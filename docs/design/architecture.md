@@ -188,34 +188,70 @@ backend/ai-service/app/
 ## 4. 디렉토리 구조
 ```
 SKN34-FINAL-3TEAM/
-├─ frontend/web/                 React 웹 (presentation / domain / data 구조)
+├─ frontend/web/                 React 웹
+│  ├─ src/                       presentation / domain / data, 레이어 안은 기능별 폴더 (chat/, report/ …)
+│  ├─ tests/
+│  └─ package.json, vite.config.ts, tsconfig.json
 ├─ backend/
 │  ├─ core-service/              Spring Boot — 공개 API·사용자 업무·리포트 일정·알림
-│  ├─ data-service/              Spring Boot — 데이터 소스·업로드·메타데이터
+│  │  ├─ src/                    main/kotlin(기능 패키지, 2.5) · main/resources(application-<env>.yml, Flyway, MyBatis) · test/kotlin
+│  │  └─ Dockerfile
+│  ├─ data-service/              Spring Boot — 데이터 소스·업로드·메타데이터 (core-service와 동일 구성)
 │  ├─ ai-service/                FastAPI — 분석 에이전트·리포트 서술·스키마 색인
-│  ├─ compute-service/           FastAPI — 프로파일링·격리 실행
-│  └─ report-service/            FastAPI — 리포트 생성·렌더링
+│  │  ├─ app/                    기능 폴더 + 공통(config·messaging·clients·llm·health), 2.5 참고
+│  │  ├─ tests/                  app과 동일 기능 폴더 구조
+│  │  ├─ pyproject.toml, uv.lock
+│  │  └─ Dockerfile
+│  ├─ compute-service/           FastAPI — 프로파일링·격리 실행 (ai-service와 동일 구성)
+│  └─ report-service/            FastAPI — 리포트 생성·렌더링 (ai-service 구성 + 아래 추가)
+│     └─ migrations/             report_db 스키마 마이그레이션 (Alembic)
 ├─ contracts/
-│  ├─ events/                    이벤트 JSON Schema, asyncapi.yaml
-│  └─ openapi/                   서비스별 OpenAPI
-├─ evaluation/                   NL2SQL·분석 정확도 평가셋, 실행 결과
+│  ├─ events/
+│  │  ├─ envelope.schema.json    CloudEvents 공통 봉투
+│  │  ├─ <message>.schema.json   메시지 1개 = 파일 1개, 1.4 메시지 이름 그대로
+│  │  └─ asyncapi.yaml           exchange·routing key·생산/소비 매핑
+│  └─ openapi/
+│     └─ <service>.yaml          core-service(공개 API), 나머지(내부 API)
+├─ evaluation/                   NL2SQL·분석 정확도 평가
+│  ├─ datasets/                  평가셋별 cases.jsonl·fixtures
+│  ├─ runners/                   ai-service 호출·채점 스크립트
+│  └─ results/                   실행 결과 요약
 ├─ infrastructure/
 │  ├─ gitops/
-│  │  ├─ charts/{app-service, platform-data, observability}/   공통 서비스 chart + 저장소 + 관측
-│  │  ├─ environments/{local, prod}/                           환경별 values·이미지 태그
+│  │  ├─ charts/
+│  │  │  ├─ app-service/         공통 서비스 chart: templates/(deployment·service·hpa·scaledobject·pdb·networkpolicy·externalsecret·ingress), values.yaml
+│  │  │  ├─ platform-data/       RabbitMQ·Redis·Qdrant (+ 로컬 전용 MySQL·MinIO)
+│  │  │  └─ observability/       OTel Collector·Prometheus·Grafana·Langfuse
+│  │  ├─ environments/{local, prod}/   <service>.yaml — 서비스별 values·이미지 태그
 │  │  ├─ argocd/
+│  │  │  ├─ root-app.yaml        App of Apps 진입점
+│  │  │  ├─ apps/                서비스·platform-data·observability Application
+│  │  │  └─ addons/              KEDA·External Secrets·AWS LB Controller·Cluster Autoscaler (외부 Helm chart)
 │  │  └─ kind/local.yaml
-│  ├─ eks/                       eksctl 클러스터·노드그룹·Ingress·오토스케일링·StorageClass
-│  ├─ messaging/                 RabbitMQ exchange·queue·DLX 정의 (definitions.json)
-│  └─ stubs/                     LLM·외부 API 대역 (테스트·무료 시연용)
-├─ .github/workflows/            서비스별 CI, 이미지 발행, 배포
-├─ docs/{architecture/, adr/}
+│  ├─ aws/                       eksctl 범위 밖 자원: RDS·S3·CloudFront·ECR·Secrets Manager·GitHub OIDC IAM (도구 미정)
+│  ├─ eks/                       eksctl 클러스터·노드그룹·IRSA·StorageClass
+│  ├─ messaging/
+│  │  └─ definitions.json        exchange·queue·DLX 단일 기준
+│  └─ stubs/
+│     └─ <target>-stub/          LLM·외부 API 대역 (테스트·무료 시연용)
+├─ .github/workflows/
+│  ├─ _<runtime>.yml             재사용 워크플로 (spring·python·web: 테스트→빌드→푸시→태그 갱신)
+│  └─ ci-<service>.yml           서비스별 경로 필터(backend/<service>/**, contracts/**) → 재사용 워크플로 호출
+├─ docs/
+│  ├─ README.md                  개발 규칙
+│  ├─ design/                    아키텍처 등 설계 문서
+│  └─ adr/                       NNNN-<제목>.md
 ├─ compose.yaml                  로컬 통합 실행 진입점
 ├─ .env.example
 └─ README.md
 ```
-- 템플릿(`project_template`) 대비: `Backend/LLM/Vision/DB` → `backend/<x>-service`로 대체, `Vision` 제거, `DB/` 제거(마이그레이션은 서비스별 Flyway·Alembic)
-- 참고 레포 대비 추가: `contracts/`, `infrastructure/messaging/` / 제외: `mobile/`, `ops-service`(LLMOps는 Langfuse + `evaluation/`로 시작, 필요 시 추가)
+
+- DB 마이그레이션은 서비스별 Flyway·Alembic
+- 서비스 추가: `app-service` chart 재사용 + `environments/<env>/<service>.yaml` + `argocd/apps/<service>.yaml` (서비스별 chart 미작성)
+- 메시지 변경: `contracts/events` 먼저 수정 → 생산·소비 서비스 반영
+- 큐 선언: `definitions.json`만 선언, 서비스 코드는 선언 없이 존재 확인만
+- 공통 코드: 공통 라이브러리 없이 서비스별 보유(이벤트 봉투·Outbox·AMQP 연결), `contracts/events` 스키마로 계약 테스트. 중복이 문제 될 때 `libs/` 검토
+- 참고 레포 대비 추가: `contracts/`, `infrastructure/messaging/`, `infrastructure/aws/` / 제외: `mobile/`, `ops-service`(LLMOps는 Langfuse + `evaluation/`로 시작, 필요 시 추가)
 
 ---
 
