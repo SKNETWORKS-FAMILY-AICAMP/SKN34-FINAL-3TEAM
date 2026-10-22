@@ -51,6 +51,8 @@
 | 오래 걸리는 단일 작업 (프로파일링, 리포트 생성) | **명령** → `cmd.direct` 작업 큐 | 타임아웃 회피, 재시도, 워커 단독 확장 |
 | 상태 변화 전파 | **이벤트** → `events.topic` | 생산자가 소비자를 모름, 소비자 추가 시 생산자 무변경 |
 
+- 동기 호출 장애 대응: 타임아웃 + 재시도 제한 + 서킷 브레이커(Spring Resilience4j / Python httpx 타임아웃·재시도), 실패 시 SSE로 오류 전달
+
 ### 1.4 메시지 목록
 
 | 메시지 | 종류 | 생산 | 소비 | 소비 측 처리 |
@@ -64,13 +66,14 @@
 
 ### 1.5 핵심 흐름
 1. **데이터 등록**: core → data(presigned URL 발급) → 브라우저가 S3 직접 업로드 → data가 dataset 저장 + Outbox(`dataset.registered`, `profiling.run`) → compute 프로파일링 → `dataset.profiled` → data·ai·core 각각 반영
-2. **대화형 분석**: Web ─SSE→ core → ai(스트리밍) → LangGraph `classify → plan → retrieve_schema(Qdrant) → generate_sql → execute(compute) → chart → verify → answer` → core가 이력 저장 + Outbox(`analysis.completed`)
+2. **대화형 분석**: Web ─SSE→ core(data로 데이터셋 접근 권한 확인 → 허용 dataset 목록·대화 이력 포함) → ai(스트리밍) → LangGraph `classify → plan → retrieve_schema(Qdrant) → generate_sql → execute(compute, 허용 dataset만 읽기) → chart → verify → answer` → core가 이력 저장 + Outbox(`analysis.completed`)
 3. **자동 리포트**: core 스케줄러(ShedLock) 또는 사용자 요청 → report_job + Outbox → `report.generate` → report가 compute로 최신 데이터 조회, ai로 서술 생성, 렌더링·S3 저장 → `report.completed` → core 알림
 
 ### 1.6 메시징 신뢰성 규칙
 - **Outbox**: DB 상태 변경 + 발행이 함께 필요한 서비스(core, data, report)만 적용. 같은 트랜잭션에 outbox 행 저장 → 릴레이 스케줄러가 publisher confirm 받은 후 발행 시각 기록 (참고 레포 `*OutboxScheduler` 패턴)
 - **상태 없는 워커(compute)**: 처리 → 결과 이벤트 발행·confirm → 그 후 ACK. 중간 장애 시 명령 재전달로 재실행
 - **멱등 소비**: 소비자별 `processed_event(event_id UK)` 테이블 또는 DB 상태 전이 조건(`QUEUED→RUNNING`)
+- **재시도**: 소비 실패 시 지연 재시도 N회 후 DLQ 이동 (횟수·지연은 `definitions.json`에서 관리)
 - **DLQ**: 큐마다 dead-letter exchange, 관리자 화면에서 현황 조회 (참고 레포 `QueueOperations*` 계승)
 - **이벤트 봉투**: CloudEvents 형식 `id, type, source, time, subject, traceparent, data` → `contracts/events/*.schema.json`
 - **SSE 다중 레플리카**: core 레플리카 간 Redis Pub/Sub으로 알림 중계
@@ -100,7 +103,13 @@
 - DB 트랜잭션은 Application 레이어에서만 시작, 트랜잭션 안에서 외부 HTTP·AMQP 호출 금지
 - 서비스 간 내부 호출: 내부 토큰 헤더 필터(참고 레포 `CatalogInternalAuthFilter` 패턴) + NetworkPolicy
 
-### 2.3 서비스별 적용 강도
+### 2.3 공통 규칙
+- 오류 응답: 전 서비스 공통 형식(RFC 9457 Problem Details), 예외 → 응답 변환은 Presentation(Spring `_common/exception`, FastAPI exception handler)
+- 사용자 컨텍스트 전파: JWT 검증은 core만, 내부 호출은 내부 토큰 + `X-User-Id`·`X-Workspace-Id` 헤더, 이벤트는 봉투 `subject`·`data`에 포함
+- 대화 상태: ai-service는 상태 없음, core가 요청마다 필요한 대화 이력 전달
+- 테스트: Domain 단위 테스트, Application은 Infrastructure 대역, Repository는 Testcontainers(MySQL·RabbitMQ), 메시지는 `contracts/events` 스키마 계약 테스트
+
+### 2.4 서비스별 적용 강도
 | 서비스 | 적용 레이어 | 비고 |
 |---|---|---|
 | core, data | 4개 전부 | 업무 규칙·DB 소유 → 표준 적용 |
@@ -108,7 +117,7 @@
 | ai | Presentation · Application · Infrastructure | DB 없음. LangGraph 그래프·노드가 Application, Qdrant·LLM이 Infrastructure |
 | compute | Presentation · Application · Infrastructure | 상태 없음. `sandbox`·`sql_guard`가 Infrastructure |
 
-### 2.4 요청 처리 예시 (core 리포트 요청)
+### 2.5 요청 처리 예시 (core 리포트 요청)
 ```
 ReportController (Presentation)      요청 검증 → DTO 변환
   → ReportService (Application)      권한 확인, @Transactional: report_job 저장 + outbox 기록
@@ -118,7 +127,7 @@ OutboxRelay (_common/messaging, Infra)  미발행 outbox 조회 → ReportComman
 ReportEventConsumer (Presentation)   report.completed 수신 → ReportService.complete() → ACK
 ```
 
-### 2.5 서비스 폴더 예시
+### 2.6 서비스 폴더 예시
 
 Spring (core)
 ```
@@ -150,9 +159,21 @@ backend/ai-service/app/
 
 ---
 
-## 3. 인프라 아키텍처
+## 3. 프론트엔드 아키텍처
+- 구조: `presentation`(페이지·컴포넌트) / `domain`(타입·화면 규칙) / `data`(API 클라이언트·SSE·쿼리 훅), 레이어 안은 기능 폴더
+- 의존: `presentation → data`, `domain`은 공통 참조, 컴포넌트에서 API 직접 호출 금지
+- 상태: 서버 상태 TanStack Query, UI 상태는 React state, 전역 상태 라이브러리 미도입
+- API: core-service만 호출, `contracts/openapi/core-service.yaml`에서 타입 생성
+- 스트리밍: 채팅·알림 SSE를 fetch 스트림으로 수신(인증 헤더 필요), 수신 결과로 쿼리 캐시 갱신
+- 인증: access token 메모리 보관, refresh token httpOnly 쿠키
+- 차트: ai-service의 Plotly 스펙 그대로 렌더링 (리포트와 동일 스펙)
+- 업로드: presigned URL로 S3 직접 업로드
 
-### 3.1 환경 구분
+---
+
+## 4. 인프라 아키텍처
+
+### 4.1 환경 구분
 | 구분 | 로컬 개발 | 로컬 K8s 검증 | 운영 (AWS) |
 |---|---|---|---|
 | 실행 | Docker Compose | kind 단일 노드 | EKS (eksctl) |
@@ -160,45 +181,45 @@ backend/ai-service/app/
 | 이미지 | 로컬 빌드 | GHCR | ECR |
 | 배포 | `docker compose up` | Argo CD (local env) | Argo CD (prod env) |
 
-### 3.2 운영 네트워크·배치
+### 4.2 운영 네트워크·배치
 - VPC: Public Subnet(ALB, NAT GW) / Private Subnet(EKS 노드, RDS)
 - 진입: CloudFront → S3(웹 정적 파일) / CloudFront → ALB(AWS Load Balancer Controller Ingress) → core-service
 - 외부 호출(LLM API): Pod → NAT GW → Internet GW
 - Namespace: `app`(core·data·ai·report), `sandbox`(compute), `platform`(RabbitMQ·Redis·Qdrant), `observability`, `argocd`
 - 노드그룹: `application`, `platform-observability` 분리 (참고 레포 2그룹 구성 계승)
 
-### 3.3 확장·격리
+### 4.3 확장·격리
 - HPA(CPU): core, ai — 최소 2, PDB `minAvailable: 1`
 - **KEDA(RabbitMQ 큐 길이)**: compute, report 워커 — 0~N 확장, EDA와 K8s 연계 지점
 - Cluster Autoscaler: Pending Pod 발생 시 application 노드 증설
 - sandbox 격리: egress 전면 차단 NetworkPolicy, 리소스 limit, non-root, readOnlyRootFilesystem, ServiceAccount 토큰 미주입
 
-### 3.4 CI/CD
+### 4.4 CI/CD
 - GitHub Actions: 경로 필터로 변경 서비스만 테스트·빌드 → GHCR/ECR 푸시(OIDC로 AWS 인증)
 - `infrastructure/gitops/environments/<env>/` 이미지 태그 갱신 커밋 → Argo CD 자동 동기화
 - Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret
 
-### 3.5 관측
+### 4.5 관측
 - Langfuse: LLM 호출·토큰·비용·trace
 - OpenTelemetry → Prometheus + Grafana: 서비스 지표, 큐 길이·DLQ 적재량
 - `traceparent`를 HTTP 헤더와 이벤트 봉투 양쪽에 전파 → 동기·비동기 구간 단일 trace
 
 ---
 
-## 4. 디렉토리 구조
+## 5. 디렉토리 구조
 ```
 SKN34-FINAL-3TEAM/
 ├─ frontend/web/                 React 웹
-│  ├─ src/                       presentation / domain / data, 레이어 안은 기능별 폴더 (chat/, report/ …)
+│  ├─ src/                       3장 참고
 │  ├─ tests/
 │  └─ package.json, vite.config.ts, tsconfig.json
 ├─ backend/
 │  ├─ core-service/              Spring Boot — 공개 API·사용자 업무·리포트 일정·알림
-│  │  ├─ src/                    main/kotlin(기능 패키지, 2.5) · main/resources(application-<env>.yml, Flyway, MyBatis) · test/kotlin
+│  │  ├─ src/                    main/kotlin(기능 패키지, 2.6) · main/resources(application-<env>.yml, Flyway, MyBatis) · test/kotlin
 │  │  └─ Dockerfile
 │  ├─ data-service/              Spring Boot — 데이터 소스·업로드·메타데이터 (core-service와 동일 구성)
 │  ├─ ai-service/                FastAPI — 분석 에이전트·리포트 서술·스키마 색인
-│  │  ├─ app/                    기능 폴더 + 공통(config·messaging·clients·llm·health), 2.5 참고
+│  │  ├─ app/                    기능 폴더 + 공통(config·messaging·clients·llm·health), 2.6 참고
 │  │  ├─ tests/                  app과 동일 기능 폴더 구조
 │  │  ├─ pyproject.toml, uv.lock
 │  │  └─ Dockerfile
@@ -255,7 +276,7 @@ SKN34-FINAL-3TEAM/
 
 ---
 
-## 5. 사용 기술
+## 6. 사용 기술
 
 | 영역 | 기술 | 선정 근거 |
 |---|---|---|
@@ -274,6 +295,6 @@ SKN34-FINAL-3TEAM/
 
 ---
 
-## 6. 확인 필요 가정
+## 7. 확인 필요 가정
 - LLM 제공자: 미정 (ai-service `llm/` 래퍼로 교체 가능하게 설계)
 
