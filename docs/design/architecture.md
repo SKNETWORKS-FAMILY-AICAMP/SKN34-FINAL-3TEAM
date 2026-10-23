@@ -1,10 +1,12 @@
 # 아키텍처 설계 (참고: SKN34-4th-1Team)
 
 ## 배경
-- 대주제: 대화형 데이터 기반 분석 에이전트 및 자동 리포팅 플랫폼 (세부 주제 미정 → 공통 기능 기준 범용 설계)
-- 확정 사항: Spring + Python 혼합, RabbitMQ 하이브리드 EDA, kind 로컬 + AWS EKS 운영
+- 대주제: 대화형 데이터 기반 분석 에이전트 및 자동 리포팅 플랫폼 → **사고뭉치**(초~중학생 사고력 학습 플랫폼)에 적용. 분석 대상 데이터 = 학생 학습 기록
+- 확정 사항: Spring + Python 혼합, RabbitMQ 하이브리드 EDA, PostgreSQL, kind 로컬 + AWS EKS 운영(자체 구축 K8s 미사용, 4.2 참고)
+- 기획서(4.4) 대비 변경: FastAPI 단일 서버 → 서비스 5개 분리, EC2 → EKS
 - 참고 레포에서 계승: `backend/<x>-service` 모노레포, 기능 중심 패키지, Outbox·DLQ·수동 ACK, Helm + Argo CD GitOps, kind/EKS, `evaluation/`, `infrastructure/stubs`
-- 참고 레포 대비 보강: 작업 큐만 쓰던 구조 → **명령 큐 + 도메인 이벤트 fan-out** 구분, 이벤트 계약(`contracts/`), 큐 길이 기반 오토스케일링(KEDA), 코드 실행 격리
+- 참고 레포 대비 보강: 작업 큐만 쓰던 구조 → **명령 큐 + 도메인 이벤트 fan-out** 구분, 이벤트 계약(`contracts/`), 큐 길이 기반 오토스케일링(KEDA)
+- 기능 요구는 [기능명세서](functional-spec.md), 공개·내부 API는 [API 명세서](api-spec.md)
 
 ---
 
@@ -14,64 +16,88 @@
 
 | 서비스 | 언어 | 책임 | 소유 저장소 |
 |---|---|---|---|
-| core-service | Spring Boot (Kotlin) | **유일한 공개 API**. 계정·인증, 워크스페이스, 대화 세션·이력, 리포트 요청·정기 일정, 알림(이메일·SSE), 관리자 | core_db, Redis |
-| data-service | Spring Boot (Kotlin) | 데이터 소스 등록·업로드(presigned URL), 메타데이터 카탈로그, 스키마 버전, 접근 권한 | data_db, S3 |
-| ai-service | FastAPI | LangGraph 분석 에이전트(NL2SQL·분석 계획·차트 스펙), 리포트 서술 생성, 스키마 의미 색인 | Qdrant (상태 없음) |
-| compute-service | FastAPI | 데이터 프로파일링, 읽기 전용 쿼리·생성 코드 **격리 실행** (DuckDB·pandas) | 없음 (S3 읽기만) |
-| report-service | FastAPI | 리포트 조립·렌더링(HTML/PDF)·저장 | report_db, S3 |
+| core-service | Spring Boot (Kotlin) | **유일한 공개 API**. 계정·인증·동의, 학부모-자녀 연결(권한 기준), 분석 대화 세션·이력, 주간 리포트 작업·일정, 알림(SSE·인앱), 신고·문의·공지, 결제·구독(토스페이먼츠 테스트), 관리자 운영·모델 버전 레지스트리, LLM 사용량 집계 | core_db, Redis |
+| learning-service | Spring Boot (Kotlin) | 미션·기준표·예시 답·생각 열기 질문(버전 관리), 학습 시도·답변 버전·초안·도움 이용·돌아보기·자기 평가, 규칙 판정(고르기·수학 동치), 판정·되묻기 저장, 학습 기록 조회 API(대시보드·에이전트 도구·리포트 소재) | learning_db, S3(미션 장면) |
+| ai-service | FastAPI | 서술 근거 구절 추출(LLM) + 원문 대조 판정(코드), 되묻기 생성·정답/금지어 유출 검사, LangGraph 분석 에이전트, 리포트 서술·저녁 질문 생성, 프롬프트 버전 | 없음 (상태 없음) |
+| scoring-service | FastAPI | M2 항목 점수(klue/roberta), M1 수학 풀이 점검(활성 범위만) 추론, CPU 추론 | 없음 (S3 가중치 읽기) |
+| report-service | FastAPI | 주간 리포트 기간·포함 기록 확정, 수치·전후 변화 코드 계산, 숫자·인용 대조, 렌더링(HTML/PDF/Markdown)·저장 | report_db, S3 |
 
-- 언어 분담 근거: 트랜잭션·권한·Outbox·스케줄 = Spring 생태계(Spring AMQP, Flyway, ShedLock) 성숙 / 데이터 처리·LLM·렌더링 = Python 생태계
+- 언어 분담 근거: 트랜잭션·권한·버전 관리·Outbox·스케줄·결제 = Spring 생태계(Spring AMQP, Flyway, ShedLock) 성숙 / LLM·모델 추론·렌더링 = Python 생태계
+- scoring 분리 근거: PyTorch 이미지·메모리 요구가 ai-service와 달라 배포·확장 단위 분리, 모델 미활성 시 ai-service 영향 없음
 - 다른 서비스 DB 직접 접근 금지, API 또는 이벤트로만 연동 (참고 레포 원칙 동일)
-- 세부 주제 확정 시: 도메인 특화 데이터 수집이 필요하면 참고 레포 `catalog-service`처럼 수집 서비스 1개 추가
+- 권한 기준: 학부모-자녀 연결은 core만 소유. core가 요청마다 권한 확인 후 내부 호출에 사용자 컨텍스트·허용 학생 범위 전달 (2.3)
 
 ### 1.2 전체 구성도
 
 ```
 [React Web] ──HTTPS──▶ CloudFront ──▶ ALB(Ingress) ──▶ core-service ──SSE──▶ Web
                                                      │
-                     ┌───────────── HTTP(동기) ───────┼─────────────────────┐
-                     ▼                                ▼                     ▼
-               data-service                      ai-service ──HTTP──▶ compute-service
-                     │                                │ (Qdrant)            (격리 namespace)
-                     ▼                                │
-      ┌──────────────────────── RabbitMQ ───────────────────────────────────┐
-      │ cmd.direct  : profiling.run, report.generate        (작업 큐, 소비자 1) │
-      │ events.topic: dataset.*, analysis.*, report.*       (fan-out, 소비자 N) │
-      └─────────────────────────────────────────────────────────────────────┘
-               ▲ consume                ▲ consume              ▲ consume
-        compute-service           report-service         core / data / ai
+                       ┌──────────── HTTP(동기) ──────┼──────────────────┐
+                       ▼                              ▼                  ▼
+               learning-service ──HTTP──▶ ai-service ──HTTP──▶ scoring-service
+                       ▲                     │  ▲
+                       └──── 기록 조회 ───────┘  │
+      ┌─────────────────────────── RabbitMQ ──┼──────────────────────────────┐
+      │ cmd.direct  : report.generate          │       (작업 큐, 소비자 1)      │
+      │ events.topic: report.*, llm.*, model.*, student.*  (fan-out, 소비자 N) │
+      └────────────────────────────────────────┼──────────────────────────────┘
+               ▲ consume                       │ HTTP(서술 생성)
+        report-service ────────────────────────┘
+          └─ HTTP(기록 조회) ─▶ learning-service
 
-저장소: RDS MySQL(서비스별 스키마) · S3(원본 데이터·리포트) · Redis · Qdrant
+저장소: RDS PostgreSQL(서비스별 DB) · S3(미션 장면·리포트 파일·모델 가중치) · Redis
+외부: LLM API(ai) · 토스페이먼츠 테스트(core)
 ```
 
 ### 1.3 통신 원칙
 | 구간 | 방식 | 근거 |
 |---|---|---|
-| 채팅 분석 (Web→core→ai→compute) | 동기 HTTP + SSE 스트리밍 | 사용자 실시간 대기, 응답 지연 불가 |
-| 오래 걸리는 단일 작업 (프로파일링, 리포트 생성) | **명령** → `cmd.direct` 작업 큐 | 타임아웃 회피, 재시도, 워커 단독 확장 |
+| 답변 제출 (Web→core→learning) | 동기 HTTP, `Idempotency-Key` | 저장 성공을 즉시 확정, 중복 제출 1회 반영 |
+| 피드백: 판정·되묻기 (Web→core→learning→ai→scoring) | 동기 HTTP + core에서 SSE 전달 | 학생 실시간 대기. 답변 저장과 분리된 별도 요청이라 AI 실패 시 저장 결과 보존, 같은 요청 재호출로 재시도 |
+| 분석 대화 (Web→core→ai, 도구→learning) | 동기 HTTP + SSE 스트리밍 | 학부모 실시간 대기 |
+| 대시보드·리포트 조회 (Web→core→learning/report) | 동기 HTTP | 단순 조회 |
+| 주간 리포트 생성 | **명령** → `cmd.direct` 작업 큐 | 일괄 처리, 재시도, 워커 단독 확장 |
 | 상태 변화 전파 | **이벤트** → `events.topic` | 생산자가 소비자를 모름, 소비자 추가 시 생산자 무변경 |
 
-- 동기 호출 장애 대응: 타임아웃 + 재시도 제한 + 서킷 브레이커(Spring Resilience4j / Python httpx 타임아웃·재시도), 실패 시 SSE로 오류 전달
+- 동기 호출 장애 대응: 타임아웃 + 재시도 제한 + 서킷 브레이커(Spring Resilience4j / Python httpx 타임아웃·재시도), 값은 `[P12]`. 실패 시 "처리 실패"로 기록·SSE 전달, 판정 보류·기록 없음과 구분
 
 ### 1.4 메시지 목록
 
 | 메시지 | 종류 | 생산 | 소비 | 소비 측 처리 |
 |---|---|---|---|---|
-| `profiling.run` | 명령 | data | compute | 통계·스키마 추출 |
-| `dataset.registered` | 이벤트 | data | core | 화면 상태 갱신 |
-| `dataset.profiled` | 이벤트 | compute | data / ai / core | 메타데이터 READY / Qdrant 스키마 색인(상태 사본 보유 → ai→data 동기 호출 제거) / 사용자 알림 |
-| `analysis.completed` | 이벤트 | core | report / core(usage) | 리포트 소재 수집 / 토큰·비용 집계 |
-| `report.generate` | 명령 | core (수동·정기) | report | 데이터 조회→서술→렌더링 |
-| `report.completed` / `report.failed` | 이벤트 | report | core | 상태 갱신, 이메일·SSE 알림 |
+| `report.generate` | 명령 | core (정기 스케줄·재생성·관리자 재처리) | report | 기간 확정 → learning 기록 조회 → 계산 → ai 서술 → 대조 → 렌더링·저장 |
+| `report.started` | 이벤트 | report | core | 작업 상태 처리 중 |
+| `report.completed` / `report.failed` | 이벤트 | report | core | 작업 상태 갱신, 학부모 알림 |
+| `llm.usage.recorded` | 이벤트 | ai, scoring | core | 호출 종류별 토큰·지연·실패·버전 집계 (학생 ID·원문 미포함) |
+| `model.version.activated` | 이벤트 | core | ai, scoring | 활성 모델·프롬프트 버전 교체 (기동 시 core 내부 API로 현재 버전 조회) |
+| `student.deleted` | 이벤트 | core | learning, report | 삭제 확정 학생의 학습 기록·리포트 삭제 처리 `[P09]` |
 
 ### 1.5 핵심 흐름
-1. **데이터 등록**: core → data(presigned URL 발급) → 브라우저가 S3 직접 업로드 → data가 dataset 저장 + Outbox(`dataset.registered`, `profiling.run`) → compute 프로파일링 → `dataset.profiled` → data·ai·core 각각 반영
-2. **대화형 분석**: Web ─SSE→ core(data로 데이터셋 접근 권한 확인 → 허용 dataset 목록·대화 이력 포함) → ai(스트리밍) → LangGraph `classify → plan → retrieve_schema(Qdrant) → generate_sql → execute(compute, 허용 dataset만 읽기) → chart → verify → answer` → core가 이력 저장 + Outbox(`analysis.completed`)
-3. **자동 리포트**: core 스케줄러(ShedLock) 또는 사용자 요청 → report_job + Outbox → `report.generate` → report가 compute로 최신 데이터 조회, ai로 서술 생성, 렌더링·S3 저장 → `report.completed` → core 알림
+1. **미션 학습**
+   - 학생이 미션 시작 → learning이 학습 시도 생성 (진행 중 시도가 있으면 반환)
+   - 초안 저장 시 `If-Match` 버전 확인, 충돌하면 409
+   - 답변 제출 → learning이 답변 버전 저장 → 201
+2. **피드백**
+   - Web ─SSE→ core → learning
+   - learning 처리 순서
+     - 고르기·수학 최종 답: 규칙 판정
+     - 서술·논술: ai `judgments` 호출 (LLM 근거 추출 → 코드 원문 대조 → M2 활성 시 scoring 교차 확인)
+     - 이후 ai `followups`로 되묻기 생성·유출 검사
+   - 판정·되묻기를 기준표·모델·프롬프트 버전과 함께 저장
+   - 실패 시 판정 상태 `FAILED` 저장, 같은 피드백 요청 재호출로 재시도
+3. **마무리**: learning이 마무리 조건 `[P04]`을 확인한 뒤에만 정답·예시 답·근거 확인된 체크리스트 반환 → 돌아보기 저장 시 완료 처리
+4. **분석 대화**
+   - Web ─SSE→ core: 자녀 연결 확인 후 허용 학생·기간·대화 이력 전달 → ai(스트리밍)
+   - LangGraph 흐름: `classify → clarify_scope → plan → tool(learning 조회, 실행마다 허용 범위 검사) → compute(코드 계산) → answer → verify(숫자·인용 대조)`
+   - core가 질문·답변·참조 기록 저장
+5. **자동 리포트**
+   - core 스케줄러(ShedLock)가 자녀별 report_job + Outbox → `report.generate`
+   - report가 learning 기록 조회 → 코드 계산 → ai 서술·저녁 질문 → 숫자·인용 대조 → 렌더링·S3 저장
+   - `report.completed` → core 알림
 
 ### 1.6 메시징 신뢰성 규칙
-- **Outbox**: DB 상태 변경 + 발행이 함께 필요한 서비스(core, data, report)만 적용. 같은 트랜잭션에 outbox 행 저장 → 릴레이 스케줄러가 publisher confirm 받은 후 발행 시각 기록 (참고 레포 `*OutboxScheduler` 패턴)
-- **상태 없는 워커(compute)**: 처리 → 결과 이벤트 발행·confirm → 그 후 ACK. 중간 장애 시 명령 재전달로 재실행
+- **Outbox**: DB 상태 변경 + 발행이 함께 필요한 서비스(core, learning, report)만 적용. 같은 트랜잭션에 outbox 행 저장 → 릴레이 스케줄러가 publisher confirm 받은 후 발행 시각 기록 (참고 레포 `*OutboxScheduler` 패턴)
+- **상태 없는 서비스(ai, scoring)**: 이벤트 발행은 처리 결과 반환 후 best-effort (사용량 집계용), 유실 시 Langfuse trace로 보정
 - **멱등 소비**: 소비자별 `processed_event(event_id UK)` 테이블 또는 DB 상태 전이 조건(`QUEUED→RUNNING`)
 - **재시도**: 소비 실패 시 지연 재시도 N회 후 DLQ 이동 (횟수·지연은 `definitions.json`에서 관리)
 - **DLQ**: 큐마다 dead-letter exchange, 관리자 화면에서 현황 조회 (참고 레포 `QueueOperations*` 계승)
@@ -83,16 +109,16 @@
 ## 2. 백엔드 아키텍처
 
 ### 2.1 구조 원칙: 기능 단위 패키지 + 기능 내부 레이어드 아키텍처
-- 최상위는 기능(`report/`, `chat/` …) 기준, 각 기능 내부를 레이어로 분리 (참고 레포 core-service 동일 방식)
+- 최상위는 기능(`attempt/`, `conversation/` …) 기준, 각 기능 내부를 레이어로 분리 (참고 레포 core-service 동일 방식)
 - 기능 우선 근거: 한 기능의 코드가 한 폴더에 모임, 기능을 별도 서비스로 분리하기 쉬움
-- 헥사고날·클린 아키텍처 미적용: 서비스 규모 대비 포트·어댑터 비용 과다. 교체 가능성이 큰 LLM 제공자(`llm/`), 실행 환경(`sandbox`)만 래퍼로 분리
+- 헥사고날·클린 아키텍처 미적용: 서비스 규모 대비 포트·어댑터 비용 과다. 교체 가능성이 큰 LLM 제공자(`llm/`), PG(`payment/client`)만 래퍼로 분리
 
 | 레이어 | Spring 위치 | Python 위치 | 책임 | 금지 |
 |---|---|---|---|---|
 | Presentation | `controller`, `consumer`, `scheduler` | `router.py`, `consumer.py` | HTTP·메시지·스케줄 수신, DTO 검증·변환, 인증 정보 추출, ACK | 업무 로직, DB 접근 |
 | Application | `service`, `facade` | `service.py`, `graph.py`·`nodes/`(ai) | 업무 흐름, 트랜잭션 경계, Outbox 기록 | HTTP 요청·AMQP 채널 객체 직접 사용 |
-| Domain | `domain` | `models.py`, `state.py` | 엔티티·값 객체, 상태 전이 규칙(`QUEUED→RUNNING` 등) | 프레임워크·외부 라이브러리 의존 |
-| Infrastructure | `repository`, `client`, `messaging` | `repository.py`, `clients/`, `messaging/`, `llm/`, `sandbox.py` | DB, 외부 API, 브로커, LLM, S3 연동 | 업무 판단 |
+| Domain | `domain` | `models.py`, `state.py` | 엔티티·값 객체, 상태 전이 규칙(`QUEUED→RUNNING`, 판정 상태 등) | 프레임워크·외부 라이브러리 의존 |
+| Infrastructure | `repository`, `client`, `messaging` | `repository.py`, `clients/`, `messaging/`, `llm/` | DB, 외부 API, 브로커, LLM, PG, S3 연동 | 업무 판단 |
 
 ### 2.2 의존 규칙
 - `Presentation → Application → Infrastructure` 단방향, 계층 건너뛰기 금지 (controller → repository 직접 호출 금지)
@@ -105,26 +131,29 @@
 
 ### 2.3 공통 규칙
 - 오류 응답: 전 서비스 공통 형식(RFC 9457 Problem Details), 예외 → 응답 변환은 Presentation(Spring `_common/exception`, FastAPI exception handler)
-- 사용자 컨텍스트 전파: JWT 검증은 core만, 내부 호출은 내부 토큰 + `X-User-Id`·`X-Workspace-Id` 헤더, 이벤트는 봉투 `subject`·`data`에 포함
-- 대화 상태: ai-service는 상태 없음, core가 요청마다 필요한 대화 이력 전달
-- 테스트: Domain 단위 테스트, Application은 Infrastructure 대역, Repository는 Testcontainers(MySQL·RabbitMQ), 메시지는 `contracts/events` 스키마 계약 테스트
+- 사용자 컨텍스트 전파: JWT 검증은 core만, 내부 호출은 내부 토큰 + `X-User-Id`·`X-User-Role`·`X-Student-Scope`(허용 학생 ID 목록) 헤더, 이벤트는 봉투 `subject`·`data`에 포함
+- 범위 검사: learning은 조회 대상 학생이 `X-Student-Scope`에 없으면 403. ai 에이전트 도구도 실행 전 같은 검사 (FN-AGT-02)
+- 대화 상태: ai-service는 상태 없음, core가 요청마다 대화 이력·허용 범위 전달
+- 버전 연결: 판정·되묻기·분석·리포트 결과에 미션·기준표·모델·프롬프트 버전 저장 (NFR-DAT-02)
+- 개인정보: LLM 요청에 학생 이름·식별정보 미포함, 운영 로그에 학생 원문·비밀 키·결제 정보 미기록 (NFR-SEC-03, 05)
+- 테스트: Domain 단위 테스트, Application은 Infrastructure 대역, Repository는 Testcontainers(PostgreSQL·RabbitMQ), 메시지는 `contracts/events` 스키마 계약 테스트
 
 ### 2.4 서비스별 적용 강도
 | 서비스 | 적용 레이어 | 비고 |
 |---|---|---|
-| core, data | 4개 전부 | 업무 규칙·DB 소유 → 표준 적용 |
+| core, learning | 4개 전부 | 업무 규칙·DB 소유 → 표준 적용 |
 | report | 4개 전부 | 작업 상태 전이·Outbox 보유 |
-| ai | Presentation · Application · Infrastructure | DB 없음. LangGraph 그래프·노드가 Application, Qdrant·LLM이 Infrastructure |
-| compute | Presentation · Application · Infrastructure | 상태 없음. `sandbox`·`sql_guard`가 Infrastructure |
+| ai | Presentation · Application · Infrastructure | DB 없음. LangGraph 그래프·노드, 판정 대조 로직이 Application, LLM·서비스 클라이언트가 Infrastructure |
+| scoring | Presentation · Application · Infrastructure | 상태 없음. 모델 로딩·추론이 Infrastructure |
 
-### 2.5 요청 처리 예시 (core 리포트 요청)
+### 2.5 요청 처리 예시 (learning 답변 제출)
 ```
-ReportController (Presentation)      요청 검증 → DTO 변환
-  → ReportService (Application)      권한 확인, @Transactional: report_job 저장 + outbox 기록
-    → ReportJob (Domain)             QUEUED 상태 생성 규칙
-    → ReportRepository (Infra)       MyBatis → MySQL
-OutboxRelay (_common/messaging, Infra)  미발행 outbox 조회 → ReportCommandPublisher → RabbitMQ (업무 로직 없음)
-ReportEventConsumer (Presentation)   report.completed 수신 → ReportService.complete() → ACK
+AnswerController (Presentation)      요청 검증 → DTO 변환, Idempotency-Key 확인
+  → AnswerService (Application)      시도 상태·학생 범위 확인, @Transactional: answer 버전 저장
+    → Answer (Domain)                버전 번호 증가 규칙, 이전 버전 덮어쓰기 금지
+    → AnswerRepository (Infra)       MyBatis → PostgreSQL
+FeedbackFacade (Application)         판정 상태 PENDING→RUNNING → 규칙 판정 또는 AiClient 호출(트랜잭션 밖)
+                                     → @Transactional: judgment·followup 저장, 상태 DONE/HELD/FAILED
 ```
 
 ### 2.6 서비스 폴더 예시
@@ -133,41 +162,60 @@ Spring (core)
 ```
 backend/core-service/src/main/kotlin/<base>/core/
 ├─ _common/{config, exception, security, messaging}   # 이벤트 봉투, OutboxRelay
-├─ account/{controller, service, domain, repository}
-├─ workspace/
-├─ chat/{controller(SSE), service, domain, repository, client(AiServiceClient)}
-├─ report/{controller, consumer(ReportEventConsumer), scheduler, service, domain, repository, messaging(ReportCommandPublisher)}
-├─ notification/{service, client(Mail), sse}
-└─ admin/{controller, service}                         # 큐·DLQ 현황
+├─ account/{controller, service, domain, repository}  # 가입·로그인·복구·탈퇴
+├─ consent/
+├─ guardianship/                                      # 자녀 등록·연결·권한 확인
+├─ learning/{controller, client(LearningClient)}      # learning 프록시 (미션·시도·대시보드)
+├─ conversation/{controller(SSE), service, domain, repository, client(AiClient)}
+├─ report/{controller, consumer, scheduler, service, domain, repository, messaging, client(ReportClient)}
+├─ notification/{controller(SSE), service, repository}
+├─ support/                                           # 신고·문의·공지·도움말
+├─ payment/{controller, service, domain, repository, client(TossClient), scheduler(정기 청구)}
+├─ usage/{consumer, service, repository}              # LLM 사용량 집계
+└─ admin/{controller, service}                        # 운영 현황·재처리·모델 버전·큐/DLQ
 src/main/resources/{db/migration (Flyway), mybatis/}
+```
+
+Spring (learning)
+```
+backend/learning-service/src/main/kotlin/<base>/learning/
+├─ _common/{config, exception, security, messaging}
+├─ mission/          # 미션·기준표·예시 답·생각 열기 질문 버전, 관리자 작성·검토·공개
+├─ attempt/          # 학습 시도·초안·도움 이용·마무리·돌아보기·자기 평가
+├─ answer/           # 답변 버전
+├─ judgment/{service, rule(choice·math 동치), client(AiClient), facade(FeedbackFacade)}
+├─ record/           # 대시보드·에이전트 도구·리포트용 조회 API
+└─ deletion/         # student.deleted 소비
 ```
 
 Python (ai)
 ```
 backend/ai-service/app/
 ├─ main.py, bootstrap.py, config.py
-├─ analysis_agent/{router.py, service.py, graph.py, nodes/, state.py, models.py, tools.py, prompts.py}
-├─ schema_index/{consumer.py, service.py}      # dataset.profiled → Qdrant
-├─ report_narrative/{router.py, service.py, prompt.py}
-├─ clients/compute_client.py                  # compute-service 호출
+├─ judgment/{router.py, service.py, extractor.py(LLM), verifier.py(코드 대조), prompts.py}
+├─ followup/{router.py, service.py, leak_guard.py, prompts.py}
+├─ analysis_agent/{router.py, service.py, graph.py, nodes/, state.py, tools.py, calculators.py, prompts.py}
+├─ report_narrative/{router.py, service.py, prompts.py}
+├─ clients/{learning_client.py, scoring_client.py}
 ├─ llm/                                       # LLM 클라이언트 래퍼 (제공자 교체 지점)
-├─ messaging/{envelope.py, connection.py, consumer.py}
+├─ messaging/{envelope.py, connection.py, publisher.py, consumer.py}
 └─ health/router.py
 ```
-- compute: `profiling/{consumer.py, service.py, models.py}`, `execution/{router.py, service.py, sandbox.py, sql_guard.py}` (sqlglot으로 SELECT만 허용, 실행 시간·행 수 제한)
-- report: `generation/{consumer.py, service.py, models.py, repository.py}`, `rendering/{templates/, renderer.py}`, `outbox/`
+- scoring: `m2/{router.py, service.py}`, `m1/{router.py, service.py}`, `model_registry.py`(활성 버전·가중치 로딩)
+- report: `generation/{consumer.py, service.py, metrics.py, verifier.py, models.py, repository.py}`, `rendering/{templates/, renderer.py}`, `query/router.py`, `outbox/`
 
 ---
 
 ## 3. 프론트엔드 아키텍처
 - 구조: `presentation`(페이지·컴포넌트) / `domain`(타입·화면 규칙) / `data`(API 클라이언트·SSE·쿼리 훅), 레이어 안은 기능 폴더
+- 역할별 화면: `student`(홈·미션·되묻기·돌아보기), `parent`(대시보드·분석 대화·리포트·구독), `admin`(운영·미션·신고·결제·모델)
 - 의존: `presentation → data`, `domain`은 공통 참조, 컴포넌트에서 API 직접 호출 금지
 - 상태: 서버 상태 TanStack Query, UI 상태는 React state, 전역 상태 라이브러리 미도입
-- API: core-service만 호출, `contracts/openapi/core-service.yaml`에서 타입 생성
-- 스트리밍: 채팅·알림 SSE를 fetch 스트림으로 수신(인증 헤더 필요), 수신 결과로 쿼리 캐시 갱신
+- API: core-service만 호출, [API 명세서](api-spec.md) 기준
+- 스트리밍: 피드백·분석 대화·알림 SSE를 fetch 스트림으로 수신(인증 헤더 필요), 수신 결과로 쿼리 캐시 갱신
 - 인증: access token 메모리 보관, refresh token httpOnly 쿠키
-- 차트: ai-service의 Plotly 스펙 그대로 렌더링 (리포트와 동일 스펙)
-- 업로드: presigned URL로 S3 직접 업로드
+- 결제: 토스페이먼츠 결제위젯 SDK (테스트 키)
+- 접근성: 움직임 줄이기 설정 시 정적 장면, 상태를 색상 외 글로 표시 (NFR-UX-02)
 
 ---
 
@@ -177,31 +225,44 @@ backend/ai-service/app/
 | 구분 | 로컬 개발 | 로컬 K8s 검증 | 운영 (AWS) |
 |---|---|---|---|
 | 실행 | Docker Compose | kind 단일 노드 | EKS (eksctl) |
-| 상태 저장소 | 컨테이너 | `platform-data` Helm chart (StatefulSet) | RDS MySQL, S3 / RabbitMQ·Redis·Qdrant는 StatefulSet + EBS gp3 |
+| 상태 저장소 | 컨테이너 | `platform-data` Helm chart (StatefulSet) | RDS PostgreSQL, S3 / RabbitMQ·Redis는 StatefulSet + EBS gp3 |
 | 이미지 | 로컬 빌드 | GHCR | ECR |
 | 배포 | `docker compose up` | Argo CD (local env) | Argo CD (prod env) |
+| 외부 연동 | stub (LLM·토스) | stub 또는 테스트 키 | LLM API, 토스페이먼츠 테스트 키 |
 
-### 4.2 운영 네트워크·배치
+### 4.2 운영 클러스터: EKS
+- 선정 근거 (자체 구축 K8s(kubeadm·k3s) 대비)
+  - 설계 구성 요소(ALB LB Controller, IRSA, EBS CSI, Cluster Autoscaler, ECR, Secrets Manager) AWS 기본 연동
+  - control plane HA·etcd 백업·업그레이드를 AWS가 관리 → 12/7 일정 내 운영 부담 제거
+  - 자체 구축도 control plane EC2 필요 → 비용 차이 작음 (EKS 수수료 $0.10/시간)
+- 구성: eksctl(`infrastructure/eks/`), 관리형 노드그룹 2개(4.3), EKS add-on(VPC CNI·CoreDNS·kube-proxy·EBS CSI), IRSA, LB Controller·Cluster Autoscaler는 Argo CD `addons/`
+- 비용 절감
+  - 데모 외 기간: 노드그룹 최소값 축소 또는 클러스터 삭제 후 eksctl 재생성
+  - `platform-observability` 노드그룹 Spot 적용
+  - NAT GW 단일 AZ 1개
+
+### 4.3 운영 네트워크·배치
 - VPC: Public Subnet(ALB, NAT GW) / Private Subnet(EKS 노드, RDS)
-- 진입: CloudFront → S3(웹 정적 파일) / CloudFront → ALB(AWS Load Balancer Controller Ingress) → core-service
-- 외부 호출(LLM API): Pod → NAT GW → Internet GW
-- Namespace: `app`(core·data·ai·report), `sandbox`(compute), `platform`(RabbitMQ·Redis·Qdrant), `observability`, `argocd`
+- 진입: CloudFront → S3(웹 정적 파일·미션 장면) / CloudFront → ALB(AWS Load Balancer Controller Ingress) → core-service
+- 외부 호출(LLM API·토스페이먼츠): Pod → NAT GW → Internet GW
+- Namespace: `app`(core·learning·ai·scoring·report), `platform`(RabbitMQ·Redis), `observability`, `argocd`
 - 노드그룹: `application`, `platform-observability` 분리 (참고 레포 2그룹 구성 계승)
+- NetworkPolicy: `app` 내부 서비스는 core·호출 관계에 있는 서비스에서만 수신, Ingress는 core만
 
-### 4.3 확장·격리
-- HPA(CPU): core, ai — 최소 2, PDB `minAvailable: 1`
-- **KEDA(RabbitMQ 큐 길이)**: compute, report 워커 — 0~N 확장, EDA와 K8s 연계 지점
+### 4.4 확장
+- HPA(CPU): core, learning, ai, scoring — 최소 2(scoring은 메모리 고려해 최소 1), PDB `minAvailable: 1`
+- **KEDA(RabbitMQ 큐 길이)**: report 워커 — 0~N 확장, EDA와 K8s 연계 지점
 - Cluster Autoscaler: Pending Pod 발생 시 application 노드 증설
-- sandbox 격리: egress 전면 차단 NetworkPolicy, 리소스 limit, non-root, readOnlyRootFilesystem, ServiceAccount 토큰 미주입
+- 공통 보안: 리소스 limit, non-root, readOnlyRootFilesystem
 
-### 4.4 CI/CD
+### 4.5 CI/CD
 - GitHub Actions: 경로 필터로 변경 서비스만 테스트·빌드 → GHCR/ECR 푸시(OIDC로 AWS 인증)
 - `infrastructure/gitops/environments/<env>/` 이미지 태그 갱신 커밋 → Argo CD 자동 동기화
-- Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret
+- Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret (LLM·토스 키는 저장소에 미포함, NFR-SEC-04)
 
-### 4.5 관측
+### 4.6 관측
 - Langfuse: LLM 호출·토큰·비용·trace
-- OpenTelemetry → Prometheus + Grafana: 서비스 지표, 큐 길이·DLQ 적재량
+- OpenTelemetry → Prometheus + Grafana: 서비스 지표, 큐 길이·DLQ 적재량, 판정·피드백·리포트 처리 지연
 - `traceparent`를 HTTP 헤더와 이벤트 봉투 양쪽에 전파 → 동기·비동기 구간 단일 trace
 
 ---
@@ -214,16 +275,16 @@ SKN34-FINAL-3TEAM/
 │  ├─ tests/
 │  └─ package.json, vite.config.ts, tsconfig.json
 ├─ backend/
-│  ├─ core-service/              Spring Boot — 공개 API·사용자 업무·리포트 일정·알림
+│  ├─ core-service/              Spring Boot — 공개 API·계정·대화·리포트 작업·알림·결제·관리자
 │  │  ├─ src/                    main/kotlin(기능 패키지, 2.6) · main/resources(application-<env>.yml, Flyway, MyBatis) · test/kotlin
 │  │  └─ Dockerfile
-│  ├─ data-service/              Spring Boot — 데이터 소스·업로드·메타데이터 (core-service와 동일 구성)
-│  ├─ ai-service/                FastAPI — 분석 에이전트·리포트 서술·스키마 색인
+│  ├─ learning-service/          Spring Boot — 미션·학습 시도·답변·규칙 판정·기록 조회 (core-service와 동일 구성)
+│  ├─ ai-service/                FastAPI — 판정 근거·되묻기·분석 에이전트·리포트 서술
 │  │  ├─ app/                    기능 폴더 + 공통(config·messaging·clients·llm·health), 2.6 참고
 │  │  ├─ tests/                  app과 동일 기능 폴더 구조
 │  │  ├─ pyproject.toml, uv.lock
 │  │  └─ Dockerfile
-│  ├─ compute-service/           FastAPI — 프로파일링·격리 실행 (ai-service와 동일 구성)
+│  ├─ scoring-service/           FastAPI — M2·M1 추론 (ai-service와 동일 구성)
 │  └─ report-service/            FastAPI — 리포트 생성·렌더링 (ai-service 구성 + 아래 추가)
 │     └─ migrations/             report_db 스키마 마이그레이션 (Alembic)
 ├─ contracts/
@@ -232,16 +293,16 @@ SKN34-FINAL-3TEAM/
 │  │  ├─ <message>.schema.json   메시지 1개 = 파일 1개, 1.4 메시지 이름 그대로
 │  │  └─ asyncapi.yaml           exchange·routing key·생산/소비 매핑
 │  └─ openapi/
-│     └─ <service>.yaml          core-service(공개 API), 나머지(내부 API)
-├─ evaluation/                   NL2SQL·분석 정확도 평가
-│  ├─ datasets/                  평가셋별 cases.jsonl·fixtures
-│  ├─ runners/                   ai-service 호출·채점 스크립트
+│     └─ <service>.yaml          api-spec.md 기준 생성. core-service(공개 API), 나머지(내부 API)
+├─ evaluation/                   판정 일치도(QWK)·되묻기 유출·에이전트 숫자/인용 대조 평가
+│  ├─ datasets/                  평가셋별 cases.jsonl·fixtures (자체 작성 예시 답안, AI Hub 원문 미포함)
+│  ├─ runners/                   서비스 호출·채점 스크립트
 │  └─ results/                   실행 결과 요약
 ├─ infrastructure/
 │  ├─ gitops/
 │  │  ├─ charts/
 │  │  │  ├─ app-service/         공통 서비스 chart: templates/(deployment·service·hpa·scaledobject·pdb·networkpolicy·externalsecret·ingress), values.yaml
-│  │  │  ├─ platform-data/       RabbitMQ·Redis·Qdrant (+ 로컬 전용 MySQL·MinIO)
+│  │  │  ├─ platform-data/       RabbitMQ·Redis (+ 로컬 전용 PostgreSQL·MinIO)
 │  │  │  └─ observability/       OTel Collector·Prometheus·Grafana·Langfuse
 │  │  ├─ environments/{local, prod}/   <service>.yaml — 서비스별 values·이미지 태그
 │  │  ├─ argocd/
@@ -254,24 +315,26 @@ SKN34-FINAL-3TEAM/
 │  ├─ messaging/
 │  │  └─ definitions.json        exchange·queue·DLX 단일 기준
 │  └─ stubs/
-│     └─ <target>-stub/          LLM·외부 API 대역 (테스트·무료 시연용)
+│     └─ <target>-stub/          LLM·토스페이먼츠 대역 (테스트·무료 시연용)
 ├─ .github/workflows/
 │  ├─ _<runtime>.yml             재사용 워크플로 (spring·python·web: 테스트→빌드→푸시→태그 갱신)
 │  └─ ci-<service>.yml           서비스별 경로 필터(backend/<service>/**, contracts/**) → 재사용 워크플로 호출
 ├─ docs/
 │  ├─ README.md                  개발 규칙
-│  ├─ design/                    아키텍처 등 설계 문서
+│  ├─ design/                    아키텍처·기능명세·API 명세 등 설계 문서
 │  └─ adr/                       NNNN-<제목>.md
 ├─ compose.yaml                  로컬 통합 실행 진입점
 ├─ .env.example
 └─ README.md
 ```
 
-- DB 마이그레이션은 서비스별 Flyway·Alembic
+- DB 마이그레이션은 서비스별 Flyway(core·learning)·Alembic(report)
 - 서비스 추가: `app-service` chart 재사용 + `environments/<env>/<service>.yaml` + `argocd/apps/<service>.yaml` (서비스별 chart 미작성)
+- API 변경: `api-spec.md` 먼저 수정 → `contracts/openapi` → 구현
 - 메시지 변경: `contracts/events` 먼저 수정 → 생산·소비 서비스 반영
 - 큐 선언: `definitions.json`만 선언, 서비스 코드는 선언 없이 존재 확인만
 - 공통 코드: 공통 라이브러리 없이 서비스별 보유(이벤트 봉투·Outbox·AMQP 연결), `contracts/events` 스키마로 계약 테스트. 중복이 문제 될 때 `libs/` 검토
+- 모델 학습 코드(M2·M1·sLLM)는 서비스 밖 실험 영역에서 관리, scoring은 승인된 가중치(S3)만 로딩
 - 참고 레포 대비 추가: `contracts/`, `infrastructure/messaging/`, `infrastructure/aws/` / 제외: `mobile/`, `ops-service`(LLMOps는 Langfuse + `evaluation/`로 시작, 필요 시 추가)
 
 ---
@@ -280,21 +343,25 @@ SKN34-FINAL-3TEAM/
 
 | 영역 | 기술 | 선정 근거 |
 |---|---|---|
-| 프론트엔드 | React, Vite, TypeScript, Tailwind CSS, TanStack Query, Plotly.js | 참고 레포 동일 계열, 차트 스펙을 백엔드 렌더링과 공유 |
-| 업무 API | Spring Boot 3, Kotlin, JDK 21, Spring Security(JWT), MyBatis, Flyway, Spring AMQP, ShedLock | 참고 레포 구현 패턴 재사용, 다중 레플리카 스케줄 중복 방지 |
-| AI·분석 API | Python 3.12, FastAPI, uv, LangGraph, LangChain, LLM API, aio-pika | 에이전트 그래프·도구 호출, 비동기 AMQP |
-| 데이터 처리 | DuckDB, pandas, sqlglot | 파일 기반 데이터 직접 SQL, SQL 검증·읽기 전용 강제 |
-| 리포트 | Jinja2, Playwright(Chromium PDF), Plotly + kaleido | HTML 템플릿 → PDF, 웹과 동일 차트 |
-| 저장소 | MySQL 8.4(RDS), S3(로컬 MinIO), Redis, Qdrant | 서비스별 스키마 분리, 대용량 파일 분리, SSE 중계·캐시, 스키마 의미 검색 |
+| 프론트엔드 | React, Vite, TypeScript, Tailwind CSS, TanStack Query, 토스페이먼츠 결제위젯 SDK | 참고 레포 동일 계열, 기획서 4.4 |
+| 업무 API | Spring Boot 3, Kotlin, JDK 21, Spring Security(JWT), MyBatis, Flyway, Spring AMQP, ShedLock, Resilience4j | 참고 레포 구현 패턴 재사용, 다중 레플리카 스케줄 중복 방지 |
+| AI API | Python 3.12, FastAPI, Pydantic, uv, LangGraph, LangChain, Claude API, aio-pika, httpx | 에이전트 그래프·도구 호출, 비동기 AMQP |
+| 모델 추론 | PyTorch, Hugging Face Transformers (M2 klue/roberta, M1) | 기획서 5장 모델 |
+| 리포트 | SQLAlchemy, Alembic, Jinja2, Playwright(Chromium PDF) | HTML 템플릿 → PDF·Markdown |
+| 저장소 | PostgreSQL(RDS), S3(로컬 MinIO), Redis | 서비스별 DB 분리, 판정 근거·기준표 JSONB, 파일 분리, SSE 중계·캐시 |
 | 메시징 | RabbitMQ (quorum queue, topic/direct exchange, DLX) | 작업 큐 + fan-out 동시 지원, Kafka 대비 운영 부담 작음 |
+| 결제 | 토스페이먼츠 테스트 환경 (결제위젯·자동결제·웹훅) | 실결제 미연동 |
 | 컨테이너·오케스트레이션 | Docker, Compose, kind, Kubernetes, Helm | 로컬 → 운영 동일 chart |
 | 확장 | HPA, KEDA, Cluster Autoscaler, PDB | CPU 기반 API 확장 + 큐 기반 워커 확장 |
-| AWS | EKS(eksctl), EC2, VPC, ALB(LB Controller), CloudFront, S3, RDS, ECR, EBS gp3, Secrets Manager | 참고 레포 EKS 구성 계승 + 관리형 DB |
+| AWS | EKS(eksctl), EC2, VPC, ALB(LB Controller), CloudFront, S3, RDS, ECR, EBS gp3, Secrets Manager | 관리형 control plane(자체 구축 대비 운영 부담 제거)·AWS 연동 기본 지원, 참고 레포 EKS 구성 계승 + 관리형 DB |
 | GitOps·CI | GitHub Actions(OIDC), GHCR, Argo CD, External Secrets | 변경 서비스만 빌드, Git 기준 배포 |
+| 테스트 | JUnit5, Testcontainers, pytest, Playwright(E2E) | 기획서 4.4 |
 | 관측·LLMOps | Langfuse, OpenTelemetry, Prometheus, Grafana | LLM trace + 서비스·큐 지표 |
 
 ---
 
 ## 7. 확인 필요 가정
-- LLM 제공자: 미정 (ai-service `llm/` 래퍼로 교체 가능하게 설계)
-
+- 미확정 정책 `[P..]`은 [기능명세서](functional-spec.md) 기준, 확정 전 해당 동작 미구현
+- LLM 제공자: Claude API (기획서 4.4), ai-service `llm/` 래퍼로 교체 가능하게 설계
+- 학습·일괄 생성(RunPod GPU, sLLM 설명)은 클러스터 밖에서 수행, 결과(가중치·주간 설명 문장)만 S3로 반입
+- AWS 계정 EKS 생성 권한·예산 한도: 권한 없으면 EC2 1대 + k3s로 대체 (HA·Cluster Autoscaler·IRSA 제외)
