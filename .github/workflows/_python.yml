@@ -1,0 +1,25 @@
+# 재사용 워크플로: Python 서비스 린트·테스트 → 이미지 빌드
+# 레지스트리 푸시·gitops 태그 갱신은 인프라 구성 시 추가
+name: _python
+
+on:
+  workflow_call:
+    inputs:
+      service-path:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.service-path }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest
+      - run: docker build -t sagomungchi/$(basename ${{ inputs.service-path }}):${{ github.sha }} .

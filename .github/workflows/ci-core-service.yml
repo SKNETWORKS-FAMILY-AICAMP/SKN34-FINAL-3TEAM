@@ -1,0 +1,20 @@
+name: ci-core-service
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - "backend/core-service/**"
+      - ".github/workflows/ci-core-service.yml"
+      - ".github/workflows/_spring.yml"
+  pull_request:
+    paths:
+      - "backend/core-service/**"
+      - ".github/workflows/ci-core-service.yml"
+      - ".github/workflows/_spring.yml"
+
+jobs:
+  build:
+    uses: ./.github/workflows/_spring.yml
+    with:
+      service-path: backend/core-service

@@ -1,0 +1,48 @@
+# 비밀 값은 환경 변수로만 주입, 그 외 기본값은 compose 인프라(localhost) 기준
+server:
+  port: 8081
+
+spring:
+  application:
+    name: learning-service
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/learning_db}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+  mvc:
+    problemdetails:
+      enabled: true
+
+mybatis:
+  mapper-locations: classpath:mybatis/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db,rabbit
+
+app:
+  internal:
+    token: ${INTERNAL_TOKEN}
+    connect-timeout: 2s
+    read-timeout: 30s # [P12] 확정 전 임시값
+  services:
+    ai: ${AI_URL:http://localhost:8000}
