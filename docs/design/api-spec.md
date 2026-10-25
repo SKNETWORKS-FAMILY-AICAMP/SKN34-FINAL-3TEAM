@@ -76,7 +76,6 @@
 ### 1.4 멱등성·동시성
 - `Idempotency-Key`(UUID) 필수 대상
   - 답변 제출
-  - 피드백 요청
   - 결제 주문·승인
   - 환불 요청
   - 작업 재처리
@@ -84,6 +83,10 @@
 - 같은 키 재요청 처리: 최초 결과를 그대로 반환하고 1회만 반영 (NFR-REL-01)
 - 키 보관 기간은 `[P12]`
 - 초안은 `ETag`/`If-Match`(초안 버전)로 처리. 불일치 시 409를 반환하고 조용히 덮어쓰지 않음
+- 피드백 요청은 키 대신 answerId의 판정 처리 상태로 중복 방지 (실패 후 재시도가 같은 요청이므로 키 재사용 불가)
+  - `DONE`: 저장된 결과 반환
+  - `RUNNING`: 새로 실행하지 않고 `status` 이벤트 후 종료, 클라이언트가 잠시 후 재요청
+  - `PENDING`·`FAILED`·리스 만료된 `RUNNING`(처리 Pod 종료로 고착): 조건부 상태 전이 후 실행 (리스 시간 `[P12]`)
 
 ### 1.5 상태 코드값 (FN 1.2 대응)
 | 대상 | 값 |
@@ -137,6 +140,9 @@
 | `result` | 엔드포인트별 최종 결과 | 대조 완료된 확정 결과 |
 | `error` | Problem Details + `retryable` | 처리 실패 |
 | `done` | `{}` | 스트림 종료 |
+
+- heartbeat: 15초마다 주석 줄 `: ping` 전송 (CloudFront·ALB 유휴 타임아웃 방지, 클라이언트는 무시)
+- 알림 스트림 재연결 시 `GET /notifications?unreadOnly=true`로 누락분 재조회
 
 ---
 
@@ -238,7 +244,7 @@
 | GET | `/children/{childId}/reports?status` | 학부모 | 대상 주·생성 상태별 목록 | RPT-10, RPT-11 | 핵심 |
 | GET | `/reports/{reportId}` | 학부모 | 상세: 기간·포함 기준·`Metric[]`·생각 유형 요약·전후 변화·돌아보기·원문 인용·저녁 질문·버전 | RPT-02~10 | 핵심 |
 | GET | `/reports/{reportId}/evidence/{itemId}` | 학부모 | 리포트 항목의 원본 기록 | RPT-03, RPT-12 | 핵심 |
-| GET | `/reports/{reportId}/download?format=pdf\|md` | 학부모 | 권한 확인 후 단기 presigned URL로 302 (제공 형식 `[P06]`) | RPT-13 | 핵심 |
+| GET | `/reports/{reportId}/download?format=pdf\|md` | 학부모 | 권한 확인 후 `{url, expiresAt}`(단기 presigned URL) 반환, 웹이 해당 URL로 이동. Bearer 인증이라 302 대신 JSON (제공 형식 `[P06]`) | RPT-13 | 핵심 |
 | POST | `/reports/{reportId}/regenerate` | 학부모·관리자 | 같은 주 재생성 → `report.generate`. 허용 대상·기존 결과 보존 `[P06]` `[P09]` | RPT-12 | 핵심 |
 
 - 자동 생성(FN-RPT-01)은 core 스케줄러가 수행하며 공개 API는 없음 (주 경계·시각 `[P06]`)
@@ -374,7 +380,8 @@ data: {}
 - 실패한 경우
   - `event: error` 데이터: `{"code":"AI_UNAVAILABLE","retryable":true}`
   - 답변은 저장된 상태로 유지
-  - 같은 엔드포인트를 다시 호출해 재시도
+  - 같은 엔드포인트를 다시 호출해 재시도 (상태별 처리는 1.4)
+- 클라이언트 연결이 끊겨도 처리는 끝까지 진행·저장, 재요청 시 저장 결과 반환
 
 ### 3.3 분석 대화 — `POST /conversations/{conversationId}/messages` (SSE)
 ```jsonc
@@ -463,6 +470,8 @@ If-Match: "7"
 
 ## 4. 내부 API (`/internal`)
 - 인증: `X-Internal-Token` + 사용자 컨텍스트 헤더 `X-User-Id`, `X-User-Role`, `X-Student-Scope`(허용 학생 ID, 콤마 구분), `traceparent`
+  - ai는 받은 컨텍스트 헤더를 learning 호출에 그대로 전달
+  - 사용자 요청 없는 호출(report-worker): `X-User-Role: SYSTEM`, `X-Student-Scope` = 이벤트 `subject` 학생
 - 외부에 노출하지 않음. NetworkPolicy로 호출 관계만 허용
 - 범위 밖 학생 요청은 403
 
@@ -509,7 +518,7 @@ If-Match: "7"
 | GET | `/internal/reports?studentId&status` | 리포트 목록 |
 | GET | `/internal/reports/{reportId}` | 상세 (3.4 스키마) |
 | GET | `/internal/reports/{reportId}/evidence/{itemId}` | 항목 근거 |
-| GET | `/internal/reports/{reportId}/files/{format}` | 단기 presigned URL 발급 |
+| GET | `/internal/reports/{reportId}/files/{format}` | 단기 presigned URL 발급 → `{url, expiresAt}` |
 
 ### 4.5 core-service (호출: ai, scoring)
 | Method | Path | 설명 |

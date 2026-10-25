@@ -60,6 +60,13 @@
 | 상태 변화 전파 | **이벤트** → `events.topic` | 생산자가 소비자를 모름, 소비자 추가 시 생산자 무변경 |
 
 - 동기 호출 장애 대응: 타임아웃 + 재시도 제한 + 서킷 브레이커(Spring Resilience4j / Python httpx 타임아웃·재시도), 값은 `[P12]`. 실패 시 "처리 실패"로 기록·SSE 전달, 판정 보류·기록 없음과 구분
+- 타임아웃 예산: 바깥 호출 타임아웃 > 안쪽 호출 합계 (예: core→learning > learning→ai judgments + followups). 전체 상한은 CloudFront·ALB 타임아웃(4.3) 이내
+- 재시도 계층: ai의 LLM 호출에서만 재시도, core·learning·report의 서비스 간 호출은 재시도 없음 (계층별 재시도 시 호출 수 곱셈 증폭)
+- SSE heartbeat: 모든 SSE는 15초마다 주석 줄(`: ping`) 전송. 피드백은 learning 동기 응답 대기 중 전송할 데이터가 없어 필수
+- SSE 연결 종료
+  - 피드백: 클라이언트가 끊겨도 learning 처리는 끝까지 진행·저장, 재요청 시 저장 결과 반환
+  - 분석 대화: 클라이언트가 끊기면 core가 ai 스트림 취소, 메시지 `FAILED`(재시도 가능) 저장
+  - 알림: 재연결 시 `/notifications`로 누락분 재조회
 
 ### 1.4 메시지 목록
 
@@ -102,6 +109,8 @@
 - **재시도**: 소비 실패 시 지연 재시도 N회 후 DLQ 이동 (횟수·지연은 `definitions.json`에서 관리)
 - **DLQ**: 큐마다 dead-letter exchange, 관리자 화면에서 현황 조회 (참고 레포 `QueueOperations*` 계승)
 - **브로드캐스트 이벤트**: 모든 레플리카가 받아야 하는 이벤트(`model.version.activated`)는 Pod별 exclusive·auto-delete 큐를 서비스가 기동 시 선언·바인딩 (exchange는 `definitions.json`). 공유 큐는 경쟁 소비라 1개 Pod만 수신
+  - 기동 순서: 큐 바인딩 → core 활성 버전 조회 (반대 순서면 그 사이 이벤트 유실)
+  - core 조회 실패 시 프로세스 종료 없이 readiness false 유지·재시도 (core 장애가 ai·scoring 기동 실패로 번지지 않게)
 - **이벤트 봉투**: CloudEvents 형식 `id, type, source, time, subject, dataschema, traceparent, data` → `contracts/events/*.schema.json`
 - **스키마 버전**: 파일 `<message>.v<N>.schema.json`, `dataschema`에 버전 표기. 하위 호환 변경(선택 필드 추가)만 같은 버전, 그 외는 새 버전 병행 발행 후 소비자 전환
 - **SSE 다중 레플리카**: core 레플리카 간 Redis Pub/Sub으로 알림 중계
@@ -134,6 +143,11 @@
 ### 2.3 공통 규칙
 - 오류 응답: 전 서비스 공통 형식(RFC 9457 Problem Details), 예외 → 응답 변환은 Presentation(Spring `_common/exception`, FastAPI exception handler)
 - 사용자 컨텍스트 전파: JWT 검증은 core만, 내부 호출은 내부 토큰 + `X-User-Id`·`X-User-Role`·`X-Student-Scope`(허용 학생 ID 목록) 헤더, 이벤트는 봉투 `subject`·`data`에 포함
+  - 중간 서비스(ai)는 받은 컨텍스트 헤더를 하위 호출(learning)에 그대로 전달
+  - 사용자 요청 없는 호출(report-worker 등 이벤트 소비): `X-User-Role: SYSTEM`, `X-Student-Scope` = 이벤트 `subject` 학생
+- 스레드 모델
+  - Spring(core·learning): JDK 21 virtual threads 사용 (LLM 대기·SSE 연결 동안 스레드 점유)
+  - FastAPI: 외부 호출은 async httpx. scoring CPU 추론은 동기 함수(스레드풀)로 실행해 이벤트 루프 차단 방지
 - 범위 검사: learning은 조회 대상 학생이 `X-Student-Scope`에 없으면 403. ai 에이전트 도구도 실행 전 같은 검사 (FN-AGT-02)
 - 대화 상태: ai-service는 상태 없음, core가 요청마다 대화 이력·허용 범위 전달
 - 버전 연결: 판정·되묻기·분석·리포트 결과에 미션·기준표·모델·프롬프트 버전 저장 (NFR-DAT-02)
@@ -429,6 +443,8 @@ backend/report-service/
 | 상태 저장소 | 컨테이너 | `platform-data` Helm chart (StatefulSet) | RDS PostgreSQL, S3 / RabbitMQ·Redis는 StatefulSet + EBS gp3 |
 | 이미지 | 로컬 빌드 | GHCR | ECR |
 | 배포 | `docker compose up` | Argo CD (local env) | Argo CD (prod env) |
+| Ingress | - | ingress-nginx | AWS LB Controller (ALB) |
+| CNI (NetworkPolicy) | - | Calico (기본 CNI 정책 지원 버전별 상이) | VPC CNI `enableNetworkPolicy: "true"` |
 | 외부 연동 | stub (LLM·토스) | stub 또는 테스트 키 | LLM API, 토스페이먼츠 테스트 키 |
 
 ### 4.2 운영 클러스터: EKS
@@ -445,18 +461,37 @@ backend/report-service/
 ### 4.3 운영 네트워크·배치
 - VPC: Public Subnet(ALB, NAT GW) / Private Subnet(EKS 노드, RDS)
 - 진입: CloudFront → S3(웹 정적 파일·미션 장면) / CloudFront → ALB(AWS Load Balancer Controller Ingress) → core-service
+- CloudFront: 웹과 API를 한 배포·한 도메인에서 경로로 분기 (refresh 쿠키 `SameSite=Strict` 전제)
+  - `/api/*` 동작: 캐시 비활성, `Authorization`·`Idempotency-Key`·`If-Match`·`X-Reauth-Token` 헤더와 쿠키 전달, 압축 비활성(SSE 버퍼링 방지)
+  - 타임아웃: CloudFront origin 응답 60초, ALB idle 120초 (SSE heartbeat 15초, 1.3)
 - 외부 호출(LLM API·토스페이먼츠): Pod → NAT GW → Internet GW
 - Namespace: `app`(core·learning·ai·scoring·report), `platform`(RabbitMQ·Redis), `observability`, `argocd`
 - 노드그룹: `application`, `platform-observability` 분리 (참고 레포 2그룹 구성 계승)
-- NetworkPolicy: `app` 내부 서비스는 core·호출 관계에 있는 서비스에서만 수신, Ingress는 core만
-  - core는 ALB 외 ai·scoring 수신 허용 (`/internal/model-versions/active`)
-  - 전 서비스 → `platform`(RabbitMQ·Redis) egress 허용
+- NetworkPolicy: 기본 거부 + 아래 허용만 (호출 관계는 [API 명세서](api-spec.md) 4장)
+
+| 대상 | ingress 허용 | egress 허용 |
+|---|---|---|
+| core | ALB(서브넷 ipBlock), ai, scoring, Prometheus | learning, ai, report-api, RabbitMQ(5672·15672), Redis, RDS, 토스(NAT) |
+| learning | core, ai, report-worker, Prometheus | ai, RabbitMQ, RDS, S3 |
+| ai | core, learning, report-worker, Prometheus | learning, scoring, core, RabbitMQ, LLM API(NAT) |
+| scoring | ai, Prometheus | core, RabbitMQ, S3 |
+| report-api | core, Prometheus | RDS, S3 |
+| report-worker | Prometheus | learning, ai, RabbitMQ, RDS, S3 |
+| RabbitMQ·Redis | `app` 전체, KEDA(RabbitMQ), Prometheus | - |
+
+  - 전 Pod 공통 egress: kube-dns(53), OTel Collector·Langfuse(`observability`)
+  - report-api·report-worker는 라벨이 달라 허용 대상에 각각 명시
+  - migration-job: RDS egress / local: LLM API·토스 대신 `<target>-stub` Service로 egress
 
 ### 4.4 확장
 - HPA(CPU): core, learning, ai, scoring, report-api — 최소 2(scoring은 메모리 고려해 최소 1, report-api 최소 1), PDB `minAvailable: 1`
 - **KEDA(RabbitMQ 큐 길이)**: report-worker — 0~N 확장, EDA와 K8s 연계 지점
-  - report 조회 API는 core가 동기 호출하므로 0으로 줄지 않는 `report-api`로 분리 (같은 이미지, 진입점만 다름)
+  - report 조회 API는 core가 동기 호출하므로 0으로 줄지 않는 `report-api`로 분리 (같은 이미지, 진입점만 다름). core `ReportClient` 대상 Service = report-api
+  - `maxReplicaCount` × consumer prefetch = learning·ai·LLM API 동시 호출 상한 → LLM rate limit 이내로 설정 `[P12]`
+- ai HPA: LLM 대기 위주라 CPU가 낮게 유지됨 → 실측 후 동시 요청 수 기준 지표 검토
 - Cluster Autoscaler: Pending Pod 발생 시 application 노드 증설
+- 종료 처리: core는 preStop 지연 + terminationGracePeriod로 SSE 정리 시간 확보 (롤링 배포·축소 시 단절은 클라이언트 재연결로 처리)
+- probe: readiness는 자기 상태(DB·브로커 연결)만 확인, 하위 서비스 호출 금지 (연쇄 NotReady 방지)
 - 공통 보안: 리소스 limit, non-root, readOnlyRootFilesystem
 
 ### 4.5 CI/CD
