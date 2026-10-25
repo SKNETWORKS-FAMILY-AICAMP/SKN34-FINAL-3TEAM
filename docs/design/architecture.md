@@ -173,10 +173,11 @@ FeedbackFacade (Application)         판정 상태 PENDING→RUNNING → 규칙 
 ```
 
 ### 2.6 서비스 폴더 예시
+- Spring 루트 패키지: `com.sagomungchi.<service>`, 디렉토리는 패키지와 1:1 (루트 패키지 생략 안 함)
 
 Spring (core)
 ```
-backend/core-service/src/main/kotlin/<base>/core/
+backend/core-service/src/main/kotlin/com/sagomungchi/core/
 ├─ _common/
 │  ├─ config/
 │  ├─ exception/
@@ -256,7 +257,7 @@ backend/core-service/src/main/resources/
 
 Spring (learning)
 ```
-backend/learning-service/src/main/kotlin/<base>/learning/
+backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 ├─ _common/
 │  ├─ config/
 │  ├─ exception/
