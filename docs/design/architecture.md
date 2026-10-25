@@ -69,7 +69,7 @@
 | `report.started` | 이벤트 | report | core | 작업 상태 처리 중 |
 | `report.completed` / `report.failed` | 이벤트 | report | core | 작업 상태 갱신, 학부모 알림 |
 | `llm.usage.recorded` | 이벤트 | ai, scoring | core | 호출 종류별 토큰·지연·실패·버전 집계 (학생 ID·원문 미포함) |
-| `model.version.activated` | 이벤트 | core | ai, scoring | 활성 모델·프롬프트 버전 교체 (기동 시 core 내부 API로 현재 버전 조회) |
+| `model.version.activated` | 이벤트 | core | ai, scoring (Pod별 수신) | 모든 레플리카가 활성 모델·프롬프트 버전 교체 (기동 시 core 내부 API로 현재 버전 조회) |
 | `student.deleted` | 이벤트 | core | learning, report | 삭제 확정 학생의 학습 기록·리포트 삭제 처리 `[P09]` |
 
 ### 1.5 핵심 흐름
@@ -96,12 +96,14 @@
    - `report.completed` → core 알림
 
 ### 1.6 메시징 신뢰성 규칙
-- **Outbox**: DB 상태 변경 + 발행이 함께 필요한 서비스(core, learning, report)만 적용. 같은 트랜잭션에 outbox 행 저장 → 릴레이 스케줄러가 publisher confirm 받은 후 발행 시각 기록 (참고 레포 `*OutboxScheduler` 패턴)
+- **Outbox**: DB 상태 변경 + 발행이 함께 필요한 서비스(core, report)만 적용 (learning은 발행 없음, 멱등 소비만). 같은 트랜잭션에 outbox 행 저장 → 릴레이 스케줄러가 publisher confirm 받은 후 발행 시각 기록 (참고 레포 `*OutboxScheduler` 패턴)
 - **상태 없는 서비스(ai, scoring)**: 이벤트 발행은 처리 결과 반환 후 best-effort (사용량 집계용), 유실 시 Langfuse trace로 보정
 - **멱등 소비**: 소비자별 `processed_event(event_id UK)` 테이블 또는 DB 상태 전이 조건(`QUEUED→RUNNING`)
 - **재시도**: 소비 실패 시 지연 재시도 N회 후 DLQ 이동 (횟수·지연은 `definitions.json`에서 관리)
 - **DLQ**: 큐마다 dead-letter exchange, 관리자 화면에서 현황 조회 (참고 레포 `QueueOperations*` 계승)
-- **이벤트 봉투**: CloudEvents 형식 `id, type, source, time, subject, traceparent, data` → `contracts/events/*.schema.json`
+- **브로드캐스트 이벤트**: 모든 레플리카가 받아야 하는 이벤트(`model.version.activated`)는 Pod별 exclusive·auto-delete 큐를 서비스가 기동 시 선언·바인딩 (exchange는 `definitions.json`). 공유 큐는 경쟁 소비라 1개 Pod만 수신
+- **이벤트 봉투**: CloudEvents 형식 `id, type, source, time, subject, dataschema, traceparent, data` → `contracts/events/*.schema.json`
+- **스키마 버전**: 파일 `<message>.v<N>.schema.json`, `dataschema`에 버전 표기. 하위 호환 변경(선택 필드 추가)만 같은 버전, 그 외는 새 버전 병행 발행 후 소비자 전환
 - **SSE 다중 레플리카**: core 레플리카 간 Redis Pub/Sub으로 알림 중계
 
 ---
@@ -161,48 +163,247 @@ FeedbackFacade (Application)         판정 상태 PENDING→RUNNING → 규칙 
 Spring (core)
 ```
 backend/core-service/src/main/kotlin/<base>/core/
-├─ _common/{config, exception, security, messaging}   # 이벤트 봉투, OutboxRelay
-├─ account/{controller, service, domain, repository}  # 가입·로그인·복구·탈퇴
+├─ _common/
+│  ├─ config/
+│  ├─ exception/
+│  ├─ security/
+│  └─ messaging/                 # 이벤트 봉투, OutboxRelay, 멱등 소비
+├─ account/                      # 가입·로그인·복구·탈퇴
+│  ├─ controller/
+│  ├─ service/
+│  ├─ domain/
+│  └─ repository/
 ├─ consent/
-├─ guardianship/                                      # 자녀 등록·연결·권한 확인
-├─ learning/{controller, client(LearningClient)}      # learning 프록시 (미션·시도·대시보드)
-├─ conversation/{controller(SSE), service, domain, repository, client(AiClient)}
-├─ report/{controller, consumer, scheduler, service, domain, repository, messaging, client(ReportClient)}
-├─ notification/{controller(SSE), service, repository}
-├─ support/                                           # 신고·문의·공지·도움말
-├─ payment/{controller, service, domain, repository, client(TossClient), scheduler(정기 청구)}
-├─ usage/{consumer, service, repository}              # LLM 사용량 집계
-└─ admin/{controller, service}                        # 운영 현황·재처리·모델 버전·큐/DLQ
-src/main/resources/{db/migration (Flyway), mybatis/}
+│  ├─ controller/
+│  ├─ service/
+│  ├─ domain/
+│  └─ repository/
+├─ guardianship/                 # 자녀 등록·연결·권한 확인, 삭제 요청 → student.deleted
+│  ├─ controller/
+│  ├─ service/
+│  ├─ domain/
+│  └─ repository/
+├─ learning/                     # learning 프록시 (미션·시도·대시보드)
+│  ├─ controller/
+│  └─ client/
+│     └─ LearningClient.kt
+├─ conversation/                 # 분석 대화, 예시 질문
+│  ├─ controller/                # SSE
+│  ├─ service/
+│  ├─ domain/
+│  ├─ repository/
+│  └─ client/
+│     └─ AiClient.kt
+├─ report/
+│  ├─ controller/
+│  ├─ consumer/                  # report.started·completed·failed
+│  ├─ scheduler/                 # ShedLock
+│  ├─ service/
+│  ├─ domain/
+│  ├─ repository/
+│  ├─ messaging/                 # report.generate 발행
+│  └─ client/
+│     └─ ReportClient.kt
+├─ notification/
+│  ├─ controller/                # SSE
+│  ├─ service/
+│  └─ repository/
+├─ support/                      # 신고·문의·공지·도움말·정정
+│  ├─ controller/
+│  ├─ service/
+│  ├─ domain/
+│  ├─ repository/
+│  └─ client/
+│     └─ LearningClient.kt       # 판정 정정
+├─ payment/
+│  ├─ controller/
+│  ├─ service/
+│  ├─ domain/
+│  ├─ repository/
+│  ├─ client/
+│  │  └─ TossClient.kt
+│  └─ scheduler/                 # 정기 청구
+├─ usage/                        # LLM 사용량 집계
+│  ├─ consumer/
+│  ├─ service/
+│  └─ repository/
+└─ admin/                        # 운영 현황·재처리·모델 버전 레지스트리·감사 이력·큐/DLQ
+   ├─ controller/
+   ├─ service/
+   ├─ domain/
+   └─ repository/
+
+backend/core-service/src/main/resources/
+├─ application-<env>.yml
+├─ db/
+│  └─ migration/                 # Flyway
+└─ mybatis/
 ```
 
 Spring (learning)
 ```
 backend/learning-service/src/main/kotlin/<base>/learning/
-├─ _common/{config, exception, security, messaging}
-├─ mission/          # 미션·기준표·예시 답·생각 열기 질문 버전, 관리자 작성·검토·공개
-├─ attempt/          # 학습 시도·초안·도움 이용·마무리·돌아보기·자기 평가
-├─ answer/           # 답변 버전
-├─ judgment/{service, rule(choice·math 동치), client(AiClient), facade(FeedbackFacade)}
-├─ record/           # 대시보드·에이전트 도구·리포트용 조회 API
-└─ deletion/         # student.deleted 소비
+├─ _common/
+│  ├─ config/
+│  ├─ exception/
+│  ├─ security/
+│  └─ messaging/                 # 멱등 소비 (발행 없음)
+├─ mission/                      # 미션·기준표·예시 답·생각 열기 질문 버전, 관리자 작성·검토·공개
+│  ├─ controller/
+│  ├─ service/
+│  ├─ domain/
+│  └─ repository/
+├─ attempt/                      # 학습 시도·초안·도움 이용·마무리·돌아보기·자기 평가
+│  ├─ controller/
+│  ├─ service/
+│  ├─ domain/
+│  └─ repository/
+├─ answer/                       # 답변 버전
+│  ├─ controller/
+│  ├─ service/
+│  ├─ domain/
+│  └─ repository/
+├─ judgment/
+│  ├─ controller/                # 피드백·정정 내부 API
+│  ├─ service/
+│  ├─ domain/
+│  ├─ repository/
+│  ├─ rule/                      # 고르기·수학 동치
+│  ├─ client/
+│  │  └─ AiClient.kt
+│  └─ facade/
+│     └─ FeedbackFacade.kt
+├─ record/                       # 대시보드·에이전트 도구·리포트용 조회 API
+│  ├─ controller/
+│  ├─ service/
+│  └─ repository/
+└─ deletion/                     # student.deleted 소비
+   ├─ consumer/
+   └─ service/
 ```
 
 Python (ai)
 ```
-backend/ai-service/app/
-├─ main.py, bootstrap.py, config.py
-├─ judgment/{router.py, service.py, extractor.py(LLM), verifier.py(코드 대조), prompts.py}
-├─ followup/{router.py, service.py, leak_guard.py, prompts.py}
-├─ analysis_agent/{router.py, service.py, graph.py, nodes/, state.py, tools.py, calculators.py, prompts.py}
-├─ report_narrative/{router.py, service.py, prompts.py}
-├─ clients/{learning_client.py, scoring_client.py}
-├─ llm/                                       # LLM 클라이언트 래퍼 (제공자 교체 지점)
-├─ messaging/{envelope.py, connection.py, publisher.py, consumer.py}
-└─ health/router.py
+backend/ai-service/
+├─ app/
+│  ├─ main.py
+│  ├─ bootstrap.py
+│  ├─ config.py
+│  ├─ judgment/
+│  │  ├─ router.py
+│  │  ├─ service.py
+│  │  ├─ extractor.py            # LLM 근거 추출
+│  │  ├─ verifier.py             # 코드 원문 대조
+│  │  └─ prompts.py
+│  ├─ followup/
+│  │  ├─ router.py
+│  │  ├─ service.py
+│  │  ├─ leak_guard.py
+│  │  └─ prompts.py
+│  ├─ analysis_agent/
+│  │  ├─ router.py
+│  │  ├─ service.py
+│  │  ├─ graph.py
+│  │  ├─ nodes/
+│  │  ├─ state.py
+│  │  ├─ tools.py
+│  │  ├─ calculators.py
+│  │  └─ prompts.py
+│  ├─ report_narrative/
+│  │  ├─ router.py
+│  │  ├─ service.py
+│  │  └─ prompts.py
+│  ├─ speech/                    # 전사·읽어주기 (선택, [P03])
+│  │  ├─ router.py
+│  │  └─ service.py
+│  ├─ clients/
+│  │  ├─ learning_client.py
+│  │  ├─ scoring_client.py
+│  │  └─ core_client.py          # 기동 시 활성 버전 조회
+│  ├─ llm/                       # LLM 클라이언트 래퍼 (제공자 교체 지점)
+│  ├─ messaging/
+│  │  ├─ envelope.py
+│  │  ├─ connection.py
+│  │  ├─ publisher.py            # llm.usage.recorded
+│  │  └─ consumer.py             # model.version.activated, Pod별 exclusive 큐
+│  └─ health/
+│     └─ router.py
+├─ tests/                        # app과 동일 기능 폴더 구조
+├─ pyproject.toml
+├─ uv.lock
+└─ Dockerfile
 ```
-- scoring: `m2/{router.py, service.py}`, `m1/{router.py, service.py}`, `model_registry.py`(활성 버전·가중치 로딩)
-- report: `generation/{consumer.py, service.py, metrics.py, verifier.py, models.py, repository.py}`, `rendering/{templates/, renderer.py}`, `query/router.py`, `outbox/`
+
+Python (scoring)
+```
+backend/scoring-service/
+├─ app/
+│  ├─ main.py
+│  ├─ bootstrap.py
+│  ├─ config.py
+│  ├─ m2/
+│  │  ├─ router.py
+│  │  └─ service.py
+│  ├─ m1/
+│  │  ├─ router.py
+│  │  └─ service.py
+│  ├─ model_registry.py          # 활성 버전·가중치 로딩
+│  ├─ clients/
+│  │  └─ core_client.py          # 기동 시 활성 버전 조회
+│  ├─ messaging/
+│  │  ├─ envelope.py
+│  │  ├─ connection.py
+│  │  ├─ publisher.py            # llm.usage.recorded
+│  │  └─ consumer.py             # model.version.activated, Pod별 exclusive 큐
+│  └─ health/
+│     └─ router.py
+├─ tests/
+├─ pyproject.toml
+├─ uv.lock
+└─ Dockerfile
+```
+
+Python (report)
+```
+backend/report-service/
+├─ app/
+│  ├─ main.py                    # report-api 진입점 (조회 API)
+│  ├─ worker.py                  # report-worker 진입점 (report.generate·student.deleted 소비)
+│  ├─ bootstrap.py
+│  ├─ config.py
+│  ├─ generation/
+│  │  ├─ consumer.py
+│  │  ├─ service.py
+│  │  ├─ metrics.py
+│  │  ├─ verifier.py
+│  │  ├─ models.py
+│  │  └─ repository.py
+│  ├─ rendering/
+│  │  ├─ templates/
+│  │  └─ renderer.py
+│  ├─ query/
+│  │  └─ router.py
+│  ├─ deletion/
+│  │  ├─ consumer.py
+│  │  └─ service.py
+│  ├─ outbox/                    # report.started·completed·failed
+│  ├─ clients/
+│  │  ├─ learning_client.py
+│  │  └─ ai_client.py
+│  ├─ messaging/
+│  │  ├─ envelope.py
+│  │  ├─ connection.py
+│  │  ├─ publisher.py
+│  │  └─ consumer.py
+│  └─ health/
+│     └─ router.py
+├─ migrations/                   # Alembic
+├─ tests/
+├─ pyproject.toml
+├─ uv.lock
+└─ Dockerfile
+```
+- report는 같은 이미지로 `report-api`(`main.py`)·`report-worker`(`worker.py`) 2개 Deployment 배포 (4.4)
 
 ---
 
@@ -235,7 +436,7 @@ backend/ai-service/app/
   - 설계 구성 요소(ALB LB Controller, IRSA, EBS CSI, Cluster Autoscaler, ECR, Secrets Manager) AWS 기본 연동
   - control plane HA·etcd 백업·업그레이드를 AWS가 관리 → 12/7 일정 내 운영 부담 제거
   - 자체 구축도 control plane EC2 필요 → 비용 차이 작음 (EKS 수수료 $0.10/시간)
-- 구성: eksctl(`infrastructure/eks/`), 관리형 노드그룹 2개(4.3), EKS add-on(VPC CNI·CoreDNS·kube-proxy·EBS CSI), IRSA, LB Controller·Cluster Autoscaler는 Argo CD `addons/`
+- 구성: eksctl(`infrastructure/eks/`), 관리형 노드그룹 2개(4.3), EKS add-on(VPC CNI·CoreDNS·kube-proxy·EBS CSI), IRSA, LB Controller·Cluster Autoscaler는 Argo CD `addons/prod/`
 - 비용 절감
   - 데모 외 기간: 노드그룹 최소값 축소 또는 클러스터 삭제 후 eksctl 재생성
   - `platform-observability` 노드그룹 Spot 적용
@@ -248,10 +449,13 @@ backend/ai-service/app/
 - Namespace: `app`(core·learning·ai·scoring·report), `platform`(RabbitMQ·Redis), `observability`, `argocd`
 - 노드그룹: `application`, `platform-observability` 분리 (참고 레포 2그룹 구성 계승)
 - NetworkPolicy: `app` 내부 서비스는 core·호출 관계에 있는 서비스에서만 수신, Ingress는 core만
+  - core는 ALB 외 ai·scoring 수신 허용 (`/internal/model-versions/active`)
+  - 전 서비스 → `platform`(RabbitMQ·Redis) egress 허용
 
 ### 4.4 확장
-- HPA(CPU): core, learning, ai, scoring — 최소 2(scoring은 메모리 고려해 최소 1), PDB `minAvailable: 1`
-- **KEDA(RabbitMQ 큐 길이)**: report 워커 — 0~N 확장, EDA와 K8s 연계 지점
+- HPA(CPU): core, learning, ai, scoring, report-api — 최소 2(scoring은 메모리 고려해 최소 1, report-api 최소 1), PDB `minAvailable: 1`
+- **KEDA(RabbitMQ 큐 길이)**: report-worker — 0~N 확장, EDA와 K8s 연계 지점
+  - report 조회 API는 core가 동기 호출하므로 0으로 줄지 않는 `report-api`로 분리 (같은 이미지, 진입점만 다름)
 - Cluster Autoscaler: Pending Pod 발생 시 application 노드 증설
 - 공통 보안: 리소스 limit, non-root, readOnlyRootFilesystem
 
@@ -270,72 +474,124 @@ backend/ai-service/app/
 ## 5. 디렉토리 구조
 ```
 SKN34-FINAL-3TEAM/
-├─ frontend/web/                 React 웹
-│  ├─ src/                       3장 참고
-│  ├─ tests/
-│  └─ package.json, vite.config.ts, tsconfig.json
-├─ backend/
-│  ├─ core-service/              Spring Boot — 공개 API·계정·대화·리포트 작업·알림·결제·관리자
-│  │  ├─ src/                    main/kotlin(기능 패키지, 2.6) · main/resources(application-<env>.yml, Flyway, MyBatis) · test/kotlin
+├─ frontend/
+│  └─ web/                       # React 웹
+│     ├─ src/                    # 3장 참고
+│     ├─ tests/
+│     │  └─ e2e/                 # Playwright 대표 시나리오 (NFR-QA-01)
+│     ├─ package.json
+│     ├─ vite.config.ts
+│     └─ tsconfig.json
+├─ backend/                      # 서비스별 내부 구조는 2.6 참고
+│  ├─ core-service/              # Spring Boot — 공개 API·계정·대화·리포트 작업·알림·결제·관리자
+│  │  ├─ src/
+│  │  │  ├─ main/
+│  │  │  │  ├─ kotlin/           # 기능 패키지
+│  │  │  │  └─ resources/        # application-<env>.yml, Flyway, MyBatis
+│  │  │  └─ test/
+│  │  │     └─ kotlin/
 │  │  └─ Dockerfile
-│  ├─ learning-service/          Spring Boot — 미션·학습 시도·답변·규칙 판정·기록 조회 (core-service와 동일 구성)
-│  ├─ ai-service/                FastAPI — 판정 근거·되묻기·분석 에이전트·리포트 서술
-│  │  ├─ app/                    기능 폴더 + 공통(config·messaging·clients·llm·health), 2.6 참고
-│  │  ├─ tests/                  app과 동일 기능 폴더 구조
-│  │  ├─ pyproject.toml, uv.lock
-│  │  └─ Dockerfile
-│  ├─ scoring-service/           FastAPI — M2·M1 추론 (ai-service와 동일 구성)
-│  └─ report-service/            FastAPI — 리포트 생성·렌더링 (ai-service 구성 + 아래 추가)
-│     └─ migrations/             report_db 스키마 마이그레이션 (Alembic)
+│  ├─ learning-service/          # Spring Boot — 미션·학습 시도·답변·규칙 판정·기록 조회 (core-service와 동일 구성)
+│  ├─ ai-service/                # FastAPI — 판정 근거·되묻기·분석 에이전트·리포트 서술·음성
+│  ├─ scoring-service/           # FastAPI — M2·M1 추론
+│  └─ report-service/            # FastAPI — 리포트 생성·렌더링·조회 (report-api·report-worker)
 ├─ contracts/
 │  ├─ events/
-│  │  ├─ envelope.schema.json    CloudEvents 공통 봉투
-│  │  ├─ <message>.schema.json   메시지 1개 = 파일 1개, 1.4 메시지 이름 그대로
-│  │  └─ asyncapi.yaml           exchange·routing key·생산/소비 매핑
+│  │  ├─ envelope.schema.json    # CloudEvents 공통 봉투
+│  │  ├─ <message>.v1.schema.json  # 메시지 1개·버전 1개 = 파일 1개, 1.4 메시지 이름 그대로
+│  │  └─ asyncapi.yaml           # exchange·routing key·생산/소비 매핑
 │  └─ openapi/
-│     └─ <service>.yaml          api-spec.md 기준 생성. core-service(공개 API), 나머지(내부 API)
-├─ evaluation/                   판정 일치도(QWK)·되묻기 유출·에이전트 숫자/인용 대조 평가
-│  ├─ datasets/                  평가셋별 cases.jsonl·fixtures (자체 작성 예시 답안, AI Hub 원문 미포함)
-│  ├─ runners/                   서비스 호출·채점 스크립트
-│  └─ results/                   실행 결과 요약
+│     └─ <service>.yaml          # api-spec.md 기준 생성. core-service(공개 API), 나머지(내부 API)
+├─ ml/                           # 모델 학습 (클러스터 밖 실행, 이미지 빌드·배포 대상 아님)
+│  ├─ m2/
+│  ├─ m1/
+│  └─ sllm/
+├─ evaluation/                   # 판정 일치도(QWK)·되묻기 유출·에이전트 숫자/인용 대조 평가
+│  ├─ datasets/                  # 평가셋별 cases.jsonl·fixtures (자체 작성 예시 답안, AI Hub 원문 미포함)
+│  ├─ runners/                   # 서비스 호출·채점 스크립트
+│  └─ results/                   # 실행 결과 요약
 ├─ infrastructure/
 │  ├─ gitops/
 │  │  ├─ charts/
-│  │  │  ├─ app-service/         공통 서비스 chart: templates/(deployment·service·hpa·scaledobject·pdb·networkpolicy·externalsecret·ingress), values.yaml
-│  │  │  ├─ platform-data/       RabbitMQ·Redis (+ 로컬 전용 PostgreSQL·MinIO)
-│  │  │  └─ observability/       OTel Collector·Prometheus·Grafana·Langfuse
-│  │  ├─ environments/{local, prod}/   <service>.yaml — 서비스별 values·이미지 태그
-│  │  ├─ argocd/
-│  │  │  ├─ root-app.yaml        App of Apps 진입점
-│  │  │  ├─ apps/                서비스·platform-data·observability Application
-│  │  │  └─ addons/              KEDA·External Secrets·AWS LB Controller·Cluster Autoscaler (외부 Helm chart)
-│  │  └─ kind/local.yaml
-│  ├─ aws/                       eksctl 범위 밖 자원: RDS·S3·CloudFront·ECR·Secrets Manager·GitHub OIDC IAM (도구 미정)
-│  ├─ eks/                       eksctl 클러스터·노드그룹·IRSA·StorageClass
-│  ├─ messaging/
-│  │  └─ definitions.json        exchange·queue·DLX 단일 기준
+│  │  │  ├─ app-service/         # 공통 서비스 chart
+│  │  │  │  ├─ templates/
+│  │  │  │  │  ├─ deployment.yaml
+│  │  │  │  │  ├─ service.yaml
+│  │  │  │  │  ├─ serviceaccount.yaml          # IRSA (S3 접근 서비스)
+│  │  │  │  │  ├─ hpa.yaml
+│  │  │  │  │  ├─ scaledobject.yaml
+│  │  │  │  │  ├─ triggerauthentication.yaml   # KEDA RabbitMQ 인증
+│  │  │  │  │  ├─ pdb.yaml
+│  │  │  │  │  ├─ networkpolicy.yaml
+│  │  │  │  │  ├─ externalsecret.yaml
+│  │  │  │  │  ├─ ingress.yaml
+│  │  │  │  │  └─ migration-job.yaml           # Argo CD PreSync hook
+│  │  │  │  └─ values.yaml
+│  │  │  ├─ platform-data/       # RabbitMQ·Redis (+ 로컬 전용 PostgreSQL·MinIO)
+│  │  │  │  ├─ templates/
+│  │  │  │  ├─ files/
+│  │  │  │  │  └─ rabbitmq/
+│  │  │  │  │     └─ definitions.json         # exchange·queue·DLX 단일 기준
+│  │  │  │  └─ values.yaml
+│  │  │  └─ observability/       # OTel Collector·Prometheus·Grafana·Langfuse
+│  │  │     ├─ templates/
+│  │  │     └─ values.yaml
+│  │  ├─ environments/           # 앱별 values·이미지 태그
+│  │  │  ├─ local/
+│  │  │  │  ├─ core-service.yaml
+│  │  │  │  ├─ learning-service.yaml
+│  │  │  │  ├─ ai-service.yaml
+│  │  │  │  ├─ scoring-service.yaml
+│  │  │  │  ├─ report-api.yaml
+│  │  │  │  ├─ report-worker.yaml
+│  │  │  │  ├─ <target>-stub.yaml
+│  │  │  │  ├─ platform-data.yaml
+│  │  │  │  └─ observability.yaml
+│  │  │  └─ prod/                # local과 동일 구성, stub 제외
+│  │  └─ argocd/
+│  │     ├─ local/
+│  │     │  └─ root-app.yaml     # kind Argo CD 진입점
+│  │     ├─ prod/
+│  │     │  └─ root-app.yaml     # EKS Argo CD 진입점
+│  │     ├─ apps/
+│  │     │  └─ applicationset.yaml  # env 파라미터로 environments/<env>/* Application 생성
+│  │     └─ addons/              # 외부 Helm chart
+│  │        ├─ common/           # KEDA
+│  │        └─ prod/             # External Secrets·AWS LB Controller·Cluster Autoscaler
+│  ├─ kind/
+│  │  └─ local.yaml              # kind 클러스터 설정
+│  ├─ eks/                       # eksctl 클러스터·노드그룹·IRSA·StorageClass
+│  ├─ aws/                       # eksctl 범위 밖 자원: RDS·S3·CloudFront·ECR·Secrets Manager·GitHub OIDC IAM (도구 미정)
 │  └─ stubs/
-│     └─ <target>-stub/          LLM·토스페이먼츠 대역 (테스트·무료 시연용)
-├─ .github/workflows/
-│  ├─ _<runtime>.yml             재사용 워크플로 (spring·python·web: 테스트→빌드→푸시→태그 갱신)
-│  └─ ci-<service>.yml           서비스별 경로 필터(backend/<service>/**, contracts/**) → 재사용 워크플로 호출
+│     └─ <target>-stub/          # LLM·토스페이먼츠 대역 (테스트·무료 시연용)
+│        └─ Dockerfile
+├─ .github/
+│  └─ workflows/
+│     ├─ _spring.yml             # 재사용 워크플로: 테스트→빌드→푸시→태그 갱신
+│     ├─ _python.yml
+│     ├─ _web.yml
+│     ├─ ci-<service>.yml        # 서비스·stub별 경로 필터(<경로>/**, contracts/**) → 재사용 워크플로 호출
+│     └─ ci-contracts.yml        # 스키마 검증, asyncapi ↔ definitions.json exchange·routing key 일치 검사
 ├─ docs/
-│  ├─ README.md                  개발 규칙
-│  ├─ design/                    아키텍처·기능명세·API 명세 등 설계 문서
-│  └─ adr/                       NNNN-<제목>.md
-├─ compose.yaml                  로컬 통합 실행 진입점
+│  ├─ README.md                  # 개발 규칙
+│  ├─ design/                    # 아키텍처·기능명세·API 명세 등 설계 문서
+│  └─ adr/                       # NNNN-<제목>.md
+├─ compose.yaml                  # 로컬 통합 실행 진입점
 ├─ .env.example
 └─ README.md
 ```
 
-- DB 마이그레이션은 서비스별 Flyway(core·learning)·Alembic(report)
-- 서비스 추가: `app-service` chart 재사용 + `environments/<env>/<service>.yaml` + `argocd/apps/<service>.yaml` (서비스별 chart 미작성)
+- DB 마이그레이션: 서비스별 Flyway(core·learning)·Alembic(report), 앱 기동이 아닌 `migration-job`(Argo CD PreSync hook)으로 1회 실행. 로컬 compose는 일회성 컨테이너로 동일 실행
+- 서비스 추가: `app-service` chart 재사용 + `environments/<env>/<service>.yaml` (ApplicationSet이 자동 생성, 서비스별 chart 미작성)
+- 한 서비스의 다중 Deployment(report-api·report-worker): 같은 이미지, values의 실행 명령·확장 방식만 다름
 - API 변경: `api-spec.md` 먼저 수정 → `contracts/openapi` → 구현
 - 메시지 변경: `contracts/events` 먼저 수정 → 생산·소비 서비스 반영
-- 큐 선언: `definitions.json`만 선언, 서비스 코드는 선언 없이 존재 확인만
+- 큐 선언: `definitions.json`만 선언, 서비스 코드는 선언 없이 존재 확인만. 예외: 브로드캐스트 이벤트의 Pod별 exclusive 큐 (1.6)
+- `definitions.json`은 Helm `.Files` 접근 범위인 `platform-data` chart 안에 두고, compose도 같은 파일 마운트
 - 공통 코드: 공통 라이브러리 없이 서비스별 보유(이벤트 봉투·Outbox·AMQP 연결), `contracts/events` 스키마로 계약 테스트. 중복이 문제 될 때 `libs/` 검토
-- 모델 학습 코드(M2·M1·sLLM)는 서비스 밖 실험 영역에서 관리, scoring은 승인된 가중치(S3)만 로딩
-- 참고 레포 대비 추가: `contracts/`, `infrastructure/messaging/`, `infrastructure/aws/` / 제외: `mobile/`, `ops-service`(LLMOps는 Langfuse + `evaluation/`로 시작, 필요 시 추가)
+- Docker 빌드 컨텍스트는 서비스 폴더, `contracts/` 계약 테스트는 CI에서만 실행
+- 모델 학습 코드(M2·M1·sLLM)는 `ml/`에서 관리, scoring은 승인된 가중치(S3)만 로딩
+- 참고 레포 대비 추가: `contracts/`, `ml/`, `infrastructure/aws/` / 제외: `mobile/`, `ops-service`(LLMOps는 Langfuse + `evaluation/`로 시작, 필요 시 추가)
 
 ---
 

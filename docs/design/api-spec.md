@@ -192,6 +192,7 @@
 | POST | `/speech/transcriptions` | 학생 | 음성 시범: 오디오 → 전사 텍스트 (원음 미저장, 판정 제외, 범위 `[P03]`) | LRN-18 | 선택 |
 | GET | `/missions/{missionId}/audio` | 학생 | 질문 읽어주기 음성 (대상 학년 `[P03]`) | LRN-19 | 선택 |
 
+- 음성(FN-LRN-18, 19): core가 ai `/internal/speech/*`로 전달
 - 메모(FN-LRN-07): 보관 여부 `[P05]` 확정 전에는 서버에 저장하지 않음 (클라이언트에만 보관)
 - 목록 접기·펼치기(FN-LRN-20): 프론트 전용, API 없음
 - 판정 규칙 (FN-JDG-01~05)
@@ -227,6 +228,7 @@
 | GET | `/conversations/{conversationId}/messages/{messageId}/evidence` | 학부모 | 답변 근거(미션·답변 시점·원문, 전후 답변 연결) | AGT-07 | 핵심 |
 | GET | `/agent/example-questions?childId` | 학부모 | 예시 질문(숫자·유형별 활동·아이가 쓴 생각·전후 변화·돌아보기·수학 점검), 가능 여부 표시 | AGT-12 | 선택 |
 
+- 예시 질문(FN-AGT-12): core `conversation`이 learning `/internal/records/...`로 기록 유무 확인 후 가능 여부 표시
 - 대화 이력 보관 기간·삭제 시 근거 처리는 `[P02]` `[P09]`
 - 대조 실패 시 확정 답변을 보내지 않고 `error`를 보냄. 대체 답변은 `[P16]` (FN-AGT-06)
 
@@ -470,6 +472,7 @@ If-Match: "7"
 | GET | `/internal/missions`, `/internal/missions/{id}` | core | 학생용 미션 조회 (2.2 프록시) |
 | POST · GET · PUT | `/internal/attempts/...` | core | 시도·초안·도움·답변·마무리·돌아보기·자기 평가 (2.2 경로와 1:1) |
 | POST | `/internal/answers/{answerId}/feedback` | core | 판정 오케스트레이션: 규칙 판정 또는 ai 호출 → 저장 → 결과 반환 (동기) |
+| POST | `/internal/judgments/{judgmentId}/corrections` | core | 신고 정정 반영(SUP-03): `{reportId, reason, corrected}` → 기존 판정·사유·시점 보존 후 정정 이력 저장 (원본 답변 불변), `Idempotency-Key` |
 | GET | `/internal/records/students/{studentId}/summary?from&to` | core, ai | 건수·상태 `Metric[]` |
 | GET | `/internal/records/students/{studentId}/thinking-types?from&to` | core, ai, report | 유형별 미션·기록 |
 | GET | `/internal/records/students/{studentId}/attempts?from&to` | core, ai, report | 시도 목록·상세(답변 버전·되묻기·도움·돌아보기 원문) |
@@ -486,6 +489,8 @@ If-Match: "7"
 | POST | `/internal/analysis/stream` | core | **SSE**. `{conversationId, question, scope{studentId, from, to}, history[]}` → 3.3과 같은 이벤트 |
 | POST | `/internal/report-narratives` | report | `{metrics[], thinkingTypes[], changes[], reflections[], quotes[]}` → `{narrative, eveningQuestion, citedQuotes[]}` |
 | GET | `/internal/versions` | core | 활성 프롬프트 버전 |
+| POST | `/internal/speech/transcriptions` | core | 오디오 → 전사 텍스트 (원음 미저장, 선택 기능, 범위 `[P03]`) |
+| POST | `/internal/speech/syntheses` | core | 질문 텍스트 → 읽어주기 음성 (선택 기능, 대상 학년 `[P03]`) |
 
 - LLM 요청에는 학생 이름·식별정보를 넣지 않음. 학생 ID는 가명 토큰으로 치환 (NFR-SEC-03)
 
@@ -497,6 +502,8 @@ If-Match: "7"
 | GET | `/internal/versions` | 활성 모델 버전 |
 
 ### 4.4 report-service (호출: core)
+- 호출 대상은 `report-api` Deployment (KEDA로 0까지 줄어드는 `report-worker`와 분리, [아키텍처 4.4](architecture.md#44-확장))
+
 | Method | Path | 설명 |
 |---|---|---|
 | GET | `/internal/reports?studentId&status` | 리포트 목록 |
