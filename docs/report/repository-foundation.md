@@ -112,7 +112,7 @@ Linux/CI에서는 각 Spring 서비스에서 `./gradlew test`를 실행한다. �
 - core·learning 배포 JAR에 Flyway·Testcontainers·테스트 Mapper가 포함되지 않음을 확인.
 - 로컬 Spring 검사는 PC의 Java 17 대신 공식 `eclipse-temurin:21-jdk` Docker 이미지에서 실행했다. 초기 Gradle 의존성 준비를 포함한 시간은 core 8분 53초, 캐시를 재사용한 learning 2분 39초다. #14에는 3분 제한이 없으며 #13 DB CI의 제한과 별개다.
 
-## develop 병합 후 확인한 별도 스키마 작업
+## 정책 마이그레이션 반영 전 검증 기록
 
 2026-10-26 `origin/develop`의 `fd4ee9c`를 작업 브랜치에 병합했다. 파일 충돌은 없었다. 이 develop에는 #13의 DB CI와 정책 확정 문서 변경(`fc90e35`)이 함께 들어 있다. 최신 ERD 7장에도 정책 변경이 기존 마이그레이션에는 미반영이라고 명시돼 있다.
 
@@ -130,6 +130,25 @@ Linux/CI에서는 각 Spring 서비스에서 `./gradlew test`를 실행한다. �
 | learning `followup` | 질문 은행 테이블·FK 추가, source에서 TEMPLATE 제거 | 은행 테이블·FK 없음, TEMPLATE 허용 |
 | report | 테이블·컬럼 변경 없음 | 컬럼·NULL 허용 기준 일치 |
 
-현재 DB CI는 첫 불일치인 `core_db: table/column mismatch`에서 정상적으로 실패한다. 따라서 **#14의 서비스 테스트 통과와 전체 DB 스키마 CI 통과는 구분해야 한다.** 이슈 #14의 제약대로 위 변경은 별도 마이그레이션 PR로 처리하며, 기존 데이터의 출생연도·상품 한도·폐기 코드 처리와 검증 fixture/단일 허용값 CHECK 검사도 함께 정해야 한다. 이번 PR에서 검사를 생략하거나 예전 ERD로 되돌려 통과시키지 않는다.
+당시 DB CI는 첫 불일치인 `core_db: table/column mismatch`에서 정상적으로 실패했다. 따라서 **#14의 서비스 테스트 통과와 전체 DB 스키마 CI 통과는 구분해야 한다.** 이슈 #14의 제약대로 위 변경은 별도 마이그레이션 PR로 처리하며, 검사를 생략하거나 예전 ERD로 되돌려 통과시키지 않는다.
+
+## 이슈 #19와 결합한 사전 검증 — 3단계
+
+2026-10-26 로컬 `feature/repository-schema-check`의 `7039dab`에서 Repository 구현 `4c7390a`와 #19 스키마·CI 변경 `16dc70f`를 합쳐 검증했다. 병합 충돌은 없었다. 이 검증용 브랜치는 원격에 올리지 않으며, #14 원본 브랜치에는 #19 마이그레이션을 미리 병합하지 않는다.
+
+| 검증 | 결과 |
+|---|---|
+| core | JDK 21 `test bootJar --no-daemon --rerun-tasks` 통과. 9개 테스트, 실패·오류·생략 0개. 실제 Testcontainers DB에 V1~V7 적용 로그 확인 |
+| learning | 같은 명령 통과. 7개 테스트, 실패·오류·생략 0개. 실제 Testcontainers DB에 V1~V5 적용 로그 확인 |
+| report | pytest 12개, 실패·오류·생략 0개. CI와 같은 서비스 디렉터리에서 Ruff 검사·포맷 검사 통과 |
+| DB CI | 세 DB 전체 적용·59개 테이블/506개 컬럼·41개 위반 입력·61개 코드 CHECK·19개 인덱스 검사, 재실행·report downgrade/upgrade 통과. 실행 스크립트 15.8초 |
+| 검증기 | `python -O` 회귀 테스트 18개 통과 |
+| 배포 JAR | core·learning 모두 Flyway·Testcontainers 라이브러리와 테스트 전용 Mapper 미포함 |
+
+UUID·JSONB·timestamptz 왕복, SQL NULL/JSON null 구분, Repository 저장/조회·고유키 위반 전파, report commit/rollback·Session 분리, 세 서비스의 빈 DB 기동 시 자동 마이그레이션 미실행을 다시 확인했다. Spring 전체 실행 시간은 core 2분 48초, learning 2분 15초이며 #13 DB CI job의 3분 제한과는 별개다.
+
+확인한 공통 기반과 예시 Repository에는 삭제된 학생 계정 연결·음성 입력 컬럼 참조가 없어 구현 코드를 바꿀 필요가 없었다. 아직 구현하지 않은 기능별 Repository까지 검증했다는 의미는 아니다.
+
+다음 순서는 #19 별도 PR 검토·병합 → 최신 develop을 이 브랜치에 반영 → 충돌·변경 영향 재검증 → #14 새 PR이다. #14 코드와 테스트 의존성은 #19 PR에 포함하지 않는다.
 
 참고: [pgJDBC의 시각 타입](https://jdbc.postgresql.org/documentation/query/#using-java-8-date-and-time-classes), [MyBatis 타입 핸들러](https://mybatis.org/mybatis-3/configuration.html#typeHandlers), [SQLAlchemy 세션·트랜잭션](https://docs.sqlalchemy.org/en/20/orm/session_basics.html), [Testcontainers PostgreSQL](https://java.testcontainers.org/modules/databases/postgres/).
