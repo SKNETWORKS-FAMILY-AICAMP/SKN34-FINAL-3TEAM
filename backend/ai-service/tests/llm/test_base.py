@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 import pytest
 from pydantic import BaseModel
@@ -24,7 +25,9 @@ class ScriptedLlm(LlmClient):
 
     def __init__(self, steps: list[LlmError | Answer], max_retries: int = 2) -> None:
         self.usages: list[LlmUsage] = []
-        super().__init__("fake-model", max_retries, self.usages.append, backoff_seconds=0)
+        super().__init__(
+            "fake-model", max_retries, self.usages.append, backoff_seconds=0, timeout=15
+        )
         self._steps = steps
         self.calls = 0
 
@@ -98,3 +101,45 @@ def test_unconfigured_llm_is_unavailable_without_retry() -> None:
     assert [(u.model, u.input_tokens, u.error_code) for u in usages] == [
         ("claude-sonnet-5-5", None, "LLM_NOT_CONFIGURED")
     ]
+
+
+def test_deadline_cuts_timeout_and_stops_retry() -> None:
+    llm = ScriptedLlm([LlmError("LLM_TIMEOUT", retryable=True), Answer(value="ok")])
+    requests: list[LlmRequest] = []
+    original = llm._request
+
+    async def capture(request: LlmRequest[T]) -> ProviderResponse[T]:
+        requests.append(request)
+        return await original(request)
+
+    llm._request = capture  # type: ignore[method-assign]
+    deadline = time.monotonic() + 3
+    result = asyncio.run(
+        llm.generate(
+            system="s",
+            user="u",
+            output=Answer,
+            call_type="FOLLOWUP",
+            prompt_version="followup@3",
+            deadline=deadline,
+        )
+    )
+    assert result.data.value == "ok"
+    assert all(0 < request.timeout <= 3 for request in requests)  # 15초 대신 남은 시간
+
+
+def test_expired_deadline_sends_no_request() -> None:
+    llm = ScriptedLlm([Answer(value="ok")])
+    with pytest.raises(LlmUnavailable) as exc:
+        asyncio.run(
+            llm.generate(
+                system="s",
+                user="u",
+                output=Answer,
+                call_type="FOLLOWUP",
+                prompt_version="followup@3",
+                deadline=time.monotonic() - 1,
+            )
+        )
+    assert (exc.value.code, exc.value.retryable) == ("LLM_DEADLINE_EXCEEDED", True)
+    assert (llm.calls, llm.usages) == (0, [])

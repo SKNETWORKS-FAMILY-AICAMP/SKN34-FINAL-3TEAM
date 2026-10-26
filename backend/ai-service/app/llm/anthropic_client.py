@@ -27,11 +27,9 @@ class AnthropicLlm(LlmClient):
         recorder: UsageRecorder,
         client: anthropic.AsyncAnthropic | None = None,
     ) -> None:
-        super().__init__(model, max_retries, recorder, backoff_seconds)
-        # SDK 자체 재시도는 끔 (재시도는 LlmClient 한 곳에서만)
-        self._client = client or anthropic.AsyncAnthropic(
-            api_key=api_key, timeout=timeout, max_retries=0
-        )
+        super().__init__(model, max_retries, recorder, backoff_seconds, timeout)
+        # SDK 자체 재시도는 끔 (재시도는 LlmClient 한 곳에서만), 타임아웃은 요청마다 지정
+        self._client = client or anthropic.AsyncAnthropic(api_key=api_key, max_retries=0)
         self._effort = effort
         self._fallback = fallback
 
@@ -50,6 +48,7 @@ class AnthropicLlm(LlmClient):
                         "schema": anthropic.transform_schema(request.output),
                     },
                 },
+                timeout=request.timeout,
                 **options,
             )
         except anthropic.APIConnectionError as exc:

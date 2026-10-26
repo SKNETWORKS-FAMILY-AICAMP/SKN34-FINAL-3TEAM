@@ -28,6 +28,7 @@ class LlmRequest(Generic[T]):
     call_type: str
     prompt_version: str
     max_tokens: int
+    timeout: float  # 이번 요청 1회의 타임아웃(초). 마감이 있으면 남은 시간으로 줄어듦
 
 
 @dataclass(frozen=True)
@@ -99,11 +100,13 @@ class LlmClient(ABC):
         max_retries: int,
         recorder: UsageRecorder,
         backoff_seconds: float,
+        timeout: float,
     ) -> None:
         self._model = model
         self._max_retries = max_retries
         self._recorder = recorder
         self._backoff_seconds = backoff_seconds
+        self._timeout = timeout
 
     @property
     def model(self) -> str:
@@ -118,9 +121,21 @@ class LlmClient(ABC):
         call_type: str,
         prompt_version: str,
         max_tokens: int = 4096,
+        deadline: float | None = None,
     ) -> LlmResult[T]:
-        request = LlmRequest(system, user, output, call_type, prompt_version, max_tokens)
+        """deadline(time.monotonic 기준 시각)이 있으면 그 안에서만 요청·재시도.
+
+        남은 시간이 없으면 요청하지 않고 LLM_DEADLINE_EXCEEDED로 실패 (사용량 기록 없음).
+        """
         for attempt in range(self._max_retries + 1):
+            timeout = self._timeout
+            if deadline is not None:
+                timeout = min(timeout, deadline - time.monotonic())
+                if timeout <= 0:
+                    raise LlmUnavailable("LLM_DEADLINE_EXCEEDED", retryable=True)
+            request = LlmRequest(
+                system, user, output, call_type, prompt_version, max_tokens, timeout
+            )
             started = time.monotonic()
             try:
                 response = await self._request(request)
@@ -169,7 +184,7 @@ class UnconfiguredLlm(LlmClient):
     """API 키 미설정. 서버는 기동하고 호출 시 503 (재시도 무의미)."""
 
     def __init__(self, model: str, recorder: UsageRecorder) -> None:
-        super().__init__(model, max_retries=0, recorder=recorder, backoff_seconds=0)
+        super().__init__(model, max_retries=0, recorder=recorder, backoff_seconds=0, timeout=0)
 
     async def _request(self, request: LlmRequest[T]) -> ProviderResponse[T]:
         raise LlmError("LLM_NOT_CONFIGURED", retryable=False)

@@ -61,7 +61,7 @@ def make_llm(result: Any, fallback: bool = True) -> tuple[AnthropicLlm, FakeMess
 
 
 def request_once(llm: AnthropicLlm):
-    request = LlmRequest("system", "user", Answer, "JUDGMENT", "judge@1", 1024)
+    request = LlmRequest("system", "user", Answer, "JUDGMENT", "judge@1", 1024, 7.5)
     return asyncio.run(llm._request(request))
 
 
@@ -78,6 +78,7 @@ def test_parses_structured_output_with_usage() -> None:
     assert messages.kwargs["output_config"]["format"]["type"] == "json_schema"
     assert messages.kwargs["betas"] == [FALLBACK_BETA]
     assert messages.kwargs["fallbacks"] == "default"
+    assert messages.kwargs["timeout"] == 7.5  # 요청마다 지정한 타임아웃
 
 
 def test_fallback_disabled_sends_no_beta() -> None:
@@ -144,6 +145,7 @@ def test_factory_disables_sdk_retries_and_uses_configured_backoff() -> None:
     assert isinstance(llm, AnthropicLlm)
     assert llm._client.max_retries == 0
     assert llm._backoff_seconds == 1.5
+    assert llm._timeout == 15.0  # LLM 1회 15초 (P12)
 
 
 def test_factory_rejects_unknown_provider() -> None:
