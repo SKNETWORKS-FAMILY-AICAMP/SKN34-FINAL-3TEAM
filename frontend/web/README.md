@@ -11,7 +11,7 @@ npm ci
 npm run dev
 ```
 
-기본은 **API 모드**입니다. Vite가 `/api/v1` 요청을 core-service(기본 8080)로 전달합니다. 로컬 기반 66f6052에는 로그인·학습·리포트 공개 Controller가 없으며, 2026-10-26 착수 시 fetch한 `origin/develop` c8cb58f에도 core/learning 공개 Controller 추가는 없습니다. 원격 병합은 사용자 요청으로 보류 중이고 실제 로그인 연동은 아직 검증되지 않았습니다. 오류를 샘플 데이터로 덮지 않습니다.
+기본은 **API 모드**입니다. Vite가 `/api/v1` 요청을 core-service(기본 8080)로 전달합니다. 로컬 기반 66f6052에는 로그인·학습·리포트 공개 Controller가 없으며, 2026-10-26 fetch 후 반영한 `origin/develop` c8cb58f에도 core/learning 공개 Controller 추가는 없습니다. 실제 로그인 연동은 아직 검증되지 않았습니다. 오류를 샘플 데이터로 덮지 않습니다.
 
 이슈 #7 기준, 개발 중에는 MSW를 켜 실제 API 요청을 가로채서 확인합니다. 앱은 목 여부와 무관하게 같은 apiClient·SSE·Query 경로를 사용합니다.
 
@@ -80,7 +80,7 @@ node tests/parent-admin-browser.mjs
 node tests/api-mode-browser.mjs
 ```
 
-이슈 #7은 `docs/report/issue-7-student-completion.md`, #8·#9 구현/예외/검증/미확정 사항은 `docs/report/issue-8-9-parent-admin.md`에 기록합니다. 실제 backend 통합·원격 CI·배포 검증은 별도입니다. 커밋·push·PR은 보류 중입니다.
+이슈 #7은 `docs/report/issue-7-student-completion.md`, #8·#9 구현/예외/검증/미확정 사항은 `docs/report/issue-8-9-parent-admin.md`에 기록합니다. 실제 backend 통합·원격 CI·배포 검증은 별도입니다. 이후 사용자 요청으로 보류를 해제하고 `feature/fe-parent`에서 `develop` 대상 PR을 준비했습니다. PR 본문은 `docs/report/pr-fe-workspace.md`이며, develop 직접 push·자동 PR 병합은 하지 않습니다.
 
 ## 미체크 후속 회귀
 
