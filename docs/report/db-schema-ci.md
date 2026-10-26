@@ -86,7 +86,7 @@ Windows의 기본 CP949 설정에서도 Alembic CLI가 설정 파일을 읽도�
 
 오류를 복구한 뒤 **기존 Compose CLI 방식도 41건 모두 통과**했다. 1단계의 기존 데이터 업그레이드·중단 검사는 별도 `scripts/check_policy_migrations.py`로 재현하며, 기존 #13 CI job에 그 별도 장시간 시나리오를 추가하지 않았다.
 
-현재는 로컬 검증 완료이며 push·새 PR·이번 변경의 GitHub Actions 실행은 진행하지 않았다. 다음 단계는 #14 Repository 재검증이다.
+위 기록은 2단계 로컬 검증 결과이며 GitHub Actions 결과와 구분한다. 이후 #14 Repository와 결합한 3단계 검증도 완료했으며, 상세 결과와 #19 우선 검토 순서는 [스키마 변경 보고서](db-policy-schema.md)를 따른다. 원격 CI 결과는 #19 연결 PR의 Checks에서 확인한다.
 
 ## 최초 #13 구현 당시 검증 기록 — 정책 변경 전
 

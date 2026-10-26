@@ -56,9 +56,7 @@ def expect_rejected(database, statement, state):
     try:
         query(database, statement)
     except psycopg.Error as error:
-        require(
-            error.sqlstate == state, f"Expected {state}, got {error.sqlstate}: {error}"
-        )
+        require(error.sqlstate == state, f"Expected {state}, got {error.sqlstate}: {error}")
     else:
         raise RuntimeError(f"Statement unexpectedly accepted: {statement}")
 
@@ -173,9 +171,7 @@ def main():
         for kind in ("empty", "upgrade")
         for service in ("core", "learning")
     ]
-    existing = {
-        name for (name,) in query("postgres", "SELECT datname FROM pg_database")
-    }
+    existing = {name for (name,) in query("postgres", "SELECT datname FROM pg_database")}
     require(
         not (set(names) & existing),
         "Use a fresh disposable server: policy databases already exist",
@@ -223,7 +219,8 @@ def main():
                 "Migration installed seed data",
             )
         print(
-            f"PASS {service}: empty install, {table_count} tables/{column_count} columns, no seeds, unchanged rerun",
+            f"PASS {service}: empty install, {table_count} tables/{column_count} columns, "
+            "no seeds, unchanged rerun",
             flush=True,
         )
 
@@ -294,7 +291,8 @@ def main():
     flyway("learning", learning, target=4)
     query(
         learning,
-        f"INSERT INTO followup_bank_question VALUES ('{uid(109)}', 'TELL_MORE', 'synthetic bank only', true, now())",
+        f"INSERT INTO followup_bank_question VALUES ('{uid(109)}', 'TELL_MORE', "
+        "'synthetic bank only', true, now())",
     )
     learning_tables = [
         "flyway_schema_history",
@@ -343,7 +341,8 @@ def main():
             )
             query(database, restore)
         print(
-            f"PASS {service}: {len(guards)} legacy-data failures rolled back without changing rows/history",
+            f"PASS {service}: {len(guards)} legacy-data failures rolled back "
+            "without changing rows/history",
             flush=True,
         )
 
@@ -356,8 +355,7 @@ def main():
     require(flyway("core", core) == 1, "core final migration missing")
     require(flyway("learning", learning) == 1, "learning final migration missing")
     require(
-        query(core, "SELECT id, nickname, grade, birth_year FROM student")
-        == core_before,
+        query(core, "SELECT id, nickname, grade, birth_year FROM student") == core_before,
         "Student data changed",
     )
     require(
@@ -365,8 +363,7 @@ def main():
         "Historical product data changed",
     )
     require(
-        query(learning, "SELECT id, content, submitted_at FROM answer")
-        == answer_before,
+        query(learning, "SELECT id, content, submitted_at FROM answer") == answer_before,
         "Answer content changed",
     )
     require(
@@ -380,7 +377,8 @@ def main():
         require(
             query(
                 database,
-                f"SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='{table}' AND column_name='{column}'",
+                "SELECT 1 FROM information_schema.columns WHERE table_schema='public' "
+                f"AND table_name='{table}' AND column_name='{column}'",
             )
             == [],
             "Retired column remains",
@@ -392,7 +390,8 @@ def main():
             "Upgrade rerun changed history",
         )
     print(
-        "PASS: reviewed upgrade preserves IDs/content/product values and removes only retired columns",
+        "PASS: reviewed upgrade preserves IDs/content/product values "
+        "and removes only retired columns",
         flush=True,
     )
 
@@ -443,16 +442,14 @@ def main():
                    features, active, created_at, limits FROM product WHERE id='{uid(4)}';
         """,
         )
-    expect_rejected(
-        core, f"UPDATE product SET code='FREE' WHERE id='{uid(4)}'", "23505"
-    )
+    expect_rejected(core, f"UPDATE product SET code='FREE' WHERE id='{uid(4)}'", "23505")
     require(
-        query(core, f"SELECT code, price FROM product WHERE id='{uid(4)}'")
-        == [("BASIC", 1000)],
+        query(core, f"SELECT code, price FROM product WHERE id='{uid(4)}'") == [("BASIC", 1000)],
         "Historical product was relabeled",
     )
     print(
-        f"PASS: {len(negatives) + 1} invalid writes rejected; approved codes, grade boundaries and bank links accepted",
+        f"PASS: {len(negatives) + 1} invalid writes rejected; "
+        "approved codes, grade boundaries and bank links accepted",
         flush=True,
     )
     print(

@@ -2,7 +2,7 @@
 
 작성일: 2026-10-26. 기준: `develop`의 `fd4ee9c` 및 [이슈 #19](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/19), [기능 명세 P01~P16](../design/functional-spec.md), [ERD](../design/erd.md).
 
-확정된 설계에 맞춘 **마이그레이션 추가·Docker 검증(1단계)**을 완료했고, 이어서 **#13 CI 검증기 수정·로컬 전체 실행(2단계)**도 완료했다. 기존 이슈 #5 마이그레이션의 내용은 유지한다. #14 Repository 재검증과 새 PR/GitHub Actions 확인은 남아 있으므로 #19 전체 완료로 해석하지 않는다.
+확정된 설계에 맞춘 **마이그레이션 추가·Docker 검증(1단계)**, **#13 CI 검증기 수정·로컬 전체 실행(2단계)**, **#14 Repository와 결합한 재검증(3단계)**을 완료했다. 기존 이슈 #5 마이그레이션의 내용은 유지한다. #19 스키마·CI 변경부터 별도 PR로 검토받고, 병합 후 #14 작업을 최신 develop에 반영한다. PR 검토·병합 전에는 이슈 전체를 완료 처리하지 않는다.
 
 ## 변경 대상과 이유
 
@@ -112,8 +112,24 @@ uv run --frozen --project backend/report-service python -O scripts/check_policy_
 
 검사가 끝나면 해당 검증용 Compose 프로젝트/컨테이너만 정리한다. 기존 업무 DB나 다른 프로젝트의 컨테이너를 삭제하지 않는다.
 
-## 단계별 현재 상태
+## 3단계 Repository 영향 검증
+
+로컬 `feature/repository-schema-check`의 `7039dab`에서 #14 구현 `4c7390a`와 #19 스키마·CI 변경 `16dc70f`를 결합했다. 충돌 없이 병합됐으며, 이 검증용 브랜치의 Repository 구현과 의존성은 #19 PR에 포함하지 않는다.
+
+| 검증 대상 | 결과 |
+|---|---|
+| core | JDK 21에서 `test bootJar --no-daemon --rerun-tasks`, 9개 테스트 통과. 실제 Testcontainers DB에 V1~V7 적용 확인 |
+| learning | 같은 명령, 7개 테스트 통과. 실제 Testcontainers DB에 V1~V5 적용 확인 |
+| report | pytest 12개 통과. 서비스 디렉터리에서 Ruff 검사·포맷 검사 통과 |
+| DB CI | 결합 상태에서 전체 적용·ERD 대조·41개 위반 입력·재실행·report 왕복 통과, 실행 스크립트 15.8초. 검증기 회귀 18개도 통과 |
+| 배포 JAR | core·learning에 Flyway·Testcontainers와 테스트 Mapper가 포함되지 않음 |
+
+세 서비스 총 28개 테스트 모두 실패·오류·생략 0개다. UUID·JSONB·시각 값 왕복, Repository 저장/조회·예외 전파, report 트랜잭션, 빈 DB 앱 기동 시 자동 마이그레이션 미실행을 확인했다. Spring 실행은 core 2분 48초, learning 2분 15초이며 DB CI job 제한과 별개다.
+
+공통 기반과 예시 Repository에는 삭제된 컬럼 참조가 없어 기능 코드 수정은 필요하지 않았다. 아직 구현되지 않은 학생·상품·되묻기 기능별 Repository까지 검증했다는 뜻은 아니다. #14의 상세 가이드에는 동일 검증 결과를 로컬로 기록했으며, #19 병합 후 다시 최신 develop을 반영한다.
+
+## 검토 및 후속 순서
 
 1. **#13 CI — 2단계 로컬 완료**: 학생·답변 fixture를 최신 구조로 바꾸고, 단일 허용값 CHECK를 ERD의 `CHECK[REGISTER]`·`CHECK[IN_APP]` 표기와 대조하도록 보강했다. 검증기 회귀 18개, 제약 위반 41건, 코드 CHECK 61개, 인덱스 19개 및 마이그레이션 재실행·report 왕복 검증을 통과했다. 전체 실행 스크립트 12.4초. 일부러 넣은 오류 8건을 거부하고 복구 후 Compose 방식도 통과했다. [CI 보고서](db-schema-ci.md)에 범위와 근거를 정리했다.
-2. **#14 Repository — 다음 단계**: 별도 보존한 `feature/repository-foundation` 작업에 이 스키마를 반영한 뒤 서비스 테스트·연결·자료형·트랜잭션을 다시 확인한다. 2단계에서는 그 브랜치를 수정하지 않았다.
-3. **PR·GitHub Actions — 아직 미실행**: Repository 재검증까지 끝난 후 PR을 준비하고 GitHub에서 실제 CI 결과·실행 시간을 확인한다. 로컬 통과 결과만으로 이슈 전체를 완료 처리하지 않는다.
+2. **#14 Repository — 3단계 사전 검증 완료**: 위 결합 브랜치에서 28개 서비스 테스트와 전체 DB CI를 통과했다. #14 원본에는 스키마를 미리 병합하지 않고 검증 결과 문서만 로컬에 기록했다.
+3. **#19 PR 검토 우선**: `feature/db-policy-schema` → `develop` PR에 스키마·CI 변경과 이 보고서를 올리고, GitHub Actions 결과와 상품 코드 해석·기존 데이터 전환 절차를 검토받는다. #19 병합 후 #14 브랜치에 최신 develop을 반영·재검증하고 별도 PR을 준비한다.
