@@ -53,6 +53,7 @@ def make_llm(result: Any, fallback: bool = True) -> tuple[AnthropicLlm, FakeMess
         fallback=fallback,
         timeout=30,
         max_retries=0,
+        backoff_seconds=0,
         recorder=lambda _: None,
         client=client,  # type: ignore[arg-type]
     )
@@ -137,10 +138,12 @@ def test_factory_without_key_returns_unconfigured() -> None:
     assert llm.model == "claude-sonnet-5-5"
 
 
-def test_factory_disables_sdk_retries() -> None:
-    llm = create_llm(Settings(internal_token="t", anthropic_api_key="k"), recorder)
+def test_factory_disables_sdk_retries_and_uses_configured_backoff() -> None:
+    settings = Settings(internal_token="t", anthropic_api_key="k", llm_retry_backoff=1.5)
+    llm = create_llm(settings, recorder)
     assert isinstance(llm, AnthropicLlm)
     assert llm._client.max_retries == 0
+    assert llm._backoff_seconds == 1.5
 
 
 def test_factory_rejects_unknown_provider() -> None:

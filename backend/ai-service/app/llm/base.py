@@ -98,7 +98,7 @@ class LlmClient(ABC):
         model: str,
         max_retries: int,
         recorder: UsageRecorder,
-        backoff_seconds: float = 0.5,
+        backoff_seconds: float,
     ) -> None:
         self._model = model
         self._max_retries = max_retries
@@ -169,7 +169,7 @@ class UnconfiguredLlm(LlmClient):
     """API 키 미설정. 서버는 기동하고 호출 시 503 (재시도 무의미)."""
 
     def __init__(self, model: str, recorder: UsageRecorder) -> None:
-        super().__init__(model, max_retries=0, recorder=recorder)
+        super().__init__(model, max_retries=0, recorder=recorder, backoff_seconds=0)
 
     async def _request(self, request: LlmRequest[T]) -> ProviderResponse[T]:
         raise LlmError("LLM_NOT_CONFIGURED", retryable=False)

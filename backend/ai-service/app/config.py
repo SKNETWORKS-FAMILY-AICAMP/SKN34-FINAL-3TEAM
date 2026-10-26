@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     anthropic_fallback: bool = True  # 안전 거절 시 Anthropic 권장 모델로 자동 재처리
     llm_timeout: float = 30.0  # [P12] 확정 전 임시값
     llm_max_retries: int = 2  # [P12] 확정 전 임시값
+    llm_retry_backoff: float = 0.5  # [P12] 확정 전 임시값, 재시도마다 2배 (0.5초 → 1초)
 
     # 판정·되묻기
     judge_require_verified: bool = False  # 사람 검증(judge_verified) 도입 시 true

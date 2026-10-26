@@ -23,6 +23,7 @@ def create_llm(settings: Settings, recorder: UsageRecorder) -> LlmClient:
             fallback=settings.anthropic_fallback,
             timeout=settings.llm_timeout,
             max_retries=settings.llm_max_retries,
+            backoff_seconds=settings.llm_retry_backoff,
             recorder=recorder,
         )
     raise ValueError(f"지원하지 않는 LLM_PROVIDER: {settings.llm_provider}")
