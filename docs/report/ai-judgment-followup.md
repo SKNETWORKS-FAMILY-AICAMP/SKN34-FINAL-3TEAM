@@ -6,7 +6,7 @@ ai-service의 `POST /internal/judgments`, `POST /internal/followups`, `GET /inte
 
 ## API 계약 변경
 
-[API 명세 4.2](../design/api-spec.md)의 followups 행을 갱신했다. [시퀀스 다이어그램](../design/sequence-diagram.md)은 아직 이전 형태라 아래 "후속 할 일"에 남긴다.
+[API 명세 4.2](../design/api-spec.md)의 followups 행과 [시퀀스 다이어그램](../design/sequence-diagram.md) 피드백 흐름의 followups 요청·응답을 갱신했다.
 
 | 대상 | 변경 | 이유 |
 |---|---|---|
@@ -32,13 +32,15 @@ ai-service의 `POST /internal/judgments`, `POST /internal/followups`, `GET /inte
 
 ## 설계 문서와 다르게 구현한 부분
 
+결과 결정 위치, 미검증 요소 보류, `versions.model` 의미, 함수 이름, 파일 구성은 설계 문서를 구현에 맞춰 갱신했다: [API 명세](../design/api-spec.md) 1.6·3.2, [클래스 다이어그램](../design/class-diagram.md) 4.2·5.1, [시퀀스 다이어그램](../design/sequence-diagram.md) 피드백, [상태 다이어그램](../design/state-diagram.md) 3, [ERD](../design/erd.md) 기준표 규칙, [아키텍처](../design/architecture.md) ai-service 디렉토리 구조.
+
 | 항목 | 문서 | 구현 | 근거 |
 |---|---|---|---|
 | 미검증 요소 보류 | `judge_verified = false`면 `HELD(UNVERIFIED_SCOPE)` (state-diagram 3, erd) | 기본 꺼짐, `JUDGE_REQUIRE_VERIFIED=true`로 켬 | 사람 검증(P11)이 아직 없어 켜면 모든 서술 판정이 보류됨 |
 | 보류 시 요소 결과 | 정하지 않음 | `HELD`면 `elements` 빈 배열 | 보류가 낮은 수준으로 기록되지 않게 함 (FN-JDG-04) |
 | 결과 결정 위치 | `QuoteVerifier.decide` (class-diagram) | `judgment/service.py` | 업무 판단은 service (architecture 2.1). `verifier.py`는 원문 대조만 |
 | `versions.model` 의미 | 예시가 M2 버전(`m2-klue@1.0`), LLM 판정은 `null` (api-spec 1.6·3.2) | LLM 모델 ID (예: `claude-sonnet-5-5`) | 제공자를 바꿔도 판정·되묻기를 만든 모델을 남김. 되묻기에는 M2가 없어 같은 의미로 맞춤 |
-| 함수 이름 | `LeakGuard.check`, `FollowupService.generate`, `LlmClient.complete` | `find_leaks`, `create`, `generate` | 동작은 같음. 문서 갱신 여부는 검토 요청 |
+| 함수 이름 | `LeakGuard.check`, `FollowupService.generate`, `LlmClient.complete` | `find_leaks`, `create`, `generate` | 동작은 같음. class-diagram을 코드에 맞춤 |
 | 사용량 이벤트 `traceparent` | 봉투에 포함 (architecture 1.6) | null | PR #28 공통 `UsagePublisher`가 받지 않음. 공통 기반 수정은 범위 밖 |
 | LLM 제공자 | Claude API (architecture 6장) | Claude + OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`로 교체 | architecture의 "`llm/` 래퍼로 교체 가능" 범위 안. Claude 전용 기능(추론 강도·대체 모델·스키마 강제)을 지키려고 제공자별 클래스를 둠 |
 
@@ -67,16 +69,8 @@ ai-service의 `POST /internal/judgments`, `POST /internal/followups`, `GET /inte
 
 ## 후속 할 일
 
-설계 문서 중 API 명세 변경을 아직 따라가지 못한 곳:
-
-| 문서 | 위치 | 지금 | 바꿀 내용 |
-|---|---|---|---|
-| [sequence-diagram.md](../design/sequence-diagram.md) | 피드백 흐름, followups 요청 | `{timeline, judgment, rubric}` | `{timeline, judgment, rubric, mission, grade}` |
-| [sequence-diagram.md](../design/sequence-diagram.md) | 피드백 흐름, followups 응답 | `type·question·source·leakCheck` | `type·question·source·leakCheck·versions` |
-
 확인·합의가 필요한 것:
 
 - M2 연동 시 M2 버전은 `judgment.model_scores`에 담는 방안을 이슈 #4 담당과 정한다.
 - 사용량 이벤트 `traceparent`를 공통 `UsagePublisher`에 추가할지 정한다.
-- class-diagram의 ai 쪽 함수 이름을 코드에 맞출지 정한다.
 - OpenAI 키를 받으면 `gpt-6-luna` 모델 ID와 판정·되묻기 결과를 실제 호출로 확인한다.

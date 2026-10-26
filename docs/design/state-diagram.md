@@ -188,10 +188,10 @@ stateDiagram-v2
 
 | 결과 | 조건 | 결정 위치 |
 |---|---|---|
-| `CORRECT` | 규칙: 정답 키 일치·수학 동치 / LLM: 모든 필수 요소 `verified && satisfied` | learning `RuleJudge` / ai `QuoteVerifier.decide` |
-| `PARTIAL` | LLM: 일부 요소만 충족 (배점 기준) | ai `QuoteVerifier.decide` |
-| `RETHINK` | 규칙: 불일치 / LLM: 충족 요소 없음 | learning `RuleJudge` / ai `QuoteVerifier.decide` |
-| `HELD` | `INSUFFICIENT_EVIDENCE`·`QUOTE_MISMATCH`·`TOO_SHORT`·`UNVERIFIED_SCOPE`(`judge_verified = false`)·`MODEL_DISAGREEMENT`(M2 불일치)·`LOW_CONFIDENCE`(M1 0.8 미만, P15) | ai `QuoteVerifier.decide`·`JudgmentService` (learning은 `judge_verified`·학년 포함 기준표 전달만) |
+| `CORRECT` | 규칙: 정답 키 일치·수학 동치 / LLM: 모든 필수 요소 `verified && satisfied` | learning `RuleJudge` / ai `JudgmentService` |
+| `PARTIAL` | LLM: 일부 요소만 충족 (배점 기준) | ai `JudgmentService` |
+| `RETHINK` | 규칙: 불일치 / LLM: 충족 요소 없음 | learning `RuleJudge` / ai `JudgmentService` |
+| `HELD` | `INSUFFICIENT_EVIDENCE`·`QUOTE_MISMATCH`·`TOO_SHORT`·`UNVERIFIED_SCOPE`(`judge_verified = false`, `JUDGE_REQUIRE_VERIFIED=true`일 때만)·`MODEL_DISAGREEMENT`(M2 불일치)·`LOW_CONFIDENCE`(M1 0.8 미만, P15) | ai `JudgmentService` (learning은 `judge_verified`·학년 포함 기준표 전달만) |
 
 - `HELD`는 정상 처리 결과(`DONE`), API 실패는 `FAILED` → 서로 다른 컬럼 (NFR-REL-04)
 

@@ -130,7 +130,8 @@
   "submittedAt": "...", "quote": "아이 원문 일부", "available": true }   // 삭제 시 available=false
 
 // Versions: 결과에 연결된 버전 (NFR-DAT-02)
-{ "mission": "m-12@3", "rubric": "r-12@2", "model": "m2-klue@1.0", "prompt": "judge@4" }
+// model: 판정·되묻기를 만든 LLM 모델 ID, 규칙 판정은 null. M2 버전 위치는 M2 연동 시 결정
+{ "mission": "m-12@3", "rubric": "r-12@2", "model": "claude-sonnet-5-5", "prompt": "judge@4" }
 ```
 
 - SSE 이벤트
@@ -379,7 +380,7 @@ data: {
   },
   "followup":{"followupId":"f-32","type":"TELL_MORE","question":"왜 그렇게 생각했는지 하나 더 말해 볼까?","source":"LLM"},
   "nextActions":["ANSWER_FOLLOWUP","FINISH"],
-  "versions":{"mission":"m-12@3","rubric":"r-12@2","model":null,"prompt":"judge@4"}
+  "versions":{"mission":"m-12@3","rubric":"r-12@2","model":"claude-sonnet-5-5","prompt":"judge@4"}
 }
 
 event: done

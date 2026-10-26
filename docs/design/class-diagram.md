@@ -1089,7 +1089,7 @@ classDiagram
   3. 트랜잭션 밖: 시도 내 되묻기 2회 미만이고 고르기 `CORRECT`가 아니면 `AiClient.followup` (정답·금지어 유출 검사는 ai 담당, P04). 재생성까지 검사 실패하면 learning이 `followup_bank_question`에서 같은 `type` 질문 선택(`BANK`, P16)
   4. `JudgmentService.saveResult`: 판정·요소·되묻기·버전 저장 + `DONE`. 예외 시 `markFailed`
 - `JudgmentElement`: `verified = false`면 `satisfy()` 거부 (ERD CHECK와 동일 규칙을 Domain에서도 검사)
-- `judge_verified = false` 요소·미검증 학년 조합의 `HELD(UNVERIFIED_SCOPE)` 결정은 ai `QuoteVerifier` 담당. learning은 `judge_verified`·학년을 포함한 기준표를 `AiClient.judge`에 전달 (FN-JDG-04)
+- `judge_verified = false` 요소·미검증 학년 조합의 `HELD(UNVERIFIED_SCOPE)` 결정은 ai `JudgmentService` 담당(`JUDGE_REQUIRE_VERIFIED=true`일 때만, 기본 꺼짐). learning은 `judge_verified`·학년을 포함한 기준표를 `AiClient.judge`에 전달 (FN-JDG-04)
 - 정정은 `Judgment`를 바꾸지 않고 `JudgmentCorrection` 추가, `result()` 조회 시 최신 정정 반영 (FN-SUP-03)
 
 ### 4.3 기록 조회·삭제 (record · deletion)
@@ -1186,7 +1186,6 @@ classDiagram
   class QuoteVerifier {
     <<service>>
     +verify(answer_text, quotes) list~VerifiedQuote~
-    +decide(verified, rubric) Decision
   }
   class followup_router {
     <<router>>
@@ -1194,15 +1193,15 @@ classDiagram
   }
   class FollowupService {
     <<service>>
-    +generate(request) FollowupResponse
+    +create(request) FollowupResponse
   }
   class LeakGuard {
     <<service>>
-    +check(question, answer_key, forbidden_terms, example_answer) LeakCheck
+    +find_leaks(question, rubric, example_overlap_chars, student_answers) list~str~
   }
   class LlmClient {
     <<client>>
-    +complete(call_type, prompt, schema) LlmResult
+    +generate(system, user, output, call_type, prompt_version, deadline) LlmResult
     +stream(call_type, prompt) AsyncIterator
   }
   class ScoringClient {
@@ -1236,10 +1235,10 @@ classDiagram
 | 클래스 | 파일 | 책임 |
 |---|---|---|
 | `EvidenceExtractor` | `judgment/extractor.py` | LLM에 기준표 요소별 근거 구절 추출 요청 (학생 이름 미포함) |
-| `QuoteVerifier` | `judgment/verifier.py` | 구절의 답변 원문 존재 확인(코드), 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정. LLM과 분리 (FN-JDG-03) |
-| `JudgmentService` | `judgment/service.py` | 추출 → 대조 → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`) → 응답 |
+| `QuoteVerifier` | `judgment/verifier.py` | 구절의 답변 원문 존재 확인(코드). LLM과 분리 (FN-JDG-03) |
+| `JudgmentService` | `judgment/service.py` | 사전 보류(`TOO_SHORT`·`UNVERIFIED_SCOPE`) → 추출 → 대조 → 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정 (업무 판단은 service, 아키텍처 2.1) → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`) → 응답 |
 | `LeakGuard` | `followup/leak_guard.py` | 정답 키·예시 답·금지어 포함 검사. 실패 시 1회 재생성(`LLM_RETRY`), 재실패 시 `question` 없이 `leakCheck.passed = false` 반환 → learning이 질문 은행 선택 (`BANK`, P16) |
-| `LlmClient` | `llm/` | 제공자 교체 지점, LLM 호출 재시도는 이 클래스에서만 (아키텍처 1.3), 호출마다 사용량 발행 |
+| `LlmClient` | `llm/base.py`, 제공자는 `llm/providers.py` | 제공자 교체 지점(Claude·OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`), LLM 호출 재시도는 이 클래스에서만 (아키텍처 1.3), 호출마다 사용량 발행 |
 | `ActiveVersions` | `versions.py` (신규) | 활성 프롬프트 버전 보관, `model.version.activated` 수신 시 교체 |
 
 ### 5.2 분석 에이전트·리포트 서술 (analysis_agent · report_narrative)
