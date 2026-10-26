@@ -1,0 +1,786 @@
+# 시퀀스 다이어그램
+
+- 근거: [아키텍처 설계](architecture.md) 1장(통신 원칙·메시지·신뢰성 규칙), [API 명세서](api-spec.md), [ERD](erd.md), [클래스 다이어그램](class-diagram.md), [유스케이스](usecase.md) 4장
+- 범위: 서비스 간 호출이 있거나 상태 전이·멱등 처리가 필요한 핵심 흐름. 단순 조회(CRUD)는 생략
+- 상태값 전이 조건은 [상태 다이어그램](state-diagram.md)
+- `[P..]`는 미확정 정책. 해당 분기는 자리만 표시
+
+---
+
+## 1. 공통 규칙
+
+| 항목 | 규칙 |
+|---|---|
+| 참여자 | `Web` · `core` · `learning` · `ai` · `scoring` · `report-api` · `report-worker` · `MQ`(RabbitMQ) · `Redis` · `DB`(해당 서비스 DB) · `LLM` · `Toss` · `S3` |
+| 화살표 | `->>` 동기 호출, `-->>` 동기 응답, `-)` 비동기 발행(메시지·이벤트) |
+| 내부 호출 | 모든 서비스 간 HTTP에 `X-Internal-Token`·`X-User-*`·`X-Student-Scope`·`traceparent` 자동 첨부 (`InternalRestClientFactory`·`internal_client`), 다이어그램에서는 생략 |
+| 트랜잭션 | `rect` 영역 = DB 트랜잭션 1개. 영역 안에 서비스 간 HTTP·AMQP 호출 없음 (아키텍처 2.2) |
+| 재시도 | LLM 호출만 ai `LlmClient`에서 재시도, 서비스 간 호출은 재시도 없음 (아키텍처 1.3) |
+| SSE | 15초 heartbeat `: ping`은 모든 SSE 공통이라 생략 |
+
+---
+
+## 2. 계정·자녀 연결
+
+### 2.1 로그인·토큰 재발급
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as 사용자
+  participant W as Web
+  participant C as core
+  participant DB as core_db
+
+  U->>W: 로그인 ID·비밀번호
+  W->>C: POST /auth/login
+  C->>DB: user_account 조회 (status = ACTIVE)
+  alt 인증 실패
+    C-->>W: 401 UNAUTHENTICATED
+  else 성공
+    C->>DB: refresh_token 저장 (token_hash)
+    C-->>W: 200 accessToken·역할·시작 화면 + Set-Cookie refresh (httpOnly·SameSite=Strict)
+  end
+  Note over W: access token은 메모리 보관
+  W->>C: API 호출 (Bearer)
+  C-->>W: 401 TOKEN_EXPIRED
+  W->>C: POST /auth/refresh (쿠키)
+  C->>DB: refresh_token 검증 → 폐기 + 새 토큰 저장 (회전)
+  C-->>W: 200 새 accessToken
+  W->>C: 원래 요청 재시도
+```
+
+### 2.2 자녀 등록·법정대리인 동의
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web
+  participant C as core
+  participant DB as core_db
+
+  W->>C: GET /consent-documents
+  C-->>W: 현재 문서 버전 (TERMS·PRIVACY·GUARDIAN)
+  W->>C: POST /children {nickname, grade, agreements[]}
+  C->>C: GuardianshipService.registerChild
+  C->>DB: 현재 필수 문서(required) 조회
+  alt 필수 GUARDIAN 동의 누락
+    C-->>W: 400 VALIDATION_FAILED
+  else
+    rect rgba(128,128,128,0.12)
+      C->>DB: student 저장 (가명 닉네임만)
+      C->>DB: guardianship 저장 (REGISTER, LINKED)
+      C->>DB: consent 저장 (주체·문서 버전·시점)
+    end
+    C-->>W: 201 childId
+  end
+```
+
+- 만 14세 확인 절차·학생 계정 `[P01]`, 기존 학생 연결(`/children/link`) 절차 `[P02]`
+- 연결 변경(`link`·`unlink`)은 `X-Reauth-Token` 확인 후 처리, `audit_log` 기록 (FN-ACC-10)
+
+### 2.3 자녀 범위 권한 확인 (모든 자녀 대상 API 공통)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web
+  participant C as core
+  participant DB as core_db
+  participant L as learning
+
+  W->>C: GET /children/{childId}/summary?from&to (Bearer)
+  C->>C: JwtAuthFilter → UserContext(userId, PARENT)
+  C->>DB: guardianship (parent, childId, LINKED) 존재 확인
+  alt 미연결
+    C-->>W: 403 CHILD_NOT_LINKED
+  else 연결됨
+    C->>C: UserContext.studentScope = {childId}
+    C->>L: GET /internal/records/students/{childId}/summary (X-Student-Scope: childId)
+    L->>L: InternalAuthFilter → requireStudent(childId)
+    L-->>C: Metric[] + state + period
+    C-->>W: 200
+  end
+```
+
+---
+
+## 3. 미션 학습
+
+### 3.1 시작·초안 저장·답변 제출
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web
+  participant C as core
+  participant L as learning
+  participant DB as learning_db
+
+  W->>C: POST /missions/{missionId}/attempts
+  C->>L: POST /internal/missions/{missionId}/attempts
+  L->>DB: 공개·학년 범위 미션 확인
+  alt 비공개·범위 밖 미션
+    L-->>C: 409 MISSION_NOT_AVAILABLE
+  else 진행 중 시도 있음
+    L-->>C: 기존 attempt (이어하기)
+  else
+    L->>DB: attempt 저장 (IN_PROGRESS, 당시 mission·rubric 버전 고정)
+    L-->>C: 201 attempt
+  end
+  C-->>W: attempt
+
+  W->>C: PUT /attempts/{id}/draft (If-Match: "7")
+  C->>L: PUT /internal/attempts/{id}/draft
+  L->>DB: UPDATE attempt_draft ... WHERE version = 7
+  alt 영향 0행
+    L-->>C: 409 ATTEMPT_DRAFT_CONFLICT + latest
+    C-->>W: 409 (현재 입력 유지, 충돌 안내)
+  else
+    L-->>C: 200 version 8·savedAt (ETag)
+    C-->>W: 200
+  end
+
+  W->>C: POST /attempts/{id}/answers (Idempotency-Key: k1)
+  C->>C: IdempotencyService (user, k1) 조회
+  alt 같은 키·같은 본문 기록 있음
+    C-->>W: 저장된 최초 응답 그대로
+  else 같은 키·다른 본문
+    C-->>W: 422 IDEMPOTENCY_KEY_REUSED
+  else 새 요청
+    C->>L: POST /internal/attempts/{id}/answers (Idempotency-Key: k1)
+    rect rgba(128,128,128,0.12)
+      L->>DB: attempt IN_PROGRESS 확인 (아니면 409 ATTEMPT_CLOSED)
+      L->>DB: answer 저장 (version = 이전+1, followup_id 연결)
+      L->>DB: judgment 저장 (PENDING)
+    end
+    L-->>C: 201 answerId·version·feedback.status=PENDING
+    C->>C: idempotency_record 저장
+    C-->>W: 201
+  end
+```
+
+- 저장 성공(201)과 이후 피드백 처리 성공을 분리 (FN-LRN-10). 피드백은 3.2의 별도 요청
+- 메모는 서버에 저장하지 않음 `[P05]`
+
+### 3.2 피드백 SSE (판정·되묻기)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web
+  participant C as core
+  participant L as learning
+  participant DB as learning_db
+  participant A as ai
+  participant S as scoring
+  participant LLM as LLM
+
+  W->>C: POST /answers/{answerId}/feedback (SSE)
+  C-->>W: event status {RUNNING}
+  C->>L: POST /internal/answers/{answerId}/feedback (동기)
+  L->>DB: judgment 조건부 전이 PENDING·FAILED·리스 만료 RUNNING → RUNNING
+  alt 이미 DONE
+    L-->>C: 저장된 결과
+  else 유효 리스 RUNNING (다른 요청이 처리 중)
+    L-->>C: status RUNNING
+  else 전이 성공
+    alt 고르기·수학 최종 답
+      L->>L: ChoiceJudge·MathEquivalenceJudge
+    else 서술·논술·풀이 단계
+      L->>A: POST /internal/judgments {answerText, rubric(judge_verified 포함), grade, versions}
+      A->>LLM: 기준표 요소별 근거 구절 추출 (학생 이름 미포함)
+      LLM-->>A: quotes[]
+      A->>A: QuoteVerifier 원문 대조 → 요소 충족·결과 결정 (미검증 요소·범위는 HELD(UNVERIFIED_SCOPE))
+      opt M2 활성 범위
+        A->>S: POST /internal/m2/scores
+        S-->>A: 항목 점수 또는 {active:false}
+        A->>A: LLM 관찰과 불일치 시 HELD(MODEL_DISAGREEMENT)
+      end
+      opt 풀이 단계(SOLUTION_STEPS) + M1 활성 범위
+        A->>S: POST /internal/m1/checks
+        S-->>A: 정답 여부·실수 위치·확신도
+        A->>A: 확신도 0.8 미만이면 HELD(LOW_CONFIDENCE) [P15]
+      end
+      A-->>L: result·elements·heldReason·trial·versions
+    end
+    opt 되묻기 대상 (고르기 정답 후 즉시 마무리 여부 [P04])
+      L->>A: POST /internal/followups {timeline, judgment, rubric}
+      A->>LLM: 되묻기 생성
+      A->>A: LeakGuard 정답·금지어 검사
+      opt 검사 실패
+        A->>LLM: 1회 재생성 (source = LLM_RETRY)
+        Note over A: 재실패 시 질문 은행 [P16]
+      end
+      A-->>L: type·question·source·leakCheck
+    end
+    A--)A: llm.usage.recorded 발행 (best-effort)
+    alt 위 처리 중 예외 (ai·LLM 실패, 타임아웃)
+      L->>DB: judgment FAILED (failure_code, retry_count+1)
+      L-->>C: 503 AI_UNAVAILABLE retryable
+    else 정상
+      rect rgba(128,128,128,0.12)
+        L->>DB: judgment DONE + judgment_element + followup + 버전 저장
+      end
+      L-->>C: FeedbackResult
+    end
+  end
+  alt status RUNNING 수신
+    C-->>W: event status → done (클라이언트가 잠시 후 재요청)
+  else 503 수신
+    C-->>W: event error {AI_UNAVAILABLE, retryable:true} → done
+  else 결과 수신 (저장 결과 포함)
+    C-->>W: event result {judgment, followup, nextActions, versions} → done
+  end
+```
+
+- 클라이언트가 끊겨도 core→learning 호출은 끝까지 진행·저장, 재요청 시 저장 결과 반환 (API 3.2)
+- 타임아웃 예산: core→learning > learning→ai(judgments + followups) 합계, 값 `[P12]` (아키텍처 1.3)
+- 판정 보류(`result = HELD`)는 정상 처리(`DONE`), 처리 실패(`process_status = FAILED`)와 구분 (NFR-REL-04)
+- 보류 사유 결정은 모두 ai 담당, learning은 `judge_verified`·학년을 포함한 기준표 전달 (상태 다이어그램 3.3)
+
+### 3.3 마무리·정답 공개·돌아보기
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web
+  participant C as core
+  participant L as learning
+  participant DB as learning_db
+
+  W->>C: POST /attempts/{id}/finish
+  C->>L: POST /internal/attempts/{id}/finish
+  L->>DB: 타임라인(답변·판정·되묻기) 조회
+  L->>L: FinishPolicy.canFinish [P04]
+  alt 조건 미충족
+    L-->>C: 409 REVEAL_CONDITION_UNMET
+    C-->>W: 409 (정답·예시 답 비공개)
+  else 충족
+    L->>DB: attempt.finished_at 기록
+    L-->>C: 정답(닫힌 문제)·예시 답(열린 문제)·verified 요소만 체크한 체크리스트
+    C-->>W: 200
+  end
+  opt 자기 평가 (선택)
+    W->>C: POST /attempts/{id}/self-assessment
+    C->>L: POST /internal/attempts/{id}/self-assessment
+    L-->>C: 자기 체크 저장 (판정·원본 불변), AI 확인 항목과 나란히 반환
+    C-->>W: 200
+  end
+  W->>C: POST /attempts/{id}/reflection {difficulty, changedText}
+  C->>L: POST /internal/attempts/{id}/reflection
+  alt finished_at 없음 (마무리 전)
+    L-->>C: 409 REVEAL_CONDITION_UNMET
+    C-->>W: 409
+  else
+    rect rgba(128,128,128,0.12)
+      L->>DB: reflection 저장
+      L->>DB: attempt IN_PROGRESS → COMPLETED, completed_at
+    end
+    L-->>C: 200
+    C-->>W: 200 학습 완료
+  end
+```
+
+---
+
+## 4. 대시보드 조회
+- 2.3 권한 확인 후 core가 learning `/internal/records/...`를 그대로 프록시 (서비스 간 추가 호출 없음)
+- 응답의 `state`(`OK`·`NO_RECORD`·`INSUFFICIENT_SAMPLE`)와 조회 실패(5xx → `FAILED`)를 화면에서 구분 (FN-DSH-11)
+
+---
+
+## 5. 분석 대화 SSE
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web
+  participant C as core
+  participant CDB as core_db
+  participant A as ai
+  participant LLM as LLM
+  participant L as learning
+
+  W->>C: POST /conversations/{id}/messages {question, scope?} (SSE)
+  C->>CDB: guardianship LINKED 확인 (scope 자녀)
+  C->>C: Conversation.resolveScope (생략 시 확인된 자녀·기간 유지)
+  C->>CDB: conversation_message 저장 (QUEUED → RUNNING)
+  C->>A: POST /internal/analysis/stream {question, scope, history[]} (X-Student-Scope: childId)
+  A->>A: classify
+  A->>LLM: 질문 의도·대상·기간 분류
+  A->>A: clarify_scope
+  alt 대상·기간 불명확 또는 현재 선택과 충돌
+    A-->>C: event clarification {question, options[]}
+    C->>CDB: message COMPLETED + clarification 저장
+    C-->>W: event clarification → done
+  else 범위 확정
+    A->>A: plan (조회 도구 선택)
+    loop 도구 호출마다
+      A->>A: require_student(scope.studentId)
+      A->>L: GET /internal/records/students/{id}/... (헤더 그대로 전달)
+      L-->>A: 기록·Metric[]·state
+    end
+    A->>A: compute (calculators, 코드 계산)
+    A-->>C: event status {기록 조회 완료}
+    C-->>W: event status
+    A->>LLM: answer (조회·계산 결과 기반 답변, 스트리밍)
+    loop 답변 조각
+      A-->>C: event delta {text}
+      C-->>W: event delta (대조 전 임시 표시)
+    end
+    A->>A: verify (AnswerVerifier 숫자·인용 대조)
+    alt 대조 실패
+      A-->>C: event error {VERIFICATION_FAILED}
+      C->>CDB: message FAILED (failure_code)
+      C-->>W: event error → done (delta 임시 텍스트 폐기)
+    else 대조 통과
+      A-->>C: event result {answer, metrics, evidence, verification, recordCount}
+      rect rgba(128,128,128,0.12)
+        C->>CDB: message COMPLETED + answer·metrics·verification·버전
+        C->>CDB: message_evidence (attemptId·answerId·version만)
+      end
+      C-->>W: event result → done
+    end
+  end
+  A--)A: llm.usage.recorded 발행
+  opt 클라이언트 단절
+    C->>A: 스트림 취소
+    C->>CDB: message FAILED (CLIENT_DISCONNECTED, 재시도 가능)
+  end
+```
+
+- 재시도(`/messages/{id}/retry`): 같은 행 `FAILED → RUNNING` 조건부 전이 후 같은 흐름 (ERD 3.2)
+- 대조 실패 시 규칙 기반 대체 답변 `[P16]` 합의 전 미사용 (FN-AGT-06)
+- 근거 확인(`/evidence`): core가 `message_evidence` ID로 learning `/internal/records/evidence` 조회, 삭제된 기록은 `available: false`
+
+---
+
+## 6. 주간 리포트
+
+### 6.1 자동 생성
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant SCH as core 스케줄러
+  participant C as core
+  participant CDB as core_db
+  participant MQ as RabbitMQ
+  participant RW as report-worker
+  participant RDB as report_db
+  participant L as learning
+  participant A as ai
+  participant S3 as S3
+
+  SCH->>SCH: @SchedulerLock 획득 (ShedLock, 1개 레플리카만) [P06]
+  loop 대상 학생마다 (대상 범위 [P06])
+    rect rgba(128,128,128,0.12)
+      SCH->>CDB: report_job 저장 (SCHEDULE, QUEUED) — 부분 UK로 중복 방지
+      SCH->>CDB: outbox_event (report.generate) 저장
+    end
+  end
+  C->>CDB: OutboxRelay 미발행 행 조회
+  C-)MQ: cmd.direct / report.generate (publisher confirm)
+  C->>CDB: published_at 기록
+  MQ-)RW: report.report.generate 소비 (수동 ACK)
+  RW->>RW: bind_user_context(SYSTEM, scope = subject 학생)
+  RW->>RDB: job_id로 weekly_report 조회
+  alt 없음 (최초 소비)
+    rect rgba(128,128,128,0.12)
+      RW->>RDB: weekly_report 저장 (job_id UK, RUNNING)
+      RW->>RDB: outbox_event (report.started)
+    end
+  else 기존 COMPLETED·FAILED (재전달)
+    RW->>MQ: ACK 후 종료 (종료 이벤트는 같은 트랜잭션 outbox에 이미 저장)
+  else 기존 RUNNING (이전 Pod 중단 후 재전달)
+    Note over RW: 같은 행으로 아래 처리 처음부터 재실행
+  end
+  RW->>L: GET /internal/records/students/{id}/thinking-types·attempts·changes
+  L-->>RW: 기간 내 기록
+  RW->>RW: MetricsCalculator (기간 확정·수치·전후 변화·state)
+  alt 기록 없음·표본 부족
+    RW->>RW: state = NO_RECORD·INSUFFICIENT_SAMPLE (가능한 요약만)
+  end
+  RW->>A: POST /internal/report-narratives {metrics, thinkingTypes, changes, reflections, quotes}
+  Note over RW,A: NO_RECORD 주의 서술 생략 여부는 가정 (11장)
+  A-->>RW: narrative·eveningQuestion·citedQuotes
+  RW->>L: GET /internal/records/evidence?answerIds=
+  RW->>RW: ReportVerifier 숫자·인용 대조
+  RW->>RW: ReportRenderer HTML·PDF·MD
+  RW->>S3: 파일 업로드
+  alt 처리 성공
+    rect rgba(128,128,128,0.12)
+      RW->>RDB: weekly_report COMPLETED + report_item·evidence·report_file
+      RW->>RDB: outbox_event (report.completed)
+    end
+  else 처리 실패
+    rect rgba(128,128,128,0.12)
+      RW->>RDB: weekly_report FAILED (failure_reason)
+      RW->>RDB: outbox_event (report.failed)
+    end
+  end
+  RW->>MQ: ACK
+  RW-)MQ: events.topic / report.started·completed·failed (OutboxRelay)
+  MQ-)C: core.report.events 소비
+  C->>CDB: processed_event 저장 (중복이면 무시)
+  C->>CDB: report_job 조건부 전이 (started: QUEUED → RUNNING / completed·failed: QUEUED·RUNNING → COMPLETED·FAILED + report_id)
+  opt report.completed
+    C->>C: NotificationService.notify (REPORT_COMPLETED, source_event_id)
+  end
+```
+
+- 소비 실패(예외)는 NACK → 지연 재시도 N회 → `report.report.generate.dlq` (아키텍처 1.6, `definitions.json`)
+- `report.started`보다 `report.completed`가 먼저 도착해도 `QUEUED → COMPLETED` 허용 (상태 다이어그램 4.1)
+- KEDA가 `report.report.generate` 큐 길이로 report-worker 0~N 확장
+
+### 6.2 알림 전달 (SSE 다중 레플리카)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C1 as core (소비 레플리카)
+  participant CDB as core_db
+  participant R as Redis
+  participant C2 as core (SSE 연결 레플리카)
+  participant W as Web
+
+  W->>C2: GET /notifications/stream (SSE 연결 유지)
+  C2->>R: SUBSCRIBE notifications
+  C1->>CDB: notification INSERT QUEUED (UK user_id·type·source_event_id, 중복 시 무시)
+  alt 새로 생성됨
+    C1->>CDB: QUEUED → RUNNING
+    C1->>R: PUBLISH {userId, notificationId}
+    alt 발행 성공
+      C1->>CDB: RUNNING → COMPLETED
+      R-->>C2: 메시지
+      C2-->>W: event notification (제목·링크만, 원문·결제 정보 없음)
+    else Redis 오류
+      C1->>CDB: RUNNING → FAILED (failure_reason, 관리자 재처리 대상)
+    end
+  end
+  Note over W,C2: 재연결 시 GET /notifications?unreadOnly=true 로 누락분 조회
+```
+
+### 6.3 조회·다운로드
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web
+  participant C as core
+  participant RA as report-api
+  participant S3 as S3
+
+  W->>C: GET /reports/{reportId}/download?format=pdf
+  C->>C: GuardianshipService.authorizeLinkedChildren → X-Student-Scope = 연결 자녀 전체
+  C->>RA: GET /internal/reports/{reportId}/files/pdf
+  RA->>RA: weekly_report.student_id ∈ X-Student-Scope 검사
+  alt 범위 밖
+    RA-->>C: 403 FORBIDDEN
+    C-->>W: 403 CHILD_NOT_LINKED
+  else
+    RA->>S3: presigned URL 발급 (단기)
+    RA-->>C: {url, expiresAt}
+    C-->>W: 200 {url, expiresAt}
+    W->>S3: GET url
+  end
+```
+
+- `reportId`처럼 경로에 자녀 ID가 없는 API는 core가 연결 자녀 전체를 범위로 전달하고, 소유 서비스(report-api)가 리소스의 학생 ID로 검사
+- 상세 조회 시 core가 `report_view` 저장 (열람률 지표)
+- 재생성(`/regenerate`): 새 `report_job(REGENERATE)` + outbox → 6.1과 같은 흐름, `weekly_report.revision` 증가 (보존 방식 `[P06]` `[P09]`)
+
+---
+
+## 7. 결제·구독 (토스페이먼츠 테스트)
+
+### 7.1 주문·승인
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web (결제위젯)
+  participant C as core
+  participant DB as core_db
+  participant T as Toss
+
+  W->>C: POST /orders {productId, childId} (Idempotency-Key)
+  C->>DB: 연결 자녀 확인, 활성 구독(ACTIVE·RENEWAL_FAILED) 확인
+  alt 중복 구독
+    C-->>W: 409 SUBSCRIPTION_DUPLICATE
+  else
+    C->>DB: payment_order 저장 (INITIAL, amount)
+    C-->>W: orderId·amount·위젯 파라미터
+  end
+  W->>T: 결제위젯 결제 요청
+  T-->>W: successUrl (paymentKey, orderId, amount)
+  W->>C: POST /payments/confirm (Idempotency-Key)
+  C->>DB: order.amount·대상 자녀 대조
+  alt 금액 불일치
+    C-->>W: 422 PAYMENT_AMOUNT_MISMATCH
+  else
+    C->>T: POST 결제 승인 API (트랜잭션 밖)
+    alt 승인 성공
+      C->>DB: payment APPROVED 저장 (order_id UK)
+      alt 구독 반영 성공
+        rect rgba(128,128,128,0.12)
+          C->>DB: subscription ACTIVE 생성·기간 설정
+          C->>DB: payment_order.subscription_id 연결, entitlement APPLIED
+        end
+        C-->>W: 200 APPROVED + subscription
+      else 구독 반영 실패
+        C->>DB: payment APPROVED 유지, entitlement RECOVERY_REQUIRED
+        C-->>W: 200 APPROVED (권한 반영 처리 중)
+        Note over C: 추가 청구 없이 SubscriptionService.recoverEntitlement 재시도
+      end
+    else 응답 지연·불명확 (타임아웃)
+      C->>DB: payment CONFIRMING
+      C-->>W: 202 CONFIRMING (재결제 안내 금지)
+    else 승인 실패
+      C->>DB: payment FAILED (failure_code)
+      C-->>W: 실패 안내
+    end
+  end
+```
+
+### 7.2 상태 확인·웹훅
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant T as Toss
+  participant C as core
+  participant DB as core_db
+  participant SCH as core 스케줄러
+
+  T->>C: POST /webhooks/tosspayments (transmission_id)
+  C->>DB: pg_webhook_event INSERT (transmission_id UK, 충돌 시 기존 행 조회)
+  alt 기존 행 result = APPLIED·IGNORED (처리 완료 통지)
+    C-->>T: 200
+  else 새 통지 또는 기존 FAILED·미처리
+    C->>T: 결제 조회 API (본문 미신뢰)
+    T-->>C: 실제 상태
+    alt 상태 반영 대상
+      C->>DB: payment 상태 갱신 (CONFIRMING → APPROVED·FAILED 등) + 구독 반영
+      C->>DB: pg_webhook_event APPLIED·processed_at
+    else 변경 없음
+      C->>DB: pg_webhook_event IGNORED·processed_at
+    end
+    C-->>T: 200
+  end
+  opt 처리 중 오류
+    C->>DB: pg_webhook_event FAILED
+    C-->>T: 5xx (PG 재전송 시 위 분기로 재처리)
+  end
+  SCH->>DB: payment CONFIRMING 조회 (status, updated_at)
+  SCH->>T: 결제 조회 API
+  SCH->>DB: 상태 확정
+```
+
+### 7.3 정기 청구·해지
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant SCH as core 스케줄러
+  participant DB as core_db
+  participant T as Toss
+  participant N as NotificationService
+
+  SCH->>SCH: @SchedulerLock 획득
+  SCH->>DB: subscription 조회 (auto_renew, next_billing_date ≤ 오늘)
+  loop 대상 구독마다
+    SCH->>DB: payment_order 저장 (RENEWAL, billing_period_start) — 부분 UK로 이중 청구 방지
+    alt UK 충돌 + 기존 결제 APPROVED·CONFIRMING
+      SCH->>SCH: 건너뜀
+    else 신규 주문 또는 UK 충돌 + 기존 결제 FAILED (재청구 [P13], 11장 가정)
+      SCH->>T: 빌링키 자동결제 API
+      alt 성공
+        SCH->>DB: payment APPROVED, subscription 기간 연장·next_billing_date 갱신
+      else 실패
+        SCH->>DB: payment FAILED, subscription RENEWAL_FAILED (retry_count·grace_until [P13])
+        SCH->>N: SUBSCRIPTION_CHANGED 알림
+      end
+    end
+  end
+  SCH->>DB: auto_renew = false 이고 period_end 지난 구독 → CANCELED [P14]
+  SCH->>DB: RENEWAL_FAILED 이고 grace_until 지난 구독 → CANCELED [P13]
+```
+
+### 7.4 환불
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web (학부모)
+  participant AW as Web (관리자)
+  participant C as core
+  participant DB as core_db
+  participant T as Toss
+
+  W->>C: POST /payments/{id}/refund-requests (Idempotency-Key) [P14]
+  C->>DB: refund_request REQUESTED, payment REFUND_REVIEW
+  alt 관리자 반려
+    AW->>C: POST /admin/refund-requests/{id}/reject {reason}
+    C->>DB: refund_request REJECTED (decided_by, reject_reason), payment REFUND_REVIEW → APPROVED
+    C->>DB: audit_log 기록
+    C-->>AW: 결과
+  else 관리자 승인
+    AW->>C: POST /admin/refund-requests/{id}/approve (PAYMENT_REFUND, Idempotency-Key)
+    C->>DB: 승인 합계 + 요청 금액 ≤ payment.amount 확인
+    alt 초과·중복
+      C-->>AW: 409 REFUND_NOT_ALLOWED
+    else
+      C->>DB: refund_request APPROVED (decided_by)
+      C->>T: 결제 취소 API (amount)
+      alt PG 성공
+        C->>DB: refund_request COMPLETED, payment REFUNDED, 구독 기간·권한 반영 [P14]
+      else PG 실패
+        C->>DB: refund_request FAILED (pg_status), payment REFUND_REVIEW → APPROVED
+      end
+      C->>DB: audit_log 기록
+      C-->>AW: 결과
+    end
+  end
+```
+
+- PG 취소 응답이 불명확하면 PG 조회로 확정 후 반영 (재취소 요청 금지, FN-ADM-16)
+
+---
+
+## 8. 오류 신고·정정
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web (학생·학부모)
+  participant AW as Web (관리자)
+  participant C as core
+  participant DB as core_db
+  participant L as learning
+
+  W->>C: POST /error-reports {targetType: JUDGMENT, targetId, comment} (Idempotency-Key)
+  C->>DB: error_report RECEIVED
+  AW->>C: PATCH /admin/error-reports/{id} {status: IN_REVIEW}
+  C->>DB: RECEIVED → IN_REVIEW
+  AW->>C: POST /admin/error-reports/{id}/corrections {reason, corrected}
+  C->>L: POST /internal/judgments/{judgmentId}/corrections (Idempotency-Key)
+  L->>L: judgment_correction 추가 (기존 판정·원본 답변 불변)
+  L-->>C: 201
+  rect rgba(128,128,128,0.12)
+    C->>DB: correction 저장 (impact: 대화·집계·리포트 반영 여부)
+    C->>DB: error_report RESOLVED + audit_log
+  end
+  C->>C: NotificationService.notify (ERROR_REPORT_RESOLVED)
+```
+
+- 접수만으로 판정을 바꾸지 않음 (FN-SUP-02). 정정 없이 종료하는 경우 `IN_REVIEW → RESOLVED`만 수행
+
+---
+
+## 9. 모델·프롬프트 버전 활성화
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant AW as Web (관리자)
+  participant C as core
+  participant DB as core_db
+  participant MQ as RabbitMQ
+  participant A1 as ai Pod 1
+  participant A2 as ai Pod 2
+  participant S as scoring Pod
+
+  Note over A1,S: 기동 시
+  A1->>MQ: exclusive·auto-delete 큐 선언 → events.topic model.version.* 바인딩
+  A1->>C: GET /internal/model-versions/active
+  alt core 조회 실패
+    A1->>A1: readiness false 유지, 재시도 (프로세스 종료 안 함)
+  else
+    C-->>A1: 활성 버전 → ActiveVersions.replace → readiness true
+  end
+
+  AW->>C: POST /admin/model-versions/{id}/activate
+  C->>C: 승인 조건 확인 (eval_result, NFR-AIQ-05)
+  rect rgba(128,128,128,0.12)
+    C->>DB: 기존 ACTIVE → INACTIVE, 대상 → ACTIVE (부분 UK)
+    C->>DB: audit_log (MODEL_ACTIVATE)
+    C->>DB: outbox_event (model.version.activated)
+  end
+  C-)MQ: events.topic / model.version.activated
+  par 모든 레플리카 수신
+    MQ-)A1: Pod별 큐
+    A1->>A1: ActiveVersions 교체
+  and
+    MQ-)A2: Pod별 큐
+    A2->>A2: ActiveVersions 교체
+  and
+    MQ-)S: Pod별 큐
+    S->>S: ModelRegistry 가중치 로딩 (S3) → 교체
+  end
+```
+
+- 롤백(`/rollback`): 이전 승인 버전 재활성화로 같은 흐름, 재분석 여부는 `audit_log.detail` 기록 (FN-ADM-18)
+- 기준표(`kind = RUBRIC`) 행은 core 레지스트리의 승인·활성 기록만 담당. learning은 이 이벤트를 소비하지 않으며, `judge_verified`·현재 기준표 버전 반영은 관리자 미션 API(`/admin/missions/...`)로 별도 수행
+
+---
+
+## 10. 학생 삭제 전파·LLM 사용량
+
+### 10.1 `student.deleted`
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web (학부모)
+  participant C as core
+  participant CDB as core_db
+  participant MQ as RabbitMQ
+  participant L as learning
+  participant RW as report-worker
+
+  W->>C: POST /children/{childId}/deletion-requests {scope}
+  C->>CDB: deletion_request REQUESTED
+  Note over C: 확인 절차 후 [P09]
+  rect rgba(128,128,128,0.12)
+    C->>CDB: deletion_request CONFIRMED (scope = PROFILE면 student DELETION_REQUESTED)
+    C->>CDB: outbox_event (student.deleted, subject = studentId)
+  end
+  C-)MQ: events.topic / student.deleted
+  par
+    MQ-)L: learning.student.deleted
+    L->>L: processed_event 확인 → attempt 이하 삭제 + deleted_student 저장
+  and
+    MQ-)RW: report.student.deleted
+    RW->>RW: processed_event 확인 → weekly_report·S3 파일 삭제
+  end
+  Note over C: 완료 확인 방식 [P09] → deletion_request COMPLETED, student DELETED
+```
+
+### 10.2 `llm.usage.recorded`
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant A as ai·scoring
+  participant MQ as RabbitMQ
+  participant C as core
+  participant DB as core_db
+
+  A->>A: LLM 호출(ai LlmClient)·모델 추론(scoring) 완료 (토큰·지연·성공 여부)
+  A-)MQ: events.topic / llm.usage.recorded (학생 ID·원문 없음, best-effort)
+  MQ-)C: core.llm.usage.recorded
+  C->>DB: llm_usage INSERT (event_id UK, 중복 무시), cost_usd = 설정 단가로 계산
+```
+
+---
+
+## 11. 확인 필요 가정
+- `[P04]` 마무리 조건, `[P06]` 주 경계·생성 시각·재생성 보존, `[P09]` 삭제 확인·완료 판정, `[P12]` 타임아웃·리스·재시도 값, `[P13]` `[P14]` 갱신 실패·해지·환불 기준, `[P16]` 대체 응답은 분기 자리만 표시
+- `student.deleted` 완료 확인: learning·report가 완료 이벤트를 발행하지 않음(learning 발행 없음 원칙). 확정 전 가정은 core가 이벤트 발행 시점에 `CONFIRMED`까지만 관리
+- `report.started`·`report.completed` 순서 역전 허용 (상태 다이어그램 4.1)
+- 학생 진입 세션 `[P01]` 흐름은 확정 후 2장에 추가
+- 정기 청구 재시도(7.3): ERD 부분 UK `(subscription_id, billing_period_start) WHERE kind = 'RENEWAL'` 때문에 같은 기간 새 주문 불가. 가정은 "기존 주문의 결제가 `FAILED`면 같은 주문으로 재청구". PG 주문번호 재사용 가능 여부 확인 후 ERD 반영 필요 `[P13]`
+- `NO_RECORD` 주 리포트(6.1): ai 서술 호출 생략 여부 미정. 확정 전에는 호출하고 서술에서 기록 없음 안내
+- 웹훅 처리 실패 시 5xx 응답으로 PG 재전송 유도(7.2): 토스페이먼츠 재전송 정책 확인 필요
