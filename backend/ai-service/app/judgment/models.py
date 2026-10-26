@@ -38,7 +38,7 @@ class JudgmentRequest(ApiModel):
     answer_text: str
     # 고르기·수학 최종 답은 learning 규칙 판정, ai는 서술·논술만 (아키텍처 1.5)
     input_type: Literal["NARRATIVE", "ESSAY"]
-    grade: int = Field(ge=1, le=9)  # 초1 = 1 … 중3 = 9
+    grade: int = Field(ge=3, le=6)  # 지원 학년 초3~6 (P03)
     rubric: Rubric
     versions: Versions = Field(default_factory=Versions)
 

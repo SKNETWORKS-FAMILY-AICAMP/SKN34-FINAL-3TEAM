@@ -2,6 +2,7 @@ import asyncio
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from app.config import Settings
 from app.errors import ApiError
@@ -46,8 +47,8 @@ def question(text: str) -> GeneratedQuestion:
     return GeneratedQuestion(question=text)
 
 
-def create(llm: FakeLlm, request: FollowupRequest | None = None):
-    service = FollowupService(llm, Settings(internal_token="t"))
+def create(llm: FakeLlm, request: FollowupRequest | None = None, **settings: Any):
+    service = FollowupService(llm, Settings(internal_token="t", **settings))
     return asyncio.run(service.create(request or make_request()))
 
 
@@ -64,7 +65,7 @@ def test_type_follows_judgment_result(result: str, followup_type: str) -> None:
     response = create(FakeLlm(question("왜 그렇게 생각했어?")), make_request(result))
     assert response.type == followup_type
     assert (response.source, response.leak_check.passed) == ("LLM", True)
-    assert response.versions.model_dump() == {"model": "fake-model", "prompt": "followup@2"}
+    assert response.versions.model_dump() == {"model": "fake-model", "prompt": "followup@3"}
 
 
 def test_leaked_question_is_regenerated_as_llm_retry() -> None:
@@ -78,16 +79,36 @@ def test_leaked_question_is_regenerated_as_llm_retry() -> None:
     assert "집중력 향상 때문일까?" in llm.requests[1].user
 
 
-def test_repeated_leak_is_503_and_leaked_question_is_not_returned() -> None:
-    llm = FakeLlm(*[question("쉬는 시간이 길면 친구와 더 친해지고 그럴까?")] * 3)
-    with pytest.raises(ApiError) as exc:
-        create(llm)
-    assert (exc.value.status, exc.value.code, exc.value.extra) == (
-        503,
-        "AI_UNAVAILABLE",
-        {"retryable": True},
-    )
-    assert len(llm.requests) == 3  # 최초 1회 + 재생성 2회
+def no_question(response) -> tuple:
+    return (response.question, response.source, response.leak_check.passed)
+
+
+def test_repeated_leak_returns_no_question_for_bank() -> None:
+    # P16: 재생성 1회까지 유출이면 질문 없이 passed=false → learning이 질문 은행 사용
+    llm = FakeLlm(*[question("쉬는 시간이 길면 친구와 더 친해지고 그럴까?")] * 2)
+    response = create(llm)
+    assert no_question(response) == (None, "LLM_RETRY", False)
+    assert response.type == "TELL_MORE"
+    assert len(llm.requests) == 2  # 최초 1회 + 재생성 1회
+
+
+def test_regeneration_failure_falls_back_to_bank_not_503() -> None:
+    llm = FakeLlm(question("집중력 향상 때문일까?"), LlmError("LLM_TIMEOUT", retryable=True))
+    assert no_question(create(llm)) == (None, "LLM_RETRY", False)
+
+
+def test_no_regeneration_after_deadline() -> None:
+    # 첫 생성에 마감 시간을 다 써 버리면 재생성 요청 없이 질문 은행으로
+    llm = FakeLlm(question("집중력 향상 때문일까?"), question("다시 만든 질문"), delay=0.2)
+    response = create(llm, followup_deadline=0.1)
+    assert no_question(response) == (None, "LLM_RETRY", False)
+    assert len(llm.requests) == 1
+
+
+def test_llm_timeout_is_cut_to_remaining_deadline() -> None:
+    llm = FakeLlm(question("왜 그렇게 생각했어?"))
+    create(llm, followup_deadline=5)
+    assert 4 < llm.requests[0].timeout <= 5  # LLM 1회 15초보다 남은 시간이 짧으면 남은 시간
 
 
 def test_empty_question_is_regenerated() -> None:
@@ -111,15 +132,21 @@ def test_example_answer_is_not_sent_but_banned_terms_are() -> None:
 
 
 @pytest.mark.parametrize(
-    ("grade", "label", "style"),
-    [(1, "초1", "아주 짧은 한 문장"), (5, "초5", "한두 문장"), (8, "중2", "중학생")],
+    ("grade", "style"),
+    [(3, "짧은 한 문장"), (4, "짧은 한 문장"), (5, "한 문장 위주"), (6, "한 문장 위주")],
 )
-def test_prompt_follows_grade(grade: int, label: str, style: str) -> None:
+def test_prompt_follows_grade(grade: int, style: str) -> None:
     llm = FakeLlm(question("왜 그렇게 생각했어?"))
     create(llm, make_request(grade=grade))
     prompt = llm.requests[0].user
-    assert f"학년: {label}" in prompt
+    assert f"학년: 초{grade}" in prompt
     assert style in prompt
+
+
+@pytest.mark.parametrize("grade", [2, 7])
+def test_grade_outside_supported_range_is_rejected(grade: int) -> None:
+    with pytest.raises(ValidationError):
+        make_request(grade=grade)  # 지원 학년 초3~6 (P03)
 
 
 def test_thinking_direction_only_for_one_step_more() -> None:

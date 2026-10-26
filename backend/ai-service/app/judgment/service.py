@@ -18,8 +18,6 @@ from app.judgment.models import (
 )
 from app.llm.base import LlmClient, LlmUnavailable
 
-LOWER_GRADES = 2  # 초1~2 서술은 판정 보류 (FN-JDG-04)
-
 
 class JudgmentService:
     def __init__(self, llm: LlmClient, settings: Settings) -> None:
@@ -64,8 +62,7 @@ class JudgmentService:
     def _held_before_llm(self, request: JudgmentRequest) -> HeldReason | None:
         if verifier.visible_length(request.answer_text) < self._settings.judge_min_answer_length:
             return "TOO_SHORT"
-        if request.grade <= LOWER_GRADES:
-            return "UNVERIFIED_SCOPE"
+        # 지원 학년이 초3~6(P03)이라 학년 보류는 없음, 미검증 요소만 확인
         if self._settings.judge_require_verified and not all(
             element.judge_verified for element in request.rubric.elements
         ):

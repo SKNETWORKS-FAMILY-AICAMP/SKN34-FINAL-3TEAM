@@ -2,6 +2,7 @@ import asyncio
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from app.config import Settings
 from app.errors import ApiError
@@ -174,7 +175,6 @@ def test_held_after_llm_has_no_elements(items: tuple, reason: str) -> None:
     ("overrides", "settings", "reason"),
     [
         ({"answerText": " 몰 라 요 "}, {}, "TOO_SHORT"),
-        ({"grade": 2}, {}, "UNVERIFIED_SCOPE"),
         ({}, {"judge_require_verified": True}, "UNVERIFIED_SCOPE"),
     ],
 )
@@ -212,3 +212,14 @@ def test_prompt_has_no_student_identifiers() -> None:
     judge(llm)
     prompt = llm.requests[0].user
     assert ANSWER in prompt and "m-12@3" not in prompt
+
+
+@pytest.mark.parametrize("grade", [2, 7])
+def test_grade_outside_supported_range_is_rejected(grade: int) -> None:
+    with pytest.raises(ValidationError):
+        make_request(grade=grade)  # 지원 학년 초3~6 (P03), 초1~2 보류 규칙은 문서에서 삭제됨
+
+
+def test_lowest_supported_grade_is_judged() -> None:
+    llm = FakeLlm(extraction(("e1", "FOUND", "나는 찬성해"), ("e2", "NOT_FOUND", None)))
+    assert judge(llm, make_request(grade=3)).result == "PARTIAL"

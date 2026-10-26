@@ -55,7 +55,7 @@ class FollowupRequest(ApiModel):
     judgment: JudgmentSummary
     rubric: FollowupRubric
     mission: Mission
-    grade: int = Field(ge=1, le=9)  # 판정 요청과 같은 체계, 초1 = 1 … 중3 = 9. 질문 말투에 사용
+    grade: int = Field(ge=3, le=6)  # 지원 학년 초3~6 (P03). 질문 말투에 사용
 
 
 class LeakCheck(ApiModel):
@@ -69,7 +69,8 @@ class LlmVersions(ApiModel):
 
 class FollowupResponse(ApiModel):
     type: FollowupType
-    question: str
+    # 재생성도 유출·실패면 None → learning이 같은 type의 질문 은행 질문 사용 (P16)
+    question: str | None
     source: Literal["LLM", "LLM_RETRY"]
     leak_check: LeakCheck
     versions: LlmVersions

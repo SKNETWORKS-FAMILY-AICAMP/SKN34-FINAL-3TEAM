@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from app.followup.models import FollowupRequest, FollowupType, ThinkingType
 
-PROMPT_VERSION = "followup@2"
+PROMPT_VERSION = "followup@3"
 
 TYPE_GUIDE: dict[FollowupType, str] = {
     "ONE_STEP_MORE": "한 걸음 더: 이미 잘 쓴 생각을 더 넓히거나 깊게 하도록",
@@ -27,10 +27,11 @@ THINKING_DIRECTION: dict[ThinkingType, str] = {
 }
 
 SYSTEM = """\
-너는 초등·중학생이 스스로 생각을 더 펼치도록 돕는 질문을 하나 만든다.
+너는 초등학생이 스스로 생각을 더 펼치도록 돕는 질문을 하나 만든다.
 
 규칙
-- 질문은 하나. "학년에 맞는 말투"를 따르고, 친근한 반말로 묻는다.
+- 한 번에 한 가지만 묻는다. "~하고 ~도 말해 줘"처럼 두 가지를 묶어 묻지 않는다.
+- "학년에 맞는 말투"를 따르고, 친근한 반말로 묻는다.
 - 학생 답에 실제로 쓴 내용에서 출발한다. 이미 했던 질문을 되풀이하지 않는다.
 - 정답이나 답의 내용을 알려 주거나 암시하지 않는다. "쓰지 말 표현"은 어떤 형태로도 쓰지 않는다.
 - 답을 대신 써 주거나, 문장을 고쳐 주거나, 맞춤법을 지적하지 않는다.
@@ -43,22 +44,11 @@ class GeneratedQuestion(BaseModel):
     question: str
 
 
-def grade_label(grade: int) -> str:
-    return f"초{grade}" if grade <= 6 else f"중{grade - 6}"
-
-
 def grade_style(grade: int) -> str:
-    if grade <= 2:
-        # 초1~2 목표는 생각·느낌 표현과 쓰기 흥미, 보호자 받아쓰기로 입력 (기획서 5장)
-        return (
-            "아주 짧은 한 문장, 아이가 매일 쓰는 쉬운 낱말만. "
-            "생각이나 느낌을 말로 편하게 꺼내도록 묻고, 짧게 소리 내어 대답할 수 있게 한다"
-        )
+    """지원 학년 초3~6 (P03), 기획서 학년군(초3~4·초5~6) 기준."""
     if grade <= 4:
-        return "한 문장, 쉬운 낱말. 어려운 한자어는 풀어서 쓴다"
-    if grade <= 6:
-        return "한두 문장, 초등 고학년이 이해하는 낱말"
-    return "한두 문장, 중학생 수준의 낱말"
+        return "짧은 한 문장, 쉬운 낱말. 어려운 한자어는 풀어서 쓴다"
+    return "한 문장 위주, 초등 고학년이 이해하는 낱말"
 
 
 def build_user(request: FollowupRequest, followup_type: FollowupType, rejected: list[str]) -> str:
@@ -66,7 +56,7 @@ def build_user(request: FollowupRequest, followup_type: FollowupType, rejected: 
     lines = [
         f"미션: {request.mission.title}",
         f"미션 질문: {request.mission.question}",
-        f"학년: {grade_label(request.grade)}",
+        f"학년: 초{request.grade}",
         f"학년에 맞는 말투: {grade_style(request.grade)}",
         "",
         f"만들 질문 유형: {TYPE_GUIDE[followup_type]}",

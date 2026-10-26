@@ -30,7 +30,7 @@ def test_followup_response_uses_camel_case() -> None:
         "question": "문제를 다시 읽어 볼까?",
         "source": "LLM",
         "leakCheck": {"passed": True},
-        "versions": {"model": "fake-model", "prompt": "followup@2"},
+        "versions": {"model": "fake-model", "prompt": "followup@3"},
     }
 
 

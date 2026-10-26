@@ -1,9 +1,13 @@
 """되묻기 흐름: 판정 결과로 유형 결정 → LLM 질문 생성 → 유출 검사, 실패 시 재생성 (FN-JDG-06·07).
 
-재생성까지 유출되면 유출된 질문을 내보내지 않고 503 (중립 질문 은행 [P16]은 범위 밖).
+- 첫 생성이 LLM 실패면 503 (처리 실패, 재요청)
+- 유출이면 1회 재생성(LLM_RETRY). 재생성도 유출이거나 실패·마감 초과면 question 없이
+  leakCheck.passed = false → learning이 질문 은행(BANK)에서 같은 유형 질문 선택 (P16)
+- 전체를 followup_deadline 안에 끝내 learning→ai 타임아웃(P12)에 걸리지 않게 함
 """
 
 import logging
+import time
 
 from app.config import Settings
 from app.errors import ApiError
@@ -34,8 +38,10 @@ class FollowupService:
         self._settings = settings
 
     async def create(self, request: FollowupRequest) -> FollowupResponse:
+        deadline = time.monotonic() + self._settings.followup_deadline
         followup_type = TYPE_BY_RESULT[request.judgment.result]
         student_answers = [item.text for item in request.timeline if item.kind == "ANSWER"]
+        versions = LlmVersions(model=self._llm.model, prompt=prompts.PROMPT_VERSION)
         rejected: list[str] = []
         leaks: list[str] = []
         for attempt in range(self._settings.followup_leak_max_retries + 1):
@@ -47,11 +53,16 @@ class FollowupService:
                     call_type="FOLLOWUP",
                     prompt_version=prompts.PROMPT_VERSION,
                     max_tokens=1024,
+                    deadline=deadline,
                 )
             except LlmUnavailable as exc:
-                raise ApiError(
-                    503, "AI_UNAVAILABLE", "AI 처리 실패", retryable=exc.retryable
-                ) from exc
+                if attempt == 0:
+                    raise ApiError(
+                        503, "AI_UNAVAILABLE", "AI 처리 실패", retryable=exc.retryable
+                    ) from exc
+                logger.warning("되묻기 재생성 실패, 질문 은행으로: code=%s", exc.code)
+                break
+            versions = LlmVersions(model=generated.model, prompt=prompts.PROMPT_VERSION)
             question = generated.data.question.strip()
             leaks = leak_guard.find_leaks(
                 question,
@@ -65,8 +76,14 @@ class FollowupService:
                     question=question,
                     source="LLM" if attempt == 0 else "LLM_RETRY",
                     leak_check=LeakCheck(passed=True),
-                    versions=LlmVersions(model=generated.model, prompt=prompts.PROMPT_VERSION),
+                    versions=versions,
                 )
             rejected.append(question)
-        logger.warning("되묻기 유출 검사 반복 실패: leaks=%s", leaks)
-        raise ApiError(503, "AI_UNAVAILABLE", "AI 처리 실패", retryable=True)
+        logger.warning("되묻기 유출 검사 재실패, 질문 은행으로: leaks=%s", leaks)
+        return FollowupResponse(
+            type=followup_type,
+            question=None,
+            source="LLM_RETRY",
+            leak_check=LeakCheck(passed=False),
+            versions=versions,
+        )
