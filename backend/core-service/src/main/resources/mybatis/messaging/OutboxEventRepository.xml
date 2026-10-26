@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core._common.messaging.OutboxEventRepository">
+
+    <insert id="insert">
+        INSERT INTO outbox_event (id, event_type, routing_key, subject, payload, created_at)
+        VALUES (#{id}, #{eventType}, #{routingKey}, #{subject}, #{payload}::jsonb, #{createdAt})
+    </insert>
+
+    <!-- 생성자 순서와 컬럼 순서 일치 -->
+    <select id="findUnpublished" resultType="com.sagomungchi.core._common.messaging.OutboxEvent">
+        SELECT id, event_type, routing_key, subject, payload::text AS payload, created_at
+        FROM outbox_event
+        WHERE published_at IS NULL
+        ORDER BY created_at
+        LIMIT #{limit}
+        FOR UPDATE SKIP LOCKED
+    </select>
+
+    <update id="markPublished">
+        UPDATE outbox_event SET published_at = #{publishedAt} WHERE id = #{id}
+    </update>
+</mapper>

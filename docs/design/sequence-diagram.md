@@ -474,7 +474,7 @@ sequenceDiagram
   end
 ```
 
-- 소비 실패(예외)는 NACK → 지연 재시도 3회(1·5·15분, P12) → `report.report.generate.dlq` (아키텍처 1.6, `definitions.json`)
+- 소비 실패(예외)는 `report.report.generate.retry.1~3` 경유 지연 재시도 3회(1·5·15분, P12) → `report.report.generate.dlq` (아키텍처 1.6, `definitions.json`)
 - `report.started`보다 `report.completed`가 먼저 도착해도 `QUEUED → COMPLETED` 허용 (상태 다이어그램 4.1)
 - KEDA가 `report.report.generate` 큐 길이로 report-worker 0~N 확장
 
@@ -829,7 +829,7 @@ sequenceDiagram
 ---
 
 ## 11. 확인 필요 가정
-- `student.deleted` 완료 확인: learning 이벤트 발행 없음 원칙에 따라 이벤트 대신 core 내부 API로 완료 보고(10.1). 보고 호출 실패 시 메시지 NACK → 재전달 → 삭제는 멱등이라 다시 보고 (P09)
+- `student.deleted` 완료 확인: learning 이벤트 발행 없음 원칙에 따라 이벤트 대신 core 내부 API로 완료 보고(10.1). 보고 호출 실패 시 지연 재시도(1·5·15분)로 재전달 → 삭제는 멱등이라 다시 보고 (P09)
 - `report.started`·`report.completed` 순서 역전 허용 (상태 다이어그램 4.1)
 - 정기 청구 재시도(7.3): ERD 부분 UK `(subscription_id, billing_period_start) WHERE kind = 'RENEWAL'` 때문에 같은 기간 새 주문 불가. 가정은 "기존 주문의 결제가 `FAILED`면 같은 주문으로 재청구". PG 주문번호 재사용 가능 여부 확인 후 ERD 반영 필요
 - 웹훅 처리 실패 시 5xx 응답으로 PG 재전송 유도(7.2): 토스페이먼츠 재전송 정책 확인 필요
