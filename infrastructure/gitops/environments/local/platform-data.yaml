@@ -1,0 +1,76 @@
+# Use with release platform-data, namespace platform, context kind-sagomungchi-local.
+existingSecret: "platform-data-credentials"
+storageClassName: null
+
+postgres:
+  enabled: true
+  persistence:
+    size: "2Gi"
+  settings:
+    sharedBuffers: "64MB"
+    maxConnections: 40
+    workMem: "2MB"
+    maintenanceWorkMem: "32MB"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+rabbitmq:
+  persistence:
+    size: "2Gi"
+  memoryHighWatermark: "1073741824"
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "2Gi"
+  initialization:
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "250m"
+        memory: "128Mi"
+
+redis:
+  persistence:
+    size: "512Mi"
+  maxMemory: "128mb"
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "250m"
+      memory: "256Mi"
+
+minio:
+  enabled: true
+  persistence:
+    size: "2Gi"
+  buckets:
+    missions: "sagomungchi-local-missions"
+    reports: "sagomungchi-local-reports"
+    models: "sagomungchi-local-models"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
+  initialization:
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "250m"
+        memory: "128Mi"

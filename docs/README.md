@@ -41,6 +41,8 @@
   - [이슈 #5 DB 변경 대상 검토표](report/erd-change-targets-step1.md): 구현 항목, 조장 확인 항목, 후속 기능과 분류 이유
   - [이슈 #5 DB 스키마 구현·검증](report/db-schema-validation.md): 기술 결정, 마이그레이션 결과와 검증 재현 방법
   - [이슈 #13 DB 마이그레이션 CI](report/db-schema-ci.md): 확정 정책 반영 후 검증 범위와 로컬·CI 실행 방법
+  - [이슈 #17 로컬 플랫폼 자원 설계](report/local-platform-resource-plan.md): 기준 PC와 CPU·메모리·볼륨 설정
+  - [이슈 #17 로컬 플랫폼 설계 변경 근거](report/local-platform-design-decisions.md): 버전·CNI·MinIO 배포 방식·초기화·자격 증명과 데이터 보존의 기술 근거
   - [이슈 #19 확정 정책 DB 스키마 수정](report/db-policy-schema.md): 변경 대상, 기존 데이터 전환 절차, 1~3단계 검증과 검토 순서
 
 ## 개발 규칙

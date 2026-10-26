@@ -14,7 +14,9 @@ docker compose up --build
 | scoring-service | http://localhost:8001 |
 | report-api | http://localhost:8002 |
 | RabbitMQ 관리 화면 | http://localhost:15672 |
+| MinIO API / 관리 화면 | http://localhost:9000 / http://localhost:9001 |
 
 - 포트 충돌(Windows 8000~8099 예약 등) 시 `.env`의 `*_HOST_PORT`로 변경
 - 웹: `cd frontend/web && npm install && npm run dev` (`/api` → core-service 프록시)
 - 개발 규칙: [docs/README.md](docs/README.md)
+- 로컬 Kubernetes: [kind 설정·설치](infrastructure/kind/README.md), [저장소·Secret 설정](infrastructure/gitops/charts/platform-data/README.md)
