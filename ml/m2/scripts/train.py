@@ -164,6 +164,12 @@ def main() -> None:
         ignore_mismatched_sizes=True,  # 출력 칸(9개 점수)은 새로 만듦
     ).to(device)
 
+    # 점수 칸의 시작값을 공부용 평균 점수(3점 언저리)로 맞춤.
+    # 0에서 시작하면 3점까지 올라오는 데만 학습을 꽤 써서, 짧게 돌리면 전부 1점이 나옴
+    head = [m for m in model.modules() if isinstance(m, torch.nn.Linear)][-1]
+    with torch.no_grad():
+        head.bias.copy_(torch.tensor(targets(sets["train"]).mean(axis=0)))
+
     loaders = {
         name: make_loader(
             part, tokenizer, args.max_length, args.batch_size, name == "train"
