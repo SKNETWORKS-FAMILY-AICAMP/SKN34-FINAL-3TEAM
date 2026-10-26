@@ -53,6 +53,7 @@ netsh interface ipv4 show excludedportrange protocol=tcp
 ## 설치 전 준비
 
 - Docker Desktop Linux Engine과 WSL 2가 필요하다. kind v0.33.0·Helm v4.3.1의 Windows amd64 공식 배포 파일과 checksum을 확인해서 도구를 준비한다.
+- Secret 준비 스크립트는 PowerShell 7 이상이 필요하며 Windows 기본 PowerShell 5.1에서는 실행할 수 없다. 미설치 시 `winget install --id Microsoft.PowerShell --source winget`으로 설치하고 새 터미널에서 `pwsh --version`으로 7 이상인지 확인한다. 스크립트는 아래 절차의 `pwsh -File` 명령으로 실행한다. [공식 설치 안내](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell-on-windows)를 따른다.
 - 기존 `sagomungchi-local` 클러스터·context가 있으면 생성 명령을 실행하기 전에 소유권과 상태를 확인한다. 삭제·덮어쓰기해서 진행하지 않는다.
 - [자원 설계](../../docs/report/local-platform-resource-plan.md)의 메모리·디스크 여유를 확보한다. 다른 작업의 컨테이너·WSL·프로그램을 자동으로 중단하거나 데이터를 정리하지 않는다.
 - 아래 명령은 저장소 루트에서 실행한다. API·HTTP·HTTPS는 loopback에서만 노출한다. 다른 PC·모바일 기기 접근은 별도 요구사항과 설계가 필요하다.
@@ -111,7 +112,7 @@ kubectl --context kind-sagomungchi-local wait --for=condition=Ready nodes --all 
 kubectl --context kind-sagomungchi-local -n platform get pods,jobs,pvc
 ```
 
-Compose를 중단할 때 업무 데이터를 유지하려면 `docker compose down`을 사용하고 `--volumes`를 붙이지 않는다. 기존 데이터 볼륨의 삭제와 클러스터 삭제는 별도의 작업으로 다룬다.
+Compose를 중단할 때 업무 데이터를 유지하려면 `docker compose down`을 사용하고 `--volumes`를 붙이지 않는다. 선택 MinIO도 실행했다면 `docker compose -f compose.yaml -f compose.minio.yaml down`으로 중단한다. 기존 데이터 볼륨의 삭제와 클러스터 삭제는 별도의 작업으로 다룬다.
 
 ## 이후 구현이 맞춰야 할 항목
 

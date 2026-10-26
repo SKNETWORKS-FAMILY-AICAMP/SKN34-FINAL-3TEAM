@@ -93,4 +93,11 @@ kubectl --context kind-sagomungchi-local -n platform get pods,jobs,pvc,services
 
 Pod Ready 외에 Job Complete, PostgreSQL DB 세 개, RabbitMQ의 기존 definitions와 실제 topology 일치, MinIO 버킷 세 개를 확인한다. 관리 화면은 `kubectl --context kind-sagomungchi-local -n platform port-forward svc/rabbitmq 15672:15672` 또는 `svc/minio 9001:9001`로 연결한다.
 
-Compose는 같은 `.env`를 사용해 `docker compose up --build`로 실행한다. 인프라만 확인할 때는 `docker compose up -d postgres rabbitmq redis minio` 후 `docker compose run --rm rabbitmq-init`, `docker compose run --rm minio-init`을 실행한다. MinIO API·콘솔은 기본 `127.0.0.1:9000`·`:9001`이며 포트 충돌 시 `.env`의 `MINIO_HOST_PORT`·`MINIO_CONSOLE_HOST_PORT`로 변경한다. 최소 서버 이미지에는 실행형 healthcheck 도구가 없으므로 Compose의 `minio-init`이 HTTP 준비 상태를 기다린다.
+Compose의 기본 앱은 같은 `.env`를 사용해 `docker compose up --build`로 실행하며 MinIO 계정은 필요하지 않다. PostgreSQL·RabbitMQ·Redis만 확인할 때는 `docker compose up -d postgres rabbitmq redis` 후 `docker compose run --rm rabbitmq-init`을 실행한다. MinIO는 [선택 실행 절차](../../../../README.md#minio-선택-실행)에 따라 별도 파일을 추가한다.
+
+```powershell
+docker compose -f compose.yaml -f compose.minio.yaml up -d minio
+docker compose -f compose.yaml -f compose.minio.yaml run --rm minio-init
+```
+
+MinIO API·콘솔은 기본 `127.0.0.1:9000`·`:9001`이며 포트 충돌 시 `.env`의 `MINIO_HOST_PORT`·`MINIO_CONSOLE_HOST_PORT`로 변경한다. 최소 서버 이미지에는 실행형 healthcheck 도구가 없으므로 Compose의 `minio-init`이 HTTP 준비 상태를 기다린다. kind 배포에서는 계속 여섯 계정 키와 로컬 values의 MinIO 설정을 사용한다.

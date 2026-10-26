@@ -76,46 +76,6 @@ services:
       timeout: 5s
       retries: 20
 
-  minio-data-init:
-    image: curlimages/curl:8.17.0
-    user: "0:0"
-    read_only: true
-    cap_drop: [ALL]
-    cap_add: [CHOWN]
-    volumes:
-      - minio-data:/data
-    entrypoint: [/bin/sh, -ec, 'chown 65532:65532 /data']
-
-  minio:
-    image: cgr.dev/chainguard/minio@sha256:98c819b873cbd455860c1fb5a9171a62b2f48d86554a4b2c6847e60a14a9ef30
-    depends_on:
-      minio-data-init:
-        condition: service_completed_successfully
-    cpus: 0.5
-    mem_limit: 1g
-    command: ["--certs-dir", "/tmp/certs", "server", "--address", ":9000", "--console-address", ":9001", "/data"]
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?.env 설정 필요}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?.env 설정 필요}
-    volumes:
-      - minio-data:/data
-    ports:
-      - "127.0.0.1:${MINIO_HOST_PORT:-9000}:9000"
-      - "127.0.0.1:${MINIO_CONSOLE_HOST_PORT:-9001}:9001"
-
-  minio-init:
-    image: curlimages/curl:8.17.0
-    depends_on:
-      minio:
-        condition: service_started
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?.env 설정 필요}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?.env 설정 필요}
-    volumes:
-      - ./infrastructure/gitops/charts/platform-data/files/minio/create-buckets.sh:/create-buckets.sh:ro
-    entrypoint: [/bin/sh, /create-buckets.sh]
-    command: [sagomungchi-local-missions, sagomungchi-local-reports, sagomungchi-local-models]
-
   # ---------- DB 마이그레이션 (일회성) ----------
   core-migrate:
     image: flyway/flyway:13.11.1-alpine
@@ -251,4 +211,3 @@ services:
 volumes:
   postgres-data:
   rabbitmq-data:
-  minio-data:

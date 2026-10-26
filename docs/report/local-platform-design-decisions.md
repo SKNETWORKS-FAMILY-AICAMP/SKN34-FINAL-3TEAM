@@ -34,6 +34,18 @@
 
 ## 초기화와 자격 증명
 
+### Compose MinIO 선택 실행
+
+MinIO 서비스 세 개(`minio-data-init`·`minio`·`minio-init`)와 `minio-data` 볼륨은 루트의 [compose.minio.yaml](../../compose.minio.yaml)에 둔다. 기본 [compose.yaml](../../compose.yaml)에는 MinIO 계정 참조를 두지 않아 기존 `.env`와 DB 스키마 검증용 환경 파일을 그대로 사용할 수 있게 한다. Compose는 파일 병합 전에 각 파일의 변수를 해석하므로 profile로 서비스 실행만 제외해도 `${VAR:?}` 필수값 검사를 피할 수 없다. 별도 파일 안에서는 필수값 검사를 유지한다.
+
+기본 앱 실행에서 현재 소비하지 않는 MinIO 이미지 다운로드·호스트 포트 바인딩·서버 메모리 상한 1GiB를 추가하지 않는다. MinIO가 필요할 때만 `-f compose.yaml -f compose.minio.yaml`을 지정하며, kind의 chart·자원값·버킷 구성은 유지한다. 실행과 초기화 절차는 [루트 README](../../README.md#minio-선택-실행)를 따른다.
+
+### Secret 준비 환경
+
+Secret 준비 스크립트는 PowerShell 7 이상에서 실행한다. 프로세스 인자 목록·UTF-8 stdin·JSON Hashtable 변환·프로세스 트리 종료 API를 사용하므로 Windows 기본 PowerShell 5.1에서 실행하는 방식으로 바꾸지 않는다. [kind 설치 전 준비](../../infrastructure/kind/README.md#설치-전-준비)에 설치와 버전 확인 절차를 제공한다. MinIO 사용자명은 3자 이상, 비밀번호는 8자 이상이어야 하며 `.env.example`에도 같은 조건을 안내한다.
+
+### 공통 초기화 규칙
+
 - RabbitMQ 계정을 먼저 기동한 뒤 Job이 관리 API로 기존 `definitions.json`을 반영한다. 계정을 JSON에 기록하지 않으면서 default-user 생성과 definitions 로딩 순서를 분리하기 위한 선택이다.
 - 큐·exchange·binding과 재시도 단계는 기존 JSON만 기준으로 사용한다. `default_queue_type`을 전역 quorum으로 강제하지 않아 Pod별 exclusive 브로드캐스트 큐와 충돌하지 않도록 한다.
 - PostgreSQL의 `init.sql`·RabbitMQ의 `definitions.json`은 원래 위치에 보존하고 Helm `.Files`와 Compose 마운트가 같은 파일을 읽는다. 추가 초기화 스크립트도 두 실행 경로가 공유한다.
@@ -51,3 +63,4 @@ StatefulSet·PVC로 프로그램 실행과 데이터를 분리하고, StatefulSe
 - [ingress-nginx 지원 버전](https://github.com/kubernetes/ingress-nginx#supported-versions-table), [종료 공지](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/), [kind v0.33.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0)
 - [Calico Kubernetes 요구사항](https://docs.tigera.io/calico/latest/getting-started/kubernetes/requirements), [native v3 CRD·admission 정책 조건](https://docs.tigera.io/calico/latest/operations/native-v3-crds)
 - [MinIO 커뮤니티 배포 방식](https://github.com/minio/minio#source-only-distribution), [Chainguard MinIO 배포본](https://images.chainguard.dev/directory/image/minio/overview), [curl SigV4](https://curl.se/docs/manpage.html#--aws-sigv4)
+- [Compose 변수 해석](https://docs.docker.com/reference/compose-file/interpolation/), [Compose 파일 병합](https://docs.docker.com/compose/how-tos/multiple-compose-files/merge/), [Windows PowerShell 7 설치](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell-on-windows)

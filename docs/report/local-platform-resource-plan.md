@@ -77,7 +77,7 @@ Docker의 현재 CPU·메모리 상한은 우선 유지한다. 상한을 늘려 
 2. 작성 완료 후 Helm lint·렌더링, Compose 설정 검사, 비밀 값 포함 여부와 `git diff --check`를 모아서 수행한다.
 3. kind를 실제 생성하고 노드 capacity·allocatable·시스템 Pod requests, 모든 저장소 Pod Ready와 초기화 Job 성공을 확인한다. DB 세 개·버킷 세 개·RabbitMQ topology와 지표 노출을 확인한다.
 4. CPU·메모리·디스크와 OOMKilled·재시작·CPU throttling·저장소 alarm을 확인한다. 대표 데이터는 합성 데이터로 DB 쓰기·조회, AMQP 발행·소비, Redis 쓰기·읽기, MinIO 업로드·다운로드를 수행한다. CPU throttling을 수집할 지표가 없으면 미검증으로 보고한다. 기본 플랫폼 검증에 운영 모델·실제 학습 기록을 사용하지 않는다.
-5. kind와 별도로 Compose의 MinIO 포함 기동·버킷 준비를 검증한다. 기존 사용자 데이터를 삭제하거나 클러스터 종료를 자동 수행하지 않는다.
+5. kind와 별도로 기본 Compose가 MinIO 계정 없이 해석되는지 확인하고, `-f compose.yaml -f compose.minio.yaml` 선택 실행으로 MinIO 기동·버킷 준비를 검증한다. 기존 사용자 데이터를 삭제하거나 클러스터 종료를 자동 수행하지 않는다.
 6. 실제 사용량에 맞춰 필요한 항목만 조정하고 실패 항목·수정 영향 범위를 재검증한다. 앱 연결과 운영 EKS·실제 부하 검증은 후속 범위로 구분한다.
 
 ## 근거
