@@ -6,12 +6,11 @@ ai-service의 `POST /internal/judgments`, `POST /internal/followups`, `GET /inte
 
 ## API 계약 변경
 
-[API 명세 4.2](../design/api-spec.md)와 [시퀀스 다이어그램](../design/sequence-diagram.md) 피드백 흐름을 함께 갱신했다.
+[API 명세 4.2](../design/api-spec.md)의 followups 행을 갱신했다. [시퀀스 다이어그램](../design/sequence-diagram.md)은 아직 이전 형태라 아래 "후속 할 일"에 남긴다.
 
 | 대상 | 변경 | 이유 |
 |---|---|---|
 | followups 요청 | `grade`(3~6) 추가 | 학년군(초3~4·초5~6)에 맞는 말투로 질문을 만들기 위함. 판정 요청과 같은 값을 보낸다 |
-| followups 요청 | `mission` 명시 (시퀀스 다이어그램) | API 명세에는 있었으나 시퀀스 다이어그램에서 빠져 있어 맞춤 |
 | followups 응답 | `versions{model, prompt}` 추가 | `followup` 테이블의 `model_version`·`prompt_version`을 learning이 저장할 값이 응답에 없었음 (NFR-DAT-02) |
 
 하위 호환: 응답의 `versions`는 필드 추가다. 요청의 `grade`는 필수라 learning이 보내지 않으면 400이 난다. 선택값으로 두면 빠뜨려도 드러나지 않고 학년에 맞지 않는 말투로 질문하게 되므로 필수로 정했다.
@@ -66,7 +65,16 @@ ai-service의 `POST /internal/judgments`, `POST /internal/followups`, `GET /inte
 - `elementId`는 `rubric_element.id`(UUID)로 보낸다. `judgment_element.rubric_element_id`에 그대로 저장할 수 있다.
 - ai 판정은 최악 31초, 되묻기는 33초 안에 끝나므로 learning→ai 타임아웃 35초(P12)와 맞는다.
 
-## 후속 확인
+## 후속 할 일
+
+설계 문서 중 API 명세 변경을 아직 따라가지 못한 곳:
+
+| 문서 | 위치 | 지금 | 바꿀 내용 |
+|---|---|---|---|
+| [sequence-diagram.md](../design/sequence-diagram.md) | 피드백 흐름, followups 요청 | `{timeline, judgment, rubric}` | `{timeline, judgment, rubric, mission, grade}` |
+| [sequence-diagram.md](../design/sequence-diagram.md) | 피드백 흐름, followups 응답 | `type·question·source·leakCheck` | `type·question·source·leakCheck·versions` |
+
+확인·합의가 필요한 것:
 
 - M2 연동 시 M2 버전은 `judgment.model_scores`에 담는 방안을 이슈 #4 담당과 정한다.
 - 사용량 이벤트 `traceparent`를 공통 `UsagePublisher`에 추가할지 정한다.
