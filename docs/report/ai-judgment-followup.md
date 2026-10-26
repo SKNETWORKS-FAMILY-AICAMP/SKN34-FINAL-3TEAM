@@ -39,7 +39,7 @@ ai-service의 `POST /internal/judgments`, `POST /internal/followups`, `GET /inte
 | 미검증 요소 보류 | `judge_verified = false`면 `HELD(UNVERIFIED_SCOPE)` (state-diagram 3, erd) | 기본 꺼짐, `JUDGE_REQUIRE_VERIFIED=true`로 켬 | 사람 검증(P11)이 아직 없어 켜면 모든 서술 판정이 보류됨 |
 | 보류 시 요소 결과 | 정하지 않음 | `HELD`면 `elements` 빈 배열 | 보류가 낮은 수준으로 기록되지 않게 함 (FN-JDG-04) |
 | 결과 결정 위치 | `QuoteVerifier.decide` (class-diagram) | `judgment/service.py` | 업무 판단은 service (architecture 2.1). `verifier.py`는 원문 대조만 |
-| `versions.model` 의미 | 예시가 M2 버전(`m2-klue@1.0`), LLM 판정은 `null` (api-spec 1.6·3.2) | LLM 모델 ID (예: `claude-sonnet-5-5`) | 제공자를 바꿔도 판정·되묻기를 만든 모델을 남김. 되묻기에는 M2가 없어 같은 의미로 맞춤 |
+| `versions.model` 의미 | 예시가 M2 버전(`m2-klue-narrative@1.0`), LLM 판정은 `null` (api-spec 1.6·3.2) | M2 미활성 판정·되묻기는 LLM 모델 ID (예: `claude-sonnet-5-5`), M2 활성 판정은 M2 버전, 규칙 판정은 `null` | 제공자를 바꿔도 판정·되묻기를 만든 모델을 남김. M2 버전 규칙(PR #33)과 함께 쓰도록 M2 활성 시에는 M2 버전 우선 |
 | 함수 이름 | `LeakGuard.check`, `FollowupService.generate`, `LlmClient.complete` | `find_leaks`, `create`, `generate` | 동작은 같음. class-diagram을 코드에 맞춤 |
 | 사용량 이벤트 `traceparent` | 봉투에 포함 (architecture 1.6) | null | PR #28 공통 `UsagePublisher`가 받지 않음. 공통 기반 수정은 범위 밖 |
 | LLM 제공자 | Claude API (architecture 6장) | Claude + OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`로 교체 | architecture의 "`llm/` 래퍼로 교체 가능" 범위 안. Claude 전용 기능(추론 강도·대체 모델·스키마 강제)을 지키려고 제공자별 클래스를 둠 |
@@ -71,6 +71,6 @@ ai-service의 `POST /internal/judgments`, `POST /internal/followups`, `GET /inte
 
 확인·합의가 필요한 것:
 
-- M2 연동 시 M2 버전은 `judgment.model_scores`에 담는 방안을 이슈 #4 담당과 정한다.
+- M2 연동 시 ai가 M2 활성 판정의 `versions.model`을 scoring 응답의 M2 버전으로 채운다. 이때 LLM 모델 ID는 사용량 이벤트 `model`에만 남는다.
 - 사용량 이벤트 `traceparent`를 공통 `UsagePublisher`에 추가할지 정한다.
 - OpenAI 키를 받으면 `gpt-6-luna` 모델 ID와 판정·되묻기 결과를 실제 호출로 확인한다.

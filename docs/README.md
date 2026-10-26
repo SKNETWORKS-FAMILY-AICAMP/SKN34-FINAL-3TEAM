@@ -43,6 +43,7 @@
   - [이슈 #13 DB 마이그레이션 CI](report/db-schema-ci.md): 확정 정책 반영 후 검증 범위와 로컬·CI 실행 방법
   - [이슈 #19 확정 정책 DB 스키마 수정](report/db-policy-schema.md): 변경 대상, 기존 데이터 전환 절차, 1~3단계 검증과 검토 순서
   - [이슈 #6 ai-service 판정·되묻기 API 설계 변경](report/ai-judgment-followup.md): API 계약 변경, 설계와 다르게 구현한 부분과 근거, learning 연동 시 반영할 점
+  - [이슈 #4 M2 API 명세 정렬](report/m2-api-alignment.md): 학년 입력·점수 범위·모델 버전 규칙 명세 반영과 근거
 
 ## 개발 규칙
 
