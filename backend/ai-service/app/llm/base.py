@@ -188,8 +188,19 @@ class LlmClient(ABC):
             logger.warning("LLM 사용량 기록 실패: call_type=%s", request.call_type, exc_info=True)
 
 
+def status_error(status: int) -> LlmError:
+    """제공자 HTTP 상태 코드 → 공통 오류 코드 (제공자 공통)."""
+    if status == 429:
+        return LlmError("LLM_RATE_LIMITED", retryable=True)
+    if status in (408, 409) or status >= 500:
+        return LlmError("LLM_SERVER_ERROR", retryable=True)
+    if status in (401, 403):
+        return LlmError("LLM_AUTH_FAILED", retryable=False)
+    return LlmError("LLM_BAD_REQUEST", retryable=False)
+
+
 class UnconfiguredLlm(LlmClient):
-    """API 키 미설정. 서버는 기동하고 호출 시 503 (재시도 무의미)."""
+    """API 키·모델 미설정. 서버는 기동하고 호출 시 503 (재시도 무의미)."""
 
     def __init__(self, model: str, recorder: UsageRecorder) -> None:
         super().__init__(model, max_retries=0, recorder=recorder, backoff_seconds=0, timeout=0)

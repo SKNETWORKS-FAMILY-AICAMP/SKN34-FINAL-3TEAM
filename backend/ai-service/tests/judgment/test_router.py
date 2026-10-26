@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from app.bootstrap import create_app
 from app.judgment.extractor import Extraction
 from app.llm.base import LlmError
-from app.llm.factory import get_llm
+from app.llm.providers import get_llm
 from tests.fakes import FakeLlm
 
 HEADERS = {"X-Internal-Token": "test-token"}

@@ -10,7 +10,7 @@ from app.errors import register_error_handlers
 from app.followup.router import router as followup_router
 from app.health.router import router as health_router
 from app.judgment.router import router as judgment_router
-from app.llm.factory import create_llm
+from app.llm.providers import create_llm
 from app.messaging.connection import AmqpConnection
 from app.messaging.publisher import EventPublisher, UsagePublisher
 from app.messaging.usage_recorder import BackgroundUsageRecorder

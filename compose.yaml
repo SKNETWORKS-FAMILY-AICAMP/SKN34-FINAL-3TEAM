@@ -177,6 +177,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_JSON_MODE: ${OPENAI_JSON_MODE:-json_schema}
     ports:
       - "${AI_HOST_PORT:-8000}:8000"
     healthcheck:

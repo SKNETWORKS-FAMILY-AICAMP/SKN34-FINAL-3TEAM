@@ -1,6 +1,7 @@
 """서비스 설정. 비밀 값은 환경 변수로만 주입."""
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings
 
@@ -21,6 +22,11 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-sonnet-5-5"
     anthropic_effort: str = "medium"  # low|medium|high|xhigh|max, 학생 대기 시간 고려
     anthropic_fallback: bool = True  # 안전 거절 시 Anthropic 권장 모델로 자동 재처리
+    # OpenAI 또는 OpenAI 호환 sLLM 서버(vLLM·Ollama 등). 모델이 비어 있으면 503 AI_UNAVAILABLE
+    openai_api_key: str | None = None  # sLLM 서버(openai_base_url 지정)는 비워도 됨
+    openai_model: str = ""
+    openai_base_url: str | None = None  # 비우면 OpenAI 기본 주소
+    openai_json_mode: Literal["json_schema", "json_object"] = "json_schema"  # sLLM은 json_object
     # 판정 최악 15 + 1 + 15 = 31초 < learning→ai 35초 (P12)
     llm_timeout: float = 15.0  # LLM 1회 15초 (P12)
     llm_max_retries: int = 1  # 재시도 1회 (P12)

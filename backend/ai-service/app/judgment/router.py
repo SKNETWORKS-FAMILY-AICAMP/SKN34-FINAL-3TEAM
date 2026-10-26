@@ -6,7 +6,7 @@ from app.config import get_settings
 from app.judgment.models import JudgmentRequest, JudgmentResponse
 from app.judgment.service import JudgmentService
 from app.llm.base import LlmClient
-from app.llm.factory import get_llm
+from app.llm.providers import get_llm
 
 router = APIRouter(prefix="/internal/judgments", tags=["judgment"])
 

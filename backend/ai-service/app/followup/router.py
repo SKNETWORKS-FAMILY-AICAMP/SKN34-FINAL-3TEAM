@@ -6,7 +6,7 @@ from app.config import get_settings
 from app.followup.models import FollowupRequest, FollowupResponse
 from app.followup.service import FollowupService
 from app.llm.base import LlmClient
-from app.llm.factory import get_llm
+from app.llm.providers import get_llm
 
 router = APIRouter(prefix="/internal/followups", tags=["followup"])
 
