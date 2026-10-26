@@ -6,7 +6,7 @@
 - 기획서(4.4) 대비 변경: FastAPI 단일 서버 → 서비스 5개 분리, EC2 → EKS
 - 참고 레포에서 계승: `backend/<x>-service` 모노레포, 기능 중심 패키지, Outbox·DLQ·수동 ACK, Helm + Argo CD GitOps, kind/EKS, `evaluation/`, `infrastructure/stubs`
 - 참고 레포 대비 보강: 작업 큐만 쓰던 구조 → **명령 큐 + 도메인 이벤트 fan-out** 구분, 이벤트 계약(`contracts/`), 큐 길이 기반 오토스케일링(KEDA)
-- 기능 요구는 [기능명세서](functional-spec.md), 공개·내부 API는 [API 명세서](api-spec.md)
+- 기능 요구는 [기능명세서](functional-spec.md), 공개·내부 API는 [API 명세서](api-spec.md), 서비스별 DB는 [ERD](erd.md)
 
 ---
 
@@ -42,7 +42,7 @@
       │ events.topic: report.*, llm.*, model.*, student.*  (fan-out, 소비자 N) │
       └────────────────────────────────────────┼──────────────────────────────┘
                ▲ consume                       │ HTTP(서술 생성)
-        report-service ────────────────────────┘
+        report-service ────────────────────────┘2222222222222222222
           └─ HTTP(기록 조회) ─▶ learning-service
 
 저장소: RDS PostgreSQL(서비스별 DB) · S3(미션 장면·리포트 파일·모델 가중치) · Redis
@@ -136,7 +136,7 @@
 - Domain은 모든 레이어가 참조 가능, Domain은 다른 레이어를 참조하지 않음
 - 기능 간 호출은 상대 기능의 service로만 (다른 기능의 repository 직접 참조 금지)
 - 여러 기능에 걸친 흐름은 `facade`로 조합 (참고 레포 `applicationpreparation/facade` 패턴)
-- 공통 코드: Spring `_common/`, Python `app/` 루트의 `config.py`·`messaging/`
+- 공통 코드: Spring `_common/`, Python `app/` 루트의 `config.py`·`errors.py`·`security.py`·`messaging/`·`clients/base.py`
 - DB 트랜잭션은 Application 레이어에서만 시작, 트랜잭션 안에서 외부 HTTP·AMQP 호출 금지
 - 서비스 간 내부 호출: 내부 토큰 헤더 필터(참고 레포 `CatalogInternalAuthFilter` 패턴) + NetworkPolicy
 
@@ -304,6 +304,8 @@ backend/ai-service/
 │  ├─ main.py
 │  ├─ bootstrap.py
 │  ├─ config.py
+│  ├─ errors.py                 # Problem Details 예외 핸들러
+│  ├─ security.py               # 내부 토큰·사용자 컨텍스트·학생 범위 검사
 │  ├─ judgment/
 │  │  ├─ router.py
 │  │  ├─ service.py
@@ -332,6 +334,7 @@ backend/ai-service/
 │  │  ├─ router.py
 │  │  └─ service.py
 │  ├─ clients/
+│  │  ├─ base.py                 # 내부 토큰·컨텍스트 헤더 전달 httpx 클라이언트
 │  │  ├─ learning_client.py
 │  │  ├─ scoring_client.py
 │  │  └─ core_client.py          # 기동 시 활성 버전 조회
@@ -356,6 +359,8 @@ backend/scoring-service/
 │  ├─ main.py
 │  ├─ bootstrap.py
 │  ├─ config.py
+│  ├─ errors.py
+│  ├─ security.py
 │  ├─ m2/
 │  │  ├─ router.py
 │  │  └─ service.py
@@ -364,6 +369,7 @@ backend/scoring-service/
 │  │  └─ service.py
 │  ├─ model_registry.py          # 활성 버전·가중치 로딩
 │  ├─ clients/
+│  │  ├─ base.py
 │  │  └─ core_client.py          # 기동 시 활성 버전 조회
 │  ├─ messaging/
 │  │  ├─ envelope.py
@@ -386,6 +392,8 @@ backend/report-service/
 │  ├─ worker.py                  # report-worker 진입점 (report.generate·student.deleted 소비)
 │  ├─ bootstrap.py
 │  ├─ config.py
+│  ├─ errors.py
+│  ├─ security.py
 │  ├─ generation/
 │  │  ├─ consumer.py
 │  │  ├─ service.py
@@ -403,6 +411,7 @@ backend/report-service/
 │  │  └─ service.py
 │  ├─ outbox/                    # report.started·completed·failed
 │  ├─ clients/
+│  │  ├─ base.py
 │  │  ├─ learning_client.py
 │  │  └─ ai_client.py
 │  ├─ messaging/
@@ -566,8 +575,10 @@ SKN34-FINAL-3TEAM/
 │  │  │  ├─ platform-data/       # RabbitMQ·Redis (+ 로컬 전용 PostgreSQL·MinIO)
 │  │  │  │  ├─ templates/
 │  │  │  │  ├─ files/
-│  │  │  │  │  └─ rabbitmq/
-│  │  │  │  │     └─ definitions.json         # exchange·queue·DLX 단일 기준
+│  │  │  │  │  ├─ rabbitmq/
+│  │  │  │  │  │  └─ definitions.json      # exchange·queue·DLX 단일 기준
+│  │  │  │  │  └─ postgres/
+│  │  │  │  │     └─ init.sql              # 로컬 전용 서비스별 DB 생성
 │  │  │  │  └─ values.yaml
 │  │  │  └─ observability/       # OTel Collector·Prometheus·Grafana·Langfuse
 │  │  │     ├─ templates/

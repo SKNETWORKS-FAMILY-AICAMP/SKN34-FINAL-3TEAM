@@ -3,5 +3,7 @@ dist/
 node_modules/
 .venv/
 __pycache__/
+.gradle/
+.kotlin/
 
 .env

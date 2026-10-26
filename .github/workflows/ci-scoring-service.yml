@@ -1,0 +1,20 @@
+name: ci-scoring-service
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - "backend/scoring-service/**"
+      - ".github/workflows/ci-scoring-service.yml"
+      - ".github/workflows/_python.yml"
+  pull_request:
+    paths:
+      - "backend/scoring-service/**"
+      - ".github/workflows/ci-scoring-service.yml"
+      - ".github/workflows/_python.yml"
+
+jobs:
+  build:
+    uses: ./.github/workflows/_python.yml
+    with:
+      service-path: backend/scoring-service
