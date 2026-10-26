@@ -88,19 +88,18 @@ def _judge_element(
 
 
 def _result(rubric: list[RubricElement], elements: list[JudgmentElement]) -> JudgmentResult:
-    """충족 배점 합 = 총점 → CORRECT, 0 초과 → PARTIAL, 0 → RETHINK.
+    """state-diagram 3 judgment.result 결정.
 
-    총점이 0이면 배점 대신 충족 요소 수로 계산.
+    필수 요소(들어가면 좋은 생각이 아닌 요소)가 모두 충족 → CORRECT,
+    충족 요소가 하나라도 있음 → PARTIAL (좋은 생각만 충족해도 PARTIAL), 없음 → RETHINK.
     """
     satisfied = {item.element_id for item in elements if item.satisfied}
-    total = sum(element.points for element in rubric)
-    if total > 0:
-        earned, full = sum(e.points for e in rubric if e.element_id in satisfied), total
-    else:
-        earned, full = len(satisfied), len(rubric)
-    if earned == full:
+    if not satisfied:
+        return "RETHINK"
+    required = [element.element_id for element in rubric if not element.good_thought]
+    if all(element_id in satisfied for element_id in required):
         return "CORRECT"
-    return "PARTIAL" if earned > 0 else "RETHINK"
+    return "PARTIAL"
 
 
 def _held(reason: HeldReason, versions: Versions) -> JudgmentResponse:

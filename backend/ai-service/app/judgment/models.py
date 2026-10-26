@@ -16,11 +16,11 @@ class ApiModel(BaseModel):
 class RubricElement(ApiModel):
     element_id: str
     label: str
-    description: str
+    description: str | None = None  # rubric_element.description NULL 허용
     points: int = Field(ge=0)
     judge_verified: bool
-    good_thought: bool = False
-    common_errors: list[str] = Field(default_factory=list)
+    good_thought: bool = False  # 들어가면 좋은 생각 = 필수 아님
+    common_errors: list[str] | None = None  # rubric_element.common_errors NULL 허용
 
 
 class Rubric(ApiModel):

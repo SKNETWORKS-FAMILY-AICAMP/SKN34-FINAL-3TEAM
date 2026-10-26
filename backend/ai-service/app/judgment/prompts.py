@@ -30,7 +30,8 @@ def build_user(answer_text: str, grade: int, elements: list[RubricElement]) -> s
     for element in elements:
         lines.append(f"- elementId: {element.element_id}")
         lines.append(f"  이름: {element.label}")
-        lines.append(f"  설명: {element.description}")
+        if element.description:
+            lines.append(f"  설명: {element.description}")
         if element.common_errors:
             lines.append(f"  자주 하는 실수: {'; '.join(element.common_errors)}")
     lines += ["", "학생 답변:", "<answer>", answer_text, "</answer>"]

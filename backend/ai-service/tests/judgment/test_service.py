@@ -6,7 +6,7 @@ import pytest
 from app.config import Settings
 from app.errors import ApiError
 from app.judgment.extractor import Extraction
-from app.judgment.models import JudgmentRequest
+from app.judgment.models import JudgmentRequest, RubricElement
 from app.judgment.service import JudgmentService
 from app.llm.base import LlmError
 from tests.fakes import FakeLlm
@@ -76,7 +76,7 @@ def test_all_elements_verified_is_correct() -> None:
     }
 
 
-def test_some_points_is_partial() -> None:
+def test_missing_required_element_is_partial() -> None:
     llm = FakeLlm(extraction(("e1", "FOUND", "나는 찬성해"), ("e2", "NOT_FOUND", None)))
     response = judge(llm)
     assert response.result == "PARTIAL"
@@ -91,6 +91,64 @@ def test_some_points_is_partial() -> None:
 def test_no_points_is_rethink() -> None:
     llm = FakeLlm(extraction(("e1", "NOT_FOUND", None), ("e2", "NOT_FOUND", None)))
     assert judge(llm).result == "RETHINK"
+
+
+def with_good_thought() -> JudgmentRequest:
+    request = make_request()
+    request.rubric.elements.append(
+        RubricElement(
+            element_id="e3",
+            label="다른 관점",
+            description="반대 입장 고려",
+            points=1,
+            judge_verified=False,
+            good_thought=True,
+        )
+    )
+    return request
+
+
+@pytest.mark.parametrize(
+    ("items", "result"),
+    [
+        # 필수 요소(e1·e2)만 충족, 들어가면 좋은 생각(e3) 없음 → CORRECT
+        (
+            (
+                ("e1", "FOUND", "나는 찬성해"),
+                ("e2", "FOUND", "더 잘 놀 수 있기 때문이야"),
+                ("e3", "NOT_FOUND", None),
+            ),
+            "CORRECT",
+        ),
+        # 좋은 생각만 충족 → PARTIAL
+        (
+            (("e1", "NOT_FOUND", None), ("e2", "NOT_FOUND", None), ("e3", "FOUND", "나는 찬성해")),
+            "PARTIAL",
+        ),
+    ],
+)
+def test_good_thought_is_not_required(items: tuple, result: str) -> None:
+    assert judge(FakeLlm(extraction(*items)), with_good_thought()).result == result
+
+
+def test_nullable_rubric_fields_are_accepted() -> None:
+    request = make_request(
+        rubric={
+            "elements": [
+                {
+                    "elementId": "e1",
+                    "label": "주장",
+                    "description": None,
+                    "points": 1,
+                    "commonErrors": None,
+                    "judgeVerified": False,
+                }
+            ]
+        }
+    )
+    llm = FakeLlm(extraction(("e1", "FOUND", "나는 찬성해")))
+    assert judge(llm, request).result == "CORRECT"
+    assert "설명:" not in llm.requests[0].user
 
 
 @pytest.mark.parametrize(
