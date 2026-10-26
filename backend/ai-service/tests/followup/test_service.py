@@ -1,0 +1,109 @@
+import asyncio
+from typing import Any
+
+import pytest
+
+from app.config import Settings
+from app.errors import ApiError
+from app.followup.models import FollowupRequest
+from app.followup.prompts import GeneratedQuestion
+from app.followup.service import FollowupService
+from app.llm.base import LlmError
+from tests.fakes import FakeLlm
+
+EXAMPLE = "쉬는 시간이 길면 친구와 더 친해지고 수업 집중도 잘 돼요."
+
+
+def make_request(result: str = "PARTIAL", **overrides: Any) -> FollowupRequest:
+    body: dict[str, Any] = {
+        "timeline": [{"kind": "ANSWER", "text": "나는 쉬는 시간을 늘리는 것에 찬성해."}],
+        "judgment": {
+            "result": result,
+            "heldReason": "TOO_SHORT" if result == "HELD" else None,
+            "elements": [] if result == "HELD" else [{"elementId": "e1", "satisfied": True}],
+        },
+        "rubric": {
+            "elements": [
+                {"elementId": "e1", "label": "주장", "description": "자기 입장"},
+                {"elementId": "e2", "label": "근거", "description": "입장의 까닭"},
+            ],
+            "answerKey": None,
+            "forbiddenTerms": ["집중력 향상"],
+            "exampleAnswer": EXAMPLE,
+        },
+        "mission": {
+            "title": "쉬는 시간",
+            "question": "쉬는 시간을 늘릴까?",
+            "thinkingType": "EVALUATE",
+        },
+    }
+    body.update(overrides)
+    return FollowupRequest.model_validate(body)
+
+
+def question(text: str) -> GeneratedQuestion:
+    return GeneratedQuestion(question=text)
+
+
+def create(llm: FakeLlm, request: FollowupRequest | None = None):
+    service = FollowupService(llm, Settings(internal_token="t"))
+    return asyncio.run(service.create(request or make_request()))
+
+
+@pytest.mark.parametrize(
+    ("result", "followup_type"),
+    [
+        ("CORRECT", "ONE_STEP_MORE"),
+        ("PARTIAL", "TELL_MORE"),
+        ("RETHINK", "LOOK_AGAIN"),
+        ("HELD", "TELL_MORE"),
+    ],
+)
+def test_type_follows_judgment_result(result: str, followup_type: str) -> None:
+    response = create(FakeLlm(question("왜 그렇게 생각했어?")), make_request(result))
+    assert response.type == followup_type
+    assert (response.source, response.leak_check.passed) == ("LLM", True)
+    assert response.versions.model_dump() == {"model": "fake-model", "prompt": "followup@1"}
+
+
+def test_leaked_question_is_regenerated_as_llm_retry() -> None:
+    llm = FakeLlm(question("집중력 향상 때문일까?"), question("왜 그렇게 생각했는지 더 말해 볼까?"))
+    response = create(llm)
+    assert (response.question, response.source) == (
+        "왜 그렇게 생각했는지 더 말해 볼까?",
+        "LLM_RETRY",
+    )
+    # 재생성 요청에 앞서 거절된 질문을 알려 줌
+    assert "집중력 향상 때문일까?" in llm.requests[1].user
+
+
+def test_repeated_leak_is_503_and_leaked_question_is_not_returned() -> None:
+    llm = FakeLlm(*[question("쉬는 시간이 길면 친구와 더 친해지고 그럴까?")] * 3)
+    with pytest.raises(ApiError) as exc:
+        create(llm)
+    assert (exc.value.status, exc.value.code, exc.value.extra) == (
+        503,
+        "AI_UNAVAILABLE",
+        {"retryable": True},
+    )
+    assert len(llm.requests) == 3  # 최초 1회 + 재생성 2회
+
+
+def test_empty_question_is_regenerated() -> None:
+    llm = FakeLlm(question("  "), question("어떤 점이 좋을까?"))
+    assert create(llm).source == "LLM_RETRY"
+
+
+def test_llm_failure_is_503() -> None:
+    with pytest.raises(ApiError) as exc:
+        create(FakeLlm(LlmError("LLM_REFUSED", retryable=False)))
+    assert (exc.value.status, exc.value.extra) == (503, {"retryable": False})
+
+
+def test_example_answer_is_not_sent_but_banned_terms_are() -> None:
+    llm = FakeLlm(question("왜 그렇게 생각했어?"))
+    create(llm)
+    prompt = llm.requests[0].user
+    assert EXAMPLE not in prompt
+    assert "집중력 향상" in prompt
+    assert llm.requests[0].call_type == "FOLLOWUP"

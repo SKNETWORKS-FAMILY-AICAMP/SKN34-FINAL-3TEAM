@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     judge_require_verified: bool = False  # 사람 검증(judge_verified) 도입 시 true
     judge_min_answer_length: int = 10  # [P12] 확정 전 임시값, TOO_SHORT 기준 (공백 제외 글자 수)
     followup_leak_max_retries: int = 2  # [P12] 확정 전 임시값
+    # [P12] 확정 전 임시값, 예시 답과 이만큼(공백·문장부호 제외 글자 수) 겹치면 유출
+    followup_example_overlap_chars: int = 12
 
 
 @lru_cache

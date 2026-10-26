@@ -7,6 +7,7 @@ from fastapi import FastAPI
 
 from app.config import get_settings
 from app.errors import register_error_handlers
+from app.followup.router import router as followup_router
 from app.health.router import router as health_router
 from app.judgment.router import router as judgment_router
 from app.llm.factory import create_llm
@@ -37,4 +38,5 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     # 기능 라우터는 여기에 등록
     app.include_router(judgment_router)
+    app.include_router(followup_router)
     return app
