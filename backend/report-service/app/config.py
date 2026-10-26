@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     service_name: str = "report-service"
     internal_token: str
     rabbitmq_url: str = "amqp://localhost:5672/"
+    # [P12] 확정 전 임시값. 재시도 지연은 definitions.json의 <큐>.retry x-message-ttl
+    consumer_max_retries: int = 3
+    # [P12] 레플리카 수 × prefetch = learning·ai 동시 호출 상한 (아키텍처 4.4)
+    consumer_prefetch: int = 1
     http_connect_timeout: float = 2.0
     http_read_timeout: float = 30.0  # [P12] 확정 전 임시값
     database_url: str

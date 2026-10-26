@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "llm.usage.recorded.v1.schema.json",
+  "title": "llm.usage.recorded v1 data",
+  "description": "생산 ai·scoring, 소비 core(llm_usage). 학생 ID·답변 원문 미포함 (NFR-PRF-02)",
+  "type": "object",
+  "required": ["service", "callType", "model", "latencyMs", "success", "occurredAt"],
+  "properties": {
+    "service": { "enum": ["ai", "scoring"] },
+    "callType": { "enum": ["JUDGMENT", "FOLLOWUP", "ANALYSIS", "REPORT_NARRATIVE", "M2", "M1", "SPEECH"] },
+    "model": { "type": "string" },
+    "promptVersion": { "type": ["string", "null"] },
+    "inputTokens": { "type": ["integer", "null"], "minimum": 0 },
+    "outputTokens": { "type": ["integer", "null"], "minimum": 0 },
+    "latencyMs": { "type": "integer", "minimum": 0 },
+    "success": { "type": "boolean" },
+    "errorCode": { "type": ["string", "null"] },
+    "occurredAt": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "envelope.schema.json",
+  "title": "CloudEvents 공통 봉투 (아키텍처 1.6)",
+  "type": "object",
+  "required": ["id", "specversion", "type", "source", "time", "dataschema", "data"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid", "description": "멱등 소비 키 (processed_event.event_id)" },
+    "specversion": { "const": "1.0" },
+    "type": { "type": "string", "description": "메시지 이름, 예: llm.usage.recorded" },
+    "source": { "type": "string", "description": "생산 서비스 이름, 예: ai-service" },
+    "time": { "type": "string", "format": "date-time" },
+    "subject": { "type": ["string", "null"], "description": "대상 식별값 (학생 ID 등)" },
+    "dataschema": { "type": "string", "pattern": "^[a-z.]+[.]v[0-9]+$", "description": "<메시지>.v<N>, 같은 이름의 *.schema.json" },
+    "traceparent": { "type": ["string", "null"] },
+    "data": { "type": "object" }
+  },
+  "additionalProperties": false
+}
