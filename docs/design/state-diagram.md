@@ -3,7 +3,7 @@
 - 근거: [ERD](erd.md) 상태 컬럼, [API 명세서](api-spec.md) 1.4·1.5, [기능명세서](functional-spec.md) 1.2, [아키텍처 설계](architecture.md) 1.6·2.1, [클래스 다이어그램](class-diagram.md), [시퀀스 다이어그램](sequence-diagram.md)
 - 범위: DB 상태 컬럼별 허용 전이, 전이 트리거, 담당 클래스, 동시성 보호 조건
 - 표에 없는 전이는 금지. Domain 엔티티 메서드가 허용 여부를 검사하고, Repository는 조건부 UPDATE로 동시 갱신을 막음 (아키텍처 2.1)
-- `[P..]`는 미확정 정책. 조건이 `[P..]`인 전이는 표·note에 표기하고, 정책 확정 전에는 해당 조건을 임의로 정해 구현하지 않음
+- `(P04)` 형태는 확정 정책 번호, 내용은 [기능명세서 1.4](functional-spec.md#14-확정-정책)
 
 ---
 
@@ -28,19 +28,19 @@
 stateDiagram-v2
   [*] --> ACTIVE: 가입·계정 생성
   ACTIVE --> WITHDRAWAL_REQUESTED: 탈퇴 요청 (재확인 토큰)
-  WITHDRAWAL_REQUESTED --> WITHDRAWN: 구독 해지·환불 정리 후 처리 완료
+  WITHDRAWAL_REQUESTED --> WITHDRAWN: 즉시 처리 완료
   WITHDRAWN --> [*]
   note right of WITHDRAWAL_REQUESTED
-    처리 조건·보관 거래 범위 [P09] [P14]
-    요청 중 로그인 허용 여부 [P09]
+    진행 중 구독·미처리 환불 있으면 요청 불가 (P09)
+    요청 후 로그인·취소 불가, 거래 기록만 5년 보관
   end note
 ```
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
 | → `ACTIVE` | `POST /auth/signup` | `AccountService.signup` | `login_id` UK |
-| `ACTIVE → WITHDRAWAL_REQUESTED` | `POST /me/withdrawal` + `X-Reauth-Token` | `AccountService.requestWithdrawal` → `UserAccount.requestWithdrawal()` | `WHERE status = 'ACTIVE'`, 같은 트랜잭션에 `withdrawal_request(REQUESTED)` |
-| `WITHDRAWAL_REQUESTED → WITHDRAWN` | 처리 완료 `[P09]` | `UserAccount.completeWithdrawal()` | 진행 중 구독 없음·미처리 환불 없음, `withdrawal_request REQUESTED → COMPLETED` 동시 전이 |
+| `ACTIVE → WITHDRAWAL_REQUESTED` | `POST /me/withdrawal` + `X-Reauth-Token` | `AccountService.requestWithdrawal` → `UserAccount.requestWithdrawal()` | 진행 중 구독·미처리 환불 없음(있으면 `409 WITHDRAWAL_BLOCKED`) + `WHERE status = 'ACTIVE'`, 같은 트랜잭션에 `withdrawal_request(REQUESTED)`·refresh token 폐기·자녀 전원 삭제 요청 (P09) |
+| `WITHDRAWAL_REQUESTED → WITHDRAWN` | 자녀 삭제 요청 전부 `COMPLETED` (P09) | `UserAccount.completeWithdrawal()` | 진행 중 구독 없음·미처리 환불 없음, `withdrawal_request REQUESTED → COMPLETED` 동시 전이 |
 
 ### 2.2 `student.status` · `deletion_request.status`
 
@@ -59,7 +59,7 @@ stateDiagram-v2
     COMPLETED --> [*]
   }
   note right of deletion_request
-    확인 절차·완료 판정 방식 [P09]
+    확인: 재확인 토큰, 완료: learning·report 완료 보고 (P09)
     RECORDS 범위는 student 상태 유지, 기록만 삭제
   end note
 ```
@@ -69,15 +69,15 @@ stateDiagram-v2
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
 | `deletion_request → REQUESTED` | `POST /children/{id}/deletion-requests` | `GuardianshipService.requestDeletion` | 연결 자녀(`LINKED`)만 |
-| `REQUESTED → CONFIRMED` | 확인 절차 `[P09]` | `GuardianshipService.confirmDeletion` → `DeletionRequest.confirm()` | 같은 트랜잭션에 `outbox_event(student.deleted)`, `scope = PROFILE`이면 `student ACTIVE → DELETION_REQUESTED` |
-| `CONFIRMED → COMPLETED`, `student → DELETED` | 완료 판정 `[P09]` | `DeletionRequest.complete()`, `Student.markDeleted()` | `deleted_at` 기록. 이후 모든 조회에서 제외, 근거는 `available: false` |
+| `REQUESTED → CONFIRMED` | `X-Reauth-Token` 재확인 (P09) | `GuardianshipService.confirmDeletion` → `DeletionRequest.confirm()` | 같은 트랜잭션에 `outbox_event(student.deleted)`, `scope = PROFILE`이면 `student ACTIVE → DELETION_REQUESTED` |
+| `CONFIRMED → COMPLETED`, `student → DELETED` | learning·report 모두 `POST /internal/deletion-requests/{id}/completions` 보고 (P09) | `DeletionRequest.complete()`, `Student.markDeleted()` | `deleted_at` 기록. 이후 모든 조회에서 제외, 근거는 `available: false` |
 
 ### 2.3 `guardianship.status` · `consent.status`
 
 ```mermaid
 stateDiagram-v2
   state guardianship {
-    [*] --> LINKED: 등록(REGISTER)·연결(LINK)
+    [*] --> LINKED: 자녀 등록(REGISTER)
     LINKED --> UNLINKED: 연결 해제 (재확인 토큰)
     UNLINKED --> [*]
   }
@@ -90,10 +90,10 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
-| → `LINKED` | `POST /children`, `POST /children/link` | `GuardianshipService.registerChild`·`link` | 부분 UK `(parent_user_id, student_id) WHERE LINKED`, `link`는 재확인 토큰 |
+| → `LINKED` | `POST /children` | `GuardianshipService.registerChild` | 부분 UK `(parent_user_id, student_id) WHERE LINKED`, 학부모당 `LINKED` 3명 이하 (P02). 다른 보호자 연결 없음 |
 | `LINKED → UNLINKED` | `DELETE /children/{id}/link` | `Guardianship.unlink()` | `WHERE status = 'LINKED'`. 재연결은 새 행 (이력 보존) |
 | → `AGREED` | 가입·자녀 등록 | `ConsentService.record` | 필수 문서(`required`) 모두 동의해야 저장 진행 |
-| `AGREED → WITHDRAWN` | `POST /me/consents/{id}/withdrawal` | `Consent.withdraw()` | 행 유지 + `withdrawn_at`. 철회 후 이용 제한·삭제 `[P09]` |
+| `AGREED → WITHDRAWN` | `POST /me/consents/{id}/withdrawal` | `Consent.withdraw()` | 행 유지 + `withdrawn_at`. 필수 동의 철회 시 대상 자녀(자녀 동의) 또는 계정 이용 차단, 삭제·탈퇴는 별도 요청. 선택 동의는 해당 기능만 중단 (P09) |
 
 ---
 
@@ -110,15 +110,16 @@ stateDiagram-v2
   PUBLISHED --> UNPUBLISHED: 신규 제공 중단
   UNPUBLISHED --> REVIEW_REQUIRED: 수정 후 재검토
   note right of PUBLISHED
-    공개 중 수정 시 새 버전 생성
-    수정본 적용 시점·진행 중 학습 처리 [P07]
+    공개 중 수정 시 새 버전 생성 (P07)
+    재검토·재게시 후 신규 시도부터 적용
+    진행 중 시도는 시작 당시 버전 유지
   end note
 ```
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
 | → `DRAFT` | `POST /admin/missions` (CONTENT) | `MissionService.create` | `mission_version` v1 생성 |
-| `DRAFT → REVIEW_REQUIRED` | 검토 요청 (트리거 미정, 9장) | `Mission.requestReview()` | 현재 미션·기준표 버전 존재 |
+| `DRAFT → REVIEW_REQUIRED` | `POST /admin/missions/{id}/review-request` (P07) | `Mission.requestReview()` | 현재 미션·기준표 버전 존재 |
 | `REVIEW_REQUIRED → DRAFT` | `POST /admin/missions/{id}/review` `CHANGES_REQUESTED` | `Mission.rejectReview()` | `mission_review` 행 추가 |
 | `REVIEW_REQUIRED → PUBLISHED` | `POST /admin/missions/{id}/publish` | `Mission.publish(snapshot)` | 현재 버전 대상 최신 리뷰 `APPROVED` + `requirePublishable` 통과, 아니면 `422 MISSION_PUBLISH_INCOMPLETE`. `published_at` 기록, `audit_log` |
 | `PUBLISHED → UNPUBLISHED` | `POST /admin/missions/{id}/unpublish` | `Mission.unpublish()` | 신규 시도 차단(`MISSION_NOT_AVAILABLE`), 기존 시도는 당시 버전 유지 |
@@ -147,11 +148,12 @@ stateDiagram-v2
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
 | `NOT_STARTED → IN_PROGRESS` | `POST /missions/{id}/attempts` | `AttemptService.start` | 부분 UK `(student_id, mission_id) WHERE IN_PROGRESS` 충돌 시 기존 시도 반환 |
-| `작성 → 마무리됨` (상태값 유지) | `POST /attempts/{id}/finish` | `Attempt.finish(now)` | `FinishPolicy.canFinish` `[P04]`, 미충족 `409 REVEAL_CONDITION_UNMET`. `finished_at` 이후 정답·예시 답 공개 |
-| `IN_PROGRESS → COMPLETED` | `POST /attempts/{id}/reflection` | `Attempt.complete(now)` | `finished_at` 있음(없으면 `409 REVEAL_CONDITION_UNMET`) + `WHERE status = 'IN_PROGRESS'`. 돌아보기 필수 여부 `[P03]` `[P04]` |
+| `작성 → 마무리됨` (상태값 유지) | `POST /attempts/{id}/finish` | `Attempt.finish(now)` | `FinishPolicy.canFinish`: 판정 `DONE` 1회 이상 (P04), 미충족 `409 REVEAL_CONDITION_UNMET`. `finished_at` 이후 정답·예시 답 공개 |
+| `IN_PROGRESS → COMPLETED` | `POST /attempts/{id}/reflection` | `Attempt.complete(now)` | `finished_at` 있음(없으면 `409 REVEAL_CONDITION_UNMET`) + `WHERE status = 'IN_PROGRESS'`. 난이도 필수·달라진 점 선택 (P04) |
 
 - `COMPLETED` 시도에 답변·초안·도움·돌아보기 쓰기 → `409 ATTEMPT_CLOSED` (`Attempt.requireOpen()`)
-- 마무리 이후 보완 답변 제출 허용 여부 `[P04]` → 확정 전 `finished_at` 이후 답변 제출 차단
+- `finished_at` 이후 답변 제출은 `409 ATTEMPT_CLOSED` (P04)
+- 되묻기는 시도당 최대 2회, 2회째 보완 답변 판정 후 되묻기 생성 없이 마무리 안내. 고르기 `CORRECT`도 되묻기 없이 마무리 안내 (P04)
 - 초안 `attempt_draft.version`: 저장마다 +1, `WHERE version = :ifMatch` (상태값 없음)
 
 ### 3.3 `judgment.process_status` (판정 처리)
@@ -179,7 +181,7 @@ stateDiagram-v2
 | `RUNNING → FAILED` | 예외·타임아웃 | `Judgment.fail(code)` | 위와 같은 리스 조건, `retry_count + 1` |
 
 - 전이 실패(영향 0행) 시 현재 상태로 응답: `DONE` → 저장 결과, 유효 `RUNNING` → `status` 이벤트 후 종료 (API 1.4)
-- 고착 `RUNNING` 탐지 인덱스 `(process_status, lease_until)`, 리스 시간 `[P12]`
+- 고착 `RUNNING` 탐지 인덱스 `(process_status, lease_until)`, 리스 90초·탐지 주기 1분 (P12)
 - 리스 시간은 core→learning 피드백 호출 타임아웃보다 길게 설정. 짧으면 처리 중인 판정을 다른 요청이 재획득해 LLM 호출이 중복됨
 
 #### `judgment.result` 결정 (`DONE`일 때만 값 존재)
@@ -189,10 +191,9 @@ stateDiagram-v2
 | `CORRECT` | 규칙: 정답 키 일치·수학 동치 / LLM: 모든 필수 요소 `verified && satisfied` | learning `RuleJudge` / ai `QuoteVerifier.decide` |
 | `PARTIAL` | LLM: 일부 요소만 충족 (배점 기준) | ai `QuoteVerifier.decide` |
 | `RETHINK` | 규칙: 불일치 / LLM: 충족 요소 없음 | learning `RuleJudge` / ai `QuoteVerifier.decide` |
-| `HELD` | `INSUFFICIENT_EVIDENCE`·`QUOTE_MISMATCH`·`TOO_SHORT`·`UNVERIFIED_SCOPE`(`judge_verified = false`·초1~2 서술)·`MODEL_DISAGREEMENT`(M2 불일치)·`LOW_CONFIDENCE`(M1 0.8 미만 `[P15]`) | ai `QuoteVerifier.decide`·`JudgmentService` (learning은 `judge_verified`·학년 포함 기준표 전달만) |
+| `HELD` | `INSUFFICIENT_EVIDENCE`·`QUOTE_MISMATCH`·`TOO_SHORT`·`UNVERIFIED_SCOPE`(`judge_verified = false`)·`MODEL_DISAGREEMENT`(M2 불일치)·`LOW_CONFIDENCE`(M1 0.8 미만, P15) | ai `QuoteVerifier.decide`·`JudgmentService` (learning은 `judge_verified`·학년 포함 기준표 전달만) |
 
 - `HELD`는 정상 처리 결과(`DONE`), API 실패는 `FAILED` → 서로 다른 컬럼 (NFR-REL-04)
-- `speech_transcribed = true` 답변은 판정 대상 아님 (FN-LRN-18). 이 경우의 `judgment` 표기 방식은 `[P03]`
 
 ---
 
@@ -250,7 +251,7 @@ stateDiagram-v2
 | `RUNNING → FAILED` | 예외 | `WeeklyReport.fail(reason)` | 위와 같음 + `outbox(report.failed)` |
 
 - 기록 없는 주·표본 부족 주는 `COMPLETED` + `state`, 처리 실패(`FAILED`)와 구분 (FN-RPT-11)
-- 재생성은 새 행(`revision + 1`), 기존 결과 보존 `[P06]` `[P09]`
+- 재생성은 새 행(`revision + 1`), 기존 결과 보존·최신판 기본 조회 (P06)
 
 ### 4.3 `conversation_message.status`
 
@@ -258,8 +259,8 @@ stateDiagram-v2
 stateDiagram-v2
   [*] --> QUEUED: 질문 저장
   QUEUED --> RUNNING: ai 스트림 시작
-  RUNNING --> COMPLETED: 대조 통과 result 또는 clarification
-  RUNNING --> FAILED: ai 실패·대조 실패·클라이언트 단절
+  RUNNING --> COMPLETED: 대조 통과·규칙 응답 result 또는 clarification
+  RUNNING --> FAILED: 기록 조회·ai 서비스 실패·클라이언트 단절
   FAILED --> RUNNING: 재시도 (사용자·관리자)
   COMPLETED --> [*]
 ```
@@ -269,10 +270,10 @@ stateDiagram-v2
 | → `QUEUED` | `POST /conversations/{id}/messages` | `ConversationService.startMessage` | UK `(conversation_id, seq)` |
 | `QUEUED → RUNNING` | ai 호출 직전 | `ConversationMessage.start()` | `WHERE status='QUEUED'` + `job_execution(RUNNING)` |
 | `RUNNING → COMPLETED` | `result`·`clarification` 이벤트 | `complete(...)`·`clarify(...)` | `WHERE status='RUNNING'`, 확정 답변·`message_evidence` 같은 트랜잭션 |
-| `RUNNING → FAILED` | `error` 이벤트·예외·단절 | `fail(code)` | `failure_code` (`AI_UNAVAILABLE`·`VERIFICATION_FAILED`·`CLIENT_DISCONNECTED`) |
+| `RUNNING → FAILED` | `error` 이벤트·예외·단절 | `fail(code)` | `failure_code` (`AI_UNAVAILABLE`·`CLIENT_DISCONNECTED`). 대조 실패·LLM 장애는 규칙 응답으로 `COMPLETED` (P16) |
 | `FAILED → RUNNING` | `/messages/{id}/retry`, `/admin/jobs/{id}/retry` | `retry()` | `WHERE status='FAILED'`, `retry_count + 1` |
 
-- `answer` 컬럼에는 대조 통과한 확정 답변만 저장 (`delta` 임시 텍스트 미저장)
+- `answer` 컬럼에는 대조 통과한 확정 답변 또는 규칙 응답 템플릿(`source = TEMPLATE`)만 저장 (`delta` 임시 텍스트 미저장)
 
 ### 4.4 `notification.status` · `job_execution.status`
 
@@ -298,7 +299,7 @@ stateDiagram-v2
 - `N_*` = `notification.status`, `E_*` = `job_execution.status` 값 (접두어는 이름 충돌 방지용)
 - `notification` UK `(user_id, type, source_event_id)` → 같은 사건 재처리 시 중복 생성 없음 (FN-SUP-08). 읽음(`read_at`)은 상태와 독립
 - `job_execution`: 대화·리포트·알림 실행 1회당 1행, UK `(job_type, job_id, attempt_no)`. 재처리는 `attempt_no + 1` 새 행 (FN-ADM-07)
-- 외부 채널(이메일·푸시) 상태는 `[P10]` 확정 전 미구현, 현재는 인앱만
+- 알림 채널은 인앱만, 이메일·푸시 없음 (P10)
 
 ---
 
@@ -355,9 +356,9 @@ stateDiagram-v2
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
 | → `APPROVED·CONFIRMING·FAILED` | `POST /payments/confirm` | `PaymentService.confirm` | `order_id` UK (같은 주문 1회), 금액 대조 통과 후에만 PG 호출 |
-| → `APPROVED·CONFIRMING·FAILED` | 정기 청구 | `BillingScheduler.chargeDue` → `SubscriptionService.renew` | `RENEWAL` 주문 1건당 1회, 재청구는 9장 가정 `[P13]` |
+| → `APPROVED·CONFIRMING·FAILED` | 정기 청구 | `BillingScheduler.chargeDue` → `SubscriptionService.renew` | `RENEWAL` 주문 1건당 1회, 실패 시 매일 1회 최대 3회 재청구 (P13), 주문 재사용은 9장 가정 |
 | `CONFIRMING → APPROVED·FAILED` | 웹훅·`GET /payments/{orderId}`·스케줄러 재조회 | `PaymentService.refreshStatus`·`handleWebhook` | `WHERE status='CONFIRMING'`, 본문 대신 PG 조회 결과 사용 |
-| `APPROVED → REFUND_REVIEW` | `POST /payments/{id}/refund-requests` | `RefundService.request` → `Payment.startRefundReview()` | `WHERE status='APPROVED'`, 조건 `[P14]` |
+| `APPROVED → REFUND_REVIEW` | `POST /payments/{id}/refund-requests` | `RefundService.request` → `Payment.startRefundReview()` | `WHERE status='APPROVED'`, 결제 7일 이내 + 프리미엄 기능 미사용 아니면 `409 REFUND_NOT_ALLOWED` (P14) |
 | `REFUND_REVIEW → REFUNDED·APPROVED` | 환불 승인 결과·반려 | `Payment.refund()` / 복귀 | `refund_request` 결과와 같은 트랜잭션 |
 | `APPROVED → CANCELED` | 웹훅 취소 통지 | `Payment.cancel()` | PG 조회로 확인된 경우만 |
 
@@ -367,7 +368,7 @@ stateDiagram-v2
 | → `RECOVERY_REQUIRED` | 승인 후 구독 반영 실패 | `Payment.requireRecovery()` |
 | `RECOVERY_REQUIRED → APPLIED` | 복구 재시도 (추가 청구 없음) | `SubscriptionService.recoverEntitlement` |
 
-- 부분 환불 시 `payment.status` 처리(`REFUNDED` 시점) `[P14]`, 확정 전 전액 환불만 `REFUNDED`
+- 부분 환불 없음, 전액 환불만 `REFUNDED` (P14). `REFUNDED` 시 대상 구독 즉시 `CANCELED`
 
 ### 6.2 `subscription.status`
 
@@ -379,10 +380,11 @@ stateDiagram-v2
   RENEWAL_FAILED --> ACTIVE: 재청구 성공
   RENEWAL_FAILED --> CANCELED: 유예 기간 만료
   ACTIVE --> CANCELED: 자동 갱신 해지 후 이용 기간 종료
+  ACTIVE --> CANCELED: 환불 완료
   CANCELED --> [*]
   note right of RENEWAL_FAILED
-    재청구 횟수·유예 기간 [P13]
-    해지 효력·환불 시 처리 [P14]
+    유예 3일·매일 1회 최대 3회 재청구 (P13)
+    유예 중 이용 유지
   end note
 ```
 
@@ -391,10 +393,12 @@ stateDiagram-v2
 | → `ACTIVE` | 결제 승인 | `SubscriptionService.activate` | 부분 UK `(student_id) WHERE status IN ('ACTIVE','RENEWAL_FAILED')` → 중복 `409 SUBSCRIPTION_DUPLICATE` |
 | `ACTIVE → ACTIVE` | `BillingScheduler.chargeDue` 성공 | `Subscription.extend(...)` | `payment_order` 부분 UK `(subscription_id, billing_period_start) WHERE RENEWAL` |
 | `ACTIVE → RENEWAL_FAILED` | 청구 실패 | `Subscription.renewalFailed(graceUntil)` | `renewal_retry_count + 1`, 알림 `SUBSCRIPTION_CHANGED` |
-| `RENEWAL_FAILED → ACTIVE·CANCELED` | 재청구 성공 / `grace_until` 경과 | `extend` / `cancel()` | `[P13]`. 같은 기간 재청구는 ERD 부분 UK와 충돌 → 9장 가정 |
-| `ACTIVE → CANCELED` | `auto_renew = false` + `period_end` 경과 | `BillingScheduler.expireCanceled` → `cancel()` | `auto_renew_canceled_at` 기록 후에만, `canceled_at` `[P14]` |
+| `RENEWAL_FAILED → ACTIVE·CANCELED` | 재청구 성공 / `grace_until` 경과 | `extend` / `cancel()` | 3회 재청구 모두 실패하거나 `grace_until`(실패일 + 3일) 경과 시 `CANCELED` (P13). 같은 기간 재청구는 ERD 부분 UK와 충돌 → 9장 가정 |
+| `ACTIVE → CANCELED` | `auto_renew = false` + `period_end` 경과 | `BillingScheduler.expireCanceled` → `cancel()` | `auto_renew_canceled_at` 기록 후에만, `canceled_at` = `period_end` 경과 시점 (P14) |
+| `ACTIVE → CANCELED` | 환불 완료(`payment REFUNDED`) | `RefundService` → `cancel()` | 같은 트랜잭션, `canceled_at` = 환불 완료 시점 (P14) |
 
-- 자동 갱신 해지(`DELETE /subscriptions/{id}/auto-renewal`)는 상태 전이 없이 `auto_renew = false`만 변경
+- 자동 갱신 해지(`DELETE /subscriptions/{id}/auto-renewal`)는 상태 전이 없이 `auto_renew = false`만 변경, `period_end` 전 해지 철회(`PUT`)는 `auto_renew = true` (P14)
+- `CANCELED` 이후 해당 자녀는 무료 플랜 한도 적용 (P13)
 
 ### 6.3 `refund_request.status`
 
@@ -457,7 +461,7 @@ stateDiagram-v2
 stateDiagram-v2
   [*] --> 저장_완료: 초안 복원
   저장_완료 --> 수정됨: 입력 변경
-  수정됨 --> 저장_중: 자동 저장 시점 [P05]
+  수정됨 --> 저장_중: 자동 저장 시점 (답변·메모 함께, P05)
   저장_중 --> 저장_완료: 200 (새 ETag·마지막 저장 시점)
   저장_중 --> 저장_실패: 네트워크·5xx
   저장_중 --> 충돌: 409 ATTEMPT_DRAFT_CONFLICT
@@ -471,14 +475,7 @@ stateDiagram-v2
 ---
 
 ## 9. 확인 필요 가정
-- 미션 `DRAFT → REVIEW_REQUIRED` 트리거: API에 검토 요청 엔드포인트 없음. 가정은 "필수 항목(현재 미션·기준표 버전) 저장 시 자동 전환" → 확정 시 API 명세 2.8 갱신 `[P07]`
-- 공개 중(`PUBLISHED`) 수정본 적용 시점·진행 중 학습 처리 `[P07]`, 재공개 시 재검토 필수 여부
-- 마무리(`finished_at`) 이후 보완 답변 허용 여부·돌아보기 필수 여부 `[P03]` `[P04]`
-- 탈퇴 처리 조건 `[P09]` `[P14]`, 학생 삭제 확인·완료 판정 `[P09]`
-- 구독 갱신 재시도·유예 `[P13]`, 해지 효력·부분 환불 상태 `[P14]`
-- 판정 리스 시간·고착 탐지 주기 `[P12]`
-- 음성 전사 답변(`speech_transcribed`)의 판정 상태 표기 `[P03]`
 - 문의 `RECEIVED → IN_REVIEW`: API 2.8에 상태 변경 엔드포인트 없음 → 필요 시 API 명세에 추가
 - 돌아보기를 마무리 전에 저장하면 `409 REVEAL_CONDITION_UNMET`으로 거부 (기존 오류 코드 재사용)
-- 정기 청구 재청구: ERD 부분 UK `(subscription_id, billing_period_start) WHERE kind = 'RENEWAL'`로 같은 기간 새 주문 불가. 가정은 "기존 주문의 결제가 `FAILED`면 같은 주문으로 재청구", PG 주문번호 재사용 가능 여부 확인 후 ERD 반영 필요 `[P13]`
+- 정기 청구 재청구: ERD 부분 UK `(subscription_id, billing_period_start) WHERE kind = 'RENEWAL'`로 같은 기간 새 주문 불가. 가정은 "기존 주문의 결제가 `FAILED`면 같은 주문으로 재청구", PG 주문번호 재사용 가능 여부 확인 후 ERD 반영 필요
 - `QUEUED` 고착 `report_job` 재처리: 새 행 생성 시 기존 행을 `FAILED`(`failure_reason = SUPERSEDED`)로 종료하는 방안 가정. 늦게 도착한 기존 job 이벤트는 조건부 UPDATE로 무시

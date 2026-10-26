@@ -1,0 +1,59 @@
+name: ci-db-schema
+
+on:
+  pull_request:
+    paths:
+      - "backend/*/src/main/resources/db/migration/**"
+      - "backend/report-service/migrations/**"
+      - "backend/report-service/alembic.ini"
+      - "backend/report-service/pyproject.toml"
+      - "backend/report-service/uv.lock"
+      - "docs/design/erd.md"
+      - "scripts/verify_db_schema.py"
+      - "scripts/check_db_migrations.py"
+      - "scripts/tests/**"
+      - "compose.yaml"
+      - ".github/workflows/ci-db-schema.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-schema-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    services:
+      postgres:
+        image: postgres:17.11-alpine
+        env:
+          POSTGRES_USER: schema_ci
+          POSTGRES_PASSWORD: schema_ci_temporary
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U schema_ci -d postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGUSER: schema_ci
+      PGPASSWORD: schema_ci_temporary
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/report-service/uv.lock
+      - name: Install locked migration dependencies
+        run: uv sync --frozen --no-dev --project backend/report-service --python 3.12
+      - name: Test verifier with Python optimizations enabled
+        run: backend/report-service/.venv/bin/python -O -m unittest discover -s scripts/tests -v
+      - name: Apply, verify, rerun and round-trip migrations
+        run: backend/report-service/.venv/bin/python -O scripts/check_db_migrations.py

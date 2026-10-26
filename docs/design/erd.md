@@ -3,7 +3,7 @@
 - 근거: [기능명세서](functional-spec.md), [API 명세서](api-spec.md), [유스케이스](usecase.md), [아키텍처 설계](architecture.md), [프로젝트 기획서](<../outputs/프로젝트 기획서_사고뭉치_최종.pdf>) 4.5
 - 범위: DB를 소유한 서비스 3개(core_db · learning_db · report_db). ai·scoring은 상태 없음 (아키텍처 1.1)
 - AI Hub 원본·가공본은 `ml/` 학습용으로 서비스 DB에 넣지 않음 (NFR-DAT-03)
-- `[P..]`는 미확정 정책. 확정 전에는 컬럼 자리만 두거나 테이블을 만들지 않음
+- `(P04)` 형태는 확정 정책 번호, 내용은 [기능명세서 1.4](functional-spec.md#14-확정-정책)
 
 ---
 
@@ -21,13 +21,13 @@
 | 버전 연결 | 판정·되묻기·분석·리포트 행에 당시 미션·기준표·모델·프롬프트 버전 저장 (NFR-DAT-02) |
 | 개인정보 | 학생은 가명 닉네임만 저장, 실명 컬럼 없음. 결제수단 민감 정보 미저장 (NFR-SEC-06) |
 | JSONB | 구조가 응답 스키마와 같고 조회 조건에 쓰지 않는 값만 (Metric[], verification, versions 등) |
-| NULL·기본값 | `NULL 허용` 표시 컬럼 외에는 NOT NULL. UUID·시각·상태·카운터의 SQL DEFAULT는 두지 않고 앱에서 전달. 미확정 정책의 기간·값을 임의 기본값으로 고정하지 않음 |
+| NULL·기본값 | `NULL 허용` 표시 컬럼 외에는 NOT NULL. UUID·시각·상태·카운터의 SQL DEFAULT는 두지 않고 앱에서 전달. 정책 값(기능명세서 1.4)을 SQL 기본값으로 고정하지 않고 앱 설정·`product` 데이터로 전달 |
 | 문자열·금액 | varchar는 길이 제한 없는 PostgreSQL varchar. ShedLock만 name varchar(64), locked_by varchar(255). 원화는 int, cost_usd는 반올림 정책 없는 numeric |
-| FK 삭제·순환 참조 | 기본 ON DELETE/UPDATE NO ACTION. mission.current_*와 answer.followup_id만 DEFERRABLE INITIALLY IMMEDIATE. 삭제 정책·CASCADE는 P09 확정 없이 추가하지 않음 |
+| FK 삭제·순환 참조 | 기본 ON DELETE/UPDATE NO ACTION. mission.current_*와 answer.followup_id만 DEFERRABLE INITIALLY IMMEDIATE. 삭제는 P09에 따라 `student.deleted` 이벤트로 서비스별 물리 삭제. learning 하위 기록의 CASCADE 여부는 7장 확인 필요 |
 
-- 테이블 없이 Redis에 두는 값: `reauthToken`(단기), 계정 복구 확인 코드, SSE 알림 중계 (아키텍처 1.6)
-- 서버에 저장하지 않는 값: 생각 메모 `[P05]`, 음성 원음 (FN-LRN-07, 18)
-- 테이블 미생성: 학생 별도 계정·학생 세션 방식 `[P01]` → `student.user_account_id` 자리만 둠
+- 테이블 없이 Redis에 두는 값: `reauthToken`(단기), 계정 복구 확인 코드, SSE 알림 중계 (아키텍처 1.6), 요금제 사용 한도 일 단위 카운터 (P13)
+- 생각 메모는 `attempt_draft.content.memo`에 저장 (P05). 음성 시범 미구현으로 음성 데이터 없음 (P03)
+- 학생 별도 계정 없음: 학생 세션은 학부모 인증 후 `student.id`로 발급하는 토큰만, 테이블 없음 (P01)
 
 ---
 
@@ -45,7 +45,7 @@
 | `error_report_id` | core `error_report.id` | learning `judgment_correction` |
 | 사용자 ID | core `user_account.id` | learning `mission.created_by`·`mission_review.reviewer_id`·`judgment_correction.corrected_by` |
 
-- 삭제 전파: core가 삭제 확정 시 `student.deleted` 발행 → learning·report가 해당 학생 기록 삭제 (아키텍처 1.4, `[P09]`)
+- 삭제 전파: core가 삭제 확정 시 `student.deleted` 발행 → learning·report가 해당 학생 기록 삭제 (아키텍처 1.4, P09)
 - 삭제된 기록을 참조하면 learning 근거 조회가 `available: false` 반환 (FN-ACC-13)
 
 ---
@@ -58,7 +58,6 @@
 erDiagram
   user_account ||--o{ admin_permission : has
   user_account ||--o{ refresh_token : issues
-  user_account |o--o| student : "학생 계정 [P01]"
   user_account ||--o{ consent : agrees
   consent_document ||--o{ consent : "문서 버전"
   student |o--o{ consent : "법정대리인 동의 대상"
@@ -96,9 +95,9 @@ erDiagram
   }
   student {
     uuid id PK "전 서비스 공통 학생 ID"
-    uuid user_account_id FK,UK "NULL 허용 · [P01]"
     varchar nickname "가명"
-    int grade "이후 제공 문제에만 적용"
+    int grade "3~6, 이후 제공 문제에만 적용 (P03)"
+    int birth_year "출생연도 (P01)"
     boolean is_demo "시연 가상 학생"
     varchar status "ACTIVE|DELETION_REQUESTED|DELETED"
     timestamptz created_at
@@ -129,7 +128,7 @@ erDiagram
     uuid id PK
     uuid parent_user_id FK
     uuid student_id FK
-    varchar method "REGISTER|LINK"
+    varchar method "REGISTER (P02: LINK 미지원)"
     varchar status "LINKED|UNLINKED"
     timestamptz linked_at
     timestamptz unlinked_at "NULL 허용"
@@ -295,7 +294,7 @@ erDiagram
   notification_setting {
     uuid user_id PK,FK
     varchar type PK
-    varchar channel PK "IN_APP|EMAIL|PUSH [P10]"
+    varchar channel PK "IN_APP (P10)"
     boolean enabled
     timestamptz updated_at
   }
@@ -305,7 +304,7 @@ erDiagram
     uuid student_id FK "NULL 허용"
     varchar target_type "FOLLOWUP|JUDGMENT|ANALYSIS|REPORT"
     uuid target_id "learning·core·report 논리 참조"
-    varchar category "NULL 허용 · [P10]"
+    varchar category "WRONG_JUDGMENT|ODD_QUESTION|MISMATCH|INAPPROPRIATE|OTHER (P10)"
     text comment "NULL 허용"
     varchar status "RECEIVED|IN_REVIEW|RESOLVED"
     text review_result "NULL 허용"
@@ -370,12 +369,13 @@ erDiagram
 
   product {
     uuid id PK
-    varchar code UK "BASIC|PLUS"
+    varchar code UK "FREE|PREMIUM 등, 가격 변경 시 새 행 (P13)"
     varchar name
-    int price "NULL 허용 · 원, [P13]"
+    int price "원, FREE = 0, PREMIUM = 14900 (P13)"
     varchar billing_cycle "MONTHLY|YEARLY"
     int child_limit
     jsonb features
+    jsonb limits "dailyMissions, dailyFeedback, dailyConversations, reportNarrative (P13)"
     boolean active
     timestamptz created_at
   }
@@ -417,10 +417,10 @@ erDiagram
     boolean auto_renew
     varchar customer_key "NULL 허용 · PG customerKey"
     varchar billing_key_enc "NULL 허용 · 암호화 저장"
-    int renewal_retry_count "NULL 허용 · [P13]"
-    date grace_until "NULL 허용 · 이용 제한 예정일 [P13]"
+    int renewal_retry_count "NULL 허용 · 최대 3 (P13)"
+    date grace_until "NULL 허용 · 갱신 실패일 + 3일 (P13)"
     timestamptz auto_renew_canceled_at "NULL 허용 · 자동 갱신 해지 요청"
-    timestamptz canceled_at "NULL 허용 · 해지 효력 [P14]"
+    timestamptz canceled_at "NULL 허용 · 해지 효력 (period_end 경과·환불 완료 시점, P14)"
     timestamptz created_at
     timestamptz updated_at
   }
@@ -449,10 +449,14 @@ erDiagram
 ```
 
 - `subscription` 부분 UK `(student_id) WHERE status IN ('ACTIVE','RENEWAL_FAILED')` → 같은 자녀 중복 구독 409 (FN-PAY-02)
+- 활성 구독이 없는 자녀는 무료 플랜, 한도는 `product(code = FREE)` 행의 `limits` (P13)
+- 가격·한도 변경은 기존 `product` 행 수정 대신 새 행 추가 후 기존 행 `active = false`. 기존 구독은 `product_id`·`payment_order.amount`로 결제 당시 조건 유지 (P13)
 - 승인 처리 순서: `payment_order.amount`·대상 자녀 대조 → PG 승인 → `payment` 저장 → 구독 생성·반영 → `payment_order.subscription_id` 연결. 반영 실패 시 `entitlement_status = RECOVERY_REQUIRED` (FN-PAY-03, 05)
 - `payment_order` 부분 UK `(subscription_id, billing_period_start) WHERE kind = 'RENEWAL'` → 정기 청구 중복 실행 시 이중 청구 방지 (FN-PAY-06, NFR-REL-01)
-- 자동 갱신 해지는 `auto_renew = false` + `auto_renew_canceled_at` 기록, 남은 기간 이후 `status = CANCELED` + `canceled_at` (FN-PAY-09)
-- 갱신 실패 시 `RENEWAL_FAILED` + `renewal_retry_count`·`grace_until` 갱신, 재시도 횟수·유예 기간 값은 `[P13]` (FN-PAY-08)
+- 자동 갱신 해지는 `auto_renew = false` + `auto_renew_canceled_at` 기록, 남은 기간 이후 `status = CANCELED` + `canceled_at`. `period_end` 전 해지 철회 시 `auto_renew = true`, `auto_renew_canceled_at = NULL` (FN-PAY-09, P14)
+- 환불 완료(`payment.status = REFUNDED`) 시 구독 즉시 `CANCELED` + `canceled_at` (P14)
+- 갱신 실패 시 `RENEWAL_FAILED` + `grace_until = 실패일 + 3일`, 매일 1회 재청구마다 `renewal_retry_count + 1`, 3회 실패 시 `CANCELED` (FN-PAY-08, P13)
+- 재청구 주문: 같은 기간 부분 UK 때문에 기존 `RENEWAL` 주문으로 재청구하는 것으로 가정. 토스 자동결제의 `orderId` 재사용 가능 여부 확인 후 확정 (기술 확인 사항)
 - 웹훅은 `transmission_id`로 1회만 반영, 본문 대신 PG 조회 결과로 상태 갱신 (FN-PAY-04)
 - 환불 중복·초과 방지: 승인된 `refund_request.amount` 합계 ≤ `payment.amount` 검사 (FN-ADM-16)
 - 카드번호 등 결제수단 원본 미저장, 빌링키는 암호화 (NFR-SEC-06)
@@ -524,7 +528,7 @@ erDiagram
     int response_status "NULL 허용"
     jsonb response_body "NULL 허용"
     timestamptz created_at
-    timestamptz expires_at "NULL 허용 · [P12]"
+    timestamptz expires_at "NULL 허용 · created_at + 24시간 (P12)"
   }
 ```
 
@@ -533,7 +537,7 @@ erDiagram
 - `llm_usage`에 학생 ID·답변 원문 컬럼 없음 (NFR-PRF-02). 수집 데이터 보고서의 예정 필드 `llm_usage_log(call_type, model, input_tokens, output_tokens, ts)` 대응
 - `cost_usd`는 core 설정의 모델별 토큰 단가(기획서 3.9)로 소비 시 계산, 단가 변경 후에도 과거 값 유지 (FN-ADM-19)
 - `outbox_event`: 상태 변경과 같은 트랜잭션에 저장, 릴레이가 publisher confirm 후 `published_at` 기록 (아키텍처 1.6)
-- `idempotency_record.user_id`는 core `user_account.id` FK. 요청 접수 후 응답 확정 전에는 response_status·response_body를 NULL로 둔다. expires_at 값은 P12에서 결정한다.
+- `idempotency_record.user_id`는 core `user_account.id` FK. 요청 접수 후 응답 확정 전에는 response_status·response_body를 NULL로 둔다. expires_at은 created_at + 24시간이다 (P12).
 - `idempotency_record`: 공개 API의 `Idempotency-Key` 대상(답변 제출·주문·승인·환불·재처리·신고) 공통. 같은 키·다른 본문은 `request_hash` 불일치로 422 (API 1.4)
 
 ---
@@ -649,6 +653,7 @@ erDiagram
   rubric_element ||--o{ judgment_element : "기준 요소"
   judgment ||--o| followup : generates
   attempt ||--o{ followup : timeline
+  followup_bank_question |o--o{ followup : "질문 은행 (P16)"
   judgment ||--o{ judgment_correction : corrected
   attempt ||--o| reflection : reflects
   attempt ||--o{ self_assessment : "자기 체크"
@@ -670,7 +675,7 @@ erDiagram
   attempt_draft {
     uuid attempt_id PK,FK
     int version "ETag"
-    jsonb content
+    jsonb content "answer, memo (P05)"
     timestamptz saved_at
   }
   hint_usage {
@@ -689,7 +694,6 @@ erDiagram
     jsonb content "text, essay, choiceIds"
     text plain_text "NULL 허용 · 인용 대조용 원문"
     boolean dictated_by_guardian
-    boolean speech_transcribed "음성 시범, 판정 제외"
     uuid idempotency_key
     timestamptz submitted_at
   }
@@ -697,7 +701,7 @@ erDiagram
     uuid id PK
     uuid answer_id FK,UK
     varchar process_status "PENDING|RUNNING|DONE|FAILED"
-    timestamptz lease_until "NULL 허용 · RUNNING 리스 [P12]"
+    timestamptz lease_until "NULL 허용 · RUNNING 리스, 획득 시각 + 90초 (P12)"
     varchar result "NULL 허용 · CORRECT|PARTIAL|RETHINK|HELD"
     varchar held_reason "NULL 허용 · INSUFFICIENT_EVIDENCE|QUOTE_MISMATCH|TOO_SHORT|UNVERIFIED_SCOPE|MODEL_DISAGREEMENT|LOW_CONFIDENCE"
     varchar method "NULL 허용 · RULE|LLM"
@@ -727,10 +731,18 @@ erDiagram
     uuid judgment_id FK,UK
     varchar type "ONE_STEP_MORE|TELL_MORE|LOOK_AGAIN"
     text question
-    varchar source "LLM|LLM_RETRY|BANK|TEMPLATE"
+    varchar source "LLM|LLM_RETRY|BANK (P16)"
+    uuid bank_question_id FK "NULL 허용 · source = BANK일 때"
     boolean leak_check_passed
     varchar prompt_version "NULL 허용"
     varchar model_version "NULL 허용"
+    timestamptz created_at
+  }
+  followup_bank_question {
+    uuid id PK
+    varchar type "ONE_STEP_MORE|TELL_MORE|LOOK_AGAIN"
+    text question "미션 무관 중립 질문"
+    boolean active
     timestamptz created_at
   }
   judgment_correction {
@@ -764,7 +776,9 @@ erDiagram
 - `attempt`는 시작 시점의 미션·기준표 버전을 고정 → 기준 변경 후에도 과거 결과 재현 (NFR-DAT-02)
 - `attempt_draft`는 시도당 1행, `UPDATE ... WHERE version = :ifMatch` 실패 시 409 (FN-LRN-17)
 - `answer` UK `(attempt_id, version)`, `(attempt_id, idempotency_key)`. 수정·삭제 없이 추가만 (FN-LRN-08~10)
-- `speech_transcribed = true` 답변은 판정하지 않음 (FN-LRN-18, 범위 `[P03]`)
+- `followup`은 시도당 최대 2행 (P04). 고르기 `CORRECT`면 생성하지 않음
+- `followup_bank_question`은 ai 유출 검사 재실패 시 learning이 `type`이 같은 활성 질문 중 선택, 시드 데이터로 관리 (P16)
+- `attempt_draft.content.memo`는 학생 본인 조회에만 사용, 판정·리포트·학부모 조회 대상 아님 (P05)
 - `judgment`는 답변 제출 시 `PENDING`으로 함께 생성. 피드백 요청 시 `PENDING|FAILED|리스 만료 RUNNING → RUNNING` 조건부 전이 (API 1.4)
 - 판정 보류는 `result = HELD`, 처리 실패는 `process_status = FAILED` → 서로 다른 컬럼 (NFR-REL-04)
 - `judgment_element` UK `(judgment_id, rubric_element_id)`. verified·satisfied는 NOT NULL이며 CHECK (verified OR NOT satisfied)로 미검증 충족을 금지한다. 근거가 없으면 quote·source_type은 NULL 가능 (API 3.2, FN-JDG-03).
@@ -772,7 +786,7 @@ erDiagram
 - `answer.input_type`은 mission_version.input_type과 같은 코드 집합을 CHECK한다. notification_setting.type은 notification.type, correction.target_type은 error_report.target_type과 같은 집합이다.
 - 정정은 `judgment`를 직접 바꾸지 않고 `judgment_correction` 추가, 최신 정정을 조회 시 반영 (FN-SUP-03)
 - `self_assessment` UK `(attempt_id, rubric_element_id)`. AI 판정·원본 답변과 별도 저장 (FN-LRN-13)
-- 도움 이용 비율 집계 근거 = `hint_usage.opened_at` vs 최초 `answer.submitted_at` (집계 규칙 `[P08]`)
+- 도움 이용 비율 집계 근거 = `hint_usage.opened_at` vs 최초 `answer.submitted_at` (최초 답변 전 열람 없는 시도 / 집계 대상 시도, P08)
 
 ### 4.3 삭제·공통
 
@@ -791,7 +805,7 @@ erDiagram
   }
 ```
 
-- `student.deleted` 소비: 해당 학생 `attempt` 이하 기록 삭제 + `deleted_student` 저장 → 근거 조회 시 `available: false` (삭제 방식 `[P09]`)
+- `student.deleted` 소비: 해당 학생 `attempt` 이하 기록 삭제 + `deleted_student` 저장 → 근거 조회 시 `available: false` (물리 삭제 + 표식, P09). 처리 완료는 core에 삭제 완료 이벤트로 알림
 - learning은 이벤트를 발행하지 않으므로 `outbox_event` 없음 (아키텍처 1.6)
 - 멱등은 `answer`·`judgment_correction`의 `idempotency_key` UK로 처리, 별도 `idempotency_record` 없음
 
@@ -814,7 +828,7 @@ erDiagram
     int revision "재생성 회차"
     varchar status "RUNNING|COMPLETED|FAILED"
     varchar state "NULL 허용 · OK|NO_RECORD|INSUFFICIENT_SAMPLE"
-    text inclusion_rule "NULL 허용 · 포함 기준 [P06][P08]"
+    text inclusion_rule "NULL 허용 · 포함 기준 (P06, P08)"
     text evening_question "NULL 허용"
     jsonb narrative "NULL 허용 · text, source, modelExplanation"
     jsonb verification "NULL 허용 · numbersMatched, quotesMatched"
@@ -864,7 +878,7 @@ erDiagram
 ```
 
 - `weekly_report.job_id` UK → 같은 `report.generate` 재전달 시 1회만 생성. 상태 전이 `RUNNING → COMPLETED|FAILED`와 `outbox_event(report.*)`를 같은 트랜잭션에 저장
-- 재생성은 기존 행을 덮지 않고 `revision` 증가 행 추가, UK `(student_id, period_from, revision)` (보존 방식 `[P06]` `[P09]`)
+- 재생성은 기존 행을 덮지 않고 `revision` 증가 행 추가, UK `(student_id, period_from, revision)` (기존 판 보존·최신판 기본 조회, P06). 학부모 요청 재생성은 리포트당 1회 → core `report_job(REGENERATE)` 건수로 확인
 - 기록 없는 주·표본 부족 주는 `status = COMPLETED` + `state`로 구분, 생성 실패(`FAILED`)와 분리 (FN-RPT-11). state는 COMPLETED일 때만 NOT NULL (상태 다이어그램 4.2).
 - `report_item` UK `(report_id, item_type, seq)`. 상세 응답(API 3.4)은 `item_type`별로 묶어 조립
 - `report_file` UK `(report_id, format)`. 다운로드는 `s3_key`로 presigned URL 발급 (FN-RPT-13)
@@ -895,14 +909,10 @@ erDiagram
 ---
 
 ## 7. 확인 필요 가정
-- `[P01]` 학생 별도 계정: 확정 전 `student.user_account_id` NULL, 학생 진입은 학부모 계정 하위 세션으로 가정. 만 14세 확인 방식 확정 시 `student.birth_year` 추가
-- `[P02]` 기존 학생 연결 절차: 연결 코드 방식 확정 시 연결 코드 테이블 추가
-- `[P05]` 메모 보관: 확정 시 `attempt_draft.content`에 포함 또는 별도 테이블
-- `[P16]` 중립 질문 은행: 사용 합의 시 learning에 질문 은행 테이블 추가 (`followup.source = BANK`)
 - PG 거래 대조(FN-ADM-15): 조회 시 PG API와 계산, 결과 테이블 없음
-- `[P09]` 삭제 방식: 물리 삭제 + `deleted_student` 표식으로 가정. 보관 기간 확정 시 대화·리포트 삭제 범위 반영
-- `[P12]` `idempotency_record.expires_at`·`judgment.lease_until` 값
-- `[P13]` 상품·가격: `product` 시드 데이터로만 관리, 스키마 변경 없음
+- learning 학생 삭제 시 `attempt` 하위 기록 삭제 방식: FK `ON DELETE CASCADE` 또는 서비스 내 삭제 순서 (클래스 다이어그램 8장)
+- 정기 청구 재청구의 `payment_order` 재사용: 토스 `orderId` 재사용 가능 여부 확인 필요 (3.4)
+- 정책 확정(P01~P16)에 따른 스키마 변경은 기존 마이그레이션(8장)에 아직 미반영: `student.user_account_id` 제거·`birth_year` 추가, `answer.speech_transcribed` 제거, `product.limits` 추가, `followup_bank_question` 신설·`followup.bank_question_id` 추가, `error_report.category`·`notification_setting.channel` 값 제한
 
 
 ## 8. 이슈 5 마이그레이션 대응
