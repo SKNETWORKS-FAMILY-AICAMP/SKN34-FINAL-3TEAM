@@ -130,7 +130,7 @@
   "submittedAt": "...", "quote": "아이 원문 일부", "available": true }   // 삭제 시 available=false
 
 // Versions: 결과에 연결된 버전 (NFR-DAT-02)
-{ "mission": "m-12@3", "rubric": "r-12@2", "model": "m2-klue@1.0", "prompt": "judge@4" }
+{ "mission": "m-12@3", "rubric": "r-12@2", "model": "m2-klue-narrative@1.0", "prompt": "judge@4" }
 ```
 
 - SSE 이벤트
@@ -517,7 +517,7 @@ If-Match: "7"
 ### 4.3 scoring-service (호출: ai)
 | Method | Path | 설명 |
 |---|---|---|
-| POST | `/internal/m2/scores` | `{prompt, text, grade}` → 총점 1~4점·8개 항목 1~5점·버전 (활성 범위 밖이면 `{active:false}`). `grade`(3~6)는 scoring이 `초{grade}`로 바꿔 모델 입력에 사용, 학습 데이터 학년(초5·6) 밖은 활성 범위 밖 |
+| POST | `/internal/m2/scores` | `{prompt, text, grade, inputType}` → 총점 1~4점·8개 항목 1~5점·버전 (활성 범위 밖이면 `{active:false}`). `inputType`(`NARRATIVE`·`ESSAY`)으로 모델 선택(`m2-klue-narrative`·`m2-klue-essay`). `grade`(3~6)는 scoring이 `초{grade}`로 바꿔 모델 입력에 사용, 학습 데이터 학년(초5·6) 밖은 활성 범위 밖 |
 | POST | `/internal/m1/checks` | `{problem, answerKey, solution}` → 정답 여부·실수 위치·확신도 (확신도 0.8 미만은 보류, P15) |
 | GET | `/internal/versions` | 활성 모델 버전 |
 
