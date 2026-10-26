@@ -19,6 +19,7 @@ RunPod (GPU):
 
 import argparse
 import json
+import math
 import random
 import time
 import warnings
@@ -188,7 +189,14 @@ def main() -> None:
     scheduler = get_linear_schedule_with_warmup(
         optimizer, int(total_steps * 0.1), total_steps
     )
-    use_amp = device.type == "cuda"  # GPU에서는 16비트 계산으로 빠르게
+    # GPU에서는 16비트 계산으로 빠르게. bf16을 지원하면(RTX 30·40, A100 등) bf16,
+    # 아니면(T4 등) fp16 + GradScaler (fp16은 작은 기울기가 0으로 사라질 수 있어서)
+    amp_dtype = None
+    if device.type == "cuda":
+        bf16_ok = torch.cuda.is_bf16_supported(including_emulation=False)
+        amp_dtype = torch.bfloat16 if bf16_ok else torch.float16
+    scaler = torch.amp.GradScaler("cuda", enabled=amp_dtype == torch.float16)
+    print(f"16비트 계산: {amp_dtype}")
 
     best_qwk, best_epoch = -1.0, 0
     ckpt_dir = args.out_dir / run_name
@@ -198,12 +206,16 @@ def main() -> None:
         for step, batch in enumerate(loaders["train"], 1):
             batch = {k: v.to(device) for k, v in batch.items()}
             with torch.autocast(
-                device_type=device.type, dtype=torch.float16, enabled=use_amp
+                device_type=device.type,
+                dtype=amp_dtype or torch.float32,
+                enabled=amp_dtype is not None,
             ):
                 loss = model(**batch).loss  # 회귀라서 MSE
-            loss.backward()
+            scaler.scale(loss).backward()  # GradScaler가 꺼져 있으면 그냥 backward
+            scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
+            scaler.step(optimizer)
+            scaler.update()
             scheduler.step()
             optimizer.zero_grad()
             if step % 100 == 0:
@@ -215,7 +227,12 @@ def main() -> None:
         print(
             f"에폭 {epoch} 검증 평균 QWK {q:.3f} ({(time.time() - start) / 60:.1f}분)"
         )
-        if q > best_qwk:
+        if math.isnan(q):
+            # 예측이 전부 같은 점수 등으로 QWK를 못 구하면 NaN. 가장 낮은 점수로 취급
+            print("  검증 QWK가 NaN이라 -1로 취급")
+            q = -1.0
+        # 첫 에폭은 무조건 저장 (그래야 마지막에 불러올 체크포인트가 항상 있음)
+        if best_epoch == 0 or q > best_qwk:
             best_qwk, best_epoch = q, epoch
             model.save_pretrained(ckpt_dir)
             tokenizer.save_pretrained(ckpt_dir)
@@ -237,6 +254,7 @@ def main() -> None:
         "best_epoch": best_epoch,
         "best_valid_qwk": round(best_qwk, 3),
         "device": str(device),
+        "amp_dtype": str(amp_dtype),
         "minutes": round((time.time() - start) / 60, 1),
     }
     (ckpt_dir / "train_info.json").write_text(
