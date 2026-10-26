@@ -228,13 +228,13 @@ sequenceDiagram
       A-->>L: result·elements·heldReason·trial·versions
     end
     opt 되묻기 대상 (시도 내 되묻기 2회 미만, 고르기 CORRECT 아님, P04)
-      L->>A: POST /internal/followups {timeline, judgment, rubric}
+      L->>A: POST /internal/followups {timeline, judgment, rubric, mission, grade}
       A->>LLM: 되묻기 생성
       A->>A: LeakGuard 정답·금지어 검사
       opt 검사 실패
         A->>LLM: 1회 재생성 (source = LLM_RETRY)
       end
-      A-->>L: type·question·source·leakCheck
+      A-->>L: type·question·source·leakCheck·versions
       opt 재생성도 검사 실패 (leakCheck.passed = false, question 없음)
         L->>DB: followup_bank_question에서 같은 type 활성 질문 선택 (source = BANK, P16)
       end

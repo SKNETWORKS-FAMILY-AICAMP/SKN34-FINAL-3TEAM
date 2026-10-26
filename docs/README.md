@@ -42,6 +42,7 @@
   - [이슈 #5 DB 스키마 구현·검증](report/db-schema-validation.md): 기술 결정, 마이그레이션 결과와 검증 재현 방법
   - [이슈 #13 DB 마이그레이션 CI](report/db-schema-ci.md): 확정 정책 반영 후 검증 범위와 로컬·CI 실행 방법
   - [이슈 #19 확정 정책 DB 스키마 수정](report/db-policy-schema.md): 변경 대상, 기존 데이터 전환 절차, 1~3단계 검증과 검토 순서
+  - [이슈 #6 ai-service 판정·되묻기 API 설계 변경](report/ai-judgment-followup.md): API 계약 변경, 설계와 다르게 구현한 부분과 근거, learning 연동 시 반영할 점
 
 ## 개발 규칙
 
