@@ -11,6 +11,7 @@ BODY = {
     "judgment": {"result": "RETHINK", "heldReason": None, "elements": []},
     "rubric": {"elements": [{"elementId": "e1", "label": "주장"}]},
     "mission": {"title": "쉬는 시간", "question": "늘릴까?", "thinkingType": "EVALUATE"},
+    "grade": 5,
 }
 
 
@@ -29,7 +30,7 @@ def test_followup_response_uses_camel_case() -> None:
         "question": "문제를 다시 읽어 볼까?",
         "source": "LLM",
         "leakCheck": {"passed": True},
-        "versions": {"model": "fake-model", "prompt": "followup@1"},
+        "versions": {"model": "fake-model", "prompt": "followup@2"},
     }
 
 

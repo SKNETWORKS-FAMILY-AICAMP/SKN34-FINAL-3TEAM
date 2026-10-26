@@ -55,6 +55,7 @@ class FollowupRequest(ApiModel):
     judgment: JudgmentSummary
     rubric: FollowupRubric
     mission: Mission
+    grade: int = Field(ge=1, le=9)  # 판정 요청과 같은 체계, 초1 = 1 … 중3 = 9. 질문 말투에 사용
 
 
 class LeakCheck(ApiModel):

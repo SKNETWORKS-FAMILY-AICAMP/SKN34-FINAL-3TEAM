@@ -36,6 +36,7 @@ def make_request(result: str = "PARTIAL", **overrides: Any) -> FollowupRequest:
             "question": "쉬는 시간을 늘릴까?",
             "thinkingType": "EVALUATE",
         },
+        "grade": 5,
     }
     body.update(overrides)
     return FollowupRequest.model_validate(body)
@@ -63,7 +64,7 @@ def test_type_follows_judgment_result(result: str, followup_type: str) -> None:
     response = create(FakeLlm(question("왜 그렇게 생각했어?")), make_request(result))
     assert response.type == followup_type
     assert (response.source, response.leak_check.passed) == ("LLM", True)
-    assert response.versions.model_dump() == {"model": "fake-model", "prompt": "followup@1"}
+    assert response.versions.model_dump() == {"model": "fake-model", "prompt": "followup@2"}
 
 
 def test_leaked_question_is_regenerated_as_llm_retry() -> None:
@@ -107,3 +108,23 @@ def test_example_answer_is_not_sent_but_banned_terms_are() -> None:
     assert EXAMPLE not in prompt
     assert "집중력 향상" in prompt
     assert llm.requests[0].call_type == "FOLLOWUP"
+
+
+@pytest.mark.parametrize(
+    ("grade", "label", "style"),
+    [(1, "초1", "아주 짧은 한 문장"), (5, "초5", "한두 문장"), (8, "중2", "중학생")],
+)
+def test_prompt_follows_grade(grade: int, label: str, style: str) -> None:
+    llm = FakeLlm(question("왜 그렇게 생각했어?"))
+    create(llm, make_request(grade=grade))
+    prompt = llm.requests[0].user
+    assert f"학년: {label}" in prompt
+    assert style in prompt
+
+
+def test_thinking_direction_only_for_one_step_more() -> None:
+    llm = FakeLlm(question("반대하는 친구는 뭐라고 할까?"), question("왜 그렇게 생각했어?"))
+    create(llm, make_request("CORRECT"))
+    create(llm, make_request("PARTIAL"))
+    assert "넓혀 갈 방향: 다른 입장이나 예외" in llm.requests[0].user
+    assert "넓혀 갈 방향" not in llm.requests[1].user
