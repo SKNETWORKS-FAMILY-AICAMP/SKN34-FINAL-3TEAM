@@ -65,7 +65,10 @@ UsageRecorder = Callable[[LlmUsage], None]
 
 
 class LlmError(Exception):
-    """제공자 요청 1회 실패. retryable이면 LlmClient가 재시도."""
+    """제공자 요청 1회 실패. retryable이면 LlmClient가 재시도.
+
+    sent=False는 LLM에 요청을 보내지 않은 실패(키 미설정 등)라 사용량을 기록하지 않음.
+    """
 
     def __init__(
         self,
@@ -75,6 +78,7 @@ class LlmError(Exception):
         model: str | None = None,
         input_tokens: int | None = None,
         output_tokens: int | None = None,
+        sent: bool = True,
     ) -> None:
         super().__init__(code)
         self.code = code
@@ -82,6 +86,7 @@ class LlmError(Exception):
         self.model = model
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
+        self.sent = sent
 
 
 class LlmUnavailable(Exception):
@@ -140,7 +145,10 @@ class LlmClient(ABC):
             try:
                 response = await self._request(request)
             except LlmError as exc:
-                self._record(request, started, exc.model, exc.input_tokens, exc.output_tokens, exc)
+                if exc.sent:
+                    self._record(
+                        request, started, exc.model, exc.input_tokens, exc.output_tokens, exc
+                    )
                 if not exc.retryable or attempt == self._max_retries:
                     raise LlmUnavailable(exc.code, exc.retryable) from exc
                 await asyncio.sleep(self._backoff_seconds * 2**attempt)
@@ -187,4 +195,4 @@ class UnconfiguredLlm(LlmClient):
         super().__init__(model, max_retries=0, recorder=recorder, backoff_seconds=0, timeout=0)
 
     async def _request(self, request: LlmRequest[T]) -> ProviderResponse[T]:
-        raise LlmError("LLM_NOT_CONFIGURED", retryable=False)
+        raise LlmError("LLM_NOT_CONFIGURED", retryable=False, sent=False)

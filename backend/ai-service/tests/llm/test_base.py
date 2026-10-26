@@ -98,9 +98,7 @@ def test_unconfigured_llm_is_unavailable_without_retry() -> None:
     with pytest.raises(LlmUnavailable) as exc:
         generate(UnconfiguredLlm("claude-sonnet-5-5", usages.append))
     assert (exc.value.code, exc.value.retryable) == ("LLM_NOT_CONFIGURED", False)
-    assert [(u.model, u.input_tokens, u.error_code) for u in usages] == [
-        ("claude-sonnet-5-5", None, "LLM_NOT_CONFIGURED")
-    ]
+    assert usages == []  # 실제 LLM 호출이 없으므로 사용량 미기록 (NFR-PRF-02 "호출마다")
 
 
 def test_deadline_cuts_timeout_and_stops_retry() -> None:

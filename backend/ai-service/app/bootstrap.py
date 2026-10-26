@@ -12,7 +12,9 @@ from app.health.router import router as health_router
 from app.judgment.router import router as judgment_router
 from app.llm.factory import create_llm
 from app.messaging.connection import AmqpConnection
+from app.messaging.publisher import UsagePublisher
 from app.security import InternalAuthMiddleware
+from app.versions import router as versions_router
 
 
 @asynccontextmanager
@@ -21,13 +23,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     amqp = AmqpConnection(settings.rabbitmq_url)
     amqp.start()
     app.state.amqp = amqp
-    app.state.llm = create_llm(settings, recorder=lambda usage: None)
+    publisher = UsagePublisher(amqp)
+    app.state.llm = create_llm(settings, recorder=publisher.record)
 
     async def rabbitmq_ready() -> bool:
         return amqp.is_connected
 
     app.state.readiness_checks = {"rabbitmq": rabbitmq_ready}
     yield
+    await publisher.close()
     await amqp.close()
 
 
@@ -39,4 +43,5 @@ def create_app() -> FastAPI:
     # 기능 라우터는 여기에 등록
     app.include_router(judgment_router)
     app.include_router(followup_router)
+    app.include_router(versions_router)
     return app
