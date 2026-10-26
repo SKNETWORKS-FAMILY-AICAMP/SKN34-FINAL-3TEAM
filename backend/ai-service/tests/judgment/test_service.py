@@ -73,7 +73,7 @@ def test_all_elements_verified_is_correct() -> None:
         "mission": "m-12@3",
         "rubric": "r-12@2",
         "model": "fake-model",
-        "prompt": "judge@1",
+        "prompt": "judge@2",
     }
 
 
@@ -168,7 +168,7 @@ def test_nullable_rubric_fields_are_accepted() -> None:
 def test_held_after_llm_has_no_elements(items: tuple, reason: str) -> None:
     response = judge(FakeLlm(extraction(*items)))
     assert (response.result, response.held_reason, response.elements) == ("HELD", reason, [])
-    assert response.versions.prompt == "judge@1"
+    assert response.versions.prompt == "judge@2"
 
 
 @pytest.mark.parametrize(
@@ -223,3 +223,46 @@ def test_grade_outside_supported_range_is_rejected(grade: int) -> None:
 def test_lowest_supported_grade_is_judged() -> None:
     llm = FakeLlm(extraction(("e1", "FOUND", "나는 찬성해"), ("e2", "NOT_FOUND", None)))
     assert judge(llm, make_request(grade=3)).result == "PARTIAL"
+
+
+def test_solution_steps_are_judged() -> None:
+    # sequence-diagram: 서술·논술·풀이 단계는 ai 판정 (M1 점검은 범위 밖)
+    llm = FakeLlm(extraction(("e1", "FOUND", "나는 찬성해"), ("e2", "NOT_FOUND", None)))
+    assert judge(llm, make_request(inputType="SOLUTION_STEPS")).result == "PARTIAL"
+
+
+def test_trial_is_false_only_when_all_elements_verified() -> None:
+    items = (("e1", "NOT_FOUND", None), ("e2", "NOT_FOUND", None))
+    assert judge(FakeLlm(extraction(*items))).trial is True
+    request = make_request()
+    for element in request.rubric.elements:
+        element.judge_verified = True
+    assert judge(FakeLlm(extraction(*items)), request).trial is False
+
+
+def test_zero_point_element_only_is_rethink() -> None:
+    # 배점 기준: 충족 요소가 있어도 충족 배점이 0이면 RETHINK
+    request = make_request()
+    request.rubric.elements[0].points = 0
+    llm = FakeLlm(extraction(("e1", "FOUND", "나는 찬성해"), ("e2", "NOT_FOUND", None)))
+    assert judge(llm, request).result == "RETHINK"
+
+
+def test_duplicate_and_unknown_element_ids_from_llm() -> None:
+    # 같은 요소가 두 번 오면 첫 번째만, 기준표에 없는 요소는 무시
+    llm = FakeLlm(
+        extraction(
+            ("e1", "FOUND", "나는 찬성해"),
+            ("e1", "FOUND", "지어낸 구절"),
+            ("e2", "NOT_FOUND", None),
+            ("e9", "FOUND", "지어낸 구절"),
+        )
+    )
+    response = judge(llm)
+    assert response.result == "PARTIAL"
+    assert [e.element_id for e in response.elements] == ["e1", "e2"]
+
+
+def test_held_before_llm_has_no_elements() -> None:
+    response = judge(FakeLlm(), make_request(answerText="몰라요"))
+    assert (response.result, response.elements, response.trial) == ("HELD", [], True)

@@ -25,9 +25,10 @@ class JudgmentService:
         self._settings = settings
 
     async def judge(self, request: JudgmentRequest) -> JudgmentResponse:
+        trial = not all(element.judge_verified for element in request.rubric.elements)
         held = self._held_before_llm(request)
         if held is not None:
-            return _held(held, request.versions)
+            return _held(held, request.versions, trial)
 
         try:
             extraction = await extractor.extract(self._llm, request)
@@ -42,7 +43,7 @@ class JudgmentService:
             evidence.setdefault(item.element_id, item)
         found = [evidence.get(element.element_id) for element in request.rubric.elements]
         if any(item is None or item.status == "UNCLEAR" for item in found):
-            return _held("INSUFFICIENT_EVIDENCE", versions)
+            return _held("INSUFFICIENT_EVIDENCE", versions, trial)
 
         elements = [
             _judge_element(element.element_id, item, request.answer_text)
@@ -50,12 +51,13 @@ class JudgmentService:
             if item is not None
         ]
         if any(item.quote is not None and not item.verified for item in elements):
-            return _held("QUOTE_MISMATCH", versions)
+            return _held("QUOTE_MISMATCH", versions, trial)
 
         return JudgmentResponse(
             result=_result(request.rubric.elements, elements),
             elements=elements,
             held_reason=None,
+            trial=trial,
             versions=versions,
         )
 
@@ -85,13 +87,16 @@ def _judge_element(
 
 
 def _result(rubric: list[RubricElement], elements: list[JudgmentElement]) -> JudgmentResult:
-    """state-diagram 3 judgment.result 결정.
+    """state-diagram 3 judgment.result 결정 (요소·배점 기준, FN-JDG-03).
 
     필수 요소(들어가면 좋은 생각이 아닌 요소)가 모두 충족 → CORRECT,
-    충족 요소가 하나라도 있음 → PARTIAL (좋은 생각만 충족해도 PARTIAL), 없음 → RETHINK.
+    충족 요소가 있고 충족 배점이 0보다 큼 → PARTIAL (좋은 생각만 충족해도 PARTIAL),
+    충족 요소가 없거나 충족 배점이 0 → RETHINK.
     """
     satisfied = {item.element_id for item in elements if item.satisfied}
-    if not satisfied:
+    total = sum(element.points for element in rubric)
+    earned = sum(element.points for element in rubric if element.element_id in satisfied)
+    if not satisfied or (total > 0 and earned == 0):
         return "RETHINK"
     required = [element.element_id for element in rubric if not element.good_thought]
     if all(element_id in satisfied for element_id in required):
@@ -99,5 +104,7 @@ def _result(rubric: list[RubricElement], elements: list[JudgmentElement]) -> Jud
     return "PARTIAL"
 
 
-def _held(reason: HeldReason, versions: Versions) -> JudgmentResponse:
-    return JudgmentResponse(result="HELD", elements=[], held_reason=reason, versions=versions)
+def _held(reason: HeldReason, versions: Versions, trial: bool) -> JudgmentResponse:
+    return JudgmentResponse(
+        result="HELD", elements=[], held_reason=reason, trial=trial, versions=versions
+    )

@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from app.followup.models import FollowupRequest, FollowupType, ThinkingType
 
-PROMPT_VERSION = "followup@3"
+PROMPT_VERSION = "followup@4"
 
 TYPE_GUIDE: dict[FollowupType, str] = {
     "ONE_STEP_MORE": "한 걸음 더: 이미 잘 쓴 생각을 더 넓히거나 깊게 하도록",
@@ -82,6 +82,6 @@ def build_user(request: FollowupRequest, followup_type: FollowupType, rejected: 
         lines.append(f"[{speaker}] {item.text}")
 
     if rejected:
-        lines += ["", "아래 질문은 쓰지 말 표현이 들어가 버렸다. 그 표현을 빼고 새로 만든다:"]
+        lines += ["", "아래 질문은 쓸 수 없다. 겹치지 않는 다른 질문을 새로 만든다:"]
         lines += [f"- {question}" for question in rejected]
     return "\n".join(lines)

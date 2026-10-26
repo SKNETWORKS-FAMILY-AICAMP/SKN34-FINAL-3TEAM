@@ -52,7 +52,7 @@ def test_judgment_response_uses_camel_case() -> None:
             "mission": "m-1@1",
             "rubric": "r-1@1",
             "model": "fake-model",
-            "prompt": "judge@1",
+            "prompt": "judge@2",
         },
     }
 

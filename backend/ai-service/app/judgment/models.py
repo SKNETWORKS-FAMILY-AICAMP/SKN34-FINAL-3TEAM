@@ -36,8 +36,9 @@ class Versions(ApiModel):
 
 class JudgmentRequest(ApiModel):
     answer_text: str
-    # 고르기·수학 최종 답은 learning 규칙 판정, ai는 서술·논술만 (아키텍처 1.5)
-    input_type: Literal["NARRATIVE", "ESSAY"]
+    # 고르기·수학 최종 답은 learning 규칙 판정, ai는 서술·논술·풀이 단계 (sequence-diagram 피드백)
+    # 풀이 단계의 M1 수학 점검은 범위 밖, 같은 근거 추출·원문 대조로 판정
+    input_type: Literal["NARRATIVE", "ESSAY", "SOLUTION_STEPS"]
     grade: int = Field(ge=3, le=6)  # 지원 학년 초3~6 (P03)
     rubric: Rubric
     versions: Versions = Field(default_factory=Versions)
@@ -55,5 +56,6 @@ class JudgmentResponse(ApiModel):
     # 보류(HELD)면 빈 목록: 보류를 낮은 수준으로 기록하지 않음 (FN-JDG-04)
     elements: list[JudgmentElement]
     held_reason: HeldReason | None
-    trial: bool = True  # 검증 전 "AI 채점(시범)" 표시 (FN-JDG-03)
+    # 검증 전 "AI 채점(시범)" 표시 (FN-JDG-03). 모든 요소가 judgeVerified면 false
+    trial: bool
     versions: Versions

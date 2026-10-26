@@ -5,10 +5,10 @@ LLM에는 답변 원문·학년·기준표만 전달, 학생 이름·ID는 넣�
 
 from app.judgment.models import RubricElement
 
-PROMPT_VERSION = "judge@1"
+PROMPT_VERSION = "judge@2"
 
 SYSTEM = """\
-너는 초등·중학생 답변에서 평가 요소별 근거 구절을 찾는 도우미다.
+너는 초등학생 답변에서 평가 요소별 근거 구절을 찾는 도우미다.
 충족 여부를 판정하거나 점수를 매기지 않는다. 근거가 되는 구절을 찾는 일만 한다.
 
 요소마다 status를 하나 고른다.

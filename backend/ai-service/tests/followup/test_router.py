@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.bootstrap import create_app
 from app.followup.prompts import GeneratedQuestion
+from app.llm.base import LlmError
 from app.llm.factory import get_llm
 from tests.fakes import FakeLlm
 
@@ -30,7 +31,7 @@ def test_followup_response_uses_camel_case() -> None:
         "question": "문제를 다시 읽어 볼까?",
         "source": "LLM",
         "leakCheck": {"passed": True},
-        "versions": {"model": "fake-model", "prompt": "followup@3"},
+        "versions": {"model": "fake-model", "prompt": "followup@4"},
     }
 
 
@@ -41,3 +42,18 @@ def test_missing_internal_token_is_401() -> None:
 def test_empty_timeline_is_rejected() -> None:
     response = post(FakeLlm(), body={**BODY, "timeline": []})
     assert response.status_code == 400
+
+
+def test_llm_failure_is_503_problem_with_retryable() -> None:
+    response = post(FakeLlm(LlmError("LLM_SERVER_ERROR", retryable=True)))
+    assert response.status_code == 503
+    assert response.headers["content-type"] == "application/problem+json"
+    assert (response.json()["code"], response.json()["retryable"]) == ("AI_UNAVAILABLE", True)
+
+
+def test_bank_fallback_response_has_null_question() -> None:
+    leaked = GeneratedQuestion(question="정답은 늘리는 거야")
+    body = {**BODY, "rubric": {**BODY["rubric"], "forbiddenTerms": ["정답"]}}
+    response = post(FakeLlm(leaked, leaked), body=body)
+    assert response.status_code == 200
+    assert (response.json()["question"], response.json()["leakCheck"]) == (None, {"passed": False})

@@ -65,7 +65,7 @@ def test_type_follows_judgment_result(result: str, followup_type: str) -> None:
     response = create(FakeLlm(question("왜 그렇게 생각했어?")), make_request(result))
     assert response.type == followup_type
     assert (response.source, response.leak_check.passed) == ("LLM", True)
-    assert response.versions.model_dump() == {"model": "fake-model", "prompt": "followup@3"}
+    assert response.versions.model_dump() == {"model": "fake-model", "prompt": "followup@4"}
 
 
 def test_leaked_question_is_regenerated_as_llm_retry() -> None:
@@ -155,3 +155,21 @@ def test_thinking_direction_only_for_one_step_more() -> None:
     create(llm, make_request("PARTIAL"))
     assert "넓혀 갈 방향: 다른 입장이나 예외" in llm.requests[0].user
     assert "넓혀 갈 방향" not in llm.requests[1].user
+
+
+def test_regeneration_prompt_is_neutral_about_leak_kind() -> None:
+    llm = FakeLlm(question("집중력 향상 때문일까?"), question("어떤 점이 좋을까?"))
+    create(llm)
+    regeneration = llm.requests[1].user
+    assert "아래 질문은 쓸 수 없다" in regeneration
+    assert "쓰지 말 표현이 들어가" not in regeneration
+
+
+def test_logs_have_no_student_text_or_question(caplog: pytest.LogCaptureFixture) -> None:
+    # 운영 로그에 학생 원문·질문 미기록 (NFR-SEC-05), 유출 종류만
+    leaked = "쉬는 시간이 길면 친구와 더 친해지고 그럴까?"
+    with caplog.at_level("WARNING"):
+        create(FakeLlm(question(leaked), question(leaked)))
+    assert "EXAMPLE_ANSWER" in caplog.text
+    assert leaked not in caplog.text
+    assert "나는 쉬는 시간을 늘리는 것에 찬성해" not in caplog.text
