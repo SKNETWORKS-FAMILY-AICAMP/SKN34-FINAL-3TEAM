@@ -1,0 +1,20 @@
+name: ci-web
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - "frontend/web/**"
+      - ".github/workflows/ci-web.yml"
+      - ".github/workflows/_web.yml"
+  pull_request:
+    paths:
+      - "frontend/web/**"
+      - ".github/workflows/ci-web.yml"
+      - ".github/workflows/_web.yml"
+
+jobs:
+  build:
+    uses: ./.github/workflows/_web.yml
+    with:
+      app-path: frontend/web

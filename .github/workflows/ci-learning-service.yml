@@ -1,0 +1,20 @@
+name: ci-learning-service
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - "backend/learning-service/**"
+      - ".github/workflows/ci-learning-service.yml"
+      - ".github/workflows/_spring.yml"
+  pull_request:
+    paths:
+      - "backend/learning-service/**"
+      - ".github/workflows/ci-learning-service.yml"
+      - ".github/workflows/_spring.yml"
+
+jobs:
+  build:
+    uses: ./.github/workflows/_spring.yml
+    with:
+      service-path: backend/learning-service
