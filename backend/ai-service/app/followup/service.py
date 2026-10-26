@@ -35,6 +35,7 @@ class FollowupService:
 
     async def create(self, request: FollowupRequest) -> FollowupResponse:
         followup_type = TYPE_BY_RESULT[request.judgment.result]
+        student_answers = [item.text for item in request.timeline if item.kind == "ANSWER"]
         rejected: list[str] = []
         leaks: list[str] = []
         for attempt in range(self._settings.followup_leak_max_retries + 1):
@@ -53,7 +54,10 @@ class FollowupService:
                 ) from exc
             question = generated.data.question.strip()
             leaks = leak_guard.find_leaks(
-                question, request.rubric, self._settings.followup_example_overlap_chars
+                question,
+                request.rubric,
+                self._settings.followup_example_overlap_chars,
+                student_answers,
             )
             if question and not leaks:
                 return FollowupResponse(
