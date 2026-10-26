@@ -1,0 +1,59 @@
+"""POST /internal/judgments 요청·응답 (API 명세서 4.2). JSON 필드는 camelCase."""
+
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
+
+JudgmentResult = Literal["CORRECT", "PARTIAL", "RETHINK", "HELD"]
+HeldReason = Literal["INSUFFICIENT_EVIDENCE", "QUOTE_MISMATCH", "TOO_SHORT", "UNVERIFIED_SCOPE"]
+
+
+class ApiModel(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class RubricElement(ApiModel):
+    element_id: str
+    label: str
+    description: str
+    points: int = Field(ge=0)
+    judge_verified: bool
+    good_thought: bool = False
+    common_errors: list[str] = Field(default_factory=list)
+
+
+class Rubric(ApiModel):
+    elements: list[RubricElement] = Field(min_length=1)
+
+
+class Versions(ApiModel):
+    mission: str | None = None
+    rubric: str | None = None
+    model: str | None = None
+    prompt: str | None = None
+
+
+class JudgmentRequest(ApiModel):
+    answer_text: str
+    # 고르기·수학 최종 답은 learning 규칙 판정, ai는 서술·논술만 (아키텍처 1.5)
+    input_type: Literal["NARRATIVE", "ESSAY"]
+    grade: int = Field(ge=1, le=9)  # 초1 = 1 … 중3 = 9
+    rubric: Rubric
+    versions: Versions = Field(default_factory=Versions)
+
+
+class JudgmentElement(ApiModel):
+    element_id: str
+    quote: str | None
+    verified: bool
+    satisfied: bool
+
+
+class JudgmentResponse(ApiModel):
+    result: JudgmentResult
+    # 보류(HELD)면 빈 목록: 보류를 낮은 수준으로 기록하지 않음 (FN-JDG-04)
+    elements: list[JudgmentElement]
+    held_reason: HeldReason | None
+    trial: bool = True  # 검증 전 "AI 채점(시범)" 표시 (FN-JDG-03)
+    versions: Versions
