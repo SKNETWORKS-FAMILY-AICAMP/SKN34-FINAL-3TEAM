@@ -64,4 +64,12 @@ Windows의 기본 CP949 설정에서도 Alembic CLI가 설정 파일을 읽도�
 - 58개 테이블·500개 컬럼, 22개 위반 입력, 60개 CHECK 코드 집합, 19개 인덱스 확인.
 - 기존 Compose CLI 방식 통과. `python -O`에서도 추가 컬럼·CHECK 허용값 변경·인덱스 누락을 각각 거부했고 검증 DB는 원상 복구했다.
 - 검증기 회귀 테스트 10개와 Ruff 검사·포맷 검사 통과.
-- 로컬 전체 실행 스크립트 12.1초. GitHub runner의 초기 준비 시간을 포함한 실행 시간은 PR CI 결과로 별도 확인한다.
+- 로컬 전체 실행 스크립트 12.1초. GitHub의 정상 워크플로는 초기 준비·정리를 포함해 35초(단일 job 32초), 마이그레이션 스크립트는 13.8초로 3분 기준을 충족했다.
+
+| GitHub PR 검증 | 기대 결과 | 확인 근거 |
+|---|---|---|
+| 정상 구현 `5efc535` | 통과 | [정상 실행](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/actions/runs/40277008014) |
+| 검증용 V6의 SQL 문법 오류 `b1b7277` | 실패 | [Flyway SQLSTATE 42601 감지](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/actions/runs/40277020140) |
+| 검증용 V6의 ERD에 없는 컬럼 `60ec06c` | 실패 | [user_account.ci_failure_probe 불일치 감지](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/actions/runs/40277220829) |
+
+오류 사례는 [검증용 Draft PR #16](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/pull/16)에서 확인했다. 검증용 V6는 구현 브랜치에 포함하지 않으며, 검증용 PR은 병합 없이 닫는다.
