@@ -1,6 +1,7 @@
 """report-worker 진입점: report.generate·student.deleted 소비.
 
-소비자는 generation/consumer.py·deletion/consumer.py에서 작성 후 여기서 시작.
+소비자는 generation/consumer.py·deletion/consumer.py에서 작성 후
+messaging/consumer.py의 EventConsumer.consume(큐, 핸들러)로 여기서 시작.
 """
 
 import asyncio

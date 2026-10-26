@@ -9,14 +9,19 @@ from app.config import get_settings
 from app.errors import register_error_handlers
 from app.health.router import router as health_router
 from app.messaging.connection import AmqpConnection
+from app.messaging.publisher import EventPublisher, UsagePublisher
 from app.security import InternalAuthMiddleware
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    amqp = AmqpConnection(get_settings().rabbitmq_url)
+    settings = get_settings()
+    amqp = AmqpConnection(settings.rabbitmq_url)
     amqp.start()
     app.state.amqp = amqp
+    app.state.usage_publisher = UsagePublisher(
+        EventPublisher(amqp), service="ai", source=settings.service_name
+    )
 
     async def rabbitmq_ready() -> bool:
         return amqp.is_connected
