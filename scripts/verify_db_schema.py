@@ -45,19 +45,26 @@ INSERT INTO user_account
     (id, role, login_id, password_hash, status, is_demo, created_at, updated_at)
 VALUES ('00000000-0000-4000-8000-000000000001', 'PARENT',
         'schema-check@example.invalid', 'schema-test-only', 'ACTIVE', true, now(), now());
-INSERT INTO student (id, nickname, grade, is_demo, status, created_at, updated_at)
-VALUES ('00000000-0000-4000-8000-000000000002', 'schema-test', 3, true, 'ACTIVE', now(), now());
+INSERT INTO student (id, nickname, grade, birth_year, is_demo, status, created_at, updated_at)
+VALUES ('00000000-0000-4000-8000-000000000002', 'schema-test', 3, 2015, true,
+        'ACTIVE', now(), now());
 SELECT pg_temp.expect_sqlstate(
     $$UPDATE user_account SET status = 'INVALID'$$, '23514');
 SELECT pg_temp.expect_sqlstate(
     $$UPDATE user_account SET status = NULL$$, '23502');
-SELECT pg_temp.expect_sqlstate(
-    $$UPDATE student SET user_account_id = '00000000-0000-4000-8000-999999999999'$$, '23503');
+SELECT pg_temp.expect_sqlstate($$UPDATE student SET birth_year = NULL$$, '23502');
+SELECT pg_temp.expect_sqlstate($$UPDATE student SET grade = 2$$, '23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE student SET grade = 7$$, '23514');
+UPDATE student SET grade = 6;
+UPDATE student SET grade = 3;
 
 INSERT INTO guardianship (id, parent_user_id, student_id, method, status, linked_at)
 VALUES ('00000000-0000-4000-8000-000000000003',
         '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002',
         'REGISTER', 'LINKED', now());
+SELECT pg_temp.expect_sqlstate(
+    $$UPDATE guardianship SET student_id = '00000000-0000-4000-8000-999999999999'$$, '23503');
+SELECT pg_temp.expect_sqlstate($$UPDATE guardianship SET method = 'LINK'$$, '23514');
 SELECT pg_temp.expect_sqlstate($$
     INSERT INTO guardianship (id, parent_user_id, student_id, method, status, linked_at)
     SELECT '00000000-0000-4000-8000-000000000004', parent_user_id, student_id,
@@ -68,6 +75,39 @@ INSERT INTO guardianship (id, parent_user_id, student_id, method, status, linked
 SELECT '00000000-0000-4000-8000-000000000005', parent_user_id, student_id,
        method, 'UNLINKED', linked_at, now() FROM guardianship
 WHERE id = '00000000-0000-4000-8000-000000000003';
+
+INSERT INTO notification_setting (user_id, type, channel, enabled, updated_at)
+VALUES ('00000000-0000-4000-8000-000000000001', 'REPORT_COMPLETED', 'IN_APP', true, now());
+SELECT pg_temp.expect_sqlstate(
+    $$UPDATE notification_setting SET channel = 'EMAIL'$$, '23514');
+SELECT pg_temp.expect_sqlstate(
+    $$UPDATE notification_setting SET channel = 'PUSH'$$, '23514');
+
+INSERT INTO error_report
+    (id, reporter_user_id, target_type, target_id, category, status, created_at)
+VALUES ('00000000-0000-4000-8000-000000000013', '00000000-0000-4000-8000-000000000001',
+        'REPORT', '00000000-0000-4000-8000-000000000014', 'OTHER', 'RECEIVED', now());
+SELECT pg_temp.expect_sqlstate($$UPDATE error_report SET category = NULL$$, '23502');
+SELECT pg_temp.expect_sqlstate($$UPDATE error_report SET category = 'INVALID'$$, '23514');
+UPDATE error_report SET category = 'WRONG_JUDGMENT';
+UPDATE error_report SET category = 'ODD_QUESTION';
+UPDATE error_report SET category = 'MISMATCH';
+UPDATE error_report SET category = 'INAPPROPRIATE';
+UPDATE error_report SET category = 'OTHER';
+
+INSERT INTO product
+    (id, code, name, price, billing_cycle, child_limit, features, limits, active, created_at)
+VALUES ('00000000-0000-4000-8000-000000000015', 'FREE', 'schema-test', 0, 'MONTHLY', 1,
+        '{}', '{"dailyMissions":3}', true, now()),
+       ('00000000-0000-4000-8000-000000000016', 'PREMIUM', 'schema-test', 14900, 'MONTHLY', 1,
+        '{}', '{"dailyFeedback":50}', true, now()),
+       ('00000000-0000-4000-8000-000000000017', 'PREMIUM_V2', 'schema-test', 15000, 'MONTHLY', 1,
+        '{}', '{"dailyFeedback":60}', false, now());
+SELECT pg_temp.expect_sqlstate($$UPDATE product SET price = NULL$$, '23502');
+SELECT pg_temp.expect_sqlstate($$UPDATE product SET limits = NULL$$, '23502');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE product SET code = 'FREE' WHERE id = '00000000-0000-4000-8000-000000000016'
+$$, '23505');
 
 INSERT INTO report_job
     (id, student_id, period_from, period_to, trigger, status, retry_count, created_at)
@@ -153,24 +193,24 @@ SELECT '00000000-0000-4000-8000-000000000107', student_id, mission_id, mission_v
        rubric_version_id, grade, 'COMPLETED', started_at, updated_at FROM attempt
 WHERE id = '00000000-0000-4000-8000-000000000105';
 INSERT INTO answer
-    (id, attempt_id, version, input_type, content, dictated_by_guardian, speech_transcribed,
+    (id, attempt_id, version, input_type, content, dictated_by_guardian,
      idempotency_key, submitted_at)
 VALUES ('00000000-0000-4000-8000-000000000108', '00000000-0000-4000-8000-000000000105',
-        1, 'CHOICE', '{"choiceIds":[]}', false, false,
+        1, 'CHOICE', '{"choiceIds":[]}', false,
         '00000000-0000-4000-8000-000000000109', now());
 SELECT pg_temp.expect_sqlstate($$
     INSERT INTO answer (id, attempt_id, version, input_type, content, dictated_by_guardian,
-                        speech_transcribed, idempotency_key, submitted_at)
+                        idempotency_key, submitted_at)
     SELECT '00000000-0000-4000-8000-000000000110', attempt_id, version, input_type, content,
-           dictated_by_guardian, speech_transcribed,
+           dictated_by_guardian,
            '00000000-0000-4000-8000-000000000111', submitted_at
     FROM answer WHERE id = '00000000-0000-4000-8000-000000000108'
 $$, '23505');
 SELECT pg_temp.expect_sqlstate($$
     INSERT INTO answer (id, attempt_id, version, input_type, content, dictated_by_guardian,
-                        speech_transcribed, idempotency_key, submitted_at)
+                        idempotency_key, submitted_at)
     SELECT '00000000-0000-4000-8000-000000000112', attempt_id, 2, input_type, content,
-           dictated_by_guardian, speech_transcribed, idempotency_key, submitted_at
+           dictated_by_guardian, idempotency_key, submitted_at
     FROM answer WHERE id = '00000000-0000-4000-8000-000000000108'
 $$, '23505');
 INSERT INTO judgment (id, answer_id, process_status, rubric_version_id, retry_count, created_at)
@@ -206,6 +246,36 @@ SELECT pg_temp.expect_sqlstate($$
 $$, '23502');
 UPDATE judgment_element SET verified = true, satisfied = true
 WHERE id = '00000000-0000-4000-8000-000000000114';
+
+INSERT INTO followup_bank_question (id, type, question, active, created_at)
+VALUES ('00000000-0000-4000-8000-000000000115', 'TELL_MORE',
+        'synthetic bank question only', true, now());
+UPDATE followup_bank_question SET type = 'ONE_STEP_MORE';
+UPDATE followup_bank_question SET type = 'LOOK_AGAIN';
+UPDATE followup_bank_question SET type = 'TELL_MORE';
+SELECT pg_temp.expect_sqlstate(
+    $$UPDATE followup_bank_question SET type = 'INVALID'$$, '23514');
+SELECT pg_temp.expect_sqlstate(
+    $$UPDATE followup_bank_question SET question = NULL$$, '23502');
+INSERT INTO followup
+    (id, attempt_id, judgment_id, type, question, source, leak_check_passed, created_at,
+     bank_question_id)
+VALUES ('00000000-0000-4000-8000-000000000116', '00000000-0000-4000-8000-000000000105',
+        '00000000-0000-4000-8000-000000000113', 'TELL_MORE', 'synthetic bank question only',
+        'BANK', true, now(), '00000000-0000-4000-8000-000000000115');
+SELECT pg_temp.expect_sqlstate($$UPDATE followup SET bank_question_id = NULL$$, '23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE followup SET source = 'LLM'$$, '23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE followup SET source = 'LLM_RETRY'$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE followup SET source = 'TEMPLATE', bank_question_id = NULL
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE followup SET bank_question_id = '00000000-0000-4000-8000-999999999999'
+$$, '23503');
+SELECT pg_temp.expect_sqlstate($$DELETE FROM followup_bank_question$$, '23503');
+UPDATE followup SET source = 'LLM', bank_question_id = NULL;
+UPDATE followup SET source = 'LLM_RETRY';
+UPDATE followup SET source = 'BANK', bank_question_id = '00000000-0000-4000-8000-000000000115';
 """
 
 REPORT_CASES = """
@@ -250,6 +320,23 @@ VALUES ('00000000-0000-4000-8000-000000000207', '00000000-0000-4000-8000-0000000
 """
 
 
+def allowed_values(comment):
+    """Read explicit CHECK[A] / CHECK[A|B] or legacy A|B code lists only."""
+    comment = comment or ""
+    code = r"[A-Za-z][A-Za-z0-9_]*"
+    if "CHECK[" in comment:
+        annotations = re.findall(r"CHECK\[([^\]]*)\]", comment)
+        require(
+            comment.count("CHECK[") == 1
+            and len(annotations) == 1
+            and re.fullmatch(code + r"(?:\|" + code + r")*", annotations[0]),
+            f"Malformed ERD CHECK annotation: {comment}",
+        )
+        return set(annotations[0].split("|"))
+    values = re.search(r"\b" + code + r"(?:\|" + code + r")+\b", comment)
+    return set(values[0].split("|")) if values else None
+
+
 def erd_contract(text=None):
     result = {}
     database = table = None
@@ -271,16 +358,13 @@ def erd_contract(text=None):
             if not match:
                 raise ValueError(f"Unrecognized ERD column: {line}")
             typ, column, flags, comment = match.groups()
-            values = re.search(
-                r"\b[A-Za-z][A-Za-z0-9_]*(?:\|[A-Za-z][A-Za-z0-9_]*)+\b", comment or ""
-            )
             result[database][table][column] = {
                 "type": typ,
                 "nullable": "NULL 허용" in (comment or ""),
                 "pk": "PK" in flags,
                 "fk": "FK" in flags,
                 "uk": "UK" in flags,
-                "values": set(values[0].split("|")) if values else None,
+                "values": allowed_values(comment),
             }
     require(
         set(result) == {"core_db", "learning_db", "report_db"},
@@ -366,7 +450,7 @@ def check_allowed_values(database, tables, constraints):
                 match = re.fullmatch(
                     re.escape(column) + r"=anyarray\[('(?:[^']|'')*'(?:,'(?:[^']|'')*')*)\]",
                     expression,
-                )
+                ) or re.fullmatch(re.escape(column) + r"=('(?:[^']|'')*')", expression)
                 if match:
                     values = {
                         value.replace("''", "'")
