@@ -298,8 +298,8 @@ def openai_settings(**overrides: Any) -> Settings:
 @pytest.mark.parametrize(
     "overrides",
     [
-        {},  # 키·모델 모두 없음
-        {"openai_api_key": "k"},  # 모델 없음
+        {},  # 키 없음 (모델은 기본값 gpt-6-luna)
+        {"openai_api_key": "k", "openai_model": ""},  # 모델 비움
         {"openai_model": "gpt-test"},  # OpenAI인데 키 없음
         {"openai_model": "gpt-test", "openai_base_url": ""},  # compose의 빈 주소
     ],
@@ -326,3 +326,9 @@ def test_sllm_server_works_without_key() -> None:
     assert isinstance(llm, OpenAICompatibleLlm)
     assert str(llm._client.base_url).startswith("http://vllm:8000/v1")
     assert llm._client.api_key == NO_KEY
+
+
+def test_openai_default_model_is_gpt_6_luna() -> None:
+    llm = create_llm(openai_settings(openai_api_key="k"), recorder)
+    assert isinstance(llm, OpenAICompatibleLlm)
+    assert llm.model == "gpt-6-luna"
