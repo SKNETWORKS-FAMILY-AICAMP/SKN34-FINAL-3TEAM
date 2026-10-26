@@ -103,6 +103,10 @@ classDiagram
     <<repository>>
     +markProcessed(eventId, eventType) Boolean
   }
+  class RetryingConsumer {
+    <<messaging>>
+    +handle(message, channel, queue, handler)
+  }
   class OutboxEventRepository {
     <<repository>>
     +insert(event)
@@ -129,8 +133,9 @@ classDiagram
 | `InternalAuthFilter`, `UserContext`, `UserContextHolder` | `_common/security` | 구현됨 | `/internal/**` 토큰 검사, `X-User-*`·`X-Student-Scope` 컨텍스트 |
 | `BusinessException`, `GlobalExceptionHandler`, `Problems` | `_common/exception` | 구현됨 | RFC 9457 오류 응답 |
 | `EventEnvelope`, `MessagingConfig` | `_common/messaging` | 구현됨 | CloudEvents 봉투, JSON 변환기 |
-| `OutboxWriter`, `OutboxRelay`, `OutboxEventRepository` | `_common/messaging` | 신규 (core만) | 같은 트랜잭션 `outbox_event` 저장 → 릴레이가 미발행 행 발행, publisher confirm 후 `published_at` 기록 |
-| `ProcessedEventRepository` | `_common/messaging` | 신규 | `processed_event` INSERT 성공 여부로 멱등 소비 |
+| `OutboxWriter`, `OutboxRelay`, `OutboxEventRepository` | `_common/messaging` | 구현됨 (core만) | 같은 트랜잭션 `outbox_event` 저장 → 릴레이가 미발행 행 발행(`FOR UPDATE SKIP LOCKED`), publisher confirm 후 `published_at` 기록 |
+| `ProcessedEventRepository` | `_common/messaging` | 구현됨 (core) | `processed_event` INSERT 성공 여부로 멱등 소비 |
+| `RetryingConsumer` | `_common/messaging` | 구현됨 (core) | 수동 ACK. 처리 실패 시 `x-retry-count` +1 후 `<큐>.retry` 재발행, 최대 횟수 초과 시 reject → DLQ (아키텍처 1.6) |
 | `JwtAuthFilter`, `JwtProvider` | `_common/security` | 신규 (core만) | 공개 API JWT 검증 → `UserContext(userId, role)` 설정 |
 | `IdempotencyService` | `_common/web` | 신규 (core만) | `idempotency_record` 조회·저장, 같은 키·다른 본문 422 |
 | `SseEmitters` | `_common/web` | 신규 (core만) | SSE 생성, 15초 heartbeat `: ping`, 연결 종료 콜백 |
@@ -204,7 +209,7 @@ classDiagram
 ```
 
 - 위 클래스는 모두 구현됨 (`config.py`·`errors.py`·`security.py`·`clients/base.py`·`messaging/connection.py`·`messaging/envelope.py`)
-- 신규 공통: `messaging/publisher.py` `EventPublisher.publish(envelope, routing_key)`, `messaging/consumer.py` `EventConsumer.consume(queue, handler)` (수동 ACK, 처리 실패 시 NACK → 지연 재시도·DLQ)
+- 신규 공통: `messaging/publisher.py` `EventPublisher.publish(envelope, routing_key)`(ai 구현됨, best-effort), `messaging/consumer.py` `EventConsumer.consume(queue, handler)`(report 구현됨, 수동 ACK, 처리 실패 시 `<큐>.retry` 재발행 → 횟수 초과 시 reject → DLQ)
 - 이벤트 소비 처리에서는 `bind_user_context(UserContext(role="SYSTEM", student_scope={subject}))` 후 하위 호출 (아키텍처 2.3)
 
 ---

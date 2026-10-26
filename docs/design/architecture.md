@@ -106,7 +106,13 @@
 - **Outbox**: DB 상태 변경 + 발행이 함께 필요한 서비스(core, report)만 적용 (learning은 발행 없음, 멱등 소비만). 같은 트랜잭션에 outbox 행 저장 → 릴레이 스케줄러가 publisher confirm 받은 후 발행 시각 기록 (참고 레포 `*OutboxScheduler` 패턴)
 - **상태 없는 서비스(ai, scoring)**: 이벤트 발행은 처리 결과 반환 후 best-effort (사용량 집계용), 유실 시 Langfuse trace로 보정
 - **멱등 소비**: 소비자별 `processed_event(event_id UK)` 테이블 또는 DB 상태 전이 조건(`QUEUED→RUNNING`)
-- **재시도**: 소비 실패 시 지연 재시도 N회 후 DLQ 이동 (횟수·지연은 `definitions.json`에서 관리)
+- **재시도**: 소비 실패 시 지연 재시도 N회 후 DLQ 이동
+  - 큐마다 `<큐>.retry`(`x-message-ttl` = 지연, 만료 시 기본 exchange로 원래 큐 복귀)를 `definitions.json`에 선언
+  - 처리 실패: 소비자가 `x-retry-count` 헤더 +1 후 `<큐>.retry`로 재발행하고 ACK. 횟수 초과 시 `reject(requeue=false)` → `dlx` → `<큐>.dlq`
+  - 횟수는 자체 헤더로 셈 (클라이언트 재발행 시 `x-death`가 승계되지 않음). 지연은 `definitions.json`, 최대 횟수는 서비스 설정 (값 `[P12]`)
+  - 메시지 변환 실패(형식 오류)는 재시도해도 복구되지 않으므로 재시도 없이 바로 reject → DLQ
+  - core는 전역 수동 ACK(`acknowledge-mode: manual`, learning은 소비자 구현 시 동일 설정): 모든 `@RabbitListener`는 `RetryingConsumer.handle`로 처리. ACK 누락 시 메시지가 unacked로 남아 소비 정지
+  - 큐 미존재 시 기동 실패 대신 경고 후 재확인(`missing-queues-fatal: false`), 큐 생성 시 소비 자동 시작
 - **DLQ**: 큐마다 dead-letter exchange, 관리자 화면에서 현황 조회 (참고 레포 `QueueOperations*` 계승)
 - **브로드캐스트 이벤트**: 모든 레플리카가 받아야 하는 이벤트(`model.version.activated`)는 Pod별 exclusive·auto-delete 큐를 서비스가 기동 시 선언·바인딩 (exchange는 `definitions.json`). 공유 큐는 경쟁 소비라 1개 Pod만 수신
   - 기동 순서: 큐 바인딩 → core 활성 버전 조회 (반대 순서면 그 사이 이벤트 유실)
@@ -153,6 +159,7 @@
 - 버전 연결: 판정·되묻기·분석·리포트 결과에 미션·기준표·모델·프롬프트 버전 저장 (NFR-DAT-02)
 - 개인정보: LLM 요청에 학생 이름·식별정보 미포함, 운영 로그에 학생 원문·비밀 키·결제 정보 미기록 (NFR-SEC-03, 05)
 - 테스트: Domain 단위 테스트, Application은 Infrastructure 대역, Repository는 Testcontainers(PostgreSQL·RabbitMQ), 메시지는 `contracts/events` 스키마 계약 테스트
+  - core 통합 테스트는 `IntegrationTestSupport` 상속 (컨테이너 JVM당 1회 기동, Flyway 전체 스키마, `definitions.json` 반영)
 
 ### 2.4 서비스별 적용 강도
 | 서비스 | 적용 레이어 | 비고 |
