@@ -9,6 +9,7 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Base64
 
@@ -19,6 +20,7 @@ import java.util.Base64
 @SpringBootTest
 abstract class IntegrationTestSupport {
     companion object {
+        private val TTL_PATTERN = Regex(""""x-message-ttl": \d+""")
         private val DEFINITIONS = Path.of("../../infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json")
 
         private val postgres = PostgreSQLContainer("postgres:17.11-alpine").apply { start() }
@@ -27,13 +29,13 @@ abstract class IntegrationTestSupport {
             importDefinitions()
         }
 
-        /** compose의 rabbitmq-init과 같은 방식으로 관리 API에 definitions.json 반영 */
+        /** compose의 rabbitmq-init과 같은 방식으로 관리 API에 definitions.json 반영. 재시도 대기만 1초로 단축 (토폴로지 동일) */
         private fun RabbitMQContainer.importDefinitions() {
             val credentials = Base64.getEncoder().encodeToString("$adminUsername:$adminPassword".toByteArray())
             val request = HttpRequest.newBuilder(URI.create("$httpUrl/api/definitions"))
                 .header("Authorization", "Basic $credentials")
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofFile(DEFINITIONS))
+                .POST(HttpRequest.BodyPublishers.ofString(Files.readString(DEFINITIONS).replace(TTL_PATTERN, "\"x-message-ttl\": 1000")))
                 .build()
             // 기본 HTTP/2(h2c) 업그레이드 요청은 관리 API가 연결을 끊음
             val client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build()

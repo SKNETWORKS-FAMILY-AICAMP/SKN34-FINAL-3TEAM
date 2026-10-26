@@ -55,7 +55,7 @@ app:
     ai: ${AI_URL:http://localhost:8000}
     report: ${REPORT_URL:http://localhost:8002}
   messaging:
-    max-retries: 3 # [P12] 확정 전 임시값. 지연은 definitions.json의 <큐>.retry x-message-ttl
+    max-retries: 3 # P12: 1·5·15분 3회. definitions.json의 <큐>.retry.1~3 개수와 일치
     outbox-relay-interval: 1s
   # 모델별 100만 토큰당 USD 단가 (기획서 3.9). 미등록 모델은 cost_usd NULL
   # 모델명에 '.'이 있으면 키를 "[모델명]" 형태로 작성

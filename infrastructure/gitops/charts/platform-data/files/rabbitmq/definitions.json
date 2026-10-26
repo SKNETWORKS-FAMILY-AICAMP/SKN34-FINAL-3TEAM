@@ -41,13 +41,37 @@
       }
     },
     {
-      "name": "report.report.generate.retry",
+      "name": "report.report.generate.retry.1",
       "vhost": "/",
       "durable": true,
       "auto_delete": false,
       "arguments": {
         "x-queue-type": "quorum",
-        "x-message-ttl": 10000,
+        "x-message-ttl": 60000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "report.report.generate"
+      }
+    },
+    {
+      "name": "report.report.generate.retry.2",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 300000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "report.report.generate"
+      }
+    },
+    {
+      "name": "report.report.generate.retry.3",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 900000,
         "x-dead-letter-exchange": "",
         "x-dead-letter-routing-key": "report.report.generate"
       }
@@ -73,13 +97,37 @@
       }
     },
     {
-      "name": "core.report.events.retry",
+      "name": "core.report.events.retry.1",
       "vhost": "/",
       "durable": true,
       "auto_delete": false,
       "arguments": {
         "x-queue-type": "quorum",
-        "x-message-ttl": 10000,
+        "x-message-ttl": 60000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "core.report.events"
+      }
+    },
+    {
+      "name": "core.report.events.retry.2",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 300000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "core.report.events"
+      }
+    },
+    {
+      "name": "core.report.events.retry.3",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 900000,
         "x-dead-letter-exchange": "",
         "x-dead-letter-routing-key": "core.report.events"
       }
@@ -105,13 +153,37 @@
       }
     },
     {
-      "name": "core.llm.usage.recorded.retry",
+      "name": "core.llm.usage.recorded.retry.1",
       "vhost": "/",
       "durable": true,
       "auto_delete": false,
       "arguments": {
         "x-queue-type": "quorum",
-        "x-message-ttl": 10000,
+        "x-message-ttl": 60000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "core.llm.usage.recorded"
+      }
+    },
+    {
+      "name": "core.llm.usage.recorded.retry.2",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 300000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "core.llm.usage.recorded"
+      }
+    },
+    {
+      "name": "core.llm.usage.recorded.retry.3",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 900000,
         "x-dead-letter-exchange": "",
         "x-dead-letter-routing-key": "core.llm.usage.recorded"
       }
@@ -137,13 +209,37 @@
       }
     },
     {
-      "name": "learning.student.deleted.retry",
+      "name": "learning.student.deleted.retry.1",
       "vhost": "/",
       "durable": true,
       "auto_delete": false,
       "arguments": {
         "x-queue-type": "quorum",
-        "x-message-ttl": 10000,
+        "x-message-ttl": 60000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "learning.student.deleted"
+      }
+    },
+    {
+      "name": "learning.student.deleted.retry.2",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 300000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "learning.student.deleted"
+      }
+    },
+    {
+      "name": "learning.student.deleted.retry.3",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 900000,
         "x-dead-letter-exchange": "",
         "x-dead-letter-routing-key": "learning.student.deleted"
       }
@@ -169,13 +265,37 @@
       }
     },
     {
-      "name": "report.student.deleted.retry",
+      "name": "report.student.deleted.retry.1",
       "vhost": "/",
       "durable": true,
       "auto_delete": false,
       "arguments": {
         "x-queue-type": "quorum",
-        "x-message-ttl": 10000,
+        "x-message-ttl": 60000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "report.student.deleted"
+      }
+    },
+    {
+      "name": "report.student.deleted.retry.2",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 300000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "report.student.deleted"
+      }
+    },
+    {
+      "name": "report.student.deleted.retry.3",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 900000,
         "x-dead-letter-exchange": "",
         "x-dead-letter-routing-key": "report.student.deleted"
       }

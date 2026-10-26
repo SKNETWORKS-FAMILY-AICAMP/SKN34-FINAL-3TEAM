@@ -20,10 +20,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
-/** 메시징 기반 검증: 재시도 1회, 단가 3·15 USD/100만 토큰 */
+/** 메시징 기반 검증: 단가 3·15 USD/100만 토큰, 재시도 대기는 IntegrationTestSupport에서 1초로 단축 */
 @TestPropertySource(
     properties = [
-        "app.messaging.max-retries=1",
         "app.llm-pricing.test-model.input=3",
         "app.llm-pricing.test-model.output=15",
     ],
@@ -55,10 +54,10 @@ class MessagingIntegrationTest(
         val envelope = usageEnvelope(UUID.randomUUID(), usageData() + ("callType" to "UNKNOWN"))
         publish(MessagingConfig.EVENTS_EXCHANGE, USAGE_ROUTING_KEY, objectMapper.writeValueAsBytes(envelope))
 
-        // TTL(definitions.json) 1회 대기 후 max-retries=1 초과
+        // <큐>.retry.1~3 경유 후 max-retries=3 초과
         val dead = receiveDead(Duration.ofSeconds(30)) { objectMapper.readTree(it.body)["id"]?.asText() == envelope.id }
 
-        assertEquals(1, (dead.messageProperties.headers[RetryingConsumer.RETRY_COUNT_HEADER] as Number).toInt())
+        assertEquals(3, (dead.messageProperties.headers[RetryingConsumer.RETRY_COUNT_HEADER] as Number).toInt())
     }
 
     @Test

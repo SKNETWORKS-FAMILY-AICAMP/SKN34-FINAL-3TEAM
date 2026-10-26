@@ -73,7 +73,7 @@ def test_failure_republishes_to_retry_queue_with_count() -> None:
     channel = run(message, fail)
 
     [(retry, routing_key)] = channel.default_exchange.published
-    assert routing_key == f"{QUEUE}.retry"
+    assert routing_key == f"{QUEUE}.retry.2"
     assert retry.headers[RETRY_COUNT_HEADER] == 2
     assert json.loads(retry.body) == json.loads(message.body)
     assert message.acked and not message.rejected

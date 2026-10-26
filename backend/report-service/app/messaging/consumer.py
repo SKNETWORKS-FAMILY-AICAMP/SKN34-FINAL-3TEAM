@@ -1,7 +1,8 @@
 """큐 소비: 수동 ACK, 처리 실패 시 지연 재시도 → DLQ (아키텍처 1.6).
 
-- 처리 실패: x-retry-count +1 후 <큐>.retry로 재발행(TTL 만료 시 원래 큐 복귀)하고 ACK
-- 최대 횟수 초과: reject → dlx → <큐>.dlq
+- 처리 실패: x-retry-count +1 후 <큐>.retry.<회차>로 재발행(1·5·15분 TTL 만료 시 원래 큐 복귀,
+  P12)하고 ACK
+- 최대 횟수(= definitions.json 단계 큐 개수) 초과: reject → dlx → <큐>.dlq
 - 봉투 형식 오류: 재시도해도 복구되지 않으므로 바로 reject → DLQ
 - 큐는 definitions.json에서 선언, 여기서는 존재 확인(passive)만
 """
@@ -78,6 +79,6 @@ class EventConsumer:
                     message_id=message.message_id,
                     delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
                 ),
-                routing_key=f"{queue_name}.retry",
+                routing_key=f"{queue_name}.retry.{retry_count + 1}",
             )
         await message.ack()

@@ -9,8 +9,8 @@ import org.springframework.stereotype.Component
 
 /**
  * 수동 ACK 소비 (아키텍처 1.6).
- * 실패 시 x-retry-count +1 후 <큐>.retry로 재발행(TTL 만료 시 원래 큐 복귀),
- * 최대 횟수 초과 시 reject → dlx → <큐>.dlq.
+ * 실패 시 x-retry-count +1 후 <큐>.retry.<회차>로 재발행(1·5·15분 TTL 만료 시 원래 큐 복귀, P12),
+ * 최대 횟수(= definitions.json 단계 큐 개수) 초과 시 reject → dlx → <큐>.dlq.
  * 메시지 변환 실패(형식 오류)는 리스너 호출 전 컨테이너가 reject → 재시도 없이 DLQ.
  * 전역 수동 ACK이므로 모든 @RabbitListener는 이 클래스로 처리 (ACK 누락 시 소비 정지)
  */
@@ -37,7 +37,7 @@ class RetryingConsumer(
             log.warn("메시지 처리 실패, 재시도 {}회차: queue={}, messageId={}", retryCount + 1, queue, messageId, ex)
             message.messageProperties.setHeader(RETRY_COUNT_HEADER, retryCount + 1)
             rabbitTemplate.invoke { ops ->
-                ops.send("", "$queue.retry", message)
+                ops.send("", "$queue.retry.${retryCount + 1}", message)
                 ops.waitForConfirmsOrDie(MessagingConfig.CONFIRM_TIMEOUT_MS)
             }
             channel.basicAck(deliveryTag, false)
