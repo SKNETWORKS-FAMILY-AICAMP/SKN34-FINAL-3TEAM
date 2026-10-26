@@ -1,97 +1,106 @@
-"""llm.usage.recorded 발행 (아키텍처 1.4·1.6, NFR-PRF-02).
+"""이벤트 발행: events.topic, best-effort (아키텍처 1.6).
 
-상태 없는 서비스라 best-effort: 응답을 막지 않도록 백그라운드로 보내고,
-브로커 미연결·발행 실패는 경고만 남기고 버림 (유실은 Langfuse trace로 보정).
-exchange는 definitions.json이 선언하므로 여기서는 선언하지 않음.
+상태 없는 서비스라 Outbox 없이 처리 결과 반환 후 발행, 실패해도 예외를 올리지 않음.
 """
 
-import asyncio
 import logging
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, Literal
 
 import aio_pika
 from aio_pika.abc import AbstractChannel
+from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
 
-from app.llm.base import LlmUsage
 from app.messaging.connection import AmqpConnection
 from app.messaging.envelope import EventEnvelope
-from app.security import current_user_context
 
 logger = logging.getLogger(__name__)
 
-EXCHANGE = "events.topic"
-ROUTING_KEY = "llm.usage.recorded"
-EVENT_TYPE = "llm.usage.recorded"
-SOURCE = "ai-service"
-DATASCHEMA = "https://sagomungchi.dev/schemas/events/llm.usage.recorded.v1.schema.json"
+EVENTS_EXCHANGE = "events.topic"
+LLM_USAGE_RECORDED = "llm.usage.recorded"
+
+CallType = Literal["JUDGMENT", "FOLLOWUP", "ANALYSIS", "REPORT_NARRATIVE", "M2", "M1", "SPEECH"]
 
 
-def usage_data(usage: LlmUsage) -> dict[str, Any]:
-    """contracts/events/llm.usage.recorded.v1.schema.json의 data. 학생 ID·원문·비용 없음."""
-    return {
-        "service": "ai",
-        "callType": usage.call_type,
-        "model": usage.model,
-        "promptVersion": usage.prompt_version,
-        "inputTokens": usage.input_tokens,
-        "outputTokens": usage.output_tokens,
-        "latencyMs": usage.latency_ms,
-        "success": usage.success,
-        "errorCode": usage.error_code,
-    }
-
-
-def usage_event(usage: LlmUsage) -> EventEnvelope[dict[str, Any]]:
-    context = current_user_context()
-    return EventEnvelope(
-        type=EVENT_TYPE,
-        source=SOURCE,
-        dataschema=DATASCHEMA,
-        traceparent=context.traceparent if context else None,
-        data=usage_data(usage),
-    )
-
-
-class UsagePublisher:
+class EventPublisher:
     def __init__(self, amqp: AmqpConnection) -> None:
         self._amqp = amqp
         self._channel: AbstractChannel | None = None
-        self._channel_lock = asyncio.Lock()
-        self._pending: set[asyncio.Task[None]] = set()
 
-    def record(self, usage: LlmUsage) -> None:
-        """LlmClient의 recorder. 요청 컨텍스트에서 봉투를 만들고 발행은 백그라운드로."""
-        task = asyncio.get_running_loop().create_task(self._publish(usage_event(usage)))
-        self._pending.add(task)
-        task.add_done_callback(self._pending.discard)
-
-    async def _publish(self, event: EventEnvelope[dict[str, Any]]) -> None:
+    async def publish(self, envelope: EventEnvelope[Any], routing_key: str) -> bool:
         if not self._amqp.is_connected:
-            logger.warning("RabbitMQ 미연결, 사용량 이벤트 버림: id=%s", event.id)
-            return
+            logger.warning("RabbitMQ 미연결, 이벤트 미발행: %s %s", routing_key, envelope.id)
+            return False
         try:
-            channel = await self._get_channel()
-            exchange = await channel.get_exchange(EXCHANGE, ensure=False)
+            if self._channel is None or self._channel.is_closed:
+                self._channel = await self._amqp.connection.channel()  # publisher confirm 기본 사용
+            exchange = await self._channel.get_exchange(EVENTS_EXCHANGE, ensure=False)
             await exchange.publish(
                 aio_pika.Message(
-                    body=event.model_dump_json().encode(),
+                    body=envelope.model_dump_json(by_alias=True).encode(),
                     content_type="application/json",
+                    message_id=envelope.id,
                     delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-                    message_id=event.id,
-                    type=event.type,
                 ),
-                routing_key=ROUTING_KEY,
+                routing_key=routing_key,
             )
-        except Exception:  # noqa: BLE001 - best-effort, 발행 실패가 서비스에 번지지 않음
-            logger.warning("사용량 이벤트 발행 실패: id=%s", event.id, exc_info=True)
+            return True
+        except Exception as exc:  # noqa: BLE001 - best-effort, 호출 흐름에 영향 없음
+            logger.warning("이벤트 발행 실패: %s %s: %s", routing_key, envelope.id, exc)
+            return False
 
-    async def _get_channel(self) -> AbstractChannel:
-        async with self._channel_lock:
-            if self._channel is None or self._channel.is_closed:
-                self._channel = await self._amqp.connection.channel()
-            return self._channel
 
-    async def close(self, timeout: float = 2.0) -> None:
-        """종료 시 보내던 이벤트를 잠깐 기다림."""
-        if self._pending:
-            await asyncio.wait(self._pending, timeout=timeout)
+class LlmUsageRecorded(BaseModel):
+    """contracts/events/llm.usage.recorded.v1.schema.json. 학생 ID·원문 미포함 (NFR-PRF-02)"""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    service: Literal["ai", "scoring"]
+    call_type: CallType
+    model: str
+    prompt_version: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    latency_ms: int
+    success: bool
+    error_code: str | None = None
+    occurred_at: datetime
+
+
+class UsagePublisher:
+    def __init__(self, publisher: EventPublisher, service: Literal["ai", "scoring"], source: str):
+        self._publisher = publisher
+        self._service = service
+        self._source = source
+
+    async def publish(
+        self,
+        call_type: CallType,
+        model: str,
+        *,
+        input_tokens: int | None,
+        output_tokens: int | None,
+        latency_ms: int,
+        success: bool,
+        prompt_version: str | None = None,
+        error_code: str | None = None,
+    ) -> bool:
+        envelope = EventEnvelope[LlmUsageRecorded](
+            type=LLM_USAGE_RECORDED,
+            source=self._source,
+            dataschema=f"{LLM_USAGE_RECORDED}.v1",
+            data=LlmUsageRecorded(
+                service=self._service,
+                call_type=call_type,
+                model=model,
+                prompt_version=prompt_version,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                latency_ms=latency_ms,
+                success=success,
+                error_code=error_code,
+                occurred_at=datetime.now(UTC),
+            ),
+        )
+        return await self._publisher.publish(envelope, LLM_USAGE_RECORDED)
