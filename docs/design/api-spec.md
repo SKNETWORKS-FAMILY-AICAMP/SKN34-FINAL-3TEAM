@@ -494,7 +494,7 @@ If-Match: "7"
 | Method | Path | 호출자 | 요청 → 응답 |
 |---|---|---|---|
 | POST | `/internal/judgments` | learning | `{answerText, inputType, grade, rubric{elements[]}, versions}` → `{result, elements[{elementId, quote, verified, satisfied}], heldReason, trial, versions}` (M2 활성 시 scoring 교차 확인) |
-| POST | `/internal/followups` | learning | `{timeline[], judgment, rubric, mission}` → `{type, question, source, leakCheck{passed}, versions}` (정답·금지어 검사 실패 시 재생성, 질문 은행 `[P16]`) |
+| POST | `/internal/followups` | learning | `{timeline[], judgment, rubric, mission, grade}` → `{type, question, source, leakCheck{passed}, versions}` (정답·금지어 검사 실패 시 재생성, 질문 은행 `[P16]`) |
 | POST | `/internal/analysis/stream` | core | **SSE**. `{conversationId, question, scope{studentId, from, to}, history[]}` → 3.3과 같은 이벤트 |
 | POST | `/internal/report-narratives` | report | `{metrics[], thinkingTypes[], changes[], reflections[], quotes[]}` → `{narrative, eveningQuestion, citedQuotes[]}` |
 | GET | `/internal/versions` | core | 활성 프롬프트 버전 |
