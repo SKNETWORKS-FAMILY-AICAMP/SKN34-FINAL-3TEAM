@@ -4,7 +4,7 @@
 - 범위: 5개 서비스의 기능별 Presentation · Application · Domain · Infrastructure 클래스와 의존 관계, 공개 메서드 시그니처
 - 상태 전이 규칙은 [상태 다이어그램](state-diagram.md), 호출 순서는 [시퀀스 다이어그램](sequence-diagram.md)
 - 클래스명은 구현 기준 이름. 필드는 ERD 컬럼과 같아 생략하고 상태 전이·검증 메서드만 표기
-- `[P..]`는 미확정 정책. 해당 메서드는 자리만 두고 확정 전 미구현
+- `(P04)` 형태는 확정 정책 번호, 내용은 [기능명세서 1.4](functional-spec.md#14-확정-정책)
 
 ---
 
@@ -247,7 +247,6 @@ classDiagram
     <<controller>>
     +list() List
     +register(request) ChildResponse
-    +link(reauthToken, request) ChildResponse
     +update(childId, request)
     +unlink(reauthToken, childId)
     +deletionImpact(childId) Impact
@@ -272,7 +271,6 @@ classDiagram
   class GuardianshipService {
     <<service>>
     +registerChild(parentId, command) Student
-    +link(parentId, command) Guardianship
     +unlink(parentId, childId)
     +authorizeChild(childId) UserContext
     +authorizeLinkedChildren() UserContext
@@ -343,7 +341,8 @@ classDiagram
 - `authorizeLinkedChildren()`: 경로에 자녀 ID가 없는 API(`/reports/{reportId}` 등)용. `studentScope = 연결 자녀 전체`로 전달하고 소유 서비스가 리소스의 학생 ID로 검사, 403은 core가 `CHILD_NOT_LINKED`로 변환
 - 공개 API 컨텍스트는 `JwtAuthFilter`가 설정하고 finally에서 해제 (`InternalAuthFilter`와 같은 방식)
 - 재확인 토큰(`reauthToken`)·복구 코드는 Redis 저장 (ERD 1장)
-- 학생 진입·학생 계정 `[P01]`: `createStudentSession`은 자리만 두고 시연 링크 방식 확정 전 미구현
+- `createStudentSession`: 학부모 토큰 + `{childId}` → `authorizeChild` 통과·필수 동의 유지 확인 후 `STUDENT` 토큰 발급 (P01). 학생 계정·시연 링크 없음
+- `GuardianshipService.registerChild`: 학년 3~6·출생연도 검증, `LINKED` 자녀 3명이면 `CHILD_LIMIT_REACHED`, GUARDIAN 동의 필수 (P01·P02·P03). 다른 보호자 연결(`link`) 없음
 
 ### 3.2 학습 프록시·분석 대화 (learning · conversation)
 
@@ -566,7 +565,7 @@ classDiagram
   class GuardianshipService { <<service>> }
 ```
 
-- `ReportScheduler`: `@Scheduled` + `@SchedulerLock`(ShedLock), 주 경계·시각 `[P06]`. 학생별 `report_job(SCHEDULE)` + outbox 저장, 부분 UK로 중복 방지
+- `ReportScheduler`: `@Scheduled` + `@SchedulerLock`(ShedLock), 매주 월 07:00 KST, 직전 월~일(KST) 대상, 기록 없는 학생 포함 (P06). 학생별 `report_job(SCHEDULE)` + outbox 저장, 부분 UK로 중복 방지
 - `ReportEventConsumer`: 큐 `core.report.events`, `processed_event`로 멱등, 상태 전이는 조건부 UPDATE (상태 다이어그램 4.1)
 - `NotificationPubSub`: Redis Pub/Sub로 core 레플리카 간 SSE 중계 (아키텍처 1.6), 알림 행 저장 후 발행
 - 리포트 조회 API에 `ReportQueryService`를 둬서 controller → client 직접 호출 금지 규칙 준수 (리포트 열람 기록 `report_view` 저장 포함)
@@ -591,6 +590,7 @@ classDiagram
     +list() List
     +registerBillingKey(subscriptionId, authKey)
     +cancelAutoRenewal(subscriptionId) CancelResult
+    +resumeAutoRenewal(subscriptionId)
   }
   class TossWebhookController {
     <<controller>>
@@ -615,6 +615,7 @@ classDiagram
     +recoverEntitlement(paymentId)
     +registerBillingKey(subscriptionId, authKey)
     +cancelAutoRenew(subscriptionId) Subscription
+    +resumeAutoRenew(subscriptionId) Subscription
     +renew(subscriptionId)
     +expire(subscriptionId)
   }
@@ -696,7 +697,7 @@ classDiagram
 
 - `TossClient`는 PG 교체 지점 래퍼 (아키텍처 2.1). 로컬·CI는 `toss-stub`, 키는 환경 변수만
 - `PaymentService.confirm`: 금액 대조(트랜잭션) → `TossClient.confirm`(트랜잭션 밖) → 결제 저장·구독 반영(트랜잭션). 반영 실패 시 `requireRecovery()` 후 `recoverEntitlement` 재시도 (FN-PAY-05)
-- `BillingScheduler`: ShedLock, 정기 청구·해지 효력·`CONFIRMING` 재조회. 재시도 횟수·유예 기간 `[P13]`, 해지 효력 `[P14]`
+- `BillingScheduler`: ShedLock, 정기 청구·해지 효력·`CONFIRMING` 재조회. 매일 09:00 KST. 갱신 실패 시 유예 3일·매일 1회 최대 3회 재청구 후 해지 (P13), 자동 갱신 해지는 `period_end` 경과 시 `CANCELED` (P14)
 
 ### 3.5 신고·지원·사용량·관리자 (support · usage · admin)
 
@@ -866,6 +867,7 @@ classDiagram
     +update(missionId, request) Mission
     +putRubric(missionId, request) RubricVersion
     +preview(missionId) MissionView
+    +requestReview(missionId)
     +review(missionId, request) MissionReview
     +publish(missionId)
     +unpublish(missionId)
@@ -877,6 +879,7 @@ classDiagram
     +create(command) Mission
     +update(missionId, command) MissionVersion
     +putRubric(missionId, command) RubricVersion
+    +requestReview(missionId)
     +review(missionId, reviewerId, result, comment)
     +publish(missionId)
     +unpublish(missionId)
@@ -989,7 +992,9 @@ classDiagram
 - `AttemptService.start`: 부분 UK `(student_id, mission_id) WHERE IN_PROGRESS` 충돌 시 기존 시도 반환 (FN-LRN-16)
 - `AttemptDraft.update`: `UPDATE ... WHERE version = :ifMatch` 영향 0행이면 `ATTEMPT_DRAFT_CONFLICT` + 최신 초안 (FN-LRN-17)
 - `AnswerService.submit`: 같은 트랜잭션에 `answer` 버전 추가 + `judgment(PENDING)` 생성. 같은 `idempotency_key`면 기존 답변 반환 (FN-LRN-10)
-- `FinishPolicy`: 마무리 조건 `[P04]`. 확정 전에는 "판정 1회 이상 `DONE`" 같은 임의 조건을 넣지 않고 정책 주입 지점만 둠
+- `FinishPolicy.canFinish`: 시도 내 판정 `DONE` 1회 이상(결과 무관, `HELD` 포함)이면 true (P04)
+- 되묻기 생성 조건: 시도 내 되묻기 2회 미만 + 고르기 `CORRECT` 아님 (P04). `finished_at` 이후 답변 제출은 `requireOpen`에서 `ATTEMPT_CLOSED`
+- `AttemptDraft.content`: `{answer, memo}`, memo는 학생 본인 조회에만 포함 (P05)
 - `Mission.requirePublishable`: 현재 버전·기준표 요소 1개 이상(서술·논술) 또는 `answer_key`(고르기·수학) 검사, 누락 시 `MISSION_PUBLISH_INCOMPLETE` (FN-ADM-11)
 
 ### 4.2 판정·되묻기 (judgment)
@@ -1081,7 +1086,7 @@ classDiagram
 - `FeedbackFacade.feedback` 순서 (아키텍처 2.5)
   1. `JudgmentService.acquire`: `PENDING|FAILED|리스 만료 RUNNING → RUNNING` 조건부 UPDATE. `DONE`이면 저장 결과 반환, 유효 `RUNNING`이면 `RUNNING` 결과 반환 (API 1.4)
   2. 트랜잭션 밖: 고르기·수학 최종 답은 `RuleJudge`, 서술·논술은 `AiClient.judge`
-  3. 트랜잭션 밖: `AiClient.followup` (정답·금지어 유출 검사는 ai 담당)
+  3. 트랜잭션 밖: 시도 내 되묻기 2회 미만이고 고르기 `CORRECT`가 아니면 `AiClient.followup` (정답·금지어 유출 검사는 ai 담당, P04). 재생성까지 검사 실패하면 learning이 `followup_bank_question`에서 같은 `type` 질문 선택(`BANK`, P16)
   4. `JudgmentService.saveResult`: 판정·요소·되묻기·버전 저장 + `DONE`. 예외 시 `markFailed`
 - `JudgmentElement`: `verified = false`면 `satisfy()` 거부 (ERD CHECK와 동일 규칙을 Domain에서도 검사)
 - `judge_verified = false` 요소·미검증 학년 조합의 `HELD(UNVERIFIED_SCOPE)` 결정은 ai `QuoteVerifier` 담당. learning은 `judge_verified`·학년을 포함한 기준표를 `AiClient.judge`에 전달 (FN-JDG-04)
@@ -1130,6 +1135,10 @@ classDiagram
     <<service>>
     +delete(eventId, studentId, scope)
   }
+  class CoreClient {
+    <<client>>
+    +reportDeletionCompleted(deletionRequestId)
+  }
   class DeletedStudentRepository { <<repository>> }
   class ProcessedEventRepository { <<repository>> }
   class AttemptService { <<service>> }
@@ -1143,11 +1152,13 @@ classDiagram
   StudentDeletionService --> ProcessedEventRepository
   StudentDeletionService --> AttemptService : deleteByStudent
   StudentDeletionService --> DeletedStudentRepository
+  StudentDeletionService --> CoreClient : 삭제 완료 보고
 ```
 
 - `RecordController`: 모든 경로에서 `UserContextHolder.current().requireStudent(studentId)` 먼저 실행 (아키텍처 2.3 범위 검사)
 - `RecordRepository`는 여러 기능 테이블을 읽는 조회 전용 MyBatis 매퍼 (쓰기 없음). 기능 간 repository 참조 금지 규칙의 예외로, 조회 전용 `record/`에 한정
-- `Metric.ratio`: 분모 5 미만이면 `value = null`, `count`만 (`[P08]` 기준안, API 1.6)
+- `Metric.ratio`: 분모 5 미만이면 `value = null`, `count`만 (P08, API 1.6)
+- `StudentDeletionService.delete`: 삭제·`deleted_student` 저장 후 `CoreClient.reportDeletionCompleted`. 보고 실패 시 예외 → NACK·재전달, 삭제는 멱등 (P09)
 - `evidence`: `deleted_student`에 있는 학생 근거는 `available: false` (FN-ACC-13)
 - `AttemptService.deleteByStudent`: `attempt` 삭제 시 하위 `answer`·`judgment`·`followup`·`reflection` 등은 FK `ON DELETE CASCADE`로 함께 삭제 가정 (ERD 미기재, 8장)
 
@@ -1227,7 +1238,7 @@ classDiagram
 | `EvidenceExtractor` | `judgment/extractor.py` | LLM에 기준표 요소별 근거 구절 추출 요청 (학생 이름 미포함) |
 | `QuoteVerifier` | `judgment/verifier.py` | 구절의 답변 원문 존재 확인(코드), 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정. LLM과 분리 (FN-JDG-03) |
 | `JudgmentService` | `judgment/service.py` | 추출 → 대조 → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`) → 응답 |
-| `LeakGuard` | `followup/leak_guard.py` | 정답 키·예시 답·금지어 포함 검사. 실패 시 1회 재생성(`LLM_RETRY`), 이후 질문 은행 `[P16]` |
+| `LeakGuard` | `followup/leak_guard.py` | 정답 키·예시 답·금지어 포함 검사. 실패 시 1회 재생성(`LLM_RETRY`), 재실패 시 `question` 없이 `leakCheck.passed = false` 반환 → learning이 질문 은행 선택 (`BANK`, P16) |
 | `LlmClient` | `llm/` | 제공자 교체 지점, LLM 호출 재시도는 이 클래스에서만 (아키텍처 1.3), 호출마다 사용량 발행 |
 | `ActiveVersions` | `versions.py` (신규) | 활성 프롬프트 버전 보관, `model.version.activated` 수신 시 교체 |
 
@@ -1324,7 +1335,8 @@ classDiagram
 - 그래프 흐름 `classify → clarify_scope → plan → run_tools → compute → answer → verify` (아키텍처 1.5), 분기는 [시퀀스 다이어그램 5](sequence-diagram.md#5-분석-대화-sse)
 - `RecordTools`: 도구 실행마다 `require_student` 검사 후 learning 호출, 컨텍스트 헤더 그대로 전달 (FN-AGT-02)
 - `calculators`: 건수·비율은 LLM이 아닌 코드 계산 (FN-AGT-05), `Metric` 형식은 learning과 동일
-- `AnswerVerifier`(`analysis_agent/verifier.py`, 신규): 답변 속 숫자 ↔ `metrics`, 인용 ↔ `evidence` 원문 대조. 실패 시 `VERIFICATION_FAILED` (FN-AGT-06)
+- `AnswerVerifier`(`analysis_agent/verifier.py`, 신규): 답변 속 숫자 ↔ `metrics`, 인용 ↔ `evidence` 원문 대조. 실패 시 규칙 응답으로 전환 (FN-AGT-06)
+- 규칙 응답(`analysis_agent/rule_responder.py`, 신규): 대조 실패·LLM 키 부재·호출 실패 시 계산된 `metrics`·`evidence`만 템플릿 문장으로 구성, `source = TEMPLATE`·`fallback` 표시 (FN-AGT-10, P16)
 - `NarrativeService`: 서술·저녁 질문만 생성, 숫자 계산·대조는 report-service 담당
 
 ### 5.3 메시징·클라이언트
@@ -1410,7 +1422,7 @@ classDiagram
 ```
 
 - `LoadedModel.predict`는 CPU 동기 추론 → `run_in_threadpool`로 호출해 이벤트 루프 차단 방지 (아키텍처 2.3)
-- 활성 범위 밖 학년·문항이면 `{active: false}` 반환, M1 확신도 0.8 미만은 보류 신호 (`[P15]`)
+- 활성 범위 밖 학년·문항이면 `{active: false}` 반환, M1 확신도 0.8 미만은 보류 신호 (P15)
 - 가중치는 S3 `artifact_uri`에서 로딩, 승인된 버전만 (아키텍처 5장)
 
 ---
@@ -1506,6 +1518,10 @@ classDiagram
     <<service>>
     +delete(event_id, student_id)
   }
+  class CoreClient {
+    <<client>>
+    +report_deletion_completed(deletion_request_id)
+  }
 
   ReportGenerateConsumer --> GenerationService
   GenerationService --> ReportRepository
@@ -1541,14 +1557,14 @@ classDiagram
 - `GenerationService.generate`: `job_id`로 기존 행 조회 → 없으면 `RUNNING` 생성, `COMPLETED·FAILED`면 ACK만, `RUNNING`이면 같은 행으로 재실행. 기록 없음·표본 부족은 `COMPLETED + state`, 실패는 `FAILED` (FN-RPT-11)
 - `query_router`·`QueryService`: 모든 조회에서 리포트의 `student_id`가 `X-Student-Scope`에 있는지 검사, 없으면 403 (API 4장)
 - 수치·전후 변화는 `MetricsCalculator`(코드)에서만 계산, ai는 서술·저녁 질문만 (FN-RPT-03, 05)
-- `ReportVerifier`: 서술 속 숫자·인용을 계산 결과·learning 원문과 대조, 실패 항목은 `verified = false`. 템플릿 전환 `[P16]`
+- `ReportVerifier`: 서술 속 숫자·인용을 계산 결과·learning 원문과 대조, 실패 시 서술을 템플릿 요약으로 교체(`narrative.source = TEMPLATE`, P16). `NO_RECORD`·무료 플랜(`narrativeEnabled = false`)은 ai 호출 생략 (P06·P13)
 
 ---
 
 ## 8. 확인 필요 가정
+- 요금제 사용 한도(P13): core가 Redis 일 단위 카운터(학생별 미션 시작·피드백, 학부모별 분석 대화)와 `product.limits`로 확인 후 `USAGE_LIMIT_REACHED`. 담당 클래스는 구현 시 `usage/`에 추가
 - core `conversation`(근거 원문 조회)·`admin`(미션 관리 프록시)이 `learning/client/LearningClient`를 직접 사용: learning 기능에 service가 없어서 생긴 예외. 문제가 되면 `learning/service/LearningRecordService`를 추가
 - 기존 `UserContextHolder`에 SSE 작업 스레드용 컨텍스트 실행 래퍼 추가 필요 (3.2)
 - learning 하위 기록 삭제의 FK `ON DELETE CASCADE` 여부 ERD 반영 필요 (4.3)
 - learning `record/RecordRepository`가 여러 기능 테이블을 조회: 조회 전용 기능 한정 예외
-- `FinishPolicy` 마무리 조건 `[P04]`, 학생 세션 `[P01]`, 질문 은행 `[P16]`, 재생성 보존 `[P06]` `[P09]`은 메서드 자리만 둠
 - 클래스 분할 단위(관리자 controller 등)는 구현 시 조정 가능, 레이어·의존 방향은 고정
