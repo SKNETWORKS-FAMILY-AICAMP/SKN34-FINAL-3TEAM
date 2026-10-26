@@ -1,0 +1,6 @@
+data/
+*.csv
+*.zip
+.venv/
+notebooks/
+checkpoints/
