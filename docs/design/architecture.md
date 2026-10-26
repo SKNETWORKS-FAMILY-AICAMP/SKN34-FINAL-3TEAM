@@ -59,7 +59,7 @@
 | 주간 리포트 생성 | **명령** → `cmd.direct` 작업 큐 | 일괄 처리, 재시도, 워커 단독 확장 |
 | 상태 변화 전파 | **이벤트** → `events.topic` | 생산자가 소비자를 모름, 소비자 추가 시 생산자 무변경 |
 
-- 동기 호출 장애 대응: 타임아웃 + 재시도 제한 + 서킷 브레이커(Spring Resilience4j / Python httpx 타임아웃·재시도), 값은 `[P12]`. 실패 시 "처리 실패"로 기록·SSE 전달, 판정 보류·기록 없음과 구분
+- 동기 호출 장애 대응: 타임아웃 + 재시도 제한 + 서킷 브레이커(Spring Resilience4j / Python httpx 타임아웃·재시도). 값(P12): LLM 1회 15초·재시도 1회(1초 대기), learning→ai 판정·되묻기 각 35초, core→learning 피드백 80초, 분석 대화 core→ai 첫 응답 20초·전체 120초, 서킷 브레이커 최근 20건 중 실패 50% 이상 시 30초 차단, 리포트 작업 재시도 3회(1·5·15분) 후 DLQ. 실패 시 "처리 실패"로 기록·SSE 전달, 판정 보류·기록 없음과 구분
 - 타임아웃 예산: 바깥 호출 타임아웃 > 안쪽 호출 합계 (예: core→learning > learning→ai judgments + followups). 전체 상한은 CloudFront·ALB 타임아웃(4.3) 이내
 - 재시도 계층: ai의 LLM 호출에서만 재시도, core·learning·report의 서비스 간 호출은 재시도 없음 (계층별 재시도 시 호출 수 곱셈 증폭)
 - SSE heartbeat: 모든 SSE는 15초마다 주석 줄(`: ping`) 전송. 피드백은 learning 동기 응답 대기 중 전송할 데이터가 없어 필수
@@ -77,7 +77,7 @@
 | `report.completed` / `report.failed` | 이벤트 | report | core | 작업 상태 갱신, 학부모 알림 |
 | `llm.usage.recorded` | 이벤트 | ai, scoring | core | 호출 종류별 토큰·지연·실패·버전 집계 (학생 ID·원문 미포함) |
 | `model.version.activated` | 이벤트 | core | ai, scoring (Pod별 수신) | 모든 레플리카가 활성 모델·프롬프트 버전 교체 (기동 시 core 내부 API로 현재 버전 조회) |
-| `student.deleted` | 이벤트 | core | learning, report | 삭제 확정 학생의 학습 기록·리포트 삭제 처리 `[P09]` |
+| `student.deleted` | 이벤트 | core | learning, report | 삭제 확정 학생의 학습 기록·리포트 물리 삭제, 처리 후 core 내부 API로 완료 보고. 페이로드에 `deletionRequestId`·`scope` 포함 (P09) |
 
 ### 1.5 핵심 흐름
 1. **미션 학습**
@@ -92,7 +92,7 @@
      - 이후 ai `followups`로 되묻기 생성·유출 검사
    - 판정·되묻기를 기준표·모델·프롬프트 버전과 함께 저장
    - 실패 시 판정 상태 `FAILED` 저장, 같은 피드백 요청 재호출로 재시도
-3. **마무리**: learning이 마무리 조건 `[P04]`을 확인한 뒤에만 정답·예시 답·근거 확인된 체크리스트 반환 → 돌아보기 저장 시 완료 처리
+3. **마무리**: learning이 마무리 조건(판정 `DONE` 1회 이상, P04)을 확인한 뒤에만 정답·예시 답·근거 확인된 체크리스트 반환 → 돌아보기 저장 시 완료 처리
 4. **분석 대화**
    - Web ─SSE→ core: 자녀 연결 확인 후 허용 학생·기간·대화 이력 전달 → ai(스트리밍)
    - LangGraph 흐름: `classify → clarify_scope → plan → tool(learning 조회, 실행마다 허용 범위 검사) → compute(코드 계산) → answer → verify(숫자·인용 대조)`
@@ -106,7 +106,7 @@
 - **Outbox**: DB 상태 변경 + 발행이 함께 필요한 서비스(core, report)만 적용 (learning은 발행 없음, 멱등 소비만). 같은 트랜잭션에 outbox 행 저장 → 릴레이 스케줄러가 publisher confirm 받은 후 발행 시각 기록 (참고 레포 `*OutboxScheduler` 패턴)
 - **상태 없는 서비스(ai, scoring)**: 이벤트 발행은 처리 결과 반환 후 best-effort (사용량 집계용), 유실 시 Langfuse trace로 보정
 - **멱등 소비**: 소비자별 `processed_event(event_id UK)` 테이블 또는 DB 상태 전이 조건(`QUEUED→RUNNING`)
-- **재시도**: 소비 실패 시 지연 재시도 N회 후 DLQ 이동 (횟수·지연은 `definitions.json`에서 관리)
+- **재시도**: 소비 실패 시 지연 재시도 후 DLQ 이동. `report.generate`는 3회(1·5·15분, P12), 그 외 큐의 횟수·지연은 `definitions.json`에서 관리
 - **DLQ**: 큐마다 dead-letter exchange, 관리자 화면에서 현황 조회 (참고 레포 `QueueOperations*` 계승)
 - **브로드캐스트 이벤트**: 모든 레플리카가 받아야 하는 이벤트(`model.version.activated`)는 Pod별 exclusive·auto-delete 큐를 서비스가 기동 시 선언·바인딩 (exchange는 `definitions.json`). 공유 큐는 경쟁 소비라 1개 Pod만 수신
   - 기동 순서: 큐 바인딩 → core 활성 버전 조회 (반대 순서면 그 사이 이벤트 유실)
@@ -333,9 +333,6 @@ backend/ai-service/
 │  │  ├─ router.py
 │  │  ├─ service.py
 │  │  └─ prompts.py
-│  ├─ speech/                    # 전사·읽어주기 (선택, [P03])
-│  │  ├─ router.py
-│  │  └─ service.py
 │  ├─ clients/
 │  │  ├─ base.py                 # 내부 토큰·컨텍스트 헤더 전달 httpx 클라이언트
 │  │  ├─ learning_client.py
@@ -486,23 +483,24 @@ backend/report-service/
 
 | 대상 | ingress 허용 | egress 허용 |
 |---|---|---|
-| core | ALB(서브넷 ipBlock), ai, scoring, Prometheus | learning, ai, report-api, RabbitMQ(5672·15672), Redis, RDS, 토스(NAT) |
-| learning | core, ai, report-worker, Prometheus | ai, RabbitMQ, RDS, S3 |
+| core | ALB(서브넷 ipBlock), ai, scoring, learning, report-worker, Prometheus | learning, ai, report-api, RabbitMQ(5672·15672), Redis, RDS, 토스(NAT) |
+| learning | core, ai, report-worker, Prometheus | core, ai, RabbitMQ, RDS, S3 |
 | ai | core, learning, report-worker, Prometheus | learning, scoring, core, RabbitMQ, LLM API(NAT) |
 | scoring | ai, Prometheus | core, RabbitMQ, S3 |
 | report-api | core, Prometheus | RDS, S3 |
-| report-worker | Prometheus | learning, ai, RabbitMQ, RDS, S3 |
+| report-worker | Prometheus | core, learning, ai, RabbitMQ, RDS, S3 |
 | RabbitMQ·Redis | `app` 전체, KEDA(RabbitMQ), Prometheus | - |
 
   - 전 Pod 공통 egress: kube-dns(53), OTel Collector·Langfuse(`observability`)
   - report-api·report-worker는 라벨이 달라 허용 대상에 각각 명시
+  - learning·report-worker → core는 삭제 완료 보고(`/internal/deletion-requests/.../completions`)만 사용 (P09)
   - migration-job: RDS egress / local: LLM API·토스 대신 `<target>-stub` Service로 egress
 
 ### 4.4 확장
 - HPA(CPU): core, learning, ai, scoring, report-api — 최소 2(scoring은 메모리 고려해 최소 1, report-api 최소 1), PDB `minAvailable: 1`
 - **KEDA(RabbitMQ 큐 길이)**: report-worker — 0~N 확장, EDA와 K8s 연계 지점
   - report 조회 API는 core가 동기 호출하므로 0으로 줄지 않는 `report-api`로 분리 (같은 이미지, 진입점만 다름). core `ReportClient` 대상 Service = report-api
-  - `maxReplicaCount` × consumer prefetch = learning·ai·LLM API 동시 호출 상한 → LLM rate limit 이내로 설정 `[P12]`
+  - `maxReplicaCount` × consumer prefetch = learning·ai·LLM API 동시 호출 상한 → LLM rate limit 이내로 설정 (값은 실측 후 결정)
 - ai HPA: LLM 대기 위주라 CPU가 낮게 유지됨 → 실측 후 동시 요청 수 기준 지표 검토
 - Cluster Autoscaler: Pending Pod 발생 시 application 노드 증설
 - 종료 처리: core는 preStop 지연 + terminationGracePeriod로 SSE 정리 시간 확보 (롤링 배포·축소 시 단절은 클라이언트 재연결로 처리)
@@ -517,6 +515,8 @@ backend/report-service/
 ### 4.6 관측
 - Langfuse: LLM 호출·토큰·비용·trace
 - OpenTelemetry → Prometheus + Grafana: 서비스 지표, 큐 길이·DLQ 적재량, 판정·피드백·리포트 처리 지연
+- 경보: Grafana Alerting → 팀 디스코드 웹훅. 오류율·지연·작업 적체·월 LLM 비용 예산 80% 도달, 담당은 인프라 1명 + 서비스별 담당 (P10, P13)
+- 백업: RDS 자동 백업(일 1회) + PITR, 보관 7일, RPO 5분·RTO 4시간 (P12)
 - `traceparent`를 HTTP 헤더와 이벤트 봉투 양쪽에 전파 → 동기·비동기 구간 단일 trace
 
 ---
@@ -542,7 +542,7 @@ SKN34-FINAL-3TEAM/
 │  │  │     └─ kotlin/
 │  │  └─ Dockerfile
 │  ├─ learning-service/          # Spring Boot — 미션·학습 시도·답변·규칙 판정·기록 조회 (core-service와 동일 구성)
-│  ├─ ai-service/                # FastAPI — 판정 근거·되묻기·분석 에이전트·리포트 서술·음성
+│  ├─ ai-service/                # FastAPI — 판정 근거·되묻기·분석 에이전트·리포트 서술
 │  ├─ scoring-service/           # FastAPI — M2·M1 추론
 │  └─ report-service/            # FastAPI — 리포트 생성·렌더링·조회 (report-api·report-worker)
 ├─ contracts/
@@ -669,7 +669,7 @@ SKN34-FINAL-3TEAM/
 ---
 
 ## 7. 확인 필요 가정
-- 미확정 정책 `[P..]`은 [기능명세서](functional-spec.md) 기준, 확정 전 해당 동작 미구현
+- 정책 값은 [기능명세서 1.4 확정 정책](functional-spec.md#14-확정-정책) 기준
 - LLM 제공자: Claude API (기획서 4.4), ai-service `llm/` 래퍼로 교체 가능하게 설계
 - 학습·일괄 생성(RunPod GPU, sLLM 설명)은 클러스터 밖에서 수행, 결과(가중치·주간 설명 문장)만 S3로 반입
 - AWS 계정 EKS 생성 권한·예산 한도: 권한 없으면 EC2 1대 + k3s로 대체 (HA·Cluster Autoscaler·IRSA 제외)
