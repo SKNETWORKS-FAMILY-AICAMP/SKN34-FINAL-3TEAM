@@ -472,7 +472,7 @@ erDiagram
   model_version {
     uuid id PK
     varchar kind "RUBRIC|MODEL|PROMPT|GENERATION"
-    varchar name "judge, m2-klue 등"
+    varchar name "judge, m2-klue-narrative, m2-klue-essay 등"
     varchar version
     uuid ref_id "NULL 허용 · RUBRIC이면 learning rubric_version"
     varchar artifact_uri "NULL 허용 · S3 가중치 경로"

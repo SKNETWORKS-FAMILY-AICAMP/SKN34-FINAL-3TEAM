@@ -1207,7 +1207,7 @@ classDiagram
   }
   class ScoringClient {
     <<client>>
-    +m2_scores(prompt, text, grade) M2Result
+    +m2_scores(prompt, text, grade, input_type) M2Result
     +m1_check(problem, answer_key, solution) M1Result
   }
   class ActiveVersions {
@@ -1388,7 +1388,7 @@ classDiagram
   }
   class M2Service {
     <<service>>
-    +score(prompt, text, grade) M2Response
+    +score(prompt, text, grade, input_type) M2Response
   }
   class M1Service {
     <<service>>
@@ -1396,9 +1396,9 @@ classDiagram
   }
   class ModelRegistry {
     <<registry>>
-    +load(kind, version, artifact_uri)
-    +get(kind) LoadedModel
-    +is_active(kind, grade) bool
+    +load(name, version, artifact_uri)
+    +get(name) LoadedModel
+    +is_active(name, grade) bool
     +replace(versions)
   }
   class LoadedModel {
