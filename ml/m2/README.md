@@ -217,7 +217,7 @@ AI Hub 원래 분할은 검증 문항이 학습에도 들어 있어(서술형 60
 
 ## 모델 입력·출력
 
-- 입력: `[학년] {grade} [지시문] {prompt}` + 학생 글 (scoring-service API `{prompt, text, grade}`와 같음). 512토큰을 넘으면 학생 글 뒤쪽을 자름
+- 입력: `[학년] {grade} [지시문] {prompt}` + 학생 글. `{grade}`는 데이터 표기(`초5`) 그대로이며, scoring-service API의 `grade`(정수 3~6)는 `초{grade}`로 바꿔 넣는다. 512토큰을 넘으면 학생 글 뒤쪽을 자름
 - 출력: 총점 + 8개 항목 점수를 숫자로 맞히는 회귀 → 반올림, 범위 밖은 자름 (총점 1~4, 항목 1~5)
 - 정답: 두 전문가 평균. 검증용 평균 QWK가 가장 좋은 에폭의 가중치를 저장
 - 주의: klue/roberta 토크나이저는 두 번째 문장에 `token_type_ids=1`을 붙이지만 모델은 0만 받는다. 추론할 때 `input_ids`, `attention_mask`만 넘길 것 (그대로 넘기면 `IndexError`)
