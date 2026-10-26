@@ -169,7 +169,14 @@ services:
       LEARNING_URL: http://learning-service:8081
       SCORING_URL: http://scoring-service:8001
       CORE_URL: http://core-service:8080
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5-5}
+      ANTHROPIC_EFFORT: ${ANTHROPIC_EFFORT:-medium}
+      ANTHROPIC_FALLBACK: ${ANTHROPIC_FALLBACK:-true}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
     ports:
       - "${AI_HOST_PORT:-8000}:8000"
     healthcheck:

@@ -15,6 +15,20 @@ class Settings(BaseSettings):
     scoring_url: str = "http://localhost:8001"
     core_url: str = "http://localhost:8080"
 
+    # LLM: 제공자 교체는 llm_provider만 변경, 키·모델은 제공자별로 보관
+    llm_provider: str = "anthropic"
+    anthropic_api_key: str | None = None  # 비어 있으면 503 AI_UNAVAILABLE
+    anthropic_model: str = "claude-sonnet-5-5"
+    anthropic_effort: str = "medium"  # low|medium|high|xhigh|max, 학생 대기 시간 고려
+    anthropic_fallback: bool = True  # 안전 거절 시 Anthropic 권장 모델로 자동 재처리
+    llm_timeout: float = 30.0  # [P12] 확정 전 임시값
+    llm_max_retries: int = 2  # [P12] 확정 전 임시값
+
+    # 판정·되묻기
+    judge_require_verified: bool = False  # 사람 검증(judge_verified) 도입 시 true
+    judge_min_answer_length: int = 10  # [P12] 확정 전 임시값, TOO_SHORT 기준 (공백 제외 글자 수)
+    followup_leak_max_retries: int = 2  # [P12] 확정 전 임시값
+
 
 @lru_cache
 def get_settings() -> Settings:
