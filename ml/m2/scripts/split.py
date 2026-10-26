@@ -20,7 +20,8 @@ import pandas as pd
 
 M2_DIR = Path(__file__).resolve().parent.parent
 
-# 서술형 나누기 
+
+# 서술형 나누기
 def split_descriptive(df: pd.DataFrame, seed: int) -> pd.DataFrame:
     # 노트북 01: 문항 표 → 칸마다 1개 뽑기 → 바둑판
     prompts = df[["prompt_id", "grade", "subject"]].drop_duplicates()
@@ -35,7 +36,8 @@ def split_descriptive(df: pd.DataFrame, seed: int) -> pd.DataFrame:
     prompts.loc[held[~is_valid].index, "split_new"] = "test"
     return prompts
 
-# 논술형 나누기 
+
+# 논술형 나누기
 def split_essay(df: pd.DataFrame, seed: int) -> pd.DataFrame:
     # 노트북 02: 섞기 → 칸 안 위치 비율 → 앞 20% 평가, 다음 20% 검증
     keys = ["essay_type", "grade"]
