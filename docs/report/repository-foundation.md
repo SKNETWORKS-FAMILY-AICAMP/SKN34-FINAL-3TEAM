@@ -112,4 +112,24 @@ Linux/CI에서는 각 Spring 서비스에서 `./gradlew test`를 실행한다. �
 - core·learning 배포 JAR에 Flyway·Testcontainers·테스트 Mapper가 포함되지 않음을 확인.
 - 로컬 Spring 검사는 PC의 Java 17 대신 공식 `eclipse-temurin:21-jdk` Docker 이미지에서 실행했다. 초기 Gradle 의존성 준비를 포함한 시간은 core 8분 53초, 캐시를 재사용한 learning 2분 39초다. #14에는 3분 제한이 없으며 #13 DB CI의 제한과 별개다.
 
+## develop 병합 후 확인한 별도 스키마 작업
+
+2026-10-26 `origin/develop`의 `fd4ee9c`를 작업 브랜치에 병합했다. 파일 충돌은 없었다. 이 develop에는 #13의 DB CI와 정책 확정 문서 변경(`fc90e35`)이 함께 들어 있다. 최신 ERD 7장에도 정책 변경이 기존 마이그레이션에는 미반영이라고 명시돼 있다.
+
+병합 후 `--rerun-tasks`로 core 9개·learning 7개 테스트와 bootJar를 다시 실행해 통과했다. report pytest 12개·Ruff와 DB 검증기 자체 회귀 테스트 10개도 통과했다. 아래의 실제 DB-ERD 대조 실패는 남아 있으므로 전체 CI 성공으로 보고하지 않는다.
+
+임시 PostgreSQL에 현재 마이그레이션을 적용한 뒤 최신 ERD와 대조하면 아래 불일치가 발생한다. `scripts/verify_db_schema.py`, ERD, Flyway SQL, Alembic revision은 develop과 동일하므로 #14의 Repository 코드에서 새로 만든 불일치가 아니다.
+
+| 대상 | 최신 ERD | 현재 마이그레이션 |
+|---|---|---|
+| core `student` | `birth_year` 추가, `user_account_id` 제거 | 이전 컬럼 유지, 출생연도 없음 |
+| core `product` | `limits` 추가, `price` NOT NULL, FREE/PREMIUM 기반 코드 | limits 없음, price NULL 허용, BASIC/PLUS CHECK |
+| core `error_report.category` | NOT NULL 및 5개 신고 유형 | NULL 허용, 유형 CHECK 없음 |
+| core `guardianship.method`·`notification_setting.channel` | REGISTER·IN_APP으로 제한 | LINK·EMAIL·PUSH도 허용 |
+| learning `answer` | `speech_transcribed` 제거 | 이전 컬럼 유지 |
+| learning `followup` | 질문 은행 테이블·FK 추가, source에서 TEMPLATE 제거 | 은행 테이블·FK 없음, TEMPLATE 허용 |
+| report | 테이블·컬럼 변경 없음 | 컬럼·NULL 허용 기준 일치 |
+
+현재 DB CI는 첫 불일치인 `core_db: table/column mismatch`에서 정상적으로 실패한다. 따라서 **#14의 서비스 테스트 통과와 전체 DB 스키마 CI 통과는 구분해야 한다.** 이슈 #14의 제약대로 위 변경은 별도 마이그레이션 PR로 처리하며, 기존 데이터의 출생연도·상품 한도·폐기 코드 처리와 검증 fixture/단일 허용값 CHECK 검사도 함께 정해야 한다. 이번 PR에서 검사를 생략하거나 예전 ERD로 되돌려 통과시키지 않는다.
+
 참고: [pgJDBC의 시각 타입](https://jdbc.postgresql.org/documentation/query/#using-java-8-date-and-time-classes), [MyBatis 타입 핸들러](https://mybatis.org/mybatis-3/configuration.html#typeHandlers), [SQLAlchemy 세션·트랜잭션](https://docs.sqlalchemy.org/en/20/orm/session_basics.html), [Testcontainers PostgreSQL](https://java.testcontainers.org/modules/databases/postgres/).
