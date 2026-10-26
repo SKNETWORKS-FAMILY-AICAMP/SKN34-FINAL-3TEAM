@@ -1,7 +1,7 @@
 # 이슈 #5 DB 스키마 구현·검증
 
 기준: develop `5fbdebf25e53fdaefaae3f3d2ae26b1a5b3c22ad`, [이슈 #5](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/5), 2026-10-26.
-구현 브랜치: `feature/db-schema`. 설계 원본은 [erd.md](erd.md)다.
+구현 브랜치: `feature/db-schema`. 설계 원본은 [erd.md](../design/erd.md)다.
 
 작업 중 추가된 develop `5fc1ab092defc97c85b2ddd98674961f8dfe9302`도 반영했다. 아키텍처 폴더 구조·클래스 문서 정리이며 ERD·API·DDL 계약의 변경은 없다.
 

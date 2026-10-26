@@ -138,7 +138,7 @@
 **근거 안내**
 
 - 이슈 기준: [ERD 검증 및 서비스별 DB 스키마 마이그레이션 #5](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/5).
-- E: [erd.md](erd.md), F: [functional-spec.md](functional-spec.md), A: [api-spec.md](api-spec.md), S: [architecture.md](architecture.md).
-- C: [class-diagram.md](class-diagram.md), Q: [sequence-diagram.md](sequence-diagram.md), T: [state-diagram.md](state-diagram.md). 숫자는 위 기준 커밋의 행 번호다.
+- E: [erd.md](../design/erd.md), F: [functional-spec.md](../design/functional-spec.md), A: [api-spec.md](../design/api-spec.md), S: [architecture.md](../design/architecture.md).
+- C: [class-diagram.md](../design/class-diagram.md), Q: [sequence-diagram.md](../design/sequence-diagram.md), T: [state-diagram.md](../design/state-diagram.md). 숫자는 위 기준 커밋의 행 번호다.
 - R: [요구사항 정의서](<../outputs/[기획]요구사항 정의서_사고뭉치.xlsx>)의 요구사항 정의서 시트 셀. 작성 기준 C30 등은 작성 기준 시트를 뜻한다.
 - 이슈의 직접 범위와 제외 사항은 이슈 본문 근거이며, 9·8·5 분류와 각 이관 이유는 기존 설계·요구사항을 대조한 검토 판단이다.
