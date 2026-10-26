@@ -166,7 +166,13 @@ def main() -> None:
 
     # 점수 칸의 시작값을 공부용 평균 점수(3점 언저리)로 맞춤.
     # 0에서 시작하면 3점까지 올라오는 데만 학습을 꽤 써서, 짧게 돌리면 전부 1점이 나옴
-    head = [m for m in model.modules() if isinstance(m, torch.nn.Linear)][-1]
+    # 출력이 9칸인 Linear를 찾음. "맨 마지막 Linear"로 찾으면 xlm-roberta는 부품 순서가 달라서
+    # 엉뚱한 층(768칸)을 잡음 (10/26 RunPod에서 에러)
+    head = [
+        m
+        for m in model.modules()
+        if isinstance(m, torch.nn.Linear) and m.out_features == len(ITEMS)
+    ][-1]
     with torch.no_grad():
         head.bias.copy_(torch.tensor(targets(sets["train"]).mean(axis=0)))
 
