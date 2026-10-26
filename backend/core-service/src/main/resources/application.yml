@@ -3,6 +3,12 @@ server:
   port: 8080
 
 spring:
+  # Schema changes belong to migration-job; never initialize from application startup.
+  flyway:
+    enabled: false
+  sql:
+    init:
+      mode: never
   application:
     name: core-service
   threads:

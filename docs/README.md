@@ -38,6 +38,7 @@
 
 - `design/`: ERD·API·아키텍처 등 구현 기준이 되는 설계 문서
 - `report/`: 작업별 검토 결과와 구현·검증 보고서
+  - [이슈 #14 Repository 공통 기반](report/repository-foundation.md): 타입 매핑, 트랜잭션 경계, 예시 Repository와 PostgreSQL 테스트 사용법
   - [이슈 #5 DB 변경 대상 검토표](report/erd-change-targets-step1.md): 구현 항목, 조장 확인 항목, 후속 기능과 분류 이유
   - [이슈 #5 DB 스키마 구현·검증](report/db-schema-validation.md): 기술 결정, 마이그레이션 결과와 검증 재현 방법
 

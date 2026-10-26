@@ -5,24 +5,14 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, text
 
 from app.config import get_settings
+from app.database import create_db_engine, create_session_factory
 from app.errors import register_error_handlers
 from app.health.router import router as health_router
 from app.messaging.connection import AmqpConnection
 from app.security import InternalAuthMiddleware
-
-DB_CONNECT_TIMEOUT_SECONDS = 3
-
-
-def create_db_engine() -> Engine:
-    # readiness 확인이 오래 막히지 않도록 연결 타임아웃 지정
-    return create_engine(
-        get_settings().database_url,
-        pool_pre_ping=True,
-        connect_args={"connect_timeout": DB_CONNECT_TIMEOUT_SECONDS},
-    )
 
 
 def _ping(engine: Engine) -> bool:
@@ -41,6 +31,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = create_db_engine()
     app.state.amqp = amqp
     app.state.engine = engine
+    app.state.session_factory = create_session_factory(engine)
 
     async def rabbitmq_ready() -> bool:
         return amqp.is_connected
@@ -49,9 +40,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         return await asyncio.to_thread(_ping, engine)
 
     app.state.readiness_checks = {"rabbitmq": rabbitmq_ready, "database": database_ready}
-    yield
-    await amqp.close()
-    engine.dispose()
+    try:
+        yield
+    finally:
+        try:
+            await amqp.close()
+        finally:
+            engine.dispose()
 
 
 def create_app() -> FastAPI:
