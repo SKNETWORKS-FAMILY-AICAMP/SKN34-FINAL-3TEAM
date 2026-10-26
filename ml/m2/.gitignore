@@ -3,3 +3,4 @@ data/
 *.zip
 .venv/
 notebooks/
+checkpoints/

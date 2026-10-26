@@ -13,10 +13,13 @@ ml/m2/
 ├─ scripts/
 │  ├─ build_tables.py   # AI Hub 라벨 zip → 학습용 표 (data/)
 │  ├─ split.py          # 문항 단위 학습/검증/평가 분할 (splits/)
-│  └─ baseline.py       # 기준선 평가 (results/)
+│  ├─ baseline.py       # 기준선 평가 (results/)
+│  ├─ train.py          # roberta 파인튜닝 (checkpoints/, results/)
+│  └─ latency.py        # CPU 추론 속도
 ├─ data/                # (커밋 안 함) build_tables.py 출력
 ├─ splits/              # (커밋 안 함) split.py 출력, 스크립트로 재현
 ├─ results/             # (커밋 안 함) 평가 결과 CSV
+├─ checkpoints/         # (커밋 안 함) 학습한 모델 가중치
 ├─ notebooks/           # (커밋 안 함) 탐색용
 ├─ pyproject.toml
 └─ uv.lock
@@ -38,6 +41,14 @@ uv run python scripts/split.py
 
 # 3) 기준선
 uv run python scripts/baseline.py
+
+# 4) 파인튜닝 (GPU 있으면 자동으로 GPU, 없으면 CPU)
+uv run python scripts/train.py --model klue/roberta-base
+uv run python scripts/train.py --model xlm-roberta-base
+#    동작 확인만: --limit 200 --epochs 1 --max-length 256
+
+# 5) CPU 추론 속도
+uv run python scripts/latency.py --model klue/roberta-base
 ```
 
 모든 스크립트는 `--data-dir`, `--out-dir` 등으로 경로를 바꿀 수 있다 (로컬·RunPod 공통).
@@ -109,6 +120,23 @@ AI Hub 원래 분할은 검증 문항이 학습에도 들어 있어(서술형 60
 - 서술형 적절성(핵심어)은 문항마다 핵심어가 달라 학습 모델보다 규칙(핵심어 개수)이 정확하다
 - 글 길이와 총점의 상관은 0.069로 거의 없다 (분량 조건이 있는 문항)
 
+## 모델 입력·출력
+
+- 입력: `[학년] {grade} [지시문] {prompt}` + 학생 글 (scoring-service API `{prompt, text, grade}`와 같음). 512토큰을 넘으면 학생 글 뒤쪽을 자름
+- 출력: 총점 + 8개 항목 점수를 숫자로 맞히는 회귀 → 반올림, 범위 밖은 자름 (총점 1~4, 항목 1~5)
+- 정답: 두 전문가 평균. 검증용 평균 QWK가 가장 좋은 에폭의 가중치를 저장
+- 주의: klue/roberta 토크나이저는 두 번째 문장에 `token_type_ids=1`을 붙이지만 모델은 0만 받는다. 추론할 때 `input_ids`, `attention_mask`만 넘길 것 (그대로 넘기면 `IndexError`)
+
+## CPU 추론 속도
+
+klue/roberta-base, 글 1개, 토큰화 포함, 30회 (Intel 노트북 CPU, 4스레드, 2026-10-26)
+
+| 글 길이 | 토큰 수 | 중앙값 | 95% |
+|---|---|---|---|
+| 200자 (서술형 수준) | 119 | 139ms | 189ms |
+| 650자 (논술형 평균) | 319 | 345ms | 409ms |
+| 1,200자 | 512 (최대) | 583ms | 618ms |
+
 ## 모델 라이선스
 
 | 모델 | 라이선스 | 비고 |
@@ -126,10 +154,10 @@ AI Hub 원래 분할은 검증 문항이 학습에도 들어 있어(서술형 60
 
 - 평가 문항이 서술형 10개, 논술형 18개로 적다. 분할에 따른 변동 폭은 교차검증으로 따로 확인할 예정
 - 데이터는 초5~중3, 서비스는 초3~6이라 M2가 실제 쓰일 학년은 초5·6이다
+- 입력이 512토큰을 넘으면 학생 글 뒷부분이 잘린다 (논술형 최대 약 2,100자)
 
 ## 할 일
 
 - [ ] xlm-roberta-base·klue/roberta-base 파인튜닝 (입력: 지시문 + 학년 + 글)
 - [ ] 학습 환경(로컬/RunPod, GPU 종류)·하이퍼파라미터 기록
-- [ ] CPU 추론 지연 측정
 - [ ] 가중치 보관 위치·버전명
