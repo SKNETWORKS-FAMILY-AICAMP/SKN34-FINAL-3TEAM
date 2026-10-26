@@ -182,7 +182,8 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ config/
 │  ├─ exception/
 │  ├─ security/
-│  └─ messaging/                 # 이벤트 봉투, OutboxRelay, 멱등 소비
+│  ├─ messaging/                 # 이벤트 봉투, OutboxRelay, 멱등 소비
+│  └─ web/                       # IdempotencyService, SseEmitters (core만)
 ├─ account/                      # 가입·로그인·복구·탈퇴
 │  ├─ controller/
 │  ├─ service/
@@ -306,6 +307,7 @@ backend/ai-service/
 │  ├─ config.py
 │  ├─ errors.py                 # Problem Details 예외 핸들러
 │  ├─ security.py               # 내부 토큰·사용자 컨텍스트·학생 범위 검사
+│  ├─ versions.py               # 활성 프롬프트 버전, model.version.activated 수신 시 교체
 │  ├─ judgment/
 │  │  ├─ router.py
 │  │  ├─ service.py
@@ -325,6 +327,7 @@ backend/ai-service/
 │  │  ├─ state.py
 │  │  ├─ tools.py
 │  │  ├─ calculators.py
+│  │  ├─ verifier.py             # 답변 숫자·인용 ↔ 조회·계산 결과 대조
 │  │  └─ prompts.py
 │  ├─ report_narrative/
 │  │  ├─ router.py
@@ -405,7 +408,8 @@ backend/report-service/
 │  │  ├─ templates/
 │  │  └─ renderer.py
 │  ├─ query/
-│  │  └─ router.py
+│  │  ├─ router.py
+│  │  └─ service.py              # 학생 범위 검사·조회
 │  ├─ deletion/
 │  │  ├─ consumer.py
 │  │  └─ service.py
@@ -413,7 +417,8 @@ backend/report-service/
 │  ├─ clients/
 │  │  ├─ base.py
 │  │  ├─ learning_client.py
-│  │  └─ ai_client.py
+│  │  ├─ ai_client.py
+│  │  └─ storage.py              # S3·로컬 MinIO
 │  ├─ messaging/
 │  │  ├─ envelope.py
 │  │  ├─ connection.py

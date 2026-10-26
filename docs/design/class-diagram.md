@@ -1541,10 +1541,6 @@ classDiagram
 ---
 
 ## 8. 확인 필요 가정
-- 신규 패키지·파일 (아키텍처 2.6 폴더 예시에 없음, 구현 전 아키텍처 문서 반영 필요)
-  - core `_common/web/` (`IdempotencyService`, `SseEmitters`)
-  - ai `app/versions.py` (`ActiveVersions`), `analysis_agent/verifier.py` (`AnswerVerifier`)
-  - report `query/service.py` (`QueryService`), `clients/storage.py` (`ObjectStorage`)
 - core `conversation`(근거 원문 조회)·`admin`(미션 관리 프록시)이 `learning/client/LearningClient`를 직접 사용: learning 기능에 service가 없어서 생긴 예외. 문제가 되면 `learning/service/LearningRecordService`를 추가
 - 기존 `UserContextHolder`에 SSE 작업 스레드용 컨텍스트 실행 래퍼 추가 필요 (3.2)
 - learning 하위 기록 삭제의 FK `ON DELETE CASCADE` 여부 ERD 반영 필요 (4.3)
