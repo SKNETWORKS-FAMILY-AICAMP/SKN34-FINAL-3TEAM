@@ -130,6 +130,7 @@
   "submittedAt": "...", "quote": "아이 원문 일부", "available": true }   // 삭제 시 available=false
 
 // Versions: 결과에 연결된 버전 (NFR-DAT-02)
+// model: M2 활성 판정은 M2 버전, M2 미활성 판정·되묻기는 LLM 모델 ID(예: claude-sonnet-5-5), 규칙 판정은 null
 { "mission": "m-12@3", "rubric": "r-12@2", "model": "m2-klue-narrative@1.0", "prompt": "judge@4" }
 ```
 
@@ -379,7 +380,7 @@ data: {
   },
   "followup":{"followupId":"f-32","type":"TELL_MORE","question":"왜 그렇게 생각했는지 하나 더 말해 볼까?","source":"LLM"},
   "nextActions":["ANSWER_FOLLOWUP","FINISH"],
-  "versions":{"mission":"m-12@3","rubric":"r-12@2","model":null,"prompt":"judge@4"}
+  "versions":{"mission":"m-12@3","rubric":"r-12@2","model":"claude-sonnet-5-5","prompt":"judge@4"}
 }
 
 event: done
@@ -507,7 +508,7 @@ If-Match: "7"
 | Method | Path | 호출자 | 요청 → 응답 |
 |---|---|---|---|
 | POST | `/internal/judgments` | learning | `{answerText, inputType, grade, rubric{elements[]}, versions}` → `{result, elements[{elementId, quote, verified, satisfied}], heldReason, trial, versions}` (M2 활성 시 scoring 교차 확인) |
-| POST | `/internal/followups` | learning | `{timeline[], judgment, rubric, mission}` → `{type, question, source, leakCheck{passed}}` (정답·금지어 검사 실패 시 1회 재생성 `LLM_RETRY`, 재실패 시 `question` 없이 `leakCheck.passed = false` → learning이 질문 은행 `BANK` 선택, P16) |
+| POST | `/internal/followups` | learning | `{timeline[], judgment, rubric, mission, grade}` → `{type, question, source, leakCheck{passed}, versions}` (정답·금지어 검사 실패 시 1회 재생성 `LLM_RETRY`, 재실패 시 `question` 없이 `leakCheck.passed = false` → learning이 질문 은행 `BANK` 선택, P16) |
 | POST | `/internal/analysis/stream` | core | **SSE**. `{conversationId, question, scope{studentId, from, to}, history[]}` → 3.3과 같은 이벤트 |
 | POST | `/internal/report-narratives` | report | `{metrics[], thinkingTypes[], changes[], reflections[], quotes[]}` → `{narrative, eveningQuestion, citedQuotes[]}` |
 | GET | `/internal/versions` | core | 활성 프롬프트 버전 |

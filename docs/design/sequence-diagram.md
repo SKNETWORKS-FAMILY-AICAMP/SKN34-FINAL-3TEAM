@@ -214,7 +214,7 @@ sequenceDiagram
       L->>A: POST /internal/judgments {answerText, rubric(judge_verified 포함), grade, versions}
       A->>LLM: 기준표 요소별 근거 구절 추출 (학생 이름 미포함)
       LLM-->>A: quotes[]
-      A->>A: QuoteVerifier 원문 대조 → 요소 충족·결과 결정 (미검증 요소·범위는 HELD(UNVERIFIED_SCOPE))
+      A->>A: QuoteVerifier 원문 대조 → JudgmentService 요소 충족·결과 결정 (JUDGE_REQUIRE_VERIFIED=true면 미검증 요소 HELD(UNVERIFIED_SCOPE))
       opt M2 활성 범위
         A->>S: POST /internal/m2/scores
         S-->>A: 항목 점수 또는 {active:false}
@@ -228,13 +228,13 @@ sequenceDiagram
       A-->>L: result·elements·heldReason·trial·versions
     end
     opt 되묻기 대상 (시도 내 되묻기 2회 미만, 고르기 CORRECT 아님, P04)
-      L->>A: POST /internal/followups {timeline, judgment, rubric}
+      L->>A: POST /internal/followups {timeline, judgment, rubric, mission, grade}
       A->>LLM: 되묻기 생성
       A->>A: LeakGuard 정답·금지어 검사
       opt 검사 실패
         A->>LLM: 1회 재생성 (source = LLM_RETRY)
       end
-      A-->>L: type·question·source·leakCheck
+      A-->>L: type·question·source·leakCheck·versions
       opt 재생성도 검사 실패 (leakCheck.passed = false, question 없음)
         L->>DB: followup_bank_question에서 같은 type 활성 질문 선택 (source = BANK, P16)
       end

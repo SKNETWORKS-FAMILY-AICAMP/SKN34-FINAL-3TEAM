@@ -318,12 +318,14 @@ backend/ai-service/
 │  ├─ judgment/
 │  │  ├─ router.py
 │  │  ├─ service.py
+│  │  ├─ models.py               # 요청·응답 스키마
 │  │  ├─ extractor.py            # LLM 근거 추출
 │  │  ├─ verifier.py             # 코드 원문 대조
 │  │  └─ prompts.py
 │  ├─ followup/
 │  │  ├─ router.py
 │  │  ├─ service.py
+│  │  ├─ models.py               # 요청·응답 스키마
 │  │  ├─ leak_guard.py
 │  │  └─ prompts.py
 │  ├─ analysis_agent/
@@ -346,10 +348,13 @@ backend/ai-service/
 │  │  ├─ scoring_client.py
 │  │  └─ core_client.py          # 기동 시 활성 버전 조회
 │  ├─ llm/                       # LLM 클라이언트 래퍼 (제공자 교체 지점)
+│  │  ├─ base.py                 # 공통 인터페이스·재시도·타임아웃·사용량 기록
+│  │  └─ providers.py            # Claude·OpenAI·OpenAI 호환 sLLM, LLM_PROVIDER로 선택
 │  ├─ messaging/
 │  │  ├─ envelope.py
 │  │  ├─ connection.py
 │  │  ├─ publisher.py            # llm.usage.recorded
+│  │  ├─ usage_recorder.py       # LlmClient 사용량 → 백그라운드 발행
 │  │  └─ consumer.py             # model.version.activated, Pod별 exclusive 큐
 │  └─ health/
 │     └─ router.py
