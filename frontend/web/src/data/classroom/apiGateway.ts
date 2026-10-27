@@ -1,3 +1,4 @@
+import { refreshAccessToken, notifyAuthChange, hasAccessToken } from '../apiClient.ts'
 import { ApiError, apiFetch, apiResponse, setAccessToken } from '../apiClient.ts'
 import { streamSse } from '../sse.ts'
 import { blankAnswer, inPeriod, publicAttempt } from '../../domain/classroom.ts'
@@ -126,21 +127,21 @@ export function createApiGateway(): ClassroomGateway {
       const raw = object(await apiFetch<unknown>('/auth/login', body({ email, password })))
       if (!['PARENT', 'ADMIN'].includes(String(raw.role)))
         return contractError('학부모/관리자 로그인 role이 필요합니다.')
-      setAccessToken(text(raw.accessToken, 'accessToken'))
+      setAccessToken(text(raw.accessToken, 'accessToken'), raw.role as 'PARENT' | 'ADMIN')
       const me = raw.role === 'ADMIN' ? object(await apiFetch('/me')) : raw
       return { role: raw.role, permissions: me.permissions } as Session
     },
     async logout() {
       try {
         await apiFetch('/auth/logout', body({}))
+        notifyAuthChange('LOGOUT')
       } finally {
         setAccessToken(null)
         conversations.clear()
       }
     },
     async restore() {
-      const refreshed = object(await apiFetch('/auth/refresh', { method: 'POST' }))
-      setAccessToken(text(refreshed.accessToken, 'accessToken'))
+      if (!hasAccessToken()) await refreshAccessToken()
       const me = object(await apiFetch('/me'))
       if (!['PARENT', 'STUDENT', 'ADMIN'].includes(String(me.role)))
         return contractError('복원할 역할을 확인하지 못했습니다.')
@@ -154,9 +155,9 @@ export function createApiGateway(): ClassroomGateway {
           Number(c.grade) > 6
         )
           return contractError('학생 범위를 복원하지 못했습니다.')
-        return { role: 'STUDENT', child: c as unknown as Child }
+        return { role: 'STUDENT', child: c as unknown as Child, nextAction: me.nextAction, startPath: me.startPath } as Session
       }
-      return { role: me.role, permissions: me.permissions } as Session
+      return { role: me.role, permissions: me.permissions, nextAction: me.nextAction, startPath: me.startPath } as Session
     },
     async home(child) {
       const raw = object(await apiFetch('/students/me/home'))
@@ -193,7 +194,8 @@ export function createApiGateway(): ClassroomGateway {
         await apiFetch<unknown>('/auth/student-sessions', body({ childId: child.id })),
       )
       if (raw.role !== 'STUDENT') return contractError('학생 세션 role이 필요합니다.')
-      setAccessToken(text(raw.accessToken, 'accessToken'))
+      setAccessToken(text(raw.accessToken, 'accessToken'), 'STUDENT')
+      notifyAuthChange('STUDENT')
       return { role: 'STUDENT', child }
     },
     async missions() {

@@ -52,6 +52,7 @@ abstract class IntegrationTestSupport {
         @JvmStatic
         @DynamicPropertySource
         fun containerProperties(registry: DynamicPropertyRegistry) {
+            registry.add("app.auth.jwt-secret") { "dGVzdC1hdXRoLXNlY3JldC0zMi1ieXRlcy1sb25nLWtleSE=" }
             registry.add("spring.datasource.url", postgres::getJdbcUrl)
             registry.add("spring.datasource.username", postgres::getUsername)
             registry.add("spring.datasource.password", postgres::getPassword)

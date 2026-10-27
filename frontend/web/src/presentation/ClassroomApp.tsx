@@ -228,10 +228,19 @@ export function ClassroomApp() {
               <p className="ux-help">
                 {isDemo
                   ? '화면 시연용 계정입니다. 실제 이메일·아동 개인정보를 입력하지 마세요.'
-                  : '현재 develop에는 로그인 공개 API가 아직 없습니다. 연결 실패는 그대로 표시됩니다.'}
+                  : 'Google 계정으로 로그인하고 자녀를 등록해 주세요.'}
               </p>
             </div>
-            <form
+            {!isDemo ? (
+              <section className="ux-login-form">
+                <h2>학부모·관리자 로그인</h2>
+                <a className="cj-primary" href="/api/v1/auth/google/authorize">Google 계정으로 계속하기</a>
+                <p>처음 로그인하면 이용 동의와 자녀 등록을 진행합니다.</p>
+                {new URLSearchParams(location.search).has('oauthError') &&
+                  <p role="alert">{new URLSearchParams(location.search).get('oauthError') === 'CANCELLED'
+                    ? 'Google 로그인을 취소했습니다.' : 'Google 로그인을 완료하지 못했습니다. 다시 시도해 주세요.'}</p>}
+              </section>
+            ) : <form
               className="ux-login-form"
               onSubmit={(e) => {
                 e.preventDefault()
@@ -275,7 +284,7 @@ export function ClassroomApp() {
                   demo-only
                 </small>
               )}
-            </form>
+            </form>}
           </main>
         ) : session.role === 'ADMIN' ? (
           <main className="cj-sheet">

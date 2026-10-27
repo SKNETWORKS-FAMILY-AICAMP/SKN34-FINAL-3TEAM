@@ -5,6 +5,9 @@ import { LoginGate, RoleLayout } from './common/RoleLayout.tsx'
 import { SignupPage } from './parent/AccountForms.tsx'
 import { ParentWorkspace } from './parent/ParentWorkspace.tsx'
 import { AdminWorkspace } from './admin/AdminWorkspace.tsx'
+import { OAuthCompletePage } from './auth/OAuthCompletePage.tsx'
+import { AuthOnboarding } from './auth/AuthOnboarding.tsx'
+import { StudentEntryPage } from './auth/StudentEntryPage.tsx'
 
 // URL 입력만으로 역할을 부여하지 않는다. 로그인 응답/학생 세션으로 진입한다.
 export const router = createBrowserRouter([
@@ -15,6 +18,8 @@ export const router = createBrowserRouter([
       </SessionProvider>
     ),
     children: [
+      { path: '/oauth/complete', element: <OAuthCompletePage /> },
+      { path: '/student/login', element: <LoginGate />, children: [{ index: true, element: <StudentEntryPage /> }] },
       {
         path: '/signup',
         element: <LoginGate />,
@@ -29,6 +34,10 @@ export const router = createBrowserRouter([
         path: `/${role.toLowerCase()}`,
         element: <RoleLayout role={role} />,
         children: [
+          ...(role === 'PARENT' ? [
+            { path: 'onboarding', element: <AuthOnboarding /> },
+            { path: 'children/new', element: <AuthOnboarding /> },
+          ] : []),
           {
             index: true,
             element: (

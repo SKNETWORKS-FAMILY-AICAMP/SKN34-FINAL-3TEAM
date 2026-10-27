@@ -17,7 +17,8 @@ import { pollFeedback } from './feedbackPolling.ts'
 // 목 여부와 무관하게 HTTP/SSE/Query 경로는 동일하다. MSW가 네트워크 경계만 가로챈다.
 const gateway = createApiGateway()
 let restoration: ReturnType<typeof gateway.restore> | undefined
-export function restoreSession() {
+export function restoreSession(fresh = false) {
+  if (fresh) restoration = undefined
   return (restoration ??= gateway.restore().catch((error) => {
     throw error
   }))

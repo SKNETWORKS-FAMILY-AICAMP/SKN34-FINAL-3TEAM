@@ -18,7 +18,7 @@
     <insert id="insert">
         INSERT INTO user_account (id, role, login_id, password_hash, display_name, status,
                                   is_demo, created_at, updated_at, withdrawn_at)
-        VALUES (#{id}, #{role}, #{loginId}, #{passwordHash}, #{displayName,jdbcType=VARCHAR},
+        VALUES (#{id}, #{role}, #{loginId}, #{passwordHash,jdbcType=VARCHAR}, #{displayName,jdbcType=VARCHAR},
                 #{status}, #{isDemo}, #{createdAt}, #{updatedAt}, #{withdrawnAt,jdbcType=TIMESTAMP_WITH_TIMEZONE})
     </insert>
     <select id="findById" resultMap="account">
