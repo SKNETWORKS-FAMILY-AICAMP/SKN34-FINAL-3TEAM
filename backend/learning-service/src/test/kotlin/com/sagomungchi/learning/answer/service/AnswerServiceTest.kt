@@ -170,6 +170,26 @@ class AnswerServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
+    fun `보완 답변을 내도 이전 버전은 덮어쓰지 않음`() {
+        val attempt = start()
+        val first = service.submit(attempt.id, UUID.randomUUID(), narrative("처음 생각"))
+        val row = { id: UUID -> jdbc.queryForObject("SELECT row_to_json(a)::text FROM answer a WHERE id = ?", String::class.java, id) }
+        val before = row(first.id)
+
+        val second = service.submit(attempt.id, UUID.randomUUID(), narrative("보완 1", followupId = followup(attempt.id, first.id, 1)))
+        service.submit(attempt.id, UUID.randomUUID(), narrative("보완 2", followupId = followup(attempt.id, second.id, 2)))
+
+        assertEquals(before, row(first.id))
+        val versions = attemptService.get(attempt.id).answers
+        assertEquals(listOf(1, 2, 3), versions.map { it.version })
+        assertEquals(
+            listOf("처음 생각", "보완 1", "보완 2"),
+            versions.map { it.text },
+        )
+        assertEquals(first.submittedAt, versions.first().submittedAt)
+    }
+
+    @Test
     fun `보완 답변은 가장 최근 되묻기에 연결해야 버전 2, 이전 답변에 이어짐`() {
         val attempt = start()
         val first = service.submit(attempt.id, UUID.randomUUID(), narrative("처음"))
