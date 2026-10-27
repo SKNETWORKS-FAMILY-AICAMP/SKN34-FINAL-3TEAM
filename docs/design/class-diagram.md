@@ -228,6 +228,15 @@ classDiagram
     +refresh(cookie) TokenResponse
     +logout(cookie)
     +createStudentSession(request) TokenResponse
+    +registerStudentDevice(request) DeviceResponse
+    +studentProfiles(deviceCookie) List
+    +studentLogin(deviceCookie, request) TokenResponse
+  }
+  class StudentDeviceController {
+    <<controller>>
+    +createPairing(request) PairingResponse
+    +list() List
+    +revoke(deviceId)
   }
   class MeController {
     <<controller>>
@@ -251,6 +260,7 @@ classDiagram
     +unlink(reauthToken, childId)
     +deletionImpact(childId) Impact
     +requestDeletion(childId, scope) DeletionResponse
+    +setPin(reauthToken, childId, request)
   }
   class AccountService {
     <<service>>
@@ -261,6 +271,16 @@ classDiagram
     +reauth(userId, password) ReauthToken
     +changeCredentials(userId, reauthToken, command)
     +requestWithdrawal(userId, reauthToken)
+  }
+  class StudentAuthService {
+    <<service>>
+    +createPairing(parentId, childIds) Pairing
+    +registerDevice(pairingCode, label) DeviceToken
+    +profiles(deviceToken) List
+    +login(deviceToken, childId, pin) TokenResponse
+    +setPin(parentId, reauthToken, childId, pin)
+    +listDevices(parentId) List
+    +revoke(parentId, deviceId)
   }
   class ConsentService {
     <<service>>
@@ -288,6 +308,15 @@ classDiagram
     +changeGrade(grade)
     +requestDeletion()
     +markDeleted()
+    +setPin(pinHash)
+    +recordPinFailure(maxAttempts)
+    +resetPinFailures()
+  }
+  class StudentDevice {
+    <<entity>>
+    +isUsable(now) Boolean
+    +touch(now)
+    +revoke()
   }
   class Consent {
     <<entity>>
@@ -312,6 +341,7 @@ classDiagram
     +existsLinked(parentId, studentId) Boolean
   }
   class DeletionRequestRepository { <<repository>> }
+  class StudentDeviceRepository { <<repository>> }
   class JwtProvider { <<security>> }
   class OutboxWriter { <<messaging>> }
 
@@ -320,6 +350,16 @@ classDiagram
   MeController --> AccountService
   ConsentController --> ConsentService
   ChildController --> GuardianshipService
+  ChildController --> StudentAuthService : PIN
+  AuthController --> StudentAuthService
+  StudentDeviceController --> StudentAuthService
+  StudentAuthService --> GuardianshipService : 연결 확인
+  StudentAuthService --> ConsentService : 필수 동의
+  StudentAuthService --> AccountService : 재확인
+  StudentAuthService --> StudentRepository
+  StudentAuthService --> StudentDeviceRepository
+  StudentAuthService --> JwtProvider
+  StudentAuthService ..> StudentDevice
   AccountService --> UserAccountRepository
   AccountService --> RefreshTokenRepository
   AccountService --> JwtProvider
@@ -341,7 +381,10 @@ classDiagram
 - `authorizeLinkedChildren()`: 경로에 자녀 ID가 없는 API(`/reports/{reportId}` 등)용. `studentScope = 연결 자녀 전체`로 전달하고 소유 서비스가 리소스의 학생 ID로 검사, 403은 core가 `CHILD_NOT_LINKED`로 변환
 - 공개 API 컨텍스트는 `JwtAuthFilter`가 설정하고 finally에서 해제 (`InternalAuthFilter`와 같은 방식)
 - 재확인 토큰(`reauthToken`)·복구 코드는 Redis 저장 (ERD 1장)
-- `createStudentSession`: 학부모 토큰 + `{childId}` → `authorizeChild` 통과·필수 동의 유지 확인 후 `STUDENT` 토큰 발급 (P01). 학생 계정·시연 링크 없음
+- `createStudentSession`: 학부모 토큰 + `{childId}` → `authorizeChild` 통과·필수 동의 유지 확인 후 `STUDENT` 토큰 발급 (P01, 학부모 동석). 학생 계정·시연 링크 없음
+- `StudentAuthService.login`: 기기 쿠키 해시로 `StudentDevice` 조회 → `isUsable`(미해제·미만료)·자녀 등록 확인 → `GuardianshipService.linkedStudentIds(device.parentUserId)`·`ConsentService.requireGuardianConsent` → 잠금·PIN 검사 → 동석 경로와 같은 `STUDENT` 토큰 발급, refresh 미발급 (P01, API 명세 3.11)
+- `Student.recordPinFailure`: 실패 횟수 증가, 5회(설정값) 도달 시 `pin_locked_at` 기록. `setPin`은 해시·실패 횟수 0·잠금 해제를 한 번에 처리
+- 페어링 코드는 Redis(10분·1회용), 기기 자격증명은 `student_device.token_hash`만 저장. 저장 구조는 ERD 10장 변경 예정
 - `GuardianshipService.registerChild`: 학년 3~6·출생연도 검증, `LINKED` 자녀 3명이면 `CHILD_LIMIT_REACHED`, GUARDIAN 동의 필수 (P01·P02·P03). 다른 보호자 연결(`link`) 없음
 
 ### 3.2 학습 프록시·분석 대화 (learning · conversation)
