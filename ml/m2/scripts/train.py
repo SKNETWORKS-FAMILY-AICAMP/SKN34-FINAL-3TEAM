@@ -68,9 +68,13 @@ def targets(df: pd.DataFrame) -> np.ndarray:
     return np.stack(cols, axis=1).astype("float32")
 
 
-def make_loader(df, tokenizer, max_length, batch_size, shuffle):
+def make_loader(df, tokenizer, max_length, batch_size, shuffle, with_keyword=False):
     # 지시문이 길어도 학생 글이 잘리도록 두 번째 문장(글)만 자름
-    first = ("[학년] " + df["grade"] + " [지시문] " + df["prompt"]).tolist()
+    first = "[학년] " + df["grade"] + " [지시문] " + df["prompt"]
+    if with_keyword:
+        # 문항 핵심어(채점 기준)를 같이 보여줌. 서술형만 핵심어가 있음
+        first = first + " [핵심어] " + df["keyword"].fillna("").astype(str)
+    first = first.tolist()
     enc = tokenizer(
         first,
         df["text"].tolist(),
@@ -167,7 +171,12 @@ def main() -> None:
     parser.add_argument(
         "--limit", type=int, default=0, help="세트마다 답 N개만 (동작 확인용)"
     )
+    parser.add_argument(
+        "--with-keyword", action="store_true", help="입력에 문항 핵심어 추가 (서술형만)"
+    )
     args = parser.parse_args()
+    if args.with_keyword and args.dataset != "descriptive":
+        parser.error("--with-keyword는 서술형(descriptive)만 가능 (논술형은 핵심어 없음)")
 
     set_seed(args.seed)
     device = pick_device(args.device)
@@ -178,6 +187,8 @@ def main() -> None:
         else args.model.replace("/", "_")
     )
     run_name = f"{model_name}_{args.dataset}_seed{args.seed}"
+    if args.with_keyword:
+        run_name += "_kw"
     print(f"장치: {device} / 모델: {args.model} / 데이터: {args.dataset}")
 
     df = load(args)
@@ -212,7 +223,12 @@ def main() -> None:
 
     loaders = {
         name: make_loader(
-            part, tokenizer, args.max_length, args.batch_size, name == "train"
+            part,
+            tokenizer,
+            args.max_length,
+            args.batch_size,
+            name == "train",
+            args.with_keyword,
         )
         for name, part in sets.items()
     }
