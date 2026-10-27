@@ -584,7 +584,7 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 ### 4.1 learning-service (호출: core, ai, report)
 | Method | Path | 호출자 | 설명 |
 |---|---|---|---|
-| GET | `/internal/missions`, `/internal/missions/{id}` | core | 학생용 미션 조회 (2.2 프록시) |
+| GET | `/internal/missions?grade&demo&page&size`, `/internal/missions/{id}?grade&demo` | core | 학생용 미션 조회 (2.2 프록시). core가 학생 학년 `grade`(3~6, 필수)와 시연 학생 여부 `demo`(`student.is_demo`, 기본 `false`)를 붙임. `demo_only` 미션은 `demo=true`일 때만 노출 |
 | POST · GET · PUT | `/internal/attempts/...` | core | 시도·초안·도움·답변·마무리·돌아보기·자기 평가 (2.2 경로와 1:1) |
 | POST | `/internal/answers/{answerId}/feedback` | core | 판정 오케스트레이션: 규칙 판정 또는 ai 호출 → 저장 → 결과 반환 (동기) |
 | POST | `/internal/judgments/{judgmentId}/corrections` | core | 신고 정정 반영(SUP-03): `{reportId, reason, corrected}` → 기존 판정·사유·시점 보존 후 정정 이력 저장 (원본 답변 불변), `Idempotency-Key` |
