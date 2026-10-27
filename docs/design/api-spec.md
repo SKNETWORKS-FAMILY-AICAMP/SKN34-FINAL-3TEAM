@@ -22,6 +22,7 @@
 
 ### 1.2 인증·권한
 - 인증: `Authorization: Bearer <accessToken>`. access token은 메모리 보관, refresh token은 httpOnly·Secure·SameSite=Strict 쿠키
+- 학생 기기 자격증명: 학부모가 등록한 기기에만 httpOnly·Secure·SameSite=Strict 쿠키(`student_device`, path `/api/v1/auth/student`)로 발급. PIN 로그인에만 사용하며 그 자체로 API 접근 권한 없음 (P01, 3.11)
 - 역할: `STUDENT`, `PARENT`, `ADMIN`. 관리자 권한은 승인 계정에만 부여, 가입 시 선택 불가 (FBN-02)
 - 관리자 세부 권한
 
@@ -57,6 +58,11 @@
 | `FORBIDDEN` | 403 | 역할·관리자 권한 부족 |
 | `CHILD_NOT_LINKED` | 403 | 연결되지 않은 자녀 요청 (FN-AGT-02, FN-RPT-12) |
 | `REAUTH_REQUIRED` | 403 | 중요 정보 변경 전 재확인 필요 (FN-ACC-10) |
+| `STUDENT_DEVICE_INVALID` | 401 | 학생 기기 자격증명 없음·해제·만료, 해당 기기에 등록되지 않은 자녀 (FN-ACC-05) |
+| `STUDENT_PIN_INVALID` | 401 | PIN 불일치, `remainingAttempts` 포함 (FN-ACC-05) |
+| `STUDENT_PIN_LOCKED` | 423 | PIN 연속 5회 실패로 잠금, 학부모 PIN 재설정 필요 (FN-ACC-05) |
+| `STUDENT_PIN_NOT_SET` | 409 | PIN 미설정 자녀의 PIN 로그인 → 학부모 동석 진입 안내 (FN-ACC-05) |
+| `PAIRING_CODE_INVALID` | 400 | 페어링 코드 없음·만료·이미 사용 (FN-ACC-14) |
 | `NOT_FOUND` | 404 | 리소스 없음 |
 | `DATA_UNAVAILABLE` | 410 | 삭제된 근거 → "이용 불가" 표시 (FN-ACC-13) |
 | `VALIDATION_FAILED` | 400 | 형식 오류 (`errors[]`에 필드별 사유) |
@@ -160,7 +166,10 @@
 | POST | `/auth/login` | 공개 | 로그인, 응답에 역할·시작 화면 | ACC-03 | 제안 |
 | POST | `/auth/refresh` | 쿠키 | access token 재발급 | ACC-04 | 제안 |
 | POST | `/auth/logout` | 인증 | refresh token 폐기 | ACC-04 | 제안 |
-| POST | `/auth/student-sessions` | 학부모 | 학생 진입: `{childId}` 연결 자녀 확인 후 학생 세션(`STUDENT` 토큰) 발급. 시연 링크·URL 식별값 진입 없음 (P01) | ACC-05 | 제안 |
+| POST | `/auth/student-sessions` | 학부모 | 학생 진입(동석): `{childId}` 연결 자녀 확인 후 학생 세션(`STUDENT` 토큰) 발급. 시연 링크·URL 식별값 진입 없음 (P01) | ACC-05 | 제안 |
+| POST | `/auth/student/devices` | 공개 | 페어링 코드로 기기 등록 `{pairingCode, label}` → 기기 자격증명 쿠키 발급, 등록 자녀 프로필 반환 (P01, 3.11) | ACC-14 | 제안 |
+| GET | `/auth/student/profiles` | 기기 쿠키 | 이 기기에 등록된 자녀 프로필 `{childId, nickname, pinSet, locked}` (P01) | ACC-05 | 제안 |
+| POST | `/auth/student/login` | 기기 쿠키 | 학생 진입(단독): `{childId, pin}` → 학생 세션(`STUDENT` 토큰) 발급. refresh 미발급 (P01, 3.11) | ACC-05 | 제안 |
 | POST | `/auth/recovery` | 공개 | 계정 복구 요청 (인증 방식별 절차) | ACC-08 | 우선1 |
 | POST | `/auth/recovery/confirm` | 공개 | 본인 확인 → 재설정, 계정·자녀 연결 유지 | ACC-08 | 우선1 |
 | GET | `/me` | 인증 | 본인 정보·역할·관리자 권한 | ACC-09 | 우선1 |
@@ -172,6 +181,10 @@
 | GET | `/children` | 학부모 | 연결 자녀 목록(닉네임·학년·기록 유무). 빈 목록이면 자녀 등록 안내 | ACC-07 | 제안 |
 | POST | `/children` | 학부모 | 자녀 프로필 등록 `{nickname, grade(3~6), birthYear}` + 법정대리인 동의(전원 만 14세 미만 간주). 3명 초과 시 409 (P01, P02, P03) | ACC-06, ACC-02 | 제안 |
 | PATCH | `/children/{childId}` | 학부모 | 닉네임·학년(3~6) 수정 (학년은 이후 제공 문제에만 적용) | ACC-09 | 우선1 |
+| PUT | `/children/{childId}/pin` | 학부모 | PIN 설정·변경 `{pin}` (`X-Reauth-Token`). 실패 횟수·잠금 해제 (P01) | ACC-14, ACC-10 | 제안 |
+| POST | `/student-devices/pairings` | 학부모 | 1회용 페어링 코드 발급 `{childIds[]}` → `{pairingCode, expiresAt}` (10분, QR은 클라이언트가 코드로 생성) (P01) | ACC-14 | 제안 |
+| GET | `/student-devices` | 학부모 | 등록 기기 목록 `{deviceId, label, children[], createdAt, lastUsedAt, expiresAt}` | ACC-14 | 제안 |
+| DELETE | `/student-devices/{deviceId}` | 학부모 | 기기 등록 해제 → 이후 해당 기기 PIN 로그인 거부 | ACC-14 | 제안 |
 | GET | `/children/{childId}/deletion-impact` | 학부모 | 연결 해제·프로필 삭제·기록 삭제별 범위·영향 안내 | ACC-11 | 우선2 |
 | DELETE | `/children/{childId}/link` | 학부모 | 연결 해제 (`X-Reauth-Token`) | ACC-11, ACC-10 | 우선2 |
 | POST | `/children/{childId}/deletion-requests` | 학부모 | 프로필·학습 기록 삭제 요청 `{scope: PROFILE\|RECORDS}` → 확정 시 `student.deleted` | ACC-11, ACC-13 | 우선2 |
@@ -486,7 +499,7 @@ If-Match: "7"
 
 공개 Controller가 없는 상태에서 MSW와 화면 어댑터를 같은 형태로 검증하기 위한 **초안**이다. 확정된 백엔드 응답/OpenAPI가 아니며 담당자 확인 전 실연동 완료로 간주하지 않는다. 기존 3.1·3.2·3.6 계약은 유지한다.
 
-- `POST /auth/login`: `{email,password}` → `{accessToken,role:PARENT|ADMIN}`. 역할별 시작 화면은 클라이언트 라우팅. 학생 계정 로그인은 제공하지 않는다(P01).
+- `POST /auth/login`: `{email,password}` → `{accessToken,role:PARENT|ADMIN}`. 역할별 시작 화면은 클라이언트 라우팅. 학생은 이 경로를 쓰지 않으며 학생 단독 진입은 3.11을 따른다(P01).
 - `POST /auth/refresh`: httpOnly 쿠키 사용, 응답 `{accessToken}`. 현재 역할·학생 범위를 유지한다. 동시 만료 요청은 refresh 1회 공유, 원 요청은 1회만 재시도한다.
 - `POST /auth/student-sessions`: 기존 `{childId}` → `{accessToken,role:STUDENT}`.
 - `GET /children`: 1.1 목록 봉투의 items에 `{childId,nickname,grade,birthYear,plan:FREE|PREMIUM}`. plan의 실제 상품/권한 응답 위치는 확인 대상이다.
@@ -532,6 +545,36 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 - POST/PATCH mission는 위 version 필드+demoOnly를 받는다. PATCH와 rubric PUT은 새 불변 버전 추가. review-request는 `{missionVersion,rubricVersion}`, review는 같은 버전+`result:APPROVED|CHANGES_REQUESTED,comment`. publish 검증은 현재 버전 검토와 필수 콘텐츠/기준 확인, 422의 `missingFields[]` 표시. preview는 `{mission:Mission,missionVersion,rubricVersion}`이며 학생 장면/입력 컴포넌트만 재사용하고 답안은 포함하지 않는다. 업로드는 미구현(URI만 입력).
 - model-version: ERD 필드 `{id,kind,name,version,status,artifactUri?,evalResult?,approvedBy?,activatedAt?,createdAt}`. 등록/활성화는 평가 근거와 승인자 필요, rollback은 이전 승인 버전을 재활성화하고 재분석 여부를 기록한다. ai-usage: `{period,items:[{callType,calls,failures,latencyMs,inputTokens,outputTokens,costUsd}]}`(원문·학생 ID 없음).
 - error-report 목록/상세는 `{reportId,status,targetType,targetId,category,comment,reviewReason?,corrections:[{reason,corrected,createdAt,impact}],linkedAttempt?:PublicAttempt}`. SERVICE_OPS만 신고 연결 시도 원문을 상세에서 열람하고 매번 감사 기록한다. 정정은 기존 판정을 덮지 않고 새 이력과 영향 반영 여부를 반환한다.
+
+### 3.11 학생 기기 등록·PIN 로그인 (P01 개정)
+
+학부모 부재 시 자녀 단독 학습을 위한 경로다. 근거·대안 비교는 [보고서](../report/student-login-separation.md)를 따른다. 기존 `POST /auth/student-sessions`(학부모 동석)는 유지한다.
+
+- 페어링 `POST /student-devices/pairings`
+  - 학부모 토큰, `childIds[]`는 모두 `guardianship LINKED`이어야 함 (아니면 `403 CHILD_NOT_LINKED`)
+  - 응답 `{pairingCode, expiresAt}`. 코드는 8자리 영숫자, 10분 유효·1회 사용, Redis 저장(원문 대신 해시 키)
+  - 학부모가 자녀 기기에서 직접 로그인한 경우 클라이언트가 발급 직후 등록 API를 호출하고 학부모 세션을 로그아웃한다
+- 등록 `POST /auth/student/devices`
+  - 요청 `{pairingCode, label}` → 응답 `201 {deviceId, children:[{childId,nickname}]}` + `Set-Cookie: student_device=<랜덤 256bit>`
+  - 서버는 토큰 해시만 저장, 만료 90일(설정값). 코드 오류·만료·재사용은 `400 PAIRING_CODE_INVALID`, IP 단위 시도 제한
+- PIN 로그인 `POST /auth/student/login`
+```jsonc
+// 요청 (Cookie: student_device=...)
+{ "childId": "c1...", "pin": "4831" }
+// 200
+{ "accessToken": "...", "role": "STUDENT", "child": { "childId": "c1...", "nickname": "별빛", "grade": 3 } }
+// 401
+{ "code": "STUDENT_PIN_INVALID", "status": 401, "remainingAttempts": 2 }
+```
+  - 검사 순서: 기기 쿠키 유효(해시 일치·미해제·미만료) → 자녀가 기기에 등록됨 → 기기 소유 학부모와 `LINKED`·`student ACTIVE`·필수 동의 유지 → PIN 설정 → 잠금 아님 → PIN 일치
+  - 기기·자녀 불일치는 `401 STUDENT_DEVICE_INVALID`, 연결·동의 문제는 `403 CHILD_NOT_LINKED`
+  - 불일치 시 `pin_failed_count` 증가, 5회째 `pin_locked_at` 기록 후 `423 STUDENT_PIN_LOCKED`. 성공 시 실패 횟수 0, 기기 `last_used_at` 갱신
+  - refresh token 미발급. access 만료 시 PIN 재입력(초안은 자동 저장으로 보존). 학생 토큰 권한은 동석 경로와 동일
+- PIN 설정 `PUT /children/{childId}/pin`
+  - `X-Reauth-Token` 필수. 숫자 4~6자리, 동일 숫자 반복(`1111`)·연속(`1234`, `4321`) 거부 `422 VALIDATION_FAILED`
+  - 해시 저장, 실패 횟수 0·잠금 해제. 잠긴 PIN의 해제 수단은 재설정뿐
+- 기기 해제 `DELETE /student-devices/{deviceId}`: `revoked_at` 기록, 기존 학생 access token은 만료까지 유효
+- 기기 등록·해제·PIN 설정은 `audit_log` 기록 (FN-ACC-10). PIN 잠금 시 학부모 알림은 알림 유형 추가와 함께 후속 확정
 
 ## 4. 내부 API (`/internal`)
 - 인증: `X-Internal-Token` + 사용자 컨텍스트 헤더 `X-User-Id`, `X-User-Role`, `X-Student-Scope`(허용 학생 ID, 콤마 구분), `traceparent`
