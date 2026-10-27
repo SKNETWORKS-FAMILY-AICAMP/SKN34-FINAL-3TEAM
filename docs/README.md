@@ -43,6 +43,7 @@
   - [이슈 #51 학습 기록·수치 계산](report/report-metrics.md): P08 계산·항목/근거 저장 검증, #27 입력 구현안과 남은 실제 연동
   - [이슈 #52 서술 요청·검증](report/report-narrative.md): AI 호출·숫자/인용 대조·실패 정책과 실제 ai 연동 조건
   - [이슈 #53 리포트 파일 생성](report/report-rendering.md): 3종 렌더링·한글 PDF·S3 저장과 배포 연결 조건
+  - [이슈 #54 리포트 조회](report/report-query.md): 응답 스키마·판 선택·학생 범위·권한별 다운로드
   - [이슈 #7 프론트 공통 기반](report/issue-7-fe-common.md): MSW 전환·인증 갱신·체크박스 검증 기준·남은 작업
   - [이슈 #7 학생 화면 후속 검증](report/issue-7-student-completion.md): 역할 URL·6종 입력·피드백·초안 회귀
   - [이슈 #8·#9 학부모·관리자 화면](report/issue-8-9-parent-admin.md): 가입·대시보드·대화·리포트·관리자 권한/작업/콘텐츠 및 목업 계약
