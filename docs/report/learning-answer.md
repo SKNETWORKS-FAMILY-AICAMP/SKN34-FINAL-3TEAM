@@ -62,10 +62,11 @@ learning-service의 `POST /internal/attempts/{id}/answers`를 만들고, 시도 
 
 ## 검증
 
-- `./gradlew test`: 67개 통과, 실패·생략 0개. 새로 추가 22개: `AnswerContentTest` 4, `AnswerServiceTest` 11, `AnswerConcurrencyTest` 2, `AnswerControllerTest` 5. `AttemptControllerTest`의 시도 상세 테스트는 `answers` 모양까지 확인하게 바꿈.
+- `./gradlew test`: 68개 통과, 실패·생략 0개. 새로 추가 23개: `AnswerContentTest` 4, `AnswerServiceTest` 12, `AnswerConcurrencyTest` 2, `AnswerControllerTest` 5. `AttemptControllerTest`의 시도 상세 테스트는 `answers` 모양까지 확인하게 바꿈.
 - 이슈 #24 완료 조건
   - 같은 키 동시 2회 → 답변 1건: `AnswerConcurrencyTest` 같은 키로 동시 8개 → 답변·판정 1건, 8개 모두 같은 답변. 다른 키로 동시 8개 → 버전 1만 1건, 나머지 7개 `422`. 요청마다 커밋해야 해서 #23처럼 별도 PostgreSQL 컨테이너 사용
   - 시도 행 잠금을 빼면 두 테스트 모두 `DuplicateKeyException`으로 실패, 되묻기 연결 검사를 빼면 `AnswerServiceTest` 3개, 초안 비우기를 빼면 1개 실패함을 확인
+- 버전 저장(FN-LRN-08·09): v1 → v2 → v3을 낸 뒤 v1 행 전체(`row_to_json`)가 처음과 같고, 시도 상세에 버전 순으로 세 답변이 보임. 답변을 고치거나 지우는 SQL은 없음. 저장할 때 이전 버전 원문을 덮어쓰도록 바꾸면 이 테스트가 실패함을 확인
 - 입력 방식 6종을 저장 후 다시 읽어도 같은 키 재요청이 같은 답변으로 판단됨: `AnswerServiceTest`(6종, 분류는 시드에 없어 테스트 미션으로)
 - 시드 데이터로 로컬 앱 실제 호출 (확인 후 만든 시도·답변·판정·되묻기 삭제):
 
