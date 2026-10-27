@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>주간 리포트</title>
+<style>
+body { font-family: "Noto Sans CJK KR", "Malgun Gothic", sans-serif; color:#183345; font-size:11px; line-height:1.75; }
+h1 { font-size:25px; color:#174c59; margin-bottom:4px; } h2 { font-size:16px; border-bottom:2px solid #d6e6e4; margin-top:24px; padding-bottom:5px; break-after:avoid; }
+h3 { font-size:12px; margin-bottom:4px; } .meta { color:#49616e; } .rule { background:#f0f7f5; padding:12px; border-radius:6px; }
+table { width:100%; border-collapse:collapse; } th,td { text-align:left; padding:8px; border-bottom:1px solid #dce6e9; vertical-align:top; }
+th { background:#edf4f5; } .text { white-space:pre-wrap; overflow-wrap:anywhere; } .card { border:1px solid #dce6e9; border-radius:6px; padding:10px; margin:9px 0; break-inside:avoid; }
+.muted { color:#687c85; } .small { font-size:9px; } tr { break-inside:avoid; } .footer { margin-top:22px; border-top:1px solid #dce6e9; padding-top:8px; }
+</style></head><body>
+<h1>{{ name }}의 주간 리포트</h1>
+<div class="meta">{{ report.period.from }} ~ {{ report.period.to }} · {{ report.revision }}판 · {{ state_labels[report.state] }}</div>
+<p class="rule">{{ report.inclusionRule or '' }}</p>
+{% if report.state == 'NO_RECORD' %}<p>확인된 학습 기록이 없습니다.</p>{% elif report.state == 'INSUFFICIENT_SAMPLE' %}<p>표본이 적어 비율 대신 개수로 안내합니다.</p>{% endif %}
+<h2>수치와 계산 근거</h2>
+<table><thead><tr><th>항목</th><th>결과</th><th>근거</th></tr></thead><tbody>
+{% for metric in report.metrics %}<tr><td>{{ metric.label }}</td><td>{% if metric.value is not none %}{{ '%.0f'|format(metric.value * 100) }}%{% else %}{{ metric.count }}건{% endif %}</td><td>{{ metric.numerator }} / {{ metric.denominator }}<br>{{ metric.formula }}<br><span class="small">{{ metric.period.from }} ~ {{ metric.period.to }} · {{ source_labels[metric.sourceType] }}</span></td></tr>{% endfor %}
+</tbody></table>
+<h2>생각 유형</h2>
+{% for group in report.thinkingTypes %}<div class="card"><h3>{{ thinking_labels[group.type] }} · {{ state_labels[group.state] }}</h3>{% for mission in group.missions %}<div>{{ mission.title }}</div>{% endfor %}{% if group.summary is defined %}<p class="text">{{ group.summary }}</p>{% endif %}</div>{% endfor %}
+<h2>전후 변화</h2>
+{% for change in report.changes %}<div class="card"><h3>{{ change.followup }}</h3><p class="text">{{ change.first.text }}</p><p class="text">{{ change.revised.text }}</p><div class="small">글자 {{ change.counts.chars[0] }} → {{ change.counts.chars[1] }} · 문장 {{ change.counts.sentences[0] }} → {{ change.counts.sentences[1] }} · 까닭을 잇는 말 {{ change.counts.reasonConnectives[0] }} → {{ change.counts.reasonConnectives[1] }}</div></div>{% else %}<p class="muted">비교할 추가 답변이 없습니다.</p>{% endfor %}
+<h2>돌아보기</h2>
+{% for reflection in report.reflections %}<div class="card">{% if reflection.written %}<div>{{ difficulty_labels.get(reflection.difficulty, reflection.difficulty) }}</div><p class="text">{{ reflection.text or '' }}</p>{% else %}미작성{% endif %}</div>{% endfor %}
+<h2>원문 인용</h2>{% for quote in report.quotes %}<div class="card text">{{ quote.text or '이용 불가' }}</div>{% endfor %}
+{% if report.narrative %}<h2>이번 주 요약</h2><p class="text">{{ report.narrative.text }}</p><div class="small">출처: {{ 'AI 서술' if report.narrative.source == 'LLM' else '계산 기반 요약' }}</div>{% endif %}
+{% if report.eveningQuestion %}<h2>이번 주 저녁 질문</h2><p class="text">{{ report.eveningQuestion }}</p>{% endif %}
+<div class="footer small">수치는 실제 기록을 코드로 계산한 관찰 결과입니다. 능력·등급·사고력 향상을 판정하지 않습니다.</div>
+</body></html>

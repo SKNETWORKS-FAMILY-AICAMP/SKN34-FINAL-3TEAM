@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -18,6 +19,12 @@ class Settings(BaseSettings):
     database_url: str
     learning_url: str = "http://localhost:8081"
     ai_url: str = "http://localhost:8000"
+    core_url: str = "http://localhost:8080"
+    s3_endpoint_url: str | None = None
+    s3_public_endpoint_url: str | None = None
+    s3_bucket: str = "sagomungchi-local-reports"
+    s3_region: str = "ap-northeast-2"
+    report_download_ttl_seconds: int = Field(default=300, ge=1, le=3600)
 
 
 @lru_cache
