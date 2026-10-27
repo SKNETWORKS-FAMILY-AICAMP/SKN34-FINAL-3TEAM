@@ -28,8 +28,10 @@ class MissionController(
         @RequestParam(defaultValue = "20") @Min(1) @Max(100) size: Int,
     ): PageResponse<MissionListItemResponse> {
         val items = missionService.listForStudent(currentStudentId(), grade)
+        // page * size가 Int 범위를 넘으면 음수가 되므로 Long으로 계산
+        val offset = (page.toLong() * size).coerceAtMost(items.size.toLong()).toInt()
         return PageResponse(
-            items = items.drop(page * size).take(size).map(MissionListItemResponse::from),
+            items = items.drop(offset).take(size).map(MissionListItemResponse::from),
             page = page,
             size = size,
             totalElements = items.size.toLong(),

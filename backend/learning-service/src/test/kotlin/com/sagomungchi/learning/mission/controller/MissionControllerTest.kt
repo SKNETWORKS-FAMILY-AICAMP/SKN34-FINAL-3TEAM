@@ -77,6 +77,11 @@ class MissionControllerTest(
             jsonPath("$.items[0].status") { value("IN_PROGRESS") }
             jsonPath("$.items[0].attemptId") { value(attemptId.toString()) }
         }
+        studentRequest("/internal/missions?grade=5&page=${Int.MAX_VALUE}&size=100").andExpect {
+            status { isOk() }
+            jsonPath("$.items.length()") { value(0) }
+            jsonPath("$.totalElements") { value(2) }
+        }
     }
 
     @Test
