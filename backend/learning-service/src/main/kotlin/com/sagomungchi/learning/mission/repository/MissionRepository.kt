@@ -4,6 +4,7 @@ import com.sagomungchi.learning.mission.domain.HintQuestion
 import com.sagomungchi.learning.mission.domain.MissionProgress
 import com.sagomungchi.learning.mission.domain.MissionSnapshot
 import com.sagomungchi.learning.mission.domain.MissionView
+import com.sagomungchi.learning.mission.domain.Rubric
 import org.springframework.stereotype.Repository
 import java.util.UUID
 
@@ -28,6 +29,15 @@ class MissionRepository(private val mapper: MissionMapper) {
 
     /** seq 순 */
     fun findHintQuestions(rubricVersionId: UUID): List<HintQuestion> = mapper.findHintQuestions(rubricVersionId)
+
+    /** 판정용 기준표와 요소(sort_order 순). 미션 버전과 기준표가 같은 미션이 아니면 없음 */
+    fun findRubric(missionVersionId: UUID, rubricVersionId: UUID): Rubric? =
+        mapper.findRubric(missionVersionId, rubricVersionId)?.let {
+            Rubric(
+                it.id, it.missionLabel, it.rubricLabel, it.answerKey, it.exampleAnswer, it.forbiddenTerms,
+                mapper.findRubricElements(rubricVersionId),
+            )
+        }
 
     /** 미션 ID별 가장 최근 시도 상태. 시도가 없는 미션은 포함하지 않음 */
     fun findProgress(studentId: UUID): Map<UUID, MissionProgress> =
