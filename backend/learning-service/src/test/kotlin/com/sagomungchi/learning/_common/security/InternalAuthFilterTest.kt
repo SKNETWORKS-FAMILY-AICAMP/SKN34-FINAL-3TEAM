@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RestController
 
-@WebMvcTest
+@WebMvcTest(InternalAuthFilterTest.ProbeController::class)
 @Import(InternalAuthFilterTest.ProbeController::class)
 @EnableConfigurationProperties(AppProperties::class)
 @TestPropertySource(
