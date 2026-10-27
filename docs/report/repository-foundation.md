@@ -4,7 +4,7 @@
 
 ## Spring: core·learning
 
-두 서비스의 `_common/persistence`에 동일한 타입 변환과 설정을 둔다. 공통 라이브러리를 만들지 않는 기존 아키텍처를 따른다.
+두 서비스의 `_common/persistence`에 타입 변환 설정을 둔다. core UUID 변환은 develop의 기존 `_common/config/UuidTypeHandler`를 재사용하며, `PersistenceConfig`에서 다른 타입과 함께 한 번만 등록한다. learning은 자체 UUID 핸들러를 둔다. 공통 라이브러리를 만들지 않는 기존 아키텍처를 따른다.
 
 | PostgreSQL | Kotlin | 적용 기준 |
 |---|---|---|
@@ -35,6 +35,8 @@ core의 `account/domain/UserAccount.kt`, `account/repository/UserAccountReposito
 
 `src/test/.../_common/persistence/PostgresRepositoryTest`를 상속한다. Testcontainers가 PostgreSQL 17.11을 만들고 **테스트 준비 코드가 직접 Flyway를 실행한 다음** Spring 컨텍스트를 시작한다. 테스트 JVM에서 DB를 공유하며 각 테스트는 Spring 테스트 트랜잭션으로 롤백된다. 컨테이너는 Testcontainers의 Ryuk이 정리한다. Docker가 없으면 테스트를 생략하지 않고 실패한다.
 
+core의 Repository 테스트는 RabbitMQ listener를 시작하지 않고 `OutboxRelay`를 Mockito 대역으로 교체해 백그라운드 발행을 분리한다. 메시징까지 필요한 테스트는 기존 `IntegrationTestSupport`를 사용한다. 이 베이스도 Spring 기동 전에 Flyway를 직접 실행하며, 실제 PostgreSQL·RabbitMQ·OutboxRelay·소비자로 검증한다. 두 베이스의 DB는 서로 분리되어 메시징의 비동기 커밋과 Repository의 테스트 롤백이 간섭하지 않는다.
+
 ```kotlin
 class MyRepositoryTest : PostgresRepositoryTest() {
     // @Autowired Repository 주입 → 저장·조회·제약 검증
@@ -45,7 +47,7 @@ class MyRepositoryTest : PostgresRepositoryTest() {
 
 ## report: SQLAlchemy
 
-`app/database.py`에 `create_db_engine()`, `create_session_factory(engine)`, `transaction(factory)`를 둔다. 엔진은 `DATABASE_URL`을 읽고 프로세스 수명 동안 공유한다. `postgresql://`도 설치된 psycopg 3 드라이버로 연결한다. API lifespan에서 `app.state.session_factory`를 제공하고 종료 시 엔진을 정리한다. worker는 소비자 조립 시 같은 함수를 이용해 factory를 서비스에 주입하고 종료 시 `engine.dispose()`한다.
+`app/database.py`에 `create_db_engine()`, `create_session_factory(engine)`, `transaction(factory)`를 둔다. 엔진은 `DATABASE_URL`을 읽고 프로세스 수명 동안 공유한다. `postgresql://`도 설치된 psycopg 3 드라이버로 연결한다. API lifespan에서 `app.state.session_factory`를 제공하고 종료 시 엔진을 정리한다. worker에 업무 소비자를 추가할 때는 같은 함수를 이용해 factory를 서비스에 주입하고 종료 시 `engine.dispose()`한다. 현재 worker에는 업무 DB 조립을 추가하지 않는다.
 
 ```python
 # Application service: factory는 생성자 등으로 주입한다.
@@ -75,7 +77,7 @@ Repository는 전달받은 Session으로 SQL만 실행한다. 자체 commit/roll
 
 - core·learning의 기본 설정: `spring.flyway.enabled: false`, `spring.sql.init.mode: never`.
 - Flyway는 `testImplementation`에만 추가해 production runtime에 넣지 않는다. 실제 환경에서는 기존 compose 일회성 컨테이너/K8s migration-job이 실행한다.
-- Spring의 `StartupWithoutMigrationTest`는 Flyway가 test classpath에 있는 상태에서 빈 PostgreSQL로 앱을 시작하고 테이블 0개·Flyway bean 없음으로 확인한다.
+- Spring의 `StartupWithoutMigrationTest`는 Flyway가 test classpath에 있는 상태에서 빈 PostgreSQL로 앱을 시작하고 테이블 0개·Flyway bean 없음으로 확인한다. core는 이 검사에서 RabbitMQ listener와 OutboxRelay만 분리하며, 자동 마이그레이션 설정은 실제 application.yml을 사용한다.
 - report도 빈 별도 DB로 API lifespan을 실행해 테이블이 생기지 않고 세션이 동작하는지 확인한다.
 - Windows Alembic이 설정 파일을 CP949로 읽는 문제를 피하도록 `alembic.ini`의 한글 주석 한 줄만 영문으로 변경했다. PR #15와 같은 변경이며 설정값은 그대로다.
 
@@ -130,7 +132,7 @@ Linux/CI에서는 각 Spring 서비스에서 `./gradlew test`를 실행한다. �
 | learning `followup` | 질문 은행 테이블·FK 추가, source에서 TEMPLATE 제거 | 은행 테이블·FK 없음, TEMPLATE 허용 |
 | report | 테이블·컬럼 변경 없음 | 컬럼·NULL 허용 기준 일치 |
 
-당시 DB CI는 첫 불일치인 `core_db: table/column mismatch`에서 정상적으로 실패했다. 따라서 **#14의 서비스 테스트 통과와 전체 DB 스키마 CI 통과는 구분해야 한다.** 이슈 #14의 제약대로 위 변경은 별도 마이그레이션 PR로 처리하며, 검사를 생략하거나 예전 ERD로 되돌려 통과시키지 않는다.
+당시 DB CI는 첫 불일치인 `core_db: table/column mismatch`에서 정상적으로 실패했다. 위 불일치는 이후 별도 #19/PR #29의 마이그레이션으로 해결됐다. 이 표는 당시 검증 기록이며 현재 미해결 목록이 아니다. **#14의 서비스 테스트 통과와 전체 DB 스키마 CI 통과는 구분해야 한다.**
 
 ## 이슈 #19와 결합한 사전 검증 — 3단계
 
@@ -149,6 +151,28 @@ UUID·JSONB·timestamptz 왕복, SQL NULL/JSON null 구분, Repository 저장/�
 
 확인한 공통 기반과 예시 Repository에는 삭제된 학생 계정 연결·음성 입력 컬럼 참조가 없어 구현 코드를 바꿀 필요가 없었다. 아직 구현하지 않은 기능별 Repository까지 검증했다는 의미는 아니다.
 
-다음 순서는 #19 별도 PR 검토·병합 → 최신 develop을 이 브랜치에 반영 → 충돌·변경 영향 재검증 → #14 새 PR이다. #14 코드와 테스트 의존성은 #19 PR에 포함하지 않는다.
+위 결과는 메시징 #28 이전의 사전 검증이다. #19는 PR #29로 develop에 병합됐으며, 최신 통합 결과는 아래에 기록한다.
+
+## 최신 develop 통합 (2026-10-27)
+
+기준은 develop `1573924`다. #28 메시징, #29 정책 스키마, #49·#57 학생 로그인 설계가 포함되어 있다.
+
+- `docs/README.md`의 문서 목록 충돌은 양쪽 링크를 유지해 해결했다.
+- core UUID 핸들러와 Flyway·PostgreSQL 테스트 의존성의 중복을 제거했다. 기존 메시징 Mapper도 같은 UUID 핸들러를 사용한다.
+- `spring.flyway.enabled=false` 상태에서도 메시징 테스트가 실행되도록 `IntegrationTestSupport`의 컨테이너 준비 단계에서 명시적으로 Flyway를 실행한다.
+- Repository·빈 DB 기동 검사는 메시징 백그라운드 작업과 분리하고, 메시징 통합 검사는 실제 소비자·발행기를 그대로 사용한다.
+- ERD·마이그레이션·DB 검증 스크립트는 기준 develop에서 변경하지 않는다. 학생 PIN·기기 테이블과 OAuth V8은 별도 작업이다.
+- #36 담당자는 이 PR의 `UserAccount`·Mapper 예시를 OAuth 설계에 맞게 확장한다. 현재 예시는 기준 develop의 `user_account` 구조를 따른다.
+
+| 검증 | 결과 |
+|---|---|
+| core | JDK 21 `test bootJar --no-daemon --rerun-tasks` 통과. 16개 테스트, 실패·오류·생략 0개. 실제 RabbitMQ 메시징 5개 포함, 테스트 준비 시 V1~V7 적용 |
+| learning | 같은 명령 통과. 7개 테스트, 실패·오류·생략 0개. V1~V5 적용 |
+| report | pytest 17개, 실패·오류·생략 0개. DB fixture 7개·소비자 5개 포함. Ruff lint/format 통과 |
+| DB CI | 59개 테이블·506개 컬럼, 41개 제약 위반 입력, 61개 코드 CHECK, 19개 인덱스 검사 통과. 재실행 시 이력 불변 및 report downgrade/upgrade 통과, 전체 실행 15.3초 |
+| 검증기 | `python -O` 단위 테스트 18개 통과 |
+| 배포 JAR | core·learning 모두 Flyway·Testcontainers·테스트 Mapper 미포함 |
+
+빈 DB 앱 기동 검사는 core·learning 각각 1개와 report 1개가 위 서비스 테스트에 포함된다. core 3분 50초, learning 2분 16초이며 테스트를 생략하거나 기존 스키마 검사를 완화하지 않았다. 실행 중 기존 Kotlin annotation target 안내와 Starlette TestClient deprecation 경고가 있었고 실패는 없었다.
 
 참고: [pgJDBC의 시각 타입](https://jdbc.postgresql.org/documentation/query/#using-java-8-date-and-time-classes), [MyBatis 타입 핸들러](https://mybatis.org/mybatis-3/configuration.html#typeHandlers), [SQLAlchemy 세션·트랜잭션](https://docs.sqlalchemy.org/en/20/orm/session_basics.html), [Testcontainers PostgreSQL](https://java.testcontainers.org/modules/databases/postgres/).

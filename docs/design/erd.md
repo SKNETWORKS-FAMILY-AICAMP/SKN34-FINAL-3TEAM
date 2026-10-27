@@ -27,7 +27,9 @@
 
 - 테이블 없이 Redis에 두는 값: `reauthToken`(단기), 계정 복구 확인 코드, SSE 알림 중계 (아키텍처 1.6), 요금제 사용 한도 일 단위 카운터 (P13)
 - 생각 메모는 `attempt_draft.content.memo`에 저장 (P05). 음성 시범 미구현으로 음성 데이터 없음 (P03)
-- 학생 별도 계정 없음: 학생 세션은 학부모 인증 후 `student.id`로 발급하는 토큰만, 테이블 없음 (P01)
+- 학생 별도 계정 없음: 학생 세션은 `student.id`로 발급하는 토큰만. 발급 경로는 학부모 인증(동석) 또는 학부모 등록 기기 + 자녀 PIN(단독). PIN·기기 저장 구조는 10장 변경 예정 (P01)
+- 학생 기기 페어링 코드(10분·1회용)는 테이블 없이 Redis 저장
+- 코드 CHECK는 Mermaid 주석의 `A|B` 목록 또는 `CHECK[A]` 명시 표기로 자동 검증한다. 허용값이 하나인 경우에도 `CHECK[A]`로 표시해 일반 설명과 구분한다.
 
 ---
 
@@ -128,7 +130,7 @@ erDiagram
     uuid id PK
     uuid parent_user_id FK
     uuid student_id FK
-    varchar method "REGISTER (P02: LINK 미지원)"
+    varchar method "CHECK[REGISTER] (P02: LINK 미지원)"
     varchar status "LINKED|UNLINKED"
     timestamptz linked_at
     timestamptz unlinked_at "NULL 허용"
@@ -294,7 +296,7 @@ erDiagram
   notification_setting {
     uuid user_id PK,FK
     varchar type PK
-    varchar channel PK "IN_APP (P10)"
+    varchar channel PK "CHECK[IN_APP] (P10)"
     boolean enabled
     timestamptz updated_at
   }
@@ -369,7 +371,7 @@ erDiagram
 
   product {
     uuid id PK
-    varchar code UK "FREE|PREMIUM 등, 가격 변경 시 새 행 (P13)"
+    varchar code UK "상품 행별 고유 코드, 초기 FREE, PREMIUM 등 (P13); 고정 enum 아님"
     varchar name
     int price "원, FREE = 0, PREMIUM = 14900 (P13)"
     varchar billing_cycle "MONTHLY|YEARLY"
@@ -471,7 +473,7 @@ erDiagram
   model_version {
     uuid id PK
     varchar kind "RUBRIC|MODEL|PROMPT|GENERATION"
-    varchar name "judge, m2-klue 등"
+    varchar name "judge, m2-klue-narrative, m2-klue-essay 등"
     varchar version
     uuid ref_id "NULL 허용 · RUBRIC이면 learning rubric_version"
     varchar artifact_uri "NULL 허용 · S3 가중치 경로"
@@ -631,7 +633,7 @@ erDiagram
 - `mission_version`·`rubric_version` UK `(mission_id, version)`. 수정은 새 버전 추가 후 `mission.current_*` 갱신, 이전 버전 불변 (FN-ADM-10, 12)
 - 공개(`PUBLISHED`) 전 필수 항목 검사: 현재 미션·기준표 버전 존재, 기준표 요소 1개 이상(서술·논술) 또는 `answer_key`(고르기·수학) (FN-ADM-11)
 - `mission.sort_order`: 학년군 안의 목록 순서, 이전·다음 이동과 진행 위치 계산 (FN-LRN-02)
-- `rubric_element.judge_verified = false` 요소는 AI 판정 시 충족 표시 금지 → `HELD (UNVERIFIED_SCOPE)`. 평가 통과 후 관리자가 갱신 (FN-JDG-04, 05, NFR-AIQ-01)
+- `rubric_element.judge_verified = false` 요소는 AI 판정 시 충족 표시 금지 → `HELD (UNVERIFIED_SCOPE)`. 평가 통과 후 관리자가 갱신 (FN-JDG-04, 05, NFR-AIQ-01). 사람 검증(P11) 도입 전에는 ai `JUDGE_REQUIRE_VERIFIED=false`(기본)로 끄고 `trial = true`로 시범 표시
 - `forbidden_terms`: 정답 키와 함께 ai `followups` 유출 검사 입력 (FN-JDG-06)
 - AI Hub 문항·답안·피드백 원문은 어떤 컬럼에도 저장하지 않음 (FN-ADM-09)
 
@@ -912,11 +914,13 @@ erDiagram
 - PG 거래 대조(FN-ADM-15): 조회 시 PG API와 계산, 결과 테이블 없음
 - learning 학생 삭제 시 `attempt` 하위 기록 삭제 방식: FK `ON DELETE CASCADE` 또는 서비스 내 삭제 순서 (클래스 다이어그램 8장)
 - 정기 청구 재청구의 `payment_order` 재사용: 토스 `orderId` 재사용 가능 여부 확인 필요 (3.4)
-- 정책 확정(P01~P16)에 따른 스키마 변경은 기존 마이그레이션(8장)에 아직 미반영: `student.user_account_id` 제거·`birth_year` 추가, `answer.speech_transcribed` 제거, `product.limits` 추가, `followup_bank_question` 신설·`followup.bank_question_id` 추가, `error_report.category`·`notification_setting.channel` 값 제한
+- 정책 확정에 따른 DDL은 core V6~V7·learning V4~V5로 추가한다(9장). 기존 데이터의 출생연도·상품 한도·폐기 코드/음성 기록은 임의 변환하지 않고 적용 전 정비가 필요하다.
+- `product.code`는 상품 행별 UK이며 P13의 요금제 추가·가격/한도별 새 행을 위해 확장 가능한 코드다. 새 상품 행은 새 고유 코드를 사용한다. 무료 상품 교체 시 기존 `code = FREE` 조회의 활성 버전 선택 방식은 상품 기능 구현 시 확정해야 한다.
 
 
 ## 8. 이슈 5 마이그레이션 대응
 
+- 이 절의 테이블 수·버전은 이슈 #5 완료 시점의 기록이다. 확정 정책 반영 후 현재 구조와 추가 버전은 9장을 따른다.
 - 기존 정의 58개 테이블(core 34, learning 18, report 6)을 대상으로 한다. 신규 메모·추천·교육과정 관리 등 기능 확장 테이블과 시드 데이터는 포함하지 않는다.
 - core는 3.1~3.5별 Flyway V1~V5, learning은 4.1~4.3별 V1~V3, report는 Alembic 20261026_01에 대응한다. report의 target_metadata=None을 유지한다.
 - 상태 CHECK는 각 컬럼에 명시된 값 전체에 적용한다. NOT_STARTED는 시도 미생성, SAVED는 초안 조회 응답, PROCESSING·조회 FAILED는 처리 상태의 API 표현이므로 같은 이름의 DB 상태를 추가하지 않는다.
@@ -924,3 +928,35 @@ erDiagram
 - FK는 같은 DB 내부만 연결하고 기존 다중 참조의 소속 일치·공개 조건·환불 합계 검사는 서비스 검증 계약으로 남긴다. 새 복합 FK·보조 컬럼과 정책 기반 삭제 방식은 이번에 임의 추가하지 않는다.
 - 순환 참조는 같은 마이그레이션에서 테이블을 모두 만든 뒤 FK를 추가한다. 기본적으로 즉시 검사하며, 명시적으로 제약을 지연시킨 단일 트랜잭션에서만 순환 참조를 일괄 처리할 수 있다. 이는 삭제 정책을 확정하거나 자동 삭제를 수행하는 설정이 아니다.
 - 초안·상태 갱신, 정정·리포트 리비전 생성, Outbox 발행·소비와 P01/P02/P05/P09/P12/P13/P16의 동작 정책은 해당 기능/정책 담당과 별도로 처리한다. 데이터 수집본이나 실제 학생 답안을 마이그레이션에 포함하지 않는다.
+
+## 9. 이슈 19 확정 정책 마이그레이션
+
+- core V6는 `student.birth_year`·`product.limits`를 nullable로 준비하고 고정 `product.code` CHECK를 제거한다. V7은 필요한 기존 데이터 정비를 검사한 뒤 NOT NULL·코드 CHECK·학년 3~6 CHECK를 적용하고 `student.user_account_id`를 제거한다. 기존 상품 코드·금액·참조 ID를 자동 변경하지 않는다.
+- learning V4는 `followup_bank_question`과 `followup.bank_question_id` FK를 준비한다. V5는 기존 음성·TEMPLATE·미연결 BANK 기록을 검사한 뒤 `answer.speech_transcribed`를 제거하고 source를 LLM/LLM_RETRY/BANK로 제한한다.
+- `followup.bank_question_id`는 BANK일 때만 필수이며 다른 출처에서는 NULL인 CHECK를 적용한다. 은행 질문의 type 일치·활성 여부 선택은 서비스가 검사한다. 삭제 FK는 NO ACTION을 유지한다.
+- report는 정책 확정에 따른 DDL 변경이 없어 새 revision을 추가하지 않는다. 최종 구조는 59개 테이블·506개 컬럼(core 34/306, learning 19/156, report 6/44)이다.
+- 기존 V1~V5/V1~V3/Alembic 초기 revision은 변경하지 않는다. 초기 DB는 순서대로 전체 적용하고, 기존 데이터가 있는 DB는 준비 버전에서 멈춰 승인된 값으로 보완한 뒤 최종 버전을 적용한다. 상세 절차는 [이슈 19 스키마 변경 보고서](../report/db-policy-schema.md)를 따른다.
+
+## 10. P01 개정 학생 기기·PIN (변경 예정, 미적용)
+
+- 근거: [학생 로그인 분리 보고서](../report/student-login-separation.md), [API 명세 3.11](api-spec.md#311-학생-기기-등록pin-로그인-p01-개정)
+- 3.1 Mermaid와 CI 스키마 대조 기준에는 아직 반영하지 않는다. #36 OAuth용 V8 이후의 다음 core Flyway 버전 추가 시 아래 내용을 3.1 Mermaid·6장 인덱스로 옮기고 이 절을 정리한다.
+
+| 대상 | 컬럼 | 타입·NULL | 설명 |
+|---|---|---|---|
+| `student` (추가) | `pin_hash` | varchar, NULL 허용 | PIN 해시. NULL이면 단독 로그인 불가 |
+| | `pin_failed_count` | int | 연속 실패 횟수, 성공·재설정 시 0 |
+| | `pin_locked_at` | timestamptz, NULL 허용 | 5회 실패 잠금 시각, 재설정 시 NULL |
+| | `pin_updated_at` | timestamptz, NULL 허용 | 마지막 설정 시각 |
+| `student_device` (신규) | `id` | uuid PK | `deviceId` |
+| | `parent_user_id` | uuid FK → `user_account` | 등록 학부모 |
+| | `token_hash` | varchar UK | 기기 자격증명 해시 |
+| | `label` | varchar | 기기 이름 (예: 거실 태블릿) |
+| | `created_at` · `expires_at` | timestamptz | 등록 시각·만료(설정값 90일, SQL DEFAULT 없음) |
+| | `last_used_at` · `revoked_at` | timestamptz, NULL 허용 | 마지막 PIN 로그인·해제 시각 |
+| `student_device_child` (신규) | `device_id` | uuid PK, FK → `student_device` | 복합 PK |
+| | `student_id` | uuid PK, FK → `student` | 이 기기에서 로그인 가능한 자녀 |
+
+- 인덱스 후보: `student_device (parent_user_id) WHERE revoked_at IS NULL` 기기 목록
+- `student_device_child.student_id`는 등록 시 `parent_user_id`와 `LINKED`인 자녀만 허용(서비스 검사). 연결 해제·삭제된 자녀는 로그인 시점에 다시 검사하므로 행을 즉시 지우지 않아도 진입 불가
+- 학생 삭제(`student.deleted`) 확정 시 해당 `student_device_child` 행 삭제, 학부모 탈퇴 시 기기 전체 `revoked_at` 기록

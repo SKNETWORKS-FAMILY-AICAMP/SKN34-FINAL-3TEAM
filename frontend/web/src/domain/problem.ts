@@ -9,4 +9,6 @@ export interface ProblemDetail {
   traceId?: string
   errors?: { field: string; reason: string }[]
   retryable?: boolean
+  latest?: unknown
+  missingFields?: string[]
 }

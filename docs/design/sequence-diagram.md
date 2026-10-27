@@ -83,6 +83,8 @@ sequenceDiagram
 
 ### 2.4 학생 진입 (P01)
 
+진입 경로는 학부모 동석(아래 첫 다이어그램)과 등록 기기 + PIN 단독 진입(기기 등록·PIN 로그인 다이어그램) 두 가지다 (2026-10-27 개정, API 명세 3.11).
+
 ```mermaid
 sequenceDiagram
   autonumber
@@ -100,6 +102,74 @@ sequenceDiagram
   end
   Note over W: 이후 학생 API는 학생 토큰으로 호출. URL 식별값(?student=) 진입 없음
 ```
+
+기기 등록 (학부모 1회 승인)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant P as Web(학부모)
+  participant K as Web(자녀 기기)
+  participant C as core
+  participant R as Redis
+  participant DB as core_db
+
+  P->>C: POST /student-devices/pairings {childIds[]} (학부모 Bearer)
+  C->>DB: 각 childId guardianship LINKED 확인
+  alt 미연결 자녀 포함
+    C-->>P: 403 CHILD_NOT_LINKED
+  else
+    C->>R: 페어링 코드 해시 저장 (parentId, childIds, 10분, 1회용)
+    C-->>P: 200 {pairingCode, expiresAt} → QR 표시
+  end
+  K->>C: POST /auth/student/devices {pairingCode, label}
+  C->>R: 코드 조회 후 즉시 삭제
+  alt 없음·만료·재사용
+    C-->>K: 400 PAIRING_CODE_INVALID
+  else
+    rect rgba(128,128,128,0.12)
+      C->>DB: student_device 저장 (token_hash, expires_at)
+      C->>DB: student_device_child 저장
+      C->>DB: audit_log 기록
+    end
+    C-->>K: 201 {deviceId, children[]} + Set-Cookie student_device (httpOnly)
+  end
+```
+
+PIN 로그인 (학부모 부재 시 단독 진입)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant K as Web(자녀 기기)
+  participant C as core
+  participant DB as core_db
+
+  K->>C: GET /auth/student/profiles (Cookie student_device)
+  C-->>K: 200 [{childId, nickname, pinSet, locked}]
+  Note over K: 자녀 프로필 선택 → PIN 입력
+  K->>C: POST /auth/student/login {childId, pin} (Cookie student_device)
+  C->>DB: student_device token_hash 조회·미해제·미만료·자녀 등록 확인
+  alt 기기 무효·자녀 미등록
+    C-->>K: 401 STUDENT_DEVICE_INVALID
+  else 미연결·삭제·필수 동의 철회
+    C-->>K: 403 CHILD_NOT_LINKED
+  else PIN 미설정
+    C-->>K: 409 STUDENT_PIN_NOT_SET
+  else 잠금 상태
+    C-->>K: 423 STUDENT_PIN_LOCKED
+  else PIN 불일치
+    C->>DB: pin_failed_count 증가 (5회째 pin_locked_at 기록)
+    C-->>K: 401 STUDENT_PIN_INVALID {remainingAttempts} 또는 423
+  else
+    C->>DB: pin_failed_count 0, student_device.last_used_at 갱신
+    C-->>K: 200 학생 accessToken (role STUDENT, refresh 없음)
+  end
+  Note over K: access 만료 시 PIN 재입력. 학부모 화면은 학부모 로그인 필요
+```
+
+- PIN 잠금 해제는 학부모 `PUT /children/{childId}/pin`(재확인 필요)으로만 가능
+- 학부모가 기기를 해제하면(`DELETE /student-devices/{deviceId}`) 이후 PIN 로그인은 `401 STUDENT_DEVICE_INVALID`
 
 ### 2.3 자녀 범위 권한 확인 (모든 자녀 대상 API 공통)
 
@@ -214,7 +284,7 @@ sequenceDiagram
       L->>A: POST /internal/judgments {answerText, rubric(judge_verified 포함), grade, versions}
       A->>LLM: 기준표 요소별 근거 구절 추출 (학생 이름 미포함)
       LLM-->>A: quotes[]
-      A->>A: QuoteVerifier 원문 대조 → 요소 충족·결과 결정 (미검증 요소·범위는 HELD(UNVERIFIED_SCOPE))
+      A->>A: QuoteVerifier 원문 대조 → JudgmentService 요소 충족·결과 결정 (JUDGE_REQUIRE_VERIFIED=true면 미검증 요소 HELD(UNVERIFIED_SCOPE))
       opt M2 활성 범위
         A->>S: POST /internal/m2/scores
         S-->>A: 항목 점수 또는 {active:false}
@@ -228,13 +298,13 @@ sequenceDiagram
       A-->>L: result·elements·heldReason·trial·versions
     end
     opt 되묻기 대상 (시도 내 되묻기 2회 미만, 고르기 CORRECT 아님, P04)
-      L->>A: POST /internal/followups {timeline, judgment, rubric}
+      L->>A: POST /internal/followups {timeline, judgment, rubric, mission, grade}
       A->>LLM: 되묻기 생성
       A->>A: LeakGuard 정답·금지어 검사
       opt 검사 실패
         A->>LLM: 1회 재생성 (source = LLM_RETRY)
       end
-      A-->>L: type·question·source·leakCheck
+      A-->>L: type·question·source·leakCheck·versions
       opt 재생성도 검사 실패 (leakCheck.passed = false, question 없음)
         L->>DB: followup_bank_question에서 같은 type 활성 질문 선택 (source = BANK, P16)
       end
@@ -474,7 +544,7 @@ sequenceDiagram
   end
 ```
 
-- 소비 실패(예외)는 NACK → 지연 재시도 3회(1·5·15분, P12) → `report.report.generate.dlq` (아키텍처 1.6, `definitions.json`)
+- 소비 실패(예외)는 `report.report.generate.retry.1~3` 경유 지연 재시도 3회(1·5·15분, P12) → `report.report.generate.dlq` (아키텍처 1.6, `definitions.json`)
 - `report.started`보다 `report.completed`가 먼저 도착해도 `QUEUED → COMPLETED` 허용 (상태 다이어그램 4.1)
 - KEDA가 `report.report.generate` 큐 길이로 report-worker 0~N 확장
 
@@ -829,7 +899,7 @@ sequenceDiagram
 ---
 
 ## 11. 확인 필요 가정
-- `student.deleted` 완료 확인: learning 이벤트 발행 없음 원칙에 따라 이벤트 대신 core 내부 API로 완료 보고(10.1). 보고 호출 실패 시 메시지 NACK → 재전달 → 삭제는 멱등이라 다시 보고 (P09)
+- `student.deleted` 완료 확인: learning 이벤트 발행 없음 원칙에 따라 이벤트 대신 core 내부 API로 완료 보고(10.1). 보고 호출 실패 시 지연 재시도(1·5·15분)로 재전달 → 삭제는 멱등이라 다시 보고 (P09)
 - `report.started`·`report.completed` 순서 역전 허용 (상태 다이어그램 4.1)
 - 정기 청구 재시도(7.3): ERD 부분 UK `(subscription_id, billing_period_start) WHERE kind = 'RENEWAL'` 때문에 같은 기간 새 주문 불가. 가정은 "기존 주문의 결제가 `FAILED`면 같은 주문으로 재청구". PG 주문번호 재사용 가능 여부 확인 후 ERD 반영 필요
 - 웹훅 처리 실패 시 5xx 응답으로 PG 재전송 유도(7.2): 토스페이먼츠 재전송 정책 확인 필요

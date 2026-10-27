@@ -35,6 +35,7 @@ dependencies {
     testImplementation("org.flywaydb:flyway-core:13.11.1")
     testImplementation("org.flywaydb:flyway-database-postgresql:13.11.1")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("org.testcontainers:rabbitmq")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

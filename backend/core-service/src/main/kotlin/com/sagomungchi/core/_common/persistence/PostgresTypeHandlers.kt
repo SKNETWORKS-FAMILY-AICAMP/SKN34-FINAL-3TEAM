@@ -12,7 +12,6 @@ import java.sql.Types
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
-import java.util.UUID
 
 /** Register a concrete DTO/collection JavaType; never globally register Any or Map. */
 open class JacksonJsonbTypeHandler<T>(
@@ -32,15 +31,6 @@ open class JacksonJsonbTypeHandler<T>(
 class JsonNodeTypeHandler(objectMapper: ObjectMapper) : JacksonJsonbTypeHandler<JsonNode>(
     objectMapper, objectMapper.typeFactory.constructType(JsonNode::class.java),
 )
-
-class UuidTypeHandler : BaseTypeHandler<UUID>() {
-    override fun setNonNullParameter(ps: PreparedStatement, i: Int, parameter: UUID, jdbcType: JdbcType?) {
-        ps.setObject(i, parameter, Types.OTHER)
-    }
-    override fun getNullableResult(rs: ResultSet, columnName: String): UUID? = rs.getObject(columnName, UUID::class.java)
-    override fun getNullableResult(rs: ResultSet, columnIndex: Int): UUID? = rs.getObject(columnIndex, UUID::class.java)
-    override fun getNullableResult(cs: CallableStatement, columnIndex: Int): UUID? = cs.getObject(columnIndex, UUID::class.java)
-}
 
 /** pgJDBC supports OffsetDateTime directly; convert Instant through UTC without JVM timezone dependence. */
 class InstantTypeHandler : BaseTypeHandler<Instant>() {

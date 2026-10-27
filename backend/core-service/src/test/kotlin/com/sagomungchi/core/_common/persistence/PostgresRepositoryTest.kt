@@ -1,9 +1,11 @@
 package com.sagomungchi.core._common.persistence
 
 import org.flywaydb.core.Flyway
+import com.sagomungchi.core._common.messaging.OutboxRelay
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.transaction.annotation.Transactional
 import org.testcontainers.containers.PostgreSQLContainer
 
@@ -11,9 +13,13 @@ import org.testcontainers.containers.PostgreSQLContainer
 @SpringBootTest(properties = [
     "app.internal.token=repository-test-token",
     "spring.rabbitmq.username=test", "spring.rabbitmq.password=test",
+    "spring.rabbitmq.listener.simple.auto-startup=false",
 ])
 @Transactional
 abstract class PostgresRepositoryTest {
+    // Repository tests do not publish messages or run the background relay.
+    @MockitoBean lateinit var outboxRelay: OutboxRelay
+
     companion object {
         private val postgres by lazy {
             PostgreSQLContainer<Nothing>("postgres:17.11-alpine").apply {

@@ -103,6 +103,10 @@ classDiagram
     <<repository>>
     +markProcessed(eventId, eventType) Boolean
   }
+  class RetryingConsumer {
+    <<messaging>>
+    +handle(message, channel, queue, handler)
+  }
   class OutboxEventRepository {
     <<repository>>
     +insert(event)
@@ -129,8 +133,9 @@ classDiagram
 | `InternalAuthFilter`, `UserContext`, `UserContextHolder` | `_common/security` | 구현됨 | `/internal/**` 토큰 검사, `X-User-*`·`X-Student-Scope` 컨텍스트 |
 | `BusinessException`, `GlobalExceptionHandler`, `Problems` | `_common/exception` | 구현됨 | RFC 9457 오류 응답 |
 | `EventEnvelope`, `MessagingConfig` | `_common/messaging` | 구현됨 | CloudEvents 봉투, JSON 변환기 |
-| `OutboxWriter`, `OutboxRelay`, `OutboxEventRepository` | `_common/messaging` | 신규 (core만) | 같은 트랜잭션 `outbox_event` 저장 → 릴레이가 미발행 행 발행, publisher confirm 후 `published_at` 기록 |
-| `ProcessedEventRepository` | `_common/messaging` | 신규 | `processed_event` INSERT 성공 여부로 멱등 소비 |
+| `OutboxWriter`, `OutboxRelay`, `OutboxEventRepository` | `_common/messaging` | 구현됨 (core만) | 같은 트랜잭션 `outbox_event` 저장 → 릴레이가 미발행 행 발행(`FOR UPDATE SKIP LOCKED`), publisher confirm 후 `published_at` 기록 |
+| `ProcessedEventRepository` | `_common/messaging` | 구현됨 (core) | `processed_event` INSERT 성공 여부로 멱등 소비 |
+| `RetryingConsumer` | `_common/messaging` | 구현됨 (core) | 수동 ACK. 처리 실패 시 `x-retry-count` +1 후 `<큐>.retry.<회차>` 재발행, 최대 횟수 초과 시 reject → DLQ (아키텍처 1.6) |
 | `JwtAuthFilter`, `JwtProvider` | `_common/security` | 신규 (core만) | 공개 API JWT 검증 → `UserContext(userId, role)` 설정 |
 | `IdempotencyService` | `_common/web` | 신규 (core만) | `idempotency_record` 조회·저장, 같은 키·다른 본문 422 |
 | `SseEmitters` | `_common/web` | 신규 (core만) | SSE 생성, 15초 heartbeat `: ping`, 연결 종료 콜백 |
@@ -204,7 +209,7 @@ classDiagram
 ```
 
 - 위 클래스는 모두 구현됨 (`config.py`·`errors.py`·`security.py`·`clients/base.py`·`messaging/connection.py`·`messaging/envelope.py`)
-- 신규 공통: `messaging/publisher.py` `EventPublisher.publish(envelope, routing_key)`, `messaging/consumer.py` `EventConsumer.consume(queue, handler)` (수동 ACK, 처리 실패 시 NACK → 지연 재시도·DLQ)
+- 신규 공통: `messaging/publisher.py` `EventPublisher.publish(envelope, routing_key)`(ai 구현됨, best-effort), `messaging/consumer.py` `EventConsumer.consume(queue, handler)`(report 구현됨, 수동 ACK, 처리 실패 시 `<큐>.retry.<회차>` 재발행 → 3회 초과 시 reject → DLQ)
 - 이벤트 소비 처리에서는 `bind_user_context(UserContext(role="SYSTEM", student_scope={subject}))` 후 하위 호출 (아키텍처 2.3)
 
 ---
@@ -223,6 +228,15 @@ classDiagram
     +refresh(cookie) TokenResponse
     +logout(cookie)
     +createStudentSession(request) TokenResponse
+    +registerStudentDevice(request) DeviceResponse
+    +studentProfiles(deviceCookie) List
+    +studentLogin(deviceCookie, request) TokenResponse
+  }
+  class StudentDeviceController {
+    <<controller>>
+    +createPairing(request) PairingResponse
+    +list() List
+    +revoke(deviceId)
   }
   class MeController {
     <<controller>>
@@ -246,6 +260,7 @@ classDiagram
     +unlink(reauthToken, childId)
     +deletionImpact(childId) Impact
     +requestDeletion(childId, scope) DeletionResponse
+    +setPin(reauthToken, childId, request)
   }
   class AccountService {
     <<service>>
@@ -256,6 +271,16 @@ classDiagram
     +reauth(userId, password) ReauthToken
     +changeCredentials(userId, reauthToken, command)
     +requestWithdrawal(userId, reauthToken)
+  }
+  class StudentAuthService {
+    <<service>>
+    +createPairing(parentId, childIds) Pairing
+    +registerDevice(pairingCode, label) DeviceToken
+    +profiles(deviceToken) List
+    +login(deviceToken, childId, pin) TokenResponse
+    +setPin(parentId, reauthToken, childId, pin)
+    +listDevices(parentId) List
+    +revoke(parentId, deviceId)
   }
   class ConsentService {
     <<service>>
@@ -283,6 +308,15 @@ classDiagram
     +changeGrade(grade)
     +requestDeletion()
     +markDeleted()
+    +setPin(pinHash)
+    +recordPinFailure(maxAttempts)
+    +resetPinFailures()
+  }
+  class StudentDevice {
+    <<entity>>
+    +isUsable(now) Boolean
+    +touch(now)
+    +revoke()
   }
   class Consent {
     <<entity>>
@@ -307,6 +341,7 @@ classDiagram
     +existsLinked(parentId, studentId) Boolean
   }
   class DeletionRequestRepository { <<repository>> }
+  class StudentDeviceRepository { <<repository>> }
   class JwtProvider { <<security>> }
   class OutboxWriter { <<messaging>> }
 
@@ -315,6 +350,16 @@ classDiagram
   MeController --> AccountService
   ConsentController --> ConsentService
   ChildController --> GuardianshipService
+  ChildController --> StudentAuthService : PIN
+  AuthController --> StudentAuthService
+  StudentDeviceController --> StudentAuthService
+  StudentAuthService --> GuardianshipService : 연결 확인
+  StudentAuthService --> ConsentService : 필수 동의
+  StudentAuthService --> AccountService : 재확인
+  StudentAuthService --> StudentRepository
+  StudentAuthService --> StudentDeviceRepository
+  StudentAuthService --> JwtProvider
+  StudentAuthService ..> StudentDevice
   AccountService --> UserAccountRepository
   AccountService --> RefreshTokenRepository
   AccountService --> JwtProvider
@@ -336,7 +381,10 @@ classDiagram
 - `authorizeLinkedChildren()`: 경로에 자녀 ID가 없는 API(`/reports/{reportId}` 등)용. `studentScope = 연결 자녀 전체`로 전달하고 소유 서비스가 리소스의 학생 ID로 검사, 403은 core가 `CHILD_NOT_LINKED`로 변환
 - 공개 API 컨텍스트는 `JwtAuthFilter`가 설정하고 finally에서 해제 (`InternalAuthFilter`와 같은 방식)
 - 재확인 토큰(`reauthToken`)·복구 코드는 Redis 저장 (ERD 1장)
-- `createStudentSession`: 학부모 토큰 + `{childId}` → `authorizeChild` 통과·필수 동의 유지 확인 후 `STUDENT` 토큰 발급 (P01). 학생 계정·시연 링크 없음
+- `createStudentSession`: 학부모 토큰 + `{childId}` → `authorizeChild` 통과·필수 동의 유지 확인 후 `STUDENT` 토큰 발급 (P01, 학부모 동석). 학생 계정·시연 링크 없음
+- `StudentAuthService.login`: 기기 쿠키 해시로 `StudentDevice` 조회 → `isUsable`(미해제·미만료)·자녀 등록 확인 → `GuardianshipService.linkedStudentIds(device.parentUserId)`·`ConsentService.requireGuardianConsent` → 잠금·PIN 검사 → 동석 경로와 같은 `STUDENT` 토큰 발급, refresh 미발급 (P01, API 명세 3.11)
+- `Student.recordPinFailure`: 실패 횟수 증가, 5회(설정값) 도달 시 `pin_locked_at` 기록. `setPin`은 해시·실패 횟수 0·잠금 해제를 한 번에 처리
+- 페어링 코드는 Redis(10분·1회용), 기기 자격증명은 `student_device.token_hash`만 저장. 저장 구조는 ERD 10장 변경 예정
 - `GuardianshipService.registerChild`: 학년 3~6·출생연도 검증, `LINKED` 자녀 3명이면 `CHILD_LIMIT_REACHED`, GUARDIAN 동의 필수 (P01·P02·P03). 다른 보호자 연결(`link`) 없음
 
 ### 3.2 학습 프록시·분석 대화 (learning · conversation)
@@ -1084,7 +1132,7 @@ classDiagram
   3. 트랜잭션 밖: 시도 내 되묻기 2회 미만이고 고르기 `CORRECT`가 아니면 `AiClient.followup` (정답·금지어 유출 검사는 ai 담당, P04). 재생성까지 검사 실패하면 learning이 `followup_bank_question`에서 같은 `type` 질문 선택(`BANK`, P16)
   4. `JudgmentService.saveResult`: 판정·요소·되묻기·버전 저장 + `DONE`. 예외 시 `markFailed`
 - `JudgmentElement`: `verified = false`면 `satisfy()` 거부 (ERD CHECK와 동일 규칙을 Domain에서도 검사)
-- `judge_verified = false` 요소·미검증 학년 조합의 `HELD(UNVERIFIED_SCOPE)` 결정은 ai `QuoteVerifier` 담당. learning은 `judge_verified`·학년을 포함한 기준표를 `AiClient.judge`에 전달 (FN-JDG-04)
+- `judge_verified = false` 요소·미검증 학년 조합의 `HELD(UNVERIFIED_SCOPE)` 결정은 ai `JudgmentService` 담당(`JUDGE_REQUIRE_VERIFIED=true`일 때만, 기본 꺼짐). learning은 `judge_verified`·학년을 포함한 기준표를 `AiClient.judge`에 전달 (FN-JDG-04)
 - 정정은 `Judgment`를 바꾸지 않고 `JudgmentCorrection` 추가, `result()` 조회 시 최신 정정 반영 (FN-SUP-03)
 
 ### 4.3 기록 조회·삭제 (record · deletion)
@@ -1153,7 +1201,7 @@ classDiagram
 - `RecordController`: 모든 경로에서 `UserContextHolder.current().requireStudent(studentId)` 먼저 실행 (아키텍처 2.3 범위 검사)
 - `RecordRepository`는 여러 기능 테이블을 읽는 조회 전용 MyBatis 매퍼 (쓰기 없음). 기능 간 repository 참조 금지 규칙의 예외로, 조회 전용 `record/`에 한정
 - `Metric.ratio`: 분모 5 미만이면 `value = null`, `count`만 (P08, API 1.6)
-- `StudentDeletionService.delete`: 삭제·`deleted_student` 저장 후 `CoreClient.reportDeletionCompleted`. 보고 실패 시 예외 → NACK·재전달, 삭제는 멱등 (P09)
+- `StudentDeletionService.delete`: 삭제·`deleted_student` 저장 후 `CoreClient.reportDeletionCompleted`. 보고 실패 시 예외 → 지연 재시도(1·5·15분) 후 재처리, 삭제는 멱등 (P09, 아키텍처 1.6)
 - `evidence`: `deleted_student`에 있는 학생 근거는 `available: false` (FN-ACC-13)
 - `AttemptService.deleteByStudent`: `attempt` 삭제 시 하위 `answer`·`judgment`·`followup`·`reflection` 등은 FK `ON DELETE CASCADE`로 함께 삭제 가정 (ERD 미기재, 8장)
 
@@ -1181,7 +1229,6 @@ classDiagram
   class QuoteVerifier {
     <<service>>
     +verify(answer_text, quotes) list~VerifiedQuote~
-    +decide(verified, rubric) Decision
   }
   class followup_router {
     <<router>>
@@ -1189,20 +1236,20 @@ classDiagram
   }
   class FollowupService {
     <<service>>
-    +generate(request) FollowupResponse
+    +create(request) FollowupResponse
   }
   class LeakGuard {
     <<service>>
-    +check(question, answer_key, forbidden_terms, example_answer) LeakCheck
+    +find_leaks(question, rubric, example_overlap_chars, student_answers) list~str~
   }
   class LlmClient {
     <<client>>
-    +complete(call_type, prompt, schema) LlmResult
+    +generate(system, user, output, call_type, prompt_version, deadline) LlmResult
     +stream(call_type, prompt) AsyncIterator
   }
   class ScoringClient {
     <<client>>
-    +m2_scores(prompt, text, grade) M2Result
+    +m2_scores(prompt, text, grade, input_type) M2Result
     +m1_check(problem, answer_key, solution) M1Result
   }
   class ActiveVersions {
@@ -1231,10 +1278,10 @@ classDiagram
 | 클래스 | 파일 | 책임 |
 |---|---|---|
 | `EvidenceExtractor` | `judgment/extractor.py` | LLM에 기준표 요소별 근거 구절 추출 요청 (학생 이름 미포함) |
-| `QuoteVerifier` | `judgment/verifier.py` | 구절의 답변 원문 존재 확인(코드), 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정. LLM과 분리 (FN-JDG-03) |
-| `JudgmentService` | `judgment/service.py` | 추출 → 대조 → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`) → 응답 |
+| `QuoteVerifier` | `judgment/verifier.py` | 구절의 답변 원문 존재 확인(코드). LLM과 분리 (FN-JDG-03) |
+| `JudgmentService` | `judgment/service.py` | 사전 보류(`TOO_SHORT`·`UNVERIFIED_SCOPE`) → 추출 → 대조 → 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정 (업무 판단은 service, 아키텍처 2.1) → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`) → 응답 |
 | `LeakGuard` | `followup/leak_guard.py` | 정답 키·예시 답·금지어 포함 검사. 실패 시 1회 재생성(`LLM_RETRY`), 재실패 시 `question` 없이 `leakCheck.passed = false` 반환 → learning이 질문 은행 선택 (`BANK`, P16) |
-| `LlmClient` | `llm/` | 제공자 교체 지점, LLM 호출 재시도는 이 클래스에서만 (아키텍처 1.3), 호출마다 사용량 발행 |
+| `LlmClient` | `llm/base.py`, 제공자는 `llm/providers.py` | 제공자 교체 지점(Claude·OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`), LLM 호출 재시도는 이 클래스에서만 (아키텍처 1.3), 호출마다 사용량 발행 |
 | `ActiveVersions` | `versions.py` (신규) | 활성 프롬프트 버전 보관, `model.version.activated` 수신 시 교체 |
 
 ### 5.2 분석 에이전트·리포트 서술 (analysis_agent · report_narrative)
@@ -1383,7 +1430,7 @@ classDiagram
   }
   class M2Service {
     <<service>>
-    +score(prompt, text, grade) M2Response
+    +score(prompt, text, grade, input_type) M2Response
   }
   class M1Service {
     <<service>>
@@ -1391,9 +1438,9 @@ classDiagram
   }
   class ModelRegistry {
     <<registry>>
-    +load(kind, version, artifact_uri)
-    +get(kind) LoadedModel
-    +is_active(kind, grade) bool
+    +load(name, version, artifact_uri)
+    +get(name) LoadedModel
+    +is_active(name, grade) bool
     +replace(versions)
   }
   class LoadedModel {

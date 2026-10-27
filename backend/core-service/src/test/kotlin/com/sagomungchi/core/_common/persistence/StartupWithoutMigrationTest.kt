@@ -1,6 +1,7 @@
 package com.sagomungchi.core._common.persistence
 
 import org.flywaydb.core.Flyway
+import com.sagomungchi.core._common.messaging.OutboxRelay
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -9,6 +10,7 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.annotation.DirtiesContext
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
@@ -18,10 +20,14 @@ import kotlin.test.assertTrue
 @SpringBootTest(properties = [
     "app.internal.token=startup-test-token",
     "spring.rabbitmq.username=test", "spring.rabbitmq.password=test",
+    "spring.rabbitmq.listener.simple.auto-startup=false",
 ])
 @Testcontainers
 @DirtiesContext
 class StartupWithoutMigrationTest {
+    // The empty-schema check isolates startup from scheduled business queries.
+    @MockitoBean lateinit var outboxRelay: OutboxRelay
+
     @Autowired lateinit var jdbc: JdbcTemplate
     @Autowired lateinit var context: ApplicationContext
 

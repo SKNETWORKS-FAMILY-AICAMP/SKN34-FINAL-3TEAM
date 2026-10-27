@@ -106,7 +106,13 @@
 - **Outbox**: DB 상태 변경 + 발행이 함께 필요한 서비스(core, report)만 적용 (learning은 발행 없음, 멱등 소비만). 같은 트랜잭션에 outbox 행 저장 → 릴레이 스케줄러가 publisher confirm 받은 후 발행 시각 기록 (참고 레포 `*OutboxScheduler` 패턴)
 - **상태 없는 서비스(ai, scoring)**: 이벤트 발행은 처리 결과 반환 후 best-effort (사용량 집계용), 유실 시 Langfuse trace로 보정
 - **멱등 소비**: 소비자별 `processed_event(event_id UK)` 테이블 또는 DB 상태 전이 조건(`QUEUED→RUNNING`)
-- **재시도**: 소비 실패 시 지연 재시도 후 DLQ 이동. `report.generate`는 3회(1·5·15분, P12), 그 외 큐의 횟수·지연은 `definitions.json`에서 관리
+- **재시도**: 소비 실패 시 지연 재시도 3회(1·5·15분, P12) 후 DLQ 이동. `report.generate` 확정값을 모든 큐에 동일 적용
+  - 큐마다 `<큐>.retry.1`(1분)·`.retry.2`(5분)·`.retry.3`(15분)을 `definitions.json`에 선언 (`x-message-ttl` = 지연, 만료 시 기본 exchange로 원래 큐 복귀)
+  - 처리 실패: 소비자가 `x-retry-count` 헤더 +1 후 `<큐>.retry.<회차>`로 재발행하고 ACK. 3회 초과 시 `reject(requeue=false)` → `dlx` → `<큐>.dlq`
+  - 횟수는 자체 헤더로 셈 (클라이언트 재발행 시 `x-death`가 승계되지 않음). 지연은 `definitions.json`, 최대 횟수는 서비스 설정(3)으로 단계 큐 개수와 일치
+  - 메시지 변환 실패(형식 오류)는 재시도해도 복구되지 않으므로 재시도 없이 바로 reject → DLQ
+  - core는 전역 수동 ACK(`acknowledge-mode: manual`, learning은 소비자 구현 시 동일 설정): 모든 `@RabbitListener`는 `RetryingConsumer.handle`로 처리. ACK 누락 시 메시지가 unacked로 남아 소비 정지
+  - 큐 미존재 시 기동 실패 대신 경고 후 재확인(`missing-queues-fatal: false`), 큐 생성 시 소비 자동 시작
 - **DLQ**: 큐마다 dead-letter exchange, 관리자 화면에서 현황 조회 (참고 레포 `QueueOperations*` 계승)
 - **브로드캐스트 이벤트**: 모든 레플리카가 받아야 하는 이벤트(`model.version.activated`)는 Pod별 exclusive·auto-delete 큐를 서비스가 기동 시 선언·바인딩 (exchange는 `definitions.json`). 공유 큐는 경쟁 소비라 1개 Pod만 수신
   - 기동 순서: 큐 바인딩 → core 활성 버전 조회 (반대 순서면 그 사이 이벤트 유실)
@@ -153,6 +159,7 @@
 - 버전 연결: 판정·되묻기·분석·리포트 결과에 미션·기준표·모델·프롬프트 버전 저장 (NFR-DAT-02)
 - 개인정보: LLM 요청에 학생 이름·식별정보 미포함, 운영 로그에 학생 원문·비밀 키·결제 정보 미기록 (NFR-SEC-03, 05)
 - 테스트: Domain 단위 테스트, Application은 Infrastructure 대역, Repository는 Testcontainers(PostgreSQL·RabbitMQ), 메시지는 `contracts/events` 스키마 계약 테스트
+  - core 통합 테스트는 `IntegrationTestSupport` 상속 (컨테이너 JVM당 1회 기동, Flyway 전체 스키마, `definitions.json` 반영)
 
 ### 2.4 서비스별 적용 강도
 | 서비스 | 적용 레이어 | 비고 |
@@ -311,12 +318,14 @@ backend/ai-service/
 │  ├─ judgment/
 │  │  ├─ router.py
 │  │  ├─ service.py
+│  │  ├─ models.py               # 요청·응답 스키마
 │  │  ├─ extractor.py            # LLM 근거 추출
 │  │  ├─ verifier.py             # 코드 원문 대조
 │  │  └─ prompts.py
 │  ├─ followup/
 │  │  ├─ router.py
 │  │  ├─ service.py
+│  │  ├─ models.py               # 요청·응답 스키마
 │  │  ├─ leak_guard.py
 │  │  └─ prompts.py
 │  ├─ analysis_agent/
@@ -339,10 +348,13 @@ backend/ai-service/
 │  │  ├─ scoring_client.py
 │  │  └─ core_client.py          # 기동 시 활성 버전 조회
 │  ├─ llm/                       # LLM 클라이언트 래퍼 (제공자 교체 지점)
+│  │  ├─ base.py                 # 공통 인터페이스·재시도·타임아웃·사용량 기록
+│  │  └─ providers.py            # Claude·OpenAI·OpenAI 호환 sLLM, LLM_PROVIDER로 선택
 │  ├─ messaging/
 │  │  ├─ envelope.py
 │  │  ├─ connection.py
 │  │  ├─ publisher.py            # llm.usage.recorded
+│  │  ├─ usage_recorder.py       # LlmClient 사용량 → 백그라운드 발행
 │  │  └─ consumer.py             # model.version.activated, Pod별 exclusive 큐
 │  └─ health/
 │     └─ router.py
@@ -458,6 +470,13 @@ backend/report-service/
 | Ingress | - | ingress-nginx | AWS LB Controller (ALB) |
 | CNI (NetworkPolicy) | - | Calico (기본 CNI 정책 지원 버전별 상이) | VPC CNI `enableNetworkPolicy: "true"` |
 | 외부 연동 | stub (LLM·토스) | stub 또는 테스트 키 | LLM API, 토스페이먼츠 테스트 키 |
+
+- 로컬 자원 시작 기준: i5-1135G7(4코어·8스레드)·16GB급 PC, WSL 2 Docker 메모리 상한 약 7.62GiB. 저장소·Ingress·초기화 작업과 기반 구성에 약 6GiB를 계획하며, 앱·관측·모델 추론의 동시 실행 보장은 아니다. [이슈 #17 자원 설계](../report/local-platform-resource-plan.md)의 제안값을 구현·실측 후 조정한다.
+- 로컬 MinIO는 `sagomungchi-local-missions`·`sagomungchi-local-reports`·`sagomungchi-local-models` 버킷 세 개를 단일 MinIO 저장 공간 안에 구성한다. 운영 S3 이름은 AWS 자원 작업에서 별도 확정한다.
+- Compose의 MinIO는 선택 실행용 `compose.minio.yaml`에 서비스 세 개와 전용 볼륨을 둔다. 기본 `compose.yaml`은 MinIO 계정 없이 기존 앱·DB 실행과 스키마 검증에 사용하고, MinIO가 필요할 때만 두 파일을 함께 지정한다. kind의 MinIO는 로컬 values에서 계속 활성화한다.
+- 로컬 MinIO 서버는 Chainguard 공개 배포본의 linux/amd64 digest로 고정하고, 버킷 초기화는 기존 curl 이미지의 고정 버전과 S3 서명 요청으로 수행한다. 이미지 참조는 `platform-data` 공통 values에서 관리한다. 로컬 계정은 `platform` namespace의 기존 `platform-data-credentials` Secret에 두고 chart는 키 이름만 참조한다. [platform-data 설정](../../infrastructure/gitops/charts/platform-data/README.md)을 따른다.
+- 버전·CNI·이미지 배포·초기화·자격 증명·데이터 보존을 구체화한 내용과 근거는 [이슈 #17 설계 변경 근거](../report/local-platform-design-decisions.md)에 기록한다.
+- 로컬 클러스터는 `sagomungchi-local`(kind v0.33.0, Kubernetes v1.35.8), Pod `10.244.0.0/16`, Service `10.96.0.0/12`, IPv4·iptables를 기준으로 한다. Calico v3.33.0과 ingress-nginx chart 4.15.1(controller v1.15.1)을 사용하며 API·HTTP·HTTPS를 loopback에서만 노출한다. 다른 PC·Wi-Fi·VPN 환경에서는 기존 경로·Docker subnet·포트 중복 여부를 확인한다. [kind 설정·설치 절차](../../infrastructure/kind/README.md)를 따른다.
 
 ### 4.2 운영 클러스터: EKS
 - 선정 근거 (자체 구축 K8s(kubeadm·k3s) 대비)
@@ -629,6 +648,7 @@ SKN34-FINAL-3TEAM/
 │  ├─ design/                    # 아키텍처·기능명세·API 명세 등 설계 문서
 │  └─ adr/                       # NNNN-<제목>.md
 ├─ compose.yaml                  # 로컬 통합 실행 진입점
+├─ compose.minio.yaml            # 로컬 MinIO 선택 실행 (기본 파일과 함께 지정)
 ├─ .env.example
 └─ README.md
 ```
