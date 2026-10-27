@@ -1,11 +1,9 @@
 package com.sagomungchi.learning.mission.controller
 
-import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.mission.service.MissionService
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
-import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestMapping
@@ -29,7 +27,7 @@ class MissionController(
         @RequestParam(defaultValue = "20") @Min(1) @Max(100) size: Int,
         @RequestParam(defaultValue = "false") demo: Boolean,
     ): PageResponse<MissionListItemResponse> {
-        val items = missionService.listForStudent(currentStudentId(), grade, demo)
+        val items = missionService.listForStudent(UserContextHolder.current().requireSelfStudent(), grade, demo)
         // page * size가 Int 범위를 넘으면 음수가 되므로 Long으로 계산
         val offset = (page.toLong() * size).coerceAtMost(items.size.toLong()).toInt()
         return PageResponse(
@@ -46,21 +44,11 @@ class MissionController(
         @RequestParam @Min(MIN_GRADE) @Max(MAX_GRADE) grade: Int,
         @RequestParam(defaultValue = "false") demo: Boolean,
     ): MissionResponse {
-        currentStudentId()
+        UserContextHolder.current().requireSelfStudent()
         return MissionResponse.from(missionService.get(missionId, grade, demo))
     }
 
-    /** 학생 토큰이면 X-Student-Scope에 본인 1명. 그 밖의 역할·범위는 403 */
-    private fun currentStudentId(): UUID {
-        val context = UserContextHolder.current()
-        val studentId = context.studentScope.singleOrNull()
-            ?.takeIf { context.role == STUDENT_ROLE }
-            ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
-        return studentId ?: throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "학생 요청만 허용")
-    }
-
     companion object {
-        private const val STUDENT_ROLE = "STUDENT"
         private const val MIN_GRADE = 3L
         private const val MAX_GRADE = 6L
     }
