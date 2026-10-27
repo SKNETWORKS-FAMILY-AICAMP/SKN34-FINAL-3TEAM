@@ -1,6 +1,10 @@
 package com.sagomungchi.learning.attempt.service
 
 import com.sagomungchi.learning.TestRows
+import com.sagomungchi.learning._common.security.UserContext
+import com.sagomungchi.learning._common.security.UserContextHolder
+import com.sagomungchi.learning.attempt.domain.AttemptDraft
+import com.sagomungchi.learning.attempt.domain.DraftContent
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -16,14 +20,15 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 
 /**
- * 같은 학생·미션의 동시 시작이 시도 하나로 모이는지 (이슈 #23 완료 조건, ERD 부분 UK).
+ * 동시 요청 (이슈 #23 완료 조건): 같은 학생·미션의 동시 시작은 시도 하나로(ERD 부분 UK),
+ * 같은 버전의 동시 초안 저장은 하나만 성공하고 나머지는 409(FN-LRN-17).
  * 요청마다 실제로 커밋해야 해서 롤백하는 PostgresRepositoryTest 대신 별도 컨테이너를 씀 (repository-foundation 보고서).
  */
 @SpringBootTest(properties = [
     "app.internal.token=concurrency-test-token",
     "spring.rabbitmq.username=test", "spring.rabbitmq.password=test",
 ])
-class AttemptStartConcurrencyTest {
+class AttemptConcurrencyTest {
     @Autowired lateinit var service: AttemptService
     @Autowired lateinit var jdbc: JdbcTemplate
 
@@ -52,6 +57,46 @@ class AttemptStartConcurrencyTest {
         assertEquals(1, started.count { it.created })
         assertEquals(1, count("SELECT count(*) FROM attempt WHERE student_id = ?", student))
         assertEquals(1, count("SELECT count(*) FROM attempt_draft WHERE attempt_id = ?", started.first().attempt.id))
+    }
+
+    @Test
+    fun `같은 If-Match로 동시에 저장하면 하나만 성공하고 나머지는 409와 그 내용`() {
+        val student = UUID.randomUUID()
+        val attempt = service.start(student, TestRows(jdbc).mission().id, grade = 3, demo = false).attempt
+        val screens = 8
+        val ready = CountDownLatch(screens)
+        val go = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(screens)
+
+        val results = (1..screens).map { screen ->
+            pool.submit<Any> {
+                UserContextHolder.set(UserContext(null, "STUDENT", setOf(student.toString()), null))
+                try {
+                    ready.countDown()
+                    go.await()
+                    service.saveDraft(attempt.id, ifMatch = 0, content = DraftContent(mapOf("text" to "화면 $screen"), ""))
+                } catch (conflict: DraftConflictException) {
+                    conflict
+                } finally {
+                    UserContextHolder.clear()
+                }
+            }
+        }
+        ready.await(10, TimeUnit.SECONDS)
+        go.countDown()
+        val outcomes = results.map { it.get(30, TimeUnit.SECONDS) }
+        pool.shutdown()
+
+        val saved = outcomes.filterIsInstance<AttemptDraft>().single()
+        val conflicts = outcomes.filterIsInstance<DraftConflictException>()
+        assertEquals(1 to screens - 1, saved.version to conflicts.size)
+        assertEquals(setOf(saved), conflicts.map { it.latest }.toSet())
+        UserContextHolder.set(UserContext(null, "STUDENT", setOf(student.toString()), null))
+        try {
+            assertEquals(saved, service.get(attempt.id).draft)
+        } finally {
+            UserContextHolder.clear()
+        }
     }
 
     private fun count(sql: String, id: UUID) = jdbc.queryForObject(sql, Int::class.java, id)
