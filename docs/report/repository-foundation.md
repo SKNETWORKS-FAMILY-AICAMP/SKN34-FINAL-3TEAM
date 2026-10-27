@@ -79,7 +79,6 @@ Repository는 전달받은 Session으로 SQL만 실행한다. 자체 commit/roll
 - Flyway는 `testImplementation`에만 추가해 production runtime에 넣지 않는다. 실제 환경에서는 기존 compose 일회성 컨테이너/K8s migration-job이 실행한다.
 - Spring의 `StartupWithoutMigrationTest`는 Flyway가 test classpath에 있는 상태에서 빈 PostgreSQL로 앱을 시작하고 테이블 0개·Flyway bean 없음으로 확인한다. core는 이 검사에서 RabbitMQ listener와 OutboxRelay만 분리하며, 자동 마이그레이션 설정은 실제 application.yml을 사용한다.
 - report도 빈 별도 DB로 API lifespan을 실행해 테이블이 생기지 않고 세션이 동작하는지 확인한다.
-- Windows Alembic이 설정 파일을 CP949로 읽는 문제를 피하도록 `alembic.ini`의 한글 주석 한 줄만 영문으로 변경했다. PR #15와 같은 변경이며 설정값은 그대로다.
 
 Docker가 실행 중이어야 한다. Spring은 JDK 21, report는 기존 서비스별 `.venv`를 사용한다.
 
@@ -105,7 +104,9 @@ Linux/CI에서는 각 Spring 서비스에서 `./gradlew test`를 실행한다. �
 
 새 production 의존성은 없다. Jackson·MyBatis·SQLAlchemy·psycopg는 기존 의존성을 재사용한다. 테스트 데이터는 직접 만든 합성 값만 사용한다.
 
-## 구현 검증 기록
+## 초기 구현 검증 기록 (2026-10-26)
+
+아래 9·7·12개 테스트 결과는 메시징 통합 이전의 초기 구현 기록이다. 현재 PR의 기준 develop `1573924` 통합 결과는 [최신 develop 통합 (2026-10-27)](#최신-develop-통합-2026-10-27)의 16·7·17개 테스트 결과를 참고한다.
 
 - core: JDK 21에서 `./gradlew test bootJar --no-daemon` 통과. 9개 테스트(신규 5개), 실패·생략 0개.
 - learning: 동일 환경에서 통과. 7개 테스트(신규 3개), 실패·생략 0개.
@@ -114,15 +115,15 @@ Linux/CI에서는 각 Spring 서비스에서 `./gradlew test`를 실행한다. �
 - core·learning 배포 JAR에 Flyway·Testcontainers·테스트 Mapper가 포함되지 않음을 확인.
 - 로컬 Spring 검사는 PC의 Java 17 대신 공식 `eclipse-temurin:21-jdk` Docker 이미지에서 실행했다. 초기 Gradle 의존성 준비를 포함한 시간은 core 8분 53초, 캐시를 재사용한 learning 2분 39초다. #14에는 3분 제한이 없으며 #13 DB CI의 제한과 별개다.
 
-## 정책 마이그레이션 반영 전 검증 기록
+## 정책 마이그레이션 반영 전 검증 기록 (2026-10-26)
 
-2026-10-26 `origin/develop`의 `fd4ee9c`를 작업 브랜치에 병합했다. 파일 충돌은 없었다. 이 develop에는 #13의 DB CI와 정책 확정 문서 변경(`fc90e35`)이 함께 들어 있다. 최신 ERD 7장에도 정책 변경이 기존 마이그레이션에는 미반영이라고 명시돼 있다.
+2026-10-26 `origin/develop`의 `fd4ee9c`를 작업 브랜치에 병합했다. 파일 충돌은 없었다. 당시 develop에는 #13의 DB CI와 정책 확정 문서 변경(`fc90e35`)이 함께 들어 있었다. 당시 ERD 7장에도 정책 변경이 기존 마이그레이션에는 미반영이라고 명시돼 있었다.
 
-병합 후 `--rerun-tasks`로 core 9개·learning 7개 테스트와 bootJar를 다시 실행해 통과했다. report pytest 12개·Ruff와 DB 검증기 자체 회귀 테스트 10개도 통과했다. 아래의 실제 DB-ERD 대조 실패는 남아 있으므로 전체 CI 성공으로 보고하지 않는다.
+병합 후 `--rerun-tasks`로 core 9개·learning 7개 테스트와 bootJar를 다시 실행해 통과했다. report pytest 12개·Ruff와 DB 검증기 자체 회귀 테스트 10개도 통과했다. 당시에는 아래의 실제 DB-ERD 대조 실패가 남아 있어 전체 CI 성공으로 보고하지 않았다.
 
-임시 PostgreSQL에 현재 마이그레이션을 적용한 뒤 최신 ERD와 대조하면 아래 불일치가 발생한다. `scripts/verify_db_schema.py`, ERD, Flyway SQL, Alembic revision은 develop과 동일하므로 #14의 Repository 코드에서 새로 만든 불일치가 아니다.
+임시 PostgreSQL에 당시 마이그레이션을 적용한 뒤 당시 ERD와 대조했을 때 아래 불일치가 발생했다. `scripts/verify_db_schema.py`, ERD, Flyway SQL, Alembic revision은 당시 develop과 동일했으므로 #14의 Repository 코드에서 새로 만든 불일치는 아니었다.
 
-| 대상 | 최신 ERD | 현재 마이그레이션 |
+| 대상 | 당시 ERD | 당시 마이그레이션 |
 |---|---|---|
 | core `student` | `birth_year` 추가, `user_account_id` 제거 | 이전 컬럼 유지, 출생연도 없음 |
 | core `product` | `limits` 추가, `price` NOT NULL, FREE/PREMIUM 기반 코드 | limits 없음, price NULL 허용, BASIC/PLUS CHECK |
