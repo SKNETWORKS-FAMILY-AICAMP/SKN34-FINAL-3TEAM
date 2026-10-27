@@ -83,6 +83,8 @@ sequenceDiagram
 
 ### 2.4 학생 진입 (P01)
 
+진입 경로는 학부모 동석(아래 첫 다이어그램)과 등록 기기 + PIN 단독 진입(기기 등록·PIN 로그인 다이어그램) 두 가지다 (2026-10-27 개정, API 명세 3.11).
+
 ```mermaid
 sequenceDiagram
   autonumber
@@ -100,6 +102,74 @@ sequenceDiagram
   end
   Note over W: 이후 학생 API는 학생 토큰으로 호출. URL 식별값(?student=) 진입 없음
 ```
+
+기기 등록 (학부모 1회 승인)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant P as Web(학부모)
+  participant K as Web(자녀 기기)
+  participant C as core
+  participant R as Redis
+  participant DB as core_db
+
+  P->>C: POST /student-devices/pairings {childIds[]} (학부모 Bearer)
+  C->>DB: 각 childId guardianship LINKED 확인
+  alt 미연결 자녀 포함
+    C-->>P: 403 CHILD_NOT_LINKED
+  else
+    C->>R: 페어링 코드 해시 저장 (parentId, childIds, 10분, 1회용)
+    C-->>P: 200 {pairingCode, expiresAt} → QR 표시
+  end
+  K->>C: POST /auth/student/devices {pairingCode, label}
+  C->>R: 코드 조회 후 즉시 삭제
+  alt 없음·만료·재사용
+    C-->>K: 400 PAIRING_CODE_INVALID
+  else
+    rect rgba(128,128,128,0.12)
+      C->>DB: student_device 저장 (token_hash, expires_at)
+      C->>DB: student_device_child 저장
+      C->>DB: audit_log 기록
+    end
+    C-->>K: 201 {deviceId, children[]} + Set-Cookie student_device (httpOnly)
+  end
+```
+
+PIN 로그인 (학부모 부재 시 단독 진입)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant K as Web(자녀 기기)
+  participant C as core
+  participant DB as core_db
+
+  K->>C: GET /auth/student/profiles (Cookie student_device)
+  C-->>K: 200 [{childId, nickname, pinSet, locked}]
+  Note over K: 자녀 프로필 선택 → PIN 입력
+  K->>C: POST /auth/student/login {childId, pin} (Cookie student_device)
+  C->>DB: student_device token_hash 조회·미해제·미만료·자녀 등록 확인
+  alt 기기 무효·자녀 미등록
+    C-->>K: 401 STUDENT_DEVICE_INVALID
+  else 미연결·삭제·필수 동의 철회
+    C-->>K: 403 CHILD_NOT_LINKED
+  else PIN 미설정
+    C-->>K: 409 STUDENT_PIN_NOT_SET
+  else 잠금 상태
+    C-->>K: 423 STUDENT_PIN_LOCKED
+  else PIN 불일치
+    C->>DB: pin_failed_count 증가 (5회째 pin_locked_at 기록)
+    C-->>K: 401 STUDENT_PIN_INVALID {remainingAttempts} 또는 423
+  else
+    C->>DB: pin_failed_count 0, student_device.last_used_at 갱신
+    C-->>K: 200 학생 accessToken (role STUDENT, refresh 없음)
+  end
+  Note over K: access 만료 시 PIN 재입력. 학부모 화면은 학부모 로그인 필요
+```
+
+- PIN 잠금 해제는 학부모 `PUT /children/{childId}/pin`(재확인 필요)으로만 가능
+- 학부모가 기기를 해제하면(`DELETE /student-devices/{deviceId}`) 이후 PIN 로그인은 `401 STUDENT_DEVICE_INVALID`
 
 ### 2.3 자녀 범위 권한 확인 (모든 자녀 대상 API 공통)
 

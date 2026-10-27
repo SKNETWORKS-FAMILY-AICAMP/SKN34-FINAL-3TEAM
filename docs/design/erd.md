@@ -27,7 +27,8 @@
 
 - 테이블 없이 Redis에 두는 값: `reauthToken`(단기), 계정 복구 확인 코드, SSE 알림 중계 (아키텍처 1.6), 요금제 사용 한도 일 단위 카운터 (P13)
 - 생각 메모는 `attempt_draft.content.memo`에 저장 (P05). 음성 시범 미구현으로 음성 데이터 없음 (P03)
-- 학생 별도 계정 없음: 학생 세션은 학부모 인증 후 `student.id`로 발급하는 토큰만, 테이블 없음 (P01)
+- 학생 별도 계정 없음: 학생 세션은 `student.id`로 발급하는 토큰만. 발급 경로는 학부모 인증(동석) 또는 학부모 등록 기기 + 자녀 PIN(단독). PIN·기기 저장 구조는 10장 변경 예정 (P01)
+- 학생 기기 페어링 코드(10분·1회용)는 테이블 없이 Redis 저장
 - 코드 CHECK는 Mermaid 주석의 `A|B` 목록 또는 `CHECK[A]` 명시 표기로 자동 검증한다. 허용값이 하나인 경우에도 `CHECK[A]`로 표시해 일반 설명과 구분한다.
 
 ---
@@ -935,3 +936,27 @@ erDiagram
 - `followup.bank_question_id`는 BANK일 때만 필수이며 다른 출처에서는 NULL인 CHECK를 적용한다. 은행 질문의 type 일치·활성 여부 선택은 서비스가 검사한다. 삭제 FK는 NO ACTION을 유지한다.
 - report는 정책 확정에 따른 DDL 변경이 없어 새 revision을 추가하지 않는다. 최종 구조는 59개 테이블·506개 컬럼(core 34/306, learning 19/156, report 6/44)이다.
 - 기존 V1~V5/V1~V3/Alembic 초기 revision은 변경하지 않는다. 초기 DB는 순서대로 전체 적용하고, 기존 데이터가 있는 DB는 준비 버전에서 멈춰 승인된 값으로 보완한 뒤 최종 버전을 적용한다. 상세 절차는 [이슈 19 스키마 변경 보고서](../report/db-policy-schema.md)를 따른다.
+
+## 10. P01 개정 학생 기기·PIN (변경 예정, 미적용)
+
+- 근거: [학생 로그인 분리 보고서](../report/student-login-separation.md), [API 명세 3.11](api-spec.md#311-학생-기기-등록pin-로그인-p01-개정)
+- 3.1 Mermaid와 CI 스키마 대조 기준에는 아직 반영하지 않는다. core Flyway V8 추가 시 아래 내용을 3.1 Mermaid·6장 인덱스로 옮기고 이 절을 정리한다.
+
+| 대상 | 컬럼 | 타입·NULL | 설명 |
+|---|---|---|---|
+| `student` (추가) | `pin_hash` | varchar, NULL 허용 | PIN 해시. NULL이면 단독 로그인 불가 |
+| | `pin_failed_count` | int | 연속 실패 횟수, 성공·재설정 시 0 |
+| | `pin_locked_at` | timestamptz, NULL 허용 | 5회 실패 잠금 시각, 재설정 시 NULL |
+| | `pin_updated_at` | timestamptz, NULL 허용 | 마지막 설정 시각 |
+| `student_device` (신규) | `id` | uuid PK | `deviceId` |
+| | `parent_user_id` | uuid FK → `user_account` | 등록 학부모 |
+| | `token_hash` | varchar UK | 기기 자격증명 해시 |
+| | `label` | varchar | 기기 이름 (예: 거실 태블릿) |
+| | `created_at` · `expires_at` | timestamptz | 등록 시각·만료(설정값 90일, SQL DEFAULT 없음) |
+| | `last_used_at` · `revoked_at` | timestamptz, NULL 허용 | 마지막 PIN 로그인·해제 시각 |
+| `student_device_child` (신규) | `device_id` | uuid PK, FK → `student_device` | 복합 PK |
+| | `student_id` | uuid PK, FK → `student` | 이 기기에서 로그인 가능한 자녀 |
+
+- 인덱스 후보: `student_device (parent_user_id) WHERE revoked_at IS NULL` 기기 목록
+- `student_device_child.student_id`는 등록 시 `parent_user_id`와 `LINKED`인 자녀만 허용(서비스 검사). 연결 해제·삭제된 자녀는 로그인 시점에 다시 검사하므로 행을 즉시 지우지 않아도 진입 불가
+- 학생 삭제(`student.deleted`) 확정 시 해당 `student_device_child` 행 삭제, 학부모 탈퇴 시 기기 전체 `revoked_at` 기록
