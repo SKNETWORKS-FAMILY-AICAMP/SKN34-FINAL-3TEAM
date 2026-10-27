@@ -34,9 +34,9 @@ learning-service의 `GET /internal/missions`, `GET /internal/missions/{id}`와 �
 | 풀이 단계 | 입력 틀 ① 무엇을 구하나요? ② 어떻게 구할까요? ③ 계산 ④ 확인해 보기 / 최종 답. 기준표는 방법과 무관한 생각 단계(문제 파악·방법 세우기 필수, 결과 확인은 들어가면 좋은 생각) | 풀이 방법이 여러 가지라 특정 방법을 요소로 두지 않음 |
 | 질문 은행 | 되묻기 유형마다 2개, 총 6개. 정답·미션 내용 없음 | P16. ai 되묻기가 유출 검사에 걸리면 learning이 같은 유형에서 고름 |
 | 작성 | 문항·기준표·예시 답은 learning 담당이 작성. AI Hub 문항·답안 미사용 | 이슈 #22 "확인 필요" 항목을 담당자가 정함 |
-| 정답 키 | 값만 넣음. 고르기·순서 `{"choiceIds":[...]}`(순서는 정답 순), 풀이 단계 `{"finalAnswer":"30"}` | 학생 제출 필드 이름(api-spec 3.8 `choiceIds`·`finalAnswer`)과 맞춤. ERD는 "정답·동치 표현"만 정함. 단위·동치 비교는 판정 규칙의 일 |
+| 정답 키 | 값만 넣음. 고르기·순서 `{"choiceIds":[...]}`(순서는 정답 순), 풀이 단계 `{"finalAnswer":"30 m²"}` | 학생 제출 필드 이름(api-spec 3.8 `choiceIds`·`finalAnswer`)과 맞춤. ERD는 "정답·동치 표현"만 정함. 단위·동치 비교는 판정 규칙의 일 |
 | 기타 값 | `judge_verified = false`(사람 검증 전), `basic_skills` 비움, 작성자 `created_by`는 고정된 시드용 ID | 기초 능력 값 목록이 문서에 없음. `created_by`는 NOT NULL이지만 core 사용자와 FK가 없음 |
-| 적재 | `backend/learning-service/db/seed/`의 SQL을 로컬 DB에 직접 적용. 마이그레이션(Flyway)에 넣지 않음. ID를 고정하고 `INSERT … ON CONFLICT (id) DO NOTHING`이라 다시 실행해도 됨 | 시드는 개발·시연용이라 운영 스키마와 분리. 이슈 #22 "확인 필요" 항목을 담당자가 정함. 시도를 만든 뒤에도 다시 적용할 수 있게 지우고 다시 넣지 않음 |
+| 적재 | `backend/learning-service/db/seed/`의 SQL을 로컬 DB에 직접 적용. 마이그레이션(Flyway)에 넣지 않음. ID를 고정하고 `INSERT … ON CONFLICT (id) DO UPDATE`라 다시 실행하면 파일 내용으로 덮어씀. 적용 방법은 파일 머리말 | 시드는 개발·시연용이라 운영 스키마와 분리. 이슈 #22 "확인 필요" 항목을 담당자가 정함. 시도를 만든 뒤에도 문항을 고쳐 다시 적용할 수 있게 지우고 다시 넣지 않음. 파일에서 빼낸 요소·질문은 DB에 남으므로 직접 지움 |
 
 ### 성취기준
 
@@ -80,3 +80,22 @@ learning-service의 `GET /internal/missions`, `GET /internal/missions/{id}`와 �
 - `choices`·`input_template`(jsonb)은 #14 보고서 권장대로 요소 타입을 지정한 `JacksonJsonbTypeHandler`(`ChoiceListTypeHandler`·`StringListTypeHandler`)로 변환한다. 일반 `List`에 전역 적용되지 않도록 `TypeReference<List<Choice>>` 등 구체 타입으로만 등록하고, XML의 `typeHandler`로 지정한다(`MissionPersistenceConfig`). 값이 없으면 SQL에서 빈 배열로 바꾼다.
 - `MissionRepositoryTest`가 `PostgresRepositoryTest`를 상속해 실제 PostgreSQL 17.11(Flyway V1~V5)에서 확인한다: 공개 미션의 현재 버전만 `sort_order` 순, jsonb 변환, 비공개·없는 미션 구분, 학생별 가장 최근 시도 상태.
 - 기존 `InternalAuthFilterTest`가 대상 없는 `@WebMvcTest`로 모든 Controller를 불러와 `MissionController`가 생기자 실패했다. 테스트 대상을 시험용 Controller로 제한했다.
+
+## 검증
+
+2026-10-27, develop `e3bb6ab` 기준 브랜치, JDK 21, Docker Desktop.
+
+- `./gradlew test`: 21개 통과, 실패·생략 0개. 미션 테스트 14개(`MissionRepositoryTest` 3, `MissionServiceTest` 6, `MissionControllerTest` 5)와 기존 7개.
+- 시드: 로컬 compose PostgreSQL(learning V1~V5)에 두 번 적용, 두 번 모두 성공. 미션 20(초3·초5 `PUBLISHED` 각 5, 초4·초6 `DRAFT` 각 5), 기준표 요소 57, 생각 열기 40, 질문 은행 6.
+- 앱을 로컬로 띄우고 시드 데이터로 `/internal/missions` 호출:
+
+| 요청 | 결과 |
+|---|---|
+| 초3 목록 | 200, 5개(고르기·서술·순서), `position` 1~5 |
+| 초5 목록 | 200, 5개(논술·풀이 단계 포함) |
+| 초4 목록 | 200, 0개 (`DRAFT`) |
+| 초3 미션 상세 | 200, 정답·예시 답·기준표 필드 없음 |
+| 초3 미션을 초5 학생이 상세 조회 / `DRAFT` 미션 상세 | 409 `MISSION_NOT_AVAILABLE` |
+| 없는 미션 | 404 `NOT_FOUND` |
+| 학부모 역할 | 403 `FORBIDDEN` |
+| 진행 중 시도 1건을 넣은 뒤 목록 | 그 미션만 `IN_PROGRESS`와 `attemptId` (확인 후 시도 삭제) |
