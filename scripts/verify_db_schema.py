@@ -45,6 +45,22 @@ INSERT INTO user_account
     (id, role, login_id, password_hash, status, is_demo, created_at, updated_at)
 VALUES ('00000000-0000-4000-8000-000000000001', 'PARENT',
         'schema-check@example.invalid', 'schema-test-only', 'ACTIVE', true, now(), now());
+-- #36: nullable legacy password and explicit Google identity/session constraints.
+UPDATE user_account SET password_hash = NULL,
+    oauth_provider = 'GOOGLE', oauth_subject = 'schema-google-sub'
+WHERE id = '00000000-0000-4000-8000-000000000001';
+SELECT pg_temp.expect_sqlstate($$UPDATE user_account SET oauth_subject = NULL$$, '23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE user_account SET oauth_provider = 'INVALID'$$, '23514');
+INSERT INTO auth_session(id,user_id,role,version,expires_at,created_at)
+VALUES ('00000000-0000-4000-8000-000000000018', '00000000-0000-4000-8000-000000000001',
+        'PARENT',1,now()+interval '7 days',now());
+SELECT pg_temp.expect_sqlstate($$UPDATE auth_session SET role = 'STUDENT'$$, '23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE auth_session SET version = 0$$, '23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE auth_session SET user_id = '00000000-0000-4000-8000-999999999999'$$, '23503');
+INSERT INTO refresh_token(id,user_id,session_id,token_hash,expires_at,created_at)
+VALUES ('00000000-0000-4000-8000-000000000019', '00000000-0000-4000-8000-000000000001',
+        '00000000-0000-4000-8000-000000000018','schema-refresh-hash',now()+interval '7 days',now());
+SELECT pg_temp.expect_sqlstate($$UPDATE refresh_token SET session_id = '00000000-0000-4000-8000-999999999999'$$, '23503');
 INSERT INTO student (id, nickname, grade, birth_year, is_demo, status, created_at, updated_at)
 VALUES ('00000000-0000-4000-8000-000000000002', 'schema-test', 3, 2015, true,
         'ACTIVE', now(), now());

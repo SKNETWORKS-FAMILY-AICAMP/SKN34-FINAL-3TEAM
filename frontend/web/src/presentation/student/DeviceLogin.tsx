@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ThemeFrame } from './world/StudentWorld.tsx'
-import { useNavigate, useSearchParams } from 'react-router'
+import { useLocation, useNavigate, useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '../../data/apiClient.ts'
 import { isDemo } from '../../data/classroom/useClassroom.ts'
@@ -117,6 +117,7 @@ function ProfileAndPin({ profiles }: { profiles: StudentProfile[] }) {
   const login = usePinLogin()
   const { setSession, setExpired } = useSession()
   const navigate = useNavigate()
+  const location = useLocation()
   const cache = useQueryClient()
   // 기기에 자녀가 한 명이면 프로필 선택을 건너뛴다 (#59 확인 결과)
   const single = profiles.length === 1 && !showAll
@@ -185,8 +186,10 @@ function ProfileAndPin({ profiles }: { profiles: StudentProfile[] }) {
                   onSuccess: (session) => {
                     cache.clear()
                     setExpired(false)
-                    setSession(session)
-                    navigate('/student/home', { replace: true })
+                    // LoginGate가 세션의 startPath로 보내므로 돌아갈 화면을 함께 둔다
+                    const target = returnTo(location.state)
+                    setSession({ ...session, startPath: target })
+                    navigate(target, { replace: true })
                   },
                   onError: (e) => {
                     const p = e instanceof ApiError ? e.problem : null
@@ -270,4 +273,10 @@ function DemoDeviceScenario({ onApplied }: { onApplied: () => void }) {
       </select>
     </label>
   )
+}
+
+/** 학생 로그인이 끊겨 PIN을 다시 넣은 경우 보던 학생 화면으로 돌아간다. 다른 경로는 학생 홈으로. */
+function returnTo(state: unknown) {
+  const from = (state as { from?: unknown } | null)?.from
+  return typeof from === 'string' && from.startsWith('/student/') && from !== '/student/login' ? from : '/student/home'
 }

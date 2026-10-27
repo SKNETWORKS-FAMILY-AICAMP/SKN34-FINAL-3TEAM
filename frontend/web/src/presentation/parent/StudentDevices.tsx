@@ -171,7 +171,7 @@ function PairingIssue({ items }: { items: Child[] }) {
   useEffect(() => {
     if (!pairing) return
     let active = true
-    const url = `${window.location.origin}/student-login?code=${pairing.pairingCode}`
+    const url = `${window.location.origin}/student/login?code=${pairing.pairingCode}`
     void QRCode.toString(url, { type: 'svg', margin: 1, width: 168 }).then((svg) => {
       if (active) setQr(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`)
     })

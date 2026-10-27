@@ -74,9 +74,12 @@ try {
     await p.getByRole('dialog').waitFor({ state: 'detached' })
     await p.getByText('나는 토리!', { exact: false }).waitFor()
     await p.getByText('서윤의 생각 숲', { exact: false }).waitFor()
+    // 학생은 새로고침하면 다시 로그인한다(#61). 다시 들어와도 서버에 저장한 설정이 그대로인지 본다.
     await p.reload({ waitUntil: 'domcontentloaded' })
-    await p.getByRole('heading', { name: '생각 지도', exact: true }).waitFor()
+    await p.waitForURL('**/student/login')
+    await student(p)
     assert.equal(await theme(p), 'forest')
+    await p.getByText('나는 토리!', { exact: false }).waitFor()
   })
 
   await check('미션 단계: 내 생각 쓰기 → 한 걸음 더, 질문은 캐릭터 말풍선', async (p) => {
@@ -114,7 +117,7 @@ try {
   )
 
   await check('PIN 로그인 화면도 기본 테마 위에 표시', async (p) => {
-    await p.goto(base + '/student-login', { waitUntil: 'domcontentloaded' })
+    await p.goto(base + '/student/login', { waitUntil: 'domcontentloaded' })
     await p.getByRole('heading', { name: '이 기기를 학습용으로 등록해요' }).waitFor()
     assert.equal(await theme(p), 'lake')
   })

@@ -6,19 +6,56 @@ export const API_BASE = '/api/v1'
 let accessToken: string | null = null
 let refreshInFlight: Promise<void> | null = null
 let tokenRevision = 0
+let accessRole: 'PARENT' | 'STUDENT' | 'ADMIN' | undefined
+let studentMode = false
+export function hasAccessToken() { return accessToken !== null }
+export function studentAuthenticationRequired() {
+  setAccessToken(null)
+  studentMode = true
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('sagomungchi:student-auth-required'))
+  return new ApiError({ status: 401, code: 'STUDENT_REAUTH_REQUIRED', title: '학생 로그인을 다시 진행해 주세요.', retryable: false })
+}
 
-export function setAccessToken(token: string | null) {
+export function setAccessToken(token: string | null, role?: 'PARENT' | 'STUDENT' | 'ADMIN') {
+  accessRole = token ? role ?? accessRole : undefined
+  studentMode = accessRole === 'STUDENT'
   accessToken = token
   tokenRevision++
 }
 
-async function refreshAccessToken() {
+// Web Locks serialize cookie rotation across tabs; no tokens are persisted.
+export async function withAuthLock<T>(action: () => Promise<T>): Promise<T> {
+  if (typeof navigator !== 'undefined' && navigator.locks)
+    return navigator.locks.request('sagomungchi-auth', action)
+  if (typeof window !== 'undefined') throw new Error('이 브라우저에서는 안전한 로그인 동기화를 지원하지 않습니다.')
+  return action() // Node contract tests have no browser cookie jar.
+}
+let channel: BroadcastChannel | undefined
+function authChannel() {
+  if (typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined')
+    return (channel ??= new BroadcastChannel('sagomungchi-auth'))
+}
+export function notifyAuthChange(mode: 'PARENT' | 'STUDENT' | 'ADMIN' | 'LOGOUT' = 'PARENT') { authChannel()?.postMessage(mode) }
+export function watchAuthChange(listener: (mode: string) => void) {
+  const target = authChannel()
+  const handler = (event: MessageEvent) => {
+    setAccessToken(null)
+    if (event.data === 'STUDENT') studentMode = true
+    listener(typeof event.data === 'string' ? event.data : 'PARENT')
+  }
+  target?.addEventListener('message', handler)
+  return () => target?.removeEventListener('message', handler)
+}
+export async function refreshAccessToken() {
+  if (studentMode) throw studentAuthenticationRequired()
   if (!refreshInFlight) {
     const revision = tokenRevision
-    refreshInFlight = (async () => {
+    const hadAccess = accessToken !== null
+    refreshInFlight = withAuthLock(async () => {
       const response = await fetch(API_BASE + '/auth/refresh', {
         method: 'POST',
         credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
       })
       if (!response.ok) throw await toApiError(response)
       const data: unknown = await response.json()
@@ -31,12 +68,15 @@ async function refreshAccessToken() {
         throw new Error('토큰 재발급 응답을 확인하지 못했습니다.')
       // 로그아웃/다른 로그인과 경합한 늦은 refresh 응답은 기존 세션을 되살리지 않는다.
       if (revision !== tokenRevision) throw new Error('인증 상태가 변경되었습니다.')
-      setAccessToken(data.accessToken)
-    })()
-      .catch(() => {
+      if ('role' in data && data.role === 'STUDENT') throw new Error('학생 refresh 발급은 허용되지 않습니다.')
+      const role = 'role' in data && data.role === 'ADMIN' ? 'ADMIN' : 'PARENT'
+      setAccessToken(data.accessToken, role)
+    })
+      .catch((error) => {
+        if (error instanceof ApiError && error.problem.status >= 500) throw error
         if (revision === tokenRevision) {
           setAccessToken(null)
-          if(typeof window!=='undefined') window.dispatchEvent(new Event('sagomungchi:session-expired'))
+          if(hadAccess && typeof window!=='undefined') window.dispatchEvent(new Event('sagomungchi:session-expired'))
         }
         throw new ApiError({
           status: 401,
@@ -52,25 +92,50 @@ async function refreshAccessToken() {
   return refreshInFlight
 }
 
+export async function waitForPendingRefresh() {
+  // A role-change invalidation must finish rejecting the old response before a fresh restore.
+  try { await refreshInFlight } catch { /* The next restore reads the current cookie. */ }
+}
+
 /** JSON·SSE가 공유하는 인증 요청. 만료 시 refresh 1회 공유, 원 요청은 한 번만 재시도한다. */
 export async function apiRequest(path: string, init: RequestInit = {}): Promise<Response> {
-  const send = () =>
-    fetch(API_BASE + path, { ...init, headers: withAuth(init.headers), credentials: 'same-origin' })
+  const send = () => {
+    const execute = () => fetch(API_BASE + path, { ...init, headers: withAuth(init.headers), credentials: 'same-origin' })
+    return ['/auth/logout', '/auth/student-sessions'].includes(path) ? withAuthLock(execute) : execute()
+  }
   const sentRevision = tokenRevision
+  // 학생 기기·PIN 엔드포인트(API 명세 3.11)의 401은 로그인 단계 오류다. 학생 재로그인 처리로 바꾸지 않는다.
+  const studentEntry = path.startsWith('/auth/student/')
   let response = await send()
-  if (response.status === 401 && !['/auth/login', '/auth/refresh', '/auth/logout'].includes(path)) {
+  if (response.status === 401 && !studentEntry && !['/auth/login', '/auth/refresh', '/auth/logout'].includes(path)) {
     const error = await toApiError(response.clone())
     if (error.problem.code === 'TOKEN_EXPIRED') {
+      if (studentMode) throw studentAuthenticationRequired()
       if (sentRevision === tokenRevision) await refreshAccessToken()
       response = await send()
     }
   }
-  if (!response.ok) throw await toApiError(response)
+  if (!response.ok) {
+    const error = await toApiError(response)
+    if (studentEntry) throw error
+    if (error.problem.code === 'SESSION_CHANGED' && typeof window !== 'undefined') {
+      if (studentMode) throw studentAuthenticationRequired()
+      setAccessToken(null)
+      window.dispatchEvent(new Event('sagomungchi:session-changed'))
+    }
+    if (error.problem.status === 401 && !['TOKEN_EXPIRED', 'SESSION_CHANGED'].includes(error.problem.code)) {
+      if (studentMode) throw studentAuthenticationRequired()
+      setAccessToken(null)
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('sagomungchi:session-expired'))
+    }
+    throw error
+  }
   return response
 }
 
 export function withAuth(headers: HeadersInit = {}): Headers {
   const result = new Headers(headers)
+  result.set('X-Requested-With', 'XMLHttpRequest')
   if (accessToken) result.set('Authorization', `Bearer ${accessToken}`)
   return result
 }

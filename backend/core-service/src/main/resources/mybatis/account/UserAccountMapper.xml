@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.account.repository.UserAccountMapper">
+    <resultMap id="account" type="com.sagomungchi.core.account.domain.UserAccount">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="role" javaType="java.lang.String"/>
+            <arg column="login_id" javaType="java.lang.String"/>
+            <arg column="password_hash" javaType="java.lang.String"/>
+            <arg column="display_name" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="is_demo" javaType="_boolean"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+            <arg column="withdrawn_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+    <insert id="insert">
+        INSERT INTO user_account (id, role, login_id, password_hash, display_name, status,
+                                  is_demo, created_at, updated_at, withdrawn_at)
+        VALUES (#{id}, #{role}, #{loginId}, #{passwordHash,jdbcType=VARCHAR}, #{displayName,jdbcType=VARCHAR},
+                #{status}, #{isDemo}, #{createdAt}, #{updatedAt}, #{withdrawnAt,jdbcType=TIMESTAMP_WITH_TIMEZONE})
+    </insert>
+    <select id="findById" resultMap="account">
+        SELECT id, role, login_id, password_hash, display_name, status, is_demo,
+               created_at, updated_at, withdrawn_at FROM user_account WHERE id = #{id}
+    </select>
+</mapper>

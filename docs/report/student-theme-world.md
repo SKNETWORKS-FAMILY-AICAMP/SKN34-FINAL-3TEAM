@@ -13,7 +13,7 @@
 | `/student/journal` 내 공책 | 기존 기록 카드를 종이 위에 표시 |
 | 꾸미기 (생각 지도 안의 창) | 첫 화면 오른쪽 아래 "꾸미기" 버튼으로 연다. 테마 5종(호수·숲·공장·소행성·바닷속), 캐릭터 5종(뭉치·토리·몽돌·콩이·몽글). 누르는 즉시 뒤의 지도에 반영·저장. 별도 메뉴·경로는 두지 않는다 |
 | `/student/attempts/:id` 미션 | 단계 표시(내 생각 쓰기 → 한 걸음 더 → 돌아보기), 메뉴 숨김. 위에서 아래로 질문(캐릭터 말풍선) → 장면 → 도움 버튼 → 내 생각 칸. 제출 버튼은 아래에 고정 |
-| `/student-login` PIN | 로그인 전이라 학생 설정을 모르므로 기본 테마(호수) 위에 표시 |
+| `/student/login` PIN | 로그인 전이라 학생 설정을 모르므로 기본 테마(호수) 위에 표시 |
 
 ## 결정
 
@@ -37,9 +37,9 @@
 | `npm test` | 63건 통과 (`studentLook.test.ts`, `studentLookMock.test.ts` 추가) |
 | `npm run lint`, `npm run build`, `node tests/production-mocks.mjs` | 통과 |
 | `tests/student-world-browser.mjs` (신규) | 5건 통과: 지도 다섯 곳·유형 필터, 첫 화면 꾸미기 창·메뉴에 없음·반영·새로고침 유지, 미션 단계·말풍선, 390px 가로 스크롤 없음, PIN 화면 테마 |
-| `tests/student-browser.mjs` | 23건 통과 |
+| `tests/student-browser.mjs` | 23건 통과. #61의 학생 재로그인 정책(새로고침·만료 시 `/student/login`)에 맞춰 진입·새로고침 복원·만료 사례의 기대값을 고침 |
 | `tests/student-device-browser.mjs` | 9건 통과 |
-| `tests/parent-admin-browser.mjs` | 관리자 "작업 재처리" 사례에서 실패. 변경 전 코드에서도 같은 위치에서 실패(#59 보고서 참고) |
+| `tests/parent-admin-browser.mjs` | develop `ecd6ecf` 병합 후 두 번째 사례(신규 가입 연속 흐름)의 로그인 칸 대기에서 실패. develop 단독에서도 같은 위치에서 실패하는 #61 가입 흐름 변경 영향이라 이 PR에서 고치지 않음. 병합 전에는 22건 통과 후 "작업 재처리"에서 실패(병합 전 HEAD도 동일) |
 
 ## 남은 점
 

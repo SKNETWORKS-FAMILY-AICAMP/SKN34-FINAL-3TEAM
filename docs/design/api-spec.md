@@ -162,20 +162,17 @@
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
 | GET | `/consent-documents` | 공개 | 현재 이용 안내·동의 문서(버전) 조회 | ACC-02 | 제안 |
-| POST | `/auth/signup` | 공개 | 학부모 등록(이메일·비밀번호·이름) + 동의 항목(문서 버전·동의 여부) 저장 (P01) | ACC-01, ACC-02 | 제안 |
-| POST | `/auth/login` | 공개 | 로그인, 응답에 역할·시작 화면 | ACC-03 | 제안 |
+| GET | `/auth/google/authorize` | 공개 | Google 로그인·가입 시작 (Authorization Code + PKCE) | ACC-01, ACC-03 | 제안 |
+| GET | `/auth/google/callback` | 공개 | Google 코드 교환·ID 토큰 검증 → refresh 쿠키 → web 복귀 | ACC-03 | 제안 |
 | POST | `/auth/refresh` | 쿠키 | access token 재발급 | ACC-04 | 제안 |
 | POST | `/auth/logout` | 인증 | refresh token 폐기 | ACC-04 | 제안 |
 | POST | `/auth/student-sessions` | 학부모 | 학생 진입(동석): `{childId}` 연결 자녀 확인 후 학생 세션(`STUDENT` 토큰) 발급. 시연 링크·URL 식별값 진입 없음 (P01) | ACC-05 | 제안 |
 | POST | `/auth/student/devices` | 공개 | 페어링 코드로 기기 등록 `{pairingCode, label}` → 기기 자격증명 쿠키 발급, 등록 자녀 프로필 반환 (P01, 3.11) | ACC-14 | 제안 |
 | GET | `/auth/student/profiles` | 기기 쿠키 | 이 기기에 등록된 자녀 프로필 `{childId, nickname, pinSet, locked}` (P01) | ACC-05 | 제안 |
 | POST | `/auth/student/login` | 기기 쿠키 | 학생 진입(단독): `{childId, pin}` → 학생 세션(`STUDENT` 토큰) 발급. refresh 미발급 (P01, 3.11) | ACC-05 | 제안 |
-| POST | `/auth/recovery` | 공개 | 계정 복구 요청 (인증 방식별 절차) | ACC-08 | 우선1 |
-| POST | `/auth/recovery/confirm` | 공개 | 본인 확인 → 재설정, 계정·자녀 연결 유지 | ACC-08 | 우선1 |
 | GET | `/me` | 인증 | 본인 정보·역할·관리자 권한 | ACC-09 | 우선1 |
 | PATCH | `/me` | 인증 | 본인 정보 수정 | ACC-09 | 우선1 |
 | POST | `/me/reauth` | 인증 | 재확인 → 단기 `reauthToken` 발급 | ACC-10 | 우선1 |
-| PATCH | `/me/credentials` | 인증 | 로그인 수단 변경 (`X-Reauth-Token` 필수), 변경 결과·시점 반환 | ACC-10 | 우선1 |
 | GET | `/me/consents` | 학부모 | 동의 이력(주체·문서 버전·시점·철회 상태) | ACC-02 | 제안 |
 | POST | `/me/consents/{consentId}/withdrawal` | 학부모 | 동의 철회. 필수 동의면 해당 자녀(또는 계정) 이용 차단 후 삭제·탈퇴 안내, 선택 동의면 해당 기능만 중단 (P09) | ACC-02 | 제안 |
 | GET | `/children` | 학부모 | 연결 자녀 목록(닉네임·학년·기록 유무, PIN 상태 `pinSet`·`pinLocked`). 빈 목록이면 자녀 등록 안내 | ACC-07, ACC-14 | 제안 |
@@ -500,8 +497,8 @@ If-Match: "7"
 
 공개 Controller가 없는 상태에서 MSW와 화면 어댑터를 같은 형태로 검증하기 위한 **초안**이다. 확정된 백엔드 응답/OpenAPI가 아니며 담당자 확인 전 실연동 완료로 간주하지 않는다. 기존 3.1·3.2·3.6 계약은 유지한다.
 
-- `POST /auth/login`: `{email,password}` → `{accessToken,role:PARENT|ADMIN}`. 역할별 시작 화면은 클라이언트 라우팅. 학생은 이 경로를 쓰지 않으며 학생 단독 진입은 3.11을 따른다(P01).
-- `POST /auth/refresh`: httpOnly 쿠키 사용, 응답 `{accessToken}`. 현재 역할·학생 범위를 유지한다. 동시 만료 요청은 refresh 1회 공유, 원 요청은 1회만 재시도한다.
+- #36 이후 이메일·비밀번호 로그인/가입은 제공하지 않는다. Google core 콜백 → web `/oauth/complete` → refresh → `/me`로 로그인 상태·시작 화면을 복원한다. 개발 전용 MSW의 이메일 fixture는 운영 계약이 아니다. 학생 단독 진입은 3.11을 따른다(P01 개정).
+- `POST /auth/refresh`: 학부모·관리자만 httpOnly 쿠키로 갱신한다. 학생은 refresh 미발급이며 3.11에 따라 재진입한다. 동시 만료 요청은 refresh 1회 공유, 원 요청은 1회만 재시도한다.
 - `POST /auth/student-sessions`: 기존 `{childId}` → `{accessToken,role:STUDENT}`.
 - `GET /children`: 1.1 목록 봉투의 items에 `{childId,nickname,grade,birthYear,plan:FREE|PREMIUM}`. plan의 실제 상품/권한 응답 위치는 확인 대상이다.
 - 학생 조회의 목업 DTO는 `frontend/web/src/domain/classroom.ts`의 화면 모델을 잠정 사용한다. Mission(제목·교과·학년·유형·질문·장면 표시 정보), Attempt(attemptId·studentId·mission·status·answers·도움·돌아보기), 목록은 1.1 봉투. draft는 3.6처럼 `{version,content:{answer,memo},savedAt}`로 직렬화한다. finish 전 reveal은 전송하지 않는다.
@@ -517,7 +514,7 @@ If-Match: "7"
 - `CHOICE`는 choiceIds 1개, `ORDERING`은 모든 choiceIds를 중복 없이 순서대로 전달한다. 모든 방식에 `dictatedByGuardian`(boolean)과 보완 시 `followupId`를 공통 적용한다. 메모는 제출에 포함하지 않는다.
 - 미션 목록 항목: 기존 Mission + `status:NOT_STARTED|IN_PROGRESS|COMPLETED`, `attemptId?`, `position`, `total`. 공개 문항은 초3·초5 각 5개를 유지하고, 6종 입력 계약 시험용 추가 문항은 별도 개발 시나리오에만 제공한다.
 - `GET /students/me/home`: `{student:Child,state:QueryState,period:{from,to},resume:Attempt|null,missions:Mission[]}`. 제출 전 초안만 있는 시도도 resume에 포함한다. 정답/예시/reveal/checklist는 마무리 전에 제공하지 않는다.
-- `GET /me`: `{role:PARENT|ADMIN}` 또는 `{role:STUDENT,child:Child}`. refresh 후 현재 역할·범위를 복원한다. 토큰·로그인 정보는 브라우저 영구 저장소에 보관하지 않는다.
+- `GET /me`: `{role:PARENT|ADMIN}` 또는 `{role:STUDENT,child:Child}`. 학부모·관리자만 refresh로 복원하며 학생은 메모리 access가 없으면 재진입한다. 토큰·로그인 정보는 브라우저 영구 저장소에 보관하지 않는다.
 - Attempt의 `answers[].content?`는 제출 답변 내용만 담으며 메모는 없다. `draft`는 3.6의 version/content/savedAt 형식을 유지한다. 저장·제출·피드백 요청은 분리한다.
 - finish 성공 후에만 `reveal`, `revealKind:ANSWER|EXAMPLE`, `checklist:Element[]`가 생긴다. Element는 3.2의 elementId/label/satisfied/quote/sourceType 형식을 사용한다. 체크는 satisfied와 원문 인용 존재가 모두 확인된 요소만 표시한다.
 - 미검증 판정은 trial:true, HELD와 FAILED는 구분한다. 개발 시나리오 PARTIAL/RETHINK/CORRECT는 실제 모델 성능 판정이 아닌 고정 UI 시험 상태다.
@@ -527,8 +524,8 @@ If-Match: "7"
 
 기존 1.6·3.3·3.4 스키마를 그대로 사용한다. 목록은 1.1 봉투이며 아래 보완은 구현용 초안이다.
 
-- 동의 문서: `{documentId,kind:TERMS|PRIVACY|GUARDIAN,version,title,content,required}`. 가입 `{email,password,name,consents:[{documentId,version,agreed}]}` → `{userId}` 후 별도 로그인. 자녀 등록은 기존 프로필 + 같은 `consents` 배열, 법정대리인 문서 동의 필수. P02에 따라 `/children/link`는 제공하지 않는다.
-- `GET /me`: `{userId,name,email,role,permissions?:AdminPermission[]}`. 이름 수정은 `PATCH /me {name}`. `/me/reauth {password}` → `{reauthToken,expiresAt}`. 닉네임·학년 변경은 `PATCH /children/{id}`이며 중요 변경은 `X-Reauth-Token` 헤더 사용(토큰 메모리 한정).
+- 동의 문서: `{documentId,kind:TERMS|PRIVACY|GUARDIAN,version,title,content,required}`. Google 인증 뒤 동의 저장은 #37에서 제공한다. 자녀 등록은 기존 프로필 + 같은 `consents` 배열, 법정대리인 문서 동의 필수. P02에 따라 `/children/link`는 제공하지 않는다.
+- `GET /me`: `{userId,name,email,role,permissions?:AdminPermission[]}`. 이름 수정은 `PATCH /me {name}`. `/me/reauth`는 Google 재인증 기반 `{reauthToken,expiresAt}`(#45). 닉네임·학년 변경은 `PATCH /children/{id}`이며 중요 변경은 `X-Reauth-Token` 헤더 사용(토큰 메모리 한정).
 - summary: `{childId,state,period,inclusionRule,metrics:Metric[]}`. thinking-types: `{childId,state,period,items:[{type,state,missions:[{attemptId,title}],summary?}]}`. 학습 목록 봉투는 `childId,state,period,inclusionRule`도 포함한다. 상세는 학생 메모·draft를 제외한 시도 원문만 반환한다.
 - 대화 목록/상세: `{conversationId,childId,period,title,createdAt,messages?:ConversationMessage[]}`. 메시지 `{messageId,question,status,scope,answer?,metrics?,evidence?,source?,fallback?,verification?,failureCode?,retryable?}`. SSE clarification 선택지는 `{label,scope:{childId,from,to}}[]`, status에 `messageId?`를 동봉해 실패 재시도 경로를 식별한다. scope가 다른 자녀면 해당 전역 범위로 명시 전환하며 이전 자녀 결과는 표시하지 않는다.
 - evidence 조회는 `{items:Evidence[]}`. 삭제된 항목은 `available:false`이며 quote를 재사용하지 않는다. 410도 이용 불가로 표시한다. 대조 실패는 P16의 검증된 TEMPLATE result와 error 시나리오를 각각 시험한다. delta는 확정 데이터/캐시에 저장하지 않는다.
@@ -655,3 +652,24 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | POST | `/internal/deletion-requests/{deletionRequestId}/completions` | learning·report가 `student.deleted` 처리 후 완료 보고 `{service}`. 두 서비스 모두 보고 시 `COMPLETED` (멱등, P09) |
 
 - 비동기 메시지(`report.generate` 등)는 [아키텍처 1.4](architecture.md#14-메시지-목록) 참고
+
+
+### 5.1 #36 Google OAuth·토큰 구현 계약 (개정 P01 정렬)
+
+구현된 6개 인증 경로의 정식 공개 계약은 [core-service OpenAPI](../../contracts/openapi/core-service.yaml)를 따른다. #58 신규 기기·PIN API는 이 파일에 구현된 것으로 포함하지 않는다.
+
+- #58 인계 경계: `POST /auth/student/devices`, `GET /auth/student/profiles`, `POST /auth/student/login`만 Bearer 검사에서 제외한다. POST는 기존 쿠키 API와 같은 정확한 web Origin·X-Requested-With 검사를 유지한다. 실제 페어링 코드·기기 쿠키·PIN 검증은 #58 핸들러가 수행한다. 다른 메서드·하위/유사 경로와 `/auth/student-sessions`는 제외하지 않는다. 현재 #58 핸들러가 없어 이 3개 경로는 유효한 요청 출처에서 Bearer 없이 MVC까지 도달한 뒤 404가 된다.
+
+학생 기기·PIN 정책은 3.11을 따른다. 이 절은 부모·관리자 Google 인증과 기존 동석 경로의 실제 구현 계약이다. 기기 등록·PIN 신규 API 7개는 아직 미구현이며 준비 상태를 성공으로 대체하지 않는다.
+
+- 학부모·관리자: Google core 콜백 → refresh 쿠키 → web `/oauth/complete` → refresh → `/me`. access는 HS256, 기본 15분·메모리 보관. refresh는 256비트 난수·SHA-256 해시 저장, 최초 로그인부터 최대 7일이며 회전으로 연장하지 않는다. 재사용 시 해당 세션 폐기.
+- 학생(동석·단독 공통): access 전용, refresh 미발급. 동석 `/auth/student-sessions`는 부모 refresh를 소비하고 세션 버전·역할·학생 범위를 변경하며 부모 refresh 쿠키를 만료시킨다. 학생 상태에서 `/auth/refresh`는 401이다. 기존 부모 access도 거부한다. 단독 PIN 로그인은 3.11 후속 구현 범위다.
+- JWT에는 `sub`(계정 UUID), `sid`, `ver`, `role`, `studentId`(학생만), `iss`, `aud`, `iat`, `exp`, `jti`를 넣는다. 매 요청에서 세션·현재 계정·자녀 연결·동의를 확인한다. 기기 해제 시 기존 학생 access를 즉시 폐기하는 별도 정책은 추가하지 않는다.
+- 학부모 access 기본 15분, 학생은 `AUTH_STUDENT_ACCESS_TTL`로 별도 관리하며 초기 기본값은 15분이다. 학생 만료·새로고침 시 자동 refresh하지 않고 학생 진입 화면으로 이동한다. 기기·PIN API 구현 전에는 단독 진입 준비 상태와 학부모 동석 진입을 안내한다. 토큰을 영구 저장해 새로고침을 우회하지 않는다.
+- 부모 refresh 응답 `{accessToken,expiresIn,role,nextAction,startPath}` + 회전 쿠키. 동석 응답 `{accessToken,expiresIn,role:STUDENT,child,nextAction:READY,startPath:/student/home}` + refresh 쿠키 삭제. child는 `{id,nickname,grade,birthYear}`(기존 #7 소비자 계약)이다. 향후 단독 경로 3.11의 `childId`는 프론트 경계에서 정규화한다.
+- `GET /me`는 부모/관리자에게 `{userId,name,email,role,permissions,nextAction,startPath}`, 학생에게 `{role,child,nextAction,startPath}`만 반환한다. 학생에게 부모 개인정보·권한을 반환하지 않는다. 학생은 `/me/consents` 등 부모 계정 관리 API를 사용할 수 없다.
+- 로그아웃은 현재 쿠키의 부모 세션 또는 Bearer로 전달된 학생 세션을 종료하고 refresh 쿠키를 삭제한다. 다른 기기는 유지한다. 쿠키 API는 정확한 web Origin과 `X-Requested-With: XMLHttpRequest`를 요구한다.
+- web/API 동일 origin. refresh 쿠키 `sagomungchi_refresh`: HttpOnly·Secure·SameSite=Strict·Path=/api/v1/auth. OAuth 상태 쿠키 `sagomungchi_oauth`: HttpOnly·Secure·SameSite=Lax·Path=/api/v1/auth/google, 10분. 로컬 HTTP만 Secure=false.
+- Google state·nonce·PKCE S256 및 ID 토큰 JWKS 서명·iss·aud·exp·nonce 검증. 서비스 토큰을 URL에 넣지 않는다. callback 성공은 `/oauth/complete`, 실패는 `/login?oauthError=<고정 코드>`.
+- 부모/관리자 refresh는 Web Locks로 탭 간 직렬화한다. 학생 전환·로그아웃 알림을 받은 다른 탭은 토큰·캐시를 지우며 학생 refresh로 다시 로그인하지 않는다. 학생→부모 복귀는 Google 로그인부터 시작한다.
+- 학생 access 수명·기기/PIN 기능은 #58, Google 재인증은 #45, 기기/PIN migration은 V8 이후 다음 버전으로 분리한다. 세부 TTL 등은 후속 기능에서 확정한다. 계정 복구·비밀번호 변경 API는 Google 단일 로그인 범위에서 제외한다.

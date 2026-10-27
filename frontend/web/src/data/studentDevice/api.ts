@@ -1,4 +1,4 @@
-import { ApiError, apiFetch, setAccessToken } from '../apiClient.ts'
+import { ApiError, apiFetch, notifyAuthChange, setAccessToken } from '../apiClient.ts'
 import { json } from '../parent/api.ts'
 import type { Child, Session } from '../../domain/classroom.ts'
 import type { Pairing, StudentDevice, StudentProfile } from '../../domain/studentDevice.ts'
@@ -65,7 +65,8 @@ export const studentDeviceApi = {
     const grade = Number(c.grade)
     if (c.childId !== childId || typeof c.nickname !== 'string' || !(grade >= 3 && grade <= 6))
       return contractError('로그인한 자녀 정보가 요청과 다릅니다.')
-    setAccessToken(raw.accessToken)
+    setAccessToken(raw.accessToken, 'STUDENT')
+    notifyAuthChange('STUDENT')
     const child: Child = {
       id: childId,
       nickname: c.nickname,

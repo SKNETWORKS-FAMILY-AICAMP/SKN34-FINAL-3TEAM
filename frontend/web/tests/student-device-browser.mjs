@@ -64,7 +64,7 @@ async function parentIssue(p, kids = ['서윤'], pin = '4831') {
   return code
 }
 async function registerDevice(p, code, label = '거실 컴퓨터') {
-  await p.goto(base + '/student-login', { waitUntil: 'domcontentloaded' })
+  await p.goto(base + '/student/login', { waitUntil: 'domcontentloaded' })
   await p.getByRole('heading', { name: '이 기기를 학습용으로 등록해요' }).waitFor()
   await p.getByLabel('등록 코드').fill(code)
   await p.getByLabel('기기 이름').fill(label)
@@ -78,7 +78,7 @@ async function typePin(p, pin, pad = 'PIN 숫자 키패드') {
 
 try {
   await check('미등록 기기: 코드 등록 화면만, PIN 키패드 없음', async (p) => {
-    await p.goto(base + '/student-login', { waitUntil: 'domcontentloaded' })
+    await p.goto(base + '/student/login', { waitUntil: 'domcontentloaded' })
     await p.getByRole('heading', { name: '이 기기를 학습용으로 등록해요' }).waitFor()
     assert.equal(await p.getByRole('group', { name: 'PIN 숫자 키패드' }).count(), 0)
     await p.getByLabel('등록 코드').fill('ZZZZ9999')
@@ -144,23 +144,31 @@ try {
     await p.getByLabel('상태 시연').selectOption('token-expired')
     await p.reload({ waitUntil: 'domcontentloaded' }).catch(() => {})
     // 새로고침하면 refresh가 없으므로 다시 PIN 로그인으로 돌아가야 한다
-    await p.waitForURL(/\/login|\/student-login/)
+    await p.waitForURL('**/student/login')
+    await p.getByRole('group', { name: 'PIN 숫자 키패드' }).waitFor()
   })
 
-  await check('만료 이벤트: 화면을 떠나지 않고 PIN 재입력 모달', async (p) => {
+  await check('미션 중 만료: PIN 다시 입력하면 보던 미션으로 돌아가고 초안 유지', async (p) => {
     const code = await parentIssue(p, ['서윤'])
     await registerDevice(p, code)
     await typePin(p, '4831')
     await p.waitForURL('**/student/home')
+    await p.getByRole('button', { name: '미션 고르기', exact: true }).click()
+    await p
+      .getByRole('article')
+      .filter({ has: p.getByRole('heading', { name: '도서관에 만화책을 더 둘까요?', exact: true }) })
+      .getByRole('button', { name: '미션 열기' })
+      .click()
+    await p.getByRole('button', { name: '작성하기 · 진행 중이면 이어서' }).click()
+    await p.waitForURL('**/student/attempts/*')
     const url = p.url()
-    // 첫 화면 조회가 끝난 뒤 만료시킨다(진행 중인 요청과 겹치지 않게)
-    await p.getByRole('heading', { name: '생각 지도', exact: true }).waitFor()
+    await p.getByLabel('내 생각과 까닭').fill('만료 전에 저장한 초안')
+    await p.getByText('초안 저장 완료(모의)', { exact: true }).waitFor()
     await p.getByLabel('상태 시연').selectOption('token-expired')
-    const dialog = p.getByRole('dialog', { name: 'PIN을 다시 눌러 주세요' })
-    await dialog.waitFor()
-    await typePin(p, '4831', '다시 확인 PIN 숫자 키패드')
-    await dialog.waitFor({ state: 'detached' })
-    assert.ok(p.url().startsWith(base + '/student/'), url)
+    await p.waitForURL('**/student/login')
+    await typePin(p, '4831')
+    await p.waitForURL(url)
+    assert.equal(await p.getByLabel('내 생각과 까닭').inputValue(), '만료 전에 저장한 초안')
   })
 
   await check('학생 → 학부모 전환은 학부모 로그인 요구', async (p) => {

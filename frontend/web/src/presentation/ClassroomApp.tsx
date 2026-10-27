@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { useSession } from './auth/sessionContext.ts'
-import { PinReentry } from './student/PinReentry.tsx'
 import './student/pinpad.css'
 import { roleStart } from '../domain/navigation.ts'
 import { StudentWorld } from './student/world/StudentWorld.tsx'
@@ -94,7 +93,7 @@ export function ClassroomApp() {
     }
   }
   // 학생 → 학부모 화면 전환은 학부모 로그인을 다시 거친다 (FN-ACC-05). 학생 세션으로 학부모 화면을 열지 않는다.
-  async function leave(to: '/login' | '/student-login' = '/login') {
+  async function leave(to: '/login' | '/student/login' = '/login') {
     try {
       await auth.logout.mutateAsync()
     } catch {
@@ -203,16 +202,7 @@ export function ClassroomApp() {
         <small>develop 66f6052 기준 · PC 정식 / 태블릿 확장 시안</small>
       </div>
       <div className={session?.role === 'STUDENT' ? 'cj-app cj-app-student' : 'cj-app'}>
-        {expired && session?.role === 'STUDENT' && session.entry === 'DEVICE' && session.child ? (
-          <Modal title="PIN을 다시 눌러 주세요" onClose={() => {}}>
-            <PinReentry
-              child={session.child}
-              onLeave={() => {
-                void leave('/student-login')
-              }}
-            />
-          </Modal>
-        ) : expired && session && (
+        {expired && session && (
           <Modal title="다시 로그인해 주세요." onClose={() => {}}>
             <p>
               인증 갱신에 실패하여 기록 조회·변경을 중단했습니다. 저장된 답변과 초안은 유지됩니다.
@@ -245,7 +235,7 @@ export function ClassroomApp() {
               <button
                 type="button"
                 className="cj-secondary"
-                onClick={() => navigate('/student-login')}
+                onClick={() => navigate('/student/login')}
               >
                 자녀 기기로 시작하기 (PIN)
               </button>
@@ -253,10 +243,19 @@ export function ClassroomApp() {
               <p className="ux-help">
                 {isDemo
                   ? '화면 시연용 계정입니다. 실제 이메일·아동 개인정보를 입력하지 마세요.'
-                  : '현재 develop에는 로그인 공개 API가 아직 없습니다. 연결 실패는 그대로 표시됩니다.'}
+                  : 'Google 계정으로 로그인하고 자녀를 등록해 주세요.'}
               </p>
             </div>
-            <form
+            {!isDemo ? (
+              <section className="ux-login-form">
+                <h2>학부모·관리자 로그인</h2>
+                <a className="cj-primary" href="/api/v1/auth/google/authorize">Google 계정으로 계속하기</a>
+                <p>처음 로그인하면 이용 동의와 자녀 등록을 진행합니다.</p>
+                {new URLSearchParams(location.search).has('oauthError') &&
+                  <p role="alert">{new URLSearchParams(location.search).get('oauthError') === 'CANCELLED'
+                    ? 'Google 로그인을 취소했습니다.' : 'Google 로그인을 완료하지 못했습니다. 다시 시도해 주세요.'}</p>}
+              </section>
+            ) : <form
               className="ux-login-form"
               onSubmit={(e) => {
                 e.preventDefault()
@@ -300,7 +299,7 @@ export function ClassroomApp() {
                   demo-only
                 </small>
               )}
-            </form>
+            </form>}
           </main>
         ) : session.role === 'ADMIN' ? (
           <main className="cj-sheet">

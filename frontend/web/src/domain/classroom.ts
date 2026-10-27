@@ -10,6 +10,8 @@ export interface Child {
   pinLocked?: boolean
 }
 export interface Session {
+  nextAction?: 'CONSENT_REQUIRED' | 'CHILD_REGISTRATION_REQUIRED' | 'READY'
+  startPath?: string
   role: Role
   /** 학생 진입 경로. DEVICE는 등록 기기 + PIN(refresh 없음, 만료 시 PIN 재입력), GUARDIAN은 학부모 동석. */
   entry?: 'DEVICE' | 'GUARDIAN'

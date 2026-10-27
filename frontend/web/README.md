@@ -24,7 +24,7 @@ npm run dev
 
 로그인 비밀번호는 모두 `demo-only`입니다. `parent@example.test`는 기본 보호자, `admin@example.test`는 전체 관리자, `content@example.test`·`ops@example.test`·`payment@example.test`·`refund@example.test`는 권한별 계정입니다. 가입 시 가상 `@example.test` 이메일만 사용합니다. 새 계정 자녀 목록은 비어 있으며 법정대리인 동의 후 최대 3명까지 등록할 수 있습니다. P02에 따라 다른 보호자의 기존 학생 연결은 제공하지 않습니다.
 
-자녀 단독 진입(#59)은 학부모 `/parent/devices`에서 본인 재확인 → 자녀 PIN 설정 → 등록 코드(또는 QR) 발급 후, 같은 브라우저를 자녀 기기로 보고 로그아웃 → `/student-login`에서 코드 입력 → PIN 순서입니다. MSW가 httpOnly 기기 쿠키를 만들 수 없어 개발용 sessionStorage 상태로 대신하며, "기기 상태 시연" 선택기로 해제·만료·잠김·PIN 미설정을 시연합니다. 자세한 내용은 `docs/report/issue-59-student-device.md`입니다.
+자녀 단독 진입(#59)은 학부모 `/parent/devices`에서 본인 재확인 → 자녀 PIN 설정 → 등록 코드(또는 QR) 발급 후, 같은 브라우저를 자녀 기기로 보고 로그아웃 → `/student/login`에서 코드 입력 → PIN 순서입니다. MSW가 httpOnly 기기 쿠키를 만들 수 없어 개발용 sessionStorage 상태로 대신하며, "기기 상태 시연" 선택기로 해제·만료·잠김·PIN 미설정을 시연합니다. 자세한 내용은 `docs/report/issue-59-student-device.md`입니다.
 
 학생 화면은 테마 캔버스 기준의 "생각 지도"입니다. 첫 화면의 꾸미기 버튼으로 테마 5종·캐릭터 5종을 고르면 `/students/me/preferences`(API 명세 3.12 목업 계약)에 저장됩니다. 자세한 내용은 `docs/report/student-theme-world.md`입니다.
 
@@ -93,3 +93,13 @@ node tests/api-mode-browser.mjs
 `docs/report/unchecked-followup.md`에 추가 구현과 최신 검증을 기록했습니다. 단위 테스트 48개, 학생 브라우저 23개, 학부모·관리자 브라우저 27개를 검증했습니다. 두 브라우저 스크립트 모두 `QA_FILTER`로 이름 일부를 지정해 특정 사례만 재실행할 수 있습니다.
 
 신규 가입 자녀는 FREE이므로 연속 시나리오는 먼저 무료 분석 차단을 검증합니다. 그 뒤 **DEV+MSW에서만** 등록되는 `sagomungchi:test-child-plan` 테스트 이벤트로 현재 가상 계정의 자녀 플랜을 설정해 프리미엄 전제의 분석·근거·다운로드를 확인합니다. 이는 구독 API나 체험 상품이 아니며 UI에 결제 성공을 표시하지 않습니다. 새 계정 기본 플랜과 실제 사용자 권한을 바꾸지 않습니다. `tests/production-mocks.mjs`는 이 이벤트와 설정 함수도 운영 번들에서 제외되는지 검사합니다.
+
+
+## #36 실제 인증
+운영/API 모드의 로그인·가입 버튼은 `/api/v1/auth/google/authorize`로 이동한다. core 콜백이 refresh 쿠키를 설정하고 `/oauth/complete`로 돌아오면 refresh → `/me`로 역할·온보딩 단계를 복원한다. access는 메모리에만 있고 refresh는 JS가 읽지 않는다. 쿠키 인증 요청에 X-Requested-With를 붙이며 브라우저가 Origin을 보낸다. Web Locks로 탭 간 쿠키 회전을 직렬화하고 BroadcastChannel로 역할 전환·로그아웃을 알린다. 이 기능을 지원하는 보안 컨텍스트 브라우저가 필요하다. localhost HTTP는 로컬 예외다. 역할 전환 이벤트는 캐시를 비우고 서버 상태를 다시 조회한다.
+
+개발 MSW 이메일/비밀번호 fixture는 기존 시연 테스트 전용이다. 실제 API에는 이메일 로그인/가입을 제공하지 않는다. 신규 Google 계정은 #37 동의·등록 API가 구현되기 전까지 온보딩 준비 안내를 표시한다. 프로필의 비밀번호 재확인은 실제 모드에서 노출하지 않고 Google 재인증(#45)을 기다린다. 서버 미구현·실패를 mock으로 대체하지 않는다.
+
+
+### P01 정렬
+부모·관리자만 refresh로 복원한다. 학생 동석 진입은 access 전용이며 서버가 부모 refresh를 폐기한다. 학생 만료·새로고침과 학생 전환 알림을 받은 다른 탭은 `/student/login`으로 이동한다. 현재 기기·PIN 신규 API가 없어 이 화면은 준비 상태와 부모 동석 진입만 안내하며 성공을 가장하지 않는다. 학생 원문 작성 요청은 만료 후 부모 refresh로 자동 재시도하지 않는다. MSW도 학생 refresh를 거부한다.
