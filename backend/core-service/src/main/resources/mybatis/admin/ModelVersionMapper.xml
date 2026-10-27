@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.admin.repository.ModelVersionMapper">
+    <resultMap id="version" type="com.sagomungchi.core.admin.repository.ModelVersionRow">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="kind" javaType="java.lang.String"/>
+            <arg column="name" javaType="java.lang.String"/>
+            <arg column="version" javaType="java.lang.String"/>
+            <arg column="ref_id" javaType="java.util.UUID"/>
+            <arg column="artifact_uri" javaType="java.lang.String"/>
+            <arg column="eval_result" javaType="com.fasterxml.jackson.databind.JsonNode"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="approved_by" javaType="java.util.UUID"/>
+            <arg column="activated_at" javaType="java.time.OffsetDateTime"/>
+            <arg column="created_at" javaType="java.time.OffsetDateTime"/>
+        </constructor>
+    </resultMap>
+    <insert id="insert">
+        INSERT INTO model_version(id,kind,name,version,ref_id,artifact_uri,eval_result,status,approved_by,activated_at,created_at)
+        VALUES(#{id},#{kind},#{name},#{version},#{refId,jdbcType=OTHER},#{artifactUri,jdbcType=VARCHAR},
+            #{evalResult,javaType=com.fasterxml.jackson.databind.JsonNode,jdbcType=OTHER},#{status},NULL,NULL,#{createdAt})
+        ON CONFLICT (kind,name,version) DO NOTHING
+    </insert>
+    <select id="find" resultMap="version" flushCache="true" useCache="false">SELECT * FROM model_version WHERE id=#{id}</select>
+    <select id="list" resultMap="version">
+        SELECT * FROM model_version <if test="kind != null">WHERE kind=#{kind}</if>
+        ORDER BY created_at DESC, id DESC LIMIT #{size} OFFSET #{offset}
+    </select>
+    <select id="count" resultType="long">
+        SELECT count(*) FROM model_version <if test="kind != null">WHERE kind=#{kind}</if>
+    </select>
+    <select id="active" resultMap="version">SELECT * FROM model_version WHERE status='ACTIVE' ORDER BY kind,name</select>
+    <select id="current" resultMap="version" flushCache="true" useCache="false">
+        SELECT * FROM model_version WHERE kind=#{kind} AND name=#{name} AND status='ACTIVE'
+    </select>
+    <!-- Stable group lock even when no ACTIVE row exists. Hash collisions only serialize unrelated groups. -->
+    <select id="lockGroup" resultType="string" flushCache="true" useCache="false">
+        SELECT pg_advisory_xact_lock(hashtextextended(jsonb_build_array(#{kind}::text,#{name}::text)::text,0))::text
+    </select>
+    <select id="nextRevision" resultType="long" flushCache="true" useCache="false">
+        SELECT COALESCE(max((eval_result-&gt;&gt;'revision')::bigint),0)+1 FROM model_version WHERE kind=#{kind} AND name=#{name}
+    </select>
+    <update id="update">
+        UPDATE model_version SET status=#{status}, approved_by=#{approvedBy,jdbcType=OTHER},
+            activated_at=#{activatedAt,jdbcType=TIMESTAMP_WITH_TIMEZONE},
+            eval_result=#{evalResult,javaType=com.fasterxml.jackson.databind.JsonNode,jdbcType=OTHER} WHERE id=#{id}
+    </update>
+    <insert id="audit">
+        INSERT INTO audit_log(id,actor_user_id,action,target_type,target_id,result,detail,created_at)
+        VALUES(#{id},#{actor},#{action},'MODEL_VERSION',#{target},'SUCCESS',
+            #{detail,javaType=com.fasterxml.jackson.databind.JsonNode,jdbcType=OTHER},#{now})
+    </insert>
+</mapper>

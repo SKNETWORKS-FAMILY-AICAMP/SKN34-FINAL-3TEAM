@@ -186,6 +186,8 @@ export function createApiGateway(): ClassroomGateway {
           grade,
           birthYear: Number(c.birthYear),
           plan: c.plan === 'PREMIUM' ? 'PREMIUM' : 'FREE',
+          ...(typeof c.pinSet === 'boolean' ? { pinSet: c.pinSet } : {}),
+          ...(typeof c.pinLocked === 'boolean' ? { pinLocked: c.pinLocked } : {}),
         } as Child
       })
     },
@@ -196,7 +198,7 @@ export function createApiGateway(): ClassroomGateway {
       if (raw.role !== 'STUDENT') return contractError('학생 세션 role이 필요합니다.')
       setAccessToken(text(raw.accessToken, 'accessToken'), 'STUDENT')
       notifyAuthChange('STUDENT')
-      return { role: 'STUDENT', child }
+      return { role: 'STUDENT', entry: 'GUARDIAN', child }
     },
     async missions() {
       return list(await apiFetch<unknown>('/missions')).map((raw) => {

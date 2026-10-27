@@ -854,8 +854,8 @@ classDiagram
   }
   class LlmUsageService {
     <<service>>
-    +record(event)
-    +summary(from, to, callType) UsageSummary
+    +record(envelope)
+    +summarize(from, to, callType) List~UsageSummary~
   }
   class AdminController {
     <<controller>>
@@ -867,18 +867,25 @@ classDiagram
     +errorReports(status)
     +payments(status, from, to)
     +approveRefund(requestId, idempotencyKey)
-    +modelVersions(kind)
-    +activate(versionId)
-    +rollback(versionId)
-    +aiUsage(from, to, callType)
   }
   class AdminMissionController {
     <<controller>>
     +proxy(path, body)
   }
+  class ModelVersionController {
+    <<controller>>
+    +list(kind, page, size) ModelVersionPage
+    +register(body, request) ModelVersion
+    +activate(versionId, body, request) ModelVersion
+    +rollback(versionId, body, request) ModelVersion
+  }
+  class AiUsageController {
+    <<controller>>
+    +usage(from, to, callType) AiUsageResponse
+  }
   class InternalModelVersionController {
     <<controller>>
-    +active() ActiveVersions
+    +active() Map
   }
   class AdminJobService {
     <<service>>
@@ -892,19 +899,52 @@ classDiagram
   }
   class ModelVersionService {
     <<service>>
-    +register(command) ModelVersion
-    +activate(versionId, adminId)
-    +rollback(versionId, adminId, reanalyze)
-    +active() ActiveVersions
+    +list(kind, page, size) ModelVersionPage
+    +register(command, actor) ModelVersion
+    +activate(id, command, actor) ModelVersion
+    +rollback(id, command, actor) ModelVersion
+    +active() List~ActiveModelVersion~
+    -locked(id) ModelVersion
+    -switch(target, scopes, reason, reanalysis, actor, action) ModelVersion
   }
   class AuditLogService {
-    <<service>>
+    <<planned>>
     +record(actorId, action, target, result, detail)
   }
   class ModelVersion {
-    <<entity>>
-    +activate(adminId)
-    +deactivate()
+    <<value>>
+    +id UUID
+    +kind ModelKind
+    +name String
+    +version String
+    +status VersionStatus
+    +evalResult EvaluationRecord
+    +approvedBy UUID
+    +activatedAt OffsetDateTime
+  }
+  class ModelVersionRepository {
+    <<repository>>
+    +insert(version) Boolean
+    +find(id) ModelVersion
+    +list(kind, page, size) List
+    +count(kind) Long
+    +active() List
+    +current(kind, name) ModelVersion
+    +lockGroup(kind, name)
+    +nextRevision(kind, name) Long
+    +update(version)
+    +audit(actor, action, target, detail, now)
+  }
+  class ModelVersionMapper {
+    <<mapper>>
+    +insert(row) Int
+    +update(row) Int
+    +audit(id, actor, action, target, detail, now) Int
+  }
+  class LlmUsageRepository {
+    <<mapper>>
+    +insertIfAbsent(usage) Int
+    +summarize(from, until, callType) List~UsageSummary~
   }
   class QueueStatsRepository {
     <<repository>>
@@ -920,11 +960,12 @@ classDiagram
   ErrorReportService ..> ErrorReport
   InquiryService ..> Inquiry
   LlmUsageConsumer --> LlmUsageService
+  LlmUsageService --> LlmUsageRepository
+  ModelVersionController --> ModelVersionService
+  AiUsageController --> LlmUsageService
   AdminController --> AdminJobService
-  AdminController --> ModelVersionService
   AdminController --> ErrorReportService
   AdminController --> RefundService
-  AdminController --> LlmUsageService
   AdminController --> AuditLogService
   AdminController --> QueueStatsRepository
   AdminMissionController --> LearningClient
@@ -935,7 +976,9 @@ classDiagram
   AdminJobService --> NotificationService : 알림 재처리
   AdminJobService --> JobExecutionService
   ModelVersionService --> OutboxWriter : model.version.activated
-  ModelVersionService --> AuditLogService
+  ModelVersionService --> ModelVersionRepository : 상태·감사 같은 트랜잭션
+  ModelVersionRepository --> ModelVersionMapper
+  ModelVersionRepository ..> ModelVersion : JSON·DB 행 변환
   ModelVersionService ..> ModelVersion
   class NotificationService { <<service>> }
   class RefundService { <<service>> }
@@ -946,8 +989,10 @@ classDiagram
 ```
 
 - `SupportLearningClient` = `support/client/LearningClient.kt` (아키텍처 2.6). 다이어그램에서만 이름 구분
-- 관리자 세부 권한(`CONTENT`·`PAYMENT_VIEW`·`PAYMENT_REFUND`·`SERVICE_OPS`)은 controller 메서드 단위 `@PreAuthorize` 검사 (API 1.2)
-- `AdminController`는 구현 시 `AdminJobController`·`AdminModelVersionController` 등 화면 단위로 분할, 다이어그램은 의존 관계만 표기
+- 구현된 #43 공개 경로는 #36 `PublicAuthFilter → AuthService.requirePermission(SERVICE_OPS)`를 재사용한다. 내부 조회는 `InternalAuthFilter`의 내부 토큰 검사를 사용한다. 다른 관리자 기능의 권한 범위는 API 1.2를 따른다.
+- #43은 실제 구현된 `ModelVersionController`·`AiUsageController`·`InternalModelVersionController`를 구분해 표시했다. 내부 응답은 `{items: List<ActiveModelVersion>}`이며 평가·관리자 정보는 제외한다. `AdminController` 및 나머지 운영 기능은 기존 후속 설계이며 구현 완료 표시가 아니다.
+- `ModelVersion`은 불변 data class다. 상태 전이는 `ModelVersionService`의 `activate`·`rollback`과 private `switch`에서 `copy` 후 Repository에 저장하며 Domain의 `activate()`·`deactivate()` 메서드는 없다.
+- `AuditLogService`는 아직 구현되지 않은 공용 감사 서비스 설계다. #43은 `ModelVersionService → ModelVersionRepository.audit → ModelVersionMapper.audit → audit_log` 경로로 감사 기록을 저장한다. 상태·감사·Outbox를 같은 트랜잭션으로 유지하며, #47 등에서 공용 감사 기능을 실제 도입할 때 이 경로의 통합을 검토한다. 현재 사용처만을 위해 공용 서비스를 추가하지 않는다 ([#43 보고서](../report/issue-43-model-registry.md)).
 - `QueueStatsRepository`: RabbitMQ 관리 API(15672) 조회, 큐 길이·DLQ 적재량 (참고 레포 `QueueOperations*`)
 
 ---

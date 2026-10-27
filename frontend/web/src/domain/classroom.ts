@@ -5,11 +5,16 @@ export interface Child {
   grade: number
   birthYear: number
   plan: 'FREE' | 'PREMIUM'
+  /** 학부모 화면 전용 PIN 상태 (API 명세 2.1 `/children`, #59). 학생 응답에는 없다. */
+  pinSet?: boolean
+  pinLocked?: boolean
 }
 export interface Session {
   nextAction?: 'CONSENT_REQUIRED' | 'CHILD_REGISTRATION_REQUIRED' | 'READY'
   startPath?: string
   role: Role
+  /** 학생 진입 경로. DEVICE는 등록 기기 + PIN(refresh 없음, 만료 시 PIN 재입력), GUARDIAN은 학부모 동석. */
+  entry?: 'DEVICE' | 'GUARDIAN'
   child?: Child
   permissions?: import('./admin/operations.ts').Permission[]
 }

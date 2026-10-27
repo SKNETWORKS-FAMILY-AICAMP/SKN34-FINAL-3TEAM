@@ -110,7 +110,7 @@ function evidenceResponse(items: ReturnType<typeof evidence>) {
 const downloadTickets = new Map<string, { file: string; childId: string; expires: number }>()
 let reauthToken = '',
   reauthExpires = 0
-function requireReauth(request: Request) {
+export function requireReauth(request: Request) {
   if (
     !reauthToken ||
     Date.now() > reauthExpires ||
