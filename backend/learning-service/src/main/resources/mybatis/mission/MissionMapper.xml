@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.learning.mission.repository.MissionMapper">
+    <resultMap id="mission" type="com.sagomungchi.learning.mission.repository.MissionRow">
+        <constructor>
+            <idArg column="id" javaType="java.lang.String"/>
+            <arg column="sort_order" javaType="_int"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="subject" javaType="java.lang.String"/>
+            <arg column="grade_min" javaType="_int"/>
+            <arg column="grade_max" javaType="_int"/>
+            <arg column="thinking_type" javaType="java.lang.String"/>
+            <arg column="input_type" javaType="java.lang.String"/>
+            <arg column="question" javaType="java.lang.String"/>
+            <arg column="guide" javaType="java.lang.String"/>
+            <arg column="scene_uri" javaType="java.lang.String"/>
+            <arg column="static_scene_uri" javaType="java.lang.String"/>
+            <arg column="choices" javaType="java.lang.String"/>
+            <arg column="input_template" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="attemptStatus" type="com.sagomungchi.learning.mission.repository.AttemptStatusRow">
+        <constructor>
+            <arg column="mission_id" javaType="java.lang.String"/>
+            <arg column="attempt_id" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 공개 미션의 현재 버전만 (정답·예시 답·기준표 컬럼은 읽지 않음) -->
+    <sql id="publishedCurrentVersion">
+        SELECT m.id::text AS id, m.sort_order, v.title, v.subject, v.grade_min, v.grade_max,
+               v.thinking_type, v.input_type, v.question, v.guide, v.scene_uri, v.static_scene_uri,
+               v.choices::text AS choices, v.input_template::text AS input_template
+        FROM mission m
+        JOIN mission_version v ON v.id = m.current_version_id
+        WHERE m.status = 'PUBLISHED'
+    </sql>
+
+    <select id="findPublished" resultMap="mission">
+        <include refid="publishedCurrentVersion"/>
+        ORDER BY m.sort_order, m.id
+    </select>
+
+    <select id="findPublishedById" resultMap="mission">
+        <include refid="publishedCurrentVersion"/>
+        AND m.id = #{id}::uuid
+    </select>
+
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM mission WHERE id = #{id}::uuid)
+    </select>
+
+    <select id="findLatestAttempts" resultMap="attemptStatus">
+        SELECT DISTINCT ON (mission_id) mission_id::text AS mission_id, id::text AS attempt_id, status
+        FROM attempt
+        WHERE student_id = #{studentId}::uuid
+        ORDER BY mission_id, started_at DESC
+    </select>
+</mapper>
