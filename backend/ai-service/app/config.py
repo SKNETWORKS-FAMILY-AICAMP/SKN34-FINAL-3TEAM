@@ -17,14 +17,14 @@ class Settings(BaseSettings):
     core_url: str = "http://localhost:8080"
 
     # LLM: 제공자 교체는 llm_provider만 변경, 키·모델은 제공자별로 보관
-    llm_provider: str = "anthropic"
+    llm_provider: str = "openai"
     anthropic_api_key: str | None = None  # 비어 있으면 503 AI_UNAVAILABLE
     anthropic_model: str = "claude-sonnet-5-5"
     anthropic_effort: str = "medium"  # low|medium|high|xhigh|max, 학생 대기 시간 고려
     anthropic_fallback: bool = True  # 안전 거절 시 Anthropic 권장 모델로 자동 재처리
     # OpenAI 또는 OpenAI 호환 sLLM 서버(vLLM·Ollama 등). 모델이 비어 있으면 503 AI_UNAVAILABLE
     openai_api_key: str | None = None  # sLLM 서버(openai_base_url 지정)는 비워도 됨
-    openai_model: str = "gpt-6-luna"  # 실제 호출로 ID 확인 전
+    openai_model: str = "gpt-6.1-terra"  # 판정·되묻기 실제 호출 확인 (2026-10-27)
     openai_base_url: str | None = None  # 비우면 OpenAI 기본 주소
     openai_json_mode: Literal["json_schema", "json_object"] = "json_schema"  # sLLM은 json_object
     # 판정 최악 15 + 1 + 15 = 31초 < learning→ai 35초 (P12)

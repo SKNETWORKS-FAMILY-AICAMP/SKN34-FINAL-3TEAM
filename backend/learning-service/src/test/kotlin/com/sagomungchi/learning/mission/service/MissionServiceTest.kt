@@ -1,8 +1,10 @@
 package com.sagomungchi.learning.mission.service
 
 import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning.mission.domain.HintQuestion
 import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.domain.MissionProgress
+import com.sagomungchi.learning.mission.domain.MissionSnapshot
 import com.sagomungchi.learning.mission.domain.MissionView
 import com.sagomungchi.learning.mission.domain.ProgressStatus
 import com.sagomungchi.learning.mission.missionView
@@ -28,6 +30,9 @@ class MissionServiceTest {
         override fun findPublishedById(id: UUID) = published.find { it.id == id }
         override fun existsById(id: UUID) = id in unpublished || published.any { it.id == id }
         override fun findLatestAttempts(studentId: UUID) = attempts
+        override fun findCurrentVersions(id: UUID): MissionSnapshot? = null
+        override fun findVersion(missionVersionId: UUID): MissionView? = null
+        override fun findHintQuestions(rubricVersionId: UUID): List<HintQuestion> = emptyList()
     }
 
     private fun service(mapper: FakeMapper) = MissionService(MissionRepository(mapper))

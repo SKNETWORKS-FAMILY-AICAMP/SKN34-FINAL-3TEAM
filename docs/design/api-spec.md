@@ -91,6 +91,10 @@
   - 신고 제출
 - 같은 키 재요청 처리: 최초 결과를 그대로 반환하고 1회만 반영 (NFR-REL-01)
 - 키 보관 기간 24시간 (P12)
+- #38 core 답변 프록시: 키는 검증된 계정 UUID에 묶고, HTTP 메서드·실제 endpoint·검증된 학생 범위·원문 본문 SHA-256을 대조한다. 같은 키로 다른 endpoint·학생·본문을 보내면 `422 IDEMPOTENCY_KEY_REUSED`다. JSON 공백·필드 순서가 바뀌어도 다른 원문으로 취급한다.
+- 처리 중 같은 키는 `409 IDEMPOTENCY_IN_PROGRESS`와 `Retry-After: 1`을 반환한다. PostgreSQL 세션 advisory lock으로 프로세스 간 실행을 직렬화하며 외부 HTTP 중 DB 트랜잭션은 열지 않는다. 응답 확정 전 NULL 행은 잠금이 해제된 다음 같은 요청으로 재개한다. 프로세스 종료·연결 종료 시 잠금은 해제된다.
+- 최초 2xx~4xx 상태·응답 원문·Content-Type·ETag·Retry-After·Location을 저장해 재사용한다. 5xx·전송 실패·core 응답 저장 실패는 성공으로 확정하지 않고 같은 키 재요청을 허용한다. core가 생성한 장애는 `503 LEARNING_UNAVAILABLE` / `503 IDEMPOTENCY_UNAVAILABLE`, 시간 초과는 `504 LEARNING_TIMEOUT`, 서킷 차단은 `503 LEARNING_CIRCUIT_OPEN`이다. learning에서 받은 오류 상태·Problem Details는 그대로 전달한다.
+- core는 답변의 `Idempotency-Key`를 learning에 그대로 전달한다. learning은 `(attempt_id, idempotency_key)` UK와 답변·PENDING 판정의 동일 트랜잭션으로 최초 응답을 재구성하고, 키 중복 시 본문 불일치를 422로 거부해야 한다. core 저장 실패·만료·연결 장애 후 재요청도 이 계약으로 중복 반영을 막는다. learning의 실제 구현·통합 검증은 #24에서 충족해야 한다.
 - 초안은 `ETag`/`If-Match`(초안 버전)로 처리. 불일치 시 409를 반환하고 조용히 덮어쓰지 않음
 - 피드백 요청은 키 대신 answerId의 판정 처리 상태로 중복 방지 (실패 후 재시도가 같은 요청이므로 키 재사용 불가)
   - `DONE`: 저장된 결과 반환
@@ -175,7 +179,7 @@
 | POST | `/me/reauth` | 인증 | 재확인 → 단기 `reauthToken` 발급 | ACC-10 | 우선1 |
 | GET | `/me/consents` | 학부모 | 동의 이력(주체·문서 버전·시점·철회 상태) | ACC-02 | 제안 |
 | POST | `/me/consents/{consentId}/withdrawal` | 학부모 | 동의 철회. 필수 동의면 해당 자녀(또는 계정) 이용 차단 후 삭제·탈퇴 안내, 선택 동의면 해당 기능만 중단 (P09) | ACC-02 | 제안 |
-| GET | `/children` | 학부모 | 연결 자녀 목록(닉네임·학년·기록 유무). 빈 목록이면 자녀 등록 안내 | ACC-07 | 제안 |
+| GET | `/children` | 학부모 | 연결 자녀 목록(닉네임·학년·기록 유무, PIN 상태 `pinSet`·`pinLocked`). 빈 목록이면 자녀 등록 안내 | ACC-07, ACC-14 | 제안 |
 | POST | `/children` | 학부모 | 자녀 프로필 등록 `{nickname, grade(3~6), birthYear}` + 법정대리인 동의(전원 만 14세 미만 간주). 3명 초과 시 409 (P01, P02, P03) | ACC-06, ACC-02 | 제안 |
 | PATCH | `/children/{childId}` | 학부모 | 닉네임·학년(3~6) 수정 (학년은 이후 제공 문제에만 적용) | ACC-09 | 우선1 |
 | PUT | `/children/{childId}/pin` | 학부모 | PIN 설정·변경 `{pin}` (`X-Reauth-Token`). 실패 횟수·잠금 해제 (P01) | ACC-14, ACC-10 | 제안 |
@@ -199,7 +203,7 @@
 |---|---|---|---|---|---|
 | GET | `/missions` | 학생 | 학년·입력 방식 범위의 공개 미션 목록(제목·교과·생각 유형·수행 상태), 진행 위치 | LRN-02, DSH-02 | 핵심 |
 | GET | `/missions/{missionId}` | 학생 | 장면(애니메이션·정적 대체)·질문·안내·입력 방식 틀. 정답·예시 답 미포함 | LRN-03, LRN-05 | 핵심 |
-| POST | `/missions/{missionId}/attempts` | 학생 | 학습 시도 시작. 진행 중 시도가 있으면 그 시도 반환(이어하기) | LRN-01, LRN-16 | 핵심 |
+| POST | `/missions/{missionId}/attempts` | 학생 | 학습 시도 시작. 신규 생성은 `201`, 진행 중 시도 반환(이어하기)은 `200`. core는 learning의 상태를 그대로 전달 | LRN-01, LRN-16 | 핵심 |
 | GET | `/attempts/{attemptId}` | 학생 | 시도 상세: 상태, 최신 초안(`ETag`), 답변·판정·되묻기 타임라인, 가능한 다음 행동 | LRN-16, JDG-08, JDG-09 | 핵심 |
 | PUT | `/attempts/{attemptId}/draft` | 학생 | 초안 자동 저장 (`If-Match`), 응답에 저장 시점·새 버전. `content: {answer, memo}` (P05) | LRN-15, LRN-16, LRN-17 | 우선1 |
 | POST | `/attempts/{attemptId}/hints` | 학생 | 생각 열기 질문 열람 기록 → 질문 반환 (정답·제출용 답 미포함) | LRN-06 | 핵심 |
@@ -209,6 +213,8 @@
 | POST | `/attempts/{attemptId}/self-assessment` | 학생 | 자기 체크 저장 → AI 확인 항목과 나란히 반환 (원본·판정 불변) | LRN-13 | 선택 |
 | POST | `/attempts/{attemptId}/reflection` | 학생 | 돌아보기 `{difficulty(필수), text(선택)}` 저장 → 학습 완료 처리 (P04) | LRN-12, LRN-14 | 핵심 |
 
+- #38 미션 조회의 `grade`·`demo`는 검증된 STUDENT의 연결된 활성 학생을 core DB에서 읽어 결정한다. 공개 요청의 동일 이름 query는 사용하지 않는다. 목록은 `page`·`size`만 learning에 전달하고, 상세도 같은 학생 학년·시연 여부를 붙인다. 학년별 문항 노출·시연 전용 미션 판단은 learning 소유다.
+
 - 음성 시범(FN-LRN-18): 미구현 (P03)
 - 질문 읽어주기(FN-LRN-19): 브라우저 TTS(Web Speech API), API 없음 (P03)
 - 메모(FN-LRN-07): 초안 `content.memo`로 저장, 학생 본인 조회에만 포함 (P05)
@@ -216,7 +222,7 @@
   - 되묻기는 시도당 최대 2회, 2회째 답변 후 `nextActions: ["FINISH"]`
   - 고르기 `CORRECT`면 되묻기 없이 `nextActions: ["FINISH"]`
   - 되묻기에 답하지 않고 `FINISH` 가능("이대로 돌아보기")
-- 무료 플랜은 하루 3개 미션까지 시도 시작 가능, 초과 시 `USAGE_LIMIT_REACHED` (P13)
+- 무료 플랜은 하루 신규 미션 시도 3개까지 허용하며 일일 한도는 core의 Redis 카운터 책임이다(learning은 관여하지 않음, P13). 후속 한도 연계에서 신규 생성 `201`만 집계하고 기존 진행 시도 반환 `200`은 집계하지 않는다. 한도 도달 시에도 이어하기는 허용하고 신규 생성만 `429 USAGE_LIMIT_REACHED`로 차단해야 한다. 시작 요청 전체를 선차단하지 않도록 기존 시도 판별·신규 생성 차단의 처리 순서는 후속 한도 구현에서 검증한다.
 - 목록 접기·펼치기(FN-LRN-20): 프론트 전용, API 없음
 - 판정 규칙 (FN-JDG-01~05)
   - 고르기·수학 최종 답: 규칙 판정
@@ -232,6 +238,7 @@
 | GET | `/students/me/home` | 학생 | 학생 정보, 이어할 시도, 시작 가능한 미션 경로 | DSH-01, DSH-02 | 제안 |
 | GET | `/students/me/attempts` | 학생 | 최근 학습 기록(미션·시점·완료 여부, `status` 필터) | DSH-03, LRN-16 | 제안 |
 | GET | `/students/me/thinking-activities` | 학생 | 수행 미션의 생각 유형·본인 돌아보기 (레벨·등급·순위 없음) | DSH-04 | 제안 |
+| GET·PUT | `/students/me/preferences` | 학생 | 생각 지도 테마·동행 캐릭터 설정 (3.12) | - | 제안 |
 | GET | `/children/{childId}/summary?from&to` | 학부모 | 학습 건수·상태 `Metric[]`, 집계 기준·기간 (P08) | DSH-06, DSH-07, DSH-10 | 제안 |
 | GET | `/children/{childId}/thinking-types?from&to` | 학부모 | 다섯 유형별 미션·기록, 없는 유형은 `NO_RECORD`("미관찰") | DSH-08 | 제안 |
 | GET | `/children/{childId}/attempts?from&to` | 학부모 | 기간 내 학습 목록 | DSH-07, DSH-09 | 제안 |
@@ -572,7 +579,27 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
   - `X-Reauth-Token` 필수. 숫자 4~6자리, 동일 숫자 반복(`1111`)·연속(`1234`, `4321`) 거부 `422 VALIDATION_FAILED`
   - 해시 저장, 실패 횟수 0·잠금 해제. 잠긴 PIN의 해제 수단은 재설정뿐
 - 기기 해제 `DELETE /student-devices/{deviceId}`: `revoked_at` 기록, 기존 학생 access token은 만료까지 유효
+- 학부모 화면의 PIN 상태: `GET /children` 각 항목에 `pinSet`(설정 여부)·`pinLocked`(5회 실패 잠금 여부)를 함께 반환. PIN 원문·해시·실패 횟수는 반환하지 않음 (#59)
 - 기기 등록·해제·PIN 설정은 `audit_log` 기록 (FN-ACC-10). PIN 잠금 시 학부모 알림은 알림 유형 추가와 함께 후속 확정
+
+### 3.12 학생 화면 꾸미기 설정 (목업 계약 초안, 백엔드 확인 대기)
+
+학생이 고른 생각 지도 테마와 동행 캐릭터를 기기와 관계없이 유지하기 위한 학생 본인 설정이다. 학습 기록·판정·리포트에 쓰지 않으며 학부모 화면에 노출하지 않는다. 대응 FN 항목이 없는 화면 개선 제안이므로 기능 명세 반영 여부도 함께 확인한다.
+
+| Method | Path | 역할 | 설명 |
+|---|---|---|---|
+| GET | `/students/me/preferences` | 학생 | 현재 설정. 저장한 적 없으면 기본값과 `updatedAt:null` |
+| PUT | `/students/me/preferences` | 학생 | 설정 전체 교체 `{theme, companion}` |
+
+```jsonc
+// GET 200 / PUT 200
+{ "theme": "lake", "companion": "mungchi", "updatedAt": "2026-10-27T05:00:00Z" }
+```
+- `theme`: `lake`(호수)·`forest`(숲)·`factory`(공장)·`space`(소행성)·`sea`(바닷속). 기본 `lake`
+- `companion`: `mungchi`(뭉치)·`tori`(토리)·`mongdol`(몽돌)·`kongi`(콩이)·`monggeul`(몽글). 기본 `mungchi`
+- 목록에 없는 값은 `422 VALIDATION_FAILED`. 학생 토큰 전용, 학부모·관리자 토큰은 `403 FORBIDDEN`
+- 숫자 레벨·보상·잠금 해제 조건 없이 언제든 바꿀 수 있다 (기능 명세 1.3의 숫자 레벨·등급·순위 비표시 원칙과 충돌하지 않음)
+- 저장 위치(core 학생 테이블 컬럼 또는 별도 설정 테이블)와 값 목록 관리 방식은 백엔드 확정 대상
 
 ## 4. 내부 API (`/internal`)
 - 인증: `X-Internal-Token` + 사용자 컨텍스트 헤더 `X-User-Id`, `X-User-Role`, `X-Student-Scope`(허용 학생 ID, 콤마 구분), `traceparent`
@@ -585,7 +612,9 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | Method | Path | 호출자 | 설명 |
 |---|---|---|---|
 | GET | `/internal/missions?grade&demo&page&size`, `/internal/missions/{id}?grade&demo` | core | 학생용 미션 조회 (2.2 프록시). core가 학생 학년 `grade`(3~6, 필수)와 시연 학생 여부 `demo`(`student.is_demo`, 기본 `false`)를 붙임. `demo_only` 미션은 `demo=true`일 때만 노출 |
-| POST · GET · PUT | `/internal/attempts/...` | core | 시도·초안·도움·답변·마무리·돌아보기·자기 평가 (2.2 경로와 1:1) |
+| POST | `/internal/missions/{id}/attempts?grade&demo` | core | 시도 시작·이어하기 (2.2와 1:1). 조회와 동일하게 core가 인증된 학생의 `grade`(필수, 3~6)와 `demo`(`student.is_demo`, 기본값 `false`)를 전달함. 공개 요청의 `grade`·`demo` 값은 사용하지 않음. 진행 중인 시도가 있으면 미션의 공개 여부나 제공 범위와 관계없이 해당 시도를 반환(`200`)하고, 신규 시도는 `201`을 반환함. core는 응답 상태를 그대로 전달하며, 신규 시도의 제공 범위 검사와 기존 시도의 시작 당시 버전 유지는 learning이 담당함. 일일 한도는 core의 Redis 책임이며, `201` 응답만 집계하는 후속 연계는 2.2 참고 |
+| POST · GET · PUT | `/internal/attempts/...` | core | 시도·초안·도움·답변·마무리·돌아보기·자기 평가 (2.2 경로와 1:1). 생각 열기 응답 형식은 `{question, seq, total}`이며, 질문이 없는 미션은 `404`를 반환함. 시도 상세 `answers[]`는 `{answerId, version, submittedAt, inputType, text(입력 틀 칸 이름을 붙인 원문), followupId, content, feedback:{status, nextActions}}`, 판정 결과·되묻기는 #25 |
+| POST | `/internal/attempts/{id}/answers` | core | 답변 제출 (3.1·3.8 형식). `Idempotency-Key`(UUID) 필수, 없거나 형식 오류면 `400`. 같은 키·같은 본문은 처음 답변을 `201`로 다시, 다른 본문은 `422 IDEMPOTENCY_KEY_REUSED`. 미션 입력 방식과 다르면 `400`, 누락은 `422 ANSWER_INCOMPLETE`, 마무리·완료한 시도는 `409 ATTEMPT_CLOSED`. 보완 답변은 가장 최근 미답 되묻기의 `followupId` 필수(아니면 `422 ANSWER_INCOMPLETE`). 저장하면 같은 트랜잭션에서 초안 `content.answer`를 비우고 `memo`는 유지, 초안 `version` +1 |
 | POST | `/internal/answers/{answerId}/feedback` | core | 판정 오케스트레이션: 규칙 판정 또는 ai 호출 → 저장 → 결과 반환 (동기) |
 | POST | `/internal/judgments/{judgmentId}/corrections` | core | 신고 정정 반영(SUP-03): `{reportId, reason, corrected}` → 기존 판정·사유·시점 보존 후 정정 이력 저장 (원본 답변 불변), `Idempotency-Key` |
 | GET | `/internal/records/students/{studentId}/summary?from&to` | core, ai | 건수·상태 `Metric[]` |

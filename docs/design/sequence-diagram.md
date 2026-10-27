@@ -236,15 +236,18 @@ sequenceDiagram
   participant DB as learning_db
 
   W->>C: POST /missions/{missionId}/attempts
-  C->>L: POST /internal/missions/{missionId}/attempts
-  L->>DB: 공개·학년 범위 미션 확인
-  alt 비공개·범위 밖 미션
-    L-->>C: 409 MISSION_NOT_AVAILABLE
-  else 진행 중 시도 있음
-    L-->>C: 기존 attempt (이어하기)
+  C->>L: POST /internal/missions/{missionId}/attempts?grade&demo
+  L->>DB: 진행 중 시도 확인
+  alt 진행 중 시도 있음
+    L-->>C: 200 기존 attempt (이어하기, 공개 중단·학년 변경과 무관)
   else
-    L->>DB: attempt 저장 (IN_PROGRESS, 당시 mission·rubric 버전 고정)
-    L-->>C: 201 attempt
+    L->>DB: 공개·학년·시연 범위 미션 확인
+    alt 비공개·범위 밖 미션
+      L-->>C: 409 MISSION_NOT_AVAILABLE
+    else
+      L->>DB: attempt 저장 (IN_PROGRESS, 당시 mission·rubric 버전 고정) + 빈 초안(version 0)
+      L-->>C: 201 attempt
+    end
   end
   C-->>W: attempt
 
@@ -268,9 +271,13 @@ sequenceDiagram
   else 새 요청
     C->>L: POST /internal/attempts/{id}/answers (Idempotency-Key: k1)
     rect rgba(128,128,128,0.12)
-      L->>DB: attempt IN_PROGRESS 확인 (아니면 409 ATTEMPT_CLOSED)
-      L->>DB: answer 저장 (version = 이전+1, followup_id 연결)
+      L->>DB: attempt 행 잠금(FOR UPDATE)·본인 시도 확인
+      L->>DB: 같은 시도·키의 answer 조회 (같은 본문이면 201 그 답변, 다른 본문이면 422 IDEMPOTENCY_KEY_REUSED)
+      L->>L: 마무리·완료 409 ATTEMPT_CLOSED · 입력 방식 다름 400 · 누락 422 ANSWER_INCOMPLETE
+      L->>DB: 보완이면 가장 최근 미답 되묻기와 followupId 확인 (아니면 422 ANSWER_INCOMPLETE)
+      L->>DB: answer 저장 (version = 이전+1, previous_answer_id·followup_id 연결)
       L->>DB: judgment 저장 (PENDING)
+      L->>DB: attempt_draft 답 칸 비움 (memo 유지, version +1)
     end
     L-->>C: 201 answerId·version·feedback.status=PENDING
     C->>C: idempotency_record 저장
@@ -279,6 +286,7 @@ sequenceDiagram
 ```
 
 - 저장 성공(201)과 이후 피드백 처리 성공을 분리 (FN-LRN-10). 피드백은 3.2의 별도 요청
+- learning도 시도·키(ERD UK)로 같은 키를 처리. core가 learning 응답을 받기 전에 끊겨 다시 보내도 답변은 1건
 - 메모는 초안 `content.memo`로 함께 저장, 학생 본인 조회에만 포함 (P05)
 - 무료 플랜은 시도 시작 시 하루 3개 미션 한도 확인, 초과 시 `429 USAGE_LIMIT_REACHED` (P13)
 
