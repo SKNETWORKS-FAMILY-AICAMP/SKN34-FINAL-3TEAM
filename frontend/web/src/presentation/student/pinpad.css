@@ -166,3 +166,6 @@
   border-radius: 12px;
   background: #fff;
 }
+#class-journal .pin-pad:focus {
+  outline: none;
+}

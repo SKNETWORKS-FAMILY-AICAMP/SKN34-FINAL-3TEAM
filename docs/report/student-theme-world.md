@@ -34,7 +34,7 @@
 
 | 항목 | 결과 |
 |---|---|
-| `npm test` | 63건 통과 (`studentLook.test.ts`, `studentLookMock.test.ts` 추가) |
+| `npm test` | 69건 통과 (최종, develop `ecd6ecf` 병합 상태. `studentLook.test.ts`, `studentLookMock.test.ts` 추가) |
 | `npm run lint`, `npm run build`, `node tests/production-mocks.mjs` | 통과 |
 | `tests/student-world-browser.mjs` (신규) | 5건 통과: 지도 다섯 곳·유형 필터, 첫 화면 꾸미기 창·메뉴에 없음·반영·새로고침 유지, 미션 단계·말풍선, 390px 가로 스크롤 없음, PIN 화면 테마 |
 | `tests/student-browser.mjs` | 23건 통과. #61의 학생 재로그인 정책(새로고침·만료 시 `/student/login`)에 맞춰 진입·새로고침 복원·만료 사례의 기대값을 고침 |

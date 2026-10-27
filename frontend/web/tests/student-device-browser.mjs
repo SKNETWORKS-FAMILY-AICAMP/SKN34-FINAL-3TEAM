@@ -171,6 +171,24 @@ try {
     assert.equal(await p.getByLabel('내 생각과 까닭').inputValue(), '만료 전에 저장한 초안')
   })
 
+  await check('물리 키보드만으로 PIN 입력·만료 후 쿼리까지 같은 화면으로 복귀', async (p) => {
+    const code = await parentIssue(p, ['서윤'])
+    await registerDevice(p, code)
+    await p.getByRole('group', { name: 'PIN 숫자 키패드' }).waitFor()
+    // 키패드 버튼을 누르지 않고 바로 숫자를 친다(키패드가 나타날 때 포커스를 받는다)
+    await p.keyboard.type('4831')
+    await p.keyboard.press('Enter')
+    await p.waitForURL('**/student/home')
+    await p.goto(base + '/student/missions?type=ANALYZE', { waitUntil: 'domcontentloaded' }).catch(() => {})
+    // 주소를 직접 열면 학생은 다시 로그인한다(#61). PIN 뒤 쿼리까지 같은 주소로 돌아와야 한다.
+    await p.waitForURL('**/student/login')
+    await p.getByRole('group', { name: 'PIN 숫자 키패드' }).waitFor()
+    await p.keyboard.type('4831')
+    await p.keyboard.press('Enter')
+    await p.waitForURL(/\/student\/missions\?type=ANALYZE$/)
+    assert.equal(await p.getByRole('button', { name: '분석하기', exact: true }).getAttribute('aria-pressed'), 'true')
+  })
+
   await check('학생 → 학부모 전환은 학부모 로그인 요구', async (p) => {
     const code = await parentIssue(p, ['서윤'])
     await registerDevice(p, code)

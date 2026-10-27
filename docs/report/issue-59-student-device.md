@@ -36,9 +36,9 @@ MSW는 httpOnly 쿠키를 만들 수 없어, 기기 쿠키 대신 `sessionStorag
 
 | 항목 | 결과 |
 |---|---|
-| `npm test` | 58건 통과 (`studentDevice.test.ts`, `studentDeviceMock.test.ts` 포함) |
+| `npm test` | 69건 통과 (최종, develop `ecd6ecf` 병합 상태. `studentDevice.test.ts`, `studentDeviceMock.test.ts` 포함) |
 | `npm run lint`, `npm run build`, `node tests/production-mocks.mjs` | 통과 |
-| `tests/student-device-browser.mjs` (신규) | 9건 통과: 미등록 기기 PIN 화면 미노출, 학부모 등록 → PIN → 학생 홈 → 미션 작성 시작, 프로필 선택·PIN 미설정 안내, 5회 실패 잠금·학부모 화면 잠김 표시, 만료 후 새로고침, 미션 중 만료 → PIN → 같은 미션·초안 유지, 학생 → 학부모 로그인 요구, 해제 기기 재등록 화면, 기기 목록 해제 |
+| `tests/student-device-browser.mjs` (신규) | 10건 통과: 물리 키보드만으로 PIN 입력·재로그인 후 쿼리(`?type=`)까지 같은 주소 복귀, 미등록 기기 PIN 화면 미노출, 학부모 등록 → PIN → 학생 홈 → 미션 작성 시작, 프로필 선택·PIN 미설정 안내, 5회 실패 잠금·학부모 화면 잠김 표시, 만료 후 새로고침, 미션 중 만료 → PIN → 같은 미션·초안 유지, 학생 → 학부모 로그인 요구, 해제 기기 재등록 화면, 기기 목록 해제 |
 | `tests/student-browser.mjs` | 23건 통과. #61의 학생 재로그인 정책(새로고침·만료 시 `/student/login`)에 맞춰 진입·새로고침 복원·만료 사례의 기대값을 고침 |
 | `tests/parent-admin-browser.mjs` | develop `ecd6ecf` 병합 후 두 번째 사례(신규 가입 연속 흐름)의 로그인 칸 대기에서 실패. develop 단독에서도 같은 위치에서 실패하는 #61 가입 흐름 변경 영향이라 이 PR에서 고치지 않음. 병합 전에는 22건 통과 후 "작업 재처리"에서 실패(병합 전 HEAD도 동일) |
 | `tests/browser-smoke.mjs` | `주간 리포트` 버튼 대기 실패. README에 기록된 대로 #7 초기 화면용 기록이며 HEAD에서도 동일 |
@@ -51,6 +51,9 @@ MSW는 httpOnly 쿠키를 만들 수 없어, 기기 쿠키 대신 `sessionStorag
 - PIN 로그인 성공 시 #61 방식대로 학생 역할 토큰으로 두고 다른 탭에 알린다.
 
 ## 미확정
+
+- PIN 설정 전 재확인이 기존 정보 관리 화면과 같은 비밀번호 방식 목업(`parentApi.reauth(password)`)이다. 명세의 `/me/reauth`는 Google 재인증 기반(#45)이라 Google 로그인 사용자는 비밀번호가 없어, 실제 연동 때 #45 재인증 흐름으로 바꿔야 PIN을 설정할 수 있다.
+- PIN 로그인 응답에는 출생연도가 없어 학생 세션의 `birthYear`는 0으로 둔다. 학생 화면에서는 쓰지 않는다.
 
 - PIN 연속 숫자의 순환(`90123` 등) 처리: 명세에 정의가 없어 거부하지 않는다.
 - 실제 기기 쿠키(`student_device`, path `/api/v1/auth/student`)·서버 잠금·만료 처리는 백엔드 통합 때 확인해야 한다.

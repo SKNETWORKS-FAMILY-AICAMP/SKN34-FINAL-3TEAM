@@ -93,7 +93,7 @@ export function ClassroomApp() {
     }
   }
   // 학생 → 학부모 화면 전환은 학부모 로그인을 다시 거친다 (FN-ACC-05). 학생 세션으로 학부모 화면을 열지 않는다.
-  async function leave(to: '/login' | '/student/login' = '/login') {
+  async function leave() {
     try {
       await auth.logout.mutateAsync()
     } catch {
@@ -101,7 +101,7 @@ export function ClassroomApp() {
     } finally {
       setSession(null)
       setExpired(false)
-      navigate(to, { replace: true })
+      navigate('/login', { replace: true })
       setDetail(null)
       setPassword(isDemo ? 'demo-only' : '')
     }

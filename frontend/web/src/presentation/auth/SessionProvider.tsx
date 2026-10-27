@@ -27,10 +27,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       clear()
       setReady(true)
       setExpired(false)
-      const from = window.location.pathname
+      const { pathname, search } = window.location
       navigate('/student/login', {
         replace: true,
-        state: from.startsWith('/student/') && from !== '/student/login' ? { from } : undefined,
+        state: pathname.startsWith('/student/') && pathname !== '/student/login' ? { from: pathname + search } : undefined,
       })
     }
     const expire = () => { setLoginPath('/login'); revision++; clear(); setReady(true); setExpired(true) }

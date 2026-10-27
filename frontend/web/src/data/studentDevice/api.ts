@@ -71,6 +71,7 @@ export const studentDeviceApi = {
       id: childId,
       nickname: c.nickname,
       grade,
+      // PIN 로그인 응답(API 명세 3.11)에는 출생연도가 없다. 학생 화면은 쓰지 않으므로 0으로 둔다.
       birthYear: Number(c.birthYear ?? 0),
       plan: c.plan === 'PREMIUM' ? 'PREMIUM' : 'FREE',
     }

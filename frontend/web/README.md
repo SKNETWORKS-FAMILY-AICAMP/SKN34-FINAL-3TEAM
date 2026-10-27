@@ -82,6 +82,7 @@ node tests/student-browser.mjs
 node tests/parent-admin-browser.mjs
 node tests/student-device-browser.mjs
 node tests/student-world-browser.mjs
+node tests/parent-dashboard-browser.mjs
 # 별도 운영 build + preview 주소. 실제 backend 대신 404 응답 스텁으로 경로/오류 표시 확인
 node tests/api-mode-browser.mjs
 ```

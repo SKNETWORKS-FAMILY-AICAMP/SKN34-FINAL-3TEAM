@@ -2,19 +2,18 @@ import { useEffect, useState } from 'react'
 import { useSearchParams, useLocation, useNavigate } from 'react-router'
 import { useSession } from '../auth/sessionContext.ts'
 import { parentApi } from '../../data/parent/api.ts'
-import { useParentQuery, useParentDashboard } from '../../data/parent/queries.ts'
+import { useParentQuery } from '../../data/parent/queries.ts'
 import { useAuthentication, displayPeriods } from '../../data/classroom/useClassroom.ts'
 import type { Child, Period } from '../../domain/classroom.ts'
 import type { Scope } from '../../domain/parent.ts'
-import { thinkingLabels } from '../../domain/classroom.ts'
 import { validPeriod } from '../../domain/parent.ts'
-import { Workspace, QueryFeedback, MetricCards } from '../common/Workspace.tsx'
-import { QueryStateNotice } from '../common/QueryStateNotice.tsx'
+import { Workspace, QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { ChildRegistration, ProfileSettings } from './AccountForms.tsx'
 import { ParentConversation } from './ParentConversation.tsx'
 import { ParentReports } from './ParentReports.tsx'
 import { StudentDevices } from './StudentDevices.tsx'
+import { ParentDashboard } from './ParentDashboard.tsx'
 export function ParentWorkspace() {
   const [params, setParams] = useSearchParams(),
     location = useLocation(),
@@ -54,6 +53,22 @@ export function ParentWorkspace() {
     <Workspace
       title="학부모 기록 공간"
       nav={nav}
+      variant="parent"
+      aside={
+        child && (
+          <div className="ws-plan">
+            <span>이용권</span>
+            <strong>
+              {child.nickname} · {child.plan === 'FREE' ? '무료' : '프리미엄'}
+            </strong>
+            <small>
+              {child.plan === 'FREE'
+                ? '하루 미션 3개, 리포트 수치 제공'
+                : '하루 피드백 50회·분석 대화 30회, 전체 리포트'}
+            </small>
+          </div>
+        )
+      }
       actions={
         <>
           <label>
@@ -113,7 +128,7 @@ export function ParentWorkspace() {
           setParams(next)
         }}
       />
-      <span>
+      <span className="ws-scope">
         선택 범위 · {child?.nickname ?? '자녀 미선택'} · {scope.from} ~ {scope.to}
       </span>
       {children.data && !children.error && !children.data.items.length ? (
@@ -151,7 +166,7 @@ export function ParentWorkspace() {
           ) : page === 'settings' ? (
             <ProfileSettings child={child} />
           ) : (
-            <Dashboard child={child} scope={scope} />
+            <ParentDashboard child={child} scope={scope} />
           )}
         </div>
       ) : null}
@@ -207,120 +222,6 @@ function PeriodFilter({ period, onApply }: { period: Period; onApply: (p: Period
         <button className="cj-secondary">기간 적용</button>
       </form>
       {error && <p role="alert">{error}</p>}
-    </>
-  )
-}
-function Dashboard({ child, scope }: { child: Child; scope: Scope }) {
-  const q = useParentDashboard(scope),
-    [record, setRecord] = useState<string | null>(null)
-  return (
-    <>
-      <h1>{child.nickname}의 기록을 함께 살펴보세요.</h1>
-      <p>건수에서 답변으로, 답변에서 질문으로 이어집니다.</p>
-      <QueryFeedback query={q.summary} />
-      {q.summary.data && !q.summary.error && (
-        <>
-          <p>
-            실제 조회 기간 · {q.summary.data.period.from} ~ {q.summary.data.period.to}
-          </p>
-          <p>{q.summary.data.inclusionRule}</p>
-          <QueryStateNotice state={q.summary.data.state} />
-          {q.summary.data.state === 'NO_RECORD' && (
-            <p>
-              아직 집계할 기록이 없습니다. 상단의 ‘이 자녀로 학습 시작’에서 첫 활동을 시작해 보세요.
-            </p>
-          )}
-          <MetricCards metrics={q.summary.data.metrics} />
-        </>
-      )}
-      <section className="ws-card">
-        <h2>다섯 가지 생각 활동</h2>
-        <QueryFeedback query={q.thinking} />
-        {q.thinking.data && !q.thinking.error && (
-          <div className="ws-metrics">
-            {q.thinking.data.items.map((t) => (
-              <div key={t.type}>
-                <h3>{thinkingLabels[t.type]}</h3>
-                <p>
-                  {t.state === 'NO_RECORD'
-                    ? '미관찰 · 아직 확인된 기록 없음'
-                    : `${t.missions.length}개 미션에서 관찰`}
-                </p>
-                {t.missions.map((m) => (
-                  <button
-                    key={m.attemptId}
-                    className="cj-secondary"
-                    onClick={() => setRecord(m.attemptId)}
-                  >
-                    {m.title}
-                  </button>
-                ))}
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-      <section className="ws-card">
-        <h2>학습 기록</h2>
-        <QueryFeedback query={q.records} />
-        {q.records.data && !q.records.error && (
-          <div className="ws-stack">
-            <p>
-              실제 목록 기간 · {q.records.data.period.from} ~ {q.records.data.period.to}
-            </p>
-            {!q.records.data.items.length && (
-              <p>아직 기록이 없습니다. 첫 학습 후 답변이 여기에 연결됩니다.</p>
-            )}
-            {q.records.data.items.map((a) => (
-              <article className="ws-card" key={a.attemptId}>
-                <h3>{a.mission.title}</h3>
-                <p>
-                  {a.status === 'COMPLETED' ? '완료' : '진행 중'} · {a.answers.length}개 답변
-                </p>
-                <button className="cj-secondary" onClick={() => setRecord(a.attemptId)}>
-                  답변·되묻기·돌아보기 보기
-                </button>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-      {record && (
-        <Modal title="학습 기록 원문" onClose={() => setRecord(null)}>
-          <RecordDetail childId={child.id} id={record} />
-        </Modal>
-      )}
-    </>
-  )
-}
-export function RecordDetail({ childId, id }: { childId: string; id: string }) {
-  const q = useParentQuery(['record', childId, id], (signal) =>
-    parentApi.record(childId, id, signal),
-  )
-  return (
-    <>
-      <QueryFeedback query={q} />
-      {q.data && !q.error && (
-        <>
-          <h3>{q.data.mission.title}</h3>
-          {q.data.answers.map((a) => (
-            <section key={a.answerId}>
-              <h4>
-                {a.version === 1 ? '최초 답변' : `보완 답변 ${a.version - 1}`} · {a.submittedAt}
-              </h4>
-              <blockquote>{a.text}</blockquote>
-              {a.feedback.followup && <p>되묻기 · {a.feedback.followup.question}</p>}
-            </section>
-          ))}
-          <p>생각 열기 이용: {q.data.helped ? '이용함' : '이용 안 함'}</p>
-          <h4>돌아보기</h4>
-          <p>
-            {q.data.reflection
-              ? `${q.data.reflection.difficulty} · ${q.data.reflection.text || '달라진 점 미작성'}`
-              : '미작성'}
-          </p>
-        </>
-      )}
     </>
   )
 }

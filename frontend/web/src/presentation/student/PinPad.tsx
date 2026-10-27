@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { Delete } from 'lucide-react'
 import { PIN_MAX, PIN_MIN } from '../../domain/studentDevice.ts'
@@ -6,7 +6,8 @@ import './pinpad.css'
 
 /**
  * 저학년용 PIN 숫자 키패드. 큰 버튼(64px 이상) + 입력 자리 점 표시.
- * 실제 키보드 숫자·Backspace·Enter도 받는다(이 영역에 포커스가 있을 때만, 전역 단축키 아님).
+ * 실제 키보드 숫자·Backspace·Enter도 받는다. 화면에 나타날 때 이 영역에 포커스를 두어 바로 입력되게 하고,
+ * 전역 단축키는 쓰지 않는다(이 영역 밖 입력란에는 영향 없음).
  */
 export function PinPad({
   label,
@@ -18,6 +19,10 @@ export function PinPad({
   onSubmit: (pin: string) => void
 }) {
   const [pin, setPin] = useState('')
+  const area = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    area.current?.focus({ preventScroll: true })
+  }, [])
   const add = (d: string) => setPin((p) => (p.length < PIN_MAX ? p + d : p))
   const back = () => setPin((p) => p.slice(0, -1))
   const submit = () => {
@@ -38,7 +43,7 @@ export function PinPad({
     }
   }
   return (
-    <div className="pin-pad" onKeyDown={onKeyDown}>
+    <div className="pin-pad" ref={area} tabIndex={-1} onKeyDown={onKeyDown}>
       <div className="pin-dots" role="status" aria-live="polite" aria-label={`${label} ${pin.length}자리 입력됨`}>
         {Array.from({ length: PIN_MAX }, (_, i) => (
           <span key={i} className={i < pin.length ? 'on' : i < PIN_MIN ? '' : 'optional'} aria-hidden="true" />

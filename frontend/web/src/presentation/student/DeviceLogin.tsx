@@ -278,5 +278,6 @@ function DemoDeviceScenario({ onApplied }: { onApplied: () => void }) {
 /** 학생 로그인이 끊겨 PIN을 다시 넣은 경우 보던 학생 화면으로 돌아간다. 다른 경로는 학생 홈으로. */
 function returnTo(state: unknown) {
   const from = (state as { from?: unknown } | null)?.from
-  return typeof from === 'string' && from.startsWith('/student/') && from !== '/student/login' ? from : '/student/home'
+  if (typeof from !== 'string' || !from.startsWith('/student/')) return '/student/home'
+  return new URL(from, window.location.origin).pathname === '/student/login' ? '/student/home' : from
 }

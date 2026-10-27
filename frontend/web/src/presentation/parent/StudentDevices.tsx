@@ -48,6 +48,8 @@ function PinSettings({ items }: { items: Child[] }) {
   const [password, setPassword] = useState(''),
     [token, setToken] = useState(''),
     [notice, setNotice] = useState('')
+  // 기존 정보 관리(AccountForms)와 같은 비밀번호 재확인 목업. 명세의 /me/reauth는 Google 재인증 기반(#45)이라
+  // Google 로그인 사용자는 비밀번호가 없다. 실제 연동 때 #45 재인증 흐름으로 바꿔야 PIN을 설정할 수 있다.
   const reauth = useParentMutation(parentApi.reauth)
   return (
     <section className="ws-card" aria-labelledby="pin-h">
