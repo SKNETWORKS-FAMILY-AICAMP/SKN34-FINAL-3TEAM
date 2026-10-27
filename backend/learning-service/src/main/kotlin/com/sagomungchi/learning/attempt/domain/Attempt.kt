@@ -30,6 +30,14 @@ data class Attempt(
         }
     }
 
+    /** 답변 제출 가능: 완료뿐 아니라 마무리(finished_at) 뒤에도 409 (P04, state-diagram 3.2). 돌아보기는 마무리 뒤에 하므로 requireOpen과 나눔 */
+    fun requireAnswerable() {
+        requireOpen()
+        if (finishedAt != null) {
+            throw BusinessException(HttpStatus.CONFLICT, "ATTEMPT_CLOSED", "마무리한 학습 시도", "마무리 뒤에는 답변을 제출할 수 없음")
+        }
+    }
+
     companion object {
         fun start(
             studentId: UUID,

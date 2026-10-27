@@ -40,6 +40,11 @@
         SELECT <include refid="columns"/> FROM attempt WHERE id = #{id}
     </select>
 
+    <!-- 같은 시도의 동시 답변 제출은 이 잠금을 기다려 같은 키 확인·버전 계산이 겹치지 않음 -->
+    <select id="findByIdForUpdate" resultMap="attempt">
+        SELECT <include refid="columns"/> FROM attempt WHERE id = #{id} FOR UPDATE
+    </select>
+
     <insert id="insertHintUsage">
         INSERT INTO hint_usage (id, attempt_id, hint_question_id, opened_at)
         VALUES (#{id}, #{attemptId}, #{hintQuestionId}, #{openedAt})

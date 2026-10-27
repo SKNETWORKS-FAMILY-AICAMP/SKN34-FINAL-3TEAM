@@ -680,7 +680,7 @@ SKN34-FINAL-3TEAM/
 |---|---|---|
 | 프론트엔드 | React, Vite, TypeScript, Tailwind CSS, TanStack Query, 토스페이먼츠 결제위젯 SDK | 참고 레포 동일 계열, 기획서 4.4 |
 | 업무 API | Spring Boot 3, Kotlin, JDK 21, Spring Security JOSE(JWT HS256·Google JWKS), MyBatis, Flyway, Spring AMQP, ShedLock, Resilience4j | 참고 레포 구현 패턴 재사용, 다중 레플리카 스케줄 중복 방지 |
-| AI API | Python 3.12, FastAPI, Pydantic, uv, LangGraph, LangChain, Claude API, aio-pika, httpx | 에이전트 그래프·도구 호출, 비동기 AMQP |
+| AI API | Python 3.12, FastAPI, Pydantic, uv, LangGraph, LangChain, OpenAI API(기본 `gpt-6.1-terra`)·Claude API(`LLM_PROVIDER`로 교체), aio-pika, httpx | 에이전트 그래프·도구 호출, 비동기 AMQP |
 | 모델 추론 | PyTorch, Hugging Face Transformers (M2 klue/roberta, M1) | 기획서 5장 모델 |
 | 리포트 | SQLAlchemy, Alembic, Jinja2, Playwright(Chromium PDF) | HTML 템플릿 → PDF·Markdown |
 | 저장소 | PostgreSQL(RDS), S3(로컬 MinIO), Redis | 서비스별 DB 분리, 판정 근거·기준표 JSONB, 파일 분리, SSE 중계·캐시 |
@@ -697,7 +697,7 @@ SKN34-FINAL-3TEAM/
 
 ## 7. 확인 필요 가정
 - 정책 값은 [기능명세서 1.4 확정 정책](functional-spec.md#14-확정-정책) 기준
-- LLM 제공자: Claude API (기획서 4.4), ai-service `llm/` 래퍼로 교체 가능하게 설계
+- LLM 제공자: 기본 OpenAI `gpt-6.1-terra`(`LLM_PROVIDER=openai`), `LLM_PROVIDER=anthropic`으로 Claude 교체 가능. ai-service `llm/` 래퍼(제공자별 클래스)로 교체 가능하게 설계. 기획서 4.4의 Claude API에서 바꾼 근거는 [ai 판정·되묻기 보고서](../report/ai-judgment-followup.md) "OpenAI 실제 호출 확인"
 - 학습·일괄 생성(RunPod GPU, sLLM 설명)은 클러스터 밖에서 수행, 결과(가중치·주간 설명 문장)만 S3로 반입
 - AWS 계정 EKS 생성 권한·예산 한도: 권한 없으면 EC2 1대 + k3s로 대체 (HA·Cluster Autoscaler·IRSA 제외)
 

@@ -18,6 +18,9 @@ class TestRows(private val jdbc: JdbcTemplate) {
         title: String = "미션",
         hints: List<String> = listOf("첫 질문", "둘째 질문"),
         demoOnly: Boolean = false,
+        inputType: String = "NARRATIVE",
+        choices: String? = null,
+        inputTemplate: String? = null,
     ): SeededMission {
         val id = UUID.randomUUID()
         jdbc.update(
@@ -25,7 +28,7 @@ class TestRows(private val jdbc: JdbcTemplate) {
                VALUES (?, ?, ?, ?, 1, ?, ?, ?)""",
             id, "TEST-$id", status, demoOnly, author, now, now,
         )
-        val versionId = addVersion(id, version = 1, title = title, grade = grade)
+        val versionId = addVersion(id, version = 1, title = title, grade = grade, inputType, choices, inputTemplate)
         val rubricVersionId = UUID.randomUUID()
         jdbc.update(
             "INSERT INTO rubric_version (id, mission_id, version, created_by, created_at) VALUES (?, ?, 1, ?, ?)",
@@ -46,14 +49,34 @@ class TestRows(private val jdbc: JdbcTemplate) {
         return SeededMission(id, versionId, rubricVersionId, hintIds)
     }
 
-    /** 미션 버전 추가 (현재 버전으로 바꾸지는 않음) */
-    fun addVersion(missionId: UUID, version: Int, title: String, grade: Int = 3): UUID {
+    /** 미션 버전 추가 (현재 버전으로 바꾸지는 않음). choices·inputTemplate은 JSON 문자열 */
+    fun addVersion(
+        missionId: UUID,
+        version: Int,
+        title: String,
+        grade: Int = 3,
+        inputType: String = "NARRATIVE",
+        choices: String? = null,
+        inputTemplate: String? = null,
+    ): UUID {
         val id = UUID.randomUUID()
         jdbc.update(
             """INSERT INTO mission_version (id, mission_id, version, title, subject, grade_min, grade_max,
-                   thinking_type, input_type, question, created_by, created_at)
-               VALUES (?, ?, ?, ?, '과학', ?, ?, 'ANALYZE', 'NARRATIVE', '질문', ?, ?)""",
-            id, missionId, version, title, grade, grade, author, now,
+                   thinking_type, input_type, question, choices, input_template, created_by, created_at)
+               VALUES (?, ?, ?, ?, '과학', ?, ?, 'ANALYZE', ?, '질문', ?::jsonb, ?::jsonb, ?, ?)""",
+            id, missionId, version, title, grade, grade, inputType, choices, inputTemplate, author, now,
+        )
+        return id
+    }
+
+    /** 답변의 판정에서 나온 되묻기 (되묻기 생성은 #25라 테스트에서 직접 넣음) */
+    fun followup(attemptId: UUID, answerId: UUID, minutesLater: Long = 1): UUID {
+        val judgmentId = jdbc.queryForObject("SELECT id FROM judgment WHERE answer_id = ?", UUID::class.java, answerId)
+        val id = UUID.randomUUID()
+        jdbc.update(
+            """INSERT INTO followup (id, attempt_id, judgment_id, type, question, source, leak_check_passed, created_at)
+               VALUES (?, ?, ?, 'TELL_MORE', '왜 그렇게 생각했나요?', 'LLM', true, ?)""",
+            id, attemptId, judgmentId, now.plusMinutes(minutesLater),
         )
         return id
     }
