@@ -940,7 +940,7 @@ erDiagram
 ## 10. P01 개정 학생 기기·PIN (변경 예정, 미적용)
 
 - 근거: [학생 로그인 분리 보고서](../report/student-login-separation.md), [API 명세 3.11](api-spec.md#311-학생-기기-등록pin-로그인-p01-개정)
-- 3.1 Mermaid와 CI 스키마 대조 기준에는 아직 반영하지 않는다. core Flyway V8 추가 시 아래 내용을 3.1 Mermaid·6장 인덱스로 옮기고 이 절을 정리한다.
+- 3.1 Mermaid와 CI 스키마 대조 기준에는 아직 반영하지 않는다. #36 OAuth용 V8 이후의 다음 core Flyway 버전 추가 시 아래 내용을 3.1 Mermaid·6장 인덱스로 옮기고 이 절을 정리한다.
 
 | 대상 | 컬럼 | 타입·NULL | 설명 |
 |---|---|---|---|
