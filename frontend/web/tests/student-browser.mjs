@@ -48,12 +48,12 @@ async function student(p, grade5 = false) {
   if (grade5) await p.getByLabel('자녀 선택', { exact: true }).selectOption('demo-doyun')
   await p.getByRole('button', { name: '이 자녀로 학습 시작' }).click()
   await p.waitForURL('**/student/home')
-  await p.getByRole('heading', { name: '학습 홈', exact: true }).waitFor()
+  await p.getByRole('heading', { name: /^학습 홈/ }).waitFor()
 }
 async function open(p, title) {
   await p.getByRole('button', { name: '미션 고르기', exact: true }).click()
   const card = p
-    .locator('.cj-activity')
+    .getByRole('article')
     .filter({ has: p.getByRole('heading', { name: title, exact: true }) })
   await card.getByRole('button', { name: '미션 열기' }).click()
   await p.getByRole('button', { name: '작성하기 · 진행 중이면 이어서' }).click()
@@ -65,7 +65,7 @@ async function saved(p) {
 }
 async function submit(p) {
   await saved(p)
-  await p.getByRole('button', { name: '답변 제출', exact: true }).click()
+  await p.getByRole('button', { name: '다 썼어요', exact: true }).click()
 }
 async function finish(p) {
   await p.getByRole('button', { name: '이대로 돌아보기', exact: true }).click()
@@ -106,7 +106,7 @@ try {
       }
     }
     await p.getByLabel('상태 시연').selectOption('normal')
-    await p.getByRole('heading', { name: '시작할 수 있는 활동' }).waitFor()
+    await p.getByRole('heading', { name: '생각 지도', exact: true }).waitFor()
   })
   await check('초안만 있는 시도 이어하기·새로고침 복원·학생 메모·브라우저 뒤로가기', async (p) => {
     await student(p)
@@ -117,7 +117,7 @@ try {
     await p.getByTestId('private-memo').fill('나만 보는 메모')
     await saved(p)
     await p.getByRole('button', { name: '공책으로', exact: true }).click()
-    await p.getByRole('button', { name: '학습 홈', exact: true }).click()
+    await p.getByRole('button', { name: '생각 지도', exact: true }).click()
     await p.getByRole('button', { name: '이어서 작성하기' }).click()
     await p.getByLabel('내 생각과 까닭').waitFor()
     assert.equal(
@@ -220,7 +220,7 @@ try {
         await p.getByLabel('상태 시연').selectOption('input-fixtures')
       await open(p, title)
       await p.getByLabel('상태 시연').selectOption('partial')
-      await p.getByRole('button', { name: '답변 제출', exact: true }).click()
+      await p.getByRole('button', { name: '다 썼어요', exact: true }).click()
       await p.getByText('ANSWER_INCOMPLETE', { exact: true }).waitFor()
       if (type === 'NARRATIVE')
         await p.getByLabel('내 생각과 까닭').fill('그림과 글이 함께 있으면 이해하기 쉬워요.')
@@ -328,7 +328,7 @@ try {
       await saved(p)
       await p.getByLabel('풀이 1', { exact: true }).focus()
       await p.evaluate(() => scrollTo(0, document.body.scrollHeight))
-      const b = await p.getByRole('button', { name: '답변 제출', exact: true }).boundingBox()
+      const b = await p.getByRole('button', { name: '다 썼어요', exact: true }).boundingBox()
       assert.ok(b.y >= 0 && b.y + b.height <= 500)
       assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     },
@@ -337,7 +337,7 @@ try {
   await check('만료 갱신·실패 시 재로그인·보호 화면 가드', async (p) => {
     await student(p)
     await p.getByLabel('상태 시연').selectOption('token-expired')
-    await p.getByRole('heading', { name: '시작할 수 있는 활동' }).waitFor()
+    await p.getByRole('heading', { name: '생각 지도', exact: true }).waitFor()
     await p.getByLabel('상태 시연').selectOption('refresh-fail')
     await p.getByRole('dialog', { name: '다시 로그인해 주세요.' }).waitFor()
     await p.getByRole('button', { name: '로그인 화면으로', exact: true }).click()

@@ -5,6 +5,7 @@ import { LoginGate, RoleLayout } from './common/RoleLayout.tsx'
 import { SignupPage } from './parent/AccountForms.tsx'
 import { ParentWorkspace } from './parent/ParentWorkspace.tsx'
 import { AdminWorkspace } from './admin/AdminWorkspace.tsx'
+import { DeviceLogin } from './student/DeviceLogin.tsx'
 
 // URL 입력만으로 역할을 부여하지 않는다. 로그인 응답/학생 세션으로 진입한다.
 export const router = createBrowserRouter([
@@ -24,6 +25,12 @@ export const router = createBrowserRouter([
         path: '/login',
         element: <LoginGate />,
         children: [{ index: true, element: <ClassroomApp /> }],
+      },
+      // 자녀 기기 진입(P01 개정): 등록 기기 + PIN. 이미 로그인 상태면 역할 시작 화면으로 보낸다.
+      {
+        path: '/student-login',
+        element: <LoginGate />,
+        children: [{ index: true, element: <DeviceLogin /> }],
       },
       ...(['STUDENT', 'PARENT', 'ADMIN'] as const).map((role) => ({
         path: `/${role.toLowerCase()}`,

@@ -11,4 +11,6 @@ export interface ProblemDetail {
   retryable?: boolean
   latest?: unknown
   missingFields?: string[]
+  /** STUDENT_PIN_INVALID의 남은 시도 횟수 (API 명세 3.11) */
+  remainingAttempts?: number
 }

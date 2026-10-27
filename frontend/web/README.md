@@ -24,6 +24,10 @@ npm run dev
 
 로그인 비밀번호는 모두 `demo-only`입니다. `parent@example.test`는 기본 보호자, `admin@example.test`는 전체 관리자, `content@example.test`·`ops@example.test`·`payment@example.test`·`refund@example.test`는 권한별 계정입니다. 가입 시 가상 `@example.test` 이메일만 사용합니다. 새 계정 자녀 목록은 비어 있으며 법정대리인 동의 후 최대 3명까지 등록할 수 있습니다. P02에 따라 다른 보호자의 기존 학생 연결은 제공하지 않습니다.
 
+자녀 단독 진입(#59)은 학부모 `/parent/devices`에서 본인 재확인 → 자녀 PIN 설정 → 등록 코드(또는 QR) 발급 후, 같은 브라우저를 자녀 기기로 보고 로그아웃 → `/student-login`에서 코드 입력 → PIN 순서입니다. MSW가 httpOnly 기기 쿠키를 만들 수 없어 개발용 sessionStorage 상태로 대신하며, "기기 상태 시연" 선택기로 해제·만료·잠김·PIN 미설정을 시연합니다. 자세한 내용은 `docs/report/issue-59-student-device.md`입니다.
+
+학생 화면은 테마 캔버스 기준의 "생각 지도"입니다. 첫 화면의 꾸미기 버튼으로 테마 5종·캐릭터 5종을 고르면 `/students/me/preferences`(API 명세 3.12 목업 계약)에 저장됩니다. 자세한 내용은 `docs/report/student-theme-world.md`입니다.
+
 시연을 끝낸 뒤 환경 변수를 제거해야 기본 API 모드가 됩니다.
 
 ```powershell
@@ -76,6 +80,8 @@ node tests/browser-smoke.mjs
 ```powershell
 node tests/student-browser.mjs
 node tests/parent-admin-browser.mjs
+node tests/student-device-browser.mjs
+node tests/student-world-browser.mjs
 # 별도 운영 build + preview 주소. 실제 backend 대신 404 응답 스텁으로 경로/오류 표시 확인
 node tests/api-mode-browser.mjs
 ```

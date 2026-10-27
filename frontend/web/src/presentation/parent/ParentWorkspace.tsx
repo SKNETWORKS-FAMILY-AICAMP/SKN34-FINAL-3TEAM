@@ -14,6 +14,7 @@ import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { ChildRegistration, ProfileSettings } from './AccountForms.tsx'
 import { ParentConversation } from './ParentConversation.tsx'
 import { ParentReports } from './ParentReports.tsx'
+import { StudentDevices } from './StudentDevices.tsx'
 export function ParentWorkspace() {
   const [params, setParams] = useSearchParams(),
     location = useLocation(),
@@ -47,6 +48,7 @@ export function ParentWorkspace() {
       { path: '/parent/analysis', label: '기록에 물어보기' },
       { path: '/parent/report', label: '주간 리포트' },
       { path: '/parent/settings', label: '정보 관리' },
+      { path: '/parent/devices', label: '자녀 기기·PIN' },
     ]
   return (
     <Workspace
@@ -120,6 +122,8 @@ export function ParentWorkspace() {
           <p>연결된 자녀가 없어 아직 기록을 조회하지 않습니다.</p>
           <ChildRegistration onCreated={(c) => select(c)} />
         </section>
+      ) : page === 'devices' && children.data && !children.error ? (
+        <StudentDevices items={children.data.items} />
       ) : childId && !child && children.data && !children.error ? (
         <section className="ws-card">
           <h1>자녀 연결을 확인해 주세요.</h1>
