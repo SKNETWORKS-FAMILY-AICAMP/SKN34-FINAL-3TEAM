@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.database import run_db, transaction
+from app.deletion.state import generation_allowed
 from app.generation.locking import JobLocks
 from app.generation.models import (
     GenerateReport,
@@ -40,7 +41,9 @@ class GenerationService:
 
     async def generate(self, command: GenerateReport) -> None:
         # Preserve the lease even if cancellation arrives while acquisition is in a DB thread.
-        acquisition = asyncio.create_task(asyncio.to_thread(self._locks.acquire, command.job_id))
+        acquisition = asyncio.create_task(
+            asyncio.to_thread(self._locks.acquire, command.job_id, command.student_id)
+        )
         try:
             lease = await asyncio.shield(acquisition)
         except asyncio.CancelledError:
@@ -52,7 +55,7 @@ class GenerationService:
             raise
         try:
             report = await run_db(lambda: self._start(command))
-            if report.status != ReportStatus.RUNNING:
+            if report is None or report.status != ReportStatus.RUNNING:
                 return
             try:
                 result = await self._generator.generate(command, report)
@@ -72,8 +75,10 @@ class GenerationService:
             raise ValueError("Encoded event type/subject does not match report")
         self._outbox.add(session, envelope)
 
-    def _start(self, command: GenerateReport) -> WeeklyReport:
+    def _start(self, command: GenerateReport) -> WeeklyReport | None:
         with transaction(self._factory) as session:
+            if not generation_allowed(session, command.student_id, command.requested_at):
+                return None
             report, created = self._repository.get_or_create(session, command)
             if created:
                 self._record_event(session, ReportEvent("report.started", report))

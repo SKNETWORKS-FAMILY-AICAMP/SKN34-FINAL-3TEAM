@@ -14,7 +14,7 @@
 
 2026-10-27 사용자(#52 담당자)가 **AI 시간 초과·5xx는 FAILED, 대조 실패만 템플릿 전환**을 선택했다. 스키마 오류·원문 조회 실패도 정상 결과나 빈 기록으로 바꾸지 않는다. 템플릿은 계산된 제출 시도 건수와 기록 확인 안내만 제공하며 검증 실패한 저녁 질문을 저장하지 않는다.
 
-`verification`은 AI 응답 검사의 `numbersMatched`, `quotesMatched`, `contentAllowed`를 보존한다. 개별 item의 verified는 계산 항목 또는 실제 source와 대조된 인용의 근거 확인 상태다. 삭제 evidence의 인용 후보는 text를 null로 바꾼다.
+`verification`은 AI 응답 검사의 `numbersMatched`, `quotesMatched`, `contentAllowed`를 보존한다. 개별 item의 verified는 계산 항목 또는 실제 source와 대조된 인용의 근거 확인 상태다. 원문과 대조되지 않은 인용 후보는 삭제 여부에 관계없이 text를 null로 바꾼다.
 
 ## 검증 및 남은 작업
 

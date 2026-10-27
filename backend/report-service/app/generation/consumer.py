@@ -1,5 +1,6 @@
 """Handler for EventConsumer; production decoding is supplied after #42 is available."""
 
+from dataclasses import replace
 from typing import Any
 from uuid import UUID
 
@@ -19,7 +20,7 @@ class GenerationConsumer:
     async def __call__(self, envelope: EventEnvelope[dict[str, Any]]) -> None:
         if envelope.type != "report.generate" or not envelope.subject:
             raise ValueError("Expected report.generate with a student subject")
-        command = self._codec.decode(envelope)
+        command = replace(self._codec.decode(envelope), requested_at=envelope.time)
         if UUID(envelope.subject) != command.student_id:
             raise ValueError("Envelope subject and requested student do not match")
         reset = bind_user_context(

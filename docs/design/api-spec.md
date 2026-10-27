@@ -64,7 +64,8 @@
 | `STUDENT_PIN_NOT_SET` | 409 | PIN 미설정 자녀의 PIN 로그인 → 학부모 동석 진입 안내 (FN-ACC-05) |
 | `PAIRING_CODE_INVALID` | 400 | 페어링 코드 없음·만료·이미 사용 (FN-ACC-14) |
 | `NOT_FOUND` | 404 | 리소스 없음 |
-| `DATA_UNAVAILABLE` | 410 | 삭제된 근거 → "이용 불가" 표시 (FN-ACC-13) |
+| `DATA_UNAVAILABLE` | 410 / 503 | 삭제된 근거 → "이용 불가" 표시(410), report 원문 조회·파일 저장소 장애는 재시도 가능한 503 |
+| `DELETION_IN_PROGRESS` | 409 | report 학생 삭제가 진행 중이므로 조회를 잠시 차단 |
 | `VALIDATION_FAILED` | 400 | 형식 오류 (`errors[]`에 필드별 사유) |
 | `ANSWER_INCOMPLETE` | 422 | 필요한 선택·입력 누락 (FN-LRN-04) |
 | `IDEMPOTENCY_KEY_REUSED` | 422 | 같은 키에 다른 요청 본문 |
@@ -657,6 +658,8 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | POST | `/internal/deletion-requests/{deletionRequestId}/completions` | learning·report가 `student.deleted` 처리 후 완료 보고 `{service}`. 두 서비스 모두 보고 시 `COMPLETED` (멱등, P09) |
 
 - 비동기 메시지(`report.generate` 등)는 [아키텍처 1.4](architecture.md#14-메시지-목록) 참고
+- #55 report 구현 기본안: PROFILE·RECORDS 모두 리포트 내용/파일을 물리 삭제하며 `report_deletion_guard`에 식별 UUID·범위·삭제 기준 시각만 남긴다. PROFILE은 이후 생성도 차단하고 RECORDS는 `report.generate`의 최초 명령 시각이 삭제 기준보다 이후인 경우만 새 생성을 허용한다. 이는 #45 담당자와 확정할 운영 정책이다.
+- core는 삭제 완료 전 새 리포트 요청을 막고, 삭제된 기존 작업의 늦은 상태 이벤트를 무시해야 한다. 재시도/Outbox 재전송 시 `EventEnvelope.time`을 최초 명령 시각으로 보존해야 한다. 서비스 간 시각 기준과 메시지 필드는 #42/#45 계약 검증이 필요하다.
 
 
 ### 5.1 #36 Google OAuth·토큰 구현 계약 (개정 P01 정렬)

@@ -78,6 +78,7 @@ def report_factory(db_engine, report_student_id, report_students):
     # Independent connections/real commits for concurrency and transaction visibility tests.
     from sqlalchemy import delete, select
 
+    from app.deletion.state import deletion_guard
     from app.generation.repository import (
         report_file,
         report_item,
@@ -91,6 +92,9 @@ def report_factory(db_engine, report_student_id, report_students):
         yield factory
     finally:
         with factory.begin() as session:
+            session.execute(
+                delete(deletion_guard).where(deletion_guard.c.student_id.in_(report_students))
+            )
             reports = select(weekly_report.c.id).where(
                 weekly_report.c.student_id.in_(report_students)
             )

@@ -212,6 +212,10 @@ services:
       DATABASE_URL: *report-db-url
       LEARNING_URL: http://learning-service:8081
       AI_URL: http://ai-service:8000
+      CORE_URL: http://core-service:8080
+      S3_BUCKET: ${REPORT_S3_BUCKET:-sagomungchi-local-reports}
+      S3_REGION: ${REPORT_S3_REGION:-ap-northeast-2}
+      REPORT_DOWNLOAD_TTL_SECONDS: ${REPORT_DOWNLOAD_TTL_SECONDS:-300}
     ports:
       - "${REPORT_HOST_PORT:-8002}:8002"
     healthcheck:

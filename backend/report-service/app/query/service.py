@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from app.clients.storage import report_key
 from app.concurrency import run_blocking
 from app.database import run_db
+from app.deletion.state import query_allowed
 from app.errors import ApiError
 from app.generation.models import EvidenceLink
 from app.generation.presentation import assemble, without_ai
@@ -61,6 +62,7 @@ class QueryService:
             if status:
                 condition &= ranked.c.status == status
             with self._factory() as session:
+                query_allowed(session, student_id)
                 total = session.scalar(select(func.count()).select_from(ranked).where(condition))
                 rows = session.execute(
                     select(ranked)
@@ -87,6 +89,7 @@ class QueryService:
         if row is None:
             raise ApiError(404, "NOT_FOUND", "리포트가 없습니다")
         require_student(row["student_id"])
+        query_allowed(session, row["student_id"])
         return row
 
     async def detail(self, report_id: UUID, revision: int | None, narrative_enabled: bool):

@@ -26,17 +26,33 @@ RETRY_COUNT_HEADER = "x-retry-count"
 Handler = Callable[[EventEnvelope[dict[str, Any]]], Awaitable[None]]
 
 
+class Subscription:
+    def __init__(self, channel, queue, tag):
+        self.channel, self.queue, self.tag = channel, queue, tag
+
+    async def stop(self):
+        await self.queue.cancel(self.tag)
+
+    async def close(self):
+        await self.channel.close()
+
+
 class EventConsumer:
     def __init__(self, amqp: AmqpConnection, max_retries: int, prefetch: int) -> None:
         self._amqp = amqp
         self._max_retries = max_retries
         self._prefetch = prefetch
 
-    async def consume(self, queue_name: str, handler: Handler) -> None:
+    async def consume(self, queue_name: str, handler: Handler) -> Subscription:
         channel = await self._amqp.connection.channel()
-        await channel.set_qos(prefetch_count=self._prefetch)
-        queue = await channel.get_queue(queue_name, ensure=True)
-        await queue.consume(partial(self.handle_message, channel, queue_name, handler))
+        try:
+            await channel.set_qos(prefetch_count=self._prefetch)
+            queue = await channel.get_queue(queue_name, ensure=True)
+            tag = await queue.consume(partial(self.handle_message, channel, queue_name, handler))
+            return Subscription(channel, queue, tag)
+        except BaseException:
+            await channel.close()
+            raise
 
     async def handle_message(
         self,
@@ -59,9 +75,7 @@ class EventConsumer:
         except Exception:
             retry_count = int(message.headers.get(RETRY_COUNT_HEADER, 0))
             if retry_count >= self._max_retries:
-                logger.exception(
-                    "메시지 처리 실패, DLQ 이동: queue=%s, id=%s", queue_name, envelope.id
-                )
+                logger.error("메시지 처리 실패, DLQ 이동: queue=%s, id=%s", queue_name, envelope.id)
                 await message.reject(requeue=False)
                 return
             logger.warning(
@@ -69,7 +83,6 @@ class EventConsumer:
                 retry_count + 1,
                 queue_name,
                 envelope.id,
-                exc_info=True,
             )
             await channel.default_exchange.publish(
                 aio_pika.Message(
