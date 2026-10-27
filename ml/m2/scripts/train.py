@@ -174,6 +174,17 @@ def main() -> None:
     parser.add_argument(
         "--with-keyword", action="store_true", help="입력에 문항 핵심어 추가 (서술형만)"
     )
+    parser.add_argument(
+        "--train-prompts",
+        type=int,
+        default=0,
+        help="공부용 문항을 N개만 씀 (문항 수에 따른 성적 확인용, 0이면 전부)",
+    )
+    parser.add_argument(
+        "--save-preds",
+        action="store_true",
+        help="답안별 예측 점수를 preds.npz로 저장 (앙상블용, 커밋 금지)",
+    )
     args = parser.parse_args()
     if args.with_keyword and args.dataset != "descriptive":
         parser.error("--with-keyword는 서술형(descriptive)만 가능 (논술형은 핵심어 없음)")
@@ -189,6 +200,8 @@ def main() -> None:
     run_name = f"{model_name}_{args.dataset}_seed{args.seed}"
     if args.with_keyword:
         run_name += "_kw"
+    if args.train_prompts:
+        run_name += f"_p{args.train_prompts}"
     print(f"장치: {device} / 모델: {args.model} / 데이터: {args.dataset}")
 
     df = load(args)
@@ -199,6 +212,13 @@ def main() -> None:
             part = part.sample(n=min(args.limit, len(part)), random_state=args.seed)
             part = part.reset_index(drop=True)
         sets[name] = part
+    if args.train_prompts:
+        # 문항 순서를 시드로 한 번 섞고 앞에서 N개만 씀 (10개 ⊂ 20개 ⊂ 30개)
+        ids = np.sort(sets["train"]["prompt_id"].unique())
+        keep = np.random.RandomState(args.seed).permutation(ids)[: args.train_prompts]
+        sets["train"] = sets["train"][sets["train"]["prompt_id"].isin(keep)]
+        sets["train"] = sets["train"].reset_index(drop=True)
+        print(f"공부용 문항 {len(keep)}개만 사용")
     print({k: len(v) for k, v in sets.items()})
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
@@ -290,6 +310,15 @@ def main() -> None:
     model = AutoModelForSequenceClassification.from_pretrained(ckpt_dir).to(device)
     raw_valid = predict(model, loaders["valid"], device)
     raw_test = predict(model, loaders["test"], device)
+    if args.save_preds:
+        # 답안별 예측 (학생 글은 없음). AI Hub 데이터에서 나온 값이라 커밋하지 않음
+        np.savez(
+            ckpt_dir / "preds.npz",
+            valid=raw_valid,
+            test=raw_test,
+            valid_id=sets["valid"]["answer_id"].to_numpy(dtype=str),
+            test_id=sets["test"]["answer_id"].to_numpy(dtype=str),
+        )
 
     # 점수 경계는 검증용으로만 찾고, 평가용엔 적용만 한다
     cuts = {
