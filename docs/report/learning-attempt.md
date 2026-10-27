@@ -1,6 +1,6 @@
 # 이슈 #23 learning 학습 시도·초안 자동 저장·생각 열기
 
-작성일: 2026-10-27. 기준: `develop`의 `1b60085`와 #22 브랜치(`feature/learning-mission`, PR #62) 위에서 작업. [이슈 #23](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/23), [API 명세 1.4·2.2·3.6·4.1](../design/api-spec.md), [ERD 4.2](../design/erd.md), [상태 다이어그램 3.1·3.2](../design/state-diagram.md), [시퀀스 다이어그램 3.1](../design/sequence-diagram.md), [클래스 다이어그램 4.1](../design/class-diagram.md).
+작성일: 2026-10-27. 기준: #62 머지 후 develop 7188b69 위에서 작업. [이슈 #23](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/23), [API 명세 1.4·2.2·3.6·4.1](../design/api-spec.md), [ERD 4.2](../design/erd.md), [상태 다이어그램 3.1·3.2](../design/state-diagram.md), [시퀀스 다이어그램 3.1](../design/sequence-diagram.md), [클래스 다이어그램 4.1](../design/class-diagram.md).
 
 learning-service의 `POST /internal/missions/{id}/attempts`, `GET /internal/attempts/{id}`, `PUT /internal/attempts/{id}/draft`, `POST /internal/attempts/{id}/hints`를 만들면서 정한 내용과 근거를 기록한다. 데이터베이스 스키마는 바꾸지 않았다.
 
