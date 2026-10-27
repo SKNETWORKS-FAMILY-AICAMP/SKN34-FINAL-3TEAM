@@ -42,7 +42,7 @@ ai-service의 `POST /internal/judgments`, `POST /internal/followups`, `GET /inte
 | `versions.model` 의미 | 예시가 M2 버전(`m2-klue-narrative@1.0`), LLM 판정은 `null` (api-spec 1.6·3.2) | M2 미활성 판정·되묻기는 LLM 모델 ID (예: `claude-sonnet-5-5`), M2 활성 판정은 M2 버전, 규칙 판정은 `null` | 제공자를 바꿔도 판정·되묻기를 만든 모델을 남김. M2 버전 규칙(PR #33)과 함께 쓰도록 M2 활성 시에는 M2 버전 우선 |
 | 함수 이름 | `LeakGuard.check`, `FollowupService.generate`, `LlmClient.complete` | `find_leaks`, `create`, `generate` | 동작은 같음. class-diagram을 코드에 맞춤 |
 | 사용량 이벤트 `traceparent` | 봉투에 포함 (architecture 1.6) | null | PR #28 공통 `UsagePublisher`가 받지 않음. 공통 기반 수정은 범위 밖 |
-| LLM 제공자 | Claude API (architecture 6장) | Claude + OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`로 교체 | architecture의 "`llm/` 래퍼로 교체 가능" 범위 안. Claude 전용 기능(추론 강도·대체 모델·스키마 강제)을 지키려고 제공자별 클래스를 둠 |
+| LLM 제공자 | Claude API (architecture 6장) | Claude + OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`로 교체. 기본은 OpenAI `gpt-6.1-terra` (2026-10-27) | architecture의 "`llm/` 래퍼로 교체 가능" 범위 안. Claude 전용 기능(추론 강도·대체 모델·스키마 강제)을 지키려고 제공자별 클래스를 둠 |
 
 ## 문서에 기준이 없어 정한 값
 
@@ -67,10 +67,28 @@ ai-service의 `POST /internal/judgments`, `POST /internal/followups`, `GET /inte
 - `elementId`는 `rubric_element.id`(UUID)로 보낸다. `judgment_element.rubric_element_id`에 그대로 저장할 수 있다.
 - ai 판정은 최악 31초, 되묻기는 33초 안에 끝나므로 learning→ai 타임아웃 35초(P12)와 맞는다.
 
+## OpenAI 실제 호출 확인 (2026-10-27)
+
+`LLM_PROVIDER=openai`, `OPENAI_MODEL=gpt-6.1-terra`로 확인했고, 이 값을 기본값으로 바꿨다(`config.py`·`compose.yaml`·`.env.example`, 이전 `anthropic`·`gpt-6-luna`). Claude는 `LLM_PROVIDER=anthropic`으로 계속 쓸 수 있다.
+
+- 모델 ID: OpenAI 모델 목록 API에서 `gpt-6.1-terra`, `gpt-6-luna`가 모두 조회됨.
+- 판정 근거 추출(`judge@2`): 근거 구절 3개 중 2개 `FOUND`, 1개 `NOT_FOUND`로 정확, JSON 스키마 통과. 입력 529·출력 82~120 토큰, 2.9~4.4초.
+- 되묻기(`followup@4`): 답을 알려주지 않는 질문 생성. 입력 304·출력 134~155 토큰, 약 2.9초.
+- 둘 다 LLM 1회 타임아웃 15초(P12) 안에 끝났고, 사용량 기록도 남았다.
+
+이 확인 중에 버그를 찾아 고쳤다.
+
+| 항목 | 내용 |
+|---|---|
+| 증상 | `LLM_PROVIDER=openai`에서 판정·되묻기가 `LLM_CONNECTION`(503 `AI_UNAVAILABLE`)으로 실패 |
+| 원인 | compose·`.env`가 `OPENAI_BASE_URL`을 빈 값으로 넘김. 코드가 `base_url=None`을 넘기면 OpenAI SDK가 이 환경 변수를 읽고, 빈 문자열을 그대로 주소로 씀 |
+| 수정 | `llm/providers.py`: 주소가 비면 `https://api.openai.com/v1`을 직접 넘김 (`OPENAI_DEFAULT_BASE_URL`). 빈 환경 변수가 있어도 기본 주소를 쓰는지 확인하는 테스트 추가 |
+| 검증 | ai-service 테스트 133개 통과. 빈 `OPENAI_BASE_URL`을 그대로 둔 상태에서 위 실제 호출 성공 |
+
 ## 후속 할 일
 
 확인·합의가 필요한 것:
 
 - M2 연동 시 ai가 M2 활성 판정의 `versions.model`을 scoring 응답의 M2 버전으로 채운다. 이때 LLM 모델 ID는 사용량 이벤트 `model`에만 남는다.
 - 사용량 이벤트 `traceparent`를 공통 `UsagePublisher`에 추가할지 정한다.
-- OpenAI 키를 받으면 `gpt-6-luna` 모델 ID와 판정·되묻기 결과를 실제 호출로 확인한다.
+- `gpt-6.1-terra`로 판정 결과 유형(CORRECT·PARTIAL·RETHINK·HELD)과 되묻기 4유형을 Claude와 비교한다. 지금은 판정·되묻기 각 1건만 확인했다.
