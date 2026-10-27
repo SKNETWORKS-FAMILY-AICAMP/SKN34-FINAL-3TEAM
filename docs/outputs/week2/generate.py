@@ -1,11 +1,12 @@
 """2주차 시스템 구성도 PNG 생성.
 
-실행: uv run --no-project --with diagrams python docs/outputs/week2/generate.py
+실행: uv run --no-project --with diagrams --with pillow python docs/outputs/week2/generate.py
 필요: Graphviz(dot). 기준 문서: docs/design/architecture.md, docs/design/api-spec.md 4장
 세부 설명은 시스템_구성도_사고뭉치.md에 두고, 그림에는 아이콘과 이름만 표시
 """
 
 import os
+from contextlib import contextmanager
 from html import escape
 from pathlib import Path
 
@@ -29,6 +30,7 @@ from diagrams.onprem.queue import Rabbitmq
 from diagrams.onprem.vcs import Github
 from diagrams.programming.framework import Fastapi, React, Spring
 from diagrams.saas.chat import Discord
+from PIL import Image
 
 GRAPHVIZ_BIN = r"C:\Program Files\Graphviz\bin"
 if os.path.isdir(GRAPHVIZ_BIN) and GRAPHVIZ_BIN not in os.environ["PATH"]:
@@ -55,19 +57,26 @@ OUTSIDE = ("#fff8e6", "#f08c00")
 GRAY = ("#f8f9fa", "#adb5bd")
 
 
+@contextmanager
 def diagram(name, title, direction="LR", **graph):
-    return Diagram(
+    """dpi 130으로 그린 뒤 절반으로 축소. 낮은 dpi로 바로 그리는 것보다 글자·선이 선명함."""
+    with Diagram(
         title,
         filename=str(OUT / name),
         outformat="png",
         show=False,
         direction=direction,
-        graph_attr={"fontname": BOLD, "fontsize": "30", "labelloc": "t", "pad": "0.5", "nodesep": "0.6",
-                    "ranksep": "0.9", "dpi": "65", "splines": "ortho", "forcelabels": "true",
+        graph_attr={"fontname": BOLD, "fontsize": "30", "labelloc": "t", "pad": "0.3", "nodesep": "0.5",
+                    "ranksep": "0.8", "dpi": "130", "splines": "ortho", "forcelabels": "true",
                     "compound": "true", **graph},
         node_attr={"fontname": FONT, "fontsize": "15", "fixedsize": "false", "width": "0", "height": "0"},
         edge_attr={"fontname": FONT, "fontsize": "17", "penwidth": "2", "arrowsize": "1"},
-    )
+    ) as d:
+        yield d
+    path = OUT / f"{name}.png"
+    with Image.open(path) as image:
+        small = image.resize((image.width // 2, image.height // 2), Image.LANCZOS)
+    small.save(path, optimize=True)
 
 
 def group(label, colors=GRAY, **graph):
@@ -183,19 +192,25 @@ def overview():
                     scoring = comp([Fastapi], "scoring-service")
                 with group("namespace: platform", PLATFORM):
                     mq = comp([Rabbitmq], "RabbitMQ")
-                    comp([Redis], "Redis")
+                    redis = comp([Redis], "Redis")
 
             with group("데이터 저장소", GRAY):
                 rds = comp([RDSPostgresqlInstance], "RDS PostgreSQL")
                 files = comp([SimpleStorageServiceS3], "S3 (파일)")
-            rds >> invis() >> files
 
-        ext_id, llm, _, _ = externals()
+        ext_id, llm, toss, google = externals()
         legend([(HTTP, "solid", "동기 HTTP"), (MSG, "dashed", "메시지 (RabbitMQ)"), (DATA, "dotted", "저장소"),
                 (EXT, "solid", "외부 API")])
 
+        # 오른쪽 세 영역(platform·저장소·외부)은 가로로 펼쳐 app 영역 높이에 맞춤
+        mq >> invis() >> redis
+        rds >> invis() >> files
+        llm >> invis() >> toss >> invis() >> google
+        # S3(웹)은 CloudFront와 같은 열에 세로로 배치
+        users >> invis() >> web
+
         users >> http("HTTPS") >> cdn
-        cdn >> data() >> web
+        cdn >> data(constraint="false") >> web
         cdn >> http("/api/*") >> alb >> http() >> core
         core >> http() >> [learning, report]
         [core, learning] >> http() >> ai
@@ -226,7 +241,8 @@ def aws():
 
             with group("VPC", ("#f4fbf4", "#2b8a3e")):
                 igw = comp([InternetGateway], "Internet Gateway")
-                with group("Public Subnet", ("#e9f7ec", "#40c057")):
+                # /api/* 선이 위쪽으로 들어오므로 영역 이름은 아래에 두고, 여백으로 NAT 선과 간격 확보
+                with group("Public Subnet", ("#e9f7ec", "#40c057"), labelloc="b", margin="40"):
                     alb = comp([ALB], "ALB")
                     nat = comp([NATGateway], "NAT Gateway")
                 with group("Private Subnet", ("#edf2ff", "#4c6ef5")):
@@ -250,16 +266,17 @@ def aws():
         app >> data() >> rds
         plat >> data() >> ebs
         app >> data() >> files
-        # 배포·보안
-        gha >> edge(label="이미지 push", style="dashed") >> ecr
-        ecr >> edge(style="dashed", ltail=cluster_id(mgmt_label), lhead=cluster_id(eks_label)) >> app
-        ecr >> invis() >> plat
+        # 배포·보안: 관리형 서비스를 EKS 노드와 같은 높이에 두어 오른쪽 아래 공백을 채움
+        gha >> edge(label="이미지 push", style="dashed", constraint="false") >> ecr
+        ecr >> edge(style="dashed", constraint="false", ltail=cluster_id(mgmt_label),
+                    lhead=cluster_id(eks_label)) >> app
+        alb >> invis() >> ecr
 
 
 def services():
     # 선 라벨이 박스와 겹치지 않도록 간격을 넓힘
     with diagram("03-msa-eda-kubernetes", "서비스 · 메시징 · Kubernetes 구성도 (MSA + EDA + K8s)",
-                 nodesep="1.0", ranksep="1.4"):
+                 nodesep="0.8", ranksep="1.2"):
         web = comp([React], "React Web")
         legend([(HTTP, "solid", "동기 HTTP"), (MSG, "dashed", "메시지 (RabbitMQ)"), (SSE, "solid", "SSE")])
 
@@ -278,7 +295,9 @@ def services():
 
             with group("namespace: platform", PLATFORM):
                 mq = comp([Rabbitmq], "RabbitMQ")
-                comp([Redis], "Redis")
+                redis = comp([Redis], "Redis")
+        # platform 영역은 가로로 배치해 세로 공백을 줄임
+        mq >> invis() >> redis
 
         # 진입과 SSE
         web >> http("HTTPS") >> ingress >> http() >> core
@@ -348,7 +367,7 @@ def cicd_observability():
             kind = card("kind (local)", "#e7f5ff", HTTP)
             eks = card("EKS (prod)", "#fff4e6", "#ff9900")
 
-        legend([("#7b8894", "solid", "빌드 · 배포 흐름"), ("#7b8894", "dashed", "이미지 pull")])
+        legend_node = legend([("#7b8894", "solid", "빌드 · 배포 흐름"), ("#7b8894", "dashed", "이미지 pull")])
         repo >> edge() >> actions >> edge() >> [ghcr, ecr]
         actions >> edge() >> gitops >> edge() >> argo >> edge() >> [kind, eks]
         ghcr >> edge(style="dashed") >> kind
@@ -364,6 +383,8 @@ def cicd_observability():
 
         apps >> edge() >> otel >> edge() >> prom >> edge() >> grafana >> edge() >> discord
         apps >> edge() >> langfuse
+        # 범례는 관측 줄 오른쪽 빈 자리에 둠
+        discord >> invis() >> legend_node
 
 
 if __name__ == "__main__":
