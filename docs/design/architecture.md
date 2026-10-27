@@ -147,7 +147,8 @@
 - 공통 코드: Spring `_common/`, Python `app/` 루트의 `config.py`·`errors.py`·`security.py`·`messaging/`·`clients/base.py`
 - DB 트랜잭션은 Application 레이어에서만 시작, 트랜잭션 안에서 외부 HTTP·AMQP 호출 금지
 - #38 공통 멱등성은 `_common/web/IdempotencyService`가 조합하고 `web/repository`가 기존 idempotency_record와 PostgreSQL 세션 잠금을 관리한다. HTTP 동안 auto-commit 연결 1개를 보유하며 트랜잭션·행 잠금은 보유하지 않는다. 잠금과 레코드 작업을 동일 연결에서 수행하는 JDBC Repository만 사용해 추가 연결 대기로 인한 풀 교착을 피한다. 일반 기능 Repository의 MyBatis 패턴은 유지한다.
-- #62 미션 조회의 학생 메타데이터는 core `guardianship/StudentLearningContextService` → 전용 Repository/Mapper로 core의 연결된 활성 학생 `grade`·`is_demo`만 조회한다. 기존 #36/#37 service 인터페이스는 유지한다. `learning`은 이 service를 통해 검증된 학생의 조회 조건을 만들고, 문항 노출 업무 판단·learning DB 접근은 수행하지 않는다.
+- #62 미션 조회와 #23 시도 시작의 학생 메타데이터는 core `guardianship/StudentLearningContextService` → 전용 Repository/Mapper로 core의 연결된 활성 학생 `grade`·`is_demo`만 조회한다. 기존 #36/#37 service 인터페이스는 유지한다. `learning`은 이 service를 통해 검증된 학생의 내부 요청 조건을 만들고, 문항 노출·신규 시도 제공 범위·기존 시도 당시 버전 유지의 업무 판단·learning DB 접근은 수행하지 않는다.
+- #23 시도 시작의 일일 한도는 core Redis 카운터 책임이며 learning은 관여하지 않는다. learning의 신규 생성 `201`·기존 진행 시도 반환 `200`을 core가 그대로 전달한다. 후속 Redis 연계에서는 `201`만 집계하고 `200`은 집계하지 않으며, 한도 도달 시에도 이어하기를 허용하고 신규 생성만 차단하는 처리 순서를 검증한다. #38의 이번 프록시 보완에는 Redis 한도 기능을 구현하지 않는다.
 - 서비스 간 내부 호출: 내부 토큰 헤더 필터(참고 레포 `CatalogInternalAuthFilter` 패턴) + NetworkPolicy
 
 ### 2.3 공통 규칙

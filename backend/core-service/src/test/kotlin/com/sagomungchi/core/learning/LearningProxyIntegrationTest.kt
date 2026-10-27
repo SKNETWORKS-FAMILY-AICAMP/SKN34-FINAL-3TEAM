@@ -120,6 +120,7 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
             val expectedQuery = when {
                 method == "GET" && path == "/missions" -> "?grade=3&demo=false&page=0&size=20"
                 method == "GET" && path.startsWith("/missions/") -> "?grade=3&demo=false"
+                method == "POST" && path == "/missions/$mission/attempts" -> "?grade=3&demo=false"
                 else -> ""
             }
             assertEquals("/internal$path$expectedQuery", received.target)
@@ -146,16 +147,57 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
         assertEquals(1, stub.requests.size)
     }
 
-    @Test fun `mission queries use verified profile and ignore client grade demo and scope overrides`() {
-        jdbc.update("UPDATE student SET grade=5,is_demo=true WHERE id=?", child)
-        call("GET", "/api/v1/missions?grade=3&demo=false&page=1&size=2&studentId=${UUID.randomUUID()}").andExpect(status().isOk())
-        assertEquals("/internal/missions?grade=5&demo=true&page=1&size=2", stub.requests.last().target)
+    @Test fun `mission queries and attempt start use current verified profile and ignore client overrides`() {
         val mission = UUID.randomUUID()
-        call("GET", "/api/v1/missions/$mission?grade=3&demo=false").andExpect(status().isOk())
-        assertEquals("/internal/missions/$mission?grade=5&demo=true", stub.requests.last().target)
-        jdbc.update("UPDATE student SET grade=3,is_demo=false WHERE id=?", child)
-        call("GET", "/api/v1/missions?grade=6&demo=true").andExpect(status().isOk())
-        assertEquals("/internal/missions?grade=3&demo=false&page=0&size=20", stub.requests.last().target)
+        val routes = listOf("GET" to "/missions", "GET" to "/missions/$mission", "POST" to "/missions/$mission/attempts")
+        // The same signed session must use current core data, never client values or a cached profile.
+        listOf(5 to true, 3 to false).forEach { (grade, demo) ->
+            jdbc.update("UPDATE student SET grade=?,is_demo=? WHERE id=?", grade, demo, child)
+            routes.forEach { (method, path) ->
+                val forgedQuery = "grade=6&grade=4&demo=${!demo}&demo=${!demo}&studentId=${UUID.randomUUID()}&page=1&size=2"
+                call(method, "/api/v1$path?$forgedQuery").andExpect(status().isOk())
+                val pagination = if (path == "/missions") "&page=1&size=2" else ""
+                assertEquals("/internal$path?grade=$grade&demo=$demo$pagination", stub.requests.last().target)
+                assertEquals(child.toString(), stub.requests.last().header("X-Student-Scope"))
+            }
+        }
+        assertEquals(6, stub.requests.size)
+    }
+
+    @Test fun `attempt start preserves learning 201 for a newly created attempt`() {
+        val mission = UUID.randomUUID()
+        val response = "{ \"attemptId\":\"$attempt\", \"status\":\"IN_PROGRESS\" }"
+        stub.respond = { LearningHttpStub.Reply(201, response) }
+
+        call("POST", "/api/v1/missions/$mission/attempts?grade=6&demo=true")
+            .andExpect(status().isCreated()).andExpect(content().string(response))
+
+        assertEquals("/internal/missions/$mission/attempts?grade=3&demo=false", stub.requests.single().target)
+    }
+
+    @Test fun `attempt start preserves learning 200 for an existing in-progress attempt`() {
+        val mission = UUID.randomUUID()
+        val response = "{ \"attemptId\":\"$attempt\", \"status\":\"IN_PROGRESS\" }"
+        stub.respond = { LearningHttpStub.Reply(200, response) }
+
+        call("POST", "/api/v1/missions/$mission/attempts?grade=6&demo=true")
+            .andExpect(status().isOk()).andExpect(content().string(response))
+
+        assertEquals("/internal/missions/$mission/attempts?grade=3&demo=false", stub.requests.single().target)
+    }
+
+    @Test fun `mission queries and attempt start reject invalid session and unlinked student before forwarding`() {
+        val mission = UUID.randomUUID()
+        val routes = listOf("GET" to "/missions", "GET" to "/missions/$mission", "POST" to "/missions/$mission/attempts")
+        routes.forEach { (method, path) ->
+            call(method, "/api/v1$path?grade=5&demo=true", bearer = "forged").andExpect(status().isUnauthorized())
+        }
+        jdbc.update("UPDATE guardianship SET status='UNLINKED',unlinked_at=now() WHERE parent_user_id=?", user)
+        routes.forEach { (method, path) ->
+            call(method, "/api/v1$path?grade=5&demo=true").andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("CHILD_NOT_LINKED"))
+        }
+        assertTrue(stub.requests.isEmpty())
     }
 
     @Test fun `same key returns first exact status bytes and headers different body endpoint or scope is 422`() {

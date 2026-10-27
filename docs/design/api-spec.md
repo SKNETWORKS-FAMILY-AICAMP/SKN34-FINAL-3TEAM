@@ -203,7 +203,7 @@
 |---|---|---|---|---|---|
 | GET | `/missions` | 학생 | 학년·입력 방식 범위의 공개 미션 목록(제목·교과·생각 유형·수행 상태), 진행 위치 | LRN-02, DSH-02 | 핵심 |
 | GET | `/missions/{missionId}` | 학생 | 장면(애니메이션·정적 대체)·질문·안내·입력 방식 틀. 정답·예시 답 미포함 | LRN-03, LRN-05 | 핵심 |
-| POST | `/missions/{missionId}/attempts` | 학생 | 학습 시도 시작. 진행 중 시도가 있으면 그 시도 반환(이어하기) | LRN-01, LRN-16 | 핵심 |
+| POST | `/missions/{missionId}/attempts` | 학생 | 학습 시도 시작. 신규 생성은 `201`, 진행 중 시도 반환(이어하기)은 `200`. core는 learning의 상태를 그대로 전달 | LRN-01, LRN-16 | 핵심 |
 | GET | `/attempts/{attemptId}` | 학생 | 시도 상세: 상태, 최신 초안(`ETag`), 답변·판정·되묻기 타임라인, 가능한 다음 행동 | LRN-16, JDG-08, JDG-09 | 핵심 |
 | PUT | `/attempts/{attemptId}/draft` | 학생 | 초안 자동 저장 (`If-Match`), 응답에 저장 시점·새 버전. `content: {answer, memo}` (P05) | LRN-15, LRN-16, LRN-17 | 우선1 |
 | POST | `/attempts/{attemptId}/hints` | 학생 | 생각 열기 질문 열람 기록 → 질문 반환 (정답·제출용 답 미포함) | LRN-06 | 핵심 |
@@ -222,7 +222,7 @@
   - 되묻기는 시도당 최대 2회, 2회째 답변 후 `nextActions: ["FINISH"]`
   - 고르기 `CORRECT`면 되묻기 없이 `nextActions: ["FINISH"]`
   - 되묻기에 답하지 않고 `FINISH` 가능("이대로 돌아보기")
-- 무료 플랜은 하루 3개 미션까지 시도 시작 가능, 초과 시 `USAGE_LIMIT_REACHED` (P13)
+- 무료 플랜은 하루 신규 미션 시도 3개까지 허용하며 일일 한도는 core의 Redis 카운터 책임이다(learning은 관여하지 않음, P13). 후속 한도 연계에서 신규 생성 `201`만 집계하고 기존 진행 시도 반환 `200`은 집계하지 않는다. 한도 도달 시에도 이어하기는 허용하고 신규 생성만 `429 USAGE_LIMIT_REACHED`로 차단해야 한다. 시작 요청 전체를 선차단하지 않도록 기존 시도 판별·신규 생성 차단의 처리 순서는 후속 한도 구현에서 검증한다.
 - 목록 접기·펼치기(FN-LRN-20): 프론트 전용, API 없음
 - 판정 규칙 (FN-JDG-01~05)
   - 고르기·수학 최종 답: 규칙 판정
@@ -591,7 +591,7 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | Method | Path | 호출자 | 설명 |
 |---|---|---|---|
 | GET | `/internal/missions?grade&demo&page&size`, `/internal/missions/{id}?grade&demo` | core | 학생용 미션 조회 (2.2 프록시). core가 학생 학년 `grade`(3~6, 필수)와 시연 학생 여부 `demo`(`student.is_demo`, 기본 `false`)를 붙임. `demo_only` 미션은 `demo=true`일 때만 노출 |
-| POST | `/internal/missions/{id}/attempts` | core | 시도 시작·이어하기 (2.2와 1:1) |
+| POST | `/internal/missions/{id}/attempts?grade&demo` | core | 시도 시작·이어하기 (2.2와 1:1). 조회와 동일하게 core가 인증된 학생의 `grade`(3~6, 필수)·`demo`(`student.is_demo`, 기본 `false`)를 붙임. 공개 요청의 `grade`·`demo`는 사용하지 않음. learning은 신규 생성 `201`·기존 진행 시도 반환 `200`을 구분하고 core는 그대로 전달. 신규 시도 제공 범위 검사·기존 시도 당시 버전 유지는 learning 소유. 일일 한도는 core Redis 책임이며 `201`만 집계하는 후속 연계는 2.2 참고 |
 | POST · GET · PUT | `/internal/attempts/...` | core | 시도·초안·도움·답변·마무리·돌아보기·자기 평가 (2.2 경로와 1:1) |
 | POST | `/internal/answers/{answerId}/feedback` | core | 판정 오케스트레이션: 규칙 판정 또는 ai 호출 → 저장 → 결과 반환 (동기) |
 | POST | `/internal/judgments/{judgmentId}/corrections` | core | 신고 정정 반영(SUP-03): `{reportId, reason, corrected}` → 기존 판정·사유·시점 보존 후 정정 이력 저장 (원본 답변 불변), `Idempotency-Key` |

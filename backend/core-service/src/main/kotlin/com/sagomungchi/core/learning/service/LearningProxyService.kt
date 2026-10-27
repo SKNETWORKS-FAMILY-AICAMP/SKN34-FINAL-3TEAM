@@ -17,7 +17,9 @@ class LearningProxyService(private val client: LearningClient, private val idemp
         val context = UserContextHolder.currentOrNull()
         if (context?.role != "STUDENT" || context.userId == null || context.studentScope.size != 1)
             throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "검증된 학생 세션이 필요합니다.")
-        val internalQuery = if (method == "GET" && (path == "/missions" || path.startsWith("/missions/"))) {
+        val missionQuery = method == "GET" && (path == "/missions" || path.startsWith("/missions/"))
+        val attemptStart = method == "POST" && path.startsWith("/missions/") && path.endsWith("/attempts")
+        val internalQuery = if (missionQuery || attemptStart) {
             val student = students.requireLinked(UUID.fromString(context.userId), UUID.fromString(context.studentScope.single()))
             listOfNotNull("grade=${student.grade}", "demo=${student.demo}", query).joinToString("&")
         } else query
