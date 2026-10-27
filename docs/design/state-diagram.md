@@ -26,7 +26,7 @@
 
 ```mermaid
 stateDiagram-v2
-  [*] --> ACTIVE: 가입·계정 생성
+  [*] --> ACTIVE: 최초 Google 로그인·계정 생성
   ACTIVE --> WITHDRAWAL_REQUESTED: 탈퇴 요청 (재확인 토큰)
   WITHDRAWAL_REQUESTED --> WITHDRAWN: 즉시 처리 완료
   WITHDRAWN --> [*]
@@ -38,8 +38,8 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
-| → `ACTIVE` | `POST /auth/signup` | `AccountService.signup` | `login_id` UK |
-| `ACTIVE → WITHDRAWAL_REQUESTED` | `POST /me/withdrawal` + `X-Reauth-Token` | `AccountService.requestWithdrawal` → `UserAccount.requestWithdrawal()` | 진행 중 구독·미처리 환불 없음(있으면 `409 WITHDRAWAL_BLOCKED`) + `WHERE status = 'ACTIVE'`, 같은 트랜잭션에 `withdrawal_request(REQUESTED)`·refresh token 폐기·자녀 전원 삭제 요청 (P09) |
+| → `ACTIVE` | 최초 `GET /auth/google/callback` (#36) | `AuthService.login` | `(oauth_provider, oauth_subject)` UK로 PARENT 생성, 같은 `login_id`(이메일) 기존 계정은 자동 연결 없이 `ACCOUNT_EXISTS` |
+| `ACTIVE → WITHDRAWAL_REQUESTED` | `POST /me/withdrawal` + `X-Reauth-Token` | `AccountService.requestWithdrawal` → `UserAccount.requestWithdrawal()` | 진행 중 구독·미처리 환불 없음(있으면 `409 WITHDRAWAL_BLOCKED`) + `WHERE status = 'ACTIVE'`, 같은 트랜잭션에 `withdrawal_request(REQUESTED)`·계정의 `auth_session` 전체 폐기(refresh 포함)·자녀 전원 삭제 요청 (P09) |
 | `WITHDRAWAL_REQUESTED → WITHDRAWN` | 자녀 삭제 요청 전부 `COMPLETED` (P09) | `UserAccount.completeWithdrawal()` | 진행 중 구독 없음·미처리 환불 없음, `withdrawal_request REQUESTED → COMPLETED` 동시 전이 |
 
 ### 2.2 `student.status` · `deletion_request.status`
@@ -125,7 +125,8 @@ stateDiagram-v2
 | `PUBLISHED → UNPUBLISHED` | `POST /admin/missions/{id}/unpublish` | `Mission.unpublish()` | 신규 시도 차단(`MISSION_NOT_AVAILABLE`), 기존 시도는 당시 버전 유지 |
 | `UNPUBLISHED → REVIEW_REQUIRED` | 수정 후 검토 요청 | `Mission.requestReview()` | 재공개는 다시 `REVIEW_REQUIRED → PUBLISHED` 경로만 |
 
-- 학생 목록 노출 조건: `status = PUBLISHED` + 학년·입력 방식 범위 + `demo_only`는 시연 계정만 (FN-LRN-02)
+- 학생 목록 노출 조건: `status = PUBLISHED` + 학년·입력 방식 범위 + `demo_only`는 시연 계정만 (FN-LRN-02). 시연 학생 여부는 core가 learning 조회에 `demo`(`student.is_demo`)로 넘김 (api-spec 4.1, [#22 보고서](../report/learning-mission.md))
+- 개발·시연용 데모 미션 시드(`backend/learning-service/db/seed/`)는 위 관리자 흐름 없이 `PUBLISHED`·`DRAFT` 상태를 직접 넣으며 `mission_review`를 만들지 않음. 운영 미션은 위 전이만 사용 ([#22 보고서](../report/learning-mission.md))
 
 ### 3.2 `attempt.status` (미션 수행)
 

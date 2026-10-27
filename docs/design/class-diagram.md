@@ -136,7 +136,7 @@ classDiagram
 | `OutboxWriter`, `OutboxRelay`, `OutboxEventRepository` | `_common/messaging` | 구현됨 (core만) | 같은 트랜잭션 `outbox_event` 저장 → 릴레이가 미발행 행 발행(`FOR UPDATE SKIP LOCKED`), publisher confirm 후 `published_at` 기록 |
 | `ProcessedEventRepository` | `_common/messaging` | 구현됨 (core) | `processed_event` INSERT 성공 여부로 멱등 소비 |
 | `RetryingConsumer` | `_common/messaging` | 구현됨 (core) | 수동 ACK. 처리 실패 시 `x-retry-count` +1 후 `<큐>.retry.<회차>` 재발행, 최대 횟수 초과 시 reject → DLQ (아키텍처 1.6) |
-| `JwtAuthFilter`, `JwtProvider` | `_common/security` | 신규 (core만) | 공개 API JWT 검증 → `UserContext(userId, role)` 설정 |
+| `PublicAuthFilter` | `_common/security` | 구현됨 (core만) | `/api/v1/**` Bearer 검증(`AuthService.authenticate`), 쿠키 API Origin·`X-Requested-With` 검사, 역할·관리자 권한·필수 동의 확인 → `UserContext(userId, role, studentScope)` 설정. JWT 발급·검증은 `account/service/TokenService` (3.1) |
 | `IdempotencyService` | `_common/web` | 신규 (core만) | `idempotency_record` 조회·저장, 같은 키·다른 본문 422 |
 | `SseEmitters` | `_common/web` | 신규 (core만) | SSE 생성, 15초 heartbeat `: ping`, 연결 종료 콜백 |
 
@@ -223,14 +223,75 @@ classDiagram
   direction TB
   class AuthController {
     <<controller>>
-    +signup(request) TokenResponse
-    +login(request) TokenResponse
+    +authorize() Redirect
+    +callback(code, state, error) Redirect
     +refresh(cookie) TokenResponse
-    +logout(cookie)
-    +createStudentSession(request) TokenResponse
+    +logout(cookie, bearer)
+    +student(request) TokenResponse
+    +me() MeResponse
     +registerStudentDevice(request) DeviceResponse
     +studentProfiles(deviceCookie) List
     +studentLogin(deviceCookie, request) TokenResponse
+  }
+  class AuthCookies {
+    <<web>>
+    +refresh(value, expires) ResponseCookie
+    +clearRefresh() ResponseCookie
+    +state(value) ResponseCookie
+    +clearState() ResponseCookie
+  }
+  class AuthService {
+    <<service>>
+    +startGoogle() StartedGoogleLogin
+    +completeGoogle(code, state, error, stateCookie, previousRefresh) IssuedAuth
+    +login(profile, previousRefresh) IssuedAuth
+    +authenticate(accessToken) AuthenticatedAccount
+    +refresh(refreshToken) IssuedAuth
+    +enterStudent(refreshToken, studentId, expected) IssuedAuth
+    +logout(refreshToken, accessToken)
+    +destination(identity) AuthDestination
+    +requireConsents(identity)
+    +requirePermission(identity, permission)
+  }
+  class TokenService {
+    <<security>>
+    +access(session) String
+    +oauthState(state, nonce, verifier) String
+    +verify(token, use) Jwt
+    +randomToken() String
+    +hash(value) String
+  }
+  class GoogleOAuthClient {
+    <<client>>
+    +authorizationUrl(state, nonce, verifier) String
+    +exchange(code, verifier, nonce) GoogleProfile
+  }
+  class AuthRepository {
+    <<repository>>
+    +googleAccount(subject) AuthAccount
+    +insertAccount(account, now)
+    +session(id, lock) AuthSession
+    +updateSession(session)
+    +refresh(hash) RefreshToken
+    +consume(id, now) Int
+    +revoke(sessionId, now)
+  }
+  class AuthSession {
+    <<value>>
+    +role String
+    +studentId UUID
+    +version Long
+    +expiresAt OffsetDateTime
+  }
+  class StudentAccessService {
+    <<service>>
+    +linkedStudents(userId) List
+    +requireLinked(userId, studentId) LinkedStudent
+  }
+  class ConsentAccessService {
+    <<service>>
+    +hasRequiredConsents(userId) Boolean
+    +hasGuardianConsent(userId, studentId) Boolean
   }
   class StudentDeviceController {
     <<controller>>
@@ -240,10 +301,8 @@ classDiagram
   }
   class MeController {
     <<controller>>
-    +me() MeResponse
     +update(request)
-    +reauth(request) ReauthToken
-    +changeCredentials(reauthToken, request)
+    +reauth() ReauthToken
     +requestWithdrawal(reauthToken)
   }
   class ConsentController {
@@ -264,12 +323,8 @@ classDiagram
   }
   class AccountService {
     <<service>>
-    +signup(command) UserAccount
-    +login(loginId, password) Tokens
-    +refresh(refreshToken) Tokens
-    +logout(refreshToken)
-    +reauth(userId, password) ReauthToken
-    +changeCredentials(userId, reauthToken, command)
+    +update(userId, command)
+    +reauth(userId) ReauthToken
     +requestWithdrawal(userId, reauthToken)
   }
   class StudentAuthService {
@@ -284,7 +339,7 @@ classDiagram
   }
   class ConsentService {
     <<service>>
-    +record(subjectUserId, studentId, agreements)
+    +record(subjectUserId, studentId, consents)
     +withdraw(userId, consentId)
     +requireGuardianConsent(studentId)
   }
@@ -333,7 +388,6 @@ classDiagram
     +complete()
   }
   class UserAccountRepository { <<repository>> }
-  class RefreshTokenRepository { <<repository>> }
   class ConsentRepository { <<repository>> }
   class StudentRepository { <<repository>> }
   class GuardianshipRepository {
@@ -342,11 +396,16 @@ classDiagram
   }
   class DeletionRequestRepository { <<repository>> }
   class StudentDeviceRepository { <<repository>> }
-  class JwtProvider { <<security>> }
   class OutboxWriter { <<messaging>> }
 
-  AuthController --> AccountService
-  AuthController --> ConsentService
+  AuthController --> AuthService
+  AuthController --> AuthCookies
+  AuthService --> GoogleOAuthClient : 트랜잭션 밖 코드 교환
+  AuthService --> TokenService
+  AuthService --> AuthRepository
+  AuthService --> StudentAccessService : 연결 자녀
+  AuthService --> ConsentAccessService : 필수·법정대리인 동의
+  AuthService ..> AuthSession
   MeController --> AccountService
   ConsentController --> ConsentService
   ChildController --> GuardianshipService
@@ -358,11 +417,10 @@ classDiagram
   StudentAuthService --> AccountService : 재확인
   StudentAuthService --> StudentRepository
   StudentAuthService --> StudentDeviceRepository
-  StudentAuthService --> JwtProvider
+  StudentAuthService --> TokenService
   StudentAuthService ..> StudentDevice
   AccountService --> UserAccountRepository
-  AccountService --> RefreshTokenRepository
-  AccountService --> JwtProvider
+  AccountService --> AuthRepository : 탈퇴 시 세션 폐기
   ConsentService --> ConsentRepository
   GuardianshipService --> ConsentService : 법정대리인 동의
   GuardianshipService --> StudentRepository
@@ -379,9 +437,12 @@ classDiagram
 - `GuardianshipService.authorizeChild(childId)`: 학부모는 `guardianship LINKED` 확인 후 `studentScope = {childId}`로 컨텍스트 갱신, 학생은 본인 ID만. 미연결 시 `403 CHILD_NOT_LINKED` (FN-AGT-02, NFR-SEC-02)
 - 자녀 범위가 필요한 모든 controller는 하위 호출 전에 `authorizeChild` 호출 → `InternalRestClientFactory`가 그 컨텍스트를 헤더로 전달
 - `authorizeLinkedChildren()`: 경로에 자녀 ID가 없는 API(`/reports/{reportId}` 등)용. `studentScope = 연결 자녀 전체`로 전달하고 소유 서비스가 리소스의 학생 ID로 검사, 403은 core가 `CHILD_NOT_LINKED`로 변환
-- 공개 API 컨텍스트는 `JwtAuthFilter`가 설정하고 finally에서 해제 (`InternalAuthFilter`와 같은 방식)
-- 재확인 토큰(`reauthToken`)·복구 코드는 Redis 저장 (ERD 1장)
-- `createStudentSession`: 학부모 토큰 + `{childId}` → `authorizeChild` 통과·필수 동의 유지 확인 후 `STUDENT` 토큰 발급 (P01, 학부모 동석). 학생 계정·시연 링크 없음
+- 구현 상태 (#36): `AuthController`의 authorize·callback·refresh·logout·student·me, `AuthCookies`·`AuthService`·`TokenService`·`GoogleOAuthClient`·`AuthRepository`·`StudentAccessService`·`ConsentAccessService`·`UserAccountRepository`는 구현됨. 기기·PIN 3개 메서드와 그 외 controller·service는 미구현 (#37·#45·#58)
+- `StudentAccessService`·`ConsentAccessService`는 인증용 읽기 전용 확인. 쓰기(자녀 등록·동의 저장)는 `GuardianshipService`·`ConsentService`(#37) 소유
+- 공개 API 컨텍스트는 `PublicAuthFilter`가 설정하고 finally에서 해제 (`InternalAuthFilter`와 같은 방식)
+- 이메일·비밀번호 가입·로그인·로그인 수단 변경 없음. Google 계정은 `(oauth_provider, oauth_subject)`로 식별, 최초 콜백에서 `AuthService.login`이 PARENT 계정 생성 (API 명세 5.1)
+- 재확인 토큰(`reauthToken`)은 Google 재인증 기반(#45), Redis 저장 (ERD 1장)
+- `AuthService.enterStudent` (`POST /auth/student-sessions`): 학부모 Bearer와 같은 세션의 refresh로 연결·활성 자녀·필수·법정대리인 동의 확인 → 부모 refresh 소비, `auth_session` role·studentId·version 변경 → `STUDENT` access만 발급, refresh 쿠키 삭제 (P01, 학부모 동석). 학생 계정·시연 링크 없음
 - `StudentAuthService.login`: 기기 쿠키 해시로 `StudentDevice` 조회 → `isUsable`(미해제·미만료)·자녀 등록 확인 → `GuardianshipService.linkedStudentIds(device.parentUserId)`·`ConsentService.requireGuardianConsent` → 잠금·PIN 검사 → 동석 경로와 같은 `STUDENT` 토큰 발급, refresh 미발급 (P01, API 명세 3.11)
 - `Student.recordPinFailure`: 실패 횟수 증가, 5회(설정값) 도달 시 `pin_locked_at` 기록. `setPin`은 해시·실패 횟수 0·잠금 해제를 한 번에 처리
 - 페어링 코드는 Redis(10분·1회용), 기기 자격증명은 `student_device.token_hash`만 저장. 저장 구조는 ERD 10장 변경 예정
@@ -900,8 +961,8 @@ classDiagram
   direction TB
   class MissionController {
     <<controller>>
-    +list(grade, inputTypes) List
-    +get(missionId) MissionView
+    +list(grade, demo) List
+    +get(missionId, grade, demo) MissionView
   }
   class AdminMissionController {
     <<controller>>
@@ -917,8 +978,8 @@ classDiagram
   }
   class MissionService {
     <<service>>
-    +listForStudent(studentId, grade) List
-    +get(missionId) MissionView
+    +listForStudent(studentId, grade, demo) List
+    +get(missionId, grade, demo) MissionView
     +create(command) Mission
     +update(missionId, command) MissionVersion
     +putRubric(missionId, command) RubricVersion

@@ -16,7 +16,7 @@ npm run dev
 1. 백엔드까지 실제로 띄우기: 저장소 루트 `.env`에 `POSTGRES_PASSWORD`·`RABBITMQ_PASSWORD`·`INTERNAL_TOKEN`(필수)과 Google 로그인용 `AUTH_JWT_SECRET`·`GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET`을 채우고 Docker Desktop을 켠 뒤 `docker compose up --build -d` → 이 폴더에서 `npm ci && npm run dev` → **http://localhost:5173** 접속. `127.0.0.1`로 열면 `AUTH_WEB_ORIGIN`(기본 `http://localhost:5173`)과 달라 refresh가 403이 됩니다. 학생 기기·PIN API는 아직 백엔드에 없어 `/student/login`은 준비 중 안내를 보여 줍니다.
 2. 백엔드 없이 화면만 보기: 아래 MSW 목업 모드(`VITE_API_MOCK=true`). 목업 없이 백엔드도 없으면 "서버(core-service)에 연결하지 못했습니다" 안내만 나옵니다.
 
-기본은 **API 모드**입니다. Vite가 `/api/v1` 요청을 core-service(기본 8080)로 전달합니다. 로컬 기반 66f6052에는 로그인·학습·리포트 공개 Controller가 없으며, 2026-10-26 fetch 후 반영한 `origin/develop` c8cb58f에도 core/learning 공개 Controller 추가는 없습니다. 실제 로그인 연동은 아직 검증되지 않았습니다. 오류를 샘플 데이터로 덮지 않습니다.
+기본은 **API 모드**입니다. Vite가 `/api/v1` 요청을 core-service(기본 8080)로 전달합니다. core에는 #36 인증 6개 경로(Google 로그인 시작·콜백, refresh, logout, 학부모 동석 학생 진입, `/me`)만 구현되어 있으며, 실제 Google 로그인·refresh·로그아웃 연동은 [#36 보고서](../../docs/report/issue-36-google-auth.md)에서 검증했습니다. 동의 저장·자녀 등록(#37)과 학습·리포트 등 나머지 공개 Controller는 아직 없으므로 해당 화면은 실제 모드에서 오류나 준비 상태로 표시됩니다. 오류를 샘플 데이터로 덮지 않습니다.
 
 이슈 #7 기준, 개발 중에는 MSW를 켜 실제 API 요청을 가로채서 확인합니다. 앱은 목 여부와 무관하게 같은 apiClient·SSE·Query 경로를 사용합니다.
 
@@ -27,7 +27,7 @@ npm run dev
 
 채워진 가상 계정으로 로그인 → 자녀 선택 → ‘이 자녀로 학습 시작’ → 미션 → 작성·추가 질문 → 마무리 → 돌아보기 순서입니다. 학부모 화면은 대시보드·분석 대화·리포트·정보 관리로 연결됩니다. 상단 상태 선택기로 저장 실패·충돌·AI 실패·권한 거부 등을 시연합니다. 학생 초안/가상 세션/멱등 응답은 개발용 sessionStorage fixture로 복원되지만 access/refresh token과 비밀번호는 저장하지 않습니다. 새로고침 시 대화·관리자 저장소 등 메모리 목업은 초기화됩니다. 실제 개인정보를 입력하지 마세요.
 
-로그인 비밀번호는 모두 `demo-only`입니다. `parent@example.test`는 기본 보호자, `admin@example.test`는 전체 관리자, `content@example.test`·`ops@example.test`·`payment@example.test`·`refund@example.test`는 권한별 계정입니다. 가입 시 가상 `@example.test` 이메일만 사용합니다. 새 계정 자녀 목록은 비어 있으며 법정대리인 동의 후 최대 3명까지 등록할 수 있습니다. P02에 따라 다른 보호자의 기존 학생 연결은 제공하지 않습니다.
+MSW 시연의 이메일 로그인 비밀번호는 모두 `demo-only`입니다(개발 전용, 실제 모드는 Google 로그인만 제공). `parent@example.test`는 기본 보호자, `admin@example.test`는 전체 관리자, `content@example.test`·`ops@example.test`·`payment@example.test`·`refund@example.test`는 권한별 계정입니다. 가입 시 가상 `@example.test` 이메일만 사용합니다. 새 계정 자녀 목록은 비어 있으며 법정대리인 동의 후 최대 3명까지 등록할 수 있습니다. P02에 따라 다른 보호자의 기존 학생 연결은 제공하지 않습니다.
 
 자녀 단독 진입(#59)은 학부모 `/parent/devices`에서 본인 재확인 → 자녀 PIN 설정 → 등록 코드(또는 QR) 발급 후, 같은 브라우저를 자녀 기기로 보고 로그아웃 → `/student/login`에서 코드 입력 → PIN 순서입니다. MSW가 httpOnly 기기 쿠키를 만들 수 없어 개발용 sessionStorage 상태로 대신하며, "기기 상태 시연" 선택기로 해제·만료·잠김·PIN 미설정을 시연합니다. 자세한 내용은 `docs/report/issue-59-student-device.md`입니다.
 
@@ -47,7 +47,7 @@ Remove-Item Env:VITE_API_MOCK
 - `domain/classroom.ts`: 답변 입력 틀, 마무리·완료 규칙, KST 기간, 집계 기준. 교과 점수나 사고력 레벨을 만들지 않습니다.
 - `data/classroom/`: Query 훅과 core 공개 API 어댑터. 기존 가상 저장소는 MSW 내부 fixture 생성에만 사용합니다. 컴포넌트가 HTTP나 내부 서비스에 직접 접근하지 않습니다.
 - `mocks/`: 개발 전용 worker·핸들러·typed fixture. `/api/v1`의 미작성 목 경로는 501로 명시하며 실제 서버로 조용히 흘려보내지 않습니다.
-- JSON·SSE 모두 만료 시 refresh 1회를 공유하며, 원 요청은 한 번만 재시도합니다. 실패 시 메모리 토큰을 지우고 재로그인 오류를 표시합니다. 실제 httpOnly 쿠키/역할 유지 검증은 백엔드 통합 대상입니다.
+- JSON·SSE 모두 만료 시 refresh 1회를 공유하며, 원 요청은 한 번만 재시도합니다. 실패 시 메모리 토큰을 지우고 재로그인 오류를 표시합니다. 실제 httpOnly 쿠키·역할 전환 검증 결과는 #36 보고서를 따릅니다.
 - 초안은 ETag/If-Match로 저장하고 409 시 비교합니다. 제출은 Idempotency-Key, 피드백은 별도 SSE입니다. 메모 원본은 제출 내용·학부모 응답에 포함하지 않습니다. 학생이 서술/풀이/논술의 대상 칸을 골라 명시적으로 복사한 글만 답변에 포함합니다. 기존 답에 덧붙이고 메모 원본은 보존하며 길이 초과 시 잘라 넣지 않습니다.
 - 시연용 그림 연습은 화면을 떠나면 유지되지 않습니다. 글 메모만 초안 저장 대상입니다. 시연 그림과 가상 기록은 AI Hub 데이터가 아닙니다.
 - 계정 복구·실제 결제·알림은 이번 화면 로직 작업의 구현 범위가 아닙니다. 가입·자녀·관리자·리포트 다운로드는 #8·#9 목업 범위로 확장했습니다.
