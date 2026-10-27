@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
+from typing import Any
 from uuid import UUID
 
 
@@ -50,6 +51,32 @@ class WeeklyReport:
 class GenerationResult:
     state: ReportState
     inclusion_rule: str | None = None
+    items: tuple["ReportItem", ...] = ()
+
+
+class ItemType(StrEnum):
+    METRIC = "METRIC"
+    THINKING_TYPE = "THINKING_TYPE"
+    CHANGE = "CHANGE"
+    REFLECTION = "REFLECTION"
+    QUOTE = "QUOTE"
+
+
+@dataclass(frozen=True)
+class EvidenceLink:
+    attempt_id: UUID
+    answer_id: UUID
+    answer_version: int
+
+
+@dataclass(frozen=True)
+class ReportItem:
+    type: ItemType
+    seq: int
+    payload: dict[str, Any]
+    state: ReportState
+    verified: bool
+    evidence: tuple[EvidenceLink, ...] = ()
 
 
 @dataclass(frozen=True)

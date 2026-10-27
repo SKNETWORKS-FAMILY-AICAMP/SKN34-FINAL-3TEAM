@@ -537,7 +537,7 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 - `/me.permissions`: `CONTENT|PAYMENT_VIEW|PAYMENT_REFUND|SERVICE_OPS` 배열. 미제공이면 권한 없는 것으로 취급한다. UI 숨김과 별개로 모든 목 핸들러에서 권한 검사한다.
 - overview: `{period,state,inclusionRule,attempts,completed,jobCounts:[{type,status,count}],missionCounts:[{status,count}]}`. 숫자는 목업 데이터에서 집계한다. 작업/미션 클릭 시 해당 필터 목록으로 연결한다.
 - jobs 목록: 1.1 봉투. 항목 `{jobId,type,status,retryCount,failureReason,createdAt,updatedAt,executions:[{executionId,attemptNo,status,errorCode,errorDetail,triggeredBy,startedAt,finishedAt}]}`. retry는 같은 키의 최초 응답을 반환한다. 재시도 결과가 실패면 FAILED 유지. queues: `{items:[{name,length,dlq}]}`. audit 항목 `{id,actorUserId,action,targetType,targetId,result,detail,createdAt}`.
-- 운영 요약 → 작업 목록의 집계 범위 유지를 위해 jobs 조회에 선택적 `from&to` 필터를 목업에서 함께 사용한다. 실제 backend의 필터 계약 확인 대상이다. 전후 변화 연결어는 목업만 `왜냐하면·때문·그래서·따라서` 고정 목록으로 시험하며 실제 서버의 확정 집계 목록을 대신하지 않는다.
+- 운영 요약 → 작업 목록의 집계 범위 유지를 위해 jobs 조회에 선택적 `from&to` 필터를 목업에서 함께 사용한다. 실제 backend의 필터 계약 확인 대상이다. 전후 변화 연결어는 `왜냐하면·때문·그래서·따라서`를 사용한다(#51에서 서버 목록도 동일하게 확인, P08). 브라우저 목업 테스트가 서버의 실제 집계·연동 검증을 대신하지는 않는다.
 - mission: `{missionId,status,demoOnly,currentVersion,currentRubricVersion,publishedVersion,versions:[{version,title,subject,gradeMin,gradeMax,thinkingType,inputType,question,guide,scene,sceneUri,staticSceneUri,achievementStandards,choices?,categories?,createdAt}],rubrics:[{version,elements:[{code,label,description,points,commonErrors,goodThought,judgeVerified}],answerKey?,exampleAnswer?,forbiddenTerms,hints}],reviews:[{missionVersion,rubricVersion,result,comment,createdAt}]}`.
 - POST/PATCH mission는 위 version 필드+demoOnly를 받는다. PATCH와 rubric PUT은 새 불변 버전 추가. review-request는 `{missionVersion,rubricVersion}`, review는 같은 버전+`result:APPROVED|CHANGES_REQUESTED,comment`. publish 검증은 현재 버전 검토와 필수 콘텐츠/기준 확인, 422의 `missingFields[]` 표시. preview는 `{mission:Mission,missionVersion,rubricVersion}`이며 학생 장면/입력 컴포넌트만 재사용하고 답안은 포함하지 않는다. 업로드는 미구현(URI만 입력).
 - model-version: ERD 필드 `{id,kind,name,version,status,artifactUri?,evalResult?,approvedBy?,activatedAt?,createdAt}`. 등록/활성화는 평가 근거와 승인자 필요, rollback은 이전 승인 버전을 재활성화하고 재분석 여부를 기록한다. ai-usage: `{period,items:[{callType,calls,failures,latencyMs,inputTokens,outputTokens,costUsd}]}`(원문·학생 ID 없음).
@@ -595,6 +595,21 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | GET | `/internal/records/evidence?answerIds=` | core, ai, report | 원문 근거 조회 (삭제 시 `available:false`) |
 | GET | `/internal/stats?from&to` | core | 운영 현황용 집계 (학생 원문 없음) |
 | * | `/internal/admin/missions/...` | core | 2.8 미션 관리 프록시 |
+
+#### 4.1.1 report 수치 집계 입력 (#51 구현안, #27 연동 확인 대기)
+
+아래는 report의 P06·P08 계산에 필요한 learning 응답의 구현안이다. **#27의 실제 구현·합의를 확인한 완료 계약으로 간주하지 않는다.** report 클라이언트는 아래 형태의 고정 응답으로 검사하며, 실제 연동 전에 #27 응답과 대조한다. 3.9의 브라우저 목업을 서버 집계 계약으로 대신 사용하지 않는다.
+
+- 세 조회 모두 `childId`·`period:{from,to}`·`state`를 반환한다. 학생·기간이 요청과 다르거나 `PROCESSING/FAILED`이면 생성에 사용할 수 없다. 날짜 범위는 KST 양 끝 포함이다.
+- `attempts`·`changes`는 1.1의 페이지 봉투를 사용한다. report는 `size=100`으로 모든 페이지를 읽으며 실패/누락 페이지를 빈 기록으로 바꾸지 않는다. `thinking-types`는 3.9의 `{childId,state,period,items}` 형태를 사용한다.
+- `attempts.items[]`의 필수 입력:
+  - `attemptId`, `studentId`, `mission:{title,thinkingType}`, `status:IN_PROGRESS|COMPLETED`, `answers[]`, `hintUsages:[{openedAt}]`. 학생 메모·초안은 포함하지 않는다. 삭제 표식 `{attemptId,available:false}`은 집계에서 제외한다.
+  - `answers[]`: `{answerId,version,submittedAt,text,feedback:{status:PENDING|RUNNING|DONE|FAILED}}`. `text`는 제출 답변의 평문이며 평문이 없는 입력은 null이다. 시도당 1번부터 조회 종료일 끝까지의 답변 버전을 제공한다. 최초 답변·도움 이용을 비교할 수 있도록 조회 시작일 이전의 답변도 포함한다. report는 종료일 이후 답변을 사용하지 않는다.
+  - `hintUsages[]`는 최초 답변 이전 열람 여부를 판정할 수 있는 전체 열람 시각을 제공한다. 단순 `helped` 값으로 대체하지 않는다.
+  - 완료 시도는 `completedAt`을 제공한다. `reflection`은 없거나 `{difficulty,text,createdAt}`이며 선택 텍스트 null은 허용한다. 해당 주에 작성한 돌아보기만 포함하고 미작성은 `written:false`로 구분한다.
+- `thinking-types.items[]`: `{type,missions:[{attemptId,title}],state,summary?}`. 집계 대상 시도의 유형·미션을 대조한다. report는 기존 `summary`를 AI 서술로 재사용하지 않는다.
+- `changes.items[]`: 3.4와 같은 `{attemptId,followup,first:{answerId,text},revised:{answerId,text}}`. 포함된 시도의 종료일 기준 최초·마지막 답변과 ID·평문이 일치해야 한다. 시도당 한 쌍이며 답변이 하나뿐이면 변화 항목을 만들지 않는다. 수치는 report가 다시 계산한다.
+- 동일 시도가 여러 주에 걸치면 각 주에 제출된 답변 존재 여부로 포함한다. 변화는 포함된 시도의 최초 답변과 해당 주 종료일 이전 마지막 답변을 비교한다. 조회 이후에 추가된 답변으로 과거 주의 마지막 답변을 바꾸지 않는다.
 
 ### 4.2 ai-service (호출: learning, core, report)
 | Method | Path | 호출자 | 요청 → 응답 |

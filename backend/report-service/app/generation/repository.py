@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    Boolean,
     Column,
     Date,
     DateTime,
@@ -16,6 +17,7 @@ from sqlalchemy import (
     select,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Session
 
@@ -46,6 +48,26 @@ weekly_report = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("generated_at", DateTime(timezone=True)),
 )
+report_item = Table(
+    "report_item",
+    metadata,
+    Column("id", PG_UUID(as_uuid=True), primary_key=True),
+    Column("report_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("item_type", String, nullable=False),
+    Column("seq", Integer, nullable=False),
+    Column("payload", JSONB, nullable=False),
+    Column("state", String, nullable=False),
+    Column("verified", Boolean, nullable=False),
+)
+report_item_evidence = Table(
+    "report_item_evidence",
+    metadata,
+    Column("id", PG_UUID(as_uuid=True), primary_key=True),
+    Column("item_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("attempt_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("answer_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("answer_version", Integer, nullable=False),
+)
 
 
 def _report(row) -> WeeklyReport:
@@ -69,6 +91,37 @@ class ReportRepository:
             .one_or_none()
         )
         return _report(row) if row is not None else None
+
+    @staticmethod
+    def _save_items(session: Session, report_id: UUID, result: GenerationResult) -> None:
+        item_rows, evidence_rows = [], []
+        for item in result.items:
+            item_id = uuid4()
+            item_rows.append(
+                {
+                    "id": item_id,
+                    "report_id": report_id,
+                    "item_type": item.type,
+                    "seq": item.seq,
+                    "payload": item.payload,
+                    "state": item.state,
+                    "verified": item.verified,
+                }
+            )
+            evidence_rows.extend(
+                {
+                    "id": uuid4(),
+                    "item_id": item_id,
+                    "attempt_id": link.attempt_id,
+                    "answer_id": link.answer_id,
+                    "answer_version": link.answer_version,
+                }
+                for link in item.evidence
+            )
+        if item_rows:
+            session.execute(report_item.insert(), item_rows)
+        if evidence_rows:
+            session.execute(report_item_evidence.insert(), evidence_rows)
 
     def get_or_create(self, session: Session, command: GenerateReport) -> tuple[WeeklyReport, bool]:
         # Also serializes revision allocation for different jobs for the same student/week.
@@ -142,4 +195,8 @@ class ReportRepository:
             .mappings()
             .one_or_none()
         )
-        return _report(row) if row is not None else None
+        if row is None:
+            return None
+        if result is not None:
+            self._save_items(session, report_id, result)
+        return _report(row)

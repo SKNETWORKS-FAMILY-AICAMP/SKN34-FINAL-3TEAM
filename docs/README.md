@@ -40,6 +40,7 @@
 - `report/`: 작업별 검토 결과와 구현·검증 보고서
   - [이슈 #14 Repository 공통 기반](report/repository-foundation.md): 타입 매핑, 트랜잭션 경계, 예시 Repository와 PostgreSQL 테스트 사용법
   - [이슈 #50 리포트 생성 기반](report/report-generation-foundation.md): 상태 전이·Outbox 검증과 #42 메시지 계약 연결 전 남은 작업
+  - [이슈 #51 학습 기록·수치 계산](report/report-metrics.md): P08 계산·항목/근거 저장 검증, #27 입력 구현안과 남은 실제 연동
   - [이슈 #7 프론트 공통 기반](report/issue-7-fe-common.md): MSW 전환·인증 갱신·체크박스 검증 기준·남은 작업
   - [이슈 #7 학생 화면 후속 검증](report/issue-7-student-completion.md): 역할 URL·6종 입력·피드백·초안 회귀
   - [이슈 #8·#9 학부모·관리자 화면](report/issue-8-9-parent-admin.md): 가입·대시보드·대화·리포트·관리자 권한/작업/콘텐츠 및 목업 계약
