@@ -310,7 +310,7 @@ sequenceDiagram
   alt 이미 DONE
     L-->>C: 저장된 결과
   else 유효 리스 RUNNING (다른 요청이 처리 중)
-    L-->>C: status RUNNING
+    L-->>C: 200 {status: RUNNING}
   else 전이 성공
     alt 고르기·수학 최종 답
       L->>L: ChoiceJudge·MathEquivalenceJudge
@@ -331,7 +331,7 @@ sequenceDiagram
       end
       A-->>L: result·elements·heldReason·trial·versions
     end
-    opt 되묻기 대상 (시도 내 되묻기 2회 미만, 고르기 CORRECT 아님, P04)
+    opt 되묻기 대상 (시도 내 되묻기 2회 미만, 고르기 CORRECT 아님, 마무리·완료 전, P04)
       L->>A: POST /internal/followups {timeline, judgment, rubric, mission, grade}
       A->>LLM: 되묻기 생성
       A->>A: LeakGuard 정답·금지어 검사
@@ -345,13 +345,13 @@ sequenceDiagram
     end
     A--)A: llm.usage.recorded 발행 (best-effort)
     alt 위 처리 중 예외 (ai·LLM 실패, 타임아웃)
-      L->>DB: judgment FAILED (failure_code, retry_count+1)
+      L->>DB: judgment FAILED (failure_code, retry_count+1, 획득한 리스일 때만)
       L-->>C: 503 AI_UNAVAILABLE retryable
     else 정상
       rect rgba(128,128,128,0.12)
-        L->>DB: judgment DONE + judgment_element + followup + 버전 저장
+        L->>DB: judgment DONE + judgment_element + followup + 버전 저장 (획득한 리스일 때만, 리스를 잃었으면 저장 없이 현재 상태)
       end
-      L-->>C: FeedbackResult
+      L-->>C: 200 FeedbackResult
     end
   end
   alt status RUNNING 수신

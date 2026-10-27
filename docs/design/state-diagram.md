@@ -189,12 +189,14 @@ stateDiagram-v2
 
 | 결과 | 조건 | 결정 위치 |
 |---|---|---|
-| `CORRECT` | 규칙: 정답 키 일치·수학 동치 / LLM: 모든 필수 요소 `verified && satisfied` | learning `RuleJudge` / ai `JudgmentService` |
-| `PARTIAL` | LLM: 일부 요소만 충족 (배점 기준) | ai `JudgmentService` |
-| `RETHINK` | 규칙: 불일치 / LLM: 충족 요소 없음 | learning `RuleJudge` / ai `JudgmentService` |
+| `CORRECT` | 규칙: 정답 키 일치·수학 동치 / LLM: 모든 필수 요소 `verified && satisfied` / 풀이 단계: 최종 답 동치 + 풀이 LLM `CORRECT` | learning `RuleJudge` / ai `JudgmentService` / learning `FeedbackFacade` |
+| `PARTIAL` | LLM: 일부 요소만 충족 (배점 기준) / 풀이 단계: 최종 답과 풀이 중 한쪽만 맞음 | ai `JudgmentService` / learning `FeedbackFacade` |
+| `RETHINK` | 규칙: 불일치 / LLM: 충족 요소 없음 / 풀이 단계: 최종 답 불일치 + 풀이 LLM `RETHINK` | learning `RuleJudge` / ai `JudgmentService` / learning `FeedbackFacade` |
 | `HELD` | `INSUFFICIENT_EVIDENCE`·`QUOTE_MISMATCH`·`TOO_SHORT`·`UNVERIFIED_SCOPE`(`judge_verified = false`, `JUDGE_REQUIRE_VERIFIED=true`일 때만)·`MODEL_DISAGREEMENT`(M2 불일치)·`LOW_CONFIDENCE`(M1 0.8 미만, P15) | ai `JudgmentService` (learning은 `judge_verified`·학년 포함 기준표 전달만) |
 
 - `HELD`는 정상 처리 결과(`DONE`), API 실패는 `FAILED` → 서로 다른 컬럼 (NFR-REL-04)
+- 풀이 단계(`SOLUTION_STEPS`)는 풀이를 ai 요소 판정, 최종 답을 `MathEquivalenceJudge`로 보고 위처럼 합침. ai가 보류하면 보류. 합치는 규칙은 기능 명세에 없어 #25에서 정한 임시 규칙 ([learning 피드백 보고서](../report/learning-feedback.md))
+- `FAILED`의 `failure_code`: `AI_TIMEOUT`·`AI_UNAVAILABLE`(연결 실패·ai 5xx)·`AI_BAD_RESPONSE`(ai 4xx·계약 밖 응답)·`AI_CIRCUIT_OPEN`·`INTERNAL_ERROR`
 
 ---
 
