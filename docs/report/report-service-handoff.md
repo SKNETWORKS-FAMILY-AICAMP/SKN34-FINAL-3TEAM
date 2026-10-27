@@ -1,6 +1,6 @@
 # 리포트 #50~#55 구현 및 인계
 
-2026-10-27 로컬 구현 기준. 기반 develop은 `ecd6ecf`이며 이후 원격 변경을 포함했다고 주장하지 않는다. 아래 브랜치는 아직 로컬이며 GitHub push·PR 생성·이슈 종료는 수행하지 않았다. 실제 타 서비스까지 연결한 완료와 report 단독 검증 완료를 구분한다.
+2026-10-27 로컬 구현 기준. 최초 기반 develop은 `ecd6ecf`이며, 이후 최신 develop `7188b69`를 현재 `feature/report-deletion`에 병합했다(merge `8b76b1f`). 아래 브랜치는 아직 로컬이며 GitHub push·PR 생성·이슈 종료는 수행하지 않았다. 실제 타 서비스까지 연결한 완료와 report 단독 검증 완료를 구분한다.
 
 ## 구현 범위
 
@@ -17,6 +17,8 @@
 
 ## 검증 근거
 
+최신 develop `7188b69` 병합 후에도 Ruff check/format, pytest **144개(56.29초)**, 세 DB 전체 migration/ERD 대조·no-op·report rollback/reapply(**12.0초**)를 다시 통과했다. #51~#54 보존 브랜치는 merge-tree 검사에서 모두 충돌이 없었으며, 실제 병합은 누적된 #55 브랜치에만 수행했다. 미션 조회·데모 시드가 추가되었지만 report 코드/스키마의 중복 변경은 없었다. 필요한 자료의 구체적인 요청 목록은 [#51~#55 필요 자료](report-required-inputs.md)를 따른다.
+
 - report 전체 pytest **144 passed, 0 failed, 0 skipped (58.10초)**. 실제 Docker PostgreSQL/RabbitMQ, HTTP 테스트 대역, moto S3, Chromium을 사용했다. AI Hub·실제 학생 데이터는 사용하지 않았다.
 - Ruff check·format check 통과. Starlette TestClient/httpx 사용에 대한 기존 deprecation warning 1개는 실패와 구분한다.
 - 일회용 PostgreSQL에서 세 DB migration 적용·재적용 no-op·ERD 타입/NULL/제약/인덱스 대조·report 전체 롤백/재적용 통과(12.7초). core 35/318, learning 19/156, report 7/50 테이블/컬럼, 제약 음성 사례 50개·CHECK 값 집합 64개·인덱스 19개. 검증기 회귀 unittest 18개 통과.
@@ -30,7 +32,7 @@
 |---|---|---|---|
 | #42 김동섭 | report.generate / started / completed / failed 공유 schema와 실제 codec, 표시 이름 공급 경로 | `generation/ports.py`의 ReportEventCodec, `worker.run(codec)`. 공통 메시지를 report에서 중복 정의하지 않는다. 표시 이름은 렌더링·AI 요청 전 이름 가림에 사용한다. | core 발행 → report 소비 → core terminal 반영 계약 테스트 |
 | #27 learning 담당(Overlay1010) | API 4.1.1 세 조회의 페이지/시각/최초·최신 답변/도움 요청 및 evidence 원문·버전·삭제 표식 | `LearningClient.records/evidence`. 오류를 빈 기록으로 취급하지 않으므로 실제 응답이 필요하다. | 합성 학생으로 정상/경계 시간/여러 페이지/삭제 evidence 대조 |
-| AI 서술 API 담당 배정 필요 | API 4.2.1 응답, prompt/model 버전, 이름 없는 요청 처리 | `AiClient.narrative`. dedicated 구현 이슈/담당자는 아직 확인되지 않았다. API 장애는 FAILED, 대조 실패만 TEMPLATE라는 사용자 결정 적용. | 정상·잘못된 숫자/인용·5xx/timeout 실제 통합 테스트 |
+| #64 AI 서술 API(현재 assignee 없음) | API 4.2.1 응답, prompt/model 버전, 이름 없는 요청 처리 | `AiClient.narrative`. #64가 새로 발행되어 기존 ‘이슈 미발행’ 인계 내용을 정정한다. API 장애는 FAILED, 대조 실패만 TEMPLATE라는 사용자 결정 적용. | 정상·잘못된 숫자/인용·5xx/timeout 실제 통합 테스트 |
 | core 리포트/상품 담당 | 현재 권한으로 계산한 `X-Report-Narrative-Enabled`, 생성 시 narrativeEnabled, 사용자/학생 scope | 무료 전환 후 기존 유료 파일이 새로 노출되지 않도록 core가 권한을 계산해야 한다. 브라우저 제공 헤더를 그대로 신뢰하면 안 된다. | 무료/유료/다운그레이드 상세·다운로드 대조 |
 | #45 김동섭·조장 | PROFILE/RECORDS 삭제 범위·진행 중 생성 정책·삭제 표식 보존·student.deleted 스키마 및 멱등 완료 API | `StudentDeletedConsumer`, `CoreClient`, 새 guard migration. 현재 구현 기본안은 팀 확정 전 운영 적용하지 않는다. | 삭제/중복/저장소 장애/완료 API 장애·재시도 E2E |
 | #42/#45 core 담당 | 최초 EventEnvelope.time 보존, 삭제 중 신규 요청 차단, 기존 queued job 취소·늦은 상태 이벤트 무시 | report 시간 장벽과 lock만으로 core 작업 상태나 learning 삭제 완료 순서까지 보장할 수 없다. | 오래된 generate/terminal을 삭제 뒤 재전달해 복원·상태 오염이 없는지 확인 |

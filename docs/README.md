@@ -47,6 +47,7 @@
   - [이슈 #55 학생 삭제](report/report-deletion.md): 멱등 삭제·실패 재시도·생성 충돌 방지
   - [이슈 #55 삭제 장벽 스키마](report/report-deletion-schema.md): 추가 revision과 운영 전 정책 검토
   - [리포트 #50~#55 통합 인계](report/report-service-handoff.md): 검증 결과와 담당자별 연결 작업
+  - [리포트 #51~#55 필요 자료](report/report-required-inputs.md): 연결 이슈별 요청할 JSON·계약·설정과 확정 여부
   - [이슈 #7 프론트 공통 기반](report/issue-7-fe-common.md): MSW 전환·인증 갱신·체크박스 검증 기준·남은 작업
   - [이슈 #7 학생 화면 후속 검증](report/issue-7-student-completion.md): 역할 URL·6종 입력·피드백·초안 회귀
   - [이슈 #8·#9 학부모·관리자 화면](report/issue-8-9-parent-admin.md): 가입·대시보드·대화·리포트·관리자 권한/작업/콘텐츠 및 목업 계약
