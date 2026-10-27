@@ -53,6 +53,8 @@
   - [이슈 #4 M2 API 명세 정렬](report/m2-api-alignment.md): 학년 입력·점수 범위·모델 버전 규칙 명세 반영과 근거
   - [이슈 #22 learning 미션 조회와 데모 미션 시드](report/learning-mission.md): 시드 문항·공개 범위·성취기준 근거, 미션 조회 구현 결정과 #14 Repository 기반 사용
 
+- [이슈 #36 Google OAuth·access/refresh](report/issue-36-google-auth.md): HS256·세션 폐기·역할 전환·프론트 계약과 후속 경계
+
 ## 개발 규칙
 
 ### 작업 규칙

@@ -8,7 +8,7 @@ data class UserAccount(
     val id: UUID,
     val role: String,
     val loginId: String,
-    val passwordHash: String,
+    val passwordHash: String?,
     val displayName: String?,
     val status: String,
     val isDemo: Boolean,

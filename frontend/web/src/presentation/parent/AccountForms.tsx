@@ -46,6 +46,13 @@ export function ConsentFields({
   )
 }
 export function SignupPage() {
+  if (!isDemo) return <Workspace title="이용 등록" nav={[]}><section className="ws-card">
+    <h2>Google 계정으로 시작하기</h2><p>로그인 후 이용 동의와 자녀 등록을 진행합니다.</p>
+    <a className="cj-primary" href="/api/v1/auth/google/authorize">Google 계정으로 계속하기</a>
+  </section></Workspace>
+  return <DemoSignupPage />
+}
+function DemoSignupPage() {
   const navigate = useNavigate(),
     documents = useParentQuery(['consents'], (signal) => parentApi.documents(signal)),
     signup = useParentMutation(parentApi.signup)
@@ -270,7 +277,7 @@ export function ProfileSettings({ child }: { child: Child }) {
       <section className="ws-card">
         <h2>자녀 정보</h2>
         <p>학년 변경은 이후 제공 문제에만 적용됩니다. 과거 답변과 문항은 변경하지 않습니다.</p>
-        <form
+        {isDemo ? <form
           className="ws-form"
           onSubmit={(e) => {
             e.preventDefault()
@@ -298,7 +305,7 @@ export function ProfileSettings({ child }: { child: Child }) {
             본인 재확인
           </button>
           <ErrorNotice error={reauth.error} />
-        </form>
+        </form> : <p>중요 정보 변경을 위한 Google 본인 확인 기능은 준비 중입니다.</p>}
         <form
           className="ws-form"
           onSubmit={(e) => {
