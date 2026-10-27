@@ -236,15 +236,18 @@ sequenceDiagram
   participant DB as learning_db
 
   W->>C: POST /missions/{missionId}/attempts
-  C->>L: POST /internal/missions/{missionId}/attempts
-  L->>DB: 공개·학년 범위 미션 확인
-  alt 비공개·범위 밖 미션
-    L-->>C: 409 MISSION_NOT_AVAILABLE
-  else 진행 중 시도 있음
-    L-->>C: 기존 attempt (이어하기)
+  C->>L: POST /internal/missions/{missionId}/attempts?grade&demo
+  L->>DB: 진행 중 시도 확인
+  alt 진행 중 시도 있음
+    L-->>C: 200 기존 attempt (이어하기, 공개 중단·학년 변경과 무관)
   else
-    L->>DB: attempt 저장 (IN_PROGRESS, 당시 mission·rubric 버전 고정)
-    L-->>C: 201 attempt
+    L->>DB: 공개·학년·시연 범위 미션 확인
+    alt 비공개·범위 밖 미션
+      L-->>C: 409 MISSION_NOT_AVAILABLE
+    else
+      L->>DB: attempt 저장 (IN_PROGRESS, 당시 mission·rubric 버전 고정) + 빈 초안(version 0)
+      L-->>C: 201 attempt
+    end
   end
   C-->>W: attempt
 
