@@ -187,7 +187,9 @@ def main() -> None:
     )
     args = parser.parse_args()
     if args.with_keyword and args.dataset != "descriptive":
-        parser.error("--with-keyword는 서술형(descriptive)만 가능 (논술형은 핵심어 없음)")
+        parser.error(
+            "--with-keyword는 서술형(descriptive)만 가능 (논술형은 핵심어 없음)"
+        )
 
     set_seed(args.seed)
     device = pick_device(args.device)

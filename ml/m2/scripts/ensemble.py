@@ -22,10 +22,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="M2 앙상블 평가")
     parser.add_argument("--dataset", choices=list(DATASETS), default="descriptive")
     parser.add_argument("--preds", type=Path, nargs="+", required=True)
-    parser.add_argument("--weights", type=float, nargs="+", help="모델별 가중치 (기본: 같게)")
+    parser.add_argument(
+        "--weights", type=float, nargs="+", help="모델별 가중치 (기본: 같게)"
+    )
     parser.add_argument("--data-dir", type=Path, default=M2_DIR / "data")
     parser.add_argument("--split-dir", type=Path, default=M2_DIR / "splits")
-    parser.add_argument("--result-dir", type=Path, default=M2_DIR / "results" / "ensemble")
+    parser.add_argument(
+        "--result-dir", type=Path, default=M2_DIR / "results" / "ensemble"
+    )
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
@@ -42,7 +46,9 @@ def main() -> None:
         for name in ["valid", "test"]:
             ids = sets[name]["answer_id"].to_numpy(dtype=str)
             if not np.array_equal(z[f"{name}_id"], ids):
-                raise SystemExit(f"{path}: {name} 답안 순서가 다름 (같은 분할·시드로 학습했는지 확인)")
+                raise SystemExit(
+                    f"{path}: {name} 답안 순서가 다름 (같은 분할·시드로 학습했는지 확인)"
+                )
         names.append(path.parent.name)
         valids.append(z["valid"])
         tests.append(z["test"])
@@ -53,7 +59,9 @@ def main() -> None:
     raw_test = np.tensordot(w, np.stack(tests), axes=1)
 
     preds = {}
-    for name, v, t in zip(names + ["ensemble"], valids + [raw_valid], tests + [raw_test]):
+    for name, v, t in zip(
+        names + ["ensemble"], valids + [raw_valid], tests + [raw_test]
+    ):
         for i, it in enumerate(ITEMS):
             cuts = fit_cuts(sets["valid"], it, v[:, i])
             preds[(name, it)] = apply_cuts(t[:, i], cuts)
@@ -65,11 +73,17 @@ def main() -> None:
     out = args.result_dir / f"ensemble_{args.dataset}.csv"
     table.to_csv(out, index=False)
     (args.result_dir / f"ensemble_{args.dataset}.json").write_text(
-        json.dumps({"preds": [str(p) for p in args.preds], "weights": w.tolist()}, ensure_ascii=False, indent=2),
+        json.dumps(
+            {"preds": [str(p) for p in args.preds], "weights": w.tolist()},
+            ensure_ascii=False,
+            indent=2,
+        ),
         encoding="utf-8",
     )
 
-    overall = table[table["group_by"] == "all"].pivot(index="item", columns="baseline", values="qwk")
+    overall = table[table["group_by"] == "all"].pivot(
+        index="item", columns="baseline", values="qwk"
+    )
     print(f"평가용 QWK (경계 조정, 가중치 {np.round(w, 2).tolist()}):")
     print(overall.reindex(ITEMS)[names + ["ensemble"]].to_string())
     print(f"\n저장: {out}")
