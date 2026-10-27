@@ -33,6 +33,9 @@ data class AttemptDetail(
     val feedbacks: Map<UUID, FeedbackResult>,
 )
 
+/** 시도와 답변 타임라인(버전 순, 각 답변이 답한 되묻기 질문 포함) */
+data class AttemptTimeline(val attempt: Attempt, val answers: List<TimelineAnswer>)
+
 /** 초안 버전 불일치. 최신 초안을 함께 돌려줌 (api-spec 3.6) */
 class DraftConflictException(val latest: AttemptDraft) :
     BusinessException(HttpStatus.CONFLICT, "ATTEMPT_DRAFT_CONFLICT", "초안 충돌", "다른 화면에서 더 최신 초안이 저장됨")
@@ -112,6 +115,16 @@ class AttemptService(
      * 메모는 보완 답변에도 쓰므로 유지(P05). lockForAnswer와 같은 트랜잭션에서 호출
      */
     fun clearSubmittedDraft(attemptId: UUID, now: Instant) = draftRepository.clearAnswer(attemptId, now)
+
+    /**
+     * 피드백용 본인 시도와 답변 타임라인 (class-diagram 4.2 FeedbackFacade --> AttemptService : 타임라인).
+     * 없으면 404, 남의 시도면 403
+     */
+    @Transactional(readOnly = true)
+    fun timeline(attemptId: UUID): AttemptTimeline {
+        val attempt = requireOwned(attemptId)
+        return AttemptTimeline(attempt, judgmentService.timeline(attempt.id))
+    }
 
     /** PostgreSQL timestamptz는 마이크로초까지 저장하므로 응답과 저장값이 같도록 맞춤 */
     private fun now(): Instant = Instant.now().truncatedTo(ChronoUnit.MICROS)
