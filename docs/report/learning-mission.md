@@ -11,8 +11,16 @@ learning-service의 `GET /internal/missions`, `GET /internal/missions/{id}`와 �
 | 상세 메서드 | `MissionService.get(missionId)` ([class-diagram 4.1](../design/class-diagram.md)) | `get(missionId, grade)` | 상세도 목록과 같은 학년 범위로 제한하려면 학년이 필요. 범위 밖은 api-spec 1.3 `409 MISSION_NOT_AVAILABLE` |
 | 목록 입력 방식 인자 | `MissionController.list(grade, inputTypes)` (class-diagram 4.1) | `inputTypes`를 받지 않고 학년으로 계산 | 같은 문서의 `MissionService.listForStudent(studentId, grade)`와 다르고, 입력 방식 범위를 넘기는 주체·기준이 문서에 없음. P03이 학년으로 정함(논술 초5~6) |
 | 시드의 공개 미션 | 공개는 검토 요청 → `mission_review APPROVED` → 공개 ([state-diagram 3.1](../design/state-diagram.md)) | 시드가 `PUBLISHED` 상태와 `published_at`을 직접 넣고 `mission_review`는 넣지 않음 | 관리자 작성·검토·공개 기능(FN-ADM-08~13)은 후속. 시드는 개발·시연용 데이터 |
-| 응답의 `scene` | 프론트 `Mission` 모델에 `scene`(`math`·`science` 등) ([api-spec 3.7](../design/api-spec.md)) | 응답에 없음 | DB(`mission_version`)에 대응 컬럼이 없음. 장면은 `sceneUri`·`staticSceneUri` |
-| 범위 밖 상세 오류 | api-spec 1.3 `409 MISSION_NOT_AVAILABLE` | api-spec대로 409 | 프론트 목업(`demoGateway.mission`)은 404를 써서 목업이 api-spec과 다름. 프론트 담당 확인 필요 |
+
+## 프론트 목업·잠정 모델과 다른 점 (프론트 담당 확인)
+
+[API 명세 3.7·3.8](../design/api-spec.md)은 프론트 `Mission` 모델을 백엔드 확인 전 잠정 계약으로 쓴다. 설계 문서와는 맞고, 목업과 아래가 다르다.
+
+| 항목 | 프론트 목업·모델 | 구현 | 근거 |
+|---|---|---|---|
+| 범위 밖 상세 오류 | `demoGateway.mission`이 `404 NOT_FOUND` | `409 MISSION_NOT_AVAILABLE` | api-spec 1.3 "비공개·범위 밖 미션". 없는 미션만 404 |
+| `scene` | `Mission.scene`(`math`·`science` 등) | 응답에 없음 | DB(`mission_version`)에 대응 컬럼이 없음. 장면은 `sceneUri`·`staticSceneUri` |
+| 입력 틀 | 필드 없음 | `inputTemplate`(풀이 단계·논술 틀 칸 이름) 추가 | api-spec 2.2 상세의 "입력 방식 틀", ERD `input_template` |
 
 ## 데모 미션 시드
 
