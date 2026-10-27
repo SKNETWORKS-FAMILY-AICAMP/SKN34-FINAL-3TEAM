@@ -22,7 +22,9 @@
 
 ## 2. 계정·자녀 연결
 
-### 2.1 로그인·토큰 재발급
+### 2.1 로그인·토큰 재발급 (#36 Google OAuth)
+
+학부모·관리자만 해당. 학생은 refresh 없이 2.4 경로로 진입. 세부 계약은 [API 명세 5.1](api-spec.md#51-36-google-oauth토큰-구현-계약-개정-p01-정렬)·[OpenAPI](../../contracts/openapi/core-service.yaml)
 
 ```mermaid
 sequenceDiagram
@@ -30,23 +32,43 @@ sequenceDiagram
   actor U as 사용자
   participant W as Web
   participant C as core
+  participant G as Google
   participant DB as core_db
 
-  U->>W: 로그인 ID·비밀번호
-  W->>C: POST /auth/login
-  C->>DB: user_account 조회 (status = ACTIVE)
-  alt 인증 실패
-    C-->>W: 401 UNAUTHENTICATED
+  U->>W: Google 계정으로 계속하기
+  W->>C: GET /auth/google/authorize
+  C-->>W: 302 Google 인가 URL (state·nonce·PKCE S256) + Set-Cookie sagomungchi_oauth (SameSite=Lax, 10분)
+  W->>G: 계정 선택·동의
+  G-->>W: 302 /auth/google/callback?code&state
+  W->>C: GET /auth/google/callback (상태 쿠키)
+  C->>C: state 쿠키 대조
+  C->>G: 코드 교환 (code_verifier) → ID 토큰 JWKS·iss·aud·exp·nonce 검증
+  alt 취소·검증 실패·같은 이메일 기존 계정
+    C-->>W: 302 /login?oauthError=CANCELLED|OAUTH_FAILED|ACCOUNT_EXISTS|OAUTH_UNAVAILABLE
   else 성공
-    C->>DB: refresh_token 저장 (token_hash)
-    C-->>W: 200 accessToken·역할·시작 화면 + Set-Cookie refresh (httpOnly·SameSite=Strict)
+    rect rgba(128,128,128,0.12)
+      C->>DB: user_account 조회 (provider+sub), 없으면 PARENT 생성 (이메일 자동 연결 없음)
+      C->>DB: auth_session·refresh_token(token_hash) 저장 (최초 로그인부터 7일)
+    end
+    C-->>W: 302 /oauth/complete + Set-Cookie sagomungchi_refresh (HttpOnly·SameSite=Strict·Path=/api/v1/auth)
   end
+  W->>C: POST /auth/refresh (쿠키, Origin·X-Requested-With)
+  C-->>W: 200 {accessToken, expiresIn, role, nextAction, startPath} + 회전 쿠키
+  W->>C: GET /me (Bearer)
+  C-->>W: 200 역할·nextAction(CONSENT_REQUIRED·CHILD_REGISTRATION_REQUIRED·READY)·startPath
   Note over W: access token은 메모리 보관
   W->>C: API 호출 (Bearer)
   C-->>W: 401 TOKEN_EXPIRED
-  W->>C: POST /auth/refresh (쿠키)
-  C->>DB: refresh_token 검증 → 폐기 + 새 토큰 저장 (회전)
-  C-->>W: 200 새 accessToken
+  W->>C: POST /auth/refresh (쿠키, 탭 간 Web Locks로 1회)
+  rect rgba(128,128,128,0.12)
+    C->>DB: auth_session 행 잠금 → refresh_token 재조회
+    alt 이미 사용한 토큰 (재사용)
+      C->>DB: auth_session 폐기 (commit)
+    else 유효
+      C->>DB: used_at 기록 + 새 refresh 저장 (세션 만료 연장 없음)
+    end
+  end
+  C-->>W: 200 새 accessToken (재사용이면 401 REFRESH_REUSED)
   W->>C: 원래 요청 재시도
 ```
 
@@ -61,7 +83,7 @@ sequenceDiagram
 
   W->>C: GET /consent-documents
   C-->>W: 현재 문서 버전 (TERMS·PRIVACY·GUARDIAN)
-  W->>C: POST /children {nickname, grade, birthYear, agreements[]}
+  W->>C: POST /children {nickname, grade, birthYear, consents[]}
   C->>C: GuardianshipService.registerChild
   C->>DB: 현재 필수 문서(required)·LINKED 자녀 수 조회
   alt 필수 GUARDIAN 동의 누락·학년 3~6 밖
@@ -93,13 +115,17 @@ sequenceDiagram
   participant DB as core_db
 
   Note over W: 학부모 로그인 상태에서 상단 자녀 전환으로 자녀 선택
-  W->>C: POST /auth/student-sessions {childId} (학부모 Bearer)
-  C->>DB: guardianship (parent, childId, LINKED)·student ACTIVE·필수 동의 유지 확인
+  W->>C: POST /auth/student-sessions {childId} (학부모 Bearer + refresh 쿠키)
+  C->>DB: auth_session 잠금·Bearer와 같은 세션 확인, guardianship (parent, childId, LINKED)·student ACTIVE·필수·법정대리인 동의 확인
   alt 미연결·삭제·필수 동의 철회
     C-->>W: 403 CHILD_NOT_LINKED
   else
-    C-->>W: 200 학생 accessToken (role STUDENT, studentId = childId)
+    rect rgba(128,128,128,0.12)
+      C->>DB: 부모 refresh 소비, auth_session role=STUDENT·student_id·version+1·만료=학생 access TTL
+    end
+    C-->>W: 200 {accessToken, expiresIn, role STUDENT, child, nextAction READY, startPath} + refresh 쿠키 삭제
   end
+  Note over W: 학생 refresh 미발급. 기존 부모 access는 version 불일치로 거부
   Note over W: 이후 학생 API는 학생 토큰으로 호출. URL 식별값(?student=) 진입 없음
 ```
 
@@ -182,7 +208,7 @@ sequenceDiagram
   participant L as learning
 
   W->>C: GET /children/{childId}/summary?from&to (Bearer)
-  C->>C: JwtAuthFilter → UserContext(userId, PARENT)
+  C->>C: PublicAuthFilter → UserContext(userId, PARENT)
   C->>DB: guardianship (parent, childId, LINKED) 존재 확인
   alt 미연결
     C-->>W: 403 CHILD_NOT_LINKED
