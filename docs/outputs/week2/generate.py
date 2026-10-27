@@ -62,7 +62,7 @@ def diagram(name, title, direction="LR", **graph):
         show=False,
         direction=direction,
         graph_attr={"fontname": BOLD, "fontsize": "34", "labelloc": "t", "pad": "0.6", "nodesep": "0.8",
-                    "ranksep": "1.1", "dpi": "130", "splines": "spline", "compound": "true", **graph},
+                    "ranksep": "1.1", "dpi": "130", "splines": "ortho", "forcelabels": "true", "compound": "true", **graph},
         node_attr={"fontname": FONT, "fontsize": "15", "fixedsize": "false", "width": "0", "height": "0"},
         edge_attr={"fontname": FONT, "fontsize": "19", "penwidth": "2", "arrowsize": "0.9"},
     )
@@ -76,6 +76,10 @@ def group(label, colors=GRAY, **graph):
 
 def cluster_id(label):
     return "cluster_" + label
+
+
+# 노드 둘레 여백: 직각 선이 글자에 붙지 않도록 함
+BOX = {"shape": "none", "margin": "0.22,0.14"}
 
 
 def _html(rows):
@@ -97,7 +101,7 @@ def comp(icons, title, desc="", size=80):
         for c in icons)
     rows = [f'<TR><TD><TABLE BORDER="0" CELLSPACING="10" CELLPADDING="0"><TR>{imgs}</TR></TABLE></TD></TR>',
             '<TR><TD HEIGHT="4"></TD></TR>']
-    return Node(_html(rows + _text_rows(title, desc)), shape="plain")
+    return Node(_html(rows + _text_rows(title, desc)), **BOX)
 
 
 def card(title, desc="", fill="#ffffff", line="#868e96"):
@@ -105,7 +109,7 @@ def card(title, desc="", fill="#ffffff", line="#868e96"):
     body = "".join(_text_rows(title, desc))
     return Node(f'<<TABLE STYLE="rounded" BORDER="1" CELLBORDER="0" COLOR="{line}" BGCOLOR="{fill}" CELLSPACING="0" '
                 f'CELLPADDING="8"><TR><TD><TABLE BORDER="0" CELLSPACING="0" CELLPADDING="2">{body}'
-                f'</TABLE></TD></TR></TABLE>>', shape="plain")
+                f'</TABLE></TD></TR></TABLE>>', **BOX)
 
 
 def table(title, header, rows, line="#adb5bd", head_fill="#f1f3f5"):
@@ -117,7 +121,7 @@ def table(title, header, rows, line="#adb5bd", head_fill="#f1f3f5"):
     return Node(f'<<TABLE BORDER="1" COLOR="{line}" BGCOLOR="#ffffff" CELLBORDER="1" CELLSPACING="0" '
                 f'CELLPADDING="7"><TR><TD COLSPAN="{len(header)}" ALIGN="LEFT" BGCOLOR="#ffffff">'
                 f'<FONT FACE="{BOLD}" POINT-SIZE="18">{escape(title)}</FONT></TD></TR>'
-                f'<TR>{cells}</TR>{body}</TABLE>>', shape="plain")
+                f'<TR>{cells}</TR>{body}</TABLE>>', **BOX)
 
 
 def legend(items, title="범례"):
@@ -127,17 +131,19 @@ def legend(items, title="범례"):
                    for c, mark, text in items)
     return Node(f'<<TABLE STYLE="rounded" BORDER="1" CELLBORDER="0" COLOR="#adb5bd" BGCOLOR="#ffffff" CELLSPACING="0" '
                 f'CELLPADDING="5"><TR><TD COLSPAN="2" ALIGN="LEFT"><FONT FACE="{BOLD}" POINT-SIZE="18">'
-                f'{escape(title)}</FONT></TD></TR>{rows}</TABLE>>', shape="plain")
+                f'{escape(title)}</FONT></TD></TR>{rows}</TABLE>>', **BOX)
 
 
 def edge(**attrs):
-    """diagrams Edge 기본 글꼴(Sans-Serif 13pt)을 덮어씀."""
+    """diagrams Edge 기본 글꼴(Sans-Serif 13pt)을 덮어씀. 직각 선은 label을 지원하지 않아 xlabel로 표시."""
+    if "label" in attrs:
+        attrs["xlabel"] = attrs.pop("label")
     return Edge(**{"fontname": FONT, "fontsize": "19", **attrs})
 
 
 def pad(label):
-    """선 라벨이 선과 겹치지 않도록 여백과 아랫줄을 둠."""
-    return f"  {label}  \n "
+    """선 라벨 좌우 여백."""
+    return f" {label} "
 
 
 def _edge(color, label, style, **attrs):
@@ -214,9 +220,9 @@ def overview():
 
         # app 영역 → 오른쪽 영역 묶음 선
         app_id = cluster_id("namespace: app")
-        scoring >> msg("명령 · 이벤트", ltail=app_id, lhead=cluster_id("namespace: platform")) >> mq
-        scoring >> data("서비스별 DB · 파일", ltail=app_id, lhead=cluster_id("데이터 저장소")) >> rds
-        scoring >> ext("외부 API", ltail=app_id, lhead=ext_id) >> llm
+        scoring >> msg(ltail=app_id, lhead=cluster_id("namespace: platform")) >> mq
+        scoring >> data(ltail=app_id, lhead=cluster_id("데이터 저장소")) >> rds
+        scoring >> ext(ltail=app_id, lhead=ext_id) >> llm
 
 
 def aws():
@@ -228,8 +234,8 @@ def aws():
         with group("AWS Region", AWS):
             cdn = comp([CloudFront], "CloudFront", "/api/* 캐시 비활성")
             web = comp([SimpleStorageServiceS3], "S3", "웹 정적 파일 · 미션 장면")
-            files = comp([SimpleStorageServiceS3], "S3", "리포트 파일 · 모델 가중치")
-            mgmt_label = "관리형 서비스"
+            files = comp([SimpleStorageServiceS3], "S3", "리포트 파일 · 모델 가중치\nIRSA로 접근")
+            mgmt_label = "관리형 서비스 (이미지 · 시크릿 · 권한 → EKS)"
             with group(mgmt_label, GRAY):
                 ecr = comp([ECR], "ECR", "서비스 이미지")
                 comp([SecretsManager], "Secrets Manager", "External Secrets로 주입")
@@ -255,16 +261,16 @@ def aws():
         cdn >> data() >> web
         cdn >> http("/api/*") >> alb >> http() >> app
         # 외부 호출: 앱 → NAT → IGW → 외부 (위쪽 배치를 위해 선은 역방향으로 두고 화살표만 반대로 표시)
-        nat - ext("외부 호출", reverse=True) - app
+        nat - ext(reverse=True) - app
         igw - ext(reverse=True) - nat
         llm - ext(reverse=True, ltail=ext_id) - igw
         # 저장소
         app >> data() >> rds
         plat >> data() >> ebs
-        app >> data("IRSA") >> files
+        app >> data() >> files
         # 배포·보안
         gha >> edge(label=pad("이미지 push"), style="dashed") >> ecr
-        ecr >> edge(label=pad("이미지 · 시크릿 · 권한"), style="dashed", ltail=cluster_id(mgmt_label),
+        ecr >> edge(style="dashed", ltail=cluster_id(mgmt_label),
                     lhead=cluster_id(eks_label)) >> app
         ecr >> invis() >> plat
 
@@ -322,11 +328,8 @@ def services():
         ai >> http("M2 · M1") >> scoring
         worker >> http("서술 생성") >> ai
 
-        # 메시지: 서비스별 발행·소비를 한 선으로 묶고 세부는 표로 표기
-        core >> msg("명령 · 이벤트", reverse=True) >> mq
-        mq >> msg(reverse=True) >> worker
-        mq >> msg() >> learning
-        mq >> msg(reverse=True, lhead=cluster_id(stateless)) >> ai
+        # 메시지: app 영역 전체와 RabbitMQ를 한 선으로 묶고 생산·소비는 표로 표기
+        core >> msg("명령 · 이벤트", reverse=True, ltail=cluster_id("namespace: app")) >> mq
         mq >> invis() >> messages
 
 
@@ -335,7 +338,7 @@ def _layer(name, color, fill, rows, **attrs):
                    f'</TD><TD ALIGN="LEFT"><FONT POINT-SIZE="16">{escape(v)}</FONT></TD></TR>' for k, v in rows)
     return Node(f'<<TABLE STYLE="rounded" BORDER="2" CELLBORDER="0" COLOR="{color}" BGCOLOR="{fill}" CELLSPACING="0" '
                 f'CELLPADDING="6"><TR><TD COLSPAN="2" ALIGN="LEFT"><FONT FACE="{BOLD}" POINT-SIZE="20" '
-                f'COLOR="{color}">{escape(name)}</FONT></TD></TR>{body}</TABLE>>', shape="plain", **attrs)
+                f'COLOR="{color}">{escape(name)}</FONT></TD></TR>{body}</TABLE>>', **BOX, **attrs)
 
 
 def layered():
@@ -396,29 +399,29 @@ def cicd_observability():
         with group("CI/CD (GitOps)", K8S):
             repo = comp([Github], "모노레포", "backend · frontend · contracts")
             actions = comp([GithubActions], "GitHub Actions", "경로 필터 → 변경 서비스만\n테스트 · 빌드 · 계약 검사")
-            ghcr = card("GHCR", "local 이미지")
-            ecr = comp([ECR], "ECR", "prod 이미지 (OIDC)")
-            gitops = comp([Github], "gitops 태그 커밋", "environments/<env>/")
-            argo = comp([Argocd], "Argo CD", "ApplicationSet · Helm chart")
+            ghcr = card("GHCR", "local 이미지 push")
+            ecr = comp([ECR], "ECR", "prod 이미지 push (OIDC)")
+            gitops = comp([Github], "gitops 태그 갱신 커밋", "environments/<env>/")
+            argo = comp([Argocd], "Argo CD", "자동 동기화 · ApplicationSet\nHelm chart")
             kind = card("kind (local)", "ingress-nginx · Calico\nstub (LLM · 토스)", "#e7f5ff", HTTP)
             eks = card("EKS (prod)", "AWS LB Controller\nCluster Autoscaler", "#fff4e6", "#ff9900")
 
-        repo >> actions >> edge(label=pad("push")) >> [ghcr, ecr]
-        actions >> edge(label=pad("태그 갱신")) >> gitops >> edge(label=pad("자동 동기화")) >> argo
-        argo >> edge(label=pad("배포")) >> [kind, eks]
-        ghcr >> edge(label=pad("pull"), style="dashed") >> kind
-        ecr >> edge(label=pad("pull"), style="dashed") >> eks
+        legend([("#7b8894", "━━━", "빌드 · 배포 흐름"), ("#7b8894", "- - -", "이미지 pull")])
+        repo >> actions >> [ghcr, ecr]
+        actions >> gitops >> argo >> [kind, eks]
+        ghcr >> edge(style="dashed") >> kind
+        ecr >> edge(style="dashed") >> eks
 
         with group("관측 (namespace: observability)", ("#f8f5ff", "#7048e8")):
             apps = card("app 서비스", "core · learning · ai\nscoring · report")
             otel = card("OpenTelemetry Collector", "traceparent: HTTP 헤더 + 이벤트 봉투")
             prom = comp([Prometheus], "Prometheus", "서비스 지표 · 큐 길이 · DLQ")
             grafana = comp([Grafana], "Grafana", "대시보드 · Alerting")
-            langfuse = card("Langfuse", "LLM 호출 · 토큰 · 비용")
+            langfuse = card("Langfuse", "ai · scoring LLM 호출\n토큰 · 비용 · trace")
         discord = comp([Discord], "팀 디스코드", "오류율 · 지연 · 적체\nLLM 비용 80% 경보")
 
-        apps >> otel >> prom >> grafana >> edge(label=pad("경보")) >> discord
-        apps >> edge(label=pad("ai · scoring")) >> langfuse
+        apps >> otel >> prom >> grafana >> discord
+        apps >> langfuse
 
 
 if __name__ == "__main__":
