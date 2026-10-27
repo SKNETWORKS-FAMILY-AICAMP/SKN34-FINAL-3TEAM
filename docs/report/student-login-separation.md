@@ -78,7 +78,7 @@ ERD 10장에 표로 기록했다. CI 스키마 대조(`scripts/verify_db_schema.
 - `student`에 `pin_hash`, `pin_failed_count`, `pin_locked_at`, `pin_updated_at` 추가
 - `student_device`(학부모 소유 기기, `token_hash` UK, 만료·해제 시각), `student_device_child`(기기별 로그인 가능 자녀) 신설
 - 페어링 코드는 Redis 저장, 테이블 없음
-- 후속 core Flyway V8에서 3.1 Mermaid·6장 인덱스로 옮긴다
+- #36 OAuth용 V8 이후의 다음 core Flyway 버전에서 3.1 Mermaid·6장 인덱스로 옮긴다
 
 ## 변경 문서
 
@@ -95,7 +95,8 @@ ERD 10장에 표로 기록했다. CI 스키마 대조(`scripts/verify_db_schema.
 
 ## 후속·미확정
 
-- core: `StudentAuthService`·쿠키 처리·시도 제한, Flyway V8, OpenAPI 반영
+- core: `StudentAuthService`·쿠키 처리·시도 제한, Flyway(#36 V8 이후 버전), OpenAPI 반영
+- 로그인이 Google OAuth(#36)이므로 학부모 재확인(`X-Reauth-Token`)은 Google 재인증 기반(#45). 자녀 기기에 학부모 Google 세션이 남지 않도록 기기 등록은 코드·QR 방식을 기본으로 한다
 - 프론트
   - 학부모: 기기 등록·PIN 설정·기기 목록 화면
   - 자녀 기기: 프로필 선택·PIN 입력 화면

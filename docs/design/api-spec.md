@@ -553,7 +553,8 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 - 페어링 `POST /student-devices/pairings`
   - 학부모 토큰, `childIds[]`는 모두 `guardianship LINKED`이어야 함 (아니면 `403 CHILD_NOT_LINKED`)
   - 응답 `{pairingCode, expiresAt}`. 코드는 8자리 영숫자, 10분 유효·1회 사용, Redis 저장(원문 대신 해시 키)
-  - 학부모가 자녀 기기에서 직접 로그인한 경우 클라이언트가 발급 직후 등록 API를 호출하고 학부모 세션을 로그아웃한다
+  - 기본 등록 방식은 학부모 기기에서 코드·QR 발급 → 자녀 기기에서 입력·스캔. 로그인이 Google OAuth(#36)이므로 학부모가 자녀 기기에서 직접 로그인하면 브라우저에 Google 세션이 남을 수 있어 비권장
+  - 부득이 자녀 기기에서 학부모가 로그인한 경우 클라이언트가 발급 직후 등록 API를 호출하고 학부모 세션을 로그아웃하며, Google 계정 로그아웃을 안내한다
 - 등록 `POST /auth/student/devices`
   - 요청 `{pairingCode, label}` → 응답 `201 {deviceId, children:[{childId,nickname}]}` + `Set-Cookie: student_device=<랜덤 256bit>`
   - 서버는 토큰 해시만 저장, 만료 90일(설정값). 코드 오류·만료·재사용은 `400 PAIRING_CODE_INVALID`, IP 단위 시도 제한
