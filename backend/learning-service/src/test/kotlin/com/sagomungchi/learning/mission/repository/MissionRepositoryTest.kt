@@ -59,6 +59,15 @@ class MissionRepositoryTest : PostgresRepositoryTest() {
     }
 
     @Test
+    fun `시연 전용 여부를 함께 읽고 거르지는 않음`() {
+        val normal = mission("PUBLISHED", sortOrder = 1)
+        val demoOnly = mission("PUBLISHED", sortOrder = 2, demoOnly = true)
+
+        assertEquals(listOf(normal to false, demoOnly to true), repository.findPublished().map { it.id to it.demoOnly })
+        assertEquals(true, repository.findPublishedById(demoOnly)?.demoOnly)
+    }
+
+    @Test
     fun `학생의 미션별 가장 최근 시도 상태`() {
         val student = UUID.randomUUID()
         val retried = mission("PUBLISHED", sortOrder = 1)
@@ -85,12 +94,13 @@ class MissionRepositoryTest : PostgresRepositoryTest() {
         inputType: String = "NARRATIVE",
         choices: String? = null,
         inputTemplate: String? = null,
+        demoOnly: Boolean = false,
     ): UUID {
         val id = UUID.randomUUID()
         jdbc.update(
             """INSERT INTO mission (id, code, status, demo_only, sort_order, created_by, created_at, updated_at)
-               VALUES (?, ?, ?, false, ?, ?, ?, ?)""",
-            id, "TEST-$id", status, sortOrder, author, now, now,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            id, "TEST-$id", status, demoOnly, sortOrder, author, now, now,
         )
         addVersion(id, version = 1, title = "미션 $sortOrder", current = true,
             inputType = inputType, choices = choices, inputTemplate = inputTemplate)

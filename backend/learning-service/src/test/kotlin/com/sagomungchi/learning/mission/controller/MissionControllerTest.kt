@@ -53,7 +53,7 @@ class MissionControllerTest(
         val first = missionView(grade = 5, sortOrder = 1)
         val second = missionView(grade = 5, sortOrder = 2)
         val attemptId = UUID.randomUUID()
-        given(missionService.listForStudent(student, 5)).willReturn(
+        given(missionService.listForStudent(student, 5, false)).willReturn(
             listOf(
                 MissionListItem(first, MissionProgress(ProgressStatus.IN_PROGRESS, attemptId), 1, 2),
                 MissionListItem(second, MissionProgress.NOT_STARTED, 2, 2),
@@ -85,10 +85,25 @@ class MissionControllerTest(
     }
 
     @Test
+    fun `core가 넘긴 시연 학생 여부를 목록과 상세에 전달`() {
+        val mission = missionView(grade = 3, demoOnly = true)
+        given(missionService.listForStudent(student, 3, true))
+            .willReturn(listOf(MissionListItem(mission, MissionProgress.NOT_STARTED, 1, 1)))
+        given(missionService.get(mission.id, 3, true)).willReturn(mission)
+
+        studentRequest("/internal/missions?grade=3&demo=true").andExpect {
+            status { isOk() }
+            jsonPath("$.items[0].id") { value(mission.id.toString()) }
+            jsonPath("$.items[0].demoOnly") { doesNotExist() }
+        }
+        studentRequest("/internal/missions/${mission.id}?grade=3&demo=true").andExpect { status { isOk() } }
+    }
+
+    @Test
     fun `상세 응답에는 정답·예시 답·기준표 필드가 없음`() {
         val mission = missionView(grade = 3, inputType = InputType.CHOICE)
             .copy(choices = listOf(Choice("c1", "물을 받지 못해서")))
-        given(missionService.get(mission.id, 3)).willReturn(mission)
+        given(missionService.get(mission.id, 3, false)).willReturn(mission)
 
         val body = studentRequest("/internal/missions/${mission.id}?grade=3")
             .andExpect { status { isOk() } }
@@ -131,7 +146,7 @@ class MissionControllerTest(
     @Test
     fun `상세 업무 오류는 Problem Details로`() {
         val id = UUID.randomUUID()
-        given(missionService.get(id, 3)).willThrow(
+        given(missionService.get(id, 3, false)).willThrow(
             BusinessException(HttpStatus.CONFLICT, "MISSION_NOT_AVAILABLE", "제공되지 않는 미션"),
         )
 

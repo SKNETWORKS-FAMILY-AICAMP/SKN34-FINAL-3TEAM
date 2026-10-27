@@ -38,7 +38,7 @@ class MissionServiceTest {
         val thirdFirst = missionView(grade = 3, sortOrder = 1)
         val fifth = missionView(grade = 5, sortOrder = 3)
 
-        val items = service(FakeMapper(listOf(third, thirdFirst, fifth))).listForStudent(student, grade = 3)
+        val items = service(FakeMapper(listOf(third, thirdFirst, fifth))).listForStudent(student, grade = 3, demo = false)
 
         assertEquals(listOf(thirdFirst.id, third.id), items.map { it.mission.id })
         assertEquals(listOf(1, 2), items.map { it.position })
@@ -50,8 +50,21 @@ class MissionServiceTest {
         val essay = missionView(grade = 3, gradeMax = 6, inputType = InputType.ESSAY)
         val mapper = FakeMapper(listOf(essay))
 
-        assertEquals(emptyList(), service(mapper).listForStudent(student, grade = 4))
-        assertEquals(listOf(essay.id), service(mapper).listForStudent(student, grade = 5).map { it.mission.id })
+        assertEquals(emptyList(), service(mapper).listForStudent(student, grade = 4, demo = false))
+        assertEquals(listOf(essay.id), service(mapper).listForStudent(student, grade = 5, demo = false).map { it.mission.id })
+    }
+
+    @Test
+    fun `시연 전용 미션은 시연 학생만 목록과 상세에서 봄 (state-diagram 3·1)`() {
+        val normal = missionView(grade = 3, sortOrder = 1)
+        val demoOnly = missionView(grade = 3, sortOrder = 2, demoOnly = true)
+        val service = service(FakeMapper(listOf(normal, demoOnly)))
+
+        assertEquals(listOf(normal.id), service.listForStudent(student, grade = 3, demo = false).map { it.mission.id })
+        assertEquals(listOf(normal.id, demoOnly.id), service.listForStudent(student, grade = 3, demo = true).map { it.mission.id })
+        assertEquals(demoOnly, service.get(demoOnly.id, grade = 3, demo = true))
+        val error = assertThrows<BusinessException> { service.get(demoOnly.id, grade = 3, demo = false) }
+        assertEquals("MISSION_NOT_AVAILABLE", error.code)
     }
 
     @Test
@@ -64,7 +77,7 @@ class MissionServiceTest {
             attempts = listOf(MissionAttempt(started.id, attemptId, ProgressStatus.IN_PROGRESS)),
         )
 
-        val items = service(mapper).listForStudent(student, grade = 3)
+        val items = service(mapper).listForStudent(student, grade = 3, demo = false)
 
         assertEquals(MissionProgress(ProgressStatus.IN_PROGRESS, attemptId), items[0].progress)
         assertEquals(MissionProgress.NOT_STARTED, items[1].progress)
@@ -74,7 +87,7 @@ class MissionServiceTest {
     fun `상세는 공개이고 학생 학년 범위인 미션`() {
         val mission = missionView(grade = 5)
 
-        assertEquals(mission, service(FakeMapper(listOf(mission))).get(mission.id, grade = 5))
+        assertEquals(mission, service(FakeMapper(listOf(mission))).get(mission.id, grade = 5, demo = false))
     }
 
     @Test
@@ -84,7 +97,7 @@ class MissionServiceTest {
         val service = service(FakeMapper(listOf(fifth), unpublished = setOf(draft)))
 
         listOf(fifth.id, draft).forEach { id ->
-            val error = assertThrows<BusinessException> { service.get(id, grade = 3) }
+            val error = assertThrows<BusinessException> { service.get(id, grade = 3, demo = false) }
             assertEquals(HttpStatus.CONFLICT, error.status)
             assertEquals("MISSION_NOT_AVAILABLE", error.code)
         }
@@ -93,7 +106,7 @@ class MissionServiceTest {
     @Test
     fun `상세 미션이 없으면 404 NOT_FOUND`() {
         val error = assertThrows<BusinessException> {
-            service(FakeMapper(emptyList())).get(UUID.randomUUID(), grade = 3)
+            service(FakeMapper(emptyList())).get(UUID.randomUUID(), grade = 3, demo = false)
         }
         assertEquals(HttpStatus.NOT_FOUND, error.status)
         assertEquals("NOT_FOUND", error.code)

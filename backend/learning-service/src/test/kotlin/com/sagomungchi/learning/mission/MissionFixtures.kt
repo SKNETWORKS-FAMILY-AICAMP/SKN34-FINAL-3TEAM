@@ -12,6 +12,7 @@ fun missionView(
     inputType: InputType = InputType.NARRATIVE,
     gradeMax: Int = grade,
     id: UUID = UUID.randomUUID(),
+    demoOnly: Boolean = false,
 ) = MissionView(
     id = id,
     sortOrder = sortOrder,
@@ -27,4 +28,5 @@ fun missionView(
     staticSceneUri = null,
     choices = emptyList(),
     inputTemplate = emptyList(),
+    demoOnly = demoOnly,
 )

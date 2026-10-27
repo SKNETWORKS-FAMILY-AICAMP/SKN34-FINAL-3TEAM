@@ -14,7 +14,8 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 /**
- * 학생용 미션 조회 (api-spec 2.2, 4.1). core가 학생 학년을 grade로 넘김 (지원 학년 초3~6, P03).
+ * 학생용 미션 조회 (api-spec 2.2, 4.1). core가 학생 학년을 grade(지원 학년 초3~6, P03),
+ * 시연 학생 여부(student.is_demo)를 demo로 넘김.
  */
 @RestController
 @RequestMapping("/internal/missions")
@@ -26,8 +27,9 @@ class MissionController(
         @RequestParam @Min(MIN_GRADE) @Max(MAX_GRADE) grade: Int,
         @RequestParam(defaultValue = "0") @Min(0) page: Int,
         @RequestParam(defaultValue = "20") @Min(1) @Max(100) size: Int,
+        @RequestParam(defaultValue = "false") demo: Boolean,
     ): PageResponse<MissionListItemResponse> {
-        val items = missionService.listForStudent(currentStudentId(), grade)
+        val items = missionService.listForStudent(currentStudentId(), grade, demo)
         // page * size가 Int 범위를 넘으면 음수가 되므로 Long으로 계산
         val offset = (page.toLong() * size).coerceAtMost(items.size.toLong()).toInt()
         return PageResponse(
@@ -42,9 +44,10 @@ class MissionController(
     fun get(
         @PathVariable missionId: UUID,
         @RequestParam @Min(MIN_GRADE) @Max(MAX_GRADE) grade: Int,
+        @RequestParam(defaultValue = "false") demo: Boolean,
     ): MissionResponse {
         currentStudentId()
-        return MissionResponse.from(missionService.get(missionId, grade))
+        return MissionResponse.from(missionService.get(missionId, grade, demo))
     }
 
     /** 학생 토큰이면 X-Student-Scope에 본인 1명. 그 밖의 역할·범위는 403 */
