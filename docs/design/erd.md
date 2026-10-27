@@ -1,6 +1,6 @@
 # ERD
 
-- 근거: [기능명세서](functional-spec.md), [API 명세서](api-spec.md), [유스케이스](usecase.md), [아키텍처 설계](architecture.md), [프로젝트 기획서](<../outputs/프로젝트 기획서_사고뭉치_최종.pdf>) 4.5
+- 근거: [기능명세서](functional-spec.md), [API 명세서](api-spec.md), [유스케이스](usecase.md), [아키텍처 설계](architecture.md), [프로젝트 기획서](<../outputs/프로젝트_기획서_사고뭉치.pdf>) 4.5
 - 범위: DB를 소유한 서비스 3개(core_db · learning_db · report_db). ai·scoring은 상태 없음 (아키텍처 1.1)
 - AI Hub 원본·가공본은 `ml/` 학습용으로 서비스 DB에 넣지 않음 (NFR-DAT-03)
 - `(P04)` 형태는 확정 정책 번호, 내용은 [기능명세서 1.4](functional-spec.md#14-확정-정책)
@@ -995,7 +995,7 @@ erDiagram
 
 ## 11. #36 OAuth·로그인 세션 (개정 P01 정렬)
 
-> OAuth·로그인 세션 V8은 현재 feature 작업이다. 10장의 기기·PIN 저장 구조는 #58에서 V8 이후의 다음 버전으로 구현한다. 학생에게는 refresh를 발급하지 않는다.
+> OAuth·로그인 세션 V8은 develop에 적용되었다(3.1.1). 10장의 기기·PIN 저장 구조는 #58에서 V8 이후의 다음 버전으로 구현한다. 학생에게는 refresh를 발급하지 않는다.
 `user_account.oauth_provider/oauth_subject`는 함께 NULL(기존 계정) 또는 GOOGLE/Google sub이며 복합 UNIQUE다. password_hash는 nullable로 보존하고 이메일로 OAuth 계정을 자동 연결하지 않는다.
 
 

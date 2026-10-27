@@ -1,6 +1,6 @@
 # API 명세서
 
-- 근거: [기능명세서](functional-spec.md), [유스케이스](usecase.md), [프로젝트 기획서](<../outputs/프로젝트 기획서_사고뭉치_최종.pdf>), [아키텍처 설계](architecture.md)
+- 근거: [기능명세서](functional-spec.md), [유스케이스](usecase.md), [프로젝트 기획서](<../outputs/프로젝트_기획서_사고뭉치.pdf>), [아키텍처 설계](architecture.md)
 - 범위: 공개 API(core-service, 웹이 호출) 전체 + 서비스 간 내부 API
 - 우선순위: 유스케이스 우선순위(핵심·제안·우선1·우선2·선택)
 - `(P04)` 형태는 확정 정책 번호, 내용은 [기능명세서 1.4](functional-spec.md#14-확정-정책)
@@ -499,7 +499,7 @@ If-Match: "7"
 
 - #36 이후 이메일·비밀번호 로그인/가입은 제공하지 않는다. Google core 콜백 → web `/oauth/complete` → refresh → `/me`로 로그인 상태·시작 화면을 복원한다. 개발 전용 MSW의 이메일 fixture는 운영 계약이 아니다. 학생 단독 진입은 3.11을 따른다(P01 개정).
 - `POST /auth/refresh`: 학부모·관리자만 httpOnly 쿠키로 갱신한다. 학생은 refresh 미발급이며 3.11에 따라 재진입한다. 동시 만료 요청은 refresh 1회 공유, 원 요청은 1회만 재시도한다.
-- `POST /auth/student-sessions`: 기존 `{childId}` → `{accessToken,role:STUDENT}`.
+- `POST /auth/student-sessions`: 요청 `{childId}`. 응답은 구현 계약 5.1·OpenAPI가 우선이다(`{accessToken,expiresIn,role:STUDENT,child,nextAction,startPath}`).
 - `GET /children`: 1.1 목록 봉투의 items에 `{childId,nickname,grade,birthYear,plan:FREE|PREMIUM}`. plan의 실제 상품/권한 응답 위치는 확인 대상이다.
 - 학생 조회의 목업 DTO는 `frontend/web/src/domain/classroom.ts`의 화면 모델을 잠정 사용한다. Mission(제목·교과·학년·유형·질문·장면 표시 정보), Attempt(attemptId·studentId·mission·status·answers·도움·돌아보기), 목록은 1.1 봉투. draft는 3.6처럼 `{version,content:{answer,memo},savedAt}`로 직렬화한다. finish 전 reveal은 전송하지 않는다.
 - 학생 홈·입력 틀 상세·최종 체크리스트의 완전한 DTO, SOLUTION_STEPS·CLASSIFICATION 제출 필드는 아직 미확정이다. 이 초안으로 임의 확정하거나 완료 체크하지 않는다.
@@ -514,7 +514,7 @@ If-Match: "7"
 - `CHOICE`는 choiceIds 1개, `ORDERING`은 모든 choiceIds를 중복 없이 순서대로 전달한다. 모든 방식에 `dictatedByGuardian`(boolean)과 보완 시 `followupId`를 공통 적용한다. 메모는 제출에 포함하지 않는다.
 - 미션 목록 항목: 기존 Mission + `status:NOT_STARTED|IN_PROGRESS|COMPLETED`, `attemptId?`, `position`, `total`. 공개 문항은 초3·초5 각 5개를 유지하고, 6종 입력 계약 시험용 추가 문항은 별도 개발 시나리오에만 제공한다.
 - `GET /students/me/home`: `{student:Child,state:QueryState,period:{from,to},resume:Attempt|null,missions:Mission[]}`. 제출 전 초안만 있는 시도도 resume에 포함한다. 정답/예시/reveal/checklist는 마무리 전에 제공하지 않는다.
-- `GET /me`: `{role:PARENT|ADMIN}` 또는 `{role:STUDENT,child:Child}`. 학부모·관리자만 refresh로 복원하며 학생은 메모리 access가 없으면 재진입한다. 토큰·로그인 정보는 브라우저 영구 저장소에 보관하지 않는다.
+- `GET /me`: `{role:PARENT|ADMIN,...}` 또는 `{role:STUDENT,child:Child,...}`. 전체 필드는 5.1·OpenAPI가 우선이다. 학부모·관리자만 refresh로 복원하며 학생은 메모리 access가 없으면 재진입한다. 토큰·로그인 정보는 브라우저 영구 저장소에 보관하지 않는다.
 - Attempt의 `answers[].content?`는 제출 답변 내용만 담으며 메모는 없다. `draft`는 3.6의 version/content/savedAt 형식을 유지한다. 저장·제출·피드백 요청은 분리한다.
 - finish 성공 후에만 `reveal`, `revealKind:ANSWER|EXAMPLE`, `checklist:Element[]`가 생긴다. Element는 3.2의 elementId/label/satisfied/quote/sourceType 형식을 사용한다. 체크는 satisfied와 원문 인용 존재가 모두 확인된 요소만 표시한다.
 - 미검증 판정은 trial:true, HELD와 FAILED는 구분한다. 개발 시나리오 PARTIAL/RETHINK/CORRECT는 실제 모델 성능 판정이 아닌 고정 UI 시험 상태다.
@@ -525,7 +525,7 @@ If-Match: "7"
 기존 1.6·3.3·3.4 스키마를 그대로 사용한다. 목록은 1.1 봉투이며 아래 보완은 구현용 초안이다.
 
 - 동의 문서: `{documentId,kind:TERMS|PRIVACY|GUARDIAN,version,title,content,required}`. Google 인증 뒤 동의 저장은 #37에서 제공한다. 자녀 등록은 기존 프로필 + 같은 `consents` 배열, 법정대리인 문서 동의 필수. P02에 따라 `/children/link`는 제공하지 않는다.
-- `GET /me`: `{userId,name,email,role,permissions?:AdminPermission[]}`. 이름 수정은 `PATCH /me {name}`. `/me/reauth`는 Google 재인증 기반 `{reauthToken,expiresAt}`(#45). 닉네임·학년 변경은 `PATCH /children/{id}`이며 중요 변경은 `X-Reauth-Token` 헤더 사용(토큰 메모리 한정).
+- `GET /me`: `{userId,name,email,role,permissions,nextAction,startPath}` (5.1·OpenAPI가 우선). 이름 수정은 `PATCH /me {name}`. `/me/reauth`는 Google 재인증 기반 `{reauthToken,expiresAt}`(#45). 닉네임·학년 변경은 `PATCH /children/{id}`이며 중요 변경은 `X-Reauth-Token` 헤더 사용(토큰 메모리 한정).
 - summary: `{childId,state,period,inclusionRule,metrics:Metric[]}`. thinking-types: `{childId,state,period,items:[{type,state,missions:[{attemptId,title}],summary?}]}`. 학습 목록 봉투는 `childId,state,period,inclusionRule`도 포함한다. 상세는 학생 메모·draft를 제외한 시도 원문만 반환한다.
 - 대화 목록/상세: `{conversationId,childId,period,title,createdAt,messages?:ConversationMessage[]}`. 메시지 `{messageId,question,status,scope,answer?,metrics?,evidence?,source?,fallback?,verification?,failureCode?,retryable?}`. SSE clarification 선택지는 `{label,scope:{childId,from,to}}[]`, status에 `messageId?`를 동봉해 실패 재시도 경로를 식별한다. scope가 다른 자녀면 해당 전역 범위로 명시 전환하며 이전 자녀 결과는 표시하지 않는다.
 - evidence 조회는 `{items:Evidence[]}`. 삭제된 항목은 `available:false`이며 quote를 재사용하지 않는다. 410도 이용 불가로 표시한다. 대조 실패는 P16의 검증된 TEMPLATE result와 error 시나리오를 각각 시험한다. delta는 확정 데이터/캐시에 저장하지 않는다.
@@ -585,7 +585,7 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 ### 4.1 learning-service (호출: core, ai, report)
 | Method | Path | 호출자 | 설명 |
 |---|---|---|---|
-| GET | `/internal/missions`, `/internal/missions/{id}` | core | 학생용 미션 조회 (2.2 프록시) |
+| GET | `/internal/missions?grade&demo&page&size`, `/internal/missions/{id}?grade&demo` | core | 학생용 미션 조회 (2.2 프록시). core가 학생 학년 `grade`(3~6, 필수)와 시연 학생 여부 `demo`(`student.is_demo`, 기본 `false`)를 붙임. `demo_only` 미션은 `demo=true`일 때만 노출 |
 | POST · GET · PUT | `/internal/attempts/...` | core | 시도·초안·도움·답변·마무리·돌아보기·자기 평가 (2.2 경로와 1:1) |
 | POST | `/internal/answers/{answerId}/feedback` | core | 판정 오케스트레이션: 규칙 판정 또는 ai 호출 → 저장 → 결과 반환 (동기) |
 | POST | `/internal/judgments/{judgmentId}/corrections` | core | 신고 정정 반영(SUP-03): `{reportId, reason, corrected}` → 기존 판정·사유·시점 보존 후 정정 이력 저장 (원본 답변 불변), `Idempotency-Key` |
@@ -661,6 +661,8 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 - #55 report 구현 기본안: PROFILE·RECORDS 모두 리포트 내용/파일을 물리 삭제하며 `report_deletion_guard`에 식별 UUID·범위·삭제 기준 시각만 남긴다. PROFILE은 이후 생성도 차단하고 RECORDS는 `report.generate`의 최초 명령 시각이 삭제 기준보다 이후인 경우만 새 생성을 허용한다. 이는 #45 담당자와 확정할 운영 정책이다.
 - core는 삭제 완료 전 새 리포트 요청을 막고, 삭제된 기존 작업의 늦은 상태 이벤트를 무시해야 한다. 재시도/Outbox 재전송 시 `EventEnvelope.time`을 최초 명령 시각으로 보존해야 한다. 서비스 간 시각 기준과 메시지 필드는 #42/#45 계약 검증이 필요하다.
 
+
+## 5. 구현 계약
 
 ### 5.1 #36 Google OAuth·토큰 구현 계약 (개정 P01 정렬)
 
