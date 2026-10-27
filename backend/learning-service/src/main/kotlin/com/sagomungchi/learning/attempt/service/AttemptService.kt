@@ -8,6 +8,7 @@ import com.sagomungchi.learning.attempt.domain.DraftContent
 import com.sagomungchi.learning.attempt.domain.HintOpened
 import com.sagomungchi.learning.attempt.repository.AttemptDraftRepository
 import com.sagomungchi.learning.attempt.repository.AttemptRepository
+import com.sagomungchi.learning.judgment.domain.FeedbackResult
 import com.sagomungchi.learning.judgment.domain.TimelineAnswer
 import com.sagomungchi.learning.judgment.service.JudgmentService
 import com.sagomungchi.learning.mission.domain.MissionView
@@ -22,13 +23,14 @@ import java.util.UUID
 /** created: 이번 요청으로 새로 만들었으면 true, 진행 중 시도를 돌려주면 false */
 data class AttemptStart(val attempt: Attempt, val created: Boolean)
 
-/** 시도 상세: 시도에 고정된 버전의 미션, 초안, 생각 열기 이용 여부, 제출 답변 타임라인 */
+/** 시도 상세: 시도에 고정된 버전의 미션, 초안, 생각 열기 이용 여부, 제출 답변 타임라인과 답변별 피드백 */
 data class AttemptDetail(
     val attempt: Attempt,
     val mission: MissionView,
     val draft: AttemptDraft,
     val helped: Boolean,
     val answers: List<TimelineAnswer>,
+    val feedbacks: Map<UUID, FeedbackResult>,
 )
 
 /** 초안 버전 불일치. 최신 초안을 함께 돌려줌 (api-spec 3.6) */
@@ -70,6 +72,7 @@ class AttemptService(
             draft = checkNotNull(draftRepository.findByAttemptId(attempt.id)) { "시도 초안 없음" },
             helped = attemptRepository.findOpenedHintIds(attempt.id).isNotEmpty(),
             answers = judgmentService.timeline(attempt.id),
+            feedbacks = judgmentService.results(attempt.id),
         )
     }
 
