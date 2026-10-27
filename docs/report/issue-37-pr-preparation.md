@@ -41,3 +41,21 @@
 - 본문에 Closes #37을 포함한다. 현재 기본 브랜치가 develop이므로 해당 base 병합 시 GitHub 종료 키워드 적용 대상이다. #27 전체와 #38은 완료 이슈로 넣지 않는다.
 - 현재 등록·설명을 확인한 라벨 후보: enhancement(New feature or request), area:core(core 영역), area:learning(learning 영역), area:web(web 영역). 기존 이슈 #37의 Type은 미설정이며 별도 등록 Type 후보는 확인되지 않았다. PR 메타데이터 설정·생성은 사용자가 직접 한다.
 - 원격 CI는 로컬 검사와 구분한다. PR 생성 후 필수 체크 결과를 확인해야 한다. 운영 동의 문서의 게시와 후속 기능은 별도다.
+
+
+## PR #77: #75 병합 후 OpenAPI 충돌 해결
+
+#77 head 62e69ed 이후 develop에 #38의 PR #75가 병합되어 d3d28140d5b5a2e74cfd6c32f2ef2a983a25a016이 됐다. 본인 feature/core-consent-children에만 develop을 merge --no-ff --no-commit으로 반영했다. 기존 커밋을 다시 쓰거나 #76 브랜치를 수정하지 않았다.
+
+충돌 파일은 contracts/openapi/core-service.yaml 1개다. 최신 #38 프록시 경로·Learning 태그·components.requestBodies.LearningJson과 #37 동의·자녀 4개 경로/6개 operation·10개 schema를 모두 유지한다. 동의 schema는 components.schemas, LearningJson은 requestBodies에 배치했다. 설명은 #36/#37/#38/#43을 포함하며 기존 #58 인계 경계를 유지한다. api-spec.md·erd.md·인증 계약 검사 파일은 자동 병합됐다.
+
+core InternalRestClientFactory와 학습 컨텍스트/프록시 코드가 병합되므로 core 전체 test·bootJar, API 계약·OpenAPI 검사와 실제 core→learning→DB의 11개 흐름을 최종 검증한다. learning·frontend 구현은 62e69ed와 동일하므로 이전 learning 57개·frontend 75개 검증은 유지한다. 검증 후 병합 커밋을 추가해 기존 PR #77 브랜치에 정상 push한다. #76의 api-spec.md 충돌은 별도 담당 범위다.
+
+
+### #77 충돌 해결 검증 결과
+
+- 최종 develop d3d2814와 #77을 병합한 실제 worktree에서 JDK 21 `test bootJar --no-daemon --max-workers=2 --no-watch-fs --console=plain`: core 전체 102/102 통과, failures/errors/skipped=0, BUILD SUCCESSFUL.
+- 스크립트는 #38 learning OpenAPI 계약까지 포함해 38/38 통과. core/learning OpenAPI 3.1 표준 검사 각각 통과. 모든 로컬 $ref·요청 본문·태그·operation 계약을 대조했다.
+- 별도 PostgreSQL의 core V1~V8·learning V1~V5 migration 적용 후 통합 core JAR→변경 없는 learning JAR→독립 DB의 실제 HTTP 11개 흐름 PASS. 빈 자녀 등록 안내, 0건 false·1건 이상 true, 초안/실패/삭제/타 학생 제외, 내부 역할·범위와 동의 철회가 유지된다. 데이터는 합성 fixture이고 HTTP 응답 대역이 아니다.
+- frontend·learning 코드는 이전 62e69ed와 동일해 기존 frontend 75개·learning 57개 검증은 반복하지 않았다. 원격 CI·운영 배포는 로컬 검증과 구분한다.
+- commit 직전 fetch에서 origin/develop은 d3d28140d5b5a2e74cfd6c32f2ef2a983a25a016, #77 원격 head는 62e69ed407be5e0c49f43887ffa97566395b774a로 동일함을 확인했다. 기존 커밋을 유지하는 병합 커밋을 추가하고 정상 push한다. #76의 소스·브랜치·문서는 수정하지 않았다.
