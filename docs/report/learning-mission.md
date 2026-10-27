@@ -67,11 +67,15 @@ learning-service의 `GET /internal/missions`, `GET /internal/missions/{id}`와 �
 | 목록 봉투 | `PageResponse`를 `mission/controller`에 둠 | 공통으로 쓸 곳이 생기면 `_common`으로 옮김. architecture 2.6 `_common` 구성을 지금 바꾸지 않음 |
 | 입력 방식 범위 | 학년으로 계산(논술은 초5 이상, P03). `inputTypes`는 받지 않음 | class-diagram의 `MissionController.list(grade, inputTypes)`와 `MissionService.listForStudent(studentId, grade)`가 다름. 입력 방식 범위를 넘기는 주체·기준이 문서에 없고 P03이 학년으로 정함 |
 
-## #14와의 관계
+## #14 Repository 기반 사용
 
-#14(Repository 공통 기반·Testcontainers)는 아직 develop에 없고 작업 중이다. #22는 #14가 고치는 파일(`build.gradle.kts`, `application.yml`, `_common/persistence/`)을 건드리지 않고, #14 코드에도 기대지 않는다. Mapper는 UUID·jsonb를 문자열로 받아 Repository에서 변환한다. Mapper 인터페이스와 Repository 클래스를 나누는 #14 방식은 따른다.
+#14(PR #60)가 develop에 머지된 뒤 그 방식으로 맞췄다. #14 파일은 고치지 않았다.
+
+- Mapper XML constructor resultMap으로 `MissionView`를 바로 만든다. UUID는 #14의 전역 `UuidTypeHandler`가 변환한다.
+- `choices`·`input_template`(jsonb)은 #14 보고서 권장대로 요소 타입을 지정한 `JacksonJsonbTypeHandler`(`ChoiceListTypeHandler`·`StringListTypeHandler`)로 변환한다. 일반 `List`에 전역 적용되지 않도록 `TypeReference<List<Choice>>` 등 구체 타입으로만 등록하고, XML의 `typeHandler`로 지정한다(`MissionPersistenceConfig`). 값이 없으면 SQL에서 빈 배열로 바꾼다.
+- `MissionRepositoryTest`가 `PostgresRepositoryTest`를 상속해 실제 PostgreSQL 17.11(Flyway V1~V5)에서 확인한다: 공개 미션의 현재 버전만 `sort_order` 순, jsonb 변환, 비공개·없는 미션 구분, 학생별 가장 최근 시도 상태.
+- 기존 `InternalAuthFilterTest`가 대상 없는 `@WebMvcTest`로 모든 Controller를 불러와 `MissionController`가 생기자 실패했다. 테스트 대상을 시험용 Controller로 제한했다.
 
 ## 남은 일
 
-- #14 머지 후: Testcontainers Repository 테스트 추가(이슈 #22 완료 조건), Mapper를 #14 타입 핸들러 방식으로 정리
 - #25: 판정 요청에 미션 질문 추가 여부, 풀이 단계의 최종 답 규칙 판정과 풀이 AI 판정 결합 방식
