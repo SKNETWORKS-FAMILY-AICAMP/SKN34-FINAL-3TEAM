@@ -1,8 +1,10 @@
 package com.sagomungchi.learning.mission.service
 
 import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning.mission.domain.HintQuestion
 import com.sagomungchi.learning.mission.domain.MissionListItem
 import com.sagomungchi.learning.mission.domain.MissionProgress
+import com.sagomungchi.learning.mission.domain.MissionSnapshot
 import com.sagomungchi.learning.mission.domain.MissionView
 import com.sagomungchi.learning.mission.repository.MissionRepository
 import org.springframework.http.HttpStatus
@@ -36,4 +38,18 @@ class MissionService(
         }
         throw BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "미션 없음")
     }
+
+    /** 학습 시도가 시작 시점에 고정할 현재 미션·기준표 버전 (class-diagram 4.1) */
+    fun currentVersions(missionId: UUID): MissionSnapshot =
+        missionRepository.findCurrentVersions(missionId)
+            ?: throw BusinessException(HttpStatus.CONFLICT, "MISSION_NOT_AVAILABLE", "현재 버전이 없는 미션")
+
+    /** 시도에 고정된 버전의 미션. 공개 여부와 무관 */
+    fun getVersion(missionVersionId: UUID): MissionView =
+        missionRepository.findVersion(missionVersionId)
+            ?: throw BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "미션 버전 없음")
+
+    /** 기준표 버전의 생각 열기 질문, seq 순 */
+    fun hintQuestions(rubricVersionId: UUID): List<HintQuestion> =
+        missionRepository.findHintQuestions(rubricVersionId)
 }
