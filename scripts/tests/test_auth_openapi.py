@@ -29,6 +29,7 @@ class AuthOpenApiTests(unittest.TestCase):
         documented = {
             (method, path)
             for path, methods in self.spec["paths"].items()
+            if path.startswith("/auth/") or path == "/me"
             for method in methods
         }
         self.assertEqual(len(actual), 6)

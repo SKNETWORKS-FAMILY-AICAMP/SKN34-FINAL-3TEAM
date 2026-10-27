@@ -8,12 +8,27 @@ import com.sagomungchi.core.usage.repository.LlmUsageRepository
 import org.springframework.stereotype.Service
 import java.math.BigDecimal
 import java.util.UUID
+import com.sagomungchi.core._common.exception.BusinessException
+import com.sagomungchi.core.usage.domain.CallType
+import com.sagomungchi.core.usage.domain.UsageSummary
+import org.springframework.http.HttpStatus
+import java.time.LocalDate
+import java.time.ZoneId
 
 @Service
 class LlmUsageService(
     private val repository: LlmUsageRepository,
     private val properties: AppProperties,
 ) {
+    fun summarize(from: LocalDate, to: LocalDate, callType: CallType?): List<UsageSummary> {
+        if (from > to || to == LocalDate.MAX) {
+            throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "조회 기간이 유효하지 않습니다.")
+        }
+        val zone = ZoneId.of("Asia/Seoul")
+        return repository.summarize(from.atStartOfDay(zone).toOffsetDateTime(),
+            to.plusDays(1).atStartOfDay(zone).toOffsetDateTime(), callType?.name)
+    }
+
     /** 같은 이벤트 재전달은 event_id UK로 무시 */
     fun record(envelope: EventEnvelope<LlmUsageRecorded>) {
         val data = envelope.data
