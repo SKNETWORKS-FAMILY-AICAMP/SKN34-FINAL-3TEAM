@@ -1,6 +1,6 @@
 # 이슈 #53 리포트 렌더링·파일 저장
 
-기반은 #52 커밋 `b50d7b0`, 작업 브랜치는 `feature/report-rendering`이다. 프로젝트 설계의 Jinja2·Playwright Chromium과 S3 SDK(boto3)를 사용한다. 운영 의존성은 uv.lock에 고정하며, moto·pypdf는 개발 검증용이다.
+최초 구현 기반은 #52 커밋 `b50d7b0`, 보존 브랜치는 `feature/report-rendering`이다. 2026-10-27 실제 MinIO 검증은 최신 develop `7188b69`를 병합한 누적 브랜치 `feature/report-deletion`에서 추가했다. 프로젝트 설계의 Jinja2·Playwright Chromium과 S3 SDK(boto3)를 사용한다. 운영 의존성은 uv.lock에 고정하며, moto·pypdf는 개발 검증용이다.
 
 ## 구현과 저장 규칙
 
@@ -21,6 +21,35 @@ Dockerfile은 production 의존성만 설치하고 Chromium·Noto CJK 폰트를 
 HTML·Markdown 스냅샷은 전문을 비교한다. PDF는 OS별 한글 폰트의 줄바꿈 차이를 고려해 공백을 제외한 논리 텍스트를 비교하며 시각 검토를 별도로 수행한다. Windows/Linux PDF의 논리 텍스트가 같음을 확인했다. CI의 report-service에만 Chromium·한글 폰트 준비 단계를 추가했다.
 
 최초 집중 검증은 `test_rendering.py` 6개 통과: 3종 스냅샷, escape, 무료 투영, moto 업로드·서명·다른 학생 파일 보존, 실제 DB의 업로드 성공/실패와 파일 메타데이터 저장. 최종 회귀 결과는 통합 보고서에 기록한다.
+
+## 실제 MinIO 추가 검증 — 2026-10-27
+
+`tests/test_minio_storage.py`의 통합 테스트 3개를 추가했고 **3 passed (26.62초)**를 확인했다. 팀 `compose.minio.yaml`에 고정된 Chainguard MinIO 이미지와 실제 PostgreSQL을 일회용 컨테이너로 실행한다. 저장 데이터는 합성 값이며, 버킷은 `sagomungchi-local-reports`, 포트는 loopback의 임의 포트, 계정은 실행마다 만든 테스트 값이다. `/data`는 tmpfs이고 테스트 종료 시 해당 컨테이너만 제거한다. 기존 MinIO·DB·볼륨·개인 `.env`는 사용하지 않는다.
+
+| 검증 | 확인한 결과 |
+|---|---|
+| 생성·메타데이터 | 실제 Chromium으로 full/free × HTML/MD/PDF 6개 생성·업로드, COMPLETED와 `report_file` 3개 행 저장 |
+| 재생성 | 같은 학생·기간의 2판 생성 시 총 12개 객체, 이전 판 파일 유지 |
+| 다운로드 | report 내부 조회 API에서 발급한 URL로 실제 HTTP 다운로드, 6개 파일 모두 200·형식·첨부 파일명·Cache-Control 확인, full 파일 크기와 DB 값 일치 |
+| 현재 권한 | 동일 리포트에 무료/유료 요청을 보내 올바른 파일 선택, 무료 파일에 AI 서술·저녁 질문 없음, 다른 학생 범위는 403 |
+| 서명 | 공개 endpoint 사용, 300초 TTL 설정, 서명 없는 요청·다른 파일로 변조한 URL은 403, 별도 5초 URL 만료 후 403 |
+| 정리 | 특정 판 삭제 시 다른 판 유지, 학생 prefix 삭제 시 다른 학생 파일 유지, 삭제한 파일의 기존 URL은 404, 재발급 요청은 503 |
+| 실제 업로드 실패 | 2개 객체 업로드 후 잘못된 테스트 계정으로 MinIO 403 유발 → FAILED, 파일 DB 행 없음, 부분 객체 제거, 다른 리포트 파일 유지 |
+
+재현 명령은 `backend/report-service`에서 실행한다. Docker가 실행 중이어야 하며, 이미지 다운로드 실패나 Docker 미실행을 skip으로 감추지 않는다. 새 테스트는 일반 `uv run pytest`에도 포함된다.
+
+```powershell
+uv sync --frozen
+uv run playwright install chromium
+uv run pytest tests/test_rendering.py tests/test_minio_storage.py -q
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest -q
+```
+
+Linux/CI에서는 기존 workflow처럼 Chromium 시스템 의존성과 Noto CJK 폰트도 준비한다. 별도의 production 이미지 검사에서는 `sagomungchi/report-service:issue55-local`을 UID 10001·읽기 전용 root·writable `/tmp`로 실행했다. Docker 네트워크의 `http://minio:9000`으로 업로드하고 `http://localhost:<임의 포트>`로 서명한 6개 파일을 호스트에서 다운로드했다. 학생 prefix 삭제 후 기존 URL 6개 모두 404를 확인했다. 다운로드한 한글 A4 PDF 2페이지를 PNG로 변환해 글자 깨짐·잘림·중첩이 없음을 확인했다.
+
+이번 보강은 테스트와 검증 문서이며 제품 코드·스키마·API 계약 변경은 없다. 실제 MinIO 저장소 연결은 완료했지만 입력 학습 기록·AI 응답·메시지 codec은 여전히 합성 대역이다. core 공개 프록시/브라우저를 포함한 전체 서비스 연동이나 #45 삭제 완료 보고까지 검증한 것으로 해석하지 않는다.
 
 ## 완성을 위한 외부 연결
 
