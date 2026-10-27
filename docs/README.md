@@ -38,6 +38,7 @@
 
 - `design/`: ERD·API·아키텍처 등 구현 기준이 되는 설계 문서
 - `report/`: 작업별 검토 결과와 구현·검증 보고서
+  - [이슈 #14 Repository 공통 기반](report/repository-foundation.md): 타입 매핑, 트랜잭션 경계, 예시 Repository와 PostgreSQL 테스트 사용법
   - [이슈 #7 프론트 공통 기반](report/issue-7-fe-common.md): MSW 전환·인증 갱신·체크박스 검증 기준·남은 작업
   - [이슈 #7 학생 화면 후속 검증](report/issue-7-student-completion.md): 역할 URL·6종 입력·피드백·초안 회귀
   - [이슈 #8·#9 학부모·관리자 화면](report/issue-8-9-parent-admin.md): 가입·대시보드·대화·리포트·관리자 권한/작업/콘텐츠 및 목업 계약
@@ -50,6 +51,11 @@
   - [이슈 #19 확정 정책 DB 스키마 수정](report/db-policy-schema.md): 변경 대상, 기존 데이터 전환 절차, 1~3단계 검증과 검토 순서
   - [이슈 #6 ai-service 판정·되묻기 API 설계 변경](report/ai-judgment-followup.md): API 계약 변경, 설계와 다르게 구현한 부분과 근거, learning 연동 시 반영할 점
   - [이슈 #4 M2 API 명세 정렬](report/m2-api-alignment.md): 학년 입력·점수 범위·모델 버전 규칙 명세 반영과 근거
+  - [이슈 #22 learning 미션 조회와 데모 미션 시드](report/learning-mission.md): 시드 문항·공개 범위·성취기준 근거, 미션 조회 구현 결정과 #14 Repository 기반 사용
+  - [이슈 #36 Google OAuth·access/refresh](report/issue-36-google-auth.md): HS256·세션 폐기·역할 전환·프론트 계약과 후속 경계
+  - [P01 개정 학생·학부모 로그인 분리](report/student-login-separation.md): 등록 기기·PIN 단독 진입 설계 근거와 대안 비교
+  - [프론트엔드 UX 정합성(최초 화면 작업)](report/frontend-backend-ux-alignment.md): 백엔드 기준 화면 정렬 기록, 현재 기준은 이슈 #7 보고서
+  - [프론트 화면 PR 설명](report/pr-fe-workspace.md): 이슈 #7·#8·#9 학생·학부모·관리자 화면 PR 변경 요약
 
 ## 개발 규칙
 

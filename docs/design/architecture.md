@@ -116,6 +116,7 @@
 - **DLQ**: 큐마다 dead-letter exchange, 관리자 화면에서 현황 조회 (참고 레포 `QueueOperations*` 계승)
 - **브로드캐스트 이벤트**: 모든 레플리카가 받아야 하는 이벤트(`model.version.activated`)는 Pod별 exclusive·auto-delete 큐를 서비스가 기동 시 선언·바인딩 (exchange는 `definitions.json`). 공유 큐는 경쟁 소비라 1개 Pod만 수신
   - 기동 순서: 큐 바인딩 → core 활성 버전 조회 (반대 순서면 그 사이 이벤트 유실)
+  - #43 계약: 내부 조회와 이벤트는 같은 kind·name별 revision·적용 scopes를 제공한다. 소비자는 초기 조회 중 이벤트를 보존·조정하고 더 높은 revision만 적용하며 승인 scope 밖에는 적용하지 않는다. core는 Pod 공유 소비 큐를 추가하지 않는다. 실제 ai·scoring 소비·readiness 구현은 해당 서비스의 후속 작업이다.
   - core 조회 실패 시 프로세스 종료 없이 readiness false 유지·재시도 (core 장애가 ai·scoring 기동 실패로 번지지 않게)
 - **이벤트 봉투**: CloudEvents 형식 `id, type, source, time, subject, dataschema, traceparent, data` → `contracts/events/*.schema.json`
 - **스키마 버전**: 파일 `<message>.v<N>.schema.json`, `dataschema`에 버전 표기. 하위 호환 변경(선택 필드 추가)만 같은 버전, 그 외는 새 버전 병행 발행 후 소비자 전환
@@ -158,8 +159,10 @@
 - 대화 상태: ai-service는 상태 없음, core가 요청마다 대화 이력·허용 범위 전달
 - 버전 연결: 판정·되묻기·분석·리포트 결과에 미션·기준표·모델·프롬프트 버전 저장 (NFR-DAT-02)
 - 개인정보: LLM 요청에 학생 이름·식별정보 미포함, 운영 로그에 학생 원문·비밀 키·결제 정보 미기록 (NFR-SEC-03, 05)
-- 테스트: Domain 단위 테스트, Application은 Infrastructure 대역, Repository는 Testcontainers(PostgreSQL·RabbitMQ), 메시지는 `contracts/events` 스키마 계약 테스트
-  - core 통합 테스트는 `IntegrationTestSupport` 상속 (컨테이너 JVM당 1회 기동, Flyway 전체 스키마, `definitions.json` 반영)
+- 테스트: Domain 단위 테스트, Application은 Infrastructure 대역, Repository는 Testcontainers(PostgreSQL), core 메시징 통합은 Testcontainers(PostgreSQL·RabbitMQ), 메시지는 `contracts/events` 스키마 계약 테스트
+  - core·learning Repository 테스트는 각 서비스의 `PostgresRepositoryTest` 상속 (PostgreSQL 컨테이너 JVM당 1회 기동, 테스트별 트랜잭션 롤백). core는 RabbitMQ listener를 시작하지 않고 `OutboxRelay`를 Mockito 대역으로 교체한다.
+  - core 메시징 통합 테스트는 `IntegrationTestSupport` 상속 (PostgreSQL·RabbitMQ 컨테이너 JVM당 1회 기동, `definitions.json` 반영, 실제 발행기·소비자 사용).
+  - 두 베이스 모두 테스트 준비 단계에서 명시적으로 Flyway 전체 스키마를 적용하며, 앱 기동 시 자동 마이그레이션은 비활성화한다. core의 두 베이스는 별도 DB를 사용해 메시징의 비동기 커밋과 Repository 테스트의 롤백이 간섭하지 않도록 한다.
 
 ### 2.4 서비스별 적용 강도
 | 서비스 | 적용 레이어 | 비고 |
@@ -191,7 +194,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ security/
 │  ├─ messaging/                 # 이벤트 봉투, OutboxRelay, 멱등 소비
 │  └─ web/                       # IdempotencyService, SseEmitters (core만)
-├─ account/                      # 가입·로그인·복구·탈퇴
+├─ account/                      # Google 로그인·세션·탈퇴
 │  ├─ controller/
 │  ├─ service/
 │  ├─ domain/
@@ -672,7 +675,7 @@ SKN34-FINAL-3TEAM/
 | 영역 | 기술 | 선정 근거 |
 |---|---|---|
 | 프론트엔드 | React, Vite, TypeScript, Tailwind CSS, TanStack Query, 토스페이먼츠 결제위젯 SDK | 참고 레포 동일 계열, 기획서 4.4 |
-| 업무 API | Spring Boot 3, Kotlin, JDK 21, Spring Security(JWT), MyBatis, Flyway, Spring AMQP, ShedLock, Resilience4j | 참고 레포 구현 패턴 재사용, 다중 레플리카 스케줄 중복 방지 |
+| 업무 API | Spring Boot 3, Kotlin, JDK 21, Spring Security JOSE(JWT HS256·Google JWKS), MyBatis, Flyway, Spring AMQP, ShedLock, Resilience4j | 참고 레포 구현 패턴 재사용, 다중 레플리카 스케줄 중복 방지 |
 | AI API | Python 3.12, FastAPI, Pydantic, uv, LangGraph, LangChain, Claude API, aio-pika, httpx | 에이전트 그래프·도구 호출, 비동기 AMQP |
 | 모델 추론 | PyTorch, Hugging Face Transformers (M2 klue/roberta, M1) | 기획서 5장 모델 |
 | 리포트 | SQLAlchemy, Alembic, Jinja2, Playwright(Chromium PDF) | HTML 템플릿 → PDF·Markdown |
@@ -693,3 +696,7 @@ SKN34-FINAL-3TEAM/
 - LLM 제공자: Claude API (기획서 4.4), ai-service `llm/` 래퍼로 교체 가능하게 설계
 - 학습·일괄 생성(RunPod GPU, sLLM 설명)은 클러스터 밖에서 수행, 결과(가중치·주간 설명 문장)만 S3로 반입
 - AWS 계정 EKS 생성 권한·예산 한도: 권한 없으면 EC2 1대 + k3s로 대체 (HA·Cluster Autoscaler·IRSA 제외)
+
+
+### #36 인증 구현 결정
+core의 공개 JWT 필터(`PublicAuthFilter`) → account service(`AuthService`) → Repository/Mapper → core_db로 로그인 세션·현재 권한을 확인한다. JWT는 Spring Security JOSE HS256, Google은 client에서 HTTP 코드 교환·JWKS 검증 후 내부 프로필로 변환한다. OAuth 외부 호출은 DB 트랜잭션 밖, 계정·세션·refresh 회전만 트랜잭션 안에서 처리한다. 상태 있는 access/refresh이며 브라우저 인증을 세션 쿠키 하나로 바꾸지 않는다. 세부 계약·키 관리·#37/#45 경계는 [#36 보고서](../report/issue-36-google-auth.md)를 따른다.

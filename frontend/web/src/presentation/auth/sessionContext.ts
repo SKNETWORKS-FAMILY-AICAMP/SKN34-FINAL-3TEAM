@@ -5,6 +5,7 @@ export interface AuthState {
   session: Session | null
   setSession: Dispatch<SetStateAction<Session | null>>
   ready: boolean
+  loginPath: '/login' | '/student/login'
   selected: string
   setSelected: Dispatch<SetStateAction<string>>
   expired: boolean

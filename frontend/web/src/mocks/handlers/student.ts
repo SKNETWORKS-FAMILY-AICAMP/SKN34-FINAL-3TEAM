@@ -131,9 +131,9 @@ export const studentHandlers = [
   http.post('/api/v1/auth/refresh', () =>
     respond(async () => {
       // 실제 쿠키/보안 속성 검증은 백엔드 통합 대상. 목은 로그인 상태만 모사한다.
-      if (scenario === 'refresh-fail' || !store.snapshot().session)
+      if (scenario === 'refresh-fail' || !store.snapshot().session || mockRole === 'STUDENT')
         throw new ApiError({ status: 401, code: 'UNAUTHENTICATED', title: '다시 로그인해 주세요.' })
-      return { accessToken: issueToken() }
+      return { accessToken: issueToken(), role: mockRole }
     }),
   ),
   http.post('/api/v1/auth/logout', () =>
@@ -151,6 +151,7 @@ export const studentHandlers = [
     respond(async () => {
       guard(request)
       const s = await store.restore()
+      if (s.role === 'STUDENT') return { role: 'STUDENT', child: s.child }
       return {
         ...s,
         ...mockIdentity,

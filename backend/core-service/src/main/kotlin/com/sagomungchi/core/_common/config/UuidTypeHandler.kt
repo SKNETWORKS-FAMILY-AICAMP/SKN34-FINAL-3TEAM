@@ -8,7 +8,7 @@ import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.util.UUID
 
-/** PostgreSQL uuid ↔ java.util.UUID (MyBatis 기본 핸들러 없음). mybatis.type-handlers-package로 등록 */
+/** PostgreSQL uuid ↔ java.util.UUID. PersistenceConfig에서 한 번만 등록한다. */
 @MappedTypes(UUID::class)
 class UuidTypeHandler : BaseTypeHandler<UUID>() {
     override fun setNonNullParameter(ps: PreparedStatement, i: Int, parameter: UUID, jdbcType: JdbcType?) =

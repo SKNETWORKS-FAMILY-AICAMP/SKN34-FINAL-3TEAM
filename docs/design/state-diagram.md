@@ -26,7 +26,7 @@
 
 ```mermaid
 stateDiagram-v2
-  [*] --> ACTIVE: 가입·계정 생성
+  [*] --> ACTIVE: 최초 Google 로그인·계정 생성
   ACTIVE --> WITHDRAWAL_REQUESTED: 탈퇴 요청 (재확인 토큰)
   WITHDRAWAL_REQUESTED --> WITHDRAWN: 즉시 처리 완료
   WITHDRAWN --> [*]
@@ -38,8 +38,8 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
-| → `ACTIVE` | `POST /auth/signup` | `AccountService.signup` | `login_id` UK |
-| `ACTIVE → WITHDRAWAL_REQUESTED` | `POST /me/withdrawal` + `X-Reauth-Token` | `AccountService.requestWithdrawal` → `UserAccount.requestWithdrawal()` | 진행 중 구독·미처리 환불 없음(있으면 `409 WITHDRAWAL_BLOCKED`) + `WHERE status = 'ACTIVE'`, 같은 트랜잭션에 `withdrawal_request(REQUESTED)`·refresh token 폐기·자녀 전원 삭제 요청 (P09) |
+| → `ACTIVE` | 최초 `GET /auth/google/callback` (#36) | `AuthService.login` | `(oauth_provider, oauth_subject)` UK로 PARENT 생성, 같은 `login_id`(이메일) 기존 계정은 자동 연결 없이 `ACCOUNT_EXISTS` |
+| `ACTIVE → WITHDRAWAL_REQUESTED` | `POST /me/withdrawal` + `X-Reauth-Token` | `AccountService.requestWithdrawal` → `UserAccount.requestWithdrawal()` | 진행 중 구독·미처리 환불 없음(있으면 `409 WITHDRAWAL_BLOCKED`) + `WHERE status = 'ACTIVE'`, 같은 트랜잭션에 `withdrawal_request(REQUESTED)`·계정의 `auth_session` 전체 폐기(refresh 포함)·자녀 전원 삭제 요청 (P09) |
 | `WITHDRAWAL_REQUESTED → WITHDRAWN` | 자녀 삭제 요청 전부 `COMPLETED` (P09) | `UserAccount.completeWithdrawal()` | 진행 중 구독 없음·미처리 환불 없음, `withdrawal_request REQUESTED → COMPLETED` 동시 전이 |
 
 ### 2.2 `student.status` · `deletion_request.status`
@@ -125,7 +125,8 @@ stateDiagram-v2
 | `PUBLISHED → UNPUBLISHED` | `POST /admin/missions/{id}/unpublish` | `Mission.unpublish()` | 신규 시도 차단(`MISSION_NOT_AVAILABLE`), 기존 시도는 당시 버전 유지 |
 | `UNPUBLISHED → REVIEW_REQUIRED` | 수정 후 검토 요청 | `Mission.requestReview()` | 재공개는 다시 `REVIEW_REQUIRED → PUBLISHED` 경로만 |
 
-- 학생 목록 노출 조건: `status = PUBLISHED` + 학년·입력 방식 범위 + `demo_only`는 시연 계정만 (FN-LRN-02)
+- 학생 목록 노출 조건: `status = PUBLISHED` + 학년·입력 방식 범위 + `demo_only`는 시연 계정만 (FN-LRN-02). 시연 학생 여부는 core가 learning 조회에 `demo`(`student.is_demo`)로 넘김 (api-spec 4.1, [#22 보고서](../report/learning-mission.md))
+- 개발·시연용 데모 미션 시드(`backend/learning-service/db/seed/`)는 위 관리자 흐름 없이 `PUBLISHED`·`DRAFT` 상태를 직접 넣으며 `mission_review`를 만들지 않음. 운영 미션은 위 전이만 사용 ([#22 보고서](../report/learning-mission.md))
 
 ### 3.2 `attempt.status` (미션 수행)
 
@@ -425,18 +426,24 @@ stateDiagram-v2
 
 ```mermaid
 stateDiagram-v2
-  [*] --> REGISTERED: 버전 등록 (평가 기록 첨부)
-  REGISTERED --> ACTIVE: 승인 조건 확인 후 활성화
-  ACTIVE --> INACTIVE: 같은 kind·name 다른 버전 활성화
-  INACTIVE --> ACTIVE: 롤백 (이전 승인 버전 재활성화)
+  [*] --> REGISTERED: 평가 근거 첨부 후 등록
+  REGISTERED --> ACTIVE: 평가 범위 내 명시적 사람 승인
+  ACTIVE --> INACTIVE: 같은 kind·name의 다른 버전 활성화 또는 복귀
+  INACTIVE --> ACTIVE: 원 승인 범위 내 rollback
 ```
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
-| `REGISTERED → ACTIVE` | `/admin/model-versions/{id}/activate` | `ModelVersionService.activate` → `ModelVersion.activate()` | `eval_result` 승인 기준(NFR-AIQ-05) 충족, 같은 트랜잭션에서 기존 `ACTIVE → INACTIVE` 먼저 (부분 UK `(kind, name) WHERE ACTIVE`) + `outbox(model.version.activated)` + `audit_log` |
-| `INACTIVE → ACTIVE` | `/admin/model-versions/{id}/rollback` | `ModelVersionService.rollback` | 한 번 `ACTIVE`였던(승인된) 버전만, 재분석 여부 `audit_log.detail` |
+| → `REGISTERED` | `POST /admin/model-versions` | `ModelVersionService.register(command, actor)` | 고정 자료·기존 결과 비교·학습/평가 분리·인용/계산·사람 검토 근거·평가 범위 필수, `MODEL_REGISTER` 감사 기록 |
+| `REGISTERED → ACTIVE` | `POST /admin/model-versions/{id}/activate` | `ModelVersionService.activate(id, command, actor)` → private `switch` | `approved=true`, 사유·평가 범위 내 scopes 필수. 최초 승인자·범위를 보존한다. 품질 합격 수치는 서버가 임의 판정하지 않는다 |
+| `ACTIVE → INACTIVE` | 같은 kind·name의 다른 대상 `activate` 또는 `rollback` | `ModelVersionService.switch` | 기존 ACTIVE를 먼저 비활성화해 부분 UK를 유지한다. 평가 근거·원 승인·마지막 revision은 보존하고 activeScopes만 비운다 |
+| `INACTIVE → ACTIVE` | `POST /admin/model-versions/{id}/rollback` | `ModelVersionService.rollback(id, command, actor)` → private `switch` | 현재 ACTIVE 및 대상의 과거 승인·활성화 이력 필수, scopes는 원 승인 범위의 부분 집합. 원 승인자는 유지하고 복귀 수행자·사유·재분석 여부를 별도 감사 기록 |
 
-- 기존 판정·분석·리포트 결과는 당시 버전을 유지 (덮어쓰기 금지, FN-ADM-18)
+- `ModelVersion`은 불변 data class이며 도메인 `activate()`·`deactivate()` 메서드는 없다. 서비스가 검증한 뒤 `copy`로 상태를 만들고 Repository가 저장한다.
+- 같은 kind·name의 transaction advisory lock → 대상 재조회 → 기존 ACTIVE 비활성화 → 대상 ACTIVE·scopes·revision 저장 → 감사 → Outbox를 하나의 트랜잭션으로 처리한다. revision은 그룹별 저장 최대값 + 1이며 실패 시 모든 변경을 롤백한다.
+- 감사 경로는 `ModelVersionRepository.audit → ModelVersionMapper.audit`다. 공용 `AuditLogService`는 미구현 후속 설계이며 #43의 호출 경로가 아니다. 성공 교체는 `MODEL_ACTIVATE`·`MODEL_ROLLBACK` 감사와 `model.version.activated` Outbox를 함께 저장한다.
+- 승인 근거·평가/승인 외 범위·null scope 항목은 422, 허용되지 않는 전이·과거 활성화 이력 없는 복귀는 409다. 불완전한 기존 ACTIVE의 내부 조회는 503으로 명시적으로 실패한다. 상세 요청·응답은 API 5.2를 따른다.
+- 기존 판정·분석·리포트 결과는 당시 버전을 유지한다. 재분석 여부는 감사 기록일 뿐 기존 결과를 덮어쓰거나 재분석 작업을 실행하지 않는다 (FN-ADM-18).
 
 ### 7.2 `outbox_event` 발행 상태 (core·report)
 

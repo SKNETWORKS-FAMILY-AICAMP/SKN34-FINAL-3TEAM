@@ -7,6 +7,8 @@ export interface Child {
   plan: 'FREE' | 'PREMIUM'
 }
 export interface Session {
+  nextAction?: 'CONSENT_REQUIRED' | 'CHILD_REGISTRATION_REQUIRED' | 'READY'
+  startPath?: string
   role: Role
   child?: Child
   permissions?: import('./admin/operations.ts').Permission[]
