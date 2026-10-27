@@ -47,6 +47,10 @@ weekly_report = Table(
     Column("failure_reason", String),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("generated_at", DateTime(timezone=True)),
+    Column("narrative", JSONB),
+    Column("verification", JSONB),
+    Column("versions", JSONB),
+    Column("evening_question", Text),
 )
 report_item = Table(
     "report_item",
@@ -180,7 +184,11 @@ class ReportRepository:
             "state": result.state if result is not None else None,
             "inclusion_rule": result.inclusion_rule if result is not None else None,
             "failure_reason": failure_reason,
-            "generated_at": datetime.now(UTC) if result is not None else None,
+            "generated_at": (result.generated_at or datetime.now(UTC)) if result else None,
+            "narrative": result.narrative if result else None,
+            "verification": result.verification if result else None,
+            "versions": result.versions if result else None,
+            "evening_question": result.evening_question if result else None,
         }
         row = (
             session.execute(
