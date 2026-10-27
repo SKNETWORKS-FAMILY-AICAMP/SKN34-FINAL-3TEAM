@@ -106,7 +106,7 @@ class AttemptService(
     fun lockForAnswer(attemptId: UUID): Attempt {
         val attempt = attemptRepository.lockById(attemptId)
             ?: throw BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "학습 시도 없음")
-        UserContextHolder.current().requireStudent(attempt.studentId.toString())
+        UserContextHolder.current().requireStudent(attempt.studentId)
         return attempt
     }
 
@@ -133,7 +133,7 @@ class AttemptService(
     private fun requireOwned(attemptId: UUID): Attempt {
         val attempt = attemptRepository.findById(attemptId)
             ?: throw BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "학습 시도 없음")
-        UserContextHolder.current().requireStudent(attempt.studentId.toString())
+        UserContextHolder.current().requireStudent(attempt.studentId)
         return attempt
     }
 }
