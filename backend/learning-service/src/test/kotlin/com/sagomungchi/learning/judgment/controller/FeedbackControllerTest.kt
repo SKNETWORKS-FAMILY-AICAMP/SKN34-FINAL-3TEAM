@@ -113,6 +113,15 @@ class FeedbackControllerTest(@Autowired private val mockMvc: MockMvc) {
     }
 
     @Test
+    fun `answerId가 UUID 형식이 아니면 400`() {
+        mockMvc.post("/internal/answers/not-a-uuid/feedback") { asStudent() }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.code") { value("VALIDATION_FAILED") }
+        }
+        verifyNoInteractions(facade)
+    }
+
+    @Test
     fun `학생이 아니면 403`() {
         mockMvc.post("/internal/answers/$answerId/feedback") { asStudent(role = "PARENT") }.andExpect {
             status { isForbidden() }
