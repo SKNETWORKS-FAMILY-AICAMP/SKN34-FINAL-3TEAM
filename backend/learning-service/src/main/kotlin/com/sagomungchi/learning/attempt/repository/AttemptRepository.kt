@@ -15,6 +15,9 @@ class AttemptRepository(private val mapper: AttemptMapper) {
 
     fun findById(id: UUID): Attempt? = mapper.findById(id)
 
+    /** 행 잠금(SELECT … FOR UPDATE). 같은 시도의 답변 제출·마무리를 한 줄로 세움 */
+    fun lockById(id: UUID): Attempt? = mapper.findByIdForUpdate(id)
+
     fun recordHintOpened(attemptId: UUID, hintQuestionId: UUID, openedAt: Instant) {
         check(mapper.insertHintUsage(UUID.randomUUID(), attemptId, hintQuestionId, openedAt) == 1)
     }

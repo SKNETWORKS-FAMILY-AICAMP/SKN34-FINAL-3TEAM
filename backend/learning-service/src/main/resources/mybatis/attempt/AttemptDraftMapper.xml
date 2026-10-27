@@ -25,4 +25,11 @@
         SET version = #{draft.version}, content = #{draft.content}, saved_at = #{draft.savedAt}
         WHERE attempt_id = #{draft.attemptId} AND version = #{ifMatch}
     </update>
+
+    <!-- 답변 제출 뒤: 메모는 두고 답 칸만 비움. 버전을 올려 다른 화면의 옛 초안 저장은 409 -->
+    <update id="clearAnswer">
+        UPDATE attempt_draft
+        SET content = jsonb_set(content, '{answer}', '{}'::jsonb), version = version + 1, saved_at = #{savedAt}
+        WHERE attempt_id = #{attemptId}
+    </update>
 </mapper>

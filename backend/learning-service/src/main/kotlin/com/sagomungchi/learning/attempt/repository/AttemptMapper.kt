@@ -11,6 +11,7 @@ interface AttemptMapper {
     fun insertIfNoneInProgress(attempt: Attempt): Int
     fun findInProgress(@Param("studentId") studentId: UUID, @Param("missionId") missionId: UUID): Attempt?
     fun findById(id: UUID): Attempt?
+    fun findByIdForUpdate(id: UUID): Attempt?
     fun insertHintUsage(
         @Param("id") id: UUID,
         @Param("attemptId") attemptId: UUID,
