@@ -59,18 +59,12 @@ services:
       rabbitmq:
         condition: service_healthy
     volumes:
-      - ./infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json:/definitions.json:ro
-    command:
-      - -fsS
-      - -u
-      - ${RABBITMQ_USER}:${RABBITMQ_PASSWORD}
-      - -H
-      - "content-type: application/json"
-      - -X
-      - POST
-      - --data-binary
-      - "@/definitions.json"
-      - http://rabbitmq:15672/api/definitions
+      - ./infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json:/definitions/definitions.json:ro
+      - ./infrastructure/gitops/charts/platform-data/files/rabbitmq/import-definitions.sh:/definitions/import-definitions.sh:ro
+    environment:
+      RABBITMQ_USER: ${RABBITMQ_USER:?.env 설정 필요}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?.env 설정 필요}
+    entrypoint: [/bin/sh, /definitions/import-definitions.sh]
 
   redis:
     image: redis:8.2.10-alpine

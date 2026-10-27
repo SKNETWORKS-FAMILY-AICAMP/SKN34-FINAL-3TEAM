@@ -1,0 +1,46 @@
+{{- if .Values.postgres.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+data:
+  init.sql: |
+{{ required "files/postgres/init.sql is required" (.Files.Get "files/postgres/init.sql") | indent 4 }}
+{{- end }}
+{{- if .Values.rabbitmq.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbitmq-config
+data:
+  enabled_plugins: |
+    [rabbitmq_management,rabbitmq_prometheus].
+  platform.conf: |
+    listeners.tcp.default = {{ .Values.rabbitmq.servicePort }}
+    management.tcp.port = {{ .Values.rabbitmq.managementPort }}
+    prometheus.tcp.port = {{ .Values.rabbitmq.prometheusPort }}
+    vm_memory_high_watermark.absolute = {{ required "rabbitmq.memoryHighWatermark must be set" .Values.rabbitmq.memoryHighWatermark }}
+    log.console = true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbitmq-definitions
+data:
+  definitions.json: |
+{{ required "files/rabbitmq/definitions.json is required" (.Files.Get "files/rabbitmq/definitions.json") | indent 4 }}
+  import-definitions.sh: |
+{{ required "RabbitMQ initialization script is required" (.Files.Get "files/rabbitmq/import-definitions.sh") | indent 4 }}
+{{- end }}
+{{- if .Values.minio.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: minio-initialization
+data:
+  create-buckets.sh: |
+{{ required "MinIO initialization script is required" (.Files.Get "files/minio/create-buckets.sh") | indent 4 }}
+{{- end }}

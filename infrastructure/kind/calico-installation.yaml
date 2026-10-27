@@ -1,0 +1,22 @@
+# Requires the Calico v3.33.0 CRDs and Tigera Operator described in README.md.
+# Keep this CIDR equal to networking.podSubnet in local.yaml.
+apiVersion: operator.tigera.io/v1
+kind: Installation
+metadata:
+  name: default
+spec:
+  calicoNetwork:
+    ipPools:
+      - name: default-ipv4-ippool
+        blockSize: 26
+        cidr: "10.244.0.0/16"
+        encapsulation: VXLANCrossSubnet
+        natOutgoing: Enabled
+        nodeSelector: all()
+---
+# Native v3 mode uses this resource for Calico admission validation webhooks.
+apiVersion: operator.tigera.io/v1
+kind: APIServer
+metadata:
+  name: default
+spec: {}

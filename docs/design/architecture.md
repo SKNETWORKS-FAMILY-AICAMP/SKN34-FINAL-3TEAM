@@ -471,6 +471,13 @@ backend/report-service/
 | CNI (NetworkPolicy) | - | Calico (기본 CNI 정책 지원 버전별 상이) | VPC CNI `enableNetworkPolicy: "true"` |
 | 외부 연동 | stub (LLM·토스) | stub 또는 테스트 키 | LLM API, 토스페이먼츠 테스트 키 |
 
+- 로컬 자원 시작 기준: i5-1135G7(4코어·8스레드)·16GB급 PC, WSL 2 Docker 메모리 상한 약 7.62GiB. 저장소·Ingress·초기화 작업과 기반 구성에 약 6GiB를 계획하며, 앱·관측·모델 추론의 동시 실행 보장은 아니다. [이슈 #17 자원 설계](../report/local-platform-resource-plan.md)의 제안값을 구현·실측 후 조정한다.
+- 로컬 MinIO는 `sagomungchi-local-missions`·`sagomungchi-local-reports`·`sagomungchi-local-models` 버킷 세 개를 단일 MinIO 저장 공간 안에 구성한다. 운영 S3 이름은 AWS 자원 작업에서 별도 확정한다.
+- Compose의 MinIO는 선택 실행용 `compose.minio.yaml`에 서비스 세 개와 전용 볼륨을 둔다. 기본 `compose.yaml`은 MinIO 계정 없이 기존 앱·DB 실행과 스키마 검증에 사용하고, MinIO가 필요할 때만 두 파일을 함께 지정한다. kind의 MinIO는 로컬 values에서 계속 활성화한다.
+- 로컬 MinIO 서버는 Chainguard 공개 배포본의 linux/amd64 digest로 고정하고, 버킷 초기화는 기존 curl 이미지의 고정 버전과 S3 서명 요청으로 수행한다. 이미지 참조는 `platform-data` 공통 values에서 관리한다. 로컬 계정은 `platform` namespace의 기존 `platform-data-credentials` Secret에 두고 chart는 키 이름만 참조한다. [platform-data 설정](../../infrastructure/gitops/charts/platform-data/README.md)을 따른다.
+- 버전·CNI·이미지 배포·초기화·자격 증명·데이터 보존을 구체화한 내용과 근거는 [이슈 #17 설계 변경 근거](../report/local-platform-design-decisions.md)에 기록한다.
+- 로컬 클러스터는 `sagomungchi-local`(kind v0.33.0, Kubernetes v1.35.8), Pod `10.244.0.0/16`, Service `10.96.0.0/12`, IPv4·iptables를 기준으로 한다. Calico v3.33.0과 ingress-nginx chart 4.15.1(controller v1.15.1)을 사용하며 API·HTTP·HTTPS를 loopback에서만 노출한다. 다른 PC·Wi-Fi·VPN 환경에서는 기존 경로·Docker subnet·포트 중복 여부를 확인한다. [kind 설정·설치 절차](../../infrastructure/kind/README.md)를 따른다.
+
 ### 4.2 운영 클러스터: EKS
 - 선정 근거 (자체 구축 K8s(kubeadm·k3s) 대비)
   - 설계 구성 요소(ALB LB Controller, IRSA, EBS CSI, Cluster Autoscaler, ECR, Secrets Manager) AWS 기본 연동
@@ -641,6 +648,7 @@ SKN34-FINAL-3TEAM/
 │  ├─ design/                    # 아키텍처·기능명세·API 명세 등 설계 문서
 │  └─ adr/                       # NNNN-<제목>.md
 ├─ compose.yaml                  # 로컬 통합 실행 진입점
+├─ compose.minio.yaml            # 로컬 MinIO 선택 실행 (기본 파일과 함께 지정)
 ├─ .env.example
 └─ README.md
 ```
