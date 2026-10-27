@@ -2,15 +2,17 @@
 
 작성일: 2026-10-27. 기준: `develop`의 `e3bb6ab`(#14 PR #60 포함) 및 [이슈 #22](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/22), [API 명세 2.2·3.8·4.1](../design/api-spec.md), [기능 명세 P03·FN-LRN-02·03](../design/functional-spec.md), [상태 다이어그램 3.1](../design/state-diagram.md), [기획서 5장](<../outputs/프로젝트_기획서_사고뭉치.pdf>).
 
-learning-service의 `GET /internal/missions`, `GET /internal/missions/{id}`와 데모 미션 시드를 만들면서 정한 내용과 근거를 기록한다. API 계약과 데이터베이스 스키마는 바꾸지 않았고, 설계 문서도 고치지 않았다.
+learning-service의 `GET /internal/missions`, `GET /internal/missions/{id}`와 데모 미션 시드를 만들면서 정한 내용과 근거를 기록한다. API 계약과 데이터베이스 스키마는 바꾸지 않았다.
 
-## 설계 문서와 다르게 한 부분
+## 설계 문서 갱신
 
-| 항목 | 문서 | 구현 | 근거 |
+구현에 맞춰 설계 문서를 아래와 같이 고쳤다.
+
+| 문서 | 변경 전 | 변경 후 | 근거 |
 |---|---|---|---|
-| 상세 메서드 | `MissionService.get(missionId)` ([class-diagram 4.1](../design/class-diagram.md)) | `get(missionId, grade)` | 상세도 목록과 같은 학년 범위로 제한하려면 학년이 필요. 범위 밖은 api-spec 1.3 `409 MISSION_NOT_AVAILABLE` |
-| 목록 입력 방식 인자 | `MissionController.list(grade, inputTypes)` (class-diagram 4.1) | `inputTypes`를 받지 않고 학년으로 계산 | 같은 문서의 `MissionService.listForStudent(studentId, grade)`와 다르고, 입력 방식 범위를 넘기는 주체·기준이 문서에 없음. P03이 학년으로 정함(논술 초5~6) |
-| 시드의 공개 미션 | 공개는 검토 요청 → `mission_review APPROVED` → 공개 ([state-diagram 3.1](../design/state-diagram.md)) | 시드가 `PUBLISHED` 상태와 `published_at`을 직접 넣고 `mission_review`는 넣지 않음 | 관리자 작성·검토·공개 기능(FN-ADM-08~13)은 후속. 시드는 개발·시연용 데이터 |
+| [class-diagram 4.1](../design/class-diagram.md) `MissionController`·`MissionService` | `get(missionId) MissionView` | `get(missionId, grade) MissionView` | 상세도 목록과 같은 학년 범위로 제한하려면 학년이 필요. 범위 밖은 api-spec 1.3 `409 MISSION_NOT_AVAILABLE`. 프론트 목업(`demoGateway.mission`)도 학생 학년 미션 안에서만 상세를 엶 |
+| class-diagram 4.1 `MissionController` | `list(grade, inputTypes) List` | `list(grade) List` | 같은 문서의 `MissionService.listForStudent(studentId, grade)`와 맞지 않았고, 입력 방식 범위를 넘기는 주체·기준이 문서에 없음. P03이 학년으로 정함(논술 초5~6) |
+| [state-diagram 3.1](../design/state-diagram.md) 미션 운영 | 공개는 검토 요청 → `mission_review APPROVED` → 공개만 정의 | 개발·시연용 데모 시드는 관리자 흐름 없이 `PUBLISHED`·`DRAFT`를 직접 넣고 `mission_review`를 만들지 않는다는 줄 추가 | 관리자 작성·검토·공개 기능(FN-ADM-08~13)은 후속. 운영 미션은 기존 전이만 사용 |
 
 ## 프론트 목업·잠정 모델과 다른 점 (프론트 담당 확인)
 
@@ -58,19 +60,19 @@ learning-service의 `GET /internal/missions`, `GET /internal/missions/{id}`와 �
 
 ## 구현에서 정한 것
 
-클래스·메서드 이름은 [클래스 다이어그램 4.1](../design/class-diagram.md)을 따른다 (`MissionController`, `MissionService.listForStudent(studentId, grade)`·`get`, `MissionRepository`, `MissionView`). 인자가 다른 두 곳은 위 "설계 문서와 다르게 한 부분"에 적었다.
+클래스·메서드 이름은 [클래스 다이어그램 4.1](../design/class-diagram.md)을 따른다 (`MissionController`, `MissionService.listForStudent(studentId, grade)`·`get`, `MissionRepository`, `MissionView`). 인자를 바꾼 두 곳은 위 "설계 문서 갱신"에 적었다.
 
 | 항목 | 정한 내용 | 근거 |
 |---|---|---|
-| 학생용 객체 이름 | `MissionView`. 정답·예시 답·기준표 필드가 없어 응답에 섞일 수 없음 | class-diagram의 `get(missionId) MissionView`. `Mission`은 공개·검토 규칙을 가진 관리자 쪽 엔티티 이름으로 남김 |
+| 학생용 객체 이름 | `MissionView`. 정답·예시 답·기준표 필드가 없어 응답에 섞일 수 없음 | class-diagram의 `get(missionId, grade) MissionView`. `Mission`은 공개·검토 규칙을 가진 관리자 쪽 엔티티 이름으로 남김 |
 | 수행 상태 조회 | `MissionRepository`가 `attempt`에서 미션별 가장 최근 시도를 읽음. 없으면 `NOT_STARTED` | class-diagram에서 `MissionService`는 `MissionRepository`만 쓰고 `AttemptService`가 `MissionService`를 씀. attempt 쪽 서비스를 부르면 순환 |
-| 상세 조회 범위 | 목록과 같은 범위(공개 + 학생 학년·입력 방식). 비공개·범위 밖이면 `409 MISSION_NOT_AVAILABLE`, 없으면 `404 NOT_FOUND`. 메서드는 `get(missionId, grade)` | api-spec 1.3 `MISSION_NOT_AVAILABLE`(비공개·범위 밖 미션). 프론트 목업(`demoGateway.mission`)도 학생 학년 미션 안에서만 상세를 엶. 범위 확인에 학년이 필요해 class-diagram의 `get(missionId)`에 인자 하나 추가. 목업은 범위 밖을 `404 NOT_FOUND`로 처리해 api-spec과 다름 → 프론트 담당 확인 |
+| 상세 조회 범위 | 목록과 같은 범위(공개 + 학생 학년·입력 방식). 비공개·범위 밖이면 `409 MISSION_NOT_AVAILABLE`, 없으면 `404 NOT_FOUND`. 메서드는 `get(missionId, grade)` | api-spec 1.3 `MISSION_NOT_AVAILABLE`(비공개·범위 밖 미션). 프론트 목업(`demoGateway.mission`)도 학생 학년 미션 안에서만 상세를 엶. 범위 확인에 학년이 필요해 class-diagram을 `get(missionId, grade)`로 갱신. 목업은 범위 밖을 `404 NOT_FOUND`로 처리해 api-spec과 다름 → 프론트 담당 확인 |
 | 목록 위치 | `position`은 학생 학년 목록에서 1부터, `total`은 그 목록 크기. 페이지 나누기(api-spec 1.1)는 Controller | api-spec 3.8 목록 항목. Service 인자는 class-diagram 그대로 |
 | 학생 확인 | `X-User-Role: STUDENT`이고 `X-Student-Scope`에 학생 1명일 때만 허용, 그 학생이 조회 대상. 아니면 `403 FORBIDDEN` | 학생 미션 API는 역할 학생 (api-spec 2.2). core가 `/missions`를 그대로 넘기는 프록시라 경로에 학생 ID가 없음 (api-spec 4.1) |
 | 학년 | core가 쿼리 `grade`(3~6)로 넘김. 범위 밖이면 `400 VALIDATION_FAILED` | 학생 학년은 core에만 있음. 지원 학년 초3~6 (P03) |
 | 응답 필드 | 프론트 `Mission` 모델 이름. 안내는 `hint`, 학년 범위는 `grade`·`gradeMax`, 입력 틀은 `inputTemplate`. 프론트의 `scene`은 DB에 없어 제외(장면은 `sceneUri`) | api-spec 3.7·3.8이 프론트 모델을 잠정 계약으로 씀 |
 | 목록 봉투 | `PageResponse`를 `mission/controller`에 둠 | 공통으로 쓸 곳이 생기면 `_common`으로 옮김. architecture 2.6 `_common` 구성을 지금 바꾸지 않음 |
-| 입력 방식 범위 | 학년으로 계산(논술은 초5 이상, P03). `inputTypes`는 받지 않음 | class-diagram의 `MissionController.list(grade, inputTypes)`와 `MissionService.listForStudent(studentId, grade)`가 다름. 입력 방식 범위를 넘기는 주체·기준이 문서에 없고 P03이 학년으로 정함 |
+| 입력 방식 범위 | 학년으로 계산(논술은 초5 이상, P03). `inputTypes`는 받지 않음 | 입력 방식 범위를 넘기는 주체·기준이 문서에 없고 P03이 학년으로 정함. class-diagram을 `list(grade)`로 갱신 |
 
 ## #14 Repository 기반 사용
 

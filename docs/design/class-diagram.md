@@ -900,8 +900,8 @@ classDiagram
   direction TB
   class MissionController {
     <<controller>>
-    +list(grade, inputTypes) List
-    +get(missionId) MissionView
+    +list(grade) List
+    +get(missionId, grade) MissionView
   }
   class AdminMissionController {
     <<controller>>
@@ -918,7 +918,7 @@ classDiagram
   class MissionService {
     <<service>>
     +listForStudent(studentId, grade) List
-    +get(missionId) MissionView
+    +get(missionId, grade) MissionView
     +create(command) Mission
     +update(missionId, command) MissionVersion
     +putRubric(missionId, command) RubricVersion
