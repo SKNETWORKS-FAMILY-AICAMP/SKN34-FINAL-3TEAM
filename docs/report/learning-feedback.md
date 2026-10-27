@@ -67,6 +67,7 @@ learning-service의 `POST /internal/answers/{answerId}/feedback`을 만들고, �
 | `application.yml` | `app.internal.read-timeout` 30s(확정 전 임시값) → 35s | P12 learning→ai 35초. learning이 부르는 내부 서비스는 ai뿐이라 공통 값 변경으로 충분. 30초면 ai 되묻기 마감(33초)보다 먼저 끊김 |
 | `build.gradle.kts` | `resilience4j-circuitbreaker 2.3.0`, 테스트 `wiremock-standalone 3.13.1` | 아키텍처 1.3 서킷 브레이커, 이슈 완료 조건 "ai 목(WireMock 등)". 사용자 동의(10/27) |
 | `attempt/` | `Attempt.acceptsAnswers`, `AttemptService.timeline`, 시도 상세 `feedbacks`·`nextActions` | 위 표 |
+| `_common/security/UserContext.kt`, `attempt/service/AttemptService.kt` | 학생 본인 확인을 UUID끼리 비교하는 `requireStudent(UUID)` 추가, 시도 확인(`requireOwned`·`lockForAnswer`)이 그것을 씀. 문자열 버전은 그대로 | PR #74 리뷰 지적 1번: `requireSelfStudent`는 UUID로 읽어 대소문자와 무관한데 시도 확인은 문자열 비교라, core가 대문자 UUID를 보내면 본인 시도도 403. 피드백 API도 같은 확인을 거쳐 여기서 고침. 대문자 범위 테스트(문자열 비교로 되돌리면 실패) |
 | `mission/` | `Rubric`·`AnswerKey`, `MissionService.rubric`, 판정용 기준표 조회(정답 키·예시 답 포함, 학생 응답에 쓰지 않음) | class-diagram 4.2 `FeedbackFacade --> MissionService` |
 
 ## 프론트 확인 (프론트 담당)
@@ -87,7 +88,7 @@ learning-service의 `POST /internal/answers/{answerId}/feedback`을 만들고, �
 
 ## 검증
 
-- `./gradlew test`: 112개 통과, 실패·생략 0개. 새로 추가 44개: `RuleJudgeTest` 6, `JudgmentTest` 6, `AiClientTest` 5(WireMock), `FeedbackFacadeTest` 18(Testcontainers + WireMock), `FeedbackControllerTest` 4, `FeedbackConcurrencyTest` 3, `JudgmentServiceTest` 1, `AttemptControllerTest` 1(판정 결과가 있는 시도 상세).
+- `./gradlew test`: 114개 통과, 실패·생략 0개. 새로 추가 46개: `RuleJudgeTest` 6, `JudgmentTest` 6, `AiClientTest` 5(WireMock), `FeedbackFacadeTest` 18(Testcontainers + WireMock), `FeedbackControllerTest` 5, `FeedbackConcurrencyTest` 3, `JudgmentServiceTest` 1, `AttemptControllerTest` 1(판정 결과가 있는 시도 상세), `AttemptServiceTest` 1(대문자 학생 범위).
 - 이슈 #25 완료 조건
   - ai 목으로 정상·보류·실패·유출 검사 실패: `FeedbackFacadeTest`(서술 PARTIAL 요소·버전 저장, HELD `TOO_SHORT`와 되묻기, ai 503 → `FAILED`·retryable, 되묻기만 실패 → `FAILED`·판정 미저장, 유출 실패 → 질문 은행 두 번 다른 질문), `AiClientTest`(503 `retryable` 전달, 500, 400, 깨진 JSON, 시간 초과, 연결 실패, 서킷 차단)
   - `FAILED` 후 재요청 시 재실행, `DONE` 후 재요청 시 같은 결과: `FeedbackFacadeTest`(재실행 뒤 ai 판정 호출 2번·되묻기 1번, 세 번째 요청은 ai 호출 없이 같은 결과, `retry_count` 1 유지), `FeedbackConcurrencyTest`(실제 커밋: 실패가 따로 커밋된 뒤 재요청이 처음부터 실행)
