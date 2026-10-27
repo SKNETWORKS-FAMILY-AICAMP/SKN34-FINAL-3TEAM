@@ -87,7 +87,7 @@ class AttemptControllerTest(@Autowired private val mockMvc: MockMvc) {
     fun `시도 상세는 ETag와 저장된 초안, 제출 답변과 판정 처리 상태`() {
         val saved = AttemptDraft.empty(attempt.id, now).update(DraftContent(mapOf("text" to "답"), "메모"), now)
         val answer = TimelineAnswer(
-            UUID.randomUUID(), 1, now, InputType.NARRATIVE, "제출한 답", null, mapOf("text" to "제출한 답"), ProcessStatus.PENDING,
+            UUID.randomUUID(), 1, now, InputType.NARRATIVE, "제출한 답", null, null, mapOf("text" to "제출한 답"), ProcessStatus.PENDING,
         )
         given(service.get(attempt.id)).willReturn(detail(saved, listOf(answer)))
 
