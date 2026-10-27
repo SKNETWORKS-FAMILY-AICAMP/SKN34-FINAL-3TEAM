@@ -112,6 +112,39 @@ def to_scores(raw: np.ndarray) -> dict:
     }
 
 
+def default_cuts(item: str) -> list[float]:
+    # 반올림과 같은 기준: 1.5 넘으면 2점, 2.5 넘으면 3점 ...
+    return [k + 0.5 for k in range(1, top_score(item))]
+
+
+def apply_cuts(raw_col: np.ndarray, cuts: list[float]) -> np.ndarray:
+    return np.digitize(raw_col, cuts) + 1
+
+
+def fit_cuts(df: pd.DataFrame, item: str, raw_col: np.ndarray) -> list[float]:
+    """검증용에서 QWK가 가장 높아지는 점수 경계를 찾는다.
+
+    모델은 3.4 같은 숫자를 내는데, 반올림(3.5 기준)하면 실제보다 낮게 주는 경우가 많았다
+    (10/26 과소 판정 37~62%). 경계를 하나씩 앞뒤로 옮겨 보며 검증용 QWK가 오르는 쪽으로 고정한다.
+    평가용은 쓰지 않는다.
+    """
+    cuts = default_cuts(item)
+    best = evaluate(df, item, apply_cuts(raw_col, cuts))["qwk"]
+    for _ in range(3):  # 경계끼리 영향을 주므로 몇 바퀴 반복
+        for j in range(len(cuts)):
+            low = cuts[j - 1] + 0.05 if j > 0 else 0.5
+            high = cuts[j + 1] - 0.05 if j + 1 < len(cuts) else top_score(item) + 0.5
+            for c in np.arange(cuts[j] - 0.5, cuts[j] + 0.51, 0.05):
+                if not low <= c <= high:
+                    continue
+                trial = cuts.copy()
+                trial[j] = round(float(c), 2)
+                q = evaluate(df, item, apply_cuts(raw_col, trial))["qwk"]
+                if q > best + 1e-6:
+                    best, cuts = q, trial
+    return cuts
+
+
 def mean_qwk(df: pd.DataFrame, raw: np.ndarray) -> float:
     scores = to_scores(raw)
     return float(np.mean([evaluate(df, it, scores[it])["qwk"] for it in ITEMS]))
@@ -239,10 +272,20 @@ def main() -> None:
 
     # 검증 기준 가장 좋았던 에폭의 가중치로 평가용 성적을 한 번만 낸다
     model = AutoModelForSequenceClassification.from_pretrained(ckpt_dir).to(device)
-    preds = {
-        (run_name, it): s
-        for it, s in to_scores(predict(model, loaders["test"], device)).items()
+    raw_valid = predict(model, loaders["valid"], device)
+    raw_test = predict(model, loaders["test"], device)
+
+    # 점수 경계는 검증용으로만 찾고, 평가용엔 적용만 한다
+    cuts = {
+        it: fit_cuts(sets["valid"], it, raw_valid[:, i]) for i, it in enumerate(ITEMS)
     }
+    (ckpt_dir / "score_cuts.json").write_text(
+        json.dumps(cuts, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    preds = {(run_name, it): s for it, s in to_scores(raw_test).items()}
+    for i, it in enumerate(ITEMS):
+        preds[(f"{run_name}_cut", it)] = apply_cuts(raw_test[:, i], cuts[it])
     test = sets["test"]
     group_cols = ["grade"] + (["essay_type"] if "essay_type" in test else [])
     table = score_table(test, preds, group_cols)
@@ -255,14 +298,22 @@ def main() -> None:
         "best_valid_qwk": round(best_qwk, 3),
         "device": str(device),
         "amp_dtype": str(amp_dtype),
+        "score_cuts": cuts,
         "minutes": round((time.time() - start) / 60, 1),
     }
     (ckpt_dir / "train_info.json").write_text(
         json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
-    overall = table[table["group_by"] == "all"].set_index("item")["qwk"].reindex(ITEMS)
-    print(f"\n평가용 QWK (가장 좋은 에폭 {best_epoch}):\n{overall.to_string()}")
+    overall = table[table["group_by"] == "all"].pivot(
+        index="item", columns="baseline", values="qwk"
+    )
+    overall.columns = [
+        "반올림" if c == run_name else "경계 조정" for c in overall.columns
+    ]
+    print(
+        f"\n평가용 QWK (가장 좋은 에폭 {best_epoch}):\n{overall.reindex(ITEMS).to_string()}"
+    )
 
 
 if __name__ == "__main__":
