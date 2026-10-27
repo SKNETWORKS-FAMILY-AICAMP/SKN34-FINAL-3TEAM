@@ -1,0 +1,122 @@
+{{- if .Values.rabbitmq.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rabbitmq
+  labels:
+    app.kubernetes.io/name: rabbitmq
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  serviceName: rabbitmq-headless
+  replicas: 1
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rabbitmq
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rabbitmq
+        app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        checksum/rabbitmq-config: {{ .Values.rabbitmq | toJson | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        fsGroup: 101
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: rabbitmq
+          image: {{ .Values.rabbitmq.image | quote }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: RABBITMQ_NODENAME
+              value: rabbit@$(POD_NAME)
+            - name: RABBITMQ_DEFAULT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "existingSecret must be set" .Values.existingSecret }}
+                  key: {{ .Values.rabbitmq.usernameKey }}
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: {{ .Values.rabbitmq.passwordKey }}
+            - name: RABBITMQ_PLUGINS_EXPAND_DIR
+              value: /var/lib/rabbitmq/plugins
+            - name: RABBITMQ_LOGS
+              value: "-"
+          ports:
+            - name: amqp
+              containerPort: {{ .Values.rabbitmq.servicePort }}
+            - name: management
+              containerPort: {{ .Values.rabbitmq.managementPort }}
+            - name: prometheus
+              containerPort: {{ .Values.rabbitmq.prometheusPort }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+{{ include "platform-data.resources" .Values.rabbitmq.resources | indent 12 }}
+          startupProbe:
+            exec:
+              command: [rabbitmq-diagnostics, -q, ping]
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            exec:
+              command: [rabbitmq-diagnostics, -q, check_port_connectivity]
+            periodSeconds: 10
+            timeoutSeconds: 10
+          livenessProbe:
+            exec:
+              command: [rabbitmq-diagnostics, -q, ping]
+            periodSeconds: 20
+            timeoutSeconds: 10
+            failureThreshold: 3
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/rabbitmq
+            - name: configuration
+              mountPath: /etc/rabbitmq/conf.d/20-platform.conf
+              subPath: platform.conf
+              readOnly: true
+            - name: configuration
+              mountPath: /etc/rabbitmq/enabled_plugins
+              subPath: enabled_plugins
+              readOnly: true
+            - name: temporary
+              mountPath: /tmp
+      volumes:
+        - name: configuration
+          configMap:
+            name: rabbitmq-config
+        - name: temporary
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- if kindIs "string" .Values.storageClassName }}
+        storageClassName: {{ .Values.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.rabbitmq.persistence.size | quote }}
+{{- end }}

@@ -60,7 +60,7 @@ services:
     ports: !reset []
 ```
 
-PowerShell 예시다. 두 경로와 DB 사용자명은 준비한 로컬 값으로 바꾼다. `schema-check.env`는 `.env.example`의 필수 항목을 모두 채워야 한다.
+PowerShell 예시다. 두 경로와 DB 사용자명은 준비한 로컬 값으로 바꾼다. `schema-check.env`는 기본 `compose.yaml`이 요구하는 `POSTGRES_USER`·`POSTGRES_PASSWORD`·`RABBITMQ_USER`·`RABBITMQ_PASSWORD`·`INTERNAL_TOKEN`을 채워야 한다. MinIO 선택 파일을 사용하지 않으므로 MinIO 계정은 필요하지 않다.
 
 ```powershell
 $checkEnv = '../schema-check.env'

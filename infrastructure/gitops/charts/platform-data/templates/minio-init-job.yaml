@@ -1,0 +1,73 @@
+{{- if .Values.minio.enabled }}
+{{- $buckets := required "minio.buckets must be set" .Values.minio.buckets }}
+{{- $content := printf "%s%s%s" (.Files.Get "files/minio/create-buckets.sh") (.Values.minio | toJson) .Values.existingSecret }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-init-{{ $content | sha256sum | trunc 10 }}
+  labels:
+    app.kubernetes.io/name: minio-init
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  backoffLimit: {{ .Values.minio.initialization.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.minio.initialization.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: minio-init
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: initialize
+          image: {{ .Values.minio.initialization.image | quote }}
+          command: [/bin/sh, /scripts/create-buckets.sh]
+          args:
+            - {{ required "minio.buckets.missions must be set" $buckets.missions | quote }}
+            - {{ required "minio.buckets.reports must be set" $buckets.reports | quote }}
+            - {{ required "minio.buckets.models must be set" $buckets.models | quote }}
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "existingSecret must be set" .Values.existingSecret }}
+                  key: {{ .Values.minio.usernameKey }}
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: {{ .Values.minio.passwordKey }}
+            - name: MINIO_ENDPOINT
+              value: {{ printf "http://minio:%v" .Values.minio.servicePort | quote }}
+            - name: WAIT_TIMEOUT_SECONDS
+              value: {{ .Values.minio.initialization.waitTimeoutSeconds | quote }}
+            - name: HOME
+              value: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+{{ include "platform-data.resources" .Values.minio.initialization.resources | indent 12 }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: temporary
+              mountPath: /tmp
+      volumes:
+        - name: scripts
+          configMap:
+            name: minio-initialization
+        - name: temporary
+          emptyDir: {}
+{{- end }}

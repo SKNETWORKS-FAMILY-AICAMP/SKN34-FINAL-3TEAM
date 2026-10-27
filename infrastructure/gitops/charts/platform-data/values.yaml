@@ -1,0 +1,72 @@
+# Supply the existing Secret name and resources through an environment values file.
+# The Helm release namespace owns all chart resources; local uses namespace platform.
+existingSecret: ""
+
+# null: use the cluster default StorageClass; "": request no StorageClass.
+storageClassName: null
+
+postgres:
+  enabled: false
+  image: "postgres:17.11-alpine"
+  usernameKey: "POSTGRES_USER"
+  passwordKey: "POSTGRES_PASSWORD"
+  servicePort: 5432
+  persistence:
+    size: "2Gi"
+  settings:
+    sharedBuffers: "128MB"
+    maxConnections: 100
+    workMem: "4MB"
+    maintenanceWorkMem: "64MB"
+  resources: {}
+
+rabbitmq:
+  enabled: true
+  image: "rabbitmq:4.3.7-management-alpine"
+  usernameKey: "RABBITMQ_USER"
+  passwordKey: "RABBITMQ_PASSWORD"
+  servicePort: 5672
+  managementPort: 15672
+  prometheusPort: 15692
+  persistence:
+    size: "2Gi"
+  # Set an absolute byte count in the environment values file.
+  memoryHighWatermark: ""
+  resources: {}
+  initialization:
+    image: "curlimages/curl:8.17.0"
+    backoffLimit: 3
+    activeDeadlineSeconds: 300
+    waitTimeoutSeconds: 120
+    resources: {}
+
+redis:
+  enabled: true
+  image: "redis:8.2.10-alpine"
+  servicePort: 6379
+  persistence:
+    size: "512Mi"
+  # Set maxMemory below the container limit in the environment values file.
+  maxMemory: ""
+  maxMemoryPolicy: "noeviction"
+  appendOnly: true
+  resources: {}
+
+minio:
+  enabled: false
+  # FINAL independently selected linux/amd64 images, pinned without a mutable tag.
+  image: "cgr.dev/chainguard/minio@sha256:98c819b873cbd455860c1fb5a9171a62b2f48d86554a4b2c6847e60a14a9ef30"
+  usernameKey: "MINIO_ROOT_USER"
+  passwordKey: "MINIO_ROOT_PASSWORD"
+  servicePort: 9000
+  consolePort: 9001
+  persistence:
+    size: "2Gi"
+  buckets: {}
+  resources: {}
+  initialization:
+    image: "curlimages/curl:8.17.0"
+    backoffLimit: 3
+    activeDeadlineSeconds: 300
+    waitTimeoutSeconds: 120
+    resources: {}

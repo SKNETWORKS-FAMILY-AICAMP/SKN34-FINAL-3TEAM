@@ -38,10 +38,18 @@
 
 - `design/`: ERD·API·아키텍처 등 구현 기준이 되는 설계 문서
 - `report/`: 작업별 검토 결과와 구현·검증 보고서
+  - [이슈 #7 프론트 공통 기반](report/issue-7-fe-common.md): MSW 전환·인증 갱신·체크박스 검증 기준·남은 작업
+  - [이슈 #7 학생 화면 후속 검증](report/issue-7-student-completion.md): 역할 URL·6종 입력·피드백·초안 회귀
+  - [이슈 #8·#9 학부모·관리자 화면](report/issue-8-9-parent-admin.md): 가입·대시보드·대화·리포트·관리자 권한/작업/콘텐츠 및 목업 계약
+  - [미체크 항목 후속 작업](report/unchecked-followup.md): 메모 대상 칸 복사·신규 가입 연속 흐름·확정 정책과 오래된 이슈 문구 구분
   - [이슈 #5 DB 변경 대상 검토표](report/erd-change-targets-step1.md): 구현 항목, 조장 확인 항목, 후속 기능과 분류 이유
   - [이슈 #5 DB 스키마 구현·검증](report/db-schema-validation.md): 기술 결정, 마이그레이션 결과와 검증 재현 방법
   - [이슈 #13 DB 마이그레이션 CI](report/db-schema-ci.md): 확정 정책 반영 후 검증 범위와 로컬·CI 실행 방법
+  - [이슈 #17 로컬 플랫폼 자원 설계](report/local-platform-resource-plan.md): 기준 PC와 CPU·메모리·볼륨 설정
+  - [이슈 #17 로컬 플랫폼 설계 변경 근거](report/local-platform-design-decisions.md): 버전·CNI·MinIO 배포 방식·초기화·자격 증명과 데이터 보존의 기술 근거
   - [이슈 #19 확정 정책 DB 스키마 수정](report/db-policy-schema.md): 변경 대상, 기존 데이터 전환 절차, 1~3단계 검증과 검토 순서
+  - [이슈 #6 ai-service 판정·되묻기 API 설계 변경](report/ai-judgment-followup.md): API 계약 변경, 설계와 다르게 구현한 부분과 근거, learning 연동 시 반영할 점
+  - [이슈 #4 M2 API 명세 정렬](report/m2-api-alignment.md): 학년 입력·점수 범위·모델 버전 규칙 명세 반영과 근거
 
 ## 개발 규칙
 

@@ -1,4 +1,4 @@
-import { API_BASE, toApiError, withAuth } from './apiClient.ts'
+import { apiRequest } from './apiClient.ts'
 
 /** SSE 이벤트 (API 명세서 1.6: status·clarification·delta·result·error·done) */
 export interface SseEvent {
@@ -14,31 +14,38 @@ interface StreamOptions {
 }
 
 /** 인증 헤더가 필요해 EventSource 대신 fetch 스트림으로 수신 */
-export async function streamSse(path: string, { method = 'POST', body, signal, onEvent }: StreamOptions) {
-  const headers = withAuth({ Accept: 'text/event-stream' })
+export async function streamSse(
+  path: string,
+  { method = 'POST', body, signal, onEvent }: StreamOptions,
+) {
+  const headers = new Headers({ Accept: 'text/event-stream' })
   if (body !== undefined) headers.set('Content-Type', 'application/json')
-  const response = await fetch(API_BASE + path, {
+  const response = await apiRequest(path, {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,
-    credentials: 'same-origin',
   })
-  if (!response.ok || !response.body) throw await toApiError(response)
+  if (!response.body) throw new Error('스트림 본문이 없습니다.')
 
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
   let buffer = ''
-  for (;;) {
-    const { value, done } = await reader.read()
-    if (done) break
-    buffer = (buffer + value).replace(/\r\n/g, '\n')
-    let boundary = buffer.indexOf('\n\n')
-    while (boundary >= 0) {
-      const parsed = parseBlock(buffer.slice(0, boundary))
-      if (parsed) onEvent(parsed)
-      buffer = buffer.slice(boundary + 2)
-      boundary = buffer.indexOf('\n\n')
+  try {
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer = (buffer + value).replace(/\r\n/g, '\n')
+      let boundary = buffer.indexOf('\n\n')
+      while (boundary >= 0) {
+        const parsed = parseBlock(buffer.slice(0, boundary))
+        if (parsed) onEvent(parsed)
+        buffer = buffer.slice(boundary + 2)
+        boundary = buffer.indexOf('\n\n')
+      }
     }
+  } finally {
+    await reader.cancel().catch(() => {})
+    reader.releaseLock()
   }
 }
 
