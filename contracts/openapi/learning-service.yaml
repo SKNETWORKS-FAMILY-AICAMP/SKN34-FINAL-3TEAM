@@ -1,0 +1,101 @@
+openapi: 3.1.0
+info:
+  title: learning 기록 존재 확인 내부 API (#37 선행)
+  version: 1.0.0
+  description: '#27 전체 기록 조회는 별도 범위. 내부 인증과 허용 학생 scope를 사용한다.'
+servers:
+  - url: /internal
+security:
+  - InternalToken: []
+paths:
+  /records/students/{studentId}/exists:
+    get:
+      operationId: recordExists
+      summary: 전체 보존 기록의 존재 여부
+      description: 제출 답변이 있는 시도를 확인한다. 모든 답변이 FAILED인 시도·초안만 있는 시도·삭제 표식 학생은 제외한다. 기간·건수·답변·메모는 반환하지 않는다.
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-User-Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [PARENT, STUDENT, SYSTEM]
+        - name: X-Student-Scope
+          in: header
+          required: true
+          schema:
+            type: string
+            description: 검증된 허용 학생 UUID의 쉼표 구분 목록
+      responses:
+        '200':
+          description: 정상 조회. 없으면 false, 있으면 true.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordExists'
+        '400':
+          description: VALIDATION_FAILED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: UNAUTHENTICATED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: FORBIDDEN
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: INTERNAL_ERROR. 조회 실패를 false로 바꾸지 않는다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+components:
+  securitySchemes:
+    InternalToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Token
+  schemas:
+    RecordExists:
+      type: object
+      additionalProperties: false
+      required: [studentId, hasRecords]
+      properties:
+        studentId:
+          type: string
+          format: uuid
+        hasRecords:
+          type: boolean
+    Problem:
+      type: object
+      required: [type, title, status, code, traceId]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        code:
+          type: string
+        detail:
+          type: [string, 'null']
+        instance:
+          type: string
+        traceId:
+          type: string

@@ -118,6 +118,9 @@ export async function apiRequest(path: string, init: RequestInit = {}): Promise<
   if (!response.ok) {
     const error = await toApiError(response)
     if (studentEntry) throw error
+    if (studentMode && ['CONSENT_REQUIRED', 'CHILD_NOT_LINKED'].includes(error.problem.code)) throw studentAuthenticationRequired()
+    if (error.problem.code === 'CONSENT_REQUIRED' && typeof window !== 'undefined')
+      window.dispatchEvent(new Event('sagomungchi:consent-required'))
     if (error.problem.code === 'SESSION_CHANGED' && typeof window !== 'undefined') {
       if (studentMode) throw studentAuthenticationRequired()
       setAccessToken(null)

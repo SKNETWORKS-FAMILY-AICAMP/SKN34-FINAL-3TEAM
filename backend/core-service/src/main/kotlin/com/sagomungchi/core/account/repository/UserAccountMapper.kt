@@ -8,4 +8,5 @@ import java.util.UUID
 interface UserAccountMapper {
     fun insert(account: UserAccount): Int
     fun findById(id: UUID): UserAccount?
+    fun lockById(id: UUID): UserAccount?
 }

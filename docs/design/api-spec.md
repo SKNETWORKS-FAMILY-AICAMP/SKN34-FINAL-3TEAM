@@ -174,8 +174,9 @@
 | PATCH | `/me` | 인증 | 본인 정보 수정 | ACC-09 | 우선1 |
 | POST | `/me/reauth` | 인증 | 재확인 → 단기 `reauthToken` 발급 | ACC-10 | 우선1 |
 | GET | `/me/consents` | 학부모 | 동의 이력(주체·문서 버전·시점·철회 상태) | ACC-02 | 제안 |
+| POST | `/me/consents` | 학부모 | 현재 문서의 동의 항목 저장 `{consents:[{documentId,version,agreed}], childId?}`. 계정은 TERMS·PRIVACY, 자녀는 GUARDIAN | ACC-02 | 제안 |
 | POST | `/me/consents/{consentId}/withdrawal` | 학부모 | 동의 철회. 필수 동의면 해당 자녀(또는 계정) 이용 차단 후 삭제·탈퇴 안내, 선택 동의면 해당 기능만 중단 (P09) | ACC-02 | 제안 |
-| GET | `/children` | 학부모 | 연결 자녀 목록(닉네임·학년·기록 유무, PIN 상태 `pinSet`·`pinLocked`). 빈 목록이면 자녀 등록 안내 | ACC-07, ACC-14 | 제안 |
+| GET | `/children` | 학부모 | 연결 자녀 목록(닉네임·학년·기록 유무, #58 확장 PIN 상태 `pinSet`·`pinLocked`). 빈 목록이면 자녀 등록 안내 | ACC-07, ACC-14 | 제안 |
 | POST | `/children` | 학부모 | 자녀 프로필 등록 `{nickname, grade(3~6), birthYear}` + 법정대리인 동의(전원 만 14세 미만 간주). 3명 초과 시 409 (P01, P02, P03) | ACC-06, ACC-02 | 제안 |
 | PATCH | `/children/{childId}` | 학부모 | 닉네임·학년(3~6) 수정 (학년은 이후 제공 문제에만 적용) | ACC-09 | 우선1 |
 | PUT | `/children/{childId}/pin` | 학부모 | PIN 설정·변경 `{pin}` (`X-Reauth-Token`). 실패 횟수·잠금 해제 (P01) | ACC-14, ACC-10 | 제안 |
@@ -610,6 +611,7 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | POST · GET · PUT | `/internal/attempts/...` | core | 시도·초안·도움·답변·마무리·돌아보기·자기 평가 (2.2 경로와 1:1). 생각 열기 응답 `{question, seq, total}`, 질문이 없는 미션은 `404` |
 | POST | `/internal/answers/{answerId}/feedback` | core | 판정 오케스트레이션: 규칙 판정 또는 ai 호출 → 저장 → 결과 반환 (동기) |
 | POST | `/internal/judgments/{judgmentId}/corrections` | core | 신고 정정 반영(SUP-03): `{reportId, reason, corrected}` → 기존 판정·사유·시점 보존 후 정정 이력 저장 (원본 답변 불변), `Idempotency-Key` |
+| GET | `/internal/records/students/{studentId}/exists` | core | 전체 보존 기록의 존재 여부 `{studentId,hasRecords}`. #37 선행 최소 API, P08 제출·실패·삭제 제외 기준 적용 |
 | GET | `/internal/records/students/{studentId}/summary?from&to` | core, ai | 건수·상태 `Metric[]` |
 | GET | `/internal/records/students/{studentId}/thinking-types?from&to` | core, ai, report | 유형별 미션·기록 |
 | GET | `/internal/records/students/{studentId}/attempts?from&to` | core, ai, report | 시도 목록·상세(답변 버전·되묻기·도움·돌아보기 원문) |
@@ -702,3 +704,25 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 - ai·scoring의 Pod별 소비·readiness·실제 교체 구현은 별도 서비스 작업이며 core 계약 테스트의 큐 대역으로 완료 처리하지 않는다.
 
 - #43 기존 SQL NULL 평가 행은 목록에서 evalResult:null로 보존하고 활성화/복귀 시 422로 거부한다. 승인 근거·적용 범위가 불완전한 기존 ACTIVE 행이 있으면 내부 snapshot은 MODEL_VERSION_STATE_INVALID(503)로 명시적으로 실패하며 임의 기본 버전을 반환하지 않는다. 신규 등록은 계속 완전한 평가 기록을 요구한다.
+
+
+### 5.3 #37 동의·자녀 구현 계약
+
+- 문서 조회·저장·철회·자녀 등록의 정식 스키마는 core OpenAPI를 따른다. GET /consent-documents는 3종 현재 문서를 목록 봉투로 반환한다. 현재=KST 시행일 이하에서 effective_from·created_at·id 내림차순 첫 문서. 게시 문서가 없거나 불완전하면 503 CONSENT_DOCUMENTS_UNAVAILABLE이며 가짜 본문을 생성하지 않는다.
+- POST /me/consents: `{consents:[{documentId,version,agreed}],childId?}`. childId 없음=TERMS·PRIVACY, 있음=소유한 자녀 GUARDIAN 재동의. 필요한 범위의 모든 현재 항목을 정확히 1개씩 보낸다. 필수 거부/누락은 400 VALIDATION_FAILED, 오래된 문서/범위 불일치는 409 CONSENT_DOCUMENT_CHANGED. 200은 해당 범위 동의 목록 봉투다. 재전송은 현재 선택과 같으면 행을 중복 생성하지 않는다.
+- GET /me/consents: 주체·문서 메타데이터·studentId·agreed·status·agreedAt·withdrawnAt의 전체 이력(최대 항목 제한 없이 1개 목록 봉투). POST /me/consents/{consentId}/withdrawal: 본인 이력만 철회, 반복 요청은 같은 행 반환. 타인/없는 ID는 403 FORBIDDEN. 필수 철회 후에는 계정/해당 자녀의 현재 동의 검사로 접근을 차단한다. 삭제·탈퇴는 #45에서 별도 요청하며 자동 삭제하지 않는다.
+- 권한 판정은 같은 문서·주체·자녀의 최신 이력만 사용한다. 필수 계정 동의 전에는 본인 조회·로그아웃·동의 관리만 허용한다. 현재 계정 동의가 있어야 POST /children을 사용한다. /me nextAction은 CONSENT_REQUIRED → CHILD_REGISTRATION_REQUIRED → READY다. 연결은 있으나 GUARDIAN 철회인 자녀는 목록에 guardianConsentRequired=true로 남기고 재동의를 안내한다.
+- POST /children: `{nickname,grade,birthYear,consents}` → 201 `{id,nickname,grade,birthYear}`. 학년 3~6, 별명 1~40자(앞뒤 공백 제거), 출생연도 1900~현재 KST 연도. 필수 GUARDIAN 동의와 학생·연결을 원자 저장한다. 보호자 행 잠금 후 LINKED 연결 수를 검사해 동시 요청도 최대 3명, 초과 409 CHILD_LIMIT_REACHED다.
+- GET /children: 목록 봉투 items=`{id,nickname,grade,birthYear,guardianConsentRequired,hasRecords:boolean|null,recordState:AVAILABLE|UNAVAILABLE|CONSENT_REQUIRED}`. 기존 프론트 id 계약을 유지한다. 실제 learning `/internal/records/students/{studentId}/exists`의 hasRecords로 기록 유무를 전달한다. 공급자 미구현·실패는 UNAVAILABLE/null로 명시하며 기록 없음으로 바꾸지 않는다. 동의 없는 자녀는 CONSENT_REQUIRED/null이며 기록 조회·동석 진입을 막는다. pinSet은 사용자 결정에 따라 #58·#59로 남긴다. plan은 이 API에서 임의 생성하지 않는다.
+- 기능 간 접근은 service를 거친다. requireLinked의 반환 계약을 유지하고 현재 GUARDIAN 동의를 확인한다. 보호자 내부 scope는 이용 가능한 자녀만 포함한다. 필터가 자녀별 경로의 scope를 확인하며 학생은 매 인증에서 현재 계정·GUARDIAN 동의를 다시 확인한다.
+
+
+### 5.4 #37 선행 learning 기록 존재 확인
+
+- 정식 내부 계약은 [learning-service OpenAPI](../../contracts/openapi/learning-service.yaml)를 따른다. `GET /internal/records/students/{studentId}/exists` → 200 `{studentId,hasRecords:boolean}`. 기간·페이지·건수·답변 원문·메모는 반환하지 않는다. #27 전체 목록·상세·통계 API는 별도 범위다.
+- core의 공개 GET /children → GuardianshipService → ChildRecordsClient → learning RecordExistsController → RecordExistsService → RecordExistsRepository/Mapper → learning DB 순서다. core는 learning DB를 직접 읽지 않는다.
+- 기간 필터가 없는 전체 보존 기록을 조회한다. P08에 따라 답변 제출이 있는 완료/미완료 시도가 대상이며, 초안만 있는 시도는 제외한다. 해당 시도의 답변이 모두 FAILED 판정이면 제외한다. PENDING/RUNNING/DONE(보류 포함) 및 아직 판정 행이 없는 제출 답변은 실패 확정 상태가 아니므로 포함한다. 답변 저장과 후속 처리는 구분한다.
+- `deleted_student` 표식이 있는 학생은 조회 대상에서 제외해 false다. 삭제·재등록·재학습의 수명주기를 새로 구현하지 않는다. #27과 삭제 기능에서 이 정책을 바꾸면 소비자·회귀 테스트를 함께 변경한다.
+- 기존 InternalAuthFilter의 내부 토큰 검증 뒤 PARENT/STUDENT/SYSTEM 역할과 X-Student-Scope를 검사한다. 잘못된 내부 토큰은 401, 미허용 역할·범위 밖 학생은 403이다. 학부모는 core에서 현재 연결·동의를 검사해 생성한 scope만 전달한다.
+- DB/HTTP 장애는 정상 false로 변환하지 않는다. learning은 오류 응답, core는 기존 공개 계약에 따라 hasRecords=null, recordState=UNAVAILABLE로 표시한다. 정상 false/true는 recordState=AVAILABLE이다. 응답 studentId·boolean 형식이 다르면 UNAVAILABLE이다.
+- 현재 조사는 origin/develop b2441711e12ff949cb2859df058a119f0181032c 기준이며 records 공급자가 미구현임을 확인했다. 사용자가 #27 영역의 최소 API 선행 추가를 승인했고, 전체 #27 기능은 추가하지 않는다.

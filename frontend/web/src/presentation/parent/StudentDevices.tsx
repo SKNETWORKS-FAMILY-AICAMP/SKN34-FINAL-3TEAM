@@ -101,7 +101,8 @@ function ChildPin({ child, token, onDone }: { child: Child; token: string; onDon
     [again, setAgain] = useState(''),
     [problem, setProblem] = useState<string | null>(null)
   const { setPin: save } = useDeviceAdmin()
-  const status = child.pinLocked ? '잠김 · 다시 정해야 풀려요' : child.pinSet ? '설정됨' : '아직 없음'
+  const state = child.pinLocked === true ? 'locked' : child.pinSet === true ? 'set' : child.pinSet === false ? 'none' : 'unknown'
+  const status = state === 'locked' ? '잠김 · 다시 정해야 풀려요' : state === 'set' ? '설정됨' : state === 'none' ? '아직 없음' : '확인 필요'
   return (
     <form
       className="ws-form"
@@ -127,7 +128,7 @@ function ChildPin({ child, token, onDone }: { child: Child; token: string; onDon
         {child.nickname} <small>· 초{child.grade}</small>
       </h3>
       <p>
-        현재 상태: <strong data-pin-state={child.pinLocked ? 'locked' : child.pinSet ? 'set' : 'none'}>{status}</strong>
+        현재 상태: <strong data-pin-state={state}>{status}</strong>
       </p>
       <label>
         새 PIN
@@ -155,7 +156,7 @@ function ChildPin({ child, token, onDone }: { child: Child; token: string; onDon
       </label>
       {problem && <p role="alert">{problem}</p>}
       <button className="cj-primary" disabled={!token || save.isPending}>
-        {child.pinSet ? 'PIN 바꾸기' : 'PIN 정하기'}
+        {child.pinSet === true ? 'PIN 바꾸기' : child.pinSet === false ? 'PIN 정하기' : 'PIN 설정·변경'}
       </button>
       {!token && <small>본인 재확인 후 저장할 수 있습니다.</small>}
       <ErrorNotice error={save.error} />
