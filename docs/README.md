@@ -51,7 +51,7 @@
   - [이슈 #19 확정 정책 DB 스키마 수정](report/db-policy-schema.md): 변경 대상, 기존 데이터 전환 절차, 1~3단계 검증과 검토 순서
   - [이슈 #6 ai-service 판정·되묻기 API 설계 변경](report/ai-judgment-followup.md): API 계약 변경, 설계와 다르게 구현한 부분과 근거, learning 연동 시 반영할 점
   - [이슈 #4 M2 API 명세 정렬](report/m2-api-alignment.md): 학년 입력·점수 범위·모델 버전 규칙 명세 반영과 근거
-  - [이슈 #22 learning 미션 조회와 데모 미션 시드](report/learning-mission.md): 시드 문항·공개 범위·성취기준 근거, 판정 API가 미션 질문을 받지 않는 문제와 #25 검토 사항
+  - [이슈 #22 learning 미션 조회와 데모 미션 시드](report/learning-mission.md): 시드 문항·공개 범위·성취기준 근거, 미션 조회 구현 결정과 #14 Repository 기반 사용
 
 ## 개발 규칙
 

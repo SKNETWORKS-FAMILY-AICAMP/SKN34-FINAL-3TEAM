@@ -1,8 +1,18 @@
 # 이슈 #22 learning 미션 조회와 데모 미션 시드
 
-작성일: 2026-10-27. 기준: `develop`의 `95c62e3` 및 [이슈 #22](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/22), [API 명세 2.2·3.8·4.1](../design/api-spec.md), [기능 명세 P03·FN-LRN-02·03](../design/functional-spec.md), [상태 다이어그램 3.1](../design/state-diagram.md), [기획서 5장](<../outputs/프로젝트_기획서_사고뭉치.pdf>).
+작성일: 2026-10-27. 기준: `develop`의 `e3bb6ab`(#14 PR #60 포함) 및 [이슈 #22](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/22), [API 명세 2.2·3.8·4.1](../design/api-spec.md), [기능 명세 P03·FN-LRN-02·03](../design/functional-spec.md), [상태 다이어그램 3.1](../design/state-diagram.md), [기획서 5장](<../outputs/프로젝트_기획서_사고뭉치.pdf>).
 
-learning-service의 `GET /internal/missions`, `GET /internal/missions/{id}`와 데모 미션 시드를 만들면서 정한 내용과 근거, 다른 이슈에서 검토할 점을 기록한다. API 계약과 데이터베이스 스키마는 바꾸지 않았다.
+learning-service의 `GET /internal/missions`, `GET /internal/missions/{id}`와 데모 미션 시드를 만들면서 정한 내용과 근거를 기록한다. API 계약과 데이터베이스 스키마는 바꾸지 않았고, 설계 문서도 고치지 않았다.
+
+## 설계 문서와 다르게 한 부분
+
+| 항목 | 문서 | 구현 | 근거 |
+|---|---|---|---|
+| 상세 메서드 | `MissionService.get(missionId)` ([class-diagram 4.1](../design/class-diagram.md)) | `get(missionId, grade)` | 상세도 목록과 같은 학년 범위로 제한하려면 학년이 필요. 범위 밖은 api-spec 1.3 `409 MISSION_NOT_AVAILABLE` |
+| 목록 입력 방식 인자 | `MissionController.list(grade, inputTypes)` (class-diagram 4.1) | `inputTypes`를 받지 않고 학년으로 계산 | 같은 문서의 `MissionService.listForStudent(studentId, grade)`와 다르고, 입력 방식 범위를 넘기는 주체·기준이 문서에 없음. P03이 학년으로 정함(논술 초5~6) |
+| 시드의 공개 미션 | 공개는 검토 요청 → `mission_review APPROVED` → 공개 ([state-diagram 3.1](../design/state-diagram.md)) | 시드가 `PUBLISHED` 상태와 `published_at`을 직접 넣고 `mission_review`는 넣지 않음 | 관리자 작성·검토·공개 기능(FN-ADM-08~13)은 후속. 시드는 개발·시연용 데이터 |
+| 응답의 `scene` | 프론트 `Mission` 모델에 `scene`(`math`·`science` 등) ([api-spec 3.7](../design/api-spec.md)) | 응답에 없음 | DB(`mission_version`)에 대응 컬럼이 없음. 장면은 `sceneUri`·`staticSceneUri` |
+| 범위 밖 상세 오류 | api-spec 1.3 `409 MISSION_NOT_AVAILABLE` | api-spec대로 409 | 프론트 목업(`demoGateway.mission`)은 404를 써서 목업이 api-spec과 다름. 프론트 담당 확인 필요 |
 
 ## 데모 미션 시드
 
@@ -12,10 +22,13 @@ learning-service의 `GET /internal/missions`, `GET /internal/missions/{id}`와 �
 | 공개 범위 | 초3·초5 10문항만 `PUBLISHED`, 초4·초6 10문항은 `DRAFT`. 모두 `demo_only = false` | 시연 초3·초5 각 5문항 (P03), 공개 문항은 초3·초5 각 5개 유지 (api-spec 3.8) |
 | 입력 방식 | 학년마다 고르기·순서·서술·풀이 단계·논술을 나눔. 논술은 초5·초6만, 분류는 이번 시드에 없음 | 논술 틀 초5~6 (P03). 이슈 #22 시드 조건(서술·논술·고르기·수학 최종 답 각 1 이상) 충족 |
 | 판정 방식 | 고르기·순서·풀이 단계의 최종 답은 정답 키로 규칙 판정, 서술·논술·풀이 과정은 기준표 요소로 AI 판정 | 기획서 5장 "문항 종류별 판정과 진행" |
+| 기준표 설명 | 요소 설명에 미션 주제를 넣음. 예: "쉬는 시간을 20분으로 늘리는 것에 찬성 또는 반대 입장을 밝힘". 풀이 단계의 "방법 세우기"는 여러 방법을 인정하되 남은 부분만의 넓이·부피를 구하는 방법으로 씀 | ai 판정 요청에는 학생 답과 기준표 요소만 가고 미션 질문은 없음 ([API 명세 4.2](../design/api-spec.md)). 설명이 일반적이면 주제와 무관한 답이나 틀린 방법도 충족으로 판정될 수 있음 |
 | 풀이 단계 | 입력 틀 ① 무엇을 구하나요? ② 어떻게 구할까요? ③ 계산 ④ 확인해 보기 / 최종 답. 기준표는 방법과 무관한 생각 단계(문제 파악·방법 세우기 필수, 결과 확인은 들어가면 좋은 생각) | 풀이 방법이 여러 가지라 특정 방법을 요소로 두지 않음 |
 | 질문 은행 | 되묻기 유형마다 2개, 총 6개. 정답·미션 내용 없음 | P16. ai 되묻기가 유출 검사에 걸리면 learning이 같은 유형에서 고름 |
 | 작성 | 문항·기준표·예시 답은 learning 담당이 작성. AI Hub 문항·답안 미사용 | 이슈 #22 "확인 필요" 항목을 담당자가 정함 |
-| 적재 | `backend/learning-service/db/seed/`의 SQL을 로컬 DB에 직접 적용. 마이그레이션(Flyway)에 넣지 않음 | 시드는 개발·시연용이라 운영 스키마와 분리. 이슈 #22 "확인 필요" 항목을 담당자가 정함 |
+| 정답 키 | 값만 넣음. 고르기·순서 `{"choiceIds":[...]}`(순서는 정답 순), 풀이 단계 `{"finalAnswer":"30"}` | 학생 제출 필드 이름(api-spec 3.8 `choiceIds`·`finalAnswer`)과 맞춤. ERD는 "정답·동치 표현"만 정함. 단위·동치 비교는 판정 규칙의 일 |
+| 기타 값 | `judge_verified = false`(사람 검증 전), `basic_skills` 비움, 작성자 `created_by`는 고정된 시드용 ID | 기초 능력 값 목록이 문서에 없음. `created_by`는 NOT NULL이지만 core 사용자와 FK가 없음 |
+| 적재 | `backend/learning-service/db/seed/`의 SQL을 로컬 DB에 직접 적용. 마이그레이션(Flyway)에 넣지 않음. ID를 고정하고 `INSERT … ON CONFLICT (id) DO NOTHING`이라 다시 실행해도 됨 | 시드는 개발·시연용이라 운영 스키마와 분리. 이슈 #22 "확인 필요" 항목을 담당자가 정함. 시도를 만든 뒤에도 다시 적용할 수 있게 지우고 다시 넣지 않음 |
 
 ### 성취기준
 
@@ -35,25 +48,9 @@ learning-service의 `GET /internal/missions`, `GET /internal/missions/{id}`와 �
 
 3~4학년군 과학에는 그림자 성취기준이 없어(그림자는 `[6과13-01]`) 초4 분석하기를 자석으로 정했다. 초4 수학은 세 자리 수 범위(`[4수01-03]`·`[4수01-04]`) 안의 수만 쓴다.
 
-## 판정 API가 미션 질문을 받지 않는 문제
-
-데모 미션의 예시 답과 아이 수준 답안을 실제 ai 판정(Claude, `judge@2`)으로 확인하다가 발견했다. 판정 요청([API 명세 4.2](../design/api-spec.md))에는 학생 답과 기준표 요소만 있고 미션 질문이 없다. 그래서 요소 설명이 "입장을 밝힘"처럼 일반적이면 주제와 무관한 답도 충족으로 판정된다.
-
-| 대응 | 내용 | 결과 |
-|---|---|---|
-| 이번 시드 (A안) | 요소 설명에 미션 주제를 넣음. 예: "쉬는 시간을 20분으로 늘리는 것에 찬성 또는 반대 입장을 밝힘" | 주제와 무관한 답 7개 중 6개 `RETHINK`, 1개 `HELD`. 넣기 전에는 주제와 무관한 답도 충족으로 판정됨 |
-| 근본 해결 (B안) | 판정 요청에 미션 질문을 추가 (api-spec 4.2, ai `judge@3`, learning 요청) | #25에서 결정 |
-
-같은 확인에서 본 점:
-
-- 예시 답은 AI 판정 대상 16문항 모두 `CORRECT`. 빠진 답(까닭 없음·관찰만·근거 평가 없음)은 `PARTIAL`.
-- 풀이 단계에서 방법은 맞고 계산만 틀린 답은 AI가 `CORRECT`로 본다. 최종 답 규칙 판정이 오답으로 잡으므로, 두 결과를 합치는 방식은 #25에서 정한다.
-- "방법 세우기" 설명이 "어떤 방법이든"처럼 넓으면 틀린 방법(뗀 부분을 잊고 큰 직사각형만 계산)도 충족이 된다. 설명을 "남은 부분만의 넓이를 구하는 방법"으로 좁혀 여러 방법은 인정하고 틀린 방법은 걸렀다.
-- 같은 답이 실행마다 다르게 판정되는 경우가 있다(분석하기 서술의 잘못된 원인 답). 사람 검증(P11)에서 확인할 대상이다.
-
 ## 구현에서 정한 것
 
-클래스·메서드 이름은 [클래스 다이어그램 4.1](../design/class-diagram.md)을 따른다 (`MissionController`, `MissionService.listForStudent(studentId, grade)`·`get(missionId)`, `MissionRepository`, `MissionView`).
+클래스·메서드 이름은 [클래스 다이어그램 4.1](../design/class-diagram.md)을 따른다 (`MissionController`, `MissionService.listForStudent(studentId, grade)`·`get`, `MissionRepository`, `MissionView`). 인자가 다른 두 곳은 위 "설계 문서와 다르게 한 부분"에 적었다.
 
 | 항목 | 정한 내용 | 근거 |
 |---|---|---|
@@ -75,7 +72,3 @@ learning-service의 `GET /internal/missions`, `GET /internal/missions/{id}`와 �
 - `choices`·`input_template`(jsonb)은 #14 보고서 권장대로 요소 타입을 지정한 `JacksonJsonbTypeHandler`(`ChoiceListTypeHandler`·`StringListTypeHandler`)로 변환한다. 일반 `List`에 전역 적용되지 않도록 `TypeReference<List<Choice>>` 등 구체 타입으로만 등록하고, XML의 `typeHandler`로 지정한다(`MissionPersistenceConfig`). 값이 없으면 SQL에서 빈 배열로 바꾼다.
 - `MissionRepositoryTest`가 `PostgresRepositoryTest`를 상속해 실제 PostgreSQL 17.11(Flyway V1~V5)에서 확인한다: 공개 미션의 현재 버전만 `sort_order` 순, jsonb 변환, 비공개·없는 미션 구분, 학생별 가장 최근 시도 상태.
 - 기존 `InternalAuthFilterTest`가 대상 없는 `@WebMvcTest`로 모든 Controller를 불러와 `MissionController`가 생기자 실패했다. 테스트 대상을 시험용 Controller로 제한했다.
-
-## 남은 일
-
-- #25: 판정 요청에 미션 질문 추가 여부, 풀이 단계의 최종 답 규칙 판정과 풀이 AI 판정 결합 방식
