@@ -11,6 +11,11 @@ npm ci
 npm run dev
 ```
 
+새로 클론한 저장소에서 확인한 실행 순서(2026-10-27):
+
+1. 백엔드까지 실제로 띄우기: 저장소 루트 `.env`에 `POSTGRES_PASSWORD`·`RABBITMQ_PASSWORD`·`INTERNAL_TOKEN`(필수)과 Google 로그인용 `AUTH_JWT_SECRET`·`GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET`을 채우고 Docker Desktop을 켠 뒤 `docker compose up --build -d` → 이 폴더에서 `npm ci && npm run dev` → **http://localhost:5173** 접속. `127.0.0.1`로 열면 `AUTH_WEB_ORIGIN`(기본 `http://localhost:5173`)과 달라 refresh가 403이 됩니다. 학생 기기·PIN API는 아직 백엔드에 없어 `/student/login`은 준비 중 안내를 보여 줍니다.
+2. 백엔드 없이 화면만 보기: 아래 MSW 목업 모드(`VITE_API_MOCK=true`). 목업 없이 백엔드도 없으면 "서버(core-service)에 연결하지 못했습니다" 안내만 나옵니다.
+
 기본은 **API 모드**입니다. Vite가 `/api/v1` 요청을 core-service(기본 8080)로 전달합니다. 로컬 기반 66f6052에는 로그인·학습·리포트 공개 Controller가 없으며, 2026-10-26 fetch 후 반영한 `origin/develop` c8cb58f에도 core/learning 공개 Controller 추가는 없습니다. 실제 로그인 연동은 아직 검증되지 않았습니다. 오류를 샘플 데이터로 덮지 않습니다.
 
 이슈 #7 기준, 개발 중에는 MSW를 켜 실제 API 요청을 가로채서 확인합니다. 앱은 목 여부와 무관하게 같은 apiClient·SSE·Query 경로를 사용합니다.

@@ -40,6 +40,13 @@ export function DeviceLogin() {
             <p role="status">이 기기를 확인하고 있어요.</p>
           ) : unregistered ? (
             <Registration />
+          ) : profiles.error instanceof ApiError && profiles.error.problem.status === 404 ? (
+            // 백엔드에 기기·PIN API(명세 3.11)가 아직 없을 때. 원시 404 대신 동석 진입을 안내한다.
+            <>
+              <h1>자녀 기기 로그인은 준비 중이에요</h1>
+              <p className="lead">지금은 보호자가 로그인한 뒤 자녀를 골라 함께 시작할 수 있어요.</p>
+              <GuardianLinks />
+            </>
           ) : profiles.error ? (
             <ErrorNotice error={profiles.error} retry={() => void profiles.refetch()} />
           ) : (
