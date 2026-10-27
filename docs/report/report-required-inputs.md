@@ -2,17 +2,41 @@
 
 2026-10-27 GitHub 이슈 본문·담당자와 로컬 구현을 다시 대조했다. 여기서 자료는 원본 데이터셋이 아니라 **확정된 API/메시지 형식, 가짜 값으로 만든 요청·응답 예시, 연결할 구현 커밋/PR, 실행 설정**을 뜻한다. AI Hub 자료를 추가로 받거나 저장소에 올릴 필요는 없다.
 
+## GitHub·develop 재조회로 확인한 내용
+
+직접 조회한 #17/#27/#42/#45/#51~#56/#64에는 댓글이 없었다. 원격 develop은 `7188b69`로 직전 병합 기준과 같았다. Open 여부만으로 미구현을 판단하지 않고 develop의 실제 파일도 대조했다.
+
+| 항목 | 이미 확인된 내용 | 실제로 남은 내용 |
+|---|---|---|
+| #51 입력 (#27) | 조회 경로, 5유형, 답변 버전·도움·돌아보기·원문 제공, 메모 제외, 삭제 available:false, 0/1~4/5건 이상 상태 규칙은 이슈와 설계에 있음 | develop의 learning `record/`에는 .gitkeep만 있음. 실제 DTO·페이지·시간 경계·최초/최신 답변 응답을 API 4.1.1 report 구현안과 맞추기 |
+| #52 AI (#64) | POST /internal/report-narratives와 입력 5개 배열, 서술/질문/인용 응답, AI 장애 503, 입력 외 인용 제한은 #64에 있음. #64는 Open·미배정 | develop의 report_narrative에는 __init__.py만 있음. 실제 API와 세부 DTO·versions·timeout 합의. report 단독 테스트는 이 구현을 기다릴 필요 없음 |
+| #53 저장소 (#17) | #17 Closed, PR #32 merged. reports 버킷·로컬 주소·포트 변경·Secret 준비 절차까지 확인됨 | 로컬 저장소 연결 시험은 우리가 진행 가능. 닉네임 공급은 #42와 맞추고 AWS 운영 설정은 별도 작업 |
+| #54 권한 (#42) | core가 권한 판단, report가 X-Student-Scope 확인. 무료 수치/프리미엄 전체 정책과 생성 시 narrativeEnabled 전달은 설계에 있음 | 실제 core 프록시와 현재 권한 전달 필드 합의. X-Report-Narrative-Enabled는 아직 report 로컬 제안. 만료 300초도 팀 확정값은 아님 |
+| #55 삭제 (#45) | 이벤트 이름·subject=studentId·deletionRequestId/scope, 완료 POST 경로·service:report, 양 서비스 보고 후 완료는 설계에 있음. PROFILE은 학생 삭제, RECORDS는 학생 유지/기록 삭제라는 기본 구분도 있음 | 공유 JSON Schema와 core API 구현, 생성 중 삭제/늦은 명령 처리, 추가 guard 보존·운영 적용 검토. RECORDS 완료 시 student 상태를 바꾸지 않는 조건을 문서·코드에 일관되게 명시해야 함 |
+
+**로컬 MinIO는 추가로 주소·버킷 결정을 요청할 대상이 아니다.** develop의 compose.minio.yaml 및 platform-data README에서 컨테이너 주소 `http://minio:9000`, 호스트 기본 API `http://127.0.0.1:9000`, `MINIO_HOST_PORT` 변경, 버킷 `sagomungchi-local-reports`, `.env`의 MINIO_ROOT_USER/MINIO_ROOT_PASSWORD와 kind Secret `platform-data-credentials` 준비 절차를 확인했다. report용 AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY 매핑과 S3_PUBLIC_ENDPOINT_URL은 현재 report 브랜치에 추가된 연결 설정이며 아직 develop 기능으로 표현하지 않는다.
+
+**삭제 문서의 구체적인 정합성 확인점:** develop state-diagram 2.2의 note는 RECORDS에 대해 student 상태 유지라고 명시하지만, 같은 절 완료 전이 표와 sequence-diagram 10.1의 마지막 설명은 student DELETED를 scope 조건 없이 적는다. 따라서 삭제 전체 정책을 새로 정할 필요는 없고, #45 구현 시 PROFILE에만 DELETED를 적용한다는 조건을 일치시키는 검토가 필요하다. RUNNING 동시성·삭제 후 새 생성 시각 규칙은 별도 미확정 사항이다.
+
+공유 schema는 develop의 contracts/events에 envelope·llm.usage.recorded만 있고 report.*·student.deleted는 아직 없다. #42/#45 실제 구현 PR은 검색 결과에서 확인되지 않았으며, 최근 PR #73은 #43 모델 레지스트리, #71은 #59 프론트 PIN/테마로 이 계약을 대신하지 않는다.
+
+새 #72 ‘학부모 보고서 화면 챗봇 기능 추가 회의’는 회의 제안이며 확정 요구나 #51~#55 선행 작업으로 추가하지 않는다. #52/#56의 ‘AI 이슈 미발행’과 #56의 ‘#14 미병합’은 현재 상태와 맞지 않는 과거 설명이다. 각각 #64와 병합된 PR #60을 기준으로 확인한다.
+
+근거: [#17](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/17), [PR #32](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/pull/32), [#27](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/27), [#42](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/42), [#45](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/45), [#64](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/64), [#72](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/72). 실제 기능의 실행 성공까지 확인한 것은 아니다.
+
+## 담당자와 맞출 세부 입력
+
 | 내 이슈 | 자료가 나와야 하는 이슈·담당 | 구체적으로 받을 내용 | 사용하는 곳 |
 |---|---|---|---|
 | #51 학습 기록·집계 | #27 learning 학습 기록 조회, Overlay1010 | attempts/thinking-types/changes 실제 JSON 예시와 필드 정의. 학생/기간/state, 페이지 봉투, 답변 ID·버전·제출 시각·원문·처리 상태, 도움 열람 시각, 완료 시각·돌아보기. 주를 걸친 최초/마지막 답변 제공 기준 포함 | API 4.1.1 입력 구현안과 대조, 수치/전후 변화 계산 |
 | #52 서술·대조 | #64 AI 리포트 서술 API, 현재 미배정 | POST /internal/report-narratives 입력 배열 형태, narrative 객체, eveningQuestion, citedQuotes의 attemptId/answerId/answerVersion/quote, versions.prompt/model 응답 예시. 서술 길이·질문 말투·timeout도 합의 | API 4.2.1 및 AiClient 계약 연결 |
 | #52 서술·대조 | #27, Overlay1010 | GET /internal/records/evidence?answerIds= 응답: 답변/시도 ID·버전·원문 및 삭제 available:false 또는 410 예시 | AI가 쓴 인용과 실제 원문 대조 |
 | #53 파일 생성 | #42 core 리포트, 김동섭 | 학생 표시 이름의 신뢰할 수 있는 공급 경로. 메시지에 넣을지 별도 내부 조회로 받을지 합의 | 자녀 닉네임 렌더링, AI 전송 전 이름 가림 |
-| #53 파일 생성 | #17 로컬 저장소, 김동섭/인프라 | 기존 reports 버킷을 사용하는 MinIO endpoint·브라우저 접근 주소·환경변수/Secret 주입 방법. AWS는 별도 자원 작업에서 S3/IAM 확정 | S3 업로드·다운로드 실제 연결. #17에 버킷 이름은 이미 sagomungchi-local-reports로 정해져 있음 |
+| #53 파일 생성 | #17 로컬 저장소, 기존 구성 재사용 | 로컬 주소·버킷·환경변수/Secret 절차는 위와 같이 확인 완료. 실제 업로드·브라우저 다운로드 연결은 report에서 검증. AWS는 별도 자원 작업에서 S3/IAM 확정 | 로컬 정보 제공을 기다릴 필요 없음 |
 | #54 조회·다운로드 | #42 core 리포트, 김동섭 | 공개 API → report 내부 API 프록시, X-Internal-Token·X-Student-Scope 전달, 현재 유료/무료 권한을 core가 계산해 넘기는 방식 | 자녀 범위 검사, 현재 권한에 따른 full/free 상세·파일 선택 |
-| #54 조회·다운로드 | #27 및 #17 | #27 현재 evidence/삭제 응답, #17 브라우저에서 실제 접근 가능한 서명 URL | 근거 열람과 다운로드 |
+| #54 조회·다운로드 | #27 및 기존 #17 구성 | #27 현재 evidence/삭제 응답은 연동 대기. #17 로컬 주소는 확인되어 report에서 실제 서명 URL 접근 검증 가능 | 근거 열람과 다운로드 |
 | #55 삭제 | #45 core 자녀 삭제, 김동섭 | student.deleted.v1 JSON/schema: subject, deletionRequestId, scope, time. 완료 API의 요청/성공/중복 응답 예시와 실제 구현 PR | 삭제 이벤트 해석, 삭제 후 core에 service:report 완료 보고 |
-| #55 삭제 | #45·#42, 김동섭 및 조장 정책 확인 | PROFILE/RECORDS 범위, 생성 중 삭제 처리, 삭제 전 queued 작업 취소·늦은 결과 무시, 최초 이벤트 time 보존, 삭제 표식 보존 기준 | 삭제한 자료의 재생성 방지와 새 리포트 허용 시점 결정 |
+| #55 삭제 | #45·#42, 김동섭 및 조장 정책 확인 | PROFILE/RECORDS 기본 의미는 확인됨. RECORDS 완료 시 학생 상태 유지 조건의 문서 일치, 생성 중 삭제 처리, 삭제 전 queued 작업 취소·늦은 결과 무시, 최초 이벤트 time 보존, 삭제 표식 보존 기준 확인 | 삭제한 자료의 재생성 방지와 새 리포트 허용 시점 결정 |
 
 공통 선행인 #42에서 `contracts/events/`의 report.generate / report.started / report.completed / report.failed 공유 schema와 JSON 예시도 받아야 한다. report 측 codec 구현·연결은 우리가 맡고, 공유 규격 정의를 report에서 중복 작성하지 않는다.
 

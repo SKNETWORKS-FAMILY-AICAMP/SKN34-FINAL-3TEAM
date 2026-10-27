@@ -36,7 +36,7 @@
 | core 리포트/상품 담당 | 현재 권한으로 계산한 `X-Report-Narrative-Enabled`, 생성 시 narrativeEnabled, 사용자/학생 scope | 무료 전환 후 기존 유료 파일이 새로 노출되지 않도록 core가 권한을 계산해야 한다. 브라우저 제공 헤더를 그대로 신뢰하면 안 된다. | 무료/유료/다운그레이드 상세·다운로드 대조 |
 | #45 김동섭·조장 | PROFILE/RECORDS 삭제 범위·진행 중 생성 정책·삭제 표식 보존·student.deleted 스키마 및 멱등 완료 API | `StudentDeletedConsumer`, `CoreClient`, 새 guard migration. 현재 구현 기본안은 팀 확정 전 운영 적용하지 않는다. | 삭제/중복/저장소 장애/완료 API 장애·재시도 E2E |
 | #42/#45 core 담당 | 최초 EventEnvelope.time 보존, 삭제 중 신규 요청 차단, 기존 queued job 취소·늦은 상태 이벤트 무시 | report 시간 장벽과 lock만으로 core 작업 상태나 learning 삭제 완료 순서까지 보장할 수 없다. | 오래된 generate/terminal을 삭제 뒤 재전달해 복원·상태 오염이 없는지 확인 |
-| 인프라 담당 | S3/MinIO 버킷·IAM/IRSA·서명 endpoint·보존/버전/복제 정책, Chromium `/tmp` writable volume와 종료 유예 | URL 기본안은 설정 가능한 300초. 이미 발급한 URL/외부 캐시·S3 과거 버전은 DB 행 삭제만으로 회수되지 않는다. | 실제 MinIO generate→파일→조회→학생 삭제, 이후 AWS 동작 검증 |
+| 인프라 담당 / report 로컬 연결 | #17 로컬 MinIO 주소·버킷·Secret 준비 절차는 확인 완료. AWS IAM/IRSA·운영 endpoint·보존/버전/복제 정책, 배포 Chromium `/tmp` volume와 종료 유예는 후속 | 로컬 MinIO 연결 검증은 report에서 바로 진행 가능. URL 기본안은 300초이며 이미 발급한 URL/외부 캐시·S3 과거 버전은 DB 행 삭제만으로 모두 회수되지 않는다. | 실제 MinIO generate→파일→조회→학생 삭제, 이후 AWS 동작 검증 |
 
 ## 확정값과 기본안
 
