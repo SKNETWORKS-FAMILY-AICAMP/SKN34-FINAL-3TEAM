@@ -10,7 +10,7 @@ import java.math.BigInteger
 
 /**
  * 수학 최종 답 판정 (FN-JDG-02): 분수·소수·한글 분수 등 같은 값이면 정답. 풀이 과정은 판정하지 않음(ai).
- * 단위는 문서에 규칙이 없어 읽지 않음(앞쪽 수 표현만, 리포트 "임시"). 수로 읽을 수 없으면 글자 그대로 비교
+ * 단위는 FN-JDG-02에 없어 비교하지 않음(앞쪽 수 표현만, 리포트 "수학 단위" 후속 확인). 수로 읽을 수 없으면 글자 그대로 비교
  */
 @Component
 class MathEquivalenceJudge : RuleJudge {
