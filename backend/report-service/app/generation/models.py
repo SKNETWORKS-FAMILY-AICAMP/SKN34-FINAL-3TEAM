@@ -1,7 +1,7 @@
 """Internal report models; these do not define the #42 message payload contract."""
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
@@ -27,6 +27,7 @@ class GenerateReport:
     period_to: date
     trigger: str
     narrative_enabled: bool
+    display_name: str | None = None
 
     def __post_init__(self) -> None:
         if self.period_from > self.period_to:
@@ -52,6 +53,19 @@ class GenerationResult:
     state: ReportState
     inclusion_rule: str | None = None
     items: tuple["ReportItem", ...] = ()
+    narrative: dict[str, Any] | None = None
+    verification: dict[str, bool] | None = None
+    versions: dict[str, str | None] | None = None
+    evening_question: str | None = None
+    generated_at: datetime | None = None
+    files: tuple["ReportFile", ...] = ()
+
+
+@dataclass(frozen=True)
+class ReportFile:
+    format: str
+    key: str
+    size_bytes: int
 
 
 class ItemType(StrEnum):
