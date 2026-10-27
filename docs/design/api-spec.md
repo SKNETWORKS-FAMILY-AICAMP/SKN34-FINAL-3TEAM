@@ -91,6 +91,10 @@
   - 신고 제출
 - 같은 키 재요청 처리: 최초 결과를 그대로 반환하고 1회만 반영 (NFR-REL-01)
 - 키 보관 기간 24시간 (P12)
+- #38 core 답변 프록시: 키는 검증된 계정 UUID에 묶고, HTTP 메서드·실제 endpoint·검증된 학생 범위·원문 본문 SHA-256을 대조한다. 같은 키로 다른 endpoint·학생·본문을 보내면 `422 IDEMPOTENCY_KEY_REUSED`다. JSON 공백·필드 순서가 바뀌어도 다른 원문으로 취급한다.
+- 처리 중 같은 키는 `409 IDEMPOTENCY_IN_PROGRESS`와 `Retry-After: 1`을 반환한다. PostgreSQL 세션 advisory lock으로 프로세스 간 실행을 직렬화하며 외부 HTTP 중 DB 트랜잭션은 열지 않는다. 응답 확정 전 NULL 행은 잠금이 해제된 다음 같은 요청으로 재개한다. 프로세스 종료·연결 종료 시 잠금은 해제된다.
+- 최초 2xx~4xx 상태·응답 원문·Content-Type·ETag·Retry-After·Location을 저장해 재사용한다. 5xx·전송 실패·core 응답 저장 실패는 성공으로 확정하지 않고 같은 키 재요청을 허용한다. core가 생성한 장애는 `503 LEARNING_UNAVAILABLE` / `503 IDEMPOTENCY_UNAVAILABLE`, 시간 초과는 `504 LEARNING_TIMEOUT`, 서킷 차단은 `503 LEARNING_CIRCUIT_OPEN`이다. learning에서 받은 오류 상태·Problem Details는 그대로 전달한다.
+- core는 답변의 `Idempotency-Key`를 learning에 그대로 전달한다. learning은 `(attempt_id, idempotency_key)` UK와 답변·PENDING 판정의 동일 트랜잭션으로 최초 응답을 재구성하고, 키 중복 시 본문 불일치를 422로 거부해야 한다. core 저장 실패·만료·연결 장애 후 재요청도 이 계약으로 중복 반영을 막는다. learning의 실제 구현·통합 검증은 #24에서 충족해야 한다.
 - 초안은 `ETag`/`If-Match`(초안 버전)로 처리. 불일치 시 409를 반환하고 조용히 덮어쓰지 않음
 - 피드백 요청은 키 대신 answerId의 판정 처리 상태로 중복 방지 (실패 후 재시도가 같은 요청이므로 키 재사용 불가)
   - `DONE`: 저장된 결과 반환
@@ -208,6 +212,8 @@
 | POST | `/attempts/{attemptId}/finish` | 학생 | 마무리 → 정답(닫힌 문제)·예시 답(열린 문제)·근거 확인된 체크리스트 공개. 판정 `DONE` 1회 이상 아니면 409 (P04) | LRN-11, JDG-09 | 핵심 |
 | POST | `/attempts/{attemptId}/self-assessment` | 학생 | 자기 체크 저장 → AI 확인 항목과 나란히 반환 (원본·판정 불변) | LRN-13 | 선택 |
 | POST | `/attempts/{attemptId}/reflection` | 학생 | 돌아보기 `{difficulty(필수), text(선택)}` 저장 → 학습 완료 처리 (P04) | LRN-12, LRN-14 | 핵심 |
+
+- #38 미션 조회의 `grade`·`demo`는 검증된 STUDENT의 연결된 활성 학생을 core DB에서 읽어 결정한다. 공개 요청의 동일 이름 query는 사용하지 않는다. 목록은 `page`·`size`만 learning에 전달하고, 상세도 같은 학생 학년·시연 여부를 붙인다. 학년별 문항 노출·시연 전용 미션 판단은 learning 소유다.
 
 - 음성 시범(FN-LRN-18): 미구현 (P03)
 - 질문 읽어주기(FN-LRN-19): 브라우저 TTS(Web Speech API), API 없음 (P03)
@@ -585,6 +591,7 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | Method | Path | 호출자 | 설명 |
 |---|---|---|---|
 | GET | `/internal/missions?grade&demo&page&size`, `/internal/missions/{id}?grade&demo` | core | 학생용 미션 조회 (2.2 프록시). core가 학생 학년 `grade`(3~6, 필수)와 시연 학생 여부 `demo`(`student.is_demo`, 기본 `false`)를 붙임. `demo_only` 미션은 `demo=true`일 때만 노출 |
+| POST | `/internal/missions/{id}/attempts` | core | 시도 시작·이어하기 (2.2와 1:1) |
 | POST · GET · PUT | `/internal/attempts/...` | core | 시도·초안·도움·답변·마무리·돌아보기·자기 평가 (2.2 경로와 1:1) |
 | POST | `/internal/answers/{answerId}/feedback` | core | 판정 오케스트레이션: 규칙 판정 또는 ai 호출 → 저장 → 결과 반환 (동기) |
 | POST | `/internal/judgments/{judgmentId}/corrections` | core | 신고 정정 반영(SUP-03): `{reportId, reason, corrected}` → 기존 판정·사유·시점 보존 후 정정 이력 저장 (원본 답변 불변), `Idempotency-Key` |

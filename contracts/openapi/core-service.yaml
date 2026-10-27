@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
-  title: 사고뭉치 core-service 인증 API (#36)
+  title: 사고뭉치 core-service 공개 API
   version: 1.0.0
-  description: '#36에서 구현한 공개 인증 API만 정의한다. access는 메모리, refresh는 보안 쿠키. POST 쿠키 API는 정확한 Origin과 X-Requested-With를 요구한다. #58의
+  description: '#36 공개 인증 및 #38 학생 미션 learning 프록시 API. 실제 learning API 연동은 후속 검증 대상이다. access는 메모리, refresh는 보안 쿠키. POST 쿠키 API는 정확한 Origin과 X-Requested-With를 요구한다. #58의
     POST /auth/student/devices, GET /auth/student/profiles, POST /auth/student/login은 Bearer만 제외하며 실제 기기/PIN 검증·신규 API 구현은
     이 계약의 범위 밖이다.'
 servers:
@@ -11,9 +11,136 @@ servers:
 tags:
 - name: Auth
 - name: Account
+- name: Learning
 security:
 - BearerAuth: []
 paths:
+  /missions:
+    get:
+      operationId: listMissions
+      tags: [Learning]
+      summary: 학생 공개 미션 목록
+      description: STUDENT 전용. 검증된 본인 학생의 grade·demo를 core DB에서 결정해 /internal/missions에 전달한다. 클라이언트 grade·demo query는 사용하지 않는다. page·size만 전달하며 문항 노출 판단은 learning 소유다.
+      parameters:
+      - {name: page, in: query, schema: {type: integer, minimum: 0}}
+      - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        '200': {$ref: '#/components/responses/LearningResult'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /missions/{missionId}:
+    parameters:
+    - {$ref: '#/components/parameters/MissionId'}
+    get:
+      operationId: getMission
+      tags: [Learning]
+      summary: 학생 미션 상세
+      description: STUDENT 전용. 검증된 본인 학생의 grade·demo를 core DB에서 결정해 전달하며 클라이언트 query는 사용하지 않는다. learning의 공개 전 정답·예시 답 비공개 계약을 유지한다.
+      responses:
+        '200': {$ref: '#/components/responses/LearningResult'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /missions/{missionId}/attempts:
+    parameters:
+    - {$ref: '#/components/parameters/MissionId'}
+    post:
+      operationId: startAttempt
+      tags: [Learning]
+      summary: 학생 시도 시작·이어하기
+      description: STUDENT 전용. /internal/missions/{missionId}/attempts에 전달한다. 기존 진행 시도 선택·한도 판단은 learning 계약을 따른다.
+      responses:
+        '200': {$ref: '#/components/responses/LearningResult'}
+        '201': {$ref: '#/components/responses/LearningResult'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /attempts/{attemptId}:
+    parameters:
+    - {$ref: '#/components/parameters/AttemptId'}
+    get:
+      operationId: getAttempt
+      tags: [Learning]
+      summary: 학생 시도·타임라인·최신 초안
+      description: STUDENT 전용. learning의 상태·응답·ETag를 보존한다. 대상 학생의 소유권은 learning이 X-Student-Scope와 대조한다.
+      responses:
+        '200': {$ref: '#/components/responses/LearningResult'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /attempts/{attemptId}/draft:
+    parameters:
+    - {$ref: '#/components/parameters/AttemptId'}
+    put:
+      operationId: saveDraft
+      tags: [Learning]
+      summary: 학생 초안 저장
+      description: STUDENT 전용. If-Match를 변경 없이 전달한다. 초안 충돌은 409와 최신 초안·ETag를 보존한다.
+      parameters:
+      - {name: If-Match, in: header, required: true, schema: {type: string}, example: '"7"'}
+      requestBody: {$ref: '#/components/requestBodies/LearningJson'}
+      responses:
+        '200': {$ref: '#/components/responses/LearningResult'}
+        '409': {$ref: '#/components/responses/LearningProblem'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /attempts/{attemptId}/hints:
+    parameters:
+    - {$ref: '#/components/parameters/AttemptId'}
+    post:
+      operationId: openHints
+      tags: [Learning]
+      summary: 학생 생각 열기 질문 열람
+      responses:
+        '200': {$ref: '#/components/responses/LearningResult'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /attempts/{attemptId}/answers:
+    parameters:
+    - {$ref: '#/components/parameters/AttemptId'}
+    post:
+      operationId: submitAnswer
+      tags: [Learning]
+      summary: 학생 최초·보완 답변 제출
+      description: >-
+        STUDENT 전용. Idempotency-Key UUID 필수. 같은 계정·키의 메서드·endpoint·검증된 학생·원문 본문을 대조한다.
+        원문 공백·필드 순서 변경도 422 IDEMPOTENCY_KEY_REUSED다. 최초 2xx~4xx 상태·원문·헤더를 24시간 재사용한다.
+        처리 중은 409 IDEMPOTENCY_IN_PROGRESS와 Retry-After 1. 5xx·시간 초과·core 저장 실패는 미확정이며 같은 키로 재요청한다.
+        learning에 동일 키를 전달하며 learning은 답변 UK와 최초 결과 재구성을 보장해야 한다.
+      parameters:
+      - {name: Idempotency-Key, in: header, required: true, schema: {type: string, format: uuid}}
+      requestBody: {$ref: '#/components/requestBodies/LearningJson'}
+      responses:
+        '201': {$ref: '#/components/responses/LearningResult'}
+        '409': {$ref: '#/components/responses/LearningProblem'}
+        '422': {$ref: '#/components/responses/LearningProblem'}
+        '503': {$ref: '#/components/responses/LearningProblem'}
+        '504': {$ref: '#/components/responses/LearningProblem'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /attempts/{attemptId}/finish:
+    parameters:
+    - {$ref: '#/components/parameters/AttemptId'}
+    post:
+      operationId: finishAttempt
+      tags: [Learning]
+      summary: 학생 마무리·정답 공개
+      description: STUDENT 전용. 판정 DONE 조건과 공개 응답은 learning 소유. 조건 미충족 409를 보존한다.
+      responses:
+        '200': {$ref: '#/components/responses/LearningResult'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /attempts/{attemptId}/self-assessment:
+    parameters:
+    - {$ref: '#/components/parameters/AttemptId'}
+    post:
+      operationId: saveSelfAssessment
+      tags: [Learning]
+      summary: 학생 자기 평가
+      requestBody: {$ref: '#/components/requestBodies/LearningJson'}
+      responses:
+        '200': {$ref: '#/components/responses/LearningResult'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /attempts/{attemptId}/reflection:
+    parameters:
+    - {$ref: '#/components/parameters/AttemptId'}
+    post:
+      operationId: saveReflection
+      tags: [Learning]
+      summary: 학생 돌아보기·완료
+      requestBody: {$ref: '#/components/requestBodies/LearningJson'}
+      responses:
+        '200': {$ref: '#/components/responses/LearningResult'}
+        default: {$ref: '#/components/responses/LearningProblem'}
   /auth/google/authorize:
     get:
       operationId: startGoogleLogin
@@ -249,6 +376,16 @@ components:
       name: sagomungchi_refresh
       description: 부모·관리자 전용 HttpOnly·Secure·SameSite=Strict, Path=/api/v1/auth. 원문은 서버 DB에 저장하지 않는다.
   parameters:
+    MissionId:
+      name: missionId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    AttemptId:
+      name: attemptId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
     WebOrigin:
       name: Origin
       in: header
@@ -467,7 +604,32 @@ components:
           type:
           - string
           - 'null'
+  requestBodies:
+    LearningJson:
+      required: true
+      description: JSON object 원문을 learning에 전달한다. 입력 방식·필수 필드·업무 검증은 learning 계약(api-spec 2.2·3.1·3.6)을 따른다. 미확정 DTO를 core에서 새로 정의하지 않는다.
+      content:
+        application/json:
+          schema: {type: object, additionalProperties: true}
   responses:
+    LearningResult:
+      description: learning의 최초 상태·JSON 원문을 보존한다. DTO 완성·실제 API 제공은 learning #22·#23·#24·#26의 후속 연결 조건이다.
+      headers:
+        ETag: {schema: {type: string}, description: learning의 초안 버전}
+        Location: {schema: {type: string}, description: learning이 제공한 리소스 위치}
+      content:
+        application/json:
+          schema: {type: object, additionalProperties: true}
+    LearningProblem:
+      description: >-
+        learning 오류 상태·Problem Details·확장 필드를 보존한다. core 인증 401/403·잘못된 UUID/JSON/필수 헤더 400,
+        처리 중 409·키 재사용 422·전송/서킷/저장 장애 503·시간 초과 504를 반환한다. 5xx는 확정 저장하지 않는다.
+      headers:
+        ETag: {schema: {type: string}, description: 충돌 시 최신 초안 버전}
+        Retry-After: {schema: {type: string}, description: '처리 중은 1초, 서킷 차단은 30초'}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
     Unauthenticated:
       description: 미인증·만료·서명 오류·세션 변경·refresh 재사용. code로 구분한다.
       content:

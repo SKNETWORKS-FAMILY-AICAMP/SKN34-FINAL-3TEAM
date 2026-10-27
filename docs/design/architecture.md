@@ -62,6 +62,7 @@
 - 동기 호출 장애 대응: 타임아웃 + 재시도 제한 + 서킷 브레이커(Spring Resilience4j / Python httpx 타임아웃·재시도). 값(P12): LLM 1회 15초·재시도 1회(1초 대기), learning→ai 판정·되묻기 각 35초, core→learning 피드백 80초, 분석 대화 core→ai 첫 응답 20초·전체 120초, 서킷 브레이커 최근 20건 중 실패 50% 이상 시 30초 차단, 리포트 작업 재시도 3회(1·5·15분) 후 DLQ. 실패 시 "처리 실패"로 기록·SSE 전달, 판정 보류·기록 없음과 구분
 - 타임아웃 예산: 바깥 호출 타임아웃 > 안쪽 호출 합계 (예: core→learning > learning→ai judgments + followups). 전체 상한은 CloudFront·ALB 타임아웃(4.3) 이내
 - 재시도 계층: ai의 LLM 호출에서만 재시도, core·learning·report의 서비스 간 호출은 재시도 없음 (계층별 재시도 시 호출 수 곱셈 증폭)
+- #38 일반 core→learning JSON 프록시는 연결 2초·응답 30초를 사용한다(피드백의 80초 예산은 #39). Resilience4j count window 20·최소 20건·실패율 50%·차단 30초·half-open 1건으로 복구를 확인한다. 전송 오류·5xx를 실패로 집계하고 4xx는 정상 HTTP 결과로 센다. 응답·오류 대역은 test 소스에만 둔다.
 - SSE heartbeat: 모든 SSE는 15초마다 주석 줄(`: ping`) 전송. 피드백은 learning 동기 응답 대기 중 전송할 데이터가 없어 필수
 - SSE 연결 종료
   - 피드백: 클라이언트가 끊겨도 learning 처리는 끝까지 진행·저장, 재요청 시 저장 결과 반환
@@ -144,6 +145,8 @@
 - 여러 기능에 걸친 흐름은 `facade`로 조합 (참고 레포 `applicationpreparation/facade` 패턴)
 - 공통 코드: Spring `_common/`, Python `app/` 루트의 `config.py`·`errors.py`·`security.py`·`messaging/`·`clients/base.py`
 - DB 트랜잭션은 Application 레이어에서만 시작, 트랜잭션 안에서 외부 HTTP·AMQP 호출 금지
+- #38 공통 멱등성은 `_common/web/IdempotencyService`가 조합하고 `web/repository`가 기존 idempotency_record와 PostgreSQL 세션 잠금을 관리한다. HTTP 동안 auto-commit 연결 1개를 보유하며 트랜잭션·행 잠금은 보유하지 않는다. 잠금과 레코드 작업을 동일 연결에서 수행하는 JDBC Repository만 사용해 추가 연결 대기로 인한 풀 교착을 피한다. 일반 기능 Repository의 MyBatis 패턴은 유지한다.
+- #62 미션 조회의 학생 메타데이터는 core `guardianship/StudentLearningContextService` → 전용 Repository/Mapper로 core의 연결된 활성 학생 `grade`·`is_demo`만 조회한다. 기존 #36/#37 service 인터페이스는 유지한다. `learning`은 이 service를 통해 검증된 학생의 조회 조건을 만들고, 문항 노출 업무 판단·learning DB 접근은 수행하지 않는다.
 - 서비스 간 내부 호출: 내부 토큰 헤더 필터(참고 레포 `CatalogInternalAuthFilter` 패턴) + NetworkPolicy
 
 ### 2.3 공통 규칙
