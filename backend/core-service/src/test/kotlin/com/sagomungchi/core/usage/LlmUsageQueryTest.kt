@@ -59,6 +59,28 @@ class LlmUsageQueryTest : PostgresRepositoryTest() {
         CallType.entries.forEach { assertEquals(it.name, usage.summarize(day, day, it).single().callType) }
     }
 
+    @Test fun `366 inclusive days are allowed and the next day is rejected`() {
+        val from = LocalDate.parse("2024-01-01")
+        assertTrue(usage.summarize(from, from.plusDays(365), null).isEmpty())
+        val error = assertFailsWith<BusinessException> { usage.summarize(from, from.plusDays(366), null) }
+        assertEquals(400, error.status.value())
+        assertEquals("VALIDATION_FAILED", error.code)
+    }
+
+    @Test fun `four digit year edges query successfully and extreme years or unbounded ranges return 400`() {
+        val earliest = LocalDate.of(1, 1, 1)
+        val latest = LocalDate.of(9999, 12, 31)
+        assertTrue(usage.summarize(earliest, earliest, null).isEmpty())
+        assertTrue(usage.summarize(latest, latest, null).isEmpty())
+        listOf(earliest to latest, LocalDate.of(0, 1, 1) to earliest,
+            latest to LocalDate.of(10000, 1, 1), LocalDate.MIN to LocalDate.MIN,
+            LocalDate.MAX to LocalDate.MAX).forEach { (from, to) ->
+            val error = assertFailsWith<BusinessException> { usage.summarize(from, to, null) }
+            assertEquals(400, error.status.value())
+            assertEquals("VALIDATION_FAILED", error.code)
+        }
+    }
+
     @Test fun `reversed periods are rejected`() {
         assertEquals("VALIDATION_FAILED", assertFailsWith<BusinessException> {
             usage.summarize(day.plusDays(1), day, null)

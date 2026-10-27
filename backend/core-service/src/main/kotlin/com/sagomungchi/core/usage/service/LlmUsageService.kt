@@ -14,6 +14,7 @@ import com.sagomungchi.core.usage.domain.UsageSummary
 import org.springframework.http.HttpStatus
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 @Service
 class LlmUsageService(
@@ -21,8 +22,9 @@ class LlmUsageService(
     private val properties: AppProperties,
 ) {
     fun summarize(from: LocalDate, to: LocalDate, callType: CallType?): List<UsageSummary> {
-        if (from > to || to == LocalDate.MAX) {
-            throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "조회 기간이 유효하지 않습니다.")
+        if (from.year !in 1..9999 || to.year !in 1..9999 || from > to ||
+            ChronoUnit.DAYS.between(from, to) >= MAX_QUERY_DAYS) {
+            throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "조회 기간은 0001~9999 연도에서 양 끝 포함 최대 366일이어야 합니다.")
         }
         val zone = ZoneId.of("Asia/Seoul")
         return repository.summarize(from.atStartOfDay(zone).toOffsetDateTime(),
@@ -60,6 +62,7 @@ class LlmUsageService(
     }
 
     companion object {
+        private const val MAX_QUERY_DAYS = 366L
         private val TOKENS_PER_PRICE_UNIT = BigDecimal(1_000_000)
     }
 }

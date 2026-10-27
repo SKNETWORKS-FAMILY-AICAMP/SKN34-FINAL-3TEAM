@@ -2,6 +2,19 @@
 
 대상: SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM. 원본 체크아웃을 전환하지 않고 별도 worktree의 `feature/core-model-registry`에서 작업한다. 시작 시 fetch한 origin/develop은 `ecd6ecf7880e90341855d2fad6d9e773f3711c67`이며 #36 PR #61 병합을 포함한다. origin은 원본 저장소, upstream은 미등록이다. #37·#38 worktree는 별도 유지한다.
 
+
+## 현재 PR·CI 상태 (2026-10-27 확인)
+
+구현 커밋 `2022604e34820634fe6bb1463958f65d6a0862bc`는 `feature/core-model-registry`에 push되어 [PR #73](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/pull/73)이 develop 대상으로 열려 있다. 해당 SHA의 원격 CI 세 항목이 모두 성공했다.
+
+| CI | 확인 결과 |
+|---|---|
+| [ci-core-service](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/actions/runs/40467242558) | success |
+| [ci-ai-service](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/actions/runs/40467242580) | success |
+| [ci-db-schema](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/actions/runs/40467242551) | success |
+
+이 결과는 명시한 구현 SHA 기준이며 이후 리뷰 수정 커밋의 원격 CI는 별도로 확인한다. 최신 head의 체크 상태는 [PR #73 checks](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/pull/73/checks)에서 확인할 수 있다. 아래 최초 구현·PR 준비 검증은 당시 기록으로 보존한다. 운영 배포·실제 ai/scoring 레플리카 교체를 검증했다는 뜻이 아니다.
+
 ## 정책 결정과 계약
 
 NFR-AIQ-05에는 품질 합격 수치·승인 상태·근거 JSON이 확정되어 있지 않아 사용자에게 질문했다. 사용자는 2026-10-27에 **평가 근거 필수·SERVICE_OPS의 명시적 사람 승인·평가된 범위 내 활성화·기존 승인 범위 내 rollback·자동 합격선 없음**을 승인했다. 새 승인 상태를 만들지 않고 기존 REGISTERED·ACTIVE·INACTIVE를 사용한다. 평가 자료·비교·학습/평가 분리·인용·계산·사람 검토 기록을 보존한다. 근거 기록의 사실성·통계적 합격 여부는 운영자의 판단이며 서버가 실제 평가를 실행했다고 주장하지 않는다. 수치 기준(NFR-AIQ-06)은 별도 평가 정책으로 확정해야 한다.
@@ -52,7 +65,7 @@ MockMvc는 실제 #36 필터·JWT·서버 세션·권한 및 Controller/Service/
 
 중간 재검증 1회는 RabbitMQ 컨테이너의 기본 기동 대기 시간 초과로 본문 실행 전 실패했으며 이후 동일한 격리 공통 기반에서 실제 기동·발행·수신을 통과했다. Windows JDK의 Unix 도메인 소켓 연결 오류는 독립 Selector 진단에서도 재현했다. JDK 소스의 TCP fallback을 사용하도록 테스트 프로세스에만 `-Djdk.net.unixdomain.tmpdir=<존재하지 않는 공백 없는 임시 경로>`를 주입해 해결했다. 저장소 실행 설정·보안 설정·JDK 설치는 바꾸지 않았다. 준비용 Linux 검증 컨테이너는 이 채팅이 생성한 것만 종료했다.
 
-검사 도구(openapi-spec-validator 0.9.0, jsonschema 4.26.0)는 ignored build 폴더에만 설치했으며 production 의존성·lock 파일을 변경하지 않았다. 실제 수신 JSON·전체/영향/최종 재검증 XML·고유 결과 대조 자료도 ignored build 폴더에 있다. core 실행 JAR 생성은 확인했으나 배포·실제 모든 ai/scoring 레플리카 교체를 뜻하지 않는다. 원격 CI는 commit/push하지 않아 미실행이다. learning/report 전체 마이그레이션 CLI 검사는 해당 DDL 변경이 없어 실행하지 않았다.
+검사 도구(openapi-spec-validator 0.9.0, jsonschema 4.26.0)는 ignored build 폴더에만 설치했으며 production 의존성·lock 파일을 변경하지 않았다. 실제 수신 JSON·전체/영향/최종 재검증 XML·고유 결과 대조 자료도 ignored build 폴더에 있다. core 실행 JAR 생성은 확인했으나 배포·실제 모든 ai/scoring 레플리카 교체를 뜻하지 않는다. 최초 로컬 검증 시점에는 원격 CI를 실행하지 않았으며, PR 생성 후 확인한 성공 결과는 이 문서 상단의 SHA별 CI 표를 따른다. learning/report 전체 마이그레이션 CLI 검사는 해당 DDL 변경이 없어 실행하지 않았다.
 
 ### 기존 NULL 평가 행
 
@@ -60,7 +73,7 @@ MockMvc는 실제 #36 필터·JWT·서버 세션·권한 및 Controller/Service/
 
 ### 구현 완료 시 Git 상태 (커밋 전)
 
-브랜치는 `feature/core-model-registry`, 기준/PR 대상은 `origin/develop`(`ecd6ecf7880e90341855d2fad6d9e773f3711c67`)이다. 이전 구현 완료 시점에는 신규 커밋 0개, 미stage 변경 상태였다. commit·push·PR 생성·squash·이력 재작성은 수행하지 않았다. 원본 체크아웃과 #37·#38 worktree를 전환하거나 그 파일을 수정하지 않았다.
+최초 구현 기준은 `origin/develop`의 `ecd6ecf7880e90341855d2fad6d9e773f3711c67`이었다. 이후 최신 develop을 반영하고 구현 커밋을 push했으며 사용자가 PR #73을 생성했다. 원본 체크아웃과 #37·#38 worktree를 전환하거나 그 파일을 수정하지 않았고, squash·이력 재작성은 하지 않았다.
 
 
 ## PR 준비 검토 (2026-10-27)
@@ -79,4 +92,26 @@ PR 검토에서는 새 OpenAPI 경로 검사가 #43의 두 Controller와 여섯 
 - 최종 `scripts/tests` 29/29, OpenAPI 3.1 표준 검사, 세 이벤트 JSON Schema, 실제 RabbitMQ 활성화/rollback 수신 봉투와 data·core snapshot 스키마 검사를 통과했다. 기존 수집·인증 회귀도 전체 core 실행에 포함된다.
 - 이번 작업 25개 파일만 포함하며 환경 파일·임시 산출물·비밀 키 패턴·package 경계와 변경/신규 행 공백을 확인했다. PR #70의 문서 변경은 base에 포함되어 #43 PR 차이로 다시 섞이지 않는다.
 - 이슈 #43의 해야 할 일 5개와 완료 조건 3개는 core 구현·검증으로 충족했다. 사용자가 GitHub 체크박스를 직접 표시하기로 했으며 이 작업에서 이슈 본문은 수정하지 않았다. 이 체크는 ai/scoring 실제 소비·전체 레플리카 교체나 배포 완료를 뜻하지 않는다.
-- PR 대상은 원본 저장소 develop, head는 feature/core-model-registry다. 최종 검토 후 이번 변경만 커밋·해당 브랜치만 push하며 PR 생성은 사용자에게 맡긴다. 원격 CI는 실제 PR 생성 후 별도로 확인해야 한다.
+- PR 대상은 원본 저장소 develop, head는 feature/core-model-registry다. 구현 변경만 커밋·push했고 사용자가 PR #73을 생성했다. 생성 후 실제 확인한 원격 CI 결과는 상단의 구현 SHA별 표를 따른다.
+
+
+## PR #73 리뷰 반영
+
+[리뷰 코멘트](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/pull/73#issuecomment-6436404768)의 네 항목을 실제 코드와 대조했다.
+
+1. class-diagram 3.5와 state-diagram 7.1을 실제 Controller 분리·서비스 메서드 인자·불변 ModelVersion·Repository/Mapper·트랜잭션 경계에 맞게 갱신했다. #22의 learning 미션 다이어그램과 다른 후속 설계는 보존했다.
+2. 감사 경로의 편차를 명시했다. 공용 AuditLogService는 기존 다이어그램의 후속 설계이며 실제 구현이 없다. #43은 ModelVersionService → ModelVersionRepository.audit → ModelVersionMapper.audit → audit_log로 저장한다. 상태·감사·Outbox를 같은 트랜잭션으로 묶는 현재 경로를 유지한다. #47 등에서 공용 감사 기능을 도입할 때 통합 여부를 검토하며 미래 중복 가능성만으로 이번에 공용 서비스를 추가하지 않는다.
+3. 사용자에게 조회 상한을 확인했고 양 끝 날짜 포함 366일로 확정했다. 367일 이상·역전 기간·0001~9999 밖의 연도는 DB/시각 변환 전에 400 VALIDATION_FAILED로 거부한다. 연도 0001·9999의 허용 경계와 윤년 366일·367일 거부를 실제 PostgreSQL·HTTP 경로에서 확인한다. 새 예산·과금·알림 체계는 추가하지 않는다.
+4. 원격 CI 미확인·PR 준비 이전 문구를 과거 기록과 현재 상태로 구분해 갱신했다. PR 본문은 사용자가 직접 변경할 수 있도록 최신 검증·CI 문구를 대화로 제공한다. 코멘트 답글·PR 메타데이터 변경은 자동 전송하지 않는다.
+
+원격 develop에 추가된 #22 PR #62의 `7188b696e6e28d537d015a0e7c4eab3346a65976`를 기존 커밋 재작성 없이 병합했다. 통합 커밋은 `74ead83`이며, 새 리뷰 수정은 별도 커밋으로 유지한다. 이 병합의 learning 파일은 develop 자체에 이미 포함되어 #43 PR 차이로 중복 추가되지 않는다.
+
+
+### 리뷰 반영 검증 결과
+
+- JDK 21 `gradlew.bat test bootJar --no-daemon --max-workers=2`에서 67개 중 46개가 통과했고, RabbitMQ Testcontainer의 기본 기동 대기 시간 초과로 IntegrationTestSupport 초기화가 실패하여 21개가 테스트 본문에 도달하지 못했다. 실제 코드 실패와 구분한다.
+- 실패한 MessagingIntegrationTest·AuthFlowIntegrationTest·ModelVersionMessagingTest만 새 격리 환경에서 재실행해 21/21 통과했다. 고유 testcase의 최신 결과는 67개 모두 통과, 건너뜀 0이다. 이번 결과를 한 번의 전체 67개 실행 통과로 표현하지 않는다. bootJar도 생성했다.
+- 추가된 366일 허용·367일 거부와 연도 0001/9999 허용·범위 밖 연도/전체 기간 거부는 첫 실행에서 실제 PostgreSQL 및 MockMvc HTTP 경로로 모두 통과했다. 조회 상한은 DB/시각 변환 전에 검사하며 기존 수집·event_id 멱등성·null 비용 계산을 유지한다.
+- `python -O -m unittest discover -s scripts/tests -v` 29/29, OpenAPI 3.1·세 이벤트 JSON Schema 검사, 실제 RabbitMQ 활성화/rollback 수신 봉투/data 스키마 검사를 통과했다. 변경 다이어그램의 메서드/관계·상태 전이·문서 참조·코드 package 및 `git diff --check`를 확인했다. Mermaid 렌더링 자체는 실행하지 않았다.
+- 공개 소비 경로는 frontend Usage → adminApi.usage(period, callType) → apiFetch → core AiUsageController → LlmUsageService → Mapper다. 기존 클라이언트는 오류를 QueryFeedback으로 표시한다는 점을 코드로 대조했다. 프론트는 목업 계약을 포함하고 있으며 실제 브라우저·운영 UI 실연동을 이번 검증으로 완료 처리하지 않는다.
+- 공용 감사 서비스 신설·기존 감사 SQL 이동·마이그레이션·compose·다른 worktree 변경은 없다. 새 커밋의 원격 CI는 push 후 실제 head SHA로 별도 확인하며 PR 본문 교체 문구는 사용자에게 제공한다.

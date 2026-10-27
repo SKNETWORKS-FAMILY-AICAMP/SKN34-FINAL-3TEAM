@@ -99,6 +99,20 @@ class ModelVersionHttpTest : PostgresRepositoryTest() {
         }
     }
 
+    @Test fun `usage HTTP allows 366 days but rejects excess periods and unsupported years with 400`() {
+        val (_, access) = adminToken()
+        mvc.get("/api/v1/admin/ai-usage") {
+            header("Authorization", "Bearer $access"); param("from", "2024-01-01"); param("to", "2024-12-31")
+        }.andExpect { status { isOk() }; jsonPath("$.period.to") { value("2024-12-31") } }
+        listOf("2024-01-01" to "2025-01-01", "0001-01-01" to "9999-12-31",
+            "0000-01-01" to "0001-01-01", "9999-12-31" to "+10000-01-01",
+            "-999999999-01-01" to "+999999999-12-31").forEach { (from, to) ->
+            mvc.get("/api/v1/admin/ai-usage") {
+                header("Authorization", "Bearer $access"); param("from", from); param("to", to)
+            }.andExpect { status { isBadRequest() }; jsonPath("$.code") { value("VALIDATION_FAILED") } }
+        }
+    }
+
     @Test fun `null entries in registration activation and rollback scopes return 422 and preserve state`() {
         val (actor, access) = adminToken()
         val request = json.readTree(json.writeValueAsString(registration())) as com.fasterxml.jackson.databind.node.ObjectNode
