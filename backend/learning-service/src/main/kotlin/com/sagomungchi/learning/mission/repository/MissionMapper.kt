@@ -1,5 +1,7 @@
 package com.sagomungchi.learning.mission.repository
 
+import com.sagomungchi.learning.mission.domain.HintQuestion
+import com.sagomungchi.learning.mission.domain.MissionSnapshot
 import com.sagomungchi.learning.mission.domain.MissionView
 import com.sagomungchi.learning.mission.domain.ProgressStatus
 import org.apache.ibatis.annotations.Mapper
@@ -11,6 +13,9 @@ interface MissionMapper {
     fun findPublishedById(id: UUID): MissionView?
     fun existsById(id: UUID): Boolean
     fun findLatestAttempts(studentId: UUID): List<MissionAttempt>
+    fun findCurrentVersions(id: UUID): MissionSnapshot?
+    fun findVersion(missionVersionId: UUID): MissionView?
+    fun findHintQuestions(rubricVersionId: UUID): List<HintQuestion>
 }
 
 /** 미션별 가장 최근 시도 */

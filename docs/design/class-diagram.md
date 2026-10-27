@@ -1033,6 +1033,8 @@ classDiagram
     +publish(missionId)
     +unpublish(missionId)
     +currentVersions(missionId) MissionSnapshot
+    +getVersion(missionVersionId) MissionView
+    +hintQuestions(rubricVersionId) List
   }
   class Mission {
     <<entity>>
@@ -1055,7 +1057,7 @@ classDiagram
   }
   class AttemptController {
     <<controller>>
-    +start(missionId) Attempt
+    +start(missionId, grade, demo) Attempt
     +get(attemptId) AttemptDetail
     +saveDraft(attemptId, ifMatch, content) Draft
     +openHint(attemptId) Hint
@@ -1065,7 +1067,7 @@ classDiagram
   }
   class AttemptService {
     <<service>>
-    +start(studentId, missionId) Attempt
+    +start(studentId, missionId, grade, demo) Attempt
     +get(attemptId) AttemptDetail
     +saveDraft(attemptId, ifMatch, content) AttemptDraft
     +openHint(attemptId) HintQuestion

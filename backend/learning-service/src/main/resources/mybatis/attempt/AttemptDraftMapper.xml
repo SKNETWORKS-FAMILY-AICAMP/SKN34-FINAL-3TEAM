@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.learning.attempt.repository.AttemptDraftMapper">
+    <resultMap id="draft" type="com.sagomungchi.learning.attempt.domain.AttemptDraft">
+        <constructor>
+            <idArg column="attempt_id" javaType="java.util.UUID"/>
+            <arg column="version" javaType="_int"/>
+            <arg column="content" javaType="com.sagomungchi.learning.attempt.domain.DraftContent"/>
+            <arg column="saved_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO attempt_draft (attempt_id, version, content, saved_at)
+        VALUES (#{attemptId}, #{version}, #{content}, #{savedAt})
+    </insert>
+
+    <select id="findByAttemptId" resultMap="draft">
+        SELECT attempt_id, version, content, saved_at FROM attempt_draft WHERE attempt_id = #{attemptId}
+    </select>
+
+    <!-- 버전 불일치면 0행 → 409 ATTEMPT_DRAFT_CONFLICT, 조용히 덮어쓰지 않음 (FN-LRN-17) -->
+    <update id="updateIfVersion">
+        UPDATE attempt_draft
+        SET version = #{draft.version}, content = #{draft.content}, saved_at = #{draft.savedAt}
+        WHERE attempt_id = #{draft.attemptId} AND version = #{ifMatch}
+    </update>
+</mapper>

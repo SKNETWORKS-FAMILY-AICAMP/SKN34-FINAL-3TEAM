@@ -27,7 +27,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       clear()
       setReady(true)
       setExpired(false)
-      navigate('/student/login', { replace: true })
+      const { pathname, search } = window.location
+      navigate('/student/login', {
+        replace: true,
+        state: pathname.startsWith('/student/') && pathname !== '/student/login' ? { from: pathname + search } : undefined,
+      })
     }
     const expire = () => { setLoginPath('/login'); revision++; clear(); setReady(true); setExpired(true) }
     const restore = async (fresh: boolean) => {
@@ -43,7 +47,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (error instanceof ApiError && error.problem.status === 401) {
           clear()
           if (window.location.pathname.startsWith('/student/')) navigate('/student/login', { replace: true })
-        } else setRestoreError('로그인 상태를 확인하지 못했습니다. 잠시 후 새로고침해 주세요.')
+        } else {
+          // core-service가 꺼져 있으면 Vite 프록시가 502를 준다. 로그인 상태 실패와 구분해 원인을 알린다.
+          const down = error instanceof TypeError || (error instanceof ApiError && [502, 503, 504].includes(error.problem.status))
+          setRestoreError(down ? 'SERVER_DOWN' : '로그인 상태를 확인하지 못했습니다. 잠시 후 새로고침해 주세요.')
+        }
       } finally { if (active && current === revision) setReady(true) }
     }
     const changed = () => { setLoginPath('/login'); clear(); void restore(true) }
@@ -66,6 +74,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [navigate])
   return <AuthContext.Provider value={{ session, setSession, ready, loginPath, selected, setSelected, expired, setExpired, scenario, setScenario }}>
-    {restoreError ? <main><p role="alert">{restoreError}</p><button onClick={() => window.location.reload()}>새로고침</button></main> : children}
+    {restoreError ? (
+      <main style={{ maxWidth: 560, margin: '15vh auto', padding: '0 20px', fontFamily: 'system-ui, sans-serif', lineHeight: 1.6 }}>
+        {restoreError === 'SERVER_DOWN' ? (
+          <>
+            <p role="alert"><strong>서버(core-service)에 연결하지 못했습니다.</strong> 로그인 상태를 확인할 수 없어 화면을 열지 않았습니다.</p>
+            {import.meta.env.DEV && (
+              <p>
+                로컬 개발: 저장소 루트에서 <code>docker compose up --build</code>로 백엔드를 띄운 뒤 새로고침하거나,
+                백엔드 없이 화면만 보려면 <code>VITE_API_MOCK=true</code>로 <code>npm run dev</code>를 실행해 주세요.
+              </p>
+            )}
+          </>
+        ) : (
+          <p role="alert">{restoreError}</p>
+        )}
+        <button onClick={() => window.location.reload()}>새로고침</button>
+      </main>
+    ) : children}
   </AuthContext.Provider>
 }

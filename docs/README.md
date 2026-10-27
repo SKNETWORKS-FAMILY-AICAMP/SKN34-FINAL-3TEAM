@@ -52,6 +52,7 @@
   - [이슈 #6 ai-service 판정·되묻기 API 설계 변경](report/ai-judgment-followup.md): API 계약 변경, 설계와 다르게 구현한 부분과 근거, learning 연동 시 반영할 점
   - [이슈 #4 M2 API 명세 정렬](report/m2-api-alignment.md): 학년 입력·점수 범위·모델 버전 규칙 명세 반영과 근거
   - [이슈 #22 learning 미션 조회와 데모 미션 시드](report/learning-mission.md): 시드 문항·공개 범위·성취기준 근거, 미션 조회 구현 결정과 #14 Repository 기반 사용
+  - [이슈 #23 learning 학습 시도·초안·생각 열기](report/learning-attempt.md): 이어하기·동시 시작, 초안 버전 충돌, 생각 열기 순서와 설계 문서 갱신 근거
   - [이슈 #36 Google OAuth·access/refresh](report/issue-36-google-auth.md): HS256·세션 폐기·역할 전환·프론트 계약과 후속 경계
   - [P01 개정 학생·학부모 로그인 분리](report/student-login-separation.md): 등록 기기·PIN 단독 진입 설계 근거와 대안 비교
   - [프론트엔드 UX 정합성(최초 화면 작업)](report/frontend-backend-ux-alignment.md): 백엔드 기준 화면 정렬 기록, 현재 기준은 이슈 #7 보고서
