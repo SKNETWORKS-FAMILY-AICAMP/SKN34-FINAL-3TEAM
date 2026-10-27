@@ -3,6 +3,12 @@ server:
   port: 8080
 
 spring:
+  # Schema changes belong to migration-job; never initialize from application startup.
+  flyway:
+    enabled: false
+  sql:
+    init:
+      mode: never
   application:
     name: core-service
   threads:
@@ -28,7 +34,6 @@ spring:
 
 mybatis:
   mapper-locations: classpath:mybatis/**/*.xml
-  type-handlers-package: com.sagomungchi.core._common.config
   configuration:
     map-underscore-to-camel-case: true
 

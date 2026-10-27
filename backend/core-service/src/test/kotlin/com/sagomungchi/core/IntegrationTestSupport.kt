@@ -1,6 +1,7 @@
 package com.sagomungchi.core
 
 import org.springframework.boot.test.context.SpringBootTest
+import org.flywaydb.core.Flyway
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import org.testcontainers.containers.PostgreSQLContainer
@@ -23,7 +24,12 @@ abstract class IntegrationTestSupport {
         private val TTL_PATTERN = Regex(""""x-message-ttl": \d+""")
         private val DEFINITIONS = Path.of("../../infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json")
 
-        private val postgres = PostgreSQLContainer("postgres:17.11-alpine").apply { start() }
+        private val postgres = PostgreSQLContainer("postgres:17.11-alpine").apply {
+            start()
+            // Test setup owns migrations; Spring startup keeps Flyway disabled.
+            Flyway.configure().dataSource(jdbcUrl, username, password)
+                .locations("classpath:db/migration").load().migrate()
+        }
         private val rabbit = RabbitMQContainer("rabbitmq:4.3.7-management-alpine").apply {
             start()
             importDefinitions()
