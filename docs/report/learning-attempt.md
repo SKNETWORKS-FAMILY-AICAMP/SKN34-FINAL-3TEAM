@@ -50,10 +50,10 @@ learning-service의 `POST /internal/missions/{id}/attempts`, `GET /internal/atte
 
 ## 검증
 
-- `./gradlew test`: 44개 통과, 실패·생략 0개. 새로 추가 20개: `AttemptRepositoryTest` 3, `AttemptServiceTest` 8, `AttemptStartConcurrencyTest` 1, `AttemptControllerTest` 7, `MissionRepositoryTest` 1(시도용 조회).
+- `./gradlew test`: 45개 통과, 실패·생략 0개. 새로 추가 21개: `AttemptRepositoryTest` 3, `AttemptServiceTest` 8, `AttemptConcurrencyTest` 2, `AttemptControllerTest` 7, `MissionRepositoryTest` 1(시도용 조회).
 - 이슈 #23 완료 조건
-  - 같은 미션 시작 2회 → 같은 attemptId: `AttemptServiceTest`(순서대로), `AttemptStartConcurrencyTest`(동시 8개, 시도·초안 각 1행). 동시 테스트는 요청마다 커밋해야 해서 롤백하는 `PostgresRepositoryTest` 대신 별도 PostgreSQL 컨테이너를 씀(repository-foundation 보고서)
-  - 오래된 `If-Match`로 저장 시 409, 덮어쓰기 없음: `AttemptServiceTest`, `AttemptControllerTest`
+  - 같은 미션 시작 2회 → 같은 attemptId: `AttemptServiceTest`(순서대로), `AttemptConcurrencyTest`(동시 8개, 시도·초안 각 1행). 동시 테스트는 요청마다 커밋해야 해서 롤백하는 `PostgresRepositoryTest` 대신 별도 PostgreSQL 컨테이너를 씀(repository-foundation 보고서)
+  - 오래된 `If-Match`로 저장 시 409, 덮어쓰기 없음: `AttemptServiceTest`(순서대로), `AttemptConcurrencyTest`(같은 `If-Match: 0`으로 동시 8개 → 1개만 성공, 7개 409와 그 내용, 최종 초안도 그 내용), `AttemptControllerTest`. 저장 SQL에서 버전 조건을 빼면 동시 테스트가 실패함을 확인
 - 저장 시각은 마이크로초로 맞춤: PostgreSQL `timestamptz`가 마이크로초까지 저장해, 그대로 두면 저장 응답(나노초)과 이후 조회의 `savedAt`이 달라짐. 테스트가 저장 응답과 조회 결과가 같은지 확인하고, 맞춤을 빼면 실패함.
 - 시드 데이터로 로컬 앱 실제 호출 (확인 후 만든 시도 삭제):
 
