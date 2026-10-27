@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.guardianship.repository.StudentAccessMapper">
+    <resultMap id="student" type="com.sagomungchi.core.guardianship.domain.LinkedStudent">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="nickname" javaType="java.lang.String"/>
+            <arg column="grade" javaType="_int"/>
+            <arg column="birth_year" javaType="_int"/>
+        </constructor>
+    </resultMap>
+    <select id="linkedStudents" resultMap="student">
+        SELECT s.id, s.nickname, s.grade, s.birth_year FROM student s
+        JOIN guardianship g ON g.student_id=s.id
+        WHERE g.parent_user_id=#{userId} AND g.status='LINKED' AND s.status='ACTIVE'
+        ORDER BY g.linked_at, s.id
+    </select>
+</mapper>

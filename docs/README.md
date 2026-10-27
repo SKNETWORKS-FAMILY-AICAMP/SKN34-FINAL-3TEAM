@@ -52,6 +52,8 @@
   - [이슈 #6 ai-service 판정·되묻기 API 설계 변경](report/ai-judgment-followup.md): API 계약 변경, 설계와 다르게 구현한 부분과 근거, learning 연동 시 반영할 점
   - [이슈 #4 M2 API 명세 정렬](report/m2-api-alignment.md): 학년 입력·점수 범위·모델 버전 규칙 명세 반영과 근거
 
+- [이슈 #36 Google OAuth·access/refresh](report/issue-36-google-auth.md): HS256·세션 폐기·역할 전환·프론트 계약과 후속 경계
+
 ## 개발 규칙
 
 ### 작업 규칙

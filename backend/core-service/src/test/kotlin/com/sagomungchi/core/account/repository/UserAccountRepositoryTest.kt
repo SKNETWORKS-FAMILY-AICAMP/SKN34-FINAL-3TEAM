@@ -29,6 +29,13 @@ class UserAccountRepositoryTest : PostgresRepositoryTest() {
     }
 
     @Test
+    fun `passwordless account round trips after OAuth migration`() {
+        val account = account().copy(passwordHash = null)
+        repository.insert(account)
+        assertEquals(account, repository.findById(account.id))
+    }
+
+    @Test
     fun `database uniqueness errors propagate to the application layer`() {
         val account = account()
         repository.insert(account)

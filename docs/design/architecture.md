@@ -695,3 +695,7 @@ SKN34-FINAL-3TEAM/
 - LLM 제공자: Claude API (기획서 4.4), ai-service `llm/` 래퍼로 교체 가능하게 설계
 - 학습·일괄 생성(RunPod GPU, sLLM 설명)은 클러스터 밖에서 수행, 결과(가중치·주간 설명 문장)만 S3로 반입
 - AWS 계정 EKS 생성 권한·예산 한도: 권한 없으면 EC2 1대 + k3s로 대체 (HA·Cluster Autoscaler·IRSA 제외)
+
+
+### #36 인증 구현 결정
+core의 공개 JWT 필터 → account service → Repository/Mapper → core_db로 로그인 세션·현재 권한을 확인한다. JWT는 Spring Security JOSE HS256, Google은 client에서 HTTP 코드 교환·JWKS 검증 후 내부 프로필로 변환한다. OAuth 외부 호출은 DB 트랜잭션 밖, 계정·세션·refresh 회전만 트랜잭션 안에서 처리한다. 상태 있는 access/refresh이며 브라우저 인증을 세션 쿠키 하나로 바꾸지 않는다. 세부 계약·키 관리·#37/#45 경계는 [#36 보고서](../report/issue-36-google-auth.md)를 따른다.

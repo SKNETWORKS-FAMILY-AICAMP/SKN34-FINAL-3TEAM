@@ -73,7 +73,9 @@ erDiagram
     uuid id PK
     varchar role "STUDENT|PARENT|ADMIN"
     varchar login_id UK "로그인 ID(이메일)"
-    varchar password_hash
+    varchar password_hash "NULL 허용 · 기존 데이터 보존, 로그인 미사용"
+    varchar oauth_provider "NULL 허용 · GOOGLE"
+    varchar oauth_subject "NULL 허용 · provider와 복합 UK"
     varchar display_name "NULL 허용"
     varchar status "ACTIVE|WITHDRAWAL_REQUESTED|WITHDRAWN"
     boolean is_demo "시연 계정"
@@ -89,6 +91,8 @@ erDiagram
   }
   refresh_token {
     uuid id PK
+    uuid session_id FK "NULL 허용 · 기존 토큰, 신규는 필수"
+    timestamptz used_at "NULL 허용"
     uuid user_id FK
     varchar token_hash UK
     timestamptz expires_at
@@ -160,6 +164,24 @@ erDiagram
 - `deletion_request`가 `CONFIRMED`가 되면 같은 트랜잭션에서 `outbox_event(student.deleted)` 저장
 - 로그인 수단·자녀 연결 변경 결과·시점은 `audit_log`에 기록 (FN-ACC-10)
 - `user_account.is_demo`·`student.is_demo` 행은 운영 현황·사용량·결제 집계에서 제외 (NFR-OPS-01)
+
+### 3.1.1 로그인 세션 (#36)
+
+```mermaid
+erDiagram
+  user_account ||--o{ auth_session : owns
+  auth_session ||--o{ refresh_token : rotates
+  auth_session {
+    uuid id PK
+    uuid user_id FK
+    varchar role "PARENT|STUDENT|ADMIN"
+    uuid student_id FK "NULL 허용 · STUDENT에만 필수"
+    bigint version
+    timestamptz expires_at
+    timestamptz revoked_at "NULL 허용"
+    timestamptz created_at
+  }
+```
 
 ### 3.2 분석 대화·리포트 작업 (FN-AGT, FN-RPT)
 
@@ -960,3 +982,11 @@ erDiagram
 - 인덱스 후보: `student_device (parent_user_id) WHERE revoked_at IS NULL` 기기 목록
 - `student_device_child.student_id`는 등록 시 `parent_user_id`와 `LINKED`인 자녀만 허용(서비스 검사). 연결 해제·삭제된 자녀는 로그인 시점에 다시 검사하므로 행을 즉시 지우지 않아도 진입 불가
 - 학생 삭제(`student.deleted`) 확정 시 해당 `student_device_child` 행 삭제, 학부모 탈퇴 시 기기 전체 `revoked_at` 기록
+
+## 11. #36 OAuth·로그인 세션 (개정 P01 정렬)
+
+> OAuth·로그인 세션 V8은 현재 feature 작업이다. 10장의 기기·PIN 저장 구조는 #58에서 V8 이후의 다음 버전으로 구현한다. 학생에게는 refresh를 발급하지 않는다.
+`user_account.oauth_provider/oauth_subject`는 함께 NULL(기존 계정) 또는 GOOGLE/Google sub이며 복합 UNIQUE다. password_hash는 nullable로 보존하고 이메일로 OAuth 계정을 자동 연결하지 않는다.
+
+
+기존 refresh_token에는 `session_id uuid NULL 허용 FK(auth_session.id)`·`used_at timestamptz NULL 허용`를 추가한다. 기존 토큰은 revoked_at을 채우고 다시 로그인하게 한다. 새 토큰은 반드시 session_id를 저장하며 만료는 세션의 최초 만료를 넘지 않는다. 사용 이력은 재사용 탐지를 위해 세션 만료까지 보존한다. 학생 전환은 version을 증가시키고 세션 만료를 학생 access TTL로 줄이며 기존 부모 refresh를 소비한다. 새 refresh는 발급하지 않는다. 관리자 세부 권한·동의·자녀 연결은 최신 테이블에서 확인한다. 기존 계정/비밀번호를 삭제하거나 OAuth subject를 추정하는 백필은 하지 않는다.

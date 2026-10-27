@@ -1,0 +1,494 @@
+openapi: 3.1.0
+info:
+  title: 사고뭉치 core-service 인증 API (#36)
+  version: 1.0.0
+  description: '#36에서 구현한 공개 인증 API만 정의한다. access는 메모리, refresh는 보안 쿠키. POST 쿠키 API는 정확한 Origin과 X-Requested-With를 요구한다. #58의
+    POST /auth/student/devices, GET /auth/student/profiles, POST /auth/student/login은 Bearer만 제외하며 실제 기기/PIN 검증·신규 API 구현은
+    이 계약의 범위 밖이다.'
+servers:
+- url: /api/v1
+  description: web과 동일 origin의 core 공개 API
+tags:
+- name: Auth
+- name: Account
+security:
+- BearerAuth: []
+paths:
+  /auth/google/authorize:
+    get:
+      operationId: startGoogleLogin
+      tags:
+      - Auth
+      summary: Google 로그인·가입 시작
+      description: core가 state·nonce·PKCE S256을 생성하고 Google로 이동한다. Google 키가 없으면 503이다.
+      security: []
+      responses:
+        '302':
+          description: Google 인가 페이지로 이동. OAuth 상태 쿠키는 HttpOnly·SameSite=Lax, 10분.
+          headers:
+            Cache-Control:
+              description: 인증 응답은 저장하지 않는다.
+              schema:
+                type: string
+                const: no-store
+            Set-Cookie:
+              description: HttpOnly 쿠키. 성공 콜백은 OAuth 상태 쿠키 삭제와 refresh 설정의 복수 Set-Cookie를 반환한다. 학생 전환·로그아웃은 refresh 쿠키를 만료시킨다.
+              schema:
+                type: string
+            Location:
+              description: Google 인가 URL. 서비스 access/refresh는 포함하지 않는다.
+              schema:
+                type: string
+                format: uri
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /auth/google/callback:
+    get:
+      operationId: completeGoogleLogin
+      tags:
+      - Auth
+      summary: Google 인가 응답 처리
+      description: state 쿠키·nonce·PKCE와 ID 토큰 JWKS 서명·iss·aud·exp를 검증한다. Google 계정은 provider+sub로 식별하며 이메일 자동 연결은 하지 않는다.
+        성공하면 refresh 쿠키를 설정하고 /oauth/complete로 이동한다.
+      security: []
+      parameters:
+      - name: code
+        in: query
+        required: false
+        description: Google 일회용 인가 코드. 성공 흐름에 필수.
+        schema:
+          type: string
+      - name: state
+        in: query
+        required: false
+        description: 로그인 시작 시 생성한 state. 성공 흐름에 필수.
+        schema:
+          type: string
+      - name: error
+        in: query
+        required: false
+        description: Google이 반환한 오류(사용자 취소 포함).
+        schema:
+          type: string
+      - name: sagomungchi_oauth
+        in: cookie
+        required: false
+        description: 성공하려면 유효한 로그인 상태 쿠키가 있어야 한다. 없거나 만료되면 실패 화면으로 이동한다.
+        schema:
+          type: string
+      responses:
+        '302':
+          description: '성공: /oauth/complete. 실패: /login?oauthError=CANCELLED|ACCOUNT_EXISTS|OAUTH_UNAVAILABLE|OAUTH_FAILED.
+            상태 쿠키 삭제.'
+          headers:
+            Cache-Control:
+              description: 인증 응답은 저장하지 않는다.
+              schema:
+                type: string
+                const: no-store
+            Set-Cookie:
+              description: HttpOnly 쿠키. 성공 콜백은 OAuth 상태 쿠키 삭제와 refresh 설정의 복수 Set-Cookie를 반환한다. 학생 전환·로그아웃은 refresh 쿠키를 만료시킨다.
+              schema:
+                type: string
+            Location:
+              schema:
+                type: string
+                format: uri
+              description: 설정된 web origin 안의 성공 또는 실패 경로.
+  /auth/refresh:
+    post:
+      operationId: refreshAccessToken
+      tags:
+      - Auth
+      summary: 부모·관리자 access 재발급
+      description: 부모·관리자 refresh를 원자적으로 회전한다. 최초 로그인부터 기본 7일 만료는 연장하지 않는다. 재사용은 해당 세션을 폐기한다. 학생 세션은 refresh를 발급하지 않으며 이 경로를
+        사용할 수 없다.
+      security:
+      - RefreshCookie: []
+      parameters:
+      - $ref: '#/components/parameters/WebOrigin'
+      - $ref: '#/components/parameters/RequestedWith'
+      responses:
+        '200':
+          description: 새 access와 회전한 refresh 쿠키.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParentTokenResponse'
+          headers:
+            Cache-Control:
+              description: 인증 응답은 저장하지 않는다.
+              schema:
+                type: string
+                const: no-store
+            Set-Cookie:
+              description: HttpOnly 쿠키. 성공 콜백은 OAuth 상태 쿠키 삭제와 refresh 설정의 복수 Set-Cookie를 반환한다. 학생 전환·로그아웃은 refresh 쿠키를 만료시킨다.
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /auth/logout:
+    post:
+      operationId: logoutSession
+      tags:
+      - Auth
+      summary: 현재 로그인 세션 종료
+      description: 현재 refresh 쿠키 또는 Bearer 학생 access로 식별한 서비스 세션을 폐기한다. 다른 기기의 세션과 Google 계정 자체는 로그아웃하지 않는다. 인증 정보가 없어도 올바른
+        요청 출처에서는 idempotent 204를 반환한다.
+      security:
+      - RefreshCookie: []
+      - BearerAuth: []
+      - {}
+      parameters:
+      - $ref: '#/components/parameters/WebOrigin'
+      - $ref: '#/components/parameters/RequestedWith'
+      responses:
+        '204':
+          description: 서비스 세션 폐기·refresh 쿠키 만료.
+          headers:
+            Cache-Control:
+              description: 인증 응답은 저장하지 않는다.
+              schema:
+                type: string
+                const: no-store
+            Set-Cookie:
+              description: HttpOnly 쿠키. 성공 콜백은 OAuth 상태 쿠키 삭제와 refresh 설정의 복수 Set-Cookie를 반환한다. 학생 전환·로그아웃은 refresh 쿠키를 만료시킨다.
+              schema:
+                type: string
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /auth/student-sessions:
+    post:
+      operationId: enterAccompaniedStudentSession
+      tags:
+      - Auth
+      summary: 부모 동석 학생 진입
+      description: '부모 Bearer와 같은 세션의 refresh로 연결·활성 자녀 및 현재 필수/법정대리인 동의를 확인한다. 학생 access만 발급하고 부모 refresh를 소비·삭제하며 기존 부모
+        access를 거부한다. PIN 단독 진입은 #58 소유다.'
+      security:
+      - BearerAuth: []
+        RefreshCookie: []
+      parameters:
+      - $ref: '#/components/parameters/WebOrigin'
+      - $ref: '#/components/parameters/RequestedWith'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StudentSessionRequest'
+      responses:
+        '200':
+          description: 학생 access 전용 응답. refresh 쿠키는 만료되며 원문 refresh를 응답하지 않는다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentTokenResponse'
+          headers:
+            Cache-Control:
+              description: 인증 응답은 저장하지 않는다.
+              schema:
+                type: string
+                const: no-store
+            Set-Cookie:
+              description: HttpOnly 쿠키. 성공 콜백은 OAuth 상태 쿠키 삭제와 refresh 설정의 복수 Set-Cookie를 반환한다. 학생 전환·로그아웃은 refresh 쿠키를 만료시킨다.
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /me:
+    get:
+      operationId: getCurrentIdentity
+      tags:
+      - Account
+      summary: 본인 역할·시작 화면 조회
+      description: '학생은 부모 개인정보·관리자 권한을 받지 않는다. 신규 부모는 필수 동의·자녀 등록 단계로 안내한다. 동의 저장·자녀 등록 API는 #37 소유다.'
+      responses:
+        '200':
+          description: 현재 인증 상태에 따라 역할별 최소 정보 반환.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/ParentMeResponse'
+                - $ref: '#/components/schemas/StudentMeResponse'
+          headers:
+            Cache-Control:
+              description: 인증 응답은 저장하지 않는다.
+              schema:
+                type: string
+                const: no-store
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: core가 발급·검증하는 HS256 access JWT. sid·ver와 최신 서버 세션·권한을 확인한다.
+    RefreshCookie:
+      type: apiKey
+      in: cookie
+      name: sagomungchi_refresh
+      description: 부모·관리자 전용 HttpOnly·Secure·SameSite=Strict, Path=/api/v1/auth. 원문은 서버 DB에 저장하지 않는다.
+  parameters:
+    WebOrigin:
+      name: Origin
+      in: header
+      required: true
+      description: AUTH_WEB_ORIGIN과 정확히 일치. 로컬 기본은 아래 예시. 배포에서는 HTTPS origin을 사용한다.
+      schema:
+        type: string
+        format: uri
+      example: http://localhost:5173
+    RequestedWith:
+      name: X-Requested-With
+      in: header
+      required: true
+      schema:
+        type: string
+        const: XMLHttpRequest
+  schemas:
+    Child:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - nickname
+      - grade
+      - birthYear
+      properties:
+        id:
+          type: string
+          format: uuid
+        nickname:
+          type: string
+        grade:
+          type: integer
+          enum:
+          - 3
+          - 4
+          - 5
+          - 6
+        birthYear:
+          type: integer
+    ParentTokenResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - accessToken
+      - expiresIn
+      - role
+      - nextAction
+      - startPath
+      properties:
+        accessToken:
+          type: string
+          description: HS256 access JWT. 메모리 보관하며 URL·영구 저장소에 넣지 않는다.
+        expiresIn:
+          type: integer
+          minimum: 1
+          description: 설정된 access TTL(초), 초기 기본 900초.
+        role:
+          type: string
+          enum:
+          - PARENT
+          - ADMIN
+        child:
+          type: 'null'
+        nextAction:
+          type: string
+          enum:
+          - CONSENT_REQUIRED
+          - CHILD_REGISTRATION_REQUIRED
+          - READY
+        startPath:
+          type: string
+          enum:
+          - /parent/onboarding
+          - /parent/children/new
+          - /parent/journal
+          - /admin/home
+          - /student/home
+    StudentTokenResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - accessToken
+      - expiresIn
+      - role
+      - child
+      - nextAction
+      - startPath
+      properties:
+        accessToken:
+          type: string
+          description: HS256 access JWT. 메모리 보관하며 URL·영구 저장소에 넣지 않는다.
+        expiresIn:
+          type: integer
+          minimum: 1
+          description: 설정된 access TTL(초), 초기 기본 900초.
+        role:
+          type: string
+          const: STUDENT
+        child:
+          $ref: '#/components/schemas/Child'
+        nextAction:
+          type: string
+          const: READY
+        startPath:
+          type: string
+          const: /student/home
+    ParentMeResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - userId
+      - name
+      - email
+      - role
+      - permissions
+      - nextAction
+      - startPath
+      properties:
+        userId:
+          type: string
+          format: uuid
+        name:
+          type:
+          - string
+          - 'null'
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum:
+          - PARENT
+          - ADMIN
+        permissions:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+            - CONTENT
+            - PAYMENT_VIEW
+            - PAYMENT_REFUND
+            - SERVICE_OPS
+        child:
+          type: 'null'
+        nextAction:
+          type: string
+          enum:
+          - CONSENT_REQUIRED
+          - CHILD_REGISTRATION_REQUIRED
+          - READY
+        startPath:
+          type: string
+          enum:
+          - /parent/onboarding
+          - /parent/children/new
+          - /parent/journal
+          - /admin/home
+          - /student/home
+    StudentMeResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - role
+      - child
+      - nextAction
+      - startPath
+      properties:
+        role:
+          type: string
+          const: STUDENT
+        child:
+          $ref: '#/components/schemas/Child'
+        nextAction:
+          type: string
+          const: READY
+        startPath:
+          type: string
+          const: /student/home
+    StudentSessionRequest:
+      type: object
+      required:
+      - childId
+      properties:
+        childId:
+          type: string
+          format: uuid
+    Problem:
+      type: object
+      required:
+      - type
+      - title
+      - status
+      - code
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        code:
+          type: string
+        detail:
+          type:
+          - string
+          - 'null'
+        instance:
+          type: string
+          format: uri-reference
+        traceId:
+          type:
+          - string
+          - 'null'
+  responses:
+    Unauthenticated:
+      description: 미인증·만료·서명 오류·세션 변경·refresh 재사용. code로 구분한다.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Forbidden:
+      description: 역할·권한·동의·자녀 연결 또는 요청 출처가 허용되지 않음.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unavailable:
+      description: Google 또는 인증 저장소를 사용할 수 없음.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    InvalidRequest:
+      description: UUID·JSON 요청 형식 오류.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'

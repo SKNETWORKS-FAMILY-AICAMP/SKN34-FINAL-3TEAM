@@ -12,6 +12,7 @@ import org.testcontainers.containers.PostgreSQLContainer
 /** One disposable DB per test JVM. Each test rolls back; Ryuk removes the container on JVM exit. */
 @SpringBootTest(properties = [
     "app.internal.token=repository-test-token",
+    "app.auth.jwt-secret=dGVzdC1hdXRoLXNlY3JldC0zMi1ieXRlcy1sb25nLWtleSE=",
     "spring.rabbitmq.username=test", "spring.rabbitmq.password=test",
     "spring.rabbitmq.listener.simple.auto-startup=false",
 ])
