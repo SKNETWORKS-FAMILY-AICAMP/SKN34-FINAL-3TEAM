@@ -14,6 +14,7 @@ for (const marker of [
   'setupWorker',
   'fixtureStore',
   'msw-access-',
+  'msw-consent-',
   'msw-conversation-',
   'demo-seoyun',
   'Mocking enabled',
@@ -24,6 +25,14 @@ for (const marker of [
   'mock-report-files',
   'sagomungchi:test-child-plan',
   'setMockChildPlan',
+  // #59 학생 기기: 기기 쿠키를 대신하는 개발용 상태·상태 선택기
+  'sagomungchi:msw-device',
+  'sagomungchi:device-scenario',
+  'setDeviceScenario',
+  'startDeviceStudentSession',
+  '기기 상태 시연',
+  // 학생 꾸미기 설정 목업 저장소
+  'sagomungchi:msw-look',
 ])
   assert.equal(
     js.some((s) => s.includes(marker)),

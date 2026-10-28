@@ -1,73 +1,38 @@
-# 이슈 #50 리포트 생성 기반 — #42 계약 연결 전
+# 이슈 #50 리포트 생성 메시지·worker·Outbox
 
-## 범위와 현재 상태
+## 목적과 현재 범위
 
-[#50](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/50)의 DB 처리·생성 상태 전이·Outbox 발행 기반을 구현한다. develop `e3bb6ab`에서 시작했으며 최종 정리 기준은 #36 인증 구현이 병합된 `ecd6ecf`다. 두 기준 사이에 report 코드·마이그레이션·이벤트 계약 변경은 없다. 작업 브랜치는 `feature/report-generation`이다.
+core가 발행한 `report.generate`를 report-worker가 받아 작업 상태와 결과 이벤트를 중복 없이 저장·발행하는 기반이다. 기존 이슈 브랜치 `feature/report-generation`에서 develop `47e5ffe`를 반영했다. #42가 제공한 공유 v1 스키마를 재사용하며 새 이벤트 필드·DB migration은 추가하지 않았다.
 
-공통 메시지 스키마는 [#42](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/42)에서 작성하는 것을 재사용한다. 기준 develop에는 `report.*` 스키마가 없으므로 이번 변경에는 별도 스키마나 임시 운영용 메시지 변환기를 추가하지 않았다. **이 변경만으로 #50 완료를 선언하거나 이슈를 종료하지 않는다.**
+#50은 생성 기반 범위다. 계산·서술·렌더링은 #51~#53에서 조립한다. 테스트에서는 이슈가 허용한 빈 생성기로 성공 경로를 확인한다. 이 브랜치의 기본 CLI는 생성 큐를 실제 구독하지만 계산 파이프라인이 미연결이면 `GENERATOR_NOT_CONFIGURED`로 FAILED를 기록한다. 기록을 조회하지 않고 NO_RECORD/COMPLETED로 꾸미지 않는다. 후속 단계는 `run(generator=...)`에 실제 생성기를 연결한다.
 
-## 구현 내용
+## 구현과 완료 조건
 
-| 위치 (`backend/report-service/`) | 역할 |
+| 항목 | 구현 및 검사 |
 |---|---|
-| `app/generation/models.py` | 내부 명령·리포트 상태·생성 결과. 외부 JSON 필드 계약과 구분 |
-| `app/generation/ports.py` | `ReportGenerator`와 `ReportEventCodec` 연결 지점 |
-| `app/generation/repository.py` | 기존 `weekly_report` 조회·생성·조건부 종료, 재생성 revision 할당 |
-| `app/generation/service.py` | 시작/종료 상태와 Outbox를 같은 트랜잭션에 저장, 비동기 생성 실행 |
-| `app/generation/locking.py` | 작업별 PostgreSQL 세션 advisory lock으로 동시 실행 방지 |
-| `app/generation/consumer.py` | 기존 `EventConsumer`에 전달할 핸들러. 학생 subject 대조, SYSTEM 컨텍스트 지정·복구 |
-| `app/outbox/repository.py`·`relay.py` | 미발행 행 `FOR UPDATE SKIP LOCKED`, confirm 이후 발행 시각 기록 |
-| `app/messaging/publisher.py` | 기존 AMQP 연결로 `events.topic` 발행. persistent·mandatory·publisher confirm 적용 |
-| `app/database.py`·`security.py` | 기존 트랜잭션/컨텍스트 기반에 DB 스레드 실행·컨텍스트 복구 함수 추가 |
+| worker 시작·종료 | 기본 `ReportV1Codec`, `EventConsumer.consume(report.report.generate)`, Outbox 주기 실행. 큐/브로커 준비 전 재확인, 종료 시 소비 취소→진행 작업 대기→채널 정리 |
+| 메시지 계약 | 필수 id/specversion/time을 수신 시 자동 생성하지 않음. source/type/dataschema, UUID, subject=data.studentId, 월~일 기간, trigger, 엄격한 boolean·허용 필드 검사. 형식 오류는 즉시 DLQ |
+| 사용자 컨텍스트 | subject 학생만 SYSTEM scope로 바인딩하고 종료·예외 후 복구, traceparent 전달 |
+| 작업 멱등·재실행 | job_id UK, 최초 RUNNING+started, 종료 상태 재전달은 무작업, RUNNING은 같은 행으로 재실행 |
+| 재생성 | 학생·주별 advisory transaction lock으로 revision 증가, 기존 판 보존 |
+| 종료 트랜잭션 | COMPLETED 또는 FAILED와 해당 Outbox를 같은 짧은 트랜잭션에 저장. 오류 원문은 저장·로그에 노출하지 않음 |
+| Outbox 발행 | 이벤트별 session advisory lock으로 선점, AUTOCOMMIT 연결만 유지한 채 발행. AMQP confirm 후 별도 짧은 DB 트랜잭션으로 published_at 기록 |
+| 장애 복구 | confirm 후 기록 실패·timeout·취소 시 같은 ID/payload로 재발행 가능. 소비 측 멱등성과 결합하는 at-least-once 방식 |
 
-새 마이그레이션·ERD 변경·의존성 추가는 없다. SQLAlchemy Table은 기존 스키마를 조회하는 정의이며 `create_all`·reflection·앱 기동 마이그레이션을 실행하지 않는다.
+`app/messaging/contracts.py`는 기존 봉투의 엄격한 수신 DTO다. 기존 `EventEnvelope`는 발행 시 ID/시각 기본값을 계속 제공한다. `app/generation/codec.py`가 #42의 payload를 내부 모델로 변환하며 공유 스키마를 복사하거나 변경하지 않는다. `requested_at`은 원래 봉투 time을 보존해 #55 삭제 장벽에서도 사용할 수 있도록 한다.
 
-### 처리 흐름
+Outbox는 동시에 처리 중인 앞 100개 후보를 건너뛰며 다른 행을 선점할 수 있다. 각 발행은 최대 15초다. 브로커 대기 동안 DB 트랜잭션/행 잠금은 없지만 session lock용 DB 연결 하나는 사용한다. 연결 풀과 worker 동시 실행 수를 함께 관리한다. 기존 core OutboxRelay 구현은 이 변경의 대상이 아니다.
 
-1. 계약 변환기가 메시지를 내부 `GenerateReport`로 변환한다. 핸들러는 봉투의 학생 subject와 명령의 학생이 같은지 확인한 뒤 `SYSTEM` 컨텍스트를 지정한다.
-2. `job_id`별 세션 advisory lock을 획득한다. 다른 소비자가 같은 작업을 처리 중이면 예외를 전달해 기존 `EventConsumer`의 지연 재시도를 사용한다.
-3. 짧은 트랜잭션에서 최초 작업은 `RUNNING`과 `report.started`를 함께 저장한다. 종료된 작업은 즉시 반환한다. 기존 `RUNNING`은 같은 행을 재사용하며 started 이벤트를 다시 저장하지 않는다.
-4. 생성기를 호출한다. 이 호출 동안 DB 트랜잭션은 열어 두지 않는다. 작업 잠금용 연결 하나는 유지하므로 worker 동시 실행 수와 DB 연결 풀 크기를 함께 관리해야 한다.
-5. 성공 시 `COMPLETED`와 `report.completed`, 생성기 예외 시 `FAILED`와 `report.failed`를 각각 같은 트랜잭션에 저장한다. 예외 원문에는 민감한 값이 포함될 수 있어 `failure_reason`에는 `GENERATION_FAILED`만 기록한다.
-6. DB 저장/메시지 변환 실패는 롤백 후 호출자에게 전달한다. 종료 저장 실패 시 `RUNNING`이 남아 재전달로 복구한다. 취소도 FAILED로 바꾸지 않으며 DB 스레드 정리 후 잠금을 반환한다.
-7. 핸들러 반환 뒤 ACK·실패 재시도는 기존 `EventConsumer`가 담당한다. 핸들러는 종료·예외·취소 시 이전 사용자 컨텍스트를 복구한다.
+## 검증 — 2026-10-28
 
-동일 학생·시작일의 revision은 트랜잭션 advisory lock 아래 `MAX(revision) + 1`로 할당한다. 서로 다른 재생성 job이 동시에 들어와도 기존 판을 덮지 않는다. `job_id`가 다른 학생/기간으로 재사용되면 기존 행을 수정하지 않고 거부한다.
+- Ruff check·format check(46개 파일), 공백 검사 통과. root 계약·스키마 unittest 53개도 통과(2.397초).
+- report pytest 첫 실행 64 passed / 2 failed (33.50초). 새 실제 브로커 테스트의 정리 코드가 quorum 큐에서 지원하지 않는 if-unused 옵션을 사용한 실패였다. 정상/실패 lifecycle 송수신 검증 이후의 정리 단계 오류였다.
+- 테스트 전용 큐 삭제 옵션을 고친 뒤 해당 2개 모두 통과(16.83초). 따라서 66개 항목을 확인했으며 이를 단일 전체 실행 66 passed로 표현하지 않는다.
+- 실제 PostgreSQL에서 상태/Outbox 롤백·동시 job·revision·취소 복구, 발행 중 idle-in-transaction 0개, confirm 후 DB 실패·같은 ID 재전송·릴레이 선점 해제를 검증했다.
+- 실제 RabbitMQ에서 공유 JSON Schema에 맞춘 명령을 두 번 발행하고 생성 1회, started와 completed/failed 각 1개, job/report 식별자·schema·publisher confirm을 검증했다. 기존 transport 테스트의 반송 후 재전송 검사도 통과했다.
+- 합성 데이터만 사용했다. 실 학생 기록·AI Hub·운영 자격 증명은 사용하지 않았다. core 애플리케이션 전체 실행과 실제 #27/#64 연동은 이 검사에 포함하지 않는다.
+- `docker build -t sagomungchi/report-service:issue50-20261028 .` 통과. 읽기 전용 root·네트워크 없는 운영 이미지에서 worker import와 pytest/jsonschema 미포함도 확인했다. jsonschema는 dev 그룹에만 추가했다.
 
-### Outbox 발행
+## 후속 경계
 
-- 상태 변경과 같은 Session에 전체 EventEnvelope를 JSONB로 저장한다. Repository는 commit하지 않는다.
-- 릴레이의 DB Session·트랜잭션은 한 DB 스레드에서 사용하고, AMQP 발행은 해당 연결의 이벤트 루프에서 실행한다. 행 잠금은 제한 시간 내 confirm을 기다리는 동안만 유지한다.
-- 연결 단절·반송(unroutable)·NACK·시간 초과·DB 반영 실패 시 `published_at`은 남기지 않는다. 다음 호출에서 다시 시도할 수 있다.
-- confirm 직후 DB 반영 전에 중단되면 같은 이벤트가 재발행될 수 있다. 저장된 이벤트 ID·본문은 그대로 유지하며 core의 멱등 소비와 결합하는 at-least-once 방식이다.
-- exchange·큐 선언은 운영의 `definitions.json`이 담당한다. 서비스 발행기는 기존 exchange를 확인해 사용한다.
-
-## #42 연결 후 남은 작업
-
-| #50 항목 | 현재 검증 범위 | 남은 연결 |
-|---|---|---|
-| `EventConsumer.consume` worker 시작 | 핸들러 구성, 내부 생성 서비스 | #42 codec과 생성기를 조립해 `worker.py`에 소비 시작·종료 처리 연결 |
-| SYSTEM 사용자 컨텍스트 | subject 대조·범위 지정·trace 전달·복구 | 실제 요청 JSON의 학생 필드와 계약 검증 |
-| 시작·종료·재전달·재생성 | 실제 PostgreSQL에서 검증 | 실제 메시지로 같은 흐름 재검증 |
-| Outbox 저장·발행 | 롤백·중복·confirm·반송·재발행 검증 | worker의 릴레이 실행 주기·종료 처리 연결 |
-| 공통 이벤트 스키마 | #42 담당, 이번 변경에서 생성하지 않음 | `report.generate/started/completed/failed` 스키마를 재사용 |
-| 스키마 계약 테스트 | 미완료 | 실제 #42 스키마와 입력/출력 페이로드 대조 |
-
-`tests/report_helpers.py`의 FakeCodec·EmptyGenerator는 합성 테스트 전용이다. `testOnlyReportId`는 팀 메시지 필드가 아니다. 계산·서술·파일 생성은 #51~#53에서 채운다. 운영 worker에는 임시 생성기를 연결하지 않았으며, 빈 결과로 실제 작업을 완료 처리하지 않는다.
-
-#42 규격을 받은 뒤 필요한 필드·버전·실패 사유 형식을 대조하고 변환기를 구현한다. 공개 API 계약 변경이 필요하면 API 명세와 이 보고서를 함께 갱신한다. #50 종료는 worker 연결과 계약 테스트까지 통과한 뒤 판단한다.
-
-## 검증
-
-2026-10-27 로컬 서비스 `.venv`와 일회용 PostgreSQL 17.11·RabbitMQ 4.3.7 컨테이너를 사용한다. 실제 학생 답안·AI Hub 자료 없이 합성 데이터만 사용한다.
-
-- `uv run --frozen ruff check .`
-- `uv run --frozen ruff format --check .`
-- `uv run --frozen pytest`
-- `docker build -t sagomungchi/report-service:issue50-local .`
-
-위 검증은 모두 통과했다. pytest **40개 통과·실패/생략 0개(26.22초)**이며, 기존 Starlette TestClient 사용 중단 안내 경고 1개가 남았다. 실제 PostgreSQL 마이그레이션 적용 후 테스트했고, 실제 RabbitMQ의 정상 confirm과 라우팅 실패 후 재발행도 포함한다. 서비스 이미지 빌드도 성공했다.
-
-주요 검증: 동일 job 중복·동시 전달, 초기/완료 Outbox 저장 실패 시 롤백, 기존 RUNNING 재개, 다른 학생으로 job 재사용 거부, 동시 revision 할당, 취소 후 복구, SYSTEM 범위·trace 전파, 릴레이 동시 실행, confirm 후 DB 실패 시 동일 ID 재발행, 실제 브로커의 라우팅 실패 후 재발행.
-
-실제 core와의 메시지 계약·worker 전체 연동은 위 테스트 결과에 포함하지 않는다.
+#50의 메시지 기반 검증과 전체 주간 리포트 생성 완료는 구분한다. #51의 실제 learning 응답은 #27, #52의 실제 AI는 #64, #53의 닉네임 공급은 core 연결이 필요하다. core 정기/재생성의 상품 권한 공급자도 아직 503을 반환하므로 실제 스케줄 E2E 완료라고 보고하지 않는다. 실제 생성기는 후속 이슈에서 연결하고 기존 실패 작업의 재생성은 core의 새 job 규칙을 따른다.

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.sagomungchi.core.consent.repository.ConsentAccessMapper">
-    <select id="hasRequiredConsents" resultType="boolean">
+    <select id="hasRequiredConsents" resultType="boolean" flushCache="true" useCache="false">
         WITH current_documents AS (
             SELECT DISTINCT ON (kind) id, kind, required FROM consent_document
             WHERE kind IN ('TERMS','PRIVACY') AND effective_from &lt;= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date
@@ -10,18 +10,67 @@
         SELECT (SELECT count(*) FROM current_documents)=2 AND NOT EXISTS (
             SELECT 1 FROM current_documents d WHERE d.required AND NOT EXISTS (
                 SELECT 1 FROM consent c WHERE c.document_id=d.id AND c.subject_user_id=#{userId}
-                AND c.student_id IS NULL AND c.agreed AND c.status='AGREED' AND c.withdrawn_at IS NULL
+                AND c.student_id IS NULL
+                AND c.id=(SELECT latest.id FROM consent latest
+                    WHERE latest.document_id=d.id AND latest.subject_user_id=#{userId} AND latest.student_id IS NULL
+                    ORDER BY latest.agreed_at DESC, latest.id DESC LIMIT 1)
+                AND c.agreed AND c.status='AGREED' AND c.withdrawn_at IS NULL
             )
         )
     </select>
-    <select id="hasGuardianConsent" resultType="boolean">
+    <select id="hasGuardianConsent" resultType="boolean" flushCache="true" useCache="false">
         WITH current_guardian AS (
-            SELECT id FROM consent_document WHERE kind='GUARDIAN'
+            SELECT id, required FROM consent_document WHERE kind='GUARDIAN'
             AND effective_from &lt;= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date
             ORDER BY effective_from DESC, created_at DESC, id DESC LIMIT 1
         )
         SELECT EXISTS (SELECT 1 FROM current_guardian d JOIN consent c ON c.document_id=d.id
-            WHERE c.subject_user_id=#{userId} AND c.student_id=#{studentId}
+            WHERE d.required AND c.subject_user_id=#{userId} AND c.student_id=#{studentId}
+            AND c.id=(SELECT latest.id FROM consent latest WHERE latest.document_id=d.id
+                AND latest.subject_user_id=#{userId} AND latest.student_id=#{studentId}
+                ORDER BY latest.agreed_at DESC, latest.id DESC LIMIT 1)
             AND c.agreed AND c.status='AGREED' AND c.withdrawn_at IS NULL)
     </select>
+    <resultMap id="document" type="com.sagomungchi.core.consent.domain.ConsentDocument">
+        <constructor>
+            <idArg column="document_id" javaType="java.util.UUID"/>
+            <arg column="kind" javaType="java.lang.String"/>
+            <arg column="version" javaType="java.lang.String"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="content" javaType="java.lang.String"/>
+            <arg column="required" javaType="_boolean"/>
+            <arg column="effective_from" javaType="java.time.LocalDate"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="entry" type="com.sagomungchi.core.consent.domain.ConsentEntry">
+        <constructor>
+            <idArg column="consent_id" javaType="java.util.UUID"/>
+            <arg column="subject_user_id" javaType="java.util.UUID"/>
+            <arg column="student_id" javaType="java.util.UUID"/>
+            <arg javaType="com.sagomungchi.core.consent.domain.ConsentDocument" resultMap="document"/>
+            <arg column="agreed" javaType="_boolean"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="agreed_at" javaType="java.time.OffsetDateTime"/>
+            <arg column="withdrawn_at" javaType="java.time.OffsetDateTime"/>
+        </constructor>
+    </resultMap>
+    <select id="currentDocuments" resultMap="document" flushCache="true" useCache="false">
+        SELECT DISTINCT ON (kind) id AS document_id, kind, version, title, content, required, effective_from
+        FROM consent_document WHERE effective_from &lt;= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date
+        ORDER BY kind, effective_from DESC, created_at DESC, id DESC
+    </select>
+    <select id="history" resultMap="entry" useCache="false">
+        SELECT c.id AS consent_id, c.subject_user_id, c.student_id, c.agreed, c.status, c.agreed_at, c.withdrawn_at,
+            d.id AS document_id, d.kind, d.version, d.title, d.content, d.required, d.effective_from
+        FROM consent c JOIN consent_document d ON d.id=c.document_id
+        WHERE c.subject_user_id=#{userId} ORDER BY c.agreed_at DESC, c.id DESC
+    </select>
+    <insert id="insert">
+        INSERT INTO consent(id,document_id,subject_user_id,student_id,agreed,status,agreed_at,withdrawn_at)
+        VALUES(#{consentId},#{document.documentId},#{subjectUserId},#{studentId,jdbcType=OTHER},#{agreed},#{status},#{agreedAt},#{withdrawnAt,jdbcType=TIMESTAMP_WITH_TIMEZONE})
+    </insert>
+    <update id="withdraw">
+        UPDATE consent SET status='WITHDRAWN', withdrawn_at=#{now}
+        WHERE id=#{consentId} AND subject_user_id=#{userId}
+    </update>
 </mapper>

@@ -1,7 +1,6 @@
-"""Concurrent relays claim separate rows and commit published_at only after confirmation."""
+"""Session advisory claim across publish; confirmation uses a short DB transaction."""
 
 import asyncio
-from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Protocol
 
 from sqlalchemy.orm import Session, sessionmaker
@@ -29,20 +28,26 @@ class OutboxRelay:
         self._repository = repository or OutboxRepository()
 
     async def publish_once(self) -> bool:
-        loop = asyncio.get_running_loop()
-        return await run_db(lambda: self._publish_one(loop))
-
-    def _publish_one(self, loop: asyncio.AbstractEventLoop) -> bool:
-        # The Session and transaction stay in one DB thread. AMQP stays on its event loop.
-        with transaction(self._factory) as session:
-            event = self._repository.next_unpublished(session)
-            if event is None:
-                return False
-            publication = asyncio.run_coroutine_threadsafe(self._publisher.publish(event), loop)
-            try:
-                publication.result(timeout=self._timeout)
-            except FutureTimeoutError:
-                publication.cancel()
-                raise
-            self._repository.mark_published(session, event.id)
+        with self._factory() as session:
+            engine = session.get_bind()
+        acquisition = asyncio.create_task(asyncio.to_thread(self._repository.claim_next, engine))
+        try:
+            claim = await asyncio.shield(acquisition)
+        except asyncio.CancelledError:
+            claim = await acquisition
+            if claim is not None:
+                await run_db(claim.close)
+            raise
+        if claim is None:
+            return False
+        try:
+            async with asyncio.timeout(self._timeout):
+                await self._publisher.publish(claim.event)
+            await run_db(lambda: self._mark(claim.event.id))
             return True
+        finally:
+            await run_db(claim.close)
+
+    def _mark(self, event_id):
+        with transaction(self._factory) as session:
+            self._repository.mark_published(session, event_id)
