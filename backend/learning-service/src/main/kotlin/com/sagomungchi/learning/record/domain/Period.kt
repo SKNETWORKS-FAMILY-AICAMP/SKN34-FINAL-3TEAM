@@ -1,0 +1,32 @@
+package com.sagomungchi.learning.record.domain
+
+import com.sagomungchi.learning._common.exception.BusinessException
+import org.springframework.http.HttpStatus
+import java.time.Clock
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+
+/**
+ * 조회 기간 (api-spec 1.1): KST 날짜, 양 끝 포함. 시각 비교는 [from 00:00, to 다음 날 00:00) KST.
+ * 없으면 오늘 포함 최근 7일 (P06)
+ */
+data class Period(val from: LocalDate, val to: LocalDate) {
+    init {
+        if (from.isAfter(to)) throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "기간 오류", "from이 to보다 늦음")
+    }
+
+    fun start(): Instant = from.atStartOfDay(KST).toInstant()
+
+    fun endExclusive(): Instant = to.plusDays(1).atStartOfDay(KST).toInstant()
+
+    companion object {
+        val KST: ZoneId = ZoneId.of("Asia/Seoul")
+        private const val DEFAULT_DAYS = 7L
+
+        fun of(from: LocalDate?, to: LocalDate?, clock: Clock = Clock.system(KST)): Period {
+            val end = to ?: from?.plusDays(DEFAULT_DAYS - 1)?.coerceAtMost(LocalDate.now(clock)) ?: LocalDate.now(clock)
+            return Period(from ?: end.minusDays(DEFAULT_DAYS - 1), end)
+        }
+    }
+}
