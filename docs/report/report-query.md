@@ -17,6 +17,14 @@
 
 API 4.4와 `contracts/openapi/report-service.yaml`을 맞췄다. OpenAPI는 실제 FastAPI 모델에서 내보낸 JSON 표현의 YAML 1.2 문서이며 테스트에서 서버 스키마와 대조한다. URL 경로의 snake_case placeholder 이름은 서버 함수 이름이며 실제 URL 식별자는 UUID다.
 
+## 돌아보기 표시 계약 정리 (2026-10-28)
+
+API 3.4의 `reflections[].difficulty`는 `쉬웠어요`·`보통`·`어려웠어요` 또는 미작성의 null이다. 조회 응답 모델과 OpenAPI에 이 범위를 명시하고, #53과 공유하는 `generation/presentation.py`에서 저장된 `EASY`·`NORMAL`·`HARD`를 변환한다. PDF·HTML·Markdown과 같은 표시값이며 DB payload를 덮어쓰지 않는다. 무료/유료 응답 모두 동일하다. 난이도를 선택하고 글을 쓰지 않은 돌아보기는 `written:true,text:null`, 미작성은 `written:false,difficulty:null,text:null`이다.
+
+learning 입력은 API 4.1.1의 `reflection:null` 또는 코드·작성 시각이 있는 객체다. 조회 출력과 입력을 혼용하지 않는다. #27 실제 evidence의 원문 범위·버전·삭제·평문 없는 답변 표현은 담당자 답변을 기다리며 기존 evidence 검증을 임의로 완화하지 않았다.
+
+사전 정리 검증: `test_report_query.py` **22개 통과(51.33초)**. 일회용 PostgreSQL의 코드값을 조회해 무료/유료 API의 세 한글 표시값·미작성 null·작성했지만 텍스트가 없는 경우·DB payload 보존을 확인했다. 실제 FastAPI OpenAPI와 저장한 계약 파일도 일치한다. 기존 TestClient deprecation warning 1개는 실패와 구분한다.
+
 ## 검증
 
 집중 검증은 `test_report_query.py` 14개를 포함한다: 기본 최신판·이전판, 최신 선택 후 상태 필터, 네 경로 학생 범위 검사, 무료/헤더 누락 가림, 실제 원문/삭제 근거, 권한별 파일 변형, 400/404, OpenAPI 대조, 응답 오류의 원문 비노출. 실제 PostgreSQL을 사용하고 core 프록시·learning·S3 서명 공급자는 명시한 대역으로 검사한다. 최종 회귀 결과는 통합 보고서에 기록한다.

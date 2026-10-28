@@ -138,6 +138,41 @@ def test_free_or_missing_entitlement_header_hides_stored_ai(api, report_factory,
     assert all("summary" not in group for group in body["thinkingTypes"])
 
 
+@pytest.mark.parametrize("premium", [False, True])
+@pytest.mark.parametrize(
+    "code,label,written",
+    [
+        ("EASY", "쉬웠어요", True),
+        ("NORMAL", "보통", True),
+        ("HARD", "어려웠어요", True),
+        (None, None, False),
+    ],
+)
+def test_reflection_response_labels_and_null_text_preserve_stored_codes(
+    api, report_factory, report_student_id, premium, code, label, written
+):
+    report_id = seed_report(report_factory, report_student_id)
+    condition = (
+        report_item.c.report_id == report_id,
+        report_item.c.item_type == ItemType.REFLECTION,
+    )
+    with transaction(report_factory) as session:
+        payload = session.scalar(select(report_item.c.payload).where(*condition))
+        payload = {**payload, "difficulty": code, "text": None, "written": written}
+        session.execute(report_item.update().where(*condition).values(payload=payload))
+
+    client, _, _ = api
+    response = client.get(
+        f"/internal/reports/{report_id}", headers=headers(report_student_id, premium=premium)
+    )
+    assert response.status_code == 200
+    [reflection] = response.json()["reflections"]
+    assert reflection["difficulty"] == label
+    assert reflection["written"] is written and reflection["text"] is None
+    with report_factory() as session:
+        assert session.scalar(select(report_item.c.payload).where(*condition)) == payload
+
+
 def test_latest_is_selected_before_status_filter(api, report_factory, report_student_id):
     seed_report(report_factory, report_student_id)
     seed_report(report_factory, report_student_id, failure=True)
