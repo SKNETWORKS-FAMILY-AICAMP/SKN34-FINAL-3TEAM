@@ -16,7 +16,10 @@ export function recordReflection(raw: unknown): Reflection | undefined {
   }
   if (typeof value.difficulty !== 'string' || !Object.hasOwn(labels, value.difficulty) ||
       (value.text !== null && typeof value.text !== 'string')) return recordContractError()
-  return { difficulty: labels[value.difficulty], text: value.text ?? '' }
+  if (value.createdAt !== undefined && (typeof value.createdAt !== 'string' || !Number.isFinite(Date.parse(value.createdAt))))
+    return recordContractError()
+  return { difficulty: labels[value.difficulty], text: value.text ?? '',
+    ...(typeof value.createdAt === 'string' ? { createdAt: value.createdAt } : {}) }
 }
 
 export function recordDto(raw: PublicAttempt, studentId: string): PublicAttempt {

@@ -154,7 +154,7 @@ function ProfileAndPin({ profiles }: { profiles: StudentProfile[] }) {
               }}
             >
               {p.nickname}
-              <small>{p.locked ? '잠겨 있어요' : p.pinSet ? 'PIN으로 들어가요' : 'PIN이 아직 없어요'}</small>
+              <small>{p.pinLocked ? '잠겨 있어요' : p.pinSet ? 'PIN으로 들어가요' : 'PIN이 아직 없어요'}</small>
             </button>
           ))}
         </div>
@@ -167,7 +167,7 @@ function ProfileAndPin({ profiles }: { profiles: StudentProfile[] }) {
     setShowAll(true)
     setState(null)
   }
-  const locked = selected.locked || state?.kind === 'locked'
+  const locked = selected.pinLocked || state?.kind === 'locked'
   return (
     <>
       <h1>{selected.nickname}, 안녕하세요!</h1>

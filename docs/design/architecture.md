@@ -124,7 +124,7 @@
   - core 조회 실패 시 프로세스 종료 없이 readiness false 유지·재시도 (core 장애가 ai·scoring 기동 실패로 번지지 않게)
 - **이벤트 봉투**: CloudEvents 형식 `id, specversion, type, source, time, subject, dataschema, traceparent, data` → `contracts/events/*.schema.json`
 - **스키마 버전**: 파일 `<message>.v<N>.schema.json`, `dataschema`에 버전 표기. 하위 호환 변경(선택 필드 추가)만 같은 버전, 그 외는 새 버전 병행 발행 후 소비자 전환
-- **SSE 다중 레플리카**: core 레플리카 간 Redis Pub/Sub으로 알림 중계
+- **SSE 다중 레플리카**: core 레플리카 간 Redis Pub/Sub으로 알림 중계. #44는 리포트 상태 전이의 동기 ApplicationEvent를 같은 트랜잭션에서 알림으로 저장하고 AFTER_COMMIT에서 발행한다. report.service의 알림 연결부 → guardianship.service로 수신 보호자를 결정한 뒤 notification.service로 저장한다. Redis 채널 `core:notifications:v1`은 #58 페어링 키와 분리하며 같은 spring.data.redis 연결을 사용한다. 알림 전용 구독은 SseEmitters의 heartbeat/종료 정리를 재사용하되 작업 완료 후 종료하는 피드백 API는 유지한다. 알림 구독 5분·15초 heartbeat, 종료 시 사용자별 구독 제거, 재연결 ready 후 목록 재조회로 유실을 보완한다.
 
 ---
 
@@ -167,9 +167,9 @@
 - 대화 상태: ai-service는 상태 없음, core가 요청마다 대화 이력·허용 범위 전달
 - 버전 연결: 판정·되묻기·분석·리포트 결과에 미션·기준표·모델·프롬프트 버전 저장 (NFR-DAT-02)
 - 개인정보: LLM 요청에 학생 이름·식별정보 미포함, 운영 로그에 학생 원문·비밀 키·결제 정보 미기록 (NFR-SEC-03, 05)
-- 테스트: Domain 단위 테스트, Application은 Infrastructure 대역, Repository는 Testcontainers(PostgreSQL), core 메시징 통합은 Testcontainers(PostgreSQL·RabbitMQ), 메시지는 `contracts/events` 스키마 계약 테스트
+- 테스트: Domain 단위 테스트, Application은 Infrastructure 대역, Repository는 Testcontainers(PostgreSQL), core 메시징 통합은 Testcontainers(PostgreSQL·RabbitMQ·Redis), 메시지는 `contracts/events` 스키마 계약 테스트
   - core·learning Repository 테스트는 각 서비스의 `PostgresRepositoryTest` 상속 (PostgreSQL 컨테이너 JVM당 1회 기동, 테스트별 트랜잭션 롤백). core는 RabbitMQ listener를 시작하지 않고 `OutboxRelay`를 Mockito 대역으로 교체한다.
-  - core 메시징 통합 테스트는 `IntegrationTestSupport` 상속 (PostgreSQL·RabbitMQ 컨테이너 JVM당 1회 기동, `definitions.json` 반영, 실제 발행기·소비자 사용).
+  - core 메시징 통합 테스트는 `IntegrationTestSupport` 상속 (PostgreSQL·RabbitMQ·Redis 컨테이너 JVM당 1회 기동, `definitions.json` 반영, 실제 발행기·소비자 사용).
   - 두 베이스 모두 테스트 준비 단계에서 명시적으로 Flyway 전체 스키마를 적용하며, 앱 기동 시 자동 마이그레이션은 비활성화한다. core의 두 베이스는 별도 DB를 사용해 메시징의 비동기 커밋과 Repository 테스트의 롤백이 간섭하지 않도록 한다.
 
 ### 2.4 서비스별 적용 강도
@@ -727,3 +727,5 @@ report/scheduler → ReportScheduleService → ReportJobService의 자녀별 트
 ## #45 삭제·재인증 보완
 
 `student.deleted.v1` data는 `{studentId,deletionRequestId,scope:PROFILE|RECORDS}`다. 요청 CONFIRMED와 OutboxWriter.append는 한 트랜잭션이다. learning/report는 실제 삭제가 끝난 후 요청 ID와 service로 완료 보고한다. core는 서비스별 UNIQUE 완료 행을 기록하고 둘 다 확인할 때만 COMPLETED로 전이한다. core 분석 대화 정리는 conversation service를 통해 같은 DB 트랜잭션으로 처리한다. payment의 탈퇴 조건 조회도 payment service를 통해 호출한다. account/guardianship에서 다른 기능 repository를 직접 참조하지 않는다. Google 네트워크 교환은 DB 트랜잭션 밖에서 수행한다.
+
+#58 학생 단독 인증: account/controller → account/service/StudentAuthService → account/repository(StudentDeviceRepository, PairingRepository). PIN·자녀 잠금은 guardianship/service/StudentPinService → guardianship/repository/StudentPinRepository. 기능 간 repository 참조 없이 service로 연결한다. PIN 변경의 재인증 DB 소비·PIN 갱신·audit는 같은 트랜잭션이다. Redis 페어링은 DB 등록 전 단회 소비하며 실패 시 코드 재발급이 필요하다.

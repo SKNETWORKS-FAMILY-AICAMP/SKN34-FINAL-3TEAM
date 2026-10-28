@@ -1,4 +1,4 @@
-"""#40 consumer contracts distinguish planned #27 producers from implemented endpoints."""
+"""#40 public dashboard DTOs consume the implemented #27 contract."""
 from pathlib import Path
 import re
 import unittest
@@ -6,53 +6,63 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 
+class UniqueLoader(yaml.SafeLoader):
+    pass
+
+def unique_mapping(loader, node, deep=False):
+    result = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in result:
+            raise ValueError(f"duplicate YAML key: {key}")
+        result[key] = loader.construct_object(value_node, deep=deep)
+    return result
+
+UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, unique_mapping)
+
+def spec(name):
+    return yaml.load((ROOT / f'contracts/openapi/{name}-service.yaml').read_text('utf-8'), Loader=UniqueLoader)
 
 class DashboardContractTest(unittest.TestCase):
-    def test_seven_public_queries_and_six_planned_supplier_paths(self):
-        core = yaml.safe_load((ROOT / 'contracts/openapi/core-service.yaml').read_text('utf-8'))
-        learning = yaml.safe_load((ROOT / 'contracts/openapi/learning-service.yaml').read_text('utf-8'))
+    def test_public_queries_match_controller_and_provider_is_implemented_once(self):
+        core, learning = spec('core'), spec('learning')
         source = (ROOT / 'backend/core-service/src/main/kotlin/com/sagomungchi/core/learning/controller/DashboardController.kt').read_text('utf-8')
         paths = {p.removeprefix('/api/v1') for p in re.findall(r'@GetMapping\("([^"]+)"\)', source)}
         documented = {p for p, ops in core['paths'].items() if 'Dashboard' in ops.get('get', {}).get('tags', [])}
         self.assertEqual(paths, documented)
         self.assertEqual(len(paths), 7)
-        planned = [op for ops in learning['paths'].values() for op in ops.values() if op.get('x-implementation-status') == 'planned-issue-27']
-        self.assertEqual(len(planned), 6)
-        for op in planned:
-            params = {p['name'] for p in op['parameters']}
-            self.assertTrue({'studentId', 'X-User-Role', 'X-User-Id', 'X-Student-Scope', 'from', 'to'} <= params)
+        for suffix in ['home', 'attempts', 'thinking-activities', 'summary', 'thinking-types', 'attempts/{attemptId}']:
+            op = learning['paths']['/records/students/{studentId}/' + suffix]['get']
+            self.assertNotIn('x-implementation-status', op)
+        self.assertFalse(any(n.startswith('Dashboard') for n in learning['components']['schemas']))
+
+    def test_new_record_fields_and_private_draft_boundary(self):
+        core, learning = spec('core'), spec('learning')
+        for name in ['DashboardPublicAttempt', 'DashboardAttemptDetail', 'DashboardAttempt']:
+            shape = core['components']['schemas'][name]
+            self.assertTrue({'completedAt', 'hintUsages'}.issubset(shape['required']))
+            for field in ['completedAt', 'hintUsages']:
+                self.assertEqual(shape['properties'][field], learning['components']['schemas']['RecordAttempt']['properties'][field])
+        self.assertIn('createdAt', core['components']['schemas']['DashboardRecordReflection']['required'])
+        self.assertNotIn('createdAt', core['components']['schemas']['DashboardReflection']['required'])
         for name in ['DashboardPublicAttempt', 'DashboardAttemptDetail']:
             self.assertNotIn('draft', core['components']['schemas'][name]['properties'])
         self.assertIn('draft', core['components']['schemas']['DashboardAttempt']['properties'])
-        self.assertEqual(core['components']['schemas']['DashboardMetric'], learning['components']['schemas']['DashboardMetric'])
-        for path in ['/students/me/attempts', '/children/{childId}/attempts']:
-            params = {p['name']: p for p in core['paths'][path]['get']['parameters']}
-            self.assertEqual(params['size']['schema']['maximum'], 100)
-            self.assertEqual(params['status']['schema']['enum'], ['IN_PROGRESS', 'COMPLETED'])
+        self.assertEqual(learning['components']['schemas']['RecordHome']['properties']['resume']['oneOf'][0]['$ref'], '#/components/schemas/RecordAttempt')
+        self.assertNotIn('draft', learning['components']['schemas']['RecordAttempt']['properties'])
 
-    def test_frontend_consumers_keep_compatible_top_level_shapes(self):
-        source = (ROOT / 'frontend/web/src/data/parent/api.ts').read_text('utf-8')
-        for suffix in ['summary', 'thinking-types', 'attempts']:
-            self.assertIn('/' + suffix, source)
-        spec = yaml.safe_load((ROOT / 'contracts/openapi/core-service.yaml').read_text('utf-8'))
-        props = spec['components']['schemas']['DashboardAttemptDetail']['properties']
-        self.assertTrue({'attemptId', 'studentId', 'mission', 'answers', 'status', 'state', 'period'} <= props.keys())
+    def test_internal_identity_and_public_parent_mapping(self):
+        learning = spec('learning')
+        for name in ['RecordSummary', 'RecordThinkingTypes', 'RecordAttemptPage', 'RecordHome', 'RecordThinkingActivities']:
+            shape = learning['components']['schemas'][name]
+            self.assertIn('studentId', shape['required'])
+            self.assertNotIn('childId', shape['properties'])
+        core = spec('core')
+        for name in ['DashboardSummary', 'DashboardThinkingTypes', 'DashboardParentAttempts']:
+            self.assertIn('childId', core['components']['schemas'][name]['required'])
 
-
-    def test_internal_record_identity_is_independent_of_role(self):
-        spec = yaml.safe_load((ROOT / 'contracts/openapi/learning-service.yaml').read_text('utf-8'))
-        for name in ['DashboardSummary', 'DashboardThinkingTypes', 'DashboardStudentAttempts']:
-            self.assertIn('studentId', spec['components']['schemas'][name]['required'])
-            self.assertNotIn('childId', spec['components']['schemas'][name]['properties'])
-        response = spec['paths']['/records/students/{studentId}/attempts']['get']['responses']['200']['content']['application/json']['schema']
-        self.assertEqual(response, {'$ref': '#/components/schemas/DashboardStudentAttempts'})
-        self.assertEqual(spec['components']['schemas']['DashboardThinkingTypes']['properties']['items']['minItems'], 5)
-
-
-    def test_record_home_excludes_draft_while_public_student_home_retains_it(self):
-        spec = yaml.safe_load((ROOT / 'contracts/openapi/learning-service.yaml').read_text('utf-8'))
-        resume = spec['components']['schemas']['DashboardHomeRecords']['properties']['resume']
-        self.assertEqual(resume['anyOf'][0]['$ref'], '#/components/schemas/DashboardPublicAttempt')
-        core = yaml.safe_load((ROOT / 'contracts/openapi/core-service.yaml').read_text('utf-8'))
-        self.assertEqual(core['components']['schemas']['DashboardHome']['properties']['resume']['anyOf'][0]['$ref'], '#/components/schemas/DashboardAttempt')
-        self.assertEqual(core['components']['schemas']['DashboardHomeRecords'], spec['components']['schemas']['DashboardHomeRecords'])
+    def test_frontend_record_adapter_keeps_creation_time(self):
+        source = (ROOT / 'frontend/web/src/data/recordDto.ts').read_text('utf-8')
+        self.assertIn('createdAt: value.createdAt', source)
+        shape = spec('core')['components']['schemas']['DashboardAttemptDetail']['properties']
+        self.assertTrue({'attemptId', 'studentId', 'mission', 'answers', 'state', 'period'}.issubset(shape))

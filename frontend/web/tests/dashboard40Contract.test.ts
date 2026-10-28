@@ -72,3 +72,15 @@ test('학부모 상세는 타 자녀 응답과 알 수 없는 돌아보기 값�
   assert.equal(recordReflection(null), undefined)
   assert.deepEqual(recordReflection({ difficulty: 'HARD', text: '원문 그대로' }), { difficulty: '어려웠어', text: '원문 그대로' })
 })
+
+
+test('기록 추가 필드와 돌아보기 작성 시각은 표시 변환 후에도 보존된다', async (t) => {
+  const at = '2026-09-30T01:02:03Z'
+  t.mock.method(globalThis, 'fetch', async () => response({ ...attempt(1), state: 'OK', period,
+    completedAt: at, hintUsages: [{ openedAt: at }], reflection: { difficulty: 'NORMAL', text: null, createdAt: at } }))
+  const record = await parentApi.record(child.id, 'attempt-1', undefined, period)
+  assert.equal(record.completedAt, at)
+  assert.deepEqual(record.hintUsages, [{ openedAt: at }])
+  assert.deepEqual(record.reflection, { difficulty: '보통', text: '', createdAt: at })
+  assert.throws(() => recordReflection({ difficulty: 'NORMAL', text: null, createdAt: null }))
+})

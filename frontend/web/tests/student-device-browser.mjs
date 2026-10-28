@@ -43,13 +43,13 @@ async function parentIssue(p, kids = ['서윤'], pin = '4831') {
   await parentLogin(p)
   await p.goto(base + '/parent/devices', { waitUntil: 'domcontentloaded' })
   await p.getByRole('heading', { name: '자녀 PIN' }).waitFor()
-  await p.getByLabel('PIN 재확인 비밀번호').fill('demo-only')
-  await p.getByRole('button', { name: '본인 재확인' }).click()
-  await p.getByText('재확인을 완료했습니다', { exact: false }).waitFor()
   for (const kid of kids) {
+    await p.getByRole('button', { name: `${kid} Google 본인 확인` }).click()
+    await p.getByRole('button', { name: `${kid} 완료 확인` }).click()
+    await p.getByText('재확인을 완료했습니다', { exact: false }).first().waitFor()
     await p.getByLabel(`${kid} 새 PIN`, { exact: true }).fill(pin)
     await p.getByLabel(`${kid} 새 PIN 확인`).fill(pin)
-    await p.getByRole('form', { name: `${kid} PIN` }).getByRole('button').first().click()
+    await p.getByRole('form', { name: `${kid} PIN` }).getByRole('button', { name: /PIN 정하기|PIN 바꾸기|PIN 설정·변경/ }).click()
     await p.getByText(`${kid}의 PIN을 저장했습니다.`, { exact: false }).waitFor()
   }
   for (const label of ['서윤 · 초3', '도윤 · 초5'])

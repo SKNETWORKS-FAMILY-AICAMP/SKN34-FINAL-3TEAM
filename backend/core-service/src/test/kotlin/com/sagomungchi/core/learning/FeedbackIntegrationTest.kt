@@ -66,7 +66,7 @@ class FeedbackIntegrationTest : PostgresRepositoryTest() {
         val parent = auth.login(GoogleProfile(subject, "$subject@example.test", "합성 보호자"), null)
         user = parent.identity.account.id
         child = UUID.randomUUID()
-        jdbc.update("INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,created_at,updated_at) VALUES(?,'합성 학생',3,2017,false,'ACTIVE',now(),now())", child)
+        jdbc.update("INSERT INTO student(pin_failed_count,id,nickname,grade,birth_year,is_demo,status,created_at,updated_at) VALUES(0,?,'합성 학생',3,2017,false,'ACTIVE',now(),now())", child)
         jdbc.update("INSERT INTO guardianship(id,parent_user_id,student_id,method,status,linked_at) VALUES(?,?,?,'REGISTER','LINKED',now())", UUID.randomUUID(), user, child)
         listOf("TERMS", "PRIVACY", "GUARDIAN").forEach { kind ->
             val document = UUID.randomUUID(); documents.add(document)

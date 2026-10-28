@@ -55,7 +55,7 @@ class DashboardIntegrationTest : PostgresRepositoryTest() {
         val parent = auth.login(GoogleProfile(subject, "$subject@example.test", "테스트 보호자"), null)
         user = parent.identity.account.id
         child = UUID.randomUUID()
-        jdbc.update("INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,created_at,updated_at) VALUES(?,'테스트 학생',3,2017,false,'ACTIVE',now(),now())", child)
+        jdbc.update("INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,created_at,updated_at,pin_failed_count) VALUES(?,'테스트 학생',3,2017,false,'ACTIVE',now(),now(),0)", child)
         jdbc.update("INSERT INTO guardianship(id,parent_user_id,student_id,method,status,linked_at) VALUES(?,?,?,'REGISTER','LINKED',now())", UUID.randomUUID(), user, child)
         listOf("TERMS", "PRIVACY", "GUARDIAN").forEach { kind ->
             val document = UUID.randomUUID(); documents.add(document)
@@ -145,7 +145,7 @@ class DashboardIntegrationTest : PostgresRepositoryTest() {
 
     @Test fun `parent forwards only selected child from multiple authorized children and restores context`() {
         val other = UUID.randomUUID()
-        jdbc.update("INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,created_at,updated_at) VALUES(?,'other',3,2017,false,'ACTIVE',now(),now())", other)
+        jdbc.update("INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,created_at,updated_at,pin_failed_count) VALUES(?,'other',3,2017,false,'ACTIVE',now(),now(),0)", other)
         jdbc.update("INSERT INTO guardianship(id,parent_user_id,student_id,method,status,linked_at) VALUES(?,?,?,'REGISTER','LINKED',now())", UUID.randomUUID(), user, other)
         jdbc.queryForList("SELECT id FROM consent_document WHERE kind='GUARDIAN'").forEach { doc ->
             jdbc.update("INSERT INTO consent(id,document_id,subject_user_id,student_id,agreed,status,agreed_at) VALUES(?,?,?,?,true,'AGREED',now())", UUID.randomUUID(), doc["id"], user, other)
@@ -299,4 +299,23 @@ class DashboardIntegrationTest : PostgresRepositoryTest() {
             attemptJson().replace("\"version\":1,", "") else reply("home")) }
         call("GET", "/api/v1/students/me/home").andExpect(status().isBadGateway())
     }
+
+    @Test fun `record metadata survives parent serialization and home private draft composition`() {
+        val at = "2026-10-01T00:00:00Z"
+        val hint = "\"hintUsages\":[{\"openedAt\":\"$at\"}],\"completedAt\":null,"
+        stub.respond = { request -> LearningHttpStub.Reply(body = if (request.target.startsWith("/internal/attempts/"))
+            attemptJson() else reply("home").replace("\"answers\":[]", hint + "\"answers\":[]")) }
+        call("GET", "/api/v1/students/me/home").andExpect(status().isOk())
+            .andExpect(jsonPath("$.resume.hintUsages[0].openedAt").value(at))
+            .andExpect(jsonPath("$.resume.draft.content.memo").value("PRIVATE-MEMO"))
+        val payload = reply("detail").dropLast(1) +
+            ",\"completedAt\":\"$at\",\"hintUsages\":[{\"openedAt\":\"$at\"}],\"reflection\":{\"difficulty\":\"EASY\",\"text\":null,\"createdAt\":\"$at\"}}"
+        stub.respond = { LearningHttpStub.Reply(body = payload) }
+        call("GET", "/api/v1/children/$child/attempts/$attempt", bearer = parentToken()).andExpect(status().isOk())
+            .andExpect(jsonPath("$.reflection.createdAt").value(at))
+            .andExpect(jsonPath("$.completedAt").value(at))
+            .andExpect(jsonPath("$.hintUsages[0].openedAt").value(at))
+            .andExpect(jsonPath("$.draft").doesNotExist())
+    }
+
 }

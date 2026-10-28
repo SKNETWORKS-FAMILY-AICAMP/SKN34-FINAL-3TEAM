@@ -16,8 +16,8 @@ class RecordExistsContractTest(unittest.TestCase):
             prefix=re.search(r'^@RequestMapping\("([^"]*)"\)',text,re.M)
             for method,path in re.findall(r'@(Get|Post|Put|Delete)Mapping(?:\("([^"]*)"\))?',text):
                 actual.add((method.lower(),((prefix[1] if prefix else '')+path).removeprefix('/internal')))
-        documented={(method,path) for path,methods in self.spec['paths'].items() for method, operation in methods.items() if not operation.get('x-implementation-status')}
-        self.assertEqual(len(actual),12)
+        documented={(method,path) for path,methods in self.spec['paths'].items() for method in methods}
+        self.assertEqual(len(actual),21)
         self.assertEqual(actual,documented)
     def test_producer_and_consumer_use_the_same_path(self):
         path='/records/students/{studentId}/exists'
@@ -26,7 +26,7 @@ class RecordExistsContractTest(unittest.TestCase):
         consumer=(ROOT/'backend/core-service/src/main/kotlin/com/sagomungchi/core/learning/client/LearningRecordClient.kt').read_text(encoding='utf-8')
         self.assertIn('@GetMapping("/internal'+path+'")',producer)
         self.assertIn('/records/students/$studentId/exists',consumer)
-        # #40 also consumes planned dashboard queries; exists retains its narrow contract.
+        # #40 consumes implemented dashboard queries; exists retains its narrow contract.
     def test_guardianship_calls_learning_service_without_cross_feature_client_access(self):
         source=(ROOT/'backend/core-service/src/main/kotlin/com/sagomungchi/core/guardianship/service/GuardianshipService.kt').read_text(encoding='utf-8')
         self.assertIn('core.learning.service.LearningRecordService',source)

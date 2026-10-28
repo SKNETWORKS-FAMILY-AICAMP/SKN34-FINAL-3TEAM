@@ -54,7 +54,8 @@ class LearningRecordClient(private val client: LearningClient, private val json:
                     if (privateAttempt.path("status").asText() != "IN_PROGRESS" ||
                         !draft.path("version").isIntegralNumber || draft.path("version").asLong() < 0 ||
                         !draft.path("content").path("memo").isTextual || !draft.path("content").path("answer").isObject) invalid()
-                    body.set<JsonNode>("resume", privateAttempt)
+                    // Keep the record provider's completedAt/hintUsages/reflection metadata.
+                    (resume as ObjectNode).set<JsonNode>("draft", draft)
                 }
                 body.remove("studentId")
                 body.set<JsonNode>("student", json.valueToTree(child))

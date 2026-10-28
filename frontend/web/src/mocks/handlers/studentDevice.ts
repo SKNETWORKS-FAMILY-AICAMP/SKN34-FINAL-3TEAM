@@ -14,7 +14,7 @@ import {
   persistDeviceState,
 } from '../fixtures/studentDevice.ts'
 import { respond, startDeviceStudentSession } from './student.ts'
-import { fail, page, parentChild, parentGuard, requireReauth, mockChildConsentMetadata } from './parent.ts'
+import { fail, page, parentChild, parentGuard, consumePinReauth, mockChildConsentMetadata } from './parent.ts'
 
 // 학생 기기 등록·PIN 로그인 목 (API 명세 2.1, 3.11). 실제 서버 계약과 같은 경로·오류 코드를 쓴다.
 const save = async <T,>(action: () => Promise<T>, status = 200) =>
@@ -46,7 +46,6 @@ export const studentDeviceHandlers = [
   http.put('/api/v1/children/:childId/pin', ({ request, params }) =>
     save(async () => {
       const c = await parentChild(request, String(params.childId))
-      requireReauth(request)
       const { pin } = (await request.json()) as { pin: string }
       const problem = pinProblem(String(pin ?? ''))
       if (problem)
@@ -56,7 +55,9 @@ export const studentDeviceHandlers = [
           title: problem,
           errors: [{ field: 'pin', reason: problem }],
         })
-      deviceState.pins[c.id] = { hash: await hashPin(c.id, pin), failed: 0, locked: false }
+      const hash = await hashPin(c.id, pin)
+      consumePinReauth(request, c.id)
+      deviceState.pins[c.id] = { hash, failed: 0, locked: false }
       return undefined
     }, 204),
   ),
@@ -143,7 +144,7 @@ export const studentDeviceHandlers = [
         d.childIds
           .map((id) => owned.find((c) => c.id === id))
           .filter((c) => !!c)
-          .map((c) => ({ childId: c.id, nickname: c.nickname, pinSet: !!deviceState.pins[c.id], locked: !!deviceState.pins[c.id]?.locked })),
+          .map((c) => ({ childId: c.id, nickname: c.nickname, pinSet: !!deviceState.pins[c.id], pinLocked: !!deviceState.pins[c.id]?.locked })),
       )
     }),
   ),

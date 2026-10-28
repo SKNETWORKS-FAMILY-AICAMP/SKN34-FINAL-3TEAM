@@ -33,8 +33,11 @@ class GuardianshipRecordsTest {
     private val students=List(3) { LinkedStudent(UUID.randomUUID(),"child-$it",3,2017) }
     private val access=mock(StudentAccessService::class.java)
     private val consent=mock(ConsentAccessService::class.java)
+    private val pins=mock(com.sagomungchi.core.guardianship.service.StudentPinService::class.java).also { mock ->
+        students.forEach { `when`(mock.state(it.id)).thenReturn(com.sagomungchi.core.guardianship.domain.PinState(false,false)) }
+    }
     private fun guardianship(records: LearningRecordService) = GuardianshipService(mock(StudentAccessRepository::class.java),access,
-        mock(AccountAccessService::class.java),mock(ConsentService::class.java),consent,records)
+        mock(AccountAccessService::class.java),mock(ConsentService::class.java),consent,records,pins)
     private fun records(stub: LearningHttpStub) = LearningRecordService(LearningRecordClient(LearningClient(
         InternalRestClientFactory(AppProperties(AppProperties.Internal("server-secret",Duration.ofSeconds(1),Duration.ofSeconds(30)),
             mapOf("learning" to stub.url)),RestClient.builder()),LearningHttpProperties(Duration.ofSeconds(10))),jacksonObjectMapper()),

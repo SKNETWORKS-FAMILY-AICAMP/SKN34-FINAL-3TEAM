@@ -1,6 +1,6 @@
 # #40 학생·학부모 대시보드 조회
 
-> 현재 계약과 재검증은 아래 **#40 재리뷰** 절을 따른다. 초기 검증 수치는 당시 실행 이력이다.
+> 현재 계약과 재검증은 아래 **#27 실제 공급자 통합** 절을 따른다. 초기 검증 수치는 당시 실행 이력이다.
 
 ## 기준 및 범위
 
@@ -95,3 +95,35 @@
 - 최종 JAR SHA-256: `c4f11b89a7af84157300ed216ee46db4c9d4ca74b8831325675ad53083e3ceeb`. 검증 컨테이너의 수정 클라이언트와 worktree 소스 바이트 일치를 확인했다.
 - HTTP 대역은 records 응답과 기존 학생 attempt 상세 응답 모두에 사용했다. 실제 learning 대시보드·실제 두 learning API의 연결·브라우저 E2E·배포는 검증하지 않았다. #27은 open이며 새 내부 계약은 공급자 확인/구현 대기 상태다.
 - 새 production 의존성·마이그레이션·#44 notification·#58 PIN/기기/재인증 구현은 추가/변경하지 않았다. 기존 커밋은 보존하고 같은 feature 브랜치에 후속 커밋한다. PR은 생성하지 않는다.
+
+
+## #27 실제 공급자 통합 (2026-10-28)
+
+- 같은 feature/core-dashboard-queries에서 origin/develop b344797(PR #105)을 merge한다. #44·#58·비용 집계 수정 등 develop의 병합된 코드를 보존한다. 기존 작업 커밋을 squash/rebase하지 않는다.
+- learning OpenAPI는 #27의 실제 21개 경로·Record 스키마 하나로 통합하고 planned-issue-27 경로·중복 Dashboard 스키마를 제거한다. api-spec의 공급자 기록 절은 #27 정의를 유지한다.
+- core 공개 Dashboard 시도·상세 및 홈 resume에 completedAt·hintUsages와 기록 reflection.createdAt을 보존한다. thinking-activities의 reflection은 공급자의 기본 Reflection(difficulty/text)이며 createdAt을 강제하지 않는다.
+- 프론트 표시 어댑터는 새 필드를 보존한다. 홈은 records resume를 전체 교체하지 않고, 검증된 학생 전용 상세에서 draft만 조합해 기록 메타데이터 유실을 막는다.
+- 실제 core/learning JAR·분리된 폐기 가능 DB·합성 fixture로 검증한다. 공유 compose·기존 DB는 사용하지 않으며 AI/Google 실호출은 범위 밖이다. 실행 결과는 최종 검증 후 기록한다.
+
+
+### Docker 중단 당시 진행 기록
+
+- scripts/tests 58개 통과, core·learning OpenAPI 3.1 검사 통과. 프론트 테스트 80개·build·변경 DTO lint 통과(기존 번들 크기 경고).
+- backend 검증은 Docker Desktop 자원 경합으로 순차 실행으로 조정했다. learning production compile/bootJar 및 테스트 실행 단계까지 확인했지만, 이후 Docker Desktop API가 반복적으로 500을 반환하고 조회 명령이 멈춰 최종 결과를 수집하지 못했다. core 전체 테스트와 실제 core→learning 연결 결과도 아직 확정하지 않았다.
+- 실제 연결 스크립트 scripts/verify_dashboard_learning.py를 작성했고, 전용 PostgreSQL/Redis/RabbitMQ·Python/JDK 런타임을 준비했다. 실제 연결 성공으로 보고하지 않는다.
+- Docker 복구 후 backend 결과 수집/필요한 재실행과 실제 연결 검증을 마친 뒤에만 merge 커밋·push한다. 공유 Docker 재시작은 다른 채팅/서비스에 영향을 줄 수 있어 사용자 확인을 요청했다.
+
+
+### #27 통합 최종 검증 (2026-10-28)
+
+- Docker 복구 후 core의 중단 로그에서 Redis 의존성 Maven DNS 실패를 확인했다. 검증된 #58 Gradle modules 캐시를 읽기 전용으로 복제해 core는 offline으로 재실행했다. 공유 Docker/서비스는 임의 재시작하지 않았다.
+- core 전체 205개 실행 중 20개 실패: DashboardIntegrationTest 13개는 #58 V13의 필수 pin_failed_count를 누락한 기존 #40 fixture였다. 합성 학생 INSERT 두 곳에 0을 넣어 13개 모두 재검증 통과. LlmUsageQueryTest 7개는 여러 Spring 테스트 컨텍스트가 공유하는 폐기 PostgreSQL의 연결 수 한도 초과였으며 별도 테스트 JVM에서 7개 모두 통과했다. production 풀 설정은 변경하지 않았다.
+- 최종 core 고유 **205개 통과**, 실패·오류·생략 0(전체 실행 + 실패 범위 재검증 합산). core bootJar 성공. 모든 테스트를 최종 소스에서 한 번에 통과시킨 것으로 표현하지 않는다.
+- learning 전체 **183개 통과**, 실패·오류·생략 0, bootJar 성공. learning production 소스는 develop b344797의 #27 구현을 그대로 사용했다.
+- scripts/tests **58개 통과**, core·learning OpenAPI 3.1 검사 및 git diff --check 통과. 프론트 **80개 통과**, build·변경 DTO lint 성공(기존 번들 크기 경고).
+- 실제 core/learning JAR + 전용 PostgreSQL 두 DB·Redis·RabbitMQ를 scripts/verify_dashboard_learning.py로 실행해 **9개 시나리오 통과**. Google identity/과거 시각은 합성 SQL fixture이며, 동의·자녀 등록·학생 진입·미션 시작·초안·답변 제출과 7개 공개 조회는 실제 HTTP를 사용했다. AI 호출은 하지 않았다.
+- 실제 검증: 빈 기록/기본 KST 기간, 제출 전 초안 이어하기와 메타데이터 보존, 과거 목록의 종료일 경계와 상세 전체 이력, 5건 집계·페이지·status·다섯 유형, 인증·타 자녀·날짜·페이지·내부 scope, 비활성/연결 해제/동의 철회 거부, 실제 learning 접근 로그의 단일 parent scope·trace, learning 프로세스 중단 시 503 LEARNING_UNAVAILABLE 전달. 성공 응답은 공개 OpenAPI 스키마로 검사했고 학부모 응답의 draft/memo·메모 원문 미노출을 재귀 검사했다.
+- 실제 core 상세 응답을 Node의 recordDto에 입력해 reflection.createdAt·hintUsages 보존도 통과했다. 브라우저 E2E·Google/AI 실호출·배포는 미검증이다.
+- 실제 연결 첫 실행은 부하 상황의 Redis 초기 연결 2초 제한으로 core 기동이 실패했다. 검증 실행에만 Redis connect/read timeout 30초를 지정하고 새 폐기 DB에서 재실행해 통과했다. production Redis 설정이나 core→learning timeout은 변경하지 않았다.
+- 실제 검증 JAR SHA-256: core `1f5bb658e8a8e72af32f19e557343e87274c24ddf0288a11a4350ec9ff99cd69`, learning `204400babbc545ca5149b9f8e8779e627595a40880b72910789ff92e5bf911b8`. 검증한 production client와 worktree 소스가 바이트 단위로 일치했다.
+- 기존 #40 두 커밋을 보존하고 develop b344797과의 merge 커밋으로 통합한다. PR은 생성하지 않는다. 이전의 #27 공급자 대기 상태는 이번 통합으로 해소됐다.
