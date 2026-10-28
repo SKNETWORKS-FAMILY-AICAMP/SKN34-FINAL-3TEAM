@@ -10,7 +10,8 @@ learning-service의 `/internal/records/*`·`/internal/stats`(학부모 대시보
 |---|---|---|---|
 | [api-spec 4.1](../design/api-spec.md) | 경로 6개와 한 줄 설명 | 경로마다 응답 모양(3.9·3.4·1.6 형식), 지표 4개, 시도 상세 경로 추가, 기록 조회 공통(역할·범위·KST 기간·기본 7일·집계 대상·상태·메모 제외) | 이슈 지침 "API 계약 변경이 필요하면 api-spec 먼저". core가 응답을 그대로 프록시(sequence-diagram 4)하므로 learning 응답이 곧 학부모 화면 계약 |
 | [class-diagram 4.3](../design/class-diagram.md) | `countAttempts`·`findAttemptsWithTimeline`, `Metric.count(label, count, period)`, `RecordService --> RecordRepository`만, 구현 상태 "미구현" | `findEligible`·`findAnswerPairs`·`isRecorded`·`findEvidence`·`stats`, `attempt(studentId, attemptId)`, `Metric.count(label, count, formula, period)`, `RecordService --> AttemptService : 기록 목록·상세`, 처리 설명, 구현 상태 | 아래 "사용자 결정"·"설계와 다른 점" |
-| [contracts/openapi/learning-service.yaml](../../contracts/openapi/learning-service.yaml) | 기록 경로는 `exists`만 | 기록 경로 7개(요약·유형·목록·상세·전후 변화·근거·운영 집계)와 스키마(`Metric`·`QueryState`·`RecordPeriod`·`RecordAttempt` 등) | #92(D6) 대조 테스트가 learning 컨트롤러 경로와 yaml 경로가 같아야 통과. 경로 수 12 → 19 |
+| [contracts/openapi/learning-service.yaml](../../contracts/openapi/learning-service.yaml) | 기록 경로는 `exists`만 | 기록 경로 7개(요약·유형·목록·상세·전후 변화·근거·운영 집계)와 스키마(`Metric`·`QueryState`·`RecordPeriod`·`RecordAttempt` 등) | #92(D6) 대조 테스트가 learning 컨트롤러 경로와 yaml 경로가 같아야 통과. 경로 수 12 → 19. 맨 위 설명의 역할 문구(기록 조회 PARENT·STUDENT·SYSTEM, 운영 집계 ADMIN·SYSTEM)도 갱신 |
+| api-spec 5.4(#37 기록 존재 확인) | "#27 전체 목록·상세·통계 API는 별도 범위다" | #27에서 4.1 "기록 조회"로 추가했다(같은 실패·삭제 제외 기준) | 구현됨 |
 
 ## 사용자 결정 (10/28, 설계와 다르게 한 것은 모두 확인받음)
 
