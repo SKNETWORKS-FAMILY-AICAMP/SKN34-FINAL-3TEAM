@@ -1,0 +1,171 @@
+/* 학생 기기 로그인·PIN 키패드 (#59). 저학년 터치 기준: 버튼 64px 이상, 글자 24px 이상 */
+#class-journal .pin-pad {
+  display: grid;
+  gap: 14px;
+  justify-items: center;
+}
+#class-journal .pin-dots {
+  display: flex;
+  gap: 14px;
+  min-height: 24px;
+}
+#class-journal .pin-dots span {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--cj-ink);
+  background: var(--cj-white);
+}
+#class-journal .pin-dots span.on {
+  background: var(--cj-ink);
+}
+#class-journal .pin-dots span.optional {
+  border-style: dashed;
+  border-color: var(--cj-muted);
+}
+#class-journal .pin-help {
+  margin: 0;
+  color: var(--cj-muted);
+  font-size: 15px;
+}
+#class-journal .pin-keys {
+  display: grid;
+  grid-template-columns: repeat(3, 72px);
+  gap: 12px;
+}
+#class-journal .pin-keys button {
+  height: 72px;
+  border-radius: 18px;
+  border: 2px solid var(--cj-line);
+  background: var(--cj-white);
+  color: var(--cj-ink);
+  font-size: 28px;
+  font-weight: 700;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+#class-journal .pin-keys button:hover:not(:disabled) {
+  border-color: var(--cj-green);
+}
+#class-journal .pin-keys button:focus-visible {
+  outline: 3px solid var(--cj-pencil);
+  outline-offset: 2px;
+}
+#class-journal .pin-keys button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+#class-journal .pin-keys .pin-back {
+  font-size: 13px;
+  gap: 2px;
+}
+#class-journal .pin-keys .pin-back svg {
+  width: 22px;
+  height: 22px;
+}
+#class-journal .pin-keys .pin-ok {
+  background: var(--cj-green);
+  border-color: var(--cj-green);
+  color: #fff;
+  font-size: 20px;
+}
+
+/* 자녀 기기 화면 */
+#class-journal .device-login {
+  min-height: calc(100vh - 40px);
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+#class-journal .device-card {
+  width: min(560px, 100%);
+  background: var(--cj-paper);
+  border: 1px solid var(--cj-line);
+  border-radius: 24px;
+  padding: 28px;
+  display: grid;
+  gap: 18px;
+}
+#class-journal .device-card h1 {
+  margin: 0;
+  font-size: 28px;
+}
+#class-journal .device-card .lead {
+  margin: 0;
+  color: var(--cj-muted);
+}
+#class-journal .device-profiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+#class-journal .device-profiles button {
+  min-height: 120px;
+  border-radius: 20px;
+  border: 2px solid var(--cj-line);
+  background: var(--cj-white);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--cj-ink);
+  cursor: pointer;
+  display: grid;
+  gap: 6px;
+  place-items: center;
+  padding: 12px;
+}
+#class-journal .device-profiles button small {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--cj-muted);
+}
+#class-journal .device-profiles button:hover {
+  border-color: var(--cj-green);
+}
+#class-journal .device-code {
+  font-size: 28px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-align: center;
+  padding: 12px;
+  border-radius: 14px;
+  border: 2px solid var(--cj-line);
+}
+#class-journal .device-notice {
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: var(--cj-light);
+  color: var(--cj-dark);
+}
+#class-journal .device-notice.warn {
+  background: #fff6dc;
+  color: #6d4a05;
+}
+#class-journal .device-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+/* 학부모 기기·PIN 관리 */
+#class-journal .pairing-code {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: center;
+}
+#class-journal .pairing-code strong {
+  font-size: 34px;
+  letter-spacing: 0.16em;
+}
+#class-journal .pairing-code img {
+  width: 168px;
+  height: 168px;
+  border: 1px solid var(--cj-line);
+  border-radius: 12px;
+  background: #fff;
+}
+#class-journal .pin-pad:focus {
+  outline: none;
+}

@@ -2,13 +2,14 @@ import { http, HttpResponse } from 'msw/http'
 import { ApiError } from '../../data/apiClient.ts'
 import { counts } from '../../domain/classroom.ts'
 import type { Child, Period } from '../../domain/classroom.ts'
-import type { Consent, ConsentDocument, Conversation, Scope } from '../../domain/parent.ts'
+import type { Consent, ConsentDocument, ConsentHistory, Conversation, Scope } from '../../domain/parent.ts'
 import { validPeriod } from '../../domain/parent.ts'
 import { fixtureStore as store } from '../fixtures/student.ts'
 import {
   mockAccounts,
   mockIdentity,
   mockAccountChildren,
+  mockConsentHistory, mockConsentRequired, mockGuardianConsentRequired,
   workspaceScenario as mode,
 } from '../fixtures/accounts.ts'
 import {
@@ -32,12 +33,14 @@ export function parentGuard(request: Request) {
   guard(request)
   if (store.snapshot().session?.role !== 'PARENT')
     fail('FORBIDDEN', '학부모 권한이 필요합니다.', 403)
+  if (!new URL(request.url).pathname.startsWith('/api/v1/me/consents') && mockConsentRequired())
+    fail('CONSENT_REQUIRED', '필수 동의를 먼저 완료해 주세요.', 403)
 }
 export async function parentChild(request: Request, id: string) {
   parentGuard(request)
   if (mode === 'unlinked') fail('CHILD_NOT_LINKED', '연결되지 않은 자녀입니다.', 403)
   const c = (await store.children()).find((c) => c.id === id)
-  if (!c) fail('CHILD_NOT_LINKED', '연결되지 않은 자녀입니다.', 403)
+  if (!c || mockGuardianConsentRequired(id)) fail('CHILD_NOT_LINKED', '연결 또는 법정대리인 동의를 확인해 주세요.', 403)
   return c!
 }
 const docs: ConsentDocument[] = [
@@ -67,6 +70,27 @@ const docs: ConsentDocument[] = [
     required: true,
   },
 ]
+function fixtureConsent(document: ConsentDocument, studentId: string | null = null, agreed = true): ConsentHistory {
+  const now = new Date().toISOString()
+  return { consentId: `msw-consent-${crypto.randomUUID()}`, subjectUserId: mockIdentity.userId, studentId,
+    document, agreed, status: agreed ? 'AGREED' : 'WITHDRAWN', agreedAt: now, withdrawnAt: agreed ? null : now }
+}
+async function consentRows() {
+  let rows = mockConsentHistory.get(mockIdentity.email)
+  if (!rows) {
+    // Existing demo accounts/children are explicitly pre-consented synthetic fixtures.
+    rows = docs.filter((d) => d.kind !== 'GUARDIAN').map((d) => fixtureConsent(d))
+    for (const c of await store.children()) rows.push(fixtureConsent(docs.find((d) => d.kind === 'GUARDIAN')!, c.id))
+    mockConsentHistory.set(mockIdentity.email, rows)
+  }
+  return rows
+}
+export function mockChildConsentMetadata(c: Child) {
+  const blocked = mockGuardianConsentRequired(c.id)
+  const hasRecords = store.snapshot().attempts.some((a) => a.studentId === c.id && a.answers.some((v) => v.feedback.status !== 'FAILED'))
+  return { ...c, guardianConsentRequired: blocked, hasRecords: blocked ? null : hasRecords,
+    recordState: blocked ? 'CONSENT_REQUIRED' as const : 'AVAILABLE' as const }
+}
 function consentCheck(consents: Consent[], guardian = false) {
   for (const d of docs.filter((d) => (guardian ? d.kind === 'GUARDIAN' : d.kind !== 'GUARDIAN')))
     if (
@@ -110,7 +134,7 @@ function evidenceResponse(items: ReturnType<typeof evidence>) {
 const downloadTickets = new Map<string, { file: string; childId: string; expires: number }>()
 let reauthToken = '',
   reauthExpires = 0
-function requireReauth(request: Request) {
+export function requireReauth(request: Request) {
   if (
     !reauthToken ||
     Date.now() > reauthExpires ||
@@ -239,6 +263,36 @@ function streamMessage(
 }
 export const parentHandlers = [
   http.get('/api/v1/consent-documents', () => HttpResponse.json(page(docs))),
+  http.get('/api/v1/me/consents', ({ request }) => respond(async () => {
+    parentGuard(request)
+    return page(await consentRows())
+  })),
+  http.post('/api/v1/me/consents', ({ request }) => respond(async () => {
+    parentGuard(request)
+    const d = await request.json() as { childId?: string; consents: Consent[] }
+    if (d.childId && !(await store.children()).some((c) => c.id === d.childId)) fail('CHILD_NOT_LINKED', '연결되지 않은 자녀입니다.', 403)
+    const expected = docs.filter((doc) => d.childId ? doc.kind === 'GUARDIAN' : doc.kind !== 'GUARDIAN')
+    if (d.consents.some((c) => !expected.some((doc) => doc.documentId === c.documentId && doc.version === c.version)))
+      fail('CONSENT_DOCUMENT_CHANGED', '현재 문서를 다시 확인해 주세요.', 409)
+    if (d.consents.length !== expected.length || new Set(d.consents.map((c) => c.documentId)).size !== d.consents.length)
+      fail('VALIDATION_FAILED', '동의 항목을 확인해 주세요.')
+    consentCheck(d.consents, !!d.childId)
+    const rows = await consentRows()
+    const selected = expected.map((doc) => {
+      const agreed = d.consents.find((c) => c.documentId === doc.documentId)!.agreed
+      const current = rows.find((c) => c.document.documentId === doc.documentId && c.studentId === (d.childId ?? null))
+      if (current && current.agreed === agreed && current.status === (agreed ? 'AGREED' : 'WITHDRAWN')) return current
+      const entry = fixtureConsent(doc, d.childId ?? null, agreed); rows.unshift(entry); return entry
+    })
+    return page(selected)
+  })),
+  http.post('/api/v1/me/consents/:consentId/withdrawal', ({ request, params }) => respond(async () => {
+    parentGuard(request)
+    const entry = (await consentRows()).find((c) => c.consentId === params.consentId)
+    if (!entry) fail('FORBIDDEN', '본인의 동의만 철회할 수 있습니다.', 403)
+    if (entry!.status !== 'WITHDRAWN') { entry!.status = 'WITHDRAWN'; entry!.withdrawnAt = new Date().toISOString() }
+    return entry!
+  })),
   http.post('/api/v1/auth/signup', ({ request }) =>
     respond(async () => {
       const d = (await request.json()) as {
@@ -254,6 +308,7 @@ export const parentHandlers = [
       mockAccounts.add(d.email)
       mockIdentity.name = d.name
       mockAccountChildren.set(d.email, [])
+      mockConsentHistory.set(d.email, docs.filter((doc) => doc.kind !== 'GUARDIAN').map((doc) => fixtureConsent(doc)))
       return { userId: crypto.randomUUID() }
     }, 201),
   ),
@@ -264,7 +319,7 @@ export const parentHandlers = [
       return page(
         mode === 'no-children'
           ? []
-          : (await store.children()).map((c) => ({ ...c, childId: c.id })),
+          : (await store.children()).map((c) => ({ ...mockChildConsentMetadata(c), childId: c.id })),
       )
     }),
   ),
@@ -286,6 +341,7 @@ export const parentHandlers = [
         d.birthYear > 2026
       )
         fail('VALIDATION_FAILED', '별명·지원 학년·출생연도를 확인해 주세요.')
+      const rows = await consentRows()
       const c: Child = {
         id: crypto.randomUUID(),
         nickname: d.nickname,
@@ -293,6 +349,7 @@ export const parentHandlers = [
         birthYear: d.birthYear,
         plan: 'FREE',
       }
+      rows.unshift(fixtureConsent(docs.find((doc) => doc.kind === 'GUARDIAN')!, c.id))
       store.replaceChildren([...children, c])
       mockAccountChildren.set(mockIdentity.email, structuredClone([...children, c]))
       return c

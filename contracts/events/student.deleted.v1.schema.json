@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "student.deleted.v1.schema.json",
+  "title": "student.deleted v1 data",
+  "type": "object",
+  "required": [
+    "studentId",
+    "deletionRequestId",
+    "scope"
+  ],
+  "properties": {
+    "studentId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "deletionRequestId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "scope": {
+      "enum": [
+        "PROFILE",
+        "RECORDS"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

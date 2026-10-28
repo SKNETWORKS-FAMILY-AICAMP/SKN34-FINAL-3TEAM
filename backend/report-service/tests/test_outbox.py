@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 from pamqp.commands import Basic
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.database import transaction
 from app.messaging.envelope import EventEnvelope
@@ -38,6 +38,17 @@ def test_confirm_precedes_published_timestamp(report_factory, report_student_id)
     class Publisher:
         async def publish(self, event):
             assert rows(report_factory)[0]["published_at"] is None
+            with report_factory() as session:
+                assert (
+                    session.scalar(
+                        text(
+                            "SELECT count(*) FROM pg_stat_activity "
+                            "WHERE datname=current_database() "
+                            "AND pid<>pg_backend_pid() AND state LIKE 'idle in transaction%'"
+                        )
+                    )
+                    == 0
+                )
             delivered.append(event)
 
     async def scenario():
@@ -118,6 +129,27 @@ def test_two_relays_do_not_publish_one_locked_row_twice(report_factory, report_s
 def pending():
     event_id = uuid4()
     return PendingEvent(event_id, "test.synthetic", {"id": str(event_id), "data": {"test": True}})
+
+
+def test_cancelled_publication_releases_claim(report_factory, report_student_id):
+    seed(report_factory, report_student_id)
+
+    async def scenario():
+        entered = asyncio.Event()
+
+        class Stalled:
+            async def publish(self, event):
+                entered.set()
+                await asyncio.Event().wait()
+
+        task = asyncio.create_task(OutboxRelay(report_factory, Stalled()).publish_once())
+        await asyncio.wait_for(entered.wait(), 5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert await OutboxRelay(report_factory, AsyncMock()).publish_once()
+
+    asyncio.run(scenario())
 
 
 class FakeAmqp:

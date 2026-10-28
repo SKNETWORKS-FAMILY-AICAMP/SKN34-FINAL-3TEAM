@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.learning.mission.repository.MissionMapper">
+    <resultMap id="mission" type="com.sagomungchi.learning.mission.domain.MissionView">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="sort_order" javaType="_int"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="subject" javaType="java.lang.String"/>
+            <arg column="grade_min" javaType="_int"/>
+            <arg column="grade_max" javaType="_int"/>
+            <arg column="thinking_type" javaType="com.sagomungchi.learning.mission.domain.ThinkingType"/>
+            <arg column="input_type" javaType="com.sagomungchi.learning.mission.domain.InputType"/>
+            <arg column="question" javaType="java.lang.String"/>
+            <arg column="guide" javaType="java.lang.String"/>
+            <arg column="scene_uri" javaType="java.lang.String"/>
+            <arg column="static_scene_uri" javaType="java.lang.String"/>
+            <arg column="choices" javaType="java.util.List"
+                 typeHandler="com.sagomungchi.learning.mission.repository.ChoiceListTypeHandler"/>
+            <arg column="input_template" javaType="java.util.List"
+                 typeHandler="com.sagomungchi.learning.mission.repository.StringListTypeHandler"/>
+            <arg column="demo_only" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="snapshot" type="com.sagomungchi.learning.mission.domain.MissionSnapshot">
+        <constructor>
+            <arg column="current_version_id" javaType="java.util.UUID"/>
+            <arg column="current_rubric_version_id" javaType="java.util.UUID"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="hint" type="com.sagomungchi.learning.mission.domain.HintQuestion">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="seq" javaType="_int"/>
+            <arg column="content" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="rubric" type="com.sagomungchi.learning.mission.repository.RubricHeader">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="mission_label" javaType="java.lang.String"/>
+            <arg column="rubric_label" javaType="java.lang.String"/>
+            <arg column="answer_key" javaType="com.sagomungchi.learning.mission.domain.AnswerKey"
+                 typeHandler="com.sagomungchi.learning.mission.repository.AnswerKeyTypeHandler"/>
+            <arg column="example_answer" javaType="java.lang.String"/>
+            <arg column="forbidden_terms" javaType="java.util.List"
+                 typeHandler="com.sagomungchi.learning.mission.repository.StringListTypeHandler"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="rubricElement" type="com.sagomungchi.learning.mission.domain.RubricElement">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="code" javaType="java.lang.String"/>
+            <arg column="label" javaType="java.lang.String"/>
+            <arg column="description" javaType="java.lang.String"/>
+            <arg column="points" javaType="_int"/>
+            <arg column="common_errors" javaType="java.util.List"
+                 typeHandler="com.sagomungchi.learning.mission.repository.StringListTypeHandler"/>
+            <arg column="good_thought" javaType="_boolean"/>
+            <arg column="judge_verified" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="attempt" type="com.sagomungchi.learning.mission.repository.MissionAttempt">
+        <constructor>
+            <arg column="mission_id" javaType="java.util.UUID"/>
+            <arg column="id" javaType="java.util.UUID"/>
+            <arg column="status" javaType="com.sagomungchi.learning.mission.domain.ProgressStatus"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 공개 미션의 현재 버전만 (정답·예시 답·기준표 컬럼은 읽지 않음). 선택지·입력 틀이 없으면 빈 배열.
+         시연 전용 여부는 MissionView.isOpenTo가 판단 -->
+    <sql id="missionColumns">
+        SELECT m.id, m.sort_order, v.title, v.subject, v.grade_min, v.grade_max,
+               v.thinking_type, v.input_type, v.question, v.guide, v.scene_uri, v.static_scene_uri,
+               COALESCE(v.choices, '[]'::jsonb) AS choices,
+               COALESCE(v.input_template, '[]'::jsonb) AS input_template, m.demo_only
+    </sql>
+
+    <sql id="publishedCurrentVersion">
+        <include refid="missionColumns"/>
+        FROM mission m
+        JOIN mission_version v ON v.id = m.current_version_id
+        WHERE m.status = 'PUBLISHED'
+    </sql>
+
+    <select id="findPublished" resultMap="mission">
+        <include refid="publishedCurrentVersion"/>
+        ORDER BY m.sort_order, m.id
+    </select>
+
+    <select id="findPublishedById" resultMap="mission">
+        <include refid="publishedCurrentVersion"/>
+        AND m.id = #{id}
+    </select>
+
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM mission WHERE id = #{id})
+    </select>
+
+    <select id="findCurrentVersions" resultMap="snapshot">
+        SELECT current_version_id, current_rubric_version_id
+        FROM mission
+        WHERE id = #{id} AND current_version_id IS NOT NULL AND current_rubric_version_id IS NOT NULL
+    </select>
+
+    <!-- 시도에 고정된 버전. 공개 중단·새 버전 공개 뒤에도 진행 중 시도는 이 버전을 보여 줌 (state-diagram 3.1) -->
+    <select id="findVersion" resultMap="mission">
+        <include refid="missionColumns"/>
+        FROM mission_version v
+        JOIN mission m ON m.id = v.mission_id
+        WHERE v.id = #{missionVersionId}
+    </select>
+
+    <select id="findHintQuestions" resultMap="hint">
+        SELECT id, seq, content FROM hint_question WHERE rubric_version_id = #{rubricVersionId} ORDER BY seq
+    </select>
+
+    <!-- 판정용 (정답 키·예시 답 포함, 학생 응답에 쓰지 않음). 요소는 findRubricElements로 따로 읽어 Repository가 합침 -->
+    <select id="findRubric" resultMap="rubric">
+        SELECT rv.id, m.code || '@' || v.version AS mission_label, m.code || '@' || rv.version AS rubric_label,
+               rv.answer_key, rv.example_answer, COALESCE(rv.forbidden_terms, '[]'::jsonb) AS forbidden_terms
+        FROM rubric_version rv
+        JOIN mission m ON m.id = rv.mission_id
+        JOIN mission_version v ON v.mission_id = m.id AND v.id = #{missionVersionId}
+        WHERE rv.id = #{rubricVersionId}
+    </select>
+
+    <select id="findRubricElements" resultMap="rubricElement">
+        SELECT id, code, label, description, points, COALESCE(common_errors, '[]'::jsonb) AS common_errors,
+               good_thought, judge_verified
+        FROM rubric_element WHERE rubric_version_id = #{rubricVersionId} ORDER BY sort_order
+    </select>
+
+    <select id="findLatestAttempts" resultMap="attempt">
+        SELECT DISTINCT ON (mission_id) mission_id, id, status
+        FROM attempt
+        WHERE student_id = #{studentId}
+        ORDER BY mission_id, started_at DESC
+    </select>
+</mapper>

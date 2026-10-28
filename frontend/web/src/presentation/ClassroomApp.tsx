@@ -1,8 +1,13 @@
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { useSession } from './auth/sessionContext.ts'
+import './student/pinpad.css'
 import { roleStart } from '../domain/navigation.ts'
-import { StudentDashboard } from './student/StudentDashboard.tsx'
+import { StudentWorld } from './student/world/StudentWorld.tsx'
+import type { StudentPage } from './student/world/StudentWorld.tsx'
+import { ThinkingMap } from './student/world/ThinkingMap.tsx'
+import { StudentMissions } from './student/world/StudentMissions.tsx'
+import { isThinkingType } from '../domain/studentLook.ts'
 import {
   ArrowLeft,
   ArrowRight,
@@ -50,6 +55,8 @@ export function ClassroomApp() {
   const work = location.pathname.startsWith('/student/attempts/')
     ? location.pathname.split('/')[3]
     : null
+  const studentPage: StudentPage = (['home', 'missions'] as const).find((p) => p === page) ?? 'journal'
+  const typeFilter = new URLSearchParams(location.search).get('type')
   const setPage = (page: Page) => navigate(`/${session?.role.toLowerCase() ?? 'parent'}/${page}`)
   const setWork = (id: string | null) =>
     navigate(id ? `/student/attempts/${encodeURIComponent(id)}` : '/student/journal')
@@ -85,6 +92,7 @@ export function ClassroomApp() {
       setPassword('')
     }
   }
+  // 학생 → 학부모 화면 전환은 학부모 로그인을 다시 거친다 (FN-ACC-05). 학생 세션으로 학부모 화면을 열지 않는다.
   async function leave() {
     try {
       await auth.logout.mutateAsync()
@@ -193,7 +201,7 @@ export function ClassroomApp() {
         )}
         <small>develop 66f6052 기준 · PC 정식 / 태블릿 확장 시안</small>
       </div>
-      <div className="cj-app">
+      <div className={session?.role === 'STUDENT' ? 'cj-app cj-app-student' : 'cj-app'}>
         {expired && session && (
           <Modal title="다시 로그인해 주세요." onClose={() => {}}>
             <p>
@@ -221,9 +229,16 @@ export function ClassroomApp() {
                 공책에서 다시 만나요.
               </h1>
               <p>
-                학생 별도 계정 없이, 학부모 로그인 후<br />
-                자녀를 골라 학습을 시작합니다.
+                학생 별도 계정 없이, 보호자가 등록한 기기에서 PIN으로<br />
+                들어오거나 학부모 로그인 후 자녀를 골라 시작합니다.
               </p>
+              <button
+                type="button"
+                className="cj-secondary"
+                onClick={() => navigate('/student/login')}
+              >
+                자녀 기기로 시작하기 (PIN)
+              </button>
               <span className="cj-tag">초등 3~6학년</span>
               <p className="ux-help">
                 {isDemo
@@ -303,15 +318,108 @@ export function ClassroomApp() {
               로그아웃
             </button>
           </main>
-        ) : session.role === 'STUDENT' && work ? (
-          <StudentWorkPage
-            key={work}
-            attemptId={work}
-            onBack={() => {
-              setWork(null)
-              setPage('journal')
+        ) : session.role === 'STUDENT' && child ? (
+          <StudentWorld
+            child={child}
+            page={work ? null : studentPage}
+            focus={!!work}
+            onNavigate={(p) => {
+              setPage(p)
+              setDetail(null)
             }}
-          />
+            onLeave={() => {
+              void leave()
+            }}
+          >
+            {work ? (
+              <StudentWorkPage
+                key={work}
+                attemptId={work}
+                onBack={() => {
+                  setWork(null)
+                  setPage('journal')
+                }}
+              />
+            ) : studentPage === 'home' ? (
+              <ThinkingMap
+                child={child}
+                onResume={setWork}
+                onOpen={setInstructions}
+                onType={(t) => navigate(`/student/missions?type=${t}`)}
+                onJournal={() => setPage('journal')}
+              />
+            ) : studentPage === 'missions' ? (
+              <StudentMissions
+                child={child}
+                type={isThinkingType(typeFilter) ? typeFilter : null}
+                onType={(t) => navigate(t ? `/student/missions?type=${t}` : '/student/missions')}
+                onOpen={setInstructions}
+              />
+            ) : detail ? (
+              <main className="st-paper st-sheet">
+                <RecordDetail record={detail} child={child} onClose={() => setDetail(null)} />
+              </main>
+            ) : (
+              <main className="st-paper st-sheet">
+                <div className="cj-feedbar">
+                  <h1>
+                    <NotebookPen />
+                    나의 공책
+                  </h1>
+                  <div className="cj-filters">
+                    <select
+                      aria-label="과목 필터"
+                      value={subject}
+                      onChange={(e) => setSubject(e.target.value)}
+                    >
+                      <option value="all">모든 과목</option>
+                      {subjects.map((s) => (
+                        <option key={s}>{s}</option>
+                      ))}
+                    </select>
+                    <select
+                      aria-label="공책 기간"
+                      value={period.from}
+                      onChange={(e) =>
+                        setPeriod(e.target.value === recentPeriod.from ? recentPeriod : previousWeek)
+                      }
+                    >
+                      <option value={recentPeriod.from}>최근 7일 · {shortRange(recentPeriod)}</option>
+                      <option value={previousWeek.from}>지난주 · {shortRange(previousWeek)}</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="cj-feed">
+                  {records.isPending && (
+                    <QueryStateNotice state="PROCESSING">기록을 읽는 중입니다.</QueryStateNotice>
+                  )}
+                  <ErrorNotice
+                    error={records.error}
+                    retry={() => {
+                      void records.refetch()
+                    }}
+                  />
+                  {records.isSuccess && rows.length === 0 && (
+                    <QueryStateNotice state="NO_RECORD">
+                      이 기간·과목에 제출한 답변이 없습니다.
+                      <button type="button" className="cj-primary" onClick={() => setPage('missions')}>
+                        첫 미션 고르기
+                      </button>
+                    </QueryStateNotice>
+                  )}
+                  {rows.map((r) => (
+                    <RecordCard
+                      key={r.attemptId}
+                      record={r}
+                      child={child}
+                      onDetail={() => setDetail(r)}
+                      onContinue={() => setWork(r.attemptId)}
+                    />
+                  ))}
+                </div>
+              </main>
+            )}
+          </StudentWorld>
         ) : (
           <>
             <header className="cj-top">
@@ -414,12 +522,6 @@ export function ClassroomApp() {
                     period={analysisPeriod}
                     onEvidence={evidence}
                   />
-                ) : child && page === 'home' && session.role === 'STUDENT' ? (
-                  <StudentDashboard
-                    child={child}
-                    onResume={setWork}
-                    onChoose={() => setPage('missions')}
-                  />
                 ) : (
                   <>
                     <div className="cj-feedbar">
@@ -467,7 +569,7 @@ export function ClassroomApp() {
                         <div className="ux-parent-entry">
                           <span>
                             <strong>{child.nickname}</strong> · 초등 {child.grade}학년 ·{' '}
-                            {child.plan === 'FREE' ? '무료' : '프리미엄'}
+                            {child.plan === 'FREE' ? '무료' : child.plan === 'PREMIUM' ? '프리미엄' : '이용권 확인 필요'}
                           </span>
                           <button
                             type="button"
