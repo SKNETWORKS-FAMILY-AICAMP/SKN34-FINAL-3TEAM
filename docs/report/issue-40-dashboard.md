@@ -136,3 +136,11 @@
 - 변경 영향 검증: scripts/tests 58개, 프론트 테스트 87개, 프론트 build·전체 oxlint, core/learning/ai OpenAPI 3.1 검사 및 git diff --check 모두 통과했다. 기존 Vite 번들 크기 경고는 남아 있다.
 - #40 대시보드 계약과 report의 studentId·조회 기간·시각 필드 계약을 대조했다. core/learning/리포트 전체 생성 E2E·실제 AI 호출·QR 브라우저 시연은 이번 통합에서 추가 실행하지 않았다. AI/report 서비스 내부 테스트는 해당 develop 병합 PR의 검증 범위이며 이번 #40 실행 결과로 합산하지 않는다.
 - 기존 작업 커밋을 보존하고 추가 merge 커밋을 같은 작업 브랜치에 일반 push한다. PR은 사용자가 직접 생성한다.
+
+
+## PR #111 core CI 연결 풀 소진 수정 (2026-10-28)
+
+- head 9ca5e50의 ci-core-service 실행 40663209183에서 205개 중 LlmUsageQueryTest 7개가 `FATAL: sorry, too many clients already`로 실패했다. 병합 충돌은 없었다.
+- PostgresRepositoryTest의 여러 캐시된 Spring 컨텍스트가 같은 PostgreSQL을 공유하면서 각 Hikari 풀이 기본 유휴 연결을 보유한 것이 원인이다. 테스트 전용 maximum-pool-size=5, minimum-idle=0을 지정했다. production 설정·테스트 항목·실행 순서는 변경하지 않았다.
+- JDK 21 격리 환경의 전체 test bootJar 단일 실행에서 205개 전부 통과(실패·오류·생략 0, 8m56s). 이전 분리 재검증 합산과 달리 이번은 전체 단일 실행 결과다. git diff --check 통과. 실제 API나 프론트 코드는 변경하지 않아 해당 검증을 반복하지 않았다.
+- 같은 작업 브랜치에 일반 push해 원격 CI 재실행 결과를 확인한다. PR 병합·댓글·메타데이터 변경은 수행하지 않는다.
