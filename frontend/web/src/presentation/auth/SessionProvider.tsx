@@ -28,7 +28,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setReady(true)
       setExpired(false)
       const { pathname, search } = window.location
-      navigate('/student/login', {
+      // QR로 연 /student/login?code=…는 그대로 둔다. 초기 인증 확인에서 코드를 지우면 등록할 수 없다.
+      if (pathname !== '/student/login') navigate('/student/login', {
         replace: true,
         state: pathname.startsWith('/student/') && pathname !== '/student/login' ? { from: pathname + search } : undefined,
       })
@@ -46,7 +47,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (!active || current !== revision) return
         if (error instanceof ApiError && error.problem.status === 401) {
           clear()
-          if (window.location.pathname.startsWith('/student/')) navigate('/student/login', { replace: true })
+          if (window.location.pathname.startsWith('/student/') && window.location.pathname !== '/student/login')
+            navigate('/student/login', { replace: true })
         } else {
           // core-service가 꺼져 있으면 Vite 프록시가 502를 준다. 로그인 상태 실패와 구분해 원인을 알린다.
           const down = error instanceof TypeError || (error instanceof ApiError && [502, 503, 504].includes(error.problem.status))

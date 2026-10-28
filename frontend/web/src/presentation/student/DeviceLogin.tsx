@@ -24,6 +24,7 @@ const code = (e: unknown) => (e instanceof ApiError ? e.problem.code : '')
  * 미등록·해제·만료 기기(401 STUDENT_DEVICE_INVALID)에는 PIN 화면 대신 코드 등록 화면만 보인다.
  */
 export function DeviceLogin() {
+  const [registered, setRegistered] = useState(false)
   const profiles = useDeviceProfiles()
   const cache = useQueryClient()
   const unregistered = code(profiles.error) === 'STUDENT_DEVICE_INVALID'
@@ -35,11 +36,12 @@ export function DeviceLogin() {
       <main className="device-login">
         <section className="device-card" aria-busy={profiles.isPending}>
           <Brand />
+          {registered && !unregistered && <p role="status">기기 등록을 마쳤어요. 이제 내 PIN으로 들어가요.</p>}
           {isDemo && <DemoDeviceScenario onApplied={() => void cache.invalidateQueries({ queryKey: ['student-device'] })} />}
           {profiles.isPending ? (
             <p role="status">이 기기를 확인하고 있어요.</p>
           ) : unregistered ? (
-            <Registration />
+            <Registration onRegistered={() => setRegistered(true)} />
           ) : profiles.error instanceof ApiError && profiles.error.problem.status === 404 ? (
             // 백엔드에 기기·PIN API(명세 3.11)가 아직 없을 때. 원시 404 대신 동석 진입을 안내한다.
             <>
@@ -60,11 +62,15 @@ export function DeviceLogin() {
   )
 }
 
-function Registration() {
-  const [params] = useSearchParams()
+function Registration({ onRegistered }: { onRegistered: () => void }) {
+  const [params, setParams] = useSearchParams()
+  const location = useLocation()
   const [value, setValue] = useState(normalizePairingCode(params.get('code') ?? ''))
   const [label, setLabel] = useState('')
-  const register = useDeviceRegistration()
+  const register = useDeviceRegistration(() => {
+    onRegistered()
+    setParams((p) => { p.delete('code'); return p }, { replace: true, state: location.state })
+  })
   const normalized = normalizePairingCode(value)
   return (
     <>

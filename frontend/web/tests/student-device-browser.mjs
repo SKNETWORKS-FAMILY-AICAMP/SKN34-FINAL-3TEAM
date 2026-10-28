@@ -77,6 +77,12 @@ async function typePin(p, pin, pad = 'PIN 숫자 키패드') {
 }
 
 try {
+  await check('QR URL의 등록 코드는 초기 인증 확인 후에도 유지', async (p) => {
+    await p.goto(base + '/student/login?code=ABCD2345', { waitUntil: 'domcontentloaded' })
+    await p.getByRole('heading', { name: '이 기기를 학습용으로 등록해요' }).waitFor()
+    assert.equal(await p.getByLabel('등록 코드', { exact: true }).inputValue(), 'ABCD2345')
+    assert.equal(new URL(p.url()).searchParams.get('code'), 'ABCD2345')
+  })
   await check('미등록 기기: 코드 등록 화면만, PIN 키패드 없음', async (p) => {
     await p.goto(base + '/student/login', { waitUntil: 'domcontentloaded' })
     await p.getByRole('heading', { name: '이 기기를 학습용으로 등록해요' }).waitFor()
