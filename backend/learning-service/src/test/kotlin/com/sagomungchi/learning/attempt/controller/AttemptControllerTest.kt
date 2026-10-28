@@ -272,18 +272,15 @@ class AttemptControllerTest(@Autowired private val mockMvc: MockMvc) {
     }
 
     @Test
-    fun `돌아보기는 난이도 EASY·NORMAL·HARD 필수, 빈 달라진 점은 null로 저장하고 완료 상태·시점 반환`() {
-        val completed = attempt.copy(finishedAt = now).complete(now)
-        given(service.saveReflection(attempt.id, Reflection(Difficulty.EASY, null))).willReturn(completed)
-
+    fun `돌아보기는 난이도 EASY·NORMAL·HARD 필수, 빈 달라진 점은 null로 저장하고 학습 완료 반환`() {
         mockMvc.post("/internal/attempts/${attempt.id}/reflection") {
             asStudent()
             contentType = MediaType.APPLICATION_JSON
             content = """{"difficulty":"EASY","text":"  "}"""
         }.andExpect {
             status { isOk() }
+            jsonPath("$.attemptId") { value(attempt.id.toString()) }
             jsonPath("$.status") { value("COMPLETED") }
-            jsonPath("$.completedAt") { value("2026-10-27T01:00:00Z") }
             jsonPath("$.reflection.difficulty") { value("EASY") }
             jsonPath("$.reflection.text") { value(null) }
         }

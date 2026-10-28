@@ -171,9 +171,9 @@ class AttemptFinishTest : PostgresRepositoryTest() {
         assertError(HttpStatus.CONFLICT, "REVEAL_CONDITION_UNMET") { service.saveReflection(setup.attempt.id, Reflection(Difficulty.EASY, null)) }
         service.finish(setup.attempt.id)
 
-        val completed = service.saveReflection(setup.attempt.id, Reflection(Difficulty.HARD, null))
+        service.saveReflection(setup.attempt.id, Reflection(Difficulty.HARD, null))
 
-        assertEquals(AttemptStatus.COMPLETED, completed.status)
+        assertEquals(AttemptStatus.COMPLETED, service.get(setup.attempt.id).attempt.status)
         val row = jdbc.queryForMap(
             "SELECT a.status, a.completed_at, r.difficulty, r.changed_text FROM attempt a JOIN reflection r ON r.attempt_id = a.id WHERE a.id = ?",
             setup.attempt.id,

@@ -7,7 +7,6 @@ import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.answer.domain.AnswerContent
 import com.sagomungchi.learning.answer.service.AnswerService
 import com.sagomungchi.learning.answer.service.SubmitCommand
-import com.sagomungchi.learning.attempt.domain.Attempt
 import com.sagomungchi.learning.attempt.domain.AttemptDraft
 import com.sagomungchi.learning.attempt.domain.Difficulty
 import com.sagomungchi.learning.attempt.domain.DraftContent
@@ -181,6 +180,7 @@ class AttemptConcurrencyTest {
                     ready.countDown()
                     go.await()
                     service.saveReflection(attempt.id, Reflection(Difficulty.NORMAL, null))
+                    "COMPLETED"
                 } catch (closed: BusinessException) {
                     closed.code
                 } finally {
@@ -193,8 +193,8 @@ class AttemptConcurrencyTest {
         val outcomes = results.map { it.get(30, TimeUnit.SECONDS) }
         pool.shutdown()
 
-        assertEquals(1, outcomes.count { it is Attempt })
-        assertEquals(List(requests - 1) { "ATTEMPT_CLOSED" }, outcomes.filterIsInstance<String>())
+        assertEquals(1, outcomes.count { it == "COMPLETED" })
+        assertEquals(List(requests - 1) { "ATTEMPT_CLOSED" }, outcomes.filter { it != "COMPLETED" })
         assertEquals(1, count("SELECT count(*) FROM reflection WHERE attempt_id = ?", attempt.id))
         assertEquals(1, count("SELECT count(*) FROM attempt WHERE id = ? AND status = 'COMPLETED' AND completed_at IS NOT NULL", attempt.id))
     }

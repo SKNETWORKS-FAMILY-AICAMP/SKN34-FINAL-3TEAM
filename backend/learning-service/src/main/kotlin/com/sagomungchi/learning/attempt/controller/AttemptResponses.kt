@@ -99,11 +99,10 @@ data class ReflectionView(val difficulty: Difficulty, val text: String?) {
     }
 }
 
-/** 돌아보기 저장 결과: 학습 완료 상태·시점 (FN-LRN-14) */
+/** 돌아보기 저장 결과: 학습 완료 (sequence-diagram 3.3 "200 학습 완료"). 완료 시점은 시도 상세·기록 조회에서 */
 data class ReflectionResponse(
     val attemptId: UUID,
     val status: AttemptStatus,
-    val completedAt: Instant,
     val reflection: ReflectionView,
 )
 

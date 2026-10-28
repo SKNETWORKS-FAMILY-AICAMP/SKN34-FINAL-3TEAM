@@ -118,11 +118,10 @@ class AttemptService(
 
     /** 돌아보기 저장 + 학습 완료 (sequence-diagram 3.3, FN-LRN-12·14): 같은 트랜잭션. 마무리 전이면 409 REVEAL_CONDITION_UNMET, 완료 뒤면 409 ATTEMPT_CLOSED */
     @Transactional
-    fun saveReflection(attemptId: UUID, command: Reflection): Attempt {
+    fun saveReflection(attemptId: UUID, command: Reflection) {
         val completed = lockOwned(attemptId).complete(now())
         attemptRepository.insertReflection(completed.id, command, checkNotNull(completed.completedAt))
         attemptRepository.complete(completed)
-        return completed
     }
 
     /**

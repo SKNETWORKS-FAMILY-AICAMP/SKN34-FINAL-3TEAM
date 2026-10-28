@@ -3,6 +3,7 @@ package com.sagomungchi.learning.attempt.controller
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.exception.Problems
 import com.sagomungchi.learning._common.security.UserContextHolder
+import com.sagomungchi.learning.attempt.domain.AttemptStatus
 import com.sagomungchi.learning.attempt.domain.SelfAssessmentItem
 import com.sagomungchi.learning.attempt.domain.SelfCheck
 import com.sagomungchi.learning.attempt.service.AttemptService
@@ -85,8 +86,8 @@ class AttemptController(
     fun reflection(@PathVariable attemptId: UUID, @RequestBody request: ReflectionRequest): ReflectionResponse {
         UserContextHolder.current().requireSelfStudent()
         val command = request.toCommand()
-        val completed = attemptService.saveReflection(attemptId, command)
-        return ReflectionResponse(completed.id, completed.status, checkNotNull(completed.completedAt), ReflectionView.from(command))
+        attemptService.saveReflection(attemptId, command)
+        return ReflectionResponse(attemptId, AttemptStatus.COMPLETED, ReflectionView.from(command))
     }
 
     /** 자기 평가 (api-spec 2.2): 자기 체크를 저장하고 기준표 요소마다 AI 확인과 나란히 (FN-LRN-13) */
