@@ -122,6 +122,7 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *spring-env
+      REDIS_HOST: redis
       DB_URL: jdbc:postgresql://postgres:5432/core_db
       LEARNING_URL: http://learning-service:8081
       AI_URL: http://ai-service:8000

@@ -18,6 +18,25 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SseEmittersTest {
+    @Test fun `subscription registers before validation and removes heartbeat and owner registration once on invalidation`() {
+        val emitters = SseEmitters(Duration.ofMillis(20), Duration.ofSeconds(90))
+        val registered = java.util.concurrent.atomic.AtomicBoolean(false)
+        val closed = CountDownLatch(1)
+        val count = java.util.concurrent.atomic.AtomicInteger()
+        try {
+            val stream = emitters.subscribe(Duration.ofMinutes(5), {
+                assertTrue(registered.get()); count.incrementAndGet(); closed.countDown()
+            }, { registered.set(true) }) { error("revoked test session") }
+            assertEquals(300_000L, stream.emitter.timeout)
+            assertTrue(closed.await(5, TimeUnit.SECONDS))
+            stream.disconnected()
+            assertEquals(1, count.get())
+            assertEquals(0, emitters.activeConnections)
+            assertEquals(0, emitters.pendingHeartbeats)
+        } finally { emitters.close() }
+        assertTrue(emitters.terminated)
+    }
+
     @Test fun `blocking event and terminal sends do not pin JDK21 virtual thread carriers`() {
         val emitters = SseEmitters(Duration.ofSeconds(15), Duration.ofSeconds(90))
         val recording = Recording()
