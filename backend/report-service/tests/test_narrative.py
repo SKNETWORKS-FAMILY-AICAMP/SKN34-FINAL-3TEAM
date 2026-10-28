@@ -232,7 +232,9 @@ def test_learning_evidence_lookup_checks_identity_and_deleted_records(case):
         assert result.text == (answer.text if case == "valid" else None)
 
 
-@pytest.mark.parametrize("api_status,expected", [(200, "COMPLETED"), (503, "FAILED")])
+@pytest.mark.parametrize(
+    "api_status,expected", [(200, "COMPLETED"), (503, "FAILED"), ("timeout", "FAILED")]
+)
 def test_pipeline_persists_narrative_or_api_failure(
     report_factory, db_engine, report_student_id, api_status, expected
 ):
@@ -256,11 +258,14 @@ def test_pipeline_persists_narrative_or_api_failure(
     )
 
     async def scenario():
+        def handle(request):
+            if api_status == "timeout":
+                raise httpx.ReadTimeout("Synthetic API timeout", request=request)
+            return httpx.Response(api_status, json=response)
+
         async with internal_client(
             "http://ai.test",
-            transport=httpx.MockTransport(
-                lambda request: httpx.Response(api_status, json=response)
-            ),
+            transport=httpx.MockTransport(handle),
         ) as http:
             generator = NarrativeGenerator(
                 Previous(result), AiClient(http), EvidenceReader(evidence)
