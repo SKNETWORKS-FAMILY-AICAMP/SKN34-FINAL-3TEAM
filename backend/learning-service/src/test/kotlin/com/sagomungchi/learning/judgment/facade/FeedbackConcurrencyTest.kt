@@ -44,7 +44,9 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import javax.sql.DataSource
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -63,6 +65,7 @@ class FeedbackConcurrencyTest {
     @Autowired lateinit var attemptService: AttemptService
     @Autowired lateinit var jdbc: JdbcTemplate
     @Autowired lateinit var judgmentService: JudgmentService
+    @Autowired lateinit var dataSource: DataSource
 
     @Test
     fun `동시에 요청해도 ai 판정은 한 번, 나머지는 처리 중 응답이고 끝난 뒤에는 같은 결과`() {
@@ -239,6 +242,69 @@ class FeedbackConcurrencyTest {
         assertTrue(result.nextActions.isEmpty())
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM followup f JOIN judgment j ON j.id = f.judgment_id WHERE j.answer_id = ?", Int::class.java, answer.id))
     }
+
+    @Test
+    fun `마무리가 시도 행을 잠근 동안 판정 저장은 기다리고, 마무리가 커밋되면 되묻기를 저장하지 않음`() {
+        ai.resetAll()
+        val rows = TestRows(jdbc)
+        val mission = rows.mission(inputType = "NARRATIVE")
+        val element = rows.rubric(mission).single()
+        val student = UUID.randomUUID()
+        val context = UserContext(null, "STUDENT", setOf(student.toString()), null)
+        UserContextHolder.set(context)
+        val answer = try {
+            val attempt = attemptService.start(student, mission.id, 3, demo = false).attempt
+            answerService.submit(attempt.id, UUID.randomUUID(), SubmitCommand(InputType.NARRATIVE, AnswerContent(text = "놀 수 있어서 좋아요"), false, null))
+        } finally {
+            UserContextHolder.clear()
+        }
+        ai.stubFor(
+            post(urlEqualTo("/internal/judgments")).willReturn(
+                okJson("""{"result":"PARTIAL","elements":[{"elementId":"$element","quote":"놀 수 있어서","verified":true,"satisfied":true}],"heldReason":null,"trial":true,"versions":{"model":"m","prompt":"judge@2"}}"""),
+            ),
+        )
+        ai.stubFor(
+            post(urlEqualTo("/internal/followups")).willReturn(
+                okJson("""{"type":"TELL_MORE","question":"더 말해 줄래요?","source":"LLM","leakCheck":{"passed":true},"versions":{"model":"m","prompt":"followup@4"}}"""),
+            ),
+        )
+        val pool = Executors.newSingleThreadExecutor()
+        // 마무리(#26)처럼 별도 트랜잭션이 시도 행을 잠그고 있는 동안 피드백 처리
+        val pending = dataSource.connection.use { finish ->
+            finish.autoCommit = false
+            finish.prepareStatement("SELECT id FROM attempt WHERE id = ? FOR UPDATE").use { it.setObject(1, answer.attemptId); it.executeQuery() }
+            val pending = pool.submit<FeedbackResult> {
+                UserContextHolder.set(context)
+                try {
+                    facade.feedback(answer.id)
+                } finally {
+                    UserContextHolder.clear()
+                }
+            }
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+            while (savingWaitsForAttemptLock() == 0) {
+                check(System.nanoTime() < deadline) { "판정 저장이 시도 잠금을 기다리지 않음" }
+                Thread.sleep(20)
+            }
+            assertFalse(pending.isDone)
+            finish.prepareStatement("UPDATE attempt SET finished_at = now() WHERE id = ?").use { it.setObject(1, answer.attemptId); it.executeUpdate() }
+            finish.commit()
+            pending
+        }
+        val result = pending.get(30, TimeUnit.SECONDS)
+        pool.shutdown()
+
+        assertEquals(ProcessStatus.DONE, result.status)
+        assertNull(result.followup)
+        assertTrue(result.nextActions.isEmpty())
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM followup f JOIN judgment j ON j.id = f.judgment_id WHERE j.answer_id = ?", Int::class.java, answer.id))
+    }
+
+    /** 판정 저장의 시도 행 잠금(JudgmentMapper lockAttemptOpen)이 다른 트랜잭션의 잠금을 기다리는 중인 연결 수 */
+    private fun savingWaitsForAttemptLock(): Int = jdbc.queryForObject(
+        "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%FOR UPDATE OF t%'",
+        Int::class.java,
+    ) ?: 0
 
     companion object {
         private val ai = WireMockServer(options().dynamicPort()).apply { start() }
