@@ -494,6 +494,8 @@ data: {}
 }
 ```
 
+- 리포트 상세의 `reflections[].difficulty`는 표시값 `쉬웠어요`·`보통`·`어려웠어요`이며 PDF·HTML·Markdown도 같은 표시값을 쓴다. learning 입력과 report 내부 저장의 `EASY`·`NORMAL`·`HARD` 코드는 출력 조립 시 변환한다. 미작성·기간 밖이면 `written:false`, `difficulty:null`, `text:null`이다. 선택 텍스트 없이 난이도만 작성한 기록은 `written:true`, `text:null`로 구분한다.
+
 ### 3.5 결제 승인 — `POST /payments/confirm`
 ```jsonc
 // 요청 (결제위젯 successUrl 쿼리 값)
