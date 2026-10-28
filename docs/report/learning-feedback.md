@@ -71,7 +71,7 @@ learning-service의 `POST /internal/answers/{answerId}/feedback`을 만들고, �
 | `_common/security/UserContext.kt`, `attempt/service/AttemptService.kt` | 학생 본인 확인을 UUID끼리 비교하는 `requireStudent(UUID)` 추가, 시도 확인(`requireOwned`·`lockForAnswer`)이 그것을 씀. 문자열 버전은 그대로 | PR #74 리뷰 지적 1번: `requireSelfStudent`는 UUID로 읽어 대소문자와 무관한데 시도 확인은 문자열 비교라, core가 대문자 UUID를 보내면 본인 시도도 403. 피드백 API도 같은 확인을 거쳐 여기서 고침. 대문자 범위 테스트(문자열 비교로 되돌리면 실패) |
 | `mission/` | `Rubric`·`AnswerKey`, `MissionService.rubric`, 판정용 기준표 조회(정답 키·예시 답 포함, 학생 응답에 쓰지 않음) | class-diagram 4.2 `FeedbackFacade --> MissionService` |
 
-## 프론트 확인 (프론트 담당)
+## 프론트 확인 (프론트 담당, #82)
 
 | 항목 | 프론트 타입·목업 | 구현 | 근거 |
 |---|---|---|---|
@@ -125,11 +125,13 @@ learning-service의 `POST /internal/answers/{answerId}/feedback`을 만들고, �
 
 ## 후속
 
-- 기준표 요소가 0개인 고르기 미션: ai 되묻기가 요소 1개 이상을 요구해(`FollowupRubric.elements` min 1) 오답이면 `AI_BAD_RESPONSE`가 됨. 지금 시드는 모두 요소가 있음. 미션 공개 검사(`Mission.requirePublishable`, 관리자 이슈)에서 고르기도 요소 1개 이상을 요구해야 함
+PR #78 리뷰에서 후속 항목을 이슈로 나눔(kty2001): #79 판정 규칙 확정, #80 판정 정정 수신 API, #81 미션 공개 검사, #82 학생 피드백 화면 계약.
+
+- 기준표 요소가 0개인 고르기 미션: ai 되묻기가 요소 1개 이상을 요구해(`FollowupRubric.elements` min 1) 오답이면 `AI_BAD_RESPONSE`가 됨. 지금 시드는 모두 요소가 있음. 미션 공개 검사(`Mission.requirePublishable`)에서 고르기도 요소 1개 이상을 요구해야 함 → #81
 
 - 판정 요청에 미션 질문 넣기(B안): ai 판정 요청은 학생 답과 기준표만 받아 요소 설명이 일반적이면 주제와 무관한 답도 충족될 수 있음(#22 검사에서 A안 "요소 설명에 주제"로 대응). api-spec 4.2·ai 판정 프롬프트(judge@3)·learning을 함께 바꿔야 해 별도 이슈
-- 수학 단위 비교 여부(위 "수학 단위", 설계에 규칙 추가가 필요), 풀이 단계 결합 규칙 확정(위 "임시로 정한 것")
+- 수학 단위 비교 여부(위 "수학 단위", 설계에 규칙 추가가 필요), 풀이 단계 결합 규칙 확정(위 "임시로 정한 것") → #79
 - 같은 답이 실행마다 다르게 판정되는 경우(#22 검사): 사람 검증(P11) 대상
-- 분류 문항: 그룹(`categories`) 저장 위치가 정해지면 그룹 ID 확인·유출 검사용 정답 추가. 기획서 5장 "분류 기준"(이유를 봄)과 지금 분류 문항(정답 키)의 관계 확인
-- 판정 정정(`POST /internal/judgments/{judgmentId}/corrections`, class-diagram 4.2 `CorrectionController`·`JudgmentService.correct`·`CorrectionRepository`, FN-SUP-03): 이슈 #25 범위가 아님. 관리자 정정과 learning 전달은 core #46(20220348-kim) 몫이지만, learning 쪽 받는 API는 어느 이슈의 작업 위치에도 없어 learning 이슈를 새로 만들어 #46과 요청·응답을 맞춰야 함. 고착 `RUNNING` 탐지 주기(1분)는 운영 작업. 지금은 요청 때 리스 만료로 다시 가져감
-- 마무리(#26): 판정 `DONE` 1회 이상 확인, 체크리스트는 저장된 요소(`ANSWER_KEY`·`AI_OBSERVATION`) 사용. 판정 처리 중 마무리는 #25에서 막음(위 "마무리한 시도의 남은 답변"): 마무리도 같은 시도 행을 잠가야(`lockById`) 저장과 차례로 처리됨
+- 분류 문항: 그룹(`categories`) 저장 위치가 정해지면 그룹 ID 확인·유출 검사용 정답 추가. 기획서 5장 "분류 기준"(이유를 봄)과 지금 분류 문항(정답 키)의 관계 확인 → #79
+- 판정 정정(`POST /internal/judgments/{judgmentId}/corrections`, class-diagram 4.2 `CorrectionController`·`JudgmentService.correct`·`CorrectionRepository`, FN-SUP-03): 이슈 #25 범위가 아님. 관리자 정정과 learning 전달은 core #46(20220348-kim) 몫이지만, learning 쪽 받는 API는 #80에서 #46과 요청·응답을 맞춤. 고착 `RUNNING` 탐지 주기(1분)는 운영 작업. 지금은 요청 때 리스 만료로 다시 가져감
+- 마무리(#26): 판정 `DONE` 1회 이상 확인, 체크리스트는 저장된 요소(`ANSWER_KEY`·`AI_OBSERVATION`) 사용. 판정 처리 중 마무리(#26 이슈 코멘트의 두 번째 방법 "saveResult 직전에 시도를 다시 확인")는 이 PR에서 반영(위 "마무리한 시도의 남은 답변"). #26에서는 마무리도 같은 시도 행을 잠가야(`lockById`) 저장과 차례로 처리됨
