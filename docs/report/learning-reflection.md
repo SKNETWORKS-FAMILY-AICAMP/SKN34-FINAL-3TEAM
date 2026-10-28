@@ -1,6 +1,6 @@
 # 이슈 #26 learning 마무리·돌아보기·자기 평가
 
-작성일: 2026-10-28. 기준: #78 머지 후 develop e728a64 위에서 작업, PR 전 develop 40a2501(#83 core 피드백 SSE, learning 코드 변경 없음)을 병합. [이슈 #26](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/26), [API 명세 1.3·1.5·2.2·3.8·4.1](../design/api-spec.md), [ERD 4.2](../design/erd.md) `reflection`·`self_assessment`, [기능 명세 FN-LRN-11~14](../design/functional-spec.md), [유스케이스 4.5](../design/usecase.md), [시퀀스 다이어그램 3.3](../design/sequence-diagram.md), [상태 다이어그램 3.2](../design/state-diagram.md), [클래스 다이어그램 4.1](../design/class-diagram.md).
+작성일: 2026-10-28. 기준: #78 머지 후 develop e728a64 위에서 작업, PR 전 develop 40a2501(#83 core 피드백 SSE, learning 코드 변경 없음)과 1f71360(#92 설계 문서 정합성 점검)을 병합. [이슈 #26](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/26), [API 명세 1.3·1.5·2.2·3.8·4.1](../design/api-spec.md), [ERD 4.2](../design/erd.md) `reflection`·`self_assessment`, [기능 명세 FN-LRN-11~14](../design/functional-spec.md), [유스케이스 4.5](../design/usecase.md), [시퀀스 다이어그램 3.3](../design/sequence-diagram.md), [상태 다이어그램 3.2](../design/state-diagram.md), [클래스 다이어그램 4.1](../design/class-diagram.md).
 
 learning-service의 `POST /internal/attempts/{id}/finish`·`/reflection`·`/self-assessment`를 만들고, 시도 상세에 마무리 뒤 공개 내용과 돌아보기를 붙이면서 정한 내용과 근거를 기록한다. 데이터베이스 스키마는 바꾸지 않았다.
 
@@ -15,6 +15,8 @@ learning-service의 `POST /internal/attempts/{id}/finish`·`/reflection`·`/self
 | [sequence-diagram 3.3](../design/sequence-diagram.md) | 돌아보기 요청 `{difficulty, changedText}`, 잠금 없음 | `{difficulty, text}`(api-spec 2.2와 같게), 마무리·돌아보기의 시도 행 잠금, 마무리 다시 요청, 자기 평가 409 | api-spec 2.2와 프론트가 `text`. 필드 이름 `changedText`는 ERD 컬럼(`changed_text`)을 따른 것으로 보임 |
 | [class-diagram 4.1](../design/class-diagram.md) | `Attempt.finish·complete`, `FinishPolicy.canFinish`, 서비스 메서드 이름만 | `Attempt.requireFinished()` 추가, `finish`·`saveReflection`·`saveSelfAssessment` 처리 순서와 공개 내용, `AttemptRepository` 메서드 | 아래 "설계와 다른 점" |
 | [state-diagram 3.2](../design/state-diagram.md) | 마무리 행에 다시 요청 없음 | 다시 요청하면 기록 없이 같은 결과, 자기 평가는 마무리 뒤·완료 전 | 아래 "정한 것" |
+| [contracts/openapi/learning-service.yaml](../../contracts/openapi/learning-service.yaml) | #92(D6)가 구현된 learning 내부 API 9개만 계약화 | `finish`·`reflection`·`self-assessment` 경로, 시도 상세의 `reveal`·`revealKind`·`checklist`·`reflection`, 스키마 `FinishResult`·`Difficulty`·`Reflection`·`SelfAssessmentItem`, 판정 요소와 체크리스트가 같이 쓰는 `Element` | 대조 테스트(`scripts/tests/test_record_exists_openapi.py`)가 learning 컨트롤러 경로와 yaml 경로가 같아야 통과. 경로 수 9 → 12 |
+| class-diagram 4.1 구현 상태 | #92가 `finish`·`saveReflection`·`saveSelfAssessment`·`FinishPolicy`를 미구현으로 표기 | 구현됨으로, `Attempt.finish`·`complete`·`requireFinished` 추가 | #26 구현 |
 | class-diagram 4.2, sequence-diagram 3.2 | `saveResult`가 시도를 다시 확인하지 않음 | `saveResult`가 시도 행을 잠그고 다시 확인해 마무리된 시도에는 되묻기를 저장하지 않음 | 아래 "마무리 경합" |
 
 ## 정한 것 (설계를 따르거나 설계에 없던 값을 채운 것)
@@ -65,6 +67,7 @@ PR #78(#25) 리뷰에서 #26으로 나뉜 항목: 피드백은 ai 호출 **전�
 | `judgment/facade/FeedbackConcurrencyTest.kt` | 경합 테스트 2개(실제 마무리, 마무리가 잠근 동안 저장이 기다림) | 위와 같음 |
 | `attempt/service/AttemptService.kt` | `lockForAnswer`가 같은 잠금(`lockOwned`)을 씀 | 마무리·돌아보기·자기 평가와 같은 잠금. 동작 같음 |
 | 테스트 `TestRows.kt` | `judged(answerId, elements, result)`: 판정을 처리 완료로 직접 만듦 | 판정 실행은 피드백 API(#25)라 마무리 테스트에서는 저장된 판정만 필요 |
+| `scripts/tests/test_record_exists_openapi.py` | learning 컨트롤러 경로 수 9 → 12 | #26 경로 3개 추가(위 OpenAPI). 경로 목록은 yaml과 그대로 대조 |
 
 ## 프론트 확인 (프론트 담당)
 

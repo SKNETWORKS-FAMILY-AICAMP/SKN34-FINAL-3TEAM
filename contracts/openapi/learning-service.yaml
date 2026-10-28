@@ -251,6 +251,122 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /attempts/{attemptId}/finish:
+    post:
+      operationId: finishAttempt
+      summary: 마무리 → 정답·예시 답·체크리스트 공개
+      description: >-
+        시도 안에 판정 DONE이 1회 이상(보류 포함, 되묻기 미응답 허용)이어야 함(P04). 다시 요청하면 기록하지 않고 같은 결과.
+        checklist는 기준표 요소 전체이고, 이 시도의 처리 완료 판정 중 원문 구절과 함께 충족된 요소만 satisfied(가장 최근 구절).
+      parameters:
+        - $ref: '#/components/parameters/AttemptId'
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/StudentRole'
+        - $ref: '#/components/parameters/StudentScope'
+      responses:
+        '200':
+          description: 마무리 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinishResult'
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: REVEAL_CONDITION_UNMET(판정 DONE 1회 미만)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /attempts/{attemptId}/reflection:
+    post:
+      operationId: saveReflection
+      summary: 돌아보기 저장 → 학습 완료
+      description: 같은 트랜잭션에 돌아보기 저장 + IN_PROGRESS → COMPLETED·completed_at (P04, FN-LRN-12·14)
+      parameters:
+        - $ref: '#/components/parameters/AttemptId'
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/StudentRole'
+        - $ref: '#/components/parameters/StudentScope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [difficulty]
+              properties:
+                difficulty: {$ref: '#/components/schemas/Difficulty'}
+                text: {type: [string, 'null'], description: 달라진 점(선택), 빈 글은 null로 저장}
+      responses:
+        '200':
+          description: 학습 완료
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [attemptId, status, reflection]
+                properties:
+                  attemptId: {type: string, format: uuid}
+                  status: {type: string, enum: [COMPLETED]}
+                  reflection: {$ref: '#/components/schemas/Reflection'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: REVEAL_CONDITION_UNMET(마무리 전) 또는 ATTEMPT_CLOSED(완료 뒤)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /attempts/{attemptId}/self-assessment:
+    post:
+      operationId: saveSelfAssessment
+      summary: 자기 평가 저장 → AI 확인과 나란히
+      description: >-
+        마무리 뒤·완료 전. 기준표 요소별 자기 체크를 저장하고(다시 보내면 checked만 변경) 기준표 요소마다 자기 체크와 AI 확인을 반환.
+        답변·판정은 바꾸지 않음 (FN-LRN-13)
+      parameters:
+        - $ref: '#/components/parameters/AttemptId'
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/StudentRole'
+        - $ref: '#/components/parameters/StudentScope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [checks]
+              properties:
+                checks:
+                  type: array
+                  minItems: 1
+                  description: 이 시도 기준표 요소를 한 번씩만
+                  items:
+                    type: object
+                    required: [elementId, checked]
+                    properties:
+                      elementId: {type: string, format: uuid}
+                      checked: {type: boolean}
+      responses:
+        '200':
+          description: 기준표 요소마다 자기 체크와 AI 확인
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/SelfAssessmentItem'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: REVEAL_CONDITION_UNMET(마무리 전) 또는 ATTEMPT_CLOSED(완료 뒤)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /answers/{answerId}/feedback:
     post:
       operationId: answerFeedback
@@ -484,7 +600,7 @@ components:
     Attempt:
       type: object
       additionalProperties: false
-      required: [attemptId, studentId, mission, status, finishedAt, answers, helped, draft, nextActions]
+      required: [attemptId, studentId, mission, status, finishedAt, answers, helped, draft, nextActions, reveal, revealKind, checklist, reflection]
       properties:
         attemptId: {type: string, format: uuid}
         studentId: {type: string, format: uuid}
@@ -502,6 +618,20 @@ components:
           type: array
           description: 마지막 답변의 다음 행동
           items: {$ref: '#/components/schemas/NextAction'}
+        reveal: {type: [string, 'null'], description: 마무리 뒤에만. 시도 기준표 버전의 예시 답(닫힌 문제는 정답과 해설)}
+        revealKind:
+          type: [string, 'null']
+          enum: [ANSWER, EXAMPLE, null]
+          description: 마무리 뒤에만. 고르기·순서·분류·풀이 단계 ANSWER, 서술·논술 EXAMPLE
+        checklist:
+          type: [array, 'null']
+          description: 마무리 뒤에만
+          items: {$ref: '#/components/schemas/Element'}
+        reflection:
+          description: 돌아보기 뒤에만
+          oneOf:
+            - $ref: '#/components/schemas/Reflection'
+            - type: 'null'
     AnswerItem:
       type: object
       additionalProperties: false
@@ -613,19 +743,53 @@ components:
         trial: {type: boolean}
         elements:
           type: array
-          items:
-            type: object
-            additionalProperties: false
-            required: [elementId, label, satisfied, quote, sourceType]
-            properties:
-              elementId: {type: string, format: uuid, description: rubric_element.id}
-              label: {type: string}
-              satisfied: {type: boolean}
-              quote: {type: [string, 'null'], description: 학생 답 원문 구절 또는 고른 답}
-              sourceType:
-                type: [string, 'null']
-                enum: [RECORD, RULE, ANSWER_KEY, AI_OBSERVATION, null]
+          items: {$ref: '#/components/schemas/Element'}
         heldReason: {type: [string, 'null']}
+    Element:
+      type: object
+      additionalProperties: false
+      required: [elementId, label, satisfied, quote, sourceType]
+      properties:
+        elementId: {type: string, format: uuid, description: rubric_element.id}
+        label: {type: string}
+        satisfied: {type: boolean}
+        quote: {type: [string, 'null'], description: 학생 답 원문 구절 또는 고른 답}
+        sourceType:
+          type: [string, 'null']
+          enum: [RECORD, RULE, ANSWER_KEY, AI_OBSERVATION, null]
+    FinishResult:
+      type: object
+      additionalProperties: false
+      required: [attemptId, finishedAt, reveal, revealKind, checklist]
+      properties:
+        attemptId: {type: string, format: uuid}
+        finishedAt: {type: string, format: date-time}
+        reveal: {type: [string, 'null'], description: 시도 기준표 버전의 예시 답(닫힌 문제는 정답과 해설), 없으면 null}
+        revealKind: {type: string, enum: [ANSWER, EXAMPLE]}
+        checklist:
+          type: array
+          items: {$ref: '#/components/schemas/Element'}
+    Difficulty:
+      type: string
+      enum: [EASY, NORMAL, HARD]
+      description: 돌아보기 난이도 (api-spec 1.5) EASY 쉬웠어 · NORMAL 보통 · HARD 어려웠어
+    Reflection:
+      type: object
+      additionalProperties: false
+      required: [difficulty, text]
+      properties:
+        difficulty: {$ref: '#/components/schemas/Difficulty'}
+        text: {type: [string, 'null'], description: 달라진 점}
+    SelfAssessmentItem:
+      type: object
+      additionalProperties: false
+      required: [elementId, label, selfChecked, aiChecked, quote]
+      properties:
+        elementId: {type: string, format: uuid}
+        label: {type: string}
+        selfChecked: {type: [boolean, 'null'], description: 학생이 체크하지 않은 요소면 null}
+        aiChecked: {type: boolean, description: 체크리스트의 체크}
+        quote: {type: [string, 'null']}
     Followup:
       type: object
       additionalProperties: false
