@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
@@ -60,3 +61,37 @@ def db_session_factory(db_engine):
 def db_session(db_session_factory) -> Session:
     with db_session_factory() as session:
         yield session
+
+
+@pytest.fixture
+def report_student_id():
+    return uuid4()
+
+
+@pytest.fixture
+def report_factory(db_engine, report_student_id):
+    # Independent connections/real commits for concurrency and transaction visibility tests.
+    from sqlalchemy import delete, select
+
+    from app.generation.repository import report_item, report_item_evidence, weekly_report
+    from app.outbox.repository import outbox_event
+
+    factory = sessionmaker(bind=db_engine, expire_on_commit=False)
+    try:
+        yield factory
+    finally:
+        with factory.begin() as session:
+            reports = select(weekly_report.c.id).where(
+                weekly_report.c.student_id == report_student_id
+            )
+            items = select(report_item.c.id).where(report_item.c.report_id.in_(reports))
+            session.execute(
+                delete(report_item_evidence).where(report_item_evidence.c.item_id.in_(items))
+            )
+            session.execute(delete(report_item).where(report_item.c.report_id.in_(reports)))
+            session.execute(
+                delete(outbox_event).where(outbox_event.c.subject == str(report_student_id))
+            )
+            session.execute(
+                delete(weekly_report).where(weekly_report.c.student_id == report_student_id)
+            )

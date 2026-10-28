@@ -127,3 +127,12 @@
 - 실제 연결 첫 실행은 부하 상황의 Redis 초기 연결 2초 제한으로 core 기동이 실패했다. 검증 실행에만 Redis connect/read timeout 30초를 지정하고 새 폐기 DB에서 재실행해 통과했다. production Redis 설정이나 core→learning timeout은 변경하지 않았다.
 - 실제 검증 JAR SHA-256: core `1f5bb658e8a8e72af32f19e557343e87274c24ddf0288a11a4350ec9ff99cd69`, learning `204400babbc545ca5149b9f8e8779e627595a40880b72910789ff92e5bf911b8`. 검증한 production client와 worktree 소스가 바이트 단위로 일치했다.
 - 기존 #40 두 커밋을 보존하고 develop b344797과의 merge 커밋으로 통합한다. PR은 생성하지 않는다. 이전의 #27 공급자 대기 상태는 이번 통합으로 해소됐다.
+
+
+## 최신 develop 추가 반영 (2026-10-28, 7f30c2e)
+
+- 같은 feature/core-dashboard-queries에 origin/develop 7f30c2e를 merge했다. #50(PR #101)·#51(PR #108), AI 분석(PR #107), QR 시연(PR #106) 변경을 보존했으며 텍스트 충돌은 없었다.
+- #40의 core/learning 소스·테스트·설정과 core/learning OpenAPI는 이전 검증 커밋 ce58afd에서 변경되지 않았음을 git diff로 확인했다. 앞선 core 205개 합산·learning 183개·실제 연결 9개 결과를 이번에 재실행한 것으로 표현하지 않는다.
+- 변경 영향 검증: scripts/tests 58개, 프론트 테스트 87개, 프론트 build·전체 oxlint, core/learning/ai OpenAPI 3.1 검사 및 git diff --check 모두 통과했다. 기존 Vite 번들 크기 경고는 남아 있다.
+- #40 대시보드 계약과 report의 studentId·조회 기간·시각 필드 계약을 대조했다. core/learning/리포트 전체 생성 E2E·실제 AI 호출·QR 브라우저 시연은 이번 통합에서 추가 실행하지 않았다. AI/report 서비스 내부 테스트는 해당 develop 병합 PR의 검증 범위이며 이번 #40 실행 결과로 합산하지 않는다.
+- 기존 작업 커밋을 보존하고 추가 merge 커밋을 같은 작업 브랜치에 일반 push한다. PR은 사용자가 직접 생성한다.

@@ -583,7 +583,7 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 - `/me.permissions`: `CONTENT|PAYMENT_VIEW|PAYMENT_REFUND|SERVICE_OPS` 배열. 미제공이면 권한 없는 것으로 취급한다. UI 숨김과 별개로 모든 목 핸들러에서 권한 검사한다.
 - overview: `{period,state,inclusionRule,attempts,completed,jobCounts:[{type,status,count}],missionCounts:[{status,count}]}`. 숫자는 목업 데이터에서 집계한다. 작업/미션 클릭 시 해당 필터 목록으로 연결한다.
 - jobs 목록: 1.1 봉투. 항목 `{jobId,type,status,retryCount,failureReason,createdAt,updatedAt,executions:[{executionId,attemptNo,status,errorCode,errorDetail,triggeredBy,startedAt,finishedAt}]}`. retry는 같은 키의 최초 응답을 반환한다. 재시도 결과가 실패면 FAILED 유지. queues: `{items:[{name,length,dlq}]}`. audit 항목 `{id,actorUserId,action,targetType,targetId,result,detail,createdAt}`.
-- 운영 요약 → 작업 목록의 집계 범위 유지를 위해 jobs 조회에 선택적 `from&to` 필터를 목업에서 함께 사용한다. 실제 backend의 필터 계약 확인 대상이다. 전후 변화 연결어는 목업만 `왜냐하면·때문·그래서·따라서` 고정 목록으로 시험하며 실제 서버의 확정 집계 목록을 대신하지 않는다.
+- 운영 요약 → 작업 목록의 집계 범위 유지를 위해 jobs 조회에 선택적 `from&to` 필터를 목업에서 함께 사용한다. 실제 backend의 필터 계약 확인 대상이다. 전후 변화 연결어는 `왜냐하면·때문·그래서·따라서`를 사용한다(#51에서 서버 목록도 동일하게 확인, P08). 브라우저 목업 테스트가 서버의 실제 집계·연동 검증을 대신하지는 않는다.
 - mission: `{missionId,status,demoOnly,currentVersion,currentRubricVersion,publishedVersion,versions:[{version,title,subject,gradeMin,gradeMax,thinkingType,inputType,question,guide,scene,sceneUri,staticSceneUri,achievementStandards,choices?,categories?,createdAt}],rubrics:[{version,elements:[{code,label,description,points,commonErrors,goodThought,judgeVerified}],answerKey?,exampleAnswer?,forbiddenTerms,hints}],reviews:[{missionVersion,rubricVersion,result,comment,createdAt}]}`.
 - POST/PATCH mission는 위 version 필드+demoOnly를 받는다. PATCH와 rubric PUT은 새 불변 버전 추가. review-request는 `{missionVersion,rubricVersion}`, review는 같은 버전+`result:APPROVED|CHANGES_REQUESTED,comment`. publish 검증은 현재 버전 검토와 필수 콘텐츠/기준 확인, 422의 `missingFields[]` 표시. preview는 `{mission:Mission,missionVersion,rubricVersion}`이며 학생 장면/입력 컴포넌트만 재사용하고 답안은 포함하지 않는다. 업로드는 미구현(URI만 입력).
 - model-version: ERD 필드 `{id,kind,name,version,status,artifactUri?,evalResult?,approvedBy?,activatedAt?,createdAt}`. 등록/활성화는 평가 근거와 승인자 필요, rollback은 이전 승인 버전을 재활성화하고 재분석 여부를 기록한다. ai-usage: `{period,items:[{callType,calls,failures,latencyMs,inputTokens,outputTokens,costUsd}]}`(원문·학생 ID 없음). 확정 계약은 model-version 5.2(`refId`·`evaluation` 등)·ai-usage 4.6(`unpricedCalls` 등)이 우선한다.
@@ -680,6 +680,23 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | * | `/internal/admin/missions/...` | core | 2.8 미션 관리 프록시 |
 
 - 기록 조회 공통 (#27): 학생 경로는 역할 `PARENT`·`STUDENT`·`SYSTEM`(`home`은 학생 본인 `STUDENT`만)이고 `X-Student-Scope`에 대상 학생이 없으면 `403`. `from`·`to`는 KST 날짜(양 끝 포함), 둘 다 주거나 둘 다 생략(생략하면 오늘 포함 최근 7일, P06), 한쪽만 주거나 `from > to`면 `400`. 응답 `period`는 실제 조회 기간. 집계 대상은 P08(기간 안에 답변 제출이 있는 시도, 미완료 포함·판정 상태 무관. 조회 종료일까지의 답변이 모두 처리 실패인 시도와 삭제 기록은 제외). 시도별 사실(완료·되묻기 받음·보완 답변·최근 답변)은 조회 종료일까지 일어난 것만. `state`는 집계 대상(비율은 분모) 0건 `NO_RECORD`, 1~4건 `INSUFFICIENT_SAMPLE`(비율 `value: null`), 5건 이상 `OK`. 메모·초안은 반환하지 않음(P05). 최상위 학생 식별자는 호출 역할과 무관하게 `studentId`(학부모 공개 응답의 `childId`는 core가 바꿈, core #40·report #51과 합의). 조회 장애는 `state`가 아니라 HTTP 오류(Problem Details)로 반환. 까닭을 잇는 말은 `왜냐하면`·`때문`·`그래서`·`따라서`(report와 확정)
+
+#### 4.1.1 report 수치 집계 입력 (#27 공급 계약·#51 수신부 반영)
+
+2026-10-28 PR #105가 develop `b344797`에 병합되어 learning의 코드·OpenAPI·검증 문서로 공급 계약을 확인했다. report 수신부도 `studentId`, 학생 작성 칸 기준 수치 계산, nullable `followup`에 맞췄다. 아래는 P06·P08 계산에 사용하는 입력이며, 검증 범위와 후속 연결은 [#51 입력·계산 검증](../report/report-metrics.md)을 따른다.
+
+- 세 조회 모두 `studentId`·`period:{from,to}`·`state`를 반환한다. 학부모 공개 응답의 `childId`와 혼용하지 않는다. 학생·기간이 요청과 다르면 생성에 사용할 수 없다. 날짜 범위는 KST 양 끝 포함이며 조회 장애는 HTTP 오류다.
+- `attempts`·`changes`는 1.1의 페이지 봉투를 사용한다. `page`는 0부터 시작하고 `totalElements`는 같은 학생·기간·포함 기준의 전체 항목 수다. report는 `size=100`으로 모든 페이지를 읽으며 실패/누락 페이지를 빈 기록으로 바꾸지 않는다. `thinking-types`는 `{studentId,state,period,items}` 형태를 사용한다.
+- `attempts.items[]`의 필수 입력:
+  - `attemptId`, `studentId`, `mission:{title,thinkingType}`, `status:IN_PROGRESS|COMPLETED`, `answers[]`, `hintUsages:[{openedAt}]`. 학생 메모·초안은 포함하지 않는다. #27은 attempts에 삭제 표식 항목을 넣지 않는다. 삭제 뒤 정상 조회는 `NO_RECORD`, `items:[]`, `totalElements:0`이다. 이것은 evidence의 삭제된 답변 표시나 #55 삭제 완료 처리를 대신하지 않는다.
+  - `answers[]`: `{answerId,version,submittedAt,inputType,text,followupId,content,feedback:{status:PENDING|RUNNING|DONE|FAILED}}`. `text`는 표시·근거용 평문 전체이고 null이 아닌 문자열이다(내용이 없으면 `""`). 풀이·논술의 칸 이름과 고르기의 선택지 이름이 포함될 수 있다. 수치 재계산에는 `content`의 학생 작성 칸만 사용해야 하며 표시용 `text`를 그대로 세면 안 된다. 시도당 1번부터 조회 종료일 끝까지의 답변 버전을 제공한다. 최초 답변·도움 이용을 비교할 수 있도록 조회 시작일 이전의 답변도 포함한다. report는 종료일 이후 답변을 사용하지 않는다.
+  - `hintUsages[]`는 조회 시작일 이전 기록을 포함하여 최초 답변 이전 열람 여부를 판정할 수 있는 전체 열람 시각을 제공한다. 열람이 없으면 빈 배열이며 단순 `helped` 값으로 대체하지 않는다. `submittedAt`·`openedAt`·`completedAt`·`createdAt`은 시간대 오프셋이 있는 ISO 8601 시각이다.
+  - 완료 시도는 `completedAt`을 제공한다. learning **입력**의 `reflection`은 해당 기간에 작성한 `{difficulty:EASY|NORMAL|HARD,text:string|null,createdAt}` 또는 `null`이다. 미작성·기간 밖이면 `null`을 사용하고 report는 필드 생략도 허용한다. 선택 텍스트가 null이어도 난이도·작성 시각이 있는 돌아보기는 작성한 기록이다. `{written:false}`만 있는 객체는 입력 형식이 아니다.
+  - report **출력/저장 항목**의 `reflections[]`는 미작성·기간 밖이면 `{attemptId,written:false,difficulty:null,text:null}`이다. 입력에 기간 밖 돌아보기가 포함되어도 report가 작성 시각으로 제외한다. 작성한 항목은 `written:true`이며 내부 계산·저장에는 난이도 코드를 유지한다. 입력과 3.4 출력 형식을 혼용하지 않는다.
+- `thinking-types.items[]`: `{type,missions:[{attemptId,title}],state}`. 다섯 유형을 모두 제공하며 없는 유형은 `NO_RECORD`, 있는 유형은 `OK`다. 유형 요약 문장은 제공하지 않는다. 집계 대상 시도의 유형·미션을 대조한다.
+- `changes.items[]`: `{attemptId,followup:string|null,first:{answerId,text},revised:{answerId,text},counts:{chars,sentences,reasonConnectives}}`. 포함된 시도의 종료일 기준 최초·마지막 답변과 ID·평문이 일치해야 한다. 시도당 한 쌍이며 답변이 하나뿐이면 변화 항목을 만들지 않는다. 수치는 report가 `answers[].content`로 다시 계산한다. 서술은 text, 풀이는 steps 순서 후 finalAnswer, 논술은 essay.claim·reasons 순서·rebuttal 중 비어 있지 않은 칸을 줄바꿈으로 연결한다. 칸 이름·선택지 이름·메모·추가 필드는 제외하며 고르기·순서·분류의 학생 작성 글은 빈 문자열로 계산한다. 필수 내용 누락·잘못된 형식은 오류로 처리하며 표시용 text로 대신 계산하지 않는다. null `followup`은 계산 결과·DB에 그대로 보존한다. 후속 #53·#54의 조회 JSON도 null을 유지하고 PDF·HTML·Markdown은 질문 문구를 생략해야 한다. `None`이나 임의의 질문을 표시하지 않는다.
+- `evidence`는 `{items:[...]}`다. 정상 항목은 `answerId,attemptId,answerVersion,quote,missionTitle,submittedAt,available:true`이며 `quote`는 attempts의 `text`와 같은 전체 평문이다. 없는 답변·삭제 학생은 `available:false`로 원문을 제공하지 않는다. 요청 ID를 중복 제거한 순서대로 정상/삭제 항목을 함께 반환하며 누락하지 않는다. report는 ID를 중복 없이 보내고 시도·버전·원문을 대조한다.
+- 동일 시도가 여러 주에 걸치면 각 주에 제출된 답변 존재 여부로 포함한다. 변화는 포함된 시도의 최초 답변과 해당 주 종료일 이전 마지막 답변을 비교한다. 조회 이후에 추가된 답변으로 과거 주의 마지막 답변을 바꾸지 않는다.
 
 ### 4.2 ai-service (호출: learning, core, report)
 
