@@ -42,7 +42,7 @@
       │ events.topic: report.*, llm.*, model.*, student.*  (fan-out, 소비자 N) │
       └────────────────────────────────────────┼──────────────────────────────┘
                ▲ consume                       │ HTTP(서술 생성)
-        report-service ────────────────────────┘2222222222222222222
+        report-service ────────────────────────┘
           └─ HTTP(기록 조회) ─▶ learning-service
 
 저장소: RDS PostgreSQL(서비스별 DB) · S3(미션 장면·리포트 파일·모델 가중치) · Redis
@@ -60,7 +60,7 @@
 | 상태 변화 전파 | **이벤트** → `events.topic` | 생산자가 소비자를 모름, 소비자 추가 시 생산자 무변경 |
 
 - 동기 호출 장애 대응: 타임아웃 + 재시도 제한 + 서킷 브레이커(Spring Resilience4j / Python httpx 타임아웃·재시도). 값(P12): LLM 1회 15초·재시도 1회(1초 대기), learning→ai 판정·되묻기 각 35초, core→learning 피드백 80초, 분석 대화 core→ai 첫 응답 20초·전체 120초, 서킷 브레이커 최근 20건 중 실패 50% 이상 시 30초 차단, 리포트 작업 재시도 3회(1·5·15분) 후 DLQ. 실패 시 "처리 실패"로 기록·SSE 전달, 판정 보류·기록 없음과 구분
-- 타임아웃 예산: 바깥 호출 타임아웃 > 안쪽 호출 합계 (예: core→learning > learning→ai judgments + followups). 전체 상한은 CloudFront·ALB 타임아웃(4.3) 이내
+- 타임아웃 예산: 바깥 호출 타임아웃 > 안쪽 호출 합계 (예: core→learning > learning→ai judgments + followups). 전체 상한은 CloudFront·ALB 타임아웃(4.3) 이내. 이를 넘는 SSE(피드백 80초, 분석 대화 120초)는 15초 heartbeat가 유휴 타이머를 갱신하는 것을 전제로 함
 - 재시도 계층: ai의 LLM 호출에서만 재시도, core·learning·report의 서비스 간 호출은 재시도 없음 (계층별 재시도 시 호출 수 곱셈 증폭)
 - #38 일반 core→learning JSON 프록시는 연결 2초·응답 30초를 사용한다(피드백의 80초 예산은 #39). Resilience4j count window 20·최소 20건·실패율 50%·차단 30초·half-open 1건으로 복구를 확인한다. 전송 오류·5xx를 실패로 집계하고 4xx는 정상 HTTP 결과로 센다. 응답·오류 대역은 test 소스에만 둔다.
 - SSE heartbeat: 모든 SSE는 15초마다 주석 줄(`: ping`) 전송. 피드백은 learning 동기 응답 대기 중 전송할 데이터가 없어 필수
@@ -122,7 +122,7 @@
   - 기동 순서: 큐 바인딩 → core 활성 버전 조회 (반대 순서면 그 사이 이벤트 유실)
   - #43 계약: 내부 조회와 이벤트는 같은 kind·name별 revision·적용 scopes를 제공한다. 소비자는 초기 조회 중 이벤트를 보존·조정하고 더 높은 revision만 적용하며 승인 scope 밖에는 적용하지 않는다. core는 Pod 공유 소비 큐를 추가하지 않는다. 실제 ai·scoring 소비·readiness 구현은 해당 서비스의 후속 작업이다.
   - core 조회 실패 시 프로세스 종료 없이 readiness false 유지·재시도 (core 장애가 ai·scoring 기동 실패로 번지지 않게)
-- **이벤트 봉투**: CloudEvents 형식 `id, type, source, time, subject, dataschema, traceparent, data` → `contracts/events/*.schema.json`
+- **이벤트 봉투**: CloudEvents 형식 `id, specversion, type, source, time, subject, dataschema, traceparent, data` → `contracts/events/*.schema.json`
 - **스키마 버전**: 파일 `<message>.v<N>.schema.json`, `dataschema`에 버전 표기. 하위 호환 변경(선택 필드 추가)만 같은 버전, 그 외는 새 버전 병행 발행 후 소비자 전환
 - **SSE 다중 레플리카**: core 레플리카 간 Redis Pub/Sub으로 알림 중계
 
@@ -218,9 +218,12 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ domain/
 │  └─ repository/
 ├─ learning/                     # learning 프록시 (미션·시도·대시보드)
-│  ├─ controller/
+│  ├─ controller/                # LearningController, FeedbackController(SSE)
+│  ├─ service/                   # LearningProxyService, FeedbackService, LearningRecordService
+│  ├─ config/                    # FeedbackConfiguration (피드백 전용 클라이언트·서킷)
 │  └─ client/
-│     └─ LearningClient.kt
+│     ├─ LearningClient.kt
+│     └─ LearningRecordClient.kt
 ├─ conversation/                 # 분석 대화, 예시 질문
 │  ├─ controller/                # SSE
 │  ├─ service/
@@ -482,6 +485,8 @@ backend/report-service/
 | CNI (NetworkPolicy) | - | Calico (기본 CNI 정책 지원 버전별 상이) | VPC CNI `enableNetworkPolicy: "true"` |
 | 외부 연동 | stub (LLM·토스) | stub 또는 테스트 키 | LLM API, 토스페이먼츠 테스트 키 |
 
+- 현재 stub(`infrastructure/stubs`)은 미구성이다. Docker Compose의 ai-service는 `.env`의 `LLM_PROVIDER`·API 키로 실제 LLM을 호출하고, 키가 없으면 판정·되묻기가 `AI_UNAVAILABLE`로 실패한다(6장 LLM 제공자).
+
 - 로컬 자원 시작 기준: i5-1135G7(4코어·8스레드)·16GB급 PC, WSL 2 Docker 메모리 상한 약 7.62GiB. 저장소·Ingress·초기화 작업과 기반 구성에 약 6GiB를 계획하며, 앱·관측·모델 추론의 동시 실행 보장은 아니다. [이슈 #17 자원 설계](../report/local-platform-resource-plan.md)의 제안값을 구현·실측 후 조정한다.
 - 로컬 MinIO는 `sagomungchi-local-missions`·`sagomungchi-local-reports`·`sagomungchi-local-models` 버킷 세 개를 단일 MinIO 저장 공간 안에 구성한다. 운영 S3 이름은 AWS 자원 작업에서 별도 확정한다.
 - Compose의 MinIO는 선택 실행용 `compose.minio.yaml`에 서비스 세 개와 전용 볼륨을 둔다. 기본 `compose.yaml`은 MinIO 계정 없이 기존 앱·DB 실행과 스키마 검증에 사용하고, MinIO가 필요할 때만 두 파일을 함께 지정한다. kind의 MinIO는 로컬 values에서 계속 활성화한다.
@@ -504,7 +509,7 @@ backend/report-service/
 - VPC: Public Subnet(ALB, NAT GW) / Private Subnet(EKS 노드, RDS)
 - 진입: CloudFront → S3(웹 정적 파일·미션 장면) / CloudFront → ALB(AWS Load Balancer Controller Ingress) → core-service
 - CloudFront: 웹과 API를 한 배포·한 도메인에서 경로로 분기 (refresh 쿠키 `SameSite=Strict` 전제)
-  - `/api/*` 동작: 캐시 비활성, `Authorization`·`Idempotency-Key`·`If-Match`·`X-Reauth-Token` 헤더와 쿠키 전달, 압축 비활성(SSE 버퍼링 방지)
+  - `/api/*` 동작: 캐시 비활성, `Authorization`·`Idempotency-Key`·`If-Match`·`X-Reauth-Token`·`Origin`·`X-Requested-With`(쿠키 API 검사, API 5.1) 헤더와 쿠키 전달, 압축 비활성(SSE 버퍼링 방지)
   - 타임아웃: CloudFront origin 응답 60초, ALB idle 120초 (SSE heartbeat 15초, 1.3)
 - 외부 호출(LLM API·토스페이먼츠): Pod → NAT GW → Internet GW
 - Namespace: `app`(core·learning·ai·scoring·report), `platform`(RabbitMQ·Redis), `observability`, `argocd`
@@ -654,6 +659,7 @@ SKN34-FINAL-3TEAM/
 │     ├─ _python.yml
 │     ├─ _web.yml
 │     ├─ ci-<service>.yml        # 서비스·stub별 경로 필터(<경로>/**, contracts/**) → 재사용 워크플로 호출
+│     ├─ ci-db-schema.yml        # 마이그레이션 적용·ERD 대조 (scripts/check_db_migrations.py)
 │     └─ ci-contracts.yml        # 스키마 검증, asyncapi ↔ definitions.json exchange·routing key 일치 검사
 ├─ docs/
 │  ├─ README.md                  # 개발 규칙
