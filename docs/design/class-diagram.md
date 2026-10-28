@@ -1706,9 +1706,9 @@ classDiagram
 ```mermaid
 classDiagram
   direction TB
-  class ReportGenerateConsumer {
+  class GenerationConsumer {
     <<consumer>>
-    +on_generate(envelope)
+    +__call__(envelope)
   }
   class GenerationService {
     <<service>>
@@ -1716,10 +1716,16 @@ classDiagram
   }
   class MetricsCalculator {
     <<service>>
-    +metrics(records, period) list~Metric~
-    +thinking_types(records) list
-    +changes(pairs) list~Change~
-    +state(records) ReportState
+    +calculate(records) GenerationResult
+  }
+  class RecordGenerator {
+    <<service>>
+    +generate(command, report) GenerationResult
+  }
+  class GenerationResult {
+    +state ReportState
+    +inclusion_rule str
+    +items tuple~ReportItem~
   }
   class ReportVerifier {
     <<service>>
@@ -1731,34 +1737,33 @@ classDiagram
   }
   class WeeklyReport {
     <<entity>>
-    +complete(state, items, narrative, verification)
-    +fail(reason)
+    +id UUID
+    +job_id UUID
+    +student_id UUID
+    +revision int
+    +status ReportStatus
+    +state ReportState
   }
   class ReportItem { <<entity>> }
   class ReportRepository {
     <<repository>>
-    +create_running(job_id, student_id, period) WeeklyReport
-    +find_by_job(job_id) WeeklyReport
-    +save(report)
-  }
-  class OutboxWriter {
-    <<messaging>>
-    +append(session, type, routing_key, subject, data)
+    +get_or_create(session, command) tuple
+    +find_by_job(session, job_id) WeeklyReport
+    +finish(session, report_id, result, failure_reason) WeeklyReport
   }
   class OutboxRelay {
     <<messaging>>
-    +run()
+    +publish_once() bool
   }
   class OutboxRepository {
     <<repository>>
-    +find_unpublished(limit) list
-    +mark_published(id, published_at)
+    +add(session, envelope)
+    +next_unpublished(session) PendingEvent
+    +mark_published(session, event_id)
   }
   class LearningClient {
     <<client>>
-    +thinking_types(student_id, period) list
-    +attempts(student_id, period) list
-    +changes(student_id, period) list
+    +records(student_id, period) LearningRecords
     +evidence(answer_ids) list
   }
   class AiClient {
@@ -1797,18 +1802,18 @@ classDiagram
     +report_deletion_completed(deletion_request_id)
   }
 
-  ReportGenerateConsumer --> GenerationService
+  GenerationConsumer --> GenerationService
   GenerationService --> ReportRepository
-  GenerationService --> OutboxWriter : report.started·completed·failed
-  GenerationService --> LearningClient
-  GenerationService --> MetricsCalculator
+  GenerationService --> OutboxRepository : report.started·completed·failed
+  GenerationService --> RecordGenerator : R2 계산 단계
+  RecordGenerator --> LearningClient
+  RecordGenerator --> MetricsCalculator
   GenerationService --> AiClient
   GenerationService --> ReportVerifier
   GenerationService --> ReportRenderer
   GenerationService --> ObjectStorage
   GenerationService ..> WeeklyReport
-  WeeklyReport *-- ReportItem
-  OutboxWriter --> OutboxRepository
+  GenerationResult *-- ReportItem
   OutboxRelay --> OutboxRepository : 미발행 조회·발행 기록
   OutboxRelay --> EventPublisher : publisher confirm
   query_router --> QueryService
@@ -1821,9 +1826,11 @@ classDiagram
 
 | 클래스 | 파일 | 실행 프로세스 |
 |---|---|---|
-| `ReportGenerateConsumer`, `GenerationService`, `MetricsCalculator`, `ReportVerifier`, `ReportRepository`, `WeeklyReport` | `generation/consumer.py`·`service.py`·`metrics.py`·`verifier.py`·`repository.py`·`models.py` | report-worker |
+| `GenerationConsumer`, `GenerationService`, `MetricsCalculator`, `ReportVerifier`, `ReportRepository`, `WeeklyReport` | `generation/consumer.py`·`service.py`·`metrics.py`·`verifier.py`·`repository.py`·`models.py` | report-worker |
+| `RecordGenerator`, `GenerationResult`·`ReportItem` | `generation/record_generator.py`·`models.py` | report-worker (R2 계산 결과를 종료 트랜잭션으로 전달) |
+| `LearningClient` | `clients/learning_client.py` | report-worker (`records`는 세 조회를 모아 정규화, `evidence`는 #52 계획) |
 | `ReportRenderer` | `rendering/renderer.py` (Jinja2 → HTML, Playwright → PDF, Markdown) | report-worker |
-| `OutboxWriter`, `OutboxRelay`, `OutboxRepository` | `outbox/` | report-worker |
+| `OutboxRelay`, `OutboxRepository` | `outbox/` | report-worker (서비스의 종료 트랜잭션이 `OutboxRepository.add` 호출) |
 | `StudentDeletedConsumer`, `DeletionService` | `deletion/` | report-worker |
 | `query_router`, `QueryService` | `query/router.py`, `query/service.py` (신규) | report-api |
 | `ObjectStorage` | `clients/storage.py` (신규, S3·로컬 MinIO) | 공통 |
@@ -1831,6 +1838,8 @@ classDiagram
 - `GenerationService.generate`: `job_id`로 기존 행 조회 → 없으면 `RUNNING` 생성, `COMPLETED·FAILED`면 ACK만, `RUNNING`이면 같은 행으로 재실행. 기록 없음·표본 부족은 `COMPLETED + state`, 실패는 `FAILED` (FN-RPT-11)
 - `query_router`·`QueryService`: 모든 조회에서 리포트의 `student_id`가 `X-Student-Scope`에 있는지 검사, 없으면 403 (API 4장)
 - 수치·전후 변화는 `MetricsCalculator`(코드)에서만 계산, ai는 서술·저녁 질문만 (FN-RPT-03, 05)
+- #51 구현의 `RecordGenerator`는 learning 조회 → `MetricsCalculator.calculate` → 항목·근거가 포함된 `GenerationResult`를 반환한다. `ReportRepository.finish`가 상태·항목·근거를 저장하며 종료 이벤트와 같은 트랜잭션에 참여한다. 입력 계약은 병합된 #27 코드·OpenAPI와 대조한 API 4.1.1이며, #51의 검증 범위는 `docs/report/report-metrics.md`에 기록한다.
+- report 다이어그램의 AI 서술·원문 재검증·렌더링·저장·조회·삭제는 #52~#55의 최종 구성 계획을 포함한다. #42 공통 메시지 계약과 #50 worker·Outbox 연결은 develop에 반영됐다. 계산·서술·렌더링을 포함한 전체 생성기 조립은 후속 단계에서 검증한다. `LearningClient.evidence`도 #52 구현 대상이다.
 - `ReportVerifier`: 서술 속 숫자·인용을 계산 결과·learning 원문과 대조, 실패 시 서술을 템플릿 요약으로 교체(`narrative.source = TEMPLATE`, P16). `NO_RECORD`·무료 플랜(`narrativeEnabled = false`)은 ai 호출 생략 (P06·P13)
 
 ---
