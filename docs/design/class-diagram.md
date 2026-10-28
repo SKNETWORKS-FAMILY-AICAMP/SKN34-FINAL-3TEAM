@@ -519,18 +519,23 @@ classDiagram
   class LearningRecordService {
     <<service>>
     +exists(studentId) Boolean
+    +studentDashboard(resource, query) HttpExchangeResult
+    +parentDashboard(studentId, resource, query) HttpExchangeResult
   }
   class LearningRecordClient {
     <<client>>
     +exists(studentId) Boolean
+    +dashboard(studentId, resource, query, parent, child) HttpExchangeResult
   }
   class DashboardController {
     <<controller>>
-    +studentHome() Home
-    +childSummary(childId, from, to) Summary
-    +childThinkingTypes(childId, from, to) List
-    +childAttempts(childId, from, to) List
-    +childAttempt(childId, attemptId) AttemptDetail
+    +home(from, to) Response
+    +studentAttempts(from, to, page, size, status) Response
+    +activities(from, to) Response
+    +summary(childId, from, to) Response
+    +types(childId, from, to) Response
+    +parentAttempts(childId, from, to, page, size, status) Response
+    +detail(childId, attemptId, from, to) Response
   }
   class LearningClient {
     <<client>>
@@ -592,8 +597,9 @@ classDiagram
   FeedbackService --> LearningProxyService
   LearningRecordService --> LearningRecordClient
   LearningRecordClient --> LearningClient
-  DashboardController --> GuardianshipService
-  DashboardController --> LearningClient
+  DashboardController --> LearningRecordService
+  LearningRecordService --> StudentAccessService : 현재 연결·ACTIVE·동의
+  LearningRecordService --> StudentLearningContextService : home 학년·demo
   ConversationController --> GuardianshipService
   ConversationController --> ConversationService
   ConversationController --> SseEmitters
@@ -607,7 +613,8 @@ classDiagram
 ```
 
 - `learning/`은 controller → service(`LearningProxyService`·`FeedbackService`·`LearningRecordService`) → `LearningClient` 구조 (아키텍처 1.3·2.6). 공통 프록시는 `exchange`로 경로·본문을 그대로 전달하고 학생 컨텍스트·답변 멱등을 service에서 처리 ([이슈 #38 보고서](../report/issue-38-core-learning-proxy.md))
-- 구현 상태 (#37·#38·#39): `LearningController`·`LearningProxyService`·`StudentLearningContextService`·`FeedbackController`·`FeedbackService`·`LearningRecordService`·`LearningRecordClient`·`LearningClient.exchange` 구현됨. `finish`·`reflection`·`selfAssessment`는 core 프록시만 있고 learning 처리는 #26 후속. `DashboardController`·`Conversation*`·`AiClient`·`LearningClient.evidence`·`correctJudgment`는 미구현
+- 구현 상태 (#37·#38·#39): `LearningController`·`LearningProxyService`·`StudentLearningContextService`·`FeedbackController`·`FeedbackService`·`LearningRecordService`·`LearningRecordClient`·`LearningClient.exchange` 구현됨. `finish`·`reflection`·`selfAssessment`는 core 프록시만 있고 learning 처리는 #26 후속. `Conversation*`·`AiClient`·`LearningClient.evidence`·`correctJudgment`는 미구현
+- #40 `DashboardController`의 학생 3개·학부모 4개 조회는 LearningRecordService → LearningRecordClient → 기존 LearningClient를 사용한다. 공급자의 집계·home·상세는 #27 예정 계약이며 core는 수치를 계산하지 않는다. [#40 보고서](../report/issue-40-dashboard.md) 참고.
 - `FeedbackController`: learning 동기 응답을 기다리는 동안 heartbeat만 전송, 응답을 `status`·`result`·`error`·`done` 이벤트로 변환. 클라이언트 단절과 무관하게 learning 호출 유지 (아키텍처 1.3)
 - `ConversationService.stream`: ai SSE 이벤트를 그대로 중계, `result` 수신 시 `complete`(트랜잭션), 클라이언트 단절 시 `AiClient.cancel` + `fail(CLIENT_DISCONNECTED)` (재시도 가능)
 - 근거 원문은 저장하지 않고 `message_evidence` ID로 learning `/internal/records/evidence` 조회 (ERD 3.2)

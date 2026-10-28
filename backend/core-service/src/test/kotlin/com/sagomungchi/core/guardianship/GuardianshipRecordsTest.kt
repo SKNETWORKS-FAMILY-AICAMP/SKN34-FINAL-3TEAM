@@ -13,6 +13,7 @@ import com.sagomungchi.core.guardianship.domain.LinkedStudent
 import com.sagomungchi.core.guardianship.repository.StudentAccessRepository
 import com.sagomungchi.core.guardianship.service.GuardianshipService
 import com.sagomungchi.core.guardianship.service.StudentAccessService
+import com.sagomungchi.core.guardianship.service.StudentLearningContextService
 import com.sagomungchi.core.learning.LearningHttpStub
 import com.sagomungchi.core.learning.client.LearningClient
 import com.sagomungchi.core.learning.client.LearningHttpProperties
@@ -36,7 +37,8 @@ class GuardianshipRecordsTest {
         mock(AccountAccessService::class.java),mock(ConsentService::class.java),consent,records)
     private fun records(stub: LearningHttpStub) = LearningRecordService(LearningRecordClient(LearningClient(
         InternalRestClientFactory(AppProperties(AppProperties.Internal("server-secret",Duration.ofSeconds(1),Duration.ofSeconds(30)),
-            mapOf("learning" to stub.url)),RestClient.builder()),LearningHttpProperties(Duration.ofSeconds(10))),jacksonObjectMapper()))
+            mapOf("learning" to stub.url)),RestClient.builder()),LearningHttpProperties(Duration.ofSeconds(10))),jacksonObjectMapper()),
+        access, mock(StudentLearningContextService::class.java))
 
     @Test fun `three actual HTTP requests overlap with verified context and preserve child order`() = LearningHttpStub().use { stub ->
         `when`(access.linkedStudents(user)).thenReturn(students)
