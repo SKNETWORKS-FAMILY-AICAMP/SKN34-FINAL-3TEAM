@@ -89,3 +89,11 @@ ShedLock 설정 근거: [고정 버전 6.10.0 공식 README](https://github.com/
 - 검증 중 30개 non-Markdown 변경 파일의 SHA-256이 그대로임을 확인했고, JAR의 Flyway·Testcontainers·JUnit·Mockito·테스트 payload 미포함을 확인했다. DB migration은 바뀌지 않아 10/27의 전체 3-DB cycle을 반복하지 않았으며, 현재 core 전체 테스트는 기존 V1~V8을 실제 임시 DB에 적용했다.
 - 원격 CI·운영 배포·실제 report-service/상품/AI 연결은 이번 결과에 포함하지 않는다. 상품 미연결의 명시적 503과 기존 공통 OutboxRelay의 트랜잭션 제한은 남는다. #44 알림 연결 지점 및 #50~#54·#64 실제 연동 후 검증 조건은 위 경계를 유지한다.
 - Git 준비: #42 변경 34개 파일만 명시적으로 stage하는 한 기능 커밋으로 정리한다. 메시지는 `feat: core 주간 리포트 작업·스케줄·조회 구현`, push 대상은 origin의 `feature/core-weekly-reports`, PR base는 develop이다. 원본 checkout 및 다른 작업 브랜치를 변경하지 않으며 PR은 생성하지 않는다. 실제 커밋 SHA·push 결과는 최종 작업 보고와 Git 기록을 따른다.
+
+### core-integration 대상 PR 준비
+
+2026-10-28 요청에 따라 최신 develop과 같은 `40a2501223defd69bcc55595643a6fecf81e9df3`에서 `feature/core-integration` 브랜치를 생성·push했다. 기존 checkout을 전환하지 않았다. 이 시점의 #42 head는 `f744baf44ef6b3c1dc88e27e358b414eff210e79`이며, 실제 PR base는 이제 feature/core-integration이다. core 임시 통합 경로를 docs/README.md에 명시하고 최종 반영은 develop을 유지한다. PR 생성·메타데이터 설정·병합은 직접 수행하지 않는다.
+
+PR 준비 중 ci-db-schema가 report-service의 production 의존성만 설치하는데 새 계약 테스트는 jsonschema를 import하는 것을 확인했다. 기존 로컬 환경에는 설치되어 있어 46개 검사가 통과했지만 그대로는 CI에서 import가 실패한다. 따라서 해당 CI의 테스트 환경에만 jsonschema 4.26.0 설치 단계를 추가한다. report-service pyproject.toml·uv.lock·production 의존성 및 업무 코드는 바꾸지 않는다. locked --no-dev 의존성 + 명시적인 계약 검사 도구를 새 검증 환경에 설치해 전체 scripts/tests를 검증한다. core 업무 코드와 API/이벤트 계약이 변하지 않아 이미 통과한 JDK 21 전체 150개를 반복하지 않는다.
+
+CI 의존성 조합 검증 결과: 새 Python 3.12.10 환경에서 report-service lock의 --no-dev 36개 패키지와 jsonschema 4.26.0만 설치해 scripts/tests 46/46 통과(실패·생략 0). workflow YAML, sync→검사 도구 설치→unittest 순서, core/schema PR의 base 브랜치 제한 없음, production pyproject/lock 미변경 및 git diff --check를 확인했다. 이는 로컬 의존성 재현 검증이며 아직 생성하지 않은 PR의 원격 CI 성공을 뜻하지 않는다.
