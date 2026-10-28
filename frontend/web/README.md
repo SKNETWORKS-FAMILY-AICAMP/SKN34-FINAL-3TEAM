@@ -13,10 +13,10 @@ npm run dev
 
 새로 클론한 저장소에서 확인한 실행 순서(2026-10-27):
 
-1. 백엔드까지 실제로 띄우기: 저장소 루트 `.env`에 `POSTGRES_PASSWORD`·`RABBITMQ_PASSWORD`·`INTERNAL_TOKEN`(필수)과 Google 로그인용 `AUTH_JWT_SECRET`·`GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET`을 채우고 Docker Desktop을 켠 뒤 `docker compose up --build -d` → 이 폴더에서 `npm ci && npm run dev` → **http://localhost:5173** 접속. `127.0.0.1`로 열면 `AUTH_WEB_ORIGIN`(기본 `http://localhost:5173`)과 달라 refresh가 403이 됩니다. 학생 기기·PIN API는 아직 백엔드에 없어 `/student/login`은 준비 중 안내를 보여 줍니다.
+1. 백엔드까지 실제로 띄우기: 저장소 루트 `.env`에 `POSTGRES_PASSWORD`·`RABBITMQ_PASSWORD`·`INTERNAL_TOKEN`(필수)과 Google 로그인용 `AUTH_JWT_SECRET`·`GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET`을 채우고 Docker Desktop을 켠 뒤 `docker compose up --build -d` → 이 폴더에서 `npm ci && npm run dev` → **http://localhost:5173** 접속. `127.0.0.1`로 열면 `AUTH_WEB_ORIGIN`(기본 `http://localhost:5173`)과 달라 refresh가 403이 됩니다. 학생 기기·PIN API는 #104로 구현되어 PostgreSQL·Redis 및 Google 재인증 설정이 필요합니다.
 2. 백엔드 없이 화면만 보기: 아래 MSW 목업 모드(`VITE_API_MOCK=true`). 목업 없이 백엔드도 없으면 "서버(core-service)에 연결하지 못했습니다" 안내만 나옵니다.
 
-기본은 **API 모드**입니다. Vite가 `/api/v1` 요청을 core-service(기본 8080)로 전달합니다. core에는 #36 인증 6개 경로(Google 로그인 시작·콜백, refresh, logout, 학부모 동석 학생 진입, `/me`)만 구현되어 있으며, 실제 Google 로그인·refresh·로그아웃 연동은 [#36 보고서](../../docs/report/issue-36-google-auth.md)에서 검증했습니다. 동의 저장·자녀 등록(#37)과 학습·리포트 등 나머지 공개 Controller는 아직 없으므로 해당 화면은 실제 모드에서 오류나 준비 상태로 표시됩니다. 오류를 샘플 데이터로 덮지 않습니다.
+기본은 **API 모드**입니다. Vite가 `/api/v1` 요청을 core-service(기본 8080)로 전달합니다. 최신 develop에는 #36 인증, #37 동의·자녀 등록, #58 기기·PIN 및 Google 재인증 연결이 포함됩니다. 실제 연결 범위와 검증 조건은 각 이슈 보고서를 참고하세요. 서버 미구현·실패를 샘플 데이터로 덮지 않습니다.
 
 이슈 #7 기준, 개발 중에는 MSW를 켜 실제 API 요청을 가로채서 확인합니다. 앱은 목 여부와 무관하게 같은 apiClient·SSE·Query 경로를 사용합니다.
 
@@ -121,8 +121,8 @@ node tests/api-mode-browser.mjs
 ## #36 실제 인증
 운영/API 모드의 로그인·가입 버튼은 `/api/v1/auth/google/authorize`로 이동한다. core 콜백이 refresh 쿠키를 설정하고 `/oauth/complete`로 돌아오면 refresh → `/me`로 역할·온보딩 단계를 복원한다. access는 메모리에만 있고 refresh는 JS가 읽지 않는다. 쿠키 인증 요청에 X-Requested-With를 붙이며 브라우저가 Origin을 보낸다. Web Locks로 탭 간 쿠키 회전을 직렬화하고 BroadcastChannel로 역할 전환·로그아웃을 알린다. 이 기능을 지원하는 보안 컨텍스트 브라우저가 필요하다. localhost HTTP는 로컬 예외다. 역할 전환 이벤트는 캐시를 비우고 서버 상태를 다시 조회한다.
 
-개발 MSW 이메일/비밀번호 fixture는 기존 시연 테스트 전용이다. 실제 API에는 이메일 로그인/가입을 제공하지 않는다. 신규 Google 계정은 #37 동의·등록 API가 구현되기 전까지 온보딩 준비 안내를 표시한다. 프로필의 비밀번호 재확인은 실제 모드에서 노출하지 않고 Google 재인증(#45)을 기다린다. 서버 미구현·실패를 mock으로 대체하지 않는다.
+개발 MSW 이메일/비밀번호 fixture는 시연 테스트 전용이다. 실제 API에는 이메일 로그인/가입을 제공하지 않는다. 신규 Google 계정은 #37 동의·자녀 등록 흐름을 따른다. 자녀 PIN 변경은 #104에 포함된 자녀별 Google 재인증을 사용한다. 공유 QR 시연에서도 동일한 자녀·세션별 단회 재확인 계약을 유지하며 Google 응답만 개발 fixture로 제공한다. 서버 미구현·실패를 mock으로 대체하지 않는다.
 
 
 ### P01 정렬
-부모·관리자만 refresh로 복원한다. 학생 동석 진입은 access 전용이며 서버가 부모 refresh를 폐기한다. 학생 만료·새로고침과 학생 전환 알림을 받은 다른 탭은 `/student/login`으로 이동한다. 현재 기기·PIN 신규 API가 없어 이 화면은 준비 상태와 부모 동석 진입만 안내하며 성공을 가장하지 않는다. 학생 원문 작성 요청은 만료 후 부모 refresh로 자동 재시도하지 않는다. MSW도 학생 refresh를 거부한다.
+부모·관리자만 refresh로 복원한다. 학생 동석 진입은 access 전용이며 서버가 부모 refresh를 폐기한다. 등록 기기·PIN 로그인은 #104의 별도 학생 access 세션을 사용하며 보호자 세션을 유지한다. 학생 만료·새로고침 시 `/student/login`에서 PIN을 다시 입력한다. 학생 원문 작성 요청은 만료 후 부모 refresh로 자동 재시도하지 않는다. MSW도 학생 refresh를 거부한다.

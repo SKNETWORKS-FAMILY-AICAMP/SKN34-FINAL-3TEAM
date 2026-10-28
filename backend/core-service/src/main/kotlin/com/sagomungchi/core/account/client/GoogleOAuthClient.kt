@@ -29,22 +29,30 @@ class GoogleOAuthClient(private val properties: AuthProperties) {
     private val decoder = NimbusJwtDecoder.withJwkSetUri(properties.googleJwkUrl)
         .jwsAlgorithm(SignatureAlgorithm.RS256).restOperations(RestTemplate(requestFactory)).build()
 
-    fun authorizationUrl(state: String, nonce: String, verifier: String): String {
+    fun authorizationUrl(state: String, nonce: String, verifier: String): String = authorizationAt(state, nonce, verifier, properties.callbackUrl)
+
+    fun reauthAuthorizationUrl(state: String, nonce: String, verifier: String): String = authorizationAt(state, nonce, verifier, properties.reauthCallbackUrl)
+
+    private fun authorizationAt(state: String, nonce: String, verifier: String, callback: String): String {
         if (!properties.googleConfigured) throw BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "OAUTH_UNAVAILABLE", "Google 로그인이 설정되지 않았습니다.")
         val challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.US_ASCII)))
         return UriComponentsBuilder.fromUriString("https://accounts.google.com/o/oauth2/v2/auth")
-            .queryParam("client_id", properties.googleClientId).queryParam("redirect_uri", properties.callbackUrl)
+            .queryParam("client_id", properties.googleClientId).queryParam("redirect_uri", callback)
             .queryParam("response_type", "code").queryParam("scope", "openid email profile")
             .queryParam("state", state).queryParam("nonce", nonce)
             .queryParam("code_challenge", challenge).queryParam("code_challenge_method", "S256")
             .queryParam("prompt", "select_account").build().encode().toUriString()
     }
 
-    fun exchange(code: String, verifier: String, nonce: String): GoogleProfile {
+    fun exchange(code: String, verifier: String, nonce: String): GoogleProfile = exchangeAt(code, verifier, nonce, properties.callbackUrl)
+
+    fun exchangeReauth(code: String, verifier: String, nonce: String): GoogleProfile = exchangeAt(code, verifier, nonce, properties.reauthCallbackUrl)
+
+    private fun exchangeAt(code: String, verifier: String, nonce: String, callback: String): GoogleProfile {
         val body = LinkedMultiValueMap<String, String>().apply {
             add("grant_type", "authorization_code"); add("code", code); add("code_verifier", verifier)
             add("client_id", properties.googleClientId); add("client_secret", properties.googleClientSecret)
-            add("redirect_uri", properties.callbackUrl)
+            add("redirect_uri", callback)
         }
         val raw = try {
             client.post().uri(properties.googleTokenUrl).contentType(MediaType.APPLICATION_FORM_URLENCODED)

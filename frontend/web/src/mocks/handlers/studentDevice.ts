@@ -1,8 +1,9 @@
 import { http } from 'msw/http'
 import { ApiError } from '../../data/apiClient.ts'
+import type { Child } from '../../domain/classroom.ts'
 import { normalizePairingCode, pinProblem } from '../../domain/studentDevice.ts'
 import { fixtureStore as store } from '../fixtures/student.ts'
-import { mockAccountChildren, mockIdentity } from '../fixtures/accounts.ts'
+import { mockAccountChildren, mockIdentity, mockConsentRequired, mockGuardianConsentRequired } from '../fixtures/accounts.ts'
 import {
   DEVICE_TTL_MS,
   MAX_PIN_FAILURES,
@@ -14,7 +15,7 @@ import {
   persistDeviceState,
 } from '../fixtures/studentDevice.ts'
 import { respond, startDeviceStudentSession } from './student.ts'
-import { fail, page, parentChild, parentGuard, requireReauth } from './parent.ts'
+import { fail, page, parentChild, parentGuard, consumePinReauth, mockChildConsentMetadata } from './parent.ts'
 import { demoRequest, sharedDeviceDemo, sharedParentRequest } from '../sharedDevice.ts'
 import type { SharedLogin } from '../sharedDevice.ts'
 
@@ -41,15 +42,17 @@ export const studentDeviceHandlers = [
   http.get('/api/v1/children', ({ request }) =>
     respond(async () => {
       parentGuard(request)
-      if (sharedDeviceDemo) return sharedParentRequest('/children')
-      return page((await store.children()).map((c) => ({ ...c, childId: c.id, ...pinStatus(c.id) })))
+      if (sharedDeviceDemo) {
+        const result = await sharedParentRequest<{ items: Child[] }>('/children')
+        return { ...result, items: result.items.map((c) => ({ ...c, ...mockChildConsentMetadata(c) })) }
+      }
+      return page((await store.children()).map((c) => ({ ...mockChildConsentMetadata(c), childId: c.id, ...pinStatus(c.id) })))
     }),
   ),
 
   http.put('/api/v1/children/:childId/pin', ({ request, params }) =>
     save(async () => {
       const c = await parentChild(request, String(params.childId))
-      requireReauth(request)
       const { pin } = (await request.json()) as { pin: string }
       const problem = pinProblem(String(pin ?? ''))
       if (problem)
@@ -59,10 +62,12 @@ export const studentDeviceHandlers = [
           title: problem,
           errors: [{ field: 'pin', reason: problem }],
         })
+      const hash = await hashPin(c.id, pin)
+      consumePinReauth(request, c.id)
       if (sharedDeviceDemo) return sharedParentRequest(`/pins/${encodeURIComponent(c.id)}`, {
         method: 'PUT', body: JSON.stringify({ pin }),
       })
-      deviceState.pins[c.id] = { hash: await hashPin(c.id, pin), failed: 0, locked: false }
+      deviceState.pins[c.id] = { hash, failed: 0, locked: false }
       return undefined
     }, 204),
   ),
@@ -156,7 +161,7 @@ export const studentDeviceHandlers = [
         d.childIds
           .map((id) => owned.find((c) => c.id === id))
           .filter((c) => !!c)
-          .map((c) => ({ childId: c.id, nickname: c.nickname, pinSet: !!deviceState.pins[c.id], locked: !!deviceState.pins[c.id]?.locked })),
+          .map((c) => ({ childId: c.id, nickname: c.nickname, pinSet: !!deviceState.pins[c.id], pinLocked: !!deviceState.pins[c.id]?.locked })),
       )
     }),
   ),
@@ -175,7 +180,8 @@ export const studentDeviceHandlers = [
       if (!d.childIds.includes(childId)) deviceInvalid()
       const owned = mockAccountChildren.get(d.owner) ?? []
       const child = owned.find((c) => c.id === childId)
-      if (!child) fail('CHILD_NOT_LINKED', '보호자와 연결이 확인되지 않았어요.', 403)
+      if (!child || mockConsentRequired(d.owner) || mockGuardianConsentRequired(childId, d.owner))
+        fail('CHILD_NOT_LINKED', '보호자 연결·동의를 확인해 주세요.', 403)
       const p = deviceState.pins[childId]
       if (!p) fail('STUDENT_PIN_NOT_SET', '아직 PIN이 없어요. 보호자와 함께 시작해 주세요.', 409)
       if (p!.locked) fail('STUDENT_PIN_LOCKED', 'PIN이 잠겼어요. 보호자에게 다시 정해 달라고 해 주세요.', 423)

@@ -54,12 +54,12 @@ class AuthFlowIntegrationTest : IntegrationTestSupport() {
 
     @Test fun `device entry paths reach MVC without Bearer while accompanied entry stays protected`() {
         mvc.get("/api/v1/auth/student/profiles").andExpect {
-            status { isNotFound() }; jsonPath("$.code") { value("NOT_FOUND") }
+            status { isUnauthorized() }; jsonPath("$.code") { value("STUDENT_DEVICE_INVALID") }
         }
         listOf("/api/v1/auth/student/devices", "/api/v1/auth/student/login").forEach { path ->
             mvc.post(path) {
                 header("Origin", "http://localhost:5173"); header("X-Requested-With", "XMLHttpRequest")
-            }.andExpect { status { isNotFound() }; jsonPath("$.code") { value("NOT_FOUND") } }
+            }.andExpect { status { isBadRequest() }; jsonPath("$.code") { value("VALIDATION_FAILED") } }
         }
         mvc.post("/api/v1/auth/student-sessions") {
             header("Origin", "http://localhost:5173"); header("X-Requested-With", "XMLHttpRequest")
@@ -75,7 +75,7 @@ class AuthFlowIntegrationTest : IntegrationTestSupport() {
     }
     private fun child(user: UUID): UUID {
         val id = UUID.randomUUID()
-        jdbc.update("INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,created_at,updated_at) VALUES(?,'학생',3,2017,false,'ACTIVE',?,?)", id, OffsetDateTime.now(), OffsetDateTime.now())
+        jdbc.update("INSERT INTO student(pin_failed_count,id,nickname,grade,birth_year,is_demo,status,created_at,updated_at) VALUES(0,?,'학생',3,2017,false,'ACTIVE',?,?)", id, OffsetDateTime.now(), OffsetDateTime.now())
         jdbc.update("INSERT INTO guardianship(id,parent_user_id,student_id,method,status,linked_at) VALUES(?,?,?,'REGISTER','LINKED',?)", UUID.randomUUID(), user, id, OffsetDateTime.now())
         val existingDocument = jdbc.queryForList("SELECT id FROM consent_document WHERE kind='GUARDIAN' ORDER BY created_at DESC LIMIT 1", UUID::class.java).firstOrNull()
         val document = existingDocument ?: UUID.randomUUID().also { value ->

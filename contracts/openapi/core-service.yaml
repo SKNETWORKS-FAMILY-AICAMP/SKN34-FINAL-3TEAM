@@ -1,19 +1,608 @@
 openapi: 3.1.0
 info:
-  title: 사고뭉치 core-service 인증 API (#36)
+  title: 사고뭉치 core-service 인증·동의·자녀·관리자 API
   version: 1.0.0
-  description: '#36에서 구현한 공개 인증 API만 정의한다. access는 메모리, refresh는 보안 쿠키. POST 쿠키 API는 정확한 Origin과 X-Requested-With를 요구한다. #58의
-    POST /auth/student/devices, GET /auth/student/profiles, POST /auth/student/login은 Bearer만 제외하며 실제 기기/PIN 검증·신규 API 구현은
-    이 계약의 범위 밖이다.'
+  description: 'core 인증·동의·자녀·리포트·관리자 및 #58 학생 기기/PIN API. access는 메모리, refresh는 부모·관리자 전용 보안 쿠키. 학생 기기 API는 기기 쿠키와 PIN을 검증하고 부모 세션을 변경하지 않는다.'
 servers:
 - url: /api/v1
   description: web과 동일 origin의 core 공개 API
 tags:
 - name: Auth
 - name: Account
+- name: Feedback
+- name: Learning
+- name: Consent
+- name: Children
+- name: Admin
+- name: ModelRegistry
 security:
 - BearerAuth: []
 paths:
+  /student-devices/pairings:
+    post:
+      operationId: createStudentPairing
+      tags:
+      - Auth
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentPairing'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+              description: 인증·기기·PIN 상태 캐시 금지
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - childIds
+              properties:
+                childIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 3
+                  uniqueItems: true
+                  items:
+                    type: string
+                    format: uuid
+  /student-devices:
+    get:
+      operationId: listStudentDevices
+      tags:
+      - Auth
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentDeviceList'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+              description: 인증·기기·PIN 상태 캐시 금지
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /student-devices/{deviceId}:
+    delete:
+      operationId: revokeStudentDevice
+      tags:
+      - Auth
+      responses:
+        '204':
+          description: 성공
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+              description: 인증·기기·PIN 상태 캐시 금지
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      parameters:
+      - name: deviceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /children/{childId}/pin:
+    put:
+      operationId: setStudentPin
+      tags:
+      - Auth
+      responses:
+        '204':
+          description: 성공
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+              description: 인증·기기·PIN 상태 캐시 금지
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - pin
+              properties:
+                pin:
+                  type: string
+                  pattern: ^[0-9]{4,6}$
+      parameters:
+      - name: childId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: X-Reauth-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      description: 5분·현재 세션/버전·PIN_CHANGE·자녀에 결합된 DB 재인증 grant를 PIN 변경과 같은 트랜잭션에서 1회 소비한다. 실패 시 소비도 롤백한다. 반복·연속 숫자는
+        422.
+  /auth/student/devices:
+    post:
+      operationId: registerStudentDevice
+      tags:
+      - Auth
+      responses:
+        '201':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentDeviceRegistration'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+              description: 인증·기기·PIN 상태 캐시 금지
+            Set-Cookie:
+              schema:
+                type: string
+              description: student_device=256bit 난수; HttpOnly; Secure(로컬 HTTP만 false); SameSite=Strict; Path=/api/v1/auth/student;
+                고정 90일 만료
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - pairingCode
+              - label
+              properties:
+                pairingCode:
+                  type: string
+                  pattern: ^[A-Z0-9]{8}$
+                label:
+                  type: string
+                  minLength: 1
+                  maxLength: 80
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/WebOrigin'
+      - $ref: '#/components/parameters/RequestedWith'
+  /auth/student/profiles:
+    get:
+      operationId: studentDeviceProfiles
+      tags:
+      - Auth
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentDeviceProfiles'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+              description: 인증·기기·PIN 상태 캐시 금지
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      security:
+      - StudentDeviceCookie: []
+  /auth/student/login:
+    post:
+      operationId: loginStudentDevice
+      tags:
+      - Auth
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentDeviceToken'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+              description: 인증·기기·PIN 상태 캐시 금지
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '423':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - childId
+              - pin
+              properties:
+                childId:
+                  type: string
+                  format: uuid
+                pin:
+                  type: string
+                  maxLength: 128
+      security:
+      - StudentDeviceCookie: []
+      parameters:
+      - $ref: '#/components/parameters/WebOrigin'
+      - $ref: '#/components/parameters/RequestedWith'
+      description: 기기 → 기기 자녀 → 보호자/연결/활성/동의 → PIN 설정/잠금/일치. 5회 실패 423, 401 PIN 불일치는 remainingAttempts를 반환한다. 별도 학생
+        세션이며 refresh·부모 세션 변경 없음.
+  /notifications:
+    get:
+      operationId: listNotifications
+      summary: 본인 알림 목록 (학생 세션 금지)
+      parameters:
+      - {name: unreadOnly, in: query, schema: {type: boolean, default: false}}
+      - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: 최신순 알림. 재연결 ready 후 처음부터 재조회하여 id로 병합한다.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, page, size, hasNext]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Notification'}}
+                  page: {type: integer}
+                  size: {type: integer}
+                  hasNext: {type: boolean}
+        default: {$ref: '#/components/responses/NotificationProblem'}
+  /notifications/{notificationId}/read:
+    patch:
+      operationId: readNotification
+      summary: 본인 알림 읽음 (멱등, 학생 세션 금지)
+      parameters:
+      - {name: notificationId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: 최초 읽음 시각 유지}
+        default: {$ref: '#/components/responses/NotificationProblem'}
+  /notifications/read-all:
+    post:
+      operationId: readAllNotifications
+      summary: 본인 알림 전체 읽음 (학생 세션 금지)
+      responses:
+        '204': {description: 최초 읽음 시각 유지}
+        default: {$ref: '#/components/responses/NotificationProblem'}
+  /notifications/stream:
+    get:
+      operationId: streamNotifications
+      summary: 본인 알림 SSE (학생 세션 금지)
+      description: 'ready 후 목록 재조회 필수. notification 이벤트는 Notification, heartbeat는 15초 주석. 최대 5분. 매 전송에 세션/동의 재검사. Last-Event-ID 재생 없음. Pub/Sub 유실에 대비해 주기적으로 목록 동기화. Redis 발행 성공은 브라우저 수신 보장이 아니다.'
+      responses:
+        '200':
+          description: ready·notification 이벤트와 ping 주석
+          content:
+            text/event-stream:
+              schema: {type: string}
+        default: {$ref: '#/components/responses/NotificationProblem'}
+  /notification-settings:
+    get:
+      operationId: getNotificationSettings
+      summary: 본인 유형별 수신 설정 (학생 세션 금지)
+      responses:
+        '200':
+          description: 미저장 유형은 true, IN_APP 전용
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotificationSettings'}
+        default: {$ref: '#/components/responses/NotificationProblem'}
+    put:
+      operationId: updateNotificationSettings
+      summary: 지정 유형의 수신 설정 갱신 (학생 세션 금지)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/NotificationSettings'}
+      responses:
+        '200':
+          description: 갱신 후 전체 유효 설정. 수신 거부는 새 알림 생성을 막고 기존 알림은 보존.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotificationSettings'}
+        default: {$ref: '#/components/responses/NotificationProblem'}
+  /missions:
+    get:
+      operationId: listMissions
+      tags: [Learning]
+      summary: 학생 공개 미션 목록
+      description: STUDENT 전용. 검증된 본인 학생의 grade·demo를 core DB에서 결정해 /internal/missions에 전달한다. 클라이언트 grade·demo query는 사용하지 않는다. page·size만 전달하며 문항 노출 판단은 learning 소유다.
+      parameters:
+      - {name: page, in: query, schema: {type: integer, minimum: 0}}
+      - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        '200': {$ref: '#/components/responses/LearningResult'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /missions/{missionId}:
+    parameters:
+    - {$ref: '#/components/parameters/MissionId'}
+    get:
+      operationId: getMission
+      tags: [Learning]
+      summary: 학생 미션 상세
+      description: STUDENT 전용. 검증된 본인 학생의 grade·demo를 core DB에서 결정해 전달하며 클라이언트 query는 사용하지 않는다. learning의 공개 전 정답·예시 답 비공개 계약을 유지한다.
+      responses:
+        '200': {$ref: '#/components/responses/LearningResult'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /missions/{missionId}/attempts:
+    parameters:
+    - {$ref: '#/components/parameters/MissionId'}
+    post:
+      operationId: startAttempt
+      tags: [Learning]
+      summary: 학생 시도 시작·이어하기
+      description: >-
+        STUDENT 전용. 검증된 본인 학생의 grade·demo를 core DB에서 결정해 /internal/missions/{missionId}/attempts에 쿼리로 전달하며 클라이언트 query는 사용하지 않는다.
+        learning은 신규 생성 201·기존 진행 시도 반환 200을 구분하며 core는 상태를 그대로 전달한다. 신규 시도 제공 범위 검사·기존 진행 시도 선택과 당시 버전 유지는 learning 소유다.
+        일일 한도는 core Redis 책임이며 learning은 관여하지 않는다. 후속 한도 연계는 201만 집계하고 200은 집계하지 않는다.
+        한도 도달 시에도 기존 이어하기는 허용하고 신규 생성만 차단해야 한다. 한도 검사·기존 시도 판별·신규 생성 차단의 처리 순서는 후속 구현에서 검증한다. Redis 한도 기능은 현재 프록시 구현 범위 밖이다.
+      responses:
+        '200':
+          $ref: '#/components/responses/LearningResult'
+          description: 기존 진행 시도 반환(이어하기). 후속 일일 한도 집계 대상 아님.
+        '201':
+          $ref: '#/components/responses/LearningResult'
+          description: 신규 시도 생성. 후속 core Redis 일일 한도 집계 대상.
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /attempts/{attemptId}:
+    parameters:
+    - {$ref: '#/components/parameters/AttemptId'}
+    get:
+      operationId: getAttempt
+      tags: [Learning]
+      summary: 학생 시도·타임라인·최신 초안
+      description: STUDENT 전용. learning의 상태·응답·ETag를 보존한다. 대상 학생의 소유권은 learning이 X-Student-Scope와 대조한다.
+      responses:
+        '200': {$ref: '#/components/responses/LearningResult'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /attempts/{attemptId}/draft:
+    parameters:
+    - {$ref: '#/components/parameters/AttemptId'}
+    put:
+      operationId: saveDraft
+      tags: [Learning]
+      summary: 학생 초안 저장
+      description: STUDENT 전용. If-Match를 변경 없이 전달한다. 초안 충돌은 409와 최신 초안·ETag를 보존한다.
+      parameters:
+      - {name: If-Match, in: header, required: true, schema: {type: string}, example: '"7"'}
+      requestBody: {$ref: '#/components/requestBodies/LearningJson'}
+      responses:
+        '200': {$ref: '#/components/responses/LearningResult'}
+        '409': {$ref: '#/components/responses/LearningProblem'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /attempts/{attemptId}/hints:
+    parameters:
+    - {$ref: '#/components/parameters/AttemptId'}
+    post:
+      operationId: openHints
+      tags: [Learning]
+      summary: 학생 생각 열기 질문 열람
+      responses:
+        '200': {$ref: '#/components/responses/LearningResult'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /attempts/{attemptId}/answers:
+    parameters:
+    - {$ref: '#/components/parameters/AttemptId'}
+    post:
+      operationId: submitAnswer
+      tags: [Learning]
+      summary: 학생 최초·보완 답변 제출
+      description: >-
+        STUDENT 전용. Idempotency-Key UUID 필수. 같은 계정·키의 메서드·endpoint·검증된 학생·원문 본문을 대조한다.
+        원문 공백·필드 순서 변경도 422 IDEMPOTENCY_KEY_REUSED다. 최초 2xx~4xx 상태·원문·헤더를 24시간 재사용한다.
+        처리 중은 409 IDEMPOTENCY_IN_PROGRESS와 Retry-After 1. 5xx·시간 초과·core 저장 실패는 미확정이며 같은 키로 재요청한다.
+        learning에 동일 키를 전달하며 learning은 답변 UK와 최초 결과 재구성을 보장해야 한다.
+      parameters:
+      - {name: Idempotency-Key, in: header, required: true, schema: {type: string, format: uuid}}
+      requestBody: {$ref: '#/components/requestBodies/LearningJson'}
+      responses:
+        '201': {$ref: '#/components/responses/LearningResult'}
+        '409': {$ref: '#/components/responses/LearningProblem'}
+        '422': {$ref: '#/components/responses/LearningProblem'}
+        '503': {$ref: '#/components/responses/LearningProblem'}
+        '504': {$ref: '#/components/responses/LearningProblem'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /attempts/{attemptId}/finish:
+    parameters:
+    - {$ref: '#/components/parameters/AttemptId'}
+    post:
+      operationId: finishAttempt
+      tags: [Learning]
+      summary: 학생 마무리·정답 공개
+      description: STUDENT 전용. 판정 DONE 조건과 공개 응답은 learning 소유. 조건 미충족 409를 보존한다.
+      responses:
+        '200': {$ref: '#/components/responses/LearningResult'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /attempts/{attemptId}/self-assessment:
+    parameters:
+    - {$ref: '#/components/parameters/AttemptId'}
+    post:
+      operationId: saveSelfAssessment
+      tags: [Learning]
+      summary: 학생 자기 평가
+      requestBody: {$ref: '#/components/requestBodies/LearningJson'}
+      responses:
+        '200': {$ref: '#/components/responses/LearningResult'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /attempts/{attemptId}/reflection:
+    parameters:
+    - {$ref: '#/components/parameters/AttemptId'}
+    post:
+      operationId: saveReflection
+      tags: [Learning]
+      summary: 학생 돌아보기·완료
+      requestBody: {$ref: '#/components/requestBodies/LearningJson'}
+      responses:
+        '200': {$ref: '#/components/responses/LearningResult'}
+        default: {$ref: '#/components/responses/LearningProblem'}
   /auth/google/authorize:
     get:
       operationId: startGoogleLogin
@@ -236,8 +825,1319 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '503':
           $ref: '#/components/responses/Unavailable'
+    patch:
+      operationId: updateAccountName
+      tags:
+      - Account
+      summary: 본인 표시 이름 수정
+      responses:
+        '200':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 80
+              required:
+              - name
+              additionalProperties: false
+
+  /admin/ai-usage:
+    get:
+      operationId: getAiUsage
+      tags: [Admin]
+      summary: SERVICE_OPS AI 사용량 조회
+      description: KST 날짜 양 끝 포함 최대 366일이며 연도는 0001~9999만 허용한다. 초과·역전 기간이나 허용 연도 밖의 날짜는 DB 조회 전 400 VALIDATION_FAILED로 거부한다. 성공·실패 전체 평균 지연과 저장된 소비 시점 비용을 집계한다. 미산정 비용이 포함되면 costUsd는 null이다.
+      parameters:
+      - {name: from, in: query, required: true, schema: {type: string, format: date}}
+      - {name: to, in: query, required: true, schema: {type: string, format: date}}
+      - name: callType
+        in: query
+        schema: {$ref: '#/components/schemas/CallType'}
+      responses:
+        '200':
+          description: 기간 내 호출이 있는 종류별 집계. 빈 기간은 items 빈 배열.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiUsageResponse'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/model-versions:
+    get:
+      operationId: listModelVersions
+      tags: [ModelRegistry]
+      summary: SERVICE_OPS 버전 목록
+      parameters:
+      - {name: kind, in: query, schema: {$ref: '#/components/schemas/ModelKind'}}
+      - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: SERVICE_OPS 버전 목록 결과
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ModelVersionPage'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: registerModelVersion
+      tags: [ModelRegistry]
+      summary: SERVICE_OPS 평가 근거와 버전 등록
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RegisterModelVersion'}
+      responses:
+        '201':
+          description: SERVICE_OPS 평가 근거와 버전 등록 결과
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ModelVersion'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/ModelNotFound'}
+        '409': {$ref: '#/components/responses/ModelConflict'}
+        '422': {$ref: '#/components/responses/ModelApprovalRejected'}
+  /admin/model-versions/{versionId}/activate:
+    post:
+      operationId: activateModelVersion
+      tags: [ModelRegistry]
+      summary: SERVICE_OPS 최초 사람 승인·활성화
+      parameters:
+      - {name: versionId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ActivateModelVersion'}
+      responses:
+        '200':
+          description: SERVICE_OPS 최초 사람 승인·활성화 결과
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ModelVersion'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/ModelNotFound'}
+        '409': {$ref: '#/components/responses/ModelConflict'}
+        '422': {$ref: '#/components/responses/ModelApprovalRejected'}
+  /admin/model-versions/{versionId}/rollback:
+    post:
+      operationId: rollbackModelVersion
+      tags: [ModelRegistry]
+      summary: SERVICE_OPS 이전 승인 범위 내 복귀
+      parameters:
+      - {name: versionId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RollbackModelVersion'}
+      responses:
+        '200':
+          description: SERVICE_OPS 이전 승인 범위 내 복귀 결과
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ModelVersion'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/ModelNotFound'}
+        '409': {$ref: '#/components/responses/ModelConflict'}
+        '422': {$ref: '#/components/responses/ModelApprovalRejected'}
+  /internal/model-versions/active:
+    get:
+      operationId: activeModelVersions
+      tags: [ModelRegistry]
+      summary: 기동 시 활성 버전 조회
+      servers: [{url: /}]
+      security: [{InternalToken: []}]
+      description: Pod별 큐 바인딩 후 조회한다. 초기 조회 중 이벤트를 보존·조정하고 그룹별 높은 revision만 적용하며 scopes 밖에 적용하지 않는다.
+      responses:
+        '200':
+          description: 기동 시 활성 버전 조회 결과
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ActiveModelVersions'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/ModelStateUnavailable'}
+
+  /consent-documents:
+    get:
+      operationId: currentConsentDocuments
+      tags:
+      - Consent
+      summary: 시행 중인 현재 문서 조회
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentDocumentPage'
+        '503':
+          description: CONSENT_DOCUMENTS_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      security: []
+  /me/consents:
+    get:
+      operationId: consentHistory
+      tags:
+      - Consent
+      summary: 본인 동의 전체 이력
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentHistoryPage'
+        '400':
+          description: VALIDATION_FAILED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: UNAUTHENTICATED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: FORBIDDEN / CONSENT_REQUIRED / CHILD_NOT_LINKED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: CONSENT_DOCUMENT_CHANGED / CHILD_LIMIT_REACHED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: CONSENT_DOCUMENTS_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+    post:
+      operationId: saveConsents
+      tags:
+      - Consent
+      summary: 현재 문서 버전 동의 저장
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentHistoryPage'
+        '400':
+          description: VALIDATION_FAILED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: UNAUTHENTICATED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: FORBIDDEN / CONSENT_REQUIRED / CHILD_NOT_LINKED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: CONSENT_DOCUMENT_CHANGED / CHILD_LIMIT_REACHED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: CONSENT_DOCUMENTS_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsentWrite'
+  /me/consents/{consentId}/withdrawal:
+    post:
+      operationId: withdrawConsent
+      tags:
+      - Consent
+      summary: 본인 동의 철회
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentHistory'
+        '400':
+          description: VALIDATION_FAILED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: UNAUTHENTICATED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: FORBIDDEN / CONSENT_REQUIRED / CHILD_NOT_LINKED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: CONSENT_DOCUMENT_CHANGED / CHILD_LIMIT_REACHED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: CONSENT_DOCUMENTS_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      parameters:
+      - name: consentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /children:
+    get:
+      description: 기록 조회는 learning service를 거쳐 공통 learning-json 서킷과 기존 read timeout을 공유한다. 최대 3명은 병렬 조회하며 실패는 hasRecords=null·UNAVAILABLE로 구분한다.
+      operationId: listChildren
+      tags:
+      - Children
+      summary: 연결 자녀·현재 동의·실제 기록 조회 상태
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChildListItemPage'
+        '400':
+          description: VALIDATION_FAILED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: UNAUTHENTICATED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: FORBIDDEN / CONSENT_REQUIRED / CHILD_NOT_LINKED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: CONSENT_DOCUMENT_CHANGED / CHILD_LIMIT_REACHED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: CONSENT_DOCUMENTS_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+    post:
+      operationId: registerChild
+      tags:
+      - Children
+      summary: 자녀 등록과 법정대리인 동의 원자 저장
+      responses:
+        '201':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisteredChild'
+        '400':
+          description: VALIDATION_FAILED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: UNAUTHENTICATED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: FORBIDDEN / CONSENT_REQUIRED / CHILD_NOT_LINKED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: CONSENT_DOCUMENT_CHANGED / CHILD_LIMIT_REACHED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: CONSENT_DOCUMENTS_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChildRegistration'
+  /answers/{answerId}/feedback:
+    post:
+      operationId: streamAnswerFeedback
+      tags: [Feedback]
+      summary: 학생 답변의 판정·되묻기 SSE
+      description: |
+        검증된 STUDENT 세션만 허용한다. core가 내부 토큰과 검증된 사용자·학생 범위를 learning에 전달한다.
+        learning 동기 호출 제한은 80초이며 자동 재시도하지 않는다. 대기 중 15초마다 주석 ': ping'을 전송한다.
+        status(RUNNING) → result(DONE, HELD 포함) → done({}) 순서다.
+        이미 RUNNING이면 status → done, 처리 실패는 error(Problem Details + retryable) → done이다.
+        스트림 시작 뒤 오류의 HTTP 응답 상태는 200이며 error 이벤트의 status/code를 사용한다.
+        DONE·RUNNING·FAILED 재실행·리스·학생 소유권 판단과 저장은 learning 소유다.
+        피드백은 Idempotency-Key를 요구하거나 core에서 캐시하지 않는다.
+        연결은 90초 제한이며 클라이언트 종료·전송 실패에도 시작한 learning 처리는 취소하지 않는다.
+        learning-feedback 서킷은 전송 오류와 계약된 Problem Details가 아닌 5xx를 집계한다.
+        application/problem+json 및 문자열 code가 있는 업무 오류는 error로 전달하며 core 서킷을 열지 않는다.
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: answerId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: SSE. 정상·HELD·RUNNING·실패 모두 마지막 done 후 종료한다. 단절된 연결에는 전달을 보장하지 않는다.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+            X-Accel-Buffering:
+              schema: {type: string, const: 'no'}
+          content:
+            text/event-stream:
+              schema: {type: string}
+              examples:
+                running:
+                  value: "event:status\ndata:{\"state\":\"RUNNING\",\"message\":\"생각을 살펴보는 중\"}\n\nevent:done\ndata:{}\n\n"
+                failure:
+                  value: "event:status\ndata:{\"state\":\"RUNNING\",\"message\":\"생각을 살펴보는 중\"}\n\nevent:error\ndata:{\"type\":\"about:blank\",\"title\":\"처리 실패\",\"status\":503,\"code\":\"AI_UNAVAILABLE\",\"retryable\":true}\n\nevent:done\ndata:{}\n\n"
+        '400':
+          description: answerId 형식 오류 (스트림 시작 전).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          description: 스트림 시작 전 인증 DB·세션 조회 장애(AUTH_UNAVAILABLE). learning 서킷·연결 장애는 HTTP 200 스트림의 error 이벤트로 전달한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /me/reauth:
+    post:
+      operationId: reauthenticateGoogle
+      tags:
+      - Account
+      summary: Google 재인증 시작 또는 VERIFIED challenge의 1회 토큰 수령
+      responses:
+        '200':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - type: object
+                  required:
+                  - challengeId
+                  - authorizationUrl
+                  - expiresAt
+                  properties:
+                    challengeId:
+                      type: string
+                      format: uuid
+                    authorizationUrl:
+                      type: string
+                      format: uri
+                    expiresAt:
+                      type: string
+                      format: date-time
+                - type: object
+                  required:
+                  - reauthToken
+                  - expiresAt
+                  properties:
+                    reauthToken:
+                      type: string
+                    expiresAt:
+                      type: string
+                      format: date-time
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+                properties:
+                  purpose:
+                    type: string
+                    enum:
+                    - PIN_CHANGE
+                    - CHILD_UNLINK
+                    - CHILD_DELETE
+                    - WITHDRAWAL
+                  childId:
+                    type: string
+                    format: uuid
+                  scope:
+                    type: string
+                    enum:
+                    - PROFILE
+                    - RECORDS
+                required:
+                - purpose
+                additionalProperties: false
+              - type: object
+                properties:
+                  challengeId:
+                    type: string
+                    format: uuid
+                required:
+                - challengeId
+                additionalProperties: false
+      description: 시작 응답 challengeId/authorizationUrl/expiresAt. 별도 Google callback
+        완료 뒤 같은 세션에서 challengeId를 POST하면 reauthToken/expiresAt. 완료 전 409 REAUTH_PENDING.
+        두 단계 모두 Origin/X-Requested-With 필요. 상태 쿠키 HttpOnly/Secure/Lax. 토큰 메모리 보관. Google
+        계정 확인은 비밀번호/MFA 재입력 보장이 아님.
+      parameters:
+      - $ref: '#/components/parameters/WebOrigin'
+      - $ref: '#/components/parameters/RequestedWith'
+  /auth/google/reauth/callback:
+    get:
+      operationId: completeGoogleReauthentication
+      tags:
+      - Account
+      summary: 별도 Google 재인증 callback
+      responses:
+        '200':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      security: []
+      parameters:
+      - in: query
+        name: code
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: state
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: error
+        required: false
+        schema:
+          type: string
+  /children/{childId}:
+    patch:
+      operationId: updateChildProfile
+      tags:
+      - Account
+      summary: 닉네임·학년 수정
+      responses:
+        '200':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      parameters:
+      - in: path
+        name: childId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nickname:
+                  type: string
+                  minLength: 1
+                  maxLength: 40
+                grade:
+                  type: integer
+                  minimum: 3
+                  maximum: 6
+              required: []
+              additionalProperties: false
+  /children/{childId}/deletion-impact:
+    get:
+      operationId: getChildDeletionImpact
+      tags:
+      - Account
+      summary: 연결 해제·프로필/기록 삭제 영향
+      responses:
+        '200':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      parameters:
+      - in: path
+        name: childId
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /children/{childId}/link:
+    delete:
+      operationId: unlinkChild
+      tags:
+      - Account
+      summary: 자녀 연결 해제
+      responses:
+        '204':
+          description: 연결 해제 완료
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      parameters:
+      - in: path
+        name: childId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: X-Reauth-Token
+        required: true
+        schema:
+          type: string
+        description: 현재 세션/작업/자녀/scope에 결합된 5분·1회용 토큰
+  /children/{childId}/deletion-requests:
+    post:
+      operationId: requestChildDeletion
+      tags:
+      - Account
+      summary: 삭제 확정과 Outbox 원자적 저장
+      responses:
+        '202':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deletionRequestId:
+                    type: string
+                    format: uuid
+                  childId:
+                    type: string
+                    format: uuid
+                  scope:
+                    type: string
+                    enum:
+                    - PROFILE
+                    - RECORDS
+                  status:
+                    type: string
+                    enum:
+                    - CONFIRMED
+                    - COMPLETED
+                  completedServices:
+                    type: array
+                    items:
+                      type: string
+                      enum:
+                      - learning
+                      - report
+                required:
+                - deletionRequestId
+                - childId
+                - scope
+                - status
+                - completedServices
+                additionalProperties: false
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      parameters:
+      - in: path
+        name: childId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: X-Reauth-Token
+        required: true
+        schema:
+          type: string
+        description: 현재 세션/작업/자녀/scope에 결합된 5분·1회용 토큰
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scope:
+                  type: string
+                  enum:
+                  - PROFILE
+                  - RECORDS
+              required:
+              - scope
+              additionalProperties: false
+  /children/{childId}/deletion-requests/{requestId}:
+    get:
+      operationId: getChildDeletionStatus
+      tags:
+      - Account
+      summary: 요청한 보호자의 삭제 상태 조회
+      responses:
+        '200':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deletionRequestId:
+                    type: string
+                    format: uuid
+                  childId:
+                    type: string
+                    format: uuid
+                  scope:
+                    type: string
+                    enum:
+                    - PROFILE
+                    - RECORDS
+                  status:
+                    type: string
+                    enum:
+                    - CONFIRMED
+                    - COMPLETED
+                  completedServices:
+                    type: array
+                    items:
+                      type: string
+                      enum:
+                      - learning
+                      - report
+                required:
+                - deletionRequestId
+                - childId
+                - scope
+                - status
+                - completedServices
+                additionalProperties: false
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      parameters:
+      - in: path
+        name: childId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: path
+        name: requestId
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /me/withdrawal/precheck:
+    get:
+      operationId: precheckAccountWithdrawal
+      tags:
+      - Account
+      summary: 구독·환불·거래 보관 확인
+      responses:
+        '200':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+  /me/withdrawal:
+    post:
+      operationId: requestAccountWithdrawal
+      tags:
+      - Account
+      summary: 탈퇴 즉시 로그인 차단·세션 폐기
+      responses:
+        '202':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      parameters:
+      - in: header
+        name: X-Reauth-Token
+        required: true
+        schema:
+          type: string
+        description: 현재 세션/작업/자녀/scope에 결합된 5분·1회용 토큰
+    get:
+      operationId: getAccountWithdrawal
+      tags:
+      - Account
+      summary: 본인 또는 조회 전용 영수증의 탈퇴 상태
+      responses:
+        '200':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      security:
+      - BearerAuth: []
+      - WithdrawalReceipt: []
+  /internal/deletion-requests/{deletionRequestId}/completions:
+    post:
+      operationId: completeStudentDeletion
+      tags:
+      - Account
+      summary: 내부 서비스별 멱등 완료 보고
+      responses:
+        '200':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deletionRequestId:
+                    type: string
+                    format: uuid
+                  childId:
+                    type: string
+                    format: uuid
+                  scope:
+                    type: string
+                    enum:
+                    - PROFILE
+                    - RECORDS
+                  status:
+                    type: string
+                    enum:
+                    - CONFIRMED
+                    - COMPLETED
+                  completedServices:
+                    type: array
+                    items:
+                      type: string
+                      enum:
+                      - learning
+                      - report
+                required:
+                - deletionRequestId
+                - childId
+                - scope
+                - status
+                - completedServices
+                additionalProperties: false
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      parameters:
+      - in: path
+        name: deletionRequestId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                service:
+                  type: string
+                  enum:
+                  - learning
+                  - report
+              required:
+              - service
+              additionalProperties: false
+      security:
+      - InternalToken: []
+      description: SYSTEM 역할 및 대상 학생 X-Student-Scope 필수. learning/report 양쪽 완료 시에만 COMPLETED.
+    servers:
+    - url: /
+  /children/{childId}/reports:
+    get:
+      tags:
+      - Reports
+      operationId: listChildReports
+      summary: 연결 자녀의 주간 리포트 목록
+      parameters:
+      - name: childId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: status
+        in: query
+        required: false
+        schema:
+          enum:
+          - QUEUED
+          - RUNNING
+          - COMPLETED
+          - FAILED
+      responses:
+        '200':
+          description: report-api 조회 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportList'
+        '400':
+          description: 유효하지 않은 조회 조건
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: 인증 필요
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: 다른 보호자·동의 없음·권한 없음
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: 없는 리포트
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: REPORT_ENTITLEMENT_UNAVAILABLE 또는 REPORT_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: REPORT_CONTRACT_INVALID
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /reports/{reportId}:
+    get:
+      tags:
+      - Reports
+      operationId: getReport
+      summary: 연결 자녀의 최신판 또는 이전판 상세
+      parameters:
+      - name: reportId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: revision
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+      responses:
+        '200':
+          description: report-api 조회 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportDetail'
+        '400':
+          description: 유효하지 않은 조회 조건
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: 인증 필요
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: 다른 보호자·동의 없음·권한 없음
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: 없는 리포트
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: REPORT_ENTITLEMENT_UNAVAILABLE 또는 REPORT_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: REPORT_CONTRACT_INVALID
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /reports/{reportId}/evidence/{itemId}:
+    get:
+      tags:
+      - Reports
+      operationId: getReportEvidence
+      summary: 연결 자녀 리포트의 원본 근거
+      parameters:
+      - name: reportId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: report-api 조회 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportEvidence'
+        '400':
+          description: 유효하지 않은 조회 조건
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: 인증 필요
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: 다른 보호자·동의 없음·권한 없음
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: 없는 리포트
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: REPORT_ENTITLEMENT_UNAVAILABLE 또는 REPORT_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: REPORT_CONTRACT_INVALID
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /reports/{reportId}/download:
+    get:
+      tags:
+      - Reports
+      operationId: downloadReport
+      summary: PDF·Markdown 다운로드 URL
+      parameters:
+      - name: reportId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: format
+        in: query
+        required: true
+        schema:
+          enum:
+          - pdf
+          - md
+      responses:
+        '200':
+          description: report-api 조회 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportDownload'
+        '400':
+          description: 유효하지 않은 조회 조건
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: 인증 필요
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: 다른 보호자·동의 없음·권한 없음
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: 없는 리포트
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: REPORT_ENTITLEMENT_UNAVAILABLE 또는 REPORT_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: REPORT_CONTRACT_INVALID
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /reports/{reportId}/regenerate:
+    post:
+      tags:
+      - Reports
+      operationId: regenerateReport
+      summary: 학부모 1회·SERVICE_OPS 관리자 재생성
+      parameters:
+      - name: reportId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '202':
+          description: 새 작업 저장, 기존 판 보존
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportJobAccepted'
+        '400':
+          description: 유효하지 않은 조회 조건
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: 인증 필요
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: 다른 보호자·동의 없음·권한 없음
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: 없는 리포트
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: REPORT_ENTITLEMENT_UNAVAILABLE 또는 REPORT_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: REPORT_REGENERATION_LIMIT 또는 REPORT_GENERATION_IN_PROGRESS
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 components:
   securitySchemes:
+    StudentDeviceCookie: {type: apiKey, in: cookie, name: student_device}
+    WithdrawalReceipt:
+      type: apiKey
+      in: header
+      name: X-Withdrawal-Status-Token
+    InternalToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Token
     BearerAuth:
       type: http
       scheme: bearer
@@ -249,6 +2149,16 @@ components:
       name: sagomungchi_refresh
       description: 부모·관리자 전용 HttpOnly·Secure·SameSite=Strict, Path=/api/v1/auth. 원문은 서버 DB에 저장하지 않는다.
   parameters:
+    MissionId:
+      name: missionId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    AttemptId:
+      name: attemptId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
     WebOrigin:
       name: Origin
       in: header
@@ -266,6 +2176,623 @@ components:
         type: string
         const: XMLHttpRequest
   schemas:
+    StudentDeviceProfile:
+      type: object
+      additionalProperties: false
+      required:
+      - childId
+      - nickname
+      - pinSet
+      - pinLocked
+      properties:
+        childId:
+          type: string
+          format: uuid
+        nickname:
+          type: string
+        pinSet:
+          type: boolean
+        pinLocked:
+          type: boolean
+    StudentDeviceProfiles:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StudentDeviceProfile'
+    StudentDeviceItem:
+      type: object
+      additionalProperties: false
+      required:
+      - deviceId
+      - label
+      - children
+      - createdAt
+      - lastUsedAt
+      - expiresAt
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        label:
+          type: string
+        children:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - childId
+            - nickname
+            properties:
+              childId:
+                type: string
+                format: uuid
+              nickname:
+                type: string
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+    StudentDeviceList:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StudentDeviceItem'
+    StudentPairing:
+      type: object
+      additionalProperties: false
+      required:
+      - pairingCode
+      - expiresAt
+      properties:
+        pairingCode:
+          type: string
+          pattern: ^[A-Z0-9]{8}$
+        expiresAt:
+          type: string
+          format: date-time
+    StudentDeviceRegistration:
+      type: object
+      additionalProperties: false
+      required:
+      - deviceId
+      - children
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        children:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - childId
+            - nickname
+            properties:
+              childId:
+                type: string
+                format: uuid
+              nickname:
+                type: string
+    StudentDeviceToken:
+      type: object
+      additionalProperties: false
+      required:
+      - accessToken
+      - expiresIn
+      - role
+      - child
+      properties:
+        accessToken:
+          type: string
+        expiresIn:
+          type: integer
+        role:
+          const: STUDENT
+        child:
+          type: object
+          additionalProperties: false
+          required:
+          - childId
+          - nickname
+          - grade
+          - birthYear
+          properties:
+            childId:
+              type: string
+              format: uuid
+            nickname:
+              type: string
+            grade:
+              type: integer
+              minimum: 3
+              maximum: 6
+            birthYear:
+              type: integer
+    NotificationType:
+      type: string
+      enum: [REPORT_COMPLETED, REPORT_FAILED, ERROR_REPORT_RESOLVED, INQUIRY_ANSWERED, PAYMENT_CHANGED, SUBSCRIPTION_CHANGED]
+    Notification:
+      type: object
+      additionalProperties: false
+      required: [id, childId, type, title, link, readAt, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        childId: {type: [string, 'null'], format: uuid}
+        type: {$ref: '#/components/schemas/NotificationType'}
+        title: {type: string}
+        link: {type: string}
+        readAt: {type: [string, 'null'], format: date-time}
+        createdAt: {type: string, format: date-time}
+    NotificationSettings:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 6
+          description: 유형 중복 금지. PUT은 지정 유형만 갱신하며 GET/응답은 전체 유형 반환.
+          items:
+            type: object
+            required: [type, enabled]
+            properties:
+              type: {$ref: '#/components/schemas/NotificationType'}
+              enabled: {type: boolean}
+    ReportPeriod:
+      type: object
+      required:
+      - from
+      - to
+      properties:
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+    ReportSummary:
+      type: object
+      required:
+      - reportId
+      - childId
+      - period
+      - status
+      - revision
+      properties:
+        reportId:
+          type: string
+          format: uuid
+        childId:
+          type: string
+          format: uuid
+        period:
+          $ref: '#/components/schemas/ReportPeriod'
+        status:
+          enum:
+          - QUEUED
+          - RUNNING
+          - COMPLETED
+          - FAILED
+        state:
+          enum:
+          - OK
+          - NO_RECORD
+          - INSUFFICIENT_SAMPLE
+          - null
+        revision:
+          type: integer
+          minimum: 1
+        generatedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    ReportList:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportSummary'
+    ReportDetail:
+      allOf:
+      - $ref: '#/components/schemas/ReportSummary'
+      - type: object
+        required:
+        - revisions
+        - inclusionRule
+        - metrics
+        - thinkingTypes
+        - changes
+        - reflections
+        - quotes
+        - eveningQuestion
+        - narrative
+        - verification
+        - versions
+        properties:
+          revisions:
+            type: array
+            items:
+              type: object
+              required:
+              - revision
+              - generatedAt
+              properties:
+                revision:
+                  type: integer
+                  minimum: 1
+                generatedAt:
+                  type: string
+                  format: date-time
+          inclusionRule:
+            type: string
+          metrics:
+            type: array
+            items:
+              type: object
+          thinkingTypes:
+            type: array
+            items:
+              type: object
+          changes:
+            type: array
+            items:
+              type: object
+          reflections:
+            type: array
+            items:
+              type: object
+          quotes:
+            type: array
+            items:
+              type: object
+          eveningQuestion:
+            type:
+            - string
+            - 'null'
+          narrative:
+            type:
+            - object
+            - 'null'
+          verification:
+            type: object
+          versions:
+            type: object
+    ReportEvidence:
+      type: object
+      description: 'report-api 근거 JSON을 보존. 삭제 근거는 available=false. 구체적인 필드는 #54에서 확정한다.'
+    ReportDownload:
+      type: object
+      required:
+      - url
+      - expiresAt
+      properties:
+        url:
+          type: string
+          format: uri
+        expiresAt:
+          type: string
+          format: date-time
+    ReportJobAccepted:
+      type: object
+      required:
+      - jobId
+      - childId
+      - period
+      - status
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        childId:
+          type: string
+          format: uuid
+        period:
+          $ref: '#/components/schemas/ReportPeriod'
+        status:
+          const: QUEUED
+    ModelKind:
+      type: string
+      enum:
+      - RUBRIC
+      - MODEL
+      - PROMPT
+      - GENERATION
+    EvaluationEvidence:
+      type: object
+      additionalProperties: false
+      required:
+      - datasetId
+      - datasetVersion
+      - baselineVersion
+      - comparisonReport
+      - trainingEvaluationSeparation
+      - quoteAccuracy
+      - calculationAccuracy
+      - humanReview
+      - evaluatedScopes
+      properties:
+        datasetId: &id001
+          type: string
+          minLength: 1
+        datasetVersion: *id001
+        baselineVersion: *id001
+        comparisonReport: *id001
+        trainingEvaluationSeparation: *id001
+        quoteAccuracy: *id001
+        calculationAccuracy: *id001
+        humanReview: *id001
+        evaluatedScopes: &id002
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+            pattern: ^[a-z0-9][a-z0-9._:/-]{0,199}$
+    RegisterModelVersion:
+      type: object
+      additionalProperties: false
+      required:
+      - kind
+      - name
+      - version
+      - evaluation
+      properties:
+        kind:
+          $ref: '#/components/schemas/ModelKind'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        version:
+          type: string
+          minLength: 1
+          maxLength: 100
+        refId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        artifactUri:
+          type:
+          - string
+          - 'null'
+          maxLength: 2048
+        evaluation:
+          $ref: '#/components/schemas/EvaluationEvidence'
+    ActivateModelVersion:
+      type: object
+      additionalProperties: false
+      required:
+      - approved
+      - scopes
+      - reason
+      - reanalysisPlanned
+      properties:
+        approved:
+          type: boolean
+          const: true
+        scopes: *id002
+        reason: *id001
+        reanalysisPlanned:
+          type: boolean
+    RollbackModelVersion:
+      type: object
+      additionalProperties: false
+      required:
+      - scopes
+      - reason
+      - reanalysisPlanned
+      properties:
+        scopes: *id002
+        reason: *id001
+        reanalysisPlanned:
+          type: boolean
+    VersionApproval:
+      type: object
+      additionalProperties: false
+      required:
+      - scopes
+      - reason
+      - approvedBy
+      - approvedAt
+      properties:
+        scopes: *id002
+        reason: *id001
+        approvedBy: &id003
+          type: string
+          format: uuid
+        approvedAt: &id004
+          type: string
+          format: date-time
+    EvaluationRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - evidence
+      - approval
+      - activeScopes
+      - revision
+      properties:
+        evidence:
+          $ref: '#/components/schemas/EvaluationEvidence'
+        approval:
+          oneOf:
+          - $ref: '#/components/schemas/VersionApproval'
+          - type: 'null'
+        activeScopes:
+          type: array
+          items:
+            type: string
+        revision:
+          type: integer
+          format: int64
+          minimum: 0
+    ModelVersion:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - kind
+      - name
+      - version
+      - refId
+      - artifactUri
+      - evalResult
+      - status
+      - approvedBy
+      - activatedAt
+      - createdAt
+      properties:
+        id: *id003
+        kind: &id005
+          $ref: '#/components/schemas/ModelKind'
+        name: *id001
+        version: *id001
+        refId: &id006
+          type:
+          - string
+          - 'null'
+          format: uuid
+        artifactUri: &id007
+          type:
+          - string
+          - 'null'
+        evalResult:
+          oneOf:
+          - $ref: '#/components/schemas/EvaluationRecord'
+          - type: 'null'
+        status:
+          type: string
+          enum:
+          - REGISTERED
+          - ACTIVE
+          - INACTIVE
+        approvedBy:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        activatedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        createdAt: *id004
+    ModelVersionPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - page
+      - size
+      - totalElements
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelVersion'
+        page:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        totalElements:
+          type: integer
+          format: int64
+          minimum: 0
+    ActiveModelVersion:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - kind
+      - name
+      - version
+      - refId
+      - artifactUri
+      - scopes
+      - revision
+      - activatedAt
+      properties:
+        id: *id003
+        kind: *id005
+        name: *id001
+        version: *id001
+        refId: *id006
+        artifactUri: *id007
+        scopes: *id002
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
+        activatedAt: *id004
+    ActiveModelVersions:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActiveModelVersion'
+    CallType:
+      type: string
+      enum: [JUDGMENT, FOLLOWUP, ANALYSIS, REPORT_NARRATIVE, M2, M1]
+    AiUsageResponse:
+      type: object
+      additionalProperties: false
+      required: [period, items]
+      properties:
+        period:
+          type: object
+          additionalProperties: false
+          required: [from, to]
+          properties:
+            from: {type: string, format: date}
+            to: {type: string, format: date}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/UsageSummary'}
+    UsageSummary:
+      type: object
+      additionalProperties: false
+      required: [callType, calls, failures, latencyMs, inputTokens, outputTokens, costUsd, unpricedCalls]
+      properties:
+        callType: {$ref: '#/components/schemas/CallType'}
+        calls: {type: integer, format: int64, minimum: 1}
+        failures: {type: integer, format: int64, minimum: 0}
+        latencyMs: {type: number, minimum: 0, description: 성공·실패를 포함한 평균 지연 ms}
+        inputTokens: {type: [integer, 'null'], format: int64, description: 미기록 호출이 있으면 null}
+        outputTokens: {type: [integer, 'null'], format: int64, description: 미기록 호출이 있으면 null}
+        costUsd: {type: [number, 'null'], description: 미산정 호출이 있으면 null}
+        unpricedCalls: {type: integer, format: int64, minimum: 0}
     Child:
       type: object
       additionalProperties: false
@@ -444,7 +2971,13 @@ components:
       - title
       - status
       - code
+      - traceId
       properties:
+        remainingAttempts:
+          type: integer
+          minimum: 0
+          maximum: 4
+          description: 학생 PIN 불일치 시 남은 실패 허용 횟수. 잠금 응답은 0.
         type:
           type: string
           format: uri-reference
@@ -464,10 +2997,321 @@ components:
           type: string
           format: uri-reference
         traceId:
+          type: string
+    ConsentDocument:
+      type: object
+      additionalProperties: false
+      required:
+      - documentId
+      - kind
+      - version
+      - title
+      - content
+      - required
+      - effectiveFrom
+      properties:
+        documentId:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+          - TERMS
+          - PRIVACY
+          - GUARDIAN
+        version:
+          type: string
+        title:
+          type: string
+        content:
+          type: string
+        required:
+          type: boolean
+        effectiveFrom:
+          type: string
+          format: date
+    ConsentChoice:
+      type: object
+      additionalProperties: false
+      required:
+      - documentId
+      - version
+      - agreed
+      properties:
+        documentId:
+          type: string
+          format: uuid
+        version:
+          type: string
+          minLength: 1
+        agreed:
+          type: boolean
+    ConsentWrite:
+      type: object
+      additionalProperties: false
+      required:
+      - consents
+      properties:
+        consents:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/ConsentChoice'
+        childId:
+          type: string
+          format: uuid
+    ConsentHistory:
+      type: object
+      additionalProperties: false
+      required:
+      - consentId
+      - subjectUserId
+      - studentId
+      - document
+      - agreed
+      - status
+      - agreedAt
+      - withdrawnAt
+      properties:
+        consentId:
+          type: string
+          format: uuid
+        subjectUserId:
+          type: string
+          format: uuid
+        studentId:
           type:
           - string
           - 'null'
+          format: uuid
+        document:
+          $ref: '#/components/schemas/ConsentDocument'
+        agreed:
+          type: boolean
+        status:
+          type: string
+          enum:
+          - AGREED
+          - WITHDRAWN
+        agreedAt:
+          type: string
+          format: date-time
+        withdrawnAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    RegisteredChild:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - nickname
+      - grade
+      - birthYear
+      properties:
+        id:
+          type: string
+          format: uuid
+        nickname:
+          type: string
+          minLength: 1
+          maxLength: 40
+        grade:
+          type: integer
+          minimum: 3
+          maximum: 6
+        birthYear:
+          type: integer
+          minimum: 1900
+    ChildRegistration:
+      type: object
+      additionalProperties: false
+      required:
+      - nickname
+      - grade
+      - birthYear
+      - consents
+      properties:
+        nickname:
+          type: string
+          minLength: 1
+          maxLength: 40
+        grade:
+          type: integer
+          minimum: 3
+          maximum: 6
+        birthYear:
+          type: integer
+          minimum: 1900
+          description: KST 현재 연도 이하
+        consents:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            $ref: '#/components/schemas/ConsentChoice'
+    ChildListItem:
+      type: object
+      additionalProperties: false
+      required:
+      - pinSet
+      - pinLocked
+      - id
+      - nickname
+      - grade
+      - birthYear
+      - guardianConsentRequired
+      - hasRecords
+      - recordState
+      properties:
+        pinSet: {type: boolean}
+        pinLocked: {type: boolean}
+        id:
+          type: string
+          format: uuid
+        nickname:
+          type: string
+          minLength: 1
+          maxLength: 40
+        grade:
+          type: integer
+          minimum: 3
+          maximum: 6
+        birthYear:
+          type: integer
+          minimum: 1900
+        guardianConsentRequired:
+          type: boolean
+        hasRecords:
+          type:
+          - boolean
+          - 'null'
+          description: learning /internal/records/students/{studentId}/exists의 실제 보존 제출 기록 여부. 조회 불가·동의 필요 시 null.
+        recordState:
+          type: string
+          enum:
+          - AVAILABLE
+          - UNAVAILABLE
+          - CONSENT_REQUIRED
+    ConsentDocumentPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - page
+      - size
+      - totalElements
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConsentDocument'
+        page:
+          type: integer
+          const: 0
+        size:
+          type: integer
+          minimum: 0
+        totalElements:
+          type: integer
+          minimum: 0
+    ConsentHistoryPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - page
+      - size
+      - totalElements
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConsentHistory'
+        page:
+          type: integer
+          const: 0
+        size:
+          type: integer
+          minimum: 0
+        totalElements:
+          type: integer
+          minimum: 0
+    ChildListItemPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - page
+      - size
+      - totalElements
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChildListItem'
+        page:
+          type: integer
+          const: 0
+        size:
+          type: integer
+          minimum: 0
+        totalElements:
+          type: integer
+          minimum: 0
+  requestBodies:
+    LearningJson:
+      required: true
+      description: JSON object 원문을 learning에 전달한다. 입력 방식·필수 필드·업무 검증은 learning 계약(api-spec 2.2·3.1·3.6)을 따른다. 미확정 DTO를 core에서 새로 정의하지 않는다.
+      content:
+        application/json:
+          schema: {type: object, additionalProperties: true}
   responses:
+    NotificationProblem:
+      description: 인증 실패 401, 학생 403, 타인/없는 알림 404, 잘못된 목록/설정 400
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    LearningResult:
+      description: learning의 최초 상태·JSON 원문을 보존한다. DTO 완성·실제 API 제공은 learning #22·#23·#24·#26의 후속 연결 조건이다.
+      headers:
+        ETag: {schema: {type: string}, description: learning의 초안 버전}
+        Location: {schema: {type: string}, description: learning이 제공한 리소스 위치}
+      content:
+        application/json:
+          schema: {type: object, additionalProperties: true}
+    LearningProblem:
+      description: >-
+        learning 오류 상태·Problem Details·확장 필드를 보존한다. core 인증 401/403·잘못된 UUID/JSON/필수 헤더 400,
+        처리 중 409·키 재사용 422·전송/서킷/저장 장애 503·시간 초과 504를 반환한다. 5xx는 확정 저장하지 않는다.
+      headers:
+        ETag: {schema: {type: string}, description: 충돌 시 최신 초안 버전}
+        Retry-After: {schema: {type: string}, description: '처리 중은 1초, 서킷 차단은 30초'}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    ModelStateUnavailable:
+      description: 활성 버전의 승인 근거·범위를 확인할 수 없음 (MODEL_VERSION_STATE_INVALID).
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    ModelNotFound:
+      description: 대상 버전 없음.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    ModelConflict:
+      description: 중복 버전 또는 허용되지 않는 활성화·복귀 상태.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    ModelApprovalRejected:
+      description: 평가 근거·명시적 사람 승인·범위·사유가 충족되지 않음. 범위 배열의 null 항목도 거부한다.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
     Unauthenticated:
       description: 미인증·만료·서명 오류·세션 변경·refresh 재사용. code로 구분한다.
       content:

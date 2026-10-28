@@ -29,12 +29,33 @@ class AuthOpenApiTests(unittest.TestCase):
         documented = {
             (method, path)
             for path, methods in self.spec["paths"].items()
-            for method in methods
+            for method, operation in methods.items()
+            if method in {"get", "post", "patch", "delete", "put"}
+            and ("Auth" in operation.get("tags", []) or (path == "/me" and method == "get"))
         }
         self.assertEqual(len(actual), 6)
-        self.assertEqual(documented, actual)
+        device_source = (ROOT / "backend/core-service/src/main/kotlin/com/sagomungchi/core/account/controller/StudentDeviceController.kt").read_text(encoding="utf-8")
+        actual.update((method.lower(), path.removeprefix("/api/v1"))
+                      for method, path in re.findall(r'@(Get|Post)Mapping\("([^\"]+)"\)', device_source)
+                      if path.startswith("/api/v1/auth/"))
+        self.assertEqual({item for item in documented if item[1].startswith("/auth/") or item[1] == "/me"}, actual)
         for path in ("/auth/student/devices", "/auth/student/profiles", "/auth/student/login"):
-            self.assertNotIn(path, self.spec["paths"])
+            self.assertIn(path, self.spec["paths"])
+
+    def test_consent_and_child_paths_match_implemented_producers(self):
+        actual = set()
+        for name in ("consent/controller/ConsentController.kt", "guardianship/controller/ChildrenController.kt"):
+            source = (ROOT / "backend/core-service/src/main/kotlin/com/sagomungchi/core" / name).read_text(encoding="utf-8")
+            actual.update((method.lower(), path.removeprefix("/api/v1")) for method, path in re.findall(r'@(Get|Post)Mapping\("([^\"]+)"\)', source))
+        documented = {(method, path) for path, methods in self.spec["paths"].items() for method in methods
+                      if path in ("/consent-documents", "/me/consents", "/me/consents/{consentId}/withdrawal", "/children")}
+        self.assertEqual(actual, documented)
+        self.assertEqual(len(actual), 6)
+        schemas = self.spec["components"]["schemas"]
+        self.assertIn("pinSet", schemas["ChildListItem"]["properties"])
+        self.assertIn("pinLocked", schemas["ChildListItem"]["required"])
+        self.assertEqual(schemas["ChildListItem"]["properties"]["hasRecords"]["type"], ["boolean", "null"])
+        self.assertIn("consents", schemas["ChildRegistration"]["required"])
 
     def test_all_references_resolve_locally(self):
         def visit(value):

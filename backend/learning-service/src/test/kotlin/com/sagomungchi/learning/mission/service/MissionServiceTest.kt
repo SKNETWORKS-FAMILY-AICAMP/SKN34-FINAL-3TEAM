@@ -1,14 +1,18 @@
 package com.sagomungchi.learning.mission.service
 
 import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning.mission.domain.HintQuestion
 import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.domain.MissionProgress
+import com.sagomungchi.learning.mission.domain.MissionSnapshot
 import com.sagomungchi.learning.mission.domain.MissionView
 import com.sagomungchi.learning.mission.domain.ProgressStatus
+import com.sagomungchi.learning.mission.domain.RubricElement
 import com.sagomungchi.learning.mission.missionView
 import com.sagomungchi.learning.mission.repository.MissionAttempt
 import com.sagomungchi.learning.mission.repository.MissionMapper
 import com.sagomungchi.learning.mission.repository.MissionRepository
+import com.sagomungchi.learning.mission.repository.RubricHeader
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.http.HttpStatus
@@ -28,6 +32,11 @@ class MissionServiceTest {
         override fun findPublishedById(id: UUID) = published.find { it.id == id }
         override fun existsById(id: UUID) = id in unpublished || published.any { it.id == id }
         override fun findLatestAttempts(studentId: UUID) = attempts
+        override fun findCurrentVersions(id: UUID): MissionSnapshot? = null
+        override fun findVersion(missionVersionId: UUID): MissionView? = null
+        override fun findHintQuestions(rubricVersionId: UUID): List<HintQuestion> = emptyList()
+        override fun findRubric(missionVersionId: UUID, rubricVersionId: UUID): RubricHeader? = null
+        override fun findRubricElements(rubricVersionId: UUID): List<RubricElement> = emptyList()
     }
 
     private fun service(mapper: FakeMapper) = MissionService(MissionRepository(mapper))

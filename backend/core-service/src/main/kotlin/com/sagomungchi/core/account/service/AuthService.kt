@@ -60,6 +60,17 @@ class AuthService(
         issue(session)
     })
 
+    /** Device caller holds the parent account lock and has verified device, child and PIN. */
+    @org.springframework.transaction.annotation.Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)
+    fun issueDeviceStudent(parent: UUID, child: UUID): IssuedAuth {
+        students.requireLinked(parent,child)
+        requireGuardian(parent,child)
+        val now=now()
+        val session=AuthSession(UUID.randomUUID(),parent,"STUDENT",child,1,now.plus(properties.studentAccessTtl),null,now)
+        repository.insertSession(session)
+        return IssuedAuth(tokens.access(session),null,null,identity(session))
+    }
+
     fun authenticate(accessToken: String): AuthenticatedAccount {
         val jwt = tokens.verify(accessToken)
         val sid = uuid(jwt.getClaimAsString("sid"))
@@ -149,7 +160,7 @@ class AuthService(
                 requireGuardian(account.id, studentId)
                 setOf(students.requireLinked(account.id, studentId).id)
             }
-            "PARENT" -> students.linkedStudents(account.id).map { it.id }.toSet()
+            "PARENT" -> students.linkedStudents(account.id).filter { consents.hasGuardianConsent(account.id, it.id) }.map { it.id }.toSet()
             else -> emptySet()
         }
         return AuthenticatedAccount(account, session, if (session.role == "ADMIN") repository.permissions(account.id) else emptySet(), scope)

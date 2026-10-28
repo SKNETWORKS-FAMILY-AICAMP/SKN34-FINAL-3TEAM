@@ -41,7 +41,7 @@ test('독립 기기 등록 → HttpOnly 기기 쿠키 → PIN 로그인 → 보�
   assert.match(registered.setCookie!, /HttpOnly; SameSite=Strict/)
   assert.ok(!JSON.stringify(registered.data).includes('credential'))
   assert.deepEqual((await tablet.call('/profiles')).data.items,
-    [{ childId: child.id, nickname: '하린', pinSet: true, locked: false }])
+    [{ childId: child.id, nickname: '하린', pinSet: true, pinLocked: false }])
   assert.equal((await tablet.call('/login', 'POST', { childId: child.id, pin: '4831' })).status, 200)
   const list = (await parent.call('/devices')).data.items
   assert.equal(list[0].label, '하린의 태블릿')
@@ -80,6 +80,7 @@ test('PIN 5회 실패는 기기 간 공유되고 보호자의 재설정으로 �
   assert.equal((await tablet.call('/login', 'POST', { childId: child.id, pin: '4831' })).status, 423)
   const statuses = await parent.call('/children', 'PUT', { children: [child] })
   assert.equal(statuses.data.items[0].pinLocked, true)
+  assert.equal((await tablet.call('/profiles')).data.items[0].pinLocked, true)
   await parent.call('/pins/demo-child', 'PUT', { pin: '90210' })
   assert.equal((await tablet.call('/login', 'POST', { childId: child.id, pin: '90210' })).status, 200)
 })

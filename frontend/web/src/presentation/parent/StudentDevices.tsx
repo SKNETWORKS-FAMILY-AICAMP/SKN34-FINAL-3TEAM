@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
-import { parentApi } from '../../data/parent/api.ts'
+import { studentDeviceApi } from '../../data/studentDevice/api.ts'
 import { useParentMutation } from '../../data/parent/queries.ts'
 import { qrDemoEnabled, useDeviceAdmin, usePairingOrigins, useStudentDevices } from '../../data/studentDevice/queries.ts'
 import type { Child } from '../../domain/classroom.ts'
 import {
   PIN_MAX,
-  PIN_MIN,
   deviceExpired,
   formatPairingCode,
   pinProblem,
@@ -45,63 +44,44 @@ export function StudentDevices({ items }: { items: Child[] }) {
 }
 
 function PinSettings({ items }: { items: Child[] }) {
-  const [password, setPassword] = useState(''),
-    [token, setToken] = useState(''),
-    [notice, setNotice] = useState('')
-  // 기존 정보 관리(AccountForms)와 같은 비밀번호 재확인 목업. 명세의 /me/reauth는 Google 재인증 기반(#45)이라
-  // Google 로그인 사용자는 비밀번호가 없다. 실제 연동 때 #45 재인증 흐름으로 바꿔야 PIN을 설정할 수 있다.
-  const reauth = useParentMutation(parentApi.reauth)
-  return (
-    <section className="ws-card" aria-labelledby="pin-h">
-      <h2 id="pin-h">자녀 PIN</h2>
-      <p>
-        자녀가 등록된 기기에서 혼자 들어올 때 쓰는 숫자 {PIN_MIN}~{PIN_MAX}자리입니다. 같은 숫자 반복(1111)과
-        이어지는 숫자(1234)는 쓸 수 없습니다. 5번 틀리면 잠기고, 여기서 다시 정해야 풀립니다.
-      </p>
-      <form
-        className="ws-form"
-        onSubmit={(e) => {
-          e.preventDefault()
-          void reauth
-            .mutateAsync(password)
-            .then((r) => {
-              setToken(r.reauthToken)
-              setPassword('')
-              setNotice('재확인을 완료했습니다. 5분 안에 PIN을 정해 주세요.')
-            })
-            .catch(() => {})
-        }}
-      >
-        <label>
-          PIN 변경 전 본인 재확인
-          <input
-            aria-label="PIN 재확인 비밀번호"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            required
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </label>
-        <button className="cj-secondary" disabled={reauth.isPending}>
-          본인 재확인
-        </button>
-        <ErrorNotice error={reauth.error} />
-      </form>
-      {items.map((c) => (
-        <ChildPin key={c.id} child={c} token={token} onDone={setNotice} />
-      ))}
-      <p role="status">{notice}</p>
-    </section>
-  )
+  return <section className="ws-card" aria-labelledby="pin-h">
+    <h2 id="pin-h">자녀 PIN</h2>
+    <p>자녀별 Google 본인 확인 후 PIN을 정해 주세요. 5번 틀려 잠긴 PIN도 여기서 다시 정하면 풀립니다.</p>
+    {items.map((c) => <ChildPin key={c.id} child={c} />)}
+  </section>
 }
 
-function ChildPin({ child, token, onDone }: { child: Child; token: string; onDone: (m: string) => void }) {
+function ChildPin({ child }: { child: Child }) {
+  const [challenge, setChallenge] = useState('')
+  const [grant, setGrant] = useState<{ reauthToken: string; expiresAt: string } | null>(null)
+  const [notice, setNotice] = useState('')
+  const start = useParentMutation(studentDeviceApi.startPinReauth)
+  const finish = useParentMutation(studentDeviceApi.finishPinReauth)
+  useEffect(() => {
+    if (!grant) return
+    const timeout = window.setTimeout(() => setGrant(null), Math.max(0, Date.parse(grant.expiresAt) - Date.now()))
+    return () => window.clearTimeout(timeout)
+  }, [grant])
+  const token = grant?.reauthToken ?? ''
+  function begin() {
+    const popup = window.open('about:blank', '_blank')
+    if (!popup) { setNotice('팝업을 허용한 뒤 다시 시도해 주세요.'); return }
+    popup.opener = null
+    setGrant(null); setChallenge(''); setNotice('')
+    void start.mutateAsync(child.id).then((result) => {
+      const url = new URL(result.authorizationUrl, window.location.origin)
+      if (url.protocol !== 'https:' && url.origin !== window.location.origin) throw new Error('잘못된 재인증 주소입니다.')
+      popup.location.href = url.href
+      setChallenge(result.challengeId)
+      setNotice('Google 확인을 마친 뒤 이 화면에서 완료 확인을 눌러 주세요.')
+    }).catch(() => { popup.close(); setNotice('Google 재확인을 시작하지 못했습니다.') })
+  }
   const [pin, setPin] = useState(''),
     [again, setAgain] = useState(''),
     [problem, setProblem] = useState<string | null>(null)
   const { setPin: save } = useDeviceAdmin()
-  const status = child.pinLocked ? '잠김 · 다시 정해야 풀려요' : child.pinSet ? '설정됨' : '아직 없음'
+  const state = child.pinLocked === true ? 'locked' : child.pinSet === true ? 'set' : child.pinSet === false ? 'none' : 'unknown'
+  const status = state === 'locked' ? '잠김 · 다시 정해야 풀려요' : state === 'set' ? '설정됨' : state === 'none' ? '아직 없음' : '확인 필요'
   return (
     <form
       className="ws-form"
@@ -117,7 +97,8 @@ function ChildPin({ child, token, onDone }: { child: Child; token: string; onDon
             onSuccess: () => {
               setPin('')
               setAgain('')
-              onDone(`${child.nickname}의 PIN을 저장했습니다.${child.pinLocked ? ' 잠금도 풀렸습니다.' : ''}`)
+              setGrant(null); setChallenge('')
+              setNotice(`${child.nickname}의 PIN을 저장했습니다.${child.pinLocked ? ' 잠금도 풀렸습니다.' : ''}`)
             },
           },
         )
@@ -127,8 +108,17 @@ function ChildPin({ child, token, onDone }: { child: Child; token: string; onDon
         {child.nickname} <small>· 초{child.grade}</small>
       </h3>
       <p>
-        현재 상태: <strong data-pin-state={child.pinLocked ? 'locked' : child.pinSet ? 'set' : 'none'}>{status}</strong>
+        현재 상태: <strong data-pin-state={state}>{status}</strong>
       </p>
+      <button type="button" className="cj-secondary" disabled={start.isPending || finish.isPending} onClick={begin}>
+        {child.nickname} Google 본인 확인
+      </button>
+      {challenge && !token && <button type="button" className="cj-secondary" disabled={finish.isPending}
+        onClick={() => { void finish.mutateAsync(challenge).then((value) => { setGrant(value); setNotice('재확인을 완료했습니다. 5분 안에 PIN을 정해 주세요.') }).catch(() => {}) }}>
+        {child.nickname} 완료 확인
+      </button>}
+      <ErrorNotice error={start.error ?? finish.error} />
+      <p role="status">{notice}</p>
       <label>
         새 PIN
         <input
@@ -154,8 +144,8 @@ function ChildPin({ child, token, onDone }: { child: Child; token: string; onDon
         />
       </label>
       {problem && <p role="alert">{problem}</p>}
-      <button className="cj-primary" disabled={!token || save.isPending}>
-        {child.pinSet ? 'PIN 바꾸기' : 'PIN 정하기'}
+      <button className="cj-primary" disabled={!token || save.isPending || start.isPending || finish.isPending}>
+        {child.pinSet === true ? 'PIN 바꾸기' : child.pinSet === false ? 'PIN 정하기' : 'PIN 설정·변경'}
       </button>
       {!token && <small>본인 재확인 후 저장할 수 있습니다.</small>}
       <ErrorNotice error={save.error} />

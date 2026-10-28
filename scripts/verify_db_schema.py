@@ -56,23 +56,42 @@ VALUES ('00000000-0000-4000-8000-000000000018', '00000000-0000-4000-8000-0000000
         'PARENT',1,now()+interval '7 days',now());
 SELECT pg_temp.expect_sqlstate($$UPDATE auth_session SET role = 'STUDENT'$$, '23514');
 SELECT pg_temp.expect_sqlstate($$UPDATE auth_session SET version = 0$$, '23514');
+-- #45: live profile and reauth target/completion contracts.
+SELECT pg_temp.expect_sqlstate($$INSERT INTO reauth_challenge(id,user_id,session_id,session_version,purpose,state_hash,expires_at)
+VALUES ('00000000-0000-4000-8000-000000000021','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000018',1,'PIN_CHANGE','schema-invalid',now())$$, '23514');
+INSERT INTO reauth_challenge(id,user_id,session_id,session_version,purpose,state_hash,expires_at)
+VALUES ('00000000-0000-4000-8000-000000000021','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000018',1,'WITHDRAWAL','schema-state',now());
+SELECT pg_temp.expect_sqlstate($$INSERT INTO reauth_grant(token_hash,challenge_id,expires_at)
+VALUES ('hash','00000000-0000-4000-8000-999999999999',now())$$, '23503');
+
 SELECT pg_temp.expect_sqlstate($$UPDATE auth_session SET user_id = '00000000-0000-4000-8000-999999999999'$$, '23503');
 INSERT INTO refresh_token(id,user_id,session_id,token_hash,expires_at,created_at)
 VALUES ('00000000-0000-4000-8000-000000000019', '00000000-0000-4000-8000-000000000001',
         '00000000-0000-4000-8000-000000000018','schema-refresh-hash',now()+interval '7 days',now());
 SELECT pg_temp.expect_sqlstate($$UPDATE refresh_token SET session_id = '00000000-0000-4000-8000-999999999999'$$, '23503');
-INSERT INTO student (id, nickname, grade, birth_year, is_demo, status, created_at, updated_at)
-VALUES ('00000000-0000-4000-8000-000000000002', 'schema-test', 3, 2015, true,
+INSERT INTO student (pin_failed_count, id, nickname, grade, birth_year, is_demo, status, created_at, updated_at)
+VALUES (0, '00000000-0000-4000-8000-000000000002', 'schema-test', 3, 2015, true,
         'ACTIVE', now(), now());
 SELECT pg_temp.expect_sqlstate(
     $$UPDATE user_account SET status = 'INVALID'$$, '23514');
 SELECT pg_temp.expect_sqlstate(
     $$UPDATE user_account SET status = NULL$$, '23502');
-SELECT pg_temp.expect_sqlstate($$UPDATE student SET birth_year = NULL$$, '23502');
+SELECT pg_temp.expect_sqlstate($$UPDATE student SET birth_year = NULL$$, '23514');
 SELECT pg_temp.expect_sqlstate($$UPDATE student SET grade = 2$$, '23514');
 SELECT pg_temp.expect_sqlstate($$UPDATE student SET grade = 7$$, '23514');
 UPDATE student SET grade = 6;
 UPDATE student SET grade = 3;
+SELECT pg_temp.expect_sqlstate($$UPDATE student SET pin_failed_count=-1$$, '23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE student SET pin_failed_count=NULL$$, '23502');
+INSERT INTO student_device(id,parent_user_id,token_hash,label,created_at,expires_at)
+VALUES ('00000000-0000-4000-8000-000000000030','00000000-0000-4000-8000-000000000001','device-hash','synthetic',now(),now()+interval '90 days');
+SELECT pg_temp.expect_sqlstate($$UPDATE student_device SET expires_at=created_at$$, '23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE student_device SET parent_user_id='00000000-0000-4000-8000-999999999999'$$, '23503');
+SELECT pg_temp.expect_sqlstate($$INSERT INTO student_device(id,parent_user_id,token_hash,label,created_at,expires_at)
+SELECT '00000000-0000-4000-8000-000000000031',parent_user_id,token_hash,label,created_at,expires_at FROM student_device$$, '23505');
+INSERT INTO student_device_child(device_id,student_id) VALUES('00000000-0000-4000-8000-000000000030','00000000-0000-4000-8000-000000000002');
+SELECT pg_temp.expect_sqlstate($$INSERT INTO student_device_child SELECT * FROM student_device_child$$, '23505');
+SELECT pg_temp.expect_sqlstate($$UPDATE student_device_child SET student_id='00000000-0000-4000-8000-999999999999'$$, '23503');
 
 INSERT INTO guardianship (id, parent_user_id, student_id, method, status, linked_at)
 VALUES ('00000000-0000-4000-8000-000000000003',
@@ -94,6 +113,9 @@ WHERE id = '00000000-0000-4000-8000-000000000003';
 
 INSERT INTO notification_setting (user_id, type, channel, enabled, updated_at)
 VALUES ('00000000-0000-4000-8000-000000000001', 'REPORT_COMPLETED', 'IN_APP', true, now());
+INSERT INTO notification_setting (user_id, type, channel, enabled, updated_at)
+VALUES ('00000000-0000-4000-8000-000000000001', 'REPORT_FAILED', 'IN_APP', false, now());
+SELECT pg_temp.expect_sqlstate($$UPDATE notification_setting SET type = 'UNKNOWN_EVENT'$$, '23514');
 SELECT pg_temp.expect_sqlstate(
     $$UPDATE notification_setting SET channel = 'EMAIL'$$, '23514');
 SELECT pg_temp.expect_sqlstate(

@@ -13,7 +13,7 @@
 |---|---|
 | 상태값 | API 1.5·ERD CHECK 코드값 그대로 |
 | 전이 검사 | 엔티티 메서드(`Judgment.acquire()` 등)가 현재 상태로 허용 여부 판단, 불허 시 `BusinessException(409)` |
-| 동시성 | 상태 변경 SQL은 `UPDATE ... SET status = :to WHERE id = :id AND status IN (:from)` 형태. 영향 행 0이면 다른 요청이 먼저 처리한 것으로 보고 현재 상태 재조회 |
+| 동시성 | 상태 변경 SQL은 `UPDATE ... SET status = :to WHERE id = :id AND status IN (:from)` 형태. 영향 행 0이면 다른 요청이 먼저 처리한 것으로 보고 현재 상태 재조회. 예외: `model_version`은 같은 kind·name advisory lock 안에서 재조회 후 `WHERE id`로 갱신(7.1), 동의 철회는 보호자 행 잠금 후 갱신(2.3) |
 | 이벤트 소비 | `processed_event` 저장 + 조건부 UPDATE 같은 트랜잭션. 중복·역순 이벤트는 영향 행 0으로 무시 (아키텍처 1.6) |
 | 이력 | 상태 덮어쓰기와 별도로 결과 행은 보존: 답변·판정·정정·리포트 revision은 새 행 (ERD 1장) |
 | 종료 상태 | 다이어그램의 `[*]`로 나가는 상태. 이후 재처리는 새 행 또는 표에 명시한 전이만 |
@@ -53,13 +53,13 @@ stateDiagram-v2
     S_DELETED --> [*]
   }
   state deletion_request {
-    [*] --> REQUESTED: 삭제 요청
-    REQUESTED --> CONFIRMED: 확인 절차 통과 + student.deleted 발행
+    [*] --> REQUESTED: 삭제 요청 (X-Reauth-Token)
+    REQUESTED --> CONFIRMED: 같은 요청에서 확정 + student.deleted 발행
     CONFIRMED --> COMPLETED: 삭제 완료 판정
     COMPLETED --> [*]
   }
   note right of deletion_request
-    확인: 재확인 토큰, 완료: learning·report 완료 보고 (P09)
+    재확인 토큰은 요청 시 검사, 완료: learning·report 완료 보고 (P09)
     RECORDS 범위는 student 상태 유지, 기록만 삭제
   end note
 ```
@@ -68,8 +68,8 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
-| `deletion_request → REQUESTED` | `POST /children/{id}/deletion-requests` | `GuardianshipService.requestDeletion` | 연결 자녀(`LINKED`)만 |
-| `REQUESTED → CONFIRMED` | `X-Reauth-Token` 재확인 (P09) | `GuardianshipService.confirmDeletion` → `DeletionRequest.confirm()` | 같은 트랜잭션에 `outbox_event(student.deleted)`, `scope = PROFILE`이면 `student ACTIVE → DELETION_REQUESTED` |
+| `deletion_request → REQUESTED` | `POST /children/{id}/deletion-requests` + `X-Reauth-Token` (P09) | `GuardianshipService.requestDeletion` | 연결 자녀(`LINKED`)만. 재확인 토큰이 없거나 무효면 `403 REAUTH_REQUIRED`로 행을 만들지 않음 |
+| `REQUESTED → CONFIRMED` | 같은 요청 안에서 바로 확정 (별도 확인 API 없음, 연결 해제·탈퇴와 같은 1단계) | `GuardianshipService.requestDeletion` → `DeletionRequest.confirm()` | 같은 트랜잭션에 `outbox_event(student.deleted)`, `scope = PROFILE`이면 `student ACTIVE → DELETION_REQUESTED` |
 | `CONFIRMED → COMPLETED`, `student → DELETED` | learning·report 모두 `POST /internal/deletion-requests/{id}/completions` 보고 (P09) | `DeletionRequest.complete()`, `Student.markDeleted()` | `deleted_at` 기록. 이후 모든 조회에서 제외, 근거는 `available: false` |
 
 ### 2.3 `guardianship.status` · `consent.status`
@@ -83,6 +83,7 @@ stateDiagram-v2
   }
   state consent {
     [*] --> AGREED: 동의 저장 (문서 버전·시점)
+    [*] --> WITHDRAWN: 선택 항목 미동의 저장
     AGREED --> WITHDRAWN: 동의 철회
     WITHDRAWN --> [*]
   }
@@ -90,10 +91,10 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
-| → `LINKED` | `POST /children` | `GuardianshipService.registerChild` | 부분 UK `(parent_user_id, student_id) WHERE LINKED`, 학부모당 `LINKED` 3명 이하 (P02). 다른 보호자 연결 없음 |
+| → `LINKED` | `POST /children` | `GuardianshipService.register` | 부분 UK `(parent_user_id, student_id) WHERE LINKED`, 보호자 행 잠금 후 학부모당 `LINKED` 3명 이하 (P02). 다른 보호자 연결 없음 |
 | `LINKED → UNLINKED` | `DELETE /children/{id}/link` | `Guardianship.unlink()` | `WHERE status = 'LINKED'`. 재연결은 새 행 (이력 보존) |
-| → `AGREED` | 가입·자녀 등록 | `ConsentService.record` | 필수 문서(`required`) 모두 동의해야 저장 진행 |
-| `AGREED → WITHDRAWN` | `POST /me/consents/{id}/withdrawal` | `Consent.withdraw()` | 행 유지 + `withdrawn_at`. 필수 동의 철회 시 대상 자녀(자녀 동의) 또는 계정 이용 차단, 삭제·탈퇴는 별도 요청. 선택 동의는 해당 기능만 중단 (P09) |
+| → `AGREED`·`WITHDRAWN` | 가입·자녀 등록·동의 변경 (`POST /me/consents`, `POST /children`) | `ConsentService.save` | 현재 문서 전체 항목과 필수 문서(`required`) 동의가 있어야 저장. 항목마다 최신 행과 선택이 다를 때만 새 행 저장(동의 AGREED, 선택 항목 미동의 WITHDRAWN). 재동의도 새 AGREED 행. 권한은 같은 문서·주체·자녀의 최신 행으로 판정 |
+| `AGREED → WITHDRAWN` | `POST /me/consents/{id}/withdrawal` | `ConsentService.withdraw` | 보호자 행 잠금 후 본인 행 확인, 이미 WITHDRAWN이면 그대로 반환. 행 유지 + `withdrawn_at`. 필수 동의 철회 시 대상 자녀(자녀 동의) 또는 계정 이용 차단, 삭제·탈퇴는 별도 요청. 선택 동의는 해당 기능만 중단 (P09) |
 
 ---
 
@@ -149,11 +150,12 @@ stateDiagram-v2
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
 | `NOT_STARTED → IN_PROGRESS` | `POST /missions/{id}/attempts` | `AttemptService.start` | 부분 UK `(student_id, mission_id) WHERE IN_PROGRESS` 충돌 시 기존 시도 반환 |
-| `작성 → 마무리됨` (상태값 유지) | `POST /attempts/{id}/finish` | `Attempt.finish(now)` | `FinishPolicy.canFinish`: 판정 `DONE` 1회 이상 (P04), 미충족 `409 REVEAL_CONDITION_UNMET`. `finished_at` 이후 정답·예시 답 공개 |
+| `작성 → 마무리됨` (상태값 유지) | `POST /attempts/{id}/finish` | `Attempt.finish(now)` | `FinishPolicy.canFinish`: 판정 `DONE` 1회 이상 (P04), 미충족 `409 REVEAL_CONDITION_UNMET`. `finished_at` 이후 정답·예시 답 공개. 이미 마무리했으면 기록 없이 같은 결과 |
 | `IN_PROGRESS → COMPLETED` | `POST /attempts/{id}/reflection` | `Attempt.complete(now)` | `finished_at` 있음(없으면 `409 REVEAL_CONDITION_UNMET`) + `WHERE status = 'IN_PROGRESS'`. 난이도 필수·달라진 점 선택 (P04) |
 
 - `COMPLETED` 시도에 답변·초안·도움·돌아보기 쓰기 → `409 ATTEMPT_CLOSED` (`Attempt.requireOpen()`)
 - `finished_at` 이후 답변 제출은 `409 ATTEMPT_CLOSED` (P04)
+- 자기 평가는 마무리 뒤·완료 전에만(`Attempt.requireFinished()`: 마무리 전 `409 REVEAL_CONDITION_UNMET`, 완료 뒤 `409 ATTEMPT_CLOSED`)
 - 되묻기는 시도당 최대 2회, 2회째 보완 답변 판정 후 되묻기 생성 없이 마무리 안내. 고르기 `CORRECT`도 되묻기 없이 마무리 안내 (P04)
 - 초안 `attempt_draft.version`: 저장마다 +1, `WHERE version = :ifMatch` (상태값 없음)
 
@@ -177,24 +179,26 @@ stateDiagram-v2
 | 전이 | 트리거 | 담당 | 조건부 UPDATE |
 |---|---|---|---|
 | → `PENDING` | `POST /attempts/{id}/answers` | `JudgmentService.createPending` | `answer_id` UK |
-| `PENDING·FAILED → RUNNING`, 만료 `RUNNING → RUNNING` | `POST /answers/{id}/feedback` | `Judgment.acquire(now, lease)` | `SET process_status='RUNNING', lease_until=:until WHERE answer_id=:id AND (process_status IN ('PENDING','FAILED') OR (process_status='RUNNING' AND lease_until < now()))` |
+| `PENDING·FAILED → RUNNING`, 만료 `RUNNING → RUNNING` | `POST /answers/{id}/feedback` | `Judgment.acquire(now, lease)` | `SET process_status='RUNNING', lease_until=:until WHERE answer_id=:id AND (process_status IN ('PENDING','FAILED') OR (process_status='RUNNING' AND (lease_until IS NULL OR lease_until < now())))`. 리스 없는 `RUNNING`도 만료로 봄(엔티티 판단과 같게) |
 | `RUNNING → DONE` | 처리 완료 | `Judgment.done(...)`·`hold(reason)` | `WHERE id=:id AND process_status='RUNNING' AND lease_until=:until` (획득한 리스 값으로 늦게 끝난 이전 처리의 덮어쓰기 방지) |
 | `RUNNING → FAILED` | 예외·타임아웃 | `Judgment.fail(code)` | 위와 같은 리스 조건, `retry_count + 1` |
 
 - 전이 실패(영향 0행) 시 현재 상태로 응답: `DONE` → 저장 결과, 유효 `RUNNING` → `status` 이벤트 후 종료 (API 1.4)
-- 고착 `RUNNING` 탐지 인덱스 `(process_status, lease_until)`, 리스 90초·탐지 주기 1분 (P12)
+- 고착 `RUNNING` 탐지 인덱스 `(process_status, lease_until)`, 리스 90초·탐지 주기 1분 (P12). 주기 탐지 작업은 미구현(운영 작업 후속)이며 현재는 다음 피드백 요청 때 만료 리스를 재획득 ([이슈 #25 보고서](../report/learning-feedback.md))
 - 리스 시간은 core→learning 피드백 호출 타임아웃보다 길게 설정. 짧으면 처리 중인 판정을 다른 요청이 재획득해 LLM 호출이 중복됨
 
 #### `judgment.result` 결정 (`DONE`일 때만 값 존재)
 
 | 결과 | 조건 | 결정 위치 |
 |---|---|---|
-| `CORRECT` | 규칙: 정답 키 일치·수학 동치 / LLM: 모든 필수 요소 `verified && satisfied` | learning `RuleJudge` / ai `JudgmentService` |
-| `PARTIAL` | LLM: 일부 요소만 충족 (배점 기준) | ai `JudgmentService` |
-| `RETHINK` | 규칙: 불일치 / LLM: 충족 요소 없음 | learning `RuleJudge` / ai `JudgmentService` |
+| `CORRECT` | 규칙: 정답 키 일치·수학 동치 / LLM: 모든 필수 요소 `verified && satisfied` / 풀이 단계: 최종 답 동치 + 풀이 LLM `CORRECT` | learning `RuleJudge` / ai `JudgmentService` / learning `FeedbackFacade` |
+| `PARTIAL` | LLM: 일부 요소만 충족 (배점 기준) / 풀이 단계: 최종 답과 풀이 중 한쪽만 맞음 | ai `JudgmentService` / learning `FeedbackFacade` |
+| `RETHINK` | 규칙: 불일치 / LLM: 충족 요소 없음 / 풀이 단계: 최종 답 불일치 + 풀이 LLM `RETHINK` | learning `RuleJudge` / ai `JudgmentService` / learning `FeedbackFacade` |
 | `HELD` | `INSUFFICIENT_EVIDENCE`·`QUOTE_MISMATCH`·`TOO_SHORT`·`UNVERIFIED_SCOPE`(`judge_verified = false`, `JUDGE_REQUIRE_VERIFIED=true`일 때만)·`MODEL_DISAGREEMENT`(M2 불일치)·`LOW_CONFIDENCE`(M1 0.8 미만, P15) | ai `JudgmentService` (learning은 `judge_verified`·학년 포함 기준표 전달만) |
 
 - `HELD`는 정상 처리 결과(`DONE`), API 실패는 `FAILED` → 서로 다른 컬럼 (NFR-REL-04)
+- 풀이 단계(`SOLUTION_STEPS`)는 풀이를 ai 요소 판정, 최종 답을 `MathEquivalenceJudge`로 보고 위처럼 합침. ai가 보류하면 보류. 합치는 규칙은 기능 명세에 없어 #25에서 정한 임시 규칙 ([learning 피드백 보고서](../report/learning-feedback.md))
+- `FAILED`의 `failure_code`: `AI_TIMEOUT`·`AI_UNAVAILABLE`(연결 실패·ai 5xx)·`AI_BAD_RESPONSE`(ai 4xx·계약 밖 응답)·`AI_CIRCUIT_OPEN`·`INTERNAL_ERROR`
 
 ---
 
@@ -426,18 +430,24 @@ stateDiagram-v2
 
 ```mermaid
 stateDiagram-v2
-  [*] --> REGISTERED: 버전 등록 (평가 기록 첨부)
-  REGISTERED --> ACTIVE: 승인 조건 확인 후 활성화
-  ACTIVE --> INACTIVE: 같은 kind·name 다른 버전 활성화
-  INACTIVE --> ACTIVE: 롤백 (이전 승인 버전 재활성화)
+  [*] --> REGISTERED: 평가 근거 첨부 후 등록
+  REGISTERED --> ACTIVE: 평가 범위 내 명시적 사람 승인
+  ACTIVE --> INACTIVE: 같은 kind·name의 다른 버전 활성화 또는 복귀
+  INACTIVE --> ACTIVE: 원 승인 범위 내 rollback
 ```
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
-| `REGISTERED → ACTIVE` | `/admin/model-versions/{id}/activate` | `ModelVersionService.activate` → `ModelVersion.activate()` | `eval_result` 승인 기준(NFR-AIQ-05) 충족, 같은 트랜잭션에서 기존 `ACTIVE → INACTIVE` 먼저 (부분 UK `(kind, name) WHERE ACTIVE`) + `outbox(model.version.activated)` + `audit_log` |
-| `INACTIVE → ACTIVE` | `/admin/model-versions/{id}/rollback` | `ModelVersionService.rollback` | 한 번 `ACTIVE`였던(승인된) 버전만, 재분석 여부 `audit_log.detail` |
+| → `REGISTERED` | `POST /admin/model-versions` | `ModelVersionService.register(command, actor)` | 고정 자료·기존 결과 비교·학습/평가 분리·인용/계산·사람 검토 근거·평가 범위 필수, `MODEL_REGISTER` 감사 기록 |
+| `REGISTERED → ACTIVE` | `POST /admin/model-versions/{id}/activate` | `ModelVersionService.activate(id, command, actor)` → private `switch` | `approved=true`, 사유·평가 범위 내 scopes 필수. 최초 승인자·범위를 보존한다. 품질 합격 수치는 서버가 임의 판정하지 않는다 |
+| `ACTIVE → INACTIVE` | 같은 kind·name의 다른 대상 `activate` 또는 `rollback` | `ModelVersionService.switch` | 기존 ACTIVE를 먼저 비활성화해 부분 UK를 유지한다. 평가 근거·원 승인·마지막 revision은 보존하고 activeScopes만 비운다 |
+| `INACTIVE → ACTIVE` | `POST /admin/model-versions/{id}/rollback` | `ModelVersionService.rollback(id, command, actor)` → private `switch` | 현재 ACTIVE 및 대상의 과거 승인·활성화 이력 필수, scopes는 원 승인 범위의 부분 집합. 원 승인자는 유지하고 복귀 수행자·사유·재분석 여부를 별도 감사 기록 |
 
-- 기존 판정·분석·리포트 결과는 당시 버전을 유지 (덮어쓰기 금지, FN-ADM-18)
+- `ModelVersion`은 불변 data class이며 도메인 `activate()`·`deactivate()` 메서드는 없다. 서비스가 검증한 뒤 `copy`로 상태를 만들고 Repository가 저장한다.
+- 같은 kind·name의 transaction advisory lock → 대상 재조회 → 기존 ACTIVE 비활성화 → 대상 ACTIVE·scopes·revision 저장 → 감사 → Outbox를 하나의 트랜잭션으로 처리한다. revision은 그룹별 저장 최대값 + 1이며 실패 시 모든 변경을 롤백한다.
+- 감사 경로는 `ModelVersionRepository.audit → ModelVersionMapper.audit`다. 공용 `AuditLogService`는 미구현 후속 설계이며 #43의 호출 경로가 아니다. 성공 교체는 `MODEL_ACTIVATE`·`MODEL_ROLLBACK` 감사와 `model.version.activated` Outbox를 함께 저장한다.
+- 승인 근거·평가/승인 외 범위·null scope 항목은 422, 허용되지 않는 전이·과거 활성화 이력 없는 복귀는 409다. 불완전한 기존 ACTIVE의 내부 조회는 503으로 명시적으로 실패한다. 상세 요청·응답은 API 5.2를 따른다.
+- 기존 판정·분석·리포트 결과는 당시 버전을 유지한다. 재분석 여부는 감사 기록일 뿐 기존 결과를 덮어쓰거나 재분석 작업을 실행하지 않는다 (FN-ADM-18).
 
 ### 7.2 `outbox_event` 발행 상태 (core·report)
 

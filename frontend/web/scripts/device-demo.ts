@@ -152,7 +152,7 @@ export function createDeviceDemo(now = Date.now) {
           const d = deviceFor(request)
           return json(page(d.childIds.filter((id) => d.owner.children.some((c) => c.id === id)).map((id) => ({
             childId: id, nickname: linked(d.owner, id).nickname, pinSet: d.owner.pins.has(id),
-            locked: (d.owner.pins.get(id)?.failures ?? 0) >= 5,
+            pinLocked: (d.owner.pins.get(id)?.failures ?? 0) >= 5,
           }))))
         }
         if (path === '/login' && request.method === 'POST') {

@@ -14,6 +14,7 @@ for (const marker of [
   'setupWorker',
   'fixtureStore',
   'msw-access-',
+  'msw-consent-',
   'msw-conversation-',
   'demo-seoyun',
   'Mocking enabled',
