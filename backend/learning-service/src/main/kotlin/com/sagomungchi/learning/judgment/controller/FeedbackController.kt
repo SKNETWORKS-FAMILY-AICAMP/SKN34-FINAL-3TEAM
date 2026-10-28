@@ -15,7 +15,7 @@ import java.util.UUID
 
 /**
  * 피드백 내부 API (api-spec 4.1). core가 SSE로 바꿔 학생에게 전달 (sequence-diagram 3.2).
- * DONE이면 판정·되묻기·다음 행동·버전, 다른 요청이 처리 중이면 200 `{status:"RUNNING"}`
+ * DONE이면 판정·되묻기·다음 행동·버전, 다른 요청이 처리 중이면 200 `{status:"RUNNING", nextActions:[]}`(나머지 null)
  */
 @RestController
 class FeedbackController(

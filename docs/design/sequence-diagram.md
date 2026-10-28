@@ -310,7 +310,7 @@ sequenceDiagram
   alt 이미 DONE
     L-->>C: 저장된 결과
   else 유효 리스 RUNNING (다른 요청이 처리 중)
-    L-->>C: 200 {status: RUNNING}
+    L-->>C: 200 {status: RUNNING, judgment·followup·versions: null, nextActions: []}
   else 전이 성공
     alt 고르기·수학 최종 답
       L->>L: ChoiceJudge·MathEquivalenceJudge
@@ -349,7 +349,7 @@ sequenceDiagram
       L-->>C: 503 AI_UNAVAILABLE retryable
     else 정상
       rect rgba(128,128,128,0.12)
-        L->>DB: judgment DONE + judgment_element + followup + 버전 저장 (획득한 리스일 때만, 리스를 잃었으면 저장 없이 현재 상태)
+        L->>DB: attempt 행 잠금(FOR UPDATE)·마무리 여부 다시 확인 → judgment DONE + judgment_element + followup(마무리 전일 때만) + 버전 저장 (획득한 리스일 때만, 리스를 잃었으면 저장 없이 현재 상태)
       end
       L-->>C: 200 FeedbackResult
     end
