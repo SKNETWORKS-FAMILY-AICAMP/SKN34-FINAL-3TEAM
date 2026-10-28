@@ -25,20 +25,26 @@ import com.sagomungchi.learning.judgment.domain.ElementSource
 import com.sagomungchi.learning.judgment.domain.FeedbackResult
 import com.sagomungchi.learning.judgment.domain.FollowupSource
 import com.sagomungchi.learning.judgment.domain.FollowupType
+import com.sagomungchi.learning.judgment.domain.Judgment
 import com.sagomungchi.learning.judgment.domain.JudgmentResult
 import com.sagomungchi.learning.judgment.domain.NextAction
 import com.sagomungchi.learning.judgment.domain.ProcessStatus
+import com.sagomungchi.learning.judgment.service.JudgmentService
 import com.sagomungchi.learning.mission.domain.InputType
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.anyString
+import org.mockito.BDDMockito.willThrow
 import org.mybatis.spring.SqlSessionTemplate
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.HttpStatus
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -54,6 +60,7 @@ class FeedbackFacadeTest : PostgresRepositoryTest() {
     @Autowired lateinit var jdbc: JdbcTemplate
     @Autowired lateinit var sqlSession: SqlSessionTemplate
     @Autowired lateinit var objectMapper: ObjectMapper
+    @MockitoSpyBean lateinit var judgmentService: JudgmentService
 
     private lateinit var rows: TestRows
     private val student = UUID.randomUUID()
@@ -406,6 +413,39 @@ class FeedbackFacadeTest : PostgresRepositoryTest() {
         rows.bankQuestion("TELL_MORE", "생각을 조금 더 말해 줄래요?")
         assertEquals(FollowupSource.BANK, facade.feedback(answer.id).followup?.source)
     }
+
+    @Test
+    fun `실패 기록이 실패해도 ai 실패는 그대로 503 retryable로 응답하고 기록 오류는 suppressed로 붙임`() {
+        val answer = narrative(setup("NARRATIVE").attempt, "놀 수 있어서 좋아요")
+        val recordError = IllegalStateException("실패 기록 오류")
+        willThrow(recordError).given(judgmentService).markFailed(anyJudgment(), anyString())
+        aiUnavailable("/internal/judgments")
+
+        val error = assertThrows<AiUnavailableException> { facade.feedback(answer.id) }
+
+        assertTrue(error.retryable)
+        assertEquals(listOf<Throwable>(recordError), error.suppressed.toList())
+        assertEquals("RUNNING", judgment(answer.id)["process_status"])
+    }
+
+    @Test
+    fun `실패 기록이 실패해도 예상 못 한 오류는 원래 예외 그대로 던짐`() {
+        val setup = setup("NARRATIVE")
+        judgeReturns("PARTIAL", listOf(setup.elements[0] to "놀 수 있어서"))
+        followupReturns("TELL_MORE", null, source = "LLM_RETRY")
+        val answer = narrative(setup.attempt, "놀 수 있어서 좋아요")
+        val recordError = IllegalStateException("실패 기록 오류")
+        willThrow(recordError).given(judgmentService).markFailed(anyJudgment(), anyString())
+
+        val error = assertThrows<IllegalStateException> { facade.feedback(answer.id) }
+
+        assertTrue(error.message.orEmpty().startsWith("질문 은행에"))
+        assertEquals(listOf<Throwable>(recordError), error.suppressed.toList())
+    }
+
+    /** Kotlin 매개변수는 null을 받지 않아 Mockito 매처 자리에 임시 값을 넣음 (매칭은 매처로 함) */
+    private fun anyJudgment(): Judgment =
+        any(Judgment::class.java) ?: Judgment(UUID.randomUUID(), UUID.randomUUID(), ProcessStatus.RUNNING, null, 0)
 
     @Test
     fun `순서 문항은 순서까지 맞아야 정답, 유출 검사용 정답은 정답 순서 전체`() {

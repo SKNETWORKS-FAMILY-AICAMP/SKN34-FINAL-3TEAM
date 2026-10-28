@@ -25,6 +25,7 @@ import com.sagomungchi.learning.judgment.domain.FollowupSource
 import com.sagomungchi.learning.judgment.domain.FollowupType
 import com.sagomungchi.learning.judgment.domain.Judged
 import com.sagomungchi.learning.judgment.domain.JudgedBy
+import com.sagomungchi.learning.judgment.domain.Judgment
 import com.sagomungchi.learning.judgment.domain.JudgmentElement
 import com.sagomungchi.learning.judgment.domain.JudgmentMethod
 import com.sagomungchi.learning.judgment.domain.JudgmentResult
@@ -77,15 +78,26 @@ class FeedbackFacade(
             }
             judgmentService.saveResult(judgment, judged, followup)
         } catch (error: AiCallException) {
-            judgmentService.markFailed(judgment, error.failureCode)
-            throw AiUnavailableException(error.retryable)
+            throw AiUnavailableException(error.retryable).also { recordFailure(judgment, error.failureCode, it) }
         } catch (error: Exception) {
             // 예상 못 한 오류도 리스를 풀어 재요청이 다시 실행되게 함
-            judgmentService.markFailed(judgment, INTERNAL_ERROR)
+            recordFailure(judgment, INTERNAL_ERROR, error)
             throw error
         }
         // 리스를 잃어 저장하지 못했어도 현재 상태(다른 요청의 결과나 처리 중)를 돌려줌
         return current(answerId)
+    }
+
+    /**
+     * 실패 기록(markFailed)이 실패해도 원래 오류를 그대로 응답: 기록 오류는 suppressed로 붙임.
+     * 기록하지 못한 판정은 RUNNING으로 남아 리스(90초)가 끝나면 재요청이 다시 가져감
+     */
+    private fun recordFailure(judgment: Judgment, code: String, original: Throwable) {
+        try {
+            judgmentService.markFailed(judgment, code)
+        } catch (failure: Exception) {
+            original.addSuppressed(failure)
+        }
     }
 
     /**
