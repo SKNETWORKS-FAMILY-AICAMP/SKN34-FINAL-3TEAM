@@ -12,6 +12,7 @@ import org.springframework.web.client.ResourceAccessException
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.RestClientException
 import org.springframework.web.client.RestClientResponseException
+import java.net.http.HttpConnectTimeoutException
 import java.net.http.HttpTimeoutException
 import java.time.Duration
 
@@ -69,8 +70,7 @@ class AiClient(
         }
         throw AiCallException("AI_BAD_RESPONSE", retryable = false, countsAsFailure = false, error)
     } catch (error: ResourceAccessException) {
-        val timedOut = generateSequence<Throwable>(error) { it.cause }.any { it is HttpTimeoutException }
-        throw AiCallException(if (timedOut) "AI_TIMEOUT" else "AI_UNAVAILABLE", retryable = true, countsAsFailure = true, error)
+        throw AiCallException(transportFailureCode(error), retryable = true, countsAsFailure = true, error)
     } catch (error: RestClientException) {
         // 응답 본문을 계약 형식으로 읽지 못함
         throw AiCallException("AI_BAD_RESPONSE", retryable = false, countsAsFailure = false, error)
@@ -85,5 +85,14 @@ class AiClient(
         private const val WINDOW = 20
         private const val FAILURE_RATE = 50f
         private val OPEN_DURATION: Duration = Duration.ofSeconds(30)
+
+        /**
+         * 전송 오류 분류: 응답 시간 초과만 AI_TIMEOUT, 나머지는 연결 실패 AI_UNAVAILABLE.
+         * 연결 시간 초과(HttpConnectTimeoutException)는 HttpTimeoutException의 하위 타입이지만 연결 실패
+         */
+        internal fun transportFailureCode(error: Throwable): String {
+            val causes = generateSequence(error) { it.cause }
+            return if (causes.any { it is HttpTimeoutException && it !is HttpConnectTimeoutException }) "AI_TIMEOUT" else "AI_UNAVAILABLE"
+        }
     }
 }

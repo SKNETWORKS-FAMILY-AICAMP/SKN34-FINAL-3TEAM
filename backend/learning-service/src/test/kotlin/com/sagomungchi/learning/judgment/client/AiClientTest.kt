@@ -19,7 +19,10 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter
+import org.springframework.web.client.ResourceAccessException
 import org.springframework.web.client.RestClient
+import java.net.http.HttpConnectTimeoutException
+import java.net.http.HttpTimeoutException
 import java.time.Duration
 import kotlin.test.assertEquals
 
@@ -112,6 +115,16 @@ class AiClientTest {
 
         val unreachable = clientWith("http://localhost:${server.port()}").also { server.stop() }
         assertEquals("AI_UNAVAILABLE" to true, failure { unreachable.judge(request) }.let { it.failureCode to it.retryable })
+    }
+
+    // 실제 연결 시간 초과는 네트워크 환경마다 다르게 나(바로 거절되기도 함) 예외로 분류만 확인
+    @Test
+    fun `연결 시간 초과는 HttpTimeoutException의 하위 타입이어도 연결 실패라 AI_UNAVAILABLE`() {
+        val connect = ResourceAccessException("I/O error", HttpConnectTimeoutException("HTTP connect timed out"))
+        val response = ResourceAccessException("I/O error", HttpTimeoutException("request timed out"))
+
+        assertEquals("AI_UNAVAILABLE", AiClient.transportFailureCode(connect))
+        assertEquals("AI_TIMEOUT", AiClient.transportFailureCode(response))
     }
 
     @Test
