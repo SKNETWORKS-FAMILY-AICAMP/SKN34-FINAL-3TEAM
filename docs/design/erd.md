@@ -906,6 +906,15 @@ erDiagram
   report_item ||--o{ report_item_evidence : cites
   weekly_report ||--o{ report_file : files
 
+  report_deletion_guard {
+    uuid student_id PK "core 논리 참조 · 삭제 장벽"
+    varchar scope "PROFILE|RECORDS"
+    timestamptz cutoff_at
+    uuid deletion_request_id "core 논리 참조"
+    varchar status "PENDING|COMPLETED"
+    timestamptz updated_at
+  }
+
   weekly_report {
     uuid id PK
     uuid job_id UK "core report_job"
@@ -969,6 +978,7 @@ erDiagram
 - 기록 없는 주·표본 부족 주는 `status = COMPLETED` + `state`로 구분, 생성 실패(`FAILED`)와 분리 (FN-RPT-11). state는 COMPLETED일 때만 NOT NULL (상태 다이어그램 4.2).
 - `report_item` UK `(report_id, item_type, seq)`. 상세 응답(API 3.4)은 `item_type`별로 묶어 조립
 - `report_file` UK `(report_id, format)`. 다운로드는 `s3_key`로 presigned URL 발급 (FN-RPT-13)
+- #55의 `20261027_02`는 `report_deletion_guard`를 추가한다. 삭제 중 생성·조회를 막고 완료 후에도 PROFILE·RECORDS 모두 생성을 차단한다. 최신 #45의 자동 학습 재개 금지와 일치시키며 재개는 별도 계약이 필요하다. 학생 UUID·삭제 요청 UUID·범위·시각·처리 상태만 남기며 원문·이름·리포트 내용은 저장하지 않는다.
 
 ---
 

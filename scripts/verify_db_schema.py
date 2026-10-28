@@ -355,6 +355,20 @@ $$, '23503');
 INSERT INTO report_item_evidence (id, item_id, attempt_id, answer_id, answer_version)
 VALUES ('00000000-0000-4000-8000-000000000207', '00000000-0000-4000-8000-000000000206',
         '00000000-0000-4000-8000-999999999998', '00000000-0000-4000-8000-999999999997', 1);
+INSERT INTO report_deletion_guard
+    (student_id, scope, cutoff_at, deletion_request_id, status, updated_at)
+VALUES ('00000000-0000-4000-8000-000000000002', 'RECORDS', now(),
+        '00000000-0000-4000-8000-000000000208', 'PENDING', now());
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE report_deletion_guard SET scope = 'INVALID'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE report_deletion_guard SET status = 'INVALID'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE report_deletion_guard SET cutoff_at = NULL
+$$, '23502');
+UPDATE report_deletion_guard SET scope = 'PROFILE', status = 'COMPLETED';
 """
 
 

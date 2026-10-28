@@ -13,13 +13,15 @@ def lock_key(value: str) -> int:
 
 
 class JobLease:
-    def __init__(self, connection: Connection, key: int) -> None:
+    def __init__(self, connection: Connection, keys: list[tuple[int, bool]]) -> None:
         self._connection = connection
-        self._key = key
+        self._keys = keys
 
     def close(self) -> None:
         try:
-            self._connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": self._key})
+            for key, shared in reversed(self._keys):
+                function = "pg_advisory_unlock_shared" if shared else "pg_advisory_unlock"
+                self._connection.execute(text(f"SELECT {function}(:key)"), {"key": key})
         except BaseException:
             # Never return a connection with a session lock to the pool.
             self._connection.invalidate()
@@ -32,14 +34,26 @@ class JobLocks:
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
 
-    def acquire(self, job_id: UUID) -> JobLease:
+    def acquire(self, job_id: UUID, student_id: UUID | None = None) -> JobLease:
+        keys = []
+        if student_id is not None:
+            keys.append((lock_key(f"report-student:{student_id}"), True))
+        keys.append((lock_key(f"report-job:{job_id}"), False))
+        return self._acquire(keys)
+
+    def acquire_student(self, student_id: UUID) -> JobLease:
+        return self._acquire([(lock_key(f"report-student:{student_id}"), False)])
+
+    def _acquire(self, keys: list[tuple[int, bool]]) -> JobLease:
         connection = self._engine.connect().execution_options(isolation_level="AUTOCOMMIT")
-        key = lock_key(f"report-job:{job_id}")
+        acquired_keys = []
         try:
-            acquired = connection.scalar(text("SELECT pg_try_advisory_lock(:key)"), {"key": key})
-            if not acquired:
-                raise GenerationBusy("Report job is already running")
-            return JobLease(connection, key)
+            for key, shared in keys:
+                function = "pg_try_advisory_lock_shared" if shared else "pg_try_advisory_lock"
+                if not connection.scalar(text(f"SELECT {function}(:key)"), {"key": key}):
+                    raise GenerationBusy("Report generation/deletion is already running")
+                acquired_keys.append((key, shared))
+            return JobLease(connection, acquired_keys)
         except BaseException:
-            connection.close()
+            JobLease(connection, acquired_keys).close()
             raise

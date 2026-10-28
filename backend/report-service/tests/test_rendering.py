@@ -64,6 +64,16 @@ def test_html_and_markdown_escape_source_content():
     assert "<script>" not in md and "<img src=x>" not in md
 
 
+def test_nullable_followup_renders_without_inventing_a_question():
+    detail = fixed_detail()
+    detail["changes"][0]["followup"] = None
+    rendered = ReportRenderer().render(detail, "합성학생")
+    texts = [rendered["HTML"].decode(), rendered["MD"].decode(), pdf_text(rendered["PDF"])]
+    for text in texts:
+        assert "None" not in text and "합성 되묻기" not in text and "합성되묻기" not in text
+    assert detail["changes"][0]["followup"] is None
+
+
 def test_free_projection_cannot_reveal_old_ai_summary():
     detail = fixed_detail()
     detail["thinkingTypes"][0]["summary"] = "AI가 작성한 요약"
