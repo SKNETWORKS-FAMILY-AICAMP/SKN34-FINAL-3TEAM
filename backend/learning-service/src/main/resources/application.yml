@@ -49,6 +49,6 @@ app:
   internal:
     token: ${INTERNAL_TOKEN}
     connect-timeout: 2s
-    read-timeout: 30s # [P12] 확정 전 임시값
+    read-timeout: 35s # [P12] learning→ai 각 35초 (learning이 부르는 내부 서비스는 ai뿐, architecture 1.3)
   services:
     ai: ${AI_URL:http://localhost:8000}

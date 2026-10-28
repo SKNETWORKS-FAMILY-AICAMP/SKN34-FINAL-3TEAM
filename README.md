@@ -32,7 +32,7 @@ docker compose -f compose.yaml -f compose.minio.yaml run --rm minio-init
 
 첫 명령은 전용 볼륨 소유권 준비 후 서버를 실행하고, 두 번째 명령은 서버 준비 상태를 기다려 `sagomungchi-local-missions`·`sagomungchi-local-reports`·`sagomungchi-local-models` 버킷을 만든다. 같은 초기화 명령을 다시 실행해도 기존 버킷과 데이터를 유지한다. 두 파일은 같은 Compose 프로젝트 이름을 사용해야 하며 기본 프로젝트 이름은 `sagomungchi`다.
 
-MinIO를 포함한 프로젝트를 중단할 때도 `docker compose -f compose.yaml -f compose.minio.yaml down`을 사용한다. 데이터를 보존하려면 `--volumes`를 붙이지 않는다. 기본 파일과 함께 실행하는 명령이므로 기존 PostgreSQL·RabbitMQ·내부 토큰 환경 변수도 필요하다.
+MinIO를 포함한 프로젝트를 중단할 때도 `docker compose -f compose.yaml -f compose.minio.yaml down`을 사용한다. 데이터를 보존하려면 `--volumes`를 붙이지 않는다. 기본 파일과 함께 실행하는 명령이므로 기존 PostgreSQL·RabbitMQ·내부 토큰·`AUTH_JWT_SECRET` 환경 변수도 필요하다(Compose가 전체 파일의 필수 변수를 먼저 확인).
 
 
 ### Google OAuth (#36)
@@ -40,6 +40,6 @@ MinIO를 포함한 프로젝트를 중단할 때도 `docker compose -f compose.y
 
 배포 시 core 환경에 `AUTH_JWT_SECRET`·`GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET`을 Kubernetes Secret 참조로 주입하고 `AUTH_WEB_ORIGIN`을 실제 web origin으로 지정한다. 현재 저장소의 platform-data chart는 앱 배포를 소유하지 않으므로 실제 core Deployment의 Secret 주입은 앱 배포 구성 시 적용한다. 키·자격 증명은 Git에 넣지 않는다.
 
-인증 구현은 [#36 결정·검증 보고서](docs/report/issue-36-google-auth.md)를 따른다. 실제 모드의 로그인·가입은 Google을 사용하며 동의 저장/자녀 등록은 #37, 중요 작업 Google 재인증은 #45 후속 범위다. 현재 온보딩 페이지는 완료를 가장하지 않고 준비 상태를 안내한다.
+인증 구현은 [#36 결정·검증 보고서](docs/report/issue-36-google-auth.md)를 따른다. 실제 모드의 로그인·가입은 Google을 사용하며 동의 저장·자녀 등록은 [#37 계약·검증 보고서](docs/report/issue-37-consent-children.md)를 따른다. 현재 문서 확인 → 동의 저장 → 자녀 등록을 온보딩에서 진행한다. 운영자가 검토된 TERMS·PRIVACY·GUARDIAN 문서를 게시해야 하며, 미게시 상태는 503 오류로 안내한다. 중요 작업 Google 재인증은 #45 후속 범위다.
 
 개정 P01에 따라 부모·관리자만 refresh를 사용한다. 학생 동석 진입은 부모 쿠키를 폐기하고 access만 발급한다. 학생 TTL은 `AUTH_STUDENT_ACCESS_TTL`(초기 15분)이며 만료·새로고침 시 학생 진입을 다시 진행한다. 등록 기기·PIN 신규 API는 후속 범위다.

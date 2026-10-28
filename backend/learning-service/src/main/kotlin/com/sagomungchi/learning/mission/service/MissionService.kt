@@ -6,6 +6,7 @@ import com.sagomungchi.learning.mission.domain.MissionListItem
 import com.sagomungchi.learning.mission.domain.MissionProgress
 import com.sagomungchi.learning.mission.domain.MissionSnapshot
 import com.sagomungchi.learning.mission.domain.MissionView
+import com.sagomungchi.learning.mission.domain.Rubric
 import com.sagomungchi.learning.mission.repository.MissionRepository
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -48,6 +49,11 @@ class MissionService(
     fun getVersion(missionVersionId: UUID): MissionView =
         missionRepository.findVersion(missionVersionId)
             ?: throw BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "미션 버전 없음")
+
+    /** 판정용 기준표·정답 키 (class-diagram 4.2 FeedbackFacade --> MissionService). 시도에 고정된 두 버전으로 찾음 */
+    fun rubric(missionVersionId: UUID, rubricVersionId: UUID): Rubric =
+        missionRepository.findRubric(missionVersionId, rubricVersionId)
+            ?: throw BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "기준표 없음")
 
     /** 기준표 버전의 생각 열기 질문, seq 순 */
     fun hintQuestions(rubricVersionId: UUID): List<HintQuestion> =

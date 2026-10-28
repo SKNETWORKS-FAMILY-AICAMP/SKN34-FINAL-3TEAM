@@ -84,7 +84,7 @@ sequenceDiagram
   W->>C: GET /consent-documents
   C-->>W: 현재 문서 버전 (TERMS·PRIVACY·GUARDIAN)
   W->>C: POST /children {nickname, grade, birthYear, consents[]}
-  C->>C: GuardianshipService.registerChild
+  C->>C: GuardianshipService.register
   C->>DB: 현재 필수 문서(required)·LINKED 자녀 수 조회
   alt 필수 GUARDIAN 동의 누락·학년 3~6 밖
     C-->>W: 400 VALIDATION_FAILED
@@ -102,6 +102,30 @@ sequenceDiagram
 
 - 자녀는 전원 만 14세 미만으로 간주, GUARDIAN 동의를 항상 필수로 받음 (P01)
 - 다른 보호자의 기존 자녀 연결 없음 (P02). 연결 해제(`unlink`)는 `X-Reauth-Token` 확인 후 처리, `audit_log` 기록 (FN-ACC-10)
+
+### 2.3 자녀 범위 권한 확인 (모든 자녀 대상 API 공통)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web
+  participant C as core
+  participant DB as core_db
+  participant L as learning
+
+  W->>C: GET /children/{childId}/summary?from&to (Bearer)
+  C->>C: PublicAuthFilter → UserContext(userId, PARENT)
+  C->>DB: guardianship (parent, childId, LINKED) 존재 확인
+  alt 미연결
+    C-->>W: 403 CHILD_NOT_LINKED
+  else 연결됨
+    C->>C: UserContext.studentScope = {childId}
+    C->>L: GET /internal/records/students/{childId}/summary (X-Student-Scope: childId)
+    L->>L: InternalAuthFilter → requireStudent(childId)
+    L-->>C: Metric[] + state + period
+    C-->>W: 200
+  end
+```
 
 ### 2.4 학생 진입 (P01)
 
@@ -172,7 +196,7 @@ sequenceDiagram
   participant DB as core_db
 
   K->>C: GET /auth/student/profiles (Cookie student_device)
-  C-->>K: 200 [{childId, nickname, pinSet, locked}]
+  C-->>K: 200 [{childId, nickname, pinSet, pinLocked}]
   Note over K: 자녀 프로필 선택 → PIN 입력
   K->>C: POST /auth/student/login {childId, pin} (Cookie student_device)
   C->>DB: student_device token_hash 조회·미해제·미만료·자녀 등록 확인
@@ -196,30 +220,6 @@ sequenceDiagram
 
 - PIN 잠금 해제는 학부모 `PUT /children/{childId}/pin`(재확인 필요)으로만 가능
 - 학부모가 기기를 해제하면(`DELETE /student-devices/{deviceId}`) 이후 PIN 로그인은 `401 STUDENT_DEVICE_INVALID`
-
-### 2.3 자녀 범위 권한 확인 (모든 자녀 대상 API 공통)
-
-```mermaid
-sequenceDiagram
-  autonumber
-  participant W as Web
-  participant C as core
-  participant DB as core_db
-  participant L as learning
-
-  W->>C: GET /children/{childId}/summary?from&to (Bearer)
-  C->>C: PublicAuthFilter → UserContext(userId, PARENT)
-  C->>DB: guardianship (parent, childId, LINKED) 존재 확인
-  alt 미연결
-    C-->>W: 403 CHILD_NOT_LINKED
-  else 연결됨
-    C->>C: UserContext.studentScope = {childId}
-    C->>L: GET /internal/records/students/{childId}/summary (X-Student-Scope: childId)
-    L->>L: InternalAuthFilter → requireStudent(childId)
-    L-->>C: Metric[] + state + period
-    C-->>W: 200
-  end
-```
 
 ---
 
@@ -288,7 +288,7 @@ sequenceDiagram
 - 저장 성공(201)과 이후 피드백 처리 성공을 분리 (FN-LRN-10). 피드백은 3.2의 별도 요청
 - learning도 시도·키(ERD UK)로 같은 키를 처리. core가 learning 응답을 받기 전에 끊겨 다시 보내도 답변은 1건
 - 메모는 초안 `content.memo`로 함께 저장, 학생 본인 조회에만 포함 (P05)
-- 무료 플랜은 시도 시작 시 하루 3개 미션 한도 확인, 초과 시 `429 USAGE_LIMIT_REACHED` (P13)
+- 무료 플랜은 하루 신규 미션 시도 3개까지 허용 (P13). 신규 생성 `201`만 집계하고 이어하기 `200`은 항상 허용, 한도 초과 신규 생성만 `429 USAGE_LIMIT_REACHED` (API 2.2, core Redis 카운터는 후속 구현)
 
 ### 3.2 피드백 SSE (판정·되묻기)
 
@@ -310,7 +310,7 @@ sequenceDiagram
   alt 이미 DONE
     L-->>C: 저장된 결과
   else 유효 리스 RUNNING (다른 요청이 처리 중)
-    L-->>C: status RUNNING
+    L-->>C: 200 {status: RUNNING, judgment·followup·versions: null, nextActions: []}
   else 전이 성공
     alt 고르기·수학 최종 답
       L->>L: ChoiceJudge·MathEquivalenceJudge
@@ -331,7 +331,7 @@ sequenceDiagram
       end
       A-->>L: result·elements·heldReason·trial·versions
     end
-    opt 되묻기 대상 (시도 내 되묻기 2회 미만, 고르기 CORRECT 아님, P04)
+    opt 되묻기 대상 (시도 내 되묻기 2회 미만, 고르기 CORRECT 아님, 마무리·완료 전, P04)
       L->>A: POST /internal/followups {timeline, judgment, rubric, mission, grade}
       A->>LLM: 되묻기 생성
       A->>A: LeakGuard 정답·금지어 검사
@@ -345,13 +345,13 @@ sequenceDiagram
     end
     A--)A: llm.usage.recorded 발행 (best-effort)
     alt 위 처리 중 예외 (ai·LLM 실패, 타임아웃)
-      L->>DB: judgment FAILED (failure_code, retry_count+1)
+      L->>DB: judgment FAILED (failure_code, retry_count+1, 획득한 리스일 때만)
       L-->>C: 503 AI_UNAVAILABLE retryable
     else 정상
       rect rgba(128,128,128,0.12)
-        L->>DB: judgment DONE + judgment_element + followup + 버전 저장
+        L->>DB: judgment DONE + judgment_element + followup + 버전 저장 (획득한 리스일 때만, 리스를 잃었으면 저장 없이 현재 상태)
       end
-      L-->>C: FeedbackResult
+      L-->>C: 200 FeedbackResult
     end
   end
   alt status RUNNING 수신
@@ -893,11 +893,11 @@ sequenceDiagram
   participant L as learning
   participant RW as report-worker
 
-  W->>C: POST /children/{childId}/deletion-requests {scope}
-  C->>CDB: deletion_request REQUESTED
-  Note over C: X-Reauth-Token 재확인 후 (P09)
+  Note over W: 사전 안내 GET /children/{childId}/deletion-impact
+  W->>C: POST /children/{childId}/deletion-requests {scope} (X-Reauth-Token)
+  Note over C: 재확인 토큰 검사, 무효면 403 REAUTH_REQUIRED (P09)
   rect rgba(128,128,128,0.12)
-    C->>CDB: deletion_request CONFIRMED (scope = PROFILE면 student DELETION_REQUESTED)
+    C->>CDB: deletion_request REQUESTED → CONFIRMED (scope = PROFILE면 student DELETION_REQUESTED)
     C->>CDB: outbox_event (student.deleted, subject = studentId)
   end
   C-)MQ: events.topic / student.deleted

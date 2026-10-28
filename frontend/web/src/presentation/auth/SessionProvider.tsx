@@ -64,6 +64,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     window.addEventListener('sagomungchi:session-expired', expire)
     window.addEventListener('sagomungchi:student-auth-required', studentEntry)
     window.addEventListener('sagomungchi:session-changed', changed)
+    window.addEventListener('sagomungchi:consent-required', changed)
     void restore(false)
     return () => {
       active = false
@@ -71,6 +72,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('sagomungchi:session-expired', expire)
       window.removeEventListener('sagomungchi:student-auth-required', studentEntry)
       window.removeEventListener('sagomungchi:session-changed', changed)
+      window.removeEventListener('sagomungchi:consent-required', changed)
     }
   }, [navigate])
   return <AuthContext.Provider value={{ session, setSession, ready, loginPath, selected, setSelected, expired, setExpired, scenario, setScenario }}>

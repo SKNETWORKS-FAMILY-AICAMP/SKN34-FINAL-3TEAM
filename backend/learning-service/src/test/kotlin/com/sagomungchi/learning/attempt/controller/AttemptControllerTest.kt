@@ -9,8 +9,18 @@ import com.sagomungchi.learning.attempt.service.AttemptDetail
 import com.sagomungchi.learning.attempt.service.AttemptService
 import com.sagomungchi.learning.attempt.service.AttemptStart
 import com.sagomungchi.learning.attempt.service.DraftConflictException
+import com.sagomungchi.learning.judgment.domain.ElementSource
+import com.sagomungchi.learning.judgment.domain.ElementView
+import com.sagomungchi.learning.judgment.domain.FeedbackResult
+import com.sagomungchi.learning.judgment.domain.FollowupSource
+import com.sagomungchi.learning.judgment.domain.FollowupType
+import com.sagomungchi.learning.judgment.domain.FollowupView
+import com.sagomungchi.learning.judgment.domain.JudgmentResult
+import com.sagomungchi.learning.judgment.domain.JudgmentView
+import com.sagomungchi.learning.judgment.domain.NextAction
 import com.sagomungchi.learning.judgment.domain.ProcessStatus
 import com.sagomungchi.learning.judgment.domain.TimelineAnswer
+import com.sagomungchi.learning.judgment.domain.Versions
 import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.domain.HintQuestion
 import com.sagomungchi.learning.mission.domain.MissionSnapshot
@@ -52,7 +62,8 @@ class AttemptControllerTest(@Autowired private val mockMvc: MockMvc) {
     private fun detail(
         draft: AttemptDraft = AttemptDraft.empty(attempt.id, now),
         answers: List<TimelineAnswer> = emptyList(),
-    ) = AttemptDetail(attempt, mission, draft, helped = false, answers = answers)
+        feedbacks: Map<UUID, FeedbackResult> = answers.associate { it.answerId to FeedbackResult.inProgress(it.processStatus) },
+    ) = AttemptDetail(attempt, mission, draft, helped = false, answers = answers, feedbacks = feedbacks)
 
     private fun MockHttpServletRequestDsl.asStudent(role: String = "STUDENT") {
         header("X-Internal-Token", "test-token")
@@ -87,7 +98,7 @@ class AttemptControllerTest(@Autowired private val mockMvc: MockMvc) {
     fun `시도 상세는 ETag와 저장된 초안, 제출 답변과 판정 처리 상태`() {
         val saved = AttemptDraft.empty(attempt.id, now).update(DraftContent(mapOf("text" to "답"), "메모"), now)
         val answer = TimelineAnswer(
-            UUID.randomUUID(), 1, now, InputType.NARRATIVE, "제출한 답", null, mapOf("text" to "제출한 답"), ProcessStatus.PENDING,
+            UUID.randomUUID(), 1, now, InputType.NARRATIVE, "제출한 답", null, null, mapOf("text" to "제출한 답"), ProcessStatus.PENDING,
         )
         given(service.get(attempt.id)).willReturn(detail(saved, listOf(answer)))
 
@@ -103,6 +114,33 @@ class AttemptControllerTest(@Autowired private val mockMvc: MockMvc) {
             jsonPath("$.answers[0].content.text") { value("제출한 답") }
             jsonPath("$.answers[0].followupId") { value(null) }
             jsonPath("$.answers[0].feedback.status") { value("PENDING") }
+            jsonPath("$.nextActions.length()") { value(0) }
+        }
+    }
+
+    @Test
+    fun `판정이 끝난 답변은 판정·되묻기와 다음 행동, 시도의 다음 행동은 마지막 답변 기준`() {
+        val answer = TimelineAnswer(UUID.randomUUID(), 1, now, InputType.NARRATIVE, "답", null, null, mapOf("text" to "답"), ProcessStatus.DONE)
+        val elementId = UUID.randomUUID()
+        val followupId = UUID.randomUUID()
+        val done = FeedbackResult(
+            status = ProcessStatus.DONE,
+            judgment = JudgmentView(JudgmentResult.PARTIAL, true, listOf(ElementView(elementId, "주장", true, "답", ElementSource.AI_OBSERVATION)), null),
+            followup = FollowupView(followupId, FollowupType.TELL_MORE, "왜 그렇게 생각했나요?", FollowupSource.LLM),
+            nextActions = listOf(NextAction.ANSWER_FOLLOWUP, NextAction.FINISH),
+            versions = Versions("M@1", "M@1", "gpt", "judge@2"),
+        )
+        given(service.get(attempt.id)).willReturn(detail(answers = listOf(answer), feedbacks = mapOf(answer.answerId to done)))
+
+        mockMvc.get("/internal/attempts/${attempt.id}") { asStudent() }.andExpect {
+            status { isOk() }
+            jsonPath("$.answers[0].feedback.judgment.result") { value("PARTIAL") }
+            jsonPath("$.answers[0].feedback.judgment.elements[0].elementId") { value(elementId.toString()) }
+            jsonPath("$.answers[0].feedback.judgment.elements[0].sourceType") { value("AI_OBSERVATION") }
+            jsonPath("$.answers[0].feedback.followup.followupId") { value(followupId.toString()) }
+            jsonPath("$.answers[0].feedback.versions.prompt") { value("judge@2") }
+            jsonPath("$.nextActions[0]") { value("ANSWER_FOLLOWUP") }
+            jsonPath("$.nextActions[1]") { value("FINISH") }
         }
     }
 

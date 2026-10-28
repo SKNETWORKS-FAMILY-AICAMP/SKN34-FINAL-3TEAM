@@ -5,6 +5,7 @@ import type { Child, Period, PublicAttempt } from '../../domain/classroom.ts'
 import type {
   Consent,
   ConsentDocument,
+  ConsentHistory,
   Page,
   Scope,
   Summary,
@@ -32,6 +33,10 @@ function assertChild<T extends { childId: string }>(r: T, scope: Scope): T {
 export const parentApi = {
   documents: (signal?: AbortSignal) =>
     apiFetch<Page<ConsentDocument>>('/consent-documents', { signal }),
+  saveConsents: (data: { consents: Consent[]; childId?: string }) =>
+    apiFetch<Page<ConsentHistory>>('/me/consents', json(data)),
+  consentHistory: (signal?: AbortSignal) => apiFetch<Page<ConsentHistory>>('/me/consents', { signal }),
+  withdrawConsent: (id: string) => apiFetch<ConsentHistory>(`/me/consents/${item(id)}/withdrawal`, json({})),
   signup: (data: { email: string; password: string; name: string; consents: Consent[] }) =>
     apiFetch<{ userId: string }>('/auth/signup', json(data)),
   children: (signal?: AbortSignal) => apiFetch<Page<Child>>('/children', { signal }),

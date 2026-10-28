@@ -569,7 +569,7 @@ export function ClassroomApp() {
                         <div className="ux-parent-entry">
                           <span>
                             <strong>{child.nickname}</strong> · 초등 {child.grade}학년 ·{' '}
-                            {child.plan === 'FREE' ? '무료' : '프리미엄'}
+                            {child.plan === 'FREE' ? '무료' : child.plan === 'PREMIUM' ? '프리미엄' : '이용권 확인 필요'}
                           </span>
                           <button
                             type="button"

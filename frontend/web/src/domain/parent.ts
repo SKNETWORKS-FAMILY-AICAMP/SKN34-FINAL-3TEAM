@@ -14,6 +14,16 @@ export interface ConsentDocument {
   content: string
   required: boolean
 }
+export interface ConsentHistory {
+  consentId: string
+  subjectUserId: string
+  studentId: string | null
+  document: ConsentDocument
+  agreed: boolean
+  status: 'AGREED' | 'WITHDRAWN'
+  agreedAt: string
+  withdrawnAt: string | null
+}
 export interface Consent {
   documentId: string
   version: string
