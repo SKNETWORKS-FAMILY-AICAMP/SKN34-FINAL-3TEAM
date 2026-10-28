@@ -412,6 +412,12 @@ data: {}
   - 답변은 저장된 상태로 유지
   - 같은 엔드포인트를 다시 호출해 재시도 (상태별 처리는 1.4)
 - 클라이언트 연결이 끊겨도 처리는 끝까지 진행·저장, 재요청 시 저장 결과 반환
+- core 중계 계약(#39): 인증·학생 범위 검사는 스트림 시작 전에 수행한다. `status(RUNNING)` 후 learning 동기 응답을 기다리고, `DONE`은 응답 전체를 `result`로 전달한다(`HELD` 포함). learning이 이미 `RUNNING`을 반환하면 `status`만 전달하고 종료한다. 정상·실패·이미 처리 중인 경우 모두 마지막에 `done: {}`를 한 번 전송하고 연결을 닫는다. 전송 불가능한 연결에는 종료 이벤트 전달을 보장할 수 없다.
+- 내부 응답: `200 application/json`의 `status`는 `DONE` 또는 `RUNNING`이다. `DONE` 결과는 위 3.2 형태이며 `RUNNING`은 4.1과 동일한 `{status:"RUNNING", judgment:null, followup:null, nextActions:[], versions:null}`이다. 내부 message 필드는 없으며 공개 status의 message는 core가 작성한다. 업무·처리 실패는 비-2xx Problem Details(+`retryable`)로 반환한다. core는 확장 필드를 보존하며, 잘못된 JSON·알 수 없는 성공 상태는 `502 LEARNING_INVALID_RESPONSE`로 전달한다. 판정 상태 전이·저장은 learning만 수행한다.
+- 스트림 시작 뒤 learning HTTP 오류·연결 실패·80초 시간 초과는 `error`(Problem Details + `retryable`) → `done`이다. 내부 Problem Details는 원래 code·확장 필드를 유지하고, `retryable`이 없으면 5xx·429만 true로 보충한다. core 연결 장애는 `503 LEARNING_UNAVAILABLE`, 시간 초과는 `504 LEARNING_TIMEOUT`, 서킷 차단은 `503 LEARNING_CIRCUIT_OPEN`이다. 성공 fallback·core 피드백 캐시는 없다.
+- 피드백 전용 `learning-feedback` 서킷은 전송 오류·시간 초과·계약된 Problem Details가 아닌 5xx를 실패로 센다. 5xx여도 Content-Type이 `application/problem+json`이고 JSON 객체에 비어 있지 않은 문자열 `code`가 있으면 learning이 반환한 업무/처리 오류로 보고 서킷 실패에는 포함하지 않는다. `AI_UNAVAILABLE`·`INTERNAL_ERROR`는 계속 error 이벤트이며 성공으로 바꾸지 않는다. AI 서킷·FAILED 재실행은 learning 소유이고, core가 AI 업무 실패를 다시 30초 차단하지 않는다. 일반 JSON의 `learning-json` 집계는 기존대로 유지한다.
+- 스트림 시작 전 인증 DB/세션 조회 장애는 실제 PublicAuthFilter가 HTTP `503 AUTH_UNAVAILABLE` Problem Details로 반환한다. learning 서킷·연결 오류는 스트림 시작 뒤 error 이벤트에만 담는다.
+- SSE 연결 타임아웃은 90초로 내부 80초보다 길다. 15초 주석 heartbeat는 연결 종료 시 해제하지만 이미 시작한 learning 호출은 취소하지 않는다. 검증된 컨텍스트를 복사해 virtual thread에 명시적으로 설정하고 finally에서 제거한다. executor는 앱 생명주기에 맞춰 종료하며 heartbeat 전송 대기가 다른 연결의 heartbeat를 막지 않게 한다.
 
 ### 3.3 분석 대화 — `POST /conversations/{conversationId}/messages` (SSE)
 ```jsonc

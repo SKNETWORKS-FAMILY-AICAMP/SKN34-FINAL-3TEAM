@@ -68,6 +68,9 @@
   - 피드백: 클라이언트가 끊겨도 learning 처리는 끝까지 진행·저장, 재요청 시 저장 결과 반환
   - 분석 대화: 클라이언트가 끊기면 core가 ai 스트림 취소, 메시지 `FAILED`(재시도 가능) 저장
   - 알림: 재연결 시 `/notifications`로 누락분 재조회
+- core 피드백(#39): `learning/controller` → `learning/service/FeedbackService` → #38 `LearningProxyService` → `LearningClient` → 기존 `InternalRestClientFactory`. 피드백 전용 조합은 같은 client/service 구현에 80초 read timeout을 적용하며 일반 JSON 경로의 30초 설정·멱등성은 유지한다. `_common/web/SseEmitters`는 90초 연결·15초 heartbeat·전송 종료만 소유하고 판정 상태를 저장하지 않는다. 컨텍스트는 요청에서 복사해 작업 virtual thread에 설정·정리한다. 연결 종료는 heartbeat만 취소하며 learning 작업을 취소하지 않는다.
+- 피드백의 별도 서킷 이름은 `learning-feedback`이다. 전송 오류·시간 초과·계약된 Problem Details가 아닌 5xx를 실패로 센다. Content-Type `application/problem+json`의 JSON 객체에 비어 있지 않은 문자열 code가 있으면 정상 HTTP 전달로 집계하되 업무 결과는 error로 유지한다. 따라서 learning이 보낸 AI_UNAVAILABLE·INTERNAL_ERROR를 core 서킷이 다시 차단하지 않고 같은 답변 재요청은 learning으로 전달할 수 있다. AI 서킷은 learning이 소유하며 일반 `learning-json`의 기존 5xx 집계는 바꾸지 않는다.
+- JDK 21 SSE 전송·종료의 상호 배제는 `ReentrantLock`을 사용한다. 블로킹 소켓 전송을 synchronized monitor 안에서 실행해 virtual thread의 carrier가 고정되지 않게 한다.
 
 ### 1.4 메시지 목록
 
@@ -531,6 +534,7 @@ backend/report-service/
 - ai HPA: LLM 대기 위주라 CPU가 낮게 유지됨 → 실측 후 동시 요청 수 기준 지표 검토
 - Cluster Autoscaler: Pending Pod 발생 시 application 노드 증설
 - 종료 처리: core는 preStop 지연 + terminationGracePeriod로 SSE 정리 시간 확보 (롤링 배포·축소 시 단절은 클라이언트 재연결로 처리)
+  - 피드백 executor 종료 대기는 최대 85초, heartbeat timer 종료 대기는 최대 5초다. 배포 시 `terminationGracePeriodSeconds`는 preStop 지연 + Spring/Tomcat 종료 단계의 예산 + 이 최대 90초 + 안전 여유보다 길게 설정하고 실제 롤링 종료로 검증한다. 현재 앱 Deployment의 수치가 저장소에 확정돼 있지 않아 이 작업에서 임의의 배포 설정은 추가하지 않는다. SIGKILL·프로세스 강제 종료 후에도 진행 중 호출이 보존된다는 의미는 아니다.
 - probe: readiness는 자기 상태(DB·브로커 연결)만 확인, 하위 서비스 호출 금지 (연쇄 NotReady 방지)
 - 공통 보안: 리소스 limit, non-root, readOnlyRootFilesystem
 

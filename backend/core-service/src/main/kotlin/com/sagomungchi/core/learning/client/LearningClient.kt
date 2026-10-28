@@ -1,5 +1,7 @@
 package com.sagomungchi.core.learning.client
 
+import com.fasterxml.jackson.core.JsonProcessingException
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core._common.config.InternalRestClientFactory
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.web.HttpExchangeResult
@@ -8,6 +10,7 @@ import io.github.resilience4j.circuitbreaker.CallNotPermittedException
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig
 import org.springframework.http.HttpMethod
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Component
 import org.springframework.http.HttpStatus
 import org.springframework.web.client.ResourceAccessException
@@ -17,14 +20,19 @@ import java.net.SocketTimeoutException
 import java.time.Duration
 
 @Component
-class LearningClient(factory: InternalRestClientFactory, properties: LearningHttpProperties) {
+class LearningClient private constructor(factory: InternalRestClientFactory, properties: LearningHttpProperties,
+                                       circuitName: String, failedResponse: (HttpExchangeResult) -> Boolean) {
+    @Autowired
+    constructor(factory: InternalRestClientFactory, properties: LearningHttpProperties) :
+        this(factory, properties, "learning-json", { it.status >= 500 })
+
     private val client = factory.create("learning", properties.readTimeout)
-    internal val circuit = CircuitBreaker.of("learning-json", CircuitBreakerConfig.custom()
+    internal val circuit = CircuitBreaker.of(circuitName, CircuitBreakerConfig.custom()
         .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
         .slidingWindowSize(20).minimumNumberOfCalls(20).failureRateThreshold(50f)
         .waitDurationInOpenState(Duration.ofSeconds(30)).permittedNumberOfCallsInHalfOpenState(1)
         .recordExceptions(ResourceAccessException::class.java)
-        .recordResult { (it as? HttpExchangeResult)?.status?.let { status -> status >= 500 } == true }
+        .recordResult { it is HttpExchangeResult && failedResponse(it) }
         .build())
 
     fun exchange(method: String, path: String, query: String? = null, body: ByteArray? = null,
@@ -54,5 +62,21 @@ class LearningClient(factory: InternalRestClientFactory, properties: LearningHtt
 
     companion object {
         private val RESPONSE_HEADERS = setOf("content-type", "etag", "retry-after", "location")
+
+        /** Application/AI failures remain error responses, but must not prevent FAILED reexecution. */
+        internal fun forFeedback(factory: InternalRestClientFactory, properties: LearningHttpProperties,
+                                 json: ObjectMapper) = LearningClient(factory, properties, "learning-feedback") { response ->
+            response.status >= 500 && !learningProblem(response, json)
+        }
+
+        private fun learningProblem(response: HttpExchangeResult, json: ObjectMapper): Boolean {
+            val contentType = response.headers.entries.firstOrNull { it.key.equals("Content-Type", true) }
+                ?.value?.firstOrNull()?.substringBefore(';')?.trim()
+            if (contentType?.equals("application/problem+json", true) != true) return false
+            return try {
+                val data = json.readTree(response.body)
+                data?.takeIf { it.isObject }?.get("code")?.let { it.isTextual && it.asText().isNotBlank() } == true
+            } catch (_: JsonProcessingException) { false }
+        }
     }
 }

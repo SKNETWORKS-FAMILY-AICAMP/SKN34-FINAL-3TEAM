@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: 사고뭉치 core-service 인증·동의·자녀·관리자 API
   version: 1.0.0
-  description: '#36 인증, #38 학생 미션 learning 프록시 및 #43 관리자 버전·사용량 API. 실제 learning API 연동 범위는 작업 보고서를 따른다. access는 메모리, refresh는
+  description: '#39 피드백 SSE, #36 인증, #38 학생 미션 learning 프록시 및 #43 관리자 버전·사용량 API. 실제 learning API 연동 범위는 작업 보고서를 따른다. access는 메모리, refresh는
     보안 쿠키. POST 쿠키 API는 정확한 Origin과 X-Requested-With를 요구한다. #58의 POST /auth/student/devices, GET /auth/student/profiles, POST
     /auth/student/login은 Bearer만 제외하며 실제 기기/PIN 검증·신규 API 구현은 이 계약의 범위 밖이다. #37 현재 동의 문서·버전별 동의·철회·자녀 등록/목록을 포함한다.'
 servers:
@@ -11,6 +11,7 @@ servers:
 tags:
 - name: Auth
 - name: Account
+- name: Feedback
 - name: Learning
 - name: Consent
 - name: Children
@@ -777,6 +778,61 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ChildRegistration'
+  /answers/{answerId}/feedback:
+    post:
+      operationId: streamAnswerFeedback
+      tags: [Feedback]
+      summary: 학생 답변의 판정·되묻기 SSE
+      description: |
+        검증된 STUDENT 세션만 허용한다. core가 내부 토큰과 검증된 사용자·학생 범위를 learning에 전달한다.
+        learning 동기 호출 제한은 80초이며 자동 재시도하지 않는다. 대기 중 15초마다 주석 ': ping'을 전송한다.
+        status(RUNNING) → result(DONE, HELD 포함) → done({}) 순서다.
+        이미 RUNNING이면 status → done, 처리 실패는 error(Problem Details + retryable) → done이다.
+        스트림 시작 뒤 오류의 HTTP 응답 상태는 200이며 error 이벤트의 status/code를 사용한다.
+        DONE·RUNNING·FAILED 재실행·리스·학생 소유권 판단과 저장은 learning 소유다.
+        피드백은 Idempotency-Key를 요구하거나 core에서 캐시하지 않는다.
+        연결은 90초 제한이며 클라이언트 종료·전송 실패에도 시작한 learning 처리는 취소하지 않는다.
+        learning-feedback 서킷은 전송 오류와 계약된 Problem Details가 아닌 5xx를 집계한다.
+        application/problem+json 및 문자열 code가 있는 업무 오류는 error로 전달하며 core 서킷을 열지 않는다.
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: answerId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: SSE. 정상·HELD·RUNNING·실패 모두 마지막 done 후 종료한다. 단절된 연결에는 전달을 보장하지 않는다.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+            X-Accel-Buffering:
+              schema: {type: string, const: 'no'}
+          content:
+            text/event-stream:
+              schema: {type: string}
+              examples:
+                running:
+                  value: "event:status\ndata:{\"state\":\"RUNNING\",\"message\":\"생각을 살펴보는 중\"}\n\nevent:done\ndata:{}\n\n"
+                failure:
+                  value: "event:status\ndata:{\"state\":\"RUNNING\",\"message\":\"생각을 살펴보는 중\"}\n\nevent:error\ndata:{\"type\":\"about:blank\",\"title\":\"처리 실패\",\"status\":503,\"code\":\"AI_UNAVAILABLE\",\"retryable\":true}\n\nevent:done\ndata:{}\n\n"
+        '400':
+          description: answerId 형식 오류 (스트림 시작 전).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          description: 스트림 시작 전 인증 DB·세션 조회 장애(AUTH_UNAVAILABLE). learning 서킷·연결 장애는 HTTP 200 스트림의 error 이벤트로 전달한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 components:
   securitySchemes:
     InternalToken:
