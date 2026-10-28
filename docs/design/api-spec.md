@@ -678,6 +678,7 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | POST | `/internal/followups` | learning | `{timeline[], judgment, rubric, mission, grade}` → `{type, question, source, leakCheck{passed}, versions}` (정답·금지어 검사 실패 시 1회 재생성 `LLM_RETRY`, 재실패 시 `question` 없이 `leakCheck.passed = false` → learning이 질문 은행 `BANK` 선택, P16) |
 | POST | `/internal/analysis/stream` | core | **SSE**. `{conversationId, question, scope{studentId, from, to}, history[]}` → 3.3과 같은 이벤트 |
 | POST | `/internal/report-narratives` | report | `{metrics[], thinkingTypes[], changes[], reflections[], quotes[]}` → `{narrative, eveningQuestion, citedQuotes[]}` |
+| GET | `/internal/versions` | core | 활성 프롬프트 버전 |
 
 #### 4.2.1 report 서술 응답 (#52, ai 구현 담당 연동 확인 필요)
 
@@ -685,7 +686,6 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 - report는 learning evidence의 같은 answer ID·version·원문과 인용을 대조하고, 서술·저녁 질문의 숫자가 계산 결과에 포함되는지 검사한다. 지원하지 않는 한글 수사 표현은 검증 통과로 간주하지 않는다. 검증 메타데이터는 `numbersMatched`, `quotesMatched`, `contentAllowed`다.
 - 대조 실패만 코드 기반 템플릿 요약으로 전환한다. AI 시간 초과·5xx·응답 스키마 오류·learning 원문 조회 실패는 `FAILED`로 처리한다(#52 담당자 확인 2026-10-27). 학생 이름·닉네임 필드는 요청에 넣지 않으며, 알려진 닉네임이 본문에 포함된 경우 전송 전에 가린다.
 - 이 응답 구조는 report 측 구현 기준이며, 아직 ai의 해당 API 구현·E2E 완료를 뜻하지 않는다.
-| GET | `/internal/versions` | core | 활성 프롬프트 버전 |
 
 - LLM 요청에는 학생 이름·식별정보를 넣지 않음. 학생 ID는 가명 토큰으로 치환 (NFR-SEC-03)
 
@@ -706,7 +706,7 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | GET | `/internal/reports/{reportId}/evidence/{itemId}` | 항목 근거 |
 | GET | `/internal/reports/{reportId}/files/{format}` | 단기 presigned URL 발급 → `{url, expiresAt}` |
 
-- #54 조회에서 core는 현재 이용 권한을 확인해 `X-Report-Narrative-Enabled:true|false`를 설정한다. 공개 요청의 같은 이름 헤더를 그대로 전달하지 않는다. 누락 시 false로 처리하며 report는 응답과 다운로드 파일에서 AI 서술·생각 유형 summary·저녁 질문을 가린다.
+- #54 report 측 권한 수신 구현안: core가 현재 이용 권한을 확인해 `X-Report-Narrative-Enabled:true|false`를 설정하도록 연결한다. **develop `78bbdc1`의 core 프록시는 이 헤더를 아직 제공하지 않는다.** 공개 요청의 같은 이름 헤더를 그대로 전달하면 안 된다. report는 누락 시 false로 처리하며 응답과 다운로드 파일에서 AI 서술·생각 유형 summary·저녁 질문을 가린다.
 - 목록은 학생/대상 주별 최신 revision을 고른 뒤 status를 적용하며 1.1 페이지 봉투를 사용한다. 상세의 기본값은 같은 학생·대상 주 최신판, `revision` 지정 시 해당 판이다. evidence/files 경로는 전달한 실제 reportId 판에 속한 항목·파일을 조회한다.
 - 파일 키는 `reports/{studentId}/{reportId}/r{revision}/{full|free}/{pdf|md|html}`다. DB `report_file`에는 full 키 3개를 저장하며 무료용 파생 파일도 생성한다. 다운로드 수명은 설정값이며 운영 기본안은 300초다. 버전·형식·학생이 맞지 않는 키를 서명하지 않는다.
 

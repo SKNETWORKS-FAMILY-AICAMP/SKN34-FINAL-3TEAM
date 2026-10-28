@@ -1,5 +1,7 @@
 # 리포트 #50~#55 구현 및 인계
 
+> 현재 상태(2026-10-28): `feature/inyoung9629-report`에 기존 #50~#55와 develop `78bbdc1`을 병합했다. #42/#45 공유 규격·core 구현은 확보되었다. 아래는 이전 검증 이력이며, 현재 완료 가능 범위·남은 연결·이번 검사 결과는 [에픽 #56 점검](report-epic-readiness.md)을 우선한다. 이후 PR은 개인 에픽 브랜치에서 develop으로 제출하며, 아래의 개별 PR 순서 안내는 이전 계획이다.
+
 2026-10-28 로컬 구현 기준. 최초 기반 develop은 `ecd6ecf`이며, 최신 develop `826e4dc`를 현재 `feature/report-deletion`에 병합했다(merge `9a91fb0`). 아래 브랜치는 아직 로컬이며 GitHub push·PR 생성·이슈 종료는 수행하지 않았다. 실제 타 서비스까지 연결한 완료와 report 단독 검증 완료를 구분한다.
 
 ## 구현 범위

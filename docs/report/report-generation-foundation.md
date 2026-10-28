@@ -1,5 +1,7 @@
 # 이슈 #50 리포트 생성 기반 — #42 계약 연결 전
 
+> 2026-10-28: #42 공유 스키마가 develop에 병합되었고 `feature/inyoung9629-report`에 반영했다. 이제 production codec과 worker 기본 진입점 연결은 report 측에서 진행할 수 있다. 아래 미확보 표현은 이전 시점의 기록이며 현재 판단은 [에픽 #56 점검](report-epic-readiness.md)을 따른다. codec 연결 자체는 아직 완료하지 않았다.
+
 ## 범위와 현재 상태
 
 [#50](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/50)의 DB 처리·생성 상태 전이·Outbox 발행 기반을 구현한다. develop `e3bb6ab`에서 시작했으며 최종 정리 기준은 #36 인증 구현이 병합된 `ecd6ecf`다. 두 기준 사이에 report 코드·마이그레이션·이벤트 계약 변경은 없다. 작업 브랜치는 `feature/report-generation`이다.
