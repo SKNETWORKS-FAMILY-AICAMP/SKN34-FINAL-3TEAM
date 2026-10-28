@@ -349,7 +349,7 @@ sequenceDiagram
       L-->>C: 503 AI_UNAVAILABLE retryable
     else 정상
       rect rgba(128,128,128,0.12)
-        L->>DB: judgment DONE + judgment_element + followup + 버전 저장 (획득한 리스일 때만, 리스를 잃었으면 저장 없이 현재 상태)
+        L->>DB: attempt 행 잠금(FOR UPDATE)·마무리 여부 다시 확인 → judgment DONE + judgment_element + followup(마무리 전일 때만) + 버전 저장 (획득한 리스일 때만, 리스를 잃었으면 저장 없이 현재 상태)
       end
       L-->>C: 200 FeedbackResult
     end
@@ -381,6 +381,7 @@ sequenceDiagram
 
   W->>C: POST /attempts/{id}/finish
   C->>L: POST /internal/attempts/{id}/finish
+  L->>DB: attempt 행 잠금(FOR UPDATE)·본인 시도 확인 (이미 마무리했으면 기록 없이 같은 결과)
   L->>DB: 타임라인(답변·판정·되묻기) 조회
   L->>L: FinishPolicy.canFinish (판정 DONE 1회 이상, P04)
   alt 조건 미충족
@@ -393,14 +394,15 @@ sequenceDiagram
   end
   opt 자기 평가 (선택)
     W->>C: POST /attempts/{id}/self-assessment
-    C->>L: POST /internal/attempts/{id}/self-assessment
-    L-->>C: 자기 체크 저장 (판정·원본 불변), AI 확인 항목과 나란히 반환
+    C->>L: POST /internal/attempts/{id}/self-assessment {checks}
+    L-->>C: 자기 체크 저장 (판정·원본 불변), AI 확인 항목과 나란히 반환 (마무리 전·완료 뒤 409)
     C-->>W: 200
   end
-  W->>C: POST /attempts/{id}/reflection {difficulty, changedText}
+  W->>C: POST /attempts/{id}/reflection {difficulty, text}
   C->>L: POST /internal/attempts/{id}/reflection
-  alt finished_at 없음 (마무리 전)
-    L-->>C: 409 REVEAL_CONDITION_UNMET
+  L->>DB: attempt 행 잠금(FOR UPDATE)·본인 시도 확인
+  alt finished_at 없음 (마무리 전) 또는 이미 완료
+    L-->>C: 409 REVEAL_CONDITION_UNMET (완료 뒤면 ATTEMPT_CLOSED)
     C-->>W: 409
   else
     rect rgba(128,128,128,0.12)
