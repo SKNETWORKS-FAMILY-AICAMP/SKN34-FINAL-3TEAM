@@ -46,6 +46,7 @@ class AnswerRecord:
     submitted_at: datetime
     text: str | None
     process_status: str
+    written_text: str
 
 
 @dataclass(frozen=True)
@@ -78,7 +79,7 @@ class ThinkingMission:
 @dataclass(frozen=True)
 class ChangePair:
     attempt_id: UUID
-    followup: str
+    followup: str | None
     first_answer_id: UUID
     first_text: str
     revised_answer_id: UUID

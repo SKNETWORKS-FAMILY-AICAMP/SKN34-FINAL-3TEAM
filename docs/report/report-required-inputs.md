@@ -4,7 +4,7 @@
 
 | 대상 | 담당/이슈 | 필요한 내용 |
 |---|---|---|
-| #51·#52·#54 | report 담당(우리 쪽) | #27 PR·실제 DTO·OpenAPI·테스트를 확보했다. 학생 ID 수신, 학생 작성 칸 기준 수치 계산, nullable followup 처리를 보완하고 실제 연동한다. #27 담당자의 추가 형식 답변을 기다릴 필요는 없다. |
+| #51·#52·#54 | report 담당(우리 쪽) | #27 공급 자료 확보, 세 계약 차이 수정, 실제 learning → report 집계·DB·조회·파일 검증 완료. #27 자료를 더 기다릴 필요는 없다. 전체 생성에 남은 AI·core 연결은 아래 별도 항목이다. |
 | #52 | #64, 조회 시 미배정 | 서술 API·API 4.2.1 응답·prompt/model 버전. AI 장애 FAILED, 대조 실패 TEMPLATE 기준 연결. 이슈에서 허용한 가짜 응답 검증은 별도 수행했다. |
 | #52·#53 | core 리포트 담당 김동섭 | AI 전송 전 이름 가림과 파일 제목에 쓸 신뢰할 수 있는 닉네임 내부 조회 경로. 확정 report.generate.v1 메시지에는 임의로 추가하지 않는다. |
 | 실제 생성·#54 | core 리포트/상품 담당 | 현재 503인 ReportEntitlementService의 실제 상품 판정, 조회 시 X-Report-Narrative-Enabled 전달. 이미 구현된 학생 scope·공개 프록시는 재요청하지 않는다. |
@@ -40,18 +40,18 @@
 | 평문 없는 답변 | 모든 입력 방식의 `text`는 문자열, 비어 있으면 `""`. evidence SQL도 null을 빈 문자열로 변환 | 정상 available=true/quote=null을 허용하도록 바꿀 필요 없음 |
 | 시각·돌아보기 | answers·hintUsages는 시작일 이전 포함, 종료일까지. completedAt 제공, 돌아보기 미작성·기간 밖 null, 작성 시 createdAt 포함. EASY·NORMAL·HARD 유지 | 필요한 입력 확보. 난이도 한글 표시는 기존 report 처리 재사용 |
 | P08·페이지 | 기간 내 제출 시도, 미완료·PENDING/RUNNING 포함. 종료일까지 전부 FAILED인 시도만 제외. KST 양 끝 포함. attempts·changes page 0부터, size 최대 100 | 기준 확보. thinking-types는 다섯 유형, 별도 페이지 없음 |
-| 합성 응답 자료 | 제공자 테스트의 합성 데이터·JSON 응답 검증과 보고서의 결과 요약은 있음. 네 조회의 완전한 응답을 모은 별도 JSON 파일은 찾지 못함 | 실제 코드·스키마·테스트로 우리 쪽에서 재현 가능. 별도 파일 미제공 때문에 구현을 기다릴 필요는 없음 |
+| 합성 응답 자료 | 제공자 테스트·보고서에 더해 우리 검증 스크립트로 실제 네 API 응답 JSON을 생성 | 로컬 output/report27-live-20261028-final에 확보. #27 담당자에게 별도 예시를 요청할 필요 없음 |
 
-## 우리 쪽에 남은 계약 보완
+## 우리 쪽 계약 보완 완료
 
-| 대상 | 현재 차이 | 다음 작업 |
+| 대상 | 해결한 차이 | 완료한 처리 |
 |---|---|---|
-| learning_client.py의 ScopeInput·_check_scope | report는 최상위 `childId` 필수, #27은 `studentId` 제공 | learning 입력 검사만 studentId로 변경. report 공개 응답 childId까지 일괄 변경하지 않음 |
-| AnswerInput·AnswerRecord·MetricsCalculator | report는 표시용 text로 전후 글자 수 계산. #27의 논술·풀이 text에는 학생이 쓰지 않은 칸 이름이 포함됨 | 이미 제공되는 inputType·content를 받아 학생 작성 칸만 집계. text는 표시·원문 근거 대조에 보존 |
-| ChangeInput·변화 출력 | #27 followup은 string 또는 null, report 입력은 문자열만 허용 | null 수신부터 저장·API·파일 표시까지 일관되게 처리하고 문구를 임의로 생성하지 않는지 검증 |
+| learning_client.py의 ScopeInput·_check_scope | 내부 응답에 childId를 요구하던 차이 | studentId로 검사. report 공개 응답 childId 보존, 실제 HTTP 조회로 확인 |
+| AnswerInput·AnswerRecord·MetricsCalculator | 표시용 text의 칸 이름까지 세던 차이 | inputType·content의 학생 작성 칸만 집계. 원문 보존, 여섯 입력 방식의 수치를 실제 learning counts와 대조 |
+| ChangeInput·변화 출력 | null 되묻기를 거부하던 차이 | DB·API에서 null 보존, PDF·HTML·MD 질문 생략. OpenAPI와 프론트 타입·빈 질문 표시도 정렬 |
 
-공급자 스키마에 맞는 합성 입력으로 현재 report 수신부를 직접 검사했다. studentId 페이지는 childId 누락 오류, followup:null은 문자열 형식 오류를 재현했다. 논술 기본 칸 이름을 붙인 합성 예에서 표시용 text는 39자지만 학생 작성 내용은 11자여서 현재 집계 차이도 재현했다. 이는 실제 서비스 간 통합 테스트가 아닌 계약 진단이다. 이번에는 수신부 제품 코드를 변경하지 않았다.
+수정 전 진단에서 studentId 페이지의 childId 누락 오류, followup:null의 문자열 형식 오류, 논술 합성 예의 39자/11자 집계 차이를 재현했다. 이후 제품 코드를 수정했고 실제 learning HTTP → report 집계 → DB 저장 → report HTTP·파일까지 검증했다. 재현 방법과 범위는 [연동 검증 보고서](report-learning-integration.md)를 따른다.
 
-병합 후 저장소 계약 검사 **54개 통과**. 과거 report 203개 통과 결과는 당시 고정 입력 기준이며 새 #27 응답과의 연동 성공을 뜻하지 않는다. #27의 학생 기록 삭제 소비자는 별도 미구현이라고 명시되어 있어 #55 전체 삭제 연동 완료로 판단하지 않는다.
+최종 report 전체 **220개**, 저장소 계약 **54개**, 실제 서비스 연동 **8개 항목** 통과. #27의 학생 기록 삭제 소비자는 별도 미구현이라고 명시되어 있어, 삭제 표식 이후 조회 검증을 #55 전체 삭제 연동 완료로 판단하지 않는다. 실제 AI/core 전체 생성은 별도다.
 
 [인계 문서](report-service-handoff.md)와 [에픽 점검](report-epic-readiness.md)을 참고한다. Slack·이슈 댓글로 요청을 보내지 않았다.

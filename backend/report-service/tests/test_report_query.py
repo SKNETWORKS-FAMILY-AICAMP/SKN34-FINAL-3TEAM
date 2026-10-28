@@ -139,6 +139,27 @@ def test_free_or_missing_entitlement_header_hides_stored_ai(api, report_factory,
 
 
 @pytest.mark.parametrize("premium", [False, True])
+def test_nullable_followup_survives_db_and_public_response(
+    api, report_factory, report_student_id, premium
+):
+    report_id = seed_report(report_factory, report_student_id)
+    condition = (report_item.c.report_id == report_id, report_item.c.item_type == ItemType.CHANGE)
+    with transaction(report_factory) as session:
+        payload = session.scalar(select(report_item.c.payload).where(*condition))
+        payload = {**payload, "followup": None}
+        session.execute(report_item.update().where(*condition).values(payload=payload))
+    client, _, _ = api
+    response = client.get(
+        f"/internal/reports/{report_id}", headers=headers(report_student_id, premium=premium)
+    )
+    assert response.status_code == 200
+    assert response.json()["childId"] == str(report_student_id)
+    assert response.json()["changes"][0]["followup"] is None
+    with report_factory() as session:
+        assert session.scalar(select(report_item.c.payload).where(*condition)) == payload
+
+
+@pytest.mark.parametrize("premium", [False, True])
 @pytest.mark.parametrize(
     "code,label,written",
     [

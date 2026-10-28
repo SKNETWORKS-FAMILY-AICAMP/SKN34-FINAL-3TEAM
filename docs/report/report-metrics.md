@@ -6,7 +6,7 @@
 
 2026-10-27 최초 검증 당시 #27은 열려 있고 실제 learning API 연동 완료는 확인되지 않았다. **이 문서의 검증 결과는 당시 입력 구현안과 합성 고정 응답, 실제 report DB에 대한 결과다. #27·#42와의 실제 연동 완료를 뜻하지 않는다.**
 
-2026-10-28 갱신: #27은 PR #105로 병합되었고 develop `b344797`을 누적 `feature/report-deletion`에 반영했다. 아래 구현안·협의 전 기록은 과거 경과다. 최신 공급 계약은 API 4.1.1과 [입력 대조 결과](report-required-inputs.md)를 따른다. 실제 DTO·OpenAPI·테스트 자료는 확보했고, report의 studentId 수신·학생 작성 칸 기준 집계·nullable followup 처리를 보완한 뒤 연동 검사해야 한다. 이번에는 제품 코드를 변경하지 않았다.
+2026-10-28 갱신: #27 PR #105가 포함된 develop `b344797`을 누적 `feature/report-deletion`에 반영한 뒤 report의 studentId·학생 작성 칸 집계·nullable followup을 수정했다. **report 전체 220개, 저장소 계약 54개, 실제 learning/report 연동 8개 항목 통과.** 아래 구현안·협의 전 기록은 과거 경과다. 최신 계약은 API 4.1.1, 완료 범위는 [연동 검증](report-learning-integration.md), 나머지 의존은 [남은 입력](report-required-inputs.md)을 따른다. 이번 수정은 원래 이슈 브랜치들로 아직 전파하지 않았다.
 
 | 구분 | 근거·결정 |
 |---|---|
@@ -14,7 +14,7 @@
 | 표본 상태 | API 1.5: 0건 `NO_RECORD`, 1~4건 `INSUFFICIENT_SAMPLE`, 5건 이상 `OK` |
 | Metric | API 1.6: count·numerator·denominator·formula·period·sourceType·state |
 | 까닭을 잇는 말 | #51 담당 사용자가 2026-10-27 이 대화에서 `왜냐하면·때문·그래서·따라서` 4개 사용을 확인. P08과 코드 상수에 반영 |
-| learning 상세 입력 | API 4.1.1에 구현안으로 명시. #27 실제 응답과의 대조는 남아 있음 |
+| learning 상세 입력 | API 4.1.1에 실제 공급·수신 계약 명시. 여섯 입력 방식·101건 페이지·원문/삭제를 실제 API로 대조 완료 |
 | 저장 | 기존 ERD 5장 `weekly_report`·`report_item`·`report_item_evidence`·Outbox 사용 |
 
 새 마이그레이션·의존성·테이블 생성은 없다. 기존 Alembic 스키마에 대한 SQLAlchemy Core 조회 정의를 보강했다. `target_metadata = None`과 명시적 마이그레이션 방식을 유지한다.

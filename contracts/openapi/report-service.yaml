@@ -364,8 +364,16 @@
             "title": "Attemptid"
           },
           "followup": {
-            "type": "string",
-            "title": "Followup"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Followup",
+            "description": "원문 되묻기. 없으면 null이며 질문을 만들어 채우지 않음."
           },
           "first": {
             "$ref": "#/components/schemas/TextAnswer"

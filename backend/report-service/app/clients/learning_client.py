@@ -1,4 +1,4 @@
-"""Strict reader for API 4.1.1's #51 proposal; real #27 compatibility is still pending."""
+"""Strict reader for the merged #27 record API (API 4.1.1)."""
 
 from datetime import date
 from typing import Literal
@@ -36,7 +36,7 @@ class PeriodInput(InputModel):
 
 
 class ScopeInput(InputModel):
-    child_id: UUID
+    student_id: UUID
     period: PeriodInput
     state: Literal["OK", "NO_RECORD", "INSUFFICIENT_SAMPLE", "PROCESSING", "FAILED"]
 
@@ -52,12 +52,51 @@ class FeedbackInput(InputModel):
     status: Literal["PENDING", "RUNNING", "DONE", "FAILED"]
 
 
+class NarrativeContent(InputModel):
+    text: str
+
+
+class SolutionContent(InputModel):
+    steps: list[str]
+    final_answer: str
+
+
+class EssayFields(InputModel):
+    claim: str
+    reasons: list[str]
+    rebuttal: str
+
+
+class EssayContent(InputModel):
+    essay: EssayFields
+
+
 class AnswerInput(InputModel):
     answer_id: UUID
     version: StrictInt = Field(ge=1)
     submitted_at: AwareDatetime
-    text: str | None
+    text: str
+    input_type: Literal[
+        "NARRATIVE", "SOLUTION_STEPS", "ESSAY", "CHOICE", "ORDERING", "CLASSIFICATION"
+    ]
+    content: dict
     feedback: FeedbackInput
+
+    def written_text(self) -> str:
+        # Same fields/order as learning TextCounts.writtenText. Never count labels,
+        # selection IDs, draft/memo or extra fields; keep display text separately.
+        match self.input_type:
+            case "NARRATIVE":
+                fields = [NarrativeContent.model_validate(self.content).text]
+            case "SOLUTION_STEPS":
+                content = SolutionContent.model_validate(self.content)
+                fields = [*content.steps, content.final_answer]
+            case "ESSAY":
+                essay = EssayContent.model_validate(self.content).essay
+                fields = [essay.claim, *essay.reasons, essay.rebuttal]
+            case _:
+                fields = []
+        return "\n".join(value for value in fields if value.strip())
 
 
 class MissionInput(InputModel):
@@ -94,7 +133,14 @@ class AttemptInput(InputModel):
             thinking_type=self.mission.thinking_type,
             status=self.status,
             answers=tuple(
-                AnswerRecord(a.answer_id, a.version, a.submitted_at, a.text, a.feedback.status)
+                AnswerRecord(
+                    a.answer_id,
+                    a.version,
+                    a.submitted_at,
+                    a.text,
+                    a.feedback.status,
+                    a.written_text(),
+                )
                 for a in self.answers
             ),
             hint_opened_at=tuple(h.opened_at for h in self.hint_usages),
@@ -129,7 +175,7 @@ class ChangeAnswerInput(InputModel):
 
 class ChangeInput(InputModel):
     attempt_id: UUID
-    followup: str
+    followup: str | None
     first: ChangeAnswerInput
     revised: ChangeAnswerInput
 
@@ -215,7 +261,7 @@ class LearningClient:
 
     @staticmethod
     def _check_scope(response: ScopeInput, student_id: UUID, period: Period) -> None:
-        if response.child_id != student_id or (response.period.from_, response.period.to) != (
+        if response.student_id != student_id or (response.period.from_, response.period.to) != (
             period.start,
             period.end,
         ):
