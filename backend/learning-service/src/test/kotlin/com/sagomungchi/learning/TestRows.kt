@@ -104,6 +104,25 @@ class TestRows(private val jdbc: JdbcTemplate) {
         )
     }
 
+    /**
+     * 답변의 판정을 처리 완료(DONE)로 (판정 실행은 피드백 API라 테스트에서 직접). elements는 기준표 요소 ID와 근거 구절,
+     * 구절이 null이면 미충족
+     */
+    fun judged(answerId: UUID, elements: List<Pair<UUID, String?>> = emptyList(), result: String = "PARTIAL", heldReason: String? = null) {
+        val judgmentId = jdbc.queryForObject("SELECT id FROM judgment WHERE answer_id = ?", UUID::class.java, answerId)
+        jdbc.update(
+            "UPDATE judgment SET process_status = 'DONE', result = ?, held_reason = ?, method = 'LLM', trial = true, completed_at = ? WHERE id = ?",
+            result, heldReason, now, judgmentId,
+        )
+        elements.forEach { (elementId, quote) ->
+            jdbc.update(
+                """INSERT INTO judgment_element (id, judgment_id, rubric_element_id, quote, verified, satisfied, source_type)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                UUID.randomUUID(), judgmentId, elementId, quote, quote != null, quote != null, quote?.let { "AI_OBSERVATION" },
+            )
+        }
+    }
+
     /** 답변의 판정에서 나온 되묻기 (되묻기 생성은 #25라 테스트에서 직접 넣음) */
     fun followup(attemptId: UUID, answerId: UUID, minutesLater: Long = 1): UUID {
         val judgmentId = jdbc.queryForObject("SELECT id FROM judgment WHERE answer_id = ?", UUID::class.java, answerId)

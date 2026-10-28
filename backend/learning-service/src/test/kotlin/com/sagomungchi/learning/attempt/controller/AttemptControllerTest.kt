@@ -4,7 +4,9 @@ import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning.attempt.domain.Attempt
 import com.sagomungchi.learning.attempt.domain.AttemptDraft
 import com.sagomungchi.learning.attempt.domain.DraftContent
+import com.sagomungchi.learning.attempt.domain.FinishResult
 import com.sagomungchi.learning.attempt.domain.HintOpened
+import com.sagomungchi.learning.attempt.domain.Reflection
 import com.sagomungchi.learning.attempt.service.AttemptDetail
 import com.sagomungchi.learning.attempt.service.AttemptService
 import com.sagomungchi.learning.attempt.service.AttemptStart
@@ -63,7 +65,9 @@ class AttemptControllerTest(@Autowired private val mockMvc: MockMvc) {
         draft: AttemptDraft = AttemptDraft.empty(attempt.id, now),
         answers: List<TimelineAnswer> = emptyList(),
         feedbacks: Map<UUID, FeedbackResult> = answers.associate { it.answerId to FeedbackResult.inProgress(it.processStatus) },
-    ) = AttemptDetail(attempt, mission, draft, helped = false, answers = answers, feedbacks = feedbacks)
+        revealed: FinishResult? = null,
+        reflection: Reflection? = null,
+    ) = AttemptDetail(attempt, mission, draft, helped = false, answers = answers, feedbacks = feedbacks, revealed = revealed, reflection = reflection)
 
     private fun MockHttpServletRequestDsl.asStudent(role: String = "STUDENT") {
         header("X-Internal-Token", "test-token")
