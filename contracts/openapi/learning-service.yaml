@@ -458,13 +458,18 @@ paths:
       operationId: recordAttempts
       summary: 학습 기록 목록 (최근 답변 순)
       description: >-
-        items는 학생 시도 상세에서 초안(draft, 메모 포함)을 뺀 모양 (P05), answers는 1번부터 조회 종료일까지의 버전만
+        items는 학생 시도 상세에서 초안(draft, 메모 포함)을 뺀 모양 (P05) + completedAt·hintUsages·reflection.createdAt.
+        answers·hintUsages는 1번·처음부터 조회 종료일까지(시작일 이전 포함), reflection은 기간 안에 쓴 것만(아니면 null)
       parameters:
         - $ref: '#/components/parameters/StudentId'
         - $ref: '#/components/parameters/RecordRole'
         - $ref: '#/components/parameters/RecordScope'
         - $ref: '#/components/parameters/From'
         - $ref: '#/components/parameters/To'
+        - name: status
+          in: query
+          description: 지금 그 상태인 시도만. 생략하면 전체
+          schema: {type: string, enum: [IN_PROGRESS, COMPLETED]}
         - name: page
           in: query
           schema: {type: integer, minimum: 0, default: 0}
@@ -484,19 +489,24 @@ paths:
     get:
       operationId: recordAttempt
       summary: 학습 기록 상세 (학부모 api-spec 2.3)
-      description: 목록 items와 같은 모양. 다른 학생의 시도·처리 실패만 있는 시도는 404
+      description: >-
+        목록 items와 같은 모양 + state(OK)·period. 기간은 화면 유지용이라 검증·기본값만 적용하고 이력은 자르지 않음.
+        다른 학생의 시도·처리 실패만 있는 시도는 404
       parameters:
         - $ref: '#/components/parameters/StudentId'
         - $ref: '#/components/parameters/AttemptId'
         - $ref: '#/components/parameters/RecordRole'
         - $ref: '#/components/parameters/RecordScope'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
       responses:
         '200':
           description: 기록 상세
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RecordAttempt'
+                $ref: '#/components/schemas/RecordAttemptDetail'
+        '400': {$ref: '#/components/responses/Problem'}
         '403': {$ref: '#/components/responses/Problem'}
         '404': {$ref: '#/components/responses/Problem'}
   /records/students/{studentId}/changes:
@@ -504,13 +514,19 @@ paths:
       operationId: recordChanges
       summary: 되묻기 전후 답변 쌍
       description: >-
-        보완 답변이 있는 시도의 최초 vs 조회 종료일 이전 마지막 답변(P08, FN-RPT-02). text는 칸 이름을 붙인 원문, counts는 학생이 쓴 칸만 [최초, 마지막]
+        보완 답변이 있는 시도의 최초 vs 조회 종료일 이전 마지막 답변(P08, FN-RPT-02), 1.1 페이지. text는 칸 이름을 붙인 원문, counts는 학생이 쓴 칸만 [최초, 마지막]
       parameters:
         - $ref: '#/components/parameters/StudentId'
         - $ref: '#/components/parameters/RecordRole'
         - $ref: '#/components/parameters/RecordScope'
         - $ref: '#/components/parameters/From'
         - $ref: '#/components/parameters/To'
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 0, default: 0}
+        - name: size
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
       responses:
         '200':
           description: 조회 결과
@@ -684,12 +700,12 @@ components:
     From:
       name: from
       in: query
-      description: KST 날짜(포함). 없으면 to 기준 7일 전부터 (P06)
+      description: KST 날짜(포함). to와 함께 주거나 함께 생략(생략하면 오늘 포함 최근 7일, P06), 한쪽만 주면 400
       schema: {type: string, format: date}
     To:
       name: to
       in: query
-      description: KST 날짜(포함). 없으면 오늘. from보다 이르면 400
+      description: KST 날짜(포함). from과 함께 주거나 함께 생략, 한쪽만 주거나 from보다 이르면 400
       schema: {type: string, format: date}
   headers:
     DraftETag:
@@ -1058,8 +1074,8 @@ components:
     RecordAttempt:
       type: object
       additionalProperties: false
-      description: 시도 상세(Attempt)에서 draft를 뺀 모양
-      required: [attemptId, studentId, mission, status, finishedAt, answers, helped, nextActions, reveal, revealKind, checklist, reflection]
+      description: 시도 상세(Attempt)에서 draft를 뺀 모양 + completedAt·hintUsages·reflection.createdAt
+      required: [attemptId, studentId, mission, status, finishedAt, answers, helped, nextActions, reveal, revealKind, checklist, reflection, completedAt, hintUsages]
       properties:
         attemptId: {type: string, format: uuid}
         studentId: {type: string, format: uuid}
@@ -1080,8 +1096,65 @@ components:
           items: {$ref: '#/components/schemas/Element'}
         reflection:
           oneOf:
-            - $ref: '#/components/schemas/Reflection'
+            - $ref: '#/components/schemas/RecordReflection'
             - type: 'null'
+        completedAt: {type: [string, 'null'], format: date-time}
+        hintUsages:
+          type: array
+          description: 생각 열기 열람 시각, 열람 순 (report가 최초 답변 전 열람 여부를 판단)
+          items:
+            type: object
+            additionalProperties: false
+            required: [openedAt]
+            properties:
+              openedAt: {type: string, format: date-time}
+    RecordAttemptDetail:
+      type: object
+      additionalProperties: false
+      description: RecordAttempt + 화면이 유지할 조회 기간·상태 (이력은 자르지 않음)
+      required: [attemptId, studentId, mission, status, finishedAt, answers, helped, nextActions, reveal, revealKind, checklist, reflection, completedAt, hintUsages, state, period]
+      properties:
+        attemptId: {type: string, format: uuid}
+        studentId: {type: string, format: uuid}
+        mission: {$ref: '#/components/schemas/Mission'}
+        status: {type: string, enum: [IN_PROGRESS, COMPLETED]}
+        finishedAt: {type: [string, 'null'], format: date-time}
+        answers:
+          type: array
+          items: {$ref: '#/components/schemas/AnswerItem'}
+        helped: {type: boolean}
+        nextActions:
+          type: array
+          items: {$ref: '#/components/schemas/NextAction'}
+        reveal: {type: [string, 'null']}
+        revealKind: {type: [string, 'null'], enum: [ANSWER, EXAMPLE, null]}
+        checklist:
+          type: [array, 'null']
+          items: {$ref: '#/components/schemas/Element'}
+        reflection:
+          oneOf:
+            - $ref: '#/components/schemas/RecordReflection'
+            - type: 'null'
+        completedAt: {type: [string, 'null'], format: date-time}
+        hintUsages:
+          type: array
+          description: 생각 열기 열람 시각, 열람 순 (report가 최초 답변 전 열람 여부를 판단)
+          items:
+            type: object
+            additionalProperties: false
+            required: [openedAt]
+            properties:
+              openedAt: {type: string, format: date-time}
+        state: {$ref: '#/components/schemas/QueryState'}
+        period: {$ref: '#/components/schemas/RecordPeriod'}
+    RecordReflection:
+      type: object
+      additionalProperties: false
+      required: [difficulty, text, createdAt]
+      properties:
+        difficulty: {$ref: '#/components/schemas/Difficulty'}
+        text: {type: [string, 'null']}
+        createdAt: {type: [string, 'null'], format: date-time}
     RecordAttemptPage:
       type: object
       additionalProperties: false
@@ -1100,8 +1173,11 @@ components:
     RecordChanges:
       type: object
       additionalProperties: false
-      required: [childId, state, period, items]
+      required: [items, page, size, totalElements, childId, state, period]
       properties:
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1}
+        totalElements: {type: integer, minimum: 0}
         childId: {type: string, format: uuid}
         state: {$ref: '#/components/schemas/QueryState'}
         period: {$ref: '#/components/schemas/RecordPeriod'}
