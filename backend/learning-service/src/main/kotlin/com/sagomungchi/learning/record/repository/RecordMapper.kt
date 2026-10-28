@@ -1,0 +1,58 @@
+package com.sagomungchi.learning.record.repository
+
+import com.sagomungchi.learning.answer.domain.AnswerContent
+import com.sagomungchi.learning.mission.domain.ThinkingType
+import org.apache.ibatis.annotations.Mapper
+import org.apache.ibatis.annotations.Param
+import java.time.Instant
+import java.util.UUID
+
+/**
+ * 집계 대상 시도(P08) 하나의 사실. helpedBeforeFirstAnswer는 최초 답변 전 생각 열기 열람,
+ * receivedFollowup은 되묻기를 받음, revised는 되묻기에 답한 보완 답변을 냄 (시도 전체 기준)
+ */
+data class EligibleAttempt(
+    val attemptId: UUID,
+    val missionTitle: String,
+    val thinkingType: ThinkingType,
+    val completed: Boolean,
+    val helpedBeforeFirstAnswer: Boolean,
+    val receivedFollowup: Boolean,
+    val revised: Boolean,
+    val lastSubmittedAt: Instant,
+)
+
+/** 시도의 최초·마지막 답변과 마지막 답변이 답한 되묻기 질문 */
+data class AnswerPair(
+    val attemptId: UUID,
+    val followup: String?,
+    val firstAnswerId: UUID,
+    val firstText: String,
+    val firstContent: AnswerContent,
+    val lastAnswerId: UUID,
+    val lastText: String,
+    val lastContent: AnswerContent,
+)
+
+/** 근거 원문 한 건. deleted는 학생이 deleted_student에 있음 */
+data class EvidenceRow(
+    val answerId: UUID,
+    val attemptId: UUID,
+    val studentId: UUID,
+    val missionTitle: String,
+    val answerVersion: Int,
+    val submittedAt: Instant,
+    val text: String,
+    val deleted: Boolean,
+)
+
+data class StatsRow(val attempts: Int, val completedAttempts: Int, val students: Int)
+
+@Mapper
+interface RecordMapper {
+    fun findEligible(@Param("studentId") studentId: UUID, @Param("start") start: Instant, @Param("end") end: Instant): List<EligibleAttempt>
+    fun findAnswerPairs(@Param("studentId") studentId: UUID, @Param("start") start: Instant, @Param("end") end: Instant): List<AnswerPair>
+    fun isRecorded(@Param("studentId") studentId: UUID, @Param("attemptId") attemptId: UUID): Boolean
+    fun findEvidence(@Param("answerIds") answerIds: List<UUID>): List<EvidenceRow>
+    fun stats(@Param("start") start: Instant, @Param("end") end: Instant): StatsRow
+}
