@@ -1729,6 +1729,20 @@ classDiagram
     <<service>>
     +generate(command, report) GenerationResult
   }
+  class NarrativeGenerator {
+    +generate(command, report) GenerationResult
+  }
+  class RenderingGenerator {
+    +generate(command, report) GenerationResult
+  }
+  class JobLocks {
+    +acquire(job_id, student_id) JobLease
+    +acquire_student(student_id) JobLease
+  }
+  class DeletionRepository {
+    +begin(session, command) bool
+    +finish(session, command)
+  }
   class GenerationResult {
     +state ReportState
     +inclusion_rule str
@@ -1736,11 +1750,11 @@ classDiagram
   }
   class ReportVerifier {
     <<service>>
-    +verify(narrative, metrics, quotes) Verification
+    +verify(response, result, evidence) Verification
   }
   class ReportRenderer {
     <<service>>
-    +render(report, format) bytes
+    +render(report, display_name) dict
   }
   class WeeklyReport {
     <<entity>>
@@ -1771,7 +1785,7 @@ classDiagram
   class LearningClient {
     <<client>>
     +records(student_id, period) LearningRecords
-    +evidence(answer_ids) list
+    +evidence(student_id, links) tuple
   }
   class AiClient {
     <<client>>
@@ -1780,29 +1794,30 @@ classDiagram
   class ObjectStorage {
     <<client>>
     +put(key, body, content_type)
-    +presigned_url(key, expires) str
+    +presigned_url(key, ttl, filename) dict
+    +delete_prefix(prefix)
   }
   class query_router {
     <<router>>
-    +list(student_id, status) Page
-    +detail(report_id) ReportDetail
+    +list(student_id, status, page, size) Page
+    +detail(report_id, revision, narrative_enabled) ReportDetail
     +evidence(report_id, item_id) Evidence
-    +file_url(report_id, format) DownloadUrl
+    +file(report_id, format, narrative_enabled) DownloadUrl
   }
   class QueryService {
     <<service>>
-    +list(student_id, status) Page
-    +detail(report_id) ReportDetail
+    +list(student_id, status, page, size) Page
+    +detail(report_id, revision, narrative_enabled) ReportDetail
     +evidence(report_id, item_id) Evidence
-    +file_url(report_id, format) DownloadUrl
+    +file(report_id, format, narrative_enabled) DownloadUrl
   }
   class StudentDeletedConsumer {
     <<consumer>>
-    +on_student_deleted(envelope)
+    +__call__(envelope)
   }
   class DeletionService {
     <<service>>
-    +delete(event_id, student_id)
+    +delete(command)
   }
   class CoreClient {
     <<client>>
@@ -1812,22 +1827,28 @@ classDiagram
   GenerationConsumer --> GenerationService
   GenerationService --> ReportRepository
   GenerationService --> OutboxRepository : report.started·completed·failed
-  GenerationService --> RecordGenerator : R2 계산 단계
+  GenerationService --> RenderingGenerator : R4
+  GenerationService --> JobLocks
+  RenderingGenerator --> NarrativeGenerator : R3
+  NarrativeGenerator --> RecordGenerator : R2
   RecordGenerator --> LearningClient
   RecordGenerator --> MetricsCalculator
-  GenerationService --> AiClient
-  GenerationService --> ReportVerifier
-  GenerationService --> ReportRenderer
-  GenerationService --> ObjectStorage
+  NarrativeGenerator --> AiClient
+  NarrativeGenerator --> LearningClient : 원문 대조
+  NarrativeGenerator --> ReportVerifier
+  RenderingGenerator --> ReportRenderer
+  RenderingGenerator --> ObjectStorage
   GenerationService ..> WeeklyReport
   GenerationResult *-- ReportItem
   OutboxRelay --> OutboxRepository : 미발행 조회·발행 기록
   OutboxRelay --> EventPublisher : publisher confirm
   query_router --> QueryService
-  QueryService --> ReportRepository
+  QueryService --> LearningClient : 현재 근거
   QueryService --> ObjectStorage
   StudentDeletedConsumer --> DeletionService
-  DeletionService --> ReportRepository
+  DeletionService --> DeletionRepository
+  DeletionService --> JobLocks
+  DeletionService --> CoreClient
   DeletionService --> ObjectStorage
 ```
 
@@ -1835,10 +1856,12 @@ classDiagram
 |---|---|---|
 | `GenerationConsumer`, `GenerationService`, `MetricsCalculator`, `ReportVerifier`, `ReportRepository`, `WeeklyReport` | `generation/consumer.py`·`service.py`·`metrics.py`·`verifier.py`·`repository.py`·`models.py` | report-worker |
 | `RecordGenerator`, `GenerationResult`·`ReportItem` | `generation/record_generator.py`·`models.py` | report-worker (R2 계산 결과를 종료 트랜잭션으로 전달) |
-| `LearningClient` | `clients/learning_client.py` | report-worker (`records`는 세 조회를 모아 정규화, `evidence`는 #52 계획) |
+| `LearningClient` | `clients/learning_client.py` | worker/API (`records`는 세 조회 정규화, `evidence`는 현재 원문·버전·삭제 대조) |
+| `NarrativeGenerator`, `RenderingGenerator`, `JobLocks` | `generation/narrative_generator.py`·`locking.py`, `rendering/generator.py` | report-worker |
 | `ReportRenderer` | `rendering/renderer.py` (Jinja2 → HTML, Playwright → PDF, Markdown) | report-worker |
 | `OutboxRelay`, `OutboxRepository` | `outbox/` | report-worker (서비스의 종료 트랜잭션이 `OutboxRepository.add` 호출) |
 | `StudentDeletedConsumer`, `DeletionService` | `deletion/` | report-worker |
+| `DeletionRepository` | `deletion/state.py` | report-worker (삭제 장벽·processed_event·물리 삭제 트랜잭션) |
 | `query_router`, `QueryService` | `query/router.py`, `query/service.py` (신규) | report-api |
 | `ObjectStorage` | `clients/storage.py` (신규, S3·로컬 MinIO) | 공통 |
 
@@ -1846,7 +1869,7 @@ classDiagram
 - `query_router`·`QueryService`: 모든 조회에서 리포트의 `student_id`가 `X-Student-Scope`에 있는지 검사, 없으면 403 (API 4장)
 - 수치·전후 변화는 `MetricsCalculator`(코드)에서만 계산, ai는 서술·저녁 질문만 (FN-RPT-03, 05)
 - #51 구현의 `RecordGenerator`는 learning 조회 → `MetricsCalculator.calculate` → 항목·근거가 포함된 `GenerationResult`를 반환한다. `ReportRepository.finish`가 상태·항목·근거를 저장하며 종료 이벤트와 같은 트랜잭션에 참여한다. 입력 계약은 병합된 #27 코드·OpenAPI와 대조한 API 4.1.1이며, #51의 검증 범위는 `docs/report/report-metrics.md`에 기록한다.
-- report 다이어그램의 AI 서술·원문 재검증·렌더링·저장·조회·삭제는 #52~#55의 최종 구성 계획을 포함한다. #42 공통 메시지 계약과 #50 worker·Outbox 연결은 develop에 반영됐다. 계산·서술·렌더링을 포함한 전체 생성기 조립은 후속 단계에서 검증한다. `LearningClient.evidence`도 #52 구현 대상이다.
+- #52~#55의 AI 서술·원문 재검증·렌더링·저장·조회·삭제 구현을 포함한다. `worker.run(generator=None)`은 #42 v1 codec, 생성·삭제 구독과 Outbox를 조립한다. 생성기를 주입하지 않은 기본 실행은 `GENERATOR_NOT_CONFIGURED`로 실패하며 임의의 완료 결과를 만들지 않는다. 실제 서비스 전체 생성 흐름의 연결 검증은 별도다.
 - `ReportVerifier`: 서술 속 숫자·인용을 계산 결과·learning 원문과 대조, 실패 시 서술을 템플릿 요약으로 교체(`narrative.source = TEMPLATE`, P16). `NO_RECORD`·무료 플랜(`narrativeEnabled = false`)은 ai 호출 생략 (P06·P13)
 
 ---

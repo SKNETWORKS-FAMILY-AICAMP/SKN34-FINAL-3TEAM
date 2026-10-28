@@ -55,7 +55,9 @@ class TextAnswer(Response):
 
 class Change(ItemResponse):
     attempt_id: UUID
-    followup: str | None
+    followup: str | None = Field(
+        description="원문 되묻기. 없으면 null이며 질문을 만들어 채우지 않음."
+    )
     first: TextAnswer
     revised: TextAnswer
     counts: "ChangeCounts"

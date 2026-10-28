@@ -64,7 +64,8 @@
 | `STUDENT_PIN_NOT_SET` | 409 | PIN 미설정 자녀의 PIN 로그인 → 학부모 동석 진입 안내 (FN-ACC-05) |
 | `PAIRING_CODE_INVALID` | 400 | 페어링 코드 없음·만료·이미 사용 (FN-ACC-14) |
 | `NOT_FOUND` | 404 | 리소스 없음 |
-| `DATA_UNAVAILABLE` | 410 | 삭제된 근거 → "이용 불가" 표시 (FN-ACC-13) |
+| `DATA_UNAVAILABLE` | 410 / 503 | 삭제된 근거 → "이용 불가" 표시(410), report 원문 조회·파일 저장소 장애는 재시도 가능한 503 |
+| `DELETION_IN_PROGRESS` | 409 | report 학생 삭제가 진행 중이므로 조회를 잠시 차단 |
 | `VALIDATION_FAILED` | 400 | 형식 오류 (`errors[]`에 필드별 사유) |
 | `ANSWER_INCOMPLETE` | 422 | 필요한 선택·입력 누락 (FN-LRN-04) |
 | `IDEMPOTENCY_KEY_REUSED` | 422 | 같은 키에 다른 요청 본문 |
@@ -740,7 +741,7 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | GET | `/internal/reports/{reportId}/evidence/{itemId}` | 항목 근거 |
 | GET | `/internal/reports/{reportId}/files/{format}` | 단기 presigned URL 발급 → `{url, expiresAt}` |
 
-- #54 조회에서 core는 현재 이용 권한을 확인해 `X-Report-Narrative-Enabled:true|false`를 설정한다. 공개 요청의 같은 이름 헤더를 그대로 전달하지 않는다. 누락 시 false로 처리하며 report는 응답과 다운로드 파일에서 AI 서술·생각 유형 summary·저녁 질문을 가린다.
+- #54 조회에서 core는 현재 이용 권한을 확인해 `X-Report-Narrative-Enabled:true|false`를 설정해야 한다. 공개 요청의 같은 이름 헤더를 그대로 전달하지 않는다. report는 누락 시 false로 처리하며 응답과 다운로드 파일에서 AI 서술·생각 유형 summary·저녁 질문을 가린다. 현재 core 헤더 전달 연동의 검증 범위는 [#54 조회 보고서](../report/report-query.md)를 따른다.
 - 목록은 학생/대상 주별 최신 revision을 고른 뒤 status를 적용하며 1.1 페이지 봉투를 사용한다. 상세의 기본값은 같은 학생·대상 주 최신판, `revision` 지정 시 해당 판이다. evidence/files 경로는 전달한 실제 reportId 판에 속한 항목·파일을 조회한다.
 - 파일 키는 `reports/{studentId}/{reportId}/r{revision}/{full|free}/{pdf|md|html}`다. DB `report_file`에는 full 키 3개를 저장하며 무료용 파생 파일도 생성한다. 다운로드 수명은 설정값이며 운영 기본안은 300초다. 버전·형식·학생이 맞지 않는 키를 서명하지 않는다.
 
@@ -751,6 +752,8 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | POST | `/internal/deletion-requests/{deletionRequestId}/completions` | learning·report가 `student.deleted` 처리 후 완료 보고 `{service}`. 두 서비스 모두 보고 시 `COMPLETED` (멱등, P09) |
 
 - 비동기 메시지(`report.generate` 등)는 [아키텍처 1.4](architecture.md#14-메시지-목록) 참고
+- #55 report: PROFILE·RECORDS 모두 리포트 내용/파일을 물리 삭제하며 `report_deletion_guard`에 식별 UUID·범위·삭제 기준 시각·처리 상태만 남긴다. 최신 #45 core가 RECORDS 후에도 자동 학습 재개를 하지 않으므로 두 scope 모두 이후 생성도 차단한다. 새 명령의 time이 삭제 시각보다 늦다는 이유만으로 재개를 허용하지 않는다. 재개가 필요하면 별도 명시적 계약을 확정한다.
+- core의 삭제 상태 접근 차단과 `EventEnvelope.time` 보존·공유 메시지 규격은 #42/#45에서 확보했다. 삭제 전 queued job 정리와 삭제된 기존 작업의 늦은 상태 이벤트 무시는 core 후속 통합 검증 대상이다. report의 학생 lock·삭제 장벽만으로 core job 상태를 대신 정리하지 않는다.
 
 ### 4.6 #43 AI 사용량 조회 계약
 

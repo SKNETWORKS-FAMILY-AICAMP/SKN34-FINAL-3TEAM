@@ -199,7 +199,7 @@ function ReportDetail({
                   {!r.changes.length && <p>비교할 답변 쌍이 없습니다.</p>}
                   {r.changes.map((c) => (
                     <article className="ws-card" key={c.attemptId}>
-                      <p>받은 질문 · {c.followup}</p>
+                      {c.followup !== null && <p>받은 질문 · {c.followup}</p>}
                       <div className="ws-grid">
                         <div>
                           <h4>최초 답변</h4>
