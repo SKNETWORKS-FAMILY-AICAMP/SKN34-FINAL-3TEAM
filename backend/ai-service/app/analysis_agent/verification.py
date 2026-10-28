@@ -57,9 +57,9 @@ def verify(answer: str, citations: list[Citation], computation: Computation) -> 
     stripped = QUOTED.sub(" ", answer)
     for source in computation.sources:
         stripped = stripped.replace(source.evidence.mission_title, " ")
+    allowed = allowed_numbers(computation)
     numbers_ok = not KOREAN_COUNT.search(stripped) and all(
-        _normalize_number(number) in allowed_numbers(computation)
-        for number in NUMBER.findall(stripped)
+        _normalize_number(number) in allowed for number in NUMBER.findall(stripped)
     )
     content_ok = not any(word in answer for word in FORBIDDEN)
     return VerifiedAnswer(
@@ -73,9 +73,7 @@ def verify(answer: str, citations: list[Citation], computation: Computation) -> 
 def allowed_numbers(computation: Computation) -> set[str]:
     allowed = {str(computation.record_count), *computation.extra_numbers}
     for metric in computation.metrics:
-        allowed.update(
-            str(n) for n in (metric.count, metric.numerator, metric.denominator) if n is not None
-        )
+        allowed.update(str(n) for n in (metric.count, metric.numerator, metric.denominator))
         if metric.value is not None:
             allowed.add(_normalize_number(f"{metric.value * 100:.1f}"))
             allowed.add(str(round(metric.value * 100)))

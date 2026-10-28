@@ -69,15 +69,23 @@ class Period(ApiModel):
 
 
 class Metric(ApiModel):
+    """learning Metric과 같은 모양. 건수 지표는 value null, 분자·분모 = 건수 (Metric.count)."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="ignore")
+
     label: str
-    value: float | None  # 분모 5 미만이면 null (P08)
+    value: float | None  # 분모 5 미만이거나 건수 지표면 null (P08)
     count: int
-    numerator: int | None
-    denominator: int | None
-    formula: str
+    numerator: int
+    denominator: int
+    formula: str  # 비율 지표는 "분자 / 분모" 형태
     period: Period
     source_type: Literal["RECORD"] = "RECORD"
     state: QueryState
+
+    @property
+    def is_ratio(self) -> bool:
+        return "/" in self.formula
 
 
 class Evidence(ApiModel):
@@ -138,7 +146,8 @@ class StreamError(ApiModel):
 
 
 # ---------------------------------------------------------------------------
-# learning 기록 (API 4.1·4.1.1 구현안, learning 구현 전이라 필요한 필드만 읽음)
+# learning 기록 (contracts/openapi/learning-service.yaml, 필요한 필드만 읽음)
+# 집계 대상·기간·수치는 learning이 P08로 계산함. ai는 다시 계산하지 않고 그대로 씀
 # ---------------------------------------------------------------------------
 
 
@@ -146,42 +155,28 @@ class RecordModel(ApiModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="ignore")
 
 
-class AnswerFeedback(RecordModel):
-    status: Literal["PENDING", "RUNNING", "DONE", "FAILED"]
-
-
 class RecordAnswer(RecordModel):
     answer_id: str
     version: int
-    submitted_at: str  # ISO-8601 오프셋 포함
-    text: str | None
-    feedback: AnswerFeedback | None = None
-
-
-class HintUsage(RecordModel):
-    opened_at: str
+    submitted_at: str
+    text: str  # 입력 틀 칸 이름을 붙인 원문
 
 
 class Reflection(RecordModel):
     difficulty: Literal["EASY", "NORMAL", "HARD"]
-    text: str | None = None
-    created_at: str | None = None
+    text: str | None
 
 
 class MissionRef(RecordModel):
     title: str
-    thinking_type: str
 
 
 class RecordAttempt(RecordModel):
+    """기록 목록 항목. answers는 1번부터 조회 종료일까지."""
+
     attempt_id: str
-    available: bool = True  # 삭제 표식 {attemptId, available:false}
-    mission: MissionRef | None = None
-    status: Literal["IN_PROGRESS", "COMPLETED"] | None = None
-    answers: list[RecordAnswer] = Field(default_factory=list)
-    hint_usages: list[HintUsage] = Field(default_factory=list)
-    completed_at: str | None = None
-    reflection: Reflection | None = None
+    mission: MissionRef
+    answers: list[RecordAnswer]
 
 
 class ThinkingTypeMission(RecordModel):
@@ -191,24 +186,41 @@ class ThinkingTypeMission(RecordModel):
 
 class ThinkingTypeItem(RecordModel):
     type: str
-    missions: list[ThinkingTypeMission] = Field(default_factory=list)
+    missions: list[ThinkingTypeMission]
 
 
 class ChangeAnswer(RecordModel):
     answer_id: str
-    text: str | None
+    text: str
+
+
+class ChangeCounts(RecordModel):
+    """[최초, 마지막]. 학생이 쓴 칸만 센 값 (P08)."""
+
+    chars: tuple[int, int]
+    sentences: tuple[int, int]
+    reason_connectives: tuple[int, int]
 
 
 class RecordChange(RecordModel):
     attempt_id: str
-    followup: str | None = None
+    followup: str | None
     first: ChangeAnswer
     revised: ChangeAnswer
+    counts: ChangeCounts
+
+
+class ThinkingActivity(RecordModel):
+    attempt_id: str
+    mission_title: str
+    reflection: Reflection | None  # 기간 안에 쓴 돌아보기만
 
 
 class Records(RecordModel):
-    """도구가 가져온 원본. 질문 유형에 필요한 것만 채워짐."""
+    """도구가 가져온 원본. summary는 항상, 나머지는 질문 유형에 필요한 것만 채워짐."""
 
-    attempts: list[RecordAttempt] = Field(default_factory=list)
+    summary: list[Metric]
+    attempts: list[RecordAttempt] | None = None
     thinking_types: list[ThinkingTypeItem] | None = None
     changes: list[RecordChange] | None = None
+    activities: list[ThinkingActivity] | None = None

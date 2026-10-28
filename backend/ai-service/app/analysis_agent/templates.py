@@ -59,7 +59,7 @@ def unsupported_answer(intent: Intent, computation: Computation, scope: Scope) -
 
 
 def metric_line(metric: Metric) -> str:
-    if metric.denominator is None:
+    if not metric.is_ratio:
         return f"{metric.label}: {metric.count}개"
     if metric.denominator == 0:
         return f"{metric.label}: 해당하는 시도가 없어요"

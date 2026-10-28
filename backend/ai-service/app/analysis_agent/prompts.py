@@ -81,8 +81,8 @@ def build_answer_user(request: AnalysisRequest, intent: Intent, computation: Com
         {
             "label": m.label,
             "count": m.count,
-            "numerator": m.numerator,
-            "denominator": m.denominator,
+            "numerator": m.numerator if m.is_ratio else None,
+            "denominator": m.denominator if m.is_ratio else None,
             "ratio": None if m.value is None else f"{m.value * 100:.1f}%",
             "formula": m.formula,
         }

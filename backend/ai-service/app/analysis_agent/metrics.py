@@ -1,14 +1,11 @@
-"""수치 계산 (FN-AGT-05, P08). LLM은 숫자를 만들지 않고 여기서 계산한 값만 문장으로 옮김.
+"""질문 유형별 수치·원문 고르기 (FN-AGT-05, P08). LLM은 숫자를 만들지 않고 여기 값만 문장으로 옮김.
 
-집계 대상: 기간 안에 답변을 1건 이상 제출한 시도 (완료·미완료 모두).
-제외: 처리 실패만 있는 시도·삭제 기록. 분모 5 미만은 비율 대신 개수만.
-전후 변화: 시도당 최초 vs 마지막 답변의 글자 수(공백 포함)·문장 수·까닭을 잇는 말.
+집계 대상·기간·건수·비율은 learning이 P08로 계산해 줌 (summary·thinking-types·changes.counts).
+대시보드·리포트와 숫자가 어긋나지 않도록 ai는 그 값을 그대로 쓰고, learning 값을 세는 지표만 더함.
 """
 
-import re
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
 
 from app.analysis_agent.models import (
     Evidence,
@@ -16,16 +13,15 @@ from app.analysis_agent.models import (
     Metric,
     Period,
     QueryState,
-    RecordAnswer,
     RecordAttempt,
     Records,
     Scope,
 )
+from app.analysis_agent.records import RECORD_COUNT_LABEL
 
-KST = timezone(timedelta(hours=9))
 MIN_RATIO_DENOMINATOR = 5
-CONNECTIVES = ("왜냐하면", "때문", "그래서", "따라서")  # P08 고정 목록 (report와 같음)
-SENTENCE_SPLIT = re.compile(r"[.?!\n]")
+COMPLETED_LABEL = "완료한 활동"
+REVISED_LABEL = "되묻기 후 생각을 더한 활동"
 THINKING_TYPE_LABELS = {
     "ANALYZE": "분석하기",
     "EVALUATE": "따져 보기",
@@ -34,9 +30,8 @@ THINKING_TYPE_LABELS = {
     "REFLECT": "돌아보기",
 }
 DIFFICULTY_LABELS = {"EASY": "쉬웠어", "NORMAL": "보통", "HARD": "어려웠어"}
-THOUGHT_LIMIT = 8  # 아이가 쓴 생각 원문 후보 최대 개수 (최근 순)
-
-INCLUSION = "기간 안에 답변을 1건 이상 제출한 시도 (처리 실패만 있는 시도·삭제 기록 제외)"
+THOUGHT_LIMIT = 8  # 아이가 쓴 생각 원문 후보 최대 개수 (최근 답변 순)
+CHANGE_RULE = "되묻기 후 다시 쓴 시도 수"
 
 
 @dataclass(frozen=True)
@@ -58,217 +53,132 @@ class Computation:
 
 def compute(intent: Intent, records: Records, scope: Scope) -> Computation:
     period = Period.model_validate({"from": scope.from_, "to": scope.to})
-    included = included_attempts(records.attempts, scope)
-    n = len(included)
-    metrics = [_count("집계 대상 시도 수", n, INCLUSION, period)]
+    summary = {metric.label: metric for metric in records.summary}
+    total = summary[RECORD_COUNT_LABEL]
+    metrics = [total]
     sources: list[Source] = []
-    insufficient = "NO_RECORD" if n == 0 else None
+    insufficient = "NO_RECORD" if total.count == 0 else None
+    titles = {a.attempt_id: a.mission_title for a in records.activities or []}
 
     if intent == "COUNT":
-        completed = sum(1 for attempt in included if attempt.status == "COMPLETED")
-        unaided = sum(1 for attempt in included if _started_unaided(attempt))
-        metrics += [
-            _count("완료한 시도 수", completed, "집계 대상 중 완료한 시도 수", period),
-            _ratio(
-                "도움 없이 시작한 비율",
-                unaided,
-                n,
-                "최초 답변 전 도움 열람이 없는 시도 수 / 집계 대상 시도 수",
-                period,
-            ),
-        ]
+        metrics = list(records.summary)
     elif intent == "THINKING_TYPES":
-        ids = {attempt.attempt_id for attempt in included}
-        counts: Counter[str] = Counter()
         for item in records.thinking_types or []:
-            counts[item.type] += len({m.attempt_id for m in item.missions} & ids)
-        for code, count in sorted(counts.items(), key=lambda pair: (-pair[1], pair[0])):
-            if count:
-                label = THINKING_TYPE_LABELS.get(code, code)
-                metrics.append(
-                    _count(f"{label} 시도 수", count, f"{label} 유형 집계 대상 시도 수", period)
-                )
+            if item.missions:
+                label = THINKING_TYPE_LABELS.get(item.type, item.type)
+                formula = f"{label} 유형 시도 수"
+                metrics.append(count_metric(f"{label} 활동", len(item.missions), formula, period))
     elif intent == "CHILD_THOUGHTS":
-        latest = [(_last_answer(attempt, scope), attempt) for attempt in included]
-        latest.sort(key=lambda pair: pair[0].submitted_at, reverse=True)
-        for answer, attempt in latest[:THOUGHT_LIMIT]:
-            if answer.text:
-                sources.append(_answer_source(attempt, answer))
+        latest = (_latest_answer(attempt) for attempt in records.attempts or [])
+        sources = [source for source in latest if source is not None]
     elif intent == "CHANGES":
-        by_id = {attempt.attempt_id: attempt for attempt in included}
-        changes = [c for c in records.changes or [] if c.attempt_id in by_id]
-        longer = sentences = connectives = 0
-        for change in changes:
-            first, revised = change.first.text or "", change.revised.text or ""
-            longer += len(revised) > len(first)
-            sentences += sentence_count(revised) > sentence_count(first)
-            connectives += connective_count(revised) > connective_count(first)
-            attempt = by_id[change.attempt_id]
-            for ref in (change.first, change.revised):
-                answer = _find_answer(attempt, ref.answer_id)
-                if answer is not None and answer.text:
-                    sources.append(_answer_source(attempt, answer))
-        total = len(changes)
-        rule = "되묻기 후 다시 쓴 시도 수"
+        changes = records.changes or []
+        grew = {
+            "글자 수가 늘어난 시도": sum(c.counts.chars[1] > c.counts.chars[0] for c in changes),
+            "문장 수가 늘어난 시도": sum(
+                c.counts.sentences[1] > c.counts.sentences[0] for c in changes
+            ),
+            "까닭을 잇는 말이 늘어난 시도": sum(
+                c.counts.reason_connectives[1] > c.counts.reason_connectives[0] for c in changes
+            ),
+        }
+        if REVISED_LABEL in summary:
+            metrics.append(summary[REVISED_LABEL])
         metrics += [
-            _count(rule, total, "집계 대상 중 최초·마지막 답변이 다른 시도 수", period),
-            _ratio(
-                "글자 수가 늘어난 시도",
-                longer,
-                total,
-                f"글자 수(공백 포함)가 늘어난 시도 / {rule}",
-                period,
-            ),
-            _ratio(
-                "문장 수가 늘어난 시도", sentences, total, f"문장 수가 늘어난 시도 / {rule}", period
-            ),
-            _ratio(
-                "까닭을 잇는 말이 늘어난 시도",
-                connectives,
-                total,
-                f"'{'·'.join(CONNECTIVES)}' 개수가 늘어난 시도 / {rule}",
-                period,
-            ),
+            ratio_metric(label, count, len(changes), f"{label} 수 / {CHANGE_RULE}", period)
+            for label, count in grew.items()
         ]
-        if n and not total:
+        sources = [
+            _source(
+                change.attempt_id, titles.get(change.attempt_id, ""), answer.answer_id, answer.text
+            )
+            for change in changes
+            for answer in (change.first, change.revised)
+        ]
+        if total.count and not changes:
             insufficient = "NO_CHANGES"
     elif intent == "REFLECTIONS":
-        completed = [attempt for attempt in included if attempt.status == "COMPLETED"]
-        written = [attempt for attempt in completed if attempt.reflection is not None]
+        written = [a for a in records.activities or [] if a.reflection is not None]
+        if COMPLETED_LABEL in summary:
+            metrics.append(summary[COMPLETED_LABEL])
         metrics.append(
-            _ratio(
-                "돌아보기를 쓴 시도",
-                len(written),
-                len(completed),
-                "돌아보기를 쓴 시도 수 / 집계 대상 중 완료한 시도 수",
-                period,
-            )
+            count_metric("돌아보기를 쓴 활동", len(written), "기간 안에 쓴 돌아보기 수", period)
         )
-        difficulty = Counter(
-            attempt.reflection.difficulty for attempt in written if attempt.reflection
-        )
+        difficulty = Counter(a.reflection.difficulty for a in written if a.reflection)
         for code, label in DIFFICULTY_LABELS.items():
             if difficulty[code]:
+                formula = "난이도별 돌아보기 수"
                 metrics.append(
-                    _count(
-                        f"난이도 {label} 돌아보기", difficulty[code], "난이도별 돌아보기 수", period
-                    )
+                    count_metric(f"난이도 {label} 돌아보기", difficulty[code], formula, period)
                 )
-        for attempt in written:
-            if attempt.reflection and attempt.reflection.text:
-                sources.append(_reflection_source(attempt))
-        if n and not written:
+        sources = [
+            _source(a.attempt_id, a.mission_title, None, a.reflection.text)
+            for a in written
+            if a.reflection and a.reflection.text
+        ]
+        if total.count and not written:
             insufficient = "NO_REFLECTIONS"
 
     extra = {
         str(part) for day in (scope.from_, scope.to) for part in (day.month, day.day, day.year)
     }
-    return Computation(metrics, sources, n, insufficient, extra)
+    return Computation(metrics, sources, total.count, insufficient, extra)
 
 
-def included_attempts(attempts: list[RecordAttempt], scope: Scope) -> list[RecordAttempt]:
-    result = []
-    for attempt in attempts:
-        if not attempt.available or attempt.mission is None:
-            continue
-        in_period = [
-            a for a in attempt.answers if scope.from_ <= kst_date(a.submitted_at) <= scope.to
-        ]
-        if not in_period:
-            continue
-        if all(a.feedback is not None and a.feedback.status == "FAILED" for a in in_period):
-            continue
-        result.append(attempt)
-    return result
-
-
-def kst_date(value: str) -> date:
-    moment = datetime.fromisoformat(value)
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=KST)
-    return moment.astimezone(KST).date()
-
-
-def sentence_count(text: str) -> int:
-    return sum(1 for part in SENTENCE_SPLIT.split(text) if part.strip())
-
-
-def connective_count(text: str) -> int:
-    return sum(text.count(word) for word in CONNECTIVES)
-
-
-def _started_unaided(attempt: RecordAttempt) -> bool:
-    first = min(attempt.answers, key=lambda a: _moment(a.submitted_at))
-    return all(_moment(h.opened_at) >= _moment(first.submitted_at) for h in attempt.hint_usages)
-
-
-def _last_answer(attempt: RecordAttempt, scope: Scope) -> RecordAnswer:
-    in_period = [a for a in attempt.answers if kst_date(a.submitted_at) <= scope.to]
-    return max(in_period, key=lambda a: a.version)
-
-
-def _find_answer(attempt: RecordAttempt, answer_id: str) -> RecordAnswer | None:
-    return next((a for a in attempt.answers if a.answer_id == answer_id), None)
-
-
-def _moment(value: str) -> datetime:
-    moment = datetime.fromisoformat(value)
-    return moment if moment.tzinfo else moment.replace(tzinfo=KST)
-
-
-def _answer_source(attempt: RecordAttempt, answer: RecordAnswer) -> Source:
-    text = answer.text or ""
-    evidence = Evidence(
-        attempt_id=attempt.attempt_id,
-        mission_title=attempt.mission.title if attempt.mission else "",
-        answer_id=answer.answer_id,
-        answer_version=answer.version,
-        submitted_at=answer.submitted_at,
-        quote=text,
-    )
-    return Source(evidence, text)
-
-
-def _reflection_source(attempt: RecordAttempt) -> Source:
-    reflection = attempt.reflection
-    text = reflection.text if reflection and reflection.text else ""
-    evidence = Evidence(
-        attempt_id=attempt.attempt_id,
-        mission_title=attempt.mission.title if attempt.mission else "",
-        answer_id=None,
-        answer_version=None,
-        submitted_at=reflection.created_at if reflection else None,
-        quote=text,
-    )
-    return Source(evidence, text)
-
-
-def _count(label: str, count: int, formula: str, period: Period) -> Metric:
+def count_metric(label: str, count: int, formula: str, period: Period) -> Metric:
+    """learning Metric.count와 같은 규칙: value null, 분자·분모 = 건수."""
     return Metric(
         label=label,
         value=None,
         count=count,
-        numerator=None,
-        denominator=None,
+        numerator=count,
+        denominator=count,
         formula=formula,
         period=period,
-        state="OK" if count else "NO_RECORD",
+        state=_state(count),
     )
 
 
-def _ratio(label: str, numerator: int, denominator: int, formula: str, period: Period) -> Metric:
-    state: QueryState = "OK"
-    if denominator == 0:
-        state = "NO_RECORD"
-    elif denominator < MIN_RATIO_DENOMINATOR:
-        state = "INSUFFICIENT_SAMPLE"
+def ratio_metric(
+    label: str, numerator: int, denominator: int, formula: str, period: Period
+) -> Metric:
+    """learning Metric.ratio와 같은 규칙: 분모 5 미만이면 value null."""
     return Metric(
         label=label,
-        value=round(numerator / denominator, 4) if state == "OK" else None,
+        value=numerator / denominator if denominator >= MIN_RATIO_DENOMINATOR else None,
         count=numerator,
         numerator=numerator,
         denominator=denominator,
         formula=formula,
         period=period,
-        state=state,
+        state=_state(denominator),
     )
+
+
+def _state(n: int) -> QueryState:
+    if n == 0:
+        return "NO_RECORD"
+    return "INSUFFICIENT_SAMPLE" if n < MIN_RATIO_DENOMINATOR else "OK"
+
+
+def _latest_answer(attempt: RecordAttempt) -> Source | None:
+    if not attempt.answers:
+        return None
+    answer = max(attempt.answers, key=lambda a: a.version)
+    if not answer.text.strip():
+        return None
+    source = _source(attempt.attempt_id, attempt.mission.title, answer.answer_id, answer.text)
+    update = {"answer_version": answer.version, "submitted_at": answer.submitted_at}
+    return Source(source.evidence.model_copy(update=update), source.text)
+
+
+def _source(attempt_id: str, mission_title: str, answer_id: str | None, text: str) -> Source:
+    evidence = Evidence(
+        attempt_id=attempt_id,
+        mission_title=mission_title,
+        answer_id=answer_id,
+        answer_version=None,
+        submitted_at=None,
+        quote=text,
+    )
+    return Source(evidence, text)

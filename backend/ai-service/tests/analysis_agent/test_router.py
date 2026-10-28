@@ -56,12 +56,14 @@ def test_verified_llm_answer() -> None:
         citations=[Citation(source_id="S2", quote="왜냐하면 쉬는 시간이 길면")],
     )
     llm = FakeLlm(classified("CHANGES"), draft)
-    response = post(llm)
+    records = FakeRecords()
+    response = post(llm, records)
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
     names = [name for name, _ in events(response)]
     assert names[-2:] == ["result", "done"]
     assert "status" in names
+    assert records.closed  # 질문이 끝나면 learning 연결을 닫음
     result = events(response)[-2][1]
     assert result["source"] == "LLM"
     assert result["fallback"] is None
@@ -95,7 +97,8 @@ def test_verification_failure_falls_back_to_template() -> None:
     assert result["fallback"] == {"reason": "VERIFICATION_FAILED"}
     assert result["verification"]["numbersMatched"] is False
     assert "7개" not in result["answer"]  # LLM 문장은 버림
-    assert "되묻기 후 다시 쓴 시도 수: 1개" in result["answer"]
+    assert "글자 수가 늘어난 시도: 1개 중 1개" in result["answer"]
+    assert "학습한 활동: 3개" in result["answer"]
 
 
 def test_llm_unavailable_falls_back_to_template() -> None:
@@ -116,7 +119,7 @@ def test_answer_llm_failure_falls_back_to_template() -> None:
 
 def test_no_records_is_guidance_not_failure() -> None:
     llm = FakeLlm(classified("CHANGES"))
-    result = events(post(llm, FakeRecords(attempts=[])))[-2][1]
+    result = events(post(llm, FakeRecords(empty=True)))[-2][1]
     assert result["source"] == "TEMPLATE"
     assert result["fallback"] is None
     assert result["recordCount"] == 0
@@ -150,7 +153,7 @@ def test_tools_use_confirmed_scope_only() -> None:
         ),
         records,
     )
-    assert {name for name, _ in records.calls} == {"attempts", "thinking_types"}
+    assert {name for name, _ in records.calls} == {"summary", "thinking_types"}
     assert all(scope.student_id == "s-1" for _, scope in records.calls)
 
 

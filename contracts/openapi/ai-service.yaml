@@ -551,6 +551,7 @@ components:
       - prompt
       type: object
     AnalysisMetric:
+      description: learning Metric과 같은 모양. 건수 지표는 value null, 분자·분모 = 건수 (Metric.count).
       properties:
         label:
           type: string
@@ -561,13 +562,9 @@ components:
         count:
           type: integer
         numerator:
-          anyOf:
-          - type: integer
-          - type: 'null'
+          type: integer
         denominator:
-          anyOf:
-          - type: integer
-          - type: 'null'
+          type: integer
         formula:
           type: string
         period:

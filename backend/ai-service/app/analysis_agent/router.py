@@ -53,6 +53,14 @@ async def stream(
 
 
 async def _events(body: AnalysisRequest, context: AgentContext) -> AsyncIterator[str]:
+    try:
+        async for event in _run(body, context):
+            yield event
+    finally:
+        await context.records.aclose()
+
+
+async def _run(body: AnalysisRequest, context: AgentContext) -> AsyncIterator[str]:
     final: AnalysisState = {}
     try:
         async for mode, chunk in build_graph().astream(
