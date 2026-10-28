@@ -11,6 +11,7 @@ import com.sagomungchi.learning.answer.domain.Essay
 import com.sagomungchi.learning.answer.service.AnswerService
 import com.sagomungchi.learning.answer.service.SubmitCommand
 import com.sagomungchi.learning.attempt.domain.Attempt
+import com.sagomungchi.learning.attempt.domain.AttemptStatus
 import com.sagomungchi.learning.attempt.service.AttemptService
 import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.domain.ThinkingType
@@ -119,9 +120,9 @@ class RecordServiceTest : PostgresRepositoryTest() {
         val failed = answer(attempt(title = "실패만"), "실패한 답변")
         jdbc.update("UPDATE judgment SET process_status = 'FAILED', failure_code = 'AI_TIMEOUT', retry_count = 1 WHERE answer_id = ?", failed.id)
 
-        val listed = service.attempts(student, week, 0, 20)
+        val listed = service.attempts(student, week, null, 0, 20)
 
-        assertEquals(listOf("기간 안"), listed.items.map { it.mission.title })
+        assertEquals(listOf("기간 안"), listed.items.map { it.detail.mission.title })
         assertEquals(1 to QueryState.INSUFFICIENT_SAMPLE, listed.totalElements to listed.state)
     }
 
@@ -131,7 +132,7 @@ class RecordServiceTest : PostgresRepositoryTest() {
         answer(attempt(title = "월요일 0시"), "답", OffsetDateTime.parse("2026-11-09T00:00:00+09:00"))
         answer(attempt(title = "월요일 시작"), "답", OffsetDateTime.parse("2026-11-02T00:00:00+09:00"))
 
-        assertEquals(setOf("일요일 밤", "월요일 시작"), service.attempts(student, week, 0, 20).items.map { it.mission.title }.toSet())
+        assertEquals(setOf("일요일 밤", "월요일 시작"), service.attempts(student, week, null, 0, 20).items.map { it.detail.mission.title }.toSet())
     }
 
     @Test
@@ -180,10 +181,10 @@ class RecordServiceTest : PostgresRepositoryTest() {
         val newer = attempt(title = "나중")
         answer(newer, "답", inWeek.plusDays(1))
 
-        val first = service.attempts(student, week, 0, 1)
-        assertEquals(listOf("나중") to 2, first.items.map { it.mission.title } to first.totalElements)
-        assertEquals(listOf("먼저"), service.attempts(student, week, 1, 1).items.map { it.mission.title })
-        assertEquals(newer.id, service.attempt(student, newer.id).attempt.id)
+        val first = service.attempts(student, week, null, 0, 1)
+        assertEquals(listOf("나중") to 2, first.items.map { it.detail.mission.title } to first.totalElements)
+        assertEquals(listOf("먼저"), service.attempts(student, week, null, 1, 1).items.map { it.detail.mission.title })
+        assertEquals(newer.id, service.attempt(student, newer.id).detail.attempt.id)
 
         val other = UUID.randomUUID()
         val othersAttempt = attempt(title = "다른 학생", owner = other)
@@ -203,7 +204,7 @@ class RecordServiceTest : PostgresRepositoryTest() {
         val last = answer(attempt, "왜냐하면 친구랑 놀 수 있기 때문이에요. 그래서 좋아요!", inWeek.plusMinutes(10), rows.followup(attempt.id, second.id, minutesLater = 2))
         answer(attempt(title = "보완 없음"), "한 번만")
 
-        val change = service.changes(student, week).items.single()
+        val change = service.changes(student, week, 0, 20).items.single()
 
         assertEquals(first.id to last.id, change.pair.firstAnswerId to change.pair.lastAnswerId)
         assertEquals("좋아요" to "왜냐하면 친구랑 놀 수 있기 때문이에요. 그래서 좋아요!", change.pair.firstText to change.pair.lastText)
@@ -225,7 +226,7 @@ class RecordServiceTest : PostgresRepositoryTest() {
         steps("900원에서 480원을 빼요", rows.followup(attempt.id, first.id))
         actAs(student)
 
-        val change = service.changes(student, week).items.single()
+        val change = service.changes(student, week, 0, 20).items.single()
 
         assertEquals("① 무엇을 구하나요?: 900원에서 480원을 빼요\n최종 답: 420원", change.pair.lastText)
         assertEquals(TextCounts.of("900원에서 480원을 빼요\n420원"), change.revised)
@@ -245,18 +246,85 @@ class RecordServiceTest : PostgresRepositoryTest() {
         val completedBefore = service.stats(week).completedAttempts to service.stats(following).completedAttempts
         jdbc.update("UPDATE attempt SET status = 'COMPLETED', finished_at = ?, completed_at = ? WHERE id = ?", nextWeek, nextWeek, attempt.id)
 
-        val thisWeek = service.attempts(student, week, 0, 20).items.single { it.attempt.id == attempt.id }
-        assertEquals(listOf(first.id), thisWeek.answers.map { it.answerId })
-        assertTrue(service.changes(student, week).items.isEmpty())
+        val thisWeek = service.attempts(student, week, null, 0, 20).items.single { it.detail.attempt.id == attempt.id }
+        assertEquals(listOf(first.id), thisWeek.detail.answers.map { it.answerId })
+        assertTrue(service.changes(student, week, 0, 20).items.isEmpty())
         val metrics = service.summary(student, week).metrics.associateBy { it.label }
         assertEquals(0, metrics.getValue("완료한 활동").numerator)
         assertEquals(0 to 1, metrics.getValue("되묻기 후 생각을 더한 활동").let { it.numerator to it.denominator })
         assertEquals(completedBefore.first to completedBefore.second + 1, service.stats(week).completedAttempts to service.stats(following).completedAttempts)
 
-        assertEquals(listOf(first.id, revised.id), service.attempts(student, following, 0, 20).items.single { it.attempt.id == attempt.id }.answers.map { it.answerId })
-        val change = service.changes(student, following).items.single()
+        assertEquals(listOf(first.id, revised.id), service.attempts(student, following, null, 0, 20).items.single { it.detail.attempt.id == attempt.id }.detail.answers.map { it.answerId })
+        val change = service.changes(student, following, 0, 20).items.single()
         assertEquals(first.id to revised.id, change.pair.firstAnswerId to change.pair.lastAnswerId)
         assertEquals(1, service.summary(student, following).metrics.single { it.label == "완료한 활동" }.numerator)
+    }
+
+    @Test
+    fun `종료일까지의 답변이 모두 처리 실패인 시도만 제외, 앞서 판정된 답변이 있으면 이번 기간 답변이 실패해도 포함 (P08, report #51)`() {
+        val earlierDone = attempt(title = "지난주 판정, 이번 주 실패")
+        val first = answer(earlierDone, "처음 답", inWeek.minusDays(7))
+        rows.judged(first.id)
+        val failedNow = revise(earlierDone, first, "보완 답", inWeek)
+        jdbc.update("UPDATE judgment SET process_status = 'FAILED', failure_code = 'AI_TIMEOUT', retry_count = 1 WHERE answer_id = ?", failedNow.id)
+        val running = answer(attempt(title = "처리 중"), "답", inWeek)
+        jdbc.update("UPDATE judgment SET process_status = 'RUNNING' WHERE answer_id = ?", running.id)
+
+        assertEquals(setOf("지난주 판정, 이번 주 실패", "처리 중"), service.attempts(student, week, null, 0, 20).items.map { it.detail.mission.title }.toSet())
+    }
+
+    @Test
+    fun `목록 status 필터는 지금 그 상태인 시도만, 페이지 수도 필터 기준 (core #40)`() {
+        answer(attempt(title = "진행 중"), "답")
+        val done = attempt(title = "완료")
+        answer(done, "답")
+        jdbc.update("UPDATE attempt SET status = 'COMPLETED', finished_at = now(), completed_at = now() WHERE id = ?", done.id)
+
+        val completed = service.attempts(student, week, AttemptStatus.COMPLETED, 0, 20)
+        assertEquals(listOf("완료") to 1, completed.items.map { it.detail.mission.title } to completed.totalElements)
+        assertEquals(listOf("진행 중"), service.attempts(student, week, AttemptStatus.IN_PROGRESS, 0, 20).items.map { it.detail.mission.title })
+    }
+
+    @Test
+    fun `목록 항목에 생각 열기 열람 시각(시작일 이전 포함, 종료일까지)과 완료 시각, 돌아보기는 기간 안에 쓴 것만 (report #51)`() {
+        val attempt = attempt(title = "돌아보기")
+        answer(attempt, "답", inWeek)
+        fun opened(at: OffsetDateTime) = jdbc.update(
+            "INSERT INTO hint_usage (id, attempt_id, hint_question_id, opened_at) SELECT gen_random_uuid(), ?, id, ? FROM hint_question WHERE rubric_version_id = ? LIMIT 1",
+            attempt.id, at, attempt.rubricVersionId,
+        )
+        opened(inWeek.minusDays(9))
+        opened(inWeek.plusMinutes(1))
+        opened(inWeek.plusDays(9))
+        val completedAt = inWeek.plusHours(1)
+        jdbc.update("UPDATE attempt SET status = 'COMPLETED', finished_at = ?, completed_at = ? WHERE id = ?", completedAt, completedAt, attempt.id)
+        jdbc.update("INSERT INTO reflection (id, attempt_id, difficulty, changed_text, created_at) VALUES (gen_random_uuid(), ?, 'NORMAL', '달라졌어요', ?)", attempt.id, completedAt)
+
+        val item = service.attempts(student, week, null, 0, 20).items.single()
+        assertEquals(listOf(inWeek.minusDays(9), inWeek.plusMinutes(1)).map { it.toInstant() }, item.hintUsages)
+        assertEquals(completedAt.toInstant(), item.detail.attempt.completedAt)
+        assertEquals(completedAt.toInstant(), item.reflectionCreatedAt)
+        assertEquals("달라졌어요", item.detail.reflection?.text)
+
+        jdbc.update("UPDATE reflection SET created_at = ? WHERE attempt_id = ?", inWeek.plusDays(8), attempt.id)
+        val outside = service.attempts(student, week, null, 0, 20).items.single()
+        assertNull(outside.detail.reflection)
+        assertNull(outside.reflectionCreatedAt)
+        val detail = service.attempt(student, attempt.id)
+        assertEquals(3 to inWeek.plusDays(8).toInstant(), detail.hintUsages.size to detail.reflectionCreatedAt)
+    }
+
+    @Test
+    fun `전후 변화는 1·1 페이지로 나눠 줌 (report #51)`() {
+        repeat(3) { index ->
+            val attempt = attempt(title = "변화 $index")
+            val first = answer(attempt, "처음", inWeek.plusMinutes(index.toLong()))
+            revise(attempt, first, "보완", inWeek.plusMinutes(10L + index))
+        }
+
+        val firstPage = service.changes(student, week, 0, 2)
+        assertEquals(2 to 3, firstPage.items.size to firstPage.totalElements)
+        assertEquals(1, service.changes(student, week, 1, 2).items.size)
     }
 
     @Test

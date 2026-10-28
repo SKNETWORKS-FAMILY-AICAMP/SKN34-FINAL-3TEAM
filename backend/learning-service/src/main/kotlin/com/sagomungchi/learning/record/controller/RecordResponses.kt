@@ -2,8 +2,9 @@ package com.sagomungchi.learning.record.controller
 
 import com.sagomungchi.learning.attempt.controller.AttemptResponse
 import com.sagomungchi.learning.attempt.controller.AnswerItem
-import com.sagomungchi.learning.attempt.controller.ReflectionView
+import com.fasterxml.jackson.annotation.JsonUnwrapped
 import com.sagomungchi.learning.attempt.domain.AttemptStatus
+import com.sagomungchi.learning.attempt.domain.Difficulty
 import com.sagomungchi.learning.attempt.domain.RevealKind
 import com.sagomungchi.learning.attempt.service.AttemptDetail
 import com.sagomungchi.learning.judgment.domain.ElementView
@@ -16,6 +17,7 @@ import com.sagomungchi.learning.record.domain.QueryState
 import com.sagomungchi.learning.record.service.Change
 import com.sagomungchi.learning.record.service.Evidence
 import com.sagomungchi.learning.record.service.MissionRef
+import com.sagomungchi.learning.record.service.RecordAttempt
 import com.sagomungchi.learning.record.service.RecordPage
 import com.sagomungchi.learning.record.service.RecordService
 import java.time.Instant
@@ -80,24 +82,45 @@ data class RecordAttemptResponse(
     val reveal: String?,
     val revealKind: RevealKind?,
     val checklist: List<ElementView>?,
-    val reflection: ReflectionView?,
+    val reflection: RecordReflection?,
+    val completedAt: Instant?,
+    val hintUsages: List<HintUsage>,
 ) {
     companion object {
-        fun from(detail: AttemptDetail): RecordAttemptResponse = AttemptResponse.from(detail).let {
+        fun from(record: RecordAttempt): RecordAttemptResponse = AttemptResponse.from(record.detail).let {
             RecordAttemptResponse(
                 it.attemptId, it.studentId, it.mission, it.status, it.finishedAt, it.answers, it.helped,
-                it.nextActions, it.reveal, it.revealKind, it.checklist, it.reflection,
+                it.nextActions, it.reveal, it.revealKind, it.checklist,
+                it.reflection?.let { reflection -> RecordReflection(reflection.difficulty, reflection.text, record.reflectionCreatedAt) },
+                record.detail.attempt.completedAt,
+                record.hintUsages.map(::HintUsage),
             )
         }
     }
 }
 
-/** 되묻기 전후 변화 (api-spec 3.4 changes). counts는 [최초, 마지막] */
+/** 돌아보기와 작성 시각 (report #51) */
+data class RecordReflection(val difficulty: Difficulty, val text: String?, val createdAt: Instant?)
+
+/** 생각 열기 열람 시각 (report #51: 최초 답변 전 열람 여부를 report가 판단) */
+data class HintUsage(val openedAt: Instant)
+
+/** 기록 상세 (core #40): 시도와 화면이 유지할 조회 기간·상태 */
+data class RecordAttemptDetailResponse(
+    @get:JsonUnwrapped val attempt: RecordAttemptResponse,
+    val state: QueryState,
+    val period: Period,
+)
+
+/** 되묻기 전후 변화 (api-spec 3.4 changes, 1.1 페이지). counts는 [최초, 마지막] */
 data class ChangesResponse(
+    val items: List<ChangeItem>,
+    val page: Int,
+    val size: Int,
+    val totalElements: Int,
     val childId: UUID,
     val state: QueryState,
     val period: Period,
-    val items: List<ChangeItem>,
 )
 
 data class ChangeItem(

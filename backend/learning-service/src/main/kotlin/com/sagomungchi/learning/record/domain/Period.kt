@@ -9,7 +9,7 @@ import java.time.ZoneId
 
 /**
  * 조회 기간 (api-spec 1.1): KST 날짜, 양 끝 포함. 시각 비교는 [from 00:00, to 다음 날 00:00) KST.
- * 없으면 오늘 포함 최근 7일 (P06)
+ * 둘 다 주거나 둘 다 생략(생략하면 오늘 포함 최근 7일, P06). 한쪽만 주면 400 (core #40과 합의)
  */
 data class Period(val from: LocalDate, val to: LocalDate) {
     init {
@@ -25,8 +25,12 @@ data class Period(val from: LocalDate, val to: LocalDate) {
         private const val DEFAULT_DAYS = 7L
 
         fun of(from: LocalDate?, to: LocalDate?, clock: Clock = Clock.system(KST)): Period {
-            val end = to ?: from?.plusDays(DEFAULT_DAYS - 1)?.coerceAtMost(LocalDate.now(clock)) ?: LocalDate.now(clock)
-            return Period(from ?: end.minusDays(DEFAULT_DAYS - 1), end)
+            if (from != null && to != null) return Period(from, to)
+            if (from != null || to != null) {
+                throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "기간 오류", "from과 to는 함께 주거나 함께 생략")
+            }
+            val today = LocalDate.now(clock)
+            return Period(today.minusDays(DEFAULT_DAYS - 1), today)
         }
     }
 }

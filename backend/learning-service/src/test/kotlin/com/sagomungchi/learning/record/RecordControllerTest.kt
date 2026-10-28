@@ -12,11 +12,15 @@ import com.sagomungchi.learning.record.domain.Metric
 import com.sagomungchi.learning.record.domain.Period
 import com.sagomungchi.learning.record.domain.QueryState
 import com.sagomungchi.learning.record.repository.StatsRow
+import com.sagomungchi.learning.record.service.Changes
+import com.sagomungchi.learning.record.service.RecordAttempt
 import com.sagomungchi.learning.record.service.RecordPage
 import com.sagomungchi.learning.record.service.RecordService
 import com.sagomungchi.learning.record.service.Summary
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.anyInt
+import org.mockito.ArgumentMatchers.isNull
 import org.mockito.BDDMockito.given
 import org.mockito.Mockito.verifyNoInteractions
 import org.springframework.beans.factory.annotation.Autowired
@@ -112,6 +116,10 @@ class RecordControllerTest {
             "/internal/records/students/$student/attempts?page=-1",
             "/internal/records/evidence?answerIds=abc",
             "/internal/records/evidence?answerIds=",
+            "/internal/records/students/$student/attempts?from=2026-11-02",
+            "/internal/records/students/$student/attempts?status=DONE",
+            "/internal/records/students/$student/changes?size=101",
+            "/internal/records/students/$student/attempts/${UUID.randomUUID()}?to=2026-11-08",
         ).forEach { path ->
             mockMvc.get(path) { caller() }.andExpect {
                 status { isBadRequest() }
@@ -127,8 +135,8 @@ class RecordControllerTest {
         val attempt = Attempt.start(student, mission.id, MissionSnapshot(UUID.randomUUID(), UUID.randomUUID()), 3, now)
         val draft = AttemptDraft.empty(attempt.id, now).update(DraftContent(mapOf("text" to "쓰던 답"), "비밀 메모"), now)
         val detail = AttemptDetail(attempt, mission, draft, helped = true, answers = emptyList(), feedbacks = emptyMap(), revealed = null, reflection = null)
-        given(service.attempts(any(UUID::class.java) ?: student, any(Period::class.java) ?: week, org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyInt()))
-            .willReturn(RecordPage(QueryState.INSUFFICIENT_SAMPLE, listOf(detail), 0, 20, 1))
+        given(service.attempts(any(UUID::class.java) ?: student, any(Period::class.java) ?: week, isNull(), anyInt(), anyInt()))
+            .willReturn(RecordPage(QueryState.INSUFFICIENT_SAMPLE, listOf(RecordAttempt(detail, listOf(now), null)), 0, 20, 1))
 
         mockMvc.get("/internal/records/students/$student/attempts?from=2026-11-02&to=2026-11-08") { caller() }.andExpect {
             status { isOk() }
@@ -136,10 +144,38 @@ class RecordControllerTest {
             jsonPath("$.items[0].helped") { value(true) }
             jsonPath("$.items[0].draft") { doesNotExist() }
             jsonPath("$.items[0].reveal") { value(null) }
+            jsonPath("$.items[0].completedAt") { value(null) }
+            jsonPath("$.items[0].hintUsages[0].openedAt") { value("2026-11-03T01:00:00Z") }
             jsonPath("$.totalElements") { value(1) }
             jsonPath("$.childId") { value(student.toString()) }
             jsonPath("$.state") { value("INSUFFICIENT_SAMPLE") }
             jsonPath("$.inclusionRule") { value(RecordService.INCLUSION_RULE) }
+        }
+    }
+
+    @Test
+    fun `기록 상세는 시도에 화면이 유지할 기간과 상태 OK를 붙이고, 전후 변화는 1·1 페이지`() {
+        val mission = missionView(grade = 3)
+        val now = Instant.parse("2026-11-03T01:00:00Z")
+        val attempt = Attempt.start(student, mission.id, MissionSnapshot(UUID.randomUUID(), UUID.randomUUID()), 3, now)
+        val detail = AttemptDetail(attempt, mission, AttemptDraft.empty(attempt.id, now), helped = false, answers = emptyList(), feedbacks = emptyMap(), revealed = null, reflection = null)
+        given(service.attempt(student, attempt.id)).willReturn(RecordAttempt(detail, emptyList(), null))
+        given(service.changes(student, week, 1, 2)).willReturn(Changes(QueryState.OK, emptyList(), 1, 2, 3))
+
+        mockMvc.get("/internal/records/students/$student/attempts/${attempt.id}?from=2026-11-02&to=2026-11-08") { caller() }.andExpect {
+            status { isOk() }
+            jsonPath("$.attemptId") { value(attempt.id.toString()) }
+            jsonPath("$.state") { value("OK") }
+            jsonPath("$.period.from") { value("2026-11-02") }
+            jsonPath("$.draft") { doesNotExist() }
+            jsonPath("$.hintUsages.length()") { value(0) }
+        }
+        mockMvc.get("/internal/records/students/$student/changes?from=2026-11-02&to=2026-11-08&page=1&size=2") { caller("SYSTEM") }.andExpect {
+            status { isOk() }
+            jsonPath("$.page") { value(1) }
+            jsonPath("$.size") { value(2) }
+            jsonPath("$.totalElements") { value(3) }
+            jsonPath("$.state") { value("OK") }
         }
     }
 }

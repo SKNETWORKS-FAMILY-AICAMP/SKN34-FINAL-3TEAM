@@ -2,6 +2,7 @@ package com.sagomungchi.learning.record.repository
 
 import com.sagomungchi.learning.record.domain.Period
 import org.springframework.stereotype.Repository
+import java.time.Instant
 import java.util.UUID
 
 /**
@@ -24,4 +25,12 @@ class RecordRepository(private val mapper: RecordMapper) {
     fun findEvidence(answerIds: List<UUID>): List<EvidenceRow> = mapper.findEvidence(answerIds)
 
     fun stats(period: Period): StatsRow = mapper.stats(period.start(), period.endExclusive())
+
+    /** 시도별 생각 열기 열람 시각, 열람 순 */
+    fun findHintUsages(attemptIds: List<UUID>): Map<UUID, List<Instant>> =
+        if (attemptIds.isEmpty()) emptyMap() else mapper.findHintUsages(attemptIds).groupBy({ it.attemptId }, { it.at })
+
+    /** 시도별 돌아보기 작성 시각 */
+    fun findReflectionTimes(attemptIds: List<UUID>): Map<UUID, Instant> =
+        if (attemptIds.isEmpty()) emptyMap() else mapper.findReflectionTimes(attemptIds).associate { it.attemptId to it.at }
 }

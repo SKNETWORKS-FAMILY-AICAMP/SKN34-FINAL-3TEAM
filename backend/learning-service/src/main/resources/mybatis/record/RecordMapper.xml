@@ -6,6 +6,7 @@
             <idArg column="attempt_id" javaType="java.util.UUID"/>
             <arg column="mission_title" javaType="java.lang.String"/>
             <arg column="thinking_type" javaType="com.sagomungchi.learning.mission.domain.ThinkingType"/>
+            <arg column="status" javaType="com.sagomungchi.learning.attempt.domain.AttemptStatus"/>
             <arg column="completed" javaType="_boolean"/>
             <arg column="helped_before_first_answer" javaType="_boolean"/>
             <arg column="received_followup" javaType="_boolean"/>
@@ -48,21 +49,27 @@
         </constructor>
     </resultMap>
 
-    <!-- P08 집계 대상: 기간 안에 처리 실패가 아닌 답변 제출이 있는 시도(미완료 포함), 삭제 학생 제외. 메모·초안은 읽지 않음 -->
+    <!--
+        P08 집계 대상: 기간 안에 답변 제출이 있는 시도(미완료 포함, 판정 상태 무관).
+        제외: 조회 종료일까지의 답변이 모두 처리 실패(FAILED)인 시도, 삭제 학생. 메모·초안은 읽지 않음
+    -->
     <sql id="recordedInPeriod">
         NOT EXISTS (SELECT 1 FROM deleted_student d WHERE d.student_id = a.student_id)
         AND EXISTS (
             SELECT 1 FROM answer ans
-            LEFT JOIN judgment j ON j.answer_id = ans.id
-            WHERE ans.attempt_id = a.id
-              AND ans.submitted_at &gt;= #{start} AND ans.submitted_at &lt; #{end}
+            WHERE ans.attempt_id = a.id AND ans.submitted_at &gt;= #{start} AND ans.submitted_at &lt; #{end}
+        )
+        AND EXISTS (
+            SELECT 1 FROM answer ok
+            LEFT JOIN judgment j ON j.answer_id = ok.id
+            WHERE ok.attempt_id = a.id AND ok.submitted_at &lt; #{end}
               AND (j.process_status IS NULL OR j.process_status &lt;&gt; 'FAILED')
         )
     </sql>
 
     <select id="findEligible" resultMap="eligible" flushCache="true" useCache="false">
         <!-- 시도별 사실은 조회 종료일까지 일어난 것만: 지난 기간을 조회해도 그 뒤의 답변·완료로 바뀌지 않음 (FN-RPT-02) -->
-        SELECT a.id AS attempt_id, v.title AS mission_title, v.thinking_type,
+        SELECT a.id AS attempt_id, v.title AS mission_title, v.thinking_type, a.status,
                (a.status = 'COMPLETED' AND a.completed_at &lt; #{end}) AS completed,
                EXISTS (
                    SELECT 1 FROM hint_usage h
@@ -120,6 +127,26 @@
         JOIN mission_version v ON v.id = a.mission_version_id
         WHERE ans.id IN
         <foreach collection="answerIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <resultMap id="openedAt" type="com.sagomungchi.learning.record.repository.AttemptTime">
+        <constructor>
+            <arg column="attempt_id" javaType="java.util.UUID"/>
+            <arg column="at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 생각 열기 열람 시각 (report #51: 최초 답변 전 열람 여부를 report가 판단) -->
+    <select id="findHintUsages" resultMap="openedAt" flushCache="true" useCache="false">
+        SELECT attempt_id, opened_at AS at FROM hint_usage WHERE attempt_id IN
+        <foreach collection="attemptIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY opened_at
+    </select>
+
+    <!-- 돌아보기 작성 시각 (기간 안에 쓴 돌아보기만 목록에 넣으려고) -->
+    <select id="findReflectionTimes" resultMap="openedAt" flushCache="true" useCache="false">
+        SELECT attempt_id, created_at AS at FROM reflection WHERE attempt_id IN
+        <foreach collection="attemptIds" item="id" open="(" separator="," close=")">#{id}</foreach>
     </select>
 
     <!-- 운영 현황 (FN-ADM-02): 학생 원문 없이 건수만 -->

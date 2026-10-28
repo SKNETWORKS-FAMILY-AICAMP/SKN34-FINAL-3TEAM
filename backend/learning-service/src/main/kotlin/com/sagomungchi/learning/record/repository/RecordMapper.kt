@@ -1,6 +1,7 @@
 package com.sagomungchi.learning.record.repository
 
 import com.sagomungchi.learning.answer.domain.AnswerContent
+import com.sagomungchi.learning.attempt.domain.AttemptStatus
 import com.sagomungchi.learning.mission.domain.ThinkingType
 import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
@@ -15,6 +16,7 @@ data class EligibleAttempt(
     val attemptId: UUID,
     val missionTitle: String,
     val thinkingType: ThinkingType,
+    val status: AttemptStatus,
     val completed: Boolean,
     val helpedBeforeFirstAnswer: Boolean,
     val receivedFollowup: Boolean,
@@ -48,6 +50,9 @@ data class EvidenceRow(
 
 data class StatsRow(val attempts: Int, val completedAttempts: Int, val students: Int)
 
+/** 시도별 시각 한 건 (생각 열기 열람, 돌아보기 작성) */
+data class AttemptTime(val attemptId: UUID, val at: Instant)
+
 @Mapper
 interface RecordMapper {
     fun findEligible(@Param("studentId") studentId: UUID, @Param("start") start: Instant, @Param("end") end: Instant): List<EligibleAttempt>
@@ -55,4 +60,6 @@ interface RecordMapper {
     fun isRecorded(@Param("studentId") studentId: UUID, @Param("attemptId") attemptId: UUID): Boolean
     fun findEvidence(@Param("answerIds") answerIds: List<UUID>): List<EvidenceRow>
     fun stats(@Param("start") start: Instant, @Param("end") end: Instant): StatsRow
+    fun findHintUsages(@Param("attemptIds") attemptIds: List<UUID>): List<AttemptTime>
+    fun findReflectionTimes(@Param("attemptIds") attemptIds: List<UUID>): List<AttemptTime>
 }

@@ -2,7 +2,9 @@ package com.sagomungchi.learning.record.controller
 
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.security.UserContextHolder
+import com.sagomungchi.learning.attempt.domain.AttemptStatus
 import com.sagomungchi.learning.record.domain.Period
+import com.sagomungchi.learning.record.domain.QueryState
 import com.sagomungchi.learning.record.service.RecordService
 import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.HttpStatus
@@ -50,21 +52,27 @@ class RecordController(private val service: RecordService) {
         @PathVariable studentId: UUID,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate?,
+        @RequestParam(required = false) status: AttemptStatus?,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "20") size: Int,
     ): RecordPageResponse {
         requireStudentRecord(studentId)
-        if (page < 0 || size !in 1..MAX_SIZE) {
-            throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "페이지 오류", "page는 0 이상, size는 1~$MAX_SIZE")
-        }
+        requirePage(page, size)
         val period = Period.of(from, to)
-        return RecordPageResponse.from(studentId, period, service.attempts(studentId, period, page, size))
+        return RecordPageResponse.from(studentId, period, service.attempts(studentId, period, status, page, size))
     }
 
+    /** 기간은 화면 유지용 정보 (core #40): 검증·기본값 적용 후 그대로 돌려주고, 이력은 자르지 않음 */
     @GetMapping("/records/students/{studentId}/attempts/{attemptId}")
-    fun attempt(@PathVariable studentId: UUID, @PathVariable attemptId: UUID): RecordAttemptResponse {
+    fun attempt(
+        @PathVariable studentId: UUID,
+        @PathVariable attemptId: UUID,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate?,
+    ): RecordAttemptDetailResponse {
         requireStudentRecord(studentId)
-        return RecordAttemptResponse.from(service.attempt(studentId, attemptId))
+        val period = Period.of(from, to)
+        return RecordAttemptDetailResponse(RecordAttemptResponse.from(service.attempt(studentId, attemptId)), QueryState.OK, period)
     }
 
     @GetMapping("/records/students/{studentId}/changes")
@@ -72,11 +80,14 @@ class RecordController(private val service: RecordService) {
         @PathVariable studentId: UUID,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate?,
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "20") size: Int,
     ): ChangesResponse {
         requireStudentRecord(studentId)
+        requirePage(page, size)
         val period = Period.of(from, to)
-        val changes = service.changes(studentId, period)
-        return ChangesResponse(studentId, changes.state, period, changes.items.map(ChangeItem::from))
+        val changes = service.changes(studentId, period, page, size)
+        return ChangesResponse(changes.items.map(ChangeItem::from), changes.page, changes.size, changes.totalElements, studentId, changes.state, period)
     }
 
     /** answerIds는 쉼표로 나눈 UUID 1~100개. 학생 범위는 답변마다 서비스가 확인 */
@@ -111,6 +122,10 @@ class RecordController(private val service: RecordService) {
         if (UserContextHolder.current().role !in roles) {
             throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "기록 조회 권한이 없습니다.")
         }
+    }
+
+    private fun requirePage(page: Int, size: Int) {
+        if (page < 0 || size !in 1..MAX_SIZE) invalid("page는 0 이상, size는 1~$MAX_SIZE")
     }
 
     private fun invalid(detail: String): Nothing = throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "요청 오류", detail)

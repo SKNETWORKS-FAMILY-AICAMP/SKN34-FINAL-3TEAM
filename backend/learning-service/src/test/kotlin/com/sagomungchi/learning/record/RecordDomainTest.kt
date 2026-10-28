@@ -28,16 +28,19 @@ class RecordDomainTest {
     }
 
     @Test
-    fun `기간은 KST 날짜 양 끝 포함, 없으면 오늘 포함 최근 7일, from이 to보다 늦으면 400`() {
+    fun `기간은 KST 날짜 양 끝 포함, 둘 다 없으면 오늘 포함 최근 7일, 한쪽만 주거나 from이 to보다 늦으면 400`() {
         assertEquals(Instant.parse("2026-11-01T15:00:00Z"), week.start())
         assertEquals(Instant.parse("2026-11-08T15:00:00Z"), week.endExclusive())
 
         val today = Clock.fixed(Instant.parse("2026-11-04T16:00:00Z"), Period.KST)
         assertEquals(Period(LocalDate.parse("2026-10-30"), LocalDate.parse("2026-11-05")), Period.of(null, null, today))
-        assertEquals(Period(LocalDate.parse("2026-11-01"), LocalDate.parse("2026-11-07")), Period.of(null, LocalDate.parse("2026-11-07"), today))
+        assertEquals(week, Period.of(LocalDate.parse("2026-11-02"), LocalDate.parse("2026-11-08"), today))
 
-        val error = assertThrows<BusinessException> { Period.of(LocalDate.parse("2026-11-08"), LocalDate.parse("2026-11-02")) }
-        assertEquals("VALIDATION_FAILED", error.code)
+        listOf(
+            { Period.of(null, LocalDate.parse("2026-11-07"), today) },
+            { Period.of(LocalDate.parse("2026-11-01"), null, today) },
+            { Period.of(LocalDate.parse("2026-11-08"), LocalDate.parse("2026-11-02")) },
+        ).forEach { assertEquals("VALIDATION_FAILED", assertThrows<BusinessException> { it() }.code) }
     }
 
     @Test

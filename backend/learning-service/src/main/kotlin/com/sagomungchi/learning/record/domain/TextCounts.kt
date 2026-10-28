@@ -8,7 +8,7 @@ import com.sagomungchi.learning.answer.domain.AnswerContent
  */
 data class TextCounts(val chars: Int, val sentences: Int, val reasonConnectives: Int) {
     companion object {
-        /** P08 "고정 목록"이 문서에 없어 프론트 목업 목록을 임시로 씀 (리포트 "임시로 정한 것") */
+        /** P08 고정 목록. report(#51)와 10/28 확정 (프론트 목업 목록과 같음) */
         val REASON_CONNECTIVES = listOf("왜냐하면", "때문", "그래서", "따라서")
         private val SENTENCE_BREAK = Regex("""[.?!\n]""")
 
