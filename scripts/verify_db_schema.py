@@ -69,8 +69,8 @@ INSERT INTO refresh_token(id,user_id,session_id,token_hash,expires_at,created_at
 VALUES ('00000000-0000-4000-8000-000000000019', '00000000-0000-4000-8000-000000000001',
         '00000000-0000-4000-8000-000000000018','schema-refresh-hash',now()+interval '7 days',now());
 SELECT pg_temp.expect_sqlstate($$UPDATE refresh_token SET session_id = '00000000-0000-4000-8000-999999999999'$$, '23503');
-INSERT INTO student (id, nickname, grade, birth_year, is_demo, status, created_at, updated_at)
-VALUES ('00000000-0000-4000-8000-000000000002', 'schema-test', 3, 2015, true,
+INSERT INTO student (pin_failed_count, id, nickname, grade, birth_year, is_demo, status, created_at, updated_at)
+VALUES (0, '00000000-0000-4000-8000-000000000002', 'schema-test', 3, 2015, true,
         'ACTIVE', now(), now());
 SELECT pg_temp.expect_sqlstate(
     $$UPDATE user_account SET status = 'INVALID'$$, '23514');
@@ -81,6 +81,17 @@ SELECT pg_temp.expect_sqlstate($$UPDATE student SET grade = 2$$, '23514');
 SELECT pg_temp.expect_sqlstate($$UPDATE student SET grade = 7$$, '23514');
 UPDATE student SET grade = 6;
 UPDATE student SET grade = 3;
+SELECT pg_temp.expect_sqlstate($$UPDATE student SET pin_failed_count=-1$$, '23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE student SET pin_failed_count=NULL$$, '23502');
+INSERT INTO student_device(id,parent_user_id,token_hash,label,created_at,expires_at)
+VALUES ('00000000-0000-4000-8000-000000000030','00000000-0000-4000-8000-000000000001','device-hash','synthetic',now(),now()+interval '90 days');
+SELECT pg_temp.expect_sqlstate($$UPDATE student_device SET expires_at=created_at$$, '23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE student_device SET parent_user_id='00000000-0000-4000-8000-999999999999'$$, '23503');
+SELECT pg_temp.expect_sqlstate($$INSERT INTO student_device(id,parent_user_id,token_hash,label,created_at,expires_at)
+SELECT '00000000-0000-4000-8000-000000000031',parent_user_id,token_hash,label,created_at,expires_at FROM student_device$$, '23505');
+INSERT INTO student_device_child(device_id,student_id) VALUES('00000000-0000-4000-8000-000000000030','00000000-0000-4000-8000-000000000002');
+SELECT pg_temp.expect_sqlstate($$INSERT INTO student_device_child SELECT * FROM student_device_child$$, '23505');
+SELECT pg_temp.expect_sqlstate($$UPDATE student_device_child SET student_id='00000000-0000-4000-8000-999999999999'$$, '23503');
 
 INSERT INTO guardianship (id, parent_user_id, student_id, method, status, linked_at)
 VALUES ('00000000-0000-4000-8000-000000000003',

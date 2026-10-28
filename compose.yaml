@@ -122,7 +122,6 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *spring-env
-      REDIS_HOST: redis
       DB_URL: jdbc:postgresql://postgres:5432/core_db
       LEARNING_URL: http://learning-service:8081
       AI_URL: http://ai-service:8000
@@ -132,6 +131,11 @@ services:
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
       AUTH_ACCESS_TTL: ${AUTH_ACCESS_TTL:-15m}
       AUTH_STUDENT_ACCESS_TTL: ${AUTH_STUDENT_ACCESS_TTL:-15m}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      STUDENT_DEVICE_TTL: ${STUDENT_DEVICE_TTL:-90d}
+      STUDENT_DEVICE_ATTEMPT_LIMIT: ${STUDENT_DEVICE_ATTEMPT_LIMIT:-20}
       AUTH_REFRESH_TTL: ${AUTH_REFRESH_TTL:-7d}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
