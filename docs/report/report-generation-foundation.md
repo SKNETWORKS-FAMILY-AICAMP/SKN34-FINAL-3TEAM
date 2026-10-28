@@ -1,5 +1,7 @@
 # 이슈 #50 리포트 생성 기반 — #42 계약 연결 전
 
+> 현재 상태(2026-10-28): 사용자 지시에 따라 기존 이슈별 브랜치 `feature/report-generation`에서 진행한다. develop `78bbdc1`을 충돌 없이 병합하여 #42 공유 스키마를 확보했다. 아래 스키마 미확보 설명은 이전 검증 이력이며, 지금 남은 작업은 production codec·worker 연결과 공유 규격 기반 검증이다. #51~#55 변경은 이 브랜치에 포함하지 않았다.
+
 ## 범위와 현재 상태
 
 [#50](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/50)의 DB 처리·생성 상태 전이·Outbox 발행 기반을 구현한다. develop `e3bb6ab`에서 시작했으며 최종 정리 기준은 #36 인증 구현이 병합된 `ecd6ecf`다. 두 기준 사이에 report 코드·마이그레이션·이벤트 계약 변경은 없다. 작업 브랜치는 `feature/report-generation`이다.
