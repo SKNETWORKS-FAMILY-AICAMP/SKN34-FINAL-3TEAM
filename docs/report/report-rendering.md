@@ -1,6 +1,6 @@
 # 이슈 #53 리포트 렌더링·파일 저장
 
-최초 구현 기반은 #52 커밋 `b50d7b0`, 보존 브랜치는 `feature/report-rendering`이다. 2026-10-27 실제 MinIO 검증은 최신 develop `7188b69`를 병합한 누적 브랜치 `feature/report-deletion`에서 추가했다. 프로젝트 설계의 Jinja2·Playwright Chromium과 S3 SDK(boto3)를 사용한다. 운영 의존성은 uv.lock에 고정하며, moto·pypdf는 개발 검증용이다.
+작업 브랜치는 `feature/report-rendering`이다. develop `47e5ffe`와 #50·#52의 검증된 메시지·서술 변경을 병합했다. 프로젝트 설계의 Jinja2·Playwright Chromium과 S3 SDK(boto3)를 사용한다. 운영 의존성은 uv.lock에 고정하며, moto·pypdf는 개발 검증용이다.
 
 ## 구현과 저장 규칙
 
@@ -15,6 +15,8 @@
 새 스키마는 추가하지 않는다. 파일 메타데이터는 상태·항목·근거·완료 Outbox와 같은 종료 트랜잭션에 저장한다. DB 저장 전 중단돼도 RUNNING report ID가 있어 prefix를 식별할 수 있다.
 
 ## PDF·검증 환경
+
+2026-10-28 병합 후 report 전체 **147개 통과(70.39초)**, Ruff check/format 통과. `sagomungchi/report-service:issue53-20261028` 이미지를 새로 빌드하고 non-root(uid 10001)·read-only root·네트워크 차단·`/tmp` tmpfs 환경에서 고정 합성 데이터의 HTML/PDF/MD를 생성했다. PDF 191,409바이트·2페이지의 논리 텍스트가 검토된 스냅샷과 일치했고 PNG 2페이지에서 한글 깨짐·잘림·중첩이 없음을 확인했다. 운영 이미지에 pytest가 없는 것도 확인했다. 이 실행은 저장 기능의 moto 검사이며, 실제 MinIO+조회 API 결합 검증은 #54가 포함된 후속 누적 브랜치에서 수행한다.
 
 Dockerfile은 production 의존성만 설치하고 Chromium·Noto CJK 폰트를 준비한다. non-root 사용자로 실제 Linux PDF를 생성했다. 한글 텍스트 추출과 A4 2개 페이지의 PNG 시각 검토에서 글자 깨짐·잘림·중첩을 확인하지 않았다. Windows 출력도 같은 방식으로 확인했다.
 
@@ -53,8 +55,8 @@ Linux/CI에서는 기존 workflow처럼 Chromium 시스템 의존성과 Noto CJK
 
 ## 완성을 위한 외부 연결
 
-- #42: 신뢰할 수 있는 표시 이름을 메시지에 포함하거나 허용된 프로필 조회 경로를 제공해야 한다. 현재 내부 모델의 display_name은 외부 메시지 필드가 확정됐다는 뜻이 아니다.
+- core 담당자: 신뢰할 수 있는 표시 이름의 허용된 조회 경로가 필요하다. #42의 확정 `report.generate.v1`에는 닉네임이 없으므로 메시지에 임의로 추가하지 않는다. 내부 모델의 display_name은 조회 결과를 전달할 자리다.
 - 인프라 담당: 운영 버킷·IAM/IRSA, S3 endpoint, 공개 다운로드 주소 및 비밀 값 주입. readOnlyRootFilesystem에서는 Chromium이 쓸 `/tmp` writable volume이 필요하다. 실제 AWS 배포 검증은 하지 않았다.
-- #50/#42 공통 메시지 계약에 맞춘 worker 조립 후 계산→서술→렌더링→완료 이벤트의 실제 연동을 검증해야 한다.
+- #50/#42 공통 v1 codec은 연결했다. #27 학습 기록·#64 서술 API와 표시 이름 조회 연결 후 계산→서술→렌더링→완료 이벤트의 전체 서비스 연동 검증이 필요하다. 이 브랜치의 독립 worker 기본 생성기는 아직 `GENERATOR_NOT_CONFIGURED` 실패로 명시한다. 단계별 생성기는 테스트에서 조립해 검증하며 가짜 파일로 운영 완료를 만들지 않는다.
 
 참고: [Playwright Docker 지침](https://playwright.dev/python/docs/docker), [boto3 S3 API](https://docs.aws.amazon.com/boto3/latest/reference/services/s3.html).

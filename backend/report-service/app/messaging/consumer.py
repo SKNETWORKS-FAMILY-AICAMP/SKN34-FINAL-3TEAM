@@ -17,6 +17,7 @@ from aio_pika.abc import AbstractChannel, AbstractIncomingMessage
 from pydantic import ValidationError
 
 from app.messaging.connection import AmqpConnection
+from app.messaging.contracts import InvalidEvent, ReceivedEnvelope
 from app.messaging.envelope import EventEnvelope
 
 logger = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ class EventConsumer:
         message: AbstractIncomingMessage,
     ) -> None:
         try:
-            envelope = EventEnvelope[dict[str, Any]].model_validate_json(message.body)
+            envelope = ReceivedEnvelope.model_validate_json(message.body)
         except ValidationError:
             logger.error(
                 "봉투 형식 오류, DLQ 이동: queue=%s, messageId=%s", queue_name, message.message_id
@@ -72,8 +73,15 @@ class EventConsumer:
 
         try:
             await handler(envelope)
+        except InvalidEvent:
+            logger.warning("메시지 계약 오류, DLQ 이동: queue=%s, id=%s", queue_name, envelope.id)
+            await message.reject(requeue=False)
+            return
         except Exception:
-            retry_count = int(message.headers.get(RETRY_COUNT_HEADER, 0))
+            retry_count = message.headers.get(RETRY_COUNT_HEADER, 0)
+            if type(retry_count) is not int or retry_count < 0:
+                await message.reject(requeue=False)
+                return
             if retry_count >= self._max_retries:
                 logger.error("메시지 처리 실패, DLQ 이동: queue=%s, id=%s", queue_name, envelope.id)
                 await message.reject(requeue=False)

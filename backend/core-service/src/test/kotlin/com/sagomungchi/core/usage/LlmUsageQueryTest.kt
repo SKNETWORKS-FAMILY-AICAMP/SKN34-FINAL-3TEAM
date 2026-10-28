@@ -19,9 +19,10 @@ class LlmUsageQueryTest : PostgresRepositoryTest() {
     @Autowired lateinit var usage: LlmUsageService
     private val day = LocalDate.parse("2026-11-12")
     private fun event(time: String, type: String = "JUDGMENT", success: Boolean = true,
-                      model: String = "query-model", latency: Int = 100, input: Int? = 1000) = EventEnvelope(
+                      model: String = "query-model", latency: Int = 100, input: Int? = 1000,
+                      output: Int? = 2000) = EventEnvelope(
         type = "llm.usage.recorded", source = "ai-service", dataschema = "llm.usage.recorded.v1",
-        data = LlmUsageRecorded("ai", type, model, "judge@1", input, 2000, latency,
+        data = LlmUsageRecorded("ai", type, model, "judge@1", input, output, latency,
             success, if (success) null else "TIMEOUT", OffsetDateTime.parse(time)))
 
     @Test fun `KST inclusive dates exclude adjacent instants and duplicate collection stays idempotent`() {
@@ -52,9 +53,17 @@ class LlmUsageQueryTest : PostgresRepositoryTest() {
         assertEquals(1L, summary.unpricedCalls)
     }
 
+    @Test fun `priced model with any missing token count stores null cost instead of an undercount`() {
+        usage.record(event("2026-11-12T01:00:00Z", input = null))
+        usage.record(event("2026-11-12T02:00:00Z", output = null))
+        val summary = usage.summarize(day, day, null).single()
+        assertNull(summary.costUsd)
+        assertEquals(2L, summary.unpricedCalls)
+    }
+
     @Test fun `every existing call type can be queried and empty ranges stay empty`() {
         CallType.entries.forEach { usage.record(event("2026-11-12T01:00:00Z", it.name)) }
-        assertEquals(7, usage.summarize(day, day, null).size)
+        assertEquals(6, usage.summarize(day, day, null).size)
         assertTrue(usage.summarize(day.plusDays(1), day.plusDays(2), null).isEmpty())
         CallType.entries.forEach { assertEquals(it.name, usage.summarize(day, day, it).single().callType) }
     }
