@@ -136,3 +136,5 @@ feature/* → develop → main
 - [이슈 #45 계정 관리·Google 재인증·삭제·탈퇴](report/issue-45-account-management.md): #58 호출 계약, 삭제 Outbox·서비스별 완료, 탈퇴 차단·세션 폐기 및 통합 조건
 
 - [이슈 #58 학생 기기·PIN 인증](report/issue-58-student-device-auth.md): 실제 재인증·기기·PIN 계약, 삭제 연동과 검증 범위
+
+- [이슈 #41 분석 대화·SSE·한도](report/issue-41-analysis-conversations.md): 대화 소유권·취소·삭제 경합·payment 소비 계약·Redis 일 한도

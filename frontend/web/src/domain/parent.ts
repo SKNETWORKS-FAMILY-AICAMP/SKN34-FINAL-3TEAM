@@ -75,7 +75,7 @@ export interface MessageResult {
   metrics: Metric[]
   evidence: Evidence[]
   recordCount: number
-  source: 'LLM' | 'TEMPLATE'
+  source: 'LLM' | 'LLM_RETRY' | 'TEMPLATE'
   fallback?: { reason: string }
   verification: { numbersMatched: boolean; quotesMatched: boolean }
 }

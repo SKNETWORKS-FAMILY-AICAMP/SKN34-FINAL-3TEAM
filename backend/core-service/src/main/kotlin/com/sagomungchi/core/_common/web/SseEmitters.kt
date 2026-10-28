@@ -32,8 +32,9 @@ class SseEmitters internal constructor(private val heartbeat: Duration, private 
     internal val pendingHeartbeats get() = timer.queue.size
     internal val terminated get() = tasks.isTerminated && timer.isTerminated
 
-    fun open(context: UserContext, operation: (Stream) -> Unit): SseEmitter {
-        val stream = Stream(SseEmitter(timeout.toMillis()))
+    fun open(context: UserContext, lifetime: Duration = timeout, onClose: (Stream) -> Unit = {},
+             validate: () -> Unit = {}, delivery: (() -> Unit) -> Unit = { it() }, operation: (Stream) -> Unit): SseEmitter {
+        val stream = Stream(SseEmitter(lifetime.toMillis()), onClose, validate, delivery)
         streams.add(stream)
         stream.emitter.onCompletion { stream.disconnected() }
         stream.emitter.onTimeout { stream.disconnected(); stream.emitter.complete() }
@@ -78,8 +79,10 @@ class SseEmitters internal constructor(private val heartbeat: Duration, private 
     }
 
     inner class Stream internal constructor(val emitter: SseEmitter,
-        private val onClose: (Stream) -> Unit = {}, private val validate: () -> Unit = {}) {
+        private val onClose: (Stream) -> Unit = {}, private val validate: () -> Unit = {},
+        private val delivery: (() -> Unit) -> Unit = { it() }) {
         private val connected = AtomicBoolean(true)
+        val isConnected: Boolean get() = connected.get()
         private val sendingHeartbeat = AtomicBoolean(false)
         private val lock = ReentrantLock()
         @Volatile private var scheduled: ScheduledFuture<*>? = null
@@ -93,10 +96,9 @@ class SseEmitters internal constructor(private val heartbeat: Duration, private 
 
         private fun send(event: SseEmitter.SseEventBuilder) = lock.withLock {
             if (connected.get()) {
-                try { validate() } catch (_: Exception) { disconnected(); emitter.complete(); return@withLock }
-                try { emitter.send(event) }
-                catch (_: IOException) { disconnected() }
-                catch (_: IllegalStateException) { disconnected() }
+                try {
+                    delivery { validate(); emitter.send(event) }
+                } catch (_: Exception) { disconnected(); emitter.complete() }
             }
         }
 

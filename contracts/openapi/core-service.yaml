@@ -2127,6 +2127,221 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /conversations:
+    post:
+      tags:
+      - Conversations
+      operationId: post_conversations
+      description: '#41 계약: docs/report/issue-41-analysis-conversations.md. 첫 응답 20초·전체
+        120초, 취소 FAILED, delta 미저장.'
+      responses:
+        '201':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisConversation'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - childId
+              properties:
+                childId:
+                  type: string
+                  format: uuid
+                from:
+                  type: string
+                  format: date
+                to:
+                  type: string
+                  format: date
+    get:
+      tags:
+      - Conversations
+      operationId: get_conversations
+      description: '#41 계약: docs/report/issue-41-analysis-conversations.md. 첫 응답 20초·전체
+        120초, 취소 FAILED, delta 미저장.'
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisConversations'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - name: childId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /conversations/{conversationId}:
+    get:
+      tags:
+      - Conversations
+      operationId: get_conversations_conversationId
+      description: '#41 계약: docs/report/issue-41-analysis-conversations.md. 첫 응답 20초·전체
+        120초, 취소 FAILED, delta 미저장.'
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisConversation'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - name: conversationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /conversations/{conversationId}/messages:
+    post:
+      tags:
+      - Conversations
+      operationId: post_conversations_conversationId_messages
+      description: '#41 계약: docs/report/issue-41-analysis-conversations.md. 첫 응답 20초·전체
+        120초, 취소 FAILED, delta 미저장. Events status, delta, result, clarification, error,
+        done. result는 AnalysisMessage의 확정 답변 필드, clarification은 question/options, error는
+        Problem + retryable/messageId다. delta는 임시 text만 포함한다.'
+      responses:
+        '200':
+          description: 성공
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        default:
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - name: conversationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - question
+              properties:
+                question:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+                scope:
+                  type: object
+                  properties:
+                    childId:
+                      type: string
+                      format: uuid
+                    from:
+                      type: string
+                      format: date
+                    to:
+                      type: string
+                      format: date
+                  required:
+                  - from
+                  - to
+  /conversations/{conversationId}/messages/{messageId}/retry:
+    post:
+      tags:
+      - Conversations
+      operationId: post_conversations_conversationId_messages_messageId_retry
+      description: '#41 계약: docs/report/issue-41-analysis-conversations.md. 첫 응답 20초·전체
+        120초, 취소 FAILED, delta 미저장. Events status, delta, result, clarification, error,
+        done. result는 AnalysisMessage의 확정 답변 필드, clarification은 question/options, error는
+        Problem + retryable/messageId다. delta는 임시 text만 포함한다.'
+      responses:
+        '200':
+          description: 성공
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        default:
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - name: conversationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: messageId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /conversations/{conversationId}/messages/{messageId}/evidence:
+    get:
+      tags:
+      - Conversations
+      operationId: get_conversations_conversationId_messages_messageId_evidence
+      description: '#41 계약: docs/report/issue-41-analysis-conversations.md. 첫 응답 20초·전체
+        120초, 취소 FAILED, delta 미저장.'
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisEvidenceResponse'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - name: conversationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: messageId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /agent/example-questions:
+    get:
+      tags:
+      - Conversations
+      operationId: get_agent_example-questions
+      description: '#41 계약: docs/report/issue-41-analysis-conversations.md. 첫 응답 20초·전체
+        120초, 취소 FAILED, delta 미저장.'
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisExamples'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - name: childId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
 components:
   securitySchemes:
     StudentDeviceCookie: {type: apiKey, in: cookie, name: student_device}
@@ -2176,6 +2391,192 @@ components:
         type: string
         const: XMLHttpRequest
   schemas:
+    AnalysisScope:
+      type: object
+      required:
+      - childId
+      - from
+      - to
+      properties:
+        childId: &analysis_id002
+          type: string
+          format: uuid
+        from: &analysis_id001
+          type: string
+          format: date
+        to: *analysis_id001
+        changed:
+          type: boolean
+    AnalysisEvidence:
+      type: object
+      required:
+      - evidenceId
+      - attemptId
+      - answerId
+      properties:
+        evidenceId: *analysis_id002
+        attemptId: *analysis_id002
+        answerId: *analysis_id002
+        answerVersion:
+          type: integer
+          minimum: 1
+        available:
+          type: boolean
+        quote:
+          type: string
+        submittedAt:
+          type: string
+          format: date-time
+        missionTitle:
+          type: string
+    AnalysisMessage:
+      type: object
+      required:
+      - messageId
+      - question
+      - status
+      - retryable
+      properties:
+        messageId: *analysis_id002
+        question:
+          type: string
+        status:
+          type: string
+          enum:
+          - QUEUED
+          - RUNNING
+          - COMPLETED
+          - FAILED
+        scope:
+          $ref: '#/components/schemas/AnalysisScope'
+        answer:
+          type:
+          - string
+          - 'null'
+        source:
+          type:
+          - string
+          - 'null'
+          enum:
+          - LLM
+          - LLM_RETRY
+          - TEMPLATE
+          - null
+        clarification:
+          type:
+          - object
+          - 'null'
+        metrics:
+          type:
+          - array
+          - 'null'
+          items:
+            type: object
+        verification:
+          type:
+          - object
+          - 'null'
+          properties:
+            numbersMatched:
+              type: boolean
+            quotesMatched:
+              type: boolean
+        recordCount:
+          type:
+          - integer
+          - 'null'
+        failureCode:
+          type:
+          - string
+          - 'null'
+        fallback:
+          type:
+          - object
+          - 'null'
+          properties:
+            reason:
+              enum:
+              - AI_UNAVAILABLE
+              - VERIFICATION_FAILED
+        retryable:
+          type: boolean
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalysisEvidence'
+    AnalysisConversation:
+      type: object
+      required:
+      - conversationId
+      - childId
+      - period
+      - title
+      - createdAt
+      - messages
+      properties:
+        conversationId: *analysis_id002
+        childId: *analysis_id002
+        period:
+          type: object
+          required:
+          - from
+          - to
+          properties:
+            from: *analysis_id001
+            to: *analysis_id001
+        title:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalysisMessage'
+    AnalysisConversations:
+      type: object
+      required:
+      - items
+      - page
+      - size
+      - totalElements
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalysisConversation'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+    AnalysisEvidenceResponse:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalysisEvidence'
+    AnalysisExamples:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required:
+            - question
+            - available
+            properties:
+              question:
+                type: string
+              available:
+                type: boolean
     StudentDeviceProfile:
       type: object
       additionalProperties: false
