@@ -1,0 +1,1280 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "report-service",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health/live": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Live",
+        "operationId": "live_health_live_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Live Health Live Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Ready",
+        "operationId": "ready_health_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/reports": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "List Reports",
+        "operationId": "list_reports_internal_reports_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "studentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Studentid"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ReportStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/reports/{report_id}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Detail",
+        "operationId": "detail_internal_reports__report_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Report Id"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Revision"
+            }
+          },
+          {
+            "name": "X-Report-Narrative-Enabled",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "X-Report-Narrative-Enabled"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/reports/{report_id}/evidence/{item_id}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Evidence",
+        "operationId": "evidence_internal_reports__report_id__evidence__item_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Report Id"
+            }
+          },
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidencePage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/reports/{report_id}/files/{format}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "File",
+        "operationId": "file_internal_reports__report_id__files__format__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Report Id"
+            }
+          },
+          {
+            "name": "format",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "pdf",
+                "md",
+                "html"
+              ],
+              "type": "string",
+              "title": "Format"
+            }
+          },
+          {
+            "name": "X-Report-Narrative-Enabled",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "X-Report-Narrative-Enabled"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Download"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Change": {
+        "properties": {
+          "itemId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Itemid"
+          },
+          "attemptId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Attemptid"
+          },
+          "followup": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Followup"
+          },
+          "first": {
+            "$ref": "#/components/schemas/TextAnswer"
+          },
+          "revised": {
+            "$ref": "#/components/schemas/TextAnswer"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/ChangeCounts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attemptId",
+          "followup",
+          "first",
+          "revised",
+          "counts"
+        ],
+        "title": "Change"
+      },
+      "ChangeCounts": {
+        "properties": {
+          "chars": {
+            "prefixItems": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Chars"
+          },
+          "sentences": {
+            "prefixItems": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Sentences"
+          },
+          "reasonConnectives": {
+            "prefixItems": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Reasonconnectives"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chars",
+          "sentences",
+          "reasonConnectives"
+        ],
+        "title": "ChangeCounts"
+      },
+      "Download": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expiresat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "expiresAt"
+        ],
+        "title": "Download"
+      },
+      "Evidence": {
+        "properties": {
+          "attemptId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Attemptid"
+          },
+          "answerId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Answerid"
+          },
+          "answerVersion": {
+            "type": "integer",
+            "title": "Answerversion"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote"
+          },
+          "missionTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missiontitle"
+          },
+          "submittedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submittedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attemptId",
+          "answerId",
+          "answerVersion",
+          "available"
+        ],
+        "title": "Evidence"
+      },
+      "EvidencePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "EvidencePage"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Metric": {
+        "properties": {
+          "itemId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Itemid"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Count"
+          },
+          "numerator": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Numerator"
+          },
+          "denominator": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Denominator"
+          },
+          "formula": {
+            "type": "string",
+            "title": "Formula"
+          },
+          "period": {
+            "$ref": "#/components/schemas/PeriodResponse"
+          },
+          "sourceType": {
+            "type": "string",
+            "enum": [
+              "RECORD",
+              "RULE",
+              "ANSWER_KEY",
+              "AI_OBSERVATION"
+            ],
+            "title": "Sourcetype"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ReportState"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "value",
+          "count",
+          "numerator",
+          "denominator",
+          "formula",
+          "period",
+          "sourceType",
+          "state"
+        ],
+        "title": "Metric"
+      },
+      "Mission": {
+        "properties": {
+          "attemptId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Attemptid"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attemptId",
+          "title"
+        ],
+        "title": "Mission"
+      },
+      "Narrative": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "LLM",
+              "TEMPLATE"
+            ],
+            "title": "Source"
+          },
+          "modelExplanation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelexplanation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text",
+          "source"
+        ],
+        "title": "Narrative"
+      },
+      "PeriodResponse": {
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date",
+            "title": "From"
+          },
+          "to": {
+            "type": "string",
+            "format": "date",
+            "title": "To"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "PeriodResponse"
+      },
+      "Quote": {
+        "properties": {
+          "itemId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Itemid"
+          },
+          "attemptId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Attemptid"
+          },
+          "answerId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Answerid"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "verified": {
+            "type": "boolean",
+            "title": "Verified"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attemptId",
+          "answerId",
+          "text",
+          "verified"
+        ],
+        "title": "Quote"
+      },
+      "Reflection": {
+        "properties": {
+          "itemId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Itemid"
+          },
+          "attemptId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Attemptid"
+          },
+          "written": {
+            "type": "boolean",
+            "title": "Written"
+          },
+          "difficulty": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "쉬웠어요",
+                  "보통",
+                  "어려웠어요"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty",
+            "description": "표시용 난이도. 내부 EASY/NORMAL/HARD 코드와 구분하며 미작성은 null."
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attemptId",
+          "written",
+          "difficulty",
+          "text"
+        ],
+        "title": "Reflection"
+      },
+      "ReportDetail": {
+        "properties": {
+          "reportId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Reportid"
+          },
+          "childId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Childid"
+          },
+          "period": {
+            "$ref": "#/components/schemas/PeriodResponse"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revisions": {
+            "items": {
+              "$ref": "#/components/schemas/Revision"
+            },
+            "type": "array",
+            "title": "Revisions"
+          },
+          "inclusionRule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inclusionrule"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/Metric"
+            },
+            "type": "array",
+            "title": "Metrics"
+          },
+          "thinkingTypes": {
+            "items": {
+              "$ref": "#/components/schemas/Thinking"
+            },
+            "type": "array",
+            "title": "Thinkingtypes"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/Change"
+            },
+            "type": "array",
+            "title": "Changes"
+          },
+          "reflections": {
+            "items": {
+              "$ref": "#/components/schemas/Reflection"
+            },
+            "type": "array",
+            "title": "Reflections"
+          },
+          "quotes": {
+            "items": {
+              "$ref": "#/components/schemas/Quote"
+            },
+            "type": "array",
+            "title": "Quotes"
+          },
+          "eveningQuestion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eveningquestion"
+          },
+          "narrative": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Narrative"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verification": {
+            "$ref": "#/components/schemas/Verification"
+          },
+          "versions": {
+            "$ref": "#/components/schemas/Versions"
+          },
+          "generatedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reportId",
+          "childId",
+          "period",
+          "revision",
+          "status",
+          "state",
+          "revisions",
+          "inclusionRule",
+          "metrics",
+          "thinkingTypes",
+          "changes",
+          "reflections",
+          "quotes",
+          "eveningQuestion",
+          "narrative",
+          "verification",
+          "versions",
+          "generatedAt"
+        ],
+        "title": "ReportDetail"
+      },
+      "ReportPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReportSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "totalElements": {
+            "type": "integer",
+            "title": "Totalelements"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "size",
+          "totalElements"
+        ],
+        "title": "ReportPage"
+      },
+      "ReportState": {
+        "type": "string",
+        "enum": [
+          "OK",
+          "NO_RECORD",
+          "INSUFFICIENT_SAMPLE"
+        ],
+        "title": "ReportState"
+      },
+      "ReportStatus": {
+        "type": "string",
+        "enum": [
+          "RUNNING",
+          "COMPLETED",
+          "FAILED"
+        ],
+        "title": "ReportStatus"
+      },
+      "ReportSummary": {
+        "properties": {
+          "reportId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Reportid"
+          },
+          "childId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Childid"
+          },
+          "period": {
+            "$ref": "#/components/schemas/PeriodResponse"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "reportId",
+          "childId",
+          "period",
+          "revision",
+          "status",
+          "state"
+        ],
+        "title": "ReportSummary"
+      },
+      "Revision": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "generatedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision",
+          "generatedAt"
+        ],
+        "title": "Revision"
+      },
+      "TextAnswer": {
+        "properties": {
+          "answerId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Answerid"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "answerId",
+          "text"
+        ],
+        "title": "TextAnswer"
+      },
+      "Thinking": {
+        "properties": {
+          "itemId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Itemid"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ThinkingType"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ReportState"
+          },
+          "missions": {
+            "items": {
+              "$ref": "#/components/schemas/Mission"
+            },
+            "type": "array",
+            "title": "Missions"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "state",
+          "missions"
+        ],
+        "title": "Thinking"
+      },
+      "ThinkingType": {
+        "type": "string",
+        "enum": [
+          "ANALYZE",
+          "EVALUATE",
+          "CREATE",
+          "SOLVE",
+          "REFLECT"
+        ],
+        "title": "ThinkingType"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "Verification": {
+        "properties": {
+          "numbersMatched": {
+            "type": "boolean",
+            "title": "Numbersmatched"
+          },
+          "quotesMatched": {
+            "type": "boolean",
+            "title": "Quotesmatched"
+          },
+          "contentAllowed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contentallowed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "numbersMatched",
+          "quotesMatched"
+        ],
+        "title": "Verification"
+      },
+      "Versions": {
+        "properties": {
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt",
+          "model"
+        ],
+        "title": "Versions"
+      }
+    },
+    "securitySchemes": {
+      "APIKeyHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Internal-Token"
+      }
+    }
+  }
+}

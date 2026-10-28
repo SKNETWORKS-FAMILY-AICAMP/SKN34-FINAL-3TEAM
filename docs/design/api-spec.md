@@ -512,6 +512,8 @@ data: {}
 
 - 리포트 상세의 `reflections[].difficulty`는 표시값 `쉬웠어요`·`보통`·`어려웠어요`이며 PDF·HTML·Markdown도 같은 표시값을 쓴다. learning 입력과 report 내부 저장의 `EASY`·`NORMAL`·`HARD` 코드는 출력 조립 시 변환한다. 미작성·기간 밖이면 `written:false`, `difficulty:null`, `text:null`이다. 선택 텍스트 없이 난이도만 작성한 기록은 `written:true`, `text:null`로 구분한다.
 
+- 리포트 상세의 `changes[].followup`은 문자열 또는 null이다. 학습 기록 API 4.1.1에서 되묻기 없이 제출한 보완 답변도 비교하므로, 질문이 없는 경우 null을 그대로 반환하고 최초/최종 답변 및 계산 수치는 유지한다. 저장된 결과를 임의 질문이나 빈 기록으로 대체하지 않는다.
+
 ### 3.5 결제 승인 — `POST /payments/confirm`
 ```jsonc
 // 요청 (결제위젯 successUrl 쿼리 값)
