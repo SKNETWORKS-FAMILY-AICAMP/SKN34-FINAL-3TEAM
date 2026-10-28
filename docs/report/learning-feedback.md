@@ -92,22 +92,22 @@ learning-service의 `POST /internal/answers/{answerId}/feedback`을 만들고, �
 
 | 지적 | 고친 내용 | 테스트 |
 |---|---|---|
-| 연결 시간 초과가 `AI_TIMEOUT`으로 기록됨 (`HttpConnectTimeoutException`이 `HttpTimeoutException`의 하위 타입) | 응답 시간 초과만 `AI_TIMEOUT`, 연결 시간 초과는 연결 실패 `AI_UNAVAILABLE` (`AiClient.transportFailureCode`) | `AiClientTest`: 실제 연결 시간 초과는 네트워크 환경마다 다르게 나(바로 거절되기도 함) 예외로 분류만 확인 |
+| 연결 시간 초과가 `AI_TIMEOUT`으로 기록됨 (`HttpConnectTimeoutException`이 `HttpTimeoutException`의 하위 타입) | 응답 시간 초과만 `AI_TIMEOUT`, 연결 시간 초과는 연결 실패 `AI_UNAVAILABLE` (`AiClient.transportFailureCode`) | `AiClientTest`: 예외로 분류 확인(실제 연결 시간 초과는 네트워크 환경마다 다르게 나 CI에 넣지 않음). 닿지 않는 주소·연결 제한 1초로 한 번 직접 확인: `ResourceAccessException → HttpConnectTimeoutException → ConnectException`, 1.3초 뒤 `AI_UNAVAILABLE` |
 | `lease_until`이 NULL인 `RUNNING`을 엔티티는 만료로, SQL은 비만료로 봄 | 획득 SQL에 `lease_until IS NULL OR` 추가, state-diagram 3.3 SQL도 같이 | `JudgmentServiceTest`: 리스 없는 `RUNNING`을 가져감 |
 | `markFailed` 예외가 원래 오류를 가림 | 기록 오류는 원래 오류에 suppressed로 붙이고 원래 응답 유지 | `FeedbackFacadeTest`: ai 실패는 503 `retryable`, 예상 못 한 오류는 원래 예외 |
-| api-spec 4.1 처리 중 응답 표기가 실제와 다름 | `{status:"RUNNING", judgment:null, followup:null, nextActions:[], versions:null}`로, sequence 3.2·이 리포트·컨트롤러 주석도 같이 | - |
+| api-spec 4.1 처리 중 응답 표기가 실제와 다름 | `{status:"RUNNING", judgment:null, followup:null, nextActions:[], versions:null}`로, sequence 3.2·이 리포트·컨트롤러 주석도 같이 | `FeedbackControllerTest`: 처리 중 응답 JSON을 null 필드까지 그대로 비교 |
 | (의견) `JUDGMENT_STATE_CONFLICT`를 1.3 공통 오류 표 대신 4.1 비고에만 | 1.3 줄을 빼고 4.1 비고에 설명을 옮김 | - |
-| (리뷰 중 직접 발견) ai 호출 동안 시도가 마무리되면 마무리된 시도에 되묻기가 저장될 수 있음 | `saveResult`가 시도 행을 잠그고 다시 확인해 되묻기를 저장하지 않음. 이슈 #25 할 일에 한 줄 추가. 처음에는 마무리 API가 생기는 #26으로 넘겼지만, "마무리한 시도에는 되묻기를 만들지 않음"은 #25가 정한 규칙이라 #25에서 막음 | `FeedbackConcurrencyTest`(실제 커밋): 되묻기 응답을 늦추는 사이 마무리를 커밋 → 판정 `DONE`, 되묻기 0행, `nextActions: []` |
+| (리뷰 중 직접 발견) ai 호출 동안 시도가 마무리되면 마무리된 시도에 되묻기가 저장될 수 있음 | `saveResult`가 시도 행을 잠그고 다시 확인해 되묻기를 저장하지 않음. 이슈 #25 할 일에 한 줄 추가. 처음에는 마무리 API가 생기는 #26으로 넘겼지만, "마무리한 시도에는 되묻기를 만들지 않음"은 #25가 정한 규칙이라 #25에서 막음 | `FeedbackConcurrencyTest`(실제 커밋): 되묻기 응답을 늦추는 사이 마무리를 커밋 → 판정 `DONE`, 되묻기 0행, `nextActions: []`. 마무리(#26)처럼 다른 트랜잭션이 시도 행을 잠근 동안에는 저장이 잠금을 기다리고, 마무리가 커밋된 뒤 되묻기 없이 저장 |
 
 ## 검증
 
-- `./gradlew test`: 131개 통과(develop #77의 기록 유무 테스트 12개 포함), 실패·생략 0개. 새로 추가 51개: `RuleJudgeTest` 6, `JudgmentTest` 6, `AiClientTest` 6(WireMock), `FeedbackFacadeTest` 20(Testcontainers + WireMock), `FeedbackControllerTest` 5, `FeedbackConcurrencyTest` 4, `JudgmentServiceTest` 2, `AttemptControllerTest` 1(판정 결과가 있는 시도 상세), `AttemptServiceTest` 1(대문자 학생 범위).
+- `./gradlew test`: 132개 통과(develop #77의 기록 유무 테스트 12개 포함), 실패·생략 0개. 새로 추가 52개: `RuleJudgeTest` 6, `JudgmentTest` 6, `AiClientTest` 6(WireMock), `FeedbackFacadeTest` 20(Testcontainers + WireMock), `FeedbackControllerTest` 5, `FeedbackConcurrencyTest` 5, `JudgmentServiceTest` 2, `AttemptControllerTest` 1(판정 결과가 있는 시도 상세), `AttemptServiceTest` 1(대문자 학생 범위).
 - 이슈 #25 완료 조건
   - ai 목으로 정상·보류·실패·유출 검사 실패: `FeedbackFacadeTest`(서술 PARTIAL 요소·버전 저장, HELD `TOO_SHORT`와 되묻기, ai 503 → `FAILED`·retryable, 되묻기만 실패 → `FAILED`·판정 미저장, 유출 실패 → 질문 은행 두 번 다른 질문), `AiClientTest`(503 `retryable` 전달, 500, 400, 깨진 JSON, 시간 초과, 연결 실패, 서킷 차단)
   - `FAILED` 후 재요청 시 재실행, `DONE` 후 재요청 시 같은 결과: `FeedbackFacadeTest`(재실행 뒤 ai 판정 호출 2번·되묻기 1번, 세 번째 요청은 ai 호출 없이 같은 결과, `retry_count` 1 유지), `FeedbackConcurrencyTest`(실제 커밋: 실패가 따로 커밋된 뒤 재요청이 처음부터 실행)
   - 그 밖의 경로: 근거 없는 충족 → `AI_BAD_RESPONSE`, 질문 은행이 비면 `INTERNAL_ERROR` 후 재요청, 순서 문항(순서까지 비교·유출 검사용 정답은 정답 순서 전체), 풀이 단계 `RETHINK` 결합·보류 통과
   - 처리 상태: 유효 리스면 `RUNNING`, 만료면 다시 실행(`FeedbackFacadeTest`), 같은 답변 동시 6개 → ai 판정 1번·나머지 `RUNNING`·끝난 뒤 같은 결과(`FeedbackConcurrencyTest`, 별도 컨테이너), 리스를 잃은 늦은 처리는 저장·실패 기록 모두 0행(`JudgmentServiceTest`)
-- 보호 장치를 하나씩 빼면 테스트가 실패함을 확인: 획득 SQL 조건(동시 요청 1개 실패), 엔티티의 리스 만료 판단(2개), 저장의 리스 조건(1개), 실패 기록의 다시 읽기(1개), `satisfy()` 거부(1개), 기준표 요소 ID 확인(1개), 질문 은행 대체(2개), 되묻기 2회 제한(1개), 고르기 정답 되묻기 생략(2개), 수학 최종 답 결합(1개), 실패 기록(4개), HTTP/1.1 고정(1개), ai 요소 목록(중복·누락) 확인(1개), 결과를 읽을 때의 시도 상태(1개), 엔티티 전이 검사(1개), 리스 시각 자르기(5개), 서킷 차단 기준 50%를 60%·40%로 바꾸면 각각 실패. PR #78 리뷰 반영분: 연결 시간 초과 분류(1개), 리스 없는 `RUNNING` 획득(1개), 실패 기록 오류 감싸기(2개), 저장 때 시도 다시 확인(1개).
+- 보호 장치를 하나씩 빼면 테스트가 실패함을 확인: 획득 SQL 조건(동시 요청 1개 실패), 엔티티의 리스 만료 판단(2개), 저장의 리스 조건(1개), 실패 기록의 다시 읽기(1개), `satisfy()` 거부(1개), 기준표 요소 ID 확인(1개), 질문 은행 대체(2개), 되묻기 2회 제한(1개), 고르기 정답 되묻기 생략(2개), 수학 최종 답 결합(1개), 실패 기록(4개), HTTP/1.1 고정(1개), ai 요소 목록(중복·누락) 확인(1개), 결과를 읽을 때의 시도 상태(1개), 엔티티 전이 검사(1개), 리스 시각 자르기(5개), 서킷 차단 기준 50%를 60%·40%로 바꾸면 각각 실패. PR #78 리뷰 반영분: 연결 시간 초과 분류(1개), 리스 없는 `RUNNING` 획득(1개), 실패 기록 오류 감싸기(2개), 저장 때 시도 다시 확인(1개), 저장 때 시도 행 잠금(1개).
   - 저장 중 롤백: 없는 시도의 되묻기로 외래키 오류를 내 판정 저장까지 롤백된 뒤에도 `markFailed`가 `FAILED`를 기록하고 다시 가져갈 수 있음(`FeedbackConcurrencyTest`, 실제 커밋)
 - compose 실제 확인(`docker compose up -d --build learning-service ai-service`, `LLM_PROVIDER=openai`, `gpt-6.1-terra`, 시드 2번 서술 미션 "쉬는 시간을 늘린다면?", 확인 후 만든 행 삭제·컨테이너 정지):
 
