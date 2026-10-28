@@ -38,7 +38,7 @@
 
 - `design/`: ERD·API·아키텍처 등 구현 기준이 되는 설계 문서
 - `report/`: 작업별 검토 결과와 구현·검증 보고서
-  - [리포트 에픽 #56 현재 완료 가능 범위](report/report-epic-readiness.md): 개인 브랜치, 최신 develop 통합, #50~#55별 완료 조건과 남은 연동
+  - [리포트 에픽 #56 현재 완료 가능 범위](report/report-epic-readiness.md): 이슈별 브랜치 진행, 최신 develop 통합, #50~#55별 완료 조건과 남은 연동
   - [이슈 #14 Repository 공통 기반](report/repository-foundation.md): 타입 매핑, 트랜잭션 경계, 예시 Repository와 PostgreSQL 테스트 사용법
   - [이슈 #50 리포트 생성 기반](report/report-generation-foundation.md): 상태 전이·Outbox 검증과 #42 메시지 계약 연결 전 남은 작업
   - [이슈 #51 학습 기록·수치 계산](report/report-metrics.md): P08 계산·항목/근거 저장 검증, #27 입력 구현안과 남은 실제 연동

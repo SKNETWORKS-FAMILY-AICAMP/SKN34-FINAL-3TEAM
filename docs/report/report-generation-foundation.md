@@ -1,6 +1,6 @@
 # 이슈 #50 리포트 생성 기반 — #42 계약 연결 전
 
-> 2026-10-28: #42 공유 스키마가 develop에 병합되었고 `feature/inyoung9629-report`에 반영했다. 이제 production codec과 worker 기본 진입점 연결은 report 측에서 진행할 수 있다. 아래 미확보 표현은 이전 시점의 기록이며 현재 판단은 [에픽 #56 점검](report-epic-readiness.md)을 따른다. codec 연결 자체는 아직 완료하지 않았다.
+> 2026-10-28: #42 공유 스키마가 develop에 병합되었고 최신화 결과를 누적 `feature/report-deletion`에 보존했다. 사용자 지시에 따라 #50은 기존 `feature/report-generation`에서 계속 진행한다. 이제 production codec과 worker 기본 진입점 연결은 report 측에서 진행할 수 있다. 아래 미확보 표현은 이전 시점의 기록이며 현재 판단은 [에픽 #56 점검](report-epic-readiness.md)을 따른다. codec 연결 자체는 아직 완료하지 않았다.
 
 ## 범위와 현재 상태
 
