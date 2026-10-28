@@ -14,7 +14,7 @@ class RecordRepository(private val mapper: RecordMapper) {
     fun findEligible(studentId: UUID, period: Period): List<EligibleAttempt> =
         mapper.findEligible(studentId, period.start(), period.endExclusive())
 
-    /** 집계 대상 시도 중 보완 답변이 있는 시도의 최초·마지막 답변 (P08 "최초 vs 마지막") */
+    /** 집계 대상 시도 중 보완 답변이 있는 시도의 최초·조회 종료일 이전 마지막 답변 (P08 "최초 vs 마지막") */
     fun findAnswerPairs(studentId: UUID, period: Period): List<AnswerPair> =
         mapper.findAnswerPairs(studentId, period.start(), period.endExclusive())
 

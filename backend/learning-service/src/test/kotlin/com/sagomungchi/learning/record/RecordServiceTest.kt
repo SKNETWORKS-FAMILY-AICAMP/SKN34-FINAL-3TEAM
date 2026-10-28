@@ -233,6 +233,33 @@ class RecordServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
+    fun `지난 기간을 조회하면 그 뒤의 보완 답변·완료는 섞이지 않고, 다음 기간에는 1번부터 그 기간 끝까지 (FN-RPT-02)`() {
+        val attempt = attempt(title = "두 주에 걸친 미션")
+        val first = answer(attempt, "좋아요", inWeek)
+        val nextWeek = inWeek.plusDays(7)
+        val revised = revise(attempt, first, "왜냐하면 더 놀 수 있기 때문이에요", nextWeek)
+        val following = Period(week.from.plusDays(7), week.to.plusDays(7))
+        val laterFollowup = attempt(title = "되묻기는 다음 주")
+        val laterAnswer = answer(laterFollowup, "처음 답", inWeek)
+        jdbc.update("UPDATE followup SET created_at = ? WHERE id = ?", nextWeek, rows.followup(laterFollowup.id, laterAnswer.id))
+        val completedBefore = service.stats(week).completedAttempts to service.stats(following).completedAttempts
+        jdbc.update("UPDATE attempt SET status = 'COMPLETED', finished_at = ?, completed_at = ? WHERE id = ?", nextWeek, nextWeek, attempt.id)
+
+        val thisWeek = service.attempts(student, week, 0, 20).items.single { it.attempt.id == attempt.id }
+        assertEquals(listOf(first.id), thisWeek.answers.map { it.answerId })
+        assertTrue(service.changes(student, week).items.isEmpty())
+        val metrics = service.summary(student, week).metrics.associateBy { it.label }
+        assertEquals(0, metrics.getValue("완료한 활동").numerator)
+        assertEquals(0 to 1, metrics.getValue("되묻기 후 생각을 더한 활동").let { it.numerator to it.denominator })
+        assertEquals(completedBefore.first to completedBefore.second + 1, service.stats(week).completedAttempts to service.stats(following).completedAttempts)
+
+        assertEquals(listOf(first.id, revised.id), service.attempts(student, following, 0, 20).items.single { it.attempt.id == attempt.id }.answers.map { it.answerId })
+        val change = service.changes(student, following).items.single()
+        assertEquals(first.id to revised.id, change.pair.firstAnswerId to change.pair.lastAnswerId)
+        assertEquals(1, service.summary(student, following).metrics.single { it.label == "완료한 활동" }.numerator)
+    }
+
+    @Test
     fun `학생이 쓴 칸만 셈 - 논술은 네 칸, 칸 이름은 세지 않음`() {
         val essay = AnswerContent(essay = Essay("늘려야 해요.", listOf("놀 수 있어요.", "쉬어야 해요."), "공부도 해요."))
         assertEquals("늘려야 해요.\n놀 수 있어요.\n쉬어야 해요.\n공부도 해요.", TextCounts.writtenText(essay))

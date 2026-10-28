@@ -88,11 +88,17 @@ class RecordService(
         return ThinkingTypes(QueryState.of(attempts.size), items)
     }
 
-    /** 집계 대상 시도를 최근 답변 순으로 */
+    /**
+     * 집계 대상 시도를 최근 답변 순으로. 답변은 1번부터 조회 종료일까지의 버전만(지난 기간을 조회해도 그 뒤 답변이 섞이지 않음, FN-RPT-02).
+     * 시도 상태·마무리 공개·돌아보기는 지금 상태
+     */
     @Transactional(readOnly = true)
     fun attempts(studentId: UUID, period: Period, page: Int, size: Int): RecordPage {
         val attempts = repository.findEligible(studentId, period)
-        val items = attempts.drop(page * size).take(size).map { attemptService.get(it.attemptId) }
+        val end = period.endExclusive()
+        val items = attempts.drop(page * size).take(size).map { attempt ->
+            attemptService.get(attempt.attemptId).let { detail -> detail.copy(answers = detail.answers.filter { it.submittedAt < end }) }
+        }
         return RecordPage(QueryState.of(attempts.size), items, page, size, attempts.size)
     }
 
@@ -105,7 +111,7 @@ class RecordService(
         return attemptService.get(attemptId)
     }
 
-    /** 보완 답변이 있는 시도의 최초 vs 마지막 답변 (P08, FN-RPT-05). 실제로 센 값만 */
+    /** 보완 답변이 있는 시도의 최초 vs 조회 종료일 이전 마지막 답변 (P08, FN-RPT-05). 실제로 센 값만 */
     @Transactional(readOnly = true)
     fun changes(studentId: UUID, period: Period): Changes {
         val pairs = repository.findAnswerPairs(studentId, period)

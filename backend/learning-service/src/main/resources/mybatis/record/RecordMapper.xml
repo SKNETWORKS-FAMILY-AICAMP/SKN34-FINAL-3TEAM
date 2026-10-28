@@ -61,15 +61,20 @@
     </sql>
 
     <select id="findEligible" resultMap="eligible" flushCache="true" useCache="false">
-        SELECT a.id AS attempt_id, v.title AS mission_title, v.thinking_type, a.status = 'COMPLETED' AS completed,
+        <!-- 시도별 사실은 조회 종료일까지 일어난 것만: 지난 기간을 조회해도 그 뒤의 답변·완료로 바뀌지 않음 (FN-RPT-02) -->
+        SELECT a.id AS attempt_id, v.title AS mission_title, v.thinking_type,
+               (a.status = 'COMPLETED' AND a.completed_at &lt; #{end}) AS completed,
                EXISTS (
                    SELECT 1 FROM hint_usage h
                    WHERE h.attempt_id = a.id
                      AND h.opened_at &lt; (SELECT min(f.submitted_at) FROM answer f WHERE f.attempt_id = a.id)
                ) AS helped_before_first_answer,
-               EXISTS (SELECT 1 FROM followup fu WHERE fu.attempt_id = a.id) AS received_followup,
-               EXISTS (SELECT 1 FROM answer r WHERE r.attempt_id = a.id AND r.followup_id IS NOT NULL) AS revised,
-               (SELECT max(l.submitted_at) FROM answer l WHERE l.attempt_id = a.id) AS last_submitted_at
+               EXISTS (SELECT 1 FROM followup fu WHERE fu.attempt_id = a.id AND fu.created_at &lt; #{end}) AS received_followup,
+               EXISTS (
+                   SELECT 1 FROM answer r
+                   WHERE r.attempt_id = a.id AND r.followup_id IS NOT NULL AND r.submitted_at &lt; #{end}
+               ) AS revised,
+               (SELECT max(l.submitted_at) FROM answer l WHERE l.attempt_id = a.id AND l.submitted_at &lt; #{end}) AS last_submitted_at
         FROM attempt a
         JOIN mission_version v ON v.id = a.mission_version_id
         WHERE a.student_id = #{studentId}
@@ -83,7 +88,8 @@
                la.id AS last_id, coalesce(la.plain_text, '') AS last_text, la.content AS last_content
         FROM attempt a
         JOIN answer fa ON fa.attempt_id = a.id AND fa.version = (SELECT min(x.version) FROM answer x WHERE x.attempt_id = a.id)
-        JOIN answer la ON la.attempt_id = a.id AND la.version = (SELECT max(y.version) FROM answer y WHERE y.attempt_id = a.id)
+        JOIN answer la ON la.attempt_id = a.id
+            AND la.version = (SELECT max(y.version) FROM answer y WHERE y.attempt_id = a.id AND y.submitted_at &lt; #{end})
         LEFT JOIN followup fu ON fu.id = la.followup_id
         WHERE a.student_id = #{studentId}
           AND la.version &gt; fa.version
@@ -118,7 +124,7 @@
 
     <!-- 운영 현황 (FN-ADM-02): 학생 원문 없이 건수만 -->
     <select id="stats" resultMap="stats" flushCache="true" useCache="false">
-        SELECT count(*) AS attempts, count(*) FILTER (WHERE a.status = 'COMPLETED') AS completed_attempts,
+        SELECT count(*) AS attempts, count(*) FILTER (WHERE a.status = 'COMPLETED' AND a.completed_at &lt; #{end}) AS completed_attempts,
                count(DISTINCT a.student_id) AS students
         FROM attempt a
         WHERE <include refid="recordedInPeriod"/>

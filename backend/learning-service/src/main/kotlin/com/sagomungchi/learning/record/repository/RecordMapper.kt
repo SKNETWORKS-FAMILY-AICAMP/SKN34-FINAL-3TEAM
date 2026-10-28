@@ -9,7 +9,7 @@ import java.util.UUID
 
 /**
  * 집계 대상 시도(P08) 하나의 사실. helpedBeforeFirstAnswer는 최초 답변 전 생각 열기 열람,
- * receivedFollowup은 되묻기를 받음, revised는 되묻기에 답한 보완 답변을 냄 (시도 전체 기준)
+ * receivedFollowup은 되묻기를 받음, revised는 되묻기에 답한 보완 답변을 냄. 모두 조회 종료일까지 일어난 것만
  */
 data class EligibleAttempt(
     val attemptId: UUID,
@@ -22,7 +22,7 @@ data class EligibleAttempt(
     val lastSubmittedAt: Instant,
 )
 
-/** 시도의 최초·마지막 답변과 마지막 답변이 답한 되묻기 질문 */
+/** 시도의 최초 답변과 조회 종료일 이전 마지막 답변, 마지막 답변이 답한 되묻기 질문 */
 data class AnswerPair(
     val attemptId: UUID,
     val followup: String?,
