@@ -29,7 +29,8 @@ class AuthOpenApiTests(unittest.TestCase):
         documented = {
             (method, path)
             for path, methods in self.spec["paths"].items()
-            for method in methods
+            for method, operation in methods.items()
+            if method in {"get", "post"} and {"Auth", "Account"}.intersection(operation.get("tags", []))
         }
         self.assertEqual(len(actual), 6)
         self.assertEqual(documented, actual)

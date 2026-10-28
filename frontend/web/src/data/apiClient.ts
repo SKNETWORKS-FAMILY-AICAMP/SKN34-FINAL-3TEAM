@@ -104,8 +104,10 @@ export async function apiRequest(path: string, init: RequestInit = {}): Promise<
     return ['/auth/logout', '/auth/student-sessions'].includes(path) ? withAuthLock(execute) : execute()
   }
   const sentRevision = tokenRevision
+  // 학생 기기·PIN 엔드포인트(API 명세 3.11)의 401은 로그인 단계 오류다. 학생 재로그인 처리로 바꾸지 않는다.
+  const studentEntry = path.startsWith('/auth/student/')
   let response = await send()
-  if (response.status === 401 && !['/auth/login', '/auth/refresh', '/auth/logout'].includes(path)) {
+  if (response.status === 401 && !studentEntry && !['/auth/login', '/auth/refresh', '/auth/logout'].includes(path)) {
     const error = await toApiError(response.clone())
     if (error.problem.code === 'TOKEN_EXPIRED') {
       if (studentMode) throw studentAuthenticationRequired()
@@ -115,6 +117,7 @@ export async function apiRequest(path: string, init: RequestInit = {}): Promise<
   }
   if (!response.ok) {
     const error = await toApiError(response)
+    if (studentEntry) throw error
     if (error.problem.code === 'SESSION_CHANGED' && typeof window !== 'undefined') {
       if (studentMode) throw studentAuthenticationRequired()
       setAccessToken(null)

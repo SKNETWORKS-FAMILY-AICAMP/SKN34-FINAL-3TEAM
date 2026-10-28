@@ -1,9 +1,11 @@
 package com.sagomungchi.learning.mission.repository
 
+import com.sagomungchi.learning.TestRows
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.learning.mission.domain.Choice
 import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.domain.MissionProgress
+import com.sagomungchi.learning.mission.domain.MissionSnapshot
 import com.sagomungchi.learning.mission.domain.ProgressStatus
 import com.sagomungchi.learning.mission.domain.ThinkingType
 import org.junit.jupiter.api.Test
@@ -65,6 +67,20 @@ class MissionRepositoryTest : PostgresRepositoryTest() {
 
         assertEquals(listOf(normal to false, demoOnly to true), repository.findPublished().map { it.id to it.demoOnly })
         assertEquals(true, repository.findPublishedById(demoOnly)?.demoOnly)
+    }
+
+    @Test
+    fun `시도가 쓸 현재 버전 묶음·고정 버전 미션·생각 열기 질문`() {
+        val rows = TestRows(jdbc)
+        val seeded = rows.mission(status = "PUBLISHED", title = "처음 버전", hints = listOf("하나", "둘"))
+        val newer = rows.addVersion(seeded.id, version = 2, title = "새 버전")
+        jdbc.update("UPDATE mission SET current_version_id = ?, status = 'UNPUBLISHED' WHERE id = ?", newer, seeded.id)
+
+        assertEquals(MissionSnapshot(newer, seeded.rubricVersionId), repository.findCurrentVersions(seeded.id))
+        assertEquals("처음 버전", repository.findVersion(seeded.versionId)?.title)
+        assertEquals(seeded.id, repository.findVersion(seeded.versionId)?.id)
+        assertEquals(listOf(1 to "하나", 2 to "둘"), repository.findHintQuestions(seeded.rubricVersionId).map { it.seq to it.content })
+        assertNull(repository.findCurrentVersions(UUID.randomUUID()))
     }
 
     @Test

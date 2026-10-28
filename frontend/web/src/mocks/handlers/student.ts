@@ -17,6 +17,8 @@ import {
   persistFixtureState,
   mockSubmissionReceipts,
 } from '../fixtures/student.ts'
+import { mockLooks, persistLooks } from '../fixtures/studentLook.ts'
+import { DEFAULT_LOOK, isCompanionId, isThemeId } from '../../domain/studentLook.ts'
 
 let child: Child | undefined = store.snapshot().session?.child,
   token = '',
@@ -34,6 +36,17 @@ export function setMockScenario(value: DemoScenario) {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('sagomungchi:mock-invalidate'))
 }
 const issueToken = () => (token = `msw-access-${++serial}`)
+/** 기기 PIN 로그인 성공 시 학생 세션을 연다. 학부모 로그인 없이 기기 소유 학부모의 자녀 목록을 쓴다. */
+export function startDeviceStudentSession(selected: Child, ownerChildren: Child[]) {
+  store.restoreSnapshot({
+    ...store.snapshot(),
+    children: structuredClone(ownerChildren),
+    session: { role: 'STUDENT', entry: 'DEVICE', child: structuredClone(selected) },
+  })
+  mockRole = 'STUDENT'
+  child = selected
+  return issueToken()
+}
 const page = (items: unknown[]) => ({ items, page: 0, size: 20, totalElements: items.length })
 export function guard(request: Request) {
   if ((scenario === 'token-expired' || scenario === 'refresh-fail') && token.startsWith('expired-'))
@@ -98,6 +111,11 @@ async function linked(id: string) {
   if (!c)
     throw new ApiError({ status: 403, code: 'CHILD_NOT_LINKED', title: '연결된 자녀가 아닙니다.' })
   return c
+}
+function studentOnly() {
+  if (mockRole !== 'STUDENT' || !child)
+    throw new ApiError({ status: 403, code: 'FORBIDDEN', title: '학생만 바꿀 수 있는 설정입니다.' })
+  return child
 }
 const id = (value: string | readonly string[] | undefined) => {
   if (!value) throw new Error('경로 식별값이 없습니다.')
@@ -165,6 +183,26 @@ export const studentHandlers = [
       guard(request)
       const h = await store.home(child!)
       return { ...h, resume: h.resume ? wireAttempt(h.resume) : null }
+    }),
+  ),
+  // 꾸미기 설정 (API 명세 3.12 목업 계약): 학생 토큰 전용
+  http.get('/api/v1/students/me/preferences', ({ request }) =>
+    respond(async () => {
+      guard(request)
+      return mockLooks.get(studentOnly().id) ?? DEFAULT_LOOK
+    }),
+  ),
+  http.put('/api/v1/students/me/preferences', ({ request }) =>
+    respond(async () => {
+      guard(request)
+      const me = studentOnly()
+      const body = (await request.json()) as { theme?: unknown; companion?: unknown }
+      if (!isThemeId(body.theme) || !isCompanionId(body.companion))
+        throw new ApiError({ status: 422, code: 'VALIDATION_FAILED', title: '고를 수 없는 테마나 캐릭터입니다.' })
+      const look = { theme: body.theme, companion: body.companion, updatedAt: new Date().toISOString() }
+      mockLooks.set(me.id, look)
+      persistLooks()
+      return look
     }),
   ),
   http.get('/api/v1/children', ({ request }) =>

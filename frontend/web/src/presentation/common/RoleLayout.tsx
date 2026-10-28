@@ -7,7 +7,7 @@ export function RoleLayout({ role }: { role: Role }) {
   const { session, ready, loginPath } = useSession(),
     location = useLocation()
   if (!ready) return <p role="status">로그인 상태를 확인하고 있습니다.</p>
-  if (!session) return <Navigate to={role === 'STUDENT' ? '/student/login' : loginPath} replace state={{ from: location.pathname }} />
+  if (!session) return <Navigate to={role === 'STUDENT' ? '/student/login' : loginPath} replace state={{ from: location.pathname + location.search }} />
   if (session.role === 'PARENT' && session.nextAction && session.nextAction !== 'READY' && location.pathname !== session.startPath)
     return <Navigate to={session.startPath ?? '/parent/onboarding'} replace />
   if (session.role !== role) return <Navigate to={roleStart(session.role)} replace />

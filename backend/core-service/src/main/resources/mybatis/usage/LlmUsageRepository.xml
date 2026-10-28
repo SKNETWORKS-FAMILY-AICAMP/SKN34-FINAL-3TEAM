@@ -13,4 +13,29 @@
         )
         ON CONFLICT (event_id) DO NOTHING
     </insert>
+    <resultMap id="summary" type="com.sagomungchi.core.usage.domain.UsageSummary">
+        <constructor>
+            <arg column="call_type" javaType="java.lang.String"/>
+            <arg column="calls" javaType="_long"/>
+            <arg column="failures" javaType="_long"/>
+            <arg column="latency_ms" javaType="java.math.BigDecimal"/>
+            <arg column="input_tokens" javaType="java.lang.Long"/>
+            <arg column="output_tokens" javaType="java.lang.Long"/>
+            <arg column="cost_usd" javaType="java.math.BigDecimal"/>
+            <arg column="unpriced_calls" javaType="_long"/>
+        </constructor>
+    </resultMap>
+    <select id="summarize" resultMap="summary">
+        SELECT call_type, count(*) AS calls,
+               count(*) FILTER (WHERE NOT success) AS failures,
+               avg(latency_ms) AS latency_ms,
+               CASE WHEN count(input_tokens) = count(*) THEN sum(input_tokens) END AS input_tokens,
+               CASE WHEN count(output_tokens) = count(*) THEN sum(output_tokens) END AS output_tokens,
+               CASE WHEN count(cost_usd) = count(*) THEN sum(cost_usd) END AS cost_usd,
+               count(*) FILTER (WHERE cost_usd IS NULL) AS unpriced_calls
+        FROM llm_usage
+        WHERE occurred_at &gt;= #{from} AND occurred_at &lt; #{until}
+        <if test="callType != null">AND call_type = #{callType}</if>
+        GROUP BY call_type ORDER BY call_type
+    </select>
 </mapper>

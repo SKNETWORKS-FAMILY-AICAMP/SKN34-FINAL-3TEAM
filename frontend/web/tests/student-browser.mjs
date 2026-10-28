@@ -37,8 +37,10 @@ async function check(name, run, options = {}) {
   }
 }
 async function parent(p, admin = false) {
+  // 로그인 없이 학생 경로를 열면 학생 로그인(기기·PIN)으로 보낸다(#61·#59). 학부모는 /login에서 들어온다.
   await p.goto(base + '/student/missions', { waitUntil: 'domcontentloaded' })
-  await p.waitForURL('**/login')
+  await p.waitForURL('**/student/login')
+  await p.goto(base + '/login', { waitUntil: 'domcontentloaded' })
   if (admin) await p.getByLabel('이메일', { exact: true }).fill('admin@example.test')
   await p.getByRole('button', { name: '시연 계정으로 로그인' }).click()
   await p.waitForURL(admin ? /\/admin\/home(?:\?|$)/ : /\/parent\/journal(?:\?|$)/)
@@ -48,12 +50,12 @@ async function student(p, grade5 = false) {
   if (grade5) await p.getByLabel('자녀 선택', { exact: true }).selectOption('demo-doyun')
   await p.getByRole('button', { name: '이 자녀로 학습 시작' }).click()
   await p.waitForURL('**/student/home')
-  await p.getByRole('heading', { name: '학습 홈', exact: true }).waitFor()
+  await p.getByRole('heading', { name: /^학습 홈/ }).waitFor()
 }
 async function open(p, title) {
   await p.getByRole('button', { name: '미션 고르기', exact: true }).click()
   const card = p
-    .locator('.cj-activity')
+    .getByRole('article')
     .filter({ has: p.getByRole('heading', { name: title, exact: true }) })
   await card.getByRole('button', { name: '미션 열기' }).click()
   await p.getByRole('button', { name: '작성하기 · 진행 중이면 이어서' }).click()
@@ -65,7 +67,7 @@ async function saved(p) {
 }
 async function submit(p) {
   await saved(p)
-  await p.getByRole('button', { name: '답변 제출', exact: true }).click()
+  await p.getByRole('button', { name: '다 썼어요', exact: true }).click()
 }
 async function finish(p) {
   await p.getByRole('button', { name: '이대로 돌아보기', exact: true }).click()
@@ -87,8 +89,10 @@ try {
     await p.getByRole('button', { name: '시연 계정으로 로그인' }).click()
     await p.waitForURL('**/admin/home')
     await p.getByRole('heading', { name: '관리자 운영 화면' }).waitFor()
+    // 주소를 직접 열면(새로고침) 학생 경로는 학생 로그인으로 보낸다(#61). 관리자 세션으로 학생 화면을 열지 않는다.
     await p.goto(base + '/student/home', { waitUntil: 'domcontentloaded' })
-    await p.waitForURL('**/admin/home')
+    await p.waitForURL('**/student/login')
+    assert.equal(await p.getByRole('navigation', { name: '학생 메뉴' }).count(), 0)
   })
   await check('학생 홈 QueryState 5종과 retryable 재시도', async (p) => {
     await student(p)
@@ -106,7 +110,7 @@ try {
       }
     }
     await p.getByLabel('상태 시연').selectOption('normal')
-    await p.getByRole('heading', { name: '시작할 수 있는 활동' }).waitFor()
+    await p.getByRole('heading', { name: '생각 지도', exact: true }).waitFor()
   })
   await check('초안만 있는 시도 이어하기·새로고침 복원·학생 메모·브라우저 뒤로가기', async (p) => {
     await student(p)
@@ -117,14 +121,18 @@ try {
     await p.getByTestId('private-memo').fill('나만 보는 메모')
     await saved(p)
     await p.getByRole('button', { name: '공책으로', exact: true }).click()
-    await p.getByRole('button', { name: '학습 홈', exact: true }).click()
+    await p.getByRole('button', { name: '생각 지도', exact: true }).click()
     await p.getByRole('button', { name: '이어서 작성하기' }).click()
     await p.getByLabel('내 생각과 까닭').waitFor()
     assert.equal(
       await p.getByLabel('내 생각과 까닭').inputValue(),
       '새로고침 후에도 유지할 초안입니다.',
     )
+    // 학생은 새로고침하면 다시 로그인한다(#61). 다시 들어와 이어 쓰면 서버의 초안이 그대로 있어야 한다.
     await p.reload()
+    await p.waitForURL('**/student/login')
+    await student(p)
+    await p.getByRole('button', { name: '이어서 작성하기' }).click()
     await p.getByLabel('내 생각과 까닭').waitFor()
     assert.equal(
       await p.getByLabel('내 생각과 까닭').inputValue(),
@@ -220,7 +228,7 @@ try {
         await p.getByLabel('상태 시연').selectOption('input-fixtures')
       await open(p, title)
       await p.getByLabel('상태 시연').selectOption('partial')
-      await p.getByRole('button', { name: '답변 제출', exact: true }).click()
+      await p.getByRole('button', { name: '다 썼어요', exact: true }).click()
       await p.getByText('ANSWER_INCOMPLETE', { exact: true }).waitFor()
       if (type === 'NARRATIVE')
         await p.getByLabel('내 생각과 까닭').fill('그림과 글이 함께 있으면 이해하기 쉬워요.')
@@ -328,20 +336,20 @@ try {
       await saved(p)
       await p.getByLabel('풀이 1', { exact: true }).focus()
       await p.evaluate(() => scrollTo(0, document.body.scrollHeight))
-      const b = await p.getByRole('button', { name: '답변 제출', exact: true }).boundingBox()
+      const b = await p.getByRole('button', { name: '다 썼어요', exact: true }).boundingBox()
       assert.ok(b.y >= 0 && b.y + b.height <= 500)
       assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     },
     { viewport: { width: 390, height: 500 }, reducedMotion: 'reduce' },
   )
-  await check('만료 갱신·실패 시 재로그인·보호 화면 가드', async (p) => {
+  await check('학생 토큰 만료는 갱신 없이 학생 로그인으로·보호 화면 가드', async (p) => {
     await student(p)
+    // 학생 세션은 refresh를 쓰지 않는다(#61, API 명세 3.11). 만료되면 학생 로그인으로 보낸다.
     await p.getByLabel('상태 시연').selectOption('token-expired')
-    await p.getByRole('heading', { name: '시작할 수 있는 활동' }).waitFor()
-    await p.getByLabel('상태 시연').selectOption('refresh-fail')
-    await p.getByRole('dialog', { name: '다시 로그인해 주세요.' }).waitFor()
-    await p.getByRole('button', { name: '로그인 화면으로', exact: true }).click()
-    await p.waitForURL('**/login')
+    await p.waitForURL('**/student/login')
+    assert.equal(await p.getByRole('navigation', { name: '학생 메뉴' }).count(), 0)
+    await p.goto(base + '/student/journal', { waitUntil: 'domcontentloaded' })
+    await p.waitForURL('**/student/login')
   })
   assert.deepEqual(errors, [])
   if (out)

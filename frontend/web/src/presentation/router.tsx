@@ -7,7 +7,7 @@ import { ParentWorkspace } from './parent/ParentWorkspace.tsx'
 import { AdminWorkspace } from './admin/AdminWorkspace.tsx'
 import { OAuthCompletePage } from './auth/OAuthCompletePage.tsx'
 import { AuthOnboarding } from './auth/AuthOnboarding.tsx'
-import { StudentEntryPage } from './auth/StudentEntryPage.tsx'
+import { DeviceLogin } from './student/DeviceLogin.tsx'
 
 // URL 입력만으로 역할을 부여하지 않는다. 로그인 응답/학생 세션으로 진입한다.
 export const router = createBrowserRouter([
@@ -19,7 +19,8 @@ export const router = createBrowserRouter([
     ),
     children: [
       { path: '/oauth/complete', element: <OAuthCompletePage /> },
-      { path: '/student/login', element: <LoginGate />, children: [{ index: true, element: <StudentEntryPage /> }] },
+      // 자녀 기기 진입(P01 개정, #59): 등록 기기 + PIN. 학생 토큰 만료·새로고침 때도 여기로 온다.
+      { path: '/student/login', element: <LoginGate />, children: [{ index: true, element: <DeviceLogin /> }] },
       {
         path: '/signup',
         element: <LoginGate />,

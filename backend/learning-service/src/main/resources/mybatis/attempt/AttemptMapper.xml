@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.learning.attempt.repository.AttemptMapper">
+    <resultMap id="attempt" type="com.sagomungchi.learning.attempt.domain.Attempt">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="student_id" javaType="java.util.UUID"/>
+            <arg column="mission_id" javaType="java.util.UUID"/>
+            <arg column="mission_version_id" javaType="java.util.UUID"/>
+            <arg column="rubric_version_id" javaType="java.util.UUID"/>
+            <arg column="grade" javaType="_int"/>
+            <arg column="status" javaType="com.sagomungchi.learning.attempt.domain.AttemptStatus"/>
+            <arg column="started_at" javaType="java.time.Instant"/>
+            <arg column="finished_at" javaType="java.time.Instant"/>
+            <arg column="completed_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="columns">
+        id, student_id, mission_id, mission_version_id, rubric_version_id, grade, status,
+        started_at, finished_at, completed_at, updated_at
+    </sql>
+
+    <!-- 부분 UK uq_attempt_in_progress: 동시 시작은 먼저 커밋된 시도만 남고 나머지는 0행 (FN-LRN-16) -->
+    <insert id="insertIfNoneInProgress">
+        INSERT INTO attempt (<include refid="columns"/>)
+        VALUES (#{id}, #{studentId}, #{missionId}, #{missionVersionId}, #{rubricVersionId}, #{grade}, #{status},
+                #{startedAt}, #{finishedAt,jdbcType=TIMESTAMP_WITH_TIMEZONE},
+                #{completedAt,jdbcType=TIMESTAMP_WITH_TIMEZONE}, #{updatedAt})
+        ON CONFLICT (student_id, mission_id) WHERE status = 'IN_PROGRESS' DO NOTHING
+    </insert>
+
+    <select id="findInProgress" resultMap="attempt">
+        SELECT <include refid="columns"/> FROM attempt
+        WHERE student_id = #{studentId} AND mission_id = #{missionId} AND status = 'IN_PROGRESS'
+    </select>
+
+    <select id="findById" resultMap="attempt">
+        SELECT <include refid="columns"/> FROM attempt WHERE id = #{id}
+    </select>
+
+    <!-- 같은 시도의 동시 답변 제출은 이 잠금을 기다려 같은 키 확인·버전 계산이 겹치지 않음 -->
+    <select id="findByIdForUpdate" resultMap="attempt">
+        SELECT <include refid="columns"/> FROM attempt WHERE id = #{id} FOR UPDATE
+    </select>
+
+    <insert id="insertHintUsage">
+        INSERT INTO hint_usage (id, attempt_id, hint_question_id, opened_at)
+        VALUES (#{id}, #{attemptId}, #{hintQuestionId}, #{openedAt})
+    </insert>
+
+    <select id="findOpenedHintIds" resultType="java.util.UUID">
+        SELECT DISTINCT hint_question_id FROM hint_usage WHERE attempt_id = #{attemptId}
+    </select>
+</mapper>

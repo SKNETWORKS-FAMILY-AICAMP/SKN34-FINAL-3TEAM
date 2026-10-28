@@ -854,8 +854,8 @@ classDiagram
   }
   class LlmUsageService {
     <<service>>
-    +record(event)
-    +summary(from, to, callType) UsageSummary
+    +record(envelope)
+    +summarize(from, to, callType) List~UsageSummary~
   }
   class AdminController {
     <<controller>>
@@ -867,18 +867,25 @@ classDiagram
     +errorReports(status)
     +payments(status, from, to)
     +approveRefund(requestId, idempotencyKey)
-    +modelVersions(kind)
-    +activate(versionId)
-    +rollback(versionId)
-    +aiUsage(from, to, callType)
   }
   class AdminMissionController {
     <<controller>>
     +proxy(path, body)
   }
+  class ModelVersionController {
+    <<controller>>
+    +list(kind, page, size) ModelVersionPage
+    +register(body, request) ModelVersion
+    +activate(versionId, body, request) ModelVersion
+    +rollback(versionId, body, request) ModelVersion
+  }
+  class AiUsageController {
+    <<controller>>
+    +usage(from, to, callType) AiUsageResponse
+  }
   class InternalModelVersionController {
     <<controller>>
-    +active() ActiveVersions
+    +active() Map
   }
   class AdminJobService {
     <<service>>
@@ -892,19 +899,52 @@ classDiagram
   }
   class ModelVersionService {
     <<service>>
-    +register(command) ModelVersion
-    +activate(versionId, adminId)
-    +rollback(versionId, adminId, reanalyze)
-    +active() ActiveVersions
+    +list(kind, page, size) ModelVersionPage
+    +register(command, actor) ModelVersion
+    +activate(id, command, actor) ModelVersion
+    +rollback(id, command, actor) ModelVersion
+    +active() List~ActiveModelVersion~
+    -locked(id) ModelVersion
+    -switch(target, scopes, reason, reanalysis, actor, action) ModelVersion
   }
   class AuditLogService {
-    <<service>>
+    <<planned>>
     +record(actorId, action, target, result, detail)
   }
   class ModelVersion {
-    <<entity>>
-    +activate(adminId)
-    +deactivate()
+    <<value>>
+    +id UUID
+    +kind ModelKind
+    +name String
+    +version String
+    +status VersionStatus
+    +evalResult EvaluationRecord
+    +approvedBy UUID
+    +activatedAt OffsetDateTime
+  }
+  class ModelVersionRepository {
+    <<repository>>
+    +insert(version) Boolean
+    +find(id) ModelVersion
+    +list(kind, page, size) List
+    +count(kind) Long
+    +active() List
+    +current(kind, name) ModelVersion
+    +lockGroup(kind, name)
+    +nextRevision(kind, name) Long
+    +update(version)
+    +audit(actor, action, target, detail, now)
+  }
+  class ModelVersionMapper {
+    <<mapper>>
+    +insert(row) Int
+    +update(row) Int
+    +audit(id, actor, action, target, detail, now) Int
+  }
+  class LlmUsageRepository {
+    <<mapper>>
+    +insertIfAbsent(usage) Int
+    +summarize(from, until, callType) List~UsageSummary~
   }
   class QueueStatsRepository {
     <<repository>>
@@ -920,11 +960,12 @@ classDiagram
   ErrorReportService ..> ErrorReport
   InquiryService ..> Inquiry
   LlmUsageConsumer --> LlmUsageService
+  LlmUsageService --> LlmUsageRepository
+  ModelVersionController --> ModelVersionService
+  AiUsageController --> LlmUsageService
   AdminController --> AdminJobService
-  AdminController --> ModelVersionService
   AdminController --> ErrorReportService
   AdminController --> RefundService
-  AdminController --> LlmUsageService
   AdminController --> AuditLogService
   AdminController --> QueueStatsRepository
   AdminMissionController --> LearningClient
@@ -935,7 +976,9 @@ classDiagram
   AdminJobService --> NotificationService : 알림 재처리
   AdminJobService --> JobExecutionService
   ModelVersionService --> OutboxWriter : model.version.activated
-  ModelVersionService --> AuditLogService
+  ModelVersionService --> ModelVersionRepository : 상태·감사 같은 트랜잭션
+  ModelVersionRepository --> ModelVersionMapper
+  ModelVersionRepository ..> ModelVersion : JSON·DB 행 변환
   ModelVersionService ..> ModelVersion
   class NotificationService { <<service>> }
   class RefundService { <<service>> }
@@ -946,8 +989,10 @@ classDiagram
 ```
 
 - `SupportLearningClient` = `support/client/LearningClient.kt` (아키텍처 2.6). 다이어그램에서만 이름 구분
-- 관리자 세부 권한(`CONTENT`·`PAYMENT_VIEW`·`PAYMENT_REFUND`·`SERVICE_OPS`)은 controller 메서드 단위 `@PreAuthorize` 검사 (API 1.2)
-- `AdminController`는 구현 시 `AdminJobController`·`AdminModelVersionController` 등 화면 단위로 분할, 다이어그램은 의존 관계만 표기
+- 구현된 #43 공개 경로는 #36 `PublicAuthFilter → AuthService.requirePermission(SERVICE_OPS)`를 재사용한다. 내부 조회는 `InternalAuthFilter`의 내부 토큰 검사를 사용한다. 다른 관리자 기능의 권한 범위는 API 1.2를 따른다.
+- #43은 실제 구현된 `ModelVersionController`·`AiUsageController`·`InternalModelVersionController`를 구분해 표시했다. 내부 응답은 `{items: List<ActiveModelVersion>}`이며 평가·관리자 정보는 제외한다. `AdminController` 및 나머지 운영 기능은 기존 후속 설계이며 구현 완료 표시가 아니다.
+- `ModelVersion`은 불변 data class다. 상태 전이는 `ModelVersionService`의 `activate`·`rollback`과 private `switch`에서 `copy` 후 Repository에 저장하며 Domain의 `activate()`·`deactivate()` 메서드는 없다.
+- `AuditLogService`는 아직 구현되지 않은 공용 감사 서비스 설계다. #43은 `ModelVersionService → ModelVersionRepository.audit → ModelVersionMapper.audit → audit_log` 경로로 감사 기록을 저장한다. 상태·감사·Outbox를 같은 트랜잭션으로 유지하며, #47 등에서 공용 감사 기능을 실제 도입할 때 이 경로의 통합을 검토한다. 현재 사용처만을 위해 공용 서비스를 추가하지 않는다 ([#43 보고서](../report/issue-43-model-registry.md)).
 - `QueueStatsRepository`: RabbitMQ 관리 API(15672) 조회, 큐 길이·DLQ 적재량 (참고 레포 `QueueOperations*`)
 
 ---
@@ -988,6 +1033,8 @@ classDiagram
     +publish(missionId)
     +unpublish(missionId)
     +currentVersions(missionId) MissionSnapshot
+    +getVersion(missionVersionId) MissionView
+    +hintQuestions(rubricVersionId) List
   }
   class Mission {
     <<entity>>
@@ -1010,7 +1057,7 @@ classDiagram
   }
   class AttemptController {
     <<controller>>
-    +start(missionId) Attempt
+    +start(missionId, grade, demo) Attempt
     +get(attemptId) AttemptDetail
     +saveDraft(attemptId, ifMatch, content) Draft
     +openHint(attemptId) Hint
@@ -1020,19 +1067,21 @@ classDiagram
   }
   class AttemptService {
     <<service>>
-    +start(studentId, missionId) Attempt
+    +start(studentId, missionId, grade, demo) Attempt
     +get(attemptId) AttemptDetail
     +saveDraft(attemptId, ifMatch, content) AttemptDraft
     +openHint(attemptId) HintQuestion
     +finish(attemptId) FinishResult
     +saveReflection(attemptId, command)
     +saveSelfAssessment(attemptId, checks) List
-    +requireOpen(attemptId) Attempt
+    +lockForAnswer(attemptId) Attempt
+    +clearSubmittedDraft(attemptId, now)
     +deleteByStudent(studentId)
   }
   class Attempt {
     <<entity>>
     +requireOpen()
+    +requireAnswerable()
     +finish(now)
     +complete(now)
   }
@@ -1054,8 +1103,14 @@ classDiagram
   }
   class Answer {
     <<entity>>
-    +next(previous, followupId, content)$ Answer
-    +plainText() String
+    +next(previous, followupId, content, plainText)$ Answer
+    +sameRequestAs(other) Boolean
+  }
+  class AnswerContent {
+    <<value>>
+    +only(inputType) AnswerContent
+    +requireComplete(inputType, mission)
+    +plainText(inputType, mission) String
   }
   class MissionRepository { <<repository>> }
   class RubricRepository { <<repository>> }
@@ -1067,6 +1122,7 @@ classDiagram
   class AnswerRepository {
     <<repository>>
     +findByIdempotencyKey(attemptId, key) Answer
+    +findLatest(attemptId) Answer
   }
   class JudgmentService { <<service>> }
 
@@ -1087,17 +1143,20 @@ classDiagram
   AttemptService ..> AttemptDraft
   Attempt --> FinishPolicy
   AnswerController --> AnswerService
-  AnswerService --> AttemptService : requireOpen
+  AnswerService --> AttemptService : lockForAnswer·clearSubmittedDraft
+  AnswerService --> MissionService : 시도 고정 버전
   AnswerService --> AnswerRepository
   AnswerService --> JudgmentService : createPending
   AnswerService ..> Answer
+  Answer *-- AnswerContent
 ```
 
 - `AttemptService.start`: 부분 UK `(student_id, mission_id) WHERE IN_PROGRESS` 충돌 시 기존 시도 반환 (FN-LRN-16)
 - `AttemptDraft.update`: `UPDATE ... WHERE version = :ifMatch` 영향 0행이면 `ATTEMPT_DRAFT_CONFLICT` + 최신 초안 (FN-LRN-17)
-- `AnswerService.submit`: 같은 트랜잭션에 `answer` 버전 추가 + `judgment(PENDING)` 생성. 같은 `idempotency_key`면 기존 답변 반환 (FN-LRN-10)
+- `AnswerService.submit`: 같은 트랜잭션에 `answer` 버전 추가 + `judgment(PENDING)` 생성. 같은 `idempotency_key`·같은 본문이면 기존 답변 반환, 다른 본문이면 `422 IDEMPOTENCY_KEY_REUSED` (FN-LRN-10, API 1.4). `lockForAnswer`가 시도 행을 잠가(`FOR UPDATE`) 같은 시도의 제출을 한 줄로 세움. 저장하면 `clearSubmittedDraft`로 초안의 `answer`를 비우고 `memo`는 유지, 초안 version +1 (FN-LRN-15·16)
+- 보완 답변 연결: 첫 답변은 `followupId` 없이, 버전 2부터는 이 시도의 가장 최근 되묻기 중 아직 답하지 않은 것만 (`JudgmentService.unansweredLatestFollowupId`). 아니면 `422 ANSWER_INCOMPLETE`. 판정 전 추가 제출·되묻기 2회 뒤 제출도 여기서 막힘 (P04)
 - `FinishPolicy.canFinish`: 시도 내 판정 `DONE` 1회 이상(결과 무관, `HELD` 포함)이면 true (P04)
-- 되묻기 생성 조건: 시도 내 되묻기 2회 미만 + 고르기 `CORRECT` 아님 (P04). `finished_at` 이후 답변 제출은 `requireOpen`에서 `ATTEMPT_CLOSED`
+- 되묻기 생성 조건: 시도 내 되묻기 2회 미만 + 고르기 `CORRECT` 아님 (P04). `finished_at` 이후 답변 제출은 `Attempt.requireAnswerable`에서 `ATTEMPT_CLOSED`. `requireOpen`은 `COMPLETED`만 막음(마무리 뒤 돌아보기 저장)
 - `AttemptDraft.content`: `{answer, memo}`, memo는 학생 본인 조회에만 포함 (P05)
 - `Mission.requirePublishable`: 현재 버전·기준표 요소 1개 이상(서술·논술) 또는 `answer_key`(고르기·수학) 검사, 누락 시 `MISSION_PUBLISH_INCOMPLETE` (FN-ADM-11)
 
@@ -1121,6 +1180,8 @@ classDiagram
   class JudgmentService {
     <<service>>
     +createPending(answerId, rubricVersionId)
+    +unansweredLatestFollowupId(attemptId) UUID
+    +timeline(attemptId) List~TimelineAnswer~
     +acquire(answerId, now) AcquireResult
     +saveResult(judgmentId, judged, followup)
     +markFailed(judgmentId, code)
