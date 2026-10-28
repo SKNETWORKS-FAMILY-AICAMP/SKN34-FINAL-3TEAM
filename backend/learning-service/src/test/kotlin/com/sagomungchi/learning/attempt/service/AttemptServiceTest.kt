@@ -134,6 +134,15 @@ class AttemptServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
+    fun `학생 범위 헤더가 대문자 UUID여도 본인 시도로 확인 (requireSelfStudent와 같은 UUID 비교)`() {
+        val attempt = service.start(student, rows.mission().id, 3, false).attempt
+
+        UserContextHolder.set(UserContext(null, "STUDENT", setOf(student.toString().uppercase()), null))
+
+        assertEquals(attempt.id, service.get(attempt.id).attempt.id)
+    }
+
+    @Test
     fun `생각 열기 질문이 없는 미션은 404`() {
         val attempt = service.start(student, rows.mission(hints = emptyList()).id, 3, false).attempt
 

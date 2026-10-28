@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.learning.judgment.repository.FollowupMapper">
+    <resultMap id="bank" type="com.sagomungchi.learning.judgment.domain.BankQuestion">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="question" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="stored" type="com.sagomungchi.learning.judgment.domain.StoredFollowup">
+        <constructor>
+            <arg column="answer_id" javaType="java.util.UUID"/>
+            <idArg column="followup_id" javaType="java.util.UUID"/>
+            <arg column="type" javaType="com.sagomungchi.learning.judgment.domain.FollowupType"/>
+            <arg column="question" javaType="java.lang.String"/>
+            <arg column="source" javaType="com.sagomungchi.learning.judgment.domain.FollowupSource"/>
+        </constructor>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO followup (id, attempt_id, judgment_id, type, question, source, leak_check_passed,
+                              prompt_version, model_version, bank_question_id, created_at)
+        VALUES (#{id}, #{followup.attemptId}, #{judgmentId}, #{followup.type}, #{followup.question}, #{followup.source},
+                #{followup.leakCheckPassed}, #{followup.promptVersion,jdbcType=VARCHAR},
+                #{followup.modelVersion,jdbcType=VARCHAR}, #{followup.bankQuestionId,jdbcType=OTHER}, #{now})
+    </insert>
+
+    <select id="countByAttempt" resultType="int">
+        SELECT count(*) FROM followup WHERE attempt_id = #{attemptId}
+    </select>
+
+    <!-- 같은 유형의 활성 질문 중 이 시도에서 아직 쓰지 않은 것을 먼저, 그다음 생성 순 -->
+    <select id="findBankQuestion" resultMap="bank">
+        SELECT b.id, b.question
+        FROM followup_bank_question b
+        WHERE b.type = #{type} AND b.active
+        ORDER BY EXISTS (SELECT 1 FROM followup f WHERE f.attempt_id = #{attemptId} AND f.bank_question_id = b.id),
+                 b.created_at, b.id
+        LIMIT 1
+    </select>
+
+    <select id="findStored" resultMap="stored">
+        SELECT a.id AS answer_id, f.id AS followup_id, f.type, f.question, f.source
+        FROM answer a
+        JOIN judgment j ON j.answer_id = a.id AND j.process_status = 'DONE'
+        JOIN followup f ON f.judgment_id = j.id
+        <where>
+            <if test="attemptId != null">a.attempt_id = #{attemptId}</if>
+            <if test="answerId != null">AND a.id = #{answerId}</if>
+        </where>
+    </select>
+</mapper>

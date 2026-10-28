@@ -23,6 +23,9 @@ data class Attempt(
     val completedAt: Instant?,
     val updatedAt: Instant,
 ) {
+    /** 아직 답변을 받는 시도 (완료·마무리 전). 되묻기 생성과 다음 행동 안내에 씀 (P04) */
+    val acceptsAnswers: Boolean get() = status == AttemptStatus.IN_PROGRESS && finishedAt == null
+
     /** 완료된 시도에는 답변·초안·도움·돌아보기 쓰기 불가 (state-diagram 3.2) */
     fun requireOpen() {
         if (status == AttemptStatus.COMPLETED) {
