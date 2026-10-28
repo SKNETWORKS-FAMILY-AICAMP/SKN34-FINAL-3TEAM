@@ -1,6 +1,6 @@
 # 이슈 #26 learning 마무리·돌아보기·자기 평가
 
-작성일: 2026-10-28. 기준: #78 머지 후 develop e728a64 위에서 작업. [이슈 #26](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/26), [API 명세 1.3·1.5·2.2·3.8·4.1](../design/api-spec.md), [ERD 4.2](../design/erd.md) `reflection`·`self_assessment`, [기능 명세 FN-LRN-11~14](../design/functional-spec.md), [유스케이스 4.5](../design/usecase.md), [시퀀스 다이어그램 3.3](../design/sequence-diagram.md), [상태 다이어그램 3.2](../design/state-diagram.md), [클래스 다이어그램 4.1](../design/class-diagram.md).
+작성일: 2026-10-28. 기준: #78 머지 후 develop e728a64 위에서 작업, PR 전 develop 40a2501(#83 core 피드백 SSE, learning 코드 변경 없음)을 병합. [이슈 #26](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/26), [API 명세 1.3·1.5·2.2·3.8·4.1](../design/api-spec.md), [ERD 4.2](../design/erd.md) `reflection`·`self_assessment`, [기능 명세 FN-LRN-11~14](../design/functional-spec.md), [유스케이스 4.5](../design/usecase.md), [시퀀스 다이어그램 3.3](../design/sequence-diagram.md), [상태 다이어그램 3.2](../design/state-diagram.md), [클래스 다이어그램 4.1](../design/class-diagram.md).
 
 learning-service의 `POST /internal/attempts/{id}/finish`·`/reflection`·`/self-assessment`를 만들고, 시도 상세에 마무리 뒤 공개 내용과 돌아보기를 붙이면서 정한 내용과 근거를 기록한다. 데이터베이스 스키마는 바꾸지 않았다.
 
@@ -31,7 +31,7 @@ learning-service의 `POST /internal/attempts/{id}/finish`·`/reflection`·`/self
 | 체크리스트 시점 | 읽을 때 처리 완료 판정으로 계산. 마무리 뒤에 판정이 끝난 답변(마무리 전에 제출한 답변)이 있으면 시도 상세의 체크리스트에 더해짐 | 저장된 판정이 근거. 마무리 결과를 따로 저장하는 테이블은 ERD에 없음 |
 | 돌아보기 요청 | `{difficulty, text}`. `difficulty`는 `EASY·NORMAL·HARD` 필수(없거나 값 밖이면 `400 VALIDATION_FAILED`), `text`는 선택이고 빈 글이면 `null`로 저장(`changed_text`) | P04 "난이도 필수·달라진 점 선택", api-spec 1.5(위)·2.2, DDL CHECK. ERD·DDL은 `difficulty` NULL 허용이지만 P04가 필수라 API에서 막음(스키마는 바꾸지 않음) |
 | 돌아보기 처리 | 시도 행 잠금 → `Attempt.complete(now)`(완료 뒤 `409 ATTEMPT_CLOSED`, 마무리 전 `409 REVEAL_CONDITION_UNMET`) → 같은 트랜잭션에 `reflection` 저장 + `IN_PROGRESS → COMPLETED`·`completed_at` | sequence-diagram 3.3, state-diagram 3.2·9장. 동시에 보내도 잠금으로 하나만 완료 |
-| 돌아보기 응답 | `200 {attemptId, status:"COMPLETED", completedAt, reflection:{difficulty, text}}` | 설계는 "200 학습 완료"뿐. FN-LRN-14 완료 상태·시점 |
+| 돌아보기 응답 | `200 {attemptId, status:"COMPLETED", reflection:{difficulty, text}}`. 완료 시점(`completed_at`)은 저장하고 시도 상세·기록 조회에서 확인 | sequence-diagram 3.3 "200 학습 완료", class-diagram `saveReflection(attemptId, command)`(반환 없음) 그대로 |
 | 자기 평가 시점 | 마무리 뒤·완료 전 (마무리 전 `409 REVEAL_CONDITION_UNMET`, 완료 뒤 `409 ATTEMPT_CLOSED`) | sequence-diagram 3.3에서 마무리 뒤·돌아보기 전 선택 단계, 완료 뒤 쓰기는 409(state-diagram 3.2) |
 | 자기 평가 요청 | `{checks:[{elementId, checked}]}`. 비었거나 같은 요소가 두 번이거나 이 시도 기준표에 없는 요소면 `400 VALIDATION_FAILED`. 일부 요소만 보내도 됨, 다시 보내면 `checked`만 바꿈(UK `(attempt_id, rubric_element_id)`) | class-diagram `saveSelfAssessment(attemptId, checks)`, ERD UK. 사용자 결정(10/28) |
 | 자기 평가 응답 | 기준표 요소마다 `{elementId, label, selfChecked(체크하지 않은 요소는 null), aiChecked(체크리스트의 체크), quote}` 배열 | FN-LRN-13 "AI 확인 항목과 나란히", class-diagram 반환형 `List`. api-spec 1.1 목록 봉투는 `page`·`size`로 조회하는 목록 규칙이라 해당 없음. 답변·판정 행은 바꾸지 않음(테스트로 확인) |
@@ -55,7 +55,6 @@ PR #78(#25) 리뷰에서 #26으로 나뉜 항목: 피드백은 ai 호출 **전�
 |---|---|---|
 | `Attempt --> FinishPolicy` | 서비스가 `FinishPolicy.canFinish(timeline)`를 부른 뒤 `Attempt.finish(now)` | `Attempt.finish(now)` 시그니처는 타임라인을 받지 않음. sequence-diagram 3.3도 "타임라인 조회 → canFinish → finished_at 기록" 순서. 시그니처를 바꾸지 않고 순서를 따름 |
 | `Attempt`: `requireOpen`·`requireAnswerable`·`finish`·`complete` | `requireFinished()` 추가 | 돌아보기(`complete`)와 자기 평가가 같은 확인(완료 뒤 `ATTEMPT_CLOSED`, 마무리 전 `REVEAL_CONDITION_UNMET`)을 씀. `requireAnswerable`과 같은 방식 |
-| `saveReflection(attemptId, command)` (반환 없음) | 완료한 `Attempt`를 돌려줌 | 응답의 `completedAt` |
 | `AttemptRepository <<repository>>` (메서드 없음) | `finish`·`complete`·`insertReflection`·`findReflection`·`saveSelfAssessments`·`findSelfAssessments` | 돌아보기·자기 평가 Repository는 설계에 없어 #23 생각 열기 기록처럼 `AttemptRepository`에 둠 |
 
 ## 기존 파일 수정
@@ -75,14 +74,14 @@ PR #78(#25) 리뷰에서 #26으로 나뉜 항목: 피드백은 ai 호출 **전�
 | 달라진 점 없음 | `text: string` | 빈 글이면 `text: null` | 없는 값은 `null`(#25와 같음). 화면은 이미 `text \|\| '별도 문장 없음'` |
 | 체크리스트 | 목업은 마지막 답변의 요소만 | 모든 답변의 처리 완료 판정을 합침 | 위 "체크리스트" |
 | 자기 평가 | 타입·화면 없음 | 요청 `{checks:[{elementId, checked}]}`, 응답 배열 `[{elementId, label, selfChecked, aiChecked, quote}]` | 새 계약 |
-| 마무리·돌아보기 응답 본문 | 쓰지 않고 시도 상세를 다시 읽음 | 마무리 `{attemptId, finishedAt, reveal, revealKind, checklist}`, 돌아보기 `{attemptId, status, completedAt, reflection}` | 다시 읽어도 같은 값 |
+| 마무리·돌아보기 응답 본문 | 쓰지 않고 시도 상세를 다시 읽음 | 마무리 `{attemptId, finishedAt, reveal, revealKind, checklist}`, 돌아보기 `{attemptId, status, reflection}` | 다시 읽어도 같은 값 |
 | 오류 | 목업은 난이도 오류도 `REVEAL_CONDITION_UNMET` | 난이도 오류는 `400 VALIDATION_FAILED`, 마무리 전 `409 REVEAL_CONDITION_UNMET`, 완료 뒤 `409 ATTEMPT_CLOSED` | api-spec 1.3 |
 
 report 담당 확인: api-spec 3.4 주간 리포트 예시 `reflections[].difficulty`가 `"보통"`(한글). learning 기록 조회(#27)는 코드(`NORMAL`)를 줄 예정이라, 리포트·ai 문장 생성이 코드를 받아 한글로 바꿀지 확인 필요.
 
 ## 검증
 
-- `./gradlew clean test bootJar`: 152개 통과, 실패·생략 0개. 새로 추가 22개: `AttemptFinishTest` 12(Testcontainers), `AttemptControllerTest` 4, `AttemptConcurrencyTest` 2(별도 컨테이너, 실제 커밋), `ChecklistTest` 2, `FeedbackConcurrencyTest` 2(경합). `docker build` 성공, 배포 JAR에 WireMock 없음. 기능 커밋을 각각 따로 꺼내 테스트해 모두 통과(도메인·저장·서비스·API·체크리스트 테스트·마무리 경합·동시 마무리 테스트 순으로 130·130·143·147·149·151·152개).
+- `./gradlew clean test bootJar`: 152개 통과, 실패·생략 0개. 새로 추가 22개: `AttemptFinishTest` 12(Testcontainers), `AttemptControllerTest` 4, `AttemptConcurrencyTest` 2(별도 컨테이너, 실제 커밋), `ChecklistTest` 2, `FeedbackConcurrencyTest` 2(경합). `docker build` 성공, 배포 JAR에 WireMock 없음. 기능 커밋을 각각 따로 꺼내 테스트해 모두 통과(도메인·저장·서비스·API·체크리스트 테스트·마무리 경합·동시 마무리 테스트 순으로 130·130·143·147·149·151·152개. develop(#83) 병합은 learning 코드를 바꾸지 않았고, 돌아보기 반환 정리(`08d3e33`) 뒤 152개).
 - 이슈 #26 완료 조건
   - 판정 없이 finish 시 409: 답변 없음, 판정 `PENDING`·`RUNNING`·`FAILED`만 있을 때 모두 `409 REVEAL_CONDITION_UNMET`, `finished_at`은 그대로
   - 완료 후 답변·초안 변경 불가: 돌아보기 뒤 답변·초안·생각 열기·돌아보기·자기 평가 모두 `409 ATTEMPT_CLOSED`(마무리 뒤 답변 제출도 409)
@@ -90,17 +89,17 @@ report 담당 확인: api-spec 3.4 주간 리포트 예시 `reflections[].diffic
 - 동시 요청(별도 PostgreSQL 컨테이너, 실제 커밋): 같은 시도에 마무리 8개 → 모두 같은 결과·마무리 시각 하나, 돌아보기 8개 → 1개 완료·7개 `409 ATTEMPT_CLOSED`·돌아보기 1행
 - 마무리 경합: 보완 답변의 되묻기 응답을 늦추는 사이 실제 `finish` → 판정 `DONE`, 되묻기 0행, `nextActions: []`. 다른 트랜잭션이 시도 행을 잠근 동안 판정 저장이 잠금을 기다리고, 마무리 커밋 뒤 되묻기 없이 저장
 - 보호 장치를 하나씩 빼면 테스트가 실패함을 확인(15개): 마무리 조건, 체크리스트 합치기, 구절 있는 충족만 체크, 가장 최근 구절, 자기 평가는 마무리 뒤, 돌아보기는 마무리 뒤, 돌아보기 시도 잠금, 마무리 시도 잠금, 마무리 다시 요청, 자기 평가 중복·기준표 밖 요소, 빈 달라진 점 null, 마무리 전 공개 안 함, 판정 저장 때 다시 확인, 판정 저장 때 시도 잠금
-- compose 실제 확인(에픽 #21 완료 조건, `docker compose up -d --build learning-service ai-service`, OpenAI `gpt-6.1-terra`, core 없이 learning `/internal/*` 직접 호출, 확인 후 만든 시도 2건만 삭제·컨테이너 정지):
+- compose 실제 확인(에픽 #21 완료 조건, `docker compose up -d --build learning-service ai-service`, OpenAI `gpt-6.1-terra`, core 없이 learning `/internal/*` 직접 호출, 확인 후 만든 시도 2건만 삭제·컨테이너 정지, 최종 코드 08d3e33):
 
 | 미션 | 흐름과 결과 |
 |---|---|
-| 서술형(시드 2번 "쉬는 시간을 늘린다면?") | 시작 201 → 답변 전·피드백 전 마무리 409 → 피드백 200 8.0초 `CORRECT`(주장·근거 충족, 다른 관점 미충족)·`ONE_STEP_MORE` → 마무리 전 돌아보기 409 → 보완 답변 피드백 200 7.7초 `HELD`(요소 없음)·`TELL_MORE` → 마무리 200 `EXAMPLE`, 체크리스트 주장·근거 체크(v1 구절), 다른 관점 미체크 → 다시 마무리 같은 결과 → 마무리 뒤 답변 409 → 자기 평가 200(세 요소 자기 체크, AI 확인 나란히) → 한글 난이도 400 → 돌아보기 200 `COMPLETED`·`completedAt` → 돌아보기 다시 409 → 시도 상세 `COMPLETED`·체크리스트 마무리 결과와 같음·돌아보기·`nextActions []` → 초안·자기 평가 409 |
+| 서술형(시드 2번 "쉬는 시간을 늘린다면?") | 시작 201 → 답변 전·피드백 전 마무리 409 → 피드백 200 8.0초 `CORRECT`(주장·근거 충족, 다른 관점 미충족)·`ONE_STEP_MORE` → 마무리 전 돌아보기 409 → 보완 답변 피드백 200 9.7초 `PARTIAL`(근거·다른 관점 충족, 주장 미충족)·`TELL_MORE` → 마무리 200 `EXAMPLE`, 체크리스트 세 요소 모두 체크(주장은 v1 구절, 근거·다른 관점은 v2 구절) → 다시 마무리 같은 결과 → 마무리 뒤 답변 409 → 자기 평가 200(세 요소 자기 체크, AI 확인 나란히) → 한글 난이도 400 → 돌아보기 200 `{attemptId, status:"COMPLETED", reflection}` → 돌아보기 다시 409 → 시도 상세 `COMPLETED`·체크리스트 마무리 결과와 같음·돌아보기·`nextActions []` → 초안·자기 평가 409 |
 | 고르기(시드 1번 "한 화분만 시든 까닭") | 시작 → 정답 `c2` 피드백 200 0.03초 `CORRECT`·되묻기 없음·`[FINISH]`(규칙 판정, 모델 없음) → 마무리 200 `ANSWER` "정답: 물을 받지 못해서…", 체크리스트 "원인 찾기" 체크(`ANSWER_KEY`, 고른 답) → 돌아보기(난이도만) 200 `COMPLETED`·`text: null` → 시도 상세 같음 |
 
-- compose에서 보완 답변이 `HELD`(요소 없음)로 판정돼도 체크리스트가 첫 답변에서 확인된 요소를 유지함을 확인(위 "체크리스트"의 합치기 근거). 보완 답변이 보류된 이유는 ai 판정이 보완 답변 글만 보기 때문으로 보임(#25 리포트, 판정 규칙은 #79)
+- 체크리스트 합치기가 실제로 필요한 경우: 위 실행에서 보완 답변은 주장을 충족하지 않았지만(보완 답변 글만 판정) 체크리스트는 첫 답변의 주장 구절을 유지함. 같은 흐름의 앞선 실행(리뷰 반영 전 코드)에서는 보완 답변이 `HELD`(요소 없음)였고, 이때도 첫 답변의 요소를 유지함. 같은 답에도 ai 판정이 실행마다 다른 점은 #22·#25에서 본 것과 같음(사람 검증 P11, 판정 규칙 #79)
 
 ## 후속
 
-- 공개 검사(#81): 예시 답이 없는 기준표는 마무리 공개 내용(`reveal`)이 `null`이 됨. 공개 전 예시 답(닫힌 문제는 정답 해설) 필수 여부를 같이 정하면 좋음
+- 공개 검사(#81): 닫힌 문제의 정답은 예시 답 글로 보여 주므로(위 "공개 내용") 예시 답에 정답이 들어가야 함(시드 7개는 모두 "정답: …" 또는 "최종 답: …" 포함). 예시 답이 없는 기준표는 `reveal`이 `null`. 공개 전 예시 답 필수(닫힌 문제는 정답 포함)를 공개 검사에 넣을지 같이 정하면 좋음. 정답 키(`answer_key`)로 정답 글을 만드는 방법은 예시 답과 정답이 두 번 보이고, 분류 그룹 이름 저장 위치가 정해지지 않아(#79) 쓰지 않음
 - 달라진 점 길이 상한: 문서에 없어 두지 않음(답변 길이 상한과 함께 후속, #24 리포트)
 - 학습 기록 조회(#27): 돌아보기 원문(`difficulty` 코드·`text`)과 완료 시점을 기록 조회 응답에 포함

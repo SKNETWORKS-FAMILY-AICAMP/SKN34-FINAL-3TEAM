@@ -1162,7 +1162,7 @@ classDiagram
 - `FinishPolicy.canFinish`: 시도 내 판정 `DONE` 1회 이상(결과 무관, `HELD` 포함)이면 true (P04)
 - `AttemptService.finish`: 시도 행을 잠그고(`AttemptRepository.lockById`, 답변 제출·판정 저장과 같은 행) 본인 확인 → 이미 마무리했으면 기록 없이 같은 결과 → 타임라인으로 `FinishPolicy.canFinish`(sequence-diagram 3.3 순서) → `Attempt.finish(now)` → `AttemptRepository.finish`(`WHERE status = 'IN_PROGRESS' AND finished_at IS NULL`) → `FinishResult{finishedAt, reveal, revealKind, checklist}`. `Attempt.finish(now)`는 타임라인을 받지 않아 `canFinish`는 서비스가 먼저 부름
 - 공개 내용(FN-LRN-11): `reveal`은 시도 기준표 버전의 예시 답(닫힌 문제는 정답과 해설), `revealKind`는 고르기·순서·분류·풀이 단계 `ANSWER`, 서술·논술 `EXAMPLE`. 체크리스트는 기준표 요소 전체, 이 시도의 처리 완료 판정(`JudgmentService.results`) 중 원문 구절과 함께 충족된 적 있는 요소만 체크하고 가장 최근 구절 표시. 시도 상세도 마무리 뒤에 같은 값
-- `AttemptService.saveReflection`: 잠금 → `Attempt.complete(now)`(`requireFinished`: 완료 뒤 `ATTEMPT_CLOSED`, 마무리 전 `REVEAL_CONDITION_UNMET`) → 같은 트랜잭션에 `reflection` 저장 + `IN_PROGRESS → COMPLETED`·`completed_at`. 완료한 시도를 돌려줌
+- `AttemptService.saveReflection`: 잠금 → `Attempt.complete(now)`(`requireFinished`: 완료 뒤 `ATTEMPT_CLOSED`, 마무리 전 `REVEAL_CONDITION_UNMET`) → 같은 트랜잭션에 `reflection` 저장 + `IN_PROGRESS → COMPLETED`·`completed_at`
 - `AttemptService.saveSelfAssessment`: 잠금 → `requireFinished` → 기준표 요소 확인(비었거나 중복·기준표 밖이면 400) → `self_assessment` UK `(attempt_id, rubric_element_id)`로 저장(다시 보내면 `checked`만) → 기준표 요소마다 `{selfChecked, aiChecked(체크리스트), quote}`. 답변·판정은 건드리지 않음 (FN-LRN-13)
 - `AttemptRepository`: `lockById`·`finish`·`complete`·`insertReflection`·`findReflection`·`saveSelfAssessments`·`findSelfAssessments` (돌아보기·자기 평가 Repository를 따로 두지 않음)
 - 되묻기 생성 조건: 시도 내 되묻기 2회 미만 + 고르기 `CORRECT` 아님 (P04). `finished_at` 이후 답변 제출은 `Attempt.requireAnswerable`에서 `ATTEMPT_CLOSED`. `requireOpen`은 `COMPLETED`만 막음(마무리 뒤 돌아보기 저장)
