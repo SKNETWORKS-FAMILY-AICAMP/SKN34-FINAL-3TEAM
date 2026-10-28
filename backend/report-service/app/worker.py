@@ -89,9 +89,7 @@ async def run(generator=None) -> None:
         return storage_instances[0]
 
     codec = ReportV1Codec()
-    service = GenerationService(
-        factory, locks, generator or UnconfiguredGenerator(), codec
-    )
+    service = GenerationService(factory, locks, generator or UnconfiguredGenerator(), codec)
     publisher = EventPublisher(amqp)
     amqp.start()
     stop = asyncio.Event()

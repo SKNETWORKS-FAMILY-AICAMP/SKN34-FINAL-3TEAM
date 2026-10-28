@@ -1,60 +1,30 @@
 # 리포트 #50~#55 구현 및 인계
 
-> 현재 상태(2026-10-28): 사용자 지시에 따라 기존 이슈별 브랜치·PR 방식을 유지한다. 최신 develop `78bbdc1` 병합과 점검 결과는 누적 `feature/report-deletion`에 보존했다. #42/#45 공유 규격·core 구현은 확보되었다. 아래는 이전 검증 이력이며, 현재 완료 가능 범위·남은 연결·이번 검사 결과는 [에픽 #56 점검](report-epic-readiness.md)을 우선한다.
+2026-10-28 develop `47e5ffe`를 원래 이슈 브랜치에 순차 병합했다. 개인 에픽 브랜치는 삭제하고 작업은 보존했다. #85 실제 모델 연동은 계속 중단한다.
 
-2026-10-28 로컬 구현 기준. 최초 기반 develop은 `ecd6ecf`이며, 최신 develop `826e4dc`를 현재 `feature/report-deletion`에 병합했다(merge `9a91fb0`). 아래 브랜치는 아직 로컬이며 GitHub push·PR 생성·이슈 종료는 수행하지 않았다. 실제 타 서비스까지 연결한 완료와 report 단독 검증 완료를 구분한다.
+사용자 최신 지시로 **이미 등록한 #50 PR #101은 유지하고 추가 PR 등록은 중단**한다. 코드·문서·검증 결과를 브랜치에 보존하며 develop 병합이나 이슈 종료는 하지 않는다.
 
-## 구현 범위
-
-| 이슈 | 브랜치 | 구현 결과 | 남은 완료 조건 |
+| 이슈 | 브랜치 | 이번에 한 일 | 실제 연결에서 남은 것 |
 |---|---|---|---|
-| #50 | feature/report-generation | 상태 전이·job 멱등·Outbox·confirm 후 발행 기록·지연 재시도 연계 | #42 공유 메시지 codec 실제 연결 |
-| #51 | feature/report-metrics | 기간/포함 규칙·P08 수치/전후 변화·항목과 evidence 저장 | #27 실제 응답 계약·통합 검증 |
-| #52 | feature/report-narrative | AI 요청·이름 가림·수치/인용 대조·검증 실패 템플릿·메타데이터 저장 | AI 서술 API와 버전 실제 제공 |
-| #53 | feature/report-rendering | HTML/MD/PDF·한글 폰트·S3 저장·full/free 파일·Docker/CI 의존성·실제 MinIO 검증 | #42 닉네임/생성 연결, 운영 AWS·버킷 정책 |
-| #54 | feature/report-query | 목록/판 선택/상세/현재 evidence/권한별 서명 URL·OpenAPI | core의 현재 entitlement 전달·공개 경로 연동 |
-| #55 | feature/report-deletion | 학생별 삭제·processed_event·S3 재시도·core 완료 보고·삭제/생성 장벽·worker 조립 | #45 범위/동시성 정책·생성 시각·공유 스키마 확인, 추가 DDL 검토 |
+| #50 | feature/report-generation | 공유 v1 codec·필수값/학생 검사·worker 생성 구독·트랜잭션 밖 Outbox·실제 브로커 검사, PR #101 | 전체 생성기·닉네임·학습/AI·상품 판정 |
+| #51 | feature/report-metrics | 기존 계산 구현을 최신 #50에 병합·회귀 검사 | #27 실제 DTO |
+| #52 | feature/report-narrative | 최신 기반 병합·timeout FAILED DB 검사·#42 대기 문구 제거·API 표 복구 | #64·#27·닉네임 |
+| #53 | feature/report-rendering | 최신 기반 병합·전체 테스트·새 Docker 한글 PDF·스냅샷/2페이지 시각 검사 | 닉네임·운영 AWS |
+| #54 | feature/report-query | #55 정합성을 위해 최신 #53 병합, 기존 조회/권한/다운로드 유지 | core 권한 헤더·#27 evidence |
+| #55 | feature/report-deletion | 공유 삭제 메시지 엄격 검사·기본 worker 삭제 구독·RECORDS 자동 생성 허용 제거·실제 브로커/DB/MinIO 결합 검사 | core queued job/늦은 terminal·전체 E2E·guard 운영 리뷰 |
 
-브랜치는 위 순서대로 누적된다. 나중 브랜치를 develop과 바로 비교하면 앞선 이슈 변경도 포함된다. 검토자는 앞 브랜치 대비 차이로 보거나 #50부터 차례로 병합하고 다음 PR base를 갱신해야 한다. 파일별 부분 복사나 초기 migration 수정으로 맞추지 않는다. #55 추가 migration은 기능 코드와 분리한 커밋으로 검토한다.
+브랜치는 #50→#51→#52→#53→#54→#55 누적 구조다. 다음 PR 요청 시 선행 병합 여부와 develop diff를 확인한다. #55 guard DDL은 기존 별도 커밋을 보존하고 초기 migration은 수정하지 않는다.
 
-2026-10-27 #53의 실제 MinIO 테스트·검증 문서 보강은 현재 누적 브랜치 `feature/report-deletion`에 추가했다. 표의 이전 보존 브랜치에 자동으로 반영된 것은 아니다. 이슈별 PR을 정리할 때 이 보강 커밋도 포함해야 한다.
+## 실행 경계
 
-## 검증 근거
+기본 worker는 생성·삭제 큐를 v1으로 구독한다. 삭제는 S3 정리와 core 완료 보고를 조립했다. 전체 생성은 닉네임 공급 경로가 없어 기본 생성기로 가짜 성공을 만들지 않고 GENERATOR_NOT_CONFIGURED FAILED를 기록한다. run(generator=...) 주입 지점을 유지한다. #51~#53 조합은 합성 입력으로 검사하며 core·learning·AI 전체 연동 완료와 구분한다.
 
-2026-10-28 develop `826e4dc`를 충돌 없이 병합했다. 이전 기준 `7188b69` 이후 팀 커밋 36개를 반영했으며, 모델 레지스트리·학생 PIN 화면·학습 시도·답변·core 학습 프록시 변경을 포함한다. report 코드와 세 서비스의 migration 파일은 병합 전과 같다. Ruff check/format, 합성 환경변수의 Compose/MinIO overlay 구성 검사, 세 DB 전체 migration/ERD 대조·no-op·report rollback/reapply(**16.4초**)를 통과했다. 필요한 자료의 구체적인 요청 목록은 [#51~#55 필요 자료](report-required-inputs.md)를 따른다.
+## 검증 기록
 
-이전 2026-10-27 `7188b69` 병합 검증은 pytest 144개(56.29초)·DB 검증 12.0초였다. 당시 #51~#54 보존 브랜치의 merge-tree 검사도 통과했다. 이번 실제 최신화 대상은 누적된 `feature/report-deletion`이며, 이전 개별 브랜치들을 함께 최신화한 것은 아니다.
+- #50: 64개 통과 후 브로커 테스트 정리 옵션 오류 2개 수정·해당 2개 재실행 통과. root 계약 53개, Ruff, Docker 검사. [상세](report-generation-foundation.md).
+- #52: 전체 **141개 통과(34.71초)**, Ruff. AI timeout·5xx FAILED, 대조 실패 TEMPLATE. [상세](report-narrative.md).
+- #53: 전체 **147개 통과(70.39초)**, Ruff. 새 Docker의 UID 10001·read-only root·네트워크 차단 환경에서 3종 파일·한글 PDF 스냅샷/시각 검사. [상세](report-rendering.md).
+- #55 최종 누적 전체 **182개 통과(141.69초)**, Ruff 78파일·root 계약 53개·3개 DB migration/ERD/롤백 재검증 통과. 실제 저장소/브로커와 대역 범위 및 최초 오류 수정은 [삭제 보고서](report-deletion.md)에 기록했다.
+- AI Hub·실제 학생 자료·운영 자격 증명을 사용하지 않았다. 기존 TestClient deprecation warning은 기능 실패와 구분한다.
 
-- 2026-10-28 병합 커밋 `9a91fb0`의 전체 pytest **147 passed, 0 failed, 0 skipped (85.23초)**. 실제 Docker PostgreSQL/RabbitMQ/MinIO, HTTP 테스트 대역, moto S3, Chromium을 사용했다. AI Hub·실제 학생 데이터는 사용하지 않았다.
-- Ruff check·format check 통과. Starlette TestClient/httpx 사용에 대한 기존 deprecation warning 1개는 실패와 구분한다.
-- 2026-10-28 일회용 PostgreSQL에서 세 DB migration 적용·재적용 no-op·ERD 타입/NULL/제약/인덱스 대조·report 전체 롤백/재적용 통과(16.4초). core 35/318, learning 19/156, report 7/50 테이블/컬럼, 제약 음성 사례 50개·CHECK 값 집합 64개·인덱스 19개. 검증기 회귀 unittest 18개 통과는 기존 10월 27일 기록이다.
-- 2026-10-27 `sagomungchi/report-service:issue55-local` Docker 빌드 및 UID 10001·읽기 전용 root + 쓰기 가능한 `/tmp`에서 worker import와 HTML/MD/한글 A4 PDF 2페이지 생성을 확인했다. 운영 이미지에 pytest가 없는 것도 확인했다. 이번 병합에 report 코드·Dockerfile 변경이 없어 이미지를 다시 빌드하지 않았다.
-- Compose와 MinIO overlay 구성 유효성 검사에 이어, 실제 MinIO 통합 테스트 3개(26.62초)와 production Linux 이미지의 내부 endpoint 업로드·공개 URL 다운로드·prefix 삭제를 통과했다. 리포트 생성/DB 저장/내부 조회에서 full/free 파일 구분, 재생성 판 보존, 부분 실패 정리, 서명 변조·만료 거부, 삭제 후 기존 URL 404를 확인했다. 기존 컨테이너·볼륨·개인 `.env` 대신 별도 일회용 환경을 사용했다. core·learning·AI·삭제 완료 API 전체 연동은 포함하지 않는다.
-- HTML/MD와 PDF 논리 텍스트 스냅샷을 검사한다. PDF 스냅샷은 OS별 한글 줄바꿈 차이를 허용하도록 공백을 정규화하며, 화면 배치 확인은 별도 렌더링 이미지로 수행했다.
-
-## 다른 담당자에게 필요한 작업
-
-| 대상/담당 | 필요한 결과물 | 연결 위치·이유 | 완료 확인 |
-|---|---|---|---|
-| #42 김동섭 | report.generate / started / completed / failed 공유 schema와 실제 codec, 표시 이름 공급 경로 | `generation/ports.py`의 ReportEventCodec, `worker.run(codec)`. 공통 메시지를 report에서 중복 정의하지 않는다. 표시 이름은 렌더링·AI 요청 전 이름 가림에 사용한다. | core 발행 → report 소비 → core terminal 반영 계약 테스트 |
-| #27 learning 담당(Overlay1010) | API 4.1.1 세 조회의 페이지/시각/최초·최신 답변/도움 요청 및 evidence 원문·버전·삭제 표식 | `LearningClient.records/evidence`. 오류를 빈 기록으로 취급하지 않으므로 실제 응답이 필요하다. | 합성 학생으로 정상/경계 시간/여러 페이지/삭제 evidence 대조 |
-| #64 AI 서술 API(현재 assignee 없음) | API 4.2.1 응답, prompt/model 버전, 이름 없는 요청 처리 | `AiClient.narrative`. #64가 새로 발행되어 기존 ‘이슈 미발행’ 인계 내용을 정정한다. API 장애는 FAILED, 대조 실패만 TEMPLATE라는 사용자 결정 적용. | 정상·잘못된 숫자/인용·5xx/timeout 실제 통합 테스트 |
-| core 리포트/상품 담당 | 현재 권한으로 계산한 `X-Report-Narrative-Enabled`, 생성 시 narrativeEnabled, 사용자/학생 scope | 무료 전환 후 기존 유료 파일이 새로 노출되지 않도록 core가 권한을 계산해야 한다. 브라우저 제공 헤더를 그대로 신뢰하면 안 된다. | 무료/유료/다운그레이드 상세·다운로드 대조 |
-| #45 김동섭·조장 | PROFILE/RECORDS 삭제 범위·진행 중 생성 정책·삭제 표식 보존·student.deleted 스키마 및 멱등 완료 API | `StudentDeletedConsumer`, `CoreClient`, 새 guard migration. 현재 구현 기본안은 팀 확정 전 운영 적용하지 않는다. | 삭제/중복/저장소 장애/완료 API 장애·재시도 E2E |
-| #42/#45 core 담당 | 최초 EventEnvelope.time 보존, 삭제 중 신규 요청 차단, 기존 queued job 취소·늦은 상태 이벤트 무시 | report 시간 장벽과 lock만으로 core 작업 상태나 learning 삭제 완료 순서까지 보장할 수 없다. | 오래된 generate/terminal을 삭제 뒤 재전달해 복원·상태 오염이 없는지 확인 |
-| 인프라 담당 / 운영 배포 후속 | #17 로컬 MinIO 구성과 실제 연결 검증 완료. AWS IAM/IRSA·운영 endpoint·보존/버전/복제 정책, 배포 Chromium `/tmp` volume와 종료 유예는 후속 | 로컬 MinIO 저장소 검증은 대기 항목에서 제외한다. URL 기본안은 300초이며 이미 내려받은 복사본/외부 캐시·S3 과거 버전은 객체 삭제만으로 모두 회수되지 않는다. | 운영 AWS 동작 검증, #45 실제 삭제 이벤트·core 완료 보고까지 전체 연동 |
-
-## 확정값과 기본안
-
-사용자 확정: 까닭 연결어 집계는 **왜냐하면·때문·그래서·따라서**, AI API 장애는 **FAILED**, 숫자/인용 대조 실패만 템플릿 대체다.
-
-별도 운영 확인이 남은 구현 기본안: URL 300초(설정 가능), 무료 상세/파일에서 narrative·thinking summary·evening question 제외, PROFILE은 영구 생성 차단/RECORDS는 삭제 후 새 명령 허용. 기본안을 확정 정책으로 보고하지 않는다.
-
-## 다음 진행 순서
-
-1. 로컬 변경 검토 후 이슈별 순서로 push/PR을 준비한다. develop 최신화는 작업 보존·fetch·변경 비교 후 수행하고, 실제 최신 commit에서 재검증한다.
-2. #42/#27/AI/core 연결 결과를 받아 production codec과 HTTP 계약을 연결한다. 현재 기본 CLI는 생성 큐를 소비하지 않으므로 이를 통합 완료로 승인하면 안 된다.
-3. #55 정책과 추가 DDL을 승인받은 뒤 운영 migration job으로 적용한다. 앱 startup에서 migration하지 않는다.
-4. 완료한 report/MinIO 검증을 바탕으로 실제 core·learning·AI 메시지/API와 #45 삭제 완료 보고를 연결해 전체 흐름을 검증한다. 담당자별 잔여 항목이 닫힌 뒤 #56 에픽 완료 여부를 판단한다.
-
-상세 구현과 재현 기준은 각 이슈 보고서 및 코드 테스트를 따른다. 외부 담당자에게 메시지나 이슈 댓글을 자동 게시하지 않았다.
+[담당자별 남은 입력](report-required-inputs.md)에 후속 연결을 정리했다. 이미 받은 #42/#45 스키마·scope·완료 API는 재요청하지 않는다. 삭제 재개는 별도 계약 전 허용하지 않는다. URL 300초·S3 보존은 운영 검토 항목이다. Slack·이슈 댓글은 보내지 않았다. #56은 실제 하위 기능과 전체 연동 후 완료 판단한다.

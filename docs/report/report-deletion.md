@@ -1,6 +1,6 @@
 # 이슈 #55 학생 삭제 처리
 
-`feature/report-deletion`은 #54 조회 구현 위에 삭제 소비자와 worker 조립을 추가한다. #45 공유 스키마를 임의로 만들지 않고 아키텍처의 `student.deleted.v1`, subject 학생 UUID, data의 `deletionRequestId`·`scope`를 읽는다. 실제 producer와 계약 테스트는 남아 있다.
+`feature/report-deletion`은 develop `47e5ffe`와 최신 #50~#54를 병합했다. 공유 `student.deleted.v1.schema.json`을 재사용하고 source=core-service, type/dataschema, UUID, subject=data.studentId, deletionRequestId·scope·허용 필드를 검사한다. 잘못된 메시지는 삭제 전에 InvalidEvent로 거부해 DLQ로 보내며 재시도하지 않는다.
 
 ## 처리 순서와 실패
 
@@ -10,16 +10,22 @@
 4. `report_item_evidence → report_item → report_file → weekly_report`와 해당 학생 Outbox를 삭제하고 guard COMPLETED·processed_event를 같은 DB 트랜잭션에 저장한다.
 5. 기존 내부 HTTP 클라이언트로 core 완료 API에 `{service:"report"}`를 보낸다. 실패하면 이벤트 재시도에서 물리 삭제를 반복하지 않고 완료 보고를 다시 보낸다.
 
-동일 이벤트 두 번 처리 시 S3/DB 삭제는 한 번이고 완료 보고는 두 번일 수 있다. 다른 학생은 삭제 범위에 들어가지 않는다. 더 오래된 RECORDS 이벤트는 최신 삭제 이후 생성된 리포트를 다시 지우지 않으며 PROFILE은 RECORDS보다 우선한다.
+동일 이벤트 두 번 처리 시 S3/DB 삭제는 한 번이고 완료 보고는 두 번일 수 있다. 다른 학생은 삭제 범위에 들어가지 않는다. 더 오래된 RECORDS 이벤트는 이미 처리한 삭제를 반복하지 않으며 PROFILE은 RECORDS보다 우선한다.
 
-## 구현 기본안과 팀 확인
+## 최신 core와 맞춘 정책
 
-PROFILE·RECORDS 모두 기존 리포트 내용/파일을 삭제한다. PROFILE은 이후 생성도 차단하며 RECORDS는 삭제 이후 최초 생성 명령만 허용한다. 이것은 사용자나 팀이 확정한 정책으로 보고하지 않는다. #45와 범위·삭제 중 요청·시각 기준·삭제 표식 보존을 확정한 뒤 운영 적용한다. 추가 DDL은 [별도 스키마 보고서](report-deletion-schema.md)에서 검토한다.
+PROFILE·RECORDS 모두 기존 리포트 내용/파일을 삭제하고 이후 새 생성도 차단한다. core가 RECORDS 완료 뒤 student를 DELETION_REQUESTED로 유지하므로 report 단독 완료만으로 재개하지 않는다. 삭제 시각보다 늦은 명령도 같은 규칙이다. 이전의 RECORDS 새 명령 허용 구현안은 폐기했다. 향후 재개 계약·표식 보존은 별도 검토하며 추가 DDL은 [별도 스키마 보고서](report-deletion-schema.md)를 따른다.
 
-`worker.run(codec)`은 생성/삭제 소비자와 Outbox를 조립한다. 기본 `python -m app.worker`는 #42 production codec이 없으므로 생성 큐를 소비하지 않고 경고한다. 가짜 성공 응답이나 임의 공유 메시지는 사용하지 않는다. 종료 시 소비 취소 → 진행 중 처리 대기 → 채널 정리 순서를 사용한다. SIGTERM 유예 시간과 DLQ 복구는 운영 설정이 필요하다.
+`worker.run(generator=None)`은 기본 진입점부터 확정 v1 codec·생성/삭제 구독·Outbox·S3 삭제·core 완료 보고를 조립한다. 전체 생성기는 닉네임 공급 경로 등이 미연결이므로 기본값은 GENERATOR_NOT_CONFIGURED 실패이며 가짜 완료를 만들지 않는다. 실제 생성기는 별도 주입 가능하다. 종료는 소비 취소 → 진행 중 처리 대기 → 채널 정리 순서이며 SIGTERM 유예·DLQ 복구는 운영 설정이 필요하다.
 
 ## 검증
 
-2026-10-27 삭제 테스트 10개를 포함한 report 전체 **144개 통과**, Ruff check/format 통과. 실제 PostgreSQL에서 중복·다른 학생 보존·S3 오류 재시도 큐 이동·core 장애 후 보고만 재시도·생성/삭제 lock 충돌·늦은 명령 차단·기록 초기화 후 새 명령·오래된 삭제·조회 차단을 확인했다. 저장소 오류는 테스트 대역이고 별도 렌더링 테스트는 moto S3를 사용한다. 실제 core/learning/MinIO를 모두 연결한 통합 검증으로 표현하지 않는다.
+최종 누적 브랜치 전체 실행은 **182 passed, 0 failed, 0 skipped (141.69초)**다. Ruff check/format(78개 파일), root 계약·스키마 unittest 53개(1.985초), 문서 UTF-8/충돌 표식/내부 링크 10문서·11링크, API 4.2 표 구조, `git diff --check`를 통과했다. 3개 DB migration·ERD 대조·반복 no-op·report 롤백/재적용도 16.3초에 통과했다([스키마 상세](report-deletion-schema.md)).
+
+직전 전체 검사에서는 179개 통과/3개 setup 오류였다. 서로 다른 일회용 MinIO의 자격 증명을 boto3 기본 세션이 재사용한 테스트 격리 문제여서 fixture에서 기본 세션을 분리했다. 위 182개는 수정 후 단일 전체 실행 결과다. Starlette TestClient의 기존 deprecation warning 1개는 남아 있다.
+
+최종 `sagomungchi/report-service:issue55-20261028` 이미지 빌드와 worker import도 통과했다. UID 10001·read-only root·네트워크 차단·`/tmp` tmpfs에서 3종 파일을 생성했고 한글 PDF(191,409바이트)의 논리 텍스트가 #53에서 시각 확인한 출력과 일치했다. 운영 이미지에 pytest가 없음을 확인했다. 실제 core·learning·AI 전체 E2E와 운영 AWS 검증은 포함하지 않는다.
+
+2026-10-28 변경 후 삭제 집중 검사 **18개 통과(18.61초)**. 실제 PostgreSQL에서 중복·다른 학생 보존·완료 보고 재시도·생성/삭제 lock·양 scope의 늦은/새 명령 차단을 확인했다. 계약 위반 7개는 삭제 호출 전에 거부한다. 실제 RabbitMQ의 팀 토폴로지 retry.1 큐 이동과 본문/time 보존, 재전달 두 번에도 물리 삭제 한 번을 확인했다. 최초 저장소 실패는 주입하고 재전달 성공은 실제 MinIO의 학생별 6개 객체·DB 리포트 정리로 확인했다. core 완료 호출은 대역이며 실제 HTTP 요청의 토큰/SYSTEM·scope/본문은 별도 MockTransport 검사다. 재시도 1분 TTL을 실제로 기다린 테스트는 아니며 큐에서 메시지를 꺼내 즉시 재전달했다.
 
 생성 도중 업로드 취소는 작업 스레드 정리까지 기다린 뒤 lock을 반환한다. 다른 프로세스의 비정상 종료로 남은 RUNNING 행은 삭제가 lock을 얻은 후 함께 정리한다. 발행 중이던 Outbox 이벤트, 이미 발급된 URL, S3 이전 버전/캐시는 report DB 삭제만으로 모두 회수할 수 없으므로 인계 문서의 core/인프라 후속 사항이 필요하다.

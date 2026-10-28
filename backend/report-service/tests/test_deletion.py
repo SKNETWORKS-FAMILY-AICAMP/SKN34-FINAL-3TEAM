@@ -1,4 +1,5 @@
 import asyncio
+import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -26,6 +27,7 @@ from app.worker import serve
 from tests.report_helpers import command_for
 from tests.test_consumer import FakeChannel, FakeMessage
 from tests.test_generation import make_service, stored
+from tests.test_report_codec import validate_contract
 
 
 class Storage:
@@ -87,8 +89,49 @@ def envelope(command):
         time=command.occurred_at,
         subject=str(command.student_id),
         dataschema="student.deleted.v1",
-        data={"deletionRequestId": str(command.request_id), "scope": command.scope},
+        data={
+            "studentId": str(command.student_id),
+            "deletionRequestId": str(command.request_id),
+            "scope": command.scope,
+        },
     )
+
+
+@pytest.mark.parametrize(
+    "fault", ["source", "subject", "missing-student", "extra", "scope", "uuid", "schema"]
+)
+def test_invalid_shared_deletion_contract_is_rejected_before_side_effects(fault):
+    command = DeleteStudent(uuid4(), uuid4(), uuid4(), "RECORDS", datetime.now(UTC))
+    body = envelope(command).model_dump(mode="json")
+    validate_contract(body)
+    if fault == "source":
+        body["source"] = "other-service"
+    elif fault == "subject":
+        body["subject"] = str(uuid4())
+    elif fault == "missing-student":
+        del body["data"]["studentId"]
+    elif fault == "extra":
+        body["data"]["nickname"] = "synthetic"
+    elif fault == "scope":
+        body["data"]["scope"] = "UNLINK"
+    elif fault == "uuid":
+        body["data"]["deletionRequestId"] = uuid4().hex
+    else:
+        body["dataschema"] = "student.deleted.v2"
+
+    class Untouched:
+        async def delete(self, command):
+            pytest.fail("Invalid contract reached deletion side effects")
+
+    message, channel = FakeMessage(json.dumps(body).encode()), FakeChannel()
+    asyncio.run(
+        EventConsumer(AmqpConnection("amqp://unused"), 3, 1).handle_message(
+            channel, DELETION_QUEUE, StudentDeletedConsumer(Untouched()), message
+        )
+    )
+    assert message.rejected and not message.acked
+    assert not channel.default_exchange.published
+    assert current_user_context() is None
 
 
 def test_duplicate_deletes_all_owned_rows_once_and_preserves_other_student(
@@ -230,7 +273,7 @@ def test_generation_lock_blocks_deletion_and_deletion_lock_blocks_generation(
 
 
 @pytest.mark.parametrize("scope", ["PROFILE", "RECORDS"])
-def test_late_generation_barrier_and_record_reset(
+def test_both_scopes_block_late_and_new_generation_until_explicit_resume(
     scope, deletion_setup, report_factory, db_engine, report_student_id
 ):
     new_command, service, _, _ = deletion_setup
@@ -244,10 +287,10 @@ def test_late_generation_barrier_and_record_reset(
         command_for(report_student_id), requested_at=command.occurred_at + timedelta(seconds=1)
     )
     asyncio.run(make_service(report_factory, db_engine, request).generate(request))
-    assert len(stored(report_factory, report_student_id)[0]) == (scope == "RECORDS")
+    assert stored(report_factory, report_student_id) == ([], [])
 
 
-def test_old_records_event_does_not_delete_new_reports_but_profile_always_upgrades(
+def test_old_records_event_is_idempotent_but_profile_always_upgrades(
     deletion_setup, report_factory, db_engine, report_student_id
 ):
     new_command, service, storage, _ = deletion_setup
@@ -259,7 +302,7 @@ def test_old_records_event_does_not_delete_new_reports_but_profile_always_upgrad
     asyncio.run(make_service(report_factory, db_engine, request).generate(request))
     old = new_command("RECORDS", current.occurred_at - timedelta(seconds=1))
     asyncio.run(service.delete(old))
-    assert len(storage.calls) == 1 and len(stored(report_factory, report_student_id)[0]) == 1
+    assert len(storage.calls) == 1 and stored(report_factory, report_student_id) == ([], [])
     profile = new_command("PROFILE", old.occurred_at)
     asyncio.run(service.delete(profile))
     assert len(storage.calls) == 2 and stored(report_factory, report_student_id) == ([], [])

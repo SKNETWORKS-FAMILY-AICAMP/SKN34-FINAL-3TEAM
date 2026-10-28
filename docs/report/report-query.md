@@ -1,6 +1,6 @@
 # 이슈 #54 리포트 조회 내부 API
 
-기반은 #53 커밋 `3cfa9f1`, 작업 브랜치는 `feature/report-query`다. `query/router.py`·`service.py`·`schemas.py`를 추가하고 API 앱에 등록했다. 설계 문서 1.6·3.4의 수치·유형·변화·돌아보기·인용·검증·버전을 응답 모델로 검사한다.
+작업 브랜치는 `feature/report-query`다. 2026-10-28 최신 #53과 develop `47e5ffe`를 병합했다. `query/router.py`·`service.py`·`schemas.py`를 API 앱에 등록했고 설계 문서 1.6·3.4의 수치·유형·변화·돌아보기·인용·검증·버전을 응답 모델로 검사한다.
 
 ## 동작
 
@@ -25,7 +25,7 @@ API 4.4와 `contracts/openapi/report-service.yaml`을 맞췄다. OpenAPI는 실�
 
 ## 완성을 위한 외부 연결
 
-- 김동섭님 #42: 공개 목록·상세·근거·다운로드 프록시에서 범위 헤더와 현재 상품 권한 헤더를 설정해야 한다. report 목록에 없는 QUEUED 작업의 표시는 core report_job과 결합해야 한다.
+- core 리포트/상품 담당: #42 공개 프록시와 범위 헤더 전달은 이미 확보했다. 현재 상품 권한 헤더는 아직 미연결이므로 이를 연결하고 실제 무료/유료/다운그레이드 흐름을 검증해야 한다. report 목록에 없는 QUEUED 작업은 core report_job 책임이다.
 - #27: evidence의 answerId/attemptId/version·원문·available:false 및 410 계약을 맞춰야 한다.
 - 인프라: 로컬 MinIO 내부/공개 주소 분리와 호스트 HTTP 다운로드는 검증했다. 운영 S3 주소·버킷 권한 주입은 후속이다. 수명 기본값 300초는 변경 가능한 초기 운영값이며 최종 팀 운영 설정과 구분한다.
 

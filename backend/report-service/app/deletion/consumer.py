@@ -1,11 +1,28 @@
-"""Known student.deleted fields from architecture 1.4; shared schema remains #45-owned."""
+"""Consume the shared #45 student.deleted.v1 contract with exact student scope."""
 
+from typing import Literal
 from uuid import UUID
 
+from pydantic import BaseModel, ConfigDict, field_validator
+
 from app.deletion.state import DeleteStudent
+from app.messaging.contracts import InvalidEvent, uuid_text
 from app.security import UserContext, bind_user_context, reset_user_context
 
 DELETION_QUEUE = "report.student.deleted"
+
+
+class DeletionData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    studentId: UUID
+    deletionRequestId: UUID
+    scope: Literal["PROFILE", "RECORDS"]
+
+    @field_validator("studentId", "deletionRequestId", mode="before")
+    @classmethod
+    def uuid_field(cls, value):
+        return uuid_text(value)
 
 
 class StudentDeletedConsumer:
@@ -13,21 +30,27 @@ class StudentDeletedConsumer:
         self._service = service
 
     async def __call__(self, envelope):
-        if envelope.type != "student.deleted" or envelope.dataschema != "student.deleted.v1":
-            raise ValueError("Unsupported student deletion contract")
-        if (
-            not envelope.subject
-            or "deletionRequestId" not in envelope.data
-            or "scope" not in envelope.data
-        ):
-            raise ValueError("Student deletion fields are missing")
-        command = DeleteStudent(
-            UUID(envelope.id),
-            UUID(envelope.subject),
-            UUID(envelope.data["deletionRequestId"]),
-            envelope.data["scope"],
-            envelope.time,
-        )
+        try:
+            if (envelope.type, envelope.source, envelope.dataschema) != (
+                "student.deleted",
+                "core-service",
+                "student.deleted.v1",
+            ):
+                raise ValueError("Unsupported deletion identity")
+            data = DeletionData.model_validate(envelope.data)
+            if uuid_text(envelope.subject) != data.studentId:
+                raise ValueError("Student identity mismatch")
+            if envelope.time.utcoffset() is None:
+                raise ValueError("Missing time offset")
+            command = DeleteStudent(
+                uuid_text(envelope.id),
+                data.studentId,
+                data.deletionRequestId,
+                data.scope,
+                envelope.time,
+            )
+        except (ValueError, TypeError, AttributeError):
+            raise InvalidEvent("Invalid student.deleted v1 contract") from None
         reset = bind_user_context(
             UserContext(None, "SYSTEM", frozenset({str(command.student_id)}), envelope.traceparent)
         )

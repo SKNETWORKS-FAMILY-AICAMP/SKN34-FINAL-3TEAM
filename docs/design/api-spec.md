@@ -717,8 +717,8 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | POST | `/internal/deletion-requests/{deletionRequestId}/completions` | learning·report가 `student.deleted` 처리 후 완료 보고 `{service}`. 두 서비스 모두 보고 시 `COMPLETED` (멱등, P09) |
 
 - 비동기 메시지(`report.generate` 등)는 [아키텍처 1.4](architecture.md#14-메시지-목록) 참고
-- #55 report 구현 기본안: PROFILE·RECORDS 모두 리포트 내용/파일을 물리 삭제하며 `report_deletion_guard`에 식별 UUID·범위·삭제 기준 시각만 남긴다. PROFILE은 이후 생성도 차단하고 RECORDS는 `report.generate`의 최초 명령 시각이 삭제 기준보다 이후인 경우만 새 생성을 허용한다. 이는 #45 담당자와 확정할 운영 정책이다.
-- core는 삭제 완료 전 새 리포트 요청을 막고, 삭제된 기존 작업의 늦은 상태 이벤트를 무시해야 한다. 재시도/Outbox 재전송 시 `EventEnvelope.time`을 최초 명령 시각으로 보존해야 한다. 서비스 간 시각 기준과 메시지 필드는 #42/#45 계약 검증이 필요하다.
+- #55 report: PROFILE·RECORDS 모두 리포트 내용/파일을 물리 삭제하며 `report_deletion_guard`에 식별 UUID·범위·삭제 기준 시각·처리 상태만 남긴다. 최신 #45 core가 RECORDS 후에도 자동 학습 재개를 하지 않으므로 두 scope 모두 이후 생성도 차단한다. 새 명령의 time이 삭제 시각보다 늦다는 이유만으로 재개를 허용하지 않는다. 재개가 필요하면 별도 명시적 계약을 확정한다.
+- core의 삭제 상태 접근 차단과 `EventEnvelope.time` 보존·공유 메시지 규격은 #42/#45에서 확보했다. 삭제 전 queued job 정리와 삭제된 기존 작업의 늦은 상태 이벤트 무시는 core 후속 통합 검증 대상이다. report의 학생 lock·삭제 장벽만으로 core job 상태를 대신 정리하지 않는다.
 
 ### 4.6 #43 AI 사용량 조회 계약
 

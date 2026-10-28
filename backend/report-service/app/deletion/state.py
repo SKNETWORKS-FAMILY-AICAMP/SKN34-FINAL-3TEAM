@@ -56,9 +56,9 @@ def generation_allowed(session, student_id, requested_at):
         return True
     if row["status"] == "PENDING":
         raise GenerationBusy("Student deletion is pending")
-    if row["scope"] == "PROFILE":
-        return False
-    return requested_at is not None and requested_at > row["cutoff_at"]
+    # Core does not resume learning after either deletion scope. A future resume
+    # contract must explicitly lift this guard; message time grants no permission.
+    return False
 
 
 def query_allowed(session, student_id):

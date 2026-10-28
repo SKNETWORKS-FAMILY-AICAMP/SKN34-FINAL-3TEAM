@@ -90,6 +90,9 @@ def minio_endpoint():
 @pytest.fixture
 def minio_storage(minio_endpoint, monkeypatch):
     internal, public, access, secret = minio_endpoint
+    # Each disposable server has different credentials. Do not reuse a boto3
+    # default session cached by a preceding test module's MinIO instance.
+    monkeypatch.setattr(boto3, "DEFAULT_SESSION", None)
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", access)
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", secret)
     monkeypatch.delenv("AWS_SESSION_TOKEN", raising=False)
