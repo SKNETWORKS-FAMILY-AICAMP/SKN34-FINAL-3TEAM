@@ -70,7 +70,7 @@ class HintInput(InputModel):
 
 
 class ReflectionInput(InputModel):
-    difficulty: str
+    difficulty: Literal["EASY", "NORMAL", "HARD"]
     text: str | None
     created_at: AwareDatetime
 
