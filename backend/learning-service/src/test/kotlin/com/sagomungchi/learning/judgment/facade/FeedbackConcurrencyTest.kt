@@ -46,6 +46,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -186,6 +187,57 @@ class FeedbackConcurrencyTest {
             jdbc.queryForMap("SELECT process_status, failure_code, retry_count FROM judgment WHERE answer_id = ?", answer.id).values.toList(),
         )
         assertIs<AcquireResult.Acquired>(judgmentService.acquire(answer.id, now.plusSeconds(1)))
+    }
+
+    @Test
+    fun `되묻기를 만드는 사이 시도가 마무리되면 판정만 저장하고 되묻기는 저장하지 않음 (P04)`() {
+        ai.resetAll()
+        val rows = TestRows(jdbc)
+        val mission = rows.mission(inputType = "NARRATIVE")
+        val element = rows.rubric(mission).single()
+        val student = UUID.randomUUID()
+        val context = UserContext(null, "STUDENT", setOf(student.toString()), null)
+        UserContextHolder.set(context)
+        val answer = try {
+            val attempt = attemptService.start(student, mission.id, 3, demo = false).attempt
+            answerService.submit(attempt.id, UUID.randomUUID(), SubmitCommand(InputType.NARRATIVE, AnswerContent(text = "놀 수 있어서 좋아요"), false, null))
+        } finally {
+            UserContextHolder.clear()
+        }
+        ai.stubFor(
+            post(urlEqualTo("/internal/judgments")).willReturn(
+                okJson("""{"result":"PARTIAL","elements":[{"elementId":"$element","quote":"놀 수 있어서","verified":true,"satisfied":true}],"heldReason":null,"trial":true,"versions":{"model":"m","prompt":"judge@2"}}"""),
+            ),
+        )
+        ai.stubFor(
+            post(urlEqualTo("/internal/followups")).willReturn(
+                okJson("""{"type":"TELL_MORE","question":"더 말해 줄래요?","source":"LLM","leakCheck":{"passed":true},"versions":{"model":"m","prompt":"followup@4"}}""")
+                    .withFixedDelay(1500),
+            ),
+        )
+        val pool = Executors.newSingleThreadExecutor()
+        val pending = pool.submit<FeedbackResult> {
+            UserContextHolder.set(context)
+            try {
+                facade.feedback(answer.id)
+            } finally {
+                UserContextHolder.clear()
+            }
+        }
+        // 되묻기 요청이 들어온 뒤(ai 호출 전 마무리 확인은 이미 지남) 마무리를 커밋
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+        while (ai.countRequestsMatching(postRequestedFor(urlEqualTo("/internal/followups")).build()).count == 0) {
+            check(System.nanoTime() < deadline) { "되묻기 요청이 오지 않음" }
+            Thread.sleep(20)
+        }
+        jdbc.update("UPDATE attempt SET finished_at = now() WHERE id = ?", answer.attemptId)
+        val result = pending.get(30, TimeUnit.SECONDS)
+        pool.shutdown()
+
+        assertEquals(ProcessStatus.DONE, result.status)
+        assertNull(result.followup)
+        assertTrue(result.nextActions.isEmpty())
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM followup f JOIN judgment j ON j.id = f.judgment_id WHERE j.answer_id = ?", Int::class.java, answer.id))
     }
 
     companion object {
