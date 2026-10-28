@@ -36,6 +36,9 @@ class JudgmentRepository(private val mapper: JudgmentMapper) {
      */
     fun acquire(answerId: UUID, now: Instant, leaseUntil: Instant): Int = mapper.acquire(answerId, now, leaseUntil)
 
+    /** 답변의 시도 행을 잠그고(FOR UPDATE) 아직 마무리·완료 전인지 */
+    fun lockAttemptOpen(answerId: UUID): Boolean = mapper.lockAttemptOpen(answerId)
+
     /** 끝난 판정 저장. 획득한 리스 값이 그대로일 때만 (늦게 끝난 이전 처리의 덮어쓰기 방지) */
     fun complete(judgment: Judgment, leaseUntil: Instant, traceId: String?, now: Instant): Boolean =
         mapper.complete(judgment, leaseUntil, traceId, now) == 1

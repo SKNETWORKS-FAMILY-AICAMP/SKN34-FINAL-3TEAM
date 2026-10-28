@@ -79,11 +79,13 @@ class JudgmentService(
 
     /**
      * 판정·요소·되묻기·버전 저장 + DONE (class-diagram 4.2 saveResult). judgment는 acquire로 얻은 것.
-     * 리스를 잃었으면(다른 요청이 다시 가져감) false, 아무것도 저장하지 않음
+     * 리스를 잃었으면(다른 요청이 다시 가져감) false, 아무것도 저장하지 않음.
+     * 시도 행을 먼저 잠그고 다시 확인: ai 호출 동안 시도가 마무리됐으면 판정만 저장하고 되묻기는 저장하지 않음 (P04)
      */
     @Transactional
     fun saveResult(judgment: Judgment, judged: Judged, followup: Followup?): Boolean {
         val lease = checkNotNull(judgment.leaseUntil) { "리스 없는 판정" }
+        val attemptOpen = judgmentRepository.lockAttemptOpen(judgment.answerId)
         if (judged.result == JudgmentResult.HELD) {
             judgment.hold(checkNotNull(judged.heldReason), judged.by)
         } else {
@@ -92,7 +94,7 @@ class JudgmentService(
         val now = now()
         if (!judgmentRepository.complete(judgment, lease, traceId(), now)) return false
         judgmentRepository.insertElements(judgment)
-        followup?.let { followupRepository.insert(judgment.id, it, now) }
+        if (attemptOpen) followup?.let { followupRepository.insert(judgment.id, it, now) }
         return true
     }
 

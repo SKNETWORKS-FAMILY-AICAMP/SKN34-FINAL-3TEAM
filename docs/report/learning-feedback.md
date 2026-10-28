@@ -133,4 +133,4 @@ PR #78 리뷰에서 후속 항목을 이슈로 나눔(kty2001): #79 판정 규�
 - 같은 답이 실행마다 다르게 판정되는 경우(#22 검사): 사람 검증(P11) 대상
 - 분류 문항: 그룹(`categories`) 저장 위치가 정해지면 그룹 ID 확인·유출 검사용 정답 추가. 기획서 5장 "분류 기준"(이유를 봄)과 지금 분류 문항(정답 키)의 관계 확인 → #79
 - 판정 정정(`POST /internal/judgments/{judgmentId}/corrections`, class-diagram 4.2 `CorrectionController`·`JudgmentService.correct`·`CorrectionRepository`, FN-SUP-03): 이슈 #25 범위가 아님. 관리자 정정과 learning 전달은 core #46(20220348-kim) 몫이지만, learning 쪽 받는 API는 #80에서 #46과 요청·응답을 맞춤. 고착 `RUNNING` 탐지 주기(1분)는 운영 작업. 지금은 요청 때 리스 만료로 다시 가져감
-- 마무리(#26): 판정 `DONE` 1회 이상 확인, 체크리스트는 저장된 요소(`ANSWER_KEY`·`AI_OBSERVATION`) 사용. 피드백은 ai 호출 전에 읽은 시도로 되묻기 여부를 정하므로, 판정 처리 중에 마무리하면 마무리된 시도에 되묻기가 생길 수 있음 → PR #78 리뷰에서 #26 이슈 코멘트로 분리: finish가 같은 시도 잠금(`lockById`)을 쓰고 `RUNNING` 판정이 있으면 기다리거나 거절, 또는 `saveResult` 직전에 시도를 다시 확인
+- 마무리(#26): 판정 `DONE` 1회 이상 확인, 체크리스트는 저장된 요소(`ANSWER_KEY`·`AI_OBSERVATION`) 사용. 피드백은 ai 호출 전에 읽은 시도로 되묻기 여부를 정하므로, 판정 처리 중에 마무리하면 마무리된 시도에 되묻기가 생길 수 있음 → PR #78 리뷰에서 #26 이슈 코멘트로 분리: finish가 같은 시도 잠금(`lockById`)을 쓰고 `RUNNING` 판정이 있으면 기다리거나 거절, 또는 `saveResult` 직전에 시도를 다시 확인 → #26에서 두 번째 방법으로 반영([learning-reflection.md](learning-reflection.md) "마무리 경합")
