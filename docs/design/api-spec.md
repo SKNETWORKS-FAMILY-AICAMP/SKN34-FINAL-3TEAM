@@ -658,7 +658,7 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | Method | Path | 설명 |
 |---|---|---|
 | GET | `/internal/reports?studentId&status` | 리포트 목록 |
-| GET | `/internal/reports/{reportId}` | 상세 (3.4 스키마) |
+| GET | `/internal/reports/{reportId}?revision` | 상세 (3.4 스키마), 기본 최신판·양의 revision으로 이전판 조회 |
 | GET | `/internal/reports/{reportId}/evidence/{itemId}` | 항목 근거 |
 | GET | `/internal/reports/{reportId}/files/{format}` | 단기 presigned URL 발급 → `{url, expiresAt}` |
 
@@ -743,7 +743,15 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 - 자녀별 원격 조회는 기존 최대 자녀 수 3을 상한으로 병렬 수행해 read timeout이 순차로 누적되는 것을 피한다. LearningHttpProperties의 기존 read timeout(기본 30초), learning-json 서킷의 최근 20회·최소 20회·실패율 50%·30초 차단 정책을 공유하며 재시도는 추가하지 않는다. 서킷 OPEN은 즉시 null/UNAVAILABLE이고 CLOSED의 개별 요청은 기존 timeout을 유지한다. 전체 HTTP 요청의 엄격한 30초 deadline을 새로 정의하거나 보장하지 않는다.
 - core LearningRecordService는 검증된 PARENT 컨텍스트와 대상 학생 scope만 허용하는 기록 전용 service다. 기존 학생 전용 LearningProxyService의 역할·쓰기 권한은 완화하지 않는다.
 
-### 5.5 #45 계정 관리·Google 재확인·삭제·탈퇴 계약
+
+### 5.5 #42 주간 리포트 구현 계약
+
+- 자동 생성은 직전 KST 월~일, 매주 월요일 07:00이다. 부모 REGENERATE 한도는 자녀·주 계열 전체 1회(새 판을 기준으로 재요청해도 409 REPORT_REGENERATION_LIMIT). SERVICE_OPS 관리자는 같은 POST 경로에서 ADMIN_RETRY 작업을 무제한 생성한다. 생성 중 작업이 있으면 409 REPORT_GENERATION_IN_PROGRESS이다.
+- 재생성 202는 `{jobId, childId, period:{from,to}, status:"QUEUED"}`다. 이전 reportId는 보존되고 report가 revision을 배정한다. 상품 계약 미연결은 503 REPORT_ENTITLEMENT_UNAVAILABLE이며 job/Outbox는 생성되지 않는다.
+- reportId 조회의 자녀 연결·현재 필수/법정대리인 동의를 확인한 뒤 단일 학생 scope로 report-api를 호출한다. 없는 core reportId는 404 REPORT_NOT_FOUND다. 목록은 `{items:[3.4의 식별·기간·status·state·revision·generatedAt 필드]}`다. 상세는 3.4, 근거는 report-api JSON을 그대로 전달하고 다운로드는 pdf/md의 `{url,expiresAt}`다. report 장애는 503 REPORT_UNAVAILABLE, JSON 계약 위반은 502 REPORT_CONTRACT_INVALID다. 성공 상세의 실제 반환 reportId로 열람 기록을 남긴다.
+- v1 이벤트 스키마/봉투/생산자·소비자는 contracts/events/report-messages.md를 따른다. 알림 및 실제 공급자 연결 경계는 docs/report/issue-42-weekly-reports.md에 기록한다.
+
+### 5.6 #45 계정 관리·Google 재확인·삭제·탈퇴 계약
 
 - 기존 Google 로그인과 별도 재인증 흐름을 사용한다. `POST /me/reauth`에 `{purpose: PIN_CHANGE|CHILD_UNLINK|CHILD_DELETE|WITHDRAWAL, childId?, scope?}`를 보내면 `{challengeId,authorizationUrl,expiresAt}`를 반환하고 HttpOnly/Secure/SameSite=Lax 재인증 상태 쿠키를 설정한다. CHILD_DELETE는 PROFILE/RECORDS scope를 반드시 지정한다. WITHDRAWAL은 자녀/scope를 허용하지 않는다. 다른 자녀 작업은 childId 필수다.
 - Google redirect URI는 web origin + `/api/v1/auth/google/reauth/callback`이다. 기존 GoogleOAuthClient의 code·PKCE·서명·iss·aud·exp·nonce 검증을 재사용한다. callback은 현재 계정의 Google sub와 일치할 때만 challenge를 VERIFIED로 바꾸며 로그인/refresh를 발급하지 않는다. 계정 선택은 비밀번호/MFA 재입력을 보장하지 않는다. 클라이언트는 원래 로그인 세션을 유지한 상태에서 `POST /me/reauth`에 `{challengeId}`를 보내 `{reauthToken,expiresAt}`를 한 번 수령한다. 아직 callback 전이면 409 REAUTH_PENDING이다. callback 응답은 완료 안내 JSON이다.

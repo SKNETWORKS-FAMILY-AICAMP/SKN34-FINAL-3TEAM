@@ -35,11 +35,14 @@ class PublicAuthFilter(private val auth: AuthService, private val properties: Au
                 ?: throw BusinessException(HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "로그인이 필요합니다.")
             val identity = auth.authenticate(bearer)
             request.setAttribute(AuthController.IDENTITY, identity)
+            val adminReportRegeneration = identity.session.role == "ADMIN" && request.method == "POST" &&
+                Regex("/reports/[0-9a-fA-F-]{36}/regenerate").matches(path)
+            if (adminReportRegeneration) auth.requirePermission(identity, "SERVICE_OPS")
             if (path.startsWith("/students/") || path.startsWith("/missions") || path.startsWith("/attempts/") || path.startsWith("/answers/")) {
                 if (identity.session.role != "STUDENT") throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "학생 세션이 필요합니다.")
             }
             if (listOf("/student-devices", "/children", "/conversations", "/reports", "/agent/", "/orders", "/payments", "/subscriptions").any { path.startsWith(it) }) {
-                if (identity.session.role != "PARENT") throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "학부모 세션이 필요합니다.")
+                if (identity.session.role != "PARENT" && !adminReportRegeneration) throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "학부모 세션이 필요합니다.")
             }
             if (identity.session.role == "STUDENT" && (path.startsWith("/me/") || (path == "/me" && request.method != "GET")))
                 throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "학생은 계정 관리 기능을 사용할 수 없습니다.")

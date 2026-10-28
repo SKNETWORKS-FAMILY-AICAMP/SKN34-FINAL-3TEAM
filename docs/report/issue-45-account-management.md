@@ -75,3 +75,12 @@
 인증 검사·OpenAPI·README·API 문서 충돌을 양쪽 계약을 보존해 해결했다. 계약 스크립트 45개와 최종 OpenAPI 표준 검사를 실행한다. 최종 core 전체 결과는 후속 기록을 따른다. 실제 Google 및 learning/report 물리 삭제·#58 기기·#48 결제 쓰기 통합의 미검증 조건은 유지된다.
 
 최종 통합 검증: JDK 21 core 전체 146개 테스트 통과(실패/오류/생략 0), test bootJar BUILD SUCCESSFUL(4m22s). #37 동의/자녀·#38 프록시·#39 SSE와 #45를 함께 실행했다. 계약 검사 45/45, OpenAPI 표준 검사 및 git diff --check 통과. 기존 V9/DDL 변경이 없어 앞선 DB 전체 cycle 결과를 유지한다. 검증 컨테이너는 종료·제거했다.
+
+
+## 2026-10-28 PR #91과 #90 통합 충돌 해결
+
+#42 PR #90이 core-integration에 먼저 병합되어 기준이 b4e9b8c로 변경됐다. #45 브랜치에서 해당 기준을 일반 merge하고 공통 OpenAPI·문서 4개 충돌을 해결했다. #42 리포트 경로/스키마와 #45 계정/삭제 경로/스키마를 모두 보존했으며, API 명세는 #42 5.5절·#45 5.6절로 구분했다. 두 부모 커밋의 각 API operation 값이 통합 문서에 그대로 유지됨을 대조했다.
+
+PR #91 schema CI의 직접 실패는 test_account_management_contract의 jsonschema import 누락이었다. #42에 추가된 ci-db-schema.yml의 jsonschema==4.26.0 설치 단계를 반영했다. 격리된 새 uv 환경(pyyaml/jsonschema 명시 설치)에서 계약 검사 49개 통과, 최종 OpenAPI 3.1 표준 검사 통과다. 이는 원격 CI 재실행 결과와 구분한다. 기존 V9와 DB 설계에는 추가 변경이 없다.
+
+최종 JDK 21 core 전체 test·bootJar 성공: 172개 테스트, 실패/오류/생략 0. 실제 PostgreSQL/RabbitMQ 및 HTTP 대역을 사용하는 기존 #42·#45 테스트를 함께 실행했다. 검증 컨테이너 종료·제거 완료.
