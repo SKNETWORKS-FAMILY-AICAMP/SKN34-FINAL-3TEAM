@@ -45,6 +45,7 @@ try {
       loggedIn = false; role = 'STUDENT'
       return reply({ accessToken: 'fixture-STUDENT', role, child, nextAction: 'READY', startPath: '/student/home' })
     }
+    if (path.endsWith('/auth/student/profiles')) return reply({ status: 401, code: 'STUDENT_DEVICE_INVALID', title: '등록되지 않은 기기' }, 401)
     if (path.endsWith('/children')) return reply({ items: [{ ...child, childId: child.id, plan: 'FREE' }], page: 0, size: 20, totalElements: 1 })
     if (path.endsWith('/students/me/home')) return reply({ student: child, state: 'NO_RECORD', period: { from: '2026-10-21', to: '2026-10-27' }, resume: null, missions: [] })
     if (path.endsWith('/missions') || path.endsWith('/attempts')) return reply({ items: [], page: 0, size: 20, totalElements: 0 })
@@ -68,7 +69,7 @@ try {
   const beforeStudent = refreshes
   await a.getByRole('button', { name: '이 자녀로 학습 시작' }).click()
   await Promise.all([a.waitForURL('**/student/home'), b.waitForURL('**/student/login')])
-  await b.getByRole('heading', { name: '학생 로그인', exact: true }).waitFor()
+  await b.getByRole('heading', { name: '이 기기를 학습용으로 등록해요', exact: true }).waitFor()
   assert.equal(refreshes, beforeStudent, 'Student transition must not refresh into parent credentials')
   await a.reload()
   await a.waitForURL('**/student/login')

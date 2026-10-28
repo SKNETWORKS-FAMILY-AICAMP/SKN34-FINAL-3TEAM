@@ -30,6 +30,12 @@ for (const marker of [
   'sagomungchi:device-scenario',
   'setDeviceScenario',
   'startDeviceStudentSession',
+  'startSharedDemo',
+  'sagomungchi:qr-demo-owner',
+  '/__demo/device',
+  'X-Sagomungchi-Demo',
+  'sagomungchi_demo_device',
+  '두 기기 QR 시연',
   '기기 상태 시연',
   // 학생 꾸미기 설정 목업 저장소
   'sagomungchi:msw-look',

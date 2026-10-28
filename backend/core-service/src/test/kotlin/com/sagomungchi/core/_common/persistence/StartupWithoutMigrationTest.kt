@@ -27,6 +27,7 @@ import kotlin.test.assertTrue
 @DirtiesContext
 class StartupWithoutMigrationTest {
     // The empty-schema check isolates startup from scheduled business queries.
+    @MockitoBean lateinit var notificationListenerContainer: org.springframework.data.redis.listener.RedisMessageListenerContainer
     @MockitoBean lateinit var outboxRelay: OutboxRelay
 
     @Autowired lateinit var jdbc: JdbcTemplate

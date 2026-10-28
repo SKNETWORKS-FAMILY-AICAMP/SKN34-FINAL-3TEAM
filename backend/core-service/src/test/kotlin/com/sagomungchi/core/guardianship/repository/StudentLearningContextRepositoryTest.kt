@@ -18,7 +18,7 @@ class StudentLearningContextRepositoryTest : PostgresRepositoryTest() {
     @Test fun `only linked active student's core-owned grade and demo metadata are returned`() {
         val user = UUID.randomUUID(); val child = UUID.randomUUID()
         jdbc.update("INSERT INTO user_account(id,role,login_id,status,is_demo,created_at,updated_at) VALUES(?,'PARENT',?,'ACTIVE',false,now(),now())", user, "$user@example.test")
-        jdbc.update("INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,created_at,updated_at) VALUES(?,'테스트 학생',5,2015,true,'ACTIVE',now(),now())", child)
+        jdbc.update("INSERT INTO student(pin_failed_count,id,nickname,grade,birth_year,is_demo,status,created_at,updated_at) VALUES(0,?,'테스트 학생',5,2015,true,'ACTIVE',now(),now())", child)
         jdbc.update("INSERT INTO guardianship(id,parent_user_id,student_id,method,status,linked_at) VALUES(?,?,?,'REGISTER','LINKED',now())", UUID.randomUUID(), user, child)
         assertEquals(StudentLearningContext(5, true), repository.findLinked(user, child))
         assertNull(repository.findLinked(UUID.randomUUID(), child))
