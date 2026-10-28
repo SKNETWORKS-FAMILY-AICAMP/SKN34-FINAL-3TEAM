@@ -120,6 +120,8 @@ learning-service의 `POST /internal/answers/{answerId}/feedback`을 만들고, �
 | 같은 피드백 재요청 | 200, 0.02초, LLM 호출 없이 같은 결과 |
 | 시도 상세 | 같은 피드백, `nextActions: [ANSWER_FOLLOWUP, FINISH]` |
 | DB | `judgment` DONE·LLM·`retry_count` 0, 요소 3행, 되묻기 1행 |
+| 리뷰 반영 후 다시(10/28, c76f448) | 피드백 200 8.1초 `CORRECT`·`ONE_STEP_MORE`, 재요청 0.02초 같은 결과, 시도 상세 같은 피드백·`[ANSWER_FOLLOWUP, FINISH]` |
+| 판정 처리 중 마무리(10/28) | 되묻기에 답한 2번째 답변의 피드백이 ai를 기다리는 동안(판정 `RUNNING`) DB에서 `finished_at` 기록 → ai 되묻기는 호출됐지만 저장 때 다시 확인해 되묻기 0행, 응답 200 `PARTIAL`·`followup: null`·`nextActions: []` |
 
 ## 후속
 
