@@ -185,7 +185,10 @@ export function createApiGateway(): ClassroomGateway {
           nickname: text(c.nickname, 'nickname'),
           grade,
           birthYear: Number(c.birthYear),
-          plan: c.plan === 'PREMIUM' ? 'PREMIUM' : 'FREE',
+          plan: c.plan === 'PREMIUM' || c.plan === 'FREE' ? c.plan : undefined,
+          guardianConsentRequired: c.guardianConsentRequired,
+          hasRecords: c.hasRecords,
+          recordState: c.recordState,
           ...(typeof c.pinSet === 'boolean' ? { pinSet: c.pinSet } : {}),
           ...(typeof c.pinLocked === 'boolean' ? { pinLocked: c.pinLocked } : {}),
         } as Child

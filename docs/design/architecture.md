@@ -143,6 +143,7 @@
 - `Presentation → Application → Infrastructure` 단방향, 계층 건너뛰기 금지 (controller → repository 직접 호출 금지)
 - Domain은 모든 레이어가 참조 가능, Domain은 다른 레이어를 참조하지 않음
 - 기능 간 호출은 상대 기능의 service로만 (다른 기능의 repository 직접 참조 금지)
+- #37 자녀 기록 존재 조회는 guardianship service → learning의 LearningRecordService → LearningRecordClient → 기존 LearningClient 순서로 호출한다. 학생 전용 LearningProxyService 권한은 유지하며 learning-json 서킷·타임아웃·내부 컨텍스트 전달을 공유한다. 최대 3명 조회는 요청 단위의 최대 3개 virtual-thread 작업으로 병렬 수행하고, 검증된 UserContext를 전달·finally 정리한다. HTTP를 DB 트랜잭션 안에서 호출하지 않는다.
 - 여러 기능에 걸친 흐름은 `facade`로 조합 (참고 레포 `applicationpreparation/facade` 패턴)
 - 공통 코드: Spring `_common/`, Python `app/` 루트의 `config.py`·`errors.py`·`security.py`·`messaging/`·`clients/base.py`
 - DB 트랜잭션은 Application 레이어에서만 시작, 트랜잭션 안에서 외부 HTTP·AMQP 호출 금지

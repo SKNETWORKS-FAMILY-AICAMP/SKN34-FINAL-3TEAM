@@ -42,7 +42,16 @@ class PublicAuthFilter(private val auth: AuthService, private val properties: Au
             }
             if (identity.session.role == "STUDENT" && (path.startsWith("/me/") || (path == "/me" && request.method != "GET")))
                 throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "학생은 계정 관리 기능을 사용할 수 없습니다.")
-            if (path != "/me" && path != "/me/consents" && !path.startsWith("/me/consents/")) auth.requireConsents(identity)
+            val consentRecovery = (request.method == "GET" && path == "/me") ||
+                (request.method in setOf("GET", "POST") && path == "/me/consents") ||
+                (request.method == "POST" && Regex("/me/consents/[0-9a-fA-F-]{36}/withdrawal").matches(path))
+            if (!consentRecovery) auth.requireConsents(identity)
+            // #37: a withdrawn guardian consent also blocks existing parent child-resource requests.
+            if (identity.session.role == "PARENT" && path.startsWith("/children/")) {
+                val childId = runCatching { java.util.UUID.fromString(path.removePrefix("/children/").substringBefore('/')) }.getOrNull()
+                if (childId != null && childId !in identity.studentScope)
+                    throw BusinessException(HttpStatus.FORBIDDEN, "CHILD_NOT_LINKED", "연결 또는 법정대리인 동의를 확인해 주세요.")
+            }
             if (path.startsWith("/admin/")) auth.requirePermission(identity, permission(path))
             UserContextHolder.set(UserContext(identity.account.id.toString(), identity.session.role,
                 identity.studentScope.map { it.toString() }.toSet(), request.getHeader("traceparent")))
