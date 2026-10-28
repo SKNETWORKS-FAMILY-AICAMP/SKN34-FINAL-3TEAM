@@ -196,7 +196,7 @@ sequenceDiagram
   participant DB as core_db
 
   K->>C: GET /auth/student/profiles (Cookie student_device)
-  C-->>K: 200 [{childId, nickname, pinSet, locked}]
+  C-->>K: 200 [{childId, nickname, pinSet, pinLocked}]
   Note over K: 자녀 프로필 선택 → PIN 입력
   K->>C: POST /auth/student/login {childId, pin} (Cookie student_device)
   C->>DB: student_device token_hash 조회·미해제·미만료·자녀 등록 확인
@@ -893,11 +893,11 @@ sequenceDiagram
   participant L as learning
   participant RW as report-worker
 
-  W->>C: POST /children/{childId}/deletion-requests {scope}
-  C->>CDB: deletion_request REQUESTED
-  Note over C: X-Reauth-Token 재확인 후 (P09)
+  Note over W: 사전 안내 GET /children/{childId}/deletion-impact
+  W->>C: POST /children/{childId}/deletion-requests {scope} (X-Reauth-Token)
+  Note over C: 재확인 토큰 검사, 무효면 403 REAUTH_REQUIRED (P09)
   rect rgba(128,128,128,0.12)
-    C->>CDB: deletion_request CONFIRMED (scope = PROFILE면 student DELETION_REQUESTED)
+    C->>CDB: deletion_request REQUESTED → CONFIRMED (scope = PROFILE면 student DELETION_REQUESTED)
     C->>CDB: outbox_event (student.deleted, subject = studentId)
   end
   C-)MQ: events.topic / student.deleted

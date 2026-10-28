@@ -69,7 +69,7 @@
   - [이슈 #59 학생 PIN 로그인·기기 관리 화면](report/issue-59-student-device.md): MSW 목업 계약과 백엔드 확인 항목
   - [학부모 대시보드 시안 적용](report/parent-dashboard.md): 대시보드 화면 시안 반영 기록
   - [학생 화면 테마 적용](report/student-theme-world.md): 생각 지도 테마·캐릭터·꾸미기 화면 기록
-  - [설계 문서 정합성 점검](report/docs-consistency-audit.md): 코드 대비·문서 간 불일치 수정 내역, 결정 필요 항목, 코드 결함 이슈 초안
+  - [설계 문서 정합성 점검](report/docs-consistency-audit.md): 코드 대비·문서 간 불일치 수정 내역, 결정 항목 반영(계정 복구·삭제 재확인·내부 OpenAPI 등), 코드 결함 이슈 초안
 
 ## 개발 규칙
 

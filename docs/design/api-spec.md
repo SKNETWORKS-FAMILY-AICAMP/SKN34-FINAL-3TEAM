@@ -186,7 +186,7 @@
 | POST | `/auth/logout` | 인증 | refresh token 폐기 | ACC-04 | 제안 |
 | POST | `/auth/student-sessions` | 학부모 | 학생 진입(동석): `{childId}` 연결 자녀 확인 후 학생 세션(`STUDENT` 토큰) 발급. 시연 링크·URL 식별값 진입 없음 (P01) | ACC-05 | 제안 |
 | POST | `/auth/student/devices` | 공개 | 페어링 코드로 기기 등록 `{pairingCode, label}` → 기기 자격증명 쿠키 발급, 등록 자녀 프로필 반환 (P01, 3.11) | ACC-14 | 제안 |
-| GET | `/auth/student/profiles` | 기기 쿠키 | 이 기기에 등록된 자녀 프로필 `{childId, nickname, pinSet, locked}` (P01) | ACC-05 | 제안 |
+| GET | `/auth/student/profiles` | 기기 쿠키 | 이 기기에 등록된 자녀 프로필 `{childId, nickname, pinSet, pinLocked}` (P01, `/children` 확장과 같은 필드명) | ACC-05 | 제안 |
 | POST | `/auth/student/login` | 기기 쿠키 | 학생 진입(단독): `{childId, pin}` → 학생 세션(`STUDENT` 토큰) 발급. refresh 미발급 (P01, 3.11) | ACC-05 | 제안 |
 | GET | `/me` | 인증 | 본인 정보·역할·관리자 권한 | ACC-09 | 우선1 |
 | PATCH | `/me` | 인증 | 본인 정보 수정 | ACC-09 | 우선1 |
@@ -203,7 +203,7 @@
 | DELETE | `/student-devices/{deviceId}` | 학부모 | 기기 등록 해제 → 이후 해당 기기 PIN 로그인 거부 | ACC-14 | 제안 |
 | GET | `/children/{childId}/deletion-impact` | 학부모 | 연결 해제·프로필 삭제·기록 삭제별 범위·영향 안내 | ACC-11 | 우선2 |
 | DELETE | `/children/{childId}/link` | 학부모 | 연결 해제 (`X-Reauth-Token`) | ACC-11, ACC-10 | 우선2 |
-| POST | `/children/{childId}/deletion-requests` | 학부모 | 프로필·학습 기록 삭제 요청 `{scope: PROFILE\|RECORDS}` → 확정 시 `student.deleted` | ACC-11, ACC-13 | 우선2 |
+| POST | `/children/{childId}/deletion-requests` | 학부모 | 프로필·학습 기록 삭제 요청 `{scope: PROFILE\|RECORDS}` (`X-Reauth-Token`). 같은 요청에서 확정하고 `student.deleted` 발행, 별도 확인 API 없음. 사전 안내는 `deletion-impact` (P09) | ACC-11, ACC-13 | 우선2 |
 | GET | `/me/withdrawal/precheck` | 인증 | 탈퇴 전 진행 중 구독·미처리 환불·보관 거래(5년) 안내 (P09, P14) | ACC-12 | 우선2 |
 | POST | `/me/withdrawal` | 인증 | 탈퇴 요청 (`X-Reauth-Token`). 진행 중 구독·미처리 환불이 있으면 409, 요청 즉시 처리·이후 로그인 불가 (P09) | ACC-12 | 우선2 |
 | GET | `/me/withdrawal` | 인증 | 탈퇴 처리 상태 | ACC-12 | 우선2 |
@@ -419,7 +419,7 @@ data: {
 event: done
 data: {}
 ```
-- 보류인 경우: `judgment.result: "HELD"`, `heldReason`(`INSUFFICIENT_EVIDENCE`·`QUOTE_MISMATCH`·`TOO_SHORT`·`UNVERIFIED_SCOPE`·`MODEL_DISAGREEMENT`·`LOW_CONFIDENCE`)
+- 보류인 경우: `judgment.result: "HELD"`, `heldReason`(`INSUFFICIENT_EVIDENCE`·`QUOTE_MISMATCH`·`TOO_SHORT`·`UNVERIFIED_SCOPE`, M2·M1 교차 확인 활성 시 `MODEL_DISAGREEMENT`·`LOW_CONFIDENCE` 추가(#69, 현재 ai는 앞 4종만 반환))
 - 실패한 경우
   - `event: error` 데이터: `{"code":"AI_UNAVAILABLE","retryable":true}`
   - 답변은 저장된 상태로 유지
@@ -631,6 +631,9 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 - 범위 밖 학생 요청은 403
 
 ### 4.1 learning-service (호출: core, ai, report)
+
+구현된 경로의 요청·응답 계약: [contracts/openapi/learning-service.yaml](../../contracts/openapi/learning-service.yaml) (`scripts/tests/test_record_exists_openapi.py`가 컨트롤러 경로와 대조)
+
 | Method | Path | 호출자 | 설명 |
 |---|---|---|---|
 | GET | `/internal/missions?grade&demo&page&size`, `/internal/missions/{id}?grade&demo` | core | 학생용 미션 조회 (2.2 프록시). core가 학생 학년 `grade`(3~6, 필수)와 시연 학생 여부 `demo`(`student.is_demo`, 기본 `false`)를 붙임. `demo_only` 미션은 `demo=true`일 때만 노출 |
@@ -649,6 +652,9 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | * | `/internal/admin/missions/...` | core | 2.8 미션 관리 프록시 |
 
 ### 4.2 ai-service (호출: learning, core, report)
+
+구현된 경로의 요청·응답 계약: [contracts/openapi/ai-service.yaml](../../contracts/openapi/ai-service.yaml) (`scripts/tests/test_ai_openapi.py`가 라우터 경로와 대조)
+
 | Method | Path | 호출자 | 요청 → 응답 |
 |---|---|---|---|
 | POST | `/internal/judgments` | learning | `{answerText, inputType, grade, rubric{elements[]}, versions}` → `{result, elements[{elementId, quote, verified, satisfied}], heldReason, trial, versions}` (M2 활성 시 scoring 교차 확인) |

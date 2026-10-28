@@ -140,7 +140,7 @@ classDiagram
 | `RetryingConsumer` | `_common/messaging` | 구현됨 (core) | 수동 ACK. 처리 실패 시 `x-retry-count` +1 후 `<큐>.retry.<회차>` 재발행, 최대 횟수 초과 시 reject → DLQ (아키텍처 1.6) |
 | `PublicAuthFilter` | `_common/security` | 구현됨 (core만) | `/api/v1/**` Bearer 검증(`AuthService.authenticate`), 쿠키 API Origin·`X-Requested-With` 검사, 역할·관리자 권한·필수 동의 확인 → `UserContext(userId, role, studentScope)` 설정. JWT 발급·검증은 `account/service/TokenService` (3.1) |
 | `IdempotencyService` | `_common/web` | 구현됨 (core만, #38) | `idempotency_record` 조회·저장, 같은 키·다른 본문 422 |
-| `SseEmitters` | `_common/web` | 구현됨 (core만, #39) | SSE 생성, 15초 heartbeat `: ping`, 연결 종료 콜백. `open(context, …)`이 요청 스레드의 `UserContext`를 작업 스레드에 설정·해제 |
+| `SseEmitters` | `_common/web` | 구현됨 (core만, #39) | SSE 생성, 15초 heartbeat `: ping`, 연결 종료 콜백. 연결 시간은 용도별 설정(현재 피드백 90초 고정, 분석 대화는 #41에서 120초 + 여유로 지정하도록 확장). `open(context, …)`이 요청 스레드의 `UserContext`를 작업 스레드에 설정·해제 |
 
 ### 2.2 Python 공통 (`app/`, ai·scoring·report 동일)
 
@@ -326,7 +326,7 @@ classDiagram
     +update(childId, request)
     +unlink(reauthToken, childId)
     +deletionImpact(childId) Impact
-    +requestDeletion(childId, scope) DeletionResponse
+    +requestDeletion(reauthToken, childId, scope) DeletionResponse
     +setPin(reauthToken, childId, request)
   }
   class AccountService {
@@ -368,8 +368,7 @@ classDiagram
     +authorizeChild(childId) UserContext
     +authorizeLinkedChildren() UserContext
     +linkedStudentIds(parentId) Set
-    +requestDeletion(parentId, childId, scope) DeletionRequest
-    +confirmDeletion(requestId)
+    +requestDeletion(parentId, reauthToken, childId, scope) DeletionRequest
   }
   class UserAccount {
     <<entity>>

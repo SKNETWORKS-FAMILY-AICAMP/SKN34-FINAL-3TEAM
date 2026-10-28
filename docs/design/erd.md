@@ -25,7 +25,7 @@
 | 문자열·금액 | varchar는 길이 제한 없는 PostgreSQL varchar. ShedLock만 name varchar(64), locked_by varchar(255). 원화는 int, cost_usd는 반올림 정책 없는 numeric |
 | FK 삭제·순환 참조 | 기본 ON DELETE/UPDATE NO ACTION. mission.current_*와 answer.followup_id만 DEFERRABLE INITIALLY IMMEDIATE. 삭제는 P09에 따라 `student.deleted` 이벤트로 서비스별 물리 삭제. learning 하위 기록의 CASCADE 여부는 7장 확인 필요 |
 
-- 테이블 없이 Redis에 두는 값: `reauthToken`(단기), 계정 복구 확인 코드, SSE 알림 중계 (아키텍처 1.6), 요금제 사용 한도 일 단위 카운터 (P13)
+- 테이블 없이 Redis에 두는 값: `reauthToken`(단기), SSE 알림 중계 (아키텍처 1.6), 요금제 사용 한도 일 단위 카운터 (P13)
 - 생각 메모는 `attempt_draft.content.memo`에 저장 (P05). 음성 시범 미구현으로 음성 데이터 없음 (P03)
 - 학생 별도 계정 없음: 학생 세션은 `student.id`로 발급하는 토큰만. 발급 경로는 학부모 인증(동석) 또는 학부모 등록 기기 + 자녀 PIN(단독). PIN·기기 저장 구조는 10장 변경 예정 (P01)
 - 학생 기기 페어링 코드(10분·1회용)는 테이블 없이 Redis 저장

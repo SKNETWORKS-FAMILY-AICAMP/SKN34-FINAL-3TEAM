@@ -53,13 +53,13 @@ stateDiagram-v2
     S_DELETED --> [*]
   }
   state deletion_request {
-    [*] --> REQUESTED: 삭제 요청
-    REQUESTED --> CONFIRMED: 확인 절차 통과 + student.deleted 발행
+    [*] --> REQUESTED: 삭제 요청 (X-Reauth-Token)
+    REQUESTED --> CONFIRMED: 같은 요청에서 확정 + student.deleted 발행
     CONFIRMED --> COMPLETED: 삭제 완료 판정
     COMPLETED --> [*]
   }
   note right of deletion_request
-    확인: 재확인 토큰, 완료: learning·report 완료 보고 (P09)
+    재확인 토큰은 요청 시 검사, 완료: learning·report 완료 보고 (P09)
     RECORDS 범위는 student 상태 유지, 기록만 삭제
   end note
 ```
@@ -68,8 +68,8 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
-| `deletion_request → REQUESTED` | `POST /children/{id}/deletion-requests` | `GuardianshipService.requestDeletion` | 연결 자녀(`LINKED`)만 |
-| `REQUESTED → CONFIRMED` | `X-Reauth-Token` 재확인 (P09) | `GuardianshipService.confirmDeletion` → `DeletionRequest.confirm()` | 같은 트랜잭션에 `outbox_event(student.deleted)`, `scope = PROFILE`이면 `student ACTIVE → DELETION_REQUESTED` |
+| `deletion_request → REQUESTED` | `POST /children/{id}/deletion-requests` + `X-Reauth-Token` (P09) | `GuardianshipService.requestDeletion` | 연결 자녀(`LINKED`)만. 재확인 토큰이 없거나 무효면 `403 REAUTH_REQUIRED`로 행을 만들지 않음 |
+| `REQUESTED → CONFIRMED` | 같은 요청 안에서 바로 확정 (별도 확인 API 없음, 연결 해제·탈퇴와 같은 1단계) | `GuardianshipService.requestDeletion` → `DeletionRequest.confirm()` | 같은 트랜잭션에 `outbox_event(student.deleted)`, `scope = PROFILE`이면 `student ACTIVE → DELETION_REQUESTED` |
 | `CONFIRMED → COMPLETED`, `student → DELETED` | learning·report 모두 `POST /internal/deletion-requests/{id}/completions` 보고 (P09) | `DeletionRequest.complete()`, `Student.markDeleted()` | `deleted_at` 기록. 이후 모든 조회에서 제외, 근거는 `available: false` |
 
 ### 2.3 `guardianship.status` · `consent.status`

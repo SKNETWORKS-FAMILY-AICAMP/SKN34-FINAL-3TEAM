@@ -68,7 +68,7 @@
   - 피드백: 클라이언트가 끊겨도 learning 처리는 끝까지 진행·저장, 재요청 시 저장 결과 반환
   - 분석 대화: 클라이언트가 끊기면 core가 ai 스트림 취소, 메시지 `FAILED`(재시도 가능) 저장
   - 알림: 재연결 시 `/notifications`로 누락분 재조회
-- core 피드백(#39): `learning/controller` → `learning/service/FeedbackService` → #38 `LearningProxyService` → `LearningClient` → 기존 `InternalRestClientFactory`. 피드백 전용 조합은 같은 client/service 구현에 80초 read timeout을 적용하며 일반 JSON 경로의 30초 설정·멱등성은 유지한다. `_common/web/SseEmitters`는 90초 연결·15초 heartbeat·전송 종료만 소유하고 판정 상태를 저장하지 않는다. 컨텍스트는 요청에서 복사해 작업 virtual thread에 설정·정리한다. 연결 종료는 heartbeat만 취소하며 learning 작업을 취소하지 않는다.
+- core 피드백(#39): `learning/controller` → `learning/service/FeedbackService` → #38 `LearningProxyService` → `LearningClient` → 기존 `InternalRestClientFactory`. 피드백 전용 조합은 같은 client/service 구현에 80초 read timeout을 적용하며 일반 JSON 경로의 30초 설정·멱등성은 유지한다. `_common/web/SseEmitters`는 연결 시간·15초 heartbeat·전송 종료만 소유하고(연결 시간은 용도별 설정: 현재 피드백 90초 고정, 분석 대화(#41)는 P12 전체 120초 + 여유로 호출 측이 지정하도록 확장) 판정 상태를 저장하지 않는다. 컨텍스트는 요청에서 복사해 작업 virtual thread에 설정·정리한다. 연결 종료는 heartbeat만 취소하며 learning 작업을 취소하지 않는다.
 - 피드백의 별도 서킷 이름은 `learning-feedback`이다. 전송 오류·시간 초과·계약된 Problem Details가 아닌 5xx를 실패로 센다. Content-Type `application/problem+json`의 JSON 객체에 비어 있지 않은 문자열 code가 있으면 정상 HTTP 전달로 집계하되 업무 결과는 error로 유지한다. 따라서 learning이 보낸 AI_UNAVAILABLE·INTERNAL_ERROR를 core 서킷이 다시 차단하지 않고 같은 답변 재요청은 learning으로 전달할 수 있다. AI 서킷은 learning이 소유하며 일반 `learning-json`의 기존 5xx 집계는 바꾸지 않는다.
 - JDK 21 SSE 전송·종료의 상호 배제는 `ReentrantLock`을 사용한다. 블로킹 소켓 전송을 synchronized monitor 안에서 실행해 virtual thread의 carrier가 고정되지 않게 한다.
 
@@ -271,7 +271,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
    └─ repository/
 
 backend/core-service/src/main/resources/
-├─ application-<env>.yml
+├─ application.yml               # 현재 단일 파일, 환경별 application-<env>.yml은 예정
 ├─ db/
 │  └─ migration/                 # Flyway
 └─ mybatis/
@@ -544,7 +544,7 @@ backend/report-service/
 - 공통 보안: 리소스 limit, non-root, readOnlyRootFilesystem
 
 ### 4.5 CI/CD
-- GitHub Actions: 경로 필터로 변경 서비스만 테스트·빌드 → GHCR/ECR 푸시(OIDC로 AWS 인증)
+- GitHub Actions: 경로 필터로 변경 서비스만 테스트·빌드 → GHCR/ECR 푸시(OIDC로 AWS 인증). 현재는 테스트·빌드까지, 푸시·태그 갱신은 예정
 - `infrastructure/gitops/environments/<env>/` 이미지 태그 갱신 커밋 → Argo CD 자동 동기화
 - Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret (LLM·토스 키는 저장소에 미포함, NFR-SEC-04)
 
@@ -558,13 +558,16 @@ backend/report-service/
 ---
 
 ## 5. 디렉토리 구조
+
+목표 구조다. `(예정)` 표시는 아직 저장소에 없는 항목이며 해당 기능 착수 시 만든다.
+
 ```
 SKN34-FINAL-3TEAM/
 ├─ frontend/
 │  └─ web/                       # React 웹
 │     ├─ src/                    # 3장 참고
 │     ├─ tests/
-│     │  └─ e2e/                 # Playwright 대표 시나리오 (NFR-QA-01)
+│     │  └─ e2e/                 # (예정) Playwright 대표 시나리오 (NFR-QA-01). 현재 빈 폴더
 │     ├─ package.json
 │     ├─ vite.config.ts
 │     └─ tsconfig.json
@@ -573,7 +576,7 @@ SKN34-FINAL-3TEAM/
 │  │  ├─ src/
 │  │  │  ├─ main/
 │  │  │  │  ├─ kotlin/           # 기능 패키지
-│  │  │  │  └─ resources/        # application-<env>.yml, Flyway, MyBatis
+│  │  │  │  └─ resources/        # application.yml(환경별 application-<env>.yml은 예정), Flyway, MyBatis
 │  │  │  └─ test/
 │  │  │     └─ kotlin/
 │  │  └─ Dockerfile
@@ -585,21 +588,21 @@ SKN34-FINAL-3TEAM/
 │  ├─ events/
 │  │  ├─ envelope.schema.json    # CloudEvents 공통 봉투
 │  │  ├─ <message>.v1.schema.json  # 메시지 1개·버전 1개 = 파일 1개, 1.4 메시지 이름 그대로
-│  │  └─ asyncapi.yaml           # exchange·routing key·생산/소비 매핑
+│  │  └─ asyncapi.yaml           # (예정) exchange·routing key·생산/소비 매핑
 │  └─ openapi/
 │     └─ <service>.yaml          # api-spec.md 기준 생성. core-service(공개 API), 나머지(내부 API)
 ├─ ml/                           # 모델 학습 (클러스터 밖 실행, 이미지 빌드·배포 대상 아님)
 │  ├─ m2/
-│  ├─ m1/
-│  └─ sllm/
-├─ evaluation/                   # 판정 일치도(QWK)·되묻기 유출·에이전트 숫자/인용 대조 평가
+│  ├─ m1/                        # (예정)
+│  └─ sllm/                      # (예정)
+├─ evaluation/                   # (예정) 판정 일치도(QWK)·되묻기 유출·에이전트 숫자/인용 대조 평가
 │  ├─ datasets/                  # 평가셋별 cases.jsonl·fixtures (자체 작성 예시 답안, AI Hub 원문 미포함)
 │  ├─ runners/                   # 서비스 호출·채점 스크립트
 │  └─ results/                   # 실행 결과 요약
 ├─ infrastructure/
 │  ├─ gitops/
 │  │  ├─ charts/
-│  │  │  ├─ app-service/         # 공통 서비스 chart
+│  │  │  ├─ app-service/         # (예정) 공통 서비스 chart
 │  │  │  │  ├─ templates/
 │  │  │  │  │  ├─ deployment.yaml
 │  │  │  │  │  ├─ service.yaml
@@ -621,12 +624,12 @@ SKN34-FINAL-3TEAM/
 │  │  │  │  │  └─ postgres/
 │  │  │  │  │     └─ init.sql              # 로컬 전용 서비스별 DB 생성
 │  │  │  │  └─ values.yaml
-│  │  │  └─ observability/       # OTel Collector·Prometheus·Grafana·Langfuse
+│  │  │  └─ observability/       # (예정) OTel Collector·Prometheus·Grafana·Langfuse
 │  │  │     ├─ templates/
 │  │  │     └─ values.yaml
 │  │  ├─ environments/           # 앱별 values·이미지 태그
 │  │  │  ├─ local/
-│  │  │  │  ├─ core-service.yaml
+│  │  │  │  ├─ core-service.yaml     # (예정) 앱별 파일 전부 예정, 현재 platform-data.yaml만 존재
 │  │  │  │  ├─ learning-service.yaml
 │  │  │  │  ├─ ai-service.yaml
 │  │  │  │  ├─ scoring-service.yaml
@@ -635,8 +638,8 @@ SKN34-FINAL-3TEAM/
 │  │  │  │  ├─ <target>-stub.yaml
 │  │  │  │  ├─ platform-data.yaml
 │  │  │  │  └─ observability.yaml
-│  │  │  └─ prod/                # local과 동일 구성, stub 제외
-│  │  └─ argocd/
+│  │  │  └─ prod/                # (예정) local과 동일 구성, stub 제외
+│  │  └─ argocd/                 # (예정)
 │  │     ├─ local/
 │  │     │  └─ root-app.yaml     # kind Argo CD 진입점
 │  │     ├─ prod/
@@ -648,23 +651,23 @@ SKN34-FINAL-3TEAM/
 │  │        └─ prod/             # External Secrets·AWS LB Controller·Cluster Autoscaler
 │  ├─ kind/
 │  │  └─ local.yaml              # kind 클러스터 설정
-│  ├─ eks/                       # eksctl 클러스터·노드그룹·IRSA·StorageClass
-│  ├─ aws/                       # eksctl 범위 밖 자원: RDS·S3·CloudFront·ECR·Secrets Manager·GitHub OIDC IAM (도구 미정)
-│  └─ stubs/
+│  ├─ eks/                       # (예정) eksctl 클러스터·노드그룹·IRSA·StorageClass
+│  ├─ aws/                       # (예정) eksctl 범위 밖 자원: RDS·S3·CloudFront·ECR·Secrets Manager·GitHub OIDC IAM (도구 미정)
+│  └─ stubs/                     # (예정)
 │     └─ <target>-stub/          # LLM·토스페이먼츠 대역 (테스트·무료 시연용)
 │        └─ Dockerfile
 ├─ .github/
 │  └─ workflows/
-│     ├─ _spring.yml             # 재사용 워크플로: 테스트→빌드→푸시→태그 갱신
+│     ├─ _spring.yml             # 재사용 워크플로: 테스트→빌드 (푸시·태그 갱신은 예정)
 │     ├─ _python.yml
 │     ├─ _web.yml
 │     ├─ ci-<service>.yml        # 서비스·stub별 경로 필터(<경로>/**, contracts/**) → 재사용 워크플로 호출
 │     ├─ ci-db-schema.yml        # 마이그레이션 적용·ERD 대조 (scripts/check_db_migrations.py)
-│     └─ ci-contracts.yml        # 스키마 검증, asyncapi ↔ definitions.json exchange·routing key 일치 검사
+│     └─ ci-contracts.yml        # (예정) 스키마 검증, asyncapi ↔ definitions.json exchange·routing key 일치 검사
 ├─ docs/
 │  ├─ README.md                  # 개발 규칙
 │  ├─ design/                    # 아키텍처·기능명세·API 명세 등 설계 문서
-│  └─ adr/                       # NNNN-<제목>.md
+│  └─ adr/                       # (예정) NNNN-<제목>.md
 ├─ compose.yaml                  # 로컬 통합 실행 진입점
 ├─ compose.minio.yaml            # 로컬 MinIO 선택 실행 (기본 파일과 함께 지정)
 ├─ .env.example
@@ -690,18 +693,18 @@ SKN34-FINAL-3TEAM/
 | 영역 | 기술 | 선정 근거 |
 |---|---|---|
 | 프론트엔드 | React, Vite, TypeScript, Tailwind CSS, TanStack Query, 토스페이먼츠 결제위젯 SDK | 참고 레포 동일 계열, 기획서 4.4 |
-| 업무 API | Spring Boot 3, Kotlin, JDK 21, Spring Security JOSE(JWT HS256·Google JWKS), MyBatis, Flyway, Spring AMQP, ShedLock, Resilience4j | 참고 레포 구현 패턴 재사용, 다중 레플리카 스케줄 중복 방지 |
+| 업무 API | Spring Boot 3, Kotlin, JDK 21, Spring Security JOSE(JWT HS256·Google JWKS), MyBatis, Flyway, Spring AMQP, ShedLock(예정), Resilience4j | 참고 레포 구현 패턴 재사용, 다중 레플리카 스케줄 중복 방지 |
 | AI API | Python 3.12, FastAPI, Pydantic, uv, LangGraph, LangChain, OpenAI API(기본 `gpt-6.1-terra`)·Claude API(`LLM_PROVIDER`로 교체), aio-pika, httpx | 에이전트 그래프·도구 호출, 비동기 AMQP |
 | 모델 추론 | PyTorch, Hugging Face Transformers (M2 klue/roberta, M1) | 기획서 5장 모델 |
 | 리포트 | SQLAlchemy, Alembic, Jinja2, Playwright(Chromium PDF) | HTML 템플릿 → PDF·Markdown |
-| 저장소 | PostgreSQL(RDS), S3(로컬 MinIO), Redis | 서비스별 DB 분리, 판정 근거·기준표 JSONB, 파일 분리, SSE 중계·캐시 |
+| 저장소 | PostgreSQL(RDS), S3(로컬 MinIO), Redis(core 연동은 예정, 현재 Compose 기동만) | 서비스별 DB 분리, 판정 근거·기준표 JSONB, 파일 분리, SSE 중계·캐시 |
 | 메시징 | RabbitMQ (quorum queue, topic/direct exchange, DLX) | 작업 큐 + fan-out 동시 지원, Kafka 대비 운영 부담 작음 |
 | 결제 | 토스페이먼츠 테스트 환경 (결제위젯·자동결제·웹훅) | 실결제 미연동 |
 | 컨테이너·오케스트레이션 | Docker, Compose, kind, Kubernetes, Helm | 로컬 → 운영 동일 chart |
 | 확장 | HPA, KEDA, Cluster Autoscaler, PDB | CPU 기반 API 확장 + 큐 기반 워커 확장 |
 | AWS | EKS(eksctl), EC2, VPC, ALB(LB Controller), CloudFront, S3, RDS, ECR, EBS gp3, Secrets Manager | 관리형 control plane(자체 구축 대비 운영 부담 제거)·AWS 연동 기본 지원, 참고 레포 EKS 구성 계승 + 관리형 DB |
 | GitOps·CI | GitHub Actions(OIDC), GHCR, Argo CD, External Secrets | 변경 서비스만 빌드, Git 기준 배포 |
-| 테스트 | JUnit5, Testcontainers, pytest, Playwright(E2E) | 기획서 4.4 |
+| 테스트 | JUnit5, Testcontainers, pytest, Playwright(E2E, 예정) | 기획서 4.4 |
 | 관측·LLMOps | Langfuse, OpenTelemetry, Prometheus, Grafana | LLM trace + 서비스·큐 지표 |
 
 ---

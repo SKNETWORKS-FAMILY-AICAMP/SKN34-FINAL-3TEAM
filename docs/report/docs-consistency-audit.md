@@ -1,6 +1,6 @@
 # 설계 문서 정합성 점검
 
-develop `40a2501` 기준으로 설계 문서를 코드와 대조하고, 문서끼리도 대조한 결과다. 코드나 최신 보고서가 기준인 항목은 설계 문서를 고쳤다. 정책이나 계약 결정이 필요한 항목은 2장에, 코드 결함은 3장에 이슈 초안으로 남겼다. 이번 작업에서는 코드·OpenAPI·이벤트 스키마를 수정하지 않았다.
+develop `40a2501` 기준으로 설계 문서를 코드와 대조하고, 문서끼리도 대조한 결과다. 코드나 최신 보고서가 기준인 항목은 설계 문서를 고쳤다(1장). 결정이 필요한 항목은 선택 결과를 반영했다(2장). 코드 결함은 3장에 이슈 초안으로 남겼다. 애플리케이션 코드·이벤트 스키마는 수정하지 않았고, OpenAPI·계약 테스트는 2장 결정에 따라 수정했다.
 
 ## 범위·방법
 
@@ -19,7 +19,7 @@ develop `40a2501` 기준으로 설계 문서를 코드와 대조하고, 문서�
 | 검증 | 확인 대상 | 확인하지 않는 대상 |
 |---|---|---|
 | `scripts/verify_db_schema.py` (`ci-db-schema.yml`) | ERD 컬럼 이름·타입·NULL 여부·기본값 없음·PK·FK 컬럼·단일 컬럼 UK, 단일 컬럼 CHECK 값, §6 인덱스 존재, 위반 입력 47건 | FK 대상 테이블·ON DELETE, 복합·부분 UK 대부분, §6 밖의 추가 인덱스, 시드 |
-| `scripts/tests/test_*_openapi.py` | core controller 매핑과 yaml의 메서드+경로 집합, 일부 헤더·스키마 | 요청·응답 필드, learning 내부 API(`exists` 외), ai-service, 프론트 호출 |
+| `scripts/tests/test_*_openapi.py` | core controller 매핑과 yaml의 메서드+경로 집합, 일부 헤더·스키마. 2장 D6 이후 learning 컨트롤러·ai 라우터 경로 집합도 대조 | 요청·응답 필드와 실제 직렬화 결과, 프론트 호출 |
 
 ## 1. 수정한 문서
 
@@ -53,21 +53,23 @@ develop `40a2501` 기준으로 설계 문서를 코드와 대조하고, 문서�
 | 루트 `README.md` | MinIO 실행에 `AUTH_JWT_SECRET`도 필요함을 추가 | `compose.yaml:129` `:?` |
 | `docs/README.md` | 보고서 색인 누락 6건과 이 보고서 추가 | `docs/report/` |
 
-## 2. 결정 필요 항목 (문서 미수정)
+## 2. 결정 항목과 반영 결과
 
-| 항목 | 불일치 | 제안 |
-|---|---|---|
-| 계정 복구·로그인 수단 변경 | `functional-spec.md` FN-ACC-08·10, `usecase.md` UC-04, `erd.md` 1장 Redis "계정 복구 확인 코드"에는 남아 있음. api-spec 5.1·class-diagram 3.1·#36은 Google 단일 로그인으로 제외 | 요구사항 문서 범위 조정 여부 결정 후 기능명세·유스케이스·ERD 정리 |
-| 삭제 요청 재확인 | state 2.2·sequence 10.1은 `X-Reauth-Token`(`REQUESTED → CONFIRMED`)을 요구. api-spec 2.1 `POST /children/{childId}/deletion-requests`에는 없고 확인 API도 없음 | #45 재인증과 함께 API 확정 |
-| 학생 프로필 잠금 필드명 | `/auth/student/profiles`는 `locked`(api-spec 2.1, sequence 2.4), `/children` 확장은 `pinLocked` | #58·#59에서 하나로 통일 |
-| SSE 연결 시간 | `SseEmitters`의 90초 고정값이 범용으로 기술됨(architecture 1.3, class 2.1). 분석 대화(P12 전체 120초)에 재사용하면 먼저 끊김 | 분석 대화 구현 시 연결 시간 설정화 |
-| Problem `traceId` | core yaml은 선택·nullable, learning yaml은 필수. core 코드는 항상 포함 | OpenAPI 정리 시 통일 |
-| 내부 API 계약 파일 | learning 내부 API(`exists` 제외)와 ai-service는 OpenAPI가 없음. api-spec 첫 절은 `contracts/openapi/<service>.yaml` 반영을 요구. `test_record_exists_openapi.py:14`가 learning yaml을 경로 1개로 고정 | 내부 계약 범위 결정 후 yaml·테스트 확장 |
-| 이벤트 계약 | architecture 4.4·5장의 메시지별 스키마 중 `report.generate`·`report.*`·`student.deleted`, `asyncapi.yaml`, `ci-contracts.yml`이 없음 | 해당 기능 구현 시 계약을 먼저 추가(현재 규칙 유지) |
-| 목표 구조만 있는 항목 | `infrastructure/stubs`·`eks`·`aws`, `gitops/argocd`, `charts/app-service`·`observability`, `docs/adr`, `application-<env>.yml`, Playwright E2E, core Redis·ShedLock 의존성, 이미지 푸시. `contracts/**` CI 트리거가 ai·core에만 있음 | 목표 구조로 유지. 착수 시 해당 절 갱신 |
-| core OpenAPI 경미 사항 | 공개 `GET /consent-documents`에 401·403·409 응답이 선언됨. `Admin`·`ModelRegistry` 태그가 최상위 `tags`에 없음 | OpenAPI 정리 시 반영 |
-| `heldReason` | ai는 4종, api-spec 3.2는 M1·M2용 `MODEL_DISAGREEMENT`·`LOW_CONFIDENCE`까지 6종 | M1·M2 착수 시 ai 모델에 추가 |
-| 판정 전 피드백 모양 | `learning-answer.md`는 `{status, nextActions:[]}`로 기술. api-spec은 이번에 코드 기준으로 수정 | 보고서는 당시 기록으로 유지 |
+점검 직후 결정이 필요했던 11건. 항목마다 문제·원인·선택지를 정리했고, 사용자가 모두 권장안을 선택해 반영했다.
+
+| # | 문제 | 원인 | 결정 | 반영 |
+|---|---|---|---|---|
+| D1 계정 복구 | FN-ACC-08·10, UC-04, ERD Redis "계정 복구 확인 코드"가 남음. api-spec 5.1은 제외 | #36에서 Google 단일 로그인 확정 시 요구사항 문서 미갱신 | Google 기준 정리 | `functional-spec.md` FN-ACC-08(Google 계정 복구 위임·재로그인 안내)·FN-ACC-10(로그인 수단 변경 삭제, 재확인은 Google 재인증), `usecase.md` UC-04 "정보 수정·접근 복구 안내", `erd.md` Redis 항목 삭제 |
+| D2 삭제 재확인 | state·sequence는 2단계(`REQUESTED → CONFIRMED`에 `X-Reauth-Token`), api-spec은 헤더·확인 API 없음 | 상태 설계와 API 표를 따로 작성 | 1단계 + 헤더 (연결 해제·탈퇴와 같은 방식) | api-spec 2.1, state 2.2, sequence 10.1, class 3.1(`confirmDeletion` 제거) |
+| D3 PIN 잠금 필드명 | `/auth/student/profiles`는 `locked`, `/children`은 `pinLocked` | #59 목업에서 따로 정의 | `pinLocked` 통일 | api-spec 2.1, sequence 2.4. 프론트 `studentDevice.ts`의 `locked`는 #58·#59에서 변경 |
+| D4 SSE 연결 시간 | `SseEmitters` 90초 고정이 범용으로 기술됨, 분석 대화는 120초(P12) | #39가 피드백 전용 값으로 구현 | 용도별 설정 명시 | architecture 1.3, class 2.1. 코드 확장은 #41 |
+| D5 Problem `traceId` | core yaml 선택·nullable, learning yaml 필수. 코드는 항상 포함 | #36·#37이 각자 스키마 정의 | 필수로 통일 | core yaml `Problem.required`에 `traceId` 추가 |
+| D6 내부 API OpenAPI | 구현된 learning 내부 API 8개·ai 3개가 yaml에 없음, 테스트가 learning yaml을 경로 1개로 고정 | #37이 최소 범위만 계약화, 이후 이슈는 api-spec만 갱신 | 지금 yaml 추가 | `learning-service.yaml` 9개 경로(DTO 기준 스키마), `ai-service.yaml` 신규 3개 경로(FastAPI 생성 스키마). 테스트: learning 컨트롤러·ai 라우터 경로 집합 대조, ai `heldReason` 대조. api-spec 4.1·4.2에 링크 |
+| D7 이벤트 스키마 | `report.*`·`student.deleted` 스키마, asyncapi·`ci-contracts.yml` 없음 | 해당 기능 미착수 | 기능 이슈에서 선행 | #45·#42·#50 체크리스트에 이미 스키마 항목 있음. 새 정보만 코멘트: [#45](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/45#issuecomment-6459420129)(D1·D2 결정, `student.deleted` 선행), [#42](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/42#issuecomment-6459420524)·[#50](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/50#issuecomment-6459420848)(같은 스키마 중복 추가 방지, `narrativeEnabled`). #55는 #45 스키마 사용이라 생략 |
+| D8 목표 구조 | stub·eks·aws·argocd·app chart·adr·환경별 yml·E2E·Redis·ShedLock·이미지 푸시가 저장소에 없음 | 최종 목표 구조로 작성 | "(예정)" 표시 | architecture 2.6·4.5·5·6장 |
+| D9 core yaml 경미 | 공개 `GET /consent-documents`에 불필요한 오류 응답, `Admin`·`ModelRegistry` 태그 미선언 | 응답 블록 복사 | D5·D6과 함께 수정 | 400·401·403·409 제거(503 유지), 최상위 `tags` 추가 |
+| D10 `heldReason` | ai 4종, api-spec 6종 | M1·M2 교차 확인(#69) 미구현 | 명세에 조건 표기 | api-spec 3.2. ai 추가는 #69 |
+| D11 보고서 기록 | `learning-answer.md`의 판정 전 피드백 모양이 코드와 다름 | 당시 기록 | 조치 없음 | 과거 기록 유지 |
 
 ## 3. 코드 결함 이슈 초안 (코드 미수정)
 
