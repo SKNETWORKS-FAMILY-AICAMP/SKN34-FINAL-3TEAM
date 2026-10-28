@@ -1,0 +1,99 @@
+openapi: 3.1.0
+info:
+  title: scoring 내부 API
+  version: 1.0.0
+  description: 실제 로딩 완료한 모델 버전 조회 (#85, api-spec 4.3). 구현된 GET /versions만 포함한다. 점수
+    API(#87), M1 검사(#88), health 경로는 제외한다. 활성 모델 없음 또는 초기 로딩 중에는 items가 비어 있으며 준비
+    상태는 /health/ready에서 확인한다.
+servers:
+- url: /internal
+security:
+- InternalToken: []
+paths:
+  /versions:
+    get:
+      summary: 실제 로딩 완료한 모델 name·version·revision (name 순 정렬)
+      operationId: versions
+      responses:
+        '200':
+          description: 성공. 활성 모델이 없으면 items=[]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionsResponse'
+        '401':
+          description: UNAUTHENTICATED (내부 토큰 누락·불일치)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+components:
+  securitySchemes:
+    InternalToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Token
+  schemas:
+    ModelVersionSummary:
+      properties:
+        name:
+          type: string
+          title: Name
+        version:
+          type: string
+          title: Version
+        revision:
+          type: integer
+          minimum: 1.0
+          title: Revision
+      type: object
+      required:
+      - name
+      - version
+      - revision
+      title: ModelVersionSummary
+    VersionsResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ModelVersionSummary'
+          type: array
+          title: Items
+      type: object
+      required:
+      - items
+      title: VersionsResponse
+    Problem:
+      type: object
+      required:
+      - type
+      - title
+      - status
+      - code
+      - instance
+      - traceId
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        code:
+          type: string
+        detail:
+          type: string
+        instance:
+          type: string
+        traceId:
+          type: string
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              reason:
+                type: string

@@ -66,6 +66,7 @@
   - [이슈 #38 학생 미션 공개 API·멱등성](report/issue-38-core-learning-proxy.md): core→learning 프록시·답변 멱등·서킷과 학생 컨텍스트
   - [이슈 #39 core 피드백 SSE](report/issue-39-core-feedback-sse.md): heartbeat·연결 시간·오류 이벤트·컨텍스트 전달과 리뷰 대응
   - [이슈 #43 모델 레지스트리·AI 사용량](report/issue-43-model-registry.md): 버전 등록·활성화·복귀, 사용량 조회 계약과 검증
+  - [이슈 #85 scoring 모델 레지스트리·S3 로딩](report/issue-85-scoring-model-registry.md): 승인 버전 로딩·scope 제한·readiness·Docker 검증과 실제 모델 확인 범위
   - [이슈 #59 학생 PIN 로그인·기기 관리 화면](report/issue-59-student-device.md): MSW 목업 계약과 백엔드 확인 항목
   - [학부모 대시보드 시안 적용](report/parent-dashboard.md): 대시보드 화면 시안 반영 기록
   - [학생 화면 테마 적용](report/student-theme-world.md): 생각 지도 테마·캐릭터·꾸미기 화면 기록

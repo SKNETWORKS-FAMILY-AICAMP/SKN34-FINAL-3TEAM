@@ -5,11 +5,13 @@ on:
     branches: [develop, main]
     paths:
       - "backend/scoring-service/**"
+      - "contracts/openapi/scoring-service.yaml"
       - ".github/workflows/ci-scoring-service.yml"
       - ".github/workflows/_python.yml"
   pull_request:
     paths:
       - "backend/scoring-service/**"
+      - "contracts/openapi/scoring-service.yaml"
       - ".github/workflows/ci-scoring-service.yml"
       - ".github/workflows/_python.yml"
 
