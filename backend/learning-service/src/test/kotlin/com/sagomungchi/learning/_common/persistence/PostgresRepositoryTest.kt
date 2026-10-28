@@ -14,6 +14,9 @@ import org.testcontainers.containers.PostgreSQLContainer
 ])
 @Transactional
 abstract class PostgresRepositoryTest {
+    // Core access is a separate HTTP contract test; repository fixtures use the free permit.
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    lateinit var paymentUsage: com.sagomungchi.learning.judgment.client.PaymentUsageClient
     companion object {
         private val postgres by lazy {
             PostgreSQLContainer<Nothing>("postgres:17.11-alpine").apply {

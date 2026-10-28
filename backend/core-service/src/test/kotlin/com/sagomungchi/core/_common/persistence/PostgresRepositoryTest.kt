@@ -15,6 +15,7 @@ import org.testcontainers.containers.PostgreSQLContainer
     "app.auth.jwt-secret=dGVzdC1hdXRoLXNlY3JldC0zMi1ieXRlcy1sb25nLWtleSE=",
     "spring.rabbitmq.username=test", "spring.rabbitmq.password=test",
     "spring.rabbitmq.listener.simple.auto-startup=false",
+    "spring.datasource.hikari.maximum-pool-size=4", "spring.datasource.hikari.minimum-idle=0",
 ])
 @Transactional
 abstract class PostgresRepositoryTest {

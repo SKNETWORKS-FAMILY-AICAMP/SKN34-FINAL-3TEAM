@@ -645,6 +645,8 @@ sequenceDiagram
 
 ## 7. 결제·구독 (토스페이먼츠 테스트)
 
+#48 확정: 아래 개념 시퀀스의 정기 주문은 논리 주문이며 실제 PG 요청은 payment_charge_attempt로 분리한다. 확정 실패 이후에만 일별 새 PG 주문을 생성하고 불명확한 거래는 조회만 한다. 준비/결과/권한 트랜잭션과 parent 계정 잠금은 PG 호출 양쪽으로 분리한다. 무료 상품 선택·사용 예약/환불 동결·서명/PG 교차 검증은 [#48 보고서](../report/issue-48-payments.md)가 우선한다.
+
 ### 7.1 주문·승인
 
 ```mermaid
@@ -937,7 +939,7 @@ sequenceDiagram
 ## 11. 확인 필요 가정
 - `student.deleted` 완료 확인: learning 이벤트 발행 없음 원칙에 따라 이벤트 대신 core 내부 API로 완료 보고(10.1). 보고 호출 실패 시 지연 재시도(1·5·15분)로 재전달 → 삭제는 멱등이라 다시 보고 (P09)
 - `report.started`·`report.completed` 순서 역전 허용 (상태 다이어그램 4.1)
-- 정기 청구 재시도(7.3): ERD 부분 UK `(subscription_id, billing_period_start) WHERE kind = 'RENEWAL'` 때문에 같은 기간 새 주문 불가. 가정은 "기존 주문의 결제가 `FAILED`면 같은 주문으로 재청구". PG 주문번호 재사용 가능 여부 확인 후 ERD 반영 필요
+- 정기 청구 재시도(7.3): ERD 부분 UK `(subscription_id, billing_period_start) WHERE kind = 'RENEWAL'` 때문에 같은 기간 새 주문 불가. 논리 주문은 유지하고 확정 실패 후 새 charge attempt/PG 주문을 사용한다(#48). PG 결과가 불명확하면 새 청구를 만들지 않는다
 - 웹훅 처리 실패 시 5xx 응답으로 PG 재전송 유도(7.2): 토스페이먼츠 재전송 정책 확인 필요
 
 #58 단독 로그인은 계정 행 잠금 → 기기 유효/등록 자녀 → 현재 연결·활성·동의 → PIN 설정·잠금·일치 순으로 재검사한다. 실패 횟수 커밋 후 401/423 응답한다. 성공은 별도 STUDENT auth_session을 생성하며 부모 세션을 변경하지 않는다. PIN 변경은 계정 잠금 → 현재 자녀 권한 → 학생 잠금 → DB 재인증 consume → PIN 갱신·감사 기록을 한 트랜잭션으로 실행한다.

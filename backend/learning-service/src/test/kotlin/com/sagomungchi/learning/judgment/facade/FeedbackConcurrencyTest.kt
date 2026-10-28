@@ -60,6 +60,8 @@ import kotlin.test.assertTrue
     "spring.rabbitmq.username=test", "spring.rabbitmq.password=test",
 ])
 class FeedbackConcurrencyTest {
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    lateinit var paymentUsage: com.sagomungchi.learning.judgment.client.PaymentUsageClient
     @Autowired lateinit var facade: FeedbackFacade
     @Autowired lateinit var answerService: AnswerService
     @Autowired lateinit var attemptService: AttemptService

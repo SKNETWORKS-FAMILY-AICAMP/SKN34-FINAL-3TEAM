@@ -14,6 +14,46 @@ servers:
 security:
   - InternalToken: []
 paths:
+  /payment-usage/students/{studentId}:
+    get:
+      operationId: getPaymentUsageEvidence
+      summary: SYSTEM과 정확한 학생 scope의 결제 후 피드백 사용 증빙
+      parameters:
+      - name: studentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: since
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date-time
+      responses:
+        '200':
+          description: DONE 또는 RUNNING 피드백 여부, 원문 미포함
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - studentId
+                - since
+                - used
+                properties:
+                  studentId:
+                    type: string
+                    format: uuid
+                  since:
+                    type: string
+                    format: date-time
+                  used:
+                    type: boolean
+                additionalProperties: false
+        '403':
+          description: SYSTEM/학생 범위 불일치
   /missions:
     get:
       operationId: listMissions

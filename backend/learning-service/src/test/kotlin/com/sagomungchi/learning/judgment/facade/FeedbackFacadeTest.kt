@@ -485,6 +485,24 @@ class FeedbackFacadeTest : PostgresRepositoryTest() {
         assertEquals("FORBIDDEN", assertThrows<BusinessException> { facade.feedback(answer.id) }.code)
         assertEquals("NOT_FOUND", assertThrows<BusinessException> { facade.feedback(UUID.randomUUID()) }.code)
         assertEquals("PENDING", judgment(answer.id)["process_status"])
+        org.mockito.Mockito.verifyNoInteractions(paymentUsage)
+    }
+
+    @Test fun `owned feedback reserves premium use and marks it complete only after DONE`() {
+        val setup=setup("CHOICE",answerKey="""{"choiceIds":["c2"]}""")
+        val answer=submit(setup.attempt,AnswerContent(choiceIds=listOf("c2")),InputType.CHOICE)
+        val reservation=UUID.randomUUID()
+        org.mockito.Mockito.`when`(paymentUsage.begin(student,answer.id)).thenReturn(reservation)
+        assertEquals(ProcessStatus.DONE,facade.feedback(answer.id).status)
+        org.mockito.Mockito.verify(paymentUsage).complete(student,reservation)
+    }
+
+    @Test fun `refund freeze rejects feedback before acquiring a judgment lease`() {
+        val setup=setup("CHOICE",answerKey="""{"choiceIds":["c2"]}""")
+        val answer=submit(setup.attempt,AnswerContent(choiceIds=listOf("c2")),InputType.CHOICE)
+        org.mockito.Mockito.`when`(paymentUsage.begin(student,answer.id)).thenThrow(BusinessException(HttpStatus.CONFLICT,"REFUND_IN_PROGRESS","환불 확인 중"))
+        assertEquals("REFUND_IN_PROGRESS",assertThrows<BusinessException> { facade.feedback(answer.id) }.code)
+        assertEquals("PENDING",judgment(answer.id)["process_status"])
     }
 
     companion object {

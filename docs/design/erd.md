@@ -437,6 +437,9 @@ erDiagram
 
 ### 3.4 결제·구독 (FN-PAY) — 토스페이먼츠 테스트
 
+#48: 무료 상품 버전은 PAYMENT_FREE_PRODUCT_ID로 지정한다(2026-10-28 사용자 확정). 상품·주문·구독 조건은 snapshot으로 보존한다. V15의 payment_charge_attempt는 논리 주문당 확정 실패 재청구 이력을 분리하며 `(order_id,attempt_no)`·pg_order_no·멱등키 UK를 갖는다. 기존 정기 주문 기간 UK는 유지한다. subscription.billing_anchor_day는 최초 일자를 보존한다. payment_premium_usage는 환불과 경합하는 사용 예약·완료 증빙을 소유한다. 상세 경계는 [보고서](../report/issue-48-payments.md)를 따른다.
+
+
 ```mermaid
 erDiagram
   product ||--o{ payment_order : ordered
@@ -449,6 +452,28 @@ erDiagram
   payment_order ||--o| payment : "승인"
   payment ||--o{ refund_request : refunds
 
+  payment_charge_attempt {
+    uuid id PK
+    uuid order_id FK
+    int attempt_no
+    varchar pg_order_no UK
+    uuid idempotency_key UK
+    varchar status "CONFIRMING|APPROVED|FAILED|CANCELED"
+    varchar payment_key "NULL 허용"
+    varchar failure_code "NULL 허용"
+    timestamptz started_at
+    timestamptz updated_at
+  }
+  payment_premium_usage {
+    uuid id PK
+    uuid student_id FK
+    uuid subscription_id FK
+    varchar kind "FEEDBACK|CONVERSATION|REPORT_VIEW"
+    uuid source_id
+    varchar status "RESERVED|USED|FAILED"
+    timestamptz created_at
+    timestamptz updated_at
+  }
   product {
     uuid id PK
     varchar code UK "상품 행별 고유 코드, 초기 FREE, PREMIUM 등 (P13); 고정 enum 아님"
@@ -463,7 +488,7 @@ erDiagram
   }
   payment_order {
     uuid id PK
-    varchar order_no UK "PG orderId"
+    varchar order_no UK "논리 주문 ID, PG 주문은 charge attempt에 보존"
     uuid parent_user_id FK
     uuid student_id FK
     uuid product_id FK
@@ -471,6 +496,7 @@ erDiagram
     varchar kind "INITIAL|RENEWAL"
     date billing_period_start "NULL 허용 · 갱신 청구 대상 기간"
     int amount
+    jsonb product_snapshot "NULL 허용 · 과거 거래는 승인된 backfill 필요"
     varchar trace_id "NULL 허용"
     timestamptz created_at
   }
@@ -495,6 +521,10 @@ erDiagram
     varchar status "ACTIVE|RENEWAL_FAILED|CANCELED"
     date period_start
     date period_end
+    jsonb product_snapshot "NULL 허용 · 과거 구독은 승인된 backfill 필요"
+    int billing_anchor_day "NULL 허용 · 최초 결제일 일자"
+    bigint revision "빌링 발급 중 해지/변경을 감지하는 단조 증가 버전"
+    date last_billing_attempt_date "NULL 허용"
     date next_billing_date "NULL 허용"
     boolean auto_renew
     varchar customer_key "NULL 허용 · PG customerKey"
@@ -514,6 +544,8 @@ erDiagram
     text reason
     varchar status "REQUESTED|APPROVED|REJECTED|COMPLETED|FAILED"
     uuid decided_by FK "NULL 허용"
+    uuid cancel_key UK "NULL 허용"
+    timestamptz usage_verified_at "NULL 허용"
     text reject_reason "NULL 허용"
     varchar pg_status "NULL 허용"
     timestamptz decided_at "NULL 허용"
@@ -531,7 +563,7 @@ erDiagram
 ```
 
 - `subscription` 부분 UK `(student_id) WHERE status IN ('ACTIVE','RENEWAL_FAILED')` → 같은 자녀 중복 구독 409 (FN-PAY-02)
-- 활성 구독이 없는 자녀는 무료 플랜, 한도는 `product(code = FREE)` 행의 `limits` (P13)
+- 유효 구독이 없는 자녀는 무료 플랜, 한도는 `PAYMENT_FREE_PRODUCT_ID`로 지정한 활성 0원 product의 limits (P13, #48 확정)
 - 가격·한도 변경은 기존 `product` 행 수정 대신 새 행 추가 후 기존 행 `active = false`. 기존 구독은 `product_id`·`payment_order.amount`로 결제 당시 조건 유지 (P13)
 - 승인 처리 순서: `payment_order.amount`·대상 자녀 대조 → PG 승인 → `payment` 저장 → 구독 생성·반영 → `payment_order.subscription_id` 연결. 반영 실패 시 `entitlement_status = RECOVERY_REQUIRED` (FN-PAY-03, 05)
 - `payment_order` 부분 UK `(subscription_id, billing_period_start) WHERE kind = 'RENEWAL'` → 정기 청구 중복 실행 시 이중 청구 방지 (FN-PAY-06, NFR-REL-01)
@@ -999,9 +1031,9 @@ erDiagram
 ## 7. 확인 필요 가정
 - PG 거래 대조(FN-ADM-15): 조회 시 PG API와 계산, 결과 테이블 없음
 - learning 학생 삭제 시 `attempt` 하위 기록 삭제 방식: FK `ON DELETE CASCADE` 또는 서비스 내 삭제 순서 (클래스 다이어그램 8장)
-- 정기 청구 재청구의 `payment_order` 재사용: 토스 `orderId` 재사용 가능 여부 확인 필요 (3.4)
+- 정기 청구는 월별 payment_order를 재사용하며, 확정 실패 후의 일별 재청구마다 payment_charge_attempt에 새 PG 주문과 멱등키를 보존한다. 불명확한 거래는 재청구하지 않고 조회 복구한다(#48).
 - 정책 확정에 따른 DDL은 core V6~V7·learning V4~V5로 추가한다(9장). 기존 데이터의 출생연도·상품 한도·폐기 코드/음성 기록은 임의 변환하지 않고 적용 전 정비가 필요하다.
-- `product.code`는 상품 행별 UK이며 P13의 요금제 추가·가격/한도별 새 행을 위해 확장 가능한 코드다. 새 상품 행은 새 고유 코드를 사용한다. 무료 상품 교체 시 기존 `code = FREE` 조회의 활성 버전 선택 방식은 상품 기능 구현 시 확정해야 한다.
+- `product.code`는 상품 행별 UK이며 P13의 요금제 추가·가격/한도별 새 행을 위해 확장 가능한 코드다. 새 상품 행은 새 고유 코드를 사용한다. 무료 상품 교체는 PAYMENT_FREE_PRODUCT_ID를 명시적으로 변경한다(#48 사용자 확정).
 
 
 ## 8. 이슈 5 마이그레이션 대응
