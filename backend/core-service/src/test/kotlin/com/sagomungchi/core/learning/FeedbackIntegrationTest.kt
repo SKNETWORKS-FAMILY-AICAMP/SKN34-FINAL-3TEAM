@@ -37,6 +37,9 @@ import kotlin.test.assertTrue
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = [
     "app.internal.token=repository-test-token", "app.auth.jwt-secret=dGVzdC1hdXRoLXNlY3JldC0zMi1ieXRlcy1sb25nLWtleSE=",
     "spring.rabbitmq.username=test", "spring.rabbitmq.password=test", "spring.rabbitmq.listener.simple.auto-startup=false",
+    "spring.datasource.hikari.maximum-pool-size=5", "spring.datasource.hikari.minimum-idle=0",
+    // Shortened from 15s heartbeat / 80s timeout so the timing tests do not wait in real time.
+    "app.sse.heartbeat=1s", "app.feedback.timeout=3s",
 ])
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class FeedbackIntegrationTest : PostgresRepositoryTest() {
@@ -183,7 +186,7 @@ class FeedbackIntegrationTest : PostgresRepositoryTest() {
         assertTrue(learning.requests.isEmpty())
     }
 
-    @Test fun `heartbeat is sent after 15 seconds and disconnected request still completes learning`() {
+    @Test fun `heartbeat is sent after the interval and disconnected request still completes learning`() {
         val entered = CountDownLatch(1); val release = CountDownLatch(1); val completed = CountDownLatch(1)
         learning.respond = {
             entered.countDown()
@@ -200,7 +203,7 @@ class FeedbackIntegrationTest : PostgresRepositoryTest() {
                 var line: String?
                 do { line = reader.readLine() } while (line != null && line != ": ping")
                 assertEquals(": ping", line)
-                assertTrue(Duration.ofNanos(System.nanoTime() - start).toMillis() >= 14_000)
+                assertTrue(Duration.ofNanos(System.nanoTime() - start).toMillis() >= 900)
                 reader.close() // Real client socket/body termination while the downstream operation is blocked.
             }
             assertFalse(completed.await(200, TimeUnit.MILLISECONDS))
@@ -213,14 +216,14 @@ class FeedbackIntegrationTest : PostgresRepositoryTest() {
         assertEquals(listOf("status", "result", "done"), events(call().body()))
     }
 
-    @Test fun `80 second downstream timeout emits retryable error and closes stream`() {
+    @Test fun `downstream timeout emits retryable error and closes stream`() {
         val release = CountDownLatch(1)
         learning.respond = { check(release.await(100, TimeUnit.SECONDS)); LearningHttpStub.Reply(200, done()) }
         try {
             val start = System.nanoTime()
             val response = call()
             val seconds = Duration.ofNanos(System.nanoTime() - start).seconds
-            assertTrue(seconds in 78..89, "actual seconds: $seconds")
+            assertTrue(seconds in 3..8, "actual seconds: $seconds")
             assertEquals(listOf("status", "error", "done"), events(response.body()))
             assertTrue(response.body().contains("LEARNING_TIMEOUT")); assertTrue(response.body().contains("\"status\":504"))
             assertTrue(response.body().contains("\"retryable\":true"))
