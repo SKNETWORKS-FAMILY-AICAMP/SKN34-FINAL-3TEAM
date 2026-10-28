@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     # 되묻기 전체 마감(초). learning→ai 되묻기 35초(P12)보다 짧게, 재생성은 이 안에서만
     followup_deadline: float = 33.0
 
+    # 분석 대화 전체 마감(초). core 기준 전체 120초(P12)보다 짧게, LLM 호출은 이 안에서만
+    analysis_deadline: float = 110.0
+
 
 @lru_cache
 def get_settings() -> Settings:

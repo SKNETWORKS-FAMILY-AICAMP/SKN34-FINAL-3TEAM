@@ -2,7 +2,7 @@
 
 ## 목적과 기준
 
-학습 기록을 P06·P08에 따라 집계해 리포트 항목과 원문 근거를 저장한다. 작업 브랜치는 `feature/report-metrics`이며, 검증 완료한 #50 `8ae3caf`와 develop `1208ead`를 반영했다. #27은 PR #105로 병합됐으므로 이전의 “learning 응답 확인 대기”는 해소됐다.
+학습 기록을 P06·P08에 따라 집계해 리포트 항목과 원문 근거를 저장한다. 작업 브랜치는 `feature/report-metrics`이며, #50 PR #101이 병합된 develop `6e8d2c6`을 반영했다. #27은 PR #105로 병합됐으므로 이전의 “learning 응답 확인 대기”는 해소됐다.
 
 `docs/design/api-spec.md` 4.1.1과 실제 learning 코드·OpenAPI를 대조해 내부 식별자 `studentId`, 학생 작성 칸 기준 수치, nullable `followup`을 반영했다. API 문서 충돌은 #27의 공통 기록 조회 계약을 보존하고 report 수신 규칙을 이어 적는 방식으로 해결했다. 새 테이블·migration·운영 의존성은 없다.
 
@@ -41,11 +41,11 @@
 
 - `uv run --locked ruff check .`: 통과.
 - `uv run --locked ruff format --check .`: 54개 파일 통과.
-- `uv run --locked pytest -q`: **150 passed**, 실패·생략 없음(53.01초). 실제 PostgreSQL·RabbitMQ를 사용하며 기존 #14·#50 회귀를 포함한다.
+- #50 병합 develop `6e8d2c6` 반영 후 `uv run --locked pytest -q`: **150 passed**, 실패·생략 없음(41.40초). 실제 PostgreSQL·RabbitMQ를 사용하며 기존 #14·#50 회귀를 포함한다.
 - root 계약 검사 54개, 변경 Markdown의 UTF-8·충돌 표식·로컬 링크 검사와 `git diff --check`도 통과했다.
 - 기존 Starlette TestClient deprecation warning 1개는 테스트 실패가 아니다.
 - #27의 실제 서비스 연동은 앞서 누적 브랜치 `708a242`에서 합성 데이터로 확인한 이력이 있다. 이번 #51 실행은 그중 수신·계산 수정만 이 이슈 브랜치로 옮긴 뒤 수행한 전체 회귀이며, 새 core 스케줄·AI·렌더링 E2E 실행으로 표현하지 않는다.
 
 ## 다음 단계
 
-#50 PR #101을 먼저 반영해야 한다. #51은 학습 기록 조회·계산·저장 단계이며 #52 AI 서술과 #53 파일 렌더링을 조립하는 기반이다. 실제 worker 전체 생성기 조립과 core 상품 권한·표시 이름 공급은 후속 연동 범위다. 앞 단계 PR이 수정되면 이 브랜치에도 반영하고 재검증한다.
+#50 PR #101은 develop에 병합됐다. #51은 학습 기록 조회·계산·저장 단계이며 #52 AI 서술과 #53 파일 렌더링을 조립하는 기반이다. 이번 PR은 develop을 대상으로 #51 변경만 검토한다. 실제 worker 전체 생성기 조립과 표시 이름 공급은 후속 연동 범위다. core가 전달하는 학생 범위·상품 권한 계약은 이미 존재하므로 다시 정의하지 않는다.

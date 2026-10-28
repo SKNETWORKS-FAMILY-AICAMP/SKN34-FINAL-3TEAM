@@ -1838,8 +1838,8 @@ classDiagram
 - `GenerationService.generate`: `job_id`로 기존 행 조회 → 없으면 `RUNNING` 생성, `COMPLETED·FAILED`면 ACK만, `RUNNING`이면 같은 행으로 재실행. 기록 없음·표본 부족은 `COMPLETED + state`, 실패는 `FAILED` (FN-RPT-11)
 - `query_router`·`QueryService`: 모든 조회에서 리포트의 `student_id`가 `X-Student-Scope`에 있는지 검사, 없으면 403 (API 4장)
 - 수치·전후 변화는 `MetricsCalculator`(코드)에서만 계산, ai는 서술·저녁 질문만 (FN-RPT-03, 05)
-- #51 구현의 `RecordGenerator`는 learning 조회 → `MetricsCalculator.calculate` → 항목·근거가 포함된 `GenerationResult`를 반환한다. `ReportRepository.finish`가 상태·항목·근거를 저장하며 종료 이벤트와 같은 트랜잭션에 참여한다. 입력 계약은 API 4.1.1 구현안이며 #27 실제 연동 확인은 남아 있다.
-- report 다이어그램의 AI 서술·원문 재검증·렌더링·저장·조회·삭제는 #52~#55의 최종 구성 계획을 포함한다. #50/#51의 운영 worker 조립은 #42 공통 메시지 계약 연결 후 완료한다. `LearningClient.evidence`도 #52 구현 대상이다.
+- #51 구현의 `RecordGenerator`는 learning 조회 → `MetricsCalculator.calculate` → 항목·근거가 포함된 `GenerationResult`를 반환한다. `ReportRepository.finish`가 상태·항목·근거를 저장하며 종료 이벤트와 같은 트랜잭션에 참여한다. 입력 계약은 병합된 #27 코드·OpenAPI와 대조한 API 4.1.1이며, #51의 검증 범위는 `docs/report/report-metrics.md`에 기록한다.
+- report 다이어그램의 AI 서술·원문 재검증·렌더링·저장·조회·삭제는 #52~#55의 최종 구성 계획을 포함한다. #42 공통 메시지 계약과 #50 worker·Outbox 연결은 develop에 반영됐다. 계산·서술·렌더링을 포함한 전체 생성기 조립은 후속 단계에서 검증한다. `LearningClient.evidence`도 #52 구현 대상이다.
 - `ReportVerifier`: 서술 속 숫자·인용을 계산 결과·learning 원문과 대조, 실패 시 서술을 템플릿 요약으로 교체(`narrative.source = TEMPLATE`, P16). `NO_RECORD`·무료 플랜(`narrativeEnabled = false`)은 ai 호출 생략 (P06·P13)
 
 ---
