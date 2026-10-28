@@ -41,6 +41,33 @@ data class Attempt(
         }
     }
 
+    /**
+     * 마무리 (state-diagram 3.2 작성 → 마무리됨). 마무리 조건(FinishPolicy.canFinish)은 부른 쪽이 타임라인으로 먼저 확인 (sequence-diagram 3.3).
+     * 완료된 시도는 409 ATTEMPT_CLOSED
+     */
+    fun finish(now: Instant): Attempt {
+        requireOpen()
+        check(finishedAt == null) { "이미 마무리한 시도" }
+        return copy(finishedAt = now, updatedAt = now)
+    }
+
+    /** 돌아보기 저장 시 학습 완료 (state-diagram 3.2 IN_PROGRESS → COMPLETED, FN-LRN-14) */
+    fun complete(now: Instant): Attempt {
+        requireFinished()
+        return copy(status = AttemptStatus.COMPLETED, completedAt = now, updatedAt = now)
+    }
+
+    /**
+     * 마무리 뒤에 하는 쓰기(돌아보기·자기 평가): 완료된 시도는 409 ATTEMPT_CLOSED,
+     * 마무리 전이면 409 REVEAL_CONDITION_UNMET (state-diagram 3.2·9장)
+     */
+    fun requireFinished() {
+        requireOpen()
+        if (finishedAt == null) {
+            throw BusinessException(HttpStatus.CONFLICT, "REVEAL_CONDITION_UNMET", "마무리 전", "마무리한 뒤에 할 수 있어요.")
+        }
+    }
+
     companion object {
         fun start(
             studentId: UUID,
