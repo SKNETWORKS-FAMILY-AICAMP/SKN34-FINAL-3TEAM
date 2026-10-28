@@ -8,7 +8,7 @@ learning-service의 `/internal/records/*`·`/internal/stats`(학부모 대시보
 
 | 문서 | 변경 전 | 변경 후 | 근거 |
 |---|---|---|---|
-| [api-spec 4.1](../design/api-spec.md) | 경로 6개와 한 줄 설명 | 경로마다 응답 모양(3.9·3.4·1.6 형식), 지표 4개, 시도 상세 경로 추가, 기록 조회 공통(역할·범위·KST 기간·기본 7일·집계 대상·상태·메모 제외) | 이슈 지침 "API 계약 변경이 필요하면 api-spec 먼저". core가 응답을 그대로 프록시(sequence-diagram 4)하므로 learning 응답이 곧 학부모 화면 계약 |
+| [api-spec 4.1](../design/api-spec.md) | 경로 6개와 한 줄 설명 | 경로마다 응답 모양(3.9·3.4·1.6 형식), 지표 4개, 시도 상세 경로 추가, 기록 조회 공통(역할·범위·KST 기간·기본 7일·집계 대상·상태·메모 제외) | 이슈 지침 "API 계약 변경이 필요하면 api-spec 먼저". 처음에는 core가 응답을 그대로 프록시(sequence-diagram 4)한다고 보고 learning 응답을 학부모 화면 계약에 맞췄으나, core #40이 응답을 검사·변환하기로 해 최상위 학생 식별자만 `studentId`로 바꿈(아래 "학생 필드") |
 | [class-diagram 4.3](../design/class-diagram.md) | `countAttempts`·`findAttemptsWithTimeline`, `Metric.count(label, count, period)`, `RecordService --> RecordRepository`만, 구현 상태 "미구현" | `findEligible`·`findAnswerPairs`·`isRecorded`·`findEvidence`·`stats`, `attempt(studentId, attemptId)`, `Metric.count(label, count, formula, period)`, `RecordService --> AttemptService : 기록 목록·상세`, 처리 설명, 구현 상태 | 아래 "사용자 결정"·"설계와 다른 점" |
 | [contracts/openapi/learning-service.yaml](../../contracts/openapi/learning-service.yaml) | 기록 경로는 `exists`만 | 기록 경로 7개(요약·유형·목록·상세·전후 변화·근거·운영 집계)와 스키마(`Metric`·`QueryState`·`RecordPeriod`·`RecordAttempt` 등) | #92(D6) 대조 테스트가 learning 컨트롤러 경로와 yaml 경로가 같아야 통과. 경로 수 12 → 19. 맨 위 설명의 역할 문구(기록 조회 PARENT·STUDENT·SYSTEM, 운영 집계 ADMIN·SYSTEM)도 갱신 |
 | api-spec 5.4(#37 기록 존재 확인) | "#27 전체 목록·상세·통계 API는 별도 범위다" | #27에서 4.1 "기록 조회"로 추가했다(같은 실패·삭제 제외 기준) | 구현됨 |
@@ -33,11 +33,11 @@ learning-service의 `/internal/records/*`·`/internal/stats`(학부모 대시보
 | 상태 | 응답 전체와 건수 지표는 집계 대상 수, 비율 지표는 분모로: 0건 `NO_RECORD`, 1~4건 `INSUFFICIENT_SAMPLE`(비율 `value: null`, 개수만), 5건 이상 `OK` | P08, api-spec 1.5·1.6, 이슈 완료 조건 |
 | 기간 | `from`·`to`는 KST 날짜 양 끝 포함, 시각 비교는 `[from 00:00, to 다음 날 00:00)` KST. 둘 다 주거나 둘 다 생략(생략하면 오늘 포함 최근 7일), 한쪽만 주거나 `from > to`면 400. 응답 `period`는 실제 조회 기간 | api-spec 1.1, P06(기본 기간 최근 7일·오늘 포함), core #40과 합의(한쪽만 주는 경우 400) |
 | 역할·범위 | 학생 경로는 `PARENT`·`STUDENT`·`SYSTEM`, 대상 학생이 `X-Student-Scope`에 없으면 403(UUID 비교). 근거 조회는 답변마다 학생 범위 확인. 운영 집계는 `ADMIN`·`SYSTEM`, 학생 범위 없음 | class-diagram 4.3 "모든 경로에서 requireStudent 먼저", architecture 2.3, FN-ADM-02. #37 기록 유무와 같은 역할 |
-| 학생 필드 | 응답의 학생 ID는 `childId` | core가 그대로 프록시하고 api-spec 3.9·프론트 타입이 `childId` |
+| 학생 필드 | 응답 최상위 학생 ID는 호출 역할과 무관하게 `studentId`. 학부모 공개 응답의 `childId`는 core가 바꿈 | 처음에는 core가 그대로 프록시한다고 보고 api-spec 3.9·프론트 타입대로 `childId`로 구현. core #40이 내부 응답을 `studentId`로 검사·변환하기로 해(최상위 `studentId`가 없으면 502) report #51 동의를 받아 10/28 바꿈 |
 | thinking-types | 다섯 유형 모두, 유형마다 기간 안 시도 `[{attemptId, title}]`, 없으면 `NO_RECORD`, 있으면 `OK`. 유형 요약 문장(`summary`)은 넣지 않음 | FN-DSH-08 "미관찰, 점수·능력 부족으로 해석 금지", 문장은 리포트·ai 몫 |
-| 목록 | 1.1 봉투 + `childId·state·period·inclusionRule`, 최근 답변 순, `status`(`IN_PROGRESS`·`COMPLETED`)를 주면 지금 그 상태인 시도만, `page` 0 이상·`size` 1~100(기본 20, 아니면 400). 항목은 학생 시도 상세 − 초안 + `completedAt`·`hintUsages:[{openedAt}]`·`reflection.createdAt`. `answers`·`hintUsages`는 1번·처음부터 조회 종료일까지(시작일 이전 포함), `reflection`은 기간 안에 쓴 것만(아니면 `null`). 시도 상태·마무리 공개는 지금 상태 | api-spec 1.1·3.9, core #40(`status` 필터), report #51(추가 필드·돌아보기 기간, 최초 답변 전 열람은 report가 판단) |
+| 목록 | 1.1 봉투 + `studentId·state·period·inclusionRule`, 최근 답변 순, `status`(`IN_PROGRESS`·`COMPLETED`)를 주면 지금 그 상태인 시도만, `page` 0 이상·`size` 1~100(기본 20, 아니면 400). 항목은 학생 시도 상세 − 초안 + `completedAt`·`hintUsages:[{openedAt}]`·`reflection.createdAt`. `answers`·`hintUsages`는 1번·처음부터 조회 종료일까지(시작일 이전 포함), `reflection`은 기간 안에 쓴 것만(아니면 `null`). 시도 상태·마무리 공개는 지금 상태 | api-spec 1.1·3.9, core #40(`status` 필터), report #51(추가 필드·돌아보기 기간, 최초 답변 전 열람은 report가 판단) |
 | 상세 | 목록 항목과 같은 모양 + `state: OK`·`period`. `from`·`to`는 화면이 유지할 기간이라 검증·기본값만 적용하고, 답변·되묻기·도움·돌아보기 이력은 자르지 않음. 이 학생의 시도이고 종료일 무관 처리 실패만 있는 시도가 아니어야 하며 아니면 404 | core #40과 합의 |
-| changes | 1.1 봉투 + `childId·state·period`. 조회 종료일까지 보완 답변이 있는 시도마다 최초 vs 종료일 이전 마지막 답변, `followup`은 마지막 답변이 답한 되묻기 질문, `counts`는 `[최초, 마지막]`(report는 다시 계산) | P08 "시도당 최초 vs 마지막 답변", api-spec 3.4 `changes` 예시, report #51(페이지) |
+| changes | 1.1 봉투 + `studentId·state·period`. 조회 종료일까지 보완 답변이 있는 시도마다 최초 vs 종료일 이전 마지막 답변, `followup`은 마지막 답변이 답한 되묻기 질문, `counts`는 `[최초, 마지막]`(report는 다시 계산) | P08 "시도당 최초 vs 마지막 답변", api-spec 3.4 `changes` 예시, report #51(페이지) |
 | 전후 변화의 수 | 글자 수(공백 포함, 코드 포인트), 문장 수(`.` `?` `!`·줄바꿈으로 나눈 비지 않은 덩어리), 까닭을 잇는 말 나온 횟수. **학생이 쓴 칸 내용만**(서술 글, 풀이 단계·최종 답, 논술 네 칸) 셈. 보여 주는 원문(`text`)은 칸 이름을 붙인 `plain_text` 그대로 | P08 계산 규칙. `plain_text`의 칸 이름("① 무엇을 구하나요?:")을 세면 학생이 쓰지 않은 글자와 `?`까지 셈 |
 | evidence | `{items}` 요청 순서대로, 원문은 `plain_text`. 없는 답변(삭제로 지워진 기록 포함)·삭제 학생은 `available: false`, 원문·제목 없음. 범위 밖 학생의 답변이 섞이면 403. `answerIds`는 쉼표로 나눈 UUID 1~100개(아니면 400) | api-spec 1.6·3.9 "삭제된 항목은 quote를 재사용하지 않음", P09 물리 삭제 + 표식 |
 | stats | `{period, inclusionRule, attempts, completedAttempts, students}`, 집계 대상 기준(완료는 종료일까지), 학생 원문 없음 | FN-ADM-02 "학습 시도·완료 건수". 대화·리포트 처리 현황은 core 몫 |
@@ -55,7 +55,7 @@ learning-service의 `/internal/records/*`·`/internal/stats`(학부모 대시보
 | 담당 | 합의 | 반영 |
 |---|---|---|
 | core(kimdongseop, #40) | 목록 `status` 필터, 상세의 `from`·`to`는 화면 유지용(`period`·`state: OK`, 이력은 자르지 않음), 날짜 둘 다/둘 다 생략, 범위 검사는 대상 학생 포함 여부 유지(1명 제한 없음), `QueryState`는 learning 값 그대로·장애는 Problem Details, 병합은 #27 먼저 | 반영함 |
-| core(#40) | 내부 응답의 학생 식별자는 역할과 무관하게 `studentId`(학부모 공개 응답의 `childId`는 core가 변환), 학생 대시보드 `home`·`thinking-activities`를 #27에서 함께 | **보류**: `studentId`는 report도 쓰는 계약이라 report 답을 기다림. `home`·`thinking-activities`는 #27 범위 추가 여부를 사용자가 정할 일 |
+| core(#40) | 내부 응답의 학생 식별자는 역할과 무관하게 `studentId`(학부모 공개 응답의 `childId`는 core가 변환), 학생 대시보드 `home`·`thinking-activities`를 #27에서 함께 | 반영함: `studentId`는 report 동의(10/28 "PR 링크와 합성 응답 예시만 있으면 될 듯") 뒤 바꿈. `home`·`thinking-activities`는 사용자가 #27에 넣기로 정함 |
 | report(inyoung9629, #51) | 돌아보기는 미작성·기간 밖이면 `null`, `hintUsages:[{openedAt}]`·`completedAt`·`reflection.createdAt`, `changes` 페이지, 삭제 표식 항목 불필요(`NO_RECORD`·빈 목록), 까닭을 잇는 말 4개 확정, 난이도 코드 유지, 병합은 #27 먼저 | 반영함 |
 | report(#51) | evidence 모양·삭제 답변·평문·집계 대상 질문 | 답함: `{items}` 요청 순서, 원문 전체, 없는 ID `available:false`(빠지지 않음, 같은 ID는 한 번), 평문은 항상 있음(비면 `""`), 실패 기준은 P08대로 고침(위 "집계 대상") |
 
@@ -79,8 +79,8 @@ core 예정 계약의 시도 스키마는 추가 필드를 막아(`additionalPro
 | 목록 상태 | 목록도 `state`를 집계 대상 수로 줌(1~4건이면 `INSUFFICIENT_SAMPLE`) | 프론트 |
 | 돌아보기 난이도 | 목록 항목의 `reflection.difficulty`는 코드(`EASY·NORMAL·HARD`). api-spec 3.4 리포트 예시는 `"보통"` | report·ai·프론트(#26 리포트와 같음) |
 | core 연결 | core는 지금 기록 유무(`exists`)만 부름. 학부모 대시보드·근거·운영 집계 프록시는 core 이슈에서 이 계약으로 | core |
-| core #40 예정 계약 | 위 "팀 합의"의 보류 2건(`studentId`, `home`·`thinking-activities`)과 시도 스키마 추가 필드 | core(kimdongseop) |
-| report #51 예정 입력 | `studentId` 변경 동의 여부(core 결정), 4.1.1 문구 정리는 report가 함 | report(inyoung9629) |
+| core #40 예정 계약 | 병합 순서(#27 먼저). core PR #103은 learning-service.yaml에 같은 경로 4개(`summary`·`thinking-types`·`attempts`·`attempts/{attemptId}`)를 예정 계약으로 따로 두어, 둘을 합치면 git 충돌 없이 경로가 두 번 들어감(10/28 시험 병합으로 확인). 나중에 병합하는 쪽이 예정 경로를 지우고 하나로 합쳐야 함. 시도 스키마 추가 필드도 이 계약에 맞춤 | core(kimdongseop) |
+| report #51 예정 입력 | 4.1.1의 `childId` 문구를 `studentId`로 정리하는 것은 report가 함. PR 링크와 합성 응답 예시 전달 | report(inyoung9629) |
 | 다른 브랜치와 파일 충돌 | `core-dashboard-queries`는 api-spec·대조 테스트와 충돌, learning OpenAPI는 같은 경로가 두 번 들어감. `report-metrics`·`report-narrative`·`report-deletion`은 api-spec과 충돌. #27을 먼저 머지하고 각 브랜치가 실제 계약으로 정리하는 순서를 제안 | core·report |
 
 ## 검증
@@ -89,7 +89,7 @@ core 예정 계약의 시도 스키마는 추가 필드를 막아(`additionalPro
 - 이슈 #27 완료 조건
   - 0건·1~4건·5건 이상 케이스별 `state`: 0건 `NO_RECORD`, 4건 `INSUFFICIENT_SAMPLE`(비율 `value: null`), 5건 `OK`(완료 1/5 → 0.2)
   - 범위 밖 학생 403: 범위에 없는 학생·범위 헤더 없음·허용하지 않는 역할(`ADMIN`·`CONTENT`) 403, 근거에 범위 밖 학생의 답변이 섞이면 403, 운영 집계는 학부모 403
-- 그 밖의 경로: 집계 대상(기간 밖·초안만·처리 실패만 제외, 미완료 포함), 조회 종료일 기준(이번 주 조회에 다음 주 보완 답변·완료·되묻기가 섞이지 않고 다음 주 조회는 1번부터), 지난주 판정·이번 주 실패 시도와 처리 중 시도 포함, `status` 필터, 열람 시각(시작일 이전 포함·종료일 뒤 제외)·완료 시각·기간 안 돌아보기만, 상세는 이력 전체·`state`·`period`, `changes` 페이지, 날짜 한쪽만·`status` 값 오류 400, KST 경계(끝 날짜 23:59 포함·다음 날 0:00 제외·시작 날짜 0:00 포함), 도움 없이 시작(최초 답변 뒤 열람은 도움 없이 시작으로 셈), 생각을 더한 활동(분모 = 되묻기 받은 시도), 다섯 유형·미관찰, 목록 페이지·최근 답변 순, 상세 404(다른 학생·처리 실패만), 전후 변화(최초 vs 마지막, 마지막 답변이 답한 되묻기, 풀이 단계는 칸 이름을 빼고 셈), 근거(요청 순서, 없는 답변·삭제 학생 `available:false`·원문 없음), 삭제 학생 요약 `NO_RECORD`, 운영 집계, 입력 오류 400(날짜 형식·`from > to`·페이지·`answerIds`), JSON 모양(`childId`·`period{from,to}`·목록에 `draft` 없음)
+- 그 밖의 경로: 집계 대상(기간 밖·초안만·처리 실패만 제외, 미완료 포함), 조회 종료일 기준(이번 주 조회에 다음 주 보완 답변·완료·되묻기가 섞이지 않고 다음 주 조회는 1번부터), 지난주 판정·이번 주 실패 시도와 처리 중 시도 포함, `status` 필터, 열람 시각(시작일 이전 포함·종료일 뒤 제외)·완료 시각·기간 안 돌아보기만, 상세는 이력 전체·`state`·`period`, `changes` 페이지, 날짜 한쪽만·`status` 값 오류 400, KST 경계(끝 날짜 23:59 포함·다음 날 0:00 제외·시작 날짜 0:00 포함), 도움 없이 시작(최초 답변 뒤 열람은 도움 없이 시작으로 셈), 생각을 더한 활동(분모 = 되묻기 받은 시도), 다섯 유형·미관찰, 목록 페이지·최근 답변 순, 상세 404(다른 학생·처리 실패만), 전후 변화(최초 vs 마지막, 마지막 답변이 답한 되묻기, 풀이 단계는 칸 이름을 빼고 셈), 근거(요청 순서, 없는 답변·삭제 학생 `available:false`·원문 없음), 삭제 학생 요약 `NO_RECORD`, 운영 집계, 입력 오류 400(날짜 형식·`from > to`·페이지·`answerIds`), JSON 모양(`studentId`·`period{from,to}`·목록에 `draft` 없음)
 - 보호 장치를 하나씩 빼면 테스트가 실패함을 확인(28개): 처리 실패만 있는 시도 제외, 기간 안 답변만, 끝 날짜 포함, KST 기준, 삭제 학생 제외, 분모 5 미만 비율 없음, 최초 답변 전 도움만, 생각을 더한 활동 분모, 근거 범위 검사, 삭제 학생 근거 원문 없음, 학생이 쓴 칸만 셈, 상세는 이 학생의 기록만, 역할 검사, 학생 범위 검사, 목록에서 초안 빼기, 페이지 범위, 종료일 기준 6개(완료·되묻기 받음·보완 답변·전후 변화 마지막 답변·운영 집계 완료·목록 답변), 합의 반영 6개(종료일까지 실패만 제외, `status` 필터, 열람은 종료일까지, 돌아보기는 기간 안, `changes` 페이지, 날짜 한쪽만 400)
 - compose 실제 확인(`docker compose up -d --build learning-service ai-service`, OpenAI `gpt-6.1-terra`, core 없이 learning `/internal/*` 직접 호출, 확인 후 만든 시도 2건만 삭제·컨테이너 정지):
 

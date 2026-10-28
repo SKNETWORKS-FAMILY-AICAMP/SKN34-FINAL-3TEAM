@@ -1036,9 +1036,9 @@ components:
     RecordSummary:
       type: object
       additionalProperties: false
-      required: [childId, state, period, inclusionRule, metrics]
+      required: [studentId, state, period, inclusionRule, metrics]
       properties:
-        childId: {type: string, format: uuid}
+        studentId: {type: string, format: uuid}
         state: {$ref: '#/components/schemas/QueryState'}
         period: {$ref: '#/components/schemas/RecordPeriod'}
         inclusionRule: {type: string}
@@ -1048,9 +1048,9 @@ components:
     RecordThinkingTypes:
       type: object
       additionalProperties: false
-      required: [childId, state, period, items]
+      required: [studentId, state, period, items]
       properties:
-        childId: {type: string, format: uuid}
+        studentId: {type: string, format: uuid}
         state: {$ref: '#/components/schemas/QueryState'}
         period: {$ref: '#/components/schemas/RecordPeriod'}
         items:
@@ -1158,7 +1158,7 @@ components:
     RecordAttemptPage:
       type: object
       additionalProperties: false
-      required: [items, page, size, totalElements, childId, state, period, inclusionRule]
+      required: [items, page, size, totalElements, studentId, state, period, inclusionRule]
       properties:
         items:
           type: array
@@ -1166,19 +1166,19 @@ components:
         page: {type: integer, minimum: 0}
         size: {type: integer, minimum: 1}
         totalElements: {type: integer, minimum: 0}
-        childId: {type: string, format: uuid}
+        studentId: {type: string, format: uuid}
         state: {$ref: '#/components/schemas/QueryState'}
         period: {$ref: '#/components/schemas/RecordPeriod'}
         inclusionRule: {type: string}
     RecordChanges:
       type: object
       additionalProperties: false
-      required: [items, page, size, totalElements, childId, state, period]
+      required: [items, page, size, totalElements, studentId, state, period]
       properties:
         page: {type: integer, minimum: 0}
         size: {type: integer, minimum: 1}
         totalElements: {type: integer, minimum: 0}
-        childId: {type: string, format: uuid}
+        studentId: {type: string, format: uuid}
         state: {$ref: '#/components/schemas/QueryState'}
         period: {$ref: '#/components/schemas/RecordPeriod'}
         items:

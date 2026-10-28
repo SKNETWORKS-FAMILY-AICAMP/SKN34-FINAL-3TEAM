@@ -58,13 +58,13 @@ class RecordControllerTest {
     }
 
     @Test
-    fun `요약은 childId·상태·실제 기간·집계 기준과 지표, 기간은 KST 날짜`() {
+    fun `요약은 studentId·상태·실제 기간·집계 기준과 지표, 기간은 KST 날짜`() {
         val metric = Metric.ratio("완료한 활동", 3, 5, "완료 / 대상", week)
         given(service.summary(student, week)).willReturn(Summary(QueryState.OK, listOf(metric)))
 
         mockMvc.get("/internal/records/students/$student/summary?from=2026-11-02&to=2026-11-08") { caller() }.andExpect {
             status { isOk() }
-            jsonPath("$.childId") { value(student.toString()) }
+            jsonPath("$.studentId") { value(student.toString()) }
             jsonPath("$.state") { value("OK") }
             jsonPath("$.period.from") { value("2026-11-02") }
             jsonPath("$.period.to") { value("2026-11-08") }
@@ -147,7 +147,7 @@ class RecordControllerTest {
             jsonPath("$.items[0].completedAt") { value(null) }
             jsonPath("$.items[0].hintUsages[0].openedAt") { value("2026-11-03T01:00:00Z") }
             jsonPath("$.totalElements") { value(1) }
-            jsonPath("$.childId") { value(student.toString()) }
+            jsonPath("$.studentId") { value(student.toString()) }
             jsonPath("$.state") { value("INSUFFICIENT_SAMPLE") }
             jsonPath("$.inclusionRule") { value(RecordService.INCLUSION_RULE) }
         }

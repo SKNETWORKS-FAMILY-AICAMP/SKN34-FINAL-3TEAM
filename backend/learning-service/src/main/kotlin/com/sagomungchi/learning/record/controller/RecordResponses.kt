@@ -23,9 +23,9 @@ import com.sagomungchi.learning.record.service.RecordService
 import java.time.Instant
 import java.util.UUID
 
-/** 학습 현황 요약 (api-spec 2.3·3.9). childId는 학생 ID(core가 그대로 프록시) */
+/** 학습 현황 요약 (api-spec 2.3·3.9). 내부 응답은 호출 역할과 무관하게 studentId, 학부모 공개 응답의 childId는 core가 바꿈 (core #40·report #51) */
 data class SummaryResponse(
-    val childId: UUID,
+    val studentId: UUID,
     val state: QueryState,
     val period: Period,
     val inclusionRule: String,
@@ -34,7 +34,7 @@ data class SummaryResponse(
 
 /** 유형별 활동 (api-spec 3.9) */
 data class ThinkingTypesResponse(
-    val childId: UUID,
+    val studentId: UUID,
     val state: QueryState,
     val period: Period,
     val items: List<ThinkingTypeItem>,
@@ -42,13 +42,13 @@ data class ThinkingTypesResponse(
 
 data class ThinkingTypeItem(val type: ThinkingType, val state: QueryState, val missions: List<MissionRef>)
 
-/** 기록 목록 (api-spec 1.1 봉투 + 3.9 childId·state·period·inclusionRule) */
+/** 기록 목록 (api-spec 1.1 봉투 + studentId·state·period·inclusionRule) */
 data class RecordPageResponse(
     val items: List<RecordAttemptResponse>,
     val page: Int,
     val size: Int,
     val totalElements: Int,
-    val childId: UUID,
+    val studentId: UUID,
     val state: QueryState,
     val period: Period,
     val inclusionRule: String,
@@ -59,7 +59,7 @@ data class RecordPageResponse(
             page = page.page,
             size = page.size,
             totalElements = page.totalElements,
-            childId = studentId,
+            studentId = studentId,
             state = page.state,
             period = period,
             inclusionRule = RecordService.INCLUSION_RULE,
@@ -118,7 +118,7 @@ data class ChangesResponse(
     val page: Int,
     val size: Int,
     val totalElements: Int,
-    val childId: UUID,
+    val studentId: UUID,
     val state: QueryState,
     val period: Period,
 )
