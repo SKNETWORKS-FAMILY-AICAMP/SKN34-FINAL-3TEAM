@@ -13,10 +13,20 @@ class RecordExistsContractTest(unittest.TestCase):
         path='/records/students/{studentId}/exists'
         self.assertEqual(set(self.spec['paths']),{path})
         producer=(ROOT/'backend/learning-service/src/main/kotlin/com/sagomungchi/learning/record/controller/RecordExistsController.kt').read_text(encoding='utf-8')
-        consumer=(ROOT/'backend/core-service/src/main/kotlin/com/sagomungchi/core/guardianship/client/ChildRecordsClient.kt').read_text(encoding='utf-8')
+        consumer=(ROOT/'backend/core-service/src/main/kotlin/com/sagomungchi/core/learning/client/LearningRecordClient.kt').read_text(encoding='utf-8')
         self.assertIn('@GetMapping("/internal'+path+'")',producer)
-        self.assertIn('/internal/records/students/{id}/exists',consumer)
+        self.assertIn('/records/students/$studentId/exists',consumer)
         self.assertNotIn('/attempts',consumer)
+    def test_guardianship_calls_learning_service_without_cross_feature_client_access(self):
+        source=(ROOT/'backend/core-service/src/main/kotlin/com/sagomungchi/core/guardianship/service/GuardianshipService.kt').read_text(encoding='utf-8')
+        self.assertIn('core.learning.service.LearningRecordService',source)
+        self.assertNotIn('core.learning.client',source)
+        self.assertNotIn('InternalRestClientFactory',source)
+    def test_child_mock_draft_defers_to_the_confirmed_contract(self):
+        source=(ROOT/'docs/design/api-spec.md').read_text(encoding='utf-8')
+        draft=source.split('### 3.7')[1].split('### 3.8')[0]
+        self.assertIn('5.3·core OpenAPI',draft)
+        self.assertIn('실제 식별자는 `id`',draft)
     def test_only_existence_metadata_is_exposed(self):
         schema=self.spec['components']['schemas']['RecordExists']
         self.assertEqual(set(schema['properties']),{'studentId','hasRecords'})

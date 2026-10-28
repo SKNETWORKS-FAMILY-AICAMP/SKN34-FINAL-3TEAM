@@ -1,5 +1,7 @@
 # #37 기록 존재 확인 선행 API와 실제 데이터 연동
 
+> 추가 리뷰 후 현재 기록 조회 경로·공유 서킷·병렬 처리는 [리뷰 대응 보고서](issue-37-review-followup.md)를 따른다. 아래 검증 수치와 이전 파일명은 각 작업 시점의 이력이다.
+
 > 최신 develop 통합·검증과 PR 준비 기준은 [PR 준비 보고서](issue-37-pr-preparation.md)를 따른다. 아래 SHA·미커밋/미푸시 표시는 각 검증 시점의 기록이다.
 
 ## 범위와 기준
@@ -54,7 +56,7 @@ GET /children의 기존 hasRecords nullable/recordState 계약은 유지한다. 
 
 - 신규 내부 계약: `GET /internal/records/students/{studentId}/exists` → `{studentId,hasRecords}`.
 - 소유 파일: learning `record/controller/RecordExistsController.kt`, `record/service/RecordExistsService.kt`, `record/repository/RecordExistsRepository.kt`, `resources/mybatis/record/RecordExistsMapper.xml`, `src/test/.../record/RecordExistsTest.kt`.
-- core 소비자: `guardianship/client/ChildRecordsClient.kt`. 기존 `_common/config/InternalRestClientFactory`가 내부 토큰·검증된 사용자/scope를 전달한다.
+- 현재 core 소비자: `learning/service/LearningRecordService.kt`와 `learning/client/LearningRecordClient.kt`. guardianship은 상대 service만 호출하며 기존 LearningClient의 서킷·타임아웃·내부 컨텍스트 전달을 재사용한다. 이전 guardianship/client/ChildRecordsClient.kt는 이 경로로 이동했다.
 - 조회 기준: 제출 답변 존재, 실패만 있는 시도 제외, 삭제 표식 학생 제외. process_status=PENDING/RUNNING/DONE(결과 HELD 포함) 또는 아직 판정 행이 없는 제출은 보존 기록이다. 초안·답변 원문·메모·프로필은 조회/응답 대상이 아니다.
 - `deleted_student`에 PROFILE/RECORDS 어느 표식이든 있으면 현재 exists는 false다. 삭제 표식 이후 새 학습 허용/복원 수명주기는 이번에 구현하지 않았다. #27·삭제 기능에서 정책을 확장할 때 이 조건과 테스트를 함께 조정해야 한다.
 - #27 전체 summary/thinking-types/attempts/changes/evidence/stats는 미구현 범위로 유지한다. 이 최소 API를 #27 전체 완료로 처리하지 않는다. 전체 조회 구현 시 대상·제외 기준을 검토해 동일하게 적용하고 exists 계약을 변경하면 core 소비자도 함께 맞춘다.

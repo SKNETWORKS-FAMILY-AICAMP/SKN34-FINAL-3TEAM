@@ -507,7 +507,7 @@ If-Match: "7"
 - #36 이후 이메일·비밀번호 로그인/가입은 제공하지 않는다. Google core 콜백 → web `/oauth/complete` → refresh → `/me`로 로그인 상태·시작 화면을 복원한다. 개발 전용 MSW의 이메일 fixture는 운영 계약이 아니다. 학생 단독 진입은 3.11을 따른다(P01 개정).
 - `POST /auth/refresh`: 학부모·관리자만 httpOnly 쿠키로 갱신한다. 학생은 refresh 미발급이며 3.11에 따라 재진입한다. 동시 만료 요청은 refresh 1회 공유, 원 요청은 1회만 재시도한다.
 - `POST /auth/student-sessions`: 요청 `{childId}`. 응답은 구현 계약 5.1·OpenAPI가 우선이다(`{accessToken,expiresIn,role:STUDENT,child,nextAction,startPath}`).
-- `GET /children`: 1.1 목록 봉투의 items에 `{childId,nickname,grade,birthYear,plan:FREE|PREMIUM}`. plan의 실제 상품/권한 응답 위치는 확인 대상이다.
+- `GET /children`: 이 절의 `{childId,nickname,grade,birthYear,plan:FREE|PREMIUM}`은 #7 목업 초안이다. **5.3·core OpenAPI 확정 계약이 우선**이며 실제 식별자는 `id`, #37 응답은 `plan`을 생성하지 않는다. PIN 확장·상품/권한 응답은 별도 후속 계약이다.
 - 학생 조회의 목업 DTO는 `frontend/web/src/domain/classroom.ts`의 화면 모델을 잠정 사용한다. Mission(제목·교과·학년·유형·질문·장면 표시 정보), Attempt(attemptId·studentId·mission·status·answers·도움·돌아보기), 목록은 1.1 봉투. draft는 3.6처럼 `{version,content:{answer,memo},savedAt}`로 직렬화한다. finish 전 reveal은 전송하지 않는다.
 - 학생 홈·입력 틀 상세·최종 체크리스트의 완전한 DTO, SOLUTION_STEPS·CLASSIFICATION 제출 필드는 아직 미확정이다. 이 초안으로 임의 확정하거나 완료 체크하지 않는다.
 - 시나리오 선택은 개발 브라우저 내부 이벤트로 전달하며 `/api/v1`에 가짜 운영 경로를 추가하지 않는다.
@@ -727,9 +727,11 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 ### 5.4 #37 선행 learning 기록 존재 확인
 
 - 정식 내부 계약은 [learning-service OpenAPI](../../contracts/openapi/learning-service.yaml)를 따른다. `GET /internal/records/students/{studentId}/exists` → 200 `{studentId,hasRecords:boolean}`. 기간·페이지·건수·답변 원문·메모는 반환하지 않는다. #27 전체 목록·상세·통계 API는 별도 범위다.
-- core의 공개 GET /children → GuardianshipService → ChildRecordsClient → learning RecordExistsController → RecordExistsService → RecordExistsRepository/Mapper → learning DB 순서다. core는 learning DB를 직접 읽지 않는다.
+- core의 공개 GET /children → GuardianshipService → core learning의 LearningRecordService → LearningRecordClient → 기존 LearningClient(공유 서킷) → learning RecordExistsController → RecordExistsService → RecordExistsRepository/Mapper → learning DB 순서다. core는 learning DB를 직접 읽지 않는다.
 - 기간 필터가 없는 전체 보존 기록을 조회한다. P08에 따라 답변 제출이 있는 완료/미완료 시도가 대상이며, 초안만 있는 시도는 제외한다. 해당 시도의 답변이 모두 FAILED 판정이면 제외한다. PENDING/RUNNING/DONE(보류 포함) 및 아직 판정 행이 없는 제출 답변은 실패 확정 상태가 아니므로 포함한다. 답변 저장과 후속 처리는 구분한다.
 - `deleted_student` 표식이 있는 학생은 조회 대상에서 제외해 false다. 삭제·재등록·재학습의 수명주기를 새로 구현하지 않는다. #27과 삭제 기능에서 이 정책을 바꾸면 소비자·회귀 테스트를 함께 변경한다.
 - 기존 InternalAuthFilter의 내부 토큰 검증 뒤 PARENT/STUDENT/SYSTEM 역할과 X-Student-Scope를 검사한다. 잘못된 내부 토큰은 401, 미허용 역할·범위 밖 학생은 403이다. 학부모는 core에서 현재 연결·동의를 검사해 생성한 scope만 전달한다.
 - DB/HTTP 장애는 정상 false로 변환하지 않는다. learning은 오류 응답, core는 기존 공개 계약에 따라 hasRecords=null, recordState=UNAVAILABLE로 표시한다. 정상 false/true는 recordState=AVAILABLE이다. 응답 studentId·boolean 형식이 다르면 UNAVAILABLE이다.
-- 현재 조사는 origin/develop b2441711e12ff949cb2859df058a119f0181032c 기준이며 records 공급자가 미구현임을 확인했다. 사용자가 #27 영역의 최소 API 선행 추가를 승인했고, 전체 #27 기능은 추가하지 않는다.
+- 2026-10-27 최신 확인 기준은 origin/develop 826e4dc71e60ba4d2396d3545f87a41524d6db83(#76 답변 제출 포함)이다. 해당 develop에는 records 공급자가 없어 본 PR에서 승인된 최소 exists API만 선행 구현했다. 전체 #27 조회·통계는 후속 범위다.
+- 자녀별 원격 조회는 기존 최대 자녀 수 3을 상한으로 병렬 수행해 read timeout이 순차로 누적되는 것을 피한다. LearningHttpProperties의 기존 read timeout(기본 30초), learning-json 서킷의 최근 20회·최소 20회·실패율 50%·30초 차단 정책을 공유하며 재시도는 추가하지 않는다. 서킷 OPEN은 즉시 null/UNAVAILABLE이고 CLOSED의 개별 요청은 기존 timeout을 유지한다. 전체 HTTP 요청의 엄격한 30초 deadline을 새로 정의하거나 보장하지 않는다.
+- core LearningRecordService는 검증된 PARENT 컨텍스트와 대상 학생 scope만 허용하는 기록 전용 service다. 기존 학생 전용 LearningProxyService의 역할·쓰기 권한은 완화하지 않는다.

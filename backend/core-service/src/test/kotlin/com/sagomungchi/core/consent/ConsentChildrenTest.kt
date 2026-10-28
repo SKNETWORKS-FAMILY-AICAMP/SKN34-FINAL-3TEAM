@@ -10,8 +10,7 @@ import com.sagomungchi.core.account.service.dto.IssuedAuth
 import com.sagomungchi.core.consent.domain.ConsentChoice
 import com.sagomungchi.core.consent.service.ConsentAccessService
 import com.sagomungchi.core.consent.service.ConsentService
-import com.sagomungchi.core.guardianship.client.ChildRecordsClient
-import com.sagomungchi.core.guardianship.domain.ChildRecords
+import com.sagomungchi.core.learning.service.LearningRecordService
 import com.sagomungchi.core.guardianship.service.GuardianshipService
 import com.sagomungchi.core.guardianship.service.StudentAccessService
 import jakarta.servlet.http.Cookie
@@ -48,7 +47,7 @@ class ConsentChildrenTest : PostgresRepositoryTest() {
     @Autowired lateinit var jdbc: JdbcTemplate
     @Autowired lateinit var mvc: MockMvc
     @Autowired lateinit var json: ObjectMapper
-    @MockitoBean lateinit var records: ChildRecordsClient
+    @MockitoBean lateinit var records: LearningRecordService
     private val users = mutableListOf<UUID>()
     private val documents = mutableListOf<UUID>()
     private val kinds = listOf("TERMS", "PRIVACY", "GUARDIAN")
@@ -122,7 +121,7 @@ class ConsentChildrenTest : PostgresRepositoryTest() {
             content = childPayload()
         }.andExpect { status { isCreated() }; jsonPath("$.grade") { value(3) } }.andReturn().response
         val child = json.readTree(response.contentAsString)["id"].asText()
-        `when`(records.records(UUID.fromString(child))).thenReturn(ChildRecords(null, "UNAVAILABLE"))
+        `when`(records.exists(UUID.fromString(child))).thenReturn(null)
         me(parent.accessToken, "READY")
         mvc.get("/api/v1/children") { header("Authorization", "Bearer ${parent.accessToken}") }.andExpect {
             status { isOk() }; jsonPath("$.items[0].id") { value(child) }

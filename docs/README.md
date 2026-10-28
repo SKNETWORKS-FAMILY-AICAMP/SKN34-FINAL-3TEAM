@@ -58,6 +58,7 @@
   - [P01 개정 학생·학부모 로그인 분리](report/student-login-separation.md): 등록 기기·PIN 단독 진입 설계 근거와 대안 비교
   - [프론트엔드 UX 정합성(최초 화면 작업)](report/frontend-backend-ux-alignment.md): 백엔드 기준 화면 정렬 기록, 현재 기준은 이슈 #7 보고서
   - [프론트 화면 PR 설명](report/pr-fe-workspace.md): 이슈 #7·#8·#9 학생·학부모·관리자 화면 PR 변경 요약
+  - [이슈 #37 추가 리뷰 대응](report/issue-37-review-followup.md): 공유 서킷·기록 service 경계·병렬 조회와 무커밋 검증
   - [이슈 #37 PR 준비·최신 develop 통합](report/issue-37-pr-preparation.md): 충돌 해결·PIN/동의 호환성과 통합 검증
   - [이슈 #37 기록 존재 확인 선행 API](report/issue-37-record-existence.md): #27 최소 공급자·실제 core/learning 데이터 연동
   - [이슈 #37 동의·자녀 등록](report/issue-37-consent-children.md): 버전별 동의·철회·동시 등록·온보딩

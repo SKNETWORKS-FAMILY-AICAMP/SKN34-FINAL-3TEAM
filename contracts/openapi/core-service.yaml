@@ -687,6 +687,7 @@ paths:
           format: uuid
   /children:
     get:
+      description: 기록 조회는 learning service를 거쳐 공통 learning-json 서킷과 기존 read timeout을 공유한다. 최대 3명은 병렬 조회하며 실패는 hasRecords=null·UNAVAILABLE로 구분한다.
       operationId: listChildren
       tags:
       - Children
