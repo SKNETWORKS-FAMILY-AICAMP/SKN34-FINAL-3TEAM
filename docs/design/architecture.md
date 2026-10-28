@@ -714,3 +714,7 @@ core의 공개 JWT 필터(`PublicAuthFilter`) → account service(`AuthService`)
 ### #42 주간 리포트 연결 경계
 
 report/scheduler → ReportScheduleService → ReportJobService의 자녀별 트랜잭션 → ReportJobRepository + 기존 OutboxWriter를 사용한다. report/consumer는 기존 RetryingConsumer → ReportLifecycleService(트랜잭션) → processed_event·report_job·job_execution을 사용한다. ReportQueryService의 내부 HTTP와 열람 저장 트랜잭션은 분리한다. ReportEntitlementService는 미확정 상품 계약의 명시적인 오류 경계이며 상품 기능을 구현하지 않는다. 기존 StudentAccessService·ConsentAccessService를 재사용하고 #37 구현을 복사하지 않는다. ShedLock Spring/JDBC 6.10.0만 production 의존성으로 추가하며 기존 shedlock 테이블을 사용한다. 상세 결정과 기존 OutboxRelay의 트랜잭션 제한은 [#42 보고서](../report/issue-42-weekly-reports.md)를 따른다.
+
+## #45 삭제·재인증 보완
+
+`student.deleted.v1` data는 `{studentId,deletionRequestId,scope:PROFILE|RECORDS}`다. 요청 CONFIRMED와 OutboxWriter.append는 한 트랜잭션이다. learning/report는 실제 삭제가 끝난 후 요청 ID와 service로 완료 보고한다. core는 서비스별 UNIQUE 완료 행을 기록하고 둘 다 확인할 때만 COMPLETED로 전이한다. core 분석 대화 정리는 conversation service를 통해 같은 DB 트랜잭션으로 처리한다. payment의 탈퇴 조건 조회도 payment service를 통해 호출한다. account/guardianship에서 다른 기능 repository를 직접 참조하지 않는다. Google 네트워크 교환은 DB 트랜잭션 밖에서 수행한다.

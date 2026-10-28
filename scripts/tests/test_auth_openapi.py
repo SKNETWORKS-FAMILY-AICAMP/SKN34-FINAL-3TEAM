@@ -30,7 +30,8 @@ class AuthOpenApiTests(unittest.TestCase):
             (method, path)
             for path, methods in self.spec["paths"].items()
             for method, operation in methods.items()
-            if method in {"get", "post"} and {"Auth", "Account"}.intersection(operation.get("tags", []))
+            if method in {"get", "post", "patch", "delete", "put"}
+            and ("Auth" in operation.get("tags", []) or (path == "/me" and method == "get"))
         }
         self.assertEqual(len(actual), 6)
         self.assertEqual({item for item in documented if item[1].startswith("/auth/") or item[1] == "/me"}, actual)

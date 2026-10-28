@@ -121,3 +121,5 @@ feature/* → develop → main
 - `feature/core-integration`은 최신 develop에서 만들며, 개별 core PR의 base로 사용한다. 이후 develop의 변경을 merge하고 통합 검증한 뒤 develop 대상 최종 PR로 반영한다.
 - 이 경로는 core 임시 통합용 예외다. main 반영은 기존 `develop → main` 흐름을 유지하고, 기존 기능 커밋을 임의로 squash·rebase하지 않는다.
 - 기본 브랜치가 아닌 통합 브랜치 대상 PR의 `Closes`는 이슈를 자동 종료하지 않는다. 실제 해결 범위를 확인한 최종 develop PR에도 해당 `Closes #이슈번호`를 포함한다.
+
+- [이슈 #45 계정 관리·Google 재인증·삭제·탈퇴](report/issue-45-account-management.md): #58 호출 계약, 삭제 Outbox·서비스별 완료, 탈퇴 차단·세션 폐기 및 통합 조건
