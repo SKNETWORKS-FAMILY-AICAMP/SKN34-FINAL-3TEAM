@@ -15,4 +15,15 @@
         WHERE g.parent_user_id=#{userId} AND g.status='LINKED' AND s.status='ACTIVE'
         ORDER BY g.linked_at, s.id
     </select>
+    <select id="linkedCount" resultType="int" useCache="false">
+        SELECT count(*) FROM guardianship WHERE parent_user_id=#{userId} AND status='LINKED'
+    </select>
+    <insert id="insertStudent">
+        INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,created_at,updated_at)
+        VALUES(#{child.id},#{child.nickname},#{child.grade},#{child.birthYear},#{demo},'ACTIVE',#{now},#{now})
+    </insert>
+    <insert id="insertLink">
+        INSERT INTO guardianship(id,parent_user_id,student_id,method,status,linked_at)
+        VALUES(#{id},#{userId},#{studentId},'REGISTER','LINKED',#{now})
+    </insert>
 </mapper>

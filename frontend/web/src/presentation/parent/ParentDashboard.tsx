@@ -247,7 +247,7 @@ function ReportCard({ child }: { child: Child }) {
       <p>
         {child.plan === 'FREE'
           ? '무료 이용권에서는 리포트 수치만 제공합니다. 요약 문장과 근거 인용은 프리미엄에서 볼 수 있습니다.'
-          : '수치와 요약, 근거가 된 답변 인용을 함께 볼 수 있습니다.'}
+          : child.plan === 'PREMIUM' ? '수치와 요약, 근거가 된 답변 인용을 함께 볼 수 있습니다.' : '이용권 정보를 확인하지 못했습니다.'}
       </p>
       <div className="pd-actions">
         <button type="button" className="cj-primary" onClick={() => go('/parent/report')}>
