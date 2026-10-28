@@ -4,6 +4,8 @@ from copy import deepcopy
 
 from app.generation.models import GenerationResult, ItemType, WeeklyReport
 
+DIFFICULTY_LABELS = {"EASY": "쉬웠어요", "NORMAL": "보통", "HARD": "어려웠어요"}
+
 COLLECTIONS = {
     ItemType.METRIC: "metrics",
     ItemType.THINKING_TYPE: "thinkingTypes",
@@ -19,6 +21,9 @@ def assemble(metadata: dict, items: list[tuple[str, str | None, dict]]) -> dict:
         if kind not in COLLECTIONS:
             raise ValueError("Unknown report item type")
         value = deepcopy(payload)
+        if kind == ItemType.REFLECTION:
+            difficulty = value.get("difficulty")
+            value["difficulty"] = DIFFICULTY_LABELS.get(difficulty, difficulty)
         if kind == ItemType.QUOTE and not value.get("verified", False):
             value["text"] = None
         if identifier is not None:

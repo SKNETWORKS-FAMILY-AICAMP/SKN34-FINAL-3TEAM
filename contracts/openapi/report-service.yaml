@@ -778,13 +778,19 @@
           "difficulty": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "enum": [
+                  "쉬웠어요",
+                  "보통",
+                  "어려웠어요"
+                ]
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Difficulty"
+            "title": "Difficulty",
+            "description": "표시용 난이도. 내부 EASY/NORMAL/HARD 코드와 구분하며 미작성은 null."
           },
           "text": {
             "anyOf": [

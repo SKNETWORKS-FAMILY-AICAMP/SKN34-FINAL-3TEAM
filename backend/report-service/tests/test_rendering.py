@@ -13,7 +13,8 @@ from sqlalchemy import select
 from app.clients.storage import ObjectStorage, report_key
 from app.generation.consumer import GenerationConsumer
 from app.generation.locking import JobLocks
-from app.generation.presentation import without_ai
+from app.generation.models import ItemType
+from app.generation.presentation import from_result, without_ai
 from app.generation.repository import report_file, weekly_report
 from app.generation.service import GenerationService
 from app.messaging.envelope import EventEnvelope
@@ -70,6 +71,32 @@ def test_free_projection_cannot_reveal_old_ai_summary():
     assert free["narrative"] is None and free["eveningQuestion"] is None
     assert all("summary" not in group for group in free["thinkingTypes"])
     assert detail["narrative"] is not None  # no mutation of the paid stored report
+
+
+@pytest.mark.parametrize(
+    "code,label", [("EASY", "쉬웠어요"), ("NORMAL", "보통"), ("HARD", "어려웠어요")]
+)
+def test_reflection_labels_match_detail_and_files_without_changing_stored_code(code, label):
+    report, result = fixed_result()
+    result = replace(
+        result,
+        items=tuple(
+            replace(item, payload={**item.payload, "difficulty": code})
+            if item.type == ItemType.REFLECTION
+            else item
+            for item in result.items
+        ),
+    )
+    detail = from_result(report, result)
+    assert detail["reflections"][0]["difficulty"] == label
+    assert without_ai(detail)["reflections"][0]["difficulty"] == label
+    renderer = ReportRenderer()
+    html = renderer._templates.get_template("weekly.html").render(report=detail, name="합성학생")
+    markdown = renderer.markdown(detail, "합성학생")
+    assert label in html and label in markdown
+    assert code not in html and code not in markdown
+    [stored] = [item.payload for item in result.items if item.type == ItemType.REFLECTION]
+    assert stored["difficulty"] == code
 
 
 @mock_aws

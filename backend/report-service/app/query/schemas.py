@@ -70,7 +70,9 @@ class ChangeCounts(Response):
 class Reflection(ItemResponse):
     attempt_id: UUID
     written: bool
-    difficulty: str | None
+    difficulty: Literal["쉬웠어요", "보통", "어려웠어요"] | None = Field(
+        description="표시용 난이도. 내부 EASY/NORMAL/HARD 코드와 구분하며 미작성은 null."
+    )
     text: str | None
 
 

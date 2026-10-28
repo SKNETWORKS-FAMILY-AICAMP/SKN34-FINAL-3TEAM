@@ -7,6 +7,8 @@ from pydantic import ValidationError
 
 from app.clients.base import internal_client
 from app.clients.learning_client import LearningClient
+from app.generation.metrics import MetricsCalculator
+from app.generation.models import ItemType, ReportState
 from app.generation.records import RecordContractError
 from app.security import UserContext, bind_user_context, reset_user_context
 from tests.record_helpers import (
@@ -88,6 +90,86 @@ def test_tombstone_and_private_fields_are_not_forwarded():
     records = asyncio.run(read(student, handler_for(student, [attempt], [], mutate)))
     assert len(records.attempts) == 1
     assert "PRIVATE-MEMO-TEST" not in repr(records)
+
+
+@pytest.mark.parametrize(
+    "difficulty,text,created_at,written",
+    [
+        ("EASY", "", "2026-10-20T10:00:00+09:00", True),
+        ("NORMAL", None, "2026-10-20T10:00:00+09:00", True),
+        ("HARD", "직접 쓴 돌아보기", "2026-10-20T10:00:00+09:00", True),
+        ("NORMAL", "지난 주 기록", "2026-10-18T23:59:59+09:00", False),
+        ("NORMAL", "다음 주 기록", "2026-10-26T00:00:00+09:00", False),
+    ],
+)
+def test_reflection_input_becomes_period_scoped_report_item(difficulty, text, created_at, written):
+    student = uuid4()
+
+    def mutate(name, data):
+        if name == "attempts":
+            data["items"][0]["reflection"] = {
+                "difficulty": difficulty,
+                "text": text,
+                "createdAt": created_at,
+            }
+        return data
+
+    records = asyncio.run(read(student, handler_for(student, [attempt_for(student)], [], mutate)))
+    result = MetricsCalculator().calculate(records)
+    [reflection] = [item.payload for item in result.items if item.type == ItemType.REFLECTION]
+    assert reflection["written"] is written
+    assert reflection["difficulty"] == (difficulty if written else None)
+    assert reflection["text"] == (text if written else None)
+
+
+@pytest.mark.parametrize("omit", [False, True])
+def test_null_or_absent_reflection_produces_unwritten_report_item(omit):
+    student = uuid4()
+
+    def mutate(name, data):
+        if name == "attempts" and omit:
+            del data["items"][0]["reflection"]
+        return data
+
+    records = asyncio.run(read(student, handler_for(student, [attempt_for(student)], [], mutate)))
+    result = MetricsCalculator().calculate(records)
+    [reflection] = [item for item in result.items if item.type == ItemType.REFLECTION]
+    assert reflection.state == ReportState.NO_RECORD
+    assert reflection.payload["written"] is False
+    assert reflection.payload["difficulty"] is None and reflection.payload["text"] is None
+
+
+@pytest.mark.parametrize(
+    "reflection",
+    [
+        {"written": False},
+        {"difficulty": "보통", "text": None, "createdAt": "2026-10-20T10:00:00+09:00"},
+    ],
+)
+def test_report_output_shape_is_not_accepted_as_learning_reflection_input(reflection):
+    student = uuid4()
+
+    def mutate(name, data):
+        if name == "attempts":
+            data["items"][0]["reflection"] = reflection
+        return data
+
+    with pytest.raises(ValidationError):
+        asyncio.run(read(student, handler_for(student, [attempt_for(student)], [], mutate)))
+
+
+def test_empty_no_record_response_needs_no_attempt_tombstones():
+    student = uuid4()
+
+    def mutate(name, data):
+        data["state"] = "NO_RECORD"
+        return data
+
+    records = asyncio.run(read(student, handler_for(student, [], [], mutate)))
+    result = MetricsCalculator().calculate(records)
+    assert records.attempts == () and records.changes == ()
+    assert result.state == ReportState.NO_RECORD
+    assert all(item.payload["count"] == 0 for item in result.items if item.type == ItemType.METRIC)
 
 
 @pytest.mark.parametrize(
