@@ -2,7 +2,7 @@ import { http } from 'msw/http'
 import { ApiError } from '../../data/apiClient.ts'
 import { normalizePairingCode, pinProblem } from '../../domain/studentDevice.ts'
 import { fixtureStore as store } from '../fixtures/student.ts'
-import { mockAccountChildren, mockIdentity } from '../fixtures/accounts.ts'
+import { mockAccountChildren, mockIdentity, mockConsentRequired, mockGuardianConsentRequired } from '../fixtures/accounts.ts'
 import {
   DEVICE_TTL_MS,
   MAX_PIN_FAILURES,
@@ -14,7 +14,7 @@ import {
   persistDeviceState,
 } from '../fixtures/studentDevice.ts'
 import { respond, startDeviceStudentSession } from './student.ts'
-import { fail, page, parentChild, parentGuard, requireReauth } from './parent.ts'
+import { fail, page, parentChild, parentGuard, requireReauth, mockChildConsentMetadata } from './parent.ts'
 
 // 학생 기기 등록·PIN 로그인 목 (API 명세 2.1, 3.11). 실제 서버 계약과 같은 경로·오류 코드를 쓴다.
 const save = async <T,>(action: () => Promise<T>, status = 200) =>
@@ -39,7 +39,7 @@ export const studentDeviceHandlers = [
   http.get('/api/v1/children', ({ request }) =>
     respond(async () => {
       parentGuard(request)
-      return page((await store.children()).map((c) => ({ ...c, childId: c.id, ...pinStatus(c.id) })))
+      return page((await store.children()).map((c) => ({ ...mockChildConsentMetadata(c), childId: c.id, ...pinStatus(c.id) })))
     }),
   ),
 
@@ -156,7 +156,8 @@ export const studentDeviceHandlers = [
       if (!d.childIds.includes(childId)) deviceInvalid()
       const owned = mockAccountChildren.get(d.owner) ?? []
       const child = owned.find((c) => c.id === childId)
-      if (!child) fail('CHILD_NOT_LINKED', '보호자와 연결이 확인되지 않았어요.', 403)
+      if (!child || mockConsentRequired(d.owner) || mockGuardianConsentRequired(childId, d.owner))
+        fail('CHILD_NOT_LINKED', '보호자 연결·동의를 확인해 주세요.', 403)
       const p = deviceState.pins[childId]
       if (!p) fail('STUDENT_PIN_NOT_SET', '아직 PIN이 없어요. 보호자와 함께 시작해 주세요.', 409)
       if (p!.locked) fail('STUDENT_PIN_LOCKED', 'PIN이 잠겼어요. 보호자에게 다시 정해 달라고 해 주세요.', 423)

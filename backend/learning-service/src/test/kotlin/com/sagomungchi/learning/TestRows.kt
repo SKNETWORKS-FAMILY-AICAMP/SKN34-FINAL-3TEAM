@@ -69,6 +69,60 @@ class TestRows(private val jdbc: JdbcTemplate) {
         return id
     }
 
+    /**
+     * 판정용 기준표: 요소(sort_order 순 ID를 돌려줌)와 정답 키·금지어(JSON 문자열)·예시 답.
+     * goodThought는 "들어가면 좋은 생각"인 요소의 순번(0부터)
+     */
+    fun rubric(
+        mission: SeededMission,
+        elements: List<String> = listOf("근거"),
+        answerKey: String? = null,
+        forbiddenTerms: String? = null,
+        exampleAnswer: String? = null,
+        goodThought: Set<Int> = emptySet(),
+    ): List<UUID> {
+        jdbc.update(
+            "UPDATE rubric_version SET answer_key = ?::jsonb, forbidden_terms = ?::jsonb, example_answer = ? WHERE id = ?",
+            answerKey, forbiddenTerms, exampleAnswer, mission.rubricVersionId,
+        )
+        return elements.mapIndexed { index, label ->
+            UUID.randomUUID().also {
+                jdbc.update(
+                    """INSERT INTO rubric_element (id, rubric_version_id, code, label, description, points, good_thought,
+                           judge_verified, sort_order) VALUES (?, ?, ?, ?, ?, 1, ?, false, ?)""",
+                    it, mission.rubricVersionId, "e${index + 1}", label, "$label 설명", index in goodThought, index + 1,
+                )
+            }
+        }
+    }
+
+    /** 질문 은행 질문 (P16). minutesLater가 작을수록 먼저 고름 */
+    fun bankQuestion(type: String, question: String, minutesLater: Long = 0): UUID = UUID.randomUUID().also {
+        jdbc.update(
+            "INSERT INTO followup_bank_question (id, type, question, active, created_at) VALUES (?, ?, ?, true, ?)",
+            it, type, question, now.plusMinutes(minutesLater),
+        )
+    }
+
+    /**
+     * 답변의 판정을 처리 완료(DONE)로 (판정 실행은 피드백 API라 테스트에서 직접). elements는 기준표 요소 ID와 근거 구절,
+     * 구절이 null이면 미충족
+     */
+    fun judged(answerId: UUID, elements: List<Pair<UUID, String?>> = emptyList(), result: String = "PARTIAL", heldReason: String? = null) {
+        val judgmentId = jdbc.queryForObject("SELECT id FROM judgment WHERE answer_id = ?", UUID::class.java, answerId)
+        jdbc.update(
+            "UPDATE judgment SET process_status = 'DONE', result = ?, held_reason = ?, method = 'LLM', trial = true, completed_at = ? WHERE id = ?",
+            result, heldReason, now, judgmentId,
+        )
+        elements.forEach { (elementId, quote) ->
+            jdbc.update(
+                """INSERT INTO judgment_element (id, judgment_id, rubric_element_id, quote, verified, satisfied, source_type)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                UUID.randomUUID(), judgmentId, elementId, quote, quote != null, quote != null, quote?.let { "AI_OBSERVATION" },
+            )
+        }
+    }
+
     /** 답변의 판정에서 나온 되묻기 (되묻기 생성은 #25라 테스트에서 직접 넣음) */
     fun followup(attemptId: UUID, answerId: UUID, minutesLater: Long = 1): UUID {
         val judgmentId = jdbc.queryForObject("SELECT id FROM judgment WHERE answer_id = ?", UUID::class.java, answerId)

@@ -25,4 +25,8 @@
         SELECT id, role, login_id, password_hash, display_name, status, is_demo,
                created_at, updated_at, withdrawn_at FROM user_account WHERE id = #{id}
     </select>
+    <select id="lockById" resultMap="account" flushCache="true" useCache="false">
+        SELECT id, role, login_id, password_hash, display_name, status, is_demo,
+               created_at, updated_at, withdrawn_at FROM user_account WHERE id = #{id} FOR UPDATE
+    </select>
 </mapper>

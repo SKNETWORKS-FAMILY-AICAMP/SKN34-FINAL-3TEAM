@@ -8,6 +8,7 @@ import {
   mockIdentity,
   permissionsFor,
   mockAccountChildren,
+  mockConsentRequired, mockGuardianConsentRequired,
 } from '../fixtures/accounts.ts'
 import {
   fixtureStore as store,
@@ -170,8 +171,10 @@ export const studentHandlers = [
       guard(request)
       const s = await store.restore()
       if (s.role === 'STUDENT') return { role: 'STUDENT', child: s.child }
+      const nextAction = mockConsentRequired() ? 'CONSENT_REQUIRED' : (await store.children()).length ? 'READY' : 'CHILD_REGISTRATION_REQUIRED'
       return {
         ...s,
+        ...(s.role === 'PARENT' ? { nextAction, startPath: nextAction === 'CONSENT_REQUIRED' ? '/parent/onboarding' : nextAction === 'CHILD_REGISTRATION_REQUIRED' ? '/parent/children/new' : '/parent/journal' } : {}),
         ...mockIdentity,
         role: mockRole ?? s.role,
         permissions: s.role === 'ADMIN' ? (s.permissions ?? mockIdentity.permissions) : [],
@@ -215,6 +218,8 @@ export const studentHandlers = [
     respond(async () => {
       guard(request)
       const data = (await request.json()) as { childId: string }
+      if (mockConsentRequired()) throw new ApiError({ status: 403, code: 'CONSENT_REQUIRED', title: '필수 동의가 필요합니다.' })
+      if (mockGuardianConsentRequired(data.childId)) throw new ApiError({ status: 403, code: 'CHILD_NOT_LINKED', title: '법정대리인 동의가 필요합니다.' })
       const selected = await linked(data.childId)
       const session = await store.enterStudent(selected)
       mockRole = 'STUDENT'

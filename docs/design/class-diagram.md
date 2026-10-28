@@ -80,8 +80,10 @@ classDiagram
   class EventEnvelope~T~ {
     <<value>>
     +id String
+    +specversion String
     +type String
     +source String
+    +time OffsetDateTime
     +subject String
     +dataschema String
     +traceparent String
@@ -137,8 +139,8 @@ classDiagram
 | `ProcessedEventRepository` | `_common/messaging` | 구현됨 (core) | `processed_event` INSERT 성공 여부로 멱등 소비 |
 | `RetryingConsumer` | `_common/messaging` | 구현됨 (core) | 수동 ACK. 처리 실패 시 `x-retry-count` +1 후 `<큐>.retry.<회차>` 재발행, 최대 횟수 초과 시 reject → DLQ (아키텍처 1.6) |
 | `PublicAuthFilter` | `_common/security` | 구현됨 (core만) | `/api/v1/**` Bearer 검증(`AuthService.authenticate`), 쿠키 API Origin·`X-Requested-With` 검사, 역할·관리자 권한·필수 동의 확인 → `UserContext(userId, role, studentScope)` 설정. JWT 발급·검증은 `account/service/TokenService` (3.1) |
-| `IdempotencyService` | `_common/web` | 신규 (core만) | `idempotency_record` 조회·저장, 같은 키·다른 본문 422 |
-| `SseEmitters` | `_common/web` | 신규 (core만) | SSE 생성, 15초 heartbeat `: ping`, 연결 종료 콜백 |
+| `IdempotencyService` | `_common/web` | 구현됨 (core만, #38) | `idempotency_record` 조회·저장, 같은 키·다른 본문 422 |
+| `SseEmitters` | `_common/web` | 구현됨 (core만, #39) | SSE 생성, 15초 heartbeat `: ping`, 연결 종료 콜백. 연결 시간은 용도별 설정(현재 피드백 90초 고정, 분석 대화는 #41에서 120초 + 여유로 지정하도록 확장). `open(context, …)`이 요청 스레드의 `UserContext`를 작업 스레드에 설정·해제 |
 
 ### 2.2 Python 공통 (`app/`, ai·scoring·report 동일)
 
@@ -195,8 +197,13 @@ classDiagram
   class EventEnvelope~T~ {
     <<value>>
     +id str
+    +specversion str
     +type str
+    +source str
+    +time datetime
     +subject str
+    +dataschema str
+    +traceparent str
     +data T
   }
 
@@ -308,17 +315,18 @@ classDiagram
   class ConsentController {
     <<controller>>
     +documents() List
-    +myConsents() List
-    +withdraw(consentId)
+    +history() List
+    +save(request) List
+    +withdraw(consentId) ConsentEntry
   }
-  class ChildController {
+  class ChildrenController {
     <<controller>>
-    +list() List
+    +children() List
     +register(request) ChildResponse
     +update(childId, request)
     +unlink(reauthToken, childId)
     +deletionImpact(childId) Impact
-    +requestDeletion(childId, scope) DeletionResponse
+    +requestDeletion(reauthToken, childId, scope) DeletionResponse
     +setPin(reauthToken, childId, request)
   }
   class AccountService {
@@ -339,19 +347,28 @@ classDiagram
   }
   class ConsentService {
     <<service>>
-    +record(subjectUserId, studentId, consents)
-    +withdraw(userId, consentId)
-    +requireGuardianConsent(studentId)
+    +documents() List
+    +history(userId) List
+    +save(userId, childId, choices) List
+    +withdraw(userId, consentId) ConsentEntry
+  }
+  class AccountAccessService {
+    <<service>>
+    +lockParent(userId) UserAccount
+  }
+  class LearningRecordService {
+    <<service>>
+    +exists(studentId) Boolean
   }
   class GuardianshipService {
     <<service>>
-    +registerChild(parentId, command) Student
+    +register(userId, nickname, grade, birthYear, choices) LinkedStudent
+    +children(userId) List
     +unlink(parentId, childId)
     +authorizeChild(childId) UserContext
     +authorizeLinkedChildren() UserContext
     +linkedStudentIds(parentId) Set
-    +requestDeletion(parentId, childId, scope) DeletionRequest
-    +confirmDeletion(requestId)
+    +requestDeletion(parentId, reauthToken, childId, scope) DeletionRequest
   }
   class UserAccount {
     <<entity>>
@@ -373,10 +390,6 @@ classDiagram
     +touch(now)
     +revoke()
   }
-  class Consent {
-    <<entity>>
-    +withdraw()
-  }
   class Guardianship {
     <<entity>>
     +unlink()
@@ -387,12 +400,23 @@ classDiagram
     +confirm()
     +complete()
   }
-  class UserAccountRepository { <<repository>> }
-  class ConsentRepository { <<repository>> }
-  class StudentRepository { <<repository>> }
-  class GuardianshipRepository {
+  class UserAccountRepository {
     <<repository>>
-    +existsLinked(parentId, studentId) Boolean
+    +lockById(id) UserAccount
+  }
+  class ConsentAccessRepository {
+    <<repository>>
+    +currentDocuments() List
+    +history(userId) List
+    +insert(entry)
+    +withdraw(userId, consentId, now)
+  }
+  class StudentRepository { <<repository>> }
+  class StudentAccessRepository {
+    <<repository>>
+    +linkedStudents(userId) List
+    +linkedCount(userId) Int
+    +insert(child, userId, demo, now)
   }
   class DeletionRequestRepository { <<repository>> }
   class StudentDeviceRepository { <<repository>> }
@@ -408,12 +432,12 @@ classDiagram
   AuthService ..> AuthSession
   MeController --> AccountService
   ConsentController --> ConsentService
-  ChildController --> GuardianshipService
-  ChildController --> StudentAuthService : PIN
+  ChildrenController --> GuardianshipService
+  ChildrenController --> StudentAuthService : PIN
   AuthController --> StudentAuthService
   StudentDeviceController --> StudentAuthService
   StudentAuthService --> GuardianshipService : 연결 확인
-  StudentAuthService --> ConsentService : 필수 동의
+  StudentAuthService --> ConsentAccessService : 필수·법정대리인 동의
   StudentAuthService --> AccountService : 재확인
   StudentAuthService --> StudentRepository
   StudentAuthService --> StudentDeviceRepository
@@ -421,54 +445,84 @@ classDiagram
   StudentAuthService ..> StudentDevice
   AccountService --> UserAccountRepository
   AccountService --> AuthRepository : 탈퇴 시 세션 폐기
-  ConsentService --> ConsentRepository
-  GuardianshipService --> ConsentService : 법정대리인 동의
+  ConsentService --> ConsentAccessRepository
+  ConsentService --> AccountAccessService : 보호자 행 잠금
+  ConsentService --> StudentAccessService : 연결 자녀
+  ConsentAccessService --> ConsentAccessRepository
+  StudentAccessService --> StudentAccessRepository
+  AccountAccessService --> UserAccountRepository
+  GuardianshipService --> AccountAccessService : 보호자 행 잠금
+  GuardianshipService --> ConsentService : 법정대리인 동의 저장
+  GuardianshipService --> ConsentAccessService : 현재 동의 확인
+  GuardianshipService --> StudentAccessService
+  GuardianshipService --> LearningRecordService : 기록 유무
   GuardianshipService --> StudentRepository
-  GuardianshipService --> GuardianshipRepository
+  GuardianshipService --> StudentAccessRepository : 연결 자녀·등록
   GuardianshipService --> DeletionRequestRepository
   GuardianshipService --> OutboxWriter : student.deleted
   AccountService ..> UserAccount
   GuardianshipService ..> Student
   GuardianshipService ..> Guardianship
   GuardianshipService ..> DeletionRequest
-  ConsentService ..> Consent
 ```
 
 - `GuardianshipService.authorizeChild(childId)`: 학부모는 `guardianship LINKED` 확인 후 `studentScope = {childId}`로 컨텍스트 갱신, 학생은 본인 ID만. 미연결 시 `403 CHILD_NOT_LINKED` (FN-AGT-02, NFR-SEC-02)
 - 자녀 범위가 필요한 모든 controller는 하위 호출 전에 `authorizeChild` 호출 → `InternalRestClientFactory`가 그 컨텍스트를 헤더로 전달
 - `authorizeLinkedChildren()`: 경로에 자녀 ID가 없는 API(`/reports/{reportId}` 등)용. `studentScope = 연결 자녀 전체`로 전달하고 소유 서비스가 리소스의 학생 ID로 검사, 403은 core가 `CHILD_NOT_LINKED`로 변환
-- 구현 상태 (#36): `AuthController`의 authorize·callback·refresh·logout·student·me, `AuthCookies`·`AuthService`·`TokenService`·`GoogleOAuthClient`·`AuthRepository`·`StudentAccessService`·`ConsentAccessService`·`UserAccountRepository`는 구현됨. 기기·PIN 3개 메서드와 그 외 controller·service는 미구현 (#37·#45·#58)
+- 구현 상태 (#36·#37): `AuthController`의 authorize·callback·refresh·logout·student·me, `AuthCookies`·`AuthService`·`TokenService`·`GoogleOAuthClient`·`AuthRepository`·`StudentAccessService`·`ConsentAccessService`·`AccountAccessService`·`UserAccountRepository`(#36), `ConsentController`·`ConsentService`·`ChildrenController`의 children·register·`GuardianshipService`의 register·children·`ConsentAccessRepository`·`StudentAccessRepository`·`LearningRecordService`(#37)는 구현됨. 기기·PIN 3개 메서드, `MeController`·`AccountService`·`StudentAuthService`·`StudentDeviceController`, `ChildrenController`의 나머지 메서드, entity 메서드는 미구현 (#45·#58)
+- 동의는 별도 entity 없이 선택마다 새 `consent` 행(AGREED·WITHDRAWN)을 저장하고 최신 행으로 판정 (상태 다이어그램 2.3, [이슈 #37 보고서](../report/issue-37-consent-children.md))
 - `StudentAccessService`·`ConsentAccessService`는 인증용 읽기 전용 확인. 쓰기(자녀 등록·동의 저장)는 `GuardianshipService`·`ConsentService`(#37) 소유
 - 공개 API 컨텍스트는 `PublicAuthFilter`가 설정하고 finally에서 해제 (`InternalAuthFilter`와 같은 방식)
 - 이메일·비밀번호 가입·로그인·로그인 수단 변경 없음. Google 계정은 `(oauth_provider, oauth_subject)`로 식별, 최초 콜백에서 `AuthService.login`이 PARENT 계정 생성 (API 명세 5.1)
 - 재확인 토큰(`reauthToken`)은 Google 재인증 기반(#45), Redis 저장 (ERD 1장)
 - `AuthService.enterStudent` (`POST /auth/student-sessions`): 학부모 Bearer와 같은 세션의 refresh로 연결·활성 자녀·필수·법정대리인 동의 확인 → 부모 refresh 소비, `auth_session` role·studentId·version 변경 → `STUDENT` access만 발급, refresh 쿠키 삭제 (P01, 학부모 동석). 학생 계정·시연 링크 없음
-- `StudentAuthService.login`: 기기 쿠키 해시로 `StudentDevice` 조회 → `isUsable`(미해제·미만료)·자녀 등록 확인 → `GuardianshipService.linkedStudentIds(device.parentUserId)`·`ConsentService.requireGuardianConsent` → 잠금·PIN 검사 → 동석 경로와 같은 `STUDENT` 토큰 발급, refresh 미발급 (P01, API 명세 3.11)
+- `StudentAuthService.login`: 기기 쿠키 해시로 `StudentDevice` 조회 → `isUsable`(미해제·미만료)·자녀 등록 확인 → `GuardianshipService.linkedStudentIds(device.parentUserId)`·`ConsentAccessService.hasGuardianConsent` → 잠금·PIN 검사 → 동석 경로와 같은 `STUDENT` 토큰 발급, refresh 미발급 (P01, API 명세 3.11)
 - `Student.recordPinFailure`: 실패 횟수 증가, 5회(설정값) 도달 시 `pin_locked_at` 기록. `setPin`은 해시·실패 횟수 0·잠금 해제를 한 번에 처리
 - 페어링 코드는 Redis(10분·1회용), 기기 자격증명은 `student_device.token_hash`만 저장. 저장 구조는 ERD 10장 변경 예정
-- `GuardianshipService.registerChild`: 학년 3~6·출생연도 검증, `LINKED` 자녀 3명이면 `CHILD_LIMIT_REACHED`, GUARDIAN 동의 필수 (P01·P02·P03). 다른 보호자 연결(`link`) 없음
+- `GuardianshipService.register`: 학년 3~6·출생연도 검증, 보호자 행 잠금 후 `LINKED` 자녀 3명이면 `CHILD_LIMIT_REACHED`, GUARDIAN 동의 필수 (P01·P02·P03). 다른 보호자 연결(`link`) 없음
 
 ### 3.2 학습 프록시·분석 대화 (learning · conversation)
 
 ```mermaid
 classDiagram
   direction TB
-  class StudentLearningController {
+  class LearningController {
     <<controller>>
-    +missions() List
-    +mission(missionId) Mission
-    +startAttempt(missionId) Attempt
-    +attempt(attemptId) AttemptDetail
-    +saveDraft(attemptId, ifMatch, body) Draft
-    +openHint(attemptId) Hint
-    +submitAnswer(attemptId, idempotencyKey, body) AnswerCreated
-    +finish(attemptId) FinishResult
-    +reflection(attemptId, body)
-    +selfAssessment(attemptId, body)
+    +missions(page, size) Response
+    +mission(missionId) Response
+    +start(missionId) Response
+    +attempt(attemptId) Response
+    +draft(attemptId, ifMatch, body) Response
+    +hints(attemptId) Response
+    +answer(attemptId, idempotencyKey, body) Response
+    +finish(attemptId) Response
+    +reflection(attemptId, body) Response
+    +selfAssessment(attemptId, body) Response
   }
+  class LearningProxyService {
+    <<service>>
+    +exchange(method, path, query, body, ifMatch, key) HttpExchangeResult
+  }
+  class StudentLearningContextService {
+    <<service>>
+    +requireLinked(userId, studentId) StudentLearningContext
+  }
+  class IdempotencyService { <<web>> }
   class FeedbackController {
     <<controller>>
     +feedback(answerId) SseEmitter
+  }
+  class FeedbackService {
+    <<service>>
+    +feedback(answerId) HttpExchangeResult
+  }
+  class LearningRecordService {
+    <<service>>
+    +exists(studentId) Boolean
+  }
+  class LearningRecordClient {
+    <<client>>
+    +exists(studentId) Boolean
   }
   class DashboardController {
     <<controller>>
@@ -480,10 +534,7 @@ classDiagram
   }
   class LearningClient {
     <<client>>
-    +get(path) Response
-    +post(path, body, headers) Response
-    +put(path, body, ifMatch) Response
-    +feedback(answerId) FeedbackResult
+    +exchange(method, path, query, body, ifMatch, key) HttpExchangeResult
     +evidence(answerIds) List
     +correctJudgment(judgmentId, command, idempotencyKey)
   }
@@ -532,10 +583,15 @@ classDiagram
   class JobExecutionService { <<service>> }
   class SseEmitters { <<web>> }
 
-  StudentLearningController --> GuardianshipService
-  StudentLearningController --> LearningClient
-  FeedbackController --> LearningClient
+  LearningController --> LearningProxyService
+  LearningProxyService --> StudentLearningContextService : 학생 학년·연결 확인
+  LearningProxyService --> IdempotencyService : 답변 제출
+  LearningProxyService --> LearningClient
+  FeedbackController --> FeedbackService
   FeedbackController --> SseEmitters
+  FeedbackService --> LearningProxyService
+  LearningRecordService --> LearningRecordClient
+  LearningRecordClient --> LearningClient
   DashboardController --> GuardianshipService
   DashboardController --> LearningClient
   ConversationController --> GuardianshipService
@@ -550,11 +606,12 @@ classDiagram
   ConversationService ..> ConversationMessage
 ```
 
-- `learning/`은 프록시 기능이라 service 없이 controller → `LearningClient` (아키텍처 2.6 폴더 구성 그대로)
+- `learning/`은 controller → service(`LearningProxyService`·`FeedbackService`·`LearningRecordService`) → `LearningClient` 구조 (아키텍처 1.3·2.6). 공통 프록시는 `exchange`로 경로·본문을 그대로 전달하고 학생 컨텍스트·답변 멱등을 service에서 처리 ([이슈 #38 보고서](../report/issue-38-core-learning-proxy.md))
+- 구현 상태 (#37·#38·#39): `LearningController`·`LearningProxyService`·`StudentLearningContextService`·`FeedbackController`·`FeedbackService`·`LearningRecordService`·`LearningRecordClient`·`LearningClient.exchange` 구현됨. `finish`·`reflection`·`selfAssessment`는 core 프록시만 있고 learning 처리는 #26 후속. `DashboardController`·`Conversation*`·`AiClient`·`LearningClient.evidence`·`correctJudgment`는 미구현
 - `FeedbackController`: learning 동기 응답을 기다리는 동안 heartbeat만 전송, 응답을 `status`·`result`·`error`·`done` 이벤트로 변환. 클라이언트 단절과 무관하게 learning 호출 유지 (아키텍처 1.3)
 - `ConversationService.stream`: ai SSE 이벤트를 그대로 중계, `result` 수신 시 `complete`(트랜잭션), 클라이언트 단절 시 `AiClient.cancel` + `fail(CLIENT_DISCONNECTED)` (재시도 가능)
 - 근거 원문은 저장하지 않고 `message_evidence` ID로 learning `/internal/records/evidence` 조회 (ERD 3.2)
-- SSE 처리를 별도 스레드(executor)에서 실행하면 `UserContextHolder`(ThreadLocal) 값이 전달되지 않음 → 요청 스레드에서 컨텍스트를 캡처해 작업 스레드에서 설정·해제. 기존 `UserContextHolder`에 실행 래퍼(예: `runWith(context, block)`) 추가 필요
+- SSE 처리를 별도 스레드(executor)에서 실행하면 `UserContextHolder`(ThreadLocal) 값이 전달되지 않음 → `SseEmitters.open(context, …)`이 요청 스레드에서 캡처한 컨텍스트를 작업 스레드에서 설정·해제 (#39)
 
 ### 3.3 리포트 작업·알림 (report · notification)
 
@@ -1035,6 +1092,7 @@ classDiagram
     +currentVersions(missionId) MissionSnapshot
     +getVersion(missionVersionId) MissionView
     +hintQuestions(rubricVersionId) List
+    +rubric(missionVersionId, rubricVersionId) Rubric
   }
   class Mission {
     <<entity>>
@@ -1067,14 +1125,15 @@ classDiagram
   }
   class AttemptService {
     <<service>>
-    +start(studentId, missionId, grade, demo) Attempt
+    +start(studentId, missionId, grade, demo) AttemptStart
     +get(attemptId) AttemptDetail
     +saveDraft(attemptId, ifMatch, content) AttemptDraft
-    +openHint(attemptId) HintQuestion
+    +openHint(attemptId) HintOpened
     +finish(attemptId) FinishResult
     +saveReflection(attemptId, command)
     +saveSelfAssessment(attemptId, checks) List
     +lockForAnswer(attemptId) Attempt
+    +timeline(attemptId) AttemptTimeline
     +clearSubmittedDraft(attemptId, now)
     +deleteByStudent(studentId)
   }
@@ -1082,12 +1141,14 @@ classDiagram
     <<entity>>
     +requireOpen()
     +requireAnswerable()
+    +acceptsAnswers Boolean
     +finish(now)
     +complete(now)
+    +requireFinished()
   }
   class AttemptDraft {
     <<entity>>
-    +update(ifMatch, content) AttemptDraft
+    +update(content, now) AttemptDraft
   }
   class FinishPolicy {
     <<value>>
@@ -1112,12 +1173,16 @@ classDiagram
     +requireComplete(inputType, mission)
     +plainText(inputType, mission) String
   }
-  class MissionRepository { <<repository>> }
+  class MissionRepository {
+    <<repository>>
+    +findRubric(missionVersionId, rubricVersionId) Rubric
+  }
   class RubricRepository { <<repository>> }
   class AttemptRepository { <<repository>> }
   class AttemptDraftRepository {
     <<repository>>
-    +updateIfVersion(attemptId, version, content) Int
+    +updateIfVersion(next, ifMatch) Boolean
+    +clearAnswer(attemptId, savedAt)
   }
   class AnswerRepository {
     <<repository>>
@@ -1152,12 +1217,18 @@ classDiagram
 ```
 
 - `AttemptService.start`: 부분 UK `(student_id, mission_id) WHERE IN_PROGRESS` 충돌 시 기존 시도 반환 (FN-LRN-16)
-- `AttemptDraft.update`: `UPDATE ... WHERE version = :ifMatch` 영향 0행이면 `ATTEMPT_DRAFT_CONFLICT` + 최신 초안 (FN-LRN-17)
+- `AttemptDraft.update(content, now)`가 다음 버전을 만들고 `AttemptDraftRepository.updateIfVersion(next, ifMatch)`가 `UPDATE ... WHERE version = :ifMatch` 실행, 영향 0행이면 `ATTEMPT_DRAFT_CONFLICT` + 최신 초안 (FN-LRN-17)
 - `AnswerService.submit`: 같은 트랜잭션에 `answer` 버전 추가 + `judgment(PENDING)` 생성. 같은 `idempotency_key`·같은 본문이면 기존 답변 반환, 다른 본문이면 `422 IDEMPOTENCY_KEY_REUSED` (FN-LRN-10, API 1.4). `lockForAnswer`가 시도 행을 잠가(`FOR UPDATE`) 같은 시도의 제출을 한 줄로 세움. 저장하면 `clearSubmittedDraft`로 초안의 `answer`를 비우고 `memo`는 유지, 초안 version +1 (FN-LRN-15·16)
 - 보완 답변 연결: 첫 답변은 `followupId` 없이, 버전 2부터는 이 시도의 가장 최근 되묻기 중 아직 답하지 않은 것만 (`JudgmentService.unansweredLatestFollowupId`). 아니면 `422 ANSWER_INCOMPLETE`. 판정 전 추가 제출·되묻기 2회 뒤 제출도 여기서 막힘 (P04)
 - `FinishPolicy.canFinish`: 시도 내 판정 `DONE` 1회 이상(결과 무관, `HELD` 포함)이면 true (P04)
+- `AttemptService.finish`: 시도 행을 잠그고(`AttemptRepository.lockById`, 답변 제출·판정 저장과 같은 행) 본인 확인 → 이미 마무리했으면 기록 없이 같은 결과 → 타임라인으로 `FinishPolicy.canFinish`(sequence-diagram 3.3 순서) → `Attempt.finish(now)` → `AttemptRepository.finish`(`WHERE status = 'IN_PROGRESS' AND finished_at IS NULL`) → `FinishResult{finishedAt, reveal, revealKind, checklist}`. `Attempt.finish(now)`는 타임라인을 받지 않아 `canFinish`는 서비스가 먼저 부름
+- 공개 내용(FN-LRN-11): `reveal`은 시도 기준표 버전의 예시 답(닫힌 문제는 정답과 해설), `revealKind`는 고르기·순서·분류·풀이 단계 `ANSWER`, 서술·논술 `EXAMPLE`. 체크리스트는 기준표 요소 전체, 이 시도의 처리 완료 판정(`JudgmentService.results`) 중 원문 구절과 함께 충족된 적 있는 요소만 체크하고 가장 최근 구절 표시. 시도 상세도 마무리 뒤에 같은 값
+- `AttemptService.saveReflection`: 잠금 → `Attempt.complete(now)`(`requireFinished`: 완료 뒤 `ATTEMPT_CLOSED`, 마무리 전 `REVEAL_CONDITION_UNMET`) → 같은 트랜잭션에 `reflection` 저장 + `IN_PROGRESS → COMPLETED`·`completed_at`
+- `AttemptService.saveSelfAssessment`: 잠금 → `requireFinished` → 기준표 요소 확인(비었거나 중복·기준표 밖이면 400) → `self_assessment` UK `(attempt_id, rubric_element_id)`로 저장(다시 보내면 `checked`만) → 기준표 요소마다 `{selfChecked, aiChecked(체크리스트), quote}`. 답변·판정은 건드리지 않음 (FN-LRN-13)
+- `AttemptRepository`: `lockById`·`finish`·`complete`·`insertReflection`·`findReflection`·`saveSelfAssessments`·`findSelfAssessments` (돌아보기·자기 평가 Repository를 따로 두지 않음)
 - 되묻기 생성 조건: 시도 내 되묻기 2회 미만 + 고르기 `CORRECT` 아님 (P04). `finished_at` 이후 답변 제출은 `Attempt.requireAnswerable`에서 `ATTEMPT_CLOSED`. `requireOpen`은 `COMPLETED`만 막음(마무리 뒤 돌아보기 저장)
 - `AttemptDraft.content`: `{answer, memo}`, memo는 학생 본인 조회에만 포함 (P05)
+- 구현 상태 (#22~#26): 학생 조회 경로(`MissionService.listForStudent`·`get`·`currentVersions`·`getVersion`·`rubric`·`hintQuestions`), `AttemptService`의 start·get·saveDraft·openHint·finish·saveReflection·saveSelfAssessment·lockForAnswer·clearSubmittedDraft·timeline, `Attempt.finish`·`complete`·`requireFinished`, `FinishPolicy`, `AnswerService.submit` 구현됨. 기준표는 학생·판정 조회용 값 객체 `Rubric`(`elements`·`answerKey`·`forbiddenTerms`)을 `MissionRepository.findRubric`으로 읽음(별도 `RubricRepository` 없음). 관리자 미션·기준표 쓰기(`AdminMissionController`·`RubricVersion`)와 `deleteByStudent`는 미구현
 - `Mission.requirePublishable`: 현재 버전·기준표 요소 1개 이상(서술·논술) 또는 `answer_key`(고르기·수학) 검사, 누락 시 `MISSION_PUBLISH_INCOMPLETE` (FN-ADM-11)
 
 ### 4.2 판정·되묻기 (judgment)
@@ -1182,17 +1253,21 @@ classDiagram
     +createPending(answerId, rubricVersionId)
     +unansweredLatestFollowupId(attemptId) UUID
     +timeline(attemptId) List~TimelineAnswer~
+    +target(answerId) FeedbackTarget
     +acquire(answerId, now) AcquireResult
-    +saveResult(judgmentId, judged, followup)
-    +markFailed(judgmentId, code)
+    +followupCount(attemptId) Int
+    +bankQuestion(attemptId, type) BankQuestion
+    +saveResult(judgment, judged, followup) Boolean
+    +markFailed(judgment, code) Boolean
     +result(answerId) FeedbackResult
+    +results(attemptId) Map
     +correct(judgmentId, command, idempotencyKey) JudgmentCorrection
   }
   class Judgment {
     <<entity>>
     +acquire(now, lease) Boolean
-    +done(result, elements, versions)
-    +hold(reason)
+    +done(result, elements, by)
+    +hold(reason, by)
     +fail(code)
     +isLeaseExpired(now) Boolean
   }
@@ -1250,9 +1325,12 @@ classDiagram
 
 - `FeedbackFacade.feedback` 순서 (아키텍처 2.5)
   1. `JudgmentService.acquire`: `PENDING|FAILED|리스 만료 RUNNING → RUNNING` 조건부 UPDATE. `DONE`이면 저장 결과 반환, 유효 `RUNNING`이면 `RUNNING` 결과 반환 (API 1.4)
-  2. 트랜잭션 밖: 고르기·수학 최종 답은 `RuleJudge`, 서술·논술은 `AiClient.judge`
-  3. 트랜잭션 밖: 시도 내 되묻기 2회 미만이고 고르기 `CORRECT`가 아니면 `AiClient.followup` (정답·금지어 유출 검사는 ai 담당, P04). 재생성까지 검사 실패하면 learning이 `followup_bank_question`에서 같은 `type` 질문 선택(`BANK`, P16)
-  4. `JudgmentService.saveResult`: 판정·요소·되묻기·버전 저장 + `DONE`. 예외 시 `markFailed`
+  2. 트랜잭션 밖: 고르기·수학 최종 답은 `RuleJudge`, 서술·논술은 `AiClient.judge`. 풀이 단계는 풀이를 `AiClient.judge`, 최종 답을 `MathEquivalenceJudge`로 보고 합침 (state-diagram 3.3)
+  3. 트랜잭션 밖: 시도 내 되묻기 2회 미만이고 고르기 `CORRECT`가 아니면 `AiClient.followup` (정답·금지어 유출 검사는 ai 담당, P04). 마무리·완료한 시도에는 만들지 않음. 유출 검사용 정답은 학생에게 보이는 글자(선택지 이름·정답 순서·최종 답)로 보냄. 재생성까지 검사 실패하면 learning이 `followup_bank_question`에서 같은 `type` 질문 선택(`BANK`, P16), 이 시도에서 아직 쓰지 않은 것부터
+  4. `JudgmentService.saveResult`: 판정·요소·되묻기·버전 저장 + `DONE`. 먼저 시도 행을 잠그고(`FOR UPDATE`, 답변 제출·마무리와 같은 "시도 → 판정" 순서) 다시 확인해, 3 이후 마무리·완료된 시도면 되묻기는 저장하지 않음(P04). 예외 시 `markFailed`(실패 기록 자체가 실패해도 원래 오류로 응답)
+- 전이는 `Judgment` 엔티티가 허용 여부를 판단하고 `JudgmentRepository`가 조건부 UPDATE로 저장 (#23 초안 `AttemptDraft.update` + `updateIfVersion`과 같은 방식). `saveResult`·`markFailed`는 획득한 리스 값을 비교해야 해 `judgmentId` 대신 `acquire`로 얻은 `judgment`를 받음. `markFailed`는 DB에서 다시 읽은 판정으로 기록(저장 중 롤백돼 엔티티만 `DONE`이 된 경우)
+- `done`·`hold`의 `by`: 판정 방법(`RULE`·`LLM`)·`trial`·모델·프롬프트 버전 (ERD judgment.method·trial·model_version·prompt_version)
+- `AiClient`: 응답 35초, 서비스 간 재시도 없음, 서킷 브레이커 최근 20건 중 실패 50% 이상이면 30초 차단(전송 오류·5xx만 실패로 셈, 아키텍처 1.3)
 - `JudgmentElement`: `verified = false`면 `satisfy()` 거부 (ERD CHECK와 동일 규칙을 Domain에서도 검사)
 - `judge_verified = false` 요소·미검증 학년 조합의 `HELD(UNVERIFIED_SCOPE)` 결정은 ai `JudgmentService` 담당(`JUDGE_REQUIRE_VERIFIED=true`일 때만, 기본 꺼짐). learning은 `judge_verified`·학년을 포함한 기준표를 `AiClient.judge`에 전달 (FN-JDG-04)
 - 정정은 `Judgment`를 바꾸지 않고 `JudgmentCorrection` 추가, `result()` 조회 시 최신 정정 반영 (FN-SUP-03)
@@ -1320,12 +1398,13 @@ classDiagram
   StudentDeletionService --> CoreClient : 삭제 완료 보고
 ```
 
+- 구현 상태 (#37): `record/`에는 기록 존재 확인 `RecordExistsController`·`RecordExistsService`·`RecordExistsRepository`(`GET /internal/records/students/{studentId}/exists`)만 구현됨. `RecordController`·`RecordService`·`RecordRepository`·삭제 소비는 미구현 ([이슈 #37 기록 존재 보고서](../report/issue-37-record-existence.md))
 - `RecordController`: 모든 경로에서 `UserContextHolder.current().requireStudent(studentId)` 먼저 실행 (아키텍처 2.3 범위 검사)
 - `RecordRepository`는 여러 기능 테이블을 읽는 조회 전용 MyBatis 매퍼 (쓰기 없음). 기능 간 repository 참조 금지 규칙의 예외로, 조회 전용 `record/`에 한정
 - `Metric.ratio`: 분모 5 미만이면 `value = null`, `count`만 (P08, API 1.6)
 - `StudentDeletionService.delete`: 삭제·`deleted_student` 저장 후 `CoreClient.reportDeletionCompleted`. 보고 실패 시 예외 → 지연 재시도(1·5·15분) 후 재처리, 삭제는 멱등 (P09, 아키텍처 1.6)
 - `evidence`: `deleted_student`에 있는 학생 근거는 `available: false` (FN-ACC-13)
-- `AttemptService.deleteByStudent`: `attempt` 삭제 시 하위 `answer`·`judgment`·`followup`·`reflection` 등은 FK `ON DELETE CASCADE`로 함께 삭제 가정 (ERD 미기재, 8장)
+- `AttemptService.deleteByStudent`: `attempt` 삭제 시 하위 `answer`·`judgment`·`followup`·`reflection` 등 삭제 방식(FK `ON DELETE CASCADE` 또는 서비스 내 삭제 순서) 미결. 현재 마이그레이션의 learning FK는 모두 NO ACTION (ERD 1장·7장, 8장)
 
 ---
 
@@ -1338,30 +1417,31 @@ classDiagram
   direction TB
   class judgment_router {
     <<router>>
-    +post_judgments(request, ctx) JudgmentResponse
+    +judge(request, service) JudgmentResponse
   }
   class JudgmentService {
     <<service>>
     +judge(request) JudgmentResponse
   }
   class EvidenceExtractor {
-    <<service>>
-    +extract(answer_text, rubric) list~ExtractedQuote~
+    <<module>>
+    +extract(llm, request) LlmResult~Extraction~
   }
   class QuoteVerifier {
-    <<service>>
-    +verify(answer_text, quotes) list~VerifiedQuote~
+    <<module>>
+    +is_verbatim(quote, answer_text) bool
+    +visible_length(text) int
   }
   class followup_router {
     <<router>>
-    +post_followups(request, ctx) FollowupResponse
+    +create_followup(request, service) FollowupResponse
   }
   class FollowupService {
     <<service>>
     +create(request) FollowupResponse
   }
   class LeakGuard {
-    <<service>>
+    <<module>>
     +find_leaks(question, rubric, example_overlap_chars, student_answers) list~str~
   }
   class LlmClient {
@@ -1379,6 +1459,11 @@ classDiagram
     +prompt(name) PromptVersion
     +replace(versions)
   }
+  class BackgroundUsageRecorder {
+    <<messaging>>
+    +__call__(usage)
+    +close(timeout)
+  }
   class UsagePublisher {
     <<messaging>>
     +publish(call_type, model, tokens, latency, success)
@@ -1394,17 +1479,18 @@ classDiagram
   FollowupService --> LlmClient
   FollowupService --> LeakGuard
   FollowupService --> ActiveVersions
-  LlmClient --> UsagePublisher
+  LlmClient --> BackgroundUsageRecorder : 호출마다 사용량 콜백
+  BackgroundUsageRecorder --> UsagePublisher : 백그라운드 발행
 ```
 
 | 클래스 | 파일 | 책임 |
 |---|---|---|
-| `EvidenceExtractor` | `judgment/extractor.py` | LLM에 기준표 요소별 근거 구절 추출 요청 (학생 이름 미포함) |
-| `QuoteVerifier` | `judgment/verifier.py` | 구절의 답변 원문 존재 확인(코드). LLM과 분리 (FN-JDG-03) |
-| `JudgmentService` | `judgment/service.py` | 사전 보류(`TOO_SHORT`·`UNVERIFIED_SCOPE`) → 추출 → 대조 → 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정 (업무 판단은 service, 아키텍처 2.1) → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`) → 응답 |
-| `LeakGuard` | `followup/leak_guard.py` | 정답 키·예시 답·금지어 포함 검사. 실패 시 1회 재생성(`LLM_RETRY`), 재실패 시 `question` 없이 `leakCheck.passed = false` 반환 → learning이 질문 은행 선택 (`BANK`, P16) |
-| `LlmClient` | `llm/base.py`, 제공자는 `llm/providers.py` | 제공자 교체 지점(Claude·OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`), LLM 호출 재시도는 이 클래스에서만 (아키텍처 1.3), 호출마다 사용량 발행 |
-| `ActiveVersions` | `versions.py` (신규) | 활성 프롬프트 버전 보관, `model.version.activated` 수신 시 교체 |
+| `EvidenceExtractor` | `judgment/extractor.py` | 모듈 함수 `extract()`. LLM에 기준표 요소별 근거 구절 추출 요청 (학생 이름 미포함) |
+| `QuoteVerifier` | `judgment/verifier.py` | 모듈 함수 `normalize`·`is_verbatim`·`visible_length`. 구절의 답변 원문 존재 확인(코드). LLM과 분리 (FN-JDG-03) |
+| `JudgmentService` | `judgment/service.py` | 사전 보류(`TOO_SHORT`·`UNVERIFIED_SCOPE`) → 추출 → 대조 → 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정 (업무 판단은 service, 아키텍처 2.1) → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`) → 응답. M2·M1 교차 확인(`ScoringClient`)은 미구현 |
+| `LeakGuard` | `followup/leak_guard.py` | 모듈 함수 `find_leaks()`. 정답 키·예시 답·금지어 포함 검사. 실패 시 1회 재생성(`LLM_RETRY`), 재실패 시 `question` 없이 `leakCheck.passed = false` 반환 → learning이 질문 은행 선택 (`BANK`, P16) |
+| `LlmClient` | `llm/base.py`, 제공자는 `llm/providers.py` | 제공자 교체 지점(Claude·OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`), LLM 호출 재시도는 이 클래스에서만 (아키텍처 1.3), 호출마다 사용량 콜백(`BackgroundUsageRecorder` → `UsagePublisher`, 발행 실패는 로그만). `stream`은 분석 에이전트와 함께 후속 |
+| `ActiveVersions` | `versions.py` | 미구현. 현재 `versions.py`는 `GET /internal/versions`로 코드 상수 프롬프트 버전만 제공. `model.version.activated` 수신 시 교체는 후속 |
 
 ### 5.2 분석 에이전트·리포트 서술 (analysis_agent · report_narrative)
 
@@ -1759,8 +1845,7 @@ classDiagram
 
 ## 8. 확인 필요 가정
 - 요금제 사용 한도(P13): core가 Redis 일 단위 카운터(학생별 미션 시작·피드백, 학부모별 분석 대화)와 `product.limits`로 확인 후 `USAGE_LIMIT_REACHED`. 담당 클래스는 구현 시 `usage/`에 추가
-- core `conversation`(근거 원문 조회)·`admin`(미션 관리 프록시)이 `learning/client/LearningClient`를 직접 사용: learning 기능에 service가 없어서 생긴 예외. 문제가 되면 `learning/service/LearningRecordService`를 추가
-- 기존 `UserContextHolder`에 SSE 작업 스레드용 컨텍스트 실행 래퍼 추가 필요 (3.2)
-- learning 하위 기록 삭제의 FK `ON DELETE CASCADE` 여부 ERD 반영 필요 (4.3)
+- core `conversation`(근거 원문 조회)·`admin`(미션 관리 프록시)의 learning 호출: core `learning/service`(#37·#38에서 추가)를 거칠지, 기능별 client를 둘지 구현 시 결정
+- learning 하위 기록 삭제 방식(FK `ON DELETE CASCADE` 또는 서비스 내 삭제 순서) 결정 후 ERD 반영 필요 (4.3). 현재 FK는 NO ACTION
 - learning `record/RecordRepository`가 여러 기능 테이블을 조회: 조회 전용 기능 한정 예외
 - 클래스 분할 단위(관리자 controller 등)는 구현 시 조정 가능, 레이어·의존 방향은 고정

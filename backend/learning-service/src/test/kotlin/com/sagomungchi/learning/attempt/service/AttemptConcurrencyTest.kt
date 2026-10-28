@@ -1,10 +1,18 @@
 package com.sagomungchi.learning.attempt.service
 
 import com.sagomungchi.learning.TestRows
+import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.security.UserContext
 import com.sagomungchi.learning._common.security.UserContextHolder
+import com.sagomungchi.learning.answer.domain.AnswerContent
+import com.sagomungchi.learning.answer.service.AnswerService
+import com.sagomungchi.learning.answer.service.SubmitCommand
 import com.sagomungchi.learning.attempt.domain.AttemptDraft
+import com.sagomungchi.learning.attempt.domain.Difficulty
 import com.sagomungchi.learning.attempt.domain.DraftContent
+import com.sagomungchi.learning.attempt.domain.FinishResult
+import com.sagomungchi.learning.attempt.domain.Reflection
+import com.sagomungchi.learning.mission.domain.InputType
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -13,6 +21,7 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import org.testcontainers.containers.PostgreSQLContainer
+import java.time.OffsetDateTime
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -21,7 +30,7 @@ import kotlin.test.assertEquals
 
 /**
  * 동시 요청 (이슈 #23 완료 조건): 같은 학생·미션의 동시 시작은 시도 하나로(ERD 부분 UK),
- * 같은 버전의 동시 초안 저장은 하나만 성공하고 나머지는 409(FN-LRN-17).
+ * 같은 버전의 동시 초안 저장은 하나만 성공하고 나머지는 409(FN-LRN-17), 동시 마무리는 모두 같은 결과·동시 돌아보기는 하나만 학습 완료(이슈 #26).
  * 요청마다 실제로 커밋해야 해서 롤백하는 PostgresRepositoryTest 대신 별도 컨테이너를 씀 (repository-foundation 보고서).
  */
 @SpringBootTest(properties = [
@@ -30,6 +39,7 @@ import kotlin.test.assertEquals
 ])
 class AttemptConcurrencyTest {
     @Autowired lateinit var service: AttemptService
+    @Autowired lateinit var answerService: AnswerService
     @Autowired lateinit var jdbc: JdbcTemplate
 
     @Test
@@ -97,6 +107,96 @@ class AttemptConcurrencyTest {
         } finally {
             UserContextHolder.clear()
         }
+    }
+
+    @Test
+    fun `동시에 마무리해도 모두 같은 결과이고 마무리 시각은 하나 (시도 행 잠금)`() {
+        val student = UUID.randomUUID()
+        val context = UserContext(null, "STUDENT", setOf(student.toString()), null)
+        val rows = TestRows(jdbc)
+        val mission = rows.mission()
+        rows.rubric(mission)
+        UserContextHolder.set(context)
+        val attempt = try {
+            val attempt = service.start(student, mission.id, grade = 3, demo = false).attempt
+            rows.judged(answerService.submit(attempt.id, UUID.randomUUID(), SubmitCommand(InputType.NARRATIVE, AnswerContent(text = "놀 수 있어서 좋아요"), false, null)).id)
+            attempt
+        } finally {
+            UserContextHolder.clear()
+        }
+        val requests = 8
+        val ready = CountDownLatch(requests)
+        val go = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(requests)
+
+        val results = (1..requests).map {
+            pool.submit<FinishResult> {
+                UserContextHolder.set(context)
+                try {
+                    ready.countDown()
+                    go.await()
+                    service.finish(attempt.id)
+                } finally {
+                    UserContextHolder.clear()
+                }
+            }
+        }
+        ready.await(10, TimeUnit.SECONDS)
+        go.countDown()
+        val outcomes = results.map { it.get(30, TimeUnit.SECONDS) }
+        pool.shutdown()
+
+        assertEquals(1, outcomes.toSet().size)
+        val finishedAt = jdbc.queryForObject("SELECT finished_at FROM attempt WHERE id = ?", OffsetDateTime::class.java, attempt.id)
+        assertEquals(outcomes.first().finishedAt, finishedAt?.toInstant())
+    }
+
+    @Test
+    fun `마무리한 시도에 동시에 돌아보기를 보내면 하나만 학습 완료, 나머지는 409 (시도 행 잠금)`() {
+        val student = UUID.randomUUID()
+        val context = UserContext(null, "STUDENT", setOf(student.toString()), null)
+        val rows = TestRows(jdbc)
+        val mission = rows.mission()
+        rows.rubric(mission)
+        UserContextHolder.set(context)
+        val attempt = try {
+            val attempt = service.start(student, mission.id, grade = 3, demo = false).attempt
+            val answer = answerService.submit(attempt.id, UUID.randomUUID(), SubmitCommand(InputType.NARRATIVE, AnswerContent(text = "놀 수 있어서 좋아요"), false, null))
+            rows.judged(answer.id)
+            service.finish(attempt.id)
+            attempt
+        } finally {
+            UserContextHolder.clear()
+        }
+        val requests = 8
+        val ready = CountDownLatch(requests)
+        val go = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(requests)
+
+        val results = (1..requests).map {
+            pool.submit<Any> {
+                UserContextHolder.set(context)
+                try {
+                    ready.countDown()
+                    go.await()
+                    service.saveReflection(attempt.id, Reflection(Difficulty.NORMAL, null))
+                    "COMPLETED"
+                } catch (closed: BusinessException) {
+                    closed.code
+                } finally {
+                    UserContextHolder.clear()
+                }
+            }
+        }
+        ready.await(10, TimeUnit.SECONDS)
+        go.countDown()
+        val outcomes = results.map { it.get(30, TimeUnit.SECONDS) }
+        pool.shutdown()
+
+        assertEquals(1, outcomes.count { it == "COMPLETED" })
+        assertEquals(List(requests - 1) { "ATTEMPT_CLOSED" }, outcomes.filter { it != "COMPLETED" })
+        assertEquals(1, count("SELECT count(*) FROM reflection WHERE attempt_id = ?", attempt.id))
+        assertEquals(1, count("SELECT count(*) FROM attempt WHERE id = ? AND status = 'COMPLETED' AND completed_at IS NOT NULL", attempt.id))
     }
 
     private fun count(sql: String, id: UUID) = jdbc.queryForObject(sql, Int::class.java, id)

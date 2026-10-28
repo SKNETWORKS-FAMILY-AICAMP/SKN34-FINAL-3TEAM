@@ -4,8 +4,11 @@ export interface Child {
   nickname: string
   grade: number
   birthYear: number
-  plan: 'FREE' | 'PREMIUM'
-  /** 학부모 화면 전용 PIN 상태 (API 명세 2.1 `/children`, #59). 학생 응답에는 없다. */
+  plan?: 'FREE' | 'PREMIUM'
+  guardianConsentRequired?: boolean
+  hasRecords?: boolean | null
+  recordState?: 'AVAILABLE' | 'UNAVAILABLE' | 'CONSENT_REQUIRED'
+  /** #58 확장 메타데이터. #37 응답에는 없을 수 있다. */
   pinSet?: boolean
   pinLocked?: boolean
 }

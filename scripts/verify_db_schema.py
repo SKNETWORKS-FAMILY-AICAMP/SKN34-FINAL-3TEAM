@@ -56,6 +56,14 @@ VALUES ('00000000-0000-4000-8000-000000000018', '00000000-0000-4000-8000-0000000
         'PARENT',1,now()+interval '7 days',now());
 SELECT pg_temp.expect_sqlstate($$UPDATE auth_session SET role = 'STUDENT'$$, '23514');
 SELECT pg_temp.expect_sqlstate($$UPDATE auth_session SET version = 0$$, '23514');
+-- #45: live profile and reauth target/completion contracts.
+SELECT pg_temp.expect_sqlstate($$INSERT INTO reauth_challenge(id,user_id,session_id,session_version,purpose,state_hash,expires_at)
+VALUES ('00000000-0000-4000-8000-000000000021','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000018',1,'PIN_CHANGE','schema-invalid',now())$$, '23514');
+INSERT INTO reauth_challenge(id,user_id,session_id,session_version,purpose,state_hash,expires_at)
+VALUES ('00000000-0000-4000-8000-000000000021','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000018',1,'WITHDRAWAL','schema-state',now());
+SELECT pg_temp.expect_sqlstate($$INSERT INTO reauth_grant(token_hash,challenge_id,expires_at)
+VALUES ('hash','00000000-0000-4000-8000-999999999999',now())$$, '23503');
+
 SELECT pg_temp.expect_sqlstate($$UPDATE auth_session SET user_id = '00000000-0000-4000-8000-999999999999'$$, '23503');
 INSERT INTO refresh_token(id,user_id,session_id,token_hash,expires_at,created_at)
 VALUES ('00000000-0000-4000-8000-000000000019', '00000000-0000-4000-8000-000000000001',
@@ -68,7 +76,7 @@ SELECT pg_temp.expect_sqlstate(
     $$UPDATE user_account SET status = 'INVALID'$$, '23514');
 SELECT pg_temp.expect_sqlstate(
     $$UPDATE user_account SET status = NULL$$, '23502');
-SELECT pg_temp.expect_sqlstate($$UPDATE student SET birth_year = NULL$$, '23502');
+SELECT pg_temp.expect_sqlstate($$UPDATE student SET birth_year = NULL$$, '23514');
 SELECT pg_temp.expect_sqlstate($$UPDATE student SET grade = 2$$, '23514');
 SELECT pg_temp.expect_sqlstate($$UPDATE student SET grade = 7$$, '23514');
 UPDATE student SET grade = 6;

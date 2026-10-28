@@ -6,7 +6,7 @@ import java.util.UUID
 
 /**
  * 시도 타임라인의 답변 한 줄과 판정 처리 상태 (class-diagram 4.1 AttemptService --> JudgmentService : 타임라인).
- * 판정 결과·근거·되묻기는 피드백(#25)에서 채움
+ * followupQuestion은 이 답변이 답한 되묻기 질문 (되묻기 요청의 타임라인, class-diagram 4.2 FeedbackFacade --> AttemptService : 타임라인)
  */
 data class TimelineAnswer(
     val answerId: UUID,
@@ -15,6 +15,7 @@ data class TimelineAnswer(
     val inputType: InputType,
     val text: String?,
     val followupId: UUID?,
+    val followupQuestion: String?,
     val content: Map<String, Any?>,
     val processStatus: ProcessStatus,
 )

@@ -11,6 +11,7 @@ import { Workspace, QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { ChildRegistration, ProfileSettings } from './AccountForms.tsx'
 import { ParentConversation } from './ParentConversation.tsx'
+import { ConsentSettings } from './ConsentSettings.tsx'
 import { ParentReports } from './ParentReports.tsx'
 import { StudentDevices } from './StudentDevices.tsx'
 import { ParentDashboard } from './ParentDashboard.tsx'
@@ -59,12 +60,12 @@ export function ParentWorkspace() {
           <div className="ws-plan">
             <span>이용권</span>
             <strong>
-              {child.nickname} · {child.plan === 'FREE' ? '무료' : '프리미엄'}
+              {child.nickname} · {child.plan === 'FREE' ? '무료' : child.plan === 'PREMIUM' ? '프리미엄' : '이용권 확인 필요'}
             </strong>
             <small>
               {child.plan === 'FREE'
                 ? '하루 미션 3개, 리포트 수치 제공'
-                : '하루 피드백 50회·분석 대화 30회, 전체 리포트'}
+                : child.plan === 'PREMIUM' ? '하루 피드백 50회·분석 대화 30회, 전체 리포트' : '이용권 정보를 확인하지 못했습니다.'}
             </small>
           </div>
         )
@@ -99,7 +100,7 @@ export function ParentWorkspace() {
           {child && (
             <button
               className="cj-primary"
-              disabled={auth.enter.isPending}
+              disabled={auth.enter.isPending || child.guardianConsentRequired}
               onClick={() => {
                 void auth.enter
                   .mutateAsync(child)
@@ -118,6 +119,10 @@ export function ParentWorkspace() {
     >
       <QueryFeedback query={children} />
       <ErrorNotice error={auth.enter.error} />
+      {child?.recordState === 'UNAVAILABLE' && <p role="alert">기록 유무를 확인하지 못했습니다. 기록이 없는 상태와 다릅니다. 자녀 선택과 동석 진입은 사용할 수 있습니다.</p>}
+      {child?.hasRecords === false && child.recordState === 'AVAILABLE' && <p>아직 학습 기록이 없습니다. 이 자녀로 첫 학습을 시작해 주세요.</p>}
+      {child?.guardianConsentRequired && <p role="alert">법정대리인 동의가 필요합니다. 정보 관리에서 현재 문서에 동의해 주세요.</p>}
+      {page === 'settings' && <ConsentSettings key={child?.id} child={child} />}
       <PeriodFilter
         key={`${scope.from}:${scope.to}`}
         period={scope}
