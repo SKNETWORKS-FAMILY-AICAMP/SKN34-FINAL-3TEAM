@@ -13,7 +13,7 @@
 |---|---|
 | 상태값 | API 1.5·ERD CHECK 코드값 그대로 |
 | 전이 검사 | 엔티티 메서드(`Judgment.acquire()` 등)가 현재 상태로 허용 여부 판단, 불허 시 `BusinessException(409)` |
-| 동시성 | 상태 변경 SQL은 `UPDATE ... SET status = :to WHERE id = :id AND status IN (:from)` 형태. 영향 행 0이면 다른 요청이 먼저 처리한 것으로 보고 현재 상태 재조회 |
+| 동시성 | 상태 변경 SQL은 `UPDATE ... SET status = :to WHERE id = :id AND status IN (:from)` 형태. 영향 행 0이면 다른 요청이 먼저 처리한 것으로 보고 현재 상태 재조회. 예외: `model_version`은 같은 kind·name advisory lock 안에서 재조회 후 `WHERE id`로 갱신(7.1), 동의 철회는 보호자 행 잠금 후 갱신(2.3) |
 | 이벤트 소비 | `processed_event` 저장 + 조건부 UPDATE 같은 트랜잭션. 중복·역순 이벤트는 영향 행 0으로 무시 (아키텍처 1.6) |
 | 이력 | 상태 덮어쓰기와 별도로 결과 행은 보존: 답변·판정·정정·리포트 revision은 새 행 (ERD 1장) |
 | 종료 상태 | 다이어그램의 `[*]`로 나가는 상태. 이후 재처리는 새 행 또는 표에 명시한 전이만 |
@@ -53,13 +53,13 @@ stateDiagram-v2
     S_DELETED --> [*]
   }
   state deletion_request {
-    [*] --> REQUESTED: 삭제 요청
-    REQUESTED --> CONFIRMED: 확인 절차 통과 + student.deleted 발행
+    [*] --> REQUESTED: 삭제 요청 (X-Reauth-Token)
+    REQUESTED --> CONFIRMED: 같은 요청에서 확정 + student.deleted 발행
     CONFIRMED --> COMPLETED: 삭제 완료 판정
     COMPLETED --> [*]
   }
   note right of deletion_request
-    확인: 재확인 토큰, 완료: learning·report 완료 보고 (P09)
+    재확인 토큰은 요청 시 검사, 완료: learning·report 완료 보고 (P09)
     RECORDS 범위는 student 상태 유지, 기록만 삭제
   end note
 ```
@@ -68,8 +68,8 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
-| `deletion_request → REQUESTED` | `POST /children/{id}/deletion-requests` | `GuardianshipService.requestDeletion` | 연결 자녀(`LINKED`)만 |
-| `REQUESTED → CONFIRMED` | `X-Reauth-Token` 재확인 (P09) | `GuardianshipService.confirmDeletion` → `DeletionRequest.confirm()` | 같은 트랜잭션에 `outbox_event(student.deleted)`, `scope = PROFILE`이면 `student ACTIVE → DELETION_REQUESTED` |
+| `deletion_request → REQUESTED` | `POST /children/{id}/deletion-requests` + `X-Reauth-Token` (P09) | `GuardianshipService.requestDeletion` | 연결 자녀(`LINKED`)만. 재확인 토큰이 없거나 무효면 `403 REAUTH_REQUIRED`로 행을 만들지 않음 |
+| `REQUESTED → CONFIRMED` | 같은 요청 안에서 바로 확정 (별도 확인 API 없음, 연결 해제·탈퇴와 같은 1단계) | `GuardianshipService.requestDeletion` → `DeletionRequest.confirm()` | 같은 트랜잭션에 `outbox_event(student.deleted)`, `scope = PROFILE`이면 `student ACTIVE → DELETION_REQUESTED` |
 | `CONFIRMED → COMPLETED`, `student → DELETED` | learning·report 모두 `POST /internal/deletion-requests/{id}/completions` 보고 (P09) | `DeletionRequest.complete()`, `Student.markDeleted()` | `deleted_at` 기록. 이후 모든 조회에서 제외, 근거는 `available: false` |
 
 ### 2.3 `guardianship.status` · `consent.status`
@@ -83,6 +83,7 @@ stateDiagram-v2
   }
   state consent {
     [*] --> AGREED: 동의 저장 (문서 버전·시점)
+    [*] --> WITHDRAWN: 선택 항목 미동의 저장
     AGREED --> WITHDRAWN: 동의 철회
     WITHDRAWN --> [*]
   }
@@ -90,10 +91,10 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
-| → `LINKED` | `POST /children` | `GuardianshipService.registerChild` | 부분 UK `(parent_user_id, student_id) WHERE LINKED`, 학부모당 `LINKED` 3명 이하 (P02). 다른 보호자 연결 없음 |
+| → `LINKED` | `POST /children` | `GuardianshipService.register` | 부분 UK `(parent_user_id, student_id) WHERE LINKED`, 보호자 행 잠금 후 학부모당 `LINKED` 3명 이하 (P02). 다른 보호자 연결 없음 |
 | `LINKED → UNLINKED` | `DELETE /children/{id}/link` | `Guardianship.unlink()` | `WHERE status = 'LINKED'`. 재연결은 새 행 (이력 보존) |
-| → `AGREED` | 가입·자녀 등록 | `ConsentService.record` | 필수 문서(`required`) 모두 동의해야 저장 진행 |
-| `AGREED → WITHDRAWN` | `POST /me/consents/{id}/withdrawal` | `Consent.withdraw()` | 행 유지 + `withdrawn_at`. 필수 동의 철회 시 대상 자녀(자녀 동의) 또는 계정 이용 차단, 삭제·탈퇴는 별도 요청. 선택 동의는 해당 기능만 중단 (P09) |
+| → `AGREED`·`WITHDRAWN` | 가입·자녀 등록·동의 변경 (`POST /me/consents`, `POST /children`) | `ConsentService.save` | 현재 문서 전체 항목과 필수 문서(`required`) 동의가 있어야 저장. 항목마다 최신 행과 선택이 다를 때만 새 행 저장(동의 AGREED, 선택 항목 미동의 WITHDRAWN). 재동의도 새 AGREED 행. 권한은 같은 문서·주체·자녀의 최신 행으로 판정 |
+| `AGREED → WITHDRAWN` | `POST /me/consents/{id}/withdrawal` | `ConsentService.withdraw` | 보호자 행 잠금 후 본인 행 확인, 이미 WITHDRAWN이면 그대로 반환. 행 유지 + `withdrawn_at`. 필수 동의 철회 시 대상 자녀(자녀 동의) 또는 계정 이용 차단, 삭제·탈퇴는 별도 요청. 선택 동의는 해당 기능만 중단 (P09) |
 
 ---
 
@@ -183,7 +184,7 @@ stateDiagram-v2
 | `RUNNING → FAILED` | 예외·타임아웃 | `Judgment.fail(code)` | 위와 같은 리스 조건, `retry_count + 1` |
 
 - 전이 실패(영향 0행) 시 현재 상태로 응답: `DONE` → 저장 결과, 유효 `RUNNING` → `status` 이벤트 후 종료 (API 1.4)
-- 고착 `RUNNING` 탐지 인덱스 `(process_status, lease_until)`, 리스 90초·탐지 주기 1분 (P12)
+- 고착 `RUNNING` 탐지 인덱스 `(process_status, lease_until)`, 리스 90초·탐지 주기 1분 (P12). 주기 탐지 작업은 미구현(운영 작업 후속)이며 현재는 다음 피드백 요청 때 만료 리스를 재획득 ([이슈 #25 보고서](../report/learning-feedback.md))
 - 리스 시간은 core→learning 피드백 호출 타임아웃보다 길게 설정. 짧으면 처리 중인 판정을 다른 요청이 재획득해 LLM 호출이 중복됨
 
 #### `judgment.result` 결정 (`DONE`일 때만 값 존재)

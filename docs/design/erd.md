@@ -25,7 +25,7 @@
 | 문자열·금액 | varchar는 길이 제한 없는 PostgreSQL varchar. ShedLock만 name varchar(64), locked_by varchar(255). 원화는 int, cost_usd는 반올림 정책 없는 numeric |
 | FK 삭제·순환 참조 | 기본 ON DELETE/UPDATE NO ACTION. mission.current_*와 answer.followup_id만 DEFERRABLE INITIALLY IMMEDIATE. 삭제는 P09에 따라 `student.deleted` 이벤트로 서비스별 물리 삭제. learning 하위 기록의 CASCADE 여부는 7장 확인 필요 |
 
-- 테이블 없이 Redis에 두는 값: `reauthToken`(단기), 계정 복구 확인 코드, SSE 알림 중계 (아키텍처 1.6), 요금제 사용 한도 일 단위 카운터 (P13)
+- 테이블 없이 Redis에 두는 값: `reauthToken`(단기), SSE 알림 중계 (아키텍처 1.6), 요금제 사용 한도 일 단위 카운터 (P13)
 - 생각 메모는 `attempt_draft.content.memo`에 저장 (P05). 음성 시범 미구현으로 음성 데이터 없음 (P03)
 - 학생 별도 계정 없음: 학생 세션은 `student.id`로 발급하는 토큰만. 발급 경로는 학부모 인증(동석) 또는 학부모 등록 기기 + 자녀 PIN(단독). PIN·기기 저장 구조는 10장 변경 예정 (P01)
 - 학생 기기 페어링 코드(10분·1회용)는 테이블 없이 Redis 저장
@@ -183,6 +183,8 @@ erDiagram
     timestamptz created_at
   }
 ```
+
+- `auth_session` CHECK: `version > 0`, `ck_auth_session_student`(role이 STUDENT면 `student_id` 필수, 그 외 역할은 NULL) (V8)
 
 ### 3.2 분석 대화·리포트 작업 (FN-AGT, FN-RPT)
 
@@ -718,7 +720,7 @@ erDiagram
     uuid followup_id FK "NULL 허용 · 보완 답변이 답한 되묻기"
     uuid previous_answer_id FK "NULL 허용"
     varchar input_type
-    jsonb content "text, essay, choiceIds"
+    jsonb content "text, essay, choiceIds, finalAnswer, steps, assignments"
     text plain_text "NULL 허용 · 인용 대조용 원문"
     boolean dictated_by_guardian
     uuid idempotency_key
@@ -832,7 +834,7 @@ erDiagram
   }
 ```
 
-- `student.deleted` 소비: 해당 학생 `attempt` 이하 기록 삭제 + `deleted_student` 저장 → 근거 조회 시 `available: false` (물리 삭제 + 표식, P09). 처리 완료는 core에 삭제 완료 이벤트로 알림
+- `student.deleted` 소비: 해당 학생 `attempt` 이하 기록 삭제 + `deleted_student` 저장 → 근거 조회 시 `available: false` (물리 삭제 + 표식, P09). 처리 완료는 core 내부 API `POST /internal/deletion-requests/{id}/completions`로 알림
 - learning은 이벤트를 발행하지 않으므로 `outbox_event` 없음 (아키텍처 1.6)
 - 멱등은 `answer`·`judgment_correction`의 `idempotency_key` UK로 처리, 별도 `idempotency_record` 없음
 
@@ -924,6 +926,8 @@ erDiagram
 | core | `notification` | `(user_id, read_at, created_at)` | 읽지 않은 알림 |
 | core | `payment` | `(status, updated_at)` | `CONFIRMING` 재조회, 결제 운영 조회 |
 | core | `subscription` | `(next_billing_date) WHERE auto_renew` | 정기 청구 대상 |
+| core | `auth_session` | `(user_id)` | 사용자별 세션 폐기 |
+| core | `refresh_token` | `(session_id)` | 세션별 토큰 폐기·재사용 탐지 |
 | core | `llm_usage` | `(occurred_at, call_type)` | 사용량·비용 집계 |
 | core | `outbox_event` | `(created_at) WHERE published_at IS NULL` | 릴레이 대상 |
 | learning | `mission` | `(status, sort_order)`, `mission_version (thinking_type, grade_min, grade_max)` | 학년·유형별 공개 미션 목록 |
@@ -959,7 +963,7 @@ erDiagram
 - core V6는 `student.birth_year`·`product.limits`를 nullable로 준비하고 고정 `product.code` CHECK를 제거한다. V7은 필요한 기존 데이터 정비를 검사한 뒤 NOT NULL·코드 CHECK·학년 3~6 CHECK를 적용하고 `student.user_account_id`를 제거한다. 기존 상품 코드·금액·참조 ID를 자동 변경하지 않는다.
 - learning V4는 `followup_bank_question`과 `followup.bank_question_id` FK를 준비한다. V5는 기존 음성·TEMPLATE·미연결 BANK 기록을 검사한 뒤 `answer.speech_transcribed`를 제거하고 source를 LLM/LLM_RETRY/BANK로 제한한다.
 - `followup.bank_question_id`는 BANK일 때만 필수이며 다른 출처에서는 NULL인 CHECK를 적용한다. 은행 질문의 type 일치·활성 여부 선택은 서비스가 검사한다. 삭제 FK는 NO ACTION을 유지한다.
-- report는 정책 확정에 따른 DDL 변경이 없어 새 revision을 추가하지 않는다. 최종 구조는 59개 테이블·506개 컬럼(core 34/306, learning 19/156, report 6/44)이다.
+- report는 정책 확정에 따른 DDL 변경이 없어 새 revision을 추가하지 않는다. 최종 구조는 59개 테이블·506개 컬럼(core 34/306, learning 19/156, report 6/44)이다. 이후 core V8(#36 `auth_session`, `refresh_token.session_id`·`used_at`) 반영 현재 60개 테이블·518개 컬럼(core 35/318)이다.
 - 기존 V1~V5/V1~V3/Alembic 초기 revision은 변경하지 않는다. 초기 DB는 순서대로 전체 적용하고, 기존 데이터가 있는 DB는 준비 버전에서 멈춰 승인된 값으로 보완한 뒤 최종 버전을 적용한다. 상세 절차는 [이슈 19 스키마 변경 보고서](../report/db-policy-schema.md)를 따른다.
 
 ## 10. P01 개정 학생 기기·PIN (변경 예정, 미적용)
