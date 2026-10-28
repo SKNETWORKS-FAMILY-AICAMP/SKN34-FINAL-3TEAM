@@ -3,9 +3,15 @@ package com.sagomungchi.learning.record
 import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning.attempt.domain.Attempt
 import com.sagomungchi.learning.attempt.domain.AttemptDraft
+import com.sagomungchi.learning.attempt.domain.Difficulty
+import com.sagomungchi.learning.attempt.domain.Reflection
 import com.sagomungchi.learning.attempt.domain.DraftContent
 import com.sagomungchi.learning.attempt.service.AttemptDetail
+import com.sagomungchi.learning.mission.domain.MissionListItem
+import com.sagomungchi.learning.mission.domain.MissionProgress
 import com.sagomungchi.learning.mission.domain.MissionSnapshot
+import com.sagomungchi.learning.mission.domain.ProgressStatus
+import com.sagomungchi.learning.mission.domain.ThinkingType
 import com.sagomungchi.learning.mission.missionView
 import com.sagomungchi.learning.record.controller.RecordController
 import com.sagomungchi.learning.record.domain.Metric
@@ -13,10 +19,13 @@ import com.sagomungchi.learning.record.domain.Period
 import com.sagomungchi.learning.record.domain.QueryState
 import com.sagomungchi.learning.record.repository.StatsRow
 import com.sagomungchi.learning.record.service.Changes
+import com.sagomungchi.learning.record.service.Home
 import com.sagomungchi.learning.record.service.RecordAttempt
 import com.sagomungchi.learning.record.service.RecordPage
 import com.sagomungchi.learning.record.service.RecordService
 import com.sagomungchi.learning.record.service.Summary
+import com.sagomungchi.learning.record.service.ThinkingActivities
+import com.sagomungchi.learning.record.service.ThinkingActivity
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyInt
@@ -55,6 +64,12 @@ class RecordControllerTest {
         header("X-Internal-Token", "test-token")
         header("X-User-Role", role)
         scope?.let { header("X-Student-Scope", it.toString()) }
+    }
+
+    private fun MockHttpServletRequestDsl.callerScopes(role: String, scope: String) {
+        header("X-Internal-Token", "test-token")
+        header("X-User-Role", role)
+        header("X-Student-Scope", scope)
     }
 
     @Test
@@ -177,5 +192,73 @@ class RecordControllerTest {
             jsonPath("$.totalElements") { value(3) }
             jsonPath("$.state") { value("OK") }
         }
+    }
+
+    @Test
+    fun `학생 홈은 이어할 시도(초안·메모 없음)와 학생 미션 목록 항목, 학생 본인 요청만`() {
+        val mission = missionView(grade = 3)
+        val now = Instant.parse("2026-11-03T01:00:00Z")
+        val attempt = Attempt.start(student, mission.id, MissionSnapshot(UUID.randomUUID(), UUID.randomUUID()), 3, now)
+        val draft = AttemptDraft.empty(attempt.id, now).update(DraftContent(mapOf("text" to "쓰던 답"), "비밀 메모"), now)
+        val detail = AttemptDetail(attempt, mission, draft, helped = false, answers = emptyList(), feedbacks = emptyMap(), revealed = null, reflection = null)
+        val item = MissionListItem(mission, MissionProgress(ProgressStatus.IN_PROGRESS, attempt.id), 1, 1)
+        given(service.home(student, week, 3, false)).willReturn(Home(QueryState.NO_RECORD, RecordAttempt(detail, emptyList(), null), listOf(item)))
+
+        mockMvc.get("/internal/records/students/$student/home?from=2026-11-02&to=2026-11-08&grade=3") { caller("STUDENT") }.andExpect {
+            status { isOk() }
+            jsonPath("$.studentId") { value(student.toString()) }
+            jsonPath("$.state") { value("NO_RECORD") }
+            jsonPath("$.period.from") { value("2026-11-02") }
+            jsonPath("$.resume.attemptId") { value(attempt.id.toString()) }
+            jsonPath("$.resume.draft") { doesNotExist() }
+            jsonPath("$.resume.hintUsages.length()") { value(0) }
+            jsonPath("$.missions[0].id") { value(mission.id.toString()) }
+            jsonPath("$.missions[0].status") { value("IN_PROGRESS") }
+            jsonPath("$.missions[0].attemptId") { value(attempt.id.toString()) }
+        }
+    }
+
+    @Test
+    fun `학생 홈은 학부모·시스템·다른 학생·여러 학생 범위면 403, 학년이 없거나 3~6 밖이면 400`() {
+        listOf("PARENT", "SYSTEM").forEach { role ->
+            mockMvc.get("/internal/records/students/$student/home?grade=3") { caller(role) }.andExpect { status { isForbidden() } }
+        }
+        mockMvc.get("/internal/records/students/$student/home?grade=3") { caller("STUDENT", scope = UUID.randomUUID()) }.andExpect {
+            status { isForbidden() }
+            jsonPath("$.code") { value("FORBIDDEN") }
+        }
+        mockMvc.get("/internal/records/students/$student/home?grade=3") { callerScopes("STUDENT", "$student,${UUID.randomUUID()}") }.andExpect {
+            status { isForbidden() }
+        }
+        listOf("", "?grade=2", "?grade=7", "?grade=3&from=2026-11-02").forEach { query ->
+            mockMvc.get("/internal/records/students/$student/home$query") { caller("STUDENT") }.andExpect { status { isBadRequest() } }
+        }
+        verifyNoInteractions(service)
+    }
+
+    @Test
+    fun `생각 활동은 유형·미션 이름과 돌아보기(난이도·달라진 점), 돌아보기가 없으면 null`() {
+        val first = UUID.randomUUID()
+        val second = UUID.randomUUID()
+        given(service.thinkingActivities(student, week)).willReturn(
+            ThinkingActivities(
+                QueryState.INSUFFICIENT_SAMPLE,
+                listOf(ThinkingActivity(first, ThinkingType.EVALUATE, "따져 보기", Reflection(Difficulty.HARD, "더 생각했어요")), ThinkingActivity(second, ThinkingType.CREATE, "만들기", null)),
+            ),
+        )
+
+        mockMvc.get("/internal/records/students/$student/thinking-activities?from=2026-11-02&to=2026-11-08") { caller("STUDENT") }.andExpect {
+            status { isOk() }
+            jsonPath("$.studentId") { value(student.toString()) }
+            jsonPath("$.state") { value("INSUFFICIENT_SAMPLE") }
+            jsonPath("$.items[0].attemptId") { value(first.toString()) }
+            jsonPath("$.items[0].thinkingType") { value("EVALUATE") }
+            jsonPath("$.items[0].missionTitle") { value("따져 보기") }
+            jsonPath("$.items[0].reflection.difficulty") { value("HARD") }
+            jsonPath("$.items[0].reflection.text") { value("더 생각했어요") }
+            jsonPath("$.items[0].reflection.createdAt") { doesNotExist() }
+            jsonPath("$.items[1].reflection") { value(null) }
+        }
+        mockMvc.get("/internal/records/students/$student/thinking-activities") { caller("ADMIN") }.andExpect { status { isForbidden() } }
     }
 }

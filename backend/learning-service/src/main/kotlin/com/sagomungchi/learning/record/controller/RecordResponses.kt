@@ -5,10 +5,12 @@ import com.sagomungchi.learning.attempt.controller.AnswerItem
 import com.fasterxml.jackson.annotation.JsonUnwrapped
 import com.sagomungchi.learning.attempt.domain.AttemptStatus
 import com.sagomungchi.learning.attempt.domain.Difficulty
+import com.sagomungchi.learning.attempt.domain.Reflection
 import com.sagomungchi.learning.attempt.domain.RevealKind
 import com.sagomungchi.learning.attempt.service.AttemptDetail
 import com.sagomungchi.learning.judgment.domain.ElementView
 import com.sagomungchi.learning.judgment.domain.NextAction
+import com.sagomungchi.learning.mission.controller.MissionListItemResponse
 import com.sagomungchi.learning.mission.controller.MissionResponse
 import com.sagomungchi.learning.mission.domain.ThinkingType
 import com.sagomungchi.learning.record.domain.Metric
@@ -91,7 +93,7 @@ data class RecordAttemptResponse(
             RecordAttemptResponse(
                 it.attemptId, it.studentId, it.mission, it.status, it.finishedAt, it.answers, it.helped,
                 it.nextActions, it.reveal, it.revealKind, it.checklist,
-                it.reflection?.let { reflection -> RecordReflection(reflection.difficulty, reflection.text, record.reflectionCreatedAt) },
+                it.reflection?.let { reflection -> RecordReflection(reflection.difficulty, reflection.text, checkNotNull(record.reflectionCreatedAt)) },
                 record.detail.attempt.completedAt,
                 record.hintUsages.map(::HintUsage),
             )
@@ -99,8 +101,8 @@ data class RecordAttemptResponse(
     }
 }
 
-/** 돌아보기와 작성 시각 (report #51) */
-data class RecordReflection(val difficulty: Difficulty, val text: String?, val createdAt: Instant?)
+/** 돌아보기와 작성 시각 (report #51). 돌아보기가 있으면 작성 시각도 항상 있음(= completedAt) */
+data class RecordReflection(val difficulty: Difficulty, val text: String?, val createdAt: Instant)
 
 /** 생각 열기 열람 시각 (report #51: 최초 답변 전 열람 여부를 report가 판단) */
 data class HintUsage(val openedAt: Instant)
@@ -111,6 +113,25 @@ data class RecordAttemptDetailResponse(
     val state: QueryState,
     val period: Period,
 )
+
+/** 학생 홈 (api-spec 2.3, core #40). resume은 기록 목록 항목과 같은 모양(초안·메모 없음), missions는 학생 미션 목록 항목 */
+data class HomeResponse(
+    val studentId: UUID,
+    val state: QueryState,
+    val period: Period,
+    val resume: RecordAttemptResponse?,
+    val missions: List<MissionListItemResponse>,
+)
+
+/** 생각 활동 (api-spec 2.3 FN-DSH-04, core #40) */
+data class ThinkingActivitiesResponse(
+    val studentId: UUID,
+    val state: QueryState,
+    val period: Period,
+    val items: List<ThinkingActivityItem>,
+)
+
+data class ThinkingActivityItem(val attemptId: UUID, val thinkingType: ThinkingType, val missionTitle: String, val reflection: Reflection?)
 
 /** 되묻기 전후 변화 (api-spec 3.4 changes, 1.1 페이지). counts는 [최초, 마지막] */
 data class ChangesResponse(

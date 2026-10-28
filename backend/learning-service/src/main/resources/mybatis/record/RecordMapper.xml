@@ -143,10 +143,33 @@
         ORDER BY opened_at
     </select>
 
-    <!-- 돌아보기 작성 시각 (기간 안에 쓴 돌아보기만 목록에 넣으려고) -->
-    <select id="findReflectionTimes" resultMap="openedAt" flushCache="true" useCache="false">
-        SELECT attempt_id, created_at AS at FROM reflection WHERE attempt_id IN
+    <resultMap id="reflection" type="com.sagomungchi.learning.record.repository.ReflectionRow">
+        <constructor>
+            <arg column="attempt_id" javaType="java.util.UUID"/>
+            <arg column="difficulty" javaType="com.sagomungchi.learning.attempt.domain.Difficulty"/>
+            <arg column="text" javaType="java.lang.String"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 돌아보기와 작성 시각 (기간 안에 쓴 돌아보기만 목록·생각 활동에 넣으려고) -->
+    <select id="findReflections" resultMap="reflection" flushCache="true" useCache="false">
+        SELECT attempt_id, difficulty, changed_text AS text, created_at FROM reflection WHERE attempt_id IN
         <foreach collection="attemptIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <!--
+        이어할 시도 (FN-DSH-02, FN-LRN-16): 진행 중 시도 중 시작·답변 제출·초안 저장 중 가장 늦은 시각이 가장 최근인 것.
+        기간과 무관하고 초안만 있는 시도도 포함. 초안은 저장 시각만 읽고 내용(메모 포함)은 읽지 않음 (P05)
+    -->
+    <select id="findResume" resultType="java.util.UUID" flushCache="true" useCache="false">
+        SELECT a.id
+        FROM attempt a
+        LEFT JOIN attempt_draft d ON d.attempt_id = a.id
+        WHERE a.student_id = #{studentId} AND a.status = 'IN_PROGRESS'
+          AND NOT EXISTS (SELECT 1 FROM deleted_student x WHERE x.student_id = a.student_id)
+        ORDER BY greatest(a.started_at, d.saved_at, (SELECT max(s.submitted_at) FROM answer s WHERE s.attempt_id = a.id)) DESC, a.id
+        LIMIT 1
     </select>
 
     <!-- 운영 현황 (FN-ADM-02): 학생 원문 없이 건수만 -->

@@ -5,7 +5,10 @@ import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.attempt.domain.AttemptStatus
 import com.sagomungchi.learning.record.domain.Period
 import com.sagomungchi.learning.record.domain.QueryState
+import com.sagomungchi.learning.mission.controller.MissionListItemResponse
 import com.sagomungchi.learning.record.service.RecordService
+import jakarta.validation.constraints.Max
+import jakarta.validation.constraints.Min
 import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.GetMapping
@@ -90,6 +93,38 @@ class RecordController(private val service: RecordService) {
         return ChangesResponse(changes.items.map(ChangeItem::from), changes.page, changes.size, changes.totalElements, studentId, changes.state, period)
     }
 
+    /** 학생 홈 (core #40): 학생 본인 요청만(미션 목록과 같은 기준). grade(3~6, P03)·demo는 core가 붙임 */
+    @GetMapping("/records/students/{studentId}/home")
+    fun home(
+        @PathVariable studentId: UUID,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate?,
+        @RequestParam @Min(MIN_GRADE) @Max(MAX_GRADE) grade: Int,
+        @RequestParam(defaultValue = "false") demo: Boolean,
+    ): HomeResponse {
+        if (UserContextHolder.current().requireSelfStudent() != studentId) {
+            throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "접근 범위 밖 학생")
+        }
+        val period = Period.of(from, to)
+        val home = service.home(studentId, period, grade, demo)
+        return HomeResponse(studentId, home.state, period, home.resume?.let(RecordAttemptResponse::from), home.missions.map(MissionListItemResponse::from))
+    }
+
+    @GetMapping("/records/students/{studentId}/thinking-activities")
+    fun thinkingActivities(
+        @PathVariable studentId: UUID,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate?,
+    ): ThinkingActivitiesResponse {
+        requireStudentRecord(studentId)
+        val period = Period.of(from, to)
+        val activities = service.thinkingActivities(studentId, period)
+        return ThinkingActivitiesResponse(
+            studentId, activities.state, period,
+            activities.items.map { ThinkingActivityItem(it.attemptId, it.thinkingType, it.missionTitle, it.reflection) },
+        )
+    }
+
     /** answerIds는 쉼표로 나눈 UUID 1~100개. 학생 범위는 답변마다 서비스가 확인 */
     @GetMapping("/records/evidence")
     fun evidence(@RequestParam answerIds: String): EvidenceResponse {
@@ -132,6 +167,8 @@ class RecordController(private val service: RecordService) {
 
     companion object {
         private const val MAX_SIZE = 100
+        private const val MIN_GRADE = 3L
+        private const val MAX_GRADE = 6L
         private val STUDENT_RECORD_ROLES = setOf("PARENT", "STUDENT", "SYSTEM")
         private val STATS_ROLES = setOf("ADMIN", "SYSTEM")
     }

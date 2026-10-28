@@ -3,9 +3,12 @@ package com.sagomungchi.learning.record.service
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.attempt.domain.AttemptStatus
+import com.sagomungchi.learning.attempt.domain.Reflection
 import com.sagomungchi.learning.attempt.service.AttemptDetail
 import com.sagomungchi.learning.attempt.service.AttemptService
+import com.sagomungchi.learning.mission.domain.MissionListItem
 import com.sagomungchi.learning.mission.domain.ThinkingType
+import com.sagomungchi.learning.mission.service.MissionService
 import com.sagomungchi.learning.record.domain.Metric
 import com.sagomungchi.learning.record.domain.Period
 import com.sagomungchi.learning.record.domain.QueryState
@@ -42,6 +45,14 @@ data class Change(val pair: AnswerPair, val first: TextCounts, val revised: Text
 
 data class Changes(val state: QueryState, val items: List<Change>, val page: Int, val size: Int, val totalElements: Int)
 
+/** 학생 홈: 이어할 시도(없으면 null)와 시작할 수 있는 미션 */
+data class Home(val state: QueryState, val resume: RecordAttempt?, val missions: List<MissionListItem>)
+
+/** 수행한 미션의 생각 유형과 본인 돌아보기 (FN-DSH-04, 수치 없음) */
+data class ThinkingActivity(val attemptId: UUID, val thinkingType: ThinkingType, val missionTitle: String, val reflection: Reflection?)
+
+data class ThinkingActivities(val state: QueryState, val items: List<ThinkingActivity>)
+
 /** 근거 원문 (api-spec 1.6). 없는 답변·삭제 학생은 available=false, 원문 없음 */
 data class Evidence(
     val answerId: UUID,
@@ -62,6 +73,7 @@ data class Evidence(
 class RecordService(
     private val repository: RecordRepository,
     private val attemptService: AttemptService,
+    private val missionService: MissionService,
 ) {
     @Transactional(readOnly = true)
     fun summary(studentId: UUID, period: Period): Summary {
@@ -105,12 +117,12 @@ class RecordService(
         val attempts = repository.findEligible(studentId, period).filter { status == null || it.status == status }
         val slice = attempts.drop(page * size).take(size).map { it.attemptId }
         val hints = repository.findHintUsages(slice)
-        val reflections = repository.findReflectionTimes(slice)
+        val reflections = repository.findReflections(slice)
         val start = period.start()
         val end = period.endExclusive()
         val items = slice.map { attemptId ->
             val detail = attemptService.get(attemptId)
-            val reflectedAt = reflections[attemptId]?.takeIf { it >= start && it < end }
+            val reflectedAt = reflections[attemptId]?.createdAt?.takeIf { it >= start && it < end }
             RecordAttempt(
                 detail.copy(answers = detail.answers.filter { it.submittedAt < end }, reflection = detail.reflection.takeIf { reflectedAt != null }),
                 hints[attemptId].orEmpty().filter { it < end },
@@ -129,8 +141,42 @@ class RecordService(
         if (!repository.isRecorded(studentId, attemptId)) {
             throw BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "학습 기록 없음")
         }
+        return fullRecord(attemptId)
+    }
+
+    /**
+     * 학생 홈 (api-spec 2.3, FN-DSH-01·02): 이어할 시도와 시작할 수 있는 미션(미션 목록과 같은 범위).
+     * 이어할 시도는 진행 중 시도 중 가장 최근에 손댄 것 하나, 기간과 무관하고 초안만 있는 시도도 포함(FN-LRN-16).
+     * 기록 상세와 같은 모양이라 초안·메모는 응답에서 빠짐(P05, 본인 초안은 core가 학생 시도 상세로 붙임 core #40). state는 기간 안 집계 대상 시도 수
+     */
+    @Transactional(readOnly = true)
+    fun home(studentId: UUID, period: Period, grade: Int, demo: Boolean): Home {
+        val state = QueryState.of(repository.findEligible(studentId, period).size)
+        val resume = repository.findResume(studentId)?.let(::fullRecord)
+        return Home(state, resume, missionService.listForStudent(studentId, grade, demo))
+    }
+
+    /**
+     * 생각 활동 (api-spec 2.3, FN-DSH-04): 집계 대상 시도의 생각 유형·미션 이름을 최근 답변 순으로.
+     * 돌아보기는 기간 안에 쓴 것만(아니면 null, 기록 목록과 같음). 수치·등급·순위 없음
+     */
+    @Transactional(readOnly = true)
+    fun thinkingActivities(studentId: UUID, period: Period): ThinkingActivities {
+        val attempts = repository.findEligible(studentId, period)
+        val reflections = repository.findReflections(attempts.map { it.attemptId })
+        val start = period.start()
+        val end = period.endExclusive()
+        val items = attempts.map { attempt ->
+            val reflection = reflections[attempt.attemptId]?.takeIf { it.createdAt >= start && it.createdAt < end }
+            ThinkingActivity(attempt.attemptId, attempt.thinkingType, attempt.missionTitle, reflection?.let { Reflection(it.difficulty, it.text) })
+        }
+        return ThinkingActivities(QueryState.of(attempts.size), items)
+    }
+
+    /** 시도의 전체 답변·되묻기·도움·돌아보기 (이력을 자르지 않음) */
+    private fun fullRecord(attemptId: UUID): RecordAttempt {
         val ids = listOf(attemptId)
-        return RecordAttempt(attemptService.get(attemptId), repository.findHintUsages(ids)[attemptId].orEmpty(), repository.findReflectionTimes(ids)[attemptId])
+        return RecordAttempt(attemptService.get(attemptId), repository.findHintUsages(ids)[attemptId].orEmpty(), repository.findReflections(ids)[attemptId]?.createdAt)
     }
 
     /** 보완 답변이 있는 시도의 최초 vs 조회 종료일 이전 마지막 답변 (P08, FN-RPT-05). 실제로 센 값만, 1.1 페이지 (report #51) */

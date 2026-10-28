@@ -12,6 +12,8 @@ import com.sagomungchi.learning.answer.service.AnswerService
 import com.sagomungchi.learning.answer.service.SubmitCommand
 import com.sagomungchi.learning.attempt.domain.Attempt
 import com.sagomungchi.learning.attempt.domain.AttemptStatus
+import com.sagomungchi.learning.attempt.domain.Difficulty
+import com.sagomungchi.learning.attempt.domain.Reflection
 import com.sagomungchi.learning.attempt.service.AttemptService
 import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.domain.ThinkingType
@@ -34,7 +36,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** 이슈 #27 기록 조회: 집계 기준 P08, 상태(0건·1~4건·5건 이상), 전후 변화, 근거, 운영 집계 */
+/** 이슈 #27 기록 조회: 집계 기준 P08, 상태(0건·1~4건·5건 이상), 전후 변화, 근거, 운영 집계, 학생 홈·생각 활동 */
 class RecordServiceTest : PostgresRepositoryTest() {
     @Autowired lateinit var service: RecordService
     @Autowired lateinit var attemptService: AttemptService
@@ -375,5 +377,72 @@ class RecordServiceTest : PostgresRepositoryTest() {
             listOf(after.attempts, after.completedAttempts, after.students),
         )
         assertTrue(after.attempts >= 3)
+    }
+
+    /** 시도 시작·초안 저장 시각을 정함 (답변 제출 시각은 answer()가 정함) */
+    private fun touched(attempt: Attempt, startedAt: OffsetDateTime, draftSavedAt: OffsetDateTime) {
+        jdbc.update("UPDATE attempt SET started_at = ? WHERE id = ?", startedAt, attempt.id)
+        jdbc.update("UPDATE attempt_draft SET saved_at = ? WHERE attempt_id = ?", draftSavedAt, attempt.id)
+    }
+
+    @Test
+    fun `학생 홈 이어할 시도는 진행 중 시도 중 가장 최근에 손댄 것, 초안만 있어도·기간과 무관, 완료 시도는 빠짐`() {
+        val answered = attempt(title = "답변한 시도")
+        answer(answered, "놀 수 있어서 좋아요", inWeek)
+        touched(answered, inWeek.minusHours(1), inWeek)
+        val drafted = attempt(title = "초안만")
+        touched(drafted, inWeek.minusHours(2), inWeek.plusHours(1))
+        val done = attempt(title = "완료")
+        answer(done, "다 했어요", inWeek)
+        touched(done, inWeek.minusHours(3), inWeek.plusHours(2))
+        jdbc.update("UPDATE attempt SET status = 'COMPLETED', finished_at = ?, completed_at = ? WHERE id = ?", inWeek, inWeek, done.id)
+
+        val home = service.home(student, week, 3, demo = false)
+
+        assertEquals(drafted.id, home.resume?.detail?.attempt?.id)
+        assertEquals(QueryState.INSUFFICIENT_SAMPLE, home.state)
+        assertTrue(home.missions.map { it.mission.id }.containsAll(listOf(answered.missionId, drafted.missionId, done.missionId)))
+        assertEquals(drafted.id, service.home(student, Period(LocalDate.parse("2027-01-04"), LocalDate.parse("2027-01-10")), 3, demo = false).resume?.detail?.attempt?.id)
+
+        jdbc.update("UPDATE answer SET submitted_at = ? WHERE id = (SELECT id FROM answer WHERE attempt_id = ?)", inWeek.plusHours(3), answered.id)
+        assertEquals(answered.id, service.home(student, week, 3, demo = false).resume?.detail?.attempt?.id)
+
+        jdbc.update("INSERT INTO deleted_student (student_id, scope, event_id, deleted_at) VALUES (?, 'RECORDS', ?, now())", student, UUID.randomUUID())
+        assertNull(service.home(student, week, 3, demo = false).resume)
+    }
+
+    @Test
+    fun `학생 홈은 진행 중 시도가 없으면 이어할 시도 null, 다른 학생의 시도는 고르지 않음`() {
+        val other = UUID.randomUUID()
+        attempt(title = "다른 학생", owner = other)
+
+        val home = service.home(student, week, 3, demo = false)
+
+        assertNull(home.resume)
+        assertEquals(QueryState.NO_RECORD, home.state)
+    }
+
+    @Test
+    fun `생각 활동은 집계 대상 시도의 유형·미션 이름을 최근 답변 순으로, 돌아보기는 기간 안에 쓴 것만`() {
+        val evaluated = attempt(ThinkingType.EVALUATE, "따져 보기")
+        answer(evaluated, "그래서 좋아요", inWeek)
+        val created = attempt(ThinkingType.CREATE, "만들기")
+        answer(created, "새로 만들었어요", inWeek.plusHours(1))
+        answer(attempt(ThinkingType.SOLVE, "기간 밖"), "지난주 답", inWeek.minusDays(7))
+        listOf(evaluated to inWeek.plusHours(2), created to inWeek.plusDays(8)).forEach { (attempt, at) ->
+            jdbc.update("UPDATE attempt SET status = 'COMPLETED', finished_at = ?, completed_at = ? WHERE id = ?", at, at, attempt.id)
+            jdbc.update("INSERT INTO reflection (id, attempt_id, difficulty, changed_text, created_at) VALUES (gen_random_uuid(), ?, 'HARD', '더 생각했어요', ?)", attempt.id, at)
+        }
+
+        val activities = service.thinkingActivities(student, week)
+
+        assertEquals(QueryState.INSUFFICIENT_SAMPLE, activities.state)
+        assertEquals(
+            listOf(
+                Triple("만들기", ThinkingType.CREATE, null),
+                Triple("따져 보기", ThinkingType.EVALUATE, Reflection(Difficulty.HARD, "더 생각했어요")),
+            ),
+            activities.items.map { Triple(it.missionTitle, it.thinkingType, it.reflection) },
+        )
     }
 }
