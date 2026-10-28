@@ -21,6 +21,13 @@
         --essay-zip "<26.논술형 글쓰기 평가 데이터.zip 경로>"
 출력 (data/):
     서술형_답안.csv, 서술형_문항.csv, 논술형_답안.csv.gz, 논술형_문항.csv
+
+71817 주제별 글쓰기(성인)도 같은 구조라 같이 만들 수 있다 (학습에만 추가하는 용도):
+    python scripts/build_tables.py --adult-zip "<27.주제별 글쓰기 평가 데이터 zip 경로>"
+    → 성인_답안.csv.gz, 성인_문항.csv
+    - 문항 id가 71819(A01 등)와 겹쳐서 앞에 "T_"를 붙인다
+    - 학년 칸은 "성인"으로 통일 (입력에 [학년] 성인으로 들어감)
+    - 같은 지시문이 연령대(20~30대/40대 이상)별로 id가 달라서, 지시문이 같으면 같은 문항으로 묶는다
 """
 
 import argparse
@@ -52,7 +59,10 @@ def iter_label_json(zip_path: Path):
         inner = zipfile.ZipFile(io.BytesIO(outer.read(info)))
         for name in inner.namelist():
             if name.endswith(".json"):
-                yield split, json.loads(inner.read(name).decode("utf-8-sig"))
+                j = json.loads(inner.read(name).decode("utf-8-sig"))
+                # 여러 데이터가 한 zip에 섞여 있어도 글쓰기 평가 JSON만 쓴다 (동화 질의응답 등은 건너뜀)
+                if isinstance(j, dict) and "essay_question" in j and "score" in j:
+                    yield split, j
 
 
 def essay_type_of(item_name: str) -> str:
@@ -90,9 +100,17 @@ def to_row(split: str, j: dict, with_type: bool) -> dict:
     return row
 
 
-def build(zip_path: Path, with_type: bool) -> tuple[pd.DataFrame, pd.DataFrame]:
+def build(
+    zip_path: Path, with_type: bool, adult: bool = False
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     rows = [to_row(split, j, with_type) for split, j in iter_label_json(zip_path)]
     df = pd.DataFrame(rows)
+    if adult:
+        # 지시문이 같으면 같은 문항 (연령대별 id 2개 → 1개). 71819 id와 안 겹치게 T_ 접두어
+        first_id = df.groupby("prompt")["prompt_id"].transform("min")
+        df["prompt_id"] = "T_" + first_id.astype(str)
+        df["answer_id"] = "T_" + df["answer_id"].astype(str)
+        df["grade"] = "성인"
     # 문항 정보는 답마다 반복되므로 문항 표로 따로 뺀다 (prompt_id로 연결)
     id_cols = ["prompt_id", "subject", "grade"] + (["essay_type"] if with_type else [])
     prompts = (
@@ -104,21 +122,24 @@ def build(zip_path: Path, with_type: bool) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="AI Hub 라벨 zip → 학습용 표")
-    parser.add_argument(
-        "--descriptive-zip", type=Path, required=True, help="71818 서술형 zip"
-    )
-    parser.add_argument(
-        "--essay-zip", type=Path, required=True, help="71819 논술형 zip"
-    )
+    parser.add_argument("--descriptive-zip", type=Path, help="71818 서술형 zip")
+    parser.add_argument("--essay-zip", type=Path, help="71819 논술형 zip")
+    parser.add_argument("--adult-zip", type=Path, help="71817 주제별 글쓰기(성인) zip")
     parser.add_argument("--out-dir", type=Path, default=M2_DIR / "data")
     args = parser.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
-    for zip_path, name, with_type, ext in [
-        (args.descriptive_zip, "서술형", False, ".csv"),
-        (args.essay_zip, "논술형", True, ".csv.gz"),
-    ]:
-        answers, prompts = build(zip_path, with_type)
+    jobs = [
+        (args.descriptive_zip, "서술형", False, ".csv", False),
+        (args.essay_zip, "논술형", True, ".csv.gz", False),
+        (args.adult_zip, "성인", True, ".csv.gz", True),
+    ]
+    if not any(j[0] for j in jobs):
+        parser.error("zip 경로를 하나 이상 주세요")
+    for zip_path, name, with_type, ext, adult in jobs:
+        if zip_path is None:
+            continue
+        answers, prompts = build(zip_path, with_type, adult)
         answers.to_csv(
             args.out_dir / f"{name}_답안{ext}", index=False, encoding="utf-8-sig"
         )

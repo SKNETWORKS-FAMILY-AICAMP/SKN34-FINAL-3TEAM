@@ -21,6 +21,7 @@ RunPod (GPU):
     uv run python scripts/train.py --model klue/roberta-base --with-keyword
     uv run python scripts/train.py --model klue/roberta-base --dataset essay --with-purpose
     uv run python scripts/train.py --model klue/roberta-base --with-keyword --with-exemplar
+    uv run python scripts/train.py --dataset essay --extra-adult      # 성인 글 추가 (공부용만)
 """
 
 import argparse
@@ -67,7 +68,22 @@ def load(args: argparse.Namespace) -> pd.DataFrame:
     prompts = pd.read_csv(args.data_dir / prompt_file)
     split = pd.read_csv(args.split_dir / f"{args.dataset}_split_seed{args.seed}.csv")
     df = df.merge(prompts[["prompt_id", "prompt", "keyword"]], on="prompt_id")
-    return df.merge(split[["prompt_id", "split_new"]], on="prompt_id")
+    df = df.merge(split[["prompt_id", "split_new"]], on="prompt_id")
+    if args.extra_adult:
+        # 71817 성인 글을 공부용에만 더함 (검증·평가는 그대로 학생 글만). build_tables.py --adult-zip로 만든 표
+        adult = pd.read_csv(args.data_dir / "성인_답안.csv.gz")
+        adult_p = pd.read_csv(args.data_dir / "성인_문항.csv")
+        adult = adult.merge(adult_p[["prompt_id", "prompt", "keyword"]], on="prompt_id")
+        adult["split_new"] = "train"
+        adult["answer_id"] = adult["answer_id"].astype(str)
+        df["answer_id"] = df["answer_id"].astype(str)
+        print(
+            f"성인 글 {len(adult):,}건 (문항 {adult['prompt_id'].nunique()}개)을 공부용에 추가"
+        )
+        df = pd.concat(
+            [df, adult[df.columns.intersection(adult.columns)]], ignore_index=True
+        )
+    return df
 
 
 N_CLASS = 5  # 1~5점
@@ -322,6 +338,11 @@ def main() -> None:
         help="예시 답안을 앞에서 몇 글자까지 붙일지",
     )
     parser.add_argument(
+        "--extra-adult",
+        action="store_true",
+        help="71817 성인 글(data/성인_답안.csv.gz)을 공부용에만 추가 (논술형만, 평가는 학생 글 그대로)",
+    )
+    parser.add_argument(
         "--train-prompts",
         type=int,
         default=0,
@@ -336,6 +357,10 @@ def main() -> None:
     if args.with_keyword and args.dataset != "descriptive":
         parser.error(
             "--with-keyword는 서술형(descriptive)만 가능 (논술형은 핵심어 없음)"
+        )
+    if args.extra_adult and args.dataset != "essay":
+        parser.error(
+            "--extra-adult는 논술형(essay)만 (성인 글은 논술형과 같은 루브릭, 핵심어 없음)"
         )
     if args.with_purpose and args.dataset != "essay":
         parser.error(
@@ -359,6 +384,8 @@ def main() -> None:
         run_name += "_purpose"
     if args.with_exemplar:
         run_name += f"_ex{args.exemplar_chars}"
+    if args.extra_adult:
+        run_name += "_adult"
     if args.train_prompts:
         run_name += f"_p{args.train_prompts}"
     print(f"장치: {device} / 모델: {args.model} / 데이터: {args.dataset}")
