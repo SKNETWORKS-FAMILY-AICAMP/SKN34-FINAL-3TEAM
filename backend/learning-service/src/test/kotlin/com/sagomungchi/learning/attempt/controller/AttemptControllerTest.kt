@@ -3,10 +3,14 @@ package com.sagomungchi.learning.attempt.controller
 import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning.attempt.domain.Attempt
 import com.sagomungchi.learning.attempt.domain.AttemptDraft
+import com.sagomungchi.learning.attempt.domain.Difficulty
 import com.sagomungchi.learning.attempt.domain.DraftContent
 import com.sagomungchi.learning.attempt.domain.FinishResult
 import com.sagomungchi.learning.attempt.domain.HintOpened
 import com.sagomungchi.learning.attempt.domain.Reflection
+import com.sagomungchi.learning.attempt.domain.RevealKind
+import com.sagomungchi.learning.attempt.domain.SelfAssessmentItem
+import com.sagomungchi.learning.attempt.domain.SelfCheck
 import com.sagomungchi.learning.attempt.service.AttemptDetail
 import com.sagomungchi.learning.attempt.service.AttemptService
 import com.sagomungchi.learning.attempt.service.AttemptStart
@@ -30,6 +34,7 @@ import com.sagomungchi.learning.mission.missionView
 import org.junit.jupiter.api.Test
 import org.mockito.BDDMockito.given
 import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoMoreInteractions
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
@@ -226,6 +231,93 @@ class AttemptControllerTest(@Autowired private val mockMvc: MockMvc) {
         }
         mockMvc.post("/internal/missions/${mission.id}/attempts?grade=3") { asStudent(role = "PARENT") }.andExpect {
             status { isForbidden() }
+        }
+    }
+
+    @Test
+    fun `시도 상세의 공개 필드는 마무리 전에는 null, 마무리 뒤 정답·예시 답·체크리스트, 돌아보기 뒤 돌아보기`() {
+        given(service.get(attempt.id)).willReturn(detail())
+        mockMvc.get("/internal/attempts/${attempt.id}") { asStudent() }.andExpect {
+            jsonPath("$.reveal") { value(null) }
+            jsonPath("$.revealKind") { value(null) }
+            jsonPath("$.checklist") { value(null) }
+            jsonPath("$.reflection") { value(null) }
+        }
+
+        val elementId = UUID.randomUUID()
+        val revealed = FinishResult(now, "예시 답", RevealKind.EXAMPLE, listOf(ElementView(elementId, "주장", true, "답", ElementSource.AI_OBSERVATION)))
+        given(service.get(attempt.id)).willReturn(detail(revealed = revealed, reflection = Reflection(Difficulty.NORMAL, null)))
+        mockMvc.get("/internal/attempts/${attempt.id}") { asStudent() }.andExpect {
+            jsonPath("$.reveal") { value("예시 답") }
+            jsonPath("$.revealKind") { value("EXAMPLE") }
+            jsonPath("$.checklist[0].elementId") { value(elementId.toString()) }
+            jsonPath("$.checklist[0].quote") { value("답") }
+            jsonPath("$.reflection.difficulty") { value("NORMAL") }
+            jsonPath("$.reflection.text") { value(null) }
+        }
+    }
+
+    @Test
+    fun `마무리는 정답·예시 답과 체크리스트를 돌려줌`() {
+        given(service.finish(attempt.id)).willReturn(FinishResult(now, "정답: 물", RevealKind.ANSWER, emptyList()))
+
+        mockMvc.post("/internal/attempts/${attempt.id}/finish") { asStudent() }.andExpect {
+            status { isOk() }
+            jsonPath("$.attemptId") { value(attempt.id.toString()) }
+            jsonPath("$.finishedAt") { value("2026-10-27T01:00:00Z") }
+            jsonPath("$.reveal") { value("정답: 물") }
+            jsonPath("$.revealKind") { value("ANSWER") }
+            jsonPath("$.checklist.length()") { value(0) }
+        }
+    }
+
+    @Test
+    fun `돌아보기는 난이도 EASY·NORMAL·HARD 필수, 빈 달라진 점은 null로 저장하고 완료 상태·시점 반환`() {
+        val completed = attempt.copy(finishedAt = now).complete(now)
+        given(service.saveReflection(attempt.id, Reflection(Difficulty.EASY, null))).willReturn(completed)
+
+        mockMvc.post("/internal/attempts/${attempt.id}/reflection") {
+            asStudent()
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"difficulty":"EASY","text":"  "}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.status") { value("COMPLETED") }
+            jsonPath("$.completedAt") { value("2026-10-27T01:00:00Z") }
+            jsonPath("$.reflection.difficulty") { value("EASY") }
+            jsonPath("$.reflection.text") { value(null) }
+        }
+        verify(service).saveReflection(attempt.id, Reflection(Difficulty.EASY, null))
+
+        listOf("""{"text":"달라진 점"}""", """{"difficulty":"보통"}""", """{"difficulty":null}""").forEach { body ->
+            mockMvc.post("/internal/attempts/${attempt.id}/reflection") {
+                asStudent()
+                contentType = MediaType.APPLICATION_JSON
+                content = body
+            }.andExpect {
+                status { isBadRequest() }
+                jsonPath("$.code") { value("VALIDATION_FAILED") }
+            }
+        }
+        verifyNoMoreInteractions(service)
+    }
+
+    @Test
+    fun `자기 평가는 요소마다 자기 체크와 AI 확인을 나란히 배열로`() {
+        val elementId = UUID.randomUUID()
+        given(service.saveSelfAssessment(attempt.id, listOf(SelfCheck(elementId, true))))
+            .willReturn(listOf(SelfAssessmentItem(elementId, "주장", true, false, null)))
+
+        mockMvc.post("/internal/attempts/${attempt.id}/self-assessment") {
+            asStudent()
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"checks":[{"elementId":"$elementId","checked":true}]}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$[0].elementId") { value(elementId.toString()) }
+            jsonPath("$[0].selfChecked") { value(true) }
+            jsonPath("$[0].aiChecked") { value(false) }
+            jsonPath("$[0].quote") { value(null) }
         }
     }
 }
