@@ -22,6 +22,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
+import org.springframework.test.json.JsonCompareMode
 import org.springframework.test.web.servlet.MockHttpServletRequestDsl
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.post
@@ -91,13 +92,12 @@ class FeedbackControllerTest(@Autowired private val mockMvc: MockMvc) {
     }
 
     @Test
-    fun `다른 요청이 처리 중이면 200 status RUNNING`() {
+    fun `다른 요청이 처리 중이면 200 status RUNNING, 나머지는 생략하지 않고 null (api-spec 4·1)`() {
         given(facade.feedback(answerId)).willReturn(FeedbackResult.inProgress(ProcessStatus.RUNNING))
 
         mockMvc.post("/internal/answers/$answerId/feedback") { asStudent() }.andExpect {
             status { isOk() }
-            jsonPath("$.status") { value("RUNNING") }
-            jsonPath("$.nextActions.length()") { value(0) }
+            content { json("""{"status":"RUNNING","judgment":null,"followup":null,"nextActions":[],"versions":null}""", JsonCompareMode.STRICT) }
         }
     }
 
