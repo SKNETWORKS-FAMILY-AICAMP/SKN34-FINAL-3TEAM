@@ -131,3 +131,5 @@ feature/* → develop → main
 - 기본 브랜치가 아닌 통합 브랜치 대상 PR의 `Closes`는 이슈를 자동 종료하지 않는다. 실제 해결 범위를 확인한 최종 develop PR에도 해당 `Closes #이슈번호`를 포함한다.
 
 - [이슈 #45 계정 관리·Google 재인증·삭제·탈퇴](report/issue-45-account-management.md): #58 호출 계약, 삭제 Outbox·서비스별 완료, 탈퇴 차단·세션 폐기 및 통합 조건
+
+- [이슈 #58 학생 기기·PIN 인증](report/issue-58-student-device-auth.md): 실제 재인증·기기·PIN 계약, 삭제 연동과 검증 범위

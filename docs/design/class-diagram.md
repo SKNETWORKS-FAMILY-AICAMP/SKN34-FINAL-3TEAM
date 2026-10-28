@@ -302,9 +302,13 @@ classDiagram
   }
   class StudentDeviceController {
     <<controller>>
-    +createPairing(request) PairingResponse
-    +list() List
+    +pairing(request) PairingResponse
+    +devices() List
     +revoke(deviceId)
+    +register(request) DeviceResponse
+    +profiles(deviceCookie) List
+    +login(request, deviceCookie) StudentToken
+    +pin(childId, request, reauthToken)
   }
   class MeController {
     <<controller>>
@@ -327,7 +331,6 @@ classDiagram
     +unlink(reauthToken, childId)
     +deletionImpact(childId) Impact
     +requestDeletion(reauthToken, childId, scope) DeletionResponse
-    +setPin(reauthToken, childId, request)
   }
   class AccountService {
     <<service>>
@@ -337,13 +340,19 @@ classDiagram
   }
   class StudentAuthService {
     <<service>>
-    +createPairing(parentId, childIds) Pairing
-    +registerDevice(pairingCode, label) DeviceToken
+    +pairing(identity, childIds) PairingIssued
+    +register(pairingCode, label, ip) Registered
     +profiles(deviceToken) List
     +login(deviceToken, childId, pin) TokenResponse
-    +setPin(parentId, reauthToken, childId, pin)
-    +listDevices(parentId) List
+    +list(identity) List
     +revoke(parentId, deviceId)
+  }
+  class StudentPinService {
+    <<service>>
+    +set(identity, childId, pin, token)
+    +state(childId) PinState
+    +attempt(childId, pin) PinAttempt
+    +clear(childId)
   }
   class ConsentService {
     <<service>>
@@ -433,13 +442,13 @@ classDiagram
   MeController --> AccountService
   ConsentController --> ConsentService
   ChildrenController --> GuardianshipService
-  ChildrenController --> StudentAuthService : PIN
-  AuthController --> StudentAuthService
+  StudentDeviceController --> StudentPinService : PIN 변경
   StudentDeviceController --> StudentAuthService
-  StudentAuthService --> GuardianshipService : 연결 확인
-  StudentAuthService --> ConsentAccessService : 필수·법정대리인 동의
-  StudentAuthService --> AccountService : 재확인
-  StudentAuthService --> StudentRepository
+  StudentAuthService --> ChildAuthorizationService : 현재 자녀 권한
+  StudentAuthService --> AuthService : 독립 학생 세션
+  StudentPinService --> ReauthenticationService : DB grant 소비
+  StudentPinService --> StudentPinRepository
+  StudentAuthService --> StudentPinService : 자녀 PIN 잠금·검사
   StudentAuthService --> StudentDeviceRepository
   StudentAuthService --> TokenService
   StudentAuthService ..> StudentDevice
@@ -469,15 +478,15 @@ classDiagram
 - `GuardianshipService.authorizeChild(childId)`: 학부모는 `guardianship LINKED` 확인 후 `studentScope = {childId}`로 컨텍스트 갱신, 학생은 본인 ID만. 미연결 시 `403 CHILD_NOT_LINKED` (FN-AGT-02, NFR-SEC-02)
 - 자녀 범위가 필요한 모든 controller는 하위 호출 전에 `authorizeChild` 호출 → `InternalRestClientFactory`가 그 컨텍스트를 헤더로 전달
 - `authorizeLinkedChildren()`: 경로에 자녀 ID가 없는 API(`/reports/{reportId}` 등)용. `studentScope = 연결 자녀 전체`로 전달하고 소유 서비스가 리소스의 학생 ID로 검사, 403은 core가 `CHILD_NOT_LINKED`로 변환
-- 구현 상태 (#36·#37): `AuthController`의 authorize·callback·refresh·logout·student·me, `AuthCookies`·`AuthService`·`TokenService`·`GoogleOAuthClient`·`AuthRepository`·`StudentAccessService`·`ConsentAccessService`·`AccountAccessService`·`UserAccountRepository`(#36), `ConsentController`·`ConsentService`·`ChildrenController`의 children·register·`GuardianshipService`의 register·children·`ConsentAccessRepository`·`StudentAccessRepository`·`LearningRecordService`(#37)는 구현됨. 기기·PIN 3개 메서드, `MeController`·`AccountService`·`StudentAuthService`·`StudentDeviceController`, `ChildrenController`의 나머지 메서드, entity 메서드는 미구현 (#45·#58)
+- 구현 상태 (#36·#37): `AuthController`의 authorize·callback·refresh·logout·student·me, `AuthCookies`·`AuthService`·`TokenService`·`GoogleOAuthClient`·`AuthRepository`·`StudentAccessService`·`ConsentAccessService`·`AccountAccessService`·`UserAccountRepository`(#36), `ConsentController`·`ConsentService`·`ChildrenController`의 children·register·`GuardianshipService`의 register·children·`ConsentAccessRepository`·`StudentAccessRepository`·`LearningRecordService`(#37)는 구현됨. 기기·PIN은 #58의 `StudentDeviceController` 7개 API·`StudentAuthService`·`StudentPinService`에서 구현했다. #45는 `ReauthenticationService`·`AccountManagementService`·`AccountWithdrawalService`·`ChildManagementService`를 사용한다. 그림의 추상 `MeController`·`AccountService`와 Student entity 메서드명은 실제 클래스 이름으로 해석하지 않는다.
 - 동의는 별도 entity 없이 선택마다 새 `consent` 행(AGREED·WITHDRAWN)을 저장하고 최신 행으로 판정 (상태 다이어그램 2.3, [이슈 #37 보고서](../report/issue-37-consent-children.md))
 - `StudentAccessService`·`ConsentAccessService`는 인증용 읽기 전용 확인. 쓰기(자녀 등록·동의 저장)는 `GuardianshipService`·`ConsentService`(#37) 소유
 - 공개 API 컨텍스트는 `PublicAuthFilter`가 설정하고 finally에서 해제 (`InternalAuthFilter`와 같은 방식)
 - 이메일·비밀번호 가입·로그인·로그인 수단 변경 없음. Google 계정은 `(oauth_provider, oauth_subject)`로 식별, 최초 콜백에서 `AuthService.login`이 PARENT 계정 생성 (API 명세 5.1)
-- 재확인 토큰(`reauthToken`)은 Google 재인증 기반(#45), Redis 저장 (ERD 1장)
+- 재확인 토큰(`reauthToken`)은 Google 재인증 기반(#45), DB reauth_challenge/reauth_grant 저장
 - `AuthService.enterStudent` (`POST /auth/student-sessions`): 학부모 Bearer와 같은 세션의 refresh로 연결·활성 자녀·필수·법정대리인 동의 확인 → 부모 refresh 소비, `auth_session` role·studentId·version 변경 → `STUDENT` access만 발급, refresh 쿠키 삭제 (P01, 학부모 동석). 학생 계정·시연 링크 없음
-- `StudentAuthService.login`: 기기 쿠키 해시로 `StudentDevice` 조회 → `isUsable`(미해제·미만료)·자녀 등록 확인 → `GuardianshipService.linkedStudentIds(device.parentUserId)`·`ConsentAccessService.hasGuardianConsent` → 잠금·PIN 검사 → 동석 경로와 같은 `STUDENT` 토큰 발급, refresh 미발급 (P01, API 명세 3.11)
-- `Student.recordPinFailure`: 실패 횟수 증가, 5회(설정값) 도달 시 `pin_locked_at` 기록. `setPin`은 해시·실패 횟수 0·잠금 해제를 한 번에 처리
+- `StudentAuthService.login`: 기기 쿠키 해시로 `StudentDevice` 조회 → `isUsable`(미해제·미만료)·자녀 등록 확인 → `ChildAuthorizationService.requireCurrent`·`StudentAccessService.requireLinked` → 잠금·PIN 검사 → 동석 경로와 같은 `STUDENT` 토큰 발급, refresh 미발급 (P01, API 명세 3.11)
+- `StudentPinService.attempt`: 학생 행 잠금으로 실패 횟수 증가, 5회 도달 시 `pin_locked_at` 기록. `set`은 DB 재인증 소비와 해시·실패 횟수 0·잠금 해제를 한 번에 처리
 - 페어링 코드는 Redis(10분·1회용), 기기 자격증명은 `student_device.token_hash`만 저장. 저장 구조는 ERD 10장 변경 예정
 - `GuardianshipService.register`: 학년 3~6·출생연도 검증, 보호자 행 잠금 후 `LINKED` 자녀 3명이면 `CHILD_LIMIT_REACHED`, GUARDIAN 동의 필수 (P01·P02·P03). 다른 보호자 연결(`link`) 없음
 
@@ -1817,3 +1826,5 @@ classDiagram
 - learning 하위 기록 삭제 방식(FK `ON DELETE CASCADE` 또는 서비스 내 삭제 순서) 결정 후 ERD 반영 필요 (4.3). 현재 FK는 NO ACTION
 - learning `record/RecordRepository`가 여러 기능 테이블을 조회: 조회 전용 기능 한정 예외
 - 클래스 분할 단위(관리자 controller 등)는 구현 시 조정 가능, 레이어·의존 방향은 고정
+
+#58 구현 상태: StudentDeviceController의 7개 API와 StudentAuthService·StudentPinService·StudentDeviceCleanupService·Repository가 구현됐다. 자녀 PIN 저장·잠금은 StudentPinService, 삭제·탈퇴 기기 정리는 StudentDeviceCleanupService가 담당한다.
