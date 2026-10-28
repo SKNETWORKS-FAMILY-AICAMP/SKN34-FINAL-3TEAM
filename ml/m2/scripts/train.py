@@ -125,6 +125,23 @@ def cls_loss(logits: torch.Tensor, soft: torch.Tensor) -> torch.Tensor:
     return -(soft.view_as(logp) * logp).sum(-1).mean()
 
 
+def corr_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """배치 안에서 항목마다 (1 - Pearson 상관)의 평균. 점수 크기가 아니라 '순서'를 직접 가르친다.
+
+    MSE만 쓰면 애매한 글을 전부 3점 근처로 몰아도 손해가 적어서(10/28 확인: 예측 퍼짐이 정답의 6할),
+    좋은 글과 나쁜 글의 순서를 맞히는 항을 더한다 (R2BERT의 회귀 + 순위 학습과 같은 생각).
+    배치 안에서 정답이 전부 같은 항목은 상관을 못 구하니 뺀다.
+    """
+    p = pred - pred.mean(0, keepdim=True)
+    t = target - target.mean(0, keepdim=True)
+    denom = p.norm(dim=0) * t.norm(dim=0)
+    ok = t.norm(dim=0) > 1e-6
+    if not ok.any():
+        return pred.sum() * 0.0
+    r = (p * t).sum(0)[ok] / (denom[ok] + 1e-8)
+    return (1 - r).mean()
+
+
 def pick_exemplars(df: pd.DataFrame, seed: int) -> pd.DataFrame:
     """문항마다 '예시 답안' 1개를 고른다 (모범 답안 필드가 없어서 고득점 학생 답으로 대신).
 
@@ -332,6 +349,17 @@ def main() -> None:
     parser.add_argument("--max-length", type=int, default=512)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
+        "--corr-loss",
+        type=float,
+        default=0.0,
+        help="회귀 손실에 (1 - 배치 상관) x 이 값을 더함. 0이면 MSE만 (순서 학습 실험용, 예: 1.0)",
+    )
+    parser.add_argument(
+        "--merge-valid",
+        action="store_true",
+        help="검증 문항도 학습에 합침. early stop 판단이 불가능해서 --epochs로 정한 에폭까지 학습하고 마지막 에폭을 씀",
+    )
+    parser.add_argument(
         "--aihub-split",
         action="store_true",
         help="AI Hub 원래 구분으로 학습·평가 (TL 90%% 학습, TL 10%% 검증, VL 평가). 같은 지시문 조건 비교용",
@@ -419,6 +447,10 @@ def main() -> None:
         run_name += "_adult"
     if args.aihub_split:
         run_name += "_aihub"
+    if args.corr_loss:
+        run_name += f"_corr{args.corr_loss:g}"
+    if args.merge_valid:
+        run_name += f"_mergevalid_ep{args.epochs}"
     if args.train_prompts:
         run_name += f"_p{args.train_prompts}"
     print(f"장치: {device} / 모델: {args.model} / 데이터: {args.dataset}")
@@ -453,6 +485,11 @@ def main() -> None:
         sets["train"] = sets["train"][sets["train"]["prompt_id"].isin(keep)]
         sets["train"] = sets["train"].reset_index(drop=True)
         print(f"공부용 문항 {len(keep)}개만 사용")
+    if args.merge_valid:
+        sets["train"] = pd.concat([sets["train"], sets["valid"]], ignore_index=True)
+        print(
+            f"검증 문항도 학습에 합침 (에폭 {args.epochs} 고정, 검증 점수는 학습에 쓴 글이라 참고만)"
+        )
     print({k: len(v) for k, v in sets.items()})
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
@@ -539,6 +576,10 @@ def main() -> None:
                     loss = cls_loss(logits, batch["labels"])
                 else:
                     loss = torch.nn.functional.mse_loss(logits.float(), batch["labels"])
+                    if args.corr_loss:
+                        loss = loss + args.corr_loss * corr_loss(
+                            logits.float(), batch["labels"]
+                        )
             scaler.scale(loss).backward()  # GradScaler가 꺼져 있으면 그냥 backward
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -588,11 +629,15 @@ def main() -> None:
         # 첫 에폭은 무조건 저장 (그래야 마지막에 불러올 체크포인트가 항상 있음)
         if math.isnan(stop_score):
             stop_score = -1.0
-        if best_epoch == 0 or stop_score > best_qwk:
+        if args.merge_valid or best_epoch == 0 or stop_score > best_qwk:
             best_qwk, best_epoch = stop_score, epoch
             model.save_pretrained(ckpt_dir)
             tokenizer.save_pretrained(ckpt_dir)
-        elif args.patience and epoch - best_epoch >= args.patience:
+        elif (
+            not args.merge_valid
+            and args.patience
+            and epoch - best_epoch >= args.patience
+        ):
             print(
                 f"검증 상관이 {args.patience}에폭 연속 안 올라서 멈춤 (가장 좋은 에폭 {best_epoch})"
             )
