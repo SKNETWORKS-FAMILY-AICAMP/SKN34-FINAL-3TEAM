@@ -20,7 +20,7 @@ PROFILE·RECORDS 모두 기존 리포트 내용/파일을 삭제하고 이후 �
 
 ## 검증
 
-최종 누적 브랜치 전체 실행은 **182 passed, 0 failed, 0 skipped (141.69초)**다. Ruff check/format(78개 파일), root 계약·스키마 unittest 53개(1.985초), 문서 UTF-8/충돌 표식/내부 링크 10문서·11링크, API 4.2 표 구조, `git diff --check`를 통과했다. 3개 DB migration·ERD 대조·반복 no-op·report 롤백/재적용도 16.3초에 통과했다([스키마 상세](report-deletion-schema.md)).
+아래 삭제 구현 직후의 누적 전체 실행은 **182 passed, 0 failed, 0 skipped (141.69초)**다. Ruff check/format(78개 파일), root 계약·스키마 unittest 53개(1.985초), 문서 UTF-8/충돌 표식/내부 링크 10문서·11링크, API 4.2 표 구조, `git diff --check`를 통과했다. 3개 DB migration·ERD 대조·반복 no-op·report 롤백/재적용도 16.3초에 통과했다([스키마 상세](report-deletion-schema.md)).
 
 직전 전체 검사에서는 179개 통과/3개 setup 오류였다. 서로 다른 일회용 MinIO의 자격 증명을 boto3 기본 세션이 재사용한 테스트 격리 문제여서 fixture에서 기본 세션을 분리했다. 위 182개는 수정 후 단일 전체 실행 결과다. Starlette TestClient의 기존 deprecation warning 1개는 남아 있다.
 
@@ -29,3 +29,7 @@ PROFILE·RECORDS 모두 기존 리포트 내용/파일을 삭제하고 이후 �
 2026-10-28 변경 후 삭제 집중 검사 **18개 통과(18.61초)**. 실제 PostgreSQL에서 중복·다른 학생 보존·완료 보고 재시도·생성/삭제 lock·양 scope의 늦은/새 명령 차단을 확인했다. 계약 위반 7개는 삭제 호출 전에 거부한다. 실제 RabbitMQ의 팀 토폴로지 retry.1 큐 이동과 본문/time 보존, 재전달 두 번에도 물리 삭제 한 번을 확인했다. 최초 저장소 실패는 주입하고 재전달 성공은 실제 MinIO의 학생별 6개 객체·DB 리포트 정리로 확인했다. core 완료 호출은 대역이며 실제 HTTP 요청의 토큰/SYSTEM·scope/본문은 별도 MockTransport 검사다. 재시도 1분 TTL을 실제로 기다린 테스트는 아니며 큐에서 메시지를 꺼내 즉시 재전달했다.
 
 생성 도중 업로드 취소는 작업 스레드 정리까지 기다린 뒤 lock을 반환한다. 다른 프로세스의 비정상 종료로 남은 RUNNING 행은 삭제가 lock을 얻은 후 함께 정리한다. 발행 중이던 Outbox 이벤트, 이미 발급된 URL, S3 이전 버전/캐시는 report DB 삭제만으로 모두 회수할 수 없으므로 인계 문서의 core/인프라 후속 사항이 필요하다.
+
+## #27 사전 보완 병합 후 회귀 (2026-10-28)
+
+#51 돌아보기 입력·#53 공통 난이도 표시·#54 응답/OpenAPI 보완을 순서대로 이 브랜치에 병합했다. 문서 충돌은 기존 MinIO 검증과 새 계약 설명을 모두 보존해 해결했다. 삭제 코드·guard migration은 변경하지 않았다. 누적 전체 **203 passed, 0 failed, 0 skipped (133.01초)**, Ruff 78파일 통과. 기존 TestClient deprecation warning 1개가 있다. 실제 DB·브로커·MinIO 검사는 포함하며 core 완료 호출과 learning/AI 응답의 대역 범위는 유지한다. 상세 변경과 #27 확인 대기는 [인계 문서](report-service-handoff.md)를 따른다. 추가 PR·원격 push는 하지 않았다.
