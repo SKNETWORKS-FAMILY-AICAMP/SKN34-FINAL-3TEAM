@@ -1,4 +1,4 @@
-"""Integration boundaries. The production message codec awaits #42's shared schemas."""
+"""Generation and message adapters; ReportV1Codec implements #42's shared schemas."""
 
 from typing import Any, Protocol
 

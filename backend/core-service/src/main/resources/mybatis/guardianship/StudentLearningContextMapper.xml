@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.guardianship.repository.StudentLearningContextMapper">
+    <resultMap id="context" type="com.sagomungchi.core.guardianship.domain.StudentLearningContext">
+        <constructor>
+            <arg column="grade" javaType="_int"/>
+            <arg column="demo" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+    <select id="findLinked" resultMap="context">
+        SELECT s.grade, s.is_demo AS demo FROM student s
+        JOIN guardianship g ON g.student_id=s.id
+        WHERE s.id=#{studentId} AND g.parent_user_id=#{userId}
+          AND g.status='LINKED' AND s.status='ACTIVE'
+    </select>
+</mapper>

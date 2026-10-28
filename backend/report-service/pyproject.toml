@@ -20,6 +20,7 @@ dependencies = [
 dev = [
     "moto[s3]>=5.2.4",
     "pypdf>=6.21.2",
+    "jsonschema==4.26.0",
     "pytest>=9.1.1",
     "ruff>=0.17.2",
     "testcontainers>=4.15.0",

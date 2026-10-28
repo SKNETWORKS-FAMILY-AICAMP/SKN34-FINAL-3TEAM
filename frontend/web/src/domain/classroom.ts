@@ -4,12 +4,20 @@ export interface Child {
   nickname: string
   grade: number
   birthYear: number
-  plan: 'FREE' | 'PREMIUM'
+  plan?: 'FREE' | 'PREMIUM'
+  guardianConsentRequired?: boolean
+  hasRecords?: boolean | null
+  recordState?: 'AVAILABLE' | 'UNAVAILABLE' | 'CONSENT_REQUIRED'
+  /** #58 확장 메타데이터. #37 응답에는 없을 수 있다. */
+  pinSet?: boolean
+  pinLocked?: boolean
 }
 export interface Session {
   nextAction?: 'CONSENT_REQUIRED' | 'CHILD_REGISTRATION_REQUIRED' | 'READY'
   startPath?: string
   role: Role
+  /** 학생 진입 경로. DEVICE는 등록 기기 + PIN(refresh 없음, 만료 시 PIN 재입력), GUARDIAN은 학부모 동석. */
+  entry?: 'DEVICE' | 'GUARDIAN'
   child?: Child
   permissions?: import('./admin/operations.ts').Permission[]
 }

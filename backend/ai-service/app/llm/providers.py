@@ -101,6 +101,9 @@ class AnthropicLlm(LlmClient):
 JsonMode = Literal["json_schema", "json_object"]
 # sLLM 서버는 키를 요구하지 않는 경우가 많지만 SDK는 빈 키를 허용하지 않음
 NO_KEY = "not-needed"
+# SDK는 base_url=None이면 OPENAI_BASE_URL 환경 변수를 읽는데, 빈 값(compose 기본값)도 그대로
+# 주소로 써서 연결이 실패함. 그래서 주소가 비면 기본 주소를 직접 넘김
+OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
 
 class OpenAICompatibleLlm(LlmClient):
@@ -126,7 +129,7 @@ class OpenAICompatibleLlm(LlmClient):
         super().__init__(model, max_retries, recorder, backoff_seconds, timeout)
         # SDK 자체 재시도는 끔 (재시도는 LlmClient 한 곳에서만), 타임아웃은 요청마다 지정
         self._client = client or openai.AsyncOpenAI(
-            api_key=api_key or NO_KEY, base_url=base_url or None, max_retries=0
+            api_key=api_key or NO_KEY, base_url=base_url or OPENAI_DEFAULT_BASE_URL, max_retries=0
         )
         self._json_mode = json_mode
 

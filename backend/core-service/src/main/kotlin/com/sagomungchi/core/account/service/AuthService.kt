@@ -149,7 +149,7 @@ class AuthService(
                 requireGuardian(account.id, studentId)
                 setOf(students.requireLinked(account.id, studentId).id)
             }
-            "PARENT" -> students.linkedStudents(account.id).map { it.id }.toSet()
+            "PARENT" -> students.linkedStudents(account.id).filter { consents.hasGuardianConsent(account.id, it.id) }.map { it.id }.toSet()
             else -> emptySet()
         }
         return AuthenticatedAccount(account, session, if (session.role == "ADMIN") repository.permissions(account.id) else emptySet(), scope)

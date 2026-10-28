@@ -22,7 +22,9 @@
 
 ## 2. 계정·자녀 연결
 
-### 2.1 로그인·토큰 재발급
+### 2.1 로그인·토큰 재발급 (#36 Google OAuth)
+
+학부모·관리자만 해당. 학생은 refresh 없이 2.4 경로로 진입. 세부 계약은 [API 명세 5.1](api-spec.md#51-36-google-oauth토큰-구현-계약-개정-p01-정렬)·[OpenAPI](../../contracts/openapi/core-service.yaml)
 
 ```mermaid
 sequenceDiagram
@@ -30,23 +32,43 @@ sequenceDiagram
   actor U as 사용자
   participant W as Web
   participant C as core
+  participant G as Google
   participant DB as core_db
 
-  U->>W: 로그인 ID·비밀번호
-  W->>C: POST /auth/login
-  C->>DB: user_account 조회 (status = ACTIVE)
-  alt 인증 실패
-    C-->>W: 401 UNAUTHENTICATED
+  U->>W: Google 계정으로 계속하기
+  W->>C: GET /auth/google/authorize
+  C-->>W: 302 Google 인가 URL (state·nonce·PKCE S256) + Set-Cookie sagomungchi_oauth (SameSite=Lax, 10분)
+  W->>G: 계정 선택·동의
+  G-->>W: 302 /auth/google/callback?code&state
+  W->>C: GET /auth/google/callback (상태 쿠키)
+  C->>C: state 쿠키 대조
+  C->>G: 코드 교환 (code_verifier) → ID 토큰 JWKS·iss·aud·exp·nonce 검증
+  alt 취소·검증 실패·같은 이메일 기존 계정
+    C-->>W: 302 /login?oauthError=CANCELLED|OAUTH_FAILED|ACCOUNT_EXISTS|OAUTH_UNAVAILABLE
   else 성공
-    C->>DB: refresh_token 저장 (token_hash)
-    C-->>W: 200 accessToken·역할·시작 화면 + Set-Cookie refresh (httpOnly·SameSite=Strict)
+    rect rgba(128,128,128,0.12)
+      C->>DB: user_account 조회 (provider+sub), 없으면 PARENT 생성 (이메일 자동 연결 없음)
+      C->>DB: auth_session·refresh_token(token_hash) 저장 (최초 로그인부터 7일)
+    end
+    C-->>W: 302 /oauth/complete + Set-Cookie sagomungchi_refresh (HttpOnly·SameSite=Strict·Path=/api/v1/auth)
   end
+  W->>C: POST /auth/refresh (쿠키, Origin·X-Requested-With)
+  C-->>W: 200 {accessToken, expiresIn, role, nextAction, startPath} + 회전 쿠키
+  W->>C: GET /me (Bearer)
+  C-->>W: 200 역할·nextAction(CONSENT_REQUIRED·CHILD_REGISTRATION_REQUIRED·READY)·startPath
   Note over W: access token은 메모리 보관
   W->>C: API 호출 (Bearer)
   C-->>W: 401 TOKEN_EXPIRED
-  W->>C: POST /auth/refresh (쿠키)
-  C->>DB: refresh_token 검증 → 폐기 + 새 토큰 저장 (회전)
-  C-->>W: 200 새 accessToken
+  W->>C: POST /auth/refresh (쿠키, 탭 간 Web Locks로 1회)
+  rect rgba(128,128,128,0.12)
+    C->>DB: auth_session 행 잠금 → refresh_token 재조회
+    alt 이미 사용한 토큰 (재사용)
+      C->>DB: auth_session 폐기 (commit)
+    else 유효
+      C->>DB: used_at 기록 + 새 refresh 저장 (세션 만료 연장 없음)
+    end
+  end
+  C-->>W: 200 새 accessToken (재사용이면 401 REFRESH_REUSED)
   W->>C: 원래 요청 재시도
 ```
 
@@ -61,8 +83,8 @@ sequenceDiagram
 
   W->>C: GET /consent-documents
   C-->>W: 현재 문서 버전 (TERMS·PRIVACY·GUARDIAN)
-  W->>C: POST /children {nickname, grade, birthYear, agreements[]}
-  C->>C: GuardianshipService.registerChild
+  W->>C: POST /children {nickname, grade, birthYear, consents[]}
+  C->>C: GuardianshipService.register
   C->>DB: 현재 필수 문서(required)·LINKED 자녀 수 조회
   alt 필수 GUARDIAN 동의 누락·학년 3~6 밖
     C-->>W: 400 VALIDATION_FAILED
@@ -81,6 +103,30 @@ sequenceDiagram
 - 자녀는 전원 만 14세 미만으로 간주, GUARDIAN 동의를 항상 필수로 받음 (P01)
 - 다른 보호자의 기존 자녀 연결 없음 (P02). 연결 해제(`unlink`)는 `X-Reauth-Token` 확인 후 처리, `audit_log` 기록 (FN-ACC-10)
 
+### 2.3 자녀 범위 권한 확인 (모든 자녀 대상 API 공통)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web
+  participant C as core
+  participant DB as core_db
+  participant L as learning
+
+  W->>C: GET /children/{childId}/summary?from&to (Bearer)
+  C->>C: PublicAuthFilter → UserContext(userId, PARENT)
+  C->>DB: guardianship (parent, childId, LINKED) 존재 확인
+  alt 미연결
+    C-->>W: 403 CHILD_NOT_LINKED
+  else 연결됨
+    C->>C: UserContext.studentScope = {childId}
+    C->>L: GET /internal/records/students/{childId}/summary (X-Student-Scope: childId)
+    L->>L: InternalAuthFilter → requireStudent(childId)
+    L-->>C: Metric[] + state + period
+    C-->>W: 200
+  end
+```
+
 ### 2.4 학생 진입 (P01)
 
 진입 경로는 학부모 동석(아래 첫 다이어그램)과 등록 기기 + PIN 단독 진입(기기 등록·PIN 로그인 다이어그램) 두 가지다 (2026-10-27 개정, API 명세 3.11).
@@ -93,13 +139,17 @@ sequenceDiagram
   participant DB as core_db
 
   Note over W: 학부모 로그인 상태에서 상단 자녀 전환으로 자녀 선택
-  W->>C: POST /auth/student-sessions {childId} (학부모 Bearer)
-  C->>DB: guardianship (parent, childId, LINKED)·student ACTIVE·필수 동의 유지 확인
+  W->>C: POST /auth/student-sessions {childId} (학부모 Bearer + refresh 쿠키)
+  C->>DB: auth_session 잠금·Bearer와 같은 세션 확인, guardianship (parent, childId, LINKED)·student ACTIVE·필수·법정대리인 동의 확인
   alt 미연결·삭제·필수 동의 철회
     C-->>W: 403 CHILD_NOT_LINKED
   else
-    C-->>W: 200 학생 accessToken (role STUDENT, studentId = childId)
+    rect rgba(128,128,128,0.12)
+      C->>DB: 부모 refresh 소비, auth_session role=STUDENT·student_id·version+1·만료=학생 access TTL
+    end
+    C-->>W: 200 {accessToken, expiresIn, role STUDENT, child, nextAction READY, startPath} + refresh 쿠키 삭제
   end
+  Note over W: 학생 refresh 미발급. 기존 부모 access는 version 불일치로 거부
   Note over W: 이후 학생 API는 학생 토큰으로 호출. URL 식별값(?student=) 진입 없음
 ```
 
@@ -146,7 +196,7 @@ sequenceDiagram
   participant DB as core_db
 
   K->>C: GET /auth/student/profiles (Cookie student_device)
-  C-->>K: 200 [{childId, nickname, pinSet, locked}]
+  C-->>K: 200 [{childId, nickname, pinSet, pinLocked}]
   Note over K: 자녀 프로필 선택 → PIN 입력
   K->>C: POST /auth/student/login {childId, pin} (Cookie student_device)
   C->>DB: student_device token_hash 조회·미해제·미만료·자녀 등록 확인
@@ -171,30 +221,6 @@ sequenceDiagram
 - PIN 잠금 해제는 학부모 `PUT /children/{childId}/pin`(재확인 필요)으로만 가능
 - 학부모가 기기를 해제하면(`DELETE /student-devices/{deviceId}`) 이후 PIN 로그인은 `401 STUDENT_DEVICE_INVALID`
 
-### 2.3 자녀 범위 권한 확인 (모든 자녀 대상 API 공통)
-
-```mermaid
-sequenceDiagram
-  autonumber
-  participant W as Web
-  participant C as core
-  participant DB as core_db
-  participant L as learning
-
-  W->>C: GET /children/{childId}/summary?from&to (Bearer)
-  C->>C: JwtAuthFilter → UserContext(userId, PARENT)
-  C->>DB: guardianship (parent, childId, LINKED) 존재 확인
-  alt 미연결
-    C-->>W: 403 CHILD_NOT_LINKED
-  else 연결됨
-    C->>C: UserContext.studentScope = {childId}
-    C->>L: GET /internal/records/students/{childId}/summary (X-Student-Scope: childId)
-    L->>L: InternalAuthFilter → requireStudent(childId)
-    L-->>C: Metric[] + state + period
-    C-->>W: 200
-  end
-```
-
 ---
 
 ## 3. 미션 학습
@@ -210,15 +236,18 @@ sequenceDiagram
   participant DB as learning_db
 
   W->>C: POST /missions/{missionId}/attempts
-  C->>L: POST /internal/missions/{missionId}/attempts
-  L->>DB: 공개·학년 범위 미션 확인
-  alt 비공개·범위 밖 미션
-    L-->>C: 409 MISSION_NOT_AVAILABLE
-  else 진행 중 시도 있음
-    L-->>C: 기존 attempt (이어하기)
+  C->>L: POST /internal/missions/{missionId}/attempts?grade&demo
+  L->>DB: 진행 중 시도 확인
+  alt 진행 중 시도 있음
+    L-->>C: 200 기존 attempt (이어하기, 공개 중단·학년 변경과 무관)
   else
-    L->>DB: attempt 저장 (IN_PROGRESS, 당시 mission·rubric 버전 고정)
-    L-->>C: 201 attempt
+    L->>DB: 공개·학년·시연 범위 미션 확인
+    alt 비공개·범위 밖 미션
+      L-->>C: 409 MISSION_NOT_AVAILABLE
+    else
+      L->>DB: attempt 저장 (IN_PROGRESS, 당시 mission·rubric 버전 고정) + 빈 초안(version 0)
+      L-->>C: 201 attempt
+    end
   end
   C-->>W: attempt
 
@@ -242,9 +271,13 @@ sequenceDiagram
   else 새 요청
     C->>L: POST /internal/attempts/{id}/answers (Idempotency-Key: k1)
     rect rgba(128,128,128,0.12)
-      L->>DB: attempt IN_PROGRESS 확인 (아니면 409 ATTEMPT_CLOSED)
-      L->>DB: answer 저장 (version = 이전+1, followup_id 연결)
+      L->>DB: attempt 행 잠금(FOR UPDATE)·본인 시도 확인
+      L->>DB: 같은 시도·키의 answer 조회 (같은 본문이면 201 그 답변, 다른 본문이면 422 IDEMPOTENCY_KEY_REUSED)
+      L->>L: 마무리·완료 409 ATTEMPT_CLOSED · 입력 방식 다름 400 · 누락 422 ANSWER_INCOMPLETE
+      L->>DB: 보완이면 가장 최근 미답 되묻기와 followupId 확인 (아니면 422 ANSWER_INCOMPLETE)
+      L->>DB: answer 저장 (version = 이전+1, previous_answer_id·followup_id 연결)
       L->>DB: judgment 저장 (PENDING)
+      L->>DB: attempt_draft 답 칸 비움 (memo 유지, version +1)
     end
     L-->>C: 201 answerId·version·feedback.status=PENDING
     C->>C: idempotency_record 저장
@@ -253,8 +286,9 @@ sequenceDiagram
 ```
 
 - 저장 성공(201)과 이후 피드백 처리 성공을 분리 (FN-LRN-10). 피드백은 3.2의 별도 요청
+- learning도 시도·키(ERD UK)로 같은 키를 처리. core가 learning 응답을 받기 전에 끊겨 다시 보내도 답변은 1건
 - 메모는 초안 `content.memo`로 함께 저장, 학생 본인 조회에만 포함 (P05)
-- 무료 플랜은 시도 시작 시 하루 3개 미션 한도 확인, 초과 시 `429 USAGE_LIMIT_REACHED` (P13)
+- 무료 플랜은 하루 신규 미션 시도 3개까지 허용 (P13). 신규 생성 `201`만 집계하고 이어하기 `200`은 항상 허용, 한도 초과 신규 생성만 `429 USAGE_LIMIT_REACHED` (API 2.2, core Redis 카운터는 후속 구현)
 
 ### 3.2 피드백 SSE (판정·되묻기)
 
@@ -276,7 +310,7 @@ sequenceDiagram
   alt 이미 DONE
     L-->>C: 저장된 결과
   else 유효 리스 RUNNING (다른 요청이 처리 중)
-    L-->>C: status RUNNING
+    L-->>C: 200 {status: RUNNING, judgment·followup·versions: null, nextActions: []}
   else 전이 성공
     alt 고르기·수학 최종 답
       L->>L: ChoiceJudge·MathEquivalenceJudge
@@ -297,7 +331,7 @@ sequenceDiagram
       end
       A-->>L: result·elements·heldReason·trial·versions
     end
-    opt 되묻기 대상 (시도 내 되묻기 2회 미만, 고르기 CORRECT 아님, P04)
+    opt 되묻기 대상 (시도 내 되묻기 2회 미만, 고르기 CORRECT 아님, 마무리·완료 전, P04)
       L->>A: POST /internal/followups {timeline, judgment, rubric, mission, grade}
       A->>LLM: 되묻기 생성
       A->>A: LeakGuard 정답·금지어 검사
@@ -311,13 +345,13 @@ sequenceDiagram
     end
     A--)A: llm.usage.recorded 발행 (best-effort)
     alt 위 처리 중 예외 (ai·LLM 실패, 타임아웃)
-      L->>DB: judgment FAILED (failure_code, retry_count+1)
+      L->>DB: judgment FAILED (failure_code, retry_count+1, 획득한 리스일 때만)
       L-->>C: 503 AI_UNAVAILABLE retryable
     else 정상
       rect rgba(128,128,128,0.12)
-        L->>DB: judgment DONE + judgment_element + followup + 버전 저장
+        L->>DB: attempt 행 잠금(FOR UPDATE)·마무리 여부 다시 확인 → judgment DONE + judgment_element + followup(마무리 전일 때만) + 버전 저장 (획득한 리스일 때만, 리스를 잃었으면 저장 없이 현재 상태)
       end
-      L-->>C: FeedbackResult
+      L-->>C: 200 FeedbackResult
     end
   end
   alt status RUNNING 수신
@@ -347,6 +381,7 @@ sequenceDiagram
 
   W->>C: POST /attempts/{id}/finish
   C->>L: POST /internal/attempts/{id}/finish
+  L->>DB: attempt 행 잠금(FOR UPDATE)·본인 시도 확인 (이미 마무리했으면 기록 없이 같은 결과)
   L->>DB: 타임라인(답변·판정·되묻기) 조회
   L->>L: FinishPolicy.canFinish (판정 DONE 1회 이상, P04)
   alt 조건 미충족
@@ -359,14 +394,15 @@ sequenceDiagram
   end
   opt 자기 평가 (선택)
     W->>C: POST /attempts/{id}/self-assessment
-    C->>L: POST /internal/attempts/{id}/self-assessment
-    L-->>C: 자기 체크 저장 (판정·원본 불변), AI 확인 항목과 나란히 반환
+    C->>L: POST /internal/attempts/{id}/self-assessment {checks}
+    L-->>C: 자기 체크 저장 (판정·원본 불변), AI 확인 항목과 나란히 반환 (마무리 전·완료 뒤 409)
     C-->>W: 200
   end
-  W->>C: POST /attempts/{id}/reflection {difficulty, changedText}
+  W->>C: POST /attempts/{id}/reflection {difficulty, text}
   C->>L: POST /internal/attempts/{id}/reflection
-  alt finished_at 없음 (마무리 전)
-    L-->>C: 409 REVEAL_CONDITION_UNMET
+  L->>DB: attempt 행 잠금(FOR UPDATE)·본인 시도 확인
+  alt finished_at 없음 (마무리 전) 또는 이미 완료
+    L-->>C: 409 REVEAL_CONDITION_UNMET (완료 뒤면 ATTEMPT_CLOSED)
     C-->>W: 409
   else
     rect rgba(128,128,128,0.12)
@@ -859,11 +895,11 @@ sequenceDiagram
   participant L as learning
   participant RW as report-worker
 
-  W->>C: POST /children/{childId}/deletion-requests {scope}
-  C->>CDB: deletion_request REQUESTED
-  Note over C: X-Reauth-Token 재확인 후 (P09)
+  Note over W: 사전 안내 GET /children/{childId}/deletion-impact
+  W->>C: POST /children/{childId}/deletion-requests {scope} (X-Reauth-Token)
+  Note over C: 재확인 토큰 검사, 무효면 403 REAUTH_REQUIRED (P09)
   rect rgba(128,128,128,0.12)
-    C->>CDB: deletion_request CONFIRMED (scope = PROFILE면 student DELETION_REQUESTED)
+    C->>CDB: deletion_request REQUESTED → CONFIRMED (scope = PROFILE면 student DELETION_REQUESTED)
     C->>CDB: outbox_event (student.deleted, subject = studentId)
   end
   C-)MQ: events.topic / student.deleted
