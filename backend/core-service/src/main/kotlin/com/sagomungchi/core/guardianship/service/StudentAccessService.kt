@@ -9,6 +9,9 @@ import java.util.UUID
 
 @Service
 class StudentAccessService(private val repository: StudentAccessRepository, private val consents: ConsentAccessService) {
+    fun notificationParents(studentId: UUID) = repository.activeParents(studentId).filter {
+        consents.hasRequiredConsents(it) && consents.hasGuardianConsent(it, studentId)
+    }
     /** Management list includes children whose guardian consent needs renewal. */
     fun linkedStudents(userId: UUID) = repository.linkedStudents(userId)
     fun requireOwned(userId: UUID, studentId: UUID) = linkedStudents(userId).find { it.id == studentId }

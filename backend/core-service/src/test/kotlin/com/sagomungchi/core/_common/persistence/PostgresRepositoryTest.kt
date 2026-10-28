@@ -19,6 +19,7 @@ import org.testcontainers.containers.PostgreSQLContainer
 @Transactional
 abstract class PostgresRepositoryTest {
     // Repository tests do not publish messages or run the background relay.
+    @MockitoBean lateinit var notificationListenerContainer: org.springframework.data.redis.listener.RedisMessageListenerContainer
     @MockitoBean lateinit var outboxRelay: OutboxRelay
 
     companion object {

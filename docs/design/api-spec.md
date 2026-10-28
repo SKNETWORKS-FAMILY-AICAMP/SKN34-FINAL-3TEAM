@@ -331,7 +331,15 @@
 | GET | `/notification-settings` | 인증 | 알림 유형별 수신 설정 (앱 내 알림만, P10) | SUP-10 | 우선2 |
 | PUT | `/notification-settings` | 인증 | 수신 설정 변경 (유형별 on/off, 이메일·푸시 없음, P10) | SUP-10 | 우선2 |
 
-- 알림 생성(FN-SUP-08)은 내부 사건(리포트 완료, 신고·문의 처리, 구독·결제 변경)에서 발생
+- #44 권한: 학생 세션의 account.id는 보호자 ID를 공유하므로 학생은 모든 알림/설정 API에서 403이다. PARENT·ADMIN은 인증된 본인 계정만 사용하며 userId 입력을 받지 않는다. 학생 전용 알림함은 현재 제공하지 않는다.
+- 목록: `GET /notifications?unreadOnly=false&page=0&size=20` → `{items:[{id,childId,type,title,link,readAt,createdAt}],page,size,hasNext}`. size 1~100, 최신 createdAt·id 내림차순. 읽음 PATCH와 전체 읽음 POST는 204, 반복해도 최초 readAt 유지, 타인/없는 ID는 404.
+- 설정: GET → `{items:[{type,enabled}]}`, PUT도 동일한 객체(1~6개 중복 없는 유형)로 지정 유형만 갱신하고 전체 유효 설정을 반환. 미저장 유형 기본 true, 채널은 IN_APP 고정. 유형은 REPORT_COMPLETED, REPORT_FAILED, ERROR_REPORT_RESOLVED, INQUIRY_ANSWERED, PAYMENT_CHANGED, SUBSCRIPTION_CHANGED. 수신 거부는 이후 알림 생성을 막으며 기존 알림은 보존한다.
+- 리포트 실패는 REPORT_FAILED로 독립 설정한다. 완료·실패 모두 현재 연결·동의가 유효한 보호자에게 생성한다. 상세 링크 권한은 이동 시 다시 검사한다. 실패 링크는 리포트 목록으로 이동한다.
+- SSE는 `event: notification`에 목록 항목과 같은 데이터를 전송한다. 15초 `: ping`, 최대 5분 후 재연결. 각 전송·heartbeat에서 세션/동의를 재검사하고 만료·폐기 시 연결을 닫는다. 학생으로 역할을 바꾸면 기존 보호자 구독도 폐기된 세션 검사로 닫힌다.
+- 구독 준비 후 `event: ready`를 받으면 목록 API를 첫 페이지부터 재조회해 id로 병합한다. 연결 중에도 주기적으로 목록을 동기화한다. Last-Event-ID 재생은 제공하지 않는다. Redis Pub/Sub은 유실 가능하며 SSE를 영구 전달 보장으로 사용하지 않는다.
+- DB 저장이 원본이다. 커밋 이후 Redis에 발행하며 발행 실패는 DB 전달 상태 FAILED/REDIS_PUBLISH_FAILED와 로그로 기록한다. COMPLETED는 Redis 발행 성공이며 브라우저 수신 확인이 아니다(구독자 0명도 발행 성공). 프로세스가 커밋 직후 종료되면 QUEUED로 남아도 목록에서 조회된다. 발행 실패 때문에 리포트 상태를 되돌리지 않는다.
+
+- 알림 생성(FN-SUP-08)은 내부 사건(리포트 완료·실패, 신고·문의 처리, 구독·결제 변경)에서 발생
   - 사건 ID 기준으로 1회만 생성
   - 알림 본문에는 학생 원문·결제 민감 정보를 넣지 않고 상세 화면 링크만 담음 (FN-SUP-11)
 
@@ -701,7 +709,7 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 
 ### 4.6 #43 AI 사용량 조회 계약
 
-- `GET /api/v1/admin/ai-usage`: 기존 #36 Bearer·`SERVICE_OPS` 검사를 사용한다. 필수 `from`, `to`는 0001~9999 연도의 ISO 날짜이며 KST 기준 양 끝 날짜를 포함한다. 조회 기간은 양 끝 포함 최대 366일이다. `from > to`, 366일 초과 또는 허용 연도 밖의 날짜는 DB 조회 전에 400 `VALIDATION_FAILED`로 거부한다. 선택 `callType`은 기존 사용량 이벤트의 7개 호출 종류 중 하나다.
+- `GET /api/v1/admin/ai-usage`: 기존 #36 Bearer·`SERVICE_OPS` 검사를 사용한다. 필수 `from`, `to`는 0001~9999 연도의 ISO 날짜이며 KST 기준 양 끝 날짜를 포함한다. 조회 기간은 양 끝 포함 최대 366일이다. `from > to`, 366일 초과 또는 허용 연도 밖의 날짜는 DB 조회 전에 400 `VALIDATION_FAILED`로 거부한다. 선택 `callType`은 기존 사용량 이벤트의 6개 호출 종류 중 하나다.
 - 응답은 `{period:{from,to},items:[{callType,calls,failures,latencyMs,inputTokens,outputTokens,costUsd,unpricedCalls}]}`다. 기간에 실제 호출이 있는 종류만 반환한다. `latencyMs`는 성공·실패를 포함한 호출당 평균 지연(ms)이다. 토큰은 합계이며 하나라도 미기록이면 해당 합계는 null이다.
 - `costUsd`는 저장된 소비 시점 비용의 합계다. 단가 미등록 등 null 비용이 하나라도 있으면 합계도 null이며 `unpricedCalls`로 미산정 호출 수를 공개한다. 빈 결과는 `items:[]`이고 null을 0으로 치환하지 않는다. 수집·멱등 처리·과거 단가 계산은 변경하지 않는다.
 - 요금제 한도, 월 예산 알림, 결제·구독 구현은 #43 조회 범위에 포함하지 않는다.

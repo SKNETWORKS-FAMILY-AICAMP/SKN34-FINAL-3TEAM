@@ -9,6 +9,11 @@
             <arg column="birth_year" javaType="_int"/>
         </constructor>
     </resultMap>
+    <select id="activeParents" resultType="java.util.UUID">
+        SELECT g.parent_user_id FROM guardianship g JOIN user_account u ON u.id=g.parent_user_id
+        JOIN student s ON s.id=g.student_id
+        WHERE g.student_id=#{studentId} AND g.status='LINKED' AND s.status='ACTIVE' AND u.status='ACTIVE' AND u.role='PARENT'
+    </select>
     <select id="linkedStudents" resultMap="student">
         SELECT s.id, s.nickname, s.grade, s.birth_year FROM student s
         JOIN guardianship g ON g.student_id=s.id

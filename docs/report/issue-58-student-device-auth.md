@@ -20,10 +20,10 @@
 
 ## 통합 설정
 
-#44 worktree의 최종 V12__report_failed_notification_type.sql과 충돌하지 않도록 #58은 V10을 사용한다. Redis starter와 spring.data.redis host/port/password, 2초 연결/명령 timeout을 동일하게 맞췄다. compose의 기존 redis를 사용한다. PIN 저장은 PBKDF2-HMAC-SHA256(600,000회, 16바이트 난수 salt), 기기 토큰은 기존 TokenService의 256bit 난수와 SHA-256 해시다. 단독 로그인 성공은 다른 탭에 부모 세션 역할 변경을 broadcast하지 않는다.
+#44 worktree의 최종 V12__report_failed_notification_type.sql과 충돌하지 않도록 #58은 최초 V10을 사용했다. #44 병합 후에는 아래 업그레이드 검증에 따라 V13으로 변경했다. Redis starter와 spring.data.redis host/port/password, 2초 연결/명령 timeout을 동일하게 맞췄다. compose의 기존 redis를 사용한다. PIN 저장은 PBKDF2-HMAC-SHA256(600,000회, 16바이트 난수 salt), 기기 토큰은 기존 TokenService의 256bit 난수와 SHA-256 해시다. 단독 로그인 성공은 다른 탭에 부모 세션 역할 변경을 broadcast하지 않는다.
 
 
-## 최종 검증 결과
+## 초기 #58 단독 검증 결과
 
 - `npm test`: 75/75 통과. `npm run lint`, `npm run build`, `node tests/production-mocks.mjs` 통과. 기존 번들 500kB 경고는 남으며 성능 개선을 주장하지 않는다.
 - #59 `student-device-browser.mjs`: 서로 다른 10개 사례 통과. 초기 잠금 대기 1회 timeout은 같은 사례 단독 재실행에서 통과했다. 첫 3개 + 잠금 1개 + 만료 필터 4개 + 학부모 필터 3개(첫 등록 사례 중복)로 검증했다.
@@ -45,10 +45,44 @@
 
 최종 core 소스·설정·테스트 230개는 검증 컨테이너와 SHA-256으로 대조한다. 테스트 XML과 JAR는 저장소 밖 전용 검증 폴더에 보존하며 커밋하지 않는다.
 
-## 전달 상태
+## 초기 PR 준비 상태
 
 작업 브랜치는 `feature/core-student-device-auth`, PR base는 `develop`, 구현 시작점은 `78bbdc1`이다. 검증 중 확인한 최신 develop `47e5ffe`의 별도 LLM 비용/주석 수정은 이 기능에 섞지 않는다. PR은 사용자가 직접 생성한다.
 
 실제 해결 범위인 #58은 PR 본문에 `Closes #58`을 포함한다. 기본 브랜치도 develop임을 확인했다. #59는 필요한 API·재인증 연결만 수정했으므로 자동 종료 대상으로 넣지 않는다. 추천 라벨은 현재 등록·설명을 확인한 `enhancement`, `area:core`, `area:db`, `area:web`이며, #58의 현재 Type은 미설정이다.
 
-최종 검증 JAR SHA-256: `2a650ca4311ebd00986a1d76fe5947e37cfe3dc20077289f1d26d8c8bd99e764`.
+초기 단독 검증 JAR SHA-256: `2a650ca4311ebd00986a1d76fe5947e37cfe3dc20077289f1d26d8c8bd99e764`.
+
+
+## #44 병합 후 develop 통합 (2026-10-28)
+
+PR #102가 develop에 병합된 `7629c55`를 #58 브랜치에서 일반 merge로 반영했다. 기존 #58 커밋을 rebase/squash하지 않는다. #100의 비용·계약·주석 수정도 최신 develop 기준으로 함께 들어온다.
+
+OpenAPI 충돌은 학생 기기/PIN 경로와 알림 경로·스키마를 모두 유지하여 해결했다. 양쪽 부모의 모든 API operation과 신규 학생/알림 스키마가 결과에 그대로 보존됐는지 비교했다. Compose 자동 병합이 남긴 중복 REDIS_HOST는 한 개로 정리했다. 동일 Redis starter·spring.data.redis 연결 설정은 한 개이며 V12 알림 이후 V13 기기/PIN migration을 적용한다.
+
+#44 기능을 호출하는 PIN/새 기기 알림은 여전히 제품 정책 미확정이므로 새로 연결하지 않는다. #40은 이 통합에 포함하지 않는다.
+
+통합 검증 결과는 아래에 기록한다.
+
+
+### 마이그레이션 적용 순서 수정
+
+최신 develop의 V12를 먼저 적용한 별도 빈 DB에서 V10을 추가하자 Flyway 13.11.1이 `Detected resolved migration not applied to database: 10`으로 거부했다. 번호의 유일성만으로는 순차 업그레이드가 보장되지 않았다.
+
+따라서 아직 develop에 미병합인 #58 migration 파일만 V10 → V13으로 바꿨다. DDL 내용은 같고 기존 V1~V9·V12는 수정하지 않는다. outOfOrder/ignore/repair를 켜거나 기존 DB migration 이력을 조작하지 않는다. V12 → V13 업그레이드와 V13 포함 신규 설치를 모두 검증한다. 이전 V10 단독 검증 기록은 당시 결과로 남긴다.
+
+
+### #44 통합 최종 검증
+
+- JDK 21 `clean test bootJar` 성공. 최종 34개 클래스·190개 테스트, 실패/오류/생략 0. #58 기기/PIN·재인증·삭제 경합과 #44 알림·리포트·Redis 및 기존 피드백 SSE 회귀를 함께 실행했다.
+
+- 최초 V10+V12 통합에서도 core 190개가 통과했지만, V12 적용 DB에 V10 추가가 실패함을 별도 업그레이드 검증으로 발견했다. V13 변경 후 최종 전체 테스트를 다시 실행했다. 단순 신규 설치 검사만으로 업그레이드 성공을 판단하지 않았다.
+- V12 적용 DB → V13: Flyway 기본 설정으로 1개 migration 추가 적용 성공. outOfOrder/ignore/repair 사용 없음. 최종 JAR에는 V12·V13이 있고 이전 V10 파일은 없다.
+- 최종 V13 신규 설치: core 11개·learning 5개·report migration 적용, 65개 테이블/551개 컬럼 ERD 일치, 57개 제약 음성 검사, 65 CHECK 집합, 23 인덱스 통과. 재실행 0건·이력 불변, report downgrade/upgrade 후 schema 재검증 통과.
+- Python 계약 테스트 54개, OpenAPI 표준 검사, 실제 MockMvc 알림 목록·설정 응답의 OpenAPI 대조, 실제 RabbitMQ report 4종 봉투/데이터·HTTP 리포트 상세 계약 검사 통과.
+- `docker compose config --no-interpolate --quiet`와 `git diff --check` 통과. Redis 연결 설정은 공유하며 페어링 키와 알림 채널을 분리한다.
+- 최종 core 소스·설정·테스트 243개가 검증 컨테이너와 SHA-256 일치. 전용 테스트 XML/JAR는 저장소 밖에 보존한다.
+- 이번 통합에서 프론트 소스 변경은 없다. 앞선 프론트 75개·lint/build·MSW 브라우저 10개·실제 core 브라우저 연결 결과는 초기 #58 검증 기록으로 유지하며, 이번 통합에서 재실행한 결과로 표시하지 않는다.
+- 실제 Google 계정, 실제 report worker/상품 공급자 E2E, 원격 CI·배포는 이번 로컬 통합 검증에 포함하지 않는다. PIN 잠금·새 기기 알림 발생 연결은 정책 미확정 상태를 유지한다.
+
+통합 검증 JAR SHA-256: `e7663ddc02ef39a48b49ba304b09fd0dba7111e9447c94d445efd3763cdb0f63`.

@@ -362,7 +362,7 @@ erDiagram
     uuid id PK
     uuid user_id FK
     uuid child_id FK "NULL 허용"
-    varchar type "REPORT_COMPLETED|ERROR_REPORT_RESOLVED|INQUIRY_ANSWERED|PAYMENT_CHANGED|SUBSCRIPTION_CHANGED"
+    varchar type "REPORT_COMPLETED|REPORT_FAILED|ERROR_REPORT_RESOLVED|INQUIRY_ANSWERED|PAYMENT_CHANGED|SUBSCRIPTION_CHANGED"
     uuid source_event_id "사건 ID"
     varchar title "원문·결제 민감 정보 미포함"
     varchar link "상세 화면 경로"
@@ -430,6 +430,7 @@ erDiagram
   }
 ```
 
+- #44: V12는 notification·notification_setting의 type CHECK에 REPORT_FAILED를 추가한다. V9는 #45, V13은 #58의 student_device_auth. 기존 마이그레이션은 수정하지 않는다. 알림 status는 Redis 발행 상태이며 읽음은 read_at으로 별도 관리한다.
 - `notification` UK `(user_id, type, source_event_id)` → 같은 사건 재처리 시 중복 생성 방지 (FN-SUP-08)
 - 판정 정정 원본은 learning `judgment_correction`, core `correction`은 신고 단위 정정 사유·영향 범위 기록 (FN-SUP-03)
 - 도움말(`/help`)은 정적 콘텐츠로 테이블 없음
@@ -1024,14 +1025,14 @@ erDiagram
 
 ## 10. P01 학생 기기·PIN 구현 (#58)
 
-저장 구조는 3.1과 인덱스 6장으로 이동했다. V10은 #45 V9를 보존하고 #44 신규 번호와 분리한다.
+저장 구조는 3.1과 인덱스 6장으로 이동했다. V13은 #45 V9·#44 V12를 보존하며, V12가 먼저 적용된 DB에서도 순서대로 실행한다.
 기존 student는 PIN 미설정(NULL), 실패 횟수 0으로 옮긴다. 임의 PIN·기기는 생성하지 않는다. 신규 student의 pin_failed_count는 앱에서 0을 전달하며 SQL DEFAULT는 두지 않는다.
 삭제 확정 때 student_device_child를 제거하고 PIN 해시·잠금도 지운다. 탈퇴 시 모든 기기를 폐기한다. 연결·동의 해제는 기존 세션 검사로 즉시 차단한다.
 재인증은 V9 reauth_challenge/reauth_grant에 저장한다. 페어링 코드와 시도 제한만 Redis에 둔다.
 
 ## 11. #36 OAuth·로그인 세션 (개정 P01 정렬)
 
-> OAuth·로그인 세션 V8은 develop에 적용되었다(3.1.1). 기기·PIN 저장 구조는 #58의 V10이다. 학생에게는 refresh를 발급하지 않는다.
+> OAuth·로그인 세션 V8은 develop에 적용되었다(3.1.1). 기기·PIN 저장 구조는 #58의 V13이다. 학생에게는 refresh를 발급하지 않는다.
 `user_account.oauth_provider/oauth_subject`는 함께 NULL(기존 계정) 또는 GOOGLE/Google sub이며 복합 UNIQUE다. password_hash는 nullable로 보존하고 이메일로 OAuth 계정을 자동 연결하지 않는다.
 
 
