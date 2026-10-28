@@ -50,8 +50,10 @@
 - #54 URL 300초와 현재 권한에 따른 조회 가림은 구현 기본안이다. 최종 팀 운영값과 권한 전달 계약은 확인해야 한다.
 - #55 양 범위의 기존 리포트 물리 삭제, PROFILE 이후 생성 차단/RECORDS 이후 새 명령 허용은 구현 기본안이며 팀 확정 전 운영 적용하지 않는다. 추가 guard migration도 리뷰 대상이다.
 
-## 최신 develop 병합 확인
+## 최신 develop 병합 확인 — 2026-10-28
 
-develop `7188b69`를 누적 브랜치 feature/report-deletion에 병합했다(8b76b1f). #51~#54 개별 브랜치도 merge-tree 검사에서 충돌이 없었다. 개별 브랜치를 모두 최신화한 것은 아니며 실제 병합은 누적 브랜치에 수행했다.
+develop `826e4dc`를 누적 브랜치 `feature/report-deletion`에 충돌 없이 병합했다(`9a91fb0`). 이전 `7188b69` 이후 36개 커밋을 반영했다. 개별 #50~#54 보존 브랜치를 모두 최신화한 것은 아니다.
 
-이번 develop은 미션 조회·데모 미션 시드와 인증/설계 문서 정리를 포함한다. report 코드나 report migration의 중복 추가는 없었다. 새 미션 조회 API는 #27 학습 기록 조회 API를 대신하지 않는다. 따라서 #27/#42/#45/#64와의 실제 연동 확인은 여전히 필요하다. 최종 회귀 결과는 통합 인계 문서에 기록한다.
+이번 반영에는 PR #73 모델 레지스트리, #71 학생 기기/PIN 화면, #74 학습 시도·초안·생각 열기, #75 core 학습 프록시, #76 답변 제출·버전 저장이 포함된다. report 코드와 세 서비스 migration 파일은 변경되지 않았다. ai Compose 기본 provider/model 변경도 포함되지만 report 서술 API 구현 추가를 뜻하지 않는다.
+
+10월 28일 재조회에서도 #27/#42/#45/#64는 Open이며 댓글이 없었다. develop의 learning `record`와 core `report`는 여전히 빈 폴더이고 AI `report_narrative`에는 초기 파일만 있다. 공유 report.* / student.deleted schema도 아직 없다. 별도 열린 PR #77은 기록 존재 여부의 최소 exists API만 포함하며, #78은 피드백 처리이므로 #27의 전체 기록 조회를 대신하지 않는다. 따라서 기존 외부 연동 대기 항목은 유지한다. 이번 재검증 결과는 [통합 인계 문서](report-service-handoff.md)에 기록한다.

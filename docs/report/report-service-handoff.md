@@ -1,6 +1,6 @@
 # 리포트 #50~#55 구현 및 인계
 
-2026-10-27 로컬 구현 기준. 최초 기반 develop은 `ecd6ecf`이며, 이후 최신 develop `7188b69`를 현재 `feature/report-deletion`에 병합했다(merge `8b76b1f`). 아래 브랜치는 아직 로컬이며 GitHub push·PR 생성·이슈 종료는 수행하지 않았다. 실제 타 서비스까지 연결한 완료와 report 단독 검증 완료를 구분한다.
+2026-10-28 로컬 구현 기준. 최초 기반 develop은 `ecd6ecf`이며, 최신 develop `826e4dc`를 현재 `feature/report-deletion`에 병합했다(merge `9a91fb0`). 아래 브랜치는 아직 로컬이며 GitHub push·PR 생성·이슈 종료는 수행하지 않았다. 실제 타 서비스까지 연결한 완료와 report 단독 검증 완료를 구분한다.
 
 ## 구현 범위
 
@@ -19,12 +19,14 @@
 
 ## 검증 근거
 
-최신 develop `7188b69` 병합 후에도 Ruff check/format, pytest **144개(56.29초)**, 세 DB 전체 migration/ERD 대조·no-op·report rollback/reapply(**12.0초**)를 다시 통과했다. #51~#54 보존 브랜치는 merge-tree 검사에서 모두 충돌이 없었으며, 실제 병합은 누적된 #55 브랜치에만 수행했다. 미션 조회·데모 시드가 추가되었지만 report 코드/스키마의 중복 변경은 없었다. 필요한 자료의 구체적인 요청 목록은 [#51~#55 필요 자료](report-required-inputs.md)를 따른다.
+2026-10-28 develop `826e4dc`를 충돌 없이 병합했다. 이전 기준 `7188b69` 이후 팀 커밋 36개를 반영했으며, 모델 레지스트리·학생 PIN 화면·학습 시도·답변·core 학습 프록시 변경을 포함한다. report 코드와 세 서비스의 migration 파일은 병합 전과 같다. Ruff check/format, 합성 환경변수의 Compose/MinIO overlay 구성 검사, 세 DB 전체 migration/ERD 대조·no-op·report rollback/reapply(**16.4초**)를 통과했다. 필요한 자료의 구체적인 요청 목록은 [#51~#55 필요 자료](report-required-inputs.md)를 따른다.
 
-- #53 MinIO 보강 후 최신 전체 pytest **147 passed, 0 failed, 0 skipped (79.40초)**. 실제 Docker PostgreSQL/RabbitMQ/MinIO, HTTP 테스트 대역, moto S3, Chromium을 사용했다. AI Hub·실제 학생 데이터는 사용하지 않았다.
+이전 2026-10-27 `7188b69` 병합 검증은 pytest 144개(56.29초)·DB 검증 12.0초였다. 당시 #51~#54 보존 브랜치의 merge-tree 검사도 통과했다. 이번 실제 최신화 대상은 누적된 `feature/report-deletion`이며, 이전 개별 브랜치들을 함께 최신화한 것은 아니다.
+
+- 2026-10-28 병합 커밋 `9a91fb0`의 전체 pytest **147 passed, 0 failed, 0 skipped (85.23초)**. 실제 Docker PostgreSQL/RabbitMQ/MinIO, HTTP 테스트 대역, moto S3, Chromium을 사용했다. AI Hub·실제 학생 데이터는 사용하지 않았다.
 - Ruff check·format check 통과. Starlette TestClient/httpx 사용에 대한 기존 deprecation warning 1개는 실패와 구분한다.
-- 일회용 PostgreSQL에서 세 DB migration 적용·재적용 no-op·ERD 타입/NULL/제약/인덱스 대조·report 전체 롤백/재적용 통과(12.7초). core 35/318, learning 19/156, report 7/50 테이블/컬럼, 제약 음성 사례 50개·CHECK 값 집합 64개·인덱스 19개. 검증기 회귀 unittest 18개 통과.
-- 최종 `sagomungchi/report-service:issue55-local` Docker 빌드 및 UID 10001·읽기 전용 root + 쓰기 가능한 `/tmp`에서 worker import와 HTML/MD/한글 A4 PDF 2페이지 생성을 확인했다. 운영 이미지에 pytest가 없는 것도 확인했다.
+- 2026-10-28 일회용 PostgreSQL에서 세 DB migration 적용·재적용 no-op·ERD 타입/NULL/제약/인덱스 대조·report 전체 롤백/재적용 통과(16.4초). core 35/318, learning 19/156, report 7/50 테이블/컬럼, 제약 음성 사례 50개·CHECK 값 집합 64개·인덱스 19개. 검증기 회귀 unittest 18개 통과는 기존 10월 27일 기록이다.
+- 2026-10-27 `sagomungchi/report-service:issue55-local` Docker 빌드 및 UID 10001·읽기 전용 root + 쓰기 가능한 `/tmp`에서 worker import와 HTML/MD/한글 A4 PDF 2페이지 생성을 확인했다. 운영 이미지에 pytest가 없는 것도 확인했다. 이번 병합에 report 코드·Dockerfile 변경이 없어 이미지를 다시 빌드하지 않았다.
 - Compose와 MinIO overlay 구성 유효성 검사에 이어, 실제 MinIO 통합 테스트 3개(26.62초)와 production Linux 이미지의 내부 endpoint 업로드·공개 URL 다운로드·prefix 삭제를 통과했다. 리포트 생성/DB 저장/내부 조회에서 full/free 파일 구분, 재생성 판 보존, 부분 실패 정리, 서명 변조·만료 거부, 삭제 후 기존 URL 404를 확인했다. 기존 컨테이너·볼륨·개인 `.env` 대신 별도 일회용 환경을 사용했다. core·learning·AI·삭제 완료 API 전체 연동은 포함하지 않는다.
 - HTML/MD와 PDF 논리 텍스트 스냅샷을 검사한다. PDF 스냅샷은 OS별 한글 줄바꿈 차이를 허용하도록 공백을 정규화하며, 화면 배치 확인은 별도 렌더링 이미지로 수행했다.
 
