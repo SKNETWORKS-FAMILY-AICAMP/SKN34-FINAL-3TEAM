@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.conversation.repository.ConversationDeletionMapper">
+
+ <delete id="evidence">DELETE FROM message_evidence WHERE message_id IN (SELECT m.id FROM conversation_message m JOIN conversation c ON c.id=m.conversation_id WHERE c.student_id=#{student} OR m.scope_student_id=#{student})</delete>
+ <delete id="messages">DELETE FROM conversation_message WHERE conversation_id IN (SELECT id FROM conversation WHERE student_id=#{student}) OR scope_student_id=#{student}</delete>
+ <delete id="conversations">DELETE FROM conversation WHERE student_id=#{student}</delete>
+
+</mapper>

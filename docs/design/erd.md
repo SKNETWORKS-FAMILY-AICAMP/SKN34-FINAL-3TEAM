@@ -1,6 +1,6 @@
 # ERD
 
-- 근거: [기능명세서](functional-spec.md), [API 명세서](api-spec.md), [유스케이스](usecase.md), [아키텍처 설계](architecture.md), [프로젝트 기획서](<../outputs/프로젝트 기획서_사고뭉치_최종.pdf>) 4.5
+- 근거: [기능명세서](functional-spec.md), [API 명세서](api-spec.md), [유스케이스](usecase.md), [아키텍처 설계](architecture.md), [프로젝트 기획서](<../outputs/프로젝트_기획서_사고뭉치.pdf>) 4.5
 - 범위: DB를 소유한 서비스 3개(core_db · learning_db · report_db). ai·scoring은 상태 없음 (아키텍처 1.1)
 - AI Hub 원본·가공본은 `ml/` 학습용으로 서비스 DB에 넣지 않음 (NFR-DAT-03)
 - `(P04)` 형태는 확정 정책 번호, 내용은 [기능명세서 1.4](functional-spec.md#14-확정-정책)
@@ -25,7 +25,7 @@
 | 문자열·금액 | varchar는 길이 제한 없는 PostgreSQL varchar. ShedLock만 name varchar(64), locked_by varchar(255). 원화는 int, cost_usd는 반올림 정책 없는 numeric |
 | FK 삭제·순환 참조 | 기본 ON DELETE/UPDATE NO ACTION. mission.current_*와 answer.followup_id만 DEFERRABLE INITIALLY IMMEDIATE. 삭제는 P09에 따라 `student.deleted` 이벤트로 서비스별 물리 삭제. learning 하위 기록의 CASCADE 여부는 7장 확인 필요 |
 
-- 테이블 없이 Redis에 두는 값: `reauthToken`(단기), 계정 복구 확인 코드, SSE 알림 중계 (아키텍처 1.6), 요금제 사용 한도 일 단위 카운터 (P13)
+- 테이블 없이 Redis에 두는 값: `reauthToken`(단기), SSE 알림 중계 (아키텍처 1.6), 요금제 사용 한도 일 단위 카운터 (P13)
 - 생각 메모는 `attempt_draft.content.memo`에 저장 (P05). 음성 시범 미구현으로 음성 데이터 없음 (P03)
 - 학생 별도 계정 없음: 학생 세션은 `student.id`로 발급하는 토큰만. 발급 경로는 학부모 인증(동석) 또는 학부모 등록 기기 + 자녀 PIN(단독). PIN·기기 저장 구조는 10장 변경 예정 (P01)
 - 학생 기기 페어링 코드(10분·1회용)는 테이블 없이 Redis 저장
@@ -101,9 +101,9 @@ erDiagram
   }
   student {
     uuid id PK "전 서비스 공통 학생 ID"
-    varchar nickname "가명"
-    int grade "3~6, 이후 제공 문제에만 적용 (P03)"
-    int birth_year "출생연도 (P01)"
+    varchar nickname "가명, DELETED 표식은 NULL 허용"
+    int grade "3~6, 이후 제공 문제에만 적용 (P03), DELETED 표식은 NULL 허용"
+    int birth_year "출생연도 (P01), DELETED 표식은 NULL 허용"
     boolean is_demo "시연 가상 학생"
     varchar status "ACTIVE|DELETION_REQUESTED|DELETED"
     timestamptz created_at
@@ -155,15 +155,49 @@ erDiagram
     varchar status "REQUESTED|COMPLETED"
     timestamptz requested_at
     timestamptz completed_at "NULL 허용"
+    varchar status_token_hash UK "NULL 허용, 조회 전용 토큰 해시"
   }
 ```
 
+- #37: 동의 권한은 문서·주체·student_id별 agreed_at·id 내림차순 최신 행 기준이다. 같은 보호자의 동의 저장·철회·자녀 등록은 user_account 행 잠금으로 직렬화한다. 기존 스키마를 사용하며 V1~V8을 수정하지 않는다.
 - `consent_document` UK `(kind, version)`. 동의는 철회해도 행 유지 → `status`·`withdrawn_at` 갱신 (FN-ACC-02)
 - `guardianship` 부분 UK `(parent_user_id, student_id) WHERE status = 'LINKED'`. 권한 확인은 이 테이블의 `LINKED` 행 기준 (아키텍처 1.1)
 - 연결 해제는 행 삭제 대신 `UNLINKED` 전환 → 해제 이후 조회 차단, 이력 보존 (FN-DSH-06)
 - `deletion_request`가 `CONFIRMED`가 되면 같은 트랜잭션에서 `outbox_event(student.deleted)` 저장
 - 로그인 수단·자녀 연결 변경 결과·시점은 `audit_log`에 기록 (FN-ACC-10)
 - `user_account.is_demo`·`student.is_demo` 행은 운영 현황·사용량·결제 집계에서 제외 (NFR-OPS-01)
+
+### #45 재인증·삭제 완료 저장
+
+```mermaid
+erDiagram
+  reauth_challenge {
+    uuid id PK
+    uuid user_id FK
+    uuid session_id FK
+    bigint session_version
+    varchar purpose "PIN_CHANGE|CHILD_UNLINK|CHILD_DELETE|WITHDRAWAL"
+    uuid student_id FK "NULL 허용"
+    varchar scope "NULL 허용, CHECK[PROFILE|RECORDS]"
+    varchar state_hash UK
+    timestamptz expires_at
+    timestamptz verified_at "NULL 허용"
+    timestamptz issued_at "NULL 허용"
+  }
+  reauth_grant {
+    varchar token_hash PK
+    uuid challenge_id FK,UK
+    timestamptz expires_at
+    timestamptz used_at "NULL 허용"
+  }
+  deletion_completion {
+    uuid request_id PK,FK
+    varchar service PK "learning|report"
+    timestamptz completed_at
+  }
+```
+
+`withdrawal_request.status_token_hash varchar NULL 허용`을 추가한다(신규 요청은 해시 필수). PROFILE 완료 후 student의 nickname/grade/birth_year는 NULL로 지우며, DELETED가 아닌 행의 필수 프로필은 CHECK로 보존한다. 재인증 challenge의 purpose/자녀/scope 조합도 CHECK한다. 기존 V1~V8은 수정하지 않는다. #58 기기 테이블은 만들거나 SQL에서 참조하지 않는다. V9 번호는 착수 시 다른 worktree V1~V8만 존재함을 확인했고 병합 전 다시 확인한다.
 
 ### 3.1.1 로그인 세션 (#36)
 
@@ -182,6 +216,8 @@ erDiagram
     timestamptz created_at
   }
 ```
+
+- `auth_session` CHECK: `version > 0`, `ck_auth_session_student`(role이 STUDENT면 `student_id` 필수, 그 외 역할은 NULL) (V8)
 
 ### 3.2 분석 대화·리포트 작업 (FN-AGT, FN-RPT)
 
@@ -557,12 +593,14 @@ erDiagram
 ```
 
 - `model_version` UK `(kind, name, version)`, 부분 UK `(kind, name) WHERE status = 'ACTIVE'`. 롤백은 이전 버전 재활성화 + `audit_log` 기록 (FN-ADM-18)
+- #43 `eval_result`는 API 5.2의 불변 평가 근거·최초 승인과 현재 적용 범위·그룹 revision을 저장한다. DDL·기존 ACTIVE 부분 UK는 유지한다. 교체는 동일 그룹 transaction advisory lock 이후 상태·감사·Outbox를 원자적으로 저장한다.
 - 기준표 원본은 learning `rubric_version`, core는 `kind = RUBRIC` 행의 `ref_id`로 연결해 승인·활성 상태만 관리
 - `llm_usage`에 학생 ID·답변 원문 컬럼 없음 (NFR-PRF-02). 수집 데이터 보고서의 예정 필드 `llm_usage_log(call_type, model, input_tokens, output_tokens, ts)` 대응
 - `cost_usd`는 core 설정의 모델별 토큰 단가(기획서 3.9)로 소비 시 계산, 단가 변경 후에도 과거 값 유지 (FN-ADM-19)
 - `outbox_event`: 상태 변경과 같은 트랜잭션에 저장, 릴레이가 publisher confirm 후 `published_at` 기록 (아키텍처 1.6)
 - `idempotency_record.user_id`는 core `user_account.id` FK. 요청 접수 후 응답 확정 전에는 response_status·response_body를 NULL로 둔다. expires_at은 created_at + 24시간이다 (P12).
 - `idempotency_record`: 공개 API의 `Idempotency-Key` 대상(답변 제출·주문·승인·환불·재처리·신고) 공통. 같은 키·다른 본문은 `request_hash` 불일치로 422 (API 1.4)
+- #38의 response_body는 원문 보존용 JSON 봉투 `{body: base64, headers: {이름: [값]}}`다. response_status가 NULL이면 미확정이며 봉투도 NULL이다. expires_at은 DB 시계 기준 24시간이며 만료 행은 같은 키 접수 시와 주기 청소에서 제거한다. 세션 advisory lock은 테이블을 추가하지 않으며 사용자·키 해시로 잠근다. endpoint에는 메서드와 실제 공개 경로를 저장한다.
 
 ---
 
@@ -715,7 +753,7 @@ erDiagram
     uuid followup_id FK "NULL 허용 · 보완 답변이 답한 되묻기"
     uuid previous_answer_id FK "NULL 허용"
     varchar input_type
-    jsonb content "text, essay, choiceIds"
+    jsonb content "text, essay, choiceIds, finalAnswer, steps, assignments"
     text plain_text "NULL 허용 · 인용 대조용 원문"
     boolean dictated_by_guardian
     uuid idempotency_key
@@ -829,7 +867,7 @@ erDiagram
   }
 ```
 
-- `student.deleted` 소비: 해당 학생 `attempt` 이하 기록 삭제 + `deleted_student` 저장 → 근거 조회 시 `available: false` (물리 삭제 + 표식, P09). 처리 완료는 core에 삭제 완료 이벤트로 알림
+- `student.deleted` 소비: 해당 학생 `attempt` 이하 기록 삭제 + `deleted_student` 저장 → 근거 조회 시 `available: false` (물리 삭제 + 표식, P09). 처리 완료는 core 내부 API `POST /internal/deletion-requests/{id}/completions`로 알림
 - learning은 이벤트를 발행하지 않으므로 `outbox_event` 없음 (아키텍처 1.6)
 - 멱등은 `answer`·`judgment_correction`의 `idempotency_key` UK로 처리, 별도 `idempotency_record` 없음
 
@@ -921,6 +959,8 @@ erDiagram
 | core | `notification` | `(user_id, read_at, created_at)` | 읽지 않은 알림 |
 | core | `payment` | `(status, updated_at)` | `CONFIRMING` 재조회, 결제 운영 조회 |
 | core | `subscription` | `(next_billing_date) WHERE auto_renew` | 정기 청구 대상 |
+| core | `auth_session` | `(user_id)` | 사용자별 세션 폐기 |
+| core | `refresh_token` | `(session_id)` | 세션별 토큰 폐기·재사용 탐지 |
 | core | `llm_usage` | `(occurred_at, call_type)` | 사용량·비용 집계 |
 | core | `outbox_event` | `(created_at) WHERE published_at IS NULL` | 릴레이 대상 |
 | learning | `mission` | `(status, sort_order)`, `mission_version (thinking_type, grade_min, grade_max)` | 학년·유형별 공개 미션 목록 |
@@ -956,7 +996,7 @@ erDiagram
 - core V6는 `student.birth_year`·`product.limits`를 nullable로 준비하고 고정 `product.code` CHECK를 제거한다. V7은 필요한 기존 데이터 정비를 검사한 뒤 NOT NULL·코드 CHECK·학년 3~6 CHECK를 적용하고 `student.user_account_id`를 제거한다. 기존 상품 코드·금액·참조 ID를 자동 변경하지 않는다.
 - learning V4는 `followup_bank_question`과 `followup.bank_question_id` FK를 준비한다. V5는 기존 음성·TEMPLATE·미연결 BANK 기록을 검사한 뒤 `answer.speech_transcribed`를 제거하고 source를 LLM/LLM_RETRY/BANK로 제한한다.
 - `followup.bank_question_id`는 BANK일 때만 필수이며 다른 출처에서는 NULL인 CHECK를 적용한다. 은행 질문의 type 일치·활성 여부 선택은 서비스가 검사한다. 삭제 FK는 NO ACTION을 유지한다.
-- report는 정책 확정에 따른 DDL 변경이 없어 새 revision을 추가하지 않는다. 최종 구조는 59개 테이블·506개 컬럼(core 34/306, learning 19/156, report 6/44)이다.
+- report는 정책 확정에 따른 DDL 변경이 없어 새 revision을 추가하지 않는다. 최종 구조는 59개 테이블·506개 컬럼(core 34/306, learning 19/156, report 6/44)이다. 이후 core V8(#36 `auth_session`, `refresh_token.session_id`·`used_at`) 반영 현재 60개 테이블·518개 컬럼(core 35/318)이다.
 - 기존 V1~V5/V1~V3/Alembic 초기 revision은 변경하지 않는다. 초기 DB는 순서대로 전체 적용하고, 기존 데이터가 있는 DB는 준비 버전에서 멈춰 승인된 값으로 보완한 뒤 최종 버전을 적용한다. 상세 절차는 [이슈 19 스키마 변경 보고서](../report/db-policy-schema.md)를 따른다.
 
 ## 10. P01 개정 학생 기기·PIN (변경 예정, 미적용)
@@ -985,7 +1025,7 @@ erDiagram
 
 ## 11. #36 OAuth·로그인 세션 (개정 P01 정렬)
 
-> OAuth·로그인 세션 V8은 현재 feature 작업이다. 10장의 기기·PIN 저장 구조는 #58에서 V8 이후의 다음 버전으로 구현한다. 학생에게는 refresh를 발급하지 않는다.
+> OAuth·로그인 세션 V8은 develop에 적용되었다(3.1.1). 10장의 기기·PIN 저장 구조는 #58에서 V8 이후의 다음 버전으로 구현한다. 학생에게는 refresh를 발급하지 않는다.
 `user_account.oauth_provider/oauth_subject`는 함께 NULL(기존 계정) 또는 GOOGLE/Google sub이며 복합 UNIQUE다. password_hash는 nullable로 보존하고 이메일로 OAuth 계정을 자동 연결하지 않는다.
 
 
