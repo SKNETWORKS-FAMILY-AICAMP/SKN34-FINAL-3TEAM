@@ -8,6 +8,8 @@ import com.sagomungchi.learning.attempt.domain.DraftContent
 import com.sagomungchi.learning.attempt.domain.HintOpened
 import com.sagomungchi.learning.attempt.repository.AttemptDraftRepository
 import com.sagomungchi.learning.attempt.repository.AttemptRepository
+import com.sagomungchi.learning.judgment.domain.TimelineAnswer
+import com.sagomungchi.learning.judgment.service.JudgmentService
 import com.sagomungchi.learning.mission.domain.MissionView
 import com.sagomungchi.learning.mission.service.MissionService
 import org.springframework.http.HttpStatus
@@ -20,12 +22,13 @@ import java.util.UUID
 /** created: 이번 요청으로 새로 만들었으면 true, 진행 중 시도를 돌려주면 false */
 data class AttemptStart(val attempt: Attempt, val created: Boolean)
 
-/** 시도 상세: 시도에 고정된 버전의 미션, 초안, 생각 열기 이용 여부 */
+/** 시도 상세: 시도에 고정된 버전의 미션, 초안, 생각 열기 이용 여부, 제출 답변 타임라인 */
 data class AttemptDetail(
     val attempt: Attempt,
     val mission: MissionView,
     val draft: AttemptDraft,
     val helped: Boolean,
+    val answers: List<TimelineAnswer>,
 )
 
 /** 초안 버전 불일치. 최신 초안을 함께 돌려줌 (api-spec 3.6) */
@@ -37,6 +40,7 @@ class AttemptService(
     private val attemptRepository: AttemptRepository,
     private val draftRepository: AttemptDraftRepository,
     private val missionService: MissionService,
+    private val judgmentService: JudgmentService,
 ) {
     /**
      * 시도 시작 (state-diagram 3.2, sequence-diagram 3.1). 진행 중 시도가 있으면 미션 공개·범위와 무관하게 그 시도를 돌려줌
@@ -65,6 +69,7 @@ class AttemptService(
             mission = missionService.getVersion(attempt.missionVersionId),
             draft = checkNotNull(draftRepository.findByAttemptId(attempt.id)) { "시도 초안 없음" },
             helped = attemptRepository.findOpenedHintIds(attempt.id).isNotEmpty(),
+            answers = judgmentService.timeline(attempt.id),
         )
     }
 
@@ -87,6 +92,23 @@ class AttemptService(
         attemptRepository.recordHintOpened(attempt.id, opened.question.id, now())
         return opened
     }
+
+    /**
+     * 답변 제출용: 시도 행을 잠그고 본인 시도인지 확인 (class-diagram 4.1 AnswerService --> AttemptService).
+     * 제출 가능 여부는 같은 키 재요청을 먼저 처리한 뒤 Attempt.requireAnswerable()로 확인. 호출한 쪽 트랜잭션 필요
+     */
+    fun lockForAnswer(attemptId: UUID): Attempt {
+        val attempt = attemptRepository.lockById(attemptId)
+            ?: throw BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "학습 시도 없음")
+        UserContextHolder.current().requireStudent(attempt.studentId.toString())
+        return attempt
+    }
+
+    /**
+     * 답변 제출 뒤 초안의 답 칸 비우기 (FN-LRN-15·16): 제출한 답이 새로고침 때 미제출 초안으로 돌아오지 않게.
+     * 메모는 보완 답변에도 쓰므로 유지(P05). lockForAnswer와 같은 트랜잭션에서 호출
+     */
+    fun clearSubmittedDraft(attemptId: UUID, now: Instant) = draftRepository.clearAnswer(attemptId, now)
 
     /** PostgreSQL timestamptz는 마이크로초까지 저장하므로 응답과 저장값이 같도록 맞춤 */
     private fun now(): Instant = Instant.now().truncatedTo(ChronoUnit.MICROS)

@@ -9,6 +9,9 @@ import com.sagomungchi.learning.attempt.service.AttemptDetail
 import com.sagomungchi.learning.attempt.service.AttemptService
 import com.sagomungchi.learning.attempt.service.AttemptStart
 import com.sagomungchi.learning.attempt.service.DraftConflictException
+import com.sagomungchi.learning.judgment.domain.ProcessStatus
+import com.sagomungchi.learning.judgment.domain.TimelineAnswer
+import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.domain.HintQuestion
 import com.sagomungchi.learning.mission.domain.MissionSnapshot
 import com.sagomungchi.learning.mission.missionView
@@ -46,8 +49,10 @@ class AttemptControllerTest(@Autowired private val mockMvc: MockMvc) {
     private val now = Instant.parse("2026-10-27T01:00:00Z")
     private val attempt = Attempt.start(student, mission.id, MissionSnapshot(UUID.randomUUID(), UUID.randomUUID()), 3, now)
 
-    private fun detail(draft: AttemptDraft = AttemptDraft.empty(attempt.id, now)) =
-        AttemptDetail(attempt, mission, draft, helped = false)
+    private fun detail(
+        draft: AttemptDraft = AttemptDraft.empty(attempt.id, now),
+        answers: List<TimelineAnswer> = emptyList(),
+    ) = AttemptDetail(attempt, mission, draft, helped = false, answers = answers)
 
     private fun MockHttpServletRequestDsl.asStudent(role: String = "STUDENT") {
         header("X-Internal-Token", "test-token")
@@ -79,9 +84,12 @@ class AttemptControllerTest(@Autowired private val mockMvc: MockMvc) {
     }
 
     @Test
-    fun `시도 상세는 ETag와 저장된 초안`() {
+    fun `시도 상세는 ETag와 저장된 초안, 제출 답변과 판정 처리 상태`() {
         val saved = AttemptDraft.empty(attempt.id, now).update(DraftContent(mapOf("text" to "답"), "메모"), now)
-        given(service.get(attempt.id)).willReturn(detail(saved))
+        val answer = TimelineAnswer(
+            UUID.randomUUID(), 1, now, InputType.NARRATIVE, "제출한 답", null, mapOf("text" to "제출한 답"), ProcessStatus.PENDING,
+        )
+        given(service.get(attempt.id)).willReturn(detail(saved, listOf(answer)))
 
         mockMvc.get("/internal/attempts/${attempt.id}") { asStudent() }.andExpect {
             status { isOk() }
@@ -89,6 +97,12 @@ class AttemptControllerTest(@Autowired private val mockMvc: MockMvc) {
             jsonPath("$.draft.content.answer.text") { value("답") }
             jsonPath("$.draft.content.memo") { value("메모") }
             jsonPath("$.draft.savedAt") { value("2026-10-27T01:00:00Z") }
+            jsonPath("$.answers[0].answerId") { value(answer.answerId.toString()) }
+            jsonPath("$.answers[0].version") { value(1) }
+            jsonPath("$.answers[0].text") { value("제출한 답") }
+            jsonPath("$.answers[0].content.text") { value("제출한 답") }
+            jsonPath("$.answers[0].followupId") { value(null) }
+            jsonPath("$.answers[0].feedback.status") { value("PENDING") }
         }
     }
 

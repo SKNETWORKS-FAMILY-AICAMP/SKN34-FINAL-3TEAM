@@ -1074,12 +1074,14 @@ classDiagram
     +finish(attemptId) FinishResult
     +saveReflection(attemptId, command)
     +saveSelfAssessment(attemptId, checks) List
-    +requireOpen(attemptId) Attempt
+    +lockForAnswer(attemptId) Attempt
+    +clearSubmittedDraft(attemptId, now)
     +deleteByStudent(studentId)
   }
   class Attempt {
     <<entity>>
     +requireOpen()
+    +requireAnswerable()
     +finish(now)
     +complete(now)
   }
@@ -1101,8 +1103,14 @@ classDiagram
   }
   class Answer {
     <<entity>>
-    +next(previous, followupId, content)$ Answer
-    +plainText() String
+    +next(previous, followupId, content, plainText)$ Answer
+    +sameRequestAs(other) Boolean
+  }
+  class AnswerContent {
+    <<value>>
+    +only(inputType) AnswerContent
+    +requireComplete(inputType, mission)
+    +plainText(inputType, mission) String
   }
   class MissionRepository { <<repository>> }
   class RubricRepository { <<repository>> }
@@ -1114,6 +1122,7 @@ classDiagram
   class AnswerRepository {
     <<repository>>
     +findByIdempotencyKey(attemptId, key) Answer
+    +findLatest(attemptId) Answer
   }
   class JudgmentService { <<service>> }
 
@@ -1134,17 +1143,20 @@ classDiagram
   AttemptService ..> AttemptDraft
   Attempt --> FinishPolicy
   AnswerController --> AnswerService
-  AnswerService --> AttemptService : requireOpen
+  AnswerService --> AttemptService : lockForAnswer·clearSubmittedDraft
+  AnswerService --> MissionService : 시도 고정 버전
   AnswerService --> AnswerRepository
   AnswerService --> JudgmentService : createPending
   AnswerService ..> Answer
+  Answer *-- AnswerContent
 ```
 
 - `AttemptService.start`: 부분 UK `(student_id, mission_id) WHERE IN_PROGRESS` 충돌 시 기존 시도 반환 (FN-LRN-16)
 - `AttemptDraft.update`: `UPDATE ... WHERE version = :ifMatch` 영향 0행이면 `ATTEMPT_DRAFT_CONFLICT` + 최신 초안 (FN-LRN-17)
-- `AnswerService.submit`: 같은 트랜잭션에 `answer` 버전 추가 + `judgment(PENDING)` 생성. 같은 `idempotency_key`면 기존 답변 반환 (FN-LRN-10)
+- `AnswerService.submit`: 같은 트랜잭션에 `answer` 버전 추가 + `judgment(PENDING)` 생성. 같은 `idempotency_key`·같은 본문이면 기존 답변 반환, 다른 본문이면 `422 IDEMPOTENCY_KEY_REUSED` (FN-LRN-10, API 1.4). `lockForAnswer`가 시도 행을 잠가(`FOR UPDATE`) 같은 시도의 제출을 한 줄로 세움. 저장하면 `clearSubmittedDraft`로 초안의 `answer`를 비우고 `memo`는 유지, 초안 version +1 (FN-LRN-15·16)
+- 보완 답변 연결: 첫 답변은 `followupId` 없이, 버전 2부터는 이 시도의 가장 최근 되묻기 중 아직 답하지 않은 것만 (`JudgmentService.unansweredLatestFollowupId`). 아니면 `422 ANSWER_INCOMPLETE`. 판정 전 추가 제출·되묻기 2회 뒤 제출도 여기서 막힘 (P04)
 - `FinishPolicy.canFinish`: 시도 내 판정 `DONE` 1회 이상(결과 무관, `HELD` 포함)이면 true (P04)
-- 되묻기 생성 조건: 시도 내 되묻기 2회 미만 + 고르기 `CORRECT` 아님 (P04). `finished_at` 이후 답변 제출은 `requireOpen`에서 `ATTEMPT_CLOSED`
+- 되묻기 생성 조건: 시도 내 되묻기 2회 미만 + 고르기 `CORRECT` 아님 (P04). `finished_at` 이후 답변 제출은 `Attempt.requireAnswerable`에서 `ATTEMPT_CLOSED`. `requireOpen`은 `COMPLETED`만 막음(마무리 뒤 돌아보기 저장)
 - `AttemptDraft.content`: `{answer, memo}`, memo는 학생 본인 조회에만 포함 (P05)
 - `Mission.requirePublishable`: 현재 버전·기준표 요소 1개 이상(서술·논술) 또는 `answer_key`(고르기·수학) 검사, 누락 시 `MISSION_PUBLISH_INCOMPLETE` (FN-ADM-11)
 
@@ -1168,6 +1180,8 @@ classDiagram
   class JudgmentService {
     <<service>>
     +createPending(answerId, rubricVersionId)
+    +unansweredLatestFollowupId(attemptId) UUID
+    +timeline(attemptId) List~TimelineAnswer~
     +acquire(answerId, now) AcquireResult
     +saveResult(judgmentId, judged, followup)
     +markFailed(judgmentId, code)

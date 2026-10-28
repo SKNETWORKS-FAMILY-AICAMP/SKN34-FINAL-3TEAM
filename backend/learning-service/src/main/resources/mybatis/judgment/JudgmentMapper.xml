@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.learning.judgment.repository.JudgmentMapper">
+    <resultMap id="timeline" type="com.sagomungchi.learning.judgment.domain.TimelineAnswer">
+        <constructor>
+            <idArg column="answer_id" javaType="java.util.UUID"/>
+            <arg column="version" javaType="_int"/>
+            <arg column="submitted_at" javaType="java.time.Instant"/>
+            <arg column="input_type" javaType="com.sagomungchi.learning.mission.domain.InputType"/>
+            <arg column="plain_text" javaType="java.lang.String"/>
+            <arg column="followup_id" javaType="java.util.UUID"/>
+            <arg column="content" javaType="java.util.Map"
+                 typeHandler="com.sagomungchi.learning.judgment.repository.ContentMapTypeHandler"/>
+            <arg column="process_status" javaType="com.sagomungchi.learning.judgment.domain.ProcessStatus"/>
+        </constructor>
+    </resultMap>
+
+    <insert id="insertPending">
+        INSERT INTO judgment (id, answer_id, process_status, rubric_version_id, retry_count, created_at)
+        VALUES (#{id}, #{answerId}, 'PENDING', #{rubricVersionId}, 0, #{createdAt})
+    </insert>
+
+    <!-- 가장 최근 되묻기 하나만 보고, 이미 그 되묻기에 답한 답변이 있으면 없음 -->
+    <select id="findUnansweredLatestFollowupId" resultType="java.util.UUID">
+        WITH latest AS (
+            SELECT id FROM followup WHERE attempt_id = #{attemptId} ORDER BY created_at DESC, id DESC LIMIT 1
+        )
+        SELECT latest.id FROM latest
+        WHERE NOT EXISTS (SELECT 1 FROM answer WHERE answer.followup_id = latest.id)
+    </select>
+
+    <select id="findTimeline" resultMap="timeline">
+        SELECT a.id AS answer_id, a.version, a.submitted_at, a.input_type, a.plain_text, a.followup_id, a.content,
+               j.process_status
+        FROM answer a
+        JOIN judgment j ON j.answer_id = a.id
+        WHERE a.attempt_id = #{attemptId}
+        ORDER BY a.version
+    </select>
+</mapper>
