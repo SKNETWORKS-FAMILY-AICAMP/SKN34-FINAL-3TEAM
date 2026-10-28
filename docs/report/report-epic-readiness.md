@@ -5,9 +5,9 @@
 ## 브랜치와 목적
 
 - 사용자 지시에 따라 개인 에픽 브랜치 운영을 중단하고 기존 이슈별 브랜치 방식을 유지한다. #50은 `feature/report-generation`, #51은 `feature/report-metrics`, #52는 `feature/report-narrative`, #53은 `feature/report-rendering`, #54는 `feature/report-query`, #55는 `feature/report-deletion`에서 진행한다.
-- 최초 점검 때 만든 `feature/inyoung9629-report`는 삭제 요청이 없어 보존만 한다. 이 브랜치에 반영한 develop `78bbdc1` 병합(`5ef5a8e`)과 점검 결과(`b244668`)는 기존 누적 `feature/report-deletion`에도 fast-forward로 보존했다. 개별 기능 커밋과 #55 추가 migration 커밋은 유지한다.
+- 최초 점검 때 만든 `feature/inyoung9629-report`는 사용자 요청에 따른 삭제 대상이다. 이 브랜치에 반영한 develop `78bbdc1` 병합(`5ef5a8e`)과 점검 결과(`b244668`)는 기존 누적 `feature/report-deletion`에 fast-forward로 보존했다. 개별 기능 커밋과 #55 추가 migration 커밋은 유지한다.
 - PR은 이슈별로 범위를 확인해 `develop`에 제출한다. 후속 브랜치가 앞선 이슈를 포함하는 누적 구조이므로 선행 병합 후 다음 브랜치의 기준을 갱신하고 diff를 확인한다. 이번 방향 변경에서는 PR 생성·병합·이슈 종료를 수행하지 않는다.
-- scoring 에픽의 `feature/inyoung9629-scoring` 및 #85의 실제 모델 연동 보류 상태는 유지한다. scoring 변경을 report 브랜치에 섞지 않았다.
+- scoring 에픽 개인 브랜치도 삭제 대상이며, #85 작업은 기존 `feature/scoring-model-registry`에 보존한다. #85의 실제 모델 연동 보류 상태는 유지하고 scoring 변경을 report 브랜치에 섞지 않는다.
 
 ## 이슈별 판단
 
