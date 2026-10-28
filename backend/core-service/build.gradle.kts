@@ -25,6 +25,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-amqp")
+    implementation("net.javacrumbs.shedlock:shedlock-spring:6.10.0")
+    implementation("net.javacrumbs.shedlock:shedlock-provider-jdbc-template:6.10.0")
     implementation("org.springframework.security:spring-security-oauth2-jose") // JWT HS256 + Google JWKS verification; Boot BOM version
     implementation("org.mybatis.spring.boot:mybatis-spring-boot-starter:3.0.5")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
