@@ -50,7 +50,7 @@ class RuleJudgeTest {
     }
 
     @Test
-    fun `수학 최종 답은 값이 같으면 정답, 단위 차이는 보지 않음(FN-JDG-02 범위), 수가 아니면 글자 그대로`() {
+    fun `수학 최종 답은 값이 같으면 정답, 단위는 비교하지 않음(FN-JDG-02, 단위는 답 칸 뒤에 고정), 수가 아니면 글자 그대로`() {
         assertTrue(mathCorrect("30", "30 m²"))
         assertTrue(mathCorrect("30.0 ㎡", "30 m²"))
         assertTrue(mathCorrect("420 원", "420원"))

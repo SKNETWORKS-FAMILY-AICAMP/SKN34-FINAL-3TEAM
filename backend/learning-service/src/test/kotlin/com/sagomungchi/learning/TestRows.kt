@@ -75,7 +75,7 @@ class TestRows(private val jdbc: JdbcTemplate) {
 
     /**
      * 판정용 기준표: 요소(sort_order 순 ID를 돌려줌)와 정답 키·금지어(JSON 문자열)·예시 답.
-     * goodThought는 "들어가면 좋은 생각"인 요소의 순번(0부터)
+     * goodThought는 "들어가면 좋은 생각"인 요소의 순번(0부터). finalAnswer면 마지막에 최종 답 요소(FINAL_ANSWER)를 더함
      */
     fun rubric(
         mission: SeededMission,
@@ -84,17 +84,20 @@ class TestRows(private val jdbc: JdbcTemplate) {
         forbiddenTerms: String? = null,
         exampleAnswer: String? = null,
         goodThought: Set<Int> = emptySet(),
+        finalAnswer: Boolean = false,
     ): List<UUID> {
         jdbc.update(
             "UPDATE rubric_version SET answer_key = ?::jsonb, forbidden_terms = ?::jsonb, example_answer = ? WHERE id = ?",
             answerKey, forbiddenTerms, exampleAnswer, mission.rubricVersionId,
         )
-        return elements.mapIndexed { index, label ->
+        val codes = elements.indices.map { "e${it + 1}" } + listOfNotNull("FINAL_ANSWER".takeIf { finalAnswer })
+        val labels = elements + listOfNotNull("최종 답".takeIf { finalAnswer })
+        return labels.mapIndexed { index, label ->
             UUID.randomUUID().also {
                 jdbc.update(
                     """INSERT INTO rubric_element (id, rubric_version_id, code, label, description, points, good_thought,
                            judge_verified, sort_order) VALUES (?, ?, ?, ?, ?, 1, ?, false, ?)""",
-                    it, mission.rubricVersionId, "e${index + 1}", label, "$label 설명", index in goodThought, index + 1,
+                    it, mission.rubricVersionId, codes[index], label, "$label 설명", index in goodThought, index + 1,
                 )
             }
         }
