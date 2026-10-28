@@ -2,6 +2,7 @@ package com.sagomungchi.learning.mission.repository
 
 import com.sagomungchi.learning.TestRows
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
+import com.sagomungchi.learning.mission.domain.Category
 import com.sagomungchi.learning.mission.domain.Choice
 import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.domain.MissionProgress
@@ -35,6 +36,10 @@ class MissionRepositoryTest : PostgresRepositoryTest() {
         val essay = mission("PUBLISHED", sortOrder = 1, inputType = "ESSAY",
             inputTemplate = """["주장","까닭 1","까닭 2","반대 의견에 답하기"]""")
         mission("DRAFT", sortOrder = 0)
+        jdbc.update(
+            "UPDATE mission_version SET categories = ?::jsonb, answer_unit = 'm²' WHERE id = (SELECT current_version_id FROM mission WHERE id = ?)",
+            """[{"id":"g1","label":"식물"}]""", choice,
+        )
 
         val missions = repository.findPublished()
 
@@ -47,6 +52,8 @@ class MissionRepositoryTest : PostgresRepositoryTest() {
         assertEquals(emptyList(), first.inputTemplate)
         assertEquals(listOf("주장", "까닭 1", "까닭 2", "반대 의견에 답하기"), missions[0].inputTemplate)
         assertEquals(emptyList(), missions[0].choices)
+        assertEquals(listOf(Category("g1", "식물")) to "m²", first.categories to first.answerUnit)
+        assertEquals(emptyList<Category>() to null, missions[0].categories to missions[0].answerUnit)
     }
 
     @Test

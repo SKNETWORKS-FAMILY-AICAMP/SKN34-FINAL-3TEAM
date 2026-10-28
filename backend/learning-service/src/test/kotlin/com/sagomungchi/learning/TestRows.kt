@@ -21,6 +21,8 @@ class TestRows(private val jdbc: JdbcTemplate) {
         inputType: String = "NARRATIVE",
         choices: String? = null,
         inputTemplate: String? = null,
+        categories: String? = null,
+        answerUnit: String? = null,
     ): SeededMission {
         val id = UUID.randomUUID()
         jdbc.update(
@@ -28,7 +30,7 @@ class TestRows(private val jdbc: JdbcTemplate) {
                VALUES (?, ?, ?, ?, 1, ?, ?, ?)""",
             id, "TEST-$id", status, demoOnly, author, now, now,
         )
-        val versionId = addVersion(id, version = 1, title = title, grade = grade, inputType, choices, inputTemplate)
+        val versionId = addVersion(id, version = 1, title = title, grade = grade, inputType, choices, inputTemplate, categories, answerUnit)
         val rubricVersionId = UUID.randomUUID()
         jdbc.update(
             "INSERT INTO rubric_version (id, mission_id, version, created_by, created_at) VALUES (?, ?, 1, ?, ?)",
@@ -49,7 +51,7 @@ class TestRows(private val jdbc: JdbcTemplate) {
         return SeededMission(id, versionId, rubricVersionId, hintIds)
     }
 
-    /** 미션 버전 추가 (현재 버전으로 바꾸지는 않음). choices·inputTemplate은 JSON 문자열 */
+    /** 미션 버전 추가 (현재 버전으로 바꾸지는 않음). choices·inputTemplate·categories는 JSON 문자열 */
     fun addVersion(
         missionId: UUID,
         version: Int,
@@ -58,13 +60,15 @@ class TestRows(private val jdbc: JdbcTemplate) {
         inputType: String = "NARRATIVE",
         choices: String? = null,
         inputTemplate: String? = null,
+        categories: String? = null,
+        answerUnit: String? = null,
     ): UUID {
         val id = UUID.randomUUID()
         jdbc.update(
             """INSERT INTO mission_version (id, mission_id, version, title, subject, grade_min, grade_max,
-                   thinking_type, input_type, question, choices, input_template, created_by, created_at)
-               VALUES (?, ?, ?, ?, '과학', ?, ?, 'ANALYZE', ?, '질문', ?::jsonb, ?::jsonb, ?, ?)""",
-            id, missionId, version, title, grade, grade, inputType, choices, inputTemplate, author, now,
+                   thinking_type, input_type, question, choices, input_template, categories, answer_unit, created_by, created_at)
+               VALUES (?, ?, ?, ?, '과학', ?, ?, 'ANALYZE', ?, '질문', ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?)""",
+            id, missionId, version, title, grade, grade, inputType, choices, inputTemplate, categories, answerUnit, author, now,
         )
         return id
     }
