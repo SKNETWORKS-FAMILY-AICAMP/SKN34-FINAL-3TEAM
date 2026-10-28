@@ -25,7 +25,7 @@ learning-service의 `GET /internal/missions`, `GET /internal/missions/{id}`와 �
 | 범위 밖 상세 오류 | `demoGateway.mission`이 `404 NOT_FOUND` | `409 MISSION_NOT_AVAILABLE` | api-spec 1.3 "비공개·범위 밖 미션". 없는 미션만 404 |
 | `scene` | `Mission.scene`(`math`·`science` 등) | 응답에 없음 | DB(`mission_version`)에 대응 컬럼이 없음. 장면은 `sceneUri`·`staticSceneUri` |
 | 입력 틀 | 필드 없음 | `inputTemplate`(풀이 단계·논술 틀 칸 이름) 추가 | api-spec 2.2 상세의 "입력 방식 틀", ERD `input_template` |
-| 분류 문항 `categories` | api-spec 3.8 "미션 상세에 `categories:[{id,label}]` 제공" | 제공하지 않음 | DB에 분류 그룹을 담을 컬럼이 없고 이번 시드에 분류 문항이 없음. 프론트에서 추후 맞춤 |
+| 분류 문항 `categories` | api-spec 3.8 "미션 상세에 `categories:[{id,label}]` 제공" | 제공하지 않음 | DB에 분류 그룹을 담을 컬럼이 없고 이번 시드에 분류 문항이 없음. 프론트에서 추후 맞춤 → #79에서 확정([판정 규칙 보고서](learning-judgment-rules.md)): `categories` 제공 |
 
 ## 데모 미션 시드
 
@@ -40,7 +40,7 @@ learning-service의 `GET /internal/missions`, `GET /internal/missions/{id}`와 �
 | 풀이 단계 | 입력 틀 ① 무엇을 구하나요? ② 어떻게 구할까요? ③ 계산 ④ 확인해 보기 / 최종 답. 기준표는 방법과 무관한 생각 단계(문제 파악·방법 세우기 필수, 결과 확인은 들어가면 좋은 생각) | 풀이 방법이 여러 가지라 특정 방법을 요소로 두지 않음 |
 | 질문 은행 | 되묻기 유형마다 2개, 총 6개. 정답·미션 내용 없음 | P16. ai 되묻기가 유출 검사에 걸리면 learning이 같은 유형에서 고름 |
 | 작성 | 문항·기준표·예시 답은 learning 담당이 작성. AI Hub 문항·답안 미사용 | 이슈 #22 "확인 필요" 항목을 담당자가 정함 |
-| 정답 키 | 값만 넣음. 고르기·순서 `{"choiceIds":[...]}`(순서는 정답 순), 풀이 단계 `{"finalAnswer":"30 m²"}` | 학생 제출 필드 이름(api-spec 3.8 `choiceIds`·`finalAnswer`)과 맞춤. ERD는 "정답·동치 표현"만 정함. 단위·동치 비교는 판정 규칙의 일 |
+| 정답 키 | 값만 넣음. 고르기·순서 `{"choiceIds":[...]}`(순서는 정답 순), 풀이 단계 `{"finalAnswer":"30 m²"}` → #79에서 확정([판정 규칙 보고서](learning-judgment-rules.md)): 수만(`30`), 단위는 `answer_unit` | 학생 제출 필드 이름(api-spec 3.8 `choiceIds`·`finalAnswer`)과 맞춤. ERD는 "정답·동치 표현"만 정함. 단위·동치 비교는 판정 규칙의 일 |
 | 기타 값 | `judge_verified = false`(사람 검증 전), `basic_skills` 비움, 작성자 `created_by`는 고정된 시드용 ID | 기초 능력 값 목록이 문서에 없음. `created_by`는 NOT NULL이지만 core 사용자와 FK가 없음 |
 | 적재 | `backend/learning-service/db/seed/`의 SQL을 로컬 DB에 직접 적용. 마이그레이션(Flyway)에 넣지 않음. ID를 고정하고 `INSERT … ON CONFLICT (id) DO UPDATE`라 다시 실행하면 파일 내용으로 덮어씀. 적용 방법은 파일 머리말 | 시드는 개발·시연용이라 운영 스키마와 분리. 이슈 #22 "확인 필요" 항목을 담당자가 정함. 시도를 만든 뒤에도 문항을 고쳐 다시 적용할 수 있게 지우고 다시 넣지 않음. 파일에서 빼낸 요소·질문은 DB에 남으므로 직접 지움 |
 
@@ -113,4 +113,4 @@ learning-service의 `GET /internal/missions`, `GET /internal/missions/{id}`와 �
 |---|---|---|
 | core 프록시가 붙일 쿼리 | learning은 `grade`(필수)·`demo`(기본 `false`)를 받음 | core #38(학생 미션 API learning 프록시)에서 학생 학년과 `student.is_demo`를 붙임. 붙이기 전에는 `demo_only` 미션이 모두에게서 빠짐 |
 | 공개 중단·새 버전과 진행 중 시도 | 미션 목록·상세는 지금 공개된 현재 버전 기준. 공개 중단된 미션은 목록에서 빠져 진행 중 상태도 목록에 안 보이고, 새 버전을 공개하면 상세는 새 버전 질문을 보여 줌 | 진행 중 시도는 시작 당시 버전을 유지해야 함(P07, state-diagram 3.1). #23 시도 상세가 시도에 고정된 `mission_version`을 주고, 이어하기는 시도(학생 홈 `resume`)로 들어가는지 확인 |
-| 분류 문항 `categories` | 제공하지 않음 | 분류 그룹 저장 위치(ERD)와 함께 정하고 프론트에서 맞춤 |
+| 분류 문항 `categories` | 제공하지 않음 | 분류 그룹 저장 위치(ERD)와 함께 정하고 프론트에서 맞춤 → #79에서 확정([판정 규칙 보고서](learning-judgment-rules.md)) |
