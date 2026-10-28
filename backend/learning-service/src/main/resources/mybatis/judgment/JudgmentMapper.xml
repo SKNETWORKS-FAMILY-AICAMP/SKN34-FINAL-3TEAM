@@ -94,11 +94,13 @@
         SELECT id, answer_id, process_status, lease_until, retry_count FROM judgment WHERE answer_id = #{answerId}
     </select>
 
-    <!-- state-diagram 3.3: PENDING·FAILED·리스 만료 RUNNING만 RUNNING으로. 엔티티 판단 뒤 그사이 다른 요청이 가져갔으면 0행 -->
+    <!-- state-diagram 3.3: PENDING·FAILED·리스 만료 RUNNING만 RUNNING으로. 엔티티 판단 뒤 그사이 다른 요청이 가져갔으면 0행.
+         리스 없는 RUNNING은 엔티티(isLeaseExpired)처럼 만료로 봄 -->
     <update id="acquire">
         UPDATE judgment SET process_status = 'RUNNING', lease_until = #{leaseUntil}
         WHERE answer_id = #{answerId}
-          AND (process_status IN ('PENDING', 'FAILED') OR (process_status = 'RUNNING' AND lease_until &lt; #{now}))
+          AND (process_status IN ('PENDING', 'FAILED')
+               OR (process_status = 'RUNNING' AND (lease_until IS NULL OR lease_until &lt; #{now})))
     </update>
 
     <!-- 획득한 리스 값이 그대로일 때만: 리스가 끝나 다른 요청이 다시 가져갔으면 0행 (늦게 끝난 처리의 덮어쓰기 방지) -->

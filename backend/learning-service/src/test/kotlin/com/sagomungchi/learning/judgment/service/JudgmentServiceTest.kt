@@ -4,6 +4,7 @@ import com.sagomungchi.learning.TestRows
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.learning._common.security.UserContext
 import com.sagomungchi.learning._common.security.UserContextHolder
+import com.sagomungchi.learning.answer.domain.Answer
 import com.sagomungchi.learning.answer.domain.AnswerContent
 import com.sagomungchi.learning.answer.service.AnswerService
 import com.sagomungchi.learning.answer.service.SubmitCommand
@@ -40,13 +41,7 @@ class JudgmentServiceTest : PostgresRepositoryTest() {
 
     @Test
     fun `리스가 끝나 다른 요청이 다시 가져가면 늦게 끝난 처리는 저장도 실패 기록도 못 함 (state-diagram 3·3)`() {
-        val rows = TestRows(jdbc)
-        val mission = rows.mission()
-        val element = rows.rubric(mission).single()
-        val student = UUID.randomUUID()
-        UserContextHolder.set(UserContext(null, "STUDENT", setOf(student.toString()), null))
-        val attempt = attemptService.start(student, mission.id, 3, demo = false).attempt
-        val answer = answerService.submit(attempt.id, UUID.randomUUID(), SubmitCommand(InputType.NARRATIVE, AnswerContent(text = "답"), false, null))
+        val (answer, element) = submitted()
         val judged = Judged(
             JudgmentResult.PARTIAL, null,
             listOf(JudgmentElement(element, "답", verified = true, sourceType = ElementSource.AI_OBSERVATION).satisfy()),
@@ -64,5 +59,25 @@ class JudgmentServiceTest : PostgresRepositoryTest() {
         assertTrue(service.saveResult(second, judged, null))
         assertEquals(AcquireResult.Busy(ProcessStatus.DONE), service.acquire(answer.id, now.plus(Judgment.LEASE.multipliedBy(3))))
         assertEquals(listOf("DONE", 0), jdbc.queryForMap("SELECT process_status, retry_count FROM judgment WHERE id = ?", first.id).values.toList())
+    }
+
+    @Test
+    fun `리스 없는 RUNNING은 엔티티처럼 SQL도 만료로 보고 가져감`() {
+        val (answer, _) = submitted()
+        jdbc.update("UPDATE judgment SET process_status = 'RUNNING', lease_until = NULL WHERE answer_id = ?", answer.id)
+
+        assertIs<AcquireResult.Acquired>(service.acquire(answer.id, Instant.now()))
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM judgment WHERE answer_id = ? AND lease_until IS NOT NULL", Int::class.java, answer.id))
+    }
+
+    /** 서술 답변 하나를 제출해 판정 PENDING을 만듦. 기준표 요소 ID와 함께 */
+    private fun submitted(): Pair<Answer, UUID> {
+        val rows = TestRows(jdbc)
+        val mission = rows.mission()
+        val element = rows.rubric(mission).single()
+        val student = UUID.randomUUID()
+        UserContextHolder.set(UserContext(null, "STUDENT", setOf(student.toString()), null))
+        val attempt = attemptService.start(student, mission.id, 3, demo = false).attempt
+        return answerService.submit(attempt.id, UUID.randomUUID(), SubmitCommand(InputType.NARRATIVE, AnswerContent(text = "답"), false, null)) to element
     }
 }
