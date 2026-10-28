@@ -7,7 +7,7 @@
   "required": ["service", "callType", "model", "latencyMs", "success", "occurredAt"],
   "properties": {
     "service": { "enum": ["ai", "scoring"] },
-    "callType": { "enum": ["JUDGMENT", "FOLLOWUP", "ANALYSIS", "REPORT_NARRATIVE", "M2", "M1", "SPEECH"] },
+    "callType": { "enum": ["JUDGMENT", "FOLLOWUP", "ANALYSIS", "REPORT_NARRATIVE", "M2", "M1"] },
     "model": { "type": "string" },
     "promptVersion": { "type": ["string", "null"] },
     "inputTokens": { "type": ["integer", "null"], "minimum": 0 },
