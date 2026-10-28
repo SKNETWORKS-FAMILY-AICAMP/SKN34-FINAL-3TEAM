@@ -25,7 +25,6 @@ interface JudgmentMapper {
     fun findTarget(answerId: UUID): FeedbackTarget?
     fun findByAnswerId(answerId: UUID): Judgment?
     fun acquire(@Param("answerId") answerId: UUID, @Param("now") now: Instant, @Param("leaseUntil") leaseUntil: Instant): Int
-    fun lockAttemptOpen(answerId: UUID): Boolean
     fun complete(
         @Param("judgment") judgment: Judgment,
         @Param("leaseUntil") leaseUntil: Instant,

@@ -103,14 +103,6 @@
                OR (process_status = 'RUNNING' AND (lease_until IS NULL OR lease_until &lt; #{now})))
     </update>
 
-    <!-- 판정 저장 전 시도 행 잠금. 답변 제출·마무리와 같은 행을 같은 순서(시도 → 판정)로 잠가 저장과 마무리가 겹치지 않음 -->
-    <select id="lockAttemptOpen" resultType="_boolean">
-        SELECT t.status = 'IN_PROGRESS' AND t.finished_at IS NULL
-        FROM attempt t JOIN answer a ON a.attempt_id = t.id
-        WHERE a.id = #{answerId}
-        FOR UPDATE OF t
-    </select>
-
     <!-- 획득한 리스 값이 그대로일 때만: 리스가 끝나 다른 요청이 다시 가져갔으면 0행 (늦게 끝난 처리의 덮어쓰기 방지) -->
     <update id="complete">
         UPDATE judgment
