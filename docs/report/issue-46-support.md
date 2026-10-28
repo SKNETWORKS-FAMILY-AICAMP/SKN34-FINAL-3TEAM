@@ -30,7 +30,7 @@ learning 실제 controller와 OpenAPI에는 정정·대상 확인·관리자 원
 
 ## 공급자에 필요한 확인
 
-`contracts/openapi/support-learning-required.yaml`은 구현되어 있다는 주장이 아닌 협의용 계약이다. learning 담당자는 대상 ID→학생/시도 매핑, 단일 학생 scope의 ADMIN 원문 조회(draft/memo 제외), 정정 idempotency/reportId 중복 방지와 최초 결과 재구성, impact의 실제 반영 범위를 구현·확인해야 한다. core는 미구현/HTTP 실패를 SUPPORT_DEPENDENCY_UNAVAILABLE로 반환하고 완료 처리하지 않는다. ANALYSIS/REPORT 정정은 별도 공급자 계약이 없어 422 CORRECTION_TARGET_UNSUPPORTED이며 이번 작업에서 ai/report 정정을 확장하지 않는다.
+`contracts/openapi/support-learning-required.yaml`은 구현되어 있다는 주장이 아닌 협의용 계약이다. learning 담당자는 대상 ID→학생/시도 매핑, 단일 학생 scope의 ADMIN 원문 조회(draft/memo 제외), 정정 idempotency/reportId 중복 방지와 최초 결과 재구성, impact의 실제 반영 범위를 구현·확인해야 한다. core는 미구현/기타 HTTP 실패를 SUPPORT_DEPENDENCY_UNAVAILABLE로 반환하고 완료 처리하지 않는다. 정정 POST의 409/422 공개 매핑은 아래 #80 계약 보완 절을 따른다. ANALYSIS/REPORT 정정은 별도 공급자 계약이 없어 422 CORRECTION_TARGET_UNSUPPORTED이며 이번 작업에서 ai/report 정정을 확장하지 않는다.
 
 
 ## 최종 검증 재개·최신 develop 반영
@@ -42,7 +42,7 @@ learning 실제 controller와 OpenAPI에는 정정·대상 확인·관리자 원
 앞선 실행은 테스트 import 충돌 수정 후, Windows bind 경로의 Redis 2초 연결 초기화 실패와 이후 Docker 연결 unexpected EOF로 완료되지 않았다. 기존 DLQ 30초 대기 실패의 코드/환경 원인은 재실행 결과와 구분하여 기록한다. 실패한 실행을 통과한 것으로 집계하지 않는다.
 
 
-## 최종 검증 결과 (2026-10-28)
+## 초기 core 구현 검증 결과 (계약 보완 전, 2026-10-28)
 
 - 기준: 최신 origin/develop `7f30c2ee0691b301d32e7ef757eff2547e73eb3a` + 이번 작업. 검증한 core·프론트·OpenAPI 소스의 SHA-256과 현재 worktree 파일 일치를 확인했다. 최초 작업 기준 `8202f58`과 최신 통합 기준을 구분한다.
 - JDK 21 `test bootJar` 성공: 36개 클래스, 204개 테스트, 실패·오류·건너뜀 0. SupportIntegrationTest 12개 + PostgresRepositoryTest 기반 SupportRepositoryTest 2개를 포함한다. 기존 알림·리포트·인증·학생 기기·SSE·메시징 회귀도 같은 전체 실행에 포함된다.
@@ -61,10 +61,10 @@ learning 실제 controller와 OpenAPI에는 정정·대상 확인·관리자 원
 
 - head: `feature/core-support`, base: `develop`. PR은 사용자가 직접 생성한다.
 - 제목: `feat: 신고·문의·공지·도움말과 처리 결과 알림 구현`
-- learning 공급자 구현/계약 수용 및 실제 연동은 미완료다. 아래 종료 구문은 core 이슈의 해결 범위를 검토한 뒤 사용할 PR 초안이며, 실제 공급자 연동 완료를 뜻하지 않는다.
+- learning 공급자 구현/계약 수용 및 실제 연동은 미완료다. 아래 PR 초안은 Refs #46으로 연결만 하며 실제 공급자·E2E 완료 전에는 #46을 닫지 않는다.
 
 ```markdown
-Closes #46
+Refs #46
 
 신고·문의·공지·역할별 도움말을 core API로 구현하고 보호자 처리 결과를 기존 알림 저장·커밋 후 Redis 전달에 연결합니다.
 
@@ -80,4 +80,41 @@ Closes #46
 ```
 
 
-PR 메타데이터 후보(최종 준비 시 실제 등록값 재조회): `enhancement`(신규 기능) + `area:core`, 스키마·소비자 범위 보조로 `area:db`·`area:web`. 조직 Issue Type 목록 API는 401로 조회할 수 없어 Type 후보를 추정하지 않았다. 실제 저장소 기본 브랜치도 develop으로 확인했다. 해결 범위를 충족한 PR이 develop에 병합되면 `Closes #46` 자동 종료 조건에 해당한다. PR은 아직 생성하지 않았으며 공급자 실연동 미완료를 초안에 명시했다.
+PR 메타데이터 후보(최종 준비 시 실제 등록값 재조회): `enhancement`(신규 기능) + `area:core`, 스키마·소비자 범위 보조로 `area:db`·`area:web`. 조직 Issue Type 목록 API는 401로 조회할 수 없어 Type 후보를 추정하지 않았다. 실제 저장소 기본 브랜치도 develop으로 확인했다. 공급자 실연동이 미완료이므로 현재 PR 초안은 `Refs #46`을 사용하고 #46은 열어둔다. 자동 종료 구문은 실제 해결 범위를 충족한 최종 연동 PR에서만 사용한다. PR은 아직 생성하지 않았으며 공급자 실연동 미완료를 초안에 명시했다.
+
+
+## #80 담당자 전달 계약 보완 (2026-10-28)
+
+### 범위·근거
+
+이번 보완은 현재 feature/core-support의 core 구현(33c260b)을 기준으로 한다. #80은 `/internal/judgments/{judgmentId}/corrections`와 최신 정정 조회 적용을 구현한다. `/internal/support/targets/...`는 신고 대상 확인·최초 정정 전 조회에, `/internal/support/attempts/...`는 관리자 원문 열람에 필요한 **별도 공급자 이슈**다. 두 경로를 #80에 포함시킨 것으로 설명하지 않는다. 세 공급자와 실제로 연결하기 전 정정 E2E 완료를 주장하지 않는다. 이번 작업에서 이슈·댓글·PR은 생성하지 않는다.
+
+### 확정 의미와 처리 순서
+
+- `impact.aggregation`은 학습 수치 집계에 대한 반영 여부다. 개별 기록 상세의 판정 표시는 조회 결과의 최신 정정 적용 규칙에 속한다.
+- APPLIED=해당 영역 반영을 확인함, NOT_APPLIED=반영하지 않았음을 확인함, UNKNOWN=확인하지 못함. 집계가 판정 결과를 사용하지 않아 변경할 대상이 없는 경우도 NOT_APPLIED이며 오류나 후속 처리 필요를 뜻하지 않는다. conversation/report UNKNOWN을 허용한다.
+- 모든 impact UNKNOWN도 공급자가 판정 정정에 성공한 응답이면 core는 RESOLVED로 저장할 수 있다. 파생 결과까지 모두 반영됐다고 표시하지 않는다. core 완료 전이가 impact==APPLIED를 요구하지 않는 기존 로직은 유지하고 회귀 테스트를 보강했다.
+- 공급자는 내부 토큰·ADMIN·단일 대상 학생 scope·X-User-Id를 검사한다. DONE 이전 409, 같은 reportId의 다른 키 409, 같은 키의 다른 본문 422, 같은 키·본문은 최초 응답 전체를 재현한다. 원판정·원본 답변 불변, 정정 이력 추가, 최신 정정 조회 적용, 기존 되묻기·nextActions 유지가 필수다. 이 규칙은 공급자에 대한 계약이며 아직 실제 구현을 검증한 것은 아니다.
+- 공개 요청 키와 learning 키를 혼동하지 않는다. core는 영속 correction UUID를 learning `Idempotency-Key`로 보내는 기존 순서(의도 커밋 → HTTP → 완료 트랜잭션)를 유지한다. 공급자/원문 조회를 우회하거나 다른 역할로 위장하지 않는다.
+
+### 공급자 오류의 공개 표시
+
+기존 LearningSupportClient.exchange는 비-2xx 전부를 503 SUPPORT_DEPENDENCY_UNAVAILABLE로 바꾸므로 learning 409·422도 관리자에게 503으로 보였다. 정상 2xx의 JSON/필수 필드/impact 코드 오류는 별도로 502 SUPPORT_INVALID_RESPONSE였고, 전송/시간 초과/서킷은 기존 LearningClient의 LEARNING_* 오류였다.
+
+정정에 필요한 업무 충돌을 장애로 오인하지 않도록 설계·공개 OpenAPI를 먼저 보완하고, **정정 POST에만** 409→409 SUPPORT_CORRECTION_CONFLICT, 422→422 SUPPORT_CORRECTION_REJECTED를 적용했다. 공급자 오류 본문과 내부 code/detail은 공개하지 않는다. 조회 경로의 409/422와 다른 비-2xx는 기존 503, 잘못된 2xx는 502, 전송 계층은 기존 LEARNING_*를 유지한다. core 자체 상태/본문 충돌 응답은 변경하지 않는다. 공급자 실패 시 정정 FAILED·신고 IN_REVIEW·완료 알림 없음은 유지한다.
+
+### 소비자 영향
+
+관리자 화면에서 raw impact JSON 대신 분석 대화·학습 수치 집계·리포트의 확인 상태를 구분한다. 미반영은 변경 대상 없음도 포함하고 오류/후속 처리 필요를 의미하지 않는다고 표시한다. UNKNOWN·누락·잘못된 형식을 전체 반영 성공으로 대체하지 않는다. 기존 ApiError/ErrorNotice는 공개 409/422를 그대로 오류로 처리하므로 별도 재시도/인증 흐름을 추가하지 않는다.
+
+### 이번 보완의 검증
+
+구현·문서·관련 테스트 작성 뒤 영향 범위 검증을 모아서 수행했으며 아래 결과를 따른다. 기존 204개 전체 통과 기록은 이전 core 구현 기준이고 이번 보완의 새 실행 결과와 혼동하지 않는다. 실제 #80 공급자·별도 조회 API와의 연동, 실제 Google/브라우저 E2E·배포는 여전히 미완료다.
+
+
+- JDK 21 영향 범위: `bash gradlew test --tests 'com.sagomungchi.core.support.*' bootJar ...` 성공. SupportIntegrationTest 15개·SupportRepositoryTest 2개, 총 **17개**, 실패·오류·건너뜀 0. 전용 Linux source/cache, 2CPU·2GiB 상한, fork 1·heap 512MiB, IntegrationTestSupport의 실제 PostgreSQL·Redis·RabbitMQ와 테스트 전용 learning HTTP 대역을 사용했다. 전체 204개를 이번에 다시 실행했다고 표현하지 않는다.
+- 새 검증은 모든 impact UNKNOWN 성공/RESOLVED·알림 생성, 실제 producer 헤더(내부 토큰·ADMIN·단일 scope·X-User-Id)와 영속 correction UUID 전달, 공급자 409/422의 공개 HTTP 상태·고정 code·비공개 본문 차단·FAILED/IN_REVIEW 유지·완료 알림 없음, 조회 오류 503 유지, 잘못된 성공 JSON/필드/impact의 502 유지를 포함한다. 기존 support 소유권·감사·멱등/응답 유실·저장 실패·공지·도움말 회귀도 통과했다.
+- `python -O -m unittest discover -s scripts/tests -q`: **59개 통과**. 인증 헤더·DONE·reportId/키 충돌·전체 응답 재현·impact enum/의미·#80/별도 이슈 범위·공개 오류 명세를 대조했다. 이는 실제 learning 공급자의 구현 검증이 아니다.
+- 프론트 `npm test`: **87개 통과**, lint·build 성공. UNKNOWN 전체 완료 오표시 방지, NOT_APPLIED 변경 대상 없음/오류 아님 표시, 누락/잘못된 형식의 성공 대체 방지, 공개 409/422 보존을 확인했다. 기존 500KB 번들 안내는 남아 있다.
+- `python scripts/validate_support_contracts.py`: 실제 MockMvc JSON **7종**(기존 5종 + 공개 정정 409/422)의 스키마·UUID·시각 형식 통과. 검증 소스(core·프론트·OpenAPI)와 worktree SHA-256 일치 확인. bootJar SHA-256 `daa92b31881b92c0be57170ac264782152776391501e9dadfafdc7b8e5830c74`.
+- production 의존성·DB 스키마·마이그레이션·인증 기반·공급자 구현은 변경하지 않았다. 이번에는 영향받지 않은 전체 DB cycle·이전 전체 core 회귀·실제 브라우저/Google·실제 learning E2E·원격 CI·배포를 반복하지 않았다. `git diff --check` 통과. 이슈 초안은 대화에 제공하며 실제 생성/전송하지 않는다.

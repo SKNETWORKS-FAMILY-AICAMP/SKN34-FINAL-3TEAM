@@ -68,6 +68,7 @@ class SupportIntegrationTest: IntegrationTestSupport() {
  private val targets=ConcurrentHashMap<String,Pair<UUID,UUID>>()
  @Volatile private var loseResponse=false
  @Volatile private var failCorrection=false
+ @Volatile private var suppliedImpact=mapOf("conversation" to "UNKNOWN","aggregation" to "NOT_APPLIED","report" to "UNKNOWN")
  companion object {
   val stub=LearningHttpStub()
   @JvmStatic @DynamicPropertySource fun learning(registry: DynamicPropertyRegistry) { registry.add("app.services.learning") { stub.url } }
@@ -75,6 +76,7 @@ class SupportIntegrationTest: IntegrationTestSupport() {
  }
  @BeforeEach fun prepare() {
   stub.reset();client.circuit.reset();applied.clear();supplierApplications.set(0);targets.clear();loseResponse=false;failCorrection=false
+  suppliedImpact=mapOf("conversation" to "UNKNOWN","aggregation" to "NOT_APPLIED","report" to "UNKNOWN")
   user=parent(jdbc);student=child(jdbc,user);sibling=child(jdbc,user)
   parentToken=tokens.access(session(jdbc,user,"PARENT"));studentToken=tokens.access(session(jdbc,user,"STUDENT",student));siblingToken=tokens.access(session(jdbc,user,"STUDENT",sibling))
   adminToken=tokens.access(session(jdbc,account(jdbc),"ADMIN"));judgment=UUID.randomUUID();attempt=UUID.randomUUID()
@@ -90,7 +92,7 @@ class SupportIntegrationTest: IntegrationTestSupport() {
     req.target.endsWith("/corrections") -> {
      if(failCorrection) LearningHttpStub.Reply(503,"{}") else {
       val key=req.header("Idempotency-Key")!!
-      val response=applied.computeIfAbsent(key) { supplierApplications.incrementAndGet();json.writeValueAsString(mapOf("correctionId" to UUID.randomUUID(),"previousResult" to "RETHINK","corrected" to "CORRECT","createdAt" to OffsetDateTime.now().toString(),"impact" to mapOf("conversation" to "UNKNOWN","aggregation" to "APPLIED","report" to "NOT_APPLIED"))) }
+      val response=applied.computeIfAbsent(key) { supplierApplications.incrementAndGet();json.writeValueAsString(mapOf("correctionId" to UUID.randomUUID(),"previousResult" to "RETHINK","corrected" to "CORRECT","createdAt" to OffsetDateTime.now().toString(),"impact" to suppliedImpact)) }
       if(loseResponse) { loseResponse=false;throw java.io.IOException("test-only response lost after supplier commit") }
       LearningHttpStub.Reply(body=response)
      }
@@ -207,6 +209,52 @@ class SupportIntegrationTest: IntegrationTestSupport() {
   stub.respond={ req -> if(req.target.contains("/support/attempts/")) LearningHttpStub.Reply(body=json.writeValueAsString(mapOf("studentId" to sibling,"attemptId" to attempt,"answers" to emptyList<String>()))) else original(req) }
   call("GET","/admin/error-reports/$id",adminToken,expected=502)
   assertEquals(0,count("SELECT count(*) FROM audit_log WHERE action='SUPPORT_ORIGINAL_VIEW' AND target_id=?",UUID.fromString(id)))
+ }
+ @Test fun `all unknown derived impacts still resolve confirmed judgment correction and preserve producer headers`() {
+  suppliedImpact=mapOf("conversation" to "UNKNOWN","aggregation" to "UNKNOWN","report" to "UNKNOWN")
+  val id=submit()["reportId"].asText();review(id);val key=UUID.randomUUID()
+  val result=correction(id,key)
+  assertEquals("RESOLVED",result["status"].asText())
+  assertTrue(result["corrections"][0]["impact"].properties().all { it.value.asText()=="UNKNOWN" })
+  assertEquals(1,count("SELECT count(*) FROM notification WHERE user_id=?",user))
+  val sent=stub.requests.single { it.target.endsWith("/corrections") }
+  val durableId=jdbc.queryForObject("SELECT id FROM correction WHERE error_report_id=?",UUID::class.java,UUID.fromString(id))!!
+  assertEquals(durableId.toString(),sent.header("Idempotency-Key"))
+  assertEquals("test-token",sent.header("X-Internal-Token"))
+  assertEquals("ADMIN",sent.header("X-User-Role"))
+  assertEquals(student.toString(),sent.header("X-Student-Scope"))
+  assertEquals(auth.authenticate(adminToken).account.id.toString(),sent.header("X-User-Id"))
+ }
+ @Test fun `supplier correction 409 and 422 retain public status without forwarding private supplier body`() {
+  val normal=stub.respond
+  listOf(409 to "SUPPORT_CORRECTION_CONFLICT",422 to "SUPPORT_CORRECTION_REJECTED").forEach { (status,code) ->
+   stub.respond=normal
+   val id=submit()["reportId"].asText();review(id)
+   stub.respond={ req -> if(req.target.endsWith("/corrections")) LearningHttpStub.Reply(status,
+    json.writeValueAsString(mapOf("status" to status,"code" to "UPSTREAM_INTERNAL_CODE","detail" to "supplier-private-value"))) else normal(req) }
+   val response=call("POST","/admin/error-reports/$id/corrections",adminToken,CorrectionCommand("근거 확인","CORRECT"),UUID.randomUUID(),status,
+    if(status==409) "correction-conflict" else "correction-rejected")
+   assertEquals(code,response["code"].asText())
+   assertFalse(response.toString().contains("supplier-private-value"));assertFalse(response.toString().contains("UPSTREAM_INTERNAL_CODE"))
+   assertEquals("IN_REVIEW",call("GET","/error-reports/$id")["status"].asText())
+   assertEquals("FAILED",jdbc.queryForObject("SELECT processing_status FROM correction WHERE error_report_id=?",String::class.java,UUID.fromString(id)))
+  }
+  assertEquals(0,count("SELECT count(*) FROM notification WHERE user_id=?",user))
+ }
+ @Test fun `non correction HTTP failures remain 503 and malformed correction success remains 502`() {
+  val normal=stub.respond
+  listOf(409,422).forEach { status ->
+   stub.respond={ LearningHttpStub.Reply(status,"{}") }
+   val error=submit(expected=503);assertEquals("SUPPORT_DEPENDENCY_UNAVAILABLE",error["code"].asText())
+  }
+  stub.respond=normal
+  val id=submit()["reportId"].asText();review(id);val key=UUID.randomUUID()
+  listOf("not-json","{}",json.writeValueAsString(mapOf("correctionId" to UUID.randomUUID(),"previousResult" to "RETHINK","corrected" to "CORRECT","createdAt" to OffsetDateTime.now().toString(),"impact" to mapOf("conversation" to "UNKNOWN","aggregation" to "INVALID","report" to "UNKNOWN")))).forEach { body ->
+   stub.respond={ req -> if(req.target.endsWith("/corrections")) LearningHttpStub.Reply(body=body) else normal(req) }
+   val error=correction(id,key,502);assertEquals("SUPPORT_INVALID_RESPONSE",error["code"].asText())
+  }
+  assertEquals("IN_REVIEW",call("GET","/error-reports/$id")["status"].asText())
+  assertEquals(0,count("SELECT count(*) FROM notification WHERE user_id=?",user))
  }
  @Test fun `core finalize rollback can recover supplier success without another application`() {
   val id=submit()["reportId"].asText();review(id);val key=UUID.randomUUID()

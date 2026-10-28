@@ -1,3 +1,4 @@
+import { correctionImpactText } from '../../domain/admin/operations.ts'
 import { useState } from 'react'
 import { adminApi } from '../../data/admin/api.ts'
 import { useAdminQuery, useAdminMutation } from '../../data/admin/queries.ts'
@@ -249,13 +250,14 @@ function ErrorDetail({ id }: { id: string }) {
             </button>
             <ErrorNotice error={correction.error} />
           </form>
+          {q.data.corrections.length > 0 && <p>판정 정정과 파생 결과 반영은 별개입니다. 아래 표시는 각 영역에서 확인된 반영 여부입니다.</p>}
           {q.data.corrections.map((c, i) => (
             <section className="ws-card" key={i}>
               <p>
                 {c.createdAt} · {c.reason}
               </p>
               <p>{c.corrected}</p>
-              <p>{typeof c.impact === 'string' ? c.impact : JSON.stringify(c.impact)}</p>
+              <p>{correctionImpactText(c.impact)}</p>
             </section>
           ))}
         </>

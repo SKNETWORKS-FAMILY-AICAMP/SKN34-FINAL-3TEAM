@@ -92,6 +92,8 @@
 | `LEARNING_UNAVAILABLE` / `LEARNING_TIMEOUT` / `LEARNING_CIRCUIT_OPEN` | 503 / 504 / 503 | core→learning 호출 실패 / 시간 초과 / 서킷 차단 (1.4) |
 | `MODEL_VERSION_CONFLICT` / `MODEL_APPROVAL_REJECTED` / `MODEL_VERSION_STATE_INVALID` | 409 / 422 / 503 | 허용되지 않는 전이·복귀 이력 없음 / 승인 근거·범위 부족 / 기존 ACTIVE 상태 불완전 (5.2) |
 | `LEARNING_INVALID_RESPONSE` | 502 | 피드백 SSE에서 learning 응답 형식 오류 (3.2) |
+| `SUPPORT_CORRECTION_CONFLICT` / `SUPPORT_CORRECTION_REJECTED` | 409 / 422 | learning 정정 POST의 업무 충돌 / 요청 거부. 공급자 본문은 공개하지 않음 (5.7) |
+| `SUPPORT_DEPENDENCY_UNAVAILABLE` / `SUPPORT_INVALID_RESPONSE` | 503 / 502 | 지원 공급자의 기타 비-2xx / 잘못된 2xx 성공 응답 (5.7) |
 | `INTERNAL_ERROR` | 500 | 예상하지 못한 서버 오류 (SSE `error` 이벤트는 `retryable: true`) |
 
 - 피드백 SSE `error` 이벤트: core가 만든 오류는 `type: "about:blank"`·`title`·`status`·`code`·`retryable`만 포함하고 `instance`·`traceId`는 없음. learning이 보낸 Problem Details는 그대로 전달하고 빠진 `type`·`title`·`status`·`code`·`retryable`만 보충 (3.2)
@@ -849,6 +851,26 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 
 - GET `/internal/support/targets/{targetType}/{targetId}`: JUDGMENT/FOLLOWUP/ATTEMPT → `{studentId,attemptId,judgmentId?,previousResult?}`. 내부 토큰 + 사용자 scope 검사, 관리자 SERVICE_OPS 컨텍스트는 core 검증 후 전달. 범위 밖 403, 대상 없음 404, 미구현/장애는 core `SUPPORT_DEPENDENCY_UNAVAILABLE` (503).
 - GET `/internal/support/attempts/{attemptId}`: `{studentId,attemptId,answers:[{answerId,version,text,feedback}]}`. core가 저장된 연결 ID로만 호출, 공급자도 전달한 단일 학생 scope·ADMIN 역할·core 내부 토큰 검사(SERVICE_OPS는 core에서 검증). draft/memo/이름 제외.
-- POST `/internal/judgments/{judgmentId}/corrections`: `{reportId,reason,corrected}` + 고정 Idempotency-Key. 공급자는 `(judgmentId,key)`와 reportId 단위 중복 방지, 본문 대조, 기존 결과/사유/시점 보존. 응답 `{correctionId,previousResult,corrected,createdAt,impact:{conversation,aggregation,report}}`. impact 값은 APPLIED/NOT_APPLIED/UNKNOWN만, 확인하지 않은 반영은 UNKNOWN. 응답 유실·core 저장 실패 후 동일 key로 같은 응답을 재구성해야 한다.
+- POST `/internal/judgments/{judgmentId}/corrections`는 **#80**의 공급자 구현 범위다. `{reportId,reason,corrected}`와 core에 영속 저장한 correction UUID를 `Idempotency-Key`로 전달하는 현재 흐름을 유지한다. 원판정·원본 답변을 보존하고 정정 이력을 추가한다. 조회에는 최신 정정을 적용하되 기존 되묻기와 `nextActions`는 유지한다.
+- 정정 인증은 내부 토큰·`ADMIN`·대상 학생 **정확히 1명**의 `X-Student-Scope`·UUID `X-User-Id`가 필수다. SERVICE_OPS 검사는 core가 소유한다. 잘못된 내부 토큰은 401, 역할/학생 범위 위반은 403, 필수 사용자 ID 누락/형식 오류는 400이다.
+- 정정 대상의 처리 상태가 `DONE` 이전이면 409. 동일 `reportId`에 다른 `Idempotency-Key`를 사용하면 409. 같은 키·같은 본문은 `correctionId`·이전 결과·정정 결과·시각·impact를 포함한 **최초 응답 전체**를 재현하고, 같은 키·다른 본문은 422다. 응답 유실·core 저장 실패 후에도 같은 영속 키로 재개한다.
+- 정정 응답은 `{correctionId,previousResult,corrected,createdAt,impact:{conversation,aggregation,report}}`다. `impact.aggregation`은 **학습 수치 집계**에 대한 정정 반영 여부이며 개별 기록 상세의 판정 표시와 구분한다.
+- impact의 `APPLIED`는 해당 영역에 정정 반영을 확인함, `NOT_APPLIED`는 해당 영역에 정정 반영을 수행하지 않았음을 확인함, `UNKNOWN`은 반영 여부를 확인하지 못함이다. 집계가 판정 결과를 사용하지 않아 변경 대상이 없는 경우도 `aggregation: NOT_APPLIED`이며 오류나 후속 처리 필요를 뜻하지 않는다. learning은 `conversation`·`report`에 UNKNOWN을 반환할 수 있다.
+- **모든 impact가 UNKNOWN이어도 판정 정정 성공과 신고 RESOLVED 전이가 가능**하다. core는 공급자가 확인한 정정 성공을 기준으로 완료 처리하고 impact는 그대로 보존한다. 관리자 화면은 이를 대화·집계·리포트까지 모두 반영됐다는 의미로 표시하지 않는다.
+- `/support/targets/...`(신고 대상 확인·최초 정정 전 조회)와 `/support/attempts/...`(관리자 원문 조회)는 **#80 범위 밖의 별도 공급자 이슈**다. #80만으로 실제 정정 E2E가 완료되지는 않는다.
+
+#### #46 관리자 정정 공개 오류 계약
+
+기존 구현은 공급자의 모든 비-2xx를 `503 SUPPORT_DEPENDENCY_UNAVAILABLE`로 변환했다. 정정 POST에 한해 다음처럼 구분한다. 공급자 오류 본문·내부 상세·임의 code는 공개 응답에 전달하지 않는다.
+
+| learning 응답/실패 | 관리자 `POST /admin/error-reports/{id}/corrections` 응답 | 상태 처리 |
+|---|---|---|
+| 409 (DONE 이전·reportId/키 충돌) | **409 SUPPORT_CORRECTION_CONFLICT** | 정정 FAILED, 신고 IN_REVIEW 유지, 완료 알림 없음 |
+| 422 (같은 키·다른 본문) | **422 SUPPORT_CORRECTION_REJECTED** | 정정 FAILED, 신고 IN_REVIEW 유지, 완료 알림 없음 |
+| 그 외 비-2xx (조회 API의 409·422도 포함) | **503 SUPPORT_DEPENDENCY_UNAVAILABLE** | 완료로 표시하지 않음 |
+| 2xx의 잘못된 JSON·필수 필드·impact 코드 | **502 SUPPORT_INVALID_RESPONSE** | 완료로 표시하지 않음 |
+| 전송/시간 초과/서킷 차단 | 기존 LEARNING_UNAVAILABLE(503) / LEARNING_TIMEOUT(504) / LEARNING_CIRCUIT_OPEN(503) | 완료로 표시하지 않음 |
+
+core 자체의 권한·상태·본문 충돌 오류는 기존 계약을 유지한다. 이 표는 공급자 HTTP 응답 변환에 대한 계약이며 learning 공급자 구현 완료를 의미하지 않는다.
 
 #46 신고 POST의 최초 접수 응답은 RECEIVED·검토 결과 없음·정정 이력 없음으로 고정한다. 공통 멱등 응답 저장 실패 후 재구성해도 이미 진행된 관리자 처리 결과를 최초 접수 응답에 섞지 않는다. 생성 시각은 PostgreSQL과 같은 UTC 마이크로초 정밀도를 사용한다. 최신 learning #27의 기록 상세는 ADMIN을 허용하지 않으므로 이를 보호자/SYSTEM으로 위장 호출하지 않는다.

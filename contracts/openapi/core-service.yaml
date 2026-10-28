@@ -2448,6 +2448,7 @@ paths:
     post:
       tags:
       - Support
+      description: 판정 정정 성공 시 RESOLVED. impact가 모두 UNKNOWN이어도 성공하며 파생 결과 전체 반영을 뜻하지 않음.
       operationId: postAdminError-ReportsReportidCorrections
       responses:
         '200':
@@ -2456,6 +2457,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SupportReport'
+        '409':
+          description: core 상태 충돌 또는 learning 409를 SUPPORT_CORRECTION_CONFLICT로 변환. 신고 완료 아님.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: learning 422를 SUPPORT_CORRECTION_REJECTED로 변환. 공급자 본문은 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         default:
           $ref: '#/components/responses/LearningProblem'
         '403':
@@ -3917,6 +3930,7 @@ components:
           - 'null'
           format: date-time
         impact:
+          description: aggregation은 학습 수치 집계에 대한 반영 여부. APPLIED=반영 확인, NOT_APPLIED=미반영 확인(변경 대상 없음 포함·오류/후속 필요 아님), UNKNOWN=확인 못함. 모든 UNKNOWN도 정정 성공과 양립함.
           type:
           - object
           - 'null'
