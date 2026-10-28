@@ -88,6 +88,20 @@ def load(args: argparse.Namespace) -> pd.DataFrame:
     return df
 
 
+def aihub_split(df: pd.DataFrame, seed: int) -> pd.DataFrame:
+    """AI Hub 원래 구분으로 다시 나눈다 (같은 지시문으로 학습·평가하는 AI Hub 공식 조건 비교용).
+
+    AI Hub VL(Validation 4,000건) → 평가용(test), 딱 한 번만 채점
+    AI Hub TL → 답안 10%를 무작위로 떼어 검증용(early stop 판단), 나머지 학습용
+    VL을 early stop에도 쓰면 누수라서 검증용은 TL 안에서 따로 뗀다.
+    """
+    df = df.copy()
+    is_tl = df["split"] == "train"
+    pick = np.random.RandomState(seed).rand(len(df)) < 0.1
+    df["split_new"] = np.where(~is_tl, "test", np.where(pick, "valid", "train"))
+    return df
+
+
 N_CLASS = 5  # 1~5점
 
 
@@ -318,6 +332,11 @@ def main() -> None:
     parser.add_argument("--max-length", type=int, default=512)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
+        "--aihub-split",
+        action="store_true",
+        help="AI Hub 원래 구분으로 학습·평가 (TL 90%% 학습, TL 10%% 검증, VL 평가). 같은 지시문 조건 비교용",
+    )
+    parser.add_argument(
         "--split-seed",
         type=int,
         default=42,
@@ -370,6 +389,10 @@ def main() -> None:
         parser.error(
             "--extra-adult는 논술형(essay)만 (성인 글은 논술형과 같은 루브릭, 핵심어 없음)"
         )
+    if args.aihub_split and args.extra_adult:
+        parser.error(
+            "--aihub-split와 --extra-adult는 같이 못 씀 (성인 글 VL이 평가용에 섞임)"
+        )
     if args.with_purpose and args.dataset != "essay":
         parser.error(
             "--with-purpose는 논술형(essay)만 가능 (서술형은 글 목적 구분 없음)"
@@ -394,11 +417,16 @@ def main() -> None:
         run_name += f"_ex{args.exemplar_chars}"
     if args.extra_adult:
         run_name += "_adult"
+    if args.aihub_split:
+        run_name += "_aihub"
     if args.train_prompts:
         run_name += f"_p{args.train_prompts}"
     print(f"장치: {device} / 모델: {args.model} / 데이터: {args.dataset}")
 
     df = load(args)
+    if args.aihub_split:
+        df = aihub_split(df, args.split_seed)
+        print("AI Hub 구분 사용:", df["split_new"].value_counts().to_dict())
     if args.with_exemplar:
         ex = pick_exemplars(df, args.seed)
         df = df[
