@@ -829,3 +829,26 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 
 
 #45 보완: 연결 해제 뒤에도 동일 보호자의 등록 이력으로 PROFILE/RECORDS 삭제를 요청할 수 있다. PIN_CHANGE/CHILD_UNLINK 재인증은 현재 LINKED 소유권이 필요하다. 이미 진행 중인 RECORDS 삭제와 탈퇴가 겹치면 기존 RECORDS 완료 뒤 새로운 PROFILE 요청/이벤트를 기록한다. 두 이벤트의 scope를 바꾸거나 완료 보고를 다른 요청으로 전용하지 않는다. PROFILE 완료 시 연락 이메일/표시 이름은 계정 tombstone으로 정리하며 Google sub는 탈퇴 계정 재로그인을 차단하기 위한 식별 표식으로 유지한다. 상품/거래/구독/환불 행은 변경하지 않는다.
+
+
+### 5.7 #46 support 구현 계약
+
+- `/help`·`/notices`는 Bearer 인증·현재 동의가 필요하다. help의 role 생략 시 현재 역할, 다른 역할 요청은 403. 기존 Google·기기·PIN·탈퇴 상태 토큰 예외는 유지한다.
+- 신고·문의 소유자는 `(userId, requesterRole, requesterStudentId)`다. 학생은 세션 studentId만, 보호자는 자신의 PARENT 건만 조회한다. 자녀 대상은 현재 연결·동의를 재검사한다. 기존 소유 역할이 없는 행은 사용자 목록에 추정 노출하지 않는다.
+- `POST /error-reports`: 기존 필드 + 선택 `studentId`(서버 확인), UUID Idempotency-Key 필수. learning 대상은 아래 공급자 조회에서 학생·시도를 검증한 뒤 저장한다. ANALYSIS targetId는 core conversation_message ID, REPORT는 완료 report ID이며 보호자만 가능하다. 접수는 판정을 변경하지 않는다.
+- `POST /inquiries`: `{category:ACCOUNT|USAGE|PAYMENT,title,body,studentId?,attemptId?}`. 학생은 세션 학생으로 고정한다. 세 문의 분류는 학생·보호자 모두 접수할 수 있으며, 문의 분류가 결제 데이터 조회 권한을 부여하지 않는다. attemptId는 공급자가 해당 학생 시도로 확인할 때만 연결한다. 문의 목록·상세는 `{inquiryId,category,title,body,status,answer?,answeredAt?,createdAt}`.
+- 관리자 신고 PATCH `{status,reviewReason,reviewResult?}`: RECEIVED→IN_REVIEW→RESOLVED. RESOLVED는 결과·사유 필수(reviewResult 생략 시 reviewReason 사용). 완료 후 재요청은 동일 값만 허용한다. 문의 답변 `{answer}`는 RECEIVED/IN_REVIEW→RESOLVED, 같은 답변 재시도는 동일 결과, 변경은 409.
+- 정정 POST는 UUID Idempotency-Key + `{reason,corrected:CORRECT|PARTIAL|RETHINK|HELD}`. 이번 공급자 계약은 JUDGMENT만 지원하며 다른 targetType은 422. 검토 중 신고에 정정 의도·이전 결과·고정 요청 ID를 먼저 커밋 → 트랜잭션 밖 learning HTTP → 성공 결과와 영향·신고 완료·알림을 같은 트랜잭션으로 저장한다. 실패/응답 유실은 완료하지 않으며 동일 ID로 재시도한다. 신고당 정정 1건, 다른 본문 재사용 409. 원본 학생 답변·판정은 덮어쓰지 않는다.
+- 관리자 상세 원문은 저장된 attemptId·studentId에서만 조회한다. 임의 attemptId query를 받지 않는다. 목록·쓰기 응답에는 원문 없음. 원문은 draft·memo 제외 답변·판정만, 응답 전에 audit_log 저장(실패 시 원문 응답 실패). 문의 원문은 추가 `GET /admin/inquiries/{inquiryId}`를 동일하게 처리한다.
+- 공지 POST/PATCH `{kind:NOTICE|MAINTENANCE,title,body,targetRoles:[STUDENT|PARENT|ADMIN],visibleFrom,visibleTo?}`. 역할·기간 검증, 종료 후 수정 금지. DELETE는 endedAt 기록이며 물리 삭제하지 않는다. 사용자 GET은 현재 역할과 `visibleFrom <= now < visibleTo`, endedAt 없음만 조회한다. 목록은 공통 page/size 봉투.
+- 보호자 신고 완료·문의 답변만 기존 알림 service로 연결한다. 학생 건은 본인 결과 조회, 보호자 알림으로 우회하지 않는다. sourceEventId는 신고/문의 UUID이며 완료 여부만 알린다. 링크는 `/parent/support?reportId=...` 또는 `?inquiryId=...`, 소비자에서 본인 상세 API를 호출한다.
+
+### learning 공급자 필요 계약 (아직 구현되지 않음)
+
+현재 learning controller/OpenAPI에는 target 해석·SERVICE_OPS 원문·정정 구현이 없다. 학생 전용 `/internal/attempts/{id}`를 관리자로 위장 호출하지 않는다. 별도 `contracts/openapi/support-learning-required.yaml`은 협의용 계약이며 현재 learning 구현 명세와 구분한다.
+
+- GET `/internal/support/targets/{targetType}/{targetId}`: JUDGMENT/FOLLOWUP/ATTEMPT → `{studentId,attemptId,judgmentId?,previousResult?}`. 내부 토큰 + 사용자 scope 검사, 관리자 SERVICE_OPS 컨텍스트는 core 검증 후 전달. 범위 밖 403, 대상 없음 404, 미구현/장애는 core `SUPPORT_DEPENDENCY_UNAVAILABLE` (503).
+- GET `/internal/support/attempts/{attemptId}`: `{studentId,attemptId,answers:[{answerId,version,text,feedback}]}`. core가 저장된 연결 ID로만 호출, 공급자도 전달한 단일 학생 scope·ADMIN 역할·core 내부 토큰 검사(SERVICE_OPS는 core에서 검증). draft/memo/이름 제외.
+- POST `/internal/judgments/{judgmentId}/corrections`: `{reportId,reason,corrected}` + 고정 Idempotency-Key. 공급자는 `(judgmentId,key)`와 reportId 단위 중복 방지, 본문 대조, 기존 결과/사유/시점 보존. 응답 `{correctionId,previousResult,corrected,createdAt,impact:{conversation,aggregation,report}}`. impact 값은 APPLIED/NOT_APPLIED/UNKNOWN만, 확인하지 않은 반영은 UNKNOWN. 응답 유실·core 저장 실패 후 동일 key로 같은 응답을 재구성해야 한다.
+
+#46 신고 POST의 최초 접수 응답은 RECEIVED·검토 결과 없음·정정 이력 없음으로 고정한다. 공통 멱등 응답 저장 실패 후 재구성해도 이미 진행된 관리자 처리 결과를 최초 접수 응답에 섞지 않는다. 생성 시각은 PostgreSQL과 같은 UTC 마이크로초 정밀도를 사용한다. 최신 learning #27의 기록 상세는 ADMIN을 허용하지 않으므로 이를 보호자/SYSTEM으로 위장 호출하지 않는다.

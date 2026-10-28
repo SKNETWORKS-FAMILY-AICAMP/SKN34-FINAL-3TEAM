@@ -10,6 +10,8 @@ import java.util.UUID
 
 @Service
 class AccountAccessService(private val repository: UserAccountRepository) {
+    fun notificationRecipient(userId: UUID) = repository.findById(userId)?.let { it.role == "PARENT" && it.status == "ACTIVE" } == true
+
     /** Serializes consent and child mutations for one parent across requests/replicas. */
     @Transactional(propagation = Propagation.MANDATORY)
     fun lockParent(userId: UUID) = repository.lockById(userId)?.takeIf { it.role == "PARENT" && it.status == "ACTIVE" }

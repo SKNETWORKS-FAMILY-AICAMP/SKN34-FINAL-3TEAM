@@ -80,6 +80,6 @@ export const adminApi = {
     apiFetch<ErrorReport>(`/admin/error-reports/${p(id)}`, { signal }),
   reviewError: (id: string, status: string, reviewReason: string) =>
     apiFetch<ErrorReport>(`/admin/error-reports/${p(id)}`, json({ status, reviewReason }, 'PATCH')),
-  correction: (id: string, reason: string, corrected: string) =>
-    apiFetch<ErrorReport>(`/admin/error-reports/${p(id)}/corrections`, json({ reason, corrected })),
+  correction: (id: string, reason: string, corrected: string, key: string) =>
+    apiFetch<ErrorReport>(`/admin/error-reports/${p(id)}/corrections`, { ...json({ reason, corrected }), headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key } }),
 }

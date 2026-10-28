@@ -75,6 +75,8 @@
   - [학생 화면 테마 적용](report/student-theme-world.md): 생각 지도 테마·캐릭터·꾸미기 화면 기록
   - [설계 문서 정합성 점검](report/docs-consistency-audit.md): 코드 대비·문서 간 불일치 수정 내역, 결정 항목 반영(계정 복구·삭제 재확인·내부 OpenAPI 등), 코드 결함 이슈 초안
 
+- [이슈 #46 신고·문의·공지·도움말](report/issue-46-support.md): 요청 역할·학생 scope, 정정 재시도·감사, 알림 연결과 공급자 필요 계약
+
 ## 개발 규칙
 
 ### 작업 규칙

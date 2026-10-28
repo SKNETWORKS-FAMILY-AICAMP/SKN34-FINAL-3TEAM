@@ -178,10 +178,10 @@ export function ErrorManager() {
 function ErrorDetail({ id }: { id: string }) {
   const q = useAdminQuery(['error', id], (signal) => adminApi.error(id, signal)),
     [reason, setReason] = useState(''),
-    [corrected, setCorrected] = useState(''),
+    [corrected, setCorrected] = useState('CORRECT'),
     [status, setStatus] = useState('IN_REVIEW'),
     review = useAdminMutation(() => adminApi.reviewError(id, status, reason)),
-    correction = useAdminMutation(() => adminApi.correction(id, reason, corrected))
+    correction = useAdminMutation(() => adminApi.correction(id, reason, corrected, id))
   return (
     <>
       <QueryFeedback query={q} />
@@ -240,12 +240,9 @@ function ErrorDetail({ id }: { id: string }) {
           >
             <label>
               정정 결과
-              <textarea
-                aria-label="정정 결과"
-                required
-                value={corrected}
-                onChange={(e) => setCorrected(e.target.value)}
-              />
+              <select aria-label="정정 결과" value={corrected} onChange={(e) => setCorrected(e.target.value)}>
+                {['CORRECT', 'PARTIAL', 'RETHINK', 'HELD'].map((value) => <option key={value}>{value}</option>)}
+              </select>
             </label>
             <button className="cj-primary" disabled={!reason.trim() || correction.isPending}>
               정정 이력 추가
@@ -258,7 +255,7 @@ function ErrorDetail({ id }: { id: string }) {
                 {c.createdAt} · {c.reason}
               </p>
               <p>{c.corrected}</p>
-              <p>{c.impact}</p>
+              <p>{typeof c.impact === 'string' ? c.impact : JSON.stringify(c.impact)}</p>
             </section>
           ))}
         </>

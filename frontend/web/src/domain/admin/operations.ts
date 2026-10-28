@@ -114,7 +114,7 @@ export interface ErrorReport {
   comment: string
   reviewReason?: string
   linkedAttempt?: PublicAttempt
-  corrections: { reason: string; corrected: string; createdAt: string; impact: string }[]
+  corrections: { reason: string; corrected: string; createdAt: string; impact: string | Record<string, string> | null }[]
 }
 export interface Usage {
   period: Period

@@ -1,0 +1,273 @@
+openapi: 3.1.0
+info:
+  title: '#46 learning 공급자 필요 계약 (미구현·협의용)'
+  version: 0.1.0
+servers:
+- url: /internal
+security:
+- InternalToken: []
+paths:
+  /support/targets/{targetType}/{targetId}:
+    get:
+      description: 학생 scope 확인 후 studentId/attemptId/judgmentId/previousResult. ATTEMPT도
+        허용. 원문 없음.
+      parameters:
+      - name: targetType
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: targetId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-User-Role
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - STUDENT
+          - PARENT
+          - ADMIN
+      - name: X-Student-Scope
+        in: header
+        required: true
+        schema:
+          type: string
+          description: core가 검증한 학생 UUID 목록. 원문·정정은 저장된 단일 학생. SERVICE_OPS 검사는 core
+            소유.
+      responses:
+        '200':
+          description: api-spec 5.7의 엄격한 응답
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportTarget'
+        '403':
+          description: scope/권한 부족
+        '404':
+          description: 대상 없음
+  /support/attempts/{attemptId}:
+    get:
+      description: core가 신고/문의에서 읽은 단일 학생 scope, SERVICE_OPS. draft/memo 제외.
+      parameters:
+      - name: attemptId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-User-Role
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - STUDENT
+          - PARENT
+          - ADMIN
+      - name: X-Student-Scope
+        in: header
+        required: true
+        schema:
+          type: string
+          description: core가 검증한 학생 UUID 목록. 원문·정정은 저장된 단일 학생. SERVICE_OPS 검사는 core
+            소유.
+      responses:
+        '200':
+          description: api-spec 5.7의 엄격한 응답
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportOriginal'
+        '403':
+          description: scope/권한 부족
+        '404':
+          description: 대상 없음
+  /judgments/{judgmentId}/corrections:
+    post:
+      description: Idempotency-Key 필수. 동일 key/본문과 reportId 중복 방지, 이전 결과 보존. api-spec
+        5.7 참고.
+      parameters:
+      - name: judgmentId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-User-Role
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - STUDENT
+          - PARENT
+          - ADMIN
+      - name: X-Student-Scope
+        in: header
+        required: true
+        schema:
+          type: string
+          description: core가 검증한 학생 UUID 목록. 원문·정정은 저장된 단일 학생. SERVICE_OPS 검사는 core
+            소유.
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: api-spec 5.7의 엄격한 응답
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CorrectionResult'
+        '403':
+          description: scope/권한 부족
+        '404':
+          description: 대상 없음
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CorrectionCommand'
+components:
+  securitySchemes:
+    InternalToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Token
+  schemas:
+    SupportTarget:
+      type: object
+      required:
+      - studentId
+      - attemptId
+      properties:
+        studentId:
+          type: string
+          format: uuid
+        attemptId:
+          type: string
+          format: uuid
+        judgmentId:
+          type: string
+          format: uuid
+        previousResult:
+          type: string
+          enum:
+          - CORRECT
+          - PARTIAL
+          - RETHINK
+          - HELD
+    SupportOriginal:
+      type: object
+      required:
+      - studentId
+      - attemptId
+      - answers
+      properties:
+        studentId:
+          type: string
+          format: uuid
+        attemptId:
+          type: string
+          format: uuid
+        answers:
+          type: array
+          items:
+            type: object
+            required:
+            - answerId
+            - version
+            - text
+            - feedback
+            properties:
+              answerId:
+                type: string
+                format: uuid
+              version:
+                type: integer
+                minimum: 1
+              text:
+                type: string
+              feedback:
+                type: object
+                description: PublicAttempt feedback。draft/memo/name excluded
+    CorrectionCommand:
+      type: object
+      required:
+      - reportId
+      - reason
+      - corrected
+      properties:
+        reportId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          minLength: 1
+        corrected:
+          type: string
+          enum:
+          - CORRECT
+          - PARTIAL
+          - RETHINK
+          - HELD
+    CorrectionResult:
+      type: object
+      required:
+      - correctionId
+      - previousResult
+      - corrected
+      - createdAt
+      - impact
+      properties:
+        correctionId:
+          type: string
+          format: uuid
+        previousResult:
+          type: string
+          enum:
+          - CORRECT
+          - PARTIAL
+          - RETHINK
+          - HELD
+        corrected:
+          type: string
+          enum:
+          - CORRECT
+          - PARTIAL
+          - RETHINK
+          - HELD
+        createdAt:
+          type: string
+          format: date-time
+        impact:
+          type: object
+          required:
+          - conversation
+          - aggregation
+          - report
+          properties:
+            conversation:
+              type: string
+              enum:
+              - APPLIED
+              - NOT_APPLIED
+              - UNKNOWN
+            aggregation:
+              type: string
+              enum:
+              - APPLIED
+              - NOT_APPLIED
+              - UNKNOWN
+            report:
+              type: string
+              enum:
+              - APPLIED
+              - NOT_APPLIED
+              - UNKNOWN
