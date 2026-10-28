@@ -1,4 +1,3 @@
-import asyncio
 import json
 from pathlib import Path
 from uuid import uuid4
@@ -104,6 +103,22 @@ def test_payload_contract_errors_go_directly_to_dlq(field, value):
     assert not channel.default_exchange.published
 
 
+@pytest.mark.parametrize(
+    "field", ["jobId", "studentId", "periodFrom", "periodTo", "trigger", "narrativeEnabled"]
+)
+def test_missing_generate_fields_go_directly_to_dlq(field):
+    body = wire(uuid4())
+    del body["data"][field]
+    message = FakeMessage(json.dumps(body).encode())
+
+    async def handler(envelope):
+        ReportV1Codec().decode(envelope)
+
+    channel = run(message, handler)
+    assert message.rejected and not message.acked
+    assert not channel.default_exchange.published
+
+
 @pytest.mark.parametrize("field", ["id", "time", "specversion", "dataschema", "source"])
 def test_missing_wire_fields_are_not_filled_from_defaults(field):
     body = wire(uuid4())
@@ -152,11 +167,11 @@ def test_shared_codec_pipeline_is_idempotent_and_unconfigured_is_not_success(
         GenerationService(report_factory, JobLocks(db_engine), generator, codec), codec
     )
 
-    async def scenario():
-        for _ in range(2):
-            await handler(ReceivedEnvelope.model_validate_json(json.dumps(body)))
-
-    asyncio.run(scenario())
+    for _ in range(2):
+        message = FakeMessage(json.dumps(body).encode())
+        channel = run(message, handler)
+        assert message.acked and not message.rejected
+        assert not channel.default_exchange.published
     reports, events = stored(report_factory, report_student_id)
     assert len(reports) == 1 and len(events) == 2
     assert reports[0]["status"] == ("COMPLETED" if configured else "FAILED")

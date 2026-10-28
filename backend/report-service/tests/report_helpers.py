@@ -24,7 +24,7 @@ class FakeCodec:
         self.command = command
 
     def decode(self, envelope):
-        # Decoding the real payload is deliberately not implemented until #42.
+        # Isolate persistence tests; ReportV1Codec is exercised in contract/broker tests.
         return self.command
 
     def encode(self, event, traceparent):
