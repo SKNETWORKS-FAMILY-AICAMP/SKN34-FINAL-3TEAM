@@ -83,7 +83,7 @@ class AccountManagementTest : PostgresRepositoryTest() {
  }
  private fun child(user: UUID): UUID {
   val id=UUID.randomUUID(); students+=id
-  jdbc.update("INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,created_at,updated_at) VALUES(?,'학생',3,2017,false,'ACTIVE',now(),now())",id)
+  jdbc.update("INSERT INTO student(pin_failed_count,id,nickname,grade,birth_year,is_demo,status,created_at,updated_at) VALUES(0,?,'학생',3,2017,false,'ACTIVE',now(),now())",id)
   jdbc.update("INSERT INTO guardianship(id,parent_user_id,student_id,method,status,linked_at) VALUES(?,?,?,'REGISTER','LINKED',now())",UUID.randomUUID(),user,id)
   consent(user,id); return id
  }

@@ -126,7 +126,8 @@ class ConsentChildrenTest : PostgresRepositoryTest() {
         mvc.get("/api/v1/children") { header("Authorization", "Bearer ${parent.accessToken}") }.andExpect {
             status { isOk() }; jsonPath("$.items[0].id") { value(child) }
             jsonPath("$.items[0].hasRecords") { value(null as Any?) }; jsonPath("$.items[0].recordState") { value("UNAVAILABLE") }
-            jsonPath("$.items[0].pinSet") { doesNotExist() }; jsonPath("$.items[0].plan") { doesNotExist() }
+            jsonPath("$.items[0].pinSet") { value(false) }; jsonPath("$.items[0].pinLocked") { value(false) }
+            jsonPath("$.items[0].plan") { doesNotExist() }
         }
         mvc.post("/api/v1/auth/student-sessions") {
             header("Authorization", "Bearer ${parent.accessToken}"); header("Origin", "http://localhost:5173")

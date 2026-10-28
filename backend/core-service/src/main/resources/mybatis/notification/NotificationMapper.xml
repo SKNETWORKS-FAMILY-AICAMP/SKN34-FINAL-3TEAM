@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.notification.repository.NotificationMapper">
+ <resultMap id="notification" type="com.sagomungchi.core.notification.domain.Notification">
+  <constructor>
+   <idArg column="id" javaType="java.util.UUID"/>
+   <arg column="user_id" javaType="java.util.UUID"/><arg column="child_id" javaType="java.util.UUID"/>
+   <arg column="type" javaType="com.sagomungchi.core.notification.domain.NotificationType"/>
+   <arg column="source_event_id" javaType="java.util.UUID"/><arg column="title" javaType="java.lang.String"/>
+   <arg column="link" javaType="java.lang.String"/><arg column="read_at" javaType="java.time.OffsetDateTime"/>
+   <arg column="created_at" javaType="java.time.OffsetDateTime"/>
+  </constructor>
+ </resultMap>
+ <select id="list" resultMap="notification">
+  SELECT * FROM notification WHERE user_id=#{userId}
+  <if test="unreadOnly">AND read_at IS NULL</if>
+  ORDER BY created_at DESC,id DESC LIMIT #{limit} OFFSET #{offset}
+ </select>
+ <select id="find" resultMap="notification">SELECT * FROM notification WHERE user_id=#{userId} AND id=#{id}</select>
+ <update id="read">UPDATE notification SET read_at=COALESCE(read_at,CURRENT_TIMESTAMP) WHERE user_id=#{userId} AND id=#{id}</update>
+ <update id="readAll">UPDATE notification SET read_at=CURRENT_TIMESTAMP WHERE user_id=#{userId} AND read_at IS NULL</update>
+ <select id="settings" resultType="com.sagomungchi.core.notification.domain.NotificationSetting">
+  SELECT type,enabled FROM notification_setting WHERE user_id=#{userId} AND channel='IN_APP'
+ </select>
+ <insert id="setting">
+  INSERT INTO notification_setting(user_id,type,channel,enabled,updated_at) VALUES(#{userId},#{type},'IN_APP',#{enabled},CURRENT_TIMESTAMP)
+  ON CONFLICT(user_id,type,channel) DO UPDATE SET enabled=EXCLUDED.enabled,updated_at=EXCLUDED.updated_at
+ </insert>
+ <insert id="insert">
+  INSERT INTO notification(id,user_id,child_id,type,source_event_id,title,link,status,retry_count,created_at)
+  SELECT #{id},#{userId},#{childId},#{type},#{sourceEventId},#{title},#{link},'QUEUED',0,#{createdAt}
+  WHERE NOT EXISTS(SELECT 1 FROM notification_setting WHERE user_id=#{userId} AND type=#{type} AND channel='IN_APP' AND NOT enabled)
+  ON CONFLICT(user_id,type,source_event_id) DO NOTHING
+ </insert>
+ <update id="delivery">UPDATE notification SET status=#{status},failure_reason=#{reason} WHERE id=#{id}</update>
+</mapper>

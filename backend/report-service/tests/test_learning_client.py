@@ -74,6 +74,86 @@ def test_all_pages_are_loaded_with_existing_internal_headers():
     assert len(requests) == 4
 
 
+def test_public_child_id_cannot_replace_internal_student_id():
+    student = uuid4()
+
+    def mutate(name, data):
+        data["childId"] = data.pop("studentId")
+        return data
+
+    with pytest.raises(ValidationError, match="studentId"):
+        asyncio.run(read(student, handler_for(student, [], [], mutate)))
+
+
+@pytest.mark.parametrize(
+    "input_type,content,written",
+    [
+        ("NARRATIVE", {"text": "가🙂. 왜냐하면 좋아요."}, "가🙂. 왜냐하면 좋아요."),
+        (
+            "SOLUTION_STEPS",
+            {"steps": ["  ", "가?", "그래서 나."], "finalAnswer": "3"},
+            "가?\n그래서 나.\n3",
+        ),
+        (
+            "ESSAY",
+            {"essay": {"claim": "가.", "reasons": ["때문", "따라서"], "rebuttal": "나!"}},
+            "가.\n때문\n따라서\n나!",
+        ),
+        ("CHOICE", {"choiceIds": ["c1"]}, ""),
+        ("ORDERING", {"choiceIds": ["c2", "c1"]}, ""),
+        ("CLASSIFICATION", {"assignments": [{"choiceId": "c1", "categoryId": "g1"}]}, ""),
+        ("NARRATIVE", {"text": ""}, ""),
+    ],
+)
+def test_counts_use_written_fields_but_evidence_keeps_full_display_text(
+    input_type, content, written
+):
+    from app.generation.metrics import text_counts
+
+    student = uuid4()
+    display = "학생이 쓰지 않은 칸 이름? " + written
+    attempt = attempt_for(student, texts=(display, display))
+
+    def mutate(name, data):
+        if name == "attempts":
+            for answer in data["items"][0]["answers"]:
+                answer.update(inputType=input_type, content={**content, "memo": "PRIVATE-MEMO"})
+        elif name == "changes":
+            data["items"][0]["followup"] = None
+        return data
+
+    records = asyncio.run(read(student, handler_for(student, [attempt], [], mutate)))
+    assert all(a.written_text == written for a in records.attempts[0].answers)
+    assert "PRIVATE-MEMO" not in repr(records)
+    result = MetricsCalculator().calculate(records)
+    [change] = [i.payload for i in result.items if i.type == ItemType.CHANGE]
+    assert change["counts"] == {key: [value, value] for key, value in text_counts(written).items()}
+    assert change["first"]["text"] == change["revised"]["text"] == display
+    assert change["followup"] is None
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"inputType": "UNKNOWN"},
+        {"content": {}},
+        {"inputType": "ESSAY", "content": {"essay": {"claim": "가"}}},
+        {"inputType": "SOLUTION_STEPS", "content": {"steps": [1], "finalAnswer": "3"}},
+        {"text": None},
+    ],
+)
+def test_invalid_written_content_fails_instead_of_falling_back_to_display_text(patch):
+    student = uuid4()
+
+    def mutate(name, data):
+        if name == "attempts":
+            data["items"][0]["answers"][0].update(patch)
+        return data
+
+    with pytest.raises(ValidationError):
+        asyncio.run(read(student, handler_for(student, [attempt_for(student)], [], mutate)))
+
+
 def test_tombstone_and_private_fields_are_not_forwarded():
     student = uuid4()
     attempt = attempt_for(student)
@@ -82,7 +162,7 @@ def test_tombstone_and_private_fields_are_not_forwarded():
         if name == "attempts":
             data["items"][0]["draft"] = {"content": {"memo": "PRIVATE-MEMO-TEST"}}
             data["items"][0]["memo"] = "PRIVATE-MEMO-TEST"
-            data["items"][0]["answers"][0]["content"] = {"memo": "PRIVATE-MEMO-TEST"}
+            data["items"][0]["answers"][0]["content"]["memo"] = "PRIVATE-MEMO-TEST"
             data["items"].append({"attemptId": str(uuid4()), "available": False})
             data["totalElements"] = 2
         return data
@@ -192,7 +272,7 @@ def test_invalid_or_incomplete_response_fails_instead_of_becoming_no_record(faul
     def mutate(name, data):
         if name == "attempts":
             if fault == "student":
-                data["childId"] = str(uuid4())
+                data["studentId"] = str(uuid4())
             elif fault == "period":
                 data["period"]["to"] = "2026-10-26"
             elif fault in ("failed", "processing"):

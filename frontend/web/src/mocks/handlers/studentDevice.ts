@@ -1,5 +1,6 @@
 import { http } from 'msw/http'
 import { ApiError } from '../../data/apiClient.ts'
+import type { Child } from '../../domain/classroom.ts'
 import { normalizePairingCode, pinProblem } from '../../domain/studentDevice.ts'
 import { fixtureStore as store } from '../fixtures/student.ts'
 import { mockAccountChildren, mockIdentity, mockConsentRequired, mockGuardianConsentRequired } from '../fixtures/accounts.ts'
@@ -14,7 +15,9 @@ import {
   persistDeviceState,
 } from '../fixtures/studentDevice.ts'
 import { respond, startDeviceStudentSession } from './student.ts'
-import { fail, page, parentChild, parentGuard, requireReauth, mockChildConsentMetadata } from './parent.ts'
+import { fail, page, parentChild, parentGuard, consumePinReauth, mockChildConsentMetadata } from './parent.ts'
+import { demoRequest, sharedDeviceDemo, sharedParentRequest } from '../sharedDevice.ts'
+import type { SharedLogin } from '../sharedDevice.ts'
 
 // 학생 기기 등록·PIN 로그인 목 (API 명세 2.1, 3.11). 실제 서버 계약과 같은 경로·오류 코드를 쓴다.
 const save = async <T,>(action: () => Promise<T>, status = 200) =>
@@ -39,6 +42,10 @@ export const studentDeviceHandlers = [
   http.get('/api/v1/children', ({ request }) =>
     respond(async () => {
       parentGuard(request)
+      if (sharedDeviceDemo) {
+        const result = await sharedParentRequest<{ items: Child[] }>('/children')
+        return { ...result, items: result.items.map((c) => ({ ...c, ...mockChildConsentMetadata(c) })) }
+      }
       return page((await store.children()).map((c) => ({ ...mockChildConsentMetadata(c), childId: c.id, ...pinStatus(c.id) })))
     }),
   ),
@@ -46,7 +53,6 @@ export const studentDeviceHandlers = [
   http.put('/api/v1/children/:childId/pin', ({ request, params }) =>
     save(async () => {
       const c = await parentChild(request, String(params.childId))
-      requireReauth(request)
       const { pin } = (await request.json()) as { pin: string }
       const problem = pinProblem(String(pin ?? ''))
       if (problem)
@@ -56,7 +62,12 @@ export const studentDeviceHandlers = [
           title: problem,
           errors: [{ field: 'pin', reason: problem }],
         })
-      deviceState.pins[c.id] = { hash: await hashPin(c.id, pin), failed: 0, locked: false }
+      const hash = await hashPin(c.id, pin)
+      consumePinReauth(request, c.id)
+      if (sharedDeviceDemo) return sharedParentRequest(`/pins/${encodeURIComponent(c.id)}`, {
+        method: 'PUT', body: JSON.stringify({ pin }),
+      })
+      deviceState.pins[c.id] = { hash, failed: 0, locked: false }
       return undefined
     }, 204),
   ),
@@ -69,6 +80,9 @@ export const studentDeviceHandlers = [
         fail('VALIDATION_FAILED', '등록할 자녀를 한 명 이상 골라 주세요.')
       const children = []
       for (const id of new Set(childIds)) children.push(await parentChild(request, id))
+      if (sharedDeviceDemo) return sharedParentRequest('/pairings', {
+        method: 'POST', body: JSON.stringify({ childIds }),
+      })
       const pairingCode = newPairingCode(),
         expiresAt = Date.now() + PAIRING_TTL_MS
       deviceState.pairings[pairingCode] = { owner: mockIdentity.email, children, expiresAt }
@@ -79,6 +93,7 @@ export const studentDeviceHandlers = [
   http.get('/api/v1/student-devices', ({ request }) =>
     respond(async () => {
       parentGuard(request)
+      if (sharedDeviceDemo) return sharedParentRequest('/devices')
       const owned = deviceState.devices.filter((d) => d.owner === mockIdentity.email && !d.revokedAt)
       const names = new Map((await store.children()).map((c) => [c.id, c.nickname]))
       return page(
@@ -97,6 +112,7 @@ export const studentDeviceHandlers = [
   http.delete('/api/v1/student-devices/:deviceId', ({ request, params }) =>
     save(async () => {
       parentGuard(request)
+      if (sharedDeviceDemo) return sharedParentRequest(`/devices/${encodeURIComponent(String(params.deviceId))}`, { method: 'DELETE' })
       const d = deviceState.devices.find(
         (d) => d.deviceId === String(params.deviceId) && d.owner === mockIdentity.email && !d.revokedAt,
       )
@@ -110,6 +126,7 @@ export const studentDeviceHandlers = [
   http.post('/api/v1/auth/student/devices', ({ request }) =>
     save(async () => {
       const data = (await request.json()) as { pairingCode: string; label: string }
+      if (sharedDeviceDemo) return demoRequest('/register', { method: 'POST', body: JSON.stringify(data) })
       const code = normalizePairingCode(String(data.pairingCode ?? ''))
       const pairing = deviceState.pairings[code]
       delete deviceState.pairings[code] // 1회용: 성공·실패 관계없이 조회한 코드는 버린다
@@ -137,13 +154,14 @@ export const studentDeviceHandlers = [
 
   http.get('/api/v1/auth/student/profiles', () =>
     respond(async () => {
+      if (sharedDeviceDemo) return demoRequest('/profiles')
       const d = currentDevice() ?? deviceInvalid()
       const owned = mockAccountChildren.get(d.owner) ?? []
       return page(
         d.childIds
           .map((id) => owned.find((c) => c.id === id))
           .filter((c) => !!c)
-          .map((c) => ({ childId: c.id, nickname: c.nickname, pinSet: !!deviceState.pins[c.id], locked: !!deviceState.pins[c.id]?.locked })),
+          .map((c) => ({ childId: c.id, nickname: c.nickname, pinSet: !!deviceState.pins[c.id], pinLocked: !!deviceState.pins[c.id]?.locked })),
       )
     }),
   ),
@@ -151,6 +169,12 @@ export const studentDeviceHandlers = [
   http.post('/api/v1/auth/student/login', ({ request }) =>
     save(async () => {
       // 검사 순서: 기기 → 기기에 등록된 자녀 → 소유 학부모 연결 → PIN 설정 → 잠금 → PIN 일치 (API 명세 3.11)
+      if (sharedDeviceDemo) {
+        const data = await request.json()
+        const result = await demoRequest<SharedLogin>('/login', { method: 'POST', body: JSON.stringify(data) })
+        const accessToken = startDeviceStudentSession(result.child, result.children)
+        return { accessToken, role: 'STUDENT', child: { ...result.child, childId: result.child.id } }
+      }
       const d = currentDevice() ?? deviceInvalid()
       const { childId, pin } = (await request.json()) as { childId: string; pin: string }
       if (!d.childIds.includes(childId)) deviceInvalid()

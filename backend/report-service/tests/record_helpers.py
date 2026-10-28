@@ -1,4 +1,4 @@
-"""Synthetic fixtures for #51 calculations and the explicitly proposed #27 response."""
+"""Synthetic fixtures for #51 calculations and the merged #27 response."""
 
 from datetime import date, datetime
 from uuid import uuid4
@@ -22,7 +22,9 @@ def instant(value="2026-10-20T10:00:00+09:00"):
 
 def attempt_for(student_id, *, texts=("직접 만든 첫 답변.",), times=None, status="IN_PROGRESS"):
     answers = tuple(
-        AnswerRecord(uuid4(), i + 1, instant(times[i]) if times else instant(), text, "DONE")
+        AnswerRecord(
+            uuid4(), i + 1, instant(times[i]) if times else instant(), text, "DONE", text or ""
+        )
         for i, text in enumerate(texts)
     )
     return AttemptRecord(
@@ -70,6 +72,8 @@ def wire_attempt(attempt):
                 "version": a.version,
                 "submittedAt": a.submitted_at.isoformat(),
                 "text": a.text,
+                "inputType": "NARRATIVE",
+                "content": {"text": a.written_text},
                 "feedback": {"status": a.process_status},
             }
             for a in attempt.answers
@@ -87,7 +91,7 @@ def wire_attempt(attempt):
 
 
 def scope(student_id, *, period=PERIOD):
-    return {"childId": str(student_id), "period": period.payload(), "state": "OK"}
+    return {"studentId": str(student_id), "period": period.payload(), "state": "OK"}
 
 
 def page(student_id, items, *, index=0, size=100, total=None):
