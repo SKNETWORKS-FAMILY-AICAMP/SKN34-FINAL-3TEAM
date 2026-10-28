@@ -858,7 +858,7 @@ components:
         status:
           type: string
           enum: [IN_PROGRESS, COMPLETED]
-        finishedAt: {type: [string, 'null'], format: date-time, description: 마무리(정답·예시 답 공개) 시각, 그 뒤 답변 제출 불가. 마무리 전 null}
+        finishedAt: {type: [string, 'null'], format: date-time, description: "마무리(정답·예시 답 공개) 시각, 그 뒤 답변 제출 불가. 마무리 전 null"}
         answers:
           type: array
           items: {$ref: '#/components/schemas/AnswerItem'}
@@ -1135,7 +1135,7 @@ components:
         studentId: {type: string, format: uuid}
         mission: {$ref: '#/components/schemas/Mission'}
         status: {type: string, enum: [IN_PROGRESS, COMPLETED]}
-        finishedAt: {type: [string, 'null'], format: date-time, description: 마무리(정답·예시 답 공개) 시각, 그 뒤 답변 제출 불가. 마무리 전 null}
+        finishedAt: {type: [string, 'null'], format: date-time, description: "마무리(정답·예시 답 공개) 시각, 그 뒤 답변 제출 불가. 마무리 전 null"}
         answers:
           type: array
           items: {$ref: '#/components/schemas/AnswerItem'}
@@ -1172,7 +1172,7 @@ components:
         studentId: {type: string, format: uuid}
         mission: {$ref: '#/components/schemas/Mission'}
         status: {type: string, enum: [IN_PROGRESS, COMPLETED]}
-        finishedAt: {type: [string, 'null'], format: date-time, description: 마무리(정답·예시 답 공개) 시각, 그 뒤 답변 제출 불가. 마무리 전 null}
+        finishedAt: {type: [string, 'null'], format: date-time, description: "마무리(정답·예시 답 공개) 시각, 그 뒤 답변 제출 불가. 마무리 전 null"}
         answers:
           type: array
           items: {$ref: '#/components/schemas/AnswerItem'}

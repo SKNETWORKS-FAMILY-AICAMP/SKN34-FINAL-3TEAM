@@ -90,6 +90,7 @@
 | `CONSENT_DOCUMENT_CHANGED` / `CONSENT_DOCUMENTS_UNAVAILABLE` | 409 / 503 | 제출한 동의 문서 버전이 현재와 다름 / 게시된 동의 문서 확인 실패 (5.3) |
 | `IDEMPOTENCY_IN_PROGRESS` / `IDEMPOTENCY_UNAVAILABLE` | 409 / 503 | 같은 키 처리 중(`Retry-After: 1`) / 멱등 기록 저장소 장애 (1.4) |
 | `LEARNING_UNAVAILABLE` / `LEARNING_TIMEOUT` / `LEARNING_CIRCUIT_OPEN` | 503 / 504 / 503 | core→learning 호출 실패 / 시간 초과 / 서킷 차단 (1.4) |
+| `LEARNING_CONTRACT_INVALID` | 502 | 대시보드 공급자의 JSON·학생 식별자·필수 조회 봉투 계약 위반. 기록 없음으로 대체하지 않음 (#40, 2.3) |
 | `MODEL_VERSION_CONFLICT` / `MODEL_APPROVAL_REJECTED` / `MODEL_VERSION_STATE_INVALID` | 409 / 422 / 503 | 허용되지 않는 전이·복귀 이력 없음 / 승인 근거·범위 부족 / 기존 ACTIVE 상태 불완전 (5.2) |
 | `LEARNING_INVALID_RESPONSE` | 502 | 피드백 SSE에서 learning 응답 형식 오류 (3.2) |
 | `INTERNAL_ERROR` | 500 | 예상하지 못한 서버 오류 (SSE `error` 이벤트는 `retryable: true`) |
@@ -250,6 +251,13 @@
 - 판정 보류(`HELD`)와 처리 실패(`FAILED`)는 서로 다른 필드로 구분 (NFR-REL-04)
 
 ### 2.3 대시보드 (FN-DSH)
+
+#40 구현 계약: 아래 7개 GET은 `from`·`to`를 함께 받는다. 모두 생략하면 **KST 오늘 포함 최근 7일**이며 한쪽만 지정하거나 역전/유효하지 않은 날짜(연도 0001~9999 밖 포함)는 400 VALIDATION_FAILED다. 양 끝 날짜 포함, learning 조회 시 `[from 00:00 KST, to 다음날 00:00 KST)` 경계다. 응답 period는 실제 learning 조회 결과를 보존한다. 목록 page는 0 이상, size는 1~100(기본 20), status는 생략 또는 IN_PROGRESS/COMPLETED다. 상세 기간은 화면 범위 메타데이터이며 답변 이력 자체를 자르지 않는다.
+
+학생 home은 core의 현재 학생 프로필과 learning `/internal/records/students/{studentId}/home?from&to&grade&demo`를 조합한다. 학생 attempts/thinking-activities 및 학부모 summary/thinking-types/attempts/attempts/{attemptId}는 같은 내부 records 경로에 대응한다. 내부 studentId는 검증된 STUDENT scope 또는 현재 연결·활성·동의를 확인한 자녀다. 내부 records/home의 resume는 제출 전 시도도 식별하되 draft·memo를 포함하지 않는다. core는 해당 attemptId로 기존 학생 전용 `/internal/attempts/{attemptId}`를 조회해 검증된 본인 초안을 공개 home.resume에 조합한다. 두 번째 조회 실패도 홈 조회 실패이며 부분 성공/빈 이어하기로 대체하지 않는다. 공개 home resume는 집계 기간 밖의 제출 전 초안도 포함할 수 있지만 집계·목록은 P08 기준을 유지한다. 집계/미션 선정은 learning 소유다.
+
+정식 공개 DTO는 core OpenAPI의 Dashboard 스키마, 내부 공급자 DTO는 #27 learning OpenAPI의 Record 스키마를 따른다. #40 재리뷰: 내부 records 응답 식별자는 호출 역할과 무관하게 studentId로 통일하고, core가 학부모 요약·유형·목록의 최상위 식별자만 childId로 매핑한다. #27은 core·ai·report 공용이므로 역할별 응답 모양을 요구하지 않는다. Metric의 필수 값·타입과 다섯 생각 유형의 누락/중복은 502 계약 오류로 처리하며 수치를 보충하지 않는다. 프론트는 선택 기간과 페이지를 요청하고 상세에도 같은 기간을 전달한다. reflection의 EASY/NORMAL/HARD·nullable text는 프론트 표시 경계에서 기존 한국어 선택값·빈 표시문으로 변환한다. 학부모 상세는 기존 Attempt 최상위 구조에 state·period를 추가하고 draft·중첩 memo를 제외한다. thinking-activities는 `{studentId,state,period,items:[{attemptId,thinkingType,missionTitle,reflection}]}`다. 공급자 조회 실패는 오류이며 NO_RECORD가 아니다. `/exists`는 이 계약의 구현 완료를 뜻하지 않는다. preferences는 #40 범위 밖이다. #27 통합: completedAt·hintUsages와 기록 reflection.createdAt을 공개 DTO에서도 보존한다. 홈은 records resume의 메타데이터를 유지하고 학생 전용 상세에서 draft만 조합한다. finishedAt은 마무리 공개 시각, completedAt은 돌아보기 제출 완료 시각이며 이전에는 각각 null이다. reflection이 있으면 createdAt은 필수다.
+
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
 | GET | `/students/me/home` | 학생 | 학생 정보, 이어할 시도, 시작 가능한 미션 경로 | DSH-01, DSH-02 | 제안 |
