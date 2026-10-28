@@ -349,7 +349,7 @@ sequenceDiagram
       L-->>C: 503 AI_UNAVAILABLE retryable
     else 정상
       rect rgba(128,128,128,0.12)
-        L->>DB: attempt 행 잠금(FOR UPDATE)·마무리 여부 다시 확인 → judgment DONE + judgment_element + followup(마무리 전일 때만) + 버전 저장 (획득한 리스일 때만, 리스를 잃었으면 저장 없이 현재 상태)
+        L->>DB: judgment DONE + judgment_element + followup + 버전 저장 (획득한 리스일 때만, 리스를 잃었으면 저장 없이 현재 상태)
       end
       L-->>C: 200 FeedbackResult
     end

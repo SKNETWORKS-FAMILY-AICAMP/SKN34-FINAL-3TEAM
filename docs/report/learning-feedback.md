@@ -9,9 +9,9 @@ learning-service의 `POST /internal/answers/{answerId}/feedback`을 만들고, �
 | 문서 | 변경 전 | 변경 후 | 근거 |
 |---|---|---|---|
 | [api-spec 4.1](../design/api-spec.md) | 피드백: "규칙 판정 또는 ai 호출 → 저장 → 결과 반환 (동기)" | 200 결과 모양(3.2 `result`와 같음, `elementId`는 `rubric_element.id`, `versions`는 `미션 code@버전`), 처리 중 `200 {status:"RUNNING", judgment:null, followup:null, nextActions:[], versions:null}`, 실패 `503 AI_UNAVAILABLE` + `retryable`, `nextActions` 규칙, 판정 전이 충돌 `409 JUDGMENT_STATE_CONFLICT`(내부 방어 코드) | core(#39)가 SSE로 바꿀 때 상태별 응답이 필요. 처리 중 응답의 HTTP 상태는 문서에 없었음 |
-| [class-diagram 4.2](../design/class-diagram.md) | `saveResult(judgmentId, judged, followup)`·`markFailed(judgmentId, code)`, `done(result, elements, versions)`·`hold(reason)` | `saveResult(judgment, judged, followup)`·`markFailed(judgment, code)`, `done(result, elements, by)`·`hold(reason, by)`, 조회 메서드 `target`·`followupCount`·`bankQuestion`·`results(attemptId)` 추가, 처리 순서 설명에 풀이 결합·유출 검사용 정답·질문 은행 선택·엔티티와 조건부 UPDATE의 역할, `saveResult`가 시도 행을 잠그고 다시 확인해 그사이 마무리된 시도에는 되묻기를 저장하지 않음 | 저장·실패 기록은 획득한 리스 값과 비교해야 해 ID 대신 `acquire`로 얻은 `Judgment`가 필요. `by`는 판정 방법·trial·모델·프롬프트 버전(보류도 기록). 클래스·관계(엔티티 `Judgment`·`JudgmentElement`·`Followup`, `FollowupRepository`, `FeedbackFacade --> RuleJudge`·`RuleJudge.judge(answer, answerKey) Judged`, `FeedbackFacade --> AttemptService : 타임라인`)와 `result(answerId)`는 원래 설계 그대로 |
+| [class-diagram 4.2](../design/class-diagram.md) | `saveResult(judgmentId, judged, followup)`·`markFailed(judgmentId, code)`, `done(result, elements, versions)`·`hold(reason)` | `saveResult(judgment, judged, followup)`·`markFailed(judgment, code)`, `done(result, elements, by)`·`hold(reason, by)`, 조회 메서드 `target`·`followupCount`·`bankQuestion`·`results(attemptId)` 추가, 처리 순서 설명에 풀이 결합·유출 검사용 정답·질문 은행 선택·엔티티와 조건부 UPDATE의 역할 | 저장·실패 기록은 획득한 리스 값과 비교해야 해 ID 대신 `acquire`로 얻은 `Judgment`가 필요. `by`는 판정 방법·trial·모델·프롬프트 버전(보류도 기록). 클래스·관계(엔티티 `Judgment`·`JudgmentElement`·`Followup`, `FollowupRepository`, `FeedbackFacade --> RuleJudge`·`RuleJudge.judge(answer, answerKey) Judged`, `FeedbackFacade --> AttemptService : 타임라인`)와 `result(answerId)`는 원래 설계 그대로 |
 | class-diagram 4.1 | - | `MissionService.rubric(missionVersionId, rubricVersionId)`, `AttemptService.timeline(attemptId)`, `Attempt.acceptsAnswers` | `FeedbackFacade --> MissionService : 기준표·정답 키`, `FeedbackFacade --> AttemptService : 타임라인`(본인 시도 확인 + 각 답변이 답한 되묻기 질문이 있는 타임라인). 마무리한 시도에는 되묻기를 만들지 않음 |
-| [sequence-diagram 3.2](../design/sequence-diagram.md) | 되묻기 조건에 마무리 없음, 처리 중·결과 응답의 HTTP 상태 없음, 저장·실패 기록의 리스 조건 없음 | 되묻기는 마무리·완료 전만(저장 때 시도 행을 잠그고 다시 확인), 처리 중 `200 {status: RUNNING}`(나머지 null)·결과 `200`, 저장·실패 기록은 획득한 리스일 때만(잃었으면 저장 없이 현재 상태). 분기("고르기·수학 최종 답 → 규칙 / 서술·논술·풀이 단계 → ai")는 원래 그대로: 풀이 단계 답변은 최종 답을 규칙, 풀이를 ai로 보고 합침 | 마무리한 시도에는 답변을 받지 않음(P04, #24). 리스 조건은 state-diagram 3.3 |
+| [sequence-diagram 3.2](../design/sequence-diagram.md) | 되묻기 조건에 마무리 없음, 처리 중·결과 응답의 HTTP 상태 없음, 저장·실패 기록의 리스 조건 없음 | 되묻기는 마무리·완료 전만, 처리 중 `200 {status: RUNNING}`(나머지 null)·결과 `200`, 저장·실패 기록은 획득한 리스일 때만(잃었으면 저장 없이 현재 상태). 분기("고르기·수학 최종 답 → 규칙 / 서술·논술·풀이 단계 → ai")는 원래 그대로: 풀이 단계 답변은 최종 답을 규칙, 풀이를 ai로 보고 합침 | 마무리한 시도에는 답변을 받지 않음(P04, #24). 리스 조건은 state-diagram 3.3 |
 | [state-diagram 3.3](../design/state-diagram.md) | 결과 결정 표에 풀이 단계 없음 | 풀이 단계 결합 규칙, `failure_code` 값, 획득 조건에 리스 없는 `RUNNING`(`lease_until IS NULL`)도 만료로 | 아래 "임시로 정한 것", 실패 코드는 문서에 값 목록이 없었음. 리스 없는 `RUNNING`은 엔티티(`isLeaseExpired`)가 만료로 보는데 SQL은 가져가지 않아 기준을 맞춤(PR #78 리뷰). 전이 담당(`Judgment.acquire`·`done`·`fail`)과 조건부 UPDATE는 원래 설계 그대로 구현 |
 | [api-spec 2.2](../design/api-spec.md) 판정 규칙 | "고르기·수학 최종 답: 규칙 / 서술·논술: LLM" | 풀이 단계 줄 추가(풀이 LLM + 최종 답 규칙을 합침) | 위와 같음 |
 | api-spec 1.4 | 피드백 `RUNNING`은 "새로 실행하지 않고 status"까지 | 그사이 다른 요청이 실패한 경우도 처리 중으로 응답하고 다시 요청하면 실행 | 판정 전이 충돌 코드(state-diagram 1.3 "불허 시 409")는 내부 방어 코드라 1.3 공통 오류 표가 아니라 4.1 비고에만 둠(PR #78 리뷰 의견). 그사이 실패한 경우를 200 `FAILED`로 보내면 core #39(DONE·RUNNING·503만 처리)가 다룰 수 없음 |
@@ -42,7 +42,7 @@ learning-service의 `POST /internal/answers/{answerId}/feedback`을 만들고, �
 | `retryable` | ai 503 본문의 값을 그대로(LLM 인증 실패 등은 false), 없으면 true. 시간 초과·연결 실패·차단은 true, 4xx·계약 밖 응답은 false | api-spec 4.2. 고칠 수 없는 오류를 "다시 시도"로 안내하지 않음 |
 | `nextActions` | 지금 할 수 있는 행동: 이 판정의 되묻기가 아직 답을 받지 않았으면 `[ANSWER_FOLLOWUP, FINISH]`, 되묻기가 없으면 `[FINISH]`, 마무리·완료한 시도는 `[]`. 처리 중·실패는 `[]`. 시도 상태는 결과를 읽을 때 함께 읽음(처리 중에 마무리해도 맞게 나옴) | 설계는 생성 시점 규칙(api-spec 2.2·sequence-diagram 3.2)만 정함. FN-JDG-09 "현재 가능한 행동 표시"에 따라 읽는 시점 기준으로 정함. 프론트 `canAddAnswer`가 마지막 답변의 `nextActions`로 보완 답변 칸을 염 |
 | 버전 | 판정에 `rubric_version_id`(제출 때 저장)·`model_version`·`prompt_version`, 되묻기에 되묻기의 모델·프롬프트 버전. 응답 `versions`는 `{mission: "미션 code@버전", rubric: "미션 code@기준표 버전", model, prompt}`(판정 값, 규칙 판정이면 없음) | ERD 4.2. api-spec 1.6 예시(`m-12@3`·`r-12@2`)는 mission·rubric code가 다르지만 기준표에는 code 컬럼이 없어 미션 code에 기준표 버전을 붙임(두 버전이 같으면 같은 문자열) |
-| 마무리한 시도의 남은 답변 | 판정은 하고 되묻기는 만들지 않으며 `nextActions: []`. ai 호출 전에 확인하고, ai 호출 동안 마무리될 수 있어 `saveResult`가 시도 행을 잠그고(`FOR UPDATE`) 다시 확인해 마무리됐으면 되묻기를 저장하지 않음. 잠금 순서는 답변 제출·마무리와 같은 "시도 → 판정"이라 교착이 없음 | 문서에 없음. 기록은 남겨야 하고(P08), 마무리 뒤에는 답변을 받지 않음(P04, #24). 마무리(#26)도 같은 시도 행을 잠가야 함(`lockById`) |
+| 마무리한 시도의 남은 답변 | 판정은 하고 되묻기는 만들지 않으며 `nextActions: []`. 시도 상태는 ai 호출 전에 확인(ai 호출 동안 마무리되는 경우는 아래 "후속" #26) | 문서에 없음. 기록은 남겨야 하고(P08), 마무리 뒤에는 답변을 받지 않음(P04, #24) |
 | 시도 상세 | `answers[].feedback`은 피드백 API와 같은 모양, 시도의 `nextActions`는 마지막 답변의 `nextActions` | #24에서 "#25에서 채움"으로 둔 부분 |
 | ai 호출 | 응답 35초(`app.internal.read-timeout`), 재시도 없음, 서킷 브레이커 최근 20건·최소 20건·실패율 50%·30초 차단·half-open 1건(전송 오류·5xx만 실패로 셈) | 아키텍처 1.3, P12. core #38과 같은 값·같은 라이브러리(`resilience4j-circuitbreaker 2.3.0`) |
 | 식별정보 | ai 요청 본문에 학생 이름·ID 없음(학년만). 공통 내부 클라이언트가 붙이는 사용자 컨텍스트 헤더(`X-Student-Scope` 등)는 내부 인증 규칙대로 전달 | 이슈 #25, api-spec 4장 "인증: 내부 토큰 + 사용자 컨텍스트 헤더". ai는 헤더를 판정·LLM 입력에 쓰지 않음 |
@@ -97,17 +97,17 @@ learning-service의 `POST /internal/answers/{answerId}/feedback`을 만들고, �
 | `markFailed` 예외가 원래 오류를 가림 | 기록 오류는 원래 오류에 suppressed로 붙이고 원래 응답 유지 | `FeedbackFacadeTest`: ai 실패는 503 `retryable`, 예상 못 한 오류는 원래 예외 |
 | api-spec 4.1 처리 중 응답 표기가 실제와 다름 | `{status:"RUNNING", judgment:null, followup:null, nextActions:[], versions:null}`로, sequence 3.2·이 리포트·컨트롤러 주석도 같이 | `FeedbackControllerTest`: 처리 중 응답 JSON을 null 필드까지 그대로 비교 |
 | (의견) `JUDGMENT_STATE_CONFLICT`를 1.3 공통 오류 표 대신 4.1 비고에만 | 1.3 줄을 빼고 4.1 비고에 설명을 옮김 | - |
-| (리뷰 중 직접 발견) ai 호출 동안 시도가 마무리되면 마무리된 시도에 되묻기가 저장될 수 있음 | `saveResult`가 시도 행을 잠그고 다시 확인해 되묻기를 저장하지 않음. 이슈 #25 할 일에 한 줄 추가. 처음에는 마무리 API가 생기는 #26으로 넘겼지만, "마무리한 시도에는 되묻기를 만들지 않음"은 #25가 정한 규칙이라 #25에서 막음 | `FeedbackConcurrencyTest`(실제 커밋): 되묻기 응답을 늦추는 사이 마무리를 커밋 → 판정 `DONE`, 되묻기 0행, `nextActions: []`. 마무리(#26)처럼 다른 트랜잭션이 시도 행을 잠근 동안에는 저장이 잠금을 기다리고, 마무리가 커밋된 뒤 되묻기 없이 저장 |
+| (마무리 경합) ai 호출 동안 시도가 마무리되면 마무리된 시도에 되묻기가 저장될 수 있음 | 리뷰에서 #26 이슈 코멘트로 분리돼 이 PR에서는 처리하지 않음. 한때 `saveResult`가 시도를 다시 확인하도록 넣었다가(`e03eff0`·`9237859`) 리뷰대로 되돌림(revert) | - |
 
 ## 검증
 
-- `./gradlew test`: 132개 통과(develop #77의 기록 유무 테스트 12개 포함), 실패·생략 0개. 새로 추가 52개: `RuleJudgeTest` 6, `JudgmentTest` 6, `AiClientTest` 6(WireMock), `FeedbackFacadeTest` 20(Testcontainers + WireMock), `FeedbackControllerTest` 5, `FeedbackConcurrencyTest` 5, `JudgmentServiceTest` 2, `AttemptControllerTest` 1(판정 결과가 있는 시도 상세), `AttemptServiceTest` 1(대문자 학생 범위).
+- `./gradlew test`: 130개 통과(develop #77의 기록 유무 테스트 12개 포함), 실패·생략 0개. 새로 추가 50개: `RuleJudgeTest` 6, `JudgmentTest` 6, `AiClientTest` 6(WireMock), `FeedbackFacadeTest` 20(Testcontainers + WireMock), `FeedbackControllerTest` 5, `FeedbackConcurrencyTest` 3, `JudgmentServiceTest` 2, `AttemptControllerTest` 1(판정 결과가 있는 시도 상세), `AttemptServiceTest` 1(대문자 학생 범위).
 - 이슈 #25 완료 조건
   - ai 목으로 정상·보류·실패·유출 검사 실패: `FeedbackFacadeTest`(서술 PARTIAL 요소·버전 저장, HELD `TOO_SHORT`와 되묻기, ai 503 → `FAILED`·retryable, 되묻기만 실패 → `FAILED`·판정 미저장, 유출 실패 → 질문 은행 두 번 다른 질문), `AiClientTest`(503 `retryable` 전달, 500, 400, 깨진 JSON, 시간 초과, 연결 실패, 서킷 차단)
   - `FAILED` 후 재요청 시 재실행, `DONE` 후 재요청 시 같은 결과: `FeedbackFacadeTest`(재실행 뒤 ai 판정 호출 2번·되묻기 1번, 세 번째 요청은 ai 호출 없이 같은 결과, `retry_count` 1 유지), `FeedbackConcurrencyTest`(실제 커밋: 실패가 따로 커밋된 뒤 재요청이 처음부터 실행)
   - 그 밖의 경로: 근거 없는 충족 → `AI_BAD_RESPONSE`, 질문 은행이 비면 `INTERNAL_ERROR` 후 재요청, 순서 문항(순서까지 비교·유출 검사용 정답은 정답 순서 전체), 풀이 단계 `RETHINK` 결합·보류 통과
   - 처리 상태: 유효 리스면 `RUNNING`, 만료면 다시 실행(`FeedbackFacadeTest`), 같은 답변 동시 6개 → ai 판정 1번·나머지 `RUNNING`·끝난 뒤 같은 결과(`FeedbackConcurrencyTest`, 별도 컨테이너), 리스를 잃은 늦은 처리는 저장·실패 기록 모두 0행(`JudgmentServiceTest`)
-- 보호 장치를 하나씩 빼면 테스트가 실패함을 확인: 획득 SQL 조건(동시 요청 1개 실패), 엔티티의 리스 만료 판단(2개), 저장의 리스 조건(1개), 실패 기록의 다시 읽기(1개), `satisfy()` 거부(1개), 기준표 요소 ID 확인(1개), 질문 은행 대체(2개), 되묻기 2회 제한(1개), 고르기 정답 되묻기 생략(2개), 수학 최종 답 결합(1개), 실패 기록(4개), HTTP/1.1 고정(1개), ai 요소 목록(중복·누락) 확인(1개), 결과를 읽을 때의 시도 상태(1개), 엔티티 전이 검사(1개), 리스 시각 자르기(5개), 서킷 차단 기준 50%를 60%·40%로 바꾸면 각각 실패. PR #78 리뷰 반영분: 연결 시간 초과 분류(1개), 리스 없는 `RUNNING` 획득(1개), 실패 기록 오류 감싸기(2개), 저장 때 시도 다시 확인(1개), 저장 때 시도 행 잠금(1개).
+- 보호 장치를 하나씩 빼면 테스트가 실패함을 확인: 획득 SQL 조건(동시 요청 1개 실패), 엔티티의 리스 만료 판단(2개), 저장의 리스 조건(1개), 실패 기록의 다시 읽기(1개), `satisfy()` 거부(1개), 기준표 요소 ID 확인(1개), 질문 은행 대체(2개), 되묻기 2회 제한(1개), 고르기 정답 되묻기 생략(2개), 수학 최종 답 결합(1개), 실패 기록(4개), HTTP/1.1 고정(1개), ai 요소 목록(중복·누락) 확인(1개), 결과를 읽을 때의 시도 상태(1개), 엔티티 전이 검사(1개), 리스 시각 자르기(5개), 서킷 차단 기준 50%를 60%·40%로 바꾸면 각각 실패. PR #78 리뷰 반영분: 연결 시간 초과 분류(1개), 리스 없는 `RUNNING` 획득(1개), 실패 기록 오류 감싸기(2개).
   - 저장 중 롤백: 없는 시도의 되묻기로 외래키 오류를 내 판정 저장까지 롤백된 뒤에도 `markFailed`가 `FAILED`를 기록하고 다시 가져갈 수 있음(`FeedbackConcurrencyTest`, 실제 커밋)
 - compose 실제 확인(`docker compose up -d --build learning-service ai-service`, `LLM_PROVIDER=openai`, `gpt-6.1-terra`, 시드 2번 서술 미션 "쉬는 시간을 늘린다면?", 확인 후 만든 행 삭제·컨테이너 정지):
 
@@ -121,7 +121,6 @@ learning-service의 `POST /internal/answers/{answerId}/feedback`을 만들고, �
 | 시도 상세 | 같은 피드백, `nextActions: [ANSWER_FOLLOWUP, FINISH]` |
 | DB | `judgment` DONE·LLM·`retry_count` 0, 요소 3행, 되묻기 1행 |
 | 리뷰 반영 후 다시(10/28, c76f448) | 피드백 200 8.1초 `CORRECT`·`ONE_STEP_MORE`, 재요청 0.02초 같은 결과, 시도 상세 같은 피드백·`[ANSWER_FOLLOWUP, FINISH]` |
-| 판정 처리 중 마무리(10/28) | 되묻기에 답한 2번째 답변의 피드백이 ai를 기다리는 동안(판정 `RUNNING`) DB에서 `finished_at` 기록 → ai 되묻기는 호출됐지만 저장 때 다시 확인해 되묻기 0행, 응답 200 `PARTIAL`·`followup: null`·`nextActions: []` |
 
 ## 후속
 
@@ -134,4 +133,4 @@ PR #78 리뷰에서 후속 항목을 이슈로 나눔(kty2001): #79 판정 규�
 - 같은 답이 실행마다 다르게 판정되는 경우(#22 검사): 사람 검증(P11) 대상
 - 분류 문항: 그룹(`categories`) 저장 위치가 정해지면 그룹 ID 확인·유출 검사용 정답 추가. 기획서 5장 "분류 기준"(이유를 봄)과 지금 분류 문항(정답 키)의 관계 확인 → #79
 - 판정 정정(`POST /internal/judgments/{judgmentId}/corrections`, class-diagram 4.2 `CorrectionController`·`JudgmentService.correct`·`CorrectionRepository`, FN-SUP-03): 이슈 #25 범위가 아님. 관리자 정정과 learning 전달은 core #46(20220348-kim) 몫이지만, learning 쪽 받는 API는 #80에서 #46과 요청·응답을 맞춤. 고착 `RUNNING` 탐지 주기(1분)는 운영 작업. 지금은 요청 때 리스 만료로 다시 가져감
-- 마무리(#26): 판정 `DONE` 1회 이상 확인, 체크리스트는 저장된 요소(`ANSWER_KEY`·`AI_OBSERVATION`) 사용. 판정 처리 중 마무리(#26 이슈 코멘트의 두 번째 방법 "saveResult 직전에 시도를 다시 확인")는 이 PR에서 반영(위 "마무리한 시도의 남은 답변"). #26에서는 마무리도 같은 시도 행을 잠가야(`lockById`) 저장과 차례로 처리됨
+- 마무리(#26): 판정 `DONE` 1회 이상 확인, 체크리스트는 저장된 요소(`ANSWER_KEY`·`AI_OBSERVATION`) 사용. 피드백은 ai 호출 전에 읽은 시도로 되묻기 여부를 정하므로, 판정 처리 중에 마무리하면 마무리된 시도에 되묻기가 생길 수 있음 → PR #78 리뷰에서 #26 이슈 코멘트로 분리: finish가 같은 시도 잠금(`lockById`)을 쓰고 `RUNNING` 판정이 있으면 기다리거나 거절, 또는 `saveResult` 직전에 시도를 다시 확인
