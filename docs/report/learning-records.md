@@ -28,19 +28,19 @@ learning-service의 `/internal/records/*`·`/internal/stats`(학부모 대시보
 | 항목 | 정한 내용 | 근거 |
 |---|---|---|
 | 집계 대상 | 기간 안에 처리 실패가 아닌(`judgment`가 없거나 `FAILED`가 아닌) 답변 제출이 있는 시도, 완료·미완료 모두, 삭제 학생(`deleted_student`) 제외. 초안만 있는 시도는 제외 | P08, FN-RPT-02(기간을 걸친 학습은 해당 기간마다). #37 기록 유무와 같은 실패·삭제 기준 |
-| 시도별 사실 | 완료, 최초 답변 전 생각 열기 열람, 되묻기 받음, 보완 답변(되묻기에 답한 답변) 제출은 시도 전체 기준 | P08 "도움 없이 시작한 비율 = 최초 답변 전 도움 열람 없는 시도", ERD 4.2 하단(`hint_usage.opened_at` vs 최초 `answer.submitted_at`). 시도가 집계 단위 |
+| 시도별 사실 | 완료(`completed_at`), 최초 답변 전 생각 열기 열람, 되묻기 받음(`followup.created_at`), 보완 답변(되묻기에 답한 답변) 제출, 최근 답변 시각은 **조회 종료일까지** 일어난 것만 | P08 "도움 없이 시작한 비율 = 최초 답변 전 도움 열람 없는 시도", ERD 4.2 하단(`hint_usage.opened_at` vs 최초 `answer.submitted_at`). 시도가 집계 단위. 지난 기간을 조회해도 그 뒤의 답변·완료로 값이 바뀌지 않게(FN-RPT-02, report #51 4.1.1) |
 | summary 지표 | ① 학습한 활동: 집계 대상 시도 수(건수) ② 완료한 활동: 완료 / 집계 대상 ③ 도움 없이 시작한 활동: 최초 답변 전 생각 열기를 열지 않은 시도 / 집계 대상 ④ 되묻기 후 생각을 더한 활동: 보완 답변 제출 시도 / 되묻기 받은 시도 | ① FN-DSH-07 학습 건수 ② P08 "완료 여부 별도 표시" ③ P08 ④ api-spec 1.6 예시 |
 | 상태 | 응답 전체와 건수 지표는 집계 대상 수, 비율 지표는 분모로: 0건 `NO_RECORD`, 1~4건 `INSUFFICIENT_SAMPLE`(비율 `value: null`, 개수만), 5건 이상 `OK` | P08, api-spec 1.5·1.6, 이슈 완료 조건 |
 | 기간 | `from`·`to`는 KST 날짜 양 끝 포함, 시각 비교는 `[from 00:00, to 다음 날 00:00)` KST. 둘 다 없으면 오늘 포함 최근 7일, `to`만 있으면 그날까지 7일, `from`만 있으면 7일 뒤(오늘을 넘지 않게)까지, `from > to`면 400. 응답 `period`는 실제 조회 기간 | api-spec 1.1, P06(기본 기간 최근 7일·오늘 포함) |
 | 역할·범위 | 학생 경로는 `PARENT`·`STUDENT`·`SYSTEM`, 대상 학생이 `X-Student-Scope`에 없으면 403(UUID 비교). 근거 조회는 답변마다 학생 범위 확인. 운영 집계는 `ADMIN`·`SYSTEM`, 학생 범위 없음 | class-diagram 4.3 "모든 경로에서 requireStudent 먼저", architecture 2.3, FN-ADM-02. #37 기록 유무와 같은 역할 |
 | 학생 필드 | 응답의 학생 ID는 `childId` | core가 그대로 프록시하고 api-spec 3.9·프론트 타입이 `childId` |
 | thinking-types | 다섯 유형 모두, 유형마다 기간 안 시도 `[{attemptId, title}]`, 없으면 `NO_RECORD`, 있으면 `OK`. 유형 요약 문장(`summary`)은 넣지 않음 | FN-DSH-08 "미관찰, 점수·능력 부족으로 해석 금지", 문장은 리포트·ai 몫 |
-| 목록 | 1.1 봉투 + `childId·state·period·inclusionRule`, 최근 답변 순, `page` 0 이상·`size` 1~100(기본 20, 아니면 400) | api-spec 1.1·3.9 |
+| 목록 | 1.1 봉투 + `childId·state·period·inclusionRule`, 최근 답변 순, 항목의 `answers`는 1번부터 조회 종료일까지(시작일 이전 버전 포함, 시도 상태·마무리 공개·돌아보기는 지금 상태), `page` 0 이상·`size` 1~100(기본 20, 아니면 400) | api-spec 1.1·3.9 |
 | 상세 | 이 학생의 시도이고 처리 실패만 있는 시도가 아니면 목록 항목과 같은 모양, 아니면 404(기간 무관) | 목록에 나오지 않는 시도는 상세도 없음 |
-| changes | 보완 답변이 있는 시도마다 최초 vs 마지막 답변, `followup`은 마지막 답변이 답한 되묻기 질문, `counts`는 `[최초, 마지막]` | P08 "시도당 최초 vs 마지막 답변", api-spec 3.4 `changes` 예시 |
+| changes | 조회 종료일까지 보완 답변이 있는 시도마다 최초 vs 종료일 이전 마지막 답변, `followup`은 마지막 답변이 답한 되묻기 질문, `counts`는 `[최초, 마지막]` | P08 "시도당 최초 vs 마지막 답변", api-spec 3.4 `changes` 예시 |
 | 전후 변화의 수 | 글자 수(공백 포함, 코드 포인트), 문장 수(`.` `?` `!`·줄바꿈으로 나눈 비지 않은 덩어리), 까닭을 잇는 말 나온 횟수. **학생이 쓴 칸 내용만**(서술 글, 풀이 단계·최종 답, 논술 네 칸) 셈. 보여 주는 원문(`text`)은 칸 이름을 붙인 `plain_text` 그대로 | P08 계산 규칙. `plain_text`의 칸 이름("① 무엇을 구하나요?:")을 세면 학생이 쓰지 않은 글자와 `?`까지 셈 |
 | evidence | `{items}` 요청 순서대로, 원문은 `plain_text`. 없는 답변(삭제로 지워진 기록 포함)·삭제 학생은 `available: false`, 원문·제목 없음. 범위 밖 학생의 답변이 섞이면 403. `answerIds`는 쉼표로 나눈 UUID 1~100개(아니면 400) | api-spec 1.6·3.9 "삭제된 항목은 quote를 재사용하지 않음", P09 물리 삭제 + 표식 |
-| stats | `{period, inclusionRule, attempts, completedAttempts, students}`, 집계 대상 기준, 학생 원문 없음 | FN-ADM-02 "학습 시도·완료 건수". 대화·리포트 처리 현황은 core 몫 |
+| stats | `{period, inclusionRule, attempts, completedAttempts, students}`, 집계 대상 기준(완료는 종료일까지), 학생 원문 없음 | FN-ADM-02 "학습 시도·완료 건수". 대화·리포트 처리 현황은 core 몫 |
 | 메모·초안 | 어떤 응답에도 넣지 않음 | P05, 이슈 지침 |
 | MyBatis 캐시 | 기록 조회 SELECT는 `flushCache="true" useCache="false"` | 같은 트랜잭션에서 같은 조회를 다시 해도 최신 행을 읽게. #37 기록 유무와 같은 설정 |
 
@@ -69,15 +69,18 @@ learning-service의 `/internal/records/*`·`/internal/stats`(학부모 대시보
 | 돌아보기 난이도 | 목록 항목의 `reflection.difficulty`는 코드(`EASY·NORMAL·HARD`). api-spec 3.4 리포트 예시는 `"보통"` | report·ai·프론트(#26 리포트와 같음) |
 | 까닭을 잇는 말 | 위 임시 목록 확정 | 팀 |
 | core 연결 | core는 지금 기록 유무(`exists`)만 부름. 학부모 대시보드·근거·운영 집계 프록시는 core 이슈에서 이 계약으로 | core |
+| core #40 예정 계약 (`feature/core-dashboard-queries`, `planned-issue-27`) | 학생 대시보드 `home`·`thinking-activities` 경로를 #27에서 만들지, 역할별 `studentId`(학생)/`childId`(학부모) 필드, 학생 목록 `status` 필터, 상세의 `state`·`period`·`from`·`to`, `from`·`to`는 둘 다 또는 둘 다 없음, 학생 범위 1명, 병합 순서. 10/28 질문 보냄, 답을 받아 반영 | core(kimdongseop) |
+| report #51 예정 입력 (`report-*` 브랜치 api-spec 4.1.1) | 조회 종료일 기준은 반영함(위 "시도별 사실"·"목록"·"changes"). 남은 것: 시도 항목 `hintUsages:[{openedAt}]`·`completedAt`·`reflection.createdAt` 추가, 그 기간에 쓴 돌아보기만·미작성 `written:false`, `changes` 페이지 봉투, 삭제 표식 항목 필요 여부, 병합 순서. 10/28 질문 보냄 | report(inyoung9629) |
+| 다른 브랜치와 파일 충돌 | `core-dashboard-queries`는 api-spec·대조 테스트와 충돌, learning OpenAPI는 같은 경로가 두 번 들어감. `report-metrics`·`report-narrative`·`report-deletion`은 api-spec과 충돌. #27을 먼저 머지하고 각 브랜치가 실제 계약으로 정리하는 순서를 제안 | core·report |
 
 ## 검증
 
-- `./gradlew clean test bootJar`: 171개 통과(새로 19개: `RecordServiceTest` 11·`RecordControllerTest` 5·`RecordDomainTest` 3, Testcontainers PostgreSQL). `scripts/tests` 46개 통과(OpenAPI 경로 대조 19개). 기능 커밋을 각각 따로 꺼내 테스트해 모두 통과(도메인·저장소·서비스·내부 API 순으로 155·155·166·171개, 커밋마다 scripts/tests도 통과. #26 문서 수정 병합은 learning 코드를 바꾸지 않음)
+- `./gradlew clean test bootJar`: 172개 통과(새로 20개: `RecordServiceTest` 12·`RecordControllerTest` 5·`RecordDomainTest` 3, Testcontainers PostgreSQL). `scripts/tests` 46개 통과(OpenAPI 경로 대조 19개). 기능 커밋을 각각 따로 꺼내 테스트해 모두 통과(도메인·저장소·서비스·내부 API 순으로 155·155·166·171개, 커밋마다 scripts/tests도 통과. #26 문서 수정 병합은 learning 코드를 바꾸지 않음)
 - 이슈 #27 완료 조건
   - 0건·1~4건·5건 이상 케이스별 `state`: 0건 `NO_RECORD`, 4건 `INSUFFICIENT_SAMPLE`(비율 `value: null`), 5건 `OK`(완료 1/5 → 0.2)
   - 범위 밖 학생 403: 범위에 없는 학생·범위 헤더 없음·허용하지 않는 역할(`ADMIN`·`CONTENT`) 403, 근거에 범위 밖 학생의 답변이 섞이면 403, 운영 집계는 학부모 403
-- 그 밖의 경로: 집계 대상(기간 밖·초안만·처리 실패만 제외, 미완료 포함), KST 경계(끝 날짜 23:59 포함·다음 날 0:00 제외·시작 날짜 0:00 포함), 도움 없이 시작(최초 답변 뒤 열람은 도움 없이 시작으로 셈), 생각을 더한 활동(분모 = 되묻기 받은 시도), 다섯 유형·미관찰, 목록 페이지·최근 답변 순, 상세 404(다른 학생·처리 실패만), 전후 변화(최초 vs 마지막, 마지막 답변이 답한 되묻기, 풀이 단계는 칸 이름을 빼고 셈), 근거(요청 순서, 없는 답변·삭제 학생 `available:false`·원문 없음), 삭제 학생 요약 `NO_RECORD`, 운영 집계, 입력 오류 400(날짜 형식·`from > to`·페이지·`answerIds`), JSON 모양(`childId`·`period{from,to}`·목록에 `draft` 없음)
-- 보호 장치를 하나씩 빼면 테스트가 실패함을 확인(16개): 처리 실패만 있는 시도 제외, 기간 안 답변만, 끝 날짜 포함, KST 기준, 삭제 학생 제외, 분모 5 미만 비율 없음, 최초 답변 전 도움만, 생각을 더한 활동 분모, 근거 범위 검사, 삭제 학생 근거 원문 없음, 학생이 쓴 칸만 셈, 상세는 이 학생의 기록만, 역할 검사, 학생 범위 검사, 목록에서 초안 빼기, 페이지 범위
+- 그 밖의 경로: 집계 대상(기간 밖·초안만·처리 실패만 제외, 미완료 포함), 조회 종료일 기준(이번 주 조회에 다음 주 보완 답변·완료·되묻기가 섞이지 않고 다음 주 조회는 1번부터), KST 경계(끝 날짜 23:59 포함·다음 날 0:00 제외·시작 날짜 0:00 포함), 도움 없이 시작(최초 답변 뒤 열람은 도움 없이 시작으로 셈), 생각을 더한 활동(분모 = 되묻기 받은 시도), 다섯 유형·미관찰, 목록 페이지·최근 답변 순, 상세 404(다른 학생·처리 실패만), 전후 변화(최초 vs 마지막, 마지막 답변이 답한 되묻기, 풀이 단계는 칸 이름을 빼고 셈), 근거(요청 순서, 없는 답변·삭제 학생 `available:false`·원문 없음), 삭제 학생 요약 `NO_RECORD`, 운영 집계, 입력 오류 400(날짜 형식·`from > to`·페이지·`answerIds`), JSON 모양(`childId`·`period{from,to}`·목록에 `draft` 없음)
+- 보호 장치를 하나씩 빼면 테스트가 실패함을 확인(22개): 처리 실패만 있는 시도 제외, 기간 안 답변만, 끝 날짜 포함, KST 기준, 삭제 학생 제외, 분모 5 미만 비율 없음, 최초 답변 전 도움만, 생각을 더한 활동 분모, 근거 범위 검사, 삭제 학생 근거 원문 없음, 학생이 쓴 칸만 셈, 상세는 이 학생의 기록만, 역할 검사, 학생 범위 검사, 목록에서 초안 빼기, 페이지 범위, 종료일 기준 6개(완료·되묻기 받음·보완 답변·전후 변화 마지막 답변·운영 집계 완료·목록 답변)
 - compose 실제 확인(`docker compose up -d --build learning-service ai-service`, OpenAI `gpt-6.1-terra`, core 없이 learning `/internal/*` 직접 호출, 확인 후 만든 시도 2건만 삭제·컨테이너 정지):
 
 | 단계 | 결과 |

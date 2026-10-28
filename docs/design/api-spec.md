@@ -646,14 +646,14 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | GET | `/internal/records/students/{studentId}/exists` | core | 전체 보존 기록의 존재 여부 `{studentId,hasRecords}`. #37 선행 최소 API, P08 제출·실패·삭제 제외 기준 적용 |
 | GET | `/internal/records/students/{studentId}/summary?from&to` | core, ai | 건수·상태 `Metric[]` → `{childId, state, period, inclusionRule, metrics}`(3.9). 지표: 학습한 활동(집계 대상 시도 수), 완료한 활동(완료 / 집계 대상), 도움 없이 시작한 활동(최초 답변 전 생각 열기 열람 없는 시도 / 집계 대상, P08), 되묻기 후 생각을 더한 활동(보완 답변 제출 시도 / 되묻기 받은 시도, 1.6) |
 | GET | `/internal/records/students/{studentId}/thinking-types?from&to` | core, ai, report | 유형별 미션·기록 → `{childId, state, period, items:[{type, state, missions:[{attemptId, title}]}]}`, 다섯 유형 모두, 기록 없는 유형은 `NO_RECORD`(FN-DSH-08 미관찰) |
-| GET | `/internal/records/students/{studentId}/attempts?from&to&page&size` | core, ai, report | 시도 목록·상세(답변 버전·되묻기·도움·돌아보기 원문) → 1.1 봉투 + `{childId, state, period, inclusionRule}`, `items`는 4.1 시도 상세에서 초안(`draft`, 메모 포함)을 뺀 모양, 최근 답변 순 |
+| GET | `/internal/records/students/{studentId}/attempts?from&to&page&size` | core, ai, report | 시도 목록·상세(답변 버전·되묻기·도움·돌아보기 원문) → 1.1 봉투 + `{childId, state, period, inclusionRule}`, `items`는 4.1 시도 상세에서 초안(`draft`, 메모 포함)을 뺀 모양, 최근 답변 순. `answers`는 1번부터 조회 종료일까지의 버전만(지난 기간을 조회해도 그 뒤 답변이 섞이지 않음, FN-RPT-02) |
 | GET | `/internal/records/students/{studentId}/attempts/{attemptId}` | core | 학부모 2.3 시도 상세용. 목록 `items`와 같은 모양, 다른 학생의 시도·집계 대상이 아닌 시도는 `404` |
-| GET | `/internal/records/students/{studentId}/changes?from&to` | ai, report | 되묻기 전후 답변 쌍 → `{childId, state, period, items:[{attemptId, followup(마지막 답변이 답한 되묻기), first{answerId, text}, revised{answerId, text}, counts{chars, sentences, reasonConnectives}}]}`(3.4). 보완 답변이 있는 시도만, 최초 vs 마지막 답변(P08). `text`는 원문, 수는 학생이 쓴 칸 내용으로 셈 |
+| GET | `/internal/records/students/{studentId}/changes?from&to` | ai, report | 되묻기 전후 답변 쌍 → `{childId, state, period, items:[{attemptId, followup(마지막 답변이 답한 되묻기), first{answerId, text}, revised{answerId, text}, counts{chars, sentences, reasonConnectives}}]}`(3.4). 조회 종료일까지 보완 답변이 있는 시도만, 최초 vs 종료일 이전 마지막 답변(P08, FN-RPT-02). `text`는 원문, 수는 학생이 쓴 칸 내용으로 셈 |
 | GET | `/internal/records/evidence?answerIds=` | core, ai, report | 원문 근거 조회 → `{items: Evidence[]}`(1.6·3.9). 요청한 순서대로, 없는 답변·삭제 학생은 `available:false`(원문 없음), 범위 밖 학생의 답변이면 `403` |
 | GET | `/internal/stats?from&to` | core | 운영 현황용 집계 (학생 원문 없음) → `{period, inclusionRule, attempts, completedAttempts, students}`(FN-ADM-02). 역할 `ADMIN`·`SYSTEM`, 학생 범위 없음 |
 | * | `/internal/admin/missions/...` | core | 2.8 미션 관리 프록시 |
 
-- 기록 조회 공통 (#27): 학생 경로는 역할 `PARENT`·`STUDENT`·`SYSTEM`이고 `X-Student-Scope`에 대상 학생이 없으면 `403`. `from`·`to`는 KST 날짜(양 끝 포함), 없으면 오늘 포함 최근 7일(P06), `from > to`면 `400`. 응답 `period`는 실제 조회 기간. 집계 대상은 P08(기간 내 답변 제출이 있는 시도, 미완료 포함, 처리 실패만 있는 시도·삭제 기록 제외). `state`는 집계 대상(비율은 분모) 0건 `NO_RECORD`, 1~4건 `INSUFFICIENT_SAMPLE`(비율 `value: null`), 5건 이상 `OK`. 메모·초안은 반환하지 않음(P05)
+- 기록 조회 공통 (#27): 학생 경로는 역할 `PARENT`·`STUDENT`·`SYSTEM`이고 `X-Student-Scope`에 대상 학생이 없으면 `403`. `from`·`to`는 KST 날짜(양 끝 포함), 없으면 오늘 포함 최근 7일(P06), `from > to`면 `400`. 응답 `period`는 실제 조회 기간. 집계 대상은 P08(기간 내 답변 제출이 있는 시도, 미완료 포함, 처리 실패만 있는 시도·삭제 기록 제외). 시도별 사실(완료·되묻기 받음·보완 답변·최근 답변)은 조회 종료일까지 일어난 것만. `state`는 집계 대상(비율은 분모) 0건 `NO_RECORD`, 1~4건 `INSUFFICIENT_SAMPLE`(비율 `value: null`), 5건 이상 `OK`. 메모·초안은 반환하지 않음(P05)
 
 ### 4.2 ai-service (호출: learning, core, report)
 

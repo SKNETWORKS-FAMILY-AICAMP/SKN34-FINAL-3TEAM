@@ -458,7 +458,7 @@ paths:
       operationId: recordAttempts
       summary: 학습 기록 목록 (최근 답변 순)
       description: >-
-        items는 학생 시도 상세에서 초안(draft, 메모 포함)을 뺀 모양 (P05)
+        items는 학생 시도 상세에서 초안(draft, 메모 포함)을 뺀 모양 (P05), answers는 1번부터 조회 종료일까지의 버전만
       parameters:
         - $ref: '#/components/parameters/StudentId'
         - $ref: '#/components/parameters/RecordRole'
@@ -504,7 +504,7 @@ paths:
       operationId: recordChanges
       summary: 되묻기 전후 답변 쌍
       description: >-
-        보완 답변이 있는 시도의 최초 vs 마지막 답변(P08). text는 칸 이름을 붙인 원문, counts는 학생이 쓴 칸만 [최초, 마지막]
+        보완 답변이 있는 시도의 최초 vs 조회 종료일 이전 마지막 답변(P08, FN-RPT-02). text는 칸 이름을 붙인 원문, counts는 학생이 쓴 칸만 [최초, 마지막]
       parameters:
         - $ref: '#/components/parameters/StudentId'
         - $ref: '#/components/parameters/RecordRole'
