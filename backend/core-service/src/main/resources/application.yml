@@ -18,6 +18,13 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/core_db}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      connect-timeout: 2s
+      timeout: 2s
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
@@ -51,6 +58,10 @@ management:
           include: readinessState,db,rabbit
 
 app:
+  student-device:
+    ttl: ${STUDENT_DEVICE_TTL:90d}
+    attempt-limit: ${STUDENT_DEVICE_ATTEMPT_LIMIT:20}
+    pin-failure-limit: 5
   auth:
     jwt-secret: ${AUTH_JWT_SECRET:}
     web-origin: ${AUTH_WEB_ORIGIN:http://localhost:5173}

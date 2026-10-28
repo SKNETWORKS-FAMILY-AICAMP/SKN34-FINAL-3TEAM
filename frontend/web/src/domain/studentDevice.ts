@@ -9,7 +9,7 @@ export interface StudentProfile {
   childId: string
   nickname: string
   pinSet: boolean
-  locked: boolean
+  pinLocked: boolean
 }
 
 export interface StudentDevice {

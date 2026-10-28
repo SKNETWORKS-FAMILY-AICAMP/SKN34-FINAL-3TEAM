@@ -58,3 +58,7 @@ MSW는 httpOnly 쿠키를 만들 수 없어, 기기 쿠키 대신 `sessionStorag
 - PIN 연속 숫자의 순환(`90123` 등) 처리: 명세에 정의가 없어 거부하지 않는다.
 - 실제 기기 쿠키(`student_device`, path `/api/v1/auth/student`)·서버 잠금·만료 처리는 백엔드 통합 때 확인해야 한다.
 - 학부모 화면의 PIN 재확인 토큰 유효 시간(5분 안내)은 기존 `/me/reauth` 목업 기준이다.
+
+## #58 실제 계약 연결
+
+PIN 화면은 자녀별 Google 재인증 시작 → 새 창에서 확인 → 원래 세션에서 challengeId로 토큰 수령 → 같은 자녀 PIN 변경으로 연결했다. 토큰은 메모리·5분·1회 사용이다. profiles의 필드는 pinLocked로 통일했다. MSW의 Google proof는 개발용 대역이며 실제 검증을 의미하지 않는다. 이전 비밀번호 목업 설명은 최초 #59 구현 기록이다.
