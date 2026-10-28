@@ -1,6 +1,6 @@
 # 이슈 #27 learning 학습 기록 조회 내부 API
 
-작성일: 2026-10-28. 기준: #26 브랜치(`feature/learning-reflection`) 위에서 작업, #89 머지 후 develop 47e5ffe(#89·#90·#91·#98·#100)와 7629c55(#102 core 알림)를 병합(둘 다 learning 코드 변경 없음). [이슈 #27](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/27), [API 명세 1.1·1.5·1.6·2.3·3.4·3.9·4.1](../design/api-spec.md), [기능 명세 1.4 P08·FN-DSH-06~11·FN-RPT-02~06·FN-AGT-04·07·FN-ADM-02](../design/functional-spec.md), [ERD 4.2·4.3](../design/erd.md), [클래스 다이어그램 4.3](../design/class-diagram.md), [시퀀스 다이어그램 4](../design/sequence-diagram.md).
+작성일: 2026-10-28. 기준: #26 브랜치(`feature/learning-reflection`) 위에서 작업, #89 머지 후 develop 47e5ffe(#89·#90·#91·#98·#100)·7629c55(#102 core 알림)·8202f58(#104 학생 기기 인증)를 병합(모두 learning 코드 변경 없음). [이슈 #27](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/27), [API 명세 1.1·1.5·1.6·2.3·3.4·3.9·4.1](../design/api-spec.md), [기능 명세 1.4 P08·FN-DSH-06~11·FN-RPT-02~06·FN-AGT-04·07·FN-ADM-02](../design/functional-spec.md), [ERD 4.2·4.3](../design/erd.md), [클래스 다이어그램 4.3](../design/class-diagram.md), [시퀀스 다이어그램 4](../design/sequence-diagram.md).
 
 learning-service의 `/internal/records/*`·`/internal/stats`(학부모 대시보드, 분석 에이전트 도구, 주간 리포트가 같이 쓰는 조회)를 만들면서 정한 내용과 근거를 기록한다. 데이터베이스 스키마는 바꾸지 않았다.
 
@@ -93,7 +93,7 @@ core 예정 계약의 시도 스키마는 추가 필드를 막아(`additionalPro
 
 ## 검증
 
-- `./gradlew clean test bootJar`: 183개 통과(새로 31개: `RecordServiceTest` 19·`RecordControllerTest` 9·`RecordDomainTest` 3, Testcontainers PostgreSQL). `scripts/tests` 53개 통과(OpenAPI 경로 대조 21개). 기능 커밋을 각각 따로 꺼내 테스트해 모두 통과(도메인·저장소·서비스·내부 API·종료일 기준 수정·합의 반영·`studentId` 변경·학생 홈과 생각 활동 순으로 155·155·166·171·172·177·177·183개, 커밋마다 scripts/tests도 통과. #26 문서 수정 병합은 learning 코드를 바꾸지 않음)
+- `./gradlew clean test bootJar`: 183개 통과(새로 31개: `RecordServiceTest` 19·`RecordControllerTest` 9·`RecordDomainTest` 3, Testcontainers PostgreSQL). `scripts/tests` 53개 통과(OpenAPI 경로 대조 21개, develop 8202f58 병합 뒤 54개). 기능 커밋을 각각 따로 꺼내 테스트해 모두 통과(도메인·저장소·서비스·내부 API·종료일 기준 수정·합의 반영·`studentId` 변경·학생 홈과 생각 활동 순으로 155·155·166·171·172·177·177·183개, 커밋마다 scripts/tests도 통과. #26 문서 수정 병합은 learning 코드를 바꾸지 않음)
 - 이슈 #27 완료 조건
   - 0건·1~4건·5건 이상 케이스별 `state`: 0건 `NO_RECORD`, 4건 `INSUFFICIENT_SAMPLE`(비율 `value: null`), 5건 `OK`(완료 1/5 → 0.2)
   - 범위 밖 학생 403: 범위에 없는 학생·범위 헤더 없음·허용하지 않는 역할(`ADMIN`·`CONTENT`) 403, 근거에 범위 밖 학생의 답변이 섞이면 403, 운영 집계는 학부모 403
