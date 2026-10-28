@@ -87,7 +87,7 @@ core 예정 계약의 시도 스키마는 추가 필드를 막아(`additionalPro
 | 목록 상태 | 목록도 `state`를 집계 대상 수로 줌(1~4건이면 `INSUFFICIENT_SAMPLE`) | 프론트 |
 | 돌아보기 난이도 | 목록 항목의 `reflection.difficulty`는 코드(`EASY·NORMAL·HARD`). api-spec 3.4 리포트 예시는 `"보통"` | report·ai·프론트(#26 리포트와 같음) |
 | core 연결 | core는 지금 기록 유무(`exists`)만 부름. 학부모 대시보드·근거·운영 집계 프록시는 core 이슈에서 이 계약으로 | core |
-| core #40 예정 계약 | 병합 순서(#27 먼저). core PR #103은 learning-service.yaml에 같은 경로 4개(`summary`·`thinking-types`·`attempts`·`attempts/{attemptId}`)를 예정 계약으로 따로 두어, 둘을 합치면 git 충돌 없이 경로가 두 번 들어감(10/28 시험 병합으로 확인). 나중에 병합하는 쪽이 예정 경로를 지우고 하나로 합쳐야 함. 시도 스키마 추가 필드도 이 계약에 맞춤 | core(kimdongseop) |
+| core #40 예정 계약 | 병합 순서(#27 먼저). core #40 브랜치(`feature/core-dashboard-queries`, 10/28 PR #103은 머지 없이 닫힘)는 learning-service.yaml에 같은 경로 4개(`summary`·`thinking-types`·`attempts`·`attempts/{attemptId}`)를 예정 계약으로 따로 두어, 둘을 합치면 git 충돌 없이 경로가 두 번 들어감(10/28 시험 병합으로 확인). 나중에 병합하는 쪽이 예정 경로를 지우고 하나로 합쳐야 함. 시도 스키마 추가 필드도 이 계약에 맞춤 | core(kimdongseop) |
 | report #51 예정 입력 | 4.1.1의 `childId` 문구를 `studentId`로 정리하는 것은 report가 함. PR 링크와 합성 응답 예시 전달 | report(inyoung9629) |
 | 다른 브랜치와 파일 충돌 | `core-dashboard-queries`는 api-spec·대조 테스트와 충돌, learning OpenAPI는 같은 경로가 두 번 들어감. `report-metrics`·`report-narrative`·`report-deletion`은 api-spec과 충돌. #27을 먼저 머지하고 각 브랜치가 실제 계약으로 정리하는 순서를 제안 | core·report |
 
