@@ -148,6 +148,7 @@ class AnswerServiceTest : PostgresRepositoryTest() {
     @Test
     fun `입력 방식마다 저장한 내용을 다시 읽어도 같은 키 재요청은 같은 답변`() {
         val choices = """[{"id": "a", "label": "물"}, {"id": "b", "label": "얼음"}]"""
+        val categories = """[{"id": "액체", "label": "액체"}, {"id": "고체", "label": "고체"}]"""
         val commands = mapOf(
             ("CHOICE" to 3) to SubmitCommand(InputType.CHOICE, AnswerContent(choiceIds = listOf("b")), false, null),
             ("ORDERING" to 3) to SubmitCommand(InputType.ORDERING, AnswerContent(choiceIds = listOf("b", "a")), false, null),
@@ -158,7 +159,7 @@ class AnswerServiceTest : PostgresRepositoryTest() {
             ("ESSAY" to 5) to SubmitCommand(InputType.ESSAY, AnswerContent(essay = Essay("찬성", listOf("안전", "편리"), "그래도 필요")), false, null),
         )
         commands.forEach { (type, command) ->
-            val mission = rows.mission(inputType = type.first, grade = type.second, choices = choices)
+            val mission = rows.mission(inputType = type.first, grade = type.second, choices = choices, categories = categories)
             val attempt = attemptService.start(student, mission.id, type.second, demo = false).attempt
             val key = UUID.randomUUID()
 
