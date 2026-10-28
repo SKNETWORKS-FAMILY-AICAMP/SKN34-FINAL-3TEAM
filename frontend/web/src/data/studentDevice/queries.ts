@@ -1,6 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { studentDeviceApi } from './api.ts'
 
+export const qrDemoEnabled = import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true' &&
+  import.meta.env.VITE_SHARED_DEVICE_MOCK === 'true'
+
+export function usePairingOrigins() {
+  return useQuery({
+    queryKey: ['device-demo-addresses'], enabled: qrDemoEnabled, retry: false, staleTime: Infinity,
+    queryFn: async () => {
+      if (import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true' &&
+          import.meta.env.VITE_SHARED_DEVICE_MOCK === 'true')
+        return (await import('../../mocks/sharedDevice.ts')).deviceDemoConfig()
+      return null
+    },
+  })
+}
+
 /** 자녀 기기: 이 기기에 등록된 프로필. 미등록 기기는 401 STUDENT_DEVICE_INVALID. */
 export function useDeviceProfiles() {
   return useQuery({
@@ -10,12 +25,16 @@ export function useDeviceProfiles() {
   })
 }
 
-export function useDeviceRegistration() {
+export function useDeviceRegistration(onRegistered?: () => void) {
   const cache = useQueryClient()
   return useMutation({
     mutationFn: ({ code, label }: { code: string; label: string }) =>
       studentDeviceApi.register(code, label),
-    onSuccess: () => cache.invalidateQueries({ queryKey: ['student-device'] }),
+    onSuccess: () => {
+      // 프로필 재조회가 등록 폼을 제거하기 전에 완료 안내와 QR 주소 정리를 실행한다.
+      onRegistered?.()
+      return cache.invalidateQueries({ queryKey: ['student-device'] })
+    },
   })
 }
 
@@ -35,6 +54,7 @@ export function useStudentDevices() {
     queryKey: ['parent', 'student-devices'],
     queryFn: ({ signal }) => studentDeviceApi.devices(signal),
     retry: false,
+    refetchInterval: qrDemoEnabled ? 3000 : false,
   })
 }
 

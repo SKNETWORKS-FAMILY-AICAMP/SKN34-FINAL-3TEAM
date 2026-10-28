@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import { studentDeviceApi } from '../../data/studentDevice/api.ts'
 import { useParentMutation } from '../../data/parent/queries.ts'
-import { useDeviceAdmin, useStudentDevices } from '../../data/studentDevice/queries.ts'
+import { qrDemoEnabled, useDeviceAdmin, usePairingOrigins, useStudentDevices } from '../../data/studentDevice/queries.ts'
 import type { Child } from '../../domain/classroom.ts'
 import {
   PIN_MAX,
@@ -156,34 +156,55 @@ function ChildPin({ child }: { child: Child }) {
 function PairingIssue({ items }: { items: Child[] }) {
   const [picked, setPicked] = useState<string[]>(() => items.map((c) => c.id))
   const [pairing, setPairing] = useState<Pairing | null>(null)
-  const [qr, setQr] = useState('')
+  const [qr, setQr] = useState<{ url: string; src: string; error: boolean } | null>(null)
+  const [selectedOrigin, setSelectedOrigin] = useState('')
+  const addresses = usePairingOrigins()
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)
+  const suggested = addresses.data?.origins.find((a) => !/docker|vethernet|wsl|virtual|loopback/i.test(a.label))
+    ?? addresses.data?.origins[0]
+  const origin = selectedOrigin || (local && qrDemoEnabled ? suggested?.origin : undefined) || window.location.origin
+  const registrationUrl = pairing ? `${origin}/student/login?code=${encodeURIComponent(pairing.pairingCode)}` : ''
   const { pairing: issue } = useDeviceAdmin()
   const now = useNow(!!pairing)
   const left = pairing ? remaining(pairing.expiresAt, now) : null
   useEffect(() => {
     if (!pairing) return
     let active = true
-    const url = `${window.location.origin}/student/login?code=${pairing.pairingCode}`
-    void QRCode.toString(url, { type: 'svg', margin: 1, width: 168 }).then((svg) => {
-      if (active) setQr(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`)
-    })
+    void QRCode.toString(registrationUrl, { type: 'svg', margin: 4, width: 224 }).then((svg) => {
+      if (active) setQr({ url: registrationUrl, src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`, error: false })
+    }).catch(() => { if (active) setQr({ url: registrationUrl, src: '', error: true }) })
     return () => {
       active = false
     }
-  }, [pairing])
+  }, [pairing, registrationUrl])
   return (
     <section className="ws-card" aria-labelledby="pairing-h">
       <h2 id="pairing-h">자녀 기기 등록</h2>
       <p>
-        자녀가 쓸 기기에서 <strong>사고뭉치 › 자녀 기기로 시작</strong>을 열고, 아래 코드를 입력하거나 QR을
-        찍으면 등록됩니다. 자녀 기기에서 보호자 계정으로 로그인하지 마세요(보호자 Google 로그인이 남을 수
-        있습니다).
+        자녀 태블릿의 기본 카메라로 QR을 찍어 주세요. 열린 화면에서 기기 이름을 적고 등록하면,
+        다음부터는 자녀 PIN으로 들어갈 수 있습니다. 코드를 직접 입력해도 됩니다.
       </p>
+      {qrDemoEnabled && (
+        <div className="ws-form">
+          <p>두 기기 QR 시연 · 노트북과 태블릿을 같은 Wi-Fi에 연결해 주세요. 가상 정보만 사용합니다.</p>
+          <label>
+            QR에서 열 주소
+            <select aria-label="QR에서 열 주소" value={origin} onChange={(e) => setSelectedOrigin(e.target.value)}>
+              <option value={window.location.origin}>{window.location.origin}{local ? ' (이 컴퓨터에서만)' : ' (현재 주소)'}</option>
+              {addresses.data?.origins.filter((a) => a.origin !== window.location.origin).map((a) => (
+                <option key={a.origin} value={a.origin}>{a.origin} · {a.label}</option>
+              ))}
+            </select>
+          </label>
+          {local && origin === window.location.origin && <p role="status">다른 기기에서 찍으려면 Wi-Fi 주소를 골라 주세요.</p>}
+          <ErrorNotice error={addresses.error} retry={() => void addresses.refetch()} />
+        </div>
+      )}
       <form
         className="ws-form"
         onSubmit={(e) => {
           e.preventDefault()
-          setQr('')
+          setQr(null)
           issue.mutate(picked, { onSuccess: setPairing })
         }}
       >
@@ -218,7 +239,9 @@ function PairingIssue({ items }: { items: Child[] }) {
               {left ? `남은 시간 ${left}` : '코드 시간이 지났습니다. 새 코드를 만들어 주세요.'}
             </p>
           </div>
-          {qr && left && <img src={qr} alt="자녀 기기 등록 QR 코드 (위 코드와 같은 내용)" />}
+          {qr?.url === registrationUrl && qr.src && left && <img src={qr.src} alt="자녀 기기 등록 QR 코드 (위 코드와 같은 내용)" width="224" height="224" />}
+          {left && <a href={registrationUrl} target="_blank" rel="noreferrer">등록 화면 열기</a>}
+          {qr?.url === registrationUrl && qr.error && <p role="status">QR을 만들지 못했습니다. 위 등록 코드를 직접 입력해 주세요.</p>}
         </div>
       )}
     </section>
