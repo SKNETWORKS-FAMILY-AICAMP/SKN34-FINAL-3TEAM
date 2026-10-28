@@ -93,7 +93,7 @@ core 예정 계약의 시도 스키마는 추가 필드를 막아(`additionalPro
 
 ## 검증
 
-- `./gradlew clean test bootJar`: 183개 통과(새로 31개: `RecordServiceTest` 19·`RecordControllerTest` 9·`RecordDomainTest` 3, Testcontainers PostgreSQL). `scripts/tests` 53개 통과(OpenAPI 경로 대조 21개). 기능 커밋을 각각 따로 꺼내 테스트해 모두 통과(도메인·저장소·서비스·내부 API·종료일 기준 수정·합의 반영 순으로 155·155·166·171·172·177개, 커밋마다 scripts/tests도 통과. #26 문서 수정 병합은 learning 코드를 바꾸지 않음)
+- `./gradlew clean test bootJar`: 183개 통과(새로 31개: `RecordServiceTest` 19·`RecordControllerTest` 9·`RecordDomainTest` 3, Testcontainers PostgreSQL). `scripts/tests` 53개 통과(OpenAPI 경로 대조 21개). 기능 커밋을 각각 따로 꺼내 테스트해 모두 통과(도메인·저장소·서비스·내부 API·종료일 기준 수정·합의 반영·`studentId` 변경·학생 홈과 생각 활동 순으로 155·155·166·171·172·177·177·183개, 커밋마다 scripts/tests도 통과. #26 문서 수정 병합은 learning 코드를 바꾸지 않음)
 - 이슈 #27 완료 조건
   - 0건·1~4건·5건 이상 케이스별 `state`: 0건 `NO_RECORD`, 4건 `INSUFFICIENT_SAMPLE`(비율 `value: null`), 5건 `OK`(완료 1/5 → 0.2)
   - 범위 밖 학생 403: 범위에 없는 학생·범위 헤더 없음·허용하지 않는 역할(`ADMIN`·`CONTENT`) 403, 근거에 범위 밖 학생의 답변이 섞이면 403, 운영 집계는 학부모 403
