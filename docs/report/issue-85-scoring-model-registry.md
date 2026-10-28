@@ -17,7 +17,7 @@ API 변경은 [API 명세 4.3](../design/api-spec.md)에 먼저 기록했다. `/
 
 ## 경계와 후속 작업
 
-개인 작업 브랜치는 `feature/inyoung9629-scoring`이며 [상위 에픽 #84](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/84)의 #85~88을 모아 작업한다. 기존 이슈를 그대로 사용하고 이슈별 커밋으로 변경을 구분한다. 에픽 완료 조건을 검증한 뒤 이 브랜치에서 `develop`으로 통합 PR을 제출한다.
+사용자 지시에 따라 개인 에픽 브랜치를 사용하지 않고 기존 이슈별 방식으로 진행한다. #85 작업은 `feature/scoring-model-registry`에 보존했으며 PR 대상은 `develop`이다. [상위 에픽 #84](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/84)는 #85~88 각각의 완료 조건을 확인한 뒤 종료한다. #85의 실제 팀 모델 연동 검증은 모델 업로드·경로 공유를 기다리며 사용자 요청에 따라 보류한다.
 
 - #85: snapshot 조회·S3 다운로드·CPU 모델 로딩·revision 비교·scope 검사·readiness·버전 조회.
 - #86: 큐 바인딩 → snapshot → 초기 이벤트 조정, 실제 활성화 이벤트·재연결. 롤백 파일 캐시 재사용 정책도 여기서 확정한다. #85의 다운로드 작업 디렉터리는 영속 롤백 캐시가 아니다.
