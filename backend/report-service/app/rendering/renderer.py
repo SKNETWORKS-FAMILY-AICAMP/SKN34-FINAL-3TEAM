@@ -5,6 +5,8 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 from playwright.sync_api import sync_playwright
 
+from app.generation.presentation import DIFFICULTY_LABELS
+
 THINKING_LABELS = {
     "ANALYZE": "분석하기",
     "EVALUATE": "따져 보기",
@@ -19,7 +21,6 @@ SOURCE_LABELS = {
     "ANSWER_KEY": "정답 키",
     "AI_OBSERVATION": "AI 관찰",
 }
-DIFFICULTY_LABELS = {"EASY": "쉬웠어요", "NORMAL": "보통", "HARD": "어려웠어요"}
 
 
 class ReportRenderer:

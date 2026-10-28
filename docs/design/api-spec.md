@@ -494,6 +494,8 @@ data: {}
 }
 ```
 
+- 리포트 상세의 `reflections[].difficulty`는 표시값 `쉬웠어요`·`보통`·`어려웠어요`이며 PDF·HTML·Markdown도 같은 표시값을 쓴다. learning 입력과 report 내부 저장의 `EASY`·`NORMAL`·`HARD` 코드는 출력 조립 시 변환한다. 미작성·기간 밖이면 `written:false`, `difficulty:null`, `text:null`이다. 선택 텍스트 없이 난이도만 작성한 기록은 `written:true`, `text:null`로 구분한다.
+
 ### 3.5 결제 승인 — `POST /payments/confirm`
 ```jsonc
 // 요청 (결제위젯 successUrl 쿼리 값)
@@ -657,12 +659,13 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 아래는 report의 P06·P08 계산에 필요한 learning 응답의 구현안이다. **#27의 실제 구현·합의를 확인한 완료 계약으로 간주하지 않는다.** report 클라이언트는 아래 형태의 고정 응답으로 검사하며, 실제 연동 전에 #27 응답과 대조한다. 3.9의 브라우저 목업을 서버 집계 계약으로 대신 사용하지 않는다.
 
 - 세 조회 모두 `childId`·`period:{from,to}`·`state`를 반환한다. 학생·기간이 요청과 다르거나 `PROCESSING/FAILED`이면 생성에 사용할 수 없다. 날짜 범위는 KST 양 끝 포함이다.
-- `attempts`·`changes`는 1.1의 페이지 봉투를 사용한다. report는 `size=100`으로 모든 페이지를 읽으며 실패/누락 페이지를 빈 기록으로 바꾸지 않는다. `thinking-types`는 3.9의 `{childId,state,period,items}` 형태를 사용한다.
+- `attempts`·`changes`는 1.1의 페이지 봉투를 사용한다. `page`는 0부터 시작하고 `totalElements`는 같은 학생·기간·포함 기준의 전체 항목 수다. report는 `size=100`으로 모든 페이지를 읽으며 실패/누락 페이지를 빈 기록으로 바꾸지 않는다. `thinking-types`는 3.9의 `{childId,state,period,items}` 형태를 사용한다.
 - `attempts.items[]`의 필수 입력:
-  - `attemptId`, `studentId`, `mission:{title,thinkingType}`, `status:IN_PROGRESS|COMPLETED`, `answers[]`, `hintUsages:[{openedAt}]`. 학생 메모·초안은 포함하지 않는다. 삭제 표식 `{attemptId,available:false}`은 집계에서 제외한다.
+  - `attemptId`, `studentId`, `mission:{title,thinkingType}`, `status:IN_PROGRESS|COMPLETED`, `answers[]`, `hintUsages:[{openedAt}]`. 학생 메모·초안은 포함하지 않는다. 삭제 표식 `{attemptId,available:false}`이 제공되면 집계에서 제외하지만, 표식 반환은 필수가 아니다. 물리 삭제 뒤 정상 조회가 `NO_RECORD`, `items:[]`, `totalElements:0`을 반환해도 된다. 이것은 evidence의 삭제된 답변 표시나 #55 삭제 완료 처리를 대신하지 않는다.
   - `answers[]`: `{answerId,version,submittedAt,text,feedback:{status:PENDING|RUNNING|DONE|FAILED}}`. `text`는 제출 답변의 평문이며 평문이 없는 입력은 null이다. 시도당 1번부터 조회 종료일 끝까지의 답변 버전을 제공한다. 최초 답변·도움 이용을 비교할 수 있도록 조회 시작일 이전의 답변도 포함한다. report는 종료일 이후 답변을 사용하지 않는다.
-  - `hintUsages[]`는 최초 답변 이전 열람 여부를 판정할 수 있는 전체 열람 시각을 제공한다. 단순 `helped` 값으로 대체하지 않는다.
-  - 완료 시도는 `completedAt`을 제공한다. `reflection`은 없거나 `{difficulty,text,createdAt}`이며 선택 텍스트 null은 허용한다. 해당 주에 작성한 돌아보기만 포함하고 미작성은 `written:false`로 구분한다.
+  - `hintUsages[]`는 조회 시작일 이전 기록을 포함하여 최초 답변 이전 열람 여부를 판정할 수 있는 전체 열람 시각을 제공한다. 열람이 없으면 빈 배열이며 단순 `helped` 값으로 대체하지 않는다. `submittedAt`·`openedAt`·`completedAt`·`createdAt`은 시간대 오프셋이 있는 ISO 8601 시각이다.
+  - 완료 시도는 `completedAt`을 제공한다. learning **입력**의 `reflection`은 해당 기간에 작성한 `{difficulty:EASY|NORMAL|HARD,text:string|null,createdAt}` 또는 `null`이다. 미작성·기간 밖이면 `null`을 사용하고 report는 필드 생략도 허용한다. 선택 텍스트가 null이어도 난이도·작성 시각이 있는 돌아보기는 작성한 기록이다. `{written:false}`만 있는 객체는 입력 형식이 아니다.
+  - report **출력/저장 항목**의 `reflections[]`는 미작성·기간 밖이면 `{attemptId,written:false,difficulty:null,text:null}`이다. 입력에 기간 밖 돌아보기가 포함되어도 report가 작성 시각으로 제외한다. 작성한 항목은 `written:true`이며 내부 계산·저장에는 난이도 코드를 유지한다. 입력과 3.4 출력 형식을 혼용하지 않는다.
 - `thinking-types.items[]`: `{type,missions:[{attemptId,title}],state,summary?}`. 집계 대상 시도의 유형·미션을 대조한다. report는 기존 `summary`를 AI 서술로 재사용하지 않는다.
 - `changes.items[]`: 3.4와 같은 `{attemptId,followup,first:{answerId,text},revised:{answerId,text}}`. 포함된 시도의 종료일 기준 최초·마지막 답변과 ID·평문이 일치해야 한다. 시도당 한 쌍이며 답변이 하나뿐이면 변화 항목을 만들지 않는다. 수치는 report가 다시 계산한다.
 - 동일 시도가 여러 주에 걸치면 각 주에 제출된 답변 존재 여부로 포함한다. 변화는 포함된 시도의 최초 답변과 해당 주 종료일 이전 마지막 답변을 비교한다. 조회 이후에 추가된 답변으로 과거 주의 마지막 답변을 바꾸지 않는다.
