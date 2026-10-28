@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.account.repository.StudentDeviceMapper">
+  <resultMap id="device" type="com.sagomungchi.core.account.domain.StudentDevice">
+    <constructor>
+      <idArg column="id" javaType="java.util.UUID"/>
+      <arg column="parent_user_id" javaType="java.util.UUID"/>
+      <arg column="token_hash" javaType="java.lang.String"/>
+      <arg column="label" javaType="java.lang.String"/>
+      <arg column="created_at" javaType="java.time.OffsetDateTime"/>
+      <arg column="expires_at" javaType="java.time.OffsetDateTime"/>
+      <arg column="last_used_at" javaType="java.time.OffsetDateTime"/>
+      <arg column="revoked_at" javaType="java.time.OffsetDateTime"/>
+    </constructor>
+  </resultMap>
+  <select id="byHash" resultMap="device" useCache="false">SELECT * FROM student_device WHERE token_hash=#{hash}</select>
+  <select id="find" resultMap="device" useCache="false" flushCache="true">SELECT * FROM student_device WHERE id=#{id}<if test="lock"> FOR UPDATE</if></select>
+  <select id="list" resultMap="device">SELECT * FROM student_device WHERE parent_user_id=#{user} AND revoked_at IS NULL ORDER BY created_at DESC,id</select>
+  <select id="children" resultType="java.util.UUID" useCache="false">SELECT student_id FROM student_device_child WHERE device_id=#{id} ORDER BY student_id</select>
+  <insert id="insert">INSERT INTO student_device(id,parent_user_id,token_hash,label,created_at,expires_at,last_used_at,revoked_at)
+    VALUES(#{id},#{parentUserId},#{tokenHash},#{label},#{createdAt},#{expiresAt},#{lastUsedAt},#{revokedAt})</insert>
+  <insert id="link">INSERT INTO student_device_child(device_id,student_id) VALUES(#{device},#{child})</insert>
+  <update id="touch">UPDATE student_device SET last_used_at=#{now} WHERE id=#{id}</update>
+  <update id="revoke">UPDATE student_device SET revoked_at=#{now} WHERE id=#{id} AND revoked_at IS NULL</update>
+  <update id="revokeAll">UPDATE student_device SET revoked_at=#{now} WHERE parent_user_id=#{user} AND revoked_at IS NULL</update>
+  <delete id="removeChild">DELETE FROM student_device_child WHERE student_id=#{child}</delete>
+</mapper>

@@ -9,6 +9,11 @@
             <arg column="birth_year" javaType="_int"/>
         </constructor>
     </resultMap>
+    <select id="activeParents" resultType="java.util.UUID">
+        SELECT g.parent_user_id FROM guardianship g JOIN user_account u ON u.id=g.parent_user_id
+        JOIN student s ON s.id=g.student_id
+        WHERE g.student_id=#{studentId} AND g.status='LINKED' AND s.status='ACTIVE' AND u.status='ACTIVE' AND u.role='PARENT'
+    </select>
     <select id="linkedStudents" resultMap="student">
         SELECT s.id, s.nickname, s.grade, s.birth_year FROM student s
         JOIN guardianship g ON g.student_id=s.id
@@ -19,8 +24,8 @@
         SELECT count(*) FROM guardianship WHERE parent_user_id=#{userId} AND status='LINKED'
     </select>
     <insert id="insertStudent">
-        INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,created_at,updated_at)
-        VALUES(#{child.id},#{child.nickname},#{child.grade},#{child.birthYear},#{demo},'ACTIVE',#{now},#{now})
+        INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,created_at,updated_at,pin_failed_count)
+        VALUES(#{child.id},#{child.nickname},#{child.grade},#{child.birthYear},#{demo},'ACTIVE',#{now},#{now},0)
     </insert>
     <insert id="insertLink">
         INSERT INTO guardianship(id,parent_user_id,student_id,method,status,linked_at)

@@ -5,6 +5,7 @@ import org.flywaydb.core.Flyway
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import org.testcontainers.containers.PostgreSQLContainer
+import org.testcontainers.containers.GenericContainer
 import org.testcontainers.containers.RabbitMQContainer
 import java.net.URI
 import java.net.http.HttpClient
@@ -30,6 +31,7 @@ abstract class IntegrationTestSupport {
             Flyway.configure().dataSource(jdbcUrl, username, password)
                 .locations("classpath:db/migration").load().migrate()
         }
+        private val redis = GenericContainer("redis:8.2.10-alpine").withExposedPorts(6379).apply { start() }
         private val rabbit = RabbitMQContainer("rabbitmq:4.3.7-management-alpine").apply {
             start()
             importDefinitions()
@@ -52,6 +54,8 @@ abstract class IntegrationTestSupport {
         @JvmStatic
         @DynamicPropertySource
         fun containerProperties(registry: DynamicPropertyRegistry) {
+            registry.add("spring.data.redis.host", redis::getHost)
+            registry.add("spring.data.redis.port") { redis.getMappedPort(6379) }
             registry.add("app.auth.jwt-secret") { "dGVzdC1hdXRoLXNlY3JldC0zMi1ieXRlcy1sb25nLWtleSE=" }
             registry.add("spring.datasource.url", postgres::getJdbcUrl)
             registry.add("spring.datasource.username", postgres::getUsername)

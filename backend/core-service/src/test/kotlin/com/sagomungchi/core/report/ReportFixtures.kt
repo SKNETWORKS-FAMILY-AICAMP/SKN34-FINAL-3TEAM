@@ -21,7 +21,7 @@ internal data class ReportLifecyclePayload(val jobId: UUID, val studentId: UUID,
 internal fun parent(jdbc: JdbcTemplate): UUID = account(jdbc, "PARENT", null).also { consents(jdbc, it) }
 internal fun child(jdbc: JdbcTemplate, parent: UUID): UUID {
     val id = UUID.randomUUID(); val now = OffsetDateTime.now()
-    jdbc.update("INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,created_at,updated_at) VALUES(?,'검증용',3,2017,false,'ACTIVE',?,?)", id, now, now)
+    jdbc.update("INSERT INTO student(pin_failed_count,id,nickname,grade,birth_year,is_demo,status,created_at,updated_at) VALUES(0,?,'검증용',3,2017,false,'ACTIVE',?,?)", id, now, now)
     jdbc.update("INSERT INTO guardianship(id,parent_user_id,student_id,method,status,linked_at) VALUES(?,?,?,'REGISTER','LINKED',?)", UUID.randomUUID(), parent, id, now)
     consents(jdbc, parent, id)
     return id
