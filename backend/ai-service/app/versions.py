@@ -5,6 +5,7 @@
 
 from fastapi import APIRouter
 
+from app.analysis_agent import prompts as analysis_prompts
 from app.followup import prompts as followup_prompts
 from app.judgment import prompts as judgment_prompts
 
@@ -15,6 +16,7 @@ def active_prompt_versions() -> dict[str, str]:
     return {
         "judgment": judgment_prompts.PROMPT_VERSION,
         "followup": followup_prompts.PROMPT_VERSION,
+        "analysis": analysis_prompts.PROMPT_VERSION,
     }
 
 
