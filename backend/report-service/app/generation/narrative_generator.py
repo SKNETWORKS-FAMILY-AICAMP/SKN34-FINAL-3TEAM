@@ -79,7 +79,7 @@ class NarrativeGenerator:
                     and item.payload["text"] in original.text
                 )
                 payload = {**item.payload, "verified": verified}
-                if not verified:
+                if original is not None and not original.available:
                     payload["text"] = None
                 verified_items.append(replace(item, verified=verified, payload=payload))
             else:

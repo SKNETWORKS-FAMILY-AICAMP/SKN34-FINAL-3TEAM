@@ -36,7 +36,7 @@ def sample_state(count: int) -> ReportState:
 def text_counts(text: str) -> dict[str, int]:
     return {
         "chars": len(text),
-        "sentences": sum(bool(part.strip()) for part in re.split(r"[.?!\r\n]+", text)),
+        "sentences": sum(bool(part.strip()) for part in re.split(r"[.?!\n]+", text)),
         "reasonConnectives": sum(text.count(word) for word in REASON_CONNECTIVES),
     }
 
@@ -151,7 +151,7 @@ class MetricsCalculator:
                     raise RecordContractError(
                         "Change pair differs from first/latest submitted answer"
                     )
-                before, after = text_counts(first.text), text_counts(last.text)
+                before, after = text_counts(first.written_text), text_counts(last.written_text)
                 append(
                     ItemType.CHANGE,
                     {

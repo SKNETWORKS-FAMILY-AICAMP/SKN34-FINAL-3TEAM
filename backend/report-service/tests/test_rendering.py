@@ -73,6 +73,19 @@ def test_free_projection_cannot_reveal_old_ai_summary():
     assert detail["narrative"] is not None  # no mutation of the paid stored report
 
 
+def test_nullable_followup_keeps_answers_without_printing_none():
+    detail = fixed_detail()
+    detail["changes"][0]["followup"] = None
+    renderer = ReportRenderer()
+    html = renderer._templates.get_template("weekly.html").render(report=detail, name="합성학생")
+    markdown = renderer.markdown(detail, "합성학생")
+    assert "<h3>None</h3>" not in html
+    assert "\nNone\n" not in markdown
+    assert detail["changes"][0]["first"]["text"] in html
+    assert detail["changes"][0]["revised"]["text"] in markdown
+    assert "None" not in pdf_text(renderer.render(detail, "합성학생")["PDF"])
+
+
 @pytest.mark.parametrize(
     "code,label", [("EASY", "쉬웠어요"), ("NORMAL", "보통"), ("HARD", "어려웠어요")]
 )

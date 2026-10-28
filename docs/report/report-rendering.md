@@ -37,3 +37,39 @@ HTML·Markdown 스냅샷은 전문을 비교한다. PDF는 OS별 한글 폰트�
 - #50/#42 공통 v1 codec은 연결했다. #27 학습 기록·#64 서술 API와 표시 이름 조회 연결 후 계산→서술→렌더링→완료 이벤트의 전체 서비스 연동 검증이 필요하다. 이 브랜치의 독립 worker 기본 생성기는 아직 `GENERATOR_NOT_CONFIGURED` 실패로 명시한다. 단계별 생성기는 테스트에서 조립해 검증하며 가짜 파일로 운영 완료를 만들지 않는다.
 
 참고: [Playwright Docker 지침](https://playwright.dev/python/docs/docker), [boto3 S3 API](https://docs.aws.amazon.com/boto3/latest/reference/services/s3.html).
+
+## 최신 develop 통합·재검증 (2026-10-28)
+
+`feature/report-rendering`의 `733f8ead`에 로컬 develop `b644b56f`를 통합했다. 이 기준에는 #52 PR #109, 대시보드 PR #111, CI 개선 PR #115가 포함된다. 별도 `local/issue53-integration` 브랜치에서 작업했으며 GitHub push·PR 변경은 하지 않았다.
+
+충돌 3개를 해결했다. `narrative_generator.py`는 develop의 #52 원문 보존/삭제 처리 기준을 유지했다. 파일 출력에서는 `presentation.assemble`의 verified 검사로 미검증 인용을 가린다. `report-narrative.md`는 develop의 최신 검증·계약 기록을 보존하고, `docs/README.md`에는 최신 목록과 #53 링크를 함께 유지했다. learning 수신 모델의 studentId·학생 작성 내용 집계·nullable followup도 develop과 동일하게 유지했다.
+
+nullable followup이 HTML/PDF/Markdown에 `None`으로 표시되는 결함을 수정했다. 질문이 없으면 빈 문자열로 표시하고 최초/최종 답변은 유지한다. 세 출력 형식을 확인하는 회귀 테스트를 추가했다.
+
+| 이번 검사 | 결과 |
+|---|---|
+| Python 3.12 Docker, uv sync --frozen | 성공 |
+| Ruff check / format | 통과, 66개 파일 포맷 일치 |
+| report 전체 pytest | **184 passed, 46.57초**, 실패·건너뜀 없음 |
+| 공통 계약·스키마 unittest | **58개 통과**, `python -O -m unittest discover -s scripts/tests -q` |
+| 운영 Dockerfile 빌드 | `local/issue53-report:20261028` 성공 |
+| 운영 이미지 실행 조건 | uid 10001, read-only root, network none, /tmp tmpfs, pytest 미포함 확인 |
+| 고정 데이터 출력 | 일반 PDF 191,409바이트·2쪽, nullable PDF 190,311바이트·2쪽. HTML·Markdown도 생성 |
+| PDF 검증 | 한글 텍스트 및 None 미출력 확인. 총 4쪽 PNG에서 한글 깨짐·잘림·겹침 없음 |
+
+전체 pytest에는 실제 PostgreSQL·RabbitMQ, moto S3 업로드·서명, 업로드 실패의 FAILED 저장, report_file 저장 검사가 포함된다. 기존 Starlette/httpx 폐기 예정 경고 1개는 테스트 실패가 아니다. Docker 호스트는 host.docker.internal로 연결했다. 최초 검증 이미지 빌드는 운영 dockerignore의 tests 제외 때문에 실패했으며, 저장소 밖 검증용 Dockerfile의 별도 ignore 설정으로 해결했다. 호스트 Python의 공통 검사는 PyYAML 누락으로 실패했고, 잠긴 Docker 환경에서 위 58개를 재실행했다. 실패한 실행은 통과 수치에 포함하지 않는다.
+
+### 이슈 요구사항 대조
+
+| 요구사항 | 확인 근거 |
+|---|---|
+| 닉네임·기간·포함 기준·수치 근거·생각 유형·전후 변화·돌아보기·인용·저녁 질문 | HTML/Markdown 조립과 고정 데이터 스냅샷 |
+| PDF·Markdown 변환 | 실제 Chromium PDF와 Markdown 생성·스냅샷 통과 |
+| S3 업로드·presigned URL | ObjectStorage 및 moto 테스트 통과 |
+| report_file 저장·실패 시 FAILED | PostgreSQL 성공/실패 회귀 테스트, 기존 유일성 제약 사용 |
+| 3종 렌더링 스냅샷 | 전체 pytest에 포함하여 통과 |
+| MinIO 또는 moto | moto로 충족 |
+| Docker 한글 PDF | 운영 이미지 생성·텍스트·PNG 시각 검증으로 충족 |
+| Ruff·pytest | 통합한 코드에서 통과 |
+
+#53 모듈 범위의 구현·검증 조건을 확인했다. 실제 생성기 bootstrap 연결, 신뢰 가능한 닉네임 공급, #64 실제 AI API와 전체 서비스 E2E는 별도 후속 사항이다. 이번 실행은 실제 AWS/MinIO 접속 검증이 아니다. 앞선 절의 #27 확인 대기 기록은 당시 상태이며 이번 통합에서는 develop에 병합된 #27/#51 계약을 유지했다. 이후 원격 develop 변경은 새 기준으로 충돌·검증을 다시 확인해야 한다.

@@ -97,27 +97,42 @@ def test_start_and_outbox_roll_back_together(report_factory, db_engine, report_s
     JobLocks(db_engine).acquire(command.job_id).close()
 
 
-def test_completion_rollback_leaves_running_and_redelivery_reuses_it(
-    report_factory, db_engine, report_student_id
+@pytest.mark.parametrize("failure", [False, True])
+def test_terminal_rollback_leaves_running_and_redelivery_reuses_it(
+    report_factory, db_engine, report_student_id, failure
 ):
-    class BrokenCompletion(OutboxRepository):
+    terminal_event = "report.failed" if failure else "report.completed"
+
+    class Generator(EmptyGenerator):
+        async def generate(self, command, report):
+            result = await super().generate(command, report)
+            if failure:
+                raise RuntimeError("synthetic generator failure")
+            return result
+
+    class BrokenTerminal(OutboxRepository):
         def add(self, session, envelope):
             super().add(session, envelope)
-            if envelope.type == "report.completed":
-                raise RuntimeError("synthetic completion persistence failure")
+            if envelope.type == terminal_event:
+                raise RuntimeError("synthetic terminal persistence failure")
 
     command = command_for(report_student_id)
-    broken = make_service(report_factory, db_engine, command, outbox=BrokenCompletion())
-    with pytest.raises(RuntimeError, match="completion persistence"):
+    generator = Generator()
+    broken = make_service(report_factory, db_engine, command, generator, BrokenTerminal())
+    with pytest.raises(RuntimeError, match="terminal persistence"):
         asyncio.run(broken.generate(command))
     reports, events = stored(report_factory, report_student_id)
     original_id = reports[0]["id"]
     assert reports[0]["status"] == "RUNNING" and reports[0]["state"] is None
+    assert reports[0]["failure_reason"] is None and reports[0]["generated_at"] is None
     assert [e["event_type"] for e in events] == ["report.started"]
-    asyncio.run(make_service(report_factory, db_engine, command).generate(command))
+    asyncio.run(make_service(report_factory, db_engine, command, generator).generate(command))
     reports, events = stored(report_factory, report_student_id)
     assert len(reports) == 1 and reports[0]["id"] == original_id
-    assert [e["event_type"] for e in events] == ["report.started", "report.completed"]
+    assert reports[0]["status"] == ("FAILED" if failure else "COMPLETED")
+    assert reports[0]["failure_reason"] == ("GENERATION_FAILED" if failure else None)
+    assert [e["event_type"] for e in events] == ["report.started", terminal_event]
+    assert generator.calls == 2
 
 
 def test_conflicting_job_does_not_change_original_report(

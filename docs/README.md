@@ -60,6 +60,8 @@
   - [이슈 #24 learning 답변 제출·버전 저장](report/learning-answer.md): 제출 순서·행 잠금, 같은 키 재요청, 보완 답변 연결, 제출 뒤 초안 비우기와 설계 문서 갱신 근거
   - [이슈 #25 learning 피드백 오케스트레이션](report/learning-feedback.md): 처리 상태 전이·리스, 규칙·ai 판정과 풀이 결합, 되묻기·질문 은행, ai 호출 장애 처리와 설계 문서 갱신 근거
   - [이슈 #26 learning 마무리·돌아보기·자기 평가](report/learning-reflection.md): 마무리 조건·공개 내용·체크리스트, 돌아보기 난이도 코드와 학습 완료, 자기 평가, 마무리 경합과 설계 문서 갱신 근거
+  - [이슈 #27 learning 학습 기록 조회](report/learning-records.md): 집계 대상(P08)·지표·상태, KST 기간, 기록 목록·상세(학생 시도 상세 재사용), 전후 변화 계산, 근거·운영 집계와 설계 문서 갱신 근거
+  - [이슈 #79 learning 판정 규칙 확정](report/learning-judgment-rules.md): 수학 단위(비교 안 함·답 칸 뒤 고정), 풀이 단계 결합과 최종 답 요소, 분류 그룹 저장(V6)과 기획서 "분류 기준"과의 관계
   - [이슈 #36 Google OAuth·access/refresh](report/issue-36-google-auth.md): HS256·세션 폐기·역할 전환·프론트 계약과 후속 경계
   - [P01 개정 학생·학부모 로그인 분리](report/student-login-separation.md): 등록 기기·PIN 단독 진입 설계 근거와 대안 비교
   - [프론트엔드 UX 정합성(최초 화면 작업)](report/frontend-backend-ux-alignment.md): 백엔드 기준 화면 정렬 기록, 현재 기준은 이슈 #7 보고서
@@ -135,3 +137,5 @@ feature/* → develop → main
 - 기본 브랜치가 아닌 통합 브랜치 대상 PR의 `Closes`는 이슈를 자동 종료하지 않는다. 실제 해결 범위를 확인한 최종 develop PR에도 해당 `Closes #이슈번호`를 포함한다.
 
 - [이슈 #45 계정 관리·Google 재인증·삭제·탈퇴](report/issue-45-account-management.md): #58 호출 계약, 삭제 Outbox·서비스별 완료, 탈퇴 차단·세션 폐기 및 통합 조건
+
+- [이슈 #58 학생 기기·PIN 인증](report/issue-58-student-device-auth.md): 실제 재인증·기기·PIN 계약, 삭제 연동과 검증 범위

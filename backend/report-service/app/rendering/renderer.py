@@ -117,7 +117,7 @@ class ReportRenderer:
                 if key == "changes":
                     lines.extend(
                         [
-                            safe(value["followup"]),
+                            safe(value["followup"] or ""),
                             safe(value["first"]["text"]),
                             safe(value["revised"]["text"]),
                             " · ".join(

@@ -4,6 +4,7 @@ import com.sagomungchi.core._common.security.UserContext
 import com.sagomungchi.core._common.security.UserContextHolder
 import jakarta.annotation.PreDestroy
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Component
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
@@ -22,7 +23,7 @@ import kotlin.concurrent.withLock
 /** Feedback transport lifecycle only. Disconnecting never cancels the independently running operation. */
 @Component
 class SseEmitters internal constructor(private val heartbeat: Duration, private val timeout: Duration) : AutoCloseable {
-    @Autowired constructor() : this(Duration.ofSeconds(15), Duration.ofSeconds(90))
+    @Autowired constructor(@Value("\${app.sse.heartbeat:15s}") heartbeat: Duration) : this(heartbeat, Duration.ofSeconds(90))
 
     private val tasks = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("feedback-sse-", 0).factory())
     private val timer = ScheduledThreadPoolExecutor(1, Thread.ofPlatform().daemon().name("feedback-heartbeat").factory())
@@ -62,7 +63,23 @@ class SseEmitters internal constructor(private val heartbeat: Duration, private 
         return stream.emitter
     }
 
-    inner class Stream internal constructor(val emitter: SseEmitter) {
+    /** Subscription lifetime is independent of feedback's finite operation and 90-second default. */
+    fun subscribe(lifetime: Duration, onClose: (Stream) -> Unit, register: (Stream) -> Unit, validate: () -> Unit): Stream {
+        val stream = Stream(SseEmitter(lifetime.toMillis()), onClose, validate)
+        streams.add(stream)
+        stream.emitter.onCompletion { stream.disconnected() }
+        stream.emitter.onTimeout { stream.disconnected(); stream.emitter.complete() }
+        stream.emitter.onError { stream.disconnected() }
+        // Register before a heartbeat can reject the session and invoke cleanup.
+        try {
+            register(stream)
+            stream.attach(timer.scheduleAtFixedRate({ stream.heartbeat() }, heartbeat.toMillis(), heartbeat.toMillis(), TimeUnit.MILLISECONDS))
+        } catch (ex: Exception) { stream.disconnected(); stream.emitter.completeWithError(ex); throw ex }
+        return stream
+    }
+
+    inner class Stream internal constructor(val emitter: SseEmitter,
+        private val onClose: (Stream) -> Unit = {}, private val validate: () -> Unit = {}) {
         private val connected = AtomicBoolean(true)
         private val sendingHeartbeat = AtomicBoolean(false)
         private val lock = ReentrantLock()
@@ -77,6 +94,7 @@ class SseEmitters internal constructor(private val heartbeat: Duration, private 
 
         private fun send(event: SseEmitter.SseEventBuilder) = lock.withLock {
             if (connected.get()) {
+                try { validate() } catch (_: Exception) { disconnected(); emitter.complete(); return@withLock }
                 try { emitter.send(event) }
                 catch (_: IOException) { disconnected() }
                 catch (_: IllegalStateException) { disconnected() }
@@ -103,9 +121,10 @@ class SseEmitters internal constructor(private val heartbeat: Duration, private 
         }
 
         internal fun disconnected() {
-            connected.set(false)
+            if (!connected.compareAndSet(true, false)) return
             scheduled?.cancel(false)
             streams.remove(this)
+            onClose(this)
         }
     }
 
