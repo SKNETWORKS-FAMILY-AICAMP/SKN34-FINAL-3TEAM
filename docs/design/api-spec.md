@@ -510,6 +510,8 @@ data: {}
 }
 ```
 
+- 리포트 상세의 `reflections[].difficulty`는 표시값 `쉬웠어요`·`보통`·`어려웠어요`이며 PDF·HTML·Markdown도 같은 표시값을 쓴다. learning 입력과 report 내부 저장의 `EASY`·`NORMAL`·`HARD` 코드는 출력 조립 시 변환한다. 미작성·기간 밖이면 `written:false`, `difficulty:null`, `text:null`이다. 선택 텍스트 없이 난이도만 작성한 기록은 `written:true`, `text:null`로 구분한다.
+
 ### 3.5 결제 승인 — `POST /payments/confirm`
 ```jsonc
 // 요청 (결제위젯 successUrl 쿼리 값)
@@ -735,6 +737,10 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | GET | `/internal/reports/{reportId}?revision` | 상세 (3.4 스키마), 기본 최신판·양의 revision으로 이전판 조회 |
 | GET | `/internal/reports/{reportId}/evidence/{itemId}` | 항목 근거 |
 | GET | `/internal/reports/{reportId}/files/{format}` | 단기 presigned URL 발급 → `{url, expiresAt}` |
+
+- #54 조회에서 core는 현재 이용 권한을 확인해 `X-Report-Narrative-Enabled:true|false`를 설정한다. 공개 요청의 같은 이름 헤더를 그대로 전달하지 않는다. 누락 시 false로 처리하며 report는 응답과 다운로드 파일에서 AI 서술·생각 유형 summary·저녁 질문을 가린다.
+- 목록은 학생/대상 주별 최신 revision을 고른 뒤 status를 적용하며 1.1 페이지 봉투를 사용한다. 상세의 기본값은 같은 학생·대상 주 최신판, `revision` 지정 시 해당 판이다. evidence/files 경로는 전달한 실제 reportId 판에 속한 항목·파일을 조회한다.
+- 파일 키는 `reports/{studentId}/{reportId}/r{revision}/{full|free}/{pdf|md|html}`다. DB `report_file`에는 full 키 3개를 저장하며 무료용 파생 파일도 생성한다. 다운로드 수명은 설정값이며 운영 기본안은 300초다. 버전·형식·학생이 맞지 않는 키를 서명하지 않는다.
 
 ### 4.5 core-service (호출: ai, scoring, learning, report)
 | Method | Path | 설명 |
