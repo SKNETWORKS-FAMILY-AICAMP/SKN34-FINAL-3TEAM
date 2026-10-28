@@ -66,7 +66,9 @@ def load(args: argparse.Namespace) -> pd.DataFrame:
     answer_file, prompt_file = DATASETS[args.dataset]
     df = pd.read_csv(args.data_dir / answer_file)
     prompts = pd.read_csv(args.data_dir / prompt_file)
-    split = pd.read_csv(args.split_dir / f"{args.dataset}_split_seed{args.seed}.csv")
+    split = pd.read_csv(
+        args.split_dir / f"{args.dataset}_split_seed{args.split_seed}.csv"
+    )
     df = df.merge(prompts[["prompt_id", "prompt", "keyword"]], on="prompt_id")
     df = df.merge(split[["prompt_id", "split_new"]], on="prompt_id")
     if args.extra_adult:
@@ -315,6 +317,12 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--max-length", type=int, default=512)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--split-seed",
+        type=int,
+        default=42,
+        help="문항 분할 파일의 시드 (--seed만 바꾸면 같은 분할에서 초기값·순서만 달라짐)",
+    )
     parser.add_argument(
         "--limit", type=int, default=0, help="세트마다 답 N개만 (동작 확인용)"
     )
