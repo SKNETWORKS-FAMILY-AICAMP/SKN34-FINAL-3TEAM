@@ -1344,7 +1344,8 @@ classDiagram
     <<controller>>
     +summary(studentId, from, to) List~Metric~
     +thinkingTypes(studentId, from, to) List
-    +attempts(studentId, from, to) List
+    +attempts(studentId, from, to, page, size) RecordPage
+    +attempt(studentId, attemptId) RecordAttempt
     +changes(studentId, from, to) List
     +evidence(answerIds) List~Evidence~
     +stats(from, to) Stats
@@ -1353,22 +1354,24 @@ classDiagram
     <<service>>
     +summary(studentId, period) List~Metric~
     +thinkingTypes(studentId, period) List
-    +attempts(studentId, period) List
+    +attempts(studentId, period, page, size) RecordPage
+    +attempt(studentId, attemptId) AttemptDetail
     +changes(studentId, period) List
     +evidence(answerIds) List~Evidence~
     +stats(period) Stats
   }
   class RecordRepository {
     <<repository>>
-    +countAttempts(studentId, period) Counts
-    +findAttemptsWithTimeline(studentId, period) List
+    +findEligible(studentId, period) List
     +findAnswerPairs(studentId, period) List
+    +isRecorded(studentId, attemptId) Boolean
     +findEvidence(answerIds) List
+    +stats(period) Stats
   }
   class Metric {
     <<value>>
     +ratio(label, numerator, denominator, formula, period)$ Metric
-    +count(label, count, period)$ Metric
+    +count(label, count, formula, period)$ Metric
   }
   class StudentDeletedConsumer {
     <<consumer>>
@@ -1390,6 +1393,7 @@ classDiagram
   RecordController --> UserContext : requireStudent
   RecordController --> RecordService
   RecordService --> RecordRepository
+  RecordService --> AttemptService : 기록 목록·상세(학생 시도 상세 재사용)
   RecordService ..> Metric
   StudentDeletedConsumer --> StudentDeletionService
   StudentDeletionService --> ProcessedEventRepository
@@ -1398,10 +1402,13 @@ classDiagram
   StudentDeletionService --> CoreClient : 삭제 완료 보고
 ```
 
-- 구현 상태 (#37): `record/`에는 기록 존재 확인 `RecordExistsController`·`RecordExistsService`·`RecordExistsRepository`(`GET /internal/records/students/{studentId}/exists`)만 구현됨. `RecordController`·`RecordService`·`RecordRepository`·삭제 소비는 미구현 ([이슈 #37 기록 존재 보고서](../report/issue-37-record-existence.md))
+- 구현 상태 (#37·#27): `record/`의 기록 존재 확인 `RecordExistsController`·`RecordExistsService`·`RecordExistsRepository`(#37)와 `RecordController`·`RecordService`·`RecordRepository`·`Metric`(#27) 구현됨. 삭제 소비(`StudentDeletedConsumer`·`StudentDeletionService`)는 미구현 ([이슈 #37 기록 존재 보고서](../report/issue-37-record-existence.md), [이슈 #27 기록 조회 보고서](../report/learning-records.md))
 - `RecordController`: 모든 경로에서 `UserContextHolder.current().requireStudent(studentId)` 먼저 실행 (아키텍처 2.3 범위 검사)
 - `RecordRepository`는 여러 기능 테이블을 읽는 조회 전용 MyBatis 매퍼 (쓰기 없음). 기능 간 repository 참조 금지 규칙의 예외로, 조회 전용 `record/`에 한정
-- `Metric.ratio`: 분모 5 미만이면 `value = null`, `count`만 (P08, API 1.6)
+- `Metric.ratio`: 분모 5 미만이면 `value = null`, `count`만 (P08, API 1.6). `Metric.count`도 계산식을 받음(기능 명세 1.3 "모든 건수·비율은 계산식과 함께")
+- `RecordRepository.findEligible`: 집계 대상 시도(P08: 기간 안에 처리 실패가 아닌 답변 제출, 미완료 포함, 삭제 학생 제외)와 시도별 사실(완료, 최초 답변 전 생각 열기 열람, 되묻기 받음, 보완 답변)을 한 번 읽고 summary·thinkingTypes·attempts가 같이 씀. `isRecorded`는 기간과 무관한 상세용, `stats`는 운영 집계
+- `RecordService.attempts`·`attempt`: 학생 시도 상세(`AttemptService.get`)를 그대로 쓰고 응답에서 초안(메모 포함)만 뺌(P05). 그래서 `findAttemptsWithTimeline`은 두지 않음
+- `RecordService.changes`: 보완 답변이 있는 시도의 최초 vs 마지막 답변. 원문은 `plain_text`, 글자·문장·까닭을 잇는 말 수는 학생이 쓴 칸 내용으로 셈(칸 이름 제외). 까닭을 잇는 말 목록은 임시(`TextCounts.REASON_CONNECTIVES`)
 - `StudentDeletionService.delete`: 삭제·`deleted_student` 저장 후 `CoreClient.reportDeletionCompleted`. 보고 실패 시 예외 → 지연 재시도(1·5·15분) 후 재처리, 삭제는 멱등 (P09, 아키텍처 1.6)
 - `evidence`: `deleted_student`에 있는 학생 근거는 `available: false` (FN-ACC-13)
 - `AttemptService.deleteByStudent`: `attempt` 삭제 시 하위 `answer`·`judgment`·`followup`·`reflection` 등 삭제 방식(FK `ON DELETE CASCADE` 또는 서비스 내 삭제 순서) 미결. 현재 마이그레이션의 learning FK는 모두 NO ACTION (ERD 1장·7장, 8장)
