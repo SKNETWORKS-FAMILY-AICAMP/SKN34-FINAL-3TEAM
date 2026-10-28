@@ -43,3 +43,5 @@ MinIO를 포함한 프로젝트를 중단할 때도 `docker compose -f compose.y
 인증 구현은 [#36 결정·검증 보고서](docs/report/issue-36-google-auth.md)를 따른다. 실제 모드의 로그인·가입은 Google을 사용하며 동의 저장·자녀 등록은 [#37 계약·검증 보고서](docs/report/issue-37-consent-children.md)를 따른다. 현재 문서 확인 → 동의 저장 → 자녀 등록을 온보딩에서 진행한다. 운영자가 검토된 TERMS·PRIVACY·GUARDIAN 문서를 게시해야 하며, 미게시 상태는 503 오류로 안내한다. 중요 작업 Google 재인증은 #45 후속 범위다.
 
 개정 P01에 따라 부모·관리자만 refresh를 사용한다. 학생 동석 진입은 부모 쿠키를 폐기하고 access만 발급한다. 학생 TTL은 `AUTH_STUDENT_ACCESS_TTL`(초기 15분)이며 만료·새로고침 시 학생 진입을 다시 진행한다. 등록 기기·PIN 신규 API는 후속 범위다.
+
+Google 재인증: Google redirect URI에 `AUTH_WEB_ORIGIN` + `/api/v1/auth/google/reauth/callback`을 등록한다. [#45 보고서](docs/report/issue-45-account-management.md)를 따른다.

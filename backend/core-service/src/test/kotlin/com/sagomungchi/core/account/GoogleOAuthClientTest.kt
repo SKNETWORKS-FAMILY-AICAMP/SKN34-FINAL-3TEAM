@@ -63,6 +63,17 @@ class GoogleOAuthClientTest {
         assertEquals(503, assertFailsWith<BusinessException> { client.exchange("code", "verifier", "nonce") }.status.value())
         assertEquals("OAUTH_UNAVAILABLE", assertFailsWith<BusinessException> { GoogleOAuthClient(AuthProperties()).authorizationUrl("s", "n", "v") }.code)
     }
+    @Test fun `reauth exchanges through verified Google flow using its own redirect URI`() {
+        assertEquals("google-sub", client.exchangeReauth("fresh-code", "verifier", "nonce").subject)
+        val request = java.net.URLDecoder.decode(requestBody, Charsets.UTF_8)
+        assertContains(request, "redirect_uri=http://localhost:5173/api/v1/auth/google/reauth/callback")
+        val url = java.net.URLDecoder.decode(client.reauthAuthorizationUrl("state", "nonce", "verifier"), Charsets.UTF_8)
+        assertContains(url, "code_challenge_method=S256")
+        assertContains(url, "prompt=select_account")
+        assertContains(url, "redirect_uri=http://localhost:5173/api/v1/auth/google/reauth/callback")
+        token = signed(nonce = "other")
+        assertFailsWith<BusinessException> { client.exchangeReauth("fresh-code", "verifier", "nonce") }
+    }
     private fun signed(exp: Instant = Instant.now().plusSeconds(300), issuer: String = "https://accounts.google.com",
                        audience: String = "client", nonce: String = "nonce", otherKey: Boolean = false): String {
         val claims = JWTClaimsSet.Builder().issuer(issuer).audience(audience).subject("google-sub")

@@ -50,7 +50,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(core["guardianship"]["method"]["values"], {"REGISTER"})
         self.assertEqual(core["notification_setting"]["channel"]["values"], {"IN_APP"})
         self.assertIsNone(core["product"]["code"]["values"])
-        self.assertFalse(core["student"]["birth_year"]["nullable"])
+        self.assertTrue(core["student"]["birth_year"]["nullable"])  # #45 erases DELETED profile; live rows are CHECK constrained.
         self.assertFalse(core["product"]["limits"]["nullable"])
         self.assertNotIn("user_account_id", core["student"])
         self.assertNotIn("speech_transcribed", learning["answer"])

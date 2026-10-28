@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.report.repository.ReportJobMapper">
+    <resultMap id="job" type="com.sagomungchi.core.report.domain.ReportJob">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="student_id" javaType="java.util.UUID"/>
+            <arg column="period_from" javaType="java.time.LocalDate"/>
+            <arg column="period_to" javaType="java.time.LocalDate"/>
+            <arg column="trigger" javaType="com.sagomungchi.core.report.domain.ReportTrigger"/>
+            <arg column="requested_by" javaType="java.util.UUID"/>
+            <arg column="status" javaType="com.sagomungchi.core.report.domain.ReportJobStatus"/>
+            <arg column="report_id" javaType="java.util.UUID"/>
+            <arg column="failure_reason" javaType="java.lang.String"/>
+            <arg column="created_at" javaType="java.time.OffsetDateTime"/>
+            <arg column="started_at" javaType="java.time.OffsetDateTime"/>
+            <arg column="completed_at" javaType="java.time.OffsetDateTime"/>
+        </constructor>
+    </resultMap>
+    <!-- Scheduling projection only. Child membership/consent decisions use existing feature services. -->
+    <select id="candidateParents" resultType="java.util.UUID">
+        SELECT DISTINCT g.parent_user_id FROM guardianship g JOIN user_account u ON u.id=g.parent_user_id
+        WHERE g.status='LINKED' AND u.status='ACTIVE' AND u.role='PARENT' ORDER BY g.parent_user_id
+    </select>
+    <select id="lockWeek" resultType="java.lang.Object" flushCache="true" useCache="false">
+        SELECT pg_advisory_xact_lock(hashtextextended('report:' || CAST(#{studentId} AS text) || ':' || CAST(#{from} AS text), 0))
+    </select>
+    <select id="scheduled" resultMap="job" useCache="false" flushCache="true">
+        SELECT * FROM report_job WHERE student_id=#{studentId} AND period_from=#{from} AND trigger='SCHEDULE'
+    </select>
+    <select id="find" resultMap="job" useCache="false" flushCache="true">SELECT * FROM report_job WHERE id=#{id}</select>
+    <select id="lock" resultMap="job" useCache="false" flushCache="true">SELECT * FROM report_job WHERE id=#{id} FOR UPDATE</select>
+    <select id="byReport" resultMap="job" useCache="false" flushCache="true">SELECT * FROM report_job WHERE report_id=#{reportId}</select>
+    <select id="inProgress" resultType="int" useCache="false" flushCache="true">
+        SELECT count(*) FROM report_job WHERE student_id=#{studentId} AND period_from=#{from} AND status IN ('QUEUED','RUNNING')
+    </select>
+    <select id="regenerations" resultType="int" useCache="false" flushCache="true">
+        SELECT count(*) FROM report_job WHERE student_id=#{studentId} AND period_from=#{from} AND trigger='REGENERATE'
+    </select>
+    <insert id="insert">
+        INSERT INTO report_job(id,student_id,period_from,period_to,trigger,requested_by,status,report_id,failure_reason,
+            retry_count,created_at,started_at,completed_at)
+        VALUES(#{id},#{studentId},#{periodFrom},#{periodTo},#{trigger},#{requestedBy},#{status},#{reportId},#{failureReason},
+            0,#{createdAt},#{startedAt},#{completedAt})
+    </insert>
+    <update id="transition">
+        UPDATE report_job SET status=#{status}, report_id=#{reportId},
+        <choose>
+            <when test="status.name() == 'RUNNING'">started_at=#{at}</when>
+            <otherwise>completed_at=#{at}, failure_reason=#{failureReason}</otherwise>
+        </choose>
+        WHERE id=#{jobId}
+        <choose>
+            <when test="status.name() == 'RUNNING'">AND status='QUEUED'</when>
+            <otherwise>AND status IN ('QUEUED','RUNNING')</otherwise>
+        </choose>
+        AND (report_id IS NULL OR report_id=#{reportId})
+    </update>
+    <insert id="execution">
+        INSERT INTO job_execution(id,job_type,job_id,attempt_no,status,error_code,triggered_by,started_at,finished_at)
+        VALUES(#{id},'REPORT',#{jobId},1,#{status},#{errorCode},#{actor},#{at},
+            CASE WHEN CAST(#{status} AS text)='RUNNING' THEN NULL ELSE #{at} END)
+        ON CONFLICT(job_type,job_id,attempt_no) DO UPDATE
+        SET status=EXCLUDED.status, error_code=EXCLUDED.error_code, finished_at=EXCLUDED.finished_at
+        WHERE job_execution.status='RUNNING'
+    </insert>
+    <insert id="view">
+        INSERT INTO report_view(id,report_id,user_id,viewed_at) VALUES(#{id},#{reportId},#{userId},#{at})
+    </insert>
+</mapper>
