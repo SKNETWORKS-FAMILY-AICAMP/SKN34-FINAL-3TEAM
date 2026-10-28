@@ -722,6 +722,8 @@ core의 공개 JWT 필터(`PublicAuthFilter`) → account service(`AuthService`)
 
 ### #42 주간 리포트 연결 경계
 
+#50 report-worker는 공유 v1 규격을 `ReportV1Codec`으로 검증하고 기본 진입점에서 생성 큐·Outbox 릴레이를 시작한다. report Outbox는 이벤트별 session advisory lock과 AUTOCOMMIT 연결로 발행을 선점하고, publisher confirm 이후 짧은 트랜잭션에서 발행 시각을 기록한다. HTTP·AMQP 대기 동안 DB 트랜잭션을 유지하지 않는다. #50 기반 단독 실행에서 계산/렌더링 생성기가 미연결이면 `GENERATOR_NOT_CONFIGURED`로 실패를 명시한다. 실제 생성기는 #51~#53에서 조립하며 이 기반만으로 전체 리포트 E2E 완료를 의미하지 않는다. 상세 검증은 [#50 보고서](../report/report-generation-foundation.md)를 따른다.
+
 report/scheduler → ReportScheduleService → ReportJobService의 자녀별 트랜잭션 → ReportJobRepository + 기존 OutboxWriter를 사용한다. report/consumer는 기존 RetryingConsumer → ReportLifecycleService(트랜잭션) → processed_event·report_job·job_execution을 사용한다. ReportQueryService의 내부 HTTP와 열람 저장 트랜잭션은 분리한다. ReportEntitlementService는 미확정 상품 계약의 명시적인 오류 경계이며 상품 기능을 구현하지 않는다. 기존 StudentAccessService·ConsentAccessService를 재사용하고 #37 구현을 복사하지 않는다. ShedLock Spring/JDBC 6.10.0만 production 의존성으로 추가하며 기존 shedlock 테이블을 사용한다. 상세 결정과 기존 OutboxRelay의 트랜잭션 제한은 [#42 보고서](../report/issue-42-weekly-reports.md)를 따른다.
 
 ## #45 삭제·재인증 보완
