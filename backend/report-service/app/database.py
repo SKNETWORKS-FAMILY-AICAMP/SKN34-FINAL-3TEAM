@@ -4,8 +4,11 @@ No migration, reflection or create_all is performed when constructing these obje
 Repositories receive a Session and never commit/rollback it themselves.
 """
 
-from collections.abc import Iterator
+import asyncio
+import contextlib
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from typing import TypeVar
 
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.engine import URL, make_url
@@ -14,6 +17,18 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import get_settings
 
 DB_CONNECT_TIMEOUT_SECONDS = 3
+T = TypeVar("T")
+
+
+async def run_db(operation: Callable[[], T]) -> T:
+    """Run a whole sync DB scope in one thread and finish cleanup before cancellation."""
+    task = asyncio.create_task(asyncio.to_thread(operation))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        with contextlib.suppress(Exception):
+            await task
+        raise
 
 
 def create_db_engine(database_url: str | URL | None = None) -> Engine:

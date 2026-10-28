@@ -63,6 +63,11 @@ def bind_user_context(context: UserContext) -> Token[UserContext | None]:
     return _current.set(context)
 
 
+def reset_user_context(token: Token[UserContext | None]) -> None:
+    """Restore the caller's context after a worker handler finishes or fails."""
+    _current.reset(token)
+
+
 def get_user_context(request: Request) -> UserContext:
     """라우터 의존성: Annotated[UserContext, Depends(get_user_context)]."""
     return request.state.user_context
