@@ -4,7 +4,9 @@
 
 [#51](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/51)의 learning 조회·P08 계산·항목 및 근거 저장을 구현했다. 기준 develop은 `ecd6ecf`, 직접적인 구현 기반은 #50의 로컬 커밋 `666decc`다. 작업 브랜치는 `feature/report-metrics`이며 #50 브랜치와 구분한다.
 
-2026-10-27 기준 #27은 열려 있고 실제 learning API 연동 완료는 확인되지 않았다. **이 문서의 검증 결과는 명시한 입력 구현안과 합성 고정 응답, 실제 report DB에 대한 결과다. #27·#42와의 실제 연동 완료를 뜻하지 않는다.**
+2026-10-27 최초 검증 당시 #27은 열려 있고 실제 learning API 연동 완료는 확인되지 않았다. **이 문서의 검증 결과는 당시 입력 구현안과 합성 고정 응답, 실제 report DB에 대한 결과다. #27·#42와의 실제 연동 완료를 뜻하지 않는다.**
+
+2026-10-28 갱신: #27은 PR #105로 병합되었고 develop `b344797`을 누적 `feature/report-deletion`에 반영했다. 아래 구현안·협의 전 기록은 과거 경과다. 최신 공급 계약은 API 4.1.1과 [입력 대조 결과](report-required-inputs.md)를 따른다. 실제 DTO·OpenAPI·테스트 자료는 확보했고, report의 studentId 수신·학생 작성 칸 기준 집계·nullable followup 처리를 보완한 뒤 연동 검사해야 한다. 이번에는 제품 코드를 변경하지 않았다.
 
 | 구분 | 근거·결정 |
 |---|---|

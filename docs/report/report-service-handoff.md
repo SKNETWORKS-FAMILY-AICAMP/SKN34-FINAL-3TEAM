@@ -2,15 +2,17 @@
 
 2026-10-28 develop `47e5ffe`를 원래 이슈 브랜치에 순차 병합했다. 개인 에픽 브랜치는 삭제하고 작업은 보존했다. #85 실제 모델 연동은 계속 중단한다.
 
+같은 날 #27 PR #105가 병합된 develop `b344797`을 로컬 develop과 **누적 `feature/report-deletion` 브랜치**에 반영했다. 다른 report 브랜치는 이번에 갱신하지 않았다. API 문서 충돌 한 곳은 최신 공급 계약과 기존 report 설명을 함께 보존해 해결했다. #27의 PR·코드·OpenAPI·테스트 자료는 확보했으며, 아래의 미연결 항목은 외부 답변 대기가 아니라 report 수신부 보완과 실제 연동 검사다. [대조 결과](report-required-inputs.md).
+
 사용자 최신 지시로 **이미 등록한 #50 PR #101은 유지하고 추가 PR 등록은 중단**한다. 코드·문서·검증 결과를 브랜치에 보존하며 develop 병합이나 이슈 종료는 하지 않는다.
 
 | 이슈 | 브랜치 | 이번에 한 일 | 실제 연결에서 남은 것 |
 |---|---|---|---|
 | #50 | feature/report-generation | 공유 v1 codec·필수값/학생 검사·worker 생성 구독·트랜잭션 밖 Outbox·실제 브로커 검사, PR #101 | 전체 생성기·닉네임·학습/AI·상품 판정 |
-| #51 | feature/report-metrics | 최신 #50 기반·돌아보기 입력/출력 구분·난이도 코드 검사·계약 설명 보완 | #27 실제 DTO |
-| #52 | feature/report-narrative | 최신 기반 병합·timeout FAILED DB 검사·#42 대기 문구 제거·API 표 복구 | #64·#27·닉네임 |
+| #51 | feature/report-metrics | 최신 #50 기반·돌아보기 입력/출력 구분·난이도 코드 검사·계약 설명 보완 | #27 DTO 확보. 누적 브랜치에서 학생 ID·학생 작성 칸 집계·nullable followup 차이 확인, 수신부 보완 필요 |
+| #52 | feature/report-narrative | 최신 기반 병합·timeout FAILED DB 검사·#42 대기 문구 제거·API 표 복구 | #64·닉네임·#27 실제 연결 검사 |
 | #53 | feature/report-rendering | 기존 파일 검증에 더해 조회/파일 공통 난이도 표시·저장 코드 보존 | 닉네임·운영 AWS |
-| #54 | feature/report-query | 한글 난이도 응답·OpenAPI 일치·무료/유료/미작성 DB 연계 검사 | core 권한 헤더·#27 evidence |
+| #54 | feature/report-query | 한글 난이도 응답·OpenAPI 일치·무료/유료/미작성 DB 연계 검사 | core 권한 헤더·#27 evidence 실제 연결 검사(원문/삭제 계약 확보) |
 | #55 | feature/report-deletion | 공유 삭제 메시지 엄격 검사·기본 worker 삭제 구독·RECORDS 자동 생성 허용 제거·실제 브로커/DB/MinIO 결합 검사 | core queued job/늦은 terminal·전체 E2E·guard 운영 리뷰 |
 
 브랜치는 #50→#51→#52→#53→#54→#55 누적 구조다. 다음 PR 요청 시 선행 병합 여부와 develop diff를 확인한다. #55 guard DDL은 기존 별도 커밋을 보존하고 초기 migration은 수정하지 않는다.
@@ -29,6 +31,7 @@
 
 ## 검증 기록
 
+- #27 병합 후 저장소 계약 **54개 통과**. 공급자 스키마에 맞는 합성 입력으로 report의 studentId·nullable followup 수신 오류와 표시용 평문 기반 글자 수 차이를 재현했다. 제품 코드는 이번에 수정하지 않았고, 아래 과거 203개 통과 결과를 최신 #27 실제 연동 성공으로 해석하지 않는다.
 - **최신 #27 사전 보완 후 누적 전체: 203개 통과(133.01초), 실패·생략 0개.** Ruff check/format 78파일 통과. 일회용 PostgreSQL·RabbitMQ·MinIO, 실제 Chromium 파일 스냅샷과 OpenAPI 대조를 포함한다. 새로 추가한 입력·표시·DB 보존 검사는 21개다. 실제 #27/core/AI 서비스 연동은 아직 별도다.
 - 단계별 집중 검사: #51 입력/계산 56개(0.66초), #53 포함 입력/표시/파일 스냅샷 64개(4.86초), #54 조회/실제 DB/OpenAPI 22개(51.33초). 서로 겹치는 검사이므로 이 숫자를 합산하지 않는다.
 - #50: 64개 통과 후 브로커 테스트 정리 옵션 오류 2개 수정·해당 2개 재실행 통과. root 계약 53개, Ruff, Docker 검사. [상세](report-generation-foundation.md).
