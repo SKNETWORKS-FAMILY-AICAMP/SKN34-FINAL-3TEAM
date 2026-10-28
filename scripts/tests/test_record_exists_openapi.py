@@ -9,9 +9,19 @@ class RecordExistsContractTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.spec=yaml.safe_load((ROOT/'contracts/openapi/learning-service.yaml').read_text(encoding='utf-8'))
+    def test_documented_operations_match_learning_controllers(self):
+        actual=set()
+        for source in (ROOT/'backend/learning-service/src/main/kotlin').rglob('*Controller.kt'):
+            text=source.read_text(encoding='utf-8')
+            prefix=re.search(r'^@RequestMapping\("([^"]*)"\)',text,re.M)
+            for method,path in re.findall(r'@(Get|Post|Put|Delete)Mapping(?:\("([^"]*)"\))?',text):
+                actual.add((method.lower(),((prefix[1] if prefix else '')+path).removeprefix('/internal')))
+        documented={(method,path) for path,methods in self.spec['paths'].items() for method in methods}
+        self.assertEqual(len(actual),9)
+        self.assertEqual(actual,documented)
     def test_producer_and_consumer_use_the_same_path(self):
         path='/records/students/{studentId}/exists'
-        self.assertEqual(set(self.spec['paths']),{path})
+        self.assertIn(path,self.spec['paths'])
         producer=(ROOT/'backend/learning-service/src/main/kotlin/com/sagomungchi/learning/record/controller/RecordExistsController.kt').read_text(encoding='utf-8')
         consumer=(ROOT/'backend/core-service/src/main/kotlin/com/sagomungchi/core/learning/client/LearningRecordClient.kt').read_text(encoding='utf-8')
         self.assertIn('@GetMapping("/internal'+path+'")',producer)
@@ -33,7 +43,7 @@ class RecordExistsContractTest(unittest.TestCase):
         self.assertEqual(schema['properties']['hasRecords']['type'],'boolean')
         self.assertFalse(schema['additionalProperties'])
     def test_internal_credentials_and_scope_are_explicit(self):
-        op=next(iter(self.spec['paths'].values()))['get']
+        op=self.spec['paths']['/records/students/{studentId}/exists']['get']
         self.assertEqual(self.spec['security'],[{'InternalToken':[]}])
         self.assertEqual(self.spec['components']['securitySchemes']['InternalToken']['name'],'X-Internal-Token')
         params={p['name']:p for p in op['parameters']}
