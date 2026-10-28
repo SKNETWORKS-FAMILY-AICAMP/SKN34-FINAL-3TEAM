@@ -8,18 +8,26 @@ import { setMockChildPlan } from './fixtures/childPlan.ts'
 import { studentDeviceHandlers } from './handlers/studentDevice.ts'
 import { setDeviceScenario } from './fixtures/studentDevice.ts'
 import type { DeviceScenario } from './fixtures/studentDevice.ts'
+import { demoRequest, sharedDeviceDemo } from './sharedDevice.ts'
 
 // 학생 기기 핸들러가 GET /children에 PIN 상태를 더하므로 기존 핸들러보다 먼저 둔다.
-const worker = setupWorker(
+export const mockHandlers = [
   ...studentDeviceHandlers,
   ...parentHandlers,
   ...adminHandlers,
   ...studentHandlers,
-)
-export async function startMockWorker() {
+]
+export function installMockEvents() {
   window.addEventListener('sagomungchi:device-scenario', (event) => {
-    setDeviceScenario((event as CustomEvent<DeviceScenario>).detail)
-    window.dispatchEvent(new Event('sagomungchi:device-scenario-applied'))
+    const value = (event as CustomEvent<DeviceScenario>).detail
+    if (sharedDeviceDemo) {
+      void demoRequest('/scenario', { method: 'POST', body: JSON.stringify({ value }) })
+        .then(() => window.dispatchEvent(new Event('sagomungchi:device-scenario-applied')))
+        .catch(() => window.dispatchEvent(new Event('sagomungchi:device-scenario-failed')))
+    } else {
+      setDeviceScenario(value)
+      window.dispatchEvent(new Event('sagomungchi:device-scenario-applied'))
+    }
   })
   window.addEventListener('sagomungchi:test-child-plan', (event) => {
     const detail = (event as CustomEvent<unknown>).detail
@@ -33,6 +41,10 @@ export async function startMockWorker() {
   window.addEventListener('sagomungchi:mock-scenario', (event) =>
     setMockScenario((event as CustomEvent<DemoScenario>).detail),
   )
+}
+export async function startMockWorker() {
+  installMockEvents()
+  const worker = setupWorker(...mockHandlers)
   await worker.start({
     quiet: true,
     onUnhandledFrame: 'bypass',

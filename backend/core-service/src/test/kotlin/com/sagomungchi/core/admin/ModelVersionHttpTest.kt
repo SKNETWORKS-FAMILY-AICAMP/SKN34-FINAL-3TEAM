@@ -31,7 +31,7 @@ class ModelVersionHttpTest : PostgresRepositoryTest() {
     private fun studentToken(): String {
         val user = account(jdbc, "PARENT", null); consents(jdbc, user)
         val id = UUID.randomUUID(); val now = OffsetDateTime.now()
-        jdbc.update("INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,created_at,updated_at) VALUES(?,'테스트',3,2017,false,'ACTIVE',?,?)", id, now, now)
+        jdbc.update("INSERT INTO student(pin_failed_count,id,nickname,grade,birth_year,is_demo,status,created_at,updated_at) VALUES(0,?,'테스트',3,2017,false,'ACTIVE',?,?)", id, now, now)
         jdbc.update("INSERT INTO guardianship(id,parent_user_id,student_id,method,status,linked_at) VALUES(?,?,?,'REGISTER','LINKED',?)", UUID.randomUUID(), user, id, now)
         consents(jdbc, user, id)
         return tokens.access(session(jdbc, user, "STUDENT", id))

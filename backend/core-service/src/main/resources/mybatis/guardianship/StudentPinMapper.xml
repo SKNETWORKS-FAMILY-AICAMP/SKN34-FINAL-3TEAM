@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.guardianship.repository.StudentPinMapper">
+  <resultMap id="pin" type="com.sagomungchi.core.guardianship.domain.StudentPin">
+    <constructor>
+      <idArg column="id" javaType="java.util.UUID"/>
+      <arg column="pin_hash" javaType="java.lang.String"/>
+      <arg column="pin_failed_count" javaType="_int"/>
+      <arg column="pin_locked_at" javaType="java.time.OffsetDateTime"/>
+      <arg column="pin_updated_at" javaType="java.time.OffsetDateTime"/>
+    </constructor>
+  </resultMap>
+  <select id="find" resultMap="pin" useCache="false" flushCache="true">
+    SELECT id,pin_hash,pin_failed_count,pin_locked_at,pin_updated_at FROM student WHERE id=#{id}
+    <if test="lock">FOR UPDATE</if>
+  </select>
+  <update id="set">UPDATE student SET pin_hash=#{hash},pin_failed_count=0,pin_locked_at=NULL,pin_updated_at=#{now} WHERE id=#{id}</update>
+  <update id="attempt">UPDATE student SET pin_failed_count=#{count},pin_locked_at=#{lockedAt} WHERE id=#{id}</update>
+  <update id="clear">UPDATE student SET pin_hash=NULL,pin_failed_count=0,pin_locked_at=NULL,pin_updated_at=NULL WHERE id=#{id}</update>
+</mapper>

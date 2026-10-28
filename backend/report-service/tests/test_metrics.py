@@ -68,6 +68,7 @@ def test_failed_only_and_no_submission_are_excluded_but_pending_included():
         (" \r\n .?! ", 8, 0, 0),
         ("가 나.왜?그래!\r\n마지막", 14, 4, 0),
         ("가🙂", 2, 1, 0),
+        ("가\r나", 3, 1, 0),  # learning's delimiters are . ? ! and LF (not lone CR).
         ("왜냐하면 왜냐하면 때문에 그래서 따라서", 21, 1, 5),
     ],
 )

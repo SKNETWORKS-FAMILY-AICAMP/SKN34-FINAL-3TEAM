@@ -17,7 +17,7 @@ import java.util.UUID
 class ChildManagementService(private val repository: ChildManagementRepository,
  private val access: ChildAuthorizationService, private val accounts: AccountManagementService,
  private val reauth: ReauthenticationService, private val outbox: OutboxWriter,
- private val conversations: ConversationDeletionService) {
+ private val conversations: ConversationDeletionService, private val devices: StudentDeviceCleanupService, private val pins: StudentPinService) {
  @Transactional
  fun update(identity: AuthenticatedAccount, id: UUID, nickname: String?, grade: Int?): LinkedStudent {
   accounts.lock(identity); access.requireCurrent(identity.account.id,id)
@@ -35,7 +35,7 @@ class ChildManagementService(private val repository: ChildManagementRepository,
    mapOf("scope" to "UNLINK","effect" to "연결 해제·학생 세션 폐기, 기록 보존"),
    mapOf("scope" to "PROFILE","effect" to "프로필·학습·대화·리포트 삭제, 거래 기록 5년 보관"),
    mapOf("scope" to "RECORDS","effect" to "프로필 보존, 학습·대화·리포트 삭제, 학습 재개는 후속 계약 필요")),
-   "retainedTransactionsYears" to 5,"deviceCleanupPending" to true)
+   "retainedTransactionsYears" to 5,"deviceCleanupPending" to false)
  }
  @Transactional
  fun unlink(identity: AuthenticatedAccount, id: UUID, token: String?) {
@@ -65,6 +65,7 @@ class ChildManagementService(private val repository: ChildManagementRepository,
   val now=now(); val request=DeletionRequest(UUID.randomUUID(),user,id,scope.name,"CONFIRMED",now,now,null)
   repository.insert(request); repository.block(id,now); accounts.revokeStudent(id)
   if(scope==DeletionScope.PROFILE) repository.unlink(user,id,now)
+  devices.removeChild(id); pins.clear(id)
   conversations.deleteStudent(id)
   outbox.append("student.deleted","student.deleted",id.toString(),mapOf("studentId" to id,"deletionRequestId" to request.id,"scope" to scope.name))
   accounts.audit(user,"CHILD_DELETION_CONFIRMED",id)

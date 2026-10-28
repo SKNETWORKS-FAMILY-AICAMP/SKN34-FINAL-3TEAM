@@ -16,6 +16,10 @@ async function check(name, run) {
   if (process.env.QA_FILTER && !name.includes(process.env.QA_FILTER)) return
   const context = await browser.newContext({ viewport: { width: 1024, height: 768 } })
   await context.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) => route.abort())
+  // Google 대역 팝업이 로그인 앱을 다시 실행해 부모 세션을 바꾸지 않게 한다.
+  await context.route('**/login?reauthMock=1', (route) => route.fulfill({
+    contentType: 'text/html', body: '<!doctype html><title>Google 재인증 대역</title><p>재확인 완료 후 원래 화면으로 돌아가세요.</p>',
+  }))
   const p = await context.newPage()
   p.setDefaultTimeout(12000)
   p.on('pageerror', (e) => errors.push(name + ': ' + e.message))
@@ -43,13 +47,13 @@ async function parentIssue(p, kids = ['서윤'], pin = '4831') {
   await parentLogin(p)
   await p.goto(base + '/parent/devices', { waitUntil: 'domcontentloaded' })
   await p.getByRole('heading', { name: '자녀 PIN' }).waitFor()
-  await p.getByLabel('PIN 재확인 비밀번호').fill('demo-only')
-  await p.getByRole('button', { name: '본인 재확인' }).click()
-  await p.getByText('재확인을 완료했습니다', { exact: false }).waitFor()
   for (const kid of kids) {
+    await p.getByRole('button', { name: `${kid} Google 본인 확인` }).click()
+    await p.getByRole('button', { name: `${kid} 완료 확인` }).click()
+    await p.getByText('재확인을 완료했습니다', { exact: false }).first().waitFor()
     await p.getByLabel(`${kid} 새 PIN`, { exact: true }).fill(pin)
     await p.getByLabel(`${kid} 새 PIN 확인`).fill(pin)
-    await p.getByRole('form', { name: `${kid} PIN` }).getByRole('button').first().click()
+    await p.getByRole('form', { name: `${kid} PIN` }).getByRole('button', { name: /PIN 정하기|PIN 바꾸기|PIN 설정·변경/ }).click()
     await p.getByText(`${kid}의 PIN을 저장했습니다.`, { exact: false }).waitFor()
   }
   for (const label of ['서윤 · 초3', '도윤 · 초5'])
@@ -77,6 +81,12 @@ async function typePin(p, pin, pad = 'PIN 숫자 키패드') {
 }
 
 try {
+  await check('QR URL의 등록 코드는 초기 인증 확인 후에도 유지', async (p) => {
+    await p.goto(base + '/student/login?code=ABCD2345', { waitUntil: 'domcontentloaded' })
+    await p.getByRole('heading', { name: '이 기기를 학습용으로 등록해요' }).waitFor()
+    assert.equal(await p.getByLabel('등록 코드', { exact: true }).inputValue(), 'ABCD2345')
+    assert.equal(new URL(p.url()).searchParams.get('code'), 'ABCD2345')
+  })
   await check('미등록 기기: 코드 등록 화면만, PIN 키패드 없음', async (p) => {
     await p.goto(base + '/student/login', { waitUntil: 'domcontentloaded' })
     await p.getByRole('heading', { name: '이 기기를 학습용으로 등록해요' }).waitFor()

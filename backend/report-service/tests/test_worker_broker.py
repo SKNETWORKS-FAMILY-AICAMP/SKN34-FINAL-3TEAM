@@ -23,14 +23,19 @@ from tests.test_report_codec import validate_contract, wire
 
 
 @pytest.mark.parametrize("failure", [False, True])
+@pytest.mark.parametrize("narrative_enabled", [False, True])
 def test_worker_duplicate_command_and_real_lifecycle_events(
-    request, report_factory, db_engine, report_student_id, failure
+    request, report_factory, db_engine, report_student_id, failure, narrative_enabled
 ):
     broker_url = request.getfixturevalue("rabbit_url")
     body = wire(report_student_id)
+    body["data"]["narrativeEnabled"] = narrative_enabled
+    validate_contract(body)
+    received_commands = []
 
     class Generator(EmptyGenerator):
         async def generate(self, command, report):
+            received_commands.append(command)
             result = await super().generate(command, report)
             if failure:
                 raise RuntimeError("synthetic private error must not be emitted")
@@ -123,3 +128,7 @@ def test_worker_duplicate_command_and_real_lifecycle_events(
     reports, events = stored(report_factory, report_student_id)
     assert generator.calls == 1 and len(reports) == 1 and len(events) == 2
     assert reports[0]["status"] == ("FAILED" if failure else "COMPLETED")
+    assert received_commands[0].narrative_enabled is narrative_enabled
+    assert generator.contexts[0].role == "SYSTEM"
+    assert generator.contexts[0].student_scope == frozenset({str(report_student_id)})
+    assert all(event["published_at"] is not None for event in events)
