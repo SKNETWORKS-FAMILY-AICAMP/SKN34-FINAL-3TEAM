@@ -306,13 +306,12 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
         }
     }
 
-    @Test fun `invalid request metadata and JSON never call learning and feedback remains outside scope`() {
+    @Test fun `invalid request metadata and JSON never call learning`() {
         call("POST", answerPath, content = body).andExpect(status().isBadRequest())
         call("POST", answerPath, UUID.randomUUID(), "{").andExpect(status().isBadRequest())
         call("POST", answerPath, UUID.randomUUID(), "null").andExpect(status().isBadRequest())
         call("PUT", "/api/v1/attempts/$attempt/draft", content = "{}").andExpect(status().isBadRequest())
         call("GET", "/api/v1/attempts/not-uuid").andExpect(status().isBadRequest())
-        call("POST", "/api/v1/answers/${UUID.randomUUID()}/feedback").andExpect(status().isNotFound())
         assertTrue(stub.requests.isEmpty())
         client.circuit.transitionToOpenState()
         call("GET", "/api/v1/missions").andExpect(status().isServiceUnavailable())

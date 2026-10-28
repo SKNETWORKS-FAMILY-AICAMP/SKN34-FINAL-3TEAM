@@ -68,6 +68,7 @@
   - 피드백: 클라이언트가 끊겨도 learning 처리는 끝까지 진행·저장, 재요청 시 저장 결과 반환
   - 분석 대화: 클라이언트가 끊기면 core가 ai 스트림 취소, 메시지 `FAILED`(재시도 가능) 저장
   - 알림: 재연결 시 `/notifications`로 누락분 재조회
+- core 피드백(#39): `learning/controller` → `learning/service/FeedbackService` → #38 `LearningProxyService` → `LearningClient` → 기존 `InternalRestClientFactory`. 피드백 전용 조합은 같은 client/service 구현에 80초 read timeout을 적용하며 일반 JSON 경로의 30초 설정·멱등성은 유지한다. `_common/web/SseEmitters`는 90초 연결·15초 heartbeat·전송 종료만 소유하고 판정 상태를 저장하지 않는다. 컨텍스트는 요청에서 복사해 작업 virtual thread에 설정·정리한다. 연결 종료는 heartbeat만 취소하며 learning 작업을 취소하지 않는다.
 
 ### 1.4 메시지 목록
 
