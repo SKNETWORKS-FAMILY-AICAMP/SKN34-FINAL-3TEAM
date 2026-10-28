@@ -709,3 +709,8 @@ SKN34-FINAL-3TEAM/
 
 ### #36 인증 구현 결정
 core의 공개 JWT 필터(`PublicAuthFilter`) → account service(`AuthService`) → Repository/Mapper → core_db로 로그인 세션·현재 권한을 확인한다. JWT는 Spring Security JOSE HS256, Google은 client에서 HTTP 코드 교환·JWKS 검증 후 내부 프로필로 변환한다. OAuth 외부 호출은 DB 트랜잭션 밖, 계정·세션·refresh 회전만 트랜잭션 안에서 처리한다. 상태 있는 access/refresh이며 브라우저 인증을 세션 쿠키 하나로 바꾸지 않는다. 세부 계약·키 관리·#37/#45 경계는 [#36 보고서](../report/issue-36-google-auth.md)를 따른다.
+
+
+## #45 삭제·재인증 보완
+
+`student.deleted.v1` data는 `{studentId,deletionRequestId,scope:PROFILE|RECORDS}`다. 요청 CONFIRMED와 OutboxWriter.append는 한 트랜잭션이다. learning/report는 실제 삭제가 끝난 후 요청 ID와 service로 완료 보고한다. core는 서비스별 UNIQUE 완료 행을 기록하고 둘 다 확인할 때만 COMPLETED로 전이한다. core 분석 대화 정리는 conversation service를 통해 같은 DB 트랜잭션으로 처리한다. payment의 탈퇴 조건 조회도 payment service를 통해 호출한다. account/guardianship에서 다른 기능 repository를 직접 참조하지 않는다. Google 네트워크 교환은 DB 트랜잭션 밖에서 수행한다.

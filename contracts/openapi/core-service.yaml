@@ -374,6 +374,41 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '503':
           $ref: '#/components/responses/Unavailable'
+    patch:
+      operationId: updateAccountName
+      tags:
+      - Account
+      summary: 본인 표시 이름 수정
+      responses:
+        '200':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 80
+              required:
+              - name
+              additionalProperties: false
+
   /admin/ai-usage:
     get:
       operationId: getAiUsage
@@ -833,8 +868,536 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /me/reauth:
+    post:
+      operationId: reauthenticateGoogle
+      tags:
+      - Account
+      summary: Google 재인증 시작 또는 VERIFIED challenge의 1회 토큰 수령
+      responses:
+        '200':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - type: object
+                  required:
+                  - challengeId
+                  - authorizationUrl
+                  - expiresAt
+                  properties:
+                    challengeId:
+                      type: string
+                      format: uuid
+                    authorizationUrl:
+                      type: string
+                      format: uri
+                    expiresAt:
+                      type: string
+                      format: date-time
+                - type: object
+                  required:
+                  - reauthToken
+                  - expiresAt
+                  properties:
+                    reauthToken:
+                      type: string
+                    expiresAt:
+                      type: string
+                      format: date-time
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+                properties:
+                  purpose:
+                    type: string
+                    enum:
+                    - PIN_CHANGE
+                    - CHILD_UNLINK
+                    - CHILD_DELETE
+                    - WITHDRAWAL
+                  childId:
+                    type: string
+                    format: uuid
+                  scope:
+                    type: string
+                    enum:
+                    - PROFILE
+                    - RECORDS
+                required:
+                - purpose
+                additionalProperties: false
+              - type: object
+                properties:
+                  challengeId:
+                    type: string
+                    format: uuid
+                required:
+                - challengeId
+                additionalProperties: false
+      description: 시작 응답 challengeId/authorizationUrl/expiresAt. 별도 Google callback
+        완료 뒤 같은 세션에서 challengeId를 POST하면 reauthToken/expiresAt. 완료 전 409 REAUTH_PENDING.
+        두 단계 모두 Origin/X-Requested-With 필요. 상태 쿠키 HttpOnly/Secure/Lax. 토큰 메모리 보관. Google
+        계정 확인은 비밀번호/MFA 재입력 보장이 아님.
+      parameters:
+      - $ref: '#/components/parameters/WebOrigin'
+      - $ref: '#/components/parameters/RequestedWith'
+  /auth/google/reauth/callback:
+    get:
+      operationId: completeGoogleReauthentication
+      tags:
+      - Account
+      summary: 별도 Google 재인증 callback
+      responses:
+        '200':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      security: []
+      parameters:
+      - in: query
+        name: code
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: state
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: error
+        required: false
+        schema:
+          type: string
+  /children/{childId}:
+    patch:
+      operationId: updateChildProfile
+      tags:
+      - Account
+      summary: 닉네임·학년 수정
+      responses:
+        '200':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      parameters:
+      - in: path
+        name: childId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nickname:
+                  type: string
+                  minLength: 1
+                  maxLength: 40
+                grade:
+                  type: integer
+                  minimum: 3
+                  maximum: 6
+              required: []
+              additionalProperties: false
+  /children/{childId}/deletion-impact:
+    get:
+      operationId: getChildDeletionImpact
+      tags:
+      - Account
+      summary: 연결 해제·프로필/기록 삭제 영향
+      responses:
+        '200':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      parameters:
+      - in: path
+        name: childId
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /children/{childId}/link:
+    delete:
+      operationId: unlinkChild
+      tags:
+      - Account
+      summary: 자녀 연결 해제
+      responses:
+        '204':
+          description: 연결 해제 완료
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      parameters:
+      - in: path
+        name: childId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: X-Reauth-Token
+        required: true
+        schema:
+          type: string
+        description: 현재 세션/작업/자녀/scope에 결합된 5분·1회용 토큰
+  /children/{childId}/deletion-requests:
+    post:
+      operationId: requestChildDeletion
+      tags:
+      - Account
+      summary: 삭제 확정과 Outbox 원자적 저장
+      responses:
+        '202':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deletionRequestId:
+                    type: string
+                    format: uuid
+                  childId:
+                    type: string
+                    format: uuid
+                  scope:
+                    type: string
+                    enum:
+                    - PROFILE
+                    - RECORDS
+                  status:
+                    type: string
+                    enum:
+                    - CONFIRMED
+                    - COMPLETED
+                  completedServices:
+                    type: array
+                    items:
+                      type: string
+                      enum:
+                      - learning
+                      - report
+                required:
+                - deletionRequestId
+                - childId
+                - scope
+                - status
+                - completedServices
+                additionalProperties: false
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      parameters:
+      - in: path
+        name: childId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: X-Reauth-Token
+        required: true
+        schema:
+          type: string
+        description: 현재 세션/작업/자녀/scope에 결합된 5분·1회용 토큰
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scope:
+                  type: string
+                  enum:
+                  - PROFILE
+                  - RECORDS
+              required:
+              - scope
+              additionalProperties: false
+  /children/{childId}/deletion-requests/{requestId}:
+    get:
+      operationId: getChildDeletionStatus
+      tags:
+      - Account
+      summary: 요청한 보호자의 삭제 상태 조회
+      responses:
+        '200':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deletionRequestId:
+                    type: string
+                    format: uuid
+                  childId:
+                    type: string
+                    format: uuid
+                  scope:
+                    type: string
+                    enum:
+                    - PROFILE
+                    - RECORDS
+                  status:
+                    type: string
+                    enum:
+                    - CONFIRMED
+                    - COMPLETED
+                  completedServices:
+                    type: array
+                    items:
+                      type: string
+                      enum:
+                      - learning
+                      - report
+                required:
+                - deletionRequestId
+                - childId
+                - scope
+                - status
+                - completedServices
+                additionalProperties: false
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      parameters:
+      - in: path
+        name: childId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: path
+        name: requestId
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /me/withdrawal/precheck:
+    get:
+      operationId: precheckAccountWithdrawal
+      tags:
+      - Account
+      summary: 구독·환불·거래 보관 확인
+      responses:
+        '200':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+  /me/withdrawal:
+    post:
+      operationId: requestAccountWithdrawal
+      tags:
+      - Account
+      summary: 탈퇴 즉시 로그인 차단·세션 폐기
+      responses:
+        '202':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      parameters:
+      - in: header
+        name: X-Reauth-Token
+        required: true
+        schema:
+          type: string
+        description: 현재 세션/작업/자녀/scope에 결합된 5분·1회용 토큰
+    get:
+      operationId: getAccountWithdrawal
+      tags:
+      - Account
+      summary: 본인 또는 조회 전용 영수증의 탈퇴 상태
+      responses:
+        '200':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      security:
+      - BearerAuth: []
+      - WithdrawalReceipt: []
+  /internal/deletion-requests/{deletionRequestId}/completions:
+    post:
+      operationId: completeStudentDeletion
+      tags:
+      - Account
+      summary: 내부 서비스별 멱등 완료 보고
+      responses:
+        '200':
+          description: 정상 처리
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deletionRequestId:
+                    type: string
+                    format: uuid
+                  childId:
+                    type: string
+                    format: uuid
+                  scope:
+                    type: string
+                    enum:
+                    - PROFILE
+                    - RECORDS
+                  status:
+                    type: string
+                    enum:
+                    - CONFIRMED
+                    - COMPLETED
+                  completedServices:
+                    type: array
+                    items:
+                      type: string
+                      enum:
+                      - learning
+                      - report
+                required:
+                - deletionRequestId
+                - childId
+                - scope
+                - status
+                - completedServices
+                additionalProperties: false
+        '400':
+          description: 유효하지 않은 입력
+        '401':
+          description: 인증 실패
+        '403':
+          description: 권한/재인증 실패
+        '409':
+          description: 정책/상태 충돌
+      parameters:
+      - in: path
+        name: deletionRequestId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                service:
+                  type: string
+                  enum:
+                  - learning
+                  - report
+              required:
+              - service
+              additionalProperties: false
+      security:
+      - InternalToken: []
+      description: SYSTEM 역할 및 대상 학생 X-Student-Scope 필수. learning/report 양쪽 완료 시에만 COMPLETED.
+    servers:
+    - url: /
 components:
   securitySchemes:
+    WithdrawalReceipt:
+      type: apiKey
+      in: header
+      name: X-Withdrawal-Status-Token
     InternalToken:
       type: apiKey
       in: header

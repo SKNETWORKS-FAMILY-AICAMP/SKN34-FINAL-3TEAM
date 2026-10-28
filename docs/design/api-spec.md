@@ -742,3 +742,23 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 - 2026-10-27 최신 확인 기준은 origin/develop 826e4dc71e60ba4d2396d3545f87a41524d6db83(#76 답변 제출 포함)이다. 해당 develop에는 records 공급자가 없어 본 PR에서 승인된 최소 exists API만 선행 구현했다. 전체 #27 조회·통계는 후속 범위다.
 - 자녀별 원격 조회는 기존 최대 자녀 수 3을 상한으로 병렬 수행해 read timeout이 순차로 누적되는 것을 피한다. LearningHttpProperties의 기존 read timeout(기본 30초), learning-json 서킷의 최근 20회·최소 20회·실패율 50%·30초 차단 정책을 공유하며 재시도는 추가하지 않는다. 서킷 OPEN은 즉시 null/UNAVAILABLE이고 CLOSED의 개별 요청은 기존 timeout을 유지한다. 전체 HTTP 요청의 엄격한 30초 deadline을 새로 정의하거나 보장하지 않는다.
 - core LearningRecordService는 검증된 PARENT 컨텍스트와 대상 학생 scope만 허용하는 기록 전용 service다. 기존 학생 전용 LearningProxyService의 역할·쓰기 권한은 완화하지 않는다.
+
+### 5.5 #45 계정 관리·Google 재확인·삭제·탈퇴 계약
+
+- 기존 Google 로그인과 별도 재인증 흐름을 사용한다. `POST /me/reauth`에 `{purpose: PIN_CHANGE|CHILD_UNLINK|CHILD_DELETE|WITHDRAWAL, childId?, scope?}`를 보내면 `{challengeId,authorizationUrl,expiresAt}`를 반환하고 HttpOnly/Secure/SameSite=Lax 재인증 상태 쿠키를 설정한다. CHILD_DELETE는 PROFILE/RECORDS scope를 반드시 지정한다. WITHDRAWAL은 자녀/scope를 허용하지 않는다. 다른 자녀 작업은 childId 필수다.
+- Google redirect URI는 web origin + `/api/v1/auth/google/reauth/callback`이다. 기존 GoogleOAuthClient의 code·PKCE·서명·iss·aud·exp·nonce 검증을 재사용한다. callback은 현재 계정의 Google sub와 일치할 때만 challenge를 VERIFIED로 바꾸며 로그인/refresh를 발급하지 않는다. 계정 선택은 비밀번호/MFA 재입력을 보장하지 않는다. 클라이언트는 원래 로그인 세션을 유지한 상태에서 `POST /me/reauth`에 `{challengeId}`를 보내 `{reauthToken,expiresAt}`를 한 번 수령한다. 아직 callback 전이면 409 REAUTH_PENDING이다. callback 응답은 완료 안내 JSON이다.
+- challenge 10분, reauthToken 5분(설정값, 세션 만료 이내). 토큰은 256비트 난수, DB에는 SHA-256 해시만 저장한다. 프론트는 메모리에만 보관한다. 사용자·세션 ID/version·purpose·childId·삭제 scope에 결합하며 변경 트랜잭션에서 정확히 1회 소비한다. 일반 access/로그인 상태는 재인증 증명이 아니다. 잘못된 계정·만료·위조·다른 범위·중복 사용은 403 REAUTH_REQUIRED다.
+- #58은 `ReauthenticationService.consume(identity, token, ReauthPurpose.PIN_CHANGE, childId)`를 PIN 변경의 같은 트랜잭션 안에서 호출한다(MANDATORY). 기존 인증/현재 자녀 권한 검사를 별도로 수행한다.
+- PATCH /me `{name}` → `{userId,name}`; PATCH /children/{id} `{nickname?,grade?}` → 현재 자녀. 공백·범위 밖 입력 거부. 기존 기록/학년을 변경하지 않는다. 학생 역할 금지, 계정·자녀의 현재 동의를 검사한다.
+- deletion-impact → `{childId,actions:[{scope,effect}],retainedTransactionsYears:5,deviceCleanupPending:true}`. 연결 해제는 UNLINKED 이력을 남기고 학생 세션을 폐기한다. 삭제 확정은 `X-Reauth-Token`, `{scope}` 필수, 202 `{deletionRequestId,childId,scope,status,completedServices}`. 동시에 진행 중인 다른 삭제는 409 DELETION_IN_PROGRESS다. 재확인이 유효한 요청을 즉시 CONFIRMED로 저장한다.
+- PROFILE은 연결 해제·학생 이용 차단 후 두 서비스 완료 시 프로필 필드를 지우고 DELETED 표식을 남긴다(FK/거래 보존용 ID 유지). RECORDS는 프로필을 유지하되 CONFIRMED부터 이용을 차단한다. 완료 후에도 자동 학습 재개는 하지 않는다. learning의 삭제 표식 이후 새 기록 허용 계약은 후속 통합 사항이다. 두 scope 모두 core 분석 대화·근거와 learning/report 기록을 삭제한다. 기기 매핑 삭제는 #58 테이블 도입 후 연결한다.
+- GET /children/{id}/deletion-requests/{requestId}: 본인 소유 삭제 상태 조회. 삭제 후에도 본인이 요청한 상태는 조회 가능하다. 다른 보호자는 403이다.
+- 내부 완료 API는 기존 내부 토큰 + SYSTEM 컨텍스트/대상 학생 scope를 요구하며 `{service:learning|report}`만 허용한다. `(request_id,service)` UNIQUE 기록으로 중복/동시 보고를 멱등 처리한다. CONFIRMED인 요청만 완료할 수 있으며 두 서비스가 모두 있어야 COMPLETED다. 한 서비스 완료는 실제 전체 삭제 완료가 아니다.
+- 필수 동의 철회 뒤에도 재인증·삭제 영향·연결 해제·삭제/탈퇴 요청 및 상태 조회는 가능하다. 재동의를 파기의 선행 조건으로 요구하지 않는다. 이 경로는 계정 활성·보호자 소유권·재확인을 계속 검사한다. 정보 수정에는 기존 동의를 요구한다.
+- 탈퇴 precheck는 core payment 소유 서비스로 현재 subscription/refund_request를 실제 조회한다. ACTIVE(기간 내/자동갱신), RENEWAL_FAILED, 취소됐어도 기간 내 구독 및 REQUESTED/APPROVED/FAILED 환불은 409 WITHDRAWAL_BLOCKED다. DB 오류는 성공으로 대체하지 않는다. #48은 결제/환불 쓰기 시 같은 parent 계정 행 잠금 규약에 참여해야 한다.
+- POST /me/withdrawal은 WITHDRAWAL 재인증, 계정 행 잠금 후 재확인한다. 즉시 WITHDRAWAL_REQUESTED·전체 세션/refresh 폐기·자녀 PROFILE 삭제 요청/Outbox를 같은 트랜잭션에 저장한다. 자녀가 모두 삭제되면 WITHDRAWN 및 withdrawal COMPLETED다. 자녀가 없으면 즉시 완료한다. 요청 즉시 로그인/취소 불가다.
+- 응답 `{withdrawalRequestId,status,statusToken}`의 statusToken은 별도 256비트 조회 전용 영수증이다(DB에는 해시). 세션 폐기 후 `GET /me/withdrawal`에 `X-Withdrawal-Status-Token`으로 해당 요청의 `{withdrawalRequestId,status}`만 조회한다. 로그인/사용자 정보 접근 권한을 주지 않는다. 헤더/응답은 no-store다. 인증 상태에서도 자신의 최신 요청을 조회할 수 있다.
+- #37·#38 미병합 구현은 복사하지 않는다. 기존 인증/동의/학생 scope service를 호출하며 병합 후 소비자/생산자 통합 검증이 필요하다. #39 SSE·#42 report 스케줄·#55 실제 삭제 소비자는 변경하지 않는다.
+
+
+#45 보완: 연결 해제 뒤에도 동일 보호자의 등록 이력으로 PROFILE/RECORDS 삭제를 요청할 수 있다. PIN_CHANGE/CHILD_UNLINK 재인증은 현재 LINKED 소유권이 필요하다. 이미 진행 중인 RECORDS 삭제와 탈퇴가 겹치면 기존 RECORDS 완료 뒤 새로운 PROFILE 요청/이벤트를 기록한다. 두 이벤트의 scope를 바꾸거나 완료 보고를 다른 요청으로 전용하지 않는다. PROFILE 완료 시 연락 이메일/표시 이름은 계정 tombstone으로 정리하며 Google sub는 탈퇴 계정 재로그인을 차단하기 위한 식별 표식으로 유지한다. 상품/거래/구독/환불 행은 변경하지 않는다.

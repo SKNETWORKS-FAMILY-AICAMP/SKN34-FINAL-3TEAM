@@ -101,9 +101,9 @@ erDiagram
   }
   student {
     uuid id PK "전 서비스 공통 학생 ID"
-    varchar nickname "가명"
-    int grade "3~6, 이후 제공 문제에만 적용 (P03)"
-    int birth_year "출생연도 (P01)"
+    varchar nickname "가명, DELETED 표식은 NULL 허용"
+    int grade "3~6, 이후 제공 문제에만 적용 (P03), DELETED 표식은 NULL 허용"
+    int birth_year "출생연도 (P01), DELETED 표식은 NULL 허용"
     boolean is_demo "시연 가상 학생"
     varchar status "ACTIVE|DELETION_REQUESTED|DELETED"
     timestamptz created_at
@@ -155,6 +155,7 @@ erDiagram
     varchar status "REQUESTED|COMPLETED"
     timestamptz requested_at
     timestamptz completed_at "NULL 허용"
+    varchar status_token_hash UK "NULL 허용, 조회 전용 토큰 해시"
   }
 ```
 
@@ -165,6 +166,38 @@ erDiagram
 - `deletion_request`가 `CONFIRMED`가 되면 같은 트랜잭션에서 `outbox_event(student.deleted)` 저장
 - 로그인 수단·자녀 연결 변경 결과·시점은 `audit_log`에 기록 (FN-ACC-10)
 - `user_account.is_demo`·`student.is_demo` 행은 운영 현황·사용량·결제 집계에서 제외 (NFR-OPS-01)
+
+### #45 재인증·삭제 완료 저장
+
+```mermaid
+erDiagram
+  reauth_challenge {
+    uuid id PK
+    uuid user_id FK
+    uuid session_id FK
+    bigint session_version
+    varchar purpose "PIN_CHANGE|CHILD_UNLINK|CHILD_DELETE|WITHDRAWAL"
+    uuid student_id FK "NULL 허용"
+    varchar scope "NULL 허용, CHECK[PROFILE|RECORDS]"
+    varchar state_hash UK
+    timestamptz expires_at
+    timestamptz verified_at "NULL 허용"
+    timestamptz issued_at "NULL 허용"
+  }
+  reauth_grant {
+    varchar token_hash PK
+    uuid challenge_id FK,UK
+    timestamptz expires_at
+    timestamptz used_at "NULL 허용"
+  }
+  deletion_completion {
+    uuid request_id PK,FK
+    varchar service PK "learning|report"
+    timestamptz completed_at
+  }
+```
+
+`withdrawal_request.status_token_hash varchar NULL 허용`을 추가한다(신규 요청은 해시 필수). PROFILE 완료 후 student의 nickname/grade/birth_year는 NULL로 지우며, DELETED가 아닌 행의 필수 프로필은 CHECK로 보존한다. 재인증 challenge의 purpose/자녀/scope 조합도 CHECK한다. 기존 V1~V8은 수정하지 않는다. #58 기기 테이블은 만들거나 SQL에서 참조하지 않는다. V9 번호는 착수 시 다른 worktree V1~V8만 존재함을 확인했고 병합 전 다시 확인한다.
 
 ### 3.1.1 로그인 세션 (#36)
 

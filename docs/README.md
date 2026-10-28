@@ -114,3 +114,5 @@ feature/* → develop → main
 - `feature/*`는 `develop`으로만 병합
 - `main`은 `develop`에서만 병합
 - 순서를 건너뛴 병합(`feature/*` → `main`) 금지
+
+- [이슈 #45 계정 관리·Google 재인증·삭제·탈퇴](report/issue-45-account-management.md): #58 호출 계약, 삭제 Outbox·서비스별 완료, 탈퇴 차단·세션 폐기 및 통합 조건

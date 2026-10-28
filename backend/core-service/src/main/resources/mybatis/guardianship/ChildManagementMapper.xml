@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.guardianship.repository.ChildManagementMapper">
+
+ <resultMap id="request" type="com.sagomungchi.core.guardianship.domain.DeletionRequest"><constructor>
+ <arg column="id" javaType="java.util.UUID"/><arg column="requested_by" javaType="java.util.UUID"/><arg column="student_id" javaType="java.util.UUID"/>
+ <arg column="scope" javaType="java.lang.String"/><arg column="status" javaType="java.lang.String"/><arg column="requested_at" javaType="java.time.OffsetDateTime"/>
+ <arg column="confirmed_at" javaType="java.time.OffsetDateTime"/><arg column="completed_at" javaType="java.time.OffsetDateTime"/></constructor></resultMap>
+ <resultMap id="child" type="com.sagomungchi.core.guardianship.domain.LinkedStudent"><constructor>
+ <arg column="id" javaType="java.util.UUID"/><arg column="nickname" javaType="java.lang.String"/><arg column="grade" javaType="_int"/><arg column="birth_year" javaType="_int"/>
+ </constructor></resultMap>
+ <select id="owned" resultType="boolean" flushCache="true" useCache="false">SELECT EXISTS(SELECT 1 FROM guardianship g WHERE g.parent_user_id=#{user} AND g.student_id=#{student}<if test="linked"> AND g.status='LINKED'</if>)</select>
+ <select id="lock" resultType="java.util.UUID" flushCache="true" useCache="false">SELECT id FROM student WHERE id=#{student} AND status!='DELETED' FOR UPDATE</select>
+ <select id="profile" resultMap="child" flushCache="true" useCache="false">SELECT id,nickname,grade,birth_year FROM student WHERE id=#{student} AND status='ACTIVE'</select>
+ <update id="update">UPDATE student SET nickname=#{nickname},grade=#{grade},updated_at=#{now} WHERE id=#{student} AND status='ACTIVE'</update>
+ <update id="unlink">UPDATE guardianship SET status='UNLINKED',unlinked_at=#{now} WHERE parent_user_id=#{user} AND student_id=#{student} AND status='LINKED'</update>
+ <select id="pending" resultMap="request" flushCache="true" useCache="false">SELECT * FROM deletion_request WHERE student_id=#{student} AND status!='COMPLETED' ORDER BY requested_at LIMIT 1</select>
+ <insert id="insert">INSERT INTO deletion_request(id,requested_by,student_id,scope,status,requested_at,confirmed_at) VALUES(#{id},#{requestedBy},#{studentId},#{scope},'CONFIRMED',#{requestedAt},#{confirmedAt})</insert>
+ <select id="request" resultMap="request" flushCache="true" useCache="false">SELECT * FROM deletion_request WHERE id=#{id}<if test="lock"> FOR UPDATE</if></select>
+ <update id="block">UPDATE student SET status='DELETION_REQUESTED',updated_at=#{now} WHERE id=#{student} AND status!='DELETED'</update>
+ <insert id="completion">INSERT INTO deletion_completion(request_id,service,completed_at) VALUES(#{id},#{service},#{now}) ON CONFLICT DO NOTHING</insert>
+ <select id="services" resultType="string" flushCache="true" useCache="false">SELECT service FROM deletion_completion WHERE request_id=#{id} ORDER BY service</select>
+ <update id="complete">UPDATE deletion_request SET status='COMPLETED',completed_at=#{now} WHERE id=#{id} AND status='CONFIRMED'</update>
+ <update id="eraseProfile">UPDATE student SET nickname=NULL,grade=NULL,birth_year=NULL,status='DELETED',deleted_at=#{now},updated_at=#{now} WHERE id=#{student}</update>
+ <select id="children" resultType="java.util.UUID" flushCache="true" useCache="false">SELECT DISTINCT s.id FROM student s JOIN guardianship g ON g.student_id=s.id WHERE g.parent_user_id=#{user} AND s.status!='DELETED' ORDER BY s.id</select>
+ <select id="pendingForUser" resultType="int" flushCache="true" useCache="false">SELECT count(*) FROM student s JOIN guardianship g ON g.student_id=s.id WHERE g.parent_user_id=#{user} AND s.status!='DELETED'</select>
+
+</mapper>
