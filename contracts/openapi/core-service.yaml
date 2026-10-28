@@ -2,9 +2,7 @@ openapi: 3.1.0
 info:
   title: 사고뭉치 core-service 인증·동의·자녀·관리자 API
   version: 1.0.0
-  description: '#39 피드백 SSE, #36 인증, #38 학생 미션 learning 프록시 및 #43 관리자 버전·사용량 API. 실제 learning API 연동 범위는 작업 보고서를 따른다. access는 메모리, refresh는
-    보안 쿠키. POST 쿠키 API는 정확한 Origin과 X-Requested-With를 요구한다. #58의 POST /auth/student/devices, GET /auth/student/profiles, POST
-    /auth/student/login은 Bearer만 제외하며 실제 기기/PIN 검증·신규 API 구현은 이 계약의 범위 밖이다. #37 현재 동의 문서·버전별 동의·철회·자녀 등록/목록을 포함한다.'
+  description: 'core 인증·동의·자녀·리포트·관리자 및 #58 학생 기기/PIN API. access는 메모리, refresh는 부모·관리자 전용 보안 쿠키. 학생 기기 API는 기기 쿠키와 PIN을 검증하고 부모 세션을 변경하지 않는다.'
 servers:
 - url: /api/v1
   description: web과 동일 origin의 core 공개 API
@@ -20,6 +18,381 @@ tags:
 security:
 - BearerAuth: []
 paths:
+  /student-devices/pairings:
+    post:
+      operationId: createStudentPairing
+      tags:
+      - Auth
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentPairing'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+              description: 인증·기기·PIN 상태 캐시 금지
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - childIds
+              properties:
+                childIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 3
+                  uniqueItems: true
+                  items:
+                    type: string
+                    format: uuid
+  /student-devices:
+    get:
+      operationId: listStudentDevices
+      tags:
+      - Auth
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentDeviceList'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+              description: 인증·기기·PIN 상태 캐시 금지
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /student-devices/{deviceId}:
+    delete:
+      operationId: revokeStudentDevice
+      tags:
+      - Auth
+      responses:
+        '204':
+          description: 성공
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+              description: 인증·기기·PIN 상태 캐시 금지
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      parameters:
+      - name: deviceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /children/{childId}/pin:
+    put:
+      operationId: setStudentPin
+      tags:
+      - Auth
+      responses:
+        '204':
+          description: 성공
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+              description: 인증·기기·PIN 상태 캐시 금지
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - pin
+              properties:
+                pin:
+                  type: string
+                  pattern: ^[0-9]{4,6}$
+      parameters:
+      - name: childId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: X-Reauth-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      description: 5분·현재 세션/버전·PIN_CHANGE·자녀에 결합된 DB 재인증 grant를 PIN 변경과 같은 트랜잭션에서 1회 소비한다. 실패 시 소비도 롤백한다. 반복·연속 숫자는
+        422.
+  /auth/student/devices:
+    post:
+      operationId: registerStudentDevice
+      tags:
+      - Auth
+      responses:
+        '201':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentDeviceRegistration'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+              description: 인증·기기·PIN 상태 캐시 금지
+            Set-Cookie:
+              schema:
+                type: string
+              description: student_device=256bit 난수; HttpOnly; Secure(로컬 HTTP만 false); SameSite=Strict; Path=/api/v1/auth/student;
+                고정 90일 만료
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - pairingCode
+              - label
+              properties:
+                pairingCode:
+                  type: string
+                  pattern: ^[A-Z0-9]{8}$
+                label:
+                  type: string
+                  minLength: 1
+                  maxLength: 80
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/WebOrigin'
+      - $ref: '#/components/parameters/RequestedWith'
+  /auth/student/profiles:
+    get:
+      operationId: studentDeviceProfiles
+      tags:
+      - Auth
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentDeviceProfiles'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+              description: 인증·기기·PIN 상태 캐시 금지
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      security:
+      - StudentDeviceCookie: []
+  /auth/student/login:
+    post:
+      operationId: loginStudentDevice
+      tags:
+      - Auth
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentDeviceToken'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+              description: 인증·기기·PIN 상태 캐시 금지
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '423':
+          description: RFC 9457 오류. code와 선택적인 remainingAttempts를 확인한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - childId
+              - pin
+              properties:
+                childId:
+                  type: string
+                  format: uuid
+                pin:
+                  type: string
+                  maxLength: 128
+      security:
+      - StudentDeviceCookie: []
+      parameters:
+      - $ref: '#/components/parameters/WebOrigin'
+      - $ref: '#/components/parameters/RequestedWith'
+      description: 기기 → 기기 자녀 → 보호자/연결/활성/동의 → PIN 설정/잠금/일치. 5회 실패 423, 401 PIN 불일치는 remainingAttempts를 반환한다. 별도 학생
+        세션이며 refresh·부모 세션 변경 없음.
   /notifications:
     get:
       operationId: listNotifications
@@ -1756,6 +2129,7 @@ paths:
                 $ref: '#/components/schemas/Problem'
 components:
   securitySchemes:
+    StudentDeviceCookie: {type: apiKey, in: cookie, name: student_device}
     WithdrawalReceipt:
       type: apiKey
       in: header
@@ -1802,6 +2176,157 @@ components:
         type: string
         const: XMLHttpRequest
   schemas:
+    StudentDeviceProfile:
+      type: object
+      additionalProperties: false
+      required:
+      - childId
+      - nickname
+      - pinSet
+      - pinLocked
+      properties:
+        childId:
+          type: string
+          format: uuid
+        nickname:
+          type: string
+        pinSet:
+          type: boolean
+        pinLocked:
+          type: boolean
+    StudentDeviceProfiles:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StudentDeviceProfile'
+    StudentDeviceItem:
+      type: object
+      additionalProperties: false
+      required:
+      - deviceId
+      - label
+      - children
+      - createdAt
+      - lastUsedAt
+      - expiresAt
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        label:
+          type: string
+        children:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - childId
+            - nickname
+            properties:
+              childId:
+                type: string
+                format: uuid
+              nickname:
+                type: string
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+    StudentDeviceList:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StudentDeviceItem'
+    StudentPairing:
+      type: object
+      additionalProperties: false
+      required:
+      - pairingCode
+      - expiresAt
+      properties:
+        pairingCode:
+          type: string
+          pattern: ^[A-Z0-9]{8}$
+        expiresAt:
+          type: string
+          format: date-time
+    StudentDeviceRegistration:
+      type: object
+      additionalProperties: false
+      required:
+      - deviceId
+      - children
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        children:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - childId
+            - nickname
+            properties:
+              childId:
+                type: string
+                format: uuid
+              nickname:
+                type: string
+    StudentDeviceToken:
+      type: object
+      additionalProperties: false
+      required:
+      - accessToken
+      - expiresIn
+      - role
+      - child
+      properties:
+        accessToken:
+          type: string
+        expiresIn:
+          type: integer
+        role:
+          const: STUDENT
+        child:
+          type: object
+          additionalProperties: false
+          required:
+          - childId
+          - nickname
+          - grade
+          - birthYear
+          properties:
+            childId:
+              type: string
+              format: uuid
+            nickname:
+              type: string
+            grade:
+              type: integer
+              minimum: 3
+              maximum: 6
+            birthYear:
+              type: integer
     NotificationType:
       type: string
       enum: [REPORT_COMPLETED, REPORT_FAILED, ERROR_REPORT_RESOLVED, INQUIRY_ANSWERED, PAYMENT_CHANGED, SUBSCRIPTION_CHANGED]
@@ -2448,6 +2973,11 @@ components:
       - code
       - traceId
       properties:
+        remainingAttempts:
+          type: integer
+          minimum: 0
+          maximum: 4
+          description: 학생 PIN 불일치 시 남은 실패 허용 횟수. 잠금 응답은 0.
         type:
           type: string
           format: uri-reference
@@ -2626,6 +3156,8 @@ components:
       type: object
       additionalProperties: false
       required:
+      - pinSet
+      - pinLocked
       - id
       - nickname
       - grade
@@ -2634,6 +3166,8 @@ components:
       - hasRecords
       - recordState
       properties:
+        pinSet: {type: boolean}
+        pinLocked: {type: boolean}
         id:
           type: string
           format: uuid

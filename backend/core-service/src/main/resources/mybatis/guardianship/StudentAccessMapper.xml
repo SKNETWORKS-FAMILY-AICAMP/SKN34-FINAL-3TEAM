@@ -24,8 +24,8 @@
         SELECT count(*) FROM guardianship WHERE parent_user_id=#{userId} AND status='LINKED'
     </select>
     <insert id="insertStudent">
-        INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,created_at,updated_at)
-        VALUES(#{child.id},#{child.nickname},#{child.grade},#{child.birthYear},#{demo},'ACTIVE',#{now},#{now})
+        INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,created_at,updated_at,pin_failed_count)
+        VALUES(#{child.id},#{child.nickname},#{child.grade},#{child.birthYear},#{demo},'ACTIVE',#{now},#{now},0)
     </insert>
     <insert id="insertLink">
         INSERT INTO guardianship(id,parent_user_id,student_id,method,status,linked_at)
