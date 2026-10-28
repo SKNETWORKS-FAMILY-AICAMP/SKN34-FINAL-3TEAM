@@ -16,6 +16,7 @@ from app.generation.models import (
 )
 from app.generation.ports import ReportEventCodec, ReportGenerator
 from app.generation.repository import ReportRepository
+from app.generation.unconfigured import GeneratorNotConfigured
 from app.outbox.repository import OutboxRepository
 from app.security import current_user_context
 
@@ -56,6 +57,10 @@ class GenerationService:
                 return
             try:
                 result = await self._generator.generate(command, report)
+            except GeneratorNotConfigured:
+                await run_db(
+                    lambda: self._finish(report.id, failure_reason="GENERATOR_NOT_CONFIGURED")
+                )
             except Exception:
                 # Do not persist raw exceptions (may contain student text, URLs or credentials).
                 await run_db(lambda: self._finish(report.id, failure_reason="GENERATION_FAILED"))
