@@ -1,6 +1,6 @@
 # 이슈 #27 learning 학습 기록 조회 내부 API
 
-작성일: 2026-10-28. 기준: #26 브랜치(`feature/learning-reflection`) 위에서 작업, #89 머지 후 develop 47e5ffe(#89·#90·#91·#98·#100, learning 코드 변경 없음)를 병합. [이슈 #27](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/27), [API 명세 1.1·1.5·1.6·2.3·3.4·3.9·4.1](../design/api-spec.md), [기능 명세 1.4 P08·FN-DSH-06~11·FN-RPT-02~06·FN-AGT-04·07·FN-ADM-02](../design/functional-spec.md), [ERD 4.2·4.3](../design/erd.md), [클래스 다이어그램 4.3](../design/class-diagram.md), [시퀀스 다이어그램 4](../design/sequence-diagram.md).
+작성일: 2026-10-28. 기준: #26 브랜치(`feature/learning-reflection`) 위에서 작업, #89 머지 후 develop 47e5ffe(#89·#90·#91·#98·#100)와 7629c55(#102 core 알림)를 병합(둘 다 learning 코드 변경 없음). [이슈 #27](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/27), [API 명세 1.1·1.5·1.6·2.3·3.4·3.9·4.1](../design/api-spec.md), [기능 명세 1.4 P08·FN-DSH-06~11·FN-RPT-02~06·FN-AGT-04·07·FN-ADM-02](../design/functional-spec.md), [ERD 4.2·4.3](../design/erd.md), [클래스 다이어그램 4.3](../design/class-diagram.md), [시퀀스 다이어그램 4](../design/sequence-diagram.md).
 
 learning-service의 `/internal/records/*`·`/internal/stats`(학부모 대시보드, 분석 에이전트 도구, 주간 리포트가 같이 쓰는 조회)를 만들면서 정한 내용과 근거를 기록한다. 데이터베이스 스키마는 바꾸지 않았다.
 
