@@ -33,7 +33,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** Real embedded Tomcat, PublicAuthFilter, JWT/session/consent DB and internal HTTP.
- * #38's test-only HTTP server supplies the unimplemented #25 contract, never production results. */
+ * #38's test-only HTTP server supplies the #25 contract; actual learning is verified separately. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = [
     "app.internal.token=repository-test-token", "app.auth.jwt-secret=dGVzdC1hdXRoLXNlY3JldC0zMi1ieXRlcy1sb25nLWtleSE=",
     "spring.rabbitmq.username=test", "spring.rabbitmq.password=test", "spring.rabbitmq.listener.simple.auto-startup=false",
@@ -127,8 +127,9 @@ class FeedbackIntegrationTest : PostgresRepositoryTest() {
         val calls = AtomicInteger()
         learning.respond = {
             when (calls.incrementAndGet()) {
-                1 -> LearningHttpStub.Reply(503, """{"type":"about:blank","title":"처리 실패","status":503,"code":"AI_UNAVAILABLE","retryable":true,"extra":[1]}""")
-                2 -> LearningHttpStub.Reply(200, """{"status":"RUNNING","message":"이미 처리 중"}""")
+                1 -> LearningHttpStub.Reply(503, """{"type":"about:blank","title":"처리 실패","status":503,"code":"AI_UNAVAILABLE","retryable":true,"extra":[1]}""",
+                    mapOf("Content-Type" to "application/problem+json"))
+                2 -> LearningHttpStub.Reply(200, """{"status":"RUNNING","judgment":null,"followup":null,"nextActions":[],"versions":null}""")
                 else -> LearningHttpStub.Reply(200, done())
             }
         }
@@ -136,9 +137,24 @@ class FeedbackIntegrationTest : PostgresRepositoryTest() {
         assertEquals(listOf("status", "error", "done"), events(failed))
         assertTrue(failed.contains("AI_UNAVAILABLE")); assertTrue(failed.contains("\"extra\":[1]"))
         val running = call().body()
-        assertEquals(listOf("status", "status", "done"), events(running)); assertTrue(running.contains("이미 처리 중"))
+        assertEquals(listOf("status", "status", "done"), events(running)); assertTrue(running.contains("생각을 살펴보는 중"))
         repeat(2) { assertEquals(listOf("status", "result", "done"), events(call().body())) }
         assertEquals(4, calls.get())
+    }
+
+    @Test fun `twenty AI failures keep their error event and allow the next feedback request`() {
+        learning.respond = { LearningHttpStub.Reply(503,
+            """{"type":"about:blank","title":"판정 처리 실패","status":503,"code":"AI_UNAVAILABLE","retryable":false}""",
+            mapOf("Content-Type" to "application/problem+json")) }
+        repeat(20) {
+            val body = call().body()
+            assertEquals(listOf("status", "error", "done"), events(body))
+            assertTrue(body.contains("AI_UNAVAILABLE")); assertTrue(body.contains("\"retryable\":false"))
+            assertFalse(body.contains("LEARNING_CIRCUIT_OPEN"))
+        }
+        learning.respond = { LearningHttpStub.Reply(200, done()) }
+        assertEquals(listOf("status", "result", "done"), events(call().body()))
+        assertEquals(21, learning.requests.size)
     }
 
     @Test fun `invalid successful payload is explicit failure and scope errors preserve extensions`() {

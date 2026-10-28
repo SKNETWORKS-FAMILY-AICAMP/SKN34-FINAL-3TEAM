@@ -38,7 +38,7 @@ class FeedbackController(private val feedback: FeedbackService, private val stre
                     stream.event("error", data)
                 } else when (data.path("status").asText()) {
                     "DONE" -> stream.event("result", data)
-                    "RUNNING" -> stream.event("status", running(data.path("message").takeIf { it.isTextual }?.asText()))
+                    "RUNNING" -> stream.event("status", running())
                     else -> invalid(stream)
                 }
             } catch (ex: BusinessException) {
@@ -49,7 +49,7 @@ class FeedbackController(private val feedback: FeedbackService, private val stre
             .contentType(MediaType.TEXT_EVENT_STREAM).body(emitter)
     }
 
-    private fun running(message: String? = null) = mapOf("state" to "RUNNING", "message" to (message ?: "생각을 살펴보는 중"))
+    private fun running() = mapOf("state" to "RUNNING", "message" to "생각을 살펴보는 중")
     private fun problem(status: Int, code: String, title: String) = mapOf("type" to "about:blank", "title" to title,
         "status" to status, "code" to code, "retryable" to (status >= 500 || status == 429))
     private fun invalid(stream: SseEmitters.Stream) = stream.event("error", problem(502, "LEARNING_INVALID_RESPONSE", "학습 서비스 응답 형식이 올바르지 않습니다."))

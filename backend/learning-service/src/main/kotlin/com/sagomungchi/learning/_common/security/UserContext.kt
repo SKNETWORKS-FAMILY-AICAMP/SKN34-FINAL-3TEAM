@@ -20,6 +20,13 @@ data class UserContext(
         }
     }
 
+    /** 학생 ID를 UUID끼리 비교: 범위 헤더가 대문자 UUID여도 같은 학생이면 허용 (requireSelfStudent와 같은 기준) */
+    fun requireStudent(studentId: UUID) {
+        if (studentScope.none { runCatching { UUID.fromString(it) }.getOrNull() == studentId }) {
+            throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "접근 범위 밖 학생")
+        }
+    }
+
     /**
      * 학생 본인 요청의 학생 ID. 학생 토큰이면 X-Student-Scope에 본인 1명 (api-spec 2.2 역할 학생).
      * 그 밖의 역할·범위는 403

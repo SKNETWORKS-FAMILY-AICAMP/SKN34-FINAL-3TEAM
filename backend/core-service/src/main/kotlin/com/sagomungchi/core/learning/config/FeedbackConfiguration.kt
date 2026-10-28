@@ -1,5 +1,6 @@
 package com.sagomungchi.core.learning.config
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core._common.config.InternalRestClientFactory
 import com.sagomungchi.core._common.web.IdempotencyService
 import com.sagomungchi.core.guardianship.service.StudentLearningContextService
@@ -16,6 +17,6 @@ class FeedbackConfiguration {
     /** Reuse #38 without changing the general JSON client's 30-second budget or idempotency. */
     @Bean
     fun feedbackService(factory: InternalRestClientFactory, idempotency: IdempotencyService,
-                        students: StudentLearningContextService): FeedbackService = FeedbackService(
-        LearningProxyService(LearningClient(factory, LearningHttpProperties(Duration.ofSeconds(80))), idempotency, students))
+                        students: StudentLearningContextService, json: ObjectMapper): FeedbackService = FeedbackService(
+        LearningProxyService(LearningClient.forFeedback(factory, LearningHttpProperties(Duration.ofSeconds(80)), json), idempotency, students))
 }

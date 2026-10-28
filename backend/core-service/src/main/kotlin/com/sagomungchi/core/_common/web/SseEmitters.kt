@@ -16,6 +16,8 @@ import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /** Feedback transport lifecycle only. Disconnecting never cancels the independently running operation. */
 @Component
@@ -63,7 +65,7 @@ class SseEmitters internal constructor(private val heartbeat: Duration, private 
     inner class Stream internal constructor(val emitter: SseEmitter) {
         private val connected = AtomicBoolean(true)
         private val sendingHeartbeat = AtomicBoolean(false)
-        private val lock = Any()
+        private val lock = ReentrantLock()
         @Volatile private var scheduled: ScheduledFuture<*>? = null
 
         internal fun attach(future: ScheduledFuture<*>) {
@@ -73,7 +75,7 @@ class SseEmitters internal constructor(private val heartbeat: Duration, private 
 
         fun event(name: String, data: Any) = send(SseEmitter.event().name(name).data(data, MediaType.APPLICATION_JSON))
 
-        private fun send(event: SseEmitter.SseEventBuilder) = synchronized(lock) {
+        private fun send(event: SseEmitter.SseEventBuilder) = lock.withLock {
             if (connected.get()) {
                 try { emitter.send(event) }
                 catch (_: IOException) { disconnected() }
@@ -92,7 +94,7 @@ class SseEmitters internal constructor(private val heartbeat: Duration, private 
             } catch (_: RejectedExecutionException) { sendingHeartbeat.set(false); disconnected() }
         }
 
-        fun complete() = synchronized(lock) {
+        fun complete() = lock.withLock {
             if (connected.get()) {
                 event("done", emptyMap<String, Any>())
                 disconnected()

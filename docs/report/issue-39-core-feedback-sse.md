@@ -1,5 +1,7 @@
 # #39 core 피드백 SSE
 
+현재 기준은 아래 **PR #83 리뷰 대응(2026-10-28)** 절이다. #25는 develop `e728a64`에 병합됐고, 리뷰 수정 후 core 124개·실제 core/learning DB 연결 6개를 재검증했다. 앞 절의 미병합·무커밋·과거 테스트 수는 각 작업 시점의 기록이다.
+
 ## 기준·선행 계약
 
 - 전용 worktree `issue-39-worktree`, 브랜치 `feature/core-feedback-sse`, develop 기준 `3e3273152e6a27e60e4febf96aa8749dd21b0d73`.
@@ -112,6 +114,35 @@
 - PR 본문은 `Closes #39`를 포함한다. develop이 기본 브랜치이므로 해당 PR을 develop에 병합할 때 GitHub 자동 종료 대상이 된다. #25는 이 PR의 종료 대상이 아니며 미병합 의존성과 검증 범위를 본문에 명시한다.
 
 최종 commit SHA·원격 반영 결과·Git merge-tree 결과는 대화의 완료 보고에 실제 값으로 제공한다. 원격 CI·PR 생성·병합·배포를 실행 완료로 표시하지 않는다.
+
+## PR #83 리뷰 대응 (2026-10-28)
+
+리뷰: https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/pull/83#issuecomment-6458281554
+
+- 시작 상태는 head `97a18fa4e8a5c9b397fd94453f8498647d3cefb2`, 원격과 같고 작업 트리는 깨끗했다. 최신 develop의 #25 병합 `e728a642f2f43c51664dfe78ad5f6a1ede79e714`를 `merge --no-commit --no-ff`로 충돌 없이 반영했다. 기존 커밋은 재작성하지 않고 리뷰 수정·최종 검증 후 merge와 수정 사항을 같은 후속 커밋으로 기록한다. learning 파일의 index 변경은 이 develop 병합에서 온 것이며 #39가 별도로 수정하지 않는다.
+- 리뷰 1: #78은 병합 완료다. 이번 실제 연결 검증은 미병합 517cc23 대신 **develop e728a64의 learning 구현**으로 수행한다. 기존 PR 본문은 과거 상태이므로 갱신안을 제공한다. 시작 시 원격 CI는 기존 head 97a18fa의 check 3개가 success(schema, build/build 2개)이며 check run 0개라는 과거 문구는 더 이상 현재 상태가 아니다. 본문·메타데이터는 사용자가 직접 수정하는 지침에 따라 원격 본문은 바꾸지 않는다.
+- 리뷰 2: 3.2의 내부 RUNNING을 4.1/FeedbackResult와 동일한 `{status:"RUNNING", judgment:null, followup:null, nextActions:[], versions:null}`로 정정하고 대역도 그대로 사용한다. learning의 존재하지 않는 message 필드 분기는 제거하고 공개 status의 message는 core의 문구만 사용한다.
+- 리뷰 3: SseEmitters의 send·complete 잠금을 ReentrantLock으로 바꾼다. JDK 21 JFR의 `jdk.VirtualThreadPinned`를 기록하며, 실제 monitor 대기의 positive control은 pinning이 감지되는지, 같은 블로킹 전송 대역에서 send·complete는 pinning이 없는지를 검사한다. 실제 운영 부하나 성능 개선율 측정은 아니다.
+- 리뷰 4: 일반 JSON은 기존 `learning-json`의 5xx 집계를 유지한다. 피드백은 기존 LearningClient의 HTTP 로직과 설정을 재사용하면서 이름을 `learning-feedback`으로 구분한다. 전송 실패/timeout과 유효한 learning Problem Details가 아닌 5xx만 서킷 실패로 센다. Content-Type `application/problem+json` + JSON 객체의 비어 있지 않은 문자열 code가 있으면 업무 실패(error 이벤트)를 그대로 보존하며 core의 HTTP 서킷 실패로 다시 세지 않는다. learning의 AI 서킷과 이중으로 FAILED 재요청을 막지 않기 위한 결정이며 AI 오류를 정상 결과로 숨기는 것이 아니다. 기본 생성자·일반 client의 정책은 보존한다.
+- 리뷰 5: 스트림 시작 전 인증 DB/세션 조회 실패에는 실제 PublicAuthFilter의 `503 AUTH_UNAVAILABLE` 경로가 있다. OpenAPI 503에 이 조건을 명시하고 실제 필터 + AuthService DB 예외 대역으로 비동기 SSE 시작 전 응답을 검증한다. production 인증 필터는 바꾸지 않는다.
+- 리뷰 6: architecture 4.4에 preStop + Spring/Tomcat 종료 단계 + executor 85초/timer 5초 + 여유보다 긴 terminationGracePeriod 예산을 명시했다. 앱 Deployment의 값이 현재 저장소에 없어 임의의 배포 리소스를 추가하지 않았으며 실제 롤링/SIGKILL 검증은 후속이다.
+
+검증은 코드·설정·테스트 작성을 모두 마친 뒤 일괄 진행한다. 새 production 의존성·DB migration·공유 compose·다른 채팅 파일 변경은 없다. 필요한 로컬/실제 연결 결과와 새 head의 원격 CI 상태는 아래에 별도로 기록한다.
+
+### 리뷰 수정 검증 결과
+
+| 범위 | 실제 결과 |
+|---|---|
+| JDK 21 core 전체 | 격리 eclipse-temurin:21-jdk(21.0.12.1), `test bootJar --no-daemon --max-workers=2 -Pkotlin.compiler.execution.strategy=in-process -Dorg.gradle.jvmargs=-Xmx768m`: **124/124 통과**, 실패·오류·생략 0. bootJar 성공. 이번 전체 실행은 첫 실행에서 통과 |
+| 신규 회귀 | FeedbackClientTest 4개, 실제 인증 필터의 스트림 전 503 1개, JFR pinning 1개, 실제 SSE 경로의 AI 오류 20회 뒤 재요청 1개를 추가. 기존 피드백·인증·멱등성·기록/관리자 회귀 포함 |
+| 서킷 | valid Problem Details의 503 AI_UNAVAILABLE·500 INTERNAL_ERROR를 각각 20회 받아도 feedback CLOSED·실패 집계 0, 이후 DONE 전달. 일반 learning-json은 같은 5xx에 기존대로 OPEN. 잘못된 Content-Type·깨진 JSON·빈 code/일반 5xx는 20회 뒤 OPEN. 연결 실패/timeout 집계·자동 재시도 없음 확인 |
+| JFR | JDK21 `jdk.VirtualThreadPinned`에서 monitor 대기 positive control을 감지하고, 블로킹 전송 대역을 사용하는 send·complete 경로에는 해당 pinning이 없음을 확인. [JDK 21 virtual threads 문서](https://docs.oracle.com/en/java/javase/21/core/virtual-threads.html)의 monitor pinning/ReentrantLock 및 JFR 설명을 참고. 운영 부하·지연 개선 측정은 아님 |
+| 병합된 learning | develop e728a64의 learning bootJar 성공. 같은 snapshot의 수정 core와 실제 learning JAR·각 DB·AI HTTP 대역으로 **6개 PASS**: 실제 동의/자녀/학생 진입, FAILED 커밋→동일 judgment 재실행→DONE 재응답(AI 판정 2회·되묻기 1회), 유효 RUNNING 중 중복 없음, 연결 종료 뒤 DONE 저장, HELD와 retryable=false 보존. 이번 learningMerged는 true이며 이전 517cc23 미병합 검증과 구분 |
+| 계약 | scripts/tests **42/42**, OpenAPI 3.1 표준 검사, git diff --check·staged diff check 통과 |
+
+실제 연결 core JAR SHA-256은 `f99874ceb7531b9c5a0b00933502862750b19714acc57f8ef5518dc10c6f851e`, learning JAR은 `1b8051e065ccaa523c5277a3c8e153ec667bd8f74d4baeeadf2352a10bd25ed2`다. learning source는 origin/develop과 동일하며 #39가 learning 파일을 별도 수정하지 않았다. 이번 실제 연결에서는 **AI만 대역**이고 실제 AI·LLM·판정 품질·브라우저 E2E·배포/롤링 종료 및 learning 전체 테스트는 미검증이다.
+
+검증 JVM·AI 대역은 runner 종료 시 정리했다. 해당 sidecar DB/전용 네트워크도 정리하며 JDK/Gradle 캐시·검증 결과만 남긴다. 사용자 상시 허가에 따라 검증된 리뷰 수정과 develop 병합을 기존 feature 브랜치에 후속 커밋·일반 push한다. 기존 97a18fa를 amend/squash/rebase하거나 force push하지 않는다. 실제 commit SHA·새 head CI 상태는 대화에 보고한다. PR 댓글 전송·리뷰 resolve·본문/메타데이터 수정·병합은 수행하지 않는다.
 
 ## 이전 검증 시점의 후속 (현재 상태는 위 2026-10-28 절 우선)
 

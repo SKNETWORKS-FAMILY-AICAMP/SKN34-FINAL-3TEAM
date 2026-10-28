@@ -1035,6 +1035,7 @@ classDiagram
     +currentVersions(missionId) MissionSnapshot
     +getVersion(missionVersionId) MissionView
     +hintQuestions(rubricVersionId) List
+    +rubric(missionVersionId, rubricVersionId) Rubric
   }
   class Mission {
     <<entity>>
@@ -1075,6 +1076,7 @@ classDiagram
     +saveReflection(attemptId, command)
     +saveSelfAssessment(attemptId, checks) List
     +lockForAnswer(attemptId) Attempt
+    +timeline(attemptId) AttemptTimeline
     +clearSubmittedDraft(attemptId, now)
     +deleteByStudent(studentId)
   }
@@ -1082,6 +1084,7 @@ classDiagram
     <<entity>>
     +requireOpen()
     +requireAnswerable()
+    +acceptsAnswers Boolean
     +finish(now)
     +complete(now)
   }
@@ -1182,17 +1185,21 @@ classDiagram
     +createPending(answerId, rubricVersionId)
     +unansweredLatestFollowupId(attemptId) UUID
     +timeline(attemptId) List~TimelineAnswer~
+    +target(answerId) FeedbackTarget
     +acquire(answerId, now) AcquireResult
-    +saveResult(judgmentId, judged, followup)
-    +markFailed(judgmentId, code)
+    +followupCount(attemptId) Int
+    +bankQuestion(attemptId, type) BankQuestion
+    +saveResult(judgment, judged, followup) Boolean
+    +markFailed(judgment, code) Boolean
     +result(answerId) FeedbackResult
+    +results(attemptId) Map
     +correct(judgmentId, command, idempotencyKey) JudgmentCorrection
   }
   class Judgment {
     <<entity>>
     +acquire(now, lease) Boolean
-    +done(result, elements, versions)
-    +hold(reason)
+    +done(result, elements, by)
+    +hold(reason, by)
     +fail(code)
     +isLeaseExpired(now) Boolean
   }
@@ -1250,9 +1257,12 @@ classDiagram
 
 - `FeedbackFacade.feedback` 순서 (아키텍처 2.5)
   1. `JudgmentService.acquire`: `PENDING|FAILED|리스 만료 RUNNING → RUNNING` 조건부 UPDATE. `DONE`이면 저장 결과 반환, 유효 `RUNNING`이면 `RUNNING` 결과 반환 (API 1.4)
-  2. 트랜잭션 밖: 고르기·수학 최종 답은 `RuleJudge`, 서술·논술은 `AiClient.judge`
-  3. 트랜잭션 밖: 시도 내 되묻기 2회 미만이고 고르기 `CORRECT`가 아니면 `AiClient.followup` (정답·금지어 유출 검사는 ai 담당, P04). 재생성까지 검사 실패하면 learning이 `followup_bank_question`에서 같은 `type` 질문 선택(`BANK`, P16)
-  4. `JudgmentService.saveResult`: 판정·요소·되묻기·버전 저장 + `DONE`. 예외 시 `markFailed`
+  2. 트랜잭션 밖: 고르기·수학 최종 답은 `RuleJudge`, 서술·논술은 `AiClient.judge`. 풀이 단계는 풀이를 `AiClient.judge`, 최종 답을 `MathEquivalenceJudge`로 보고 합침 (state-diagram 3.3)
+  3. 트랜잭션 밖: 시도 내 되묻기 2회 미만이고 고르기 `CORRECT`가 아니면 `AiClient.followup` (정답·금지어 유출 검사는 ai 담당, P04). 마무리·완료한 시도에는 만들지 않음. 유출 검사용 정답은 학생에게 보이는 글자(선택지 이름·정답 순서·최종 답)로 보냄. 재생성까지 검사 실패하면 learning이 `followup_bank_question`에서 같은 `type` 질문 선택(`BANK`, P16), 이 시도에서 아직 쓰지 않은 것부터
+  4. `JudgmentService.saveResult`: 판정·요소·되묻기·버전 저장 + `DONE`. 예외 시 `markFailed`(실패 기록 자체가 실패해도 원래 오류로 응답)
+- 전이는 `Judgment` 엔티티가 허용 여부를 판단하고 `JudgmentRepository`가 조건부 UPDATE로 저장 (#23 초안 `AttemptDraft.update` + `updateIfVersion`과 같은 방식). `saveResult`·`markFailed`는 획득한 리스 값을 비교해야 해 `judgmentId` 대신 `acquire`로 얻은 `judgment`를 받음. `markFailed`는 DB에서 다시 읽은 판정으로 기록(저장 중 롤백돼 엔티티만 `DONE`이 된 경우)
+- `done`·`hold`의 `by`: 판정 방법(`RULE`·`LLM`)·`trial`·모델·프롬프트 버전 (ERD judgment.method·trial·model_version·prompt_version)
+- `AiClient`: 응답 35초, 서비스 간 재시도 없음, 서킷 브레이커 최근 20건 중 실패 50% 이상이면 30초 차단(전송 오류·5xx만 실패로 셈, 아키텍처 1.3)
 - `JudgmentElement`: `verified = false`면 `satisfy()` 거부 (ERD CHECK와 동일 규칙을 Domain에서도 검사)
 - `judge_verified = false` 요소·미검증 학년 조합의 `HELD(UNVERIFIED_SCOPE)` 결정은 ai `JudgmentService` 담당(`JUDGE_REQUIRE_VERIFIED=true`일 때만, 기본 꺼짐). learning은 `judge_verified`·학년을 포함한 기준표를 `AiClient.judge`에 전달 (FN-JDG-04)
 - 정정은 `Judgment`를 바꾸지 않고 `JudgmentCorrection` 추가, `result()` 조회 시 최신 정정 반영 (FN-SUP-03)

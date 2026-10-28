@@ -9,9 +9,54 @@
             <arg column="input_type" javaType="com.sagomungchi.learning.mission.domain.InputType"/>
             <arg column="plain_text" javaType="java.lang.String"/>
             <arg column="followup_id" javaType="java.util.UUID"/>
+            <arg column="followup_question" javaType="java.lang.String"/>
             <arg column="content" javaType="java.util.Map"
                  typeHandler="com.sagomungchi.learning.judgment.repository.ContentMapTypeHandler"/>
             <arg column="process_status" javaType="com.sagomungchi.learning.judgment.domain.ProcessStatus"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="target" type="com.sagomungchi.learning.judgment.domain.FeedbackTarget">
+        <constructor>
+            <idArg column="answer_id" javaType="java.util.UUID"/>
+            <arg column="attempt_id" javaType="java.util.UUID"/>
+            <arg column="version" javaType="_int"/>
+            <arg column="input_type" javaType="com.sagomungchi.learning.mission.domain.InputType"/>
+            <arg column="content" javaType="com.sagomungchi.learning.answer.domain.AnswerContent"/>
+            <arg column="plain_text" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="judgment" type="com.sagomungchi.learning.judgment.domain.Judgment">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="answer_id" javaType="java.util.UUID"/>
+            <arg column="process_status" javaType="com.sagomungchi.learning.judgment.domain.ProcessStatus"/>
+            <arg column="lease_until" javaType="java.time.Instant"/>
+            <arg column="retry_count" javaType="_int"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="stored" type="com.sagomungchi.learning.judgment.domain.StoredJudgment">
+        <constructor>
+            <idArg column="answer_id" javaType="java.util.UUID"/>
+            <arg column="attempt_id" javaType="java.util.UUID"/>
+            <arg column="attempt_open" javaType="_boolean"/>
+            <arg column="process_status" javaType="com.sagomungchi.learning.judgment.domain.ProcessStatus"/>
+            <arg column="result" javaType="com.sagomungchi.learning.judgment.domain.JudgmentResult"/>
+            <arg column="trial" javaType="java.lang.Boolean"/>
+            <arg column="held_reason" javaType="java.lang.String"/>
+            <arg column="model_version" javaType="java.lang.String"/>
+            <arg column="prompt_version" javaType="java.lang.String"/>
+            <arg column="mission_label" javaType="java.lang.String"/>
+            <arg column="rubric_label" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="storedElement" type="com.sagomungchi.learning.judgment.domain.StoredElement">
+        <constructor>
+            <arg column="answer_id" javaType="java.util.UUID"/>
+            <arg column="element_id" javaType="java.util.UUID"/>
+            <arg column="label" javaType="java.lang.String"/>
+            <arg column="satisfied" javaType="_boolean"/>
+            <arg column="quote" javaType="java.lang.String"/>
+            <arg column="source_type" javaType="com.sagomungchi.learning.judgment.domain.ElementSource"/>
         </constructor>
     </resultMap>
 
@@ -29,12 +74,89 @@
         WHERE NOT EXISTS (SELECT 1 FROM answer WHERE answer.followup_id = latest.id)
     </select>
 
+    <!-- 각 답변이 답한 되묻기 질문도 함께 (되묻기 요청의 타임라인) -->
     <select id="findTimeline" resultMap="timeline">
-        SELECT a.id AS answer_id, a.version, a.submitted_at, a.input_type, a.plain_text, a.followup_id, a.content,
-               j.process_status
+        SELECT a.id AS answer_id, a.version, a.submitted_at, a.input_type, a.plain_text, a.followup_id,
+               f.question AS followup_question, a.content, j.process_status
         FROM answer a
         JOIN judgment j ON j.answer_id = a.id
+        LEFT JOIN followup f ON f.id = a.followup_id
         WHERE a.attempt_id = #{attemptId}
         ORDER BY a.version
+    </select>
+
+    <select id="findTarget" resultMap="target">
+        SELECT id AS answer_id, attempt_id, version, input_type, content, COALESCE(plain_text, '') AS plain_text
+        FROM answer WHERE id = #{answerId}
+    </select>
+
+    <select id="findByAnswerId" resultMap="judgment">
+        SELECT id, answer_id, process_status, lease_until, retry_count FROM judgment WHERE answer_id = #{answerId}
+    </select>
+
+    <!-- state-diagram 3.3: PENDING·FAILED·리스 만료 RUNNING만 RUNNING으로. 엔티티 판단 뒤 그사이 다른 요청이 가져갔으면 0행.
+         리스 없는 RUNNING은 엔티티(isLeaseExpired)처럼 만료로 봄 -->
+    <update id="acquire">
+        UPDATE judgment SET process_status = 'RUNNING', lease_until = #{leaseUntil}
+        WHERE answer_id = #{answerId}
+          AND (process_status IN ('PENDING', 'FAILED')
+               OR (process_status = 'RUNNING' AND (lease_until IS NULL OR lease_until &lt; #{now})))
+    </update>
+
+    <!-- 획득한 리스 값이 그대로일 때만: 리스가 끝나 다른 요청이 다시 가져갔으면 0행 (늦게 끝난 처리의 덮어쓰기 방지) -->
+    <update id="complete">
+        UPDATE judgment
+        SET process_status = #{judgment.status}, result = #{judgment.result}, held_reason = #{judgment.heldReason,jdbcType=VARCHAR},
+            method = #{judgment.by.method}, trial = #{judgment.by.trial},
+            model_version = #{judgment.by.model,jdbcType=VARCHAR}, prompt_version = #{judgment.by.prompt,jdbcType=VARCHAR},
+            failure_code = NULL, trace_id = #{traceId,jdbcType=VARCHAR}, completed_at = #{now}
+        WHERE id = #{judgment.id} AND process_status = 'RUNNING' AND lease_until = #{leaseUntil}
+    </update>
+
+    <insert id="insertElements">
+        INSERT INTO judgment_element (id, judgment_id, rubric_element_id, quote, verified, satisfied, source_type)
+        VALUES
+        <foreach collection="elements" item="e" separator=",">
+            (gen_random_uuid(), #{judgmentId}, #{e.rubricElementId}, #{e.quote,jdbcType=VARCHAR}, #{e.verified},
+             #{e.satisfied}, #{e.sourceType,jdbcType=VARCHAR})
+        </foreach>
+    </insert>
+
+    <update id="fail">
+        UPDATE judgment SET process_status = #{judgment.status}, failure_code = #{judgment.failureCode},
+                            retry_count = #{judgment.retryCount}
+        WHERE id = #{judgment.id} AND process_status = 'RUNNING' AND lease_until = #{leaseUntil}
+    </update>
+
+    <!-- 시도의 모든 답변(attemptId) 또는 답변 하나(answerId) -->
+    <sql id="storedScope">
+        <where>
+            <if test="attemptId != null">a.attempt_id = #{attemptId}</if>
+            <if test="answerId != null">AND a.id = #{answerId}</if>
+        </where>
+    </sql>
+
+    <select id="findStored" resultMap="stored">
+        SELECT a.id AS answer_id, a.attempt_id, (t.status = 'IN_PROGRESS' AND t.finished_at IS NULL) AS attempt_open,
+               j.process_status, j.result, j.trial, j.held_reason, j.model_version, j.prompt_version,
+               m.code || '@' || v.version AS mission_label, m.code || '@' || rv.version AS rubric_label
+        FROM answer a
+        JOIN judgment j ON j.answer_id = a.id
+        JOIN attempt t ON t.id = a.attempt_id
+        JOIN mission m ON m.id = t.mission_id
+        JOIN mission_version v ON v.id = t.mission_version_id
+        JOIN rubric_version rv ON rv.id = j.rubric_version_id
+        <include refid="storedScope"/>
+        ORDER BY a.version
+    </select>
+
+    <select id="findStoredElements" resultMap="storedElement">
+        SELECT a.id AS answer_id, e.rubric_element_id AS element_id, r.label, e.satisfied, e.quote, e.source_type
+        FROM answer a
+        JOIN judgment j ON j.answer_id = a.id AND j.process_status = 'DONE'
+        JOIN judgment_element e ON e.judgment_id = j.id
+        JOIN rubric_element r ON r.id = e.rubric_element_id
+        <include refid="storedScope"/>
+        ORDER BY a.version, r.sort_order
     </select>
 </mapper>

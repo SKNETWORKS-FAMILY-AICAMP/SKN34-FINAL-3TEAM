@@ -792,6 +792,8 @@ paths:
         DONE·RUNNING·FAILED 재실행·리스·학생 소유권 판단과 저장은 learning 소유다.
         피드백은 Idempotency-Key를 요구하거나 core에서 캐시하지 않는다.
         연결은 90초 제한이며 클라이언트 종료·전송 실패에도 시작한 learning 처리는 취소하지 않는다.
+        learning-feedback 서킷은 전송 오류와 계약된 Problem Details가 아닌 5xx를 집계한다.
+        application/problem+json 및 문자열 code가 있는 업무 오류는 error로 전달하며 core 서킷을 열지 않는다.
       security:
       - BearerAuth: []
       parameters:
@@ -826,7 +828,11 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '503':
-          $ref: '#/components/responses/Unavailable'
+          description: 스트림 시작 전 인증 DB·세션 조회 장애(AUTH_UNAVAILABLE). learning 서킷·연결 장애는 HTTP 200 스트림의 error 이벤트로 전달한다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 components:
   securitySchemes:
     InternalToken:

@@ -21,6 +21,8 @@ class FeedbackOpenApiTests(unittest.TestCase):
             self.assertTrue(example["value"].endswith("event:done\ndata:{}\n\n"))
         for marker in ("80초", "15초", "90초", "HELD", "RUNNING", "FAILED", "취소하지"):
             self.assertIn(marker, operation["description"])
+        self.assertIn("AUTH_UNAVAILABLE", operation["responses"]["503"]["description"])
+        self.assertIn("learning-feedback", operation["description"])
 
     def test_feedback_controller_matches_openapi(self):
         source = (ROOT / "backend/core-service/src/main/kotlin/com/sagomungchi/core/learning/controller/FeedbackController.kt").read_text(encoding="utf-8")

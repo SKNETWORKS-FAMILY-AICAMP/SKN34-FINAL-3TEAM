@@ -5,7 +5,8 @@ import com.sagomungchi.learning.attempt.domain.AttemptStatus
 import com.sagomungchi.learning.attempt.domain.DraftContent
 import com.sagomungchi.learning.attempt.domain.HintOpened
 import com.sagomungchi.learning.attempt.service.AttemptDetail
-import com.sagomungchi.learning.judgment.domain.ProcessStatus
+import com.sagomungchi.learning.judgment.domain.FeedbackResult
+import com.sagomungchi.learning.judgment.domain.NextAction
 import com.sagomungchi.learning.judgment.domain.TimelineAnswer
 import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.controller.MissionResponse
@@ -29,7 +30,7 @@ data class DraftResponse(
 
 /**
  * 시도 상세. 필드 이름은 프론트 Attempt 모델(api-spec 3.7·3.8). mission은 시도에 고정된 버전.
- * answers는 제출 답변과 판정 처리 상태, 판정 결과·되묻기와 nextActions는 피드백(#25)에서 채움
+ * answers는 제출 답변과 피드백(판정 전이면 처리 상태만), nextActions는 마지막 답변의 다음 행동
  */
 data class AttemptResponse(
     val attemptId: UUID,
@@ -40,7 +41,7 @@ data class AttemptResponse(
     val answers: List<AnswerItem>,
     val helped: Boolean,
     val draft: DraftResponse,
-    val nextActions: List<String>,
+    val nextActions: List<NextAction>,
 ) {
     companion object {
         fun from(detail: AttemptDetail) = AttemptResponse(
@@ -49,10 +50,10 @@ data class AttemptResponse(
             mission = MissionResponse.from(detail.mission),
             status = detail.attempt.status,
             finishedAt = detail.attempt.finishedAt,
-            answers = detail.answers.map(AnswerItem::from),
+            answers = detail.answers.map { AnswerItem.from(it, detail.feedbacks.getValue(it.answerId)) },
             helped = detail.helped,
             draft = DraftResponse.from(detail.draft),
-            nextActions = emptyList(),
+            nextActions = detail.answers.lastOrNull()?.let { detail.feedbacks.getValue(it.answerId).nextActions }.orEmpty(),
         )
     }
 }
@@ -68,7 +69,7 @@ data class HintResponse(
     }
 }
 
-/** 시도 타임라인의 답변 (프론트 Answer 모델). feedback은 판정 처리 상태까지 */
+/** 시도 타임라인의 답변 (프론트 Answer 모델). feedback은 피드백 API와 같은 모양 (api-spec 3.2) */
 data class AnswerItem(
     val answerId: UUID,
     val version: Int,
@@ -77,12 +78,10 @@ data class AnswerItem(
     val text: String,
     val followupId: UUID?,
     val content: Map<String, Any?>,
-    val feedback: Feedback,
+    val feedback: FeedbackResult,
 ) {
-    data class Feedback(val status: ProcessStatus, val nextActions: List<String>)
-
     companion object {
-        fun from(answer: TimelineAnswer) = AnswerItem(
+        fun from(answer: TimelineAnswer, feedback: FeedbackResult) = AnswerItem(
             answerId = answer.answerId,
             version = answer.version,
             submittedAt = answer.submittedAt,
@@ -90,7 +89,7 @@ data class AnswerItem(
             text = answer.text.orEmpty(),
             followupId = answer.followupId,
             content = answer.content,
-            feedback = Feedback(answer.processStatus, emptyList()),
+            feedback = feedback,
         )
     }
 }

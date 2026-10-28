@@ -13,6 +13,9 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verifyNoInteractions
+import org.mockito.Mockito.`when`
+import org.springframework.dao.TransientDataAccessResourceException
+import org.springframework.http.MediaType
 import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
 import org.springframework.http.ProblemDetail
@@ -23,17 +26,29 @@ import org.springframework.test.web.servlet.ResultActions
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.test.web.servlet.setup.StandaloneMockMvcBuilder
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RestController
 import kotlin.test.assertNull
+import kotlin.test.assertFalse
 
 class PublicAuthFilterTest {
     private val auth = mock(AuthService::class.java)
     private val properties = AuthProperties(webOrigin = "http://localhost:5173", cookieSecure = false)
     private lateinit var mvc: MockMvc
+
+    @Test fun `feedback authentication database failure is 503 before starting a stream`() {
+        `when`(auth.authenticate("db-unavailable")).thenThrow(TransientDataAccessResourceException("synthetic DB failure"))
+        val result = call("POST", "/answers/00000000-0000-0000-0000-000000000039/feedback", bearer = "db-unavailable")
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+            .andExpect(jsonPath("$.code").value("AUTH_UNAVAILABLE")).andReturn()
+        assertFalse(result.request.isAsyncStarted)
+        assertNull(UserContextHolder.currentOrNull())
+    }
 
     @BeforeEach
     fun setup() {
