@@ -120,7 +120,7 @@ learning-service의 `POST /internal/answers/{answerId}/feedback`을 만들고, �
 | 같은 피드백 재요청 | 200, 0.02초, LLM 호출 없이 같은 결과 |
 | 시도 상세 | 같은 피드백, `nextActions: [ANSWER_FOLLOWUP, FINISH]` |
 | DB | `judgment` DONE·LLM·`retry_count` 0, 요소 3행, 되묻기 1행 |
-| 리뷰 반영 후 다시(10/28, c76f448) | 피드백 200 8.1초 `CORRECT`·`ONE_STEP_MORE`, 재요청 0.02초 같은 결과, 시도 상세 같은 피드백·`[ANSWER_FOLLOWUP, FINISH]` |
+| 리뷰 반영 후 다시(10/28, 마무리 경합을 되돌린 0c882bd) | 피드백 200 7.3초 `CORRECT`·`ONE_STEP_MORE`, 재요청 0.17초 같은 결과, 시도 상세 같은 피드백·`[ANSWER_FOLLOWUP, FINISH]` |
 
 ## 후속
 
