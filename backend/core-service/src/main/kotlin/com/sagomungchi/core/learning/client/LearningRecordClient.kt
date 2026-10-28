@@ -30,17 +30,50 @@ class LearningRecordClient(private val client: LearningClient, private val json:
         }
         if (response.status != 200 || body.path("state").asText() !in QUERY_STATES ||
             !validPeriod(body.path("period"))) invalid()
-        val identity = if (parent && !resource.startsWith("attempts/")) "childId" else "studentId"
-        if (body.path(identity).asText() != studentId.toString()) invalid()
+        if (body.path("studentId").asText() != studentId.toString()) invalid()
         validateScope(body, studentId.toString())
+        // #27 records never supply private drafts, even to a student caller.
+        removePrivate(body)
         when {
             resource == "home" -> {
                 if (!body.has("resume") || !body.path("missions").isArray || child == null) invalid()
-                if (!body.path("resume").isNull) validateAttempt(body.path("resume"), studentId.toString())
+                if (!body.path("resume").isNull) {
+                    val resume = body.path("resume")
+                    validateAttempt(resume, studentId.toString())
+                    val attemptId = resume.path("attemptId").asText()
+                    // IDs from a downstream response must not become an unchecked request path.
+                    val id = try { UUID.fromString(attemptId) } catch (_: IllegalArgumentException) { invalid() }
+                    if (id.toString() != attemptId) invalid()
+                    val detail = client.exchange("GET", "/attempts/$id")
+                    if (detail.status !in 200..299) return detail
+                    val privateAttempt = try { json.readTree(detail.body) } catch (_: JsonProcessingException) { null }
+                    if (detail.status != 200 || privateAttempt !is ObjectNode || privateAttempt.path("attemptId").asText() != attemptId) invalid()
+                    validateScope(privateAttempt, studentId.toString())
+                    validateAttempt(privateAttempt, studentId.toString())
+                    val draft = privateAttempt.path("draft")
+                    if (privateAttempt.path("status").asText() != "IN_PROGRESS" ||
+                        !draft.path("version").isIntegralNumber || draft.path("version").asLong() < 0 ||
+                        !draft.path("content").path("memo").isTextual || !draft.path("content").path("answer").isObject) invalid()
+                    body.set<JsonNode>("resume", privateAttempt)
+                }
                 body.remove("studentId")
                 body.set<JsonNode>("student", json.valueToTree(child))
             }
-            resource == "summary" -> if (!body.path("metrics").isArray || !body.path("inclusionRule").isTextual) invalid()
+            resource == "summary" -> {
+                if (!body.path("metrics").isArray || !body.path("inclusionRule").isTextual) invalid()
+                body.path("metrics").forEach(::validateMetric)
+            }
+            resource == "thinking-types" -> {
+                val items = body.path("items")
+                if (!items.isArray || items.size() != THINKING_TYPES.size ||
+                    items.map { it.path("type").asText() }.toSet() != THINKING_TYPES) invalid()
+                items.forEach { item ->
+                    if (item.path("state").asText() !in QUERY_STATES || !item.path("missions").isArray) invalid()
+                    item.path("missions").forEach { mission ->
+                        if (!mission.path("attemptId").isTextual || !mission.path("title").isTextual) invalid()
+                    }
+                }
+            }
             resource == "attempts" -> {
                 if (!body.path("items").isArray || !body.path("inclusionRule").isTextual ||
                     !body.path("page").isIntegralNumber || body.path("page").asLong() < 0 ||
@@ -54,7 +87,10 @@ class LearningRecordClient(private val client: LearningClient, private val json:
             }
             else -> if (!body.path("items").isArray) invalid()
         }
-        if (parent || resource == "attempts") removePrivate(body)
+        if (parent && !resource.startsWith("attempts/")) {
+            body.remove("studentId")
+            body.put("childId", studentId.toString())
+        }
         return response.copy(body = json.writeValueAsBytes(body))
     }
 
@@ -63,6 +99,16 @@ class LearningRecordClient(private val client: LearningClient, private val json:
         val to = java.time.LocalDate.parse(node.path("to").textValue())
         from.year in 1..9999 && to.year in 1..9999 && from <= to
     } catch (_: RuntimeException) { false }
+
+    private fun validateMetric(node: JsonNode) {
+        if (!node.isObject || !node.path("label").isTextual || !node.path("formula").isTextual ||
+            !node.has("value") || !(node.path("value").isNull || node.path("value").isNumber) ||
+            !validPeriod(node.path("period")) || node.path("state").asText() !in QUERY_STATES ||
+            node.path("sourceType").asText() !in setOf("RECORD", "RULE", "ANSWER_KEY", "AI_OBSERVATION")) invalid()
+        listOf("count", "numerator", "denominator").forEach {
+            if (!node.path(it).isIntegralNumber || node.path(it).bigIntegerValue().signum() < 0) invalid()
+        }
+    }
 
     private fun validateScope(node: JsonNode, studentId: String) {
         if (node.isObject) {
@@ -77,6 +123,11 @@ class LearningRecordClient(private val client: LearningClient, private val json:
         if (!node.isObject || node.path("studentId").asText() != studentId ||
             !node.path("attemptId").isTextual || !node.path("mission").isObject ||
             !node.path("answers").isArray || node.path("status").asText() !in setOf("IN_PROGRESS", "COMPLETED")) invalid()
+        if (node.hasNonNull("finishedAt")) {
+            if (!node.path("finishedAt").isTextual) invalid()
+            try { java.time.Instant.parse(node.path("finishedAt").textValue()) }
+            catch (_: java.time.DateTimeException) { invalid() }
+        }
         // A provider must not reveal an answer before finish, including on the resume path.
         if (node.path("finishedAt").isMissingNode || node.path("finishedAt").isNull) {
             if (listOf("reveal", "revealKind", "checklist").any { node.hasNonNull(it) }) invalid()
@@ -107,5 +158,6 @@ class LearningRecordClient(private val client: LearningClient, private val json:
 
     companion object {
         private val QUERY_STATES = setOf("OK", "NO_RECORD", "INSUFFICIENT_SAMPLE", "PROCESSING", "FAILED")
+        private val THINKING_TYPES = setOf("ANALYZE", "EVALUATE", "CREATE", "SOLVE", "REFLECT")
     }
 }

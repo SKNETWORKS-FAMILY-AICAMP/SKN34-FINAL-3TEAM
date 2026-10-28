@@ -95,14 +95,20 @@ class DashboardIntegrationTest : PostgresRepositoryTest() {
 
     private fun parentToken() = auth.login(GoogleProfile(subject, "$subject@example.test", null), null).accessToken
     private val period = "\"period\":{\"from\":\"2026-10-01\",\"to\":\"2026-10-07\"}"
-    private fun attemptJson(id: UUID = attempt, owner: UUID = child) = """{"attemptId":"$id","studentId":"$owner","mission":{"title":"mission"},"status":"IN_PROGRESS","answers":[],"helped":false,"draft":{"content":{"memo":"PRIVATE-MEMO","answer":{}}},"nested":{"memo":"PRIVATE-NESTED"}}"""
+    private fun attemptJson(id: UUID = attempt, owner: UUID = child) = """{"attemptId":"$id","studentId":"$owner","mission":{"title":"mission"},"status":"IN_PROGRESS","answers":[],"helped":false,"draft":{"version":1,"content":{"memo":"PRIVATE-MEMO","answer":{}}},"nested":{"memo":"PRIVATE-NESTED"}}"""
     private fun reply(resource: String, parent: Boolean = false, state: String = "NO_RECORD"): String {
-        val identity = if (parent) "childId" else "studentId"
+        val identity = "studentId"
         val base = "\"$identity\":\"$child\",\"state\":\"$state\",$period"
         return when (resource) {
             "home" -> """{$base,"resume":${attemptJson()},"missions":[]}"""
             "summary" -> """{$base,"inclusionRule":"P08","metrics":[{"label":"sample","value":null,"count":3,"numerator":3,"denominator":4,"formula":"provider formula",$period,"sourceType":"RECORD","state":"INSUFFICIENT_SAMPLE"}]}"""
             "attempts" -> """{$base,"inclusionRule":"P08","items":[${attemptJson()}],"page":0,"size":20,"totalElements":1}"""
+            "thinking-types" -> {
+                val types = listOf("ANALYZE", "EVALUATE", "CREATE", "SOLVE", "REFLECT").joinToString(",") {
+                    """{"type":"$it","state":"NO_RECORD","missions":[]}"""
+                }
+                """{$base,"items":[$types]}"""
+            }
             "detail" -> attemptJson().dropLast(1) + ",\"state\":\"OK\",$period}"
             else -> """{$base,"items":[]}"""
         }
@@ -119,11 +125,12 @@ class DashboardIntegrationTest : PostgresRepositoryTest() {
             Triple("/children/$child/attempts", "attempts", true),
             Triple("/children/$child/attempts/$attempt", "detail", true))
         routes.forEach { (path, resource, isParent) ->
-            stub.respond = { LearningHttpStub.Reply(body = reply(resource, isParent)) }
+            stub.respond = { request -> LearningHttpStub.Reply(body = if (request.target.startsWith("/internal/attempts/")) attemptJson() else reply(resource, isParent)) }
             val result = call("GET", "/api/v1$path?from=2026-10-01&to=2026-10-07", bearer = if (isParent) parent else access)
                 .andExpect(status().isOk()).andExpect(jsonPath("$.period.from").value("2026-10-01"))
                 .andReturn().response.contentAsString
-            val received = stub.requests.last()
+            val received = if (resource == "home") stub.requests[stub.requests.size - 2] else stub.requests.last()
+            if (resource == "home") assertEquals("/internal/attempts/$attempt", stub.requests.last().target)
             val suffix = if (resource == "detail") "attempts/$attempt" else resource
             assertTrue(received.target.startsWith("/internal/records/students/$child/$suffix?from=2026-10-01&to=2026-10-07"))
             assertEquals(child.toString(), received.header("X-Student-Scope"))
@@ -203,7 +210,7 @@ class DashboardIntegrationTest : PostgresRepositoryTest() {
     @Test fun `provider failures keep HTTP errors and sanitize private extensions`() {
         val parent = parentToken()
         listOf(403, 404, 503, 504).forEach { code ->
-            stub.respond = { LearningHttpStub.Reply(code, """{"status":$code,"code":"QUERY_FAILED","memo":"PRIVATE","latest":{"draft":{"content":{"memo":"PRIVATE"}}},"retryable":true}""", mapOf("Content-Type" to "application/problem+json")) }
+            stub.respond = { LearningHttpStub.Reply(code, """{"status":$code,"code":"QUERY_FAILED","memo":"PRIVATE","latest":{"draft":{"content":{"memo":"PRIVATE"}}},"extensions":[{"memo":"PRIVATE-ARRAY"},{"values":[{"draft":{"content":{"memo":"PRIVATE-DEEP"}}}]}],"retryable":true}""", mapOf("Content-Type" to "application/problem+json")) }
             val response = call("GET", "/api/v1/children/$child/summary", bearer = parent)
                 .andExpect(status().`is`(code)).andExpect(jsonPath("$.code").value("QUERY_FAILED"))
                 .andExpect(jsonPath("$.retryable").value(true)).andReturn().response.contentAsString
@@ -228,16 +235,68 @@ class DashboardIntegrationTest : PostgresRepositoryTest() {
         }
         stub.respond = { LearningHttpStub.Reply(body = reply("detail").replace("\"answers\":[]", "\"answers\":[],\"reveal\":\"secret answer\"")) }
         call("GET", "/api/v1/children/$child/attempts/$attempt", bearer = parent).andExpect(status().isBadGateway())
+        stub.respond = { LearningHttpStub.Reply(body = reply("detail").replace("\"answers\":[]", "\"answers\":[],\"finishedAt\":\"\",\"reveal\":\"secret answer\"")) }
+        call("GET", "/api/v1/children/$child/attempts/$attempt", bearer = parent).andExpect(status().isBadGateway())
     }
 
     @Test fun `empty home preserves no record while resume retains unsubmitted draft`() {
-        stub.respond = { LearningHttpStub.Reply(body = reply("home")) }
+        stub.respond = { request -> LearningHttpStub.Reply(body = if (request.target.startsWith("/internal/attempts/")) attemptJson() else reply("home")) }
         call("GET", "/api/v1/students/me/home").andExpect(status().isOk())
             .andExpect(jsonPath("$.state").value("NO_RECORD"))
             .andExpect(jsonPath("$.resume.answers").isEmpty())
             .andExpect(jsonPath("$.resume.draft.content.memo").value("PRIVATE-MEMO"))
             .andExpect(jsonPath("$.student.id").value(child.toString()))
-        stub.respond = { LearningHttpStub.Reply(body = reply("home").replace(attemptJson(), "null")) }
+        stub.respond = { LearningHttpStub.Reply(body = """{"studentId":"$child","state":"NO_RECORD",$period,"resume":null,"missions":[]}""") }
         call("GET", "/api/v1/students/me/home").andExpect(status().isOk()).andExpect(jsonPath("$.resume").doesNotExist())
+    }
+
+    @Test fun `invalid metrics and incomplete thinking types are contract errors not empty results`() {
+        val parent = parentToken()
+        val valid = reply("summary", true)
+        listOf(
+            valid.replace("\"count\":3", "\"count\":null"),
+            valid.replace("\"denominator\":4", "\"denominator\":-1"),
+            valid.replace("\"value\":null,", ""),
+            valid.replace("\"formula\":\"provider formula\"", "\"formula\":4"),
+            valid.replace("\"sourceType\":\"RECORD\"", "\"sourceType\":\"UNKNOWN\"")
+        ).forEach { payload ->
+            stub.respond = { LearningHttpStub.Reply(body = payload) }
+            call("GET", "/api/v1/children/$child/summary", bearer = parent)
+                .andExpect(status().isBadGateway()).andExpect(jsonPath("$.code").value("LEARNING_CONTRACT_INVALID"))
+        }
+        listOf(reply("thinking-activities", true), reply("thinking-types", true).replace("CREATE", "ANALYZE")).forEach { payload ->
+            stub.respond = { LearningHttpStub.Reply(body = payload) }
+            call("GET", "/api/v1/children/$child/thinking-types", bearer = parent).andExpect(status().isBadGateway())
+        }
+        stub.respond = { LearningHttpStub.Reply(body = reply("thinking-types", true)) }
+        call("GET", "/api/v1/children/$child/thinking-types", bearer = parent)
+            .andExpect(status().isOk()).andExpect(jsonPath("$.childId").value(child.toString()))
+            .andExpect(jsonPath("$.studentId").doesNotExist()).andExpect(jsonPath("$.items.length()").value(5))
+    }
+
+    @Test fun `unlinked guardian and foreign attempt in a valid child envelope are rejected`() {
+        val parent = parentToken()
+        stub.respond = { LearningHttpStub.Reply(body = reply("attempts", true).replace(attemptJson(), attemptJson(owner = UUID.randomUUID()))) }
+        call("GET", "/api/v1/children/$child/attempts", bearer = parent).andExpect(status().isBadGateway())
+        stub.reset()
+        jdbc.update("UPDATE guardianship SET status='UNLINKED',unlinked_at=now() WHERE student_id=?", child)
+        call("GET", "/api/v1/children/$child/summary", bearer = parent).andExpect(status().isForbidden())
+        assertTrue(stub.requests.isEmpty())
+    }
+
+    @Test fun `student home uses existing private attempt API and does not hide its failure or foreign response`() {
+        stub.respond = { request -> if (request.target.startsWith("/internal/attempts/"))
+            LearningHttpStub.Reply(503, """{"code":"LEARNING_UNAVAILABLE","status":503}""")
+            else LearningHttpStub.Reply(body = reply("home")) }
+        call("GET", "/api/v1/students/me/home").andExpect(status().isServiceUnavailable())
+            .andExpect(jsonPath("$.resume").doesNotExist())
+        assertEquals(child.toString(), stub.requests.last().header("X-Student-Scope"))
+        assertEquals("STUDENT", stub.requests.last().header("X-User-Role"))
+        stub.respond = { request -> LearningHttpStub.Reply(body = if (request.target.startsWith("/internal/attempts/"))
+            attemptJson(owner = UUID.randomUUID()) else reply("home")) }
+        call("GET", "/api/v1/students/me/home").andExpect(status().isBadGateway())
+        stub.respond = { request -> LearningHttpStub.Reply(body = if (request.target.startsWith("/internal/attempts/"))
+            attemptJson().replace("\"version\":1,", "") else reply("home")) }
+        call("GET", "/api/v1/students/me/home").andExpect(status().isBadGateway())
     }
 }

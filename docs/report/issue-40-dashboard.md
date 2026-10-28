@@ -1,5 +1,7 @@
 # #40 학생·학부모 대시보드 조회
 
+> 현재 계약과 재검증은 아래 **#40 재리뷰** 절을 따른다. 초기 검증 수치는 당시 실행 이력이다.
+
 ## 기준 및 범위
 
 - 2026-10-28 origin/develop `78bbdc1`에서 `feature/core-dashboard-queries` 분기. #37·#38·#39 및 #42·#45 포함. 기존 체크아웃은 전환하지 않았다.
@@ -10,7 +12,7 @@
 
 - api-spec 1.1·1.5·1.6·2.3·3.8·3.9·4.1·5.3, P05·P08, frontend의 `StudentHome`, `Summary`, `ThinkingResponse`, `RecordPage`, `PublicAttempt`를 대조했다.
 - 프론트 목업의 고정 날짜는 운영 기본값이 아니다. 날짜를 모두 생략하면 KST 오늘 포함 최근 7일, 한쪽만 전달하면 400으로 확정한다. 상세도 동일 기간을 받되 원문은 전체 시도 이력을 반환한다. period는 learning이 실제 적용한 기간을 보존한다.
-- 학생 home은 core의 현재 Child 프로필과 learning의 `{studentId,state,period,resume,missions}`를 조합한다. 학년·demo는 기존 StudentLearningContextService에서 얻어 전달한다. resume는 기간 밖/제출 전 초안도 포함할 수 있으며 집계는 P08만 사용한다.
+- 학생 home은 core의 현재 Child 프로필과 learning의 `{studentId,state,period,resume,missions}`를 조합한다. 학년·demo는 기존 StudentLearningContextService에서 얻어 전달한다. records의 resume는 기간 밖/제출 전 시도도 식별할 수 있으나 초안은 포함하지 않는다. 공개 home의 초안은 기존 학생 전용 시도 상세에서 조합하며 집계는 P08만 사용한다.
 - 기록 목록은 학생·학부모 모두 P08 대상, page=0/size=20(최대 100), 선택 status=IN_PROGRESS|COMPLETED. 초안만 있는 이어하기는 home으로 분리한다.
 - 학부모 상세는 기존 Attempt 필드를 최상위에 유지하고 state·period를 추가한다. draft와 모든 중첩 memo는 응답 직렬화 전에 제거한다. 소수는 BigDecimal로 읽어 Metric 정밀도를 유지한다. 원문의 text 자체는 변경하지 않는다. 오류 응답도 같은 개인정보 경계를 적용한다.
 - 공통 LearningRecordService → LearningRecordClient → LearningClient의 learning-json 서킷·내부 인증을 재사용한다. 현재 연결·ACTIVE·동의를 기존 service로 검사하고 하위 scope는 자녀 하나로 축소 후 finally 복원한다.
@@ -56,3 +58,40 @@
 - 본문에 `Closes #40` 포함. #40 core 소비자 구현과 HTTP 대역 검증 범위를 해결하며, #27 실제 공급자 구현/연결은 별도 후속이다. #27을 종료 대상으로 포함하지 않는다.
 - 등록 라벨과 설명을 조회한 추천: enhancement(New feature or request), area:core(core 영역), 필요 시 P1(우선1·제안). #40의 Type은 조회 시 null이며 PR의 별도 Type 지원은 확인하지 않았다.
 - 사용자가 PR을 직접 생성한다. 커밋·push 결과와 CI 상태는 최종 전달에서 실제 상태로 보고한다.
+
+
+## #40 재리뷰 (2026-10-28)
+
+- 최신 #27은 open·댓글 없음이며 실제 공급자는 여전히 대기 상태다. origin/develop은 47e5ffe로 갱신됐으나 신규 변경은 비용 집계·SPEECH 제거 등 #40과 별개다. 기존 feature 브랜치/이력을 유지한다.
+- 확인한 문제: 학생 records의 기간 미전달, 페이지 첫 20건만 소비, 학부모 상세의 기간 유실, reflection 내부 enum/null과 화면 DTO 차이, Metric·생각 유형 내부 항목 미검사.
+- 내부 공용 records는 studentId로 통일하고 core가 공개 parent childId를 변환한다. 예정 계약 수정이며 #27 담당자가 확정/구현한 계약으로 표현하지 않는다.
+- 현재 StudentAccessService의 LINKED·ACTIVE·계정/법정대리인 동의 검사 및 요청 필터를 재사용한다. 단일 자녀 scope 제한과 finally 복원은 변경하지 않는다.
+- 메모·draft 제거는 학부모 성공/오류 JSON의 중첩 배열에도 적용한다. 학생 resume의 본인 초안은 보존한다. 조회 실패를 NO_RECORD·임의 Metric으로 대체하지 않는다.
+- 수정 및 최종 검증 결과는 다음 절을 따른다.
+
+- 추가 계약 충돌: #27은 메모를 조회하지 않으므로 records/home.resume도 draft 없는 공개 시도로 정정했다. core는 제공된 attemptId로 기존 학생 전용 `/internal/attempts/{id}`를 호출해 본인 초안을 조합한다. 공급자가 선택한 이어하기 대상을 사용하며 core가 최신 시도를 계산하지 않는다. 두 번째 응답의 학생/시도 ID·마무리 공개 조건을 검사하며 실패하면 전체 홈 조회를 실패시킨다.
+
+
+### 재리뷰 수정 결과
+
+| 발견 항목 | 수정 |
+|---|---|
+| 학생 선택 기간 미전달·목록 첫 페이지만 사용 | 학생 API에 from/to를 전달하고 배열 소비자는 페이지를 끝까지 조회한다. 페이지·대상·기간·중복/변동 건수 불일치는 명시적 오류다. 학부모 대시보드는 이전/다음 페이지를 제공하며 query key에 페이지·상세 기간을 포함한다. |
+| #27 메모 제외 계약과 home의 private draft 요구 충돌 | records/home.resume는 DashboardPublicAttempt로 정정. 이어할 시도가 있으면 같은 검증된 STUDENT scope로 기존 `/internal/attempts/{id}`를 호출한다(없으면 records 1회, 있으면 총 2회). 두 번째 응답의 학생·시도 ID, IN_PROGRESS, 초안 version/content, 마무리 공개 조건을 검사한다. |
+| 내부 식별자의 역할별 DTO 차이 | 공용 내부 records는 studentId, 공개 parent summary/thinking-types/attempts는 core가 childId로 매핑한다. 집계는 변경하지 않는다. |
+| Metric·유형 내부 항목 미검사 | 필수 수치·문자열·상태·기간·출처 타입과 다섯 유형의 누락/중복을 검사한다. 계약 위반은 502이며 임의 수치나 NO_RECORD를 만들지 않는다. |
+| 빈 finishedAt으로 공개 조건 통과 가능 | non-null finishedAt은 유효한 Instant여야 한다. 빈 문자열·잘못된 시각은 502로 거부한다. |
+| reflection wire enum/null과 화면 DTO 차이 | 공용 기록 표시 어댑터에서 EASY/NORMAL/HARD 및 nullable text를 기존 한국어 표시값으로 변환한다. 원문은 보존하고 알 수 없는 값은 오류로 처리한다. |
+| 실패/처리 중을 정상 관찰·빈 기록으로 표시 | 목록/상세 상태를 구분해 표시하고 배열 소비 경로에서는 실패/처리 중을 오류로 전달한다. |
+
+자녀 권한 검사의 우회는 이번 리뷰 범위에서 발견하지 않았다. 기존 PublicAuthFilter → AuthService/StudentAccessService의 현재 연결·활성·계정 및 법정대리인 동의 검사, 단일 scope와 finally 복원을 유지했다. 타 자녀·연결 해제·비활성·동의 철회 및 공급자의 타 학생 응답 거부를 검증했다. 학부모 성공/오류 응답의 중첩 객체·배열 memo/draft 제거와 학생 홈의 본인 초안 보존을 확인했다.
+
+### 재리뷰 최종 검증
+
+- JDK 21 전체 `test bootJar`: **185/185 통과**, 실패·오류·생략 0 (10m45s).
+- 추가 홈 수정 후 DashboardIntegrationTest·DashboardQueryTest·LearningRecordClientTest·LearningRecordServiceTest 및 bootJar 재검증: **19/19 통과** (2m14s). 최종 고유 테스트 **186개 통과**이며 전체 실행+영향 범위 재검증 합산이다. 기존 전체 성공 테스트를 모두 다시 실행한 결과로 표현하지 않는다.
+- `npm test`: **79/79 통과**. `npm run build` 성공. 변경 프론트 파일 11개의 oxlint 성공. 기존 Vite 500 kB 번들 경고만 남았다.
+- 계약 scripts/tests 전체 **56/56 통과** 후 홈 경계 수정의 dashboard 계약 **4/4 통과**(신규 1개 포함, 고유 57개). core·learning OpenAPI 3.1 검사 통과. 최종 git diff --check 통과.
+- 최종 JAR SHA-256: `c4f11b89a7af84157300ed216ee46db4c9d4ca74b8831325675ad53083e3ceeb`. 검증 컨테이너의 수정 클라이언트와 worktree 소스 바이트 일치를 확인했다.
+- HTTP 대역은 records 응답과 기존 학생 attempt 상세 응답 모두에 사용했다. 실제 learning 대시보드·실제 두 learning API의 연결·브라우저 E2E·배포는 검증하지 않았다. #27은 open이며 새 내부 계약은 공급자 확인/구현 대기 상태다.
+- 새 production 의존성·마이그레이션·#44 notification·#58 PIN/기기/재인증 구현은 추가/변경하지 않았다. 기존 커밋은 보존하고 같은 feature 브랜치에 후속 커밋한다. PR은 생성하지 않는다.

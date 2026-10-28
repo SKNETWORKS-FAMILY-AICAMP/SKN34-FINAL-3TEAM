@@ -415,8 +415,11 @@ export const parentHandlers = [
       queryFault()
       const p = period(request),
         rows = scopedRows(c, p)
+      const query = new URL(request.url).searchParams
+      const index = Number(query.get('page') ?? 0), size = Number(query.get('size') ?? 20)
+      if (!Number.isInteger(index) || index < 0 || !Number.isInteger(size) || size < 1 || size > 100) fail('VALIDATION_FAILED', '페이지를 확인해 주세요.')
       return {
-        ...page(rows),
+        items: rows.slice(index * size, (index + 1) * size), page: index, size, totalElements: rows.length,
         childId: c.id,
         state: rows.length ? 'OK' : 'NO_RECORD',
         period: p,
@@ -432,7 +435,7 @@ export const parentHandlers = [
         .attempts.find((a) => a.attemptId === params.attemptId && a.studentId === c.id)
       if (!a) fail('NOT_FOUND', '기록을 찾을 수 없습니다.', 404)
       const { draft: _private, ...visible } = a!
-      return visible
+      return { ...visible, state: 'OK', period: period(request) }
     }),
   ),
   http.get('/api/v1/conversations', ({ request }) =>

@@ -3703,10 +3703,13 @@ components:
           - 'null'
         count:
           type: integer
+          minimum: 0
         numerator:
           type: integer
+          minimum: 0
         denominator:
           type: integer
+          minimum: 0
         formula:
           type: string
         period:
@@ -3791,6 +3794,8 @@ components:
                       type: string
               summary:
                 type: string
+          minItems: 5
+          maxItems: 5
     DashboardThinkingActivities:
       type: object
       required:
@@ -4000,7 +4005,7 @@ components:
           $ref: '#/components/schemas/DashboardPeriod'
         resume:
           anyOf:
-          - $ref: '#/components/schemas/DashboardAttempt'
+          - $ref: '#/components/schemas/DashboardPublicAttempt'
           - type: 'null'
         missions:
           type: array

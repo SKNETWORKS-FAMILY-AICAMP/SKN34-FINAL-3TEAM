@@ -26,7 +26,7 @@ export interface ClassroomGateway {
   restore: () => Promise<Session>
   mission: (id: string, child: Child) => Promise<Mission>
   records: (child: Child, role: 'STUDENT' | 'PARENT', period: Period) => Promise<PublicAttempt[]>
-  record: (child: Child, id: string) => Promise<PublicAttempt>
+  record: (child: Child, id: string, period?: Period) => Promise<PublicAttempt>
   start: (mission: Mission, child: Child) => Promise<Attempt>
   attempt: (id: string) => Promise<Attempt>
   saveDraft: (id: string, draft: Draft) => Promise<Draft>

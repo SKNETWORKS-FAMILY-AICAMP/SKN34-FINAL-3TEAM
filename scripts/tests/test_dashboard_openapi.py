@@ -37,3 +37,22 @@ class DashboardContractTest(unittest.TestCase):
         spec = yaml.safe_load((ROOT / 'contracts/openapi/core-service.yaml').read_text('utf-8'))
         props = spec['components']['schemas']['DashboardAttemptDetail']['properties']
         self.assertTrue({'attemptId', 'studentId', 'mission', 'answers', 'status', 'state', 'period'} <= props.keys())
+
+
+    def test_internal_record_identity_is_independent_of_role(self):
+        spec = yaml.safe_load((ROOT / 'contracts/openapi/learning-service.yaml').read_text('utf-8'))
+        for name in ['DashboardSummary', 'DashboardThinkingTypes', 'DashboardStudentAttempts']:
+            self.assertIn('studentId', spec['components']['schemas'][name]['required'])
+            self.assertNotIn('childId', spec['components']['schemas'][name]['properties'])
+        response = spec['paths']['/records/students/{studentId}/attempts']['get']['responses']['200']['content']['application/json']['schema']
+        self.assertEqual(response, {'$ref': '#/components/schemas/DashboardStudentAttempts'})
+        self.assertEqual(spec['components']['schemas']['DashboardThinkingTypes']['properties']['items']['minItems'], 5)
+
+
+    def test_record_home_excludes_draft_while_public_student_home_retains_it(self):
+        spec = yaml.safe_load((ROOT / 'contracts/openapi/learning-service.yaml').read_text('utf-8'))
+        resume = spec['components']['schemas']['DashboardHomeRecords']['properties']['resume']
+        self.assertEqual(resume['anyOf'][0]['$ref'], '#/components/schemas/DashboardPublicAttempt')
+        core = yaml.safe_load((ROOT / 'contracts/openapi/core-service.yaml').read_text('utf-8'))
+        self.assertEqual(core['components']['schemas']['DashboardHome']['properties']['resume']['anyOf'][0]['$ref'], '#/components/schemas/DashboardAttempt')
+        self.assertEqual(core['components']['schemas']['DashboardHomeRecords'], spec['components']['schemas']['DashboardHomeRecords'])

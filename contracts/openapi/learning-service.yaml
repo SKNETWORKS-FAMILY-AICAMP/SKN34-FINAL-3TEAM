@@ -471,7 +471,7 @@ paths:
       tags:
       - Dashboard
       description: 'PLANNED supplier contract for #40; not implemented. P08 aggregation
-        belongs to learning. Role determines studentId versus childId envelope. Single-student
+        belongs to learning. Every role receives the studentId envelope; core maps childId for its public parent API. Single-student
         scope required.'
       parameters:
       - name: from
@@ -575,7 +575,7 @@ paths:
       tags:
       - Dashboard
       description: 'PLANNED supplier contract for #40; not implemented. P08 aggregation
-        belongs to learning. Role determines studentId versus childId envelope. Single-student
+        belongs to learning. Every role receives the studentId envelope; core maps childId for its public parent API. Single-student
         scope required.'
       parameters:
       - name: from
@@ -637,9 +637,7 @@ paths:
           content:
             application/json:
               schema:
-                oneOf:
-                - $ref: '#/components/schemas/DashboardStudentAttempts'
-                - $ref: '#/components/schemas/DashboardParentAttempts'
+                $ref: '#/components/schemas/DashboardStudentAttempts'
         '400':
           description: Problem Details
           content:
@@ -689,7 +687,7 @@ paths:
       tags:
       - Dashboard
       description: 'PLANNED supplier contract for #40; not implemented. P08 aggregation
-        belongs to learning. Role determines studentId versus childId envelope. Single-student
+        belongs to learning. Every role receives the studentId envelope; core maps childId for its public parent API. Single-student
         scope required.'
       parameters:
       - name: from
@@ -781,7 +779,7 @@ paths:
       tags:
       - Dashboard
       description: 'PLANNED supplier contract for #40; not implemented. P08 aggregation
-        belongs to learning. Role determines studentId versus childId envelope. Single-student
+        belongs to learning. Every role receives the studentId envelope; core maps childId for its public parent API. Single-student
         scope required.'
       parameters:
       - name: from
@@ -873,7 +871,7 @@ paths:
       tags:
       - Dashboard
       description: 'PLANNED supplier contract for #40; not implemented. P08 aggregation
-        belongs to learning. Role determines studentId versus childId envelope. Single-student
+        belongs to learning. Every role receives the studentId envelope; core maps childId for its public parent API. Single-student
         scope required.'
       parameters:
       - name: from
@@ -965,7 +963,7 @@ paths:
       tags:
       - Dashboard
       description: 'PLANNED supplier contract for #40; not implemented. P08 aggregation
-        belongs to learning. Role determines studentId versus childId envelope. Single-student
+        belongs to learning. Every role receives the studentId envelope; core maps childId for its public parent API. Single-student
         scope required.'
       parameters:
       - name: from
@@ -1968,10 +1966,13 @@ components:
           - 'null'
         count:
           type: integer
+          minimum: 0
         numerator:
           type: integer
+          minimum: 0
         denominator:
           type: integer
+          minimum: 0
         formula:
           type: string
         period:
@@ -1988,15 +1989,12 @@ components:
     DashboardSummary:
       type: object
       required:
-      - childId
+      - studentId
       - state
       - period
       - inclusionRule
       - metrics
       properties:
-        childId:
-          type: string
-          format: uuid
         state:
           $ref: '#/components/schemas/DashboardQueryState'
         period:
@@ -2007,17 +2005,17 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DashboardMetric'
+        studentId:
+          type: string
+          format: uuid
     DashboardThinkingTypes:
       type: object
       required:
-      - childId
+      - studentId
       - state
       - period
       - items
       properties:
-        childId:
-          type: string
-          format: uuid
         state:
           $ref: '#/components/schemas/DashboardQueryState'
         period:
@@ -2056,6 +2054,11 @@ components:
                       type: string
               summary:
                 type: string
+          minItems: 5
+          maxItems: 5
+        studentId:
+          type: string
+          format: uuid
     DashboardThinkingActivities:
       type: object
       required:
@@ -2265,7 +2268,7 @@ components:
           $ref: '#/components/schemas/DashboardPeriod'
         resume:
           anyOf:
-          - $ref: '#/components/schemas/DashboardAttempt'
+          - $ref: '#/components/schemas/DashboardPublicAttempt'
           - type: 'null'
         missions:
           type: array
