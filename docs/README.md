@@ -39,7 +39,7 @@
 - `design/`: ERD·API·아키텍처 등 구현 기준이 되는 설계 문서
 - `report/`: 작업별 검토 결과와 구현·검증 보고서
   - [이슈 #14 Repository 공통 기반](report/repository-foundation.md): 타입 매핑, 트랜잭션 경계, 예시 Repository와 PostgreSQL 테스트 사용법
-  - [이슈 #50 리포트 생성 기반](report/report-generation-foundation.md): 상태 전이·Outbox 검증과 #42 메시지 계약 연결 전 남은 작업
+  - [이슈 #50 리포트 생성 기반](report/report-generation-foundation.md): 공유 v1 계약·worker·Outbox 검증과 후속 생성기 연결 범위
   - [이슈 #51 학습 기록·수치 계산](report/report-metrics.md): P08 계산·항목/근거 저장 검증, #27 입력 구현안과 남은 실제 연동
   - [이슈 #7 프론트 공통 기반](report/issue-7-fe-common.md): MSW 전환·인증 갱신·체크박스 검증 기준·남은 작업
   - [이슈 #7 학생 화면 후속 검증](report/issue-7-student-completion.md): 역할 URL·6종 입력·피드백·초안 회귀
@@ -53,8 +53,26 @@
   - [이슈 #19 확정 정책 DB 스키마 수정](report/db-policy-schema.md): 변경 대상, 기존 데이터 전환 절차, 1~3단계 검증과 검토 순서
   - [이슈 #6 ai-service 판정·되묻기 API 설계 변경](report/ai-judgment-followup.md): API 계약 변경, 설계와 다르게 구현한 부분과 근거, learning 연동 시 반영할 점
   - [이슈 #4 M2 API 명세 정렬](report/m2-api-alignment.md): 학년 입력·점수 범위·모델 버전 규칙 명세 반영과 근거
-
-- [이슈 #36 Google OAuth·access/refresh](report/issue-36-google-auth.md): HS256·세션 폐기·역할 전환·프론트 계약과 후속 경계
+  - [이슈 #22 learning 미션 조회와 데모 미션 시드](report/learning-mission.md): 시드 문항·공개 범위·성취기준 근거, 미션 조회 구현 결정과 #14 Repository 기반 사용
+  - [이슈 #23 learning 학습 시도·초안·생각 열기](report/learning-attempt.md): 이어하기·동시 시작, 초안 버전 충돌, 생각 열기 순서와 설계 문서 갱신 근거
+  - [이슈 #24 learning 답변 제출·버전 저장](report/learning-answer.md): 제출 순서·행 잠금, 같은 키 재요청, 보완 답변 연결, 제출 뒤 초안 비우기와 설계 문서 갱신 근거
+  - [이슈 #25 learning 피드백 오케스트레이션](report/learning-feedback.md): 처리 상태 전이·리스, 규칙·ai 판정과 풀이 결합, 되묻기·질문 은행, ai 호출 장애 처리와 설계 문서 갱신 근거
+  - [이슈 #26 learning 마무리·돌아보기·자기 평가](report/learning-reflection.md): 마무리 조건·공개 내용·체크리스트, 돌아보기 난이도 코드와 학습 완료, 자기 평가, 마무리 경합과 설계 문서 갱신 근거
+  - [이슈 #36 Google OAuth·access/refresh](report/issue-36-google-auth.md): HS256·세션 폐기·역할 전환·프론트 계약과 후속 경계
+  - [P01 개정 학생·학부모 로그인 분리](report/student-login-separation.md): 등록 기기·PIN 단독 진입 설계 근거와 대안 비교
+  - [프론트엔드 UX 정합성(최초 화면 작업)](report/frontend-backend-ux-alignment.md): 백엔드 기준 화면 정렬 기록, 현재 기준은 이슈 #7 보고서
+  - [프론트 화면 PR 설명](report/pr-fe-workspace.md): 이슈 #7·#8·#9 학생·학부모·관리자 화면 PR 변경 요약
+  - [이슈 #37 추가 리뷰 대응](report/issue-37-review-followup.md): 공유 서킷·기록 service 경계·병렬 조회와 무커밋 검증
+  - [이슈 #37 PR 준비·최신 develop 통합](report/issue-37-pr-preparation.md): 충돌 해결·PIN/동의 호환성과 통합 검증
+  - [이슈 #37 기록 존재 확인 선행 API](report/issue-37-record-existence.md): #27 최소 공급자·실제 core/learning 데이터 연동
+  - [이슈 #37 동의·자녀 등록](report/issue-37-consent-children.md): 버전별 동의·철회·동시 등록·온보딩
+  - [이슈 #38 학생 미션 공개 API·멱등성](report/issue-38-core-learning-proxy.md): core→learning 프록시·답변 멱등·서킷과 학생 컨텍스트
+  - [이슈 #39 core 피드백 SSE](report/issue-39-core-feedback-sse.md): heartbeat·연결 시간·오류 이벤트·컨텍스트 전달과 리뷰 대응
+  - [이슈 #43 모델 레지스트리·AI 사용량](report/issue-43-model-registry.md): 버전 등록·활성화·복귀, 사용량 조회 계약과 검증
+  - [이슈 #59 학생 PIN 로그인·기기 관리 화면](report/issue-59-student-device.md): MSW 목업 계약과 백엔드 확인 항목
+  - [학부모 대시보드 시안 적용](report/parent-dashboard.md): 대시보드 화면 시안 반영 기록
+  - [학생 화면 테마 적용](report/student-theme-world.md): 생각 지도 테마·캐릭터·꾸미기 화면 기록
+  - [설계 문서 정합성 점검](report/docs-consistency-audit.md): 코드 대비·문서 간 불일치 수정 내역, 결정 항목 반영(계정 복구·삭제 재확인·내부 OpenAPI 등), 코드 결함 이슈 초안
 
 ## 개발 규칙
 
@@ -106,3 +124,12 @@ feature/* → develop → main
 - `feature/*`는 `develop`으로만 병합
 - `main`은 `develop`에서만 병합
 - 순서를 건너뛴 병합(`feature/*` → `main`) 금지
+
+#### core 임시 통합 경로 (2026-10-28)
+
+- core 병렬 작업의 통합 검증에 한해 `feature/* → feature/core-integration → develop` 경로를 사용한다.
+- `feature/core-integration`은 최신 develop에서 만들며, 개별 core PR의 base로 사용한다. 이후 develop의 변경을 merge하고 통합 검증한 뒤 develop 대상 최종 PR로 반영한다.
+- 이 경로는 core 임시 통합용 예외다. main 반영은 기존 `develop → main` 흐름을 유지하고, 기존 기능 커밋을 임의로 squash·rebase하지 않는다.
+- 기본 브랜치가 아닌 통합 브랜치 대상 PR의 `Closes`는 이슈를 자동 종료하지 않는다. 실제 해결 범위를 확인한 최종 develop PR에도 해당 `Closes #이슈번호`를 포함한다.
+
+- [이슈 #45 계정 관리·Google 재인증·삭제·탈퇴](report/issue-45-account-management.md): #58 호출 계약, 삭제 Outbox·서비스별 완료, 탈퇴 차단·세션 폐기 및 통합 조건

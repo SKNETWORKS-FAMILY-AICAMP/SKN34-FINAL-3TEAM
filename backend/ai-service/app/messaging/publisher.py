@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 EVENTS_EXCHANGE = "events.topic"
 LLM_USAGE_RECORDED = "llm.usage.recorded"
 
-CallType = Literal["JUDGMENT", "FOLLOWUP", "ANALYSIS", "REPORT_NARRATIVE", "M2", "M1", "SPEECH"]
+CallType = Literal["JUDGMENT", "FOLLOWUP", "ANALYSIS", "REPORT_NARRATIVE", "M2", "M1"]
 
 
 class EventPublisher:

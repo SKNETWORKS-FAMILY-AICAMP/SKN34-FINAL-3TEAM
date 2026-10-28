@@ -28,6 +28,7 @@ dependencies {
     implementation("org.mybatis.spring.boot:mybatis-spring-boot-starter:3.0.5")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
+    implementation("io.github.resilience4j:resilience4j-circuitbreaker:2.3.0") // ai 호출 서킷 브레이커 (아키텍처 1.3, core와 같은 버전). 재시도 모듈은 쓰지 않음
     runtimeOnly("org.postgresql:postgresql")
     // Test-only: production migrations run in the dedicated migration job.
     testImplementation("org.testcontainers:postgresql")
@@ -36,6 +37,7 @@ dependencies {
     testImplementation("org.flywaydb:flyway-database-postgresql:13.11.1")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
+    testImplementation("org.wiremock:wiremock-standalone:3.13.1") // ai 목 서버 (이슈 #25)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

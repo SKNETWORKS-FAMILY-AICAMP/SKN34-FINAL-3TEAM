@@ -2,10 +2,11 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from hashlib import blake2b
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Column, DateTime, MetaData, String, Table, select
+from sqlalchemy import Column, DateTime, MetaData, String, Table, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Session
@@ -33,6 +34,20 @@ class PendingEvent:
     payload: dict[str, Any]
 
 
+class OutboxClaim:
+    def __init__(self, connection, key, event):
+        self.connection, self.key, self.event = connection, key, event
+
+    def close(self):
+        try:
+            self.connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": self.key})
+        except BaseException:
+            self.connection.invalidate()
+            raise
+        finally:
+            self.connection.close()
+
+
 class OutboxRepository:
     def add(self, session: Session, envelope: EventEnvelope[dict[str, Any]]) -> None:
         if not envelope.subject:
@@ -48,21 +63,47 @@ class OutboxRepository:
             )
         )
 
-    def next_unpublished(self, session: Session) -> PendingEvent | None:
-        row = (
-            session.execute(
-                select(outbox_event)
+    def claim_next(self, engine) -> OutboxClaim | None:
+        connection = engine.connect().execution_options(isolation_level="AUTOCOMMIT")
+        held_key = None
+        try:
+            candidates = connection.scalars(
+                select(outbox_event.c.id)
                 .where(outbox_event.c.published_at.is_(None))
                 .order_by(outbox_event.c.created_at, outbox_event.c.id)
-                .limit(1)
-                .with_for_update(skip_locked=True)
-            )
-            .mappings()
-            .one_or_none()
-        )
-        if row is None:
-            return None
-        return PendingEvent(row["id"], row["routing_key"], row["payload"])
+                .limit(100)
+            ).all()
+            for event_id in candidates:
+                key = int.from_bytes(
+                    blake2b(f"report-outbox:{event_id}".encode(), digest_size=8).digest(),
+                    "big",
+                    signed=True,
+                )
+                if not connection.scalar(text("SELECT pg_try_advisory_lock(:key)"), {"key": key}):
+                    continue
+                held_key = key
+                row = (
+                    connection.execute(
+                        select(outbox_event).where(
+                            outbox_event.c.id == event_id, outbox_event.c.published_at.is_(None)
+                        )
+                    )
+                    .mappings()
+                    .one_or_none()
+                )
+                if row is not None:
+                    return OutboxClaim(
+                        connection, key, PendingEvent(row["id"], row["routing_key"], row["payload"])
+                    )
+                connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
+                held_key = None
+        except BaseException:
+            if held_key is not None:
+                connection.invalidate()
+            connection.close()
+            raise
+        connection.close()
+        return None
 
     def mark_published(self, session: Session, event_id: UUID) -> None:
         session.execute(

@@ -141,13 +141,16 @@ def recorder(_: LlmUsage) -> None:
 
 
 def test_factory_without_key_returns_unconfigured() -> None:
-    llm = create_llm(Settings(internal_token="t", anthropic_api_key=None), recorder)
+    settings = Settings(internal_token="t", llm_provider="anthropic", anthropic_api_key=None)
+    llm = create_llm(settings, recorder)
     assert isinstance(llm, UnconfiguredLlm)
     assert llm.model == "claude-sonnet-5-5"
 
 
 def test_factory_disables_sdk_retries_and_uses_configured_backoff() -> None:
-    settings = Settings(internal_token="t", anthropic_api_key="k", llm_retry_backoff=1.5)
+    settings = Settings(
+        internal_token="t", llm_provider="anthropic", anthropic_api_key="k", llm_retry_backoff=1.5
+    )
     llm = create_llm(settings, recorder)
     assert isinstance(llm, AnthropicLlm)
     assert llm._client.max_retries == 0
@@ -298,7 +301,7 @@ def openai_settings(**overrides: Any) -> Settings:
 @pytest.mark.parametrize(
     "overrides",
     [
-        {},  # 키 없음 (모델은 기본값 gpt-6-luna)
+        {},  # 키 없음 (모델은 기본값 gpt-6.1-terra)
         {"openai_api_key": "k", "openai_model": ""},  # 모델 비움
         {"openai_model": "gpt-test"},  # OpenAI인데 키 없음
         {"openai_model": "gpt-test", "openai_base_url": ""},  # compose의 빈 주소
@@ -320,6 +323,14 @@ def test_openai_factory_uses_shared_policy() -> None:
     )
 
 
+def test_openai_ignores_empty_base_url_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    # compose는 OPENAI_BASE_URL을 빈 값으로 넘김. SDK가 이를 주소로 쓰면 연결 실패
+    monkeypatch.setenv("OPENAI_BASE_URL", "")
+    llm = create_llm(openai_settings(openai_api_key="k", openai_model="gpt-test"), recorder)
+    assert isinstance(llm, OpenAICompatibleLlm)
+    assert str(llm._client.base_url).startswith("https://api.openai.com/v1")
+
+
 def test_sllm_server_works_without_key() -> None:
     settings = openai_settings(openai_model="qwen", openai_base_url="http://vllm:8000/v1")
     llm = create_llm(settings, recorder)
@@ -328,7 +339,7 @@ def test_sllm_server_works_without_key() -> None:
     assert llm._client.api_key == NO_KEY
 
 
-def test_openai_default_model_is_gpt_6_luna() -> None:
-    llm = create_llm(openai_settings(openai_api_key="k"), recorder)
+def test_default_provider_is_openai_gpt_6_1_terra() -> None:
+    llm = create_llm(Settings(internal_token="t", openai_api_key="k"), recorder)
     assert isinstance(llm, OpenAICompatibleLlm)
-    assert llm.model == "gpt-6-luna"
+    assert llm.model == "gpt-6.1-terra"

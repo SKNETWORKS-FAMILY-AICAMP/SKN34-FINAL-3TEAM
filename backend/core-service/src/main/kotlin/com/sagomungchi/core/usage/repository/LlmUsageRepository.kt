@@ -1,6 +1,8 @@
 package com.sagomungchi.core.usage.repository
 
 import org.apache.ibatis.annotations.Mapper
+import org.apache.ibatis.annotations.Param
+import com.sagomungchi.core.usage.domain.UsageSummary
 import java.math.BigDecimal
 import java.time.OffsetDateTime
 import java.util.UUID
@@ -25,4 +27,6 @@ data class LlmUsage(
 @Mapper
 interface LlmUsageRepository {
     fun insertIfAbsent(usage: LlmUsage): Int
+    fun summarize(@Param("from") from: OffsetDateTime, @Param("until") until: OffsetDateTime,
+                  @Param("callType") callType: String?): List<UsageSummary>
 }

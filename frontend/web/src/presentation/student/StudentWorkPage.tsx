@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useBlocker } from 'react-router'
-import { ArrowLeft, Check, Lightbulb, List, NotebookPen, Pencil, Volume2 } from 'lucide-react'
+import { ArrowLeft, Check, Lightbulb, NotebookPen, Pencil, Volume2 } from 'lucide-react'
 import { useAttempt, useLearningActions, isDemo } from '../../data/classroom/useClassroom.ts'
 import { DraftConflictError } from '../../data/classroom/errors.ts'
 import {
@@ -12,10 +12,15 @@ import {
   latestFeedback,
   validateAnswer,
   isVerifiedElement,
+  thinkingLabels,
 } from '../../domain/classroom.ts'
 import type { AnswerContent, Attempt, Draft, Reflection } from '../../domain/classroom.ts'
 import { ActivityPaper, ErrorNotice, MemoCanvas, Modal } from '../shared/ClassroomParts.tsx'
 import { MissionScene } from './MissionScene.tsx'
+import { Companion } from './world/Companion.tsx'
+import { useLook } from './world/lookContext.ts'
+import { STAGE_LABELS, companionLabel, missionStage } from '../../domain/studentLook.ts'
+import type { MissionStage } from '../../domain/studentLook.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { appendMemo, memoTargets } from '../../domain/memoTransfer.ts'
 
@@ -252,6 +257,8 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
       setError(e)
     }
   }
+  const { companion } = useLook()
+  const stage = missionStage(a)
   const f = latestFeedback(a),
     writing = !a.finishedAt && (a.answers.length === 0 || more) && canAddAnswer(a)
   const pending =
@@ -265,105 +272,104 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
     ? memoTarget
     : targets[0]?.id ?? ''
   return (
-    <section className="cj-editor" aria-label="미션 작성기">
-      <header className="cj-editor-top">
-        <button type="button" className="cj-close" onClick={back} aria-label="공책으로">
-          <ArrowLeft />
+    <section className="cj-editor st-work" aria-label="미션 작성기">
+      <header className="st-work-top">
+        <button type="button" className="st-back" onClick={back}>
+          <ArrowLeft aria-hidden="true" />
+          공책으로
         </button>
-        <h1>
-          {a.mission.title}
-          <small>
-            {a.mission.subject} ·{' '}
-            {memo ? '생각 메모 · 나만 보기' : inputLabels[a.mission.inputType]} ·{' '}
-            {isDemo ? '화면 시연' : 'API 연결'}
-          </small>
-        </h1>
-        {writing && !memo ? (
-          <button
-            type="button"
-            className="cj-primary"
-            disabled={pending || saveState === 'CONFLICT' || saveState === 'SAVING'}
-            onClick={() => {
-              void submit()
-            }}
-          >
-            <Check />
-            답변 제출
-          </button>
-        ) : (
-          <button type="button" className="cj-primary" onClick={() => setMemo(!memo)}>
-            {memo ? '답변으로' : '메모'}
-          </button>
-        )}
+        <ol className="st-steps" aria-label="미션 진행 단계">
+          {(Object.keys(STAGE_LABELS) as MissionStage[]).map((s, i, all) => {
+            const at = all.indexOf(stage)
+            return (
+              <li key={s} aria-current={s === stage ? 'step' : undefined} data-done={i < at || undefined}>
+                {i < at && <Check aria-hidden="true" />}
+                {STAGE_LABELS[s]}
+              </li>
+            )
+          })}
+        </ol>
       </header>
-      <div className="cj-editor-grid ux-work-grid">
-        <aside className="cj-toolrail" aria-label="작성 도구">
-          <button
-            type="button"
-            className="cj-tool"
-            aria-label="답변 쓰기"
-            aria-pressed={!memo}
-            onClick={() => setMemo(false)}
-          >
-            <NotebookPen />
-          </button>
-          <span className="cj-tool-label">답변</span>
-          <button
-            type="button"
-            className="cj-tool"
-            aria-label="생각 메모"
-            aria-pressed={memo}
-            onClick={() => setMemo(true)}
-            disabled={!!a.finishedAt}
-          >
-            <Pencil />
-          </button>
-          <span className="cj-tool-label">메모</span>
-          <button
-            type="button"
-            className="cj-tool"
-            aria-label="생각 열기"
-            disabled={!!a.finishedAt}
-            onClick={() => {
-              void actions.hint.mutateAsync(a.attemptId).then(setHint).catch(setError)
-            }}
-          >
-            <Lightbulb />
-          </button>
-          <span className="cj-tool-label">생각 열기</span>
-          <button
-            type="button"
-            className="cj-tool"
-            aria-label="질문 읽기"
-            onClick={() => {
-              if (!window.speechSynthesis) {
-                setNotice('이 브라우저에서는 읽어주기를 지원하지 않습니다.')
-                return
-              }
-              window.speechSynthesis.cancel()
-              const voice = new SpeechSynthesisUtterance(a.mission.question)
-              voice.lang = 'ko-KR'
-              window.speechSynthesis.speak(voice)
-            }}
-          >
-            <Volume2 />
-          </button>
-          <span className="cj-tool-label">읽기</span>
-          <button type="button" className="cj-tool" aria-label="활동 목록으로" onClick={back}>
-            <List />
-          </button>
-          <span className="cj-tool-label">목록</span>
-        </aside>
-        <div className="cj-board-column">
-          <div className="ux-answer-paper">
-            <div className="ux-paper-question">
-              <small>
-                {a.mission.subject} / 초등 {a.mission.grade}학년
-              </small>
-              <h2>{a.mission.question}</h2>
-              <MissionScene mission={a.mission} />
-              {more && f?.followup && <p className="cj-quote">{f.followup.question}</p>}
+      <div className="st-paper st-work-paper">
+        <div className="ux-answer-paper">
+          <div className="ux-paper-question">
+            <p className="st-kicker">
+              {a.mission.subject} · {thinkingLabels[a.mission.thinkingType]} · 초등 {a.mission.grade}학년
+              {isDemo ? ' · 화면 시연' : ''}
+            </p>
+            <h1>{a.mission.title}</h1>
+            <div className="st-ask">
+              <Companion kind={companion} size={64} decorative />
+              <div className="st-say">
+                <span className="st-visually-hidden">{companionLabel(companion)}의 질문</span>
+                <h2>{a.mission.question}</h2>
+                <small>{memo ? '생각 메모 · 나만 보기' : inputLabels[a.mission.inputType]}</small>
+              </div>
             </div>
+            <MissionScene mission={a.mission} />
+            <div className="st-tools" role="group" aria-label="작성 도구">
+              <button type="button" aria-label="답변 쓰기" aria-pressed={!memo} onClick={() => setMemo(false)}>
+                <NotebookPen aria-hidden="true" />
+                답변
+              </button>
+              <button
+                type="button"
+                aria-label="생각 메모"
+                aria-pressed={memo}
+                onClick={() => setMemo(true)}
+                disabled={!!a.finishedAt}
+              >
+                <Pencil aria-hidden="true" />
+                메모
+              </button>
+              <button
+                type="button"
+                aria-label="생각 열기"
+                disabled={!!a.finishedAt}
+                onClick={() => {
+                  void actions.hint.mutateAsync(a.attemptId).then(setHint).catch(setError)
+                }}
+              >
+                <Lightbulb aria-hidden="true" />
+                생각 열기
+              </button>
+              <button
+                type="button"
+                aria-label="질문 읽기"
+                onClick={() => {
+                  if (!window.speechSynthesis) {
+                    setNotice('이 브라우저에서는 읽어주기를 지원하지 않습니다.')
+                    return
+                  }
+                  window.speechSynthesis.cancel()
+                  const voice = new SpeechSynthesisUtterance(a.mission.question)
+                  voice.lang = 'ko-KR'
+                  window.speechSynthesis.speak(voice)
+                }}
+              >
+                <Volume2 aria-hidden="true" />
+                읽어 주기
+              </button>
+            </div>
+            {hint && (
+              <div className="st-ask st-hint">
+                <Companion kind={companion} size={48} decorative />
+                <div className="st-say">
+                  <strong>생각 열기</strong>
+                  <p>{hint}</p>
+                </div>
+              </div>
+            )}
+            {more && f?.followup && (
+              <div className="st-ask">
+                <Companion kind={companion} size={48} decorative />
+                <div className="st-say">
+                  <strong>한 걸음 더</strong>
+                  <p>{f.followup.question}</p>
+                </div>
+              </div>
+            )}
+          </div>
             {memo && draft ? (
               <>
                 <div className="ux-private">
@@ -479,17 +485,20 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                       </p>
                     )}
                     {f.followup && !a.finishedAt && (
-                      <>
-                        <p>{f.followup.question}</p>
-                        <small>
-                          {f.followup.source === 'BANK'
-                            ? '질문 은행'
-                            : f.followup.source === 'LLM_RETRY'
-                              ? '재생성된 질문'
-                              : 'AI 질문'}
-                          {isDemo ? ' · 시연 예시' : ''}
-                        </small>
-                      </>
+                      <div className="st-ask">
+                        <Companion kind={companion} size={56} decorative />
+                        <div className="st-say">
+                          <p>{f.followup.question}</p>
+                          <small>
+                            {f.followup.source === 'BANK'
+                              ? '질문 은행'
+                              : f.followup.source === 'LLM_RETRY'
+                                ? '재생성된 질문'
+                                : 'AI 질문'}
+                            {isDemo ? ' · 시연 예시' : ''}
+                          </small>
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}
@@ -587,12 +596,6 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                 )}
               </>
             )}
-            {hint && (
-              <div className="ux-help">
-                <strong>생각 열기</strong>
-                <p>{hint}</p>
-              </div>
-            )}
             {notice && !reflectOpen && (
               <p className="ux-error" role="alert">
                 {notice}
@@ -609,31 +612,45 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
               }
             />
           </div>
-          <div className="ux-save-line" role="status">
-            {!a.finishedAt && draft && (
-              <span>
-                {
+          <div className="st-actions">
+            <div className="ux-save-line" role="status">
+              {!a.finishedAt && draft && (
+                <span>
                   {
-                    SAVED: isDemo ? '초안 저장 완료(모의)' : '초안 저장 완료',
-                    DIRTY: '변경 내용 저장 대기',
-                    SAVING: '초안 저장 중',
-                    FAILED: '초안 저장 실패 · 입력은 유지됩니다.',
-                    CONFLICT: '초안 충돌 · 선택 전에는 덮어쓰지 않아요.',
-                  }[saveState]
-                }
-              </span>
+                    {
+                      SAVED: isDemo ? '초안 저장 완료(모의)' : '초안 저장 완료',
+                      DIRTY: '변경 내용 저장 대기',
+                      SAVING: '초안 저장 중',
+                      FAILED: '초안 저장 실패 · 입력은 유지됩니다.',
+                      CONFLICT: '초안 충돌 · 선택 전에는 덮어쓰지 않아요.',
+                    }[saveState]
+                  }
+                </span>
+              )}
+              {!a.finishedAt && draft?.savedAt && (
+                <time dateTime={draft.savedAt}>
+                  마지막 저장 ·{' '}
+                  {new Date(draft.savedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}
+                </time>
+              )}
+              <small>
+                {a.finishedAt
+                  ? '마무리한 활동은 답변을 더 제출할 수 없어요.'
+                  : '다 쓰기 전에는 정답·예시 답을 보여 주지 않아요.'}
+              </small>
+            </div>
+            {writing && !memo && (
+              <button
+                type="button"
+                className="st-button st-primary"
+                disabled={pending || saveState === 'CONFLICT' || saveState === 'SAVING'}
+                onClick={() => {
+                  void submit()
+                }}
+              >
+                {a.answers.length ? '더해서 보내기' : '다 썼어요'}
+              </button>
             )}
-            {!a.finishedAt && draft?.savedAt && (
-              <time dateTime={draft.savedAt}>
-                마지막 저장 ·{' '}
-                {new Date(draft.savedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}
-              </time>
-            )}
-            <small>
-              {a.finishedAt
-                ? '마무리한 활동은 답변을 더 제출할 수 없어요.'
-                : '마무리 전에는 정답·예시 답을 공개하지 않습니다.'}
-            </small>
           </div>
           <ErrorNotice
             error={saveError}
@@ -646,7 +663,6 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                 : undefined
             }
           />
-        </div>
       </div>
       {(leaveOpen || blocker.state === 'blocked') && draft && (
         <Modal title="아직 저장하지 못한 입력이 있어요." onClose={stay}>
