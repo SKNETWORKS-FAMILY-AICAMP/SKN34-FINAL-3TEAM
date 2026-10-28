@@ -102,6 +102,9 @@ WHERE id = '00000000-0000-4000-8000-000000000003';
 
 INSERT INTO notification_setting (user_id, type, channel, enabled, updated_at)
 VALUES ('00000000-0000-4000-8000-000000000001', 'REPORT_COMPLETED', 'IN_APP', true, now());
+INSERT INTO notification_setting (user_id, type, channel, enabled, updated_at)
+VALUES ('00000000-0000-4000-8000-000000000001', 'REPORT_FAILED', 'IN_APP', false, now());
+SELECT pg_temp.expect_sqlstate($$UPDATE notification_setting SET type = 'UNKNOWN_EVENT'$$, '23514');
 SELECT pg_temp.expect_sqlstate(
     $$UPDATE notification_setting SET channel = 'EMAIL'$$, '23514');
 SELECT pg_temp.expect_sqlstate(

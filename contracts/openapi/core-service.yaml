@@ -20,6 +20,82 @@ tags:
 security:
 - BearerAuth: []
 paths:
+  /notifications:
+    get:
+      operationId: listNotifications
+      summary: 본인 알림 목록 (학생 세션 금지)
+      parameters:
+      - {name: unreadOnly, in: query, schema: {type: boolean, default: false}}
+      - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: 최신순 알림. 재연결 ready 후 처음부터 재조회하여 id로 병합한다.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, page, size, hasNext]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Notification'}}
+                  page: {type: integer}
+                  size: {type: integer}
+                  hasNext: {type: boolean}
+        default: {$ref: '#/components/responses/NotificationProblem'}
+  /notifications/{notificationId}/read:
+    patch:
+      operationId: readNotification
+      summary: 본인 알림 읽음 (멱등, 학생 세션 금지)
+      parameters:
+      - {name: notificationId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: 최초 읽음 시각 유지}
+        default: {$ref: '#/components/responses/NotificationProblem'}
+  /notifications/read-all:
+    post:
+      operationId: readAllNotifications
+      summary: 본인 알림 전체 읽음 (학생 세션 금지)
+      responses:
+        '204': {description: 최초 읽음 시각 유지}
+        default: {$ref: '#/components/responses/NotificationProblem'}
+  /notifications/stream:
+    get:
+      operationId: streamNotifications
+      summary: 본인 알림 SSE (학생 세션 금지)
+      description: 'ready 후 목록 재조회 필수. notification 이벤트는 Notification, heartbeat는 15초 주석. 최대 5분. 매 전송에 세션/동의 재검사. Last-Event-ID 재생 없음. Pub/Sub 유실에 대비해 주기적으로 목록 동기화. Redis 발행 성공은 브라우저 수신 보장이 아니다.'
+      responses:
+        '200':
+          description: ready·notification 이벤트와 ping 주석
+          content:
+            text/event-stream:
+              schema: {type: string}
+        default: {$ref: '#/components/responses/NotificationProblem'}
+  /notification-settings:
+    get:
+      operationId: getNotificationSettings
+      summary: 본인 유형별 수신 설정 (학생 세션 금지)
+      responses:
+        '200':
+          description: 미저장 유형은 true, IN_APP 전용
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotificationSettings'}
+        default: {$ref: '#/components/responses/NotificationProblem'}
+    put:
+      operationId: updateNotificationSettings
+      summary: 지정 유형의 수신 설정 갱신 (학생 세션 금지)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/NotificationSettings'}
+      responses:
+        '200':
+          description: 갱신 후 전체 유효 설정. 수신 거부는 새 알림 생성을 막고 기존 알림은 보존.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotificationSettings'}
+        default: {$ref: '#/components/responses/NotificationProblem'}
   /missions:
     get:
       operationId: listMissions
@@ -1726,6 +1802,36 @@ components:
         type: string
         const: XMLHttpRequest
   schemas:
+    NotificationType:
+      type: string
+      enum: [REPORT_COMPLETED, REPORT_FAILED, ERROR_REPORT_RESOLVED, INQUIRY_ANSWERED, PAYMENT_CHANGED, SUBSCRIPTION_CHANGED]
+    Notification:
+      type: object
+      additionalProperties: false
+      required: [id, childId, type, title, link, readAt, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        childId: {type: [string, 'null'], format: uuid}
+        type: {$ref: '#/components/schemas/NotificationType'}
+        title: {type: string}
+        link: {type: string}
+        readAt: {type: [string, 'null'], format: date-time}
+        createdAt: {type: string, format: date-time}
+    NotificationSettings:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 6
+          description: 유형 중복 금지. PUT은 지정 유형만 갱신하며 GET/응답은 전체 유형 반환.
+          items:
+            type: object
+            required: [type, enabled]
+            properties:
+              type: {$ref: '#/components/schemas/NotificationType'}
+              enabled: {type: boolean}
     ReportPeriod:
       type: object
       required:
@@ -2629,6 +2735,11 @@ components:
         application/json:
           schema: {type: object, additionalProperties: true}
   responses:
+    NotificationProblem:
+      description: 인증 실패 401, 학생 403, 타인/없는 알림 404, 잘못된 목록/설정 400
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
     LearningResult:
       description: learning의 최초 상태·JSON 원문을 보존한다. DTO 완성·실제 API 제공은 learning #22·#23·#24·#26의 후속 연결 조건이다.
       headers:

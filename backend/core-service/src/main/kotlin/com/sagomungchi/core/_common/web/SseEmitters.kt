@@ -62,7 +62,23 @@ class SseEmitters internal constructor(private val heartbeat: Duration, private 
         return stream.emitter
     }
 
-    inner class Stream internal constructor(val emitter: SseEmitter) {
+    /** Subscription lifetime is independent of feedback's finite operation and 90-second default. */
+    fun subscribe(lifetime: Duration, onClose: (Stream) -> Unit, register: (Stream) -> Unit, validate: () -> Unit): Stream {
+        val stream = Stream(SseEmitter(lifetime.toMillis()), onClose, validate)
+        streams.add(stream)
+        stream.emitter.onCompletion { stream.disconnected() }
+        stream.emitter.onTimeout { stream.disconnected(); stream.emitter.complete() }
+        stream.emitter.onError { stream.disconnected() }
+        // Register before a heartbeat can reject the session and invoke cleanup.
+        try {
+            register(stream)
+            stream.attach(timer.scheduleAtFixedRate({ stream.heartbeat() }, heartbeat.toMillis(), heartbeat.toMillis(), TimeUnit.MILLISECONDS))
+        } catch (ex: Exception) { stream.disconnected(); stream.emitter.completeWithError(ex); throw ex }
+        return stream
+    }
+
+    inner class Stream internal constructor(val emitter: SseEmitter,
+        private val onClose: (Stream) -> Unit = {}, private val validate: () -> Unit = {}) {
         private val connected = AtomicBoolean(true)
         private val sendingHeartbeat = AtomicBoolean(false)
         private val lock = ReentrantLock()
@@ -77,6 +93,7 @@ class SseEmitters internal constructor(private val heartbeat: Duration, private 
 
         private fun send(event: SseEmitter.SseEventBuilder) = lock.withLock {
             if (connected.get()) {
+                try { validate() } catch (_: Exception) { disconnected(); emitter.complete(); return@withLock }
                 try { emitter.send(event) }
                 catch (_: IOException) { disconnected() }
                 catch (_: IllegalStateException) { disconnected() }
@@ -103,9 +120,10 @@ class SseEmitters internal constructor(private val heartbeat: Duration, private 
         }
 
         internal fun disconnected() {
-            connected.set(false)
+            if (!connected.compareAndSet(true, false)) return
             scheduled?.cancel(false)
             streams.remove(this)
+            onClose(this)
         }
     }
 
