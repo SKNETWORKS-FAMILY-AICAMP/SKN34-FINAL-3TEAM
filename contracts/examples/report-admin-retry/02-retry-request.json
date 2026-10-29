@@ -1,0 +1,17 @@
+{
+  "id": "aaaaaaaa-aaaa-4aaa-8aaa-000000000002",
+  "specversion": "1.0",
+  "type": "report.generate",
+  "source": "core-service",
+  "time": "2026-10-29T08:00:02Z",
+  "subject": "11111111-1111-4111-8111-111111111111",
+  "dataschema": "report.generate.v1",
+  "data": {
+    "jobId": "33333333-3333-4333-8333-333333333333",
+    "studentId": "11111111-1111-4111-8111-111111111111",
+    "periodFrom": "2026-10-19",
+    "periodTo": "2026-10-25",
+    "trigger": "ADMIN_RETRY",
+    "narrativeEnabled": true
+  }
+}

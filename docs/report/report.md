@@ -4,6 +4,8 @@
 
 계약은 [API 명세](../design/api-spec.md) 3.4·4.1.1·4.2.1·4.4·5.5, 메시지는 [report-messages](../../contracts/events/report-messages.md).
 
+#152 관리자 실패 작업 재처리는 새 jobId·ADMIN_RETRY와 기존 생성/revision을 재사용한다. 원작업 연결·관리자 접수는 core #47, report 실행·중복 방어·기존 판 보존은 [#152 검토](issue-152-report-admin-retry.md)를 따른다. 기존 #50의 종료 작업 단순 재전달 종료 정책은 유지한다.
+
 ## 1. core 주간 리포트 (#42)
 
 - 매주 월요일 07:00 Asia/Seoul, 직전 월~일 `LocalDate`, 집계 경계 `[월 00:00 KST, 다음 월 00:00 KST)`. 기록 없는 자녀도 대상

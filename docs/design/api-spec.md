@@ -906,6 +906,16 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - reportId 조회의 자녀 연결·현재 필수/법정대리인 동의를 확인한 뒤 단일 학생 scope로 report-api를 호출한다. 없는 core reportId는 404 REPORT_NOT_FOUND다. 목록은 `{items:[3.4의 식별·기간·status·state·revision·generatedAt 필드]}`다. 상세는 3.4, 근거는 report-api JSON을 그대로 전달하고 다운로드는 pdf/md의 `{url,expiresAt}`다. report 장애는 503 REPORT_UNAVAILABLE, JSON 계약 위반은 502 REPORT_CONTRACT_INVALID다. 성공 상세의 실제 반환 reportId로 열람 기록을 남긴다.
 - v1 이벤트 스키마·봉투·생산자·소비자는 [report-messages.md](../../contracts/events/report-messages.md). 결정 근거는 [리포트 보고서](../report/report.md).
 
+#### 5.5.1 #152 관리자 실패 리포트 재처리 (report 공급 계약)
+
+- #47 담당자와 합의: core가 관리자 권한·Idempotency-Key·현재 이용 권한/학생 상태를 확인하고, 원래 실패 작업과 **새 jobId**의 연결·감사 기록을 관리한다. report에는 기존 `report.generate.v1`의 `trigger=ADMIN_RETRY`와 현재 권한의 `narrativeEnabled`를 보낸다. 같은 재처리 요청 재전달은 같은 jobId·같은 업무 본문을 사용한다. 새로 명시적으로 재처리할 때만 새 jobId를 발급한다.
+- report는 기존 GenerationService·JobLocks·ReportRepository·OutboxRelay를 재사용한다. 새 jobId이면 같은 학생/주의 다음 revision을 생성하고 이전 판을 보존한다. 같은 jobId의 COMPLETED·FAILED 재전달은 ACK 후 종료하며 상태를 되돌리거나 생성기를 다시 호출하지 않는다(#50 유지). 동시 전달은 작업 잠금으로 중복 실행을 막고 기존 소비자의 지연 재시도 정책을 따른다.
+- started/completed/failed는 **받은 새 jobId**, 학생 ID 및 그 실행에 배정한 같은 reportId를 반환한다. 원래 실패 jobId·revision·관리자 ID는 report 이벤트에 추가하지 않는다. core는 jobId로 실행을 구분해 지연된 원작업 이벤트가 새 작업에 반영되지 않게 한다. report에는 core 결과 이벤트를 다시 적용하는 API가 없다.
+- 시작 행과 started Outbox, 종료 상태/항목/파일과 terminal Outbox는 각각 같은 DB 트랜잭션이다. Outbox 발행은 at-least-once이므로 core는 봉투 id와 조건부 상태 전이로 중복·순서 역전을 방어한다. 새 이벤트 ID를 붙여 같은 jobId를 다시 보내도 업무 실행은 늘어나지 않는다.
+- report는 기존 삭제 장벽과 core ACTIVE 프로필 조회를 유지한다. 삭제 장벽으로 거부된 작업은 기존 정책대로 생성·성공 이벤트를 만들지 않는다. 삭제와 경쟁한 core 작업의 취소·정리는 core 책임이며 #152에서 삭제 정책이나 거짓 실패/완료 이벤트를 임의 추가하지 않는다.
+- 새 HTTP API·이벤트 버전·DB 컬럼은 필요 없다. `/admin/jobs/{id}/retry`의 실제 요청 접수·원작업 연결·감사 처리는 #47 후속이며, 이 공급 계약만으로 현재 core의 `JOB_RETRY_UNAVAILABLE` 차단을 해제하지 않는다.
+- 요청·결과 예시: [report-admin-retry](../../contracts/examples/report-admin-retry/). 기존 [공유 메시지 계약](../../contracts/events/report-messages.md)과 같은 스키마를 사용한다.
+
 ### 5.6 #45 계정 관리·Google 재확인·삭제·탈퇴 계약
 
 - 기존 Google 로그인과 별도 재인증 흐름을 사용한다. `POST /me/reauth`에 `{purpose: PIN_CHANGE|CHILD_UNLINK|CHILD_DELETE|WITHDRAWAL, childId?, scope?}`를 보내면 `{challengeId,authorizationUrl,expiresAt}`를 반환하고 HttpOnly/Secure/SameSite=Lax 재인증 상태 쿠키를 설정한다. CHILD_DELETE는 PROFILE/RECORDS scope를 반드시 지정한다. WITHDRAWAL은 자녀/scope를 허용하지 않는다. 다른 자녀 작업은 childId 필수다.
