@@ -1,5 +1,4 @@
 import type { Mission, Period, ThinkingType, InputType, PublicAttempt } from '../classroom.ts'
-import type { QueryState } from '../queryState.ts'
 export type Permission = 'CONTENT' | 'PAYMENT_VIEW' | 'PAYMENT_REFUND' | 'SERVICE_OPS'
 export type JobStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED'
 export type JobType = 'CONVERSATION' | 'REPORT' | 'NOTIFICATION'
@@ -11,35 +10,40 @@ export interface Job {
   retryCount: number
   failureReason: string | null
   createdAt: string
-  updatedAt: string
+  retryable: boolean
+  retryUnavailableReason: string | null
   executions: {
     executionId: string
     attemptNo: number
     status: JobStatus
     errorCode: string | null
-    errorDetail: string | null
     triggeredBy: string | null
     startedAt: string
     finishedAt: string | null
   }[]
 }
+export interface OperationQueue {
+  name: string
+  kind: 'WORK' | 'RETRY' | 'DLQ'
+  messages: number
+  messagesReady: number
+  messagesUnacknowledged: number
+  consumers: number
+  state: string
+}
 export interface Overview {
   period: Period
-  state: QueryState
   inclusionRule: string
-  attempts: number
-  completed: number
+  learning: { attempts: number; completedAttempts: number; students: number; inclusionRule: string }
   jobCounts: { type: JobType; status: JobStatus; count: number }[]
-  missionCounts: { status: MissionStatus; count: number }[]
 }
 export interface Audit {
   id: string
   actorUserId: string
   action: string
   targetType: string
-  targetId: string
+  targetId: string | null
   result: 'SUCCESS' | 'FAILURE'
-  detail: string
   createdAt: string
 }
 export interface MissionVersion {

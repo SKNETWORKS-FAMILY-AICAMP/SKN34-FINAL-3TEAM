@@ -76,3 +76,16 @@ JAR SHA-256: `c0bb716d77abcdd998848132bbe4e76ddae3e49e52edc9dbb1a75c7378f5910f`.
 - 추천 Label: 이슈 #119에서 등록·설명을 확인한 `enhancement`(New feature or request), `area:core`(core 영역). Label 목록 전용 조회는 연결 도구의 허용 endpoint에 없어 전체 목록을 재조회하지 못했다. Type 목록도 확인하지 못했으며 설정하지 않았다. PR 메타데이터는 사용자가 생성 화면에서 확인·설정한다.
 - #119 전체 완료 조건에는 실제 worker 연결·제목·가림 검증이 남아 있어 이 core 범위 초안에 자동 종료 구문을 넣지 않는다. 전체 조건이 충족된 최종 PR에 `Closes #119`를 포함한다. 원격 저장소 조회로 확인한 기본 브랜치는 `develop`이다. 현재 통합 브랜치 대상 PR은 병합해도 자동 종료되지 않으며, 기본 브랜치 develop으로 통합하는 최종 PR에 종료 구문을 유지해야 한다.
 - PR 생성·댓글 전송·병합·이슈 종료·squash/rebase/force push는 수행하지 않는다. 실제 커밋 SHA·push·최종 working tree 상태는 완료 응답에서 보고한다.
+
+## PR #125 충돌 해결 (2026-10-29)
+
+PR 생성 후 base에 #47 PR #123이 병합돼 `ea9b3aef3d823cdeb9bc3eab5f5d4753a3791d6a`로 전진했다. #119 head는 `f9fc69bda58aa71ce54d5747588a1d745a05c28c`였다. OpenAPI의 `paths`·`components.schemas` 시작 위치에 양쪽이 독립 항목을 추가해 이 파일 한 곳에서 두 hunk 충돌이 났다. API/로직 의미의 충돌은 아니다.
+
+작업 브랜치에 최신 base를 일반 merge로 반영하고 두 추가 블록을 모두 보존했다. 관리자 API/스키마를 삭제·수정하지 않았고 #119 경로/스키마도 유지했다. 공통 api-spec은 자동 병합됐다. 다른 체크아웃이나 #47 worktree는 수정하지 않았다. rebase/squash/force push는 하지 않는다. 검증 결과는 아래에 기록한다.
+
+- 병합 OpenAPI 전체를 파싱해 **최신 base + 기존 #119 경로 1개·스키마 1개**와 구조적으로 완전히 같음을 확인했다. 비교 스크립트의 최초 저장소 경로 오류는 검증 도구에서 수정해 재실행했고 통과했다. 제품 코드 수정은 없다.
+- 같은 JDK 21 Docker/Linux 검증 명령으로 전체 core **46개 클래스·282개 테스트 통과**, 실패/오류/생략 0, bootJar 성공, BUILD SUCCESSFUL (5분 2초). #47 관리자·기존 공개 인증·#119 실제 HTTP/DB 회귀를 포함한다.
+- 공통 계약 **73개 통과**, core OpenAPI 3.1 표준 검사, 충돌 표시 제거, `git diff --check`·stage 변경 검사 통과.
+- 검증 tar와 현재 core 입력 **318개 파일 바이트 일치**. JAR SHA-256은 `f216f496e1189c4285439e52031e89db9709165e5017431403afa0d751d35a87`이다. 결과는 저장소 밖 `issue119-verification/merge125`에 보존한다.
+- base 대비 변경은 기존 #119의 11개 파일 범위이며 #47 관리자 코드·프론트·SQL·테스트는 base와 동일하다. 프론트는 별도 변경이 없어 이번 core/OpenAPI 충돌 해결에서 프론트 테스트를 재실행하지 않았다.
+- report 제품 코드·연결 범위는 이전과 같고 실제 worker/AI payload·배포는 계속 미검증이다. 원격 CI 상태는 push 이후 별도 확인 대상이다.
