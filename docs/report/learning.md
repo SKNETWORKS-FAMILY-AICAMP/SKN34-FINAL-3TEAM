@@ -1,4 +1,4 @@
-# learning 학습 서비스 (#22~#27·#79·#80·#128·#145)
+# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146)
 
 통합 원본: learning-mission, learning-attempt, learning-answer, learning-feedback, learning-reflection, learning-records, learning-judgment-rules
 
@@ -199,5 +199,30 @@ core #126(#47)이 관리자 미션 요청 10개(경로 8개)를 learning `/inter
 - 확인 필요·한계:
   - core가 learning 404를 아직 503 `ADMIN_MISSIONS_UNAVAILABLE`로 바꿈(없는 미션 실제 확인). core가 고치기로 함
   - 프론트 `missingMissionFields`를 같은 조건으로 맞추는 것은 프론트 반영 중(이슈 해야 할 일 4)
-  - `verify_feedback_learning.py`는 학생 시작·답변 제출까지 통과(위 스크립트 수정 확인)하지만 AI 실패 단계에서 멈춤. develop 원본에서도 같아 #145와 무관한 기존 문제, 지금 core는 Redis도 필요
+  - `verify_feedback_learning.py`는 학생 시작·답변 제출까지 통과(위 스크립트 수정 확인)하지만 AI 실패 단계에서 멈춤. develop 원본에서도 같아 #145와 무관한 기존 문제, 지금 core는 Redis도 필요. 원인은 스크립트가 learning에 `CORE_URL`을 넘기지 않아 피드백 전 결제 사용 확인이 503 `PAYMENT_USAGE_UNAVAILABLE`로 끝나는 것(11절에서 확인)
   - V7 추가는 DB 담당에게 공유
+
+## 11. 신고 지원 조회 (#146)
+
+core #46 신고·문의는 접수·문의 연결·관리자 정정 전에 learning에서 대상의 학생·시도를 확인하고, 관리자는 신고된 시도 원문을 봄. core `LearningSupportClient`는 두 경로를 이미 부르지만 learning 구현이 없어 #80 정정이 있어도 실제 흐름이 이어지지 않던 문제를 고침. 계약은 api-spec 4.1 두 줄·5.7과 learning OpenAPI(core 소비 계약 `support-learning-required.yaml` 0.2.0은 그대로). 설계에 없던 자리만 추가하고 나머지는 기존 판정 조회를 다시 씀
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 위치 | 새 패키지 없이 `judgment/`: `SupportController` + `JudgmentService.supportTarget`·`supportOriginal` + `JudgmentMapper.findSupportTarget` | 아키텍처 learning `judgment/controller` "피드백·정정 내부 API", 이슈 "class-diagram 확인 후 결정" |
+| 대상 확인 | `GET /internal/support/targets/{JUDGMENT·FOLLOWUP·ATTEMPT}/{id}` → `{studentId, attemptId, judgmentId?, previousResult?}`. 판정은 판정 ID·지금 보이는 결과(최신 정정, 8절 정정 직전 결과와 같은 규칙, `DONE` 전이면 없음), 되묻기는 만든 판정 ID, 시도는 둘 다 없음. 없는 칸은 null 대신 생략. 원문 없음 | core 계약(선택 칸), core는 정정 전 `previousResult`가 결과 값이 아니면 409 |
+| 대상 확인 권한 | `STUDENT`·`PARENT`·`ADMIN`(관리자는 학생 1명, #80과 같음) 아니면 403, `X-User-Id` UUID 아니면 400, 대상 없음 404 → 대상 학생이 범위 밖 403(#80 정정과 같은 순서) | core가 학생·보호자 신고와 관리자 정정 전 확인에 같은 경로를 씀 |
+| 원문 | `GET /internal/support/attempts/{id}` → `{studentId, attemptId, answers:[{answerId, version, text, feedback}]}`. 기존 `timeline`·`results`를 그대로(`text`는 시도 상세 원문, `feedback`은 시도 상세와 같은 모양). 초안·메모·이름·돌아보기 없음. `ADMIN` + 학생 1명 + `X-User-Id` | core는 이 네 칸만 골라 씀, api-spec 5.7 "학생 전용 `/internal/attempts`를 관리자로 쓰지 않음" |
+| `judgmentId` | 피드백 결과 `judgment`에 `judgmentId`(피드백 SSE·시도 상세·원문 모두, 만드는 곳은 `stored()` 한 곳). 판정 전(`judgment: null`)이면 판정 신고 없음 | core 합의 (a): 프론트 신고 버튼이 판정 ID로 신고(이슈 해야 할 일에 추가) |
+
+- 설계와 다른 점: 없음. 설계에 없던 `SupportController`·서비스 메서드 2개·`judgmentId`만 class-diagram 4.2·api-spec에 먼저 추가
+- 기존 파일 수정: `JudgmentView`(`judgmentId`), `StoredJudgment`·`JudgmentMapper.xml` `findStored`(`judgment_id`), `JudgmentMapper`·`JudgmentRepository`(`findSupportTarget`), 테스트 `AttemptControllerTest`·`FeedbackControllerTest`(`judgmentId` 인자·확인), `scripts/tests/test_record_exists_openapi.py`(경로 수 33 → 35)
+- 같이 고친 것:
+  - `scripts/tests/test_support_openapi.py`(core #46 담당 테스트) 22행: "learning 계약에 `/support/targets`가 없어야 함"(미구현 경계)을 "조회 두 경로가 있어야 함"으로. 구현해서 깨지는 줄이라 같은 PR에서(사용자 확인, 같은 테스트의 다른 검사·core 소비 계약은 그대로, 담당에게 공유)
+  - `JudgmentMapper.xml` 주석이 #145에서 바뀐 `CorrectionMapper.lockTarget`을 가리키던 것을 `findTarget`으로
+  - api-spec 5.7 "learning 공급자 필요 계약 (아직 구현되지 않음)" 제목·"정정 구현이 없다" 문장을 사실대로(#80·#146 구현), 나머지 문장은 그대로
+- 설계 문서: api-spec 3.2(`judgmentId` 예시·설명)·4.1(피드백 줄 `judgmentId`, 두 경로 줄)·5.7(위 두 곳), class-diagram 4.2(`SupportController`·`supportTarget`·`supportOriginal`·화살표·메모), OpenAPI(경로 2·`SupportTarget`·`SupportOriginal`·`Judgment.judgmentId`, 버전은 #80처럼 그대로)
+- 검증: learning 테스트 246개(새 8: 서비스 4·컨트롤러 4), scripts/tests 83개(새 `test_support_lookup_contract.py` 4: core가 부르는 경로 = OpenAPI, 대상 유형, core가 읽는 칸, `judgmentId`). 보호 장치 13개를 빼면 각각 실패(범위 403·없음 404·최신 정정·되묻기 판정 ID·원문 범위·피드백 판정 ID·컨트롤러 역할·관리자 1명·`X-User-Id` 2·원문 관리자만·학생 1명·없는 칸 생략). 실제 연동: core·learning JAR + 임시 DB(합성 계정, ai 없이 고르기 규칙 판정, 되묻기 1건만 합성 행)로 core 경유 피드백 SSE·시도 상세에 `judgmentId` → 학생 JUDGMENT 신고(core가 learning 학생·시도 저장) → 보호자 FOLLOWUP 신고·ATTEMPT 문의 연결 → 다른 가족 신고 거부 → 관리자 신고·문의 상세 원문(답변 네 칸, 메모 없음, 열람 감사 1건) → 검토 → 정정(`previousResult: CORRECT` → `RETHINK`, 학생 시도 상세 `RETHINK`, 원판정 `CORRECT` 그대로)
+- 확인 필요·한계:
+  - 범위 밖 신고: learning 403을 core가 503 `SUPPORT_DEPENDENCY_UNAVAILABLE`로 바꿈(core는 공급자 비-2xx를 모두 503, 5.7). 신고는 막힘
+  - 학생 신고 버튼이 `judgmentId`를 쓰는 화면 반영은 프론트(#82 쪽)
+  - `verify_feedback_learning.py`는 learning에 `CORE_URL`이 없어 피드백이 결제 사용 확인에서 503(10절 기존 문제의 원인). 다른 팀원 스크립트라 고치지 않음
