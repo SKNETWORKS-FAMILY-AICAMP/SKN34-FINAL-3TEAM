@@ -209,6 +209,9 @@ services:
     environment:
       <<: *python-env
       CORE_URL: http://core-service:8080
+      S3_BUCKET: ${SCORING_S3_BUCKET:-sagomungchi-local-models}
+      S3_REGION: ${SCORING_S3_REGION:-ap-northeast-2}
+      MODEL_CACHE_DIR: /tmp/scoring-models
     ports:
       - "${SCORING_HOST_PORT:-8001}:8001"
     healthcheck:

@@ -54,6 +54,14 @@
 
 - [이슈 #46 신고·문의·공지·도움말](report/issue-46-support.md): 요청 역할·학생 scope, 정정 재시도·감사, 알림 연결과 공급자 필요 계약
 
+- [이슈 #85 scoring 모델 레지스트리·S3 로딩](report/issue-85-scoring-model-registry.md): 승인 모델 로딩·scope·readiness 및 실제 모델 검증
+
+- [이슈 #86 scoring 모델 활성화 이벤트](report/issue-86-scoring-model-events.md): 버전 교체·롤백·두 레플리카 재연결 검증
+
+- [scoring #87](report/issue-87-scoring-m2.md): M2 채점 계약·실제 모델 검증
+- [scoring #88](report/issue-88-scoring-m1.md): 미학습 M1 비활성 계약·입력 검증 및 활성화 후속 범위
+- [scoring #85~#88 통합 제출](report/scoring-85-88-integration.md): 통합 브랜치·PR 범위·검증 결과·후속 연동 구분
+
 ## 개발 규칙
 
 ### 작업 규칙

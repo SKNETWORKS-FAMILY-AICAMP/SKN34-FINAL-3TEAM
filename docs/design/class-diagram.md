@@ -1493,7 +1493,7 @@ classDiagram
   }
   class ScoringClient {
     <<client>>
-    +m2_scores(prompt, text, grade, input_type) M2Result
+    +m2_scores(prompt, text, grade, input_type, keywords) M2Result
     +m1_check(problem, answer_key, solution) M1Result
   }
   class ActiveVersions {
@@ -1576,16 +1576,18 @@ classDiagram
   }
   class RecordTools {
     <<service>>
-    +summary(student_id, period) list~Metric~
-    +thinking_types(student_id, period) list
-    +attempts(student_id, period) list
-    +changes(student_id, period) list
-    +evidence(answer_ids) list~Evidence~
+    +summary(scope) list~Metric~
+    +thinking_types(scope) list
+    +attempts(scope, size) list
+    +changes(scope) list
+    +thinking_activities(scope) list
+    +evidence(scope, answer_ids) list~RecordEvidence~
   }
   class calculators {
     <<module>>
-    +ratio(numerator, denominator, label, formula, period) Metric
-    +change_counts(first, revised) ChangeCounts
+    +compute(intent, records, scope) Computation
+    +ratio_metric(label, numerator, denominator, formula, period) Metric
+    +count_metric(label, count, formula, period) Metric
   }
   class AnswerVerifier {
     <<service>>
@@ -1601,10 +1603,11 @@ classDiagram
   }
   class LearningClient {
     <<client>>
-    +summary(student_id, period) list
-    +thinking_types(student_id, period) list
-    +attempts(student_id, period) list
-    +changes(student_id, period) list
+    +summary(scope) list
+    +thinking_types(scope) list
+    +attempts(scope, size) list
+    +changes(scope) list
+    +thinking_activities(scope) list
     +evidence(answer_ids) list
   }
   class LlmClient { <<client>> }
@@ -1625,8 +1628,9 @@ classDiagram
 ```
 
 - 그래프 흐름 `classify → clarify_scope → plan → run_tools → compute → answer → verify` (아키텍처 1.5), 분기는 [시퀀스 다이어그램 5](sequence-diagram.md#5-분석-대화-sse)
-- `RecordTools`: 도구 실행마다 `require_student` 검사 후 learning 호출, 컨텍스트 헤더 그대로 전달 (FN-AGT-02)
-- `calculators`: 건수·비율은 LLM이 아닌 코드 계산 (FN-AGT-05), `Metric` 형식은 learning과 동일
+- `RecordTools`(`analysis_agent/tools.py`): 도구 실행마다 `require_student` 검사 후 `LearningClient` 호출, 범위 밖이면 learning 미호출 (FN-AGT-02). `scope`는 core가 확인한 `{studentId, from, to}`
+- `LearningClient`(`clients/learning_client.py`): 받은 컨텍스트 헤더 그대로 전달, 재시도 없음, 응답의 학생·기간·처리 상태 대조. 조회 실패는 빈 기록이 아닌 오류 (FN-AGT-10). `evidence`의 `available: false` 항목은 원문 없이 그대로 반환
+- `calculators`: 건수·비율은 LLM이 아닌 코드 계산 (FN-AGT-05), `Metric` 형식은 learning과 동일(분모 0 `NO_RECORD`, 5 미만 `value: null`). 집계 대상·전후 변화 수(글자·문장·까닭을 잇는 말)는 learning `summary`·`changes.counts` 값을 그대로 사용해 대시보드·리포트와 숫자를 맞춤 ([ai 보고서 2장](../report/ai.md#2-분석-대화-에이전트-langgraph))
 - `AnswerVerifier`(`analysis_agent/verifier.py`, 신규): 답변 속 숫자 ↔ `metrics`, 인용 ↔ `evidence` 원문 대조. 실패 시 규칙 응답으로 전환 (FN-AGT-06)
 - 규칙 응답(`analysis_agent/rule_responder.py`, 신규): 대조 실패·LLM 키 부재·호출 실패 시 계산된 `metrics`·`evidence`만 템플릿 문장으로 구성, `source = TEMPLATE`·`fallback` 표시 (FN-AGT-10, P16)
 - `NarrativeService`: 서술·저녁 질문만 생성, 숫자 계산·대조는 report-service 담당
@@ -1680,42 +1684,67 @@ classDiagram
   }
   class M2Service {
     <<service>>
-    +score(prompt, text, grade, input_type) M2Response
+    +score(request) M2Response
   }
   class M1Service {
     <<service>>
-    +check(problem, answer_key, solution) M1Response
+    +check(request) M1Inactive
   }
   class ModelRegistry {
     <<registry>>
-    +load(name, version, artifact_uri)
-    +get(name) LoadedModel
-    +is_active(name, grade) bool
+    +load(active_version) bool
+    +get(name, scope) LoadedModel
+    +is_active(name, scope) bool
     +replace(versions)
+    +versions() list
   }
   class LoadedModel {
     <<infra>>
-    +version str
-    +predict(inputs) Prediction
+    +metadata ActiveModelVersion
+    +tokenizer
+    +training_config dict
+    +score_cuts dict
+    +predict(inputs) raw_scores
   }
+  class ModelStartup {
+    <<service>>
+    +start()
+    +offer(active_version)
+    +is_ready() bool
+    +close()
+  }
+  class ModelLoader { <<infra>> }
+  class S3ModelArtifacts { <<client>> }
+  class versions_router { <<router>> }
   class CoreClient { <<client>> }
-  class ModelVersionConsumer { <<consumer>> }
+  class ModelVersionConsumer {
+    <<consumer>>
+    +start()
+    +receive(message, startup)
+    +is_ready() bool
+    +close()
+  }
   class UsagePublisher { <<messaging>> }
 
   m2_router --> M2Service
   m1_router --> M1Service
   M2Service --> ModelRegistry
-  M1Service --> ModelRegistry
+  M1Service ..> ModelRegistry : 활성 추론 후속 연결
   ModelRegistry ..> LoadedModel
-  ModelRegistry --> CoreClient : 기동 시 활성 버전
-  ModelVersionConsumer --> ModelRegistry
+  ModelStartup --> CoreClient : 기동 시 활성 버전
+  ModelStartup --> ModelRegistry : snapshot·보존 이벤트 조정·로딩 재시도
+  ModelRegistry --> ModelLoader : 스레드풀 로딩
+  ModelLoader --> S3ModelArtifacts
+  versions_router --> ModelRegistry
+  ModelVersionConsumer --> ModelStartup : 큐 바인딩 후 시작·이벤트 전달
   M2Service --> UsagePublisher
-  M1Service --> UsagePublisher
+  M1Service ..> UsagePublisher : 활성 추론 후속 연결
 ```
 
 - `LoadedModel.predict`는 CPU 동기 추론 → `run_in_threadpool`로 호출해 이벤트 루프 차단 방지 (아키텍처 2.3)
-- 활성 범위 밖 학년·문항이면 `{active: false}` 반환, M1 확신도 0.8 미만은 보류 신호 (P15)
+- 활성 범위 밖 학년·문항이면 `{active: false}` 반환. #88 현재 M1은 미학습으로 항상 비활성이며 추론·사용량 발행을 하지 않는다. 향후 M1 확신도 0.8 미만이면 scoring은 실수 위치를 제외하고 ai가 보류를 결정한다(P15).
 - 가중치는 S3 `artifact_uri`에서 로딩, 승인된 버전만 (아키텍처 5장)
+- #85 구현: 레지스트리·S3 로더·versions 라우터. `get(name, scope)`는 승인 범위를 검사한 모델만 반환한다. #86은 `ModelVersionConsumer`·`ModelStartup`으로 이벤트 보존·재연결·모델 교체를 연결한다. #87은 m2 라우터·M2Service·사용량 발행, #88은 M1 미학습 비활성 계약을 제공한다.
 
 ---
 

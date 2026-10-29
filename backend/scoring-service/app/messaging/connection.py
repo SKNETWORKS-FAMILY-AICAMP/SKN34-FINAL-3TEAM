@@ -1,7 +1,7 @@
 """RabbitMQ 연결.
 
 브로커 장애 시 프로세스를 종료하지 않고 재연결 시도, 상태는 readiness로 노출 (아키텍처 1.6).
-큐·exchange 선언은 definitions.json만 담당, 서비스 코드에서 선언하지 않음.
+공유 큐·exchange는 definitions.json, 모델 브로드캐스트의 Pod별 큐는 소비자가 선언한다.
 """
 
 import asyncio
@@ -35,13 +35,17 @@ class AmqpConnection:
                 self._connection = await aio_pika.connect_robust(self._url, timeout=CONNECT_TIMEOUT)
                 return
             except Exception as exc:  # noqa: BLE001 - 연결 실패 원인과 무관하게 재시도
-                logger.warning("RabbitMQ 연결 실패, %s초 후 재시도: %s", self._retry_interval, exc)
+                logger.warning("RabbitMQ connection retry error_type=%s", type(exc).__name__)
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._stop.wait(), self._retry_interval)
 
     @property
     def is_connected(self) -> bool:
-        return self._connection is not None and not self._connection.is_closed
+        return (
+            self._connection is not None
+            and not self._connection.is_closed
+            and self._connection.connected.is_set()
+        )
 
     @property
     def connection(self) -> AbstractRobustConnection:
