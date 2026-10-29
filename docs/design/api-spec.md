@@ -895,7 +895,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 연결 해제 뒤에도 같은 보호자의 등록 이력으로 PROFILE·RECORDS 삭제를 요청할 수 있다. PIN_CHANGE·CHILD_UNLINK 재인증은 현재 LINKED 소유권이 필요하다.
 - 진행 중인 RECORDS 삭제와 탈퇴가 겹치면 RECORDS 완료 뒤 새 PROFILE 요청·이벤트를 기록한다. 이벤트 scope를 바꾸거나 완료 보고를 다른 요청에 쓰지 않는다.
 - 탈퇴 완료 시 연락 이메일·표시 이름은 계정 tombstone으로 정리하고 Google sub는 재로그인 차단 표식으로 유지한다. 상품·거래·구독·환불 행은 변경하지 않는다.
-- learning의 `student.deleted` 소비·완료 보고는 미구현이라 현재 삭제 요청은 COMPLETED가 되지 않는다([검증 보고서 B3](../report/audit.md)).
+- learning은 `student.deleted`를 받아 학습 기록을 삭제한 뒤 `{service:"learning"}`으로 완료를 보고한다(#128, SYSTEM 컨텍스트 + 대상 학생 범위). 같은 이벤트를 다시 받으면 삭제 없이 보고만 다시 보낸다([검증 보고서 B3](../report/audit.md) 해소).
 
 ### 5.7 #46 support 구현 계약
 
