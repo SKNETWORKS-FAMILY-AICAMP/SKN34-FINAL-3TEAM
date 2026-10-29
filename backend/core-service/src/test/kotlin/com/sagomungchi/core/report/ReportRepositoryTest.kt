@@ -57,6 +57,16 @@ class ReportRepositoryTest : PostgresRepositoryTest() {
         listOf(withdrawn, unlinked, inactive).forEach { assertNull(repository.scheduled(it, WEEK.from)) }
     }
 
+    @Test fun `schedule keeps creating other children after one child fails and reports the failure after the run`() {
+        val user = parent(jdbc); val failing = child(jdbc, user); val healthy = child(jdbc, user)
+        `when`(entitlement.narrativeEnabled(failing)).thenThrow(BusinessException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+            "REPORT_ENTITLEMENT_UNAVAILABLE", "상품 계약 미연결"))
+        `when`(entitlement.narrativeEnabled(healthy)).thenReturn(false)
+        assertFailsWith<IllegalStateException> { schedule.generate(java.time.Instant.parse("2026-10-25T22:00:00Z")) }
+        assertNotNull(repository.scheduled(healthy, WEEK.from))
+        assertNull(repository.scheduled(failing, WEEK.from))
+    }
+
     @Test fun `parent regeneration preserves old report and limit applies through newly generated revision`() {
         val user = parent(jdbc); val student = child(jdbc, user); val original = completedJob(jdbc, student)
         `when`(entitlement.narrativeEnabled(student)).thenReturn(true)

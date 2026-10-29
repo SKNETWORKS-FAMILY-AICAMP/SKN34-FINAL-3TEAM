@@ -66,13 +66,14 @@ class ReportHttpTest : IntegrationTestSupport() {
         private data class Request(val path: String, val query: String?, val scope: String?, val user: String?, val role: String?, val trace: String?, val token: String?)
         private val requests = CopyOnWriteArrayList<Request>()
         @Volatile private var response = "{}"
+        @Volatile private var fileResponse: String? = null
         @Volatile private var code = 200
         private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
             createContext("/internal/reports") { exchange ->
                 val h = exchange.requestHeaders
                 requests.add(Request(exchange.requestURI.path, exchange.requestURI.rawQuery, h.getFirst("X-Student-Scope"),
                     h.getFirst("X-User-Id"), h.getFirst("X-User-Role"), h.getFirst("traceparent"), h.getFirst("X-Internal-Token")))
-                val bytes = response.toByteArray(Charsets.UTF_8)
+                val bytes = (if(exchange.requestURI.path.contains("/files/")) fileResponse ?: response else response).toByteArray(Charsets.UTF_8)
                 exchange.responseHeaders.set("Content-Type", "application/json")
                 exchange.sendResponseHeaders(code, bytes.size.toLong())
                 exchange.responseBody.use { it.write(bytes) }
@@ -93,7 +94,7 @@ class ReportHttpTest : IntegrationTestSupport() {
         user = parent(jdbc); student = child(jdbc, user); child(jdbc, user)
         report = completedJob(jdbc, student).second
         token = tokens.access(session(jdbc, user, "PARENT"))
-        requests.clear(); response = "{}"; code = 200
+        requests.clear(); response = "{}"; fileResponse=null;code = 200
     }
 
     @Test fun `list narrows scope passes filter and authenticated headers without recording views`() {
@@ -125,18 +126,45 @@ class ReportHttpTest : IntegrationTestSupport() {
         Files.writeString(dir.resolve("report-detail.json"), result)
     }
 
-    @Test fun `evidence and pdf md downloads use exact internal routes and do not count as views`() {
+    @Test fun `evidence and pdf md downloads use exact internal routes and downloads count as usage views`() {
         val item = UUID.randomUUID(); response = """{"available":false,"answerId":null}"""
         mvc.get("/api/v1/reports/$report/evidence/$item") { header("Authorization", "Bearer $token") }
             .andExpect { status { isOk() }; jsonPath("$.available") { value(false) } }
         assertEquals("/internal/reports/$report/evidence/$item", requests.single().path)
-        response = """{"url":"https://storage.example.test/report?signature=test","expiresAt":"2026-11-01T01:00:00Z"}"""
+        response=json.writeValueAsString(detail())
+        fileResponse = """{"url":"https://storage.example.test/report?signature=test","expiresAt":"2026-11-01T01:00:00Z"}"""
         listOf("pdf", "md").forEach { format ->
             mvc.get("/api/v1/reports/$report/download?format=$format") { header("Authorization", "Bearer $token") }
                 .andExpect { status { isOk() }; jsonPath("$.url") { value("https://storage.example.test/report?signature=test") } }
             assertEquals("/internal/reports/$report/files/$format", requests.last().path)
         }
-        assertTrue(requests.all { it.scope == student.toString() }); assertEquals(0, views())
+        assertTrue(requests.all { it.scope == student.toString() }); assertEquals(2, views())
+    }
+
+    @Test fun `current free entitlement hides past premium narrative while preserving numeric detail`() {
+        val body=json.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(detail())
+        body.putObject("narrative").put("text","유료 서술");body.put("eveningQuestion","유료 저녁 질문")
+        response=json.writeValueAsString(body)
+        mvc.get("/api/v1/reports/$report") { header("Authorization","Bearer $token") }.andExpect {
+            status { isOk() };jsonPath("$.narrative") { value(null) };jsonPath("$.eveningQuestion") { value(null) }
+            jsonPath("$.metrics") { isArray() }
+        }
+        assertEquals(1,views())
+    }
+
+    @Test fun `free access cannot retrieve an old premium file and entitlement loss before URL release is fenced`() {
+        val body=json.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(detail())
+        body.putObject("narrative").put("text","유료 서술");response=json.writeValueAsString(body)
+        fileResponse="""{"url":"https://storage.example.test/premium","expiresAt":"2026-11-01T01:00:00Z"}"""
+        mvc.get("/api/v1/reports/$report/download?format=pdf") { header("Authorization","Bearer $token") }.andExpect {
+            status { isForbidden() };jsonPath("$.code") { value("REPORT_PREMIUM_REQUIRED") };jsonPath("$.url") { doesNotExist() }
+        }
+        assertTrue(requests.none { it.path.contains("/files/") });assertEquals(0,views())
+        requests.clear();`when`(entitlement.narrativeEnabled(student)).thenReturn(true,false)
+        mvc.get("/api/v1/reports/$report/download?format=pdf") { header("Authorization","Bearer $token") }.andExpect {
+            status { isForbidden() };jsonPath("$.url") { doesNotExist() }
+        }
+        assertTrue(requests.any { it.path.contains("/files/") });assertEquals(0,views())
     }
 
     @Test fun `other guardian and withdrawn guardian cannot list read evidence download or regenerate`() {
@@ -189,12 +217,21 @@ class ReportHttpTest : IntegrationTestSupport() {
     }
 
     @Test fun `invalid parameters unknown report provider outage malformed JSON and mismatched child never record view`() {
-        listOf("/reports/$report?revision=0", "/reports/$report/download?format=html", "/children/$student/reports?status=UNKNOWN").forEach { path ->
+        listOf("/reports/$report?revision=0", "/reports/$report/download?format=html", "/children/$student/reports?status=UNKNOWN",
+            "/children/$student/reports?status=QUEUED").forEach { path ->
             mvc.get("/api/v1$path") { header("Authorization", "Bearer $token") }.andExpect { status { isBadRequest() } }
         }
         mvc.get("/api/v1/reports/${UUID.randomUUID()}") { header("Authorization", "Bearer $token") }.andExpect { status { isNotFound() } }
         assertTrue(requests.isEmpty())
         code = 503
+        mvc.get("/api/v1/reports/$report") { header("Authorization", "Bearer $token") }.andExpect { status { isServiceUnavailable() }; jsonPath("$.code") { value("REPORT_UNAVAILABLE") } }
+        response = """{"status":503,"code":"DATA_UNAVAILABLE"}"""
+        mvc.get("/api/v1/reports/$report/evidence/${UUID.randomUUID()}") { header("Authorization", "Bearer $token") }
+            .andExpect { status { isServiceUnavailable() }; jsonPath("$.code") { value("DATA_UNAVAILABLE") } }
+        code = 409; response = """{"status":409,"code":"DELETION_IN_PROGRESS"}"""
+        mvc.get("/api/v1/children/$student/reports") { header("Authorization", "Bearer $token") }
+            .andExpect { status { isConflict() }; jsonPath("$.code") { value("DELETION_IN_PROGRESS") } }
+        response = """{"status":409,"code":"OTHER"}"""
         mvc.get("/api/v1/reports/$report") { header("Authorization", "Bearer $token") }.andExpect { status { isServiceUnavailable() }; jsonPath("$.code") { value("REPORT_UNAVAILABLE") } }
         code = 200; response = "not-json"
         mvc.get("/api/v1/reports/$report") { header("Authorization", "Bearer $token") }.andExpect { status { isBadGateway() } }

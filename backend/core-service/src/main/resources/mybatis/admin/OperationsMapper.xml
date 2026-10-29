@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.admin.repository.OperationsMapper">
+ <resultMap id="execution" type="com.sagomungchi.core.admin.domain.OperationExecution"><constructor>
+  <idArg column="id" javaType="java.util.UUID"/><arg column="attempt_no" javaType="_int"/>
+  <arg column="status" javaType="java.lang.String"/><arg column="error_code" javaType="java.lang.String"/>
+  <arg column="triggered_by" javaType="java.util.UUID"/><arg column="started_at" javaType="java.time.Instant"/><arg column="finished_at" javaType="java.time.Instant"/>
+ </constructor></resultMap>
+ <resultMap id="audit" type="com.sagomungchi.core.admin.domain.OperationAudit"><constructor>
+  <idArg column="id" javaType="java.util.UUID"/><arg column="actor_user_id" javaType="java.util.UUID"/>
+  <arg column="action" javaType="java.lang.String"/><arg column="target_type" javaType="java.lang.String"/>
+  <arg column="target_id" javaType="java.util.UUID"/><arg column="result" javaType="java.lang.String"/><arg column="created_at" javaType="java.time.Instant"/>
+ </constructor></resultMap>
+ <select id="executions" resultMap="execution">SELECT id,attempt_no,status,error_code,triggered_by,started_at,finished_at FROM job_execution WHERE job_type=#{type} AND job_id=#{id} ORDER BY attempt_no</select>
+ <sql id="filter">created_at &gt;= #{start} AND created_at &lt; #{end}<if test="type != null"> AND target_type=#{type}</if><if test="target != null"> AND target_id=#{target}</if></sql>
+ <select id="audits" resultMap="audit">SELECT id,actor_user_id,action,target_type,target_id,result,created_at FROM audit_log WHERE <include refid="filter"/> ORDER BY created_at DESC,id DESC LIMIT #{limit} OFFSET #{offset}</select>
+ <select id="auditCount" resultType="long">SELECT count(*) FROM audit_log WHERE <include refid="filter"/></select>
+ <insert id="audit">INSERT INTO audit_log(id,actor_user_id,action,target_type,target_id,result,created_at) VALUES(#{id},#{actor},'JOB_RETRY',#{type},#{target},#{result},CURRENT_TIMESTAMP)</insert>
+</mapper>

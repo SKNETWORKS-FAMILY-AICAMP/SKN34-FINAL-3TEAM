@@ -27,7 +27,9 @@ async def main():
     outputs = []
     for version in versions:
         loaded = registry.get(version.name, version.scopes[0])
-        assert loaded is not None and not registry.is_active(version.name, "unapproved/scope")
+        assert loaded is not None and not registry.is_active(
+            version.name, "unapproved/scope"
+        )
         # Synthetic smoke input only. #87 must separately confirm the exact keyword format.
         prompt = "[학년] 초5 [지시문] 친구를 도운 경험을 써 보세요."
         if loaded.training_config.get("with_keyword") == "True":

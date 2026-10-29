@@ -15,8 +15,7 @@ export function ErrorNotice({ error, retry }: { error: unknown; retry?: () => vo
       {problem?.detail && <p>{problem.detail}</p>}
       {problem?.status === 404 && (
         <p>
-          요청한 기능 또는 기록을 찾지 못했습니다. 현재 develop의 공개 기능 API는 아직 구현
-          전입니다.
+            요청한 기능 또는 기록을 찾지 못했습니다. 주소·대상 권한과 서버의 제공 범위를 확인해 주세요.
         </p>
       )}
       {error instanceof TypeError && (
@@ -117,13 +116,8 @@ export function Modal({
 }
 export function Brand() {
   return (
-    <span className="cj-brand">
-      <span className="cj-brand-mark">
-        <img src="/brand.jpg" alt="" />
-      </span>
-      <span className="cj-brand-word">
-        <img src="/brand.jpg" alt="사고뭉치" />
-      </span>
+    <span className="app-brand" role="img" aria-label="사고뭉치 · 생각을 잇는 배움">
+      <img src="/brand-idea-transparent.png" alt="" aria-hidden="true" />
     </span>
   )
 }

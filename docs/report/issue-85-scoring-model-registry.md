@@ -22,7 +22,7 @@ API 변경은 [API 명세 4.3](../design/api-spec.md)에 먼저 기록했다. `/
 사용자 지시에 따라 개인 에픽 브랜치를 사용하지 않고 기존 이슈별 방식으로 진행한다. #85 작업은 `feature/scoring-model-registry`에 보존했으며 PR 대상은 `develop`이다. [상위 에픽 #84](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/84)는 #85~88 각각의 완료 조건을 확인한 뒤 종료한다. 실제 팀 모델을 기다리던 보류는 2026-10-29 사용자 제공 파일로 재개했다. 이번 검증 결과는 로컬에만 저장하며 PR·push·이슈 종료는 하지 않는다.
 
 - #85: snapshot 조회·S3 다운로드·CPU 모델 로딩·revision 비교·scope 검사·readiness·버전 조회.
-- #86: 큐 바인딩 → snapshot → 초기 이벤트 조정, 실제 활성화 이벤트·재연결. 롤백 파일 캐시 재사용 정책도 여기서 확정한다. #85의 다운로드 작업 디렉터리는 영속 롤백 캐시가 아니다.
+- #86: 큐 바인딩 → snapshot → 초기 이벤트 조정, 실제 활성화 이벤트·재연결. 롤백은 #85와 같은 S3/MinIO 재다운로드 방식으로 진행하기로 확정했다. #85의 다운로드 작업 디렉터리는 영속 롤백 캐시가 아니다.
 - #87: 학년/입력 유형의 scope 매핑, 점수 API·사용량 발행, 입력 구성·점수 후처리. 현재 develop의 base/반올림 기준을 개선 모델 채택 결정으로 대체하지 않는다.
 - #88: M1 모델 형식과 로더. 학습된 M1이 없는 상태에서 M2 로더를 M1에 대신 적용하지 않는다.
 - 모델 파일 확보: 서술형·논술형 2.0 체크포인트·토크나이저·train_info.json·score_cuts.json을 받았다. 서술형 `with_keyword=True`, 논술형 `False`와 점수 경계값을 #87에서 입력·후처리에 반영해야 한다. 로컬 검증 URI를 운영 S3 경로나 서비스 채택 승인으로 간주하지 않는다.
@@ -161,3 +161,24 @@ runner는 모델 압축 파일과 결과 폴더가 Git checkout 내부이면 실
 최종 결과는 저장소 밖 `C:/Users/playdata2/Desktop/final/tmp/issue85-real-models-20261029-final/results.json`에 있다. core snapshot·활성 버전·파일 크기/해시·CPU 출력·측정값을 기록했고, `probe.log`와 `services.log`를 함께 보관했다. 자동 테스트 결과는 같은 tmp 폴더의 `issue85-team-models-pytest-20261029.xml`이다.
 
 **판정: #85에 남아 있던 실제 팀 모델 로딩·활성 버전 수동 검증 완료. 제품 로더 수정 없이 통과했으며 이번 변경은 재현 스크립트와 검증 문서다. PR·원격 push·GitHub 이슈 종료는 아직 하지 않았다.**
+
+## #85 푸시 전 최신 통합 검증 (2026-10-29)
+
+기존 #85 브랜치를 최신 develop과 통합하고 report·scoring MinIO 설정을 모두 보존해 충돌을 해결했다. #86 이벤트 수신·#87 채점 API는 포함하지 않았다. #87 미커밋 작업은 별도 기존 worktree에 보존했다.
+
+- 전용 uv 가상환경·잠금 의존성 동기화, Ruff check·format 통과.
+- scoring 전체 **52 passed**, 41.88초. 낮은 revision·scope 제한·실패 후 재시도·기존 모델 보존·대역 모델·OpenAPI·내부 인증 검사 포함.
+- 공통 검사 **74 passed, 34 subtests passed**, 28.46초.
+- 최신 core 실제 JAR와 새 `local/scoring85-release:20261029` 이미지 사용.
+- 실제 팀 M2 2.0 두 모델: 빈 snapshot 준비 완료 → 파일 누락 시 readiness 503/liveness 200 → MinIO 업로드 후 같은 프로세스에서 자동 복구 → core/versions 일치 확인.
+- CPU probe에서 두 모델 유한한 1×9 출력·승인 scope 밖 비활성·메타데이터·임시 다운로드 정리 후 추론 확인.
+- scoring 로그에서 검증 자격 증명과 미처리 traceback 없음. 전용 Compose 자원 정리 완료.
+- 모델·AI Hub 데이터는 Git에 추가하지 않았다. 증거는 저장소 밖 `tmp/issue85-release-real/results.json`·로그와 `tmp/issue85-release-tests.xml`에 보관한다.
+
+GitHub PR CI·검토·병합은 이 로컬 검증과 별도다. M1 실제 가중치 로더와 M2 최종 채점 응답은 각각 #88·#87 범위이며 #85 완료로 함께 처리하지 않는다.
+
+최종 통합 기준은 develop `48339a4`(#56 PR #148 포함)다. 마지막 추가 병합에서 core·scoring·공통 검사 소스 변경은 없었으며 충돌 없이 반영했다. 최종 diff·Ruff 검사를 통과했다. 이번에 추가한 커밋 메시지는 한국어이며 기존 원격 #85의 과거 커밋 이력은 재작성하지 않았다.
+
+### #64 병합 후 재검증
+
+develop `c364ed4`의 #64 리포트 서술 API를 반영했다. `docs/report/ai.md` 끝부분의 동시 추가 충돌은 5절(#64)·6절(#85)로 구분하여 해결했다. scoring 코드와 모델 로더 변경은 없다. scoring 52개, 공통 74개와 하위 검사 34개, report 서술 24개 테스트 및 Ruff·포맷·충돌 검사가 통과했다. 실제 모델 검증은 직전 동일 scoring 코드의 실행 결과를 유지한다.

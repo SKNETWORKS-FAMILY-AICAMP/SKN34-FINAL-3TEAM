@@ -228,36 +228,29 @@ body {
   gap: 6px;
   flex: none;
 }
-#class-journal .cj-brand-mark {
-  display: block;
+.app-brand {
+  --brand-width: 180px;
+  display: inline-block;
   position: relative;
-  width: 29px;
-  height: 31px;
+  flex: none;
+  width: var(--brand-width);
+  max-width: 100%;
+  aspect-ratio: 1600 / 600;
   overflow: hidden;
+  vertical-align: middle;
 }
-#class-journal .cj-brand-mark img {
-  position: absolute;
-  width: 92px;
-  max-width: none;
-  left: -30px;
-  top: -5px;
-  mix-blend-mode: multiply;
-}
-#class-journal .cj-brand-word {
+.app-brand > img {
   display: block;
-  position: relative;
-  width: 102px;
-  height: 31px;
-  overflow: hidden;
-}
-#class-journal .cj-brand-word img {
   position: absolute;
-  width: 158px;
+  width: 129.375%;
   max-width: none;
-  left: -26px;
-  top: -61px;
-  mix-blend-mode: multiply;
+  height: auto;
+  left: -15%;
+  top: -16.666667%;
 }
+#class-journal .ux-login-intro > .app-brand { --brand-width: 256px; }
+#class-journal .ws-side-brand > .app-brand { --brand-width: 184px; }
+#class-journal .device-card > .app-brand { --brand-width: 210px; }
 #class-journal .cj-top-context {
   font-size: 12px;
   color: var(--cj-muted);

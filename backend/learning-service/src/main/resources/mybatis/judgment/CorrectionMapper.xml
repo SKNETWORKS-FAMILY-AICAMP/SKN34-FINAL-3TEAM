@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.learning.judgment.repository.CorrectionMapper">
+    <resultMap id="target" type="com.sagomungchi.learning.judgment.domain.CorrectionTarget">
+        <constructor>
+            <idArg column="judgment_id" javaType="java.util.UUID"/>
+            <arg column="student_id" javaType="java.util.UUID"/>
+            <arg column="process_status" javaType="com.sagomungchi.learning.judgment.domain.ProcessStatus"/>
+            <arg column="result" javaType="com.sagomungchi.learning.judgment.domain.JudgmentResult"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="correction" type="com.sagomungchi.learning.judgment.domain.JudgmentCorrection">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="judgment_id" javaType="java.util.UUID"/>
+            <arg column="error_report_id" javaType="java.util.UUID"/>
+            <arg column="reason" javaType="java.lang.String"/>
+            <arg column="previous" javaType="com.sagomungchi.learning.judgment.domain.JudgmentResult"/>
+            <arg column="corrected" javaType="com.sagomungchi.learning.judgment.domain.JudgmentResult"/>
+            <arg column="corrected_by" javaType="java.util.UUID"/>
+            <arg column="idempotency_key" javaType="java.util.UUID"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 지금 보이는 결과: 최신 정정(created_at 가장 늦은 행)이 있으면 그 결과. JudgmentMapper.findStored와 같은 규칙 -->
+    <select id="lockTarget" resultMap="target">
+        SELECT j.id AS judgment_id, t.student_id, j.process_status,
+               COALESCE((SELECT c.corrected ->> 'result' FROM judgment_correction c WHERE c.judgment_id = j.id
+                         ORDER BY c.created_at DESC, c.id DESC LIMIT 1), j.result) AS result
+        FROM judgment j
+        JOIN answer a ON a.id = j.answer_id
+        JOIN attempt t ON t.id = a.attempt_id
+        WHERE j.id = #{judgmentId}
+        FOR UPDATE OF j
+    </select>
+
+    <select id="findByIdempotencyKey" resultMap="correction">
+        SELECT id, judgment_id, error_report_id, reason, previous ->> 'result' AS previous, corrected ->> 'result' AS corrected,
+               corrected_by, idempotency_key, created_at
+        FROM judgment_correction
+        WHERE idempotency_key = #{key}
+    </select>
+
+    <select id="existsByReportId" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM judgment_correction WHERE error_report_id = #{reportId})
+    </select>
+
+    <!-- previous·corrected는 {"result": "PARTIAL"} 모양 (ERD 4.2 #80) -->
+    <insert id="insert">
+        INSERT INTO judgment_correction (id, judgment_id, error_report_id, reason, previous, corrected, corrected_by,
+                                         idempotency_key, created_at)
+        VALUES (#{id}, #{judgmentId}, #{reportId}, #{reason}, jsonb_build_object('result', CAST(#{previous} AS text)),
+                jsonb_build_object('result', CAST(#{corrected} AS text)), #{correctedBy}, #{idempotencyKey}, #{createdAt})
+    </insert>
+</mapper>

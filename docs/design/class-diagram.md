@@ -140,7 +140,7 @@ classDiagram
 | `RetryingConsumer` | `_common/messaging` | 구현됨 (core) | 수동 ACK. 처리 실패 시 `x-retry-count` +1 후 `<큐>.retry.<회차>` 재발행, 최대 횟수 초과 시 reject → DLQ (아키텍처 1.6) |
 | `PublicAuthFilter` | `_common/security` | 구현됨 (core만) | `/api/v1/**` Bearer 검증(`AuthService.authenticate`), 쿠키 API Origin·`X-Requested-With` 검사, 역할·관리자 권한·필수 동의 확인 → `UserContext(userId, role, studentScope)` 설정. JWT 발급·검증은 `account/service/TokenService` (3.1) |
 | `IdempotencyService` | `_common/web` | 구현됨 (core만, #38) | `idempotency_record` 조회·저장, 같은 키·다른 본문 422 |
-| `SseEmitters` | `_common/web` | 구현됨 (core만, #39) | SSE 생성, 15초 heartbeat `: ping`, 연결 종료 콜백. 연결 시간은 용도별 설정(현재 피드백 90초 고정, 분석 대화는 #41에서 120초 + 여유로 지정하도록 확장). `open(context, …)`이 요청 스레드의 `UserContext`를 작업 스레드에 설정·해제 |
+| `SseEmitters` | `_common/web` | 구현됨 (core만, #39) | SSE 생성, 15초 heartbeat `: ping`, 연결 종료 콜백. 연결 시간은 용도별: 피드백 90초(`open`), 알림 구독 5분(`subscribe`), 분석 대화 120초 + 여유(#41 미구현). `open(context, …)`이 요청 스레드의 `UserContext`를 작업 스레드에 설정·해제 |
 
 ### 2.2 Python 공통 (`app/`, ai·scoring·report 동일)
 
@@ -478,8 +478,8 @@ classDiagram
 - `GuardianshipService.authorizeChild(childId)`: 학부모는 `guardianship LINKED` 확인 후 `studentScope = {childId}`로 컨텍스트 갱신, 학생은 본인 ID만. 미연결 시 `403 CHILD_NOT_LINKED` (FN-AGT-02, NFR-SEC-02)
 - 자녀 범위가 필요한 모든 controller는 하위 호출 전에 `authorizeChild` 호출 → `InternalRestClientFactory`가 그 컨텍스트를 헤더로 전달
 - `authorizeLinkedChildren()`: 경로에 자녀 ID가 없는 API(`/reports/{reportId}` 등)용. `studentScope = 연결 자녀 전체`로 전달하고 소유 서비스가 리소스의 학생 ID로 검사, 403은 core가 `CHILD_NOT_LINKED`로 변환
-- 구현 상태 (#36·#37): `AuthController`의 authorize·callback·refresh·logout·student·me, `AuthCookies`·`AuthService`·`TokenService`·`GoogleOAuthClient`·`AuthRepository`·`StudentAccessService`·`ConsentAccessService`·`AccountAccessService`·`UserAccountRepository`(#36), `ConsentController`·`ConsentService`·`ChildrenController`의 children·register·`GuardianshipService`의 register·children·`ConsentAccessRepository`·`StudentAccessRepository`·`LearningRecordService`(#37)는 구현됨. 기기·PIN은 #58의 `StudentDeviceController` 7개 API·`StudentAuthService`·`StudentPinService`에서 구현했다. #45는 `ReauthenticationService`·`AccountManagementService`·`AccountWithdrawalService`·`ChildManagementService`를 사용한다. 그림의 추상 `MeController`·`AccountService`와 Student entity 메서드명은 실제 클래스 이름으로 해석하지 않는다.
-- 동의는 별도 entity 없이 선택마다 새 `consent` 행(AGREED·WITHDRAWN)을 저장하고 최신 행으로 판정 (상태 다이어그램 2.3, [이슈 #37 보고서](../report/issue-37-consent-children.md))
+- 구현 상태: 인증(`AuthController`·`AuthService`·`TokenService`·`GoogleOAuthClient`), 동의·자녀(`ConsentController`·`ConsentService`·`ChildrenController`·`GuardianshipService`), 기기·PIN(`StudentDeviceController`·`StudentAuthService`·`StudentPinService`·`StudentDeviceCleanupService`), 계정 관리(`ReauthenticationService`·`AccountManagementService`·`AccountWithdrawalService`·`ChildManagementService`) 구현됨. 그림의 `MeController`·`AccountService`와 Student entity 메서드명은 추상 이름
+- 동의는 별도 entity 없이 선택마다 새 `consent` 행(AGREED·WITHDRAWN)을 저장하고 최신 행으로 판정 (상태 다이어그램 2.3, [이슈 #37 보고서](../report/auth-account.md))
 - `StudentAccessService`·`ConsentAccessService`는 인증용 읽기 전용 확인. 쓰기(자녀 등록·동의 저장)는 `GuardianshipService`·`ConsentService`(#37) 소유
 - 공개 API 컨텍스트는 `PublicAuthFilter`가 설정하고 finally에서 해제 (`InternalAuthFilter`와 같은 방식)
 - 이메일·비밀번호 가입·로그인·로그인 수단 변경 없음. Google 계정은 `(oauth_provider, oauth_subject)`로 식별, 최초 콜백에서 `AuthService.login`이 PARENT 계정 생성 (API 명세 5.1)
@@ -487,7 +487,7 @@ classDiagram
 - `AuthService.enterStudent` (`POST /auth/student-sessions`): 학부모 Bearer와 같은 세션의 refresh로 연결·활성 자녀·필수·법정대리인 동의 확인 → 부모 refresh 소비, `auth_session` role·studentId·version 변경 → `STUDENT` access만 발급, refresh 쿠키 삭제 (P01, 학부모 동석). 학생 계정·시연 링크 없음
 - `StudentAuthService.login`: 기기 쿠키 해시로 `StudentDevice` 조회 → `isUsable`(미해제·미만료)·자녀 등록 확인 → `ChildAuthorizationService.requireCurrent`·`StudentAccessService.requireLinked` → 잠금·PIN 검사 → 동석 경로와 같은 `STUDENT` 토큰 발급, refresh 미발급 (P01, API 명세 3.11)
 - `StudentPinService.attempt`: 학생 행 잠금으로 실패 횟수 증가, 5회 도달 시 `pin_locked_at` 기록. `set`은 DB 재인증 소비와 해시·실패 횟수 0·잠금 해제를 한 번에 처리
-- 페어링 코드는 Redis(10분·1회용), 기기 자격증명은 `student_device.token_hash`만 저장. 저장 구조는 ERD 10장 변경 예정
+- 페어링 코드는 Redis(10분·1회용), 기기 자격증명은 `student_device.token_hash`만 저장. 저장 구조는 ERD 3.1·6장(core V13)
 - `GuardianshipService.register`: 학년 3~6·출생연도 검증, 보호자 행 잠금 후 `LINKED` 자녀 3명이면 `CHILD_LIMIT_REACHED`, GUARDIAN 동의 필수 (P01·P02·P03). 다른 보호자 연결(`link`) 없음
 
 ### 3.2 학습 프록시·분석 대화 (learning · conversation)
@@ -621,9 +621,9 @@ classDiagram
   ConversationService ..> ConversationMessage
 ```
 
-- `learning/`은 controller → service(`LearningProxyService`·`FeedbackService`·`LearningRecordService`) → `LearningClient` 구조 (아키텍처 1.3·2.6). 공통 프록시는 `exchange`로 경로·본문을 그대로 전달하고 학생 컨텍스트·답변 멱등을 service에서 처리 ([이슈 #38 보고서](../report/issue-38-core-learning-proxy.md))
-- 구현 상태 (#37·#38·#39): `LearningController`·`LearningProxyService`·`StudentLearningContextService`·`FeedbackController`·`FeedbackService`·`LearningRecordService`·`LearningRecordClient`·`LearningClient.exchange` 구현됨. `finish`·`reflection`·`selfAssessment`는 core 프록시만 있고 learning 처리는 #26 후속. `Conversation*`·`AiClient`·`LearningClient.evidence`·`correctJudgment`는 미구현
-- #40 `DashboardController`의 학생 3개·학부모 4개 조회는 LearningRecordService → LearningRecordClient → 기존 LearningClient를 사용한다. 공급자의 집계·home·상세는 #27 실제 기록 API이며 core는 수치를 계산하지 않는다. [#40 보고서](../report/issue-40-dashboard.md) 참고.
+- `learning/`은 controller → service(`LearningProxyService`·`FeedbackService`·`LearningRecordService`) → `LearningClient` 구조 (아키텍처 1.3·2.6). 공통 프록시는 `exchange`로 경로·본문을 그대로 전달하고 학생 컨텍스트·답변 멱등을 service에서 처리 ([이슈 #38 보고서](../report/core-gateway.md))
+- 구현 상태: `LearningController`·`LearningProxyService`·`StudentLearningContextService`·`FeedbackController`·`FeedbackService`·`LearningRecordService`·`LearningRecordClient`·`LearningClient.exchange` 구현됨(마무리·돌아보기·자기 평가 포함). `Conversation*`·`AiClient`·`LearningClient.evidence`·`correctJudgment`는 미구현
+- `DashboardController`(학생 3개·학부모 4개 조회) → `LearningRecordService` → `LearningRecordClient` → `LearningClient`. 집계·home·상세는 learning 기록 API가 계산하고 core는 수치를 계산하지 않음 ([core 보고서](../report/core-gateway.md))
 - `FeedbackController`: learning 동기 응답을 기다리는 동안 heartbeat만 전송, 응답을 `status`·`result`·`error`·`done` 이벤트로 변환. 클라이언트 단절과 무관하게 learning 호출 유지 (아키텍처 1.3)
 - `ConversationService.stream`: ai SSE 이벤트를 그대로 중계, `result` 수신 시 `complete`(트랜잭션), 클라이언트 단절 시 `AiClient.cancel` + `fail(CLIENT_DISCONNECTED)` (재시도 가능)
 - 근거 원문은 저장하지 않고 `message_evidence` ID로 learning `/internal/records/evidence` 조회 (ERD 3.2)
@@ -699,25 +699,31 @@ classDiagram
   }
   class NotificationService {
     <<service>>
-    +notify(userId, childId, type, sourceEventId, title, link)
-    +list(userId, unreadOnly) Page
-    +markRead(userId, notificationId)
-    +subscribe(userId) SseEmitter
+    +report(userId, childId, sourceEventId, reportId, failed)
+    +list(identity, unreadOnly, page, size) List
+    +read(identity, notificationId)
+    +settings(identity) List
   }
-  class Notification {
-    <<entity>>
-    +deliver()
-    +fail(reason)
-    +read()
+  class ReportNotificationListener {
+    <<service>>
+    +on(ReportJobFinished)
   }
   class NotificationRepository {
     <<repository>>
-    +insertIgnoreDuplicate(notification) Boolean
   }
-  class NotificationPubSub {
-    <<repository>>
-    +publish(userId, payload)
-    +listen(handler)
+  class NotificationRedisPublisher {
+    <<messaging>>
+    +publish(NotificationStored) AFTER_COMMIT
+  }
+  class NotificationDeliveryService {
+    <<service>>
+    +record(id, published)
+  }
+  class NotificationRedisSubscriber { <<messaging>> }
+  class NotificationStreams {
+    <<service>>
+    +subscribe(userId) SseEmitter
+    +deliver(userId, payload)
   }
   class OutboxWriter { <<messaging>> }
   class ProcessedEventRepository { <<repository>> }
@@ -730,21 +736,24 @@ classDiagram
   ReportJobService --> ReportJobRepository
   ReportJobService --> ReportCommandWriter
   ReportJobService --> ProcessedEventRepository
-  ReportJobService --> NotificationService : 완료 알림
+  ReportLifecycleService ..> ReportNotificationListener : ReportJobFinished (같은 트랜잭션)
+  ReportNotificationListener --> NotificationService
   ReportCommandWriter --> OutboxWriter
   ReportQueryService --> ReportClient
   ReportQueryService --> ReportViewRepository
   ReportJobService ..> ReportJob
   NotificationController --> NotificationService
+  NotificationController --> NotificationStreams
   NotificationService --> NotificationRepository
-  NotificationService --> NotificationPubSub
-  NotificationService ..> Notification
+  NotificationService ..> NotificationRedisPublisher : NotificationStored
+  NotificationRedisPublisher --> NotificationDeliveryService
+  NotificationRedisSubscriber --> NotificationStreams
   class GuardianshipService { <<service>> }
 ```
 
 - `ReportScheduler`: `@Scheduled` + `@SchedulerLock`(ShedLock), 매주 월 07:00 KST, 직전 월~일(KST) 대상, 기록 없는 학생 포함 (P06). 학생별 `report_job(SCHEDULE)` + outbox 저장, 부분 UK로 중복 방지
 - `ReportEventConsumer`: 큐 `core.report.events`, `processed_event`로 멱등, 상태 전이는 조건부 UPDATE (상태 다이어그램 4.1)
-- `NotificationPubSub`: Redis Pub/Sub로 core 레플리카 간 SSE 중계 (아키텍처 1.6), 알림 행 저장 후 발행
+- 알림: 리포트 종료 전이 트랜잭션에서 `QUEUED` 저장 → 커밋 후 `NotificationRedisPublisher`가 `core:notifications:v1` 발행 → `NotificationDeliveryService`가 `COMPLETED`·`FAILED` 기록. 다른 레플리카의 `NotificationRedisSubscriber`가 `NotificationStreams`로 SSE 전달 (아키텍처 1.6)
 - 리포트 조회 API에 `ReportQueryService`를 둬서 controller → client 직접 호출 금지 규칙 준수 (리포트 열람 기록 `report_view` 저장 포함)
 - `ReportController`의 `reportId` 경로는 `GuardianshipService.authorizeLinkedChildren()` 사용 (3.1)
 
@@ -1046,7 +1055,6 @@ classDiagram
   InternalModelVersionController --> ModelVersionService
   AdminJobService --> ReportJobService : 리포트 재처리
   AdminJobService --> ConversationService : 대화 재처리
-  AdminJobService --> NotificationService : 알림 재처리
   AdminJobService --> JobExecutionService
   ModelVersionService --> OutboxWriter : model.version.activated
   ModelVersionService --> ModelVersionRepository : 상태·감사 같은 트랜잭션
@@ -1065,7 +1073,7 @@ classDiagram
 - 구현된 #43 공개 경로는 #36 `PublicAuthFilter → AuthService.requirePermission(SERVICE_OPS)`를 재사용한다. 내부 조회는 `InternalAuthFilter`의 내부 토큰 검사를 사용한다. 다른 관리자 기능의 권한 범위는 API 1.2를 따른다.
 - #43은 실제 구현된 `ModelVersionController`·`AiUsageController`·`InternalModelVersionController`를 구분해 표시했다. 내부 응답은 `{items: List<ActiveModelVersion>}`이며 평가·관리자 정보는 제외한다. `AdminController` 및 나머지 운영 기능은 기존 후속 설계이며 구현 완료 표시가 아니다.
 - `ModelVersion`은 불변 data class다. 상태 전이는 `ModelVersionService`의 `activate`·`rollback`과 private `switch`에서 `copy` 후 Repository에 저장하며 Domain의 `activate()`·`deactivate()` 메서드는 없다.
-- `AuditLogService`는 아직 구현되지 않은 공용 감사 서비스 설계다. #43은 `ModelVersionService → ModelVersionRepository.audit → ModelVersionMapper.audit → audit_log` 경로로 감사 기록을 저장한다. 상태·감사·Outbox를 같은 트랜잭션으로 유지하며, #47 등에서 공용 감사 기능을 실제 도입할 때 이 경로의 통합을 검토한다. 현재 사용처만을 위해 공용 서비스를 추가하지 않는다 ([#43 보고서](../report/issue-43-model-registry.md)).
+- `AuditLogService`는 아직 구현되지 않은 공용 감사 서비스 설계다. #43은 `ModelVersionService → ModelVersionRepository.audit → ModelVersionMapper.audit → audit_log` 경로로 감사 기록을 저장한다. 상태·감사·Outbox를 같은 트랜잭션으로 유지하며, #47 등에서 공용 감사 기능을 실제 도입할 때 이 경로의 통합을 검토한다. 현재 사용처만을 위해 공용 서비스를 추가하지 않는다 ([#43 보고서](../report/ai.md)).
 - `QueueStatsRepository`: RabbitMQ 관리 API(15672) 조회, 큐 길이·DLQ 적재량 (참고 레포 `QueueOperations*`)
 
 ---
@@ -1350,6 +1358,8 @@ classDiagram
 - `JudgmentElement`: `verified = false`면 `satisfy()` 거부 (ERD CHECK와 동일 규칙을 Domain에서도 검사)
 - `judge_verified = false` 요소·미검증 학년 조합의 `HELD(UNVERIFIED_SCOPE)` 결정은 ai `JudgmentService` 담당(`JUDGE_REQUIRE_VERIFIED=true`일 때만, 기본 꺼짐). learning은 `judge_verified`·학년을 포함한 기준표를 `AiClient.judge`에 전달 (FN-JDG-04)
 - 정정은 `Judgment`를 바꾸지 않고 `JudgmentCorrection` 추가, `result()` 조회 시 최신 정정 반영 (FN-SUP-03)
+  - `results()`(시도 상세·기록)도 같음. 바꾸는 것은 `judgment.result`뿐이고(정정이 있으면 `heldReason`은 null), 판정 요소·되묻기·`nextActions`는 원판정 그대로 (#80)
+  - `correct`: 판정 행을 잠그고(`FOR UPDATE`) 같은 키 → 처리 상태 `DONE` → 같은 신고(`reportId`) 순으로 확인한 뒤 저장. `JudgmentCorrection`은 정정 직전 결과(`previous`)·정정 결과·사유·신고·관리자·키·시각을 담고, 같은 키 재요청은 저장된 행으로 처음 응답을 다시 만듦 (api-spec 4.1, [이슈 #80 보고서](../report/learning.md))
 
 ### 4.3 기록 조회·삭제 (record · deletion)
 
@@ -1425,7 +1435,7 @@ classDiagram
   StudentDeletionService --> CoreClient : 삭제 완료 보고
 ```
 
-- 구현 상태 (#37·#27): `record/`의 기록 존재 확인 `RecordExistsController`·`RecordExistsService`·`RecordExistsRepository`(#37)와 `RecordController`·`RecordService`·`RecordRepository`·`Metric`(#27) 구현됨. 삭제 소비(`StudentDeletedConsumer`·`StudentDeletionService`)는 미구현 ([이슈 #37 기록 존재 보고서](../report/issue-37-record-existence.md), [이슈 #27 기록 조회 보고서](../report/learning-records.md))
+- 구현 상태: `record/`의 `RecordExistsController`·`RecordExistsService`·`RecordExistsRepository`와 `RecordController`·`RecordService`·`RecordRepository`·`Metric` 구현됨. 삭제 소비(`StudentDeletedConsumer`·`StudentDeletionService`)는 미구현 ([learning 보고서](../report/learning.md))
 - `RecordController`: 모든 경로에서 `UserContextHolder.current().requireStudent(studentId)` 먼저 실행 (아키텍처 2.3 범위 검사). `home`은 미션 목록과 같은 기준으로 `requireSelfStudent()`가 경로의 학생과 같아야 함
 - `RecordRepository`는 여러 기능 테이블을 읽는 조회 전용 MyBatis 매퍼 (쓰기 없음). 기능 간 repository 참조 금지 규칙의 예외로, 조회 전용 `record/`에 한정
 - `Metric.ratio`: 분모 5 미만이면 `value = null`, `count`만 (P08, API 1.6). `Metric.count`도 계산식을 받음(기능 명세 1.3 "모든 건수·비율은 계산식과 함께")
@@ -1847,12 +1857,18 @@ classDiagram
   class CoreClient {
     <<client>>
     +report_deletion_completed(deletion_request_id)
+    +lookup(student_id) StudentDisplayName
+  }
+  class NamedGenerator {
+    +generate(command, report) GenerationResult
   }
 
   GenerationConsumer --> GenerationService
   GenerationService --> ReportRepository
   GenerationService --> OutboxRepository : report.started·completed·failed
-  GenerationService --> RenderingGenerator : R4
+  GenerationService --> NamedGenerator : SYSTEM·scope·별명 검증
+  NamedGenerator --> CoreClient : 학생 별명
+  NamedGenerator --> RenderingGenerator : R4
   GenerationService --> JobLocks
   RenderingGenerator --> NarrativeGenerator : R3
   NarrativeGenerator --> RecordGenerator : R2
@@ -1893,8 +1909,8 @@ classDiagram
 - `GenerationService.generate`: `job_id`로 기존 행 조회 → 없으면 `RUNNING` 생성, `COMPLETED·FAILED`면 ACK만, `RUNNING`이면 같은 행으로 재실행. 기록 없음·표본 부족은 `COMPLETED + state`, 실패는 `FAILED` (FN-RPT-11)
 - `query_router`·`QueryService`: 모든 조회에서 리포트의 `student_id`가 `X-Student-Scope`에 있는지 검사, 없으면 403 (API 4장)
 - 수치·전후 변화는 `MetricsCalculator`(코드)에서만 계산, ai는 서술·저녁 질문만 (FN-RPT-03, 05)
-- #51 구현의 `RecordGenerator`는 learning 조회 → `MetricsCalculator.calculate` → 항목·근거가 포함된 `GenerationResult`를 반환한다. `ReportRepository.finish`가 상태·항목·근거를 저장하며 종료 이벤트와 같은 트랜잭션에 참여한다. 입력 계약은 병합된 #27 코드·OpenAPI와 대조한 API 4.1.1이며, #51의 검증 범위는 `docs/report/report-metrics.md`에 기록한다.
-- #52~#55의 AI 서술·원문 재검증·렌더링·저장·조회·삭제 구현을 포함한다. `worker.run(generator=None)`은 #42 v1 codec, 생성·삭제 구독과 Outbox를 조립한다. 생성기를 주입하지 않은 기본 실행은 `GENERATOR_NOT_CONFIGURED`로 실패하며 임의의 완료 결과를 만들지 않는다. 실제 서비스 전체 생성 흐름의 연결 검증은 별도다.
+- #51 구현의 `RecordGenerator`는 learning 조회 → `MetricsCalculator.calculate` → 항목·근거가 포함된 `GenerationResult`를 반환한다. `ReportRepository.finish`가 상태·항목·근거를 저장하며 종료 이벤트와 같은 트랜잭션에 참여한다. 입력 계약은 병합된 #27 코드·OpenAPI와 대조한 API 4.1.1이며, #51의 검증 범위는 `docs/report/report.md`에 기록한다.
+- #52~#55의 AI 서술·원문 재검증·렌더링·저장·조회·삭제 구현을 포함한다. #56의 `worker.run(generator=None)`은 #42 v1 codec, 생성·삭제 구독과 Outbox 및 `generation/pipeline.py`의 전체 생성기를 조립한다. 기본 실행은 #119 core 별명 조회를 사용하며 조회 실패·잘못된 학생/별명은 생성 실패로 종료한다. Compose 직접 발행 검증과 실제 AI·공개 API 전체 E2E는 구분한다.
 - `ReportVerifier`: 서술 속 숫자·인용을 계산 결과·learning 원문과 대조, 실패 시 서술을 템플릿 요약으로 교체(`narrative.source = TEMPLATE`, P16). `NO_RECORD`·무료 플랜(`narrativeEnabled = false`)은 ai 호출 생략 (P06·P13)
 
 ---
@@ -1905,5 +1921,3 @@ classDiagram
 - learning 하위 기록 삭제 방식(FK `ON DELETE CASCADE` 또는 서비스 내 삭제 순서) 결정 후 ERD 반영 필요 (4.3). 현재 FK는 NO ACTION
 - learning `record/RecordRepository`가 여러 기능 테이블을 조회: 조회 전용 기능 한정 예외
 - 클래스 분할 단위(관리자 controller 등)는 구현 시 조정 가능, 레이어·의존 방향은 고정
-
-#58 구현 상태: StudentDeviceController의 7개 API와 StudentAuthService·StudentPinService·StudentDeviceCleanupService·Repository가 구현됐다. 자녀 PIN 저장·잠금은 StudentPinService, 삭제·탈퇴 기기 정리는 StudentDeviceCleanupService가 담당한다.

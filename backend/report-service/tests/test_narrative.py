@@ -116,6 +116,7 @@ def test_valid_narrative_versions_and_verified_candidates():
     }
     assert all(i.verified for i in generated.items if i.type == ItemType.QUOTE)
     assert len(sent) == 1
+    assert [q["answerVersion"] for q in sent[0]["quotes"]] == [1]
 
 
 @pytest.mark.parametrize("fault", ["number", "quote"])

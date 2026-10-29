@@ -34,7 +34,10 @@ class ReportPeriodTest {
         assertEquals(first.plusWeeks(1), cron.next(first))
     }
     @Test fun `missing product provider fails explicitly rather than inventing a plan`() {
-        val error = assertFailsWith<BusinessException> { ReportEntitlementService().narrativeEnabled(UUID.randomUUID()) }
-        assertEquals(503, error.status.value()); assertEquals("REPORT_ENTITLEMENT_UNAVAILABLE", error.code)
+        val provider=org.mockito.Mockito.mock(com.sagomungchi.core.payment.service.ProductEntitlementService::class.java)
+        val student=UUID.randomUUID()
+        org.mockito.Mockito.`when`(provider.forStudent(student)).thenThrow(BusinessException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,"PAYMENT_FREE_PRODUCT_UNAVAILABLE","상품 설정이 필요합니다."))
+        val error = assertFailsWith<BusinessException> { ReportEntitlementService(provider).narrativeEnabled(student) }
+        assertEquals(503, error.status.value()); assertEquals("PAYMENT_FREE_PRODUCT_UNAVAILABLE", error.code)
     }
 }

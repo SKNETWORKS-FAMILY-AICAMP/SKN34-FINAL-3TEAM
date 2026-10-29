@@ -115,3 +115,21 @@ test('자녀 연결 해제는 기존 기기 프로필과 PIN 로그인에도 반
   assert.deepEqual((await tablet.call('/profiles')).data.items, [])
   assert.equal((await tablet.call('/login', 'POST', { childId: child.id, pin: '4831' })).data.code, 'CHILD_NOT_LINKED')
 })
+
+test('가상 학생 시연도 기기 쿠키·PIN 검사를 거치며 일반 QR 기기와 분리된다', async () => {
+  const { tablet, actor, ready } = setup()
+  const qrCode = await ready(), qrTablet = actor()
+  await qrTablet.call('/register', 'POST', { pairingCode: qrCode })
+  assert.equal((await tablet.call('/profiles')).status, 401)
+  const preview = await tablet.call('/preview', 'POST', {})
+  assert.equal(preview.status, 201)
+  assert.match(preview.setCookie!, /HttpOnly/)
+  const profiles = (await tablet.call('/profiles')).data.items
+  assert.equal(profiles[0].childId, 'demo-pin-student')
+  assert.equal((await tablet.call('/login', 'POST', { childId: 'demo-pin-student', pin: '1234' })).data.code, 'STUDENT_PIN_INVALID')
+  assert.equal((await tablet.call('/login', 'POST', { childId: 'demo-pin-student', pin: '5090' })).data.child.id, 'demo-pin-student')
+  assert.equal((await qrTablet.call('/profiles')).data.items[0].childId, child.id)
+  assert.equal((await qrTablet.call('/login', 'POST', { childId: child.id, pin: '5090' })).data.code, 'STUDENT_PIN_INVALID')
+  assert.equal((await qrTablet.call('/login', 'POST', { childId: child.id, pin: '4831' })).status, 200)
+  assert.equal((await actor().call('/preview', 'POST', {}, { Origin: 'https://other.test' })).status, 403)
+})

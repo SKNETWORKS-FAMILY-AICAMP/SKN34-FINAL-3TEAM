@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useLocation, useNavigate } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import { useSession } from './auth/sessionContext.ts'
 import './student/pinpad.css'
 import { roleStart } from '../domain/navigation.ts'
@@ -250,6 +250,7 @@ export function ClassroomApp() {
               <section className="ux-login-form">
                 <h2>학부모·관리자 로그인</h2>
                 <a className="cj-primary" href="/api/v1/auth/google/authorize">Google 계정으로 계속하기</a>
+                <Link to="/login-help">로그인 도움말</Link>
                 <p>처음 로그인하면 이용 동의와 자녀 등록을 진행합니다.</p>
                 {new URLSearchParams(location.search).has('oauthError') &&
                   <p role="alert">{new URLSearchParams(location.search).get('oauthError') === 'CANCELLED'
@@ -290,6 +291,7 @@ export function ClassroomApp() {
                 <ArrowRight />
               </button>
               <ErrorNotice error={auth.login.error} />
+              <Link to="/login-help">로그인 도움말</Link>
               <button type="button" className="cj-secondary" onClick={() => navigate('/signup')}>
                 처음이신가요? 이용 등록
               </button>

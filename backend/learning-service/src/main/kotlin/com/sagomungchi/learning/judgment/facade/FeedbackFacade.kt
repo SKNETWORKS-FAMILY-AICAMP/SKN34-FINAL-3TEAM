@@ -58,14 +58,19 @@ class FeedbackFacade(
     private val missionService: MissionService,
     private val ruleJudges: List<RuleJudge>,
     private val aiClient: AiClient,
+    private val paymentUsage: com.sagomungchi.learning.judgment.client.PaymentUsageClient,
 ) {
     fun feedback(answerId: UUID): FeedbackResult {
         val target = judgmentService.target(answerId)
         val timeline = attemptService.timeline(target.attemptId)
         val attempt = timeline.attempt
+        // timeline verifies answer ownership before reserving premium use for this source ID.
+        val reservation=paymentUsage.begin(attempt.studentId,answerId)
         val judgment = when (val acquired = judgmentService.acquire(answerId, Instant.now())) {
             is AcquireResult.Acquired -> acquired.judgment
-            is AcquireResult.Busy -> return current(answerId)
+            is AcquireResult.Busy -> return current(answerId).also {
+                if(it.status==ProcessStatus.DONE && reservation!=null) paymentUsage.complete(attempt.studentId,reservation)
+            }
         }
         try {
             val mission = missionService.getVersion(attempt.missionVersionId)
@@ -85,7 +90,9 @@ class FeedbackFacade(
             throw error
         }
         // 리스를 잃어 저장하지 못했어도 현재 상태(다른 요청의 결과나 처리 중)를 돌려줌
-        return current(answerId)
+        return current(answerId).also {
+            if(it.status==ProcessStatus.DONE && reservation!=null) paymentUsage.complete(attempt.studentId,reservation)
+        }
     }
 
     /**
