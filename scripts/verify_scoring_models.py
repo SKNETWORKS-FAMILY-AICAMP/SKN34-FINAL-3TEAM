@@ -46,7 +46,9 @@ def wait(url, predicate, headers=None, seconds=240):
     raise RuntimeError(f"Local endpoint not ready; status={status}")
 
 
-def verify(archive, core_root, output, image, *, events=False, scores=False):
+def verify(
+    archive, core_root, output, image, *, events=False, scores=False, epic=False
+):
     if archive.is_relative_to(ROOT) or archive.is_relative_to(core_root):
         raise ValueError("Model archive must be outside repository checkouts")
     if output.is_relative_to(ROOT) or output.is_relative_to(core_root):
@@ -252,6 +254,23 @@ def verify(archive, core_root, output, image, *, events=False, scores=False):
         }
         assert httpx.get(scoring + "/internal/versions").status_code == 401
         passed("empty active snapshot ready; unauthenticated versions 401")
+        if epic:
+            for input_type in ("NARRATIVE", "ESSAY"):
+                response = httpx.post(
+                    scoring + "/internal/m2/scores",
+                    headers=headers,
+                    json={
+                        "prompt": "생각을 설명하세요",
+                        "text": "합성 검증 문장",
+                        "grade": 5,
+                        "inputType": input_type,
+                        "keywords": ["생각"],
+                    },
+                )
+                assert response.status_code == 200 and response.json() == {
+                    "active": False
+                }
+            passed("both M2 input types return inactive before any model is activated")
         user, session = str(uuid4()), str(uuid4())
         sql = f"""INSERT INTO user_account(id,role,login_id,status,is_demo,created_at,updated_at)
         VALUES('{user}','ADMIN','issue85-{user}@test.invalid','ACTIVE',false,now(),now());
@@ -429,7 +448,9 @@ def verify(archive, core_root, output, image, *, events=False, scores=False):
         if scores:
             from verify_scoring_m2 import check_scores
 
-            check_scores(run, url, core, access, headers, password, results, passed)
+            check_scores(
+                run, url, core, access, headers, password, results, passed, epic=epic
+            )
             (output / "results.json").write_text(
                 json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8"
             )
