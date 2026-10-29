@@ -5,7 +5,7 @@
 - 제공하지 않는 질문 안내 (FN-AGT-12): 물어볼 수 있는 범위
 """
 
-from app.analysis_agent.metrics import Computation
+from app.analysis_agent.calculators import Computation
 from app.analysis_agent.models import Evidence, FallbackReason, Intent, Metric, Scope
 
 QUOTE_CHARS = 60  # 규칙 응답에 싣는 원문 길이

@@ -52,7 +52,7 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
                                                       └(통과)→ END [result: LLM]
 ```
 
-- 구성: `analysis_agent/graph.py`(조립), `state.py`, `nodes/`(understand·retrieve·respond), `records.py`(learning 기록 도구, 호출마다 권한 재확인), `metrics.py`, `verification.py`, `templates.py`, `prompts.py`(`analysis@1`), `router.py`(SSE)
+- 구성: `analysis_agent/graph.py`(조립), `state.py`, `nodes/`(understand·retrieve·respond), `tools.py`(`RecordTools`, 호출마다 권한 재확인), `calculators.py`, `verification.py`, `templates.py`, `prompts.py`(`analysis@1`), `router.py`(SSE), `clients/learning_client.py`(learning 기록 조회 HTTP, #65)
 - LLM 호출은 기존 `LlmClient` 사용(재시도·사용량 이벤트 `ANALYSIS`·대체 모델 유지). LangGraph는 분기·상태·스트리밍만
 - 도구 선택은 질문 유형 → 도구 표(6유형). 학생·기간은 LLM이 아니라 core가 확인한 `scope`만 사용
 
@@ -63,8 +63,11 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
   | 아이가 쓴 생각 | + `attempts` 첫 페이지 8건 |
   | 전후 변화 | + `changes` 전체 페이지, `thinking-activities` |
   | 돌아보기 | + `thinking-activities` |
+  | (#67 대조용, 그래프 미연결) | `evidence(answerIds)` — 삭제된 근거는 `available: false`·원문 null 그대로 |
 
 - 수치는 learning이 P08로 계산한 값을 그대로 사용(대시보드·리포트와 일치). 분모 5 미만이면 비율 null, 건수 지표에는 분자·분모를 넘기지 않음
+- #65 결정(사용자): 전후 변화 수(글자·문장·까닭을 잇는 말)는 ai가 다시 세지 않고 learning `changes.counts`를 그대로 사용. 이슈의 `calculators.change_counts`는 만들지 않고 class-diagram 5.2에서 제거. 까닭을 잇는 말 목록·문장 구분 규칙은 learning·report만 보유
+- #65 API 문서 변경: api-spec 4.1 `thinking-activities` 호출자에 `ai` 추가(기존 구현이 이미 호출, 경로·응답 변경 없음). learning은 다른 학생 기록 조회와 같은 역할·학생 범위 검사(`requireStudentRecord`)를 적용하므로 공급자 변경 없음
 - 대조 실패(숫자가 계산값·기록 수·기간 날짜에 없음, 한글 수 표현, 따옴표 인용 불일치, 레벨·등급·점수·사고력 표현) → `source: TEMPLATE`, `fallback.reason: VERIFICATION_FAILED`
 - LLM 장애 → 규칙 응답(`AI_UNAVAILABLE`), 기록 부족 → 기간·기록 수만 안내(`fallback` null), 조회 실패 → `error`(빈 기록으로 대체하지 않음)
 - `delta` 미전송(대조 통과 후에만 표시), 체크포인터 없음(이전 대화는 core가 `history`로 전달), 전체 마감 `ANALYSIS_DEADLINE` 110초
@@ -79,9 +82,11 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
 - 사용량 조회: KST 양 끝 포함 최대 366일(사용자 결정), 범위 밖은 DB 조회 전 400. 미산정 비용이 섞이면 `costUsd` null + `unpricedCalls`
 - scope 배열의 null 요소는 Kotlin 제네릭만으로 차단되지 않아 명시적으로 422
 - 기존 NULL 평가 행은 목록에 null로 남기고 활성화·복귀는 422, 불완전한 기존 ACTIVE는 내부 snapshot에서 503 `MODEL_VERSION_STATE_INVALID`
-- 미구현: ai·scoring의 Pod별 큐 바인딩 → snapshot 조회 → 더 높은 revision만 적용하는 소비 흐름(브로커 fan-out 검증만 완료)
+- scoring은 #86에서 Pod별 큐 바인딩 → snapshot 조회 → 더 높은 revision 적용·재연결을 구현했다. ai 소비 흐름은 #68 후속이다. [scoring #86 검증](issue-86-scoring-model-events.md)을 참고한다.
 
 ## 4. M2 모델과 API 정렬 (#4)
+
+2026-10-29 로컬 #87 후속 기준: 받은 2.0 모델은 핵심어 입력·score_cuts 보정·rawScores 반환을 적용한다. [#87 구현·검증](issue-87-scoring-m2.md)과 [API 4.3](../design/api-spec.md#43-scoring-service-호출-ai)을 따른다. scoring 이벤트 소비는 #86에 구현되어 있으며, AI #69의 실제 scoring 호출은 별도 후속이다. 아래 #4 기록을 새 모델의 반올림·핵심어 개수 대체 규칙으로 해석하지 않는다.
 
 - `grade`(3~6)는 scoring이 `초{grade}`로 바꿔 모델 입력에 사용(모델은 `[학년] 초5` 문자열로 학습, 데이터에 중학생도 있어 정수로 재학습 불가). 학습 데이터 학년(초5·6) 밖은 활성 범위 밖. 변환을 빠뜨리면 오류 없이 성능만 떨어짐
 - 응답 점수: 총점 1~4점(데이터에 5점 없음)·8개 항목 1~5점
@@ -115,3 +120,7 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
 | 빈 서술·빈 저녁 질문 | 503 `AI_UNAVAILABLE`(`retryable: true`) | report는 AI 실패를 `FAILED`로 처리 |
 
 - 후속: `model.version.activated` 수신 시 서술 프롬프트 버전 교체는 #68, 실제 LLM 연동 E2E는 report worker 생성기 조립 후
+
+## 6. scoring 기동 모델 로딩 (#85)
+
+`feature/scoring-model-registry`는 core 활성 snapshot 조회, 승인 scope·revision 검사, 실제 S3/MinIO 가중치 CPU 로딩 및 `/internal/versions`를 구현한다. 활성 모델이 없으면 준비 완료, 최초 조회·로딩 실패 시 준비 안 됨으로 재시도하며 프로세스는 유지한다. 같은 모델 교체 실패 시 기존 모델은 보존한다. 기동 이후 활성화 이벤트는 #86, M2 채점 API는 #87, M1 계약은 #88 범위다. 상세 증거는 [#85 검증](issue-85-scoring-model-registry.md)을 따른다.

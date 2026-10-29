@@ -1,4 +1,4 @@
-"""liveness는 프로세스, readiness는 자기 브로커·DB 연결만 확인 (아키텍처 4.4)."""
+"""liveness는 프로세스, readiness는 로컬 연결·모델 준비 상태만 확인."""
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
