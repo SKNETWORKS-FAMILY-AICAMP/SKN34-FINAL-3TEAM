@@ -1,0 +1,425 @@
+openapi: 3.1.0
+info:
+  title: '#46 소비 계약: #80 판정 정정 및 별도 support 조회 공급자'
+  version: 0.2.0
+  description: 'core 소비 기준 확정 계약. #80은 corrections만 구현한다. targets·attempts는 별도 이슈이며 세 공급자와 실제 연결하기 전 E2E 완료가 아니다.'
+servers:
+- url: /internal
+security:
+- InternalToken: []
+paths:
+  /support/targets/{targetType}/{targetId}:
+    get:
+      description: 학생 scope 확인 후 studentId/attemptId/judgmentId/previousResult. ATTEMPT도 허용. 원문 없음.
+      parameters:
+      - name: targetType
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - JUDGMENT
+          - FOLLOWUP
+          - ATTEMPT
+      - name: targetId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: X-User-Role
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - STUDENT
+          - PARENT
+          - ADMIN
+      - name: X-Student-Scope
+        in: header
+        required: true
+        schema:
+          type: string
+          description: core가 검증한 학생 UUID 목록. 원문·정정은 저장된 단일 학생. SERVICE_OPS 검사는 core 소유.
+          minLength: 1
+        description: core가 검증한 학생 UUID 범위. ADMIN 원문·정정은 대상 학생 정확히 1명만 허용한다. SERVICE_OPS 검사는 core 소유.
+      - name: X-User-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: core가 검증한 요청자 UUID. 누락·형식 오류 400.
+      responses:
+        '200':
+          description: api-spec 5.7의 엄격한 응답
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportTarget'
+        '403':
+          description: scope/권한 부족
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: 대상 없음
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '400':
+          description: 필수 X-User-Id 누락·형식/입력 오류
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: 내부 토큰 없음·불일치
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      x-tracking-scope: 별도 공급자 이슈 필요 (#80 범위 밖)
+  /support/attempts/{attemptId}:
+    get:
+      description: core가 신고/문의에서 읽은 단일 학생 scope, SERVICE_OPS. draft/memo 제외.
+      parameters:
+      - name: attemptId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: X-User-Role
+        in: header
+        required: true
+        schema:
+          type: string
+          const: ADMIN
+      - name: X-Student-Scope
+        in: header
+        required: true
+        schema:
+          type: string
+          description: core가 검증한 학생 UUID 목록. 원문·정정은 저장된 단일 학생. SERVICE_OPS 검사는 core 소유.
+          minLength: 1
+          format: uuid
+        description: 대상 학생 UUID 정확히 1개. 비어 있거나 여러 학생·범위 밖 시도/판정이면 403.
+      - name: X-User-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: core가 검증한 요청자 UUID. 누락·형식 오류 400.
+      responses:
+        '200':
+          description: api-spec 5.7의 엄격한 응답
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportOriginal'
+        '403':
+          description: scope/권한 부족
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: 대상 없음
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '400':
+          description: 필수 X-User-Id 누락·형식/입력 오류
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: 내부 토큰 없음·불일치
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      x-tracking-scope: 별도 공급자 이슈 필요 (#80 범위 밖)
+  /judgments/{judgmentId}/corrections:
+    post:
+      description: 내부 토큰·ADMIN·단일 대상 학생 scope·X-User-Id 필수. 원판정·원본 답변 보존 및 정정 이력 추가. core의 영속 correction UUID를 멱등
+        키로 사용한다. 같은 키·본문의 최초 응답 전체를 재현한다. 모든 impact UNKNOWN이어도 정정 성공 가능. api-spec 5.7 참조.
+      parameters:
+      - name: judgmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: X-User-Role
+        in: header
+        required: true
+        schema:
+          type: string
+          const: ADMIN
+      - name: X-Student-Scope
+        in: header
+        required: true
+        schema:
+          type: string
+          description: core가 검증한 학생 UUID 목록. 원문·정정은 저장된 단일 학생. SERVICE_OPS 검사는 core 소유.
+          minLength: 1
+          format: uuid
+        description: 대상 학생 UUID 정확히 1개. 비어 있거나 여러 학생·범위 밖 시도/판정이면 403.
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: X-User-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: core가 검증한 요청자 UUID. 누락·형식 오류 400.
+      responses:
+        '200':
+          description: api-spec 5.7의 엄격한 응답
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CorrectionResult'
+        '403':
+          description: scope/권한 부족
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: 대상 없음
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '400':
+          description: 필수 X-User-Id 누락·형식/입력 오류
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: 내부 토큰 없음·불일치
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: 판정 DONE 이전 또는 동일 reportId의 다른 Idempotency-Key. core 공개 409 SUPPORT_CORRECTION_CONFLICT로 매핑.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: 같은 Idempotency-Key에 다른 본문. core 공개 422 SUPPORT_CORRECTION_REJECTED로 매핑.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CorrectionCommand'
+      x-tracking-scope: '#80'
+      x-correction-rules:
+        requiredProcessStatus: DONE
+        notDoneStatus: 409
+        sameReportDifferentKeyStatus: 409
+        sameKeyDifferentBodyStatus: 422
+        sameKeySameBodyReplay: entire-first-response
+        preserveOriginalJudgment: true
+        preserveOriginalAnswer: true
+        queryLatestCorrection: true
+        preserveFollowup: true
+        preserveNextActions: true
+        coreIdempotencyKey: persisted-correction-uuid
+        allUnknownImpactAllowsSuccess: true
+components:
+  securitySchemes:
+    InternalToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Token
+  schemas:
+    SupportTarget:
+      type: object
+      required:
+      - studentId
+      - attemptId
+      properties:
+        studentId:
+          type: string
+          format: uuid
+        attemptId:
+          type: string
+          format: uuid
+        judgmentId:
+          type: string
+          format: uuid
+        previousResult:
+          type: string
+          enum:
+          - CORRECT
+          - PARTIAL
+          - RETHINK
+          - HELD
+    SupportOriginal:
+      type: object
+      required:
+      - studentId
+      - attemptId
+      - answers
+      properties:
+        studentId:
+          type: string
+          format: uuid
+        attemptId:
+          type: string
+          format: uuid
+        answers:
+          type: array
+          items:
+            type: object
+            required:
+            - answerId
+            - version
+            - text
+            - feedback
+            properties:
+              answerId:
+                type: string
+                format: uuid
+              version:
+                type: integer
+                minimum: 1
+              text:
+                type: string
+              feedback:
+                type: object
+                description: PublicAttempt feedback。draft/memo/name excluded
+    CorrectionCommand:
+      type: object
+      required:
+      - reportId
+      - reason
+      - corrected
+      properties:
+        reportId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          minLength: 1
+        corrected:
+          type: string
+          enum:
+          - CORRECT
+          - PARTIAL
+          - RETHINK
+          - HELD
+    CorrectionResult:
+      type: object
+      required:
+      - correctionId
+      - previousResult
+      - corrected
+      - createdAt
+      - impact
+      properties:
+        correctionId:
+          type: string
+          format: uuid
+        previousResult:
+          type: string
+          enum:
+          - CORRECT
+          - PARTIAL
+          - RETHINK
+          - HELD
+        corrected:
+          type: string
+          enum:
+          - CORRECT
+          - PARTIAL
+          - RETHINK
+          - HELD
+        createdAt:
+          type: string
+          format: date-time
+        impact:
+          type: object
+          required:
+          - conversation
+          - aggregation
+          - report
+          properties:
+            conversation:
+              type: string
+              enum:
+              - APPLIED
+              - NOT_APPLIED
+              - UNKNOWN
+              x-enum-descriptions:
+                APPLIED: 해당 영역에 정정 반영을 확인함.
+                NOT_APPLIED: 해당 영역에 정정 반영을 수행하지 않았음을 확인함. 변경 대상 없음도 포함하며 오류나 후속 처리 필요를 뜻하지 않음.
+                UNKNOWN: 해당 영역의 반영 여부를 확인하지 못함.
+              description: 분석 대화의 반영 여부. learning은 UNKNOWN을 허용함.
+            aggregation:
+              type: string
+              enum:
+              - APPLIED
+              - NOT_APPLIED
+              - UNKNOWN
+              x-enum-descriptions:
+                APPLIED: 해당 영역에 정정 반영을 확인함.
+                NOT_APPLIED: 해당 영역에 정정 반영을 수행하지 않았음을 확인함. 변경 대상 없음도 포함하며 오류나 후속 처리 필요를 뜻하지 않음.
+                UNKNOWN: 해당 영역의 반영 여부를 확인하지 못함.
+              description: 학습 수치 집계에 대한 정정 반영 여부. 개별 기록 상세의 판정 표시는 아님. 집계가 판정 결과를 사용하지 않아 변경 대상이 없으면 NOT_APPLIED.
+            report:
+              type: string
+              enum:
+              - APPLIED
+              - NOT_APPLIED
+              - UNKNOWN
+              x-enum-descriptions:
+                APPLIED: 해당 영역에 정정 반영을 확인함.
+                NOT_APPLIED: 해당 영역에 정정 반영을 수행하지 않았음을 확인함. 변경 대상 없음도 포함하며 오류나 후속 처리 필요를 뜻하지 않음.
+                UNKNOWN: 해당 영역의 반영 여부를 확인하지 못함.
+              description: 리포트의 반영 여부. learning은 UNKNOWN을 허용함.
+          description: 판정 정정 성공과 독립적인 파생 결과 반영 확인 상태. 세 값이 모두 UNKNOWN이어도 정정 성공이다.
+          x-all-unknown-allows-success: true
+    Problem:
+      type: object
+      required:
+      - status
+      - code
+      - title
+      properties:
+        status:
+          type: integer
+        code:
+          type: string
+        title:
+          type: string
+        detail:
+          type:
+          - string
+          - 'null'
+        traceId:
+          type: string
+x-implementation-status: supplier-integration-not-verified

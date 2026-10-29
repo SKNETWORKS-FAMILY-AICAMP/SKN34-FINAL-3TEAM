@@ -104,3 +104,22 @@ PR은 사용자가 생성한다. base develop, head feature/core-payments. 제�
 - 격리 PostgreSQL 전체 migration cycle 통과(50.3초): core 42테이블/376컬럼, learning 19/158, report 7/50. 위반 입력 60건, CHECK 값 집합 70개, ERD 인덱스 23개. 재실행 이력 불변 및 report downgrade/upgrade 후 재검사 통과. #46 V14는 아직 이 base에 없으므로 양쪽 기능이 함께 병합된 후 최종 DB 검사가 추가로 필요하다.
 - 기반영 풀 설정 파일은 새 base와 동일하며, 기반영 경로·스키마 보존 검사도 통과했다. 추가 production 로직 수정·기존 커밋 이력 재작성·develop 직접 push·PR 생성은 하지 않았다.
 - #46 채팅이 새 base용 PR 준비 문서 갱신·push(6604844)를 완료한 것을 확인했다. #46 먼저 새 base에 병합할 수 있으며, 그 뒤 #48의 공통 파일 충돌 여부를 다시 확인해야 한다. 실제 PG/Google·배포·원격 CI의 미검증 조건은 유지한다.
+
+
+## 2026-10-29 #46 PR #120 병합 후 #48 접합
+
+- PR #120이 feature/core-support에서 feature/core-support-payments-integration으로 병합된 것을 GitHub merged 상태와 통합 base 8883528로 확인했다. develop 직접 병합이 아니다.
+- #48 head e3cbec3에 통합 base를 일반 merge했다. 충돌은 PublicAuthFilter.kt, NotificationService.kt, state-diagram.md 3곳이다.
+- #46의 인증된 도움말/공지 계약은 그대로 보존하고 #48의 정확한 POST 웹훅 예외만 추가했다. support 알림 함수·수신자/동의 검사는 원문 그대로 유지하고 payment 알림 함수를 별도로 접합했다. 상태 문서는 양쪽 설명을 모두 유지했다.
+- 기반영 API 경로 74개·스키마 94개 및 공통 components/root metadata를 대조했다. 이전 사용자 승인 범위인 ReportDownload 설명 외에는 기반영 정의를 교체하지 않았다. #48 정의도 보존했으며 병합 결과 91개 경로·114개 스키마, 중복 YAML 키 없음이다.
+- learning은 #48의 이전 190개 통과 source와 동일하다. frontend는 #46에서 검증한 통합 base 원문과 같으며 #48에서 수정하지 않았다. 따라서 양쪽을 반복 실행하지 않는다. 이번 영향 범위는 core 전체·계약/실제 JSON·V14/V15 동시 DB 적용이다. 결과를 이어 기록한다.
+
+
+### #46·#48 공존 검증 결과
+
+- JDK21 core 전체 **258개** test·bootJar 통과, 실패·오류·건너뜀 0. #46 지원·#48 결제·기존 인증/알림/대시보드/리포트/피드백 회귀를 함께 실행했다. 실제 PostgreSQL/Redis/RabbitMQ는 격리 Testcontainers, PG·learning 외부 공급자 HTTP는 계약 대역이다.
+- 계약 스크립트 **65개**와 OpenAPI 표준 검사 통과. 실제 MockMvc 지원 7종·결제 5종·알림 2종, report 이벤트 4종 및 HTTP 상세 JSON 계약 대조 통과.
+- V14/V15 동시 전체 migration cycle·ERD 검사 통과(64.8초): core 42테이블/390컬럼, learning 19/158, report 7/50. 위반 입력 60건, CHECK 값 집합 74개, ERD 인덱스 23개. 재실행 이력 불변 및 report downgrade/upgrade 재검사 통과.
+- runtime/test/contract/frontend source sha256 일치, 충돌 마커·unmerged path 없음, git diff --check 통과. learning 190개와 #46 frontend 92개/lint/build 결과는 source 변경이 없어 반복 실행하지 않고 앞선 검증 범위를 유지했다.
+- #46 지원 알림과 인증/공개 계약은 그대로 보존했고 추가 기반영 production 로직을 바꾸지 않았다. #48 작업 브랜치에만 일반 merge commit을 추가하며 이력 재작성·통합 base 직접 수정·develop push·PR 생성은 하지 않는다.
+- 현재 PR base는 feature/core-support-payments-integration이다. Closes #48은 이 중간 base 병합만으로 자동 종료되지 않으며, 실제 해결 범위를 확인한 최종 develop 통합 PR에도 필요하다. 실제 PG·Google·#41 전체 대화/AI·배포·원격 CI 미검증 조건은 유지한다.
