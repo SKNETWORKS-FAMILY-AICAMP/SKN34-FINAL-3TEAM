@@ -16,7 +16,7 @@ class ReportClient(factory: InternalRestClientFactory, private val json: ObjectM
     private val http = factory.create("report")
 
     /** Narrow the factory's propagated scope, and restore the authenticated request context even on failure. */
-    fun get(studentId: UUID, path: String, query: Map<String, String> = emptyMap()): JsonNode {
+    fun get(studentId: UUID, path: String, query: Map<String, String> = emptyMap(), narrativeEnabled: Boolean? = null): JsonNode {
         val context = UserContextHolder.current()
         UserContextHolder.set(context.copy(studentScope = setOf(studentId.toString())))
         try {
@@ -25,6 +25,9 @@ class ReportClient(factory: InternalRestClientFactory, private val json: ObjectM
                     builder.path(path)
                     query.forEach { (key, value) -> builder.queryParam(key, value) }
                     builder.build()
+                }.headers { headers ->
+                    // Only the application service supplies this value; never copy public request headers.
+                    narrativeEnabled?.let { headers.set("X-Report-Narrative-Enabled", it.toString()) }
                 }.retrieve().body(String::class.java)
             } catch (ex: RestClientResponseException) {
                 val code = runCatching { json.readTree(ex.responseBodyAsString)?.get("code")?.textValue() }.getOrNull()
