@@ -71,7 +71,7 @@
         </constructor>
     </resultMap>
 
-    <!-- 공개 미션의 현재 버전만 (정답·예시 답·기준표 컬럼은 읽지 않음). 선택지·입력 틀·분류 그룹이 없으면 빈 배열.
+    <!-- 공개 미션의 공개 버전만 (정답·예시 답·기준표 컬럼은 읽지 않음). 선택지·입력 틀·분류 그룹이 없으면 빈 배열.
          시연 전용 여부는 MissionView.isOpenTo가 판단 -->
     <sql id="missionColumns">
         SELECT m.id, m.sort_order, v.title, v.subject, v.grade_min, v.grade_max,
@@ -81,10 +81,11 @@
                COALESCE(v.categories, '[]'::jsonb) AS categories, v.answer_unit
     </sql>
 
+    <!-- 학생에게는 공개 버전(published_*). 공개 중 수정한 current_*는 재게시 전까지 보이지 않음 (P07, #145) -->
     <sql id="publishedCurrentVersion">
         <include refid="missionColumns"/>
         FROM mission m
-        JOIN mission_version v ON v.id = m.current_version_id
+        JOIN mission_version v ON v.id = m.published_version_id
         WHERE m.status = 'PUBLISHED'
     </sql>
 
@@ -102,10 +103,11 @@
         SELECT EXISTS (SELECT 1 FROM mission WHERE id = #{id})
     </select>
 
+    <!-- 새 시도가 쓸 버전 묶음 = 공개 버전 (#145) -->
     <select id="findCurrentVersions" resultMap="snapshot">
-        SELECT current_version_id, current_rubric_version_id
+        SELECT published_version_id AS current_version_id, published_rubric_version_id AS current_rubric_version_id
         FROM mission
-        WHERE id = #{id} AND current_version_id IS NOT NULL AND current_rubric_version_id IS NOT NULL
+        WHERE id = #{id} AND published_version_id IS NOT NULL AND published_rubric_version_id IS NOT NULL
     </select>
 
     <!-- 시도에 고정된 버전. 공개 중단·새 버전 공개 뒤에도 진행 중 시도는 이 버전을 보여 줌 (state-diagram 3.1) -->

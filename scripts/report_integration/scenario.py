@@ -65,8 +65,8 @@ def seed(student):
             (rubric, mission, actor),
         )
         db.execute(
-            "UPDATE mission SET current_version_id=%s,current_rubric_version_id=%s WHERE id=%s",
-            (version, rubric, mission),
+            "UPDATE mission SET current_version_id=%s,current_rubric_version_id=%s,published_version_id=%s,published_rubric_version_id=%s WHERE id=%s",
+            (version, rubric, version, rubric, mission),
         )
         with httpx.Client(base_url="http://learning:8081", headers=headers(student)) as client:
             response = client.post(

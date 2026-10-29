@@ -48,6 +48,13 @@ class TestRows(private val jdbc: JdbcTemplate) {
             "UPDATE mission SET current_version_id = ?, current_rubric_version_id = ? WHERE id = ?",
             versionId, rubricVersionId, id,
         )
+        // 공개 미션은 학생에게 이 버전을 제공 (V7 published_*, #145)
+        if (status == "PUBLISHED") {
+            jdbc.update(
+                "UPDATE mission SET published_version_id = ?, published_rubric_version_id = ? WHERE id = ?",
+                versionId, rubricVersionId, id,
+            )
+        }
         return SeededMission(id, versionId, rubricVersionId, hintIds)
     }
 
