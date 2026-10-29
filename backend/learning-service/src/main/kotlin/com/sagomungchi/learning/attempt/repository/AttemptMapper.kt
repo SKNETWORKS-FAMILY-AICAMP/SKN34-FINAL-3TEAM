@@ -32,4 +32,16 @@ interface AttemptMapper {
         @Param("openedAt") openedAt: Instant,
     ): Int
     fun findOpenedHintIds(attemptId: UUID): List<UUID>
+
+    fun deferAnswerFollowupCheck()
+    fun deleteCorrectionsByStudent(studentId: UUID): Int
+    fun deleteJudgmentElementsByStudent(studentId: UUID): Int
+    fun deleteSelfAssessmentsByStudent(studentId: UUID): Int
+    fun deleteReflectionsByStudent(studentId: UUID): Int
+    fun deleteHintUsagesByStudent(studentId: UUID): Int
+    fun deleteDraftsByStudent(studentId: UUID): Int
+    fun deleteFollowupsByStudent(studentId: UUID): Int
+    fun deleteJudgmentsByStudent(studentId: UUID): Int
+    fun deleteAnswersByStudent(studentId: UUID): Int
+    fun deleteAttemptsByStudent(studentId: UUID): Int
 }

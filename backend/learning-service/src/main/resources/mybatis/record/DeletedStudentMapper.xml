@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.learning.record.repository.DeletedStudentMapper">
+    <insert id="upsert">
+        INSERT INTO deleted_student (student_id, scope, event_id, deleted_at)
+        VALUES (#{studentId}, #{scope}, #{eventId}, #{deletedAt})
+        ON CONFLICT (student_id) DO UPDATE
+        SET scope = CASE WHEN deleted_student.scope = 'PROFILE' THEN 'PROFILE' ELSE EXCLUDED.scope END,
+            event_id = EXCLUDED.event_id,
+            deleted_at = EXCLUDED.deleted_at
+    </insert>
+</mapper>
