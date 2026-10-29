@@ -13,4 +13,8 @@ import org.springframework.context.annotation.Configuration
 class MessagingConfig {
     @Bean
     fun messageConverter(objectMapper: ObjectMapper): MessageConverter = Jackson2JsonMessageConverter(objectMapper)
+
+    companion object {
+        const val CONFIRM_TIMEOUT_MS = 5_000L
+    }
 }

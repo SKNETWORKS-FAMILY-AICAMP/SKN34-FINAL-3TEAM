@@ -23,7 +23,7 @@
 | JSONB | 구조가 응답 스키마와 같고 조회 조건에 쓰지 않는 값만 (Metric[], verification, versions 등) |
 | NULL·기본값 | `NULL 허용` 표시 컬럼 외에는 NOT NULL. UUID·시각·상태·카운터의 SQL DEFAULT는 두지 않고 앱에서 전달. 정책 값(기능명세서 1.4)을 SQL 기본값으로 고정하지 않고 앱 설정·`product` 데이터로 전달 |
 | 문자열·금액 | varchar는 길이 제한 없는 PostgreSQL varchar. ShedLock만 name varchar(64), locked_by varchar(255). 원화는 int, cost_usd는 반올림 정책 없는 numeric |
-| FK 삭제·순환 참조 | 기본 ON DELETE/UPDATE NO ACTION. mission.current_*와 answer.followup_id만 DEFERRABLE INITIALLY IMMEDIATE. 삭제는 P09에 따라 `student.deleted` 이벤트로 서비스별 물리 삭제. learning 하위 기록의 CASCADE 여부는 7장 확인 필요 |
+| FK 삭제·순환 참조 | 기본 ON DELETE/UPDATE NO ACTION. mission.current_*와 answer.followup_id만 DEFERRABLE INITIALLY IMMEDIATE. 삭제는 P09에 따라 `student.deleted` 이벤트로 서비스별 물리 삭제. learning 하위 기록은 CASCADE 없이 서비스가 한 트랜잭션에서 순서대로 삭제(4.3, #128) |
 
 - 테이블 없이 Redis에 두는 값: SSE 알림 중계 (아키텍처 1.6), 요금제 사용 한도 일 단위 카운터 (P13)
 - 생각 메모는 `attempt_draft.content.memo`에 저장 (P05). 음성 시범 미구현으로 음성 데이터 없음 (P03)
@@ -940,6 +940,8 @@ erDiagram
 ```
 
 - `student.deleted` 소비: 해당 학생 `attempt` 이하 기록 삭제 + `deleted_student` 저장 → 근거 조회 시 `available: false` (물리 삭제 + 표식, P09). 처리 완료는 core 내부 API `POST /internal/deletion-requests/{id}/completions`로 알림
+  - 삭제 방식(#128): FK는 NO ACTION 그대로 두고 서비스가 한 트랜잭션에서 `judgment_correction`·`judgment_element` → `self_assessment`·`reflection`·`hint_usage`·`attempt_draft` → `followup`(`answer.followup_id`는 `SET CONSTRAINTS … DEFERRED`로 커밋 때 검사) → `judgment` → `answer` → `attempt` 순서로 삭제. `processed_event`에 이벤트 `id`를 같은 트랜잭션에 기록해 재전달 때 다시 지우지 않음
+  - `deleted_student`는 학생당 한 행: 다시 받으면 `event_id`·`deleted_at`을 갱신하고 `scope`는 이미 `PROFILE`이면 유지(report 삭제 장벽과 같은 규칙)
 - learning은 이벤트를 발행하지 않으므로 `outbox_event` 없음 (아키텍처 1.6)
 - 멱등은 `answer`·`judgment_correction`의 `idempotency_key` UK로 처리, 별도 `idempotency_record` 없음
 
@@ -1058,7 +1060,6 @@ erDiagram
 
 ## 7. 확인 필요 가정
 - PG 거래 대조(FN-ADM-15): 조회 시 PG API와 계산, 결과 테이블 없음
-- learning 학생 삭제 시 `attempt` 하위 기록 삭제 방식: FK `ON DELETE CASCADE` 또는 서비스 내 삭제 순서 (클래스 다이어그램 8장)
 - 정기 청구는 월별 payment_order를 재사용하며, 확정 실패 후의 일별 재청구마다 payment_charge_attempt에 새 PG 주문과 멱등키를 보존한다. 불명확한 거래는 재청구하지 않고 조회 복구한다(#48).
 - 정책 확정에 따른 DDL은 core V6~V7·learning V4~V5로 추가한다(9장). 기존 데이터의 출생연도·상품 한도·폐기 코드/음성 기록은 임의 변환하지 않고 적용 전 정비가 필요하다.
 - `product.code`는 상품 행별 UK이며 P13의 요금제 추가·가격/한도별 새 행을 위해 확장 가능한 코드다. 새 상품 행은 새 고유 코드를 사용한다. 무료 상품 교체는 PAYMENT_FREE_PRODUCT_ID를 명시적으로 변경한다(#48 사용자 확정).

@@ -1,4 +1,4 @@
-# learning 학습 서비스 (#22~#27·#79·#80)
+# learning 학습 서비스 (#22~#27·#79·#80·#128)
 
 통합 원본: learning-mission, learning-attempt, learning-answer, learning-feedback, learning-reflection, learning-records, learning-judgment-rules
 
@@ -113,7 +113,7 @@
 - 전후 변화 수: 글자 수(공백 포함, 코드 포인트)·문장 수(`.?!`·줄바꿈)·까닭을 잇는 말(`왜냐하면·때문·그래서·따라서`, report와 확정)을 학생이 쓴 칸만으로 셈(칸 이름을 세지 않음)
 - evidence: 요청 순서, 없는 답변·삭제 학생은 `available:false`(원문·제목 없음, `attemptId` null 가능), 범위 밖 학생 답변이 섞이면 403, ID 1~100개
 - 식별자는 역할과 무관하게 `studentId`(core·report와 합의). 메모·초안은 어떤 응답에도 없음. 기록 조회 SELECT는 `flushCache="true" useCache="false"`
-- 미구현: `student.deleted` 소비(`StudentDeletedConsumer`·`StudentDeletionService`)
+- `student.deleted` 소비(`StudentDeletedConsumer`·`StudentDeletionService`)는 9절(#128)
 
 ## 7. 판정 규칙 확정 (#79, 사용자 결정)
 
@@ -149,3 +149,23 @@ core #46 관리자가 신고를 검토해 판정을 고치면 core가 `POST /int
 - 검증: 테스트 202개(새 15: 서비스 8·동시 2·컨트롤러 5), scripts/tests 58개, #126 머지 뒤 develop 병합 상태로 206개·scripts 74개. 보호 장치 12개를 빼면 각각 실패(`DONE` 전 409는 DB 제약 `ck_judgment_result_when_done`·null 검사와 세 겹). compose 실제: 고르기 정답 `CORRECT` → `RETHINK` 정정, 같은 키 처음 응답 그대로, 422·409·409·403·404, 피드백·시도 상세·기록 모두 `RETHINK`, DB 원판정 `CORRECT` 그대로(ai 호출 없음, 만든 시도 2건만 삭제)
 - 한계: 같은 신고를 다른 판정에 동시에 보내면 판정 잠금이 달라 둘 다 저장될 수 있음(`error_report_id` UK 없음, core는 신고마다 한 정정만 보냄), 같은 키를 다른 판정에 동시에 보내면 키 UK로 한쪽 500. `judgment_correction.judgment_id` 인덱스 없음(정정은 드묾)
 - 확인 필요: core가 정정 전에 부르는 `/support/targets/{type}/{id}`·관리자 원문 `/support/attempts/{id}`는 별도 이슈(#80만으로 실제 흐름 미완성). learning 학생 삭제를 만들 때 `judgment_correction`을 판정보다 먼저 지움(FK)
+
+## 9. 학생 삭제 소비·완료 보고 (#128)
+
+core가 자녀 삭제·탈퇴를 확정하면 `student.deleted`를 보내고, learning·report 두 곳의 완료 보고가 모두 와야 삭제 요청이 `COMPLETED`가 됨(api-spec 5.6). learning에 소비자가 없어 삭제·탈퇴가 끝나지 않던 문제([점검 기록 B3](audit.md))를 고침. 클래스 다이어그램 4.3 이름(`StudentDeletedConsumer`·`StudentDeletionService`·`CoreClient`·`DeletedStudentRepository`·`ProcessedEventRepository`·`AttemptService.deleteByStudent`) 그대로, DB 변경 없음(큐는 `definitions.json`, 표는 V3)
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 흐름 | 소비자가 봉투 검증 → SYSTEM 컨텍스트 + 대상 학생 범위 → 한 트랜잭션에서 `processed_event`에 없으면 삭제·`deleted_student`·`processed_event` 저장 → 커밋 뒤 트랜잭션 밖에서 core `POST /internal/deletion-requests/{id}/completions {service:"learning"}` | api-spec 4.5·5.6, class-diagram 4.3 |
+| 재전달·보고 실패 | 이미 처리한 이벤트는 지우지 않고 보고만 다시 보냄(core가 첫 보고를 놓쳤을 수 있음). 보고 실패는 예외 → 1·5·15분 지연 재시도 → 3회 초과 DLQ, 재시도 때도 삭제 없이 보고만 | 이슈 해야 할 일 3, report 삭제와 같은 규칙 |
+| 하위 기록 삭제 | CASCADE 없이 한 트랜잭션에서 순서대로: 정정·판정 요소 → 자기 평가·돌아보기·생각 열기·초안 → 되묻기 → 판정 → 답변 → 시도. 답변 → 되묻기 → 판정 → 답변 고리는 `answer.followup_id`(DEFERRABLE)를 `SET CONSTRAINTS … DEFERRED`로 커밋 때 검사 | 사용자 결정(이슈 확인 필요). 마이그레이션·ERD 공유 계약을 바꾸지 않고, 시도 하나만 지워도 아래가 다 지워지는 위험이 없음 |
+| 범위 | PROFILE·RECORDS 모두 학습 기록 전부 삭제. learning에는 프로필이 없어 차이는 표식의 `scope`뿐 | api-spec 5.6 "두 scope 모두 learning 기록 삭제" |
+| 삭제 표식 | `deleted_student`는 학생당 한 행. 다시 삭제되면 `event_id`·`deleted_at` 갱신, `scope`는 이미 PROFILE이면 유지(RECORDS 뒤 탈퇴의 PROFILE은 PROFILE) | report 삭제 장벽과 같은 규칙 |
+| 봉투 검증 | `specversion` 1.0, `id` UUID, type `student.deleted`·source `core-service`·dataschema `student.deleted.v1`, `subject` = `data.studentId`, data 필드는 정확히 `studentId`·`deletionRequestId`·`scope`. 위반은 재시도 없이 바로 DLQ(`InvalidEventException`), 필드 누락·시간대 없는 `time`은 변환 단계에서 거부 | 아키텍처 1.6 "형식 오류는 재시도 없이 DLQ", envelope·student.deleted.v1 스키마, report 소비자와 같은 검사 |
+| 삭제 뒤 새 기록 | learning은 막지 않음. 학생 이용 차단은 core(RECORDS 완료 뒤에도 `DELETION_REQUESTED` 유지) | api-spec 5.6 "삭제 표식 이후 새 기록 허용 계약은 후속", auth-account 3장 |
+
+- 설계와 다른 점: `StudentDeletionService.delete`에 `deletionRequestId` 인자 추가(설계는 `(eventId, studentId, scope)`). 완료 보고 경로에 필요한데 learning DB에 없어 이벤트에서 받아야 함. 소비자가 직접 보고하면 설계 화살표(서비스 → `CoreClient`)가 바뀌어 인자 추가가 가장 작은 변경(사용자 확인). `onStudentDeleted`는 수동 ACK용 `message`·`channel`을 함께 받음(core 소비자와 같음)
+- 새로 둔 것: `_common/messaging/RetryingConsumer`(core와 같은 이름·동작 + 계약 위반 바로 DLQ), `InvalidEventException`, `record/domain/DeletionScope`. 삭제와 보고를 트랜잭션 안·밖으로 나누려고 Spring `TransactionTemplate` 사용(learning 첫 사용, 새 계층 아님)
+- 기존 파일 수정: `EventEnvelope`(발행용 기본값 제거: `id`가 빠진 메시지에 무작위 id가 채워져 멱등 키가 매번 달라지는 문제, learning은 발행하지 않음), `MessagingConfig`(confirm 대기 시간), `AppProperties`(`messaging.maxRetries`), `application.yml`(수동 ACK·`missing-queues-fatal: false`·publisher confirm·readiness에 `rabbit`·`app.messaging.max-retries: 3`, read-timeout 주석을 core 호출까지로), `AttemptService`·`AttemptRepository`·`AttemptMapper`(`deleteByStudent`), 테스트 6개 클래스에 `spring.rabbitmq.listener.simple.auto-startup=false`(core 테스트와 같음, 리스너가 실제 RabbitMQ에 붙지 않게)
+- 설계 문서: class-diagram 4.3(구현 상태·소비자 검증·삭제 흐름·`deleteByStudent` 순서·`delete` 시그니처), ERD 1장 FK 줄·4.3 비고·7장 확인 필요 줄 삭제, api-spec 5.6 마지막 줄(B3 해소), 아키텍처 1.6 수동 ACK 줄
+- 검증: learning 테스트 217개(새 11: 삭제 4·소비자 3·재시도 4)·scripts/tests 74개, 보호 장치 16개를 빼면 각각 실패(삭제 순서 4·멱등·보고 3·표식 1·소비자 5·재시도 3). 통합 확인은 #148의 격리 compose(`scripts/report_integration/compose.yaml`, 합성 값, 프로젝트 `learning128`)에 learning `CORE_URL`만 덮어써서: core DB에 보호자·학생 2명과 `CONFIRMED` PROFILE 삭제 요청·outbox 행 저장 → core 중계가 `student.deleted` 발행 → learning·report 둘 다 보고하고 core 요청 `COMPLETED`(2초)·학생 `DELETED`, learning은 대상 학생 시도·초안·답변·판정 0행·다른 학생 그대로·표식 PROFILE. 같은 이벤트 재전달은 처리 뒤 만든 시도를 지우지 않고 보고만(재시도·DLQ 0), source가 다른 봉투는 재시도 없이 learning DLQ 1건. readiness에 rabbit 포함 UP. 확인 뒤 격리 환경 삭제

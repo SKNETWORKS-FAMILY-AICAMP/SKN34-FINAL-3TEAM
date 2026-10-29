@@ -50,4 +50,23 @@ class AttemptRepository(private val mapper: AttemptMapper) {
     }
 
     fun findOpenedHintIds(attemptId: UUID): Set<UUID> = mapper.findOpenedHintIds(attemptId).toSet()
+
+    /**
+     * 학생의 시도 이하 기록 전부 삭제 (#128, ERD 4.3). FK는 CASCADE 없이 NO ACTION이라 자식부터 지움.
+     * 답변 → 되묻기 → 판정 → 답변이 서로 참조하므로 answer.followup_id(DEFERRABLE) 검사를 커밋 때로 미룸.
+     * 호출한 쪽 트랜잭션 안에서만. 지운 시도 수
+     */
+    fun deleteByStudent(studentId: UUID): Int {
+        mapper.deferAnswerFollowupCheck()
+        mapper.deleteCorrectionsByStudent(studentId)
+        mapper.deleteJudgmentElementsByStudent(studentId)
+        mapper.deleteSelfAssessmentsByStudent(studentId)
+        mapper.deleteReflectionsByStudent(studentId)
+        mapper.deleteHintUsagesByStudent(studentId)
+        mapper.deleteDraftsByStudent(studentId)
+        mapper.deleteFollowupsByStudent(studentId)
+        mapper.deleteJudgmentsByStudent(studentId)
+        mapper.deleteAnswersByStudent(studentId)
+        return mapper.deleteAttemptsByStudent(studentId)
+    }
 }
