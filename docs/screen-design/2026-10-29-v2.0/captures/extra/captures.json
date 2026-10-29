@@ -1,0 +1,159 @@
+{
+  "base": "http://127.0.0.1:5231",
+  "shots": [
+    {
+      "id": "C03",
+      "file": "C03.jpg",
+      "url": "/login-help",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 393,
+          "y": 149
+        },
+        {
+          "label": "2",
+          "x": 393,
+          "y": 339.5625
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1440,
+          900
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "P12",
+      "file": "P12.jpg",
+      "url": "/parent/help",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 166,
+          "y": 347.28125
+        },
+        {
+          "label": "2",
+          "x": 30,
+          "y": 187.5
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1440,
+          900
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "P13",
+      "file": "P13.jpg",
+      "url": "/parent/notices",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 166,
+          "y": 347.28125
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1440,
+          900
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "P14",
+      "file": "P14.jpg",
+      "url": "/parent/support",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 166,
+          "y": 555.078125
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1440,
+          900
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "P15",
+      "file": "P15.jpg",
+      "url": "/parent/notifications",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 166,
+          "y": 347.28125
+        },
+        {
+          "label": "2",
+          "x": 166,
+          "y": 765.46875
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1440,
+          900
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "P16",
+      "file": "P16.jpg",
+      "url": "/parent/account",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "markers": [],
+      "layout": {
+        "viewport": [
+          1440,
+          900
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    }
+  ],
+  "errors": []
+}
