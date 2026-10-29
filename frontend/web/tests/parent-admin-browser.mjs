@@ -362,7 +362,7 @@ try {
     await p.getByText(/실제 리포트 기간.*1판/).waitFor()
     await p.getByLabel('리포트 판').selectOption('latest')
     await p.getByRole('button', { name: '새 판으로 재생성' }).click()
-    await p.getByText('REGENERATE_NOT_ALLOWED', { exact: true }).waitFor()
+    await p.getByText('REPORT_REGENERATION_LIMIT', { exact: true }).waitFor()
     for (const button of ['Markdown 다운로드', 'PDF 다운로드']) {
       const wait = p.waitForEvent('download')
       await p.getByRole('button', { name: button, exact: true }).click()

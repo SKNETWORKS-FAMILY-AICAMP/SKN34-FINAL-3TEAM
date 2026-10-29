@@ -15,4 +15,4 @@ report.started는 weekly_report RUNNING 저장과 같은 트랜잭션의 Outbox�
 
 narrativeEnabled는 승인된 상품 계약에서만 결정한다. 미연결 상태에서 core는 명령을 발행하지 않고 명시적으로 실패한다. 무료=false / 프리미엄=true의 실제 연결은 상품 담당 서비스 계약 확정 후 수행한다. report는 NO_RECORD에서 true여도 AI를 호출하지 않는다.
 
-이 문서는 #42에서 먼저 제안·구현한 v1 계약이다. #50/#54 실제 공급자와 통합 시 필드·큐·응답을 대조해야 하며 합의나 실제 report-service 연동 완료를 뜻하지 않는다.
+이 문서는 #42에서 제안·구현한 v1 계약이며, report-service의 소비·발행 codec(#50~#55)이 develop에 병합되어 같은 필드·큐를 사용한다. 실제 리포트 생성기 연결과 ai 서술 API(api-spec 4.2)는 미구현이므로 생성 E2E 완료를 뜻하지 않는다.

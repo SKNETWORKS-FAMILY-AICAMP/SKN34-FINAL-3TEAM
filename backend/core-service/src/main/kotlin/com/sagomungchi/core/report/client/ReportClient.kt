@@ -27,9 +27,14 @@ class ReportClient(factory: InternalRestClientFactory, private val json: ObjectM
                     builder.build()
                 }.retrieve().body(String::class.java)
             } catch (ex: RestClientResponseException) {
-                throw when (ex.statusCode.value()) {
-                    403 -> BusinessException(HttpStatus.FORBIDDEN, "REPORT_SCOPE_REJECTED", "리포트 서비스가 접근 범위를 거부했습니다.")
-                    404 -> BusinessException(HttpStatus.NOT_FOUND, "REPORT_NOT_FOUND", "리포트를 찾을 수 없습니다.")
+                val code = runCatching { json.readTree(ex.responseBodyAsString)?.get("code")?.textValue() }.getOrNull()
+                val status = ex.statusCode.value()
+                throw when {
+                    status == 403 -> BusinessException(HttpStatus.FORBIDDEN, "REPORT_SCOPE_REJECTED", "리포트 서비스가 접근 범위를 거부했습니다.")
+                    status == 404 -> BusinessException(HttpStatus.NOT_FOUND, "REPORT_NOT_FOUND", "리포트를 찾을 수 없습니다.")
+                    // Public codes of api-spec 1.3: keep them instead of collapsing into REPORT_UNAVAILABLE.
+                    status == 409 && code == "DELETION_IN_PROGRESS" -> BusinessException(HttpStatus.CONFLICT, code, "학생 기록을 삭제 중입니다.")
+                    status == 503 && code == "DATA_UNAVAILABLE" -> BusinessException(HttpStatus.SERVICE_UNAVAILABLE, code, "리포트 근거 자료를 불러오지 못했습니다.")
                     else -> unavailable()
                 }
             } catch (_: RestClientException) { throw unavailable() }

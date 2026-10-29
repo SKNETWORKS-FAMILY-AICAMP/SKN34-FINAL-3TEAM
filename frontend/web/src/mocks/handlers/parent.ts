@@ -588,7 +588,7 @@ export const parentHandlers = [
       const id = String(params.reportId),
         versions = await reportGuard(request, id)
       if ((regenerateCounts.get(id) ?? 0) >= 1)
-        fail('REGENERATE_NOT_ALLOWED', '학부모 재생성은 리포트당 한 번만 가능합니다.', 409)
+        fail('REPORT_REGENERATION_LIMIT', '학부모 재생성은 리포트당 한 번만 가능합니다.', 409)
       const prev = versions.at(-1)!,
         c = await parentChild(request, prev.childId),
         next = makeWeekly(c, prev.period, prev.revision + 1)

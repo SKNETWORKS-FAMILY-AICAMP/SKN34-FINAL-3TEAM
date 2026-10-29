@@ -22,6 +22,68 @@ STATUS_CODES = {
 }
 
 
+PROBLEM_SCHEMA = {
+    "type": "object",
+    "required": ["type", "title", "status", "code", "instance", "traceId"],
+    "properties": {
+        "type": {"type": "string", "format": "uri"},
+        "title": {"type": "string"},
+        "status": {"type": "integer"},
+        "code": {"type": "string"},
+        "detail": {"type": "string"},
+        "instance": {"type": "string"},
+        "traceId": {"type": "string"},
+        "errors": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"field": {"type": "string"}, "reason": {"type": "string"}},
+            },
+        },
+    },
+}
+PROBLEM_DESCRIPTIONS = {
+    400: "VALIDATION_FAILED",
+    401: "UNAUTHENTICATED (내부 토큰 불일치)",
+    403: "FORBIDDEN (학생 범위 밖)",
+    404: "NOT_FOUND",
+    409: "DELETION_IN_PROGRESS (학생 기록 삭제 중)",
+    503: "DATA_UNAVAILABLE (근거 원문·파일 저장소 장애)",
+}
+
+
+def problem_responses(*statuses: int) -> dict[int | str, dict[str, Any]]:
+    """OpenAPI 오류 응답 선언. 실제 응답은 register_error_handlers의 problem+json."""
+    return {
+        status: {
+            "description": PROBLEM_DESCRIPTIONS[status],
+            "content": {
+                "application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}
+            },
+        }
+        for status in statuses
+    }
+
+
+def install_problem_openapi(app: FastAPI) -> None:
+    """FastAPI 기본 422 대신 실제 400 problem+json 계약을 OpenAPI에 반영."""
+    generate = app.openapi
+
+    def openapi() -> dict[str, Any]:
+        if app.openapi_schema is None:
+            schema = generate()
+            for operations in schema["paths"].values():
+                for operation in operations.values():
+                    operation["responses"].pop("422", None)
+            schemas = schema.setdefault("components", {}).setdefault("schemas", {})
+            schemas.pop("HTTPValidationError", None)
+            schemas.pop("ValidationError", None)
+            schemas["Problem"] = PROBLEM_SCHEMA
+        return app.openapi_schema
+
+    app.openapi = openapi
+
+
 class ApiError(Exception):
     """업무 오류. code는 API 명세서 1.3 오류 코드를 사용."""
 
