@@ -16,7 +16,7 @@ docker compose up --build
 | RabbitMQ 관리 화면 | http://localhost:15672 |
 | MinIO API / 관리 화면 (선택 실행: `compose.minio.yaml` 사용) | http://localhost:9000 / http://localhost:9001 |
 
-- 포트 충돌(Windows 8000~8099 예약 등) 시 `.env`의 `*_HOST_PORT`로 변경
+- 앱 포트 충돌(Windows 8000~8099 예약 등) 시 `.env`의 `CORE_HOST_PORT`·`LEARNING_HOST_PORT`·`AI_HOST_PORT`·`SCORING_HOST_PORT`·`REPORT_HOST_PORT`(MinIO는 `MINIO_HOST_PORT`·`MINIO_CONSOLE_HOST_PORT`)로 변경. PostgreSQL 5432, RabbitMQ 5672·15672, Redis 6379는 `compose.yaml`에 고정
 - 웹: `cd frontend/web && npm install && npm run dev` (`/api` → core-service 프록시)
 - 개발 규칙: [docs/README.md](docs/README.md)
 - 로컬 Kubernetes: [kind 설정·설치](infrastructure/kind/README.md), [저장소·Secret 설정](infrastructure/gitops/charts/platform-data/README.md)

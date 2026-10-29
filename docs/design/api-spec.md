@@ -17,7 +17,7 @@
 | 형식 | JSON(UTF-8), 필드 camelCase, 시각 ISO-8601 오프셋 포함(`2026-11-02T19:00:00+09:00`), 날짜 `YYYY-MM-DD`(KST) |
 | 식별자 | 문자열 ID(UUID). 학부모 경로의 `{childId}`는 학생 ID |
 | 기간 조회 | `from`, `to`(날짜, 양 끝 포함). 응답에 실제 조회 기간 `period` 반환 (FN-DSH-10) |
-| 목록 | `page`(0부터), `size`(기본 20, 최대 100) → `{items, page, size, totalElements}` |
+| 목록 | `page`(0부터), `size`(기본 20, 최대 100) → `{items, page, size, totalElements}`. 예외: 알림은 `totalElements` 대신 `hasNext`(3.10), 리포트·학생 기기 목록은 `{items}`만(5.5·3.11), 자녀·동의 목록은 페이지 없이 전체를 `page: 0, size = items 수`로 반환(5.3) |
 | 스트리밍 | `text/event-stream`, 각 이벤트 `event: <이름>` + `data: <JSON>` (1.6) |
 
 ### 1.2 인증·권한
@@ -65,7 +65,7 @@
 | `PAIRING_CODE_INVALID` | 400 | 페어링 코드 없음·만료·이미 사용 (FN-ACC-14) |
 | `NOT_FOUND` | 404 | 리소스 없음 |
 | `DATA_UNAVAILABLE` | 410 / 503 | 삭제된 근거 → "이용 불가" 표시(410), report 원문 조회·파일 저장소 장애는 재시도 가능한 503 |
-| `DELETION_IN_PROGRESS` | 409 | report 학생 삭제가 진행 중이므로 조회를 잠시 차단 |
+| `DELETION_IN_PROGRESS` | 409 | report 학생 삭제가 진행 중이므로 리포트 조회를 잠시 차단(core가 같은 코드로 전달), core 자녀 삭제 요청이 이미 진행 중 (5.6) |
 | `VALIDATION_FAILED` | 400 | 형식 오류 (`errors[]`에 필드별 사유) |
 | `ANSWER_INCOMPLETE` | 422 | 필요한 선택·입력 누락 (FN-LRN-04) |
 | `IDEMPOTENCY_KEY_REUSED` | 422 | 같은 키에 다른 요청 본문 |
@@ -78,7 +78,7 @@
 | `PAYMENT_AMOUNT_MISMATCH` | 422 | 요청 금액과 승인 정보 불일치 (FN-PAY-03) |
 | `REFUND_NOT_ALLOWED` | 409 | 중복·초과 환불, 환불 조건(결제 7일 이내·프리미엄 기능 미사용) 불충족 (FN-ADM-16, P14) |
 | `CHILD_LIMIT_REACHED` | 409 | 학부모당 자녀 3명 초과 등록 (FN-ACC-06, P02) |
-| `REGENERATE_NOT_ALLOWED` | 409 | 학부모의 같은 리포트 재생성 1회 초과 (FN-RPT-12, P06) |
+| `REPORT_REGENERATION_LIMIT` / `REPORT_GENERATION_IN_PROGRESS` | 409 / 409 | 학부모의 같은 자녀·주 리포트 재생성 1회 초과 (FN-RPT-12, P06) / 같은 주 생성 작업 진행 중 (5.5) |
 | `WITHDRAWAL_BLOCKED` | 409 | 진행 중 구독·미처리 환불이 있어 탈퇴 불가, 정리 대상 포함 (FN-ACC-12, P09) |
 | `USAGE_LIMIT_REACHED` | 429 | 요금제 사용 한도 도달(무료: 하루 미션 3개·분석 대화 없음, 프리미엄: 하루 피드백 50회·분석 대화 30회), 가능 범위·사유·초기화 시점 포함 (FN-ADM-19, P13) |
 | `AI_UNAVAILABLE` | 503 | AI 처리 실패, `retryable` 포함 (처리 실패 상태, 보류와 구분) |
@@ -94,6 +94,12 @@
 | `LEARNING_CONTRACT_INVALID` | 502 | 대시보드 공급자의 JSON·학생 식별자·필수 조회 봉투 계약 위반. 기록 없음으로 대체하지 않음 (#40, 2.3) |
 | `MODEL_VERSION_CONFLICT` / `MODEL_APPROVAL_REJECTED` / `MODEL_VERSION_STATE_INVALID` | 409 / 422 / 503 | 허용되지 않는 전이·복귀 이력 없음 / 승인 근거·범위 부족 / 기존 ACTIVE 상태 불완전 (5.2) |
 | `LEARNING_INVALID_RESPONSE` | 502 | 피드백 SSE에서 learning 응답 형식 오류 (3.2) |
+| `REPORT_NOT_FOUND` / `REPORT_SCOPE_REJECTED` | 404 / 403 | 없는 리포트 / report-api가 학생 범위를 거부 (5.5) |
+| `REPORT_ENTITLEMENT_UNAVAILABLE` | 503 | 리포트 상품 권한 확인 불가. 작업·Outbox를 만들지 않음 (5.5) |
+| `REPORT_UNAVAILABLE` / `REPORT_CONTRACT_INVALID` | 503 / 502 | report-api 연결 실패·그 밖의 오류 응답 / 응답 JSON·식별·기간 계약 위반 (5.5) |
+| `RATE_LIMITED` / `STUDENT_AUTH_UNAVAILABLE` | 429 / 503 | 기기 등록·페어링 발급 10분 한도 초과 / 기기·페어링 저장소(Redis) 장애 (3.11) |
+| `REAUTH_PENDING` | 409 | Google 재인증 callback 전에 재인증 토큰 수령 시도 (5.6) |
+| `METHOD_NOT_ALLOWED` / `UNSUPPORTED_MEDIA_TYPE` / `REQUEST_FAILED` | 405 / 415 / 그 밖의 4xx·5xx | 허용되지 않는 메서드 / 지원하지 않는 Content-Type / 위 표에 없는 프레임워크 기본 오류 |
 | `INTERNAL_ERROR` | 500 | 예상하지 못한 서버 오류 (SSE `error` 이벤트는 `retryable: true`) |
 
 - 피드백 SSE `error` 이벤트: core가 만든 오류는 `type: "about:blank"`·`title`·`status`·`code`·`retryable`만 포함하고 `instance`·`traceId`는 없음. learning이 보낸 Problem Details는 그대로 전달하고 빠진 `type`·`title`·`status`·`code`·`retryable`만 보충 (3.2)
@@ -712,7 +718,7 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | POST | `/internal/judgments` | learning | `{answerText, inputType, grade, rubric{elements[]}, versions}` → `{result, elements[{elementId, quote, verified, satisfied}], heldReason, trial, versions}` (M2 활성 시 scoring 교차 확인) |
 | POST | `/internal/followups` | learning | `{timeline[], judgment, rubric, mission, grade}` → `{type, question, source, leakCheck{passed}, versions}` (정답·금지어 검사 실패 시 1회 재생성 `LLM_RETRY`, 재실패 시 `question` 없이 `leakCheck.passed = false` → learning이 질문 은행 `BANK` 선택, P16) |
 | POST | `/internal/analysis/stream` | core | **SSE**. `{conversationId, question, scope{studentId, from, to}, history[]}` → 3.3과 같은 이벤트 |
-| POST | `/internal/report-narratives` | report | `{metrics[], thinkingTypes[], changes[], reflections[], quotes[]}` → `{narrative, eveningQuestion, citedQuotes[]}` |
+| POST | `/internal/report-narratives` | report | **미구현**(ai-service.yaml 미포함, report 호출부만 존재). `{metrics[], thinkingTypes[], changes[], reflections[], quotes[]}` → `{narrative, eveningQuestion, citedQuotes[]}` |
 | GET | `/internal/versions` | core | 활성 프롬프트 버전 |
 
 #### 4.2.1 report 서술 응답 (#52, ai 구현 담당 연동 확인 필요)
@@ -725,6 +731,8 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 - LLM 요청에는 학생 이름·식별정보를 넣지 않음. 학생 ID는 가명 토큰으로 치환 (NFR-SEC-03)
 
 ### 4.3 scoring-service (호출: ai)
+- 아래 경로는 모두 미구현이다. 현재 scoring-service는 health 라우터만 등록하며 OpenAPI가 없다.
+
 | Method | Path | 설명 |
 |---|---|---|
 | POST | `/internal/m2/scores` | `{prompt, text, grade, inputType}` → 총점 1~4점·8개 항목 1~5점·버전 (활성 범위 밖이면 `{active:false}`). `inputType`(`NARRATIVE`·`ESSAY`)으로 모델 선택(`m2-klue-narrative`·`m2-klue-essay`). `grade`(3~6)는 scoring이 `초{grade}`로 바꿔 모델 입력에 사용, 학습 데이터 학년(초5·6) 밖은 활성 범위 밖 |

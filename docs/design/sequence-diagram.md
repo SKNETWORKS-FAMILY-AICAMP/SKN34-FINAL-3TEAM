@@ -639,7 +639,7 @@ sequenceDiagram
 
 - `reportId`처럼 경로에 자녀 ID가 없는 API는 core가 연결 자녀 전체를 범위로 전달하고, 소유 서비스(report-api)가 리소스의 학생 ID로 검사
 - 상세 조회 시 core가 `report_view` 저장 (열람률 지표)
-- 재생성(`/regenerate`): 새 `report_job(REGENERATE)` + outbox → 6.1과 같은 흐름, `weekly_report.revision` 증가 (기존 판 보존·최신판 기본 조회. 학부모는 리포트당 1회, 초과 시 409 REGENERATE_NOT_ALLOWED, 관리자 무제한, P06)
+- 재생성(`/regenerate`): 새 `report_job(REGENERATE)` + outbox → 6.1과 같은 흐름, `weekly_report.revision` 증가 (기존 판 보존·최신판 기본 조회. 학부모는 리포트당 1회, 초과 시 409 REPORT_REGENERATION_LIMIT, 관리자 무제한, P06)
 
 ---
 

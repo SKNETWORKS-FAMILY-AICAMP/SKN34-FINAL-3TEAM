@@ -577,7 +577,7 @@ erDiagram
     uuid id PK
     uuid event_id UK "llm.usage.recorded id"
     varchar service "ai|scoring"
-    varchar call_type "JUDGMENT|FOLLOWUP|ANALYSIS|REPORT_NARRATIVE|M2|M1|SPEECH"
+    varchar call_type "JUDGMENT|FOLLOWUP|ANALYSIS|REPORT_NARRATIVE|M2|M1"
     varchar model
     varchar prompt_version "NULL 허용"
     int input_tokens "NULL 허용"
@@ -927,7 +927,7 @@ erDiagram
     text inclusion_rule "NULL 허용 · 포함 기준 (P06, P08)"
     text evening_question "NULL 허용"
     jsonb narrative "NULL 허용 · text, source, modelExplanation"
-    jsonb verification "NULL 허용 · numbersMatched, quotesMatched"
+    jsonb verification "NULL 허용 · numbersMatched, quotesMatched, contentAllowed"
     jsonb versions "NULL 허용 · prompt, model"
     varchar failure_reason "NULL 허용"
     timestamptz created_at
@@ -1033,12 +1033,12 @@ erDiagram
 - core V6는 `student.birth_year`·`product.limits`를 nullable로 준비하고 고정 `product.code` CHECK를 제거한다. V7은 필요한 기존 데이터 정비를 검사한 뒤 NOT NULL·코드 CHECK·학년 3~6 CHECK를 적용하고 `student.user_account_id`를 제거한다. 기존 상품 코드·금액·참조 ID를 자동 변경하지 않는다.
 - learning V4는 `followup_bank_question`과 `followup.bank_question_id` FK를 준비한다. V5는 기존 음성·TEMPLATE·미연결 BANK 기록을 검사한 뒤 `answer.speech_transcribed`를 제거하고 source를 LLM/LLM_RETRY/BANK로 제한한다.
 - `followup.bank_question_id`는 BANK일 때만 필수이며 다른 출처에서는 NULL인 CHECK를 적용한다. 은행 질문의 type 일치·활성 여부 선택은 서비스가 검사한다. 삭제 FK는 NO ACTION을 유지한다.
-- report는 정책 확정에 따른 DDL 변경이 없어 새 revision을 추가하지 않는다. 최종 구조는 59개 테이블·506개 컬럼(core 34/306, learning 19/156, report 6/44)이다. 이후 core V8(#36 `auth_session`, `refresh_token.session_id`·`used_at`) 반영 현재 60개 테이블·518개 컬럼(core 35/318)이다.
+- report는 정책 확정에 따른 DDL 변경이 없어 새 revision을 추가하지 않는다. 최종 구조는 59개 테이블·506개 컬럼(core 34/306, learning 19/156, report 6/44)이다. 이후 core V8(#36 `auth_session`, `refresh_token.session_id`·`used_at`) 반영 시 60개 테이블·518개 컬럼(core 35/318)이었다. core V14·learning V6·report `20261027_02` 반영 현재 66개 테이블·559개 컬럼(core 40/351, learning 19/158, report 7/50)이다.
 - 기존 V1~V5/V1~V3/Alembic 초기 revision은 변경하지 않는다. 초기 DB는 순서대로 전체 적용하고, 기존 데이터가 있는 DB는 준비 버전에서 멈춰 승인된 값으로 보완한 뒤 최종 버전을 적용한다. 상세 절차는 [이슈 19 스키마 변경 보고서](../report/db-policy-schema.md)를 따른다.
 
 ## 10. P01 학생 기기·PIN 구현 (#58)
 
-저장 구조는 3.1과 인덱스 6장으로 이동했다. V13은 #45 V9·#44 V12를 보존하며, V12가 먼저 적용된 DB에서도 순서대로 실행한다.
+저장 구조는 3.1과 인덱스 6장으로 이동했다. V13은 #45 V9·#44 V12를 보존하며, V12가 먼저 적용된 DB에서도 순서대로 실행한다. core V10·V11은 결번이다. #58은 처음 V10을 썼으나 V12가 적용된 DB에서 Flyway가 거부해 V13으로 옮겼다([#58 보고서](../report/issue-58-student-device-auth.md)). V12 첫 줄 주석의 "V10은 #58"은 당시 기록이며 체크섬 보존을 위해 수정하지 않는다.
 기존 student는 PIN 미설정(NULL), 실패 횟수 0으로 옮긴다. 임의 PIN·기기는 생성하지 않는다. 신규 student의 pin_failed_count는 앱에서 0을 전달하며 SQL DEFAULT는 두지 않는다.
 삭제 확정 때 student_device_child를 제거하고 PIN 해시·잠금도 지운다. 탈퇴 시 모든 기기를 폐기한다. 연결·동의 해제는 기존 세션 검사로 즉시 차단한다.
 재인증은 V9 reauth_challenge/reauth_grant에 저장한다. 페어링 코드와 시도 제한만 Redis에 둔다.

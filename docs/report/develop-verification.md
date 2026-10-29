@@ -1,6 +1,6 @@
 # develop 종합 검증 (c608f52)
 
-리포트 #50~#55(PR #116~#118) 병합 직후 develop `c608f52`를 검증한 결과다. 범위는 테스트·린트 실행, 코드↔문서 정합성, 문서 간 정합성, 코드 결함, 테스트 공백이다. 코드·설계 문서는 수정하지 않았고 이 보고서와 색인 1줄만 추가했다. [이전 정합성 점검](docs-consistency-audit.md)(`40a2501`)에서 수정 완료된 항목은 제외하고, 미해결 항목은 현재 상태만 표기했다.
+리포트 #50~#55(PR #116~#118) 병합 직후 develop `c608f52`를 검증한 결과다. 범위는 테스트·린트 실행, 코드↔문서 정합성, 문서 간 정합성, 코드 결함, 테스트 공백이다. 1~7장은 검증 시점(`c608f52`) 기록이며, 이후 같은 브랜치에서 처리한 결과는 [8장](#8-처리-결과)에 정리했다. [이전 정합성 점검](docs-consistency-audit.md)(`40a2501`)에서 수정 완료된 항목은 제외하고, 미해결 항목은 현재 상태만 표기했다.
 
 ## 1. 실행 결과
 
@@ -148,6 +148,27 @@ Windows 11 로컬 실행. CI(`_python.yml`·`_spring.yml`·`_web.yml`·`ci-db-sc
 | 2 | B14 | learning `AttemptService.saveDraft`가 `lockOwned`(시도 행 `FOR UPDATE`)로 확인해 마무리·돌아보기와 같은 순서로 직렬화 |
 | 2 | B15 | learning readiness에서 미사용 `rabbit` 제거, report-api 수명 주기에서 AMQP 연결·readiness 제거(발행·소비는 worker). core readiness에 Redis는 추가하지 않음(Redis 장애가 로그인 등 전체 API 중단으로 번지지 않도록) |
 | 2 | B16 | 이미 처리한 삭제 이벤트가 다른 요청 PENDING 중 재전달되면 계약 오류 대신 완료 보고만 재전송. 테스트: `test_processed_event_redelivered_during_newer_pending_request_resends_completion`(수정 전 실패 확인) |
+| 3 | C1 | report 라우터에 problem+json 오류 응답(400·401·403·404·409·503) 선언, `install_problem_openapi`가 FastAPI 기본 422와 검증 오류 스키마를 제거하고 `Problem` 추가. `report-service.yaml` 재생성 |
+| 3 | C2·C3 | `ai-service.yaml` versions에 `analysis`, `Mission`에 `title` 속성 추가 |
+| 3 | C4 | api-spec 1.3·sequence 6장을 `REPORT_REGENERATION_LIMIT`로 수정. 웹도 서버 코드 사용(이미 생성 중: `REPORT_GENERATION_IN_PROGRESS`, 목업·데모 한도 초과: `REPORT_REGENERATION_LIMIT`) |
+| 3 | C5 | 알림 오류 코드를 공통 코드로 통일(`INVALID_REQUEST`→`VALIDATION_FAILED`, `NOTIFICATION_NOT_FOUND`→`NOT_FOUND`). api-spec 1.3에 report 계열·기기·재인증·프레임워크 기본 코드 행 추가, `DELETION_IN_PROGRESS` 설명에 core 전달·삭제 중복 포함 |
+| 3 | C6·C8·C12 | ERD 9장 현재 수치(66/559), 10장에 V10·V11 결번과 V12 주석 경위(마이그레이션 미수정), `verification`에 `contentAllowed` |
+| 3 | C7 | core `V14__remove_speech_call_type.sql`로 CHECK에서 `SPEECH` 제거, ERD 동시 수정 |
+| 3 | C9 | api-spec 4.2 `/internal/report-narratives`·4.3 scoring 전 경로 미구현 표기 |
+| 3 | C10 | `NotificationController` 경로 변수를 `{notificationId}`로 변경(URL 동일) |
+| 3 | C11 | api-spec 1.1 목록 봉투 예외(알림 `hasNext`, 리포트·기기 `{items}`, 자녀·동의 전체 반환) |
+| 3 | C13·C14·C15 | `report-messages.md` 연동 상태, README 포트 변수 목록, compose core에 `AUTH_REAUTH_TTL` 전달 |
+
+### API 변경
+
+| 대상 | 변경 | 단계 |
+|---|---|---|
+| core `GET /children/{childId}/reports` | `status=QUEUED` → 400 `VALIDATION_FAILED`(필터 enum: RUNNING·COMPLETED·FAILED) | 2 |
+| core 리포트 조회 4개 경로 | report 삭제 중 409 `DELETION_IN_PROGRESS` 신규, 근거·다운로드 503 `DATA_UNAVAILABLE` 신규(그 밖은 503 `REPORT_UNAVAILABLE` 유지) | 2 |
+| core 알림 API | 400 코드 `INVALID_REQUEST`→`VALIDATION_FAILED`, 404 코드 `NOTIFICATION_NOT_FOUND`→`NOT_FOUND`(상태 동일) | 3 |
+| report 내부 API OpenAPI | 422 제거, 실제 problem+json 오류 응답 선언(동작 변경 없음) | 3 |
+| report-api `/health/ready` | `checks`에서 `rabbitmq` 제거 | 2 |
+| core·learning 인증 필터 | `;`·퍼센트 인코딩 경로도 일반 경로와 같은 권한 판정 | 1 |
 
 ### 이슈로 넘긴 결함
 
