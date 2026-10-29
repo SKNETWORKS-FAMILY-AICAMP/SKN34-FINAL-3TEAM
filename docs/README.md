@@ -60,6 +60,7 @@
 
 - [scoring #87](report/issue-87-scoring-m2.md): M2 채점 계약·실제 모델 검증
 - [scoring #88](report/issue-88-scoring-m1.md): 미학습 M1 비활성 계약·입력 검증 및 활성화 후속 범위
+- [scoring #85~#88 통합 제출](report/scoring-85-88-integration.md): 통합 브랜치·PR 범위·검증 결과·후속 연동 구분
 
 ## 개발 규칙
 
