@@ -142,3 +142,25 @@ Windows 11 로컬 실행. CI(`_python.yml`·`_spring.yml`·`_web.yml`·`ci-db-sc
 | 단계 | 항목 | 처리 |
 |---|---|---|
 | 1 | B1·B2 | 필터 판정 경로를 Spring 매칭 경로(`;` 매개변수 제거·퍼센트 디코딩)로 정규화. core `PublicAuthFilter`·core/learning `InternalAuthFilter`가 `_common/security/MatchedPath.kt`의 `matchedPath` 사용. 회귀 테스트: `ModelVersionHttpTest`(학부모 토큰 `;x`·`%61dmin` 경로 403), core·learning `InternalAuthFilterTest`(`/internal;x`·`/%69nternal` 401). 수정 전 코드에서 두 테스트 실패 확인. 실제 Tomcat 재현은 403·403·403·401로 변경 |
+| 2 | B4(일부) | `ReportScheduleService.generate`가 자녀별 실패를 경고 로그(오류 코드만)로 남기고 다음 자녀를 계속 처리, 실행 끝에 실패 수를 `IllegalStateException`으로 전파. 이용권 공급자 연결은 이슈 대상. 테스트: `ReportRepositoryTest` 한 자녀 실패 시 다른 자녀 작업 생성 |
+| 2 | B6 | core 리포트 목록 `status=QUEUED`는 report 호출 없이 400 `VALIDATION_FAILED`. OpenAPI 필터 enum에서 `QUEUED` 제거 |
+| 2 | B7 | `ReportClient`가 report 409 `DELETION_IN_PROGRESS`·503 `DATA_UNAVAILABLE`을 같은 상태·코드로 전달, 그 밖은 기존처럼 503 `REPORT_UNAVAILABLE`. OpenAPI 조회 4개 경로에 409, 근거·다운로드 503에 `DATA_UNAVAILABLE` 추가. 테스트: `ReportHttpTest` |
+| 2 | B14 | learning `AttemptService.saveDraft`가 `lockOwned`(시도 행 `FOR UPDATE`)로 확인해 마무리·돌아보기와 같은 순서로 직렬화 |
+| 2 | B15 | learning readiness에서 미사용 `rabbit` 제거, report-api 수명 주기에서 AMQP 연결·readiness 제거(발행·소비는 worker). core readiness에 Redis는 추가하지 않음(Redis 장애가 로그인 등 전체 API 중단으로 번지지 않도록) |
+| 2 | B16 | 이미 처리한 삭제 이벤트가 다른 요청 PENDING 중 재전달되면 계약 오류 대신 완료 보고만 재전송. 테스트: `test_processed_event_redelivered_during_newer_pending_request_resends_completion`(수정 전 실패 확인) |
+
+### 이슈로 넘긴 결함
+
+상세 조사 후 바로 고치기보다 결정이 먼저 필요한 항목이다.
+
+| # | 이유 |
+|---|---|
+| B3 | learning `student.deleted` 소비·완료 보고 기능 구현 |
+| B4 | 상품 권한(이용권) 공급자 계약 미정 |
+| B5 | report 실제 생성기·ai 서술 API(api-spec 4.2) 기능 구현 |
+| B8 | 실패 이벤트를 건너뛰면 같은 리포트의 started→completed 순서 보장이 깨짐. 순서 정책 결정 필요 |
+| B9 | v1 `report.failed`가 `reportId` 필수라 리포트 행 생성 전 실패를 알릴 계약이 없음. 계약 변경 또는 core 정리 작업 필요 |
+| B10 | api-spec 3.11이 "신뢰 프록시 설정 전에는 X-Forwarded-For를 쓰지 않는다"로 정한 임시 결정. ALB·CloudFront 신뢰 프록시 설정과 함께 처리 |
+| B11·B12 | 웹 실서버 계약(#93·#97 담당) |
+| B13 | 재생성 코드 이름만 3단계에서 변경, 리포트 목록 봉투·`PATCH /children` 헤더는 웹 담당 |
+| B17 | 예정 기능(#69 등)용 설정 자리와 요청별 클라이언트 생성 성능 개선 |

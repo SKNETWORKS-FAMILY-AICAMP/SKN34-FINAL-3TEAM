@@ -189,12 +189,21 @@ class ReportHttpTest : IntegrationTestSupport() {
     }
 
     @Test fun `invalid parameters unknown report provider outage malformed JSON and mismatched child never record view`() {
-        listOf("/reports/$report?revision=0", "/reports/$report/download?format=html", "/children/$student/reports?status=UNKNOWN").forEach { path ->
+        listOf("/reports/$report?revision=0", "/reports/$report/download?format=html", "/children/$student/reports?status=UNKNOWN",
+            "/children/$student/reports?status=QUEUED").forEach { path ->
             mvc.get("/api/v1$path") { header("Authorization", "Bearer $token") }.andExpect { status { isBadRequest() } }
         }
         mvc.get("/api/v1/reports/${UUID.randomUUID()}") { header("Authorization", "Bearer $token") }.andExpect { status { isNotFound() } }
         assertTrue(requests.isEmpty())
         code = 503
+        mvc.get("/api/v1/reports/$report") { header("Authorization", "Bearer $token") }.andExpect { status { isServiceUnavailable() }; jsonPath("$.code") { value("REPORT_UNAVAILABLE") } }
+        response = """{"status":503,"code":"DATA_UNAVAILABLE"}"""
+        mvc.get("/api/v1/reports/$report/evidence/${UUID.randomUUID()}") { header("Authorization", "Bearer $token") }
+            .andExpect { status { isServiceUnavailable() }; jsonPath("$.code") { value("DATA_UNAVAILABLE") } }
+        code = 409; response = """{"status":409,"code":"DELETION_IN_PROGRESS"}"""
+        mvc.get("/api/v1/children/$student/reports") { header("Authorization", "Bearer $token") }
+            .andExpect { status { isConflict() }; jsonPath("$.code") { value("DELETION_IN_PROGRESS") } }
+        response = """{"status":409,"code":"OTHER"}"""
         mvc.get("/api/v1/reports/$report") { header("Authorization", "Bearer $token") }.andExpect { status { isServiceUnavailable() }; jsonPath("$.code") { value("REPORT_UNAVAILABLE") } }
         code = 200; response = "not-json"
         mvc.get("/api/v1/reports/$report") { header("Authorization", "Bearer $token") }.andExpect { status { isBadGateway() } }
