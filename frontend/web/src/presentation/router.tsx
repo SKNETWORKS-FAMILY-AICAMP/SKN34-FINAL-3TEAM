@@ -7,6 +7,8 @@ import { ParentWorkspace } from './parent/ParentWorkspace.tsx'
 import { AdminWorkspace } from './admin/AdminWorkspace.tsx'
 import { OAuthCompletePage } from './auth/OAuthCompletePage.tsx'
 import { AuthOnboarding } from './auth/AuthOnboarding.tsx'
+import { SupportEntry } from './support/SupportEntry.tsx'
+import { SupportResults } from './support/SupportResults.tsx'
 import { DeviceLogin } from './student/DeviceLogin.tsx'
 import { ServiceCenter } from './service/ServiceCenter.tsx'
 import { WithdrawalReceipt } from './service/Withdrawal.tsx'
@@ -44,7 +46,9 @@ export const router = createBrowserRouter([
         path: `/${role.toLowerCase()}`,
         element: <RoleLayout role={role} />,
         children: [
-          ...(['help', 'support', 'notices', 'notifications'] as const).map(page => ({ path: page, element: <ServiceCenter page={page} /> })),
+          ...(['help', 'notices', 'notifications'] as const).map(page => ({ path: page, element: <ServiceCenter page={page} /> })),
+          { path: 'support', element: role === 'ADMIN' ? <ServiceCenter page="support" /> : <SupportEntry /> },
+          ...(role !== 'ADMIN' ? [{ path: 'support/results', element: <SupportResults /> }] : []),
           ...(role === 'PARENT' ? [
             { path: 'account', element: <AccountPage /> },
             { path: 'onboarding', element: <AuthOnboarding /> },

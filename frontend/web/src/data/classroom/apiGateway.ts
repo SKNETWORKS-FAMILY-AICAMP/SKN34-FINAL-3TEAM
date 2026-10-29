@@ -195,6 +195,7 @@ export function createApiGateway(): ClassroomGateway {
           nickname: text(c.nickname, 'nickname'),
           grade,
           birthYear: Number(c.birthYear),
+          // core /children에는 plan이 없다(api-spec 3.7·5.3). 목업 fixture 값만 넘어오며, 실서버에서는 미확인이다.
           plan: c.plan === 'PREMIUM' || c.plan === 'FREE' ? c.plan : undefined,
           guardianConsentRequired: c.guardianConsentRequired,
           hasRecords: c.hasRecords,
@@ -340,7 +341,8 @@ export function createApiGateway(): ClassroomGateway {
         reportPeriod.to !== period.to
       )
         return contractError('요청한 자녀·기간과 리포트 범위가 다릅니다.')
-      if (raw.status === 'COMPLETED' && child.plan === 'PREMIUM' && raw.narrative) {
+      // 이용권 계약(#129) 전에는 서버가 내려준 서술 유무로 판단한다. 무료는 서버가 narrative: null(api-spec 2.5).
+      if (raw.status === 'COMPLETED' && raw.narrative) {
         const verification = object(raw.verification)
         if (verification.numbersMatched !== true || verification.quotesMatched !== true)
           return contractError('리포트의 숫자·인용 대조가 완료되지 않았습니다.')
@@ -364,7 +366,7 @@ export function createApiGateway(): ClassroomGateway {
         metrics: Array.isArray(raw.metrics) ? raw.metrics : [],
         records,
         eveningQuestion:
-          child.plan === 'PREMIUM' && typeof raw.eveningQuestion === 'string'
+          child.plan !== 'FREE' && typeof raw.eveningQuestion === 'string'
             ? raw.eveningQuestion
             : undefined,
         narrative:

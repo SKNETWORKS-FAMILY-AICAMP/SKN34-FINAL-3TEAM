@@ -186,7 +186,7 @@ function ReportDetail({
                   </button>
                 ))}
               </div>
-              {child.plan === 'PREMIUM' && (
+              {child.plan !== 'FREE' && (
                 <>
                   <h3>생각 유형별 활동</h3>
                   {r.thinkingTypes.map((t) => (

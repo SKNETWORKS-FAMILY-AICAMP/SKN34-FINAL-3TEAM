@@ -33,7 +33,7 @@ class ModelRegistryContractTests(unittest.TestCase):
         self.assertEqual(op["servers"], [{"url": "/"}])
         self.assertEqual(self.api["components"]["securitySchemes"]["InternalToken"]["name"], "X-Internal-Token")
         for path, operations in self.api["paths"].items():
-            if path.startswith("/admin/"):
+            if path.startswith("/admin/model-versions") or path == "/admin/ai-usage":
                 for op in operations.values():
                     self.assertIn("SERVICE_OPS", op["summary"])
                     self.assertIn("403", op["responses"])

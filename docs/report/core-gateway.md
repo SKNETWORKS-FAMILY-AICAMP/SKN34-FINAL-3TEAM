@@ -43,3 +43,26 @@
 - 유실 복구는 SSE `ready` 후 목록 재조회와 주기적 동기화(Last-Event-ID replay 없음)
 - 마이그레이션: 알림 유형 CHECK 확장은 V12
 - 남은 연결: 학생 PIN 잠금·새 기기 알림 정책, 웹이 알림 링크(`/parent/report?childId&reportId`)로 자녀·상세를 자동 선택하는 처리
+
+
+## 5. 지원·결제·관리자·학생 프로필 통합과 최신 develop 반영
+
+대상은 `feature/core-support-payments-integration`(기존 head `cd4f39b`)이며 develop `c44ace8`(#127)을 일반 merge한다. 기존 기능 커밋과 #127의 인증 경로 정규화·리포트 상태/오류 전달·자녀별 스케줄 실패 격리·알림 오류 코드·learning 잠금/readiness·report 삭제 멱등 처리를 보존한다. 지원·결제·운영·학생 프로필의 기존 API 및 공급자 미연결 경계도 유지한다. 설계 문서 충돌은 양쪽 계약을 보존하고, #48로 연결된 상품 권한을 미연결로 설명하던 문구만 실제 호출 경계에 맞춘다.
+
+마이그레이션은 develop의 `V14__remove_speech_call_type.sql`과 결제 V15 SQL/체크섬을 보존하며, 지원의 `V14__support_scope_and_correction_requests.sql`을 **SQL 바이트 변경 없이 V16**으로 옮긴다. V15/V16은 서로 의존하지 않는다. 기존 지원 V14를 적용한 임시 검증 DB와 새 develop 이력은 호환된다고 가정하지 않으며 공유 DB·Flyway 이력·체크섬을 repair하지 않는다. 빈 격리 DB에서 전체 migration/ERD 왕복을 검증한다. 구 버전 번호를 포함한 기능 보고서는 당시 검증 이력이며 현재 적용 순서는 이 절과 ERD 8·12장을 따른다.
+
+관리자 기존 계약 보존 fixture는 #127이 변경한 기존 경로/스키마의 fingerprint만 갱신하고 지원·결제 등 그 밖의 fingerprint는 유지한다. 최신 develop의 새 계약을 되돌려 통과시키지 않는다. 변경 파일은 sourceCommit(기존 기능 기준)과 upstreamSourceCommit(추가 develop 기준)을 함께 기록하며 얕은 CI checkout에서도 동작한다.
+
+최종 통합 검증은 아래 결과를 따른다. #46의 실제 learning 지원 공급자, #47 REPORT/CONVERSATION 재처리·learning 관리자 공급자, #119 report-worker 호출·제목·최종 AI 요청 가림은 이번 통합으로 구현하지 않는다. 실제 PG/Google·배포 검증과 로컬 대역/서비스 연동을 구분한다.
+
+
+### 최신 develop 통합 검증 결과
+
+- JDK 21 격리 Linux 환경의 core 전체 **46클래스·285개**, learning 전체 **28클래스·191개** 테스트와 양쪽 `bootJar` 통과. 실패·오류·생략 0. 실제 PostgreSQL/Redis/RabbitMQ를 사용하는 기존 인증·관리자·결제·지원·학생 프로필·리포트 회귀를 포함한다. Gradle 명령은 `bash gradlew test bootJar --no-daemon --max-workers=1 --no-watch-fs --console=plain -Pkotlin.compiler.execution.strategy=in-process`이며 검증 전용 JVM/fork 자원 제한을 사용했다.
+- `python -O -m unittest discover -s scripts/tests -q` **74개** 통과. 새 Flyway 버전 중복 검사 포함. core/learning/협의용 support-learning OpenAPI 표준 검사 통과. core OpenAPI 106경로·124스키마는 기존 feature 추가와 develop 변경을 재귀 비교한 의미상 합집합과 완전히 같다.
+- 실제 테스트 산출물의 지원 HTTP 7종·결제 5종·알림 2종·report 이벤트 4종/상세 응답, 실제 실행 core 관리자 HTTP 5종을 공개 계약과 대조해 통과했다.
+- 별도 PostgreSQL의 전체 migration/ERD cycle **39.4초** 통과: core 42테이블/390컬럼, learning 19/158, report 7/50. 위반 입력 60건·CHECK 값 집합 74개·ERD 인덱스 23개. 재실행 migration 0·이력 불변 및 report downgrade/upgrade 통과. 별도 core_upgrade_db에 develop의 원본 SQL로 V14까지 적용한 다음 최종 SQL로 V15/V16 **2개만 추가 적용**하는 경로도 통과했다. SQL 원문 보존을 확인했고 Flyway repair·공유 DB 변경은 없다.
+- 프론트 `npm test` **93개**, lint·build 통과. 최초 빌드는 기존 node_modules의 lockfile 의존성(qrcode) 누락으로 실패했고 `npm ci --ignore-scripts`로 lockfile 그대로 복원한 뒤 빌드 성공했다. package/lockfile 변경은 없다. 기존 500kB 초과 번들 경고는 남아 있다.
+- 최종 JAR 2개와 전용 DB/Redis/RabbitMQ에서 실제 core→learning 사용 증빙, 환불 동결의 learning→core 차단, 관리자 반려 후 피드백 core→learning→core DONE/USED, 사용 후 409 환불 거부, 실제 구독 기반 탈퇴 차단, 상품 기반 report Outbox narrativeEnabled true/false를 확인했다. 관리자 운영 5종·25큐 응답을 실제 서비스로 조회했다. 세미콜론/인코딩 관리자 경로의 학부모 403 및 내부 경로의 무토큰 401, SYSTEM·학생 scope 프로필 조회/no-store와 scope 불일치 403도 실제 HTTP로 확인했다.
+- 실제 연동의 결제 상태·인증 계정은 합성 DB fixture이며 Toss/Google/AI API는 호출하지 않았다. learning 피드백은 CHOICE 규칙을 사용했다. Java 테스트·위 HTTP 호출자를 실제 report-worker·브라우저 E2E로 집계하지 않는다. #46 실제 지원 공급자, #47 REPORT/CONVERSATION 재처리·learning 관리자 미션 공급자, #119 실제 worker/제목/AI payload 가림, 배포는 계속 미검증이다.
+- 격리 빌드 입력 501파일과 현재 runtime/contract 소스 바이트 일치, 설계 문서 링크·충돌 표시·마이그레이션 이전 경로 참조·`git diff --check`를 확인했다. 이전 V14 지원 경로는 이 절의 이동 설명에만 남기고 기능 보고서의 V14/V15 수치는 당시 이력으로 보존한다. 원격 CI는 push 후 새 head에서 별도 확인한다.

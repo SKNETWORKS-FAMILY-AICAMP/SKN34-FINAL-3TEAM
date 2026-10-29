@@ -3,10 +3,9 @@ import { Link, useSearchParams } from 'react-router'
 import { adminApi } from '../../data/admin/api.ts'
 import { useAdminQuery, useAdminMutation } from '../../data/admin/queries.ts'
 import type { Permission } from '../../domain/admin/operations.ts'
-import { hasPermission, jobLabels, missionLabels } from '../../domain/admin/operations.ts'
+import { hasPermission, jobLabels } from '../../domain/admin/operations.ts'
 import type { Period } from '../../domain/classroom.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
-import { QueryStateNotice } from '../common/QueryStateNotice.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 export function AdminOperations({
   page,
@@ -35,15 +34,15 @@ function Overview({ period, permissions }: { period: Period; permissions: Permis
             실제 집계 기간 · {q.data.period.from} ~ {q.data.period.to}
           </p>
           <p>{q.data.inclusionRule}</p>
-          <QueryStateNotice state={q.data.state} />
+          <p>{q.data.learning.inclusionRule}</p>
           <div className="ws-metrics">
             <article className="ws-card">
               <h3>학습 시도</h3>
-              <strong className="ws-number">{q.data.attempts}건</strong>
+              <strong className="ws-number">{q.data.learning.attempts}건</strong>
             </article>
             <article className="ws-card">
               <h3>학습 완료</h3>
-              <strong className="ws-number">{q.data.completed}건</strong>
+              <strong className="ws-number">{q.data.learning.completedAttempts}건</strong>
             </article>
           </div>
           {hasPermission(permissions, 'SERVICE_OPS') && (
@@ -65,17 +64,7 @@ function Overview({ period, permissions }: { period: Period; permissions: Permis
           {hasPermission(permissions, 'CONTENT') && (
             <>
               <h3>미션 공개 현황</h3>
-              <div className="ws-metrics">
-                {q.data.missionCounts.map((c) => (
-                  <Link
-                    className="ws-card"
-                    key={c.status}
-                    to={`/admin/missions?status=${c.status}`}
-                  >
-                    {missionLabels[c.status]} · {c.count}개
-                  </Link>
-                ))}
-              </div>
+              <p>미션 공개 현황은 관리자 미션 공급자 연결 후 조회할 수 있습니다.</p>
             </>
           )}
         </>
@@ -191,14 +180,17 @@ function JobDetail({ id }: { id: string }) {
             {q.data.type} · {jobLabels[q.data.status]}
           </h3>
           <p>{q.data.failureReason ?? '실패 원인 없음'}</p>
+          {q.data.status === 'FAILED' && !q.data.retryable && (
+            <p>재처리 연결 대기 · {q.data.retryUnavailableReason}</p>
+          )}
           <h4>처리 이력</h4>
           {q.data.executions.map((e) => (
             <p key={e.executionId}>
               {e.attemptNo}회 · {jobLabels[e.status]} · {e.errorCode ?? '오류 없음'} ·{' '}
-              {e.errorDetail ?? ''} · {e.startedAt}
+              {e.startedAt}
             </p>
           ))}
-          {q.data.status === 'FAILED' && (
+          {q.data.retryable && (
             <button className="cj-primary" disabled={retry.isPending} onClick={run}>
               작업 재처리
             </button>
@@ -222,7 +214,7 @@ function Queues() {
             <article className="ws-card" key={c.name}>
               <h3>{c.name}</h3>
               <p>
-                대기 {c.length} · DLQ {c.dlq}
+                {c.kind} · 전체 {c.messages} · 대기 {c.messagesReady} · 처리 중 {c.messagesUnacknowledged} · 소비자 {c.consumers} · {c.state}
               </p>
             </article>
           ))}
@@ -247,7 +239,7 @@ function AuditLog({ period }: { period: Period }) {
           onChange={(e) => setTarget(e.target.value)}
         >
           <option value="">전체</option>
-          {['JOB', 'MISSION', 'MODEL', 'ERROR_REPORT'].map((v) => (
+          {['CONVERSATION', 'REPORT', 'NOTIFICATION', 'MISSION', 'MODEL_VERSION', 'ERROR_REPORT', 'ACCOUNT_MANAGEMENT'].map((v) => (
             <option key={v}>{v}</option>
           ))}
         </select>
@@ -264,7 +256,6 @@ function AuditLog({ period }: { period: Period }) {
               <p>
                 {a.actorUserId} · {a.targetType} / {a.targetId} · {a.createdAt}
               </p>
-              <p>{a.detail}</p>
             </article>
           ))}
         </div>

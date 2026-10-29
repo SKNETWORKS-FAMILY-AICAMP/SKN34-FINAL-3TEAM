@@ -43,7 +43,7 @@ export const parentApi = {
     apiFetch<Child>('/children', json(data)),
   me: () => apiFetch<{ userId: string; name: string; email: string; role: string }>('/me'),
   updateMe: (name: string) => apiFetch('/me', json({ name }, 'PATCH')),
-  updateChild: (id: string, data: { nickname: string; grade: number }) =>
+  updateChild: (id: string, data: { nickname?: string; grade?: number }) =>
     apiFetch<Child>(`/children/${item(id)}`, json(data, 'PATCH')),
   async summary(scope: Scope, signal?: AbortSignal) {
     return assertChild(
@@ -128,7 +128,7 @@ export const parentApi = {
       { signal },
     ),
   reports: (childId: string, status: string, signal?: AbortSignal) =>
-    apiFetch<Page<ReportItem>>(
+    apiFetch<{ items: ReportItem[] }>(
       `/children/${item(childId)}/reports${status ? `?status=${item(status)}` : ''}`,
       { signal },
     ),

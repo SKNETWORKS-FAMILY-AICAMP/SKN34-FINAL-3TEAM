@@ -47,7 +47,7 @@ export function ParentConversation({
       state.result?.scope ??
       (detail.data ? { ...detail.data.period, childId: child.id } : scope)
     const text = retry?.question ?? (state.phase === 'CLARIFICATION' ? lastQuestion : question)
-    if (!text.trim() || child.plan !== 'PREMIUM') return
+    if (!text.trim() || child.plan === 'FREE') return
     controller.current?.abort()
     const abort = new AbortController()
     controller.current = abort
@@ -221,7 +221,7 @@ export function ParentConversation({
                 : undefined
             }
           />
-          {child.plan !== 'PREMIUM' ? (
+          {child.plan === 'FREE' ? (
             <p className="ws-card">
               이 자녀의 무료 플랜에는 분석 대화가 포함되지 않습니다. 대시보드와 수치 리포트는 확인할
               수 있습니다.

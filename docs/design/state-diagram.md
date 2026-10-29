@@ -186,6 +186,7 @@ stateDiagram-v2
 - 전이 실패(영향 0행) 시 현재 상태로 응답: `DONE` → 저장 결과, 유효 `RUNNING` → `status` 이벤트 후 종료 (API 1.4)
 - 고착 `RUNNING` 탐지 인덱스 `(process_status, lease_until)`, 리스 90초·탐지 주기 1분 (P12). 주기 탐지 작업은 미구현(운영 작업 후속)이며 현재는 다음 피드백 요청 때 만료 리스를 재획득 ([이슈 #25 보고서](../report/learning.md))
 - 리스 시간은 core→learning 피드백 호출 타임아웃보다 길게 설정. 짧으면 처리 중인 판정을 다른 요청이 재획득해 LLM 호출이 중복됨
+- 정정(`POST /internal/judgments/{id}/corrections`, #80)은 `DONE` 판정만 받고 그 전이면 `409 JUDGMENT_STATE_CONFLICT`. `process_status`·`result`는 바꾸지 않고 `judgment_correction` 행을 추가하며, 조회 때 최신 정정 결과를 `result`로 보여 줌 (FN-SUP-03)
 
 #### `judgment.result` 결정 (`DONE`일 때만 값 존재)
 
@@ -490,3 +491,12 @@ stateDiagram-v2
 - 돌아보기를 마무리 전에 저장하면 `409 REVEAL_CONDITION_UNMET`으로 거부 (기존 오류 코드 재사용)
 - 정기 청구 재청구: ERD 부분 UK `(subscription_id, billing_period_start) WHERE kind = 'RENEWAL'`로 같은 기간 새 주문 불가. 가정은 "기존 주문의 결제가 `FAILED`면 같은 주문으로 재청구", PG 주문번호 재사용 가능 여부 확인 후 ERD 반영 필요
 - `QUEUED` 고착 `report_job` 재처리: 새 행 생성 시 기존 행을 `FAILED`(`failure_reason = SUPERSEDED`)로 종료하는 방안 가정. 늦게 도착한 기존 job 이벤트는 조건부 UPDATE로 무시
+
+
+### #48 결제 상태 적용 보완
+
+CONFIRMING은 PG 조회로만 확정하며, APPROVED/RECOVERY_REQUIRED는 추가 청구 없이 구독 반영을 재시도한다. REQUESTED 환불은 프리미엄 사용 동결 상태이며 증빙 미확인은 503이다. APPROVED 환불의 PG 결과 불명확은 FAILED로 바꾸지 않고 조회 복구한다. REFUNDED/CANCELED는 지연 DONE 통지로 되돌리지 않는다. PG 호출 중 parent 잠금은 유지하지 않으며 준비된 거래/환불이 탈퇴를 차단한다. 상세 계약은 [#48 보고서](../report/issue-48-payments.md)를 따른다.
+
+### #46 core 정정 실행 기록
+
+신고 상태는 기존 RECEIVED → IN_REVIEW → RESOLVED를 유지한다. core `SupportService.correct`는 신고 검토 중 correction.processing_status=PENDING 의도를 먼저 저장하고 HTTP를 트랜잭션 밖에서 실행한다. HTTP 실패 시 FAILED이며 신고는 IN_REVIEW다. 동일 correction UUID로 공급자가 성공을 확인하고 core 완료 트랜잭션까지 커밋될 때만 correction=COMPLETED·신고=RESOLVED·알림을 함께 기록한다. 응답 유실이나 core 저장 실패는 완료가 아니며 같은 의도로 재개한다. 원본 답변·판정은 변경하지 않는다.

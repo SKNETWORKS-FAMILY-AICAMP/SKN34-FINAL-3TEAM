@@ -1,4 +1,4 @@
-# learning 학습 서비스 (#22~#27·#79)
+# learning 학습 서비스 (#22~#27·#79·#80)
 
 통합 원본: learning-mission, learning-attempt, learning-answer, learning-feedback, learning-reflection, learning-records, learning-judgment-rules
 
@@ -90,7 +90,7 @@
 | ai 호출 | 응답 35초, 재시도 없음, 서킷 20건·50%·30초(core와 같은 값). 요청 본문에 학생 이름·ID 없음(학년만) |
 | 결과 조회 순서 | 판정 행을 먼저 읽고 요소·되묻기를 읽음(READ COMMITTED에서 섞임 방지) |
 
-- 후속(이슈 분리): 판정 정정 수신 API(#80), 미션 공개 검사(#81, 고르기도 요소 1개 이상 등), 판정 요청에 미션 질문 넣기, 고착 `RUNNING` 1분 주기 탐지(현재는 요청 때 리스 만료로 재획득)
+- 후속(이슈 분리): 판정 정정 수신 API(#80, 8절에서 구현), 미션 공개 검사(#81, 고르기도 요소 1개 이상 등), 판정 요청에 미션 질문 넣기, 고착 `RUNNING` 1분 주기 탐지(현재는 요청 때 리스 만료로 재획득)
 
 ## 5. 마무리·돌아보기·자기 평가 (#26)
 
@@ -127,3 +127,25 @@
 | 마이그레이션 | learning `V6__mission_categories_and_answer_unit.sql`(기존 V1~V5 불변) |
 
 - 웹 확인 필요: 최종 답 칸 뒤 `answerUnit` 표시, `categories` 표시, 수학 체크리스트의 "최종 답" 항목
+
+## 8. 판정 정정 수신 (#80)
+
+core #46 관리자가 신고를 검토해 판정을 고치면 core가 `POST /internal/judgments/{judgmentId}/corrections`로 알림. 원판정·요소·답변은 그대로 두고 `judgment_correction` 행을 추가하고, 조회 때 최신 정정 결과를 보여 줌(FN-SUP-03, ERD "덮어쓰기 금지"). 설계 이름(`CorrectionController`·`JudgmentService.correct`·`CorrectionRepository`·`JudgmentCorrection`) 그대로, DB 변경 없음(V2 테이블). core 소비 계약은 `feature/core-support`의 `contracts/openapi/support-learning-required.yaml`(0.2.0 `x-correction-rules`)
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 인증 | 내부 토큰 + `ADMIN` + `X-Student-Scope`에 판정 학생 정확히 1명 + UUID `X-User-Id`(= `corrected_by`). 토큰 401, 역할·범위 403, `X-User-Id`·`Idempotency-Key` 누락·형식 400, 빈 사유 400 | core 계약 |
+| 처리 순서 | 판정 행 `FOR UPDATE` → 없으면 404 → 학생 범위 403 → 같은 키(같은 요청이면 처음 정정, 아니면 422 `IDEMPOTENCY_KEY_REUSED`) → `DONE` 전 409 `JUDGMENT_STATE_CONFLICT` → 같은 `reportId`·다른 키 409 `CORRECTION_REPORT_CONFLICT` → 저장 | 사용자 결정 → core 확인. 같은 키는 처음 상태와 관계없이 처음 응답 재현. 잠금은 #24 답변 제출과 같은 방식 |
+| 같은 요청 | 판정 ID·`reportId`·`reason`·`corrected`가 같으면 같음(관리자는 비교 안 함) | core 계약 "같은 키·같은 본문" |
+| 응답 | `{correctionId, previousResult, corrected, createdAt, impact}`. 같은 키 재요청은 저장된 행으로 다시 만듦 | core 계약 |
+| `previousResult` | 정정 직전에 보이던 결과(앞선 정정이 있으면 그 결과). 최신 정정은 `created_at`(같으면 `id`) 가장 늦은 행 | ERD "정정 전 결과" |
+| 저장 모양 | `previous`·`corrected` jsonb는 `{"result": "PARTIAL"}` | ERD 비고에 추가 |
+| 보이는 곳 | `findStored` 한 쿼리라 피드백 결과·시도 상세·#27 기록 모두 최신 정정 결과. 바꾸는 것은 `result`뿐: 정정이 있으면 `heldReason` null(ai 판정의 이유라서), 판정 요소·되묻기·`nextActions`·마무리 체크리스트는 원판정 | 사용자 결정 ②. `nextActions`는 결과가 아니라 되묻기·시도 상태로 계산 |
+| impact | `aggregation: NOT_APPLIED`(learning 수치 집계는 판정 결과를 쓰지 않아 바꿀 것 없음, 오류 아님), `conversation`·`report: UNKNOWN`(learning이 확인할 수 없음) | core와 합의 ④ |
+| 오류 코드 | `JUDGMENT_STATE_CONFLICT`는 기존 코드 재사용, `CORRECTION_REPORT_CONFLICT`는 새 코드. 둘 다 api-spec 4.1에만(1.3 공개 표에 넣지 않음) | #78 리뷰대로 learning 내부 코드는 4.1 비고. core가 409·422를 공개 코드로 바꿈 |
+
+- 설계 문서: api-spec 4.1 정정 줄, class-diagram 4.2 끝 메모(`results()`·잠금 순서), state-diagram 3.3(정정은 `DONE`만), ERD 비고(jsonb 모양), OpenAPI(경로·`AdminUserId`·`AdminRole`·`CorrectionScope`·`CorrectionRequest`·`CorrectionResult`·`JudgmentResult`, 버전은 #26·#27처럼 그대로)
+- 기존 파일 수정: `JudgmentService`(`correct`), `JudgmentMapper.xml` `findStored`(최신 정정 결과·보류 이유), `scripts/tests/test_record_exists_openapi.py` 컨트롤러 경로 수 22 → 23(#126 결제 사용 증빙 경로가 먼저 22로 올림)
+- 검증: 테스트 202개(새 15: 서비스 8·동시 2·컨트롤러 5), scripts/tests 58개, #126 머지 뒤 develop 병합 상태로 206개·scripts 74개. 보호 장치 12개를 빼면 각각 실패(`DONE` 전 409는 DB 제약 `ck_judgment_result_when_done`·null 검사와 세 겹). compose 실제: 고르기 정답 `CORRECT` → `RETHINK` 정정, 같은 키 처음 응답 그대로, 422·409·409·403·404, 피드백·시도 상세·기록 모두 `RETHINK`, DB 원판정 `CORRECT` 그대로(ai 호출 없음, 만든 시도 2건만 삭제)
+- 한계: 같은 신고를 다른 판정에 동시에 보내면 판정 잠금이 달라 둘 다 저장될 수 있음(`error_report_id` UK 없음, core는 신고마다 한 정정만 보냄), 같은 키를 다른 판정에 동시에 보내면 키 UK로 한쪽 500. `judgment_correction.judgment_id` 인덱스 없음(정정은 드묾)
+- 확인 필요: core가 정정 전에 부르는 `/support/targets/{type}/{id}`·관리자 원문 `/support/attempts/{id}`는 별도 이슈(#80만으로 실제 흐름 미완성). learning 학생 삭제를 만들 때 `judgment_correction`을 판정보다 먼저 지움(FK)

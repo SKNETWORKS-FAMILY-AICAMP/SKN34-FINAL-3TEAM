@@ -46,6 +46,27 @@ class RecordExistsTest : PostgresRepositoryTest() {
             header("X-Internal-Token","repository-test-token");header("X-User-Role","PARENT");header("X-Student-Scope",student.toString())
         }.andExpect { status { isOk() }; jsonPath("$.studentId") { value(student.toString()) }; jsonPath("$.hasRecords") { value(false) }; header { string("Cache-Control","no-store") } }
     }
+    @Test fun `payment evidence counts completed feedback after purchase and in flight work without exposing text`() {
+        val student=UUID.randomUUID();val a=attempt(student);val id=answer(a,"DONE")
+        jdbc.update("UPDATE judgment SET completed_at=now() WHERE answer_id=?",id)
+        mvc.get("/internal/payment-usage/students/$student") {
+            param("since","2020-01-01T00:00:00Z");header("X-Internal-Token","repository-test-token")
+            header("X-User-Role","SYSTEM");header("X-Student-Scope",student.toString())
+        }.andExpect { status { isOk() };jsonPath("$.used") { value(true) };jsonPath("$.content") { doesNotExist() } }
+        mvc.get("/internal/payment-usage/students/$student") {
+            param("since","2099-01-01T00:00:00Z");header("X-Internal-Token","repository-test-token")
+            header("X-User-Role","SYSTEM");header("X-Student-Scope",student.toString())
+        }.andExpect { status { isOk() };jsonPath("$.used") { value(false) } }
+        jdbc.update("UPDATE judgment SET process_status='RUNNING',result=NULL WHERE answer_id=?",id)
+        mvc.get("/internal/payment-usage/students/$student") {
+            param("since","2099-01-01T00:00:00Z");header("X-Internal-Token","repository-test-token")
+            header("X-User-Role","SYSTEM");header("X-Student-Scope",student.toString())
+        }.andExpect { status { isOk() };jsonPath("$.used") { value(true) } }
+        mvc.get("/internal/payment-usage/students/$student") {
+            param("since","2020-01-01T00:00:00Z");header("X-Internal-Token","repository-test-token")
+            header("X-User-Role","PARENT");header("X-Student-Scope",student.toString())
+        }.andExpect { status { isForbidden() } }
+    }
     @Test fun `zero then one then multiple submitted records are read from PostgreSQL`() {
         val student=UUID.randomUUID()
         assertFalse(service.exists(student))

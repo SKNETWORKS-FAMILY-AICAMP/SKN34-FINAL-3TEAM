@@ -237,7 +237,7 @@ export function ProfileSettings({ child }: { child: Child }) {
     [grade, setGrade] = useState(child.grade),
     [notice, setNotice] = useState(''),
     updateMe = useParentMutation(parentApi.updateMe),
-    update = useParentMutation((d: { nickname: string; grade: number }) =>
+    update = useParentMutation((d: { nickname?: string; grade?: number }) =>
       parentApi.updateChild(child.id, d),
     ),
     me = useParentQuery(['me'], () => parentApi.me())
@@ -281,8 +281,14 @@ export function ProfileSettings({ child }: { child: Child }) {
           className="ws-form"
           onSubmit={(e) => {
             e.preventDefault()
+            // PATCH /children/{id}는 nickname·grade 모두 선택이다(api-spec 5.6). 바뀐 필드만 보낸다.
+            const changes = {
+              ...(nickname.trim() !== child.nickname ? { nickname: nickname.trim() } : {}),
+              ...(grade !== child.grade ? { grade } : {}),
+            }
+            if (!Object.keys(changes).length) return setNotice('바뀐 내용이 없습니다.')
             void update
-              .mutateAsync({ nickname, grade })
+              .mutateAsync(changes)
               .then(() => setNotice('자녀 정보를 저장했습니다.'))
               .catch(() => {})
           }}

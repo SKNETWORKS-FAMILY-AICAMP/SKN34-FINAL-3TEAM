@@ -63,6 +63,15 @@ class NotificationIntegrationTest : IntegrationTestSupport() {
     private fun event(job: UUID, student: UUID, failed: Boolean = false) = ReportLifecycleEvent(UUID.randomUUID(), job, student,
         UUID.randomUUID(), if (failed) ReportJobStatus.FAILED else ReportJobStatus.COMPLETED, if (failed) "RENDER_FAILED" else null)
 
+    @Test fun `payment service method reuses dedup settings and real Redis after commit delivery`() {
+        val user=parent(jdbc);val student=child(jdbc,user);val event=UUID.randomUUID()
+        org.springframework.transaction.support.TransactionTemplate(transactions).executeWithoutResult {
+            repeat(2) { service.payment(user,student,event,false,"결제 상태 변경"); service.payment(user,student,event,true,"구독 상태 변경") }
+        }
+        assertEquals(2,count(user))
+        assertEquals(setOf("PAYMENT_CHANGED","SUBSCRIPTION_CHANGED"),jdbc.queryForList("SELECT type FROM notification WHERE user_id=?",String::class.java,user).toSet())
+        assertEquals(2,jdbc.queryForObject("SELECT count(*) FROM notification WHERE user_id=? AND status='COMPLETED'",Int::class.java,user))
+    }
     @Test fun `real lifecycle creates one notification for repeated and newly identified terminal events and distinct failure type`() {
         val user = parent(jdbc); val student = child(jdbc, user); val id = job(student)
         val event = event(id, student)

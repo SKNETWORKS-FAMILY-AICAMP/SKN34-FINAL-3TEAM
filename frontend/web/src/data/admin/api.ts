@@ -8,18 +8,23 @@ import type {
   Job,
   ModelVersion,
   Overview,
+  MissionStatus,
+  OperationQueue,
   Rubric,
   MissionVersion,
   ErrorReport,
   Usage,
   EvaluationEvidence,
 } from '../../domain/admin/operations.ts'
+const operationFilters = (values: Record<string, string | undefined>) => new URLSearchParams(
+  Object.entries(values).filter((entry): entry is [string, string] => entry[1] !== undefined && entry[1] !== ''),
+)
 const p = (id: string) => encodeURIComponent(id)
 export const adminApi = {
   overview: (period: Period, signal?: AbortSignal) =>
     apiFetch<Overview>(`/admin/overview?${new URLSearchParams({ ...period })}`, { signal }),
   jobs: (type: string, status: string, signal?: AbortSignal, period?: Period) =>
-    apiFetch<Page<Job>>(`/admin/jobs?${new URLSearchParams({ type, status, ...period })}`, {
+    apiFetch<Page<Job>>(`/admin/jobs?${operationFilters({ type, status, ...period })}`, {
       signal,
     }),
   job: (id: string, signal?: AbortSignal) => apiFetch<Job>(`/admin/jobs/${p(id)}`, { signal }),
@@ -29,16 +34,16 @@ export const adminApi = {
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key },
     }),
   queues: (signal?: AbortSignal) =>
-    apiFetch<{ items: { name: string; length: number; dlq: number }[] }>('/admin/queues', {
+    apiFetch<{ vhost: string; items: OperationQueue[] }>('/admin/queues', {
       signal,
     }),
   audits: (period: Period, targetType: string, signal?: AbortSignal) =>
-    apiFetch<Page<Audit>>(`/admin/audit-logs?${new URLSearchParams({ ...period, targetType })}`, {
+    apiFetch<Page<Audit>>(`/admin/audit-logs?${operationFilters({ ...period, targetType })}`, {
       signal,
     }),
   missions: (filters: Record<string, string>, signal?: AbortSignal) =>
-    apiFetch<Page<AdminMission> & { counts: Overview['missionCounts'] }>(
-      `/admin/missions?${new URLSearchParams(filters)}`,
+    apiFetch<Page<AdminMission> & { counts: { status: MissionStatus; count: number }[] }>(
+      `/admin/missions?${operationFilters(filters)}`,
       { signal },
     ),
   mission: (id: string, signal?: AbortSignal) =>
@@ -82,6 +87,6 @@ export const adminApi = {
     apiFetch<ErrorReport>(`/admin/error-reports/${p(id)}`, { signal }),
   reviewError: (id: string, status: string, reviewReason: string) =>
     apiFetch<ErrorReport>(`/admin/error-reports/${p(id)}`, json({ status, reviewReason }, 'PATCH')),
-  correction: (id: string, reason: string, corrected: string) =>
-    apiFetch<ErrorReport>(`/admin/error-reports/${p(id)}/corrections`, json({ reason, corrected })),
+  correction: (id: string, reason: string, corrected: string, key: string) =>
+    apiFetch<ErrorReport>(`/admin/error-reports/${p(id)}/corrections`, { ...json({ reason, corrected }), headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key } }),
 }

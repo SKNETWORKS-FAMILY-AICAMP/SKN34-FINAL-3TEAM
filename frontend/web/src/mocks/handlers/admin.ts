@@ -114,11 +114,9 @@ export const adminHandlers = [
         statuses = ['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED'] as const
       return {
         period: p,
-        state: visible.length ? 'OK' : 'NO_RECORD',
         inclusionRule:
           '개발 목업 작업 집계 · 실제 운영 집계 아님 · 시연 학습 기록은 운영 통계에서 제외',
-        attempts: 0,
-        completed: 0,
+        learning: { attempts: 0, completedAttempts: 0, students: 0, inclusionRule: '개발 목업 · 실제 학습 통계 아님' },
         jobCounts: types.flatMap((type) =>
           statuses.map((status) => ({
             type,
@@ -126,9 +124,7 @@ export const adminHandlers = [
             count: visible.filter((j) => j.type === type && j.status === status).length,
           })),
         ),
-        missionCounts: (['DRAFT', 'REVIEW_REQUIRED', 'PUBLISHED', 'UNPUBLISHED'] as const).map(
-          (status) => ({ status, count: missions.filter((m) => m.status === status).length }),
-        ),
+
       }
     }),
   ),
@@ -170,16 +166,17 @@ export const adminHandlers = [
         return receipt.response
       }
       if (j.status !== 'FAILED') fail('VALIDATION_FAILED', '실패 작업만 재처리할 수 있습니다.')
+      if (!j.retryable) fail('JOB_RETRY_UNAVAILABLE', '재처리 공급자 연결 대기', 503)
       j.retryCount++
       j.status = mode === 'retry-fail' ? 'FAILED' : 'COMPLETED'
       j.failureReason = j.status === 'FAILED' ? '재처리에서도 외부 응답 시간 초과' : null
-      j.updatedAt = stamp()
+      j.retryable = j.status === 'FAILED'
+      j.retryUnavailableReason = j.retryable ? null : 'JOB_NOT_FAILED'
       j.executions.push({
         executionId: crypto.randomUUID(),
         attemptNo: j.executions.length + 1,
         status: j.status,
         errorCode: j.status === 'FAILED' ? 'AI_UNAVAILABLE' : null,
-        errorDetail: j.failureReason,
         triggeredBy: 'mock-admin',
         startedAt: stamp(),
         finishedAt: stamp(),
@@ -200,10 +197,15 @@ export const adminHandlers = [
       allow(request, 'SERVICE_OPS')
       queryFault()
       return {
-        items: ['report.generate', 'notification'].map((name) => ({
+        vhost: '/',
+        items: ['report.report.generate', 'report.report.generate.retry.1', 'report.report.generate.dlq'].map((name) => ({
           name,
-          length: jobs.filter((j) => j.status === 'QUEUED').length,
-          dlq: jobs.filter((j) => j.status === 'FAILED').length,
+          kind: name.endsWith('.dlq') ? 'DLQ' : name.includes('.retry.') ? 'RETRY' : 'WORK',
+          messages: 0,
+          messagesReady: 0,
+          messagesUnacknowledged: 0,
+          consumers: 0,
+          state: 'running',
         })),
       }
     }),

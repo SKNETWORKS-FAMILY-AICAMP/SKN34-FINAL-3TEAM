@@ -15,6 +15,7 @@ export function ServiceCenter({ page }: { page: 'help' | 'support' | 'notices' |
   const role = session!.role
   const root = '/' + role.toLowerCase()
   const nav = [{ path: root + '/home', label: '시작 화면' }, { path: root + '/help', label: '이용 도움말' }, { path: root + '/support', label: '문의·오류 신고' }, { path: root + '/notices', label: '공지·점검' },
+    ...(role === 'ADMIN' ? [] : [{ path: root + '/support/results', label: '신고·문의 처리 결과' }]),
     ...(role === 'STUDENT' ? [] : [{ path: root + '/notifications', label: '알림' }])]
   return <Workspace title="사고뭉치 이용 안내" nav={nav}>
     <div className="svc-page">{page === 'help' ? <Help role={role} /> : page === 'notices' ? <Notices /> : page === 'notifications' ? <Notifications role={role} /> : <Support />}</div>

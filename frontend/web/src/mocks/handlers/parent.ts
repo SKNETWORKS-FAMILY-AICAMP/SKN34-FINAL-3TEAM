@@ -368,10 +368,20 @@ export const parentHandlers = [
   http.patch('/api/v1/children/:childId', ({ request, params }) =>
     respond(async () => {
       const c = await parentChild(request, String(params.childId))
-      const d = (await request.json()) as { nickname: string; grade: number }
-      if (!d.nickname.trim() || !Number.isInteger(d.grade) || d.grade < 3 || d.grade > 6)
+      // nickname·grade 모두 선택, 그 밖의 필드는 거부 (core-service.yaml PATCH /children/{childId})
+      const d = (await request.json()) as { nickname?: unknown; grade?: unknown }
+      const nickname = typeof d.nickname === 'string' ? d.nickname.trim() : undefined
+      if (
+        Object.keys(d).some((k) => k !== 'nickname' && k !== 'grade') ||
+        (d.nickname !== undefined && (!nickname || nickname.length > 40)) ||
+        (d.grade !== undefined && (!Number.isInteger(d.grade) || Number(d.grade) < 3 || Number(d.grade) > 6))
+      )
         fail('VALIDATION_FAILED', '별명·지원 학년을 확인해 주세요.')
-      const updated = { ...c, nickname: d.nickname, grade: d.grade }
+      const updated = {
+        ...c,
+        ...(nickname !== undefined ? { nickname } : {}),
+        ...(d.grade !== undefined ? { grade: Number(d.grade) } : {}),
+      }
       store.replaceChildren((await store.children()).map((v) => (v.id === c.id ? updated : v)))
       mockAccountChildren.set(mockIdentity.email, structuredClone(await store.children()))
       return updated
@@ -547,8 +557,9 @@ export const parentHandlers = [
       const c = await parentChild(request, String(params.childId))
       queryFault()
       const status = new URL(request.url).searchParams.get('status')
-      return page(
-        ensureReports(c)
+      // 리포트 목록은 페이지 없이 {items}만 반환한다(api-spec 1.1·5.5, ReportList).
+      return {
+        items: ensureReports(c)
           .map((r) => ({
             ...r,
             status:
@@ -559,7 +570,7 @@ export const parentHandlers = [
                   : r.status,
           }))
           .filter((r) => !status || r.status === status),
-      )
+      }
     }),
   ),
   http.get('/api/v1/reports/:reportId', ({ request, params }) =>
