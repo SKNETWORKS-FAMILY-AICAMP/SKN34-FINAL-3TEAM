@@ -60,6 +60,7 @@
 | 상태 변화 전파 | **이벤트** → `events.topic` | 생산자가 소비자를 모름, 소비자 추가 시 생산자 무변경 |
 
 - 동기 호출 장애 대응: 타임아웃 + 재시도 제한 + 서킷 브레이커(Spring Resilience4j / Python httpx 타임아웃·재시도). 값(P12): LLM 1회 15초·재시도 1회(1초 대기), learning→ai 판정·되묻기 각 35초, core→learning 피드백 80초, 분석 대화 core→ai 첫 응답 20초·전체 120초, 서킷 브레이커 최근 20건 중 실패 50% 이상 시 30초 차단, 리포트 작업 재시도 3회(1·5·15분) 후 DLQ. 실패 시 "처리 실패"로 기록·SSE 전달, 판정 보류·기록 없음과 구분
+  - 현재 서킷 브레이커 적용 구간은 core→learning(`learning-json`·`learning-feedback`)과 learning→ai뿐이다. core→ai(분석 대화)·core→report·core→토스는 타임아웃만 적용한다(#167, [audit 3.7](../report/audit.md#37-아키텍처-원칙-정합성) A2)
 - 타임아웃 예산: 바깥 호출 타임아웃 > 안쪽 호출 합계 (예: core→learning > learning→ai judgments + followups). 전체 상한은 CloudFront·ALB 타임아웃(4.3) 이내. 이를 넘는 SSE(피드백 80초, 분석 대화 120초)는 15초 heartbeat가 유휴 타이머를 갱신하는 것을 전제로 함
 - 재시도 계층: ai의 LLM 호출에서만 재시도, core·learning·report의 서비스 간 호출은 재시도 없음 (계층별 재시도 시 호출 수 곱셈 증폭)
 - #38 일반 core→learning JSON 프록시는 연결 2초·응답 30초를 사용한다(피드백의 80초 예산은 #39). Resilience4j count window 20·최소 20건·실패율 50%·차단 30초·half-open 1건으로 복구를 확인한다. 전송 오류·5xx를 실패로 집계하고 4xx는 정상 HTTP 결과로 센다. 응답·오류 대역은 test 소스에만 둔다.
@@ -99,7 +100,7 @@
 3. **마무리**: learning이 마무리 조건(판정 `DONE` 1회 이상, P04)을 확인한 뒤에만 정답·예시 답·근거 확인된 체크리스트 반환 → 돌아보기 저장 시 완료 처리
 4. **분석 대화**
    - Web ─SSE→ core: 자녀 연결 확인 후 허용 학생·기간·대화 이력 전달 → ai(스트리밍)
-   - LangGraph 흐름: `classify → clarify_scope → plan → tool(learning 조회, 실행마다 허용 범위 검사) → compute(코드 계산) → answer → verify(숫자·인용 대조)`
+   - LangGraph 흐름: `classify → clarify_scope → plan → tool(learning 조회, 실행마다 허용 범위 검사) → compute(코드 계산) → answer → verify(숫자·인용 대조)`. 구현 노드는 `classify`(범위 확인 포함) → `retrieve`(도구 선택·조회) → `compute` → `answer` → `check`(대조), 실패 분기 `fallback`·`insufficient`·`unsupported` ([ai 보고서 2장](../report/ai.md#2-분석-대화-에이전트-langgraph))
    - core가 질문·답변·참조 기록 저장
 5. **자동 리포트**
    - core 스케줄러(ShedLock)가 자녀별 report_job + Outbox → `report.generate`
@@ -108,7 +109,7 @@
 
 ### 1.6 메시징 신뢰성 규칙
 - **Outbox**: DB 상태 변경 + 발행이 함께 필요한 서비스(core, report)만 적용 (learning은 발행 없음, 멱등 소비만). 같은 트랜잭션에 outbox 행 저장 → 릴레이 스케줄러가 publisher confirm 받은 후 발행 시각 기록 (참고 레포 `*OutboxScheduler` 패턴)
-- **상태 없는 서비스(ai, scoring)**: 이벤트 발행은 처리 결과 반환 후 best-effort (사용량 집계용), 유실 시 Langfuse trace로 보정
+- **상태 없는 서비스(ai, scoring)**: 이벤트 발행은 처리 결과 반환 후 best-effort (사용량 집계용), 유실 시 Langfuse trace로 보정(Langfuse는 예정, 저장소 미구성)
 - **멱등 소비**: 소비자별 `processed_event(event_id UK)` 테이블 또는 DB 상태 전이 조건(`QUEUED→RUNNING`)
 - **재시도**: 소비 실패 시 지연 재시도 3회(1·5·15분, P12) 후 DLQ 이동. `report.generate` 확정값을 모든 큐에 동일 적용
 - **명시적 관리자 재처리(#152/#47)**: 위 메시지 전송 재시도와 구분한다. core가 새 jobId·ADMIN_RETRY로 기존 명령을 발행하고 원작업 연결을 보관한다. report는 기존 생성·revision·Outbox를 재사용한다. 같은 jobId의 종료 상태 재전달은 ACK 후 종료하며, 새 관리자 HTTP API·큐·스키마를 report에 추가하지 않는다. core 관리자 접수 연결은 #47 후속이다.
@@ -254,7 +255,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ domain/
 │  ├─ repository/
 │  └─ client/
-│     └─ LearningClient.kt       # 판정 정정
+│     └─ LearningSupportClient.kt  # 대상 확인·원문·판정 정정
 ├─ payment/
 │  ├─ controller/
 │  ├─ service/
@@ -331,7 +332,7 @@ backend/ai-service/
 │  ├─ config.py
 │  ├─ errors.py                 # Problem Details 예외 핸들러
 │  ├─ security.py               # 내부 토큰·사용자 컨텍스트·학생 범위 검사
-│  ├─ versions.py               # 활성 프롬프트 버전, model.version.activated 수신 시 교체
+│  ├─ versions.py               # 활성 프롬프트 버전 조회. model.version.activated 수신 시 교체는 예정
 │  ├─ judgment/
 │  │  ├─ router.py
 │  │  ├─ service.py
@@ -346,14 +347,15 @@ backend/ai-service/
 │  │  ├─ leak_guard.py
 │  │  └─ prompts.py
 │  ├─ analysis_agent/
-│  │  ├─ router.py
-│  │  ├─ service.py
+│  │  ├─ router.py               # SSE, 그래프 실행
+│  │  ├─ models.py
 │  │  ├─ graph.py
-│  │  ├─ nodes/
+│  │  ├─ nodes/                  # understand·retrieve·respond·events
 │  │  ├─ state.py
 │  │  ├─ tools.py
 │  │  ├─ calculators.py
-│  │  ├─ verifier.py             # 답변 숫자·인용 ↔ 조회·계산 결과 대조
+│  │  ├─ verification.py         # 답변 숫자·인용 ↔ 조회·계산 결과 대조
+│  │  ├─ templates.py            # 규칙 응답
 │  │  └─ prompts.py
 │  ├─ report_narrative/
 │  │  ├─ router.py
@@ -362,8 +364,8 @@ backend/ai-service/
 │  ├─ clients/
 │  │  ├─ base.py                 # 내부 토큰·컨텍스트 헤더 전달 httpx 클라이언트
 │  │  ├─ learning_client.py
-│  │  ├─ scoring_client.py
-│  │  └─ core_client.py          # 기동 시 활성 버전 조회
+│  │  ├─ scoring_client.py       # (예정) M2·M1 교차 확인
+│  │  └─ core_client.py          # (예정) 기동 시 활성 버전 조회
 │  ├─ llm/                       # LLM 클라이언트 래퍼 (제공자 교체 지점)
 │  │  ├─ base.py                 # 공통 인터페이스·재시도·타임아웃·사용량 기록
 │  │  └─ providers.py            # Claude·OpenAI·OpenAI 호환 sLLM, LLM_PROVIDER로 선택
@@ -372,7 +374,7 @@ backend/ai-service/
 │  │  ├─ connection.py
 │  │  ├─ publisher.py            # llm.usage.recorded
 │  │  ├─ usage_recorder.py       # LlmClient 사용량 → 백그라운드 발행
-│  │  └─ consumer.py             # model.version.activated, Pod별 exclusive 큐
+│  │  └─ consumer.py             # (예정) model.version.activated, Pod별 exclusive 큐
 │  └─ health/
 │     └─ router.py
 ├─ tests/                        # app과 동일 기능 폴더 구조
@@ -517,7 +519,7 @@ backend/report-service/
 - 외부 호출(LLM API·토스페이먼츠): Pod → NAT GW → Internet GW
 - Namespace: `app`(core·learning·ai·scoring·report), `platform`(RabbitMQ·Redis), `observability`, `argocd`
 - 노드그룹: `application`, `platform-observability` 분리 (참고 레포 2그룹 구성 계승)
-- NetworkPolicy: 기본 거부 + 아래 허용만 (호출 관계는 [API 명세서](api-spec.md) 4장)
+- NetworkPolicy: 기본 거부 + 아래 허용만 (호출 관계는 [API 명세서](api-spec.md) 4장). 앱 Helm chart·Ingress·NetworkPolicy는 예정이며 현재 저장소에는 `platform-data` chart와 kind 설정만 있다(#171)
 
 | 대상 | ingress 허용 | egress 허용 |
 |---|---|---|
@@ -535,6 +537,7 @@ backend/report-service/
   - migration-job: RDS egress / local: LLM API·토스 대신 `<target>-stub` Service로 egress
 
 ### 4.4 확장
+- 현재 저장소에 HPA·KEDA·PDB·Cluster Autoscaler 구성은 없다(예정, #171). 아래는 설계 기준
 - HPA(CPU): core, learning, ai, scoring, report-api — 최소 2(scoring은 메모리 고려해 최소 1, report-api 최소 1), PDB `minAvailable: 1`
 - **KEDA(RabbitMQ 큐 길이)**: report-worker — 0~N 확장, EDA와 K8s 연계 지점
   - report 조회 API는 core가 동기 호출하므로 0으로 줄지 않는 `report-api`로 분리 (같은 이미지, 진입점만 다름). core `ReportClient` 대상 Service = report-api
@@ -552,6 +555,7 @@ backend/report-service/
 - Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret (LLM·토스 키는 저장소에 미포함, NFR-SEC-04)
 
 ### 4.6 관측
+- 현재 서비스에 OpenTelemetry·Prometheus·Langfuse 의존성과 구성은 없다(예정, #171). `traceparent` 헤더·이벤트 봉투 전파만 구현돼 있다
 - Langfuse: LLM 호출·토큰·비용·trace
 - OpenTelemetry → Prometheus + Grafana: 서비스 지표, 큐 길이·DLQ 적재량, 판정·피드백·리포트 처리 지연
 - 경보: Grafana Alerting → 팀 디스코드 웹훅. 오류율·지연·작업 적체·월 LLM 비용 예산 80% 도달, 담당은 인프라 1명 + 서비스별 담당 (P10, P13)

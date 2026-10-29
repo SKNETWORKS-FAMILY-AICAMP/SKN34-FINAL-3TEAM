@@ -45,12 +45,12 @@
 | [core-gateway](report/core-gateway.md) | core 학습 프록시·멱등성(#38), 피드백 SSE(#39), 대시보드(#40), 알림(#44) |
 | [learning](report/learning.md) | 미션·데모 시드·성취기준(#22), 시도·초안(#23), 답변(#24), 피드백(#25), 마무리(#26), 기록 조회(#27), 판정 규칙(#79), 판정 정정 수신(#80), 학생 삭제 소비(#128), 관리자 미션(#145), 신고 지원 조회(#146) |
 | [ai](report/ai.md) | 판정·되묻기(#6)·OpenAI 전환, 분석 대화 에이전트, 모델 레지스트리·AI 사용량(#43), M2 정렬(#4) |
-| [report](report/report.md) | core 주간 리포트(#42), 생성·계산·서술·렌더링·조회·삭제(#50~#55), 남은 연결 |
+| [report](report/report.md) | core 주간 리포트(#42), 생성·계산·서술·렌더링·조회·삭제(#50~#55), 이용권 연결(#129), 종료 유실 복구(#132), 연결 상태 |
 | [db-schema](report/db-schema.md) | DB 기술 결정(#5), 확정 정책 반영과 기존 데이터 전환 절차(#19) |
 | [db-dev-guide](report/db-dev-guide.md) | 마이그레이션 CI(#13), Repository·SQLAlchemy 사용법(#14) |
 | [local-platform](report/local-platform.md) | kind·Calico·ingress·MinIO 설정과 자원 예산(#17) |
 | [frontend](report/frontend.md) | 웹 공통 기반·학생·학부모·관리자 화면(#7~#9·#59), 테마·대시보드, QR 시연 |
-| [audit](report/audit.md) | develop 종합 검증(c608f52)과 설계 문서 정합성 점검, 남은 결함·테스트 공백 |
+| [audit](report/audit.md) | develop 종합 검증(c608f52·640e0a2)과 설계 문서 정합성 점검, 남은 결함·테스트 공백 |
 
 - [이슈 #46 신고·문의·공지·도움말](report/issue-46-support.md): 요청 역할·학생 scope, 정정 재시도·감사, 알림 연결과 공급자 필요 계약
 
@@ -62,6 +62,12 @@
 - [scoring #88](report/issue-88-scoring-m1.md): 미학습 M1 비활성 계약·입력 검증 및 활성화 후속 범위
 - [scoring #85~#88 통합 제출](report/scoring-85-88-integration.md): 통합 브랜치·PR 범위·검증 결과·후속 연동 구분
 - [report #152 관리자 실패 재처리](report/issue-152-report-admin-retry.md): 새 jobId 재사용·중복/판 보존·실제 연동 및 #47 요청·결과 예시
+- [이슈 #47 관리자 운영](report/issue-47-admin-operations.md): 운영 현황·작업 재처리·감사 이력·큐 조회·관리자 미션 프록시
+- [이슈 #48 결제·구독](report/issue-48-payments.md): 토스페이먼츠 테스트 결제·정기 청구·환불과 실제 상품 권한 공급
+- [이슈 #119 학생 별명 조회](report/issue-119-student-profile.md): 리포트 생성용 core 내부 학생 별명 API
+- [#56 리포트 worker 통합](report/report-worker-integration.md): 기본 worker 생성 파이프라인 연결과 완료 조건 검증
+- [프론트 요구사항 대조](report/frontend-requirements-20261029.md): 요구사항 정의서 기능 ID별 화면 대조·구현
+- [웹 develop 통합 PR](report/pr-web-develop-integration.md): 프론트 요구사항 보완과 develop 통합(#93·#97·#134)
 
 ## 개발 규칙
 

@@ -86,14 +86,14 @@
 
   일회용 PostgreSQL·RabbitMQ와 loopback 포트를 쓰고 종료 시 정리. 공유 DB·운영 AWS·실제 학생 자료 미사용
 
-## 9. 남은 연결
+## 9. 연결 상태
 
 | 항목 | 담당 | 내용 |
 |---|---|---|
-| 상품 권한 | core·상품 | #48 실제 판정 연결, #129 조회 헤더·최종 권한 확인(11장) |
-| 표시 이름 | core | AI 전송 전 이름 가림·파일 제목용 닉네임 내부 조회 경로 |
-| 생성기 조립 | report | worker 기본 생성기를 계산 → 서술 → 렌더링으로 연결 |
-| 삭제 전체 | learning·core | learning `student.deleted` 소비·완료 보고. core 미종료 작업 정리·늦은 이벤트 차단은 #132(12장) |
+| 상품 권한 | core·상품 | 연결됨: #48 `ProductEntitlementService` 판정, #129 조회 헤더·최종 권한 확인(11장) |
+| 표시 이름 | core | 연결됨(#56): core `/internal/students/{studentId}/profile` 닉네임 조회, AI 전송 전 이름 가림 |
+| 생성기 조립 | report | 연결됨(#56): worker 기본 생성기 계산 → 서술 → 렌더링, 실제 ai 서술 API는 #64 |
+| 삭제 전체 | learning·core | 연결됨: learning `student.deleted` 소비·완료 보고(#128), core 미종료 작업 정리·늦은 이벤트 차단(#132, 12장) |
 | 운영 | 인프라 | 운영 S3·IAM/IRSA·공개 endpoint, Chromium `/tmp` writable volume, guard 표식 보존·SIGTERM 유예·DLQ 복구 |
 
 ## 10. 로컬 #56 작업과 이전 통합 검증 기록

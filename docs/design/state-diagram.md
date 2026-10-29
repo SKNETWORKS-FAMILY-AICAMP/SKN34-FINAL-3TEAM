@@ -314,7 +314,7 @@ stateDiagram-v2
 - `notification` UK `(user_id, type, source_event_id)` → 같은 사건 재처리 시 중복 생성 없음 (FN-SUP-08). 읽음(`read_at`)은 상태와 독립
 - `job_execution`: 대화·리포트·알림 실행 1회당 1행, UK `(job_type, job_id, attempt_no)`. 재처리는 `attempt_no + 1` 새 행 (FN-ADM-07)
 - 알림 채널은 인앱만, 이메일·푸시 없음 (P10)
-- `notification.status`의 `RUNNING`은 CHECK만 허용하고 사용하지 않음. 실패 알림 재처리는 미구현이며 클라이언트는 목록 재조회로 보완 (api-spec 2.7)
+- `notification.status`의 `RUNNING`은 관리자 실패 알림 재처리(#47) 선점 때만 사용한다. 재처리는 `FAILED`만 `RUNNING`으로 원자 선점 후 새 `job_execution`을 남기고 결과로 종료(api-spec 2.8 retry 규칙), 자동 재처리는 없으며 클라이언트는 목록 재조회로 보완 (api-spec 2.7)
 
 ---
 

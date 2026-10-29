@@ -834,7 +834,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 - 비동기 메시지(`report.generate` 등)는 [아키텍처 1.4](architecture.md#14-메시지-목록) 참고
 - report 삭제: PROFILE·RECORDS 모두 리포트 내용·파일을 물리 삭제하고 `report_deletion_guard`에 식별 UUID·범위·기준 시각·상태만 남김. core가 RECORDS 후에도 학습을 자동 재개하지 않으므로 두 scope 모두 이후 생성을 차단(재개는 별도 계약 필요)
-- 삭제 학생의 queued job 정리와 늦은 상태 이벤트 무시는 core 미구현(검증 보고서 B9). report 삭제 장벽이 core job 상태를 대신 정리하지 않음
+- 삭제 학생의 미종료 job은 core 삭제 확정 트랜잭션에서 `FAILED(STUDENT_DELETED)`로 종료하고, 이후 도착한 상태 이벤트·복구 결과도 학생이 `ACTIVE`가 아니면 같은 사유로 종료한다(#132, `ReportLifecycleService`). report 삭제 장벽이 core job 상태를 대신 정리하지 않음
 
 ### 4.6 #43 AI 사용량 조회 계약
 
