@@ -9,7 +9,7 @@ import pytest
 from pydantic import BaseModel
 
 from app.config import Settings
-from app.llm.base import LlmError, LlmRequest, LlmUsage, UnconfiguredLlm
+from app.llm.base import LlmError, LlmRequest, LlmUsage, StreamEnd, UnconfiguredLlm
 from app.llm.providers import (
     FALLBACK_BETA,
     NO_KEY,
@@ -343,3 +343,118 @@ def test_default_provider_is_openai_gpt_6_1_terra() -> None:
     llm = create_llm(Settings(internal_token="t", openai_api_key="k"), recorder)
     assert isinstance(llm, OpenAICompatibleLlm)
     assert llm.model == "gpt-6.1-terra"
+
+
+# --- 스트리밍 (분석 대화 답변) ------------------------------------------------
+
+STREAM_REQUEST = LlmRequest("system", "user", BaseModel, "ANALYSIS", "analysis@2", 1024, 7.5)
+
+
+async def drain(llm: Any) -> list[Any]:
+    return [item async for item in llm._stream(STREAM_REQUEST)]
+
+
+class FakeAnthropicStream:
+    def __init__(self, texts: list[str], final: Any) -> None:
+        self._texts = texts
+        self._final = final
+
+    async def __aenter__(self) -> "FakeAnthropicStream":
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        return None
+
+    @property
+    async def text_stream(self) -> Any:
+        for text in self._texts:
+            yield text
+
+    async def get_final_message(self) -> Any:
+        return self._final
+
+
+class FakeStreamingMessages(FakeMessages):
+    def __init__(self, result: Any, texts: list[str]) -> None:
+        super().__init__(result)
+        self.texts = texts
+
+    def stream(self, **kwargs: Any) -> FakeAnthropicStream:
+        self.kwargs = kwargs
+        if isinstance(self.result, Exception):
+            raise self.result
+        return FakeAnthropicStream(self.texts, self.result)
+
+
+def make_streaming(result: Any, texts: list[str]) -> tuple[AnthropicLlm, FakeStreamingMessages]:
+    llm, _ = make_llm(result)
+    messages = FakeStreamingMessages(result, texts)
+    llm._client = SimpleNamespace(beta=SimpleNamespace(messages=messages))  # type: ignore[assignment]
+    return llm, messages
+
+
+def test_anthropic_stream_yields_text_then_usage() -> None:
+    llm, messages = make_streaming(message("안녕하세요"), ["안녕", "하세요"])
+    items = asyncio.run(drain(llm))
+    assert items[:2] == ["안녕", "하세요"]
+    assert items[2] == StreamEnd("claude-sonnet-5-5", 120, 30)
+    assert messages.kwargs["output_config"] == {"effort": "medium"}  # 일반 텍스트 (스키마 없음)
+    assert messages.kwargs["betas"] == [FALLBACK_BETA]
+    assert messages.kwargs["timeout"] == 7.5
+
+
+@pytest.mark.parametrize(
+    ("stop_reason", "code"), [("refusal", "LLM_REFUSED"), ("max_tokens", "LLM_INVALID_OUTPUT")]
+)
+def test_anthropic_stream_bad_stop_keeps_usage(stop_reason: str, code: str) -> None:
+    llm, _ = make_streaming(message("앞", stop_reason=stop_reason), ["앞"])
+    with pytest.raises(LlmError) as exc:
+        asyncio.run(drain(llm))
+    assert (exc.value.code, exc.value.input_tokens) == (code, 120)
+
+
+def test_anthropic_stream_sdk_errors_are_classified() -> None:
+    llm, _ = make_streaming(status_error(529), [])
+    with pytest.raises(LlmError) as exc:
+        asyncio.run(drain(llm))
+    assert (exc.value.code, exc.value.retryable) == ("LLM_SERVER_ERROR", True)
+
+
+def chunk(content: str | None, finish_reason: str | None = None, usage: Any = None) -> Any:
+    choices = [SimpleNamespace(delta=SimpleNamespace(content=content), finish_reason=finish_reason)]
+    return SimpleNamespace(model="gpt-test", choices=[] if usage else choices, usage=usage)
+
+
+async def chunks(items: list[Any]) -> Any:
+    for item in items:
+        yield item
+
+
+def test_openai_stream_yields_text_then_usage() -> None:
+    usage = SimpleNamespace(prompt_tokens=90, completion_tokens=12)
+    stream = chunks([chunk("안녕"), chunk("하세요", "stop"), chunk(None, usage=usage)])
+    llm, completions = make_openai(stream)
+    items = asyncio.run(drain(llm))
+    assert items == ["안녕", "하세요", StreamEnd("gpt-test", 90, 12)]
+    assert completions.kwargs["stream"] is True
+    assert completions.kwargs["stream_options"] == {"include_usage": True}
+    assert "response_format" not in completions.kwargs
+    assert completions.kwargs["timeout"] == 7.5
+
+
+@pytest.mark.parametrize(
+    ("finish_reason", "code"),
+    [("content_filter", "LLM_REFUSED"), ("length", "LLM_INVALID_OUTPUT")],
+)
+def test_openai_stream_bad_finish(finish_reason: str, code: str) -> None:
+    llm, _ = make_openai(chunks([chunk("앞", finish_reason)]))
+    with pytest.raises(LlmError) as exc:
+        asyncio.run(drain(llm))
+    assert exc.value.code == code
+
+
+def test_openai_stream_sdk_errors_are_classified() -> None:
+    llm, _ = make_openai(openai.APITimeoutError(request=OPENAI_REQUEST))
+    with pytest.raises(LlmError) as exc:
+        asyncio.run(drain(llm))
+    assert (exc.value.code, exc.value.retryable) == ("LLM_TIMEOUT", True)
