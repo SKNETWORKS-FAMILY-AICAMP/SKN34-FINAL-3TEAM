@@ -1,4 +1,4 @@
-# learning 학습 서비스 (#22~#27·#79·#80·#128)
+# learning 학습 서비스 (#22~#27·#79·#80·#128·#145)
 
 통합 원본: learning-mission, learning-attempt, learning-answer, learning-feedback, learning-reflection, learning-records, learning-judgment-rules
 
@@ -138,7 +138,7 @@ core #46 관리자가 신고를 검토해 판정을 고치면 core가 `POST /int
 | 처리 순서 | 판정 행 `FOR UPDATE` → 없으면 404 → 학생 범위 403 → 같은 키(같은 요청이면 처음 정정, 아니면 422 `IDEMPOTENCY_KEY_REUSED`) → `DONE` 전 409 `JUDGMENT_STATE_CONFLICT` → 같은 `reportId`·다른 키 409 `CORRECTION_REPORT_CONFLICT` → 저장 | 사용자 결정 → core 확인. 같은 키는 처음 상태와 관계없이 처음 응답 재현. 잠금은 #24 답변 제출과 같은 방식 |
 | 같은 요청 | 판정 ID·`reportId`·`reason`·`corrected`가 같으면 같음(관리자는 비교 안 함) | core 계약 "같은 키·같은 본문" |
 | 응답 | `{correctionId, previousResult, corrected, createdAt, impact}`. 같은 키 재요청은 저장된 행으로 다시 만듦 | core 계약 |
-| `previousResult` | 정정 직전에 보이던 결과(앞선 정정이 있으면 그 결과). 최신 정정은 `created_at`(같으면 `id`) 가장 늦은 행 | ERD "정정 전 결과" |
+| `previousResult` | 정정 직전에 보이던 결과(앞선 정정이 있으면 그 결과). 최신 정정은 `created_at`(같으면 `id`) 가장 늦은 행. 다른 신고 정정이 동시에 와도 앞 정정 결과(#145에서 잠근 뒤 다시 읽도록 보완, 10절) | ERD "정정 전 결과" |
 | 저장 모양 | `previous`·`corrected` jsonb는 `{"result": "PARTIAL"}` | ERD 비고에 추가 |
 | 보이는 곳 | `findStored` 한 쿼리라 피드백 결과·시도 상세·#27 기록 모두 최신 정정 결과. 바꾸는 것은 `result`뿐: 정정이 있으면 `heldReason` null(ai 판정의 이유라서), 판정 요소·되묻기·`nextActions`·마무리 체크리스트는 원판정 | 사용자 결정 ②. `nextActions`는 결과가 아니라 되묻기·시도 상태로 계산 |
 | impact | `aggregation: NOT_APPLIED`(learning 수치 집계는 판정 결과를 쓰지 않아 바꿀 것 없음, 오류 아님), `conversation`·`report: UNKNOWN`(learning이 확인할 수 없음) | core와 합의 ④ |
@@ -169,3 +169,35 @@ core가 자녀 삭제·탈퇴를 확정하면 `student.deleted`를 보내고, le
 - 기존 파일 수정: `EventEnvelope`(발행용 기본값 제거: `id`가 빠진 메시지에 무작위 id가 채워져 멱등 키가 매번 달라지는 문제, learning은 발행하지 않음), `MessagingConfig`(confirm 대기 시간), `AppProperties`(`messaging.maxRetries`), `application.yml`(수동 ACK·`missing-queues-fatal: false`·publisher confirm·readiness에 `rabbit`·`app.messaging.max-retries: 3`, read-timeout 주석을 core 호출까지로), `AttemptService`·`AttemptRepository`·`AttemptMapper`(`deleteByStudent`), 테스트 6개 클래스에 `spring.rabbitmq.listener.simple.auto-startup=false`(core 테스트와 같음, 리스너가 실제 RabbitMQ에 붙지 않게)
 - 설계 문서: class-diagram 4.3(구현 상태·소비자 검증·삭제 흐름·`deleteByStudent` 순서·`delete` 시그니처), ERD 1장 FK 줄·4.3 비고·7장 확인 필요 줄 삭제, api-spec 5.6 마지막 줄(B3 해소), 아키텍처 1.6 수동 ACK 줄
 - 검증: learning 테스트 217개(새 11: 삭제 4·소비자 3·재시도 4)·scripts/tests 74개, 보호 장치 16개를 빼면 각각 실패(삭제 순서 4·멱등·보고 3·표식 1·소비자 5·재시도 3). 통합 확인은 #148의 격리 compose(`scripts/report_integration/compose.yaml`, 합성 값, 프로젝트 `learning128`)에 learning `CORE_URL`만 덮어써서: core DB에 보호자·학생 2명과 `CONFIRMED` PROFILE 삭제 요청·outbox 행 저장 → core 중계가 `student.deleted` 발행 → learning·report 둘 다 보고하고 core 요청 `COMPLETED`(2초)·학생 `DELETED`, learning은 대상 학생 시도·초안·답변·판정 0행·다른 학생 그대로·표식 PROFILE. 같은 이벤트 재전달은 처리 뒤 만든 시도를 지우지 않고 보고만(재시도·DLQ 0), source가 다른 봉투는 재시도 없이 learning DLQ 1건. readiness에 rabbit 포함 UP. 확인 뒤 격리 환경 삭제
+
+## 10. 관리자 미션 API (#145, 구 #81 흡수)
+
+core #126(#47)이 관리자 미션 요청 10개(경로 8개)를 learning `/internal/admin/missions`로 넘기지만 learning에 받는 API가 없어 관리자 미션 화면이 동작하지 않던 문제를 고침. 클래스 다이어그램 4.1 이름(`AdminMissionController`·`MissionService`·`Mission.requirePublishable`·`MissionRepository`·`RubricRepository`)과 상태 다이어그램 3.1 전이 그대로. 계약은 api-spec 4.1 `/internal/admin/missions…` 줄과 learning OpenAPI(`/admin/missions…` 10개). 프론트·core와 계약 합의 뒤 구현
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 인증 | 내부 토큰 + `ADMIN`(아니면 403) + UUID `X-User-Id`(작성자·검토자, 없거나 형식 오류 400). `CONTENT` 권한 검사는 core, 학생 범위는 비어 옴 | core #126 프록시 |
+| 응답 | 성공은 모두 JSON 객체. 목록 `{items, page, size, totalElements, counts:[{status, count}]}`, 나머지는 미션 전체 `AdminMission`(버전·기준표·검토 이력 포함, 작성 201). `counts`는 페이지·필터와 무관한 전체 4개 상태(없으면 0) | core 프록시는 JSON 객체만 중계, 이슈 확인 필요 ②(사용자 결정 → core 확인: 건수용 경로 따로 없음) |
+| 버전 | 수정 `PATCH`·기준표 `PUT`은 새 불변 버전 추가 + `current_*`만 바꿈. 게시가 `published_*` ← `current_*`. 학생 목록·상세·시도 시작은 `published_*`, 진행 중 시도는 시작 당시 버전 | P07, ERD 4.1 |
+| 공개 중 수정 | 상태는 `PUBLISHED` 그대로, 학생은 계속 공개 버전. `PUBLISHED`에서 검토 요청은 바뀐 것이 있을 때만(상태 유지), 승인 뒤 재게시로 교체 | 프론트·core 합의(학생 화면에서 미션이 갑자기 사라지지 않게) |
+| 전이 | 검토 중(`REVIEW_REQUIRED`) 수정은 `DRAFT`로. 검토 요청 `DRAFT`·`UNPUBLISHED` → `REVIEW_REQUIRED`. 반려(`CHANGES_REQUESTED`)는 검토 중이면 `DRAFT`, 공개 중 수정본이면 상태 유지. 게시는 검토 대상일 때만, 중단은 `PUBLISHED`만. 그 밖은 409 `CONFLICT` | state-diagram 3.1 |
+| 버전 대조 | 검토 요청·검토 본문의 `missionVersion`·`rubricVersion`이 현재 버전과 다르면 409 `MISSION_VERSION_CONFLICT`(낡은 화면에서 다른 버전을 승인하지 않게) | P07, core 허용 오류 코드 |
+| 공개 검사 | 누락을 모두 모아 422 `MISSION_PUBLISH_INCOMPLETE` + 영문 `missingFields`(`title`·`question`·`subject`·`grade`·`achievementStandards`·`choices`·`categories`·`rubric`·`rubric.elements`·`rubric.elements.points`·`answerKey`·`exampleAnswer`·`review`). 기준표 요소는 **입력 방식 무관 1개 이상**(구 #81), `review`는 현재 버전 최신 검토가 `APPROVED` | FN-ADM-11, 프론트 합의(화면이 한글 표시), core 프록시가 영문 경로 모양만 통과 |
+| 정답 키 | 입력 방식 모양 객체 `{choiceIds}`·`{assignments}`·`{finalAnswer}`, 선택지·그룹과 맞는지 공개 검사 | 프론트 합의, #79 |
+| 동시 수정 | 쓰기 전 미션 행만 `FOR UPDATE`로 잠그고 다시 읽음. 같은 미션 동시 수정 8건 → 버전 2~9, 실패 없음 | 조인한 채 잠그면 기다린 뒤 새 버전 행을 못 보고 404가 나던 것을 동시 테스트로 확인 |
+| 업로드·감사 | 장면은 URI 입력 유지(업로드 미구현). 감사 기록은 core(#47 후속, 응답의 `missionId`·버전 사용) | 이슈 확인 필요 ①, core 답변 |
+
+- 설계와 다른 점: 컨트롤러 반환을 모두 `AdminMission`(설계는 `Mission`·`RubricVersion`·없음)으로. core가 JSON 객체 응답을 요구하고 화면이 바뀐 미션 전체를 다시 그려서. 상세 `detail`·`listForAdmin`·`getForAdmin` 추가(2.8 표의 상세 경로). `requestReview`·`review`에 버전 인자 추가(버전 대조). 관리자 SQL은 `AdminMissionMapper`로 나눔(학생 조회 `MissionMapper`와 섞지 않고, Repository는 설계대로 `MissionRepository` 하나)
+- DB: learning `V7__mission_published_versions.sql`(기존 V1~V6 불변). `mission.published_version_id`·`published_rubric_version_id`(NULL 허용, DEFERRABLE FK) 추가 + 기존 `PUBLISHED` 행은 현재 버전으로 채움. 데모 시드도 같은 규칙으로 채움. ERD 1장·4.1·8장 반영
+- 기존 파일 수정: `MissionService`(관리자 메서드, 생성자에 `RubricRepository`), `MissionRepository`(관리자 메서드, 생성자에 `AdminMissionMapper`), `MissionMapper.xml`(학생 조회·`findCurrentVersions`가 `published_*`), `db/seed/demo_missions.sql`, 테스트(`TestRows.mission`이 게시 미션에 `published_*`, `MissionRepositoryTest`·`AttemptServiceTest`·`MissionServiceTest` 공개 버전 반영), `scripts/tests/test_record_exists_openapi.py`(`@PatchMapping` 포함, 경로 수 33)
+- 같이 고친 것(이슈 해야 할 일에 추가):
+  - #80 판정 정정 잠금: `lockTarget`이 최신 정정 하위 조회를 붙인 채 잠가, 다른 신고 정정이 동시에 오면 기다린 뒤에도 앞 정정을 못 보고 `previousResult`가 원판정으로 저장됨(동시 8건 모두 `PARTIAL`로 재현). 위 동시 수정과 같은 방법으로 판정 행만 잠그고(`lockJudgment`) 다시 읽음(`findTarget`). 8절 `previousResult` 규칙이 동시 요청에서도 지켜짐
+  - 연동 검증 스크립트 4개(`verify_dashboard_learning`·`verify_report_learning`·`report_integration/scenario`·`verify_feedback_learning`): DB에 직접 넣는 게시 미션에 `published_*`도 채움(V7 뒤 학생 시작 실패 방지, CI 밖 수동 검증)
+  - class-diagram 4.1 구현 상태 줄: #128 뒤에도 남아 있던 "`deleteByStudent` 미구현", "별도 `RubricRepository` 없음"
+- 설계 문서: state-diagram 3.1(공개 중 수정 전이·전이 표·학생은 `published_*`), ERD(공개 버전 칸·DEFERRABLE·4.1 비고·공개 검사·8장 V1~V7, 같은 줄의 표·컬럼 수는 develop의 #157 report 표까지 실제 검사 값 69/606으로), class-diagram 4.1(컨트롤러·서비스 메서드·`requirePublishable` 조건·관리자 API·버전 메모), api-spec 4.1 관리자 미션 줄·3.10 합의·2.8 공급자 계약 문구, OpenAPI(경로 10개·`AdminMission` 등 스키마·422 `missingFields` 목록)
+- 검증: learning 테스트 238개(새 21: 미션 전이 6·관리자 서비스 7·동시 수정 1·컨트롤러 6·동시 정정 1), scripts/tests 79개(새 `test_admin_missions_contract.py` 3: core 프록시 경로 10개 = OpenAPI, 목록 쿼리, `missingFields` 코드가 core 필터 통과). 보호 장치 17개를 빼면 각각 실패(공개 버전 조회 2·게시 복사·잠금·전이 4·요소 1개 이상·풀이 단계·정답 키·승인·평평한 요소 행·관리자만·422 `missingFields`·배점·`counts`), 동시 정정 테스트는 고치기 전 코드에서 실패 확인. DB: 임시 PostgreSQL에서 `check_db_migrations.py` 통과(learning 19표/160컬럼 ERD 일치·재실행 이력 불변), V6 데모 데이터 위에 V7 적용 시 게시 10건 채움·초안 10건 비움. 실제 연동: core·learning JAR + 임시 DB로 core `/api/v1/admin/missions` 경유 `CONTENT` 없는 관리자 403 → 작성 201 → 400 통과 → `DRAFT` 게시 409 → 기준표·미리보기 → 승인 전 게시 422 `["review"]` → 승인·게시 → 학생 1판 시작 → 공개 중 수정(2판, 학생은 1판) → 낡은 버전 409 → 재검토·재게시(학생 2판, 진행 중 시도 1판) → 목록 필터·`counts` → 중단(학생 상세 409, 진행 중 시도 이어하기 200)
+- 확인 필요·한계:
+  - core가 learning 404를 아직 503 `ADMIN_MISSIONS_UNAVAILABLE`로 바꿈(없는 미션 실제 확인). core가 고치기로 함
+  - 프론트 `missingMissionFields`를 같은 조건으로 맞추는 것은 프론트 반영 중(이슈 해야 할 일 4)
+  - `verify_feedback_learning.py`는 학생 시작·답변 제출까지 통과(위 스크립트 수정 확인)하지만 AI 실패 단계에서 멈춤. develop 원본에서도 같아 #145와 무관한 기존 문제, 지금 core는 Redis도 필요
+  - V7 추가는 DB 담당에게 공유
