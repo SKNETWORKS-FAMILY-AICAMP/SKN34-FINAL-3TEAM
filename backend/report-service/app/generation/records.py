@@ -97,3 +97,14 @@ class LearningRecords:
 
 class RecordContractError(ValueError):
     """Incomplete/inconsistent upstream records must never become a NO_RECORD result."""
+
+
+@dataclass(frozen=True)
+class EvidenceRecord:
+    answer_id: UUID
+    attempt_id: UUID
+    version: int
+    text: str | None
+    available: bool
+    mission_title: str | None = None
+    submitted_at: datetime | None = None

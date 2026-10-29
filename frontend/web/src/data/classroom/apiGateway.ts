@@ -1,7 +1,7 @@
 import { refreshAccessToken, notifyAuthChange, hasAccessToken } from '../apiClient.ts'
 import { ApiError, apiFetch, apiResponse, setAccessToken } from '../apiClient.ts'
 import { streamSse } from '../sse.ts'
-import { blankAnswer, inPeriod, publicAttempt } from '../../domain/classroom.ts'
+import { blankAnswer, publicAttempt } from '../../domain/classroom.ts'
 import type {
   AnswerContent,
   AnalysisResult,
@@ -16,6 +16,7 @@ import type {
 } from '../../domain/classroom.ts'
 import type { ClassroomGateway } from './gateway.ts'
 import { DraftConflictError } from './errors.ts'
+import { recordReflection } from '../recordDto.ts'
 
 type JsonObject = Record<string, unknown>
 const contractError = (detail: string): never => {
@@ -71,6 +72,7 @@ function attemptDto(raw: unknown): Attempt {
   const a = data as unknown as Attempt
   if (!a.finishedAt && (a.reveal != null || a.revealKind != null || a.checklist != null))
     return contractError('마무리 전 응답에 정답·예시·체크리스트가 포함되어 표시하지 않았습니다.')
+  a.reflection = recordReflection(a.reflection)
   if (a.draft) a.draft = draftDto(data.draft, a.mission.inputType)
   return a
 }
@@ -107,16 +109,32 @@ export function createApiGateway(): ClassroomGateway {
   const conversations = new Map<string, string>()
   const regenerating = new Map<string, number>()
   async function childRecords(child: Child, role: 'STUDENT' | 'PARENT', period: Period) {
-    const path =
-      role === 'STUDENT'
-        ? '/students/me/attempts'
-        : `/children/${child.id}/attempts?from=${period.from}&to=${period.to}`
-    const rows = list(await apiFetch<unknown>(path)).map((raw) => publicAttempt(attemptDto(raw)))
-    if (rows.some((a) => a.studentId !== child.id))
-      return contractError('목록에 요청 범위 밖의 자녀 기록이 있습니다.')
-    return role === 'STUDENT'
-      ? rows.filter((a) => a.answers.some((v) => inPeriod(v.submittedAt, period)))
-      : rows
+    const path = role === 'STUDENT' ? '/students/me/attempts' : `/children/${child.id}/attempts`
+    const rows: import('../../domain/classroom.ts').PublicAttempt[] = []
+    let total: number | undefined
+    for (let page = 0; ; page++) {
+      const query = new URLSearchParams({ from: period.from, to: period.to, page: String(page), size: '100' })
+      const data = object(await apiFetch<unknown>(`${path}?${query}`))
+      if (data.state === 'FAILED' || data.state === 'PROCESSING')
+        throw new ApiError({ status: 503, code: 'QUERY_UNAVAILABLE', title: '학습 기록 조회를 완료하지 못했습니다.', retryable: true })
+      const actual = object(data.period)
+      const owner = role === 'STUDENT' ? data.studentId : data.childId
+      if (owner !== child.id || actual.from !== period.from || actual.to !== period.to ||
+          !['OK', 'NO_RECORD', 'INSUFFICIENT_SAMPLE'].includes(String(data.state)) ||
+          data.page !== page || !Number.isSafeInteger(data.size) || Number(data.size) < 1 || Number(data.size) > 100 ||
+          !Number.isSafeInteger(data.totalElements) || Number(data.totalElements) < 0 ||
+          (total !== undefined && data.totalElements !== total))
+        return contractError('학습 기록의 대상·기간·페이지가 요청과 일치하지 않습니다.')
+      total = Number(data.totalElements)
+      const batch = list(data).map((raw) => publicAttempt(attemptDto(raw)))
+      if (batch.length > Number(data.size) || batch.some((a) => a.studentId !== child.id || rows.some((r) => r.attemptId === a.attemptId)) ||
+          new Set(batch.map((a) => a.attemptId)).size !== batch.length)
+        return contractError('학습 목록의 대상 또는 중복 기록을 확인해 주세요.')
+      rows.push(...batch)
+      if (rows.length === total) return rows
+      if (rows.length > total || batch.length !== Number(data.size))
+        return contractError('학습 목록이 전체 건수와 일치하지 않습니다.')
+    }
   }
   return {
     demo: false,
@@ -222,9 +240,9 @@ export function createApiGateway(): ClassroomGateway {
       return { ...m, id: text(m.missionId ?? m.id, 'missionId') } as unknown as Mission
     },
     records: childRecords,
-    async record(child, id) {
+    async record(child, id, period) {
       const a = publicAttempt(
-        attemptDto(await apiFetch<unknown>(`/children/${child.id}/attempts/${id}`)),
+        attemptDto(await apiFetch<unknown>(`/children/${child.id}/attempts/${id}${period ? `?${new URLSearchParams({ from: period.from, to: period.to })}` : ''}`)),
       )
       if (a.studentId !== child.id) return contractError('요청한 자녀와 원문의 자녀가 다릅니다.')
       return a

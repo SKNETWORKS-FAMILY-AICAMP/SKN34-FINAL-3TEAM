@@ -27,6 +27,7 @@ class GenerateReport:
     period_to: date
     trigger: str
     narrative_enabled: bool
+    display_name: str | None = None
     requested_at: datetime | None = None
 
     def __post_init__(self) -> None:
@@ -55,6 +56,19 @@ class GenerationResult:
     state: ReportState
     inclusion_rule: str | None = None
     items: tuple["ReportItem", ...] = ()
+    narrative: dict[str, Any] | None = None
+    verification: dict[str, bool] | None = None
+    versions: dict[str, str | None] | None = None
+    evening_question: str | None = None
+    generated_at: datetime | None = None
+    files: tuple["ReportFile", ...] = ()
+
+
+@dataclass(frozen=True)
+class ReportFile:
+    format: str
+    key: str
+    size_bytes: int
 
 
 class ItemType(StrEnum):

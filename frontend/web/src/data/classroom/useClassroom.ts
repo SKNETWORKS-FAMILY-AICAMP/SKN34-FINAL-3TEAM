@@ -104,10 +104,10 @@ export function useAttempt(id: string | null) {
     retry: false,
   })
 }
-export function usePublicRecord(child: Child | undefined, id: string | null) {
+export function usePublicRecord(child: Child | undefined, id: string | null, period?: Period) {
   return useQuery({
-    queryKey: ['public-record', child?.id, id],
-    queryFn: () => gateway.record(child!, id!),
+    queryKey: ['public-record', child?.id, id, period],
+    queryFn: () => gateway.record(child!, id!, period),
     enabled: !!child && !!id,
     retry: false,
   })

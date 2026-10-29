@@ -1,4 +1,5 @@
 import { apiFetch, ApiError } from '../apiClient.ts'
+import { recordDto } from '../recordDto.ts'
 import { streamSse } from '../sse.ts'
 import { reduceAnalysis } from '../../domain/parent.ts'
 import type { Child, Period, PublicAttempt } from '../../domain/classroom.ts'
@@ -68,16 +69,20 @@ export const parentApi = {
       scope,
     )
   },
-  async records(scope: Scope, signal?: AbortSignal) {
-    return assertChild(
-      await apiFetch<RecordPage>(`/children/${item(scope.childId)}/attempts?${range(scope)}`, {
+  async records(scope: Scope, signal?: AbortSignal, page = 0) {
+    const result = assertChild(
+      await apiFetch<RecordPage>(`/children/${item(scope.childId)}/attempts?${range(scope)}&page=${page}&size=20`, {
         signal,
       }),
       scope,
     )
+    return { ...result, items: result.items.map((row) => recordDto(row, scope.childId)) }
   },
-  record: (childId: string, id: string, signal?: AbortSignal) =>
-    apiFetch<PublicAttempt>(`/children/${item(childId)}/attempts/${item(id)}`, { signal }),
+  async record(childId: string, id: string, signal?: AbortSignal, period?: Period) {
+    const result = await apiFetch<PublicAttempt & { state: import('../../domain/queryState.ts').QueryState; period: Period }>(
+      `/children/${item(childId)}/attempts/${item(id)}${period ? `?${range(period)}` : ''}`, { signal })
+    return { ...result, ...recordDto(result, childId) }
+  },
   conversations: (childId: string, signal?: AbortSignal) =>
     apiFetch<Page<Conversation>>(`/conversations?childId=${item(childId)}`, { signal }),
   conversation: (id: string, signal?: AbortSignal) =>

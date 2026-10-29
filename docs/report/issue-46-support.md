@@ -118,3 +118,24 @@ PR 메타데이터 후보(최종 준비 시 실제 등록값 재조회): `enhanc
 - 프론트 `npm test`: **87개 통과**, lint·build 성공. UNKNOWN 전체 완료 오표시 방지, NOT_APPLIED 변경 대상 없음/오류 아님 표시, 누락/잘못된 형식의 성공 대체 방지, 공개 409/422 보존을 확인했다. 기존 500KB 번들 안내는 남아 있다.
 - `python scripts/validate_support_contracts.py`: 실제 MockMvc JSON **7종**(기존 5종 + 공개 정정 409/422)의 스키마·UUID·시각 형식 통과. 검증 소스(core·프론트·OpenAPI)와 worktree SHA-256 일치 확인. bootJar SHA-256 `daa92b31881b92c0be57170ac264782152776391501e9dadfafdc7b8e5830c74`.
 - production 의존성·DB 스키마·마이그레이션·인증 기반·공급자 구현은 변경하지 않았다. 이번에는 영향받지 않은 전체 DB cycle·이전 전체 core 회귀·실제 브라우저/Google·실제 learning E2E·원격 CI·배포를 반복하지 않았다. `git diff --check` 통과. 이슈 초안은 대화에 제공하며 실제 생성/전송하지 않는다.
+
+
+## 최신 develop 통합 (2026-10-29)
+
+- 기존 작업 HEAD `e13626bfb9f205c51f01cad7cd2e70b0bf0338d5`와 원격 feature/core-support를 보존하고, develop `c608f52aa0f7b651133603a629a8347be61b3282`를 일반 merge로 반영한다. 최초 공통 기준은 `7f30c2e`다. rebase/squash/force push를 사용하지 않는다.
+- 실제 충돌 파일은 contracts/openapi/core-service.yaml 1개였다. develop의 #40 대시보드 경로·DTO 스키마와 #46 지원 경로·스키마가 같은 삽입 위치에 추가돼 Git 텍스트 병합에서 10개 충돌 구간으로 나타났다.
+- develop OpenAPI 원문을 기준으로 기존 정의를 교체하지 않고 #46의 새 경로 14개·스키마 15개·Support tag만 추가했다. 두 브랜치의 동일 기본 경로·스키마에 대한 #46 변경은 없음을 확인하고 접합했다. 대시보드/지원 기능의 한쪽 선택이나 기존 로직의 삭제·재구현은 하지 않는다.
+- 자동 병합된 최신 CI·SSE·대시보드·테스트 연결 풀·learning 판정 규칙·report 변경은 develop 내용을 유지한다. 이번 충돌 해결로 별도 production 의존성·DB 마이그레이션·공개 동작을 추가하지 않는다. #80 및 별도 조회 공급자와 실제 정정 E2E가 미완료라는 상태도 유지한다.
+- 이 절의 검증 결과는 아래에 기록한다. 이전 core 204개·영향 범위 17개 기록과 최신 develop 통합 결과를 혼동하지 않는다.
+
+
+### develop 통합 검증 결과
+
+- 기반영 보존 검사 통과: develop의 모든 경로·스키마·보안 스킴·공통 components·root metadata를 그대로 유지하고 #46의 경로 14개·스키마 15개를 모두 보존했다. 병합 결과 경로 74개·스키마 94개, YAML 중복 키 없음. develop 단독 파일에 추가 수정 없음도 Git diff로 확인했다. 기존 지원 코드·기존 커밋 이력을 재작성하지 않았다.
+- JDK 21 전체 `test bootJar` 성공: **222개**, 38개 클래스, 실패·오류·건너뜀 0. DashboardIntegrationTest 13개·DashboardQueryTest 2개, support 17개 포함. 기존 인증·알림·리포트·피드백·SSE·메시징 회귀 포함. 실제 PostgreSQL·Redis·RabbitMQ는 격리 Testcontainers를 사용하며 learning HTTP는 계약 대역이다.
+- 검증 실행은 전용 Linux source/cache와 `--memory=2g --cpus=2`, worker/fork 1·JVM heap 512MiB를 사용했다. 검증한 core·프론트·OpenAPI 파일과 worktree SHA-256 일치를 확인했다. bootJar SHA-256 `d0b2287aed90d50038997a924d1db7eea03f6cb01c2f0653ba3551efc8387c4d`.
+- `python -O -m unittest discover -s scripts/tests -q`: **63개 통과**. #40 실제 controller/DTO 계약과 #46 경로·정정 오류·impact·인증 계약이 함께 대조됐다.
+- 프론트 `npm test`: **92개 통과**, lint·build 성공. 대시보드 기록 소비자와 지원 impact/오류 소비자 회귀가 함께 통과했다. 기존 500KB 번들 안내는 남아 있다.
+- 새 격리 PostgreSQL의 전체 migration cycle·ERD 대조 통과: core 40테이블/365컬럼, learning 19/158, report 7/50, 위반 입력 60건·CHECK 71집합·ERD 인덱스 23개. core V14와 learning V6·report 삭제 guard가 함께 적용됐으며 재실행 0건·이력 불변·report downgrade/upgrade 후 재대조도 통과했다. 기존 공유 서비스·DB는 수정하지 않았다.
+- 실제 테스트가 생성한 support 7종·알림 2종·report 이벤트 4종/HTTP 상세의 JSON 계약 대조 통과. `git diff --check`와 staged diff 공백 검사 통과, 충돌 마커·unmerged path 없음.
+- 충돌 해결 중 기반영 production 로직·설정·계약을 별도로 수정할 필요가 없었다. 수동 수정은 OpenAPI의 additive 접합과 이 보고서 기록이다. 실제 #80/별도 조회 공급자 E2E·Google/브라우저 실검증·원격 CI·배포를 이번 병합 검증에서 완료했다고 표시하지 않는다.

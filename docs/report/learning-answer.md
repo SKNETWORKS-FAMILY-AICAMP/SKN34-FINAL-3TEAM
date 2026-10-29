@@ -29,7 +29,7 @@ learning-service의 `POST /internal/attempts/{id}/answers`를 만들고, 시도 
 | `Idempotency-Key` | 없거나 UUID가 아니면 `400 VALIDATION_FAILED` | ERD `answer.idempotency_key uuid NOT NULL`. 프론트는 `crypto.randomUUID()`로 만듦 |
 | 입력 방식 불일치 | 요청 `inputType`이 시도에 고정된 미션 버전의 입력 방식과 다르면 `400 VALIDATION_FAILED`(detail에 미션 입력 방식) | 이슈 #24 "미션 입력 방식과 불일치 시 400" |
 | 누락 검사 | 서술: 글 / 풀이: 최종 답 + 비어 있지 않은 단계 1개 이상 / 논술: 주장·까닭 2개·반대 의견 답 모두 / 고르기: 미션 선택지 중 1개 / 순서: 미션 선택지 전부 한 번씩 / 분류: 미션 선택지 전부 한 번씩, 그룹 비어 있지 않음. 아니면 `422 ANSWER_INCOMPLETE`, detail은 프론트 `validateAnswer`와 같은 안내 문구 | FN-LRN-04·05, api-spec 3.8. 화면과 서버가 같은 문구를 보여 줌 |
-| 분류의 그룹 | 그룹 ID가 미션 그룹 목록에 있는지는 확인하지 않음 | 미션 그룹(`categories`)을 저장할 곳이 ERD에 없음. #22에서 프론트가 추후 맞추기로 함 |
+| 분류의 그룹 | 그룹 ID가 미션 그룹 목록에 있는지는 확인하지 않음 | 미션 그룹(`categories`)을 저장할 곳이 ERD에 없음. #22에서 프론트가 추후 맞추기로 함 → #79에서 확정([판정 규칙 보고서](learning-judgment-rules.md)): `mission_version.categories`, 없는 그룹 422 |
 | 저장 내용 | 입력 방식에 쓰는 필드만 `content`에 저장(`AnswerContent.only`), 메모·다른 방식 필드는 버림 | api-spec 3.8 "메모는 제출에 포함하지 않는다"(P05). 요청에 `memo`가 와도 저장하지 않음을 실제 호출로 확인 |
 | 원문(`plain_text`) | 서술은 글 그대로. 풀이는 `"{입력 틀 칸 이름 또는 단계 n}: 단계"` 줄들 + `"최종 답: …"`. 논술은 `"주장: …"`·`"까닭 1: …"`·`"까닭 2: …"`·`"반대 의견에 답하기: …"`(입력 틀이 4칸이면 그 이름). 고르기·순서는 선택지 이름을 `" → "`로. 분류는 `"선택지 이름: 그룹"` 줄들 | ERD `answer.plain_text`는 판정 인용 대조용 원문(#25). 칸 이름이 있어야 판정·되묻기가 어느 칸의 말인지 앎. 시도 상세 `text`로도 보여 줌 |
 | 보완 답변 연결 | 첫 답변은 `followupId` 없이. 버전 2부터는 이 시도의 가장 최근 되묻기이면서 아직 답한 답변이 없는 것의 ID만. 아니면 `422 ANSWER_INCOMPLETE`("지금은 답할 추가 질문이 없어요." / "현재 추가 질문에 연결해 주세요." / "첫 답변은 추가 질문에 연결하지 않아요.") | 이슈 #24 "해당 시도의 되묻기인지 확인", FN-LRN-09. 되묻기는 판정이 끝나야 생기고 시도당 2회까지라(P04) 판정 전 추가 제출·네 번째 답변·고르기 정답 뒤 제출이 같은 규칙으로 막힘. 프론트 목업도 직전 되묻기에만 연결 |
@@ -91,4 +91,4 @@ learning-service의 `POST /internal/attempts/{id}/answers`를 만들고, 시도 
 
 - #25 피드백: 판정 실행·결과 저장·되묻기 생성, 시도 상세 `answers[].feedback`의 결과·되묻기와 `nextActions`
 - 답변 길이 상한: 문서에 없음. 판정 입력 크기(P12)와 함께 정함
-- 분류 그룹 ID 확인: 미션 그룹(`categories`) 저장 위치가 정해지면 추가
+- 분류 그룹 ID 확인: 미션 그룹(`categories`) 저장 위치가 정해지면 추가 → #79에서 확정([판정 규칙 보고서](learning-judgment-rules.md))

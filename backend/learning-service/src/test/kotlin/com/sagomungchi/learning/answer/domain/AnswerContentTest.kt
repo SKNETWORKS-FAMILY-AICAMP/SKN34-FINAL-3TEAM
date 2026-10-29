@@ -1,6 +1,7 @@
 package com.sagomungchi.learning.answer.domain
 
 import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning.mission.domain.Category
 import com.sagomungchi.learning.mission.domain.Choice
 import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.missionView
@@ -13,8 +14,11 @@ import kotlin.test.assertEquals
 class AnswerContentTest {
     private val choices = listOf(Choice("a", "물"), Choice("b", "얼음"), Choice("c", "수증기"))
 
-    private fun mission(inputType: InputType, inputTemplate: List<String> = emptyList()) =
-        missionView(grade = 3, inputType = inputType).copy(choices = choices, inputTemplate = inputTemplate)
+    private val categories = listOf(Category("g1", "액체"), Category("g2", "고체"))
+
+    private fun mission(inputType: InputType, inputTemplate: List<String> = emptyList(), answerUnit: String? = null) =
+        missionView(grade = 3, inputType = inputType)
+            .copy(choices = choices, inputTemplate = inputTemplate, categories = categories, answerUnit = answerUnit)
 
     private fun assertIncomplete(inputType: InputType, content: AnswerContent, message: String) {
         val error = assertThrows<BusinessException> { content.requireComplete(inputType, mission(inputType)) }
@@ -43,7 +47,7 @@ class AnswerContentTest {
     }
 
     @Test
-    fun `고르기는 미션 선택지 하나, 순서는 모든 선택지, 분류는 모든 선택지를 한 그룹씩`() {
+    fun `고르기는 미션 선택지 하나, 순서는 모든 선택지, 분류는 모든 선택지를 미션 그룹에 한 번씩`() {
         assertIncomplete(InputType.CHOICE, AnswerContent(choiceIds = listOf("a", "b")), "답을 하나 골라 주세요.")
         assertIncomplete(InputType.CHOICE, AnswerContent(choiceIds = listOf("z")), "답을 하나 골라 주세요.")
         assertIncomplete(InputType.ORDERING, AnswerContent(choiceIds = listOf("a", "b")), "모든 항목의 순서를 정해 주세요.")
@@ -52,22 +56,27 @@ class AnswerContentTest {
         assertIncomplete(InputType.CLASSIFICATION, AnswerContent(assignments = twice), classifyMessage)
         val blank = listOf(Assignment("a", "g1"), Assignment("b", ""), Assignment("c", "g2"))
         assertIncomplete(InputType.CLASSIFICATION, AnswerContent(assignments = blank), classifyMessage)
+        val unknown = listOf(Assignment("a", "g1"), Assignment("b", "g9"), Assignment("c", "g2"))
+        assertIncomplete(InputType.CLASSIFICATION, AnswerContent(assignments = unknown), classifyMessage)
 
         assertDoesNotThrow {
             AnswerContent(choiceIds = listOf("b")).requireComplete(InputType.CHOICE, mission(InputType.CHOICE))
             AnswerContent(choiceIds = listOf("c", "a", "b")).requireComplete(InputType.ORDERING, mission(InputType.ORDERING))
-            AnswerContent(assignments = choices.map { Assignment(it.id, "g") })
+            AnswerContent(assignments = choices.map { Assignment(it.id, "g1") })
                 .requireComplete(InputType.CLASSIFICATION, mission(InputType.CLASSIFICATION))
         }
     }
 
     @Test
-    fun `원문은 입력 틀의 칸 이름을 붙이고, 고르기는 선택지 이름으로`() {
+    fun `원문은 입력 틀의 칸 이름과 답 단위를 붙이고, 고르기는 선택지 이름, 분류는 그룹 이름으로`() {
         val steps = AnswerContent(finalAnswer = "6", steps = listOf("2씩 3묶음", "", "더함"))
         assertEquals(
             "알아낸 것: 2씩 3묶음\n단계 3: 더함\n최종 답: 6",
             steps.plainText(InputType.SOLUTION_STEPS, mission(InputType.SOLUTION_STEPS, listOf("알아낸 것", "식"))),
         )
+        val unit = mission(InputType.SOLUTION_STEPS, listOf("식"), answerUnit = "개")
+        assertEquals("식: 2×3\n최종 답: 6 개", AnswerContent(finalAnswer = "6", steps = listOf("2×3")).plainText(InputType.SOLUTION_STEPS, unit))
+        assertEquals("식: 2×3\n최종 답: 6개", AnswerContent(finalAnswer = "6개", steps = listOf("2×3")).plainText(InputType.SOLUTION_STEPS, unit))
 
         val essay = AnswerContent(essay = Essay("찬성", listOf("안전", "편리"), "그래도 필요"))
         assertEquals(
@@ -77,7 +86,7 @@ class AnswerContentTest {
         assertEquals("수증기 → 물 → 얼음", AnswerContent(choiceIds = listOf("c", "a", "b")).plainText(InputType.ORDERING, mission(InputType.ORDERING)))
         assertEquals(
             "물: 액체\n얼음: 고체",
-            AnswerContent(assignments = listOf(Assignment("a", "액체"), Assignment("b", "고체")))
+            AnswerContent(assignments = listOf(Assignment("a", "g1"), Assignment("b", "g2")))
                 .plainText(InputType.CLASSIFICATION, mission(InputType.CLASSIFICATION)),
         )
     }

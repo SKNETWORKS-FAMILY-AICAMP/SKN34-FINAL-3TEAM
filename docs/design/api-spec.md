@@ -64,7 +64,8 @@
 | `STUDENT_PIN_NOT_SET` | 409 | PIN 미설정 자녀의 PIN 로그인 → 학부모 동석 진입 안내 (FN-ACC-05) |
 | `PAIRING_CODE_INVALID` | 400 | 페어링 코드 없음·만료·이미 사용 (FN-ACC-14) |
 | `NOT_FOUND` | 404 | 리소스 없음 |
-| `DATA_UNAVAILABLE` | 410 | 삭제된 근거 → "이용 불가" 표시 (FN-ACC-13) |
+| `DATA_UNAVAILABLE` | 410 / 503 | 삭제된 근거 → "이용 불가" 표시(410), report 원문 조회·파일 저장소 장애는 재시도 가능한 503 |
+| `DELETION_IN_PROGRESS` | 409 | report 학생 삭제가 진행 중이므로 조회를 잠시 차단 |
 | `VALIDATION_FAILED` | 400 | 형식 오류 (`errors[]`에 필드별 사유) |
 | `ANSWER_INCOMPLETE` | 422 | 필요한 선택·입력 누락 (FN-LRN-04) |
 | `IDEMPOTENCY_KEY_REUSED` | 422 | 같은 키에 다른 요청 본문 |
@@ -90,6 +91,7 @@
 | `CONSENT_DOCUMENT_CHANGED` / `CONSENT_DOCUMENTS_UNAVAILABLE` | 409 / 503 | 제출한 동의 문서 버전이 현재와 다름 / 게시된 동의 문서 확인 실패 (5.3) |
 | `IDEMPOTENCY_IN_PROGRESS` / `IDEMPOTENCY_UNAVAILABLE` | 409 / 503 | 같은 키 처리 중(`Retry-After: 1`) / 멱등 기록 저장소 장애 (1.4) |
 | `LEARNING_UNAVAILABLE` / `LEARNING_TIMEOUT` / `LEARNING_CIRCUIT_OPEN` | 503 / 504 / 503 | core→learning 호출 실패 / 시간 초과 / 서킷 차단 (1.4) |
+| `LEARNING_CONTRACT_INVALID` | 502 | 대시보드 공급자의 JSON·학생 식별자·필수 조회 봉투 계약 위반. 기록 없음으로 대체하지 않음 (#40, 2.3) |
 | `MODEL_VERSION_CONFLICT` / `MODEL_APPROVAL_REJECTED` / `MODEL_VERSION_STATE_INVALID` | 409 / 422 / 503 | 허용되지 않는 전이·복귀 이력 없음 / 승인 근거·범위 부족 / 기존 ACTIVE 상태 불완전 (5.2) |
 | `LEARNING_INVALID_RESPONSE` | 502 | 피드백 SSE에서 learning 응답 형식 오류 (3.2) |
 | `SUPPORT_CORRECTION_CONFLICT` / `SUPPORT_CORRECTION_REJECTED` | 409 / 422 | learning 정정 POST의 업무 충돌 / 요청 거부. 공급자 본문은 공개하지 않음 (5.7) |
@@ -245,13 +247,20 @@
 - 판정 규칙 (FN-JDG-01~05)
   - 고르기·수학 최종 답: 규칙 판정
   - 서술·논술: LLM 근거 추출 → 코드 원문 대조
-  - 풀이 단계: 풀이는 LLM 근거 추출, 최종 답은 수학 동치 규칙으로 판정해 합침 (state-diagram 3.3)
+  - 풀이 단계: 풀이는 LLM 근거 추출, 최종 답은 수학 동치 규칙으로 판정해 합침 (state-diagram 3.3). 최종 답 결과는 기준표 `FINAL_ANSWER` 요소로 기록. 단위는 비교하지 않고 미션 `answerUnit`으로 답 칸 뒤에 고정 표시 (FN-JDG-02)
   - 근거 없는 요소는 `satisfied: false`
   - 검증 전 결과는 `trial: true`("AI 채점(시범)")
   - 숫자 레벨은 응답에 포함하지 않음
 - 판정 보류(`HELD`)와 처리 실패(`FAILED`)는 서로 다른 필드로 구분 (NFR-REL-04)
 
 ### 2.3 대시보드 (FN-DSH)
+
+#40 구현 계약: 아래 7개 GET은 `from`·`to`를 함께 받는다. 모두 생략하면 **KST 오늘 포함 최근 7일**이며 한쪽만 지정하거나 역전/유효하지 않은 날짜(연도 0001~9999 밖 포함)는 400 VALIDATION_FAILED다. 양 끝 날짜 포함, learning 조회 시 `[from 00:00 KST, to 다음날 00:00 KST)` 경계다. 응답 period는 실제 learning 조회 결과를 보존한다. 목록 page는 0 이상, size는 1~100(기본 20), status는 생략 또는 IN_PROGRESS/COMPLETED다. 상세 기간은 화면 범위 메타데이터이며 답변 이력 자체를 자르지 않는다.
+
+학생 home은 core의 현재 학생 프로필과 learning `/internal/records/students/{studentId}/home?from&to&grade&demo`를 조합한다. 학생 attempts/thinking-activities 및 학부모 summary/thinking-types/attempts/attempts/{attemptId}는 같은 내부 records 경로에 대응한다. 내부 studentId는 검증된 STUDENT scope 또는 현재 연결·활성·동의를 확인한 자녀다. 내부 records/home의 resume는 제출 전 시도도 식별하되 draft·memo를 포함하지 않는다. core는 해당 attemptId로 기존 학생 전용 `/internal/attempts/{attemptId}`를 조회해 검증된 본인 초안을 공개 home.resume에 조합한다. 두 번째 조회 실패도 홈 조회 실패이며 부분 성공/빈 이어하기로 대체하지 않는다. 공개 home resume는 집계 기간 밖의 제출 전 초안도 포함할 수 있지만 집계·목록은 P08 기준을 유지한다. 집계/미션 선정은 learning 소유다.
+
+정식 공개 DTO는 core OpenAPI의 Dashboard 스키마, 내부 공급자 DTO는 #27 learning OpenAPI의 Record 스키마를 따른다. #40 재리뷰: 내부 records 응답 식별자는 호출 역할과 무관하게 studentId로 통일하고, core가 학부모 요약·유형·목록의 최상위 식별자만 childId로 매핑한다. #27은 core·ai·report 공용이므로 역할별 응답 모양을 요구하지 않는다. Metric의 필수 값·타입과 다섯 생각 유형의 누락/중복은 502 계약 오류로 처리하며 수치를 보충하지 않는다. 프론트는 선택 기간과 페이지를 요청하고 상세에도 같은 기간을 전달한다. reflection의 EASY/NORMAL/HARD·nullable text는 프론트 표시 경계에서 기존 한국어 선택값·빈 표시문으로 변환한다. 학부모 상세는 기존 Attempt 최상위 구조에 state·period를 추가하고 draft·중첩 memo를 제외한다. thinking-activities는 `{studentId,state,period,items:[{attemptId,thinkingType,missionTitle,reflection}]}`다. 공급자 조회 실패는 오류이며 NO_RECORD가 아니다. `/exists`는 이 계약의 구현 완료를 뜻하지 않는다. preferences는 #40 범위 밖이다. #27 통합: completedAt·hintUsages와 기록 reflection.createdAt을 공개 DTO에서도 보존한다. 홈은 records resume의 메타데이터를 유지하고 학생 전용 상세에서 draft만 조합한다. finishedAt은 마무리 공개 시각, completedAt은 돌아보기 제출 완료 시각이며 이전에는 각각 null이다. reflection이 있으면 createdAt은 필수다.
+
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
 | GET | `/students/me/home` | 학생 | 학생 정보, 이어할 시도, 시작 가능한 미션 경로 | DSH-01, DSH-02 | 제안 |
@@ -504,6 +513,10 @@ data: {}
 }
 ```
 
+- 리포트 상세의 `reflections[].difficulty`는 표시값 `쉬웠어요`·`보통`·`어려웠어요`이며 PDF·HTML·Markdown도 같은 표시값을 쓴다. learning 입력과 report 내부 저장의 `EASY`·`NORMAL`·`HARD` 코드는 출력 조립 시 변환한다. 미작성·기간 밖이면 `written:false`, `difficulty:null`, `text:null`이다. 선택 텍스트 없이 난이도만 작성한 기록은 `written:true`, `text:null`로 구분한다.
+
+- 리포트 상세의 `changes[].followup`은 문자열 또는 null이다. 학습 기록 API 4.1.1에서 되묻기 없이 제출한 보완 답변도 비교하므로, 질문이 없는 경우 null을 그대로 반환하고 최초/최종 답변 및 계산 수치는 유지한다. 저장된 결과를 임의 질문이나 빈 기록으로 대체하지 않는다.
+
 ### 3.5 결제 승인 — `POST /payments/confirm`
 ```jsonc
 // 요청 (결제위젯 successUrl 쿼리 값)
@@ -540,7 +553,7 @@ If-Match: "7"
 - `POST /auth/refresh`: 학부모·관리자만 httpOnly 쿠키로 갱신한다. 학생은 refresh 미발급이며 3.11에 따라 재진입한다. 동시 만료 요청은 refresh 1회 공유, 원 요청은 1회만 재시도한다.
 - `POST /auth/student-sessions`: 요청 `{childId}`. 응답은 구현 계약 5.1·OpenAPI가 우선이다(`{accessToken,expiresIn,role:STUDENT,child,nextAction,startPath}`).
 - `GET /children`: 이 절의 `{childId,nickname,grade,birthYear,plan:FREE|PREMIUM}`은 #7 목업 초안이다. **5.3·core OpenAPI 확정 계약이 우선**이며 실제 식별자는 `id`, #37 응답은 `plan`을 생성하지 않는다. PIN 확장·상품/권한 응답은 별도 후속 계약이다.
-- 학생 조회의 목업 DTO는 `frontend/web/src/domain/classroom.ts`의 화면 모델을 잠정 사용한다. Mission(제목·교과·학년·유형·질문·장면 표시 정보. 실제 learning 미션 상세는 `{id,title,subject,grade,gradeMax,thinkingType,inputType,question,hint,sceneUri,staticSceneUri,choices,inputTemplate}`이며 `scene`·`categories`는 미제공, [이슈 #22 보고서](../report/learning-mission.md)), Attempt(attemptId·studentId·mission·status·answers·도움·돌아보기), 목록은 1.1 봉투. draft는 3.6처럼 `{version,content:{answer,memo},savedAt}`로 직렬화한다. finish 전 reveal은 전송하지 않는다.
+- 학생 조회의 목업 DTO는 `frontend/web/src/domain/classroom.ts`의 화면 모델을 잠정 사용한다. Mission(제목·교과·학년·유형·질문·장면 표시 정보. 실제 learning 미션 상세는 `{id,title,subject,grade,gradeMax,thinkingType,inputType,question,hint,sceneUri,staticSceneUri,choices,inputTemplate,categories,answerUnit}`이며 `scene`은 미제공. `categories`는 분류 그룹 `[{id,label}]`(분류가 아니면 `[]`), `answerUnit`은 수학 최종 답 칸 뒤에 고정할 단위(없으면 `null`, #79), [이슈 #22 보고서](../report/learning-mission.md)), Attempt(attemptId·studentId·mission·status·answers·도움·돌아보기), 목록은 1.1 봉투. draft는 3.6처럼 `{version,content:{answer,memo},savedAt}`로 직렬화한다. finish 전 reveal은 전송하지 않는다.
 - 학생 홈·입력 틀 상세·최종 체크리스트의 완전한 DTO, SOLUTION_STEPS·CLASSIFICATION 제출 필드는 아직 미확정이다. 이 초안으로 임의 확정하거나 완료 체크하지 않는다.
 - 시나리오 선택은 개발 브라우저 내부 이벤트로 전달하며 `/api/v1`에 가짜 운영 경로를 추가하지 않는다.
 
@@ -548,8 +561,8 @@ If-Match: "7"
 
 아래는 6종 입력·홈·이어하기·마무리를 MSW로 구현하기 위한 프론트 계약 초안이다. 실제 Controller/OpenAPI 확정을 대신하지 않는다. 목 OFF에서도 같은 직렬화·경로를 사용하며, 실제 통합 검증은 별도다.
 
-- `SOLUTION_STEPS` 제출: `{inputType:"SOLUTION_STEPS",finalAnswer:"...",steps:["..."]}`. 최종 답과 비어 있지 않은 풀이 단계 1개 이상 필수.
-- `CLASSIFICATION` 제출: `{inputType:"CLASSIFICATION",assignments:[{choiceId:"c1",categoryId:"g1"}]}`. 미션의 모든 choice를 정확히 한 그룹에 배정한다. 미션 상세에 `categories:[{id,label}]`를 제공한다(분류 그룹 저장 위치 결정 전까지 현재 learning 미제공, #79). 미정 그룹·항목·중복 배정은 422.
+- `SOLUTION_STEPS` 제출: `{inputType:"SOLUTION_STEPS",finalAnswer:"...",steps:["..."]}`. 최종 답과 비어 있지 않은 풀이 단계 1개 이상 필수. 최종 답은 수만 쓰면 되고 단위는 `answerUnit`으로 칸 뒤에 고정해 보여 줌(단위는 비교하지 않음, #79).
+- `CLASSIFICATION` 제출: `{inputType:"CLASSIFICATION",assignments:[{choiceId:"c1",categoryId:"g1"}]}`. 미션의 모든 choice를 정확히 한 그룹에 배정한다. 미션 상세에 `categories:[{id,label}]`를 제공한다(`mission_version.categories`, #79). 미정 그룹·항목·중복 배정은 422.
 - `CHOICE`는 choiceIds 1개, `ORDERING`은 모든 choiceIds를 중복 없이 순서대로 전달한다. 모든 방식에 `dictatedByGuardian`(boolean)과 보완 시 `followupId`를 공통 적용한다. 메모는 제출에 포함하지 않는다.
 - 미션 목록 항목: 기존 Mission + `status:NOT_STARTED|IN_PROGRESS|COMPLETED`, `attemptId?`, `position`, `total`. 공개 문항은 초3·초5 각 5개를 유지하고, 6종 입력 계약 시험용 추가 문항은 별도 개발 시나리오에만 제공한다.
 - `GET /students/me/home`: `{student:Child,state:QueryState,period:{from,to},resume:Attempt|null,missions:Mission[]}`. 제출 전 초안만 있는 시도도 resume에 포함한다. 정답/예시/reveal/checklist는 마무리 전에 제공하지 않는다.
@@ -578,7 +591,7 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 - overview: `{period,state,inclusionRule,attempts,completed,jobCounts:[{type,status,count}],missionCounts:[{status,count}]}`. 숫자는 목업 데이터에서 집계한다. 작업/미션 클릭 시 해당 필터 목록으로 연결한다.
 - jobs 목록: 1.1 봉투. 항목 `{jobId,type,status,retryCount,failureReason,createdAt,updatedAt,executions:[{executionId,attemptNo,status,errorCode,errorDetail,triggeredBy,startedAt,finishedAt}]}`. retry는 같은 키의 최초 응답을 반환한다. 재시도 결과가 실패면 FAILED 유지. queues: `{items:[{name,length,dlq}]}`. audit 항목 `{id,actorUserId,action,targetType,targetId,result,detail,createdAt}`.
 - 운영 요약 → 작업 목록의 집계 범위 유지를 위해 jobs 조회에 선택적 `from&to` 필터를 목업에서 함께 사용한다. 실제 backend의 필터 계약 확인 대상이다. 전후 변화 연결어는 `왜냐하면·때문·그래서·따라서`를 사용한다(#51에서 서버 목록도 동일하게 확인, P08). 브라우저 목업 테스트가 서버의 실제 집계·연동 검증을 대신하지는 않는다.
-- mission: `{missionId,status,demoOnly,currentVersion,currentRubricVersion,publishedVersion,versions:[{version,title,subject,gradeMin,gradeMax,thinkingType,inputType,question,guide,scene,sceneUri,staticSceneUri,achievementStandards,choices?,categories?,createdAt}],rubrics:[{version,elements:[{code,label,description,points,commonErrors,goodThought,judgeVerified}],answerKey?,exampleAnswer?,forbiddenTerms,hints}],reviews:[{missionVersion,rubricVersion,result,comment,createdAt}]}`.
+- mission: `{missionId,status,demoOnly,currentVersion,currentRubricVersion,publishedVersion,versions:[{version,title,subject,gradeMin,gradeMax,thinkingType,inputType,question,guide,scene,sceneUri,staticSceneUri,achievementStandards,choices?,categories?,answerUnit?,createdAt}],rubrics:[{version,elements:[{code,label,description,points,commonErrors,goodThought,judgeVerified}],answerKey?,exampleAnswer?,forbiddenTerms,hints}],reviews:[{missionVersion,rubricVersion,result,comment,createdAt}]}`.
 - POST/PATCH mission는 위 version 필드+demoOnly를 받는다. PATCH와 rubric PUT은 새 불변 버전 추가. review-request는 `{missionVersion,rubricVersion}`, review는 같은 버전+`result:APPROVED|CHANGES_REQUESTED,comment`. publish 검증은 현재 버전 검토와 필수 콘텐츠/기준 확인, 422의 `missingFields[]` 표시. preview는 `{mission:Mission,missionVersion,rubricVersion}`이며 학생 장면/입력 컴포넌트만 재사용하고 답안은 포함하지 않는다. 업로드는 미구현(URI만 입력).
 - model-version: ERD 필드 `{id,kind,name,version,status,artifactUri?,evalResult?,approvedBy?,activatedAt?,createdAt}`. 등록/활성화는 평가 근거와 승인자 필요, rollback은 이전 승인 버전을 재활성화하고 재분석 여부를 기록한다. ai-usage: `{period,items:[{callType,calls,failures,latencyMs,inputTokens,outputTokens,costUsd}]}`(원문·학생 ID 없음). 확정 계약은 model-version 5.2(`refId`·`evaluation` 등)·ai-usage 4.6(`unpricedCalls` 등)이 우선한다.
 - error-report 목록/상세는 `{reportId,status,targetType,targetId,category,comment,reviewReason?,corrections:[{reason,corrected,createdAt,impact}],linkedAttempt?:PublicAttempt}`. SERVICE_OPS만 신고 연결 시도 원문을 상세에서 열람하고 매번 감사 기록한다. 정정은 기존 판정을 덮지 않고 새 이력과 영향 반영 여부를 반환한다.
@@ -655,7 +668,7 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 
 | Method | Path | 호출자 | 설명 |
 |---|---|---|---|
-| GET | `/internal/missions?grade&demo&page&size`, `/internal/missions/{id}?grade&demo` | core | 학생용 미션 조회 (2.2 프록시). core가 학생 학년 `grade`(3~6, 필수)와 시연 학생 여부 `demo`(`student.is_demo`, 기본 `false`)를 붙임. `demo_only` 미션은 `demo=true`일 때만 노출 |
+| GET | `/internal/missions?grade&demo&page&size`, `/internal/missions/{id}?grade&demo` | core | 학생용 미션 조회 (2.2 프록시). core가 학생 학년 `grade`(3~6, 필수)와 시연 학생 여부 `demo`(`student.is_demo`, 기본 `false`)를 붙임. `demo_only` 미션은 `demo=true`일 때만 노출. 미션에 분류 그룹 `categories`·수학 답 단위 `answerUnit` 포함(3.8, #79) |
 | POST | `/internal/missions/{id}/attempts?grade&demo` | core | 시도 시작·이어하기 (2.2와 1:1). 조회와 동일하게 core가 인증된 학생의 `grade`(필수, 3~6)와 `demo`(`student.is_demo`, 기본값 `false`)를 전달함. 공개 요청의 `grade`·`demo` 값은 사용하지 않음. 진행 중인 시도가 있으면 미션의 공개 여부나 제공 범위와 관계없이 해당 시도를 반환(`200`)하고, 신규 시도는 `201`을 반환함. core는 응답 상태를 그대로 전달하며, 신규 시도의 제공 범위 검사와 기존 시도의 시작 당시 버전 유지는 learning이 담당함. 일일 한도는 core의 Redis 책임이며, `201` 응답만 집계하는 후속 연계는 2.2 참고 |
 | POST · GET · PUT | `/internal/attempts/...` | core | 시도·초안·도움·답변·마무리·돌아보기·자기 평가 (2.2 경로와 1:1). 생각 열기 응답 형식은 `{question, seq, total}`이며, 질문이 없는 미션은 `404`를 반환함. 시도 상세 `answers[]`는 `{answerId, version, submittedAt, inputType, text(입력 틀 칸 이름을 붙인 원문), followupId, content, feedback}`, `feedback`은 아래 피드백 결과와 같은 모양(판정 전이면 `{status, judgment:null, followup:null, nextActions:[], versions:null}`), 시도 `nextActions`는 마지막 답변의 `nextActions`. 시도 상세의 `reveal`·`revealKind`·`checklist`는 마무리 뒤에만, `reflection{difficulty, text}`는 돌아보기 뒤에만(그 전에는 `null`). 마무리 `finish` → `200 {attemptId, finishedAt, reveal(시도 기준표 버전의 예시 답, 닫힌 문제는 정답과 해설), revealKind(고르기·순서·분류·풀이 단계 `ANSWER`, 서술·논술 `EXAMPLE`), checklist(기준표 요소 전체 3.2 `Element[]`, 이 시도의 처리 완료 판정 중 원문 구절과 함께 충족된 요소만 체크·가장 최근 구절)}`, 판정 `DONE` 1회 미만이면 `409 REVEAL_CONDITION_UNMET`, 다시 요청하면 기록하지 않고 같은 결과. 돌아보기 `reflection` `{difficulty(EASY·NORMAL·HARD, 필수), text(선택, 빈 글은 null)}` → `200 {attemptId, status:"COMPLETED", reflection}`(완료 시점은 시도 상세·기록 조회), 난이도 없음·값 밖 `400`, 마무리 전 `409 REVEAL_CONDITION_UNMET`, 완료 뒤 `409 ATTEMPT_CLOSED`. 자기 평가 `self-assessment` `{checks:[{elementId, checked}]}` → `200 [{elementId, label, selfChecked(체크 안 한 요소는 null), aiChecked, quote}]`(기준표 요소 전체), 마무리 전 `409 REVEAL_CONDITION_UNMET`, 완료 뒤 `409 ATTEMPT_CLOSED`, 비었거나 같은 요소 두 번·기준표 밖 요소 `400`, 다시 보내면 `checked`만 바꿈 |
 | POST | `/internal/attempts/{id}/answers` | core | 답변 제출 (3.1·3.8 형식). `Idempotency-Key`(UUID) 필수, 없거나 형식 오류면 `400`. 같은 키·같은 본문은 처음 답변을 `201`로 다시, 다른 본문은 `422 IDEMPOTENCY_KEY_REUSED`. 미션 입력 방식과 다르면 `400`, 누락은 `422 ANSWER_INCOMPLETE`, 마무리·완료한 시도는 `409 ATTEMPT_CLOSED`. 보완 답변은 가장 최근 미답 되묻기의 `followupId` 필수(아니면 `422 ANSWER_INCOMPLETE`). 저장하면 같은 트랜잭션에서 초안 `content.answer`를 비우고 `memo`는 유지, 초안 `version` +1 |
@@ -704,6 +717,13 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | POST | `/internal/report-narratives` | report | `{metrics[], thinkingTypes[], changes[], reflections[], quotes[]}` → `{narrative, eveningQuestion, citedQuotes[]}` |
 | GET | `/internal/versions` | core | 활성 프롬프트 버전 |
 
+#### 4.2.1 report 서술 응답 (#52, ai 구현 담당 연동 확인 필요)
+
+- 응답은 `{narrative:{text,source:"LLM",modelExplanation:null},eveningQuestion,citedQuotes:[{attemptId,answerId,answerVersion,quote}],versions:{prompt,model}}`로 정의한다. 원문 인용은 citedQuotes에 명시하며 답변 버전과 연결한다. ai는 숫자를 새로 계산하거나 수치 레벨·등급·사고력 향상을 단정하지 않는다.
+- report는 learning evidence의 같은 answer ID·version·원문과 인용을 대조하고, 서술·저녁 질문의 숫자가 계산 결과에 포함되는지 검사한다. 지원하지 않는 한글 수사 표현은 검증 통과로 간주하지 않는다. 검증 메타데이터는 `numbersMatched`, `quotesMatched`, `contentAllowed`다.
+- 대조 실패만 코드 기반 템플릿 요약으로 전환한다. AI 시간 초과·5xx·응답 스키마 오류·learning 원문 조회 실패는 `FAILED`로 처리한다(#52 담당자 확인 2026-10-27). 학생 이름·닉네임 필드는 요청에 넣지 않으며, 알려진 닉네임이 본문에 포함된 경우 전송 전에 가린다.
+- 이 응답 구조는 report 측 구현 기준이며, 아직 ai의 해당 API 구현·E2E 완료를 뜻하지 않는다.
+
 - LLM 요청에는 학생 이름·식별정보를 넣지 않음. 학생 ID는 가명 토큰으로 치환 (NFR-SEC-03)
 
 ### 4.3 scoring-service (호출: ai)
@@ -723,6 +743,10 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | GET | `/internal/reports/{reportId}/evidence/{itemId}` | 항목 근거 |
 | GET | `/internal/reports/{reportId}/files/{format}` | 단기 presigned URL 발급 → `{url, expiresAt}` |
 
+- #54 조회에서 core는 현재 이용 권한을 확인해 `X-Report-Narrative-Enabled:true|false`를 설정해야 한다. 공개 요청의 같은 이름 헤더를 그대로 전달하지 않는다. report는 누락 시 false로 처리하며 응답과 다운로드 파일에서 AI 서술·생각 유형 summary·저녁 질문을 가린다. 현재 core 헤더 전달 연동의 검증 범위는 [#54 조회 보고서](../report/report-query.md)를 따른다.
+- 목록은 학생/대상 주별 최신 revision을 고른 뒤 status를 적용하며 1.1 페이지 봉투를 사용한다. 상세의 기본값은 같은 학생·대상 주 최신판, `revision` 지정 시 해당 판이다. evidence/files 경로는 전달한 실제 reportId 판에 속한 항목·파일을 조회한다.
+- 파일 키는 `reports/{studentId}/{reportId}/r{revision}/{full|free}/{pdf|md|html}`다. DB `report_file`에는 full 키 3개를 저장하며 무료용 파생 파일도 생성한다. 다운로드 수명은 설정값이며 운영 기본안은 300초다. 버전·형식·학생이 맞지 않는 키를 서명하지 않는다.
+
 ### 4.5 core-service (호출: ai, scoring, learning, report)
 | Method | Path | 설명 |
 |---|---|---|
@@ -730,6 +754,8 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 | POST | `/internal/deletion-requests/{deletionRequestId}/completions` | learning·report가 `student.deleted` 처리 후 완료 보고 `{service}`. 두 서비스 모두 보고 시 `COMPLETED` (멱등, P09) |
 
 - 비동기 메시지(`report.generate` 등)는 [아키텍처 1.4](architecture.md#14-메시지-목록) 참고
+- #55 report: PROFILE·RECORDS 모두 리포트 내용/파일을 물리 삭제하며 `report_deletion_guard`에 식별 UUID·범위·삭제 기준 시각·처리 상태만 남긴다. 최신 #45 core가 RECORDS 후에도 자동 학습 재개를 하지 않으므로 두 scope 모두 이후 생성도 차단한다. 새 명령의 time이 삭제 시각보다 늦다는 이유만으로 재개를 허용하지 않는다. 재개가 필요하면 별도 명시적 계약을 확정한다.
+- core의 삭제 상태 접근 차단과 `EventEnvelope.time` 보존·공유 메시지 규격은 #42/#45에서 확보했다. 삭제 전 queued job 정리와 삭제된 기존 작업의 늦은 상태 이벤트 무시는 core 후속 통합 검증 대상이다. report의 학생 lock·삭제 장벽만으로 core job 상태를 대신 정리하지 않는다.
 
 ### 4.6 #43 AI 사용량 조회 계약
 

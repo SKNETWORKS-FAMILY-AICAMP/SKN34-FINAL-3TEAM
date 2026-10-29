@@ -355,7 +355,12 @@ export const studentHandlers = [
   http.get('/api/v1/students/me/attempts', ({ request }) =>
     respond(async () => {
       guard(request)
-      return page(await store.records(child!, 'STUDENT', { from: '2000-01-01', to: '2099-12-31' }))
+      const q = new URL(request.url).searchParams
+      const period = { from: q.get('from') ?? '2000-01-01', to: q.get('to') ?? '2099-12-31' }
+      const index = Number(q.get('page') ?? 0), size = Number(q.get('size') ?? 20)
+      const rows = await store.records(child!, 'STUDENT', period)
+      return { items: rows.slice(index * size, (index + 1) * size), page: index, size, totalElements: rows.length,
+        studentId: child!.id, state: rows.length ? 'OK' : 'NO_RECORD', period, inclusionRule: 'P08' }
     }),
   ),
   // 이전 학부모 시안의 조회를 유지하는 호환 목. 별도 학부모 이슈 완료를 의미하지 않는다.

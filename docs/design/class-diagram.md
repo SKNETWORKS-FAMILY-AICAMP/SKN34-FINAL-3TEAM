@@ -528,18 +528,23 @@ classDiagram
   class LearningRecordService {
     <<service>>
     +exists(studentId) Boolean
+    +studentDashboard(resource, query) HttpExchangeResult
+    +parentDashboard(studentId, resource, query) HttpExchangeResult
   }
   class LearningRecordClient {
     <<client>>
     +exists(studentId) Boolean
+    +dashboard(studentId, resource, query, parent, child) HttpExchangeResult
   }
   class DashboardController {
     <<controller>>
-    +studentHome() Home
-    +childSummary(childId, from, to) Summary
-    +childThinkingTypes(childId, from, to) List
-    +childAttempts(childId, from, to) List
-    +childAttempt(childId, attemptId) AttemptDetail
+    +home(from, to) Response
+    +studentAttempts(from, to, page, size, status) Response
+    +activities(from, to) Response
+    +summary(childId, from, to) Response
+    +types(childId, from, to) Response
+    +parentAttempts(childId, from, to, page, size, status) Response
+    +detail(childId, attemptId, from, to) Response
   }
   class LearningClient {
     <<client>>
@@ -601,8 +606,9 @@ classDiagram
   FeedbackService --> LearningProxyService
   LearningRecordService --> LearningRecordClient
   LearningRecordClient --> LearningClient
-  DashboardController --> GuardianshipService
-  DashboardController --> LearningClient
+  DashboardController --> LearningRecordService
+  LearningRecordService --> StudentAccessService : 현재 연결·ACTIVE·동의
+  LearningRecordService --> StudentLearningContextService : home 학년·demo
   ConversationController --> GuardianshipService
   ConversationController --> ConversationService
   ConversationController --> SseEmitters
@@ -616,7 +622,8 @@ classDiagram
 ```
 
 - `learning/`은 controller → service(`LearningProxyService`·`FeedbackService`·`LearningRecordService`) → `LearningClient` 구조 (아키텍처 1.3·2.6). 공통 프록시는 `exchange`로 경로·본문을 그대로 전달하고 학생 컨텍스트·답변 멱등을 service에서 처리 ([이슈 #38 보고서](../report/issue-38-core-learning-proxy.md))
-- 구현 상태 (#37·#38·#39): `LearningController`·`LearningProxyService`·`StudentLearningContextService`·`FeedbackController`·`FeedbackService`·`LearningRecordService`·`LearningRecordClient`·`LearningClient.exchange` 구현됨. `finish`·`reflection`·`selfAssessment`는 core 프록시만 있고 learning 처리는 #26 후속. `DashboardController`·`Conversation*`·`AiClient`·`LearningClient.evidence`·`correctJudgment`는 미구현
+- 구현 상태 (#37·#38·#39): `LearningController`·`LearningProxyService`·`StudentLearningContextService`·`FeedbackController`·`FeedbackService`·`LearningRecordService`·`LearningRecordClient`·`LearningClient.exchange` 구현됨. `finish`·`reflection`·`selfAssessment`는 core 프록시만 있고 learning 처리는 #26 후속. `Conversation*`·`AiClient`·`LearningClient.evidence`·`correctJudgment`는 미구현
+- #40 `DashboardController`의 학생 3개·학부모 4개 조회는 LearningRecordService → LearningRecordClient → 기존 LearningClient를 사용한다. 공급자의 집계·home·상세는 #27 실제 기록 API이며 core는 수치를 계산하지 않는다. [#40 보고서](../report/issue-40-dashboard.md) 참고.
 - `FeedbackController`: learning 동기 응답을 기다리는 동안 heartbeat만 전송, 응답을 `status`·`result`·`error`·`done` 이벤트로 변환. 클라이언트 단절과 무관하게 learning 호출 유지 (아키텍처 1.3)
 - `ConversationService.stream`: ai SSE 이벤트를 그대로 중계, `result` 수신 시 `complete`(트랜잭션), 클라이언트 단절 시 `AiClient.cancel` + `fail(CLIENT_DISCONNECTED)` (재시도 가능)
 - 근거 원문은 저장하지 않고 `message_evidence` ID로 learning `/internal/records/evidence` 조회 (ERD 3.2)
@@ -1334,8 +1341,8 @@ classDiagram
 
 - `FeedbackFacade.feedback` 순서 (아키텍처 2.5)
   1. `JudgmentService.acquire`: `PENDING|FAILED|리스 만료 RUNNING → RUNNING` 조건부 UPDATE. `DONE`이면 저장 결과 반환, 유효 `RUNNING`이면 `RUNNING` 결과 반환 (API 1.4)
-  2. 트랜잭션 밖: 고르기·수학 최종 답은 `RuleJudge`, 서술·논술은 `AiClient.judge`. 풀이 단계는 풀이를 `AiClient.judge`, 최종 답을 `MathEquivalenceJudge`로 보고 합침 (state-diagram 3.3)
-  3. 트랜잭션 밖: 시도 내 되묻기 2회 미만이고 고르기 `CORRECT`가 아니면 `AiClient.followup` (정답·금지어 유출 검사는 ai 담당, P04). 마무리·완료한 시도에는 만들지 않음. 유출 검사용 정답은 학생에게 보이는 글자(선택지 이름·정답 순서·최종 답)로 보냄. 재생성까지 검사 실패하면 learning이 `followup_bank_question`에서 같은 `type` 질문 선택(`BANK`, P16), 이 시도에서 아직 쓰지 않은 것부터
+  2. 트랜잭션 밖: 고르기·수학 최종 답은 `RuleJudge`, 서술·논술은 `AiClient.judge`. 풀이 단계는 풀이를 `AiClient.judge`, 최종 답을 `MathEquivalenceJudge`로 보고 합침 (state-diagram 3.3). 기준표의 최종 답 요소(`code = 'FINAL_ANSWER'`)는 ai 요청에서 빼고(`Rubric.aiElements`) 정답 키 결과로 기록(`ANSWER_KEY`, FN-JDG-02 #79)
+  3. 트랜잭션 밖: 시도 내 되묻기 2회 미만이고 고르기 `CORRECT`가 아니면 `AiClient.followup` (정답·금지어 유출 검사는 ai 담당, P04). 마무리·완료한 시도에는 만들지 않음. 유출 검사용 정답은 학생에게 보이는 글자(선택지 이름·정답 순서·답 단위를 붙인 최종 답·"선택지 이름: 그룹 이름")로 보냄. 재생성까지 검사 실패하면 learning이 `followup_bank_question`에서 같은 `type` 질문 선택(`BANK`, P16), 이 시도에서 아직 쓰지 않은 것부터
   4. `JudgmentService.saveResult`: 판정·요소·되묻기·버전 저장 + `DONE`. 먼저 시도 행을 잠그고(`FOR UPDATE`, 답변 제출·마무리와 같은 "시도 → 판정" 순서) 다시 확인해, 3 이후 마무리·완료된 시도면 되묻기는 저장하지 않음(P04). 예외 시 `markFailed`(실패 기록 자체가 실패해도 원래 오류로 응답)
 - 전이는 `Judgment` 엔티티가 허용 여부를 판단하고 `JudgmentRepository`가 조건부 UPDATE로 저장 (#23 초안 `AttemptDraft.update` + `updateIfVersion`과 같은 방식). `saveResult`·`markFailed`는 획득한 리스 값을 비교해야 해 `judgmentId` 대신 `acquire`로 얻은 `judgment`를 받음. `markFailed`는 DB에서 다시 읽은 판정으로 기록(저장 중 롤백돼 엔티티만 `DONE`이 된 경우)
 - `done`·`hold`의 `by`: 판정 방법(`RULE`·`LLM`)·`trial`·모델·프롬프트 버전 (ERD judgment.method·trial·model_version·prompt_version)
@@ -1722,6 +1729,20 @@ classDiagram
     <<service>>
     +generate(command, report) GenerationResult
   }
+  class NarrativeGenerator {
+    +generate(command, report) GenerationResult
+  }
+  class RenderingGenerator {
+    +generate(command, report) GenerationResult
+  }
+  class JobLocks {
+    +acquire(job_id, student_id) JobLease
+    +acquire_student(student_id) JobLease
+  }
+  class DeletionRepository {
+    +begin(session, command) bool
+    +finish(session, command)
+  }
   class GenerationResult {
     +state ReportState
     +inclusion_rule str
@@ -1729,11 +1750,11 @@ classDiagram
   }
   class ReportVerifier {
     <<service>>
-    +verify(narrative, metrics, quotes) Verification
+    +verify(response, result, evidence) Verification
   }
   class ReportRenderer {
     <<service>>
-    +render(report, format) bytes
+    +render(report, display_name) dict
   }
   class WeeklyReport {
     <<entity>>
@@ -1764,7 +1785,7 @@ classDiagram
   class LearningClient {
     <<client>>
     +records(student_id, period) LearningRecords
-    +evidence(answer_ids) list
+    +evidence(student_id, links) tuple
   }
   class AiClient {
     <<client>>
@@ -1773,29 +1794,30 @@ classDiagram
   class ObjectStorage {
     <<client>>
     +put(key, body, content_type)
-    +presigned_url(key, expires) str
+    +presigned_url(key, ttl, filename) dict
+    +delete_prefix(prefix)
   }
   class query_router {
     <<router>>
-    +list(student_id, status) Page
-    +detail(report_id) ReportDetail
+    +list(student_id, status, page, size) Page
+    +detail(report_id, revision, narrative_enabled) ReportDetail
     +evidence(report_id, item_id) Evidence
-    +file_url(report_id, format) DownloadUrl
+    +file(report_id, format, narrative_enabled) DownloadUrl
   }
   class QueryService {
     <<service>>
-    +list(student_id, status) Page
-    +detail(report_id) ReportDetail
+    +list(student_id, status, page, size) Page
+    +detail(report_id, revision, narrative_enabled) ReportDetail
     +evidence(report_id, item_id) Evidence
-    +file_url(report_id, format) DownloadUrl
+    +file(report_id, format, narrative_enabled) DownloadUrl
   }
   class StudentDeletedConsumer {
     <<consumer>>
-    +on_student_deleted(envelope)
+    +__call__(envelope)
   }
   class DeletionService {
     <<service>>
-    +delete(event_id, student_id)
+    +delete(command)
   }
   class CoreClient {
     <<client>>
@@ -1805,22 +1827,28 @@ classDiagram
   GenerationConsumer --> GenerationService
   GenerationService --> ReportRepository
   GenerationService --> OutboxRepository : report.started·completed·failed
-  GenerationService --> RecordGenerator : R2 계산 단계
+  GenerationService --> RenderingGenerator : R4
+  GenerationService --> JobLocks
+  RenderingGenerator --> NarrativeGenerator : R3
+  NarrativeGenerator --> RecordGenerator : R2
   RecordGenerator --> LearningClient
   RecordGenerator --> MetricsCalculator
-  GenerationService --> AiClient
-  GenerationService --> ReportVerifier
-  GenerationService --> ReportRenderer
-  GenerationService --> ObjectStorage
+  NarrativeGenerator --> AiClient
+  NarrativeGenerator --> LearningClient : 원문 대조
+  NarrativeGenerator --> ReportVerifier
+  RenderingGenerator --> ReportRenderer
+  RenderingGenerator --> ObjectStorage
   GenerationService ..> WeeklyReport
   GenerationResult *-- ReportItem
   OutboxRelay --> OutboxRepository : 미발행 조회·발행 기록
   OutboxRelay --> EventPublisher : publisher confirm
   query_router --> QueryService
-  QueryService --> ReportRepository
+  QueryService --> LearningClient : 현재 근거
   QueryService --> ObjectStorage
   StudentDeletedConsumer --> DeletionService
-  DeletionService --> ReportRepository
+  DeletionService --> DeletionRepository
+  DeletionService --> JobLocks
+  DeletionService --> CoreClient
   DeletionService --> ObjectStorage
 ```
 
@@ -1828,10 +1856,12 @@ classDiagram
 |---|---|---|
 | `GenerationConsumer`, `GenerationService`, `MetricsCalculator`, `ReportVerifier`, `ReportRepository`, `WeeklyReport` | `generation/consumer.py`·`service.py`·`metrics.py`·`verifier.py`·`repository.py`·`models.py` | report-worker |
 | `RecordGenerator`, `GenerationResult`·`ReportItem` | `generation/record_generator.py`·`models.py` | report-worker (R2 계산 결과를 종료 트랜잭션으로 전달) |
-| `LearningClient` | `clients/learning_client.py` | report-worker (`records`는 세 조회를 모아 정규화, `evidence`는 #52 계획) |
+| `LearningClient` | `clients/learning_client.py` | worker/API (`records`는 세 조회 정규화, `evidence`는 현재 원문·버전·삭제 대조) |
+| `NarrativeGenerator`, `RenderingGenerator`, `JobLocks` | `generation/narrative_generator.py`·`locking.py`, `rendering/generator.py` | report-worker |
 | `ReportRenderer` | `rendering/renderer.py` (Jinja2 → HTML, Playwright → PDF, Markdown) | report-worker |
 | `OutboxRelay`, `OutboxRepository` | `outbox/` | report-worker (서비스의 종료 트랜잭션이 `OutboxRepository.add` 호출) |
 | `StudentDeletedConsumer`, `DeletionService` | `deletion/` | report-worker |
+| `DeletionRepository` | `deletion/state.py` | report-worker (삭제 장벽·processed_event·물리 삭제 트랜잭션) |
 | `query_router`, `QueryService` | `query/router.py`, `query/service.py` (신규) | report-api |
 | `ObjectStorage` | `clients/storage.py` (신규, S3·로컬 MinIO) | 공통 |
 
@@ -1839,7 +1869,7 @@ classDiagram
 - `query_router`·`QueryService`: 모든 조회에서 리포트의 `student_id`가 `X-Student-Scope`에 있는지 검사, 없으면 403 (API 4장)
 - 수치·전후 변화는 `MetricsCalculator`(코드)에서만 계산, ai는 서술·저녁 질문만 (FN-RPT-03, 05)
 - #51 구현의 `RecordGenerator`는 learning 조회 → `MetricsCalculator.calculate` → 항목·근거가 포함된 `GenerationResult`를 반환한다. `ReportRepository.finish`가 상태·항목·근거를 저장하며 종료 이벤트와 같은 트랜잭션에 참여한다. 입력 계약은 병합된 #27 코드·OpenAPI와 대조한 API 4.1.1이며, #51의 검증 범위는 `docs/report/report-metrics.md`에 기록한다.
-- report 다이어그램의 AI 서술·원문 재검증·렌더링·저장·조회·삭제는 #52~#55의 최종 구성 계획을 포함한다. #42 공통 메시지 계약과 #50 worker·Outbox 연결은 develop에 반영됐다. 계산·서술·렌더링을 포함한 전체 생성기 조립은 후속 단계에서 검증한다. `LearningClient.evidence`도 #52 구현 대상이다.
+- #52~#55의 AI 서술·원문 재검증·렌더링·저장·조회·삭제 구현을 포함한다. `worker.run(generator=None)`은 #42 v1 codec, 생성·삭제 구독과 Outbox를 조립한다. 생성기를 주입하지 않은 기본 실행은 `GENERATOR_NOT_CONFIGURED`로 실패하며 임의의 완료 결과를 만들지 않는다. 실제 서비스 전체 생성 흐름의 연결 검증은 별도다.
 - `ReportVerifier`: 서술 속 숫자·인용을 계산 결과·learning 원문과 대조, 실패 시 서술을 템플릿 요약으로 교체(`narrative.source = TEMPLATE`, P16). `NO_RECORD`·무료 플랜(`narrativeEnabled = false`)은 ai 호출 생략 (P06·P13)
 
 ---
