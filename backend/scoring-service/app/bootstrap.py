@@ -12,9 +12,9 @@ from app.config import get_settings
 from app.errors import register_error_handlers
 from app.health.router import router as health_router
 from app.messaging.connection import AmqpConnection
+from app.messaging.consumer import ModelVersionConsumer
 from app.model_loader import ModelLoader
 from app.model_registry import ModelRegistry
-from app.model_startup import ModelStartup
 from app.security import InternalAuthMiddleware
 from app.versions import router as versions_router
 
@@ -31,14 +31,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     async with internal_client(settings.core_url) as http:
         registry = ModelRegistry(ModelLoader(S3ModelArtifacts(settings)))
-        startup = ModelStartup(CoreClient(http), registry, settings.model_retry_interval)
+        consumer = ModelVersionConsumer(
+            amqp, CoreClient(http), registry, settings.model_retry_interval
+        )
         app.state.model_registry = registry
-        app.state.readiness_checks = {"rabbitmq": rabbitmq_ready, "models": startup.is_ready}
-        startup.start()
+        app.state.readiness_checks = {"rabbitmq": rabbitmq_ready, "models": consumer.is_ready}
+        consumer.start()
         try:
             yield
         finally:
-            await startup.close()
+            await consumer.close()
             await amqp.close()
 
 

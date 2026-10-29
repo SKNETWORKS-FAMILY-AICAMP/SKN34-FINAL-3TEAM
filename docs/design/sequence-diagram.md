@@ -875,6 +875,8 @@ sequenceDiagram
 ```
 
 - 롤백(`/rollback`): 이전 승인 버전 재활성화로 같은 흐름, 재분석 여부는 `audit_log.detail` 기록 (FN-ADM-18)
+- scoring #86은 큐 바인딩·소비 시작 → core snapshot → 조회·로딩 중 보존 이벤트의 revision 조정 → readiness true 순서다. 브로커 재연결도 같은 순서로 수행한다. 이벤트는 전체 snapshot이 아니므로 다른 모델을 제거하지 않고 해당 이름의 모델만 교체한다.
+- scoring 교체·롤백 시 artifact를 다시 내려받아 로딩한 뒤 임시 파일을 정리한다. 로딩 중에는 기존 모델을 사용하며 실패 시 기존 모델을 유지하고 재시도한다. 새 승인 scopes에서 제외된 범위에는 기존 모델도 사용하지 않는다. 최초 준비·재연결 복구가 끝나기 전에는 readiness false다.
 - 기준표(`kind = RUBRIC`) 행은 core 레지스트리의 승인·활성 기록만 담당. learning은 이 이벤트를 소비하지 않으며, `judge_verified`·현재 기준표 버전 반영은 관리자 미션 API(`/admin/missions/...`)로 별도 수행
 
 ---

@@ -5,7 +5,8 @@ import contextlib
 import logging
 
 from app.clients.core_client import CoreClient
-from app.model_registry import ModelRegistry
+from app.model_registry import ModelRegistry, RevisionConflict
+from app.model_versions import ActiveModelVersion
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,17 @@ class ModelStartup:
         self._stop = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
         self.ready = False
+        self._pending: dict[str, ActiveModelVersion] = {}
+        self._changed = asyncio.Event()
+
+    def offer(self, version: ActiveModelVersion) -> None:
+        """조회·로딩 중에도 수신을 계속하고 이름별 최신 이벤트만 보존한다."""
+        previous = self._pending.get(version.name)
+        if previous is None or version.revision > previous.revision:
+            self._pending[version.name] = version
+            self._changed.set()
+        elif version.revision == previous.revision and version != previous:
+            logger.warning("Conflicting model event ignored")
 
     def start(self) -> None:
         self._task = asyncio.create_task(self._run())
@@ -25,10 +37,26 @@ class ModelStartup:
     async def _run(self) -> None:
         while not self._stop.is_set():
             try:
-                versions = await self._core.active_versions()
-                await self._registry.replace(versions)
+                if not self.ready:
+                    snapshot = {v.name: v for v in await self._core.active_versions()}
+                    for name, event in self._pending.items():
+                        if name not in snapshot or event.revision > snapshot[name].revision:
+                            snapshot[name] = event
+                    await self._registry.replace(list(snapshot.values()))
+                # snapshot 조회·로딩 사이에 들어온 이벤트도 readiness 전에 조정한다.
+                while self._pending:
+                    name, version = next(iter(self._pending.items()))
+                    try:
+                        await self._registry.load(version)
+                    except RevisionConflict:
+                        # 동일 revision의 상충 메타데이터는 재시도할 수 없는 형식 오류.
+                        logger.warning("Conflicting model event ignored")
+                    if self._pending.get(name) == version:
+                        del self._pending[name]
                 self.ready = True
-                return
+                self._changed.clear()
+                await self._changed.wait()
+                continue
             except Exception as exc:
                 logger.warning("Model startup retry error_type=%s", type(exc).__name__)
             with contextlib.suppress(TimeoutError):
@@ -38,6 +66,7 @@ class ModelStartup:
         return self.ready
 
     async def close(self) -> None:
+        self.ready = False
         self._stop.set()
         if self._task is not None:
             self._task.cancel()

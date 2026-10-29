@@ -1,4 +1,4 @@
-"""모델 단위 revision·승인 범위·완료 후 교체. 이벤트 연결은 #86."""
+"""모델 단위 revision·승인 범위·완료 후 교체. snapshot과 이벤트가 함께 사용한다."""
 
 import asyncio
 import logging
@@ -10,6 +10,10 @@ from app.model_loader import LoadedModel
 from app.model_versions import ActiveModelVersion
 
 logger = logging.getLogger(__name__)
+
+
+class RevisionConflict(ValueError):
+    """같은 revision에 상충하는 메타데이터가 전달됨."""
 
 
 class ModelRegistry:
@@ -47,7 +51,7 @@ class ModelRegistry:
             if version.revision < desired.revision:
                 return False
             if version.revision == desired.revision and version != desired:
-                raise ValueError("conflicting metadata for same revision")
+                raise RevisionConflict("conflicting metadata for same revision")
         self._desired[name] = version
         lock = self._locks.setdefault(name, asyncio.Lock())
         async with lock:
