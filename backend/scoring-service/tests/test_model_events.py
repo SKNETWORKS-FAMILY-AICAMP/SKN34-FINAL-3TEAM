@@ -181,6 +181,31 @@ def test_event_contract_schema_fields_and_example():
     assert ActivationEnvelope.model_validate(event()).data.revision == 2
 
 
+def test_failed_model_does_not_block_another_model_update():
+    async def run():
+        def loader(item):
+            if item.name == "m2-klue-narrative" and item.revision == 2:
+                raise OSError("missing artifact")
+            return loaded(item)
+
+        registry = ModelRegistry(loader)
+        core = SimpleNamespace(active_versions=AsyncMock(return_value=[version(1)]))
+        startup = ModelStartup(core, registry, 0.01)
+        startup.start()
+        try:
+            await until(lambda: startup.ready)
+            startup.offer(version(2))
+            startup.offer(version(2, name="m2-klue-essay"))
+            await until(lambda: registry.is_active("m2-klue-essay", SCOPE))
+            assert registry.get("m2-klue-narrative", SCOPE).metadata.revision == 1
+            assert registry.get("m2-klue-essay", SCOPE).metadata.revision == 2
+            assert startup.ready
+        finally:
+            await startup.close()
+
+    asyncio.run(run())
+
+
 def test_bind_before_snapshot_and_reconnect_creates_new_queue():
     async def run():
         order, receivers = [], []

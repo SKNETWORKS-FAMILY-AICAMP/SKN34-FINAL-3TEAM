@@ -45,14 +45,21 @@ class ModelStartup:
                     await self._registry.replace(list(snapshot.values()))
                 # snapshot 조회·로딩 사이에 들어온 이벤트도 readiness 전에 조정한다.
                 while self._pending:
-                    name, version = next(iter(self._pending.items()))
-                    try:
-                        await self._registry.load(version)
-                    except RevisionConflict:
-                        # 동일 revision의 상충 메타데이터는 재시도할 수 없는 형식 오류.
-                        logger.warning("Conflicting model event ignored")
-                    if self._pending.get(name) == version:
-                        del self._pending[name]
+                    failed = False
+                    for name, version in list(self._pending.items()):
+                        try:
+                            await self._registry.load(version)
+                        except RevisionConflict:
+                            logger.warning("Conflicting model event ignored")
+                        except Exception as exc:
+                            # 한 모델의 장애가 다른 이름의 버전 교체를 막지 않는다.
+                            logger.warning("Model update retry error_type=%s", type(exc).__name__)
+                            failed = True
+                            continue
+                        if self._pending.get(name) == version:
+                            del self._pending[name]
+                    if failed:
+                        raise RuntimeError("pending model update failed")
                 self.ready = True
                 self._changed.clear()
                 await self._changed.wait()

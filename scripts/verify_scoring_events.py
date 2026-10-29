@@ -53,9 +53,7 @@ def check_events(run, url, core, access, headers, password, results, passed):
     before = {q["name"] for q in queues()}
     assert len(before) == 2 and before <= bound_queues()
     results["exclusive_queues_before"] = sorted(before)
-    passed(
-        "two actual scoring replicas own separate exclusive auto-delete bound queues"
-    )
+    passed("two actual scoring replicas own separate exclusive auto-delete bound queues")
 
     evidence = {
         key: "LOCAL transport test only; NOT quality approval"
@@ -112,18 +110,13 @@ def check_events(run, url, core, access, headers, password, results, passed):
 
         missing = register("2.2-missing", f"s3://{BUCKET}/models/missing/2.2/")
         prior_failures = [
-            run(["logs", "--no-color", service]).count(
-                "Model startup retry error_type="
-            )
+            run(["logs", "--no-color", service]).count("Model startup retry error_type=")
             for service in ("scoring", "scoring2")
         ]
         activate(missing)
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
-            logs = [
-                run(["logs", "--no-color", service])
-                for service in ("scoring", "scoring2")
-            ]
+            logs = [run(["logs", "--no-color", service]) for service in ("scoring", "scoring2")]
             if all(
                 log.count("Model startup retry error_type=") > previous
                 for log, previous in zip(logs, prior_failures, strict=True)
@@ -147,27 +140,32 @@ def check_events(run, url, core, access, headers, password, results, passed):
         after = {q["name"] for q in queues()}
         assert len(after) == 2 and before.isdisjoint(after) and after <= bound_queues()
         results["exclusive_queues_after"] = sorted(after)
-        passed(
-            "broker reconnect recreates both queues and reconciles activation during outage"
-        )
+        passed("broker reconnect recreates both queues and reconciles activation during outage")
         results["replica_versions"] = [
             httpx.get(endpoint + "/internal/versions", headers=headers).json()
             for endpoint in endpoints
         ]
         # loaders use TemporaryDirectory: no model weights remain after successful replacement.
         for service in ("scoring", "scoring2"):
-            raw = run(
-                [
-                    "exec",
-                    "-T",
-                    service,
-                    "python",
-                    "-c",
-                    "from pathlib import Path; "
-                    "assert not list(Path('/tmp/scoring-models').iterdir())",
-                ]
-            )
-            assert not raw.strip()
+            deadline = time.monotonic() + 60
+            while time.monotonic() < deadline:
+                # 재연결 시 취소된 이전 다운로드 스레드의 정리가 끝날 때까지 확인한다.
+                raw = run(
+                    [
+                        "exec",
+                        "-T",
+                        service,
+                        "python",
+                        "-c",
+                        "from pathlib import Path; "
+                        "print(len(list(Path('/tmp/scoring-models').iterdir())))",
+                    ]
+                )
+                if raw.strip() == "0":
+                    break
+                time.sleep(1)
+            else:
+                raise AssertionError("temporary model downloads were not cleaned within 60s")
         passed("temporary model downloads cleaned on both replicas")
 
 
