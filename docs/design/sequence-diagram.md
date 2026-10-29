@@ -556,7 +556,7 @@ sequenceDiagram
   else
     RW->>RW: NarrativeGenerator에서 별명·이름 필드 제거 및 본문 별명 가림 (최종 전송 payload 검증 필요)
     RW->>A: POST /internal/report-narratives {metrics, thinkingTypes, changes, reflections, quotes}
-    A-->>RW: narrative·eveningQuestion·citedQuotes
+    A-->>RW: narrative·eveningQuestion·citedQuotes·versions
     RW->>L: GET /internal/records/evidence?answerIds=
     RW->>RW: ReportVerifier 숫자·인용 대조
     opt 대조 실패 (P16)

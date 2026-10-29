@@ -92,7 +92,7 @@ PR `feature/develop-verification`에서 단계별 1커밋으로 처리.
 |---|---|
 | B3 | learning `student.deleted` 소비·완료 보고 기능 구현 |
 | B4 | 상품 권한(이용권) 공급자 계약 미정 |
-| B5 | report 실제 생성기·ai 서술 API(api-spec 4.2) 기능 구현 |
+| B5 | report 실제 생성기 조립 기능 구현 (ai 서술 API `/internal/report-narratives`는 #64에서 구현) |
 | B8 | 실패 이벤트를 건너뛰면 같은 리포트의 started→completed 순서 보장이 깨짐. 순서 정책 결정 필요 |
 | B9 | v1 `report.failed`가 `reportId` 필수라 리포트 행 생성 전 실패를 알릴 계약이 없음. 계약 변경 또는 core 정리 작업 필요 |
 | B10 | api-spec 3.11이 "신뢰 프록시 설정 전에는 X-Forwarded-For를 쓰지 않는다"로 정한 임시 결정. ALB·CloudFront 신뢰 프록시 설정과 함께 처리 |
