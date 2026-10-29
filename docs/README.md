@@ -117,3 +117,5 @@ feature/* → develop → main
 - `feature/core-integration`은 최신 develop에서 만들며, 개별 core PR의 base로 사용한다. 이후 develop의 변경을 merge하고 통합 검증한 뒤 develop 대상 최종 PR로 반영한다.
 - 이 경로는 core 병렬 작업이 develop에 모두 반영되면 종료하는 임시 예외다. main 반영은 기존 `develop → main` 흐름을 유지하고, 기존 기능 커밋을 임의로 squash·rebase하지 않는다.
 - 기본 브랜치가 아닌 통합 브랜치 대상 PR의 `Closes`는 이슈를 자동 종료하지 않는다. 실제 해결 범위를 확인한 최종 develop PR에도 해당 `Closes #이슈번호`를 포함한다.
+
+- [이슈 #41 분석 대화·SSE·한도](report/issue-41-analysis-conversations.md): core 대화·SSE·권한·사용 한도와 공급자 연동 검증
