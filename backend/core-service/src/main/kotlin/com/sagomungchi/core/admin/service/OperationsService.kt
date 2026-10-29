@@ -15,6 +15,7 @@ class OperationsService(private val reports: ReportOperationsService, private va
     fun overview(period: OperationPeriod): Map<String,Any> {
         val stats = learning.stats(period)
         return mapOf("period" to period,"learning" to stats,"inclusionRule" to "core: KST 생성 기간 안의 작업, 현재 상태; learning: P08 답변 기간",
+            "missionCounts" to learning.missionCounts(),"missionInclusionRule" to "전체 미션의 현재 상태; 기간·필터·페이지와 무관",
             "jobCounts" to OperationJobType.entries.flatMap { type -> OperationJobStatus.entries.map { OperationCount(type,it.name,count(type,period,it.name)) } })
     }
     fun jobs(period: OperationPeriod,type: OperationJobType?,status: OperationJobStatus?,page: Int,size: Int): OperationPage<OperationJob> {
