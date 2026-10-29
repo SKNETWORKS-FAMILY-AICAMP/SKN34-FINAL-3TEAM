@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     internal_token: str
     rabbitmq_url: str = "amqp://localhost:5672/"
     http_connect_timeout: float = 2.0
-    http_read_timeout: float = 30.0  # [P12] 확정 전 임시값
+    http_read_timeout: float = 30.0  # 내부 호출 기본값 (P12 목록 밖)
     core_url: str = "http://localhost:8080"
     s3_endpoint_url: str | None = None
     s3_bucket: str = "sagomungchi-local-models"

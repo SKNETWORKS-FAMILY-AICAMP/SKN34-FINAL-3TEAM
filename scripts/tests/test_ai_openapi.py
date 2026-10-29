@@ -24,7 +24,7 @@ class AiOpenApiTests(unittest.TestCase):
                 if full.startswith("/internal/"):
                     actual.add((method, full.removeprefix("/internal")))
         documented = {(method, path) for path, methods in self.spec["paths"].items() for method in methods}
-        self.assertEqual(len(actual), 3)
+        self.assertEqual(len(actual), 4)
         self.assertEqual(actual, documented)
 
     def test_internal_token_and_problem_responses(self):

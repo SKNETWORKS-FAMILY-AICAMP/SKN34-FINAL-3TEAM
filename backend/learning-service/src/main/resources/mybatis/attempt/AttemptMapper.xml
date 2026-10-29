@@ -17,6 +17,20 @@
         </constructor>
     </resultMap>
 
+    <resultMap id="reflection" type="com.sagomungchi.learning.attempt.domain.Reflection">
+        <constructor>
+            <arg column="difficulty" javaType="com.sagomungchi.learning.attempt.domain.Difficulty"/>
+            <arg column="changed_text" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="selfCheck" type="com.sagomungchi.learning.attempt.domain.SelfCheck">
+        <constructor>
+            <arg column="rubric_element_id" javaType="java.util.UUID"/>
+            <arg column="checked" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+
     <sql id="columns">
         id, student_id, mission_id, mission_version_id, rubric_version_id, grade, status,
         started_at, finished_at, completed_at, updated_at
@@ -43,6 +57,41 @@
     <!-- 같은 시도의 동시 답변 제출은 이 잠금을 기다려 같은 키 확인·버전 계산이 겹치지 않음 -->
     <select id="findByIdForUpdate" resultMap="attempt">
         SELECT <include refid="columns"/> FROM attempt WHERE id = #{id} FOR UPDATE
+    </select>
+
+    <!-- 마무리 (state-diagram 3.2). 잠근 행을 엔티티가 확인한 뒤라 1행 -->
+    <update id="finish">
+        UPDATE attempt SET finished_at = #{finishedAt}, updated_at = #{updatedAt}
+        WHERE id = #{id} AND status = 'IN_PROGRESS' AND finished_at IS NULL
+    </update>
+
+    <!-- 학습 완료 (state-diagram 3.2 IN_PROGRESS → COMPLETED): 마무리한 진행 중 시도만 -->
+    <update id="complete">
+        UPDATE attempt SET status = 'COMPLETED', completed_at = #{completedAt}, updated_at = #{updatedAt}
+        WHERE id = #{id} AND status = 'IN_PROGRESS' AND finished_at IS NOT NULL
+    </update>
+
+    <insert id="insertReflection">
+        INSERT INTO reflection (id, attempt_id, difficulty, changed_text, created_at)
+        VALUES (#{id}, #{attemptId}, #{reflection.difficulty}, #{reflection.text,jdbcType=VARCHAR}, #{createdAt})
+    </insert>
+
+    <select id="findReflection" resultMap="reflection">
+        SELECT difficulty, changed_text FROM reflection WHERE attempt_id = #{attemptId}
+    </select>
+
+    <!-- 다시 체크하면 checked만 바꿈 (UK attempt_id·rubric_element_id) -->
+    <insert id="upsertSelfAssessments">
+        INSERT INTO self_assessment (id, attempt_id, rubric_element_id, checked, created_at)
+        VALUES
+        <foreach collection="checks" item="c" separator=",">
+            (gen_random_uuid(), #{attemptId}, #{c.elementId}, #{c.checked}, #{now})
+        </foreach>
+        ON CONFLICT (attempt_id, rubric_element_id) DO UPDATE SET checked = EXCLUDED.checked
+    </insert>
+
+    <select id="findSelfAssessments" resultMap="selfCheck">
+        SELECT rubric_element_id, checked FROM self_assessment WHERE attempt_id = #{attemptId}
     </select>
 
     <insert id="insertHintUsage">

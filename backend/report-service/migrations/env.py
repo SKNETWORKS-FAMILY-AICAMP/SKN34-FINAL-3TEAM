@@ -16,7 +16,7 @@ if config.config_file_name is not None:
 
 # Hand-written revisions are the schema source of truth. Feature-local SQLAlchemy
 # Core Tables describe queries only; partial metadata must never drive autogenerate.
-# See docs/report/repository-foundation.md. App startup never invokes this module.
+# See docs/report/db-dev-guide.md. App startup never invokes this module.
 target_metadata = None
 
 # other values from the config, defined by the needs of env.py,

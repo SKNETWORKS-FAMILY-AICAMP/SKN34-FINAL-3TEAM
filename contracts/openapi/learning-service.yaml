@@ -6,13 +6,55 @@ info:
     core가 호출하는 learning 내부 API (api-spec 4.1). 구현된 경로만 담는다.
     학생 학습 API는 core가 검증한 STUDENT 컨텍스트(X-Student-Scope에 본인 1명)를 요구하고,
     미션 조회·시도 시작은 core가 학생 학년(grade)·시연 여부(demo)를 붙인다.
-    기록 존재 확인(#37)은 PARENT·STUDENT·SYSTEM 컨텍스트를 허용한다.
-    마무리·돌아보기·자기 평가(#26), 기록 조회(#27), 판정 정정(#80)은 구현 시 추가한다.
+    기록 존재 확인(#37)과 기록 조회(#27)는 PARENT·STUDENT·SYSTEM 컨텍스트와 대상 학생 X-Student-Scope를(학생 홈은 학생 STUDENT 컨텍스트만),
+    운영 집계(/stats, #27)는 ADMIN·SYSTEM 컨텍스트를 요구한다.
+    마무리·돌아보기·자기 평가(#26)는 학생 STUDENT 컨텍스트로 추가됐다.
+    판정 정정(#80)은 ADMIN 컨텍스트와 판정 학생 1명 X-Student-Scope, 관리자 X-User-Id를 요구한다.
 servers:
   - url: /internal
 security:
   - InternalToken: []
 paths:
+  /payment-usage/students/{studentId}:
+    get:
+      operationId: getPaymentUsageEvidence
+      summary: SYSTEM과 정확한 학생 scope의 결제 후 피드백 사용 증빙
+      parameters:
+      - name: studentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: since
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date-time
+      responses:
+        '200':
+          description: DONE 또는 RUNNING 피드백 여부, 원문 미포함
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - studentId
+                - since
+                - used
+                properties:
+                  studentId:
+                    type: string
+                    format: uuid
+                  since:
+                    type: string
+                    format: date-time
+                  used:
+                    type: boolean
+                additionalProperties: false
+        '403':
+          description: SYSTEM/학생 범위 불일치
   /missions:
     get:
       operationId: listMissions
@@ -52,7 +94,7 @@ paths:
         - $ref: '#/components/parameters/Demo'
       responses:
         '200':
-          description: 미션 상세. `scene`·`categories`는 미제공 (api-spec 3.7·3.8)
+          description: 미션 상세. `scene`은 미제공, 분류 그룹 `categories`·수학 답 단위 `answerUnit` 포함 (api-spec 3.7·3.8, #79)
           content:
             application/json:
               schema:
@@ -251,6 +293,122 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /attempts/{attemptId}/finish:
+    post:
+      operationId: finishAttempt
+      summary: 마무리 → 정답·예시 답·체크리스트 공개
+      description: >-
+        시도 안에 판정 DONE이 1회 이상(보류 포함, 되묻기 미응답 허용)이어야 함(P04). 다시 요청하면 기록하지 않고 같은 결과.
+        checklist는 기준표 요소 전체이고, 이 시도의 처리 완료 판정 중 원문 구절과 함께 충족된 요소만 satisfied(가장 최근 구절).
+      parameters:
+        - $ref: '#/components/parameters/AttemptId'
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/StudentRole'
+        - $ref: '#/components/parameters/StudentScope'
+      responses:
+        '200':
+          description: 마무리 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinishResult'
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: REVEAL_CONDITION_UNMET(판정 DONE 1회 미만)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /attempts/{attemptId}/reflection:
+    post:
+      operationId: saveReflection
+      summary: 돌아보기 저장 → 학습 완료
+      description: 같은 트랜잭션에 돌아보기 저장 + IN_PROGRESS → COMPLETED·completed_at (P04, FN-LRN-12·14)
+      parameters:
+        - $ref: '#/components/parameters/AttemptId'
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/StudentRole'
+        - $ref: '#/components/parameters/StudentScope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [difficulty]
+              properties:
+                difficulty: {$ref: '#/components/schemas/Difficulty'}
+                text: {type: [string, 'null'], description: 달라진 점(선택), 빈 글은 null로 저장}
+      responses:
+        '200':
+          description: 학습 완료
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [attemptId, status, reflection]
+                properties:
+                  attemptId: {type: string, format: uuid}
+                  status: {type: string, enum: [COMPLETED]}
+                  reflection: {$ref: '#/components/schemas/Reflection'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: REVEAL_CONDITION_UNMET(마무리 전) 또는 ATTEMPT_CLOSED(완료 뒤)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /attempts/{attemptId}/self-assessment:
+    post:
+      operationId: saveSelfAssessment
+      summary: 자기 평가 저장 → AI 확인과 나란히
+      description: >-
+        마무리 뒤·완료 전. 기준표 요소별 자기 체크를 저장하고(다시 보내면 checked만 변경) 기준표 요소마다 자기 체크와 AI 확인을 반환.
+        답변·판정은 바꾸지 않음 (FN-LRN-13)
+      parameters:
+        - $ref: '#/components/parameters/AttemptId'
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/StudentRole'
+        - $ref: '#/components/parameters/StudentScope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [checks]
+              properties:
+                checks:
+                  type: array
+                  minItems: 1
+                  description: 이 시도 기준표 요소를 한 번씩만
+                  items:
+                    type: object
+                    required: [elementId, checked]
+                    properties:
+                      elementId: {type: string, format: uuid}
+                      checked: {type: boolean}
+      responses:
+        '200':
+          description: 기준표 요소마다 자기 체크와 AI 확인
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/SelfAssessmentItem'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: REVEAL_CONDITION_UNMET(마무리 전) 또는 ATTEMPT_CLOSED(완료 뒤)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /answers/{answerId}/feedback:
     post:
       operationId: answerFeedback
@@ -294,6 +452,272 @@ paths:
                     required: [retryable]
                     properties:
                       retryable: {type: boolean}
+  /judgments/{judgmentId}/corrections:
+    post:
+      operationId: correctJudgment
+      summary: 신고 정정 반영 (FN-SUP-03, #80)
+      description: >-
+        core #46 관리자 정정. 기존 판정·요소·답변은 그대로 두고 정정 이력을 추가한다.
+        이후 피드백 결과·시도 상세·기록의 judgment.result는 최신 정정 결과(정정이 있으면 heldReason null),
+        판정 요소·되묻기·nextActions는 원판정 그대로.
+        같은 Idempotency-Key·같은 요청(판정·본문)은 처음 응답 전체를 다시 200으로, 다른 요청이면 422 IDEMPOTENCY_KEY_REUSED.
+        core 소비 계약은 support-learning-required.yaml.
+      parameters:
+        - name: judgmentId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/CorrectionScope'
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: core가 저장한 정정 ID. 응답 유실 뒤 같은 키로 다시 보냄
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CorrectionRequest'
+      responses:
+        '200':
+          description: 저장한(같은 키 재요청이면 처음) 정정
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CorrectionResult'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: JUDGMENT_STATE_CONFLICT(판정 DONE 전) 또는 CORRECTION_REPORT_CONFLICT(같은 reportId·다른 키)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: IDEMPOTENCY_KEY_REUSED (같은 키·다른 요청)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /records/students/{studentId}/summary:
+    get:
+      operationId: recordSummary
+      summary: 학습 현황 요약 (건수·상태 Metric[])
+      description: >-
+        지표: 학습한 활동(집계 대상 시도 수), 완료한 활동(완료 / 집계 대상), 도움 없이 시작한 활동(최초 답변 전 생각 열기 열람 없는 시도 / 집계 대상), 되묻기 후 생각을 더한 활동(보완 답변 제출 시도 / 되묻기 받은 시도). 분모 5 미만이면 value null (P08)
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/RecordRole'
+        - $ref: '#/components/parameters/RecordScope'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+      responses:
+        '200':
+          description: 조회 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordSummary'
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+  /records/students/{studentId}/thinking-types:
+    get:
+      operationId: recordThinkingTypes
+      summary: 다섯 생각 유형별 미션·기록
+      description: >-
+        다섯 유형 모두, 기록이 없는 유형은 NO_RECORD(미관찰, FN-DSH-08)
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/RecordRole'
+        - $ref: '#/components/parameters/RecordScope'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+      responses:
+        '200':
+          description: 조회 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordThinkingTypes'
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+  /records/students/{studentId}/attempts:
+    get:
+      operationId: recordAttempts
+      summary: 학습 기록 목록 (최근 답변 순)
+      description: >-
+        items는 학생 시도 상세에서 초안(draft, 메모 포함)을 뺀 모양 (P05) + completedAt·hintUsages·reflection.createdAt.
+        answers·hintUsages는 1번·처음부터 조회 종료일까지(시작일 이전 포함), reflection은 기간 안에 쓴 것만(아니면 null)
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/RecordRole'
+        - $ref: '#/components/parameters/RecordScope'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - name: status
+          in: query
+          description: 지금 그 상태인 시도만. 생략하면 전체
+          schema: {type: string, enum: [IN_PROGRESS, COMPLETED]}
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 0, default: 0}
+        - name: size
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        '200':
+          description: 조회 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordAttemptPage'
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+  /records/students/{studentId}/attempts/{attemptId}:
+    get:
+      operationId: recordAttempt
+      summary: 학습 기록 상세 (학부모 api-spec 2.3)
+      description: >-
+        목록 items와 같은 모양 + state(OK)·period. 기간은 화면 유지용이라 검증·기본값만 적용하고 이력은 자르지 않음.
+        다른 학생의 시도·처리 실패만 있는 시도는 404
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/AttemptId'
+        - $ref: '#/components/parameters/RecordRole'
+        - $ref: '#/components/parameters/RecordScope'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+      responses:
+        '200':
+          description: 기록 상세
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordAttemptDetail'
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /records/students/{studentId}/changes:
+    get:
+      operationId: recordChanges
+      summary: 되묻기 전후 답변 쌍
+      description: >-
+        보완 답변이 있는 시도의 최초 vs 조회 종료일 이전 마지막 답변(P08, FN-RPT-02), 1.1 페이지. text는 칸 이름을 붙인 원문, counts는 학생이 쓴 칸만 [최초, 마지막]
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/RecordRole'
+        - $ref: '#/components/parameters/RecordScope'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 0, default: 0}
+        - name: size
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        '200':
+          description: 조회 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordChanges'
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+  /records/students/{studentId}/home:
+    get:
+      operationId: recordHome
+      summary: 학생 홈 (이어할 시도·시작할 수 있는 미션)
+      description: >-
+        학생 본인 요청만(미션 목록과 같은 기준, X-Student-Scope에 경로의 학생 1명).
+        resume은 진행 중 시도 중 가장 최근에 손댄 것(시작·답변 제출·초안 저장 중 가장 늦은 시각) 하나로 기간과 무관하고 초안만 있는 시도도 포함,
+        기록 목록 항목과 같은 모양(초안·메모 없음, 본인 초안은 core가 학생 시도 상세로 붙임).
+        missions는 학생 미션 목록 항목 전체(같은 노출 범위). state는 기간 안 집계 대상(P08) 시도 수
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/StudentRole'
+        - $ref: '#/components/parameters/StudentScope'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/Grade'
+        - $ref: '#/components/parameters/Demo'
+      responses:
+        '200':
+          description: 조회 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordHome'
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+  /records/students/{studentId}/thinking-activities:
+    get:
+      operationId: recordThinkingActivities
+      summary: 수행한 미션의 생각 유형과 본인 돌아보기
+      description: >-
+        집계 대상(P08) 시도를 최근 답변 순으로. reflection은 기간 안에 쓴 것만(아니면 null). 수치·등급·순위 없음 (FN-DSH-04)
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/RecordRole'
+        - $ref: '#/components/parameters/RecordScope'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+      responses:
+        '200':
+          description: 조회 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordThinkingActivities'
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+  /records/evidence:
+    get:
+      operationId: recordEvidence
+      summary: 원문 근거 조회
+      description: 요청한 순서대로. 없는 답변·삭제 학생은 available=false(원문 없음), 범위 밖 학생의 답변이면 403
+      parameters:
+        - name: answerIds
+          in: query
+          required: true
+          description: 쉼표로 나눈 답변 UUID 1~100개
+          schema: {type: string}
+        - $ref: '#/components/parameters/RecordRole'
+        - $ref: '#/components/parameters/RecordScope'
+      responses:
+        '200':
+          description: 근거 목록
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidenceList'
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+  /stats:
+    get:
+      operationId: stats
+      summary: 운영 현황 집계 (학생 원문 없음, FN-ADM-02)
+      parameters:
+        - name: X-User-Role
+          in: header
+          required: true
+          schema: {type: string, enum: [ADMIN, SYSTEM]}
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+      responses:
+        '200':
+          description: 집계
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Stats'
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
   /records/students/{studentId}/exists:
     get:
       operationId: recordExists
@@ -395,6 +819,53 @@ components:
       in: path
       required: true
       schema: {type: string, format: uuid}
+    StudentId:
+      name: studentId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    AdminUserId:
+      name: X-User-Id
+      in: header
+      required: true
+      description: core가 검증한 관리자 ID (judgment_correction.corrected_by). 없거나 UUID가 아니면 400
+      schema: {type: string, format: uuid}
+    AdminRole:
+      name: X-User-Role
+      in: header
+      required: true
+      schema:
+        type: string
+        const: ADMIN
+    CorrectionScope:
+      name: X-Student-Scope
+      in: header
+      required: true
+      description: 판정 학생 UUID 정확히 1개. 비었거나 여럿이거나 다른 학생이면 403
+      schema: {type: string, format: uuid}
+    RecordRole:
+      name: X-User-Role
+      in: header
+      required: true
+      schema:
+        type: string
+        enum: [PARENT, STUDENT, SYSTEM]
+    RecordScope:
+      name: X-Student-Scope
+      in: header
+      required: true
+      description: 검증된 허용 학생 UUID의 쉼표 구분 목록, 조회 대상 학생이 있어야 함
+      schema: {type: string}
+    From:
+      name: from
+      in: query
+      description: KST 날짜(포함). to와 함께 주거나 함께 생략(생략하면 오늘 포함 최근 7일, P06), 한쪽만 주면 400
+      schema: {type: string, format: date}
+    To:
+      name: to
+      in: query
+      description: KST 날짜(포함). from과 함께 주거나 함께 생략, 한쪽만 주거나 from보다 이르면 400
+      schema: {type: string, format: date}
   headers:
     DraftETag:
       description: 초안 버전 (`"7"`)
@@ -422,7 +893,7 @@ components:
         label: {type: string}
     Mission:
       type: object
-      required: [id, title, subject, grade, gradeMax, thinkingType, inputType, question, hint, sceneUri, staticSceneUri, choices, inputTemplate]
+      required: [id, title, subject, grade, gradeMax, thinkingType, inputType, question, hint, sceneUri, staticSceneUri, choices, inputTemplate, categories, answerUnit]
       properties:
         id: {type: string, format: uuid}
         title: {type: string}
@@ -441,6 +912,13 @@ components:
         inputTemplate:
           type: array
           items: {type: string}
+        categories:
+          type: array
+          description: 분류 그룹 (mission_version.categories, 분류가 아니면 빈 배열)
+          items: {$ref: '#/components/schemas/Choice'}
+        answerUnit:
+          type: [string, 'null']
+          description: 수학 최종 답 칸 뒤에 고정해 보여 줄 단위 (단위는 비교하지 않음, FN-JDG-02)
     MissionListItem:
       unevaluatedProperties: false
       allOf:
@@ -484,7 +962,7 @@ components:
     Attempt:
       type: object
       additionalProperties: false
-      required: [attemptId, studentId, mission, status, finishedAt, answers, helped, draft, nextActions]
+      required: [attemptId, studentId, mission, status, finishedAt, answers, helped, draft, nextActions, reveal, revealKind, checklist, reflection]
       properties:
         attemptId: {type: string, format: uuid}
         studentId: {type: string, format: uuid}
@@ -492,7 +970,7 @@ components:
         status:
           type: string
           enum: [IN_PROGRESS, COMPLETED]
-        finishedAt: {type: [string, 'null'], format: date-time}
+        finishedAt: {type: [string, 'null'], format: date-time, description: "마무리(정답·예시 답 공개) 시각, 그 뒤 답변 제출 불가. 마무리 전 null"}
         answers:
           type: array
           items: {$ref: '#/components/schemas/AnswerItem'}
@@ -502,6 +980,20 @@ components:
           type: array
           description: 마지막 답변의 다음 행동
           items: {$ref: '#/components/schemas/NextAction'}
+        reveal: {type: [string, 'null'], description: 마무리 뒤에만. 시도 기준표 버전의 예시 답(닫힌 문제는 정답과 해설)}
+        revealKind:
+          type: [string, 'null']
+          enum: [ANSWER, EXAMPLE, null]
+          description: 마무리 뒤에만. 고르기·순서·분류·풀이 단계 ANSWER, 서술·논술 EXAMPLE
+        checklist:
+          type: [array, 'null']
+          description: 마무리 뒤에만
+          items: {$ref: '#/components/schemas/Element'}
+        reflection:
+          description: 돌아보기 뒤에만
+          oneOf:
+            - $ref: '#/components/schemas/Reflection'
+            - type: 'null'
     AnswerItem:
       type: object
       additionalProperties: false
@@ -613,19 +1105,53 @@ components:
         trial: {type: boolean}
         elements:
           type: array
-          items:
-            type: object
-            additionalProperties: false
-            required: [elementId, label, satisfied, quote, sourceType]
-            properties:
-              elementId: {type: string, format: uuid, description: rubric_element.id}
-              label: {type: string}
-              satisfied: {type: boolean}
-              quote: {type: [string, 'null'], description: 학생 답 원문 구절 또는 고른 답}
-              sourceType:
-                type: [string, 'null']
-                enum: [RECORD, RULE, ANSWER_KEY, AI_OBSERVATION, null]
+          items: {$ref: '#/components/schemas/Element'}
         heldReason: {type: [string, 'null']}
+    Element:
+      type: object
+      additionalProperties: false
+      required: [elementId, label, satisfied, quote, sourceType]
+      properties:
+        elementId: {type: string, format: uuid, description: rubric_element.id}
+        label: {type: string}
+        satisfied: {type: boolean}
+        quote: {type: [string, 'null'], description: 학생 답 원문 구절 또는 고른 답}
+        sourceType:
+          type: [string, 'null']
+          enum: [RECORD, RULE, ANSWER_KEY, AI_OBSERVATION, null]
+    FinishResult:
+      type: object
+      additionalProperties: false
+      required: [attemptId, finishedAt, reveal, revealKind, checklist]
+      properties:
+        attemptId: {type: string, format: uuid}
+        finishedAt: {type: string, format: date-time}
+        reveal: {type: [string, 'null'], description: 시도 기준표 버전의 예시 답(닫힌 문제는 정답과 해설), 없으면 null}
+        revealKind: {type: string, enum: [ANSWER, EXAMPLE]}
+        checklist:
+          type: array
+          items: {$ref: '#/components/schemas/Element'}
+    Difficulty:
+      type: string
+      enum: [EASY, NORMAL, HARD]
+      description: 돌아보기 난이도 (api-spec 1.5) EASY 쉬웠어 · NORMAL 보통 · HARD 어려웠어
+    Reflection:
+      type: object
+      additionalProperties: false
+      required: [difficulty, text]
+      properties:
+        difficulty: {$ref: '#/components/schemas/Difficulty'}
+        text: {type: [string, 'null'], description: 달라진 점}
+    SelfAssessmentItem:
+      type: object
+      additionalProperties: false
+      required: [elementId, label, selfChecked, aiChecked, quote]
+      properties:
+        elementId: {type: string, format: uuid}
+        label: {type: string}
+        selfChecked: {type: [boolean, 'null'], description: 학생이 체크하지 않은 요소면 null}
+        aiChecked: {type: boolean, description: 체크리스트의 체크}
+        quote: {type: [string, 'null']}
     Followup:
       type: object
       additionalProperties: false
@@ -648,6 +1174,277 @@ components:
         rubric: {type: string}
         model: {type: [string, 'null'], description: 규칙 판정이면 null}
         prompt: {type: [string, 'null']}
+    RecordPeriod:
+      type: object
+      additionalProperties: false
+      required: [from, to]
+      properties:
+        from: {type: string, format: date}
+        to: {type: string, format: date}
+    QueryState:
+      type: string
+      enum: [OK, NO_RECORD, INSUFFICIENT_SAMPLE]
+      description: 집계 대상(비율은 분모) 0건 NO_RECORD, 1~4건 INSUFFICIENT_SAMPLE, 5건 이상 OK (P08)
+    Metric:
+      type: object
+      additionalProperties: false
+      required: [label, value, count, numerator, denominator, formula, period, sourceType, state]
+      properties:
+        label: {type: string}
+        value: {type: [number, 'null'], description: 비율. 분모 5 미만이거나 건수 지표면 null}
+        count: {type: integer}
+        numerator: {type: integer}
+        denominator: {type: integer}
+        formula: {type: string}
+        period: {$ref: '#/components/schemas/RecordPeriod'}
+        sourceType: {type: string, enum: [RECORD]}
+        state: {$ref: '#/components/schemas/QueryState'}
+    RecordSummary:
+      type: object
+      additionalProperties: false
+      required: [studentId, state, period, inclusionRule, metrics]
+      properties:
+        studentId: {type: string, format: uuid}
+        state: {$ref: '#/components/schemas/QueryState'}
+        period: {$ref: '#/components/schemas/RecordPeriod'}
+        inclusionRule: {type: string}
+        metrics:
+          type: array
+          items: {$ref: '#/components/schemas/Metric'}
+    RecordThinkingTypes:
+      type: object
+      additionalProperties: false
+      required: [studentId, state, period, items]
+      properties:
+        studentId: {type: string, format: uuid}
+        state: {$ref: '#/components/schemas/QueryState'}
+        period: {$ref: '#/components/schemas/RecordPeriod'}
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [type, state, missions]
+            properties:
+              type: {$ref: '#/components/schemas/ThinkingType'}
+              state: {type: string, enum: [OK, NO_RECORD]}
+              missions:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [attemptId, title]
+                  properties:
+                    attemptId: {type: string, format: uuid}
+                    title: {type: string}
+    RecordAttempt:
+      type: object
+      additionalProperties: false
+      description: 시도 상세(Attempt)에서 draft를 뺀 모양 + completedAt·hintUsages·reflection.createdAt
+      required: [attemptId, studentId, mission, status, finishedAt, answers, helped, nextActions, reveal, revealKind, checklist, reflection, completedAt, hintUsages]
+      properties:
+        attemptId: {type: string, format: uuid}
+        studentId: {type: string, format: uuid}
+        mission: {$ref: '#/components/schemas/Mission'}
+        status: {type: string, enum: [IN_PROGRESS, COMPLETED]}
+        finishedAt: {type: [string, 'null'], format: date-time, description: "마무리(정답·예시 답 공개) 시각, 그 뒤 답변 제출 불가. 마무리 전 null"}
+        answers:
+          type: array
+          items: {$ref: '#/components/schemas/AnswerItem'}
+        helped: {type: boolean}
+        nextActions:
+          type: array
+          items: {$ref: '#/components/schemas/NextAction'}
+        reveal: {type: [string, 'null']}
+        revealKind: {type: [string, 'null'], enum: [ANSWER, EXAMPLE, null]}
+        checklist:
+          type: [array, 'null']
+          items: {$ref: '#/components/schemas/Element'}
+        reflection:
+          oneOf:
+            - $ref: '#/components/schemas/RecordReflection'
+            - type: 'null'
+        completedAt: {type: [string, 'null'], format: date-time, description: 돌아보기를 내 COMPLETED가 된 시각. 그 전 null}
+        hintUsages:
+          type: array
+          description: 생각 열기 열람 시각, 열람 순 (report가 최초 답변 전 열람 여부를 판단)
+          items:
+            type: object
+            additionalProperties: false
+            required: [openedAt]
+            properties:
+              openedAt: {type: string, format: date-time}
+    RecordAttemptDetail:
+      type: object
+      additionalProperties: false
+      description: RecordAttempt + 화면이 유지할 조회 기간·상태 (이력은 자르지 않음)
+      required: [attemptId, studentId, mission, status, finishedAt, answers, helped, nextActions, reveal, revealKind, checklist, reflection, completedAt, hintUsages, state, period]
+      properties:
+        attemptId: {type: string, format: uuid}
+        studentId: {type: string, format: uuid}
+        mission: {$ref: '#/components/schemas/Mission'}
+        status: {type: string, enum: [IN_PROGRESS, COMPLETED]}
+        finishedAt: {type: [string, 'null'], format: date-time, description: "마무리(정답·예시 답 공개) 시각, 그 뒤 답변 제출 불가. 마무리 전 null"}
+        answers:
+          type: array
+          items: {$ref: '#/components/schemas/AnswerItem'}
+        helped: {type: boolean}
+        nextActions:
+          type: array
+          items: {$ref: '#/components/schemas/NextAction'}
+        reveal: {type: [string, 'null']}
+        revealKind: {type: [string, 'null'], enum: [ANSWER, EXAMPLE, null]}
+        checklist:
+          type: [array, 'null']
+          items: {$ref: '#/components/schemas/Element'}
+        reflection:
+          oneOf:
+            - $ref: '#/components/schemas/RecordReflection'
+            - type: 'null'
+        completedAt: {type: [string, 'null'], format: date-time, description: 돌아보기를 내 COMPLETED가 된 시각. 그 전 null}
+        hintUsages:
+          type: array
+          description: 생각 열기 열람 시각, 열람 순 (report가 최초 답변 전 열람 여부를 판단)
+          items:
+            type: object
+            additionalProperties: false
+            required: [openedAt]
+            properties:
+              openedAt: {type: string, format: date-time}
+        state: {$ref: '#/components/schemas/QueryState'}
+        period: {$ref: '#/components/schemas/RecordPeriod'}
+    RecordReflection:
+      type: object
+      additionalProperties: false
+      required: [difficulty, text, createdAt]
+      properties:
+        difficulty: {$ref: '#/components/schemas/Difficulty'}
+        text: {type: [string, 'null']}
+        createdAt: {type: string, format: date-time, description: 돌아보기를 낸 시각(= completedAt)}
+    RecordAttemptPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalElements, studentId, state, period, inclusionRule]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/RecordAttempt'}
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1}
+        totalElements: {type: integer, minimum: 0}
+        studentId: {type: string, format: uuid}
+        state: {$ref: '#/components/schemas/QueryState'}
+        period: {$ref: '#/components/schemas/RecordPeriod'}
+        inclusionRule: {type: string}
+    RecordChanges:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalElements, studentId, state, period]
+      properties:
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1}
+        totalElements: {type: integer, minimum: 0}
+        studentId: {type: string, format: uuid}
+        state: {$ref: '#/components/schemas/QueryState'}
+        period: {$ref: '#/components/schemas/RecordPeriod'}
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [attemptId, followup, first, revised, counts]
+            properties:
+              attemptId: {type: string, format: uuid}
+              followup: {type: [string, 'null'], description: 마지막 답변이 답한 되묻기}
+              first: {$ref: '#/components/schemas/AnswerText'}
+              revised: {$ref: '#/components/schemas/AnswerText'}
+              counts:
+                type: object
+                additionalProperties: false
+                required: [chars, sentences, reasonConnectives]
+                properties:
+                  chars: {$ref: '#/components/schemas/CountPair'}
+                  sentences: {$ref: '#/components/schemas/CountPair'}
+                  reasonConnectives: {$ref: '#/components/schemas/CountPair'}
+    RecordHome:
+      type: object
+      additionalProperties: false
+      required: [studentId, state, period, resume, missions]
+      properties:
+        studentId: {type: string, format: uuid}
+        state: {$ref: '#/components/schemas/QueryState'}
+        period: {$ref: '#/components/schemas/RecordPeriod'}
+        resume:
+          oneOf:
+            - $ref: '#/components/schemas/RecordAttempt'
+            - type: 'null'
+        missions:
+          type: array
+          items: {$ref: '#/components/schemas/MissionListItem'}
+    RecordThinkingActivities:
+      type: object
+      additionalProperties: false
+      required: [studentId, state, period, items]
+      properties:
+        studentId: {type: string, format: uuid}
+        state: {$ref: '#/components/schemas/QueryState'}
+        period: {$ref: '#/components/schemas/RecordPeriod'}
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [attemptId, thinkingType, missionTitle, reflection]
+            properties:
+              attemptId: {type: string, format: uuid}
+              thinkingType: {$ref: '#/components/schemas/ThinkingType'}
+              missionTitle: {type: string}
+              reflection:
+                oneOf:
+                  - $ref: '#/components/schemas/Reflection'
+                  - type: 'null'
+    AnswerText:
+      type: object
+      additionalProperties: false
+      required: [answerId, text]
+      properties:
+        answerId: {type: string, format: uuid}
+        text: {type: string}
+    CountPair:
+      type: array
+      description: '[최초, 마지막]'
+      minItems: 2
+      maxItems: 2
+      items: {type: integer, minimum: 0}
+    EvidenceList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [answerId, attemptId, missionTitle, answerVersion, submittedAt, quote, available]
+            properties:
+              answerId: {type: string, format: uuid}
+              attemptId: {type: [string, 'null'], format: uuid}
+              missionTitle: {type: [string, 'null']}
+              answerVersion: {type: [integer, 'null']}
+              submittedAt: {type: [string, 'null'], format: date-time}
+              quote: {type: [string, 'null'], description: 원문(available이 false면 null)}
+              available: {type: boolean}
+    Stats:
+      type: object
+      additionalProperties: false
+      required: [period, inclusionRule, attempts, completedAttempts, students]
+      properties:
+        period: {$ref: '#/components/schemas/RecordPeriod'}
+        inclusionRule: {type: string}
+        attempts: {type: integer, minimum: 0}
+        completedAttempts: {type: integer, minimum: 0}
+        students: {type: integer, minimum: 0}
     RecordExists:
       type: object
       additionalProperties: false
@@ -658,6 +1455,39 @@ components:
           format: uuid
         hasRecords:
           type: boolean
+    JudgmentResult:
+      type: string
+      enum: [CORRECT, PARTIAL, RETHINK, HELD]
+    CorrectionRequest:
+      type: object
+      required: [reportId, reason, corrected]
+      properties:
+        reportId: {type: string, format: uuid, description: core error_report ID}
+        reason: {type: string, minLength: 1, description: 정정 사유 (공백만이면 400)}
+        corrected: {$ref: '#/components/schemas/JudgmentResult'}
+    CorrectionResult:
+      type: object
+      additionalProperties: false
+      required: [correctionId, previousResult, corrected, createdAt, impact]
+      properties:
+        correctionId: {type: string, format: uuid}
+        previousResult:
+          allOf:
+            - $ref: '#/components/schemas/JudgmentResult'
+          description: 정정 직전에 보이던 결과 (앞선 정정이 있으면 그 결과)
+        corrected: {$ref: '#/components/schemas/JudgmentResult'}
+        createdAt: {type: string, format: date-time}
+        impact:
+          type: object
+          additionalProperties: false
+          required: [conversation, aggregation, report]
+          description: >-
+            파생 결과 반영 확인 상태 (APPLIED·NOT_APPLIED·UNKNOWN). learning 수치 집계는 판정 결과를 쓰지 않아
+            aggregation NOT_APPLIED(변경 대상 없음), 대화·리포트는 learning이 확인할 수 없어 UNKNOWN
+          properties:
+            conversation: {type: string, const: UNKNOWN}
+            aggregation: {type: string, const: NOT_APPLIED}
+            report: {type: string, const: UNKNOWN}
     Problem:
       type: object
       required: [type, title, status, code, traceId]

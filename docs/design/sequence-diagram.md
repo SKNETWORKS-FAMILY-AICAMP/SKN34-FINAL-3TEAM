@@ -173,7 +173,7 @@ sequenceDiagram
     C-->>P: 200 {pairingCode, expiresAt} → QR 표시
   end
   K->>C: POST /auth/student/devices {pairingCode, label}
-  C->>R: 코드 조회 후 즉시 삭제
+  C->>R: IP 시도 제한, 원자적 코드 조회·삭제
   alt 없음·만료·재사용
     C-->>K: 400 PAIRING_CODE_INVALID
   else
@@ -196,7 +196,7 @@ sequenceDiagram
   participant DB as core_db
 
   K->>C: GET /auth/student/profiles (Cookie student_device)
-  C-->>K: 200 [{childId, nickname, pinSet, pinLocked}]
+  C-->>K: 200 {items:[{childId, nickname, pinSet, pinLocked}]}
   Note over K: 자녀 프로필 선택 → PIN 입력
   K->>C: POST /auth/student/login {childId, pin} (Cookie student_device)
   C->>DB: student_device token_hash 조회·미해제·미만료·자녀 등록 확인
@@ -349,7 +349,7 @@ sequenceDiagram
       L-->>C: 503 AI_UNAVAILABLE retryable
     else 정상
       rect rgba(128,128,128,0.12)
-        L->>DB: judgment DONE + judgment_element + followup + 버전 저장 (획득한 리스일 때만, 리스를 잃었으면 저장 없이 현재 상태)
+        L->>DB: attempt 행 잠금(FOR UPDATE)·마무리 여부 다시 확인 → judgment DONE + judgment_element + followup(마무리 전일 때만) + 버전 저장 (획득한 리스일 때만, 리스를 잃었으면 저장 없이 현재 상태)
       end
       L-->>C: 200 FeedbackResult
     end
@@ -381,6 +381,7 @@ sequenceDiagram
 
   W->>C: POST /attempts/{id}/finish
   C->>L: POST /internal/attempts/{id}/finish
+  L->>DB: attempt 행 잠금(FOR UPDATE)·본인 시도 확인 (이미 마무리했으면 기록 없이 같은 결과)
   L->>DB: 타임라인(답변·판정·되묻기) 조회
   L->>L: FinishPolicy.canFinish (판정 DONE 1회 이상, P04)
   alt 조건 미충족
@@ -393,14 +394,15 @@ sequenceDiagram
   end
   opt 자기 평가 (선택)
     W->>C: POST /attempts/{id}/self-assessment
-    C->>L: POST /internal/attempts/{id}/self-assessment
-    L-->>C: 자기 체크 저장 (판정·원본 불변), AI 확인 항목과 나란히 반환
+    C->>L: POST /internal/attempts/{id}/self-assessment {checks}
+    L-->>C: 자기 체크 저장 (판정·원본 불변), AI 확인 항목과 나란히 반환 (마무리 전·완료 뒤 409)
     C-->>W: 200
   end
-  W->>C: POST /attempts/{id}/reflection {difficulty, changedText}
+  W->>C: POST /attempts/{id}/reflection {difficulty, text}
   C->>L: POST /internal/attempts/{id}/reflection
-  alt finished_at 없음 (마무리 전)
-    L-->>C: 409 REVEAL_CONDITION_UNMET
+  L->>DB: attempt 행 잠금(FOR UPDATE)·본인 시도 확인
+  alt finished_at 없음 (마무리 전) 또는 이미 완료
+    L-->>C: 409 REVEAL_CONDITION_UNMET (완료 뒤면 ATTEMPT_CLOSED)
     C-->>W: 409
   else
     rect rgba(128,128,128,0.12)
@@ -538,6 +540,11 @@ sequenceDiagram
   else 기존 RUNNING (이전 Pod 중단 후 재전달)
     Note over RW: 같은 행으로 아래 처리 처음부터 재실행
   end
+  Note over RW,C: #119 core API 제공. 아래 별명 조회·전달의 worker 연결은 report 담당 후속 작업
+  RW->>C: GET /internal/students/{id}/profile (내부 토큰, SYSTEM, 학생 scope)
+  C-->>RW: 200 {studentId, nickname} (ACTIVE만, no-store)
+  RW->>RW: nickname을 렌더링용 display_name으로 보관 (메시지에는 추가하지 않음)
+  Note over RW,C: 403·404는 생성 실패, 통신 장애는 기존 작업 실패/재시도 정책. 가짜 별명 없음
   RW->>L: GET /internal/records/students/{id}/thinking-types·attempts·changes
   L-->>RW: 기간 내 기록
   RW->>RW: MetricsCalculator (기간 확정·수치·전후 변화·state)
@@ -547,6 +554,7 @@ sequenceDiagram
   alt NO_RECORD 또는 narrativeEnabled = false
     RW->>RW: 서술 생략 (NO_RECORD는 기록 없음 안내 문구, 무료는 narrative null) (P06, P13)
   else
+    RW->>RW: NarrativeGenerator에서 별명·이름 필드 제거 및 본문 별명 가림 (최종 전송 payload 검증 필요)
     RW->>A: POST /internal/report-narratives {metrics, thinkingTypes, changes, reflections, quotes}
     A-->>RW: narrative·eveningQuestion·citedQuotes
     RW->>L: GET /internal/records/evidence?answerIds=
@@ -573,8 +581,8 @@ sequenceDiagram
   MQ-)C: core.report.events 소비
   C->>CDB: processed_event 저장 (중복이면 무시)
   C->>CDB: report_job 조건부 전이 (started: QUEUED → RUNNING / completed·failed: QUEUED·RUNNING → COMPLETED·FAILED + report_id)
-  opt report.completed
-    C->>C: NotificationService.notify (REPORT_COMPLETED, source_event_id)
+  opt 종료 전이 (completed·failed)
+    C->>C: ReportJobFinished → ReportNotificationListener → NotificationService.report (REPORT_COMPLETED·REPORT_FAILED, 같은 트랜잭션)
   end
 ```
 
@@ -593,21 +601,20 @@ sequenceDiagram
   participant C2 as core (SSE 연결 레플리카)
   participant W as Web
 
-  W->>C2: GET /notifications/stream (SSE 연결 유지)
-  C2->>R: SUBSCRIBE notifications
-  C1->>CDB: notification INSERT QUEUED (UK user_id·type·source_event_id, 중복 시 무시)
-  alt 새로 생성됨
-    C1->>CDB: QUEUED → RUNNING
-    C1->>R: PUBLISH {userId, notificationId}
-    alt 발행 성공
-      C1->>CDB: RUNNING → COMPLETED
-      R-->>C2: 메시지
-      C2-->>W: event notification (제목·링크만, 원문·결제 정보 없음)
-    else Redis 오류
-      C1->>CDB: RUNNING → FAILED (failure_reason, 관리자 재처리 대상)
-    end
+  W->>C2: GET /notifications/stream (SSE, 5분)
+  C2->>R: SUBSCRIBE core:notifications:v1
+  C2-->>W: event ready {reconcile: /api/v1/notifications}
+  C1->>CDB: notification INSERT QUEUED (UK user_id·type·source_event_id, 중복·수신 거부 시 생성 안 함)
+  Note over C1,CDB: 리포트 전이 트랜잭션 커밋
+  C1->>R: PUBLISH (AFTER_COMMIT)
+  alt 발행 성공
+    C1->>CDB: QUEUED → COMPLETED (별도 트랜잭션)
+    R-->>C2: 메시지
+    C2-->>W: event notification (제목·링크만, 원문·결제 정보 없음)
+  else Redis 오류
+    C1->>CDB: QUEUED → FAILED (REDIS_PUBLISH_FAILED)
   end
-  Note over W,C2: 재연결 시 GET /notifications?unreadOnly=true 로 누락분 조회
+  Note over W,C2: ready 수신(재연결 포함) 후 GET /notifications 첫 페이지부터 재조회해 id로 병합
 ```
 
 ### 6.3 조회·다운로드
@@ -637,11 +644,13 @@ sequenceDiagram
 
 - `reportId`처럼 경로에 자녀 ID가 없는 API는 core가 연결 자녀 전체를 범위로 전달하고, 소유 서비스(report-api)가 리소스의 학생 ID로 검사
 - 상세 조회 시 core가 `report_view` 저장 (열람률 지표)
-- 재생성(`/regenerate`): 새 `report_job(REGENERATE)` + outbox → 6.1과 같은 흐름, `weekly_report.revision` 증가 (기존 판 보존·최신판 기본 조회. 학부모는 리포트당 1회, 초과 시 409 REGENERATE_NOT_ALLOWED, 관리자 무제한, P06)
+- 재생성(`/regenerate`): 새 `report_job(REGENERATE)` + outbox → 6.1과 같은 흐름, `weekly_report.revision` 증가 (기존 판 보존·최신판 기본 조회. 학부모는 리포트당 1회, 초과 시 409 REPORT_REGENERATION_LIMIT, 관리자 무제한, P06)
 
 ---
 
 ## 7. 결제·구독 (토스페이먼츠 테스트)
+
+#48 확정: 아래 개념 시퀀스의 정기 주문은 논리 주문이며 실제 PG 요청은 payment_charge_attempt로 분리한다. 확정 실패 이후에만 일별 새 PG 주문을 생성하고 불명확한 거래는 조회만 한다. 준비/결과/권한 트랜잭션과 parent 계정 잠금은 PG 호출 양쪽으로 분리한다. 무료 상품 선택·사용 예약/환불 동결·서명/PG 교차 검증은 [#48 보고서](../report/issue-48-payments.md)가 우선한다.
 
 ### 7.1 주문·승인
 
@@ -935,5 +944,7 @@ sequenceDiagram
 ## 11. 확인 필요 가정
 - `student.deleted` 완료 확인: learning 이벤트 발행 없음 원칙에 따라 이벤트 대신 core 내부 API로 완료 보고(10.1). 보고 호출 실패 시 지연 재시도(1·5·15분)로 재전달 → 삭제는 멱등이라 다시 보고 (P09)
 - `report.started`·`report.completed` 순서 역전 허용 (상태 다이어그램 4.1)
-- 정기 청구 재시도(7.3): ERD 부분 UK `(subscription_id, billing_period_start) WHERE kind = 'RENEWAL'` 때문에 같은 기간 새 주문 불가. 가정은 "기존 주문의 결제가 `FAILED`면 같은 주문으로 재청구". PG 주문번호 재사용 가능 여부 확인 후 ERD 반영 필요
+- 정기 청구 재시도(7.3): ERD 부분 UK `(subscription_id, billing_period_start) WHERE kind = 'RENEWAL'` 때문에 같은 기간 새 주문 불가. 논리 주문은 유지하고 확정 실패 후 새 charge attempt/PG 주문을 사용한다(#48). PG 결과가 불명확하면 새 청구를 만들지 않는다
 - 웹훅 처리 실패 시 5xx 응답으로 PG 재전송 유도(7.2): 토스페이먼츠 재전송 정책 확인 필요
+
+#58 단독 로그인은 계정 행 잠금 → 기기 유효/등록 자녀 → 현재 연결·활성·동의 → PIN 설정·잠금·일치 순으로 재검사한다. 실패 횟수 커밋 후 401/423 응답한다. 성공은 별도 STUDENT auth_session을 생성하며 부모 세션을 변경하지 않는다. PIN 변경은 계정 잠금 → 현재 자녀 권한 → 학생 잠금 → DB 재인증 consume → PIN 갱신·감사 기록을 한 트랜잭션으로 실행한다.

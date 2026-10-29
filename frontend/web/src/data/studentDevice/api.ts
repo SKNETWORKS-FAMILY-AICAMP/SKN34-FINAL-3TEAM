@@ -1,4 +1,4 @@
-import { ApiError, apiFetch, notifyAuthChange, setAccessToken } from '../apiClient.ts'
+import { ApiError, apiFetch, setAccessToken } from '../apiClient.ts'
 import { json } from '../parent/api.ts'
 import type { Child, Session } from '../../domain/classroom.ts'
 import type { Pairing, StudentDevice, StudentProfile } from '../../domain/studentDevice.ts'
@@ -19,6 +19,11 @@ const item = (id: string) => encodeURIComponent(id)
  * `credentials: 'same-origin'`으로 브라우저가 알아서 보낸다.
  */
 export const studentDeviceApi = {
+  // #45: proof is bound to this session, PIN_CHANGE and exactly one child.
+  startPinReauth: (childId: string) => apiFetch<{ challengeId: string; authorizationUrl: string; expiresAt: string }>(
+    '/me/reauth', json({ purpose: 'PIN_CHANGE', childId })),
+  finishPinReauth: (challengeId: string) => apiFetch<{ reauthToken: string; expiresAt: string }>(
+    '/me/reauth', json({ challengeId })),
   // ── 학부모 ─────────────────────────────────────────
   createPairing: (childIds: string[]) =>
     apiFetch<Pairing>('/student-devices/pairings', json({ childIds })),
@@ -66,7 +71,6 @@ export const studentDeviceApi = {
     if (c.childId !== childId || typeof c.nickname !== 'string' || !(grade >= 3 && grade <= 6))
       return contractError('로그인한 자녀 정보가 요청과 다릅니다.')
     setAccessToken(raw.accessToken, 'STUDENT')
-    notifyAuthChange('STUDENT')
     const child: Child = {
       id: childId,
       nickname: c.nickname,

@@ -3,6 +3,9 @@ package com.sagomungchi.learning.attempt.controller
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.exception.Problems
 import com.sagomungchi.learning._common.security.UserContextHolder
+import com.sagomungchi.learning.attempt.domain.AttemptStatus
+import com.sagomungchi.learning.attempt.domain.SelfAssessmentItem
+import com.sagomungchi.learning.attempt.domain.SelfCheck
 import com.sagomungchi.learning.attempt.service.AttemptService
 import com.sagomungchi.learning.attempt.service.DraftConflictException
 import jakarta.servlet.http.HttpServletRequest
@@ -25,7 +28,7 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 /**
- * 학습 시도·초안·생각 열기 (api-spec 2.2, 4.1). 시작은 미션 조회와 같이 core가 grade·demo를 붙임.
+ * 학습 시도·초안·생각 열기·마무리·돌아보기·자기 평가 (api-spec 2.2, 4.1). 시작은 미션 조회와 같이 core가 grade·demo를 붙임.
  * 초안 버전은 ETag·If-Match (api-spec 1.4)
  */
 @RestController
@@ -69,6 +72,29 @@ class AttemptController(
     fun openHint(@PathVariable attemptId: UUID): HintResponse {
         UserContextHolder.current().requireSelfStudent()
         return HintResponse.from(attemptService.openHint(attemptId))
+    }
+
+    /** 마무리 (api-spec 2.2): 판정 처리 완료 1회 이상이 아니면 409 REVEAL_CONDITION_UNMET. 다시 요청해도 같은 결과 */
+    @PostMapping("/attempts/{attemptId}/finish")
+    fun finish(@PathVariable attemptId: UUID): FinishResponse {
+        UserContextHolder.current().requireSelfStudent()
+        return FinishResponse.from(attemptId, attemptService.finish(attemptId))
+    }
+
+    /** 돌아보기 저장 → 학습 완료 (api-spec 2.2). 마무리 전 409 REVEAL_CONDITION_UNMET, 완료 뒤 409 ATTEMPT_CLOSED */
+    @PostMapping("/attempts/{attemptId}/reflection")
+    fun reflection(@PathVariable attemptId: UUID, @RequestBody request: ReflectionRequest): ReflectionResponse {
+        UserContextHolder.current().requireSelfStudent()
+        val command = request.toCommand()
+        attemptService.saveReflection(attemptId, command)
+        return ReflectionResponse(attemptId, AttemptStatus.COMPLETED, ReflectionView.from(command))
+    }
+
+    /** 자기 평가 (api-spec 2.2): 자기 체크를 저장하고 기준표 요소마다 AI 확인과 나란히 (FN-LRN-13) */
+    @PostMapping("/attempts/{attemptId}/self-assessment")
+    fun selfAssessment(@PathVariable attemptId: UUID, @RequestBody request: SelfAssessmentRequest): List<SelfAssessmentItem> {
+        UserContextHolder.current().requireSelfStudent()
+        return attemptService.saveSelfAssessment(attemptId, request.checks.map { SelfCheck(it.elementId, it.checked) })
     }
 
     /** 409 + 최신 초안 (api-spec 3.6) */

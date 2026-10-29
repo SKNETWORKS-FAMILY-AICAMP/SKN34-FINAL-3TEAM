@@ -103,6 +103,14 @@
                OR (process_status = 'RUNNING' AND (lease_until IS NULL OR lease_until &lt; #{now})))
     </update>
 
+    <!-- 판정 저장 전 시도 행 잠금. 답변 제출·마무리와 같은 행을 같은 순서(시도 → 판정)로 잠가 저장과 마무리가 겹치지 않음 -->
+    <select id="lockAttemptOpen" resultType="_boolean">
+        SELECT t.status = 'IN_PROGRESS' AND t.finished_at IS NULL
+        FROM attempt t JOIN answer a ON a.attempt_id = t.id
+        WHERE a.id = #{answerId}
+        FOR UPDATE OF t
+    </select>
+
     <!-- 획득한 리스 값이 그대로일 때만: 리스가 끝나 다른 요청이 다시 가져갔으면 0행 (늦게 끝난 처리의 덮어쓰기 방지) -->
     <update id="complete">
         UPDATE judgment
@@ -136,12 +144,21 @@
         </where>
     </sql>
 
+    <!--
+        정정(#80)이 있으면 결과는 최신 정정 결과(created_at 가장 늦은 행, CorrectionMapper.lockTarget과 같은 규칙)이고
+        보류 이유는 ai 판정의 것이라 비움. 요소·되묻기는 원판정 그대로 (class-diagram 4.2)
+    -->
     <select id="findStored" resultMap="stored">
         SELECT a.id AS answer_id, a.attempt_id, (t.status = 'IN_PROGRESS' AND t.finished_at IS NULL) AS attempt_open,
-               j.process_status, j.result, j.trial, j.held_reason, j.model_version, j.prompt_version,
+               j.process_status, COALESCE(c.result, j.result) AS result, j.trial,
+               CASE WHEN c.result IS NULL THEN j.held_reason END AS held_reason, j.model_version, j.prompt_version,
                m.code || '@' || v.version AS mission_label, m.code || '@' || rv.version AS rubric_label
         FROM answer a
         JOIN judgment j ON j.answer_id = a.id
+        LEFT JOIN LATERAL (
+            SELECT jc.corrected ->> 'result' AS result FROM judgment_correction jc WHERE jc.judgment_id = j.id
+            ORDER BY jc.created_at DESC, jc.id DESC LIMIT 1
+        ) c ON TRUE
         JOIN attempt t ON t.id = a.attempt_id
         JOIN mission m ON m.id = t.mission_id
         JOIN mission_version v ON v.id = t.mission_version_id

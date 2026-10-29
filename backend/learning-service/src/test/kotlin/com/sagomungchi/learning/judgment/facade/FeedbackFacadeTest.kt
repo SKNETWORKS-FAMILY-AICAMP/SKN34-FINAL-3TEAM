@@ -16,6 +16,7 @@ import com.sagomungchi.learning._common.security.UserContext
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.answer.domain.Answer
 import com.sagomungchi.learning.answer.domain.AnswerContent
+import com.sagomungchi.learning.answer.domain.Assignment
 import com.sagomungchi.learning.answer.service.AnswerService
 import com.sagomungchi.learning.answer.service.SubmitCommand
 import com.sagomungchi.learning.attempt.domain.Attempt
@@ -88,9 +89,12 @@ class FeedbackFacadeTest : PostgresRepositoryTest() {
         elements: List<String> = listOf("원인"),
         answerKey: String? = null,
         forbiddenTerms: String? = null,
+        categories: String? = null,
+        answerUnit: String? = null,
+        finalAnswer: Boolean = false,
     ): Setup {
-        val mission = rows.mission(inputType = inputType, grade = grade, choices = choices, title = "화분 미션")
-        val ids = rows.rubric(mission, elements, answerKey, forbiddenTerms, exampleAnswer = "예시 답")
+        val mission = rows.mission(inputType = inputType, grade = grade, choices = choices, title = "화분 미션", categories = categories, answerUnit = answerUnit)
+        val ids = rows.rubric(mission, elements, answerKey, forbiddenTerms, exampleAnswer = "예시 답", finalAnswer = finalAnswer)
         return Setup(attemptService.start(student, mission.id, grade, demo = false).attempt, ids)
     }
 
@@ -485,6 +489,24 @@ class FeedbackFacadeTest : PostgresRepositoryTest() {
         assertEquals("FORBIDDEN", assertThrows<BusinessException> { facade.feedback(answer.id) }.code)
         assertEquals("NOT_FOUND", assertThrows<BusinessException> { facade.feedback(UUID.randomUUID()) }.code)
         assertEquals("PENDING", judgment(answer.id)["process_status"])
+        org.mockito.Mockito.verifyNoInteractions(paymentUsage)
+    }
+
+    @Test fun `owned feedback reserves premium use and marks it complete only after DONE`() {
+        val setup=setup("CHOICE",answerKey="""{"choiceIds":["c2"]}""")
+        val answer=submit(setup.attempt,AnswerContent(choiceIds=listOf("c2")),InputType.CHOICE)
+        val reservation=UUID.randomUUID()
+        org.mockito.Mockito.`when`(paymentUsage.begin(student,answer.id)).thenReturn(reservation)
+        assertEquals(ProcessStatus.DONE,facade.feedback(answer.id).status)
+        org.mockito.Mockito.verify(paymentUsage).complete(student,reservation)
+    }
+
+    @Test fun `refund freeze rejects feedback before acquiring a judgment lease`() {
+        val setup=setup("CHOICE",answerKey="""{"choiceIds":["c2"]}""")
+        val answer=submit(setup.attempt,AnswerContent(choiceIds=listOf("c2")),InputType.CHOICE)
+        org.mockito.Mockito.`when`(paymentUsage.begin(student,answer.id)).thenThrow(BusinessException(HttpStatus.CONFLICT,"REFUND_IN_PROGRESS","환불 확인 중"))
+        assertEquals("REFUND_IN_PROGRESS",assertThrows<BusinessException> { facade.feedback(answer.id) }.code)
+        assertEquals("PENDING",judgment(answer.id)["process_status"])
     }
 
     companion object {
@@ -495,5 +517,73 @@ class FeedbackFacadeTest : PostgresRepositoryTest() {
         fun aiUrl(registry: DynamicPropertyRegistry) {
             registry.add("app.services.ai") { ai.baseUrl() }
         }
+    }
+
+    @Test
+    fun `풀이 단계 최종 답 요소는 ai에 보내지 않고 정답 키로 기록, 답이 틀리면 PARTIAL에 최종 답 미충족 (FN-JDG-02)`() {
+        val setup = setup(
+            "SOLUTION_STEPS", elements = listOf("문제 파악", "방법 세우기"), answerKey = """{"finalAnswer": "30"}""",
+            answerUnit = "m²", finalAnswer = true,
+        )
+        val (steps, finalId) = setup.elements.take(2) to setup.elements.last()
+        judgeReturns("CORRECT", listOf(steps[0] to "넓이를 구함", steps[1] to "나누어 구함"))
+        followupReturns("LOOK_AGAIN", "답을 다시 확인해 볼까요?")
+
+        val wrong = submit(setup.attempt, AnswerContent(finalAnswer = "28", steps = listOf("넓이를 구함", "나누어 구함")), InputType.SOLUTION_STEPS)
+        val partial = facade.feedback(wrong.id)
+
+        assertEquals(JudgmentResult.PARTIAL, partial.judgment?.result)
+        assertEquals(steps.map { it.toString() }, lastBody("/internal/judgments")["rubric"]["elements"].map { it["elementId"].asText() })
+        val missed = partial.judgment!!.elements.single { it.elementId == finalId }
+        assertEquals(listOf<Any?>(false, "28", ElementSource.ANSWER_KEY), listOf(missed.satisfied, missed.quote, missed.sourceType))
+        val followupRubric = lastBody("/internal/followups")["rubric"]
+        assertEquals(listOf("30 m²"), followupRubric["answerKey"].map { it.asText() })
+        assertTrue(followupRubric["elements"].any { it["elementId"].asText() == finalId.toString() })
+        assertTrue(lastBody("/internal/judgments")["answerText"].asText().endsWith("최종 답: 28 m²"))
+
+        val right = submit(setup.attempt, AnswerContent(finalAnswer = "30", steps = listOf("넓이를 구함", "나누어 구함")), InputType.SOLUTION_STEPS, partial.followup!!.followupId)
+        val correct = facade.feedback(right.id)
+        assertEquals(JudgmentResult.CORRECT, correct.judgment?.result)
+        assertEquals(true to "30", correct.judgment!!.elements.single { it.elementId == finalId }.let { it.satisfied to it.quote })
+    }
+
+    @Test
+    fun `풀이 단계를 ai가 보류하면 최종 답 요소도 남기지 않음`() {
+        val setup = setup("SOLUTION_STEPS", elements = listOf("문제 파악"), answerKey = """{"finalAnswer": "30"}""", finalAnswer = true)
+        judgeReturns("HELD", emptyList(), heldReason = "TOO_SHORT")
+        followupReturns("TELL_MORE", "어떻게 구했는지 더 말해 줄래요?")
+
+        val short = submit(setup.attempt, AnswerContent(finalAnswer = "30", steps = listOf("곱")), InputType.SOLUTION_STEPS)
+        val held = facade.feedback(short.id)
+
+        assertEquals(JudgmentResult.HELD, held.judgment?.result)
+        assertEquals(emptyList(), held.judgment!!.elements)
+    }
+
+    @Test
+    fun `분류는 모든 항목의 그룹이 정답 키와 같아야 정답, 없는 그룹은 422, 유출 검사용 정답은 선택지 이름과 그룹 이름`() {
+        val setup = setup(
+            "CLASSIFICATION",
+            answerKey = """{"assignments": [{"choiceId": "c1", "categoryId": "g1"}, {"choiceId": "c2", "categoryId": "g1"}, {"choiceId": "c3", "categoryId": "g2"}]}""",
+            categories = """[{"id": "g1", "label": "하늘에서 와요"}, {"id": "g2", "label": "땅에 있어요"}]""",
+        )
+        followupReturns("LOOK_AGAIN", "어디에서 오는지 다시 볼까요?")
+
+        val wrong = submit(setup.attempt, AnswerContent(assignments = listOf(Assignment("c1", "g1"), Assignment("c2", "g2"), Assignment("c3", "g2"))), InputType.CLASSIFICATION)
+        val rethink = facade.feedback(wrong.id)
+
+        assertEquals(JudgmentResult.RETHINK, rethink.judgment?.result)
+        assertEquals(0, calls("/internal/judgments"))
+        assertEquals(
+            listOf("햇빛: 하늘에서 와요", "물: 하늘에서 와요", "흙: 땅에 있어요"),
+            lastBody("/internal/followups")["rubric"]["answerKey"].map { it.asText() },
+        )
+        val unknown = assertThrows<BusinessException> {
+            submit(setup.attempt, AnswerContent(assignments = listOf(Assignment("c1", "g1"), Assignment("c2", "g1"), Assignment("c3", "g9"))), InputType.CLASSIFICATION, rethink.followup!!.followupId)
+        }
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY to "ANSWER_INCOMPLETE", unknown.status to unknown.code)
+
+        val right = submit(setup.attempt, AnswerContent(assignments = listOf(Assignment("c3", "g2"), Assignment("c1", "g1"), Assignment("c2", "g1"))), InputType.CLASSIFICATION, rethink.followup!!.followupId)
+        assertEquals(JudgmentResult.CORRECT, facade.feedback(right.id).judgment?.result)
     }
 }

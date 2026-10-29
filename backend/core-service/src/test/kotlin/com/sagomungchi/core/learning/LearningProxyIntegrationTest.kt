@@ -63,7 +63,7 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
         val parent = auth.login(GoogleProfile(subject, "$subject@example.test", "테스트 보호자"), null)
         user = parent.identity.account.id
         child = UUID.randomUUID()
-        jdbc.update("INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,created_at,updated_at) VALUES(?,'테스트 학생',3,2017,false,'ACTIVE',now(),now())", child)
+        jdbc.update("INSERT INTO student(pin_failed_count,id,nickname,grade,birth_year,is_demo,status,created_at,updated_at) VALUES(0,?,'테스트 학생',3,2017,false,'ACTIVE',now(),now())", child)
         jdbc.update("INSERT INTO guardianship(id,parent_user_id,student_id,method,status,linked_at) VALUES(?,?,?,'REGISTER','LINKED',now())", UUID.randomUUID(), user, child)
         listOf("TERMS", "PRIVACY", "GUARDIAN").forEach { kind ->
             val document = UUID.randomUUID(); documents.add(document)
@@ -214,7 +214,7 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
         // Same account entering another child must not receive the first child's cached result.
         val session = auth.authenticate(access).session.id
         val otherChild = UUID.randomUUID()
-        jdbc.update("INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,created_at,updated_at) VALUES(?,'다른 학생',3,2017,false,'ACTIVE',now(),now())", otherChild)
+        jdbc.update("INSERT INTO student(pin_failed_count,id,nickname,grade,birth_year,is_demo,status,created_at,updated_at) VALUES(0,?,'다른 학생',3,2017,false,'ACTIVE',now(),now())", otherChild)
         try {
             jdbc.update("INSERT INTO guardianship(id,parent_user_id,student_id,method,status,linked_at) VALUES(?,?,?,'REGISTER','LINKED',now())", UUID.randomUUID(), user, otherChild)
             jdbc.update("INSERT INTO consent(id,document_id,subject_user_id,student_id,agreed,status,agreed_at) SELECT ?,id,?,?,true,'AGREED',now() FROM consent_document WHERE kind='GUARDIAN' ORDER BY created_at DESC LIMIT 1", UUID.randomUUID(), user, otherChild)

@@ -98,7 +98,8 @@ class ConsentChildrenTest : PostgresRepositoryTest() {
         mvc.get("/api/v1/consent-documents").andExpect { status { isOk() }; jsonPath("$.totalElements") { value(3) } }
     }
     @Test fun `missing publication fails explicitly instead of allowing consent`() {
-        jdbc.update("DELETE FROM consent_document WHERE id=?", documents[kinds.indexOf("GUARDIAN")])
+        // The shared DB may contain older published versions from other fixture groups.
+        jdbc.update("UPDATE consent_document SET effective_from=(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date+1 WHERE kind='GUARDIAN'")
         assertEquals("CONSENT_DOCUMENTS_UNAVAILABLE", assertFailsWith<BusinessException> { consent.documents() }.code)
         mvc.get("/api/v1/consent-documents").andExpect { status { isServiceUnavailable() } }
     }
@@ -126,7 +127,8 @@ class ConsentChildrenTest : PostgresRepositoryTest() {
         mvc.get("/api/v1/children") { header("Authorization", "Bearer ${parent.accessToken}") }.andExpect {
             status { isOk() }; jsonPath("$.items[0].id") { value(child) }
             jsonPath("$.items[0].hasRecords") { value(null as Any?) }; jsonPath("$.items[0].recordState") { value("UNAVAILABLE") }
-            jsonPath("$.items[0].pinSet") { doesNotExist() }; jsonPath("$.items[0].plan") { doesNotExist() }
+            jsonPath("$.items[0].pinSet") { value(false) }; jsonPath("$.items[0].pinLocked") { value(false) }
+            jsonPath("$.items[0].plan") { doesNotExist() }
         }
         mvc.post("/api/v1/auth/student-sessions") {
             header("Authorization", "Bearer ${parent.accessToken}"); header("Origin", "http://localhost:5173")

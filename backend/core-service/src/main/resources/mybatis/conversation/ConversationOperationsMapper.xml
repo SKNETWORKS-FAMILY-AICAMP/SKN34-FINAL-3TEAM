@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.conversation.repository.ConversationOperationsMapper">
+ <resultMap id="job" type="com.sagomungchi.core.admin.domain.OperationJobRow"><constructor>
+  <idArg column="id" javaType="java.util.UUID"/><arg column="status" javaType="java.lang.String"/>
+  <arg column="retry_count" javaType="_int"/><arg column="failure_reason" javaType="java.lang.String"/>
+  <arg column="created_at" javaType="java.time.Instant"/>
+ </constructor></resultMap>
+ <sql id="period">created_at &gt;= #{start} AND created_at &lt; #{end} <if test="status != null">AND status=#{status}</if></sql>
+ <select id="list" resultMap="job">SELECT id,status,retry_count,failure_code AS failure_reason,created_at FROM conversation_message
+  WHERE <include refid="period"/> ORDER BY created_at DESC,id DESC LIMIT #{limit}</select>
+ <select id="count" resultType="long">SELECT count(*) FROM conversation_message WHERE <include refid="period"/></select>
+ <select id="find" resultMap="job" useCache="false" flushCache="true">SELECT id,status,retry_count,failure_code AS failure_reason,created_at FROM conversation_message WHERE id=#{id}</select>
+</mapper>

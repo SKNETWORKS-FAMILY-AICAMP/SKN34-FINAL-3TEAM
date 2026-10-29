@@ -15,44 +15,63 @@ import org.springframework.dao.DataAccessException
 import org.springframework.web.filter.OncePerRequestFilter
 
 class PublicAuthFilter(private val auth: AuthService, private val properties: AuthProperties, private val json: ObjectMapper) : OncePerRequestFilter() {
-    override fun shouldNotFilter(request: HttpServletRequest) = !request.requestURI.startsWith("/api/v1/")
+    override fun shouldNotFilter(request: HttpServletRequest) = !matchedPath(request).startsWith("/api/v1/")
 
     override fun doFilterInternal(request: HttpServletRequest, response: HttpServletResponse, chain: FilterChain) {
-        val path = request.requestURI.removePrefix("/api/v1")
+        val path = matchedPath(request).removePrefix("/api/v1")
         // #58 authenticates these exact endpoints with pairing/device credentials, not a user JWT.
         val studentDeviceEntry = (request.method == "GET" && path == "/auth/student/profiles") ||
             (request.method == "POST" && path in setOf("/auth/student/devices", "/auth/student/login"))
         try {
-            if (request.method == "POST" && (studentDeviceEntry || path in setOf("/auth/refresh", "/auth/logout", "/auth/student-sessions"))) {
+            if (request.method == "POST" && (studentDeviceEntry || path in setOf("/auth/refresh", "/auth/logout", "/auth/student-sessions", "/me/reauth"))) {
                 if (request.getHeader("Origin") != properties.webOrigin || request.getHeader("X-Requested-With") != "XMLHttpRequest")
                     throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "허용되지 않은 요청 출처입니다.")
             }
-            val public = (request.method == "GET" && path in setOf("/auth/google/authorize", "/auth/google/callback", "/consent-documents", "/products", "/notices", "/help")) ||
-                (request.method == "POST" && path in setOf("/auth/refresh", "/auth/logout")) || studentDeviceEntry
-            if (public) { chain.doFilter(request, response); return }
+            val public = (request.method == "GET" && path in setOf("/auth/google/authorize", "/auth/google/callback", "/auth/google/reauth/callback", "/consent-documents", "/products")) ||
+                (request.method == "POST" && path in setOf("/auth/refresh", "/auth/logout", "/webhooks/tosspayments")) || studentDeviceEntry
+            val withdrawalReceipt = request.method == "GET" && path == "/me/withdrawal" && request.getHeader("X-Withdrawal-Status-Token") != null
+            if (public || withdrawalReceipt) { chain.doFilter(request, response); return }
             val bearer = request.getHeader("Authorization")?.takeIf { it.startsWith("Bearer ") }?.removePrefix("Bearer ")
                 ?: throw BusinessException(HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "로그인이 필요합니다.")
             val identity = auth.authenticate(bearer)
             request.setAttribute(AuthController.IDENTITY, identity)
+            val adminReportRegeneration = identity.session.role == "ADMIN" && request.method == "POST" &&
+                Regex("/reports/[0-9a-fA-F-]{36}/regenerate").matches(path)
+            if (adminReportRegeneration) auth.requirePermission(identity, "SERVICE_OPS")
             if (path.startsWith("/students/") || path.startsWith("/missions") || path.startsWith("/attempts/") || path.startsWith("/answers/")) {
                 if (identity.session.role != "STUDENT") throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "학생 세션이 필요합니다.")
             }
             if (listOf("/student-devices", "/children", "/conversations", "/reports", "/agent/", "/orders", "/payments", "/subscriptions").any { path.startsWith(it) }) {
-                if (identity.session.role != "PARENT") throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "학부모 세션이 필요합니다.")
+                if (identity.session.role != "PARENT" && !adminReportRegeneration) throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "학부모 세션이 필요합니다.")
             }
             if (identity.session.role == "STUDENT" && (path.startsWith("/me/") || (path == "/me" && request.method != "GET")))
                 throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "학생은 계정 관리 기능을 사용할 수 없습니다.")
-            val consentRecovery = (request.method == "GET" && path == "/me") ||
-                (request.method in setOf("GET", "POST") && path == "/me/consents") ||
-                (request.method == "POST" && Regex("/me/consents/[0-9a-fA-F-]{36}/withdrawal").matches(path))
+            val financialRecovery = (request.method=="GET" && path in setOf("/payments","/subscriptions")) ||
+                (request.method=="GET" && Regex("/payments/[A-Za-z0-9_-]{6,64}").matches(path)) ||
+                (request.method=="POST" && Regex("/payments/[0-9a-fA-F-]{36}/refund-requests").matches(path)) ||
+                (request.method=="DELETE" && Regex("/subscriptions/[0-9a-fA-F-]{36}/auto-renewal").matches(path))
+            val consentRecovery = financialRecovery || (request.method == "GET" && path == "/me") ||
+                (path == "/me/consents" && request.method in setOf("GET", "POST")) ||
+                (request.method == "POST" && path.matches(Regex("/me/consents/[^/]+/withdrawal"))) ||
+                (request.method == "POST" && path in setOf("/me/reauth", "/me/withdrawal")) ||
+                (request.method == "GET" && path in setOf("/me/withdrawal", "/me/withdrawal/precheck")) ||
+                (path.matches(Regex("/children/[^/]+/deletion-impact")) && request.method == "GET") ||
+                (path.matches(Regex("/children/[^/]+/link")) && request.method == "DELETE") ||
+                (path.matches(Regex("/children/[^/]+/deletion-requests")) && request.method == "POST") ||
+                (path.matches(Regex("/children/[^/]+/deletion-requests/[^/]+")) && request.method == "GET")
             if (!consentRecovery) auth.requireConsents(identity)
             // #37: a withdrawn guardian consent also blocks existing parent child-resource requests.
-            if (identity.session.role == "PARENT" && path.startsWith("/children/")) {
+            if (!consentRecovery && identity.session.role == "PARENT" && path.startsWith("/children/")) {
                 val childId = runCatching { java.util.UUID.fromString(path.removePrefix("/children/").substringBefore('/')) }.getOrNull()
                 if (childId != null && childId !in identity.studentScope)
                     throw BusinessException(HttpStatus.FORBIDDEN, "CHILD_NOT_LINKED", "연결 또는 법정대리인 동의를 확인해 주세요.")
             }
-            if (path.startsWith("/admin/")) auth.requirePermission(identity, permission(path))
+            if (path.startsWith("/admin/")) {
+                val adminRead = request.method == "GET" && path in setOf("/admin/overview", "/admin/audit-logs")
+                if (adminRead) {
+                    if (identity.session.role != "ADMIN") throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "관리자 세션이 필요합니다.")
+                } else auth.requirePermission(identity, permission(path,request.method))
+            }
             UserContextHolder.set(UserContext(identity.account.id.toString(), identity.session.role,
                 identity.studentScope.map { it.toString() }.toSet(), request.getHeader("traceparent")))
             chain.doFilter(request, response)
@@ -71,9 +90,9 @@ class PublicAuthFilter(private val auth: AuthService, private val properties: Au
         } finally { UserContextHolder.clear() }
     }
 
-    private fun permission(path: String) = when {
+    private fun permission(path: String, method: String) = when {
         path.startsWith("/admin/missions") -> "CONTENT"
-        path.startsWith("/admin/refund-requests") -> "PAYMENT_REFUND"
+        path.startsWith("/admin/refund-requests") -> if(method=="GET") "PAYMENT_VIEW" else "PAYMENT_REFUND"
         path.startsWith("/admin/payments") -> "PAYMENT_VIEW"
         else -> "SERVICE_OPS"
     }
