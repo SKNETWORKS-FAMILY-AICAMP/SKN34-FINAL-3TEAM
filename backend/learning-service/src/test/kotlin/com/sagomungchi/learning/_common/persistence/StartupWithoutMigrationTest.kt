@@ -18,6 +18,7 @@ import kotlin.test.assertTrue
 @SpringBootTest(properties = [
     "app.internal.token=startup-test-token",
     "spring.rabbitmq.username=test", "spring.rabbitmq.password=test",
+    "spring.rabbitmq.listener.simple.auto-startup=false",
 ])
 @Testcontainers
 @DirtiesContext
