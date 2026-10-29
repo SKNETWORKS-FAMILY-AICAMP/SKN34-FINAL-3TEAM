@@ -10,6 +10,7 @@ info:
     운영 집계(/stats, #27)는 ADMIN·SYSTEM 컨텍스트를 요구한다.
     마무리·돌아보기·자기 평가(#26)는 학생 STUDENT 컨텍스트로 추가됐다.
     판정 정정(#80)은 ADMIN 컨텍스트와 판정 학생 1명 X-Student-Scope, 관리자 X-User-Id를 요구한다.
+    관리자 미션(#145)은 ADMIN 컨텍스트와 관리자 X-User-Id를 요구한다(CONTENT 권한은 core 프록시가 확인).
 servers:
   - url: /internal
 security:
@@ -773,6 +774,287 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /admin/missions:
+    get:
+      operationId: listAdminMissions
+      summary: 관리자 미션 목록과 전체 상태별 건수 (#145)
+      description: >-
+        core #126 프록시(CONTENT)가 그대로 넘김. 필터는 현재(편집 중) 버전 기준. counts는 페이지·status·grade·thinkingType 어느 필터와도 무관한 전체 상태별 건수.
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/MissionStatus'}}
+        - {name: grade, in: query, description: 현재 버전 학년 범위 안, schema: {type: integer}}
+        - {name: thinkingType, in: query, schema: {$ref: '#/components/schemas/ThinkingType'}}
+        - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMissionPage'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: createAdminMission
+      summary: 미션 작성 → DRAFT, 미션 버전 1·기준표 없음
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMissionRequest'
+      responses:
+        '201':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMission'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+  /admin/missions/{missionId}:
+    get:
+      operationId: getAdminMission
+      summary: 관리자 미션 상세 (버전·기준표·검토 이력)
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/MissionId'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMission'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+    patch:
+      operationId: updateAdminMission
+      summary: 미션 수정 → 새 불변 미션 버전
+      description: >-
+        검토 요청 중이면 DRAFT, 공개 중이면 상태 PUBLISHED 유지·학생에게는 publishedVersion 그대로(P07).
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/MissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMissionRequest'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMission'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /admin/missions/{missionId}/rubric:
+    put:
+      operationId: putAdminMissionRubric
+      summary: 기준표 저장 → 새 불변 기준표 버전
+      description: >-
+        상태 규칙은 수정과 같음. 요소 이름·code·양의 배점이 아니면 400.
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/MissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminRubricRequest'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMission'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /admin/missions/{missionId}/preview:
+    get:
+      operationId: previewAdminMission
+      summary: 학생 화면 미리보기 (편집 중 버전, 정답·예시 없음)
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/MissionId'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMissionPreview'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /admin/missions/{missionId}/review-request:
+    post:
+      operationId: requestAdminMissionReview
+      summary: 검토 요청 (DRAFT·UNPUBLISHED → REVIEW_REQUIRED, 공개 중 수정본은 상태 유지)
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/MissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminReviewRequest'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMission'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: MISSION_VERSION_CONFLICT(본문 버전이 현재 편집 중인 버전과 다름) 또는 CONFLICT(상태상 불가 전이, state-diagram 3.1)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /admin/missions/{missionId}/review:
+    post:
+      operationId: reviewAdminMission
+      summary: 검토 결과 기록 (CHANGES_REQUESTED면 검토 요청 중 미션은 DRAFT)
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/MissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminReviewRequest'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMission'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: MISSION_VERSION_CONFLICT(본문 버전이 현재 편집 중인 버전과 다름) 또는 CONFLICT(상태상 불가 전이, state-diagram 3.1)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /admin/missions/{missionId}/publish:
+    post:
+      operationId: publishAdminMission
+      summary: 게시·재게시 (공개 버전 ← 현재 버전)
+      description: >-
+        현재 버전 최신 검토 APPROVED + 필수 항목, 아니면 422 MISSION_PUBLISH_INCOMPLETE + missingFields. 본문은 {}.
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/MissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMission'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: MISSION_VERSION_CONFLICT(본문 버전이 현재 편집 중인 버전과 다름) 또는 CONFLICT(상태상 불가 전이, state-diagram 3.1)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: MISSION_PUBLISH_INCOMPLETE
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Problem'
+                  - type: object
+                    required: [missingFields]
+                    properties:
+                      missingFields:
+                        type: array
+                        description: 영문 코드(class-diagram 4.1). 화면이 한글로 표시
+                        items:
+                          type: string
+                          enum: [title, question, subject, grade, achievementStandards, choices, categories, rubric, rubric.elements, rubric.elements.points, answerKey, exampleAnswer, review]
+  /admin/missions/{missionId}/unpublish:
+    post:
+      operationId: unpublishAdminMission
+      summary: 신규 제공 중단 (진행 중 시도는 시작 당시 버전으로 계속)
+      description: >-
+        본문은 {}.
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/MissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMission'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: MISSION_VERSION_CONFLICT(본문 버전이 현재 편집 중인 버전과 다름) 또는 CONFLICT(상태상 불가 전이, state-diagram 3.1)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 components:
   securitySchemes:
     InternalToken:
@@ -828,7 +1110,7 @@ components:
       name: X-User-Id
       in: header
       required: true
-      description: core가 검증한 관리자 ID (judgment_correction.corrected_by). 없거나 UUID가 아니면 400
+      description: core가 검증한 관리자 ID (judgment_correction.corrected_by, 관리자 미션 created_by·reviewer_id). 없거나 UUID가 아니면 400
       schema: {type: string, format: uuid}
     AdminRole:
       name: X-User-Role
@@ -878,6 +1160,184 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
   schemas:
+    MissionStatus:
+      type: string
+      enum: [DRAFT, REVIEW_REQUIRED, PUBLISHED, UNPUBLISHED]
+    AnswerKey:
+      type: object
+      additionalProperties: false
+      description: 입력 방식 모양 - 고르기 {choiceIds:[1개]}, 순서 {choiceIds:[정답 순서]}, 분류 {assignments}, 풀이 단계 {finalAnswer(수만)}
+      properties:
+        choiceIds: {type: array, items: {type: string}}
+        finalAnswer: {type: string}
+        assignments:
+          type: array
+          items:
+            type: object
+            required: [choiceId, categoryId]
+            properties:
+              choiceId: {type: string}
+              categoryId: {type: string}
+    AdminMission:
+      type: object
+      additionalProperties: false
+      description: 관리자 미션 (api-spec 3.10·4.1). current*는 편집 중 최신, published*는 학생에게 제공하는 공개 버전
+      required: [missionId, code, status, demoOnly, currentVersion, currentRubricVersion, publishedVersion, publishedRubricVersion, versions, rubrics, reviews]
+      properties:
+        missionId: {type: string, format: uuid}
+        code: {type: string}
+        status: {$ref: '#/components/schemas/MissionStatus'}
+        demoOnly: {type: boolean}
+        currentVersion: {type: integer}
+        currentRubricVersion: {type: [integer, 'null']}
+        publishedVersion: {type: [integer, 'null']}
+        publishedRubricVersion: {type: [integer, 'null']}
+        versions:
+          type: array
+          items: {$ref: '#/components/schemas/AdminMissionVersion'}
+        rubrics:
+          type: array
+          items: {$ref: '#/components/schemas/AdminRubric'}
+        reviews:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [missionVersion, rubricVersion, result, comment, reviewerId, createdAt]
+            properties:
+              missionVersion: {type: integer}
+              rubricVersion: {type: integer}
+              result: {type: string, enum: [APPROVED, CHANGES_REQUESTED]}
+              comment: {type: [string, 'null']}
+              reviewerId: {type: string, format: uuid}
+              createdAt: {type: string, format: date-time}
+    AdminMissionVersion:
+      type: object
+      additionalProperties: false
+      required: [version, title, subject, gradeMin, gradeMax, thinkingType, inputType, question, guide, sceneUri, staticSceneUri, achievementStandards, choices, categories, answerUnit, inputTemplate, createdAt]
+      properties:
+        version: {type: integer}
+        title: {type: string}
+        subject: {type: string}
+        gradeMin: {type: integer}
+        gradeMax: {type: integer}
+        thinkingType: {$ref: '#/components/schemas/ThinkingType'}
+        inputType: {$ref: '#/components/schemas/InputType'}
+        question: {type: string}
+        guide: {type: [string, 'null']}
+        sceneUri: {type: [string, 'null'], description: URI 입력(업로드 없음)}
+        staticSceneUri: {type: [string, 'null']}
+        achievementStandards: {type: array, items: {type: string}}
+        choices: {type: array, items: {$ref: '#/components/schemas/Choice'}}
+        categories: {type: array, items: {$ref: '#/components/schemas/Choice'}}
+        answerUnit: {type: [string, 'null']}
+        inputTemplate: {type: array, items: {type: string}}
+        createdAt: {type: string, format: date-time}
+    AdminRubricElement:
+      type: object
+      additionalProperties: false
+      required: [code, label, description, points, commonErrors, goodThought, judgeVerified]
+      properties:
+        code: {type: string, description: FINAL_ANSWER는 풀이 단계 최종 답 요소 (#79)}
+        label: {type: string}
+        description: {type: [string, 'null']}
+        points: {type: integer, minimum: 1}
+        commonErrors: {type: array, items: {type: string}}
+        goodThought: {type: boolean}
+        judgeVerified: {type: boolean}
+    AdminRubric:
+      type: object
+      additionalProperties: false
+      required: [version, elements, answerKey, exampleAnswer, forbiddenTerms, hints, createdAt]
+      properties:
+        version: {type: integer}
+        elements: {type: array, items: {$ref: '#/components/schemas/AdminRubricElement'}}
+        answerKey:
+          oneOf:
+            - $ref: '#/components/schemas/AnswerKey'
+            - type: 'null'
+        exampleAnswer: {type: [string, 'null']}
+        forbiddenTerms: {type: array, items: {type: string}}
+        hints: {type: array, items: {type: string}, description: 생각 열기 질문 순서대로}
+        createdAt: {type: string, format: date-time}
+    AdminMissionPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalElements, counts]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/AdminMission'}}
+        page: {type: integer}
+        size: {type: integer}
+        totalElements: {type: integer}
+        counts:
+          type: array
+          description: 페이지·필터와 무관한 전체 상태별 건수, 네 상태 모두
+          items:
+            type: object
+            required: [status, count]
+            properties:
+              status: {$ref: '#/components/schemas/MissionStatus'}
+              count: {type: integer}
+    AdminMissionRequest:
+      type: object
+      required: [title, subject, gradeMin, gradeMax, thinkingType, inputType, question, demoOnly]
+      properties:
+        title: {type: string}
+        subject: {type: string}
+        gradeMin: {type: integer}
+        gradeMax: {type: integer}
+        thinkingType: {$ref: '#/components/schemas/ThinkingType'}
+        inputType: {$ref: '#/components/schemas/InputType'}
+        question: {type: string}
+        guide: {type: [string, 'null']}
+        sceneUri: {type: [string, 'null']}
+        staticSceneUri: {type: [string, 'null']}
+        achievementStandards: {type: array, items: {type: string}}
+        choices: {type: array, items: {$ref: '#/components/schemas/Choice'}}
+        categories: {type: array, items: {$ref: '#/components/schemas/Choice'}}
+        answerUnit: {type: [string, 'null']}
+        inputTemplate: {type: array, items: {type: string}}
+        demoOnly: {type: boolean}
+    AdminRubricRequest:
+      type: object
+      properties:
+        elements:
+          type: array
+          items:
+            type: object
+            required: [code, label, points]
+            properties:
+              code: {type: string}
+              label: {type: string}
+              description: {type: [string, 'null']}
+              points: {type: integer, minimum: 1}
+              commonErrors: {type: array, items: {type: string}}
+              goodThought: {type: boolean, default: false}
+              judgeVerified: {type: boolean, default: false}
+        answerKey: {$ref: '#/components/schemas/AnswerKey'}
+        exampleAnswer: {type: [string, 'null']}
+        forbiddenTerms: {type: array, items: {type: string}}
+        hints: {type: array, items: {type: string}}
+    AdminReviewRequest:
+      type: object
+      required: [missionVersion, rubricVersion]
+      description: 검토 요청은 두 버전만, 검토는 result 필수
+      properties:
+        missionVersion: {type: integer}
+        rubricVersion: {type: integer}
+        result: {type: string, enum: [APPROVED, CHANGES_REQUESTED]}
+        comment: {type: [string, 'null']}
+    AdminMissionPreview:
+      type: object
+      additionalProperties: false
+      required: [mission, missionVersion, rubricVersion]
+      properties:
+        mission: {$ref: '#/components/schemas/Mission'}
+        missionVersion: {type: integer}
+        rubricVersion: {type: [integer, 'null']}
+    EmptyObject:
+      type: object
+      description: core 프록시가 JSON 객체 본문을 요구, 내용은 쓰지 않음
     ThinkingType:
       type: string
       enum: [ANALYZE, EVALUATE, CREATE, SOLVE, REFLECT]

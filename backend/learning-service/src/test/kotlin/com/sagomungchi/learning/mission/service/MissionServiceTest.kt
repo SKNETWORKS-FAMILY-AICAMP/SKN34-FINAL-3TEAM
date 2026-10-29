@@ -9,12 +9,15 @@ import com.sagomungchi.learning.mission.domain.MissionView
 import com.sagomungchi.learning.mission.domain.ProgressStatus
 import com.sagomungchi.learning.mission.domain.RubricElement
 import com.sagomungchi.learning.mission.missionView
+import com.sagomungchi.learning.mission.repository.AdminMissionMapper
 import com.sagomungchi.learning.mission.repository.MissionAttempt
 import com.sagomungchi.learning.mission.repository.MissionMapper
 import com.sagomungchi.learning.mission.repository.MissionRepository
 import com.sagomungchi.learning.mission.repository.RubricHeader
+import com.sagomungchi.learning.mission.repository.RubricRepository
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.mockito.Mockito.mock
 import org.springframework.http.HttpStatus
 import java.util.UUID
 import kotlin.test.assertEquals
@@ -39,7 +42,9 @@ class MissionServiceTest {
         override fun findRubricElements(rubricVersionId: UUID): List<RubricElement> = emptyList()
     }
 
-    private fun service(mapper: FakeMapper) = MissionService(MissionRepository(mapper))
+    /** 관리자 SQL(AdminMissionMapper)·기준표 저장소는 학생 조회에서 쓰지 않아 빈 대역 */
+    private fun service(mapper: FakeMapper) =
+        MissionService(MissionRepository(mapper, mock(AdminMissionMapper::class.java)), mock(RubricRepository::class.java))
 
     @Test
     fun `목록은 학생 학년 미션만 순서대로, 위치와 전체 수를 붙임`() {
