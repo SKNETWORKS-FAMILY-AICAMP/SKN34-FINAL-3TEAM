@@ -77,7 +77,9 @@ python -X utf8 scripts/verify_report_compose.py --admin-retry --output ../tmp/is
 - 두 worker 경합으로 지연 큐에 들어간 명령 2개는 기존 60초 TTL 후 다시 전달됐다. 실제 큐 카운트 `[0,2] → [0,0]`, 리포트 5개·Outbox 10개 유지, 기존 완료·실패 행과 첫 판 S3 바이트 보존을 확인했다.
 - 실제 core는 원작업의 지연 failed/started와 완료된 새 작업의 지연 started를 받아도 원작업 FAILED·새 작업 COMPLETED를 유지했다.
 - 공유 report 계약 검사 4개 통과. JSON 예시 7개 및 실제 연동 요청/이벤트는 v1 스키마와 일치한다.
-- 검증 전용 컨테이너·네트워크·볼륨 정리 완료. 결과는 저장소 밖 `../tmp/issue152-compose-final-20261029/results.json`, pytest 결과는 `../tmp/issue152-report-tests.xml`에 보관했다.
+- 예시 JSON만 변경해도 report CI가 실행되도록 경로 필터를 추가했다. GitHub CI 실행 결과와 로컬 통과 결과는 구분한다.
+- 최신 develop `14a97f8`(리포트 현재 이용권 PR #155)을 충돌 없이 반영하고 core JDK21 bootJar를 다시 빌드했다. report 실행 코드는 해당 병합에서 바뀌지 않았으며, 최신 core로 위 8개 시나리오와 스키마 검사를 전체 재실행해 통과했다.
+- 검증 전용 컨테이너·네트워크·볼륨 정리 완료. 최종 결과는 저장소 밖 `../tmp/issue152-latest-develop-20261029/results.json`, pytest 결과는 `../tmp/issue152-report-tests.xml`에 보관했다. 직전 성공 결과 `../tmp/issue152-compose-final-20261029/results.json`도 보존했다.
 - 이번에는 report 공급 경로를 검증했다. core #47 관리자 API 권한·요청 접수·원작업 연결·감사는 미연결 상태로 남아 있다. GitHub PR·이슈 상태·댓글은 변경하지 않았다.
 
 ## #152 요청/완료 조건 대조
