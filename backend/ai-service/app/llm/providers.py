@@ -7,9 +7,11 @@
 
 각 제공자는 요청 1회만 담당 (재시도·타임아웃·사용량 기록은 base.py).
 구조화 출력은 JSON 스키마로 요청하고 검증은 직접 수행해, 형식이 깨진 응답도 토큰 사용량을 남김.
+스트림(_stream)은 일반 텍스트 조각만 내보내고 마지막에 StreamEnd(모델·토큰)를 보냄.
 """
 
 import json
+from collections.abc import AsyncIterator
 from typing import Any, Literal
 
 import anthropic
@@ -23,6 +25,7 @@ from app.llm.base import (
     LlmError,
     LlmRequest,
     ProviderResponse,
+    StreamEnd,
     T,
     UnconfiguredLlm,
     UsageRecorder,
@@ -92,6 +95,34 @@ class AnthropicLlm(LlmClient):
         if response.stop_reason == "max_tokens" or text is None:
             raise LlmError("LLM_INVALID_OUTPUT", retryable=True, **tokens)
         return ProviderResponse(_validate(request, text, tokens), **tokens)
+
+    async def _stream(self, request: LlmRequest[Any]) -> AsyncIterator[str | StreamEnd]:
+        options = {"betas": [FALLBACK_BETA], "fallbacks": "default"} if self._fallback else {}
+        try:
+            async with self._client.beta.messages.stream(
+                model=self.model,
+                max_tokens=request.max_tokens,
+                system=request.system,
+                messages=[{"role": "user", "content": request.user}],
+                output_config={"effort": self._effort},
+                timeout=request.timeout,
+                **options,
+            ) as stream:
+                async for text in stream.text_stream:
+                    yield text
+                response = await stream.get_final_message()
+        except anthropic.APIConnectionError as exc:
+            code = "LLM_TIMEOUT" if isinstance(exc, anthropic.APITimeoutError) else "LLM_CONNECTION"
+            raise LlmError(code, retryable=True) from exc
+        except anthropic.APIStatusError as exc:
+            raise status_error(exc.status_code) from exc
+
+        end = StreamEnd(response.model, response.usage.input_tokens, response.usage.output_tokens)
+        if response.stop_reason == "refusal":
+            raise LlmError("LLM_REFUSED", retryable=False, **vars(end))
+        if response.stop_reason == "max_tokens":
+            raise LlmError("LLM_INVALID_OUTPUT", retryable=True, **vars(end))
+        yield end
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +197,44 @@ class OpenAICompatibleLlm(LlmClient):
         if choice.finish_reason == "length" or not choice.message.content:
             raise LlmError("LLM_INVALID_OUTPUT", retryable=True, **tokens)
         return ProviderResponse(_validate(request, choice.message.content, tokens), **tokens)
+
+    async def _stream(self, request: LlmRequest[Any]) -> AsyncIterator[str | StreamEnd]:
+        model, usage, finish_reason = self.model, None, None
+        try:
+            chunks = await self._client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": request.system},
+                    {"role": "user", "content": request.user},
+                ],
+                max_completion_tokens=request.max_tokens,
+                timeout=request.timeout,
+                stream=True,
+                stream_options={"include_usage": True},  # 마지막 조각에 사용량
+            )
+            async for chunk in chunks:
+                model = chunk.model or model
+                usage = chunk.usage or usage
+                for choice in chunk.choices:
+                    finish_reason = choice.finish_reason or finish_reason
+                    if choice.delta.content:
+                        yield choice.delta.content
+        except openai.APIConnectionError as exc:
+            code = "LLM_TIMEOUT" if isinstance(exc, openai.APITimeoutError) else "LLM_CONNECTION"
+            raise LlmError(code, retryable=True) from exc
+        except openai.APIStatusError as exc:
+            raise status_error(exc.status_code) from exc
+
+        end = StreamEnd(
+            model,
+            usage.prompt_tokens if usage else None,
+            usage.completion_tokens if usage else None,
+        )
+        if finish_reason == "content_filter":
+            raise LlmError("LLM_REFUSED", retryable=False, **vars(end))
+        if finish_reason == "length":
+            raise LlmError("LLM_INVALID_OUTPUT", retryable=True, **vars(end))
+        yield end
 
     def _output_format(self, request: LlmRequest[T]) -> tuple[str, dict[str, Any]]:
         schema = strict_schema(request.output)

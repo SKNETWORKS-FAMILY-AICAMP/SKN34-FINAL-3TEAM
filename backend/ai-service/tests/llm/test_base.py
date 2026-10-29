@@ -1,5 +1,6 @@
 import asyncio
 import time
+from collections.abc import AsyncIterator
 
 import pytest
 from pydantic import BaseModel
@@ -11,6 +12,7 @@ from app.llm.base import (
     LlmUnavailable,
     LlmUsage,
     ProviderResponse,
+    StreamEnd,
     T,
     UnconfiguredLlm,
 )
@@ -141,3 +143,104 @@ def test_expired_deadline_sends_no_request() -> None:
         )
     assert (exc.value.code, exc.value.retryable) == ("LLM_DEADLINE_EXCEEDED", True)
     assert (llm.calls, llm.usages) == (0, [])
+
+
+# --- 스트리밍 (분석 대화 답변) ------------------------------------------------
+
+
+class StreamingLlm(ScriptedLlm):
+    """stream 단계: 조각·실패 목록. 목록 끝까지 가면 StreamEnd."""
+
+    def __init__(self, streams: list[list[str | LlmError]], max_retries: int = 1) -> None:
+        super().__init__([], max_retries)
+        self._streams = streams
+        self.requests: list[LlmRequest] = []
+
+    async def _stream(self, request: LlmRequest) -> AsyncIterator[str | StreamEnd]:
+        self.requests.append(request)
+        for item in self._streams[len(self.requests) - 1]:
+            if isinstance(item, LlmError):
+                raise item
+            yield item
+        yield StreamEnd("fake-model", 10, 5)
+
+
+def collect(llm: LlmClient, deadline: float | None = None) -> tuple[list[str], str | None]:
+    async def run() -> tuple[list[str], str | None]:
+        stream = llm.stream(
+            system="s",
+            user="u",
+            call_type="ANALYSIS",
+            prompt_version="analysis@2",
+            deadline=deadline,
+        )
+        return [text async for text in stream], stream.model
+
+    return asyncio.run(run())
+
+
+def test_stream_yields_chunks_and_records_one_usage() -> None:
+    llm = StreamingLlm([["안녕", "하세요"]])
+    assert collect(llm) == (["안녕", "하세요"], "fake-model")
+    assert [(u.call_type, u.success, u.input_tokens) for u in llm.usages] == [
+        ("ANALYSIS", True, 10)
+    ]
+
+
+def test_stream_failure_before_first_chunk_is_retried() -> None:
+    llm = StreamingLlm([[LlmError("LLM_SERVER_ERROR", retryable=True)], ["ok"]])
+    assert collect(llm)[0] == ["ok"]
+    assert [(u.success, u.error_code) for u in llm.usages] == [
+        (False, "LLM_SERVER_ERROR"),
+        (True, None),
+    ]
+
+
+def test_stream_failure_after_first_chunk_is_not_retried() -> None:
+    llm = StreamingLlm([["앞", LlmError("LLM_CONNECTION", retryable=True)], ["ok"]])
+    got: list[str] = []
+
+    async def run() -> None:
+        async for text in llm.stream(
+            system="s", user="u", call_type="ANALYSIS", prompt_version="analysis@2"
+        ):
+            got.append(text)
+
+    with pytest.raises(LlmUnavailable) as exc:
+        asyncio.run(run())
+    assert (exc.value.code, got, len(llm.requests)) == ("LLM_CONNECTION", ["앞"], 1)
+    assert [u.error_code for u in llm.usages] == ["LLM_CONNECTION"]
+
+
+def test_stream_without_end_is_invalid_output() -> None:
+    class Truncated(StreamingLlm):
+        async def _stream(self, request: LlmRequest) -> AsyncIterator[str | StreamEnd]:
+            self.requests.append(request)
+            return
+            yield ""
+
+    with pytest.raises(LlmUnavailable) as exc:
+        collect(Truncated([], max_retries=0))
+    assert exc.value.code == "LLM_INVALID_OUTPUT"
+
+
+def test_stream_stalls_past_timeout() -> None:
+    class Stalled(StreamingLlm):
+        async def _stream(self, request: LlmRequest) -> AsyncIterator[str | StreamEnd]:
+            self.requests.append(request)
+            yield "앞"
+            await asyncio.sleep(5)
+            yield StreamEnd("fake-model", 1, 1)
+
+    llm = Stalled([], max_retries=0)
+    with pytest.raises(LlmUnavailable) as exc:
+        collect(llm, deadline=time.monotonic() + 0.2)
+    assert exc.value.code == "LLM_TIMEOUT"
+    assert 0 < llm.requests[0].timeout <= 0.2  # 15초 대신 남은 시간
+
+
+def test_unconfigured_stream_is_unavailable_without_usage() -> None:
+    usages: list[LlmUsage] = []
+    with pytest.raises(LlmUnavailable) as exc:
+        collect(UnconfiguredLlm("gpt", usages.append))
+    assert (exc.value.code, usages) == ("LLM_NOT_CONFIGURED", [])

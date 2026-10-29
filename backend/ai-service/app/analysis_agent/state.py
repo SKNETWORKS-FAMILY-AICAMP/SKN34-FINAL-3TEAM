@@ -19,7 +19,6 @@ from app.analysis_agent.models import (
     StreamError,
     Verification,
 )
-from app.analysis_agent.prompts import AnswerDraft
 from app.analysis_agent.tools import RecordTools
 from app.llm.base import LlmClient
 
@@ -32,7 +31,7 @@ class AnalysisState(TypedDict, total=False):
     clarification: Clarification
     records: Records
     computation: Computation
-    draft: AnswerDraft
+    draft: str  # 스트리밍으로 받은 LLM 답변 전체 (대조 전)
     verification: Verification
     # 끝 상태: 셋 중 하나가 채워지면 종료
     result: AnalysisResult

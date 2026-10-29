@@ -105,7 +105,7 @@ paths:
               $ref: '#/components/schemas/AnalysisRequest'
       responses:
         '200':
-          description: text/event-stream. `status`(진행 상황, 여러 번) 뒤에 셋 중 하나로 끝난다. `result`(AnalysisResult) 다음 `done`({}), `clarification`(AnalysisClarification, 범위 확인 후 종료), `error`(AnalysisStreamError, 기록 조회 실패 등). `delta`는 보내지 않는다(대조 통과 전 임시 텍스트 미노출). result의 messageId·scope.changed는 core가 붙인다.
+          description: text/event-stream. `status`(진행 상황, 여러 번) 뒤에 셋 중 하나로 끝난다. `result`(AnalysisResult) 다음 `done`({}), `clarification`(AnalysisClarification, 범위 확인 후 종료), `error`(AnalysisStreamError, 기록 조회 실패 등). 답변을 만들 때는 그 사이에 `delta`({text}, LLM 답변 조각, 대조 전 임시 표시)를 보낸다. 대조 실패·LLM 장애면 delta를 폐기하고 result는 TEMPLATE이다. result의 messageId·scope.changed는 core가 붙인다.
           content:
             text/event-stream:
               schema:
@@ -548,7 +548,13 @@ components:
       - current
       type: object
     AnalysisEvidence:
+      description: 원문 근거. 돌아보기(REFLECTION)는 시도당 하나라 attemptId로 식별하고 answerId·answerVersion은 null, submittedAt은 돌아보기 작성 시각.
       properties:
+        kind:
+          enum:
+          - ANSWER
+          - REFLECTION
+          type: string
         attemptId:
           type: string
         missionTitle:
@@ -571,6 +577,7 @@ components:
           default: true
           type: boolean
       required:
+      - kind
       - attemptId
       - missionTitle
       - answerId

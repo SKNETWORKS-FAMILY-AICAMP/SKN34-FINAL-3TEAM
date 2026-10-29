@@ -161,8 +161,10 @@
 }
 
 // Evidence: 원문 근거 (FN-AGT-07)
-{ "attemptId": "...", "missionTitle": "...", "answerId": "...", "answerVersion": 1,
+{ "kind": "ANSWER", "attemptId": "...", "missionTitle": "...", "answerId": "...", "answerVersion": 1,
   "submittedAt": "...", "quote": "아이 원문 일부", "available": true }   // 삭제 시 available=false
+// kind: ANSWER(답변) | REFLECTION(돌아보기). 돌아보기는 시도당 하나라 attemptId로 식별하고
+// answerId·answerVersion은 null, submittedAt은 돌아보기 작성 시각(reflection.createdAt)
 
 // Versions: 결과에 연결된 버전 (NFR-DAT-02)
 // model: M2 활성 판정은 M2 버전, M2 미활성 판정·되묻기는 LLM 모델 ID(예: gpt-6.1-terra), 규칙 판정은 null
@@ -496,7 +498,7 @@ data: {
   "metrics":[{ "label":"되묻기 후 생각을 더한 비율","count":3,"numerator":3,"denominator":5,"value":0.6,
                "formula":"보완 답변 제출 시도 수 / 되묻기 받은 시도 수","period":{"from":"2026-10-27","to":"2026-11-08"},
                "sourceType":"RECORD","state":"OK" }],
-  "evidence":[{"attemptId":"t-7","missionTitle":"...","answerId":"a-102","answerVersion":2,"quote":"...","available":true}],
+  "evidence":[{"kind":"ANSWER","attemptId":"t-7","missionTitle":"...","answerId":"a-102","answerVersion":2,"quote":"...","available":true}],
   "verification":{"numbersMatched":true,"quotesMatched":true},
   "recordCount":5
 }
@@ -507,8 +509,10 @@ data: {}
 - 범위가 불명확한 경우
   - `event: clarification`을 보내고 스트림 종료
   - 사용자 선택을 `scope`에 담아 다시 질문
+- `delta`: ai가 LLM 답변 조각을 대조 전에 그대로 보냄. 확정 답변은 대조를 통과한 `result.answer`뿐이며 이어 붙인 delta와 앞뒤 공백만 다를 수 있음
+- `evidence`: 답변 본문의 큰따옴표 인용을 원문과 대조해 ai가 연결. 같은 원문은 근거 하나. 돌아보기 근거(`kind: REFLECTION`)는 `attemptId`로 식별하며 core 재조회는 `/internal/records/students/{studentId}/attempts/{attemptId}`의 `reflection`
 - 대조 실패·LLM 장애: 규칙 응답 모드 (P16)
-  - `delta`로 보낸 임시 텍스트는 폐기
+  - `delta`로 보낸 임시 텍스트는 폐기 (첫 조각 뒤 LLM 실패도 재시도 없이 규칙 응답)
   - `event: result`에 계산된 `metrics`·`evidence`만 템플릿 문장으로 담고 `"source":"TEMPLATE"`, `"fallback":{"reason":"VERIFICATION_FAILED|AI_UNAVAILABLE"}` 표시
   - 기록 조회 자체가 실패하면 `event: error`
 
@@ -765,7 +769,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 응답은 `{narrative:{text,source:"LLM",modelExplanation:null},eveningQuestion,citedQuotes:[{attemptId,answerId,answerVersion,quote}],versions:{prompt,model}}`로 정의한다. 원문 인용은 citedQuotes에 명시하며 답변 버전과 연결한다. ai는 숫자를 새로 계산하거나 수치 레벨·등급·사고력 향상을 단정하지 않는다.
 - report는 learning evidence의 같은 answer ID·version·원문과 인용을 대조하고, 서술·저녁 질문의 숫자가 계산 결과에 포함되는지 검사한다. 지원하지 않는 한글 수사 표현은 검증 통과로 간주하지 않는다. 검증 메타데이터는 `numbersMatched`, `quotesMatched`, `contentAllowed`다.
 - 대조 실패만 코드 기반 템플릿 요약으로 전환한다. AI 시간 초과·5xx·응답 스키마 오류·learning 원문 조회 실패는 `FAILED`로 처리한다. 학생 이름·닉네임 필드는 요청에 넣지 않으며, 알려진 닉네임이 본문에 포함된 경우 전송 전에 가린다.
-- LLM 요청에는 학생 이름·식별정보를 넣지 않음. 학생 ID는 가명 토큰으로 치환 (NFR-SEC-03)
+- LLM 요청에는 학생 이름·식별정보를 넣지 않음. 학생·시도·답변 ID도 넣지 않으므로 가명 토큰이 필요 없음(원문은 요청 안 번호로만 지칭) (NFR-SEC-03)
 
 ### 4.3 scoring-service (호출: ai)
 

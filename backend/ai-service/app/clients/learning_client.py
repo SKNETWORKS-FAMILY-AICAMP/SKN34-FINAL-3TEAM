@@ -49,23 +49,17 @@ class LearningClient:
         body = await self._get_student(scope, "thinking-types", {})
         return _parse(ThinkingTypeItem, body.get("items"))
 
-    async def attempts(self, scope: Scope, size: int) -> list[RecordAttempt]:
-        """최근 답변 순 첫 페이지만. 아이가 쓴 생각은 최근 몇 개만 보여 주므로 전체를 읽지 않음."""
+    async def attempts(self, scope: Scope, size: int | None) -> list[RecordAttempt]:
+        """size가 있으면 최근 답변 순 첫 페이지만 (아이가 쓴 생각은 최근 몇 개만 보여 줌).
+        None이면 모든 페이지 (돌아보기 수를 세므로 빠짐없이)."""
+        if size is None:
+            return _parse(RecordAttempt, await self._all_pages(scope, "attempts"))
         body = await self._get_student(scope, "attempts", {"page": 0, "size": size})
         return _parse(RecordAttempt, body.get("items"))
 
     async def changes(self, scope: Scope) -> list[RecordChange]:
         # 전후 변화 비율의 분모라 모든 페이지를 읽음
-        items: list[Any] = []
-        for page in range(MAX_PAGES):
-            body = await self._get_student(scope, "changes", {"page": page, "size": PAGE_SIZE})
-            batch = body.get("items")
-            if not isinstance(batch, list):
-                raise RecordsUnavailable("RECORDS_INVALID", retryable=False)
-            items.extend(batch)
-            if not batch or len(items) >= int(body.get("totalElements", 0)):
-                return _parse(RecordChange, items)
-        raise RecordsUnavailable("RECORDS_INVALID", retryable=False)
+        return _parse(RecordChange, await self._all_pages(scope, "changes"))
 
     async def thinking_activities(self, scope: Scope) -> list[ThinkingActivity]:
         body = await self._get_student(scope, "thinking-activities", {})
@@ -80,6 +74,18 @@ class LearningClient:
         if self._client is not None:
             await self._client.aclose()
             self._client = None
+
+    async def _all_pages(self, scope: Scope, resource: str) -> list[Any]:
+        items: list[Any] = []
+        for page in range(MAX_PAGES):
+            body = await self._get_student(scope, resource, {"page": page, "size": PAGE_SIZE})
+            batch = body.get("items")
+            if not isinstance(batch, list):
+                raise RecordsUnavailable("RECORDS_INVALID", retryable=False)
+            items.extend(batch)
+            if not batch or len(items) >= int(body.get("totalElements", 0)):
+                return items
+        raise RecordsUnavailable("RECORDS_INVALID", retryable=False)
 
     async def _get_student(
         self, scope: Scope, resource: str, params: dict[str, Any]
