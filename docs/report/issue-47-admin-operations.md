@@ -29,7 +29,7 @@ learning stats는 #27 실제 구현·OpenAPI가 존재한다. 관리자 미션 �
 | 프론트 | `npm test` **93/93**, `npm run lint`, `npm run build` 통과. build는 기존 크기 경고(500kB 초과)를 보고하며 이번 범위 밖 번들 분할은 하지 않음. 실제 연결에서 발견한 빈 미션 필터를 생략하도록 고친 뒤 최종 일괄 검증을 다시 통과. |
 | 실제 브라우저 연결 | VITE_API_MOCK=false, headless Chrome → 전용 Vite → 실제 최종 core JAR → 별도 PostgreSQL/Redis/RabbitMQ. SERVICE_OPS/CONTENT/PAYMENT_VIEW 화면의 6개 시나리오, 관리자 API HTTP 응답 13건, pageerror 0, service worker 응답 0. 알림 재처리 완료·실제 감사·25큐·권한 403·미션 503 표시 확인. 로그인 부트스트랩만 합성 JWT 응답 대역이고 core는 실제 DB 세션으로 검증. overview의 learning은 명시적 테스트 HTTP 대역, Google/실제 learning 검증이 아님. |
 | 계약 | `python -O -m unittest discover -s scripts/tests -v` **69/69**, core OpenAPI 3.1 표준 검사 통과. 브라우저에서 받은 실제 overview/jobs/job/queues/audit 응답 5종을 `scripts/validate_admin_operations_contracts.py`로 공개 스키마와 대조해 통과. 통합 기준의 기존 경로·스키마 값 보존 검사 포함. |
-| DB·소스·JAR | #47 DDL 변경 없음. 별도 빈 DB에 기존 13개 마이그레이션(V1~V9,V12~V15) 적용 성공; 전체 ERD/downgrade cycle을 이번에 반복하지 않음. 검증한 core/contract/definition 328파일과 현재 원문 SHA-256 일치. 실행 JAR에 Flyway/Testcontainers/JUnit/Mockito 없음. JAR SHA-256 `5cd8afbe4c1f09cff15013c7d74c2a982af34649004fae8d9ac243fb055ca41b`. |
+| DB·소스·JAR | #47 DDL 변경 없음. 별도 빈 DB에 기존 13개 마이그레이션(V1~V9,V12~V15) 적용 성공; 전체 ERD/downgrade cycle을 이번에 반복하지 않음. 검증 직후 core/contract/definition 328파일 원문 SHA-256 일치. 최종 stage 검사에서 OperationsQuery.kt 끝 빈 줄만 제거했고 이를 제외한 327파일 원문과 해당 파일의 끝 공백 정규화 내용은 같다. 실행 로직 변경은 없다. 실행 JAR에 Flyway/Testcontainers/JUnit/Mockito 없음. JAR SHA-256 `5cd8afbe4c1f09cff15013c7d74c2a982af34649004fae8d9ac243fb055ca41b`. |
 
 초기 Windows Gradle은 loopback 연결을 만들지 못해 테스트 시작 전에 실패했다. 전용 Linux 실행으로 전환했다. 초기 YAML 앵커 중복과 새 테스트 fixture의 scope_changed 누락은 수정했고 위 결과는 수정 후 최신 #48 기준 단일 전체 실행이다. 브라우저 검증 선택자는 감사 이력 여러 건과 오류 코드 뒤 trace 번호를 허용하도록 보완했다. 원격 CI·배포·실제 PG/Google·실제 learning 미션 관리·#41 대화 재처리는 미검증이다.
 
@@ -41,3 +41,7 @@ learning stats는 #27 실제 구현·OpenAPI가 존재한다. 관리자 미션 �
 - #47 전체 완료 조건이 아직 충족되지 않았으므로 이슈를 완료 처리하거나 Closes #47로 해결 완료를 주장하지 않는다. 현재 커밋은 독립적으로 검증한 운영 조회·알림 재처리·미션 프록시 범위다. 공급자 연결 후 실제 해결 범위를 확인한 PR에 Closes #47을 포함한다. 중간 base 병합만으로 자동 종료되지 않으며 최종 develop PR에도 필요하다.
 
 Git 이력 재작성·PR 생성·공용 브랜치 push는 하지 않는다. 기능 head만 push하며, 사용자 직접 PR 작성용 초안은 별도 전달한다. 개인 작업 규칙을 저장소 문서에 추가하지 않았다.
+
+## Git 전달 기록
+
+구현 커밋은 `8d08cfa7eeae8f2ae1af65efe94e5f720eb15bca` (`feat: 관리자 운영 조회·알림 재처리·미션 프록시 구현`)이다. 신규 파일이 stage되면서 처음 검사된 OperationsQuery.kt의 EOF 빈 줄 경고를 확인했지만 커밋 명령이 이어진 실행 실수를 바로잡았다. 해당 빈 줄만 제거하고 최종 기록과 함께 후속 커밋으로 남긴다. 구현 커밋을 amend/squash하지 않는다. 최종 base 대비 diff 전체에 git diff --check를 수행하며, 두 커밋의 기능 브랜치만 origin에 push한다. PR은 생성하지 않는다.

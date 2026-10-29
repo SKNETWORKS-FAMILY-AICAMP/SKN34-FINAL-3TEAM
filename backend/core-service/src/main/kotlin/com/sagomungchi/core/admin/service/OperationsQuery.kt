@@ -20,4 +20,3 @@ fun invalidOperations(): Nothing = throw BusinessException(HttpStatus.BAD_REQUES
             if(start>end || ChronoUnit.DAYS.between(start,end)>=366) invalidOperations()
             return OperationPeriod(start,end)
         }
-
