@@ -767,13 +767,42 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - LLM 요청에는 학생 이름·식별정보를 넣지 않음. 학생 ID는 가명 토큰으로 치환 (NFR-SEC-03)
 
 ### 4.3 scoring-service (호출: ai)
-- 아래 경로는 모두 미구현이다. 현재 scoring-service는 health 라우터만 등록하며 OpenAPI가 없다.
+
+#### #87 M2 확정 계약 (2026-10-29 담당자 답변 반영)
+
+- `POST /internal/m2/scores`: `{prompt:string, text:string, grade:integer(3~6), inputType:"NARRATIVE"|"ESSAY", keywords:string[]}`. keywords 생략은 빈 배열. 문자열은 공백만 허용하지 않는다. 요청 보호 한도는 prompt 10,000자, text 50,000자, keywords 100개·각 200자이다.
+- learning은 관리자가 입력한 `rubric_version.keywords`(문자열 배열, 서술형 전용)와 `mission_version.question`을 AI의 `keywords`·`question`으로 전달하고, AI는 question을 scoring의 prompt로 매핑한다. 이 저장 컬럼·관리자 입력·learning DTO·AI 연결은 **후속 서비스 변경 필요**이며 #87 scoring 구현이 제공했다고 해석하지 않는다.
+- 모델 이름은 `NARRATIVE → m2-klue-narrative`, `ESSAY → m2-klue-essay`. 초3·4, 미활성 모델, 승인 scope 밖, 핵심어 없는 서술형은 **200 `{active:false}`**. 논술형은 핵심어를 사용하지 않는다.
+- 승인 scope는 기존 core 논리 키 형식에 맞춘 `judgment/grade-{grade}/{narrative|essay}`의 **정확한 일치**로 검사한다. 학생 권한 헤더와 모델 승인 scope는 다른 개념이다. 문항별 승인 제한이 필요한 경우 현재 요청에는 문항 ID가 없으므로 별도 계약 확장 전에는 그 모델을 넓은 학년 scope로 승인하지 않는다.
+- 성공 응답: `{active:true, inputType, scores:{hol,task_1,content_1,content_2,content_3,organization_1,organization_2,expression_1,expression_2}, rawScores:{동일한 9개 키}, model:{name,version,revision}}`. scores.hol은 1~4 정수, 나머지는 1~5 정수. rawScores는 변환 전 유한 소수값이며 범위 자르지 않는다. 원점수 저장은 소비 측 `judgment.model_scores` 연결이 필요하다(scoring은 무상태).
+- 받은 회귀 2.0은 train_info의 max_length·with_keyword와 score_cuts.json을 사용한다. 학습 입력은 `[학년] 초N [지시문] ...` + 서술형일 때 ` [핵심어] `와 쉼표로 결합한 핵심어, 두 번째 문장은 학생 글이다. `truncation=only_second`, token_type_ids 제외. 컷 경계와 같으면 위 점수로 변환한다. 서술형 content_3도 **모델 점수**를 쓰며 예전 핵심어 개수 규칙으로 대체하지 않는다(수빈님 답변). 메타데이터·컷이 잘못되면 반올림으로 대체하지 않고 실패한다.
+- 401 내부 토큰 오류, 400 요청/첫 문장 토큰 길이 오류, 503 `SCORING_UNAVAILABLE` 모델 설정·추론 장애 또는 처리 용량 초과. AI는 장애·시간 초과를 판정 처리 실패로 다루며 active:false로 바꾸거나 재시도하지 않는다(태윤님 답변). learning→AI 35초는 전체 예산으로, M2 단독 지연 측정과 구분한다.
+- 사용량은 실제 추론 시도 후 성공/실패 모두 best-effort 발행한다. 토큰 수 null, model=`name@version`, 학생 원문·ID·핵심어 없음. 비활성 응답은 추론하지 않아 사용량 이벤트를 만들지 않는다.
+
+구현된 내부 API 계약은 [contracts/openapi/scoring-service.yaml](../../contracts/openapi/scoring-service.yaml)에 기록한다. #85 버전 조회, #87 M2 점수, #88 M1 비활성 계약을 구현했다. M1은 미학습 상태로 활성 추론을 제공하지 않는다. 계약 테스트가 실제 FastAPI 경로·응답 스키마와 대조한다.
+
+#### #88 M1 미학습 상태의 구현 계약
+
+- `problem`은 mission_version.question, `answerKey`는 answer_key.finalAnswer 문자열이다. `solution`은 정답 풀이가 아닌 학생의 `{steps: 문자열 배열, finalAnswer: 문자열}`이다. 단계 순서와 빈 단계의 위치를 보존하며, 최소 한 단계는 공백 아닌 내용이 있어야 한다. 세 최상위 항목과 두 solution 항목은 필수이며 알 수 없는 필드·잘못된 타입·공백만 있는 문제/정답/최종 답은 400이다.
+- 내부 토큰 누락·불일치는 401. 유효한 요청은 현재 항상 HTTP 200 `{active:false}`를 반환한다. M1 학습·평가·로더·승인 범위 계약이 없으므로 core에 모델 메타데이터를 등록하는 것만으로 활성화되지 않는다. M2 모델을 대신 사용하거나 문자열 비교로 정답 판정을 흉내 내지 않는다.
+- 추론하지 않으므로 M1 사용량 이벤트도 발행하지 않는다. 문항·학생 풀이를 로그에 기록하지 않는다. 기존 내부 인증·오류 처리를 재사용한다.
+- #88의 미학습 예외에 따라 이번 완료 범위는 비활성 계약이다. 향후 활성 추론은 기존 ModelRegistry·UsagePublisher를 재사용하고 threadpool에서 실행한다. 확신도 0.8 미만은 scoring이 실수 위치를 제외하고 ai가 보류를 결정한다. 활성 응답 필드·단계 번호 기준, 실제 모델/승인 scope 및 0.8 경계 검증은 활성화 후속 작업이며 이번에 검증 완료로 표시하지 않는다.
+
 
 | Method | Path | 설명 |
 |---|---|---|
-| POST | `/internal/m2/scores` | `{prompt, text, grade, inputType}` → 총점 1~4점·8개 항목 1~5점·버전 (활성 범위 밖이면 `{active:false}`). `inputType`(`NARRATIVE`·`ESSAY`)으로 모델 선택(`m2-klue-narrative`·`m2-klue-essay`). `grade`(3~6)는 scoring이 `초{grade}`로 바꿔 모델 입력에 사용, 학습 데이터 학년(초5·6) 밖은 활성 범위 밖 |
-| POST | `/internal/m1/checks` | `{problem, answerKey, solution}` → 정답 여부·실수 위치·확신도 (확신도 0.8 미만은 보류, P15) |
-| GET | `/internal/versions` | 활성 모델 버전 |
+| POST | `/internal/m2/scores` | `{prompt, text, grade, inputType, keywords}` → 총점 1~4점·8개 항목 1~5점·버전 (활성 범위 밖이면 `{active:false}`). `inputType`(`NARRATIVE`·`ESSAY`)으로 모델 선택(`m2-klue-narrative`·`m2-klue-essay`). `grade`(3~6)는 scoring이 `초{grade}`로 바꿔 모델 입력에 사용, 학습 데이터 학년(초5·6) 밖은 활성 범위 밖 |
+| POST | `/internal/m1/checks` | `{problem, answerKey, solution:{steps,finalAnswer}}` → 현재 미학습이므로 `{active:false}`. 활성 추론·확신도 처리는 후속 범위(P15) |
+| GET | `/internal/versions` | 로딩 완료한 활성 모델 `{items:[{name,version,revision}]}`. name 순 정렬, 없으면 `{items:[]}`. 내부 토큰 필수 |
+
+#### #85 scoring 모델 조회·로딩 기준 (2026-10-28)
+
+- core의 활성 snapshot에서 `kind=MODEL`, 이름이 `m2-` 또는 `m1-`로 시작하는 항목만 처리한다. `artifactUri`의 S3 디렉터리를 내려받아 로컬 파일로만 로딩하며 외부 모델 저장소로 대체하지 않는다.
+- `/internal/versions`는 core가 요구한 버전이 아니라 **실제로 로딩 완료한 버전**을 반환한다. 초기 조회·로딩 전에는 빈 목록이며 준비 여부는 `/health/ready`의 `models` 항목으로 구분한다. S3 경로·평가 자료·비밀 값은 반환하지 않는다.
+- 사용자 결정: core 조회 성공 + 활성 모델 없음은 `models=UP`. 해당 모델은 비활성이며 #87·#88에서 `{active:false}`로 응답한다. core 조회 실패 또는 첫 가중치 로딩 실패는 `models=DOWN` 상태에서 백그라운드 재시도하고 프로세스를 종료하지 않는다. 다른 readiness 항목도 모두 UP이어야 HTTP 200이다.
+- 교체는 새 가중치 로딩 완료 후 수행한다. 교체 실패 시 기존 로딩 버전을 유지한다. 같은 kind·name의 낮은 revision은 무시하고, 실패한 최신 revision은 재시도할 수 있다. 새 승인 범위가 좁아졌다면 기존 모델 유지 중에도 이전·새 범위의 교집합에서만 사용한다.
+- scope는 #43 계약의 문자열 정확 일치로 검사한다. 학년·입력 유형의 M2 scope는 위 #87 계약의 정확 일치 키를 사용한다. core 승인 범위를 임의로 확장하지 않는다.
+- #85는 기동 snapshot·로더·레지스트리 기반이다. Pod별 큐 바인딩 후 snapshot 조회·보존 이벤트 조정·재연결은 #86에서 연결한다. #85만으로 실시간 모델 버전 동기화를 완료했다고 간주하지 않는다.
 
 ### 4.4 report-service (호출: core)
 - 호출 대상은 `report-api` Deployment (KEDA로 0까지 줄어드는 `report-worker`와 분리, [아키텍처 4.4](architecture.md#44-확장))

@@ -1,6 +1,12 @@
 # 선택 실행: docker compose -f compose.yaml -f compose.minio.yaml up -d minio
 # 버킷 준비: docker compose -f compose.yaml -f compose.minio.yaml run --rm minio-init
 services:
+  scoring-service:
+    environment:
+      S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?.env 설정 필요}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?.env 설정 필요}
+
   report-api:
     environment: &report-minio-env
       S3_ENDPOINT_URL: http://minio:9000

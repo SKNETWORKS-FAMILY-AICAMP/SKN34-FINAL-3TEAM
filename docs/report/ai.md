@@ -82,9 +82,11 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
 - 사용량 조회: KST 양 끝 포함 최대 366일(사용자 결정), 범위 밖은 DB 조회 전 400. 미산정 비용이 섞이면 `costUsd` null + `unpricedCalls`
 - scope 배열의 null 요소는 Kotlin 제네릭만으로 차단되지 않아 명시적으로 422
 - 기존 NULL 평가 행은 목록에 null로 남기고 활성화·복귀는 422, 불완전한 기존 ACTIVE는 내부 snapshot에서 503 `MODEL_VERSION_STATE_INVALID`
-- 미구현: ai·scoring의 Pod별 큐 바인딩 → snapshot 조회 → 더 높은 revision만 적용하는 소비 흐름(브로커 fan-out 검증만 완료)
+- scoring은 #86에서 Pod별 큐 바인딩 → snapshot 조회 → 더 높은 revision 적용·재연결을 구현했다. ai 소비 흐름은 #68 후속이다. [scoring #86 검증](issue-86-scoring-model-events.md)을 참고한다.
 
 ## 4. M2 모델과 API 정렬 (#4)
+
+2026-10-29 로컬 #87 후속 기준: 받은 2.0 모델은 핵심어 입력·score_cuts 보정·rawScores 반환을 적용한다. [#87 구현·검증](issue-87-scoring-m2.md)과 [API 4.3](../design/api-spec.md#43-scoring-service-호출-ai)을 따른다. scoring 이벤트 소비는 #86에 구현되어 있으며, AI #69의 실제 scoring 호출은 별도 후속이다. 아래 #4 기록을 새 모델의 반올림·핵심어 개수 대체 규칙으로 해석하지 않는다.
 
 - `grade`(3~6)는 scoring이 `초{grade}`로 바꿔 모델 입력에 사용(모델은 `[학년] 초5` 문자열로 학습, 데이터에 중학생도 있어 정수로 재학습 불가). 학습 데이터 학년(초5·6) 밖은 활성 범위 밖. 변환을 빠뜨리면 오류 없이 성능만 떨어짐
 - 응답 점수: 총점 1~4점(데이터에 5점 없음)·8개 항목 1~5점
@@ -118,3 +120,7 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
 | 빈 서술·빈 저녁 질문 | 503 `AI_UNAVAILABLE`(`retryable: true`) | report는 AI 실패를 `FAILED`로 처리 |
 
 - 후속: `model.version.activated` 수신 시 서술 프롬프트 버전 교체는 #68, 실제 LLM 연동 E2E는 report worker 생성기 조립 후
+
+## 6. scoring 기동 모델 로딩 (#85)
+
+`feature/scoring-model-registry`는 core 활성 snapshot 조회, 승인 scope·revision 검사, 실제 S3/MinIO 가중치 CPU 로딩 및 `/internal/versions`를 구현한다. 활성 모델이 없으면 준비 완료, 최초 조회·로딩 실패 시 준비 안 됨으로 재시도하며 프로세스는 유지한다. 같은 모델 교체 실패 시 기존 모델은 보존한다. 기동 이후 활성화 이벤트는 #86, M2 채점 API는 #87, M1 계약은 #88 범위다. 상세 증거는 [#85 검증](issue-85-scoring-model-registry.md)을 따른다.

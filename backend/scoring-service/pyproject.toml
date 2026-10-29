@@ -4,15 +4,20 @@ version = "0.1.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "aio-pika>=10.2.0",
+    "boto3>=1.40.0",
     "fastapi>=0.162.0",
     "httpx>=0.28.1",
     "pydantic-settings>=2.16.1",
+    "torch>=2.14.1",
+    "transformers>=5.20.2",
     "uvicorn[standard]>=0.54.0",
 ]
 
 [dependency-groups]
 dev = [
+    "jsonschema==4.26.0",
     "pytest>=9.1.1",
+    "pyyaml>=6.0",
     "ruff>=0.17.2",
 ]
 
@@ -26,3 +31,12 @@ select = ["E", "F", "I", "B"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+# Linux Docker에서도 CUDA 런타임 대신 CPU wheel을 사용한다.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

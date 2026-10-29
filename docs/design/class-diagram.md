@@ -1492,7 +1492,7 @@ classDiagram
   }
   class ScoringClient {
     <<client>>
-    +m2_scores(prompt, text, grade, input_type) M2Result
+    +m2_scores(prompt, text, grade, input_type, keywords) M2Result
     +m1_check(problem, answer_key, solution) M1Result
   }
   class ActiveVersions {
@@ -1683,42 +1683,67 @@ classDiagram
   }
   class M2Service {
     <<service>>
-    +score(prompt, text, grade, input_type) M2Response
+    +score(request) M2Response
   }
   class M1Service {
     <<service>>
-    +check(problem, answer_key, solution) M1Response
+    +check(request) M1Inactive
   }
   class ModelRegistry {
     <<registry>>
-    +load(name, version, artifact_uri)
-    +get(name) LoadedModel
-    +is_active(name, grade) bool
+    +load(active_version) bool
+    +get(name, scope) LoadedModel
+    +is_active(name, scope) bool
     +replace(versions)
+    +versions() list
   }
   class LoadedModel {
     <<infra>>
-    +version str
-    +predict(inputs) Prediction
+    +metadata ActiveModelVersion
+    +tokenizer
+    +training_config dict
+    +score_cuts dict
+    +predict(inputs) raw_scores
   }
+  class ModelStartup {
+    <<service>>
+    +start()
+    +offer(active_version)
+    +is_ready() bool
+    +close()
+  }
+  class ModelLoader { <<infra>> }
+  class S3ModelArtifacts { <<client>> }
+  class versions_router { <<router>> }
   class CoreClient { <<client>> }
-  class ModelVersionConsumer { <<consumer>> }
+  class ModelVersionConsumer {
+    <<consumer>>
+    +start()
+    +receive(message, startup)
+    +is_ready() bool
+    +close()
+  }
   class UsagePublisher { <<messaging>> }
 
   m2_router --> M2Service
   m1_router --> M1Service
   M2Service --> ModelRegistry
-  M1Service --> ModelRegistry
+  M1Service ..> ModelRegistry : 활성 추론 후속 연결
   ModelRegistry ..> LoadedModel
-  ModelRegistry --> CoreClient : 기동 시 활성 버전
-  ModelVersionConsumer --> ModelRegistry
+  ModelStartup --> CoreClient : 기동 시 활성 버전
+  ModelStartup --> ModelRegistry : snapshot·보존 이벤트 조정·로딩 재시도
+  ModelRegistry --> ModelLoader : 스레드풀 로딩
+  ModelLoader --> S3ModelArtifacts
+  versions_router --> ModelRegistry
+  ModelVersionConsumer --> ModelStartup : 큐 바인딩 후 시작·이벤트 전달
   M2Service --> UsagePublisher
-  M1Service --> UsagePublisher
+  M1Service ..> UsagePublisher : 활성 추론 후속 연결
 ```
 
 - `LoadedModel.predict`는 CPU 동기 추론 → `run_in_threadpool`로 호출해 이벤트 루프 차단 방지 (아키텍처 2.3)
-- 활성 범위 밖 학년·문항이면 `{active: false}` 반환, M1 확신도 0.8 미만은 보류 신호 (P15)
+- 활성 범위 밖 학년·문항이면 `{active: false}` 반환. #88 현재 M1은 미학습으로 항상 비활성이며 추론·사용량 발행을 하지 않는다. 향후 M1 확신도 0.8 미만이면 scoring은 실수 위치를 제외하고 ai가 보류를 결정한다(P15).
 - 가중치는 S3 `artifact_uri`에서 로딩, 승인된 버전만 (아키텍처 5장)
+- #85 구현: 레지스트리·S3 로더·versions 라우터. `get(name, scope)`는 승인 범위를 검사한 모델만 반환한다. #86은 `ModelVersionConsumer`·`ModelStartup`으로 이벤트 보존·재연결·모델 교체를 연결한다. #87은 m2 라우터·M2Service·사용량 발행, #88은 M1 미학습 비활성 계약을 제공한다.
 
 ---
 
