@@ -149,10 +149,13 @@ paths:
                     required:
                     - judgment
                     - followup
+                    - analysis
                     properties:
                       judgment:
                         type: string
                       followup:
+                        type: string
+                      analysis:
                         type: string
         '401':
           description: UNAUTHENTICATED (내부 토큰 불일치)
@@ -391,6 +394,8 @@ components:
       - prompt
     Mission:
       properties:
+        title:
+          type: string
         question:
           type: string
         thinkingType:

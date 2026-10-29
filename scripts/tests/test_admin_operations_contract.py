@@ -14,6 +14,7 @@ class AdminOperationsContracts(unittest.TestCase):
         # in the test sources instead of requiring history or network access.
         baseline=json.loads((Path(__file__).parent/'fixtures/admin_operations_base_contracts.json').read_text(encoding='utf-8'))
         self.assertEqual(baseline['sourceCommit'],'85bf1079c34a3e713bcf5eedf0cfdfd7822dc5a4')
+        self.assertEqual(baseline['upstreamSourceCommit'],'c44ace8305d7f14b41e48cb24897279aa6cde46a')
         self.assertEqual(len(baseline['paths']),91)
         self.assertEqual(len(baseline['schemas']),114)
         for section,current in [('paths',self.doc['paths']),('schemas',self.doc['components']['schemas'])]:

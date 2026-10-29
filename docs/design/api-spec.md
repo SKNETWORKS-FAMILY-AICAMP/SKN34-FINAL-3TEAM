@@ -17,7 +17,7 @@
 | 형식 | JSON(UTF-8), 필드 camelCase, 시각 ISO-8601 오프셋 포함(`2026-11-02T19:00:00+09:00`), 날짜 `YYYY-MM-DD`(KST) |
 | 식별자 | 문자열 ID(UUID). 학부모 경로의 `{childId}`는 학생 ID |
 | 기간 조회 | `from`, `to`(날짜, 양 끝 포함). 응답에 실제 조회 기간 `period` 반환 (FN-DSH-10) |
-| 목록 | `page`(0부터), `size`(기본 20, 최대 100) → `{items, page, size, totalElements}` |
+| 목록 | `page`(0부터), `size`(기본 20, 최대 100) → `{items, page, size, totalElements}`. 예외: 알림은 `totalElements` 대신 `hasNext`(3.10), 리포트·학생 기기 목록은 `{items}`만(5.5·3.11), 자녀·동의 목록은 페이지 없이 전체를 `page: 0, size = items 수`로 반환(5.3) |
 | 스트리밍 | `text/event-stream`, 각 이벤트 `event: <이름>` + `data: <JSON>` (1.6) |
 
 ### 1.2 인증·권한
@@ -65,7 +65,7 @@
 | `PAIRING_CODE_INVALID` | 400 | 페어링 코드 없음·만료·이미 사용 (FN-ACC-14) |
 | `NOT_FOUND` | 404 | 리소스 없음 |
 | `DATA_UNAVAILABLE` | 410 / 503 | 삭제된 근거 → "이용 불가" 표시(410), report 원문 조회·파일 저장소 장애는 재시도 가능한 503 |
-| `DELETION_IN_PROGRESS` | 409 | report 학생 삭제가 진행 중이므로 조회를 잠시 차단 |
+| `DELETION_IN_PROGRESS` | 409 | report 학생 삭제가 진행 중이므로 리포트 조회를 잠시 차단(core가 같은 코드로 전달), core 자녀 삭제 요청이 이미 진행 중 (5.6) |
 | `VALIDATION_FAILED` | 400 | 형식 오류 (`errors[]`에 필드별 사유) |
 | `ANSWER_INCOMPLETE` | 422 | 필요한 선택·입력 누락 (FN-LRN-04) |
 | `IDEMPOTENCY_KEY_REUSED` | 422 | 같은 키에 다른 요청 본문 |
@@ -78,7 +78,7 @@
 | `PAYMENT_AMOUNT_MISMATCH` | 422 | 요청 금액과 승인 정보 불일치 (FN-PAY-03) |
 | `REFUND_NOT_ALLOWED` | 409 | 중복·초과 환불, 환불 조건(결제 7일 이내·프리미엄 기능 미사용) 불충족 (FN-ADM-16, P14) |
 | `CHILD_LIMIT_REACHED` | 409 | 학부모당 자녀 3명 초과 등록 (FN-ACC-06, P02) |
-| `REGENERATE_NOT_ALLOWED` | 409 | 학부모의 같은 리포트 재생성 1회 초과 (FN-RPT-12, P06) |
+| `REPORT_REGENERATION_LIMIT` / `REPORT_GENERATION_IN_PROGRESS` | 409 / 409 | 학부모의 같은 자녀·주 리포트 재생성 1회 초과 (FN-RPT-12, P06) / 같은 주 생성 작업 진행 중 (5.5) |
 | `WITHDRAWAL_BLOCKED` | 409 | 진행 중 구독·미처리 환불이 있어 탈퇴 불가, 정리 대상 포함 (FN-ACC-12, P09) |
 | `USAGE_LIMIT_REACHED` | 429 | 요금제 사용 한도 도달(무료: 하루 미션 3개·분석 대화 없음, 프리미엄: 하루 피드백 50회·분석 대화 30회), 가능 범위·사유·초기화 시점 포함 (FN-ADM-19, P13) |
 | `AI_UNAVAILABLE` | 503 | AI 처리 실패, `retryable` 포함 (처리 실패 상태, 보류와 구분) |
@@ -96,6 +96,12 @@
 | `LEARNING_INVALID_RESPONSE` | 502 | 피드백 SSE에서 learning 응답 형식 오류 (3.2) |
 | `SUPPORT_CORRECTION_CONFLICT` / `SUPPORT_CORRECTION_REJECTED` | 409 / 422 | learning 정정 POST의 업무 충돌 / 요청 거부. 공급자 본문은 공개하지 않음 (5.7) |
 | `SUPPORT_DEPENDENCY_UNAVAILABLE` / `SUPPORT_INVALID_RESPONSE` | 503 / 502 | 지원 공급자의 기타 비-2xx / 잘못된 2xx 성공 응답 (5.7) |
+| `REPORT_NOT_FOUND` / `REPORT_SCOPE_REJECTED` | 404 / 403 | 없는 리포트 / report-api가 학생 범위를 거부 (5.5) |
+| `REPORT_ENTITLEMENT_UNAVAILABLE` | 503 | 리포트 상품 권한 확인 불가. 작업·Outbox를 만들지 않음 (5.5) |
+| `REPORT_UNAVAILABLE` / `REPORT_CONTRACT_INVALID` | 503 / 502 | report-api 연결 실패·그 밖의 오류 응답 / 응답 JSON·식별·기간 계약 위반 (5.5) |
+| `RATE_LIMITED` / `STUDENT_AUTH_UNAVAILABLE` | 429 / 503 | 기기 등록·페어링 발급 10분 한도 초과 / 기기·페어링 저장소(Redis) 장애 (3.11) |
+| `REAUTH_PENDING` | 409 | Google 재인증 callback 전에 재인증 토큰 수령 시도 (5.6) |
+| `METHOD_NOT_ALLOWED` / `UNSUPPORTED_MEDIA_TYPE` / `REQUEST_FAILED` | 405 / 415 / 그 밖의 4xx·5xx | 허용되지 않는 메서드 / 지원하지 않는 Content-Type / 위 표에 없는 프레임워크 기본 오류 |
 | `INTERNAL_ERROR` | 500 | 예상하지 못한 서버 오류 (SSE `error` 이벤트는 `retryable: true`) |
 
 - 피드백 SSE `error` 이벤트: core가 만든 오류는 `type: "about:blank"`·`title`·`status`·`code`·`retryable`만 포함하고 `instance`·`traceId`는 없음. learning이 보낸 Problem Details는 그대로 전달하고 빠진 `type`·`title`·`status`·`code`·`retryable`만 보충 (3.2)
@@ -175,7 +181,7 @@
 | `done` | `{}` | 스트림 종료 |
 
 - heartbeat: 15초마다 주석 줄 `: ping` 전송 (CloudFront·ALB 유휴 타임아웃 방지, 클라이언트는 무시)
-- 알림 스트림 재연결 시 `GET /notifications?unreadOnly=true`로 누락분 재조회
+- 알림 스트림은 연결 직후 `event: ready`를 보내며, 재연결한 클라이언트는 `GET /notifications` 첫 페이지부터 재조회해 id로 병합 (2.7)
 
 ---
 
@@ -195,7 +201,8 @@
 | POST | `/auth/student/login` | 기기 쿠키 | 학생 진입(단독): `{childId, pin}` → 학생 세션(`STUDENT` 토큰) 발급. refresh 미발급 (P01, 3.11) | ACC-05 | 제안 |
 | GET | `/me` | 인증 | 본인 정보·역할·관리자 권한 | ACC-09 | 우선1 |
 | PATCH | `/me` | 인증 | 본인 정보 수정 | ACC-09 | 우선1 |
-| POST | `/me/reauth` | 인증 | 재확인 → 단기 `reauthToken` 발급 | ACC-10 | 우선1 |
+| POST | `/me/reauth` | 인증 | Google 재인증 시작 `{purpose, childId?, scope?}` → `{challengeId, authorizationUrl, expiresAt}`, callback 후 `{challengeId}`로 단기 `reauthToken` 수령 (5.6) | ACC-10 | 우선1 |
+| GET | `/auth/google/reauth/callback` | 공개(재인증 상태 쿠키) | Google 재인증 callback → `{challengeId, status: VERIFIED}` (5.6) | ACC-10 | 우선1 |
 | GET | `/me/consents` | 학부모 | 동의 이력(주체·문서 버전·시점·철회 상태) | ACC-02 | 제안 |
 | POST | `/me/consents` | 학부모 | 현재 문서의 동의 항목 저장 `{consents:[{documentId,version,agreed}], childId?}`. 계정은 TERMS·PRIVACY, 자녀는 GUARDIAN | ACC-02 | 제안 |
 | POST | `/me/consents/{consentId}/withdrawal` | 학부모 | 동의 철회. 필수 동의면 해당 자녀(또는 계정) 이용 차단 후 삭제·탈퇴 안내, 선택 동의면 해당 기능만 중단 (P09) | ACC-02 | 제안 |
@@ -209,6 +216,7 @@
 | GET | `/children/{childId}/deletion-impact` | 학부모 | 연결 해제·프로필 삭제·기록 삭제별 범위·영향 안내 | ACC-11 | 우선2 |
 | DELETE | `/children/{childId}/link` | 학부모 | 연결 해제 (`X-Reauth-Token`) | ACC-11, ACC-10 | 우선2 |
 | POST | `/children/{childId}/deletion-requests` | 학부모 | 프로필·학습 기록 삭제 요청 `{scope: PROFILE\|RECORDS}` (`X-Reauth-Token`). 같은 요청에서 확정하고 `student.deleted` 발행, 별도 확인 API 없음. 사전 안내는 `deletion-impact` (P09) | ACC-11, ACC-13 | 우선2 |
+| GET | `/children/{childId}/deletion-requests/{requestId}` | 학부모 | 삭제 요청 처리 상태 (5.6) | ACC-11 | 우선2 |
 | GET | `/me/withdrawal/precheck` | 인증 | 탈퇴 전 진행 중 구독·미처리 환불·보관 거래(5년) 안내 (P09, P14) | ACC-12 | 우선2 |
 | POST | `/me/withdrawal` | 인증 | 탈퇴 요청 (`X-Reauth-Token`). 진행 중 구독·미처리 환불이 있으면 409, 요청 즉시 처리·이후 로그인 불가 (P09) | ACC-12 | 우선2 |
 | GET | `/me/withdrawal` | 인증 | 탈퇴 처리 상태 | ACC-12 | 우선2 |
@@ -242,7 +250,7 @@
   - 되묻기는 시도당 최대 2회, 2회째 답변 후 `nextActions: ["FINISH"]`
   - 고르기 `CORRECT`면 되묻기 없이 `nextActions: ["FINISH"]`
   - 되묻기에 답하지 않고 `FINISH` 가능("이대로 돌아보기")
-- 무료 플랜은 하루 신규 미션 시도 3개까지 허용하며 일일 한도는 core의 Redis 카운터 책임이다(learning은 관여하지 않음, P13). 후속 한도 연계에서 신규 생성 `201`만 집계하고 기존 진행 시도 반환 `200`은 집계하지 않는다. 한도 도달 시에도 이어하기는 허용하고 신규 생성만 `429 USAGE_LIMIT_REACHED`로 차단해야 한다. 시작 요청 전체를 선차단하지 않도록 기존 시도 판별·신규 생성 차단의 처리 순서는 후속 한도 구현에서 검증한다.
+- 무료 플랜 하루 신규 미션 시도 3개(P13). 일일 한도는 core Redis 카운터 책임(미구현)이며 신규 생성 `201`만 집계하고 이어하기 `200`은 집계하지 않음. 한도 도달 시 신규 생성만 `429 USAGE_LIMIT_REACHED`
 - 목록 접기·펼치기(FN-LRN-20): 프론트 전용, API 없음
 - 판정 규칙 (FN-JDG-01~05)
   - 고르기·수학 최종 답: 규칙 판정
@@ -255,11 +263,15 @@
 
 ### 2.3 대시보드 (FN-DSH)
 
-#40 구현 계약: 아래 7개 GET은 `from`·`to`를 함께 받는다. 모두 생략하면 **KST 오늘 포함 최근 7일**이며 한쪽만 지정하거나 역전/유효하지 않은 날짜(연도 0001~9999 밖 포함)는 400 VALIDATION_FAILED다. 양 끝 날짜 포함, learning 조회 시 `[from 00:00 KST, to 다음날 00:00 KST)` 경계다. 응답 period는 실제 learning 조회 결과를 보존한다. 목록 page는 0 이상, size는 1~100(기본 20), status는 생략 또는 IN_PROGRESS/COMPLETED다. 상세 기간은 화면 범위 메타데이터이며 답변 이력 자체를 자르지 않는다.
+정식 공개 DTO는 core OpenAPI의 Dashboard 스키마, 내부 공급자 DTO는 learning OpenAPI의 Record 스키마(4.1).
 
-학생 home은 core의 현재 학생 프로필과 learning `/internal/records/students/{studentId}/home?from&to&grade&demo`를 조합한다. 학생 attempts/thinking-activities 및 학부모 summary/thinking-types/attempts/attempts/{attemptId}는 같은 내부 records 경로에 대응한다. 내부 studentId는 검증된 STUDENT scope 또는 현재 연결·활성·동의를 확인한 자녀다. 내부 records/home의 resume는 제출 전 시도도 식별하되 draft·memo를 포함하지 않는다. core는 해당 attemptId로 기존 학생 전용 `/internal/attempts/{attemptId}`를 조회해 검증된 본인 초안을 공개 home.resume에 조합한다. 두 번째 조회 실패도 홈 조회 실패이며 부분 성공/빈 이어하기로 대체하지 않는다. 공개 home resume는 집계 기간 밖의 제출 전 초안도 포함할 수 있지만 집계·목록은 P08 기준을 유지한다. 집계/미션 선정은 learning 소유다.
-
-정식 공개 DTO는 core OpenAPI의 Dashboard 스키마, 내부 공급자 DTO는 #27 learning OpenAPI의 Record 스키마를 따른다. #40 재리뷰: 내부 records 응답 식별자는 호출 역할과 무관하게 studentId로 통일하고, core가 학부모 요약·유형·목록의 최상위 식별자만 childId로 매핑한다. #27은 core·ai·report 공용이므로 역할별 응답 모양을 요구하지 않는다. Metric의 필수 값·타입과 다섯 생각 유형의 누락/중복은 502 계약 오류로 처리하며 수치를 보충하지 않는다. 프론트는 선택 기간과 페이지를 요청하고 상세에도 같은 기간을 전달한다. reflection의 EASY/NORMAL/HARD·nullable text는 프론트 표시 경계에서 기존 한국어 선택값·빈 표시문으로 변환한다. 학부모 상세는 기존 Attempt 최상위 구조에 state·period를 추가하고 draft·중첩 memo를 제외한다. thinking-activities는 `{studentId,state,period,items:[{attemptId,thinkingType,missionTitle,reflection}]}`다. 공급자 조회 실패는 오류이며 NO_RECORD가 아니다. `/exists`는 이 계약의 구현 완료를 뜻하지 않는다. preferences는 #40 범위 밖이다. #27 통합: completedAt·hintUsages와 기록 reflection.createdAt을 공개 DTO에서도 보존한다. 홈은 records resume의 메타데이터를 유지하고 학생 전용 상세에서 draft만 조합한다. finishedAt은 마무리 공개 시각, completedAt은 돌아보기 제출 완료 시각이며 이전에는 각각 null이다. reflection이 있으면 createdAt은 필수다.
+- 기간: 아래 GET은 `from`·`to`를 함께 받음. 둘 다 생략하면 KST 오늘 포함 최근 7일, 한쪽만·역전·유효하지 않은 날짜(연도 0001~9999 밖 포함)는 400 `VALIDATION_FAILED`. 양 끝 포함, learning 조회 경계는 `[from 00:00 KST, to 다음날 00:00 KST)`. 응답 `period`는 learning 조회 결과 그대로
+- 목록: `page` 0 이상, `size` 1~100(기본 20), `status`는 생략 또는 `IN_PROGRESS`·`COMPLETED`. 상세의 기간은 화면 범위 메타데이터이며 답변 이력을 자르지 않음
+- 식별자: 내부 records 응답은 역할과 무관하게 `studentId`, core가 학부모 요약·유형·목록의 최상위 식별자만 `childId`로 바꿈. 내부 studentId는 검증된 STUDENT scope 또는 현재 연결·활성·동의를 확인한 자녀
+- 학생 home: core 학생 프로필 + learning `records/.../home`. resume는 draft·memo 없이 식별만 하고, core가 학생 전용 `/internal/attempts/{attemptId}`로 본인 초안을 붙임. 두 번째 조회 실패도 홈 조회 실패(부분 성공·빈 이어하기로 대체하지 않음). 집계·미션 선정은 learning 소유
+- 계약 오류: Metric 필수 값·타입, 다섯 생각 유형 누락·중복은 502 `LEARNING_CONTRACT_INVALID`(수치 보충 없음). 공급자 조회 실패는 오류이며 `NO_RECORD`가 아님
+- 표시 필드: `completedAt`·`hintUsages`·`reflection.createdAt` 보존. `finishedAt`은 마무리 공개 시각, `completedAt`은 돌아보기 완료 시각(그 전에는 null), reflection이 있으면 `createdAt` 필수. 학부모 상세는 Attempt에 `state`·`period`를 더하고 draft·memo 제외. `thinking-activities`는 `{studentId,state,period,items:[{attemptId,thinkingType,missionTitle,reflection}]}`. reflection의 `EASY/NORMAL/HARD`·nullable text는 프론트 표시 경계에서 한국어 선택값으로 변환
+- `students/me/preferences`는 3.12 목업
 
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
@@ -570,60 +582,42 @@ If-Match: "7"
 
 ---
 
-### 3.7 이슈 #7 프론트 목업용 최소 DTO 초안 (백엔드 확인 대기)
+### 3.7 웹 목업 공통 규칙
 
-공개 Controller가 없는 상태에서 MSW와 화면 어댑터를 같은 형태로 검증하기 위한 **초안**이다. 확정된 백엔드 응답/OpenAPI가 아니며 담당자 확인 전 실연동 완료로 간주하지 않는다. 기존 3.1·3.2·3.6 계약은 유지한다.
+3.8~3.10은 공개 API가 아직 없는 화면을 MSW로 개발하기 위한 웹 목업 계약. 확정 계약(5장·core OpenAPI)이 있는 항목은 그쪽이 우선이며 여기에는 다시 적지 않음.
 
-- #36 이후 이메일·비밀번호 로그인/가입은 제공하지 않는다. Google core 콜백 → web `/oauth/complete` → refresh → `/me`로 로그인 상태·시작 화면을 복원한다. 개발 전용 MSW의 이메일 fixture는 운영 계약이 아니다. 학생 단독 진입은 3.11을 따른다(P01 개정).
-- `POST /auth/refresh`: 학부모·관리자만 httpOnly 쿠키로 갱신한다. 학생은 refresh 미발급이며 3.11에 따라 재진입한다. 동시 만료 요청은 refresh 1회 공유, 원 요청은 1회만 재시도한다.
-- `POST /auth/student-sessions`: 요청 `{childId}`. 응답은 구현 계약 5.1·OpenAPI가 우선이다(`{accessToken,expiresIn,role:STUDENT,child,nextAction,startPath}`).
-- `GET /children`: 이 절의 `{childId,nickname,grade,birthYear,plan:FREE|PREMIUM}`은 #7 목업 초안이다. **5.3·core OpenAPI 확정 계약이 우선**이며 실제 식별자는 `id`, #37 응답은 `plan`을 생성하지 않는다. PIN 확장·상품/권한 응답은 별도 후속 계약이다.
-- 학생 조회의 목업 DTO는 `frontend/web/src/domain/classroom.ts`의 화면 모델을 잠정 사용한다. Mission(제목·교과·학년·유형·질문·장면 표시 정보. 실제 learning 미션 상세는 `{id,title,subject,grade,gradeMax,thinkingType,inputType,question,hint,sceneUri,staticSceneUri,choices,inputTemplate,categories,answerUnit}`이며 `scene`은 미제공. `categories`는 분류 그룹 `[{id,label}]`(분류가 아니면 `[]`), `answerUnit`은 수학 최종 답 칸 뒤에 고정할 단위(없으면 `null`, #79), [이슈 #22 보고서](../report/learning-mission.md)), Attempt(attemptId·studentId·mission·status·answers·도움·돌아보기), 목록은 1.1 봉투. draft는 3.6처럼 `{version,content:{answer,memo},savedAt}`로 직렬화한다. finish 전 reveal은 전송하지 않는다.
-- 학생 홈·입력 틀 상세·최종 체크리스트의 완전한 DTO, SOLUTION_STEPS·CLASSIFICATION 제출 필드는 아직 미확정이다. 이 초안으로 임의 확정하거나 완료 체크하지 않는다.
-- 시나리오 선택은 개발 브라우저 내부 이벤트로 전달하며 `/api/v1`에 가짜 운영 경로를 추가하지 않는다.
+- 개발 전용 MSW fixture(이메일 로그인 등)는 운영 계약이 아님. 로그인·토큰·`/me`·`/children`·동의·리포트·모델 레지스트리·AI 사용량은 5장과 OpenAPI 기준
+- `GET /children`은 5.3·core OpenAPI 기준이며 실제 식별자는 `id`. 목업의 `childId`·`plan`은 계약이 아님(core는 `plan`을 만들지 않음)
+- 시나리오 선택은 개발 브라우저 내부 이벤트로 전달하며 `/api/v1`에 가짜 경로를 추가하지 않음
+- 새로고침 시험은 sessionStorage의 가상 fixture 상태만 복원. 실제 아동 정보·토큰·비밀번호는 저장하지 않음
+- 브라우저 목업 시험은 서버 집계·연동 검증을 대신하지 않음
 
-### 3.8 이슈 #7 학생 화면 확장 목업 계약 (백엔드 확인 대기)
+### 3.8 학생 화면 (답변 제출 형식·목업)
 
-아래는 6종 입력·홈·이어하기·마무리를 MSW로 구현하기 위한 프론트 계약 초안이다. 실제 Controller/OpenAPI 확정을 대신하지 않는다. 목 OFF에서도 같은 직렬화·경로를 사용하며, 실제 통합 검증은 별도다.
+- 입력 방식별 제출(learning 구현): `CHOICE`는 `choiceIds` 1개, `ORDERING`은 모든 `choiceIds`를 중복 없이 순서대로, `SOLUTION_STEPS`는 `{finalAnswer, steps[]}`(최종 답과 비어 있지 않은 단계 1개 이상, 단위는 `answerUnit`으로 칸 뒤에 고정·비교 안 함, #79), `CLASSIFICATION`은 `{assignments:[{choiceId, categoryId}]}`(모든 choice를 한 그룹에 정확히 배정, 미정·중복은 422). 공통으로 `dictatedByGuardian`, 보완 시 `followupId`. 메모는 제출하지 않음
+- 미션 상세 필드는 `{id,title,subject,grade,gradeMax,thinkingType,inputType,question,hint,sceneUri,staticSceneUri,choices,inputTemplate,categories,answerUnit}`(`scene` 미제공)
+- 목업 전용: 미션 목록 항목의 `status·attemptId?·position·total`, `GET /students/me/home` `{student,state,period,resume,missions}`. 마무리 전에는 정답·예시·reveal·checklist를 주지 않음
+- 마무리 후에만 `reveal`·`revealKind`·`checklist`(3.2 Element). 체크는 `satisfied`와 원문 인용이 모두 있는 요소만 표시
+- 개발 시나리오 PARTIAL·RETHINK·CORRECT는 고정 UI 시험 상태이며 모델 판정이 아님
 
-- `SOLUTION_STEPS` 제출: `{inputType:"SOLUTION_STEPS",finalAnswer:"...",steps:["..."]}`. 최종 답과 비어 있지 않은 풀이 단계 1개 이상 필수. 최종 답은 수만 쓰면 되고 단위는 `answerUnit`으로 칸 뒤에 고정해 보여 줌(단위는 비교하지 않음, #79).
-- `CLASSIFICATION` 제출: `{inputType:"CLASSIFICATION",assignments:[{choiceId:"c1",categoryId:"g1"}]}`. 미션의 모든 choice를 정확히 한 그룹에 배정한다. 미션 상세에 `categories:[{id,label}]`를 제공한다(`mission_version.categories`, #79). 미정 그룹·항목·중복 배정은 422.
-- `CHOICE`는 choiceIds 1개, `ORDERING`은 모든 choiceIds를 중복 없이 순서대로 전달한다. 모든 방식에 `dictatedByGuardian`(boolean)과 보완 시 `followupId`를 공통 적용한다. 메모는 제출에 포함하지 않는다.
-- 미션 목록 항목: 기존 Mission + `status:NOT_STARTED|IN_PROGRESS|COMPLETED`, `attemptId?`, `position`, `total`. 공개 문항은 초3·초5 각 5개를 유지하고, 6종 입력 계약 시험용 추가 문항은 별도 개발 시나리오에만 제공한다.
-- `GET /students/me/home`: `{student:Child,state:QueryState,period:{from,to},resume:Attempt|null,missions:Mission[]}`. 제출 전 초안만 있는 시도도 resume에 포함한다. 정답/예시/reveal/checklist는 마무리 전에 제공하지 않는다.
-- `GET /me`: `{role:PARENT|ADMIN,...}` 또는 `{role:STUDENT,child:Child,...}`. 전체 필드는 5.1·OpenAPI가 우선이다. 학부모·관리자만 refresh로 복원하며 학생은 메모리 access가 없으면 재진입한다. 토큰·로그인 정보는 브라우저 영구 저장소에 보관하지 않는다.
-- Attempt의 `answers[].content?`는 제출 답변 내용만 담으며 메모는 없다. `draft`는 3.6의 version/content/savedAt 형식을 유지한다. 저장·제출·피드백 요청은 분리한다.
-- finish 성공 후에만 `reveal`, `revealKind:ANSWER|EXAMPLE`, `checklist:Element[]`가 생긴다. Element는 3.2의 elementId/label/satisfied/quote/sourceType 형식을 사용한다. 체크는 satisfied와 원문 인용 존재가 모두 확인된 요소만 표시한다.
-- 미검증 판정은 trial:true, HELD와 FAILED는 구분한다. 개발 시나리오 PARTIAL/RETHINK/CORRECT는 실제 모델 성능 판정이 아닌 고정 UI 시험 상태다.
-- 브라우저 개발 목업의 새로고침 시험은 sessionStorage의 **가상 fixture 상태만** 복원한다. 실제 아동 정보를 입력하지 않으며 access/refresh 토큰·비밀번호는 저장하지 않는다. 실제 서버 저장·쿠키 보안 검증을 대신하지 않는다.
+### 3.9 학부모 화면 (목업)
 
-### 3.9 이슈 #8 학부모 목업 계약 보완 (백엔드 확인 대기)
+- 대화 목록·상세: `{conversationId,childId,period,title,createdAt,messages?}`, 메시지 `{messageId,question,status,scope,answer?,metrics?,evidence?,source?,fallback?,verification?,failureCode?,retryable?}`. clarification 선택지는 `{label,scope:{childId,from,to}}[]`, status에 `messageId?` 동봉. 다른 자녀 scope는 명시 전환하며 이전 자녀 결과는 표시하지 않음
+- evidence 조회 `{items:Evidence[]}`. 삭제 항목은 `available:false`(410도 이용 불가 표시), quote 재사용 금지. delta는 저장하지 않음
+- 학습 요약·생각 유형 목업 봉투: summary `{childId,state,period,inclusionRule,metrics[]}`, thinking-types `{childId,state,period,items:[{type,state,missions:[{attemptId,title}],summary?}]}`
 
-기존 1.6·3.3·3.4 스키마를 그대로 사용한다. 목록은 1.1 봉투이며 아래 보완은 구현용 초안이다.
+### 3.10 관리자 화면 (목업)
 
-- 동의 문서: `{documentId,kind:TERMS|PRIVACY|GUARDIAN,version,title,content,required}`. Google 인증 뒤 동의 저장은 #37에서 제공한다. 자녀 등록은 기존 프로필 + 같은 `consents` 배열, 법정대리인 문서 동의 필수. P02에 따라 `/children/link`는 제공하지 않는다.
-- `GET /me`: `{userId,name,email,role,permissions,nextAction,startPath}` (5.1·OpenAPI가 우선). 이름 수정은 `PATCH /me {name}`. `/me/reauth`는 Google 재인증 기반 `{reauthToken,expiresAt}`(#45). 닉네임·학년 변경은 `PATCH /children/{id}`이며 중요 변경은 `X-Reauth-Token` 헤더 사용(토큰 메모리 한정).
-- summary: `{childId,state,period,inclusionRule,metrics:Metric[]}`. thinking-types: `{childId,state,period,items:[{type,state,missions:[{attemptId,title}],summary?}]}`. 학습 목록 봉투는 `childId,state,period,inclusionRule`도 포함한다. 상세는 학생 메모·draft를 제외한 시도 원문만 반환한다.
-- 대화 목록/상세: `{conversationId,childId,period,title,createdAt,messages?:ConversationMessage[]}`. 메시지 `{messageId,question,status,scope,answer?,metrics?,evidence?,source?,fallback?,verification?,failureCode?,retryable?}`. SSE clarification 선택지는 `{label,scope:{childId,from,to}}[]`, status에 `messageId?`를 동봉해 실패 재시도 경로를 식별한다. scope가 다른 자녀면 해당 전역 범위로 명시 전환하며 이전 자녀 결과는 표시하지 않는다.
-- evidence 조회는 `{items:Evidence[]}`. 삭제된 항목은 `available:false`이며 quote를 재사용하지 않는다. 410도 이용 불가로 표시한다. 대조 실패는 P16의 검증된 TEMPLATE result와 error 시나리오를 각각 시험한다. delta는 확정 데이터/캐시에 저장하지 않는다.
-- 리포트 목록 항목은 3.4의 식별·기간·상태·revision 필드, 상세는 3.4 그대로 제공한다. 상세의 `items` 식별용으로 Metric/생각 유형/전후 변화 등에 `itemId?`만 추가한다. download는 `{url,expiresAt}`를 사용하며 목업 파일에는 가상 시연임을 명시한다. 재생성 202 이후 목록/상세를 재조회하며 기존 판을 보존한다.
+ERD 3.2·3.5·4.1을 camelCase로 매핑. 학생 이름·답변 원문·메모는 운영 DTO에 넣지 않음. 모든 목 핸들러가 `/me.permissions`(`CONTENT|PAYMENT_VIEW|PAYMENT_REFUND|SERVICE_OPS`, 미제공은 권한 없음)로 검사.
 
-### 3.10 이슈 #9 관리자 목업 계약 (백엔드 확인 대기)
-
-ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mission/mission_version/rubric_version/mission_review를 camelCase로 매핑한다. 학생 이름·답변 원문·메모를 운영 DTO에 포함하지 않는다.
-
-- `/me.permissions`: `CONTENT|PAYMENT_VIEW|PAYMENT_REFUND|SERVICE_OPS` 배열. 미제공이면 권한 없는 것으로 취급한다. UI 숨김과 별개로 모든 목 핸들러에서 권한 검사한다.
-- overview: `{period,state,inclusionRule,attempts,completed,jobCounts:[{type,status,count}],missionCounts:[{status,count}]}`. 숫자는 목업 데이터에서 집계한다. 작업/미션 클릭 시 해당 필터 목록으로 연결한다.
-- jobs 목록: 1.1 봉투. 항목 `{jobId,type,status,retryCount,failureReason,createdAt,updatedAt,executions:[{executionId,attemptNo,status,errorCode,errorDetail,triggeredBy,startedAt,finishedAt}]}`. retry는 같은 키의 최초 응답을 반환한다. 재시도 결과가 실패면 FAILED 유지. queues: `{items:[{name,length,dlq}]}`. audit 항목 `{id,actorUserId,action,targetType,targetId,result,detail,createdAt}`.
-- 운영 요약 → 작업 목록의 집계 범위 유지를 위해 jobs 조회에 선택적 `from&to` 필터를 목업에서 함께 사용한다. 실제 backend의 필터 계약 확인 대상이다. 전후 변화 연결어는 `왜냐하면·때문·그래서·따라서`를 사용한다(#51에서 서버 목록도 동일하게 확인, P08). 브라우저 목업 테스트가 서버의 실제 집계·연동 검증을 대신하지는 않는다.
-- mission: `{missionId,status,demoOnly,currentVersion,currentRubricVersion,publishedVersion,versions:[{version,title,subject,gradeMin,gradeMax,thinkingType,inputType,question,guide,scene,sceneUri,staticSceneUri,achievementStandards,choices?,categories?,answerUnit?,createdAt}],rubrics:[{version,elements:[{code,label,description,points,commonErrors,goodThought,judgeVerified}],answerKey?,exampleAnswer?,forbiddenTerms,hints}],reviews:[{missionVersion,rubricVersion,result,comment,createdAt}]}`.
-- POST/PATCH mission는 위 version 필드+demoOnly를 받는다. PATCH와 rubric PUT은 새 불변 버전 추가. review-request는 `{missionVersion,rubricVersion}`, review는 같은 버전+`result:APPROVED|CHANGES_REQUESTED,comment`. publish 검증은 현재 버전 검토와 필수 콘텐츠/기준 확인, 422의 `missingFields[]` 표시. preview는 `{mission:Mission,missionVersion,rubricVersion}`이며 학생 장면/입력 컴포넌트만 재사용하고 답안은 포함하지 않는다. 업로드는 미구현(URI만 입력).
-- model-version: ERD 필드 `{id,kind,name,version,status,artifactUri?,evalResult?,approvedBy?,activatedAt?,createdAt}`. 등록/활성화는 평가 근거와 승인자 필요, rollback은 이전 승인 버전을 재활성화하고 재분석 여부를 기록한다. ai-usage: `{period,items:[{callType,calls,failures,latencyMs,inputTokens,outputTokens,costUsd}]}`(원문·학생 ID 없음). 확정 계약은 model-version 5.2(`refId`·`evaluation` 등)·ai-usage 4.6(`unpricedCalls` 등)이 우선한다.
-- error-report 목록/상세는 `{reportId,status,targetType,targetId,category,comment,reviewReason?,corrections:[{reason,corrected,createdAt,impact}],linkedAttempt?:PublicAttempt}`. SERVICE_OPS만 신고 연결 시도 원문을 상세에서 열람하고 매번 감사 기록한다. 정정은 기존 판정을 덮지 않고 새 이력과 영향 반영 여부를 반환한다.
+- overview `{period,state,inclusionRule,attempts,completed,jobCounts:[{type,status,count}],missionCounts:[{status,count}]}`
+- jobs: 1.1 봉투, 항목 `{jobId,type,status,retryCount,failureReason,createdAt,updatedAt,executions:[{executionId,attemptNo,status,errorCode,errorDetail,triggeredBy,startedAt,finishedAt}]}`, 선택 `from&to` 필터(백엔드 확인 대상). retry는 같은 키의 최초 응답 반환. queues `{items:[{name,length,dlq}]}`, audit `{id,actorUserId,action,targetType,targetId,result,detail,createdAt}`
+- mission `{missionId,status,demoOnly,currentVersion,currentRubricVersion,publishedVersion,versions[],rubrics[],reviews[]}`. PATCH·rubric PUT은 새 불변 버전, review-request `{missionVersion,rubricVersion}`, review는 `result:APPROVED|CHANGES_REQUESTED,comment`, publish 실패는 422 `missingFields[]`, preview `{mission,missionVersion,rubricVersion}`(답안 미포함). 업로드는 미구현(URI 입력)
+- error-report `{reportId,status,targetType,targetId,category,comment,reviewReason?,corrections:[{reason,corrected,createdAt,impact}],linkedAttempt?}`. SERVICE_OPS만 연결 시도 원문 열람, 매번 감사 기록. 정정은 기존 판정을 덮지 않음
 
 ### 3.11 학생 기기 등록·PIN 로그인 (P01 개정)
 
-학부모 부재 시 자녀 단독 학습을 위한 경로다. 근거·대안 비교는 [보고서](../report/student-login-separation.md)를 따른다. 기존 `POST /auth/student-sessions`(학부모 동석)는 유지한다.
+학부모 부재 시 자녀 단독 학습을 위한 경로다. 근거·대안 비교는 [보고서](../report/auth-account.md)를 따른다. 기존 `POST /auth/student-sessions`(학부모 동석)는 유지한다.
 
 - 페어링 `POST /student-devices/pairings`
   - 학부모 토큰, `childIds[]`는 모두 `guardianship LINKED`이어야 함 (아니면 `403 CHILD_NOT_LINKED`)
@@ -638,7 +632,7 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 // 요청 (Cookie: student_device=...)
 { "childId": "c1...", "pin": "4831" }
 // 200
-{ "accessToken": "...", "role": "STUDENT", "child": { "childId": "c1...", "nickname": "별빛", "grade": 3 } }
+{ "accessToken": "...", "expiresIn": 900, "role": "STUDENT", "child": { "childId": "c1...", "nickname": "별빛", "grade": 3, "birthYear": 2017 } }
 // 401
 { "code": "STUDENT_PIN_INVALID", "status": 401, "remainingAttempts": 2 }
 ```
@@ -651,15 +645,13 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
   - 해시 저장, 실패 횟수 0·잠금 해제. 잠긴 PIN의 해제 수단은 재설정뿐
 - 기기 해제 `DELETE /student-devices/{deviceId}`: `revoked_at` 기록, 기존 학생 access token은 만료까지 유효
 - 학부모 화면의 실제 PIN 상태: `GET /children` 각 항목에 `pinSet`(설정 여부)·`pinLocked`(5회 실패 잠금 여부)를 반환한다. PIN 원문·해시·실패 횟수는 반환하지 않음
-- 기기 등록·해제·PIN 설정은 `audit_log` 기록 (FN-ACC-10). PIN 잠금 시 학부모 알림은 알림 유형 추가와 함께 후속 확정
-
-#58 구현 세부 계약:
-- 프로필은 `{items:[{childId,nickname,pinSet,pinLocked}]}`, 기기 목록은 `{items:[{deviceId,label,children:[{childId,nickname}],createdAt,lastUsedAt,expiresAt}]}`. 해제 기기는 목록에서 제외한다.
-- PIN 변경/해제는 204. PIN 변경은 현재 세션·버전·PIN_CHANGE·자녀에 결합된 5분 DB 재인증 grant를 같은 트랜잭션에서 1회 소비한다.
-- 등록은 IP별 10분간 20회, 페어링 발급은 보호자별 10분간 20회 기본 한도(설정 가능). 제한은 429 RATE_LIMITED, Redis 장애는 503 STUDENT_AUTH_UNAVAILABLE. 신뢰 프록시 설정 전에는 X-Forwarded-For를 사용하지 않는다.
-- 코드 소비는 Redis 원자적 GET+DEL이다. 이후 DB 등록 실패 시 코드는 복원하지 않으며 보호자가 새 코드를 발급한다.
-- 기기·학생 검사는 계정 행 잠금과 함께 재검사한다. PIN 실패는 커밋 후 오류 응답하며 5회째부터 423이다. 성공은 실패 횟수를 0으로 바꾼다.
-- 등록·프로필·로그인 응답은 Cache-Control: no-store. PIN 로그인은 refresh 쿠키를 발급하거나 기존 보호자 세션을 수정하지 않는다.
+- 기기 등록·해제·PIN 설정은 `audit_log` 기록 (FN-ACC-10). PIN 잠금 시 학부모 알림은 미정
+- 응답 형식: 프로필 `{items:[{childId,nickname,pinSet,pinLocked}]}`, 기기 목록 `{items:[{deviceId,label,children:[{childId,nickname}],createdAt,lastUsedAt,expiresAt}]}`(해제 기기 제외). PIN 설정·변경은 204(잠금 해제 포함), 별도 해제 API 없음
+- PIN 변경은 현재 세션·버전·`PIN_CHANGE`·자녀에 결합된 5분 재인증 grant를 같은 트랜잭션에서 1회 소비
+- 한도: 등록은 IP별, 페어링 발급은 보호자별 10분간 20회(설정 가능). 초과 429 `RATE_LIMITED`, Redis 장애 503 `STUDENT_AUTH_UNAVAILABLE`. 신뢰 프록시 설정 전에는 X-Forwarded-For 미사용
+- 코드 소비는 Redis 원자적 GET+DEL. 이후 DB 등록이 실패해도 코드는 복원하지 않음(새 코드 발급)
+- 기기·학생 검사는 계정 행 잠금과 함께 재검사. PIN 실패는 커밋 후 오류 응답
+- 등록·프로필·로그인 응답은 `Cache-Control: no-store`. PIN 로그인은 refresh 쿠키를 발급하거나 보호자 세션을 바꾸지 않음
 
 ### 3.12 학생 화면 꾸미기 설정 (목업 계약 초안, 백엔드 확인 대기)
 
@@ -723,9 +715,9 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 
 - 기록 조회 공통 (#27): 학생 경로는 역할 `PARENT`·`STUDENT`·`SYSTEM`(`home`은 학생 본인 `STUDENT`만)이고 `X-Student-Scope`에 대상 학생이 없으면 `403`. `from`·`to`는 KST 날짜(양 끝 포함), 둘 다 주거나 둘 다 생략(생략하면 오늘 포함 최근 7일, P06), 한쪽만 주거나 `from > to`면 `400`. 응답 `period`는 실제 조회 기간. 집계 대상은 P08(기간 안에 답변 제출이 있는 시도, 미완료 포함·판정 상태 무관. 조회 종료일까지의 답변이 모두 처리 실패인 시도와 삭제 기록은 제외). 시도별 사실(완료·되묻기 받음·보완 답변·최근 답변)은 조회 종료일까지 일어난 것만. `state`는 집계 대상(비율은 분모) 0건 `NO_RECORD`, 1~4건 `INSUFFICIENT_SAMPLE`(비율 `value: null`), 5건 이상 `OK`. 메모·초안은 반환하지 않음(P05). 최상위 학생 식별자는 호출 역할과 무관하게 `studentId`(학부모 공개 응답의 `childId`는 core가 바꿈, core #40·report #51과 합의). 조회 장애는 `state`가 아니라 HTTP 오류(Problem Details)로 반환. 까닭을 잇는 말은 `왜냐하면`·`때문`·`그래서`·`따라서`(report와 확정)
 
-#### 4.1.1 report 수치 집계 입력 (#27 공급 계약·#51 수신부 반영)
+#### 4.1.1 report 수치 집계 입력
 
-2026-10-28 PR #105가 develop `b344797`에 병합되어 learning의 코드·OpenAPI·검증 문서로 공급 계약을 확인했다. report 수신부도 `studentId`, 학생 작성 칸 기준 수치 계산, nullable `followup`에 맞췄다. 아래는 P06·P08 계산에 사용하는 입력이며, 검증 범위와 후속 연결은 [#51 입력·계산 검증](../report/report-metrics.md)을 따른다.
+P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [리포트 보고서](../report/report.md).
 
 - 세 조회 모두 `studentId`·`period:{from,to}`·`state`를 반환한다. 학부모 공개 응답의 `childId`와 혼용하지 않는다. 학생·기간이 요청과 다르면 생성에 사용할 수 없다. 날짜 범위는 KST 양 끝 포함이며 조회 장애는 HTTP 오류다.
 - `attempts`·`changes`는 1.1의 페이지 봉투를 사용한다. `page`는 0부터 시작하고 `totalElements`는 같은 학생·기간·포함 기준의 전체 항목 수다. report는 `size=100`으로 모든 페이지를 읽으며 실패/누락 페이지를 빈 기록으로 바꾸지 않는다. `thinking-types`는 `{studentId,state,period,items}` 형태를 사용한다.
@@ -749,19 +741,19 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 | POST | `/internal/judgments` | learning | `{answerText, inputType, grade, rubric{elements[]}, versions}` → `{result, elements[{elementId, quote, verified, satisfied}], heldReason, trial, versions}` (M2 활성 시 scoring 교차 확인) |
 | POST | `/internal/followups` | learning | `{timeline[], judgment, rubric, mission, grade}` → `{type, question, source, leakCheck{passed}, versions}` (정답·금지어 검사 실패 시 1회 재생성 `LLM_RETRY`, 재실패 시 `question` 없이 `leakCheck.passed = false` → learning이 질문 은행 `BANK` 선택, P16) |
 | POST | `/internal/analysis/stream` | core | **SSE**. `{conversationId, question, scope{studentId, from, to}, history[]}` → 3.3과 같은 이벤트 |
-| POST | `/internal/report-narratives` | report | `{metrics[], thinkingTypes[], changes[], reflections[], quotes[]}` → `{narrative, eveningQuestion, citedQuotes[]}` |
+| POST | `/internal/report-narratives` | report | **미구현**(ai-service.yaml 미포함, report 호출부만 존재). `{metrics[], thinkingTypes[], changes[], reflections[], quotes[]}` → `{narrative, eveningQuestion, citedQuotes[]}` |
 | GET | `/internal/versions` | core | 활성 프롬프트 버전 |
 
-#### 4.2.1 report 서술 응답 (#52, ai 구현 담당 연동 확인 필요)
+#### 4.2.1 report 서술 응답 (ai 미구현, report 쪽 기준)
 
 - 응답은 `{narrative:{text,source:"LLM",modelExplanation:null},eveningQuestion,citedQuotes:[{attemptId,answerId,answerVersion,quote}],versions:{prompt,model}}`로 정의한다. 원문 인용은 citedQuotes에 명시하며 답변 버전과 연결한다. ai는 숫자를 새로 계산하거나 수치 레벨·등급·사고력 향상을 단정하지 않는다.
 - report는 learning evidence의 같은 answer ID·version·원문과 인용을 대조하고, 서술·저녁 질문의 숫자가 계산 결과에 포함되는지 검사한다. 지원하지 않는 한글 수사 표현은 검증 통과로 간주하지 않는다. 검증 메타데이터는 `numbersMatched`, `quotesMatched`, `contentAllowed`다.
-- 대조 실패만 코드 기반 템플릿 요약으로 전환한다. AI 시간 초과·5xx·응답 스키마 오류·learning 원문 조회 실패는 `FAILED`로 처리한다(#52 담당자 확인 2026-10-27). 학생 이름·닉네임 필드는 요청에 넣지 않으며, 알려진 닉네임이 본문에 포함된 경우 전송 전에 가린다.
-- 이 응답 구조는 report 측 구현 기준이며, 아직 ai의 해당 API 구현·E2E 완료를 뜻하지 않는다.
-
+- 대조 실패만 코드 기반 템플릿 요약으로 전환한다. AI 시간 초과·5xx·응답 스키마 오류·learning 원문 조회 실패는 `FAILED`로 처리한다. 학생 이름·닉네임 필드는 요청에 넣지 않으며, 알려진 닉네임이 본문에 포함된 경우 전송 전에 가린다.
 - LLM 요청에는 학생 이름·식별정보를 넣지 않음. 학생 ID는 가명 토큰으로 치환 (NFR-SEC-03)
 
 ### 4.3 scoring-service (호출: ai)
+- 아래 경로는 모두 미구현이다. 현재 scoring-service는 health 라우터만 등록하며 OpenAPI가 없다.
+
 | Method | Path | 설명 |
 |---|---|---|
 | POST | `/internal/m2/scores` | `{prompt, text, grade, inputType}` → 총점 1~4점·8개 항목 1~5점·버전 (활성 범위 밖이면 `{active:false}`). `inputType`(`NARRATIVE`·`ESSAY`)으로 모델 선택(`m2-klue-narrative`·`m2-klue-essay`). `grade`(3~6)는 scoring이 `초{grade}`로 바꿔 모델 입력에 사용, 학습 데이터 학년(초5·6) 밖은 활성 범위 밖 |
@@ -778,7 +770,7 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 | GET | `/internal/reports/{reportId}/evidence/{itemId}` | 항목 근거 |
 | GET | `/internal/reports/{reportId}/files/{format}` | 단기 presigned URL 발급 → `{url, expiresAt}` |
 
-- #54 조회에서 core는 현재 이용 권한을 확인해 `X-Report-Narrative-Enabled:true|false`를 설정해야 한다. 공개 요청의 같은 이름 헤더를 그대로 전달하지 않는다. report는 누락 시 false로 처리하며 응답과 다운로드 파일에서 AI 서술·생각 유형 summary·저녁 질문을 가린다. 현재 core 헤더 전달 연동의 검증 범위는 [#54 조회 보고서](../report/report-query.md)를 따른다.
+- core는 현재 이용 권한으로 `X-Report-Narrative-Enabled:true|false`를 설정해야 함(공개 요청의 같은 헤더는 전달하지 않음, 현재 core 미설정). report는 누락 시 false로 처리해 응답·다운로드에서 AI 서술·생각 유형 summary·저녁 질문을 가림
 - 목록은 학생/대상 주별 최신 revision을 고른 뒤 status를 적용하며 1.1 페이지 봉투를 사용한다. 상세의 기본값은 같은 학생·대상 주 최신판, `revision` 지정 시 해당 판이다. evidence/files 경로는 전달한 실제 reportId 판에 속한 항목·파일을 조회한다.
 - 파일 키는 `reports/{studentId}/{reportId}/r{revision}/{full|free}/{pdf|md|html}`다. DB `report_file`에는 full 키 3개를 저장하며 무료용 파생 파일도 생성한다. 다운로드 수명은 설정값이며 운영 기본안은 300초다. 버전·형식·학생이 맞지 않는 키를 서명하지 않는다.
 
@@ -789,8 +781,8 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 | POST | `/internal/deletion-requests/{deletionRequestId}/completions` | learning·report가 `student.deleted` 처리 후 완료 보고 `{service}`. 두 서비스 모두 보고 시 `COMPLETED` (멱등, P09) |
 
 - 비동기 메시지(`report.generate` 등)는 [아키텍처 1.4](architecture.md#14-메시지-목록) 참고
-- #55 report: PROFILE·RECORDS 모두 리포트 내용/파일을 물리 삭제하며 `report_deletion_guard`에 식별 UUID·범위·삭제 기준 시각·처리 상태만 남긴다. 최신 #45 core가 RECORDS 후에도 자동 학습 재개를 하지 않으므로 두 scope 모두 이후 생성도 차단한다. 새 명령의 time이 삭제 시각보다 늦다는 이유만으로 재개를 허용하지 않는다. 재개가 필요하면 별도 명시적 계약을 확정한다.
-- core의 삭제 상태 접근 차단과 `EventEnvelope.time` 보존·공유 메시지 규격은 #42/#45에서 확보했다. 삭제 전 queued job 정리와 삭제된 기존 작업의 늦은 상태 이벤트 무시는 core 후속 통합 검증 대상이다. report의 학생 lock·삭제 장벽만으로 core job 상태를 대신 정리하지 않는다.
+- report 삭제: PROFILE·RECORDS 모두 리포트 내용·파일을 물리 삭제하고 `report_deletion_guard`에 식별 UUID·범위·기준 시각·상태만 남김. core가 RECORDS 후에도 학습을 자동 재개하지 않으므로 두 scope 모두 이후 생성을 차단(재개는 별도 계약 필요)
+- 삭제 학생의 queued job 정리와 늦은 상태 이벤트 무시는 core 미구현(검증 보고서 B9). report 삭제 장벽이 core job 상태를 대신 정리하지 않음
 
 ### 4.6 #43 AI 사용량 조회 계약
 
@@ -804,28 +796,26 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 
 ### 5.1 #36 Google OAuth·토큰 구현 계약 (개정 P01 정렬)
 
-구현된 6개 인증 경로의 정식 공개 계약은 [core-service OpenAPI](../../contracts/openapi/core-service.yaml)를 따른다. #58 신규 기기·PIN API는 이 파일에 구현된 것으로 포함하지 않는다.
+인증 경로의 정식 공개 계약은 [core-service OpenAPI](../../contracts/openapi/core-service.yaml). 이 절은 부모·관리자 Google 인증과 동석 학생 진입, 학생 기기·PIN은 3.11.
 
-- #58 인계 경계: `POST /auth/student/devices`, `GET /auth/student/profiles`, `POST /auth/student/login`만 Bearer 검사에서 제외한다. POST는 기존 쿠키 API와 같은 정확한 web Origin·X-Requested-With 검사를 유지한다. 실제 페어링 코드·기기 쿠키·PIN 검증은 #58 핸들러가 수행한다. 다른 메서드·하위/유사 경로와 `/auth/student-sessions`는 제외하지 않는다. 현재 #58 핸들러가 없어 이 3개 경로는 유효한 요청 출처에서 Bearer 없이 MVC까지 도달한 뒤 404가 된다.
-
-학생 기기·PIN 정책은 3.11을 따른다. 이 절은 부모·관리자 Google 인증과 기존 동석 경로의 실제 구현 계약이다. 기기 등록·PIN 신규 API 7개는 3.11 계약을 구현한다.
+- 기기 진입 3개 경로(`POST /auth/student/devices`, `GET /auth/student/profiles`, `POST /auth/student/login`)만 Bearer 검사에서 제외. POST는 다른 쿠키 API와 같이 정확한 web Origin·`X-Requested-With` 검사 유지. 다른 메서드·유사 경로와 `/auth/student-sessions`는 제외하지 않음
 
 - 학부모·관리자: Google core 콜백 → refresh 쿠키 → web `/oauth/complete` → refresh → `/me`. access는 HS256, 기본 15분·메모리 보관. refresh는 256비트 난수·SHA-256 해시 저장, 최초 로그인부터 최대 7일이며 회전으로 연장하지 않는다. 재사용 시 해당 세션 폐기.
 - 학생(동석·단독 공통): access 전용, refresh 미발급. 동석 `/auth/student-sessions`는 부모 refresh를 소비하고 세션 버전·역할·학생 범위를 변경하며 부모 refresh 쿠키를 만료시킨다. 학생 상태에서 `/auth/refresh`는 401이다. 기존 부모 access도 거부한다. 단독 PIN 로그인은 별도 학생 auth_session을 생성하며 기존 부모 세션을 변경하지 않는다.
 - JWT에는 `sub`(계정 UUID), `sid`, `ver`, `role`, `studentId`(학생만), `iss`, `aud`, `iat`, `exp`, `jti`를 넣는다. 매 요청에서 세션·현재 계정·자녀 연결·동의를 확인한다. 기기 해제 시 기존 학생 access를 즉시 폐기하는 별도 정책은 추가하지 않는다.
 - 학부모 access 기본 15분, 학생은 `AUTH_STUDENT_ACCESS_TTL`로 별도 관리하며 초기 기본값은 15분이다. 학생 만료·새로고침 시 자동 refresh하지 않고 학생 진입 화면으로 이동한다. 기기·PIN API로 단독 재진입하며 미등록 기기는 등록을 안내한다. 토큰을 영구 저장해 새로고침을 우회하지 않는다.
-- 부모 refresh 응답 `{accessToken,expiresIn,role,child:null,nextAction,startPath}` + 회전 쿠키. 동석 응답 `{accessToken,expiresIn,role:STUDENT,child,nextAction:READY,startPath:/student/home}` + refresh 쿠키 삭제. child는 `{id,nickname,grade,birthYear}`(기존 #7 소비자 계약)이다. 향후 단독 경로 3.11의 `childId`는 프론트 경계에서 정규화한다.
+- 부모 refresh 응답 `{accessToken,expiresIn,role,child:null,nextAction,startPath}` + 회전 쿠키. 동석 응답 `{accessToken,expiresIn,role:STUDENT,child,nextAction:READY,startPath:/student/home}` + refresh 쿠키 삭제. child는 `{id,nickname,grade,birthYear}`(기존 #7 소비자 계약)이다. 단독 PIN 로그인 응답(3.11)은 `child.childId`를 쓰므로 프론트 경계에서 정규화한다.
 - `GET /me`는 부모/관리자에게 `{userId,name,email,role,permissions,child:null,nextAction,startPath}`, 학생에게 `{role,child,nextAction,startPath}`만 반환한다. 학생에게 부모 개인정보·권한을 반환하지 않는다. 학생은 `/me/consents` 등 부모 계정 관리 API를 사용할 수 없다.
 - 로그아웃은 현재 쿠키의 부모 세션 또는 Bearer로 전달된 학생 세션을 종료하고 refresh 쿠키를 삭제한다. 다른 기기는 유지한다. 쿠키 API는 정확한 web Origin과 `X-Requested-With: XMLHttpRequest`를 요구한다.
 - web/API 동일 origin. refresh 쿠키 `sagomungchi_refresh`: HttpOnly·Secure·SameSite=Strict·Path=/api/v1/auth. OAuth 상태 쿠키 `sagomungchi_oauth`: HttpOnly·Secure·SameSite=Lax·Path=/api/v1/auth/google, 10분. 로컬 HTTP만 Secure=false.
 - Google state·nonce·PKCE S256 및 ID 토큰 JWKS 서명·iss·aud·exp·nonce 검증. 서비스 토큰을 URL에 넣지 않는다. callback 성공은 `/oauth/complete`, 실패는 `/login?oauthError=<고정 코드>`.
 - 부모/관리자 refresh는 Web Locks로 탭 간 직렬화한다. 학생 전환·로그아웃 알림을 받은 다른 탭은 토큰·캐시를 지우며 학생 refresh로 다시 로그인하지 않는다. 학생→부모 복귀는 Google 로그인부터 시작한다.
-- 학생 access 수명·기기/PIN 기능은 #58, Google 재인증은 #45, 기기/PIN migration은 V8 이후 다음 버전으로 분리한다. 세부 TTL 등은 후속 기능에서 확정한다. 계정 복구·비밀번호 변경 API는 Google 단일 로그인 범위에서 제외한다.
+- 계정 복구·비밀번호 변경 API는 Google 단일 로그인 범위에서 제외(기기·PIN 저장은 core V13, Google 재인증은 5.6).
 
 
-### 5.2 #43 모델 레지스트리 확정 계약 (2026-10-27)
+### 5.2 #43 모델 레지스트리 확정 계약
 
-사용자 확인으로 자동 품질 합격선을 도입하지 않고 SERVICE_OPS의 명시적 사람 승인을 사용한다. 새 승인 상태 enum은 만들지 않는다. 등록 상태는 기존 REGISTERED·ACTIVE·INACTIVE다.
+자동 품질 합격선 없이 SERVICE_OPS의 명시적 사람 승인을 사용한다. 새 승인 상태 enum은 만들지 않는다. 등록 상태는 기존 REGISTERED·ACTIVE·INACTIVE다.
 
 - GET `/api/v1/admin/model-versions?kind&page=0&size=20`: `{items,page,size,totalElements}`. size 1~100, page 0 이상. kind 생략 시 전체 종류. 항목은 `{id,kind,name,version,refId,artifactUri,evalResult,status,approvedBy,activatedAt,createdAt}`다.
 - POST 같은 경로: `{kind,name,version,refId?,artifactUri?,evaluation}` → 201 항목. `(kind,name,version)` 중복은 409. RUBRIC은 learning 원본 UUID인 refId 필수, 다른 종류는 refId를 받지 않는다. 원본 내용·수정·존재 확인을 core에서 소유하지 않는다.
@@ -861,7 +851,6 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 - `deleted_student` 표식이 있는 학생은 조회 대상에서 제외해 false다. 삭제·재등록·재학습의 수명주기를 새로 구현하지 않는다. #27과 삭제 기능에서 이 정책을 바꾸면 소비자·회귀 테스트를 함께 변경한다.
 - 기존 InternalAuthFilter의 내부 토큰 검증 뒤 PARENT/STUDENT/SYSTEM 역할과 X-Student-Scope를 검사한다. 잘못된 내부 토큰은 401, 미허용 역할·범위 밖 학생은 403이다. 학부모는 core에서 현재 연결·동의를 검사해 생성한 scope만 전달한다.
 - DB/HTTP 장애는 정상 false로 변환하지 않는다. learning은 오류 응답, core는 기존 공개 계약에 따라 hasRecords=null, recordState=UNAVAILABLE로 표시한다. 정상 false/true는 recordState=AVAILABLE이다. 응답 studentId·boolean 형식이 다르면 UNAVAILABLE이다.
-- 2026-10-27 최신 확인 기준은 origin/develop 826e4dc71e60ba4d2396d3545f87a41524d6db83(#76 답변 제출 포함)이다. 해당 develop에는 records 공급자가 없어 본 PR에서 승인된 최소 exists API만 선행 구현했다. 전체 #27 조회·통계는 후속 범위다.
 - 자녀별 원격 조회는 기존 최대 자녀 수 3을 상한으로 병렬 수행해 read timeout이 순차로 누적되는 것을 피한다. LearningHttpProperties의 기존 read timeout(기본 30초), learning-json 서킷의 최근 20회·최소 20회·실패율 50%·30초 차단 정책을 공유하며 재시도는 추가하지 않는다. 서킷 OPEN은 즉시 null/UNAVAILABLE이고 CLOSED의 개별 요청은 기존 timeout을 유지한다. 전체 HTTP 요청의 엄격한 30초 deadline을 새로 정의하거나 보장하지 않는다.
 - core LearningRecordService는 검증된 PARENT 컨텍스트와 대상 학생 scope만 허용하는 기록 전용 service다. 기존 학생 전용 LearningProxyService의 역할·쓰기 권한은 완화하지 않는다.
 
@@ -869,9 +858,9 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 ### 5.5 #42 주간 리포트 구현 계약
 
 - 자동 생성은 직전 KST 월~일, 매주 월요일 07:00이다. 부모 REGENERATE 한도는 자녀·주 계열 전체 1회(새 판을 기준으로 재요청해도 409 REPORT_REGENERATION_LIMIT). SERVICE_OPS 관리자는 같은 POST 경로에서 ADMIN_RETRY 작업을 무제한 생성한다. 생성 중 작업이 있으면 409 REPORT_GENERATION_IN_PROGRESS이다.
-- 재생성 202는 `{jobId, childId, period:{from,to}, status:"QUEUED"}`다. 이전 reportId는 보존되고 report가 revision을 배정한다. 상품 계약 미연결은 503 REPORT_ENTITLEMENT_UNAVAILABLE이며 job/Outbox는 생성되지 않는다.
+- 재생성 202는 `{jobId, childId, period:{from,to}, status:"QUEUED"}`다. 이전 reportId는 보존되고 report가 revision을 배정한다. 상품·구독 권한은 payment의 ProductEntitlementService에서 확인한다. 상품 설정 불완전·권한 조회 실패는 명시적인 오류로 처리하고 job/Outbox를 생성하지 않는다.
 - reportId 조회의 자녀 연결·현재 필수/법정대리인 동의를 확인한 뒤 단일 학생 scope로 report-api를 호출한다. 없는 core reportId는 404 REPORT_NOT_FOUND다. 목록은 `{items:[3.4의 식별·기간·status·state·revision·generatedAt 필드]}`다. 상세는 3.4, 근거는 report-api JSON을 그대로 전달하고 다운로드는 pdf/md의 `{url,expiresAt}`다. report 장애는 503 REPORT_UNAVAILABLE, JSON 계약 위반은 502 REPORT_CONTRACT_INVALID다. 성공 상세의 실제 반환 reportId로 열람 기록을 남긴다.
-- v1 이벤트 스키마/봉투/생산자·소비자는 contracts/events/report-messages.md를 따른다. 알림 및 실제 공급자 연결 경계는 docs/report/issue-42-weekly-reports.md에 기록한다.
+- v1 이벤트 스키마·봉투·생산자·소비자는 [report-messages.md](../../contracts/events/report-messages.md). 결정 근거는 [리포트 보고서](../report/report.md).
 
 ### 5.6 #45 계정 관리·Google 재확인·삭제·탈퇴 계약
 
@@ -880,19 +869,18 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 - challenge 10분, reauthToken 5분(설정값, 세션 만료 이내). 토큰은 256비트 난수, DB에는 SHA-256 해시만 저장한다. 프론트는 메모리에만 보관한다. 사용자·세션 ID/version·purpose·childId·삭제 scope에 결합하며 변경 트랜잭션에서 정확히 1회 소비한다. 일반 access/로그인 상태는 재인증 증명이 아니다. 잘못된 계정·만료·위조·다른 범위·중복 사용은 403 REAUTH_REQUIRED다.
 - #58은 `ReauthenticationService.consume(identity, token, ReauthPurpose.PIN_CHANGE, childId)`를 PIN 변경의 같은 트랜잭션 안에서 호출한다(MANDATORY). 기존 인증/현재 자녀 권한 검사를 별도로 수행한다.
 - PATCH /me `{name}` → `{userId,name}`; PATCH /children/{id} `{nickname?,grade?}` → 현재 자녀. 공백·범위 밖 입력 거부. 기존 기록/학년을 변경하지 않는다. 학생 역할 금지, 계정·자녀의 현재 동의를 검사한다.
-- deletion-impact → `{childId,actions:[{scope,effect}],retainedTransactionsYears:5,deviceCleanupPending:true}`. 연결 해제는 UNLINKED 이력을 남기고 학생 세션을 폐기한다. 삭제 확정은 `X-Reauth-Token`, `{scope}` 필수, 202 `{deletionRequestId,childId,scope,status,completedServices}`. 동시에 진행 중인 다른 삭제는 409 DELETION_IN_PROGRESS다. 재확인이 유효한 요청을 즉시 CONFIRMED로 저장한다.
-- PROFILE은 연결 해제·학생 이용 차단 후 두 서비스 완료 시 프로필 필드를 지우고 DELETED 표식을 남긴다(FK/거래 보존용 ID 유지). RECORDS는 프로필을 유지하되 CONFIRMED부터 이용을 차단한다. 완료 후에도 자동 학습 재개는 하지 않는다. learning의 삭제 표식 이후 새 기록 허용 계약은 후속 통합 사항이다. 두 scope 모두 core 분석 대화·근거와 learning/report 기록을 삭제한다. 기기 매핑 삭제는 #58 테이블 도입 후 연결한다.
+- deletion-impact → `{childId,actions:[{scope,effect}],retainedTransactionsYears:5,deviceCleanupPending:false}`. 연결 해제는 UNLINKED 이력을 남기고 학생 세션을 폐기한다. 삭제 확정은 `X-Reauth-Token`, `{scope}` 필수, 202 `{deletionRequestId,childId,scope,status,completedServices}`. 동시에 진행 중인 다른 삭제는 409 DELETION_IN_PROGRESS다. 재확인이 유효한 요청을 즉시 CONFIRMED로 저장한다.
+- PROFILE은 연결 해제·학생 이용 차단 후 두 서비스 완료 시 프로필 필드를 지우고 DELETED 표식을 남긴다(FK/거래 보존용 ID 유지). RECORDS는 프로필을 유지하되 CONFIRMED부터 이용을 차단한다. 완료 후에도 자동 학습 재개는 하지 않는다. learning의 삭제 표식 이후 새 기록 허용 계약은 후속 통합 사항이다. 두 scope 모두 core 분석 대화·근거와 learning/report 기록을 삭제한다. 삭제 확정 때 `student_device_child`를 제거하고 PIN 해시·잠금을 지운다(ERD 10장).
 - GET /children/{id}/deletion-requests/{requestId}: 본인 소유 삭제 상태 조회. 삭제 후에도 본인이 요청한 상태는 조회 가능하다. 다른 보호자는 403이다.
 - 내부 완료 API는 기존 내부 토큰 + SYSTEM 컨텍스트/대상 학생 scope를 요구하며 `{service:learning|report}`만 허용한다. `(request_id,service)` UNIQUE 기록으로 중복/동시 보고를 멱등 처리한다. CONFIRMED인 요청만 완료할 수 있으며 두 서비스가 모두 있어야 COMPLETED다. 한 서비스 완료는 실제 전체 삭제 완료가 아니다.
 - 필수 동의 철회 뒤에도 재인증·삭제 영향·연결 해제·삭제/탈퇴 요청 및 상태 조회는 가능하다. 재동의를 파기의 선행 조건으로 요구하지 않는다. 이 경로는 계정 활성·보호자 소유권·재확인을 계속 검사한다. 정보 수정에는 기존 동의를 요구한다.
 - 탈퇴 precheck는 core payment 소유 서비스로 현재 subscription/refund_request를 실제 조회한다. ACTIVE(기간 내/자동갱신), RENEWAL_FAILED, 취소됐어도 기간 내 구독 및 REQUESTED/APPROVED/FAILED 환불은 409 WITHDRAWAL_BLOCKED다. DB 오류는 성공으로 대체하지 않는다. #48은 결제/환불 쓰기 시 같은 parent 계정 행 잠금 규약에 참여해야 한다.
 - POST /me/withdrawal은 WITHDRAWAL 재인증, 계정 행 잠금 후 재확인한다. 즉시 WITHDRAWAL_REQUESTED·전체 세션/refresh 폐기·자녀 PROFILE 삭제 요청/Outbox를 같은 트랜잭션에 저장한다. 자녀가 모두 삭제되면 WITHDRAWN 및 withdrawal COMPLETED다. 자녀가 없으면 즉시 완료한다. 요청 즉시 로그인/취소 불가다.
 - 응답 `{withdrawalRequestId,status,statusToken}`의 statusToken은 별도 256비트 조회 전용 영수증이다(DB에는 해시). 세션 폐기 후 `GET /me/withdrawal`에 `X-Withdrawal-Status-Token`으로 해당 요청의 `{withdrawalRequestId,status}`만 조회한다. 로그인/사용자 정보 접근 권한을 주지 않는다. 헤더/응답은 no-store다. 인증 상태에서도 자신의 최신 요청을 조회할 수 있다.
-- #37·#38 미병합 구현은 복사하지 않는다. 기존 인증/동의/학생 scope service를 호출하며 병합 후 소비자/생산자 통합 검증이 필요하다. #39 SSE·#42 report 스케줄·#55 실제 삭제 소비자는 변경하지 않는다.
-
-
-#45 보완: 연결 해제 뒤에도 동일 보호자의 등록 이력으로 PROFILE/RECORDS 삭제를 요청할 수 있다. PIN_CHANGE/CHILD_UNLINK 재인증은 현재 LINKED 소유권이 필요하다. 이미 진행 중인 RECORDS 삭제와 탈퇴가 겹치면 기존 RECORDS 완료 뒤 새로운 PROFILE 요청/이벤트를 기록한다. 두 이벤트의 scope를 바꾸거나 완료 보고를 다른 요청으로 전용하지 않는다. PROFILE 완료 시 연락 이메일/표시 이름은 계정 tombstone으로 정리하며 Google sub는 탈퇴 계정 재로그인을 차단하기 위한 식별 표식으로 유지한다. 상품/거래/구독/환불 행은 변경하지 않는다.
-
+- 연결 해제 뒤에도 같은 보호자의 등록 이력으로 PROFILE·RECORDS 삭제를 요청할 수 있다. PIN_CHANGE·CHILD_UNLINK 재인증은 현재 LINKED 소유권이 필요하다.
+- 진행 중인 RECORDS 삭제와 탈퇴가 겹치면 RECORDS 완료 뒤 새 PROFILE 요청·이벤트를 기록한다. 이벤트 scope를 바꾸거나 완료 보고를 다른 요청에 쓰지 않는다.
+- 탈퇴 완료 시 연락 이메일·표시 이름은 계정 tombstone으로 정리하고 Google sub는 재로그인 차단 표식으로 유지한다. 상품·거래·구독·환불 행은 변경하지 않는다.
+- learning의 `student.deleted` 소비·완료 보고는 미구현이라 현재 삭제 요청은 COMPLETED가 되지 않는다([검증 보고서 B3](../report/audit.md)).
 
 ### 5.7 #46 support 구현 계약
 

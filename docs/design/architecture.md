@@ -68,7 +68,7 @@
   - 피드백: 클라이언트가 끊겨도 learning 처리는 끝까지 진행·저장, 재요청 시 저장 결과 반환
   - 분석 대화: 클라이언트가 끊기면 core가 ai 스트림 취소, 메시지 `FAILED`(재시도 가능) 저장
   - 알림: 재연결 시 `/notifications`로 누락분 재조회
-- core 피드백(#39): `learning/controller` → `learning/service/FeedbackService` → #38 `LearningProxyService` → `LearningClient` → 기존 `InternalRestClientFactory`. 피드백 전용 조합은 같은 client/service 구현에 80초 read timeout을 적용하며 일반 JSON 경로의 30초 설정·멱등성은 유지한다. `_common/web/SseEmitters`는 연결 시간·15초 heartbeat·전송 종료만 소유하고(연결 시간은 용도별 설정: 현재 피드백 90초 고정, 분석 대화(#41)는 P12 전체 120초 + 여유로 호출 측이 지정하도록 확장) 판정 상태를 저장하지 않는다. 컨텍스트는 요청에서 복사해 작업 virtual thread에 설정·정리한다. 연결 종료는 heartbeat만 취소하며 learning 작업을 취소하지 않는다.
+- core 피드백: `FeedbackService` → `LearningProxyService` → `LearningClient`(read timeout 80초, 일반 JSON 경로의 30초·멱등성은 유지). `_common/web/SseEmitters`는 연결 시간(피드백 90초 `open`, 알림 5분 `subscribe`, 분석 대화 120초 + 여유는 #41 미구현)·15초 heartbeat·종료만 소유하고 판정 상태는 저장하지 않음. 요청 컨텍스트를 작업 virtual thread에 설정·정리. 연결 종료는 heartbeat만 취소하며 learning 작업은 취소하지 않음
 - 피드백의 별도 서킷 이름은 `learning-feedback`이다. 전송 오류·시간 초과·계약된 Problem Details가 아닌 5xx를 실패로 센다. Content-Type `application/problem+json`의 JSON 객체에 비어 있지 않은 문자열 code가 있으면 정상 HTTP 전달로 집계하되 업무 결과는 error로 유지한다. 따라서 learning이 보낸 AI_UNAVAILABLE·INTERNAL_ERROR를 core 서킷이 다시 차단하지 않고 같은 답변 재요청은 learning으로 전달할 수 있다. AI 서킷은 learning이 소유하며 일반 `learning-json`의 기존 5xx 집계는 바꾸지 않는다.
 - JDK 21 SSE 전송·종료의 상호 배제는 `ReentrantLock`을 사용한다. 블로킹 소켓 전송을 synchronized monitor 안에서 실행해 virtual thread의 carrier가 고정되지 않게 한다.
 
@@ -124,7 +124,7 @@
   - core 조회 실패 시 프로세스 종료 없이 readiness false 유지·재시도 (core 장애가 ai·scoring 기동 실패로 번지지 않게)
 - **이벤트 봉투**: CloudEvents 형식 `id, specversion, type, source, time, subject, dataschema, traceparent, data` → `contracts/events/*.schema.json`
 - **스키마 버전**: 파일 `<message>.v<N>.schema.json`, `dataschema`에 버전 표기. 하위 호환 변경(선택 필드 추가)만 같은 버전, 그 외는 새 버전 병행 발행 후 소비자 전환
-- **SSE 다중 레플리카**: core 레플리카 간 Redis Pub/Sub으로 알림 중계. #44는 리포트 상태 전이의 동기 ApplicationEvent를 같은 트랜잭션에서 알림으로 저장하고 AFTER_COMMIT에서 발행한다. report.service의 알림 연결부 → guardianship.service로 수신 보호자를 결정한 뒤 notification.service로 저장한다. Redis 채널 `core:notifications:v1`은 #58 페어링 키와 분리하며 같은 spring.data.redis 연결을 사용한다. 알림 전용 구독은 SseEmitters의 heartbeat/종료 정리를 재사용하되 작업 완료 후 종료하는 피드백 API는 유지한다. 알림 구독 5분·15초 heartbeat, 종료 시 사용자별 구독 제거, 재연결 ready 후 목록 재조회로 유실을 보완한다.
+- **SSE 다중 레플리카**: 알림은 리포트 종료 전이 트랜잭션에서 저장 → AFTER_COMMIT으로 Redis 채널 `core:notifications:v1` 발행 → 구독 레플리카가 SSE 전달(5분·15초 heartbeat). 유실은 `ready` 후 목록 재조회로 보완 (api-spec 2.7)
 
 ---
 
@@ -146,13 +146,11 @@
 - `Presentation → Application → Infrastructure` 단방향, 계층 건너뛰기 금지 (controller → repository 직접 호출 금지)
 - Domain은 모든 레이어가 참조 가능, Domain은 다른 레이어를 참조하지 않음
 - 기능 간 호출은 상대 기능의 service로만 (다른 기능의 repository 직접 참조 금지)
-- #37 자녀 기록 존재 조회는 guardianship service → learning의 LearningRecordService → LearningRecordClient → 기존 LearningClient 순서로 호출한다. 학생 전용 LearningProxyService 권한은 유지하며 learning-json 서킷·타임아웃·내부 컨텍스트 전달을 공유한다. 최대 3명 조회는 요청 단위의 최대 3개 virtual-thread 작업으로 병렬 수행하고, 검증된 UserContext를 전달·finally 정리한다. HTTP를 DB 트랜잭션 안에서 호출하지 않는다.
+- 기능 간 호출 예: 자녀 기록 존재 조회는 `GuardianshipService` → `LearningRecordService` → `LearningRecordClient` → `LearningClient`(학생 전용 `LearningProxyService` 권한과 분리, 서킷·타임아웃 공유, 최대 3명 병렬). 학생 학년·시연 여부는 `StudentLearningContextService`로 조회. 전체 구현 경로는 class-diagram 3장
 - 여러 기능에 걸친 흐름은 `facade`로 조합 (참고 레포 `applicationpreparation/facade` 패턴)
 - 공통 코드: Spring `_common/`, Python `app/` 루트의 `config.py`·`errors.py`·`security.py`·`messaging/`·`clients/base.py`
 - DB 트랜잭션은 Application 레이어에서만 시작, 트랜잭션 안에서 외부 HTTP·AMQP 호출 금지
-- #38 공통 멱등성은 `_common/web/IdempotencyService`가 조합하고 `web/repository`가 기존 idempotency_record와 PostgreSQL 세션 잠금을 관리한다. HTTP 동안 auto-commit 연결 1개를 보유하며 트랜잭션·행 잠금은 보유하지 않는다. 잠금과 레코드 작업을 동일 연결에서 수행하는 JDBC Repository만 사용해 추가 연결 대기로 인한 풀 교착을 피한다. 일반 기능 Repository의 MyBatis 패턴은 유지한다.
-- #62 미션 조회와 #23 시도 시작의 학생 메타데이터는 core `guardianship/StudentLearningContextService` → 전용 Repository/Mapper로 core의 연결된 활성 학생 `grade`·`is_demo`만 조회한다. 기존 #36/#37 service 인터페이스는 유지한다. `learning`은 이 service를 통해 검증된 학생의 내부 요청 조건을 만들고, 문항 노출·신규 시도 제공 범위·기존 시도 당시 버전 유지의 업무 판단·learning DB 접근은 수행하지 않는다.
-- #23 시도 시작의 일일 한도는 core Redis 카운터 책임이며 learning은 관여하지 않는다. learning의 신규 생성 `201`·기존 진행 시도 반환 `200`을 core가 그대로 전달한다. 후속 Redis 연계에서는 `201`만 집계하고 `200`은 집계하지 않으며, 한도 도달 시에도 이어하기를 허용하고 신규 생성만 차단하는 처리 순서를 검증한다. #38의 이번 프록시 보완에는 Redis 한도 기능을 구현하지 않는다.
+- 멱등성: `_common/web/IdempotencyService`가 `idempotency_record`와 PostgreSQL 세션 잠금을 관리. HTTP 동안 auto-commit 연결 1개만 보유하고 트랜잭션·행 잠금은 보유하지 않음 (api-spec 1.4)
 - 서비스 간 내부 호출: 내부 토큰 헤더 필터(참고 레포 `CatalogInternalAuthFilter` 패턴) + NetworkPolicy
 
 ### 2.3 공통 규칙
@@ -489,11 +487,11 @@ backend/report-service/
 
 - 현재 stub(`infrastructure/stubs`)은 미구성이다. Docker Compose의 ai-service는 `.env`의 `LLM_PROVIDER`·API 키로 실제 LLM을 호출하고, 키가 없으면 판정·되묻기가 `AI_UNAVAILABLE`로 실패한다(6장 LLM 제공자).
 
-- 로컬 자원 시작 기준: i5-1135G7(4코어·8스레드)·16GB급 PC, WSL 2 Docker 메모리 상한 약 7.62GiB. 저장소·Ingress·초기화 작업과 기반 구성에 약 6GiB를 계획하며, 앱·관측·모델 추론의 동시 실행 보장은 아니다. [이슈 #17 자원 설계](../report/local-platform-resource-plan.md)의 제안값을 구현·실측 후 조정한다.
+- 로컬 자원 시작 기준: i5-1135G7(4코어·8스레드)·16GB급 PC, WSL 2 Docker 메모리 상한 약 7.62GiB. 저장소·Ingress·초기화 작업과 기반 구성에 약 6GiB를 계획하며, 앱·관측·모델 추론의 동시 실행 보장은 아니다. [이슈 #17 자원 설계](../report/local-platform.md)의 제안값을 구현·실측 후 조정한다.
 - 로컬 MinIO는 `sagomungchi-local-missions`·`sagomungchi-local-reports`·`sagomungchi-local-models` 버킷 세 개를 단일 MinIO 저장 공간 안에 구성한다. 운영 S3 이름은 AWS 자원 작업에서 별도 확정한다.
 - Compose의 MinIO는 선택 실행용 `compose.minio.yaml`에 서비스 세 개와 전용 볼륨을 둔다. 기본 `compose.yaml`은 MinIO 계정 없이 기존 앱·DB 실행과 스키마 검증에 사용하고, MinIO가 필요할 때만 두 파일을 함께 지정한다. kind의 MinIO는 로컬 values에서 계속 활성화한다.
 - 로컬 MinIO 서버는 Chainguard 공개 배포본의 linux/amd64 digest로 고정하고, 버킷 초기화는 기존 curl 이미지의 고정 버전과 S3 서명 요청으로 수행한다. 이미지 참조는 `platform-data` 공통 values에서 관리한다. 로컬 계정은 `platform` namespace의 기존 `platform-data-credentials` Secret에 두고 chart는 키 이름만 참조한다. [platform-data 설정](../../infrastructure/gitops/charts/platform-data/README.md)을 따른다.
-- 버전·CNI·이미지 배포·초기화·자격 증명·데이터 보존을 구체화한 내용과 근거는 [이슈 #17 설계 변경 근거](../report/local-platform-design-decisions.md)에 기록한다.
+- 버전·CNI·이미지 배포·초기화·자격 증명·데이터 보존을 구체화한 내용과 근거는 [이슈 #17 설계 변경 근거](../report/local-platform.md)에 기록한다.
 - 로컬 클러스터는 `sagomungchi-local`(kind v0.33.0, Kubernetes v1.35.8), Pod `10.244.0.0/16`, Service `10.96.0.0/12`, IPv4·iptables를 기준으로 한다. Calico v3.33.0과 ingress-nginx chart 4.15.1(controller v1.15.1)을 사용하며 API·HTTP·HTTPS를 loopback에서만 노출한다. 다른 PC·Wi-Fi·VPN 환경에서는 기존 경로·Docker subnet·포트 중복 여부를 확인한다. [kind 설정·설치 절차](../../infrastructure/kind/README.md)를 따른다.
 
 ### 4.2 운영 클러스터: EKS
@@ -695,11 +693,11 @@ SKN34-FINAL-3TEAM/
 | 영역 | 기술 | 선정 근거 |
 |---|---|---|
 | 프론트엔드 | React, Vite, TypeScript, Tailwind CSS, TanStack Query, 토스페이먼츠 결제위젯 SDK | 참고 레포 동일 계열, 기획서 4.4 |
-| 업무 API | Spring Boot 3, Kotlin, JDK 21, Spring Security JOSE(JWT HS256·Google JWKS), MyBatis, Flyway, Spring AMQP, ShedLock(예정), Resilience4j | 참고 레포 구현 패턴 재사용, 다중 레플리카 스케줄 중복 방지 |
+| 업무 API | Spring Boot 3, Kotlin, JDK 21, Spring Security JOSE(JWT HS256·Google JWKS), MyBatis, Flyway, Spring AMQP, ShedLock, Resilience4j | 참고 레포 구현 패턴 재사용, 다중 레플리카 스케줄 중복 방지 |
 | AI API | Python 3.12, FastAPI, Pydantic, uv, LangGraph, LangChain, OpenAI API(기본 `gpt-6.1-terra`)·Claude API(`LLM_PROVIDER`로 교체), aio-pika, httpx | 에이전트 그래프·도구 호출, 비동기 AMQP |
 | 모델 추론 | PyTorch, Hugging Face Transformers (M2 klue/roberta, M1) | 기획서 5장 모델 |
 | 리포트 | SQLAlchemy, Alembic, Jinja2, Playwright(Chromium PDF) | HTML 템플릿 → PDF·Markdown |
-| 저장소 | PostgreSQL(RDS), S3(로컬 MinIO), Redis(core 연동은 예정, 현재 Compose 기동만) | 서비스별 DB 분리, 판정 근거·기준표 JSONB, 파일 분리, SSE 중계·캐시 |
+| 저장소 | PostgreSQL(RDS), S3(로컬 MinIO), Redis(core 알림 중계·학생 기기 페어링) | 서비스별 DB 분리, 판정 근거·기준표 JSONB, 파일 분리, SSE 중계·캐시 |
 | 메시징 | RabbitMQ (quorum queue, topic/direct exchange, DLX) | 작업 큐 + fan-out 동시 지원, Kafka 대비 운영 부담 작음 |
 | 결제 | 토스페이먼츠 테스트 환경 (결제위젯·자동결제·웹훅) | 실결제 미연동 |
 | 컨테이너·오케스트레이션 | Docker, Compose, kind, Kubernetes, Helm | 로컬 → 운영 동일 chart |
@@ -713,29 +711,19 @@ SKN34-FINAL-3TEAM/
 
 ## 7. 확인 필요 가정
 - 정책 값은 [기능명세서 1.4 확정 정책](functional-spec.md#14-확정-정책) 기준
-- LLM 제공자: 기본 OpenAI `gpt-6.1-terra`(`LLM_PROVIDER=openai`), `LLM_PROVIDER=anthropic`으로 Claude 교체 가능. ai-service `llm/` 래퍼(제공자별 클래스)로 교체 가능하게 설계. 기획서 4.4의 Claude API에서 바꾼 근거는 [ai 판정·되묻기 보고서](../report/ai-judgment-followup.md) "OpenAI 실제 호출 확인"
+- LLM 제공자: 기본 OpenAI `gpt-6.1-terra`(`LLM_PROVIDER=openai`), `LLM_PROVIDER=anthropic`으로 Claude 교체 가능. ai-service `llm/` 래퍼(제공자별 클래스)로 교체 가능하게 설계. 기획서 4.4의 Claude API에서 바꾼 근거는 [ai 판정·되묻기 보고서](../report/ai.md) "OpenAI 실제 호출 확인"
 - 학습·일괄 생성(RunPod GPU, sLLM 설명)은 클러스터 밖에서 수행, 결과(가중치·주간 설명 문장)만 S3로 반입
 - AWS 계정 EKS 생성 권한·예산 한도: 권한 없으면 EC2 1대 + k3s로 대체 (HA·Cluster Autoscaler·IRSA 제외)
 
+### 7.1 구현 결정 요약
 
-### #36 인증 구현 결정
-core의 공개 JWT 필터(`PublicAuthFilter`) → account service(`AuthService`) → Repository/Mapper → core_db로 로그인 세션·현재 권한을 확인한다. JWT는 Spring Security JOSE HS256, Google은 client에서 HTTP 코드 교환·JWKS 검증 후 내부 프로필로 변환한다. OAuth 외부 호출은 DB 트랜잭션 밖, 계정·세션·refresh 회전만 트랜잭션 안에서 처리한다. 상태 있는 access/refresh이며 브라우저 인증을 세션 쿠키 하나로 바꾸지 않는다. 세부 계약·키 관리·#37/#45 경계는 [#36 보고서](../report/issue-36-google-auth.md)를 따른다.
+세부 근거는 각 보고서를 따른다.
 
-
-### #42 주간 리포트 연결 경계
-
-#50 report-worker는 공유 v1 규격을 `ReportV1Codec`으로 검증하고 기본 진입점에서 생성 큐·Outbox 릴레이를 시작한다. report Outbox는 이벤트별 session advisory lock과 AUTOCOMMIT 연결로 발행을 선점하고, publisher confirm 이후 짧은 트랜잭션에서 발행 시각을 기록한다. HTTP·AMQP 대기 동안 DB 트랜잭션을 유지하지 않는다. #50 기반 단독 실행에서 계산/렌더링 생성기가 미연결이면 `GENERATOR_NOT_CONFIGURED`로 실패를 명시한다. 실제 생성기는 #51~#53에서 조립하며 이 기반만으로 전체 리포트 E2E 완료를 의미하지 않는다. 상세 검증은 [#50 보고서](../report/report-generation-foundation.md)를 따른다.
+- 인증([auth-account](../report/auth-account.md)): `PublicAuthFilter`(판정 경로는 Spring 매칭 경로로 정규화) → `AuthService` → Repository. JWT는 Spring Security JOSE HS256, Google 코드 교환·JWKS 검증은 트랜잭션 밖, 계정·세션·refresh 회전만 트랜잭션 안. 학생 단독 인증은 `StudentAuthService`(기기·페어링)와 `StudentPinService`(PIN·잠금)로 나누고 PIN 변경의 재인증 소비·갱신·감사는 한 트랜잭션
+- 주간 리포트([report](../report/report.md)): `ReportScheduleService` → 자녀별 트랜잭션의 `ReportJobService` → `ReportJobRepository` + `OutboxWriter`(ShedLock, 자녀별 실패 격리). 소비는 `RetryingConsumer` → `ReportLifecycleService`. 조회의 내부 HTTP와 열람 저장 트랜잭션은 분리. `ReportEntitlementService`는 payment 소유 `ProductEntitlementService`에 위임한다. 상품·구독 repository를 직접 참조하지 않으며 권한 조회 실패는 명시적인 오류로 처리한다. report Outbox는 이벤트별 advisory lock·AUTOCOMMIT 선점, publisher confirm 뒤 짧은 트랜잭션으로 발행 시각 기록
+- 삭제·재인증([auth-account](../report/auth-account.md)): `student.deleted.v1` data `{studentId,deletionRequestId,scope}`. 요청 CONFIRMED와 Outbox 기록은 한 트랜잭션, learning·report 완료 보고를 서비스별 UNIQUE 행으로 기록해 둘 다 있을 때만 COMPLETED. 기능 간 정리는 각 service 경유
 
 #48은 ReportEntitlementService를 payment 소유 ProductEntitlementService에 연결한다. 외부 PG 호출과 learning 사용 증빙 조회는 DB 트랜잭션 밖, 주문/구독/환불·프리미엄 사용 예약은 공통 parent 계정 행 잠금 안이다. payment repository는 payment 패키지만 사용한다. 신규 의존성 없이 기존 HTTP·MyBatis·ShedLock·IdempotencyService·NotificationService를 사용한다. [결제 경계·복구](../report/issue-48-payments.md).
-
-
-report/scheduler → ReportScheduleService → ReportJobService의 자녀별 트랜잭션 → ReportJobRepository + 기존 OutboxWriter를 사용한다. report/consumer는 기존 RetryingConsumer → ReportLifecycleService(트랜잭션) → processed_event·report_job·job_execution을 사용한다. ReportQueryService의 내부 HTTP와 열람 저장 트랜잭션은 분리한다. ReportEntitlementService는 payment 소유 ProductEntitlementService에 위임하며 상품·구독 repository를 직접 참조하지 않는다. 기존 StudentAccessService·ConsentAccessService를 재사용하고 #37 구현을 복사하지 않는다. ShedLock Spring/JDBC 6.10.0만 production 의존성으로 추가하며 기존 shedlock 테이블을 사용한다. 상세 결정과 기존 OutboxRelay의 트랜잭션 제한은 [#42 보고서](../report/issue-42-weekly-reports.md)를 따른다.
-
-## #45 삭제·재인증 보완
-
-`student.deleted.v1` data는 `{studentId,deletionRequestId,scope:PROFILE|RECORDS}`다. 요청 CONFIRMED와 OutboxWriter.append는 한 트랜잭션이다. learning/report는 실제 삭제가 끝난 후 요청 ID와 service로 완료 보고한다. core는 서비스별 UNIQUE 완료 행을 기록하고 둘 다 확인할 때만 COMPLETED로 전이한다. core 분석 대화 정리는 conversation service를 통해 같은 DB 트랜잭션으로 처리한다. payment의 탈퇴 조건 조회도 payment service를 통해 호출한다. account/guardianship에서 다른 기능 repository를 직접 참조하지 않는다. Google 네트워크 교환은 DB 트랜잭션 밖에서 수행한다.
-
-#58 학생 단독 인증: account/controller → account/service/StudentAuthService → account/repository(StudentDeviceRepository, PairingRepository). PIN·자녀 잠금은 guardianship/service/StudentPinService → guardianship/repository/StudentPinRepository. 기능 간 repository 참조 없이 service로 연결한다. PIN 변경의 재인증 DB 소비·PIN 갱신·audit는 같은 트랜잭션이다. Redis 페어링은 DB 등록 전 단회 소비하며 실패 시 코드 재발급이 필요하다.
 
 
 ### #46 신고·지원 연결 경계

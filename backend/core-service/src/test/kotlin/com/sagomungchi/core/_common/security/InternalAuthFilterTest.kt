@@ -9,9 +9,13 @@ import org.springframework.context.annotation.Import
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RestController
+import java.net.URI
 
 @WebMvcTest(controllers = [InternalAuthFilterTest.ProbeController::class])
 @Import(InternalAuthFilterTest.ProbeController::class)
@@ -40,6 +44,15 @@ class InternalAuthFilterTest(@Autowired private val mockMvc: MockMvc) {
             status { isUnauthorized() }
             jsonPath("$.code") { value("UNAUTHENTICATED") }
             jsonPath("$.traceId") { exists() }
+        }
+    }
+
+    @Test
+    fun `매개변수·퍼센트 인코딩 경로도 토큰 없으면 401`() {
+        listOf("/internal;x/probe/students/s1", "/%69nternal/probe/students/s1").forEach { path ->
+            mockMvc.perform(MockMvcRequestBuilders.get(URI.create(path)))
+                .andExpect(status().isUnauthorized)
+                .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"))
         }
     }
 

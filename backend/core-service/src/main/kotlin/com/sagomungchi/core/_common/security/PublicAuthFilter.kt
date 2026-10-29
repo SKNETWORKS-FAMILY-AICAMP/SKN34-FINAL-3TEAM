@@ -15,10 +15,10 @@ import org.springframework.dao.DataAccessException
 import org.springframework.web.filter.OncePerRequestFilter
 
 class PublicAuthFilter(private val auth: AuthService, private val properties: AuthProperties, private val json: ObjectMapper) : OncePerRequestFilter() {
-    override fun shouldNotFilter(request: HttpServletRequest) = !request.requestURI.startsWith("/api/v1/")
+    override fun shouldNotFilter(request: HttpServletRequest) = !matchedPath(request).startsWith("/api/v1/")
 
     override fun doFilterInternal(request: HttpServletRequest, response: HttpServletResponse, chain: FilterChain) {
-        val path = request.requestURI.removePrefix("/api/v1")
+        val path = matchedPath(request).removePrefix("/api/v1")
         // #58 authenticates these exact endpoints with pairing/device credentials, not a user JWT.
         val studentDeviceEntry = (request.method == "GET" && path == "/auth/student/profiles") ||
             (request.method == "POST" && path in setOf("/auth/student/devices", "/auth/student/login"))

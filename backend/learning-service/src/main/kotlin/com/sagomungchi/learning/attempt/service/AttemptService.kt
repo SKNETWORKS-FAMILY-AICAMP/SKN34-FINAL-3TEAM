@@ -142,10 +142,10 @@ class AttemptService(
         return checklist.map { SelfAssessmentItem(it.elementId, it.label, selfChecks[it.elementId], it.satisfied, it.quote) }
     }
 
-    /** 초안 자동 저장 (FN-LRN-15·17). 저장된 버전이 ifMatch가 아니면 덮어쓰지 않고 409 + 최신 초안 */
+    /** 초안 자동 저장 (FN-LRN-15·17). 저장된 버전이 ifMatch가 아니면 덮어쓰지 않고 409 + 최신 초안. 돌아보기 완료와 겹치지 않도록 시도 행 잠금 */
     @Transactional
     fun saveDraft(attemptId: UUID, ifMatch: Int, content: DraftContent): AttemptDraft {
-        requireOwned(attemptId).requireOpen()
+        lockOwned(attemptId).requireOpen()
         val next = AttemptDraft(attemptId, ifMatch + 1, content, now())
         if (draftRepository.updateIfVersion(next, ifMatch)) return next
         throw DraftConflictException(checkNotNull(draftRepository.findByAttemptId(attemptId)) { "시도 초안 없음" })

@@ -26,8 +26,8 @@ class NotificationController(private val service: NotificationService, private v
         val items = service.list(identity, unreadOnly, page, size)
         return Page(items.take(size).map { it.view() }, page, size, items.size > size)
     }
-    @PatchMapping("/notifications/{id}/read") @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun read(@RequestAttribute(AuthController.IDENTITY) identity: AuthenticatedAccount, @PathVariable id: UUID) = service.read(identity, id)
+    @PatchMapping("/notifications/{notificationId}/read") @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun read(@RequestAttribute(AuthController.IDENTITY) identity: AuthenticatedAccount, @PathVariable notificationId: UUID) = service.read(identity, notificationId)
     @PostMapping("/notifications/read-all") @ResponseStatus(HttpStatus.NO_CONTENT)
     fun readAll(@RequestAttribute(AuthController.IDENTITY) identity: AuthenticatedAccount) = service.readAll(identity)
     @GetMapping("/notification-settings")

@@ -388,7 +388,7 @@ export function createApiGateway(): ClassroomGateway {
       if (regenerating.has(report.reportId))
         throw new ApiError({
           status: 409,
-          code: 'REGENERATE_NOT_ALLOWED',
+          code: 'REPORT_GENERATION_IN_PROGRESS',
           title: '이미 새 판을 생성 중입니다.',
         })
       await apiFetch(`/reports/${report.reportId}/regenerate`, body({}))
