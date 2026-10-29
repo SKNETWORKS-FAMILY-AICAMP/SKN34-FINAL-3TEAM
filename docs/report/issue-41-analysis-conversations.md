@@ -79,3 +79,17 @@ Closes #41
 - 실제 테스트 산출물의 알림 목록·설정 JSON, report 4종 RabbitMQ 봉투/데이터, core report 상세 JSON의 최종 OpenAPI/이벤트 schema 대조를 통과했다. bootJar 89개 라이브러리에 Testcontainers/JUnit/Mockito/Flyway가 포함되지 않음을 확인했다.
 - 최신 develop 반영 후 DB migration 파일과 DDL은 변경되지 않았다. 새 production 의존성·migration이 없다.
 - 원격 CI·배포는 실행하지 않았다. PR은 생성하지 않으며 사용자가 develop 대상 PR을 생성한다.
+
+## PR #114 최신 develop 충돌 해결 (2026-10-29)
+
+PR base는 develop이며, origin/develop c608f52를 기존 feature/core-analysis-conversations에 일반 merge한다. 이전 기능 커밋 f30db4d는 보존하고 squash/rebase/history rewrite를 하지 않는다. 로컬·원격 main은 97b0f0f로 새 파일 변경이 없으며 main은 수정하지 않았다. 병합 전 Git bundle을 저장했다.
+
+충돌 파일은 LearningRecordClient.kt, LearningRecordService.kt, contracts/openapi/core-service.yaml 3개다. develop의 #40 대시보드 메서드·조회 검증·생성자·의존성과 공개 명세를 보존하고 #41 evidence 메서드·Analysis 경로/스키마만 접합했다. 두 Kotlin 파일에서 #41 추가 메서드를 제거하면 develop 원문과 동일하며, OpenAPI 역시 #41 추가 블록을 제거하면 develop 원문과 동일함을 대조했다. develop의 모든 operation/schema와 #41 분석 operation/schema가 그대로 유지된다. 이미 반영된 조회 로직이나 계약을 수정하지 않았다.
+
+자동 병합된 SseEmitters의 heartbeat 설정 주입과 기존 피드백/알림 동작, #40 테스트 연결 풀 제한, 최신 learning/report 변경을 그대로 유지한다. 별도 production 의존성·migration을 추가하지 않는다. 프론트 UI 수동 수정은 없고 parent DTO의 자동 병합 결과를 대조한다. 실제 AI TEMPLATE/돌아보기 및 payment 공급자 연결 조건은 이전 기록과 동일하다.
+
+최종 통합 검증: JDK 21 core 전체 227/227 통과(39개 클래스, 실패/오류/건너뜀 0), test bootJar 단일 실행 BUILD SUCCESSFUL(8m32s)이다. #41 대화 통합 15개·AI HTTP/SSE client 5개·한도 계약 2개, #40 대시보드 통합 13개, 알림 통합 6개·SseEmitters 4개와 기존 피드백 회귀를 함께 실행했다. 실제 PostgreSQL·Redis·RabbitMQ와 AI/learning HTTP 대역을 구분하며 실제 AI 전체 연결을 의미하지 않는다.
+
+Python 계약 검사 60개와 core OpenAPI 3.1 표준 검사, 실제 알림 목록/설정 JSON·리포트 4종 이벤트 봉투/데이터·HTTP 상세 응답의 최종 명세 대조가 통과했다. bootJar의 Testcontainers/JUnit/Mockito/Flyway 제외도 확인했다. 프론트 전체 87개 테스트·전체 oxlint·tsc/Vite build 통과이며 기존 500KB 청크 경고는 남는다. 별도 UI 수동 수정이 없어 브라우저 검증은 이번에 반복하지 않았다.
+
+현재 core DB의 전체 Flyway는 Testcontainers로 적용했다. 이번 변경에서 learning/report 코드·migration은 develop 원본 그대로 받았으며 해당 서비스 전체 테스트·DB 전체 cycle·실제 AI/payment 연동·배포는 추가 실행하지 않았다. 이전 실행 결과를 이번 실행 결과로 합산하지 않는다. 테스트 XML·JAR·로그·요약은 외부 검증 폴더의 merge-20261029-*에 보존했다. 기존 실제 AI/payment 연동 제약은 유지된다.

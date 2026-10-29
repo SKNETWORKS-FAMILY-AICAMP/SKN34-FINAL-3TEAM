@@ -667,6 +667,8 @@ erDiagram
     varchar scene_uri "NULL 허용 · S3 애니메이션"
     varchar static_scene_uri "NULL 허용 · 움직임 줄이기"
     jsonb choices "NULL 허용"
+    jsonb categories "NULL 허용 · 분류 그룹 [{id, label}]"
+    varchar answer_unit "NULL 허용 · 수학 최종 답 단위, 답 칸 뒤 고정 표시"
     jsonb input_template "NULL 허용 · 풀이 단계·논술 틀"
     jsonb achievement_standards "NULL 허용 · 성취기준 코드"
     uuid created_by
@@ -685,7 +687,7 @@ erDiagram
   rubric_element {
     uuid id PK
     uuid rubric_version_id FK
-    varchar code "e1"
+    varchar code "e1 · FINAL_ANSWER는 수학 최종 답 요소"
     varchar label
     text description "NULL 허용"
     int points
@@ -717,6 +719,7 @@ erDiagram
 - `mission.sort_order`: 학년군 안의 목록 순서, 이전·다음 이동과 진행 위치 계산 (FN-LRN-02)
 - `rubric_element.judge_verified = false` 요소는 AI 판정 시 충족 표시 금지 → `HELD (UNVERIFIED_SCOPE)`. 평가 통과 후 관리자가 갱신 (FN-JDG-04, 05, NFR-AIQ-01). 사람 검증(P11) 도입 전에는 ai `JUDGE_REQUIRE_VERIFIED=false`(기본)로 끄고 `trial = true`로 시범 표시
 - `forbidden_terms`: 정답 키와 함께 ai `followups` 유출 검사 입력 (FN-JDG-06)
+- #79: V6는 `mission_version`에 `categories`(분류 그룹, `answer_key.assignments`의 `categoryId`가 가리킴)·`answer_unit`(수학 최종 답 단위)을 추가한다. 기존 마이그레이션은 수정하지 않는다. 수학 `answer_key.finalAnswer`는 수만 담고 단위는 비교하지 않는다(FN-JDG-02). 풀이 단계 기준표의 `code = 'FINAL_ANSWER'` 요소는 ai에 보내지 않고 정답 키로 충족을 정한다
 - AI Hub 문항·답안·피드백 원문은 어떤 컬럼에도 저장하지 않음 (FN-ADM-09)
 
 ### 4.2 학습 시도·답변·판정 (FN-LRN, FN-JDG)
@@ -903,6 +906,15 @@ erDiagram
   report_item ||--o{ report_item_evidence : cites
   weekly_report ||--o{ report_file : files
 
+  report_deletion_guard {
+    uuid student_id PK "core 논리 참조 · 삭제 장벽"
+    varchar scope "PROFILE|RECORDS"
+    timestamptz cutoff_at
+    uuid deletion_request_id "core 논리 참조"
+    varchar status "PENDING|COMPLETED"
+    timestamptz updated_at
+  }
+
   weekly_report {
     uuid id PK
     uuid job_id UK "core report_job"
@@ -966,6 +978,7 @@ erDiagram
 - 기록 없는 주·표본 부족 주는 `status = COMPLETED` + `state`로 구분, 생성 실패(`FAILED`)와 분리 (FN-RPT-11). state는 COMPLETED일 때만 NOT NULL (상태 다이어그램 4.2).
 - `report_item` UK `(report_id, item_type, seq)`. 상세 응답(API 3.4)은 `item_type`별로 묶어 조립
 - `report_file` UK `(report_id, format)`. 다운로드는 `s3_key`로 presigned URL 발급 (FN-RPT-13)
+- #55의 `20261027_02`는 `report_deletion_guard`를 추가한다. 삭제 중 생성·조회를 막고 완료 후에도 PROFILE·RECORDS 모두 생성을 차단한다. 최신 #45의 자동 학습 재개 금지와 일치시키며 재개는 별도 계약이 필요하다. 학생 UUID·삭제 요청 UUID·범위·시각·처리 상태만 남기며 원문·이름·리포트 내용은 저장하지 않는다.
 
 ---
 

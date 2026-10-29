@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Column,
     Date,
@@ -47,6 +48,10 @@ weekly_report = Table(
     Column("failure_reason", String),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("generated_at", DateTime(timezone=True)),
+    Column("narrative", JSONB),
+    Column("verification", JSONB),
+    Column("versions", JSONB),
+    Column("evening_question", Text),
 )
 report_item = Table(
     "report_item",
@@ -67,6 +72,16 @@ report_item_evidence = Table(
     Column("attempt_id", PG_UUID(as_uuid=True), nullable=False),
     Column("answer_id", PG_UUID(as_uuid=True), nullable=False),
     Column("answer_version", Integer, nullable=False),
+)
+report_file = Table(
+    "report_file",
+    metadata,
+    Column("id", PG_UUID(as_uuid=True), primary_key=True),
+    Column("report_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("format", String, nullable=False),
+    Column("s3_key", String, nullable=False),
+    Column("size_bytes", BigInteger, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
 )
 
 
@@ -122,6 +137,21 @@ class ReportRepository:
             session.execute(report_item.insert(), item_rows)
         if evidence_rows:
             session.execute(report_item_evidence.insert(), evidence_rows)
+        if result.files:
+            session.execute(
+                report_file.insert(),
+                [
+                    {
+                        "id": uuid4(),
+                        "report_id": report_id,
+                        "format": file.format,
+                        "s3_key": file.key,
+                        "size_bytes": file.size_bytes,
+                        "created_at": result.generated_at or datetime.now(UTC),
+                    }
+                    for file in result.files
+                ],
+            )
 
     def get_or_create(self, session: Session, command: GenerateReport) -> tuple[WeeklyReport, bool]:
         # Also serializes revision allocation for different jobs for the same student/week.
@@ -180,7 +210,11 @@ class ReportRepository:
             "state": result.state if result is not None else None,
             "inclusion_rule": result.inclusion_rule if result is not None else None,
             "failure_reason": failure_reason,
-            "generated_at": datetime.now(UTC) if result is not None else None,
+            "generated_at": (result.generated_at or datetime.now(UTC)) if result else None,
+            "narrative": result.narrative if result else None,
+            "verification": result.verification if result else None,
+            "versions": result.versions if result else None,
+            "evening_question": result.evening_question if result else None,
         }
         row = (
             session.execute(

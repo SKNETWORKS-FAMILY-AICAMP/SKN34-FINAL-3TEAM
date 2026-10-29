@@ -101,6 +101,8 @@ export interface Answer {
 export interface Reflection {
   difficulty: '쉬웠어' | '보통' | '어려웠어'
   text: string
+  /** Record API metadata; the student attempt API does not return this field. */
+  createdAt?: string
 }
 export interface Attempt {
   attemptId: string
@@ -108,6 +110,8 @@ export interface Attempt {
   mission: Mission
   status: 'IN_PROGRESS' | 'COMPLETED'
   finishedAt?: string
+  completedAt?: string | null
+  hintUsages?: { openedAt: string }[]
   answers: Answer[]
   reflection?: Reflection
   draft?: Draft

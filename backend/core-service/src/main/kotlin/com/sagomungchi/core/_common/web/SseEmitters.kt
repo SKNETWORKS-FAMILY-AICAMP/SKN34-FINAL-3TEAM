@@ -4,6 +4,7 @@ import com.sagomungchi.core._common.security.UserContext
 import com.sagomungchi.core._common.security.UserContextHolder
 import jakarta.annotation.PreDestroy
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Component
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
@@ -22,7 +23,7 @@ import kotlin.concurrent.withLock
 /** Feedback transport lifecycle only. Disconnecting never cancels the independently running operation. */
 @Component
 class SseEmitters internal constructor(private val heartbeat: Duration, private val timeout: Duration) : AutoCloseable {
-    @Autowired constructor() : this(Duration.ofSeconds(15), Duration.ofSeconds(90))
+    @Autowired constructor(@Value("\${app.sse.heartbeat:15s}") heartbeat: Duration) : this(heartbeat, Duration.ofSeconds(90))
 
     private val tasks = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("feedback-sse-", 0).factory())
     private val timer = ScheduledThreadPoolExecutor(1, Thread.ofPlatform().daemon().name("feedback-heartbeat").factory())

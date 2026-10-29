@@ -12,6 +12,7 @@ from app.database import create_db_engine, create_session_factory
 from app.errors import register_error_handlers
 from app.health.router import router as health_router
 from app.messaging.connection import AmqpConnection
+from app.query.router import router as query_router
 from app.security import InternalAuthMiddleware
 
 
@@ -54,5 +55,6 @@ def create_app() -> FastAPI:
     register_error_handlers(app)
     app.add_middleware(InternalAuthMiddleware)
     app.include_router(health_router)
+    app.include_router(query_router)
     # 기능 라우터는 여기에 등록
     return app

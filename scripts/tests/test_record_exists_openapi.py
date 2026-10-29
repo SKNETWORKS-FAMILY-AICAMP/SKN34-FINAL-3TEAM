@@ -26,7 +26,7 @@ class RecordExistsContractTest(unittest.TestCase):
         consumer=(ROOT/'backend/core-service/src/main/kotlin/com/sagomungchi/core/learning/client/LearningRecordClient.kt').read_text(encoding='utf-8')
         self.assertIn('@GetMapping("/internal'+path+'")',producer)
         self.assertIn('/records/students/$studentId/exists',consumer)
-        self.assertNotIn('/attempts',consumer)
+        # #40 consumes implemented dashboard queries; exists retains its narrow contract.
     def test_guardianship_calls_learning_service_without_cross_feature_client_access(self):
         source=(ROOT/'backend/core-service/src/main/kotlin/com/sagomungchi/core/guardianship/service/GuardianshipService.kt').read_text(encoding='utf-8')
         self.assertIn('core.learning.service.LearningRecordService',source)
