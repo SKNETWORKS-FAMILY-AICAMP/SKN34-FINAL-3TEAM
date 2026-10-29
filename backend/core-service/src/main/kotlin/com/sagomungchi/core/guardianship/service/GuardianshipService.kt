@@ -24,7 +24,7 @@ import java.util.UUID
 @Service
 class GuardianshipService(private val repository: StudentAccessRepository, private val access: StudentAccessService,
     private val accounts: AccountAccessService, private val consents: ConsentService,
-    private val consentAccess: ConsentAccessService, private val records: LearningRecordService) {
+    private val consentAccess: ConsentAccessService, private val records: LearningRecordService, private val pins: StudentPinService) {
     @Transactional
     fun register(userId: UUID, nickname: String, grade: Int, birthYear: Int, choices: List<ConsentChoice>): LinkedStudent {
         val account = accounts.lockParent(userId)
@@ -45,6 +45,7 @@ class GuardianshipService(private val repository: StudentAccessRepository, priva
         val children = access.linkedStudents(userId)
         if (children.isEmpty()) return emptyList()
         val blocked = children.associate { it.id to !consentAccess.hasGuardianConsent(userId, it.id) }
+        val pinStates = children.associate { it.id to pins.state(it.id) }
         val context = UserContextHolder.currentOrNull()
         return Executors.newFixedThreadPool(minOf(MAX_CHILDREN, children.size), Thread.ofVirtual().factory()).use { executor ->
             executor.invokeAll(children.map { child -> Callable {
@@ -55,8 +56,9 @@ class GuardianshipService(private val repository: StudentAccessRepository, priva
                         val exists = records.exists(child.id)
                         ChildRecords(exists, if (exists == null) "UNAVAILABLE" else "AVAILABLE")
                     }
+                    val pin=pinStates.getValue(child.id)
                     ChildListItem(child.id, child.nickname, child.grade, child.birthYear,
-                        needsConsent, state.hasRecords, state.recordState)
+                        needsConsent, state.hasRecords, state.recordState, pin.pinSet, pin.pinLocked)
                 } finally { UserContextHolder.clear() }
             } }).map { future ->
                 try { future.get() } catch (ex: ExecutionException) {

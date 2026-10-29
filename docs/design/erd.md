@@ -25,9 +25,9 @@
 | 문자열·금액 | varchar는 길이 제한 없는 PostgreSQL varchar. ShedLock만 name varchar(64), locked_by varchar(255). 원화는 int, cost_usd는 반올림 정책 없는 numeric |
 | FK 삭제·순환 참조 | 기본 ON DELETE/UPDATE NO ACTION. mission.current_*와 answer.followup_id만 DEFERRABLE INITIALLY IMMEDIATE. 삭제는 P09에 따라 `student.deleted` 이벤트로 서비스별 물리 삭제. learning 하위 기록의 CASCADE 여부는 7장 확인 필요 |
 
-- 테이블 없이 Redis에 두는 값: `reauthToken`(단기), SSE 알림 중계 (아키텍처 1.6), 요금제 사용 한도 일 단위 카운터 (P13)
+- 테이블 없이 Redis에 두는 값: SSE 알림 중계 (아키텍처 1.6), 요금제 사용 한도 일 단위 카운터 (P13)
 - 생각 메모는 `attempt_draft.content.memo`에 저장 (P05). 음성 시범 미구현으로 음성 데이터 없음 (P03)
-- 학생 별도 계정 없음: 학생 세션은 `student.id`로 발급하는 토큰만. 발급 경로는 학부모 인증(동석) 또는 학부모 등록 기기 + 자녀 PIN(단독). PIN·기기 저장 구조는 10장 변경 예정 (P01)
+- 학생 별도 계정 없음: 학생 세션은 `student.id`로 발급하는 토큰만. 발급 경로는 학부모 인증(동석) 또는 학부모 등록 기기 + 자녀 PIN(단독). PIN·기기 저장 구조는 3.1 (P01)
 - 학생 기기 페어링 코드(10분·1회용)는 테이블 없이 Redis 저장
 - 코드 CHECK는 Mermaid 주석의 `A|B` 목록 또는 `CHECK[A]` 명시 표기로 자동 검증한다. 허용값이 하나인 경우에도 `CHECK[A]`로 표시해 일반 설명과 구분한다.
 
@@ -58,6 +58,9 @@
 
 ```mermaid
 erDiagram
+  user_account ||--o{ student_device : registers
+  student_device ||--o{ student_device_child : allows
+  student ||--o{ student_device_child : uses
   user_account ||--o{ admin_permission : has
   user_account ||--o{ refresh_token : issues
   user_account ||--o{ consent : agrees
@@ -101,14 +104,32 @@ erDiagram
   }
   student {
     uuid id PK "전 서비스 공통 학생 ID"
-    varchar nickname "가명"
-    int grade "3~6, 이후 제공 문제에만 적용 (P03)"
-    int birth_year "출생연도 (P01)"
+    varchar pin_hash "NULL 허용"
+    int pin_failed_count "0 이상"
+    timestamptz pin_locked_at "NULL 허용"
+    timestamptz pin_updated_at "NULL 허용"
+    varchar nickname "가명, DELETED 표식은 NULL 허용"
+    int grade "3~6, 이후 제공 문제에만 적용 (P03), DELETED 표식은 NULL 허용"
+    int birth_year "출생연도 (P01), DELETED 표식은 NULL 허용"
     boolean is_demo "시연 가상 학생"
     varchar status "ACTIVE|DELETION_REQUESTED|DELETED"
     timestamptz created_at
     timestamptz updated_at
     timestamptz deleted_at "NULL 허용"
+  }
+  student_device {
+    uuid id PK
+    uuid parent_user_id FK
+    varchar token_hash UK
+    varchar label
+    timestamptz created_at
+    timestamptz expires_at
+    timestamptz last_used_at "NULL 허용"
+    timestamptz revoked_at "NULL 허용"
+  }
+  student_device_child {
+    uuid device_id PK,FK
+    uuid student_id PK,FK
   }
   consent_document {
     uuid id PK
@@ -155,6 +176,7 @@ erDiagram
     varchar status "REQUESTED|COMPLETED"
     timestamptz requested_at
     timestamptz completed_at "NULL 허용"
+    varchar status_token_hash UK "NULL 허용, 조회 전용 토큰 해시"
   }
 ```
 
@@ -165,6 +187,38 @@ erDiagram
 - `deletion_request`가 `CONFIRMED`가 되면 같은 트랜잭션에서 `outbox_event(student.deleted)` 저장
 - 로그인 수단·자녀 연결 변경 결과·시점은 `audit_log`에 기록 (FN-ACC-10)
 - `user_account.is_demo`·`student.is_demo` 행은 운영 현황·사용량·결제 집계에서 제외 (NFR-OPS-01)
+
+### #45 재인증·삭제 완료 저장
+
+```mermaid
+erDiagram
+  reauth_challenge {
+    uuid id PK
+    uuid user_id FK
+    uuid session_id FK
+    bigint session_version
+    varchar purpose "PIN_CHANGE|CHILD_UNLINK|CHILD_DELETE|WITHDRAWAL"
+    uuid student_id FK "NULL 허용"
+    varchar scope "NULL 허용, CHECK[PROFILE|RECORDS]"
+    varchar state_hash UK
+    timestamptz expires_at
+    timestamptz verified_at "NULL 허용"
+    timestamptz issued_at "NULL 허용"
+  }
+  reauth_grant {
+    varchar token_hash PK
+    uuid challenge_id FK,UK
+    timestamptz expires_at
+    timestamptz used_at "NULL 허용"
+  }
+  deletion_completion {
+    uuid request_id PK,FK
+    varchar service PK "learning|report"
+    timestamptz completed_at
+  }
+```
+
+`withdrawal_request.status_token_hash varchar NULL 허용`을 추가한다(신규 요청은 해시 필수). PROFILE 완료 후 student의 nickname/grade/birth_year는 NULL로 지우며, DELETED가 아닌 행의 필수 프로필은 CHECK로 보존한다. 재인증 challenge의 purpose/자녀/scope 조합도 CHECK한다. 기존 V1~V8은 수정하지 않는다. #58 기기 테이블은 만들거나 SQL에서 참조하지 않는다. V9 번호는 착수 시 다른 worktree V1~V8만 존재함을 확인했고 병합 전 다시 확인한다.
 
 ### 3.1.1 로그인 세션 (#36)
 
@@ -308,7 +362,7 @@ erDiagram
     uuid id PK
     uuid user_id FK
     uuid child_id FK "NULL 허용"
-    varchar type "REPORT_COMPLETED|ERROR_REPORT_RESOLVED|INQUIRY_ANSWERED|PAYMENT_CHANGED|SUBSCRIPTION_CHANGED"
+    varchar type "REPORT_COMPLETED|REPORT_FAILED|ERROR_REPORT_RESOLVED|INQUIRY_ANSWERED|PAYMENT_CHANGED|SUBSCRIPTION_CHANGED"
     uuid source_event_id "사건 ID"
     varchar title "원문·결제 민감 정보 미포함"
     varchar link "상세 화면 경로"
@@ -376,6 +430,7 @@ erDiagram
   }
 ```
 
+- #44: V12는 notification·notification_setting의 type CHECK에 REPORT_FAILED를 추가한다. V9는 #45, V13은 #58의 student_device_auth. 기존 마이그레이션은 수정하지 않는다. 알림 status는 Redis 발행 상태이며 읽음은 read_at으로 별도 관리한다.
 - `notification` UK `(user_id, type, source_event_id)` → 같은 사건 재처리 시 중복 생성 방지 (FN-SUP-08)
 - 판정 정정 원본은 learning `judgment_correction`, core `correction`은 신고 단위 정정 사유·영향 범위 기록 (FN-SUP-03)
 - 도움말(`/help`)은 정적 콘텐츠로 테이블 없음
@@ -612,6 +667,8 @@ erDiagram
     varchar scene_uri "NULL 허용 · S3 애니메이션"
     varchar static_scene_uri "NULL 허용 · 움직임 줄이기"
     jsonb choices "NULL 허용"
+    jsonb categories "NULL 허용 · 분류 그룹 [{id, label}]"
+    varchar answer_unit "NULL 허용 · 수학 최종 답 단위, 답 칸 뒤 고정 표시"
     jsonb input_template "NULL 허용 · 풀이 단계·논술 틀"
     jsonb achievement_standards "NULL 허용 · 성취기준 코드"
     uuid created_by
@@ -630,7 +687,7 @@ erDiagram
   rubric_element {
     uuid id PK
     uuid rubric_version_id FK
-    varchar code "e1"
+    varchar code "e1 · FINAL_ANSWER는 수학 최종 답 요소"
     varchar label
     text description "NULL 허용"
     int points
@@ -662,6 +719,7 @@ erDiagram
 - `mission.sort_order`: 학년군 안의 목록 순서, 이전·다음 이동과 진행 위치 계산 (FN-LRN-02)
 - `rubric_element.judge_verified = false` 요소는 AI 판정 시 충족 표시 금지 → `HELD (UNVERIFIED_SCOPE)`. 평가 통과 후 관리자가 갱신 (FN-JDG-04, 05, NFR-AIQ-01). 사람 검증(P11) 도입 전에는 ai `JUDGE_REQUIRE_VERIFIED=false`(기본)로 끄고 `trial = true`로 시범 표시
 - `forbidden_terms`: 정답 키와 함께 ai `followups` 유출 검사 입력 (FN-JDG-06)
+- #79: V6는 `mission_version`에 `categories`(분류 그룹, `answer_key.assignments`의 `categoryId`가 가리킴)·`answer_unit`(수학 최종 답 단위)을 추가한다. 기존 마이그레이션은 수정하지 않는다. 수학 `answer_key.finalAnswer`는 수만 담고 단위는 비교하지 않는다(FN-JDG-02). 풀이 단계 기준표의 `code = 'FINAL_ANSWER'` 요소는 ai에 보내지 않고 정답 키로 충족을 정한다
 - AI Hub 문항·답안·피드백 원문은 어떤 컬럼에도 저장하지 않음 (FN-ADM-09)
 
 ### 4.2 학습 시도·답변·판정 (FN-LRN, FN-JDG)
@@ -848,6 +906,15 @@ erDiagram
   report_item ||--o{ report_item_evidence : cites
   weekly_report ||--o{ report_file : files
 
+  report_deletion_guard {
+    uuid student_id PK "core 논리 참조 · 삭제 장벽"
+    varchar scope "PROFILE|RECORDS"
+    timestamptz cutoff_at
+    uuid deletion_request_id "core 논리 참조"
+    varchar status "PENDING|COMPLETED"
+    timestamptz updated_at
+  }
+
   weekly_report {
     uuid id PK
     uuid job_id UK "core report_job"
@@ -911,6 +978,7 @@ erDiagram
 - 기록 없는 주·표본 부족 주는 `status = COMPLETED` + `state`로 구분, 생성 실패(`FAILED`)와 분리 (FN-RPT-11). state는 COMPLETED일 때만 NOT NULL (상태 다이어그램 4.2).
 - `report_item` UK `(report_id, item_type, seq)`. 상세 응답(API 3.4)은 `item_type`별로 묶어 조립
 - `report_file` UK `(report_id, format)`. 다운로드는 `s3_key`로 presigned URL 발급 (FN-RPT-13)
+- #55의 `20261027_02`는 `report_deletion_guard`를 추가한다. 삭제 중 생성·조회를 막고 완료 후에도 PROFILE·RECORDS 모두 생성을 차단한다. 최신 #45의 자동 학습 재개 금지와 일치시키며 재개는 별도 계약이 필요하다. 학생 UUID·삭제 요청 UUID·범위·시각·처리 상태만 남기며 원문·이름·리포트 내용은 저장하지 않는다.
 
 ---
 
@@ -918,6 +986,8 @@ erDiagram
 
 | DB | 테이블 | 인덱스 | 용도 |
 |---|---|---|---|
+| core | `student_device` | `(parent_user_id) WHERE revoked_at IS NULL` | 등록 기기 목록 |
+| core | `student_device_child` | `(student_id)` | 삭제 시 매핑 정리 |
 | core | `guardianship` | `(parent_user_id) WHERE status='LINKED'` | 요청마다 자녀 연결 확인 |
 | core | `conversation` | `(parent_user_id, student_id, created_at)` | 대화 목록 |
 | core | `report_job` | `(student_id, period_from)`, `(status, created_at)` | 리포트 목록, 관리자 작업 현황 |
@@ -966,33 +1036,16 @@ erDiagram
 - report는 정책 확정에 따른 DDL 변경이 없어 새 revision을 추가하지 않는다. 최종 구조는 59개 테이블·506개 컬럼(core 34/306, learning 19/156, report 6/44)이다. 이후 core V8(#36 `auth_session`, `refresh_token.session_id`·`used_at`) 반영 현재 60개 테이블·518개 컬럼(core 35/318)이다.
 - 기존 V1~V5/V1~V3/Alembic 초기 revision은 변경하지 않는다. 초기 DB는 순서대로 전체 적용하고, 기존 데이터가 있는 DB는 준비 버전에서 멈춰 승인된 값으로 보완한 뒤 최종 버전을 적용한다. 상세 절차는 [이슈 19 스키마 변경 보고서](../report/db-policy-schema.md)를 따른다.
 
-## 10. P01 개정 학생 기기·PIN (변경 예정, 미적용)
+## 10. P01 학생 기기·PIN 구현 (#58)
 
-- 근거: [학생 로그인 분리 보고서](../report/student-login-separation.md), [API 명세 3.11](api-spec.md#311-학생-기기-등록pin-로그인-p01-개정)
-- 3.1 Mermaid와 CI 스키마 대조 기준에는 아직 반영하지 않는다. #36 OAuth용 V8 이후의 다음 core Flyway 버전 추가 시 아래 내용을 3.1 Mermaid·6장 인덱스로 옮기고 이 절을 정리한다.
-
-| 대상 | 컬럼 | 타입·NULL | 설명 |
-|---|---|---|---|
-| `student` (추가) | `pin_hash` | varchar, NULL 허용 | PIN 해시. NULL이면 단독 로그인 불가 |
-| | `pin_failed_count` | int | 연속 실패 횟수, 성공·재설정 시 0 |
-| | `pin_locked_at` | timestamptz, NULL 허용 | 5회 실패 잠금 시각, 재설정 시 NULL |
-| | `pin_updated_at` | timestamptz, NULL 허용 | 마지막 설정 시각 |
-| `student_device` (신규) | `id` | uuid PK | `deviceId` |
-| | `parent_user_id` | uuid FK → `user_account` | 등록 학부모 |
-| | `token_hash` | varchar UK | 기기 자격증명 해시 |
-| | `label` | varchar | 기기 이름 (예: 거실 태블릿) |
-| | `created_at` · `expires_at` | timestamptz | 등록 시각·만료(설정값 90일, SQL DEFAULT 없음) |
-| | `last_used_at` · `revoked_at` | timestamptz, NULL 허용 | 마지막 PIN 로그인·해제 시각 |
-| `student_device_child` (신규) | `device_id` | uuid PK, FK → `student_device` | 복합 PK |
-| | `student_id` | uuid PK, FK → `student` | 이 기기에서 로그인 가능한 자녀 |
-
-- 인덱스 후보: `student_device (parent_user_id) WHERE revoked_at IS NULL` 기기 목록
-- `student_device_child.student_id`는 등록 시 `parent_user_id`와 `LINKED`인 자녀만 허용(서비스 검사). 연결 해제·삭제된 자녀는 로그인 시점에 다시 검사하므로 행을 즉시 지우지 않아도 진입 불가
-- 학생 삭제(`student.deleted`) 확정 시 해당 `student_device_child` 행 삭제, 학부모 탈퇴 시 기기 전체 `revoked_at` 기록
+저장 구조는 3.1과 인덱스 6장으로 이동했다. V13은 #45 V9·#44 V12를 보존하며, V12가 먼저 적용된 DB에서도 순서대로 실행한다.
+기존 student는 PIN 미설정(NULL), 실패 횟수 0으로 옮긴다. 임의 PIN·기기는 생성하지 않는다. 신규 student의 pin_failed_count는 앱에서 0을 전달하며 SQL DEFAULT는 두지 않는다.
+삭제 확정 때 student_device_child를 제거하고 PIN 해시·잠금도 지운다. 탈퇴 시 모든 기기를 폐기한다. 연결·동의 해제는 기존 세션 검사로 즉시 차단한다.
+재인증은 V9 reauth_challenge/reauth_grant에 저장한다. 페어링 코드와 시도 제한만 Redis에 둔다.
 
 ## 11. #36 OAuth·로그인 세션 (개정 P01 정렬)
 
-> OAuth·로그인 세션 V8은 develop에 적용되었다(3.1.1). 10장의 기기·PIN 저장 구조는 #58에서 V8 이후의 다음 버전으로 구현한다. 학생에게는 refresh를 발급하지 않는다.
+> OAuth·로그인 세션 V8은 develop에 적용되었다(3.1.1). 기기·PIN 저장 구조는 #58의 V13이다. 학생에게는 refresh를 발급하지 않는다.
 `user_account.oauth_provider/oauth_subject`는 함께 NULL(기존 계정) 또는 GOOGLE/Google sub이며 복합 UNIQUE다. password_hash는 nullable로 보존하고 이메일로 OAuth 계정을 자동 연결하지 않는다.
 
 

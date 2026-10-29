@@ -15,10 +15,15 @@ import org.testcontainers.containers.PostgreSQLContainer
     "app.auth.jwt-secret=dGVzdC1hdXRoLXNlY3JldC0zMi1ieXRlcy1sb25nLWtleSE=",
     "spring.rabbitmq.username=test", "spring.rabbitmq.password=test",
     "spring.rabbitmq.listener.simple.auto-startup=false",
+    // Cached Spring contexts share one PostgreSQL (100 connections). Bound each
+    // test pool and avoid eagerly reserving ten idle connections per context.
+    "spring.datasource.hikari.maximum-pool-size=5",
+    "spring.datasource.hikari.minimum-idle=0",
 ])
 @Transactional
 abstract class PostgresRepositoryTest {
     // Repository tests do not publish messages or run the background relay.
+    @MockitoBean lateinit var notificationListenerContainer: org.springframework.data.redis.listener.RedisMessageListenerContainer
     @MockitoBean lateinit var outboxRelay: OutboxRelay
 
     companion object {

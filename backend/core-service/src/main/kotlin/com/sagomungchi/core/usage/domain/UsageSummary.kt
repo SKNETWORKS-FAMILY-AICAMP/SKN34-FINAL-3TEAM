@@ -2,7 +2,7 @@ package com.sagomungchi.core.usage.domain
 
 import java.math.BigDecimal
 
-enum class CallType { JUDGMENT, FOLLOWUP, ANALYSIS, REPORT_NARRATIVE, M2, M1, SPEECH }
+enum class CallType { JUDGMENT, FOLLOWUP, ANALYSIS, REPORT_NARRATIVE, M2, M1 }
 
 data class UsageSummary(
     val callType: String,

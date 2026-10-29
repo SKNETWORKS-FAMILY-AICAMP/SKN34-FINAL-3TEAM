@@ -79,7 +79,7 @@ export function ClassroomApp() {
         : (children.data?.find((c) => c.id === selected) ?? children.data?.[0])
   const missions = useMissions(session?.role === 'STUDENT' ? child : undefined)
   const records = useRecords(child, session?.role === 'STUDENT' ? 'STUDENT' : 'PARENT', period)
-  const sourceRecord = usePublicRecord(session?.role === 'PARENT' ? child : undefined, evidenceId)
+  const sourceRecord = usePublicRecord(session?.role === 'PARENT' ? child : undefined, evidenceId, period)
   const learning = useLearningActions()
   async function login() {
     try {

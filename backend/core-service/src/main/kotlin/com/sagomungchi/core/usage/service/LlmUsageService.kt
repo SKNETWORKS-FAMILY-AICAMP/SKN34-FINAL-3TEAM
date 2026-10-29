@@ -53,11 +53,11 @@ class LlmUsageService(
         )
     }
 
-    /** 소비 시점 단가로 계산해 저장, 단가 변경 후에도 과거 값 유지 (FN-ADM-19). 단가 미등록 모델은 null */
+    /** 소비 시점 단가로 계산해 저장, 단가 변경 후에도 과거 값 유지 (FN-ADM-19). 단가 미등록 모델·토큰 미기록 호출은 null */
     private fun cost(data: LlmUsageRecorded): BigDecimal? {
         val price = properties.llmPricing[data.model] ?: return null
-        val input = price.input * BigDecimal(data.inputTokens ?: 0)
-        val output = price.output * BigDecimal(data.outputTokens ?: 0)
+        val input = price.input * BigDecimal(data.inputTokens ?: return null)
+        val output = price.output * BigDecimal(data.outputTokens ?: return null)
         return (input + output).divide(TOKENS_PER_PRICE_UNIT)
     }
 

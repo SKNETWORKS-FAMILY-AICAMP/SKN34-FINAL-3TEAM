@@ -40,6 +40,10 @@ MinIO를 포함한 프로젝트를 중단할 때도 `docker compose -f compose.y
 
 배포 시 core 환경에 `AUTH_JWT_SECRET`·`GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET`을 Kubernetes Secret 참조로 주입하고 `AUTH_WEB_ORIGIN`을 실제 web origin으로 지정한다. 현재 저장소의 platform-data chart는 앱 배포를 소유하지 않으므로 실제 core Deployment의 Secret 주입은 앱 배포 구성 시 적용한다. 키·자격 증명은 Git에 넣지 않는다.
 
-인증 구현은 [#36 결정·검증 보고서](docs/report/issue-36-google-auth.md)를 따른다. 실제 모드의 로그인·가입은 Google을 사용하며 동의 저장·자녀 등록은 [#37 계약·검증 보고서](docs/report/issue-37-consent-children.md)를 따른다. 현재 문서 확인 → 동의 저장 → 자녀 등록을 온보딩에서 진행한다. 운영자가 검토된 TERMS·PRIVACY·GUARDIAN 문서를 게시해야 하며, 미게시 상태는 503 오류로 안내한다. 중요 작업 Google 재인증은 #45 후속 범위다.
+인증 구현은 [#36 결정·검증 보고서](docs/report/issue-36-google-auth.md)를 따른다. 실제 모드의 로그인·가입은 Google을 사용하며 동의 저장·자녀 등록은 [#37 계약·검증 보고서](docs/report/issue-37-consent-children.md)를 따른다. 현재 문서 확인 → 동의 저장 → 자녀 등록을 온보딩에서 진행한다. 운영자가 검토된 TERMS·PRIVACY·GUARDIAN 문서를 게시해야 하며, 미게시 상태는 503 오류로 안내한다. 중요 작업 Google 재인증은 #45의 DB 기반 계약을 사용한다.
 
-개정 P01에 따라 부모·관리자만 refresh를 사용한다. 학생 동석 진입은 부모 쿠키를 폐기하고 access만 발급한다. 학생 TTL은 `AUTH_STUDENT_ACCESS_TTL`(초기 15분)이며 만료·새로고침 시 학생 진입을 다시 진행한다. 등록 기기·PIN 신규 API는 후속 범위다.
+개정 P01에 따라 부모·관리자만 refresh를 사용한다. 학생 동석 진입은 부모 쿠키를 폐기하고 access만 발급한다. 학생 TTL은 `AUTH_STUDENT_ACCESS_TTL`(초기 15분)이며 만료·새로고침 시 학생 진입을 다시 진행한다. 등록 기기·PIN 단독 진입은 [#58 구현·검증 보고서](docs/report/issue-58-student-device-auth.md)를 따른다.
+
+Google 재인증: Google redirect URI에 `AUTH_WEB_ORIGIN` + `/api/v1/auth/google/reauth/callback`을 등록한다. [#45 보고서](docs/report/issue-45-account-management.md)를 따른다.
+
+학생 기기/PIN(#58): 기존 Redis를 사용한다. 로컬 core 단독 실행은 REDIS_HOST/REDIS_PORT/REDIS_PASSWORD, 기기 고정 만료는 STUDENT_DEVICE_TTL(90d), 페어링 발급·등록 제한은 STUDENT_DEVICE_ATTEMPT_LIMIT(10분당 20회)이다. PIN 변경은 자녀별 Google 재인증이 필요하다. 기존 학생 access TTL을 재사용하며 학생 refresh는 발급하지 않는다.

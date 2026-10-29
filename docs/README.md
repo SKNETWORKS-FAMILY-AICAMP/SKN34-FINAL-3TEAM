@@ -38,7 +38,18 @@
 
 - `design/`: ERD·API·아키텍처 등 구현 기준이 되는 설계 문서
 - `report/`: 작업별 검토 결과와 구현·검증 보고서
+  - [리포트 에픽 #56 현재 완료 가능 범위](report/report-epic-readiness.md): 이슈별 브랜치 진행, 최신 develop 통합, #50~#55별 완료 조건과 남은 연동
   - [이슈 #14 Repository 공통 기반](report/repository-foundation.md): 타입 매핑, 트랜잭션 경계, 예시 Repository와 PostgreSQL 테스트 사용법
+  - [이슈 #50 리포트 생성 기반](report/report-generation-foundation.md): 공유 v1 계약·worker·Outbox 검증과 후속 생성기 연결 범위
+  - [이슈 #51 학습 기록·수치 계산](report/report-metrics.md): P08 계산·항목/근거 저장, #27 실제 입력 계약 반영
+  - [report와 #27 실제 연동 검증](report/report-learning-integration.md): 학생 ID·학생 작성 칸 집계·nullable 되묻기 수정, 실제 HTTP·DB·파일 검증과 재현 방법
+  - [이슈 #52 서술 요청·검증](report/report-narrative.md): AI 호출·숫자/인용 대조·실패 정책과 실제 ai 연동 조건
+  - [이슈 #53 리포트 파일 생성](report/report-rendering.md): 3종 렌더링·한글 PDF·S3 저장과 배포 연결 조건
+  - [이슈 #54 리포트 조회](report/report-query.md): 응답 스키마·판 선택·학생 범위·권한별 다운로드
+  - [이슈 #55 학생 삭제](report/report-deletion.md): 멱등 삭제·실패 재시도·생성 충돌 방지
+  - [이슈 #55 삭제 장벽 스키마](report/report-deletion-schema.md): 추가 revision과 운영 전 정책 검토
+  - [리포트 #50~#55 통합 인계](report/report-service-handoff.md): 검증 결과와 담당자별 연결 작업
+  - [리포트 #51~#55 필요 자료](report/report-required-inputs.md): 연결 이슈별 요청할 JSON·계약·설정과 확정 여부
   - [이슈 #7 프론트 공통 기반](report/issue-7-fe-common.md): MSW 전환·인증 갱신·체크박스 검증 기준·남은 작업
   - [이슈 #7 학생 화면 후속 검증](report/issue-7-student-completion.md): 역할 URL·6종 입력·피드백·초안 회귀
   - [이슈 #8·#9 학부모·관리자 화면](report/issue-8-9-parent-admin.md): 가입·대시보드·대화·리포트·관리자 권한/작업/콘텐츠 및 목업 계약
@@ -55,6 +66,9 @@
   - [이슈 #23 learning 학습 시도·초안·생각 열기](report/learning-attempt.md): 이어하기·동시 시작, 초안 버전 충돌, 생각 열기 순서와 설계 문서 갱신 근거
   - [이슈 #24 learning 답변 제출·버전 저장](report/learning-answer.md): 제출 순서·행 잠금, 같은 키 재요청, 보완 답변 연결, 제출 뒤 초안 비우기와 설계 문서 갱신 근거
   - [이슈 #25 learning 피드백 오케스트레이션](report/learning-feedback.md): 처리 상태 전이·리스, 규칙·ai 판정과 풀이 결합, 되묻기·질문 은행, ai 호출 장애 처리와 설계 문서 갱신 근거
+  - [이슈 #26 learning 마무리·돌아보기·자기 평가](report/learning-reflection.md): 마무리 조건·공개 내용·체크리스트, 돌아보기 난이도 코드와 학습 완료, 자기 평가, 마무리 경합과 설계 문서 갱신 근거
+  - [이슈 #27 learning 학습 기록 조회](report/learning-records.md): 집계 대상(P08)·지표·상태, KST 기간, 기록 목록·상세(학생 시도 상세 재사용), 전후 변화 계산, 근거·운영 집계와 설계 문서 갱신 근거
+  - [이슈 #79 learning 판정 규칙 확정](report/learning-judgment-rules.md): 수학 단위(비교 안 함·답 칸 뒤 고정), 풀이 단계 결합과 최종 답 요소, 분류 그룹 저장(V6)과 기획서 "분류 기준"과의 관계
   - [이슈 #36 Google OAuth·access/refresh](report/issue-36-google-auth.md): HS256·세션 폐기·역할 전환·프론트 계약과 후속 경계
   - [P01 개정 학생·학부모 로그인 분리](report/student-login-separation.md): 등록 기기·PIN 단독 진입 설계 근거와 대안 비교
   - [프론트엔드 UX 정합성(최초 화면 작업)](report/frontend-backend-ux-alignment.md): 백엔드 기준 화면 정렬 기록, 현재 기준은 이슈 #7 보고서
@@ -123,3 +137,14 @@ feature/* → develop → main
 - `feature/*`는 `develop`으로만 병합
 - `main`은 `develop`에서만 병합
 - 순서를 건너뛴 병합(`feature/*` → `main`) 금지
+
+#### core 임시 통합 경로 (2026-10-28)
+
+- core 병렬 작업의 통합 검증에 한해 `feature/* → feature/core-integration → develop` 경로를 사용한다.
+- `feature/core-integration`은 최신 develop에서 만들며, 개별 core PR의 base로 사용한다. 이후 develop의 변경을 merge하고 통합 검증한 뒤 develop 대상 최종 PR로 반영한다.
+- 이 경로는 core 임시 통합용 예외다. main 반영은 기존 `develop → main` 흐름을 유지하고, 기존 기능 커밋을 임의로 squash·rebase하지 않는다.
+- 기본 브랜치가 아닌 통합 브랜치 대상 PR의 `Closes`는 이슈를 자동 종료하지 않는다. 실제 해결 범위를 확인한 최종 develop PR에도 해당 `Closes #이슈번호`를 포함한다.
+
+- [이슈 #45 계정 관리·Google 재인증·삭제·탈퇴](report/issue-45-account-management.md): #58 호출 계약, 삭제 Outbox·서비스별 완료, 탈퇴 차단·세션 폐기 및 통합 조건
+
+- [이슈 #58 학생 기기·PIN 인증](report/issue-58-student-device-auth.md): 실제 재인증·기기·PIN 계약, 삭제 연동과 검증 범위

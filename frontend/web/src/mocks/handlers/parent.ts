@@ -132,6 +132,15 @@ function evidenceResponse(items: ReturnType<typeof evidence>) {
   return { items }
 }
 const downloadTickets = new Map<string, { file: string; childId: string; expires: number }>()
+const pinChallenges = new Map<string, { childId: string; bearer: string; expires: number }>()
+const pinGrants = new Map<string, { childId: string; bearer: string; expires: number }>()
+export function consumePinReauth(request: Request, childId: string) {
+  const key = request.headers.get('X-Reauth-Token') ?? ''
+  const grant = pinGrants.get(key)
+  if (!grant || grant.childId !== childId || grant.bearer !== request.headers.get('Authorization') || grant.expires <= Date.now())
+    fail('REAUTH_REQUIRED', '해당 자녀의 Google 재확인이 필요합니다.', 403)
+  pinGrants.delete(key)
+}
 let reauthToken = '',
   reauthExpires = 0
 export function requireReauth(request: Request) {
@@ -380,7 +389,24 @@ export const parentHandlers = [
   http.post('/api/v1/me/reauth', ({ request }) =>
     respond(async () => {
       parentGuard(request)
-      const { password } = (await request.json()) as { password: string }
+      const body = (await request.json()) as { password?: string; purpose?: string; childId?: string; challengeId?: string }
+      const bearer = request.headers.get('Authorization') ?? ''
+      if (body.purpose === 'PIN_CHANGE' && body.childId) {
+        await parentChild(request, body.childId)
+        const challengeId = crypto.randomUUID()
+        pinChallenges.set(challengeId, { childId: body.childId, bearer, expires: Date.now() + 600000 })
+        // DEV MSW only: Google proof is a test double, never an actual Google verification.
+        return { challengeId, authorizationUrl: '/login?reauthMock=1', expiresAt: new Date(Date.now() + 600000).toISOString() }
+      }
+      if (body.challengeId) {
+        const value = pinChallenges.get(body.challengeId)
+        if (!value || value.bearer !== bearer || value.expires <= Date.now()) fail('REAUTH_REQUIRED', '재확인을 다시 시작해 주세요.', 403)
+        pinChallenges.delete(body.challengeId)
+        const reauthToken = crypto.randomUUID(), expires = Date.now() + 300000
+        pinGrants.set(reauthToken, { ...value!, expires })
+        return { reauthToken, expiresAt: new Date(expires).toISOString() }
+      }
+      const { password } = body
       if (password !== 'demo-only') fail('UNAUTHENTICATED', '시연 비밀번호를 확인해 주세요.', 401)
       reauthToken = crypto.randomUUID()
       reauthExpires = Date.now() + 300000
@@ -415,8 +441,11 @@ export const parentHandlers = [
       queryFault()
       const p = period(request),
         rows = scopedRows(c, p)
+      const query = new URL(request.url).searchParams
+      const index = Number(query.get('page') ?? 0), size = Number(query.get('size') ?? 20)
+      if (!Number.isInteger(index) || index < 0 || !Number.isInteger(size) || size < 1 || size > 100) fail('VALIDATION_FAILED', '페이지를 확인해 주세요.')
       return {
-        ...page(rows),
+        items: rows.slice(index * size, (index + 1) * size), page: index, size, totalElements: rows.length,
         childId: c.id,
         state: rows.length ? 'OK' : 'NO_RECORD',
         period: p,
@@ -432,7 +461,7 @@ export const parentHandlers = [
         .attempts.find((a) => a.attemptId === params.attemptId && a.studentId === c.id)
       if (!a) fail('NOT_FOUND', '기록을 찾을 수 없습니다.', 404)
       const { draft: _private, ...visible } = a!
-      return visible
+      return { ...visible, state: 'OK', period: period(request) }
     }),
   ),
   http.get('/api/v1/conversations', ({ request }) =>

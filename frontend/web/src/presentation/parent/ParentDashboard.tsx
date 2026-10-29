@@ -23,11 +23,17 @@ const stateText = {
  * 숫자는 서버 Metric 그대로 쓰고, 표본이 적으면 비율을 만들지 않는다. 기록 없는 유형은 '미관찰'로 둔다.
  */
 export function ParentDashboard({ child, scope }: { child: Child; scope: Scope }) {
-  const q = useParentDashboard(scope),
-    [record, setRecord] = useState<string | null>(null)
+  const scopeKey = `${scope.childId}:${scope.from}:${scope.to}`
+  const [selection, setSelection] = useState({ key: scopeKey, page: 0, record: null as string | null })
+  const current = selection.key === scopeKey ? selection : { key: scopeKey, page: 0, record: null }
+  const q = useParentDashboard(scope, current.page)
+  const record = current.record
+  const setRecord = (id: string | null) => setSelection({ ...current, record: id })
   const summary = q.summary.data && !q.summary.error ? q.summary.data : null
   const thinking = q.thinking.data && !q.thinking.error ? q.thinking.data.items : null
-  const seen = thinking?.filter((t) => t.state !== 'NO_RECORD').length
+  const seen = thinking && !['FAILED', 'PROCESSING'].includes(q.thinking.data!.state) &&
+    thinking.every((t) => !['FAILED', 'PROCESSING'].includes(t.state))
+    ? thinking.filter((t) => t.state === 'OK' || t.state === 'INSUFFICIENT_SAMPLE').length : undefined
   return (
     <div className="pd">
       <header className="pd-head">
@@ -47,7 +53,9 @@ export function ParentDashboard({ child, scope }: { child: Child; scope: Scope }
             {summary.state === 'NO_RECORD'
               ? '아직 집계할 기록이 없습니다. ‘이 자녀로 학습 시작’에서 첫 활동을 시작해 보세요.'
               : summary.state === 'INSUFFICIENT_SAMPLE'
-                ? `이 기간 집계 대상 활동이 ${summary.metrics[0]?.count ?? 0}건입니다. 비율은 5건 이상일 때부터 보여 드립니다.`
+                ? `이 기간 집계 대상 활동이 ${summary.metrics[0]?.count ?? '확인되지 않음'}건입니다. 비율은 5건 이상일 때부터 보여 드립니다.`
+                : summary.state === 'FAILED' ? '학습 기록 조회에 실패했습니다. 다시 시도해 주세요.'
+                : summary.state === 'PROCESSING' ? '학습 기록을 처리 중입니다.'
                 : '기간 내 기록을 집계했습니다.'}
           </span>
           <span className="pd-note">관찰 기록이며 사고력 진단이 아닙니다.</span>
@@ -67,7 +75,7 @@ export function ParentDashboard({ child, scope }: { child: Child; scope: Scope }
           {thinking && (
             <div className="pd-bars" aria-hidden="true">
               {thinking.map((t) => (
-                <span key={t.type} data-seen={t.state !== 'NO_RECORD' || undefined} />
+                <span key={t.type} data-seen={(t.state === 'OK' || t.state === 'INSUFFICIENT_SAMPLE') || undefined} />
               ))}
             </div>
           )}
@@ -87,11 +95,11 @@ export function ParentDashboard({ child, scope }: { child: Child; scope: Scope }
               {thinking.map((t) => (
                 <li key={t.type}>
                   <span className="pd-type">
-                    <i aria-hidden="true" data-seen={t.state !== 'NO_RECORD' || undefined} />
+                    <i aria-hidden="true" data-seen={(t.state === 'OK' || t.state === 'INSUFFICIENT_SAMPLE') || undefined} />
                     {thinkingLabels[t.type]}
                   </span>
-                  {t.state === 'NO_RECORD' ? (
-                    <span className="pd-chip">미관찰</span>
+                  {t.state !== 'OK' && t.state !== 'INSUFFICIENT_SAMPLE' ? (
+                    <span className="pd-chip">{t.state === 'NO_RECORD' ? '미관찰' : stateText[t.state]}</span>
                   ) : (
                     <span className="pd-chip pd-chip-ok">{t.missions.length}개 미션에서 관찰</span>
                   )}
@@ -118,7 +126,9 @@ export function ParentDashboard({ child, scope }: { child: Child; scope: Scope }
         <QueryFeedback query={q.records} />
         {q.records.data && !q.records.error && (
           <>
-            {!q.records.data.items.length ? (
+            {q.records.data.state === 'FAILED' || q.records.data.state === 'PROCESSING' ? (
+              <p role="status">{stateText[q.records.data.state]} · 다시 조회해 주세요.</p>
+            ) : !q.records.data.items.length ? (
               <p className="pd-empty">아직 기록이 없습니다. 첫 학습 후 답변이 여기에 연결됩니다.</p>
             ) : (
               <div className="pd-table-wrap">
@@ -145,6 +155,13 @@ export function ParentDashboard({ child, scope }: { child: Child; scope: Scope }
                 </table>
               </div>
             )}
+            <nav aria-label="학습 기록 페이지">
+              <button type="button" disabled={current.page === 0}
+                onClick={() => setSelection({ key: scopeKey, page: current.page - 1, record: null })}>이전</button>
+              <span> {current.page + 1}페이지 · 전체 {q.records.data.totalElements}건 </span>
+              <button type="button" disabled={(q.records.data.page + 1) * q.records.data.size >= q.records.data.totalElements}
+                onClick={() => setSelection({ key: scopeKey, page: current.page + 1, record: null })}>다음</button>
+            </nav>
             <p className="pd-foot">
               실제 목록 기간 · {q.records.data.period.from} ~ {q.records.data.period.to} · 원문에서
               최초 답변·되묻기·보완 답변·생각 열기 이용·돌아보기를 볼 수 있고, 아이의 생각 메모는
@@ -155,7 +172,7 @@ export function ParentDashboard({ child, scope }: { child: Child; scope: Scope }
       </section>
       {record && (
         <Modal title="학습 기록 원문" onClose={() => setRecord(null)}>
-          <RecordDetail childId={child.id} id={record} />
+          <RecordDetail scope={scope} id={record} />
         </Modal>
       )}
     </div>
@@ -262,16 +279,20 @@ function ReportCard({ child }: { child: Child }) {
 }
 
 /** 학습 기록 원문: 최초 답변·되묻기·보완 답변·생각 열기 이용·돌아보기 (FN-DSH-09). 메모는 없다. */
-export function RecordDetail({ childId, id }: { childId: string; id: string }) {
-  const q = useParentQuery(['record', childId, id], (signal) =>
-    parentApi.record(childId, id, signal),
+export function RecordDetail({ scope, id }: { scope: Scope; id: string }) {
+  const q = useParentQuery(['record', scope, id], (signal) =>
+    parentApi.record(scope.childId, id, signal, scope),
   )
   return (
     <>
       <QueryFeedback query={q} />
-      {q.data && !q.error && (
+      {q.data && !q.error && ['FAILED', 'PROCESSING'].includes(q.data.state) && (
+        <p role="status">{stateText[q.data.state]} · 다시 조회해 주세요.</p>
+      )}
+      {q.data && !q.error && !['FAILED', 'PROCESSING'].includes(q.data.state) && (
         <>
           <h3>{q.data.mission.title}</h3>
+          <p>실제 조회 기간 · {q.data.period.from} ~ {q.data.period.to}</p>
           {q.data.answers.map((a) => (
             <section key={a.answerId}>
               <h4>

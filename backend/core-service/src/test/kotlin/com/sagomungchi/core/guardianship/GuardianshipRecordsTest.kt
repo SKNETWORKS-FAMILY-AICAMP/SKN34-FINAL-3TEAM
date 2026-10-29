@@ -13,6 +13,7 @@ import com.sagomungchi.core.guardianship.domain.LinkedStudent
 import com.sagomungchi.core.guardianship.repository.StudentAccessRepository
 import com.sagomungchi.core.guardianship.service.GuardianshipService
 import com.sagomungchi.core.guardianship.service.StudentAccessService
+import com.sagomungchi.core.guardianship.service.StudentLearningContextService
 import com.sagomungchi.core.learning.LearningHttpStub
 import com.sagomungchi.core.learning.client.LearningClient
 import com.sagomungchi.core.learning.client.LearningHttpProperties
@@ -32,11 +33,15 @@ class GuardianshipRecordsTest {
     private val students=List(3) { LinkedStudent(UUID.randomUUID(),"child-$it",3,2017) }
     private val access=mock(StudentAccessService::class.java)
     private val consent=mock(ConsentAccessService::class.java)
+    private val pins=mock(com.sagomungchi.core.guardianship.service.StudentPinService::class.java).also { mock ->
+        students.forEach { `when`(mock.state(it.id)).thenReturn(com.sagomungchi.core.guardianship.domain.PinState(false,false)) }
+    }
     private fun guardianship(records: LearningRecordService) = GuardianshipService(mock(StudentAccessRepository::class.java),access,
-        mock(AccountAccessService::class.java),mock(ConsentService::class.java),consent,records)
+        mock(AccountAccessService::class.java),mock(ConsentService::class.java),consent,records,pins)
     private fun records(stub: LearningHttpStub) = LearningRecordService(LearningRecordClient(LearningClient(
         InternalRestClientFactory(AppProperties(AppProperties.Internal("server-secret",Duration.ofSeconds(1),Duration.ofSeconds(30)),
-            mapOf("learning" to stub.url)),RestClient.builder()),LearningHttpProperties(Duration.ofSeconds(10))),jacksonObjectMapper()))
+            mapOf("learning" to stub.url)),RestClient.builder()),LearningHttpProperties(Duration.ofSeconds(10))),jacksonObjectMapper()),
+        access, mock(StudentLearningContextService::class.java))
 
     @Test fun `three actual HTTP requests overlap with verified context and preserve child order`() = LearningHttpStub().use { stub ->
         `when`(access.linkedStudents(user)).thenReturn(students)

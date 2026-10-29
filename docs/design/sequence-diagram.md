@@ -173,7 +173,7 @@ sequenceDiagram
     C-->>P: 200 {pairingCode, expiresAt} → QR 표시
   end
   K->>C: POST /auth/student/devices {pairingCode, label}
-  C->>R: 코드 조회 후 즉시 삭제
+  C->>R: IP 시도 제한, 원자적 코드 조회·삭제
   alt 없음·만료·재사용
     C-->>K: 400 PAIRING_CODE_INVALID
   else
@@ -196,7 +196,7 @@ sequenceDiagram
   participant DB as core_db
 
   K->>C: GET /auth/student/profiles (Cookie student_device)
-  C-->>K: 200 [{childId, nickname, pinSet, pinLocked}]
+  C-->>K: 200 {items:[{childId, nickname, pinSet, pinLocked}]}
   Note over K: 자녀 프로필 선택 → PIN 입력
   K->>C: POST /auth/student/login {childId, pin} (Cookie student_device)
   C->>DB: student_device token_hash 조회·미해제·미만료·자녀 등록 확인
@@ -349,7 +349,7 @@ sequenceDiagram
       L-->>C: 503 AI_UNAVAILABLE retryable
     else 정상
       rect rgba(128,128,128,0.12)
-        L->>DB: judgment DONE + judgment_element + followup + 버전 저장 (획득한 리스일 때만, 리스를 잃었으면 저장 없이 현재 상태)
+        L->>DB: attempt 행 잠금(FOR UPDATE)·마무리 여부 다시 확인 → judgment DONE + judgment_element + followup(마무리 전일 때만) + 버전 저장 (획득한 리스일 때만, 리스를 잃었으면 저장 없이 현재 상태)
       end
       L-->>C: 200 FeedbackResult
     end
@@ -381,6 +381,7 @@ sequenceDiagram
 
   W->>C: POST /attempts/{id}/finish
   C->>L: POST /internal/attempts/{id}/finish
+  L->>DB: attempt 행 잠금(FOR UPDATE)·본인 시도 확인 (이미 마무리했으면 기록 없이 같은 결과)
   L->>DB: 타임라인(답변·판정·되묻기) 조회
   L->>L: FinishPolicy.canFinish (판정 DONE 1회 이상, P04)
   alt 조건 미충족
@@ -393,14 +394,15 @@ sequenceDiagram
   end
   opt 자기 평가 (선택)
     W->>C: POST /attempts/{id}/self-assessment
-    C->>L: POST /internal/attempts/{id}/self-assessment
-    L-->>C: 자기 체크 저장 (판정·원본 불변), AI 확인 항목과 나란히 반환
+    C->>L: POST /internal/attempts/{id}/self-assessment {checks}
+    L-->>C: 자기 체크 저장 (판정·원본 불변), AI 확인 항목과 나란히 반환 (마무리 전·완료 뒤 409)
     C-->>W: 200
   end
-  W->>C: POST /attempts/{id}/reflection {difficulty, changedText}
+  W->>C: POST /attempts/{id}/reflection {difficulty, text}
   C->>L: POST /internal/attempts/{id}/reflection
-  alt finished_at 없음 (마무리 전)
-    L-->>C: 409 REVEAL_CONDITION_UNMET
+  L->>DB: attempt 행 잠금(FOR UPDATE)·본인 시도 확인
+  alt finished_at 없음 (마무리 전) 또는 이미 완료
+    L-->>C: 409 REVEAL_CONDITION_UNMET (완료 뒤면 ATTEMPT_CLOSED)
     C-->>W: 409
   else
     rect rgba(128,128,128,0.12)
@@ -939,3 +941,5 @@ sequenceDiagram
 - `report.started`·`report.completed` 순서 역전 허용 (상태 다이어그램 4.1)
 - 정기 청구 재시도(7.3): ERD 부분 UK `(subscription_id, billing_period_start) WHERE kind = 'RENEWAL'` 때문에 같은 기간 새 주문 불가. 가정은 "기존 주문의 결제가 `FAILED`면 같은 주문으로 재청구". PG 주문번호 재사용 가능 여부 확인 후 ERD 반영 필요
 - 웹훅 처리 실패 시 5xx 응답으로 PG 재전송 유도(7.2): 토스페이먼츠 재전송 정책 확인 필요
+
+#58 단독 로그인은 계정 행 잠금 → 기기 유효/등록 자녀 → 현재 연결·활성·동의 → PIN 설정·잠금·일치 순으로 재검사한다. 실패 횟수 커밋 후 401/423 응답한다. 성공은 별도 STUDENT auth_session을 생성하며 부모 세션을 변경하지 않는다. PIN 변경은 계정 잠금 → 현재 자녀 권한 → 학생 잠금 → DB 재인증 consume → PIN 갱신·감사 기록을 한 트랜잭션으로 실행한다.

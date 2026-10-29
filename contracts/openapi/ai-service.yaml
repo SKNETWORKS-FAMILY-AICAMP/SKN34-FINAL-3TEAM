@@ -3,7 +3,7 @@ info:
   title: ai 내부 API
   version: 1.0.0
   description: learning·core가 호출하는 ai-service 내부 API (api-spec 4.2). 구현된 경로만 담는다. 스키마는 FastAPI(pydantic) 생성 결과에서 옮겼고 필드 이름은
-    camelCase 별칭이다. 분석 에이전트·리포트 서술(#64·#66)은 구현 시 추가한다. 헬스 체크(/health/*)는 제외한다.
+    camelCase 별칭이다. 리포트 서술은 구현 시 추가한다. 헬스 체크(/health/*)는 제외한다.
 servers:
 - url: /internal
 security:
@@ -93,6 +93,41 @@ paths:
                   properties:
                     retryable:
                       type: boolean
+  /analysis/stream:
+    post:
+      summary: 분석 대화 (api-spec 3.3·4.2). 질문 분류·범위 확인 → learning 기록 조회 → 코드 계산 → 답변 → 숫자·인용 대조, 실패 시 규칙 응답(TEMPLATE)
+      operationId: analysis_stream
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalysisRequest'
+      responses:
+        '200':
+          description: text/event-stream. `status`(진행 상황, 여러 번) 뒤에 셋 중 하나로 끝난다. `result`(AnalysisResult) 다음 `done`({}), `clarification`(AnalysisClarification, 범위 확인 후 종료), `error`(AnalysisStreamError, 기록 조회 실패 등). `delta`는 보내지 않는다(대조 통과 전 임시 텍스트 미노출). result의 messageId·scope.changed는 core가 붙인다.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          description: VALIDATION_FAILED (`errors[]`에 필드별 사유)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: UNAUTHENTICATED (내부 토큰 불일치)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: FORBIDDEN (scope.studentId가 X-Student-Scope 밖, 스트림 시작 전)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /versions:
     get:
       summary: '현재 프롬프트 버전 (코드 상수, model.version.activated 수신 교체는 #68)'
@@ -443,6 +478,264 @@ components:
           anyOf:
           - type: string
           - type: 'null'
+      type: object
+    AnalysisClarification:
+      description: 범위 확인 요청. 보낸 뒤 스트림 종료, 사용자 선택을 scope에 담아 다시 질문 (API 3.3).
+      properties:
+        reason:
+          enum:
+          - OTHER_CHILD
+          - DIFFERENT_PERIOD
+          - UNCLEAR
+          type: string
+        message:
+          type: string
+        current:
+          $ref: '#/components/schemas/AnalysisResultScope'
+      required:
+      - reason
+      - message
+      - current
+      type: object
+    AnalysisEvidence:
+      properties:
+        attemptId:
+          type: string
+        missionTitle:
+          type: string
+        answerId:
+          anyOf:
+          - type: string
+          - type: 'null'
+        answerVersion:
+          anyOf:
+          - type: integer
+          - type: 'null'
+        submittedAt:
+          anyOf:
+          - type: string
+          - type: 'null'
+        quote:
+          type: string
+        available:
+          default: true
+          type: boolean
+      required:
+      - attemptId
+      - missionTitle
+      - answerId
+      - answerVersion
+      - submittedAt
+      - quote
+      type: object
+    AnalysisFallback:
+      properties:
+        reason:
+          enum:
+          - VERIFICATION_FAILED
+          - AI_UNAVAILABLE
+          type: string
+      required:
+      - reason
+      type: object
+    AnalysisLlmVersions:
+      properties:
+        model:
+          anyOf:
+          - type: string
+          - type: 'null'
+        prompt:
+          type: string
+      required:
+      - model
+      - prompt
+      type: object
+    AnalysisMetric:
+      description: learning Metric과 같은 모양. 건수 지표는 value null, 분자·분모 = 건수 (Metric.count).
+      properties:
+        label:
+          type: string
+        value:
+          anyOf:
+          - type: number
+          - type: 'null'
+        count:
+          type: integer
+        numerator:
+          type: integer
+        denominator:
+          type: integer
+        formula:
+          type: string
+        period:
+          $ref: '#/components/schemas/AnalysisPeriod'
+        sourceType:
+          const: RECORD
+          default: RECORD
+          type: string
+        state:
+          enum:
+          - OK
+          - NO_RECORD
+          - INSUFFICIENT_SAMPLE
+          - PROCESSING
+          - FAILED
+          type: string
+      required:
+      - label
+      - value
+      - count
+      - numerator
+      - denominator
+      - formula
+      - period
+      - state
+      type: object
+    AnalysisPeriod:
+      properties:
+        from:
+          format: date
+          type: string
+        to:
+          format: date
+          type: string
+      required:
+      - from
+      - to
+      type: object
+    AnalysisRequest:
+      properties:
+        conversationId:
+          type: string
+        question:
+          maxLength: 1000
+          minLength: 1
+          type: string
+        scope:
+          $ref: '#/components/schemas/AnalysisScope'
+        history:
+          items:
+            $ref: '#/components/schemas/AnalysisTurn'
+          maxItems: 20
+          type: array
+      required:
+      - conversationId
+      - question
+      - scope
+      type: object
+    AnalysisResult:
+      properties:
+        answer:
+          type: string
+        source:
+          enum:
+          - LLM
+          - TEMPLATE
+          type: string
+        fallback:
+          anyOf:
+          - $ref: '#/components/schemas/AnalysisFallback'
+          - type: 'null'
+        scope:
+          $ref: '#/components/schemas/AnalysisResultScope'
+        metrics:
+          items:
+            $ref: '#/components/schemas/AnalysisMetric'
+          type: array
+        evidence:
+          items:
+            $ref: '#/components/schemas/AnalysisEvidence'
+          type: array
+        verification:
+          anyOf:
+          - $ref: '#/components/schemas/AnalysisVerification'
+          - type: 'null'
+        recordCount:
+          type: integer
+        versions:
+          $ref: '#/components/schemas/AnalysisLlmVersions'
+      required:
+      - answer
+      - source
+      - fallback
+      - scope
+      - metrics
+      - evidence
+      - verification
+      - recordCount
+      - versions
+      type: object
+    AnalysisResultScope:
+      properties:
+        childId:
+          type: string
+        from:
+          format: date
+          type: string
+        to:
+          format: date
+          type: string
+      required:
+      - childId
+      - from
+      - to
+      type: object
+    AnalysisScope:
+      description: core가 권한·범위를 확인해 넘긴 자녀·기간. 그래프는 이 값만 조회에 씀 (FN-AGT-03).
+      properties:
+        studentId:
+          minLength: 1
+          type: string
+        from:
+          format: date
+          type: string
+        to:
+          format: date
+          type: string
+      required:
+      - studentId
+      - from
+      - to
+      type: object
+    AnalysisStreamError:
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        retryable:
+          type: boolean
+      required:
+      - code
+      - message
+      - retryable
+      type: object
+    AnalysisTurn:
+      description: 같은 대화의 이전 질문·답변. 맥락 파악에만 쓰고 이전 범위의 기록은 섞지 않음 (FN-AGT-08).
+      properties:
+        role:
+          enum:
+          - USER
+          - ASSISTANT
+          type: string
+        text:
+          type: string
+      required:
+      - role
+      - text
+      type: object
+    AnalysisVerification:
+      properties:
+        numbersMatched:
+          type: boolean
+        quotesMatched:
+          type: boolean
+        contentAllowed:
+          type: boolean
+      required:
+      - numbersMatched
+      - quotesMatched
+      - contentAllowed
       type: object
     Problem:
       type: object

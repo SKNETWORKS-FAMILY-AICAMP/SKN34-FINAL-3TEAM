@@ -1,5 +1,6 @@
 package com.sagomungchi.learning.mission.controller
 
+import com.sagomungchi.learning.mission.domain.Category
 import com.sagomungchi.learning.mission.domain.Choice
 import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.domain.MissionListItem
@@ -16,7 +17,7 @@ data class PageResponse<T>(
     val totalElements: Long,
 )
 
-/** 미션 상세. 필드 이름은 프론트 Mission 모델(api-spec 3.7·3.8), 안내는 hint */
+/** 미션 상세. 필드 이름은 프론트 Mission 모델(api-spec 3.7·3.8), 안내는 hint. categories는 분류 그룹, answerUnit은 수학 답 칸 뒤 단위 (#79) */
 data class MissionResponse(
     val id: UUID,
     val title: String,
@@ -31,6 +32,8 @@ data class MissionResponse(
     val staticSceneUri: String?,
     val choices: List<Choice>,
     val inputTemplate: List<String>,
+    val categories: List<Category>,
+    val answerUnit: String?,
 ) {
     companion object {
         fun from(mission: MissionView) = MissionResponse(
@@ -47,6 +50,8 @@ data class MissionResponse(
             staticSceneUri = mission.staticSceneUri,
             choices = mission.choices,
             inputTemplate = mission.inputTemplate,
+            categories = mission.categories,
+            answerUnit = mission.answerUnit,
         )
     }
 }
@@ -66,6 +71,8 @@ data class MissionListItemResponse(
     val staticSceneUri: String?,
     val choices: List<Choice>,
     val inputTemplate: List<String>,
+    val categories: List<Category>,
+    val answerUnit: String?,
     val status: ProgressStatus,
     val attemptId: UUID?,
     val position: Int,
@@ -88,6 +95,8 @@ data class MissionListItemResponse(
                 staticSceneUri = mission.staticSceneUri,
                 choices = mission.choices,
                 inputTemplate = mission.inputTemplate,
+                categories = mission.categories,
+                answerUnit = mission.answerUnit,
                 status = item.progress.status,
                 attemptId = item.progress.attemptId,
                 position = item.position,

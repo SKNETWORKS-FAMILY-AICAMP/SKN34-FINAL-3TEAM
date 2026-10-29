@@ -5,7 +5,7 @@ import uuid
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.exceptions import RequestValidationError
+from fastapi.exceptions import RequestValidationError, ResponseValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -73,6 +73,14 @@ def problem(
 
 
 def register_error_handlers(app: FastAPI) -> None:
+    @app.exception_handler(ResponseValidationError)
+    async def handle_response_validation(
+        request: Request, exc: ResponseValidationError
+    ) -> JSONResponse:
+        # Validation error repr can contain student answer text; do not log its body.
+        logger.error("리포트 응답 스키마 검증 실패")
+        return problem(request, 500, "INTERNAL_ERROR", "응답 데이터를 확인해야 합니다")
+
     @app.exception_handler(ApiError)
     async def handle_api_error(request: Request, exc: ApiError) -> JSONResponse:
         return problem(request, exc.status, exc.code, exc.title, exc.detail, **exc.extra)

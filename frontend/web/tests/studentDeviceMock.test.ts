@@ -28,8 +28,9 @@ async function parentLogin() {
   parentToken = r.body.accessToken
   return parentToken
 }
-async function reauth() {
-  const r = await call('/me/reauth', { method: 'POST', body: JSON.stringify({ password: 'demo-only' }), token: parentToken })
+async function reauth(childId: string) {
+  const started = await call('/me/reauth', { method: 'POST', body: JSON.stringify({ purpose: 'PIN_CHANGE', childId }), token: parentToken })
+  const r = await call('/me/reauth', { method: 'POST', body: JSON.stringify({ challengeId: started.body.challengeId }), token: parentToken })
   return r.body.reauthToken as string
 }
 async function setPin(childId: string, pin: string) {
@@ -37,7 +38,7 @@ async function setPin(childId: string, pin: string) {
     method: 'PUT',
     body: JSON.stringify({ pin }),
     token: parentToken,
-    headers: { 'X-Reauth-Token': await reauth() },
+    headers: { 'X-Reauth-Token': await reauth(childId) },
   })
 }
 async function pair(childIds: string[]) {

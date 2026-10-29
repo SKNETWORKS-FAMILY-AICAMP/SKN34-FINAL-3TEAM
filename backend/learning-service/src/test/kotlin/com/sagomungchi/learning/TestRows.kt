@@ -21,6 +21,8 @@ class TestRows(private val jdbc: JdbcTemplate) {
         inputType: String = "NARRATIVE",
         choices: String? = null,
         inputTemplate: String? = null,
+        categories: String? = null,
+        answerUnit: String? = null,
     ): SeededMission {
         val id = UUID.randomUUID()
         jdbc.update(
@@ -28,7 +30,7 @@ class TestRows(private val jdbc: JdbcTemplate) {
                VALUES (?, ?, ?, ?, 1, ?, ?, ?)""",
             id, "TEST-$id", status, demoOnly, author, now, now,
         )
-        val versionId = addVersion(id, version = 1, title = title, grade = grade, inputType, choices, inputTemplate)
+        val versionId = addVersion(id, version = 1, title = title, grade = grade, inputType, choices, inputTemplate, categories, answerUnit)
         val rubricVersionId = UUID.randomUUID()
         jdbc.update(
             "INSERT INTO rubric_version (id, mission_id, version, created_by, created_at) VALUES (?, ?, 1, ?, ?)",
@@ -49,7 +51,7 @@ class TestRows(private val jdbc: JdbcTemplate) {
         return SeededMission(id, versionId, rubricVersionId, hintIds)
     }
 
-    /** 미션 버전 추가 (현재 버전으로 바꾸지는 않음). choices·inputTemplate은 JSON 문자열 */
+    /** 미션 버전 추가 (현재 버전으로 바꾸지는 않음). choices·inputTemplate·categories는 JSON 문자열 */
     fun addVersion(
         missionId: UUID,
         version: Int,
@@ -58,20 +60,22 @@ class TestRows(private val jdbc: JdbcTemplate) {
         inputType: String = "NARRATIVE",
         choices: String? = null,
         inputTemplate: String? = null,
+        categories: String? = null,
+        answerUnit: String? = null,
     ): UUID {
         val id = UUID.randomUUID()
         jdbc.update(
             """INSERT INTO mission_version (id, mission_id, version, title, subject, grade_min, grade_max,
-                   thinking_type, input_type, question, choices, input_template, created_by, created_at)
-               VALUES (?, ?, ?, ?, '과학', ?, ?, 'ANALYZE', ?, '질문', ?::jsonb, ?::jsonb, ?, ?)""",
-            id, missionId, version, title, grade, grade, inputType, choices, inputTemplate, author, now,
+                   thinking_type, input_type, question, choices, input_template, categories, answer_unit, created_by, created_at)
+               VALUES (?, ?, ?, ?, '과학', ?, ?, 'ANALYZE', ?, '질문', ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?)""",
+            id, missionId, version, title, grade, grade, inputType, choices, inputTemplate, categories, answerUnit, author, now,
         )
         return id
     }
 
     /**
      * 판정용 기준표: 요소(sort_order 순 ID를 돌려줌)와 정답 키·금지어(JSON 문자열)·예시 답.
-     * goodThought는 "들어가면 좋은 생각"인 요소의 순번(0부터)
+     * goodThought는 "들어가면 좋은 생각"인 요소의 순번(0부터). finalAnswer면 마지막에 최종 답 요소(FINAL_ANSWER)를 더함
      */
     fun rubric(
         mission: SeededMission,
@@ -80,17 +84,20 @@ class TestRows(private val jdbc: JdbcTemplate) {
         forbiddenTerms: String? = null,
         exampleAnswer: String? = null,
         goodThought: Set<Int> = emptySet(),
+        finalAnswer: Boolean = false,
     ): List<UUID> {
         jdbc.update(
             "UPDATE rubric_version SET answer_key = ?::jsonb, forbidden_terms = ?::jsonb, example_answer = ? WHERE id = ?",
             answerKey, forbiddenTerms, exampleAnswer, mission.rubricVersionId,
         )
-        return elements.mapIndexed { index, label ->
+        val codes = elements.indices.map { "e${it + 1}" } + listOfNotNull("FINAL_ANSWER".takeIf { finalAnswer })
+        val labels = elements + listOfNotNull("최종 답".takeIf { finalAnswer })
+        return labels.mapIndexed { index, label ->
             UUID.randomUUID().also {
                 jdbc.update(
                     """INSERT INTO rubric_element (id, rubric_version_id, code, label, description, points, good_thought,
                            judge_verified, sort_order) VALUES (?, ?, ?, ?, ?, 1, ?, false, ?)""",
-                    it, mission.rubricVersionId, "e${index + 1}", label, "$label 설명", index in goodThought, index + 1,
+                    it, mission.rubricVersionId, codes[index], label, "$label 설명", index in goodThought, index + 1,
                 )
             }
         }
@@ -102,6 +109,25 @@ class TestRows(private val jdbc: JdbcTemplate) {
             "INSERT INTO followup_bank_question (id, type, question, active, created_at) VALUES (?, ?, ?, true, ?)",
             it, type, question, now.plusMinutes(minutesLater),
         )
+    }
+
+    /**
+     * 답변의 판정을 처리 완료(DONE)로 (판정 실행은 피드백 API라 테스트에서 직접). elements는 기준표 요소 ID와 근거 구절,
+     * 구절이 null이면 미충족
+     */
+    fun judged(answerId: UUID, elements: List<Pair<UUID, String?>> = emptyList(), result: String = "PARTIAL", heldReason: String? = null) {
+        val judgmentId = jdbc.queryForObject("SELECT id FROM judgment WHERE answer_id = ?", UUID::class.java, answerId)
+        jdbc.update(
+            "UPDATE judgment SET process_status = 'DONE', result = ?, held_reason = ?, method = 'LLM', trial = true, completed_at = ? WHERE id = ?",
+            result, heldReason, now, judgmentId,
+        )
+        elements.forEach { (elementId, quote) ->
+            jdbc.update(
+                """INSERT INTO judgment_element (id, judgment_id, rubric_element_id, quote, verified, satisfied, source_type)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                UUID.randomUUID(), judgmentId, elementId, quote, quote != null, quote != null, quote?.let { "AI_OBSERVATION" },
+            )
+        }
     }
 
     /** 답변의 판정에서 나온 되묻기 (되묻기 생성은 #25라 테스트에서 직접 넣음) */

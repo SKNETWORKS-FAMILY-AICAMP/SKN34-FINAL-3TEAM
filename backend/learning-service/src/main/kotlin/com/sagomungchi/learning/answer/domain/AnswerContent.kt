@@ -28,7 +28,7 @@ data class AnswerContent(
 
     /**
      * 필요한 선택·입력이 빠지면 422 ANSWER_INCOMPLETE (api-spec 1.3, FN-LRN-04·05).
-     * 규칙은 프론트 validateAnswer와 같음. 분류의 그룹 ID는 저장 위치가 없어 비어 있지 않은지만 확인
+     * 규칙은 프론트 validateAnswer와 같음. 분류는 미션 그룹(categories)에 있는 그룹에만 넣어야 함 (#79)
      */
     fun requireComplete(inputType: InputType, mission: MissionView) {
         val choiceIds = mission.choices.map { it.id }
@@ -49,10 +49,11 @@ data class AnswerContent(
                     .takeIf { choiceIds.isEmpty() || this.choiceIds.orEmpty().sorted() != choiceIds.sorted() }
             InputType.CLASSIFICATION -> {
                 val assigned = assignments.orEmpty()
+                val categoryIds = mission.categories.map { it.id }.toSet()
                 "모든 항목을 알맞은 그룹에 한 번씩 넣어 주세요.".takeIf {
                     choiceIds.isEmpty() ||
                         assigned.map { it.choiceId }.sorted() != choiceIds.sorted() ||
-                        assigned.any { it.categoryId.isBlank() }
+                        assigned.any { it.categoryId !in categoryIds }
                 }
             }
         }
@@ -61,7 +62,7 @@ data class AnswerContent(
 
     /**
      * 판정 인용 대조용 원문 (ERD answer.plain_text, #25 판정 입력). 논술·풀이 단계는 미션 입력 틀의 칸 이름을 붙임.
-     * 고르기·순서는 선택지 이름을 순서대로
+     * 고르기·순서는 선택지 이름을 순서대로, 분류는 "선택지 이름: 그룹 이름", 풀이 최종 답에는 미션 답 단위를 붙임
      */
     fun plainText(inputType: InputType, mission: MissionView): String {
         val labels = mission.choices.associate { it.id to it.label }
@@ -71,7 +72,9 @@ data class AnswerContent(
                 val stepLines = steps.orEmpty().mapIndexedNotNull { index, step ->
                     step.takeIf { it.isNotBlank() }?.let { "${mission.inputTemplate.getOrElse(index) { "단계 ${index + 1}" }}: $it" }
                 }
-                (stepLines + "최종 답: ${finalAnswer.orEmpty()}").joinToString("\n")
+                val answer = finalAnswer.orEmpty().trim()
+                val unit = mission.answerUnit?.takeUnless { answer.endsWith(it) }
+                (stepLines + "최종 답: ${listOfNotNull(answer, unit).joinToString(" ")}").joinToString("\n")
             }
             InputType.ESSAY -> {
                 val essay = checkNotNull(essay)
@@ -82,8 +85,10 @@ data class AnswerContent(
                     .joinToString("\n")
             }
             InputType.CHOICE, InputType.ORDERING -> choiceIds.orEmpty().joinToString(" → ") { labels[it] ?: it }
-            InputType.CLASSIFICATION ->
-                assignments.orEmpty().joinToString("\n") { "${labels[it.choiceId] ?: it.choiceId}: ${it.categoryId}" }
+            InputType.CLASSIFICATION -> {
+                val groups = mission.categories.associate { it.id to it.label }
+                assignments.orEmpty().joinToString("\n") { "${labels[it.choiceId] ?: it.choiceId}: ${groups[it.categoryId] ?: it.categoryId}" }
+            }
         }
     }
 

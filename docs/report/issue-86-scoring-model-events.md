@@ -39,8 +39,6 @@ API와 이벤트의 wire 계약은 변경하지 않는다. 기존 EventEnvelope�
 - `/internal/versions`의 두 레플리카 revision을 비교하고, 파일 없는 교체 시 이전 버전 유지, 브로커 중단 중 활성화 후 재연결 복구, 임시 다운로드 정리를 검사한다.
 - 테스트 자격 증명·Compose 파일·결과 JSON은 Git 밖 `../tmp/issue86-events-20261029/`에 둔다. 테스트 전용 컨테이너·볼륨은 종료 시 정리한다.
 
-## 완료 범위의 경계
-
 ## 실행 결과 (2026-10-29)
 
 - scoring 전체 자동 테스트 **72개 통과**. Ruff check·format 통과.
@@ -51,6 +49,9 @@ API와 이벤트의 wire 계약은 변경하지 않는다. 기존 EventEnvelope�
 - 원본 2.0 모델을 활용한 로컬 연동 확인이며 모델 가중치는 Git에 추가하지 않았다.
 - 결과: Git 외부 `../tmp/issue86-events-20261029/results.json`,
   테스트 XML `../tmp/issue86-pytest-20261029.xml`.
+- 최신 develop `c608f52` 병합 시 `.env.example`·`compose.minio.yaml`의 report와 scoring
+  MinIO 설정이 같은 위치에 추가되어 충돌했다. 양쪽 서비스 설정을 모두 보존하여 해결했다.
+  scoring 실행 코드의 develop 변경은 timeout 주석 정리뿐이며 모델 교체 동작은 동일하다.
 
 ## 후속 연결 검증
 
