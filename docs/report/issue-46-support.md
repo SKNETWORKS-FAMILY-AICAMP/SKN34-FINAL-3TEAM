@@ -59,12 +59,12 @@ learning 실제 controller와 OpenAPI에는 정정·대상 확인·관리자 원
 
 ## PR 준비 초안
 
-- head: `feature/core-support`, base: `develop`. PR은 사용자가 직접 생성한다.
+- head: `feature/core-support`, 임시 PR base: `feature/core-support-payments-integration`. 최종 통합 대상은 `develop`이며 PR은 사용자가 직접 생성한다.
 - 제목: `feat: 신고·문의·공지·도움말과 처리 결과 알림 구현`
-- learning 공급자 구현/계약 수용 및 실제 연동은 미완료다. 아래 PR 초안은 Refs #46으로 연결만 하며 실제 공급자·E2E 완료 전에는 #46을 닫지 않는다.
+- learning 공급자 구현/계약 수용 및 실제 연동은 미완료다. 아래 초안의 Closes #46은 기본 브랜치가 아닌 임시 base PR의 병합만으로 자동 종료되지 않는다. 최종 develop 통합 PR에도 실제 해결 범위 확인 후 Closes #46을 포함하며, 공급자·E2E 미완료 상태를 완료로 표시하지 않는다.
 
 ```markdown
-Refs #46
+Closes #46
 
 신고·문의·공지·역할별 도움말을 core API로 구현하고 보호자 처리 결과를 기존 알림 저장·커밋 후 Redis 전달에 연결합니다.
 
@@ -74,13 +74,13 @@ Refs #46
 - 문의 답변 불변, 공지 역할·공개 기간·종료 이력, 인증된 도움말·공지 조회
 - V14와 최소 프론트 정정 계약·알림 결과 조회 경로, 기존 V13 보존
 
-검증: core 204개 테스트·bootJar, 프론트 83개·lint·build, 계약 56개 및 실제 JSON/이벤트 대조, 전체 DB migration/ERD cycle, 격리 core에 대한 실제 프론트 API 소비자 연결 통과.
+검증: c608f52 통합 기준 core 222개 테스트·bootJar, 프론트 92개·lint·build, 계약 63개 및 실제 JSON/이벤트 대조, 전체 DB migration/ERD cycle 통과. 임시 base는 동일 c608f52이므로 이 결과를 재사용한다. #46/#48 동시 통합 검증 및 실제 learning 공급자 E2E를 완료했다는 의미는 아니다.
 
 한계: learning 대상 확인·관리자 원문·정정 API는 아직 공급자 구현이 없어 계약 HTTP 대역으로 검증했습니다. 실제 learning 정정·집계·대화·리포트 반영, 실제 Google/브라우저 E2E·원격 CI·배포는 완료로 표시하지 않습니다. 필요한 공급자 계약은 contracts/openapi/support-learning-required.yaml과 docs/report/issue-46-support.md를 참고합니다.
 ```
 
 
-PR 메타데이터 후보(최종 준비 시 실제 등록값 재조회): `enhancement`(신규 기능) + `area:core`, 스키마·소비자 범위 보조로 `area:db`·`area:web`. 조직 Issue Type 목록 API는 401로 조회할 수 없어 Type 후보를 추정하지 않았다. 실제 저장소 기본 브랜치도 develop으로 확인했다. 공급자 실연동이 미완료이므로 현재 PR 초안은 `Refs #46`을 사용하고 #46은 열어둔다. 자동 종료 구문은 실제 해결 범위를 충족한 최종 연동 PR에서만 사용한다. PR은 아직 생성하지 않았으며 공급자 실연동 미완료를 초안에 명시했다.
+PR 메타데이터 후보(최종 준비 시 실제 등록값 재조회): `enhancement`(신규 기능) + `area:core`, 스키마·소비자 범위 보조로 `area:db`·`area:web`. 조직 Issue Type 목록 API는 401로 조회할 수 없어 Type 후보를 추정하지 않았다. 실제 저장소 기본 브랜치도 develop으로 확인했다. 현재 임시 PR base는 기본 브랜치가 아니므로 초안의 `Closes #46`은 이 PR 병합만으로 자동 종료되지 않는다. 최종 develop 통합 PR에도 실제 해결 범위를 확인한 뒤 `Closes #46`을 포함한다. 공급자 실연동 미완료는 별도로 유지한다. PR은 아직 생성하지 않았으며 공급자 실연동 미완료를 초안에 명시했다.
 
 
 ## #80 담당자 전달 계약 보완 (2026-10-28)
@@ -139,3 +139,12 @@ PR 메타데이터 후보(최종 준비 시 실제 등록값 재조회): `enhanc
 - 새 격리 PostgreSQL의 전체 migration cycle·ERD 대조 통과: core 40테이블/365컬럼, learning 19/158, report 7/50, 위반 입력 60건·CHECK 71집합·ERD 인덱스 23개. core V14와 learning V6·report 삭제 guard가 함께 적용됐으며 재실행 0건·이력 불변·report downgrade/upgrade 후 재대조도 통과했다. 기존 공유 서비스·DB는 수정하지 않았다.
 - 실제 테스트가 생성한 support 7종·알림 2종·report 이벤트 4종/HTTP 상세의 JSON 계약 대조 통과. `git diff --check`와 staged diff 공백 검사 통과, 충돌 마커·unmerged path 없음.
 - 충돌 해결 중 기반영 production 로직·설정·계약을 별도로 수정할 필요가 없었다. 수동 수정은 OpenAPI의 additive 접합과 이 보고서 기록이다. 실제 #80/별도 조회 공급자 E2E·Google/브라우저 실검증·원격 CI·배포를 이번 병합 검증에서 완료했다고 표시하지 않는다.
+
+
+## #46/#48 임시 공용 PR base 변경 (2026-10-29)
+
+- #48 채팅의 사용자 직접 지시를 확인하고 `feature/core-support-payments-integration`을 #46 PR base로 사용한다. head는 기존 `feature/core-support`를 유지한다. develop과 기존 feature/core-integration은 수정하지 않는다. PR 생성은 사용자가 직접 수행한다.
+- 확인 시점의 원격 새 base와 원격 develop은 모두 `c608f52aa0f7b651133603a629a8347be61b3282`다. 검증 완료 head `fb5acffd2d480eb5090f276474e0eb8d0ba3ba77`가 새 base를 이미 포함하고 두 기준 tree가 같음을 확인했다. 따라서 코드 재병합·애플리케이션 재검증·기존 이력 재작성 없이 PR 준비 문서만 갱신한다. 문서 경로/설명과 git diff --check를 확인한다.
+- 임시 흐름은 `feature/core-support`·`feature/core-payments` → `feature/core-support-payments-integration` → `develop`이다. 기본 브랜치는 develop이므로 임시 base PR의 Closes #46은 해당 병합만으로 자동 종료되지 않는다. 최종 develop 통합 PR에도 실제 해결 범위를 확인한 Closes #46이 필요하며, 아직 미완료인 공급자 연동을 완료로 표기하지 않는다.
+- #46은 V14__support_scope_and_correction_requests.sql, #48은 V15__payment_execution_and_entitlements.sql을 사용한다. #48 V15에도 V14를 #46에 예약했다는 주석이 있음을 실제 브랜치에서 확인했다. 두 PR이 공용 base에 반영된 뒤 V14 → V15가 함께 존재하는 최종 산출물로 fresh DB 및 적용 순서를 검증한다. V15만 먼저 공유 DB에 적용한 뒤 V14를 나중에 끼워 넣는 순서는 피한다. 번호 변경·기존 migration 수정·outOfOrder 설정 변경으로 우회하지 않는다.
+- 현재 새 base에는 아직 #46/#48 기능이 함께 반영된 상태가 아니다. 이번 base 변경 확인을 결제+지원 통합 테스트·두 migration 동시 적용·실제 정정 E2E의 완료로 보고하지 않는다. 공유 실행 서비스/DB와 다른 채팅 파일을 수정하지 않았다.
