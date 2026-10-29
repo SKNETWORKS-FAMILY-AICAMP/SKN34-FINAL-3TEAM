@@ -93,7 +93,7 @@
 | 상품 권한 | core·상품 | #48 실제 판정 연결, #129 조회 헤더·최종 권한 확인(11장) |
 | 표시 이름 | core | AI 전송 전 이름 가림·파일 제목용 닉네임 내부 조회 경로 |
 | 생성기 조립 | report | worker 기본 생성기를 계산 → 서술 → 렌더링으로 연결 |
-| 삭제 전체 | learning·core | learning `student.deleted` 소비·완료 보고, 삭제 학생의 queued job 정리·늦은 이벤트 무시 |
+| 삭제 전체 | learning·core | learning `student.deleted` 소비·완료 보고. core 미종료 작업 정리·늦은 이벤트 차단은 #132(12장) |
 | 운영 | 인프라 | 운영 S3·IAM/IRSA·공개 endpoint, Chromium `/tmp` writable volume, guard 표식 보존·SIGTERM 유예·DLQ 복구 |
 
 ## 10. 로컬 #56 작업과 이전 통합 검증 기록
@@ -176,3 +176,33 @@ develop `f9df2d3` 기준 #56에서 기본 worker와 실제 core 별명 API를 �
 - 이번 병합 후 `python -O -m unittest discover -s scripts/tests -q` **76개 통과**, `git diff --check`·staged 공백 검사 통과, 미해결 충돌 없음. 이동된 ai 모듈의 이전 import·테스트 파일명 참조도 확인했다.
 - core/report의 전체 소스·테스트·빌드 트리가 이전 검증본과 동일해 core 323개·bootJar, report 조회 31개, 실제 연결 5개 시나리오는 반복하지 않았다. 위 결과는 이전 실행 결과이며 이번 병합에서 새로 실행한 것으로 집계하지 않는다. 새 upstream 기능 전체의 학습·모델·삭제 E2E는 #129의 변경 검증 범위가 아니다.
 - PR 대상과 저장소 기본 브랜치는 모두 develop이며, 전체 #129 완료 범위에 `Closes #129`를 사용한다. PR 생성은 사용자가 수행한다.
+
+## 12. 종료 이벤트 유실 복구 (#132)
+
+2026-10-29 사용자 승인: v1 이벤트 변경 대신 core 주기 점검과 report 실제 상태 복구, 삭제 연동을 채택한다. 기준 develop `14a97f8`. 기본 1분 주기/생성 후 60분 후보 선정은 운영 정책이며 성능 측정/강제 실행 종료 시간이 아니다. #129 이용권·full/free 파일 선택·최종 권한 확인은 보존한다.
+
+- 종료 이벤트 유실은 저장된 결과 재조회, 행 생성 전 실패/DLQ는 영구 job guard, 고아 RUNNING은 기존 session 잠금 획득 후 실패 종료로 처리한다. 실행 중 BUSY/DB·통신 장애/식별 불일치는 종료로 단정하지 않는다.
+- guard의 보존·학생 삭제 시 제거와 영구 삭제 표식 승계는 ERD의 #132 절을 따른다. 원문은 저장하지 않는다. reportId 없는 실패는 내부 복구 응답으로만 처리하며 가짜 리포트/알림 링크를 생성하지 않는다.
+- core 학생 → 주/job 잠금을 생성·이벤트·복구에서 통일한다. 삭제의 기존 parent → student 순서와 기존 파일 삭제/완료 보고를 보존한다. 삭제 확정 트랜잭션에서 미종료 작업/실행 이력을 STUDENT_DELETED로 종료하며 새 실패 알림은 보내지 않는다.
+- 검증 계획: 실제 PostgreSQL의 잠금·중복/응답 유실·지연 재전달·삭제 경합, 실제 내부 HTTP 권한/계약·학생/기간 불일치, core 이벤트/실행 이력·삭제/생성·HTTP 도중 삭제, #129 회귀 및 전체 core/report 테스트. 구현 완료 후 한 단계로 실행하고 실제 결과/미실행을 별도 기록한다.
+
+### 실제 HTTP 검증에서 확인한 연결 보완
+
+JDK 기본 h2c 업그레이드를 포함한 POST를 Uvicorn이 400으로 거부해 복구 점검이 실패했다. 복구 전용 ReportClient 요청 팩토리만 HTTP/1.1로 지정하며 기존 InternalRestClientFactory의 내부 토큰·사용자 컨텍스트 interceptor와 설정된 connect/read timeout을 보존한다. 공통 HTTP 팩토리나 기존 조회 클라이언트는 변경하지 않는다. 테스트의 HTTP 서버도 Upgrade 헤더 부재를 확인한다. 장애 동안 작업은 미종료 상태를 유지하고 다음 점검으로 남았다.
+
+### 검증 결과 (#132)
+
+- report 전체 최초 실행: 257 passed / 4 failed / 2 errors. 실패는 새 OpenAPI 산출물 누락 1개와 Chromium 실행 파일 미설치 5개였다. Chromium 설치·OpenAPI 갱신 후 영향 범위 53개 통과. 실제 RabbitMQ DLQ의 InvalidEvent·행 생성 전 예외·GenerationBusy 재시도 소진을 추가한 복구 테스트 11개도 통과했다. 테스트 ID별 최종 결과 합산은 **266개 통과, 미해결 실패/오류/생략 0**이며 266개를 한 번에 실행한 결과는 아니다. 기존 Starlette/httpx 폐기 예정 경고 1개는 남는다.
+- 신규 migration: 격리 PostgreSQL에서 core/learning/report 전체 스키마와 ERD 대조, 제약 음성 63개·CHECK 값 집합 74개·ERD 인덱스 23개, 반복 적용 no-op 및 report downgrade base/upgrade head 통과. 기존 migration 수정 없음.
+- 공통 계약: `python -O -m unittest discover -s scripts/tests -q` 76개 통과. report 기존 OpenAPI 경로·스키마가 develop과 같고 새 복구 경로만 추가됐음을 JSON 단위로 대조했다. 변경 문서 로컬 링크와 Ruff check/format 통과.
+- core 전체 최초 실행: Docker JDK 21 `test bootJar`, **329개 중 328개 통과/1개 실패**, bootJar 성공. 새 복구 테스트가 실제 커밋한 processed_event 7개를 남겨 기존 전역 건수 검사가 실패했다. 새 테스트가 자신이 만든 이벤트 ID만 정리하도록 수정했다. 기존 테스트·production 멱등성 조건은 완화하지 않았다.
+- 초기 core 스크립트의 CRLF와 재검증의 Gradle `--tests` 인자 위치 오류는 검증 도구 실행 실패로 구분하며 테스트 성공 수에 넣지 않았다.
+
+- core report 범위 재검증: `test --tests "com.sagomungchi.core.report.*" bootJar` **44개 통과**, 실패·오류·생략 0. 새 테스트의 이벤트 정리와 복구 요청의 Upgrade 헤더 부재를 포함한다.
+- 실제 HTTP 연동 **11개 시나리오 통과**: 실제 core/report 앱·PostgreSQL·RabbitMQ·Redis·MinIO를 사용해 무료/full 상세·PDF/MD 내용, 현재 이용권·설정 실패·사용 기록, 60분 이상 후보의 행 없는 실패 복구/지연 명령 차단, 중복 호출·권한·기간 불일치, COMPLETED/FAILED/고아 RUNNING 복구, 실제 advisory lock의 BUSY 후 다음 점검 종료를 확인했다. 생성 대역·합성 리포트/파일을 사용하며 실제 PG·AI 호출·worker 전체 생성/렌더링·브라우저·운영 배포·성능 측정은 이 연동 결과에 포함하지 않는다. 삭제/생성·복구 응답 경합은 core 실제 DB 서비스 테스트로 별도 검증했다.
+- 개발 중 병합된 #152 PR #156의 develop `deecc12`를 fast-forward로 통합했다. 이번 미커밋 변경은 stash/patch로 보존 후 재적용했으며 충돌은 없었다. 기존 #152 문서·계약 예시·검증 코드를 유지했고 #132 코드/테스트의 복원 전후 동일성을 대조했다. 최종 전체 검증은 이 통합 상태에서 수행한다.
+
+- 통합 후 report 전체 `python -m pytest -q`: **278 passed, 실패·오류·생략 0**, 148.81초. #152의 추가 관리자 재처리 검사와 #132 복구 11개를 포함한다. 공통 계약 76개도 재확인했고 실제 core 테스트 산출물로 report.generate/started/completed/failed v1·상세·알림 공개 응답 스키마가 모두 통과했다.
+
+- 최종 통합 core 전체 `test bootJar`: **329개 통과, 실패·오류·생략 0**, Docker JDK 21·Gradle/Test heap 512MiB·CPU 2·단일 worker, 5분 26초. 실제 HTTP 11개 시나리오에서 사용한 JAR와 최종 JAR의 SHA-256이 같다.
+- 최종 변경분의 서비스 의존 방향, 학생 → 작업 잠금 순서, 트랜잭션 밖 HTTP·새 트랜잭션 반영, v1 계약·#129 조회/이용권 로직 보존, 문서 링크·`git diff --check`를 확인했다. 운영 성능·배포·원격 CI 완료를 의미하지 않는다. 서비스 CI는 feature push에서 실행하지 않고 PR 생성 후 실행되는 저장소 설정이다.

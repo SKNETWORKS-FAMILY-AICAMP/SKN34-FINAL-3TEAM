@@ -233,7 +233,7 @@ stateDiagram-v2
 | `QUEUED·RUNNING → FAILED` | `report.failed` | `ReportJob.fail(reason)` | 위와 같음, `failure_reason` |
 
 - 종료 후 늦게 온 `report.started`는 영향 0행 → 무시 (역순 도착 허용)
-- `QUEUED` 고착(메시지 DLQ 이동)은 관리자 `/admin/queues`·`/admin/jobs`에서 확인 후 재처리 (FN-ADM-07). 재처리는 새 행이라 기존 `QUEUED` 행의 정리 방식은 9장 가정
+- `QUEUED` 고착(메시지 DLQ 이동)은 #132 복구 점검으로 실제 report 상태와 대조한 뒤 종료한다. 관리자는 `/admin/queues`·`/admin/jobs`에서 확인하며 자동 재생성은 하지 않는다.
 
 ### 4.2 `weekly_report.status` · `state` (report)
 
@@ -494,7 +494,7 @@ stateDiagram-v2
 - 문의 `RECEIVED → IN_REVIEW`: API 2.8에 상태 변경 엔드포인트 없음 → 필요 시 API 명세에 추가
 - 돌아보기를 마무리 전에 저장하면 `409 REVEAL_CONDITION_UNMET`으로 거부 (기존 오류 코드 재사용)
 - 정기 청구 재청구: ERD 부분 UK `(subscription_id, billing_period_start) WHERE kind = 'RENEWAL'`로 같은 기간 새 주문 불가. 가정은 "기존 주문의 결제가 `FAILED`면 같은 주문으로 재청구", PG 주문번호 재사용 가능 여부 확인 후 ERD 반영 필요
-- `QUEUED` 고착 `report_job` 재처리: 새 행 생성 시 기존 행을 `FAILED`(`failure_reason = SUPERSEDED`)로 종료하는 방안 가정. 늦게 도착한 기존 job 이벤트는 조건부 UPDATE로 무시
+- `QUEUED` 고착 작업은 #132 내부 복구 API와 영구 재실행 차단 기록으로 정리한다(4.1 보완). 시간만으로 SUPERSEDED 처리하는 가정은 사용하지 않는다.
 
 
 ### #48 결제 상태 적용 보완
@@ -504,3 +504,9 @@ CONFIRMING은 PG 조회로만 확정하며, APPROVED/RECOVERY_REQUIRED는 추가
 ### #46 core 정정 실행 기록
 
 신고 상태는 기존 RECEIVED → IN_REVIEW → RESOLVED를 유지한다. core `SupportService.correct`는 신고 검토 중 correction.processing_status=PENDING 의도를 먼저 저장하고 HTTP를 트랜잭션 밖에서 실행한다. HTTP 실패 시 FAILED이며 신고는 IN_REVIEW다. 동일 correction UUID로 공급자가 성공을 확인하고 core 완료 트랜잭션까지 커밋될 때만 correction=COMPLETED·신고=RESOLVED·알림을 함께 기록한다. 응답 유실이나 core 저장 실패는 완료가 아니며 같은 의도로 재개한다. 원본 답변·판정은 변경하지 않는다.
+
+### 4.1 보완: 종료 유실·삭제 (#132)
+
+QUEUED/RUNNING → COMPLETED|FAILED: 복구 API의 저장된 종료 결과를 조건부 반영한다. BUSY/DB·HTTP 오류/식별 불일치는 상태를 보존한다. 학생 삭제 확정은 `STUDENT_DELETED`로 FAILED 및 실행 이력을 원자 기록한다. 종료 상태는 늦은 started/completed/failed와 복구 응답으로 바뀌지 않는다.
+
+report에서 잠금 소유자가 없는 RUNNING만 `REPORT_EXECUTION_ABANDONED`로 FAILED 전이한다. 행이 없으면 `REPORT_NOT_CREATED` 차단 기록을 저장해 같은 job의 지연 메시지는 ACK 종료한다. 차단 기록의 학생·기간이 다르면 오류다. 실행 중인 생성은 BUSY로 유지한다. 자동 재생성은 하지 않는다.

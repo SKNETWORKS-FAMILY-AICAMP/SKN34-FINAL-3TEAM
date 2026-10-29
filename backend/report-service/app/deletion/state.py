@@ -10,7 +10,13 @@ from sqlalchemy.dialects.postgresql import insert
 
 from app.generation.models import GenerationBusy
 from app.generation.records import RecordContractError
-from app.generation.repository import report_file, report_item, report_item_evidence, weekly_report
+from app.generation.repository import (
+    report_file,
+    report_item,
+    report_item_evidence,
+    report_job_guard,
+    weekly_report,
+)
 from app.outbox.repository import outbox_event
 
 metadata = MetaData()
@@ -142,6 +148,9 @@ class DeletionRepository:
         )
 
     def finish(self, session, command):
+        session.execute(
+            delete(report_job_guard).where(report_job_guard.c.student_id == command.student_id)
+        )
         reports = select(weekly_report.c.id).where(weekly_report.c.student_id == command.student_id)
         items = select(report_item.c.id).where(report_item.c.report_id.in_(reports))
         session.execute(

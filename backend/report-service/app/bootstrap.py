@@ -13,6 +13,7 @@ from sqlalchemy import Engine, text
 from app.config import get_settings
 from app.database import create_db_engine, create_session_factory
 from app.errors import install_problem_openapi, register_error_handlers
+from app.generation.router import router as reconciliation_router
 from app.health.router import router as health_router
 from app.query.router import router as query_router
 from app.security import InternalAuthMiddleware
@@ -50,5 +51,6 @@ def create_app() -> FastAPI:
     app.add_middleware(InternalAuthMiddleware)
     app.include_router(health_router)
     app.include_router(query_router)
+    app.include_router(reconciliation_router)
     # 기능 라우터는 여기에 등록
     return app
