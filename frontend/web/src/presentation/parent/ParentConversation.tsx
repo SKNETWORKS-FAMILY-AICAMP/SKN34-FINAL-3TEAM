@@ -46,7 +46,7 @@ export function ParentConversation({
       selectedScope ??
       state.result?.scope ??
       (detail.data ? { ...detail.data.period, childId: child.id } : scope)
-    const text = retry?.question ?? (state.phase === 'CLARIFICATION' ? lastQuestion : question)
+    const text = retry?.question ?? (state.phase === 'CLARIFICATION' && !question.trim() ? lastQuestion : question)
     if (!text.trim() || child.plan === 'FREE') return
     controller.current?.abort()
     const abort = new AbortController()
@@ -79,6 +79,7 @@ export function ParentConversation({
     } catch (e) {
       if (!active.current || abort.signal.aborted) return
       setError(e)
+      setState((previous) => ({ ...previous, phase: 'FAILED', temporary: '', result: undefined }))
       void cache.invalidateQueries({ queryKey: ['parent', 'conversation'] })
     }
   }
@@ -108,7 +109,7 @@ export function ParentConversation({
                 key={c.conversationId}
                 onClick={() => open(c.conversationId)}
               >
-                {c.period.from} ~ {c.period.to} · {c.messages.length}개 질문
+                {c.period.from} ~ {c.period.to}
               </button>
             ))}
           <button
@@ -202,7 +203,12 @@ export function ParentConversation({
                   className="cj-secondary"
                   key={i}
                   onClick={() => {
-                    void ask(option.scope)
+                    if (option.scope.childId !== child.id) {
+                      controller.current?.abort()
+                      onScope(option.scope)
+                    } else {
+                      void ask(option.scope)
+                    }
                   }}
                 >
                   {option.label}
@@ -221,38 +227,39 @@ export function ParentConversation({
                 : undefined
             }
           />
-          {child.plan === 'FREE' ? (
+          {child.plan === 'FREE' && (
             <p className="ws-card">
               이 자녀의 무료 플랜에는 분석 대화가 포함되지 않습니다. 대시보드와 수치 리포트는 확인할
               수 있습니다.
             </p>
-          ) : (
-            <form
-              className="ws-card ws-form"
-              onSubmit={(e) => {
-                e.preventDefault()
-                void ask()
-              }}
-            >
-              <label>
-                기록에 대한 질문
-                <textarea
-                  aria-label="기록에 대한 질문"
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  placeholder="되묻기 전후에 어떤 말이 더해졌나요?"
-                  maxLength={2000}
-                  required
-                />
-              </label>
-              <button className="cj-primary" disabled={pending || state.phase === 'CLARIFICATION'}>
-                기록으로 답변 받기
-              </button>
-              <small>
-                다른 화면으로 이동하면 스트림을 취소합니다. 임시 문장을 확정 답변으로 남기지
-                않습니다.
-              </small>
-            </form>
+          )}
+          {child.plan !== 'FREE' && (
+          <form
+            className="ws-card ws-form"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void ask()
+            }}
+          >
+            <label>
+              기록에 대한 질문
+              <textarea
+                aria-label="기록에 대한 질문"
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                placeholder="되묻기 전후에 어떤 말이 더해졌나요?"
+                maxLength={1000}
+                required
+              />
+            </label>
+            <button className="cj-primary" disabled={pending}>
+              기록으로 답변 받기
+            </button>
+            <small>
+              다른 화면으로 이동하면 스트림을 취소합니다. 임시 문장을 확정 답변으로 남기지
+              않습니다.
+            </small>
+          </form>
           )}
         </section>
       </div>

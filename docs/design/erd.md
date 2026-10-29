@@ -1095,3 +1095,7 @@ erDiagram
 #46 V16: develop의 V14와 결제 V15를 포함한 기존 마이그레이션 SQL은 보존한다. 소유 역할·학생 세션 범위를 추가하여 공유 보호자 ID의 학생/형제/보호자 노출을 분리한다. legacy NULL 역할은 본인 목록에 추정하지 않는다. error_report UK(reporter_user_id,submission_key), correction 부분 UK(error_report_id WHERE request_key IS NOT NULL)·UK(request_key)로 결과 저장 실패 후 재시도를 보존한다. notice DELETE는 ended_at 종료, 변경 전후는 audit_log에 기록한다.
 
 - V14는 SPEECH 사용량 CHECK 제거, V15는 결제 실행·권한, V16은 신고·문의 주체와 정정 의도 저장이다. V16은 통합 전 지원 V14의 SQL 원문을 유지한 경로 변경이며 V15와 의존 관계가 없다. 이전 지원 V14를 적용한 임시 DB에는 자동 repair·이력 변경 없이 새 격리 DB를 사용한다.
+
+### 이슈 #41 저장 규칙
+
+기존 conversation/message/evidence 스키마를 사용하며 마이그레이션을 추가하지 않는다. retry_count를 실행 세대 fencing 값으로 사용하고 실패/취소는 UPDATE만 수행한다. clarification은 COMPLETED(답변 NULL), delta는 미저장이다. 한도는 분석 전용 Redis KST 일자 카운터다. [계약](../report/issue-41-analysis-conversations.md).

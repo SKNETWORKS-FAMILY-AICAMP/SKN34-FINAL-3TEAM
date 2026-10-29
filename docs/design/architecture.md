@@ -729,3 +729,7 @@ SKN34-FINAL-3TEAM/
 ### #46 신고·지원 연결 경계
 
 support/controller → SupportService → support/repository를 사용한다. 대상 검증은 상대 기능 service(StudentAccessService·ConversationSupportService·ReportSupportService)를 호출하며 다른 기능 repository를 직접 참조하지 않는다. support/client는 기존 learning LearningClient·InternalRestClientFactory를 재사용한다. 정정 의도 저장·완료 저장 사이 HTTP는 트랜잭션 밖이며, core 영속 correction UUID가 공급자 요청 식별자다. 원문 응답 전 감사 저장이 실패하면 원문을 반환하지 않는다. 알림은 NotificationService.support로 저장·수신 설정·중복 방지·NotificationStored·커밋 후 Redis 전달을 재사용한다. 자세한 범위와 공급자 미구현은 [#46 보고서](../report/issue-46-support.md)에 기록한다.
+
+## 이슈 #41 분석 대화 수명
+
+분석 전용 SseEmitters.open의 연결 시간·취소 hook을 사용한다. 피드백과 알림 수명은 유지한다. AI HTTP body는 취소 시 닫는다. 계정→학생→대화 잠금과 시도 fencing으로 삭제/중복 재시도를 직렬화한다. 상세 계약은 [#41 보고서](../report/issue-41-analysis-conversations.md).

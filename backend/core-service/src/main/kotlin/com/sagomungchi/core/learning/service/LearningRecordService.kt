@@ -13,6 +13,15 @@ import java.util.UUID
 @Service
 class LearningRecordService(private val client: LearningRecordClient, private val students: StudentAccessService,
                             private val learningContext: StudentLearningContextService) {
+    /** Caller supplies only evidence IDs owned by its feature and a freshly authorized single-student context. */
+    fun evidence(studentId: UUID, answerIds: List<UUID>): com.fasterxml.jackson.databind.JsonNode {
+        val context = UserContextHolder.current()
+        if (context.role != "PARENT" || context.userId == null || context.studentScope != setOf(studentId.toString()))
+            throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "단일 자녀의 검증된 범위가 필요합니다.")
+        context.requireStudent(studentId.toString())
+        require(answerIds.isNotEmpty() && answerIds.size <= 100)
+        return client.evidence(answerIds)
+    }
     fun studentDashboard(resource: String, query: DashboardQuery) = run {
         val context = UserContextHolder.currentOrNull()
         if (context?.role != "STUDENT" || context.userId == null || context.studentScope.size != 1)
