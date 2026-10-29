@@ -355,6 +355,18 @@
   - 알림 본문에는 학생 원문·결제 민감 정보를 넣지 않고 상세 화면 링크만 담음 (FN-SUP-11)
 
 ### 2.8 관리자 (FN-ADM, FN-SUP 관리 측) — `/api/v1/admin`
+
+#### #47 구현 계약
+
+- overview·audit-logs의 정확한 GET 경로는 ADMIN 역할, jobs·queues·retry는 SERVICE_OPS, missions는 CONTENT다. 다른 관리자 경로의 기존 권한은 유지한다.
+- overview/jobs/audit 기간은 KST 날짜 양 끝 포함(저장 조회는 시작 이상·다음날 미만), 둘 다 생략하면 최근 7일, 한쪽만 입력하거나 역순·366일 초과는 400. page=0, size=20(1~100), page 최대 1000. 정렬은 createdAt DESC, id DESC다.
+- overview는 `{period,inclusionRule,learning:{attempts,completedAttempts,students,inclusionRule},jobCounts:[{type,status,count}]}`다. learning은 P08, core 작업은 생성 시각이 기간 안인 작업의 현재 상태를 센다. 미션 상태 집계 공급자는 없어 숫자를 만들지 않는다. learning 장애/계약 위반은 오류다.
+- jobs는 `{items,page,size,totalElements}`, 상세는 `{jobId,type,status,retryCount,failureReason,createdAt,executions,retryable,retryUnavailableReason}`다. CONVERSATION ID는 conversation_message.id, REPORT는 report_job.id, NOTIFICATION은 notification.id다. updatedAt은 존재하지 않아 반환하지 않는다. executions는 실제 job_execution을 attemptNo 순으로 반환한다. error_detail·원문 실패 메시지·감사 detail은 공개하지 않고 알려진 오류 코드만 노출하며 그 외는 REDACTED_ERROR다. UUID가 종류 간 충돌하면 409 JOB_ID_AMBIGUOUS다.
+- retry는 UUID Idempotency-Key 필수, 실패 상태만 허용한다. NOTIFICATION은 동일 ID를 RUNNING으로 원자 선점하고 새 job_execution을 남긴 뒤 트랜잭션 밖에서 기존 Redis publisher/DeliveryService를 호출한다. Redis 확인은 브라우저 수신 확인이 아니다. 실제 결과를 200 작업 상세로 반환하고 감사 기록을 남긴다. RUNNING 고착은 자동 재실행하지 않는다. REPORT는 기존 소비자가 실패 jobId를 재실행하지 않고 core lifecycle도 종료 상태이므로 503 JOB_RETRY_UNAVAILABLE, CONVERSATION도 관리자 재처리 공급자 부재로 같은 오류다. 리포트 regenerate를 대신 호출하지 않는다. 실패한 요청은 실행 이력으로 위장하지 않으며 거절 감사만 남긴다.
+- audit-logs는 targetType/targetId 및 기간·페이지 필터. 항목은 `{id,actorUserId,action,targetType,targetId,result,createdAt}`이며 자유형 detail은 노출하지 않는다. 기존 감사 저장 경로를 교체하지 않는다.
+- queues는 `{vhost,items:[{name,kind:WORK|RETRY|DLQ,messages,messagesReady,messagesUnacknowledged,consumers,state}]}`다. definitions.json의 `/` vhost와 고정 25개 큐만 읽는다. 누락·인증·HTTP·타임아웃·잘못된 응답은 명시적인 503/504이며 0으로 치환하지 않는다. `ADMIN_RABBIT_MANAGEMENT_URL`, `ADMIN_RABBIT_MANAGEMENT_USERNAME`, `ADMIN_RABBIT_MANAGEMENT_PASSWORD`를 환경에서 읽는다(기본 자격 증명 없음). 기존 AMQP 설정과 독립이며 production 의존성은 추가하지 않는다.
+- missions는 표의 명시된 메서드/경로만 `/internal/admin/missions`로 프록시한다. 검증된 ADMIN 사용자 컨텍스트, 빈 학생 범위, 내부 토큰과 trace를 기존 LearningClient/InternalRestClientFactory로 전달한다. JSON object 본문과 목록 status/grade/thinkingType/page/size만 전달한다. 버전·기준표·검토·게시 정책/DTO는 learning 소유다. 현재 실제 공급자/OpenAPI가 없으므로 본문/응답은 JSON object 중계 계약이고 테스트 HTTP 대역으로 선개발한다. 404/405/501은 503 ADMIN_MISSIONS_UNAVAILABLE, 나머지 Problem Details는 code/status와 구조화된 missingFields만 허용하며 자유형 오류 문구는 전달하지 않는다. 성공 응답은 learning 관리자 콘텐츠 계약을 그대로 반환한다. 서비스 간 재시도는 없다.
+
 | Method | Path | 권한 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
 | GET | `/admin/overview?from&to` | 관리자 | 학습 시도·완료 건수, 대화·리포트 처리 현황, 미션 공개 현황 (학생 원문 없음) | ADM-01, ADM-02, ADM-04 | 제안 |

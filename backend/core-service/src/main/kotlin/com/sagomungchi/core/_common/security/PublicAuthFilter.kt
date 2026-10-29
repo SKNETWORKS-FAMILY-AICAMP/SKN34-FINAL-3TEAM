@@ -66,7 +66,12 @@ class PublicAuthFilter(private val auth: AuthService, private val properties: Au
                 if (childId != null && childId !in identity.studentScope)
                     throw BusinessException(HttpStatus.FORBIDDEN, "CHILD_NOT_LINKED", "연결 또는 법정대리인 동의를 확인해 주세요.")
             }
-            if (path.startsWith("/admin/")) auth.requirePermission(identity, permission(path,request.method))
+            if (path.startsWith("/admin/")) {
+                val adminRead = request.method == "GET" && path in setOf("/admin/overview", "/admin/audit-logs")
+                if (adminRead) {
+                    if (identity.session.role != "ADMIN") throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "관리자 세션이 필요합니다.")
+                } else auth.requirePermission(identity, permission(path,request.method))
+            }
             UserContextHolder.set(UserContext(identity.account.id.toString(), identity.session.role,
                 identity.studentScope.map { it.toString() }.toSet(), request.getHeader("traceparent")))
             chain.doFilter(request, response)
