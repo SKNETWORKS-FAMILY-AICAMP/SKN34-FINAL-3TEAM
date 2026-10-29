@@ -540,6 +540,11 @@ sequenceDiagram
   else 기존 RUNNING (이전 Pod 중단 후 재전달)
     Note over RW: 같은 행으로 아래 처리 처음부터 재실행
   end
+  Note over RW,C: #119 core API 제공. 아래 별명 조회·전달의 worker 연결은 report 담당 후속 작업
+  RW->>C: GET /internal/students/{id}/profile (내부 토큰, SYSTEM, 학생 scope)
+  C-->>RW: 200 {studentId, nickname} (ACTIVE만, no-store)
+  RW->>RW: nickname을 렌더링용 display_name으로 보관 (메시지에는 추가하지 않음)
+  Note over RW,C: 403·404는 생성 실패, 통신 장애는 기존 작업 실패/재시도 정책. 가짜 별명 없음
   RW->>L: GET /internal/records/students/{id}/thinking-types·attempts·changes
   L-->>RW: 기간 내 기록
   RW->>RW: MetricsCalculator (기간 확정·수치·전후 변화·state)
@@ -549,6 +554,7 @@ sequenceDiagram
   alt NO_RECORD 또는 narrativeEnabled = false
     RW->>RW: 서술 생략 (NO_RECORD는 기록 없음 안내 문구, 무료는 narrative null) (P06, P13)
   else
+    RW->>RW: NarrativeGenerator에서 별명·이름 필드 제거 및 본문 별명 가림 (최종 전송 payload 검증 필요)
     RW->>A: POST /internal/report-narratives {metrics, thinkingTypes, changes, reflections, quotes}
     A-->>RW: narrative·eveningQuestion·citedQuotes
     RW->>L: GET /internal/records/evidence?answerIds=

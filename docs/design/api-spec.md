@@ -687,6 +687,16 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 - 외부에 노출하지 않음. NetworkPolicy로 호출 관계만 허용
 - 범위 밖 학생 요청은 403
 
+### 4.0 core 학생 별명 조회 (#119, 호출: report-worker)
+
+`GET /internal/students/{studentId}/profile` → `200 {studentId, nickname}`. core OpenAPI의 이 operation은 `servers: /`로 공개 API prefix와 구분한다. 응답은 `Cache-Control: no-store`이며 두 필드만 제공한다.
+
+실제 `InternalAuthFilter`가 내부 토큰을 검사한 뒤 guardianship Controller → Application Service → 기존 `ChildManagementRepository.profile`을 호출한다. Service는 `SYSTEM` 역할과 대상 학생의 `X-Student-Scope` 포함 여부를 DB 조회 전에 확인한다. 학부모 Bearer만으로 호출할 수 없다.
+
+2026-10-29 사용자 확정: 잘못된 UUID는 `400 VALIDATION_FAILED`, 토큰 누락·불일치는 `401 UNAUTHENTICATED`, 역할 누락·SYSTEM 외 역할·scope 누락/불일치는 `403 FORBIDDEN`, 미존재·ACTIVE 외 상태(DELETION_REQUESTED·DELETED 포함)는 `404 NOT_FOUND`. DB 등 예상하지 못한 조회 실패는 기존 `500 INTERNAL_ERROR` Problem Details로 반환한다. 현재 student CHECK의 상태는 ACTIVE·DELETION_REQUESTED·DELETED이며 별도 INACTIVE 상태를 추가하지 않는다. 기존 SQL·스키마·공개 API는 유지한다.
+
+report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의 내부 `display_name`으로 보관해 제목에 사용하고, NarrativeGenerator에서 AI 요청 전에 가린다. `report.generate.v1`에 별명을 추가하지 않는다. 403·404를 가짜 별명·기록 없음으로 처리하지 않고 생성 실패로 취급한다. 통신 장애는 기존 작업 실패/재시도 경계를 따르며 서비스 간 HTTP 재시도를 추가하지 않는다. 실제 worker 연결·최종 AI payload 검증은 [#119 보고서](../report/issue-119-student-profile.md)의 후속 조건을 따른다.
+
 ### 4.1 learning-service (호출: core, ai, report)
 
 구현된 경로의 요청·응답 계약: [contracts/openapi/learning-service.yaml](../../contracts/openapi/learning-service.yaml) (`scripts/tests/test_record_exists_openapi.py`가 컨트롤러 경로와 대조)
