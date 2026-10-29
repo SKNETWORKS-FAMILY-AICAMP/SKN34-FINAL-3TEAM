@@ -59,3 +59,25 @@ CI 보완 로컬 검증: 전체 Python 계약 검사 69/69 통과. 별도 복사
 사용자가 기반영 ReportMessagingTest의 해당 사례만 동기화하는 변경을 명시적으로 허용했다. 완료 이벤트를 먼저 발행하고 processed_event의 커밋 및 COMPLETED를 확인한 뒤 중복 완료·늦은 시작·실패 이벤트를 발행한다. 기존 startedAt null·COMPLETED·실행 이력 1개 검사는 유지한다. 기존 ReportRepositoryTest의 정상 started→failed 상태·시각/실패 원인 검사도 유지한다. production·공통 consumer·workflow는 변경하지 않는다. 검증 후 기존 feature 브랜치에 후속 커밋하며 이력 재작성은 하지 않는다.
 
 순서 보완 후 전용 JDK21 Linux 환경에서 core 전체 44클래스 270개 test·bootJar 통과(실패·오류·생략 0). 기존 메시징/상태 전이 검사와 #47 알림 재처리·#48 결제 회귀를 포함한다. 테스트 한 파일과 이 기록만 변경되었으며 git diff --check 통과 후 기존 feature head에 후속 커밋·push한다. 원격 4개 workflow의 최종 상태는 새 head를 기준으로 별도 확인한다.
+
+## REPORT 관리자 재처리 core 후속 (#152)
+
+최초 기준 develop `2538d195c53c70a17af84aadea9a3ab1b348840a`(PR #154), 전용 feature/core-admin-report-retry다. 사용자는 core 관리자 분기·report 생성/저장소·관계 migration·학생/상품 확인·감사·공개 응답/조회·설계/테스트 변경을 명시적으로 승인했다. report-service와 프론트는 수정하지 않는다. #152는 OPEN이며 실제 공급자 실행 결과를 완료로 간주하지 않는다. 기존 report.generate v1의 새 jobId/ADMIN_RETRY를 재사용한다. 기존 job 종료 상태와 알림 재처리는 보존한다. 원작업당 1개 재처리, 재실패 시 자식 작업 재처리, durable key 복원과 202 접수/실행 결과 구분은 API 2.8을 따른다.
+
+현재 develop·report 권한 통합 브랜치와 학생 프로필 브랜치의 core migration을 대조했으며 최신 develop 최대 V16, 병렬 브랜치에 V17은 없다. V17로 관계만 추가하며 기존 migration의 이름·내용·checksum은 수정하지 않는다. 최종 검증은 구현·테스트 작성 후 한 단계로 모아 수행한다.
+
+구현 중 PR #155/#129가 develop `14a97f8f2221f5db4fda5631650fd2242b10cf81`에 병합됐다. 작업 28파일을 ZIP/SHA-256/binary diff와 stash `ce7d99fa26a1554401f6f7fe8e19ae29bd9018f6`로 보존한 뒤 이 전용 브랜치만 fast-forward·재적용했다. 기존 ReportClient/ReportQueryService/ReportViewService와 #129 테스트는 그대로 보존했다. V17은 여전히 비어 있으며 최종 검증 기준은 이 최신 develop이다.
+
+### REPORT 후속 최종 통합·검증
+
+- 검증 중 #152가 PR #156으로 develop `deecc12dfe9a23a8e4d23d7b0fb1d02b289ca3d2`에 병합되어 작업을 보존하고 fast-forward·재적용했다. 기존 report-service 실행 코드와 프론트는 수정하지 않았다. #152의 새 jobId/ADMIN_RETRY/v1 필드를 재사용한다. 예시의 원작업 연결 방식은 core 소유이며, 이 API는 직접 자식 1개·재실패한 자식에서 다음 재처리 정책을 사용한다.
+- JDK21 core 전체 **339개**, 실패·오류·생략 0, test/bootJar 성공(최종 실행 6m28s). 새 REPORT 재처리 16개 검사 및 기존 알림·리포트·결제·인증 회귀 포함.
+- Python 계약 **77/77**, OpenAPI 표준 검사, 실제 테스트가 만든 202 접수/작업 상세 및 Outbox 봉투·report.generate v1 스키마 대조 통과.
+- 격리 빈 PostgreSQL의 전체 migration cycle 통과: core 43테이블/395컬럼, learning 19/158, report 7/50. 기존 60개 위반 입력·74 CHECK 집합·23 ERD 인덱스, 무변경 재적용 이력, report downgrade/upgrade 후 재검사 통과. 새 관계의 자기 연결·FK·중복 자식·중복 요청 키 제약은 새 core DB 테스트에서 별도 검사했다.
+- 동일 키 응답 유실 후 복원, 서로 다른 키 동시 요청, 새 작업 재실패 및 다음 작업 연결, 삭제와의 경합, 현재 상품 변경/장애, 요청·결과 감사 저장 실패 시 rollback, 과거/중복 이벤트의 결과 격리 통과. 실제 RabbitMQ Outbox 발행·core 소비를 확인했으며 report 결과 생산자는 테스트 대역이다.
+- 초기 전체 실행은 새 테스트가 남긴 processed_event 때문에 기존 리포트 전체 건수 검사 1개가 실패했다. 새 테스트 자신의 이벤트 ID만 정리하도록 보완했다. 별도 재실행의 Redis 초기화 연결 실패는 환경 실패로 구분하고 새 JVM/컨테이너 실행에서 최종 339개를 통과했다. 소스 복사/해시 목록의 초기화 및 CRLF 문제도 검증 준비 단계 실패이며 성공 결과에 포함하지 않는다.
+- 실제 report-worker를 포함한 관리자 POST→생성 파이프라인 E2E, 프론트 연결, 원격 CI·배포는 이번 검증에 포함하지 않는다. #152 공급자 자체의 실연동 결과와 이번 core 결과를 혼동하지 않는다. 접수 후 발생하는 학생 삭제로 report 소비자가 생성을 막은 경우의 queued 작업 정리 정책은 후속 연결 검토 사항이다.
+
+프론트 전달: REPORT 재처리 응답은 202 `{originalJobId,jobId,type:REPORT,status:QUEUED,acceptedAt}`이며 Location은 새 작업 조회 URL이다. ‘접수’로 표시하고 새 jobId의 GET 결과를 조회해 진행/완료/실패를 표시한다. 원작업 상세의 retryJobId, 새 작업의 retryOfJobId를 이동 링크로 사용한다. 이미 연결된 원작업은 REPORT_ALREADY_RETRIED로 다시 접수하지 않고 재실패한 새 작업에서 요청한다. 기존 NOTIFICATION의 200 결과 계약은 유지한다.
+
+이번 작업은 #47의 REPORT core 범위이며 #47 전체 해결/Closes #47을 주장하지 않는다. PR base는 develop, head는 feature/core-admin-report-retry이며 PR은 사용자가 생성한다.

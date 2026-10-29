@@ -5,10 +5,18 @@ import com.sagomungchi.core.consent.service.ConsentAccessService
 import com.sagomungchi.core.guardianship.repository.StudentAccessRepository
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.annotation.Propagation
 import java.util.UUID
 
 @Service
 class StudentAccessService(private val repository: StudentAccessRepository, private val consents: ConsentAccessService) {
+    /** Serialize acceptance with existing profile/record deletion using the same student row. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun requireReportRetryActive(studentId: UUID) {
+        if (repository.lockReportRetryStudent(studentId) == null)
+            throw BusinessException(HttpStatus.CONFLICT,"REPORT_RETRY_STUDENT_UNAVAILABLE","삭제 요청 또는 학생 상태로 재처리할 수 없습니다.")
+    }
     fun notificationParents(studentId: UUID) = repository.activeParents(studentId).filter {
         consents.hasRequiredConsents(it) && consents.hasGuardianConsent(it, studentId)
     }

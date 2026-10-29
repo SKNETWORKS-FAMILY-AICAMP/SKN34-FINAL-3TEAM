@@ -9,6 +9,7 @@ import com.sagomungchi.core.guardianship.domain.LinkedStudent
 
 @Mapper
 interface StudentAccessMapper {
+    fun lockReportRetryStudent(studentId: UUID): UUID?
     fun activeParents(studentId: UUID): List<UUID>
     fun linkedStudents(userId: UUID): List<LinkedStudent>
     fun linkedCount(userId: UUID): Int
@@ -18,6 +19,7 @@ interface StudentAccessMapper {
 
 @Repository
 class StudentAccessRepository(private val mapper: StudentAccessMapper) {
+    fun lockReportRetryStudent(studentId: UUID) = mapper.lockReportRetryStudent(studentId)
     fun activeParents(studentId: UUID) = mapper.activeParents(studentId)
     fun linkedStudents(userId: UUID) = mapper.linkedStudents(userId)
     fun linkedCount(userId: UUID) = mapper.linkedCount(userId)

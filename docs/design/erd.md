@@ -250,6 +250,9 @@ erDiagram
   conversation_message ||--o{ message_evidence : cites
   student ||--o{ report_job : target
   user_account |o--o{ report_job : "재생성 요청자"
+  report_job ||--o| report_job_retry : original
+  report_job ||--o| report_job_retry : retry
+  user_account ||--o{ report_job_retry : requests
   user_account ||--o{ report_view : views
   user_account |o--o{ job_execution : "재처리 요청자"
 
@@ -308,6 +311,13 @@ erDiagram
     timestamptz created_at
     timestamptz started_at "NULL 허용"
     timestamptz completed_at "NULL 허용"
+  }
+  report_job_retry {
+    uuid original_job_id PK,FK "원래 FAILED 작업, 원작업당 재처리 1개"
+    uuid retry_job_id FK,UK "새 ADMIN_RETRY 작업"
+    uuid requested_by FK
+    uuid idempotency_key "수행자와 복합 UNIQUE"
+    timestamptz accepted_at
   }
   job_execution {
     uuid id PK
@@ -1101,3 +1111,7 @@ erDiagram
 ### 이슈 #41 저장 규칙
 
 기존 conversation/message/evidence 스키마를 사용하며 마이그레이션을 추가하지 않는다. retry_count를 실행 세대 fencing 값으로 사용하고 실패/취소는 UPDATE만 수행한다. clarification은 COMPLETED(답변 NULL), delta는 미저장이다. 한도는 분석 전용 Redis KST 일자 카운터다. [계약](../report/issue-41-analysis-conversations.md).
+
+### #47 REPORT 재처리 관계
+
+core report_job_retry의 original_job_id는 report_job(id) PK/FK, retry_job_id는 report_job(id) UNIQUE/FK다. requested_by는 user_account(id) FK이며 `(requested_by,idempotency_key)` UNIQUE를 둔다. original_job_id와 retry_job_id는 달라야 한다. 두 작업은 삭제하지 않고 원래 FAILED 상태와 기존 판을 보존한다. 재실패 작업을 다시 처리할 때는 이전 새 작업이 다음 관계의 original_job_id가 된다. 새 작업·관계·접수 감사·Outbox는 원자 저장한다.

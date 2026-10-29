@@ -9,6 +9,10 @@
             <arg column="birth_year" javaType="_int"/>
         </constructor>
     </resultMap>
+    <select id="lockReportRetryStudent" resultType="java.util.UUID" useCache="false" flushCache="true">
+        SELECT s.id FROM student s WHERE s.id=#{studentId} AND s.status='ACTIVE'
+        AND NOT EXISTS(SELECT 1 FROM deletion_request d WHERE d.student_id=s.id) FOR UPDATE OF s
+    </select>
     <select id="activeParents" resultType="java.util.UUID">
         SELECT g.parent_user_id FROM guardianship g JOIN user_account u ON u.id=g.parent_user_id
         JOIN student s ON s.id=g.student_id
