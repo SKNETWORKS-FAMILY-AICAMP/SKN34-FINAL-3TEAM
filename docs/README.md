@@ -52,6 +52,8 @@
 | [frontend](report/frontend.md) | 웹 공통 기반·학생·학부모·관리자 화면(#7~#9·#59), 테마·대시보드, QR 시연 |
 | [audit](report/audit.md) | develop 종합 검증(c608f52)과 설계 문서 정합성 점검, 남은 결함·테스트 공백 |
 
+- [이슈 #46 신고·문의·공지·도움말](report/issue-46-support.md): 요청 역할·학생 scope, 정정 재시도·감사, 알림 연결과 공급자 필요 계약
+
 ## 개발 규칙
 
 ### 작업 규칙

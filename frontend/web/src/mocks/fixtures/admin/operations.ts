@@ -9,19 +9,19 @@ export const stamp = () => new Date().toISOString()
 export const jobs: Job[] = (['FAILED', 'RUNNING', 'QUEUED', 'COMPLETED'] as const).map(
   (status, i) => ({
     jobId: `job-${i + 1}`,
-    type: i % 2 ? 'CONVERSATION' : 'REPORT',
+    type: i === 0 ? 'NOTIFICATION' : i % 2 ? 'CONVERSATION' : 'REPORT',
     status,
     retryCount: 0,
     failureReason: status === 'FAILED' ? 'AI 응답 시간 초과 (원문 미포함)' : null,
     createdAt: '2026-10-25T10:00:00+09:00',
-    updatedAt: '2026-10-25T10:01:00+09:00',
+    retryable: status === 'FAILED' && i === 0,
+    retryUnavailableReason: status === 'FAILED' && i === 0 ? null : 'JOB_NOT_FAILED',
     executions: [
       {
         executionId: `execution-${i}`,
         attemptNo: 1,
         status,
         errorCode: status === 'FAILED' ? 'AI_UNAVAILABLE' : null,
-        errorDetail: status === 'FAILED' ? '외부 처리 시간 초과' : null,
         triggeredBy: null,
         startedAt: '2026-10-25T10:00:00+09:00',
         finishedAt:
@@ -84,7 +84,7 @@ export function audit(
   targetType: string,
   targetId: string,
   result: 'SUCCESS' | 'FAILURE',
-  detail: string,
+  _detail: string,
 ) {
   audits.unshift({
     id: crypto.randomUUID(),
@@ -93,7 +93,6 @@ export function audit(
     targetType,
     targetId,
     result,
-    detail,
     createdAt: stamp(),
   })
 }
