@@ -91,7 +91,7 @@ test('분석 SSE의 검증 전 delta는 버리고 대조 완료 result만 사용
     path.endsWith('/conversations')
       ? json({ conversationId: 'c-1' })
       : new Response(
-          'event: delta\ndata: {"text":"확인 안 된 문장"}\n\nevent: result\ndata: {"source":"LLM","answer":"검증된 답","evidence":[],"verification":{"numbersMatched":true,"quotesMatched":true}}\n\nevent: done\ndata: {}\n\n',
+          'event: delta\ndata: {"text":"확인 안 된 문장"}\n\nevent: result\ndata: {"source":"LLM","answer":"검증된 답","evidence":[],"verification":{"numbersMatched":true,"quotesMatched":true,"contentAllowed":true}}\n\nevent: done\ndata: {}\n\n',
           { headers: { 'Content-Type': 'text/event-stream' } },
         ),
   )

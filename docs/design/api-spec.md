@@ -1007,3 +1007,9 @@ core 자체의 권한·상태·본문 충돌 오류는 기존 계약을 유지�
 기존 학생 shared/job exclusive session advisory lock 획득 실패는 BUSY다. 잠금 획득 후 저장된 종료 결과를 반환하거나 소유자 없는 RUNNING을 `REPORT_EXECUTION_ABANDONED`로 종료한다. 행이 없으면 `report_job_guard`에 `REPORT_NOT_CREATED`를 원자 저장한다. 삭제 표식 PENDING은 BUSY, COMPLETED는 `STUDENT_DELETED` 실패다. 동일 호출/응답 유실 재호출은 같은 저장 결과를 사용한다. 삭제 완료 후에는 삭제 결과가 우선한다. v1 이벤트의 reportId 필수 계약은 유지한다.
 
 core는 생성 후 60분 이상 QUEUED/RUNNING을 기본 1분마다 점검한다(`app.report.recovery.stale-after`, `app.report.recovery.interval`). 60분은 운영 후보 선정 정책이며 실행 시간 측정값/강제 중단 제한이 아니다. HTTP는 DB 트랜잭션·행 잠금 밖에서 수행하고 새 트랜잭션에서 학생·작업·종료 상태를 재검사한다. 자동 재생성·재생성 횟수 정책은 변경하지 않는다.
+
+### #67·#41 분석 최종 응답 계약 보완
+
+`verification`은 source와 관계없이 최종 answer를 실제 검사한 numbersMatched/quotesMatched/contentAllowed다. 최종 검사를 통과한 응답만 result로 확정한다. 대조 실패 초안은 fallback.draftVerification에 보존하며 값을 true로 덮어쓰지 않는다. 정상 LLM은 fallback/notice=null, 규칙 응답은 fallback.reason=VERIFICATION_FAILED 또는 AI_UNAVAILABLE와 notice=null, 기록 부족·지원 외 안내는 fallback=null과 notice.reason=NO_RECORD|NO_CHANGES|NO_REFLECTIONS|UNSUPPORTED|MATH_CHECK다. LLM 장애의 draftVerification은 null이다. 최종 템플릿/안내 검사 실패는 FINAL_RESPONSE_VERIFICATION_FAILED error이며 result/done으로 대체하지 않는다. learning 조회 실패도 기존 error다. LLM 장애 후 기본 조회가 비어 있더라도 AI_UNAVAILABLE를 보존한다. 임시 delta는 최종 result.answer로 교체하고 error/clarification 시 폐기한다. 숫자 검사는 계산 결과와 허용 기간 숫자, 인용 검사는 원문 공백 정규화 범위를 사용한다. 계산에 없는 고정 임계 숫자는 안내에 넣지 않는다.
+
+#67 돌아보기 근거: kind=ANSWER는 answerId/answerVersion 필수, kind=REFLECTION은 둘 다 null이며 attemptId로 식별한다. core는 기존 learning 시도 상세 API의 reflection.text/createdAt, 현재 학생 권한 및 요청 기간의 시도 포함 여부를 검증한다. 근거 원문은 별도 복제하지 않고 참조만 저장한다. 기존 ANSWER 근거는 그대로 유지한다. conversation_message의 fallback/notice는 JSONB로 저장해 다시 조회해도 초안 실패 정보·정상 안내를 보존한다. 최종 템플릿 검증 실패도 오류이며 임시 delta는 폐기한다.

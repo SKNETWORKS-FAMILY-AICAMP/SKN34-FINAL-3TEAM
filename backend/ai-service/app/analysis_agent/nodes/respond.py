@@ -13,8 +13,10 @@ from app.analysis_agent.models import (
     Evidence,
     Fallback,
     LlmVersions,
+    Notice,
     ResultScope,
     Scope,
+    StreamError,
     Verification,
 )
 from app.analysis_agent.nodes.events import delta, status
@@ -68,16 +70,11 @@ async def fallback(state: AnalysisState, runtime: Runtime[AgentContext]) -> Anal
     assert reason is not None
     computation = state["computation"]
     text = templates.fallback_answer(reason, computation, state["request"].scope)
-    return {
-        "result": _result(
-            state,
-            text=text,
-            source="TEMPLATE",
-            evidence=templates.fallback_evidence(computation),
-            verification=state.get("verification"),
-            fallback=Fallback(reason=reason),
-        )
-    }
+    return _checked_template(
+        state,
+        text,
+        fallback=Fallback(reason=reason, draft_verification=state.get("verification")),
+    )
 
 
 async def insufficient(state: AnalysisState, runtime: Runtime[AgentContext]) -> AnalysisState:
@@ -87,7 +84,7 @@ async def insufficient(state: AnalysisState, runtime: Runtime[AgentContext]) -> 
     text = templates.insufficient_answer(
         computation.insufficient, computation, state["request"].scope
     )
-    return {"result": _result(state, text=text, source="TEMPLATE", evidence=[])}
+    return _checked_template(state, text, notice=Notice(reason=computation.insufficient))
 
 
 async def unsupported(state: AnalysisState, runtime: Runtime[AgentContext]) -> AnalysisState:
@@ -95,7 +92,40 @@ async def unsupported(state: AnalysisState, runtime: Runtime[AgentContext]) -> A
     text = templates.unsupported_answer(
         state["intent"], state["computation"], state["request"].scope
     )
-    return {"result": _result(state, text=text, source="TEMPLATE", evidence=[])}
+    return _checked_template(
+        state,
+        text,
+        notice=Notice(reason="MATH_CHECK" if state["intent"] == "MATH_CHECK" else "UNSUPPORTED"),
+    )
+
+
+def _checked_template(
+    state: AnalysisState,
+    text: str,
+    *,
+    fallback: Fallback | None = None,
+    notice: Notice | None = None,
+) -> AnalysisState:
+    checked = verify(text, state["computation"])
+    if not checked.passed:
+        return {
+            "error": StreamError(
+                code="FINAL_RESPONSE_VERIFICATION_FAILED",
+                message="최종 안내를 기록과 대조하지 못했어요.",
+                retryable=True,
+            )
+        }
+    return {
+        "result": _result(
+            state,
+            text=text,
+            source="TEMPLATE",
+            evidence=checked.evidence,
+            verification=checked.verification,
+            fallback=fallback,
+            notice=notice,
+        )
+    }
 
 
 def _result(
@@ -104,8 +134,9 @@ def _result(
     text: str,
     source: str,
     evidence: list[Evidence],
-    verification: Verification | None = None,
+    verification: Verification,
     fallback: Fallback | None = None,
+    notice: Notice | None = None,
 ) -> AnalysisResult:
     computation: Computation = state["computation"]
     scope: Scope = state["request"].scope
@@ -113,6 +144,7 @@ def _result(
         answer=text,
         source=source,  # type: ignore[arg-type]
         fallback=fallback,
+        notice=notice,
         scope=ResultScope.model_validate(
             {"childId": scope.student_id, "from": scope.from_, "to": scope.to}
         ),

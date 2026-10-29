@@ -275,6 +275,8 @@ erDiagram
     varchar status "QUEUED|RUNNING|COMPLETED|FAILED"
     varchar source "NULL 허용 · LLM|LLM_RETRY|TEMPLATE"
     jsonb clarification "NULL 허용 · 범위 확인 질문·선택지"
+    jsonb fallback "NULL 허용 · 대체 사유와 초안 검증 결과"
+    jsonb notice "NULL 허용 · 기록 부족/지원 외 정상 안내"
     jsonb metrics "NULL 허용 · Metric[]"
     jsonb verification "NULL 허용 · numbersMatched, quotesMatched"
     int record_count "NULL 허용"
@@ -290,8 +292,9 @@ erDiagram
     uuid id PK
     uuid message_id FK
     uuid attempt_id "learning 논리 참조"
-    uuid answer_id "learning 논리 참조"
-    int answer_version
+    uuid answer_id "NULL 허용 · ANSWER의 learning 논리 참조"
+    int answer_version "NULL 허용 · ANSWER 필수"
+    varchar kind "ANSWER|REFLECTION"
   }
   report_job {
     uuid id PK "= report.generate job_id"

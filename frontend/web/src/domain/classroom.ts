@@ -157,12 +157,25 @@ export interface Report {
   eveningQuestion?: string
   regenerations: number
 }
+export interface AnalysisVerification {
+  numbersMatched: boolean
+  quotesMatched: boolean
+  contentAllowed?: boolean // historical records may predate this field
+}
+export interface AnalysisFallback {
+  reason: 'VERIFICATION_FAILED' | 'AI_UNAVAILABLE'
+  draftVerification?: AnalysisVerification | null
+}
+export interface AnalysisNotice {
+  reason: 'NO_RECORD' | 'NO_CHANGES' | 'NO_REFLECTIONS' | 'UNSUPPORTED' | 'MATH_CHECK'
+}
 export interface AnalysisResult {
   source: 'LLM' | 'TEMPLATE'
   answer: string
-  evidence: { attemptId: string; answerId: string; quote: string; available: boolean }[]
-  verification: { numbersMatched: boolean; quotesMatched: boolean }
-  fallback?: { reason: string }
+  evidence: { attemptId: string; answerId: string | null; kind?: 'ANSWER' | 'REFLECTION'; quote: string; available: boolean }[]
+  verification: AnalysisVerification
+  fallback?: AnalysisFallback | null
+  notice?: AnalysisNotice | null
 }
 export type DemoScenario =
   | 'normal'

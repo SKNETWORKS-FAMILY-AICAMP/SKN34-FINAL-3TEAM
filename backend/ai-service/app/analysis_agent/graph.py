@@ -30,12 +30,12 @@ def after_retrieve(state: AnalysisState) -> str:
 
 
 def after_compute(state: AnalysisState) -> str:
+    if state.get("fallback_reason"):
+        return "fallback"
     if state["computation"].insufficient:
         return "insufficient"
     if state["intent"] in UNSUPPORTED_INTENTS:
         return "unsupported"
-    if state.get("fallback_reason"):
-        return "fallback"
     return "answer"
 
 

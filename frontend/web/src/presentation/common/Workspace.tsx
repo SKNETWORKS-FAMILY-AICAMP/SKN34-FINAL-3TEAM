@@ -239,7 +239,7 @@ export function EvidenceItems({ items }: { items: Evidence[] }) {
         <article className="ws-card" key={i}>
           <strong>{e.missionTitle ?? '관련 미션'}</strong>
           <p>
-            답변 {e.answerVersion ?? '확인 전'} · {e.submittedAt ?? '시점 정보 없음'}
+            {e.kind === 'REFLECTION' ? '돌아보기' : `답변 ${e.answerVersion ?? '확인 전'}`} · {e.submittedAt ?? '시점 정보 없음'}
           </p>
           {e.available ? (
             <blockquote>{e.quote ?? '인용 정보 없음'}</blockquote>

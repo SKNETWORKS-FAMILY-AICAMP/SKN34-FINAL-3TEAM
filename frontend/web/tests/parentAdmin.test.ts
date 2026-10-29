@@ -17,7 +17,8 @@ const result: MessageResult = {
   evidence: [],
   recordCount: 0,
   source: 'TEMPLATE',
-  verification: { numbersMatched: true, quotesMatched: true },
+  fallback: { reason: 'AI_UNAVAILABLE', draftVerification: null },
+  verification: { numbersMatched: true, quotesMatched: true, contentAllowed: true },
 }
 test('분석 delta는 임시·result로 교체·error/clarification에서 폐기', () => {
   const initial: StreamState = { phase: 'IDLE', temporary: '' }

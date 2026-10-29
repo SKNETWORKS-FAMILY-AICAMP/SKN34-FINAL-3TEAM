@@ -110,6 +110,11 @@ class Verification(ApiModel):
 
 class Fallback(ApiModel):
     reason: FallbackReason
+    draft_verification: Verification | None = None
+
+
+class Notice(ApiModel):
+    reason: Literal["NO_RECORD", "NO_CHANGES", "NO_REFLECTIONS", "UNSUPPORTED", "MATH_CHECK"]
 
 
 class ResultScope(ApiModel):
@@ -130,7 +135,8 @@ class AnalysisResult(ApiModel):
     scope: ResultScope
     metrics: list[Metric]
     evidence: list[Evidence]
-    verification: Verification | None  # LLM 답변을 검사하지 않은 경우 null
+    verification: Verification  # 사용자에게 보낼 최종 응답의 실제 검사 결과
+    notice: Notice | None = None
     record_count: int
     versions: LlmVersions
 
