@@ -20,6 +20,7 @@ data class FeedbackTarget(
  */
 data class StoredJudgment(
     val answerId: UUID,
+    val judgmentId: UUID,
     val attemptId: UUID,
     val attemptOpen: Boolean,
     val status: ProcessStatus,

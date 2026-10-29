@@ -4,6 +4,8 @@ import com.sagomungchi.learning.judgment.domain.FeedbackTarget
 import com.sagomungchi.learning.judgment.domain.Judgment
 import com.sagomungchi.learning.judgment.domain.StoredElement
 import com.sagomungchi.learning.judgment.domain.StoredJudgment
+import com.sagomungchi.learning.judgment.domain.SupportTarget
+import com.sagomungchi.learning.judgment.domain.SupportTargetType
 import com.sagomungchi.learning.judgment.domain.TimelineAnswer
 import org.springframework.stereotype.Repository
 import java.time.Instant
@@ -54,4 +56,7 @@ class JudgmentRepository(private val mapper: JudgmentMapper) {
     fun findStored(attemptId: UUID?, answerId: UUID?): List<StoredJudgment> = mapper.findStored(attemptId, answerId)
 
     fun findStoredElements(attemptId: UUID?, answerId: UUID?): List<StoredElement> = mapper.findStoredElements(attemptId, answerId)
+
+    /** 신고·문의 대상의 학생·시도 (#146). 없으면 null */
+    fun findSupportTarget(type: SupportTargetType, id: UUID): SupportTarget? = mapper.findSupportTarget(type, id)
 }

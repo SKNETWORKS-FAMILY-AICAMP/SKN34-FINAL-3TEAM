@@ -17,7 +17,7 @@ class RecordExistsContractTest(unittest.TestCase):
             for method,path in re.findall(r'@(Get|Post|Put|Patch|Delete)Mapping(?:\("([^"]*)"\))?',text):
                 actual.add((method.lower(),((prefix[1] if prefix else '')+path).removeprefix('/internal')))
         documented={(method,path) for path,methods in self.spec['paths'].items() for method in methods}
-        self.assertEqual(len(actual),33)
+        self.assertEqual(len(actual),35)
         self.assertEqual(actual,documented)
     def test_producer_and_consumer_use_the_same_path(self):
         path='/records/students/{studentId}/exists'
