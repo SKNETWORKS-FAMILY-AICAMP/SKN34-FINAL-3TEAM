@@ -5,6 +5,7 @@ preds.npz 를 여러 개 주면 평균(앙상블)한 예측으로 계산한다 (
 주 지표 (소수 점수 그대로, 정답 = 두 전문가 평균): Pearson, Spearman, MAE, RMSE
 참고 지표 (AI Hub 공식 기준과 비교용, 정수 점수가 필요해서 반올림한 값으로 계산):
     QWK (전문가 1·2 각각과의 평균), weighted F1, macro F1, 정확히 맞힌 비율, ±1점 이내 비율
+    균형 정확도, 과대 판정률(예측 > 정답), 과소 판정률(예측 < 정답) — 기능 명세 NFR-AIQ-02
     혼동 행렬 (정답 점수 × 예측 점수 건수): confusion_<이름>.csv, 화면에는 총점만
     정수 정답 = 두 전문가 평균을 반올림 (baseline.gold 와 같음)
 비교용 "전문가끼리" 줄: 전문가 1을 정답, 전문가 2를 예측으로 놓고 같은 지표를 계산
@@ -25,7 +26,12 @@ import numpy as np
 import pandas as pd
 from baseline import DATASETS, ITEMS, gold, top_score
 from scipy.stats import pearsonr, spearmanr
-from sklearn.metrics import cohen_kappa_score, confusion_matrix, f1_score
+from sklearn.metrics import (
+    balanced_accuracy_score,
+    cohen_kappa_score,
+    confusion_matrix,
+    f1_score,
+)
 from train import M2_DIR, aihub_split, cont_scores, load
 
 
@@ -36,6 +42,10 @@ def int_metrics(y_true: np.ndarray, y_pred: np.ndarray, qwk: float) -> dict:
         "macro_f1": f1_score(y_true, y_pred, average="macro", zero_division=0),
         "exact": float((y_true == y_pred).mean()),
         "within1": float((np.abs(y_true - y_pred) <= 1).mean()),
+        # NFR-AIQ-02: 균형 정확도(정답 점수별 재현율 평균, 드문 1·4점도 같은 무게), 과대·과소 판정률
+        "balanced_acc": balanced_accuracy_score(y_true, y_pred),
+        "over_rate": float((y_pred > y_true).mean()),
+        "under_rate": float((y_pred < y_true).mean()),
     }
 
 

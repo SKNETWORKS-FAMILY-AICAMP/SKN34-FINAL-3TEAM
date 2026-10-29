@@ -159,8 +159,11 @@ def pick_exemplars(df: pd.DataFrame, seed: int) -> pd.DataFrame:
     return best[["prompt_id", "answer_id", "text"]].rename(columns={"text": "exemplar"})
 
 
-def first_segment(df, with_keyword=False, with_purpose=False, exemplar_chars=0):
-    first = "[학년] " + df["grade"] + " [지시문] " + df["prompt"]
+def first_segment(
+    df, with_keyword=False, with_purpose=False, exemplar_chars=0, no_prompt=False
+):
+    # --no-prompt: 지시문 문장을 빼서 모델이 문장을 외우지 못하게 함 (10/29 바꾼 문장 시험에서 서술형이 문장을 외운 것 확인)
+    first = "[학년] " + df["grade"] + ("" if no_prompt else " [지시문] " + df["prompt"])
     if with_purpose:
         # 논술형 글 목적(설명/주장/정서). 루브릭이 글 목적별로 3가지라 '어느 기준으로 채점되는지' 알려줌
         first = first + " [글 목적] " + df["essay_type"].astype(str)
@@ -173,6 +176,72 @@ def first_segment(df, with_keyword=False, with_purpose=False, exemplar_chars=0):
             first + " [예시 답안] " + df["exemplar"].astype(str).str[:exemplar_chars]
         )
     return first.tolist()
+
+
+def build_model(args, n_out, tokenizer):
+    """학습 시작용 모델. --lora면 LLM(Kanana 등) 위에 LoRA만 학습 (나머지 가중치 고정)."""
+    model = AutoModelForSequenceClassification.from_pretrained(
+        args.model,
+        num_labels=n_out,
+        problem_type="regression",  # loss는 아래에서 직접 계산 (cls는 분포 교차 엔트로피)
+        ignore_mismatched_sizes=True,  # 출력 칸은 새로 만듦
+    )
+    if not args.lora:
+        return model
+    from peft import LoraConfig, get_peft_model
+
+    # transformers 5는 LLM을 bf16으로 불러옴 → 새 점수 칸(fp32)과 섞이면 평가 때 에러. 학습 계산은 autocast bf16 그대로
+    model = model.float()
+    # LLM은 pad 토큰이 없는 경우가 많음. 분류 모델이 "마지막 진짜 토큰"을 찾을 때 씀
+    model.config.pad_token_id = tokenizer.pad_token_id
+    # LLM 점수 칸(score)은 bias가 없어서 시작값(평균 점수)을 못 넣음 → bias 있는 칸으로 바꿈
+    if model.score.bias is None:
+        old = model.score
+        model.score = torch.nn.Linear(old.in_features, old.out_features, bias=True)
+        with torch.no_grad():
+            model.score.weight.copy_(old.weight)
+    if args.grad_ckpt:
+        model.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": False}
+        )
+        model.enable_input_require_grads()
+    cfg = LoraConfig(
+        r=args.lora,
+        lora_alpha=2 * args.lora,
+        lora_dropout=0.05,
+        target_modules=[
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ],
+        modules_to_save=["score"],
+        task_type="SEQ_CLS",
+    )
+    model = get_peft_model(model, cfg)
+    model.print_trainable_parameters()
+    return model
+
+
+def load_trained(args, ckpt_dir, n_out, tokenizer):
+    """저장한 모델 불러오기. --lora면 원래 LLM + 저장한 LoRA."""
+    if not args.lora:
+        return AutoModelForSequenceClassification.from_pretrained(ckpt_dir)
+    from peft import PeftModel
+
+    args_g, args.grad_ckpt = args.grad_ckpt, False
+    lora, args.lora = args.lora, 0
+    base = build_model(args, n_out, tokenizer).float()
+    args.grad_ckpt, args.lora = args_g, lora
+    base.config.pad_token_id = tokenizer.pad_token_id
+    if base.score.bias is None:
+        base.score = torch.nn.Linear(
+            base.score.in_features, base.score.out_features, bias=True
+        )
+    return PeftModel.from_pretrained(base, ckpt_dir)
 
 
 def make_loader(
@@ -316,6 +385,92 @@ def mean_qwk(df: pd.DataFrame, raw: np.ndarray) -> float:
     return float(np.mean([evaluate(df, it, scores[it])["qwk"] for it in ITEMS]))
 
 
+def load_override(path: Path, df: pd.DataFrame) -> pd.DataFrame:
+    """--prompt-override CSV(prompt_id, prompt)를 읽고 검사한다. 문장 내용은 출력하지 않음."""
+    ov = pd.read_csv(path, dtype={"prompt_id": str})
+    if not {"prompt_id", "prompt"} <= set(ov.columns):
+        raise SystemExit(
+            f"{path}: prompt_id, prompt 열이 필요함 (지금 {list(ov.columns)})"
+        )
+    ov["prompt_id"] = ov["prompt_id"].str.strip()
+    ov["prompt"] = ov["prompt"].astype(str).str.strip()
+    ov = ov[ov["prompt"].ne("") & ov["prompt"].ne("nan")]
+    if ov["prompt_id"].duplicated().any():
+        raise SystemExit(
+            f"{path}: prompt_id 중복 {ov.loc[ov['prompt_id'].duplicated(), 'prompt_id'].tolist()}"
+        )
+    unknown = sorted(set(ov["prompt_id"]) - set(df["prompt_id"]))
+    if unknown:
+        raise SystemExit(f"{path}: 데이터에 없는 prompt_id {unknown}")
+    same = ov.merge(
+        df[["prompt_id", "prompt"]].drop_duplicates("prompt_id"), on="prompt_id"
+    )
+    n_same = int((same["prompt_x"] == same["prompt_y"]).sum())
+    if n_same:
+        print(f"  주의: 원래 문장과 똑같은 지시문 {n_same}개 (비교 의미 없음)")
+    return ov[["prompt_id", "prompt"]].reset_index(drop=True)
+
+
+def override_eval(model, tokenizer, test, ov, args, device, input_opts, run_name):
+    """같은 모델·같은 답으로 원래 지시문 vs 바꾼 지시문 성적을 짝지어 비교 (평가할 때만 교체)."""
+    sub = test[test["prompt_id"].isin(ov["prompt_id"])].reset_index(drop=True)
+    missing = sorted(set(ov["prompt_id"]) - set(sub["prompt_id"]))
+    if missing:
+        print(f"  주의: 평가용에 답이 없는 문항 {missing} (비교에서 빠짐)")
+    if sub.empty:
+        print("  바꾼 지시문 문항이 평가용에 하나도 없어서 비교 생략")
+        return
+    new = sub.copy()
+    new["prompt"] = sub["prompt_id"].map(dict(zip(ov["prompt_id"], ov["prompt"])))
+    raws = {}
+    rows = []
+    for cond, part in [("original", sub), ("override", new)]:
+        loader = make_loader(
+            part,
+            tokenizer,
+            args.max_length,
+            args.eval_batch_size,
+            False,
+            head=args.head,
+            **input_opts,
+        )
+        raws[cond] = predict(model, loader, device)
+        cm = cont_metrics(part, raws[cond])
+        scores = to_scores(raws[cond])
+        cm["qwk"] = [
+            round(float(evaluate(part, it, scores[it])["qwk"]), 3) for it in cm["item"]
+        ]
+        cm.insert(0, "condition", cond)
+        rows.append(cm)
+    out = pd.concat(rows, ignore_index=True)
+    # 두 조건 예측이 답마다 얼마나 달라졌는지 (0에 가까우면 모델이 지시문 문장을 거의 안 봄)
+    shift = np.abs(cont_scores(raws["override"]) - cont_scores(raws["original"])).mean(
+        0
+    )
+    # 총점 Pearson 차이의 짝 부트스트랩 95% 구간 (같은 답을 뽑아 두 조건을 함께 계산)
+    gold = targets(sub)[:, ITEMS.index("hol")]
+    po = cont_scores(raws["original"])[:, ITEMS.index("hol")]
+    pn = cont_scores(raws["override"])[:, ITEMS.index("hol")]
+    rs = np.random.RandomState(args.seed)
+    diffs = []
+    for _ in range(2000):
+        i = rs.randint(0, len(sub), len(sub))
+        diffs.append(
+            np.corrcoef(pn[i], gold[i])[0, 1] - np.corrcoef(po[i], gold[i])[0, 1]
+        )
+    lo, hi = np.nanpercentile(diffs, [2.5, 97.5])
+    piv = out.pivot(index="item", columns="condition", values="pearson").reindex(ITEMS)
+    piv["diff"] = (piv["override"] - piv["original"]).round(3)
+    piv["pred_shift_mae"] = np.round(shift, 3)
+    args.result_dir.mkdir(parents=True, exist_ok=True)
+    out.to_csv(args.result_dir / f"override_{run_name}.csv", index=False)
+    piv.to_csv(args.result_dir / f"override_{run_name}_diff.csv")
+    print(
+        f"\n지시문 교체 비교 (문항 {sub['prompt_id'].nunique()}개, 답 {len(sub):,}개, 소수 Pearson):\n"
+        f"{piv.to_string()}\n총점 차이(바꾼-원래) 95% 구간: [{lo:.3f}, {hi:.3f}]"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="M2 roberta 파인튜닝")
     parser.add_argument("--model", default="klue/roberta-base")
@@ -377,6 +532,11 @@ def main() -> None:
         "--with-keyword", action="store_true", help="입력에 문항 핵심어 추가 (서술형만)"
     )
     parser.add_argument(
+        "--no-prompt",
+        action="store_true",
+        help="입력에서 지시문 문장을 뺌 (학년 + 핵심어 + 학생 글)",
+    )
+    parser.add_argument(
         "--with-purpose",
         action="store_true",
         help="입력에 글 목적(설명/주장/정서) 추가 (논술형만)",
@@ -402,6 +562,34 @@ def main() -> None:
         type=int,
         default=0,
         help="공부용 문항을 N개만 씀 (문항 수에 따른 성적 확인용, 0이면 전부)",
+    )
+    parser.add_argument(
+        "--lora",
+        type=int,
+        default=0,
+        help="LoRA rank (예: 16). LLM(kakaocorp/kanana-1.5-2.1b-base 등)을 LoRA로 학습. 0이면 끔 (roberta 전체 학습)",
+    )
+    parser.add_argument(
+        "--grad-ckpt",
+        action="store_true",
+        help="gradient checkpointing (--lora에서 메모리 절약, 대신 느려짐)",
+    )
+    parser.add_argument(
+        "--train-answers",
+        type=int,
+        default=0,
+        help="공부용 답을 전체 N개로 무작위로 줄임 (--train-prompts와 같이: 답 수를 고정하고 문항 수만 바꾸는 대조 실험, 0이면 전부)",
+    )
+    parser.add_argument(
+        "--prompt-override",
+        type=Path,
+        default=None,
+        help="CSV(prompt_id, prompt). 학습은 원래 지시문, 평가 때만 이 문장으로 바꿔 원래 문장과 비교 (--aihub-split와 같이)",
+    )
+    parser.add_argument(
+        "--eval-only",
+        action="store_true",
+        help="학습 없이 --out-dir/<run 이름>에 저장된 모델로 평가만 (같은 옵션으로 먼저 학습해 둔 모델). 보통 --prompt-override와 같이",
     )
     parser.add_argument(
         "--save-preds",
@@ -439,6 +627,8 @@ def main() -> None:
         run_name += "_cls"
     if args.with_keyword:
         run_name += "_kw"
+    if args.no_prompt:
+        run_name += "_noprompt"
     if args.with_purpose:
         run_name += "_purpose"
     if args.with_exemplar:
@@ -453,9 +643,18 @@ def main() -> None:
         run_name += f"_mergevalid_ep{args.epochs}"
     if args.train_prompts:
         run_name += f"_p{args.train_prompts}"
+    if args.train_answers:
+        run_name += f"_a{args.train_answers}"
+    if args.lora:
+        run_name += f"_lora{args.lora}"
     print(f"장치: {device} / 모델: {args.model} / 데이터: {args.dataset}")
 
     df = load(args)
+    override = load_override(args.prompt_override, df) if args.prompt_override else None
+    if override is not None:
+        print(f"지시문 교체 {len(override)}개 (평가 때만)")
+        if not args.aihub_split:
+            print("  주의: --aihub-split 없이 쓰면 평가 문항이 학습에 없던 지시문임")
     if args.aihub_split:
         df = aihub_split(df, args.split_seed)
         print("AI Hub 구분 사용:", df["split_new"].value_counts().to_dict())
@@ -468,6 +667,7 @@ def main() -> None:
         print(f"예시 답안 {len(ex)}개 (문항당 1개)를 학습·평가에서 빼고 입력에 붙임")
     input_opts = {
         "with_keyword": args.with_keyword,
+        "no_prompt": args.no_prompt,
         "with_purpose": args.with_purpose,
         "exemplar_chars": args.exemplar_chars if args.with_exemplar else 0,
     }
@@ -485,6 +685,15 @@ def main() -> None:
         sets["train"] = sets["train"][sets["train"]["prompt_id"].isin(keep)]
         sets["train"] = sets["train"].reset_index(drop=True)
         print(f"공부용 문항 {len(keep)}개만 사용")
+    if args.train_answers and len(sets["train"]) > args.train_answers:
+        sets["train"] = (
+            sets["train"]
+            .sample(n=args.train_answers, random_state=args.seed)
+            .reset_index(drop=True)
+        )
+        print(
+            f"공부용 답 {args.train_answers}개로 줄임 (문항 {sets['train']['prompt_id'].nunique()}개)"
+        )
     if args.merge_valid:
         sets["train"] = pd.concat([sets["train"], sets["valid"]], ignore_index=True)
         print(
@@ -492,14 +701,49 @@ def main() -> None:
         )
     print({k: len(v) for k, v in sets.items()})
 
+    if args.eval_only:
+        # 저장된 모델을 불러와 평가용 성적 + (있으면) 지시문 교체 비교만. 학습 결과 파일은 건드리지 않음
+        ckpt_dir = args.out_dir / run_name
+        if not any(
+            (ckpt_dir / f).exists() for f in ("config.json", "adapter_config.json")
+        ):
+            raise SystemExit(
+                f"--eval-only: 저장된 모델이 없음 ({ckpt_dir}). 같은 옵션으로 먼저 학습"
+            )
+        print(f"--eval-only: {ckpt_dir} 불러옴 (학습 안 함)")
+        if device.type == "cuda":  # 학습 후 평가와 같은 계산 설정 (TF32)
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+        tokenizer = AutoTokenizer.from_pretrained(ckpt_dir)
+        n_out = len(ITEMS) * N_CLASS if args.head == "cls" else len(ITEMS)
+        model = load_trained(args, ckpt_dir, n_out, tokenizer).to(device)
+        test = sets["test"]
+        loader = make_loader(
+            test,
+            tokenizer,
+            args.max_length,
+            args.eval_batch_size,
+            False,
+            head=args.head,
+            **input_opts,
+        )
+        cont = cont_metrics(test, predict(model, loader, device))
+        print(
+            f"\n평가용 소수 점수 성적 (학습 때 cont_{run_name}.csv와 같아야 함):\n{cont.to_string(index=False)}"
+        )
+        if override is not None:
+            override_eval(
+                model, tokenizer, test, override, args, device, input_opts, run_name
+            )
+        else:
+            print("  --prompt-override가 없어서 지시문 교체 비교는 생략")
+        return
+
     tokenizer = AutoTokenizer.from_pretrained(args.model)
+    if tokenizer.pad_token is None:  # LLM 토크나이저는 pad가 없는 경우가 많음
+        tokenizer.pad_token = tokenizer.eos_token
     n_out = len(ITEMS) * N_CLASS if args.head == "cls" else len(ITEMS)
-    model = AutoModelForSequenceClassification.from_pretrained(
-        args.model,
-        num_labels=n_out,
-        problem_type="regression",  # loss는 아래에서 직접 계산 (cls는 분포 교차 엔트로피)
-        ignore_mismatched_sizes=True,  # 출력 칸은 새로 만듦
-    ).to(device)
+    model = build_model(args, n_out, tokenizer).to(device)
 
     # 점수 칸의 시작값을 공부용 평균 점수(3점 언저리)로 맞춤.
     # 0에서 시작하면 3점까지 올라오는 데만 학습을 꽤 써서, 짧게 돌리면 전부 1점이 나옴
@@ -538,7 +782,11 @@ def main() -> None:
         )
         torch.backends.cudnn.allow_tf32 = True
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
+    optimizer = torch.optim.AdamW(
+        [p_ for p_ in model.parameters() if p_.requires_grad],
+        lr=args.lr,
+        weight_decay=0.01,
+    )
     total_steps = len(loaders["train"]) * args.epochs
     scheduler = get_linear_schedule_with_warmup(
         optimizer, int(total_steps * 0.1), total_steps
@@ -591,6 +839,7 @@ def main() -> None:
             if step % 100 == 0:
                 print(
                     f"  에폭 {epoch} 스텝 {step}/{len(loaders['train'])} loss {loss.item():.3f}"
+                    f" ({(time.time() - start) / 60:.1f}분)"
                 )
 
         raw_v = predict(model, loaders["valid"], device)
@@ -644,7 +893,7 @@ def main() -> None:
             break
 
     # 검증 기준 가장 좋았던 에폭의 가중치로 평가용 성적을 한 번만 낸다
-    model = AutoModelForSequenceClassification.from_pretrained(ckpt_dir).to(device)
+    model = load_trained(args, ckpt_dir, n_out, tokenizer).to(device)
     raw_valid = predict(model, loaders["valid"], device)
     raw_test = predict(model, loaders["test"], device)
     if args.save_preds:
@@ -683,6 +932,11 @@ def main() -> None:
     print(
         f"\n평가용 소수 점수 성적 (반올림 없음, 정답=두 전문가 평균):\n{cont.to_string(index=False)}"
     )
+
+    if override is not None:
+        override_eval(
+            model, tokenizer, test, override, args, device, input_opts, run_name
+        )
 
     info = {
         **{k: str(v) for k, v in vars(args).items()},
