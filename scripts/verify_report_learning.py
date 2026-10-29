@@ -266,6 +266,18 @@ def verify(output):
                     actor,
                 ),
             )
+            if kind == "CLASSIFICATION":
+                # #79 validates assignments against the mission's declared groups.
+                db.execute(
+                    "UPDATE mission_version SET categories=%s WHERE id=%s",
+                    (
+                        Jsonb([
+                            {"id": "g1", "label": "첫 번째 그룹"},
+                            {"id": "g2", "label": "두 번째 그룹"},
+                        ]),
+                        version,
+                    ),
+                )
             db.execute(
                 "INSERT INTO rubric_version(id,mission_id,version,created_by,created_at) VALUES(%s,%s,1,%s,now())",
                 (rubric, mission, actor),
