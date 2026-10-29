@@ -134,7 +134,7 @@ class AttemptControllerTest(@Autowired private val mockMvc: MockMvc) {
         val followupId = UUID.randomUUID()
         val done = FeedbackResult(
             status = ProcessStatus.DONE,
-            judgment = JudgmentView(JudgmentResult.PARTIAL, true, listOf(ElementView(elementId, "주장", true, "답", ElementSource.AI_OBSERVATION)), null),
+            judgment = JudgmentView(UUID.randomUUID(), JudgmentResult.PARTIAL, true, listOf(ElementView(elementId, "주장", true, "답", ElementSource.AI_OBSERVATION)), null),
             followup = FollowupView(followupId, FollowupType.TELL_MORE, "왜 그렇게 생각했나요?", FollowupSource.LLM),
             nextActions = listOf(NextAction.ANSWER_FOLLOWUP, NextAction.FINISH),
             versions = Versions("M@1", "M@1", "gpt", "judge@2"),

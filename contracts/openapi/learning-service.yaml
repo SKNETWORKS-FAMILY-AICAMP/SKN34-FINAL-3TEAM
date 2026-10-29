@@ -11,6 +11,7 @@ info:
     마무리·돌아보기·자기 평가(#26)는 학생 STUDENT 컨텍스트로 추가됐다.
     판정 정정(#80)은 ADMIN 컨텍스트와 판정 학생 1명 X-Student-Scope, 관리자 X-User-Id를 요구한다.
     관리자 미션(#145)은 ADMIN 컨텍스트와 관리자 X-User-Id를 요구한다(CONTENT 권한은 core 프록시가 확인).
+    신고 지원 조회(#146)는 대상 확인이 STUDENT·PARENT·ADMIN, 원문이 ADMIN과 학생 1명 X-Student-Scope, 둘 다 X-User-Id를 요구한다.
 servers:
   - url: /internal
 security:
@@ -505,6 +506,76 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /support/targets/{targetType}/{targetId}:
+    get:
+      operationId: supportTarget
+      summary: 신고·문의 대상 확인 (#146, core #46)
+      description: >-
+        판정·되묻기·시도 ID로 학생·시도를 찾음(원문 없음). 학생·보호자 신고 접수, 문의 시도 연결, 관리자 정정 전 확인에 씀.
+        JUDGMENT는 judgmentId·previousResult(지금 보이는 결과, 최신 정정 반영, 판정 DONE 전이면 없음),
+        FOLLOWUP은 되묻기를 만든 판정의 judgmentId, ATTEMPT는 둘 다 없음. 없는 칸은 생략.
+        core 소비 계약은 support-learning-required.yaml.
+      parameters:
+        - name: targetType
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [JUDGMENT, FOLLOWUP, ATTEMPT]
+        - name: targetId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: X-User-Id
+          in: header
+          required: true
+          description: core가 검증한 요청자 ID. 없거나 UUID가 아니면 400
+          schema: {type: string, format: uuid}
+        - name: X-User-Role
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [STUDENT, PARENT, ADMIN]
+        - name: X-Student-Scope
+          in: header
+          required: true
+          description: core가 검증한 학생 UUID 쉼표 구분 목록. 대상 학생이 있어야 함(ADMIN은 정확히 1명)
+          schema: {type: string}
+      responses:
+        '200':
+          description: 대상의 학생·시도
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportTarget'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /support/attempts/{attemptId}:
+    get:
+      operationId: supportOriginal
+      summary: 관리자 신고·문의 원문 (#146, core #46)
+      description: >-
+        답변 버전 순 원문과 피드백 결과만. 초안·메모·학생 이름·돌아보기 없음. 학생 전용 /attempts/{attemptId}와 별도.
+        SERVICE_OPS 검사는 core.
+      parameters:
+        - $ref: '#/components/parameters/AttemptId'
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/CorrectionScope'
+      responses:
+        '200':
+          description: 시도 원문
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportOriginal'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
   /records/students/{studentId}/summary:
     get:
       operationId: recordSummary
@@ -1557,8 +1628,9 @@ components:
     Judgment:
       type: object
       additionalProperties: false
-      required: [result, trial, elements, heldReason]
+      required: [judgmentId, result, trial, elements, heldReason]
       properties:
+        judgmentId: {type: string, format: uuid, description: 신고(targetType JUDGMENT)·정정 대상 ID (#146)}
         result:
           type: string
           enum: [CORRECT, PARTIAL, RETHINK, HELD]
@@ -1925,6 +1997,37 @@ components:
         reportId: {type: string, format: uuid, description: core error_report ID}
         reason: {type: string, minLength: 1, description: 정정 사유 (공백만이면 400)}
         corrected: {$ref: '#/components/schemas/JudgmentResult'}
+    SupportTarget:
+      type: object
+      additionalProperties: false
+      required: [studentId, attemptId]
+      properties:
+        studentId: {type: string, format: uuid}
+        attemptId: {type: string, format: uuid}
+        judgmentId: {type: string, format: uuid, description: JUDGMENT·FOLLOWUP만}
+        previousResult:
+          type: string
+          enum: [CORRECT, PARTIAL, RETHINK, HELD]
+          description: JUDGMENT이고 판정 DONE일 때만. 지금 보이는 결과(최신 정정 반영) = 정정 직전 결과
+    SupportOriginal:
+      type: object
+      additionalProperties: false
+      required: [studentId, attemptId, answers]
+      properties:
+        studentId: {type: string, format: uuid}
+        attemptId: {type: string, format: uuid}
+        answers:
+          type: array
+          description: 답변 버전 순
+          items:
+            type: object
+            additionalProperties: false
+            required: [answerId, version, text, feedback]
+            properties:
+              answerId: {type: string, format: uuid}
+              version: {type: integer, minimum: 1}
+              text: {type: string, description: 시도 상세 AnswerItem.text와 같은 원문}
+              feedback: {$ref: '#/components/schemas/FeedbackResult'}
     CorrectionResult:
       type: object
       additionalProperties: false
