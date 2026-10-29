@@ -106,6 +106,7 @@ export interface DemoSnapshot {
   reports: [string, Report[]][]
 }
 export function createDemoGateway(): ClassroomGateway & {
+  login: NonNullable<ClassroomGateway['login']> // 개발 시연 이메일 로그인 (#97)
   snapshot: () => DemoSnapshot
   restoreSnapshot: (snapshot: DemoSnapshot) => void
   replaceChildren: (children: Child[]) => void

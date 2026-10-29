@@ -12,6 +12,9 @@ const js = await Promise.all(
 assert.ok(js.length)
 for (const marker of [
   'setupWorker',
+  'demo-pin-student',
+  '가상 학생으로 PIN 로그인 준비',
+  '/auth/student/demo-device',
   'fixtureStore',
   'msw-access-',
   'msw-consent-',
@@ -20,6 +23,8 @@ for (const marker of [
   'Mocking enabled',
   'MOCK_NOT_IMPLEMENTED',
   'mockAccountChildren',
+  '가상 리포트 알림 예시',
+  '요구사항 구현 점검',
   'mock-reviewer',
   'content-1',
   'mock-report-files',
@@ -45,4 +50,11 @@ for (const marker of [
     false,
     `운영 JS에 목 표시 포함: ${marker}`,
   )
+// #97: 실제 모드에는 이메일 로그인·가입·비밀번호 재확인 호출이 없다 (학부모 Google 인증, 학생 기기·PIN)
+for (const [pattern, name] of [
+  [/["'`]\/auth\/login["'`]/, '/auth/login'],
+  [/["'`]\/auth\/signup["'`]/, '/auth/signup'],
+  [/\/me\/reauth["'`][^;]{0,80}password/, '/me/reauth {password}'],
+])
+  assert.equal(js.some((s) => pattern.test(s)), false, `운영 JS에 제거한 호출 포함: ${name}`)
 console.log('운영 JS에 MSW·핸들러·가상 학생 fixture 없음 / 개발 worker 빌드 복사본 제외 확인')

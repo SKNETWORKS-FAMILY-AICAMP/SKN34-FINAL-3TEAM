@@ -141,14 +141,6 @@ export function createApiGateway(): ClassroomGateway {
     setScenario() {
       /* UI 시연 전용. 실제 API 결과를 변조하지 않는다. */
     },
-    async login(email, password) {
-      const raw = object(await apiFetch<unknown>('/auth/login', body({ email, password })))
-      if (!['PARENT', 'ADMIN'].includes(String(raw.role)))
-        return contractError('학부모/관리자 로그인 role이 필요합니다.')
-      setAccessToken(text(raw.accessToken, 'accessToken'), raw.role as 'PARENT' | 'ADMIN')
-      const me = raw.role === 'ADMIN' ? object(await apiFetch('/me')) : raw
-      return { role: raw.role, permissions: me.permissions } as Session
-    },
     async logout() {
       try {
         await apiFetch('/auth/logout', body({}))

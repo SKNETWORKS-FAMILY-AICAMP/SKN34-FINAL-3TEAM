@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { ReportProblem } from '../service/ReportProblem.tsx'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Child } from '../../domain/classroom.ts'
 import type { Scope, StreamState, ConversationMessage, Evidence } from '../../domain/parent.ts'
@@ -149,6 +150,7 @@ export function ParentConversation({
                 m.verification.quotesMatched ? (
                 <>
                   <p>{m.answer}</p>
+                  <ReportProblem targetType="ANALYSIS" targetId={m.messageId}/>
                   {m.scope && (
                     <p>
                       이 답변의 실제 범위 · {m.scope.from} ~ {m.scope.to}

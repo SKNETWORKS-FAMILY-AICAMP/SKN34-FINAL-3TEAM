@@ -93,13 +93,25 @@ export interface AdminMission {
     createdAt: string
   }[]
 }
+export interface EvaluationEvidence {
+  datasetId: string; datasetVersion: string; baselineVersion: string; comparisonReport: string
+  trainingEvaluationSeparation: string; quoteAccuracy: string; calculationAccuracy: string; humanReview: string
+  evaluatedScopes: string[]
+}
+export interface EvaluationRecord {
+  evidence: EvaluationEvidence
+  approval: null | { scopes: string[]; reason: string; approvedBy: string; approvedAt: string }
+  activeScopes: string[]
+  revision: number
+}
 export interface ModelVersion {
   id: string
   kind: 'RUBRIC' | 'MODEL' | 'PROMPT' | 'GENERATION'
   name: string
   version: string
   status: 'REGISTERED' | 'ACTIVE' | 'INACTIVE'
-  evalResult?: string
+  evalResult?: EvaluationRecord | null
+  refId?: string | null
   approvedBy?: string
   artifactUri?: string
   activatedAt?: string
@@ -126,6 +138,7 @@ export interface Usage {
     inputTokens: number | null
     outputTokens: number | null
     costUsd: number | null
+    unpricedCalls: number
   }[]
 }
 export const hasPermission = (permissions: Permission[] | undefined, p: Permission) =>

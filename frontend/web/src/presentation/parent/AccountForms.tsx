@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router'
 import type { Child } from '../../domain/classroom.ts'
 import type { Consent, ConsentDocument } from '../../domain/parent.ts'
 import { parentApi } from '../../data/parent/api.ts'
+import { demoSignup } from '../../data/parent/demoSignup.ts'
 import { useParentQuery, useParentMutation } from '../../data/parent/queries.ts'
 import { isDemo } from '../../data/classroom/useClassroom.ts'
 import { Workspace, QueryFeedback } from '../common/Workspace.tsx'
@@ -55,7 +56,7 @@ export function SignupPage() {
 function DemoSignupPage() {
   const navigate = useNavigate(),
     documents = useParentQuery(['consents'], (signal) => parentApi.documents(signal)),
-    signup = useParentMutation(parentApi.signup)
+    signup = useParentMutation(demoSignup)
   const [email, setEmail] = useState(''),
     [password, setPassword] = useState(isDemo ? 'demo-only' : ''),
     [name, setName] = useState(''),
@@ -234,13 +235,10 @@ export function ProfileSettings({ child }: { child: Child }) {
   const [name, setName] = useState(''),
     [nickname, setNickname] = useState(child.nickname),
     [grade, setGrade] = useState(child.grade),
-    [password, setPassword] = useState(''),
-    [token, setToken] = useState(''),
     [notice, setNotice] = useState(''),
     updateMe = useParentMutation(parentApi.updateMe),
-    reauth = useParentMutation(parentApi.reauth),
     update = useParentMutation((d: { nickname: string; grade: number }) =>
-      parentApi.updateChild(child.id, d, token),
+      parentApi.updateChild(child.id, d),
     ),
     me = useParentQuery(['me'], () => parentApi.me())
   return (
@@ -277,35 +275,8 @@ export function ProfileSettings({ child }: { child: Child }) {
       <section className="ws-card">
         <h2>자녀 정보</h2>
         <p>학년 변경은 이후 제공 문제에만 적용됩니다. 과거 답변과 문항은 변경하지 않습니다.</p>
-        {isDemo ? <form
-          className="ws-form"
-          onSubmit={(e) => {
-            e.preventDefault()
-            void reauth
-              .mutateAsync(password)
-              .then((r) => {
-                setToken(r.reauthToken)
-                setPassword('')
-                setNotice('재확인을 완료했습니다.')
-              })
-              .catch(() => {})
-          }}
-        >
-          <label>
-            중요 변경 전 비밀번호 확인
-            <input
-              aria-label="재확인 비밀번호"
-              type="password"
-              value={password}
-              required
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </label>
-          <button className="cj-secondary" disabled={reauth.isPending}>
-            본인 재확인
-          </button>
-          <ErrorNotice error={reauth.error} />
-        </form> : <p>중요 정보 변경을 위한 Google 본인 확인 기능은 준비 중입니다.</p>}
+        <p>현재 로그인 권한으로 별명과 학년을 수정합니다. 연결 해제·삭제는 아래에서 별도로 본인 확인합니다.</p>
+
         <form
           className="ws-form"
           onSubmit={(e) => {
@@ -339,7 +310,7 @@ export function ProfileSettings({ child }: { child: Child }) {
               ))}
             </select>
           </label>
-          <button className="cj-primary" disabled={!token || update.isPending}>
+          <button className="cj-primary" disabled={update.isPending}>
             자녀 정보 저장
           </button>
           <ErrorNotice error={update.error} />

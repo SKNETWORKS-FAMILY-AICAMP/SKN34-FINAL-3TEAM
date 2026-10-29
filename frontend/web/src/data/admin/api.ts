@@ -12,6 +12,7 @@ import type {
   MissionVersion,
   ErrorReport,
   Usage,
+  EvaluationEvidence,
 } from '../../domain/admin/operations.ts'
 const p = (id: string) => encodeURIComponent(id)
 export const adminApi = {
@@ -65,13 +66,14 @@ export const adminApi = {
     kind: string
     name: string
     version: string
-    evalResult: string
-    approvedBy: string
+    evaluation: EvaluationEvidence
+    refId?: string
+    artifactUri?: string
   }) => apiFetch<ModelVersion>('/admin/model-versions', json(data)),
-  modelAction: (id: string, action: 'activate' | 'rollback', reason: string) =>
+  modelAction: (id: string, action: 'activate' | 'rollback', reason: string, scopes: string[], reanalysisPlanned = false) =>
     apiFetch<ModelVersion>(
       `/admin/model-versions/${p(id)}/${action}`,
-      json({ reason, reanalyze: false }),
+      json({ reason, scopes, reanalysisPlanned, ...(action === 'activate' ? { approved: true } : {}) }),
     ),
   usage: (period: Period, callType: string, signal?: AbortSignal) =>
     apiFetch<Usage>(`/admin/ai-usage?${new URLSearchParams({ ...period, callType })}`, { signal }),
