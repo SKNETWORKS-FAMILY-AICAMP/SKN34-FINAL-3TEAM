@@ -51,3 +51,11 @@ Git 이력 재작성·PR 생성·공용 브랜치 push는 하지 않는다. 기�
 PR #123은 base feature/core-support-payments-integration, head b017044이며 GitHub mergeable=true다. 병합 충돌이 아니라 ci-db-schema run 40806885690/job 123227860037의 계약 검사 실패였다. checkout fetch-depth=1인 CI에서 #47의 test_existing_contracts_preserved가 git show 85bf107을 호출해 exit 128이 발생했다. 로컬 전체 이력 검증에서는 발견하지 못한 테스트 환경 의존성이다. 공용 workflow의 fetch 범위를 바꾸지 않고, 검토한 base의 기존 91경로·114스키마를 canonical JSON SHA-256 fixture로 저장해 기존 계약 보존 검사를 유지한다. 테스트는 Git 이력·네트워크·현재 브랜치 이름에 의존하지 않는다. production/DB/프론트 변경은 없다. 검증은 전체 Python 계약 검사와 Git 메타데이터가 없는 격리 복사본의 동일 검사로 수행한다.
 
 CI 보완 로컬 검증: 전체 Python 계약 검사 69/69 통과. 별도 복사본에서 `.git` 없이 PATH도 비운 상태로 동일한 69/69 통과했다. 이 복사본의 기존 `/admin/ai-usage` 계약을 의도적으로 바꾸면 보존 검사가 실패함을 확인해, 검사 생략으로 통과시킨 것이 아님을 확인했다. git diff --check 통과. 테스트/fixture/기록만 변경해 기존 JDK·프론트 전체 검증은 반복하지 않는다. 원격 결과는 후속 push의 새 run을 기준으로 확인한다.
+
+## Core CI #77 메시지 테스트 순서 보완
+
+후속 head ef1383d의 schema/web/ai는 성공했지만 core run 40807420742/job 123229580279에서 270개 중 ReportMessagingTest의 중복·역순 이벤트 사례 1개가 실패했다. COMPLETED 검사는 통과했고 startedAt이 null이라는 검사만 실패했다. 완료→시작의 브로커 발행 순서를 DB 커밋 순서로 가정한 것이 원인이다. 공유 Testcontainers 브로커를 사용하는 복수 Spring context의 consumer는 메시지를 서로 다른 시점에 처리할 수 있다. 직전 b017044의 같은 core workflow는 성공했으므로 이력 검사 오류와 별개의 간헐적 테스트 순서 의존성이다.
+
+사용자가 기반영 ReportMessagingTest의 해당 사례만 동기화하는 변경을 명시적으로 허용했다. 완료 이벤트를 먼저 발행하고 processed_event의 커밋 및 COMPLETED를 확인한 뒤 중복 완료·늦은 시작·실패 이벤트를 발행한다. 기존 startedAt null·COMPLETED·실행 이력 1개 검사는 유지한다. 기존 ReportRepositoryTest의 정상 started→failed 상태·시각/실패 원인 검사도 유지한다. production·공통 consumer·workflow는 변경하지 않는다. 검증 후 기존 feature 브랜치에 후속 커밋하며 이력 재작성은 하지 않는다.
+
+순서 보완 후 전용 JDK21 Linux 환경에서 core 전체 44클래스 270개 test·bootJar 통과(실패·오류·생략 0). 기존 메시징/상태 전이 검사와 #47 알림 재처리·#48 결제 회귀를 포함한다. 테스트 한 파일과 이 기록만 변경되었으며 git diff --check 통과 후 기존 feature head에 후속 커밋·push한다. 원격 4개 workflow의 최종 상태는 새 head를 기준으로 별도 확인한다.
