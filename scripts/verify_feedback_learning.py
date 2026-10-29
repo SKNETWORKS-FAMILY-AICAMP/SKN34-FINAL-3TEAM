@@ -251,7 +251,7 @@ def verify(args):
                 VALUES('{rubric}','{mission}',1,'{user}',now());
                 INSERT INTO rubric_element(id,rubric_version_id,code,label,description,points,good_thought,judge_verified,sort_order)
                 VALUES('{element}','{rubric}','reason','까닭','까닭 찾기',1,false,true,1);
-                UPDATE mission SET current_version_id='{version}',current_rubric_version_id='{rubric}' WHERE id='{mission}';""")
+                UPDATE mission SET current_version_id='{version}',current_rubric_version_id='{rubric}',published_version_id='{version}',published_rubric_version_id='{rubric}' WHERE id='{mission}';""")
             attempt = request(f"/api/v1/missions/{mission}/attempts", {}, expected=201)["attemptId"]
             answer = request(f"/api/v1/attempts/{attempt}/answers", {"inputType": "NARRATIVE", "text": "햇빛이 비쳐서 식물이 자랐어요."},
                              expected=201, headers={"Idempotency-Key": str(uuid.uuid4())})["answerId"]
