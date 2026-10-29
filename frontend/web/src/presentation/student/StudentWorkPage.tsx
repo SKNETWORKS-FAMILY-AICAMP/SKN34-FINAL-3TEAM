@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useBlocker } from 'react-router'
+import { ReportProblem } from '../service/ReportProblem.tsx'
 import { ArrowLeft, Check, Lightbulb, NotebookPen, Pencil, Volume2 } from 'lucide-react'
 import { useAttempt, useLearningActions, isDemo } from '../../data/classroom/useClassroom.ts'
 import { DraftConflictError } from '../../data/classroom/errors.ts'
@@ -274,6 +275,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
   return (
     <section className="cj-editor st-work" aria-label="미션 작성기">
       <header className="st-work-top">
+        {a.answers.length > 0 && <ReportProblem targetType="JUDGMENT" targetId={a.answers.at(-1)!.answerId}/>}
         <button type="button" className="st-back" onClick={back}>
           <ArrowLeft aria-hidden="true" />
           공책으로

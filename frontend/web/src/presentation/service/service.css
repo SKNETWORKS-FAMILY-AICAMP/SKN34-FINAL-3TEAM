@@ -1,0 +1,22 @@
+#class-journal .svc-page, .svc-page { display: grid; gap: 20px; max-width: 1120px; min-width: 0; margin: 0 auto; }
+.svc-page h1 { font-size: 24px; margin: 0; }
+.svc-page h2 { font-size: 18px; margin: 0 0 12px; }
+.svc-page h3 { font-size: 16px; }
+.svc-page .ws-card { min-width: 0; overflow-wrap: anywhere; }
+.svc-page .ws-form { display: grid; gap: 16px; }
+.svc-page label { display: grid; gap: 8px; font-size: 14px; }
+.svc-page input, .svc-page select, .svc-page textarea, .svc-page button { font: inherit; font-size: 14px; max-width: 100%; min-height: 40px; }
+.svc-page input:not([type=checkbox]), .svc-page textarea, .svc-page select { width: 100%; padding: 10px; border: 1px solid #b8c2bd; border-radius: 6px; background: white; }
+.svc-page textarea { min-height: 120px; resize: vertical; }
+.svc-page .ws-check { display: flex; gap: 10px; align-items: center; }
+.svc-page .ws-check input { width: 18px; min-height: 18px; }
+.svc-page .ws-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.svc-page button { padding: 8px 14px; border: 1px solid #b8c2bd; border-radius: 6px; background: white; cursor: pointer; }
+.svc-page button:disabled { cursor: default; opacity: .65; }
+.svc-page small { color: #58635d; line-height: 1.6; }
+#class-journal .svc-page small { color: #46534c; font-size: 12px; }
+#class-journal .svc-page .ws-card { background: #fff; border-radius: 8px; box-shadow: none; }
+[data-role-layout="admin"] .svc-page { color: #222; }
+[data-role-layout="admin"] .svc-page .cj-primary { background: #222; color: white; }
+[data-role-layout="admin"] .svc-page .ws-card { border-color: #ddd; }
+@media(max-width: 640px) { .svc-page { gap: 16px; } .svc-page button { min-height: 44px; } }

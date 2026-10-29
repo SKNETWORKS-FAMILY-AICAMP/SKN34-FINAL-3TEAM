@@ -1,3 +1,4 @@
+import { pinDemoChild, temporaryStudentPin } from '../fixtures/studentPinDemo.ts'
 import { http } from 'msw/http'
 import { ApiError } from '../../data/apiClient.ts'
 import type { Child } from '../../domain/classroom.ts'
@@ -38,6 +39,19 @@ function pinStatus(childId: string) {
 }
 
 export const studentDeviceHandlers = [
+  http.post('/api/v1/auth/student/demo-device', () => save(async () => {
+    if (sharedDeviceDemo) return demoRequest('/preview', { method: 'POST', body: '{}' })
+    const child = { ...pinDemoChild }, owner = 'pin-demo@example.test', now = Date.now()
+    mockAccountChildren.set(owner, [child])
+    deviceState.pins[child.id] = { hash: await hashPin(child.id, temporaryStudentPin), failed: 0, locked: false }
+    const device = { deviceId: crypto.randomUUID(), owner, childIds: [child.id], label: '가상 학생 PIN 시연',
+      createdAt: new Date(now).toISOString(), expiresAt: new Date(now + DEVICE_TTL_MS).toISOString(),
+      lastUsedAt: null, revokedAt: null }
+    deviceState.devices.push(device)
+    deviceState.currentDeviceId = device.deviceId
+    return { deviceId: device.deviceId }
+  }, 201)),
+
   // 학부모 자녀 목록: 기존 응답에 PIN 상태만 더한다 (API 명세 2.1 개정)
   http.get('/api/v1/children', ({ request }) =>
     respond(async () => {

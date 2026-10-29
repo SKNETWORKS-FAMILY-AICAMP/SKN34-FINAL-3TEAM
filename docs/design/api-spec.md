@@ -672,6 +672,19 @@ ERD 3.2·3.5·4.1을 camelCase로 매핑. 학생 이름·답변 원문·메모�
 - 숫자 레벨·보상·잠금 해제 조건 없이 언제든 바꿀 수 있다 (기능 명세 1.3의 숫자 레벨·등급·순위 비표시 원칙과 충돌하지 않음)
 - 저장 위치(core 학생 테이블 컬럼 또는 별도 설정 테이블)와 값 목록 관리 방식은 백엔드 확정 대상
 
+### 3.13 요구사항 화면 보완용 지원 DTO (프론트 목업, 백엔드 확인 대기)
+
+2026-10-29 첨부 요구사항 정의서 대조에 따라 아래 지원 화면을 연결했다. 경로·역할은 2.7·2.8을 따르며 이 절의 DTO는 프론트 목업 계약이다. 실제 서버 Controller 구현이나 저장·전달 완료를 뜻하지 않는다. API 모드 실패를 시연 응답으로 대체하지 않는다.
+
+- `GET /help?role`: `{items:[{id,title,content}]}`. 현재 인증 역할만 요청한다.
+- `GET /notices`: `{items:[{id,title,content,roles[],startsAt,endsAt:null|string}]}`. 현재 역할·공개 기간을 만족하는 공지만 반환한다.
+- `POST/GET /error-reports`, `POST/GET /inquiries`: 요청은 2.7을 따른다. 화면의 공통 목록 항목은 `{id,targetType?,targetId?,category,comment,status,answer?,createdAt}`, 상태는 RECEIVED/IN_REVIEW/RESOLVED. 기존 관리자 오류 신고의 reportId는 별도 계약으로 유지한다. 목업에서 사용자 신고를 관리자 검토 목록과 연결하며 답변 원문은 수정하지 않는다.
+- `GET /admin/inquiries`: SERVICE_OPS, `{items:[공통 목록 항목]}`. `PATCH /admin/inquiries/{id}`: `{answer,status:RESOLVED}` → 갱신 항목. 일반 문의와 판정 오류 검토를 구분한다.
+- `POST /admin/notices`: SERVICE_OPS, `{title,content,roles[],startsAt,endsAt}` → 공지 항목(201). 공개 역할·기간을 검증한다.
+- 알림은 2.7의 실제 #44 계약을 그대로 사용한다. 학생에게 요청하지 않으며 읽음·수신 설정은 서버 확인 후 갱신한다. SSE 구독은 이번 화면 보완에 포함하지 않고 목록·새로고침으로 확인한다.
+- 계정·삭제·탈퇴는 5.6 실제 #45 계약을 따른다. 사전 확인 경로는 `GET /me/withdrawal/precheck`이며 `{canWithdraw,activeSubscriptions,unresolvedRefunds,retainedTransactionsYears}`를 반환한다. 삭제 목업은 CONFIRMED와 서비스별 완료 상태를 구분하고 자동으로 완료를 만들지 않는다. 탈퇴 조회 영수증은 URL·영구 저장소 대신 현재 화면 메모리에만 보관한다.
+- 점검표 `/review`와 가상 계정 진입은 DEV+MSW에서만 제공하고 운영 번들에서 제외한다. 역할 URL만으로 권한을 부여하지 않고 기존 시연 로그인·학생 동석 API를 호출한다.
+
 ## 4. 내부 API (`/internal`)
 - 인증: `X-Internal-Token` + 사용자 컨텍스트 헤더 `X-User-Id`, `X-User-Role`, `X-Student-Scope`(허용 학생 ID, 콤마 구분), `traceparent`
   - ai는 받은 컨텍스트 헤더를 learning 호출에 그대로 전달

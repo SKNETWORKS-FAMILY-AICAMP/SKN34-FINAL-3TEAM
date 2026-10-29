@@ -89,3 +89,7 @@ PR 생성 후 base에 #47 PR #123이 병합돼 `ea9b3aef3d823cdeb9bc3eab5f5d4753
 - 검증 tar와 현재 core 입력 **318개 파일 바이트 일치**. JAR SHA-256은 `f216f496e1189c4285439e52031e89db9709165e5017431403afa0d751d35a87`이다. 결과는 저장소 밖 `issue119-verification/merge125`에 보존한다.
 - base 대비 변경은 기존 #119의 11개 파일 범위이며 #47 관리자 코드·프론트·SQL·테스트는 base와 동일하다. 프론트는 별도 변경이 없어 이번 core/OpenAPI 충돌 해결에서 프론트 테스트를 재실행하지 않았다.
 - report 제품 코드·연결 범위는 이전과 같고 실제 worker/AI payload·배포는 계속 미검증이다. 원격 CI 상태는 push 이후 별도 확인 대상이다.
+
+## #56 후속 연결 (2026-10-29)
+
+위 미검증 목록은 core API 제공 시점의 기록이다. 후속 #56에서 기본 report-worker의 `CoreClient.lookup`과 `NamedGenerator`를 연결했다. 조회 결과 ID·별명을 검증하고 렌더링·AI 가림에 사용한다. 403·404·통신 오류는 기존 `GENERATION_FAILED`로 종료하며 별도 HTTP 재시도는 없다. 최신 실제 Compose 검증 범위는 [worker 통합 검증](report-worker-integration.md)을 따른다.

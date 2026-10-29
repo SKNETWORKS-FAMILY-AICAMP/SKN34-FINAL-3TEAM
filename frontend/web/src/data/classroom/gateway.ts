@@ -17,7 +17,8 @@ import type {
 export interface ClassroomGateway {
   readonly demo: boolean
   setScenario: (s: DemoScenario) => void
-  login: (email: string, password: string) => Promise<Session>
+  /** 개발 시연 전용 이메일 로그인. 실제 학부모·관리자는 Google 인증, 학생은 기기·PIN (#97) */
+  login?: (email: string, password: string) => Promise<Session>
   logout: () => Promise<void>
   children: () => Promise<Child[]>
   enterStudent: (child: Child) => Promise<Session>

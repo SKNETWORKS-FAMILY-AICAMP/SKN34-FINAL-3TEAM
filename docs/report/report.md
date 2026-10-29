@@ -20,7 +20,7 @@
 - `narrativeEnabled`는 필수 boolean. 누락·잘못된 형식은 DLQ
 - `app/messaging/contracts.py`는 엄격한 수신 DTO, `app/generation/codec.py`가 payload를 내부 모델로 변환. `requested_at`은 봉투 time을 보존(삭제 장벽에서 사용)
 - Outbox는 처리 중인 앞 100개 후보를 건너뛰어 다른 행을 선점, 발행은 최대 15초. 브로커 대기 동안 트랜잭션·행 잠금은 없지만 session lock용 연결 1개 사용(연결 풀과 worker 동시 실행 수를 함께 관리)
-- 기본 진입점의 생성기는 미연결이라 `GENERATOR_NOT_CONFIGURED`로 FAILED(가짜 완료를 만들지 않음). 실제 생성기는 `run(generator=...)`로 주입
+- #56에서 기본 진입점에 core 별명 조회 → 기록 집계 → 서술 검증 → 파일 저장 생성기를 연결했다. 테스트용 `run(generator=...)` 주입도 유지한다.
 
 ## 3. 수치 계산 (#51)
 
@@ -93,3 +93,36 @@
 | 생성기 조립 | report | worker 기본 생성기를 계산 → 서술 → 렌더링으로 연결 |
 | 삭제 전체 | learning·core | learning `student.deleted` 소비·완료 보고, 삭제 학생의 queued job 정리·늦은 이벤트 무시 |
 | 운영 | 인프라 | 운영 S3·IAM/IRSA·공개 endpoint, Chromium `/tmp` writable volume, guard 표식 보존·SIGTERM 유예·DLQ 복구 |
+
+## 10. 로컬 #56 작업과 이전 통합 검증 기록
+
+develop `f9df2d3` 기준 #56에서 기본 worker와 실제 core 별명 API를 연결했다. 최신 완료 조건 대조와 재현 방법은 [worker 통합 검증](report-worker-integration.md)을 따른다. 아래 결과는 **c608f52 기준 과거 실행 결과**다.
+
+## 2026-10-29 develop 통합 재검증
+
+목적은 #52 AI 서술 검증 → #53 파일 생성·저장 → #54 조회·다운로드 → #55 삭제의 누적 회귀와 문서 정합성 확인이다. 기준은 #52 PR #109, #53 PR #116, #54 PR #117, #55 PR #118이 병합된 develop `c608f52`이며, 로컬 `test/report-integration`에서 실행했다.
+
+| 검사 | 이번 결과 |
+|---|---|
+| 잠금 파일 기준 의존성 동기화, Ruff check/format | 통과, 78개 파일 포맷 일치 |
+| report 전체 pytest | **239 passed**, 196.38초, 실패·생략 없음. 기존 Starlette/httpx 폐기 예정 경고 1개 |
+| 공통 계약·스키마 검사 | 일반 및 `python -O` 실행 각각 **58개 통과** |
+| 일회용 DB 마이그레이션 | 세 DB ERD 대조, 제약 음성 사례 60개, CHECK 값 집합 67개, 인덱스 23개 통과. 반복 no-op 및 report downgrade/upgrade 통과, 23.9초 |
+| 운영 Docker 이미지 | `local/report-integration:20261029` 빌드 통과 |
+| 운영 이미지 렌더링 | UID 10001, read-only root, network none, `/tmp` tmpfs. HTML·MD·PDF 생성. 한글 PDF 191,409바이트·2쪽, 한글 텍스트·None 미출력 확인. 이번에는 PNG 시각 검사는 수행하지 않음 |
+| 실제 learning → report | 최신 JDK 21 bootJar 사용, **8개 항목 통과**. 여섯 입력 방식 집계·OpenAPI·근거 원문·403·무료/유료 상세·3종 파일·101건 페이지·삭제 표식 |
+| 문서/작업 상태 | 대상 14문서·57개 로컬 링크 확인. 충돌 표식 및 `git diff --check` 이상 없음 |
+
+실제 DB·RabbitMQ·MinIO 테스트와 AI/core HTTP 대역 검사는 구분한다. #52 API 장애 FAILED 및 대조 실패 TEMPLATE 정책, #53 파일/실패 처리, #54 권한·revision·nullable 응답, #55 중복·실패 재시도·다른 학생 보존은 전체 pytest에 포함된다. 실제 learning 연동의 삭제 표식 검사는 삭제 이벤트 소비자 전체 E2E가 아니다.
+
+### 발견한 문제와 수정
+
+1. 이 컴퓨터의 Docker 시작이 오래된 `sailor-ingest.sock`·`engine.sock`으로 실패했다. 해당 런타임 폴더를 백업 후 재시작해 복구했다. 최초 실행의 **154 passed / 85 setup errors**는 환경 실패이며 최종 통과 수치에 합산하지 않는다. 이미지·볼륨·기존 저장소 `output/`은 삭제하지 않았다.
+2. `state-diagram.md` 2.2와 `sequence-diagram.md` 10.1은 PROFILE만 학생 차단한다고 설명했으나, 실제 `ChildManagementService.confirm`은 두 scope 모두 차단한다. 현재 구현대로 설명을 정정했다. RECORDS 학습 재개 정책을 새로 정하거나 서비스 코드를 변경하지 않았다.
+3. 실제 learning 연동 스크립트의 합성 분류 미션에 #79의 `categories`가 없어 제출이 422로 거부됐다. 미션에 g1/g2 그룹을 등록하도록 검증 데이터만 수정했고, 전체 8개 연동 검사를 재실행하여 통과했다. 제출 검증 규칙은 완화하지 않았다.
+
+### 남은 외부 연동 및 보관
+
+당시 미연결이던 기본 worker와 core 별명 공급은 후속 #56에서 연결했다. #64 실제 AI API·core 상품 권한 헤더 전달·운영 AWS·전체 서비스 E2E는 별도 연동 검증 범위다. 현재 core `ReportClient`는 상품 권한 헤더를 공급하지 않아 report가 무료 기본값을 적용한다. #56의 직접 메시지 발행·report 내부 API 검증을 사용자 대상 전체 흐름 검증으로 해석하지 않는다.
+
+결과는 저장소 밖 `C:/Users/playdata2/Desktop/final/tmp/`의 `report-integration-20261029-final.xml`, `report-integration-pdf-20261029/`, `report-learning-20261029-final/`에 보관했다. 테스트 자원은 정리했다. 문서와 검증 스크립트 수정은 로컬 테스트 브랜치에만 남기며 원격 push·PR·병합은 수행하지 않았다.

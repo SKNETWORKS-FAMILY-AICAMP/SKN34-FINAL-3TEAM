@@ -15,6 +15,8 @@ import { ConsentSettings } from './ConsentSettings.tsx'
 import { ParentReports } from './ParentReports.tsx'
 import { StudentDevices } from './StudentDevices.tsx'
 import { ParentDashboard } from './ParentDashboard.tsx'
+import { AccountLifecycle } from '../service/AccountLifecycle.tsx'
+import { Withdrawal } from '../service/Withdrawal.tsx'
 export function ParentWorkspace() {
   const [params, setParams] = useSearchParams(),
     location = useLocation(),
@@ -169,7 +171,7 @@ export function ParentWorkspace() {
               }
             />
           ) : page === 'settings' ? (
-            <ProfileSettings child={child} />
+            <><ProfileSettings child={child} /><AccountLifecycle key={child.id} child={child} /><Withdrawal /></>
           ) : (
             <ParentDashboard child={child} scope={scope} />
           )}

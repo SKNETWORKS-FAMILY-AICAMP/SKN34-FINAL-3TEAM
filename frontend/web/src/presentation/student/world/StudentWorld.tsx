@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Link } from 'react-router'
 import { BookOpen, LogOut, Map as MapIcon, Shapes } from 'lucide-react'
 import { useStudentLook } from '../../../data/studentLook/queries.ts'
 import { DEFAULT_LOOK, THEMES } from '../../../domain/studentLook.ts'
@@ -53,12 +54,14 @@ export function StudentWorld({
         {!focus && (
           <header className="st-top">
             <div className="st-brand">
-              <span className="st-wordmark">사고뭉치</span>
+              <span className="st-wordmark">{t.sub}</span>
               <span className="st-sub">
-                {child.nickname}의 {t.title} · 초등 {child.grade}학년
+                {child.nickname} · 초등 {child.grade}학년
               </span>
             </div>
             <nav aria-label="학생 메뉴" className="st-nav">
+              <Link to="/student/help">도움말</Link>
+              <Link to="/student/support">문의·오류 신고</Link>
               {nav.map((n) => (
                 <button
                   type="button"
