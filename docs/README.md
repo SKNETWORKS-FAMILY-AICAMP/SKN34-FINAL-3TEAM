@@ -59,6 +59,7 @@
 - [이슈 #86 scoring 모델 활성화 이벤트](report/issue-86-scoring-model-events.md): 버전 교체·롤백·두 레플리카 재연결 검증
 
 - [scoring #87](report/issue-87-scoring-m2.md): M2 채점 계약·실제 모델 검증
+- [scoring #88](report/issue-88-scoring-m1.md): 미학습 M1 비활성 계약·입력 검증 및 활성화 후속 범위
 
 ## 개발 규칙
 
