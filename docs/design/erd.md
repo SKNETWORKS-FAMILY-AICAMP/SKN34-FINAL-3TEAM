@@ -955,6 +955,15 @@ erDiagram
   report_item ||--o{ report_item_evidence : cites
   weekly_report ||--o{ report_file : files
 
+  report_job_guard {
+    uuid job_id PK "core 작업 논리 참조"
+    uuid student_id "core 학생 논리 참조"
+    date period_from
+    date period_to
+    varchar failure_reason "REPORT_NOT_CREATED"
+    timestamptz created_at
+  }
+
   report_deletion_guard {
     uuid student_id PK "core 논리 참조 · 삭제 장벽"
     varchar scope "PROFILE|RECORDS"
@@ -1101,3 +1110,17 @@ erDiagram
 ### 이슈 #41 저장 규칙
 
 기존 conversation/message/evidence 스키마를 사용하며 마이그레이션을 추가하지 않는다. retry_count를 실행 세대 fencing 값으로 사용하고 실패/취소는 UPDATE만 수행한다. clarification은 COMPLETED(답변 NULL), delta는 미저장이다. 한도는 분석 전용 Redis KST 일자 카운터다. [계약](../report/issue-41-analysis-conversations.md).
+
+### report_job_guard (#132, 신규 migration 20261029_03)
+
+| 컬럼 | 제약/의미 |
+|---|---|
+| job_id | uuid PK, core 작업 논리 참조 |
+| student_id | uuid NOT NULL, 학생별 삭제 인덱스 |
+| period_from / period_to | date NOT NULL, 월~일 7일 |
+| failure_reason | varchar(100) NOT NULL, REPORT_NOT_CREATED |
+| created_at | timestamptz NOT NULL |
+
+리포트 행 생성 전 실패의 재실행 차단 기록이다. 원문·이름·파일 경로는 저장하지 않는다. DLQ 수동 재전달의 상한이 없으므로 자동 TTL 없이 유지한다. 학생 PROFILE/RECORDS 삭제 완료 트랜잭션에서 이 기록도 제거하며 영구 `report_deletion_guard(COMPLETED)`가 이후 모든 생성을 차단한다. 삭제 표식이 완료된 학생에 복구 요청이 와도 job guard를 새로 만들지 않는다. 삭제 표식 제거/학습 재개는 이번 범위 밖이다. migration downgrade는 재실행 장벽을 없애므로 운영 중 임의 실행하지 않는다.
+
+core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. job_execution은 기존 attempt_no=1 upsert로 종료를 기록하며 동일 복구/늦은 이벤트가 이력을 늘리거나 종료를 되돌리지 않는다.

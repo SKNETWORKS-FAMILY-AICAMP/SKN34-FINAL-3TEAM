@@ -58,6 +58,10 @@ management:
           include: readinessState,db,rabbit
 
 app:
+  report:
+    recovery:
+      interval: ${REPORT_RECOVERY_INTERVAL:PT1M}
+      stale-after: ${REPORT_RECOVERY_STALE_AFTER:PT60M}
   payment:
     free-product-id: ${PAYMENT_FREE_PRODUCT_ID:}
     toss-secret: ${TOSS_TEST_SECRET_KEY:}

@@ -16,10 +16,12 @@ import java.util.UUID
 
 @Service
 class ReportJobService(private val repository: ReportJobRepository, private val writer: ReportGenerateWriter,
+    private val students: com.sagomungchi.core.guardianship.service.StudentAccessService,
     private val access: ReportAccessService, private val entitlements: ReportEntitlementService,
     @Qualifier("reportClock") private val clock: Clock) {
     @Transactional
     fun scheduled(parent: UUID, studentId: UUID, period: ReportPeriod): ReportJobAccepted? {
+        students.lockActive(studentId)
         repository.lockWeek(studentId, period.from)
         if (repository.scheduled(studentId, period.from) != null) return null
         access.requireGuardian(parent, studentId)
@@ -29,6 +31,7 @@ class ReportJobService(private val repository: ReportJobRepository, private val 
     @Transactional
     fun regenerate(reportId: UUID, actor: AuthenticatedAccount): ReportJobAccepted {
         val original = repository.byReport(reportId) ?: missing()
+        students.lockActive(original.studentId)
         val admin = access.regeneration(actor, original.studentId)
         repository.lockWeek(original.studentId, original.periodFrom)
         if (!admin && repository.regenerations(original.studentId, original.periodFrom) > 0)

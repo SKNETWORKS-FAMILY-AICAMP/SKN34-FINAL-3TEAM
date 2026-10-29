@@ -17,6 +17,7 @@ import java.util.UUID
 class ChildManagementService(private val repository: ChildManagementRepository,
  private val access: ChildAuthorizationService, private val accounts: AccountManagementService,
  private val reauth: ReauthenticationService, private val outbox: OutboxWriter,
+ private val reports: com.sagomungchi.core.report.service.ReportLifecycleService,
  private val conversations: ConversationDeletionService, private val devices: StudentDeviceCleanupService, private val pins: StudentPinService) {
  @Transactional
  fun update(identity: AuthenticatedAccount, id: UUID, nickname: String?, grade: Int?): LinkedStudent {
@@ -66,6 +67,7 @@ class ChildManagementService(private val repository: ChildManagementRepository,
   repository.insert(request); repository.block(id,now); accounts.revokeStudent(id)
   if(scope==DeletionScope.PROFILE) repository.unlink(user,id,now)
   devices.removeChild(id); pins.clear(id)
+  reports.failForDeletion(id)
   conversations.deleteStudent(id)
   outbox.append("student.deleted","student.deleted",id.toString(),mapOf("studentId" to id,"deletionRequestId" to request.id,"scope" to scope.name))
   accounts.audit(user,"CHILD_DELETION_CONFIRMED",id)

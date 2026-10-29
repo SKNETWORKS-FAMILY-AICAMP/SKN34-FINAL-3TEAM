@@ -954,3 +954,26 @@ sequenceDiagram
 - 웹훅 처리 실패 시 5xx 응답으로 PG 재전송 유도(7.2): 토스페이먼츠 재전송 정책 확인 필요
 
 #58 단독 로그인은 계정 행 잠금 → 기기 유효/등록 자녀 → 현재 연결·활성·동의 → PIN 설정·잠금·일치 순으로 재검사한다. 실패 횟수 커밋 후 401/423 응답한다. 성공은 별도 STUDENT auth_session을 생성하며 부모 세션을 변경하지 않는다. PIN 변경은 계정 잠금 → 현재 자녀 권한 → 학생 잠금 → DB 재인증 consume → PIN 갱신·감사 기록을 한 트랜잭션으로 실행한다.
+
+### 6.1 보완: 종료 이벤트 누락 복구 (#132)
+
+```mermaid
+sequenceDiagram
+  participant S as core recovery scheduler
+  participant C as core DB
+  participant R as report API
+  participant D as report DB
+  S->>C: 생성 60분 이상 미종료 후보 조회
+  S->>R: POST reconcile (트랜잭션 밖)
+  R->>D: 학생 shared/job exclusive session 잠금 시도
+  alt 실행/삭제 잠금 사용 중
+    R-->>S: BUSY
+  else 잠금 획득
+    R->>D: 학생·기간 대조, 종료 결과 조회/고아 RUNNING 종료/없는 행 guard 저장
+    R-->>S: 저장된 종료 결과
+    S->>C: 새 트랜잭션: 학생 → job 잠금, 식별·종료 재검사
+    S->>C: 조건부 종료 + 실행 이력 (삭제·ID 없음은 알림 생략)
+  end
+```
+
+삭제 확정은 기존 parent → student 잠금 아래 학생 차단과 미종료 작업 종료를 함께 커밋한다. 복구 HTTP 도중 삭제가 확정되면 최종 반영은 이미 FAILED인 작업을 유지한다. 생성도 student → 주 잠금을 사용하므로 삭제 뒤 새 QUEUED 작업을 남기지 않는다.

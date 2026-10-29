@@ -736,3 +736,9 @@ support/controller → SupportService → support/repository를 사용한다. �
 ## 이슈 #41 분석 대화 수명
 
 분석 전용 SseEmitters.open의 연결 시간·취소 hook을 사용한다. 피드백과 알림 수명은 유지한다. AI HTTP body는 취소 시 닫는다. 계정→학생→대화 잠금과 시도 fencing으로 삭제/중복 재시도를 직렬화한다. 상세 계약은 [#41 보고서](../report/issue-41-analysis-conversations.md).
+
+## 이슈 #132 리포트 종료 유실 복구
+
+core report의 `ReportRecoveryScheduler`(ShedLock) → `ReportRecoveryService` → `ReportClient`가 상태를 대조한다. report generation의 router → `ReconciliationService` → 기존 `ReportRepository`/`JobLocks`를 재사용한다. HTTP 동안 core 트랜잭션은 없고 report는 session 잠금 아래 짧은 DB 트랜잭션만 사용한다. 새 production 의존성은 없다.
+
+core의 생성은 guardianship `StudentAccessService`를 통해 ACTIVE 학생 행을 먼저 잠근 뒤 주 단위 잠금·작업 저장을 수행한다. lifecycle/복구 반영도 학생 → job 순서다. 삭제는 기존 parent → student 순서를 유지하며 `ReportLifecycleService.failForDeletion`을 호출해 같은 트랜잭션에서 미종료 작업과 실행 이력을 FAILED로 만든다. 상대 기능 repository 직접 접근 없이 service 경계로 연결한다. 삭제 종료와 reportId 없는 실패는 알림을 발행하지 않는다.

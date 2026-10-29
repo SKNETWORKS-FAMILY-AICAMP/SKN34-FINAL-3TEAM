@@ -992,3 +992,13 @@ core 자체의 권한·상태·본문 충돌 오류는 기존 계약을 유지�
 - 다운로드는 상세 메타데이터와 파일 요청에 같은 판정값을 사용한다. 메타데이터가 식별한 불변 reportId를 파일 경로에 사용한다. 무료는 free, 유료는 full을 요청하며 본문에서 서술 유무를 추측해 파일 권한을 결정하지 않는다. full 요청은 최종 parent 잠금 안에서도 유료여야 URL을 반환한다(상실 시 403 REPORT_PREMIUM_REQUIRED). free 요청 중 유료 전환이 생겨도 free URL만 반환하며 프리미엄 사용을 기록하지 않는다.
 - `ReportViewService`는 요청 시 선택한 범위와 반환 직전 권한을 함께 사용해 프리미엄 사용을 기록한다. parent 잠금·환불 직렬화는 유지하고 외부 HTTP는 트랜잭션 밖이다. 최종 확인 이후 이미 발급된 서명 URL은 기존 TTL 동안 유효하며 이 변경은 발급된 URL의 즉시 회수 기능을 추가하지 않는다.
 - 공개 API 경로·응답 필드·이벤트 스키마·DB는 유지한다. 실제 report 공급자의 무료 투영·free/full 파일 계약을 재사용한다.
+
+### 5.9 리포트 작업 복구 (#132)
+
+`POST /internal/report-jobs/{jobId}/reconcile` (core → report). 내부 토큰 + SYSTEM + 정확히 한 학생 scope가 필요하다. 요청 `{studentId,periodFrom,periodTo}`는 core 작업의 학생·월~일 날짜다. report는 기존 행/차단 기록과 세 값을 대조하며 불일치는 409 `REPORT_JOB_IDENTITY_MISMATCH`로 거부한다.
+
+200 응답은 `{jobId,studentId,periodFrom,periodTo,status,reportId,failureReason}`이다. status는 BUSY·COMPLETED·FAILED. BUSY는 reportId/failureReason null, COMPLETED는 실제 reportId 필수·사유 null, FAILED는 실제 ID가 있을 때만 reportId 및 원문 없는 대문자 사유 코드다. 원문·서술·파일 URL은 반환하지 않는다. `Cache-Control: no-store`. DB/통신 실패는 오류이며 종료로 간주하지 않는다.
+
+기존 학생 shared/job exclusive session advisory lock 획득 실패는 BUSY다. 잠금 획득 후 저장된 종료 결과를 반환하거나 소유자 없는 RUNNING을 `REPORT_EXECUTION_ABANDONED`로 종료한다. 행이 없으면 `report_job_guard`에 `REPORT_NOT_CREATED`를 원자 저장한다. 삭제 표식 PENDING은 BUSY, COMPLETED는 `STUDENT_DELETED` 실패다. 동일 호출/응답 유실 재호출은 같은 저장 결과를 사용한다. 삭제 완료 후에는 삭제 결과가 우선한다. v1 이벤트의 reportId 필수 계약은 유지한다.
+
+core는 생성 후 60분 이상 QUEUED/RUNNING을 기본 1분마다 점검한다(`app.report.recovery.stale-after`, `app.report.recovery.interval`). 60분은 운영 후보 선정 정책이며 실행 시간 측정값/강제 중단 제한이 아니다. HTTP는 DB 트랜잭션·행 잠금 밖에서 수행하고 새 트랜잭션에서 학생·작업·종료 상태를 재검사한다. 자동 재생성·재생성 횟수 정책은 변경하지 않는다.
