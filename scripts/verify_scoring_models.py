@@ -50,7 +50,9 @@ def verify(archive, core_root, output, image, *, events=False):
     if archive.is_relative_to(ROOT) or archive.is_relative_to(core_root):
         raise ValueError("Model archive must be outside repository checkouts")
     if output.is_relative_to(ROOT) or output.is_relative_to(core_root):
-        raise ValueError("Local Compose credentials/results must be outside repository checkouts")
+        raise ValueError(
+            "Local Compose credentials/results must be outside repository checkouts"
+        )
     jar = core_root / "backend/core-service/build/libs/core-service-0.0.1-SNAPSHOT.jar"
     if not jar.is_file() or any(
         p.is_file() and p.stat().st_mtime > jar.stat().st_mtime
@@ -117,7 +119,10 @@ def verify(archive, core_root, output, image, *, events=False):
                     "RABBITMQ_PASSWORD": password,
                 },
                 "volumes": [
-                    str(core_root / "infrastructure/gitops/charts/platform-data/files/rabbitmq")
+                    str(
+                        core_root
+                        / "infrastructure/gitops/charts/platform-data/files/rabbitmq"
+                    )
                     + ":/definitions:ro"
                 ],
                 "entrypoint": ["/bin/sh", "/definitions/import-definitions.sh"],
@@ -127,7 +132,10 @@ def verify(archive, core_root, output, image, *, events=False):
                 "image": "flyway/flyway:13.11.1-alpine",
                 "depends_on": healthy("postgres"),
                 "volumes": [
-                    str(core_root / "backend/core-service/src/main/resources/db/migration")
+                    str(
+                        core_root
+                        / "backend/core-service/src/main/resources/db/migration"
+                    )
                     + ":/flyway/sql:ro"
                 ],
                 "command": [
@@ -211,7 +219,9 @@ def verify(archive, core_root, output, image, *, events=False):
             (output / "failed-command.log").write_text(
                 result.stdout + result.stderr, encoding="utf-8"
             )
-            raise RuntimeError("Local Docker command failed; inspect failed-command.log")
+            raise RuntimeError(
+                "Local Docker command failed; inspect failed-command.log"
+            )
         return result.stdout
 
     def url(service, port):
@@ -233,7 +243,9 @@ def verify(archive, core_root, output, image, *, events=False):
         headers = {"X-Internal-Token": token}
         wait(core + "/actuator/health/readiness", lambda r: r.status_code == 200)
         wait(scoring + "/health/ready", lambda r: r.status_code == 200)
-        assert httpx.get(scoring + "/internal/versions", headers=headers).json() == {"items": []}
+        assert httpx.get(scoring + "/internal/versions", headers=headers).json() == {
+            "items": []
+        }
         assert httpx.get(scoring + "/internal/versions").status_code == 401
         passed("empty active snapshot ready; unauthenticated versions 401")
         user, session = str(uuid4()), str(uuid4())
@@ -285,7 +297,11 @@ def verify(archive, core_root, output, image, *, events=False):
         access = (
             message
             + "."
-            + b64(hmac.new(base64.b64decode(jwt_key), message.encode(), hashlib.sha256).digest())
+            + b64(
+                hmac.new(
+                    base64.b64decode(jwt_key), message.encode(), hashlib.sha256
+                ).digest()
+            )
         )
         with httpx.Client(
             base_url=core, headers={"Authorization": "Bearer " + access}, timeout=30
@@ -340,10 +356,14 @@ def verify(archive, core_root, output, image, *, events=False):
         scoring = url("scoring", 8001)
         wait(
             scoring + "/health/ready",
-            lambda r: r.status_code == 503 and r.json()["checks"].get("models") == "DOWN",
+            lambda r: (
+                r.status_code == 503 and r.json()["checks"].get("models") == "DOWN"
+            ),
         )
         assert httpx.get(scoring + "/health/live").status_code == 200
-        assert httpx.get(scoring + "/internal/versions", headers=headers).json() == {"items": []}
+        assert httpx.get(scoring + "/internal/versions", headers=headers).json() == {
+            "items": []
+        }
         passed(
             "actual core registration/activation; missing files keep models DOWN and process live"
         )
@@ -371,17 +391,24 @@ def verify(archive, core_root, output, image, *, events=False):
                         with source.extractfile(member) as stream:
                             s3.upload_fileobj(stream, BUCKET, key)
                         assert (
-                            s3.head_object(Bucket=BUCKET, Key=key)["ContentLength"] == member.size
+                            s3.head_object(Bucket=BUCKET, Key=key)["ContentLength"]
+                            == member.size
                         )
-                        manifest.append({"key": key, "bytes": member.size, "sha256": digest})
+                        manifest.append(
+                            {"key": key, "bytes": member.size, "sha256": digest}
+                        )
                     print("Uploaded locally: " + name, flush=True)
             results["manifest"] = manifest
         finally:
             s3.close()
-        ready = wait(scoring + "/health/ready", lambda r: r.status_code == 200, seconds=300)
+        ready = wait(
+            scoring + "/health/ready", lambda r: r.status_code == 200, seconds=300
+        )
         versions = httpx.get(scoring + "/internal/versions", headers=headers).json()
         assert versions == {
-            "items": [{"name": n, "version": "2.0", "revision": 1} for n in sorted(NAMES)]
+            "items": [
+                {"name": n, "version": "2.0", "revision": 1} for n in sorted(NAMES)
+            ]
         }
         after = json.loads(run(["ps", "--format", "json", "scoring"]))
         assert before["ID"] == after["ID"]
@@ -426,7 +453,9 @@ def verify(archive, core_root, output, image, *, events=False):
                 if line.startswith("PROBE_JSON=")
             )
         )
-        passed("CPU loader: finite 1x9 outputs, metadata, scope rejection, temporary cleanup")
+        passed(
+            "CPU loader: finite 1x9 outputs, metadata, scope rejection, temporary cleanup"
+        )
         logs = run(["logs", "--no-color", "scoring"])
         assert (
             token not in logs

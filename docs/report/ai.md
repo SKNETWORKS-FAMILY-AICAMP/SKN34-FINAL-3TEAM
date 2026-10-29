@@ -79,7 +79,7 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
 - 사용량 조회: KST 양 끝 포함 최대 366일(사용자 결정), 범위 밖은 DB 조회 전 400. 미산정 비용이 섞이면 `costUsd` null + `unpricedCalls`
 - scope 배열의 null 요소는 Kotlin 제네릭만으로 차단되지 않아 명시적으로 422
 - 기존 NULL 평가 행은 목록에 null로 남기고 활성화·복귀는 422, 불완전한 기존 ACTIVE는 내부 snapshot에서 503 `MODEL_VERSION_STATE_INVALID`
-- 미구현: ai·scoring의 Pod별 큐 바인딩 → snapshot 조회 → 더 높은 revision만 적용하는 소비 흐름(브로커 fan-out 검증만 완료)
+- scoring은 #86에서 Pod별 큐 바인딩 → snapshot 조회 → 더 높은 revision 적용·재연결을 구현했다. ai 소비 흐름은 #68 후속이다. [scoring #86 검증](issue-86-scoring-model-events.md)을 참고한다.
 
 ## 4. M2 모델과 API 정렬 (#4)
 
