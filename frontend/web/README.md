@@ -29,7 +29,7 @@ npm run dev
 
 MSW 시연의 이메일 로그인 비밀번호는 모두 `demo-only`입니다(개발 전용, 실제 모드는 Google 로그인만 제공). `parent@example.test`는 기본 보호자, `admin@example.test`는 전체 관리자, `content@example.test`·`ops@example.test`·`payment@example.test`·`refund@example.test`는 권한별 계정입니다. 가입 시 가상 `@example.test` 이메일만 사용합니다. 새 계정 자녀 목록은 비어 있으며 법정대리인 동의 후 최대 3명까지 등록할 수 있습니다. P02에 따라 다른 보호자의 기존 학생 연결은 제공하지 않습니다.
 
-자녀 단독 진입(#59)은 학부모 `/parent/devices`에서 본인 재확인 → 자녀 PIN 설정 → 등록 코드(또는 QR) 발급 후, 같은 브라우저를 자녀 기기로 보고 로그아웃 → `/student/login`에서 코드 입력 → PIN 순서입니다. MSW가 httpOnly 기기 쿠키를 만들 수 없어 개발용 sessionStorage 상태로 대신하며, "기기 상태 시연" 선택기로 해제·만료·잠김·PIN 미설정을 시연합니다. 자세한 내용은 `docs/report/issue-59-student-device.md`입니다.
+자녀 단독 진입(#59)은 학부모 `/parent/devices`에서 본인 재확인 → 자녀 PIN 설정 → 등록 코드(또는 QR) 발급 후, 같은 브라우저를 자녀 기기로 보고 로그아웃 → `/student/login`에서 코드 입력 → PIN 순서입니다. MSW가 httpOnly 기기 쿠키를 만들 수 없어 개발용 sessionStorage 상태로 대신하며, "기기 상태 시연" 선택기로 해제·만료·잠김·PIN 미설정을 시연합니다. 자세한 내용은 `docs/report/frontend.md`입니다.
 
 ### 노트북·태블릿 QR 등록 시연
 
@@ -46,9 +46,9 @@ npm run dev:qr
 
 이 모드는 Vite 안의 메모리 목업이 등록 코드·PIN·기기 목록만 공유합니다. 기기 자격증명은 시연 서버의 HttpOnly 쿠키이고, QR에는 10분 동안 한 번 쓸 수 있는 등록 코드만 넣습니다. LAN HTTP에는 서비스 워커를 등록하지 않고 기존 MSW 핸들러를 개발용 fetch 어댑터에서 실행합니다. 실제 API 모드의 인증·보안 컨텍스트 요구는 그대로입니다. **답변·리포트 등 학습 데이터의 기기 간 동기화는 이 기능의 범위가 아닙니다.** 서버를 다시 시작하면 공유 등록 정보와 PIN이 초기화되므로 PIN 설정과 기기 등록을 다시 진행합니다.
 
-구조·검증은 [QR 기기 시연 보고서](../../docs/report/qr-device-demo.md)를 참고하세요.
+구조·검증은 [QR 기기 시연 보고서](../../docs/report/frontend.md)를 참고하세요.
 
-학생 화면은 테마 캔버스 기준의 "생각 지도"입니다. 첫 화면의 꾸미기 버튼으로 테마 5종·캐릭터 5종을 고르면 `/students/me/preferences`(API 명세 3.12 목업 계약)에 저장됩니다. 자세한 내용은 `docs/report/student-theme-world.md`입니다.
+학생 화면은 테마 캔버스 기준의 "생각 지도"입니다. 첫 화면의 꾸미기 버튼으로 테마 5종·캐릭터 5종을 고르면 `/students/me/preferences`(API 명세 3.12 목업 계약)에 저장됩니다. 자세한 내용은 `docs/report/frontend.md`입니다.
 
 시연을 끝낸 뒤 환경 변수를 제거해야 기본 API 모드가 됩니다.
 
@@ -109,11 +109,11 @@ node tests/parent-dashboard-browser.mjs
 node tests/api-mode-browser.mjs
 ```
 
-이슈 #7은 `docs/report/issue-7-student-completion.md`, #8·#9 구현/예외/검증/미확정 사항은 `docs/report/issue-8-9-parent-admin.md`에 기록합니다. 실제 backend 통합·원격 CI·배포 검증은 별도입니다. 이후 사용자 요청으로 보류를 해제하고 `feature/fe-parent`에서 `develop` 대상 PR을 준비했습니다. PR 본문은 `docs/report/pr-fe-workspace.md`이며, develop 직접 push·자동 PR 병합은 하지 않습니다.
+#7~#9 구현 결정과 미확정 사항은 [웹 프론트 보고서](../../docs/report/frontend.md)에 정리했습니다. 실제 backend 통합·원격 CI·배포 검증은 별도입니다. 이후 사용자 요청으로 보류를 해제하고 `feature/fe-parent`에서 `develop` 대상 PR을 준비했습니다. PR 본문은 `docs/report/frontend.md`이며, develop 직접 push·자동 PR 병합은 하지 않습니다.
 
 ## 미체크 후속 회귀
 
-`docs/report/unchecked-followup.md`에 추가 구현과 최신 검증을 기록했습니다. 단위 테스트 48개, 학생 브라우저 23개, 학부모·관리자 브라우저 27개를 검증했습니다. 두 브라우저 스크립트 모두 `QA_FILTER`로 이름 일부를 지정해 특정 사례만 재실행할 수 있습니다.
+추가 구현 결정은 [웹 프론트 보고서](../../docs/report/frontend.md)에 정리했습니다. 단위 테스트 48개, 학생 브라우저 23개, 학부모·관리자 브라우저 27개를 검증했습니다. 두 브라우저 스크립트 모두 `QA_FILTER`로 이름 일부를 지정해 특정 사례만 재실행할 수 있습니다.
 
 신규 가입 자녀는 FREE이므로 연속 시나리오는 먼저 무료 분석 차단을 검증합니다. 그 뒤 **DEV+MSW에서만** 등록되는 `sagomungchi:test-child-plan` 테스트 이벤트로 현재 가상 계정의 자녀 플랜을 설정해 프리미엄 전제의 분석·근거·다운로드를 확인합니다. 이는 구독 API나 체험 상품이 아니며 UI에 결제 성공을 표시하지 않습니다. 새 계정 기본 플랜과 실제 사용자 권한을 바꾸지 않습니다. `tests/production-mocks.mjs`는 이 이벤트와 설정 함수도 운영 번들에서 제외되는지 검사합니다.
 

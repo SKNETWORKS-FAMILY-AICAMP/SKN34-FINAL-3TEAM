@@ -1,3 +1,4 @@
+import { correctionImpactText } from '../../domain/admin/operations.ts'
 import { useState } from 'react'
 import { adminApi } from '../../data/admin/api.ts'
 import { useAdminQuery, useAdminMutation } from '../../data/admin/queries.ts'
@@ -178,10 +179,10 @@ export function ErrorManager() {
 function ErrorDetail({ id }: { id: string }) {
   const q = useAdminQuery(['error', id], (signal) => adminApi.error(id, signal)),
     [reason, setReason] = useState(''),
-    [corrected, setCorrected] = useState(''),
+    [corrected, setCorrected] = useState('CORRECT'),
     [status, setStatus] = useState('IN_REVIEW'),
     review = useAdminMutation(() => adminApi.reviewError(id, status, reason)),
-    correction = useAdminMutation(() => adminApi.correction(id, reason, corrected))
+    correction = useAdminMutation(() => adminApi.correction(id, reason, corrected, id))
   return (
     <>
       <QueryFeedback query={q} />
@@ -240,25 +241,23 @@ function ErrorDetail({ id }: { id: string }) {
           >
             <label>
               정정 결과
-              <textarea
-                aria-label="정정 결과"
-                required
-                value={corrected}
-                onChange={(e) => setCorrected(e.target.value)}
-              />
+              <select aria-label="정정 결과" value={corrected} onChange={(e) => setCorrected(e.target.value)}>
+                {['CORRECT', 'PARTIAL', 'RETHINK', 'HELD'].map((value) => <option key={value}>{value}</option>)}
+              </select>
             </label>
             <button className="cj-primary" disabled={!reason.trim() || correction.isPending}>
               정정 이력 추가
             </button>
             <ErrorNotice error={correction.error} />
           </form>
+          {q.data.corrections.length > 0 && <p>판정 정정과 파생 결과 반영은 별개입니다. 아래 표시는 각 영역에서 확인된 반영 여부입니다.</p>}
           {q.data.corrections.map((c, i) => (
             <section className="ws-card" key={i}>
               <p>
                 {c.createdAt} · {c.reason}
               </p>
               <p>{c.corrected}</p>
-              <p>{c.impact}</p>
+              <p>{correctionImpactText(c.impact)}</p>
             </section>
           ))}
         </>

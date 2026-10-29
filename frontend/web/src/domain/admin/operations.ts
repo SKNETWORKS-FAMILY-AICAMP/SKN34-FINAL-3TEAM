@@ -1,5 +1,4 @@
 import type { Mission, Period, ThinkingType, InputType, PublicAttempt } from '../classroom.ts'
-import type { QueryState } from '../queryState.ts'
 export type Permission = 'CONTENT' | 'PAYMENT_VIEW' | 'PAYMENT_REFUND' | 'SERVICE_OPS'
 export type JobStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED'
 export type JobType = 'CONVERSATION' | 'REPORT' | 'NOTIFICATION'
@@ -11,35 +10,40 @@ export interface Job {
   retryCount: number
   failureReason: string | null
   createdAt: string
-  updatedAt: string
+  retryable: boolean
+  retryUnavailableReason: string | null
   executions: {
     executionId: string
     attemptNo: number
     status: JobStatus
     errorCode: string | null
-    errorDetail: string | null
     triggeredBy: string | null
     startedAt: string
     finishedAt: string | null
   }[]
 }
+export interface OperationQueue {
+  name: string
+  kind: 'WORK' | 'RETRY' | 'DLQ'
+  messages: number
+  messagesReady: number
+  messagesUnacknowledged: number
+  consumers: number
+  state: string
+}
 export interface Overview {
   period: Period
-  state: QueryState
   inclusionRule: string
-  attempts: number
-  completed: number
+  learning: { attempts: number; completedAttempts: number; students: number; inclusionRule: string }
   jobCounts: { type: JobType; status: JobStatus; count: number }[]
-  missionCounts: { status: MissionStatus; count: number }[]
 }
 export interface Audit {
   id: string
   actorUserId: string
   action: string
   targetType: string
-  targetId: string
+  targetId: string | null
   result: 'SUCCESS' | 'FAILURE'
-  detail: string
   createdAt: string
 }
 export interface MissionVersion {
@@ -114,8 +118,27 @@ export interface ErrorReport {
   comment: string
   reviewReason?: string
   linkedAttempt?: PublicAttempt
-  corrections: { reason: string; corrected: string; createdAt: string; impact: string }[]
+  corrections: { reason: string; corrected: string; createdAt: string; impact: string | Record<string, string> | null }[]
 }
+/** A successful judgment correction does not imply that derived outputs were updated. */
+export function correctionImpactText(impact: ErrorReport['corrections'][number]['impact']): string {
+  if (impact === null) return '파생 결과 반영 정보 없음'
+  if (typeof impact === 'string') return `이전 형식의 반영 정보: ${impact}`
+  const areas = [
+    ['conversation', '분석 대화'],
+    ['aggregation', '학습 수치 집계'],
+    ['report', '리포트'],
+  ] as const
+  const states: Record<string, string> = {
+    APPLIED: '반영 확인',
+    NOT_APPLIED: '미반영 확인(변경 대상 없음 포함, 오류·후속 처리 필요 아님)',
+    UNKNOWN: '반영 여부 미확인',
+  }
+  if (areas.some(([key]) => !Object.hasOwn(states, impact[key])))
+    return '반영 정보의 형식을 확인할 수 없습니다.'
+  return areas.map(([key, label]) => `${label}: ${states[impact[key]]}`).join(' / ')
+}
+
 export interface Usage {
   period: Period
   items: {

@@ -80,7 +80,12 @@ class ReportMessagingTest : IntegrationTestSupport() {
         val complete = event(accepted.jobId, student, report, "completed")
         val started = event(accepted.jobId, student, report, "started")
         val failed = event(accepted.jobId, student, report, "failed")
-        listOf(complete, complete, started, failed).forEach(::publish)
+        // Delivery order across consumer contexts does not establish commit order.
+        // First commit completion, then verify duplicates and late events cannot undo it.
+        publish(complete)
+        await { countProcessed(listOf(complete)) == 1 }
+        assertEquals(ReportJobStatus.COMPLETED, repository.find(accepted.jobId)!!.status)
+        listOf(complete, started, failed).forEach(::publish)
         await { countProcessed(listOf(complete, started, failed)) == 3 }
         assertEquals(ReportJobStatus.COMPLETED, repository.find(accepted.jobId)!!.status)
         assertNull(repository.find(accepted.jobId)!!.startedAt)

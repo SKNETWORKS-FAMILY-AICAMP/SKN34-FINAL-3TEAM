@@ -42,7 +42,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = ["spring.rabbitmq.listener.simple.auto-startup=false"])
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = ["spring.rabbitmq.listener.simple.auto-startup=false", "spring.datasource.hikari.maximum-pool-size=5", "spring.datasource.hikari.minimum-idle=0"])
 class ConversationIntegrationTest : IntegrationTestSupport() {
     @LocalServerPort var port: Int = 0
     @Autowired lateinit var jdbc: JdbcTemplate
@@ -299,6 +299,75 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
         assertEquals(listOf("status", "status", "clarification", "done"), events(response.body()), response.body())
         assertEquals("COMPLETED", rows(id).single().status); assertNull(rows(id).single().answer)
         assertEquals(0, json.readTree(rows(id).single().clarification).path("options").size())
+    }
+    @Test fun `normalized conversation paths retain authentication role ownership and SSE protections`() {
+        val id = create()
+        val studentToken = tokens.access(session(jdbc, user, "STUDENT", student))
+        val outsider = parent(jdbc); val outsiderChild = child(jdbc, outsider)
+        val outsiderToken = tokens.access(session(jdbc, outsider, "PARENT"))
+        for (path in listOf("/conversations/$id", "/conversations;matrix=1/$id", "/%63onversations/$id")) {
+            assertEquals(200, call(path).statusCode(), path)
+            assertEquals(401, call(path, token = "").statusCode(), path)
+            assertEquals(403, call(path, token = studentToken).statusCode(), path)
+            assertEquals(404, call(path, token = outsiderToken).statusCode(), path)
+            assertEquals(403, call("$path/messages", mapOf("question" to "접근 금지"), token = studentToken).statusCode(), path)
+            assertEquals(404, call("$path/messages", mapOf("question" to "접근 금지"), token = outsiderToken).statusCode(), path)
+            assertEquals(403, call(path.substringBefore("/$id"), mapOf("childId" to outsiderChild)).statusCode(), path)
+        }
+        assertTrue(ai.requests.isEmpty())
+    }
+    @Test fun `AI contentAllowed false is never confirmed and a true retry preserves the attestation`() {
+        val id = create(); val allowed = java.util.concurrent.atomic.AtomicBoolean(false)
+        ai.respond = { exchange, request ->
+            exchange.event("status", """{"state":"RUNNING","message":"조회"}""")
+            val data = json.readTree(result(json.readTree(request.body).path("scope"))) as com.fasterxml.jackson.databind.node.ObjectNode
+            (data.path("verification") as com.fasterxml.jackson.databind.node.ObjectNode).put("contentAllowed", allowed.get())
+            exchange.event("result", data.toString()); exchange.event("done", "{}")
+        }
+        val failure = message(id)
+        assertTrue(failure.body().contains("AI_INVALID_RESPONSE")); assertFalse("result" in events(failure.body()))
+        val failed = rows(id).single(); assertEquals("FAILED", failed.status); assertNull(failed.answer)
+        allowed.set(true)
+        val success = call("/conversations/$id/messages/${failed.id}/retry", emptyMap<String, String>())
+        assertTrue("result" in events(success.body()), success.body())
+        assertTrue(json.readTree(rows(id).single().verification).path("contentAllowed").booleanValue())
+    }
+    @Test fun `earlier baseline answer requires membership in selected period including later list pages`() {
+        val id = create(); val included = java.util.concurrent.atomic.AtomicBoolean(true)
+        val oldAt = today.minusDays(8).atStartOfDay(ZoneId.of("Asia/Seoul")).plusHours(12).toInstant().toString()
+        val laterAnswer = UUID.randomUUID()
+        fun record(target: UUID): Map<String, Any?> = mapOf("attemptId" to target, "studentId" to student,
+            "mission" to mapOf("title" to "합성 미션"), "status" to "IN_PROGRESS", "finishedAt" to null,
+            "answers" to if (target == attempt) listOf(
+                mapOf("answerId" to answer, "version" to 1, "submittedAt" to oldAt, "text" to "합성 근거", "feedback" to mapOf("status" to "DONE")),
+                mapOf("answerId" to laterAnswer, "version" to 2, "submittedAt" to Instant.now().toString(), "text" to "보완 답변", "feedback" to mapOf("status" to "DONE")))
+            else listOf(mapOf("answerId" to UUID.randomUUID(), "version" to 1, "submittedAt" to Instant.now().toString(), "text" to "합성 답변", "feedback" to mapOf("status" to "DONE"))))
+        learning.respond = { request ->
+            when {
+                request.target.startsWith("/internal/records/evidence") -> {
+                    val data = json.readTree(evidence())
+                    (data.path("items")[0] as com.fasterxml.jackson.databind.node.ObjectNode).put("submittedAt", oldAt)
+                    LearningHttpStub.Reply(body = data.toString())
+                }
+                request.target.startsWith("/internal/records/students/$student/attempts?") -> {
+                    val page = if (request.target.contains("page=1")) 1 else 0
+                    val items = if (!included.get()) emptyList() else if (page == 0) (1..100).map { record(UUID.randomUUID()) } else listOf(record(attempt))
+                    val payload = mapOf("studentId" to student, "period" to mapOf("from" to today.minusDays(6), "to" to today),
+                        "state" to if (included.get()) "OK" else "NO_RECORD", "inclusionRule" to "기간 내 제출 시도", "page" to page, "size" to 100,
+                        "totalElements" to if (included.get()) 101 else 0, "items" to items)
+                    LearningHttpStub.Reply(body = json.writeValueAsString(payload))
+                }
+                else -> LearningHttpStub.Reply(status = 500, body = "{}")
+            }
+        }
+        val success = message(id)
+        assertTrue("result" in events(success.body()), success.body()); assertEquals("COMPLETED", rows(id).single().status)
+        assertTrue(learning.requests.any { it.target.contains("page=1&size=100") })
+        learning.requests.forEach { assertEquals(student.toString(), it.header("X-Student-Scope")) }
+        included.set(false)
+        val failure = message(id)
+        assertTrue(failure.body().contains("AI_INVALID_RESPONSE")); assertFalse("result" in events(failure.body()))
+        assertEquals("FAILED", rows(id).last().status); assertNull(rows(id).last().answer)
     }
     @Test fun `example question API checks current child and learning state`() {
         val response = call("/agent/example-questions?childId=$student")

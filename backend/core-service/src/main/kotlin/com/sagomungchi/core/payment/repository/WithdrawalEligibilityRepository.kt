@@ -7,9 +7,11 @@ import java.util.UUID
 interface WithdrawalEligibilityMapper {
  fun subscriptions(user: UUID): Int
  fun refunds(user: UUID): Int
+ fun pendingPayments(user: UUID): Int
 }
 @Repository
 class WithdrawalEligibilityRepository(private val mapper: WithdrawalEligibilityMapper) {
  fun subscriptions(user: UUID)=mapper.subscriptions(user)
  fun refunds(user: UUID)=mapper.refunds(user)
+ fun pendingPayments(user: UUID)=mapper.pendingPayments(user)
 }

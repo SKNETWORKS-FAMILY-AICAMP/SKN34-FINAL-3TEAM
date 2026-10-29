@@ -362,7 +362,7 @@ try {
     await p.getByText(/실제 리포트 기간.*1판/).waitFor()
     await p.getByLabel('리포트 판').selectOption('latest')
     await p.getByRole('button', { name: '새 판으로 재생성' }).click()
-    await p.getByText('REGENERATE_NOT_ALLOWED', { exact: true }).waitFor()
+    await p.getByText('REPORT_REGENERATION_LIMIT', { exact: true }).waitFor()
     for (const button of ['Markdown 다운로드', 'PDF 다운로드']) {
       const wait = p.waitForEvent('download')
       await p.getByRole('button', { name: button, exact: true }).click()
@@ -435,7 +435,7 @@ try {
     })
   await check('운영 요약→실패 목록·재처리 실패/성공·큐·감사·403', async (p) => {
     await login(p, 'ops@example.test')
-    await p.getByRole('link', { name: 'REPORT · 실패 1건', exact: false }).click()
+    await p.getByRole('link', { name: 'NOTIFICATION · 실패 1건', exact: false }).click()
     await p.getByRole('button', { name: '작업 상세' }).click()
     await mode(p, 'retry-fail')
     await p.getByRole('button', { name: '작업 재처리', exact: true }).click()
@@ -445,7 +445,7 @@ try {
     await p.getByText('서버에서 재처리 완료를 확인했습니다.', { exact: true }).waitFor()
     await p.getByRole('button', { name: '창 닫기' }).click()
     await nav(p, '큐·DLQ')
-    await p.getByText('report.generate', { exact: true }).waitFor()
+    await p.getByText('report.report.generate', { exact: true }).waitFor()
     await nav(p, '감사 이력')
     await p.getByText('JOB_RETRY · 성공', { exact: true }).waitFor()
     await mode(p, 'forbidden')

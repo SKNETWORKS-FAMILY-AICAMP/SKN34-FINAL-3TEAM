@@ -34,8 +34,8 @@ X-Internal-Token 및 검증된 PARENT context를 기존 InternalRestClientFactor
 
 - #41은 신규 production 의존성·DB migration을 추가하지 않는다. TEMPLATE fallback.reason은 기존 COMPLETED 행 failure_code에 보존하고 공개 실패 코드는 FAILED에서만 노출한다. 저장 확정 이후 연결 종료는 이미 완료된 메시지를 FAILED로 되돌리지 않는다. 원문 전송은 emitter lock→DB 잠금 순서로 삭제와 직렬화하며, 외부 AI/learning HTTP는 DB 트랜잭션 밖에서 호출한다.
 
-## #48 병렬 초안 확인과 연결 조건
-#48 worktree의 ProductEntitlementService 초안을 읽어 실제 공급 모양을 확인했다(아직 이 브랜치/develop에는 없음). forParent(parent,student)의 product.id·product.limits.dailyConversations·conversationEnabled·periodEnd/graceUntil을 AnalysisEntitlement로 투영하는 adapter는 payment가 공급한다. conversationEnabled=false(환불 진행 포함)는 한도와 무관하게 차단한다. validUntil은 ACTIVE periodEnd의 KST 자정(배타), RENEWAL_FAILED graceUntil 다음 날 KST 자정이며 무료는 null이다.
+## #48 병렬 초안 확인과 연결 조건 (통합 이전 기록)
+#48 worktree의 ProductEntitlementService 초안을 읽어 당시 공급 모양을 확인했다(이 절은 공급자 병합 전 기록이다). forParent(parent,student)의 product.id·product.limits.dailyConversations·conversationEnabled·periodEnd/graceUntil을 AnalysisEntitlement로 투영하는 adapter는 payment가 공급한다. conversationEnabled=false(환불 진행 포함)는 한도와 무관하게 차단한다. validUntil은 ACTIVE periodEnd의 KST 자정(배타), RENEWAL_FAILED graceUntil 다음 날 KST 자정이며 무료는 null이다.
 recordAttempt(parent,child,sourceId)는 같은 parent 잠금 트랜잭션에서 beginUsage(...,"CONVERSATION",sourceId)와 finishUsage(...,true)를 호출해야 한다. 차감 대상은 성공 답변이 아닌 처리 시도이므로 실패/취소도 보존한다. 새 질문/재시도마다 별도 source UUID를 생성한다. 이 port에 default 구현은 없다. 실제 #48 adapter/환불 경합 통합은 별도 검증 조건이며, 미연결 상태는 503이다. 상대 worktree는 수정하지 않았다.
 
 프론트 최소 연결: 다른 자녀 clarification 선택 시 onScope로 명시적으로 전역 자녀·기간을 전환한다. ParentWorkspace의 범위 key 변경으로 기존 스트림을 취소하고 새 대화를 시작한다. 같은 자녀의 기간 선택은 기존 scope 확인 요청을 사용한다.
@@ -93,3 +93,23 @@ PR base는 develop이며, origin/develop c608f52를 기존 feature/core-analysis
 Python 계약 검사 60개와 core OpenAPI 3.1 표준 검사, 실제 알림 목록/설정 JSON·리포트 4종 이벤트 봉투/데이터·HTTP 상세 응답의 최종 명세 대조가 통과했다. bootJar의 Testcontainers/JUnit/Mockito/Flyway 제외도 확인했다. 프론트 전체 87개 테스트·전체 oxlint·tsc/Vite build 통과이며 기존 500KB 청크 경고는 남는다. 별도 UI 수동 수정이 없어 브라우저 검증은 이번에 반복하지 않았다.
 
 현재 core DB의 전체 Flyway는 Testcontainers로 적용했다. 이번 변경에서 learning/report 코드·migration은 develop 원본 그대로 받았으며 해당 서비스 전체 테스트·DB 전체 cycle·실제 AI/payment 연동·배포는 추가 실행하지 않았다. 이전 실행 결과를 이번 실행 결과로 합산하지 않는다. 테스트 XML·JAR·로그·요약은 외부 검증 폴더의 merge-20261029-*에 보존했다. 기존 실제 AI/payment 연동 제약은 유지된다.
+
+## develop c44ace8·최신 이슈 대조 (2026-10-29)
+
+PR #127의 경로 정규화·리포트 오류/스케줄 격리·V14 SPEECH 제거와 보고서 통합을 기존 로직 그대로 받는다. 기존 topic 보고서와 설계 본문은 수정하지 않고 #41 부록만 유지한다. 이제 공통 근거는 auth-account.md, core-gateway.md, learning.md, ai.md, report.md, audit.md를 사용한다. 이미 삭제·통합된 옛 보고서를 복원하지 않는다.
+
+GitHub #41·#27·#65·#66·#67·#48·#39·#44·#45 본문과 전체 댓글을 대조했다. #41의 최근 수정은 완료 체크 갱신이며 신규 기능 요구 추가는 없다. #41의 'AI 미구현' 및 #65~#67의 미완료 표기는 실제 develop의 AI 라우터/그래프 구현과 다르므로 상태/체크 여부만으로 구현 여부를 판단하지 않는다. #45의 기존 댓글은 1단계 삭제·재인증·student.deleted 계약이며 현재 #41 삭제 경합 정책과 일치한다. 원격 이슈 본문·댓글은 수정하지 않았다.
+
+확인된 #41 보완: P08의 기간 내 집계 대상 시도는 시작일 이전 최초 답변도 비교 기준으로 사용할 수 있다. 이전 답변은 evidence의 학생/시도/답변/버전·종료일을 검증한 뒤 기존 LearningRecordService.parentDashboard의 기간별 attempts 목록에 해당 시도가 실제 포함되는지 확인한다. 상세 API는 기간을 자르지 않으므로 포함 여부 확인용으로 사용하지 않는다. 존재하지 않거나 기간 밖인 시도, 종료일 이후 답변, 조회 실패는 확정하지 않는다. 집계·숫자·인용 재계산은 core에 추가하지 않는다.
+
+AI verification.contentAllowed가 명시되어 false/잘못된 형식이면 다른 두 대조 값이 true여도 #41에서 확정하지 않는다. 값이 없는 기존 두 플래그 계약은 보존한다. AI·learning·공통 필터·기존 조회 service 로직은 바꾸지 않고 #41 코드/명세/회귀 테스트만 보완한다. 정규화 URL에서 #41의 인증·역할·소유권·SSE 거부도 직접 확인한다. TEMPLATE/돌아보기 참조 및 payment 공급자 미연결 조건은 아직 해소되지 않았다.
+
+## 검증 중 추가 병합된 develop 13a6376 반영 (2026-10-29)
+
+c44ace8 통합 체크포인트는 core 233개·front 87개·계약 60개 통과였다. 최종 확인 중 PR #126이 병합돼 13a6376이 새 기준이 되었고 #46·#48·#47·#119 코드가 포함됐다. 수동 파일 8개를 ZIP·SHA256과 Git bundle로 보존·검증한 뒤 미커밋 병합만 재시작했다. Git 이력과 기존 커밋은 바꾸지 않았다. 새 develop에 없는 #41 source/test/report만 복원했고, 새로 반영된 문서/OpenAPI는 원문 바이트를 유지한 채 #41 블록만 추가했다.
+
+#48·#46 이슈는 추가 확인 시 closed로 변경됐다. 실제 PaymentAnalysisEntitlementProvider가 현재 #41 포트와 동일한 인터페이스를 구현하므로 'payment 공급자 미연결'은 이제 과거 상태다. 유효 시각은 공급자의 실제 KST 09:00 경계이며, 앞선 초안의 자정 표기는 사용하지 않는다. 분석 Redis 일 카운터는 별도 KST 자정 경계를 유지한다. payment·support·관리자·프로필의 이미 반영된 로직은 수정하지 않는다.
+
+#41 테스트에 공급자를 mock하지 않는 별도 실제 통합 경로를 추가했다. 실제 product/subscription PostgreSQL fixture·Spring payment provider·입장 트랜잭션·Redis·core HTTP/SSE를 사용하고 AI 응답만 HTTP 대역, PG와 정기 청구는 테스트 대역이다. 무료 0 한도 차단, 상품 설정 불가 503, 상품 데이터 한도 2회·실패도 USED 사용 이력, 초과 재시도의 추가 차감/사용 이력/AI 호출 방지, 자동갱신 해지 예약 상태 유지·유예·만료·09시 경계를 확인한다. 이 검증은 실제 PG 승인/청구·실제 AI·환불 경합 전체 흐름 검증이 아니다. production에 가짜 상품이나 공급자는 추가하지 않았다.
+
+13a6376 기준 core 314개 전체 통과(실패·오류·건너뜀 0), test bootJar 성공(6m24s). 실제 payment 공급자 연결 테스트 4개를 포함한다. 계약 76개·OpenAPI 표준 검사, frontend 93개·lint·build 통과. 실제 PG·실제 AI 전체·환불 경합 전체 흐름은 이번 검증에 포함하지 않았다.

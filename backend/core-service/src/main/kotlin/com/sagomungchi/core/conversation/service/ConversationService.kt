@@ -11,6 +11,7 @@ import com.sagomungchi.core.guardianship.service.ChildAuthorizationService
 import com.sagomungchi.core.conversation.domain.*
 import com.sagomungchi.core.conversation.repository.ConversationRepository
 import com.sagomungchi.core.learning.service.LearningRecordService
+import com.sagomungchi.core.learning.service.DashboardQuery
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
@@ -138,6 +139,8 @@ class ConversationService(private val repository: ConversationRepository, privat
             data.path("verification").path("quotesMatched").booleanValue().not() ||
             !data.path("metrics").isArray || !data.path("evidence").isArray ||
             !data.path("recordCount").isIntegralNumber || data.path("recordCount").asInt(-1) < 0) invalidAi()
+        val allowed = data.path("verification").path("contentAllowed")
+        if (!allowed.isMissingNode && (!allowed.isBoolean || !allowed.booleanValue())) invalidAi()
         val source = data.path("source").asText("LLM")
         if (source !in setOf("LLM", "LLM_RETRY", "TEMPLATE")) invalidAi()
         if (source == "TEMPLATE" && data.path("fallback").path("reason").asText() !in setOf("VERIFICATION_FAILED", "AI_UNAVAILABLE")) invalidAi()
@@ -163,6 +166,7 @@ class ConversationService(private val repository: ConversationRepository, privat
         val items = response.path("items")
         if (!items.isArray || items.size() != refs.size) invalidLearning()
         val byId = items.associateBy { it.path("answerId").asText() }
+        val baselineAttempts = mutableSetOf<UUID>()
         refs.forEach { ref ->
             val item = byId[ref.path("answerId").asText()] ?: invalidLearning()
             if (!item.path("available").isBoolean || !item.path("available").booleanValue())
@@ -173,7 +177,39 @@ class ConversationService(private val repository: ConversationRepository, privat
             (ref as ObjectNode).put("answerVersion", item.path("answerVersion").asInt())
             val date = try { java.time.Instant.parse(item.path("submittedAt").asText()).atZone(java.time.ZoneId.of("Asia/Seoul")).toLocalDate() }
                 catch (_: Exception) { invalidLearning() }
-            if (date < ticket.scope.from || date > ticket.scope.to) invalidAi()
+            if (date > ticket.scope.to) invalidAi()
+            if (date < ticket.scope.from) baselineAttempts.add(uuid(ref, "attemptId"))
+        }
+        if (baselineAttempts.isNotEmpty()) requirePeriodAttempts(ticket, baselineAttempts)
+    }
+    /** Learning owns P08 inclusion. Earlier baseline answers are allowed only for its period-selected attempts. */
+    private fun requirePeriodAttempts(ticket: AnalysisTicket, expected: Set<UUID>) {
+        val remaining = expected.toMutableSet()
+        var page = 0
+        while (remaining.isNotEmpty()) {
+            val query = DashboardQuery.resolve(ticket.scope.from.toString(), ticket.scope.to.toString(), page, 100)
+            val response = records.parentDashboard(ticket.scope.childId, "attempts", query)
+            if (response.status !in 200..299) throw BusinessException(HttpStatus.BAD_GATEWAY,
+                "LEARNING_UNAVAILABLE", "근거 시도의 기간 포함 여부를 확인하지 못했습니다.")
+            val body = try { json.readTree(response.body) } catch (_: Exception) { invalidLearning() }
+            if (body == null || body.path("childId").asText() != ticket.scope.childId.toString() ||
+                body.path("period").path("from").asText() != ticket.scope.from.toString() ||
+                body.path("period").path("to").asText() != ticket.scope.to.toString() ||
+                body.path("page").asInt(-1) != page || body.path("size").asInt() != 100) invalidLearning()
+            if (body.path("state").asText() !in setOf("OK", "NO_RECORD", "INSUFFICIENT_SAMPLE"))
+                throw BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "LEARNING_UNAVAILABLE", "학습 기록 조회가 완료되지 않았습니다.")
+            val items = body.path("items")
+            val total = body.path("totalElements").asLong(-1)
+            val offset = page.toLong() * 100
+            if (!items.isArray || items.size() > 100 || total < offset + items.size() ||
+                (body.path("state").asText() == "NO_RECORD" && !items.isEmpty)) invalidLearning()
+            val ids = items.map { try { UUID.fromString(it.path("attemptId").asText()) } catch (_: Exception) { invalidLearning() } }.toSet()
+            if (ids.size != items.size()) invalidLearning()
+            remaining.removeAll(ids)
+            if (remaining.isEmpty()) return
+            if (offset + items.size() >= total) invalidAi()
+            if (items.size() != 100) invalidLearning()
+            page++
         }
     }
     fun validateClarification(ticket: AnalysisTicket, input: JsonNode): JsonNode {
