@@ -10,10 +10,12 @@ from pydantic.alias_generators import to_camel
 
 from app.clients.base import internal_client
 from app.config import get_settings
+from app.generation.models import EvidenceLink
 from app.generation.records import (
     AnswerRecord,
     AttemptRecord,
     ChangePair,
+    EvidenceRecord,
     LearningRecords,
     Period,
     RecordContractError,
@@ -200,6 +202,63 @@ class LearningClient:
     async def close(self) -> None:
         await self._client.aclose()
 
+    async def evidence(
+        self, student_id: UUID, links: tuple[EvidenceLink, ...]
+    ) -> tuple[EvidenceRecord, ...]:
+        context = current_user_context()
+        if context is None:
+            raise RecordContractError("Evidence lookup requires a user context")
+        context.require_student(str(student_id))
+        expected = {}
+        for link in links:
+            if link.answer_id in expected and expected[link.answer_id] != link:
+                raise RecordContractError("Conflicting evidence identity")
+            expected[link.answer_id] = link
+        results = []
+        keys = list(expected)
+        for start in range(0, len(keys), 50):
+            batch = keys[start : start + 50]
+            response = await self._client.get(
+                "/internal/records/evidence",
+                params={"answerIds": ",".join(str(key) for key in batch)},
+            )
+            if response.status_code == 410:
+                results.extend(
+                    EvidenceRecord(
+                        key, expected[key].attempt_id, expected[key].answer_version, None, False
+                    )
+                    for key in batch
+                )
+                continue
+            response.raise_for_status()
+            parsed = EvidenceResponse.model_validate(response.json())
+            seen = set()
+            for item in parsed.items:
+                if item.answer_id not in batch or item.answer_id in seen:
+                    raise RecordContractError("Unexpected or duplicate evidence answer")
+                seen.add(item.answer_id)
+                link = expected[item.answer_id]
+                if item.available and (
+                    item.attempt_id != link.attempt_id
+                    or item.answer_version != link.answer_version
+                    or item.quote is None
+                ):
+                    raise RecordContractError("Evidence identity/version is inconsistent")
+                results.append(
+                    EvidenceRecord(
+                        item.answer_id,
+                        link.attempt_id,
+                        link.answer_version,
+                        item.quote if item.available else None,
+                        item.available,
+                        item.mission_title if item.available else None,
+                        item.submitted_at if item.available else None,
+                    )
+                )
+            if seen != set(batch):
+                raise RecordContractError("Evidence response is incomplete")
+        return tuple(results)
+
     @staticmethod
     def _check_scope(response: ScopeInput, student_id: UUID, period: Period) -> None:
         if response.student_id != student_id or (response.period.from_, response.period.to) != (
@@ -296,3 +355,17 @@ class LearningClient:
             ),
             tuple(ChangeInput.model_validate(raw).record() for raw in raw_changes),
         )
+
+
+class EvidenceInput(InputModel):
+    answer_id: UUID
+    attempt_id: UUID | None = None
+    answer_version: StrictInt | None = None
+    quote: str | None = None
+    available: StrictBool
+    mission_title: str | None = None
+    submitted_at: AwareDatetime | None = None
+
+
+class EvidenceResponse(InputModel):
+    items: list[EvidenceInput]

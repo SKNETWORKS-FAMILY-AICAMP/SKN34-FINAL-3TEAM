@@ -113,7 +113,7 @@ class MissionControllerTest(
         assertEquals(
             setOf(
                 "id", "title", "subject", "grade", "gradeMax", "thinkingType", "inputType", "question",
-                "hint", "sceneUri", "staticSceneUri", "choices", "inputTemplate",
+                "hint", "sceneUri", "staticSceneUri", "choices", "inputTemplate", "categories", "answerUnit",
             ),
             fields,
         )

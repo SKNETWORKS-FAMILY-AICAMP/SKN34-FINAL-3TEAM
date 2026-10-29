@@ -69,11 +69,22 @@ def report_student_id():
 
 
 @pytest.fixture
-def report_factory(db_engine, report_student_id):
+def report_students(report_student_id):
+    return {report_student_id}
+
+
+@pytest.fixture
+def report_factory(db_engine, report_student_id, report_students):
     # Independent connections/real commits for concurrency and transaction visibility tests.
     from sqlalchemy import delete, select
 
-    from app.generation.repository import report_item, report_item_evidence, weekly_report
+    from app.deletion.state import deletion_guard
+    from app.generation.repository import (
+        report_file,
+        report_item,
+        report_item_evidence,
+        weekly_report,
+    )
     from app.outbox.repository import outbox_event
 
     factory = sessionmaker(bind=db_engine, expire_on_commit=False)
@@ -81,17 +92,23 @@ def report_factory(db_engine, report_student_id):
         yield factory
     finally:
         with factory.begin() as session:
+            session.execute(
+                delete(deletion_guard).where(deletion_guard.c.student_id.in_(report_students))
+            )
             reports = select(weekly_report.c.id).where(
-                weekly_report.c.student_id == report_student_id
+                weekly_report.c.student_id.in_(report_students)
             )
             items = select(report_item.c.id).where(report_item.c.report_id.in_(reports))
             session.execute(
                 delete(report_item_evidence).where(report_item_evidence.c.item_id.in_(items))
             )
             session.execute(delete(report_item).where(report_item.c.report_id.in_(reports)))
+            session.execute(delete(report_file).where(report_file.c.report_id.in_(reports)))
             session.execute(
-                delete(outbox_event).where(outbox_event.c.subject == str(report_student_id))
+                delete(outbox_event).where(
+                    outbox_event.c.subject.in_([str(s) for s in report_students])
+                )
             )
             session.execute(
-                delete(weekly_report).where(weekly_report.c.student_id == report_student_id)
+                delete(weekly_report).where(weekly_report.c.student_id.in_(report_students))
             )

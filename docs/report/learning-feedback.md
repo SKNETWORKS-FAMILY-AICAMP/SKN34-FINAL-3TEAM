@@ -31,7 +31,7 @@ learning-service의 `POST /internal/answers/{answerId}/feedback`을 만들고, �
 | ai 판정 요소 | 근거 구절이 있으면 `AI_OBSERVATION`, 없으면 `source_type`·`quote` NULL. 기준표에 없는 요소 ID·검증 안 된 충족은 `AI_BAD_RESPONSE` | api-spec 3.2 예시, ERD 4.2 "근거가 없으면 NULL", CHECK `verified OR NOT satisfied`(도메인 `JudgmentElement.satisfy()`에서도 거부) |
 | 되묻기 조건 | 시도 내 되묻기 2회 미만 + 고르기 활동 `CORRECT` 아님 + 마무리·완료 전 | P04, api-spec 2.2. 고르기 활동은 선택지·순서·분류 (FN-LRN-04) |
 | 수학 `CORRECT` | 되묻기(한 걸음 더)를 만듦, `nextActions`는 `[ANSWER_FOLLOWUP, FINISH]`라 건너뛸 수 있음 | 이슈 #25 할 일 2줄은 "고르기·수학 CORRECT면 FINISH"지만 계약 문서 api-spec 2.2와 P04는 "고르기 `CORRECT`"만 되묻기 없이 마무리. 계약 문서를 따름. 이슈 문구는 기획서 5장 "문항 종류별 판정과 진행"(수학 최종 답을 규칙 찾기·순서 맞추기와 같은 "정답이 있는 문항"으로 묶음)에서 온 것으로 보임. 기획서도 맞았을 때 바로 끝내지 않고 "어떻게 알았어?"(답하지 않아도 됨)를 물어, 건너뛸 수 있는 되묻기와 같음. 설계 문서는 기획서를 좁혀 정함(되묻기 학년별 1~3회 → 최대 2회, 고르기 오답은 다시 고르기 → 까닭 되묻기, 고르기 정답은 바로 마무리) |
-| 수학 단위 | 단위는 비교하지 않음, 앞쪽 수 표현만 동치로 비교(`30`·`30 ㎡`·`30 cm²` 모두 `30 m²`와 같음) | FN-JDG-02·usecase 4.3은 "분수·소수·한글 분수 등 동치 표현"까지만 정하고, 이슈 #25·기획서 5장에도 단위가 없음. 단위 비교는 단위 누락·환산(m·cm) 처리를 새로 정해야 해 설계에 없는 규칙이라 넣지 않음. #23 리포트(learning-mission.md 정답 키)의 "단위·동치 비교는 판정 규칙의 일"은 정답 키에 단위를 함께 저장한다는 뜻이고 비교 규칙은 정하지 않음 → 후속 확인 |
+| 수학 단위 | 단위는 비교하지 않음, 앞쪽 수 표현만 동치로 비교(`30`·`30 ㎡`·`30 cm²` 모두 `30 m²`와 같음) | FN-JDG-02·usecase 4.3은 "분수·소수·한글 분수 등 동치 표현"까지만 정하고, 이슈 #25·기획서 5장에도 단위가 없음. 단위 비교는 단위 누락·환산(m·cm) 처리를 새로 정해야 해 설계에 없는 규칙이라 넣지 않음. #23 리포트(learning-mission.md 정답 키)의 "단위·동치 비교는 판정 규칙의 일"은 정답 키에 단위를 함께 저장한다는 뜻이고 비교 규칙은 정하지 않음 → 후속 확인 → #79에서 확정([판정 규칙 보고서](learning-judgment-rules.md)): 단위는 비교하지 않고 답 칸 뒤 고정 |
 | 분류 문항 | 고르기 활동으로 정답 키 판정, 정답이면 바로 마무리 | FN-LRN-04(고르기 = 선택지·순서·분류)·FN-JDG-01, #22 구현. 기획서 5장은 "분류 기준"을 "정답이 여러 개인 문항"(이유를 봄)에 두지만, 이는 스스로 기준을 세우는 활동이고 정해진 그룹에 나누는 지금 분류 문항과 다를 수 있음. #22에서 정한 범위라 여기서는 바꾸지 않음 |
 | 고르기 오답 | 다시 살펴보기 되묻기 후 보완 답변은 다시 고르기 | FN-JDG-01 "까닭을 묻는 되묻기". 보완 답변은 미션 입력 방식과 같아야 함(#24) |
 | 질문 은행 | ai가 재생성까지 유출 검사에 실패(`question: null`)하면 같은 유형의 활성 질문 중 이 시도에서 아직 쓰지 않은 것을 생성 순으로. `source=BANK`, `bank_question_id`, `leak_check_passed=false`(ai 검사 결과 그대로), 모델·프롬프트 버전 없음(LLM 질문이 아님) | P16, ERD CHECK `ck_followup_bank_source`. 같은 시도에서 같은 질문을 두 번 보이지 않음 |
@@ -56,9 +56,9 @@ learning-service의 `POST /internal/answers/{answerId}/feedback`을 만들고, �
 
 | 항목 | 정한 내용 | 바꿀 위치 |
 |---|---|---|
-| 풀이 단계 결합 | 최종 답 동치 + 풀이 `CORRECT` → `CORRECT`, 최종 답 불일치 + 풀이 `RETHINK` → `RETHINK`, 한쪽만 → `PARTIAL`, ai 보류 → 보류(최종 답 결과는 쓰지 않음). `method`는 `LLM`. 최종 답은 기준표 요소가 아니라 요소로 저장하지 않아, 최종 답이 틀려 `PARTIAL`이어도 풀이 요소는 충족으로 남음(마무리 체크리스트는 풀이 요소, 정답은 마무리 공개로 보임). FN-JDG-04 "미검증 M1 수학 과정은 보류"는 M1 모델 결과를 쓸 때의 규칙이라 M1을 쓰지 않는 지금은 해당 없음(ai `JudgmentRequest` 주석 "M1 점검은 범위 밖, 같은 근거 추출·원문 대조로 판정", sequence-diagram 3.2 "M1 활성 범위"일 때만 `LOW_CONFIDENCE`) | `FeedbackFacade.withFinalAnswer` |
+| 풀이 단계 결합 | 최종 답 동치 + 풀이 `CORRECT` → `CORRECT`, 최종 답 불일치 + 풀이 `RETHINK` → `RETHINK`, 한쪽만 → `PARTIAL`, ai 보류 → 보류(최종 답 결과는 쓰지 않음). `method`는 `LLM`. 최종 답은 기준표 요소가 아니라 요소로 저장하지 않아, 최종 답이 틀려 `PARTIAL`이어도 풀이 요소는 충족으로 남음(마무리 체크리스트는 풀이 요소, 정답은 마무리 공개로 보임). FN-JDG-04 "미검증 M1 수학 과정은 보류"는 M1 모델 결과를 쓸 때의 규칙이라 M1을 쓰지 않는 지금은 해당 없음(ai `JudgmentRequest` 주석 "M1 점검은 범위 밖, 같은 근거 추출·원문 대조로 판정", sequence-diagram 3.2 "M1 활성 범위"일 때만 `LOW_CONFIDENCE`) → #79에서 확정([판정 규칙 보고서](learning-judgment-rules.md)): 규칙은 그대로, 최종 답은 `FINAL_ANSWER` 요소로 기록 | `FeedbackFacade.withFinalAnswer` |
 | 수 읽기 | 정수·쉼표(`1,000`)·소수·분수(`3/4`)·대분수(`1 3/4`)·한글 분수(`4분의 3`, `1과 4분의 3`). 자연수와 분수 사이에 "과·와"나 띄어쓰기가 있어야 대분수(`14분의 3`은 3/14). 위첨자(`²`)는 수로 보지 않음. 수로 읽을 수 없는 정답 키는 글자 그대로 비교 | `MathEquivalenceJudge.normalize` |
-| 분류 정답 키 | `{"assignments":[{choiceId, categoryId}]}`, 배정 순서와 무관하게 모두 같아야 정답 | 시드에 분류 문항 없음 |
+| 분류 정답 키 | `{"assignments":[{choiceId, categoryId}]}`, 배정 순서와 무관하게 모두 같아야 정답 → #79에서 확정([판정 규칙 보고서](learning-judgment-rules.md)): `categoryId`는 `mission_version.categories` | 시드에 분류 문항 없음 |
 
 ## 기존 파일 수정
 
@@ -129,8 +129,8 @@ PR #78 리뷰에서 후속 항목을 이슈로 나눔(kty2001): #79 판정 규�
 - 기준표 요소가 0개인 고르기 미션: ai 되묻기가 요소 1개 이상을 요구해(`FollowupRubric.elements` min 1) 오답이면 `AI_BAD_RESPONSE`가 됨. 지금 시드는 모두 요소가 있음. 미션 공개 검사(`Mission.requirePublishable`)에서 고르기도 요소 1개 이상을 요구해야 함 → #81
 
 - 판정 요청에 미션 질문 넣기(B안): ai 판정 요청은 학생 답과 기준표만 받아 요소 설명이 일반적이면 주제와 무관한 답도 충족될 수 있음(#22 검사에서 A안 "요소 설명에 주제"로 대응). api-spec 4.2·ai 판정 프롬프트(judge@3)·learning을 함께 바꿔야 해 별도 이슈
-- 수학 단위 비교 여부(위 "수학 단위", 설계에 규칙 추가가 필요), 풀이 단계 결합 규칙 확정(위 "임시로 정한 것") → #79
+- 수학 단위 비교 여부(위 "수학 단위", 설계에 규칙 추가가 필요), 풀이 단계 결합 규칙 확정(위 "임시로 정한 것") → #79 ([판정 규칙 보고서](learning-judgment-rules.md))
 - 같은 답이 실행마다 다르게 판정되는 경우(#22 검사): 사람 검증(P11) 대상
-- 분류 문항: 그룹(`categories`) 저장 위치가 정해지면 그룹 ID 확인·유출 검사용 정답 추가. 기획서 5장 "분류 기준"(이유를 봄)과 지금 분류 문항(정답 키)의 관계 확인 → #79
+- 분류 문항: 그룹(`categories`) 저장 위치가 정해지면 그룹 ID 확인·유출 검사용 정답 추가. 기획서 5장 "분류 기준"(이유를 봄)과 지금 분류 문항(정답 키)의 관계 확인 → #79 ([판정 규칙 보고서](learning-judgment-rules.md))
 - 판정 정정(`POST /internal/judgments/{judgmentId}/corrections`, class-diagram 4.2 `CorrectionController`·`JudgmentService.correct`·`CorrectionRepository`, FN-SUP-03): 이슈 #25 범위가 아님. 관리자 정정과 learning 전달은 core #46(20220348-kim) 몫이지만, learning 쪽 받는 API는 #80에서 #46과 요청·응답을 맞춤. 고착 `RUNNING` 탐지 주기(1분)는 운영 작업. 지금은 요청 때 리스 만료로 다시 가져감
 - 마무리(#26): 판정 `DONE` 1회 이상 확인, 체크리스트는 저장된 요소(`ANSWER_KEY`·`AI_OBSERVATION`) 사용. 피드백은 ai 호출 전에 읽은 시도로 되묻기 여부를 정하므로, 판정 처리 중에 마무리하면 마무리된 시도에 되묻기가 생길 수 있음 → PR #78 리뷰에서 #26 이슈 코멘트로 분리: finish가 같은 시도 잠금(`lockById`)을 쓰고 `RUNNING` 판정이 있으면 기다리거나 거절, 또는 `saveResult` 직전에 시도를 다시 확인 → #26에서 두 번째 방법으로 반영([learning-reflection.md](learning-reflection.md) "마무리 경합")

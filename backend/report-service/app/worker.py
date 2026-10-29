@@ -1,12 +1,18 @@
-"""#50 worker: report.generate subscription, bounded Outbox relay and graceful drain."""
+"""Shared v1 generation/deletion subscriptions, bounded Outbox relay and graceful drain."""
 
 import asyncio
 import contextlib
 import logging
 import signal
 
+from app.clients.base import internal_client
+from app.clients.core_client import CoreClient
+from app.clients.storage import ObjectStorage
+from app.concurrency import run_blocking
 from app.config import get_settings
 from app.database import create_db_engine, create_session_factory
+from app.deletion.consumer import DELETION_QUEUE, StudentDeletedConsumer
+from app.deletion.service import DeletionService
 from app.generation.codec import ReportV1Codec
 from app.generation.consumer import GENERATE_QUEUE, GenerationConsumer
 from app.generation.locking import JobLocks
@@ -74,10 +80,16 @@ async def run(generator=None) -> None:
     amqp = AmqpConnection(settings.rabbitmq_url)
     engine = create_db_engine()
     factory = create_session_factory(engine)
+    locks = JobLocks(engine)
+    storage_instances = []
+
+    def storage():
+        if not storage_instances:
+            storage_instances.append(ObjectStorage.configured())
+        return storage_instances[0]
+
     codec = ReportV1Codec()
-    service = GenerationService(
-        factory, JobLocks(engine), generator or UnconfiguredGenerator(), codec
-    )
+    service = GenerationService(factory, locks, generator or UnconfiguredGenerator(), codec)
     publisher = EventPublisher(amqp)
     amqp.start()
     stop = asyncio.Event()
@@ -86,16 +98,27 @@ async def run(generator=None) -> None:
         with contextlib.suppress(NotImplementedError):  # Windows 로컬 실행
             loop.add_signal_handler(sig, stop.set)
     try:
-        await serve(
-            amqp,
-            EventConsumer(amqp, settings.consumer_max_retries, settings.consumer_prefetch),
-            [(GENERATE_QUEUE, GenerationConsumer(service, codec))],
-            OutboxRelay(factory, publisher),
-            stop,
-        )
+        async with internal_client(settings.core_url) as core_http:
+            await serve(
+                amqp,
+                EventConsumer(amqp, settings.consumer_max_retries, settings.consumer_prefetch),
+                [
+                    (
+                        DELETION_QUEUE,
+                        StudentDeletedConsumer(
+                            DeletionService(factory, locks, storage, CoreClient(core_http))
+                        ),
+                    ),
+                    (GENERATE_QUEUE, GenerationConsumer(service, codec)),
+                ],
+                OutboxRelay(factory, publisher),
+                stop,
+            )
     finally:
         await publisher.close()
         await amqp.close()
+        for instance in storage_instances:
+            await run_blocking(instance.close)
         engine.dispose()
 
 

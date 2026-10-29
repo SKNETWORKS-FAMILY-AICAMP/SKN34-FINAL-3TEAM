@@ -125,7 +125,7 @@ class FeedbackFacade(
         return when {
             ai == null -> withAnswerKey(checkNotNull(rule) { "판정 방법 없는 입력 방식 ${target.inputType}" }, target, rubric)
             rule == null -> ai
-            else -> withFinalAnswer(rule, ai)
+            else -> withFinalAnswer(rule, ai, target, rubric)
         }
     }
 
@@ -144,10 +144,11 @@ class FeedbackFacade(
     }
 
     /**
-     * 풀이 단계: 풀이는 ai 요소 판정, 최종 답은 수학 동치 규칙 (FN-JDG-02). 합치는 규칙은 문서에 없어 임시로
-     * 둘 다 맞으면 CORRECT, 둘 다 아니면 RETHINK, 한쪽만이면 PARTIAL, ai 보류는 보류 (리포트)
+     * 풀이 단계 (FN-JDG-02, state-diagram 3.3): 풀이는 ai 요소 판정, 최종 답은 수학 동치 규칙.
+     * 둘 다 맞으면 CORRECT, 둘 다 아니면 RETHINK, 한쪽만이면 PARTIAL, ai 보류는 보류(최종 답 결과는 쓰지 않음).
+     * 최종 답 결과는 기준표의 최종 답 요소에 정답 키 근거로 기록(근거 글자는 학생이 쓴 최종 답)해 체크리스트에 보임
      */
-    private fun withFinalAnswer(finalAnswer: Judged, steps: Judged): Judged {
+    private fun withFinalAnswer(finalAnswer: Judged, steps: Judged, target: FeedbackTarget, rubric: Rubric): Judged {
         if (steps.result == JudgmentResult.HELD) return steps
         val answerCorrect = finalAnswer.result == JudgmentResult.CORRECT
         val result = when {
@@ -155,7 +156,11 @@ class FeedbackFacade(
             !answerCorrect && steps.result == JudgmentResult.RETHINK -> JudgmentResult.RETHINK
             else -> JudgmentResult.PARTIAL
         }
-        return steps.copy(result = result)
+        val answerElements = rubric.finalAnswerElements.map {
+            JudgmentElement(it.id, target.content.finalAnswer, verified = true, sourceType = ElementSource.ANSWER_KEY)
+                .let { element -> if (answerCorrect) element.satisfy() else element }
+        }
+        return steps.copy(result = result, elements = steps.elements + answerElements)
     }
 
     /** 서술·논술·풀이: ai 근거 추출·원문 대조 (FN-JDG-03). 학생 식별정보 없이 원문·학년·기준표만 */
@@ -166,7 +171,7 @@ class FeedbackFacade(
                 inputType = target.inputType.name,
                 grade = attempt.grade,
                 rubric = AiRubric(
-                    rubric.elements.map {
+                    rubric.aiElements.map {
                         AiRubricElement(it.id.toString(), it.label, it.description, it.points, it.judgeVerified, it.goodThought, it.commonErrors)
                     },
                 ),
@@ -176,9 +181,9 @@ class FeedbackFacade(
         return fromAi(response, rubric)
     }
 
-    /** 계약 밖 값(결과·기준표와 다른 요소 목록·근거 없는 충족)은 ai 응답 오류. 보류가 아니면 요소마다 한 번씩 */
+    /** 계약 밖 값(결과·보낸 요소와 다른 요소 목록·근거 없는 충족)은 ai 응답 오류. 보류가 아니면 보낸 요소마다 한 번씩 */
     private fun fromAi(response: AiJudgment, rubric: Rubric): Judged = parse {
-        val ids = rubric.elements.map { it.id }.toSet()
+        val ids = rubric.aiElements.map { it.id }.toSet()
         if (response.result != JudgmentResult.HELD.name) {
             val returned = response.elements.map { UUID.fromString(it.elementId) }
             require(returned.size == returned.toSet().size && returned.toSet() == ids) { "기준표 요소와 다른 판정 요소 $returned" }
@@ -245,8 +250,8 @@ class FeedbackFacade(
     }
 
     /**
-     * 유출 검사에 쓸 정답 (학생에게 보이는 글자). 고르기는 선택지 이름, 순서는 정답 순서 전체, 수학은 최종 답.
-     * 분류는 그룹 이름을 저장하는 곳이 없어 보내지 않음(금지어로 대신)
+     * 유출 검사에 쓸 정답 (학생에게 보이는 글자). 고르기는 선택지 이름, 순서는 정답 순서 전체,
+     * 수학은 최종 답에 답 단위를 붙인 값, 분류는 "선택지 이름: 그룹 이름" (#79)
      */
     private fun leakKey(inputType: InputType, rubric: Rubric, mission: MissionView): List<String>? {
         val key = rubric.answerKey ?: return null
@@ -254,7 +259,11 @@ class FeedbackFacade(
         return when (inputType) {
             InputType.CHOICE -> key.choiceIds?.map { labels[it] ?: it }
             InputType.ORDERING -> key.choiceIds?.let { ids -> listOf(ids.joinToString(", ") { labels[it] ?: it }) }
-            InputType.SOLUTION_STEPS -> key.finalAnswer?.let { listOf(it) }
+            InputType.SOLUTION_STEPS -> key.finalAnswer?.let { listOf(listOfNotNull(it, mission.answerUnit).joinToString(" ")) }
+            InputType.CLASSIFICATION -> key.assignments?.let { assigned ->
+                val groups = mission.categories.associate { it.id to it.label }
+                assigned.map { "${labels[it.choiceId] ?: it.choiceId}: ${groups[it.categoryId] ?: it.categoryId}" }
+            }
             else -> null
         }
     }

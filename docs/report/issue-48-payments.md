@@ -86,3 +86,21 @@ POST /api/v1/webhooks/tosspayments만 Bearer 예외다. 원문:transmission-time
 실제 토스 테스트 키가 없어 실제 PG 승인·빌링 발급/청구·취소·서명 웹훅 송신은 미검증이다. PG 대역과 합성 결제 fixture 검증을 실제 PG 결과로 표현하지 않는다. 실제 Google 인증·#41 전체 대화/AI 흐름·실제 report worker 렌더링·배포·원격 CI는 이 작업의 통과 결과에 포함하지 않는다. 프론트는 변경하지 않았다.
 
 PR은 사용자가 생성한다. base develop, head feature/core-payments. 제목은 `feat: 토스 테스트 결제·구독과 상품 권한 공급 구현`, 본문은 `Closes #48`을 포함한다. 현재 등록 설명으로 확인한 후보는 enhancement(New feature or request), area:core, area:learning이며 기존 P2는 우선순위 후보로 유지할 수 있다. Type 등록 값은 저장소 API 404·조직 API 401로 확인하지 못해 추정하지 않는다. feature push만으로는 현재 core/learning CI가 실행되지 않으며 PR 생성 후 CI를 확인해야 한다.
+
+
+## 2026-10-29 임시 통합 base 준비
+
+- 사용자 지시로 최신 develop `c608f52aa0f7b651133603a629a8347be61b3282`에서 `feature/core-support-payments-integration`을 생성·push했다. 기존 feature/core-integration과 develop checkout/이력은 변경하지 않았다. #48 head는 feature/core-payments, #46 head는 feature/core-support다. PR 생성은 사용자가 수행한다.
+- #46 채팅에 새 base·기준 SHA·기반영 보존 원칙·V14/V15 순서·최종 develop PR의 Closes 필요를 전달했다. 이 base 대상 병합은 기본 브랜치 병합이 아니므로 이슈 자동 종료로 안내하지 않는다.
+- #48에 새 base를 일반 merge로 반영했다. 충돌은 PostgresRepositoryTest.kt와 core OpenAPI 2곳이다. 풀 설정 파일은 기반영 base의 원문(최대 5/min idle 0)을 그대로 보존했다. 결제 스키마와 DashboardRecordReflection을 함께 유지했다.
+- 기반영 API 경로 60개·스키마 79개와 공통 components/root metadata를 대조했다. 기존 사용자 승인 범위인 ReportDownload 설명 외에 기반영 정의를 교체하지 않았고, #48 추가 경로·스키마도 모두 보존했다. 결과 경로 77개·스키마 99개, YAML 중복 키 없음이다. FeedbackFacade의 결제 사용 예약/완료와 #79 최종 답 요소·AI rubric 필터 변경이 함께 유지된다.
+- 추가 기반영 production 로직 수정은 하지 않았다. 아래 검증은 이 통합 결과를 대상으로 수행하며 결과를 이어 기록한다.
+
+
+### 임시 base 통합 검증 결과
+
+- JDK21 core 전체 **241개**, learning 전체 **190개**, 양쪽 test/bootJar 성공. 실패·오류·건너뜀 0. 실제 PostgreSQL/Redis/RabbitMQ 및 기존 인증·결제·알림·리포트·대시보드·피드백 회귀를 포함한다. 이 통합 실행은 PG/learning HTTP 계약 대역과 실제 서비스 검증 범위를 구분한다.
+- 계약 스크립트 60개와 core/learning OpenAPI 표준 검사 통과. 실제 결제 응답 5종·알림 2종·report 이벤트 4종 및 HTTP 상세의 계약 대조 통과. 검증된 runtime/contract/test source와 작업 트리 sha256 일치 확인.
+- 격리 PostgreSQL 전체 migration cycle 통과(50.3초): core 42테이블/376컬럼, learning 19/158, report 7/50. 위반 입력 60건, CHECK 값 집합 70개, ERD 인덱스 23개. 재실행 이력 불변 및 report downgrade/upgrade 후 재검사 통과. #46 V14는 아직 이 base에 없으므로 양쪽 기능이 함께 병합된 후 최종 DB 검사가 추가로 필요하다.
+- 기반영 풀 설정 파일은 새 base와 동일하며, 기반영 경로·스키마 보존 검사도 통과했다. 추가 production 로직 수정·기존 커밋 이력 재작성·develop 직접 push·PR 생성은 하지 않았다.
+- #46 채팅이 새 base용 PR 준비 문서 갱신·push(6604844)를 완료한 것을 확인했다. #46 먼저 새 base에 병합할 수 있으며, 그 뒤 #48의 공통 파일 충돌 여부를 다시 확인해야 한다. 실제 PG/Google·배포·원격 CI의 미검증 조건은 유지한다.
