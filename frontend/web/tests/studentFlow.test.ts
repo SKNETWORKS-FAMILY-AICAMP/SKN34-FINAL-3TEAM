@@ -50,6 +50,24 @@ for(const scenario of ['correct','partial','rethink','held'] as const) {
     a=await api.finish(a.attemptId);assert.ok(a.reveal);assert.ok(a.checklist?.every(e=>!e.satisfied||isVerifiedElement(e,a.answers.map(a=>a.text))))
   })
 }
+test('고르기 활동(고르기·순서·분류) 정답은 되묻기 없이 마무리만, 서술 정답은 되묻기 (#82)',async()=>{
+  const {api,c}=await setup();api.setScenario('input-fixtures');const list=await api.missions(c)
+  const answers:Record<string,AnswerContent>={
+    CHOICE:{...blankAnswer('CHOICE'),choiceIds:['leaf']},
+    ORDERING:{...blankAnswer('ORDERING'),choiceIds:['seed','sprout','leaf']},
+    CLASSIFICATION:{...blankAnswer('CLASSIFICATION'),assignments:[{choiceId:'nail',categoryId:'magnetic'},{choiceId:'paper',categoryId:'other'},{choiceId:'clip',categoryId:'magnetic'}]},
+    NARRATIVE:{...blankAnswer('NARRATIVE'),text:'내 생각과 까닭을 적었어요.'},
+  }
+  for(const [type,answer] of Object.entries(answers)){
+    api.setScenario('input-fixtures');const mission=list.find(m=>m.inputType===type)!
+    let a=await api.start(mission,c);a=await api.submit(a.attemptId,answer,'key-'+type)
+    api.setScenario('correct');const f=await api.feedback(a.attemptId,a.answers[0].answerId,()=>{})
+    assert.equal(f.judgment?.result,'CORRECT',type)
+    assert.ok(f.judgment?.judgmentId,type)
+    assert.deepEqual(f.nextActions,type==='NARRATIVE'?['ANSWER_FOLLOWUP','FINISH']:['FINISH'],type)
+    assert.equal(f.followup==null,type!=='NARRATIVE',type)
+  }
+})
 test('RUNNING-only 후 같은 answerId 재조회·취소·답변 중복 없음',async()=>{
   const {api,c}=await setup();api.setScenario('running');let a=await api.start(demoMissions(3)[2],c)
   a=await api.submit(a.attemptId,{...blankAnswer('NARRATIVE'),text:'저장된 답'},'key')

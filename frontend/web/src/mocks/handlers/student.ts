@@ -97,7 +97,9 @@ function sse(run: (push: (event: string, data: unknown) => void) => Promise<void
         try {
           await run(push)
         } catch (e) {
-          push('error', problem(e))
+          // SSE error는 learning처럼 오류가 정한 retryable을 그대로(ai 4xx·계약 밖은 false, #82)
+          const own = e instanceof ApiError ? e.problem.retryable : undefined
+          push('error', { ...problem(e), ...(own === undefined ? {} : { retryable: own }) })
         }
         push('done', {})
         persistFixtureState()

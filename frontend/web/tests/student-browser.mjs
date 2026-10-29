@@ -323,8 +323,25 @@ try {
         assert.ok((await p.locator('.ux-evidence').innerText()).includes('다시 생각'))
       if (scenario === 'held')
         await p.getByText('판정 보류 · 답변은 기록했어요.', { exact: true }).waitFor()
-      if (scenario === 'correct') await p.getByText('정답을 확인했어요.', { exact: true }).waitFor()
+      if (scenario === 'correct') {
+        await p.getByText('정답을 확인했어요.', { exact: true }).waitFor()
+        // 판정 신고 대상은 답변 ID가 아니라 판정 ID (#146)
+        const report = await p.getByRole('link', { name: '이 결과 오류 신고' }).getAttribute('href')
+        assert.ok(report.includes('targetType=JUDGMENT') && report.includes('-judgment'), report)
+      }
     })
+  await check('피드백 retryable:false는 재요청 버튼 대신 안내 (#82)', async (p) => {
+    await student(p)
+    await open(p, '도서관에 만화책을 더 둘까요?')
+    await p.getByLabel('상태 시연').selectOption('ai-fail-final')
+    await p.getByLabel('내 생각과 까닭').fill('근거를 덧붙여 적은 내 생각입니다.')
+    await submit(p)
+    await p.getByText('지금은 피드백을 다시 받을 수 없어요.', { exact: false }).waitFor()
+    assert.equal(await p.getByRole('button', { name: '피드백만 다시 요청' }).count(), 0)
+    assert.equal(await p.getByRole('button', { name: '다시 시도', exact: true }).count(), 0)
+    // 판정이 없으니 판정 신고 버튼도 없음 (#146)
+    assert.equal(await p.getByRole('link', { name: '이 결과 오류 신고' }).count(), 0)
+  })
   await check(
     '움직임 줄이기 정적 대체·모바일 제출 버튼 접근',
     async (p) => {
