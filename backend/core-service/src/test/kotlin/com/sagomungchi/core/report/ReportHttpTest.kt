@@ -152,19 +152,19 @@ class ReportHttpTest : IntegrationTestSupport() {
         assertEquals(1,views())
     }
 
-    @Test fun `free access cannot retrieve an old premium file and entitlement loss before URL release is fenced`() {
-        val body=json.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(detail())
-        body.putObject("narrative").put("text","유료 서술");response=json.writeValueAsString(body)
-        fileResponse="""{"url":"https://storage.example.test/premium","expiresAt":"2026-11-01T01:00:00Z"}"""
+    @Test fun `free download uses free variant and entitlement loss fences full URL even with empty narrative`() {
+        response=json.writeValueAsString(detail())
+        fileResponse="""{"url":"https://storage.example.test/free","expiresAt":"2026-11-01T01:00:00Z"}"""
+        mvc.get("/api/v1/reports/$report/download?format=pdf") { header("Authorization","Bearer $token") }.andExpect {
+            status { isOk() };jsonPath("$.url") { value("https://storage.example.test/free") }
+        }
+        assertEquals(1,views())
+        requests.clear();`when`(entitlement.narrativeEnabled(student)).thenReturn(true,false)
+        fileResponse="""{"url":"https://storage.example.test/full","expiresAt":"2026-11-01T01:00:00Z"}"""
         mvc.get("/api/v1/reports/$report/download?format=pdf") { header("Authorization","Bearer $token") }.andExpect {
             status { isForbidden() };jsonPath("$.code") { value("REPORT_PREMIUM_REQUIRED") };jsonPath("$.url") { doesNotExist() }
         }
-        assertTrue(requests.none { it.path.contains("/files/") });assertEquals(0,views())
-        requests.clear();`when`(entitlement.narrativeEnabled(student)).thenReturn(true,false)
-        mvc.get("/api/v1/reports/$report/download?format=pdf") { header("Authorization","Bearer $token") }.andExpect {
-            status { isForbidden() };jsonPath("$.url") { doesNotExist() }
-        }
-        assertTrue(requests.any { it.path.contains("/files/") });assertEquals(0,views())
+        assertTrue(requests.any { it.path.contains("/files/") });assertEquals(1,views())
     }
 
     @Test fun `other guardian and withdrawn guardian cannot list read evidence download or regenerate`() {
