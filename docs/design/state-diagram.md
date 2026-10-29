@@ -109,12 +109,14 @@ stateDiagram-v2
 stateDiagram-v2
   [*] --> DRAFT: 미션 작성
   DRAFT --> REVIEW_REQUIRED: 검토 요청
-  REVIEW_REQUIRED --> DRAFT: 검토 결과 CHANGES_REQUESTED
+  REVIEW_REQUIRED --> DRAFT: 검토 결과 CHANGES_REQUESTED 또는 검토 중 수정
   REVIEW_REQUIRED --> PUBLISHED: 검토 APPROVED + 필수 항목 충족 후 게시
+  PUBLISHED --> PUBLISHED: 수정·재검토·재게시 (공개 버전 유지)
   PUBLISHED --> UNPUBLISHED: 신규 제공 중단
   UNPUBLISHED --> REVIEW_REQUIRED: 수정 후 재검토
   note right of PUBLISHED
     공개 중 수정 시 새 버전 생성 (P07)
+    학생에게는 공개 버전(published_*), 수정본은 current_*
     재검토·재게시 후 신규 시도부터 적용
     진행 중 시도는 시작 당시 버전 유지
   end note
@@ -122,14 +124,17 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
-| → `DRAFT` | `POST /admin/missions` (CONTENT) | `MissionService.create` | `mission_version` v1 생성 |
-| `DRAFT → REVIEW_REQUIRED` | `POST /admin/missions/{id}/review-request` (P07) | `Mission.requestReview()` | 현재 미션·기준표 버전 존재 |
-| `REVIEW_REQUIRED → DRAFT` | `POST /admin/missions/{id}/review` `CHANGES_REQUESTED` | `Mission.rejectReview()` | `mission_review` 행 추가 |
-| `REVIEW_REQUIRED → PUBLISHED` | `POST /admin/missions/{id}/publish` | `Mission.publish(snapshot)` | 현재 버전 대상 최신 리뷰 `APPROVED` + `requirePublishable` 통과, 아니면 `422 MISSION_PUBLISH_INCOMPLETE`. `published_at` 기록, `audit_log` |
+| → `DRAFT` | `POST /admin/missions` (CONTENT) | `MissionService.create` | `mission_version` v1 생성, 기준표 버전 없음 |
+| 수정 | `PATCH /admin/missions/{id}`·`PUT …/rubric` | `MissionService.update`·`putRubric` | 새 `mission_version`·`rubric_version` 추가 후 `current_*` 갱신(이전 버전 불변). `REVIEW_REQUIRED`는 검토 대상이 바뀌어 `DRAFT`, `DRAFT`·`PUBLISHED`·`UNPUBLISHED`는 상태 유지(공개 버전 `published_*` 그대로, #145) |
+| `DRAFT·UNPUBLISHED → REVIEW_REQUIRED` | `POST /admin/missions/{id}/review-request` (P07) | `Mission.requestReview()` | 본문의 미션·기준표 버전이 현재 버전과 같음(아니면 `409 MISSION_VERSION_CONFLICT`), 기준표 버전 존재 |
+| `PUBLISHED` 재검토 요청 | 같은 경로 | `Mission.requestReview()` | 현재 버전이 공개 버전과 다를 때만, 상태는 `PUBLISHED` 유지(학생 제공 계속, #145) |
+| `REVIEW_REQUIRED → DRAFT` | `POST /admin/missions/{id}/review` `CHANGES_REQUESTED` | `Mission.rejectReview()` | `mission_review` 행 추가. `PUBLISHED` 재검토 반려는 상태 유지 |
+| `REVIEW_REQUIRED → PUBLISHED`, `PUBLISHED` 재게시 | `POST /admin/missions/{id}/publish` | `Mission.publish(snapshot)` | 현재 미션·기준표 버전 대상 최신 리뷰 `APPROVED` + `requirePublishable` 통과, 아니면 `422 MISSION_PUBLISH_INCOMPLETE`. `published_*` ← `current_*`, `published_at` 기록. 감사 기록은 core 프록시(learning에 감사 테이블 없음) |
 | `PUBLISHED → UNPUBLISHED` | `POST /admin/missions/{id}/unpublish` | `Mission.unpublish()` | 신규 시도 차단(`MISSION_NOT_AVAILABLE`), 기존 시도는 당시 버전 유지 |
 | `UNPUBLISHED → REVIEW_REQUIRED` | 수정 후 검토 요청 | `Mission.requestReview()` | 재공개는 다시 `REVIEW_REQUIRED → PUBLISHED` 경로만 |
 
-- 학생 목록 노출 조건: `status = PUBLISHED` + 학년·입력 방식 범위 + `demo_only`는 시연 계정만 (FN-LRN-02). 시연 학생 여부는 core가 learning 조회에 `demo`(`student.is_demo`)로 넘김 (api-spec 4.1, [#22 보고서](../report/learning.md))
+- 위에 없는 전이(예: `DRAFT`에서 게시, `UNPUBLISHED`에서 검토)는 `409 CONFLICT` (#145)
+- 학생 목록 노출 조건: `status = PUBLISHED` + 공개 버전(`published_*`) 기준 학년·입력 방식 범위 + `demo_only`는 시연 계정만 (FN-LRN-02). 시연 학생 여부는 core가 learning 조회에 `demo`(`student.is_demo`)로 넘김 (api-spec 4.1, [#22 보고서](../report/learning.md))
 - 개발·시연용 데모 미션 시드(`backend/learning-service/db/seed/`)는 위 관리자 흐름 없이 `PUBLISHED`·`DRAFT` 상태를 직접 넣으며 `mission_review`를 만들지 않음. 운영 미션은 위 전이만 사용 ([#22 보고서](../report/learning.md))
 
 ### 3.2 `attempt.status` (미션 수행)
