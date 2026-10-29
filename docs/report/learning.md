@@ -145,7 +145,7 @@ core #46 관리자가 신고를 검토해 판정을 고치면 core가 `POST /int
 | 오류 코드 | `JUDGMENT_STATE_CONFLICT`는 기존 코드 재사용, `CORRECTION_REPORT_CONFLICT`는 새 코드. 둘 다 api-spec 4.1에만(1.3 공개 표에 넣지 않음) | #78 리뷰대로 learning 내부 코드는 4.1 비고. core가 409·422를 공개 코드로 바꿈 |
 
 - 설계 문서: api-spec 4.1 정정 줄, class-diagram 4.2 끝 메모(`results()`·잠금 순서), state-diagram 3.3(정정은 `DONE`만), ERD 비고(jsonb 모양), OpenAPI(경로·`AdminUserId`·`AdminRole`·`CorrectionScope`·`CorrectionRequest`·`CorrectionResult`·`JudgmentResult`, 버전은 #26·#27처럼 그대로)
-- 기존 파일 수정: `JudgmentService`(`correct`), `JudgmentMapper.xml` `findStored`(최신 정정 결과·보류 이유), `scripts/tests/test_record_exists_openapi.py` 컨트롤러 경로 수 21 → 22
-- 검증: 테스트 199개(새 13: 서비스 6·동시 2·컨트롤러 5), scripts/tests 58개. 보호 장치 12개를 빼면 각각 실패(`DONE` 전 409는 DB 제약 `ck_judgment_result_when_done`·null 검사와 세 겹). compose 실제: 고르기 정답 `CORRECT` → `RETHINK` 정정, 같은 키 처음 응답 그대로, 422·409·409·403·404, 피드백·시도 상세·기록 모두 `RETHINK`, DB 원판정 `CORRECT` 그대로(ai 호출 없음, 만든 시도 2건만 삭제)
+- 기존 파일 수정: `JudgmentService`(`correct`), `JudgmentMapper.xml` `findStored`(최신 정정 결과·보류 이유), `scripts/tests/test_record_exists_openapi.py` 컨트롤러 경로 수 22 → 23(#126 결제 사용 증빙 경로가 먼저 22로 올림)
+- 검증: 테스트 202개(새 15: 서비스 8·동시 2·컨트롤러 5), scripts/tests 58개, #126 머지 뒤 develop 병합 상태로 206개·scripts 74개. 보호 장치 12개를 빼면 각각 실패(`DONE` 전 409는 DB 제약 `ck_judgment_result_when_done`·null 검사와 세 겹). compose 실제: 고르기 정답 `CORRECT` → `RETHINK` 정정, 같은 키 처음 응답 그대로, 422·409·409·403·404, 피드백·시도 상세·기록 모두 `RETHINK`, DB 원판정 `CORRECT` 그대로(ai 호출 없음, 만든 시도 2건만 삭제)
 - 한계: 같은 신고를 다른 판정에 동시에 보내면 판정 잠금이 달라 둘 다 저장될 수 있음(`error_report_id` UK 없음, core는 신고마다 한 정정만 보냄), 같은 키를 다른 판정에 동시에 보내면 키 UK로 한쪽 500. `judgment_correction.judgment_id` 인덱스 없음(정정은 드묾)
 - 확인 필요: core가 정정 전에 부르는 `/support/targets/{type}/{id}`·관리자 원문 `/support/attempts/{id}`는 별도 이슈(#80만으로 실제 흐름 미완성). learning 학생 삭제를 만들 때 `judgment_correction`을 판정보다 먼저 지움(FK)
