@@ -16,7 +16,7 @@ docker compose up --build
 | RabbitMQ 관리 화면 | http://localhost:15672 |
 | MinIO API / 관리 화면 (선택 실행: `compose.minio.yaml` 사용) | http://localhost:9000 / http://localhost:9001 |
 
-- 포트 충돌(Windows 8000~8099 예약 등) 시 `.env`의 `*_HOST_PORT`로 변경
+- 앱 포트 충돌(Windows 8000~8099 예약 등) 시 `.env`의 `CORE_HOST_PORT`·`LEARNING_HOST_PORT`·`AI_HOST_PORT`·`SCORING_HOST_PORT`·`REPORT_HOST_PORT`(MinIO는 `MINIO_HOST_PORT`·`MINIO_CONSOLE_HOST_PORT`)로 변경. PostgreSQL 5432, RabbitMQ 5672·15672, Redis 6379는 `compose.yaml`에 고정
 - 웹: `cd frontend/web && npm install && npm run dev` (`/api` → core-service 프록시)
 - 개발 규칙: [docs/README.md](docs/README.md)
 - 로컬 Kubernetes: [kind 설정·설치](infrastructure/kind/README.md), [저장소·Secret 설정](infrastructure/gitops/charts/platform-data/README.md)
@@ -35,11 +35,21 @@ docker compose -f compose.yaml -f compose.minio.yaml run --rm minio-init
 MinIO를 포함한 프로젝트를 중단할 때도 `docker compose -f compose.yaml -f compose.minio.yaml down`을 사용한다. 데이터를 보존하려면 `--volumes`를 붙이지 않는다. 기본 파일과 함께 실행하는 명령이므로 기존 PostgreSQL·RabbitMQ·내부 토큰·`AUTH_JWT_SECRET` 환경 변수도 필요하다(Compose가 전체 파일의 필수 변수를 먼저 확인).
 
 
-### Google OAuth (#36)
-`.env.example`의 `AUTH_JWT_SECRET`(base64 32바이트 이상 난수), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`를 개인 `.env`에 설정한다. Google web client의 redirect URI는 `AUTH_WEB_ORIGIN` + `/api/v1/auth/google/callback`과 정확히 같아야 한다. 로컬 기본은 `http://localhost:5173`이며 Vite `/api` 프록시를 사용한다. 로컬 HTTP만 `AUTH_COOKIE_SECURE=false`, 배포 HTTPS는 true다. Google 키가 없으면 OAuth는 명시적으로 실패한다.
+### 인증 설정
 
-배포 시 core 환경에 `AUTH_JWT_SECRET`·`GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET`을 Kubernetes Secret 참조로 주입하고 `AUTH_WEB_ORIGIN`을 실제 web origin으로 지정한다. 현재 저장소의 platform-data chart는 앱 배포를 소유하지 않으므로 실제 core Deployment의 Secret 주입은 앱 배포 구성 시 적용한다. 키·자격 증명은 Git에 넣지 않는다.
+`.env.example`을 참고해 개인 `.env`에 설정한다. 키·자격 증명은 Git에 넣지 않는다.
 
-인증 구현은 [#36 결정·검증 보고서](docs/report/issue-36-google-auth.md)를 따른다. 실제 모드의 로그인·가입은 Google을 사용하며 동의 저장·자녀 등록은 [#37 계약·검증 보고서](docs/report/issue-37-consent-children.md)를 따른다. 현재 문서 확인 → 동의 저장 → 자녀 등록을 온보딩에서 진행한다. 운영자가 검토된 TERMS·PRIVACY·GUARDIAN 문서를 게시해야 하며, 미게시 상태는 503 오류로 안내한다. 중요 작업 Google 재인증은 #45 후속 범위다.
+| 변수 | 용도·기본값 |
+|---|---|
+| `AUTH_JWT_SECRET` | access JWT 서명 키(base64 32바이트 이상 난수, 필수) |
+| `GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET` | Google OAuth. 없으면 로그인 시작이 503 |
+| `AUTH_WEB_ORIGIN` | web origin(기본 `http://localhost:5173`, Vite `/api` 프록시) |
+| `AUTH_COOKIE_SECURE` | 로컬 HTTP만 `false`, 배포 HTTPS는 `true` |
+| `AUTH_ACCESS_TTL`·`AUTH_STUDENT_ACCESS_TTL`·`AUTH_REFRESH_TTL`·`AUTH_REAUTH_TTL` | 부모 access 15m, 학생 access 15m, refresh 7d(부모·관리자만), 재인증 토큰 5m |
+| `REDIS_HOST`·`REDIS_PORT`·`REDIS_PASSWORD` | 알림 중계·학생 기기 페어링 |
+| `STUDENT_DEVICE_TTL`·`STUDENT_DEVICE_ATTEMPT_LIMIT` | 기기 고정 만료 90d, 페어링 발급·등록 10분당 20회 |
 
-개정 P01에 따라 부모·관리자만 refresh를 사용한다. 학생 동석 진입은 부모 쿠키를 폐기하고 access만 발급한다. 학생 TTL은 `AUTH_STUDENT_ACCESS_TTL`(초기 15분)이며 만료·새로고침 시 학생 진입을 다시 진행한다. 등록 기기·PIN 신규 API는 후속 범위다.
+- Google web client의 redirect URI로 `AUTH_WEB_ORIGIN` + `/api/v1/auth/google/callback`과 `/api/v1/auth/google/reauth/callback`을 등록한다
+- 운영자가 검토된 TERMS·PRIVACY·GUARDIAN 동의 문서를 DB에 게시해야 온보딩(문서 확인 → 동의 저장 → 자녀 등록)이 진행된다(미게시는 503)
+- 배포 시 위 비밀 값은 core에 Kubernetes Secret 참조로 주입한다(앱 Deployment는 아직 저장소에 없음)
+- 인증·동의·재인증·학생 기기 결정은 [인증·계정 보고서](docs/report/auth-account.md)

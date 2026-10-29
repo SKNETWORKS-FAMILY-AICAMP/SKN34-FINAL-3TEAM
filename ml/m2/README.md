@@ -378,7 +378,7 @@ uv run python scripts/train.py --model klue/roberta-base --dataset essay --epoch
 ### 가중치 보관
 
 - 이번 학습 가중치는 RunPod Pod와 함께 삭제했다 (AI Hub 데이터 포함, 규칙상 사용 후 삭제). 모델 하나 학습에 4090 기준 3~8분이라 다시 만들 수 있다
-- 서비스용 가중치는 설정을 정한 뒤 다시 학습해 S3에 올린다. 버전명 규칙: 서술형 `m2-klue-narrative@<버전>`, 논술형 `m2-klue-essay@<버전>` ([M2 API 명세 정렬](../../docs/report/m2-api-alignment.md))
+- 서비스용 가중치는 설정을 정한 뒤 다시 학습해 S3에 올린다. 버전명 규칙: 서술형 `m2-klue-narrative@<버전>`, 논술형 `m2-klue-essay@<버전>` ([M2 API 명세 정렬](../../docs/report/ai.md))
 
 ## 모델 입력·출력
 

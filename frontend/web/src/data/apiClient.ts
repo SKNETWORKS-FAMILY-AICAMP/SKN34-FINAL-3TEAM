@@ -27,6 +27,9 @@ export function setAccessToken(token: string | null, role?: 'PARENT' | 'STUDENT'
 export async function withAuthLock<T>(action: () => Promise<T>): Promise<T> {
   if (typeof navigator !== 'undefined' && navigator.locks)
     return navigator.locks.request('sagomungchi-auth', action)
+  // LAN HTTP 시연에는 Web Locks가 없다. 공유 목업 모드에서만 가상 인증을 실행한다.
+  if (import.meta.env?.DEV && import.meta.env?.VITE_API_MOCK === 'true' &&
+      import.meta.env?.VITE_SHARED_DEVICE_MOCK === 'true') return action()
   if (typeof window !== 'undefined') throw new Error('이 브라우저에서는 안전한 로그인 동기화를 지원하지 않습니다.')
   return action() // Node contract tests have no browser cookie jar.
 }

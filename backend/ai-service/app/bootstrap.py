@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.analysis_agent.router import router as analysis_router
 from app.config import get_settings
 from app.errors import register_error_handlers
 from app.followup.router import router as followup_router
@@ -48,5 +49,6 @@ def create_app() -> FastAPI:
     # 기능 라우터는 여기에 등록
     app.include_router(judgment_router)
     app.include_router(followup_router)
+    app.include_router(analysis_router)
     app.include_router(versions_router)
     return app

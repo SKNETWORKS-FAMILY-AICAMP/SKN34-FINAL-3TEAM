@@ -122,7 +122,7 @@ export interface WeeklyReport extends ReportItem {
   changes: {
     itemId?: string
     attemptId: string
-    followup: string
+    followup: string | null
     first: { answerId: string; text: string }
     revised: { answerId: string; text: string }
     counts: { chars: number[]; sentences: number[]; reasonConnectives: number[] }

@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     internal_token: str
     rabbitmq_url: str = "amqp://localhost:5672/"
     http_connect_timeout: float = 2.0
-    http_read_timeout: float = 30.0  # [P12] 확정 전 임시값
+    http_read_timeout: float = 30.0  # 내부 호출 기본값 (P12 목록 밖)
     learning_url: str = "http://localhost:8081"
     scoring_url: str = "http://localhost:8001"
     core_url: str = "http://localhost:8080"
@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     followup_example_overlap_chars: int = 12  # 예시 답과 이만큼(공백·문장부호 제외) 겹치면 유출
     # 되묻기 전체 마감(초). learning→ai 되묻기 35초(P12)보다 짧게, 재생성은 이 안에서만
     followup_deadline: float = 33.0
+
+    # 분석 대화 전체 마감(초). core 기준 전체 120초(P12)보다 짧게, LLM 호출은 이 안에서만
+    analysis_deadline: float = 110.0
 
 
 @lru_cache

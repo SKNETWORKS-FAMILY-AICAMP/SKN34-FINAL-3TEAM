@@ -25,7 +25,7 @@ class LearningRecordServiceTest {
     private fun client(stub: LearningHttpStub, timeout: Duration = Duration.ofSeconds(2)) = LearningClient(
         InternalRestClientFactory(AppProperties(AppProperties.Internal("server-secret", Duration.ofSeconds(1), Duration.ofSeconds(30)),
             mapOf("learning" to stub.url)), RestClient.builder()), LearningHttpProperties(timeout))
-    private fun service(client: LearningClient) = LearningRecordService(LearningRecordClient(client, jacksonObjectMapper()))
+    private fun service(client: LearningClient) = LearningRecordService(LearningRecordClient(client, jacksonObjectMapper()), mock(com.sagomungchi.core.guardianship.service.StudentAccessService::class.java), mock(StudentLearningContextService::class.java))
     private fun parent(child: UUID) = UserContext(UUID.randomUUID().toString(), "PARENT", setOf(child.toString()), null)
 
     @Test fun `records entry checks parent and scope before HTTP without broadening student proxy`() = LearningHttpStub().use { stub ->
