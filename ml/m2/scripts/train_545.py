@@ -135,6 +135,11 @@ def main():
     ap.add_argument("--max-length", type=int, default=512)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--n-new", type=int, default=10, help="처음 보는 주제로 뗄 주제 수")
+    ap.add_argument(
+        "--add-71819",
+        action="store_true",
+        help="AI Hub 71819 논술형(89문항)을 학습에만 추가: 구성=organization_1·2, 내용=task_1·content_1~3, 표현=expression_1·2, 1~5점을 0~3점으로",
+    )
     args = ap.parse_args()
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -155,6 +160,33 @@ def main():
         ),
         "new_topic": df[df["subject"].isin(new)].reset_index(drop=True),
     }
+    tag = ""
+    if args.add_71819:
+        # 평가는 545 그대로, 학습에만 71819를 더해 주제 수를 늘림 (50 → 50+89, 10/29 처음 보는 주제 0.510 개선 시도)
+        e = pd.read_csv(M2 / "data" / "논술형_답안.csv.gz")
+        groups = {
+            "org": ["organization_1", "organization_2"],
+            "cont": ["task_1", "content_1", "content_2", "content_3"],
+            "exp": ["expression_1", "expression_2"],
+        }
+        add = pd.DataFrame(
+            {
+                "grade": e["grade"],
+                "essay_type": e["essay_type"],
+                "text": e["text"],
+                "subject": "71819_" + e["prompt_id"].astype(str),
+            }
+        )
+        for a, cols in groups.items():
+            for k in (1, 2):
+                add[f"{a}_r{k}"] = (e[[f"{c}_r{k}" for c in cols]].mean(1) - 1) * 0.75
+            # 채점자 2명이라 3번째 칸은 두 명 평균 (정답 = 두 명 평균이 됨)
+            add[f"{a}_r3"] = (add[f"{a}_r1"] + add[f"{a}_r2"]) / 2
+        sets["train"] = pd.concat([sets["train"], add], ignore_index=True)
+        tag = "_add71819"
+        print(
+            f"71819 논술형 {len(add):,}건 (문항 {e['prompt_id'].nunique()}개)을 학습에 추가"
+        )
     print(
         {k: len(v) for k, v in sets.items()},
         f"주제 {len(topics)}개 중 처음 보는 주제 {len(new)}개",
@@ -187,7 +219,7 @@ def main():
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
     steps = len(dls["train"]) * args.epochs
     sch = get_linear_schedule_with_warmup(opt, int(steps * 0.1), steps)
-    out_dir = M2 / "checkpoints" / "e545"
+    out_dir = M2 / "checkpoints" / f"e545{tag}"
     out_dir.mkdir(parents=True, exist_ok=True)
     best, start = -1.0, time.time()
     for ep in range(1, args.epochs + 1):
@@ -227,7 +259,7 @@ def main():
         rows += scores(sets[name][elem].reset_index(drop=True), p[elem], name + "_elem")
     res = pd.DataFrame(rows)
     (M2 / "results" / "e545").mkdir(parents=True, exist_ok=True)
-    res.to_csv(M2 / "results" / "e545" / f"e545_seed{args.seed}.csv", index=False)
+    res.to_csv(M2 / "results" / "e545" / f"e545_seed{args.seed}{tag}.csv", index=False)
     print(
         f"\n545 에세이 결과 (정답 = 채점자 3명 평균, 학습 {(time.time() - start) / 60:.1f}분):\n{res.to_string(index=False)}"
     )

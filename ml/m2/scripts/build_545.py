@@ -43,11 +43,24 @@ with gzip.open(out, "wt", encoding="utf-8", newline="") as fh:
             grade = {"초등": "초", "중등": "중", "고등": "고"}[
                 g.split("_")[0]
             ] + g.split("_")[1].rstrip("학년")
+            # 학년군마다 채점하지 않는 세부 항목은 가중치 0 + 3명 모두 0점으로 들어 있음 (루브릭 설명서 표 5·6).
+            # 그 항목을 빼고 평균한다 (10/29: 넣고 평균했더니 초4~중1 표현에 0이 섞여 초등 표현이 0.344로 낮았음).
+            # 위치 대응은 VL에서 확인: 가중치 0인 글은 해당 위치가 예외 없이 3명 모두 0
+            rub = d["rubric"]
+            skip = {
+                "org": {
+                    1: rub["organization_weight"]["org_paragraph"],
+                    2: rub["organization_weight"]["org_coherence"],
+                },
+                "cont": {2: rub["content_weight"]["con_prompt"]},
+                "exp": {2: rub["expression_weight"]["exp_style"]},
+            }
             sc = []
             for a in ("org", "cont", "exp"):
                 for r in range(3):
                     v = det[f"essay_scoreT_{a}"][r]
-                    sc.append(round(sum(v) / len(v), 4))
+                    used = [x for j, x in enumerate(v) if skip[a].get(j, 1) != 0]
+                    sc.append(round(sum(used) / len(used), 4))
             w.writerow(
                 [
                     sp,
