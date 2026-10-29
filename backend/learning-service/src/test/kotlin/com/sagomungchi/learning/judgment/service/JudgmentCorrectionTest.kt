@@ -11,6 +11,7 @@ import com.sagomungchi.learning.answer.service.SubmitCommand
 import com.sagomungchi.learning.attempt.service.AttemptService
 import com.sagomungchi.learning.judgment.domain.CorrectionCommand
 import com.sagomungchi.learning.judgment.domain.JudgmentResult
+import com.sagomungchi.learning.judgment.domain.NextAction
 import com.sagomungchi.learning.judgment.domain.ProcessStatus
 import com.sagomungchi.learning.mission.domain.InputType
 import org.junit.jupiter.api.AfterEach
@@ -20,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.jdbc.core.JdbcTemplate
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 /** 판정 정정 (이슈 #80 완료 조건, api-spec 4.1·FN-SUP-03) */
 class JudgmentCorrectionTest : PostgresRepositoryTest() {
@@ -143,6 +145,34 @@ class JudgmentCorrectionTest : PostgresRepositoryTest() {
         assertEquals(404 to "NOT_FOUND", missing.status.value() to missing.code)
         assertEquals(403 to "FORBIDDEN", outOfScope.status.value() to outOfScope.code)
         assertEquals(0, corrections(done.judgmentId))
+    }
+
+    /** 피드백 결과·시도 상세·#27 기록은 같은 쿼리(findStored)를 거침 */
+    @Test
+    fun `정정 뒤 조회는 결과만 최신 정정으로, 보류 이유는 비우고 요소·되묻기·다음 행동은 원판정 그대로`() {
+        val done = judged(result = "HELD", heldReason = "TOO_SHORT")
+        val before = asStudent(done) { service.result(done.answerId) }
+
+        asAdmin(done) { service.correct(done.judgmentId, command(UUID.randomUUID(), JudgmentResult.CORRECT), UUID.randomUUID()) }
+
+        val after = asStudent(done) { service.result(done.answerId) }
+        assertEquals(JudgmentResult.CORRECT, after.judgment?.result)
+        assertNull(after.judgment?.heldReason)
+        assertEquals(before.judgment?.elements, after.judgment?.elements)
+        assertEquals(before.followup, after.followup)
+        assertEquals(listOf(NextAction.ANSWER_FOLLOWUP, NextAction.FINISH), after.nextActions)
+        assertEquals(before.nextActions, after.nextActions)
+        assertEquals(after, asStudent(done) { service.results(done.attemptId).getValue(done.answerId) })
+    }
+
+    @Test
+    fun `두 번 정정하면 조회는 가장 최근 정정`() {
+        val done = judged(result = "PARTIAL")
+
+        asAdmin(done) { service.correct(done.judgmentId, command(UUID.randomUUID(), JudgmentResult.RETHINK), UUID.randomUUID()) }
+        asAdmin(done) { service.correct(done.judgmentId, command(UUID.randomUUID(), JudgmentResult.CORRECT), UUID.randomUUID()) }
+
+        assertEquals(JudgmentResult.CORRECT, asStudent(done) { service.result(done.answerId) }.judgment?.result)
     }
 
     private data class Done(val studentId: UUID, val attemptId: UUID, val answerId: UUID, val judgmentId: UUID, val elementId: UUID)
