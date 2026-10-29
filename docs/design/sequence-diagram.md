@@ -326,8 +326,8 @@ sequenceDiagram
         A->>A: LLM 관찰과 불일치 시 HELD(MODEL_DISAGREEMENT)
       end
       opt 풀이 단계(SOLUTION_STEPS) + M1 활성 범위
-        A->>S: POST /internal/m1/checks
-        S-->>A: 정답 여부·실수 위치·확신도
+        A->>S: POST /internal/m1/checks {problem, answerKey, solution:{steps,finalAnswer}}
+        S-->>A: 현재 미학습: {active:false} (활성 추론은 후속)
         A->>A: 확신도 0.8 미만이면 HELD(LOW_CONFIDENCE) (P15)
       end
       A-->>L: result·elements·heldReason·trial·versions

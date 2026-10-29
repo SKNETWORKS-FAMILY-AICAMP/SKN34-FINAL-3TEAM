@@ -11,6 +11,8 @@ from app.clients.model_artifacts import S3ModelArtifacts
 from app.config import get_settings
 from app.errors import register_error_handlers
 from app.health.router import router as health_router
+from app.m1.router import router as m1_router
+from app.m1.service import M1Service
 from app.m2.router import router as m2_router
 from app.m2.service import M2Service
 from app.messaging.connection import AmqpConnection
@@ -40,6 +42,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.model_registry = registry
         usage = UsagePublisher(EventPublisher(amqp), "scoring", "scoring-service")
         app.state.m2_service = M2Service(registry, usage)
+        app.state.m1_service = M1Service()
         app.state.readiness_checks = {"rabbitmq": rabbitmq_ready, "models": consumer.is_ready}
         consumer.start()
         try:
@@ -57,4 +60,5 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(versions_router)
     app.include_router(m2_router)
+    app.include_router(m1_router)
     return app

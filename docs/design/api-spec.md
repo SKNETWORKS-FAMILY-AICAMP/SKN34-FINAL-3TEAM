@@ -779,13 +779,20 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 401 내부 토큰 오류, 400 요청/첫 문장 토큰 길이 오류, 503 `SCORING_UNAVAILABLE` 모델 설정·추론 장애 또는 처리 용량 초과. AI는 장애·시간 초과를 판정 처리 실패로 다루며 active:false로 바꾸거나 재시도하지 않는다(태윤님 답변). learning→AI 35초는 전체 예산으로, M2 단독 지연 측정과 구분한다.
 - 사용량은 실제 추론 시도 후 성공/실패 모두 best-effort 발행한다. 토큰 수 null, model=`name@version`, 학생 원문·ID·핵심어 없음. 비활성 응답은 추론하지 않아 사용량 이벤트를 만들지 않는다.
 
-구현된 내부 API 계약은 [contracts/openapi/scoring-service.yaml](../../contracts/openapi/scoring-service.yaml)에 기록한다. #85의 `GET /internal/versions`와 #87의 M2 점수 API를 구현했다. M1 검사 API는 #88의 후속 구현 대상이다. 계약 테스트가 실제 FastAPI 경로·응답 스키마와 대조한다.
+구현된 내부 API 계약은 [contracts/openapi/scoring-service.yaml](../../contracts/openapi/scoring-service.yaml)에 기록한다. #85 버전 조회, #87 M2 점수, #88 M1 비활성 계약을 구현했다. M1은 미학습 상태로 활성 추론을 제공하지 않는다. 계약 테스트가 실제 FastAPI 경로·응답 스키마와 대조한다.
+
+#### #88 M1 미학습 상태의 구현 계약
+
+- `problem`은 mission_version.question, `answerKey`는 answer_key.finalAnswer 문자열이다. `solution`은 정답 풀이가 아닌 학생의 `{steps: 문자열 배열, finalAnswer: 문자열}`이다. 단계 순서와 빈 단계의 위치를 보존하며, 최소 한 단계는 공백 아닌 내용이 있어야 한다. 세 최상위 항목과 두 solution 항목은 필수이며 알 수 없는 필드·잘못된 타입·공백만 있는 문제/정답/최종 답은 400이다.
+- 내부 토큰 누락·불일치는 401. 유효한 요청은 현재 항상 HTTP 200 `{active:false}`를 반환한다. M1 학습·평가·로더·승인 범위 계약이 없으므로 core에 모델 메타데이터를 등록하는 것만으로 활성화되지 않는다. M2 모델을 대신 사용하거나 문자열 비교로 정답 판정을 흉내 내지 않는다.
+- 추론하지 않으므로 M1 사용량 이벤트도 발행하지 않는다. 문항·학생 풀이를 로그에 기록하지 않는다. 기존 내부 인증·오류 처리를 재사용한다.
+- #88의 미학습 예외에 따라 이번 완료 범위는 비활성 계약이다. 향후 활성 추론은 기존 ModelRegistry·UsagePublisher를 재사용하고 threadpool에서 실행한다. 확신도 0.8 미만은 scoring이 실수 위치를 제외하고 ai가 보류를 결정한다. 활성 응답 필드·단계 번호 기준, 실제 모델/승인 scope 및 0.8 경계 검증은 활성화 후속 작업이며 이번에 검증 완료로 표시하지 않는다.
 
 
 | Method | Path | 설명 |
 |---|---|---|
 | POST | `/internal/m2/scores` | `{prompt, text, grade, inputType, keywords}` → 총점 1~4점·8개 항목 1~5점·버전 (활성 범위 밖이면 `{active:false}`). `inputType`(`NARRATIVE`·`ESSAY`)으로 모델 선택(`m2-klue-narrative`·`m2-klue-essay`). `grade`(3~6)는 scoring이 `초{grade}`로 바꿔 모델 입력에 사용, 학습 데이터 학년(초5·6) 밖은 활성 범위 밖 |
-| POST | `/internal/m1/checks` | `{problem, answerKey, solution}` → 정답 여부·실수 위치·확신도 (확신도 0.8 미만은 보류, P15) |
+| POST | `/internal/m1/checks` | `{problem, answerKey, solution:{steps,finalAnswer}}` → 현재 미학습이므로 `{active:false}`. 활성 추론·확신도 처리는 후속 범위(P15) |
 | GET | `/internal/versions` | 로딩 완료한 활성 모델 `{items:[{name,version,revision}]}`. name 순 정렬, 없으면 `{items:[]}`. 내부 토큰 필수 |
 
 #### #85 scoring 모델 조회·로딩 기준 (2026-10-28)

@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: scoring 내부 API
   version: 1.0.0
-  description: 실제 로딩된 버전 조회(#85), M2 채점(#87). M1(#88)은 아직 미구현.
+  description: 실제 로딩된 버전 조회(#85), M2 채점(#87), 미학습 M1 비활성 계약(#88).
 servers:
 - url: /internal
 security:
@@ -45,13 +45,13 @@ paths:
                 - $ref: '#/components/schemas/M2Active'
                 - $ref: '#/components/schemas/M2Inactive'
                 title: Response Score Internal M2 Scores Post
-        '400':
+        '400': &id001
           description: 요청 형식·입력 길이 오류
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-        '401':
+        '401': &id002
           description: 내부 인증 실패
           content:
             application/problem+json:
@@ -63,6 +63,25 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /m1/checks:
+    post:
+      summary: Check
+      operationId: check_internal_m1_checks_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/M1Request'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/M1Inactive'
+        '400': *id001
+        '401': *id002
 components:
   securitySchemes:
     InternalToken:
@@ -326,3 +345,49 @@ components:
       - expression_1
       - expression_2
       title: Scores
+    M1Request:
+      properties:
+        problem:
+          type: string
+          pattern: \S
+          title: Problem
+        answerKey:
+          type: string
+          pattern: \S
+          title: Answerkey
+        solution:
+          $ref: '#/components/schemas/StudentSolution'
+      additionalProperties: false
+      type: object
+      required:
+      - problem
+      - answerKey
+      - solution
+      title: M1Request
+    M1Inactive:
+      properties:
+        active:
+          type: boolean
+          const: false
+          title: Active
+          default: false
+      type: object
+      title: M1Inactive
+    StudentSolution:
+      properties:
+        steps:
+          items:
+            type: string
+          type: array
+          minItems: 1
+          title: Steps
+        finalAnswer:
+          type: string
+          pattern: \S
+          title: Finalanswer
+      additionalProperties: false
+      type: object
+      required:
+      - steps
+      - finalAnswer
+      title: StudentSolution

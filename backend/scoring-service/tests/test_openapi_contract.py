@@ -20,7 +20,11 @@ def test_documented_operations_and_response_models_match_runtime():
         for method in methods
     }
     documented = {(method, path) for path, methods in spec["paths"].items() for method in methods}
-    assert actual == documented == {("get", "/versions"), ("post", "/m2/scores")}
+    assert (
+        actual
+        == documented
+        == {("get", "/versions"), ("post", "/m2/scores"), ("post", "/m1/checks")}
+    )
     for name in (
         "ModelVersionSummary",
         "VersionsResponse",
@@ -30,6 +34,9 @@ def test_documented_operations_and_response_models_match_runtime():
         "Scores",
         "RawScores",
         "ModelIdentity",
+        "M1Request",
+        "M1Inactive",
+        "StudentSolution",
     ):
         assert spec["components"]["schemas"][name] == runtime["components"]["schemas"][name]
     assert (
