@@ -16,7 +16,7 @@ import java.util.UUID
 
 @Service
 class ReportQueryService(private val repository: ReportJobRepository, private val access: ReportAccessService,
-    private val client: ReportClient, private val views: ReportViewService) {
+    private val client: ReportClient, private val views: ReportViewService,private val entitlements: ReportEntitlementService) {
     fun list(childId: UUID, status: ReportJobStatus?): JsonNode {
         // report-api lists generated reports only (RUNNING·COMPLETED·FAILED); a QUEUED job has no report yet.
         if (status == ReportJobStatus.QUEUED) invalidRequest()
@@ -44,7 +44,8 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
             require(body["period"]["from"].textValue() == job.periodFrom.toString() && body["period"]["to"].textValue() == job.periodTo.toString())
             if (revision != null) require(body["revision"].intValue() == revision)
         }
-        views.record(UUID.fromString(body["reportId"].textValue()), job.studentId, parent)
+        val narrative=views.record(UUID.fromString(body["reportId"].textValue()), job.studentId, parent)
+        if(!narrative) (body as com.fasterxml.jackson.databind.node.ObjectNode).apply { putNull("narrative");putNull("eveningQuestion") }
         return body
     }
 
@@ -56,11 +57,21 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
     fun download(reportId: UUID, format: String): JsonNode {
         if (format !in setOf("pdf", "md")) invalidRequest()
         val job = owned(reportId)
-        return client.get(job.studentId, "/internal/reports/$reportId/files/$format").also { body -> contract {
+        val metadata=client.get(job.studentId,"/internal/reports/$reportId")
+        contract {
+            validateIdentity(metadata)
+            require(UUID.fromString(metadata["childId"]?.textValue())==job.studentId)
+            require(metadata["period"]["from"].textValue()==job.periodFrom.toString() && metadata["period"]["to"].textValue()==job.periodTo.toString())
+            require(metadata.has("narrative") && metadata.has("eveningQuestion"))
+        }
+        val premium=!metadata["narrative"].isNull || !metadata["eveningQuestion"].isNull
+        if(premium && !entitlements.narrativeEnabled(job.studentId)) throw BusinessException(HttpStatus.FORBIDDEN,"REPORT_PREMIUM_REQUIRED","이 파일은 유료 서술을 포함합니다. 수치 전용 리포트가 필요합니다.")
+        val actual=UUID.fromString(metadata["reportId"].textValue())
+        return client.get(job.studentId, "/internal/reports/$actual/files/$format").also { body -> contract {
             val uri = URI(body["url"]?.textValue())
             require(uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank() && uri.userInfo == null)
             OffsetDateTime.parse(body["expiresAt"]?.textValue())
-        } }
+        }; views.record(actual,job.studentId,access.parent(job.studentId),premium) }
     }
 
     private fun owned(reportId: UUID): ReportJob = (repository.byReport(reportId)

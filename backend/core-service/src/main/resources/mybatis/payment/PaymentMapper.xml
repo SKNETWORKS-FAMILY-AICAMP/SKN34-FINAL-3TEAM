@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.payment.repository.PaymentMapper">
+ <select id="confirmingStudent" resultType="boolean" flushCache="true" useCache="false">SELECT EXISTS(SELECT 1 FROM payment p JOIN payment_order o ON o.id=p.order_id WHERE o.student_id=#{student} AND (p.status='CONFIRMING' OR p.entitlement_status='RECOVERY_REQUIRED'))</select>
+ <sql id="product">id,code,name,price,billing_cycle,child_limit,features,limits,active</sql>
+ <sql id="order">id,order_no,parent_user_id,student_id,product_id,subscription_id,kind,billing_period_start,amount,product_snapshot,created_at</sql>
+ <sql id="payment">id,order_id,payment_key,amount,status,method,entitlement_status,failure_code,approved_at,canceled_at,updated_at</sql>
+ <sql id="subscription">id,parent_user_id,student_id,product_id,status,period_start,period_end,next_billing_date,auto_renew,customer_key,billing_key_enc,renewal_retry_count,grace_until,auto_renew_canceled_at,canceled_at,created_at,updated_at,product_snapshot,billing_anchor_day,last_billing_attempt_date,revision</sql>
+ <sql id="refund">id,payment_id,requested_by,amount,reason,status,decided_by,reject_reason,pg_status,decided_at,created_at,cancel_key,usage_verified_at</sql>
+ <select id="refundHistory" resultType="com.sagomungchi.core.payment.domain.RefundRequest">SELECT <include refid="refund"/> FROM refund_request WHERE payment_id=(SELECT id FROM payment WHERE order_id=#{order}) ORDER BY created_at DESC,id</select>
+ <select id="products" resultType="com.sagomungchi.core.payment.domain.Product">SELECT <include refid="product"/> FROM product WHERE active ORDER BY price,id</select>
+ <select id="product" resultType="com.sagomungchi.core.payment.domain.Product">SELECT <include refid="product"/> FROM product WHERE id=#{id}</select>
+ <select id="order" resultType="com.sagomungchi.core.payment.domain.PaymentOrder" flushCache="true" useCache="false">SELECT <include refid="order"/> FROM payment_order WHERE id=#{id}</select>
+ <select id="orderNo" resultType="com.sagomungchi.core.payment.domain.PaymentOrder" flushCache="true" useCache="false">SELECT <include refid="order"/> FROM payment_order WHERE order_no=#{no}</select>
+ <select id="renewal" resultType="com.sagomungchi.core.payment.domain.PaymentOrder" flushCache="true" useCache="false">SELECT <include refid="order"/> FROM payment_order WHERE subscription_id=#{subscription} AND billing_period_start=#{period} AND kind='RENEWAL'</select>
+ <select id="orders" resultType="com.sagomungchi.core.payment.domain.PaymentOrder">
+ SELECT <include refid="order"/> FROM payment_order o WHERE 1=1
+ <if test="owner != null">AND o.parent_user_id=#{owner}</if>
+ <if test="status != null">AND EXISTS(SELECT 1 FROM payment p WHERE p.order_id=o.id AND p.status=#{status})</if>
+ <if test="from != null">AND o.created_at &gt;= (#{from}::date::timestamp AT TIME ZONE 'Asia/Seoul')</if>
+ <if test="to != null">AND o.created_at &lt; ((#{to}::date+1)::timestamp AT TIME ZONE 'Asia/Seoul')</if>
+ ORDER BY o.created_at DESC,o.id LIMIT #{size} OFFSET #{offset}
+ </select>
+ <insert id="insertOrder">INSERT INTO payment_order(id,order_no,parent_user_id,student_id,product_id,subscription_id,kind,billing_period_start,amount,product_snapshot,created_at) VALUES(#{id},#{orderNo},#{parentUserId},#{studentId},#{productId},#{subscriptionId},#{kind},#{billingPeriodStart},#{amount},#{productSnapshot},#{createdAt})</insert>
+ <update id="attach">UPDATE payment_order SET subscription_id=#{subscription} WHERE id=#{id} AND subscription_id IS NULL</update>
+ <select id="payment" resultType="com.sagomungchi.core.payment.domain.Payment" flushCache="true" useCache="false">SELECT <include refid="payment"/> FROM payment WHERE order_id=#{order}</select>
+ <select id="paymentId" resultType="com.sagomungchi.core.payment.domain.Payment" flushCache="true" useCache="false">SELECT <include refid="payment"/> FROM payment WHERE id=#{id}</select>
+ <insert id="savePayment">
+ INSERT INTO payment(id,order_id,payment_key,amount,status,method,entitlement_status,failure_code,approved_at,canceled_at,updated_at)
+ VALUES(#{id},#{orderId},#{paymentKey},#{amount},#{status},#{method},#{entitlementStatus},#{failureCode},#{approvedAt},#{canceledAt},#{updatedAt})
+ ON CONFLICT(order_id) DO UPDATE SET payment_key=EXCLUDED.payment_key,status=EXCLUDED.status,method=EXCLUDED.method,entitlement_status=EXCLUDED.entitlement_status,failure_code=EXCLUDED.failure_code,approved_at=EXCLUDED.approved_at,canceled_at=EXCLUDED.canceled_at,updated_at=EXCLUDED.updated_at
+ </insert>
+ <select id="attempt" resultType="com.sagomungchi.core.payment.domain.ChargeAttempt" flushCache="true" useCache="false">SELECT * FROM payment_charge_attempt WHERE id=#{id}</select>
+ <select id="latest" resultType="com.sagomungchi.core.payment.domain.ChargeAttempt" flushCache="true" useCache="false">SELECT * FROM payment_charge_attempt WHERE order_id=#{order} ORDER BY attempt_no DESC LIMIT 1</select>
+ <select id="attemptNo" resultType="com.sagomungchi.core.payment.domain.ChargeAttempt" flushCache="true" useCache="false">SELECT * FROM payment_charge_attempt WHERE pg_order_no=#{no}</select>
+ <insert id="insertAttempt">INSERT INTO payment_charge_attempt(id,order_id,attempt_no,pg_order_no,idempotency_key,status,payment_key,failure_code,started_at,updated_at) VALUES(#{id},#{orderId},#{attemptNo},#{pgOrderNo},#{idempotencyKey},#{status},#{paymentKey},#{failureCode},#{startedAt},#{updatedAt})</insert>
+ <update id="finishAttempt">UPDATE payment_charge_attempt SET status=#{status},payment_key=COALESCE(#{paymentKey},payment_key),failure_code=#{code},updated_at=#{now} WHERE id=#{id} AND status IN ('CONFIRMING','APPROVED')</update>
+ <select id="subscription" resultType="com.sagomungchi.core.payment.domain.Subscription" flushCache="true" useCache="false">SELECT <include refid="subscription"/> FROM subscription WHERE id=#{id}</select>
+ <select id="active" resultType="com.sagomungchi.core.payment.domain.Subscription" flushCache="true" useCache="false">SELECT <include refid="subscription"/> FROM subscription WHERE student_id=#{student} AND status IN ('ACTIVE','RENEWAL_FAILED')</select>
+ <select id="subscriptions" resultType="com.sagomungchi.core.payment.domain.Subscription">SELECT <include refid="subscription"/> FROM subscription WHERE parent_user_id=#{owner} ORDER BY created_at DESC LIMIT 200</select>
+ <insert id="insertSubscription">
+ INSERT INTO subscription(id,parent_user_id,student_id,product_id,status,period_start,period_end,next_billing_date,auto_renew,customer_key,billing_key_enc,renewal_retry_count,grace_until,auto_renew_canceled_at,canceled_at,created_at,updated_at,product_snapshot,billing_anchor_day,last_billing_attempt_date,revision)
+ VALUES(#{id},#{parentUserId},#{studentId},#{productId},#{status},#{periodStart},#{periodEnd},#{nextBillingDate},#{autoRenew},#{customerKey},#{billingKeyEnc},#{renewalRetryCount},#{graceUntil},#{autoRenewCanceledAt},#{canceledAt},#{createdAt},#{updatedAt},#{productSnapshot},#{billingAnchorDay},#{lastBillingAttemptDate},#{revision})
+ </insert>
+ <update id="saveSubscription">
+ UPDATE subscription SET status=#{status},period_start=#{periodStart},period_end=#{periodEnd},next_billing_date=#{nextBillingDate},auto_renew=#{autoRenew},customer_key=#{customerKey},billing_key_enc=#{billingKeyEnc},renewal_retry_count=#{renewalRetryCount},grace_until=#{graceUntil},auto_renew_canceled_at=#{autoRenewCanceledAt},canceled_at=#{canceledAt},updated_at=#{updatedAt},last_billing_attempt_date=#{lastBillingAttemptDate},revision=revision+1
+ WHERE id=#{id}
+ </update>
+ <select id="due" resultType="com.sagomungchi.core.payment.domain.Subscription">
+ SELECT <include refid="subscription"/> FROM subscription WHERE status IN ('ACTIVE','RENEWAL_FAILED') AND
+ (period_end &lt;= #{today} OR next_billing_date &lt;= #{today}) ORDER BY period_end,id LIMIT 500
+ </select>
+ <select id="recovery" resultType="com.sagomungchi.core.payment.domain.PaymentOrder">
+ SELECT <include refid="order"/> FROM payment_order o WHERE EXISTS(SELECT 1 FROM payment p WHERE p.order_id=o.id AND (p.status='CONFIRMING' OR p.entitlement_status='RECOVERY_REQUIRED')) ORDER BY created_at LIMIT 100
+ </select>
+ <select id="refunds" resultType="com.sagomungchi.core.payment.domain.RefundRequest">SELECT <include refid="refund"/> FROM refund_request <if test="status != null">WHERE status=#{status}</if> ORDER BY created_at DESC,id LIMIT #{size} OFFSET #{offset}</select>
+ <select id="refund" resultType="com.sagomungchi.core.payment.domain.RefundRequest" flushCache="true" useCache="false">SELECT <include refid="refund"/> FROM refund_request WHERE id=#{id}</select>
+ <select id="pendingRefund" resultType="com.sagomungchi.core.payment.domain.RefundRequest" flushCache="true" useCache="false">SELECT <include refid="refund"/> FROM refund_request WHERE payment_id=(SELECT id FROM payment WHERE order_id=#{order}) AND status IN ('REQUESTED','APPROVED','FAILED')</select>
+ <select id="refundPending" resultType="boolean" flushCache="true" useCache="false">SELECT EXISTS(SELECT 1 FROM refund_request r JOIN payment p ON p.id=r.payment_id JOIN payment_order o ON o.id=p.order_id WHERE o.student_id=#{student} AND r.status IN ('REQUESTED','APPROVED','FAILED'))</select>
+ <insert id="insertRefund">INSERT INTO refund_request(id,payment_id,requested_by,amount,reason,status,decided_by,reject_reason,pg_status,decided_at,created_at,cancel_key,usage_verified_at) VALUES(#{id},#{paymentId},#{requestedBy},#{amount},#{reason},#{status},#{decidedBy},#{rejectReason},#{pgStatus},#{decidedAt},#{createdAt},#{cancelKey},#{usageVerifiedAt})</insert>
+ <update id="saveRefund">UPDATE refund_request SET status=#{status},decided_by=#{decidedBy},reject_reason=#{rejectReason},pg_status=#{pgStatus},decided_at=#{decidedAt},usage_verified_at=#{usageVerifiedAt} WHERE id=#{id}</update>
+ <select id="refundRecovery" resultType="com.sagomungchi.core.payment.domain.RefundRequest">SELECT <include refid="refund"/> FROM refund_request WHERE status='APPROVED' ORDER BY created_at LIMIT 100</select>
+ <select id="webhookDone" resultType="boolean">SELECT EXISTS(SELECT 1 FROM pg_webhook_event WHERE transmission_id=#{id} AND result IN ('APPLIED','IGNORED'))</select>
+ <insert id="webhook">INSERT INTO pg_webhook_event(id,transmission_id,event_type,order_no,result,received_at,processed_at) VALUES(#{id},#{transmission},#{type},#{order},'APPLIED',#{now},#{now}) ON CONFLICT(transmission_id) DO NOTHING</insert>
+ <select id="usage" resultType="com.sagomungchi.core.payment.domain.PremiumUsage" flushCache="true" useCache="false">SELECT * FROM payment_premium_usage WHERE kind=#{kind} AND source_id=#{source}</select>
+ <insert id="reserve">INSERT INTO payment_premium_usage(id,student_id,subscription_id,kind,source_id,status,created_at,updated_at) VALUES(#{id},#{studentId},#{subscriptionId},#{kind},#{sourceId},#{status},#{createdAt},#{updatedAt})</insert>
+ <update id="usageFinish">UPDATE payment_premium_usage SET status=CASE WHEN #{used} THEN 'USED' ELSE 'FAILED' END,updated_at=#{now} WHERE id=#{id} AND student_id=#{student} AND status='RESERVED'</update>
+ <select id="usageCount" resultType="int">SELECT count(*) FROM payment_premium_usage WHERE student_id=#{student} AND created_at &gt;= #{since} AND status IN ('RESERVED','USED')</select>
+ <insert id="audit">INSERT INTO audit_log(id,actor_user_id,action,target_type,target_id,result,detail,created_at) VALUES(#{id},#{actor},#{action},'PAYMENT',#{target},'SUCCESS','{}'::jsonb,#{now})</insert>
+</mapper>
