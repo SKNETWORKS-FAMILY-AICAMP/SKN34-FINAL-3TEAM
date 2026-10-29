@@ -134,3 +134,11 @@ Windows 11 로컬 실행. CI(`_python.yml`·`_spring.yml`·`_web.yml`·`ci-db-sc
 | 6 | 설계 문서 정합성 2차 | 2·3장 문서 항목(C4~C15, D1~D14) |
 | 7 | 웹 실서버 계약 정리 | B11~B13, #93·#97 |
 | 8 | CI 테스트 범위 확장 | 6장 |
+
+## 8. 처리 결과
+
+같은 브랜치에서 단계별 1커밋으로 처리했다.
+
+| 단계 | 항목 | 처리 |
+|---|---|---|
+| 1 | B1·B2 | 필터 판정 경로를 Spring 매칭 경로(`;` 매개변수 제거·퍼센트 디코딩)로 정규화. core `PublicAuthFilter`·core/learning `InternalAuthFilter`가 `_common/security/MatchedPath.kt`의 `matchedPath` 사용. 회귀 테스트: `ModelVersionHttpTest`(학부모 토큰 `;x`·`%61dmin` 경로 403), core·learning `InternalAuthFilterTest`(`/internal;x`·`/%69nternal` 401). 수정 전 코드에서 두 테스트 실패 확인. 실제 Tomcat 재현은 403·403·403·401로 변경 |
