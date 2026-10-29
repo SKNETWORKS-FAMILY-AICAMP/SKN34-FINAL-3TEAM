@@ -18,6 +18,8 @@ import java.util.UUID
 class ReportQueryService(private val repository: ReportJobRepository, private val access: ReportAccessService,
     private val client: ReportClient, private val views: ReportViewService) {
     fun list(childId: UUID, status: ReportJobStatus?): JsonNode {
+        // report-api lists generated reports only (RUNNING·COMPLETED·FAILED); a QUEUED job has no report yet.
+        if (status == ReportJobStatus.QUEUED) invalidRequest()
         access.parent(childId)
         val query = mutableMapOf("studentId" to childId.toString())
         status?.let { query["status"] = it.name }

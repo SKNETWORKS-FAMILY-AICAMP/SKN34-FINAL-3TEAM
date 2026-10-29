@@ -1836,9 +1836,9 @@ paths:
       - name: status
         in: query
         required: false
+        description: report-api의 리포트 상태. QUEUED 작업은 리포트가 없어 400
         schema:
           enum:
-          - QUEUED
           - RUNNING
           - COMPLETED
           - FAILED
@@ -1869,6 +1869,12 @@ paths:
                 $ref: '#/components/schemas/Problem'
         '404':
           description: 없는 리포트
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: DELETION_IN_PROGRESS (report 학생 기록 삭제 진행 중)
           content:
             application/problem+json:
               schema:
@@ -1935,6 +1941,12 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '409':
+          description: DELETION_IN_PROGRESS (report 학생 기록 삭제 진행 중)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '503':
           description: REPORT_ENTITLEMENT_UNAVAILABLE 또는 REPORT_UNAVAILABLE
           content:
@@ -1997,8 +2009,14 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '409':
+          description: DELETION_IN_PROGRESS (report 학생 기록 삭제 진행 중)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '503':
-          description: REPORT_ENTITLEMENT_UNAVAILABLE 또는 REPORT_UNAVAILABLE
+          description: REPORT_ENTITLEMENT_UNAVAILABLE 또는 REPORT_UNAVAILABLE, DATA_UNAVAILABLE(근거 원문·파일 저장소 장애)
           content:
             application/problem+json:
               schema:
@@ -2060,8 +2078,14 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '409':
+          description: DELETION_IN_PROGRESS (report 학생 기록 삭제 진행 중)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '503':
-          description: REPORT_ENTITLEMENT_UNAVAILABLE 또는 REPORT_UNAVAILABLE
+          description: REPORT_ENTITLEMENT_UNAVAILABLE 또는 REPORT_UNAVAILABLE, DATA_UNAVAILABLE(근거 원문·파일 저장소 장애)
           content:
             application/problem+json:
               schema:

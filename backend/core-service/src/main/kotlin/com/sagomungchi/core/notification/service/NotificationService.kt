@@ -21,12 +21,12 @@ class NotificationService(private val repository: NotificationRepository, privat
     }
     fun list(identity: AuthenticatedAccount, unreadOnly: Boolean, page: Int, size: Int): List<Notification> {
         val user = owner(identity)
-        if (page < 0 || size !in 1..100) throw BusinessException(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "목록 범위를 확인해 주세요.")
+        if (page < 0 || size !in 1..100) throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "목록 범위를 확인해 주세요.")
         return repository.list(user, unreadOnly, page.toLong() * size, size + 1)
     }
     @Transactional
     fun read(identity: AuthenticatedAccount, id: UUID) {
-        if (!repository.read(owner(identity), id)) throw BusinessException(HttpStatus.NOT_FOUND, "NOTIFICATION_NOT_FOUND", "알림을 찾을 수 없습니다.")
+        if (!repository.read(owner(identity), id)) throw BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "알림을 찾을 수 없습니다.")
     }
     @Transactional fun readAll(identity: AuthenticatedAccount) = repository.readAll(owner(identity))
     fun settings(identity: AuthenticatedAccount): List<NotificationSetting> {
@@ -37,7 +37,7 @@ class NotificationService(private val repository: NotificationRepository, privat
     fun settings(identity: AuthenticatedAccount, values: List<NotificationSetting>): List<NotificationSetting> {
         val user = owner(identity)
         if (values.isEmpty() || values.size > NotificationType.entries.size || values.map { it.type }.distinct().size != values.size)
-            throw BusinessException(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "중복 없이 알림 유형을 지정해 주세요.")
+            throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "중복 없이 알림 유형을 지정해 주세요.")
         values.forEach { repository.setting(user, it) }
         return settings(identity)
     }

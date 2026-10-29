@@ -12,6 +12,9 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers
+import java.net.URI
 import java.time.OffsetDateTime
 import java.util.UUID
 import kotlin.test.*
@@ -50,6 +53,17 @@ class ModelVersionHttpTest : PostgresRepositoryTest() {
                 mvc.post(path) { header("Authorization", "Bearer $token"); contentType = MediaType.APPLICATION_JSON; content = "{}" }
                     .andExpect { status { isForbidden() }; jsonPath("$.code") { value("FORBIDDEN") } }
             }
+        }
+    }
+
+    @Test fun `matrix parameter and percent-encoded admin paths are authorized like the plain path`() {
+        val parent = account(jdbc, "PARENT", null); consents(jdbc, parent)
+        val token = tokens.access(session(jdbc, parent, "PARENT"))
+        listOf("/api/v1/admin;x/ai-usage?from=2026-11-01&to=2026-11-02", "/api/v1/%61dmin/ai-usage?from=2026-11-01&to=2026-11-02",
+            "/api/v1/admin;x/model-versions").forEach { path ->
+            mvc.perform(MockMvcRequestBuilders.get(URI.create(path)).header("Authorization", "Bearer $token"))
+                .andExpect(MockMvcResultMatchers.status().isForbidden)
+                .andExpect(MockMvcResultMatchers.jsonPath("$.code").value("FORBIDDEN"))
         }
     }
 
