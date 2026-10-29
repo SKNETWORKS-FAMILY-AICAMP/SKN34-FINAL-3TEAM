@@ -8,7 +8,7 @@ import json
 
 from pydantic import Field
 
-from app.analysis_agent.metrics import Computation
+from app.analysis_agent.calculators import Computation
 from app.analysis_agent.models import AnalysisRequest, Intent, ScopeIssue
 from app.judgment.models import ApiModel
 

@@ -6,7 +6,7 @@ LLM 답변은 대조를 통과해야만 확정. 실패하면 LLM 문장을 버�
 from langgraph.runtime import Runtime
 
 from app.analysis_agent import prompts, templates
-from app.analysis_agent.metrics import Computation
+from app.analysis_agent.calculators import Computation
 from app.analysis_agent.models import (
     AnalysisResult,
     Evidence,
