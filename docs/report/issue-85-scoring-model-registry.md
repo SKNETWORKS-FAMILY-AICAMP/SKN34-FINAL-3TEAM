@@ -176,3 +176,5 @@ runner는 모델 압축 파일과 결과 폴더가 Git checkout 내부이면 실
 - 모델·AI Hub 데이터는 Git에 추가하지 않았다. 증거는 저장소 밖 `tmp/issue85-release-real/results.json`·로그와 `tmp/issue85-release-tests.xml`에 보관한다.
 
 GitHub PR CI·검토·병합은 이 로컬 검증과 별도다. M1 실제 가중치 로더와 M2 최종 채점 응답은 각각 #88·#87 범위이며 #85 완료로 함께 처리하지 않는다.
+
+최종 통합 기준은 develop `48339a4`(#56 PR #148 포함)다. 마지막 추가 병합에서 core·scoring·공통 검사 소스 변경은 없었으며 충돌 없이 반영했다. 최종 diff·Ruff 검사를 통과했다. 이번에 추가한 커밋 메시지는 한국어이며 기존 원격 #85의 과거 커밋 이력은 재작성하지 않았다.
