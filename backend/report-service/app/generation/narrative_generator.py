@@ -58,7 +58,14 @@ class NarrativeGenerator:
             ItemType.QUOTE: "quotes",
         }
         payload = {
-            name: [item.payload for item in result.items if item.type == kind]
+            name: [
+                # ai citedQuotes need the answer version they quote (API 4.2.1)
+                {**item.payload, "answerVersion": item.evidence[0].answer_version}
+                if kind == ItemType.QUOTE
+                else item.payload
+                for item in result.items
+                if item.type == kind
+            ]
             for kind, name in groups.items()
         }
         response = await self._ai.narrative(scrub(payload, command.display_name))

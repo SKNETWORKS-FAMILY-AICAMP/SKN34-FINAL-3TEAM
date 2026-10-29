@@ -38,6 +38,7 @@
 - 검증기(`generation/verifier.py`): 서술·저녁 질문의 숫자가 계산 결과에 있는지, 인용이 원문 부분문자열이고 answer ID·attempt ID·version이 맞는지. 근거 없는 따옴표 인용·지원하지 않는 한글 수사·과학적 표기·수치 레벨·등급·사고력 향상 단정은 통과로 보지 않음(의미·인과까지 증명하지는 않음)
 - `verification`은 `numbersMatched`·`quotesMatched`·`contentAllowed` 보존
 - evidence는 50건 단위 조회, 410·삭제 표식은 이용 불가(원문 미반환), 누락·다른 버전·예상 밖 답변은 거부
+- ai 요청 `quotes[]`에는 근거 링크의 `answerVersion`을 붙여 보냄(ai `citedQuotes` 버전 출처, #64). 저장 payload·상세 `quotes`에는 넣지 않음
 - 무료·NO_RECORD는 AI 생략. 알려진 닉네임은 본문에서 가리고 이름·학생 식별 필드는 요청에 넣지 않음. 닉네임 공급 경로는 미연결(공유 메시지에 임의로 추가하지 않음)
 
 ## 5. 렌더링·파일 저장 (#53)
@@ -88,7 +89,6 @@
 | 항목 | 담당 | 내용 |
 |---|---|---|
 | 상품 권한 | core·상품 | `ReportEntitlementService` 실제 판정, 조회 시 `X-Report-Narrative-Enabled` 전달 |
-| 서술 API | ai | `/internal/report-narratives`(api-spec 4.2.1) 구현 |
 | 표시 이름 | core | AI 전송 전 이름 가림·파일 제목용 닉네임 내부 조회 경로 |
 | 생성기 조립 | report | worker 기본 생성기를 계산 → 서술 → 렌더링으로 연결 |
 | 삭제 전체 | learning·core | learning `student.deleted` 소비·완료 보고, 삭제 학생의 queued job 정리·늦은 이벤트 무시 |

@@ -754,11 +754,13 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | POST | `/internal/judgments` | learning | `{answerText, inputType, grade, rubric{elements[]}, versions}` → `{result, elements[{elementId, quote, verified, satisfied}], heldReason, trial, versions}` (M2 활성 시 scoring 교차 확인) |
 | POST | `/internal/followups` | learning | `{timeline[], judgment, rubric, mission, grade}` → `{type, question, source, leakCheck{passed}, versions}` (정답·금지어 검사 실패 시 1회 재생성 `LLM_RETRY`, 재실패 시 `question` 없이 `leakCheck.passed = false` → learning이 질문 은행 `BANK` 선택, P16) |
 | POST | `/internal/analysis/stream` | core | **SSE**. `{conversationId, question, scope{studentId, from, to}, history[]}` → 3.3과 같은 이벤트 |
-| POST | `/internal/report-narratives` | report | **미구현**(ai-service.yaml 미포함, report 호출부만 존재). `{metrics[], thinkingTypes[], changes[], reflections[], quotes[]}` → `{narrative, eveningQuestion, citedQuotes[]}` |
+| POST | `/internal/report-narratives` | report | `{metrics[], thinkingTypes[], changes[], reflections[], quotes[]}` → `{narrative, eveningQuestion, citedQuotes[], versions}` (4.2.1) |
 | GET | `/internal/versions` | core | 활성 프롬프트 버전 |
 
-#### 4.2.1 report 서술 응답 (ai 미구현, report 쪽 기준)
+#### 4.2.1 report 서술 요청·응답
 
+- 요청 항목은 report 계산 결과(3.4 `metrics`·`thinkingTypes`·`changes`·`reflections`·`quotes`)를 그대로 보낸다. `quotes[]`는 인용 후보 `{attemptId, answerId, answerVersion, text}`이며 `answerVersion`은 해당 답변 근거의 버전이다(3.4 상세 `quotes`에는 없음). 대조 전 값인 `verified`는 ai가 무시한다. 다섯 배열은 필수(빈 배열 허용)다.
+- ai는 인용을 후보 번호와 원문 구절로 고르고, 구절이 그 후보 `text`의 부분 문자열이 아니면 `citedQuotes`에서 제외한다. `attemptId`·`answerId`·`answerVersion`은 후보 입력값을 쓴다. LLM 실패·키 미설정·빈 서술이나 빈 저녁 질문은 503 `AI_UNAVAILABLE`(+`retryable`)이다.
 - 응답은 `{narrative:{text,source:"LLM",modelExplanation:null},eveningQuestion,citedQuotes:[{attemptId,answerId,answerVersion,quote}],versions:{prompt,model}}`로 정의한다. 원문 인용은 citedQuotes에 명시하며 답변 버전과 연결한다. ai는 숫자를 새로 계산하거나 수치 레벨·등급·사고력 향상을 단정하지 않는다.
 - report는 learning evidence의 같은 answer ID·version·원문과 인용을 대조하고, 서술·저녁 질문의 숫자가 계산 결과에 포함되는지 검사한다. 지원하지 않는 한글 수사 표현은 검증 통과로 간주하지 않는다. 검증 메타데이터는 `numbersMatched`, `quotesMatched`, `contentAllowed`다.
 - 대조 실패만 코드 기반 템플릿 요약으로 전환한다. AI 시간 초과·5xx·응답 스키마 오류·learning 원문 조회 실패는 `FAILED`로 처리한다. 학생 이름·닉네임 필드는 요청에 넣지 않으며, 알려진 닉네임이 본문에 포함된 경우 전송 전에 가린다.

@@ -1,4 +1,4 @@
-# AI (판정·되묻기·분석 대화·모델 레지스트리·M2)
+# AI (판정·되묻기·분석 대화·모델 레지스트리·M2·리포트 서술)
 
 통합 원본: ai-judgment-followup, analysis-agent, issue-43-model-registry, m2-api-alignment
 
@@ -69,7 +69,7 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
 - LLM 장애 → 규칙 응답(`AI_UNAVAILABLE`), 기록 부족 → 기간·기록 수만 안내(`fallback` null), 조회 실패 → `error`(빈 기록으로 대체하지 않음)
 - `delta` 미전송(대조 통과 후에만 표시), 체크포인터 없음(이전 대화는 core가 `history`로 전달), 전체 마감 `ANALYSIS_DEADLINE` 110초
 - core와 확인할 계약: `result`의 `messageId`·`scope.changed`는 core가 붙임. `clarification` `{reason: OTHER_CHILD|DIFFERENT_PERIOD|UNCLEAR, message, current}`, `error` `{code, message, retryable}`(code: `RECORDS_UNAVAILABLE`·`RECORDS_NOT_READY`·`RECORDS_INVALID`·`FORBIDDEN`·`INTERNAL_ERROR`). 돌아보기·전후 변화 근거는 `answerId`·`answerVersion`이 null일 수 있음
-- 남은 작업: 유형별 대조 통과율 확인, 실제 learning 연동, core 대화 저장 연결, 리포트 서술 API(api-spec 4.2.1)
+- 남은 작업: 유형별 대조 통과율 확인, 실제 learning 연동, core 대화 저장 연결
 
 ## 3. 모델 레지스트리·AI 사용량 (#43)
 
@@ -95,3 +95,23 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
   | 활성화 | 두 모델을 따로 활성화·롤백 |
 
 - 미정: 논술 답변 `essay{claim, reasons[], rebuttal}`을 scoring 입력 `text`로 합치는 규칙(scoring 연동 전 결정)
+
+## 5. 리포트 서술·저녁 질문 (#64)
+
+- `POST /internal/report-narratives`(api-spec 4.2.1, `app/report_narrative/`). 서술·저녁 질문만 만들고 숫자 계산·대조·템플릿 전환은 report(class-diagram 5.2, P16). 사용량 `callType = REPORT_NARRATIVE`, 프롬프트 `report@1`(`/internal/versions`의 `reportNarrative`)
+- API 변경: 요청 `quotes[]`에 `answerVersion` 추가(report `NarrativeGenerator`가 근거 링크 버전으로 채움). 응답 `citedQuotes[].answerVersion`을 ai가 알 수 없던 문제 해소. 3.4 상세 `quotes`·저장 payload는 그대로
+- 인용: LLM이 `{후보 번호, 원문 구절}`을 고르고, 구절이 그 후보 원문의 부분 문자열이 아니거나 번호가 범위 밖이면 제외. ID·버전은 입력값. 서술 속 따옴표 문구와 `citedQuotes` 불일치는 report 대조에서 템플릿 전환
+- 프롬프트 규칙은 report `ReportVerifier` 통과 범위에 맞춤: 입력 수치·전후 변화 값만 아라비아 숫자로, 한글 수사·미션 제목·답 속 숫자(인용 밖) 금지, 점수·등급·레벨·순위 낱말과 사고력 향상 단정 금지, 기록 없는 유형은 "확인된 기록 없음", 미작성 돌아보기는 "쓰지 않음"
+- LLM 입력에는 수치·미션 제목·답변·돌아보기 원문만. 학생 이름·ID와 시도·답변 ID는 넣지 않음(인용은 후보 번호로 지칭, NFR-SEC-03). 로그에 원문 미기록
+
+### 기준이 없어 정한 값
+
+| 항목 | 값 | 근거 |
+|---|---|---|
+| 서술 | 학부모 대상 해요체 3~5문장, 600자 이내(프롬프트 지시, 코드 검사 없음) | 리포트 한 화면 분량 |
+| 저녁 질문 | 1개, 아이에게 읽어 줄 친근한 반말 한 문장. 이번 주 미션·답에서 출발, 정답·평가·능력 암시 금지 | 기획서 저녁 식탁 대화 |
+| 전체 마감 `NARRATIVE_DEADLINE` | 28초. LLM 1회 15초 + 대기 1초, 재시도는 남은 시간 안에서만 | report→ai 읽기 타임아웃 30초(report `http_read_timeout`)보다 짧게 |
+| 돌아보기 난이도 | `EASY·NORMAL·HARD` 코드를 프롬프트에서 "쉬웠어·보통·어려웠어"로, 표시값이 오면 그대로 | report 저장 payload는 코드 유지 |
+| 빈 서술·빈 저녁 질문 | 503 `AI_UNAVAILABLE`(`retryable: true`) | report는 AI 실패를 `FAILED`로 처리 |
+
+- 후속: `model.version.activated` 수신 시 서술 프롬프트 버전 교체는 #68, 실제 LLM 연동 E2E는 report worker 생성기 조립 후
