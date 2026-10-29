@@ -12,6 +12,9 @@ const js = await Promise.all(
 assert.ok(js.length)
 for (const marker of [
   'setupWorker',
+  'demo-refund-1',
+  'demo-payment-1',
+  'demo-admin-inquiry',
   'demo-pin-student',
   '가상 학생으로 PIN 로그인 준비',
   '/auth/student/demo-device',

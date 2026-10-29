@@ -62,6 +62,10 @@ try {
   assert.equal(await a.getByLabel('비밀번호', { exact: true }).count(), 0)
   assert.equal(await b.getByLabel('가입 비밀번호').count(), 0)
   assert.equal(await a.getByRole('link', { name: 'Google 계정으로 계속하기' }).getAttribute('href'), '/api/v1/auth/google/authorize')
+  await b.goto(origin + '/admin/login')
+  await b.getByRole('heading', { name: '관리자 로그인', exact: true }).waitFor()
+  assert.equal(await b.getByRole('link', { name: 'Google 계정으로 계속하기' }).getAttribute('href'), '/api/v1/auth/google/authorize')
+  assert.equal(await b.getByLabel('비밀번호', { exact: true }).count(), 0)
   loggedIn = true
   await Promise.all([a.goto(origin + '/oauth/complete'), b.goto(origin + '/oauth/complete')])
   await Promise.all([a.waitForURL('**/parent/onboarding'), b.waitForURL('**/parent/onboarding')])

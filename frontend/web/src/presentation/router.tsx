@@ -1,3 +1,4 @@
+import { AdminLoginPage } from './admin/AdminLoginPage.tsx'
 import { createBrowserRouter, Navigate, Outlet } from 'react-router'
 import { ClassroomApp } from './ClassroomApp.tsx'
 import { SessionProvider } from './auth/SessionProvider.tsx'
@@ -26,6 +27,7 @@ export const router = createBrowserRouter([
       </SessionProvider>
     ),
     children: [
+      { path: '/admin/login', element: <LoginGate />, children: [{ index: true, element: <AdminLoginPage /> }] },
       { path: '/login-help', element: <LoginHelp /> },
       ...(ReviewPage ? [{ path: '/review', element: <Suspense fallback={<p>점검표를 불러오고 있습니다.</p>}><ReviewPage /></Suspense> }] : []),
       { path: '/withdrawal-status', element: <WithdrawalReceipt /> },
@@ -47,7 +49,7 @@ export const router = createBrowserRouter([
         element: <RoleLayout role={role} />,
         children: [
           ...(['help', 'notices', 'notifications'] as const).map(page => ({ path: page, element: <ServiceCenter page={page} /> })),
-          { path: 'support', element: role === 'ADMIN' ? <ServiceCenter page="support" /> : <SupportEntry /> },
+          ...(role === 'ADMIN' ? [] : [{ path: 'support', element: <SupportEntry /> }]),
           ...(role !== 'ADMIN' ? [{ path: 'support/results', element: <SupportResults /> }] : []),
           ...(role === 'PARENT' ? [
             { path: 'account', element: <AccountPage /> },

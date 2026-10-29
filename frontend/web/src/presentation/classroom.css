@@ -1902,3 +1902,9 @@ body {
     min-height: 44px;
   }
 }
+
+/* 로그인 보조 링크와 가입/시연 안내를 독립된 행으로 배치한다. */
+#class-journal .ux-login-links { display:flex; flex-wrap:wrap; align-items:center; gap:8px 20px; margin:16px 0; }
+#class-journal .ux-login-links a { display:inline-flex; align-items:center; min-height:40px; line-height:1.5; text-underline-offset:3px; }
+#class-journal .ux-login-signup { display:block; width:100%; margin:0 0 16px; }
+#class-journal .ux-login-demo-note { display:block; padding-top:12px; border-top:1px solid var(--cj-line); font-size:12px; line-height:1.8; overflow-wrap:anywhere; color:var(--cj-muted); }

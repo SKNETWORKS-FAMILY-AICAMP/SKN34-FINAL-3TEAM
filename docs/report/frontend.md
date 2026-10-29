@@ -67,3 +67,32 @@ node tests/qr-device-browser.mjs
 - api-spec 3.8~3.12 목업 DTO의 백엔드 확정(학생 홈·대화·관리자·꾸미기 설정)
 - 이용권 정보를 받을 API(core와 협의, #129). 확정되면 3장의 이용권 표시 기준을 그 계약으로 바꾼다([점검 기록 B11](audit.md))
 - 장면 파일 업로드 방식 결정, 화면 단위 자동 테스트(Playwright 스크립트는 `npm test`·CI 밖)
+
+## 관리자 화면 추가 — 2026-10-29
+
+작업 브랜치: `feature/admin-screen-completion` · 기준 develop `26f3788`.
+작업 디렉터리: `C:\Users\playdata2\Documents\GitHub\SKN34-FINAL-3TEAM-fe-integration`.
+
+화면설계서 A00·A04·A10 중 현재 앱에 없던 관리자 로그인, 문의·공지 관리, 결제·환불·PG 대조 화면을 추가했다. 기존 `feature/admin-monochrome`의 레이아웃·로그인·UI 부품을 선별 재사용했고 실제 API 어댑터와 최신 모델·정정 로직을 유지했다. 다른 작업본은 변경하지 않았다.
+
+- `/admin/login`: 개발 모드만 가상 이메일 계정. 실제 모드는 Google 인증 링크만 제공한다. 인증 응답으로 역할·시작 화면을 결정하며 URL로 관리자 권한을 부여하지 않는다.
+- 관리자 전역: 흑백 좌측 메뉴, 권한별 노출과 직접 URL 접근 제한, 기간 선택, 태블릿 접이식 메뉴. 운영·작업·큐·오류 신고·모델·AI 사용량·감사·미션을 기존 최신 컴포넌트로 연결했다.
+- `/admin/support`: 문의 선택 후 답변 POST, 완료 답변 재편집 차단. 공지/점검 작성·수정·종료와 공개 대상·기간 설정.
+- `/admin/payments`: 환불 요청/거래 내역/PG 대조 탭, 페이지 이동, 체크리스트·최종 확인, 반려 사유와 조회/환불 승인 권한 분리.
+- 실제 `PaymentController`의 승인 POST는 body 없이 Idempotency-Key를 사용한다. 반려는 `{reason}`. APPROVED/202는 PG 확인 중이며 COMPLETED만 환불 완료로 표시한다. 적격 여부는 서버가 재검증하며 UI에서 가짜 withinSevenDays·premiumUnused 값을 만들지 않는다.
+- 실제 `SupportController`의 문의 상태 RESOLVED, `noticeId/kind/body/targetRoles/visibleFrom/visibleTo/endedAt`와 POST 답변 계약을 반영했다.
+- 현재 core에는 `GET /admin/notices` 전체 목록이 없다. `GET /notices`의 관리자 대상 공개 공지 첫 20건과 로그인 세션에서 작성·수정한 공지만 관리한다. 예약/종료 공지 전체 조회 API는 후속이다.
+- 새 기능은 실제 공개 API 어댑터를 호출한다. DEV는 별도 adminServiceHandlers가 가상 응답을 처리하고 운영 빌드에는 포함되지 않는다. 실서버 오류 때 데모 데이터로 자동 전환하지 않는다.
+
+검증: 단위·계약 114개, TypeScript·운영 빌드·lint·운영 목업 제외 검사 통과. 관리자 브라우저에서 로그인·문의 답변·공지 생성/수정/종료·환불 PG 대기·거래/대조·권한 분리, 9개 화면×1440/1024/768/390의 가로 넘침을 확인했다. Google 관리자 로그인은 운영 빌드/API 대역으로 확인했다. 실제 DB·Google OAuth·PG 결제/취소 통합 검증은 하지 않았다. 청크 500kB 경고는 남아 있다.
+
+직접 확인: `http://127.0.0.1:5242/admin/login` → 기본 `admin@example.test` / `demo-only` 로그인. `payment@example.test`는 결제 조회만, `ops@example.test`는 운영만 가능하다. 같은 LAN에서는 `http://192.168.0.125:5242/admin/login`(접근 가능한 네트워크일 때).
+재실행: frontend/web에서 `npm run dev:qr -- --port 5242`.
+새 브라우저 상태는 새로고침하면 초기화되는 개발 목업이며 실제 결제·환불은 발생하지 않는다.
+
+증거: `C:\Users\playdata2\outputs\admin-completion-20261029-final`, `C:\Users\playdata2\outputs\admin-completion-20261029\inspection`.
+로그인 디자인 검사 0FAIL/3WARN: 개발 서버 경고는 별도 운영 빌드 검사로 보완했고, 여백/캔버스 경고는 가운데 정렬된 400px 인증 폼을 유지하기 위해 수용했다. 학생 5개 테마는 변경하지 않았다.
+
+추가 테스트: `tests/adminScreenCompletion.test.ts`, `tests/admin-completion-browser.mjs`. 기존 API 모드 브라우저에 관리자 전용 Google 로그인 검증을 추가했다. 사용자 요청에 따라 관리자 화면 보완 PR로 제출한다. 게시 전 최신 develop을 일반 merge로 반영하며 원본 작업본은 보존한다.
+
+추가 UI 수정: 큐·DLQ와 작업 재처리의 중복 선택 조건을 제거했다. 학부모 로그인 하단의 도움말·관리자 링크, 가입 버튼, 데모 안내를 별도 행으로 나누고 1440/1024/768/390px에서 간격과 가로 넘침을 확인했다.
