@@ -575,8 +575,8 @@ sequenceDiagram
   MQ-)C: core.report.events 소비
   C->>CDB: processed_event 저장 (중복이면 무시)
   C->>CDB: report_job 조건부 전이 (started: QUEUED → RUNNING / completed·failed: QUEUED·RUNNING → COMPLETED·FAILED + report_id)
-  opt report.completed
-    C->>C: NotificationService.notify (REPORT_COMPLETED, source_event_id)
+  opt 종료 전이 (completed·failed)
+    C->>C: ReportJobFinished → ReportNotificationListener → NotificationService.report (REPORT_COMPLETED·REPORT_FAILED, 같은 트랜잭션)
   end
 ```
 
@@ -595,21 +595,20 @@ sequenceDiagram
   participant C2 as core (SSE 연결 레플리카)
   participant W as Web
 
-  W->>C2: GET /notifications/stream (SSE 연결 유지)
-  C2->>R: SUBSCRIBE notifications
-  C1->>CDB: notification INSERT QUEUED (UK user_id·type·source_event_id, 중복 시 무시)
-  alt 새로 생성됨
-    C1->>CDB: QUEUED → RUNNING
-    C1->>R: PUBLISH {userId, notificationId}
-    alt 발행 성공
-      C1->>CDB: RUNNING → COMPLETED
-      R-->>C2: 메시지
-      C2-->>W: event notification (제목·링크만, 원문·결제 정보 없음)
-    else Redis 오류
-      C1->>CDB: RUNNING → FAILED (failure_reason, 관리자 재처리 대상)
-    end
+  W->>C2: GET /notifications/stream (SSE, 5분)
+  C2->>R: SUBSCRIBE core:notifications:v1
+  C2-->>W: event ready {reconcile: /api/v1/notifications}
+  C1->>CDB: notification INSERT QUEUED (UK user_id·type·source_event_id, 중복·수신 거부 시 생성 안 함)
+  Note over C1,CDB: 리포트 전이 트랜잭션 커밋
+  C1->>R: PUBLISH (AFTER_COMMIT)
+  alt 발행 성공
+    C1->>CDB: QUEUED → COMPLETED (별도 트랜잭션)
+    R-->>C2: 메시지
+    C2-->>W: event notification (제목·링크만, 원문·결제 정보 없음)
+  else Redis 오류
+    C1->>CDB: QUEUED → FAILED (REDIS_PUBLISH_FAILED)
   end
-  Note over W,C2: 재연결 시 GET /notifications?unreadOnly=true 로 누락분 조회
+  Note over W,C2: ready 수신(재연결 포함) 후 GET /notifications 첫 페이지부터 재조회해 id로 병합
 ```
 
 ### 6.3 조회·다운로드
