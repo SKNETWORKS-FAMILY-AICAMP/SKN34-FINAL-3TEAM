@@ -3,12 +3,18 @@
 <mapper namespace="com.sagomungchi.core.payment.repository.WithdrawalEligibilityMapper">
 
  <select id="subscriptions" resultType="int" flushCache="true" useCache="false">
- SELECT count(*) FROM subscription WHERE parent_user_id=#{user} AND
- (status='RENEWAL_FAILED' OR (status='ACTIVE' AND auto_renew) OR period_end &gt;= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date)
+ SELECT count(*) FROM subscription s WHERE parent_user_id=#{user} AND
+ (status='RENEWAL_FAILED' OR (status='ACTIVE' AND auto_renew) OR
+ (CURRENT_TIMESTAMP &lt; ((period_end::timestamp + interval '9 hours') AT TIME ZONE 'Asia/Seoul') AND NOT EXISTS
+ (SELECT 1 FROM payment_order o JOIN payment p ON p.order_id=o.id WHERE o.subscription_id=s.id AND p.status='REFUNDED')))
  </select>
  <select id="refunds" resultType="int" flushCache="true" useCache="false">
  SELECT count(*) FROM refund_request r JOIN payment p ON p.id=r.payment_id JOIN payment_order o ON o.id=p.order_id
  WHERE o.parent_user_id=#{user} AND r.status IN ('REQUESTED','APPROVED','FAILED')
+ </select>
+ <select id="pendingPayments" resultType="int" flushCache="true" useCache="false">
+ SELECT count(*) FROM payment p JOIN payment_order o ON o.id=p.order_id WHERE o.parent_user_id=#{user}
+ AND (p.status='CONFIRMING' OR p.entitlement_status='RECOVERY_REQUIRED')
  </select>
 
 </mapper>

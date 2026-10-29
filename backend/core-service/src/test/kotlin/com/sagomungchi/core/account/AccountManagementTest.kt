@@ -243,7 +243,7 @@ class AccountManagementTest : PostgresRepositoryTest() {
  }
  @Test fun `ongoing or unexpired canceled subscriptions and unresolved refunds block withdrawal`() {
   val p=parent();val c=child(p.identity.account.id);val product=product();val subscription=UUID.randomUUID()
-  jdbc.update("INSERT INTO subscription(id,parent_user_id,student_id,product_id,status,period_start,period_end,auto_renew,created_at,updated_at) VALUES(?,?,?,?,'ACTIVE',CURRENT_DATE,CURRENT_DATE+10,true,now(),now())",subscription,p.identity.account.id,c,product)
+  jdbc.update("INSERT INTO subscription(id,parent_user_id,student_id,product_id,status,period_start,period_end,auto_renew,created_at,updated_at,revision) VALUES(?,?,?,?,'ACTIVE',CURRENT_DATE,CURRENT_DATE+10,true,now(),now(),0)",subscription,p.identity.account.id,c,product)
   val token=grant(p.identity,ReauthPurpose.WITHDRAWAL)
   listOf("ACTIVE","RENEWAL_FAILED","CANCELED").forEach { status ->
    jdbc.update("UPDATE subscription SET status=? WHERE id=?",status,subscription)

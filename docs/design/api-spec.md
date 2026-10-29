@@ -518,6 +518,19 @@ data: {}
 - 리포트 상세의 `changes[].followup`은 문자열 또는 null이다. 학습 기록 API 4.1.1에서 되묻기 없이 제출한 보완 답변도 비교하므로, 질문이 없는 경우 null을 그대로 반환하고 최초/최종 답변 및 계산 수치는 유지한다. 저장된 결과를 임의 질문이나 빈 기록으로 대체하지 않는다.
 
 ### 3.5 결제 승인 — `POST /payments/confirm`
+
+learning 최소 연동(#48): `GET /internal/payment-usage/students/{studentId}?since=<date-time>`는 SYSTEM+정확한 학생 scope에서 `{studentId,since,used}`를 반환한다. DONE 피드백의 completed_at 또는 진행 중 피드백을 확인하며 원문을 반환하지 않는다. learning 공개 피드백 경로는 실행 전에 core `POST /internal/payment-usage/reservations {studentId,sourceId}`를 호출하고 DONE 저장 후 `POST /internal/payment-usage/completions {studentId,reservationId,used:true}`를 호출한다. 두 core 경로는 내부 토큰과 STUDENT+본인 scope가 필요하다. 예약 응답은 `{reservationId:uuid|null,premium:boolean}`이며 미완료 예약은 환불 증빙 불명확으로 남긴다. 새 외부 서비스나 dependency 없이 기존 내부 HTTP를 사용한다.
+
+#48 세부 DTO·복구·내부 권한 계약은 core OpenAPI와 [결제 구현 보고서](../report/issue-48-payments.md)를 따른다. 무료 상품은 명시적 PAYMENT_FREE_PRODUCT_ID로 선택하고, 승인 응답·웹훅은 PG 주문/금액/MID/상태를 대조한다. 환불 승인과 조회 권한은 각각 PAYMENT_REFUND/PAYMENT_VIEW이며 `/admin/refund-requests` GET도 PAYMENT_VIEW다. 모든 결제 쓰기는 parent 계정 잠금에 참여하되 외부 PG/learning 호출은 트랜잭션 밖이다. 불명확한 승인·취소를 실패로 바꾸지 않고 조회 복구한다. 최초 결제 후 빌링키가 등록되기 전에는 autoRenew=false, nextBillingDate=null이다.
+
+대조 조회는 from/to(KST 날짜)를 모두 요구한다. 로컬 주문 상태 조회와 두 테스트 상점의 PG 거래 조회 페이지를 대조해 MISSING_LOCAL·MISSING_PG·DUPLICATE·MISMATCH·UNKNOWN·MATCH·NO_PG_ATTEMPT를 구분한다. PG 거래 목록이 불명확하면 빈 목록으로 대체하지 않고 503이다. 토스 거래 조회는 공식 최소 60초 timeout을 사용하며 결과는 page/size로 반환한다. paymentKey·transactionKey·customerKey는 응답에 포함하지 않는다.
+
+결제 조회의 `refundRequests`는 본인 거래의 환불 상태 이력이며 취소 멱등키는 노출하지 않는다. GET 단건 조회는 승인된 환불의 불명확 PG 결과도 조회 복구한다. 빌링키 등록·변경은 ACTIVE와 유예 중 RENEWAL_FAILED에서 허용하며 유예/재청구 횟수를 초기화하지 않는다. 늦은 빌링 발급 결과는 subscription.revision 변경 시 거부한다. 같은 HTTP 멱등키로 받은 4xx 결과는 24시간 동일하게 반환하며 새 동의/등록 의도에는 새 키를 사용한다.
+
+2026-10-28 #48 사용자 확정: 과거 리포트도 현재 상품 권한을 적용한다. 무료 전환 후 상세의 narrative/eveningQuestion은 null이며 수치는 유지한다. 다운로드는 상세 메타데이터가 식별한 동일 불변 revision reportId의 파일만 요청한다. 현재 서술 권한이 없고 기존 파일에 유료 서술이 포함되면 403 REPORT_PREMIUM_REQUIRED이며 수치 전용 파일 생성 전까지 제공하지 않는다. 수치 전용 파일은 무료에서도 제공한다. PG/HTTP 호출 이후 파일 URL 반환 직전에 parent 잠금 안에서 현재 권한·프리미엄 사용 기록을 함께 확정하여 환불과 직렬화한다.
+
+#45 복구 경계: 필수 동의 철회 후에도 본인 결제·구독 GET, 본인 환불 요청 POST, 자동 갱신 해지 DELETE만 허용한다. 거래 소유권·활성 계정·환불 증빙 검사는 유지한다. 신규 주문·승인·빌링 등록·해지 철회는 현재 동의와 자녀 연결을 요구한다. 자녀 연결 해제 후에도 본인 구독의 청구 중단은 가능하다. 이미 갱신 승인이 진행 중이면 그 결과를 복구하되 autoRenew=false는 보존하며, 미청구 만료 구독은 즉시 종료한다.
+
 ```jsonc
 // 요청 (결제위젯 successUrl 쿼리 값)
 { "paymentKey": "tgen_2026...", "orderId": "ord-88", "amount": 14900 }

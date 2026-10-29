@@ -61,5 +61,12 @@ class NotificationService(private val repository: NotificationRepository, privat
             "/parent/support?${if (inquiry) "inquiryId" else "reportId"}=$sourceEventId", null, OffsetDateTime.now())
         if (repository.insert(value)) events.publishEvent(NotificationStored(value.id, userId))
     }
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun payment(userId: UUID, childId: UUID, sourceEventId: UUID, subscription: Boolean, title: String) {
+        val value = Notification(UUID.randomUUID(),userId,childId,
+            if(subscription) NotificationType.SUBSCRIPTION_CHANGED else NotificationType.PAYMENT_CHANGED,
+            sourceEventId,title,"/parent/settings",null,OffsetDateTime.now())
+        if(repository.insert(value)) events.publishEvent(NotificationStored(value.id,userId))
+    }
     fun find(userId: UUID, id: UUID) = repository.find(userId, id)
 }
