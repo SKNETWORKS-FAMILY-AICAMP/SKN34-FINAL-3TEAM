@@ -4,9 +4,12 @@ import asyncio
 import contextlib
 import logging
 import signal
+from contextlib import AsyncExitStack
 
+from app.clients.ai_client import AiClient
 from app.clients.base import internal_client
 from app.clients.core_client import CoreClient
+from app.clients.learning_client import LearningClient
 from app.clients.storage import ObjectStorage
 from app.concurrency import run_blocking
 from app.config import get_settings
@@ -16,8 +19,8 @@ from app.deletion.service import DeletionService
 from app.generation.codec import ReportV1Codec
 from app.generation.consumer import GENERATE_QUEUE, GenerationConsumer
 from app.generation.locking import JobLocks
+from app.generation.pipeline import DisplayNameProvider, build_pipeline
 from app.generation.service import GenerationService
-from app.generation.unconfigured import UnconfiguredGenerator
 from app.messaging.connection import AmqpConnection
 from app.messaging.consumer import EventConsumer
 from app.messaging.publisher import EventPublisher
@@ -75,7 +78,9 @@ async def serve(amqp, consumer, handlers, relay, stop):
                 await subscription.close()
 
 
-async def run(generator=None) -> None:
+async def run(generator=None, *, display_names: DisplayNameProvider | None = None) -> None:
+    if generator is not None and display_names is not None:
+        raise ValueError("Supply either a generator or a display name provider")
     settings = get_settings()
     amqp = AmqpConnection(settings.rabbitmq_url)
     engine = create_db_engine()
@@ -89,7 +94,6 @@ async def run(generator=None) -> None:
         return storage_instances[0]
 
     codec = ReportV1Codec()
-    service = GenerationService(factory, locks, generator or UnconfiguredGenerator(), codec)
     publisher = EventPublisher(amqp)
     amqp.start()
     stop = asyncio.Event()
@@ -98,16 +102,28 @@ async def run(generator=None) -> None:
         with contextlib.suppress(NotImplementedError):  # Windows 로컬 실행
             loop.add_signal_handler(sig, stop.set)
     try:
-        async with internal_client(settings.core_url) as core_http:
+        async with AsyncExitStack() as clients:
+            core_http = await clients.enter_async_context(internal_client(settings.core_url))
+            core = CoreClient(core_http)
+            if generator is None:
+                learning_http = await clients.enter_async_context(
+                    internal_client(settings.learning_url)
+                )
+                ai_http = await clients.enter_async_context(internal_client(settings.ai_url))
+                generator = build_pipeline(
+                    display_names if display_names is not None else core,
+                    LearningClient(learning_http),
+                    AiClient(ai_http),
+                    storage(),
+                )
+            service = GenerationService(factory, locks, generator, codec)
             await serve(
                 amqp,
                 EventConsumer(amqp, settings.consumer_max_retries, settings.consumer_prefetch),
                 [
                     (
                         DELETION_QUEUE,
-                        StudentDeletedConsumer(
-                            DeletionService(factory, locks, storage, CoreClient(core_http))
-                        ),
+                        StudentDeletedConsumer(DeletionService(factory, locks, storage, core)),
                     ),
                     (GENERATE_QUEUE, GenerationConsumer(service, codec)),
                 ],

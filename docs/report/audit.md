@@ -164,3 +164,7 @@ PR `feature/develop-verification`에서 단계별 1커밋으로 처리.
 | #95 | `SPEECH` 호출 종류 잔존 | 해결: 이벤트 스키마·ai·core enum·OpenAPI에서 제거(`callType=SPEECH`는 400), DB CHECK는 core V14(#99) |
 | #96 | P12 "확정 전 임시값" 주석 | 해결: 서비스 공통 내부 호출 기본값 30초는 P12 목록 밖이라 값 유지, 주석만 정리 |
 | #97 | 웹 `/auth/login`·`/auth/signup`·`/me/reauth {password}` 잔존 호출 | 미해결(1.2 B12) |
+
+### #56 후속 반영 (2026-10-29)
+
+B5의 기본 worker 미연결·표시 별명 누락은 #56에서 `CoreClient.lookup`과 `NamedGenerator`를 기본 생성 파이프라인에 연결해 수정했다. 실제 AI 서술 API(C9)는 별도 후속이며 #56 검증은 이슈가 허용한 AI 대역을 사용한다. [검증 범위와 결과](report-worker-integration.md)를 참고한다.
