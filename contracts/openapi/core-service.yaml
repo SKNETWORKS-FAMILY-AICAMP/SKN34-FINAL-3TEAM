@@ -20,6 +20,623 @@ tags:
 security:
 - BearerAuth: []
 paths:
+  /admin/overview:
+    get:
+      operationId: adminOperationsOverview
+      tags:
+      - Admin
+      description: 'ADMIN 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      parameters:
+      - name: from
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      - name: to
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationOverview'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      summary: adminOperationsOverview (ADMIN)
+  /admin/jobs:
+    get:
+      operationId: adminOperationsJobs
+      tags:
+      - Admin
+      description: 'SERVICE_OPS 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      parameters:
+      - name: from
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      - name: to
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          default: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: type
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - REPORT
+          - NOTIFICATION
+          - CONVERSATION
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - QUEUED
+          - RUNNING
+          - COMPLETED
+          - FAILED
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationJobPage'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      summary: adminOperationsJobs (SERVICE_OPS)
+  /admin/jobs/{jobId}:
+    get:
+      operationId: adminOperationsJob
+      tags:
+      - Admin
+      description: 'SERVICE_OPS 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationJob'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      summary: adminOperationsJob (SERVICE_OPS)
+  /admin/jobs/{jobId}/retry:
+    post:
+      operationId: adminOperationsRetry
+      tags:
+      - Admin
+      description: 'SERVICE_OPS 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationJob'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      summary: adminOperationsRetry (SERVICE_OPS)
+  /admin/queues:
+    get:
+      operationId: adminOperationsQueues
+      tags:
+      - Admin
+      description: 'SERVICE_OPS 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      parameters: []
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationQueues'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      summary: adminOperationsQueues (SERVICE_OPS)
+  /admin/audit-logs:
+    get:
+      operationId: adminOperationsAudits
+      tags:
+      - Admin
+      description: 'ADMIN 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      parameters:
+      - name: from
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      - name: to
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          default: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: targetType
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^[A-Z][A-Z0-9_]{0,79}$
+      - name: targetId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationAuditPage'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      summary: adminOperationsAudits (ADMIN)
+  /admin/missions:
+    get:
+      operationId: adminMissionsList
+      tags:
+      - Admin
+      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          default: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - DRAFT
+          - REVIEW_REQUIRED
+          - PUBLISHED
+          - UNPUBLISHED
+      - name: grade
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 3
+          maximum: 6
+      - name: thinkingType
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - ANALYZE
+          - EVALUATE
+          - CREATE
+          - SOLVE
+          - REFLECT
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMissionDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      summary: adminMissionsList (CONTENT)
+    post:
+      operationId: adminMissionsCreate
+      tags:
+      - Admin
+      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      parameters: []
+      responses:
+        '201':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMissionDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMissionDocument'
+      summary: adminMissionsCreate (CONTENT)
+  /admin/missions/{missionId}:
+    get:
+      operationId: adminMissionsDetail
+      tags:
+      - Admin
+      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      parameters:
+      - name: missionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMissionDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      summary: adminMissionsDetail (CONTENT)
+    patch:
+      operationId: adminMissionsUpdate
+      tags:
+      - Admin
+      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      parameters:
+      - name: missionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMissionDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMissionDocument'
+      summary: adminMissionsUpdate (CONTENT)
+  /admin/missions/{missionId}/rubric:
+    put:
+      operationId: adminMissionsRubric
+      tags:
+      - Admin
+      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      parameters:
+      - name: missionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMissionDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMissionDocument'
+      summary: adminMissionsRubric (CONTENT)
+  /admin/missions/{missionId}/preview:
+    get:
+      operationId: adminMissionsPreview
+      tags:
+      - Admin
+      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      parameters:
+      - name: missionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMissionDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      summary: adminMissionsPreview (CONTENT)
+  /admin/missions/{missionId}/review-request:
+    post:
+      operationId: adminMissionsRequestReview
+      tags:
+      - Admin
+      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      parameters:
+      - name: missionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMissionDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMissionDocument'
+      summary: adminMissionsRequestReview (CONTENT)
+  /admin/missions/{missionId}/review:
+    post:
+      operationId: adminMissionsReview
+      tags:
+      - Admin
+      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      parameters:
+      - name: missionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMissionDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMissionDocument'
+      summary: adminMissionsReview (CONTENT)
+  /admin/missions/{missionId}/publish:
+    post:
+      operationId: adminMissionsPublish
+      tags:
+      - Admin
+      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      parameters:
+      - name: missionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMissionDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMissionDocument'
+      summary: adminMissionsPublish (CONTENT)
+  /admin/missions/{missionId}/unpublish:
+    post:
+      operationId: adminMissionsUnpublish
+      tags:
+      - Admin
+      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      parameters:
+      - name: missionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMissionDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMissionDocument'
+      summary: adminMissionsUnpublish (CONTENT)
   /products:
     get:
       operationId: listPaymentProducts
@@ -4555,6 +5172,312 @@ components:
         type: string
         const: XMLHttpRequest
   schemas:
+    OperationPeriod:
+      type: object
+      additionalProperties: false
+      required:
+      - from
+      - to
+      properties:
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+    OperationExecution:
+      type: object
+      additionalProperties: false
+      required:
+      - executionId
+      - attemptNo
+      - status
+      - errorCode
+      - triggeredBy
+      - startedAt
+      - finishedAt
+      properties:
+        executionId:
+          type: string
+          format: uuid
+        attemptNo:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum:
+          - RUNNING
+          - COMPLETED
+          - FAILED
+        errorCode:
+          type:
+          - string
+          - 'null'
+        triggeredBy:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    OperationJob:
+      type: object
+      additionalProperties: false
+      required:
+      - jobId
+      - type
+      - status
+      - retryCount
+      - failureReason
+      - createdAt
+      - executions
+      - retryable
+      - retryUnavailableReason
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+          - REPORT
+          - NOTIFICATION
+          - CONVERSATION
+        status:
+          type: string
+          enum:
+          - QUEUED
+          - RUNNING
+          - COMPLETED
+          - FAILED
+        retryCount:
+          type: integer
+          format: int64
+          minimum: 0
+        failureReason:
+          type:
+          - string
+          - 'null'
+        createdAt:
+          type: string
+          format: date-time
+        executions:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationExecution'
+        retryable:
+          type: boolean
+        retryUnavailableReason:
+          type:
+          - string
+          - 'null'
+    OperationAudit:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - actorUserId
+      - action
+      - targetType
+      - targetId
+      - result
+      - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        actorUserId:
+          type: string
+          format: uuid
+        action:
+          type: string
+        targetType:
+          type: string
+        targetId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        result:
+          type: string
+          enum:
+          - SUCCESS
+          - FAILURE
+        createdAt:
+          type: string
+          format: date-time
+    OperationJobPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - page
+      - size
+      - totalElements
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationJob'
+        page:
+          type: integer
+          minimum: 0
+          maximum: 1000
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        totalElements:
+          type: integer
+          format: int64
+          minimum: 0
+    OperationAuditPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - page
+      - size
+      - totalElements
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationAudit'
+        page:
+          type: integer
+          minimum: 0
+          maximum: 1000
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        totalElements:
+          type: integer
+          format: int64
+          minimum: 0
+    OperationOverview:
+      type: object
+      additionalProperties: false
+      required:
+      - period
+      - inclusionRule
+      - learning
+      - jobCounts
+      properties:
+        period:
+          $ref: '#/components/schemas/OperationPeriod'
+        inclusionRule:
+          type: string
+        learning:
+          type: object
+          additionalProperties: false
+          required:
+          - attempts
+          - completedAttempts
+          - students
+          - inclusionRule
+          properties:
+            attempts:
+              type: integer
+              format: int64
+              minimum: 0
+            completedAttempts:
+              type: integer
+              format: int64
+              minimum: 0
+            students:
+              type: integer
+              format: int64
+              minimum: 0
+            inclusionRule:
+              type: string
+        jobCounts:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - type
+            - status
+            - count
+            properties:
+              type:
+                type: string
+                enum:
+                - REPORT
+                - NOTIFICATION
+                - CONVERSATION
+              status:
+                type: string
+                enum:
+                - QUEUED
+                - RUNNING
+                - COMPLETED
+                - FAILED
+              count:
+                type: integer
+                format: int64
+                minimum: 0
+    OperationQueues:
+      type: object
+      additionalProperties: false
+      required:
+      - vhost
+      - items
+      properties:
+        vhost:
+          const: /
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - name
+            - kind
+            - messages
+            - messagesReady
+            - messagesUnacknowledged
+            - consumers
+            - state
+            properties:
+              name:
+                type: string
+              kind:
+                type: string
+                enum:
+                - WORK
+                - RETRY
+                - DLQ
+              messages:
+                type: integer
+                format: int64
+                minimum: 0
+              messagesReady:
+                type: integer
+                format: int64
+                minimum: 0
+              messagesUnacknowledged:
+                type: integer
+                format: int64
+                minimum: 0
+              consumers:
+                type: integer
+                format: int64
+                minimum: 0
+              state:
+                type: string
+    AdminMissionDocument:
+      type: object
+      additionalProperties: true
+      description: learning 소유 관리자 콘텐츠 JSON object. 공급자 구현 전 임시 중계 계약이며 core에서 버전/게시 정책을 구현하지 않는다.
     PaymentProduct:
       type: object
       required:
