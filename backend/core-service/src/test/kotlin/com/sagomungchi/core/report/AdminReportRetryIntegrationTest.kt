@@ -51,6 +51,8 @@ class AdminReportRetryIntegrationTest : PostgresRepositoryTest() {
     @Autowired lateinit var reports: ReportAdminRetryService
     @Autowired lateinit var operations: OperationsService
     @Autowired lateinit var lifecycle: ReportLifecycleService
+    @Autowired lateinit var jobRepository: com.sagomungchi.core.report.repository.ReportJobRepository
+    @Autowired lateinit var children: com.sagomungchi.core.guardianship.service.ChildManagementService
     @Autowired lateinit var tx: TransactionTemplate
     @MockitoSpyBean lateinit var audits: OperationsRepository
     @MockitoBean lateinit var notificationPublisher: NotificationRedisPublisher
@@ -270,6 +272,57 @@ class AdminReportRetryIntegrationTest : PostgresRepositoryTest() {
         rejected(other.original,child,f.actor.account.id,UUID.randomUUID(),"23505")
         val saved=reports.successor(f.original)!!
         rejected(other.original,f.original,saved.requestedBy,saved.idempotencyKey,"23505")
+    }
+
+    @Test fun `recovery without reportId audits failure once without notifying parents`() {
+        val f=fixture();val id=accepted(f);val job=jobRepository.find(id)!!
+        val outcome=ReportReconciliation(id,f.student,WEEK,"FAILED",null,"REPORT_NOT_CREATED")
+        lifecycle.reconcile(job,outcome);lifecycle.reconcile(job,outcome)
+        lifecycle.apply(event(id,f.student,UUID.randomUUID(),ReportJobStatus.COMPLETED))
+        assertEquals("FAILED",status(id));assertEquals("REPORT_NOT_CREATED",operations.job(id).failureReason)
+        assertEquals(1,count("SELECT count(*) FROM job_execution WHERE job_id=?",id))
+        assertEquals(1,count("SELECT count(*) FROM audit_log WHERE target_id=? AND action='JOB_RETRY_FAILED' AND actor_user_id=?",f.original,f.actor.account.id))
+        assertEquals(0,count("SELECT count(*) FROM notification WHERE child_id=?",f.student))
+        assertEquals("FAILED",status(f.original))
+    }
+    @Test fun `successful recovery records one terminal retry audit and existing notification`() {
+        val f=fixture();val id=accepted(f);val job=jobRepository.find(id)!!;val report=UUID.randomUUID()
+        val outcome=ReportReconciliation(id,f.student,WEEK,"COMPLETED",report,null)
+        lifecycle.reconcile(job,outcome);lifecycle.reconcile(job,outcome)
+        assertEquals("COMPLETED",status(id))
+        assertEquals(1,count("SELECT count(*) FROM audit_log WHERE target_id=? AND action='JOB_RETRY_COMPLETED'",f.original))
+        assertEquals(1,count("SELECT count(*) FROM notification WHERE child_id=?",f.student))
+    }
+    @Test fun `deletion termination audits atomically while preserving notification suppression`() {
+        val f=fixture();val id=accepted(f)
+        val parent=jdbc.queryForObject("SELECT parent_user_id FROM guardianship WHERE student_id=?",UUID::class.java,f.student)!!
+        val fail=AtomicBoolean(true)
+        doAnswer { invocation ->
+            val retry=invocation.getArgument<ReportJobRetry>(0)
+            if(retry.originalJobId==f.original && fail.compareAndSet(true,false)) throw IllegalStateException("synthetic deletion audit failure")
+            invocation.callRealMethod()
+        }.`when`(audits).reportRetryAudit(retryMatch(),eq("JOB_RETRY_FAILED") ?: "",anyString(),nullable(UUID::class.java))
+        fun delete() { tx.executeWithoutResult {
+            jdbc.queryForObject("SELECT id FROM user_account WHERE id=? FOR UPDATE",UUID::class.java,parent)
+            children.deleteForWithdrawal(parent)
+        } }
+        assertFailsWith<IllegalStateException> { delete() }
+        assertEquals("QUEUED",status(id));assertEquals("ACTIVE",jdbc.queryForObject("SELECT status FROM student WHERE id=?",String::class.java,f.student))
+        assertEquals(0,count("SELECT count(*) FROM deletion_request WHERE student_id=?",f.student))
+        assertEquals(0,count("SELECT count(*) FROM job_execution WHERE job_id=?",id))
+        delete();delete()
+        assertEquals("FAILED",status(id));assertEquals("STUDENT_DELETED",operations.job(id).failureReason)
+        assertEquals(1,count("SELECT count(*) FROM audit_log WHERE target_id=? AND action='JOB_RETRY_FAILED'",f.original))
+        assertEquals(0,count("SELECT count(*) FROM notification WHERE child_id=?",f.student))
+    }
+    @Test fun `late event for inactive student terminates retry with audit but no parent notification`() {
+        val f=fixture();val id=accepted(f)
+        jdbc.update("UPDATE student SET status='DELETION_REQUESTED' WHERE id=?",f.student)
+        val started=event(id,f.student,UUID.randomUUID(),ReportJobStatus.RUNNING)
+        lifecycle.apply(started);lifecycle.apply(started)
+        assertEquals("FAILED",status(id));assertEquals("STUDENT_DELETED",operations.job(id).failureReason)
+        assertEquals(1,count("SELECT count(*) FROM audit_log WHERE target_id=? AND action='JOB_RETRY_FAILED'",f.original))
+        assertEquals(0,count("SELECT count(*) FROM notification WHERE child_id=?",f.student))
     }
     private fun await(condition: () -> Boolean) {
         val end=System.nanoTime()+Duration.ofSeconds(10).toNanos()

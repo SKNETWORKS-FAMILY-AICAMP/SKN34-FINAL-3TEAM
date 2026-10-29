@@ -81,3 +81,18 @@ CI 보완 로컬 검증: 전체 Python 계약 검사 69/69 통과. 별도 복사
 프론트 전달: REPORT 재처리 응답은 202 `{originalJobId,jobId,type:REPORT,status:QUEUED,acceptedAt}`이며 Location은 새 작업 조회 URL이다. ‘접수’로 표시하고 새 jobId의 GET 결과를 조회해 진행/완료/실패를 표시한다. 원작업 상세의 retryJobId, 새 작업의 retryOfJobId를 이동 링크로 사용한다. 이미 연결된 원작업은 REPORT_ALREADY_RETRIED로 다시 접수하지 않고 재실패한 새 작업에서 요청한다. 기존 NOTIFICATION의 200 결과 계약은 유지한다.
 
 이번 작업은 #47의 REPORT core 범위이며 #47 전체 해결/Closes #47을 주장하지 않는다. PR base는 develop, head는 feature/core-admin-report-retry이며 PR은 사용자가 생성한다.
+
+## #132 복구·삭제 종료 감사 접합 (2026-10-30)
+
+#67/#162는 별도 채팅으로 인계했고 해당 worktree·검증 환경을 조작하지 않는다. 이 브랜치에서 origin/develop 640e0a2를 일반 merge로 준비했다. 학생 잠금 3파일과 설계 3파일의 충돌은 #132의 lockStatus/lockActive 및 #47의 삭제 이력 확인과 관계 설계를 모두 보존해 해결했다.
+
+사용자 승인으로 ReportJobOutcomeRecorded 내부 이벤트를 추가한다. 기존 정상 종료 및 #132 복구·삭제의 조건부 전이가 실제 반영된 때에만 발행하며, reportId 없이 실패한 경우도 포함한다. #47 감사는 이 이벤트를 BEFORE_COMMIT으로 소비한다. 기존 ReportJobFinished의 부모 알림 조건, 상태 전이·잠금 순서·외부 report 계약은 유지한다. 중복·지연 결과는 기존 조건부 전이로 감사를 추가하지 않는다. 삭제 결과 감사가 실패하면 학생 차단·삭제 요청·작업 종료·실행 이력도 함께 롤백한다.
+
+
+### REPORT 종료 감사 최종 검증 (develop 640e0a2 병합)
+
+- 전용 Temurin 21 Linux 환경의 `./gradlew test bootJar`: 349개, 실패·오류·생략 0, BUILD SUCCESSFUL. 정상 종료 외 reportId 없는 복구, 중복·늦은 이벤트, 학생 삭제, 감사 실패 시 전체 롤백과 부모 알림 억제를 검증했다.
+- `python -m unittest discover -s scripts/tests`: 84개 통과.
+- 새 전용 PostgreSQL의 전체 migration/재실행/report downgrade·upgrade: core 43개 표·395열, learning 19개 표·160열, report 8개 표·56열; 63개 거부 사례·74개 CHECK·23개 ERD 인덱스 통과. 기존 V17은 그대로이며 추가 migration은 없다.
+- 이번 추가 검증은 실제 PostgreSQL을 사용하는 로컬 테스트다. report-worker 실제 생성→PDF와 원격 CI·배포를 재검증했다고 주장하지 않는다.
+- #67·#162와의 최종 통합은 별도 담당 채팅에서 수행한다. 기능 브랜치를 보존하고 develop 개별 병합·PR 생성은 하지 않는다.

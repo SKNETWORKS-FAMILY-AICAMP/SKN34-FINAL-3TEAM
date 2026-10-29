@@ -84,6 +84,17 @@ class GenerationService:
         with transaction(self._factory) as session:
             if not generation_allowed(session, command.student_id, command.requested_at):
                 return None
+            if (
+                self._repository.guard(
+                    session,
+                    command.job_id,
+                    command.student_id,
+                    command.period_from,
+                    command.period_to,
+                )
+                is not None
+            ):
+                return None
             report, created = self._repository.get_or_create(session, command)
             if created:
                 self._record_event(session, ReportEvent("report.started", report))

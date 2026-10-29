@@ -19,7 +19,9 @@ class SupportContractTest(unittest.TestCase):
   actual=yaml.safe_load((ROOT/'contracts/openapi/learning-service.yaml').read_text(encoding='utf-8'))
   required=yaml.safe_load((ROOT/'contracts/openapi/support-learning-required.yaml').read_text(encoding='utf-8'))
   self.assertEqual(len(required['paths']),3)
-  self.assertNotIn('/support/targets/{targetType}/{targetId}',actual['paths'])
+  # #146 learning 구현: 조회 두 경로는 learning 계약에 있고, core 소비 계약(required)은 그대로 3개
+  for path in ('/support/targets/{targetType}/{targetId}','/support/attempts/{attemptId}'):
+   self.assertIn(path,actual['paths'])
 
  def test_correction_security_and_replay_contract(self):
   api=yaml.safe_load((ROOT/'contracts/openapi/support-learning-required.yaml').read_text(encoding='utf-8'))

@@ -1092,25 +1092,29 @@ classDiagram
   }
   class AdminMissionController {
     <<controller>>
-    +list(status, grade, thinkingType) Page
-    +create(request) Mission
-    +update(missionId, request) Mission
-    +putRubric(missionId, request) RubricVersion
-    +preview(missionId) MissionView
-    +requestReview(missionId)
-    +review(missionId, request) MissionReview
-    +publish(missionId)
-    +unpublish(missionId)
+    +list(status, grade, thinkingType, page, size) AdminMissionPage
+    +detail(missionId) AdminMission
+    +create(request) AdminMission
+    +update(missionId, request) AdminMission
+    +putRubric(missionId, request) AdminMission
+    +preview(missionId) MissionPreview
+    +requestReview(missionId, request) AdminMission
+    +review(missionId, request) AdminMission
+    +publish(missionId) AdminMission
+    +unpublish(missionId) AdminMission
   }
   class MissionService {
     <<service>>
     +listForStudent(studentId, grade, demo) List
     +get(missionId, grade, demo) MissionView
+    +listForAdmin(filter) AdminMissionPage
+    +getForAdmin(missionId) AdminMission
+    +preview(missionId) MissionPreview
     +create(command) Mission
     +update(missionId, command) MissionVersion
     +putRubric(missionId, command) RubricVersion
-    +requestReview(missionId)
-    +review(missionId, reviewerId, result, comment)
+    +requestReview(missionId, missionVersion, rubricVersion)
+    +review(missionId, reviewerId, missionVersion, rubricVersion, result, comment)
     +publish(missionId)
     +unpublish(missionId)
     +currentVersions(missionId) MissionSnapshot
@@ -1252,8 +1256,15 @@ classDiagram
 - `AttemptRepository`: `lockById`·`finish`·`complete`·`insertReflection`·`findReflection`·`saveSelfAssessments`·`findSelfAssessments` (돌아보기·자기 평가 Repository를 따로 두지 않음)
 - 되묻기 생성 조건: 시도 내 되묻기 2회 미만 + 고르기 `CORRECT` 아님 (P04). `finished_at` 이후 답변 제출은 `Attempt.requireAnswerable`에서 `ATTEMPT_CLOSED`. `requireOpen`은 `COMPLETED`만 막음(마무리 뒤 돌아보기 저장)
 - `AttemptDraft.content`: `{answer, memo}`, memo는 학생 본인 조회에만 포함 (P05)
-- 구현 상태 (#22~#26): 학생 조회 경로(`MissionService.listForStudent`·`get`·`currentVersions`·`getVersion`·`rubric`·`hintQuestions`), `AttemptService`의 start·get·saveDraft·openHint·finish·saveReflection·saveSelfAssessment·lockForAnswer·clearSubmittedDraft·timeline, `Attempt.finish`·`complete`·`requireFinished`, `FinishPolicy`, `AnswerService.submit` 구현됨. 기준표는 학생·판정 조회용 값 객체 `Rubric`(`elements`·`answerKey`·`forbiddenTerms`)을 `MissionRepository.findRubric`으로 읽음(별도 `RubricRepository` 없음). 관리자 미션·기준표 쓰기(`AdminMissionController`·`RubricVersion`)와 `deleteByStudent`는 미구현
-- `Mission.requirePublishable`: 현재 버전·기준표 요소 1개 이상(서술·논술) 또는 `answer_key`(고르기·수학) 검사, 누락 시 `MISSION_PUBLISH_INCOMPLETE` (FN-ADM-11)
+- 구현 상태 (#22~#26): 학생 조회 경로(`MissionService.listForStudent`·`get`·`currentVersions`·`getVersion`·`rubric`·`hintQuestions`), `AttemptService`의 start·get·saveDraft·openHint·finish·saveReflection·saveSelfAssessment·lockForAnswer·clearSubmittedDraft·timeline, `Attempt.finish`·`complete`·`requireFinished`, `FinishPolicy`, `AnswerService.submit` 구현됨. 기준표는 학생·판정 조회용 값 객체 `Rubric`(`elements`·`answerKey`·`forbiddenTerms`)을 `MissionRepository.findRubric`으로 읽음(관리자 기준표 버전 조회·추가는 `RubricRepository`, #145). `AttemptService.deleteByStudent`는 #128, 관리자 미션 API(`AdminMissionController`·`MissionService` 관리자 메서드·`Mission` 전이·`RubricRepository`)는 #145에서 구현
+- `Mission.requirePublishable(snapshot)` (FN-ADM-11, #145): 현재 미션·기준표 버전으로 검사하고 누락을 모두 모아 `422 MISSION_PUBLISH_INCOMPLETE` + `missingFields`(영문 코드, core 프록시가 영문 경로 모양만 통과시켜 프론트가 한글로 표시)
+  - `title`·`question`·`subject`·`achievementStandards`: 비었음 / `grade`: 3~6 밖·`gradeMin > gradeMax`·논술인데 5 미만 / `rubric`: 기준표 버전 없음
+  - `rubric.elements`: 요소 0개(**입력 방식 무관**, 고르기도 ai 되묻기가 요소를 요구, 구 #81), 풀이 단계인데 `FINAL_ANSWER` 외 요소 없음, 풀이 단계가 아닌데 `FINAL_ANSWER` 있음 / `rubric.elements.points`: 이름 비었음·배점 1 미만
+  - `choices`: 고르기·순서·분류인데 선택지 없음 / `categories`: 분류인데 그룹 없음
+  - `answerKey`: 서술·논술이 아닌데 없음 또는 입력 방식 모양(`{choiceIds}`·`{assignments}`·`{finalAnswer}`)·선택지·그룹과 맞지 않음 / `exampleAnswer`: 서술·논술인데 없음
+  - `review`: 현재 미션·기준표 버전의 최신 검토가 `APPROVED`가 아님
+- 관리자 API(#145): core가 `ADMIN` + `X-User-Id`(작성자·검토자 ID) + 빈 학생 범위로 넘김(CONTENT 검사는 core). 성공 응답은 모두 JSON 객체(core 프록시 요구): 목록 `{items, page, size, totalElements, counts}`, 나머지는 미션 전체 `AdminMission`(api-spec 3.10). `counts`는 페이지·`status`·`grade`·`thinkingType` 어느 필터와도 무관한 전체 상태별 건수
+- 버전: `update`·`putRubric`은 새 버전을 추가하고 `current_*`만 바꿈. 학생 목록·상세·`currentVersions`(시도 시작)는 공개 버전 `published_*`, `publish`가 `published_*` ← `current_*` (P07, ERD 4.1). 상태 전이는 state-diagram 3.1
 
 ### 4.2 판정·되묻기 (judgment)
 
@@ -1267,6 +1278,11 @@ classDiagram
   class CorrectionController {
     <<controller>>
     +correct(judgmentId, idempotencyKey, request) JudgmentCorrection
+  }
+  class SupportController {
+    <<controller>>
+    +target(targetType, targetId) SupportTarget
+    +original(attemptId) SupportOriginal
   }
   class FeedbackFacade {
     <<facade>>
@@ -1286,6 +1302,8 @@ classDiagram
     +result(answerId) FeedbackResult
     +results(attemptId) Map
     +correct(judgmentId, command, idempotencyKey) JudgmentCorrection
+    +supportTarget(targetType, targetId) SupportTarget
+    +supportOriginal(attemptId) SupportOriginal
   }
   class Judgment {
     <<entity>>
@@ -1331,6 +1349,7 @@ classDiagram
 
   FeedbackController --> FeedbackFacade
   CorrectionController --> JudgmentService
+  SupportController --> JudgmentService
   FeedbackFacade --> JudgmentService
   FeedbackFacade --> AttemptService : 타임라인
   FeedbackFacade --> MissionService : 기준표·정답 키
@@ -1359,7 +1378,11 @@ classDiagram
 - `judge_verified = false` 요소·미검증 학년 조합의 `HELD(UNVERIFIED_SCOPE)` 결정은 ai `JudgmentService` 담당(`JUDGE_REQUIRE_VERIFIED=true`일 때만, 기본 꺼짐). learning은 `judge_verified`·학년을 포함한 기준표를 `AiClient.judge`에 전달 (FN-JDG-04)
 - 정정은 `Judgment`를 바꾸지 않고 `JudgmentCorrection` 추가, `result()` 조회 시 최신 정정 반영 (FN-SUP-03)
   - `results()`(시도 상세·기록)도 같음. 바꾸는 것은 `judgment.result`뿐이고(정정이 있으면 `heldReason`은 null), 판정 요소·되묻기·`nextActions`는 원판정 그대로 (#80)
-  - `correct`: 판정 행을 잠그고(`FOR UPDATE`) 같은 키 → 처리 상태 `DONE` → 같은 신고(`reportId`) 순으로 확인한 뒤 저장. `JudgmentCorrection`은 정정 직전 결과(`previous`)·정정 결과·사유·신고·관리자·키·시각을 담고, 같은 키 재요청은 저장된 행으로 처음 응답을 다시 만듦 (api-spec 4.1, [이슈 #80 보고서](../report/learning.md))
+  - `correct`: 판정 행을 잠그고(`FOR UPDATE`, 판정 행만 잠근 뒤 대상·최신 정정 결과를 다시 읽음 #145) 같은 키 → 처리 상태 `DONE` → 같은 신고(`reportId`) 순으로 확인한 뒤 저장. `JudgmentCorrection`은 정정 직전 결과(`previous`)·정정 결과·사유·신고·관리자·키·시각을 담고, 같은 키 재요청은 저장된 행으로 처음 응답을 다시 만듦 (api-spec 4.1, [이슈 #80 보고서](../report/learning.md))
+- 신고 지원 조회 (#146, api-spec 4.1·5.7, core #46): `SupportController`는 정정과 같은 판정 내부 API 자리(아키텍처 learning `judgment/controller`)
+  - `supportTarget`: 판정·되묻기·시도 ID로 학생·시도(+판정 ID, 판정이면 지금 보이는 결과 = `correct`의 정정 직전 결과와 같은 규칙)를 찾음. 원문 없음. 학생 범위 검사는 컨트롤러가 받은 범위로(학생·보호자 신고, 관리자 정정 전 확인)
+  - `supportOriginal`: 관리자 원문. 답변 버전·원문·피드백 결과(`results()`와 같은 모양)만, 초안·메모·이름 없음. 학생 전용 `AttemptService.get`과 별도
+  - 피드백 결과의 `judgment`에 `judgmentId`(신고 대상 ID)
 
 ### 4.3 기록 조회·삭제 (record · deletion)
 
@@ -1531,7 +1554,7 @@ classDiagram
 | `QuoteVerifier` | `judgment/verifier.py` | 모듈 함수 `normalize`·`is_verbatim`·`visible_length`. 구절의 답변 원문 존재 확인(코드). LLM과 분리 (FN-JDG-03) |
 | `JudgmentService` | `judgment/service.py` | 사전 보류(`TOO_SHORT`·`UNVERIFIED_SCOPE`) → 추출 → 대조 → 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정 (업무 판단은 service, 아키텍처 2.1) → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`) → 응답. M2·M1 교차 확인(`ScoringClient`)은 미구현 |
 | `LeakGuard` | `followup/leak_guard.py` | 모듈 함수 `find_leaks()`. 정답 키·예시 답·금지어 포함 검사. 실패 시 1회 재생성(`LLM_RETRY`), 재실패 시 `question` 없이 `leakCheck.passed = false` 반환 → learning이 질문 은행 선택 (`BANK`, P16) |
-| `LlmClient` | `llm/base.py`, 제공자는 `llm/providers.py` | 제공자 교체 지점(Claude·OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`), LLM 호출 재시도는 이 클래스에서만 (아키텍처 1.3), 호출마다 사용량 콜백(`BackgroundUsageRecorder` → `UsagePublisher`, 발행 실패는 로그만). `stream`은 분석 에이전트와 함께 후속 |
+| `LlmClient` | `llm/base.py`, 제공자는 `llm/providers.py` | 제공자 교체 지점(Claude·OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`), LLM 호출 재시도는 이 클래스에서만 (아키텍처 1.3), 호출마다 사용량 콜백(`BackgroundUsageRecorder` → `UsagePublisher`, 발행 실패는 로그만). `stream`은 분석 대화 답변의 일반 텍스트 조각(첫 조각 전 실패만 재시도) |
 | `ActiveVersions` | `versions.py` | 미구현. 현재 `versions.py`는 `GET /internal/versions`로 코드 상수 프롬프트 버전만 제공. `model.version.activated` 수신 시 교체는 후속 |
 
 ### 5.2 분석 에이전트·리포트 서술 (analysis_agent · report_narrative)
@@ -1925,3 +1948,10 @@ classDiagram
 - core `conversation`(근거 원문 조회)·`admin`(미션 관리 프록시)의 learning 호출: core `learning/service`(#37·#38에서 추가)를 거칠지, 기능별 client를 둘지 구현 시 결정
 - learning `record/RecordRepository`가 여러 기능 테이블을 조회: 조회 전용 기능 한정 예외
 - 클래스 분할 단위(관리자 controller 등)는 구현 시 조정 가능, 레이어·의존 방향은 고정
+
+### 리포트 복구 호출 구조 (#132)
+
+- `ReportRecoveryScheduler` → `ReportRecoveryService`(후보 조회·오류 격리) → `ReportClient.reconcile`(SYSTEM/단일 scope, DTO 검증) → report generation router → `ReconciliationService` → `ReportRepository`/`JobLocks`.
+- 응답 반영은 별도 `ReportLifecycleService.reconcile` 트랜잭션. 이벤트 apply와 삭제 종료도 기존 lifecycle service에 둔다. HTTP 전후의 트랜잭션을 분리한다.
+- `ReportJobService` → `StudentAccessService.lockActive` → 학생 행 잠금, 이후 주 잠금/권한/이용권/Outbox. 관리자도 ACTIVE 검사를 우회하지 않는다.
+- `ChildManagementService.confirm` → `ReportLifecycleService.failForDeletion` (기존 삭제 트랜잭션 필수). 알림 이벤트의 non-null reportId 계약은 유지하고 ID 없는 종료는 실행 이력에만 남긴다.

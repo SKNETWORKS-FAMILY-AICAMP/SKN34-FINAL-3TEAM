@@ -510,6 +510,94 @@
           }
         }
       }
+    },
+    "/internal/report-jobs/{job_id}/reconcile": {
+      "post": {
+        "tags": [
+          "report-jobs"
+        ],
+        "summary": "Reconcile",
+        "operationId": "reconcile_internal_report_jobs__job_id__reconcile_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconcileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_FAILED",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED (내부 토큰 불일치)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN (학생 범위 밖)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "REPORT_JOB_IDENTITY_MISMATCH",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -916,6 +1004,102 @@
           "verified"
         ],
         "title": "Quote"
+      },
+      "ReconcileRequest": {
+        "properties": {
+          "studentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Studentid"
+          },
+          "periodFrom": {
+            "type": "string",
+            "format": "date",
+            "title": "Periodfrom"
+          },
+          "periodTo": {
+            "type": "string",
+            "format": "date",
+            "title": "Periodto"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "studentId",
+          "periodFrom",
+          "periodTo"
+        ],
+        "title": "ReconcileRequest"
+      },
+      "ReconcileResponse": {
+        "properties": {
+          "studentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Studentid"
+          },
+          "periodFrom": {
+            "type": "string",
+            "format": "date",
+            "title": "Periodfrom"
+          },
+          "periodTo": {
+            "type": "string",
+            "format": "date",
+            "title": "Periodto"
+          },
+          "jobId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Jobid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "BUSY",
+              "COMPLETED",
+              "FAILED"
+            ],
+            "title": "Status"
+          },
+          "reportId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reportid"
+          },
+          "failureReason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]{0,99}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failurereason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "studentId",
+          "periodFrom",
+          "periodTo",
+          "jobId",
+          "status",
+          "reportId",
+          "failureReason"
+        ],
+        "title": "ReconcileResponse"
       },
       "Reflection": {
         "properties": {

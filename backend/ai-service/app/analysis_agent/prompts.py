@@ -1,34 +1,23 @@
 """분석 대화 프롬프트와 LLM 출력 형식. 프롬프트를 바꾸면 PROMPT_VERSION을 올림.
 
-LLM 호출은 두 번: 질문 분류·범위 확인(classify), 계산 결과를 문장으로 옮기기(answer).
-학생 이름·ID는 넣지 않음 (NFR-SEC-03). 원문 출처는 S1, S2 같은 번호로만 가리킴.
+LLM 호출은 두 번: 질문 분류·범위 확인(classify), 계산 결과를 문장으로 옮기기(answer, 스트리밍).
+학생 이름·ID는 넣지 않음 (NFR-SEC-03). 시도·답변 ID도 넣지 않고 원문은 S1, S2 번호로만 보여 줌.
+answer는 일반 텍스트: 아이 글은 큰따옴표로 옮기고, 출처는 대조 단계가 따옴표 구간으로 찾음.
 """
 
 import json
-
-from pydantic import Field
 
 from app.analysis_agent.calculators import Computation
 from app.analysis_agent.models import AnalysisRequest, Intent, ScopeIssue
 from app.judgment.models import ApiModel
 
-PROMPT_VERSION = "analysis@1"
+PROMPT_VERSION = "analysis@2"
 HISTORY_TURNS = 6  # 맥락 파악에 쓰는 최근 이전 대화 수
 
 
 class Classification(ApiModel):
     intent: Intent
     scope_issue: ScopeIssue
-
-
-class Citation(ApiModel):
-    source_id: str = Field(description="원문 번호, 예: S1")
-    quote: str = Field(description="원문에서 글자 그대로 옮긴 짧은 구절")
-
-
-class AnswerDraft(ApiModel):
-    answer: str
-    citations: list[Citation]
 
 
 CLASSIFY_SYSTEM = """\
@@ -57,13 +46,14 @@ ANSWER_SYSTEM = """\
 
 1. 숫자는 [계산 결과]와 [기록 수]에 있는 값만, 아라비아 숫자로 쓴다.
    새로 계산하거나 어림하지 않는다. 비율이 null인 항목은 비율을 말하지 않고 개수만 말한다.
-2. 아이의 글을 옮길 때는 [원문]에 있는 글자 그대로 큰따옴표로 감싸고,
-   citations에 원문 번호와 구절을 넣는다. 원문에 없는 문장을 따옴표로 쓰지 않는다.
+2. 아이의 글을 옮길 때는 [원문]에 있는 글자 그대로 큰따옴표로 감싼다.
+   원문에 없는 문장, 미션 제목, 원문 번호(S1 등)는 따옴표로 쓰지 않는다.
 3. 기록에서 보이는 사실만 말한다.
    레벨·등급·점수·사고력 같은 평가나 다른 아이와의 비교를 하지 않는다.
    기록이 적은 것을 능력 부족으로 해석하지 않는다.
 4. 학부모에게 존댓말로 3~5문장 안에서 답한다.
    마지막에 집에서 나눌 수 있는 대화 한 가지를 제안해도 된다.
+5. 답변 문장만 일반 텍스트로 쓴다. JSON·제목·목록 기호를 쓰지 않는다.
 """
 
 

@@ -1,7 +1,8 @@
 """POST /internal/analysis/stream (SSE, API 명세서 3.3·4.2).
 
-이벤트: status* → result → done | clarification(종료) | error(종료).
-delta는 보내지 않음: 답변은 숫자·인용 대조를 통과한 뒤에만 보여 주므로 임시 텍스트를 흘리지 않음.
+이벤트: status* → delta* → result → done | clarification(종료) | error(종료).
+delta는 LLM 답변 조각(대조 전 임시 표시). 확정 답변은 대조를 통과한 result.answer뿐.
+core가 연결을 끊으면 이 생성기가 취소되어 그래프·LLM 스트림도 멈춤.
 """
 
 import json

@@ -3,7 +3,7 @@
 -- 학년마다 생각 유형별 1문항(총 20문항), 초3·초5는 PUBLISHED, 초4·초6은 DRAFT.
 -- ID가 고정이라 다시 실행하면 같은 행의 내용을 이 파일 기준으로 덮어쓴다.
 --
--- 적용 (저장소 루트, compose의 postgres가 떠 있고 learning 마이그레이션 V1~V6 적용 후):
+-- 적용 (저장소 루트, compose의 postgres가 떠 있고 learning 마이그레이션 V1~V7 적용 후):
 --   docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d learning_db' \
 --     < backend/learning-service/db/seed/demo_missions.sql
 --   compose는 모든 서비스의 .env 값을 확인하므로 값이 빠져 있으면 postgres 컨테이너에 직접 실행:
@@ -441,5 +441,11 @@ ON CONFLICT (id) DO UPDATE SET
     type = EXCLUDED.type,
     question = EXCLUDED.question,
     active = EXCLUDED.active;
+
+-- 공개 버전(V7, #145): 시드의 PUBLISHED 미션은 현재 버전을 그대로 학생에게 제공, DRAFT는 공개 버전 없음
+UPDATE mission
+SET published_version_id = CASE WHEN status = 'PUBLISHED' THEN current_version_id END,
+    published_rubric_version_id = CASE WHEN status = 'PUBLISHED' THEN current_rubric_version_id END
+WHERE code LIKE 'DEMO-%';
 
 COMMIT;

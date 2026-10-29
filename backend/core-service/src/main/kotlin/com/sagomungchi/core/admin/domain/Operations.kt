@@ -27,6 +27,7 @@ data class OperationAudit(val id: UUID, val actorUserId: UUID, val action: Strin
 object OperationErrors {
     private val safe = setOf("REDIS_PUBLISH_FAILED","GENERATION_FAILED","GENERATOR_NOT_CONFIGURED",
         "JOB_RETRY_UNAVAILABLE","JOB_NOT_FAILED","JOB_RETRY_IN_PROGRESS","SUPERSEDED","AI_UNAVAILABLE",
-        "AI_TIMEOUT","STREAM_DISCONNECTED","CONVERSATION_FAILED")
+        "AI_TIMEOUT","STREAM_DISCONNECTED","CONVERSATION_FAILED",
+        "STUDENT_DELETED","REPORT_NOT_CREATED","REPORT_EXECUTION_ABANDONED")
     fun code(value: String?): String? = value?.let { if (it in safe) it else "REDACTED_ERROR" }
 }

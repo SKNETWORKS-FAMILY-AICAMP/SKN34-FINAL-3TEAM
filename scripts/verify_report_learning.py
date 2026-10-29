@@ -283,8 +283,8 @@ def verify(output):
                 (rubric, mission, actor),
             )
             db.execute(
-                "UPDATE mission SET current_version_id=%s,current_rubric_version_id=%s WHERE id=%s",
-                (version, rubric, mission),
+                "UPDATE mission SET current_version_id=%s,current_rubric_version_id=%s,published_version_id=%s,published_rubric_version_id=%s WHERE id=%s",
+                (version, rubric, version, rubric, mission),
             )
             response = http.post(
                 f"/internal/missions/{mission}/attempts?grade=5",

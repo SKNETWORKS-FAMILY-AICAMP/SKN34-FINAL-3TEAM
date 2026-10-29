@@ -355,6 +355,12 @@ $$, '23503');
 INSERT INTO report_item_evidence (id, item_id, attempt_id, answer_id, answer_version)
 VALUES ('00000000-0000-4000-8000-000000000207', '00000000-0000-4000-8000-000000000206',
         '00000000-0000-4000-8000-999999999998', '00000000-0000-4000-8000-999999999997', 1);
+INSERT INTO report_job_guard(job_id,student_id,period_from,period_to,failure_reason,created_at)
+VALUES ('00000000-0000-4000-8000-000000000099','00000000-0000-4000-8000-000000000002',
+        '2026-10-19','2026-10-25','REPORT_NOT_CREATED',now());
+SELECT pg_temp.expect_sqlstate($$UPDATE report_job_guard SET period_to=period_from$$, '23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE report_job_guard SET failure_reason='INVALID'$$, '23514');
+SELECT pg_temp.expect_sqlstate($$INSERT INTO report_job_guard SELECT * FROM report_job_guard$$, '23505');
 INSERT INTO report_deletion_guard
     (student_id, scope, cutoff_at, deletion_request_id, status, updated_at)
 VALUES ('00000000-0000-4000-8000-000000000002', 'RECORDS', now(),

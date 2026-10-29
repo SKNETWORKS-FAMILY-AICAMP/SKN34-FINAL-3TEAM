@@ -50,13 +50,14 @@ class FeedbackControllerTest(@Autowired private val mockMvc: MockMvc) {
     }
 
     @Test
-    fun `판정이 끝나면 판정·요소·되묻기·다음 행동·버전 (api-spec 3·2)`() {
+    fun `판정이 끝나면 판정 ID·판정·요소·되묻기·다음 행동·버전 (api-spec 3·2)`() {
         val elementId = UUID.randomUUID()
+        val judgmentId = UUID.randomUUID()
         val followupId = UUID.randomUUID()
         given(facade.feedback(answerId)).willReturn(
             FeedbackResult(
                 status = ProcessStatus.DONE,
-                judgment = JudgmentView(JudgmentResult.HELD, true, emptyList(), "TOO_SHORT"),
+                judgment = JudgmentView(judgmentId, JudgmentResult.HELD, true, emptyList(), "TOO_SHORT"),
                 followup = FollowupView(followupId, FollowupType.TELL_MORE, "조금 더 말해 줄래요?", FollowupSource.BANK),
                 nextActions = listOf(NextAction.ANSWER_FOLLOWUP, NextAction.FINISH),
                 versions = Versions("DEMO-01@1", "DEMO-01@1", "gpt", "judge@2"),
@@ -66,6 +67,7 @@ class FeedbackControllerTest(@Autowired private val mockMvc: MockMvc) {
         mockMvc.post("/internal/answers/$answerId/feedback") { asStudent() }.andExpect {
             status { isOk() }
             jsonPath("$.status") { value("DONE") }
+            jsonPath("$.judgment.judgmentId") { value(judgmentId.toString()) }
             jsonPath("$.judgment.result") { value("HELD") }
             jsonPath("$.judgment.heldReason") { value("TOO_SHORT") }
             jsonPath("$.judgment.trial") { value(true) }
@@ -78,7 +80,7 @@ class FeedbackControllerTest(@Autowired private val mockMvc: MockMvc) {
         given(facade.feedback(answerId)).willReturn(
             FeedbackResult(
                 ProcessStatus.DONE,
-                JudgmentView(JudgmentResult.CORRECT, false, listOf(ElementView(elementId, "원인", true, "물", ElementSource.ANSWER_KEY)), null),
+                JudgmentView(judgmentId, JudgmentResult.CORRECT, false, listOf(ElementView(elementId, "원인", true, "물", ElementSource.ANSWER_KEY)), null),
                 null,
                 listOf(NextAction.FINISH),
                 Versions("DEMO-01@1", "DEMO-01@1", null, null),

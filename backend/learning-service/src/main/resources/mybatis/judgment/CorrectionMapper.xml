@@ -23,8 +23,16 @@
         </constructor>
     </resultMap>
 
+    <!--
+        정정 전 판정 행만 잠금(다른 표와 조인하지 않음). 최신 정정 하위 조회를 붙여 잠그면 기다린 뒤 잠근 행만 최신으로 다시 읽고
+        하위 조회는 처음 스냅숏 그대로라 앞 요청이 커밋한 정정을 못 봄(동시 정정 테스트에서 확인, #145). 잠근 뒤 findTarget을 새로 읽음
+    -->
+    <select id="lockJudgment" resultType="java.util.UUID" flushCache="true" useCache="false">
+        SELECT id FROM judgment WHERE id = #{judgmentId} FOR UPDATE
+    </select>
+
     <!-- 지금 보이는 결과: 최신 정정(created_at 가장 늦은 행)이 있으면 그 결과. JudgmentMapper.findStored와 같은 규칙 -->
-    <select id="lockTarget" resultMap="target">
+    <select id="findTarget" resultMap="target" flushCache="true" useCache="false">
         SELECT j.id AS judgment_id, t.student_id, j.process_status,
                COALESCE((SELECT c.corrected ->> 'result' FROM judgment_correction c WHERE c.judgment_id = j.id
                          ORDER BY c.created_at DESC, c.id DESC LIMIT 1), j.result) AS result
@@ -32,7 +40,6 @@
         JOIN answer a ON a.id = j.answer_id
         JOIN attempt t ON t.id = a.attempt_id
         WHERE j.id = #{judgmentId}
-        FOR UPDATE OF j
     </select>
 
     <select id="findByIdempotencyKey" resultMap="correction">

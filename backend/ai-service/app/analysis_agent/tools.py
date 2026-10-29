@@ -36,7 +36,8 @@ class RecordTools:
         self._require(scope)
         return await self._client.thinking_types(scope)
 
-    async def attempts(self, scope: Scope, size: int) -> list[RecordAttempt]:
+    async def attempts(self, scope: Scope, size: int | None) -> list[RecordAttempt]:
+        """size None이면 모든 페이지."""
         self._require(scope)
         return await self._client.attempts(scope, size)
 
