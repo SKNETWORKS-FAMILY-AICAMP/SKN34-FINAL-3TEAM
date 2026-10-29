@@ -1490,7 +1490,7 @@ classDiagram
   }
   class ScoringClient {
     <<client>>
-    +m2_scores(prompt, text, grade, input_type) M2Result
+    +m2_scores(prompt, text, grade, input_type, keywords) M2Result
     +m1_check(problem, answer_key, solution) M1Result
   }
   class ActiveVersions {
@@ -1677,7 +1677,7 @@ classDiagram
   }
   class M2Service {
     <<service>>
-    +score(prompt, text, grade, input_type) M2Response
+    +score(request) M2Response
   }
   class M1Service {
     <<service>>
@@ -1737,7 +1737,7 @@ classDiagram
 - `LoadedModel.predict`는 CPU 동기 추론 → `run_in_threadpool`로 호출해 이벤트 루프 차단 방지 (아키텍처 2.3)
 - 활성 범위 밖 학년·문항이면 `{active: false}` 반환, M1 확신도 0.8 미만은 보류 신호 (P15)
 - 가중치는 S3 `artifact_uri`에서 로딩, 승인된 버전만 (아키텍처 5장)
-- #85 구현: 레지스트리·S3 로더·versions 라우터. `get(name, scope)`는 승인 범위를 검사한 모델만 반환한다. #86은 `ModelVersionConsumer`·`ModelStartup`으로 이벤트 보존·재연결·모델 교체를 연결한다. 실제 m2/m1 라우터·서비스·사용량 발행은 #87~88 범위다.
+- #85 구현: 레지스트리·S3 로더·versions 라우터. `get(name, scope)`는 승인 범위를 검사한 모델만 반환한다. #86은 `ModelVersionConsumer`·`ModelStartup`으로 이벤트 보존·재연결·모델 교체를 연결한다. 이 로컬 #87 변경은 m2 라우터·M2Service·사용량 발행을 추가한다. M1은 #88 후속 범위다.
 
 ---
 

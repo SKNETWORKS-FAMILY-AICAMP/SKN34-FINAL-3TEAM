@@ -11,8 +11,11 @@ from app.clients.model_artifacts import S3ModelArtifacts
 from app.config import get_settings
 from app.errors import register_error_handlers
 from app.health.router import router as health_router
+from app.m2.router import router as m2_router
+from app.m2.service import M2Service
 from app.messaging.connection import AmqpConnection
 from app.messaging.consumer import ModelVersionConsumer
+from app.messaging.publisher import EventPublisher, UsagePublisher
 from app.model_loader import ModelLoader
 from app.model_registry import ModelRegistry
 from app.security import InternalAuthMiddleware
@@ -35,12 +38,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             amqp, CoreClient(http), registry, settings.model_retry_interval
         )
         app.state.model_registry = registry
+        usage = UsagePublisher(EventPublisher(amqp), "scoring", "scoring-service")
+        app.state.m2_service = M2Service(registry, usage)
         app.state.readiness_checks = {"rabbitmq": rabbitmq_ready, "models": consumer.is_ready}
         consumer.start()
         try:
             yield
         finally:
             await consumer.close()
+            await usage.close()
             await amqp.close()
 
 
@@ -50,5 +56,5 @@ def create_app() -> FastAPI:
     app.add_middleware(InternalAuthMiddleware)
     app.include_router(health_router)
     app.include_router(versions_router)
-    # 기능 라우터는 여기에 등록
+    app.include_router(m2_router)
     return app

@@ -83,6 +83,8 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
 
 ## 4. M2 모델과 API 정렬 (#4)
 
+2026-10-29 로컬 #87 후속 기준: 받은 2.0 모델은 핵심어 입력·score_cuts 보정·rawScores 반환을 적용한다. [#87 구현·검증](issue-87-scoring-m2.md)과 [API 4.3](../design/api-spec.md#43-scoring-service-호출-ai)을 따른다. scoring 이벤트 소비는 #86에 구현되어 있으며, AI #69의 실제 scoring 호출은 별도 후속이다. 아래 #4 기록을 새 모델의 반올림·핵심어 개수 대체 규칙으로 해석하지 않는다.
+
 - `grade`(3~6)는 scoring이 `초{grade}`로 바꿔 모델 입력에 사용(모델은 `[학년] 초5` 문자열로 학습, 데이터에 중학생도 있어 정수로 재학습 불가). 학습 데이터 학년(초5·6) 밖은 활성 범위 밖. 변환을 빠뜨리면 오류 없이 성능만 떨어짐
 - 응답 점수: 총점 1~4점(데이터에 5점 없음)·8개 항목 1~5점
 - 모델 버전 규칙: `uq_model_version_active`가 `(kind, name)` 단위라 서술·논술 모델을 `name`으로 분리

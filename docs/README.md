@@ -56,6 +56,8 @@
 - [scoring #85](report/issue-85-scoring-model-registry.md): 모델 로딩 검증
 - [scoring #86](report/issue-86-scoring-model-events.md): 버전 이벤트 검증
 
+- [scoring #87](report/issue-87-scoring-m2.md): M2 채점 계약·실제 모델 검증
+
 ## 개발 규칙
 
 ### 작업 규칙

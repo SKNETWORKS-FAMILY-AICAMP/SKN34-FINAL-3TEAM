@@ -716,12 +716,23 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 ### 4.3 scoring-service (호출: ai)
 
-구현된 내부 API 계약은 [contracts/openapi/scoring-service.yaml](../../contracts/openapi/scoring-service.yaml)에 기록한다. #85에서는 `GET /internal/versions`만 구현하며, M2 점수 API·M1 검사 API는 각각 #87·#88의 후속 구현 대상이다. 계약 테스트가 실제 FastAPI 경로·응답 스키마와 대조한다.
+#### #87 M2 확정 계약 (2026-10-29 담당자 답변 반영)
+
+- `POST /internal/m2/scores`: `{prompt:string, text:string, grade:integer(3~6), inputType:"NARRATIVE"|"ESSAY", keywords:string[]}`. keywords 생략은 빈 배열. 문자열은 공백만 허용하지 않는다. 요청 보호 한도는 prompt 10,000자, text 50,000자, keywords 100개·각 200자이다.
+- learning은 관리자가 입력한 `rubric_version.keywords`(문자열 배열, 서술형 전용)와 `mission_version.question`을 AI의 `keywords`·`question`으로 전달하고, AI는 question을 scoring의 prompt로 매핑한다. 이 저장 컬럼·관리자 입력·learning DTO·AI 연결은 **후속 서비스 변경 필요**이며 #87 scoring 구현이 제공했다고 해석하지 않는다.
+- 모델 이름은 `NARRATIVE → m2-klue-narrative`, `ESSAY → m2-klue-essay`. 초3·4, 미활성 모델, 승인 scope 밖, 핵심어 없는 서술형은 **200 `{active:false}`**. 논술형은 핵심어를 사용하지 않는다.
+- 승인 scope는 기존 core 논리 키 형식에 맞춘 `judgment/grade-{grade}/{narrative|essay}`의 **정확한 일치**로 검사한다. 학생 권한 헤더와 모델 승인 scope는 다른 개념이다. 문항별 승인 제한이 필요한 경우 현재 요청에는 문항 ID가 없으므로 별도 계약 확장 전에는 그 모델을 넓은 학년 scope로 승인하지 않는다.
+- 성공 응답: `{active:true, inputType, scores:{hol,task_1,content_1,content_2,content_3,organization_1,organization_2,expression_1,expression_2}, rawScores:{동일한 9개 키}, model:{name,version,revision}}`. scores.hol은 1~4 정수, 나머지는 1~5 정수. rawScores는 변환 전 유한 소수값이며 범위 자르지 않는다. 원점수 저장은 소비 측 `judgment.model_scores` 연결이 필요하다(scoring은 무상태).
+- 받은 회귀 2.0은 train_info의 max_length·with_keyword와 score_cuts.json을 사용한다. 학습 입력은 `[학년] 초N [지시문] ...` + 서술형일 때 ` [핵심어] `와 쉼표로 결합한 핵심어, 두 번째 문장은 학생 글이다. `truncation=only_second`, token_type_ids 제외. 컷 경계와 같으면 위 점수로 변환한다. 서술형 content_3도 **모델 점수**를 쓰며 예전 핵심어 개수 규칙으로 대체하지 않는다(수빈님 답변). 메타데이터·컷이 잘못되면 반올림으로 대체하지 않고 실패한다.
+- 401 내부 토큰 오류, 400 요청/첫 문장 토큰 길이 오류, 503 `SCORING_UNAVAILABLE` 모델 설정·추론 장애 또는 처리 용량 초과. AI는 장애·시간 초과를 판정 처리 실패로 다루며 active:false로 바꾸거나 재시도하지 않는다(태윤님 답변). learning→AI 35초는 전체 예산으로, M2 단독 지연 측정과 구분한다.
+- 사용량은 실제 추론 시도 후 성공/실패 모두 best-effort 발행한다. 토큰 수 null, model=`name@version`, 학생 원문·ID·핵심어 없음. 비활성 응답은 추론하지 않아 사용량 이벤트를 만들지 않는다.
+
+구현된 내부 API 계약은 [contracts/openapi/scoring-service.yaml](../../contracts/openapi/scoring-service.yaml)에 기록한다. #85의 `GET /internal/versions`와 #87의 M2 점수 API를 구현했다. M1 검사 API는 #88의 후속 구현 대상이다. 계약 테스트가 실제 FastAPI 경로·응답 스키마와 대조한다.
 
 
 | Method | Path | 설명 |
 |---|---|---|
-| POST | `/internal/m2/scores` | `{prompt, text, grade, inputType}` → 총점 1~4점·8개 항목 1~5점·버전 (활성 범위 밖이면 `{active:false}`). `inputType`(`NARRATIVE`·`ESSAY`)으로 모델 선택(`m2-klue-narrative`·`m2-klue-essay`). `grade`(3~6)는 scoring이 `초{grade}`로 바꿔 모델 입력에 사용, 학습 데이터 학년(초5·6) 밖은 활성 범위 밖 |
+| POST | `/internal/m2/scores` | `{prompt, text, grade, inputType, keywords}` → 총점 1~4점·8개 항목 1~5점·버전 (활성 범위 밖이면 `{active:false}`). `inputType`(`NARRATIVE`·`ESSAY`)으로 모델 선택(`m2-klue-narrative`·`m2-klue-essay`). `grade`(3~6)는 scoring이 `초{grade}`로 바꿔 모델 입력에 사용, 학습 데이터 학년(초5·6) 밖은 활성 범위 밖 |
 | POST | `/internal/m1/checks` | `{problem, answerKey, solution}` → 정답 여부·실수 위치·확신도 (확신도 0.8 미만은 보류, P15) |
 | GET | `/internal/versions` | 로딩 완료한 활성 모델 `{items:[{name,version,revision}]}`. name 순 정렬, 없으면 `{items:[]}`. 내부 토큰 필수 |
 
@@ -731,7 +742,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - `/internal/versions`는 core가 요구한 버전이 아니라 **실제로 로딩 완료한 버전**을 반환한다. 초기 조회·로딩 전에는 빈 목록이며 준비 여부는 `/health/ready`의 `models` 항목으로 구분한다. S3 경로·평가 자료·비밀 값은 반환하지 않는다.
 - 사용자 결정: core 조회 성공 + 활성 모델 없음은 `models=UP`. 해당 모델은 비활성이며 #87·#88에서 `{active:false}`로 응답한다. core 조회 실패 또는 첫 가중치 로딩 실패는 `models=DOWN` 상태에서 백그라운드 재시도하고 프로세스를 종료하지 않는다. 다른 readiness 항목도 모두 UP이어야 HTTP 200이다.
 - 교체는 새 가중치 로딩 완료 후 수행한다. 교체 실패 시 기존 로딩 버전을 유지한다. 같은 kind·name의 낮은 revision은 무시하고, 실패한 최신 revision은 재시도할 수 있다. 새 승인 범위가 좁아졌다면 기존 모델 유지 중에도 이전·새 범위의 교집합에서만 사용한다.
-- scope는 #43 계약의 문자열 정확 일치로 검사한다. 학년·입력 유형에서 scope를 만드는 규칙은 #87에서 core 등록 값과 합의하며 #85에서 임의로 생성하지 않는다.
+- scope는 #43 계약의 문자열 정확 일치로 검사한다. 학년·입력 유형의 M2 scope는 위 #87 계약의 정확 일치 키를 사용한다. core 승인 범위를 임의로 확장하지 않는다.
 - #85는 기동 snapshot·로더·레지스트리 기반이다. Pod별 큐 바인딩 후 snapshot 조회·보존 이벤트 조정·재연결은 #86에서 연결한다. #85만으로 실시간 모델 버전 동기화를 완료했다고 간주하지 않는다.
 
 ### 4.4 report-service (호출: core)
