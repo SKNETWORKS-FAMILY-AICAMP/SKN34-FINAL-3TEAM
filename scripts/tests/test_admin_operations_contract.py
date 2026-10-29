@@ -1,5 +1,5 @@
 import json
-import subprocess
+import hashlib
 import unittest
 from pathlib import Path
 import yaml
@@ -10,9 +10,17 @@ class AdminOperationsContracts(unittest.TestCase):
     def setUpClass(cls):
         cls.doc=yaml.safe_load((ROOT/'contracts/openapi/core-service.yaml').read_text(encoding='utf-8'))
     def test_existing_contracts_preserved(self):
-        old=yaml.safe_load(subprocess.check_output(['git','show','85bf107:contracts/openapi/core-service.yaml'],cwd=ROOT).decode())
-        for path,methods in old['paths'].items(): self.assertEqual(methods,self.doc['paths'][path],path)
-        for name,schema in old['components']['schemas'].items(): self.assertEqual(schema,self.doc['components']['schemas'][name],name)
+        # The CI checkout is shallow. Keep the reviewed base contract fingerprints
+        # in the test sources instead of requiring history or network access.
+        baseline=json.loads((Path(__file__).parent/'fixtures/admin_operations_base_contracts.json').read_text(encoding='utf-8'))
+        self.assertEqual(baseline['sourceCommit'],'85bf1079c34a3e713bcf5eedf0cfdfd7822dc5a4')
+        self.assertEqual(len(baseline['paths']),91)
+        self.assertEqual(len(baseline['schemas']),114)
+        for section,current in [('paths',self.doc['paths']),('schemas',self.doc['components']['schemas'])]:
+            for name,expected in baseline[section].items():
+                self.assertIn(name,current)
+                canonical=json.dumps(current[name],ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
+                self.assertEqual(expected,hashlib.sha256(canonical).hexdigest(),f'{section}/{name}')
     def test_admin_paths_and_retry_key(self):
         paths=self.doc['paths']
         for name in ['overview','jobs','queues','audit-logs','missions']: self.assertIn('/admin/'+name,paths)
