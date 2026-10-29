@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { ReportProblem } from '../service/ReportProblem.tsx'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Child } from '../../domain/classroom.ts'
 import type { Scope, StreamState, ConversationMessage, Evidence } from '../../domain/parent.ts'
@@ -46,7 +47,7 @@ export function ParentConversation({
       state.result?.scope ??
       (detail.data ? { ...detail.data.period, childId: child.id } : scope)
     const text = retry?.question ?? (state.phase === 'CLARIFICATION' && !question.trim() ? lastQuestion : question)
-    if (!text.trim()) return
+    if (!text.trim() || child.plan === 'FREE') return
     controller.current?.abort()
     const abort = new AbortController()
     controller.current = abort
@@ -150,6 +151,7 @@ export function ParentConversation({
                 m.verification.quotesMatched ? (
                 <>
                   <p>{m.answer}</p>
+                  <ReportProblem targetType="ANALYSIS" targetId={m.messageId}/>
                   {m.scope && (
                     <p>
                       이 답변의 실제 범위 · {m.scope.from} ~ {m.scope.to}
@@ -231,6 +233,7 @@ export function ParentConversation({
               수 있습니다.
             </p>
           )}
+          {child.plan !== 'FREE' && (
           <form
             className="ws-card ws-form"
             onSubmit={(e) => {
@@ -257,6 +260,7 @@ export function ParentConversation({
               않습니다.
             </small>
           </form>
+          )}
         </section>
       </div>
       {proof && (

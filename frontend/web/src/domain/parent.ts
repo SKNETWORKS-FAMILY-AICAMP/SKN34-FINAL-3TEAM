@@ -113,6 +113,7 @@ export interface ReportItem {
   revision: number
   status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED'
   state: QueryState
+  generatedAt?: string | null
 }
 export interface WeeklyReport extends ReportItem {
   revisions: { revision: number; generatedAt?: string }[]

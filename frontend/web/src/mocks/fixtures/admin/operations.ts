@@ -96,6 +96,12 @@ export function audit(
     createdAt: stamp(),
   })
 }
+// active: 지금 쓰는 버전만 현재 범위를 가짐, revision: 같은 종류·이름 안의 변경 순번 (core 규칙)
+const demoEvaluation = (approved: boolean, active = false, revision = approved ? 1 : 0) => ({
+  evidence: { datasetId:'demo-only',datasetVersion:'v1',baselineVersion:'baseline-v1',comparisonReport:'개발용 예시 · 실제 성능 승인 아님',trainingEvaluationSeparation:'가상 평가 자료',quoteAccuracy:'시연 기록',calculationAccuracy:'시연 기록',humanReview:'시연 검토',evaluatedScopes:['judgment/grade-3/narrative'] },
+  approval: approved ? { scopes:['judgment/grade-3/narrative'],reason:'개발용 예시',approvedBy:'mock-reviewer',approvedAt:stamp() } : null,
+  activeScopes: active ? ['judgment/grade-3/narrative'] : [],revision,
+})
 export const modelVersions: ModelVersion[] = [
   {
     id: 'prompt-1',
@@ -103,7 +109,7 @@ export const modelVersions: ModelVersion[] = [
     name: 'judge',
     version: 'mock-1',
     status: 'ACTIVE',
-    evalResult: '개발용 고정 평가 예시 · 실제 성능 승인 아님',
+    evalResult: demoEvaluation(true, true, 2),
     approvedBy: 'mock-reviewer',
     activatedAt: stamp(),
     createdAt: stamp(),
@@ -114,7 +120,7 @@ export const modelVersions: ModelVersion[] = [
     name: 'judge',
     version: 'mock-2',
     status: 'INACTIVE',
-    evalResult: '개발용 비교 평가 예시 · 실제 성능 승인 아님',
+    evalResult: demoEvaluation(true, false, 1),
     approvedBy: 'mock-reviewer',
     createdAt: stamp(),
   },

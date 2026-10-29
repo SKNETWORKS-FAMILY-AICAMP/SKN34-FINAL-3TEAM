@@ -113,3 +113,11 @@ c44ace8 통합 체크포인트는 core 233개·front 87개·계약 60개 통과�
 #41 테스트에 공급자를 mock하지 않는 별도 실제 통합 경로를 추가했다. 실제 product/subscription PostgreSQL fixture·Spring payment provider·입장 트랜잭션·Redis·core HTTP/SSE를 사용하고 AI 응답만 HTTP 대역, PG와 정기 청구는 테스트 대역이다. 무료 0 한도 차단, 상품 설정 불가 503, 상품 데이터 한도 2회·실패도 USED 사용 이력, 초과 재시도의 추가 차감/사용 이력/AI 호출 방지, 자동갱신 해지 예약 상태 유지·유예·만료·09시 경계를 확인한다. 이 검증은 실제 PG 승인/청구·실제 AI·환불 경합 전체 흐름 검증이 아니다. production에 가짜 상품이나 공급자는 추가하지 않았다.
 
 13a6376 기준 core 314개 전체 통과(실패·오류·건너뜀 0), test bootJar 성공(6m24s). 실제 payment 공급자 연결 테스트 4개를 포함한다. 계약 76개·OpenAPI 표준 검사, frontend 93개·lint·build 통과. 실제 PG·실제 AI 전체·환불 경합 전체 흐름은 이번 검증에 포함하지 않았다.
+
+## c364ed4 최신 병합 추가 반영
+
+13a6376 기준 검증은 core 314개 전체 통과(실패/오류/생략 0), test bootJar 성공(6m24s), 계약 76개·frontend 93개·lint·build 통과다. 이 결과를 커밋 96ed39f에 보존한 뒤 새 develop c364ed4를 추가 merge했다. 새 기준에는 #124 프론트, #148 report worker, #149 AI report narrative가 포함된다. core production/test/build 설정은 13a6376 이후 변경되지 않아 core 전체 검증을 반복하지 않는다.
+
+ParentConversation 충돌은 새 develop의 FREE 입력 차단과 분석 신고 버튼을 보존하고 #41의 clarification 재질문·오류 복구·1,000자 상한·자녀 전환을 연결했다. plan 미제공 사용자의 최종 권한 판단은 서버가 수행한다. 이미 반영된 다른 기능을 바꾸지 않았다. 실제 payment 공급자 연결과 구독 fixture 검증은 완료됐으며 실제 PG 호출·환불 경합 전체·실제 AI 분석 전체는 별도 검증 조건이다.
+
+최종 c364ed4 통합 검증: core 디렉터리 전체가 96ed39f 검증 소스와 동일함을 git diff로 확인하여 314개·bootJar 성공 결과를 유지한다. 새 frontend 전체 111개·lint·build, 계약 76개·core OpenAPI 표준 검사 및 git diff --check 통과. 번들 크기 경고는 남는다. 새 report/AI/learning 내부 기능의 전체 실행·브라우저·실제 PG·실제 AI 분석은 이번에 추가 검증하지 않았으며 각 upstream PR 검증과 구분한다. 기존 develop 기능은 보존했고 #41의 무료 오류 복구·수정 질문·범위 확인·신고 연결을 함께 유지했다.

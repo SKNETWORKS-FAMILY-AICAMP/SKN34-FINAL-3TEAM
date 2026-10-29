@@ -56,7 +56,7 @@ test('404는 예시나 빈 배열로 대체하지 않음', async (t) => {
     return json({ title: '미구현', code: 'NOT_FOUND', status: 404 }, 404)
   })
   const api = createApiGateway()
-  await assert.rejects(api.login('parent@example.test', 'demo'))
+  assert.equal(api.login, undefined) // 실제 모드는 Google 인증만 (#97)
   await assert.rejects(api.children())
   await assert.rejects(
     api.submit(
@@ -65,7 +65,7 @@ test('404는 예시나 빈 배열로 대체하지 않음', async (t) => {
       'no-contract',
     ),
   )
-  assert.equal(requests, 3) // 3.8에 명시한 풀이 제출도 같은 API 경로 사용, 404는 그대로 실패
+  assert.equal(requests, 2) // 자녀 목록·풀이 제출(3.8과 같은 API 경로) 모두 404를 그대로 실패로
 })
 test('실제 API의 초안 충돌도 명시적으로 비교 가능', async (t) => {
   t.mock.method(globalThis, 'fetch', async () =>

@@ -540,11 +540,11 @@ sequenceDiagram
   else 기존 RUNNING (이전 Pod 중단 후 재전달)
     Note over RW: 같은 행으로 아래 처리 처음부터 재실행
   end
-  Note over RW,C: #119 core API 제공. 아래 별명 조회·전달의 worker 연결은 report 담당 후속 작업
+  Note over RW,C: #119 core API를 기본 worker의 CoreClient.lookup에서 호출 (#56)
   RW->>C: GET /internal/students/{id}/profile (내부 토큰, SYSTEM, 학생 scope)
   C-->>RW: 200 {studentId, nickname} (ACTIVE만, no-store)
   RW->>RW: nickname을 렌더링용 display_name으로 보관 (메시지에는 추가하지 않음)
-  Note over RW,C: 403·404는 생성 실패, 통신 장애는 기존 작업 실패/재시도 정책. 가짜 별명 없음
+  Note over RW,C: 403·404·통신 장애는 GENERATION_FAILED로 종료. HTTP 재시도·가짜 별명 없음
   RW->>L: GET /internal/records/students/{id}/thinking-types·attempts·changes
   L-->>RW: 기간 내 기록
   RW->>RW: MetricsCalculator (기간 확정·수치·전후 변화·state)
@@ -554,9 +554,9 @@ sequenceDiagram
   alt NO_RECORD 또는 narrativeEnabled = false
     RW->>RW: 서술 생략 (NO_RECORD는 기록 없음 안내 문구, 무료는 narrative null) (P06, P13)
   else
-    RW->>RW: NarrativeGenerator에서 별명·이름 필드 제거 및 본문 별명 가림 (최종 전송 payload 검증 필요)
+    RW->>RW: NarrativeGenerator에서 별명·이름 필드 제거 및 본문 별명 가림
     RW->>A: POST /internal/report-narratives {metrics, thinkingTypes, changes, reflections, quotes}
-    A-->>RW: narrative·eveningQuestion·citedQuotes
+    A-->>RW: narrative·eveningQuestion·citedQuotes·versions
     RW->>L: GET /internal/records/evidence?answerIds=
     RW->>RW: ReportVerifier 숫자·인용 대조
     opt 대조 실패 (P16)
@@ -906,7 +906,8 @@ sequenceDiagram
   W->>C: POST /children/{childId}/deletion-requests {scope} (X-Reauth-Token)
   Note over C: 재확인 토큰 검사, 무효면 403 REAUTH_REQUIRED (P09)
   rect rgba(128,128,128,0.12)
-    C->>CDB: deletion_request REQUESTED → CONFIRMED (scope = PROFILE면 student DELETION_REQUESTED)
+    C->>CDB: deletion_request CONFIRMED 생성, 두 scope 모두 student DELETION_REQUESTED
+    C->>CDB: core 소유 대화·메시지 근거 삭제
     C->>CDB: outbox_event (student.deleted, subject = studentId)
   end
   C-)MQ: events.topic / student.deleted
@@ -919,8 +920,8 @@ sequenceDiagram
     RW->>RW: processed_event 확인 → weekly_report·S3 파일 삭제
     RW->>C: POST /internal/deletion-requests/{id}/completions {service: report}
   end
-  C->>CDB: core 소유 대화·메시지 근거 삭제
-  Note over C: learning·report 보고가 모두 오면 deletion_request COMPLETED, student DELETED (P09)
+  Note over C: learning·report 보고가 모두 오면 deletion_request COMPLETED (P09)
+  Note over C: PROFILE은 프로필 제거, RECORDS는 프로필·DELETION_REQUESTED 유지 (학습 재개는 후속 계약)
 ```
 
 ### 10.2 `llm.usage.recorded`

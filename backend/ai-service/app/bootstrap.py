@@ -15,6 +15,7 @@ from app.llm.providers import create_llm
 from app.messaging.connection import AmqpConnection
 from app.messaging.publisher import EventPublisher, UsagePublisher
 from app.messaging.usage_recorder import BackgroundUsageRecorder
+from app.report_narrative.router import router as report_narrative_router
 from app.security import InternalAuthMiddleware
 from app.versions import router as versions_router
 
@@ -50,5 +51,6 @@ def create_app() -> FastAPI:
     app.include_router(judgment_router)
     app.include_router(followup_router)
     app.include_router(analysis_router)
+    app.include_router(report_narrative_router)
     app.include_router(versions_router)
     return app

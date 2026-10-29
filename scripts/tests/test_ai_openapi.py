@@ -24,13 +24,13 @@ class AiOpenApiTests(unittest.TestCase):
                 if full.startswith("/internal/"):
                     actual.add((method, full.removeprefix("/internal")))
         documented = {(method, path) for path, methods in self.spec["paths"].items() for method in methods}
-        self.assertEqual(len(actual), 4)
+        self.assertEqual(len(actual), 5)
         self.assertEqual(actual, documented)
 
     def test_internal_token_and_problem_responses(self):
         self.assertEqual(self.spec["security"], [{"InternalToken": []}])
         self.assertEqual(self.spec["components"]["securitySchemes"]["InternalToken"]["name"], "X-Internal-Token")
-        for path in ("/judgments", "/followups"):
+        for path in ("/judgments", "/followups", "/report-narratives"):
             responses = self.spec["paths"][path]["post"]["responses"]
             self.assertTrue({"200", "400", "401", "503"} <= set(responses))
             self.assertNotIn("422", responses)

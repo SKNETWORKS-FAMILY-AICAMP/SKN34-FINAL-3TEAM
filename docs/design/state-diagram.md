@@ -48,8 +48,8 @@ stateDiagram-v2
 stateDiagram-v2
   state student {
     [*] --> S_ACTIVE: 자녀 등록
-    S_ACTIVE --> S_DELETION_REQUESTED: PROFILE 삭제 확정
-    S_DELETION_REQUESTED --> S_DELETED: 삭제 완료
+    S_ACTIVE --> S_DELETION_REQUESTED: PROFILE 또는 RECORDS 삭제 확정
+    S_DELETION_REQUESTED --> S_DELETED: PROFILE 삭제 완료
     S_DELETED --> [*]
   }
   state deletion_request {
@@ -60,7 +60,8 @@ stateDiagram-v2
   }
   note right of deletion_request
     재확인 토큰은 요청 시 검사, 완료: learning·report 완료 보고 (P09)
-    RECORDS 범위는 student 상태 유지, 기록만 삭제
+    RECORDS는 프로필을 보존하지만 DELETION_REQUESTED 유지
+    학습 재개는 후속 계약 필요
   end note
 ```
 
@@ -69,8 +70,10 @@ stateDiagram-v2
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
 | `deletion_request → REQUESTED` | `POST /children/{id}/deletion-requests` + `X-Reauth-Token` (P09) | `ChildManagementService.delete` | 연결 자녀(`LINKED`)만. 재확인 토큰이 없거나 무효면 `403 REAUTH_REQUIRED`로 행을 만들지 않음 |
-| `REQUESTED → CONFIRMED` | 같은 요청 안에서 바로 확정 (별도 확인 API 없음, 연결 해제·탈퇴와 같은 1단계) | `ChildManagementService.confirm` | 같은 트랜잭션에 `outbox_event(student.deleted)`, `scope = PROFILE`이면 `student ACTIVE → DELETION_REQUESTED` |
-| `CONFIRMED → COMPLETED`, `student → DELETED` | learning·report 모두 `POST /internal/deletion-requests/{id}/completions` 보고 (P09) | `ChildManagementService.complete` | `deleted_at` 기록. 이후 모든 조회에서 제외, 근거는 `available: false` |
+| `REQUESTED → CONFIRMED` | 같은 요청 안에서 바로 확정 (별도 확인 API 없음, 연결 해제·탈퇴와 같은 1단계) | `ChildManagementService.confirm` | 현재 구현은 CONFIRMED 행을 바로 생성한다. 같은 트랜잭션에 `outbox_event(student.deleted)`를 저장하며 두 scope 모두 `student ACTIVE → DELETION_REQUESTED`로 차단한다 |
+| `CONFIRMED → COMPLETED` | learning·report 모두 `POST /internal/deletion-requests/{id}/completions` 보고 (P09) | `ChildManagementService.complete` | PROFILE만 프로필을 제거한다. RECORDS는 프로필과 DELETION_REQUESTED를 유지하며 자동 학습 재개는 구현되지 않았다. 탈퇴 대기 중이면 후속 PROFILE 삭제를 요청한다 |
+
+2026-10-29 통합 검증: 위 상태 설명은 현재 core 구현을 반영한다. RECORDS 이후 학습 재개 정책을 새로 확정한 것이 아니며, 재개 기능은 core·learning·report가 함께 계약을 정해야 한다.
 
 ### 2.3 `guardianship.status` · `consent.status`
 
@@ -186,6 +189,7 @@ stateDiagram-v2
 - 전이 실패(영향 0행) 시 현재 상태로 응답: `DONE` → 저장 결과, 유효 `RUNNING` → `status` 이벤트 후 종료 (API 1.4)
 - 고착 `RUNNING` 탐지 인덱스 `(process_status, lease_until)`, 리스 90초·탐지 주기 1분 (P12). 주기 탐지 작업은 미구현(운영 작업 후속)이며 현재는 다음 피드백 요청 때 만료 리스를 재획득 ([이슈 #25 보고서](../report/learning.md))
 - 리스 시간은 core→learning 피드백 호출 타임아웃보다 길게 설정. 짧으면 처리 중인 판정을 다른 요청이 재획득해 LLM 호출이 중복됨
+- 정정(`POST /internal/judgments/{id}/corrections`, #80)은 `DONE` 판정만 받고 그 전이면 `409 JUDGMENT_STATE_CONFLICT`. `process_status`·`result`는 바꾸지 않고 `judgment_correction` 행을 추가하며, 조회 때 최신 정정 결과를 `result`로 보여 줌 (FN-SUP-03)
 
 #### `judgment.result` 결정 (`DONE`일 때만 값 존재)
 
