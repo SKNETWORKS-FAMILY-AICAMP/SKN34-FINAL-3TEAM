@@ -1279,6 +1279,11 @@ classDiagram
     <<controller>>
     +correct(judgmentId, idempotencyKey, request) JudgmentCorrection
   }
+  class SupportController {
+    <<controller>>
+    +target(targetType, targetId) SupportTarget
+    +original(attemptId) SupportOriginal
+  }
   class FeedbackFacade {
     <<facade>>
     +feedback(answerId) FeedbackResult
@@ -1297,6 +1302,8 @@ classDiagram
     +result(answerId) FeedbackResult
     +results(attemptId) Map
     +correct(judgmentId, command, idempotencyKey) JudgmentCorrection
+    +supportTarget(targetType, targetId) SupportTarget
+    +supportOriginal(attemptId) SupportOriginal
   }
   class Judgment {
     <<entity>>
@@ -1342,6 +1349,7 @@ classDiagram
 
   FeedbackController --> FeedbackFacade
   CorrectionController --> JudgmentService
+  SupportController --> JudgmentService
   FeedbackFacade --> JudgmentService
   FeedbackFacade --> AttemptService : 타임라인
   FeedbackFacade --> MissionService : 기준표·정답 키
@@ -1371,6 +1379,10 @@ classDiagram
 - 정정은 `Judgment`를 바꾸지 않고 `JudgmentCorrection` 추가, `result()` 조회 시 최신 정정 반영 (FN-SUP-03)
   - `results()`(시도 상세·기록)도 같음. 바꾸는 것은 `judgment.result`뿐이고(정정이 있으면 `heldReason`은 null), 판정 요소·되묻기·`nextActions`는 원판정 그대로 (#80)
   - `correct`: 판정 행을 잠그고(`FOR UPDATE`, 판정 행만 잠근 뒤 대상·최신 정정 결과를 다시 읽음 #145) 같은 키 → 처리 상태 `DONE` → 같은 신고(`reportId`) 순으로 확인한 뒤 저장. `JudgmentCorrection`은 정정 직전 결과(`previous`)·정정 결과·사유·신고·관리자·키·시각을 담고, 같은 키 재요청은 저장된 행으로 처음 응답을 다시 만듦 (api-spec 4.1, [이슈 #80 보고서](../report/learning.md))
+- 신고 지원 조회 (#146, api-spec 4.1·5.7, core #46): `SupportController`는 정정과 같은 판정 내부 API 자리(아키텍처 learning `judgment/controller`)
+  - `supportTarget`: 판정·되묻기·시도 ID로 학생·시도(+판정 ID, 판정이면 지금 보이는 결과 = `correct`의 정정 직전 결과와 같은 규칙)를 찾음. 원문 없음. 학생 범위 검사는 컨트롤러가 받은 범위로(학생·보호자 신고, 관리자 정정 전 확인)
+  - `supportOriginal`: 관리자 원문. 답변 버전·원문·피드백 결과(`results()`와 같은 모양)만, 초안·메모·이름 없음. 학생 전용 `AttemptService.get`과 별도
+  - 피드백 결과의 `judgment`에 `judgmentId`(신고 대상 ID)
 
 ### 4.3 기록 조회·삭제 (record · deletion)
 
