@@ -87,6 +87,14 @@ class DeletionRepository:
         )
         if processed is not None:
             if (
+                processed == "student.deleted"
+                and row is not None
+                and row["status"] == "PENDING"
+                and row["deletion_request_id"] != command.request_id
+            ):
+                # Completed before a newer request started; resend only its completion report.
+                return False
+            if (
                 processed != "student.deleted"
                 or row is None
                 or row["status"] != "COMPLETED"

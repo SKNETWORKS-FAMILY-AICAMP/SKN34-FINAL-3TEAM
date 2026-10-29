@@ -646,7 +646,7 @@ export function createDemoGateway(): ClassroomGateway & {
       const key = child.id + report.period.from,
         list = reportVersions.get(key) ?? [report]
       if (list.length > 1)
-        fail('REGENERATE_NOT_ALLOWED', '같은 리포트는 한 번만 다시 만들 수 있어요.')
+        fail('REPORT_REGENERATION_LIMIT', '같은 리포트는 한 번만 다시 만들 수 있어요.')
       const next = makeReport(child, report.period, 2)
       list.push(next)
       reportVersions.set(key, list)

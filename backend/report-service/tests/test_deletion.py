@@ -327,6 +327,22 @@ def test_newer_event_after_profile_deletion_can_retry_completion(
     assert guard(report_factory, report_student_id)["scope"] == "PROFILE"
 
 
+def test_processed_event_redelivered_during_newer_pending_request_resends_completion(
+    deletion_setup, report_factory, report_student_id
+):
+    new_command, service, storage, core = deletion_setup
+    first = new_command("RECORDS")
+    asyncio.run(service.delete(first))
+    newer = new_command("RECORDS", first.occurred_at + timedelta(seconds=1))
+    storage.fail = True
+    with pytest.raises(RuntimeError):
+        asyncio.run(service.delete(newer))
+    asyncio.run(service.delete(first))
+    assert core.calls == [first.request_id, first.request_id]
+    pending = guard(report_factory, report_student_id)
+    assert pending["status"] == "PENDING" and pending["deletion_request_id"] == newer.request_id
+
+
 def test_pending_blocks_query_and_generation(
     deletion_setup, report_factory, db_engine, report_student_id
 ):
