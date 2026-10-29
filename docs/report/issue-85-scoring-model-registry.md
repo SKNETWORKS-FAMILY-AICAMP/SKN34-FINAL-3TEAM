@@ -1,5 +1,7 @@
 # #85 scoring 모델 레지스트리·S3 로딩
 
+> 2026-10-29 사용자 제공 `m2_models_2.0.tar`로 실제 서술형·논술형 2.0 모델의 로컬 MinIO 로딩과 활성 버전 조회를 검증했다. 최신 결과는 아래 **실제 팀 2.0 모델 검증** 절을 참고한다. 2026-10-28 합성 모델 결과는 당시의 기록으로 보존한다.
+
 목적: core가 승인한 버전만 scoring에 로딩하고, 실제 사용 버전과 준비 상태를 조회할 수 있게 한다. 최초 구현 기준은 develop `40a2501223defd69bcc55595643a6fecf81e9df3`이며, 2026-10-28 문서 정합성 PR #92가 병합된 `1f713607f9cec510edbe14730a82d5d0fbbd2745`를 작업 브랜치에 반영한 뒤 재검증했다.
 
 ## 이번 구현 기준
@@ -17,13 +19,13 @@ API 변경은 [API 명세 4.3](../design/api-spec.md)에 먼저 기록했다. `/
 
 ## 경계와 후속 작업
 
-사용자 지시에 따라 개인 에픽 브랜치를 사용하지 않고 기존 이슈별 방식으로 진행한다. #85 작업은 `feature/scoring-model-registry`에 보존했으며 PR 대상은 `develop`이다. [상위 에픽 #84](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/84)는 #85~88 각각의 완료 조건을 확인한 뒤 종료한다. #85의 실제 팀 모델 연동 검증은 모델 업로드·경로 공유를 기다리며 사용자 요청에 따라 보류한다.
+사용자 지시에 따라 개인 에픽 브랜치를 사용하지 않고 기존 이슈별 방식으로 진행한다. #85 작업은 `feature/scoring-model-registry`에 보존했으며 PR 대상은 `develop`이다. [상위 에픽 #84](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/84)는 #85~88 각각의 완료 조건을 확인한 뒤 종료한다. 실제 팀 모델을 기다리던 보류는 2026-10-29 사용자 제공 파일로 재개했다. 이번 검증 결과는 로컬에만 저장하며 PR·push·이슈 종료는 하지 않는다.
 
 - #85: snapshot 조회·S3 다운로드·CPU 모델 로딩·revision 비교·scope 검사·readiness·버전 조회.
 - #86: 큐 바인딩 → snapshot → 초기 이벤트 조정, 실제 활성화 이벤트·재연결. 롤백 파일 캐시 재사용 정책도 여기서 확정한다. #85의 다운로드 작업 디렉터리는 영속 롤백 캐시가 아니다.
 - #87: 학년/입력 유형의 scope 매핑, 점수 API·사용량 발행, 입력 구성·점수 후처리. 현재 develop의 base/반올림 기준을 개선 모델 채택 결정으로 대체하지 않는다.
 - #88: M1 모델 형식과 로더. 학습된 M1이 없는 상태에서 M2 로더를 M1에 대신 적용하지 않는다.
-- 모델 담당: 실제 서비스 체크포인트·토크나이저·train_info.json과 등록 version/artifactUri 전달. 개선 모델 채택 시 score_cuts.json·핵심어 입력 계약도 필요하다.
+- 모델 파일 확보: 서술형·논술형 2.0 체크포인트·토크나이저·train_info.json·score_cuts.json을 받았다. 서술형 `with_keyword=True`, 논술형 `False`와 점수 경계값을 #87에서 입력·후처리에 반영해야 한다. 로컬 검증 URI를 운영 S3 경로나 서비스 채택 승인으로 간주하지 않는다.
 
 ## 검증
 
@@ -80,9 +82,82 @@ Windows 샌드박스에서는 테스트 이벤트 루프의 socketpair 생성이
 - `S3_ENDPOINT_URL` 생략 시 AWS SDK 기본 endpoint·자격 증명 체인 사용. MinIO overlay는 endpoint와 로컬 자격 증명 환경 변수를 주입한다. `S3_BUCKET`, `S3_REGION`, `MODEL_CACHE_DIR`, `MODEL_RETRY_INTERVAL`로 설정한다.
 - `MODEL_CACHE_DIR`는 일시 다운로드용 경로이며 롤백 캐시로 재사용하지 않는다. 기본 로컬 경로는 gitignore 대상 `local_data/scoring-models`, 컨테이너는 `/tmp/scoring-models`다. readOnlyRootFilesystem 배포 시 이 경로에 쓰기 가능한 임시 볼륨이 필요하다.
 
-## #85 최종 완료를 위해 남은 확인
+## 2026-10-28 당시 남았던 확인
 
 1. 모델 담당자가 서비스에 사용할 체크포인트·토크나이저·train_info.json과 버전 번호를 전달한다. 이름은 기존 `m2-klue-narrative`·`m2-klue-essay`를 사용한다. 가중치를 GitHub에 올리지 않는다.
 2. 실제 팀 체크포인트로 Compose + MinIO → core 승인·활성화 → scoring 로딩·버전 조회를 재확인하고 실제 모델의 메모리·처리 시간을 측정한다. 위 합성 모델 검증이 실제 서비스 모델의 승인·품질 검증을 대신하지 않는다.
 
-Docker 복구·이미지 빌드·합성 모델을 사용한 실제 서비스 간 연동·자동 테스트는 완료했다. 실제 팀 모델 수동 확인 전에는 #85 전체 완료·운영 준비 완료로 표시하지 않는다. 학년·입력 유형의 최종 scope 매핑은 #87, 실제 이벤트 소비·롤백·레플리카 동기화는 #86에서 검증한다.
+위 두 항목은 2026-10-29 실제 팀 모델 검증으로 해소했다. 학년·입력 유형의 최종 scope 매핑은 #87, 실제 이벤트 소비·롤백·레플리카 동기화는 #86에서 검증한다. 모델 품질 승인·운영 배포 준비 완료를 의미하지 않는다.
+
+## 실제 팀 2.0 모델 검증 (2026-10-29)
+
+### 기준과 파일
+
+- scoring: `feature/scoring-model-registry`의 `fdf0a4e` 소스로 새 CPU 이미지를 빌드했다. 별도 로컬 worktree `scoring-issue85`에서 작업하여 기존 `test/report-integration`의 #56 미커밋 변경은 유지했다.
+- core: develop `c608f52`의 실제 소스를 Java 21로 다시 빌드했다. core 마이그레이션·관리자 등록/활성화·내부 snapshot API를 사용했다. core 대역은 사용하지 않았다.
+- 파일: 사용자가 제공한 `m2_models_2.0.tar`, 886,579,200 bytes.
+- SHA-256: `aa294abf122dfd123ec5de296234fef469ab3de7ee027cfbaae5a4a9c86eba2d`.
+- 두 디렉터리 `models/m2-klue-narrative/2.0/`, `models/m2-klue-essay/2.0/`에 각각 `config.json`, `model.safetensors`, `tokenizer_config.json`, `tokenizer.json`, `train_info.json`, `score_cuts.json`이 있다.
+- 각 가중치는 442,524,276 bytes이며 9개 출력을 가진 RoBERTa 회귀 모델이다. 두 모델 모두 `max_length=512`. 서술형 핵심어 사용 설정은 True, 논술형은 False다.
+
+### 실행 범위
+
+`scripts/verify_scoring_models.py`가 임의의 고유 이름으로 로컬 Compose 프로젝트를 만든다. PostgreSQL·RabbitMQ·Redis·core·MinIO·scoring을 실제 실행한다. 모델 파일을 저장소에 풀지 않고 tar의 지정된 일반 파일 12개만 로컬 MinIO로 전송하며 크기와 SHA-256 목록을 결과에 남긴다.
+
+로컬 테스트 버킷은 `issue85-local-models`이며 URI는 다음과 같다. **운영 AWS 경로가 아니다.**
+
+```text
+s3://issue85-local-models/models/m2-klue-narrative/2.0/
+s3://issue85-local-models/models/m2-klue-essay/2.0/
+```
+
+테스트용 관리자·평가 기록·승인 scope(`verification/m2-klue-narrative`, `verification/m2-klue-essay`)는 격리된 core DB에서만 생성했다. 실제 품질 평가를 수행했다는 표시나 운영 학년 승인으로 사용하지 않는다.
+
+### 활성 버전 조회 결과
+
+```json
+{"items":[
+  {"name":"m2-klue-essay","version":"2.0","revision":1},
+  {"name":"m2-klue-narrative","version":"2.0","revision":1}
+]}
+```
+
+- 활성 모델 없는 상태: readiness 200, versions 빈 목록. 내부 토큰 없는 버전 조회는 401.
+- core에서 위 두 버전을 등록·활성화한 뒤 scoring 재시작: MinIO 파일이 없으면 models=DOWN/readiness 503, liveness 200, versions 빈 목록.
+- 실제 파일 업로드 후: 추가 재시작 없이 재시도로 두 모델을 로딩하고 models=UP/readiness 200으로 복구. core snapshot의 이름·버전·revision과 `/internal/versions` 응답 일치.
+
+### 실제 CPU 확인과 회귀 검사
+
+| 항목 | 2026-10-29 결과 |
+|---|---|
+| 실제 모델 CPU 로딩·추론 | 별도 probe도 실제 core snapshot → MinIO → #85 로더를 사용. 두 모델 모두 유한한 `1×9` 원시 점수 출력 |
+| 실행 환경 | 운영 이미지 UID 10001, `torch 2.14.1+cpu`, CUDA 없음. 이미지 lock의 Transformers 5.21.0으로 로딩 |
+| 메타데이터 | 두 모델의 `max_length`, `with_keyword`, 9개 항목 `score_cuts` 확보. 별도 JSON과 train_info 안의 점수 경계값 일치 |
+| 승인 범위 | core가 준 검증용 scope는 모델 반환, `unapproved/scope`는 비활성 |
+| 임시 파일 정리 | 두 모델 로딩 후 다운로드 디렉터리가 비어 있어도 메모리 모델로 추론 성공 |
+| 로딩 시간 | 별도 probe에서 두 모델 다운로드·로딩 합계 약 22.78초 |
+| 추론 시간 | 합성 문장 1회: 논술형 약 1.47초, 서술형 약 4.76초. 반복 벤치마크나 #87의 35초 예산 보장 자료는 아님 |
+| 메모리 | 두 모델 로딩 후 scoring 컨테이너 단일 표본 552.7 MiB. 별도 로딩·추론 probe 최대 RSS 1,172,360 KiB. 서로 다른 측정 대상 |
+| 기존 자동 테스트 | 현재 #85 소스 기준 52 passed, 27.56초. Ruff check·format 30개 파일 통과 |
+| 로그 | scoring 로그에서 이번 일회용 자격 증명 노출과 미처리 traceback 없음 |
+| 정리 | 이번 검증 전용 프로젝트 컨테이너·임시 볼륨·네트워크 제거 확인. 이전 #56 변경과 원본 tar 보존 |
+
+원시 출력의 실행 가능성을 확인한 것이며 최종 1~4/1~5 점수 변환·정확도·키워드 입력 계약을 검증한 것은 아니다. `scoring_model_probe.py`의 한국어 입력은 합성 smoke 입력이고, #87에서는 모델 학습 때의 정확한 입력 형식과 score_cuts 적용을 별도로 대조한다.
+
+### 재현과 보관
+
+최신 core `bootJar`와 #85 scoring 이미지를 먼저 빌드한다. report 개발용 Python에는 검증 runner의 boto3·httpx·PyYAML이 설치되어 있다.
+
+```powershell
+docker build -t local/scoring85-models:20261029 backend/scoring-service
+# #85 작업 폴더에서 실행. core-root는 최신 develop의 별도 checkout이다.
+& C:/Users/playdata2/Desktop/final/SKN34-FINAL-3TEAM/backend/report-service/.venv/Scripts/python.exe -X utf8 scripts/verify_scoring_models.py --archive C:/Users/playdata2/Desktop/m2_models_2.0.tar --core-root C:/Users/playdata2/Desktop/final/SKN34-FINAL-3TEAM --output C:/Users/playdata2/Desktop/final/tmp/issue85-real-models-20261029-final
+```
+
+runner는 모델 압축 파일과 결과 폴더가 Git checkout 내부이면 실행을 거부한다. 결과 폴더의 Compose 설정에는 일회용 로컬 자격 증명이 있으므로 Git에 추가하지 않는다. 종료 시 이번 테스트 프로젝트의 컨테이너·볼륨·네트워크만 정리한다. 원본 tar는 그대로 보존한다.
+
+첫 검증에서 Docker 재시작 시 자동 할당한 호스트 포트가 바뀌어 이전 주소를 기다렸다. 재시작 후 `compose port`를 다시 조회하도록 검증 스크립트를 수정했다. 모델 로더나 제품 API 오류는 아니었다.
+
+최종 결과는 저장소 밖 `C:/Users/playdata2/Desktop/final/tmp/issue85-real-models-20261029-final/results.json`에 있다. core snapshot·활성 버전·파일 크기/해시·CPU 출력·측정값을 기록했고, `probe.log`와 `services.log`를 함께 보관했다. 자동 테스트 결과는 같은 tmp 폴더의 `issue85-team-models-pytest-20261029.xml`이다.
+
+**판정: #85에 남아 있던 실제 팀 모델 로딩·활성 버전 수동 검증 완료. 제품 로더 수정 없이 통과했으며 이번 변경은 재현 스크립트와 검증 문서다. PR·원격 push·GitHub 이슈 종료는 아직 하지 않았다.**
