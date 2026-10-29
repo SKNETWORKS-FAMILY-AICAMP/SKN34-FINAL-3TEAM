@@ -114,8 +114,27 @@ export interface ErrorReport {
   comment: string
   reviewReason?: string
   linkedAttempt?: PublicAttempt
-  corrections: { reason: string; corrected: string; createdAt: string; impact: string }[]
+  corrections: { reason: string; corrected: string; createdAt: string; impact: string | Record<string, string> | null }[]
 }
+/** A successful judgment correction does not imply that derived outputs were updated. */
+export function correctionImpactText(impact: ErrorReport['corrections'][number]['impact']): string {
+  if (impact === null) return '파생 결과 반영 정보 없음'
+  if (typeof impact === 'string') return `이전 형식의 반영 정보: ${impact}`
+  const areas = [
+    ['conversation', '분석 대화'],
+    ['aggregation', '학습 수치 집계'],
+    ['report', '리포트'],
+  ] as const
+  const states: Record<string, string> = {
+    APPLIED: '반영 확인',
+    NOT_APPLIED: '미반영 확인(변경 대상 없음 포함, 오류·후속 처리 필요 아님)',
+    UNKNOWN: '반영 여부 미확인',
+  }
+  if (areas.some(([key]) => !Object.hasOwn(states, impact[key])))
+    return '반영 정보의 형식을 확인할 수 없습니다.'
+  return areas.map(([key, label]) => `${label}: ${states[impact[key]]}`).join(' / ')
+}
+
 export interface Usage {
   period: Period
   items: {

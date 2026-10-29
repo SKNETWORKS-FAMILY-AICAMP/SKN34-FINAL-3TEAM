@@ -382,6 +382,10 @@ erDiagram
   error_report {
     uuid id PK
     uuid reporter_user_id FK
+    varchar requester_role "NULL 허용 · STUDENT|PARENT, legacy 미추정"
+    uuid requester_student_id FK "NULL 허용 · 학생 요청 주체"
+    uuid attempt_id "NULL 허용 · 검증한 learning 시도"
+    uuid submission_key "NULL 허용 · 접수 중복 방지"
     uuid student_id FK "NULL 허용"
     varchar target_type "FOLLOWUP|JUDGMENT|ANALYSIS|REPORT"
     uuid target_id "learning·core·report 논리 참조"
@@ -397,6 +401,12 @@ erDiagram
   correction {
     uuid id PK
     uuid error_report_id FK
+    uuid request_key "NULL 허용 · 기존 이력 보존"
+    varchar corrected "NULL 허용 · CORRECT|PARTIAL|RETHINK|HELD"
+    varchar previous_result "NULL 허용"
+    varchar processing_status "NULL 허용 · PENDING|FAILED|COMPLETED"
+    jsonb provider_result "NULL 허용 · 공급자 처리 결과"
+    timestamptz completed_at "NULL 허용"
     varchar target_type
     uuid target_id
     text reason
@@ -407,6 +417,10 @@ erDiagram
   inquiry {
     uuid id PK
     uuid user_id FK
+    varchar requester_role "NULL 허용 · STUDENT|PARENT, legacy 미추정"
+    uuid student_id FK "NULL 허용 · 대상 학생"
+    uuid requester_student_id FK "NULL 허용 · 학생 요청 주체"
+    uuid attempt_id "NULL 허용 · 검증한 learning 시도"
     varchar category "ACCOUNT|USAGE|PAYMENT"
     varchar title
     text body
@@ -1050,3 +1064,5 @@ erDiagram
 
 
 기존 refresh_token에는 `session_id uuid NULL 허용 FK(auth_session.id)`·`used_at timestamptz NULL 허용`를 추가한다. 기존 토큰은 revoked_at을 채우고 다시 로그인하게 한다. 새 토큰은 반드시 session_id를 저장하며 만료는 세션의 최초 만료를 넘지 않는다. 사용 이력은 재사용 탐지를 위해 세션 만료까지 보존한다. 학생 전환은 version을 증가시키고 세션 만료를 학생 access TTL로 줄이며 기존 부모 refresh를 소비한다. 새 refresh는 발급하지 않는다. 관리자 세부 권한·동의·자녀 연결은 최신 테이블에서 확인한다. 기존 계정/비밀번호를 삭제하거나 OAuth subject를 추정하는 백필은 하지 않는다.
+
+#46 V14: 기존 V1~V13 불변. 소유 역할·학생 세션 범위를 추가하여 공유 보호자 ID의 학생/형제/보호자 노출을 분리한다. legacy NULL 역할은 본인 목록에 추정하지 않는다. error_report UK(reporter_user_id,submission_key), correction 부분 UK(error_report_id WHERE request_key IS NOT NULL)·UK(request_key)로 결과 저장 실패 후 재시도를 보존한다. notice DELETE는 ended_at 종료, 변경 전후는 audit_log에 기록한다.

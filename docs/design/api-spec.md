@@ -94,6 +94,8 @@
 | `LEARNING_CONTRACT_INVALID` | 502 | 대시보드 공급자의 JSON·학생 식별자·필수 조회 봉투 계약 위반. 기록 없음으로 대체하지 않음 (#40, 2.3) |
 | `MODEL_VERSION_CONFLICT` / `MODEL_APPROVAL_REJECTED` / `MODEL_VERSION_STATE_INVALID` | 409 / 422 / 503 | 허용되지 않는 전이·복귀 이력 없음 / 승인 근거·범위 부족 / 기존 ACTIVE 상태 불완전 (5.2) |
 | `LEARNING_INVALID_RESPONSE` | 502 | 피드백 SSE에서 learning 응답 형식 오류 (3.2) |
+| `SUPPORT_CORRECTION_CONFLICT` / `SUPPORT_CORRECTION_REJECTED` | 409 / 422 | learning 정정 POST의 업무 충돌 / 요청 거부. 공급자 본문은 공개하지 않음 (5.7) |
+| `SUPPORT_DEPENDENCY_UNAVAILABLE` / `SUPPORT_INVALID_RESPONSE` | 503 / 502 | 지원 공급자의 기타 비-2xx / 잘못된 2xx 성공 응답 (5.7) |
 | `INTERNAL_ERROR` | 500 | 예상하지 못한 서버 오류 (SSE `error` 이벤트는 `retryable: true`) |
 
 - 피드백 SSE `error` 이벤트: core가 만든 오류는 `type: "about:blank"`·`title`·`status`·`code`·`retryable`만 포함하고 `instance`·`traceId`는 없음. learning이 보낸 Problem Details는 그대로 전달하고 빠진 `type`·`title`·`status`·`code`·`retryable`만 보충 (3.2)
@@ -855,3 +857,46 @@ ERD 3.2 report_job/job_execution, 3.5 model_version/audit_log/llm_usage, 4.1 mis
 
 
 #45 보완: 연결 해제 뒤에도 동일 보호자의 등록 이력으로 PROFILE/RECORDS 삭제를 요청할 수 있다. PIN_CHANGE/CHILD_UNLINK 재인증은 현재 LINKED 소유권이 필요하다. 이미 진행 중인 RECORDS 삭제와 탈퇴가 겹치면 기존 RECORDS 완료 뒤 새로운 PROFILE 요청/이벤트를 기록한다. 두 이벤트의 scope를 바꾸거나 완료 보고를 다른 요청으로 전용하지 않는다. PROFILE 완료 시 연락 이메일/표시 이름은 계정 tombstone으로 정리하며 Google sub는 탈퇴 계정 재로그인을 차단하기 위한 식별 표식으로 유지한다. 상품/거래/구독/환불 행은 변경하지 않는다.
+
+
+### 5.7 #46 support 구현 계약
+
+- `/help`·`/notices`는 Bearer 인증·현재 동의가 필요하다. help의 role 생략 시 현재 역할, 다른 역할 요청은 403. 기존 Google·기기·PIN·탈퇴 상태 토큰 예외는 유지한다.
+- 신고·문의 소유자는 `(userId, requesterRole, requesterStudentId)`다. 학생은 세션 studentId만, 보호자는 자신의 PARENT 건만 조회한다. 자녀 대상은 현재 연결·동의를 재검사한다. 기존 소유 역할이 없는 행은 사용자 목록에 추정 노출하지 않는다.
+- `POST /error-reports`: 기존 필드 + 선택 `studentId`(서버 확인), UUID Idempotency-Key 필수. learning 대상은 아래 공급자 조회에서 학생·시도를 검증한 뒤 저장한다. ANALYSIS targetId는 core conversation_message ID, REPORT는 완료 report ID이며 보호자만 가능하다. 접수는 판정을 변경하지 않는다.
+- `POST /inquiries`: `{category:ACCOUNT|USAGE|PAYMENT,title,body,studentId?,attemptId?}`. 학생은 세션 학생으로 고정한다. 세 문의 분류는 학생·보호자 모두 접수할 수 있으며, 문의 분류가 결제 데이터 조회 권한을 부여하지 않는다. attemptId는 공급자가 해당 학생 시도로 확인할 때만 연결한다. 문의 목록·상세는 `{inquiryId,category,title,body,status,answer?,answeredAt?,createdAt}`.
+- 관리자 신고 PATCH `{status,reviewReason,reviewResult?}`: RECEIVED→IN_REVIEW→RESOLVED. RESOLVED는 결과·사유 필수(reviewResult 생략 시 reviewReason 사용). 완료 후 재요청은 동일 값만 허용한다. 문의 답변 `{answer}`는 RECEIVED/IN_REVIEW→RESOLVED, 같은 답변 재시도는 동일 결과, 변경은 409.
+- 정정 POST는 UUID Idempotency-Key + `{reason,corrected:CORRECT|PARTIAL|RETHINK|HELD}`. 이번 공급자 계약은 JUDGMENT만 지원하며 다른 targetType은 422. 검토 중 신고에 정정 의도·이전 결과·고정 요청 ID를 먼저 커밋 → 트랜잭션 밖 learning HTTP → 성공 결과와 영향·신고 완료·알림을 같은 트랜잭션으로 저장한다. 실패/응답 유실은 완료하지 않으며 동일 ID로 재시도한다. 신고당 정정 1건, 다른 본문 재사용 409. 원본 학생 답변·판정은 덮어쓰지 않는다.
+- 관리자 상세 원문은 저장된 attemptId·studentId에서만 조회한다. 임의 attemptId query를 받지 않는다. 목록·쓰기 응답에는 원문 없음. 원문은 draft·memo 제외 답변·판정만, 응답 전에 audit_log 저장(실패 시 원문 응답 실패). 문의 원문은 추가 `GET /admin/inquiries/{inquiryId}`를 동일하게 처리한다.
+- 공지 POST/PATCH `{kind:NOTICE|MAINTENANCE,title,body,targetRoles:[STUDENT|PARENT|ADMIN],visibleFrom,visibleTo?}`. 역할·기간 검증, 종료 후 수정 금지. DELETE는 endedAt 기록이며 물리 삭제하지 않는다. 사용자 GET은 현재 역할과 `visibleFrom <= now < visibleTo`, endedAt 없음만 조회한다. 목록은 공통 page/size 봉투.
+- 보호자 신고 완료·문의 답변만 기존 알림 service로 연결한다. 학생 건은 본인 결과 조회, 보호자 알림으로 우회하지 않는다. sourceEventId는 신고/문의 UUID이며 완료 여부만 알린다. 링크는 `/parent/support?reportId=...` 또는 `?inquiryId=...`, 소비자에서 본인 상세 API를 호출한다.
+
+### learning 공급자 필요 계약 (아직 구현되지 않음)
+
+현재 learning controller/OpenAPI에는 target 해석·SERVICE_OPS 원문·정정 구현이 없다. 학생 전용 `/internal/attempts/{id}`를 관리자로 위장 호출하지 않는다. 별도 `contracts/openapi/support-learning-required.yaml`은 협의용 계약이며 현재 learning 구현 명세와 구분한다.
+
+- GET `/internal/support/targets/{targetType}/{targetId}`: JUDGMENT/FOLLOWUP/ATTEMPT → `{studentId,attemptId,judgmentId?,previousResult?}`. 내부 토큰 + 사용자 scope 검사, 관리자 SERVICE_OPS 컨텍스트는 core 검증 후 전달. 범위 밖 403, 대상 없음 404, 미구현/장애는 core `SUPPORT_DEPENDENCY_UNAVAILABLE` (503).
+- GET `/internal/support/attempts/{attemptId}`: `{studentId,attemptId,answers:[{answerId,version,text,feedback}]}`. core가 저장된 연결 ID로만 호출, 공급자도 전달한 단일 학생 scope·ADMIN 역할·core 내부 토큰 검사(SERVICE_OPS는 core에서 검증). draft/memo/이름 제외.
+- POST `/internal/judgments/{judgmentId}/corrections`는 **#80**의 공급자 구현 범위다. `{reportId,reason,corrected}`와 core에 영속 저장한 correction UUID를 `Idempotency-Key`로 전달하는 현재 흐름을 유지한다. 원판정·원본 답변을 보존하고 정정 이력을 추가한다. 조회에는 최신 정정을 적용하되 기존 되묻기와 `nextActions`는 유지한다.
+- 정정 인증은 내부 토큰·`ADMIN`·대상 학생 **정확히 1명**의 `X-Student-Scope`·UUID `X-User-Id`가 필수다. SERVICE_OPS 검사는 core가 소유한다. 잘못된 내부 토큰은 401, 역할/학생 범위 위반은 403, 필수 사용자 ID 누락/형식 오류는 400이다.
+- 정정 대상의 처리 상태가 `DONE` 이전이면 409. 동일 `reportId`에 다른 `Idempotency-Key`를 사용하면 409. 같은 키·같은 본문은 `correctionId`·이전 결과·정정 결과·시각·impact를 포함한 **최초 응답 전체**를 재현하고, 같은 키·다른 본문은 422다. 응답 유실·core 저장 실패 후에도 같은 영속 키로 재개한다.
+- 정정 응답은 `{correctionId,previousResult,corrected,createdAt,impact:{conversation,aggregation,report}}`다. `impact.aggregation`은 **학습 수치 집계**에 대한 정정 반영 여부이며 개별 기록 상세의 판정 표시와 구분한다.
+- impact의 `APPLIED`는 해당 영역에 정정 반영을 확인함, `NOT_APPLIED`는 해당 영역에 정정 반영을 수행하지 않았음을 확인함, `UNKNOWN`은 반영 여부를 확인하지 못함이다. 집계가 판정 결과를 사용하지 않아 변경 대상이 없는 경우도 `aggregation: NOT_APPLIED`이며 오류나 후속 처리 필요를 뜻하지 않는다. learning은 `conversation`·`report`에 UNKNOWN을 반환할 수 있다.
+- **모든 impact가 UNKNOWN이어도 판정 정정 성공과 신고 RESOLVED 전이가 가능**하다. core는 공급자가 확인한 정정 성공을 기준으로 완료 처리하고 impact는 그대로 보존한다. 관리자 화면은 이를 대화·집계·리포트까지 모두 반영됐다는 의미로 표시하지 않는다.
+- `/support/targets/...`(신고 대상 확인·최초 정정 전 조회)와 `/support/attempts/...`(관리자 원문 조회)는 **#80 범위 밖의 별도 공급자 이슈**다. #80만으로 실제 정정 E2E가 완료되지는 않는다.
+
+#### #46 관리자 정정 공개 오류 계약
+
+기존 구현은 공급자의 모든 비-2xx를 `503 SUPPORT_DEPENDENCY_UNAVAILABLE`로 변환했다. 정정 POST에 한해 다음처럼 구분한다. 공급자 오류 본문·내부 상세·임의 code는 공개 응답에 전달하지 않는다.
+
+| learning 응답/실패 | 관리자 `POST /admin/error-reports/{id}/corrections` 응답 | 상태 처리 |
+|---|---|---|
+| 409 (DONE 이전·reportId/키 충돌) | **409 SUPPORT_CORRECTION_CONFLICT** | 정정 FAILED, 신고 IN_REVIEW 유지, 완료 알림 없음 |
+| 422 (같은 키·다른 본문) | **422 SUPPORT_CORRECTION_REJECTED** | 정정 FAILED, 신고 IN_REVIEW 유지, 완료 알림 없음 |
+| 그 외 비-2xx (조회 API의 409·422도 포함) | **503 SUPPORT_DEPENDENCY_UNAVAILABLE** | 완료로 표시하지 않음 |
+| 2xx의 잘못된 JSON·필수 필드·impact 코드 | **502 SUPPORT_INVALID_RESPONSE** | 완료로 표시하지 않음 |
+| 전송/시간 초과/서킷 차단 | 기존 LEARNING_UNAVAILABLE(503) / LEARNING_TIMEOUT(504) / LEARNING_CIRCUIT_OPEN(503) | 완료로 표시하지 않음 |
+
+core 자체의 권한·상태·본문 충돌 오류는 기존 계약을 유지한다. 이 표는 공급자 HTTP 응답 변환에 대한 계약이며 learning 공급자 구현 완료를 의미하지 않는다.
+
+#46 신고 POST의 최초 접수 응답은 RECEIVED·검토 결과 없음·정정 이력 없음으로 고정한다. 공통 멱등 응답 저장 실패 후 재구성해도 이미 진행된 관리자 처리 결과를 최초 접수 응답에 섞지 않는다. 생성 시각은 PostgreSQL과 같은 UTC 마이크로초 정밀도를 사용한다. 최신 learning #27의 기록 상세는 ADMIN을 허용하지 않으므로 이를 보호자/SYSTEM으로 위장 호출하지 않는다.

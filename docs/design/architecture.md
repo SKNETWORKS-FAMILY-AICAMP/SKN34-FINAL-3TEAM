@@ -731,3 +731,8 @@ report/scheduler → ReportScheduleService → ReportJobService의 자녀별 트
 `student.deleted.v1` data는 `{studentId,deletionRequestId,scope:PROFILE|RECORDS}`다. 요청 CONFIRMED와 OutboxWriter.append는 한 트랜잭션이다. learning/report는 실제 삭제가 끝난 후 요청 ID와 service로 완료 보고한다. core는 서비스별 UNIQUE 완료 행을 기록하고 둘 다 확인할 때만 COMPLETED로 전이한다. core 분석 대화 정리는 conversation service를 통해 같은 DB 트랜잭션으로 처리한다. payment의 탈퇴 조건 조회도 payment service를 통해 호출한다. account/guardianship에서 다른 기능 repository를 직접 참조하지 않는다. Google 네트워크 교환은 DB 트랜잭션 밖에서 수행한다.
 
 #58 학생 단독 인증: account/controller → account/service/StudentAuthService → account/repository(StudentDeviceRepository, PairingRepository). PIN·자녀 잠금은 guardianship/service/StudentPinService → guardianship/repository/StudentPinRepository. 기능 간 repository 참조 없이 service로 연결한다. PIN 변경의 재인증 DB 소비·PIN 갱신·audit는 같은 트랜잭션이다. Redis 페어링은 DB 등록 전 단회 소비하며 실패 시 코드 재발급이 필요하다.
+
+
+### #46 신고·지원 연결 경계
+
+support/controller → SupportService → support/repository를 사용한다. 대상 검증은 상대 기능 service(StudentAccessService·ConversationSupportService·ReportSupportService)를 호출하며 다른 기능 repository를 직접 참조하지 않는다. support/client는 기존 learning LearningClient·InternalRestClientFactory를 재사용한다. 정정 의도 저장·완료 저장 사이 HTTP는 트랜잭션 밖이며, core 영속 correction UUID가 공급자 요청 식별자다. 원문 응답 전 감사 저장이 실패하면 원문을 반환하지 않는다. 알림은 NotificationService.support로 저장·수신 설정·중복 방지·NotificationStored·커밋 후 Redis 전달을 재사용한다. 자세한 범위와 공급자 미구현은 [#46 보고서](../report/issue-46-support.md)에 기록한다.

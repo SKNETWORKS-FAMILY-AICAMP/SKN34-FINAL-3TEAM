@@ -13,7 +13,10 @@ import java.time.OffsetDateTime
 import java.util.UUID
 
 @Service
-class NotificationService(private val repository: NotificationRepository, private val events: ApplicationEventPublisher) {
+class NotificationService(private val repository: NotificationRepository, private val events: ApplicationEventPublisher,
+    private val students: com.sagomungchi.core.guardianship.service.StudentAccessService,
+    private val consents: com.sagomungchi.core.consent.service.ConsentAccessService,
+    private val accounts: com.sagomungchi.core.account.service.AccountAccessService) {
     fun owner(identity: AuthenticatedAccount): UUID {
         if (identity.session.role !in setOf("PARENT", "ADMIN"))
             throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "학생 세션은 보호자 알림에 접근할 수 없습니다.")
@@ -47,6 +50,15 @@ class NotificationService(private val repository: NotificationRepository, privat
             if (failed) NotificationType.REPORT_FAILED else NotificationType.REPORT_COMPLETED, sourceEventId,
             if (failed) "주간 리포트 생성에 실패했습니다." else "주간 리포트가 완성되었습니다.",
             if (failed) "/parent/report?childId=$childId" else "/parent/report?childId=$childId&reportId=$reportId", null, OffsetDateTime.now())
+        if (repository.insert(value)) events.publishEvent(NotificationStored(value.id, userId))
+    }
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun support(userId: UUID, childId: UUID?, sourceEventId: UUID, inquiry: Boolean) {
+        if (!accounts.notificationRecipient(userId) || !consents.hasRequiredConsents(userId) || (childId != null && userId !in students.notificationParents(childId))) return
+        val value = Notification(UUID.randomUUID(), userId, childId,
+            if (inquiry) NotificationType.INQUIRY_ANSWERED else NotificationType.ERROR_REPORT_RESOLVED,
+            sourceEventId, if (inquiry) "문의에 답변이 등록되었습니다." else "신고 처리가 완료되었습니다.",
+            "/parent/support?${if (inquiry) "inquiryId" else "reportId"}=$sourceEventId", null, OffsetDateTime.now())
         if (repository.insert(value)) events.publishEvent(NotificationStored(value.id, userId))
     }
     fun find(userId: UUID, id: UUID) = repository.find(userId, id)

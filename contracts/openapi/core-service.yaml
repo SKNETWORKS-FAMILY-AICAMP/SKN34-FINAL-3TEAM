@@ -16,6 +16,7 @@ tags:
 - name: Children
 - name: Admin
 - name: ModelRegistry
+- name: Support
 security:
 - BearerAuth: []
 paths:
@@ -2674,6 +2675,534 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /error-reports:
+    post:
+      tags:
+      - Support
+      operationId: postError-Reports
+      responses:
+        '201':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportReport'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupportReportSubmission'
+      summary: 인증 POST /error-reports
+    get:
+      tags:
+      - Support
+      operationId: getError-Reports
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportReportPage'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - in: query
+        name: size
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      summary: 인증 GET /error-reports
+  /error-reports/{reportId}:
+    get:
+      tags:
+      - Support
+      operationId: getError-ReportsReportid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportReport'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - in: path
+        name: reportId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      summary: 인증 GET /error-reports/{reportId}
+  /admin/error-reports:
+    get:
+      tags:
+      - Support
+      operationId: getAdminError-Reports
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportReportPage'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - in: query
+        name: size
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - RECEIVED
+          - IN_REVIEW
+          - RESOLVED
+      summary: SERVICE_OPS GET /admin/error-reports
+  /admin/error-reports/{reportId}:
+    get:
+      tags:
+      - Support
+      operationId: getAdminError-ReportsReportid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportReport'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - in: path
+        name: reportId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      summary: SERVICE_OPS GET /admin/error-reports/{reportId}
+    patch:
+      tags:
+      - Support
+      operationId: patchAdminError-ReportsReportid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportReport'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - in: path
+        name: reportId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupportReview'
+      summary: SERVICE_OPS PATCH /admin/error-reports/{reportId}
+  /inquiries:
+    post:
+      tags:
+      - Support
+      operationId: postInquiries
+      responses:
+        '201':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportInquiry'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupportInquirySubmission'
+      summary: 인증 POST /inquiries
+    get:
+      tags:
+      - Support
+      operationId: getInquiries
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportInquiryPage'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - in: query
+        name: size
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      summary: 인증 GET /inquiries
+  /inquiries/{inquiryId}:
+    get:
+      tags:
+      - Support
+      operationId: getInquiriesInquiryid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportInquiry'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - in: path
+        name: inquiryId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      summary: 인증 GET /inquiries/{inquiryId}
+  /admin/inquiries:
+    get:
+      tags:
+      - Support
+      operationId: getAdminInquiries
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportInquiryPage'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - in: query
+        name: size
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - RECEIVED
+          - IN_REVIEW
+          - RESOLVED
+      summary: SERVICE_OPS GET /admin/inquiries
+  /admin/inquiries/{inquiryId}:
+    get:
+      tags:
+      - Support
+      operationId: getAdminInquiriesInquiryid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportInquiry'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - in: path
+        name: inquiryId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      summary: SERVICE_OPS GET /admin/inquiries/{inquiryId}
+  /admin/error-reports/{reportId}/corrections:
+    post:
+      tags:
+      - Support
+      description: 판정 정정 성공 시 RESOLVED. impact가 모두 UNKNOWN이어도 성공하며 파생 결과 전체 반영을 뜻하지 않음.
+      operationId: postAdminError-ReportsReportidCorrections
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportReport'
+        '409':
+          description: core 상태 충돌 또는 learning 409를 SUPPORT_CORRECTION_CONFLICT로 변환. 신고 완료 아님.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: learning 422를 SUPPORT_CORRECTION_REJECTED로 변환. 공급자 본문은 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - in: path
+        name: reportId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupportCorrectionCommand'
+      summary: SERVICE_OPS POST /admin/error-reports/{reportId}/corrections
+  /admin/inquiries/{inquiryId}/answer:
+    post:
+      tags:
+      - Support
+      operationId: postAdminInquiriesInquiryidAnswer
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportInquiry'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - in: path
+        name: inquiryId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupportAnswer'
+      summary: SERVICE_OPS POST /admin/inquiries/{inquiryId}/answer
+  /notices:
+    get:
+      tags:
+      - Support
+      operationId: getNotices
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportNoticePage'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - in: query
+        name: size
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      summary: 인증 GET /notices
+  /admin/notices:
+    post:
+      tags:
+      - Support
+      operationId: postAdminNotices
+      responses:
+        '201':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportNotice'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupportNoticeCommand'
+      summary: SERVICE_OPS POST /admin/notices
+  /admin/notices/{noticeId}:
+    patch:
+      tags:
+      - Support
+      operationId: patchAdminNoticesNoticeid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportNotice'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - in: path
+        name: noticeId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupportNoticeCommand'
+      summary: SERVICE_OPS PATCH /admin/notices/{noticeId}
+    delete:
+      tags:
+      - Support
+      operationId: deleteAdminNoticesNoticeid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportNotice'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - in: path
+        name: noticeId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      summary: SERVICE_OPS DELETE /admin/notices/{noticeId}
+  /help:
+    get:
+      tags:
+      - Support
+      operationId: getHelp
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportHelp'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+      parameters:
+      - in: query
+        name: role
+        schema:
+          type: string
+          enum:
+          - STUDENT
+          - PARENT
+          - ADMIN
+      summary: 인증 GET /help
 components:
   securitySchemes:
     StudentDeviceCookie: {type: apiKey, in: cookie, name: student_device}
@@ -4768,6 +5297,446 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DashboardMissionListItem'
+    SupportReportSubmission:
+      type: object
+      required:
+      - targetType
+      - targetId
+      - category
+      properties:
+        targetType:
+          type: string
+          enum:
+          - FOLLOWUP
+          - JUDGMENT
+          - ANALYSIS
+          - REPORT
+        targetId:
+          type: string
+          format: uuid
+        category:
+          type: string
+          enum:
+          - WRONG_JUDGMENT
+          - ODD_QUESTION
+          - MISMATCH
+          - INAPPROPRIATE
+          - OTHER
+        comment:
+          type: string
+          maxLength: 10000
+        studentId:
+          type: string
+          format: uuid
+    SupportInquirySubmission:
+      type: object
+      required:
+      - category
+      - title
+      - body
+      properties:
+        category:
+          type: string
+          enum:
+          - ACCOUNT
+          - USAGE
+          - PAYMENT
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        body:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        studentId:
+          type: string
+          format: uuid
+        attemptId:
+          type: string
+          format: uuid
+    SupportReview:
+      type: object
+      required:
+      - status
+      - reviewReason
+      properties:
+        status:
+          type: string
+          enum:
+          - RECEIVED
+          - IN_REVIEW
+          - RESOLVED
+        reviewReason:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        reviewResult:
+          type: string
+    SupportCorrectionCommand:
+      type: object
+      required:
+      - reason
+      - corrected
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        corrected:
+          type: string
+          enum:
+          - CORRECT
+          - PARTIAL
+          - RETHINK
+          - HELD
+    SupportCorrection:
+      type: object
+      required:
+      - correctionId
+      - reason
+      - corrected
+      - previousResult
+      - status
+      - createdAt
+      - completedAt
+      - impact
+      properties:
+        correctionId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+        corrected:
+          type:
+          - string
+          - 'null'
+          enum:
+          - CORRECT
+          - PARTIAL
+          - RETHINK
+          - HELD
+          - null
+        previousResult:
+          type:
+          - string
+          - 'null'
+        status:
+          type:
+          - string
+          - 'null'
+          enum:
+          - PENDING
+          - FAILED
+          - COMPLETED
+          - null
+        createdAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        completedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        impact:
+          description: aggregation은 학습 수치 집계에 대한 반영 여부. APPLIED=반영 확인, NOT_APPLIED=미반영 확인(변경 대상 없음 포함·오류/후속 필요 아님), UNKNOWN=확인
+            못함. 모든 UNKNOWN도 정정 성공과 양립함.
+          type:
+          - object
+          - 'null'
+    SupportAttempt:
+      type: object
+      required:
+      - attemptId
+      - studentId
+      - answers
+      properties:
+        attemptId:
+          type: string
+          format: uuid
+        studentId:
+          type: string
+          format: uuid
+        answers:
+          type: array
+          items:
+            type: object
+    SupportReport:
+      type: object
+      required:
+      - reportId
+      - status
+      - targetType
+      - targetId
+      - category
+      - comment
+      - reviewReason
+      - reviewResult
+      - createdAt
+      - resolvedAt
+      - corrections
+      properties:
+        reportId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+          - RECEIVED
+          - IN_REVIEW
+          - RESOLVED
+        targetType:
+          type: string
+        targetId:
+          type: string
+          format: uuid
+        category:
+          type:
+          - string
+          - 'null'
+        comment:
+          type:
+          - string
+          - 'null'
+        reviewReason:
+          type:
+          - string
+          - 'null'
+        reviewResult:
+          type:
+          - string
+          - 'null'
+        createdAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        resolvedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        corrections:
+          type: array
+          items:
+            $ref: '#/components/schemas/SupportCorrection'
+        linkedAttempt:
+          $ref: '#/components/schemas/SupportAttempt'
+    SupportInquiry:
+      type: object
+      required:
+      - inquiryId
+      - category
+      - title
+      - body
+      - status
+      - answer
+      - answeredAt
+      - createdAt
+      properties:
+        inquiryId:
+          type: string
+          format: uuid
+        category:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        status:
+          type: string
+          enum:
+          - RECEIVED
+          - IN_REVIEW
+          - RESOLVED
+        answer:
+          type:
+          - string
+          - 'null'
+        answeredAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        createdAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        linkedAttempt:
+          $ref: '#/components/schemas/SupportAttempt'
+    SupportNoticeCommand:
+      type: object
+      required:
+      - kind
+      - title
+      - body
+      - targetRoles
+      - visibleFrom
+      properties:
+        kind:
+          type: string
+          enum:
+          - NOTICE
+          - MAINTENANCE
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        body:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        targetRoles:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+            - STUDENT
+            - PARENT
+            - ADMIN
+        visibleFrom:
+          type: string
+          format: date-time
+        visibleTo:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    SupportNotice:
+      type: object
+      required:
+      - noticeId
+      - kind
+      - title
+      - body
+      - targetRoles
+      - visibleFrom
+      - visibleTo
+      - endedAt
+      properties:
+        noticeId:
+          type: string
+          format: uuid
+        kind:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        targetRoles:
+          type: array
+          items:
+            type: string
+        visibleFrom:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        visibleTo:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        endedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    SupportHelp:
+      type: object
+      required:
+      - role
+      - items
+      properties:
+        role:
+          type: string
+          enum:
+          - STUDENT
+          - PARENT
+          - ADMIN
+        items:
+          type: array
+          items:
+            type: object
+            required:
+            - title
+            - body
+            properties:
+              title:
+                type: string
+              body:
+                type: string
+    SupportReportPage:
+      type: object
+      required:
+      - items
+      - page
+      - size
+      - totalElements
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SupportReport'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+    SupportInquiryPage:
+      type: object
+      required:
+      - items
+      - page
+      - size
+      - totalElements
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SupportInquiry'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+    SupportNoticePage:
+      type: object
+      required:
+      - items
+      - page
+      - size
+      - totalElements
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SupportNotice'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+    SupportAnswer:
+      type: object
+      required:
+      - answer
+      properties:
+        answer:
+          type: string
+          minLength: 1
+          maxLength: 10000
   requestBodies:
     LearningJson:
       required: true
