@@ -199,7 +199,7 @@ def verify(archive, core_root, output, image, *, events=False, scores=False):
         scoring_env["OMP_NUM_THREADS"] = "4"
         scoring_env["MKL_NUM_THREADS"] = "4"
     config = output / "compose.local.yaml"
-    if events:
+    if events or scores:
         compose["services"]["scoring2"] = {
             "image": image,
             "environment": scoring_env,
@@ -359,7 +359,7 @@ def verify(archive, core_root, output, image, *, events=False, scores=False):
         results["snapshot"] = httpx.get(
             core + "/internal/model-versions/active", headers=headers
         ).json()
-        run(["restart", "scoring", *(["scoring2"] if events else [])])
+        run(["restart", "scoring", *(["scoring2"] if events or scores else [])])
         # Docker may reallocate an automatically assigned host port on restart.
         scoring = url("scoring", 8001)
         wait(

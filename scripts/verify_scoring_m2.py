@@ -169,24 +169,32 @@ def check_scores(run, url, core, access, headers, password, results, passed):
                         "reanalysisPlanned": False,
                     },
                 ).raise_for_status()
-                wait(
-                    endpoint + "/internal/versions",
-                    lambda r, revision=revision: (
-                        r.status_code == 200
-                        and any(
-                            x["name"] == name and x["revision"] == revision
-                            for x in r.json()["items"]
-                        )
-                    ),
-                    headers,
-                    seconds=300,
-                )
-                data = client.post("/internal/m2/scores", json=request()).json()
-                assert data["model"] == {
-                    "name": name,
-                    "version": release,
-                    "revision": revision,
-                }
+                for replica in (endpoint, url("scoring2", 8001)):
+                    wait(
+                        replica + "/internal/versions",
+                        lambda r, revision=revision: (
+                            r.status_code == 200
+                            and any(
+                                x["name"] == name and x["revision"] == revision
+                                for x in r.json()["items"]
+                            )
+                        ),
+                        headers,
+                        seconds=300,
+                    )
+                    response = httpx.post(
+                        replica + "/internal/m2/scores",
+                        headers=headers,
+                        json=request(),
+                        timeout=35,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    assert data["model"] == {
+                        "name": name,
+                        "version": release,
+                        "revision": revision,
+                    }
                 passed(
                     f"real core {verb} event reflected in M2 HTTP response: {release}"
                 )
