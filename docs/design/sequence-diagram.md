@@ -505,6 +505,8 @@ sequenceDiagram
 
 ### 6.1 자동 생성
 
+#152 관리자 실패 재처리도 아래 report 소비 흐름을 재사용한다. core #47이 원작업 연결을 보관하고 새 jobId·ADMIN_RETRY로 요청한다. report는 새 행·다음 revision을 생성하며 기존 실패 jobId의 단순 재전달은 ACK 후 종료한다. started/completed/failed의 jobId는 새 작업 ID이며 원작업으로 바꾸지 않는다. 관리자 요청 접수·감사 기록은 core #47 후속 연결 범위다.
+
 ```mermaid
 sequenceDiagram
   autonumber

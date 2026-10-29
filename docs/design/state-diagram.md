@@ -261,6 +261,7 @@ stateDiagram-v2
 
 - 기록 없는 주·표본 부족 주는 `COMPLETED` + `state`, 처리 실패(`FAILED`)와 구분 (FN-RPT-11)
 - 재생성은 새 행(`revision + 1`), 기존 결과 보존·최신판 기본 조회 (P06)
+- #152 관리자 실패 재처리도 **새 jobId·새 행**으로 위 전이를 시작한다. 원래 FAILED 행은 유지하며 같은 jobId의 COMPLETED·FAILED 메시지는 ACK 후 종료한다. 원작업 연결은 core #47이 관리하고, report는 요청한 새 jobId별 이벤트만 발행한다.
 
 ### 4.3 `conversation_message.status`
 
