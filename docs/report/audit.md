@@ -40,9 +40,9 @@ Windows 11 로컬 실행. CI(`_python.yml`·`_spring.yml`·`_web.yml`·`ci-db-sc
 | B8 | 이슈 | 중간 | report Outbox가 가장 오래된 미발행 행부터 선택. 영구 실패하는 이벤트 하나가 1초마다 재시도되며 뒤 이벤트 발행을 막음 | 코드 확인(미재현) | `report-service/app/outbox/repository.py:66-95`, `worker.py:45-53` |
 | B9 | 이슈 | 중간 | 종료 이벤트 없이 core 작업이 QUEUED/RUNNING에 남는 경로: 삭제 표식 COMPLETED 시 생성 요청 조용히 ACK, codec `InvalidEvent`·`JobConflict` 후 DLQ, `GenerationBusy` 3회 후 DLQ, 학생 삭제 시 해당 학생의 미발행 Outbox 행 삭제 | 코드 확인(core 정리 방식 확인 필요) | `generation/service.py:84-86`, `deletion/state.py:148` |
 | B10 | 이슈 | 중간 | 기기 등록 rate limit 키가 `request.remoteAddr`인데 `server.forward-headers-strategy` 미설정. 프록시 뒤에서 모든 사용자가 한 버킷(10분당 20회)을 공유 | 설정 확인 | `StudentDeviceController.kt:36`, core `application.yml` |
-| B11 | 이슈 | 중간 | 웹 실서버 모드가 `/children` 응답의 `plan`을 읽지만 OpenAPI·코드에 없음. 저녁 질문이 항상 숨겨지고 숫자·인용 대조 검사를 건너뜀 | 코드 대조 | `frontend/web/src/data/classroom/apiGateway.ts:206,351,375` |
+| B11 | 해결(#134) | 중간 | 웹 실서버 모드가 `/children` 응답의 `plan`을 읽지만 OpenAPI·코드에 없음. 저녁 질문이 항상 숨겨지고 숫자·인용 대조 검사를 건너뜀. → 이용권 계약(#129) 전까지 `plan`은 미확인으로 두고, 서술·저녁 질문은 서버 응답 유무로 표시, 서술이 있으면 항상 대조 검사. `FREE`가 명시된 경우만 화면에서 제한 | 코드 대조 | `frontend/web/src/data/classroom/apiGateway.ts:206,351,375` |
 | B12 | 이슈 | 중간(미해결 #93·#97) | 웹 관리자 모델 레지스트리 요청 모양(`evalResult`, `{reason, reanalyze}`)이 OpenAPI와 다름. `/auth/login`·`/auth/signup` 호출, `/me/reauth`에 `{password}` 전송 잔존 | 코드 대조 | `src/data/admin/api.ts:64-75`, `src/data/parent/api.ts:42,49`, `src/data/apiClient.ts:113` |
-| B13 | 일부 해결 | 낮음 | 웹 재생성 409 코드를 `REGENERATE_NOT_ALLOWED`로 처리, 리포트 목록을 page 봉투로 가정, `PATCH /children`에 `X-Reauth-Token` 전송·필드 필수 처리 | 코드 대조 | `apiGateway.ts:391`, `parent/api.ts:51,138` |
+| B13 | 해결(#134) | 낮음 | 웹 재생성 409 코드를 `REGENERATE_NOT_ALLOWED`로 처리, 리포트 목록을 page 봉투로 가정, `PATCH /children`에 `X-Reauth-Token` 전송·필드 필수 처리. → 409 코드는 3단계에서 변경, 리포트 목록은 `{items}`(웹·MSW), `PATCH /children`은 헤더 없이 바뀐 필드만 전송(웹·MSW 모두 선택 필드) | 코드 대조 | `apiGateway.ts:391`, `parent/api.ts:51,138` |
 | B14 | 해결 | 낮음 | `saveDraft`가 잠금 없이 소유·열림 확인 후 버전 조건부 UPDATE. finish·reflection과 겹치면 닫힌 시도에 초안 저장 가능 | 코드 확인(미재현) | learning `AttemptService.kt:147-152` |
 | B15 | 해결 | 낮음 | report-api readiness가 쓰지 않는 RabbitMQ에 의존, learning readiness도 미사용 RabbitMQ 포함, core readiness에 Redis 없음 | 설정 확인 | `report-service/app/bootstrap.py:30,43`, core·learning `application.yml` |
 | B16 | 해결 | 낮음 | 이미 처리한 삭제 이벤트 재전달 시 다른 요청이 PENDING이면 `RecordContractError` → 3회 후 DLQ | 코드 확인 | `report-service/app/deletion/state.py:88-98` |
@@ -92,7 +92,7 @@ PR `feature/develop-verification`에서 단계별 1커밋으로 처리.
 |---|---|
 | B3 | learning `student.deleted` 소비·완료 보고 기능 구현 |
 | B4 | 상품 권한(이용권) 공급자 계약 미정 |
-| B5 | report 실제 생성기·ai 서술 API(api-spec 4.2) 기능 구현 |
+| B5 | report 실제 생성기 조립 기능 구현 (ai 서술 API `/internal/report-narratives`는 #64에서 구현) |
 | B8 | 실패 이벤트를 건너뛰면 같은 리포트의 started→completed 순서 보장이 깨짐. 순서 정책 결정 필요 |
 | B9 | v1 `report.failed`가 `reportId` 필수라 리포트 행 생성 전 실패를 알릴 계약이 없음. 계약 변경 또는 core 정리 작업 필요 |
 | B10 | api-spec 3.11이 "신뢰 프록시 설정 전에는 X-Forwarded-For를 쓰지 않는다"로 정한 임시 결정. ALB·CloudFront 신뢰 프록시 설정과 함께 처리 |
@@ -164,3 +164,7 @@ PR `feature/develop-verification`에서 단계별 1커밋으로 처리.
 | #95 | `SPEECH` 호출 종류 잔존 | 해결: 이벤트 스키마·ai·core enum·OpenAPI에서 제거(`callType=SPEECH`는 400), DB CHECK는 core V14(#99) |
 | #96 | P12 "확정 전 임시값" 주석 | 해결: 서비스 공통 내부 호출 기본값 30초는 P12 목록 밖이라 값 유지, 주석만 정리 |
 | #97 | 웹 `/auth/login`·`/auth/signup`·`/me/reauth {password}` 잔존 호출 | 미해결(1.2 B12) |
+
+### #56 후속 반영 (2026-10-29)
+
+B5의 기본 worker 미연결·표시 별명 누락은 #56에서 `CoreClient.lookup`과 `NamedGenerator`를 기본 생성 파이프라인에 연결해 수정했다. 실제 AI 서술 API(C9)는 별도 후속이며 #56 검증은 이슈가 허용한 AI 대역을 사용한다. [검증 범위와 결과](report-worker-integration.md)를 참고한다.

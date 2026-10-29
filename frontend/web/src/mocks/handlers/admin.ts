@@ -114,11 +114,9 @@ export const adminHandlers = [
         statuses = ['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED'] as const
       return {
         period: p,
-        state: visible.length ? 'OK' : 'NO_RECORD',
         inclusionRule:
           '개발 목업 작업 집계 · 실제 운영 집계 아님 · 시연 학습 기록은 운영 통계에서 제외',
-        attempts: 0,
-        completed: 0,
+        learning: { attempts: 0, completedAttempts: 0, students: 0, inclusionRule: '개발 목업 · 실제 학습 통계 아님' },
         jobCounts: types.flatMap((type) =>
           statuses.map((status) => ({
             type,
@@ -126,9 +124,7 @@ export const adminHandlers = [
             count: visible.filter((j) => j.type === type && j.status === status).length,
           })),
         ),
-        missionCounts: (['DRAFT', 'REVIEW_REQUIRED', 'PUBLISHED', 'UNPUBLISHED'] as const).map(
-          (status) => ({ status, count: missions.filter((m) => m.status === status).length }),
-        ),
+
       }
     }),
   ),
@@ -170,16 +166,17 @@ export const adminHandlers = [
         return receipt.response
       }
       if (j.status !== 'FAILED') fail('VALIDATION_FAILED', '실패 작업만 재처리할 수 있습니다.')
+      if (!j.retryable) fail('JOB_RETRY_UNAVAILABLE', '재처리 공급자 연결 대기', 503)
       j.retryCount++
       j.status = mode === 'retry-fail' ? 'FAILED' : 'COMPLETED'
       j.failureReason = j.status === 'FAILED' ? '재처리에서도 외부 응답 시간 초과' : null
-      j.updatedAt = stamp()
+      j.retryable = j.status === 'FAILED'
+      j.retryUnavailableReason = j.retryable ? null : 'JOB_NOT_FAILED'
       j.executions.push({
         executionId: crypto.randomUUID(),
         attemptNo: j.executions.length + 1,
         status: j.status,
         errorCode: j.status === 'FAILED' ? 'AI_UNAVAILABLE' : null,
-        errorDetail: j.failureReason,
         triggeredBy: 'mock-admin',
         startedAt: stamp(),
         finishedAt: stamp(),
@@ -200,10 +197,15 @@ export const adminHandlers = [
       allow(request, 'SERVICE_OPS')
       queryFault()
       return {
-        items: ['report.generate', 'notification'].map((name) => ({
+        vhost: '/',
+        items: ['report.report.generate', 'report.report.generate.retry.1', 'report.report.generate.dlq'].map((name) => ({
           name,
-          length: jobs.filter((j) => j.status === 'QUEUED').length,
-          dlq: jobs.filter((j) => j.status === 'FAILED').length,
+          kind: name.endsWith('.dlq') ? 'DLQ' : name.includes('.retry.') ? 'RETRY' : 'WORK',
+          messages: 0,
+          messagesReady: 0,
+          messagesUnacknowledged: 0,
+          consumers: 0,
+          state: 'running',
         })),
       }
     }),
@@ -431,25 +433,15 @@ export const adminHandlers = [
   http.post('/api/v1/admin/model-versions', ({ request }) =>
     respond(async () => {
       allow(request, 'SERVICE_OPS')
-      const d = (await request.json()) as ModelVersion
-      if (
-        !d.name?.trim() ||
-        !d.version?.trim() ||
-        !d.evalResult?.trim() ||
-        !d.approvedBy?.trim() ||
-        !['RUBRIC', 'MODEL', 'PROMPT', 'GENERATION'].includes(d.kind)
-      )
-        fail('VALIDATION_FAILED', '이름·버전·평가 근거·승인자를 확인해 주세요.')
-      if (
-        modelVersions.some((v) => v.kind === d.kind && v.name === d.name && v.version === d.version)
-      )
-        fail('VALIDATION_FAILED', '이미 등록된 버전입니다.')
-      const v: ModelVersion = {
-        ...d,
-        id: crypto.randomUUID(),
-        status: 'REGISTERED',
-        createdAt: stamp(),
-      }
+      const d = (await request.json()) as Omit<ModelVersion,'evalResult'> & { evaluation: import('../../domain/admin/operations.ts').EvaluationEvidence }
+      const e = d.evaluation
+      const fields = ['datasetId','datasetVersion','baselineVersion','comparisonReport','trainingEvaluationSeparation','quoteAccuracy','calculationAccuracy','humanReview'] as const
+      if (!d.name?.trim() || !d.version?.trim() || !['RUBRIC','MODEL','PROMPT','GENERATION'].includes(d.kind) ||
+          !e || fields.some(k => !e[k]?.trim()) || !e.evaluatedScopes?.length ||
+          new Set(e.evaluatedScopes).size !== e.evaluatedScopes.length || e.evaluatedScopes.some(v=>typeof v!=='string'||v.length>200||!/^[a-z0-9][a-z0-9._:/-]*$/.test(v)) ||
+          (d.kind==='RUBRIC' ? !d.refId : !!d.refId)) fail('MODEL_APPROVAL_REJECTED','평가 근거·범위·기준표 ID를 확인해 주세요.',422)
+      if (modelVersions.some(v=>v.kind===d.kind&&v.name===d.name&&v.version===d.version)) fail('MODEL_VERSION_CONFLICT','이미 등록된 버전입니다.',409)
+      const v: ModelVersion = { id:crypto.randomUUID(),kind:d.kind,name:d.name,version:d.version,refId:d.refId,artifactUri:d.artifactUri,status:'REGISTERED',createdAt:stamp(),evalResult:{ evidence:e,approval:null,activeScopes:[],revision:0 } }
       modelVersions.push(v)
       audit('MODEL_REGISTER', 'MODEL', v.id, 'SUCCESS', '평가 첨부 개발 예시')
       return v
@@ -460,20 +452,20 @@ export const adminHandlers = [
       respond(async () => {
         allow(request, 'SERVICE_OPS')
         const v = model(String(params.versionId)),
-          d = (await request.json()) as { reason: string; reanalyze: boolean }
-        if (!v.approvedBy || !v.evalResult || !d.reason?.trim())
-          fail('VALIDATION_FAILED', '승인·평가 근거와 변경 사유가 필요합니다.')
-        for (const other of modelVersions)
-          if (other.kind === v.kind && other.name === v.name) other.status = 'INACTIVE'
-        v.status = 'ACTIVE'
-        v.activatedAt = stamp()
-        audit(
-          action === 'activate' ? 'MODEL_ACTIVATE' : 'MODEL_ROLLBACK',
-          'MODEL',
-          v.id,
-          'SUCCESS',
-          `${d.reason} · 재분석 ${d.reanalyze ? '요청' : '없음'}`,
-        )
+          d = (await request.json()) as { reason: string; scopes: string[]; approved?: boolean; reanalysisPlanned: boolean }
+        const evaluation = v.evalResult
+        if (action==='activate' ? v.status!=='REGISTERED'||!!v.approvedBy : v.status!=='INACTIVE'||!evaluation?.approval||!modelVersions.some(m=>m.kind===v.kind&&m.name===v.name&&m.status==='ACTIVE'))
+          fail('MODEL_VERSION_CONFLICT','현재 상태에서는 변경할 수 없습니다.',409)
+        if (!evaluation || !d.reason?.trim() || !Array.isArray(d.scopes) || !d.scopes.length || new Set(d.scopes).size!==d.scopes.length)
+          fail('MODEL_APPROVAL_REJECTED','평가·적용 범위와 변경 사유가 필요합니다.',422)
+        const allowed = action==='activate' ? evaluation!.evidence.evaluatedScopes : evaluation!.approval?.scopes
+        if (!allowed || d.scopes.some(scope=>!allowed.includes(scope)) || (action==='activate'&&d.approved!==true)) fail('MODEL_APPROVAL_REJECTED','승인된 평가 범위만 적용할 수 있습니다.',422)
+        const revision=Math.max(...modelVersions.filter(m=>m.kind===v.kind&&m.name===v.name).map(m=>m.evalResult?.revision??0))+1
+        for (const other of modelVersions) if (other.kind===v.kind&&other.name===v.name&&other.status==='ACTIVE') { other.status='INACTIVE'; if (other.evalResult) other.evalResult.activeScopes=[] }
+        v.status='ACTIVE';v.activatedAt=stamp()
+        if (action==='activate') { evaluation!.approval={ scopes:d.scopes,reason:d.reason,approvedBy:'mock-service-ops',approvedAt:stamp() }; v.approvedBy='mock-service-ops' }
+        evaluation!.activeScopes=d.scopes;evaluation!.revision=revision
+        audit(action==='activate'?'MODEL_ACTIVATE':'MODEL_ROLLBACK','MODEL',v.id,'SUCCESS',d.reason+' · 재분석 계획 '+d.reanalysisPlanned)
         return v
       }),
     ),
@@ -484,19 +476,10 @@ export const adminHandlers = [
       queryFault()
       const p = period(request),
         filter = new URL(request.url).searchParams.get('callType')
+      if (filter && !['JUDGMENT','FOLLOWUP','ANALYSIS','REPORT_NARRATIVE','M2','M1'].includes(filter)) fail('VALIDATION_FAILED','호출 종류를 확인해 주세요.',400)
       return {
         period: p,
-        items: ['JUDGMENT', 'FOLLOWUP', 'ANALYSIS', 'REPORT_NARRATIVE']
-          .filter((t) => !filter || t === filter)
-          .map((callType) => ({
-            callType,
-            calls: 0,
-            failures: 0,
-            latencyMs: 0,
-            inputTokens: null,
-            outputTokens: null,
-            costUsd: null,
-          })),
+        items: [],
       }
     }),
   ),

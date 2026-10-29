@@ -156,6 +156,8 @@
 - 서비스 간 내부 호출: 내부 토큰 헤더 필터(참고 레포 `CatalogInternalAuthFilter` 패턴) + NetworkPolicy
 
 ### 2.3 공통 규칙
+
+- #119 내부 별명 조회는 `guardianship/controller/InternalStudentProfileController` → `guardianship/service/InternalStudentProfileService` → 기존 `ChildManagementRepository.profile` 순서다. `InternalAuthFilter`가 토큰·요청 컨텍스트를 관리하고 서비스가 SYSTEM·학생 scope를 검사한다. 응답 전용 DTO는 UUID·별명만 제공하며 ACTIVE만 조회한다. #56 기본 report-worker의 `CoreClient.lookup`·`NamedGenerator`가 조회 결과를 렌더링에 전달하고 최종 AI 요청에서 별명을 가린다([#119](../report/issue-119-student-profile.md), [#56 검증](../report/report-worker-integration.md)).
 - 오류 응답: 전 서비스 공통 형식(RFC 9457 Problem Details), 예외 → 응답 변환은 Presentation(Spring `_common/exception`, FastAPI exception handler)
 - 사용자 컨텍스트 전파: JWT 검증은 core만, 내부 호출은 내부 토큰 + `X-User-Id`·`X-User-Role`·`X-Student-Scope`(허용 학생 ID 목록) 헤더, 이벤트는 봉투 `subject`·`data`에 포함
   - 중간 서비스(ai)는 받은 컨텍스트 헤더를 하위 호출(learning)에 그대로 전달
@@ -720,5 +722,12 @@ SKN34-FINAL-3TEAM/
 세부 근거는 각 보고서를 따른다.
 
 - 인증([auth-account](../report/auth-account.md)): `PublicAuthFilter`(판정 경로는 Spring 매칭 경로로 정규화) → `AuthService` → Repository. JWT는 Spring Security JOSE HS256, Google 코드 교환·JWKS 검증은 트랜잭션 밖, 계정·세션·refresh 회전만 트랜잭션 안. 학생 단독 인증은 `StudentAuthService`(기기·페어링)와 `StudentPinService`(PIN·잠금)로 나누고 PIN 변경의 재인증 소비·갱신·감사는 한 트랜잭션
-- 주간 리포트([report](../report/report.md)): `ReportScheduleService` → 자녀별 트랜잭션의 `ReportJobService` → `ReportJobRepository` + `OutboxWriter`(ShedLock, 자녀별 실패 격리). 소비는 `RetryingConsumer` → `ReportLifecycleService`. 조회의 내부 HTTP와 열람 저장 트랜잭션은 분리. `ReportEntitlementService`는 상품 계약 미정의 명시적 오류 경계(503). report Outbox는 이벤트별 advisory lock·AUTOCOMMIT 선점, publisher confirm 뒤 짧은 트랜잭션으로 발행 시각 기록
+- 주간 리포트([report](../report/report.md)): `ReportScheduleService` → 자녀별 트랜잭션의 `ReportJobService` → `ReportJobRepository` + `OutboxWriter`(ShedLock, 자녀별 실패 격리). 소비는 `RetryingConsumer` → `ReportLifecycleService`. 조회의 내부 HTTP와 열람 저장 트랜잭션은 분리. `ReportEntitlementService`는 payment 소유 `ProductEntitlementService`에 위임한다. 상품·구독 repository를 직접 참조하지 않으며 권한 조회 실패는 명시적인 오류로 처리한다. report Outbox는 이벤트별 advisory lock·AUTOCOMMIT 선점, publisher confirm 뒤 짧은 트랜잭션으로 발행 시각 기록
 - 삭제·재인증([auth-account](../report/auth-account.md)): `student.deleted.v1` data `{studentId,deletionRequestId,scope}`. 요청 CONFIRMED와 Outbox 기록은 한 트랜잭션, learning·report 완료 보고를 서비스별 UNIQUE 행으로 기록해 둘 다 있을 때만 COMPLETED. 기능 간 정리는 각 service 경유
+
+#48은 ReportEntitlementService를 payment 소유 ProductEntitlementService에 연결한다. 외부 PG 호출과 learning 사용 증빙 조회는 DB 트랜잭션 밖, 주문/구독/환불·프리미엄 사용 예약은 공통 parent 계정 행 잠금 안이다. payment repository는 payment 패키지만 사용한다. 신규 의존성 없이 기존 HTTP·MyBatis·ShedLock·IdempotencyService·NotificationService를 사용한다. [결제 경계·복구](../report/issue-48-payments.md).
+
+
+### #46 신고·지원 연결 경계
+
+support/controller → SupportService → support/repository를 사용한다. 대상 검증은 상대 기능 service(StudentAccessService·ConversationSupportService·ReportSupportService)를 호출하며 다른 기능 repository를 직접 참조하지 않는다. support/client는 기존 learning LearningClient·InternalRestClientFactory를 재사용한다. 정정 의도 저장·완료 저장 사이 HTTP는 트랜잭션 밖이며, core 영속 correction UUID가 공급자 요청 식별자다. 원문 응답 전 감사 저장이 실패하면 원문을 반환하지 않는다. 알림은 NotificationService.support로 저장·수신 설정·중복 방지·NotificationStored·커밋 후 Redis 전달을 재사용한다. 자세한 범위와 공급자 미구현은 [#46 보고서](../report/issue-46-support.md)에 기록한다.

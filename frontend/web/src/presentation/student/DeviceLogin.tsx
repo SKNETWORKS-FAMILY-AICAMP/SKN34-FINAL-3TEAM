@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { ThemeFrame } from './world/StudentWorld.tsx'
 import { useLocation, useNavigate, useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
@@ -13,9 +13,11 @@ import {
 } from '../../domain/studentDevice.ts'
 import type { DeviceLoginState, StudentProfile } from '../../domain/studentDevice.ts'
 import { useSession } from '../auth/sessionContext.ts'
-import { Brand, ErrorNotice } from '../shared/ClassroomParts.tsx'
+import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import { PinPad } from './PinPad.tsx'
 import '../classroom.css'
+
+const DemoStudentEntry = import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true' ? lazy(() => import('./DemoStudentEntry.tsx')) : null
 
 const code = (e: unknown) => (e instanceof ApiError ? e.problem.code : '')
 
@@ -35,7 +37,7 @@ export function DeviceLogin() {
       <ThemeFrame>
       <main className="device-login">
         <section className="device-card" aria-busy={profiles.isPending}>
-          <Brand />
+          {DemoStudentEntry && <Suspense fallback={null}><DemoStudentEntry /></Suspense>}
           {registered && !unregistered && <p role="status">기기 등록을 마쳤어요. 이제 내 PIN으로 들어가요.</p>}
           {isDemo && <DemoDeviceScenario onApplied={() => void cache.invalidateQueries({ queryKey: ['student-device'] })} />}
           {profiles.isPending ? (

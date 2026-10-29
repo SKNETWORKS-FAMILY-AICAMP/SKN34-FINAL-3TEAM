@@ -1,4 +1,14 @@
 import { useState } from 'react'
+function ServiceLinks({ role }: { role?: string }) {
+  if (!role) return null
+  const root = '/' + role.toLowerCase()
+  return <nav aria-label="이용 지원" className="ws-actions" style={{ marginBottom: 20, flexWrap: 'wrap', gap: 16 }}>
+    <Link to={root + '/help'}>도움말</Link><Link to={root + '/support'}>문의·오류 신고</Link><Link to={root + '/notices'}>공지</Link>
+    {role !== 'STUDENT' && <Link to={root + '/notifications'}>알림</Link>}
+    {role === 'PARENT' && <Link to="/parent/account">계정·자녀 관리</Link>}
+    {isDemo && <Link to="/review">개발 점검표</Link>}
+  </nav>
+}
 import type { ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
@@ -153,7 +163,7 @@ export function Workspace({
                 {logout}
               </div>
             </header>
-            <main className="ws-main">{children}</main>
+            <main className="ws-main"><ServiceLinks role={session?.role} />{children}</main>
             {footer}
           </div>
           {expiredModal}
@@ -164,7 +174,7 @@ export function Workspace({
     <div id="class-journal">
       <div className="ws-shell">
         <header className="ws-header">
-          <Brand />
+          {session?.role !== 'STUDENT' && <Brand />}
           <span>{title}</span>
           <div className="ws-header-actions">
             {actions}
@@ -173,7 +183,7 @@ export function Workspace({
         </header>
         {demo}
         {menu}
-        <main className="ws-main">{children}</main>
+        <main className="ws-main"><ServiceLinks role={session?.role} />{children}</main>
         {footer}
         {expiredModal}
       </div>

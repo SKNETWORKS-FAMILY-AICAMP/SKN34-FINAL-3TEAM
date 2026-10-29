@@ -12,6 +12,7 @@ import type {
   Report,
 } from '../../domain/classroom.ts'
 import { createApiGateway } from './apiGateway.ts'
+import { demoEmailLogin } from './demoLogin.ts'
 import { calendarPeriods } from '../../domain/classroom.ts'
 import { pollFeedback } from './feedbackPolling.ts'
 // 목 여부와 무관하게 HTTP/SSE/Query 경로는 동일하다. MSW가 네트워크 경계만 가로챈다.
@@ -33,8 +34,11 @@ export function setDemoScenario(value: DemoScenario) {
 export function useAuthentication() {
   const cache = useQueryClient()
   const login = useMutation({
-    mutationFn: ({ email, password }: { email: string; password: string }) =>
-      gateway.login(email, password),
+    mutationFn: ({ email, password }: { email: string; password: string }) => {
+      // 실제 모드는 Google 인증 링크로 로그인하므로 이메일 로그인이 없다 (#97)
+      if (!isDemo) throw new Error('이메일 로그인은 개발 시연에서만 제공합니다.')
+      return demoEmailLogin(email, password)
+    },
     onSuccess: () => cache.clear(),
   })
   const logout = useMutation({ mutationFn: () => gateway.logout(), onSettled: () => cache.clear() })

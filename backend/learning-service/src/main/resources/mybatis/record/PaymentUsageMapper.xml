@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.learning.record.repository.PaymentUsageMapper">
+ <select id="used" resultType="boolean" flushCache="true" useCache="false">
+ SELECT EXISTS(SELECT 1 FROM judgment j JOIN answer a ON a.id=j.answer_id JOIN attempt t ON t.id=a.attempt_id
+ WHERE t.student_id=#{student} AND ((j.process_status='DONE' AND j.completed_at &gt;= #{since}) OR j.process_status='RUNNING'))
+ </select>
+</mapper>

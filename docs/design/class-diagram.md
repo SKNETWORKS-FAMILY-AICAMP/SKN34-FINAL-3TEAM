@@ -1358,6 +1358,8 @@ classDiagram
 - `JudgmentElement`: `verified = false`면 `satisfy()` 거부 (ERD CHECK와 동일 규칙을 Domain에서도 검사)
 - `judge_verified = false` 요소·미검증 학년 조합의 `HELD(UNVERIFIED_SCOPE)` 결정은 ai `JudgmentService` 담당(`JUDGE_REQUIRE_VERIFIED=true`일 때만, 기본 꺼짐). learning은 `judge_verified`·학년을 포함한 기준표를 `AiClient.judge`에 전달 (FN-JDG-04)
 - 정정은 `Judgment`를 바꾸지 않고 `JudgmentCorrection` 추가, `result()` 조회 시 최신 정정 반영 (FN-SUP-03)
+  - `results()`(시도 상세·기록)도 같음. 바꾸는 것은 `judgment.result`뿐이고(정정이 있으면 `heldReason`은 null), 판정 요소·되묻기·`nextActions`는 원판정 그대로 (#80)
+  - `correct`: 판정 행을 잠그고(`FOR UPDATE`) 같은 키 → 처리 상태 `DONE` → 같은 신고(`reportId`) 순으로 확인한 뒤 저장. `JudgmentCorrection`은 정정 직전 결과(`previous`)·정정 결과·사유·신고·관리자·키·시각을 담고, 같은 키 재요청은 저장된 행으로 처음 응답을 다시 만듦 (api-spec 4.1, [이슈 #80 보고서](../report/learning.md))
 
 ### 4.3 기록 조회·삭제 (record · deletion)
 
@@ -1855,12 +1857,18 @@ classDiagram
   class CoreClient {
     <<client>>
     +report_deletion_completed(deletion_request_id)
+    +lookup(student_id) StudentDisplayName
+  }
+  class NamedGenerator {
+    +generate(command, report) GenerationResult
   }
 
   GenerationConsumer --> GenerationService
   GenerationService --> ReportRepository
   GenerationService --> OutboxRepository : report.started·completed·failed
-  GenerationService --> RenderingGenerator : R4
+  GenerationService --> NamedGenerator : SYSTEM·scope·별명 검증
+  NamedGenerator --> CoreClient : 학생 별명
+  NamedGenerator --> RenderingGenerator : R4
   GenerationService --> JobLocks
   RenderingGenerator --> NarrativeGenerator : R3
   NarrativeGenerator --> RecordGenerator : R2
@@ -1902,7 +1910,7 @@ classDiagram
 - `query_router`·`QueryService`: 모든 조회에서 리포트의 `student_id`가 `X-Student-Scope`에 있는지 검사, 없으면 403 (API 4장)
 - 수치·전후 변화는 `MetricsCalculator`(코드)에서만 계산, ai는 서술·저녁 질문만 (FN-RPT-03, 05)
 - #51 구현의 `RecordGenerator`는 learning 조회 → `MetricsCalculator.calculate` → 항목·근거가 포함된 `GenerationResult`를 반환한다. `ReportRepository.finish`가 상태·항목·근거를 저장하며 종료 이벤트와 같은 트랜잭션에 참여한다. 입력 계약은 병합된 #27 코드·OpenAPI와 대조한 API 4.1.1이며, #51의 검증 범위는 `docs/report/report.md`에 기록한다.
-- #52~#55의 AI 서술·원문 재검증·렌더링·저장·조회·삭제 구현을 포함한다. `worker.run(generator=None)`은 #42 v1 codec, 생성·삭제 구독과 Outbox를 조립한다. 생성기를 주입하지 않은 기본 실행은 `GENERATOR_NOT_CONFIGURED`로 실패하며 임의의 완료 결과를 만들지 않는다. 실제 서비스 전체 생성 흐름의 연결 검증은 별도다.
+- #52~#55의 AI 서술·원문 재검증·렌더링·저장·조회·삭제 구현을 포함한다. #56의 `worker.run(generator=None)`은 #42 v1 codec, 생성·삭제 구독과 Outbox 및 `generation/pipeline.py`의 전체 생성기를 조립한다. 기본 실행은 #119 core 별명 조회를 사용하며 조회 실패·잘못된 학생/별명은 생성 실패로 종료한다. Compose 직접 발행 검증과 실제 AI·공개 API 전체 E2E는 구분한다.
 - `ReportVerifier`: 서술 속 숫자·인용을 계산 결과·learning 원문과 대조, 실패 시 서술을 템플릿 요약으로 교체(`narrative.source = TEMPLATE`, P16). `NO_RECORD`·무료 플랜(`narrativeEnabled = false`)은 ai 호출 생략 (P06·P13)
 
 ---

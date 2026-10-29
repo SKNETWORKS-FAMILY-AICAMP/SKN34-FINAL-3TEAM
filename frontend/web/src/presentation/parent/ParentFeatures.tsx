@@ -138,7 +138,7 @@ export function ParentReport({
                     </p>
                   </details>
                 ))}
-                {child.plan === 'PREMIUM' ? (
+                {child.plan !== 'FREE' ? (
                   <>
                     {r.narrative && <p className="cj-quote">{r.narrative}</p>}
                     <h3>질문 전후의 원문</h3>
