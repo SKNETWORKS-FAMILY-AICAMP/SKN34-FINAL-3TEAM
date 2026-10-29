@@ -186,6 +186,7 @@ stateDiagram-v2
 - 전이 실패(영향 0행) 시 현재 상태로 응답: `DONE` → 저장 결과, 유효 `RUNNING` → `status` 이벤트 후 종료 (API 1.4)
 - 고착 `RUNNING` 탐지 인덱스 `(process_status, lease_until)`, 리스 90초·탐지 주기 1분 (P12). 주기 탐지 작업은 미구현(운영 작업 후속)이며 현재는 다음 피드백 요청 때 만료 리스를 재획득 ([이슈 #25 보고서](../report/learning.md))
 - 리스 시간은 core→learning 피드백 호출 타임아웃보다 길게 설정. 짧으면 처리 중인 판정을 다른 요청이 재획득해 LLM 호출이 중복됨
+- 정정(`POST /internal/judgments/{id}/corrections`, #80)은 `DONE` 판정만 받고 그 전이면 `409 JUDGMENT_STATE_CONFLICT`. `process_status`·`result`는 바꾸지 않고 `judgment_correction` 행을 추가하며, 조회 때 최신 정정 결과를 `result`로 보여 줌 (FN-SUP-03)
 
 #### `judgment.result` 결정 (`DONE`일 때만 값 존재)
 
