@@ -551,7 +551,7 @@ learning 최소 연동(#48): `GET /internal/payment-usage/students/{studentId}?s
 
 결제 조회의 `refundRequests`는 본인 거래의 환불 상태 이력이며 취소 멱등키는 노출하지 않는다. GET 단건 조회는 승인된 환불의 불명확 PG 결과도 조회 복구한다. 빌링키 등록·변경은 ACTIVE와 유예 중 RENEWAL_FAILED에서 허용하며 유예/재청구 횟수를 초기화하지 않는다. 늦은 빌링 발급 결과는 subscription.revision 변경 시 거부한다. 같은 HTTP 멱등키로 받은 4xx 결과는 24시간 동일하게 반환하며 새 동의/등록 의도에는 새 키를 사용한다.
 
-2026-10-28 #48 사용자 확정: 과거 리포트도 현재 상품 권한을 적용한다. 무료 전환 후 상세의 narrative/eveningQuestion은 null이며 수치는 유지한다. 다운로드는 상세 메타데이터가 식별한 동일 불변 revision reportId의 파일만 요청한다. 현재 서술 권한이 없고 기존 파일에 유료 서술이 포함되면 403 REPORT_PREMIUM_REQUIRED이며 수치 전용 파일 생성 전까지 제공하지 않는다. 수치 전용 파일은 무료에서도 제공한다. PG/HTTP 호출 이후 파일 URL 반환 직전에 parent 잠금 안에서 현재 권한·프리미엄 사용 기록을 함께 확정하여 환불과 직렬화한다.
+2026-10-28 #48 사용자 확정·2026-10-29 #129 연결: 과거 리포트도 현재 상품 권한을 적용한다. 무료 전환 후 상세의 narrative/eveningQuestion은 null이며 수치는 유지한다. 다운로드는 상세 메타데이터가 식별한 동일 불변 revision reportId의 파일만 요청한다. 현재 서술 권한이 없으면 report가 생성한 같은 판의 free 파일을 요청한다. full 파일 URL을 요청한 뒤 반환 직전 권한이 없어졌으면 403 REPORT_PREMIUM_REQUIRED로 URL을 반환하지 않는다. 수치 전용 파일은 무료에서도 제공한다. PG/HTTP 호출 이후 파일 URL 반환 직전에 parent 잠금 안에서 현재 권한·프리미엄 사용 기록을 함께 확정하여 환불과 직렬화한다.
 
 #45 복구 경계: 필수 동의 철회 후에도 본인 결제·구독 GET, 본인 환불 요청 POST, 자동 갱신 해지 DELETE만 허용한다. 거래 소유권·활성 계정·환불 증빙 검사는 유지한다. 신규 주문·승인·빌링 등록·해지 철회는 현재 동의와 자녀 연결을 요구한다. 자녀 연결 해제 후에도 본인 구독의 청구 중단은 가능하다. 이미 갱신 승인이 진행 중이면 그 결과를 복구하되 autoRenew=false는 보존하며, 미청구 만료 구독은 즉시 종료한다.
 
@@ -814,7 +814,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | GET | `/internal/reports/{reportId}/evidence/{itemId}` | 항목 근거 |
 | GET | `/internal/reports/{reportId}/files/{format}` | 단기 presigned URL 발급 → `{url, expiresAt}` |
 
-- core는 현재 이용 권한으로 `X-Report-Narrative-Enabled:true|false`를 설정해야 함(공개 요청의 같은 헤더는 전달하지 않음, 현재 core 미설정). report는 누락 시 false로 처리해 응답·다운로드에서 AI 서술·생각 유형 summary·저녁 질문을 가림
+- core는 현재 이용 권한으로 `X-Report-Narrative-Enabled:true|false`를 설정해야 함(공개 요청의 같은 헤더는 전달하지 않음). report는 누락 시 false로 처리해 응답·다운로드에서 AI 서술·생각 유형 summary·저녁 질문을 가림
 - 목록은 학생/대상 주별 최신 revision을 고른 뒤 status를 적용하며 1.1 페이지 봉투를 사용한다. 상세의 기본값은 같은 학생·대상 주 최신판, `revision` 지정 시 해당 판이다. evidence/files 경로는 전달한 실제 reportId 판에 속한 항목·파일을 조회한다.
 - 파일 키는 `reports/{studentId}/{reportId}/r{revision}/{full|free}/{pdf|md|html}`다. DB `report_file`에는 full 키 3개를 저장하며 무료용 파생 파일도 생성한다. 다운로드 수명은 설정값이며 운영 기본안은 300초다. 버전·형식·학생이 맞지 않는 키를 서명하지 않는다.
 
@@ -973,3 +973,12 @@ core 자체의 권한·상태·본문 충돌 오류는 기존 계약을 유지�
 대화·SSE·범위 확인·payment 소비 port·Redis 차감 정책은 [#41 계약](../report/issue-41-analysis-conversations.md)을 따른다. 내부 history는 `{role:USER|ASSISTANT,text}`이며 core messageId를 요청에 추가한다. 같은 대화의 자녀는 고정하며 자녀 변경은 새 대화로 확인한다. 기간 명시는 사용자 확인이고 동일 기간 완료 이력만 AI에 전달한다.
 
 #41 보완(P08): 시작일 이전 답변은 현재 기간의 집계 대상 시도에 포함되는 경우에만 비교 근거로 허용하며 종료일 이후 답변은 거부한다. AI가 contentAllowed를 보내면 false인 결과는 확정하지 않는다.
+
+### 5.8 리포트 현재 이용권 연결 (#129)
+
+- 생성은 기존 `ReportJobService → ReportEntitlementService → ProductEntitlementService`를 사용한다. 상품·구독 판정값을 job과 같은 트랜잭션의 `report.generate.narrativeEnabled`에 기록한다. 무료 상품 누락·잘못된 상품 설정·결제 확정 중 오류를 무료 권한으로 대체하지 않는다. 데모 계정 우회 정책은 없다.
+- 상세·다운로드는 연결 자녀와 동의를 검사한 후 현재 이용권을 조회한다. `ReportQueryService → ReportClient`가 검증된 boolean으로 `X-Report-Narrative-Enabled`를 직접 설정한다. 공개 입력 헤더를 복사하지 않는다. 목록·근거 조회에는 추가 이용권 판정을 요구하지 않는다.
+- 상세는 HTTP 호출 전에 선택한 범위를 유지한다. HTTP 뒤 기존 parent 잠금 안에서 권한·연결을 다시 확인하고 열람을 기록한다. 요청 당시 또는 최종 판정이 무료이면 `narrative`·`eveningQuestion`을 null로, `thinkingTypes[].summary`를 제거한다. 호출 중 유료로 바뀌어도 이미 받은 무료 응답을 전체 응답으로 간주하거나 프리미엄 사용으로 기록하지 않는다.
+- 다운로드는 상세 메타데이터와 파일 요청에 같은 판정값을 사용한다. 메타데이터가 식별한 불변 reportId를 파일 경로에 사용한다. 무료는 free, 유료는 full을 요청하며 본문에서 서술 유무를 추측해 파일 권한을 결정하지 않는다. full 요청은 최종 parent 잠금 안에서도 유료여야 URL을 반환한다(상실 시 403 REPORT_PREMIUM_REQUIRED). free 요청 중 유료 전환이 생겨도 free URL만 반환하며 프리미엄 사용을 기록하지 않는다.
+- `ReportViewService`는 요청 시 선택한 범위와 반환 직전 권한을 함께 사용해 프리미엄 사용을 기록한다. parent 잠금·환불 직렬화는 유지하고 외부 HTTP는 트랜잭션 밖이다. 최종 확인 이후 이미 발급된 서명 URL은 기존 TTL 동안 유효하며 이 변경은 발급된 URL의 즉시 회수 기능을 추가하지 않는다.
+- 공개 API 경로·응답 필드·이벤트 스키마·DB는 유지한다. 실제 report 공급자의 무료 투영·free/full 파일 계약을 재사용한다.

@@ -10,7 +10,7 @@
 - ShedLock(Spring/JDBC, 기존 `shedlock` 테이블, `usingDbTime`) + SCHEDULE 부분 UK로 재실행 중복 방지, 자녀·기간별 advisory transaction lock으로 정기·재생성 직렬화. 자녀별 실패는 격리하고 실행 끝에 전파
 - 작업 저장과 `OutboxWriter.append`는 같은 트랜잭션, HTTP는 밖. 기존 core `OutboxRelay`는 `@Transactional` 안에서 브로커 발행·confirm을 기다리는 제약이 있음(공통 기반, 미변경)
 - 재생성: 부모는 자녀·주 계열 REGENERATE 1회(재생성 결과로 다시 요청해도 우회 불가), SERVICE_OPS 관리자는 ADMIN_RETRY 무제한. revision은 report가 배정
-- 상품 권한: narrativeEnabled를 제공할 상품·구독 계약이 없어(사용자 확인) `ReportEntitlementService`가 503. 연결 전에는 정기·재생성이 job·Outbox를 만들지 못하고 실패가 노출됨(테스트에서만 대역)
+- 상품 권한: #48에서 `ReportEntitlementService → ProductEntitlementService`를 연결했다. 생성 시 실제 상품·구독의 narrativeEnabled를 사용하며 설정·판정 오류는 job·Outbox 생성 전에 전파한다. 조회 연결은 11장(#129)을 따른다.
 - lifecycle 이벤트 data는 `jobId·studentId·reportId`(failed는 `failureReason`). core는 식별자 대조 후 `processed_event`·조건부 전이·`job_execution`을 원자 저장. 종료 후 늦은 started·상반된 종료 이벤트는 무시. 종료 전이가 반영될 때만 `ReportJobFinished` 발행(알림 연결점)
 - 조회: Controller → `ReportQueryService` → `ReportClient`. reportId의 자녀는 core `report_job`으로 식별, 연결·동의 확인 후 scope를 그 자녀로 제한. 상세 응답의 자녀·기간·UUID 대조 후 실제 반환 판 ID로 `report_view` 저장(목록·다운로드는 열람 아님). 다운로드는 pdf·md만
 
@@ -60,7 +60,7 @@
 | 파일 | 판의 메타데이터·학생·형식·키를 검사하고 현재 권한의 full·free 파일만 서명 |
 
 - 범위 밖 403, 없는 보고서·판·항목·파일 404, 형식 오류 400(problem+json), 학생 삭제 진행 중 409 `DELETION_IN_PROGRESS`, 원문·저장소 장애 503 `DATA_UNAVAILABLE`. 응답 스키마 오류 로그에 원문을 남기지 않음
-- 이용 권한은 core가 `X-Report-Narrative-Enabled`로 전달(없으면 false). 생성 당시 유료였다는 이유로 유료 파일을 서명하지 않음. core는 아직 이 헤더를 설정하지 않음
+- 이용 권한은 core가 `X-Report-Narrative-Enabled`로 전달(없으면 false). 생성 당시 유료였다는 이유로 유료 파일을 서명하지 않음. core의 상세·파일 요청에서 설정하며 반환 직전 권한 재확인도 수행한다(11장)
 
 ## 7. 학생 삭제 (#55)
 
@@ -88,7 +88,7 @@
 
 | 항목 | 담당 | 내용 |
 |---|---|---|
-| 상품 권한 | core·상품 | `ReportEntitlementService` 실제 판정, 조회 시 `X-Report-Narrative-Enabled` 전달 |
+| 상품 권한 | core·상품 | #48 실제 판정 연결, #129 조회 헤더·최종 권한 확인(11장) |
 | 표시 이름 | core | AI 전송 전 이름 가림·파일 제목용 닉네임 내부 조회 경로 |
 | 생성기 조립 | report | worker 기본 생성기를 계산 → 서술 → 렌더링으로 연결 |
 | 삭제 전체 | learning·core | learning `student.deleted` 소비·완료 보고, 삭제 학생의 queued job 정리·늦은 이벤트 무시 |
@@ -123,6 +123,54 @@ develop `f9df2d3` 기준 #56에서 기본 worker와 실제 core 별명 API를 �
 
 ### 남은 외부 연동 및 보관
 
-당시 미연결이던 기본 worker와 core 별명 공급은 후속 #56에서 연결했다. #64 실제 AI API·core 상품 권한 헤더 전달·운영 AWS·전체 서비스 E2E는 별도 연동 검증 범위다. 현재 core `ReportClient`는 상품 권한 헤더를 공급하지 않아 report가 무료 기본값을 적용한다. #56의 직접 메시지 발행·report 내부 API 검증을 사용자 대상 전체 흐름 검증으로 해석하지 않는다.
+당시 미연결이던 기본 worker와 core 별명 공급은 후속 #56에서 연결했다. #64 실제 AI API·core 상품 권한 헤더 전달·운영 AWS·전체 서비스 E2E는 별도 연동 검증 범위다. 이 검증 당시 core `ReportClient`는 상품 권한 헤더를 공급하지 않아 report가 무료 기본값을 적용했다. 후속 #129 연결은 11장을 따른다. #56의 직접 메시지 발행·report 내부 API 검증을 사용자 대상 전체 흐름 검증으로 해석하지 않는다.
 
 결과는 저장소 밖 `C:/Users/playdata2/Desktop/final/tmp/`의 `report-integration-20261029-final.xml`, `report-integration-pdf-20261029/`, `report-learning-20261029-final/`에 보관했다. 테스트 자원은 정리했다. 문서와 검증 스크립트 수정은 로컬 테스트 브랜치에만 남기며 원격 push·PR·병합은 수행하지 않았다.
+
+
+## 11. 현재 이용권 연결 (#129)
+
+### 설계와 범위
+
+시작 시점 develop `c364ed4` 기준, #48에서 상품 판정과 생성 명령 연결은 이미 반영됐지만 조회 클라이언트는 이용권 헤더를 보내지 않아 report가 기본 false를 적용한다. 기존 공급자를 재사용하고 상세·파일 요청에 검증된 현재 권한을 전달한다. API 명세 5.8의 요청 시 선택 범위와 반환 직전 재확인 규칙을 따른다.
+
+- core의 `ReportClient`, `ReportQueryService`, `ReportViewService` 및 관련 테스트가 변경 대상이다. 기존 payment 판정·report 공급자·DB·메시지 형식은 유지한다.
+- 무료 상세의 AI 세 필드(서술·저녁 질문·생각 유형 summary)를 가리고, 무료 다운로드는 이미 생성된 free 파일을 사용한다. full URL은 최종 권한 상실 시 거부한다.
+- 무료 응답을 요청한 뒤 권한이 생긴 경우 프리미엄 사용을 기록하지 않는다. 환불과 같은 parent 잠금, 학생·동의 검사, 응답 학생·기간·판본 검사를 보존한다.
+- 데모 특례와 새로운 의존성은 추가하지 않는다. #132 작업 고착 정리는 별도 범위다.
+
+### 검증 계획
+
+실제 상품·구독 공급자의 무료·프리미엄·유예·만료·환불 상태, 설정 오류, 정기·재생성 job/Outbox를 검증한다. HTTP 경로는 위조 헤더 무시, 무료/전체 전달, 상세·다운로드 도중 권한 변경, 동일 판본 파일 선택, 프리미엄 사용 기록을 검사한다. 구현 완료 후 core 전체 테스트·계약 검사·실제 core/report 연결·diff 검사를 수행하고 실행 결과를 여기에 기록한다.
+
+
+### develop 추가 반영
+
+작업 도중 병합된 #114의 develop `26f3788`을 fast-forward로 반영했다. API 명세 끝의 #41 계약과 #129 계약을 모두 보존해 문서 추가 위치 충돌만 해결했으며 분석 대화·공통 코드·OpenAPI는 새 develop 그대로다. 최종 core 전체·계약 검증은 이 통합 상태에서 수행한다.
+
+
+### #129 검증 범위와 결과
+
+- 공통 계약: `python -O -m unittest discover -s scripts/tests -q` — develop 추가 반영 후 76개 통과.
+- report 소비자: `python -m pytest tests/test_report_query.py -q` — 31개 통과. 임시 PostgreSQL을 사용하며 기존 Starlette/httpx 폐기 예정 경고 1개가 있다.
+- 실제 HTTP: 격리 PostgreSQL·RabbitMQ·Redis·MinIO와 실제 core/report 앱으로 5개 시나리오를 통과했다. 프리미엄 상세·full PDF/MD 다운로드, 무료 전환 후 AI 세 필드 제외·free PDF/MD 다운로드(위조 공개 헤더 포함), 무료 재생성 job/Outbox, 무료 상품 비활성 시 명시적 503, 무료 요청의 프리미엄 사용 미기록을 확인했다.
+- 위 실제 HTTP 검증은 합성 계정·상품·구독·저장 리포트·파일 바이트를 사용했다. 실제 PG·Google·AI 호출, worker 생성·렌더링, 브라우저·운영 배포·성능 검증은 아니다. 다운로드 URL을 실제 MinIO에 요청해 free/full 객체 내용까지 대조했다. 이 연동 검증은 최초 기준의 #129 구현 JAR이며, 이후 develop 반영에서도 report production 변경 3개 파일은 동일하다.
+- 환경 보완: 기존 가상환경에 pytest가 없어 전용 worktree에서 `uv sync --frozen`으로 준비했다. Windows JDK의 selector/socket 기동 오류를 피하려고 Docker JDK 21을 사용했다. 동시 검증 부하로 Redis 초기화가 2초를 넘겨, 실제 HTTP 검증 실행에만 Redis connect/command timeout을 10초로 설정했다. 저장소 기본값은 변경하지 않았다. 임시 연동 컨테이너·DB·파일은 검증 종료 시 제거했다.
+- 최초 core 전체 실행은 294개 중 새 환불 경합 테스트 1개가 실패했다. 합성 결제의 APPLIED 상태·상품 snapshot·charge attempt 누락을 보완한 뒤 해당 클래스 9개 모두 통과했다. 제품의 환불 검사를 완화하지 않았다.
+- 실제 core 테스트 산출물로 `validate_report_contracts.py`와 `validate_notification_contracts.py`를 실행해 report 명령·종료 이벤트·상세 응답 및 알림 HTTP 스키마를 대조했다.
+
+
+### 최종 통합 검증 (develop `26f3788` + #129)
+
+- Docker JDK 21: `bash gradlew test bootJar --no-daemon --max-workers=1 --no-watch-fs --console=plain`(검증 전용 Gradle/Test heap 512MiB·CPU 2 설정) — **323개 통과, 실패·오류·생략 0**, bootJar 성공. 새 분석 대화 경로와 #129 이용권 통합 9개를 포함한 전체 실행이다.
+- report production 변경 3개 파일은 실제 HTTP 연동 당시 소스와 바이트 단위로 동일함을 대조했다. 서비스 경계·payment service 호출·내부 헤더 생성·parent 잠금 밖 HTTP 호출·공개 계약 보존을 최종 변경분에서 확인했다.
+- `git diff --check` 통과, 미해결 충돌 없음. 원격 CI·운영 배포는 이 로컬 검증 결과에 포함하지 않는다.
+
+
+### PR 준비: 최신 develop `2538d19` 반영
+
+- #129 커밋 `2cf3bf9`을 유지하고 develop `2538d195c53c70a17af84aadea9a3ab1b348840a`를 일반 merge했다. 텍스트 충돌은 없었고 API 명세도 자동 병합됐다. squash·rebase·기존 이력 재작성은 수행하지 않았다.
+- 전체 파일 대조에서 최신 develop 대비 차이는 원래 #129의 7개 파일뿐이다. API 명세는 최신 develop 원문에 #129의 기존 문구 변경을 적용한 결과와 정확히 일치하며, 나머지 구현·테스트 변경은 `2cf3bf9`과 동일하다. AI·learning·scoring의 새 파일과 이동은 develop 그대로 보존했다.
+- 이번 병합 후 `python -O -m unittest discover -s scripts/tests -q` **76개 통과**, `git diff --check`·staged 공백 검사 통과, 미해결 충돌 없음. 이동된 ai 모듈의 이전 import·테스트 파일명 참조도 확인했다.
+- core/report의 전체 소스·테스트·빌드 트리가 이전 검증본과 동일해 core 323개·bootJar, report 조회 31개, 실제 연결 5개 시나리오는 반복하지 않았다. 위 결과는 이전 실행 결과이며 이번 병합에서 새로 실행한 것으로 집계하지 않는다. 새 upstream 기능 전체의 학습·모델·삭제 E2E는 #129의 변경 검증 범위가 아니다.
+- PR 대상과 저장소 기본 브랜치는 모두 develop이며, 전체 #129 완료 범위에 `Closes #129`를 사용한다. PR 생성은 사용자가 수행한다.
