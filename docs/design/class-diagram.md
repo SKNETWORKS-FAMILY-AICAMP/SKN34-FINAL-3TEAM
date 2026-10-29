@@ -1410,7 +1410,7 @@ classDiagram
   }
   class StudentDeletionService {
     <<service>>
-    +delete(eventId, studentId, scope)
+    +delete(eventId, studentId, scope, deletionRequestId)
   }
   class CoreClient {
     <<client>>
@@ -1435,7 +1435,7 @@ classDiagram
   StudentDeletionService --> CoreClient : 삭제 완료 보고
 ```
 
-- 구현 상태: `record/`의 `RecordExistsController`·`RecordExistsService`·`RecordExistsRepository`와 `RecordController`·`RecordService`·`RecordRepository`·`Metric` 구현됨. 삭제 소비(`StudentDeletedConsumer`·`StudentDeletionService`)는 미구현 ([learning 보고서](../report/learning.md))
+- 구현 상태: `record/`의 `RecordExistsController`·`RecordExistsService`·`RecordExistsRepository`와 `RecordController`·`RecordService`·`RecordRepository`·`Metric` 구현됨. 삭제 소비(`StudentDeletedConsumer`·`StudentDeletionService`·`CoreClient`, #128) 구현됨 ([learning 보고서](../report/learning.md))
 - `RecordController`: 모든 경로에서 `UserContextHolder.current().requireStudent(studentId)` 먼저 실행 (아키텍처 2.3 범위 검사). `home`은 미션 목록과 같은 기준으로 `requireSelfStudent()`가 경로의 학생과 같아야 함
 - `RecordRepository`는 여러 기능 테이블을 읽는 조회 전용 MyBatis 매퍼 (쓰기 없음). 기능 간 repository 참조 금지 규칙의 예외로, 조회 전용 `record/`에 한정
 - `Metric.ratio`: 분모 5 미만이면 `value = null`, `count`만 (P08, API 1.6). `Metric.count`도 계산식을 받음(기능 명세 1.3 "모든 건수·비율은 계산식과 함께")
@@ -1443,9 +1443,10 @@ classDiagram
 - `RecordService.attempts`·`attempt`: 학생 시도 상세(`AttemptService.get`)를 그대로 쓰고 응답에서 초안(메모 포함)만 뺌(P05). 목록은 답변·생각 열기 열람을 조회 종료일까지로 자르고 돌아보기는 기간 안에 쓴 것만 남김. 시도 항목에 `completedAt`·`hintUsages`·돌아보기 `createdAt`을 붙임(report #51). 상세는 이력을 자르지 않음(core #40) 그래서 `findAttemptsWithTimeline`은 두지 않음
 - `RecordService.home`·`thinkingActivities` (core #40 요청): `home`은 이어할 시도(`findResume`: 진행 중 시도 중 시작·답변 제출·초안 저장 중 가장 늦은 시각이 가장 최근, 기간과 무관, 초안은 저장 시각만 읽음)를 기록 상세와 같은 모양으로, 미션은 `MissionService.listForStudent` 그대로. `thinkingActivities`는 `findEligible` 대상의 유형·미션 이름과 기간 안에 쓴 돌아보기. 둘 다 `state`는 기간 안 집계 대상 시도 수
 - `RecordService.changes`: 보완 답변이 있는 시도의 최초 vs 조회 종료일 이전 마지막 답변. 원문은 `plain_text`, 글자·문장·까닭을 잇는 말 수는 학생이 쓴 칸 내용으로 셈(칸 이름 제외). 까닭을 잇는 말 목록(`TextCounts.REASON_CONNECTIVES`)은 report와 확정
-- `StudentDeletionService.delete`: 삭제·`deleted_student` 저장 후 `CoreClient.reportDeletionCompleted`. 보고 실패 시 예외 → 지연 재시도(1·5·15분) 후 재처리, 삭제는 멱등 (P09, 아키텍처 1.6)
+- `StudentDeletedConsumer`: 봉투 검증(`specversion` 1.0, `id` UUID, type `student.deleted`·source `core-service`·dataschema `student.deleted.v1`, `subject` = `data.studentId`, 시간대 있는 `time`, data는 스키마 그대로). 형식 오류는 재시도 없이 DLQ, 나머지 실패는 `RetryingConsumer`로 지연 재시도
+- `StudentDeletionService.delete`: `deletionRequestId`는 완료 보고 경로에 필요하고 learning DB에 없어 이벤트에서 받음(#128). 한 트랜잭션에서 `processed_event`에 없으면 삭제·`deleted_student`·`processed_event` 저장, 있으면 건너뜀. 커밋 뒤 트랜잭션 밖에서 `CoreClient.reportDeletionCompleted`(SYSTEM + 대상 학생 범위). 이미 처리한 이벤트도 보고는 다시 보냄(core가 첫 보고를 놓쳤을 수 있음, report와 같음). 보고 실패 시 예외 → 지연 재시도(1·5·15분) 때 삭제 없이 보고만 (P09, 아키텍처 1.6)
 - `evidence`: `deleted_student`에 있는 학생 근거는 `available: false` (FN-ACC-13)
-- `AttemptService.deleteByStudent`: `attempt` 삭제 시 하위 `answer`·`judgment`·`followup`·`reflection` 등 삭제 방식(FK `ON DELETE CASCADE` 또는 서비스 내 삭제 순서) 미결. 현재 마이그레이션의 learning FK는 모두 NO ACTION (ERD 1장·7장, 8장)
+- `AttemptService.deleteByStudent`: CASCADE 없이 한 트랜잭션에서 `judgment_correction`·`judgment_element` → `self_assessment`·`reflection`·`hint_usage`·`attempt_draft` → `followup`(`answer.followup_id`는 `SET CONSTRAINTS … DEFERRED`로 커밋 때 검사) → `judgment` → `answer` → `attempt` 순서로 학생의 시도 이하 기록 삭제(#128, ERD 4.3). 호출한 쪽 트랜잭션 안에서 실행
 
 ---
 
@@ -1492,7 +1493,7 @@ classDiagram
   }
   class ScoringClient {
     <<client>>
-    +m2_scores(prompt, text, grade, input_type) M2Result
+    +m2_scores(prompt, text, grade, input_type, keywords) M2Result
     +m1_check(problem, answer_key, solution) M1Result
   }
   class ActiveVersions {
@@ -1575,16 +1576,18 @@ classDiagram
   }
   class RecordTools {
     <<service>>
-    +summary(student_id, period) list~Metric~
-    +thinking_types(student_id, period) list
-    +attempts(student_id, period) list
-    +changes(student_id, period) list
-    +evidence(answer_ids) list~Evidence~
+    +summary(scope) list~Metric~
+    +thinking_types(scope) list
+    +attempts(scope, size) list
+    +changes(scope) list
+    +thinking_activities(scope) list
+    +evidence(scope, answer_ids) list~RecordEvidence~
   }
   class calculators {
     <<module>>
-    +ratio(numerator, denominator, label, formula, period) Metric
-    +change_counts(first, revised) ChangeCounts
+    +compute(intent, records, scope) Computation
+    +ratio_metric(label, numerator, denominator, formula, period) Metric
+    +count_metric(label, count, formula, period) Metric
   }
   class AnswerVerifier {
     <<service>>
@@ -1600,10 +1603,11 @@ classDiagram
   }
   class LearningClient {
     <<client>>
-    +summary(student_id, period) list
-    +thinking_types(student_id, period) list
-    +attempts(student_id, period) list
-    +changes(student_id, period) list
+    +summary(scope) list
+    +thinking_types(scope) list
+    +attempts(scope, size) list
+    +changes(scope) list
+    +thinking_activities(scope) list
     +evidence(answer_ids) list
   }
   class LlmClient { <<client>> }
@@ -1624,8 +1628,9 @@ classDiagram
 ```
 
 - 그래프 흐름 `classify → clarify_scope → plan → run_tools → compute → answer → verify` (아키텍처 1.5), 분기는 [시퀀스 다이어그램 5](sequence-diagram.md#5-분석-대화-sse)
-- `RecordTools`: 도구 실행마다 `require_student` 검사 후 learning 호출, 컨텍스트 헤더 그대로 전달 (FN-AGT-02)
-- `calculators`: 건수·비율은 LLM이 아닌 코드 계산 (FN-AGT-05), `Metric` 형식은 learning과 동일
+- `RecordTools`(`analysis_agent/tools.py`): 도구 실행마다 `require_student` 검사 후 `LearningClient` 호출, 범위 밖이면 learning 미호출 (FN-AGT-02). `scope`는 core가 확인한 `{studentId, from, to}`
+- `LearningClient`(`clients/learning_client.py`): 받은 컨텍스트 헤더 그대로 전달, 재시도 없음, 응답의 학생·기간·처리 상태 대조. 조회 실패는 빈 기록이 아닌 오류 (FN-AGT-10). `evidence`의 `available: false` 항목은 원문 없이 그대로 반환
+- `calculators`: 건수·비율은 LLM이 아닌 코드 계산 (FN-AGT-05), `Metric` 형식은 learning과 동일(분모 0 `NO_RECORD`, 5 미만 `value: null`). 집계 대상·전후 변화 수(글자·문장·까닭을 잇는 말)는 learning `summary`·`changes.counts` 값을 그대로 사용해 대시보드·리포트와 숫자를 맞춤 ([ai 보고서 2장](../report/ai.md#2-분석-대화-에이전트-langgraph))
 - `AnswerVerifier`(`analysis_agent/verifier.py`, 신규): 답변 속 숫자 ↔ `metrics`, 인용 ↔ `evidence` 원문 대조. 실패 시 규칙 응답으로 전환 (FN-AGT-06)
 - 규칙 응답(`analysis_agent/rule_responder.py`, 신규): 대조 실패·LLM 키 부재·호출 실패 시 계산된 `metrics`·`evidence`만 템플릿 문장으로 구성, `source = TEMPLATE`·`fallback` 표시 (FN-AGT-10, P16)
 - `NarrativeService`: 서술·저녁 질문만 생성, 숫자 계산·대조는 report-service 담당
@@ -1679,42 +1684,67 @@ classDiagram
   }
   class M2Service {
     <<service>>
-    +score(prompt, text, grade, input_type) M2Response
+    +score(request) M2Response
   }
   class M1Service {
     <<service>>
-    +check(problem, answer_key, solution) M1Response
+    +check(request) M1Inactive
   }
   class ModelRegistry {
     <<registry>>
-    +load(name, version, artifact_uri)
-    +get(name) LoadedModel
-    +is_active(name, grade) bool
+    +load(active_version) bool
+    +get(name, scope) LoadedModel
+    +is_active(name, scope) bool
     +replace(versions)
+    +versions() list
   }
   class LoadedModel {
     <<infra>>
-    +version str
-    +predict(inputs) Prediction
+    +metadata ActiveModelVersion
+    +tokenizer
+    +training_config dict
+    +score_cuts dict
+    +predict(inputs) raw_scores
   }
+  class ModelStartup {
+    <<service>>
+    +start()
+    +offer(active_version)
+    +is_ready() bool
+    +close()
+  }
+  class ModelLoader { <<infra>> }
+  class S3ModelArtifacts { <<client>> }
+  class versions_router { <<router>> }
   class CoreClient { <<client>> }
-  class ModelVersionConsumer { <<consumer>> }
+  class ModelVersionConsumer {
+    <<consumer>>
+    +start()
+    +receive(message, startup)
+    +is_ready() bool
+    +close()
+  }
   class UsagePublisher { <<messaging>> }
 
   m2_router --> M2Service
   m1_router --> M1Service
   M2Service --> ModelRegistry
-  M1Service --> ModelRegistry
+  M1Service ..> ModelRegistry : 활성 추론 후속 연결
   ModelRegistry ..> LoadedModel
-  ModelRegistry --> CoreClient : 기동 시 활성 버전
-  ModelVersionConsumer --> ModelRegistry
+  ModelStartup --> CoreClient : 기동 시 활성 버전
+  ModelStartup --> ModelRegistry : snapshot·보존 이벤트 조정·로딩 재시도
+  ModelRegistry --> ModelLoader : 스레드풀 로딩
+  ModelLoader --> S3ModelArtifacts
+  versions_router --> ModelRegistry
+  ModelVersionConsumer --> ModelStartup : 큐 바인딩 후 시작·이벤트 전달
   M2Service --> UsagePublisher
-  M1Service --> UsagePublisher
+  M1Service ..> UsagePublisher : 활성 추론 후속 연결
 ```
 
 - `LoadedModel.predict`는 CPU 동기 추론 → `run_in_threadpool`로 호출해 이벤트 루프 차단 방지 (아키텍처 2.3)
-- 활성 범위 밖 학년·문항이면 `{active: false}` 반환, M1 확신도 0.8 미만은 보류 신호 (P15)
+- 활성 범위 밖 학년·문항이면 `{active: false}` 반환. #88 현재 M1은 미학습으로 항상 비활성이며 추론·사용량 발행을 하지 않는다. 향후 M1 확신도 0.8 미만이면 scoring은 실수 위치를 제외하고 ai가 보류를 결정한다(P15).
 - 가중치는 S3 `artifact_uri`에서 로딩, 승인된 버전만 (아키텍처 5장)
+- #85 구현: 레지스트리·S3 로더·versions 라우터. `get(name, scope)`는 승인 범위를 검사한 모델만 반환한다. #86은 `ModelVersionConsumer`·`ModelStartup`으로 이벤트 보존·재연결·모델 교체를 연결한다. #87은 m2 라우터·M2Service·사용량 발행, #88은 M1 미학습 비활성 계약을 제공한다.
 
 ---
 
@@ -1893,6 +1923,5 @@ classDiagram
 ## 8. 확인 필요 가정
 - 요금제 사용 한도(P13): core가 Redis 일 단위 카운터(학생별 미션 시작·피드백, 학부모별 분석 대화)와 `product.limits`로 확인 후 `USAGE_LIMIT_REACHED`. 담당 클래스는 구현 시 `usage/`에 추가
 - core `conversation`(근거 원문 조회)·`admin`(미션 관리 프록시)의 learning 호출: core `learning/service`(#37·#38에서 추가)를 거칠지, 기능별 client를 둘지 구현 시 결정
-- learning 하위 기록 삭제 방식(FK `ON DELETE CASCADE` 또는 서비스 내 삭제 순서) 결정 후 ERD 반영 필요 (4.3). 현재 FK는 NO ACTION
 - learning `record/RecordRepository`가 여러 기능 테이블을 조회: 조회 전용 기능 한정 예외
 - 클래스 분할 단위(관리자 controller 등)는 구현 시 조정 가능, 레이어·의존 방향은 고정

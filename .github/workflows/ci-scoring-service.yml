@@ -5,11 +5,19 @@ on:
     branches: [develop, main]
     paths:
       - "backend/scoring-service/**"
+      - "contracts/openapi/scoring-service.yaml"
+      - "contracts/events/model.version.activated.v1.schema.json"
+      - "contracts/events/llm.usage.recorded.v1.schema.json"
+      - "contracts/events/envelope.schema.json"
       - ".github/workflows/ci-scoring-service.yml"
       - ".github/workflows/_python.yml"
   pull_request:
     paths:
       - "backend/scoring-service/**"
+      - "contracts/openapi/scoring-service.yaml"
+      - "contracts/events/model.version.activated.v1.schema.json"
+      - "contracts/events/llm.usage.recorded.v1.schema.json"
+      - "contracts/events/envelope.schema.json"
       - ".github/workflows/ci-scoring-service.yml"
       - ".github/workflows/_python.yml"
 

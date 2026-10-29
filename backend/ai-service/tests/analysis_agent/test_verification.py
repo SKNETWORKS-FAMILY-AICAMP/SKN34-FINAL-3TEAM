@@ -1,4 +1,4 @@
-from app.analysis_agent.metrics import compute
+from app.analysis_agent.calculators import compute
 from app.analysis_agent.prompts import Citation
 from app.analysis_agent.verification import verify
 from tests.analysis_agent.records_fixture import SCOPE, records

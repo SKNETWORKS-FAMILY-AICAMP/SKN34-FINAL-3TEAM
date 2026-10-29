@@ -5,9 +5,9 @@ import json
 from fastapi.testclient import TestClient
 
 from app.analysis_agent.prompts import AnswerDraft, Citation, Classification
-from app.analysis_agent.records import RecordsUnavailable
-from app.analysis_agent.router import get_learning_records
+from app.analysis_agent.router import get_record_tools
 from app.bootstrap import create_app
+from app.clients.learning_client import RecordsUnavailable
 from app.llm.base import LlmError
 from app.llm.providers import get_llm
 from tests.analysis_agent.records_fixture import FakeRecords
@@ -34,7 +34,7 @@ def classified(intent: str, issue: str = "NONE") -> Classification:
 def post(llm: FakeLlm, records: FakeRecords | None = None, body: dict = BODY, headers=HEADERS):
     app = create_app()
     app.dependency_overrides[get_llm] = lambda: llm
-    app.dependency_overrides[get_learning_records] = lambda: records or FakeRecords()
+    app.dependency_overrides[get_record_tools] = lambda: records or FakeRecords()
     with TestClient(app) as client:
         return client.post("/internal/analysis/stream", json=body, headers=headers)
 

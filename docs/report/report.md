@@ -165,3 +165,12 @@ develop `f9df2d3` 기준 #56에서 기본 worker와 실제 core 별명 API를 �
 - Docker JDK 21: `bash gradlew test bootJar --no-daemon --max-workers=1 --no-watch-fs --console=plain`(검증 전용 Gradle/Test heap 512MiB·CPU 2 설정) — **323개 통과, 실패·오류·생략 0**, bootJar 성공. 새 분석 대화 경로와 #129 이용권 통합 9개를 포함한 전체 실행이다.
 - report production 변경 3개 파일은 실제 HTTP 연동 당시 소스와 바이트 단위로 동일함을 대조했다. 서비스 경계·payment service 호출·내부 헤더 생성·parent 잠금 밖 HTTP 호출·공개 계약 보존을 최종 변경분에서 확인했다.
 - `git diff --check` 통과, 미해결 충돌 없음. 원격 CI·운영 배포는 이 로컬 검증 결과에 포함하지 않는다.
+
+
+### PR 준비: 최신 develop `2538d19` 반영
+
+- #129 커밋 `2cf3bf9`을 유지하고 develop `2538d195c53c70a17af84aadea9a3ab1b348840a`를 일반 merge했다. 텍스트 충돌은 없었고 API 명세도 자동 병합됐다. squash·rebase·기존 이력 재작성은 수행하지 않았다.
+- 전체 파일 대조에서 최신 develop 대비 차이는 원래 #129의 7개 파일뿐이다. API 명세는 최신 develop 원문에 #129의 기존 문구 변경을 적용한 결과와 정확히 일치하며, 나머지 구현·테스트 변경은 `2cf3bf9`과 동일하다. AI·learning·scoring의 새 파일과 이동은 develop 그대로 보존했다.
+- 이번 병합 후 `python -O -m unittest discover -s scripts/tests -q` **76개 통과**, `git diff --check`·staged 공백 검사 통과, 미해결 충돌 없음. 이동된 ai 모듈의 이전 import·테스트 파일명 참조도 확인했다.
+- core/report의 전체 소스·테스트·빌드 트리가 이전 검증본과 동일해 core 323개·bootJar, report 조회 31개, 실제 연결 5개 시나리오는 반복하지 않았다. 위 결과는 이전 실행 결과이며 이번 병합에서 새로 실행한 것으로 집계하지 않는다. 새 upstream 기능 전체의 학습·모델·삭제 E2E는 #129의 변경 검증 범위가 아니다.
+- PR 대상과 저장소 기본 브랜치는 모두 develop이며, 전체 #129 완료 범위에 `Closes #129`를 사용한다. PR 생성은 사용자가 수행한다.
