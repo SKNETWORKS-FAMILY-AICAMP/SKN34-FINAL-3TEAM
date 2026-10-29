@@ -8,7 +8,8 @@ import { Workspace } from '../common/Workspace.tsx'
 import { validPeriod } from '../../domain/parent.ts'
 import { AdminOperations } from './AdminOperations.tsx'
 import { MissionManager } from './MissionManager.tsx'
-import { ModelManager, ErrorManager } from './ModelManager.tsx'
+import { ErrorManager } from './ModelManager.tsx'
+import { ModelRegistry } from './ModelRegistry.tsx'
 export function AdminWorkspace() {
   const { session } = useSession(),
     location = useLocation(),
@@ -93,7 +94,7 @@ export function AdminWorkspace() {
       ) : page === 'missions' ? (
         <MissionManager />
       ) : page === 'models' ? (
-        <ModelManager />
+        <ModelRegistry />
       ) : page === 'errors' ? (
         <ErrorManager />
       ) : (

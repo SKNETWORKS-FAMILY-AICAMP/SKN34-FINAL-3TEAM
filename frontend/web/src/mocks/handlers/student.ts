@@ -171,7 +171,7 @@ export const studentHandlers = [
       guard(request)
       const s = await store.restore()
       if (s.role === 'STUDENT') return { role: 'STUDENT', child: s.child }
-      const nextAction = mockConsentRequired() ? 'CONSENT_REQUIRED' : (await store.children()).length ? 'READY' : 'CHILD_REGISTRATION_REQUIRED'
+      const nextAction = s.role !== 'PARENT' ? 'READY' : mockConsentRequired() ? 'CONSENT_REQUIRED' : (await store.children()).length ? 'READY' : 'CHILD_REGISTRATION_REQUIRED'
       return {
         ...s,
         ...(s.role === 'PARENT' ? { nextAction, startPath: nextAction === 'CONSENT_REQUIRED' ? '/parent/onboarding' : nextAction === 'CHILD_REGISTRATION_REQUIRED' ? '/parent/children/new' : '/parent/journal' } : {}),
