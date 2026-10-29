@@ -1,5 +1,10 @@
-from app.analysis_agent.metrics import compute
-from tests.analysis_agent.records_fixture import SCOPE, records
+import pytest
+
+from app.analysis_agent.calculators import compute, count_metric, ratio_metric
+from app.analysis_agent.models import Period
+from tests.analysis_agent.records_fixture import PERIOD, SCOPE, records
+
+PERIOD_ = Period.model_validate(PERIOD)
 
 
 def by_label(computation):
@@ -57,3 +62,29 @@ def test_insufficient_kinds() -> None:
     assert compute("CHANGES", no_changes, SCOPE).insufficient == "NO_CHANGES"
     no_reflection = records().model_copy(update={"activities": []})
     assert compute("REFLECTIONS", no_reflection, SCOPE).insufficient == "NO_REFLECTIONS"
+
+
+@pytest.mark.parametrize(
+    ("numerator", "denominator", "value", "state"),
+    [
+        (0, 0, None, "NO_RECORD"),  # 분모 0은 0%가 아니라 기록 없음
+        (2, 4, None, "INSUFFICIENT_SAMPLE"),  # 분모 5 미만은 비율 비움
+        (2, 5, 0.4, "OK"),
+    ],
+)
+def test_ratio_metric_matches_learning_rule(numerator, denominator, value, state) -> None:
+    metric = ratio_metric("늘어난 시도", numerator, denominator, "늘어난 수 / 시도 수", PERIOD_)
+    assert (metric.value, metric.state) == (value, state)
+    assert (metric.numerator, metric.denominator, metric.count) == (
+        numerator,
+        denominator,
+        numerator,
+    )
+    assert metric.formula == "늘어난 수 / 시도 수"
+    assert metric.period == PERIOD_
+
+
+def test_count_metric_has_no_ratio() -> None:
+    metric = count_metric("돌아보기를 쓴 활동", 0, "기간 안에 쓴 돌아보기 수", PERIOD_)
+    assert (metric.value, metric.count, metric.state) == (None, 0, "NO_RECORD")
+    assert (metric.numerator, metric.denominator) == (0, 0)

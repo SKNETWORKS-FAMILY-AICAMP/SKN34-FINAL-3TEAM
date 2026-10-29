@@ -17,9 +17,9 @@ from app.analysis_agent.models import (
     Records,
     Scope,
 )
-from app.analysis_agent.records import RECORD_COUNT_LABEL
 
 MIN_RATIO_DENOMINATOR = 5
+RECORD_COUNT_LABEL = "학습한 활동"  # learning summary의 집계 대상 시도 수 지표
 COMPLETED_LABEL = "완료한 활동"
 REVISED_LABEL = "되묻기 후 생각을 더한 활동"
 THINKING_TYPE_LABELS = {

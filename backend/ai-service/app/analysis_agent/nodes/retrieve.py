@@ -9,12 +9,13 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
-from app.analysis_agent.metrics import THOUGHT_LIMIT
-from app.analysis_agent.metrics import compute as compute_metrics
+from app.analysis_agent.calculators import THOUGHT_LIMIT
+from app.analysis_agent.calculators import compute as compute_metrics
 from app.analysis_agent.models import Intent, Records, Scope, StreamError
 from app.analysis_agent.nodes.events import status
-from app.analysis_agent.records import LearningRecords, RecordsUnavailable
 from app.analysis_agent.state import AgentContext, AnalysisState
+from app.analysis_agent.tools import RecordTools
+from app.clients.learning_client import RecordsUnavailable
 
 ERROR_MESSAGES = {
     "FORBIDDEN": "이 자녀의 기록을 조회할 권한이 없어요.",
@@ -26,7 +27,7 @@ DEFAULT_ERROR = "기록을 불러오지 못했어요. 잠시 뒤 다시 물어�
 async def retrieve(state: AnalysisState, runtime: Runtime[AgentContext]) -> AnalysisState:
     runtime.stream_writer(status("기록을 조회하는 중"))
     scope = state["request"].scope
-    calls = tool_calls(state["intent"], runtime.context.records, scope)
+    calls = tool_calls(state["intent"], runtime.context.tools, scope)
     # 모두 끝까지 기다린 뒤 첫 실패를 씀 (나머지 실패가 처리되지 않은 채 남지 않게)
     results = await asyncio.gather(*calls.values(), return_exceptions=True)
     for result in results:
@@ -41,13 +42,13 @@ async def retrieve(state: AnalysisState, runtime: Runtime[AgentContext]) -> Anal
     return {"records": Records(**dict(zip(calls, results, strict=True)))}
 
 
-def tool_calls(intent: Intent, tools: LearningRecords, scope: Scope) -> dict[str, Any]:
+def tool_calls(intent: Intent, tools: RecordTools, scope: Scope) -> dict[str, Any]:
     """질문 유형 → 조회할 도구. 키는 Records 필드 이름."""
     calls: dict[str, Any] = {"summary": tools.summary(scope)}
     if intent == "THINKING_TYPES":
         calls["thinking_types"] = tools.thinking_types(scope)
     elif intent == "CHILD_THOUGHTS":
-        calls["attempts"] = tools.recent_attempts(scope, THOUGHT_LIMIT)
+        calls["attempts"] = tools.attempts(scope, THOUGHT_LIMIT)
     elif intent == "CHANGES":
         calls["changes"] = tools.changes(scope)
         calls["activities"] = tools.thinking_activities(scope)  # 원문 근거의 미션 제목

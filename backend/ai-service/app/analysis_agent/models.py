@@ -216,6 +216,18 @@ class ThinkingActivity(RecordModel):
     reflection: Reflection | None  # 기간 안에 쓴 돌아보기만
 
 
+class RecordEvidence(RecordModel):
+    """learning 원문 근거. 없는 답변·삭제 학생은 available=false·나머지 null (원문 추정 금지)."""
+
+    answer_id: str
+    attempt_id: str | None
+    mission_title: str | None
+    answer_version: int | None
+    submitted_at: str | None
+    quote: str | None
+    available: bool
+
+
 class Records(RecordModel):
     """도구가 가져온 원본. summary는 항상, 나머지는 질문 유형에 필요한 것만 채워짐."""
 

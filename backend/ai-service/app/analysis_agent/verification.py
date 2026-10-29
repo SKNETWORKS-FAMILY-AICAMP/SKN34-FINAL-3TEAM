@@ -10,7 +10,7 @@
 import re
 from dataclasses import dataclass
 
-from app.analysis_agent.metrics import Computation
+from app.analysis_agent.calculators import Computation
 from app.analysis_agent.models import Evidence, Verification
 from app.analysis_agent.prompts import Citation
 

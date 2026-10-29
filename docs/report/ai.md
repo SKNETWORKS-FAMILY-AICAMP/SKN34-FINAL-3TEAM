@@ -52,7 +52,7 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
                                                       └(통과)→ END [result: LLM]
 ```
 
-- 구성: `analysis_agent/graph.py`(조립), `state.py`, `nodes/`(understand·retrieve·respond), `records.py`(learning 기록 도구, 호출마다 권한 재확인), `metrics.py`, `verification.py`, `templates.py`, `prompts.py`(`analysis@1`), `router.py`(SSE)
+- 구성: `analysis_agent/graph.py`(조립), `state.py`, `nodes/`(understand·retrieve·respond), `tools.py`(`RecordTools`, 호출마다 권한 재확인), `calculators.py`, `verification.py`, `templates.py`, `prompts.py`(`analysis@1`), `router.py`(SSE), `clients/learning_client.py`(learning 기록 조회 HTTP, #65)
 - LLM 호출은 기존 `LlmClient` 사용(재시도·사용량 이벤트 `ANALYSIS`·대체 모델 유지). LangGraph는 분기·상태·스트리밍만
 - 도구 선택은 질문 유형 → 도구 표(6유형). 학생·기간은 LLM이 아니라 core가 확인한 `scope`만 사용
 
@@ -63,8 +63,11 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
   | 아이가 쓴 생각 | + `attempts` 첫 페이지 8건 |
   | 전후 변화 | + `changes` 전체 페이지, `thinking-activities` |
   | 돌아보기 | + `thinking-activities` |
+  | (#67 대조용, 그래프 미연결) | `evidence(answerIds)` — 삭제된 근거는 `available: false`·원문 null 그대로 |
 
 - 수치는 learning이 P08로 계산한 값을 그대로 사용(대시보드·리포트와 일치). 분모 5 미만이면 비율 null, 건수 지표에는 분자·분모를 넘기지 않음
+- #65 결정(사용자): 전후 변화 수(글자·문장·까닭을 잇는 말)는 ai가 다시 세지 않고 learning `changes.counts`를 그대로 사용. 이슈의 `calculators.change_counts`는 만들지 않고 class-diagram 5.2에서 제거. 까닭을 잇는 말 목록·문장 구분 규칙은 learning·report만 보유
+- #65 API 문서 변경: api-spec 4.1 `thinking-activities` 호출자에 `ai` 추가(기존 구현이 이미 호출, 경로·응답 변경 없음). learning은 다른 학생 기록 조회와 같은 역할·학생 범위 검사(`requireStudentRecord`)를 적용하므로 공급자 변경 없음
 - 대조 실패(숫자가 계산값·기록 수·기간 날짜에 없음, 한글 수 표현, 따옴표 인용 불일치, 레벨·등급·점수·사고력 표현) → `source: TEMPLATE`, `fallback.reason: VERIFICATION_FAILED`
 - LLM 장애 → 규칙 응답(`AI_UNAVAILABLE`), 기록 부족 → 기간·기록 수만 안내(`fallback` null), 조회 실패 → `error`(빈 기록으로 대체하지 않음)
 - `delta` 미전송(대조 통과 후에만 표시), 체크포인터 없음(이전 대화는 core가 `history`로 전달), 전체 마감 `ANALYSIS_DEADLINE` 110초
