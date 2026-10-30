@@ -37,10 +37,18 @@ def target(df):
     ).astype("float32")
 
 
-def loader(df, tok, bs, shuffle, max_len):
+def loader(df, tok, bs, shuffle, max_len, mask_disagree=0.0):
     first = ("[학년] " + df["grade"] + " [글 종류] " + df["essay_type"]).tolist()
     enc = tok(first, df["text"].tolist(), truncation="only_second", max_length=max_len)
     y = target(df)
+    if mask_disagree:
+        # --mask-disagree: 채점자 3명 최고-최저 차이가 X 초과인 영역은 정답을 NaN으로 → 손실에서 빠짐 (학습용에만)
+        for j, a in enumerate(AREAS):
+            v = df[[f"{a}_r{r}" for r in (1, 2, 3)]]
+            y[(v.max(axis=1) - v.min(axis=1)).to_numpy() > mask_disagree, j] = np.nan
+        print(
+            f"  학습에서 뺀 칸: {int(np.isnan(y).sum()):,} / {y.size:,} (채점자 차이 {mask_disagree:g} 초과)"
+        )
     rows = [
         {
             "input_ids": enc["input_ids"][i],
@@ -136,6 +144,18 @@ def main():
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--n-new", type=int, default=10, help="처음 보는 주제로 뗄 주제 수")
     ap.add_argument(
+        "--data-dir",
+        type=Path,
+        default=M2 / "data",
+        help="에세이545_답안.csv.gz가 있는 폴더 (정제본은 data/clean)",
+    )
+    ap.add_argument(
+        "--mask-disagree",
+        type=float,
+        default=0.0,
+        help="채점자 3명 최고-최저 차이가 X 초과인 영역을 학습 손실에서만 뺌 (평가 정답은 그대로, 0이면 끔. 예: 1)",
+    )
+    ap.add_argument(
         "--add-71819",
         action="store_true",
         help="AI Hub 71819 논술형(89문항)을 학습에만 추가: 구성=organization_1·2, 내용=task_1·content_1~3, 표현=expression_1·2, 1~5점을 0~3점으로",
@@ -147,7 +167,7 @@ def main():
     if dev.type == "cuda":
         torch.backends.cuda.matmul.allow_tf32 = True
 
-    df = pd.read_csv(M2 / "data" / "에세이545_답안.csv.gz")
+    df = pd.read_csv(args.data_dir / "에세이545_답안.csv.gz")
     topics = np.sort(df["subject"].unique())
     new = set(np.random.RandomState(args.seed).permutation(topics)[: args.n_new])
     tl = df[(df["split"] == "TL") & ~df["subject"].isin(new)]
@@ -161,6 +181,10 @@ def main():
         "new_topic": df[df["subject"].isin(new)].reset_index(drop=True),
     }
     tag = ""
+    if args.data_dir.name != "data":  # 예: data/clean → _clean (원래 결과를 덮어쓰지 않게)
+        tag += f"_{args.data_dir.name}"
+    if args.mask_disagree:
+        tag += f"_mask{args.mask_disagree:g}"
     if args.add_71819:
         # 평가는 545 그대로, 학습에만 71819를 더해 주제 수를 늘림 (50 → 50+89, 10/29 처음 보는 주제 0.510 개선 시도)
         e = pd.read_csv(M2 / "data" / "논술형_답안.csv.gz")
@@ -183,7 +207,7 @@ def main():
             # 채점자 2명이라 3번째 칸은 두 명 평균 (정답 = 두 명 평균이 됨)
             add[f"{a}_r3"] = (add[f"{a}_r1"] + add[f"{a}_r2"]) / 2
         sets["train"] = pd.concat([sets["train"], add], ignore_index=True)
-        tag = "_add71819"
+        tag += "_add71819"
         print(
             f"71819 논술형 {len(add):,}건 (문항 {e['prompt_id'].nunique()}개)을 학습에 추가"
         )
@@ -213,6 +237,7 @@ def main():
             args.batch_size if k == "train" else 64,
             k == "train",
             args.max_length,
+            args.mask_disagree if k == "train" else 0.0,
         )
         for k, v in sets.items()
     }
@@ -232,7 +257,12 @@ def main():
                 logits = model(
                     input_ids=b["input_ids"], attention_mask=b["attention_mask"]
                 ).logits
-            loss = torch.nn.functional.mse_loss(logits.float(), b["labels"])
+            # NaN 칸(--mask-disagree)은 빼고 평균. NaN이 없으면 mse_loss와 같음
+            lab = b["labels"]
+            keep = ~torch.isnan(lab)
+            loss = ((logits.float() - lab.nan_to_num()) ** 2 * keep).sum() / keep.sum().clamp(
+                min=1
+            )
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()

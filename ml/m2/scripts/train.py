@@ -245,7 +245,16 @@ def load_trained(args, ckpt_dir, n_out, tokenizer):
 
 
 def make_loader(
-    df, tokenizer, max_length, batch_size, shuffle, head="cls", **input_opts
+    df,
+    tokenizer,
+    max_length,
+    batch_size,
+    shuffle,
+    head="cls",
+    mask_disagree=0.0,
+    distill=None,
+    distill_weight=0.0,
+    **input_opts,
 ):
     # 지시문·예시가 길어도 학생 글만 잘리도록 두 번째 문장(글)만 자름
     enc = tokenizer(
@@ -256,6 +265,20 @@ def make_loader(
     )
     # 분류면 (9항목 x 5점) 분포를 45칸으로 펴서, 회귀면 9개 평균 점수
     y = soft_targets(df).reshape(len(df), -1) if head == "cls" else targets(df)
+    if distill is not None and head != "cls":
+        # --distill: 정답 = (1-w) x 전문가 평균 + w x 교사 점수 (교사 점수가 없는 칸은 전문가 평균 그대로)
+        t = distill.to_numpy(dtype="float32")
+        has = ~np.isnan(t)
+        y = np.where(has, (1 - distill_weight) * y + distill_weight * t, y).astype("float32")
+        print(f"  교사 점수 섞은 칸: {int(has.sum()):,} / {y.size:,} (가중치 {distill_weight:g})")
+    if mask_disagree:
+        # --mask-disagree: 두 전문가 점수 차이가 N점 이상인 칸은 정답을 NaN으로 → 손실에서 빠짐 (학습용에만)
+        for j, it in enumerate(ITEMS):
+            far = (df[f"{it}_r1"] - df[f"{it}_r2"]).abs().to_numpy() >= mask_disagree
+            y[far, j] = np.nan
+        print(
+            f"  학습에서 뺀 칸: {int(np.isnan(y).sum()):,} / {y.size:,} (두 점수 차이 {mask_disagree:g}점 이상)"
+        )
     rows = [
         {
             "input_ids": enc["input_ids"][i],
@@ -592,6 +615,24 @@ def main() -> None:
         help="학습 없이 --out-dir/<run 이름>에 저장된 모델로 평가만 (같은 옵션으로 먼저 학습해 둔 모델). 보통 --prompt-override와 같이",
     )
     parser.add_argument(
+        "--mask-disagree",
+        type=float,
+        default=0.0,
+        help="두 전문가 점수 차이가 N점 이상인 칸을 학습 손실에서만 뺌 (검증·평가 정답은 그대로, 0이면 끔. 예: 2)",
+    )
+    parser.add_argument(
+        "--distill",
+        type=Path,
+        default=None,
+        help="교사 점수 파일(train_teacher.py 출력 teacher_preds.csv.gz). 학습 답의 정답에만 섞음 (검증·평가 정답·입력은 그대로)",
+    )
+    parser.add_argument(
+        "--distill-weight",
+        type=float,
+        default=0.5,
+        help="--distill 섞는 비율 w: 정답 = (1-w) x 전문가 평균 + w x 교사 점수",
+    )
+    parser.add_argument(
         "--save-preds",
         action="store_true",
         help="답안별 예측 점수를 preds.npz로 저장 (앙상블용, 커밋 금지)",
@@ -609,6 +650,10 @@ def main() -> None:
         parser.error(
             "--aihub-split와 --extra-adult는 같이 못 씀 (성인 글 VL이 평가용에 섞임)"
         )
+    if args.distill and (args.head == "cls" or args.corr_loss):
+        parser.error("--distill은 회귀(--head reg)·--corr-loss 없이만")
+    if args.mask_disagree and (args.head == "cls" or args.corr_loss):
+        parser.error("--mask-disagree는 회귀(--head reg)·--corr-loss 없이만")
     if args.with_purpose and args.dataset != "essay":
         parser.error(
             "--with-purpose는 논술형(essay)만 가능 (서술형은 글 목적 구분 없음)"
@@ -647,6 +692,12 @@ def main() -> None:
         run_name += f"_a{args.train_answers}"
     if args.lora:
         run_name += f"_lora{args.lora}"
+    if args.mask_disagree:
+        run_name += f"_mask{args.mask_disagree:g}"
+    if args.distill:
+        run_name += f"_distill{args.distill_weight:g}_{args.distill.parent.name}"
+    if args.data_dir.name != "data":  # 예: data/clean → _clean (원래 결과 파일을 덮어쓰지 않게)
+        run_name += f"_{args.data_dir.name}"
     print(f"장치: {device} / 모델: {args.model} / 데이터: {args.dataset}")
 
     df = load(args)
@@ -764,6 +815,18 @@ def main() -> None:
         else:
             head.bias.copy_(torch.tensor(targets(sets["train"]).mean(axis=0)))
 
+    teacher = None
+    if args.distill:
+        teacher = pd.read_csv(args.distill)
+        teacher["answer_id"] = teacher["answer_id"].astype(str)
+        teacher = teacher.set_index("answer_id")
+
+    def teacher_for(part):
+        # 학습 답 순서에 맞춘 교사 점수 (없으면 NaN → 전문가 평균 그대로)
+        if teacher is None:
+            return None
+        return teacher.reindex(part["answer_id"].astype(str))[ITEMS]
+
     loaders = {
         name: make_loader(
             part,
@@ -772,6 +835,9 @@ def main() -> None:
             args.batch_size if name == "train" else args.eval_batch_size,
             name == "train",
             head=args.head,
+            mask_disagree=args.mask_disagree if name == "train" else 0.0,
+            distill=teacher_for(part) if name == "train" else None,
+            distill_weight=args.distill_weight,
             **input_opts,
         )
         for name, part in sets.items()
@@ -823,7 +889,10 @@ def main() -> None:
                 if args.head == "cls":
                     loss = cls_loss(logits, batch["labels"])
                 else:
-                    loss = torch.nn.functional.mse_loss(logits.float(), batch["labels"])
+                    # NaN 칸(--mask-disagree)은 빼고 평균. NaN이 없으면 mse_loss와 같음
+                    lab = batch["labels"]
+                    keep = ~torch.isnan(lab)
+                    loss = ((logits.float() - lab.nan_to_num()) ** 2 * keep).sum() / keep.sum().clamp(min=1)
                     if args.corr_loss:
                         loss = loss + args.corr_loss * corr_loss(
                             logits.float(), batch["labels"]
