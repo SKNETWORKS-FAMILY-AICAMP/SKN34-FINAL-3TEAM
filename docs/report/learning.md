@@ -199,7 +199,7 @@ core #126(#47)이 관리자 미션 요청 10개(경로 8개)를 learning `/inter
 - 확인 필요·한계:
   - core가 learning 404를 아직 503 `ADMIN_MISSIONS_UNAVAILABLE`로 바꿈(없는 미션 실제 확인). core가 고치기로 함
   - 프론트 `missingMissionFields`를 같은 조건으로 맞추는 것은 프론트 반영 중(이슈 해야 할 일 4)
-  - `verify_feedback_learning.py`는 학생 시작·답변 제출까지 통과(위 스크립트 수정 확인)하지만 AI 실패 단계에서 멈춤. develop 원본에서도 같아 #145와 무관한 기존 문제, 지금 core는 Redis도 필요. 원인은 스크립트가 learning에 `CORE_URL`을 넘기지 않아 피드백 전 결제 사용 확인이 503 `PAYMENT_USAGE_UNAVAILABLE`로 끝나는 것(11절에서 확인)
+  - 당시 `verify_feedback_learning.py`는 학생 시작·답변 제출까지만 통과하고, `CORE_URL` 누락으로 피드백 전 결제 사용 확인에서 503 `PAYMENT_USAGE_UNAVAILABLE`로 끝남. core Redis 전제도 누락돼 있었음. #164 수정·검증은 13절
   - V7 추가는 DB 담당에게 공유
 
 ## 11. 신고 지원 조회 (#146)
@@ -225,7 +225,7 @@ core #46 신고·문의는 접수·문의 연결·관리자 정정 전에 learni
 - 확인 필요·한계:
   - 범위 밖 신고: learning 403을 core가 503 `SUPPORT_DEPENDENCY_UNAVAILABLE`로 바꿈(core는 공급자 비-2xx를 모두 503, 5.7). 신고는 막힘
   - 학생 신고 버튼이 `judgmentId`를 쓰는 화면 반영은 프론트(#82에서 반영, 12절)
-  - `verify_feedback_learning.py`는 learning에 `CORE_URL`이 없어 피드백이 결제 사용 확인에서 503(10절 기존 문제의 원인). 다른 팀원 스크립트라 고치지 않음
+  - 당시 `verify_feedback_learning.py`의 `CORE_URL` 누락은 #146에서 수정하지 않았음(10절). 이후 #164 수정·검증은 13절
 
 ## 12. 학생 피드백 화면 계약 반영 (#82, web)
 
@@ -247,3 +247,73 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
   - `parent-admin-browser.mjs`는 두 번째 검사(신규 가입, 이메일 입력칸)에서 시간 초과. develop 원본에서도 같아 #82와 무관한 기존 문제(프론트 담당 확인 필요)
   - 새로고침하면 실패한 피드백의 `retryable`을 알 수 없음(시도 상세의 `FAILED` 결과에는 없음). 그때는 다시 요청 버튼을 보여 주고, learning이 `FAILED`를 다시 실행
   - 웹 CI(`_web.yml`)는 lint·build만 돌리고 `npm test`·브라우저 테스트는 돌리지 않음
+
+## 13. 피드백 실제 연동 검증 환경 복구 (#164)
+
+### 수정 범위와 실행 전제
+
+`scripts/verify_feedback_learning.py`가 임의 포트로 core를 띄우면서 learning에는 `CORE_URL`을 전달하지 않아 결제 사용 확인이 기본 8080으로 향했다. 실제 `core_url`을 전달하고, core 알림 구독자의 기동에 필요한 전용 Redis를 준비한다. production 코드·application.yml 기본값·공개 API·오류 계약·DB 스키마는 변경하지 않는다. 아키텍처 변경 없음.
+
+- 기본 모드: 기존 PostgreSQL 이미지 `postgres:17.11-alpine`과 저장소에서 쓰는 `redis:8.2.10-alpine`을 실행별 고유 컨테이너로 생성한다. 호스트 루프백의 동적 포트만 공개하고 각 컨테이너는 CPU 0.5, 메모리 DB 256MiB·Redis 64MiB로 제한한다. Redis 영속 저장은 끈다. Redis PING/PONG 뒤 앱을 시작한다.
+- 자식 JVM에 `CORE_URL`·`LEARNING_URL`·`AI_URL`과 `REDIS_HOST`·`REDIS_PORT`·빈 `REDIS_PASSWORD`를 명시해 기존 셸의 다른 Redis 설정을 물려받지 않는다. 앱 준비 확인은 readiness를 사용하며 이 검증 실행의 core 그룹에만 `redis`를 포함한다(learning은 DB). 검증 흐름은 공개 SSE 요청 → core → learning HTTP, learning → core 결제 사용 확인 및 learning → AI HTTP 대역이다.
+- 종료·예외·Ctrl+C 시 자식 JVM·AI HTTP 서버·로그를 닫고, 이 실행에서 생성한 정확한 컨테이너 ID만 `docker rm -f -v`로 역순 제거한다. 시작 전 생성된 컨테이너도 추적하며 이미지가 만든 익명 볼륨을 함께 제거한다. `--rm` 컨테이너를 `rm -f`로 직접 제거했을 때 익명 볼륨이 남는 것을 실제 이벤트·볼륨 조회로 발견해 `-v`를 명시했다. 정리 실패 하나가 나머지 컨테이너 정리를 막지 않으며 원래 오류에 정리 실패를 추가한다. 정리가 실패한 실행은 PASS JSON을 만들지 않는다. 강제 프로세스 종료·호스트 종료 시 finally 실행은 보장하지 않는다.
+- `--java`·`--output`·`--core-ref`·`--learning-ref`·`--learning-source`·`--learning-merged`는 유지한다. refs는 실제 JAR 빌드 소스를 기록하며 두 소스가 다르거나 미병합이면 각각 그대로 적는다. 결과 JSON은 기존 사례·JAR SHA-256과 실제 서비스 URL·Redis 주소·인프라 소유권·익명 볼륨 이름·제거한 컨테이너 ID를 함께 남긴다. 로그와 출력은 실행별 전용 디렉터리(`build/issue164/...`)에 둔다.
+
+저장소 루트에서 JDK 21과 Python 3.12, Docker Desktop Linux 엔진을 준비한다. core·learning 각각 `gradlew bootJar --no-daemon --max-workers=1 --no-watch-fs --console=plain -Pkotlin.compiler.execution.strategy=in-process`로 빌드한다. Windows는 각 서비스 디렉터리에서 `gradlew.bat`를 사용한다. 다음 명령은 두 JAR를 현재 checkout에서 빌드했고 그 checkout이 develop에 병합된 소스인 경우의 PowerShell 예시다(미병합 learning 소스는 `--learning-merged` 생략).
+
+```powershell
+$sourceRef = git rev-parse HEAD
+python scripts/verify_feedback_learning.py `
+  --core-jar backend/core-service/build/libs/core-service-0.0.1-SNAPSHOT.jar `
+  --learning-jar backend/learning-service/build/libs/learning-service-0.0.1-SNAPSHOT.jar `
+  --learning-source . --core-ref $sourceRef --learning-ref $sourceRef --learning-merged `
+  --java "$env:JAVA_HOME/bin/java.exe" --output build/issue164/run/result.json
+```
+
+Docker CLI가 없는 Linux 실행 환경은 아래 전용 sidecar 모드를 사용한다. DB·Redis 주소는 반드시 함께 지정하고 공유 호스트를 넣지 않는다. 접두사는 안전장치일 뿐 실제 독점 소유권을 증명하지 않으므로 호출자가 새 인스턴스임을 보장한다.
+
+| 항목 | 호출자가 먼저 준비할 값 |
+|---|---|
+| 네트워크 | 이 검증 전용 Docker network. JDK 21·Python·`psycopg[binary]`가 있는 실행 컨테이너와 아래 sidecar 두 개만 연결 |
+| DB | `issue39-feedback-db-<고유값>`, `postgres:17.11-alpine`, TCP 5432, 사용자 `issue39`, 암호 `issue39-disposable-password`, 초기 DB `issue39_core_feedback`. `pg_isready -h 127.0.0.1 -U issue39 -d issue39_core_feedback` 성공까지 기다림 |
+| Redis | `issue39-feedback-redis-<고유값>`, `redis:8.2.10-alpine`, TCP 6379, 암호 없음, `redis-server --save '' --appendonly no`. 실행 컨테이너에서 해당 이름으로 연결 가능해야 함 |
+| 인자 | 기존 JAR·ref·출력 인자에 `--db-host issue39-feedback-db-<고유값> --redis-host issue39-feedback-redis-<고유값>` 추가. 기존 외부 DB 단독 호출도 Redis 인자를 보완해야 함 |
+| 정리 | 스크립트는 두 sidecar·network를 삭제하지 않음. 호출자가 성공·실패·중단 뒤 자신이 만든 정확한 컨테이너 ID만 제거하고 마지막에 전용 network를 제거. DB는 새 인스턴스만 사용(learning DB 생성·마이그레이션이 있어 재사용 불가) |
+
+### 검증 기록
+
+2026-10-30, 분기 소스는 develop 병합 커밋 `18c9c1167b4a51fa6e6afbd6acb753041e9e13da`(core·learning 공통). production 소스는 해당 커밋 그대로다.
+
+| 검증 | 실제 결과 |
+|---|---|
+| `python -m py_compile scripts/verify_feedback_learning.py scripts/tests/test_verify_feedback_learning.py` | 통과 |
+| `python -m unittest discover -s scripts/tests -p test_verify_feedback_learning.py -v` | 7개 통과. 실제 core URL·Redis 환경 상속 차단, Redis 시작/준비 실패 정리, 한 컨테이너 정리 실패 시 나머지 정리와 원래 오류 보존, 외부 sidecar 인자·소유권, PONG 확인. 익명 볼륨 정리 수정 후 7개 재검증 통과. Docker/JVM은 이 검사에서 대역 |
+| `python -m unittest discover -s scripts/tests -p test_feedback_openapi.py -v` | 기존 피드백 계약 2개 통과. 이후 계약 변경이 없어 재실행하지 않고 결과 유지 |
+| `git diff --check` | 통과 |
+| core·learning JDK 21 `bootJar` | Gradle 8.14.6·Temurin 21.0.12.1, 전용 Gradle home·공유 의존성 캐시 읽기 전용, worker 1개·Gradle heap 768MiB·ActiveProcessorCount 2·Kotlin in-process. core 2분 34초·learning 1분 48초에 빌드 통과 |
+| `verify_feedback_learning.py` 전체 | 같은 JAR로 기존 6사례 모두 PASS. 실제 core·learning HTTP/SSE·PostgreSQL·Redis, AI만 합성 HTTP 대역 |
+| 정상 종료 후 실제 자원 정리 | 기록된 컨테이너 2개·익명 볼륨 2개가 더 이상 존재하지 않고, core·learning·AI 포트 3개가 닫힌 것을 별도 조회로 확인 |
+| 의도적 JAR 기동 실패 후 실제 자원 정리 | 별도 전용 DB·Redis를 준비하고 잘못된 JAR로 learning JVM을 실제 기동. 예상한 JVM 종료 오류가 전파됐고 JVM PID 종료·컨테이너 2개·익명 볼륨 2개 제거 확인. 실패를 정상 피드백으로 바꾸지 않음 |
+
+빌드된 JAR SHA-256: core `1ebd67337e2a1596ee5bd77924d7752bb81d18da844be5ce56b16279dd117292`, learning `32aa56825a2416ca578bf52e1b885dfc8bb5bc9fd8f1aa062ecc96f3954ab8fa`. 두 JAR 모두 위 develop 병합 소스로 빌드했다. 이 결과를 #164 변경의 병합·배포로 해석하지 않는다.
+
+Windows Python 검사의 첫 시도는 샌드박스 임시 경로 권한 오류로 실행되지 않아, `TEMP`·`TMP`를 이 worktree의 `build/issue164/tmp`로 지정한 뒤 위 9개를 실행했다. 로컬 Temurin JDK `21.0.12.1`의 Gradle은 초기 루프백 소켓 연결 오류로 실패했다. 기존 `eclipse-temurin:21-jdk` 이미지의 CPU 1.5·메모리 1536MiB·worker 1개 격리 빌드로 전환했으나, C 드라이브 여유 약 30MiB와 Docker VM 디스크 I/O 오류·read-only·API 500으로 막혔다. 이 실행이 복사한 호스트 의존성 캐시만 삭제했고 공유 캐시·다른 worktree·컨테이너·볼륨은 정리하지 않았다. 이후 로컬 JDK 빌드는 위와 같이 양쪽 모두 통과했다.
+
+Docker는 초기 디스크 I/O·API 500 및 임시 Unix socket의 Windows 오류 1920으로 막혔으나, 사용자 환경 복구 후 #47 → #163 → #164 순서로 무거운 검증을 재개했다. 이 작업에서는 공유 자원·이미지·볼륨·설정을 초기화하지 않았다. 재개 시 Docker 29.7.2 정상 응답·C 드라이브 약 20GiB 여유와 기존 JAR 해시 일치를 확인했다. 이전 `issue164-feedback-build-core` 컨테이너도 남아 있지 않았다.
+
+처음 전체 6사례와 JVM·컨테이너 정리는 통과했으나, 후속 Docker 이벤트/볼륨 조회에서 정상·실패 실행의 익명 볼륨 4개가 남은 것을 발견했다. 컨테이너 ID·생성 시각으로 소유권을 확인하고 연결 컨테이너가 없는 이 4개만 제거했다. 스크립트의 `rm -f -v`와 익명 볼륨 메타데이터를 보완한 뒤 Python 회귀 7개·전체 6사례·정상 및 의도적 실패 후 실제 볼륨 정리를 다시 검증해 위 결과를 확정했다. JAR·production 소스는 변경하지 않아 재빌드하지 않았다. 두 최종 실행에서 만든 컨테이너 4개·익명 볼륨 4개와 JVM은 모두 종료·제거됐으며 Docker 사용을 종료했다.
+
+실제 전체 실행 명령(저장소 루트, Windows JDK 경로는 `--java`로 지정):
+
+```powershell
+python scripts/verify_feedback_learning.py `
+  --core-jar backend/core-service/build/libs/core-service-0.0.1-SNAPSHOT.jar `
+  --learning-jar backend/learning-service/build/libs/learning-service-0.0.1-SNAPSHOT.jar `
+  --learning-source . --core-ref 18c9c1167b4a51fa6e6afbd6acb753041e9e13da `
+  --learning-ref 18c9c1167b4a51fa6e6afbd6acb753041e9e13da --learning-merged `
+  --java "$env:JAVA_HOME/bin/java.exe" --output build/issue164/run-final/result.json
+```
+
+로컬 산출물은 `build/issue164/run-final/result.json`·`cleanup-audit.json`, `build/issue164/failure-cleanup/result.json`, 전체 로그·JAR 해시를 모은 `build/issue164/status.json`에 보존한다(`build/`는 Git 제외). 정상 실행의 실제 URL은 core `127.0.0.1:56403`, learning `:56404`, AI 대역 `:56405`, Redis `:56396`이었다. 실패 정리 검사는 검증용 호출자 `python build/issue164/check_failure_cleanup.py`가 실제 Docker·JVM을 실행해 확인했다. Linux caller-owned sidecar 모드는 인자·소유권 회귀 검사까지만 했고 전체 실행은 기본 모드로 검증했다. 원격 CI·PR·배포 검증으로 집계하지 않는다.
+
+전체 스크립트에는 등록·학생 세션, FAILED → 재시도 DONE → 저장 결과 재사용, RUNNING 중 중복 방지, SSE 연결 종료 후 저장, HELD의 DONE 저장, 영구 AI 실패 보존의 기존 6개 사례가 있다. 이 사례를 생략하거나 기대값을 완화하지 않았다. 전체 실행은 실제 core/learning HTTP/SSE·PostgreSQL·Redis와 합성 AI HTTP 대역을 구분한다. 외부 LLM·토스·OAuth·RabbitMQ 이벤트·브라우저·배포는 검증 범위가 아니다. production 변경이 없어 서비스 전체 테스트·프론트 검증은 이 작업에서 반복하지 않는다.
