@@ -76,6 +76,7 @@ const complete = (): AdminMission => ({
   currentVersion: 1,
   currentRubricVersion: 1,
   publishedVersion: null,
+          publishedRubricVersion: null,
   versions: [
     {
       version: 1,

@@ -8,13 +8,13 @@ export function AnswerKeyFields({ version, value, onChange }: {
   if (version.inputType === 'SOLUTION_STEPS') return <label>
     정답 (수만 입력)
     <span className="ux-answer-unit"><input aria-label="정답 수" inputMode="decimal"
-      value={value && 'finalAnswer' in value ? value.finalAnswer : ''}
+      value={value?.finalAnswer ?? ''}
       onChange={(e) => onChange({ finalAnswer: e.target.value })} />
       {version.answerUnit && <span>{version.answerUnit}</span>}
     </span>
   </label>
   if (version.inputType === 'CLASSIFICATION') {
-    const assignments = value && 'assignments' in value ? value.assignments : []
+    const assignments = value?.assignments ?? []
     return <fieldset><legend>정답 분류</legend>
       {choices.map((choice) => <label key={choice.id}>{choice.label}
         <select aria-label={`정답 분류 ${choice.label}`}
@@ -27,7 +27,7 @@ export function AnswerKeyFields({ version, value, onChange }: {
       </label>)}
     </fieldset>
   }
-  const ids = value && 'choiceIds' in value ? value.choiceIds : []
+  const ids = value?.choiceIds ?? []
   if (version.inputType === 'ORDERING') return <fieldset><legend>정답 순서</legend>
     <p>정답 순서대로 항목을 누르세요. 선택한 항목을 다시 누르면 순서에서 빠집니다.</p>
     <div className="ws-actions">{choices.map((choice) => <button type="button" className="cj-secondary"

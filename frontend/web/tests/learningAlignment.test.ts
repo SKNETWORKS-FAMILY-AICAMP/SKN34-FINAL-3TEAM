@@ -60,6 +60,9 @@ test('입력 방식별 정답 객체와 모든 문항 기준표, 풀이 최종 �
   assert.ok(missingMissionFields(m).includes('rubric.elements'))
   r.elements = r.elements.filter((e) => e.code !== 'FINAL_ANSWER'); r.answerKey = { choiceIds: ['c2'] }
   assert.deepEqual(missingMissionFields(m), [])
+  assert.equal(validAnswerKey(v, { choiceIds: ['c1', 'c2'], finalAnswer: null, assignments: null }), false)
+  assert.equal(validAnswerKey(v, { choiceIds: ['c2'], finalAnswer: null, assignments: null }), true)
+  assert.equal(validAnswerKey(v, { choiceIds: null, finalAnswer: null, assignments: null }), false)
   v.inputType = 'ORDERING'; assert.equal(validAnswerKey(v, r.answerKey), false)
   assert.equal(validAnswerKey(v, { choiceIds: ['c2', 'c1'] }), true)
   assert.equal(validAnswerKey(v, { choiceIds: ['c1', 'c1'] }), false)
@@ -124,19 +127,27 @@ test('공개 중 편집·기준표 갱신·검토에도 공개본을 유지하�
   const pair = () => ({ missionVersion: m.currentVersion, rubricVersion: m.currentRubricVersion })
   await call(path + '/review-request', 'POST', pair()); await call(path + '/review', 'POST', { ...pair(), result: 'APPROVED', comment: '확인' })
   m = (await call(path + '/publish', 'POST', {})).data
-  assert.equal(m.status, 'PUBLISHED'); const published = m.publishedVersion
+  assert.equal(m.status, 'PUBLISHED'); const published = m.publishedVersion, publishedRubric = m.publishedRubricVersion
+  assert.equal(publishedRubric, m.currentRubricVersion)
   saved = await call(path, 'PATCH', missionWritePayload({ ...version, title: '편집본 v2', demoOnly: true })); m = saved.data
   assert.equal(m.status, 'PUBLISHED'); assert.equal(m.publishedVersion, published); assert.equal(m.currentVersion, 2)
   assert.equal(fixtureStore.snapshot().catalog!.find((v) => v.id === m.missionId)!.title, version.title)
   m = (await call(path + '/rubric', 'PUT', source.rubrics[0])).data
   assert.equal(m.status, 'PUBLISHED'); assert.equal(m.publishedVersion, published)
+  assert.equal(m.publishedRubricVersion, publishedRubric); assert.notEqual(m.currentRubricVersion, publishedRubric)
   const failed = await call(path + '/publish', 'POST', {})
   assert.equal(failed.status, 422); assert.ok(failed.data.missingFields.includes('review'))
   assert.ok(failed.data.missingFields.every((f: string) => /^[a-zA-Z][a-zA-Z0-9.[\]]*$/.test(f)))
   m = (await call(path + '/review-request', 'POST', pair())).data; assert.equal(m.status, 'PUBLISHED')
   m = (await call(path + '/review', 'POST', { ...pair(), result: 'APPROVED', comment: '검토' })).data
   m = (await call(path + '/publish', 'POST', {})).data
-  assert.equal(m.publishedVersion, 2); assert.equal(fixtureStore.snapshot().catalog!.find((v) => v.id === m.missionId)!.title, '편집본 v2')
+  assert.equal(m.publishedRubricVersion, m.currentRubricVersion); assert.equal(m.publishedVersion, 2); assert.equal(fixtureStore.snapshot().catalog!.find((v) => v.id === m.missionId)!.title, '편집본 v2')
+  assert.equal((await call(path + '/review-request', 'POST', pair())).status, 409)
+  assert.equal((await call(path + '/publish', 'POST', {})).status, 409)
+  m = (await call(path + '/unpublish', 'POST', {})).data
+  assert.equal(m.status, 'UNPUBLISHED')
+  m = (await call(path, 'PATCH', missionWritePayload({ ...version, title: '비공개 편집본 v3', demoOnly: true }))).data
+  assert.equal(m.status, 'UNPUBLISHED'); assert.equal(m.publishedVersion, 2)
   const list = await call('/admin/missions?status=PUBLISHED&page=0&size=1')
   assert.equal(list.data.size, 1); assert.ok(list.data.items.length <= 1)
   assert.equal(list.data.counts.reduce((sum: number, r: { count: number }) => sum + r.count, 0), missions.length)

@@ -258,7 +258,7 @@ function MissionForm({
         안내
         <textarea
           aria-label="미션 안내"
-          value={form.guide}
+          value={form.guide ?? ''}
           onChange={(e) => value('guide', e.target.value)}
         />
       </label>
@@ -283,7 +283,7 @@ function MissionForm({
         애니메이션 장면 URI
         <input
           aria-label="장면 URI"
-          value={form.sceneUri}
+          value={form.sceneUri ?? ''}
           onChange={(e) => value('sceneUri', e.target.value)}
         />
       </label>
@@ -291,7 +291,7 @@ function MissionForm({
         정적 장면 URI
         <input
           aria-label="정적 장면 URI"
-          value={form.staticSceneUri}
+          value={form.staticSceneUri ?? ''}
           onChange={(e) => value('staticSceneUri', e.target.value)}
         />
       </label>
@@ -366,10 +366,10 @@ function MissionDetail({ id, onClose }: { id: string; onClose: () => void }) {
         <>
           <p>
             {missionLabels[m.status]} · 편집본 v{m.currentVersion} · 기준표 v
-            {m.currentRubricVersion ?? '미등록'} · 학생 공개본 {m.publishedVersion ? `v${m.publishedVersion}` : '없음'}
+            {m.currentRubricVersion ?? '미등록'} · 학생 공개본 {m.publishedVersion ? `v${m.publishedVersion} / 기준표 v${m.publishedRubricVersion ?? '미등록'}` : '없음'}
           </p>
           {m.status === 'PUBLISHED' && <p role="note">
-            학생에게는 공개본 v{m.publishedVersion}이 제공됩니다. 편집본·기준표 수정은 검토 요청 → 검토 → 게시 후 새 시도부터 적용됩니다.
+            학생에게는 미션 v{m.publishedVersion}·기준표 v{m.publishedRubricVersion ?? '미등록'} 공개본이 제공됩니다. 편집본·기준표 수정은 검토 요청 → 검토 → 게시 후 새 시도부터 적용됩니다.
           </p>}
           <details>
             <summary>미션·기준표 버전 이력</summary>
@@ -540,7 +540,7 @@ function RubricForm({ mission, onSaved }: { mission: AdminMission; onSaved: () =
             설명
             <input
               aria-label={`요소 ${i + 1} 설명`}
-              value={element.description}
+              value={element.description ?? ''}
               onChange={(e) =>
                 setR({
                   ...r,

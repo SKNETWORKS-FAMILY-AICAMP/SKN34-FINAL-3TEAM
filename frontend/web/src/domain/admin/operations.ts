@@ -55,33 +55,35 @@ export interface MissionVersion {
   thinkingType: ThinkingType
   inputType: InputType
   question: string
-  guide: string
+  guide: string | null
   answerUnit?: string | null
   inputTemplate?: string[]
-  sceneUri: string
-  staticSceneUri: string
+  sceneUri: string | null
+  staticSceneUri: string | null
   achievementStandards: string[]
   choices?: Mission['choices']
   categories?: Mission['categories']
   createdAt: string
 }
-export type AnswerKey =
-  | { choiceIds: string[] }
-  | { assignments: { choiceId: string; categoryId: string }[] }
-  | { finalAnswer: string }
+/** Kotlin AnswerKey의 사용하지 않는 필드는 응답에서 null일 수 있습니다. */
+export interface AnswerKey {
+  choiceIds?: string[] | null
+  assignments?: { choiceId: string; categoryId: string }[] | null
+  finalAnswer?: string | null
+}
 export interface Rubric {
   version: number
   elements: {
     code: string
     label: string
-    description: string
+    description: string | null
     points: number
     commonErrors: string[]
     goodThought: boolean
     judgeVerified: boolean
   }[]
   answerKey?: AnswerKey | null
-  exampleAnswer?: string
+  exampleAnswer?: string | null
   forbiddenTerms: string[]
   hints: string[]
 }
@@ -92,13 +94,14 @@ export interface AdminMission {
   currentVersion: number
   currentRubricVersion: number | null
   publishedVersion: number | null
+  publishedRubricVersion: number | null
   versions: MissionVersion[]
   rubrics: Rubric[]
   reviews: {
     missionVersion: number
     rubricVersion: number
     result: 'APPROVED' | 'CHANGES_REQUESTED'
-    comment: string
+    comment: string | null
     createdAt: string
   }[]
 }
@@ -197,21 +200,22 @@ export function missingFieldLabel(code: string) {
   return missingFieldLabels[indexed] ?? `확인이 필요한 항목: ${code}`
 }
 export function validAnswerKey(v: MissionVersion, key: Rubric['answerKey']): boolean {
-  if (!key) return false
+  if (!key || typeof key !== 'object' || Array.isArray(key)) return false
   const ids = v.choices?.map((c) => c.id) ?? []
   if (v.inputType === 'CHOICE' || v.inputType === 'ORDERING') {
     if (!('choiceIds' in key) || !Array.isArray(key.choiceIds)) return false
     const chosen = key.choiceIds
     return chosen.length > 0 && new Set(chosen).size === chosen.length &&
       chosen.every((id) => ids.includes(id)) &&
-      (v.inputType !== 'ORDERING' || chosen.length === ids.length)
+      (v.inputType === 'CHOICE' ? chosen.length === 1 : chosen.length === ids.length)
   }
   if (v.inputType === 'CLASSIFICATION') {
-    if (!('assignments' in key) || !Array.isArray(key.assignments)) return false
+    if (!Array.isArray(key.assignments)) return false
     const groups = v.categories?.map((g) => g.id) ?? []
-    return ids.length > 0 && key.assignments.length === ids.length &&
-      new Set(key.assignments.map((a) => a.choiceId)).size === ids.length &&
-      key.assignments.every((a) => ids.includes(a.choiceId) && groups.includes(a.categoryId))
+    const assignments = key.assignments
+    return ids.length > 0 && assignments.length === ids.length &&
+      new Set(assignments.map((a) => a.choiceId)).size === ids.length &&
+      assignments.every((a) => ids.includes(a.choiceId) && groups.includes(a.categoryId))
   }
   return v.inputType === 'SOLUTION_STEPS' && 'finalAnswer' in key &&
     typeof key.finalAnswer === 'string' && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(key.finalAnswer.trim())
@@ -231,9 +235,9 @@ export function missingMissionFields(m: AdminMission): string[] {
   if (r && (!r.elements.length ||
       (v?.inputType === 'SOLUTION_STEPS' && !r.elements.some((e) => e.code !== 'FINAL_ANSWER')) ||
       (v?.inputType !== 'SOLUTION_STEPS' && r.elements.some((e) => e.code === 'FINAL_ANSWER')))) missing.push('rubric.elements')
-  if (v && !['NARRATIVE', 'ESSAY'].includes(v.inputType) && !validAnswerKey(v, r?.answerKey)) missing.push('answerKey')
-  if (v && ['NARRATIVE', 'ESSAY'].includes(v.inputType) && !r?.exampleAnswer?.trim()) missing.push('exampleAnswer')
-  if (r?.elements.some((e) => !e.label.trim() || !Number.isFinite(e.points) || e.points <= 0)) missing.push('rubric.elements.points')
+  if (v && r && !['NARRATIVE', 'ESSAY'].includes(v.inputType) && !validAnswerKey(v, r.answerKey)) missing.push('answerKey')
+  if (v && r && ['NARRATIVE', 'ESSAY'].includes(v.inputType) && !r.exampleAnswer?.trim()) missing.push('exampleAnswer')
+  if (r?.elements.some((e) => !e.label.trim() || !Number.isInteger(e.points) || e.points <= 0)) missing.push('rubric.elements.points')
   if (m.reviews.filter((x) => x.missionVersion === m.currentVersion && x.rubricVersion === m.currentRubricVersion)
       .at(-1)?.result !== 'APPROVED') missing.push('review')
   return missing
