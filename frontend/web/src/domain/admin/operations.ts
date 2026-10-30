@@ -56,7 +56,8 @@ export interface MissionVersion {
   inputType: InputType
   question: string
   guide: string
-  scene: Mission['scene']
+  answerUnit?: string | null
+  inputTemplate?: string[]
   sceneUri: string
   staticSceneUri: string
   achievementStandards: string[]
@@ -64,6 +65,10 @@ export interface MissionVersion {
   categories?: Mission['categories']
   createdAt: string
 }
+export type AnswerKey =
+  | { choiceIds: string[] }
+  | { assignments: { choiceId: string; categoryId: string }[] }
+  | { finalAnswer: string }
 export interface Rubric {
   version: number
   elements: {
@@ -75,7 +80,7 @@ export interface Rubric {
     goodThought: boolean
     judgeVerified: boolean
   }[]
-  answerKey?: string
+  answerKey?: AnswerKey | null
   exampleAnswer?: string
   forbiddenTerms: string[]
   hints: string[]
@@ -178,35 +183,58 @@ export const missionLabels: Record<MissionStatus, string> = {
   PUBLISHED: '공개',
   UNPUBLISHED: '비공개',
 }
+/** core는 영문 missingFields 코드만 전달합니다. */
+export const missingFieldLabels: Record<string, string> = {
+  title: '제목', question: '질문', subject: '교과', grade: '지원 학년 (논술 5~6학년)',
+  achievementStandards: '성취기준', choices: '선택 항목', categories: '분류 그룹',
+  rubric: '기준표 버전', 'rubric.elements': '기준표 요소 (풀이 단계는 최종 답 외 요소 포함)',
+  'rubric.elements.points': '요소 이름·양의 배점', answerKey: '정답 키',
+  exampleAnswer: '예시 답', review: '현재 버전 검토 승인',
+}
+export function missingFieldLabel(code: string) {
+  if (missingFieldLabels[code]) return missingFieldLabels[code]
+  const indexed = code.replace(/\[\d+\]/g, '')
+  return missingFieldLabels[indexed] ?? `확인이 필요한 항목: ${code}`
+}
+export function validAnswerKey(v: MissionVersion, key: Rubric['answerKey']): boolean {
+  if (!key) return false
+  const ids = v.choices?.map((c) => c.id) ?? []
+  if (v.inputType === 'CHOICE' || v.inputType === 'ORDERING') {
+    if (!('choiceIds' in key) || !Array.isArray(key.choiceIds)) return false
+    const chosen = key.choiceIds
+    return chosen.length > 0 && new Set(chosen).size === chosen.length &&
+      chosen.every((id) => ids.includes(id)) &&
+      (v.inputType !== 'ORDERING' || chosen.length === ids.length)
+  }
+  if (v.inputType === 'CLASSIFICATION') {
+    if (!('assignments' in key) || !Array.isArray(key.assignments)) return false
+    const groups = v.categories?.map((g) => g.id) ?? []
+    return ids.length > 0 && key.assignments.length === ids.length &&
+      new Set(key.assignments.map((a) => a.choiceId)).size === ids.length &&
+      key.assignments.every((a) => ids.includes(a.choiceId) && groups.includes(a.categoryId))
+  }
+  return v.inputType === 'SOLUTION_STEPS' && 'finalAnswer' in key &&
+    typeof key.finalAnswer === 'string' && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(key.finalAnswer.trim())
+}
 export function missingMissionFields(m: AdminMission): string[] {
   const v = m.versions.find((v) => v.version === m.currentVersion),
-    r = m.rubrics.find((r) => r.version === m.currentRubricVersion),
-    missing: string[] = []
-  if (!v?.title.trim()) missing.push('제목')
-  if (!v?.question.trim()) missing.push('질문')
-  if (!v?.subject.trim()) missing.push('교과')
-  if (!v || v.gradeMin < 3 || v.gradeMax > 6 || v.gradeMin > v.gradeMax)
-    missing.push('지원 학년 3~6')
-  if (v?.inputType === 'ESSAY' && v.gradeMin < 5) missing.push('논술 학년 5~6')
-  if (!v?.achievementStandards.some((s) => s.trim())) missing.push('성취기준')
-  if (!r) missing.push('기준표 버전')
-  if (v && ['CHOICE', 'ORDERING', 'CLASSIFICATION'].includes(v.inputType) && !v.choices?.length)
-    missing.push('선택 항목')
-  if (v?.inputType === 'CLASSIFICATION' && !v.categories?.length) missing.push('분류 그룹')
-  if (v && ['NARRATIVE', 'ESSAY'].includes(v.inputType) && !r?.elements.length)
-    missing.push('기준표 요소')
-  if (v && !['NARRATIVE', 'ESSAY'].includes(v.inputType) && !r?.answerKey?.trim())
-    missing.push('정답 키')
-  if (v && ['NARRATIVE', 'ESSAY'].includes(v.inputType) && !r?.exampleAnswer?.trim())
-    missing.push('예시 답')
-  if (r?.elements.some((e) => !e.label.trim() || e.points <= 0)) missing.push('요소 이름·양의 배점')
-  if (
-    m.reviews
-      .filter(
-        (x) => x.missionVersion === m.currentVersion && x.rubricVersion === m.currentRubricVersion,
-      )
-      .at(-1)?.result !== 'APPROVED'
-  )
-    missing.push('현재 버전 검토 승인')
+    r = m.rubrics.find((r) => r.version === m.currentRubricVersion), missing: string[] = []
+  if (!v?.title.trim()) missing.push('title')
+  if (!v?.question.trim()) missing.push('question')
+  if (!v?.subject.trim()) missing.push('subject')
+  if (!v || !Number.isInteger(v.gradeMin) || !Number.isInteger(v.gradeMax) || v.gradeMin < 3 ||
+      v.gradeMax > 6 || v.gradeMin > v.gradeMax || (v.inputType === 'ESSAY' && v.gradeMin < 5)) missing.push('grade')
+  if (!v?.achievementStandards.some((s) => s.trim())) missing.push('achievementStandards')
+  if (!r) missing.push('rubric')
+  if (v && ['CHOICE', 'ORDERING', 'CLASSIFICATION'].includes(v.inputType) && !v.choices?.length) missing.push('choices')
+  if (v?.inputType === 'CLASSIFICATION' && !v.categories?.length) missing.push('categories')
+  if (r && (!r.elements.length ||
+      (v?.inputType === 'SOLUTION_STEPS' && !r.elements.some((e) => e.code !== 'FINAL_ANSWER')) ||
+      (v?.inputType !== 'SOLUTION_STEPS' && r.elements.some((e) => e.code === 'FINAL_ANSWER')))) missing.push('rubric.elements')
+  if (v && !['NARRATIVE', 'ESSAY'].includes(v.inputType) && !validAnswerKey(v, r?.answerKey)) missing.push('answerKey')
+  if (v && ['NARRATIVE', 'ESSAY'].includes(v.inputType) && !r?.exampleAnswer?.trim()) missing.push('exampleAnswer')
+  if (r?.elements.some((e) => !e.label.trim() || !Number.isFinite(e.points) || e.points <= 0)) missing.push('rubric.elements.points')
+  if (m.reviews.filter((x) => x.missionVersion === m.currentVersion && x.rubricVersion === m.currentRubricVersion)
+      .at(-1)?.result !== 'APPROVED') missing.push('review')
   return missing
 }

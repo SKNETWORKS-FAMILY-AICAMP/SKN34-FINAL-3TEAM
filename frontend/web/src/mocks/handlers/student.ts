@@ -29,6 +29,7 @@ let mockRole = store.snapshot().session?.role
 const usedKeys = mockSubmissionReceipts
 const reports = new Map<string, { child: Child; period: Period }>()
 const conversations = new Map<string, { child: Child; period: Period }>()
+const selfChecks = new Map<string, Map<string, boolean>>()
 mockAccountChildren.set('parent@example.test', structuredClone(store.snapshot().children ?? []))
 export function setMockScenario(value: DemoScenario) {
   scenario = value
@@ -344,12 +345,27 @@ export const studentHandlers = [
   http.post('/api/v1/attempts/:attemptId/reflection', ({ request, params }) =>
     respond(async () => {
       guard(request)
-      return wireAttempt(
-        await store.reflect(
-          id(params.attemptId),
-          (await request.json()) as import('../../domain/classroom.ts').Reflection,
-        ),
-      )
+      const raw = await request.json() as { difficulty: string; text: string }
+      const difficulty = ({ EASY: '쉬웠어', NORMAL: '보통', HARD: '어려웠어' } as const)[raw.difficulty as 'EASY' | 'NORMAL' | 'HARD']
+      if (!difficulty) throw new ApiError({ status: 400, code: 'VALIDATION_FAILED', title: '난이도 코드를 확인해 주세요.' })
+      return wireAttempt(await store.reflect(id(params.attemptId), { difficulty, text: raw.text }))
+    }),
+  ),
+  http.post('/api/v1/attempts/:attemptId/self-assessment', ({ request, params }) =>
+    respond(async () => {
+      guard(request)
+      const attemptId = id(params.attemptId), a = await store.attempt(attemptId)
+      if (!a.finishedAt) throw new ApiError({ status: 409, code: 'REVEAL_CONDITION_UNMET', title: '마무리 후 확인할 수 있어요.' })
+      if (a.status === 'COMPLETED') throw new ApiError({ status: 409, code: 'ATTEMPT_CLOSED', title: '완료한 활동은 바꿀 수 없어요.' })
+      const { checks } = await request.json() as { checks: { elementId: string; checked: boolean }[] }
+      const elements = a.checklist ?? []
+      if (!Array.isArray(checks) || !checks.length || new Set(checks.map((c) => c?.elementId)).size !== checks.length ||
+          checks.some((c) => !c || typeof c.checked !== 'boolean' || !elements.some((e) => e.elementId === c.elementId)))
+        throw new ApiError({ status: 400, code: 'VALIDATION_FAILED', title: '자기 평가 항목을 확인해 주세요.' })
+      const saved = selfChecks.get(attemptId) ?? new Map<string, boolean>()
+      checks.forEach((c) => saved.set(c.elementId, c.checked)); selfChecks.set(attemptId, saved)
+      return elements.map((e) => ({ elementId: e.elementId, label: e.label, selfChecked: saved.get(e.elementId) ?? null,
+        aiChecked: e.satisfied, quote: e.quote }))
     }),
   ),
   http.get('/api/v1/students/me/attempts', ({ request }) =>

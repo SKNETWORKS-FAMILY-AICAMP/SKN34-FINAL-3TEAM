@@ -87,7 +87,8 @@ const complete = (): AdminMission => ({
       inputType: 'NARRATIVE',
       question: '까닭을 설명해 주세요.',
       guide: '',
-      scene: 'korean',
+      answerUnit: null,
+      inputTemplate: [],
       sceneUri: '',
       staticSceneUri: '',
       achievementStandards: ['자체 기준'],
@@ -128,12 +129,12 @@ test('게시 필수 누락·현재 버전 승인·논술 학년·정답 키 검�
   assert.deepEqual(missingMissionFields(m), [])
   m.currentVersion = 2
   m.versions.push({ ...m.versions[0], version: 2 })
-  assert.ok(missingMissionFields(m).includes('현재 버전 검토 승인'))
+  assert.ok(missingMissionFields(m).includes('review'))
   m.versions.at(-1)!.inputType = 'ESSAY'
-  assert.ok(missingMissionFields(m).includes('논술 학년 5~6'))
+  assert.ok(missingMissionFields(m).includes('grade'))
   m.versions.at(-1)!.inputType = 'CHOICE'
-  assert.ok(missingMissionFields(m).includes('선택 항목'))
-  assert.ok(missingMissionFields(m).includes('정답 키'))
+  assert.ok(missingMissionFields(m).includes('choices'))
+  assert.ok(missingMissionFields(m).includes('answerKey'))
 })
 test('게시본 변경·중단은 진행 중 시도의 문항 스냅샷을 바꾸지 않음', async () => {
   const api = createDemoGateway()

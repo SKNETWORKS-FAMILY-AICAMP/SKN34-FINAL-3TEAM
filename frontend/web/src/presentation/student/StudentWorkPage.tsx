@@ -1,3 +1,5 @@
+import { SelfAssessmentPanel } from './SelfAssessmentPanel.tsx'
+import type { LearningMission } from '../../domain/learning.ts'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useBlocker } from 'react-router'
 import { ReportProblem } from '../service/ReportProblem.tsx'
@@ -85,6 +87,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
     resumedFeedback.current = last.answerId
     void requestFeedback({ attempt: a, answerId: last.answerId }).catch(setError)
   }, [a, requestFeedback, actions.submit.isPending, actions.feedback.isPending])
+  const [selfAssessmentPending, setSelfAssessmentPending] = useState(false)
   const [notice, setNotice] = useState('')
   const [retryAction, setRetryAction] = useState<(() => Promise<unknown>) | null>(null)
   const [leaveOpen, setLeaveOpen] = useState(false)
@@ -267,6 +270,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
     actions.feedback.isPending ||
     actions.finish.isPending ||
     actions.reflect.isPending ||
+    selfAssessmentPending ||
     actions.save.isPending
   const targets = draft ? memoTargets(draft.answer) : []
   const selectedMemoTarget = targets.some((t) => t.id === memoTarget)
@@ -532,6 +536,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                     {!a.checklist?.length && (
                       <p>근거로 확인한 항목이 아직 없습니다. 낮은 결과를 뜻하지는 않아요.</p>
                     )}
+                    <SelfAssessmentPanel key={a.attemptId} attempt={a} onBusyChange={setSelfAssessmentPending} />
                     <ActivityPaper mission={a.mission} text={a.answers.at(-1)?.text} />
                     {a.status === 'COMPLETED' ? (
                       <p>
@@ -543,6 +548,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                       <button
                         type="button"
                         className="cj-primary"
+                        disabled={selfAssessmentPending}
                         onClick={() => {
                           setReflectOpen(true)
                           setNotice('')
@@ -804,7 +810,7 @@ export function AnswerFields({
   onChange,
 }: {
   answer: AnswerContent
-  mission: import('../../domain/classroom.ts').Mission
+  mission: LearningMission
   onChange: (a: AnswerContent) => void
 }) {
   const field = (label: string, value: string, setter: (value: string) => void) => (
@@ -826,16 +832,17 @@ export function AnswerFields({
         <>
           <label className="cj-field">
             최종 답
-            <input
-              value={v.finalAnswer}
-              maxLength={120}
-              onChange={(e) => onChange({ ...v, finalAnswer: e.target.value })}
-            />
+            <span className="ux-answer-unit">
+              <input aria-label="최종 답" inputMode="decimal" value={v.finalAnswer}
+                maxLength={120} onChange={(e) => onChange({ ...v, finalAnswer: e.target.value })} />
+              {mission.answerUnit && <span aria-label="답 단위">{mission.answerUnit}</span>}
+            </span>
+            {mission.answerUnit && <small>단위는 옆에 표시되어 있어요. 수만 입력해 주세요.</small>}
           </label>
-          {v.steps.map((step, i) => (
+          {Array.from({ length: Math.max(v.steps.length, mission.inputTemplate?.length ?? 0) }, (_, i) => v.steps[i] ?? '').map((step, i) => (
             <div key={i}>
-              {field(`풀이 ${i + 1}`, step, (value) =>
-                onChange({ ...v, steps: v.steps.map((s, j) => (i === j ? value : s)) }),
+              {field(mission.inputTemplate?.[i] || `풀이 ${i + 1}`, step, (value) =>
+                onChange({ ...v, steps: Array.from({ length: Math.max(v.steps.length, mission.inputTemplate?.length ?? 0) }, (_, j) => i === j ? value : v.steps[j] ?? '') }),
               )}
             </div>
           ))}
@@ -843,12 +850,12 @@ export function AnswerFields({
       )}
       {v.inputType === 'ESSAY' && (
         <>
-          {field('내 주장', v.essay.claim, (claim) =>
+          {field(mission.inputTemplate?.[0] || '내 주장', v.essay.claim, (claim) =>
             onChange({ ...v, essay: { ...v.essay, claim } }),
           )}
           {v.essay.reasons.map((reason, i) => (
             <div key={i}>
-              {field(`까닭 ${i + 1}`, reason, (value) =>
+              {field(mission.inputTemplate?.[i + 1] || `까닭 ${i + 1}`, reason, (value) =>
                 onChange({
                   ...v,
                   essay: {
@@ -862,7 +869,7 @@ export function AnswerFields({
               )}
             </div>
           ))}
-          {field('다른 의견에 답하기', v.essay.rebuttal, (rebuttal) =>
+          {field(mission.inputTemplate?.[3] || '다른 의견에 답하기', v.essay.rebuttal, (rebuttal) =>
             onChange({ ...v, essay: { ...v.essay, rebuttal } }),
           )}
         </>

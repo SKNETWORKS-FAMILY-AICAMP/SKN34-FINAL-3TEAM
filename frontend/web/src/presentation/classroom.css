@@ -1908,3 +1908,12 @@ body {
 #class-journal .ux-login-links a { display:inline-flex; align-items:center; min-height:40px; line-height:1.5; text-underline-offset:3px; }
 #class-journal .ux-login-signup { display:block; width:100%; margin:0 0 16px; }
 #class-journal .ux-login-demo-note { display:block; padding-top:12px; border-top:1px solid var(--cj-line); font-size:12px; line-height:1.8; overflow-wrap:anywhere; color:var(--cj-muted); }
+
+.ux-answer-unit { display: flex; align-items: center; gap: 12px; }
+.ux-answer-unit input { flex: 1; min-width: 0; }
+.ux-answer-unit > span { flex: none; font-weight: 600; }
+.ux-self-assessment { margin-block: 24px; }
+.ux-self-row { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+.ux-self-row input { width: 20px; height: 20px; flex: none; }
+.ux-assessment-comparison { display: grid; gap: 16px; margin-top: 16px; }
+.ux-assessment-result { display: grid; gap: 8px; padding-block: 12px; border-bottom: 1px solid #e5e7eb; }
