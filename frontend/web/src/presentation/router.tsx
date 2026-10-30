@@ -1,3 +1,4 @@
+import { BillingResult } from './parent/BillingResult.tsx'
 import { AdminLoginPage } from './admin/AdminLoginPage.tsx'
 import { createBrowserRouter, Navigate, Outlet } from 'react-router'
 import { ClassroomApp } from './ClassroomApp.tsx'
@@ -28,6 +29,8 @@ export const router = createBrowserRouter([
       </SessionProvider>
     ),
     children: [
+      { path: '/payment/billing/success', element: <BillingResult /> },
+      { path: '/payment/billing/fail', element: <BillingResult failed /> },
       { path: '/payment/success', element: <PaymentResult /> },
       { path: '/payment/fail', element: <PaymentResult failed /> },
       { path: '/admin/login', element: <LoginGate />, children: [{ index: true, element: <AdminLoginPage /> }] },

@@ -140,7 +140,7 @@ export function ParentWorkspace() {
       {page !== 'billing' && <span className="ws-scope">
         선택 범위 · {child?.nickname ?? '자녀 미선택'} · {scope.from} ~ {scope.to}
       </span>}
-      {children.data && !children.error && !children.data.items.length ? (
+      {page === 'billing' ? <ParentPayments key={child?.id ?? 'all'} child={child} /> : children.data && !children.error && !children.data.items.length ? (
         <section className="ws-card">
           <h1>먼저 자녀를 등록해 주세요.</h1>
           <p>연결된 자녀가 없어 아직 기록을 조회하지 않습니다.</p>
@@ -155,7 +155,7 @@ export function ParentWorkspace() {
         </section>
       ) : child && validPeriod(scope) && !children.error ? (
         <div key={`${scope.childId}:${scope.from}:${scope.to}`}>
-          {page === 'billing' ? <ParentPayments key={child.id} child={child} /> : page === 'analysis' ? (
+          {page === 'analysis' ? (
             <ParentConversation
               child={child}
               scope={scope}

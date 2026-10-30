@@ -82,3 +82,9 @@ export const refundLabels: Record<string, string> = { REQUESTED: '환불 검토 
 export function duplicateSubscription(items: PaymentSubscription[], childId: string) {
   return items.some(s => s.childId === childId && ['ACTIVE', 'RENEWAL_FAILED'].includes(s.status))
 }
+
+export function nextBillingMonth(start: string) {
+  const [year, month, day] = start.split('-').map(Number)
+  const end = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
+  return new Date(Date.UTC(year, month, Math.min(day, end))).toISOString().slice(0, 10)
+}

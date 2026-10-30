@@ -28,3 +28,22 @@
 .payment-result dl { margin:24px 0; }
 @media(max-width:1100px) { .payment-columns { grid-template-columns:minmax(0,1fr); } .payment-summary { order:-1; } }
 @media(max-width:600px) { .payment-panel,.payment-result { padding:20px; } .payment-result { margin:24px 16px; } .payment-option { flex-wrap:wrap; } .payment-page .payment-primary { width:100%; } }
+
+.payment-management { display:grid; gap:32px; margin-top:32px; }
+.payment-management section>h2 { margin-bottom:16px; }
+.payment-management section>article+article { margin-top:16px; }
+.payment-management h3,.payment-free h3 { margin:0 0 12px; font-size:16px; font-weight:500; }
+.payment-management p { margin-top:16px; margin-bottom:16px; }
+.payment-agreement { display:flex; gap:10px; align-items:flex-start; margin:20px 0 12px; }
+.payment-agreement input { width:18px; height:18px; margin-top:4px; flex:none; }
+.payment-actions { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-top:16px; }
+.payment-history { display:grid; gap:16px; }
+.payment-history-heading { display:flex; justify-content:space-between; gap:16px; align-items:baseline; }
+.payment-history-heading strong { font-variant-numeric:tabular-nums; white-space:nowrap; }
+.payment-refund-status { border-left:2px solid #69766b; padding-left:16px; margin-top:16px; }
+.payment-refund-status p { margin:8px 0; }
+.payment-free { border-bottom:1px solid #dce2dd; padding-bottom:12px; margin-bottom:20px; }
+.payment-page button:not(.payment-primary) { min-height:40px; padding:8px 14px; border:1px solid #cbd5cd; border-radius:6px; background:white; font:inherit; cursor:pointer; }
+.payment-page button:disabled { cursor:default; color:#6a756d; }
+.payment-management small { display:block; overflow-wrap:anywhere; }
+.payment-management textarea { display:block; width:100%; min-height:100px; }

@@ -48,4 +48,22 @@ class TossCircuitTest {
         repeat(20) { assertSame(PgResult.Unknown, client.lookup("order", false)) }
         assertEquals(State.OPEN, client.lookupCircuit.state)
     }
+    @Suppress("UNCHECKED_CAST")
+    @Test fun `widget fallback preserves existing key priority and separates billing credentials`() {
+        val http = mock(HttpClient::class.java)
+        val response = mock(HttpResponse::class.java) as HttpResponse<ByteArray>
+        val requests = mutableListOf<HttpRequest>()
+        `when`(response.statusCode()).thenReturn(404)
+        `when`(response.body()).thenReturn("""{"code":"NOT_FOUND_PAYMENT"}""".toByteArray())
+        doAnswer { invocation -> requests.add(invocation.getArgument(0)); response }
+            .`when`(http).send(any(HttpRequest::class.java), any<HttpResponse.BodyHandler<ByteArray>>())
+        val client = TossClient(jacksonObjectMapper(), "", "test_sk_billing", http, "test_gsk_widget")
+        assertSame(PgResult.Missing, client.lookup("order", false))
+        assertSame(PgResult.Missing, client.lookup("order", true))
+        TossClient(jacksonObjectMapper(), "test_sk_legacy", "test_sk_billing", http, "test_gsk_widget").lookup("order", false)
+        val expected = listOf("test_gsk_widget:", "test_sk_billing:", "test_sk_legacy:")
+        requests.zip(expected).forEach { (request, key) ->
+            assertEquals("Basic " + java.util.Base64.getEncoder().encodeToString(key.toByteArray()), request.headers().firstValue("Authorization").orElseThrow())
+        }
+    }
 }
