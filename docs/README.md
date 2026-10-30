@@ -128,3 +128,4 @@ feature/* → develop → main
 - 기본 브랜치가 아닌 통합 브랜치 대상 PR의 `Closes`는 이슈를 자동 종료하지 않는다. 실제 해결 범위를 확인한 최종 develop PR에도 해당 `Closes #이슈번호`를 포함한다.
 
 - [이슈 #41 분석 대화·SSE·한도](report/issue-41-analysis-conversations.md): core 대화·SSE·권한·사용 한도와 공급자 연동 검증
+- [이슈 #131 report Outbox 복구](report/issue-131-outbox-recovery.md): 학생별 순서·지연 재시도·격리·수동 재처리와 DB 적용 절차

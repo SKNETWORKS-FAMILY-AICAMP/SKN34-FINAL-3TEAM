@@ -219,7 +219,7 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 1장과 같이 
 | B3 | 해결 | learning `StudentDeletedConsumer`·`StudentDeletionService`·`CoreClient` 완료 보고(#128) |
 | B4 | 해결 | `ReportEntitlementService` → `ProductEntitlementService`(#48), 조회 헤더(#129) |
 | B5 | 해결 | 기본 worker 파이프라인(#56), ai 서술 API(#64) |
-| B8 | 미해결(#131) | report Outbox가 여전히 가장 오래된 행부터 선택(`outbox/repository.py` `claim_next`), 순서 정책 결정 필요 |
+| B8 | #131 구현 브랜치에서 보완(병합 전) | 학생별 선두·1/5/15분 재시도·격리·동일 이벤트 수동 재처리. 다른 학생의 발행과 동시 처리 순서를 검증한다. [구현·검증](issue-131-outbox-recovery.md) |
 | B9 | 해결 | core 주기 점검·report 상태 복구·영구 job guard·삭제 시 미종료 작업 종료(#132) |
 | B10 | 미해결(임시 결정 유지, #133) | `StudentDeviceController`가 `remoteAddr` 사용, 신뢰 프록시 설정과 함께 처리 |
 | B11·B13 | 해결 | #134 |

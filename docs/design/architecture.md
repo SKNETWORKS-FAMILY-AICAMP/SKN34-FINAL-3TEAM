@@ -109,6 +109,7 @@
 
 ### 1.6 메시징 신뢰성 규칙
 - **Outbox**: DB 상태 변경 + 발행이 함께 필요한 서비스(core, report)만 적용 (learning은 발행 없음, 멱등 소비만). 같은 트랜잭션에 outbox 행 저장 → 릴레이 스케줄러가 publisher confirm 받은 후 발행 시각 기록 (참고 레포 `*OutboxScheduler` 패턴)
+- **report 발행 복구(#131)**: 학생별 선두만 발행한다. 실패한 학생은 1·5·15분 재시도 후 격리하고 다른 학생은 계속 처리한다. 격리된 선두와 그 뒤 이벤트는 운영 CLI로 원래 이벤트 id를 재처리할 때까지 대기한다. 소비 재시도 큐/DLQ와 별개로 Outbox DB에 실패·격리 상태를 저장한다. [정책·운영 명령](../report/issue-131-outbox-recovery.md)
 - **상태 없는 서비스(ai, scoring)**: 이벤트 발행은 처리 결과 반환 후 best-effort (사용량 집계용), 유실 시 Langfuse trace로 보정(Langfuse는 예정, 저장소 미구성)
 - **멱등 소비**: 소비자별 `processed_event(event_id UK)` 테이블 또는 DB 상태 전이 조건(`QUEUED→RUNNING`)
 - **재시도**: 소비 실패 시 지연 재시도 3회(1·5·15분, P12) 후 DLQ 이동. `report.generate` 확정값을 모든 큐에 동일 적용
@@ -727,7 +728,7 @@ SKN34-FINAL-3TEAM/
 세부 근거는 각 보고서를 따른다.
 
 - 인증([auth-account](../report/auth-account.md)): `PublicAuthFilter`(판정 경로는 Spring 매칭 경로로 정규화) → `AuthService` → Repository. JWT는 Spring Security JOSE HS256, Google 코드 교환·JWKS 검증은 트랜잭션 밖, 계정·세션·refresh 회전만 트랜잭션 안. 학생 단독 인증은 `StudentAuthService`(기기·페어링)와 `StudentPinService`(PIN·잠금)로 나누고 PIN 변경의 재인증 소비·갱신·감사는 한 트랜잭션
-- 주간 리포트([report](../report/report.md)): `ReportScheduleService` → 자녀별 트랜잭션의 `ReportJobService` → `ReportJobRepository` + `OutboxWriter`(ShedLock, 자녀별 실패 격리). 소비는 `RetryingConsumer` → `ReportLifecycleService`. 조회의 내부 HTTP와 열람 저장 트랜잭션은 분리. `ReportEntitlementService`는 payment 소유 `ProductEntitlementService`에 위임한다. 상품·구독 repository를 직접 참조하지 않으며 권한 조회 실패는 명시적인 오류로 처리한다. report Outbox는 이벤트별 advisory lock·AUTOCOMMIT 선점, publisher confirm 뒤 짧은 트랜잭션으로 발행 시각 기록
+- 주간 리포트([report](../report/report.md)): `ReportScheduleService` → 자녀별 트랜잭션의 `ReportJobService` → `ReportJobRepository` + `OutboxWriter`(ShedLock, 자녀별 실패 격리). 소비는 `RetryingConsumer` → `ReportLifecycleService`. 조회의 내부 HTTP와 열람 저장 트랜잭션은 분리. `ReportEntitlementService`는 payment 소유 `ProductEntitlementService`에 위임한다. 상품·구독 repository를 직접 참조하지 않으며 권한 조회 실패는 명시적인 오류로 처리한다. report Outbox는 학생별 advisory lock·AUTOCOMMIT 선점, publisher confirm 뒤 짧은 트랜잭션으로 발행 시각 기록
 - 삭제·재인증([auth-account](../report/auth-account.md)): `student.deleted.v1` data `{studentId,deletionRequestId,scope}`. 요청 CONFIRMED와 Outbox 기록은 한 트랜잭션, learning·report 완료 보고를 서비스별 UNIQUE 행으로 기록해 둘 다 있을 때만 COMPLETED. 기능 간 정리는 각 service 경유
 
 #48은 ReportEntitlementService를 payment 소유 ProductEntitlementService에 연결한다. 외부 PG 호출과 learning 사용 증빙 조회는 DB 트랜잭션 밖, 주문/구독/환불·프리미엄 사용 예약은 공통 parent 계정 행 잠금 안이다. payment repository는 payment 패키지만 사용한다. 신규 의존성 없이 기존 HTTP·MyBatis·ShedLock·IdempotencyService·NotificationService를 사용한다. [결제 경계·복구](../report/issue-48-payments.md).
