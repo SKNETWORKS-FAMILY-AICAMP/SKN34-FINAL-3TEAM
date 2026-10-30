@@ -59,3 +59,36 @@ CI 보완 로컬 검증: 전체 Python 계약 검사 69/69 통과. 별도 복사
 사용자가 기반영 ReportMessagingTest의 해당 사례만 동기화하는 변경을 명시적으로 허용했다. 완료 이벤트를 먼저 발행하고 processed_event의 커밋 및 COMPLETED를 확인한 뒤 중복 완료·늦은 시작·실패 이벤트를 발행한다. 기존 startedAt null·COMPLETED·실행 이력 1개 검사는 유지한다. 기존 ReportRepositoryTest의 정상 started→failed 상태·시각/실패 원인 검사도 유지한다. production·공통 consumer·workflow는 변경하지 않는다. 검증 후 기존 feature 브랜치에 후속 커밋하며 이력 재작성은 하지 않는다.
 
 순서 보완 후 전용 JDK21 Linux 환경에서 core 전체 44클래스 270개 test·bootJar 통과(실패·오류·생략 0). 기존 메시징/상태 전이 검사와 #47 알림 재처리·#48 결제 회귀를 포함한다. 테스트 한 파일과 이 기록만 변경되었으며 git diff --check 통과 후 기존 feature head에 후속 커밋·push한다. 원격 4개 workflow의 최종 상태는 새 head를 기준으로 별도 확인한다.
+
+
+## CONVERSATION 후속 (2026-10-30)
+
+사용자 승인: 관리자 백그라운드 실행·공통 분석 경로·권한/한도·감사/복구 및 새 요청 테이블. 최신 develop e758e28에서 진행한다. 원격/로컬 브랜치의 V17(REPORT), V18(#162)을 확인했고 신규 V19를 사용한다. 기존 migration은 수정하지 않는다. Redis 사용량과 DB는 단일 원자 트랜잭션이 아니므로 요청 ID 표식으로 중복 차감을 방지하며 접수/실제 실행 이력을 구분한다. 최종 통합 브랜치는 별도 담당 채팅이 생성한다.
+
+V19는 최종 통합에서 V17→V18→V19 순서로 적용한다. 통합 전 V19만 공용 DB에 먼저 적용하지 않는다. #163의 learning 오류 매핑 작업과 파일·브랜치를 공유하지 않는다.
+
+
+### CONVERSATION 검증 진행 기록
+
+- 기존 migration 수정 없음. 신규 V19의 전체 migrate·재실행·report downgrade/upgrade 및 ERD 대조 통과: core 43표/399열, learning 19표/160열, report 8표/56열. 공통 63개 거부 사례와 75개 CHECK 값 집합을 확인했다. 새 (status,accepted_at) 인덱스는 DB 정의와 별도 대조했다.
+- 별도 V16 DB에 기존 ANSWER 근거를 넣은 후 V17→V18→V19 순차 적용 통과. 기존 ANSWER ID·버전 보존, REFLECTION 및 새 재처리 요청 저장을 확인했다.
+- Python 계약 83개, OpenAPI validator, 실제 HTTP 202 응답 JSON Schema 검증 통과.
+- 실제 core HTTP·PostgreSQL·Redis·RabbitMQ·결제 권한/사용 이력과 합성 AI HTTP 응답 서버를 사용했다. 202 후 core 강제 종료→새 프로세스에서 1회 실행, 멱등 캐시 삭제 후 동일 응답 복원을 확인했다. 실행 중 강제 종료 후에는 대기 시각만 검증 DB에서 앞당겨 복구를 확인했으며 FAILED 이력/감사 1회, 두 시나리오 총 AI 호출 2회·Redis 차감 2회·실제 결제 사용 이력 2행을 확인했다. 재기동이 65초 걸려 최초 50초 대기 제한을 넘겼으나 기동 후 결과를 대조했다. 실제 외부 LLM/PG 결제 호출은 없다.
+- 첫 전체 core 345개 실행에서 최초/재접수 응답의 timestamp 정밀도 차이 1건을 발견해 최초 202도 DB 저장값으로 반환하도록 수정했다. 추가 권한 철회 사례와 함께 재검증 중이다. 테스트 import 충돌과 기존 동의 철회 오류 코드 기대값도 보완했다.
+- 이후 전체 검증에서 기존 AiClientTest 2건 및 ConversationIntegrationTest 삭제 경합 1건이 응답 시작/취소 대기 제한을 초과했다. 당시 Windows 가용 물리 메모리는 약 485MB였다. 제한 시간·검증 조건을 완화하지 않고 검증 전용 JVM 메모리/캐시/순차 fork를 줄여 재실행하려 했으나 Docker 엔진 API가 500을 반환해 중단됐다. 당시 전체 core 통과가 미확정이어서 commit/push를 보류했다. 아래 재개 검증으로 해소했다.
+- 검증 소스와 최종 core·테스트·OpenAPI 350파일 해시는 일치했다. 공유 분석 실행 본문은 #162의 기존 이벤트 검증·근거 확인·저장·취소 호출을 유지한다. #162와의 실제 통합 검증은 별도 담당 작업이며 이번에 통합 브랜치를 만들지 않았다. #163 파일·브랜치도 수정하지 않았다.
+
+이슈 확인: #41은 Closed, #47·#67·#162는 Open이다. 기능 검증 통과와 이슈 통합/종료를 구분한다. 별도 통합 작업과 원격 CI 확인은 남아 있으며 이 채팅에서 이슈를 닫지 않는다.
+
+
+### 환경 복구 후 최종 검증 (2026-10-30)
+
+사용자가 Docker를 다시 실행한 뒤 #47 검증을 우선 재개했다. 코드는 변경하지 않았고 worktree의 core·테스트·OpenAPI 350파일이 저장된 검증 소스와 일치했다. 검증 전용 Gradle init에서 maxParallelForks=1, forkEvery=8, Test heap=640m, Spring test context cache=4를 사용하고 Gradle daemon heap=384m, CPU 2·컨테이너 메모리 1792MiB로 제한했다. 이 환경 제한은 저장소/production 설정에 추가하지 않았다. 기존 테스트의 제한 시간·검증 조건을 완화하지 않았다.
+
+- `./gradlew test bootJar` 전체 실행: **53클래스 347개**, 실패·오류·생략 **0**, BUILD SUCCESSFUL(12m28s), 컨테이너 exit 0.
+- 신규 AdminConversationRetryTest **18개**, AiClientTest **5개**, ConversationIntegrationTest **18개** 모두 통과했다. 이전 시간 제한 실패 3건을 포함한 전체 회귀를 확인했다.
+- 앞서 통과한 migration 전체 검증, V17→V18→V19 기존 데이터 보존, 계약 83개, OpenAPI/실제 202 응답, 실제 프로세스 재시작·중단 복구 검증은 코드 변경이 없어 반복하지 않았다.
+- #47 Docker 검증 사용을 종료했다. 공유 Docker 재시작·초기화·공유 자원 정리 및 다른 채팅 컨테이너 조작은 하지 않았다.
+- 브랜치 기준은 develop e758e28이다. 원격 develop의 후속 변경과 #47 REPORT·미션 및 #67·#162 병합은 별도 통합 담당 작업으로 남긴다. V19 원격 번호 중복 없음과 기존 migration 불변을 다시 확인했다. #163·#164 작업 파일을 수정하지 않았다.
+
+현재 결과는 기능 브랜치 보존을 위한 로컬 검증이다. 전체 통합·원격 CI·배포 검증이나 실제 외부 LLM 호출 완료로 표현하지 않는다. PR 생성·병합·이슈 종료는 수행하지 않는다.

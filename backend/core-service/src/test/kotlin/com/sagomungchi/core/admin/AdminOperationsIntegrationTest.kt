@@ -115,15 +115,15 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         }.`when`(publisher).publish(NotificationStored(id,actor))
         val pool=Executors.newFixedThreadPool(2)
         try {
-            val first=pool.submit<HttpExchangeResult> { retry.retry(id,key,actor) }
+            val first=pool.submit<HttpExchangeResult> { retry.retry(id,key,com.sagomungchi.core.report.actor(jdbc,actor,"ADMIN",setOf("SERVICE_OPS"))) }
             assertTrue(entered.await(10,TimeUnit.SECONDS))
-            val same=runCatching { retry.retry(id,key,actor) }.exceptionOrNull()
+            val same=runCatching { retry.retry(id,key,com.sagomungchi.core.report.actor(jdbc,actor,"ADMIN",setOf("SERVICE_OPS"))) }.exceptionOrNull()
             assertNotNull(same)
-            assertEquals(409,retry.retry(id,UUID.randomUUID(),actor).status)
+            assertEquals(409,retry.retry(id,UUID.randomUUID(),com.sagomungchi.core.report.actor(jdbc,actor,"ADMIN",setOf("SERVICE_OPS"))).status)
             release.countDown();assertEquals(200,first.get(15,TimeUnit.SECONDS).status)
             assertEquals(1,jdbc.queryForObject("SELECT retry_count FROM notification WHERE id=?",Int::class.java,id))
             assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM job_execution WHERE job_id=?",Int::class.java,id))
-            assertEquals(200,retry.retry(id,key,actor).status)
+            assertEquals(200,retry.retry(id,key,com.sagomungchi.core.report.actor(jdbc,actor,"ADMIN",setOf("SERVICE_OPS"))).status)
         } finally { release.countDown();pool.shutdownNow() }
     }
 
@@ -134,11 +134,11 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
             jdbc.update("UPDATE notification SET status='FAILED',failure_reason='REDIS_PUBLISH_FAILED' WHERE id=?",id)
             null
         }.`when`(publisher).publish(NotificationStored(id,actor))
-        val first=retry.retry(id,key,actor)
+        val first=retry.retry(id,key,com.sagomungchi.core.report.actor(jdbc,actor,"ADMIN",setOf("SERVICE_OPS")))
         assertEquals(200,first.status)
         val job=json.readTree(first.body);assertEquals("FAILED",job.path("status").asText());assertTrue(job.path("retryable").asBoolean())
         assertEquals("REDIS_PUBLISH_FAILED",job.path("executions").last().path("errorCode").asText())
-        assertContentEquals(first.body,retry.retry(id,key,actor).body)
+        assertContentEquals(first.body,retry.retry(id,key,com.sagomungchi.core.report.actor(jdbc,actor,"ADMIN",setOf("SERVICE_OPS"))).body)
         assertEquals("FAILURE",jdbc.queryForObject("SELECT result FROM audit_log WHERE target_id=?",String::class.java,id))
         verify(publisher,times(1)).publish(NotificationStored(id,actor))
     }
@@ -149,11 +149,12 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         jdbc.update("INSERT INTO report_job(id,student_id,period_from,period_to,trigger,status,retry_count,created_at) VALUES(?,?,'2026-01-01','2026-01-07','SCHEDULE','FAILED',0,CURRENT_TIMESTAMP)",report,student)
         jdbc.update("INSERT INTO conversation(id,parent_user_id,student_id,period_from,period_to,created_at,updated_at) VALUES(?,?,?,'2026-01-01','2026-01-07',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",conv,actor,student)
         jdbc.update("INSERT INTO conversation_message(id,conversation_id,seq,question,scope_changed,status,retry_count,created_at) VALUES(?,?,1,'student secret',false,'FAILED',0,CURRENT_TIMESTAMP)",message,conv)
-        for(id in listOf(report,message)) {
+        for(id in listOf(report)) {
             mvc.post("/api/v1/admin/jobs/$id/retry") { header("Authorization","Bearer $access");header("Idempotency-Key",UUID.randomUUID()) }.andExpect { status { isServiceUnavailable() };jsonPath("$.code") { value("JOB_RETRY_UNAVAILABLE") } }
             assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM job_execution WHERE job_id=?",Int::class.java,id))
             assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE target_id=? AND result='FAILURE'",Int::class.java,id))
         }
+        mvc.post("/api/v1/admin/jobs/$message/retry") { header("Authorization","Bearer $access");header("Idempotency-Key",UUID.randomUUID()) }.andExpect { status { isForbidden() } }
         assertEquals("FAILED",jdbc.queryForObject("SELECT status FROM report_job WHERE id=?",String::class.java,report))
         assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM outbox_event WHERE subject=?",Int::class.java,student.toString()))
     }

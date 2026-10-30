@@ -12,10 +12,21 @@ import java.util.UUID
 @Service
 class OperationRetryService(private val jobs: OperationsService,private val notification: NotificationRetryService,
     private val records: OperationRetryRepository,private val audit: OperationsRepository,private val tx: TransactionTemplate,
-    private val keys: IdempotencyService,private val json: ObjectMapper) {
-    fun retry(id: UUID,key: UUID,actor: UUID): HttpExchangeResult = keys.execute(key,actor,"/admin/jobs/$id/retry",emptySet(),byteArrayOf()) {
+    private val keys: IdempotencyService,private val json: ObjectMapper,
+    private val conversations: com.sagomungchi.core.conversation.service.ConversationAdminRetryService) {
+    fun retry(id: UUID,key: UUID,identity: com.sagomungchi.core.account.domain.AuthenticatedAccount): HttpExchangeResult {
+        val actor=identity.account.id
+        return keys.execute(key,actor,"/admin/jobs/$id/retry",emptySet(),byteArrayOf()) {
         val job=jobs.job(id)
-        if(job.status!="FAILED") {
+        if(job.type==OperationJobType.CONVERSATION) {
+            try {
+                val accepted=conversations.request(id,key,identity)
+                HttpExchangeResult(202,mapOf("Content-Type" to listOf("application/json"),"Location" to listOf("/api/v1/admin/jobs/$id")),json.writeValueAsBytes(accepted))
+            } catch(ex: com.sagomungchi.core._common.exception.BusinessException) {
+                tx.executeWithoutResult { audit.audit(actor,job.type,id,"FAILURE") }
+                problem(ex.status.value(),ex.code)
+            }
+        } else if(job.status!="FAILED") {
             tx.executeWithoutResult { audit.audit(actor,job.type,id,"FAILURE") }
             problem(409,"JOB_NOT_FAILED")
         } else if(job.type!=OperationJobType.NOTIFICATION) {
@@ -44,6 +55,7 @@ class OperationRetryService(private val jobs: OperationsService,private val noti
                 }
             }
         }
+    }
     }
     private fun problem(status: Int,code: String)=HttpExchangeResult(status,mapOf("Content-Type" to listOf("application/problem+json")),
         json.writeValueAsBytes(mapOf("status" to status,"code" to code,"title" to "작업 재처리 조건 또는 공급자를 확인해 주세요.")))

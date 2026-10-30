@@ -25,7 +25,7 @@ class OperationsController(private val operations: OperationsService,private val
     @GetMapping("/jobs/{jobId}") fun job(@PathVariable jobId: UUID)=operations.job(jobId)
     @PostMapping("/jobs/{jobId}/retry")
     fun retry(@PathVariable jobId: UUID,@RequestHeader("Idempotency-Key") key: UUID,request: HttpServletRequest)=
-        retries.retry(jobId,key,(request.getAttribute(AuthController.IDENTITY) as AuthenticatedAccount).account.id).operationHttp()
+        retries.retry(jobId,key,(request.getAttribute(AuthController.IDENTITY) as AuthenticatedAccount)).operationHttp()
     @GetMapping("/queues") fun queues()=queues.queues()
     @GetMapping("/audit-logs")
     fun audits(@RequestParam(required=false) from: String?,@RequestParam(required=false) to: String?,

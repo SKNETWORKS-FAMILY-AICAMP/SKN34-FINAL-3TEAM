@@ -39,7 +39,7 @@ class OperationsService(private val reports: ReportOperationsService, private va
         return repository.audits(period,type,target,page,size)
     }
     private fun model(type: OperationJobType,row: OperationJobRow): OperationJob {
-        val unavailable = when { row.status!="FAILED" -> "JOB_NOT_FAILED"; type!=OperationJobType.NOTIFICATION -> "JOB_RETRY_UNAVAILABLE"; else -> null }
+        val unavailable = when { row.status!="FAILED" -> "JOB_NOT_FAILED"; type !in setOf(OperationJobType.NOTIFICATION,OperationJobType.CONVERSATION) -> "JOB_RETRY_UNAVAILABLE"; else -> null }
         return OperationJob(row.jobId,type,row.status,row.retryCount,OperationErrors.code(row.failureReason),row.createdAt,
             repository.executions(type,row.jobId),unavailable==null,unavailable)
     }

@@ -309,6 +309,17 @@ erDiagram
     timestamptz started_at "NULL 허용"
     timestamptz completed_at "NULL 허용"
   }
+  conversation_job_retry {
+    uuid id PK
+    uuid message_id FK "삭제 시 CASCADE"
+    int generation
+    uuid requested_by FK
+    uuid idempotency_key
+    varchar status "QUEUED|RUNNING|COMPLETED|FAILED"
+    timestamptz accepted_at
+    timestamptz started_at "NULL 허용"
+    timestamptz finished_at "NULL 허용"
+  }
   job_execution {
     uuid id PK
     varchar job_type "CONVERSATION|REPORT|NOTIFICATION"
@@ -1054,6 +1065,7 @@ erDiagram
 | core | `conversation` | `(parent_user_id, student_id, created_at)` | 대화 목록 |
 | core | `report_job` | `(student_id, period_from)`, `(status, created_at)` | 리포트 목록, 관리자 작업 현황 |
 | core | `job_execution` | `(job_type, job_id)` | 작업별 처리 이력 |
+| core | `conversation_job_retry` | `(status, accepted_at)` | 관리자 대화 대기·중단 작업 조회 |
 | core | `report_view` | `(report_id)`, `(user_id, viewed_at)` | 열람률 집계 |
 | core | `notification` | `(user_id, read_at, created_at)` | 읽지 않은 알림 |
 | core | `payment` | `(status, updated_at)` | `CONFIRMING` 재조회, 결제 운영 조회 |
@@ -1127,3 +1139,10 @@ erDiagram
 리포트 행 생성 전 실패의 재실행 차단 기록이다. 원문·이름·파일 경로는 저장하지 않는다. DLQ 수동 재전달의 상한이 없으므로 자동 TTL 없이 유지한다. 학생 PROFILE/RECORDS 삭제 완료 트랜잭션에서 이 기록도 제거하며 영구 `report_deletion_guard(COMPLETED)`가 이후 모든 생성을 차단한다. 삭제 표식이 완료된 학생에 복구 요청이 와도 job guard를 새로 만들지 않는다. 삭제 표식 제거/학습 재개는 이번 범위 밖이다. migration downgrade는 재실행 장벽을 없애므로 운영 중 임의 실행하지 않는다.
 
 core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. job_execution은 기존 attempt_no=1 upsert로 종료를 기록하며 동일 복구/늦은 이벤트가 이력을 늘리거나 종료를 되돌리지 않는다.
+
+
+### #47 관리자 대화 재처리 요청 (V19)
+
+conversation_job_retry는 UK(message_id,generation), UK(requested_by,idempotency_key), generation>0, 상태와 시각의 일치 및 시각 순서 CHECK를 둔다. `ix_conversation_job_retry_pending`은 (status,accepted_at) 조회 인덱스다. message_id는 conversation_message FK ON DELETE CASCADE, requested_by는 user_account FK다. 기존 V17·V18은 수정하지 않는다. 질문·답변 원문을 저장하지 않는다.
+
+학생 삭제 시 진행 요청의 실패 이력·감사를 같은 삭제 트랜잭션에 기록하고 요청 행을 CASCADE로 정리한다. 삭제 후 작업 조회와 새 접수는 404다. 기존 공통 멱등 캐시에 남은 과거 202는 재전달될 수 있으나 재실행하지 않는다. 요청 행 삭제 이후 영구 재접수 응답 복원은 보장하지 않는다. 요청 감사는 접수 시, job_execution은 실제 실행 선점 시 기록한다. Redis quota는 요청 ID 원자 표식으로 중복 차감을 방지하며 DB와 분산 원자 트랜잭션이라고 간주하지 않는다.

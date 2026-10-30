@@ -232,6 +232,16 @@ paths:
           type: string
           format: uuid
       responses:
+        '202':
+          description: CONVERSATION 재처리 접수. 실제 결과는 작업 상세에서 조회한다.
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationRetryAccepted'
         '200':
           description: 성공
           content:
@@ -5854,6 +5864,27 @@ components:
           type: integer
           format: int64
           minimum: 0
+    ConversationRetryAccepted:
+      type: object
+      additionalProperties: false
+      required: [jobId, retryRequestId, generation, acceptedAt, type, status]
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        retryRequestId:
+          type: string
+          format: uuid
+        generation:
+          type: integer
+          minimum: 1
+        acceptedAt:
+          type: string
+          format: date-time
+        type:
+          const: CONVERSATION
+        status:
+          const: QUEUED
     OperationOverview:
       type: object
       additionalProperties: false
