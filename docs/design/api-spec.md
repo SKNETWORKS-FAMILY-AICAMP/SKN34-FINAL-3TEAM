@@ -386,12 +386,12 @@
 
 - overview·audit-logs의 정확한 GET 경로는 ADMIN 역할, jobs·queues·retry는 SERVICE_OPS, missions는 CONTENT다. 다른 관리자 경로의 기존 권한은 유지한다.
 - overview/jobs/audit 기간은 KST 날짜 양 끝 포함(저장 조회는 시작 이상·다음날 미만), 둘 다 생략하면 최근 7일, 한쪽만 입력하거나 역순·366일 초과는 400. page=0, size=20(1~100), page 최대 1000. 정렬은 createdAt DESC, id DESC다.
-- overview는 `{period,inclusionRule,learning:{attempts,completedAttempts,students,inclusionRule},jobCounts:[{type,status,count}]}`다. learning은 P08, core 작업은 생성 시각이 기간 안인 작업의 현재 상태를 센다. 미션 상태 집계 공급자는 없어 숫자를 만들지 않는다. learning 장애/계약 위반은 오류다.
+- overview는 `{period,inclusionRule,learning:{attempts,completedAttempts,students,inclusionRule},jobCounts:[{type,status,count}],missionCounts:[{status,count}],missionInclusionRule}`다. learning은 P08, core 작업은 생성 시각이 기간 안인 작업의 현재 상태를 센다. 미션은 learning 관리자 목록의 전체 현재 상태별 건수로 기간·필터·페이지와 무관하다. learning 장애/계약 위반은 오류다.
 - jobs는 `{items,page,size,totalElements}`, 상세는 `{jobId,type,status,retryCount,failureReason,createdAt,executions,retryable,retryUnavailableReason}`다. CONVERSATION ID는 conversation_message.id, REPORT는 report_job.id, NOTIFICATION은 notification.id다. updatedAt은 존재하지 않아 반환하지 않는다. executions는 실제 job_execution을 attemptNo 순으로 반환한다. error_detail·원문 실패 메시지·감사 detail은 공개하지 않고 알려진 오류 코드만 노출하며 그 외는 REDACTED_ERROR다. UUID가 종류 간 충돌하면 409 JOB_ID_AMBIGUOUS다.
 - retry는 UUID Idempotency-Key 필수, 실패 상태만 허용한다. NOTIFICATION은 동일 ID를 RUNNING으로 원자 선점하고 새 job_execution을 남긴 뒤 트랜잭션 밖에서 기존 Redis publisher/DeliveryService를 호출한다. Redis 확인은 브라우저 수신 확인이 아니다. 실제 결과를 200 작업 상세로 반환하고 감사 기록을 남긴다. RUNNING 고착은 자동 재실행하지 않는다. REPORT는 위 REPORT 접수 계약에 따라 새 jobId로 재처리하며 원작업을 보존한다. CONVERSATION은 관리자 재처리 공급자 부재로 503 JOB_RETRY_UNAVAILABLE다. 리포트 regenerate를 대신 호출하지 않는다. 실패한 요청은 실행 이력으로 위장하지 않으며 거절 감사만 남긴다.
 - audit-logs는 targetType/targetId 및 기간·페이지 필터. 항목은 `{id,actorUserId,action,targetType,targetId,result,createdAt}`이며 자유형 detail은 노출하지 않는다. 기존 감사 저장 경로를 교체하지 않는다.
 - queues는 `{vhost,items:[{name,kind:WORK|RETRY|DLQ,messages,messagesReady,messagesUnacknowledged,consumers,state}]}`다. definitions.json의 `/` vhost와 고정 25개 큐만 읽는다. 누락·인증·HTTP·타임아웃·잘못된 응답은 명시적인 503/504이며 0으로 치환하지 않는다. `ADMIN_RABBIT_MANAGEMENT_URL`, `ADMIN_RABBIT_MANAGEMENT_USERNAME`, `ADMIN_RABBIT_MANAGEMENT_PASSWORD`를 환경에서 읽는다(기본 자격 증명 없음). 기존 AMQP 설정과 독립이며 production 의존성은 추가하지 않는다.
-- missions는 표의 명시된 메서드/경로만 `/internal/admin/missions`로 프록시한다. 검증된 ADMIN 사용자 컨텍스트, 빈 학생 범위, 내부 토큰과 trace를 기존 LearningClient/InternalRestClientFactory로 전달한다. JSON object 본문과 목록 status/grade/thinkingType/page/size만 전달한다. 버전·기준표·검토·게시 정책/DTO는 learning 소유다. learning 공급자 계약은 4.1 `/internal/admin/missions…`(#145)와 learning OpenAPI다. 404/405/501은 503 ADMIN_MISSIONS_UNAVAILABLE, 나머지 Problem Details는 code/status와 구조화된 missingFields만 허용하며 자유형 오류 문구는 전달하지 않는다. 성공 응답은 learning 관리자 콘텐츠 계약을 그대로 반환한다. 서비스 간 재시도는 없다.
+- missions는 표의 명시된 메서드/경로만 `/internal/admin/missions`로 프록시한다. 검증된 ADMIN 사용자 컨텍스트, 빈 학생 범위, 내부 토큰과 trace를 기존 LearningClient/InternalRestClientFactory로 전달한다. JSON object 본문과 목록 status/grade/thinkingType/page/size만 전달한다. 버전·기준표·검토·게시 정책/DTO는 learning 소유다. learning 공급자 계약은 4.1 `/internal/admin/missions…`(#145)와 learning OpenAPI다. 실제 404는 그대로 전달하고 405/501은 503 ADMIN_MISSIONS_UNAVAILABLE다. Problem Details는 code/status와 구조화된 missingFields만 허용하며 자유형 오류 문구는 전달하지 않는다. 성공 응답은 learning 관리자 콘텐츠 계약을 그대로 반환한다. 쓰기는 요청 감사 후 호출하고 응답 missionId·버전으로 결과 감사를 남긴다(하단 #47 미션 운영 후속 계약). 서비스 간 재시도는 없다.
 
 | Method | Path | 권한 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
@@ -1022,3 +1022,13 @@ core 자체의 권한·상태·본문 충돌 오류는 기존 계약을 유지�
 기존 학생 shared/job exclusive session advisory lock 획득 실패는 BUSY다. 잠금 획득 후 저장된 종료 결과를 반환하거나 소유자 없는 RUNNING을 `REPORT_EXECUTION_ABANDONED`로 종료한다. 행이 없으면 `report_job_guard`에 `REPORT_NOT_CREATED`를 원자 저장한다. 삭제 표식 PENDING은 BUSY, COMPLETED는 `STUDENT_DELETED` 실패다. 동일 호출/응답 유실 재호출은 같은 저장 결과를 사용한다. 삭제 완료 후에는 삭제 결과가 우선한다. v1 이벤트의 reportId 필수 계약은 유지한다.
 
 core는 생성 후 60분 이상 QUEUED/RUNNING을 기본 1분마다 점검한다(`app.report.recovery.stale-after`, `app.report.recovery.interval`). 60분은 운영 후보 선정 정책이며 실행 시간 측정값/강제 중단 제한이 아니다. HTTP는 DB 트랜잭션·행 잠금 밖에서 수행하고 새 트랜잭션에서 학생·작업·종료 상태를 재검사한다. 자동 재생성·재생성 횟수 정책은 변경하지 않는다.
+
+
+### #47 미션 운영 후속 계약
+
+- overview의 `missionCounts`는 learning 관리자 목록의 전체 DRAFT/REVIEW_REQUIRED/PUBLISHED/UNPUBLISHED 건수를 허용 목록으로 투영한다. 기간·목록 필터·페이지와 무관한 현재 상태이며 학생·미션 본문은 포함하지 않는다. 누락·중복·음수 등 잘못된 집계는 503으로 처리한다.
+- 실제 미션 404는 안전한 NOT_FOUND 오류로 전달한다. 405/501은 제공 기능 불가로 유지한다.
+- CONTENT 쓰기는 인증된 관리자 UUID로 요청 감사를 먼저 커밋한 뒤 learning을 한 번 호출한다. 성공 응답의 missionId/currentVersion/currentRubricVersion을 검증해 결과 감사를 별도 커밋한다. 외부 HTTP와 core DB는 단일 트랜잭션이 아니다.
+- 감사 action은 MISSION_{CREATE,UPDATE,RUBRIC,REVIEW_REQUEST,REVIEW,PUBLISH,UNPUBLISH}_{REQUESTED,SUCCEEDED,REJECTED,UNKNOWN}. REQUESTED의 SUCCESS는 요청 기록 성공만 뜻한다. 계약에 맞는 4xx 문제 응답은 REJECTED, 5xx·통신 단절·해석할 수 없는 응답은 UNKNOWN이다. 요청 원문·공급자 오류 원문은 저장하지 않는다.
+- 쓰기 응답의 X-Admin-Operation-Id는 요청 감사 ID다. 연결 실패 오류는 detail에 같은 확인 번호를 제공한다. 결과 감사 저장 실패는 503 MISSION_AUDIT_UNAVAILABLE이며 요청 기록이 남는다. 성공으로 응답하거나 자동으로 쓰기를 재호출하지 않는다. REQUESTED만 남은 작업은 결과 미확정으로 운영자가 learning에서 확인한다.
+- 공개 감사 목록은 기존대로 detail을 제외한다. 새 DB migration, learning 작성·게시 로직, 프론트 변경은 없다.

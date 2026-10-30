@@ -96,3 +96,18 @@ CI 보완 로컬 검증: 전체 Python 계약 검사 69/69 통과. 별도 복사
 - 새 전용 PostgreSQL의 전체 migration/재실행/report downgrade·upgrade: core 43개 표·395열, learning 19개 표·160열, report 8개 표·56열; 63개 거부 사례·74개 CHECK·23개 ERD 인덱스 통과. 기존 V17은 그대로이며 추가 migration은 없다.
 - 이번 추가 검증은 실제 PostgreSQL을 사용하는 로컬 테스트다. report-worker 실제 생성→PDF와 원격 CI·배포를 재검증했다고 주장하지 않는다.
 - #67·#162와의 최종 통합은 별도 담당 채팅에서 수행한다. 기능 브랜치를 보존하고 develop 개별 병합·PR 생성은 하지 않는다.
+
+## 미션 후속 — 2026-10-30
+
+승인 범위: 실제 404 전달, 전체 상태 counts, 인증 관리자·미션/버전 쓰기 감사와 불확실 결과. `feature/core-admin-mission-integration`은 develop 640e0a2에서 분기했다. 기존 learning 작성·검토·게시 로직과 프론트는 변경하지 않는다.
+
+HTTP 전 REQUESTED를 짧은 독립 트랜잭션으로 남기고 응답 후 SUCCEEDED/REJECTED/UNKNOWN을 기록한다. 프로세스 중단·결과 감사 저장 실패에는 REQUESTED만 남을 수 있으며 변경 성공 여부는 learning에서 대조해야 한다. 요청·오류 원문은 저장하지 않는다. 새 migration은 없다. 프론트는 missionCounts의 상태·count 배열과 missionInclusionRule을 연결하면 된다. 자동 재요청 기능은 추가하지 않는다.
+
+최종 검증:
+- Temurin 21 Linux `./gradlew test bootJar`: core 334개, 실패·오류·생략 0. learning은 변경 없이 실제 연동용 bootJar 빌드 통과.
+- Python 계약 검사 83개와 OpenAPI validator 통과. 실제 overview 응답도 OpenAPI JSON Schema에 부합한다.
+- 전용 core·learning·PostgreSQL·Redis·RabbitMQ에서 실제 HTTP 10건: 생성 201, 수정 후 버전 2, 조회/쓰기 404, 기존 게시 상태 409, SERVICE_OPS 쓰기 403, 필터와 무관한 전체 counts/overview, detail 없는 감사 목록을 확인했다. 계정·세션/JWT는 검증용 합성 데이터이며 Google 로그인 검증은 아니다.
+- core 감사 INSERT에만 전용 DB trigger로 장애를 주입했다. 실제 learning 생성은 유지되고 core는 503 MISSION_AUDIT_UNAVAILABLE, 요청 감사만 보존했다. trigger는 finally에서 제거했다. 정상·거부·미확정 요청을 합쳐 해당 검증 관리자 감사 9행을 대조했고 원문 미저장을 확인했다.
+- timeout·잘못된 응답·요청/결과 감사 실패는 별도 core 테스트에서 검증했다. timeout은 명시적 클라이언트 대역이며 실제 네트워크 timeout으로 표현하지 않는다.
+- 초기 컴파일의 Kotlin List.size 표기와 연동 검증의 게시 예상값(기존 learning은 DRAFT에서 409)을 수정했다. production learning 로직은 바꾸지 않았다.
+- 이 브랜치에는 DB migration이 없다. REPORT 측 전체 migration 검증과 최종 통합 시 V17→V18 순서 확인은 별도다. 프론트·원격 CI·배포는 이번 검증에 포함하지 않는다.

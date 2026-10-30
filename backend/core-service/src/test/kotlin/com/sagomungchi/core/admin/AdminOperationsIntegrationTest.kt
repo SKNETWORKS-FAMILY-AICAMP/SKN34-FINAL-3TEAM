@@ -40,6 +40,8 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
     @Autowired lateinit var json: ObjectMapper
     @Autowired lateinit var retry: OperationRetryService
     @Autowired lateinit var operations: OperationsService
+    @MockitoSpyBean lateinit var missionAudits: com.sagomungchi.core.admin.repository.MissionAuditRepository
+    @MockitoSpyBean lateinit var learningClient: com.sagomungchi.core.learning.client.LearningClient
     @MockitoSpyBean lateinit var publisher: NotificationRedisPublisher
     private fun token(permission: String?="SERVICE_OPS",role: String="ADMIN"): Pair<UUID,String> {
         val user=account(jdbc,role,permission)
@@ -52,7 +54,7 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
             id,actor,UUID.randomUUID(),status,OffsetDateTime.parse("2026-01-02T00:00:00Z"))
         return id
     }
-    @BeforeEach fun resetHttp() { requests.clear(); statsStatus=200; statsBody=STATS; missionStatus=200; missionBody="{\"items\":[],\"counts\":[]}" }
+    @BeforeEach fun resetHttp() { requests.clear(); statsStatus=200; statsBody=STATS; missionStatus=200; missionBody=MISSIONS }
 
     @Test fun `401 403 permissions and exact general administrator reads`() {
         val id=UUID.randomUUID()
@@ -76,7 +78,7 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         val result=mvc.get(path) { header("Authorization","Bearer $access") }.andExpect {
             status { isOk() };jsonPath("$.learning.attempts") { value(7) };jsonPath("$.learning.completedAttempts") { value(3) }
         }.andReturn().response.contentAsString
-        assertFalse(result.contains("secret"));assertFalse(result.contains("studentName"));assertFalse(result.contains("missionCounts"))
+        assertFalse(result.contains("secret"));assertFalse(result.contains("studentName"));assertEquals(4,json.readTree(result).path("missionCounts").size());assertEquals(12,json.readTree(result).path("missionCounts")[0].path("count").asInt())
         val req=requests.last();assertEquals("ADMIN",req.role);assertNull(req.scope);assertEquals("test-token",req.token)
         statsStatus=503
         mvc.get(path) { header("Authorization","Bearer $access") }.andExpect { status { isServiceUnavailable() } }
@@ -160,32 +162,103 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM outbox_event WHERE subject=?",Int::class.java,student.toString()))
     }
     @Test fun `missions proxy supports every declared method body and validated admin headers`() {
-        val (_,access)=token("CONTENT");val id=UUID.randomUUID();val payload="{\"version\":3,\"rubricVersion\":2}"
+        val (admin,access)=token("CONTENT");val id=UUID.randomUUID();val payload="{\"version\":3,\"rubricVersion\":2}"
         val requestsToSend=listOf("GET" to "", "POST" to "", "GET" to "/$id", "PATCH" to "/$id", "PUT" to "/$id/rubric", "GET" to "/$id/preview", "POST" to "/$id/review-request", "POST" to "/$id/review", "POST" to "/$id/publish", "POST" to "/$id/unpublish")
+        missionBody="""{"missionId":"$id","currentVersion":2,"currentRubricVersion":3}"""
         for((method,suffix) in requestsToSend) {
             mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request(org.springframework.http.HttpMethod.valueOf(method),"/api/v1/admin/missions$suffix")
                 .header("Authorization","Bearer $access").header("X-User-Role","SYSTEM").header("X-Student-Scope",UUID.randomUUID()).contentType(MediaType.APPLICATION_JSON).content(if(method=="GET") "" else payload))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk)
             val received=requests.last();assertEquals(method,received.method);assertEquals("/internal/admin/missions$suffix",received.path)
-            assertEquals("ADMIN",received.role);assertNull(received.scope);assertEquals("test-token",received.token)
+            assertEquals(admin.toString(),received.user);assertEquals("ADMIN",received.role);assertNull(received.scope);assertEquals("test-token",received.token)
             if(method!="GET") assertEquals(payload,received.body)
         }
         missionStatus=422;missionBody="{\"code\":\"MISSION_PUBLISH_INCOMPLETE\",\"detail\":\"student secret token\",\"missingFields\":[\"rubric\"]}"
         val error=mvc.post("/api/v1/admin/missions/$id/publish") { header("Authorization","Bearer $access");contentType=MediaType.APPLICATION_JSON;content=payload }.andExpect { status { isUnprocessableEntity() };jsonPath("$.code") { value("MISSION_PUBLISH_INCOMPLETE") } }.andReturn().response.contentAsString
-        assertFalse(error.contains("secret"));missionStatus=404
-        mvc.get("/api/v1/admin/missions") { header("Authorization","Bearer $access") }.andExpect { status { isServiceUnavailable() };jsonPath("$.code") { value("ADMIN_MISSIONS_UNAVAILABLE") } }
+        assertFalse(error.contains("secret"));missionStatus=404;missionBody="""{"code":"NOT_FOUND","detail":"secret"}"""
+        mvc.get("/api/v1/admin/missions") { header("Authorization","Bearer $access") }.andExpect { status { isNotFound() };jsonPath("$.code") { value("NOT_FOUND") } }
+    }
+    @Test fun `overview rejects missing duplicate negative and unavailable mission counts`() {
+        val (_,access)=token()
+        for(body in listOf("{}", """{"counts":[]} """, MISSIONS.replace("REVIEW_REQUIRED","DRAFT"), MISSIONS.replace("12","-1"))) {
+            missionBody=body
+            mvc.get("/api/v1/admin/overview?from=2026-01-01&to=2026-01-03") { header("Authorization","Bearer $access") }
+                .andExpect { status { isServiceUnavailable() };jsonPath("$.code") { value("LEARNING_INVALID_RESPONSE") } }
+        }
+        missionStatus=503
+        mvc.get("/api/v1/admin/overview?from=2026-01-01&to=2026-01-03") { header("Authorization","Bearer $access") }
+            .andExpect { status { isServiceUnavailable() } }
+    }
+    @Test fun `mission audit uses verified actor returned versions and no request or error text`() {
+        val (admin,access)=token("CONTENT");val id=UUID.randomUUID()
+        missionBody="""{"missionId":"$id","currentVersion":4,"currentRubricVersion":2}"""
+        val result=mvc.post("/api/v1/admin/missions") {
+            header("Authorization","Bearer $access");header("X-User-Id",UUID.randomUUID());contentType=MediaType.APPLICATION_JSON;content="""{"question":"private secret"}"""
+        }.andExpect { status { isOk() } }.andReturn().response
+        val operation=UUID.fromString(result.getHeader("X-Admin-Operation-Id"))
+        val rows=jdbc.queryForList("SELECT * FROM audit_log WHERE actor_user_id=? AND target_type='MISSION' ORDER BY created_at",admin)
+        assertEquals(2,rows.size);assertEquals(operation,rows[0]["id"]);assertEquals("MISSION_CREATE_REQUESTED",rows[0]["action"])
+        assertEquals("MISSION_CREATE_SUCCEEDED",rows[1]["action"]);assertEquals(id,rows[1]["target_id"])
+        val detail=json.readTree(rows[1]["detail"].toString())
+        assertEquals(4,detail.path("currentVersion").asInt());assertEquals(2,detail.path("currentRubricVersion").asInt())
+        assertEquals(operation.toString(),detail.path("operationId").asText());assertFalse(rows.toString().contains("secret"))
+        assertEquals(admin.toString(),requests.last().user)
+        missionStatus=404;missionBody="""{"code":"NOT_FOUND","detail":"secret"}"""
+        mvc.post("/api/v1/admin/missions/$id/publish") { header("Authorization","Bearer $access");contentType=MediaType.APPLICATION_JSON;content="{}" }
+            .andExpect { status { isNotFound() } }
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action='MISSION_PUBLISH_REJECTED' AND result='FAILURE'",Int::class.java,admin))
+    }
+    @Test fun `uncertain provider responses stay explicit and are never retried`() {
+        val (admin,access)=token("CONTENT");val id=UUID.randomUUID()
+        for(body in listOf("not json","{}","""{"missionId":"${UUID.randomUUID()}","currentVersion":1,"currentRubricVersion":null}""")) {
+            requests.clear();missionBody=body
+            mvc.post("/api/v1/admin/missions/$id/publish") { header("Authorization","Bearer $access");contentType=MediaType.APPLICATION_JSON;content="{}" }
+                .andExpect { status { isServiceUnavailable() };jsonPath("$.code") { value("LEARNING_INVALID_RESPONSE") } }
+            assertEquals(1,requests.size)
+        }
+        missionStatus=500;missionBody="""{"code":"INTERNAL_ERROR","detail":"secret"}"""
+        mvc.post("/api/v1/admin/missions/$id/publish") { header("Authorization","Bearer $access");contentType=MediaType.APPLICATION_JSON;content="{}" }
+            .andExpect { status { isInternalServerError() } }
+        assertEquals(4,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action='MISSION_PUBLISH_UNKNOWN'",Int::class.java,admin))
+    }
+    @Test fun `audit failures stop dispatch or preserve committed intent after provider success`() {
+        val (admin,access)=token("CONTENT");val id=UUID.randomUUID()
+        missionBody="""{"missionId":"$id","currentVersion":1,"currentRubricVersion":null}"""
+        var failAction="MISSION_CREATE_REQUESTED"
+        doAnswer { invocation ->
+            if(invocation.getArgument<String>(2)==failAction) throw org.springframework.dao.DataAccessResourceFailureException("secret")
+            invocation.callRealMethod()
+        }.`when`(missionAudits).insert(org.mockito.ArgumentMatchers.any(UUID::class.java) ?: UUID(0,0),org.mockito.ArgumentMatchers.eq(admin) ?: admin,
+            org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.nullable(UUID::class.java),org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString())
+        fun request()=mvc.post("/api/v1/admin/missions") { header("Authorization","Bearer $access");contentType=MediaType.APPLICATION_JSON;content="{}" }
+            .andExpect { status { isServiceUnavailable() };jsonPath("$.code") { value("MISSION_AUDIT_UNAVAILABLE") } }
+        request();assertTrue(requests.isEmpty())
+        failAction="MISSION_CREATE_SUCCEEDED"
+        request();assertEquals(1,requests.size)
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action='MISSION_CREATE_REQUESTED'",Int::class.java,admin))
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action='MISSION_CREATE_SUCCEEDED'",Int::class.java,admin))
+    }
+    @Test fun `transport timeout records unknown without a second call`() {
+        val (admin,access)=token("CONTENT");val id=UUID.randomUUID()
+        doThrow(com.sagomungchi.core._common.exception.BusinessException(org.springframework.http.HttpStatus.GATEWAY_TIMEOUT,"LEARNING_TIMEOUT","timeout"))
+            .`when`(learningClient).exchange("POST","/admin/missions/$id/publish",null,"{}".toByteArray(),null,null)
+        mvc.post("/api/v1/admin/missions/$id/publish") { header("Authorization","Bearer $access");contentType=MediaType.APPLICATION_JSON;content="{}" }
+            .andExpect { status { isGatewayTimeout() };jsonPath("$.code") { value("LEARNING_TIMEOUT") } }
+        verify(learningClient,times(1)).exchange("POST","/admin/missions/$id/publish",null,"{}".toByteArray(),null,null)
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action='MISSION_PUBLISH_UNKNOWN'",Int::class.java,admin))
     }
     companion object {
-        data class Seen(val method: String,val path: String,val body: String,val role: String?,val scope: String?,val token: String?)
+        data class Seen(val method: String,val path: String,val body: String,val role: String?,val scope: String?,val token: String?,val user: String?)
         val requests=CopyOnWriteArrayList<Seen>()
         @Volatile var statsStatus=200
         const val STATS="{\"period\":{\"from\":\"2026-01-01\",\"to\":\"2026-01-03\"},\"inclusionRule\":\"P08\",\"attempts\":7,\"completedAttempts\":3,\"students\":2,\"studentName\":\"secret\"}"
         @Volatile var statsBody=STATS
+        const val MISSIONS="""{"items":[{"question":"secret"}],"counts":[{"status":"DRAFT","count":12},{"status":"REVIEW_REQUIRED","count":2},{"status":"PUBLISHED","count":3},{"status":"UNPUBLISHED","count":1}]}"""
         @Volatile var missionStatus=200
         @Volatile var missionBody="{}"
         private val server=HttpServer.create(InetSocketAddress("127.0.0.1",0),0).apply {
             createContext("/internal") { e ->
-                requests.add(Seen(e.requestMethod,e.requestURI.path,e.requestBody.readBytes().toString(Charsets.UTF_8),e.requestHeaders.getFirst("X-User-Role"),e.requestHeaders.getFirst("X-Student-Scope"),e.requestHeaders.getFirst("X-Internal-Token")))
+                requests.add(Seen(e.requestMethod,e.requestURI.path,e.requestBody.readBytes().toString(Charsets.UTF_8),e.requestHeaders.getFirst("X-User-Role"),e.requestHeaders.getFirst("X-Student-Scope"),e.requestHeaders.getFirst("X-Internal-Token"),e.requestHeaders.getFirst("X-User-Id")))
                 val stats=e.requestURI.path=="/internal/stats";val status=if(stats) statsStatus else missionStatus
                 val body=(if(stats) statsBody else missionBody).toByteArray()
                 e.responseHeaders.set("Content-Type",if(status>=400) "application/problem+json" else "application/json")

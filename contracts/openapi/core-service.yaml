@@ -417,11 +417,17 @@ paths:
       operationId: adminMissionsCreate
       tags:
       - Admin
-      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      description: 'CONTENT 권한. 요청 감사 후 단일 호출, 응답 missionId·버전으로 결과 감사. 404는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
       parameters: []
       responses:
         '201':
           description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
           content:
             application/json:
               schema:
@@ -474,7 +480,7 @@ paths:
       operationId: adminMissionsUpdate
       tags:
       - Admin
-      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      description: 'CONTENT 권한. 요청 감사 후 단일 호출, 응답 missionId·버전으로 결과 감사. 404는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
       parameters:
       - name: missionId
         in: path
@@ -485,6 +491,12 @@ paths:
       responses:
         '200':
           description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
           content:
             application/json:
               schema:
@@ -509,7 +521,7 @@ paths:
       operationId: adminMissionsRubric
       tags:
       - Admin
-      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      description: 'CONTENT 권한. 요청 감사 후 단일 호출, 응답 missionId·버전으로 결과 감사. 404는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
       parameters:
       - name: missionId
         in: path
@@ -520,6 +532,12 @@ paths:
       responses:
         '200':
           description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
           content:
             application/json:
               schema:
@@ -573,7 +591,7 @@ paths:
       operationId: adminMissionsRequestReview
       tags:
       - Admin
-      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      description: 'CONTENT 권한. 요청 감사 후 단일 호출, 응답 missionId·버전으로 결과 감사. 404는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
       parameters:
       - name: missionId
         in: path
@@ -584,6 +602,12 @@ paths:
       responses:
         '200':
           description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
           content:
             application/json:
               schema:
@@ -608,7 +632,7 @@ paths:
       operationId: adminMissionsReview
       tags:
       - Admin
-      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      description: 'CONTENT 권한. 요청 감사 후 단일 호출, 응답 missionId·버전으로 결과 감사. 404는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
       parameters:
       - name: missionId
         in: path
@@ -619,6 +643,12 @@ paths:
       responses:
         '200':
           description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
           content:
             application/json:
               schema:
@@ -643,7 +673,7 @@ paths:
       operationId: adminMissionsPublish
       tags:
       - Admin
-      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      description: 'CONTENT 권한. 요청 감사 후 단일 호출, 응답 missionId·버전으로 결과 감사. 404는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
       parameters:
       - name: missionId
         in: path
@@ -654,6 +684,12 @@ paths:
       responses:
         '200':
           description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
           content:
             application/json:
               schema:
@@ -678,7 +714,7 @@ paths:
       operationId: adminMissionsUnpublish
       tags:
       - Admin
-      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      description: 'CONTENT 권한. 요청 감사 후 단일 호출, 응답 missionId·버전으로 결과 감사. 404는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
       parameters:
       - name: missionId
         in: path
@@ -689,6 +725,12 @@ paths:
       responses:
         '200':
           description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
           content:
             application/json:
               schema:
@@ -5912,6 +5954,8 @@ components:
       - inclusionRule
       - learning
       - jobCounts
+      - missionCounts
+      - missionInclusionRule
       properties:
         period:
           $ref: '#/components/schemas/OperationPeriod'
@@ -5940,6 +5984,25 @@ components:
               minimum: 0
             inclusionRule:
               type: string
+        missionInclusionRule:
+          type: string
+          description: 전체 미션 현재 상태이며 기간·페이지·필터와 무관하다.
+        missionCounts:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: object
+            additionalProperties: false
+            required: [status, count]
+            properties:
+              status:
+                type: string
+                enum: [DRAFT, REVIEW_REQUIRED, PUBLISHED, UNPUBLISHED]
+              count:
+                type: integer
+                format: int64
+                minimum: 0
         jobCounts:
           type: array
           items:
