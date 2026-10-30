@@ -208,3 +208,13 @@ JDK 기본 h2c 업그레이드를 포함한 POST를 Uvicorn이 400으로 거부�
 
 - 최종 통합 core 전체 `test bootJar`: **329개 통과, 실패·오류·생략 0**, Docker JDK 21·Gradle/Test heap 512MiB·CPU 2·단일 worker, 5분 26초. 실제 HTTP 11개 시나리오에서 사용한 JAR와 최종 JAR의 SHA-256이 같다.
 - 최종 변경분의 서비스 의존 방향, 학생 → 작업 잠금 순서, 트랜잭션 밖 HTTP·새 트랜잭션 반영, v1 계약·#129 조회/이용권 로직 보존, 문서 링크·`git diff --check`를 확인했다. 운영 성능·배포·원격 CI 완료를 의미하지 않는다. 서비스 CI는 feature push에서 실행하지 않고 PR 생성 후 실행되는 저장소 설정이다.
+
+## #167 하위 호출 서킷 브레이커 (2026-10-30)
+
+report-query와 report-recovery를 분리한다. 4xx·DATA_UNAVAILABLE 매핑, 2xx BUSY/FAILED, 학생 scope 복원을 보존한다. OPEN은 REPORT_UNAVAILABLE이며 복구는 다음 점검으로 남긴다. 관리자 재처리는 기존 Outbox 경로다.
+
+최근/최소 20건·실패율 50%·30초 차단·half-open 1건. 신규 production 의존성·오류 코드·Retry-After 없음. 최종 검증 결과는 아래와 같다.
+
+최종 검증: JDK 21 전용 Docker에서 `bash gradlew test bootJar --no-daemon --max-workers=1 --no-watch-fs --console=plain -Pkotlin.compiler.execution.strategy=in-process "-Dorg.gradle.jvmargs=-Xmx640m -XX:ActiveProcessorCount=2" -I /workspace/limits.gradle` 성공(17분 22초). 54개 클래스/346개 테스트, 실패·오류·생략 0. 검증 전용 init script는 test heap 640MiB·fork 1·8개 클래스마다 fork 교체·Spring context cache 4·CPU 2로 제한하며 저장소 실행 설정/테스트 제한 시간은 변경하지 않았다. `python -O -m unittest discover -s scripts/tests -p 'test_*contract.py' -v` 31개, `test_*openapi.py` 35개 통과. 실행한 core Kotlin/YAML/SQL 260개 파일이 최종 로컬 소스와 바이트 단위로 일치했다. `git diff --check` 통과.
+
+core HTTP·DB/Redis/RabbitMQ 통합 테스트이며 AI/report는 로컬 HTTP 대역, PG는 HttpClient/TossGateway 대역이다. 실제 AI·report 프로세스·토스 API 호출, 브라우저·원격 CI·운영 배포·성능 측정은 이번 검증에 포함하지 않는다. 기존 분석/결제 사용량·복구 흐름은 전체 테스트와 변경 없음 대조로 확인했다. 통합 브랜치 a5b72f7의 factory 선택 인자와 AI HTTP/1.1 변경을 보존했고, #168 d6ebee1에는 TossClient 변경이 없어 직접 파일 충돌이 없음을 읽기 전용으로 확인했다.

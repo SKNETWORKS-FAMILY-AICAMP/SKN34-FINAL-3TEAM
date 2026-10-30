@@ -123,3 +123,13 @@ PR은 사용자가 생성한다. base develop, head feature/core-payments. 제�
 - runtime/test/contract/frontend source sha256 일치, 충돌 마커·unmerged path 없음, git diff --check 통과. learning 190개와 #46 frontend 92개/lint/build 결과는 source 변경이 없어 반복 실행하지 않고 앞선 검증 범위를 유지했다.
 - #46 지원 알림과 인증/공개 계약은 그대로 보존했고 추가 기반영 production 로직을 바꾸지 않았다. #48 작업 브랜치에만 일반 merge commit을 추가하며 이력 재작성·통합 base 직접 수정·develop push·PR 생성은 하지 않는다.
 - 현재 PR base는 feature/core-support-payments-integration이다. Closes #48은 이 중간 base 병합만으로 자동 종료되지 않으며, 실제 해결 범위를 확인한 최종 develop 통합 PR에도 필요하다. 실제 PG·Google·#41 전체 대화/AI·배포·원격 CI 미검증 조건은 유지한다.
+
+## #167 하위 호출 서킷 브레이커 (2026-10-30)
+
+toss-lookup과 toss-transactions를 분리하며 일반/빌링 자격은 같은 구간 상태를 공유한다. OPEN은 기존 Unknown/null로 연결해 상태를 유지한다. 승인·청구·취소·빌링키 발급은 제외한다. PG에 보내지 않은 준비 거래는 조회만으로 확정할 수 없기 때문이다. 재청구·취소 재전송·새 복구 정책은 추가하지 않는다.
+
+최근/최소 20건·실패율 50%·30초 차단·half-open 1건. 신규 production 의존성·오류 코드·Retry-After 없음. 최종 검증 결과는 아래와 같다.
+
+최종 검증: JDK 21 전용 Docker에서 `bash gradlew test bootJar --no-daemon --max-workers=1 --no-watch-fs --console=plain -Pkotlin.compiler.execution.strategy=in-process "-Dorg.gradle.jvmargs=-Xmx640m -XX:ActiveProcessorCount=2" -I /workspace/limits.gradle` 성공(17분 22초). 54개 클래스/346개 테스트, 실패·오류·생략 0. 검증 전용 init script는 test heap 640MiB·fork 1·8개 클래스마다 fork 교체·Spring context cache 4·CPU 2로 제한하며 저장소 실행 설정/테스트 제한 시간은 변경하지 않았다. `python -O -m unittest discover -s scripts/tests -p 'test_*contract.py' -v` 31개, `test_*openapi.py` 35개 통과. 실행한 core Kotlin/YAML/SQL 260개 파일이 최종 로컬 소스와 바이트 단위로 일치했다. `git diff --check` 통과.
+
+core HTTP·DB/Redis/RabbitMQ 통합 테스트이며 AI/report는 로컬 HTTP 대역, PG는 HttpClient/TossGateway 대역이다. 실제 AI·report 프로세스·토스 API 호출, 브라우저·원격 CI·운영 배포·성능 측정은 이번 검증에 포함하지 않는다. 기존 분석/결제 사용량·복구 흐름은 전체 테스트와 변경 없음 대조로 확인했다. 통합 브랜치 a5b72f7의 factory 선택 인자와 AI HTTP/1.1 변경을 보존했고, #168 d6ebee1에는 TossClient 변경이 없어 직접 파일 충돌이 없음을 읽기 전용으로 확인했다.

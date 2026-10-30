@@ -9,6 +9,8 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Component
+import io.github.resilience4j.circuitbreaker.CircuitBreaker
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig
 import java.io.InputStream
 import java.time.Duration
 import java.util.concurrent.ScheduledThreadPoolExecutor
@@ -35,19 +37,32 @@ class AnalysisCall {
 class AiClient internal constructor(factory: InternalRestClientFactory, private val json: ObjectMapper,
     private val firstResponse: Duration, private val total: Duration) {
     @Autowired constructor(factory: InternalRestClientFactory, json: ObjectMapper) : this(factory, json, Duration.ofSeconds(20), Duration.ofSeconds(120))
-    private val client = factory.create("ai", total)
+    internal val circuit = CircuitBreaker.of("ai-analysis", CircuitBreakerConfig.custom()
+        .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
+        .slidingWindowSize(20).minimumNumberOfCalls(20).failureRateThreshold(50f)
+        .waitDurationInOpenState(java.time.Duration.ofSeconds(30)).permittedNumberOfCallsInHalfOpenState(1).build())
+    private val client = factory.create("ai", total, java.net.http.HttpClient.Version.HTTP_1_1)
     private val timer = ScheduledThreadPoolExecutor(1, Thread.ofPlatform().daemon().name("analysis-deadline").factory())
         .apply { removeOnCancelPolicy = true }
 
     fun stream(request: Any, call: AnalysisCall, event: (String, JsonNode) -> Unit) {
         call.attachThread()
+        if (!circuit.tryAcquirePermission()) throw BusinessException(HttpStatus.BAD_GATEWAY,
+            "AI_UNAVAILABLE", "AI 분석 서비스를 사용할 수 없습니다.")
+        val started = System.nanoTime()
+        var success = false
+        var downstreamFailure = true
+        var http4xx = false
         val first = timer.schedule({ call.cancel("ANALYSIS_FIRST_RESPONSE_TIMEOUT") }, firstResponse.toMillis(), TimeUnit.MILLISECONDS)
         val deadline = timer.schedule({ call.cancel("ANALYSIS_TIMEOUT") }, total.toMillis(), TimeUnit.MILLISECONDS)
         try {
             client.post().uri("/internal/analysis/stream").contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.TEXT_EVENT_STREAM).body(request).exchange { _, response ->
-                    if (!response.statusCode.is2xxSuccessful) throw BusinessException(HttpStatus.BAD_GATEWAY,
-                        "AI_UNAVAILABLE", "AI 분석 서비스를 사용할 수 없습니다.")
+                    if (!response.statusCode.is2xxSuccessful) {
+                        http4xx = response.statusCode.is4xxClientError
+                        throw BusinessException(HttpStatus.BAD_GATEWAY,
+                            "AI_UNAVAILABLE", "AI 분석 서비스를 사용할 수 없습니다.")
+                    }
                     if (response.headers.contentType?.isCompatibleWith(MediaType.TEXT_EVENT_STREAM) != true) invalid()
                     call.attachBody(response.body)
                     val reader = response.body.bufferedReader(Charsets.UTF_8)
@@ -74,8 +89,15 @@ class AiClient internal constructor(factory: InternalRestClientFactory, private 
                                 first.cancel(false)
                                 val parsed = try { json.readTree(data.toString()) } catch (_: Exception) { invalid() }
                                 if (parsed == null || !parsed.isObject) invalid()
-                                event(name, parsed)
-                                if (name in setOf("done", "clarification", "error")) return@exchange Unit
+                                try { event(name, parsed) } catch (ex: Exception) {
+                                    // Consumer authorization/DB/browser failures are not AI availability failures.
+                                    downstreamFailure = name == "error" || (ex is BusinessException && ex.code == "AI_INVALID_RESPONSE")
+                                    throw ex
+                                }
+                                if (name in setOf("done", "clarification", "error")) {
+                                    success = name != "error"
+                                    return@exchange Unit
+                                }
                             }
                             name = ""; data.clear(); frameSize = 0
                         } else if (!value.startsWith(":")) {
@@ -90,7 +112,19 @@ class AiClient internal constructor(factory: InternalRestClientFactory, private 
             call.checkActive()
             if (ex is BusinessException) throw ex
             throw BusinessException(HttpStatus.BAD_GATEWAY, "AI_UNAVAILABLE", "AI 분석 스트림이 중단되었습니다.")
-        } finally { first.cancel(false); deadline.cancel(false); call.release(); Thread.interrupted() }
+        } finally {
+            first.cancel(false); deadline.cancel(false); call.release(); Thread.interrupted()
+            val cancellation = call.failure.get()
+            val elapsed = System.nanoTime() - started
+            when {
+                cancellation == "STREAM_INTERRUPTED" -> circuit.releasePermission()
+                cancellation in setOf("ANALYSIS_FIRST_RESPONSE_TIMEOUT", "ANALYSIS_TIMEOUT") ->
+                    circuit.onError(elapsed, TimeUnit.NANOSECONDS, java.io.IOException("AI deadline exceeded"))
+                http4xx || success -> circuit.onSuccess(elapsed, TimeUnit.NANOSECONDS)
+                downstreamFailure -> circuit.onError(elapsed, TimeUnit.NANOSECONDS, java.io.IOException("AI stream failed"))
+                else -> circuit.releasePermission()
+            }
+        }
     }
     private fun invalid(): Nothing = throw BusinessException(HttpStatus.BAD_GATEWAY, "AI_INVALID_RESPONSE", "AI 분석 응답 형식이 올바르지 않습니다.")
     @PreDestroy fun close() { timer.shutdownNow() }

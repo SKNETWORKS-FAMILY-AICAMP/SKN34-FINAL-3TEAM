@@ -1025,3 +1025,7 @@ core 자체의 권한·상태·본문 충돌 오류는 기존 계약을 유지�
 기존 학생 shared/job exclusive session advisory lock 획득 실패는 BUSY다. 잠금 획득 후 저장된 종료 결과를 반환하거나 소유자 없는 RUNNING을 `REPORT_EXECUTION_ABANDONED`로 종료한다. 행이 없으면 `report_job_guard`에 `REPORT_NOT_CREATED`를 원자 저장한다. 삭제 표식 PENDING은 BUSY, COMPLETED는 `STUDENT_DELETED` 실패다. 동일 호출/응답 유실 재호출은 같은 저장 결과를 사용한다. 삭제 완료 후에는 삭제 결과가 우선한다. v1 이벤트의 reportId 필수 계약은 유지한다.
 
 core는 생성 후 60분 이상 QUEUED/RUNNING을 기본 1분마다 점검한다(`app.report.recovery.stale-after`, `app.report.recovery.interval`). 60분은 운영 후보 선정 정책이며 실행 시간 측정값/강제 중단 제한이 아니다. HTTP는 DB 트랜잭션·행 잠금 밖에서 수행하고 새 트랜잭션에서 학생·작업·종료 상태를 재검사한다. 자동 재생성·재생성 횟수 정책은 변경하지 않는다.
+
+## #167 하위 호출 차단
+
+분석 AI OPEN은 기존 SSE error의 502 AI_UNAVAILABLE 및 FAILED 저장으로 처리한다. 접수 시 한도·사용 이력 차감은 유지한다. report 조회/복구 OPEN은 기존 503 REPORT_UNAVAILABLE이며 신규 오류 코드나 Retry-After는 추가하지 않는다. 기존 403/404/409/503 DATA_UNAVAILABLE 매핑은 보존한다. 토스 조회 OPEN은 기존 미확정 결과(결제 상태 유지), 거래 대조 OPEN은 기존 PAYMENT_RECONCILIATION_UNAVAILABLE로 처리하며 성공/거절로 치환하지 않는다. 승인·청구·취소·빌링키 발급은 차단 대상이 아니다.

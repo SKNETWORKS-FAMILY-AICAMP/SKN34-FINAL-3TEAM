@@ -121,3 +121,13 @@ c44ace8 통합 체크포인트는 core 233개·front 87개·계약 60개 통과�
 ParentConversation 충돌은 새 develop의 FREE 입력 차단과 분석 신고 버튼을 보존하고 #41의 clarification 재질문·오류 복구·1,000자 상한·자녀 전환을 연결했다. plan 미제공 사용자의 최종 권한 판단은 서버가 수행한다. 이미 반영된 다른 기능을 바꾸지 않았다. 실제 payment 공급자 연결과 구독 fixture 검증은 완료됐으며 실제 PG 호출·환불 경합 전체·실제 AI 분석 전체는 별도 검증 조건이다.
 
 최종 c364ed4 통합 검증: core 디렉터리 전체가 96ed39f 검증 소스와 동일함을 git diff로 확인하여 314개·bootJar 성공 결과를 유지한다. 새 frontend 전체 111개·lint·build, 계약 76개·core OpenAPI 표준 검사 및 git diff --check 통과. 번들 크기 경고는 남는다. 새 report/AI/learning 내부 기능의 전체 실행·브라우저·실제 PG·실제 AI 분석은 이번에 추가 검증하지 않았으며 각 upstream PR 검증과 구분한다. 기존 develop 기능은 보존했고 #41의 무료 오류 복구·수정 질문·범위 확인·신고 연결을 함께 유지했다.
+
+## #167 하위 호출 서킷 브레이커 (2026-10-30)
+
+AI 전체 스트림을 집계한다. OPEN은 기존 AI_UNAVAILABLE/FAILED, 사용자 취소·core 소비자 실패는 집계 제외, 한도/사용 이력 차감은 보존한다. 통합 a5b72f7의 HTTP/1.1 및 factory 선택 인자를 동일하게 보존했고 통합 전체 기능을 merge하지 않았다.
+
+최근/최소 20건·실패율 50%·30초 차단·half-open 1건. 신규 production 의존성·오류 코드·Retry-After 없음. 최종 검증 결과는 아래와 같다.
+
+최종 검증: JDK 21 전용 Docker에서 `bash gradlew test bootJar --no-daemon --max-workers=1 --no-watch-fs --console=plain -Pkotlin.compiler.execution.strategy=in-process "-Dorg.gradle.jvmargs=-Xmx640m -XX:ActiveProcessorCount=2" -I /workspace/limits.gradle` 성공(17분 22초). 54개 클래스/346개 테스트, 실패·오류·생략 0. 검증 전용 init script는 test heap 640MiB·fork 1·8개 클래스마다 fork 교체·Spring context cache 4·CPU 2로 제한하며 저장소 실행 설정/테스트 제한 시간은 변경하지 않았다. `python -O -m unittest discover -s scripts/tests -p 'test_*contract.py' -v` 31개, `test_*openapi.py` 35개 통과. 실행한 core Kotlin/YAML/SQL 260개 파일이 최종 로컬 소스와 바이트 단위로 일치했다. `git diff --check` 통과.
+
+core HTTP·DB/Redis/RabbitMQ 통합 테스트이며 AI/report는 로컬 HTTP 대역, PG는 HttpClient/TossGateway 대역이다. 실제 AI·report 프로세스·토스 API 호출, 브라우저·원격 CI·운영 배포·성능 측정은 이번 검증에 포함하지 않는다. 기존 분석/결제 사용량·복구 흐름은 전체 테스트와 변경 없음 대조로 확인했다. 통합 브랜치 a5b72f7의 factory 선택 인자와 AI HTTP/1.1 변경을 보존했고, #168 d6ebee1에는 TossClient 변경이 없어 직접 파일 충돌이 없음을 읽기 전용으로 확인했다.
