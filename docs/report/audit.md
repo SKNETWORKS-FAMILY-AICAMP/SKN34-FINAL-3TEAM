@@ -224,7 +224,7 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 1장과 같이 
 | B10 | 미해결(임시 결정 유지, #133) | `StudentDeviceController`가 `remoteAddr` 사용, 신뢰 프록시 설정과 함께 처리 |
 | B11·B13 | 해결 | #134 |
 | B12(#93·#97) | 해결 | 관리자 모델 요청이 `RegisterModelVersion`·`ActivateModelVersion`·`RollbackModelVersion`과 일치, `/auth/login`·`/auth/signup`은 MSW 시연 전용 파일에만 남음 |
-| B17 | 일부(#135) | report `ai_url`·`core_url`, scoring `core_url`은 사용. ai `scoring_url`·`core_url`은 미사용(M2 교차 확인·활성 버전 조회 예정) |
+| B17 | #135 구현 브랜치에서 보완(병합 전) | report 조회 HTTP·S3는 lifespan에서 재사용. 기존 사용 URL과 ai의 #68·#69 예정 설정 유지 근거를 기록했다. [#135·#139·#140](issues-135-139-140.md) |
 
 ### 3.3 발견 항목과 처리
 
@@ -258,6 +258,8 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 1장과 같이 
 | 통합 | JDK 21 전제 수동 스크립트 4개(3.1 실행하지 않은 것)가 CI 밖이고 로컬 JDK에 의존 | 중간 |
 
 1장 1.6의 core 경로 정규화(B1·B2)·`ReportScheduleService` 실패 격리는 1장 처리에서 테스트 추가됨. scoring 메시징·모델 로딩은 125건으로 확대됨.
+
+#139·#140 구현 브랜치는 report run 조립·취소·표시/검증 직접 테스트 20개와 scoring 연결·봉투·내부 헤더·설정 테스트 19개를 추가한다. 1장의 당시 결과는 유지하고 최신 실행 수치·#131 의존 관계는 [통합 검토](issues-135-139-140.md)에 기록한다.
 
 ### 3.6 CI 공백
 
