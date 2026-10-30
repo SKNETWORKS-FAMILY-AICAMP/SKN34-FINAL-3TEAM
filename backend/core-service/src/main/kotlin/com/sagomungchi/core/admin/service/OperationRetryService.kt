@@ -15,7 +15,8 @@ import java.util.UUID
 @Service
 class OperationRetryService(private val jobs: OperationsService,private val notification: NotificationRetryService,
     private val records: OperationRetryRepository,private val audit: OperationsRepository,private val tx: TransactionTemplate,
-    private val keys: IdempotencyService,private val json: ObjectMapper,private val reports: ReportAdminRetryService) {
+    private val keys: IdempotencyService,private val json: ObjectMapper,private val reports: ReportAdminRetryService,
+    private val conversations: com.sagomungchi.core.conversation.service.ConversationAdminRetryService) {
     fun retry(id: UUID,key: UUID,identity: AuthenticatedAccount): HttpExchangeResult {
         val actor=identity.account.id
         return keys.execute(key,actor,"/admin/jobs/$id/retry",emptySet(),byteArrayOf()) {
@@ -25,6 +26,15 @@ class OperationRetryService(private val jobs: OperationsService,private val noti
                     val accepted=reports.request(id,key,identity)
                     HttpExchangeResult(202,mapOf("Content-Type" to listOf("application/json"),
                         "Location" to listOf("/api/v1/admin/jobs/${accepted.jobId}")),json.writeValueAsBytes(accepted))
+                } catch(ex: BusinessException) {
+                    tx.executeWithoutResult { audit.audit(actor,job.type,id,"FAILURE") }
+                    problem(ex.status.value(),ex.code)
+                }
+            } else if(job.type==OperationJobType.CONVERSATION) {
+                try {
+                    val accepted=conversations.request(id,key,identity)
+                    HttpExchangeResult(202,mapOf("Content-Type" to listOf("application/json"),
+                        "Location" to listOf("/api/v1/admin/jobs/$id")),json.writeValueAsBytes(accepted))
                 } catch(ex: BusinessException) {
                     tx.executeWithoutResult { audit.audit(actor,job.type,id,"FAILURE") }
                     problem(ex.status.value(),ex.code)

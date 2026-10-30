@@ -8,7 +8,7 @@ class AdminReportRetryContractTest(unittest.TestCase):
         spec=yaml.safe_load((ROOT/'contracts/openapi/core-service.yaml').read_text(encoding='utf-8'))
         responses=spec['paths']['/admin/jobs/{jobId}/retry']['post']['responses']
         self.assertEqual(responses['200']['content']['application/json']['schema'],{'$ref':'#/components/schemas/OperationJob'})
-        self.assertEqual(responses['202']['content']['application/json']['schema'],{'$ref':'#/components/schemas/ReportRetryAccepted'})
+        self.assertEqual(responses['202']['content']['application/json']['schema']['oneOf'],[{'$ref':'#/components/schemas/ReportRetryAccepted'},{'$ref':'#/components/schemas/ConversationRetryAccepted'}])
         self.assertIn('Location',responses['202']['headers'])
         accepted=spec['components']['schemas']['ReportRetryAccepted']
         self.assertEqual(accepted['properties']['status']['const'],'QUEUED')

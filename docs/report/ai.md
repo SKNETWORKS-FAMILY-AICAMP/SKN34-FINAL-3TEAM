@@ -298,3 +298,5 @@ LLM은 테스트 dependency override 또는 실제 키 미설정 분기다. 실�
 인계 후 마지막 스키마 보완을 포함해 `python -O -m unittest discover -s scripts/tests -v` 79개가 통과했다. core/AI OpenAPI 표준 검사와 `scripts/validate_analysis_contracts.py`의 실제 SSE 최종 응답 8종 검사도 통과했다. 최종 `git diff --check`를 확인했다. 실행 코드 변경 없이 보고서만 최신 결과로 정리했으므로 이미 통과한 AI·core·프론트·DB·브라우저 검증은 반복하지 않았다. 최종 파일의 SHA-256 목록은 로컬 검증 산출물에 갱신했다.
 
 최신 origin/develop 640e0a2와 대조했다. 추가된 #146은 learning 신고 지원 조회·피드백 판정 ID 범위이며 이번 실행 코드 변경과 겹치지 않는다. 이 작업은 검증한 develop dd8bbc8 기반을 유지한다. REPORT V17을 먼저 통합·적용한 뒤 분석 V18을 적용하는 순서는 유지한다. PR의 base는 develop이며 PR은 사용자가 생성한다.
+
+#47·#67·#162의 최신 develop 통합·관리자 실행·추가 브라우저 검증 결과는 [관리자 운영 통합 최종 검증](issue-47-admin-operations.md#통합-최종-검증)을 따른다. 이 절 이전의 dd8bbc8 결과는 기능 브랜치 검증 이력이다.

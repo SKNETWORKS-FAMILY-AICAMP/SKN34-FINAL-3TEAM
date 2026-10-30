@@ -24,7 +24,8 @@ data class AnalysisTicket(val parent: UUID, val conversation: ConversationRow, v
 @Service
 class ConversationService(private val repository: ConversationRepository, private val accounts: AccountAccessService,
     private val children: ChildAuthorizationService, private val usage: AnalysisUsageService,
-    private val records: LearningRecordService, private val tx: TransactionTemplate, private val json: ObjectMapper) {
+    private val records: LearningRecordService, private val tx: TransactionTemplate, private val json: ObjectMapper,
+    private val events: org.springframework.context.ApplicationEventPublisher) {
 
     fun parent(): UUID {
         val context = UserContextHolder.currentOrNull()
@@ -68,13 +69,15 @@ class ConversationService(private val repository: ConversationRepository, privat
     }!!
 
     fun prepare(id: UUID, question: String?, scope: AnalysisScope?, retryId: UUID? = null): AnalysisTicket {
-        val parent = parent(); val context = UserContextHolder.current()
+        return prepareFor(parent(),UserContextHolder.current(),id,question,scope,retryId,true)
+    }
+    private fun prepareFor(parent: UUID,context: UserContext,id: UUID,question: String?,scope: AnalysisScope?,retryId: UUID?,charge: Boolean): AnalysisTicket {
         return locked(parent, id) { conversation ->
             val messages = repository.messages(id)
             // A crashed worker cannot hold the conversation forever. Its old generation is fenced at completion.
             val now = OffsetDateTime.now()
             messages.filter { it.status == "RUNNING" }.forEach {
-                if (conversation.updatedAt.isBefore(now.minusSeconds(130))) repository.fail(it.id, it.retryCount, "STREAM_INTERRUPTED")
+                if (conversation.updatedAt.isBefore(now.minusSeconds(130))) failGeneration(it.id, it.retryCount, "STREAM_INTERRUPTED")
                 else conflict()
             }
             val previous = retryId?.let { target -> repository.message(target)?.takeIf { it.conversationId == id } ?: missing() }
@@ -86,7 +89,7 @@ class ConversationService(private val repository: ConversationRepository, privat
             val clean = previous?.question ?: question?.trim().orEmpty()
             if (clean.isBlank() || clean.length > 1000) invalid("질문은 1~1000자입니다.")
             // Reserve one attempt atomically before admitting it. No refunds on an accepted attempt.
-            usage.consume(parent, actual.childId)
+            if(charge) usage.consume(parent, actual.childId) else usage.requireEntitlement(parent,actual.childId)
             val row = if (previous == null) {
                 MessageRow(UUID.randomUUID(), id, (messages.maxOfOrNull { it.seq } ?: 0) + 1, clean, null,
                     actual.childId, actual.from, actual.to, changed, "RUNNING", null, null, null, null,
@@ -96,7 +99,7 @@ class ConversationService(private val repository: ConversationRepository, privat
                 previous.copy(status = "RUNNING", retryCount = previous.retryCount + 1, failureCode = null, completedAt = null)
             }
             // Each retry is a fresh paid attempt; provider persists it within this same parent-locked transaction.
-            usage.recordAttempt(parent, actual.childId, UUID.randomUUID())
+            if(charge) usage.recordAttempt(parent, actual.childId, UUID.randomUUID())
             repository.scope(id, selected)
             val history = messages.filter { it.seq < row.seq && it.status == "COMPLETED" && it.answer != null &&
                 it.scopeStudentId == selected.childId && it.scopeFrom == selected.from && it.scopeTo == selected.to }
@@ -124,7 +127,38 @@ class ConversationService(private val repository: ConversationRepository, privat
             deliver(); true
         }
     }
-    fun fail(ticket: AnalysisTicket, code: String) { repository.fail(ticket.message.id, ticket.message.retryCount, code) }
+    fun fail(ticket: AnalysisTicket, code: String) { failGeneration(ticket.message.id,ticket.message.retryCount,code) }
+    fun failGeneration(id: UUID,generation: Int,code: String): Boolean = tx.execute {
+        val changed=repository.fail(id,generation,code)
+        if(changed) events.publishEvent(ConversationOutcome(id,generation,"FAILED",code))
+        changed
+    }!!
+    /** Caller supplies the verified ADMIN identity; execution authority is rechecked against the real owner. */
+    fun lockForAdminRetry(id: UUID): ConversationRow {
+        val message=repository.message(id) ?: missing()
+        val owner=repository.find(message.conversationId) ?: missing()
+        return locked(owner.parentUserId,owner.id) { it }
+    }
+    fun prepareAdminRetry(id: UUID): AnalysisTicket {
+        val owner=lockForAdminRetry(id)
+        val context=UserContext(owner.parentUserId.toString(),"PARENT",setOf(owner.studentId.toString()),null)
+        return prepareFor(owner.parentUserId,context,owner.id,null,null,id,false)
+    }
+    fun resumeAdminRetry(id: UUID,generation: Int,request: UUID): AnalysisTicket {
+        val owner=lockForAdminRetry(id)
+        return locked(owner.parentUserId,owner.id) { conversation ->
+            val message=repository.message(id) ?: missing()
+            if(message.status!="RUNNING" || message.retryCount!=generation) conflict()
+            val scope=message.scope() ?: conversation.scope()
+            usage.consumeAdminRetry(owner.parentUserId,scope.childId,request)
+            usage.recordAttempt(owner.parentUserId,scope.childId,request)
+            repository.scope(owner.id,scope)
+            val history=repository.messages(owner.id).filter { it.seq<message.seq && it.status=="COMPLETED" && it.answer!=null &&
+                it.scopeStudentId==scope.childId && it.scopeFrom==scope.from && it.scopeTo==scope.to }.takeLast(10)
+                .flatMap { listOf(mapOf("role" to "USER","text" to it.question),mapOf("role" to "ASSISTANT","text" to it.answer!!)) }
+            AnalysisTicket(owner.parentUserId,conversation,message,scope,history,UserContext(owner.parentUserId.toString(),"PARENT",setOf(scope.childId.toString()),null))
+        }
+    }
 
     fun validateResult(ticket: AnalysisTicket, input: JsonNode): ObjectNode {
         val data = input.deepCopy<ObjectNode>()
@@ -294,6 +328,7 @@ class ConversationService(private val repository: ConversationRepository, privat
                     if (reflection) null else uuid(it,"answerId"), if (reflection) null else it.path("answerVersion").asInt(),
                     if (reflection) "REFLECTION" else "ANSWER"))
             }
+            events.publishEvent(ConversationOutcome(row.id,ticket.message.retryCount,"COMPLETED",row.failureCode))
             true
         }
     }

@@ -147,17 +147,15 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         verify(publisher,times(1)).publish(NotificationStored(id,actor))
     }
 
-    @Test fun `conversation retry remains unavailable without fabricated execution`() {
+    @Test fun `conversation retry rejects invalid owner without fabricated execution`() {
         val (actor,access)=token();val student=UUID.randomUUID();val report=UUID.randomUUID();val conv=UUID.randomUUID();val message=UUID.randomUUID()
         jdbc.update("INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,pin_failed_count,created_at,updated_at) VALUES(?,'synthetic',3,2017,false,'ACTIVE',0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",student)
         jdbc.update("INSERT INTO report_job(id,student_id,period_from,period_to,trigger,status,retry_count,created_at) VALUES(?,?,'2026-01-01','2026-01-07','SCHEDULE','FAILED',0,CURRENT_TIMESTAMP)",report,student)
         jdbc.update("INSERT INTO conversation(id,parent_user_id,student_id,period_from,period_to,created_at,updated_at) VALUES(?,?,?,'2026-01-01','2026-01-07',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",conv,actor,student)
         jdbc.update("INSERT INTO conversation_message(id,conversation_id,seq,question,scope_changed,status,retry_count,created_at) VALUES(?,?,1,'student secret',false,'FAILED',0,CURRENT_TIMESTAMP)",message,conv)
-        for(id in listOf(message)) {
-            mvc.post("/api/v1/admin/jobs/$id/retry") { header("Authorization","Bearer $access");header("Idempotency-Key",UUID.randomUUID()) }.andExpect { status { isServiceUnavailable() };jsonPath("$.code") { value("JOB_RETRY_UNAVAILABLE") } }
-            assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM job_execution WHERE job_id=?",Int::class.java,id))
-            assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE target_id=? AND result='FAILURE'",Int::class.java,id))
-        }
+        mvc.post("/api/v1/admin/jobs/$message/retry") { header("Authorization","Bearer $access");header("Idempotency-Key",UUID.randomUUID()) }.andExpect { status { isForbidden() } }
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM job_execution WHERE job_id=?",Int::class.java,message))
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE target_id=? AND result='FAILURE'",Int::class.java,message))
         assertEquals("FAILED",jdbc.queryForObject("SELECT status FROM report_job WHERE id=?",String::class.java,report))
         assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM outbox_event WHERE subject=?",Int::class.java,student.toString()))
     }

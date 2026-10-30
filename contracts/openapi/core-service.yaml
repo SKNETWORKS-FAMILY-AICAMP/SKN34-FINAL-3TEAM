@@ -217,8 +217,7 @@ paths:
       operationId: adminOperationsRetry
       tags:
       - Admin
-      description: SERVICE_OPS. REPORT는 새 ADMIN_RETRY job 접수 202와 Location, NOTIFICATION은 기존 실제 처리 결과 200. CONVERSATION은
-        503. 원작업은 보존한다.
+      description: SERVICE_OPS. REPORT는 새 ADMIN_RETRY job, CONVERSATION은 영속 대기 요청을 202와 Location으로 접수한다. NOTIFICATION은 기존 실제 처리 결과 200이다. 원작업은 보존한다.
       parameters:
       - name: jobId
         in: path
@@ -233,6 +232,19 @@ paths:
           type: string
           format: uuid
       responses:
+        '202':
+          description: REPORT 또는 CONVERSATION 재처리 접수. 실제 결과는 Location의 작업 상세에서 조회한다.
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/ReportRetryAccepted'
+                - $ref: '#/components/schemas/ConversationRetryAccepted'
         '200':
           description: 성공
           content:
@@ -247,18 +259,6 @@ paths:
           $ref: '#/components/responses/LearningProblem'
         '403':
           $ref: '#/components/responses/LearningProblem'
-        '202':
-          description: 새 REPORT 작업 접수. 실행 완료는 새 job 조회로 확인한다.
-          headers:
-            Location:
-              description: 새 관리자 작업 조회 경로
-              schema:
-                type: string
-                format: uri-reference
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ReportRetryAccepted'
       summary: adminOperationsRetry (SERVICE_OPS)
   /admin/queues:
     get:
@@ -6131,6 +6131,27 @@ components:
           type: integer
           format: int64
           minimum: 0
+    ConversationRetryAccepted:
+      type: object
+      additionalProperties: false
+      required: [jobId, retryRequestId, generation, acceptedAt, type, status]
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        retryRequestId:
+          type: string
+          format: uuid
+        generation:
+          type: integer
+          minimum: 1
+        acceptedAt:
+          type: string
+          format: date-time
+        type:
+          const: CONVERSATION
+        status:
+          const: QUEUED
     OperationOverview:
       type: object
       additionalProperties: false

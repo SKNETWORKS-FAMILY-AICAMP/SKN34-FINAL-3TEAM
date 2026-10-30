@@ -46,7 +46,6 @@ class OperationsService(private val reports: ReportOperationsService, private va
         val unavailable = when {
             row.status!="FAILED" -> "JOB_NOT_FAILED"
             type==OperationJobType.REPORT && successor!=null -> "REPORT_ALREADY_RETRIED"
-            type==OperationJobType.CONVERSATION -> "JOB_RETRY_UNAVAILABLE"
             else -> null
         }
         return OperationJob(row.jobId,type,row.status,row.retryCount,OperationErrors.code(row.failureReason),row.createdAt,

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.conversation.repository.ConversationRetryMapper">
+ <resultMap id="retry" type="com.sagomungchi.core.conversation.domain.ConversationRetry"><constructor>
+  <idArg column="id" javaType="java.util.UUID"/><arg column="message_id" javaType="java.util.UUID"/>
+  <arg column="generation" javaType="_int"/><arg column="requested_by" javaType="java.util.UUID"/>
+  <arg column="idempotency_key" javaType="java.util.UUID"/><arg column="status" javaType="java.lang.String"/>
+  <arg column="accepted_at" javaType="java.time.Instant"/><arg column="started_at" javaType="java.time.Instant"/><arg column="finished_at" javaType="java.time.Instant"/>
+ </constructor></resultMap>
+ <select id="find" resultMap="retry" useCache="false" flushCache="true">SELECT * FROM conversation_job_retry WHERE id=#{id}</select>
+ <select id="byKey" resultMap="retry" useCache="false" flushCache="true">SELECT * FROM conversation_job_retry WHERE requested_by=#{actor} AND idempotency_key=#{key}</select>
+ <select id="byGeneration" resultMap="retry" useCache="false" flushCache="true">SELECT * FROM conversation_job_retry WHERE message_id=#{message} AND generation=#{generation}</select>
+ <insert id="insert">INSERT INTO conversation_job_retry(id,message_id,generation,requested_by,idempotency_key,status,accepted_at) VALUES(#{id},#{messageId},#{generation},#{requestedBy},#{idempotencyKey},'QUEUED',#{acceptedAt})</insert>
+ <select id="forStudent" resultMap="retry">SELECT r.* FROM conversation_job_retry r JOIN conversation_message m ON m.id=r.message_id JOIN conversation c ON c.id=m.conversation_id WHERE c.student_id=#{student} AND r.status IN ('QUEUED','RUNNING')</select>
+ <select id="pending" resultMap="retry">SELECT * FROM conversation_job_retry WHERE status='QUEUED' AND accepted_at > CURRENT_TIMESTAMP-interval '130 seconds' ORDER BY accepted_at,id LIMIT 20</select>
+ <select id="stale" resultMap="retry">SELECT * FROM conversation_job_retry WHERE status IN ('QUEUED','RUNNING') AND COALESCE(started_at,accepted_at) &lt;= CURRENT_TIMESTAMP-interval '130 seconds' ORDER BY accepted_at,id LIMIT 20</select>
+ <update id="claim">UPDATE conversation_job_retry SET status='RUNNING',started_at=CURRENT_TIMESTAMP WHERE id=#{id} AND status='QUEUED' AND accepted_at > CURRENT_TIMESTAMP-interval '130 seconds'</update>
+ <update id="finish">UPDATE conversation_job_retry SET status=#{status},finished_at=CURRENT_TIMESTAMP WHERE id=#{id} AND status IN ('QUEUED','RUNNING')</update>
+ <insert id="startExecution">INSERT INTO job_execution(id,job_type,job_id,attempt_no,status,triggered_by,started_at) VALUES(#{id},'CONVERSATION',#{messageId},#{generation},'RUNNING',#{requestedBy},CURRENT_TIMESTAMP)</insert>
+ <update id="finishExecution">UPDATE job_execution SET status=#{status},error_code=#{code},finished_at=CURRENT_TIMESTAMP WHERE id=#{id} AND status='RUNNING'</update>
+</mapper>

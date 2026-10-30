@@ -748,3 +748,8 @@ support/controller → SupportService → support/repository를 사용한다. �
 core report의 `ReportRecoveryScheduler`(ShedLock) → `ReportRecoveryService` → `ReportClient`가 상태를 대조한다. report generation의 router → `ReconciliationService` → 기존 `ReportRepository`/`JobLocks`를 재사용한다. HTTP 동안 core 트랜잭션은 없고 report는 session 잠금 아래 짧은 DB 트랜잭션만 사용한다. 새 production 의존성은 없다.
 
 core의 생성은 guardianship `StudentAccessService`를 통해 ACTIVE 학생 행을 먼저 잠근 뒤 주 단위 잠금·작업 저장을 수행한다. lifecycle/복구 반영도 학생 → job 순서다. 삭제는 기존 parent → student 순서를 유지하며 `ReportLifecycleService.failForDeletion`을 호출해 같은 트랜잭션에서 미종료 작업과 실행 이력을 FAILED로 만든다. 상대 기능 repository 직접 접근 없이 service 경계로 연결한다. 삭제 종료와 reportId 없는 실패는 알림을 발행하지 않는다.
+
+
+### #47 관리자 대화 재처리 실행 경계
+
+CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 기존 AnalysisStreamService의 공통 실행을 호출한다. 학부모 SSE와 같은 검증·근거 확인·저장을 사용하며 관리자에게 원문 이벤트를 전달하지 않는다. RabbitMQ 큐나 외부 실행 서비스를 추가하지 않는다. 요청·종료 감사는 BEFORE_COMMIT이며 외부 AI 호출은 DB 트랜잭션 밖이다. Redis 사용량은 영속 요청 ID 원자 표식으로 중복 차감을 방지한다. 중단 실행은 세대를 확인해 실패로 종료하고 자동 AI 재실행하지 않는다.
