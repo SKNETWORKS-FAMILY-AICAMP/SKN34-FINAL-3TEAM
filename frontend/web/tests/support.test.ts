@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { adminApi } from '../src/data/admin/api.ts'
 import { correctionImpactText } from '../src/domain/admin/operations.ts'
+import { serviceApi } from '../src/data/serviceApi.ts'
 import { setAccessToken } from '../src/data/apiClient.ts'
 
 test('정정 재시도는 동일한 Idempotency-Key와 enum 결과를 전달한다', async () => {
@@ -65,5 +66,50 @@ test('정정의 공개 409·422는 refresh나 성공 대체 없이 소비자 오
       })
       assert.equal(calls, 1)
     }
+  } finally { globalThis.fetch = original; setAccessToken(null) }
+})
+
+
+test('지원 GET에서 나온 공개 403·404는 신고 접수·관리자 상세·정정 사전 확인 소비자에 유지한다', async () => {
+  const original = globalThis.fetch
+  setAccessToken('support-token', 'ADMIN')
+  try {
+    for (const [status, code, title] of [[403, 'FORBIDDEN', '지원 대상에 접근할 권한이 없습니다.'], [404, 'NOT_FOUND', '지원 대상 기록을 찾을 수 없습니다.']] as const) {
+      for (const invoke of [
+        () => serviceApi.createCase('error-reports', { targetType: 'JUDGMENT', targetId: 'j', category: 'OTHER', comment: '확인' }),
+        () => adminApi.error('r'),
+        () => adminApi.correction('r', '확인', 'CORRECT', crypto.randomUUID()),
+      ]) {
+        let calls = 0
+        globalThis.fetch = async () => {
+          calls++
+          return new Response(JSON.stringify({ status, code, title }), { status, headers: { 'Content-Type': 'application/problem+json' } })
+        }
+        await assert.rejects(invoke(), (error: unknown) => {
+          const problem = (error as { problem: { status: number; code: string; title: string } }).problem
+          assert.deepEqual(problem, { status, code, title })
+          return true
+        })
+        assert.equal(calls, 1)
+      }
+    }
+  } finally { globalThis.fetch = original; setAccessToken(null) }
+})
+
+test('관리자 미션 404 NOT_FOUND는 고정 문구와 상태를 유지한다', async () => {
+  const original = globalThis.fetch
+  setAccessToken('content-token', 'ADMIN')
+  let calls = 0
+  globalThis.fetch = async () => {
+    calls++
+    return new Response(JSON.stringify({ status: 404, code: 'NOT_FOUND', title: '미션을 찾을 수 없습니다.' }), { status: 404, headers: { 'Content-Type': 'application/problem+json' } })
+  }
+  try {
+    await assert.rejects(adminApi.mission('missing'), (error: unknown) => {
+      const problem = (error as { problem: { status: number; code: string; title: string } }).problem
+      assert.deepEqual(problem, { status: 404, code: 'NOT_FOUND', title: '미션을 찾을 수 없습니다.' })
+      return true
+    })
+    assert.equal(calls, 1)
   } finally { globalThis.fetch = original; setAccessToken(null) }
 })
