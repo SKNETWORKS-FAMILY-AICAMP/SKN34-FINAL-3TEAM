@@ -54,6 +54,7 @@ class AdminConversationRetryTest : IntegrationTestSupport() {
     @Autowired lateinit var worker: ConversationRetryWorker
     @Autowired lateinit var messages: ConversationRepository
     @Autowired lateinit var jobs: OperationsService
+    @Autowired lateinit var aiClient: com.sagomungchi.core.conversation.client.AiClient
     @Autowired lateinit var usage: AnalysisUsageService
     @Autowired lateinit var redis: StringRedisTemplate
     @Autowired lateinit var tx: TransactionTemplate
@@ -115,6 +116,21 @@ class AdminConversationRetryTest : IntegrationTestSupport() {
         assertEquals(2,quota())
         val dir=java.nio.file.Path.of("build/conversation-retry-contracts");java.nio.file.Files.createDirectories(dir)
         java.nio.file.Files.writeString(dir.resolve("accepted.json"),response.contentAsString)
+    }
+    @Test fun `open AI circuit fails background execution without HTTP and preserves quota and audit`() {
+        val accepted=accept()
+        aiClient.circuit.transitionToOpenState()
+        try {
+            worker.runOne(accepted.retryRequestId)
+            assertTrue(ai.requests.isEmpty())
+            assertEquals("FAILED",messages.message(message)!!.status)
+            assertEquals("AI_UNAVAILABLE",jobs.job(message).failureReason)
+            assertEquals(2,quota())
+            assertEquals(1,count("SELECT count(*) FROM job_execution WHERE job_id=? AND status='FAILED'",message))
+            assertEquals(1,count("SELECT count(*) FROM audit_log WHERE target_id=? AND action='JOB_RETRY_FAILED'",message))
+            worker.runOne(accepted.retryRequestId)
+            assertEquals(2,quota());assertTrue(ai.requests.isEmpty())
+        } finally { aiClient.circuit.reset() }
     }
     @Test fun `permission denial and invalid owner never admit a request`() {
         for(permission in listOf("CONTENT","PAYMENT_VIEW","PAYMENT_REFUND")) {

@@ -7,6 +7,9 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import org.springframework.transaction.support.TransactionSynchronizationManager
+import io.github.resilience4j.circuitbreaker.CircuitBreaker
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig
+import org.springframework.beans.factory.annotation.Autowired
 import java.net.URI
 import java.net.URLEncoder
 import java.net.http.HttpClient
@@ -41,13 +44,24 @@ interface TossGateway {
 }
 
 @Component
-class TossClient(private val json: ObjectMapper,
-    @Value("\${app.payment.toss-secret:}") private val secret: String,
-    @Value("\${app.payment.toss-billing-secret:}") private val billingSecret: String): TossGateway {
-    private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build()
+class TossClient internal constructor(private val json: ObjectMapper, private val secret: String,
+    private val billingSecret: String, private val http: HttpClient): TossGateway {
+    @Autowired constructor(json: ObjectMapper,
+        @Value("\${app.payment.toss-secret:}") secret: String,
+        @Value("\${app.payment.toss-billing-secret:}") billingSecret: String) :
+        this(json, secret, billingSecret, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build())
+    private val circuitConfig = CircuitBreakerConfig.custom()
+        .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
+        .slidingWindowSize(20).minimumNumberOfCalls(20).failureRateThreshold(50f)
+        .waitDurationInOpenState(java.time.Duration.ofSeconds(30)).permittedNumberOfCallsInHalfOpenState(1)
+        .recordException { it is java.io.IOException }
+        .ignoreExceptions(InterruptedException::class.java)
+        .recordResult { it is HttpResponse<*> && it.statusCode() >= 500 }.build()
+    internal val lookupCircuit = CircuitBreaker.of("toss-lookup", circuitConfig)
+    internal val transactionsCircuit = CircuitBreaker.of("toss-transactions", circuitConfig)
     override fun confirm(key: String, order: String, amount: Int, idempotency: UUID) = payment(
         call("POST","/v1/payments/confirm",false,idempotency,mapOf("paymentKey" to key,"orderId" to order,"amount" to amount)))
-    override fun lookup(order: String, billing: Boolean) = payment(call("GET","/v1/payments/orders/${encode(order)}",billing))
+    override fun lookup(order: String, billing: Boolean) = payment(call("GET","/v1/payments/orders/${encode(order)}",billing,circuit=lookupCircuit))
     override fun charge(billingKey: String, customer: String, order: String, amount: Int, name: String, idempotency: UUID) = payment(
         call("POST","/v1/billing/${encode(billingKey)}",true,idempotency,
             mapOf("customerKey" to customer,"orderId" to order,"amount" to amount,"orderName" to name)))
@@ -64,7 +78,7 @@ class TossClient(private val json: ObjectMapper,
         do {
             val query="startDate=${encode(from.toString()+"T00:00:00")}&endDate=${encode(to.toString()+"T23:59:59")}&limit=100"+
                 (cursor?.let { "&startingAfter=${encode(it)}" } ?: "")
-            val (status,n)=call("GET","/v1/transactions?$query",billing,timeout=Duration.ofSeconds(60))
+            val (status,n)=call("GET","/v1/transactions?$query",billing,timeout=Duration.ofSeconds(60),circuit=transactionsCircuit)
             if(status!=200 || n?.isArray!=true) return null
             val page=try { n.map { row ->
                 require(row.path("amount").isIntegralNumber && row.path("amount").canConvertToInt())
@@ -77,7 +91,7 @@ class TossClient(private val json: ObjectMapper,
             if(!cursors.add(cursor)) return null
         } while(true)
     }
-    private fun call(method: String, path: String, billing: Boolean, key: UUID? = null, body: Any? = null,timeout: Duration=Duration.ofSeconds(6)): Pair<Int,JsonNode?> {
+    private fun call(method: String, path: String, billing: Boolean, key: UUID? = null, body: Any? = null,timeout: Duration=Duration.ofSeconds(6),circuit: CircuitBreaker?=null): Pair<Int,JsonNode?> {
         check(!TransactionSynchronizationManager.isActualTransactionActive()) { "PG calls require no transaction" }
         val credential = if(billing) billingSecret else secret
         if(!(credential.startsWith("test_sk_") || (!billing && credential.startsWith("test_gsk_")))) unavailable()
@@ -86,8 +100,10 @@ class TossClient(private val json: ObjectMapper,
                 .timeout(timeout).header("Authorization","Basic " + Base64.getEncoder().encodeToString("$credential:".toByteArray()))
                 .header("Content-Type","application/json")
             key?.let { request.header("Idempotency-Key",it.toString()) }
-            val response = http.send(request.method(method,body?.let { HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(it)) }
-                ?: HttpRequest.BodyPublishers.noBody()).build(),HttpResponse.BodyHandlers.ofByteArray())
+            val built = request.method(method,body?.let { HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(it)) }
+                ?: HttpRequest.BodyPublishers.noBody()).build()
+            val response = if (circuit == null) http.send(built,HttpResponse.BodyHandlers.ofByteArray())
+                else circuit.executeSupplier { http.send(built,HttpResponse.BodyHandlers.ofByteArray()) }
             response.statusCode() to json.readTree(response.body())
         } catch (_: InterruptedException) { Thread.currentThread().interrupt(); 0 to null }
           catch (_: Exception) { 0 to null } // Do not log HTTP exceptions: billing key is in PG path.
