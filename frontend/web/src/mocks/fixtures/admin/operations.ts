@@ -38,6 +38,7 @@ export const missions: AdminMission[] = [
     currentVersion: 1,
     currentRubricVersion: 1,
     publishedVersion: null,
+          publishedRubricVersion: null,
     versions: [
       {
         version: 1,
@@ -49,7 +50,8 @@ export const missions: AdminMission[] = [
         inputType: 'NARRATIVE',
         question: '잎의 모양을 비교하고 다른 점을 설명해 주세요.',
         guide: '눈으로 확인한 것을 적어 주세요.',
-        scene: 'science',
+        answerUnit: null,
+        inputTemplate: [],
         sceneUri: '',
         staticSceneUri: '',
         achievementStandards: ['자체 시연 성취기준'],

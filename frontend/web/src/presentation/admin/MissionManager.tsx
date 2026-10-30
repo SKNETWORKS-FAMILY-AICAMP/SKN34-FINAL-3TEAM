@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router'
 import type { AdminMission, MissionVersion, Rubric } from '../../domain/admin/operations.ts'
+import { missingFieldLabel, missingMissionFields } from '../../domain/admin/operations.ts'
+import { AnswerKeyFields } from './AnswerKeyFields.tsx'
+import { ApiError } from '../../data/apiClient.ts'
 import { missionLabels } from '../../domain/admin/operations.ts'
 import { inputLabels, thinkingLabels, blankAnswer } from '../../domain/classroom.ts'
 import type { AnswerContent } from '../../domain/classroom.ts'
@@ -16,6 +19,7 @@ export function MissionManager() {
       status: params.get('status') ?? '',
       grade: params.get('grade') ?? '',
       thinkingType: params.get('thinkingType') ?? '',
+      page: params.get('page') ?? '0',
     },
     q = useAdminQuery(['missions', filters], (signal) => adminApi.missions(filters, signal)),
     [id, setId] = useState<string | null>(null),
@@ -23,6 +27,7 @@ export function MissionManager() {
   function filter(key: string, value: string) {
     const next = new URLSearchParams(params)
     next.set(key, value)
+    if (key !== 'page') next.set('page', '0')
     setParams(next)
   }
   return (
@@ -98,6 +103,13 @@ export function MissionManager() {
           </div>
         </>
       )}
+      {q.data && !q.error && <div className="ws-actions" aria-label="미션 목록 페이지">
+        <button className="cj-secondary" disabled={q.data.page <= 0}
+          onClick={() => filter('page', String(q.data!.page - 1))}>이전 페이지</button>
+        <span>{q.data.page + 1}쪽 · 총 {q.data.totalElements}개</span>
+        <button className="cj-secondary" disabled={(q.data.page + 1) * q.data.size >= q.data.totalElements}
+          onClick={() => filter('page', String(q.data!.page + 1))}>다음 페이지</button>
+      </div>}
       {creating && (
         <Modal title="새 미션 작성" onClose={() => setCreating(false)}>
           <MissionForm
@@ -121,7 +133,8 @@ const defaults: Omit<MissionVersion, 'version' | 'createdAt'> = {
   inputType: 'NARRATIVE',
   question: '',
   guide: '',
-  scene: 'science',
+  answerUnit: null,
+  inputTemplate: [],
   sceneUri: '',
   staticSceneUri: '',
   achievementStandards: [],
@@ -133,7 +146,7 @@ function MissionForm({
   mission?: AdminMission
   onSaved: (m: AdminMission) => void
 }) {
-  const [form, setForm] = useState(mission?.versions.at(-1) ?? defaults),
+  const [form, setForm] = useState(mission?.versions.find((v) => v.version === mission.currentVersion) ?? defaults),
     [demoOnly, setDemoOnly] = useState(mission?.demoOnly ?? true),
     [choices, setChoices] = useState(
       form.choices?.map((c) => `${c.id}|${c.label}`).join('\n') ?? '',
@@ -234,18 +247,6 @@ function MissionForm({
         </select>
       </label>
       <label>
-        장면
-        <select
-          aria-label="장면 종류"
-          value={form.scene}
-          onChange={(e) => value('scene', e.target.value as MissionVersion['scene'])}
-        >
-          {['math', 'science', 'english', 'korean'].map((v) => (
-            <option key={v}>{v}</option>
-          ))}
-        </select>
-      </label>
-      <label>
         질문
         <textarea
           aria-label="미션 질문"
@@ -257,10 +258,19 @@ function MissionForm({
         안내
         <textarea
           aria-label="미션 안내"
-          value={form.guide}
+          value={form.guide ?? ''}
           onChange={(e) => value('guide', e.target.value)}
         />
       </label>
+      {form.inputType === 'SOLUTION_STEPS' && <label>
+        답 단위 (예: m²)
+        <input aria-label="답 단위" value={form.answerUnit ?? ''} onChange={(e) => value('answerUnit', e.target.value)} />
+      </label>}
+      {['SOLUTION_STEPS', 'ESSAY'].includes(form.inputType) && <label>
+        입력 틀 항목 이름 (줄별 입력)
+        <textarea aria-label="입력 틀" value={(form.inputTemplate ?? []).join('\n')}
+          onChange={(e) => value('inputTemplate', e.target.value.split('\n'))} />
+      </label>}
       <label>
         성취기준 (줄별 입력)
         <textarea
@@ -273,7 +283,7 @@ function MissionForm({
         애니메이션 장면 URI
         <input
           aria-label="장면 URI"
-          value={form.sceneUri}
+          value={form.sceneUri ?? ''}
           onChange={(e) => value('sceneUri', e.target.value)}
         />
       </label>
@@ -281,7 +291,7 @@ function MissionForm({
         정적 장면 URI
         <input
           aria-label="정적 장면 URI"
-          value={form.staticSceneUri}
+          value={form.staticSceneUri ?? ''}
           onChange={(e) => value('staticSceneUri', e.target.value)}
         />
       </label>
@@ -336,6 +346,7 @@ function MissionDetail({ id, onClose }: { id: string; onClose: () => void }) {
       adminApi.action(id, v.action, v.data),
     )
   const m = q.error ? undefined : q.data
+  const missing = m ? missingMissionFields(m) : []
   function run(a: string, data: unknown = {}) {
     void action
       .mutateAsync({ action: a, data })
@@ -354,9 +365,12 @@ function MissionDetail({ id, onClose }: { id: string; onClose: () => void }) {
       {m && (
         <>
           <p>
-            {missionLabels[m.status]} · 미션 v{m.currentVersion} · 기준표 v
-            {m.currentRubricVersion ?? '미등록'} · 게시본 v{m.publishedVersion ?? '없음'}
+            {missionLabels[m.status]} · 편집본 v{m.currentVersion} · 기준표 v
+            {m.currentRubricVersion ?? '미등록'} · 학생 공개본 {m.publishedVersion ? `v${m.publishedVersion} / 기준표 v${m.publishedRubricVersion ?? '미등록'}` : '없음'}
           </p>
+          {m.status === 'PUBLISHED' && <p role="note">
+            학생에게는 미션 v{m.publishedVersion}·기준표 v{m.publishedRubricVersion ?? '미등록'} 공개본이 제공됩니다. 편집본·기준표 수정은 검토 요청 → 검토 → 게시 후 새 시도부터 적용됩니다.
+          </p>}
           <details>
             <summary>미션·기준표 버전 이력</summary>
             {m.versions.map((v) => (
@@ -383,7 +397,7 @@ function MissionDetail({ id, onClose }: { id: string; onClose: () => void }) {
             </section>
             <section>
               <h3>판정 기준표</h3>
-              <RubricForm key={`r${m.currentRubricVersion}`} mission={m} />
+              <RubricForm key={`v${m.currentVersion}-r${m.currentRubricVersion}`} mission={m} onSaved={() => setNotice('새 기준표 버전을 저장했습니다.')} />
             </section>
           </div>
           <div className="ws-actions">
@@ -402,7 +416,7 @@ function MissionDetail({ id, onClose }: { id: string; onClose: () => void }) {
             >
               검토 요청
             </button>
-            {m.status === 'REVIEW_REQUIRED' && (
+            {(m.status === 'REVIEW_REQUIRED' || m.status === 'PUBLISHED') && (
               <>
                 <button
                   className="cj-secondary"
@@ -451,6 +465,9 @@ function MissionDetail({ id, onClose }: { id: string; onClose: () => void }) {
               </button>
             )}
           </div>
+          {missing.length > 0 && <div><h3>게시 전 확인할 항목</h3>
+            <ul aria-label="게시 전 확인">{missing.map((code) => <li key={code}>{missingFieldLabel(code)}</li>)}</ul>
+          </div>}
           <p>
             검토·게시는 CONTENT 권한 1인도 가능합니다. 제공 중단 후에도 진행 중 학습은 시작 당시
             버전으로 계속됩니다.
@@ -463,7 +480,8 @@ function MissionDetail({ id, onClose }: { id: string; onClose: () => void }) {
         </>
       )}
       <p role="status">{notice}</p>
-      <ErrorNotice error={action.error} />
+      <ErrorNotice error={action.error instanceof ApiError && action.error.problem.missingFields ?
+        new ApiError({ ...action.error.problem, missingFields: action.error.problem.missingFields.map(missingFieldLabel) }) : action.error} />
       {preview && (
         <Modal title="학생 화면 미리보기" onClose={() => setPreview(false)}>
           <MissionPreview id={id} />
@@ -472,18 +490,18 @@ function MissionDetail({ id, onClose }: { id: string; onClose: () => void }) {
     </section>
   )
 }
-function RubricForm({ mission }: { mission: AdminMission }) {
+function RubricForm({ mission, onSaved }: { mission: AdminMission; onSaved: () => void }) {
   const [r, setR] = useState<Omit<Rubric, 'version'>>(
-      mission.rubrics.at(-1) ?? {
+      mission.rubrics.find((r) => r.version === mission.currentRubricVersion) ?? {
         elements: [],
-        answerKey: '',
+        answerKey: null,
         exampleAnswer: '',
         forbiddenTerms: [],
         hints: [],
       },
     ),
-    save = useAdminMutation(() => adminApi.rubric(mission.missionId, r)),
-    [notice, setNotice] = useState('')
+    save = useAdminMutation(() => adminApi.rubric(mission.missionId, { ...r, answerKey: ['NARRATIVE', 'ESSAY'].includes(mission.versions.find((v) => v.version === mission.currentVersion)!.inputType) ? null : r.answerKey }))
+  const version = mission.versions.find((v) => v.version === mission.currentVersion)!
   return (
     <form
       className="ws-form"
@@ -491,12 +509,17 @@ function RubricForm({ mission }: { mission: AdminMission }) {
         e.preventDefault()
         void save
           .mutateAsync(undefined)
-          .then(() => setNotice('새 기준표 버전을 저장했습니다.'))
+          .then(onSaved)
           .catch(() => {})
       }}
     >
       {r.elements.map((element, i) => (
         <section className="ws-card ws-form" key={i}>
+          <label>
+            요소 {i + 1} 코드
+            <input aria-label={`요소 ${i + 1} 코드`} value={element.code}
+              onChange={(e) => setR({ ...r, elements: r.elements.map((v, j) => i === j ? { ...v, code: e.target.value } : v) })} />
+          </label>
           <label>
             요소 {i + 1} 이름
             <input
@@ -517,7 +540,7 @@ function RubricForm({ mission }: { mission: AdminMission }) {
             설명
             <input
               aria-label={`요소 ${i + 1} 설명`}
-              value={element.description}
+              value={element.description ?? ''}
               onChange={(e) =>
                 setR({
                   ...r,
@@ -611,14 +634,8 @@ function RubricForm({ mission }: { mission: AdminMission }) {
       >
         기준표 요소 추가
       </button>
-      <label>
-        정답 키
-        <textarea
-          aria-label="정답 키"
-          value={r.answerKey ?? ''}
-          onChange={(e) => setR({ ...r, answerKey: e.target.value })}
-        />
-      </label>
+      <p>모든 입력 방식에 기준표 요소가 필요합니다. 풀이 단계는 FINAL_ANSWER 외 풀이 요소를 포함하며, FINAL_ANSWER 코드는 풀이 단계에서만 사용합니다.</p>
+      <AnswerKeyFields version={version} value={r.answerKey} onChange={(answerKey) => setR({ ...r, answerKey })} />
       <label>
         예시 답
         <textarea
@@ -648,7 +665,6 @@ function RubricForm({ mission }: { mission: AdminMission }) {
       <button className="cj-primary" disabled={save.isPending}>
         새 기준표 버전 저장
       </button>
-      <p role="status">{notice}</p>
       <ErrorNotice error={save.error} />
     </form>
   )

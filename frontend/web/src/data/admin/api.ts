@@ -54,10 +54,10 @@ export const adminApi = {
   ) =>
     apiFetch<AdminMission>(
       `/admin/missions${id ? `/${p(id)}` : ''}`,
-      json(data, id ? 'PATCH' : 'POST'),
+      json(missionWritePayload(data), id ? 'PATCH' : 'POST'),
     ),
   rubric: (id: string, data: Omit<Rubric, 'version'>) =>
-    apiFetch<AdminMission>(`/admin/missions/${p(id)}/rubric`, json(data, 'PUT')),
+    apiFetch<AdminMission>(`/admin/missions/${p(id)}/rubric`, json({ elements: data.elements, answerKey: data.answerKey ?? null, exampleAnswer: data.exampleAnswer, forbiddenTerms: data.forbiddenTerms, hints: data.hints }, 'PUT')),
   preview: (id: string, signal?: AbortSignal) =>
     apiFetch<{ mission: Mission; missionVersion: number; rubricVersion: number | null }>(
       `/admin/missions/${p(id)}/preview`,
@@ -89,4 +89,16 @@ export const adminApi = {
     apiFetch<ErrorReport>(`/admin/error-reports/${p(id)}`, json({ status, reviewReason }, 'PATCH')),
   correction: (id: string, reason: string, corrected: string, key: string) =>
     apiFetch<ErrorReport>(`/admin/error-reports/${p(id)}/corrections`, { ...json({ reason, corrected }), headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key } }),
+}
+
+export function missionWritePayload(data: Omit<MissionVersion, 'version' | 'createdAt'> & { demoOnly: boolean }) {
+  return {
+    title: data.title, subject: data.subject, gradeMin: data.gradeMin, gradeMax: data.gradeMax,
+    thinkingType: data.thinkingType, inputType: data.inputType, question: data.question, guide: data.guide,
+    sceneUri: data.sceneUri, staticSceneUri: data.staticSceneUri,
+    achievementStandards: data.achievementStandards, choices: data.choices ?? [], categories: data.categories ?? [],
+    answerUnit: data.inputType === 'SOLUTION_STEPS' ? data.answerUnit?.trim() || null : null,
+    inputTemplate: ['SOLUTION_STEPS', 'ESSAY'].includes(data.inputType) ? data.inputTemplate ?? [] : [],
+    demoOnly: data.demoOnly,
+  }
 }

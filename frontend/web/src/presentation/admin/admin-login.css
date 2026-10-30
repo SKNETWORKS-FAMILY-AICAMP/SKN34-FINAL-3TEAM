@@ -1,0 +1,28 @@
+body:has(.admin-login-page){margin:0;background:#fff}
+.admin-login-page{min-height:100vh;background:#fff;color:#202020;font:14px/1.65 Arial,'Noto Sans KR',sans-serif}
+.admin-login-page *{box-sizing:border-box}
+.admin-login-page header{height:64px;padding:0 32px;border-bottom:1px solid #e5e5e5;display:flex;align-items:center}
+.admin-login-brand{font-size:20px;font-weight:700;letter-spacing:-.04em;text-decoration:none;color:inherit}
+.admin-login-brand .admin-login-context{font-size:13px;font-weight:400;border-left:1px solid #ddd;padding-left:12px;letter-spacing:0;color:#626262}
+.admin-login-page main{width:min(100% - 40px,400px);margin:76px auto 40px}
+.admin-login-heading>p:first-child{font-size:12px;letter-spacing:.02em;margin:0 0 8px}
+.admin-login-page h1{font-size:28px;letter-spacing:-.04em;line-height:1.4;margin:0 0 14px}
+.admin-login-heading>p:last-child{margin:0 0 28px;color:#626262}
+.admin-login-page form{display:grid;gap:18px}
+.admin-login-page label{display:grid;gap:7px;font-weight:600}
+.admin-login-page input{width:100%;min-height:46px;padding:10px 12px;border:1px solid #ccc;border-radius:4px;font:inherit;color:inherit;background:#fff}
+.admin-login-page button,.admin-login-submit{display:flex;justify-content:center;align-items:center;min-height:46px;width:100%;padding:10px 14px;font:inherit;font-weight:600;background:#252525;color:#fff;border:1px solid #252525;border-radius:4px;cursor:pointer;text-decoration:none}
+.admin-login-page button:disabled{background:#777;cursor:wait}
+.admin-login-page :focus-visible{outline:2px solid #222;outline-offset:3px}
+.admin-login-page .admin-login-demo{margin:0;padding:10px 12px;border:1px solid #e4e4e4;background:#fafafa;font-size:12px;color:#555}
+.admin-login-page details{font-size:13px;color:#555}
+.admin-login-page summary{cursor:pointer;min-height:32px}
+.admin-login-page ul{padding-left:20px;margin:8px 0}
+.admin-login-page details p{margin:8px 0 0}
+.admin-login-page footer{border-top:1px solid #e5e5e5;margin-top:28px;padding-top:16px}
+.admin-login-page footer a{display:inline-flex;align-items:center;min-height:44px;color:#444;text-underline-offset:4px}
+.admin-login-oauth>p{font-size:13px;color:#626262}
+.admin-login-page [role=alert]{font-size:14px;overflow-wrap:anywhere}
+@media(max-width:600px){.admin-login-page header{padding:0 20px}.admin-login-page main{margin-top:40px}}
+
+.admin-login-brand{display:flex;align-items:center;gap:12px}.admin-login-brand>.app-brand{--brand-width:160px}
