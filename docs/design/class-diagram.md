@@ -1846,8 +1846,11 @@ classDiagram
   class OutboxRepository {
     <<repository>>
     +add(session, envelope)
-    +next_unpublished(session) PendingEvent
+    +claim_next(engine) OutboxClaim
     +mark_published(session, event_id)
+    +record_failure(session, event_id, error_code)
+    +quarantined(session, limit)
+    +requeue(session, event_id) bool
   }
   class LearningClient {
     <<client>>
