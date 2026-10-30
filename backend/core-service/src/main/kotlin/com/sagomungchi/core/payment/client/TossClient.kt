@@ -45,11 +45,12 @@ interface TossGateway {
 
 @Component
 class TossClient internal constructor(private val json: ObjectMapper, private val secret: String,
-    private val billingSecret: String, private val http: HttpClient): TossGateway {
+    private val billingSecret: String, private val http: HttpClient, private val widgetSecret: String = ""): TossGateway {
     @Autowired constructor(json: ObjectMapper,
         @Value("\${app.payment.toss-secret:}") secret: String,
-        @Value("\${app.payment.toss-billing-secret:}") billingSecret: String) :
-        this(json, secret, billingSecret, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build())
+        @Value("\${app.payment.toss-billing-secret:}") billingSecret: String,
+        @Value("\${app.payment.toss-widget-secret:}") widgetSecret: String = "") :
+        this(json, secret, billingSecret, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build(), widgetSecret)
     private val circuitConfig = CircuitBreakerConfig.custom()
         .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
         .slidingWindowSize(20).minimumNumberOfCalls(20).failureRateThreshold(50f)
@@ -93,7 +94,7 @@ class TossClient internal constructor(private val json: ObjectMapper, private va
     }
     private fun call(method: String, path: String, billing: Boolean, key: UUID? = null, body: Any? = null,timeout: Duration=Duration.ofSeconds(6),circuit: CircuitBreaker?=null): Pair<Int,JsonNode?> {
         check(!TransactionSynchronizationManager.isActualTransactionActive()) { "PG calls require no transaction" }
-        val credential = if(billing) billingSecret else secret
+        val credential = if(billing) billingSecret else secret.ifBlank { widgetSecret }
         if(!(credential.startsWith("test_sk_") || (!billing && credential.startsWith("test_gsk_")))) unavailable()
         return try {
             val request = HttpRequest.newBuilder(URI.create("https://api.tosspayments.com$path"))

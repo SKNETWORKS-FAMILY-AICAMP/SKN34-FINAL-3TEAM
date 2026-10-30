@@ -65,6 +65,7 @@ app:
   payment:
     free-product-id: ${PAYMENT_FREE_PRODUCT_ID:}
     toss-secret: ${TOSS_TEST_SECRET_KEY:}
+    toss-widget-secret: ${TOSSPAYMENTS_SECRET_KEY:}
     toss-billing-secret: ${TOSS_TEST_BILLING_SECRET_KEY:}
     toss-mid: ${TOSS_TEST_MID:}
     toss-billing-mid: ${TOSS_TEST_BILLING_MID:}
