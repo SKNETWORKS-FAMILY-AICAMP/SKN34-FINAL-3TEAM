@@ -1284,7 +1284,7 @@ classDiagram
   }
   class SupportController {
     <<controller>>
-    +target(targetType, targetId) SupportTarget
+    +target(targetType, targetId) SupportTargetResponse
     +original(attemptId) SupportOriginal
   }
   class FeedbackFacade {

@@ -4,7 +4,6 @@ import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.security.UserContext
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.judgment.domain.SupportOriginal
-import com.sagomungchi.learning.judgment.domain.SupportTarget
 import com.sagomungchi.learning.judgment.domain.SupportTargetType
 import com.sagomungchi.learning.judgment.service.JudgmentService
 import org.springframework.http.HttpStatus
@@ -20,11 +19,11 @@ class SupportController(
 ) {
     /** 학생·보호자·관리자(관리자는 범위에 학생 1명). 대상 학생 범위 검사는 서비스 */
     @GetMapping("/internal/support/targets/{targetType}/{targetId}")
-    fun target(@PathVariable targetType: SupportTargetType, @PathVariable targetId: UUID): SupportTarget {
+    fun target(@PathVariable targetType: SupportTargetType, @PathVariable targetId: UUID): SupportTargetResponse {
         val context = UserContextHolder.current()
         if (context.role !in TARGET_ROLES || (context.role == ADMIN_ROLE && context.studentScope.size != 1)) forbidden()
         requireUserId(context)
-        return judgmentService.supportTarget(targetType, targetId)
+        return SupportTargetResponse.from(judgmentService.supportTarget(targetType, targetId))
     }
 
     /** 관리자이고 범위에 시도 학생 1명만 (정정과 같은 검사, SERVICE_OPS는 core) */
