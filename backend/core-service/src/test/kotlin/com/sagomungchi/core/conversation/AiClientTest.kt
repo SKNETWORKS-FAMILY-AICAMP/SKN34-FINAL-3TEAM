@@ -36,14 +36,14 @@ class AiClientTest {
         stub.respond = { exchange, _ -> exchange.responseBody.write(": ping\n\n".toByteArray()); exchange.responseBody.flush(); release.await(3, TimeUnit.SECONDS) }
         val ai = client(stub, 120, 1000)
         try { assertEquals("ANALYSIS_FIRST_RESPONSE_TIMEOUT", assertFailsWith<BusinessException> { ai.stream(emptyMap<String, String>(), AnalysisCall()) { _, _ -> } }.code) }
-        finally { release.countDown(); ai.close() }
+        finally { assertEquals(1, ai.circuit.metrics.numberOfFailedCalls); release.countDown(); ai.close() }
     }
     @Test fun `total deadline applies after first event and closes pending stream`() = AnalysisHttpStub().use { stub ->
         val release = CountDownLatch(1)
         stub.respond = { exchange, _ -> exchange.event("status", "{}" ); release.await(3, TimeUnit.SECONDS) }
         val ai = client(stub, 500, 150)
         try { assertEquals("ANALYSIS_TIMEOUT", assertFailsWith<BusinessException> { ai.stream(emptyMap<String, String>(), AnalysisCall()) { _, _ -> } }.code) }
-        finally { release.countDown(); ai.close() }
+        finally { assertEquals(1, ai.circuit.metrics.numberOfFailedCalls); release.countDown(); ai.close() }
     }
     @Test fun `explicit cancellation interrupts upstream before further events`() = AnalysisHttpStub().use { stub ->
         val entered = CountDownLatch(1); val release = CountDownLatch(1); val call = AnalysisCall()
@@ -55,6 +55,7 @@ class AiClientTest {
             }
             assertTrue(entered.await(2, TimeUnit.SECONDS)); call.cancel("STREAM_INTERRUPTED")
             assertEquals("STREAM_INTERRUPTED", task.get(2, TimeUnit.SECONDS))
+            assertEquals(0, ai.circuit.metrics.numberOfBufferedCalls)
         } finally { release.countDown(); executor.close(); ai.close() }
     }
     @Test fun `EOF malformed JSON unknown content and oversized frames fail explicitly`() = AnalysisHttpStub().use { stub ->
@@ -64,6 +65,59 @@ class AiClientTest {
                 stub.respond = { exchange, _ -> exchange.responseBody.write(payload.toByteArray()); exchange.responseBody.flush() }
                 assertEquals("AI_INVALID_RESPONSE", assertFailsWith<BusinessException> { ai.stream(emptyMap<String, String>(), AnalysisCall()) { _, _ -> } }.code)
             }
+        } finally { ai.close() }
+    }
+
+    @Test fun `failed streams open circuit without another HTTP request and half open recovers`() = AnalysisHttpStub().use { stub ->
+        val ai = client(stub)
+        try {
+            repeat(20) { assertFailsWith<BusinessException> { ai.stream(emptyMap<String, String>(), AnalysisCall()) { _, _ -> } } }
+            assertEquals(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.OPEN, ai.circuit.state)
+            assertEquals("AI_UNAVAILABLE", assertFailsWith<BusinessException> { ai.stream(emptyMap<String, String>(), AnalysisCall()) { _, _ -> } }.code)
+            assertEquals(20, stub.requests.size)
+            ai.circuit.transitionToHalfOpenState()
+            stub.respond = { e, _ -> e.event("done", "{}") }
+            ai.stream(emptyMap<String, String>(), AnalysisCall()) { _, _ -> }
+            assertEquals(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.CLOSED, ai.circuit.state)
+            assertNull(stub.requests.last().header("Upgrade"))
+        } finally { ai.close() }
+    }
+    @Test fun `HTTP 4xx are not circuit failures but 5xx are`() = AnalysisHttpStub().use { stub ->
+        val ai = client(stub)
+        try {
+            stub.status = 429
+            repeat(20) { assertFailsWith<BusinessException> { ai.stream(emptyMap<String, String>(), AnalysisCall()) { _, _ -> } } }
+            assertEquals(0, ai.circuit.metrics.numberOfFailedCalls)
+            stub.status = 503
+            assertFailsWith<BusinessException> { ai.stream(emptyMap<String, String>(), AnalysisCall()) { _, _ -> } }
+            assertEquals(1, ai.circuit.metrics.numberOfFailedCalls)
+        } finally { ai.close() }
+    }
+    @Test fun `error terminal fails circuit and normal terminal succeeds`() = AnalysisHttpStub().use { stub ->
+        val ai = client(stub)
+        try {
+            stub.respond = { e, _ -> e.event("error", "{}") }
+            ai.stream(emptyMap<String, String>(), AnalysisCall()) { _, _ -> }
+            assertEquals(1, ai.circuit.metrics.numberOfFailedCalls)
+            stub.respond = { e, _ -> e.event("result", "{}"); e.event("done", "{}") }
+            ai.stream(emptyMap<String, String>(), AnalysisCall()) { _, _ -> }
+            assertEquals(1, ai.circuit.metrics.numberOfSuccessfulCalls)
+        } finally { ai.close() }
+    }
+    @Test fun `local consumer failure releases half open permit`() = AnalysisHttpStub().use { stub ->
+        val ai = client(stub)
+        try {
+            ai.circuit.transitionToOpenState(); ai.circuit.transitionToHalfOpenState()
+            stub.respond = { e, _ -> e.event("status", "{}") }
+            assertFailsWith<BusinessException> {
+                ai.stream(emptyMap<String, String>(), AnalysisCall()) { _, _ ->
+                    throw BusinessException(org.springframework.http.HttpStatus.FORBIDDEN, "FORBIDDEN", "denied")
+                }
+            }
+            assertEquals(0, ai.circuit.metrics.numberOfBufferedCalls)
+            stub.respond = { e, _ -> e.event("clarification", "{}") }
+            ai.stream(emptyMap<String, String>(), AnalysisCall()) { _, _ -> }
+            assertEquals(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.CLOSED, ai.circuit.state)
         } finally { ai.close() }
     }
 }

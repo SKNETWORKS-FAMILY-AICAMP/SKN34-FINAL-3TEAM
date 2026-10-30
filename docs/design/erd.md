@@ -250,6 +250,9 @@ erDiagram
   conversation_message ||--o{ message_evidence : cites
   student ||--o{ report_job : target
   user_account |o--o{ report_job : "재생성 요청자"
+  report_job ||--o| report_job_retry : original
+  report_job ||--o| report_job_retry : retry
+  user_account ||--o{ report_job_retry : requests
   user_account ||--o{ report_view : views
   user_account |o--o{ job_execution : "재처리 요청자"
 
@@ -275,6 +278,8 @@ erDiagram
     varchar status "QUEUED|RUNNING|COMPLETED|FAILED"
     varchar source "NULL 허용 · LLM|LLM_RETRY|TEMPLATE"
     jsonb clarification "NULL 허용 · 범위 확인 질문·선택지"
+    jsonb fallback "NULL 허용 · 대체 사유와 초안 검증 결과"
+    jsonb notice "NULL 허용 · 기록 부족/지원 외 정상 안내"
     jsonb metrics "NULL 허용 · Metric[]"
     jsonb verification "NULL 허용 · numbersMatched, quotesMatched"
     int record_count "NULL 허용"
@@ -290,8 +295,9 @@ erDiagram
     uuid id PK
     uuid message_id FK
     uuid attempt_id "learning 논리 참조"
-    uuid answer_id "learning 논리 참조"
-    int answer_version
+    uuid answer_id "NULL 허용 · ANSWER의 learning 논리 참조"
+    int answer_version "NULL 허용 · ANSWER 필수"
+    varchar kind "ANSWER|REFLECTION"
   }
   report_job {
     uuid id PK "= report.generate job_id"
@@ -308,6 +314,24 @@ erDiagram
     timestamptz created_at
     timestamptz started_at "NULL 허용"
     timestamptz completed_at "NULL 허용"
+  }
+  report_job_retry {
+    uuid original_job_id PK,FK "원래 FAILED 작업, 원작업당 재처리 1개"
+    uuid retry_job_id FK,UK "새 ADMIN_RETRY 작업"
+    uuid requested_by FK
+    uuid idempotency_key "수행자와 복합 UNIQUE"
+    timestamptz accepted_at
+  }
+  conversation_job_retry {
+    uuid id PK
+    uuid message_id FK "삭제 시 CASCADE"
+    int generation
+    uuid requested_by FK
+    uuid idempotency_key
+    varchar status "QUEUED|RUNNING|COMPLETED|FAILED"
+    timestamptz accepted_at
+    timestamptz started_at "NULL 허용"
+    timestamptz finished_at "NULL 허용"
   }
   job_execution {
     uuid id PK
@@ -1061,6 +1085,7 @@ erDiagram
 | core | `conversation` | `(parent_user_id, student_id, created_at)` | 대화 목록 |
 | core | `report_job` | `(student_id, period_from)`, `(status, created_at)` | 리포트 목록, 관리자 작업 현황 |
 | core | `job_execution` | `(job_type, job_id)` | 작업별 처리 이력 |
+| core | `conversation_job_retry` | `(status, accepted_at)` | 관리자 대화 대기·중단 작업 조회 |
 | core | `report_view` | `(report_id)`, `(user_id, viewed_at)` | 열람률 집계 |
 | core | `notification` | `(user_id, read_at, created_at)` | 읽지 않은 알림 |
 | core | `payment` | `(status, updated_at)` | `CONFIRMING` 재조회, 결제 운영 조회 |
@@ -1121,6 +1146,10 @@ erDiagram
 
 기존 conversation/message/evidence 스키마를 사용하며 마이그레이션을 추가하지 않는다. retry_count를 실행 세대 fencing 값으로 사용하고 실패/취소는 UPDATE만 수행한다. clarification은 COMPLETED(답변 NULL), delta는 미저장이다. 한도는 분석 전용 Redis KST 일자 카운터다. [계약](../report/issue-41-analysis-conversations.md).
 
+### #47 REPORT 재처리 관계
+
+core report_job_retry의 original_job_id는 report_job(id) PK/FK, retry_job_id는 report_job(id) UNIQUE/FK다. requested_by는 user_account(id) FK이며 `(requested_by,idempotency_key)` UNIQUE를 둔다. original_job_id와 retry_job_id는 달라야 한다. 두 작업은 삭제하지 않고 원래 FAILED 상태와 기존 판을 보존한다. 재실패 작업을 다시 처리할 때는 이전 새 작업이 다음 관계의 original_job_id가 된다. 새 작업·관계·접수 감사·Outbox는 원자 저장한다.
+
 ### report_job_guard (#132, 신규 migration 20261029_03)
 
 | 컬럼 | 제약/의미 |
@@ -1134,3 +1163,10 @@ erDiagram
 리포트 행 생성 전 실패의 재실행 차단 기록이다. 원문·이름·파일 경로는 저장하지 않는다. DLQ 수동 재전달의 상한이 없으므로 자동 TTL 없이 유지한다. 학생 PROFILE/RECORDS 삭제 완료 트랜잭션에서 이 기록도 제거하며 영구 `report_deletion_guard(COMPLETED)`가 이후 모든 생성을 차단한다. 삭제 표식이 완료된 학생에 복구 요청이 와도 job guard를 새로 만들지 않는다. 삭제 표식 제거/학습 재개는 이번 범위 밖이다. migration downgrade는 재실행 장벽을 없애므로 운영 중 임의 실행하지 않는다.
 
 core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. job_execution은 기존 attempt_no=1 upsert로 종료를 기록하며 동일 복구/늦은 이벤트가 이력을 늘리거나 종료를 되돌리지 않는다.
+
+
+### #47 관리자 대화 재처리 요청 (V19)
+
+conversation_job_retry는 UK(message_id,generation), UK(requested_by,idempotency_key), generation>0, 상태와 시각의 일치 및 시각 순서 CHECK를 둔다. `ix_conversation_job_retry_pending`은 (status,accepted_at) 조회 인덱스다. message_id는 conversation_message FK ON DELETE CASCADE, requested_by는 user_account FK다. 기존 V17·V18은 수정하지 않는다. 질문·답변 원문을 저장하지 않는다.
+
+학생 삭제 시 진행 요청의 실패 이력·감사를 같은 삭제 트랜잭션에 기록하고 요청 행을 CASCADE로 정리한다. 삭제 후 작업 조회와 새 접수는 404다. 기존 공통 멱등 캐시에 남은 과거 202는 재전달될 수 있으나 재실행하지 않는다. 요청 행 삭제 이후 영구 재접수 응답 복원은 보장하지 않는다. 요청 감사는 접수 시, job_execution은 실제 실행 선점 시 기록한다. Redis quota는 요청 ID 원자 표식으로 중복 차감을 방지하며 DB와 분산 원자 트랜잭션이라고 간주하지 않는다.

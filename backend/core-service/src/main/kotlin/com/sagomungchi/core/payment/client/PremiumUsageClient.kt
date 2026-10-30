@@ -2,9 +2,10 @@ package com.sagomungchi.core.payment.client
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core._common.config.InternalRestClientFactory
+import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.security.UserContext
 import com.sagomungchi.core._common.security.UserContextHolder
-import com.sagomungchi.core.payment.service.PaymentTransactions.Companion.unavailable
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Duration
@@ -30,4 +31,6 @@ class PremiumUsageClient(factory: InternalRestClientFactory, private val json: O
         } catch (_: Exception) { unavailable("REFUND_USAGE_UNAVAILABLE") }
         finally { if(previous==null) UserContextHolder.clear() else UserContextHolder.set(previous) }
     }
+    // PaymentTransactions.unavailable과 같은 code·문구 (Infrastructure → Application 참조 없이, #168)
+    private fun unavailable(code: String): Nothing=throw BusinessException(HttpStatus.SERVICE_UNAVAILABLE,code,"거래 정보를 확인하지 못했습니다. 같은 거래로 상태를 조회해 주세요.")
 }

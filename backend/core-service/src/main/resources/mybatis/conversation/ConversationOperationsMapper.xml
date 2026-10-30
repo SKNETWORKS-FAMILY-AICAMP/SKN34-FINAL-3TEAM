@@ -6,9 +6,11 @@
   <arg column="retry_count" javaType="_int"/><arg column="failure_reason" javaType="java.lang.String"/>
   <arg column="created_at" javaType="java.time.Instant"/>
  </constructor></resultMap>
+ <sql id="jobs">(SELECT m.id,CASE WHEN m.status='RUNNING' AND r.status='QUEUED' THEN 'QUEUED' ELSE m.status END AS status,
+ m.retry_count,m.failure_code,m.created_at FROM conversation_message m LEFT JOIN conversation_job_retry r ON r.message_id=m.id AND r.generation=m.retry_count) jobs</sql>
  <sql id="period">created_at &gt;= #{start} AND created_at &lt; #{end} <if test="status != null">AND status=#{status}</if></sql>
- <select id="list" resultMap="job">SELECT id,status,retry_count,failure_code AS failure_reason,created_at FROM conversation_message
+ <select id="list" resultMap="job">SELECT id,status,retry_count,failure_code AS failure_reason,created_at FROM <include refid="jobs"/>
   WHERE <include refid="period"/> ORDER BY created_at DESC,id DESC LIMIT #{limit}</select>
- <select id="count" resultType="long">SELECT count(*) FROM conversation_message WHERE <include refid="period"/></select>
- <select id="find" resultMap="job" useCache="false" flushCache="true">SELECT id,status,retry_count,failure_code AS failure_reason,created_at FROM conversation_message WHERE id=#{id}</select>
+ <select id="count" resultType="long">SELECT count(*) FROM <include refid="jobs"/> WHERE <include refid="period"/></select>
+ <select id="find" resultMap="job" useCache="false" flushCache="true">SELECT id,status,retry_count,failure_code AS failure_reason,created_at FROM <include refid="jobs"/> WHERE id=#{id}</select>
 </mapper>

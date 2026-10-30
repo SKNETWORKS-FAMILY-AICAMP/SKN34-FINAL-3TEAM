@@ -114,8 +114,8 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
     private fun result(scope: JsonNode, verification: Boolean = true, source: String = "LLM"): String = json.writeValueAsString(mapOf(
         "messageId" to "forged-ai-id", "answer" to "확정 합성 답변", "scope" to scope,
         "metrics" to emptyList<Any>(), "evidence" to listOf(mapOf("attemptId" to attempt, "answerId" to answer, "answerVersion" to 1, "quote" to "합성 근거", "available" to true)),
-        "verification" to mapOf("numbersMatched" to verification, "quotesMatched" to verification), "recordCount" to 5,
-        "source" to source, "fallback" to if (source == "TEMPLATE") mapOf("reason" to "AI_UNAVAILABLE") else null))
+        "verification" to mapOf("numbersMatched" to verification, "quotesMatched" to verification, "contentAllowed" to true), "recordCount" to 5,
+        "source" to source, "fallback" to if (source == "TEMPLATE") mapOf("reason" to "AI_UNAVAILABLE", "draftVerification" to null) else null))
     private fun evidence(available: Boolean = true) = json.writeValueAsString(mapOf("items" to listOf(mapOf(
         "answerId" to answer, "attemptId" to attempt, "answerVersion" to 1, "quote" to if (available) "합성 근거" else null,
         "missionTitle" to "합성 미션", "submittedAt" to Instant.now().toString(), "available" to available))))
@@ -129,6 +129,8 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
         assertEquals(1, json.readTree(call("/conversations?childId=$student").body()).path("items").size())
         val response = message(id)
         assertEquals(200, response.statusCode()); assertEquals(listOf("status", "status", "delta", "result", "done"), events(response.body()), response.body())
+        assertNull(ai.requests.last().header("Upgrade"))
+        assertNull(ai.requests.last().header("HTTP2-Settings"))
         val saved = rows(id).single()
         assertEquals("COMPLETED", saved.status); assertEquals("확정 합성 답변", saved.answer)
         assertFalse(saved.answer!!.contains("임시")); assertTrue(response.body().contains(saved.id.toString())); assertFalse(response.body().contains("forged-ai-id"))
@@ -374,4 +376,103 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
         assertEquals(200, response.statusCode()); assertEquals(5, json.readTree(response.body()).path("items").size())
         assertEquals(403, call("/agent/example-questions?childId=${UUID.randomUUID()}").statusCode())
     }
+    @Test fun `five final response categories preserve verification draft failure and notice on reload`() {
+        val modes = listOf("LLM","VERIFICATION_FAILED","AI_UNAVAILABLE","NO_RECORD","UNSUPPORTED")
+        for(mode in modes) {
+            val id=create()
+            ai.respond = { exchange, request ->
+                exchange.event("status", """{"state":"RUNNING","message":"조회"}""")
+                val value=json.readTree(result(json.readTree(request.body).path("scope"))) as com.fasterxml.jackson.databind.node.ObjectNode
+                if(mode!="LLM") value.put("source","TEMPLATE")
+                if(mode in setOf("VERIFICATION_FAILED","AI_UNAVAILABLE")) {
+                    value.set<JsonNode>("fallback",json.valueToTree(mapOf("reason" to mode,"draftVerification" to
+                        if(mode=="VERIFICATION_FAILED") mapOf("numbersMatched" to false,"quotesMatched" to true,"contentAllowed" to true) else null)))
+                } else if(mode!="LLM") {
+                    value.set<JsonNode>("notice",json.valueToTree(mapOf("reason" to mode)))
+                    value.set<JsonNode>("evidence",json.createArrayNode())
+                    if(mode=="NO_RECORD") value.put("recordCount",0)
+                }
+                exchange.event("delta","""{"text":"최종 답변이 아닌 초안"}""")
+                exchange.event("result",value.toString());exchange.event("done","{}")
+            }
+            val response=message(id)
+            assertTrue("result" in events(response.body()),response.body())
+            val saved=rows(id).single();assertEquals("COMPLETED",saved.status)
+            val detail=json.readTree(call("/conversations/$id").body()).path("messages")[0]
+            assertTrue(detail.path("verification").path("contentAllowed").asBoolean())
+            when(mode) {
+                "VERIFICATION_FAILED" -> assertFalse(detail.path("fallback").path("draftVerification").path("numbersMatched").asBoolean())
+                "AI_UNAVAILABLE" -> assertEquals(mode,detail.path("fallback").path("reason").asText())
+                "NO_RECORD","UNSUPPORTED" -> { assertEquals(mode,detail.path("notice").path("reason").asText());assertTrue(detail.path("fallback").isNull) }
+            }
+        }
+    }
+    @Test fun `contradictory source metadata and forged quotes are rejected before persistence`() {
+        for(mode in listOf("BOTH","DRAFT_PASSED","LLM_NOTICE","UNKNOWN_NOTICE","FORGED_QUOTE")) {
+            val id=create()
+            ai.respond = { exchange, request ->
+                exchange.event("status","""{"state":"RUNNING","message":"조회"}""")
+                val value=json.readTree(result(json.readTree(request.body).path("scope"),source="TEMPLATE")) as com.fasterxml.jackson.databind.node.ObjectNode
+                when(mode) {
+                    "BOTH" -> value.set<JsonNode>("notice",json.valueToTree(mapOf("reason" to "UNSUPPORTED")))
+                    "DRAFT_PASSED" -> value.set<JsonNode>("fallback",json.valueToTree(mapOf("reason" to "VERIFICATION_FAILED","draftVerification" to mapOf("numbersMatched" to true,"quotesMatched" to true,"contentAllowed" to true))))
+                    "LLM_NOTICE" -> { value.put("source","LLM");value.putNull("fallback");value.set<JsonNode>("notice",json.valueToTree(mapOf("reason" to "UNSUPPORTED"))) }
+                    "UNKNOWN_NOTICE" -> { value.putNull("fallback");value.set<JsonNode>("notice",json.valueToTree(mapOf("reason" to "UNKNOWN"))) }
+                    "FORGED_QUOTE" -> (value.path("evidence")[0] as com.fasterxml.jackson.databind.node.ObjectNode).put("quote","기록에 없는 인용")
+                }
+                exchange.event("result",value.toString());exchange.event("done","{}")
+            }
+            val response=message(id);assertTrue("error" in events(response.body()),mode);assertFalse("result" in events(response.body()))
+            assertEquals("FAILED",rows(id).single().status);assertNull(rows(id).single().answer)
+        }
+    }
+    @Test fun `reflection references are checked against learning and remain typed after reload and deletion`() {
+        val id=create();val at=Instant.now();val available=java.util.concurrent.atomic.AtomicBoolean(true)
+        val suppliedAt=java.util.concurrent.atomic.AtomicReference(at)
+        val period=mapOf("from" to today.minusDays(6).toString(),"to" to today.toString())
+        val record=mapOf("attemptId" to attempt,"studentId" to student,"mission" to mapOf("title" to "합성 미션"),
+            "status" to "COMPLETED","answers" to emptyList<Any>(),
+            "reflection" to mapOf("difficulty" to "NORMAL","text" to "돌아보기 합성 원문","createdAt" to at.toString()))
+        learning.respond = { request ->
+            if(request.target.contains("/attempts/$attempt")) {
+                if(available.get()) LearningHttpStub.Reply(body=json.writeValueAsString(record+mapOf("state" to "OK","period" to period)))
+                else LearningHttpStub.Reply(404,"""{"code":"NOT_FOUND"}""")
+            } else LearningHttpStub.Reply(body=json.writeValueAsString(mapOf("studentId" to student,"state" to "INSUFFICIENT_SAMPLE","period" to period,
+                "items" to listOf(record),"inclusionRule" to "P08","page" to 0,"size" to 100,"totalElements" to 1)))
+        }
+        ai.respond = { exchange, request ->
+            exchange.event("status","""{"state":"RUNNING","message":"조회"}""")
+            val value=json.readTree(result(json.readTree(request.body).path("scope"))) as com.fasterxml.jackson.databind.node.ObjectNode
+            value.put("answer","“돌아보기 합성”이라고 썼어요.")
+            value.set<JsonNode>("evidence",json.valueToTree(listOf(mapOf("kind" to "REFLECTION","attemptId" to attempt,"answerId" to null,
+                "answerVersion" to null,"quote" to "돌아보기 합성","submittedAt" to suppliedAt.get().toString(),"available" to true))))
+            exchange.event("result",value.toString());exchange.event("done","{}")
+        }
+        val response=message(id);assertTrue("result" in events(response.body()),response.body())
+        val savedMessage=rows(id).single();val ref=repository.evidence(savedMessage.id).single()
+        assertEquals("REFLECTION",ref.kind);assertNull(ref.answerId);assertNull(ref.answerVersion)
+        val proof=json.readTree(call("/conversations/$id/messages/${savedMessage.id}/evidence").body()).path("items")[0]
+        assertEquals("REFLECTION",proof.path("kind").asText());assertEquals("돌아보기 합성 원문",proof.path("quote").asText())
+        suppliedAt.set(at.plusSeconds(1))
+        assertTrue("error" in events(message(id,"시각이 다른 근거").body()))
+        assertEquals("FAILED",rows(id).last().status)
+        available.set(false)
+        val removed=json.readTree(call("/conversations/$id/messages/${savedMessage.id}/evidence").body()).path("items")[0]
+        assertFalse(removed.path("available").asBoolean());assertTrue(removed.path("quote").isNull)
+    }
+
+    @Test fun `evidence kind constraints retain legacy answers and reject inconsistent reflection references`() {
+        val id=create();assertTrue("result" in events(message(id).body()))
+        val saved=rows(id).single()
+        assertEquals("ANSWER",repository.evidence(saved.id).single().kind)
+        for(kind in listOf("REFLECTION","ANSWER","INVALID")) {
+            assertFailsWith<org.springframework.dao.DataIntegrityViolationException> {
+                tx.executeWithoutResult {
+                    jdbc.update("INSERT INTO message_evidence(id,message_id,attempt_id,answer_id,answer_version,kind) VALUES(?,?,?,?,?,?)",
+                        UUID.randomUUID(),saved.id,attempt,if(kind=="ANSWER") null else answer,if(kind=="ANSWER") null else 1,kind)
+                }
+            }
+        }
+    }
+
 }

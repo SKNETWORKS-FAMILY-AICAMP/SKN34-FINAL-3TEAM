@@ -338,7 +338,7 @@ class AccountManagementTest : PostgresRepositoryTest() {
    val conversation=UUID.randomUUID();val message=UUID.randomUUID()
    jdbc.update("INSERT INTO conversation(id,parent_user_id,student_id,period_from,period_to,created_at,updated_at) VALUES(?,?,?,CURRENT_DATE,CURRENT_DATE,now(),now())",conversation,p.identity.account.id,child)
    jdbc.update("INSERT INTO conversation_message(id,conversation_id,seq,question,scope_changed,status,retry_count,created_at) VALUES(?,?,1,'합성 질문',false,'COMPLETED',0,now())",message,conversation)
-   jdbc.update("INSERT INTO message_evidence(id,message_id,attempt_id,answer_id,answer_version) VALUES(?,?,?,?,1)",UUID.randomUUID(),message,UUID.randomUUID(),UUID.randomUUID())
+   jdbc.update("INSERT INTO message_evidence(id,message_id,attempt_id,answer_id,answer_version,kind) VALUES(?,?,?,?,1,'ANSWER')",UUID.randomUUID(),message,UUID.randomUUID(),UUID.randomUUID())
   }
   children.delete(p.identity,c,DeletionScope.RECORDS,grant(p.identity,ReauthPurpose.CHILD_DELETE,c,"RECORDS"))
   assertEquals(0,count("SELECT count(*) FROM conversation WHERE student_id=?",c))

@@ -1,6 +1,7 @@
 package com.sagomungchi.core.notification.messaging
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.sagomungchi.core.notification.config.NotificationRedisConfiguration
 import com.sagomungchi.core.notification.domain.NotificationStored
 import com.sagomungchi.core.notification.service.NotificationDeliveryService
 import org.slf4j.LoggerFactory

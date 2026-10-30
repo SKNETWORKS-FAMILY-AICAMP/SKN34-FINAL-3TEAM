@@ -68,6 +68,7 @@
 - [이슈 #47 관리자 운영](report/issue-47-admin-operations.md): 운영 현황·작업 재처리·감사 이력·큐 조회·관리자 미션 프록시
 - [이슈 #48 결제·구독](report/issue-48-payments.md): 토스페이먼츠 테스트 결제·정기 청구·환불과 실제 상품 권한 공급
 - [이슈 #119 학생 별명 조회](report/issue-119-student-profile.md): 리포트 생성용 core 내부 학생 별명 API
+- [이슈 #168 core 레이어 의존 정리](report/issue-168-core-layer-deps.md): domain 오류 종류·결제 응답 경계·JsonObject·역방향 의존 정리
 - [#56 리포트 worker 통합](report/report-worker-integration.md): 기본 worker 생성 파이프라인 연결과 완료 조건 검증
 - [프론트 요구사항 대조](report/frontend-requirements-20261029.md): 요구사항 정의서 기능 ID별 화면 대조·구현
 - [웹 develop 통합 PR](report/pr-web-develop-integration.md): 프론트 요구사항 보완과 develop 통합(#93·#97·#134)

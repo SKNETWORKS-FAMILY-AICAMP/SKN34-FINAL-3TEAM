@@ -54,6 +54,16 @@ class AdminMissionsContractTest(unittest.TestCase):
         for code in codes:
             self.assertRegex(code, '^' + pattern + '$')
 
+    def test_core_documents_verified_not_found_and_unsupported_api_separately(self):
+        public=yaml.safe_load((ROOT/'contracts/openapi/core-service.yaml').read_text(encoding='utf-8'))
+        for method,path in self.core_routes():
+            responses=public['paths'][path][method]['responses']
+            self.assertIn('NOT_FOUND',responses['404']['description'])
+            self.assertIn('정수 status 404',responses['404']['description'])
+            self.assertIn('application/problem+json',responses['404']['description'])
+            self.assertIn('ADMIN_MISSIONS_UNAVAILABLE',responses['503']['description'])
+            self.assertIn('405/501',responses['503']['description'])
+
 
 if __name__ == '__main__':
     unittest.main()

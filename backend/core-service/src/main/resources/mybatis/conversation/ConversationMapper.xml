@@ -30,13 +30,16 @@
 <arg column="retry_count" javaType="_int"/>
 <arg column="created_at" javaType="java.time.OffsetDateTime"/>
 <arg column="completed_at" javaType="java.time.OffsetDateTime"/>
+<arg column="fallback" javaType="java.lang.String"/>
+<arg column="notice" javaType="java.lang.String"/>
 </constructor></resultMap>
 <resultMap id="evidence" type="com.sagomungchi.core.conversation.domain.EvidenceRow"><constructor>
 <arg column="id" javaType="java.util.UUID"/>
 <arg column="message_id" javaType="java.util.UUID"/>
 <arg column="attempt_id" javaType="java.util.UUID"/>
 <arg column="answer_id" javaType="java.util.UUID"/>
-<arg column="answer_version" javaType="_int"/>
+<arg column="answer_version" javaType="java.lang.Integer"/>
+<arg column="kind" javaType="java.lang.String"/>
 </constructor></resultMap>
 
 <select id="find" resultMap="conversation" flushCache="true" useCache="false">SELECT * FROM conversation WHERE id=#{id}</select>
@@ -49,8 +52,8 @@
 <select id="message" resultMap="message" flushCache="true" useCache="false">SELECT * FROM conversation_message WHERE id=#{id}</select>
 <insert id="insertMessage">INSERT INTO conversation_message(id,conversation_id,seq,question,scope_student_id,scope_from,scope_to,scope_changed,status,retry_count,created_at) VALUES(#{id},#{conversationId},#{seq},#{question},#{scopeStudentId},#{scopeFrom},#{scopeTo},#{scopeChanged},'RUNNING',#{retryCount},#{createdAt})</insert>
 <update id="retry">UPDATE conversation_message SET status='RUNNING',retry_count=retry_count+1,failure_code=NULL,completed_at=NULL WHERE id=#{id} AND status='FAILED' AND retry_count=#{generation}</update>
-<update id="finish">UPDATE conversation_message SET status='COMPLETED',answer=#{row.answer},source=#{row.source},clarification=CAST(#{row.clarification,jdbcType=VARCHAR} AS jsonb),metrics=CAST(#{row.metrics,jdbcType=VARCHAR} AS jsonb),verification=CAST(#{row.verification,jdbcType=VARCHAR} AS jsonb),record_count=#{row.recordCount},failure_code=#{row.failureCode},completed_at=#{row.completedAt} WHERE id=#{row.id} AND status='RUNNING' AND retry_count=#{generation}</update>
+<update id="finish">UPDATE conversation_message SET status='COMPLETED',answer=#{row.answer},source=#{row.source},clarification=CAST(#{row.clarification,jdbcType=VARCHAR} AS jsonb),metrics=CAST(#{row.metrics,jdbcType=VARCHAR} AS jsonb),verification=CAST(#{row.verification,jdbcType=VARCHAR} AS jsonb),fallback=CAST(#{row.fallback,jdbcType=VARCHAR} AS jsonb),notice=CAST(#{row.notice,jdbcType=VARCHAR} AS jsonb),record_count=#{row.recordCount},failure_code=#{row.failureCode},completed_at=#{row.completedAt} WHERE id=#{row.id} AND status='RUNNING' AND retry_count=#{generation}</update>
 <update id="fail">UPDATE conversation_message SET status='FAILED',failure_code=#{code},completed_at=#{now} WHERE id=#{id} AND status='RUNNING' AND retry_count=#{generation}</update>
 <select id="evidence" resultMap="evidence" flushCache="true" useCache="false">SELECT * FROM message_evidence WHERE message_id=#{id} ORDER BY id</select>
-<insert id="insertEvidence">INSERT INTO message_evidence(id,message_id,attempt_id,answer_id,answer_version) VALUES(#{id},#{messageId},#{attemptId},#{answerId},#{answerVersion})</insert>
+<insert id="insertEvidence">INSERT INTO message_evidence(id,message_id,attempt_id,answer_id,answer_version,kind) VALUES(#{id},#{messageId},#{attemptId},#{answerId},#{answerVersion},#{kind})</insert>
 </mapper>
