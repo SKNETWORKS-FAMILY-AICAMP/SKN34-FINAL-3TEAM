@@ -19,7 +19,7 @@ data class OperationExecution(val executionId: UUID, val attemptNo: Int, val sta
     val triggeredBy: UUID?, val startedAt: Instant, val finishedAt: Instant?)
 data class OperationJob(val jobId: UUID, val type: OperationJobType, val status: String, val retryCount: Int,
     val failureReason: String?, val createdAt: Instant, val executions: List<OperationExecution>,
-    val retryable: Boolean, val retryUnavailableReason: String?)
+    val retryable: Boolean, val retryUnavailableReason: String?, val retryOfJobId: UUID? = null, val retryJobId: UUID? = null)
 data class OperationCount(val type: OperationJobType, val status: String, val count: Long)
 data class OperationAudit(val id: UUID, val actorUserId: UUID, val action: String, val targetType: String,
     val targetId: UUID?, val result: String, val createdAt: Instant)

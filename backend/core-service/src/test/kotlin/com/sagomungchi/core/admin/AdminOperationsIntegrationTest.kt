@@ -2,6 +2,7 @@ package com.sagomungchi.core.admin
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core.IntegrationTestSupport
 import com.sagomungchi.core.account.service.TokenService
+import com.sagomungchi.core.account.service.AuthService
 import com.sagomungchi.core.admin.service.OperationRetryService
 import com.sagomungchi.core.admin.service.OperationsService
 import com.sagomungchi.core.admin.domain.*
@@ -35,6 +36,7 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
     @Autowired lateinit var mvc: MockMvc
     @Autowired lateinit var jdbc: JdbcTemplate
     @Autowired lateinit var tokens: TokenService
+    @Autowired lateinit var auth: AuthService
     @Autowired lateinit var json: ObjectMapper
     @Autowired lateinit var retry: OperationRetryService
     @Autowired lateinit var operations: OperationsService
@@ -108,48 +110,48 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         mvc.post("/api/v1/admin/jobs/$id/retry") { header("Authorization","Bearer $access") }.andExpect { status { isBadRequest() } }
     }
     @Test fun `same key and different key simultaneous retry cannot run a second delivery`() {
-        val (actor,_)=token();val id=notification(actor);val key=UUID.randomUUID();val entered=CountDownLatch(1);val release=CountDownLatch(1)
+        val (actor,access)=token();val id=notification(actor);val key=UUID.randomUUID();val entered=CountDownLatch(1);val release=CountDownLatch(1)
         doAnswer { invocation ->
             assertFalse(TransactionSynchronizationManager.isActualTransactionActive())
             entered.countDown();assertTrue(release.await(10,TimeUnit.SECONDS));invocation.callRealMethod()
         }.`when`(publisher).publish(NotificationStored(id,actor))
         val pool=Executors.newFixedThreadPool(2)
         try {
-            val first=pool.submit<HttpExchangeResult> { retry.retry(id,key,actor) }
+            val first=pool.submit<HttpExchangeResult> { retry.retry(id,key,auth.authenticate(access)) }
             assertTrue(entered.await(10,TimeUnit.SECONDS))
-            val same=runCatching { retry.retry(id,key,actor) }.exceptionOrNull()
+            val same=runCatching { retry.retry(id,key,auth.authenticate(access)) }.exceptionOrNull()
             assertNotNull(same)
-            assertEquals(409,retry.retry(id,UUID.randomUUID(),actor).status)
+            assertEquals(409,retry.retry(id,UUID.randomUUID(),auth.authenticate(access)).status)
             release.countDown();assertEquals(200,first.get(15,TimeUnit.SECONDS).status)
             assertEquals(1,jdbc.queryForObject("SELECT retry_count FROM notification WHERE id=?",Int::class.java,id))
             assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM job_execution WHERE job_id=?",Int::class.java,id))
-            assertEquals(200,retry.retry(id,key,actor).status)
+            assertEquals(200,retry.retry(id,key,auth.authenticate(access)).status)
         } finally { release.countDown();pool.shutdownNow() }
     }
 
     @Test fun `failed actual delivery keeps failure retryability history and first response`() {
-        val (actor,_)=token();val id=notification(actor);val key=UUID.randomUUID()
+        val (actor,access)=token();val id=notification(actor);val key=UUID.randomUUID()
         doAnswer {
             assertFalse(TransactionSynchronizationManager.isActualTransactionActive())
             jdbc.update("UPDATE notification SET status='FAILED',failure_reason='REDIS_PUBLISH_FAILED' WHERE id=?",id)
             null
         }.`when`(publisher).publish(NotificationStored(id,actor))
-        val first=retry.retry(id,key,actor)
+        val first=retry.retry(id,key,auth.authenticate(access))
         assertEquals(200,first.status)
         val job=json.readTree(first.body);assertEquals("FAILED",job.path("status").asText());assertTrue(job.path("retryable").asBoolean())
         assertEquals("REDIS_PUBLISH_FAILED",job.path("executions").last().path("errorCode").asText())
-        assertContentEquals(first.body,retry.retry(id,key,actor).body)
+        assertContentEquals(first.body,retry.retry(id,key,auth.authenticate(access)).body)
         assertEquals("FAILURE",jdbc.queryForObject("SELECT result FROM audit_log WHERE target_id=?",String::class.java,id))
         verify(publisher,times(1)).publish(NotificationStored(id,actor))
     }
 
-    @Test fun `report and conversation retry do not pretend to execute or regenerate`() {
+    @Test fun `conversation retry remains unavailable without fabricated execution`() {
         val (actor,access)=token();val student=UUID.randomUUID();val report=UUID.randomUUID();val conv=UUID.randomUUID();val message=UUID.randomUUID()
         jdbc.update("INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,pin_failed_count,created_at,updated_at) VALUES(?,'synthetic',3,2017,false,'ACTIVE',0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",student)
         jdbc.update("INSERT INTO report_job(id,student_id,period_from,period_to,trigger,status,retry_count,created_at) VALUES(?,?,'2026-01-01','2026-01-07','SCHEDULE','FAILED',0,CURRENT_TIMESTAMP)",report,student)
         jdbc.update("INSERT INTO conversation(id,parent_user_id,student_id,period_from,period_to,created_at,updated_at) VALUES(?,?,?,'2026-01-01','2026-01-07',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",conv,actor,student)
         jdbc.update("INSERT INTO conversation_message(id,conversation_id,seq,question,scope_changed,status,retry_count,created_at) VALUES(?,?,1,'student secret',false,'FAILED',0,CURRENT_TIMESTAMP)",message,conv)
-        for(id in listOf(report,message)) {
+        for(id in listOf(message)) {
             mvc.post("/api/v1/admin/jobs/$id/retry") { header("Authorization","Bearer $access");header("Idempotency-Key",UUID.randomUUID()) }.andExpect { status { isServiceUnavailable() };jsonPath("$.code") { value("JOB_RETRY_UNAVAILABLE") } }
             assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM job_execution WHERE job_id=?",Int::class.java,id))
             assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE target_id=? AND result='FAILURE'",Int::class.java,id))

@@ -30,8 +30,10 @@ class ReportLifecycleService(private val repository: ReportJobRepository, privat
         val at = OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC)
         if (!repository.transition(job.id, status, event.reportId, event.failureReason, at)) return
         repository.execution(job, status, event.failureReason, at)
-        if (status != ReportJobStatus.RUNNING)
+        if (status != ReportJobStatus.RUNNING) {
+            events.publishEvent(ReportJobOutcomeRecorded(event.eventId, job.id, status))
             events.publishEvent(ReportJobFinished(event.eventId, job.id, job.studentId, event.reportId, status))
+        }
     }
 
     @Transactional
@@ -65,7 +67,9 @@ class ReportLifecycleService(private val repository: ReportJobRepository, privat
         val at = OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC)
         if (!repository.transition(job.id, status, reportId, reason, at)) return
         repository.execution(job, status, reason, at)
+        val outcomeId = java.util.UUID.randomUUID()
+        events.publishEvent(ReportJobOutcomeRecorded(outcomeId, job.id, status))
         if (notify && reportId != null)
-            events.publishEvent(ReportJobFinished(java.util.UUID.randomUUID(), job.id, job.studentId, reportId, status))
+            events.publishEvent(ReportJobFinished(outcomeId, job.id, job.studentId, reportId, status))
     }
 }

@@ -2,6 +2,7 @@ package com.sagomungchi.core.admin.service
 import com.sagomungchi.core.admin.domain.*
 import com.sagomungchi.core.admin.repository.OperationsRepository
 import com.sagomungchi.core.report.service.ReportOperationsService
+import com.sagomungchi.core.report.service.ReportAdminRetryService
 import com.sagomungchi.core.notification.service.NotificationOperationsService
 import com.sagomungchi.core.conversation.service.ConversationOperationsService
 import com.sagomungchi.core.learning.service.AdminLearningService
@@ -11,7 +12,7 @@ import org.springframework.stereotype.Service
 import java.util.UUID
 @Service
 class OperationsService(private val reports: ReportOperationsService, private val notifications: NotificationOperationsService,
-    private val conversations: ConversationOperationsService,private val repository: OperationsRepository,private val learning: AdminLearningService) {
+    private val conversations: ConversationOperationsService,private val repository: OperationsRepository,private val learning: AdminLearningService,private val reportRetries: ReportAdminRetryService) {
     fun overview(period: OperationPeriod): Map<String,Any> {
         val stats = learning.stats(period)
         return mapOf("period" to period,"learning" to stats,"inclusionRule" to "core: KST 생성 기간 안의 작업, 현재 상태; learning: P08 답변 기간",
@@ -39,9 +40,16 @@ class OperationsService(private val reports: ReportOperationsService, private va
         return repository.audits(period,type,target,page,size)
     }
     private fun model(type: OperationJobType,row: OperationJobRow): OperationJob {
-        val unavailable = when { row.status!="FAILED" -> "JOB_NOT_FAILED"; type!=OperationJobType.NOTIFICATION -> "JOB_RETRY_UNAVAILABLE"; else -> null }
+        val origin = if(type==OperationJobType.REPORT) reportRetries.origin(row.jobId) else null
+        val successor = if(type==OperationJobType.REPORT) reportRetries.successor(row.jobId) else null
+        val unavailable = when {
+            row.status!="FAILED" -> "JOB_NOT_FAILED"
+            type==OperationJobType.REPORT && successor!=null -> "REPORT_ALREADY_RETRIED"
+            type==OperationJobType.CONVERSATION -> "JOB_RETRY_UNAVAILABLE"
+            else -> null
+        }
         return OperationJob(row.jobId,type,row.status,row.retryCount,OperationErrors.code(row.failureReason),row.createdAt,
-            repository.executions(type,row.jobId),unavailable==null,unavailable)
+            repository.executions(type,row.jobId),unavailable==null,unavailable,origin?.originalJobId,successor?.jobId)
     }
     private fun list(type: OperationJobType,p: OperationPeriod,s: String?,limit: Int) = when(type) {
         OperationJobType.REPORT -> reports.list(p,s,limit); OperationJobType.NOTIFICATION -> notifications.list(p,s,limit); OperationJobType.CONVERSATION -> conversations.list(p,s,limit)

@@ -217,7 +217,8 @@ paths:
       operationId: adminOperationsRetry
       tags:
       - Admin
-      description: 'SERVICE_OPS 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      description: SERVICE_OPS. REPORT는 새 ADMIN_RETRY job 접수 202와 Location, NOTIFICATION은 기존 실제 처리 결과 200. CONVERSATION은
+        503. 원작업은 보존한다.
       parameters:
       - name: jobId
         in: path
@@ -246,6 +247,18 @@ paths:
           $ref: '#/components/responses/LearningProblem'
         '403':
           $ref: '#/components/responses/LearningProblem'
+        '202':
+          description: 새 REPORT 작업 접수. 실행 완료는 새 job 조회로 확인한다.
+          headers:
+            Location:
+              description: 새 관리자 작업 조회 경로
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportRetryAccepted'
       summary: adminOperationsRetry (SERVICE_OPS)
   /admin/queues:
     get:
@@ -5731,6 +5744,8 @@ components:
       - executions
       - retryable
       - retryUnavailableReason
+      - retryOfJobId
+      - retryJobId
       properties:
         jobId:
           type: string
@@ -5769,6 +5784,41 @@ components:
           type:
           - string
           - 'null'
+        retryOfJobId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        retryJobId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+    ReportRetryAccepted:
+      type: object
+      additionalProperties: false
+      required:
+      - originalJobId
+      - jobId
+      - type
+      - status
+      - acceptedAt
+      properties:
+        originalJobId:
+          type: string
+          format: uuid
+        jobId:
+          type: string
+          format: uuid
+        type:
+          type: string
+          const: REPORT
+        status:
+          type: string
+          const: QUEUED
+        acceptedAt:
+          type: string
+          format: date-time
     OperationAudit:
       type: object
       additionalProperties: false
