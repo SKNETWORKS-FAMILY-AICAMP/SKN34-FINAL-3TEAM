@@ -6,6 +6,7 @@ on:
     paths:
       - "backend/report-service/**"
       - "contracts/events/**"
+      - "contracts/openapi/report-service.yaml"
       - "contracts/examples/report-admin-retry/**"
       - "infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json"
       - ".github/workflows/ci-report-service.yml"
@@ -14,6 +15,7 @@ on:
     paths:
       - "backend/report-service/**"
       - "contracts/events/**"
+      - "contracts/openapi/report-service.yaml"
       - "contracts/examples/report-admin-retry/**"
       - "infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json"
       - ".github/workflows/ci-report-service.yml"
