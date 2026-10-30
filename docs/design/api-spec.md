@@ -55,7 +55,7 @@
 | code | status | 상황 |
 |---|---|---|
 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 401 | 미인증 / 만료 → 재인증 안내 (FN-ACC-04) |
-| `FORBIDDEN` | 403 | 역할·관리자 권한 부족 |
+| `FORBIDDEN` | 403 | 역할·관리자 권한 부족, 지원 조회의 권한·학생 범위 거부 (5.7) |
 | `CHILD_NOT_LINKED` | 403 | 연결되지 않은 자녀 요청 (FN-AGT-02, FN-RPT-12) |
 | `REAUTH_REQUIRED` | 403 | 중요 정보 변경 전 재확인 필요 (FN-ACC-10) |
 | `STUDENT_DEVICE_INVALID` | 401 | 학생 기기 자격증명 없음·해제·만료, 해당 기기에 등록되지 않은 자녀 (FN-ACC-05) |
@@ -95,7 +95,7 @@
 | `MODEL_VERSION_CONFLICT` / `MODEL_APPROVAL_REJECTED` / `MODEL_VERSION_STATE_INVALID` | 409 / 422 / 503 | 허용되지 않는 전이·복귀 이력 없음 / 승인 근거·범위 부족 / 기존 ACTIVE 상태 불완전 (5.2) |
 | `LEARNING_INVALID_RESPONSE` | 502 | 피드백 SSE에서 learning 응답 형식 오류 (3.2) |
 | `SUPPORT_CORRECTION_CONFLICT` / `SUPPORT_CORRECTION_REJECTED` | 409 / 422 | learning 정정 POST의 업무 충돌 / 요청 거부. 공급자 본문은 공개하지 않음 (5.7) |
-| `SUPPORT_DEPENDENCY_UNAVAILABLE` / `SUPPORT_INVALID_RESPONSE` | 503 / 502 | 지원 공급자의 기타 비-2xx / 잘못된 2xx 성공 응답 (5.7) |
+| `SUPPORT_DEPENDENCY_UNAVAILABLE` / `SUPPORT_INVALID_RESPONSE` | 503 / 502 | 지원 GET의 검증된 403·404를 제외한 비-2xx / 잘못된 2xx 성공 응답 (5.7) |
 | `REPORT_NOT_FOUND` / `REPORT_SCOPE_REJECTED` | 404 / 403 | 없는 리포트 / report-api가 학생 범위를 거부 (5.5) |
 | `REPORT_ENTITLEMENT_UNAVAILABLE` | 503 | 리포트 상품 권한 확인 불가. 작업·Outbox를 만들지 않음 (5.5) |
 | `REPORT_UNAVAILABLE` / `REPORT_CONTRACT_INVALID` | 503 / 502 | report-api 연결 실패·그 밖의 오류 응답 / 응답 JSON·식별·기간 계약 위반 (5.5) |
@@ -379,7 +379,7 @@
 - retry는 UUID Idempotency-Key 필수, 실패 상태만 허용한다. NOTIFICATION은 동일 ID를 RUNNING으로 원자 선점하고 새 job_execution을 남긴 뒤 트랜잭션 밖에서 기존 Redis publisher/DeliveryService를 호출한다. Redis 확인은 브라우저 수신 확인이 아니다. 실제 결과를 200 작업 상세로 반환하고 감사 기록을 남긴다. RUNNING 고착은 자동 재실행하지 않는다. REPORT는 기존 소비자가 실패 jobId를 재실행하지 않고 core lifecycle도 종료 상태이므로 503 JOB_RETRY_UNAVAILABLE, CONVERSATION도 관리자 재처리 공급자 부재로 같은 오류다. 리포트 regenerate를 대신 호출하지 않는다. 실패한 요청은 실행 이력으로 위장하지 않으며 거절 감사만 남긴다.
 - audit-logs는 targetType/targetId 및 기간·페이지 필터. 항목은 `{id,actorUserId,action,targetType,targetId,result,createdAt}`이며 자유형 detail은 노출하지 않는다. 기존 감사 저장 경로를 교체하지 않는다.
 - queues는 `{vhost,items:[{name,kind:WORK|RETRY|DLQ,messages,messagesReady,messagesUnacknowledged,consumers,state}]}`다. definitions.json의 `/` vhost와 고정 25개 큐만 읽는다. 누락·인증·HTTP·타임아웃·잘못된 응답은 명시적인 503/504이며 0으로 치환하지 않는다. `ADMIN_RABBIT_MANAGEMENT_URL`, `ADMIN_RABBIT_MANAGEMENT_USERNAME`, `ADMIN_RABBIT_MANAGEMENT_PASSWORD`를 환경에서 읽는다(기본 자격 증명 없음). 기존 AMQP 설정과 독립이며 production 의존성은 추가하지 않는다.
-- missions는 표의 명시된 메서드/경로만 `/internal/admin/missions`로 프록시한다. 검증된 ADMIN 사용자 컨텍스트, 빈 학생 범위, 내부 토큰과 trace를 기존 LearningClient/InternalRestClientFactory로 전달한다. JSON object 본문과 목록 status/grade/thinkingType/page/size만 전달한다. 버전·기준표·검토·게시 정책/DTO는 learning 소유다. learning 공급자 계약은 4.1 `/internal/admin/missions…`(#145)와 learning OpenAPI다. 404/405/501은 503 ADMIN_MISSIONS_UNAVAILABLE, 나머지 Problem Details는 code/status와 구조화된 missingFields만 허용하며 자유형 오류 문구는 전달하지 않는다. 성공 응답은 learning 관리자 콘텐츠 계약을 그대로 반환한다. 서비스 간 재시도는 없다.
+- missions는 표의 명시된 메서드/경로만 `/internal/admin/missions`로 프록시한다. 검증된 ADMIN 사용자 컨텍스트, 빈 학생 범위, 내부 토큰과 trace를 기존 LearningClient/InternalRestClientFactory로 전달한다. JSON object 본문과 목록 status/grade/thinkingType/page/size만 전달한다. 버전·기준표·검토·게시 정책/DTO는 learning 소유다. learning 공급자 계약은 4.1 `/internal/admin/missions…`(#145)와 learning OpenAPI다. 404는 application/problem+json JSON 객체의 status=404·code=NOT_FOUND가 일치할 때 404 NOT_FOUND와 고정 문구 "미션을 찾을 수 없습니다."로 반환한다(#163). 불명확한 404와 API 미지원 405/501은 기존 503 ADMIN_MISSIONS_UNAVAILABLE다. 나머지 Problem Details는 기존 code/status와 구조화된 missingFields만 허용하며 자유형 오류 문구는 전달하지 않는다. 성공 응답은 learning 관리자 콘텐츠 계약을 그대로 반환한다. 서비스 간 재시도는 없다.
 
 | Method | Path | 권한 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
@@ -960,7 +960,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 learning 구현 명세는 4.1 표와 learning OpenAPI다(정정 #80, 대상·원문 조회 #146). 학생 전용 `/internal/attempts/{id}`를 관리자로 위장 호출하지 않는다. 별도 `contracts/openapi/support-learning-required.yaml`은 협의용 계약이며 현재 learning 구현 명세와 구분한다.
 
-- GET `/internal/support/targets/{targetType}/{targetId}`: JUDGMENT/FOLLOWUP/ATTEMPT → `{studentId,attemptId,judgmentId?,previousResult?}`. 내부 토큰 + 사용자 scope 검사, 관리자 SERVICE_OPS 컨텍스트는 core 검증 후 전달. 범위 밖 403, 대상 없음 404, 미구현/장애는 core `SUPPORT_DEPENDENCY_UNAVAILABLE` (503).
+- GET `/internal/support/targets/{targetType}/{targetId}`: JUDGMENT/FOLLOWUP/ATTEMPT → `{studentId,attemptId,judgmentId?,previousResult?}`. 내부 토큰 + 사용자 scope 검사, 관리자 SERVICE_OPS 컨텍스트는 core 검증 후 전달. 범위 밖 403, 대상 없음 404. core는 아래 #163 GET 오류 매핑을 적용하며, 미구현/장애는 `SUPPORT_DEPENDENCY_UNAVAILABLE` (503).
 - GET `/internal/support/attempts/{attemptId}`: `{studentId,attemptId,answers:[{answerId,version,text,feedback}]}`. core가 저장된 연결 ID로만 호출, 공급자도 전달한 단일 학생 scope·ADMIN 역할·core 내부 토큰 검사(SERVICE_OPS는 core에서 검증). draft/memo/이름 제외.
 - POST `/internal/judgments/{judgmentId}/corrections`는 **#80**의 공급자 구현 범위다. `{reportId,reason,corrected}`와 core에 영속 저장한 correction UUID를 `Idempotency-Key`로 전달하는 현재 흐름을 유지한다. 원판정·원본 답변을 보존하고 정정 이력을 추가한다. 조회에는 최신 정정을 적용하되 기존 되묻기와 `nextActions`는 유지한다.
 - 정정 인증은 내부 토큰·`ADMIN`·대상 학생 **정확히 1명**의 `X-Student-Scope`·UUID `X-User-Id`가 필수다. SERVICE_OPS 검사는 core가 소유한다. 잘못된 내부 토큰은 401, 역할/학생 범위 위반은 403, 필수 사용자 ID 누락/형식 오류는 400이다.
@@ -970,6 +970,21 @@ learning 구현 명세는 4.1 표와 learning OpenAPI다(정정 #80, 대상·원
 - **모든 impact가 UNKNOWN이어도 판정 정정 성공과 신고 RESOLVED 전이가 가능**하다. core는 공급자가 확인한 정정 성공을 기준으로 완료 처리하고 impact는 그대로 보존한다. 관리자 화면은 이를 대화·집계·리포트까지 모두 반영됐다는 의미로 표시하지 않는다.
 - `/support/targets/...`(신고 대상 확인·최초 정정 전 조회)와 `/support/attempts/...`(관리자 원문 조회)는 **#80 범위 밖의 별도 공급자 이슈**다. #80만으로 실제 정정 E2E가 완료되지는 않는다(#146에서 구현).
 
+#### #163 지원 GET 공개 오류 매핑 (2026-10-30 사용자 승인)
+
+대상 GET과 원문 GET에만 적용한다. 정상 오류는 Content-Type `application/problem+json`(매개변수 허용)의 JSON 객체이며 HTTP 상태와 정수 `status`, 문자열 `code`가 아래 쌍과 정확히 일치해야 한다. 공급자의 title/detail/instance/traceId·추가 필드와 임의 code는 공개하지 않고 core가 고정 문구의 Problem Details를 만든다.
+
+| learning GET 응답 | core 공개 응답 | 고정 문구 |
+|---|---|---|
+| 정상 403 FORBIDDEN | 403 FORBIDDEN | 지원 대상에 접근할 권한이 없습니다. |
+| 정상 404 NOT_FOUND | 404 NOT_FOUND | 지원 대상 기록을 찾을 수 없습니다. |
+| 잘못된 Content-Type·JSON·status·code의 403/404, 400·401·405·409·422·5xx 등 나머지 비-2xx | 기존 503 SUPPORT_DEPENDENCY_UNAVAILABLE | 학습 지원 API 처리를 확인하지 못했습니다. |
+| 잘못된 2xx 응답 | 기존 502 SUPPORT_INVALID_RESPONSE | 기존 성공 응답 검증 유지 |
+
+공개 영향은 신고 접수 POST, 시도 연결 문의 POST, 관리자 신고·문의 상세 GET, 최초 정정 POST의 대상 사전 GET이다. 사전 GET 실패 시 정정 의도를 만들거나 learning 정정 POST를 호출하지 않는다. 실제 learning 정정 POST의 403/404는 이 정책에 포함하지 않고 기존 503을 유지한다. 정정 POST의 409/422·멱등성·실패 상태 저장은 아래 계약을 유지한다. 전송 오류·시간 초과·서킷 차단은 기존 LEARNING_UNAVAILABLE(503)·LEARNING_TIMEOUT(504)·LEARNING_CIRCUIT_OPEN(503)이다.
+
+기존 FORBIDDEN·NOT_FOUND를 재사용하며 신규 오류 코드는 없다. learning의 FORBIDDEN은 학생 범위·역할·scope 형식 거부를 구별하지 않으므로 학생 범위 오류로 단정하지 않는다. 프레임워크의 경로 없음도 NOT_FOUND여서 정상 Problem Details만으로 리소스 부재와 완전히 구분할 수 없다. 인증된 요청자가 403/404로 권한 거부와 대상 부재를 구별할 수 있는 공개 정보 차이는 승인된 정책이며 학생 식별자·원문은 오류에 추가하지 않는다. 학생 scope 설정·복원, 트랜잭션 밖 호출, 성공 응답 allowlist·감사 저장은 그대로다.
+
 #### #46 관리자 정정 공개 오류 계약
 
 기존 구현은 공급자의 모든 비-2xx를 `503 SUPPORT_DEPENDENCY_UNAVAILABLE`로 변환했다. 정정 POST에 한해 다음처럼 구분한다. 공급자 오류 본문·내부 상세·임의 code는 공개 응답에 전달하지 않는다.
@@ -978,7 +993,7 @@ learning 구현 명세는 4.1 표와 learning OpenAPI다(정정 #80, 대상·원
 |---|---|---|
 | 409 (DONE 이전·reportId/키 충돌) | **409 SUPPORT_CORRECTION_CONFLICT** | 정정 FAILED, 신고 IN_REVIEW 유지, 완료 알림 없음 |
 | 422 (같은 키·다른 본문) | **422 SUPPORT_CORRECTION_REJECTED** | 정정 FAILED, 신고 IN_REVIEW 유지, 완료 알림 없음 |
-| 그 외 비-2xx (조회 API의 409·422도 포함) | **503 SUPPORT_DEPENDENCY_UNAVAILABLE** | 완료로 표시하지 않음 |
+| 실제 정정 POST의 그 외 비-2xx (403·404 포함), 조회 API의 409·422 등 위 GET 예외 외 오류 | **503 SUPPORT_DEPENDENCY_UNAVAILABLE** | 완료로 표시하지 않음 |
 | 2xx의 잘못된 JSON·필수 필드·impact 코드 | **502 SUPPORT_INVALID_RESPONSE** | 완료로 표시하지 않음 |
 | 전송/시간 초과/서킷 차단 | 기존 LEARNING_UNAVAILABLE(503) / LEARNING_TIMEOUT(504) / LEARNING_CIRCUIT_OPEN(503) | 완료로 표시하지 않음 |
 

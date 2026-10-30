@@ -50,7 +50,7 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
             id,actor,UUID.randomUUID(),status,OffsetDateTime.parse("2026-01-02T00:00:00Z"))
         return id
     }
-    @BeforeEach fun resetHttp() { requests.clear(); statsStatus=200; statsBody=STATS; missionStatus=200; missionBody="{\"items\":[],\"counts\":[]}" }
+    @BeforeEach fun resetHttp() { requests.clear(); statsStatus=200; statsBody=STATS; missionStatus=200; missionContentType=null; missionBody="{\"items\":[],\"counts\":[]}" }
 
     @Test fun `401 403 permissions and exact general administrator reads`() {
         val id=UUID.randomUUID()
@@ -173,12 +173,60 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         assertFalse(error.contains("secret"));missionStatus=404
         mvc.get("/api/v1/admin/missions") { header("Authorization","Bearer $access") }.andExpect { status { isServiceUnavailable() };jsonPath("$.code") { value("ADMIN_MISSIONS_UNAVAILABLE") } }
     }
+    @Test fun `mission not found is public only for matching problem details and hides supplier fields`() {
+        val (_,access)=token("CONTENT");val id=UUID.randomUUID()
+        missionStatus=404;missionContentType="Application/Problem+Json; charset=UTF-8"
+        missionBody="""{"status":404,"code":"NOT_FOUND","title":"private supplier title","detail":"private student secret","instance":"/internal/private","traceId":"supplier-secret","studentId":"secret"}"""
+        val paths=listOf("GET" to "/$id", "PATCH" to "/$id", "PUT" to "/$id/rubric", "GET" to "/$id/preview",
+            "POST" to "/$id/review-request", "POST" to "/$id/review", "POST" to "/$id/publish", "POST" to "/$id/unpublish")
+        for((method,suffix) in paths) {
+            val result=mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request(org.springframework.http.HttpMethod.valueOf(method),"/api/v1/admin/missions$suffix")
+                .header("Authorization","Bearer $access").contentType(MediaType.APPLICATION_JSON).content(if(method=="GET") "" else "{}"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isNotFound).andReturn().response
+            val problem=json.readTree(result.contentAsString)
+            assertEquals("NOT_FOUND",problem["code"].asText());assertEquals(404,problem["status"].asInt())
+            assertEquals("미션을 찾을 수 없습니다.",problem["title"].asText())
+            assertFalse(result.contentAsString.contains("secret"));assertFalse(result.contentAsString.contains("private"))
+            assertEquals("ADMIN",requests.last().role);assertNull(requests.last().scope)
+        }
+    }
+    @Test fun `mission unsupported or ambiguous not found stays unavailable`() {
+        val (_,access)=token("CONTENT");val path="/api/v1/admin/missions/${UUID.randomUUID()}"
+        missionStatus=404
+        for(body in listOf("not-json","[]","{}","null",
+            """{"status":"404","code":"NOT_FOUND"}""", """{"status":404.0,"code":"NOT_FOUND"}""",
+            """{"status":403,"code":"NOT_FOUND"}""", """{"status":18446744073709552020,"code":"NOT_FOUND"}""",
+            """{"status":404,"code":"PRIVATE_SECRET"}""", """{"status":404,"code":404}""")) {
+            missionBody=body
+            mvc.get(path) { header("Authorization","Bearer $access") }.andExpect { status { isServiceUnavailable() };jsonPath("$.code") { value("ADMIN_MISSIONS_UNAVAILABLE") } }
+        }
+        missionBody="""{"status":404,"code":"NOT_FOUND"}"""
+        for(type in listOf("application/json","text/html","application/problem+jsonx","")) {
+            missionContentType=type
+            mvc.get(path) { header("Authorization","Bearer $access") }.andExpect { status { isServiceUnavailable() };jsonPath("$.code") { value("ADMIN_MISSIONS_UNAVAILABLE") } }
+        }
+        for(status in listOf(405,501)) {
+            missionStatus=status;missionBody="not-json"
+            mvc.get(path) { header("Authorization","Bearer $access") }.andExpect { status { isServiceUnavailable() };jsonPath("$.code") { value("ADMIN_MISSIONS_UNAVAILABLE") } }
+        }
+    }
+    @Test fun `mission conflict and incomplete publish keep codes and sanitize missing fields`() {
+        val (_,access)=token("CONTENT");val path="/api/v1/admin/missions/${UUID.randomUUID()}/publish"
+        for((status,code) in listOf(409 to "MISSION_VERSION_CONFLICT",409 to "CONFLICT",422 to "MISSION_PUBLISH_INCOMPLETE")) {
+            missionStatus=status;missionBody="""{"status":$status,"code":"$code","title":"student secret","detail":"private","missingFields":["rubric","rubric.elements",42,"student secret","<script>"]}"""
+            val response=mvc.post(path) { header("Authorization","Bearer $access");contentType=MediaType.APPLICATION_JSON;content="{}" }.andReturn().response
+            assertEquals(status,response.status);val problem=json.readTree(response.contentAsString)
+            assertEquals(code,problem["code"].asText());assertEquals(listOf("rubric","rubric.elements"),problem["missingFields"].map { it.asText() })
+            assertFalse(response.contentAsString.contains("secret"));assertFalse(response.contentAsString.contains("private"));assertFalse(response.contentAsString.contains("script"))
+        }
+    }
     companion object {
         data class Seen(val method: String,val path: String,val body: String,val role: String?,val scope: String?,val token: String?)
         val requests=CopyOnWriteArrayList<Seen>()
         @Volatile var statsStatus=200
         const val STATS="{\"period\":{\"from\":\"2026-01-01\",\"to\":\"2026-01-03\"},\"inclusionRule\":\"P08\",\"attempts\":7,\"completedAttempts\":3,\"students\":2,\"studentName\":\"secret\"}"
         @Volatile var statsBody=STATS
+        @Volatile var missionContentType: String?=null
         @Volatile var missionStatus=200
         @Volatile var missionBody="{}"
         private val server=HttpServer.create(InetSocketAddress("127.0.0.1",0),0).apply {
@@ -186,7 +234,7 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
                 requests.add(Seen(e.requestMethod,e.requestURI.path,e.requestBody.readBytes().toString(Charsets.UTF_8),e.requestHeaders.getFirst("X-User-Role"),e.requestHeaders.getFirst("X-Student-Scope"),e.requestHeaders.getFirst("X-Internal-Token")))
                 val stats=e.requestURI.path=="/internal/stats";val status=if(stats) statsStatus else missionStatus
                 val body=(if(stats) statsBody else missionBody).toByteArray()
-                e.responseHeaders.set("Content-Type",if(status>=400) "application/problem+json" else "application/json")
+                e.responseHeaders.set("Content-Type",if(!stats && missionContentType!=null) missionContentType!! else if(status>=400) "application/problem+json" else "application/json")
                 e.sendResponseHeaders(status,body.size.toLong());e.responseBody.use { it.write(body) };e.close()
             };start()
         }
