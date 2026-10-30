@@ -236,7 +236,7 @@ def test_stream_stalls_past_timeout() -> None:
     with pytest.raises(LlmUnavailable) as exc:
         collect(llm, deadline=time.monotonic() + 0.2)
     assert exc.value.code == "LLM_TIMEOUT"
-    assert 0 < llm.requests[0].timeout <= 0.2  # 15초 대신 남은 시간
+    assert 0 < llm.requests[0].timeout <= 0.2 + 1e-9  # 부동소수점 오차 허용
 
 
 def test_unconfigured_stream_is_unavailable_without_usage() -> None:
