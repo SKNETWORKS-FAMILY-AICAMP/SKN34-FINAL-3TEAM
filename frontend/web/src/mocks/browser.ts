@@ -1,4 +1,5 @@
 import { setupWorker } from 'msw/browser'
+import { serviceHandlers } from './handlers/service.ts'
 import { studentHandlers, setMockScenario } from './handlers/student.ts'
 import type { DemoScenario } from '../domain/classroom.ts'
 import { parentHandlers } from './handlers/parent.ts'
@@ -12,6 +13,7 @@ import { demoRequest, sharedDeviceDemo } from './sharedDevice.ts'
 
 // 학생 기기 핸들러가 GET /children에 PIN 상태를 더하므로 기존 핸들러보다 먼저 둔다.
 export const mockHandlers = [
+  ...serviceHandlers,
   ...studentDeviceHandlers,
   ...parentHandlers,
   ...adminHandlers,

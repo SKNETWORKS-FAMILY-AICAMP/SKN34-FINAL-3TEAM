@@ -97,7 +97,9 @@ function sse(run: (push: (event: string, data: unknown) => void) => Promise<void
         try {
           await run(push)
         } catch (e) {
-          push('error', problem(e))
+          // SSE error는 learning처럼 오류가 정한 retryable을 그대로(ai 4xx·계약 밖은 false, #82)
+          const own = e instanceof ApiError ? e.problem.retryable : undefined
+          push('error', { ...problem(e), ...(own === undefined ? {} : { retryable: own }) })
         }
         push('done', {})
         persistFixtureState()
@@ -171,7 +173,7 @@ export const studentHandlers = [
       guard(request)
       const s = await store.restore()
       if (s.role === 'STUDENT') return { role: 'STUDENT', child: s.child }
-      const nextAction = mockConsentRequired() ? 'CONSENT_REQUIRED' : (await store.children()).length ? 'READY' : 'CHILD_REGISTRATION_REQUIRED'
+      const nextAction = s.role !== 'PARENT' ? 'READY' : mockConsentRequired() ? 'CONSENT_REQUIRED' : (await store.children()).length ? 'READY' : 'CHILD_REGISTRATION_REQUIRED'
       return {
         ...s,
         ...(s.role === 'PARENT' ? { nextAction, startPath: nextAction === 'CONSENT_REQUIRED' ? '/parent/onboarding' : nextAction === 'CHILD_REGISTRATION_REQUIRED' ? '/parent/children/new' : '/parent/journal' } : {}),

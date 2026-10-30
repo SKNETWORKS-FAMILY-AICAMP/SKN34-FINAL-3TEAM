@@ -11,9 +11,13 @@ import org.testcontainers.containers.PostgreSQLContainer
 @SpringBootTest(properties = [
     "app.internal.token=repository-test-token",
     "spring.rabbitmq.username=test", "spring.rabbitmq.password=test",
+    "spring.rabbitmq.listener.simple.auto-startup=false",
 ])
 @Transactional
 abstract class PostgresRepositoryTest {
+    // Core access is a separate HTTP contract test; repository fixtures use the free permit.
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    lateinit var paymentUsage: com.sagomungchi.learning.judgment.client.PaymentUsageClient
     companion object {
         private val postgres by lazy {
             PostgreSQLContainer<Nothing>("postgres:17.11-alpine").apply {

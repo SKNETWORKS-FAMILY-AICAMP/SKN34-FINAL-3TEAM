@@ -5,6 +5,8 @@ import com.sagomungchi.learning.judgment.domain.Judgment
 import com.sagomungchi.learning.judgment.domain.JudgmentElement
 import com.sagomungchi.learning.judgment.domain.StoredElement
 import com.sagomungchi.learning.judgment.domain.StoredJudgment
+import com.sagomungchi.learning.judgment.domain.SupportTarget
+import com.sagomungchi.learning.judgment.domain.SupportTargetType
 import com.sagomungchi.learning.judgment.domain.TimelineAnswer
 import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
@@ -36,4 +38,5 @@ interface JudgmentMapper {
     fun fail(@Param("judgment") judgment: Judgment, @Param("leaseUntil") leaseUntil: Instant): Int
     fun findStored(@Param("attemptId") attemptId: UUID?, @Param("answerId") answerId: UUID?): List<StoredJudgment>
     fun findStoredElements(@Param("attemptId") attemptId: UUID?, @Param("answerId") answerId: UUID?): List<StoredElement>
+    fun findSupportTarget(@Param("type") type: SupportTargetType, @Param("id") id: UUID): SupportTarget?
 }

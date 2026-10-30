@@ -56,7 +56,7 @@ test('404는 예시나 빈 배열로 대체하지 않음', async (t) => {
     return json({ title: '미구현', code: 'NOT_FOUND', status: 404 }, 404)
   })
   const api = createApiGateway()
-  await assert.rejects(api.login('parent@example.test', 'demo'))
+  assert.equal(api.login, undefined) // 실제 모드는 Google 인증만 (#97)
   await assert.rejects(api.children())
   await assert.rejects(
     api.submit(
@@ -65,7 +65,7 @@ test('404는 예시나 빈 배열로 대체하지 않음', async (t) => {
       'no-contract',
     ),
   )
-  assert.equal(requests, 3) // 3.8에 명시한 풀이 제출도 같은 API 경로 사용, 404는 그대로 실패
+  assert.equal(requests, 2) // 자녀 목록·풀이 제출(3.8과 같은 API 경로) 모두 404를 그대로 실패로
 })
 test('실제 API의 초안 충돌도 명시적으로 비교 가능', async (t) => {
   t.mock.method(globalThis, 'fetch', async () =>
@@ -97,6 +97,50 @@ test('분석 SSE의 검증 전 delta는 버리고 대조 완료 result만 사용
   )
   const r = await createApiGateway().analyze(child, previousWeek, '질문')
   assert.equal(r.answer, '검증된 답')
+})
+const sse = (frames: string) => new Response(frames, { headers: { 'Content-Type': 'text/event-stream' } })
+test('피드백 result의 null 필드·근거 없는 요소 sourceType null·versions를 받고 판정 ID를 그대로 (#82)', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () =>
+    sse(
+      'event: result\ndata: {"status":"DONE","judgment":{"judgmentId":"j-1","result":"PARTIAL","trial":true,' +
+        '"elements":[{"elementId":"6f1c2b9e-0000-4000-8000-000000000001","label":"까닭","satisfied":false,"quote":null,"sourceType":null}],' +
+        '"heldReason":null},"followup":null,"nextActions":["FINISH"],' +
+        '"versions":{"mission":"M-1@1","rubric":"M-1@1","model":null,"prompt":null}}\n\nevent: done\ndata: {}\n\n',
+    ),
+  )
+  const f = await createApiGateway().feedback('a-1', 'ans-1', () => {})
+  assert.equal(f.judgment?.judgmentId, 'j-1')
+  assert.equal(f.judgment?.elements?.[0].sourceType, null)
+  assert.equal(f.judgment?.heldReason, null)
+  assert.equal(f.followup, null)
+  assert.equal(f.versions?.model, null)
+})
+test('처리 중 결과의 judgment·followup·versions null도 받음', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () =>
+    sse('event: result\ndata: {"status":"RUNNING","judgment":null,"followup":null,"nextActions":[],"versions":null}\n\n'),
+  )
+  const f = await createApiGateway().feedback('a-1', 'ans-1', () => {})
+  assert.equal(f.status, 'RUNNING')
+  assert.equal(f.judgment, null)
+})
+test('판정에 judgmentId가 없거나 sourceType이 계약 밖이면 계약 오류', async (t) => {
+  for (const judgment of [
+    '{"result":"CORRECT","trial":false,"elements":[],"heldReason":null}',
+    '{"judgmentId":"j-1","result":"CORRECT","trial":false,"elements":[{"elementId":"e","label":"l","satisfied":true,"quote":"q","sourceType":"GUESS"}],"heldReason":null}',
+  ]) {
+    t.mock.method(globalThis, 'fetch', async () =>
+      sse(`event: result\ndata: {"status":"DONE","judgment":${judgment},"followup":null,"nextActions":["FINISH"],"versions":null}\n\n`),
+    )
+    await assert.rejects(createApiGateway().feedback('a-1', 'ans-1', () => {}), (e: Error & { problem?: { code: string } }) =>
+      e.problem?.code === 'CONTRACT_NOT_READY')
+  }
+})
+test('피드백 error의 retryable:false를 그대로 전달 (재시도 버튼 숨김 근거)', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () =>
+    sse('event: status\ndata: {"state":"RUNNING"}\n\nevent: error\ndata: {"code":"AI_UNAVAILABLE","retryable":false}\n\nevent: done\ndata: {}\n\n'),
+  )
+  await assert.rejects(createApiGateway().feedback('a-1', 'ans-1', () => {}), (e: Error & { problem?: { retryable?: boolean; status: number } }) =>
+    e.problem?.retryable === false && e.problem.status === 503)
 })
 test('숫자/인용 대조 실패를 성공 결과로 표시하지 않음', async (t) => {
   t.mock.method(globalThis, 'fetch', async (path: string) =>

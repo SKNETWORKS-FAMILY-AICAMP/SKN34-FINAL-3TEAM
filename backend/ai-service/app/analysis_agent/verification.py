@@ -3,16 +3,16 @@
 - 숫자: 답변의 모든 아라비아 숫자가 계산 결과(개수·분자·분모·비율%)·기록 수·기간 날짜에 있어야 함.
   따옴표 인용과 미션 제목 안의 숫자는 원문 그대로라 빼고 셈. "세 번"처럼 한글로 쓴 수는 대조할 수
   없으므로 실패로 봄 (프롬프트에서 아라비아 숫자를 쓰도록 지시).
-- 인용: 출처 표시 인용과 본문 따옴표 안 문장이 모두 원문에 그대로 있어야 함 (공백 차이만 허용).
+- 인용: 본문 따옴표 안 문장이 모두 원문에 그대로 있어야 함 (공백 차이만 허용).
+  처음 들어맞는 원문을 근거로 연결하고, 같은 원문은 근거 하나로 (core가 중복 근거를 거부).
 - 표현: 레벨·등급·점수·사고력 단정 금지 (FN-AGT-09, FN-RPT-08).
 """
 
 import re
 from dataclasses import dataclass
 
-from app.analysis_agent.metrics import Computation
+from app.analysis_agent.calculators import Computation
 from app.analysis_agent.models import Evidence, Verification
-from app.analysis_agent.prompts import Citation
 
 NUMBER = re.compile(r"\d+(?:\.\d+)?")
 QUOTED = re.compile(r"[\"“”]([^\"“”]+)[\"“”]|['‘’]([^'‘’]+)['‘’]|「([^」]+)」")
@@ -34,25 +34,20 @@ class VerifiedAnswer:
         return v.numbers_matched and v.quotes_matched and v.content_allowed
 
 
-def verify(answer: str, citations: list[Citation], computation: Computation) -> VerifiedAnswer:
-    sources = {f"S{index}": source for index, source in enumerate(computation.sources, start=1)}
-    evidence: list[Evidence] = []
+def verify(answer: str, computation: Computation) -> VerifiedAnswer:
+    cited: dict[int, Evidence] = {}  # 원문 순서 → 근거 (원문마다 첫 인용 하나)
     quotes_ok = True
-    for citation in citations:
-        source = sources.get(citation.source_id)
-        if (
-            source is None
-            or not citation.quote.strip()
-            or not _contains(source.text, citation.quote)
-        ):
+    for match in QUOTED.finditer(answer):
+        quote = next(group for group in match.groups() if group).strip()
+        index = next(
+            (i for i, s in enumerate(computation.sources) if quote and _contains(s.text, quote)),
+            None,
+        )
+        if index is None:
             quotes_ok = False
-            continue
-        evidence.append(source.evidence.model_copy(update={"quote": citation.quote.strip()}))
-
-    quoted = [next(group for group in match.groups() if group) for match in QUOTED.finditer(answer)]
-    texts = [source.text for source in computation.sources]
-    if any(not any(_contains(text, quote) for text in texts) for quote in quoted):
-        quotes_ok = False
+        elif index not in cited:
+            cited[index] = computation.sources[index].evidence.model_copy(update={"quote": quote})
+    evidence = list(cited.values())
 
     stripped = QUOTED.sub(" ", answer)
     for source in computation.sources:

@@ -102,4 +102,53 @@
     <select id="findOpenedHintIds" resultType="java.util.UUID">
         SELECT DISTINCT hint_question_id FROM hint_usage WHERE attempt_id = #{attemptId}
     </select>
+
+    <!-- 학생 삭제 (#128): AttemptRepository.deleteByStudent가 이 순서로 부름 -->
+    <sql id="studentAttempts">SELECT id FROM attempt WHERE student_id = #{studentId}</sql>
+    <sql id="studentAnswers">SELECT id FROM answer WHERE attempt_id IN (<include refid="studentAttempts"/>)</sql>
+    <sql id="studentJudgments">SELECT id FROM judgment WHERE answer_id IN (<include refid="studentAnswers"/>)</sql>
+
+    <update id="deferAnswerFollowupCheck">
+        SET CONSTRAINTS fk_answer_followup_id DEFERRED
+    </update>
+
+    <delete id="deleteCorrectionsByStudent">
+        DELETE FROM judgment_correction WHERE judgment_id IN (<include refid="studentJudgments"/>)
+    </delete>
+
+    <delete id="deleteJudgmentElementsByStudent">
+        DELETE FROM judgment_element WHERE judgment_id IN (<include refid="studentJudgments"/>)
+    </delete>
+
+    <delete id="deleteSelfAssessmentsByStudent">
+        DELETE FROM self_assessment WHERE attempt_id IN (<include refid="studentAttempts"/>)
+    </delete>
+
+    <delete id="deleteReflectionsByStudent">
+        DELETE FROM reflection WHERE attempt_id IN (<include refid="studentAttempts"/>)
+    </delete>
+
+    <delete id="deleteHintUsagesByStudent">
+        DELETE FROM hint_usage WHERE attempt_id IN (<include refid="studentAttempts"/>)
+    </delete>
+
+    <delete id="deleteDraftsByStudent">
+        DELETE FROM attempt_draft WHERE attempt_id IN (<include refid="studentAttempts"/>)
+    </delete>
+
+    <delete id="deleteFollowupsByStudent">
+        DELETE FROM followup WHERE attempt_id IN (<include refid="studentAttempts"/>)
+    </delete>
+
+    <delete id="deleteJudgmentsByStudent">
+        DELETE FROM judgment WHERE answer_id IN (<include refid="studentAnswers"/>)
+    </delete>
+
+    <delete id="deleteAnswersByStudent">
+        DELETE FROM answer WHERE attempt_id IN (<include refid="studentAttempts"/>)
+    </delete>
+
+    <delete id="deleteAttemptsByStudent">
+        DELETE FROM attempt WHERE student_id = #{studentId}
+    </delete>
 </mapper>

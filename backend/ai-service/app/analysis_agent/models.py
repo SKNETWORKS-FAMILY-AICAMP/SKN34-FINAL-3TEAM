@@ -23,6 +23,7 @@ Intent = Literal[
 ScopeIssue = Literal["NONE", "OTHER_CHILD", "DIFFERENT_PERIOD", "UNCLEAR"]
 FallbackReason = Literal["VERIFICATION_FAILED", "AI_UNAVAILABLE"]
 QueryState = Literal["OK", "NO_RECORD", "INSUFFICIENT_SAMPLE", "PROCESSING", "FAILED"]
+EvidenceKind = Literal["ANSWER", "REFLECTION"]
 
 
 # ---------------------------------------------------------------------------
@@ -89,11 +90,14 @@ class Metric(ApiModel):
 
 
 class Evidence(ApiModel):
+    """원문 근거. 돌아보기는 시도당 하나라 attemptId로 식별 (answerId·answerVersion null)."""
+
+    kind: EvidenceKind
     attempt_id: str
     mission_title: str
-    answer_id: str | None  # 돌아보기 인용은 답변 ID 없음
+    answer_id: str | None
     answer_version: int | None
-    submitted_at: str | None
+    submitted_at: str | None  # 돌아보기는 작성 시각
     quote: str
     available: bool = True
 
@@ -167,16 +171,21 @@ class Reflection(RecordModel):
     text: str | None
 
 
+class AttemptReflection(Reflection):
+    created_at: str
+
+
 class MissionRef(RecordModel):
     title: str
 
 
 class RecordAttempt(RecordModel):
-    """기록 목록 항목. answers는 1번부터 조회 종료일까지."""
+    """기록 목록 항목. answers는 1번부터 조회 종료일까지, reflection은 기간 안에 쓴 것만."""
 
     attempt_id: str
     mission: MissionRef
     answers: list[RecordAnswer]
+    reflection: AttemptReflection | None = None
 
 
 class ThinkingTypeMission(RecordModel):
@@ -214,6 +223,18 @@ class ThinkingActivity(RecordModel):
     attempt_id: str
     mission_title: str
     reflection: Reflection | None  # 기간 안에 쓴 돌아보기만
+
+
+class RecordEvidence(RecordModel):
+    """learning 원문 근거. 없는 답변·삭제 학생은 available=false·나머지 null (원문 추정 금지)."""
+
+    answer_id: str
+    attempt_id: str | None
+    mission_title: str | None
+    answer_version: int | None
+    submitted_at: str | None
+    quote: str | None
+    available: bool
 
 
 class Records(RecordModel):

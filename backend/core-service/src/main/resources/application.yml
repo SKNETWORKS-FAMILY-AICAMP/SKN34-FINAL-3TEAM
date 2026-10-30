@@ -58,6 +58,19 @@ management:
           include: readinessState,db,rabbit
 
 app:
+  report:
+    recovery:
+      interval: ${REPORT_RECOVERY_INTERVAL:PT1M}
+      stale-after: ${REPORT_RECOVERY_STALE_AFTER:PT60M}
+  payment:
+    free-product-id: ${PAYMENT_FREE_PRODUCT_ID:}
+    toss-secret: ${TOSS_TEST_SECRET_KEY:}
+    toss-billing-secret: ${TOSS_TEST_BILLING_SECRET_KEY:}
+    toss-mid: ${TOSS_TEST_MID:}
+    toss-billing-mid: ${TOSS_TEST_BILLING_MID:}
+    webhook-security-key: ${TOSS_TEST_WEBHOOK_SECURITY_KEY:}
+    billing-webhook-security-key: ${TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY:}
+    billing-encryption-key: ${PAYMENT_BILLING_ENCRYPTION_KEY:}
   student-device:
     ttl: ${STUDENT_DEVICE_TTL:90d}
     attempt-limit: ${STUDENT_DEVICE_ATTEMPT_LIMIT:20}

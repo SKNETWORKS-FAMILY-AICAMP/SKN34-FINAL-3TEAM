@@ -83,6 +83,7 @@ def report_factory(db_engine, report_student_id, report_students):
         report_file,
         report_item,
         report_item_evidence,
+        report_job_guard,
         weekly_report,
     )
     from app.outbox.repository import outbox_event
@@ -92,6 +93,9 @@ def report_factory(db_engine, report_student_id, report_students):
         yield factory
     finally:
         with factory.begin() as session:
+            session.execute(
+                delete(report_job_guard).where(report_job_guard.c.student_id.in_(report_students))
+            )
             session.execute(
                 delete(deletion_guard).where(deletion_guard.c.student_id.in_(report_students))
             )

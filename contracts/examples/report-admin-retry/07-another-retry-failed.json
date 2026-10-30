@@ -1,0 +1,15 @@
+{
+  "id": "aaaaaaaa-aaaa-4aaa-8aaa-000000000007",
+  "specversion": "1.0",
+  "type": "report.failed",
+  "source": "report-service",
+  "time": "2026-10-29T08:00:07Z",
+  "subject": "11111111-1111-4111-8111-111111111111",
+  "dataschema": "report.failed.v1",
+  "data": {
+    "jobId": "44444444-4444-4444-8444-444444444444",
+    "studentId": "11111111-1111-4111-8111-111111111111",
+    "reportId": "77777777-7777-4777-8777-777777777777",
+    "failureReason": "GENERATION_FAILED"
+  }
+}

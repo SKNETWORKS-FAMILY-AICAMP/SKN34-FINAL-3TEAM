@@ -9,7 +9,7 @@ from app.analysis_agent.models import (
     ThinkingActivity,
     ThinkingTypeItem,
 )
-from app.analysis_agent.records import RecordsUnavailable
+from app.clients.learning_client import RecordsUnavailable
 
 STUDENT = "s-1"
 PERIOD = {"from": "2026-10-20", "to": "2026-10-26"}
@@ -81,6 +81,11 @@ ATTEMPTS = [
         "attemptId": "t-1",
         "mission": {"title": "쉬는 시간 토론"},
         "answers": [answer("a-1", 1, "나는 찬성해."), answer("a-2", 2, REVISED)],
+        "reflection": {
+            "difficulty": "HARD",
+            "text": "근거 찾기가 어려웠어",
+            "createdAt": "2026-10-22T19:30:00+09:00",
+        },
     },
 ]
 THINKING_TYPES = [
@@ -116,7 +121,7 @@ ACTIVITIES = [
         "attemptId": "t-1",
         "thinkingType": "ANALYZE",
         "missionTitle": "쉬는 시간 토론",
-        "reflection": {"difficulty": "HARD", "text": "근거 찾기가 어려웠어"},
+        "reflection": {"difficulty": "HARD", "text": "근거 찾기가 어려웠어"},  # createdAt 없음
     },
 ]
 
@@ -132,7 +137,7 @@ def records(empty: bool = False) -> Records:
 
 
 class FakeRecords:
-    """learning 기록 조회 대역. fail에 오류를 넣으면 모든 조회가 실패."""
+    """RecordTools 대역. fail에 오류를 넣으면 모든 조회가 실패."""
 
     def __init__(self, empty: bool = False, fail: RecordsUnavailable | None = None) -> None:
         self._records = records(empty)
@@ -146,8 +151,9 @@ class FakeRecords:
     async def thinking_types(self, scope):
         return self._call("thinking_types", scope, self._records.thinking_types)
 
-    async def recent_attempts(self, scope, limit):
-        return self._call("recent_attempts", scope, (self._records.attempts or [])[:limit])
+    async def attempts(self, scope, size):
+        self.attempts_size = size
+        return self._call("attempts", scope, (self._records.attempts or [])[:size])
 
     async def changes(self, scope):
         return self._call("changes", scope, self._records.changes)

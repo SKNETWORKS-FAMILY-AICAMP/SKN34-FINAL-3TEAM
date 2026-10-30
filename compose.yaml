@@ -140,6 +140,14 @@ services:
       AUTH_REFRESH_TTL: ${AUTH_REFRESH_TTL:-7d}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      PAYMENT_FREE_PRODUCT_ID: ${PAYMENT_FREE_PRODUCT_ID:-}
+      TOSS_TEST_SECRET_KEY: ${TOSS_TEST_SECRET_KEY:-}
+      TOSS_TEST_BILLING_SECRET_KEY: ${TOSS_TEST_BILLING_SECRET_KEY:-}
+      TOSS_TEST_MID: ${TOSS_TEST_MID:-}
+      TOSS_TEST_BILLING_MID: ${TOSS_TEST_BILLING_MID:-}
+      TOSS_TEST_WEBHOOK_SECURITY_KEY: ${TOSS_TEST_WEBHOOK_SECURITY_KEY:-}
+      TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY: ${TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY:-}
+      PAYMENT_BILLING_ENCRYPTION_KEY: ${PAYMENT_BILLING_ENCRYPTION_KEY:-}
     ports:
       - "${CORE_HOST_PORT:-8080}:8080"
     healthcheck:
@@ -158,6 +166,7 @@ services:
     environment:
       <<: *spring-env
       DB_URL: jdbc:postgresql://postgres:5432/learning_db
+      CORE_URL: http://core-service:8080
       AI_URL: http://ai-service:8000
     ports:
       - "${LEARNING_HOST_PORT:-8081}:8081"
@@ -200,6 +209,9 @@ services:
     environment:
       <<: *python-env
       CORE_URL: http://core-service:8080
+      S3_BUCKET: ${SCORING_S3_BUCKET:-sagomungchi-local-models}
+      S3_REGION: ${SCORING_S3_REGION:-ap-northeast-2}
+      MODEL_CACHE_DIR: /tmp/scoring-models
     ports:
       - "${SCORING_HOST_PORT:-8001}:8001"
     healthcheck:

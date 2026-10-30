@@ -3,18 +3,25 @@ package com.sagomungchi.learning.judgment.service
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.judgment.domain.BankQuestion
+import com.sagomungchi.learning.judgment.domain.CorrectionCommand
 import com.sagomungchi.learning.judgment.domain.FeedbackResult
 import com.sagomungchi.learning.judgment.domain.FeedbackTarget
 import com.sagomungchi.learning.judgment.domain.Followup
 import com.sagomungchi.learning.judgment.domain.FollowupType
 import com.sagomungchi.learning.judgment.domain.Judged
 import com.sagomungchi.learning.judgment.domain.Judgment
+import com.sagomungchi.learning.judgment.domain.JudgmentCorrection
 import com.sagomungchi.learning.judgment.domain.JudgmentResult
 import com.sagomungchi.learning.judgment.domain.JudgmentView
 import com.sagomungchi.learning.judgment.domain.NextAction
 import com.sagomungchi.learning.judgment.domain.ProcessStatus
+import com.sagomungchi.learning.judgment.domain.SupportAnswer
+import com.sagomungchi.learning.judgment.domain.SupportOriginal
+import com.sagomungchi.learning.judgment.domain.SupportTarget
+import com.sagomungchi.learning.judgment.domain.SupportTargetType
 import com.sagomungchi.learning.judgment.domain.TimelineAnswer
 import com.sagomungchi.learning.judgment.domain.Versions
+import com.sagomungchi.learning.judgment.repository.CorrectionRepository
 import com.sagomungchi.learning.judgment.repository.FollowupRepository
 import com.sagomungchi.learning.judgment.repository.JudgmentRepository
 import org.springframework.http.HttpStatus
@@ -41,6 +48,7 @@ sealed interface AcquireResult {
 class JudgmentService(
     private val judgmentRepository: JudgmentRepository,
     private val followupRepository: FollowupRepository,
+    private val correctionRepository: CorrectionRepository,
 ) {
     /** class-diagram 4.1 createPending. 호출한 쪽 트랜잭션 안에서 답변과 함께 저장 */
     fun createPending(answerId: UUID, rubricVersionId: UUID, now: Instant) =
@@ -122,6 +130,71 @@ class JudgmentService(
     fun results(attemptId: UUID): Map<UUID, FeedbackResult> = stored(attemptId, null)
 
     /**
+     * 신고 정정 (class-diagram 4.2 correct, FN-SUP-03). 판정 행을 잠가 같은 판정의 요청을 차례로 처리하고
+     * 같은 키 → 처리 상태 → 같은 신고 순으로 확인. 판정·요소·답변은 바꾸지 않고 정정 행만 추가 (api-spec 4.1)
+     */
+    @Transactional
+    fun correct(judgmentId: UUID, command: CorrectionCommand, idempotencyKey: UUID): JudgmentCorrection {
+        val target = correctionRepository.lockTarget(judgmentId)
+            ?: throw BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "판정 없음")
+        UserContextHolder.current().requireStudent(target.studentId)
+        correctionRepository.findByIdempotencyKey(idempotencyKey)?.let { existing ->
+            if (!existing.isSameRequest(judgmentId, command)) {
+                throw BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "IDEMPOTENCY_KEY_REUSED", "같은 키에 다른 요청 본문")
+            }
+            return existing
+        }
+        val previous = target.result
+        if (target.status != ProcessStatus.DONE || previous == null) {
+            throw BusinessException(HttpStatus.CONFLICT, "JUDGMENT_STATE_CONFLICT", "판정 상태 충돌", "완료되지 않은 판정: ${target.status}")
+        }
+        if (correctionRepository.existsByReportId(command.reportId)) {
+            throw BusinessException(HttpStatus.CONFLICT, "CORRECTION_REPORT_CONFLICT", "이미 정정한 신고", "같은 신고의 정정이 다른 키로 있음")
+        }
+        val correction = JudgmentCorrection(
+            id = UUID.randomUUID(),
+            judgmentId = judgmentId,
+            reportId = command.reportId,
+            reason = command.reason,
+            previous = previous,
+            corrected = command.corrected,
+            correctedBy = command.correctedBy,
+            idempotencyKey = idempotencyKey,
+            createdAt = now(),
+        )
+        correctionRepository.insert(correction)
+        return correction
+    }
+
+    /**
+     * 신고·문의 대상 (class-diagram 4.2 supportTarget, #146). 없으면 404, 대상 학생이 받은 범위 밖이면 403(correct와 같은 순서).
+     * 역할·관리자 학생 1명 검사는 SupportController
+     */
+    @Transactional(readOnly = true)
+    fun supportTarget(type: SupportTargetType, id: UUID): SupportTarget {
+        val target = judgmentRepository.findSupportTarget(type, id)
+            ?: throw BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "신고 대상 없음")
+        UserContextHolder.current().requireStudent(target.studentId)
+        return target
+    }
+
+    /**
+     * 관리자 원문 (class-diagram 4.2 supportOriginal, #146). 답변 버전·원문·피드백 결과만, 초안·메모·이름 없음.
+     * 타임라인을 먼저 읽음: 답변과 대기 판정은 한 트랜잭션에 저장되어 타임라인에 보인 답변은 결과에도 있음
+     */
+    @Transactional(readOnly = true)
+    fun supportOriginal(attemptId: UUID): SupportOriginal {
+        val target = supportTarget(SupportTargetType.ATTEMPT, attemptId)
+        val answers = timeline(attemptId)
+        val feedbacks = results(attemptId)
+        return SupportOriginal(
+            studentId = target.studentId,
+            attemptId = attemptId,
+            answers = answers.map { SupportAnswer(it.answerId, it.version, it.text.orEmpty(), feedbacks.getValue(it.answerId)) },
+        )
+    }
+
+    /**
      * 판정 행을 먼저 읽음: 문장마다 스냅샷이 달라(READ COMMITTED) 요소를 먼저 읽으면 그사이 커밋된 DONE과 섞여
      * "DONE인데 되묻기 없음"이 나갈 수 있음. saveResult가 DONE·요소·되묻기를 한 트랜잭션으로 커밋하므로 DONE을 본 뒤에는 나머지도 보임
      */
@@ -139,7 +212,7 @@ class JudgmentService(
                 val followup = followups[stored.answerId]
                 FeedbackResult(
                     status = ProcessStatus.DONE,
-                    judgment = JudgmentView(result, stored.trial ?: false, elements[stored.answerId].orEmpty(), stored.heldReason),
+                    judgment = JudgmentView(stored.judgmentId, result, stored.trial ?: false, elements[stored.answerId].orEmpty(), stored.heldReason),
                     followup = followup,
                     nextActions = nextActions(stored.attemptOpen, followup?.followupId, openFollowupId),
                     versions = Versions(stored.missionLabel, stored.rubricLabel, stored.modelVersion, stored.promptVersion),

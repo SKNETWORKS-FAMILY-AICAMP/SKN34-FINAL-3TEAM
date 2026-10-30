@@ -83,6 +83,16 @@ function feedbackDto(raw: unknown): Feedback {
     !Array.isArray(f.nextActions)
   )
     return contractError('피드백 status·nextActions가 유효하지 않습니다.')
+  // judgment·followup·heldReason·versions는 생략 대신 null로 올 수 있음. 판정이 있으면 신고 대상 judgmentId 필수(#146),
+  // 근거 구절이 없는 ai 요소는 sourceType null
+  if (f.judgment != null) {
+    const j = object(f.judgment)
+    if (typeof j.judgmentId !== 'string' || !['CORRECT', 'PARTIAL', 'RETHINK', 'HELD'].includes(String(j.result)))
+      return contractError('피드백 판정의 judgmentId·result가 유효하지 않습니다.')
+    if (j.elements != null && (!Array.isArray(j.elements) ||
+        j.elements.some((e) => ![null, 'RULE', 'ANSWER_KEY', 'AI_OBSERVATION'].includes(object(e).sourceType as string | null))))
+      return contractError('피드백 판정 요소의 sourceType이 유효하지 않습니다.')
+  }
   return f as unknown as Feedback
 }
 function payload(a: AnswerContent, followupId?: string): object {
@@ -141,14 +151,6 @@ export function createApiGateway(): ClassroomGateway {
     setScenario() {
       /* UI 시연 전용. 실제 API 결과를 변조하지 않는다. */
     },
-    async login(email, password) {
-      const raw = object(await apiFetch<unknown>('/auth/login', body({ email, password })))
-      if (!['PARENT', 'ADMIN'].includes(String(raw.role)))
-        return contractError('학부모/관리자 로그인 role이 필요합니다.')
-      setAccessToken(text(raw.accessToken, 'accessToken'), raw.role as 'PARENT' | 'ADMIN')
-      const me = raw.role === 'ADMIN' ? object(await apiFetch('/me')) : raw
-      return { role: raw.role, permissions: me.permissions } as Session
-    },
     async logout() {
       try {
         await apiFetch('/auth/logout', body({}))
@@ -203,6 +205,7 @@ export function createApiGateway(): ClassroomGateway {
           nickname: text(c.nickname, 'nickname'),
           grade,
           birthYear: Number(c.birthYear),
+          // core /children에는 plan이 없다(api-spec 3.7·5.3). 목업 fixture 값만 넘어오며, 실서버에서는 미확인이다.
           plan: c.plan === 'PREMIUM' || c.plan === 'FREE' ? c.plan : undefined,
           guardianConsentRequired: c.guardianConsentRequired,
           hasRecords: c.hasRecords,
@@ -348,7 +351,8 @@ export function createApiGateway(): ClassroomGateway {
         reportPeriod.to !== period.to
       )
         return contractError('요청한 자녀·기간과 리포트 범위가 다릅니다.')
-      if (raw.status === 'COMPLETED' && child.plan === 'PREMIUM' && raw.narrative) {
+      // 이용권 계약(#129) 전에는 서버가 내려준 서술 유무로 판단한다. 무료는 서버가 narrative: null(api-spec 2.5).
+      if (raw.status === 'COMPLETED' && raw.narrative) {
         const verification = object(raw.verification)
         if (verification.numbersMatched !== true || verification.quotesMatched !== true)
           return contractError('리포트의 숫자·인용 대조가 완료되지 않았습니다.')
@@ -372,7 +376,7 @@ export function createApiGateway(): ClassroomGateway {
         metrics: Array.isArray(raw.metrics) ? raw.metrics : [],
         records,
         eveningQuestion:
-          child.plan === 'PREMIUM' && typeof raw.eveningQuestion === 'string'
+          child.plan !== 'FREE' && typeof raw.eveningQuestion === 'string'
             ? raw.eveningQuestion
             : undefined,
         narrative:

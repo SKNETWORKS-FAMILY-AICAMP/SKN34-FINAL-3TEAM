@@ -37,6 +37,7 @@
     <resultMap id="stored" type="com.sagomungchi.learning.judgment.domain.StoredJudgment">
         <constructor>
             <idArg column="answer_id" javaType="java.util.UUID"/>
+            <arg column="judgment_id" javaType="java.util.UUID"/>
             <arg column="attempt_id" javaType="java.util.UUID"/>
             <arg column="attempt_open" javaType="_boolean"/>
             <arg column="process_status" javaType="com.sagomungchi.learning.judgment.domain.ProcessStatus"/>
@@ -47,6 +48,14 @@
             <arg column="prompt_version" javaType="java.lang.String"/>
             <arg column="mission_label" javaType="java.lang.String"/>
             <arg column="rubric_label" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="supportTarget" type="com.sagomungchi.learning.judgment.domain.SupportTarget">
+        <constructor>
+            <arg column="student_id" javaType="java.util.UUID"/>
+            <arg column="attempt_id" javaType="java.util.UUID"/>
+            <arg column="judgment_id" javaType="java.util.UUID"/>
+            <arg column="previous_result" javaType="com.sagomungchi.learning.judgment.domain.JudgmentResult"/>
         </constructor>
     </resultMap>
     <resultMap id="storedElement" type="com.sagomungchi.learning.judgment.domain.StoredElement">
@@ -144,12 +153,21 @@
         </where>
     </sql>
 
+    <!--
+        정정(#80)이 있으면 결과는 최신 정정 결과(created_at 가장 늦은 행, CorrectionMapper.findTarget과 같은 규칙)이고
+        보류 이유는 ai 판정의 것이라 비움. 요소·되묻기는 원판정 그대로 (class-diagram 4.2)
+    -->
     <select id="findStored" resultMap="stored">
-        SELECT a.id AS answer_id, a.attempt_id, (t.status = 'IN_PROGRESS' AND t.finished_at IS NULL) AS attempt_open,
-               j.process_status, j.result, j.trial, j.held_reason, j.model_version, j.prompt_version,
+        SELECT a.id AS answer_id, j.id AS judgment_id, a.attempt_id, (t.status = 'IN_PROGRESS' AND t.finished_at IS NULL) AS attempt_open,
+               j.process_status, COALESCE(c.result, j.result) AS result, j.trial,
+               CASE WHEN c.result IS NULL THEN j.held_reason END AS held_reason, j.model_version, j.prompt_version,
                m.code || '@' || v.version AS mission_label, m.code || '@' || rv.version AS rubric_label
         FROM answer a
         JOIN judgment j ON j.answer_id = a.id
+        LEFT JOIN LATERAL (
+            SELECT jc.corrected ->> 'result' AS result FROM judgment_correction jc WHERE jc.judgment_id = j.id
+            ORDER BY jc.created_at DESC, jc.id DESC LIMIT 1
+        ) c ON TRUE
         JOIN attempt t ON t.id = a.attempt_id
         JOIN mission m ON m.id = t.mission_id
         JOIN mission_version v ON v.id = t.mission_version_id
@@ -166,5 +184,34 @@
         JOIN rubric_element r ON r.id = e.rubric_element_id
         <include refid="storedScope"/>
         ORDER BY a.version, r.sort_order
+    </select>
+
+    <!--
+        신고·문의 대상 (#146). 판정은 지금 보이는 결과(최신 정정, CorrectionMapper.findTarget과 같은 규칙). DONE 전이면 null:
+        결과는 DONE일 때만 있고(ck_judgment_result_when_done) 정정도 DONE 판정에만 생김. 되묻기는 그 되묻기를 만든 판정 ID
+    -->
+    <select id="findSupportTarget" resultMap="supportTarget">
+        <choose>
+            <when test="type.name() == 'JUDGMENT'">
+                SELECT t.student_id, t.id AS attempt_id, j.id AS judgment_id,
+                       COALESCE((SELECT c.corrected ->> 'result' FROM judgment_correction c WHERE c.judgment_id = j.id
+                                 ORDER BY c.created_at DESC, c.id DESC LIMIT 1), j.result) AS previous_result
+                FROM judgment j
+                JOIN answer a ON a.id = j.answer_id
+                JOIN attempt t ON t.id = a.attempt_id
+                WHERE j.id = #{id}
+            </when>
+            <when test="type.name() == 'FOLLOWUP'">
+                SELECT t.student_id, t.id AS attempt_id, f.judgment_id, NULL AS previous_result
+                FROM followup f
+                JOIN attempt t ON t.id = f.attempt_id
+                WHERE f.id = #{id}
+            </when>
+            <otherwise>
+                SELECT student_id, id AS attempt_id, NULL AS judgment_id, NULL AS previous_result
+                FROM attempt
+                WHERE id = #{id}
+            </otherwise>
+        </choose>
     </select>
 </mapper>

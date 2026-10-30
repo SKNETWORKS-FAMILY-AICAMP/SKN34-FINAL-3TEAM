@@ -1,13 +1,17 @@
 """분석 대화 그래프 경로별 SSE 결과 (가짜 LLM·가짜 learning)."""
 
+import asyncio
 import json
+import time
 
 from fastapi.testclient import TestClient
 
-from app.analysis_agent.prompts import AnswerDraft, Citation, Classification
-from app.analysis_agent.records import RecordsUnavailable
-from app.analysis_agent.router import get_learning_records
+from app.analysis_agent.models import AnalysisRequest
+from app.analysis_agent.prompts import Classification
+from app.analysis_agent.router import _events, get_record_tools
+from app.analysis_agent.state import AgentContext
 from app.bootstrap import create_app
+from app.clients.learning_client import RecordsUnavailable
 from app.llm.base import LlmError
 from app.llm.providers import get_llm
 from tests.analysis_agent.records_fixture import FakeRecords
@@ -34,7 +38,7 @@ def classified(intent: str, issue: str = "NONE") -> Classification:
 def post(llm: FakeLlm, records: FakeRecords | None = None, body: dict = BODY, headers=HEADERS):
     app = create_app()
     app.dependency_overrides[get_llm] = lambda: llm
-    app.dependency_overrides[get_learning_records] = lambda: records or FakeRecords()
+    app.dependency_overrides[get_record_tools] = lambda: records or FakeRecords()
     with TestClient(app) as client:
         return client.post("/internal/analysis/stream", json=body, headers=headers)
 
@@ -48,23 +52,26 @@ def events(response) -> list[tuple[str, dict]]:
 
 
 def test_verified_llm_answer() -> None:
-    draft = AnswerDraft(
-        answer=(
-            "3개 시도 중 1개에서 되묻기 뒤에 답을 다시 썼어요. "
-            "“왜냐하면 쉬는 시간이 길면”이라는 까닭을 더했어요."
-        ),
-        citations=[Citation(source_id="S2", quote="왜냐하면 쉬는 시간이 길면")],
+    draft = (
+        "3개 시도 중 1개에서 되묻기 뒤에 답을 다시 썼어요. "
+        "“왜냐하면 쉬는 시간이 길면”이라는 까닭을 더했어요."
     )
     llm = FakeLlm(classified("CHANGES"), draft)
     records = FakeRecords()
     response = post(llm, records)
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
-    names = [name for name, _ in events(response)]
+    parsed = events(response)
+    names = [name for name, _ in parsed]
+    # status → delta → result → done (API 3.3)
+    first_delta = names.index("delta")
+    assert set(names[:first_delta]) == {"status"}
     assert names[-2:] == ["result", "done"]
-    assert "status" in names
+    assert set(names[first_delta:-2]) <= {"delta", "status"}
     assert records.closed  # 질문이 끝나면 learning 연결을 닫음
-    result = events(response)[-2][1]
+    result = parsed[-2][1]
+    deltas = "".join(data["text"] for name, data in parsed if name == "delta")
+    assert deltas.strip() == result["answer"]
     assert result["source"] == "LLM"
     assert result["fallback"] is None
     assert result["recordCount"] == 3
@@ -74,9 +81,42 @@ def test_verified_llm_answer() -> None:
         "quotesMatched": True,
         "contentAllowed": True,
     }
-    assert result["evidence"][0]["answerId"] == "a-2"
-    assert result["versions"] == {"model": "fake-model", "prompt": "analysis@1"}
+    assert [(e["kind"], e["answerId"]) for e in result["evidence"]] == [("ANSWER", "a-2")]
+    assert result["versions"] == {"model": "fake-model", "prompt": "analysis@2"}
     assert [r.call_type for r in llm.requests] == ["ANALYSIS", "ANALYSIS"]
+    assert len(llm.usages) == 2  # 노드별 LLM 호출마다 사용량 1건
+
+
+def test_llm_requests_have_no_student_id() -> None:
+    # 학생 이름·ID를 LLM에 보내지 않음 (API 4.2, NFR-SEC-03)
+    body = {**BODY, "scope": {**BODY["scope"], "studentId": "s-unique-7"}}
+    headers = {**HEADERS, "X-Student-Scope": "s-unique-7"}
+    llm = FakeLlm(classified("CHILD_THOUGHTS"), "3개 시도를 했어요.")
+    post(llm, FakeRecords(), body=body, headers=headers)
+    assert len(llm.requests) == 2
+    assert all("s-unique-7" not in r.system + r.user for r in llm.requests)
+    assert all(i not in r.user for r in llm.requests for i in ("t-1", "a-2"))  # 시도·답변 ID도
+
+
+def test_reflection_evidence_is_identified_by_attempt() -> None:
+    draft = "1개 활동에 돌아보기를 썼고, “근거 찾기가 어려웠어”라고 했어요."
+    records = FakeRecords()
+    result = events(post(FakeLlm(classified("REFLECTIONS"), draft), records))[-2][1]
+    assert result["source"] == "LLM"
+    assert result["evidence"] == [
+        {
+            "kind": "REFLECTION",
+            "attemptId": "t-1",
+            "missionTitle": "쉬는 시간 토론",
+            "answerId": None,
+            "answerVersion": None,
+            "submittedAt": "2026-10-22T19:30:00+09:00",  # 돌아보기 작성 시각
+            "quote": "근거 찾기가 어려웠어",
+            "available": True,
+        }
+    ]
+    assert {name for name, _ in records.calls} == {"summary", "attempts"}
+    assert records.attempts_size is None  # 돌아보기 수를 세므로 모든 페이지
 
 
 def test_scope_conflict_ends_with_clarification_without_records() -> None:
@@ -90,9 +130,9 @@ def test_scope_conflict_ends_with_clarification_without_records() -> None:
 
 
 def test_verification_failure_falls_back_to_template() -> None:
-    draft = AnswerDraft(answer="7개 시도에서 답을 바꿨어요.", citations=[])
-    response = post(FakeLlm(classified("CHANGES"), draft))
-    result = events(response)[-2][1]
+    parsed = events(post(FakeLlm(classified("CHANGES"), "7개 시도에서 답을 바꿨어요.")))
+    assert "delta" in [name for name, _ in parsed]  # 임시 텍스트는 이미 보냈지만 확정하지 않음
+    result = parsed[-2][1]
     assert result["source"] == "TEMPLATE"
     assert result["fallback"] == {"reason": "VERIFICATION_FAILED"}
     assert result["verification"]["numbersMatched"] is False
@@ -115,6 +155,64 @@ def test_answer_llm_failure_falls_back_to_template() -> None:
     result = events(post(llm))[-2][1]
     assert result["fallback"] == {"reason": "AI_UNAVAILABLE"}
     assert len(result["evidence"]) == 3
+    assert {e["kind"] for e in result["evidence"]} == {"ANSWER"}
+
+
+def test_stream_failure_before_first_token_is_retried() -> None:
+    llm = FakeLlm(
+        classified("THINKING_TYPES"),
+        LlmError("LLM_SERVER_ERROR", retryable=True),
+        "3개 시도를 했어요.",
+        max_retries=1,
+    )
+    result = events(post(llm))[-2][1]
+    assert result["source"] == "LLM"
+    assert len(llm.requests) == 3
+
+
+def test_stream_failure_after_first_token_is_not_retried() -> None:
+    llm = FakeLlm(
+        classified("THINKING_TYPES"),
+        ["3개 시도", LlmError("LLM_CONNECTION", retryable=True)],
+        "3개 시도를 했어요.",
+        max_retries=1,
+    )
+    parsed = events(post(llm))
+    result = parsed[-2][1]
+    assert [data["text"] for name, data in parsed if name == "delta"] == ["3개 시도"]
+    assert result["source"] == "TEMPLATE"
+    assert result["fallback"] == {"reason": "AI_UNAVAILABLE"}
+    assert len(llm.requests) == 2  # 보낸 조각이 있으면 다시 요청하지 않음
+
+
+def test_cancelled_stream_stops_graph_and_llm() -> None:
+    # core가 연결을 끊으면 Starlette가 응답 생성기를 취소함 (ASGI 2.3 disconnect 감지)
+    llm = FakeLlm(classified("CHANGES"), ["답을 다시 썼어요. "] * 20, delay=0.01)
+    records = FakeRecords()
+    context = AgentContext(llm=llm, tools=records, deadline=time.monotonic() + 60)  # type: ignore[arg-type]
+    seen: list[str] = []
+
+    async def scenario() -> None:
+        first_delta = asyncio.Event()
+
+        async def consume() -> None:
+            async for event in _events(AnalysisRequest.model_validate(BODY), context):
+                seen.append(event.split("\n", 1)[0])
+                if event.startswith("event: delta"):
+                    first_delta.set()
+
+        task = asyncio.create_task(consume())
+        await first_delta.wait()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await asyncio.sleep(0.1)  # 취소가 안 됐다면 이 사이에 조각·호출이 더 생김
+
+    asyncio.run(scenario())
+    assert seen[-1] == "event: delta"
+    assert seen.count("event: delta") < 20  # 남은 조각을 받지 않음
+    assert len(llm.requests) == 2  # 이후 LLM 호출 없음
+    assert len(llm.usages) == 1  # 답변 스트림은 끝나지 않음 (classify만 완료)
+    assert records.closed
 
 
 def test_no_records_is_guidance_not_failure() -> None:
@@ -148,13 +246,19 @@ def test_record_failure_is_error_not_empty_answer() -> None:
 def test_tools_use_confirmed_scope_only() -> None:
     records = FakeRecords()
     post(
-        FakeLlm(
-            classified("THINKING_TYPES"), AnswerDraft(answer="3개 시도를 했어요.", citations=[])
-        ),
+        FakeLlm(classified("THINKING_TYPES"), "3개 시도를 했어요."),
         records,
     )
     assert {name for name, _ in records.calls} == {"summary", "thinking_types"}
     assert all(scope.student_id == "s-1" for _, scope in records.calls)
+
+
+def test_missing_internal_token_is_unauthorized() -> None:
+    headers = {k: v for k, v in HEADERS.items() if k != "X-Internal-Token"}
+    llm = FakeLlm()
+    response = post(llm, headers=headers)
+    assert response.status_code == 401
+    assert llm.requests == []
 
 
 def test_other_child_is_forbidden_before_streaming() -> None:

@@ -68,25 +68,31 @@ export interface FeedbackElement {
   label: string
   satisfied: boolean
   quote: string | null
-  sourceType: 'RULE' | 'ANSWER_KEY' | 'AI_OBSERVATION'
+  /** 근거 구절이 없는 ai 요소는 null (learning #25) */
+  sourceType: 'RULE' | 'ANSWER_KEY' | 'AI_OBSERVATION' | null
 }
 export const isVerifiedElement = (element: FeedbackElement, texts: string[]) =>
   element.satisfied && !!element.quote && texts.some((text) => text.includes(element.quote!))
+/** learning 피드백 결과 (api-spec 3.2·4.1). 실서버는 판정 전·되묻기 없음을 생략이 아니라 null로 보냄 */
 export interface Feedback {
   status: ProcessStatus
   judgment?: {
+    /** 판정 신고(targetType JUDGMENT) 대상 ID (learning #146) */
+    judgmentId: string
     result: JudgmentResult
     trial: boolean
-    heldReason?: string
+    heldReason?: string | null
     elements?: FeedbackElement[]
-  }
+  } | null
   followup?: {
     followupId: string
     type: 'ONE_STEP_MORE' | 'TELL_MORE' | 'LOOK_AGAIN'
     question: string
     source: 'LLM' | 'LLM_RETRY' | 'BANK'
-  }
+  } | null
   nextActions: NextAction[]
+  /** 미션·기준표는 "미션 code@버전", 규칙 판정이면 model·prompt null. 화면에서는 쓰지 않음 */
+  versions?: { mission: string; rubric: string; model: string | null; prompt: string | null } | null
 }
 export interface Answer {
   answerId: string
@@ -170,6 +176,7 @@ export type DemoScenario =
   | 'draft-conflict'
   | 'submit-fail'
   | 'ai-fail'
+  | 'ai-fail-final'
   | 'held'
   | 'bank'
   | 'report-fail'

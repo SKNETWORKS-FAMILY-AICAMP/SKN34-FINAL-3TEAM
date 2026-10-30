@@ -73,7 +73,9 @@ try {
     await p.getByRole('button', { name: '다 골랐어요' }).click()
     await p.getByRole('dialog').waitFor({ state: 'detached' })
     await p.getByText('나는 토리!', { exact: false }).waitFor()
-    await p.getByText('서윤의 생각 숲', { exact: false }).waitFor()
+    // 학생 화면은 로고 없이 고른 테마의 문구만 보인다
+    await p.getByText('생각이 자라는 숲', { exact: true }).waitFor()
+    assert.equal(await p.locator('.app-brand').count(), 0)
     // 학생은 새로고침하면 다시 로그인한다(#61). 다시 들어와도 서버에 저장한 설정이 그대로인지 본다.
     await p.reload({ waitUntil: 'domcontentloaded' })
     await p.waitForURL('**/student/login')

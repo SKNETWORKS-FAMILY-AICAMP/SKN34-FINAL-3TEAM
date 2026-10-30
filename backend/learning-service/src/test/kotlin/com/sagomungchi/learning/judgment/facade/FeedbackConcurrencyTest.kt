@@ -58,8 +58,11 @@ import kotlin.test.assertTrue
 @SpringBootTest(properties = [
     "app.internal.token=concurrency-test-token",
     "spring.rabbitmq.username=test", "spring.rabbitmq.password=test",
+    "spring.rabbitmq.listener.simple.auto-startup=false",
 ])
 class FeedbackConcurrencyTest {
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    lateinit var paymentUsage: com.sagomungchi.learning.judgment.client.PaymentUsageClient
     @Autowired lateinit var facade: FeedbackFacade
     @Autowired lateinit var answerService: AnswerService
     @Autowired lateinit var attemptService: AttemptService

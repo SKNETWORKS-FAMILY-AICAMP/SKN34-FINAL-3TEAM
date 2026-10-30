@@ -106,6 +106,7 @@ export interface DemoSnapshot {
   reports: [string, Report[]][]
 }
 export function createDemoGateway(): ClassroomGateway & {
+  login: NonNullable<ClassroomGateway['login']> // 개발 시연 이메일 로그인 (#97)
   snapshot: () => DemoSnapshot
   restoreSnapshot: (snapshot: DemoSnapshot) => void
   replaceChildren: (children: Child[]) => void
@@ -216,11 +217,15 @@ export function createDemoGateway(): ClassroomGateway & {
             : correct
               ? 'CORRECT'
               : 'HELD'
-    const noMore = (result === 'CORRECT' && last.inputType === 'CHOICE') || a.answers.length >= 3
+    // learning과 같이 고르기 활동(고르기·순서·분류) 정답은 되묻기 없이 마무리만 (#82)
+    const noMore =
+      (result === 'CORRECT' && ['CHOICE', 'ORDERING', 'CLASSIFICATION'].includes(last.inputType)) ||
+      a.answers.length >= 3
     const quote = last.text.slice(0, Math.min(50, last.text.length))
     return {
       status: 'DONE',
       judgment: {
+        judgmentId: `${last.answerId}-judgment`,
         result,
         trial: !correct,
         heldReason: result === 'HELD' ? 'UNVERIFIED_SCOPE' : undefined,
@@ -568,9 +573,15 @@ export function createDemoGateway(): ClassroomGateway & {
         answer!.feedback = { status: 'FAILED', nextActions: [] }
         fail('AI_UNAVAILABLE', '답변은 저장했지만 피드백 처리가 실패했어요.', 503)
       }
+      // 다시 요청해도 같은 실패(ai 4xx·계약 밖 응답, learning #25 retryable:false)
+      if (scenario === 'ai-fail-final') {
+        answer!.feedback = { status: 'FAILED', nextActions: [] }
+        throw new ApiError({ code: 'AI_UNAVAILABLE', title: '피드백을 만들지 못했어요.', status: 503, retryable: false })
+      }
       answer!.feedback = nextFeedback(a)
       if (scenario === 'held')
         answer!.feedback.judgment = {
+          judgmentId: `${answerId}-judgment`,
           result: 'HELD',
           trial: true,
           heldReason: 'INSUFFICIENT_EVIDENCE',

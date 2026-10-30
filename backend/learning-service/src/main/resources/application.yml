@@ -23,6 +23,11 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME}
     password: ${RABBITMQ_PASSWORD}
+    publisher-confirm-type: simple # 재시도 재발행에서 confirm 대기 (core와 같음)
+    listener:
+      simple:
+        acknowledge-mode: manual # RetryingConsumer가 ACK·재발행·reject 결정 (아키텍처 1.6)
+        missing-queues-fatal: false # 큐 선언은 definitions.json 담당, 없으면 경고 로그 후 재확인
   mvc:
     problemdetails:
       enabled: true
@@ -43,12 +48,15 @@ management:
         enabled: true
       group:
         readiness:
-          include: readinessState,db
+          include: readinessState,db,rabbit # student.deleted 소비 (#128)
 
 app:
   internal:
     token: ${INTERNAL_TOKEN}
     connect-timeout: 2s
-    read-timeout: 35s # [P12] learning→ai 각 35초 (learning이 부르는 내부 서비스는 ai뿐, architecture 1.3)
+    read-timeout: 35s # [P12] learning→ai 각 35초 (architecture 1.3). core 호출(결제 사용·삭제 완료 보고)도 같은 값
   services:
+    core: ${CORE_URL:http://localhost:8080}
     ai: ${AI_URL:http://localhost:8000}
+  messaging:
+    max-retries: 3 # P12: 1·5·15분 3회. definitions.json의 <큐>.retry.1~3 개수와 일치

@@ -1,7 +1,8 @@
 """POST /internal/analysis/stream (SSE, API 명세서 3.3·4.2).
 
-이벤트: status* → result → done | clarification(종료) | error(종료).
-delta는 보내지 않음: 답변은 숫자·인용 대조를 통과한 뒤에만 보여 주므로 임시 텍스트를 흘리지 않음.
+이벤트: status* → delta* → result → done | clarification(종료) | error(종료).
+delta는 LLM 답변 조각(대조 전 임시 표시). 확정 답변은 대조를 통과한 result.answer뿐.
+core가 연결을 끊으면 이 생성기가 취소되어 그래프·LLM 스트림도 멈춤.
 """
 
 import json
@@ -16,8 +17,9 @@ from pydantic import BaseModel
 
 from app.analysis_agent.graph import build_graph
 from app.analysis_agent.models import AnalysisRequest, StreamError
-from app.analysis_agent.records import HttpLearningRecords, LearningRecords
 from app.analysis_agent.state import AgentContext, AnalysisState
+from app.analysis_agent.tools import RecordTools
+from app.clients.learning_client import LearningClient
 from app.config import get_settings
 from app.llm.base import LlmClient
 from app.llm.providers import get_llm
@@ -28,10 +30,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/internal/analysis", tags=["analysis"])
 
 
-def get_learning_records(
+def get_record_tools(
     user: Annotated[UserContext, Depends(get_user_context)],
-) -> LearningRecords:
-    return HttpLearningRecords(get_settings().learning_url, user)
+) -> RecordTools:
+    return RecordTools(LearningClient(get_settings().learning_url, user), user)
 
 
 @router.post("/stream")
@@ -39,12 +41,12 @@ async def stream(
     body: AnalysisRequest,
     user: Annotated[UserContext, Depends(get_user_context)],
     llm: Annotated[LlmClient, Depends(get_llm)],
-    records: Annotated[LearningRecords, Depends(get_learning_records)],
+    tools: Annotated[RecordTools, Depends(get_record_tools)],
 ) -> StreamingResponse:
     # 질문마다 권한 확인 (FN-AGT-02). 스트림 시작 전이라 일반 403 응답
     user.require_student(body.scope.student_id)
     deadline = time.monotonic() + get_settings().analysis_deadline
-    context = AgentContext(llm=llm, records=records, deadline=deadline)
+    context = AgentContext(llm=llm, tools=tools, deadline=deadline)
     return StreamingResponse(
         _events(body, context),
         media_type="text/event-stream",
@@ -57,7 +59,7 @@ async def _events(body: AnalysisRequest, context: AgentContext) -> AsyncIterator
         async for event in _run(body, context):
             yield event
     finally:
-        await context.records.aclose()
+        await context.tools.aclose()
 
 
 async def _run(body: AnalysisRequest, context: AgentContext) -> AsyncIterator[str]:

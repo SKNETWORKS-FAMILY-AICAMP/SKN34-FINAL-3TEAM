@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ReportProblem } from '../service/ReportProblem.tsx'
 import type { Child, Period } from '../../domain/classroom.ts'
 import type { Scope } from '../../domain/parent.ts'
 import { parentApi } from '../../data/parent/api.ts'
@@ -131,6 +132,7 @@ function ReportDetail({
   return (
     <section className="ws-card">
       <h2>리포트 상세</h2>
+      <ReportProblem targetType="REPORT" targetId={id}/>
       <QueryFeedback query={q} />
       {r && (
         <>
@@ -184,7 +186,7 @@ function ReportDetail({
                   </button>
                 ))}
               </div>
-              {child.plan === 'PREMIUM' && (
+              {child.plan !== 'FREE' && (
                 <>
                   <h3>생각 유형별 활동</h3>
                   {r.thinkingTypes.map((t) => (

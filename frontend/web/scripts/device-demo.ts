@@ -1,3 +1,4 @@
+import { pinDemoChild, temporaryStudentPin } from '../src/mocks/fixtures/studentPinDemo.ts'
 // Vite 개발 서버에서만 사용하는 공유 기기 목업. 실제 core-service/API를 대체하지 않는다.
 import { randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto'
 import type { Child } from '../src/domain/classroom.ts'
@@ -78,6 +79,17 @@ export function createDeviceDemo(now = Date.now) {
           fail(403, 'DEMO_ORIGIN_DENIED', '같은 시연 화면에서 다시 시도해 주세요.')
         if (path === '/instance' && request.method === 'GET') return json({ instanceId })
         const body = async () => await request.json() as Record<string, unknown>
+        // 명시적인 개발 시연 버튼만 호출한다. QR 기기·보호자 소유권을 재사용하지 않는다.
+        if (path === '/preview' && request.method === 'POST') {
+          if (devices.size >= 1000) fail(429, 'DEMO_LIMIT', '시연 서버를 다시 시작해 주세요.')
+          const child = { ...pinDemoChild }, salt = randomBytes(16).toString('hex')
+          const owner: Owner = { children: [child], pins: new Map([[child.id, { salt, hash: scryptSync(temporaryStudentPin, salt, 32), failures: 0 }]]) }
+          const d: Device = { deviceId: randomUUID(), credential: randomBytes(32).toString('hex'), owner,
+            childIds: [child.id], label: '가상 학생 PIN 시연', createdAt: new Date(now()).toISOString(),
+            expiresAt: new Date(now() + DEVICE_TTL).toISOString(), lastUsedAt: null, revoked: false }
+          devices.set(d.credential, d)
+          return json({ deviceId: d.deviceId }, 201, { 'Set-Cookie': cookie(request, d.credential) })
+        }
         if (path === '/owners' && request.method === 'POST') {
           if (owners.size >= 100) fail(429, 'DEMO_LIMIT', '시연 서버를 다시 시작해 주세요.')
           const data = await body(), ownerToken = randomBytes(32).toString('hex')

@@ -123,3 +123,15 @@ test('해제·만료 기기는 PIN이 맞아도 거부, 기기 목록에서 해�
   setDeviceScenario('device-expired')
   assert.equal((await login('demo-seoyun', '4831')).body.code, 'STUDENT_DEVICE_INVALID')
 })
+
+test('명시적 가상 학생 준비 후 5090 로그인: 오입력은 거절하고 학생 토큰만 발급', async () => {
+  const prepared = await call('/auth/student/demo-device', { method: 'POST' })
+  assert.equal(prepared.status, 201)
+  const profiles = (await call('/auth/student/profiles')).body.items
+  assert.equal(profiles[0].childId, 'demo-pin-student')
+  assert.equal((await login('demo-pin-student', '1234')).body.code, 'STUDENT_PIN_INVALID')
+  const entered = await login('demo-pin-student', '5090')
+  assert.equal(entered.status, 200)
+  assert.equal(entered.body.role, 'STUDENT')
+  assert.equal((await call('/children', { token: entered.body.accessToken })).status, 403)
+})

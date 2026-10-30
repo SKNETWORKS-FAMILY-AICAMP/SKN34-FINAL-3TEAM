@@ -1,12 +1,13 @@
 """답변 작성 → 대조 → 확정, 또는 코드 문장 (P16, FN-AGT-06·09).
 
-LLM 답변은 대조를 통과해야만 확정. 실패하면 LLM 문장을 버리고 계산 수치·원문 템플릿.
+LLM 답변은 조각마다 delta로 임시 표시하고, 대조를 통과해야만 result로 확정.
+실패하면 LLM 문장(보낸 delta 포함)을 버리고 계산 수치·원문 템플릿.
 """
 
 from langgraph.runtime import Runtime
 
 from app.analysis_agent import prompts, templates
-from app.analysis_agent.metrics import Computation
+from app.analysis_agent.calculators import Computation
 from app.analysis_agent.models import (
     AnalysisResult,
     Evidence,
@@ -16,7 +17,7 @@ from app.analysis_agent.models import (
     Scope,
     Verification,
 )
-from app.analysis_agent.nodes.events import status
+from app.analysis_agent.nodes.events import delta, status
 from app.analysis_agent.state import AgentContext, AnalysisState
 from app.analysis_agent.verification import verify
 from app.llm.base import LlmUnavailable
@@ -25,32 +26,35 @@ from app.llm.base import LlmUnavailable
 async def answer(state: AnalysisState, runtime: Runtime[AgentContext]) -> AnalysisState:
     runtime.stream_writer(status("답변을 쓰는 중"))
     request = state["request"]
+    stream = runtime.context.llm.stream(
+        system=prompts.ANSWER_SYSTEM,
+        user=prompts.build_answer_user(request, state["intent"], state["computation"]),
+        call_type="ANALYSIS",
+        prompt_version=prompts.PROMPT_VERSION,
+        max_tokens=1024,
+        deadline=runtime.context.deadline,
+    )
+    parts: list[str] = []
     try:
-        result = await runtime.context.llm.generate(
-            system=prompts.ANSWER_SYSTEM,
-            user=prompts.build_answer_user(request, state["intent"], state["computation"]),
-            output=prompts.AnswerDraft,
-            call_type="ANALYSIS",
-            prompt_version=prompts.PROMPT_VERSION,
-            max_tokens=1024,
-            deadline=runtime.context.deadline,
-        )
+        async for text in stream:
+            parts.append(text)
+            runtime.stream_writer(delta(text))
     except LlmUnavailable:
+        # 첫 조각 뒤 실패도 재시도 없이 규칙 응답 (보낸 delta는 core·web이 폐기)
         return {"fallback_reason": "AI_UNAVAILABLE"}
-    return {"draft": result.data, "model": result.model}
+    return {"draft": "".join(parts), "model": stream.model}
 
 
 async def check(state: AnalysisState, runtime: Runtime[AgentContext]) -> AnalysisState:
     runtime.stream_writer(status("숫자와 인용을 기록과 맞춰 보는 중"))
     draft = state["draft"]
-    computation = state["computation"]
-    checked = verify(draft.answer, draft.citations, computation)
+    checked = verify(draft, state["computation"])
     if not checked.passed:
         return {"verification": checked.verification, "fallback_reason": "VERIFICATION_FAILED"}
     return {
         "result": _result(
             state,
-            text=draft.answer.strip(),
+            text=draft.strip(),
             source="LLM",
             evidence=checked.evidence,
             verification=checked.verification,

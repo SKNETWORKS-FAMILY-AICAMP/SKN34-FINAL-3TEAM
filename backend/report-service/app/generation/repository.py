@@ -33,6 +33,16 @@ from app.generation.models import (
 )
 
 metadata = MetaData()
+report_job_guard = Table(
+    "report_job_guard",
+    metadata,
+    Column("job_id", PG_UUID(as_uuid=True), primary_key=True),
+    Column("student_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("period_from", Date, nullable=False),
+    Column("period_to", Date, nullable=False),
+    Column("failure_reason", String, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
 weekly_report = Table(
     "weekly_report",
     metadata,
@@ -99,6 +109,37 @@ def _report(row) -> WeeklyReport:
 
 
 class ReportRepository:
+    def guard(self, session, job_id, student_id, period_from, period_to):
+        row = (
+            session.execute(select(report_job_guard).where(report_job_guard.c.job_id == job_id))
+            .mappings()
+            .one_or_none()
+        )
+        if row is not None and (row["student_id"], row["period_from"], row["period_to"]) != (
+            student_id,
+            period_from,
+            period_to,
+        ):
+            raise JobConflict("Report job guard student/period does not match")
+        return row
+
+    def block(self, session, job_id, student_id, period_from, period_to):
+        session.execute(
+            report_job_guard.insert().values(
+                job_id=job_id,
+                student_id=student_id,
+                period_from=period_from,
+                period_to=period_to,
+                failure_reason="REPORT_NOT_CREATED",
+                created_at=datetime.now(UTC),
+            )
+        )
+
+    def failure_reason(self, session, report_id):
+        return session.scalar(
+            select(weekly_report.c.failure_reason).where(weekly_report.c.id == report_id)
+        )
+
     def find_by_job(self, session: Session, job_id: UUID) -> WeeklyReport | None:
         row = (
             session.execute(select(weekly_report).where(weekly_report.c.job_id == job_id))

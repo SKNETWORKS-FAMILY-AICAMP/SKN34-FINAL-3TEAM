@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     followup_example_overlap_chars: int = 12  # 예시 답과 이만큼(공백·문장부호 제외) 겹치면 유출
     # 되묻기 전체 마감(초). learning→ai 되묻기 35초(P12)보다 짧게, 재생성은 이 안에서만
     followup_deadline: float = 33.0
+    # 리포트 서술 전체 마감(초). report→ai 읽기 30초보다 짧게, 재시도는 남은 시간 안에서만
+    narrative_deadline: float = 28.0
 
     # 분석 대화 전체 마감(초). core 기준 전체 120초(P12)보다 짧게, LLM 호출은 이 안에서만
     analysis_deadline: float = 110.0

@@ -48,8 +48,8 @@ stateDiagram-v2
 stateDiagram-v2
   state student {
     [*] --> S_ACTIVE: 자녀 등록
-    S_ACTIVE --> S_DELETION_REQUESTED: PROFILE 삭제 확정
-    S_DELETION_REQUESTED --> S_DELETED: 삭제 완료
+    S_ACTIVE --> S_DELETION_REQUESTED: PROFILE 또는 RECORDS 삭제 확정
+    S_DELETION_REQUESTED --> S_DELETED: PROFILE 삭제 완료
     S_DELETED --> [*]
   }
   state deletion_request {
@@ -60,7 +60,8 @@ stateDiagram-v2
   }
   note right of deletion_request
     재확인 토큰은 요청 시 검사, 완료: learning·report 완료 보고 (P09)
-    RECORDS 범위는 student 상태 유지, 기록만 삭제
+    RECORDS는 프로필을 보존하지만 DELETION_REQUESTED 유지
+    학습 재개는 후속 계약 필요
   end note
 ```
 
@@ -69,8 +70,10 @@ stateDiagram-v2
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
 | `deletion_request → REQUESTED` | `POST /children/{id}/deletion-requests` + `X-Reauth-Token` (P09) | `ChildManagementService.delete` | 연결 자녀(`LINKED`)만. 재확인 토큰이 없거나 무효면 `403 REAUTH_REQUIRED`로 행을 만들지 않음 |
-| `REQUESTED → CONFIRMED` | 같은 요청 안에서 바로 확정 (별도 확인 API 없음, 연결 해제·탈퇴와 같은 1단계) | `ChildManagementService.confirm` | 같은 트랜잭션에 `outbox_event(student.deleted)`, `scope = PROFILE`이면 `student ACTIVE → DELETION_REQUESTED` |
-| `CONFIRMED → COMPLETED`, `student → DELETED` | learning·report 모두 `POST /internal/deletion-requests/{id}/completions` 보고 (P09) | `ChildManagementService.complete` | `deleted_at` 기록. 이후 모든 조회에서 제외, 근거는 `available: false` |
+| `REQUESTED → CONFIRMED` | 같은 요청 안에서 바로 확정 (별도 확인 API 없음, 연결 해제·탈퇴와 같은 1단계) | `ChildManagementService.confirm` | 현재 구현은 CONFIRMED 행을 바로 생성한다. 같은 트랜잭션에 `outbox_event(student.deleted)`를 저장하며 두 scope 모두 `student ACTIVE → DELETION_REQUESTED`로 차단한다 |
+| `CONFIRMED → COMPLETED` | learning·report 모두 `POST /internal/deletion-requests/{id}/completions` 보고 (P09) | `ChildManagementService.complete` | PROFILE만 프로필을 제거한다. RECORDS는 프로필과 DELETION_REQUESTED를 유지하며 자동 학습 재개는 구현되지 않았다. 탈퇴 대기 중이면 후속 PROFILE 삭제를 요청한다 |
+
+2026-10-29 통합 검증: 위 상태 설명은 현재 core 구현을 반영한다. RECORDS 이후 학습 재개 정책을 새로 확정한 것이 아니며, 재개 기능은 core·learning·report가 함께 계약을 정해야 한다.
 
 ### 2.3 `guardianship.status` · `consent.status`
 
@@ -106,12 +109,14 @@ stateDiagram-v2
 stateDiagram-v2
   [*] --> DRAFT: 미션 작성
   DRAFT --> REVIEW_REQUIRED: 검토 요청
-  REVIEW_REQUIRED --> DRAFT: 검토 결과 CHANGES_REQUESTED
+  REVIEW_REQUIRED --> DRAFT: 검토 결과 CHANGES_REQUESTED 또는 검토 중 수정
   REVIEW_REQUIRED --> PUBLISHED: 검토 APPROVED + 필수 항목 충족 후 게시
+  PUBLISHED --> PUBLISHED: 수정·재검토·재게시 (공개 버전 유지)
   PUBLISHED --> UNPUBLISHED: 신규 제공 중단
   UNPUBLISHED --> REVIEW_REQUIRED: 수정 후 재검토
   note right of PUBLISHED
     공개 중 수정 시 새 버전 생성 (P07)
+    학생에게는 공개 버전(published_*), 수정본은 current_*
     재검토·재게시 후 신규 시도부터 적용
     진행 중 시도는 시작 당시 버전 유지
   end note
@@ -119,14 +124,17 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
-| → `DRAFT` | `POST /admin/missions` (CONTENT) | `MissionService.create` | `mission_version` v1 생성 |
-| `DRAFT → REVIEW_REQUIRED` | `POST /admin/missions/{id}/review-request` (P07) | `Mission.requestReview()` | 현재 미션·기준표 버전 존재 |
-| `REVIEW_REQUIRED → DRAFT` | `POST /admin/missions/{id}/review` `CHANGES_REQUESTED` | `Mission.rejectReview()` | `mission_review` 행 추가 |
-| `REVIEW_REQUIRED → PUBLISHED` | `POST /admin/missions/{id}/publish` | `Mission.publish(snapshot)` | 현재 버전 대상 최신 리뷰 `APPROVED` + `requirePublishable` 통과, 아니면 `422 MISSION_PUBLISH_INCOMPLETE`. `published_at` 기록, `audit_log` |
+| → `DRAFT` | `POST /admin/missions` (CONTENT) | `MissionService.create` | `mission_version` v1 생성, 기준표 버전 없음 |
+| 수정 | `PATCH /admin/missions/{id}`·`PUT …/rubric` | `MissionService.update`·`putRubric` | 새 `mission_version`·`rubric_version` 추가 후 `current_*` 갱신(이전 버전 불변). `REVIEW_REQUIRED`는 검토 대상이 바뀌어 `DRAFT`, `DRAFT`·`PUBLISHED`·`UNPUBLISHED`는 상태 유지(공개 버전 `published_*` 그대로, #145) |
+| `DRAFT·UNPUBLISHED → REVIEW_REQUIRED` | `POST /admin/missions/{id}/review-request` (P07) | `Mission.requestReview()` | 본문의 미션·기준표 버전이 현재 버전과 같음(아니면 `409 MISSION_VERSION_CONFLICT`), 기준표 버전 존재 |
+| `PUBLISHED` 재검토 요청 | 같은 경로 | `Mission.requestReview()` | 현재 버전이 공개 버전과 다를 때만, 상태는 `PUBLISHED` 유지(학생 제공 계속, #145) |
+| `REVIEW_REQUIRED → DRAFT` | `POST /admin/missions/{id}/review` `CHANGES_REQUESTED` | `Mission.rejectReview()` | `mission_review` 행 추가. `PUBLISHED` 재검토 반려는 상태 유지 |
+| `REVIEW_REQUIRED → PUBLISHED`, `PUBLISHED` 재게시 | `POST /admin/missions/{id}/publish` | `Mission.publish(snapshot)` | 현재 미션·기준표 버전 대상 최신 리뷰 `APPROVED` + `requirePublishable` 통과, 아니면 `422 MISSION_PUBLISH_INCOMPLETE`. `published_*` ← `current_*`, `published_at` 기록. 감사 기록은 core 프록시(learning에 감사 테이블 없음) |
 | `PUBLISHED → UNPUBLISHED` | `POST /admin/missions/{id}/unpublish` | `Mission.unpublish()` | 신규 시도 차단(`MISSION_NOT_AVAILABLE`), 기존 시도는 당시 버전 유지 |
 | `UNPUBLISHED → REVIEW_REQUIRED` | 수정 후 검토 요청 | `Mission.requestReview()` | 재공개는 다시 `REVIEW_REQUIRED → PUBLISHED` 경로만 |
 
-- 학생 목록 노출 조건: `status = PUBLISHED` + 학년·입력 방식 범위 + `demo_only`는 시연 계정만 (FN-LRN-02). 시연 학생 여부는 core가 learning 조회에 `demo`(`student.is_demo`)로 넘김 (api-spec 4.1, [#22 보고서](../report/learning.md))
+- 위에 없는 전이(예: `DRAFT`에서 게시, `UNPUBLISHED`에서 검토)는 `409 CONFLICT` (#145)
+- 학생 목록 노출 조건: `status = PUBLISHED` + 공개 버전(`published_*`) 기준 학년·입력 방식 범위 + `demo_only`는 시연 계정만 (FN-LRN-02). 시연 학생 여부는 core가 learning 조회에 `demo`(`student.is_demo`)로 넘김 (api-spec 4.1, [#22 보고서](../report/learning.md))
 - 개발·시연용 데모 미션 시드(`backend/learning-service/db/seed/`)는 위 관리자 흐름 없이 `PUBLISHED`·`DRAFT` 상태를 직접 넣으며 `mission_review`를 만들지 않음. 운영 미션은 위 전이만 사용 ([#22 보고서](../report/learning.md))
 
 ### 3.2 `attempt.status` (미션 수행)
@@ -186,6 +194,7 @@ stateDiagram-v2
 - 전이 실패(영향 0행) 시 현재 상태로 응답: `DONE` → 저장 결과, 유효 `RUNNING` → `status` 이벤트 후 종료 (API 1.4)
 - 고착 `RUNNING` 탐지 인덱스 `(process_status, lease_until)`, 리스 90초·탐지 주기 1분 (P12). 주기 탐지 작업은 미구현(운영 작업 후속)이며 현재는 다음 피드백 요청 때 만료 리스를 재획득 ([이슈 #25 보고서](../report/learning.md))
 - 리스 시간은 core→learning 피드백 호출 타임아웃보다 길게 설정. 짧으면 처리 중인 판정을 다른 요청이 재획득해 LLM 호출이 중복됨
+- 정정(`POST /internal/judgments/{id}/corrections`, #80)은 `DONE` 판정만 받고 그 전이면 `409 JUDGMENT_STATE_CONFLICT`. `process_status`·`result`는 바꾸지 않고 `judgment_correction` 행을 추가하며, 조회 때 최신 정정 결과를 `result`로 보여 줌 (FN-SUP-03)
 
 #### `judgment.result` 결정 (`DONE`일 때만 값 존재)
 
@@ -229,7 +238,7 @@ stateDiagram-v2
 | `QUEUED·RUNNING → FAILED` | `report.failed` | `ReportJob.fail(reason)` | 위와 같음, `failure_reason` |
 
 - 종료 후 늦게 온 `report.started`는 영향 0행 → 무시 (역순 도착 허용)
-- `QUEUED` 고착(메시지 DLQ 이동)은 관리자 `/admin/queues`·`/admin/jobs`에서 확인 후 재처리 (FN-ADM-07). 재처리는 새 행이라 기존 `QUEUED` 행의 정리 방식은 9장 가정
+- `QUEUED` 고착(메시지 DLQ 이동)은 #132 복구 점검으로 실제 report 상태와 대조한 뒤 종료한다. 관리자는 `/admin/queues`·`/admin/jobs`에서 확인하며 자동 재생성은 하지 않는다.
 
 ### 4.2 `weekly_report.status` · `state` (report)
 
@@ -257,6 +266,7 @@ stateDiagram-v2
 
 - 기록 없는 주·표본 부족 주는 `COMPLETED` + `state`, 처리 실패(`FAILED`)와 구분 (FN-RPT-11)
 - 재생성은 새 행(`revision + 1`), 기존 결과 보존·최신판 기본 조회 (P06)
+- #152 관리자 실패 재처리도 **새 jobId·새 행**으로 위 전이를 시작한다. 원래 FAILED 행은 유지하며 같은 jobId의 COMPLETED·FAILED 메시지는 ACK 후 종료한다. 원작업 연결은 core #47이 관리하고, report는 요청한 새 jobId별 이벤트만 발행한다.
 
 ### 4.3 `conversation_message.status`
 
@@ -304,7 +314,7 @@ stateDiagram-v2
 - `notification` UK `(user_id, type, source_event_id)` → 같은 사건 재처리 시 중복 생성 없음 (FN-SUP-08). 읽음(`read_at`)은 상태와 독립
 - `job_execution`: 대화·리포트·알림 실행 1회당 1행, UK `(job_type, job_id, attempt_no)`. 재처리는 `attempt_no + 1` 새 행 (FN-ADM-07)
 - 알림 채널은 인앱만, 이메일·푸시 없음 (P10)
-- `notification.status`의 `RUNNING`은 CHECK만 허용하고 사용하지 않음. 실패 알림 재처리는 미구현이며 클라이언트는 목록 재조회로 보완 (api-spec 2.7)
+- `notification.status`의 `RUNNING`은 관리자 실패 알림 재처리(#47) 선점 때만 사용한다. 재처리는 `FAILED`만 `RUNNING`으로 원자 선점 후 새 `job_execution`을 남기고 결과로 종료(api-spec 2.8 retry 규칙), 자동 재처리는 없으며 클라이언트는 목록 재조회로 보완 (api-spec 2.7)
 
 ---
 
@@ -489,4 +499,19 @@ stateDiagram-v2
 - 문의 `RECEIVED → IN_REVIEW`: API 2.8에 상태 변경 엔드포인트 없음 → 필요 시 API 명세에 추가
 - 돌아보기를 마무리 전에 저장하면 `409 REVEAL_CONDITION_UNMET`으로 거부 (기존 오류 코드 재사용)
 - 정기 청구 재청구: ERD 부분 UK `(subscription_id, billing_period_start) WHERE kind = 'RENEWAL'`로 같은 기간 새 주문 불가. 가정은 "기존 주문의 결제가 `FAILED`면 같은 주문으로 재청구", PG 주문번호 재사용 가능 여부 확인 후 ERD 반영 필요
-- `QUEUED` 고착 `report_job` 재처리: 새 행 생성 시 기존 행을 `FAILED`(`failure_reason = SUPERSEDED`)로 종료하는 방안 가정. 늦게 도착한 기존 job 이벤트는 조건부 UPDATE로 무시
+- `QUEUED` 고착 작업은 #132 내부 복구 API와 영구 재실행 차단 기록으로 정리한다(4.1 보완). 시간만으로 SUPERSEDED 처리하는 가정은 사용하지 않는다.
+
+
+### #48 결제 상태 적용 보완
+
+CONFIRMING은 PG 조회로만 확정하며, APPROVED/RECOVERY_REQUIRED는 추가 청구 없이 구독 반영을 재시도한다. REQUESTED 환불은 프리미엄 사용 동결 상태이며 증빙 미확인은 503이다. APPROVED 환불의 PG 결과 불명확은 FAILED로 바꾸지 않고 조회 복구한다. REFUNDED/CANCELED는 지연 DONE 통지로 되돌리지 않는다. PG 호출 중 parent 잠금은 유지하지 않으며 준비된 거래/환불이 탈퇴를 차단한다. 상세 계약은 [#48 보고서](../report/issue-48-payments.md)를 따른다.
+
+### #46 core 정정 실행 기록
+
+신고 상태는 기존 RECEIVED → IN_REVIEW → RESOLVED를 유지한다. core `SupportService.correct`는 신고 검토 중 correction.processing_status=PENDING 의도를 먼저 저장하고 HTTP를 트랜잭션 밖에서 실행한다. HTTP 실패 시 FAILED이며 신고는 IN_REVIEW다. 동일 correction UUID로 공급자가 성공을 확인하고 core 완료 트랜잭션까지 커밋될 때만 correction=COMPLETED·신고=RESOLVED·알림을 함께 기록한다. 응답 유실이나 core 저장 실패는 완료가 아니며 같은 의도로 재개한다. 원본 답변·판정은 변경하지 않는다.
+
+### 4.1 보완: 종료 유실·삭제 (#132)
+
+QUEUED/RUNNING → COMPLETED|FAILED: 복구 API의 저장된 종료 결과를 조건부 반영한다. BUSY/DB·HTTP 오류/식별 불일치는 상태를 보존한다. 학생 삭제 확정은 `STUDENT_DELETED`로 FAILED 및 실행 이력을 원자 기록한다. 종료 상태는 늦은 started/completed/failed와 복구 응답으로 바뀌지 않는다.
+
+report에서 잠금 소유자가 없는 RUNNING만 `REPORT_EXECUTION_ABANDONED`로 FAILED 전이한다. 행이 없으면 `REPORT_NOT_CREATED` 차단 기록을 저장해 같은 job의 지연 메시지는 ACK 종료한다. 차단 기록의 학생·기간이 다르면 오류다. 실행 중인 생성은 BUSY로 유지한다. 자동 재생성은 하지 않는다.

@@ -77,13 +77,14 @@ test('SSE도 같은 refresh 경로 사용, 원래 스트림 요청 본문 유지
   assert.deepEqual(events, ['result', 'done'])
   setAccessToken(null)
 })
-test('로그인 실패는 refresh하지 않음, 갱신 뒤 다시 만료되어도 요청당 1회만 재시도', async (t) => {
+test('학생 PIN 로그인 실패는 refresh하지 않음, 갱신 뒤 다시 만료되어도 요청당 1회만 재시도', async (t) => {
   let calls = 0
   t.mock.method(globalThis, 'fetch', async (url: string) => {
     calls++
     return url.endsWith('/auth/refresh') ? json({ accessToken: 'still-expired' }) : expired()
   })
-  await assert.rejects(apiFetch('/auth/login', { method: 'POST' }))
+  // 이메일 로그인은 없어졌다(#97). 로그인 단계 401의 예는 학생 기기 PIN 로그인
+  await assert.rejects(apiFetch('/auth/student/login', { method: 'POST' }))
   assert.equal(calls, 1)
   calls = 0
   setAccessToken('expired')

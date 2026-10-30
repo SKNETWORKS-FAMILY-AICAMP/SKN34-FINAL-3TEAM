@@ -132,12 +132,13 @@ function evidenceResponse(items: ReturnType<typeof evidence>) {
   return { items }
 }
 const downloadTickets = new Map<string, { file: string; childId: string; expires: number }>()
-const pinChallenges = new Map<string, { childId: string; bearer: string; expires: number }>()
-const pinGrants = new Map<string, { childId: string; bearer: string; expires: number }>()
-export function consumePinReauth(request: Request, childId: string) {
+const pinChallenges = new Map<string, { childId?: string; purpose?: string; scope?: string; bearer: string; expires: number }>()
+const pinGrants = new Map<string, { childId?: string; purpose?: string; scope?: string; bearer: string; expires: number }>()
+export function consumePinReauth(request: Request, childId: string) { return consumeActionReauth(request, 'PIN_CHANGE', childId) }
+export function consumeActionReauth(request: Request, purpose: string, childId?: string, scope?: string) {
   const key = request.headers.get('X-Reauth-Token') ?? ''
   const grant = pinGrants.get(key)
-  if (!grant || grant.childId !== childId || grant.bearer !== request.headers.get('Authorization') || grant.expires <= Date.now())
+  if (!grant || grant.purpose !== purpose || grant.childId !== childId || grant.scope !== scope || grant.bearer !== request.headers.get('Authorization') || grant.expires <= Date.now())
     fail('REAUTH_REQUIRED', '해당 자녀의 Google 재확인이 필요합니다.', 403)
   pinGrants.delete(key)
 }
@@ -367,11 +368,20 @@ export const parentHandlers = [
   http.patch('/api/v1/children/:childId', ({ request, params }) =>
     respond(async () => {
       const c = await parentChild(request, String(params.childId))
-      requireReauth(request)
-      const d = (await request.json()) as { nickname: string; grade: number }
-      if (!d.nickname.trim() || !Number.isInteger(d.grade) || d.grade < 3 || d.grade > 6)
+      // nickname·grade 모두 선택, 그 밖의 필드는 거부 (core-service.yaml PATCH /children/{childId})
+      const d = (await request.json()) as { nickname?: unknown; grade?: unknown }
+      const nickname = typeof d.nickname === 'string' ? d.nickname.trim() : undefined
+      if (
+        Object.keys(d).some((k) => k !== 'nickname' && k !== 'grade') ||
+        (d.nickname !== undefined && (!nickname || nickname.length > 40)) ||
+        (d.grade !== undefined && (!Number.isInteger(d.grade) || Number(d.grade) < 3 || Number(d.grade) > 6))
+      )
         fail('VALIDATION_FAILED', '별명·지원 학년을 확인해 주세요.')
-      const updated = { ...c, nickname: d.nickname, grade: d.grade }
+      const updated = {
+        ...c,
+        ...(nickname !== undefined ? { nickname } : {}),
+        ...(d.grade !== undefined ? { grade: Number(d.grade) } : {}),
+      }
       store.replaceChildren((await store.children()).map((v) => (v.id === c.id ? updated : v)))
       mockAccountChildren.set(mockIdentity.email, structuredClone(await store.children()))
       return updated
@@ -389,12 +399,13 @@ export const parentHandlers = [
   http.post('/api/v1/me/reauth', ({ request }) =>
     respond(async () => {
       parentGuard(request)
-      const body = (await request.json()) as { password?: string; purpose?: string; childId?: string; challengeId?: string }
+      const body = (await request.json()) as { password?: string; purpose?: string; childId?: string; challengeId?: string; scope?: string }
       const bearer = request.headers.get('Authorization') ?? ''
-      if (body.purpose === 'PIN_CHANGE' && body.childId) {
-        await parentChild(request, body.childId)
+      if (body.purpose && ['PIN_CHANGE','CHILD_UNLINK','CHILD_DELETE','WITHDRAWAL'].includes(body.purpose)) {
+        if (body.purpose !== 'WITHDRAWAL') { if (!body.childId) fail('VALIDATION_FAILED','대상 자녀가 필요합니다.',422); await parentChild(request, body.childId!) }
+        if (body.purpose==='CHILD_DELETE' && !['PROFILE','RECORDS'].includes(body.scope ?? '')) fail('VALIDATION_FAILED','삭제 범위가 필요합니다.',422)
         const challengeId = crypto.randomUUID()
-        pinChallenges.set(challengeId, { childId: body.childId, bearer, expires: Date.now() + 600000 })
+        pinChallenges.set(challengeId, { childId: body.childId, purpose:body.purpose,scope:body.scope,bearer,expires:Date.now()+600000 })
         // DEV MSW only: Google proof is a test double, never an actual Google verification.
         return { challengeId, authorizationUrl: '/login?reauthMock=1', expiresAt: new Date(Date.now() + 600000).toISOString() }
       }
@@ -546,8 +557,9 @@ export const parentHandlers = [
       const c = await parentChild(request, String(params.childId))
       queryFault()
       const status = new URL(request.url).searchParams.get('status')
-      return page(
-        ensureReports(c)
+      // 리포트 목록은 페이지 없이 {items}만 반환한다(api-spec 1.1·5.5, ReportList).
+      return {
+        items: ensureReports(c)
           .map((r) => ({
             ...r,
             status:
@@ -558,7 +570,7 @@ export const parentHandlers = [
                   : r.status,
           }))
           .filter((r) => !status || r.status === status),
-      )
+      }
     }),
   ),
   http.get('/api/v1/reports/:reportId', ({ request, params }) =>

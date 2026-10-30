@@ -175,7 +175,7 @@ test('학부모 API의 다른 자녀 응답 거부·실제 응답 기간 허용'
   )
   assert.equal((await parentApi.summary(scope)).period.from, '2026-10-01')
 })
-test('관리자 재처리 키와 자녀 정보 수정 재확인 헤더 유지', async (t) => {
+test('관리자 재처리 키 유지·자녀 정보 수정은 재확인 헤더 없이 (#97)', async (t) => {
   const calls: { url: string; init: RequestInit }[] = []
   setAccessToken('memory-test-token')
   t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
@@ -184,10 +184,10 @@ test('관리자 재처리 키와 자녀 정보 수정 재확인 헤더 유지', 
   })
   await adminApi.retry('job1', 'stable-key')
   await adminApi.retry('job1', 'stable-key')
-  await parentApi.updateChild('s1', { nickname: '예시', grade: 3 }, 'short-reauth')
+  await parentApi.updateChild('s1', { nickname: '예시', grade: 3 })
   assert.equal(new Headers(calls[0].init.headers).get('Idempotency-Key'), 'stable-key')
   assert.equal(new Headers(calls[1].init.headers).get('Idempotency-Key'), 'stable-key')
-  assert.equal(new Headers(calls[2].init.headers).get('X-Reauth-Token'), 'short-reauth')
+  assert.equal(new Headers(calls[2].init.headers).get('X-Reauth-Token'), null) // core 계약에 없는 헤더
   setAccessToken(null)
 })
 test('SSE 실패 재시도 경로·임시 출력 폐기·AbortSignal 전달', async (t) => {

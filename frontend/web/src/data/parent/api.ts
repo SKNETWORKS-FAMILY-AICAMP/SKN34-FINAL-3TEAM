@@ -38,20 +38,13 @@ export const parentApi = {
     apiFetch<Page<ConsentHistory>>('/me/consents', json(data)),
   consentHistory: (signal?: AbortSignal) => apiFetch<Page<ConsentHistory>>('/me/consents', { signal }),
   withdrawConsent: (id: string) => apiFetch<ConsentHistory>(`/me/consents/${item(id)}/withdrawal`, json({})),
-  signup: (data: { email: string; password: string; name: string; consents: Consent[] }) =>
-    apiFetch<{ userId: string }>('/auth/signup', json(data)),
   children: (signal?: AbortSignal) => apiFetch<Page<Child>>('/children', { signal }),
   register: (data: { nickname: string; grade: number; birthYear: number; consents: Consent[] }) =>
     apiFetch<Child>('/children', json(data)),
   me: () => apiFetch<{ userId: string; name: string; email: string; role: string }>('/me'),
   updateMe: (name: string) => apiFetch('/me', json({ name }, 'PATCH')),
-  reauth: (password: string) =>
-    apiFetch<{ reauthToken: string; expiresAt: string }>('/me/reauth', json({ password })),
-  updateChild: (id: string, data: { nickname: string; grade: number }, reauthToken: string) =>
-    apiFetch<Child>(`/children/${item(id)}`, {
-      ...json(data, 'PATCH'),
-      headers: { 'Content-Type': 'application/json', 'X-Reauth-Token': reauthToken },
-    }),
+  updateChild: (id: string, data: { nickname?: string; grade?: number }) =>
+    apiFetch<Child>(`/children/${item(id)}`, json(data, 'PATCH')),
   async summary(scope: Scope, signal?: AbortSignal) {
     return assertChild(
       await apiFetch<Summary>(`/children/${item(scope.childId)}/summary?${range(scope)}`, {
@@ -135,7 +128,7 @@ export const parentApi = {
       { signal },
     ),
   reports: (childId: string, status: string, signal?: AbortSignal) =>
-    apiFetch<Page<ReportItem>>(
+    apiFetch<{ items: ReportItem[] }>(
       `/children/${item(childId)}/reports${status ? `?status=${item(status)}` : ''}`,
       { signal },
     ),
