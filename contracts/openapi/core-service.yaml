@@ -412,6 +412,18 @@ paths:
           $ref: '#/components/responses/LearningProblem'
         '403':
           $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "미션을 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       summary: adminMissionsList (CONTENT)
     post:
       operationId: adminMissionsCreate
@@ -440,6 +452,18 @@ paths:
           $ref: '#/components/responses/LearningProblem'
         '403':
           $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "미션을 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       requestBody:
         required: true
         content:
@@ -475,6 +499,18 @@ paths:
           $ref: '#/components/responses/LearningProblem'
         '403':
           $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "미션을 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       summary: adminMissionsDetail (CONTENT)
     patch:
       operationId: adminMissionsUpdate
@@ -509,6 +545,18 @@ paths:
           $ref: '#/components/responses/LearningProblem'
         '403':
           $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "미션을 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       requestBody:
         required: true
         content:
@@ -550,6 +598,18 @@ paths:
           $ref: '#/components/responses/LearningProblem'
         '403':
           $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "미션을 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       requestBody:
         required: true
         content:
@@ -585,6 +645,18 @@ paths:
           $ref: '#/components/responses/LearningProblem'
         '403':
           $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "미션을 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       summary: adminMissionsPreview (CONTENT)
   /admin/missions/{missionId}/review-request:
     post:
@@ -620,6 +692,18 @@ paths:
           $ref: '#/components/responses/LearningProblem'
         '403':
           $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "미션을 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       requestBody:
         required: true
         content:
@@ -661,6 +745,18 @@ paths:
           $ref: '#/components/responses/LearningProblem'
         '403':
           $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "미션을 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       requestBody:
         required: true
         content:
@@ -702,6 +798,18 @@ paths:
           $ref: '#/components/responses/LearningProblem'
         '403':
           $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "미션을 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       requestBody:
         required: true
         content:
@@ -743,6 +851,18 @@ paths:
           $ref: '#/components/responses/LearningProblem'
         '403':
           $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "미션을 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       requestBody:
         required: true
         content:
@@ -4747,7 +4867,35 @@ paths:
         default:
           $ref: '#/components/responses/LearningProblem'
         '403':
-          $ref: '#/components/responses/LearningProblem'
+          description: FORBIDDEN — core 권한 거부 또는 learning 지원 GET의 검증된 403 FORBIDDEN. 공급자 HTTP 상태·정수 status·문자열 code 일치 및 application/problem+json 객체 필수. 고정 문구 "지원 대상에 접근할 권한이 없습니다.".
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: NOT_FOUND — core 리소스 없음 또는 learning 지원 GET의 검증된 404 NOT_FOUND. 고정 문구 "지원 대상 기록을 찾을 수 없습니다.". 정정 POST에서는 사전 대상 GET에만 적용.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: SUPPORT_INVALID_RESPONSE — 잘못된 2xx 공급자 응답. 기존 성공 응답 allowlist·필수 필드·식별자 검증 유지.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: SUPPORT_DEPENDENCY_UNAVAILABLE — 불명확한 GET 403/404·내부 인증 401·나머지 비-2xx. 실제 learning 정정 POST의 403/404도 기존 503. 전송·서킷은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN. 공급자 본문 비공개.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '504':
+          description: LEARNING_TIMEOUT — 기존 learning 호출 시간 초과.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       parameters:
       - in: header
         name: Idempotency-Key
@@ -4870,7 +5018,35 @@ paths:
         default:
           $ref: '#/components/responses/LearningProblem'
         '403':
-          $ref: '#/components/responses/LearningProblem'
+          description: FORBIDDEN — core 권한 거부 또는 learning 지원 GET의 검증된 403 FORBIDDEN. 공급자 HTTP 상태·정수 status·문자열 code 일치 및 application/problem+json 객체 필수. 고정 문구 "지원 대상에 접근할 권한이 없습니다.".
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: NOT_FOUND — core 리소스 없음 또는 learning 지원 GET의 검증된 404 NOT_FOUND. 고정 문구 "지원 대상 기록을 찾을 수 없습니다.". 정정 POST에서는 사전 대상 GET에만 적용.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: SUPPORT_INVALID_RESPONSE — 잘못된 2xx 공급자 응답. 기존 성공 응답 allowlist·필수 필드·식별자 검증 유지.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: SUPPORT_DEPENDENCY_UNAVAILABLE — 불명확한 GET 403/404·내부 인증 401·나머지 비-2xx. 실제 learning 정정 POST의 403/404도 기존 503. 전송·서킷은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN. 공급자 본문 비공개.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '504':
+          description: LEARNING_TIMEOUT — 기존 learning 호출 시간 초과.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       parameters:
       - in: path
         name: reportId
@@ -4923,7 +5099,35 @@ paths:
         default:
           $ref: '#/components/responses/LearningProblem'
         '403':
-          $ref: '#/components/responses/LearningProblem'
+          description: FORBIDDEN — core 권한 거부 또는 learning 지원 GET의 검증된 403 FORBIDDEN. 공급자 HTTP 상태·정수 status·문자열 code 일치 및 application/problem+json 객체 필수. 고정 문구 "지원 대상에 접근할 권한이 없습니다.".
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: NOT_FOUND — core 리소스 없음 또는 learning 지원 GET의 검증된 404 NOT_FOUND. 고정 문구 "지원 대상 기록을 찾을 수 없습니다.". 정정 POST에서는 사전 대상 GET에만 적용.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: SUPPORT_INVALID_RESPONSE — 잘못된 2xx 공급자 응답. 기존 성공 응답 allowlist·필수 필드·식별자 검증 유지.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: SUPPORT_DEPENDENCY_UNAVAILABLE — 불명확한 GET 403/404·내부 인증 401·나머지 비-2xx. 실제 learning 정정 POST의 403/404도 기존 503. 전송·서킷은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN. 공급자 본문 비공개.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '504':
+          description: LEARNING_TIMEOUT — 기존 learning 호출 시간 초과.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       requestBody:
         required: true
         content:
@@ -5039,7 +5243,35 @@ paths:
         default:
           $ref: '#/components/responses/LearningProblem'
         '403':
-          $ref: '#/components/responses/LearningProblem'
+          description: FORBIDDEN — core 권한 거부 또는 learning 지원 GET의 검증된 403 FORBIDDEN. 공급자 HTTP 상태·정수 status·문자열 code 일치 및 application/problem+json 객체 필수. 고정 문구 "지원 대상에 접근할 권한이 없습니다.".
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: NOT_FOUND — core 리소스 없음 또는 learning 지원 GET의 검증된 404 NOT_FOUND. 고정 문구 "지원 대상 기록을 찾을 수 없습니다.". 정정 POST에서는 사전 대상 GET에만 적용.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: SUPPORT_INVALID_RESPONSE — 잘못된 2xx 공급자 응답. 기존 성공 응답 allowlist·필수 필드·식별자 검증 유지.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: SUPPORT_DEPENDENCY_UNAVAILABLE — 불명확한 GET 403/404·내부 인증 401·나머지 비-2xx. 실제 learning 정정 POST의 403/404도 기존 503. 전송·서킷은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN. 공급자 본문 비공개.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '504':
+          description: LEARNING_TIMEOUT — 기존 learning 호출 시간 초과.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       parameters:
       - in: path
         name: inquiryId
@@ -5076,7 +5308,35 @@ paths:
         default:
           $ref: '#/components/responses/LearningProblem'
         '403':
-          $ref: '#/components/responses/LearningProblem'
+          description: FORBIDDEN — core 권한 거부 또는 learning 지원 GET의 검증된 403 FORBIDDEN. 공급자 HTTP 상태·정수 status·문자열 code 일치 및 application/problem+json 객체 필수. 고정 문구 "지원 대상에 접근할 권한이 없습니다.".
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: NOT_FOUND — core 리소스 없음 또는 learning 지원 GET의 검증된 404 NOT_FOUND. 고정 문구 "지원 대상 기록을 찾을 수 없습니다.". 정정 POST에서는 사전 대상 GET에만 적용.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: SUPPORT_INVALID_RESPONSE — 잘못된 2xx 공급자 응답. 기존 성공 응답 allowlist·필수 필드·식별자 검증 유지.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: SUPPORT_DEPENDENCY_UNAVAILABLE — 불명확한 GET 403/404·내부 인증 401·나머지 비-2xx. 실제 learning 정정 POST의 403/404도 기존 503. 전송·서킷은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN. 공급자 본문 비공개.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '504':
+          description: LEARNING_TIMEOUT — 기존 learning 호출 시간 초과.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       parameters:
       - in: path
         name: reportId

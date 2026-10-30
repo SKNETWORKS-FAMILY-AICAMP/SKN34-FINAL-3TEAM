@@ -91,6 +91,16 @@ class AdminLearningService(private val client: LearningClient,private val json: 
     private fun sanitize(response: HttpExchangeResult): HttpExchangeResult {
         if(response.status in setOf(405,501)) unavailable("ADMIN_MISSIONS_UNAVAILABLE")
         val node = try { json.readTree(response.body) } catch (_: Exception) { null }
+        if(response.status==404) {
+            val contentType = response.headers.entries.firstOrNull { it.key.equals("Content-Type",true) }
+                ?.value?.firstOrNull()?.substringBefore(';')?.trim()
+            if(!contentType.equals("application/problem+json",true) || node?.isObject!=true ||
+                !node.path("status").isIntegralNumber || !node.path("status").canConvertToInt() || node.path("status").asInt()!=404 ||
+                !node.path("code").isTextual || node.path("code").asText()!="NOT_FOUND") unavailable("ADMIN_MISSIONS_UNAVAILABLE")
+            val safe=json.createObjectNode().put("type","about:blank").put("status",404).put("code","NOT_FOUND")
+                .put("title","미션을 찾을 수 없습니다.")
+            return HttpExchangeResult(404,mapOf("Content-Type" to listOf("application/problem+json")),json.writeValueAsBytes(safe))
+        }
         if(node?.isObject!=true) unavailable("LEARNING_INVALID_RESPONSE")
         if(response.status !in 200..299) {
             val allowedCodes = setOf("VALIDATION_FAILED","FORBIDDEN","MISSION_PUBLISH_INCOMPLETE","MISSION_NOT_AVAILABLE",

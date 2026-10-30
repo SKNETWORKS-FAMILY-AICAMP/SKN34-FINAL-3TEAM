@@ -171,3 +171,48 @@ ConversationService의 최종 검증·fallback/notice·ANSWER/REFLECTION과 실�
 실제 외부 LLM·PG 결제·OAuth·report-worker PDF 생성 전체 파이프라인·원격 CI·배포는 이번 통합 검증 범위가 아니다. REPORT의 RabbitMQ 발행·종료 감사는 core 통합 테스트와 실제 생성 응답/이벤트 계약 검사 범위다. 성능·모델 품질 향상을 측정했다고 주장하지 않는다. 로컬 산출물은 admin-analysis-verification에 보존하고 합성 JWT가 든 fixture 파일은 공유/commit하지 않는다.
 
 최종 origin/develop 재조회에서도 d651aa1을 확인했다. 현재 저장소 기본 브랜치도 develop이므로 이 통합 PR의 Closes #47, Closes #67, Closes #162는 해당 기본 브랜치 병합 시 적용된다. #163·#164는 별도 브랜치이며 이 PR의 종료 대상이 아니다.
+
+
+## #163 learning 오류 매핑 변경 (2026-10-30)
+
+사용자가 기반영 core 코드·공개 계약의 아래 범위를 명시적으로 승인했다. 기준 develop `7f1549ad8165e60895b96f3c0fb6d645e2e67149`, 전용 `feature/core-learning-error-mapping`에서 api-spec 1.3·2.8·5.7과 core OpenAPI를 먼저 변경한다. #47·#67·#162의 별도 worktree·작업은 합치거나 수정하지 않는다.
+
+관리자 미션은 정상 Problem Details의 404 NOT_FOUND를 고정 문구의 404로, 불명확한 404와 405·501은 기존 503 ADMIN_MISSIONS_UNAVAILABLE로 처리한다. 기존 409·422 allowlist 및 정제한 missingFields는 유지한다. 지원 target/original GET은 정상 403 FORBIDDEN·404 NOT_FOUND를 같은 상태·기존 공통 코드와 고정 문구로 반환한다. 정상 오류는 application/problem+json JSON 객체·HTTP와 일치하는 정수 status·허용 문자열 code다. 오류 원문·내부 URI·공급자 trace·임의 code는 공개하지 않는다. 나머지 지원 HTTP 오류는 기존 503, 잘못된 2xx는 기존 502, 전송·시간 초과·서킷 오류는 기존 LearningClient 계약이다.
+
+호출은 관리자 미션 controller → AdminLearningService → LearningClient → learning 관리자 API, 지원 controller → SupportService → LearningSupportClient → learning 지원 GET이다. 공개 신고/연결 문의 POST와 관리자 신고/문의 상세 GET에 영향이 있다. 최초 정정 POST 역시 대상 GET으로 사전 확인하므로 403/404가 공개될 수 있고 이때 정정 의도·공급자 정정 호출·완료 알림을 만들지 않는다. 실제 learning 정정 POST의 409/422·403/404 매핑은 유지한다. scope 설정·복원, 트랜잭션 밖 HTTP, 원문 allowlist·감사 저장·멱등성도 보존한다.
+
+신규 공개 코드는 추가하지 않는다. FORBIDDEN은 learning의 학생 범위·역할·scope 형식 거부를 구별하지 못하고 NOT_FOUND는 프레임워크 경로 부재와 리소스 부재를 완전히 구별하지 못한다. 인증된 요청자의 403/404 구분에 따른 존재 여부 정보 차이를 포함해 승인받았다. learning production·frontend production·DB·의존성은 변경하지 않는다. frontend의 기존 ApiError·ErrorNotice·QueryFeedback는 상태·코드·고정 문구를 소비하고 404 안내·5xx 재시도 표시를 처리한다.
+
+검증 결과는 구현·테스트 작성 후 일괄 검증을 마치고 아래에 추가한다. 과거 테스트 개수·실제 연동 결과를 이번 결과로 재사용하지 않는다.
+
+
+### #163 최종 검증 결과 (2026-10-30)
+
+| 검증 | 실제 결과와 경계 |
+|---|---|
+| core 전체 | Temurin JDK 21에서 `bash gradlew test bootJar --no-daemon --max-workers=1 --no-watch-fs --console=plain -Pkotlin.compiler.execution.strategy=in-process -Dorg.gradle.jvmargs=-Xmx384m -I <검증 전용 init>` 성공. **52클래스 339개**, 실패·오류·생략 0, BUILD SUCCESSFUL(10m 3s). 테스트 전용 CPU 2·메모리 1792MiB, Test heap 640m·forkEvery 8·Spring context cache 4. 이 자원 설정은 production이나 저장소 Gradle 설정에 추가하지 않았다. |
+| core HTTP 회귀 | AdminOperationsIntegrationTest 11개·SupportIntegrationTest 22개 통과. 관리자 404/405/501/409/422, 지원 target/original 403/404·불명확한 오류·내부 401·장애·잘못된 2xx, 실제 정정 POST의 기존 409/422 및 403/404→503을 MockMvc 공개 경로 + learning HTTP 대역으로 확인했다. JWT/권한·학생 scope/복원·트랜잭션 밖 호출·오류 상세 비노출·정정 미저장/완료 알림 미발행을 포함한다. 실제 learning 공급자 검증과는 아래처럼 구분한다. |
+| 계약·소비자 | `python -O -m unittest discover -s scripts/tests -v` **85개 통과**. core·learning·support 소비 OpenAPI 3개 표준 검사 통과. `validate_support_contracts.py`로 테스트가 생성한 지원 응답 7종, 별도 검사로 새 403/404 응답 2종을 공개 스키마에 대조해 통과했다. 기존 계약 fingerprint는 승인된 support 오류 응답만 정규화하고 나머지 원래 필드의 보존 검사를 유지했다. |
+| 프론트 | `npm test` **118개 통과**, `npm run lint`·`npm run build` 성공. 관리자 미션 404와 신고·관리자 상세·정정 사전 조회 403/404의 ApiError 전달, 기존 정정 409/422 소비를 모의 fetch 응답으로 확인했다. 기존 500kB 초과 번들 경고는 남는다. frontend production 코드는 변경하지 않았다. |
+| 실제 core→learning | 검증한 core JAR + 변경하지 않은 learning의 새 `bootJar`(성공) + 새 PostgreSQL/Redis/RabbitMQ, 합성 DB/JWT 계정으로 **오류 HTTP 12건** 통과. 관리자 미션 404 NOT_FOUND·409 CONFLICT·422 MISSION_PUBLISH_INCOMPLETE, 신고 대상 없음 404, 신고·시도 연결 문의·관리자 신고/문의 원문·정정 사전 조회의 범위 거부 403, 관리자 원문/정정 사전 조회의 대상 없음 404를 확인했다. 거부된 원문에서 성공 감사 증가 없음, 정정 사전 실패 시 correction/notification 0건·IN_REVIEW 유지 확인. 실제 OAuth·AI·브라우저·배포 검증은 아니다. 미지원 405/501·장애/잘못된 공급자 응답·learning 정정 POST의 409/422는 위 HTTP 대역 회귀 검증 범위다. learning 전체 테스트는 소스 변경이 없어 반복하지 않았다. |
+| 소스·산출물 | worktree와 Docker 검증 소스 **764파일 SHA-256 일치**. 컨테이너/로컬 JAR SHA-256도 일치: core `f2e22f9dbad34ad7102552f68c30ac49406acadf0135621a9ffbf099cbc03a3c`, learning `5ab1010fd5ec30686dd525a3ec1955dd8eddb310f40bf68b59100543f1dbe9d0`. |
+
+초기 저장공간 부족/Docker API 500으로 중단된 실행과, 잘못된 127.0.0.1 host override로 Ryuk 연결에 실패한 실행은 최종 통과 집계에 넣지 않았다. 복구 후 선행 #47의 Docker 사용 종료를 확인하고, 브리지 네트워크의 `TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal` 및 위 검증 전용 자원 설정으로 core 전체를 다시 통과했다. core와 learning 빌드는 같은 전용 Gradle 캐시를 사용하므로 순차 실행해 초기 캐시 잠금 충돌을 피했다. 실제 연동의 전용 컨테이너/네트워크와 중지한 #163 빌드 컨테이너를 정리해 **Docker 검증 사용을 종료**했다. 재현용 소스·캐시 볼륨만 보존했다.
+
+검증 기준은 최초 develop `7f1549a`다. 종료 전 확인한 최신 origin/develop 및 repository default branch는 `d651aa1`·`develop`이며, 후속 develop 변경과 이번 13개 변경 파일의 경로 겹침이 없음을 확인했다. 후속 develop 및 #47·#67·#162 기능을 이번 브랜치에 병합하지 않았으므로 최신 develop 통합 검증이나 원격 CI·배포 완료를 주장하지 않는다. 최종 문서 기록 뒤 `git diff --check`를 확인하고 현재 feature 브랜치에만 커밋·push하며 PR은 생성하지 않는다.
+
+## 최신 develop 3dffad6 접합 (2026-10-30)
+
+#163·#164를 포함한 최신 develop을 이력 보존 merge로 반영한다. 기존 미션 counts·요청/결과 감사·인증 관리자·버전 검증과 #163 Problem Details의 Content-Type/정수 status/code 대조를 모두 유지한다. sanitize는 검증된 404를 고정 문구의 안전한 응답으로 반환해 쓰기 처리의 UNKNOWN 예외 분기로 흘러 503이 되는 것을 방지한다. 정상 404 쓰기는 REJECTED와 X-Admin-Operation-Id를 남기며 불명확한 404·405·501은 503/UNKNOWN이다. 지원 GET 403/404 매핑과 #164 검증 도구 변경은 develop 그대로 보존한다. 과거 절의 “#163 미통합”은 해당 시점의 이력이다.
+
+### 최신 develop 접합 검증 결과
+
+- 원격 develop/MERGE_HEAD를 재조회해 모두 3dffad625890206af6b364e77a4925702d9833a4임을 확인했다.
+- 영향 범위 core 6클래스 99개와 bootJar 통과(실패·오류·생략 0, 8m26s): AdminOperations 17, Support 22, 관리자 대화 재처리 18, 분석 대화 22, REPORT 재처리 19, REPORT 메시징 1. 검증된 404의 조회/쓰기 계약·REJECTED 감사·확인 번호와 불명확한 오류의 503/UNKNOWN, 기존 재처리·근거·저장 회귀를 포함한다.
+- 계약 검사 93개 중 #164의 7개는 최초 샌드박스 임시 폴더 쓰기/정리 권한 오류로 실행되지 못했다. 다른 86개는 통과했고 쓰기 가능한 검증용 TEMP/TMP로 해당 7개를 재실행해 모두 통과했다. 테스트 코드나 판정 조건은 변경하지 않았다.
+- core/AI/learning/support 소비 OpenAPI 4종의 표준·중복 키 검사, 실제 지원 HTTP 응답 7종 및 403/404 응답 2종의 공개 Problem 스키마 대조 통과.
+- 프론트 131개 테스트·lint·build 통과. production 프론트는 기존 통합본과 같고 #163 소비자 테스트가 추가됐다. 기존 번들 크기 경고는 유지한다.
+- 최신 core JAR→실제 learning HTTP 10건·감사 9행 통과. 조회·쓰기 NOT_FOUND의 고정 문구 및 쓰기 X-Admin-Operation-Id를 확인했고, 생성/수정·409·권한·전체 counts·감사 저장 장애의 결과 보존 검증도 유지했다. 합성 계정/JWT이며 실제 OAuth 검증이 아니다.
+- #163 LearningSupportClient/SupportIntegrationTest와 #164 verify_feedback_learning.py는 develop 원본과 동일하다. 기존 AI·프론트 실행 코드·V17~V19 migration은 이전 통합 커밋과 동일하다. 변경 없는 AI·전체 migration·브라우저·프로세스 복구 검사는 반복하지 않았으며 앞 절의 결과를 이력으로 유지한다. 검증 컨테이너의 소스 해시 일치 및 최종 diff 검사를 확인했다.
+
+이 절이 이전 “#163·#164 미반영” 상태를 대체한다. 두 이슈의 변경은 develop 이력으로 포함하며 이 PR의 해결 이슈는 #47·#67·#162다. 원격 CI·배포는 아직 검증하지 않았고 PR 생성 후 확인한다.
