@@ -372,14 +372,26 @@
 
 #### #47 구현 계약
 
+##### #47 REPORT 실패 작업 재처리 (core, #152 연결)
+
+- SERVICE_OPS 관리자만 실패한 report_job ID로 `POST /admin/jobs/{jobId}/retry`를 요청한다. reportId가 없어도 가능하며 원래 FAILED 작업·기존 report 판은 바꾸지 않는다. 학부모 regenerate 경로와 제한은 유지한다.
+- REPORT 성공 접수는 **202** `{originalJobId,jobId,type:"REPORT",status:"QUEUED",acceptedAt}`와 `Location: /api/v1/admin/jobs/{새jobId}`다. 이는 실행 완료가 아니다. 알림의 기존 200 작업 상세 응답은 유지한다. CONVERSATION은 계속 JOB_RETRY_UNAVAILABLE다.
+- 원작업↔새 ADMIN_RETRY 작업 관계와 수행자·Idempotency-Key·접수 시각은 core report_job_retry에 영속 저장한다. 원작업당 새 작업 1개, 새 작업 ID·수행자+요청 키 각각 UNIQUE다. 같은 키의 응답 저장 유실/24시간 만료 뒤에도 최초 202를 복원한다. 다른 키로 이미 재처리한 원작업을 요청하면 409 REPORT_ALREADY_RETRIED다. 새 작업이 다시 FAILED면 그 새 jobId를 대상으로 다음 재처리를 요청한다.
+- 기존 학생·주 잠금과 원작업 행 잠금을 사용하고 다른 QUEUED/RUNNING 주간 작업이 있으면 409 REPORT_GENERATION_IN_PROGRESS다. 학생 활성 상태·삭제 요청 이력을 학생 행 잠금 아래 확인하며 삭제/비활성은 409 REPORT_RETRY_STUDENT_UNAVAILABLE다. 현재 상품의 narrativeEnabled를 기존 ReportEntitlementService로 확정하며 설정/조회 장애는 기존 명시적 오류다.
+- 새 report_job·관계·요청 감사 JOB_RETRY_REQUESTED·기존 OutboxWriter의 report.generate를 한 트랜잭션에 기록한다. 외부 HTTP/브로커 호출은 이 트랜잭션에서 하지 않는다. 기존 v1 이벤트 필드만 사용하며 원작업 연결은 core가 소유한다.
+- 새 job의 started/completed/failed와 job_execution은 기존 ReportLifecycleService를 재사용한다. ReportJobOutcomeRecorded의 BEFORE_COMMIT 처리로 JOB_RETRY_COMPLETED/FAILED 감사를 동일 결과 트랜잭션에 저장한다. 이 내부 이벤트는 정상 결과·복구·삭제 종료에 모두 적용하며 reportId 없는 실패도 포함한다. 부모 알림용 ReportJobFinished의 기존 조건은 유지한다. 과거 job의 지연/중복 이벤트는 기존 종료 상태와 jobId 구분으로 새 작업을 덮어쓰지 않는다.
+- 작업 DTO에 `retryOfJobId`(직전 원작업), `retryJobId`(직접 재처리 작업)를 nullable UUID로 추가한다. 이미 자식이 있는 FAILED REPORT는 retryable=false, retryUnavailableReason=REPORT_ALREADY_RETRIED다. 관계 없는 FAILED REPORT의 retryable=true는 접수 가능 상태를 뜻하며 POST에서 현재 권한·학생/상품·진행 작업을 다시 검사한다.
+- 프론트 담당자 연결: 202/QUEUED는 ‘재처리 접수’로 표시하고 새 jobId/Location을 조회해 RUNNING/COMPLETED/FAILED를 구분해야 한다. 기존 AdminOperations의 ‘FAILED 아니면 완료’ 분기는 적용 전 수정이 필요하다. 이 core 브랜치에서 프론트 파일은 변경하지 않는다. 실제 report 생성 연결 검증은 #152 공급자 결과와 별도로 구분한다.
+
+
 - overview·audit-logs의 정확한 GET 경로는 ADMIN 역할, jobs·queues·retry는 SERVICE_OPS, missions는 CONTENT다. 다른 관리자 경로의 기존 권한은 유지한다.
 - overview/jobs/audit 기간은 KST 날짜 양 끝 포함(저장 조회는 시작 이상·다음날 미만), 둘 다 생략하면 최근 7일, 한쪽만 입력하거나 역순·366일 초과는 400. page=0, size=20(1~100), page 최대 1000. 정렬은 createdAt DESC, id DESC다.
-- overview는 `{period,inclusionRule,learning:{attempts,completedAttempts,students,inclusionRule},jobCounts:[{type,status,count}]}`다. learning은 P08, core 작업은 생성 시각이 기간 안인 작업의 현재 상태를 센다. 미션 상태 집계 공급자는 없어 숫자를 만들지 않는다. learning 장애/계약 위반은 오류다.
+- overview는 `{period,inclusionRule,learning:{attempts,completedAttempts,students,inclusionRule},jobCounts:[{type,status,count}],missionCounts:[{status,count}],missionInclusionRule}`다. learning은 P08, core 작업은 생성 시각이 기간 안인 작업의 현재 상태를 센다. 미션은 learning 관리자 목록의 전체 현재 상태별 건수로 기간·필터·페이지와 무관하다. learning 장애/계약 위반은 오류다.
 - jobs는 `{items,page,size,totalElements}`, 상세는 `{jobId,type,status,retryCount,failureReason,createdAt,executions,retryable,retryUnavailableReason}`다. CONVERSATION ID는 conversation_message.id, REPORT는 report_job.id, NOTIFICATION은 notification.id다. updatedAt은 존재하지 않아 반환하지 않는다. executions는 실제 job_execution을 attemptNo 순으로 반환한다. error_detail·원문 실패 메시지·감사 detail은 공개하지 않고 알려진 오류 코드만 노출하며 그 외는 REDACTED_ERROR다. UUID가 종류 간 충돌하면 409 JOB_ID_AMBIGUOUS다.
-- retry는 UUID Idempotency-Key 필수, 실패 상태만 허용한다. NOTIFICATION은 동일 ID를 RUNNING으로 원자 선점하고 새 job_execution을 남긴 뒤 트랜잭션 밖에서 기존 Redis publisher/DeliveryService를 호출한다. Redis 확인은 브라우저 수신 확인이 아니다. 실제 결과를 200 작업 상세로 반환하고 감사 기록을 남긴다. RUNNING 고착은 자동 재실행하지 않는다. REPORT는 기존 소비자가 실패 jobId를 재실행하지 않고 core lifecycle도 종료 상태이므로 503 JOB_RETRY_UNAVAILABLE, CONVERSATION도 관리자 재처리 공급자 부재로 같은 오류다. 리포트 regenerate를 대신 호출하지 않는다. 실패한 요청은 실행 이력으로 위장하지 않으며 거절 감사만 남긴다.
+- retry는 UUID Idempotency-Key 필수, 실패 상태만 허용한다. NOTIFICATION은 동일 ID를 RUNNING으로 원자 선점하고 새 job_execution을 남긴 뒤 트랜잭션 밖에서 기존 Redis publisher/DeliveryService를 호출한다. Redis 확인은 브라우저 수신 확인이 아니다. 실제 결과를 200 작업 상세로 반환하고 감사 기록을 남긴다. RUNNING 고착은 자동 재실행하지 않는다. REPORT는 위 REPORT 접수 계약에 따라 새 jobId로 재처리하며 원작업을 보존한다. CONVERSATION은 아래 후속 계약대로 DB 대기 작업으로 202 접수한다. 리포트 regenerate를 대신 호출하지 않는다. 실패한 요청은 실행 이력으로 위장하지 않으며 거절 감사만 남긴다.
 - audit-logs는 targetType/targetId 및 기간·페이지 필터. 항목은 `{id,actorUserId,action,targetType,targetId,result,createdAt}`이며 자유형 detail은 노출하지 않는다. 기존 감사 저장 경로를 교체하지 않는다.
 - queues는 `{vhost,items:[{name,kind:WORK|RETRY|DLQ,messages,messagesReady,messagesUnacknowledged,consumers,state}]}`다. definitions.json의 `/` vhost와 고정 25개 큐만 읽는다. 누락·인증·HTTP·타임아웃·잘못된 응답은 명시적인 503/504이며 0으로 치환하지 않는다. `ADMIN_RABBIT_MANAGEMENT_URL`, `ADMIN_RABBIT_MANAGEMENT_USERNAME`, `ADMIN_RABBIT_MANAGEMENT_PASSWORD`를 환경에서 읽는다(기본 자격 증명 없음). 기존 AMQP 설정과 독립이며 production 의존성은 추가하지 않는다.
-- missions는 표의 명시된 메서드/경로만 `/internal/admin/missions`로 프록시한다. 검증된 ADMIN 사용자 컨텍스트, 빈 학생 범위, 내부 토큰과 trace를 기존 LearningClient/InternalRestClientFactory로 전달한다. JSON object 본문과 목록 status/grade/thinkingType/page/size만 전달한다. 버전·기준표·검토·게시 정책/DTO는 learning 소유다. learning 공급자 계약은 4.1 `/internal/admin/missions…`(#145)와 learning OpenAPI다. 404는 application/problem+json JSON 객체의 status=404·code=NOT_FOUND가 일치할 때 404 NOT_FOUND와 고정 문구 "미션을 찾을 수 없습니다."로 반환한다(#163). 불명확한 404와 API 미지원 405/501은 기존 503 ADMIN_MISSIONS_UNAVAILABLE다. 나머지 Problem Details는 기존 code/status와 구조화된 missingFields만 허용하며 자유형 오류 문구는 전달하지 않는다. 성공 응답은 learning 관리자 콘텐츠 계약을 그대로 반환한다. 서비스 간 재시도는 없다.
+- missions는 표의 명시된 메서드/경로만 `/internal/admin/missions`로 프록시한다. 검증된 ADMIN 사용자 컨텍스트, 빈 학생 범위, 내부 토큰과 trace를 기존 LearningClient/InternalRestClientFactory로 전달한다. JSON object 본문과 목록 status/grade/thinkingType/page/size만 전달한다. 버전·기준표·검토·게시 정책/DTO는 learning 소유다. learning 공급자 계약은 4.1 `/internal/admin/missions…`(#145)와 learning OpenAPI다. 404는 application/problem+json JSON 객체의 status=404·code=NOT_FOUND가 일치할 때 404 NOT_FOUND와 고정 문구 "미션을 찾을 수 없습니다."로 반환한다(#163). 불명확한 404와 API 미지원 405/501은 기존 503 ADMIN_MISSIONS_UNAVAILABLE다. 나머지 Problem Details는 기존 code/status와 구조화된 missingFields만 허용하며 자유형 오류 문구는 전달하지 않는다. 성공 응답은 learning 관리자 콘텐츠 계약을 그대로 반환한다. 쓰기는 요청 감사 후 호출하고 응답 missionId·버전으로 결과 감사를 남긴다(하단 #47 미션 운영 후속 계약). 서비스 간 재시도는 없다.
 
 | Method | Path | 권한 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
@@ -1029,3 +1041,34 @@ core는 생성 후 60분 이상 QUEUED/RUNNING을 기본 1분마다 점검한다
 ## #167 하위 호출 차단
 
 분석 AI OPEN은 기존 SSE error의 502 AI_UNAVAILABLE 및 FAILED 저장으로 처리한다. 접수 시 한도·사용 이력 차감은 유지한다. report 조회/복구 OPEN은 기존 503 REPORT_UNAVAILABLE이며 신규 오류 코드나 Retry-After는 추가하지 않는다. 기존 403/404/409/503 DATA_UNAVAILABLE 매핑은 보존한다. 토스 조회 OPEN은 기존 미확정 결과(결제 상태 유지), 거래 대조 OPEN은 기존 PAYMENT_RECONCILIATION_UNAVAILABLE로 처리하며 성공/거절로 치환하지 않는다. 승인·청구·취소·빌링키 발급은 차단 대상이 아니다.
+
+
+### #47 미션 운영 후속 계약
+
+- overview의 `missionCounts`는 learning 관리자 목록의 전체 DRAFT/REVIEW_REQUIRED/PUBLISHED/UNPUBLISHED 건수를 허용 목록으로 투영한다. 기간·목록 필터·페이지와 무관한 현재 상태이며 학생·미션 본문은 포함하지 않는다. 누락·중복·음수 등 잘못된 집계는 503으로 처리한다.
+- 실제 미션 404는 안전한 NOT_FOUND 오류로 전달한다. 405/501은 제공 기능 불가로 유지한다.
+- CONTENT 쓰기는 인증된 관리자 UUID로 요청 감사를 먼저 커밋한 뒤 learning을 한 번 호출한다. 성공 응답의 missionId/currentVersion/currentRubricVersion을 검증해 결과 감사를 별도 커밋한다. 외부 HTTP와 core DB는 단일 트랜잭션이 아니다.
+- 감사 action은 MISSION_{CREATE,UPDATE,RUBRIC,REVIEW_REQUEST,REVIEW,PUBLISH,UNPUBLISH}_{REQUESTED,SUCCEEDED,REJECTED,UNKNOWN}. REQUESTED의 SUCCESS는 요청 기록 성공만 뜻한다. 계약에 맞는 4xx 문제 응답은 REJECTED, 5xx·통신 단절·해석할 수 없는 응답은 UNKNOWN이다. 요청 원문·공급자 오류 원문은 저장하지 않는다.
+- 쓰기 응답의 X-Admin-Operation-Id는 요청 감사 ID다. 연결 실패 오류는 detail에 같은 확인 번호를 제공한다. 결과 감사 저장 실패는 503 MISSION_AUDIT_UNAVAILABLE이며 요청 기록이 남는다. 성공으로 응답하거나 자동으로 쓰기를 재호출하지 않는다. REQUESTED만 남은 작업은 결과 미확정으로 운영자가 learning에서 확인한다.
+- 공개 감사 목록은 기존대로 detail을 제외한다. 새 DB migration, learning 작성·게시 로직, 프론트 변경은 없다.
+### #67·#41 분석 최종 응답 계약 보완
+
+`verification`은 source와 관계없이 최종 answer를 실제 검사한 numbersMatched/quotesMatched/contentAllowed다. 최종 검사를 통과한 응답만 result로 확정한다. 대조 실패 초안은 fallback.draftVerification에 보존하며 값을 true로 덮어쓰지 않는다. 정상 LLM은 fallback/notice=null, 규칙 응답은 fallback.reason=VERIFICATION_FAILED 또는 AI_UNAVAILABLE와 notice=null, 기록 부족·지원 외 안내는 fallback=null과 notice.reason=NO_RECORD|NO_CHANGES|NO_REFLECTIONS|UNSUPPORTED|MATH_CHECK다. LLM 장애의 draftVerification은 null이다. 최종 템플릿/안내 검사 실패는 FINAL_RESPONSE_VERIFICATION_FAILED error이며 result/done으로 대체하지 않는다. learning 조회 실패도 기존 error다. LLM 장애 후 기본 조회가 비어 있더라도 AI_UNAVAILABLE를 보존한다. 임시 delta는 최종 result.answer로 교체하고 error/clarification 시 폐기한다. 숫자 검사는 계산 결과와 허용 기간 숫자, 인용 검사는 원문 공백 정규화 범위를 사용한다. 계산에 없는 고정 임계 숫자는 안내에 넣지 않는다.
+
+#67 돌아보기 근거: kind=ANSWER는 answerId/answerVersion 필수, kind=REFLECTION은 둘 다 null이며 attemptId로 식별한다. core는 기존 learning 시도 상세 API의 reflection.text/createdAt, 현재 학생 권한 및 요청 기간의 시도 포함 여부를 검증한다. 근거 원문은 별도 복제하지 않고 참조만 저장한다. 기존 ANSWER 근거는 그대로 유지한다. conversation_message의 fallback/notice는 JSONB로 저장해 다시 조회해도 초안 실패 정보·정상 안내를 보존한다. 최종 템플릿 검증 실패도 오류이며 임시 delta는 폐기한다.
+
+### #47 CONVERSATION 관리자 재처리
+
+SERVICE_OPS는 실패 message ID에 UUID Idempotency-Key로 재처리를 접수한다. 202는 `{jobId,type:CONVERSATION,retryRequestId,generation,status:QUEUED,acceptedAt}`이며 Location은 기존 작업 상세다. 같은 관리자·키는 완료 후에도 같은 접수 응답을 반환하고 다른 메시지에 재사용하면 422다. 새 키의 동시 요청은 한 세대만 접수한다. 관리자 화면에 질문·답변 원문을 반환하지 않는다.
+
+접수는 현재 학부모 계정·연결·동의·상품 권한을 검사하고 메시지를 새 RUNNING 세대로 선점하며 새 요청 표의 QUEUED·요청 감사를 같은 DB 트랜잭션으로 저장한다. 작업 조회는 대기 요청을 QUEUED로 투영한다. DB 대기 작업을 core 내부 작업자가 실행하며 실제 실행 시 권한·상품·사용량을 재검사한다. 한도 부족 등 실행 전 거절은 비동기 FAILED이며 임의 성공으로 바꾸지 않는다. 실제 실행부터 job_execution을 기록한다.
+
+사용량 Redis와 DB는 분산 원자 트랜잭션이 아니다. 관리자 실행은 영속 요청 ID의 Redis 원자 중복 방지 표식으로 한 번만 차감한다. 표식 TTL보다 짧은 130초 대기·실행 만료를 적용하며 중단 작업은 실패 처리하고 자동 AI 재실행하지 않는다. 부모 SSE는 기존 소비 정책을 보존한다. 결제 사용 증빙은 실행 세대 요청 ID로 기존 provider에 기록한다.
+
+학부모 SSE와 관리자 실행은 같은 AI 이벤트 순서·최종 검증·근거 확인·저장 경로를 사용한다. 관리자는 학생 원문을 수신하지 않는다. 내부 실행 컨텍스트는 권한을 재검사한 대화 소유 학부모이며 요청 관리자는 별도 감사에 보존한다. 성공·실패·stale 세대 종료 감사는 상태/실행 이력과 같은 트랜잭션이며, 늦은 세대 결과는 현재 실행을 덮어쓰지 못한다. #162의 fallback·notice·ANSWER/REFLECTION 계약은 최종 통합에서 그대로 유지한다.
+
+학생 삭제 시 요청 표는 message FK CASCADE로 정리하며 삭제 전 실패 이력·감사를 같은 트랜잭션에 기록한다. 삭제된 작업 조회·새 접수는 404다. 기존 멱등 캐시의 과거 202가 재전달될 수 있으나 재실행하지 않는다.
+
+관리자 재처리 화면은 202 QUEUED를 접수로 안내하고 REPORT는 응답의 새 jobId, CONVERSATION은 기존 jobId의 상세를 조회한다. 사용자가 상태를 새로 조회할 수 있고 실제 COMPLETED 응답에만 완료 문구를 표시한다. NOTIFICATION의 200 완료/실패 구분은 유지한다.
+
+#163·#47 통합: 검증된 미션 404는 GET/쓰기 모두 고정 문구의 404 NOT_FOUND를 반환한다. 쓰기는 요청 감사와 REJECTED 결과 감사 및 X-Admin-Operation-Id를 보존한다. 불명확한 404·405·501은 503이며 쓰기 결과 감사는 UNKNOWN이다.

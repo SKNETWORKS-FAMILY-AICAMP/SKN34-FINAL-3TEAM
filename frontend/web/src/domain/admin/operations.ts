@@ -22,6 +22,28 @@ export interface Job {
     finishedAt: string | null
   }[]
 }
+export type JobRetryResult = Job | {
+  jobId: string
+  type: 'REPORT'
+  originalJobId: string
+  status: 'QUEUED'
+  acceptedAt: string
+} | {
+  jobId: string
+  type: 'CONVERSATION'
+  retryRequestId: string
+  generation: number
+  status: 'QUEUED'
+  acceptedAt: string
+}
+export function jobRetryMessage(status: JobStatus): string {
+  return {
+    QUEUED: '재처리를 접수했습니다. 작업 상태를 조회해 결과를 확인해 주세요.',
+    RUNNING: '재처리 중입니다. 아직 완료되지 않았습니다.',
+    COMPLETED: '서버에서 재처리 완료를 확인했습니다.',
+    FAILED: '재처리 실패 · 완료로 표시하지 않습니다.',
+  }[status]
+}
 export interface OperationQueue {
   name: string
   kind: 'WORK' | 'RETRY' | 'DLQ'

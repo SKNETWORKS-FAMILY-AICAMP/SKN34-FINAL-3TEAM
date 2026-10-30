@@ -215,6 +215,20 @@ components:
       in: header
       name: X-Internal-Token
   schemas:
+    AnalysisNotice:
+      type: object
+      additionalProperties: false
+      required:
+      - reason
+      properties:
+        reason:
+          type: string
+          enum:
+          - NO_RECORD
+          - NO_CHANGES
+          - NO_REFLECTIONS
+          - UNSUPPORTED
+          - MATH_CHECK
     ElementResult:
       properties:
         elementId:
@@ -592,6 +606,11 @@ components:
           - VERIFICATION_FAILED
           - AI_UNAVAILABLE
           type: string
+        draftVerification:
+          anyOf:
+          - $ref: '#/components/schemas/AnalysisVerification'
+          - type: 'null'
+          default: null
       required:
       - reason
       type: object
@@ -704,13 +723,16 @@ components:
             $ref: '#/components/schemas/AnalysisEvidence'
           type: array
         verification:
-          anyOf:
-          - $ref: '#/components/schemas/AnalysisVerification'
-          - type: 'null'
+          $ref: '#/components/schemas/AnalysisVerification'
         recordCount:
           type: integer
         versions:
           $ref: '#/components/schemas/AnalysisLlmVersions'
+        notice:
+          anyOf:
+          - $ref: '#/components/schemas/AnalysisNotice'
+          - type: 'null'
+          default: null
       required:
       - answer
       - source

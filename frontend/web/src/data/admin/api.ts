@@ -6,6 +6,7 @@ import type {
   AdminMission,
   Audit,
   Job,
+  JobRetryResult,
   ModelVersion,
   Overview,
   MissionStatus,
@@ -29,7 +30,7 @@ export const adminApi = {
     }),
   job: (id: string, signal?: AbortSignal) => apiFetch<Job>(`/admin/jobs/${p(id)}`, { signal }),
   retry: (id: string, key: string) =>
-    apiFetch<Job>(`/admin/jobs/${p(id)}/retry`, {
+    apiFetch<JobRetryResult>(`/admin/jobs/${p(id)}/retry`, {
       ...json({}),
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key },
     }),

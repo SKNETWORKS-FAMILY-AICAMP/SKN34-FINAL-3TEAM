@@ -41,6 +41,7 @@ class AiClient internal constructor(factory: InternalRestClientFactory, private 
         .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
         .slidingWindowSize(20).minimumNumberOfCalls(20).failureRateThreshold(50f)
         .waitDurationInOpenState(java.time.Duration.ofSeconds(30)).permittedNumberOfCallsInHalfOpenState(1).build())
+
     private val client = factory.create("ai", total, java.net.http.HttpClient.Version.HTTP_1_1)
     private val timer = ScheduledThreadPoolExecutor(1, Thread.ofPlatform().daemon().name("analysis-deadline").factory())
         .apply { removeOnCancelPolicy = true }

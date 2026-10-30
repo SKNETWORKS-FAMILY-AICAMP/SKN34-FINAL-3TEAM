@@ -245,10 +245,10 @@ function streamMessage(
             evidence: evidence(mode === 'scope-change' ? actualRows : rows),
             recordCount: actualRows.length,
             source: 'TEMPLATE' as const,
-            verification: { numbersMatched: true, quotesMatched: true },
+            verification: { numbersMatched: true, quotesMatched: true, contentAllowed: true },
             ...(mode === 'verification-fallback'
-              ? { fallback: { reason: 'VERIFICATION_FAILED' } }
-              : {}),
+              ? { fallback: { reason: 'VERIFICATION_FAILED' as const, draftVerification: { numbersMatched: false, quotesMatched: true, contentAllowed: true } } }
+              : { fallback: { reason: 'AI_UNAVAILABLE' as const, draftVerification: null } }),
           }
           Object.assign(message, result, { status: 'COMPLETED' })
           c.period = { from: actualScope.from, to: actualScope.to }

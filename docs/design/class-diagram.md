@@ -133,7 +133,7 @@ classDiagram
 |---|---|---|---|
 | `AppProperties`, `InternalRestClientFactory` | `_common/config` | 구현됨 | 내부 호출 RestClient(내부 토큰·컨텍스트 헤더·타임아웃, 재시도 없음) |
 | `InternalAuthFilter`, `UserContext`, `UserContextHolder` | `_common/security` | 구현됨 | `/internal/**` 토큰 검사, `X-User-*`·`X-Student-Scope` 컨텍스트 |
-| `BusinessException`, `GlobalExceptionHandler`, `Problems` | `_common/exception` | 구현됨 | RFC 9457 오류 응답 |
+| `BusinessException`, `GlobalExceptionHandler`, `Problems` | `_common/exception` | 구현됨 | RFC 9457 오류 응답. domain은 HTTP 상태 대신 `ErrorKind`를 받는 보조 생성자 사용(core 400·404·409 #168, learning 400·409·422 #169) |
 | `EventEnvelope`, `MessagingConfig` | `_common/messaging` | 구현됨 | CloudEvents 봉투, JSON 변환기 |
 | `OutboxWriter`, `OutboxRelay`, `OutboxEventRepository` | `_common/messaging` | 구현됨 (core만) | 같은 트랜잭션 `outbox_event` 저장 → 릴레이가 미발행 행 발행(`FOR UPDATE SKIP LOCKED`), publisher confirm 후 `published_at` 기록 |
 | `ProcessedEventRepository` | `_common/messaging` | 구현됨 (core) | `processed_event` INSERT 성공 여부로 멱등 소비 |
@@ -719,7 +719,7 @@ classDiagram
     <<service>>
     +record(id, published)
   }
-  class NotificationRedisSubscriber { <<messaging>> }
+  class NotificationRedisSubscriber { <<consumer>> }
   class NotificationStreams {
     <<service>>
     +subscribe(userId) SseEmitter
@@ -753,7 +753,7 @@ classDiagram
 
 - `ReportScheduler`: `@Scheduled` + `@SchedulerLock`(ShedLock), 매주 월 07:00 KST, 직전 월~일(KST) 대상, 기록 없는 학생 포함 (P06). 학생별 `report_job(SCHEDULE)` + outbox 저장, 부분 UK로 중복 방지
 - `ReportEventConsumer`: 큐 `core.report.events`, `processed_event`로 멱등, 상태 전이는 조건부 UPDATE (상태 다이어그램 4.1)
-- 알림: 리포트 종료 전이 트랜잭션에서 `QUEUED` 저장 → 커밋 후 `NotificationRedisPublisher`가 `core:notifications:v1` 발행 → `NotificationDeliveryService`가 `COMPLETED`·`FAILED` 기록. 다른 레플리카의 `NotificationRedisSubscriber`가 `NotificationStreams`로 SSE 전달 (아키텍처 1.6)
+- 알림: 리포트 종료 전이 트랜잭션에서 `QUEUED` 저장 → 커밋 후 `NotificationRedisPublisher`가 `core:notifications:v1` 발행 → `NotificationDeliveryService`가 `COMPLETED`·`FAILED` 기록. 다른 레플리카의 `NotificationRedisSubscriber`(`notification/consumer`, 구독 연결·채널 이름은 `notification/config/NotificationRedisConfiguration`, #168)가 `NotificationStreams`로 SSE 전달 (아키텍처 1.6)
 - 리포트 조회 API에 `ReportQueryService`를 둬서 controller → client 직접 호출 금지 규칙 준수 (리포트 열람 기록 `report_view` 저장 포함)
 - `ReportController`의 `reportId` 경로는 `GuardianshipService.authorizeLinkedChildren()` 사용 (3.1)
 - 구현 이름: `ReportScheduler` = `report/scheduler/WeeklyReportScheduler` + `ReportScheduleService`, `ReportEventConsumer` = `report/consumer/ReportLifecycleConsumer` + `ReportLifecycleService`, `ReportCommandWriter` = `report/messaging/ReportGenerateWriter`, `ReportViewRepository` = `ReportJobRepository`(`report_view` 포함). 종료 이벤트 유실 복구(#132)는 `ReportRecoveryScheduler` + `ReportRecoveryService`
@@ -886,6 +886,7 @@ classDiagram
 - `PaymentService.confirm`: 금액 대조(트랜잭션) → `TossClient.confirm`(트랜잭션 밖) → 결제 저장·구독 반영(트랜잭션). 반영 실패 시 `requireRecovery()` 후 `recoverEntitlement` 재시도 (FN-PAY-05)
 - `BillingScheduler`: ShedLock, 정기 청구·해지 효력·`CONFIRMING` 재조회. 매일 09:00 KST. 갱신 실패 시 유예 3일·매일 1회 최대 3회 재청구 후 해지 (P13), 자동 갱신 해지는 `period_end` 경과 시 `CANCELED` (P14)
 - 구현 이름(#48): 컨트롤러는 `PaymentController` 하나(구독·관리자 결제/환불·`TossWebhookController`의 웹훅 포함)와 내부 `InternalPaymentUsageController`, `SubscriptionService` 역할은 `PaymentService`(구독 조회·빌링 등록·자동 갱신 해지)·`RenewalService`(정기 청구·재조회)·`ProductEntitlementService`(현재 권한)로 나뉨, 웹훅 = `PaymentWebhookService`, `BillingScheduler` = `payment/scheduler/PaymentScheduler`, Repository는 `PaymentRepository` 하나(`PaymentOrderRepository`·`SubscriptionRepository`·`RefundRequestRepository`·`PgWebhookEventRepository` 역할 포함)
+- 응답 경계(#168): `PaymentController`는 domain `PaymentView`·`RefundRequest` 대신 `payment/controller/PaymentResponses`(`PaymentViewResponse`·`RefundRequestResponse`)를 응답·멱등 저장본으로 내보내 PG 키(`paymentKey`·`cancelKey`)를 넣지 않음. 상품 `features`·`limits`·상품 스냅샷은 Jackson `JsonNode` 대신 `_common/json/JsonObject`(이 타입에만 Jackson·MyBatis 변환 등록)
 
 ### 3.5 신고·지원·사용량·관리자 (support · usage · admin)
 

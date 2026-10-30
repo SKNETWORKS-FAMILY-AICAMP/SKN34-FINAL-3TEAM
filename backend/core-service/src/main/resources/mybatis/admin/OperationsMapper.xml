@@ -16,4 +16,6 @@
  <select id="audits" resultMap="audit">SELECT id,actor_user_id,action,target_type,target_id,result,created_at FROM audit_log WHERE <include refid="filter"/> ORDER BY created_at DESC,id DESC LIMIT #{limit} OFFSET #{offset}</select>
  <select id="auditCount" resultType="long">SELECT count(*) FROM audit_log WHERE <include refid="filter"/></select>
  <insert id="audit">INSERT INTO audit_log(id,actor_user_id,action,target_type,target_id,result,created_at) VALUES(#{id},#{actor},'JOB_RETRY',#{type},#{target},#{result},CURRENT_TIMESTAMP)</insert>
+ <insert id="reportRetryAudit">INSERT INTO audit_log(id,actor_user_id,action,target_type,target_id,result,detail,created_at)
+  VALUES(#{id},#{actor},#{action},'REPORT',#{original},#{result},CAST(#{detail} AS jsonb),CURRENT_TIMESTAMP)</insert>
 </mapper>

@@ -159,7 +159,7 @@ class PaymentIntegrationTest: PostgresRepositoryTest() {
         assertEquals("APPLIED",paid.entitlementStatus); assertTrue(report.narrativeEnabled(student))
         jdbc.update("UPDATE product SET price=20000,active=false WHERE id=?",premium)
         assertEquals(14900,entitlements.forParent(owner,student).product.price)
-        assertEquals(30,entitlements.forStudent(student).product.limits["dailyConversations"].intValue())
+        assertEquals(30,entitlements.forStudent(student).product.limits["dailyConversations"])
         assertEquals(Instant.parse("2026-11-28T00:00:00Z"),analysis.entitlement(owner,student).validUntil)
         assertFalse(withdrawal.check(owner).canWithdraw)
         error("SUBSCRIPTION_DUPLICATE") { payments.create(owner,student,premium) }
@@ -416,6 +416,74 @@ class PaymentIntegrationTest: PostgresRepositoryTest() {
         mvc.post("/api/v1/admin/refund-requests/${r.id}/approve") {
             header("Authorization","Bearer $bearer");header("Idempotency-Key",UUID.randomUUID())
         }.andExpect { status { isOk() };jsonPath("$.status") { value("COMPLETED") };jsonPath("$.decidedBy") { value(admin.toString()) } }
+    }
+    @Test fun `payment and refund responses and their idempotent replays never carry PG keys (issue 168)`() {
+        val bearer=tokens.access(session(jdbc,owner,"PARENT"))
+        val admin=com.sagomungchi.core.admin.account(jdbc,"ADMIN","PAYMENT_VIEW").also { actors+=it }
+        jdbc.update("INSERT INTO admin_permission(user_id,permission,granted_by,granted_at) VALUES(?,'PAYMENT_REFUND',?,now())",admin,admin)
+        val adminBearer=tokens.access(session(jdbc,admin,"ADMIN"))
+        fun post(path: String,token: String,key: UUID,body: String?)=mvc.post(path) {
+            header("Authorization","Bearer $token");header("Idempotency-Key",key)
+            body?.let { contentType=org.springframework.http.MediaType.APPLICATION_JSON;content=it }
+        }.andReturn().response.contentAsString
+        fun get(path: String,token: String)=mvc.get(path) { header("Authorization","Bearer $token") }
+            .andExpect { status { isOk() } }.andReturn().response.contentAsString
+        val order=payments.create(owner,student,premium);val paymentKey="synthetic-${UUID.randomUUID()}"
+        val confirm=json.writeValueAsString(mapOf("paymentKey" to paymentKey,"orderId" to order.orderId,"amount" to order.amount))
+        val confirmKey=UUID.randomUUID()
+        val bodies=mutableListOf(post("/api/v1/payments/confirm",bearer,confirmKey,confirm),post("/api/v1/payments/confirm",bearer,confirmKey,confirm))
+        val paid=payments.status(owner,order.orderId)
+        val refundKey=UUID.randomUUID()
+        bodies+=post("/api/v1/payments/${paid.paymentId}/refund-requests",bearer,refundKey,"""{"reason":"합성 사유"}""")
+        bodies+=post("/api/v1/payments/${paid.paymentId}/refund-requests",bearer,refundKey,"""{"reason":"합성 사유"}""")
+        val refund=refunds.list("REQUESTED",0,100).single { it.paymentId==paid.paymentId }
+        val cancelKey=requireNotNull(repository.refund(refund.id)!!.cancelKey).toString()
+        bodies+=listOf(get("/api/v1/payments/${order.orderId}",bearer),get("/api/v1/payments",bearer),
+            get("/api/v1/admin/payments",adminBearer),get("/api/v1/admin/refund-requests",adminBearer))
+        val attempt=repository.latest(repository.orderNo(order.orderId)!!.id)!!
+        `when`(pg.cancel(anyString(),anyInt(),anyBoolean(),anyId())).thenReturn(found(attempt.pgOrderNo,paymentKey,status="CANCELED"))
+        val approveKey=UUID.randomUUID()
+        bodies+=post("/api/v1/admin/refund-requests/${refund.id}/approve",adminBearer,approveKey,null)
+        bodies+=post("/api/v1/admin/refund-requests/${refund.id}/approve",adminBearer,approveKey,null)
+        bodies+=get("/api/v1/payments/${order.orderId}",bearer)
+        assertEquals(bodies[0],bodies[1]);assertEquals(bodies[2],bodies[3]);assertEquals(bodies[8],bodies[9])
+        assertEquals(refund.id.toString(),json.readTree(bodies[2])["id"].asText())
+        assertEquals("COMPLETED",json.readTree(bodies[10])["refundRequests"][0]["status"].asText())
+        val stored=jdbc.queryForList("SELECT response_body::text FROM idempotency_record WHERE user_id IN (?,?)",String::class.java,owner,admin)
+        assertEquals(3,stored.size)
+        (bodies+stored).forEach { body ->
+            assertFalse("cancelKey" in body || "paymentKey" in body || cancelKey in body || paymentKey in body,body)
+        }
+        val logged=repository.payment(repository.orderNo(order.orderId)!!.id).toString()+repository.refund(refund.id).toString()
+        assertFalse(paymentKey in logged || cancelKey in logged,logged)
+        val limits=json.readTree(get("/api/v1/products",bearer))["items"].single { it["id"].asText()==premium.toString() }["limits"]
+        assertEquals(30,limits["dailyConversations"].intValue());assertTrue(limits["reportNarrative"].booleanValue())
+    }
+    @Test fun `product terms checks keep their JSON number and boolean rules (issue 168)`() {
+        listOf("""{"dailyConversations":"30","reportNarrative":true}""","""{"dailyConversations":2.5,"reportNarrative":true}""",
+            """{"dailyConversations":5000000000,"reportNarrative":true}""","""{"dailyConversations":-1,"reportNarrative":true}""",
+            """{"dailyConversations":30,"reportNarrative":"true"}""","""{"dailyConversations":30}""").forEach { limits ->
+            jdbc.update("UPDATE product SET limits=?::jsonb WHERE id=?",limits,premium)
+            error("PRODUCT_TERMS_INVALID") { payments.create(owner,student,premium) }
+        }
+        jdbc.update("UPDATE product SET limits=?::jsonb WHERE id=?","""{"dailyMissions":3,"dailyFeedback":50,"dailyConversations":30,"reportNarrative":true}""",premium)
+        approved()
+        assertEquals(30,analysis.entitlement(owner,student).dailyConversations)
+        jdbc.update("UPDATE subscription SET product_snapshot=jsonb_set(product_snapshot,'{limits,dailyConversations}','5000000000') WHERE student_id=?",student)
+        assertTrue(entitlements.forStudent(student).conversationEnabled)
+        error("PAYMENT_ENTITLEMENT_UNAVAILABLE") { analysis.entitlement(owner,student) }
+        jdbc.update("UPDATE subscription SET product_snapshot=jsonb_set(product_snapshot,'{limits,dailyConversations}','2.5') WHERE student_id=?",student)
+        error("PAYMENT_PRODUCT_UNAVAILABLE") { entitlements.forStudent(student) }
+    }
+    @Test fun `rejected refund response carries no cancel key (issue 168)`() {
+        val paid=approved();val r=refunds.request(owner,paid.paymentId!!,"반려 검증")
+        val admin=com.sagomungchi.core.admin.account(jdbc,"ADMIN","PAYMENT_REFUND").also { actors+=it }
+        val body=mvc.post("/api/v1/admin/refund-requests/${r.id}/reject") {
+            header("Authorization","Bearer ${tokens.access(session(jdbc,admin,"ADMIN"))}")
+            contentType=org.springframework.http.MediaType.APPLICATION_JSON;content="""{"reason":"증빙 미확인"}"""
+        }.andExpect { status { isOk() };jsonPath("$.status") { value("REJECTED") } }.andReturn().response.contentAsString
+        val cancelKey=requireNotNull(repository.refund(r.id)!!.cancelKey).toString()
+        assertFalse("cancelKey" in body || cancelKey in body,body)
     }
     @Test fun `concurrent cancel approval cannot duplicate PG cancellation and premium use stays frozen`() {
         val paid=approved();val r=refunds.request(owner,paid.paymentId!!,"합성 요청")
