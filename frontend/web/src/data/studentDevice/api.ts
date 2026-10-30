@@ -82,3 +82,12 @@ export const studentDeviceApi = {
     return { role: 'STUDENT', entry: 'DEVICE', child }
   },
 }
+
+/** DEV 시연 화면에서만 사용하는 기기 준비. 미사용 export는 운영 빌드에서 제거합니다. */
+export async function prepareDemoStudentDevice() {
+  const raw = await apiFetch<{ deviceId?: unknown }>('/auth/student/demo-device', { method: 'POST' })
+  if (typeof raw?.deviceId !== 'string' || !raw.deviceId)
+    return contractError('시연 기기 등록 결과의 deviceId가 필요합니다.')
+  const { temporaryStudentPin } = await import('../../mocks/fixtures/studentPinDemo.ts')
+  return { deviceId: raw.deviceId, pin: temporaryStudentPin }
+}

@@ -1,5 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { ApiError } from '../src/data/apiClient.ts'
+import { prepareDemoStudentDevice } from '../src/data/studentDevice/api.ts'
 
 // MSW 핸들러는 상대 경로('/api/v1/...')로 등록되어 있어 Node에서는 기준 주소가 필요하다.
 Object.defineProperty(globalThis, 'location', { value: new URL('http://localhost/'), configurable: true })
@@ -125,8 +127,9 @@ test('해제·만료 기기는 PIN이 맞아도 거부, 기기 목록에서 해�
 })
 
 test('명시적 가상 학생 준비 후 5090 로그인: 오입력은 거절하고 학생 토큰만 발급', async () => {
-  const prepared = await call('/auth/student/demo-device', { method: 'POST' })
-  assert.equal(prepared.status, 201)
+  const prepared = await prepareDemoStudentDevice()
+  assert.ok(prepared.deviceId)
+  assert.equal(prepared.pin, '5090')
   const profiles = (await call('/auth/student/profiles')).body.items
   assert.equal(profiles[0].childId, 'demo-pin-student')
   assert.equal((await login('demo-pin-student', '1234')).body.code, 'STUDENT_PIN_INVALID')
@@ -134,4 +137,11 @@ test('명시적 가상 학생 준비 후 5090 로그인: 오입력은 거절하�
   assert.equal(entered.status, 200)
   assert.equal(entered.body.role, 'STUDENT')
   assert.equal((await call('/children', { token: entered.body.accessToken })).status, 403)
+})
+
+test('시연 기기 준비 실패·잘못된 응답에서는 PIN을 성공 결과로 내보내지 않는다', async (t) => {
+  const fetch = t.mock.method(globalThis, 'fetch', async () => Response.json({ status: 503, code: 'DEMO_FAILED', title: '준비 실패' }, { status: 503 }))
+  await assert.rejects(prepareDemoStudentDevice(), /준비 실패/)
+  fetch.mock.mockImplementation(async () => Response.json({}))
+  await assert.rejects(prepareDemoStudentDevice(), (error: unknown) => error instanceof ApiError && error.problem.code === 'CONTRACT_NOT_READY')
 })
