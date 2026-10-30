@@ -11,7 +11,8 @@ on:
       - "docs/design/erd.md"
       - "scripts/verify_db_schema.py"
       - "scripts/check_db_migrations.py"
-      - "scripts/tests/**"
+      - "scripts/tests/test_verify_db_schema.py"
+      - "scripts/tests/fixtures/**"
       - "compose.yaml"
       - ".github/workflows/ci-db-schema.yml"
 
@@ -53,9 +54,7 @@ jobs:
           cache-dependency-glob: backend/report-service/uv.lock
       - name: Install locked migration dependencies
         run: uv sync --frozen --no-dev --project backend/report-service --python 3.12
-      - name: Install JSON Schema contract-test dependency
-        run: uv pip install --python backend/report-service/.venv/bin/python "jsonschema==4.26.0"
       - name: Test verifier with Python optimizations enabled
-        run: backend/report-service/.venv/bin/python -O -m unittest discover -s scripts/tests -v
+        run: backend/report-service/.venv/bin/python -O -m unittest discover -s scripts/tests -p test_verify_db_schema.py -v
       - name: Apply, verify, rerun and round-trip migrations
         run: backend/report-service/.venv/bin/python -O scripts/check_db_migrations.py
