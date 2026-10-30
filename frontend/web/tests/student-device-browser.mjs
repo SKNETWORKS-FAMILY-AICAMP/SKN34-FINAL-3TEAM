@@ -81,6 +81,17 @@ async function typePin(p, pin, pad = 'PIN 숫자 키패드') {
 }
 
 try {
+  await check('#170 시연 준비 → 프로필 재조회 → PIN 5090 → 학생 홈', async (p) => {
+    await p.goto(base + '/student/login', { waitUntil: 'domcontentloaded' })
+    const demo = p.locator('aside').filter({ hasText: '학생 로그인 시연' })
+    assert.equal(await demo.getByText('5090', { exact: false }).count(), 0)
+    await demo.getByRole('button', { name: '가상 학생으로 PIN 로그인 준비' }).click()
+    await demo.getByRole('status').filter({ hasText: 'PIN 5090' }).waitFor()
+    await p.getByRole('group', { name: 'PIN 숫자 키패드', exact: true }).waitFor()
+    await typePin(p, '5090')
+    await p.waitForURL('**/student/home')
+    await p.getByRole('heading', { name: '생각 지도', exact: true }).waitFor()
+  })
   await check('QR URL의 등록 코드는 초기 인증 확인 후에도 유지', async (p) => {
     await p.goto(base + '/student/login?code=ABCD2345', { waitUntil: 'domcontentloaded' })
     await p.getByRole('heading', { name: '이 기기를 학습용으로 등록해요' }).waitFor()

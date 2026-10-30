@@ -1,4 +1,4 @@
-# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82)
+# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82·#169·#137)
 
 통합 원본: learning-mission, learning-attempt, learning-answer, learning-feedback, learning-reflection, learning-records, learning-judgment-rules
 
@@ -199,7 +199,7 @@ core #126(#47)이 관리자 미션 요청 10개(경로 8개)를 learning `/inter
 - 확인 필요·한계:
   - core가 learning 404를 아직 503 `ADMIN_MISSIONS_UNAVAILABLE`로 바꿈(없는 미션 실제 확인). core가 고치기로 함
   - 프론트 `missingMissionFields`를 같은 조건으로 맞추는 것은 프론트 반영 중(이슈 해야 할 일 4)
-  - 당시 `verify_feedback_learning.py`는 학생 시작·답변 제출까지만 통과하고, `CORE_URL` 누락으로 피드백 전 결제 사용 확인에서 503 `PAYMENT_USAGE_UNAVAILABLE`로 끝남. core Redis 전제도 누락돼 있었음. #164 수정·검증은 13절
+  - 당시 `verify_feedback_learning.py`는 학생 시작·답변 제출까지만 통과하고, `CORE_URL` 누락으로 피드백 전 결제 사용 확인에서 503 `PAYMENT_USAGE_UNAVAILABLE`로 끝남. core Redis 전제도 누락돼 있었음. #164 수정·검증은 15절
   - V7 추가는 DB 담당에게 공유
 
 ## 11. 신고 지원 조회 (#146)
@@ -225,7 +225,7 @@ core #46 신고·문의는 접수·문의 연결·관리자 정정 전에 learni
 - 확인 필요·한계:
   - 범위 밖 신고: learning 403을 core가 503 `SUPPORT_DEPENDENCY_UNAVAILABLE`로 바꿈(core는 공급자 비-2xx를 모두 503, 5.7). 신고는 막힘
   - 학생 신고 버튼이 `judgmentId`를 쓰는 화면 반영은 프론트(#82에서 반영, 12절)
-  - 당시 `verify_feedback_learning.py`의 `CORE_URL` 누락은 #146에서 수정하지 않았음(10절). 이후 #164 수정·검증은 13절
+  - 당시 `verify_feedback_learning.py`의 `CORE_URL` 누락은 #146에서 수정하지 않았음(10절). 이후 #164 수정·검증은 15절
 
 ## 12. 학생 피드백 화면 계약 반영 (#82, web)
 
@@ -248,7 +248,35 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
   - 새로고침하면 실패한 피드백의 `retryable`을 알 수 없음(시도 상세의 `FAILED` 결과에는 없음). 그때는 다시 요청 버튼을 보여 주고, learning이 `FAILED`를 다시 실행
   - 웹 CI(`_web.yml`)는 lint·build만 돌리고 `npm test`·브라우저 테스트는 돌리지 않음
 
-## 13. 피드백 실제 연동 검증 환경 복구 (#164)
+## 13. domain 프레임워크 의존 정리 (#169)
+
+[점검 기록](audit.md) 3.7 A3: learning domain 6개 파일이 `HttpStatus`(5개)·Jackson `@JsonInclude`(`Support.kt`)를 참조해 아키텍처 2.1 "Domain은 프레임워크 의존 금지"와 다름. 확인 필요 항목(domain의 HttpStatus 허용 여부)은 허용하지 않는 쪽으로 정함(core #168과 같은 결정 대상). 설계 문서의 원칙은 그대로이고, API 응답(code·status·본문)은 바뀌지 않음
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| domain 오류 | domain은 `BusinessException(ErrorKind.CONFLICT, code, …)`처럼 오류 종류(`INVALID`·`CONFLICT`·`UNPROCESSABLE`)만 넘기고, 400·409·422 변환은 `_common/exception`의 `BusinessException` 보조 생성자가 함. domain 5개 파일 10곳(`AnswerContent`·`Attempt`·`Judgment`·`Mission`·`Period`, `MissionPublishIncompleteException` 포함) | 아키텍처 2.1(domain 의존 금지)·2.3(예외 → 응답 변환은 `_common/exception`), 이슈 "새 계층·공통 라이브러리 만들지 않음" |
+| 별도 domain 예외를 두지 않은 이유 | 같은 code(`ATTEMPT_CLOSED`·`ANSWER_INCOMPLETE`·`REVEAL_CONDITION_UNMET`·`JUDGMENT_STATE_CONFLICT`)를 service도 던짐. 예외 타입을 나누면 처리기·테스트 약 40곳이 "어느 층에서 던졌나"에 따라 갈리고, 기존 테스트가 하던 HTTP 상태 확인을 잃음 | 이슈 완료 조건 "오류 응답 code·status 변화 없음"을 기존 테스트 그대로 검증 |
+| 신고 대상 응답 | `@JsonInclude(NON_NULL)`을 domain `SupportTarget`에서 새 응답 DTO `SupportTargetResponse`(`judgment/controller/SupportResponses.kt`)로 옮김. `SupportController.target`이 변환해 반환 | 이슈 해야 할 일 3, 기존 `AttemptResponses`·`MissionResponses` 방식 |
+
+- 설계와 다른 점: 없음. class-diagram 4.2 `SupportController.target` 반환 타입만 `SupportTargetResponse`로 고침. 공통 `BusinessException` 그림(class-diagram 1장, core와 공유)은 필드가 그대로라 손대지 않음. OpenAPI 스키마 이름 `SupportTarget`은 응답 모양이 같아 그대로
+- 새 파일: `judgment/controller/SupportResponses.kt`. 기존 파일 수정: `_common/exception/BusinessException.kt`(보조 생성자·`ErrorKind`), domain 위 5개 파일(import·상태 인자), `judgment/domain/Support.kt`(`@JsonInclude` 제거), `judgment/controller/SupportController.kt`(응답 DTO)
+- 검증: domain(`*/domain/`)의 `org.springframework`·`com.fasterxml` import 0건. learning 테스트 246개 통과(테스트 코드 변경 없음, HTTP 상태·code 확인 그대로), scripts/tests 83개. 보호 장치 4개를 틀리게 하면 각각 실패(`INVALID`→400·`CONFLICT`→409·`UNPROCESSABLE`→422 변환, 응답 DTO의 없는 칸 생략)
+- 한계: 예외 객체는 실행 중에 HTTP 상태를 들고 있음(domain 코드는 모름). 오류 종류는 지금 domain에서 쓰는 세 가지뿐이고, 새 종류가 필요하면 `ErrorKind`와 변환을 함께 늘림
+
+## 14. 공통 예외·초안 저장 경합 테스트 (#137)
+
+[점검 기록](audit.md) 1.6의 learning 테스트 공백을 채움. 테스트만 추가했고 코드·설계·API 계약은 바꾸지 않음
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 405·415 | 실제 학생 경로(`AttemptController`)로 없는 메서드(`DELETE /internal/attempts/{id}`)·JSON 아닌 본문(`PUT …/draft` `text/plain`)을 보내 `application/problem+json`, `status`, `code`(`METHOD_NOT_ALLOWED`·`UNSUPPORTED_MEDIA_TYPE`), `type`, `instance`, `traceparent`의 `traceId`를 확인. 405는 `Allow` 헤더도 | api-spec 1.3 Problem Details, `GlobalExceptionHandler.createResponseEntity`가 Spring 기본 예외에도 `code`·`traceId`를 붙임 |
+| 초안 저장 경합 | 마무리한 시도에서 돌아보기 트랜잭션이 시도 행을 잠그고 완료로 바꾼 채 커밋 직전에 멈춘 사이 초안을 저장: 초안 저장은 잠금을 기다렸다가(0.5초 뒤에도 끝나지 않음) 커밋 뒤 `409 ATTEMPT_CLOSED`, 초안 행(버전·내용·저장 시각)은 그대로 | audit B14(#127에서 `saveDraft`가 `lockOwned`로 시도 행 잠금). 여러 요청을 한꺼번에 보내면 겹칠지가 운이라, 겹치는 순서를 직접 만들어 잠금이 없으면 항상 실패하게 함 |
+
+- 새 파일: `_common/exception/GlobalExceptionHandlerTest`(2). 기존 파일 수정: `AttemptConcurrencyTest`(1 추가, 설명 줄)
+- 검증: learning 테스트 249개(새 3), scripts/tests 83개. 보호 장치 4개를 빼면 각각 실패(405 code·415 code·기본 예외 `code`·`traceId` 붙이기·초안 저장 시도 행 잠금 → `requireOwned`)
+- 범위 밖: audit 1.6 learning 줄의 `EventEnvelope`·`MessagingConfig`는 #128 소비자 테스트에서 다룸
+
+## 15. 피드백 실제 연동 검증 환경 복구 (#164)
 
 ### 수정 범위와 실행 전제
 
@@ -317,3 +345,10 @@ python scripts/verify_feedback_learning.py `
 로컬 산출물은 `build/issue164/run-final/result.json`·`cleanup-audit.json`, `build/issue164/failure-cleanup/result.json`, 전체 로그·JAR 해시를 모은 `build/issue164/status.json`에 보존한다(`build/`는 Git 제외). 정상 실행의 실제 URL은 core `127.0.0.1:56403`, learning `:56404`, AI 대역 `:56405`, Redis `:56396`이었다. 실패 정리 검사는 검증용 호출자 `python build/issue164/check_failure_cleanup.py`가 실제 Docker·JVM을 실행해 확인했다. Linux caller-owned sidecar 모드는 인자·소유권 회귀 검사까지만 했고 전체 실행은 기본 모드로 검증했다. 원격 CI·PR·배포 검증으로 집계하지 않는다.
 
 전체 스크립트에는 등록·학생 세션, FAILED → 재시도 DONE → 저장 결과 재사용, RUNNING 중 중복 방지, SSE 연결 종료 후 저장, HELD의 DONE 저장, 영구 AI 실패 보존의 기존 6개 사례가 있다. 이 사례를 생략하거나 기대값을 완화하지 않았다. 전체 실행은 실제 core/learning HTTP/SSE·PostgreSQL·Redis와 합성 AI HTTP 대역을 구분한다. 외부 LLM·토스·OAuth·RabbitMQ 이벤트·브라우저·배포는 검증 범위가 아니다. production 변경이 없어 서비스 전체 테스트·프론트 검증은 이 작업에서 반복하지 않는다.
+
+### 최신 develop 병합과 문서 충돌 정리 (#189)
+
+- `feature/feedback-learning-verification`의 `6f2f392bca9ce8eb5e439a5ea84b2b2ebe07b131`에 develop `d651aa1787f62a3e8f12e177bcbe08c4f4192d4a`를 일반 merge했다. develop의 기존 13절(#169)·14절(#137)을 보존하고 #164 기록을 15절로 옮겼으며, 10·11절과 audit B21의 참조를 갱신했다.
+- 충돌 해결에서 서비스 코드·설정·공개 계약·DB 스키마를 추가 수정하지 않는다. 최신 develop의 파일을 그대로 보존하고 #164 검증 스크립트·회귀 검사도 기존 기능 커밋의 바이트를 유지한다.
+- 병합 후 저장소 Python 계약·회귀 검사 `python -O -m unittest discover -s scripts/tests -v` 90개가 통과했다(27.320초). 기존 13·14절이 develop과 동일하고 #164 기록은 15절에 한 번만 존재하며, 10·11절과 audit B21의 이전 참조가 없고 상대 경로·앵커 대상이 유효한 것을 확인했다. 충돌 표시·미해결 index 항목이 없고 `git diff --check`도 통과했다.
+- 병합에서 수동으로 변경한 것은 learning·audit 보고서 두 파일이다. 서비스 코드·설정·계약·프론트·인프라·워크플로는 최신 develop과 같고, #164 스크립트·회귀 검사는 `6f2f392`와 같다. 문서 충돌 해결에 실행 변경이 없어 신규 JAR 빌드·Docker 전체 실행은 반복하지 않았다. 위 JAR 해시와 실연동 6사례·실패 후 정리는 최초 검증 소스 `18c9c11`의 이력이며, 이번 병합 소스의 신규 실연동 결과로 주장하지 않는다. 원본 JAR는 `build/issue164/merge-develop/pre-merge-jars/`에 보존했다.

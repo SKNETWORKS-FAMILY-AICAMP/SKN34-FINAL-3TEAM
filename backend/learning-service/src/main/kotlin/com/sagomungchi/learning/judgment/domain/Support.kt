@@ -1,6 +1,5 @@
 package com.sagomungchi.learning.judgment.domain
 
-import com.fasterxml.jackson.annotation.JsonInclude
 import java.util.UUID
 
 /** 신고·문의 대상 유형 (api-spec 4.1 `/internal/support/targets`, #146) */
@@ -8,9 +7,8 @@ enum class SupportTargetType { JUDGMENT, FOLLOWUP, ATTEMPT }
 
 /**
  * 신고·문의 대상의 학생·시도 (#146). 원문 없음. judgmentId는 판정·되묻기, previousResult는 판정 DONE일 때만(지금 보이는 결과,
- * 정정 직전 결과와 같은 규칙). 없는 칸은 응답에서 뺌(core 계약은 선택 칸)
+ * 정정 직전 결과와 같은 규칙). 응답은 SupportTargetResponse
  */
-@JsonInclude(JsonInclude.Include.NON_NULL)
 data class SupportTarget(
     val studentId: UUID,
     val attemptId: UUID,

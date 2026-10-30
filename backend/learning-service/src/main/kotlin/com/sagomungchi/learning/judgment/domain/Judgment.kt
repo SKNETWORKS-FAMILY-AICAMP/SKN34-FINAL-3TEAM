@@ -1,7 +1,7 @@
 package com.sagomungchi.learning.judgment.domain
 
 import com.sagomungchi.learning._common.exception.BusinessException
-import org.springframework.http.HttpStatus
+import com.sagomungchi.learning._common.exception.ErrorKind
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
@@ -77,7 +77,7 @@ class Judgment(
     /** 전이 검사: 처리 중(RUNNING)인 판정만 끝내거나 실패로 기록 (state-diagram 1.3 불허 시 409) */
     private fun requireRunning() {
         if (status != ProcessStatus.RUNNING) {
-            throw BusinessException(HttpStatus.CONFLICT, "JUDGMENT_STATE_CONFLICT", "판정 상태 충돌", "처리 중인 판정이 아님: $status")
+            throw BusinessException(ErrorKind.CONFLICT, "JUDGMENT_STATE_CONFLICT", "판정 상태 충돌", "처리 중인 판정이 아님: $status")
         }
     }
 

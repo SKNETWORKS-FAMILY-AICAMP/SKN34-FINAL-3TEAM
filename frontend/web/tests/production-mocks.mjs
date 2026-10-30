@@ -53,6 +53,8 @@ for (const marker of [
     false,
     `운영 JS에 목 표시 포함: ${marker}`,
   )
+// #170: 개발 전용 PIN이 축약된 운영 JS 문자열로 남아 있지 않아야 합니다.
+assert.equal(js.some((s) => /(['"`])5090\1/.test(s)), false, '운영 JS에 시연 PIN 포함')
 // #97: 실제 모드에는 이메일 로그인·가입·비밀번호 재확인 호출이 없다 (학부모 Google 인증, 학생 기기·PIN)
 for (const [pattern, name] of [
   [/["'`]\/auth\/login["'`]/, '/auth/login'],

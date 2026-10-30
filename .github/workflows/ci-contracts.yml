@@ -1,0 +1,64 @@
+name: ci-contracts
+
+on:
+  pull_request:
+    paths:
+      - "contracts/**"
+      - "backend/**"
+      - "frontend/web/**"
+      - "scripts/**"
+      - "docs/design/**"
+      - "compose.yaml"
+      - "infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json"
+      - ".github/workflows/ci-contracts.yml"
+  push:
+    branches: [develop, main]
+    paths:
+      - "contracts/**"
+      - "backend/**"
+      - "frontend/web/**"
+      - "scripts/**"
+      - "docs/design/**"
+      - "compose.yaml"
+      - "infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json"
+      - ".github/workflows/ci-contracts.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contracts-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+      - name: 계약 검증 환경 준비
+        run: |
+          uv venv .venv-contracts --python 3.12
+          uv pip install --python .venv-contracts/bin/python "PyYAML==6.0.3" "jsonschema==4.26.0"
+      - name: 저장소 계약 및 검증기 회귀 검사
+        run: .venv-contracts/bin/python -O -m unittest discover -s scripts/tests -v
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v6
+      # 합성 JSON을 복사하지 않고 실제 PostgreSQL·RabbitMQ 테스트에서 응답을 생성한다.
+      - name: core 리포트·알림 계약 산출물 생성
+        working-directory: backend/core-service
+        run: |
+          chmod +x gradlew
+          ./gradlew clean test --no-daemon \
+            --tests 'com.sagomungchi.core.report.ReportMessagingTest' \
+            --tests 'com.sagomungchi.core.report.ReportHttpTest' \
+            --tests 'com.sagomungchi.core.notification.NotificationIntegrationTest'
+      - name: 실제 리포트 이벤트·응답 계약 검사
+        run: .venv-contracts/bin/python scripts/validate_report_contracts.py
+      - name: 실제 알림 응답 계약 검사
+        run: .venv-contracts/bin/python scripts/validate_notification_contracts.py

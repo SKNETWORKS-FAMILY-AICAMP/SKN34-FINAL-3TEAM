@@ -4,6 +4,8 @@
 
 계약은 [API 명세](../design/api-spec.md) 3.4·4.1.1·4.2.1·4.4·5.5, 메시지는 [report-messages](../../contracts/events/report-messages.md).
 
+#135 조회 API는 lifespan 소유 learning HTTP·S3 클라이언트를 요청 간 재사용하고 종료 때 정리한다. 권한 헤더는 요청마다 읽어 전달한다. 설정 유지 근거와 #139·#140 테스트 보강은 [통합 검토](issues-135-139-140.md)를 따른다.
+
 #152 관리자 실패 작업 재처리는 새 jobId·ADMIN_RETRY와 기존 생성/revision을 재사용한다. 원작업 연결·관리자 접수는 core #47, report 실행·중복 방어·기존 판 보존은 [#152 검토](issue-152-report-admin-retry.md)를 따른다. 기존 #50의 종료 작업 단순 재전달 종료 정책은 유지한다.
 
 ## 1. core 주간 리포트 (#42)
@@ -21,7 +23,7 @@
 - report-worker가 `report.generate`를 받아 작업 상태·결과 이벤트를 중복 없이 저장·발행. 공유 v1 스키마를 재사용(`report.generate` data는 `jobId·studentId·periodFrom·periodTo·trigger·narrativeEnabled` 6개, 요청 시각은 봉투 `time`)
 - `narrativeEnabled`는 필수 boolean. 누락·잘못된 형식은 DLQ
 - `app/messaging/contracts.py`는 엄격한 수신 DTO, `app/generation/codec.py`가 payload를 내부 모델로 변환. `requested_at`은 봉투 time을 보존(삭제 장벽에서 사용)
-- Outbox는 처리 중인 앞 100개 후보를 건너뛰어 다른 행을 선점, 발행은 최대 15초. 브로커 대기 동안 트랜잭션·행 잠금은 없지만 session lock용 연결 1개 사용(연결 풀과 worker 동시 실행 수를 함께 관리)
+- Outbox는 학생별 미발행 선두 중 적격 후보 100개에서 선점하며, 발행은 최대 15초다. #131에서 학생별 순서를 유지하고 실패한 학생만 1·5·15분 지연 후 격리한다. 다른 학생은 계속 처리한다. 브로커 대기 동안 트랜잭션·행 잠금은 없지만 학생별 session lock용 연결 1개를 사용한다(연결 풀과 worker 동시 실행 수를 함께 관리). [격리 조회·수동 재처리·마이그레이션](issue-131-outbox-recovery.md)
 - #56에서 기본 진입점에 core 별명 조회 → 기록 집계 → 서술 검증 → 파일 저장 생성기를 연결했다. 테스트용 `run(generator=...)` 주입도 유지한다.
 
 ## 3. 수치 계산 (#51)

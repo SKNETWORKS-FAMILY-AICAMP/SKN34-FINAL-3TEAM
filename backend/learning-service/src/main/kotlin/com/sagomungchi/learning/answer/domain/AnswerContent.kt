@@ -1,9 +1,9 @@
 package com.sagomungchi.learning.answer.domain
 
 import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning._common.exception.ErrorKind
 import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.domain.MissionView
-import org.springframework.http.HttpStatus
 
 /**
  * 입력 방식별 제출 내용 (api-spec 3.1·3.8). 저장할 때는 그 입력 방식에 쓰는 필드만 남김 (only).
@@ -57,7 +57,7 @@ data class AnswerContent(
                 }
             }
         }
-        if (message != null) throw BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "ANSWER_INCOMPLETE", "답변 미완성", message)
+        if (message != null) throw BusinessException(ErrorKind.UNPROCESSABLE, "ANSWER_INCOMPLETE", "답변 미완성", message)
     }
 
     /**

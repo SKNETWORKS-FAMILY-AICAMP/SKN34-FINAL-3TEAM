@@ -219,12 +219,12 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 1장과 같이 
 | B3 | 해결 | learning `StudentDeletedConsumer`·`StudentDeletionService`·`CoreClient` 완료 보고(#128) |
 | B4 | 해결 | `ReportEntitlementService` → `ProductEntitlementService`(#48), 조회 헤더(#129) |
 | B5 | 해결 | 기본 worker 파이프라인(#56), ai 서술 API(#64) |
-| B8 | 미해결(#131) | report Outbox가 여전히 가장 오래된 행부터 선택(`outbox/repository.py` `claim_next`), 순서 정책 결정 필요 |
+| B8 | #131 구현 브랜치에서 보완(병합 전) | 학생별 선두·1/5/15분 재시도·격리·동일 이벤트 수동 재처리. 다른 학생의 발행과 동시 처리 순서를 검증한다. [구현·검증](issue-131-outbox-recovery.md) |
 | B9 | 해결 | core 주기 점검·report 상태 복구·영구 job guard·삭제 시 미종료 작업 종료(#132) |
 | B10 | 미해결(임시 결정 유지, #133) | `StudentDeviceController`가 `remoteAddr` 사용, 신뢰 프록시 설정과 함께 처리 |
 | B11·B13 | 해결 | #134 |
 | B12(#93·#97) | 해결 | 관리자 모델 요청이 `RegisterModelVersion`·`ActivateModelVersion`·`RollbackModelVersion`과 일치, `/auth/login`·`/auth/signup`은 MSW 시연 전용 파일에만 남음 |
-| B17 | 일부(#135) | report `ai_url`·`core_url`, scoring `core_url`은 사용. ai `scoring_url`·`core_url`은 미사용(M2 교차 확인·활성 버전 조회 예정) |
+| B17 | #135 구현 브랜치에서 보완(병합 전) | report 조회 HTTP·S3는 lifespan에서 재사용. 기존 사용 URL과 ai의 #68·#69 예정 설정 유지 근거를 기록했다. [#135·#139·#140](issues-135-139-140.md) |
 
 ### 3.3 발견 항목과 처리
 
@@ -233,7 +233,7 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 1장과 같이 
 | B18 | 결함(중간) | core 관리자 미션 프록시가 learning 404(없는 미션 `NOT_FOUND`)를 503 `ADMIN_MISSIONS_UNAVAILABLE`로 바꿈. api-spec 2.8이 #145 이전에 정한 규칙이고 learning 보고서 10절에서 core가 고치기로 함 | 이슈 #163(api-spec 2.8 변경 동반) |
 | B19 | 결함(낮음) | core 신고·정정이 learning 403(학생 범위 밖)을 503 `SUPPORT_DEPENDENCY_UNAVAILABLE`로 바꿈(api-spec 1.3·5.7 "기타 비-2xx는 503"). 신고는 막히지만 원인 구분 불가 | 이슈 #163(계약 결정 필요) |
 | B20 | 스크립트 | `check_policy_migrations.py`가 #19 당시 최신 버전 수(core 7, learning 5)를 고정해 V8 이후 추가로 항상 실패 | 수정: #19 정책 버전까지만 `-target`으로 적용(`POLICY_HEAD`). 이후 버전은 `check_db_migrations.py`가 검사 |
-| B21 | 스크립트 | `verify_feedback_learning.py`가 learning에 `CORE_URL`을 넘기지 않아 피드백이 결제 사용 확인에서 503(learning 보고서 10·11절) | #164 작업 브랜치에서 실제 core URL·전용 Redis·익명 볼륨까지 정리 보완. JDK 21 기존 전체 6사례와 정상/기동 실패 후 실제 자원 정리 통과. 전제·범위·한계는 [learning 보고서 13절](learning.md#13-피드백-실제-연동-검증-환경-복구-164) |
+| B21 | 스크립트 | `verify_feedback_learning.py`가 learning에 `CORE_URL`을 넘기지 않아 피드백이 결제 사용 확인에서 503(learning 보고서 10·11절) | #164 작업 브랜치에서 실제 core URL·전용 Redis·익명 볼륨까지 정리 보완. JDK 21 기존 전체 6사례와 정상/기동 실패 후 실제 자원 정리 통과. 전제·범위·한계는 [learning 보고서 15절](learning.md#15-피드백-실제-연동-검증-환경-복구-164) |
 | C16 | 코드↔문서 | class-diagram 3.2가 `Conversation*`·`AiClient`·`LearningClient.evidence`·`correctJudgment`를 미구현으로 표기(#41·#46 구현) | 구현 상태와 실제 클래스 대응으로 수정 |
 | C17 | 코드↔문서 | class-diagram은 "클래스명은 구현 기준"이나 3.3~3.5가 설계 이름(`ReportScheduler`·`ReportEventConsumer`·`ReportCommandWriter`·`SubscriptionService`·`BillingScheduler`·`AdminController`·`AdminJobService` 등)과 낡은 경로(`support/client/LearningClient.kt`)를 유지, "`AdminController`는 구현 완료 표시가 아님"(#47 구현) | 절마다 구현 이름 대응 추가, 낡은 문장 수정. 그림 자체는 유지 |
 | C18 | 코드↔문서 | ai 분석 에이전트: class-diagram 5.2·architecture 2.6의 `service.py`·`verifier.py`·`rule_responder.py`가 실제는 `router.py` 실행·`verification.py`·`templates.py`, 노드 이름도 다름(#65·#66). architecture 2.6 ai `scoring_client.py`·`core_client.py`·`messaging/consumer.py`는 없음 | 실제 파일·노드 대응으로 수정, 없는 파일은 "(예정)" |
@@ -258,6 +258,8 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 1장과 같이 
 | 통합 | JDK 21 전제 수동 스크립트 4개(3.1 실행하지 않은 것)가 CI 밖이고 로컬 JDK에 의존 | 중간 |
 
 1장 1.6의 core 경로 정규화(B1·B2)·`ReportScheduleService` 실패 격리는 1장 처리에서 테스트 추가됨. scoring 메시징·모델 로딩은 125건으로 확대됨.
+
+#139·#140 구현 브랜치는 report run 조립·취소·표시/검증 직접 테스트 20개와 scoring 연결·봉투·내부 헤더·설정 테스트 19개를 추가한다. 1장의 당시 결과는 유지하고 최신 실행 수치·#131 의존 관계는 [통합 검토](issues-135-139-140.md)에 기록한다.
 
 ### 3.6 CI 공백
 

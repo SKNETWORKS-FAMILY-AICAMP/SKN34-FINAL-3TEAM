@@ -1026,6 +1026,13 @@ erDiagram
     jsonb payload
     timestamptz created_at
     timestamptz published_at "NULL 허용"
+    int failure_count
+    timestamptz next_attempt_at "NULL 허용"
+    varchar last_error_code "NULL 허용, 원문 없는 안전 오류 코드"
+    timestamptz last_failed_at "NULL 허용"
+    timestamptz quarantined_at "NULL 허용"
+    int manual_retry_count
+    timestamptz last_requeued_at "NULL 허용"
   }
   processed_event {
     uuid event_id PK
@@ -1067,7 +1074,7 @@ erDiagram
 | learning | `answer` | `(attempt_id, submitted_at)` | 시도 타임라인 |
 | learning | `judgment` | `(process_status, lease_until)` | 고착 `RUNNING` 탐지 |
 | report | `weekly_report` | `(student_id, status, period_from)` | 자녀별 리포트 목록 |
-| report | `outbox_event` | `(created_at) WHERE published_at IS NULL` | 리포트 이벤트 릴레이 대상 |
+| report | `outbox_event` | `(created_at) WHERE published_at IS NULL`, `(subject, created_at, id) WHERE published_at IS NULL` | 학생별 선두·발행 순서 및 재시도 대상 |
 
 ---
 
@@ -1080,7 +1087,7 @@ erDiagram
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V16(V10·V11 결번), learning Flyway V1~V7, report Alembic `20261026_01`·`20261027_02`·`20261029_03`. 현재 69개 테이블·606개 컬럼(core 42/390, learning 19/160, report 8/56). 결정 경위는 [DB 스키마 보고서](../report/db-schema.md)
+- 버전: core Flyway V1~V9·V12~V16(V10·V11 결번), learning Flyway V1~V7, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`. 현재 69개 테이블·613개 컬럼(core 42/390, learning 19/160, report 8/63). 결정 경위는 [DB 스키마 보고서](../report/db-schema.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11은 #58이 처음 V10을 썼다가 V12가 적용된 DB에서 Flyway가 거부해 V13으로 옮긴 결번이며, V12 첫 줄 주석의 "V10은 #58"은 당시 기록
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT
