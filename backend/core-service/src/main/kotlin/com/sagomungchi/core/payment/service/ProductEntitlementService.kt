@@ -23,14 +23,14 @@ class ProductEntitlementService(private val repository: PaymentRepository, priva
         val current=repository.active(student)
         if(current!=null && !BillingDates.entitled(current,tx.now()) && repository.confirmingStudent(student)) unavailable("PAYMENT_ENTITLEMENT_CONFIRMING")
         val sub=current?.takeIf { BillingDates.entitled(it,tx.now()) }
-        val product=if(sub != null) sub.productSnapshot?.let { json.treeToValue(it,Product::class.java) }
+        val product=if(sub != null) sub.productSnapshot?.let { json.convertValue(it,Product::class.java) }
             ?: unavailable("PAYMENT_PRODUCT_UNAVAILABLE") else freeProduct()
         val pending=repository.refundPending(student)
-        val conversations=product.limits.path("dailyConversations")
-        val narrative=product.limits.path("reportNarrative")
-        if(!conversations.isIntegralNumber || conversations.intValue()<0 || !narrative.isBoolean) unavailable("PAYMENT_PRODUCT_UNAVAILABLE")
+        val conversations=product.limits["dailyConversations"].takeIf { it is Int || it is Long || it is java.math.BigInteger } as Number?
+        val narrative=product.limits["reportNarrative"] as? Boolean
+        if(conversations==null || conversations.toInt()<0 || narrative==null) unavailable("PAYMENT_PRODUCT_UNAVAILABLE")
         return ProductEntitlement(student,product,sub?.id,sub?.status ?: "FREE",sub?.autoRenew ?: false,
-            sub?.periodEnd,sub?.graceUntil,pending,!pending && conversations.intValue()>0,!pending && narrative.booleanValue())
+            sub?.periodEnd,sub?.graceUntil,pending,!pending && conversations.toInt()>0,!pending && narrative)
     }
     private fun freeProduct(): Product {
         val id=runCatching { UUID.fromString(freeProductId) }.getOrNull() ?: unavailable("PAYMENT_FREE_PRODUCT_UNAVAILABLE")

@@ -3,6 +3,7 @@ package com.sagomungchi.core._common.persistence
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core._common.config.UuidTypeHandler
+import com.sagomungchi.core._common.json.JsonObject
 import org.apache.ibatis.type.OffsetDateTimeTypeHandler
 import org.mybatis.spring.boot.autoconfigure.ConfigurationCustomizer
 import org.springframework.context.annotation.Bean
@@ -20,6 +21,7 @@ class PersistenceConfig {
             register(Instant::class.java, InstantTypeHandler())
             register(OffsetDateTime::class.java, OffsetDateTimeTypeHandler())
             register(JsonNode::class.java, JsonNodeTypeHandler(objectMapper))
+            register(JsonObject::class.java, JsonObjectTypeHandler(objectMapper))
         }
     }
 }
