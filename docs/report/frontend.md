@@ -104,3 +104,11 @@ node tests/qr-device-browser.mjs
 - 최신 #82 피드백 처리와 #146 judgmentId 기반 신고를 유지합니다. 임시 대기였던 판정 ID 연결은 이제 최신 develop에 포함됩니다.
 - 단위·계약 테스트 124개, lint·TypeScript·운영 빌드·운영 목업 제외 검사 통과. 브라우저 관리자 36조합·학습/미션 편집 9조합에서 가로 넘침과 실행 오류 없음. 운영 빌드 다중 탭 인증 회귀도 통과했습니다.
 - 브라우저 검증은 가상 데이터/API 대역이며 실제 core/learning/DB·Google OAuth·PG 통합 성공을 뜻하지 않습니다. JS 청크 500kB 경고는 남아 있습니다.
+
+### #170 시연 학생 진입의 계층 분리 (2026-10-30)
+
+- `DemoStudentEntry`의 직접 `apiFetch`·TanStack Query 설정과 목업 fixture 참조를 제거했습니다. 기존 `data/studentDevice/api.ts`의 시연 준비 함수와 `queries.ts` mutation 훅을 사용합니다. 새 계층·라이브러리는 추가하지 않았습니다.
+- data 계층에서 시연 기기 준비 결과의 deviceId를 검증하고, 성공할 때만 시연 PIN을 반환합니다. mutation 성공 후 기존 `student-device` 쿼리를 무효화해 프로필/PIN 화면을 다시 읽습니다. 준비 실패·잘못된 응답은 성공 안내로 바꾸지 않습니다.
+- 개발 화면은 기존 DEV+MSW 조건부 지연 로딩을 유지하며 준비 후 PIN을 표시합니다. `/auth/student/demo-device`의 요청·응답은 변경하지 않았습니다. 실제 인증 API 계약 변경은 없습니다.
+- `npm test` 125개·lint·운영 빌드·`node tests/production-mocks.mjs` 통과. 운영 JS에 시연 경로·fixture·시연 PIN 문자열이 포함되지 않음을 확인했습니다. JS 청크 500kB 경고는 기존과 같습니다.
+- Chrome 가상 데이터 검증: 시연 준비 → 프로필 재조회 → PIN 안내 → 5090 로그인 → 학생 홈 통과. 캡처는 `C:/Users/playdata2/outputs/issue170-20261030/`에 보존했습니다. 실제 DB/OAuth 검증을 수행한 것은 아닙니다.
