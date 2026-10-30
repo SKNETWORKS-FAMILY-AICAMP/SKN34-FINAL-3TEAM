@@ -21,6 +21,7 @@ from app.followup.models import (
 )
 from app.judgment.models import JudgmentResult
 from app.llm.base import LlmClient, LlmUnavailable
+from app.versions import ActiveVersions
 
 logger = logging.getLogger(__name__)
 
@@ -33,25 +34,29 @@ TYPE_BY_RESULT: dict[JudgmentResult, FollowupType] = {
 
 
 class FollowupService:
-    def __init__(self, llm: LlmClient, settings: Settings) -> None:
+    def __init__(
+        self, llm: LlmClient, settings: Settings, versions: ActiveVersions | None = None
+    ) -> None:
         self._llm = llm
         self._settings = settings
+        self._versions = versions or ActiveVersions()
 
     async def create(self, request: FollowupRequest) -> FollowupResponse:
+        prompt = self._versions.prompt("followup")
         deadline = time.monotonic() + self._settings.followup_deadline
         followup_type = TYPE_BY_RESULT[request.judgment.result]
         student_answers = [item.text for item in request.timeline if item.kind == "ANSWER"]
-        versions = LlmVersions(model=self._llm.model, prompt=prompts.PROMPT_VERSION)
+        versions = LlmVersions(model=self._llm.model, prompt=prompt.version)
         rejected: list[str] = []
         leaks: list[str] = []
         for attempt in range(self._settings.followup_leak_max_retries + 1):
             try:
                 generated = await self._llm.generate(
-                    system=prompts.SYSTEM,
-                    user=prompts.build_user(request, followup_type, rejected),
+                    system=prompt.body.SYSTEM,
+                    user=prompt.body.build_user(request, followup_type, rejected),
                     output=prompts.GeneratedQuestion,
                     call_type="FOLLOWUP",
-                    prompt_version=prompts.PROMPT_VERSION,
+                    prompt_version=prompt.version,
                     max_tokens=1024,
                     deadline=deadline,
                 )
@@ -62,7 +67,7 @@ class FollowupService:
                     ) from exc
                 logger.warning("되묻기 재생성 실패, 질문 은행으로: code=%s", exc.code)
                 break
-            versions = LlmVersions(model=generated.model, prompt=prompts.PROMPT_VERSION)
+            versions = LlmVersions(model=generated.model, prompt=prompt.version)
             question = generated.data.question.strip()
             leaks = leak_guard.find_leaks(
                 question,

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.config import get_settings
 from app.judgment.models import JudgmentRequest, JudgmentResponse
@@ -11,8 +11,10 @@ from app.llm.providers import get_llm
 router = APIRouter(prefix="/internal/judgments", tags=["judgment"])
 
 
-def get_judgment_service(llm: Annotated[LlmClient, Depends(get_llm)]) -> JudgmentService:
-    return JudgmentService(llm, get_settings())
+def get_judgment_service(
+    request: Request, llm: Annotated[LlmClient, Depends(get_llm)]
+) -> JudgmentService:
+    return JudgmentService(llm, get_settings(), request.app.state.active_versions)
 
 
 @router.post("", response_model=JudgmentResponse)

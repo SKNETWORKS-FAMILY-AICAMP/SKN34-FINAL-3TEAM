@@ -15,6 +15,7 @@ from app.bootstrap import create_app
 from app.clients.learning_client import RecordsUnavailable
 from app.llm.base import LlmError
 from app.llm.providers import get_llm
+from app.versions import ActiveVersions
 from tests.analysis_agent.records_fixture import FakeRecords
 from tests.fakes import FakeLlm
 
@@ -191,7 +192,12 @@ def test_cancelled_stream_stops_graph_and_llm() -> None:
     # core가 연결을 끊으면 Starlette가 응답 생성기를 취소함 (ASGI 2.3 disconnect 감지)
     llm = FakeLlm(classified("CHANGES"), ["답을 다시 썼어요. "] * 20, delay=0.01)
     records = FakeRecords()
-    context = AgentContext(llm=llm, tools=records, deadline=time.monotonic() + 60)  # type: ignore[arg-type]
+    context = AgentContext(
+        llm=llm,
+        tools=records,
+        deadline=time.monotonic() + 60,
+        prompt=ActiveVersions().prompt("analysis"),
+    )  # type: ignore[arg-type]
     seen: list[str] = []
 
     async def scenario() -> None:

@@ -6,6 +6,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.analysis_agent.router import router as analysis_router
+from app.clients.base import internal_client
+from app.clients.core_client import CoreClient
 from app.config import get_settings
 from app.errors import register_error_handlers
 from app.followup.router import router as followup_router
@@ -13,10 +15,12 @@ from app.health.router import router as health_router
 from app.judgment.router import router as judgment_router
 from app.llm.providers import create_llm
 from app.messaging.connection import AmqpConnection
+from app.messaging.consumer import ModelVersionConsumer
 from app.messaging.publisher import EventPublisher, UsagePublisher
 from app.messaging.usage_recorder import BackgroundUsageRecorder
 from app.report_narrative.router import router as report_narrative_router
 from app.security import InternalAuthMiddleware
+from app.versions import ActiveVersions
 from app.versions import router as versions_router
 
 
@@ -36,10 +40,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async def rabbitmq_ready() -> bool:
         return amqp.is_connected
 
-    app.state.readiness_checks = {"rabbitmq": rabbitmq_ready}
-    yield
-    await usage_recorder.close()
-    await amqp.close()
+    async with internal_client(settings.core_url) as http:
+        versions = ActiveVersions()
+        consumer = ModelVersionConsumer(amqp, CoreClient(http), versions)
+        app.state.active_versions = versions
+        app.state.readiness_checks = {"rabbitmq": rabbitmq_ready, "versions": consumer.is_ready}
+        consumer.start()
+        try:
+            yield
+        finally:
+            await consumer.close()
+            await usage_recorder.close()
+            await amqp.close()
 
 
 def create_app() -> FastAPI:

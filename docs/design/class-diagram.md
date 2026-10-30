@@ -1559,7 +1559,7 @@ classDiagram
 | `JudgmentService` | `judgment/service.py` | 사전 보류(`TOO_SHORT`·`UNVERIFIED_SCOPE`) → 추출 → 대조 → 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정 (업무 판단은 service, 아키텍처 2.1) → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`) → 응답. M2·M1 교차 확인(`ScoringClient`)은 미구현 |
 | `LeakGuard` | `followup/leak_guard.py` | 모듈 함수 `find_leaks()`. 정답 키·예시 답·금지어 포함 검사. 실패 시 1회 재생성(`LLM_RETRY`), 재실패 시 `question` 없이 `leakCheck.passed = false` 반환 → learning이 질문 은행 선택 (`BANK`, P16) |
 | `LlmClient` | `llm/base.py`, 제공자는 `llm/providers.py` | 제공자 교체 지점(Claude·OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`), LLM 호출 재시도는 이 클래스에서만 (아키텍처 1.3), 호출마다 사용량 콜백(`BackgroundUsageRecorder` → `UsagePublisher`, 발행 실패는 로그만). `stream`은 분석 대화 답변의 일반 텍스트 조각(첫 조각 전 실패만 재시도) |
-| `ActiveVersions` | `versions.py` | 미구현. 현재 `versions.py`는 `GET /internal/versions`로 코드 상수 프롬프트 버전만 제공. `model.version.activated` 수신 시 교체는 후속 |
+| `ActiveVersions` | `versions.py` | #68에서 내장 버전과 core 활성 `PROMPT` 네 이름·승인 scope를 조정한다. 선택한 실제 본문·버전을 요청 동안 고정하고 `/internal/versions`에 같은 버전을 제공한다. 미보유 활성 버전은 명시적 503과 readiness DOWN |
 
 ### 5.2 분석 에이전트·리포트 서술 (analysis_agent · report_narrative)
 
@@ -1692,7 +1692,7 @@ classDiagram
   EventPublisher --> AmqpConnection
 ```
 
-- 기동 순서: exclusive 큐 선언·바인딩 → `CoreClient.active_versions()` → `ActiveVersions.replace`. 조회 실패 시 readiness false 유지·재시도 (아키텍처 1.6)
+- 기동 순서: exclusive 큐 선언·바인딩·소비 시작 → `CoreClient.active_versions()` → 조회 중 이벤트 revision 조정 → `ActiveVersions.replace`. 조회 실패·미보유 활성 본문은 readiness false, 프로세스 유지. 재연결도 새 큐 바인딩 후 snapshot으로 조정한다 (아키텍처 1.6).
 - `UsagePublisher`: 응답 반환 후 best-effort 발행, 학생 ID·원문 미포함 (NFR-PRF-02)
 
 ---

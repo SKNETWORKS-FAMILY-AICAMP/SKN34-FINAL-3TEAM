@@ -21,10 +21,12 @@ from app.analysis_agent.models import (
 )
 from app.analysis_agent.tools import RecordTools
 from app.llm.base import LlmClient
+from app.versions import PromptChoice
 
 
 class AnalysisState(TypedDict, total=False):
     request: AnalysisRequest
+    prompt_version: str
     intent: Intent
     model: str | None  # 마지막으로 응답한 LLM 모델
     fallback_reason: FallbackReason | None
@@ -43,3 +45,4 @@ class AgentContext:
     llm: LlmClient
     tools: RecordTools
     deadline: float  # time.monotonic 기준 전체 마감 (P12 분석 대화 전체 120초 안)
+    prompt: PromptChoice

@@ -4,9 +4,9 @@ from typing import Literal
 
 from pydantic import Field
 
-from app.judgment import prompts
 from app.judgment.models import ApiModel, JudgmentRequest
 from app.llm.base import LlmClient, LlmResult
+from app.versions import PromptChoice
 
 EvidenceStatus = Literal["FOUND", "NOT_FOUND", "UNCLEAR"]
 
@@ -21,11 +21,13 @@ class Extraction(ApiModel):
     elements: list[ElementEvidence] = Field(default_factory=list)
 
 
-async def extract(llm: LlmClient, request: JudgmentRequest) -> LlmResult[Extraction]:
+async def extract(
+    llm: LlmClient, request: JudgmentRequest, prompt: PromptChoice
+) -> LlmResult[Extraction]:
     return await llm.generate(
-        system=prompts.SYSTEM,
-        user=prompts.build_user(request.answer_text, request.grade, request.rubric.elements),
+        system=prompt.body.SYSTEM,
+        user=prompt.body.build_user(request.answer_text, request.grade, request.rubric.elements),
         output=Extraction,
         call_type="JUDGMENT",
-        prompt_version=prompts.PROMPT_VERSION,
+        prompt_version=prompt.version,
     )
