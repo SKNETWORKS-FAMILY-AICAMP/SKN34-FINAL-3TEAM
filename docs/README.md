@@ -62,6 +62,7 @@
 - [scoring #88](report/issue-88-scoring-m1.md): 미학습 M1 비활성 계약·입력 검증 및 활성화 후속 범위
 - [scoring #85~#88 통합 제출](report/scoring-85-88-integration.md): 통합 브랜치·PR 범위·검증 결과·후속 연동 구분
 - [report #152 관리자 실패 재처리](report/issue-152-report-admin-retry.md): 새 jobId 재사용·중복/판 보존·실제 연동 및 #47 요청·결과 예시
+- [report #130 기본 worker 완료 근거](report/issue-130-worker-closure.md): 기존 생성기·별명 조회 재사용 및 최신 검증
 - [이슈 #47 관리자 운영](report/issue-47-admin-operations.md): 운영 현황·작업 재처리·감사 이력·큐 조회·관리자 미션 프록시
 - [이슈 #48 결제·구독](report/issue-48-payments.md): 토스페이먼츠 테스트 결제·정기 청구·환불과 실제 상품 권한 공급
 - [이슈 #119 학생 별명 조회](report/issue-119-student-profile.md): 리포트 생성용 core 내부 학생 별명 API
