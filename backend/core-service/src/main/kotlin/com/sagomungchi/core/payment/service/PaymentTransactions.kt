@@ -33,7 +33,7 @@ class PaymentTransactions(manager: PlatformTransactionManager, private val accou
     fun <T: Any> transaction(block: () -> T): T = requireNotNull(template.execute { block() })
     fun ownedOrder(parent: UUID, no: String)= (repository.orderNo(no) ?: missing()).also { if(it.parentUserId != parent) forbidden() }
     fun ownedSubscription(parent: UUID, id: UUID)= (repository.subscription(id) ?: missing()).also { if(it.parentUserId != parent) forbidden() }
-    fun product(order: PaymentOrder): Product = order.productSnapshot?.let { json.treeToValue(it,Product::class.java) } ?: unavailable("PAYMENT_PRODUCT_UNAVAILABLE")
+    fun product(order: PaymentOrder): Product = order.productSnapshot?.let { json.convertValue(it,Product::class.java) } ?: unavailable("PAYMENT_PRODUCT_UNAVAILABLE")
     fun cancelSubscription(s: Subscription) = s.copy(status="CANCELED",autoRenew=false,nextBillingDate=null,canceledAt=now(),updatedAt=now())
     fun audit(actor: UUID, action: String, target: UUID) { check(repository.audit(UUID.randomUUID(),actor,action,target,now())==1) }
     companion object {
