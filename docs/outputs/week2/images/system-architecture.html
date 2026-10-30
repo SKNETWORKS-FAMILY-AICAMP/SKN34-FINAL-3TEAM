@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>사고뭉치 시스템 아키텍처</title>
+<style>
+  :root { --ink:#1d2329; --muted:#5b6670; --line:#3b4650; --aws:#f2f4f6; --vpc:#eef6ff; --pub:#e8f5e9; --pri:#f6f2ff; --eks:#fff; --ns:#f8fafc; --accent:#2f7d5b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#fff; font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif; color:var(--ink); }
+  #canvas { position:relative; width:1680px; height:1030px; }
+  .box { position:absolute; border:1.6px solid var(--line); border-radius:6px; }
+  .title { position:absolute; left:0; right:0; top:0; height:30px; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:15px; border-bottom:1.4px solid var(--line); background:rgba(255,255,255,.75); border-radius:6px 6px 0 0; }
+  .title.left { justify-content:flex-start; padding-left:12px; }
+  .tag { position:absolute; top:-12px; left:14px; background:#fff; border:1.4px solid var(--line); border-radius:12px; padding:1px 10px; font-size:12px; font-weight:700; }
+  .node { position:absolute; background:#fff; border:1.5px solid var(--line); border-radius:8px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:4px 6px; }
+  .node b { font-size:14px; }
+  .node small { font-size:11.5px; color:var(--muted); line-height:1.35; }
+  .badge { display:inline-block; font-size:10.5px; font-weight:700; color:#fff; border-radius:4px; padding:1px 6px; margin-bottom:3px; }
+  .b-spring { background:#6db33f; } .b-fast { background:#059487; } .b-react { background:#1e88b5; }
+  .b-aws { background:#ec7211; } .b-db { background:#336791; } .b-mq { background:#ff6600; } .b-redis { background:#d82c20; }
+  .b-ext { background:#10a37f; } .b-ops { background:#6b5bd2; } .b-git { background:#24292f; }
+  .list { position:absolute; font-size:12.5px; line-height:1.6; }
+  .list b { font-size:13px; }
+  svg { position:absolute; left:0; top:0; pointer-events:none; }
+  .lbl { font-size:11.5px; fill:#33404c; }
+  .lbl-bg { fill:#fff; }
+  .user { position:absolute; text-align:center; font-size:13px; font-weight:700; }
+  .user .head { width:62px; height:62px; border-radius:50%; border:2.5px solid #1e88e5; margin:0 auto 6px; position:relative; background:#e3f2fd; }
+  .user .head:before { content:""; position:absolute; left:20px; top:10px; width:22px; height:22px; border-radius:50%; background:#1e88e5; }
+  .user .head:after { content:""; position:absolute; left:12px; top:36px; width:38px; height:18px; border-radius:19px 19px 4px 4px; background:#1e88e5; }
+  .foot { position:absolute; left:170px; bottom:10px; font-size:11.5px; color:var(--muted); }
+</style>
+</head>
+<body>
+<div id="canvas">
+  <!-- 사용자 -->
+  <div class="user" style="left:12px;top:430px;width:140px">
+    <div class="head"></div>사용자<br><span style="font-weight:400;font-size:11.5px;color:#5b6670">학생 · 학부모 · 관리자<br>(React 웹)</span>
+  </div>
+
+  <!-- AWS -->
+  <div class="box" style="left:170px;top:20px;width:1180px;height:960px;background:var(--aws)"><div class="title">AWS (운영)</div></div>
+
+  <div class="node" style="left:200px;top:440px;width:150px;height:90px"><span class="badge b-aws">CloudFront</span><b>단일 도메인</b><small>웹 정적 파일 · /api/*<br>캐시·압축 끔(SSE)</small></div>
+
+  <!-- VPC -->
+  <div class="box" style="left:380px;top:60px;width:950px;height:740px;background:var(--vpc)"><div class="title left">VPC</div></div>
+  <div class="box" style="left:395px;top:96px;width:920px;height:82px;background:var(--pub);border-style:dashed"><span class="tag">Public Subnet</span></div>
+  <div class="node" style="left:410px;top:108px;width:170px;height:58px"><span class="badge b-aws">ALB</span><small>AWS LB Controller Ingress</small></div>
+  <div class="node" style="left:1130px;top:108px;width:170px;height:58px"><span class="badge b-aws">NAT Gateway</span><small>외부 호출 (단일 AZ)</small></div>
+
+  <div class="box" style="left:395px;top:192px;width:920px;height:594px;background:var(--pri);border-style:dashed"><span class="tag">Private Subnet</span></div>
+
+  <!-- EKS -->
+  <div class="box" style="left:410px;top:222px;width:890px;height:420px;background:var(--eks)"><div class="title">EKS (eksctl · 관리형 노드그룹)</div></div>
+
+  <div class="box" style="left:425px;top:262px;width:460px;height:292px;background:var(--ns)"><span class="tag">namespace: app · HPA·PDB</span></div>
+  <div class="node" style="left:445px;top:290px;width:200px;height:70px"><span class="badge b-spring">Spring Boot · Kotlin</span><b>core-service</b><small>유일한 공개 API · 인증·권한 · SSE</small></div>
+  <div class="node" style="left:665px;top:290px;width:200px;height:70px"><span class="badge b-fast">FastAPI · LangGraph</span><b>ai-service</b><small>판정·되묻기 · 분석 에이전트 · 서술</small></div>
+  <div class="node" style="left:445px;top:378px;width:200px;height:70px"><span class="badge b-spring">Spring Boot · Kotlin</span><b>learning-service</b><small>미션 · 학습 기록 · 규칙 판정</small></div>
+  <div class="node" style="left:665px;top:378px;width:200px;height:70px"><span class="badge b-fast">FastAPI · PyTorch</span><b>scoring-service</b><small>M2 klue/roberta · M1</small></div>
+  <div class="node" style="left:445px;top:466px;width:200px;height:70px"><span class="badge b-fast">FastAPI</span><b>report-service / worker</b><small>리포트 계산·대조·렌더링 · KEDA</small></div>
+  <div class="list" style="left:670px;top:470px;width:200px;color:#5b6670">서비스별 DB 분리<br>다른 서비스 DB 직접 접근 금지<br>API·이벤트로만 연동</div>
+
+  <div class="box" style="left:900px;top:262px;width:385px;height:128px;background:var(--ns)"><span class="tag">namespace: platform</span></div>
+  <div class="node" style="left:915px;top:288px;width:175px;height:88px"><span class="badge b-mq">RabbitMQ</span><small>cmd.direct: report.generate<br>events.topic: report·llm·<br>model·student</small></div>
+  <div class="node" style="left:1100px;top:288px;width:170px;height:88px"><span class="badge b-redis">Redis</span><small>SSE 중계 · 캐시</small></div>
+
+  <div class="box" style="left:900px;top:404px;width:385px;height:150px;background:var(--ns)"><span class="tag">namespace: observability</span></div>
+  <div class="list" style="left:916px;top:424px;width:360px"><span class="badge b-ops">LLMOps · 모니터링</span><br><b>Langfuse</b> — LLM trace · 토큰 · 비용<br><b>OpenTelemetry</b> → <b>Prometheus</b> + <b>Grafana</b><br><span style="color:#5b6670">서비스 지표 · 큐 길이·DLQ · 처리 지연</span></div>
+
+  <div class="box" style="left:425px;top:566px;width:860px;height:62px;background:var(--ns)"><span class="tag">namespace: argocd · add-on</span></div>
+  <div class="list" style="left:440px;top:584px;width:840px">Argo CD · AWS LB Controller · Cluster Autoscaler · KEDA · EBS CSI　|　노드그룹: <b>application</b> · <b>platform-observability</b>(Spot)</div>
+
+  <div class="node" style="left:410px;top:660px;width:440px;height:110px"><span class="badge b-db">RDS PostgreSQL</span><b>core_db · learning_db · report_db</b><small>서비스별 DB · 자동 백업 일 1회 + PITR 7일</small></div>
+  <div class="node" style="left:870px;top:660px;width:430px;height:110px"><span class="badge b-aws">EBS gp3</span><b>RabbitMQ · Redis 볼륨</b><small>StatefulSet</small></div>
+
+  <!-- AWS 공용 -->
+  <div class="node" style="left:380px;top:822px;width:470px;height:138px"><span class="badge b-aws">S3</span><b>웹 정적 파일 · 미션 장면</b><b>리포트 파일(PDF·MD) · 모델 가중치</b><small>로컬 개발은 MinIO</small></div>
+  <div class="node" style="left:870px;top:822px;width:220px;height:138px"><span class="badge b-aws">ECR</span><b>컨테이너 이미지</b></div>
+  <div class="node" style="left:1110px;top:822px;width:220px;height:138px"><span class="badge b-aws">Secrets Manager</span><b>LLM·결제 키</b><small>External Secrets</small></div>
+
+  <!-- 외부 -->
+  <div class="box" style="left:1380px;top:60px;width:280px;height:330px;background:#fff"><div class="title">외부 서비스</div></div>
+  <div class="node" style="left:1395px;top:106px;width:250px;height:100px"><span class="badge b-ext">LLM API</span><b>OpenAI · Claude</b><small>LLM_PROVIDER로 교체<br>OpenAI 호환 sLLM 서버(vLLM) 연결 가능</small></div>
+  <div class="node" style="left:1395px;top:218px;width:250px;height:72px"><span class="badge b-git">Google</span><b>OAuth 로그인 · 재인증</b><small>학부모·관리자</small></div>
+  <div class="node" style="left:1395px;top:302px;width:250px;height:72px"><span class="badge b-aws" style="background:#0064ff">토스페이먼츠</span><b>결제 (테스트 환경)</b></div>
+
+  <div class="box" style="left:1380px;top:420px;width:280px;height:200px;background:#fff"><div class="title">CI/CD</div></div>
+  <div class="node" style="left:1395px;top:464px;width:250px;height:62px"><span class="badge b-git">GitHub Actions</span><small>변경 서비스만 테스트·빌드 (OIDC)</small></div>
+  <div class="node" style="left:1395px;top:540px;width:250px;height:62px"><span class="badge b-git">GitOps 저장소</span><small>environments/&lt;env&gt; 이미지 태그</small></div>
+
+  <div class="node" style="left:1380px;top:680px;width:280px;height:80px"><span class="badge b-ops">경보</span><b>Grafana Alerting → Discord</b><small>오류율·지연·적체·LLM 비용 80%</small></div>
+
+  <svg width="1680" height="1030" viewBox="0 0 1680 1030">
+    <defs>
+      <marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1d2329"/></marker>
+    </defs>
+    <g fill="none" stroke="#1d2329" stroke-width="1.7" marker-end="url(#a)">
+      <path d="M152 485 H198" marker-start="url(#a)"/>
+      <path d="M275 440 V137 H408"/>
+      <path d="M275 530 V890 H378"/>
+      <path d="M495 166 V288"/>
+      <path d="M545 360 V376"/>
+      <path d="M645 325 H663"/>
+      <path d="M645 400 L690 362" marker-start="url(#a)"/>
+      <path d="M765 360 V376"/>
+      <path d="M445 340 H433 V500 H443"/>
+      <path d="M885 332 H913" marker-start="url(#a)"/>
+      <path d="M655 554 V658"/>
+      <path d="M425 540 H402 V820"/>
+      <path d="M815 290 V207 H1215 V168"/>
+      <path d="M1300 137 H1393"/>
+      <path d="M1393 596 H1287"/>
+      <path d="M1660 500 H1672 V1000 H980 V962"/>
+      <path d="M1285 470 H1345 V720 H1378"/>
+    </g>
+    <g>
+      <rect class="lbl-bg" x="282" y="230" width="98" height="18"/><text class="lbl" x="286" y="243">/api/* · SSE</text>
+      <rect class="lbl-bg" x="282" y="690" width="120" height="18"/><text class="lbl" x="286" y="703">웹 정적·미션 장면</text>
+      <rect class="lbl-bg" x="500" y="214" width="62" height="18"/><text class="lbl" x="504" y="227">HTTPS</text>
+      
+      <rect class="lbl-bg" x="888" y="314" width="0" height="0"/>
+      <rect class="lbl-bg" x="664" y="637" width="160" height="18"/><text class="lbl" x="668" y="650">SQL (MyBatis·SQLAlchemy)</text>
+      <rect class="lbl-bg" x="940" y="198" width="150" height="18"/><text class="lbl" x="944" y="211">LLM API · 토스 · Google</text>
+      <rect class="lbl-bg" x="1296" y="572" width="80" height="18"/><text class="lbl" x="1300" y="585">GitOps 동기화</text>
+      <rect class="lbl-bg" x="1360" y="991" width="108" height="18"/><text class="lbl" x="1364" y="1004">이미지 푸시(OIDC)</text>
+      <rect class="lbl-bg" x="1305" y="640" width="30" height="18"/><text class="lbl" x="1306" y="653">경보</text>
+      <rect class="lbl-bg" x="890" y="318" width="0" height="0"/>
+    </g>
+  </svg>
+  <div class="foot">설계 기준: docs/design/architecture.md 1·4·6장 (운영 목표 구성). 로컬 개발은 Docker Compose, 로컬 K8s 검증은 kind.</div>
+</div>
+</body>
+</html>

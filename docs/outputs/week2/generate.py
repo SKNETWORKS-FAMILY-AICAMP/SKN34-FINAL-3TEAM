@@ -1,11 +1,14 @@
 """2주차 시스템 구성도 PNG 생성.
 
-실행: uv run --no-project --with diagrams --with pillow python docs/outputs/week2/generate.py
+실행: uv run --no-project --with diagrams --with pillow python docs/outputs/week2/generate.py [그림 이름 ...]
 필요: Graphviz(dot). 기준 문서: docs/design/architecture.md, docs/design/api-spec.md 4장
 세부 설명은 시스템_구성도_사고뭉치.md에 두고, 그림에는 아이콘과 이름만 표시
 """
 
+import base64
 import os
+import subprocess
+import sys
 from contextlib import contextmanager
 from html import escape
 from pathlib import Path
@@ -99,10 +102,14 @@ def _name(title, size=18, color="#212529"):
     return f'<TR><TD><FONT FACE="{BOLD}" POINT-SIZE="{size}" COLOR="{color}">{escape(title)}</FONT></TD></TR>'
 
 
+def _icon_path(icon):
+    return ICONS / icon._icon_dir / icon._icon
+
+
 def comp(icons, title, fill="#ffffff", line="#adb5bd"):
     """아이콘(1개 이상)과 이름을 한 박스에 표시."""
     imgs = "".join(f'<TD FIXEDSIZE="TRUE" WIDTH="64" HEIGHT="64">'
-                   f'<IMG SRC="{(ICONS / c._icon_dir / c._icon).as_posix()}" SCALE="TRUE"/></TD>' for c in icons)
+                   f'<IMG SRC="{_icon_path(c).as_posix()}" SCALE="TRUE"/></TD>' for c in icons)
     icon_row = (f'<TR><TD><TABLE BORDER="0" CELLSPACING="8" CELLPADDING="0"><TR>{imgs}</TR></TABLE>'
                 f'</TD></TR>')
     return _box(icon_row + _name(title), fill, line)
@@ -387,10 +394,146 @@ def cicd_observability():
         discord >> invis() >> legend_node
 
 
+EDGE = Path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe")
+AI = ("#f8f5ff", "#7048e8")
+DASH = {"solid": "", "dashed": ' stroke-dasharray="7 5"', "dotted": ' stroke-dasharray="2 4"'}
+
+
+def _svg_text(x, y, text, size=15, color="#212529", bold=False, anchor="middle"):
+    weight = ' font-weight="700"' if bold else ""
+    return (f'<text x="{x}" y="{y}" font-size="{size}" fill="{color}" text-anchor="{anchor}"{weight}>'
+            f'{escape(text)}</text>')
+
+
+def _svg_group(x, y, w, h, label, colors):
+    bg, line = colors
+    return (f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="12" fill="{bg}" stroke="{line}" stroke-width="1.6"/>'
+            + _svg_text(x + 14, y + 26, label, 17, bold=True, anchor="start"))
+
+
+def _svg_node(x, y, w, title, keywords, icons=()):
+    """아이콘 + 이름 + 키워드 한 줄. 아이콘이 없으면 낮은 박스."""
+    h = 130 if icons else 80
+    out = [f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="10" fill="#ffffff" stroke="#adb5bd" '
+           f'stroke-width="1.5"/>']
+    size, gap = 52, 8
+    left = x + (w - len(icons) * size - (len(icons) - 1) * gap) / 2
+    for i, icon in enumerate(icons):
+        data = base64.b64encode(_icon_path(icon).read_bytes()).decode()
+        out.append(f'<image href="data:image/png;base64,{data}" x="{left + i * (size + gap)}" y="{y + 14}" '
+                   f'width="{size}" height="{size}"/>')
+    out.append(_svg_text(x + w / 2, y + h - 34, title, bold=True))
+    out.append(_svg_text(x + w / 2, y + h - 14, keywords, 12, "#868e96"))
+    return "".join(out)
+
+
+def _svg_arrow(points, color, style="solid", label="", label_at=None, label_size=13, bold=False):
+    """직각 화살표. points는 꺾이는 점 목록, 마지막 점에 화살촉."""
+    d = "M" + " L".join(f"{x} {y}" for x, y in points)
+    out = (f'<path d="{d}" fill="none" stroke="{color}" stroke-width="2"{DASH[style]} '
+           f'marker-end="url(#a{color[1:]})"/>')
+    if label:
+        lx, ly = label_at
+        weight = ' font-weight="700"' if bold else ""
+        out += (f'<text x="{lx}" y="{ly}" font-size="{label_size}" fill="{color}"{weight} stroke="#ffffff" '
+                f'stroke-width="4" paint-order="stroke">{escape(label)}</text>')
+    return out
+
+
+def system_icon():
+    """제출용 한 장 요약. 박스 위치를 직접 지정해야 해서 Graphviz 대신 SVG로 그린 뒤 Edge로 PNG 변환.
+
+    화살표는 오른쪽 또는 아래쪽: 행 A(요청 흐름) → 행 B(정적 파일 · 메시징 · 파일) → AWS 아래 외부 서비스
+    (AI 처리 → RabbitMQ만 platform 제목을 피해 RabbitMQ · Redis 사이로 내려가 RabbitMQ 오른쪽으로 진입,
+    외부 호출은 EKS → 왼쪽 Public Subnet의 NAT Gateway → 아래 외부 서비스)
+    VPC 안은 ALB · NAT Gateway(Public), EKS · RDS(Private)만. CloudFront · S3는 VPC 밖 AWS 관리형 서비스
+    """
+    width, height = 2170, 980
+    a, b = 280, 510  # 행 A · 행 B 노드 위쪽 y
+    ac, bc = a + 65, b + 65  # 행 중앙 y
+    body = [
+        _svg_text(width / 2, 50, "사고뭉치 시스템 구성도", 28, bold=True),
+        # 영역
+        _svg_group(220, 80, 1920, 670, "AWS Cloud", AWS),
+        _svg_group(240, 470, 194, 200, "Frontend", ("#f3fbfc", "#1098ad")),
+        _svg_group(460, 120, 1430, 610, "VPC", ("#f4fbf4", "#2b8a3e")),
+        _svg_group(480, 160, 180, 550, "Public Subnet", ("#e9f7ec", "#40c057")),
+        _svg_group(690, 160, 1180, 550, "Private Subnet", ("#eef6fb", "#147eba")),
+        _svg_group(710, 200, 890, 490, "Amazon EKS", K8S),
+        _svg_group(730, 240, 380, 430, "앱 서버 (namespace: app)", NS),
+        _svg_group(1140, 240, 440, 190, "AI 처리", AI),
+        _svg_group(1140, 470, 440, 200, "namespace: platform", PLATFORM),
+        _svg_group(440, 790, 810, 150, "외부 서비스", OUTSIDE),
+        # 노드
+        _svg_node(20, a, 175, "학생 · 학부모 · 관리자", "웹 브라우저", [Users]),
+        _svg_node(262, a, 150, "CloudFront", "단일 도메인 · 경로 분기", [CloudFront]),
+        _svg_node(495, a, 150, "ALB", "Ingress", [ALB]),
+        _svg_node(495, b, 150, "NAT Gateway", "외부 호출 · 단일 AZ", [NATGateway]),
+        _svg_node(262, b, 150, "Frontend (React)", "S3 정적 배포", [React, SimpleStorageServiceS3]),
+        _svg_node(750, a, 150, "core-service", "공개 API · 인증 · SSE", [Spring]),
+        _svg_node(940, a, 150, "learning-service", "미션 · 기록 · 규칙 판정", [Spring]),
+        _svg_node(940, b, 150, "report-service", "주간 리포트 · KEDA", [Fastapi]),
+        _svg_node(1160, a, 180, "ai-service (LangGraph)", "판정 · 되묻기 · 분석 에이전트", [Fastapi]),
+        _svg_node(1380, a, 180, "scoring-service (M2)", "M2 점수 · M1 수학 점검", [Fastapi]),
+        _svg_node(1160, b, 180, "RabbitMQ", "명령 · 이벤트", [Rabbitmq]),
+        _svg_node(1380, b, 180, "Redis", "SSE 중계", [Redis]),
+        _svg_node(1660, a, 190, "RDS PostgreSQL", "서비스별 DB", [RDSPostgresqlInstance]),
+        _svg_node(1930, b, 190, "S3 (파일)", "미션 장면 · 리포트 · 가중치", [SimpleStorageServiceS3]),
+        _svg_node(460, 840, 180, "LLM API", "OpenAI · Claude"),
+        _svg_node(660, 840, 180, "Google OAuth", "로그인 · 재인증"),
+        _svg_node(860, 840, 180, "토스페이먼츠", "구독 결제 (테스트)"),
+        _svg_node(1060, 840, 170, "RunPod GPU", "M2 학습 → S3 가중치"),
+        # 요청 흐름 (행 A, 오른쪽)
+        _svg_arrow([(195, ac), (260, ac)], HTTP, label="HTTPS", label_at=(200, ac - 10)),
+        _svg_arrow([(412, ac), (493, ac)], HTTP, label="/api/*", label_at=(420, ac - 10)),
+        _svg_arrow([(645, ac), (748, ac)], HTTP),
+        _svg_arrow([(900, ac), (938, ac)], HTTP),
+        _svg_arrow([(1090, ac), (1158, ac)], HTTP),
+        _svg_arrow([(1340, ac), (1378, ac)], HTTP),
+        # 아래로 분기
+        _svg_arrow([(385, a + 130), (385, b - 2)], DATA, "dotted", "정적 파일", (393, 445)),
+        _svg_arrow([(825, a + 130), (825, bc), (938, bc)], HTTP),
+        # 메시징
+        _svg_arrow([(1090, bc), (1158, bc)], MSG, "dashed"),
+        _svg_arrow([(1360, 430), (1360, bc), (1342, bc)], MSG, "dashed"),
+        # 저장소
+        _svg_arrow([(1600, ac), (1658, ac)], DATA, "dotted", "SQL", (1612, ac - 10)),
+        _svg_arrow([(1600, bc), (1928, bc)], DATA, "dotted", "파일", (1612, bc - 10)),
+        # 외부 호출: EKS → NAT Gateway → 외부 서비스
+        _svg_arrow([(710, bc), (647, bc)], EXT),
+        _svg_arrow([(570, b + 130), (570, 788)], EXT),
+    ]
+
+    items = [(HTTP, "solid", "동기 HTTP"), (MSG, "dashed", "메시지 (RabbitMQ)"), (DATA, "dotted", "저장소"),
+             (EXT, "solid", "외부 API")]
+    body.append('<rect x="40" y="790" width="230" height="150" rx="10" fill="#ffffff" stroke="#adb5bd"/>')
+    body.append(_svg_text(56, 816, "범례", 15, bold=True, anchor="start"))
+    for i, (color, style, text) in enumerate(items):
+        y = 844 + i * 26
+        body.append(f'<line x1="56" y1="{y - 4}" x2="96" y2="{y - 4}" stroke="{color}" stroke-width="2"{DASH[style]}/>')
+        body.append(_svg_text(106, y, text, 13, anchor="start"))
+
+    markers = "".join(
+        f'<marker id="a{c[1:]}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" '
+        f'orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="{c}"/></marker>' for c in (HTTP, MSG, DATA, EXT))
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+           f'viewBox="0 0 {width} {height}" font-family="{FONT}, sans-serif"><defs>{markers}</defs>'
+           f'<rect width="{width}" height="{height}" fill="#ffffff"/>{"".join(body)}</svg>')
+
+    svg_path, png_path = OUT / "시스템구성도_아이콘형.svg", OUT / "시스템구성도_아이콘형.png"
+    svg_path.write_text(svg, encoding="utf-8")
+    if not EDGE.exists():
+        print(f"Edge 없음: {svg_path.name}만 생성, PNG는 브라우저로 변환 필요")
+        return
+    subprocess.run([str(EDGE), "--headless", "--disable-gpu", "--hide-scrollbars", f"--window-size={width},{height}",
+                    "--force-device-scale-factor=2", f"--screenshot={png_path}", svg_path.as_uri()],
+                   check=True, capture_output=True)
+
+
+FIGURES = {f.__name__: f for f in (overview, aws, services, layered, cicd_observability, system_icon)}
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
-    overview()
-    aws()
-    services()
-    layered()
-    cicd_observability()
+    # 인자로 그림 이름을 주면 해당 그림만 생성 (예: system_icon)
+    for name in sys.argv[1:] or FIGURES:
+        FIGURES[name]()
