@@ -1,4 +1,4 @@
-# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146)
+# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82)
 
 통합 원본: learning-mission, learning-attempt, learning-answer, learning-feedback, learning-reflection, learning-records, learning-judgment-rules
 
@@ -224,5 +224,26 @@ core #46 신고·문의는 접수·문의 연결·관리자 정정 전에 learni
 - 검증: learning 테스트 246개(새 8: 서비스 4·컨트롤러 4), scripts/tests 83개(새 `test_support_lookup_contract.py` 4: core가 부르는 경로 = OpenAPI, 대상 유형, core가 읽는 칸, `judgmentId`). 보호 장치 13개를 빼면 각각 실패(범위 403·없음 404·최신 정정·되묻기 판정 ID·원문 범위·피드백 판정 ID·컨트롤러 역할·관리자 1명·`X-User-Id` 2·원문 관리자만·학생 1명·없는 칸 생략). 실제 연동: core·learning JAR + 임시 DB(합성 계정, ai 없이 고르기 규칙 판정, 되묻기 1건만 합성 행)로 core 경유 피드백 SSE·시도 상세에 `judgmentId` → 학생 JUDGMENT 신고(core가 learning 학생·시도 저장) → 보호자 FOLLOWUP 신고·ATTEMPT 문의 연결 → 다른 가족 신고 거부 → 관리자 신고·문의 상세 원문(답변 네 칸, 메모 없음, 열람 감사 1건) → 검토 → 정정(`previousResult: CORRECT` → `RETHINK`, 학생 시도 상세 `RETHINK`, 원판정 `CORRECT` 그대로)
 - 확인 필요·한계:
   - 범위 밖 신고: learning 403을 core가 503 `SUPPORT_DEPENDENCY_UNAVAILABLE`로 바꿈(core는 공급자 비-2xx를 모두 503, 5.7). 신고는 막힘
-  - 학생 신고 버튼이 `judgmentId`를 쓰는 화면 반영은 프론트(#82 쪽)
+  - 학생 신고 버튼이 `judgmentId`를 쓰는 화면 반영은 프론트(#82에서 반영, 12절)
   - `verify_feedback_learning.py`는 learning에 `CORE_URL`이 없어 피드백이 결제 사용 확인에서 503(10절 기존 문제의 원인). 다른 팀원 스크립트라 고치지 않음
+
+## 12. 학생 피드백 화면 계약 반영 (#82, web)
+
+learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 학생 화면·웹 어댑터·목업에 맞춤. core는 learning 결과를 SSE `result`로 그대로 넘기므로 화면까지 같은 모양. API 계약 변경 없음(api-spec 3.2·4.1 그대로). 이슈 지침대로 기존 `apiGateway`·`demoGateway`·도메인 타입만 고치고 새 계층 없음
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| null 필드 | `Feedback.judgment`·`followup`·`judgment.heldReason`·`versions`는 생략 대신 `null` 허용, 요소 `sourceType`은 근거 구절 없는 ai 요소면 `null`. 화면은 이미 `?.`·참거짓 검사라 동작 그대로, 타입만 맞춤 | learning 응답은 판정 전·되묻기 없음을 `null`로 보냄(api-spec 4.1) |
+| `versions` | `{mission, rubric, model, prompt}` 타입만 받음(화면 미사용), `elementId`는 기존대로 문자열(실서버는 `rubric_element.id` UUID) | 이슈 해야 할 일 3 |
+| 어댑터 검증 | `feedbackDto`: 판정이 있으면 `judgmentId` 문자열·`result` 4종 필수, 요소 `sourceType`은 4종 중 하나(`null` 포함), 아니면 계약 오류(`CONTRACT_NOT_READY`) | 신고 대상 ID가 없으면 신고가 실패하므로 받을 때 막음 |
+| 재시도 | SSE `error`가 `retryable:false`면 "피드백만 다시 요청" 버튼 대신 "지금은 피드백을 다시 받을 수 없어요…" 안내(오류 상자 "다시 시도"는 원래 숨김) | learning은 ai 4xx·계약 밖 응답을 `retryable:false`로 보냄(4절) |
+| 신고 버튼 | 판정 신고 `targetId`를 마지막 답변 ID 대신 피드백 `judgment.judgmentId`로, 판정이 없으면 버튼 숨김 | #146 learning이 판정 ID로 대상을 찾음(답변 ID면 core 503), core 합의 (a). 이슈 해야 할 일에 추가 |
+| 목업 되묻기 | 고르기뿐 아니라 순서·분류 정답도 되묻기 없이 `["FINISH"]`, 목업 판정에 `judgmentId` | learning 되묻기 조건 "고르기 활동 `CORRECT` 아님"(4절) |
+
+- 설계와 다른 점: 없음(설계 문서 변경 없음)
+- 기존 파일 수정: `domain/classroom.ts`(`FeedbackElement`·`Feedback` 타입, `DemoScenario`에 `ai-fail-final`), `data/classroom/apiGateway.ts`(`feedbackDto`), `data/classroom/demoGateway.ts`(`noMore`, 판정 `judgmentId`, `ai-fail-final` 시나리오), `mocks/handlers/student.ts`(SSE `error`만 오류가 정한 `retryable`을 그대로: 공통 `problem()`은 5xx면 늘 true로 덮어써 실서버처럼 false를 낼 수 없었음. 공통 함수는 그대로 둬 보호자·관리자 목업 동작은 같음), `presentation/ClassroomApp.tsx`("상태 시연"에 "피드백 처리 실패(다시 요청 불가)"), `presentation/student/StudentWorkPage.tsx`(재시도 안내·신고 버튼), 테스트 `tests/apiGateway.test.ts`·`studentFlow.test.ts`·`student-browser.mjs`
+- 검증: `npm ci`(lock 그대로, `node_modules`는 git 제외) 뒤 단위 116개(새 5: null 필드·`sourceType` null·`versions`, 처리 중 null, `judgmentId` 누락·`sourceType` 계약 밖 거부, `retryable:false` 전달, 고르기 활동 정답 되묻기 없음), lint·`tsc -b` 빌드 통과. 브라우저(MSW 목업, 프로젝트 밖 임시 Playwright + 설치된 Chrome): 학생 24개(새 1: `retryable:false` 안내·재요청·신고 버튼 없음, 기존 정답 시나리오에 신고 링크가 판정 ID), 학생 세계 5·보호자 대시보드 4·학생 기기 11개 통과. 보호 장치 8개를 되돌리면 각각 실패(`judgmentId` 필수·`sourceType` null 허용·계약 밖 거부·목업 되묻기·재요청 숨김·목업 SSE `retryable`·신고 판정 ID·판정 없으면 신고 숨김). 새 시나리오를 처음 돌렸을 때 목업이 `retryable`을 덮어쓰는 문제를 찾아 위처럼 고침
+- 확인 필요·한계:
+  - `parent-admin-browser.mjs`는 두 번째 검사(신규 가입, 이메일 입력칸)에서 시간 초과. develop 원본에서도 같아 #82와 무관한 기존 문제(프론트 담당 확인 필요)
+  - 새로고침하면 실패한 피드백의 `retryable`을 알 수 없음(시도 상세의 `FAILED` 결과에는 없음). 그때는 다시 요청 버튼을 보여 주고, learning이 `FAILED`를 다시 실행
+  - 웹 CI(`_web.yml`)는 lint·build만 돌리고 `npm test`·브라우저 테스트는 돌리지 않음
