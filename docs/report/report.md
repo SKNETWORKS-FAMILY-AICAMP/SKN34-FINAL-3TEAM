@@ -4,6 +4,8 @@
 
 계약은 [API 명세](../design/api-spec.md) 3.4·4.1.1·4.2.1·4.4·5.5, 메시지는 [report-messages](../../contracts/events/report-messages.md).
 
+#135 조회 API는 lifespan 소유 learning HTTP·S3 클라이언트를 요청 간 재사용하고 종료 때 정리한다. 권한 헤더는 요청마다 읽어 전달한다. 설정 유지 근거와 #139·#140 테스트 보강은 [통합 검토](issues-135-139-140.md)를 따른다.
+
 #152 관리자 실패 작업 재처리는 새 jobId·ADMIN_RETRY와 기존 생성/revision을 재사용한다. 원작업 연결·관리자 접수는 core #47, report 실행·중복 방어·기존 판 보존은 [#152 검토](issue-152-report-admin-retry.md)를 따른다. 기존 #50의 종료 작업 단순 재전달 종료 정책은 유지한다.
 
 ## 1. core 주간 리포트 (#42)

@@ -13,8 +13,8 @@ class Settings(BaseSettings):
     http_connect_timeout: float = 2.0
     http_read_timeout: float = 30.0  # 내부 호출 기본값 (P12 목록 밖)
     learning_url: str = "http://localhost:8081"
-    scoring_url: str = "http://localhost:8001"
-    core_url: str = "http://localhost:8080"
+    scoring_url: str = "http://localhost:8001"  # #69 M2/M1 교차 확인 연결용으로 유지
+    core_url: str = "http://localhost:8080"  # #68 활성 버전 조회 연결용으로 유지
 
     # LLM: 제공자 교체는 llm_provider만 변경, 키·모델은 제공자별로 보관
     llm_provider: str = "openai"
