@@ -66,3 +66,14 @@ data class ReportLifecycleEvent(val eventId: UUID, val jobId: UUID, val studentI
 
 data class ReportJobAccepted(val jobId: UUID, val childId: UUID, val period: ReportPeriod,
     val status: ReportJobStatus = ReportJobStatus.QUEUED)
+
+/** Validated internal recovery result; never contains report contents or URLs. */
+data class ReportReconciliation(val jobId: UUID, val studentId: UUID, val period: ReportPeriod,
+    val status: String, val reportId: UUID?, val failureReason: String?) {
+    init {
+        require(status in setOf("BUSY", "COMPLETED", "FAILED"))
+        require(if (status == "FAILED") failureReason?.matches(Regex("[A-Z][A-Z0-9_]{0,99}")) == true else failureReason == null)
+        require(status != "COMPLETED" || reportId != null)
+        require(status != "BUSY" || reportId == null)
+    }
+}

@@ -44,6 +44,7 @@ def test_changes_use_learning_counts() -> None:
 def test_child_thoughts_use_latest_answer_per_attempt() -> None:
     computation = compute("CHILD_THOUGHTS", records(), SCOPE)
     assert [s.evidence.answer_id for s in computation.sources] == ["a-4", "a-3", "a-2"]
+    assert {s.evidence.kind for s in computation.sources} == {"ANSWER"}
     assert computation.sources[2].evidence.answer_version == 2
 
 
@@ -53,14 +54,23 @@ def test_reflections() -> None:
     assert metrics["돌아보기를 쓴 활동"].count == 1
     assert metrics["난이도 어려웠어 돌아보기"].count == 1
     assert computation.sources[0].text == "근거 찾기가 어려웠어"
-    assert computation.sources[0].evidence.answer_id is None
+    evidence = computation.sources[0].evidence
+    # 돌아보기는 시도당 하나라 attemptId로 식별, 제출 시각 자리에 작성 시각
+    assert (evidence.kind, evidence.attempt_id, evidence.mission_title) == (
+        "REFLECTION",
+        "t-1",
+        "쉬는 시간 토론",
+    )
+    assert (evidence.answer_id, evidence.answer_version) == (None, None)
+    assert evidence.submitted_at == "2026-10-22T19:30:00+09:00"
 
 
 def test_insufficient_kinds() -> None:
     assert compute("COUNT", records(empty=True), SCOPE).insufficient == "NO_RECORD"
     no_changes = records().model_copy(update={"changes": []})
     assert compute("CHANGES", no_changes, SCOPE).insufficient == "NO_CHANGES"
-    no_reflection = records().model_copy(update={"activities": []})
+    attempts = [a.model_copy(update={"reflection": None}) for a in records().attempts or []]
+    no_reflection = records().model_copy(update={"attempts": attempts})
     assert compute("REFLECTIONS", no_reflection, SCOPE).insufficient == "NO_REFLECTIONS"
 
 

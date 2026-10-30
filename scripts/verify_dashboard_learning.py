@@ -192,7 +192,7 @@ def verify(args):
             sql('learning', "INSERT INTO rubric_version(id,mission_id,version,example_answer,created_by,created_at) VALUES(%s,%s,1,'합성 예시',%s,now())", (rubric,m,user))
             sql('learning', "INSERT INTO rubric_element(id,rubric_version_id,code,label,description,points,good_thought,judge_verified,sort_order) VALUES(%s,%s,'reason','까닭','합성 검증 기준',1,false,true,1)", (uid(),rubric))
             sql('learning', 'INSERT INTO hint_question(id,rubric_version_id,seq,content) VALUES(%s,%s,1,\'어떤 까닭일까?\')', (hint,rubric))
-            sql('learning', 'UPDATE mission SET current_version_id=%s,current_rubric_version_id=%s WHERE id=%s', (version,rubric,m))
+            sql('learning', 'UPDATE mission SET current_version_id=%s,current_rubric_version_id=%s,published_version_id=%s,published_rubric_version_id=%s WHERE id=%s', (version,rubric,version,rubric,m))
             return m, version, rubric, hint
 
         m, version, rubric, hint = mission()

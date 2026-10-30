@@ -7,7 +7,8 @@ import java.util.UUID
 
 @Mapper
 interface CorrectionMapper {
-    fun lockTarget(judgmentId: UUID): CorrectionTarget?
+    fun lockJudgment(judgmentId: UUID): UUID?
+    fun findTarget(judgmentId: UUID): CorrectionTarget?
     fun findByIdempotencyKey(key: UUID): JudgmentCorrection?
     fun existsByReportId(reportId: UUID): Boolean
     fun insert(correction: JudgmentCorrection): Int

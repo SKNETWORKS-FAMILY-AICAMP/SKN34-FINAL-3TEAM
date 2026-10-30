@@ -53,7 +53,8 @@ def tool_calls(intent: Intent, tools: RecordTools, scope: Scope) -> dict[str, An
         calls["changes"] = tools.changes(scope)
         calls["activities"] = tools.thinking_activities(scope)  # 원문 근거의 미션 제목
     elif intent == "REFLECTIONS":
-        calls["activities"] = tools.thinking_activities(scope)
+        # 돌아보기 작성 시각(근거 submittedAt)이 attempts에만 있어 모든 페이지를 읽음
+        calls["attempts"] = tools.attempts(scope, None)
     return calls
 
 

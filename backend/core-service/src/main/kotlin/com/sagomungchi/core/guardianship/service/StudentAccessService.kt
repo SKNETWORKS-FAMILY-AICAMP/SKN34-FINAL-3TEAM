@@ -9,6 +9,14 @@ import java.util.UUID
 
 @Service
 class StudentAccessService(private val repository: StudentAccessRepository, private val consents: ConsentAccessService) {
+    @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    fun lockStatus(studentId: UUID): String? = repository.lockStatus(studentId)
+
+    fun lockActive(studentId: UUID) {
+        if (lockStatus(studentId) != "ACTIVE")
+            throw BusinessException(HttpStatus.CONFLICT, "STUDENT_DELETED", "삭제 차단된 학생의 리포트를 생성할 수 없습니다.")
+    }
+
     fun notificationParents(studentId: UUID) = repository.activeParents(studentId).filter {
         consents.hasRequiredConsents(it) && consents.hasGuardianConsent(it, studentId)
     }

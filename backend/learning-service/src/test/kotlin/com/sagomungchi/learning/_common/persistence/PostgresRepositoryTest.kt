@@ -11,6 +11,7 @@ import org.testcontainers.containers.PostgreSQLContainer
 @SpringBootTest(properties = [
     "app.internal.token=repository-test-token",
     "spring.rabbitmq.username=test", "spring.rabbitmq.password=test",
+    "spring.rabbitmq.listener.simple.auto-startup=false",
 ])
 @Transactional
 abstract class PostgresRepositoryTest {

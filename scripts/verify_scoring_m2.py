@@ -15,7 +15,9 @@ import jsonschema
 from verify_scoring_models import BUCKET, ROOT, verify, wait
 
 
-def check_scores(run, url, core, access, headers, password, results, passed):
+def check_scores(
+    run, url, core, access, headers, password, results, passed, *, epic=False
+):
     endpoint, rabbit = url("scoring", 8001), url("rabbitmq", 15672)
     queue = "issue87.usage.probe"
     with httpx.Client(
@@ -235,6 +237,12 @@ def check_scores(run, url, core, access, headers, password, results, passed):
         passed(
             "actual RabbitMQ M2 usage envelopes validate shared schema and omit raw input"
         )
+        if epic:
+            from verify_scoring_epic import check_epic
+
+            check_epic(
+                run, endpoint, rabbit, headers, password, request, results, passed
+            )
         # 브로커 장애는 응답 실패로 전파하지 않는다.
         run(["exec", "-T", "rabbitmq", "rabbitmqctl", "stop_app"])
         wait(endpoint + "/health/ready", lambda r: r.status_code == 503)

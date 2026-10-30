@@ -263,6 +263,10 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
   }
   const { companion } = useLook()
   const stage = missionStage(a)
+  // 판정 신고는 판정 ID로, 판정 전이면 신고하지 않음 (learning #146)
+  const reportJudgmentId = latestFeedback(a)?.judgment?.judgmentId
+  // retryable:false면 다시 요청해도 같은 실패라 재요청 버튼 대신 안내 (api-spec 3.2)
+  const feedbackFinal = error instanceof ApiError && error.problem.retryable === false
   const f = latestFeedback(a),
     writing = !a.finishedAt && (a.answers.length === 0 || more) && canAddAnswer(a)
   const pending =
@@ -279,7 +283,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
   return (
     <section className="cj-editor st-work" aria-label="미션 작성기">
       <header className="st-work-top">
-        {a.answers.length > 0 && <ReportProblem targetType="JUDGMENT" targetId={a.answers.at(-1)!.answerId}/>}
+        {reportJudgmentId && <ReportProblem targetType="JUDGMENT" targetId={reportJudgmentId}/>}
         <button type="button" className="st-back" onClick={back}>
           <ArrowLeft aria-hidden="true" />
           공책으로
@@ -560,7 +564,10 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                   </>
                 ) : (
                   <div className="cj-modal-actions">
-                    {f?.status === 'FAILED' && (
+                    {f?.status === 'FAILED' && feedbackFinal && (
+                      <p role="status">지금은 피드백을 다시 받을 수 없어요. 답변은 저장했으니 나중에 다시 확인해 주세요.</p>
+                    )}
+                    {f?.status === 'FAILED' && !feedbackFinal && (
                       <button
                         type="button"
                         className="cj-primary"

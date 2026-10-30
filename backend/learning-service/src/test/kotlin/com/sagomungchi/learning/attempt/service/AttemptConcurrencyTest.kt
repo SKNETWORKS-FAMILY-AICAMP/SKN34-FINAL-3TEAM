@@ -36,6 +36,7 @@ import kotlin.test.assertEquals
 @SpringBootTest(properties = [
     "app.internal.token=concurrency-test-token",
     "spring.rabbitmq.username=test", "spring.rabbitmq.password=test",
+    "spring.rabbitmq.listener.simple.auto-startup=false",
 ])
 class AttemptConcurrencyTest {
     @Autowired lateinit var service: AttemptService

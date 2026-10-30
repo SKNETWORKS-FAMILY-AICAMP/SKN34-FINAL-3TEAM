@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.learning.mission.repository.AdminMissionMapper">
+    <!-- ===== 관리자 미션 (#145): 편집은 current_*, 학생 제공은 published_* ===== -->
+    <resultMap id="missionHeader" type="com.sagomungchi.learning.mission.repository.MissionHeader">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="code" javaType="java.lang.String"/>
+            <arg column="status" javaType="com.sagomungchi.learning.mission.domain.MissionStatus"/>
+            <arg column="demo_only" javaType="_boolean"/>
+            <arg column="current_version_id" javaType="java.util.UUID"/>
+            <arg column="current_version" javaType="_int"/>
+            <arg column="current_rubric_version" javaType="java.lang.Integer"/>
+            <arg column="published_version" javaType="java.lang.Integer"/>
+            <arg column="published_rubric_version" javaType="java.lang.Integer"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="adminVersion" type="com.sagomungchi.learning.mission.domain.AdminMissionVersion">
+        <constructor>
+            <arg column="version" javaType="_int"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="subject" javaType="java.lang.String"/>
+            <arg column="grade_min" javaType="_int"/>
+            <arg column="grade_max" javaType="_int"/>
+            <arg column="thinking_type" javaType="com.sagomungchi.learning.mission.domain.ThinkingType"/>
+            <arg column="input_type" javaType="com.sagomungchi.learning.mission.domain.InputType"/>
+            <arg column="question" javaType="java.lang.String"/>
+            <arg column="guide" javaType="java.lang.String"/>
+            <arg column="scene_uri" javaType="java.lang.String"/>
+            <arg column="static_scene_uri" javaType="java.lang.String"/>
+            <arg column="achievement_standards" javaType="java.util.List" typeHandler="com.sagomungchi.learning.mission.repository.StringListTypeHandler"/>
+            <arg column="choices" javaType="java.util.List" typeHandler="com.sagomungchi.learning.mission.repository.ChoiceListTypeHandler"/>
+            <arg column="categories" javaType="java.util.List" typeHandler="com.sagomungchi.learning.mission.repository.CategoryListTypeHandler"/>
+            <arg column="answer_unit" javaType="java.lang.String"/>
+            <arg column="input_template" javaType="java.util.List" typeHandler="com.sagomungchi.learning.mission.repository.StringListTypeHandler"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="adminReview" type="com.sagomungchi.learning.mission.domain.AdminReview">
+        <constructor>
+            <arg column="mission_version" javaType="_int"/>
+            <arg column="rubric_version" javaType="_int"/>
+            <arg column="result" javaType="com.sagomungchi.learning.mission.domain.ReviewResult"/>
+            <arg column="comment" javaType="java.lang.String"/>
+            <arg column="reviewer_id" javaType="java.util.UUID"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="statusCount" type="com.sagomungchi.learning.mission.domain.StatusCount">
+        <constructor>
+            <arg column="status" javaType="com.sagomungchi.learning.mission.domain.MissionStatus"/>
+            <arg column="count" javaType="_long"/>
+        </constructor>
+    </resultMap>
+
+    <!--
+        쓰기 전 미션 행만 잠금(다른 표와 조인하지 않음). 조인한 채 FOR UPDATE를 기다리면 PostgreSQL이 잠근 행만 최신으로 다시 읽고
+        조인한 새 버전 행은 처음 스냅숏에 없어 결과가 비어 버림(동시 수정 테스트에서 확인). 잠근 뒤 findMissionHeader를 새로 읽음
+    -->
+    <select id="lockMission" resultType="java.util.UUID" flushCache="true" useCache="false">
+        SELECT id FROM mission WHERE id = #{id} FOR UPDATE
+    </select>
+
+    <select id="findMissionHeader" resultMap="missionHeader" flushCache="true" useCache="false">
+        SELECT m.id, m.code, m.status, m.demo_only, m.current_version_id, cv.version AS current_version,
+               cr.version AS current_rubric_version, pv.version AS published_version, pr.version AS published_rubric_version
+        FROM mission m
+        JOIN mission_version cv ON cv.id = m.current_version_id
+        LEFT JOIN rubric_version cr ON cr.id = m.current_rubric_version_id
+        LEFT JOIN mission_version pv ON pv.id = m.published_version_id
+        LEFT JOIN rubric_version pr ON pr.id = m.published_rubric_version_id
+        WHERE m.id = #{id}
+    </select>
+
+    <!-- 목록 필터: 상태, 학년(현재 버전 학년 범위 안), 생각 유형(현재 버전) -->
+    <sql id="adminFilter">
+        FROM mission m
+        JOIN mission_version v ON v.id = m.current_version_id
+        <where>
+            <if test="filter.status != null">m.status = #{filter.status}</if>
+            <if test="filter.grade != null">AND #{filter.grade} BETWEEN v.grade_min AND v.grade_max</if>
+            <if test="filter.thinkingType != null">AND v.thinking_type = #{filter.thinkingType}</if>
+        </where>
+    </sql>
+
+    <select id="findMissionIds" resultType="java.util.UUID" flushCache="true" useCache="false">
+        SELECT m.id <include refid="adminFilter"/>
+        ORDER BY m.sort_order, m.id
+        LIMIT #{filter.size} OFFSET #{offset}
+    </select>
+
+    <select id="countMissions" resultType="long" flushCache="true" useCache="false">
+        SELECT count(*) <include refid="adminFilter"/>
+    </select>
+
+    <!-- 필터·페이지와 무관한 전체 상태별 건수 (core overview가 현재 미션 상태로 씀) -->
+    <select id="countByStatus" resultMap="statusCount" flushCache="true" useCache="false">
+        SELECT status, count(*) AS count FROM mission GROUP BY status
+    </select>
+
+    <select id="findAdminVersions" resultMap="adminVersion" flushCache="true" useCache="false">
+        SELECT version, title, subject, grade_min, grade_max, thinking_type, input_type, question, guide, scene_uri,
+               static_scene_uri, COALESCE(achievement_standards, '[]'::jsonb) AS achievement_standards,
+               COALESCE(choices, '[]'::jsonb) AS choices, COALESCE(categories, '[]'::jsonb) AS categories, answer_unit,
+               COALESCE(input_template, '[]'::jsonb) AS input_template, created_at
+        FROM mission_version WHERE mission_id = #{missionId} ORDER BY version
+    </select>
+
+    <select id="findReviews" resultMap="adminReview" flushCache="true" useCache="false">
+        SELECT v.version AS mission_version, rv.version AS rubric_version, r.result, r.comment, r.reviewer_id, r.created_at
+        FROM mission_review r
+        JOIN mission_version v ON v.id = r.mission_version_id
+        JOIN rubric_version rv ON rv.id = r.rubric_version_id
+        WHERE r.mission_id = #{missionId}
+        ORDER BY r.created_at, r.id
+    </select>
+
+    <select id="nextSortOrder" resultType="int" flushCache="true" useCache="false">
+        SELECT COALESCE(max(sort_order), 0) + 1 FROM mission
+    </select>
+
+    <select id="nextVersion" resultType="int" flushCache="true" useCache="false">
+        SELECT COALESCE(max(version), 0) + 1 FROM mission_version WHERE mission_id = #{missionId}
+    </select>
+
+    <insert id="insertMission">
+        INSERT INTO mission (id, code, status, demo_only, sort_order, created_by, created_at, updated_at)
+        VALUES (#{id}, #{code}, 'DRAFT', #{demoOnly}, #{sortOrder}, #{authorId}, #{now}, #{now})
+    </insert>
+
+    <insert id="insertVersion">
+        INSERT INTO mission_version (id, mission_id, version, title, subject, grade_min, grade_max, thinking_type, input_type,
+                                     question, guide, scene_uri, static_scene_uri, achievement_standards, choices, categories,
+                                     answer_unit, input_template, created_by, created_at)
+        VALUES (#{id}, #{missionId}, #{version}, #{command.title}, #{command.subject}, #{command.gradeMin},
+                #{command.gradeMax}, #{command.thinkingType}, #{command.inputType}, #{command.question},
+                #{command.guide,jdbcType=VARCHAR}, #{command.sceneUri,jdbcType=VARCHAR}, #{command.staticSceneUri,jdbcType=VARCHAR},
+                #{command.achievementStandards,typeHandler=com.sagomungchi.learning.mission.repository.StringListTypeHandler},
+                #{command.choices,typeHandler=com.sagomungchi.learning.mission.repository.ChoiceListTypeHandler},
+                #{command.categories,typeHandler=com.sagomungchi.learning.mission.repository.CategoryListTypeHandler},
+                #{command.answerUnit,jdbcType=VARCHAR},
+                #{command.inputTemplate,typeHandler=com.sagomungchi.learning.mission.repository.StringListTypeHandler}, #{command.authorId}, #{now})
+    </insert>
+
+    <update id="updateCurrentVersion">
+        UPDATE mission SET current_version_id = #{versionId}, demo_only = #{demoOnly}, updated_at = #{now}
+        WHERE id = #{missionId}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE mission SET status = #{status}, updated_at = #{now} WHERE id = #{missionId}
+    </update>
+
+    <!-- 게시·재게시: 공개 버전을 지금 편집 중인 버전으로 (P07) -->
+    <update id="publish">
+        UPDATE mission
+        SET status = 'PUBLISHED', published_version_id = current_version_id,
+            published_rubric_version_id = current_rubric_version_id, published_at = #{now}, updated_at = #{now}
+        WHERE id = #{missionId}
+    </update>
+
+    <!-- 검토는 지금 편집 중인 버전 묶음에 대해 (Mission.requireCurrent로 확인한 뒤) -->
+    <insert id="insertReview">
+        INSERT INTO mission_review (id, mission_id, mission_version_id, rubric_version_id, reviewer_id, result, comment, created_at)
+        SELECT #{id}, m.id, m.current_version_id, m.current_rubric_version_id, #{reviewerId}, #{result},
+               #{comment,jdbcType=VARCHAR}, #{now}
+        FROM mission m WHERE m.id = #{missionId}
+    </insert>
+</mapper>

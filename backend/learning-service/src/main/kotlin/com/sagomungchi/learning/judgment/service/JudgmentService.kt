@@ -15,6 +15,10 @@ import com.sagomungchi.learning.judgment.domain.JudgmentResult
 import com.sagomungchi.learning.judgment.domain.JudgmentView
 import com.sagomungchi.learning.judgment.domain.NextAction
 import com.sagomungchi.learning.judgment.domain.ProcessStatus
+import com.sagomungchi.learning.judgment.domain.SupportAnswer
+import com.sagomungchi.learning.judgment.domain.SupportOriginal
+import com.sagomungchi.learning.judgment.domain.SupportTarget
+import com.sagomungchi.learning.judgment.domain.SupportTargetType
 import com.sagomungchi.learning.judgment.domain.TimelineAnswer
 import com.sagomungchi.learning.judgment.domain.Versions
 import com.sagomungchi.learning.judgment.repository.CorrectionRepository
@@ -163,6 +167,34 @@ class JudgmentService(
     }
 
     /**
+     * 신고·문의 대상 (class-diagram 4.2 supportTarget, #146). 없으면 404, 대상 학생이 받은 범위 밖이면 403(correct와 같은 순서).
+     * 역할·관리자 학생 1명 검사는 SupportController
+     */
+    @Transactional(readOnly = true)
+    fun supportTarget(type: SupportTargetType, id: UUID): SupportTarget {
+        val target = judgmentRepository.findSupportTarget(type, id)
+            ?: throw BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "신고 대상 없음")
+        UserContextHolder.current().requireStudent(target.studentId)
+        return target
+    }
+
+    /**
+     * 관리자 원문 (class-diagram 4.2 supportOriginal, #146). 답변 버전·원문·피드백 결과만, 초안·메모·이름 없음.
+     * 타임라인을 먼저 읽음: 답변과 대기 판정은 한 트랜잭션에 저장되어 타임라인에 보인 답변은 결과에도 있음
+     */
+    @Transactional(readOnly = true)
+    fun supportOriginal(attemptId: UUID): SupportOriginal {
+        val target = supportTarget(SupportTargetType.ATTEMPT, attemptId)
+        val answers = timeline(attemptId)
+        val feedbacks = results(attemptId)
+        return SupportOriginal(
+            studentId = target.studentId,
+            attemptId = attemptId,
+            answers = answers.map { SupportAnswer(it.answerId, it.version, it.text.orEmpty(), feedbacks.getValue(it.answerId)) },
+        )
+    }
+
+    /**
      * 판정 행을 먼저 읽음: 문장마다 스냅샷이 달라(READ COMMITTED) 요소를 먼저 읽으면 그사이 커밋된 DONE과 섞여
      * "DONE인데 되묻기 없음"이 나갈 수 있음. saveResult가 DONE·요소·되묻기를 한 트랜잭션으로 커밋하므로 DONE을 본 뒤에는 나머지도 보임
      */
@@ -180,7 +212,7 @@ class JudgmentService(
                 val followup = followups[stored.answerId]
                 FeedbackResult(
                     status = ProcessStatus.DONE,
-                    judgment = JudgmentView(result, stored.trial ?: false, elements[stored.answerId].orEmpty(), stored.heldReason),
+                    judgment = JudgmentView(stored.judgmentId, result, stored.trial ?: false, elements[stored.answerId].orEmpty(), stored.heldReason),
                     followup = followup,
                     nextActions = nextActions(stored.attemptOpen, followup?.followupId, openFollowupId),
                     versions = Versions(stored.missionLabel, stored.rubricLabel, stored.modelVersion, stored.promptVersion),

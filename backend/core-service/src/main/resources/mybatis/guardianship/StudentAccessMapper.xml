@@ -9,6 +9,9 @@
             <arg column="birth_year" javaType="_int"/>
         </constructor>
     </resultMap>
+    <select id="lockStatus" resultType="string" flushCache="true" useCache="false">
+        SELECT status FROM student WHERE id=#{studentId} FOR UPDATE
+    </select>
     <select id="activeParents" resultType="java.util.UUID">
         SELECT g.parent_user_id FROM guardianship g JOIN user_account u ON u.id=g.parent_user_id
         JOIN student s ON s.id=g.student_id

@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 
 from app.analysis_agent.models import (
     Evidence,
+    EvidenceKind,
     Intent,
     Metric,
     Period,
@@ -90,7 +91,11 @@ def compute(intent: Intent, records: Records, scope: Scope) -> Computation:
         ]
         sources = [
             _source(
-                change.attempt_id, titles.get(change.attempt_id, ""), answer.answer_id, answer.text
+                "ANSWER",
+                change.attempt_id,
+                titles.get(change.attempt_id, ""),
+                answer.answer_id,
+                answer.text,
             )
             for change in changes
             for answer in (change.first, change.revised)
@@ -98,7 +103,7 @@ def compute(intent: Intent, records: Records, scope: Scope) -> Computation:
         if total.count and not changes:
             insufficient = "NO_CHANGES"
     elif intent == "REFLECTIONS":
-        written = [a for a in records.activities or [] if a.reflection is not None]
+        written = [a for a in records.attempts or [] if a.reflection is not None]
         if COMPLETED_LABEL in summary:
             metrics.append(summary[COMPLETED_LABEL])
         metrics.append(
@@ -111,8 +116,16 @@ def compute(intent: Intent, records: Records, scope: Scope) -> Computation:
                 metrics.append(
                     count_metric(f"난이도 {label} 돌아보기", difficulty[code], formula, period)
                 )
+        # 돌아보기는 시도당 하나: attemptId로 식별, 제출 시각 자리에 작성 시각
         sources = [
-            _source(a.attempt_id, a.mission_title, None, a.reflection.text)
+            _source(
+                "REFLECTION",
+                a.attempt_id,
+                a.mission.title,
+                None,
+                a.reflection.text,
+                submitted_at=a.reflection.created_at,
+            )
             for a in written
             if a.reflection and a.reflection.text
         ]
@@ -167,18 +180,28 @@ def _latest_answer(attempt: RecordAttempt) -> Source | None:
     answer = max(attempt.answers, key=lambda a: a.version)
     if not answer.text.strip():
         return None
-    source = _source(attempt.attempt_id, attempt.mission.title, answer.answer_id, answer.text)
+    source = _source(
+        "ANSWER", attempt.attempt_id, attempt.mission.title, answer.answer_id, answer.text
+    )
     update = {"answer_version": answer.version, "submitted_at": answer.submitted_at}
     return Source(source.evidence.model_copy(update=update), source.text)
 
 
-def _source(attempt_id: str, mission_title: str, answer_id: str | None, text: str) -> Source:
+def _source(
+    kind: EvidenceKind,
+    attempt_id: str,
+    mission_title: str,
+    answer_id: str | None,
+    text: str,
+    submitted_at: str | None = None,
+) -> Source:
     evidence = Evidence(
+        kind=kind,
         attempt_id=attempt_id,
         mission_title=mission_title,
         answer_id=answer_id,
         answer_version=None,
-        submitted_at=None,
+        submitted_at=submitted_at,
         quote=text,
     )
     return Source(evidence, text)

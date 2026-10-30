@@ -18,7 +18,9 @@ data class FeedbackResult(
     }
 }
 
+/** judgmentId는 신고(targetType JUDGMENT)·정정 대상 ID (#146) */
 data class JudgmentView(
+    val judgmentId: UUID,
     val result: JudgmentResult,
     val trial: Boolean,
     val elements: List<ElementView>,

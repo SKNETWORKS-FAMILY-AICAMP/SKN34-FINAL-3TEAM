@@ -24,16 +24,18 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
 
 /**
  * 동시 정정 (이슈 #80): 판정 행 잠금으로 같은 판정의 정정이 한 줄로 서서
- * 같은 키는 정정 1건, 같은 신고를 다른 키로 보내면 1건만 남고 나머지는 409.
+ * 같은 키는 정정 1건, 같은 신고를 다른 키로 보내면 1건만 남고 나머지는 409, 다른 신고는 앞 정정 결과를 이전 결과로 (#145).
  * 요청마다 실제로 커밋해야 해서 AnswerConcurrencyTest처럼 별도 컨테이너를 씀
  */
 @SpringBootTest(properties = [
     "app.internal.token=concurrency-test-token",
     "spring.rabbitmq.username=test", "spring.rabbitmq.password=test",
+    "spring.rabbitmq.listener.simple.auto-startup=false",
 ])
 class CorrectionConcurrencyTest {
     @Autowired lateinit var service: JudgmentService
@@ -69,6 +71,25 @@ class CorrectionConcurrencyTest {
             outcomes.filterIsInstance<BusinessException>().map { it.code },
         )
         assertEquals(1, count(judgmentId))
+    }
+
+    @Test
+    fun `다른 신고 정정이 동시에 오면 이전 결과는 앞 정정 결과로 이어짐`() {
+        val (student, judgmentId) = judged()
+        val sent = AtomicInteger()
+
+        concurrently(student) {
+            val corrected = if (sent.getAndIncrement() % 2 == 0) JudgmentResult.CORRECT else JudgmentResult.RETHINK
+            service.correct(judgmentId, CorrectionCommand(UUID.randomUUID(), "동시에 보낸 정정", corrected, admin), UUID.randomUUID())
+        }
+
+        val chain = jdbc.query(
+            """SELECT previous ->> 'result' AS previous, corrected ->> 'result' AS corrected FROM judgment_correction
+               WHERE judgment_id = ? ORDER BY created_at, id""",
+            { rs, _ -> rs.getString("previous") to rs.getString("corrected") }, judgmentId,
+        )
+        assertEquals(8, chain.size)
+        assertEquals(listOf("PARTIAL") + chain.dropLast(1).map { it.second }, chain.map { it.first })
     }
 
     /** 서술 답변을 제출하고 판정을 DONE으로. 학생 ID와 판정 ID */

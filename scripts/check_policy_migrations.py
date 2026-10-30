@@ -15,6 +15,9 @@ import psycopg
 from psycopg import sql
 from verify_db_schema import ROOT, require
 
+# #19 정책 반영 버전(core V7, learning V5)까지만 적용한다. 이후 버전은 check_db_migrations.py가 검사
+POLICY_HEAD = {"core": 7, "learning": 5}
+
 
 def uid(number):
     return f"00000000-0000-4000-8000-{number:012d}"
@@ -180,16 +183,18 @@ def main():
         query("postgres", sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
 
     for service, head, table_count, column_count in [
-        ("core", 7, 34, 306),
-        ("learning", 5, 19, 156),
+        ("core", POLICY_HEAD["core"], 34, 306),
+        ("learning", POLICY_HEAD["learning"], 19, 156),
     ]:
         database = f"policy_empty_{service}"
         require(
-            flyway(service, database) == head,
+            flyway(service, database, target=head) == head,
             f"{service}: wrong initial migration count",
         )
         history = snapshot(database, ["flyway_schema_history"])
-        require(flyway(service, database) == 0, f"{service}: rerun was not a no-op")
+        require(
+            flyway(service, database, target=head) == 0, f"{service}: rerun was not a no-op"
+        )
         require(
             snapshot(database, ["flyway_schema_history"]) == history,
             "Rerun changed history",
@@ -334,7 +339,7 @@ def main():
         for invalid, restore, message in guards:
             query(database, invalid)
             before = snapshot(database, tables)
-            flyway(service, database, failure=message)
+            flyway(service, database, target=POLICY_HEAD[service], failure=message)
             require(
                 snapshot(database, tables) == before,
                 "Rejected migration changed fixture/history",
@@ -352,8 +357,13 @@ def main():
     product_before = query(core, "SELECT * FROM product")
     answer_before = query(learning, "SELECT id, content, submitted_at FROM answer")
     followup_before = query(learning, "SELECT * FROM followup")
-    require(flyway("core", core) == 1, "core final migration missing")
-    require(flyway("learning", learning) == 1, "learning final migration missing")
+    require(
+        flyway("core", core, target=POLICY_HEAD["core"]) == 1, "core final migration missing"
+    )
+    require(
+        flyway("learning", learning, target=POLICY_HEAD["learning"]) == 1,
+        "learning final migration missing",
+    )
     require(
         query(core, "SELECT id, nickname, grade, birth_year FROM student") == core_before,
         "Student data changed",
@@ -384,7 +394,10 @@ def main():
             "Retired column remains",
         )
         before = snapshot(database, ["flyway_schema_history"])
-        require(flyway(service, database) == 0, "Upgrade rerun was not a no-op")
+        require(
+            flyway(service, database, target=POLICY_HEAD[service]) == 0,
+            "Upgrade rerun was not a no-op",
+        )
         require(
             snapshot(database, ["flyway_schema_history"]) == before,
             "Upgrade rerun changed history",

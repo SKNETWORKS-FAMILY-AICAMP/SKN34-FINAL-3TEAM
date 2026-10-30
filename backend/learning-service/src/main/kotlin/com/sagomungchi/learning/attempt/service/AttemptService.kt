@@ -22,6 +22,7 @@ import com.sagomungchi.learning.mission.domain.MissionView
 import com.sagomungchi.learning.mission.service.MissionService
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -167,6 +168,13 @@ class AttemptService(
      * 제출 가능 여부는 같은 키 재요청을 먼저 처리한 뒤 Attempt.requireAnswerable()로 확인. 호출한 쪽 트랜잭션 필요
      */
     fun lockForAnswer(attemptId: UUID): Attempt = lockOwned(attemptId)
+
+    /**
+     * 학생 삭제(class-diagram 4.3 StudentDeletionService --> AttemptService, #128): 학생의 시도 이하 기록 전부 물리 삭제.
+     * 삭제 표식·처리 기록과 같은 트랜잭션이어야 해 호출한 쪽 트랜잭션 안에서만 실행. 지운 시도 수
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun deleteByStudent(studentId: UUID): Int = attemptRepository.deleteByStudent(studentId)
 
     /**
      * 답변 제출 뒤 초안의 답 칸 비우기 (FN-LRN-15·16): 제출한 답이 새로고침 때 미제출 초안으로 돌아오지 않게.

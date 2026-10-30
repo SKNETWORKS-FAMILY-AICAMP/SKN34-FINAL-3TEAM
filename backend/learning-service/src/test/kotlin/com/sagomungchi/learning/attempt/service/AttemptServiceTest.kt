@@ -86,7 +86,7 @@ class AttemptServiceTest : PostgresRepositoryTest() {
         val mission = rows.mission(title = "처음 버전")
         val attempt = service.start(student, mission.id, 3, false).attempt
         val newer = rows.addVersion(mission.id, version = 2, title = "새 버전")
-        jdbc.update("UPDATE mission SET current_version_id = ? WHERE id = ?", newer, mission.id)
+        jdbc.update("UPDATE mission SET current_version_id = ?, published_version_id = ? WHERE id = ?", newer, newer, mission.id)
 
         assertEquals("처음 버전", service.get(attempt.id).mission.title)
     }

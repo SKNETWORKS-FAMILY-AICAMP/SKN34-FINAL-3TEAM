@@ -83,6 +83,16 @@ function feedbackDto(raw: unknown): Feedback {
     !Array.isArray(f.nextActions)
   )
     return contractError('피드백 status·nextActions가 유효하지 않습니다.')
+  // judgment·followup·heldReason·versions는 생략 대신 null로 올 수 있음. 판정이 있으면 신고 대상 judgmentId 필수(#146),
+  // 근거 구절이 없는 ai 요소는 sourceType null
+  if (f.judgment != null) {
+    const j = object(f.judgment)
+    if (typeof j.judgmentId !== 'string' || !['CORRECT', 'PARTIAL', 'RETHINK', 'HELD'].includes(String(j.result)))
+      return contractError('피드백 판정의 judgmentId·result가 유효하지 않습니다.')
+    if (j.elements != null && (!Array.isArray(j.elements) ||
+        j.elements.some((e) => ![null, 'RULE', 'ANSWER_KEY', 'AI_OBSERVATION'].includes(object(e).sourceType as string | null))))
+      return contractError('피드백 판정 요소의 sourceType이 유효하지 않습니다.')
+  }
   return f as unknown as Feedback
 }
 function payload(a: AnswerContent, followupId?: string): object {

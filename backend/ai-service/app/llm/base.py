@@ -1,6 +1,6 @@
 """LLM 공통 인터페이스 (아키텍처 2.1 제공자 교체 지점).
 
-판정·되묻기는 LlmClient.generate만 사용하고 어떤 제공자인지 모름.
+판정·되묻기는 LlmClient.generate만, 분석 대화 답변은 stream도 사용하고 어떤 제공자인지 모름.
 재시도는 여기에서만 수행 (아키텍처 1.3), 제공자 구현은 요청 1회만 담당.
 요청마다 사용량을 recorder로 넘김 (재시도 포함 요청 1회 = 1건, NFR-PRF-02).
 """
@@ -9,9 +9,9 @@ import asyncio
 import logging
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel
 
@@ -36,6 +36,15 @@ class ProviderResponse(Generic[T]):
     """제공자 요청 1회의 결과."""
 
     data: T
+    model: str
+    input_tokens: int | None
+    output_tokens: int | None
+
+
+@dataclass(frozen=True)
+class StreamEnd:
+    """제공자 스트림 1회의 마지막 항목. 텍스트 조각 뒤에 한 번 보냄."""
+
     model: str
     input_tokens: int | None
     output_tokens: int | None
@@ -159,9 +168,26 @@ class LlmClient(ABC):
             return LlmResult(response.data, response.model)
         raise AssertionError("unreachable")
 
+    def stream(
+        self,
+        *,
+        system: str,
+        user: str,
+        call_type: str,
+        prompt_version: str,
+        max_tokens: int = 4096,
+        deadline: float | None = None,
+    ) -> "LlmTextStream":
+        """일반 텍스트를 조각으로 받음. 재시도는 첫 조각 전 실패만 (첫 조각 뒤 실패는 바로 실패)."""
+        return LlmTextStream(self, system, user, call_type, prompt_version, max_tokens, deadline)
+
     @abstractmethod
     async def _request(self, request: LlmRequest[T]) -> ProviderResponse[T]:
         """요청 1회. 실패는 LlmError로 변환해 던짐."""
+
+    def _stream(self, request: LlmRequest[Any]) -> AsyncIterator[str | StreamEnd]:
+        """스트림 요청 1회: 텍스트 조각들 → StreamEnd. 실패는 LlmError로 변환해 던짐."""
+        raise NotImplementedError
 
     def _record(
         self,
@@ -188,6 +214,78 @@ class LlmClient(ABC):
             logger.warning("LLM 사용량 기록 실패: call_type=%s", request.call_type, exc_info=True)
 
 
+class LlmTextStream:
+    """LlmClient.stream 결과. async for로 조각을 받고, 끝나면 model에 응답한 모델 ID."""
+
+    def __init__(
+        self,
+        llm: LlmClient,
+        system: str,
+        user: str,
+        call_type: str,
+        prompt_version: str,
+        max_tokens: int,
+        deadline: float | None,
+    ) -> None:
+        self._llm = llm
+        self._args = (system, user, call_type, prompt_version, max_tokens)
+        self._deadline = deadline
+        self.model: str | None = None
+
+    async def __aiter__(self) -> AsyncIterator[str]:
+        llm = self._llm
+        system, user, call_type, prompt_version, max_tokens = self._args
+        for attempt in range(llm._max_retries + 1):
+            timeout = llm._timeout
+            if self._deadline is not None:
+                timeout = min(timeout, self._deadline - time.monotonic())
+                if timeout <= 0:
+                    raise LlmUnavailable("LLM_DEADLINE_EXCEEDED", retryable=True)
+            request = LlmRequest(
+                system, user, BaseModel, call_type, prompt_version, max_tokens, timeout
+            )
+            started = time.monotonic()
+            sent = False  # 조각을 하나라도 넘겼으면 재시도하지 않음 (받은 쪽이 이미 표시)
+            try:
+                async for item in _within(llm._stream(request), started + timeout):
+                    if isinstance(item, StreamEnd):
+                        llm._record(
+                            request, started, item.model, item.input_tokens, item.output_tokens
+                        )
+                        self.model = item.model
+                        return
+                    sent = True
+                    yield item
+                raise LlmError("LLM_INVALID_OUTPUT", retryable=True)  # StreamEnd 없이 끝남
+            except LlmError as exc:
+                if exc.sent:
+                    llm._record(
+                        request, started, exc.model, exc.input_tokens, exc.output_tokens, exc
+                    )
+                if sent or not exc.retryable or attempt == llm._max_retries:
+                    raise LlmUnavailable(exc.code, exc.retryable) from exc
+                await asyncio.sleep(llm._backoff_seconds * 2**attempt)
+        raise AssertionError("unreachable")
+
+
+async def _within[I](items: AsyncIterator[I], until: float) -> AsyncIterator[I]:
+    """요청 1회 타임아웃: until(time.monotonic 기준)까지 다음 조각이 오지 않으면 LLM_TIMEOUT."""
+    iterator = aiter(items)
+    try:
+        while True:
+            try:
+                item = await asyncio.wait_for(anext(iterator), until - time.monotonic())
+            except StopAsyncIteration:
+                return
+            except TimeoutError as exc:
+                raise LlmError("LLM_TIMEOUT", retryable=True) from exc
+            yield item
+    finally:
+        close = getattr(iterator, "aclose", None)
+        if close is not None:
+            await close()
+
+
 def status_error(status: int) -> LlmError:
     """제공자 HTTP 상태 코드 → 공통 오류 코드 (제공자 공통)."""
     if status == 429:
@@ -203,7 +301,12 @@ class UnconfiguredLlm(LlmClient):
     """API 키·모델 미설정. 서버는 기동하고 호출 시 503 (재시도 무의미)."""
 
     def __init__(self, model: str, recorder: UsageRecorder) -> None:
-        super().__init__(model, max_retries=0, recorder=recorder, backoff_seconds=0, timeout=0)
+        # 요청을 보내지 않으므로 타임아웃은 의미 없음 (0이면 스트림이 시작 전에 시간 초과)
+        super().__init__(model, max_retries=0, recorder=recorder, backoff_seconds=0, timeout=1)
 
     async def _request(self, request: LlmRequest[T]) -> ProviderResponse[T]:
         raise LlmError("LLM_NOT_CONFIGURED", retryable=False, sent=False)
+
+    async def _stream(self, request: LlmRequest[Any]) -> AsyncIterator[str | StreamEnd]:
+        raise LlmError("LLM_NOT_CONFIGURED", retryable=False, sent=False)
+        yield ""  # 비동기 생성기로 만들기 위한 줄 (실행되지 않음)

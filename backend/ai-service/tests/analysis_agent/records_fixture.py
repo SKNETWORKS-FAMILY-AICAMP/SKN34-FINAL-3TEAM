@@ -81,6 +81,11 @@ ATTEMPTS = [
         "attemptId": "t-1",
         "mission": {"title": "쉬는 시간 토론"},
         "answers": [answer("a-1", 1, "나는 찬성해."), answer("a-2", 2, REVISED)],
+        "reflection": {
+            "difficulty": "HARD",
+            "text": "근거 찾기가 어려웠어",
+            "createdAt": "2026-10-22T19:30:00+09:00",
+        },
     },
 ]
 THINKING_TYPES = [
@@ -116,7 +121,7 @@ ACTIVITIES = [
         "attemptId": "t-1",
         "thinkingType": "ANALYZE",
         "missionTitle": "쉬는 시간 토론",
-        "reflection": {"difficulty": "HARD", "text": "근거 찾기가 어려웠어"},
+        "reflection": {"difficulty": "HARD", "text": "근거 찾기가 어려웠어"},  # createdAt 없음
     },
 ]
 
@@ -147,6 +152,7 @@ class FakeRecords:
         return self._call("thinking_types", scope, self._records.thinking_types)
 
     async def attempts(self, scope, size):
+        self.attempts_size = size
         return self._call("attempts", scope, (self._records.attempts or [])[:size])
 
     async def changes(self, scope):

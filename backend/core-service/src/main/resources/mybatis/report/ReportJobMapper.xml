@@ -28,6 +28,14 @@
     <select id="scheduled" resultMap="job" useCache="false" flushCache="true">
         SELECT * FROM report_job WHERE student_id=#{studentId} AND period_from=#{from} AND trigger='SCHEDULE'
     </select>
+    <select id="stale" resultMap="job" useCache="false" flushCache="true">
+        SELECT * FROM report_job WHERE status IN ('QUEUED','RUNNING') AND created_at &lt;= #{before}
+        <if test="after != null">AND id &gt; #{after}</if>
+        ORDER BY id LIMIT 100
+    </select>
+    <select id="pendingForStudent" resultMap="job" useCache="false" flushCache="true">
+        SELECT * FROM report_job WHERE student_id=#{studentId} AND status IN ('QUEUED','RUNNING') ORDER BY id FOR UPDATE
+    </select>
     <select id="find" resultMap="job" useCache="false" flushCache="true">SELECT * FROM report_job WHERE id=#{id}</select>
     <select id="lock" resultMap="job" useCache="false" flushCache="true">SELECT * FROM report_job WHERE id=#{id} FOR UPDATE</select>
     <select id="byReport" resultMap="job" useCache="false" flushCache="true">SELECT * FROM report_job WHERE report_id=#{reportId}</select>
@@ -44,7 +52,7 @@
             0,#{createdAt},#{startedAt},#{completedAt})
     </insert>
     <update id="transition">
-        UPDATE report_job SET status=#{status}, report_id=#{reportId},
+        UPDATE report_job SET status=#{status}, report_id=COALESCE(#{reportId,jdbcType=OTHER},report_id),
         <choose>
             <when test="status.name() == 'RUNNING'">started_at=#{at}</when>
             <otherwise>completed_at=#{at}, failure_reason=#{failureReason}</otherwise>
@@ -54,7 +62,7 @@
             <when test="status.name() == 'RUNNING'">AND status='QUEUED'</when>
             <otherwise>AND status IN ('QUEUED','RUNNING')</otherwise>
         </choose>
-        AND (report_id IS NULL OR report_id=#{reportId})
+        AND (CAST(#{reportId,jdbcType=OTHER} AS uuid) IS NULL OR report_id IS NULL OR report_id=#{reportId,jdbcType=OTHER})
     </update>
     <insert id="execution">
         INSERT INTO job_execution(id,job_type,job_id,attempt_no,status,error_code,triggered_by,started_at,finished_at)

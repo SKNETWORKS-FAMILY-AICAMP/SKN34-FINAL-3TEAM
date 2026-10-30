@@ -23,7 +23,7 @@
 | JSONB | 구조가 응답 스키마와 같고 조회 조건에 쓰지 않는 값만 (Metric[], verification, versions 등) |
 | NULL·기본값 | `NULL 허용` 표시 컬럼 외에는 NOT NULL. UUID·시각·상태·카운터의 SQL DEFAULT는 두지 않고 앱에서 전달. 정책 값(기능명세서 1.4)을 SQL 기본값으로 고정하지 않고 앱 설정·`product` 데이터로 전달 |
 | 문자열·금액 | varchar는 길이 제한 없는 PostgreSQL varchar. ShedLock만 name varchar(64), locked_by varchar(255). 원화는 int, cost_usd는 반올림 정책 없는 numeric |
-| FK 삭제·순환 참조 | 기본 ON DELETE/UPDATE NO ACTION. mission.current_*와 answer.followup_id만 DEFERRABLE INITIALLY IMMEDIATE. 삭제는 P09에 따라 `student.deleted` 이벤트로 서비스별 물리 삭제. learning 하위 기록의 CASCADE 여부는 7장 확인 필요 |
+| FK 삭제·순환 참조 | 기본 ON DELETE/UPDATE NO ACTION. mission.current_*·published_*와 answer.followup_id만 DEFERRABLE INITIALLY IMMEDIATE. 삭제는 P09에 따라 `student.deleted` 이벤트로 서비스별 물리 삭제. learning 하위 기록은 CASCADE 없이 서비스가 한 트랜잭션에서 순서대로 삭제(4.3, #128) |
 
 - 테이블 없이 Redis에 두는 값: SSE 알림 중계 (아키텍처 1.6), 요금제 사용 한도 일 단위 카운터 (P13)
 - 생각 메모는 `attempt_draft.content.memo`에 저장 (P05). 음성 시범 미구현으로 음성 데이터 없음 (P03)
@@ -688,8 +688,10 @@ erDiagram
     uuid id PK
     varchar code UK
     varchar status "DRAFT|REVIEW_REQUIRED|PUBLISHED|UNPUBLISHED"
-    uuid current_version_id FK "NULL 허용"
-    uuid current_rubric_version_id FK "NULL 허용"
+    uuid current_version_id FK "NULL 허용 · 편집 중 최신"
+    uuid current_rubric_version_id FK "NULL 허용 · 편집 중 최신"
+    uuid published_version_id FK "NULL 허용 · 학생에게 제공하는 공개 버전"
+    uuid published_rubric_version_id FK "NULL 허용 · 공개 기준표 버전"
     boolean demo_only "시연 전용"
     int sort_order "목록 순서·이전·다음"
     uuid created_by "core 사용자"
@@ -761,7 +763,8 @@ erDiagram
 ```
 
 - `mission_version`·`rubric_version` UK `(mission_id, version)`. 수정은 새 버전 추가 후 `mission.current_*` 갱신, 이전 버전 불변 (FN-ADM-10, 12)
-- 공개(`PUBLISHED`) 전 필수 항목 검사: 현재 미션·기준표 버전 존재, 기준표 요소 1개 이상(서술·논술) 또는 `answer_key`(고르기·수학) (FN-ADM-11)
+- 공개 버전(#145, P07): 학생 목록·상세·시도 시작은 `published_*`, 관리자 편집은 `current_*`. 게시 때 `published_*` ← `current_*`라 공개 중 수정본은 재검토·재게시 전까지 학생에게 보이지 않음. learning V7이 칸을 추가하고 기존 `PUBLISHED` 미션은 `current_*`로 채움
+- 공개(`PUBLISHED`) 전 필수 항목 검사(FN-ADM-11, #145): 현재 미션·기준표 버전 존재, 제목·질문·교과·성취기준, 학년 3~6(논술 5~6), **기준표 요소 1개 이상(입력 방식 무관, 구 #81)**·요소 이름·양의 배점, 풀이 단계는 `FINAL_ANSWER` 외 요소 1개 이상·`FINAL_ANSWER`는 풀이 단계만, 고르기·순서·분류는 선택지(분류는 그룹), 서술·논술이 아니면 `answer_key`(입력 방식 모양), 서술·논술은 `example_answer`, 현재 버전 최신 검토 `APPROVED`. 누락은 `422 MISSION_PUBLISH_INCOMPLETE` + `missingFields`(class-diagram 4.1)
 - `mission.sort_order`: 학년군 안의 목록 순서, 이전·다음 이동과 진행 위치 계산 (FN-LRN-02)
 - `rubric_element.judge_verified = false` 요소는 AI 판정 시 충족 표시 금지 → `HELD (UNVERIFIED_SCOPE)`. 평가 통과 후 관리자가 갱신 (FN-JDG-04, 05, NFR-AIQ-01). 사람 검증(P11) 도입 전에는 ai `JUDGE_REQUIRE_VERIFIED=false`(기본)로 끄고 `trial = true`로 시범 표시
 - `forbidden_terms`: 정답 키와 함께 ai `followups` 유출 검사 입력 (FN-JDG-06)
@@ -940,6 +943,8 @@ erDiagram
 ```
 
 - `student.deleted` 소비: 해당 학생 `attempt` 이하 기록 삭제 + `deleted_student` 저장 → 근거 조회 시 `available: false` (물리 삭제 + 표식, P09). 처리 완료는 core 내부 API `POST /internal/deletion-requests/{id}/completions`로 알림
+  - 삭제 방식(#128): FK는 NO ACTION 그대로 두고 서비스가 한 트랜잭션에서 `judgment_correction`·`judgment_element` → `self_assessment`·`reflection`·`hint_usage`·`attempt_draft` → `followup`(`answer.followup_id`는 `SET CONSTRAINTS … DEFERRED`로 커밋 때 검사) → `judgment` → `answer` → `attempt` 순서로 삭제. `processed_event`에 이벤트 `id`를 같은 트랜잭션에 기록해 재전달 때 다시 지우지 않음
+  - `deleted_student`는 학생당 한 행: 다시 받으면 `event_id`·`deleted_at`을 갱신하고 `scope`는 이미 `PROFILE`이면 유지(report 삭제 장벽과 같은 규칙)
 - learning은 이벤트를 발행하지 않으므로 `outbox_event` 없음 (아키텍처 1.6)
 - 멱등은 `answer`·`judgment_correction`의 `idempotency_key` UK로 처리, 별도 `idempotency_record` 없음
 
@@ -952,6 +957,15 @@ erDiagram
   weekly_report ||--o{ report_item : items
   report_item ||--o{ report_item_evidence : cites
   weekly_report ||--o{ report_file : files
+
+  report_job_guard {
+    uuid job_id PK "core 작업 논리 참조"
+    uuid student_id "core 학생 논리 참조"
+    date period_from
+    date period_to
+    varchar failure_reason "REPORT_NOT_CREATED"
+    timestamptz created_at
+  }
 
   report_deletion_guard {
     uuid student_id PK "core 논리 참조 · 삭제 장벽"
@@ -1021,6 +1035,7 @@ erDiagram
 ```
 
 - `weekly_report.job_id` UK → 같은 `report.generate` 재전달 시 1회만 생성. 상태 전이 `RUNNING → COMPLETED|FAILED`와 `outbox_event(report.*)`를 같은 트랜잭션에 저장
+- #152 관리자 재처리는 새 jobId로 다음 revision을 만든다. 원래 실패 행·기존 파일은 보존한다. 원작업↔재처리 연결은 core #47 소유이며 report DB에 교차 서비스 FK·원작업 컬럼을 추가하지 않는다. 현재 core의 연결 저장 구조를 이 문서에서 임의 확정하지 않는다.
 - 재생성은 기존 행을 덮지 않고 `revision` 증가 행 추가, UK `(student_id, period_from, revision)` (기존 판 보존·최신판 기본 조회, P06). 학부모 요청 재생성은 리포트당 1회 → core `report_job(REGENERATE)` 건수로 확인
 - 기록 없는 주·표본 부족 주는 `status = COMPLETED` + `state`로 구분, 생성 실패(`FAILED`)와 분리 (FN-RPT-11). state는 COMPLETED일 때만 NOT NULL (상태 다이어그램 4.2).
 - `report_item` UK `(report_id, item_type, seq)`. 상세 응답(API 3.4)은 `item_type`별로 묶어 조립
@@ -1058,7 +1073,6 @@ erDiagram
 
 ## 7. 확인 필요 가정
 - PG 거래 대조(FN-ADM-15): 조회 시 PG API와 계산, 결과 테이블 없음
-- learning 학생 삭제 시 `attempt` 하위 기록 삭제 방식: FK `ON DELETE CASCADE` 또는 서비스 내 삭제 순서 (클래스 다이어그램 8장)
 - 정기 청구는 월별 payment_order를 재사용하며, 확정 실패 후의 일별 재청구마다 payment_charge_attempt에 새 PG 주문과 멱등키를 보존한다. 불명확한 거래는 재청구하지 않고 조회 복구한다(#48).
 - 정책 확정에 따른 DDL은 core V6~V7·learning V4~V5로 추가한다(9장). 기존 데이터의 출생연도·상품 한도·폐기 코드/음성 기록은 임의 변환하지 않고 적용 전 정비가 필요하다.
 - `product.code`는 상품 행별 UK이며 P13의 요금제 추가·가격/한도별 새 행을 위해 확장 가능한 코드다. 새 상품 행은 새 고유 코드를 사용한다. 무료 상품 교체는 PAYMENT_FREE_PRODUCT_ID를 명시적으로 변경한다(#48 사용자 확정).
@@ -1066,7 +1080,7 @@ erDiagram
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V16(V10·V11 결번), learning Flyway V1~V6, report Alembic `20261026_01`·`20261027_02`. 현재 68개 테이블·598개 컬럼(core 42/390, learning 19/158, report 7/50). 결정 경위는 [DB 스키마 보고서](../report/db-schema.md)
+- 버전: core Flyway V1~V9·V12~V16(V10·V11 결번), learning Flyway V1~V7, report Alembic `20261026_01`·`20261027_02`·`20261029_03`. 현재 69개 테이블·606개 컬럼(core 42/390, learning 19/160, report 8/56). 결정 경위는 [DB 스키마 보고서](../report/db-schema.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11은 #58이 처음 V10을 썼다가 V12가 적용된 DB에서 Flyway가 거부해 V13으로 옮긴 결번이며, V12 첫 줄 주석의 "V10은 #58"은 당시 기록
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT
@@ -1099,3 +1113,17 @@ erDiagram
 ### 이슈 #41 저장 규칙
 
 기존 conversation/message/evidence 스키마를 사용하며 마이그레이션을 추가하지 않는다. retry_count를 실행 세대 fencing 값으로 사용하고 실패/취소는 UPDATE만 수행한다. clarification은 COMPLETED(답변 NULL), delta는 미저장이다. 한도는 분석 전용 Redis KST 일자 카운터다. [계약](../report/issue-41-analysis-conversations.md).
+
+### report_job_guard (#132, 신규 migration 20261029_03)
+
+| 컬럼 | 제약/의미 |
+|---|---|
+| job_id | uuid PK, core 작업 논리 참조 |
+| student_id | uuid NOT NULL, 학생별 삭제 인덱스 |
+| period_from / period_to | date NOT NULL, 월~일 7일 |
+| failure_reason | varchar(100) NOT NULL, REPORT_NOT_CREATED |
+| created_at | timestamptz NOT NULL |
+
+리포트 행 생성 전 실패의 재실행 차단 기록이다. 원문·이름·파일 경로는 저장하지 않는다. DLQ 수동 재전달의 상한이 없으므로 자동 TTL 없이 유지한다. 학생 PROFILE/RECORDS 삭제 완료 트랜잭션에서 이 기록도 제거하며 영구 `report_deletion_guard(COMPLETED)`가 이후 모든 생성을 차단한다. 삭제 표식이 완료된 학생에 복구 요청이 와도 job guard를 새로 만들지 않는다. 삭제 표식 제거/학습 재개는 이번 범위 밖이다. migration downgrade는 재실행 장벽을 없애므로 운영 중 임의 실행하지 않는다.
+
+core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. job_execution은 기존 attempt_no=1 upsert로 종료를 기록하며 동일 복구/늦은 이벤트가 이력을 늘리거나 종료를 되돌리지 않는다.
