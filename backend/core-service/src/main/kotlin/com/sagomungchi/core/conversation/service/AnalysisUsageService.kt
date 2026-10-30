@@ -30,6 +30,13 @@ class AnalysisUsageService(private val providers: ObjectProvider<AnalysisEntitle
             entitlement.dailyConversations.toString(), expires.toString()) } catch (_: Exception) { unavailable("ANALYSIS_USAGE_UNAVAILABLE") }
         if (accepted != 1L) limited()
     }
+    fun consumeAdminRetry(parent: UUID,child: UUID,request: UUID) {
+        val entitlement=requireEntitlement(parent,child)
+        val (key,expires)=counterWindow(child,Instant.now())
+        val accepted=try { redis.execute(CONSUME_RETRY,listOf(key,"analysis:retry:v1:$request"),
+            entitlement.dailyConversations.toString(),expires.toString()) } catch (_: Exception) { unavailable("ANALYSIS_USAGE_UNAVAILABLE") }
+        if(accepted!=1L) limited()
+    }
     private fun limited(): Nothing = throw BusinessException(HttpStatus.TOO_MANY_REQUESTS, "USAGE_LIMIT_REACHED", "분석 대화 사용 한도에 도달했습니다.")
     private fun unavailable(code: String): Nothing = throw BusinessException(HttpStatus.SERVICE_UNAVAILABLE, code, "분석 권한·사용 한도를 확인할 수 없습니다.")
     companion object {
@@ -38,6 +45,15 @@ class AnalysisUsageService(private val providers: ObjectProvider<AnalysisEntitle
             return "analysis:daily:v1:$child:${now.toLocalDate()}" to
                 now.toLocalDate().plusDays(2).atStartOfDay(now.zone).toEpochSecond()
         }
+        private val CONSUME_RETRY=DefaultRedisScript("""
+            if redis.call('EXISTS',KEYS[2]) == 1 then return 1 end
+            local used=tonumber(redis.call('GET',KEYS[1]) or '0')
+            if used >= tonumber(ARGV[1]) then return 0 end
+            redis.call('INCR',KEYS[1])
+            redis.call('EXPIREAT',KEYS[1],ARGV[2])
+            redis.call('SET',KEYS[2],KEYS[1],'EXAT',ARGV[2])
+            return 1
+        """.trimIndent(),Long::class.java)
         private val CONSUME = DefaultRedisScript("""
             local used = tonumber(redis.call('GET', KEYS[1]) or '0')
             if used >= tonumber(ARGV[1]) then return 0 end

@@ -60,6 +60,118 @@ CI 보완 로컬 검증: 전체 Python 계약 검사 69/69 통과. 별도 복사
 
 순서 보완 후 전용 JDK21 Linux 환경에서 core 전체 44클래스 270개 test·bootJar 통과(실패·오류·생략 0). 기존 메시징/상태 전이 검사와 #47 알림 재처리·#48 결제 회귀를 포함한다. 테스트 한 파일과 이 기록만 변경되었으며 git diff --check 통과 후 기존 feature head에 후속 커밋·push한다. 원격 4개 workflow의 최종 상태는 새 head를 기준으로 별도 확인한다.
 
+## REPORT 관리자 재처리 core 후속 (#152)
+
+최초 기준 develop `2538d195c53c70a17af84aadea9a3ab1b348840a`(PR #154), 전용 feature/core-admin-report-retry다. 사용자는 core 관리자 분기·report 생성/저장소·관계 migration·학생/상품 확인·감사·공개 응답/조회·설계/테스트 변경을 명시적으로 승인했다. report-service와 프론트는 수정하지 않는다. #152는 OPEN이며 실제 공급자 실행 결과를 완료로 간주하지 않는다. 기존 report.generate v1의 새 jobId/ADMIN_RETRY를 재사용한다. 기존 job 종료 상태와 알림 재처리는 보존한다. 원작업당 1개 재처리, 재실패 시 자식 작업 재처리, durable key 복원과 202 접수/실행 결과 구분은 API 2.8을 따른다.
+
+현재 develop·report 권한 통합 브랜치와 학생 프로필 브랜치의 core migration을 대조했으며 최신 develop 최대 V16, 병렬 브랜치에 V17은 없다. V17로 관계만 추가하며 기존 migration의 이름·내용·checksum은 수정하지 않는다. 최종 검증은 구현·테스트 작성 후 한 단계로 모아 수행한다.
+
+구현 중 PR #155/#129가 develop `14a97f8f2221f5db4fda5631650fd2242b10cf81`에 병합됐다. 작업 28파일을 ZIP/SHA-256/binary diff와 stash `ce7d99fa26a1554401f6f7fe8e19ae29bd9018f6`로 보존한 뒤 이 전용 브랜치만 fast-forward·재적용했다. 기존 ReportClient/ReportQueryService/ReportViewService와 #129 테스트는 그대로 보존했다. V17은 여전히 비어 있으며 최종 검증 기준은 이 최신 develop이다.
+
+### REPORT 후속 최종 통합·검증
+
+- 검증 중 #152가 PR #156으로 develop `deecc12dfe9a23a8e4d23d7b0fb1d02b289ca3d2`에 병합되어 작업을 보존하고 fast-forward·재적용했다. 기존 report-service 실행 코드와 프론트는 수정하지 않았다. #152의 새 jobId/ADMIN_RETRY/v1 필드를 재사용한다. 예시의 원작업 연결 방식은 core 소유이며, 이 API는 직접 자식 1개·재실패한 자식에서 다음 재처리 정책을 사용한다.
+- JDK21 core 전체 **339개**, 실패·오류·생략 0, test/bootJar 성공(최종 실행 6m28s). 새 REPORT 재처리 16개 검사 및 기존 알림·리포트·결제·인증 회귀 포함.
+- Python 계약 **77/77**, OpenAPI 표준 검사, 실제 테스트가 만든 202 접수/작업 상세 및 Outbox 봉투·report.generate v1 스키마 대조 통과.
+- 격리 빈 PostgreSQL의 전체 migration cycle 통과: core 43테이블/395컬럼, learning 19/158, report 7/50. 기존 60개 위반 입력·74 CHECK 집합·23 ERD 인덱스, 무변경 재적용 이력, report downgrade/upgrade 후 재검사 통과. 새 관계의 자기 연결·FK·중복 자식·중복 요청 키 제약은 새 core DB 테스트에서 별도 검사했다.
+- 동일 키 응답 유실 후 복원, 서로 다른 키 동시 요청, 새 작업 재실패 및 다음 작업 연결, 삭제와의 경합, 현재 상품 변경/장애, 요청·결과 감사 저장 실패 시 rollback, 과거/중복 이벤트의 결과 격리 통과. 실제 RabbitMQ Outbox 발행·core 소비를 확인했으며 report 결과 생산자는 테스트 대역이다.
+- 초기 전체 실행은 새 테스트가 남긴 processed_event 때문에 기존 리포트 전체 건수 검사 1개가 실패했다. 새 테스트 자신의 이벤트 ID만 정리하도록 보완했다. 별도 재실행의 Redis 초기화 연결 실패는 환경 실패로 구분하고 새 JVM/컨테이너 실행에서 최종 339개를 통과했다. 소스 복사/해시 목록의 초기화 및 CRLF 문제도 검증 준비 단계 실패이며 성공 결과에 포함하지 않는다.
+- 실제 report-worker를 포함한 관리자 POST→생성 파이프라인 E2E, 프론트 연결, 원격 CI·배포는 이번 검증에 포함하지 않는다. #152 공급자 자체의 실연동 결과와 이번 core 결과를 혼동하지 않는다. 접수 후 발생하는 학생 삭제로 report 소비자가 생성을 막은 경우의 queued 작업 정리 정책은 후속 연결 검토 사항이다.
+
+프론트 전달: REPORT 재처리 응답은 202 `{originalJobId,jobId,type:REPORT,status:QUEUED,acceptedAt}`이며 Location은 새 작업 조회 URL이다. ‘접수’로 표시하고 새 jobId의 GET 결과를 조회해 진행/완료/실패를 표시한다. 원작업 상세의 retryJobId, 새 작업의 retryOfJobId를 이동 링크로 사용한다. 이미 연결된 원작업은 REPORT_ALREADY_RETRIED로 다시 접수하지 않고 재실패한 새 작업에서 요청한다. 기존 NOTIFICATION의 200 결과 계약은 유지한다.
+
+이번 작업은 #47의 REPORT core 범위이며 #47 전체 해결/Closes #47을 주장하지 않는다. PR base는 develop, head는 feature/core-admin-report-retry이며 PR은 사용자가 생성한다.
+
+## #132 복구·삭제 종료 감사 접합 (2026-10-30)
+
+#67/#162는 별도 채팅으로 인계했고 해당 worktree·검증 환경을 조작하지 않는다. 이 브랜치에서 origin/develop 640e0a2를 일반 merge로 준비했다. 학생 잠금 3파일과 설계 3파일의 충돌은 #132의 lockStatus/lockActive 및 #47의 삭제 이력 확인과 관계 설계를 모두 보존해 해결했다.
+
+사용자 승인으로 ReportJobOutcomeRecorded 내부 이벤트를 추가한다. 기존 정상 종료 및 #132 복구·삭제의 조건부 전이가 실제 반영된 때에만 발행하며, reportId 없이 실패한 경우도 포함한다. #47 감사는 이 이벤트를 BEFORE_COMMIT으로 소비한다. 기존 ReportJobFinished의 부모 알림 조건, 상태 전이·잠금 순서·외부 report 계약은 유지한다. 중복·지연 결과는 기존 조건부 전이로 감사를 추가하지 않는다. 삭제 결과 감사가 실패하면 학생 차단·삭제 요청·작업 종료·실행 이력도 함께 롤백한다.
+
+
+### REPORT 종료 감사 최종 검증 (develop 640e0a2 병합)
+
+- 전용 Temurin 21 Linux 환경의 `./gradlew test bootJar`: 349개, 실패·오류·생략 0, BUILD SUCCESSFUL. 정상 종료 외 reportId 없는 복구, 중복·늦은 이벤트, 학생 삭제, 감사 실패 시 전체 롤백과 부모 알림 억제를 검증했다.
+- `python -m unittest discover -s scripts/tests`: 84개 통과.
+- 새 전용 PostgreSQL의 전체 migration/재실행/report downgrade·upgrade: core 43개 표·395열, learning 19개 표·160열, report 8개 표·56열; 63개 거부 사례·74개 CHECK·23개 ERD 인덱스 통과. 기존 V17은 그대로이며 추가 migration은 없다.
+- 이번 추가 검증은 실제 PostgreSQL을 사용하는 로컬 테스트다. report-worker 실제 생성→PDF와 원격 CI·배포를 재검증했다고 주장하지 않는다.
+- #67·#162와의 최종 통합은 별도 담당 채팅에서 수행한다. 기능 브랜치를 보존하고 develop 개별 병합·PR 생성은 하지 않는다.
+
+## 미션 후속 — 2026-10-30
+
+승인 범위: 실제 404 전달, 전체 상태 counts, 인증 관리자·미션/버전 쓰기 감사와 불확실 결과. `feature/core-admin-mission-integration`은 develop 640e0a2에서 분기했다. 기존 learning 작성·검토·게시 로직과 프론트는 변경하지 않는다.
+
+HTTP 전 REQUESTED를 짧은 독립 트랜잭션으로 남기고 응답 후 SUCCEEDED/REJECTED/UNKNOWN을 기록한다. 프로세스 중단·결과 감사 저장 실패에는 REQUESTED만 남을 수 있으며 변경 성공 여부는 learning에서 대조해야 한다. 요청·오류 원문은 저장하지 않는다. 새 migration은 없다. 프론트는 missionCounts의 상태·count 배열과 missionInclusionRule을 연결하면 된다. 자동 재요청 기능은 추가하지 않는다.
+
+최종 검증:
+- Temurin 21 Linux `./gradlew test bootJar`: core 334개, 실패·오류·생략 0. learning은 변경 없이 실제 연동용 bootJar 빌드 통과.
+- Python 계약 검사 83개와 OpenAPI validator 통과. 실제 overview 응답도 OpenAPI JSON Schema에 부합한다.
+- 전용 core·learning·PostgreSQL·Redis·RabbitMQ에서 실제 HTTP 10건: 생성 201, 수정 후 버전 2, 조회/쓰기 404, 기존 게시 상태 409, SERVICE_OPS 쓰기 403, 필터와 무관한 전체 counts/overview, detail 없는 감사 목록을 확인했다. 계정·세션/JWT는 검증용 합성 데이터이며 Google 로그인 검증은 아니다.
+- core 감사 INSERT에만 전용 DB trigger로 장애를 주입했다. 실제 learning 생성은 유지되고 core는 503 MISSION_AUDIT_UNAVAILABLE, 요청 감사만 보존했다. trigger는 finally에서 제거했다. 정상·거부·미확정 요청을 합쳐 해당 검증 관리자 감사 9행을 대조했고 원문 미저장을 확인했다.
+- timeout·잘못된 응답·요청/결과 감사 실패는 별도 core 테스트에서 검증했다. timeout은 명시적 클라이언트 대역이며 실제 네트워크 timeout으로 표현하지 않는다.
+- 초기 컴파일의 Kotlin List.size 표기와 연동 검증의 게시 예상값(기존 learning은 DRAFT에서 409)을 수정했다. production learning 로직은 바꾸지 않았다.
+- 이 브랜치에는 DB migration이 없다. REPORT 측 전체 migration 검증과 최종 통합 시 V17→V18 순서 확인은 별도다. 프론트·원격 CI·배포는 이번 검증에 포함하지 않는다.
+
+
+## CONVERSATION 후속 (2026-10-30)
+
+사용자 승인: 관리자 백그라운드 실행·공통 분석 경로·권한/한도·감사/복구 및 새 요청 테이블. 최신 develop e758e28에서 진행한다. 원격/로컬 브랜치의 V17(REPORT), V18(#162)을 확인했고 신규 V19를 사용한다. 기존 migration은 수정하지 않는다. Redis 사용량과 DB는 단일 원자 트랜잭션이 아니므로 요청 ID 표식으로 중복 차감을 방지하며 접수/실제 실행 이력을 구분한다. 최종 통합 브랜치는 별도 담당 채팅이 생성한다.
+
+V19는 최종 통합에서 V17→V18→V19 순서로 적용한다. 통합 전 V19만 공용 DB에 먼저 적용하지 않는다. #163의 learning 오류 매핑 작업과 파일·브랜치를 공유하지 않는다.
+
+
+### CONVERSATION 검증 진행 기록
+
+- 기존 migration 수정 없음. 신규 V19의 전체 migrate·재실행·report downgrade/upgrade 및 ERD 대조 통과: core 43표/399열, learning 19표/160열, report 8표/56열. 공통 63개 거부 사례와 75개 CHECK 값 집합을 확인했다. 새 (status,accepted_at) 인덱스는 DB 정의와 별도 대조했다.
+- 별도 V16 DB에 기존 ANSWER 근거를 넣은 후 V17→V18→V19 순차 적용 통과. 기존 ANSWER ID·버전 보존, REFLECTION 및 새 재처리 요청 저장을 확인했다.
+- Python 계약 83개, OpenAPI validator, 실제 HTTP 202 응답 JSON Schema 검증 통과.
+- 실제 core HTTP·PostgreSQL·Redis·RabbitMQ·결제 권한/사용 이력과 합성 AI HTTP 응답 서버를 사용했다. 202 후 core 강제 종료→새 프로세스에서 1회 실행, 멱등 캐시 삭제 후 동일 응답 복원을 확인했다. 실행 중 강제 종료 후에는 대기 시각만 검증 DB에서 앞당겨 복구를 확인했으며 FAILED 이력/감사 1회, 두 시나리오 총 AI 호출 2회·Redis 차감 2회·실제 결제 사용 이력 2행을 확인했다. 재기동이 65초 걸려 최초 50초 대기 제한을 넘겼으나 기동 후 결과를 대조했다. 실제 외부 LLM/PG 결제 호출은 없다.
+- 첫 전체 core 345개 실행에서 최초/재접수 응답의 timestamp 정밀도 차이 1건을 발견해 최초 202도 DB 저장값으로 반환하도록 수정했다. 추가 권한 철회 사례와 함께 재검증 중이다. 테스트 import 충돌과 기존 동의 철회 오류 코드 기대값도 보완했다.
+- 이후 전체 검증에서 기존 AiClientTest 2건 및 ConversationIntegrationTest 삭제 경합 1건이 응답 시작/취소 대기 제한을 초과했다. 당시 Windows 가용 물리 메모리는 약 485MB였다. 제한 시간·검증 조건을 완화하지 않고 검증 전용 JVM 메모리/캐시/순차 fork를 줄여 재실행하려 했으나 Docker 엔진 API가 500을 반환해 중단됐다. 당시 전체 core 통과가 미확정이어서 commit/push를 보류했다. 아래 재개 검증으로 해소했다.
+- 검증 소스와 최종 core·테스트·OpenAPI 350파일 해시는 일치했다. 공유 분석 실행 본문은 #162의 기존 이벤트 검증·근거 확인·저장·취소 호출을 유지한다. #162와의 실제 통합 검증은 별도 담당 작업이며 이번에 통합 브랜치를 만들지 않았다. #163 파일·브랜치도 수정하지 않았다.
+
+이슈 확인: #41은 Closed, #47·#67·#162는 Open이다. 기능 검증 통과와 이슈 통합/종료를 구분한다. 별도 통합 작업과 원격 CI 확인은 남아 있으며 이 채팅에서 이슈를 닫지 않는다.
+
+
+### 환경 복구 후 최종 검증 (2026-10-30)
+
+사용자가 Docker를 다시 실행한 뒤 #47 검증을 우선 재개했다. 코드는 변경하지 않았고 worktree의 core·테스트·OpenAPI 350파일이 저장된 검증 소스와 일치했다. 검증 전용 Gradle init에서 maxParallelForks=1, forkEvery=8, Test heap=640m, Spring test context cache=4를 사용하고 Gradle daemon heap=384m, CPU 2·컨테이너 메모리 1792MiB로 제한했다. 이 환경 제한은 저장소/production 설정에 추가하지 않았다. 기존 테스트의 제한 시간·검증 조건을 완화하지 않았다.
+
+- `./gradlew test bootJar` 전체 실행: **53클래스 347개**, 실패·오류·생략 **0**, BUILD SUCCESSFUL(12m28s), 컨테이너 exit 0.
+- 신규 AdminConversationRetryTest **18개**, AiClientTest **5개**, ConversationIntegrationTest **18개** 모두 통과했다. 이전 시간 제한 실패 3건을 포함한 전체 회귀를 확인했다.
+- 앞서 통과한 migration 전체 검증, V17→V18→V19 기존 데이터 보존, 계약 83개, OpenAPI/실제 202 응답, 실제 프로세스 재시작·중단 복구 검증은 코드 변경이 없어 반복하지 않았다.
+- #47 Docker 검증 사용을 종료했다. 공유 Docker 재시작·초기화·공유 자원 정리 및 다른 채팅 컨테이너 조작은 하지 않았다.
+- 브랜치 기준은 develop e758e28이다. 원격 develop의 후속 변경과 #47 REPORT·미션 및 #67·#162 병합은 별도 통합 담당 작업으로 남긴다. V19 원격 번호 중복 없음과 기존 migration 불변을 다시 확인했다. #163·#164 작업 파일을 수정하지 않았다.
+
+현재 결과는 기능 브랜치 보존을 위한 로컬 검증이다. 전체 통합·원격 CI·배포 검증이나 실제 외부 LLM 호출 완료로 표현하지 않는다. PR 생성·병합·이슈 종료는 수행하지 않는다.
+
+## #47·#67·#162 통합 (2026-10-30)
+
+최신 develop d651aa1에서 feature/admin-analysis-integration을 분기했다. REPORT 6be0eb8, 미션 d3d22c9, 분석 674ed64, CONVERSATION be78a29의 기존 커밋을 merge로 보존한다. 관리자·REPORT·분석 보고서와 ERD의 양쪽 내용을 함께 유지했다. OperationRetryService는 인증된 관리자 identity를 두 접수 서비스에 전달하며 REPORT의 새 jobId Location과 CONVERSATION의 기존 jobId Location을 구분한다. NOTIFICATION 200 결과는 유지하고 202 OpenAPI는 REPORT/CONVERSATION oneOf로 합쳤다. 작업 조회는 REPORT 원작업/후속 연결과 CONVERSATION 재처리 가능 여부를 함께 보존한다.
+
+ConversationService의 최종 검증·fallback/notice·ANSWER/REFLECTION과 실행 세대·종료 감사는 모두 유지한다. migration은 V17→V18→V19를 포함하며 기존 파일을 수정하지 않는다. #163 오류 매핑 브랜치는 아직 이 통합 대상에 포함하지 않았다. develop에 반영되기 전 해당 정책을 임의로 덮어쓰지 않으며 향후 병합 시 관리자 미션 오류 매핑 충돌을 확인해야 한다.
+
+최종 검증은 접합 완료 후 통합 소스 기준으로 수행하며 기능 브랜치의 과거 결과와 구분한다. PR은 develop 대상 하나이며 사용자가 생성한다.
+
+### 통합 최종 검증
+
+- core 전체 `test bootJar`: 55클래스 377개 중 375개 통과, 실패 2개·오류/생략 0. 관리자 테스트에는 양쪽 브랜치를 합치면서 남은 기존 “재처리 공급자 없음(503)” 기대값이 있었다. 현재 유효하지 않은 소유자 403·실행 이력 없음·실패 감사 1개로 정렬했다. AiClient 취소 검사는 상류 진입 대기 2초를 넘겼다. 해당 검사 코드를 바꾸거나 제한 시간을 늘리지 않았다. 두 영향 클래스의 18개 테스트와 bootJar를 다시 실행해 모두 통과했다(2분). 초기 전체 실패 로그와 최종 재검증 XML을 각각 보존한다. 이를 전체 377개 단일 실행 성공으로 표현하지 않는다.
+- AI: 통합 소스 pytest 226개, Ruff check·format 통과.
+- 프론트: 관리자 화면 추가 승인 후 최종 test 129개, lint·build 통과. 기존 500kB 초과 번들 경고는 남는다.
+- 계약: Python 84개, core/AI/learning OpenAPI 표준 검사와 core YAML 중복 키 검사 통과. 실제 분석 SSE result 8개, REPORT/CONVERSATION 202 응답 5개가 공개 스키마에 맞는다.
+- DB: 빈 전용 PostgreSQL의 전체 migration·재적용·report downgrade/upgrade 통과. core 44표/407열, learning 19/160, report 8/63; 위반 입력 63개·CHECK 집합 76개·ERD 인덱스 25개 검증. 별도 V16 DB의 기존 ANSWER를 V17→V18→V19로 올려 ID/버전 보존·REFLECTION/재처리 요청 공존을 확인했다. 세 migration 내용은 원본 브랜치와 동일하다.
+- 실제 core→learning: 미션 생성/수정·404·409·권한·전체 counts·overview·감사 오류 10건, 감사 9행 확인. 실제 learning 변경 뒤 core 감사 저장 장애를 주입해 503과 요청 기록·learning 결과 보존을 확인했다.
+- 실제 core→AI 그래프→learning: 정상·숫자/인용 불일치·키 미설정·기록 없음·지원 외·돌아보기·범위 확인·조회 장애/재시도 9개 시나리오 통과. 추가로 실제 SSE 연결 해제 시 FAILED/부분 답변 미저장, 다른 자녀 403, 무인증 401 통과.
+- 실제 관리자 재처리→AI 그래프→learning: 숫자 실패 fallback, 지원 외 notice, REFLECTION 근거 3종을 저장·재조회했다. 작업별 실행 이력/관리자 완료 감사 1개와 멱등 캐시 제거 후 같은 접수 응답 복원을 확인했다.
+- 학부모 브라우저: 통합 Vite→core→AI/learning의 규칙 응답·안내·돌아보기 5개 시나리오, 실제 API 응답 28건, pageerror 0. 로그인 부트스트랩과 LLM만 대역이다.
+- 관리자 브라우저: 모의 HTTP 응답으로 REPORT/CONVERSATION의 QUEUED→RUNNING→COMPLETED, REPORT 새 jobId/원작업 이동, NOTIFICATION 완료를 확인했다. 세 사례 pageerror 0. 202를 완료로 안내하던 기반영 화면은 추가 승인 범위에서 응답 타입·조회 ID·수동 상태 갱신을 보완했다.
+
+검증 소스는 컨테이너 복사 후 SHA-256으로 대조했다. 이후 수정은 관리자 테스트 1개, 승인된 관리자 프론트 및 관련 테스트·문서이며 해당 범위를 재검증했다. 오프라인 npm 캐시 누락, 초기 tar 복사 시점, AI 이미지의 검사 의존성/실행 경로, Gradle 필터 옵션 순서 오류는 준비 단계에서 바로잡았으며 성공 검증에 포함하지 않는다. 최종 코드에 production 의존성이나 검증용 자원 설정을 추가하지 않았다.
+
+실제 외부 LLM·PG 결제·OAuth·report-worker PDF 생성 전체 파이프라인·원격 CI·배포는 이번 통합 검증 범위가 아니다. REPORT의 RabbitMQ 발행·종료 감사는 core 통합 테스트와 실제 생성 응답/이벤트 계약 검사 범위다. 성능·모델 품질 향상을 측정했다고 주장하지 않는다. 로컬 산출물은 admin-analysis-verification에 보존하고 합성 JWT가 든 fixture 파일은 공유/commit하지 않는다.
+
+최종 origin/develop 재조회에서도 d651aa1을 확인했다. 현재 저장소 기본 브랜치도 develop이므로 이 통합 PR의 Closes #47, Closes #67, Closes #162는 해당 기본 브랜치 병합 시 적용된다. #163·#164는 별도 브랜치이며 이 PR의 종료 대상이 아니다.
+
 
 ## #163 learning 오류 매핑 변경 (2026-10-30)
 
@@ -88,3 +200,32 @@ CI 보완 로컬 검증: 전체 Python 계약 검사 69/69 통과. 별도 복사
 초기 저장공간 부족/Docker API 500으로 중단된 실행과, 잘못된 127.0.0.1 host override로 Ryuk 연결에 실패한 실행은 최종 통과 집계에 넣지 않았다. 복구 후 선행 #47의 Docker 사용 종료를 확인하고, 브리지 네트워크의 `TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal` 및 위 검증 전용 자원 설정으로 core 전체를 다시 통과했다. core와 learning 빌드는 같은 전용 Gradle 캐시를 사용하므로 순차 실행해 초기 캐시 잠금 충돌을 피했다. 실제 연동의 전용 컨테이너/네트워크와 중지한 #163 빌드 컨테이너를 정리해 **Docker 검증 사용을 종료**했다. 재현용 소스·캐시 볼륨만 보존했다.
 
 검증 기준은 최초 develop `7f1549a`다. 종료 전 확인한 최신 origin/develop 및 repository default branch는 `d651aa1`·`develop`이며, 후속 develop 변경과 이번 13개 변경 파일의 경로 겹침이 없음을 확인했다. 후속 develop 및 #47·#67·#162 기능을 이번 브랜치에 병합하지 않았으므로 최신 develop 통합 검증이나 원격 CI·배포 완료를 주장하지 않는다. 최종 문서 기록 뒤 `git diff --check`를 확인하고 현재 feature 브랜치에만 커밋·push하며 PR은 생성하지 않는다.
+
+## 최신 develop 3dffad6 접합 (2026-10-30)
+
+#163·#164를 포함한 최신 develop을 이력 보존 merge로 반영한다. 기존 미션 counts·요청/결과 감사·인증 관리자·버전 검증과 #163 Problem Details의 Content-Type/정수 status/code 대조를 모두 유지한다. sanitize는 검증된 404를 고정 문구의 안전한 응답으로 반환해 쓰기 처리의 UNKNOWN 예외 분기로 흘러 503이 되는 것을 방지한다. 정상 404 쓰기는 REJECTED와 X-Admin-Operation-Id를 남기며 불명확한 404·405·501은 503/UNKNOWN이다. 지원 GET 403/404 매핑과 #164 검증 도구 변경은 develop 그대로 보존한다. 과거 절의 “#163 미통합”은 해당 시점의 이력이다.
+
+### 최신 develop 접합 검증 결과
+
+- 원격 develop/MERGE_HEAD를 재조회해 모두 3dffad625890206af6b364e77a4925702d9833a4임을 확인했다.
+- 영향 범위 core 6클래스 99개와 bootJar 통과(실패·오류·생략 0, 8m26s): AdminOperations 17, Support 22, 관리자 대화 재처리 18, 분석 대화 22, REPORT 재처리 19, REPORT 메시징 1. 검증된 404의 조회/쓰기 계약·REJECTED 감사·확인 번호와 불명확한 오류의 503/UNKNOWN, 기존 재처리·근거·저장 회귀를 포함한다.
+- 계약 검사 93개 중 #164의 7개는 최초 샌드박스 임시 폴더 쓰기/정리 권한 오류로 실행되지 못했다. 다른 86개는 통과했고 쓰기 가능한 검증용 TEMP/TMP로 해당 7개를 재실행해 모두 통과했다. 테스트 코드나 판정 조건은 변경하지 않았다.
+- core/AI/learning/support 소비 OpenAPI 4종의 표준·중복 키 검사, 실제 지원 HTTP 응답 7종 및 403/404 응답 2종의 공개 Problem 스키마 대조 통과.
+- 프론트 131개 테스트·lint·build 통과. production 프론트는 기존 통합본과 같고 #163 소비자 테스트가 추가됐다. 기존 번들 크기 경고는 유지한다.
+- 최신 core JAR→실제 learning HTTP 10건·감사 9행 통과. 조회·쓰기 NOT_FOUND의 고정 문구 및 쓰기 X-Admin-Operation-Id를 확인했고, 생성/수정·409·권한·전체 counts·감사 저장 장애의 결과 보존 검증도 유지했다. 합성 계정/JWT이며 실제 OAuth 검증이 아니다.
+- #163 LearningSupportClient/SupportIntegrationTest와 #164 verify_feedback_learning.py는 develop 원본과 동일하다. 기존 AI·프론트 실행 코드·V17~V19 migration은 이전 통합 커밋과 동일하다. 변경 없는 AI·전체 migration·브라우저·프로세스 복구 검사는 반복하지 않았으며 앞 절의 결과를 이력으로 유지한다. 검증 컨테이너의 소스 해시 일치 및 최종 diff 검사를 확인했다.
+
+이 절이 이전 “#163·#164 미반영” 상태를 대체한다. 두 이슈의 변경은 develop 이력으로 포함하며 이 PR의 해결 이슈는 #47·#67·#162다. 원격 CI·배포는 아직 검증하지 않았고 PR 생성 후 확인한다.
+
+## PR #191과 #168 최신 develop 접합
+
+PR HEAD a5b72f7의 CI 5종은 모두 성공했으나 develop eed6513(PR #190/#168) 이후 Conversations.kt 충돌로 병합이 막혔다. #168의 ErrorKind INVALID/NOT_FOUND/CONFLICT 변환과 #162 EvidenceRow의 nullable answerId/answerVersion·kind, MessageRow의 fallback/notice를 함께 보존한다. #168 JsonObject·결제 응답 DTO·사용량 이벤트 domain·알림 consumer/config 이동은 원본 그대로 반영하고 기존 재처리·감사 흐름을 유지한다. core 전체 및 계약 검증 후 결과를 기록한다.
+
+### #168 접합 검증 결과
+
+- 최신 develop eed651335d89a3ee2d054347190fa1859214cdfa를 재조회해 병합 기준과 일치함을 확인했다. 충돌한 Conversations.kt는 기존 통합본 대비 import 1개와 오류 생성 3줄만 ErrorKind 방식으로 바뀌며, MessageRow/EvidenceRow의 #162 필드는 보존했다.
+- 새 소스 볼륨에서 core 전체 test/bootJar를 실행했다. 57클래스 393개 중 380개 통과, 13개 실패·오류/생략 0. AuthFlowIntegrationTest 12개는 RabbitMQ 시작 로그 대기 시간 초과에 따른 클래스 초기화 실패였고 AiClientTest의 SSE 파서 검사 1개도 스트림 중단으로 실패했다. 공유 Docker에서 다른 검증이 동시에 실행된 사실은 확인했지만 직접 원인으로 단정하지 않는다.
+- 원본 전체 XML/로그를 보존한 뒤 두 클래스를 각각 새 JVM에서 재실행했다. 인증 12개(1m25s), AI 클라이언트 5개 및 bootJar(22s) 모두 통과했다. 검사 코드·시간 제한·production 설정은 변경하지 않았다. 전체 393개 단일 실행 성공으로 표현하지 않는다.
+- Python 계약 검사 93개·OpenAPI 4종 통과. 새 core 테스트의 실제 결제 5종·알림 2종·리포트 HTTP/이벤트·지원 7종·REPORT 재처리 접수/상세/이벤트 JSON을 기존 공개 계약과 대조해 모두 통과했다. PG·learning 외부 응답은 해당 core 테스트의 대역 범위다.
+- 소스 SHA-256 일치, 이전 알림 클래스 경로가 검증 볼륨에 남지 않음, 실행 코드의 이전 import 미잔존, 최종 diff 검사를 확인했다. 문서에 남은 이전 경로는 #168 변경 전 위반/이동 이력이다.
+- #168의 payment/usage/notification/_common/json 구현은 develop 원본과 동일하고 migration·AI·프론트 실행 코드는 이번에 변경하지 않았다. 변경 없는 브라우저·실서비스 전체 검증은 반복하지 않았다. 이후 PR 새 HEAD의 원격 CI는 별도 확인한다.

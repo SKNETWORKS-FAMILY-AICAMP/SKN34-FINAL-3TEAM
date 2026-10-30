@@ -1,3 +1,4 @@
+import { analysisResultLabel } from '../../domain/parent.ts'
 import { useEffect, useRef, useState } from 'react'
 import { ReportProblem } from '../service/ReportProblem.tsx'
 import { useQueryClient } from '@tanstack/react-query'
@@ -148,7 +149,7 @@ export function ParentConversation({
               ) : m.status === 'COMPLETED' &&
                 m.answer &&
                 m.verification?.numbersMatched &&
-                m.verification.quotesMatched ? (
+                m.verification.quotesMatched && m.verification.contentAllowed !== false ? (
                 <>
                   <p>{m.answer}</p>
                   <ReportProblem targetType="ANALYSIS" targetId={m.messageId}/>
@@ -163,9 +164,9 @@ export function ParentConversation({
                       이 범위를 화면 전체에 적용
                     </button>
                   )}
-                  {m.fallback && (
+                  {(m.fallback || m.notice) && (
                     <p className="ws-tag">
-                      {m.fallback.reason} · 규칙 응답 모드(TEMPLATE). 대조 실패 사실을 안내합니다.
+                      {analysisResultLabel(m)}
                     </p>
                   )}
                   {m.metrics && <MetricCards metrics={m.metrics} />}

@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.annotation.Propagation
 import java.time.Clock
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
@@ -41,6 +42,11 @@ class ReportJobService(private val repository: ReportJobRepository, private val 
         return create(original.studentId, ReportPeriod(original.periodFrom, original.periodTo),
             if (admin) ReportTrigger.ADMIN_RETRY else ReportTrigger.REGENERATE, actor.account.id)
     }
+
+    /** Caller owns source/student/week validation and the acceptance transaction. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun enqueueAdminRetry(original: ReportJob, actor: UUID): ReportJobAccepted =
+        create(original.studentId, ReportPeriod(original.periodFrom,original.periodTo), ReportTrigger.ADMIN_RETRY, actor)
 
     private fun create(studentId: UUID, period: ReportPeriod, trigger: ReportTrigger, actor: UUID?): ReportJobAccepted {
         val narrative = entitlements.narrativeEnabled(studentId)

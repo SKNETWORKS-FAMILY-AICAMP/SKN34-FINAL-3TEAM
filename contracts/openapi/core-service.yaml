@@ -217,7 +217,7 @@ paths:
       operationId: adminOperationsRetry
       tags:
       - Admin
-      description: 'SERVICE_OPS 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      description: SERVICE_OPS. REPORT는 새 ADMIN_RETRY job, CONVERSATION은 영속 대기 요청을 202와 Location으로 접수한다. NOTIFICATION은 기존 실제 처리 결과 200이다. 원작업은 보존한다.
       parameters:
       - name: jobId
         in: path
@@ -232,6 +232,19 @@ paths:
           type: string
           format: uuid
       responses:
+        '202':
+          description: REPORT 또는 CONVERSATION 재처리 접수. 실제 결과는 Location의 작업 상세에서 조회한다.
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/ReportRetryAccepted'
+                - $ref: '#/components/schemas/ConversationRetryAccepted'
         '200':
           description: 성공
           content:
@@ -416,11 +429,17 @@ paths:
       operationId: adminMissionsCreate
       tags:
       - Admin
-      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      description: 'CONTENT 권한. 요청 감사 후 단일 호출, 응답 missionId·버전으로 결과 감사. 404는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
       parameters: []
       responses:
         '201':
           description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
           content:
             application/json:
               schema:
@@ -497,7 +516,7 @@ paths:
       operationId: adminMissionsUpdate
       tags:
       - Admin
-      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      description: 'CONTENT 권한. 요청 감사 후 단일 호출, 응답 missionId·버전으로 결과 감사. 404는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
       parameters:
       - name: missionId
         in: path
@@ -508,6 +527,12 @@ paths:
       responses:
         '200':
           description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
           content:
             application/json:
               schema:
@@ -544,7 +569,7 @@ paths:
       operationId: adminMissionsRubric
       tags:
       - Admin
-      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      description: 'CONTENT 권한. 요청 감사 후 단일 호출, 응답 missionId·버전으로 결과 감사. 404는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
       parameters:
       - name: missionId
         in: path
@@ -555,6 +580,12 @@ paths:
       responses:
         '200':
           description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
           content:
             application/json:
               schema:
@@ -632,7 +663,7 @@ paths:
       operationId: adminMissionsRequestReview
       tags:
       - Admin
-      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      description: 'CONTENT 권한. 요청 감사 후 단일 호출, 응답 missionId·버전으로 결과 감사. 404는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
       parameters:
       - name: missionId
         in: path
@@ -643,6 +674,12 @@ paths:
       responses:
         '200':
           description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
           content:
             application/json:
               schema:
@@ -679,7 +716,7 @@ paths:
       operationId: adminMissionsReview
       tags:
       - Admin
-      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      description: 'CONTENT 권한. 요청 감사 후 단일 호출, 응답 missionId·버전으로 결과 감사. 404는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
       parameters:
       - name: missionId
         in: path
@@ -690,6 +727,12 @@ paths:
       responses:
         '200':
           description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
           content:
             application/json:
               schema:
@@ -726,7 +769,7 @@ paths:
       operationId: adminMissionsPublish
       tags:
       - Admin
-      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      description: 'CONTENT 권한. 요청 감사 후 단일 호출, 응답 missionId·버전으로 결과 감사. 404는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
       parameters:
       - name: missionId
         in: path
@@ -737,6 +780,12 @@ paths:
       responses:
         '200':
           description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
           content:
             application/json:
               schema:
@@ -773,7 +822,7 @@ paths:
       operationId: adminMissionsUnpublish
       tags:
       - Admin
-      description: 'CONTENT 권한. #47 상세 기간·장애·공급자 조건은 api-spec 2.8을 따른다.'
+      description: 'CONTENT 권한. 요청 감사 후 단일 호출, 응답 missionId·버전으로 결과 감사. 404는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
       parameters:
       - name: missionId
         in: path
@@ -784,6 +833,12 @@ paths:
       responses:
         '200':
           description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
           content:
             application/json:
               schema:
@@ -5551,7 +5606,7 @@ paths:
       operationId: post_conversations_conversationId_messages
       description: '#41 계약: docs/report/issue-41-analysis-conversations.md. 첫 응답 20초·전체
         120초, 취소 FAILED, delta 미저장. Events status, delta, result, clarification, error,
-        done. result는 AnalysisMessage의 확정 답변 필드, clarification은 question/options, error는
+        done. result는 AnalysisFinalResult, clarification은 question/options, error는
         Problem + retryable/messageId다. delta는 임시 text만 포함한다.'
       responses:
         '200':
@@ -5604,7 +5659,7 @@ paths:
       operationId: post_conversations_conversationId_messages_messageId_retry
       description: '#41 계약: docs/report/issue-41-analysis-conversations.md. 첫 응답 20초·전체
         120초, 취소 FAILED, delta 미저장. Events status, delta, result, clarification, error,
-        done. result는 AnalysisMessage의 확정 답변 필드, clarification은 question/options, error는
+        done. result는 AnalysisFinalResult, clarification은 question/options, error는
         Problem + retryable/messageId다. delta는 임시 text만 포함한다.'
       responses:
         '200':
@@ -5729,6 +5784,159 @@ components:
         type: string
         const: XMLHttpRequest
   schemas:
+    AnalysisFinalResult:
+      type: object
+      required:
+      - messageId
+      - answer
+      - scope
+      - source
+      - metrics
+      - evidence
+      - verification
+      - recordCount
+      properties:
+        messageId:
+          type: string
+          format: uuid
+        answer:
+          type: string
+          minLength: 1
+        scope:
+          $ref: '#/components/schemas/AnalysisScope'
+        source:
+          enum:
+          - LLM
+          - LLM_RETRY
+          - TEMPLATE
+        metrics:
+          type: array
+          items:
+            type: object
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalysisEvidence'
+        verification:
+          type: object
+          additionalProperties: false
+          required:
+          - numbersMatched
+          - quotesMatched
+          - contentAllowed
+          properties:
+            numbersMatched:
+              type: boolean
+              const: true
+            quotesMatched:
+              type: boolean
+              const: true
+            contentAllowed:
+              type: boolean
+              const: true
+        recordCount:
+          type: integer
+          minimum: 0
+        fallback:
+          anyOf:
+          - type: object
+            additionalProperties: false
+            required:
+            - reason
+            - draftVerification
+            properties:
+              reason:
+                enum:
+                - VERIFICATION_FAILED
+                - AI_UNAVAILABLE
+              draftVerification:
+                anyOf:
+                - $ref: '#/components/schemas/AnalysisVerification'
+                - type: 'null'
+            allOf:
+            - if:
+                properties:
+                  reason:
+                    const: VERIFICATION_FAILED
+              then:
+                properties:
+                  draftVerification:
+                    type: object
+                    anyOf:
+                    - properties:
+                        numbersMatched:
+                          const: false
+                    - properties:
+                        quotesMatched:
+                          const: false
+                    - properties:
+                        contentAllowed:
+                          const: false
+              else:
+                properties:
+                  draftVerification:
+                    type: 'null'
+          - type: 'null'
+        notice:
+          anyOf:
+          - $ref: '#/components/schemas/AnalysisNotice'
+          - type: 'null'
+      oneOf:
+      - properties:
+          source:
+            enum:
+            - LLM
+            - LLM_RETRY
+          fallback:
+            type: 'null'
+          notice:
+            type: 'null'
+      - required:
+        - fallback
+        properties:
+          source:
+            const: TEMPLATE
+          fallback:
+            type: object
+          notice:
+            type: 'null'
+      - required:
+        - notice
+        properties:
+          source:
+            const: TEMPLATE
+          fallback:
+            type: 'null'
+          notice:
+            type: object
+    AnalysisNotice:
+      type: object
+      additionalProperties: false
+      required:
+      - reason
+      properties:
+        reason:
+          type: string
+          enum:
+          - NO_RECORD
+          - NO_CHANGES
+          - NO_REFLECTIONS
+          - UNSUPPORTED
+          - MATH_CHECK
+    AnalysisVerification:
+      type: object
+      additionalProperties: false
+      required:
+      - numbersMatched
+      - quotesMatched
+      - contentAllowed
+      properties:
+        numbersMatched:
+          type: boolean
+        quotesMatched:
+          type: boolean
+        contentAllowed:
+          type: boolean
     AnalysisScope:
       type: object
       required:
@@ -5752,21 +5960,43 @@ components:
       - attemptId
       - answerId
       properties:
-        evidenceId: *analysis_id002
-        attemptId: *analysis_id002
-        answerId: *analysis_id002
+        evidenceId:
+          type: string
+          format: uuid
+        attemptId:
+          type: string
+          format: uuid
+        answerId:
+          type:
+          - string
+          - 'null'
+          format: uuid
         answerVersion:
-          type: integer
+          type:
+          - integer
+          - 'null'
           minimum: 1
         available:
           type: boolean
         quote:
-          type: string
+          type:
+          - string
+          - 'null'
         submittedAt:
-          type: string
+          type:
+          - string
+          - 'null'
           format: date-time
         missionTitle:
+          type:
+          - string
+          - 'null'
+        kind:
           type: string
+          enum:
+          - ANSWER
+          - REFLECTION
+          default: ANSWER
     AnalysisMessage:
       type: object
       required:
@@ -5775,7 +6005,9 @@ components:
       - status
       - retryable
       properties:
-        messageId: *analysis_id002
+        messageId:
+          type: string
+          format: uuid
         question:
           type: string
         status:
@@ -5838,12 +6070,20 @@ components:
               enum:
               - AI_UNAVAILABLE
               - VERIFICATION_FAILED
+            draftVerification:
+              anyOf:
+              - $ref: '#/components/schemas/AnalysisVerification'
+              - type: 'null'
         retryable:
           type: boolean
         evidence:
           type: array
           items:
             $ref: '#/components/schemas/AnalysisEvidence'
+        notice:
+          anyOf:
+          - $ref: '#/components/schemas/AnalysisNotice'
+          - type: 'null'
     AnalysisConversation:
       type: object
       required:
@@ -5991,6 +6231,8 @@ components:
       - executions
       - retryable
       - retryUnavailableReason
+      - retryOfJobId
+      - retryJobId
       properties:
         jobId:
           type: string
@@ -6029,6 +6271,41 @@ components:
           type:
           - string
           - 'null'
+        retryOfJobId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        retryJobId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+    ReportRetryAccepted:
+      type: object
+      additionalProperties: false
+      required:
+      - originalJobId
+      - jobId
+      - type
+      - status
+      - acceptedAt
+      properties:
+        originalJobId:
+          type: string
+          format: uuid
+        jobId:
+          type: string
+          format: uuid
+        type:
+          type: string
+          const: REPORT
+        status:
+          type: string
+          const: QUEUED
+        acceptedAt:
+          type: string
+          format: date-time
     OperationAudit:
       type: object
       additionalProperties: false
@@ -6114,6 +6391,27 @@ components:
           type: integer
           format: int64
           minimum: 0
+    ConversationRetryAccepted:
+      type: object
+      additionalProperties: false
+      required: [jobId, retryRequestId, generation, acceptedAt, type, status]
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        retryRequestId:
+          type: string
+          format: uuid
+        generation:
+          type: integer
+          minimum: 1
+        acceptedAt:
+          type: string
+          format: date-time
+        type:
+          const: CONVERSATION
+        status:
+          const: QUEUED
     OperationOverview:
       type: object
       additionalProperties: false
@@ -6122,6 +6420,8 @@ components:
       - inclusionRule
       - learning
       - jobCounts
+      - missionCounts
+      - missionInclusionRule
       properties:
         period:
           $ref: '#/components/schemas/OperationPeriod'
@@ -6150,6 +6450,25 @@ components:
               minimum: 0
             inclusionRule:
               type: string
+        missionInclusionRule:
+          type: string
+          description: 전체 미션 현재 상태이며 기간·페이지·필터와 무관하다.
+        missionCounts:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: object
+            additionalProperties: false
+            required: [status, count]
+            properties:
+              status:
+                type: string
+                enum: [DRAFT, REVIEW_REQUIRED, PUBLISHED, UNPUBLISHED]
+              count:
+                type: integer
+                format: int64
+                minimum: 0
         jobCounts:
           type: array
           items:

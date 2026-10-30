@@ -4,6 +4,7 @@ import asyncio
 import json
 import time
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.analysis_agent.models import AnalysisRequest
@@ -134,8 +135,9 @@ def test_verification_failure_falls_back_to_template() -> None:
     assert "delta" in [name for name, _ in parsed]  # 임시 텍스트는 이미 보냈지만 확정하지 않음
     result = parsed[-2][1]
     assert result["source"] == "TEMPLATE"
-    assert result["fallback"] == {"reason": "VERIFICATION_FAILED"}
-    assert result["verification"]["numbersMatched"] is False
+    assert result["fallback"]["reason"] == "VERIFICATION_FAILED"
+    assert result["fallback"]["draftVerification"]["numbersMatched"] is False
+    assert all(result["verification"].values())
     assert "7개" not in result["answer"]  # LLM 문장은 버림
     assert "글자 수가 늘어난 시도: 1개 중 1개" in result["answer"]
     assert "학습한 활동: 3개" in result["answer"]
@@ -145,15 +147,15 @@ def test_llm_unavailable_falls_back_to_template() -> None:
     llm = FakeLlm(LlmError("LLM_SERVER_ERROR", retryable=True))
     result = events(post(llm))[-2][1]
     assert result["source"] == "TEMPLATE"
-    assert result["fallback"] == {"reason": "AI_UNAVAILABLE"}
-    assert result["verification"] is None
+    assert result["fallback"] == {"reason": "AI_UNAVAILABLE", "draftVerification": None}
+    assert all(result["verification"].values())
     assert result["metrics"][0]["count"] == 3
 
 
 def test_answer_llm_failure_falls_back_to_template() -> None:
     llm = FakeLlm(classified("CHILD_THOUGHTS"), LlmError("LLM_TIMEOUT", retryable=True))
     result = events(post(llm))[-2][1]
-    assert result["fallback"] == {"reason": "AI_UNAVAILABLE"}
+    assert result["fallback"] == {"reason": "AI_UNAVAILABLE", "draftVerification": None}
     assert len(result["evidence"]) == 3
     assert {e["kind"] for e in result["evidence"]} == {"ANSWER"}
 
@@ -181,7 +183,7 @@ def test_stream_failure_after_first_token_is_not_retried() -> None:
     result = parsed[-2][1]
     assert [data["text"] for name, data in parsed if name == "delta"] == ["3개 시도"]
     assert result["source"] == "TEMPLATE"
-    assert result["fallback"] == {"reason": "AI_UNAVAILABLE"}
+    assert result["fallback"] == {"reason": "AI_UNAVAILABLE", "draftVerification": None}
     assert len(llm.requests) == 2  # 보낸 조각이 있으면 다시 요청하지 않음
 
 
@@ -271,3 +273,68 @@ def test_other_child_is_forbidden_before_streaming() -> None:
 def test_invalid_period_is_validation_error() -> None:
     body = {**BODY, "scope": {"studentId": "s-1", "from": "2026-10-27", "to": "2026-10-20"}}
     assert post(FakeLlm(), body=body).status_code == 400
+
+
+@pytest.mark.parametrize(
+    "intent,reason",
+    [
+        ("CHANGES", "NO_CHANGES"),
+        ("REFLECTIONS", "NO_REFLECTIONS"),
+        ("OTHER", "UNSUPPORTED"),
+        ("MATH_CHECK", "MATH_CHECK"),
+    ],
+)
+def test_notices_have_verified_final_text_and_no_failure(intent, reason):
+    records = FakeRecords()
+    if intent == "CHANGES":
+        records._records.changes = []
+    elif intent == "REFLECTIONS":
+        for attempt in records._records.attempts:
+            attempt.reflection = None
+    result = events(post(FakeLlm(classified(intent)), records))[-2][1]
+    assert result["source"] == "TEMPLATE"
+    assert result["notice"] == {"reason": reason}
+    assert result["fallback"] is None
+    assert all(result["verification"].values())
+
+
+def test_no_record_notice_is_verified():
+    result = events(post(FakeLlm(classified("COUNT")), FakeRecords(empty=True)))[-2][1]
+    assert result["notice"] == {"reason": "NO_RECORD"}
+    assert all(result["verification"].values())
+
+
+def test_llm_failure_is_preserved_even_when_records_are_empty():
+    result = events(
+        post(FakeLlm(LlmError("LLM_SERVER_ERROR", retryable=True)), FakeRecords(empty=True))
+    )[-2][1]
+    assert result["fallback"] == {"reason": "AI_UNAVAILABLE", "draftVerification": None}
+    assert result["notice"] is None
+    assert result["recordCount"] == 0
+    assert all(result["verification"].values())
+
+
+@pytest.mark.parametrize(
+    "draft,field",
+    [
+        ("99999개 활동이에요.", "numbersMatched"),
+        ("“원문에 없는 인용”이라고 썼어요.", "quotesMatched"),
+        ("사고력이 좋아졌어요.", "contentAllowed"),
+    ],
+)
+def test_failed_draft_attestation_is_preserved_separately(draft, field):
+    result = events(post(FakeLlm(classified("CHANGES"), draft)))[-2][1]
+    assert result["fallback"]["draftVerification"][field] is False
+    assert all(result["verification"].values())
+    assert result["answer"] != draft
+
+
+def test_invalid_final_template_is_error_without_result_or_done(monkeypatch):
+    from app.analysis_agent import templates
+
+    monkeypatch.setattr(templates, "fallback_answer", lambda *args: "99999개 활동이에요.")
+    parsed = events(post(FakeLlm(classified("CHANGES"), "99998개 활동이에요.")))
+    assert parsed[-1][0] == "error"
+    assert parsed[-1][1]["code"] == "FINAL_RESPONSE_VERIFICATION_FAILED"
+    assert parsed[-1][1]["retryable"] is True
+    assert not any(name in {"result", "done"} for name, _ in parsed)

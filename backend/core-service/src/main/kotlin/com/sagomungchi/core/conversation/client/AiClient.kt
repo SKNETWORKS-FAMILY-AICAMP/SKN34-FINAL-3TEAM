@@ -35,7 +35,7 @@ class AnalysisCall {
 class AiClient internal constructor(factory: InternalRestClientFactory, private val json: ObjectMapper,
     private val firstResponse: Duration, private val total: Duration) {
     @Autowired constructor(factory: InternalRestClientFactory, json: ObjectMapper) : this(factory, json, Duration.ofSeconds(20), Duration.ofSeconds(120))
-    private val client = factory.create("ai", total)
+    private val client = factory.create("ai", total, java.net.http.HttpClient.Version.HTTP_1_1)
     private val timer = ScheduledThreadPoolExecutor(1, Thread.ofPlatform().daemon().name("analysis-deadline").factory())
         .apply { removeOnCancelPolicy = true }
 
