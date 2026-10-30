@@ -1,4 +1,4 @@
-# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82)
+# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82·#169)
 
 통합 원본: learning-mission, learning-attempt, learning-answer, learning-feedback, learning-reflection, learning-records, learning-judgment-rules
 
@@ -247,3 +247,18 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
   - `parent-admin-browser.mjs`는 두 번째 검사(신규 가입, 이메일 입력칸)에서 시간 초과. develop 원본에서도 같아 #82와 무관한 기존 문제(프론트 담당 확인 필요)
   - 새로고침하면 실패한 피드백의 `retryable`을 알 수 없음(시도 상세의 `FAILED` 결과에는 없음). 그때는 다시 요청 버튼을 보여 주고, learning이 `FAILED`를 다시 실행
   - 웹 CI(`_web.yml`)는 lint·build만 돌리고 `npm test`·브라우저 테스트는 돌리지 않음
+
+## 13. domain 프레임워크 의존 정리 (#169)
+
+[점검 기록](audit.md) 3.7 A3: learning domain 6개 파일이 `HttpStatus`(5개)·Jackson `@JsonInclude`(`Support.kt`)를 참조해 아키텍처 2.1 "Domain은 프레임워크 의존 금지"와 다름. 확인 필요 항목(domain의 HttpStatus 허용 여부)은 허용하지 않는 쪽으로 정함(core #168과 같은 결정 대상). 설계 문서의 원칙은 그대로이고, API 응답(code·status·본문)은 바뀌지 않음
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| domain 오류 | domain은 `BusinessException(ErrorKind.CONFLICT, code, …)`처럼 오류 종류(`INVALID`·`CONFLICT`·`UNPROCESSABLE`)만 넘기고, 400·409·422 변환은 `_common/exception`의 `BusinessException` 보조 생성자가 함. domain 5개 파일 10곳(`AnswerContent`·`Attempt`·`Judgment`·`Mission`·`Period`, `MissionPublishIncompleteException` 포함) | 아키텍처 2.1(domain 의존 금지)·2.3(예외 → 응답 변환은 `_common/exception`), 이슈 "새 계층·공통 라이브러리 만들지 않음" |
+| 별도 domain 예외를 두지 않은 이유 | 같은 code(`ATTEMPT_CLOSED`·`ANSWER_INCOMPLETE`·`REVEAL_CONDITION_UNMET`·`JUDGMENT_STATE_CONFLICT`)를 service도 던짐. 예외 타입을 나누면 처리기·테스트 약 40곳이 "어느 층에서 던졌나"에 따라 갈리고, 기존 테스트가 하던 HTTP 상태 확인을 잃음 | 이슈 완료 조건 "오류 응답 code·status 변화 없음"을 기존 테스트 그대로 검증 |
+| 신고 대상 응답 | `@JsonInclude(NON_NULL)`을 domain `SupportTarget`에서 새 응답 DTO `SupportTargetResponse`(`judgment/controller/SupportResponses.kt`)로 옮김. `SupportController.target`이 변환해 반환 | 이슈 해야 할 일 3, 기존 `AttemptResponses`·`MissionResponses` 방식 |
+
+- 설계와 다른 점: 없음. class-diagram 4.2 `SupportController.target` 반환 타입만 `SupportTargetResponse`로 고침. 공통 `BusinessException` 그림(class-diagram 1장, core와 공유)은 필드가 그대로라 손대지 않음. OpenAPI 스키마 이름 `SupportTarget`은 응답 모양이 같아 그대로
+- 새 파일: `judgment/controller/SupportResponses.kt`. 기존 파일 수정: `_common/exception/BusinessException.kt`(보조 생성자·`ErrorKind`), domain 위 5개 파일(import·상태 인자), `judgment/domain/Support.kt`(`@JsonInclude` 제거), `judgment/controller/SupportController.kt`(응답 DTO)
+- 검증: domain(`*/domain/`)의 `org.springframework`·`com.fasterxml` import 0건. learning 테스트 246개 통과(테스트 코드 변경 없음, HTTP 상태·code 확인 그대로), scripts/tests 83개. 보호 장치 4개를 틀리게 하면 각각 실패(`INVALID`→400·`CONFLICT`→409·`UNPROCESSABLE`→422 변환, 응답 DTO의 없는 칸 생략)
+- 한계: 예외 객체는 실행 중에 HTTP 상태를 들고 있음(domain 코드는 모름). 오류 종류는 지금 domain에서 쓰는 세 가지뿐이고, 새 종류가 필요하면 `ErrorKind`와 변환을 함께 늘림
