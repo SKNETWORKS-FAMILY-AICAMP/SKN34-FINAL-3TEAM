@@ -43,7 +43,8 @@ interface TossGateway {
 @Component
 class TossClient(private val json: ObjectMapper,
     @Value("\${app.payment.toss-secret:}") private val secret: String,
-    @Value("\${app.payment.toss-billing-secret:}") private val billingSecret: String): TossGateway {
+    @Value("\${app.payment.toss-billing-secret:}") private val billingSecret: String,
+    @Value("\${app.payment.toss-widget-secret:}") private val widgetSecret: String = ""): TossGateway {
     private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build()
     override fun confirm(key: String, order: String, amount: Int, idempotency: UUID) = payment(
         call("POST","/v1/payments/confirm",false,idempotency,mapOf("paymentKey" to key,"orderId" to order,"amount" to amount)))
@@ -79,7 +80,7 @@ class TossClient(private val json: ObjectMapper,
     }
     private fun call(method: String, path: String, billing: Boolean, key: UUID? = null, body: Any? = null,timeout: Duration=Duration.ofSeconds(6)): Pair<Int,JsonNode?> {
         check(!TransactionSynchronizationManager.isActualTransactionActive()) { "PG calls require no transaction" }
-        val credential = if(billing) billingSecret else secret
+        val credential = if(billing) billingSecret else secret.ifBlank { widgetSecret }
         if(!(credential.startsWith("test_sk_") || (!billing && credential.startsWith("test_gsk_")))) unavailable()
         return try {
             val request = HttpRequest.newBuilder(URI.create("https://api.tosspayments.com$path"))
