@@ -5,11 +5,15 @@
 
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI
 from sqlalchemy import Engine, text
 
+from app.clients.base import internal_client
+from app.clients.learning_client import LearningClient
+from app.clients.storage import ObjectStorage
+from app.concurrency import run_blocking
 from app.config import get_settings
 from app.database import create_db_engine, create_session_factory
 from app.errors import install_problem_openapi, register_error_handlers
@@ -39,7 +43,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     app.state.readiness_checks = {"database": database_ready}
     try:
-        yield
+        async with AsyncExitStack() as clients:
+            http = await clients.enter_async_context(internal_client(get_settings().learning_url))
+            storage = await run_blocking(ObjectStorage.configured)
+            clients.push_async_callback(run_blocking, storage.close)
+            app.state.learning_client = LearningClient(http)
+            app.state.storage = storage
+            yield
     finally:
         engine.dispose()
 
