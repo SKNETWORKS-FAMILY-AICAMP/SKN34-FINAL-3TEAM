@@ -20,6 +20,8 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.support.TransactionTemplate
 import org.testcontainers.containers.PostgreSQLContainer
 import java.time.OffsetDateTime
 import java.util.UUID
@@ -30,7 +32,8 @@ import kotlin.test.assertEquals
 
 /**
  * 동시 요청 (이슈 #23 완료 조건): 같은 학생·미션의 동시 시작은 시도 하나로(ERD 부분 UK),
- * 같은 버전의 동시 초안 저장은 하나만 성공하고 나머지는 409(FN-LRN-17), 동시 마무리는 모두 같은 결과·동시 돌아보기는 하나만 학습 완료(이슈 #26).
+ * 같은 버전의 동시 초안 저장은 하나만 성공하고 나머지는 409(FN-LRN-17), 동시 마무리는 모두 같은 결과·동시 돌아보기는 하나만 학습 완료(이슈 #26),
+ * 돌아보기 완료와 겹친 초안 저장은 닫힌 시도에 저장되지 않음(이슈 #137, audit B14).
  * 요청마다 실제로 커밋해야 해서 롤백하는 PostgresRepositoryTest 대신 별도 컨테이너를 씀 (repository-foundation 보고서).
  */
 @SpringBootTest(properties = [
@@ -42,6 +45,7 @@ class AttemptConcurrencyTest {
     @Autowired lateinit var service: AttemptService
     @Autowired lateinit var answerService: AnswerService
     @Autowired lateinit var jdbc: JdbcTemplate
+    @Autowired lateinit var transactions: PlatformTransactionManager
 
     @Test
     fun `동시에 시작해도 시도와 초안은 하나이고 모두 같은 attemptId`() {
@@ -198,6 +202,64 @@ class AttemptConcurrencyTest {
         assertEquals(List(requests - 1) { "ATTEMPT_CLOSED" }, outcomes.filter { it != "COMPLETED" })
         assertEquals(1, count("SELECT count(*) FROM reflection WHERE attempt_id = ?", attempt.id))
         assertEquals(1, count("SELECT count(*) FROM attempt WHERE id = ? AND status = 'COMPLETED' AND completed_at IS NOT NULL", attempt.id))
+    }
+
+    @Test
+    fun `돌아보기 완료가 커밋되기 전 초안 저장은 기다렸다가 ATTEMPT_CLOSED, 닫힌 시도의 초안은 그대로 (이슈 #137)`() {
+        val student = UUID.randomUUID()
+        val context = UserContext(null, "STUDENT", setOf(student.toString()), null)
+        val rows = TestRows(jdbc)
+        val mission = rows.mission()
+        rows.rubric(mission)
+        UserContextHolder.set(context)
+        val attempt = try {
+            val attempt = service.start(student, mission.id, grade = 3, demo = false).attempt
+            rows.judged(answerService.submit(attempt.id, UUID.randomUUID(), SubmitCommand(InputType.NARRATIVE, AnswerContent(text = "놀 수 있어서 좋아요"), false, null)).id)
+            service.finish(attempt.id)
+            attempt
+        } finally {
+            UserContextHolder.clear()
+        }
+        val before = jdbc.queryForMap("SELECT version, content::text AS content, saved_at FROM attempt_draft WHERE attempt_id = ?", attempt.id)
+        val locked = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(2)
+
+        // 돌아보기: 시도 행을 잠그고 완료로 바꾼 뒤 커밋 직전에 멈춤
+        val reflection = pool.submit {
+            UserContextHolder.set(context)
+            try {
+                TransactionTemplate(transactions).executeWithoutResult {
+                    service.saveReflection(attempt.id, Reflection(Difficulty.NORMAL, null))
+                    locked.countDown()
+                    check(release.await(30, TimeUnit.SECONDS))
+                }
+            } finally {
+                UserContextHolder.clear()
+            }
+        }
+        check(locked.await(10, TimeUnit.SECONDS))
+        val draft = pool.submit<Any> {
+            UserContextHolder.set(context)
+            try {
+                service.saveDraft(attempt.id, ifMatch = before["version"] as Int, content = DraftContent(mapOf("text" to "완료 뒤 초안"), "메모"))
+            } catch (closed: BusinessException) {
+                closed.code
+            } finally {
+                UserContextHolder.clear()
+            }
+        }
+        // 잠금이 있으면 초안 저장은 돌아보기 커밋을 기다림
+        Thread.sleep(500)
+        val waited = !draft.isDone
+        release.countDown()
+        reflection.get(30, TimeUnit.SECONDS)
+        val outcome = draft.get(30, TimeUnit.SECONDS)
+        pool.shutdown()
+
+        assertEquals(true to "ATTEMPT_CLOSED", waited to outcome)
+        assertEquals(before, jdbc.queryForMap("SELECT version, content::text AS content, saved_at FROM attempt_draft WHERE attempt_id = ?", attempt.id))
+        assertEquals(1, count("SELECT count(*) FROM attempt WHERE id = ? AND status = 'COMPLETED'", attempt.id))
     }
 
     private fun count(sql: String, id: UUID) = jdbc.queryForObject(sql, Int::class.java, id)
