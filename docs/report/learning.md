@@ -1,4 +1,4 @@
-# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82·#169)
+# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82·#169·#137)
 
 통합 원본: learning-mission, learning-attempt, learning-answer, learning-feedback, learning-reflection, learning-records, learning-judgment-rules
 
@@ -262,3 +262,16 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 - 새 파일: `judgment/controller/SupportResponses.kt`. 기존 파일 수정: `_common/exception/BusinessException.kt`(보조 생성자·`ErrorKind`), domain 위 5개 파일(import·상태 인자), `judgment/domain/Support.kt`(`@JsonInclude` 제거), `judgment/controller/SupportController.kt`(응답 DTO)
 - 검증: domain(`*/domain/`)의 `org.springframework`·`com.fasterxml` import 0건. learning 테스트 246개 통과(테스트 코드 변경 없음, HTTP 상태·code 확인 그대로), scripts/tests 83개. 보호 장치 4개를 틀리게 하면 각각 실패(`INVALID`→400·`CONFLICT`→409·`UNPROCESSABLE`→422 변환, 응답 DTO의 없는 칸 생략)
 - 한계: 예외 객체는 실행 중에 HTTP 상태를 들고 있음(domain 코드는 모름). 오류 종류는 지금 domain에서 쓰는 세 가지뿐이고, 새 종류가 필요하면 `ErrorKind`와 변환을 함께 늘림
+
+## 14. 공통 예외·초안 저장 경합 테스트 (#137)
+
+[점검 기록](audit.md) 1.6의 learning 테스트 공백을 채움. 테스트만 추가했고 코드·설계·API 계약은 바꾸지 않음
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 405·415 | 실제 학생 경로(`AttemptController`)로 없는 메서드(`DELETE /internal/attempts/{id}`)·JSON 아닌 본문(`PUT …/draft` `text/plain`)을 보내 `application/problem+json`, `status`, `code`(`METHOD_NOT_ALLOWED`·`UNSUPPORTED_MEDIA_TYPE`), `type`, `instance`, `traceparent`의 `traceId`를 확인. 405는 `Allow` 헤더도 | api-spec 1.3 Problem Details, `GlobalExceptionHandler.createResponseEntity`가 Spring 기본 예외에도 `code`·`traceId`를 붙임 |
+| 초안 저장 경합 | 마무리한 시도에서 돌아보기 트랜잭션이 시도 행을 잠그고 완료로 바꾼 채 커밋 직전에 멈춘 사이 초안을 저장: 초안 저장은 잠금을 기다렸다가(0.5초 뒤에도 끝나지 않음) 커밋 뒤 `409 ATTEMPT_CLOSED`, 초안 행(버전·내용·저장 시각)은 그대로 | audit B14(#127에서 `saveDraft`가 `lockOwned`로 시도 행 잠금). 여러 요청을 한꺼번에 보내면 겹칠지가 운이라, 겹치는 순서를 직접 만들어 잠금이 없으면 항상 실패하게 함 |
+
+- 새 파일: `_common/exception/GlobalExceptionHandlerTest`(2). 기존 파일 수정: `AttemptConcurrencyTest`(1 추가, 설명 줄)
+- 검증: learning 테스트 249개(새 3), scripts/tests 83개. 보호 장치 4개를 빼면 각각 실패(405 code·415 code·기본 예외 `code`·`traceId` 붙이기·초안 저장 시도 행 잠금 → `requireOwned`)
+- 범위 밖: audit 1.6 learning 줄의 `EventEnvelope`·`MessagingConfig`는 #128 소비자 테스트에서 다룸
