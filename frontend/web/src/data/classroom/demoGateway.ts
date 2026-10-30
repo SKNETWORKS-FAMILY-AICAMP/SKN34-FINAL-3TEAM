@@ -678,8 +678,8 @@ export function createDemoGateway(): ClassroomGateway & {
           ? `선택한 기간에 답을 남긴 활동은 ${rows.length}개입니다. 아래는 실제 예시 기록의 원문입니다.`
           : '이 기간에는 제출 답변이 없습니다. 기록이 없는 상태를 능력 부족으로 해석하지 않습니다.',
         evidence,
-        verification: { numbersMatched: true, quotesMatched: true },
-        fallback: { reason: '화면 시연: LLM 미호출 · 규칙 응답 모드' },
+        verification: { numbersMatched: true, quotesMatched: true, contentAllowed: true },
+        fallback: { reason: 'AI_UNAVAILABLE', draftVerification: null },
       }
     },
   }

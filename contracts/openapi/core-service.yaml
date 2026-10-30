@@ -5346,7 +5346,7 @@ paths:
       operationId: post_conversations_conversationId_messages
       description: '#41 계약: docs/report/issue-41-analysis-conversations.md. 첫 응답 20초·전체
         120초, 취소 FAILED, delta 미저장. Events status, delta, result, clarification, error,
-        done. result는 AnalysisMessage의 확정 답변 필드, clarification은 question/options, error는
+        done. result는 AnalysisFinalResult, clarification은 question/options, error는
         Problem + retryable/messageId다. delta는 임시 text만 포함한다.'
       responses:
         '200':
@@ -5399,7 +5399,7 @@ paths:
       operationId: post_conversations_conversationId_messages_messageId_retry
       description: '#41 계약: docs/report/issue-41-analysis-conversations.md. 첫 응답 20초·전체
         120초, 취소 FAILED, delta 미저장. Events status, delta, result, clarification, error,
-        done. result는 AnalysisMessage의 확정 답변 필드, clarification은 question/options, error는
+        done. result는 AnalysisFinalResult, clarification은 question/options, error는
         Problem + retryable/messageId다. delta는 임시 text만 포함한다.'
       responses:
         '200':
@@ -5524,6 +5524,159 @@ components:
         type: string
         const: XMLHttpRequest
   schemas:
+    AnalysisFinalResult:
+      type: object
+      required:
+      - messageId
+      - answer
+      - scope
+      - source
+      - metrics
+      - evidence
+      - verification
+      - recordCount
+      properties:
+        messageId:
+          type: string
+          format: uuid
+        answer:
+          type: string
+          minLength: 1
+        scope:
+          $ref: '#/components/schemas/AnalysisScope'
+        source:
+          enum:
+          - LLM
+          - LLM_RETRY
+          - TEMPLATE
+        metrics:
+          type: array
+          items:
+            type: object
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalysisEvidence'
+        verification:
+          type: object
+          additionalProperties: false
+          required:
+          - numbersMatched
+          - quotesMatched
+          - contentAllowed
+          properties:
+            numbersMatched:
+              type: boolean
+              const: true
+            quotesMatched:
+              type: boolean
+              const: true
+            contentAllowed:
+              type: boolean
+              const: true
+        recordCount:
+          type: integer
+          minimum: 0
+        fallback:
+          anyOf:
+          - type: object
+            additionalProperties: false
+            required:
+            - reason
+            - draftVerification
+            properties:
+              reason:
+                enum:
+                - VERIFICATION_FAILED
+                - AI_UNAVAILABLE
+              draftVerification:
+                anyOf:
+                - $ref: '#/components/schemas/AnalysisVerification'
+                - type: 'null'
+            allOf:
+            - if:
+                properties:
+                  reason:
+                    const: VERIFICATION_FAILED
+              then:
+                properties:
+                  draftVerification:
+                    type: object
+                    anyOf:
+                    - properties:
+                        numbersMatched:
+                          const: false
+                    - properties:
+                        quotesMatched:
+                          const: false
+                    - properties:
+                        contentAllowed:
+                          const: false
+              else:
+                properties:
+                  draftVerification:
+                    type: 'null'
+          - type: 'null'
+        notice:
+          anyOf:
+          - $ref: '#/components/schemas/AnalysisNotice'
+          - type: 'null'
+      oneOf:
+      - properties:
+          source:
+            enum:
+            - LLM
+            - LLM_RETRY
+          fallback:
+            type: 'null'
+          notice:
+            type: 'null'
+      - required:
+        - fallback
+        properties:
+          source:
+            const: TEMPLATE
+          fallback:
+            type: object
+          notice:
+            type: 'null'
+      - required:
+        - notice
+        properties:
+          source:
+            const: TEMPLATE
+          fallback:
+            type: 'null'
+          notice:
+            type: object
+    AnalysisNotice:
+      type: object
+      additionalProperties: false
+      required:
+      - reason
+      properties:
+        reason:
+          type: string
+          enum:
+          - NO_RECORD
+          - NO_CHANGES
+          - NO_REFLECTIONS
+          - UNSUPPORTED
+          - MATH_CHECK
+    AnalysisVerification:
+      type: object
+      additionalProperties: false
+      required:
+      - numbersMatched
+      - quotesMatched
+      - contentAllowed
+      properties:
+        numbersMatched:
+          type: boolean
+        quotesMatched:
+          type: boolean
+        contentAllowed:
+          type: boolean
     AnalysisScope:
       type: object
       required:
@@ -5547,21 +5700,43 @@ components:
       - attemptId
       - answerId
       properties:
-        evidenceId: *analysis_id002
-        attemptId: *analysis_id002
-        answerId: *analysis_id002
+        evidenceId:
+          type: string
+          format: uuid
+        attemptId:
+          type: string
+          format: uuid
+        answerId:
+          type:
+          - string
+          - 'null'
+          format: uuid
         answerVersion:
-          type: integer
+          type:
+          - integer
+          - 'null'
           minimum: 1
         available:
           type: boolean
         quote:
-          type: string
+          type:
+          - string
+          - 'null'
         submittedAt:
-          type: string
+          type:
+          - string
+          - 'null'
           format: date-time
         missionTitle:
+          type:
+          - string
+          - 'null'
+        kind:
           type: string
+          enum:
+          - ANSWER
+          - REFLECTION
+          default: ANSWER
     AnalysisMessage:
       type: object
       required:
@@ -5570,7 +5745,9 @@ components:
       - status
       - retryable
       properties:
-        messageId: *analysis_id002
+        messageId:
+          type: string
+          format: uuid
         question:
           type: string
         status:
@@ -5633,12 +5810,20 @@ components:
               enum:
               - AI_UNAVAILABLE
               - VERIFICATION_FAILED
+            draftVerification:
+              anyOf:
+              - $ref: '#/components/schemas/AnalysisVerification'
+              - type: 'null'
         retryable:
           type: boolean
         evidence:
           type: array
           items:
             $ref: '#/components/schemas/AnalysisEvidence'
+        notice:
+          anyOf:
+          - $ref: '#/components/schemas/AnalysisNotice'
+          - type: 'null'
     AnalysisConversation:
       type: object
       required:

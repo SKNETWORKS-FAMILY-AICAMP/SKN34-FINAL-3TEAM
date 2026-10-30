@@ -25,10 +25,11 @@ data class MessageRow(val id: UUID, val conversationId: UUID, val seq: Int, val 
     val answer: String?, val scopeStudentId: UUID?, val scopeFrom: LocalDate?, val scopeTo: LocalDate?,
     val scopeChanged: Boolean, val status: String, val source: String?, val clarification: String?,
     val metrics: String?, val verification: String?, val recordCount: Int?, val failureCode: String?,
-    val retryCount: Int, val createdAt: OffsetDateTime, val completedAt: OffsetDateTime?) {
+    val retryCount: Int, val createdAt: OffsetDateTime, val completedAt: OffsetDateTime?,
+    val fallback: String? = null, val notice: String? = null) {
     fun scope() = scopeStudentId?.let { AnalysisScope(it, scopeFrom!!, scopeTo!!, scopeChanged) }
 }
-data class EvidenceRow(val id: UUID, val messageId: UUID, val attemptId: UUID, val answerId: UUID, val answerVersion: Int)
+data class EvidenceRow(val id: UUID, val messageId: UUID, val attemptId: UUID, val answerId: UUID?, val answerVersion: Int?, val kind: String = "ANSWER")
 fun invalid(message: String): Nothing = throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", message)
 fun missing(): Nothing = throw BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "대화 또는 메시지를 찾을 수 없습니다.")
 fun conflict(): Nothing = throw BusinessException(HttpStatus.CONFLICT, "ANALYSIS_IN_PROGRESS", "진행 중인 질문이 있거나 재시도할 수 없는 메시지입니다.")

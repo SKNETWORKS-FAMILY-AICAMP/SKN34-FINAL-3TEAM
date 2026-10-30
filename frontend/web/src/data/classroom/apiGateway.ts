@@ -1,3 +1,4 @@
+import { assertVerifiedAnalysis } from '../../domain/parent.ts'
 import { refreshAccessToken, notifyAuthChange, hasAccessToken } from '../apiClient.ts'
 import { ApiError, apiFetch, apiResponse, setAccessToken } from '../apiClient.ts'
 import { streamSse } from '../sse.ts'
@@ -416,10 +417,8 @@ export function createApiGateway(): ClassroomGateway {
         onEvent(event) {
           // delta는 검증 전 임시 출력. 확정 응답으로 사용하지 않는다.
           if (event.event === 'result') {
-            const raw = object(event.data),
-              v = object(raw.verification)
-            if (v.numbersMatched !== true || v.quotesMatched !== true)
-              return contractError('숫자·인용 대조를 통과한 result가 필요합니다.')
+            const raw = object(event.data)
+            assertVerifiedAnalysis(raw as unknown as AnalysisResult)
             result = raw as unknown as AnalysisResult
           } else if (event.event === 'clarification')
             throw new ApiError({

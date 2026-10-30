@@ -139,28 +139,71 @@ class ConversationService(private val repository: ConversationRepository, privat
             data.path("verification").path("quotesMatched").booleanValue().not() ||
             !data.path("metrics").isArray || !data.path("evidence").isArray ||
             !data.path("recordCount").isIntegralNumber || data.path("recordCount").asInt(-1) < 0) invalidAi()
-        val allowed = data.path("verification").path("contentAllowed")
-        if (!allowed.isMissingNode && (!allowed.isBoolean || !allowed.booleanValue())) invalidAi()
+        if (!verification(data.path("verification"), requirePassed = true)) invalidAi()
         val source = data.path("source").asText("LLM")
         if (source !in setOf("LLM", "LLM_RETRY", "TEMPLATE")) invalidAi()
-        if (source == "TEMPLATE" && data.path("fallback").path("reason").asText() !in setOf("VERIFICATION_FAILED", "AI_UNAVAILABLE")) invalidAi()
+        val fallback = data.path("fallback")
+        val notice = data.path("notice")
+        val hasFallback = !fallback.isNull && !fallback.isMissingNode
+        val hasNotice = !notice.isNull && !notice.isMissingNode
+        if (source == "TEMPLATE") {
+            if (hasFallback == hasNotice) invalidAi()
+        } else if (hasFallback || hasNotice) invalidAi()
+        if (hasFallback) {
+            if (!fallback.isObject || fallback.fieldNames().asSequence().toSet() != setOf("reason", "draftVerification")) invalidAi()
+            when (fallback.path("reason").asText()) {
+                "VERIFICATION_FAILED" -> {
+                    val draft = fallback.path("draftVerification")
+                    if (!verification(draft, requirePassed = false) || verification(draft, requirePassed = true)) invalidAi()
+                }
+                "AI_UNAVAILABLE" -> if (!fallback.path("draftVerification").isNull) invalidAi()
+                else -> invalidAi()
+            }
+        }
+        if (hasNotice && (!notice.isObject || notice.fieldNames().asSequence().toSet() != setOf("reason") ||
+            notice.path("reason").asText() !in setOf("NO_RECORD", "NO_CHANGES", "NO_REFLECTIONS", "UNSUPPORTED", "MATH_CHECK"))) invalidAi()
+        if (hasNotice && notice.path("reason").asText() == "NO_RECORD" && data.path("recordCount").asInt() != 0) invalidAi()
         if (data.path("evidence").size() > 100) invalidAi()
-        val answerIds = mutableSetOf<UUID>()
-        data.path("evidence").forEach { item ->
-            uuid(item, "attemptId")
-            if (!answerIds.add(uuid(item, "answerId"))) invalidAi()
-            val version = item.path("answerVersion")
-            if (!version.isMissingNode && !version.isNull && (!version.isIntegralNumber || version.asInt() <= 0)) invalidAi()
+        val identities = mutableSetOf<String>()
+        data.path("evidence").forEach {
+            val attempt = uuid(it, "attemptId")
+            val kind = it.path("kind").asText("ANSWER")
+            val identity = when (kind) {
+                "ANSWER" -> {
+                    val answer = uuid(it, "answerId")
+                    val version = it.path("answerVersion")
+                    if (!version.isMissingNode && !version.isNull && (!version.isIntegralNumber || version.asInt() <= 0)) invalidAi()
+                    "ANSWER:$answer"
+                }
+                "REFLECTION" -> {
+                    if (!it.path("answerId").isNull || !it.path("answerVersion").isNull || !it.path("submittedAt").isTextual) invalidAi()
+                    "REFLECTION:$attempt"
+                }
+                else -> invalidAi()
+            }
+            if (!identities.add(identity)) invalidAi()
+            if (!it.path("quote").isTextual || it.path("quote").asText().isBlank()) invalidAi()
+            (it as? ObjectNode ?: invalidAi()).put("kind", kind)
         }
         // Only core-generated reference IDs leave this boundary; quote text remains transient.
         data.path("evidence").forEach { (it as? ObjectNode ?: invalidAi()).put("evidenceId", UUID.randomUUID().toString()) }
         data.put("messageId", ticket.message.id.toString()); data.put("source", source)
         data.set<JsonNode>("scope", json.valueToTree(ticket.scope))
-        data.retain("messageId", "answer", "scope", "metrics", "evidence", "verification", "recordCount", "source", "fallback")
+        data.retain("messageId", "answer", "scope", "metrics", "evidence", "verification", "recordCount", "source", "fallback", "notice")
         return data
     }
     fun verifyEvidence(ticket: AnalysisTicket, result: ObjectNode?) {
-        val refs = result?.path("evidence")?.toList().orEmpty()
+        val allRefs = result?.path("evidence")?.toList().orEmpty()
+        val reflections = allRefs.filter { it.path("kind").asText() == "REFLECTION" }
+        if (reflections.isNotEmpty()) {
+            requirePeriodAttempts(ticket, reflections.map { uuid(it,"attemptId") }.toSet())
+            reflections.forEach { ref ->
+                val record = reflection(ticket.scope,uuid(ref,"attemptId")) ?: throw BusinessException(HttpStatus.GONE,"EVIDENCE_UNAVAILABLE","삭제되거나 조회 범위 밖인 돌아보기입니다.")
+                if (instant(ref.path("submittedAt").asText()) != instant(record.path("reflection").path("createdAt").asText()) ||
+                    !containsQuote(record.path("reflection").path("text").asText(),ref.path("quote").asText())) invalidAi()
+            }
+        }
+        val refs = allRefs.filter { it.path("kind").asText("ANSWER") == "ANSWER" }
         if (refs.isEmpty()) return
         val response = records.evidence(ticket.scope.childId, refs.map { uuid(it, "answerId") })
         val items = response.path("items")
@@ -174,6 +217,7 @@ class ConversationService(private val repository: ConversationRepository, privat
             if (item.path("attemptId").asText() != ref.path("attemptId").asText() ||
                 !item.path("answerVersion").isIntegralNumber || item.path("answerVersion").asInt() <= 0) invalidLearning()
             if (ref.path("answerVersion").isIntegralNumber && item.path("answerVersion").asInt() != ref.path("answerVersion").asInt()) invalidLearning()
+            if (!item.path("quote").isTextual || !containsQuote(item.path("quote").asText(),ref.path("quote").asText())) invalidAi()
             (ref as ObjectNode).put("answerVersion", item.path("answerVersion").asInt())
             val date = try { java.time.Instant.parse(item.path("submittedAt").asText()).atZone(java.time.ZoneId.of("Asia/Seoul")).toLocalDate() }
                 catch (_: Exception) { invalidLearning() }
@@ -240,10 +284,15 @@ class ConversationService(private val repository: ConversationRepository, privat
             val row = ticket.message.copy(status = "COMPLETED", answer = result?.path("answer")?.asText(),
                 source = result?.path("source")?.asText(), clarification = clarification?.toString(),
                 metrics = result?.path("metrics")?.toString(), verification = result?.path("verification")?.toString(),
+                fallback = result?.get("fallback")?.takeUnless { it.isNull }?.toString(),
+                notice = result?.get("notice")?.takeUnless { it.isNull }?.toString(),
                 recordCount = result?.path("recordCount")?.asInt(), failureCode = result?.path("fallback")?.path("reason")?.asText()?.takeIf { it.isNotBlank() }, completedAt = OffsetDateTime.now())
             if (!repository.finish(row, ticket.message.retryCount)) conflict()
             result?.path("evidence")?.forEach {
-                repository.insertEvidence(EvidenceRow(uuid(it, "evidenceId"), row.id, uuid(it, "attemptId"), uuid(it, "answerId"), it.path("answerVersion").asInt()))
+                val reflection = it.path("kind").asText() == "REFLECTION"
+                repository.insertEvidence(EvidenceRow(uuid(it, "evidenceId"), row.id, uuid(it, "attemptId"),
+                    if (reflection) null else uuid(it,"answerId"), if (reflection) null else it.path("answerVersion").asInt(),
+                    if (reflection) "REFLECTION" else "ANSWER"))
             }
             true
         }
@@ -252,14 +301,16 @@ class ConversationService(private val repository: ConversationRepository, privat
         val parent = parent()
         val owned = locked(parent, id) { conversation ->
             val message = repository.message(messageId)?.takeIf { it.conversationId == id } ?: missing()
-            Pair(conversation, repository.evidence(message.id))
+            Triple(conversation, message.scope() ?: conversation.scope(), repository.evidence(message.id))
         }
-        val refs = owned.second
-        if (refs.isEmpty()) return mapOf("items" to emptyList<Any>())
+        val refs = owned.third.filter { it.kind == "ANSWER" }
+        val reflectionRefs = owned.third.filter { it.kind == "REFLECTION" }
+        if (owned.third.isEmpty()) return mapOf("items" to emptyList<Any>())
         val old = UserContextHolder.current()
         val result = try {
             UserContextHolder.set(old.copy(studentScope = setOf(owned.first.studentId.toString())))
-            records.evidence(owned.first.studentId, refs.map { it.answerId })
+            if (refs.isEmpty()) json.createObjectNode().set<JsonNode>("items",json.createArrayNode())
+            else records.evidence(owned.first.studentId, refs.map { requireNotNull(it.answerId) })
         } finally { UserContextHolder.set(old) }
         val items = result.path("items")
         if (!items.isArray || items.size() != refs.size) invalidLearning()
@@ -267,16 +318,24 @@ class ConversationService(private val repository: ConversationRepository, privat
         val mapped = refs.map { ref ->
             val item = byId[ref.answerId.toString()] ?: invalidLearning()
             if (!item.path("available").isBoolean) invalidLearning()
-            if (!item.path("available").booleanValue()) mapOf("evidenceId" to ref.id, "attemptId" to ref.attemptId, "answerId" to ref.answerId, "available" to false)
+            if (!item.path("available").booleanValue()) mapOf("evidenceId" to ref.id, "kind" to "ANSWER", "attemptId" to ref.attemptId, "answerId" to ref.answerId, "available" to false)
             else {
                 if (item.path("attemptId").asText() != ref.attemptId.toString() || item.path("answerVersion").asInt() != ref.answerVersion || !item.path("quote").isTextual) invalidLearning()
-                mapOf("evidenceId" to ref.id, "attemptId" to ref.attemptId, "answerId" to ref.answerId, "answerVersion" to ref.answerVersion,
+                mapOf("evidenceId" to ref.id, "kind" to "ANSWER", "attemptId" to ref.attemptId, "answerId" to ref.answerId, "answerVersion" to ref.answerVersion,
                     "available" to true, "quote" to item.path("quote").asText(), "missionTitle" to item.path("missionTitle").asText(), "submittedAt" to item.path("submittedAt").asText())
             }
         }
+        val reflectionItems = reflectionRefs.map { ref ->
+            val record = reflection(owned.second,ref.attemptId)
+            mapOf("evidenceId" to ref.id,"kind" to "REFLECTION","attemptId" to ref.attemptId,"answerId" to null,
+                "answerVersion" to null,"available" to (record != null),
+                "quote" to record?.path("reflection")?.path("text")?.asText(),
+                "missionTitle" to record?.path("mission")?.path("title")?.asText(),
+                "submittedAt" to record?.path("reflection")?.path("createdAt")?.asText())
+        }
         return locked(parent, id) {
             if (repository.message(messageId)?.conversationId != id) missing()
-            mapOf("items" to mapped)
+            mapOf("items" to (mapped + reflectionItems))
         }
     }
     fun examples(child: UUID): Map<String, Any> {
@@ -300,9 +359,34 @@ class ConversationService(private val repository: ConversationRepository, privat
         "status" to row.status, "scope" to row.scope(), "answer" to row.answer, "source" to row.source,
         "metrics" to row.metrics?.let(json::readTree), "verification" to row.verification?.let(json::readTree),
         "clarification" to row.clarification?.let(json::readTree), "recordCount" to row.recordCount,
-        "fallback" to row.failureCode?.takeIf { row.source == "TEMPLATE" }?.let { mapOf("reason" to it) },
+        "fallback" to (row.fallback?.let(json::readTree) ?: row.failureCode?.takeIf { row.source == "TEMPLATE" }?.let { mapOf("reason" to it) }),
+        "notice" to row.notice?.let(json::readTree),
         "failureCode" to row.failureCode?.takeIf { row.status == "FAILED" }, "retryable" to (row.status == "FAILED"),
-        "evidence" to repository.evidence(row.id).map { mapOf("evidenceId" to it.id, "attemptId" to it.attemptId, "answerId" to it.answerId, "answerVersion" to it.answerVersion) })
+        "evidence" to repository.evidence(row.id).map { mapOf("evidenceId" to it.id,"kind" to it.kind, "attemptId" to it.attemptId, "answerId" to it.answerId, "answerVersion" to it.answerVersion) })
+    private fun verification(node: JsonNode, requirePassed: Boolean): Boolean {
+        val fields = setOf("numbersMatched","quotesMatched","contentAllowed")
+        return node.isObject && node.fieldNames().asSequence().toSet() == fields &&
+            fields.all { node.path(it).isBoolean && (!requirePassed || node.path(it).booleanValue()) }
+    }
+    private fun instant(value: String): java.time.Instant = try { java.time.OffsetDateTime.parse(value).toInstant() }
+        catch (_: Exception) { invalidLearning() }
+    private fun containsQuote(source: String, quote: String): Boolean {
+        fun normalize(value: String) = value.replace(Regex("(?U)\\s+")," ").trim()
+        return normalize(quote).isNotBlank() && normalize(source).contains(normalize(quote))
+    }
+    private fun reflection(scope: AnalysisScope, attemptId: UUID): JsonNode? {
+        val response = records.parentDashboard(scope.childId,"attempts/$attemptId",DashboardQuery.resolve(scope.from.toString(),scope.to.toString()))
+        if (response.status == 404) return null
+        if (response.status !in 200..299) throw BusinessException(HttpStatus.SERVICE_UNAVAILABLE,"LEARNING_UNAVAILABLE","돌아보기 근거를 확인하지 못했습니다.")
+        val body = try { json.readTree(response.body) } catch (_: Exception) { invalidLearning() }
+        if (body == null || !body.isObject || body.path("state").asText() != "OK" ||
+            body.path("period").path("from").asText() != scope.from.toString() || body.path("period").path("to").asText() != scope.to.toString() ||
+            body.path("attemptId").asText() != attemptId.toString() || body.path("studentId").asText() != scope.childId.toString()) invalidLearning()
+        val value = body.path("reflection")
+        if (value.isNull || !value.path("text").isTextual || value.path("text").asText().isBlank()) return null
+        val date = instant(value.path("createdAt").asText()).atZone(java.time.ZoneId.of("Asia/Seoul")).toLocalDate()
+        return body.takeIf { date >= scope.from && date <= scope.to }
+    }
     private fun uuid(node: JsonNode, field: String): UUID = try { UUID.fromString(node.path(field).asText()) } catch (_: Exception) { invalidAi() }
     private fun invalidAi(): Nothing = throw BusinessException(HttpStatus.BAD_GATEWAY, "AI_INVALID_RESPONSE", "AI 분석 결과가 계약과 다릅니다.")
     private fun invalidLearning(): Nothing = throw BusinessException(HttpStatus.BAD_GATEWAY, "LEARNING_INVALID_RESPONSE", "근거 기록 응답이 계약과 다릅니다.")
