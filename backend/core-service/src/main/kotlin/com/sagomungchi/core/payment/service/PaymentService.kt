@@ -3,6 +3,7 @@ package com.sagomungchi.core.payment.service
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core.notification.service.NotificationService
 import com.sagomungchi.core.payment.client.*
+import com.sagomungchi.core._common.json.JsonObject
 import com.sagomungchi.core.payment.domain.*
 import com.sagomungchi.core.payment.repository.PaymentRepository
 import com.sagomungchi.core.payment.service.PaymentTransactions.Companion.conflict
@@ -30,10 +31,10 @@ class PaymentService(private val repository: PaymentRepository, private val tx: 
         if(repository.active(child) != null || repository.confirmingStudent(child)) conflict("SUBSCRIPTION_DUPLICATE")
         val product=repository.product(productId)?.takeIf { it.active } ?: missing()
         if(product.price <= 0 || product.billingCycle != "MONTHLY" || product.childLimit != 1) conflict("PRODUCT_NOT_PURCHASABLE")
-        if(!product.limits.path("dailyConversations").isIntegralNumber || !product.limits.path("dailyConversations").canConvertToInt() ||
-            product.limits.path("dailyConversations").intValue()<0 || !product.limits.path("reportNarrative").isBoolean) conflict("PRODUCT_TERMS_INVALID")
+        val conversations=product.limits["dailyConversations"]
+        if(conversations !is Int || conversations<0 || product.limits["reportNarrative"] !is Boolean) conflict("PRODUCT_TERMS_INVALID")
         val id=UUID.randomUUID(); val order=PaymentOrder(id,"ord-$id",parent,child,product.id,null,"INITIAL",null,
-            product.price,tx.json.valueToTree(product),tx.now())
+            product.price,tx.json.convertValue(product,JsonObject::class.java),tx.now())
         check(repository.insertOrder(order)==1)
         OrderCreated(order.orderNo,order.amount,product.name,child,product.id)
     }

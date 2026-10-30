@@ -216,3 +216,16 @@ ConversationService의 최종 검증·fallback/notice·ANSWER/REFLECTION과 실�
 - #163 LearningSupportClient/SupportIntegrationTest와 #164 verify_feedback_learning.py는 develop 원본과 동일하다. 기존 AI·프론트 실행 코드·V17~V19 migration은 이전 통합 커밋과 동일하다. 변경 없는 AI·전체 migration·브라우저·프로세스 복구 검사는 반복하지 않았으며 앞 절의 결과를 이력으로 유지한다. 검증 컨테이너의 소스 해시 일치 및 최종 diff 검사를 확인했다.
 
 이 절이 이전 “#163·#164 미반영” 상태를 대체한다. 두 이슈의 변경은 develop 이력으로 포함하며 이 PR의 해결 이슈는 #47·#67·#162다. 원격 CI·배포는 아직 검증하지 않았고 PR 생성 후 확인한다.
+
+## PR #191과 #168 최신 develop 접합
+
+PR HEAD a5b72f7의 CI 5종은 모두 성공했으나 develop eed6513(PR #190/#168) 이후 Conversations.kt 충돌로 병합이 막혔다. #168의 ErrorKind INVALID/NOT_FOUND/CONFLICT 변환과 #162 EvidenceRow의 nullable answerId/answerVersion·kind, MessageRow의 fallback/notice를 함께 보존한다. #168 JsonObject·결제 응답 DTO·사용량 이벤트 domain·알림 consumer/config 이동은 원본 그대로 반영하고 기존 재처리·감사 흐름을 유지한다. core 전체 및 계약 검증 후 결과를 기록한다.
+
+### #168 접합 검증 결과
+
+- 최신 develop eed651335d89a3ee2d054347190fa1859214cdfa를 재조회해 병합 기준과 일치함을 확인했다. 충돌한 Conversations.kt는 기존 통합본 대비 import 1개와 오류 생성 3줄만 ErrorKind 방식으로 바뀌며, MessageRow/EvidenceRow의 #162 필드는 보존했다.
+- 새 소스 볼륨에서 core 전체 test/bootJar를 실행했다. 57클래스 393개 중 380개 통과, 13개 실패·오류/생략 0. AuthFlowIntegrationTest 12개는 RabbitMQ 시작 로그 대기 시간 초과에 따른 클래스 초기화 실패였고 AiClientTest의 SSE 파서 검사 1개도 스트림 중단으로 실패했다. 공유 Docker에서 다른 검증이 동시에 실행된 사실은 확인했지만 직접 원인으로 단정하지 않는다.
+- 원본 전체 XML/로그를 보존한 뒤 두 클래스를 각각 새 JVM에서 재실행했다. 인증 12개(1m25s), AI 클라이언트 5개 및 bootJar(22s) 모두 통과했다. 검사 코드·시간 제한·production 설정은 변경하지 않았다. 전체 393개 단일 실행 성공으로 표현하지 않는다.
+- Python 계약 검사 93개·OpenAPI 4종 통과. 새 core 테스트의 실제 결제 5종·알림 2종·리포트 HTTP/이벤트·지원 7종·REPORT 재처리 접수/상세/이벤트 JSON을 기존 공개 계약과 대조해 모두 통과했다. PG·learning 외부 응답은 해당 core 테스트의 대역 범위다.
+- 소스 SHA-256 일치, 이전 알림 클래스 경로가 검증 볼륨에 남지 않음, 실행 코드의 이전 import 미잔존, 최종 diff 검사를 확인했다. 문서에 남은 이전 경로는 #168 변경 전 위반/이동 이력이다.
+- #168의 payment/usage/notification/_common/json 구현은 develop 원본과 동일하고 migration·AI·프론트 실행 코드는 이번에 변경하지 않았다. 변경 없는 브라우저·실서비스 전체 검증은 반복하지 않았다. 이후 PR 새 HEAD의 원격 CI는 별도 확인한다.

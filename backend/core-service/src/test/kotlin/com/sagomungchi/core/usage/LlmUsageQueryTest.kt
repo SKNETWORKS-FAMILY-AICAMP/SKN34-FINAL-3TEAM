@@ -3,7 +3,7 @@ package com.sagomungchi.core.usage
 import com.sagomungchi.core._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.messaging.EventEnvelope
-import com.sagomungchi.core.usage.consumer.LlmUsageRecorded
+import com.sagomungchi.core.usage.domain.LlmUsageRecorded
 import com.sagomungchi.core.usage.domain.CallType
 import com.sagomungchi.core.usage.service.LlmUsageService
 import org.junit.jupiter.api.Test
