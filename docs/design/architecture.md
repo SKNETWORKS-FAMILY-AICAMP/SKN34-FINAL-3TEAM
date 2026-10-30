@@ -207,6 +207,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ exception/
 │  ├─ security/
 │  ├─ messaging/                 # 이벤트 봉투, OutboxRelay, 멱등 소비
+│  ├─ json/                      # JsonObject: domain이 드는 jsonb 객체 값 (#168)
 │  └─ web/                       # IdempotencyService, SseEmitters (core만)
 ├─ account/                      # Google 로그인·세션·탈퇴
 │  ├─ controller/
@@ -249,8 +250,12 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │     └─ ReportClient.kt
 ├─ notification/
 │  ├─ controller/                # SSE
+│  ├─ consumer/                  # Redis 구독(다른 레플리카 알림 수신, #168)
+│  ├─ config/                    # Redis 구독 연결·채널 이름
 │  ├─ service/
-│  └─ repository/
+│  ├─ domain/
+│  ├─ repository/
+│  └─ messaging/                 # Redis 발행(커밋 후)
 ├─ support/                      # 신고·문의·공지·도움말·정정
 │  ├─ controller/
 │  ├─ service/
