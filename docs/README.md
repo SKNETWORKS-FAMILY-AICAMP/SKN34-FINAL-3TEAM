@@ -48,6 +48,7 @@
 | [report](report/report.md) | core 주간 리포트(#42), 생성·계산·서술·렌더링·조회·삭제(#50~#55), 이용권 연결(#129), 종료 유실 복구(#132), 연결 상태 |
 | [db-schema](report/db-schema.md) | DB 기술 결정(#5), 확정 정책 반영과 기존 데이터 전환 절차(#19) |
 | [db-dev-guide](report/db-dev-guide.md) | 마이그레이션 CI(#13), Repository·SQLAlchemy 사용법(#14) |
+| [issue-143-contract-ci](report/issue-143-contract-ci.md) | 웹 단위 테스트·독립 계약 CI·실제 core 산출물 검증 및 로컬 실행 안내(#143) |
 | [local-platform](report/local-platform.md) | kind·Calico·ingress·MinIO 설정과 자원 예산(#17) |
 | [frontend](report/frontend.md) | 웹 공통 기반·학생·학부모·관리자 화면(#7~#9·#59), 테마·대시보드, QR 시연 |
 | [audit](report/audit.md) | develop 종합 검증(c608f52·640e0a2)과 설계 문서 정합성 점검, 남은 결함·테스트 공백 |

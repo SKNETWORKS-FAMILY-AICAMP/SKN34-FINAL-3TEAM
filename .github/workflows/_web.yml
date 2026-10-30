@@ -1,4 +1,4 @@
-# 재사용 워크플로: 웹 린트·빌드
+# 재사용 워크플로: 웹 린트·단위 테스트·빌드
 name: _web
 
 on:
@@ -23,4 +23,5 @@ jobs:
           cache-dependency-path: ${{ inputs.app-path }}/package-lock.json
       - run: npm ci
       - run: npm run lint
+      - run: npm test
       - run: npm run build
