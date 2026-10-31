@@ -775,7 +775,9 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | POST | `/internal/followups` | learning | `{timeline[], judgment, rubric, mission, grade}` → `{type, question, source, leakCheck{passed}, versions}` (정답·금지어 검사 실패 시 1회 재생성 `LLM_RETRY`, 재실패 시 `question` 없이 `leakCheck.passed = false` → learning이 질문 은행 `BANK` 선택, P16) |
 | POST | `/internal/analysis/stream` | core | **SSE**. `{conversationId, question, scope{studentId, from, to}, history[]}` → 3.3과 같은 이벤트 |
 | POST | `/internal/report-narratives` | report | `{metrics[], thinkingTypes[], changes[], reflections[], quotes[]}` → `{narrative, eveningQuestion, citedQuotes[], versions}` (4.2.1) |
-| GET | `/internal/versions` | core | 활성 프롬프트 버전 |
+| GET | `/internal/versions` | core | 현재 호출에 사용하는 프롬프트 버전 `{prompts:{judgment,followup,analysis,reportNarrative}}` |
+
+- #68 프롬프트 레지스트리의 `PROMPT name`은 위 응답의 네 키와 같다. 승인 scope는 차례대로 `ai/judgment`·`ai/followup`·`ai/analysis`·`ai/report-narrative`이며 요청 범위 밖 이벤트는 적용하지 않는다. core에 해당 활성 항목이 없으면 ai 이미지에 포함된 기존 본문·버전을 사용한다. 활성화된 버전의 실제 본문이 이미지에 없으면 해당 기능의 새 요청과 `/internal/versions`는 `503 AI_PROMPT_VERSION_UNAVAILABLE`로 실패하고 `/health/ready`의 `versions`는 DOWN이다. 기존 본문을 새 버전명으로 보고하지 않는다. 진행 중인 요청은 시작 때 선택한 본문·버전으로 완료한다.
 
 #### 4.2.1 report 서술 요청·응답
 
@@ -891,6 +893,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - `evalResult`는 `{evidence:evaluation,approval:null|{scopes,reason,approvedBy,approvedAt},activeScopes:[],revision:0}`로 저장한다. 활성화·복귀 때 activeScopes와 revision을 갱신한다. 동일 kind·name을 advisory transaction lock으로 직렬화하고 해당 그룹에 저장된 최대 revision + 1을 사용한다. 평가 근거와 최초 승인은 덮어쓰지 않는다.
 - 내부 GET `/internal/model-versions/active`는 기존 `X-Internal-Token` 필수이며 `{items:[{id,kind,name,version,refId,artifactUri,scopes,revision,activatedAt}]}`를 반환한다. 평가·관리자 정보는 전파하지 않는다. 공개 API base(`/api/v1`)를 붙이지 않는다.
 - 이벤트는 `contracts/events/model.version.activated.v1.schema.json` data와 기존 봉투를 사용한다. `revision`은 kind·name별 단조 증가 값이다. 소비자는 큐 바인딩 후 내부 API로 초기화하고, 초기화 중 이벤트를 보존·조정하며 더 높은 revision만 적용한다. 승인 scope를 실제 요청 시에도 제한해야 한다.
+- ai는 `PROMPT` 중 #68의 네 이름과 해당 기능 scope만 반영한다. 이벤트는 전체 snapshot이 아니며 다른 기능의 활성 버전을 제거하지 않는다. 새 scope에서 빠진 기능에는 이전 활성 본문을 계속 쓰지 않고 내장 버전으로 돌아간다. 재연결 후 새 큐 바인딩·snapshot 조회·이벤트 조정을 완료하기 전에는 `versions=DOWN`이다. malformed 이벤트는 안전한 로그 후 ACK하여 재시도하지 않는다. probe 자체는 core 조회를 수행하지 않는다.
 - ai·scoring의 Pod별 소비·readiness·실제 교체 구현은 별도 서비스 작업이며 core 계약 테스트의 큐 대역으로 완료 처리하지 않는다.
 
 - #43 기존 SQL NULL 평가 행은 목록에서 evalResult:null로 보존하고 활성화/복귀 시 422로 거부한다. 승인 근거·적용 범위가 불완전한 기존 ACTIVE 행이 있으면 내부 snapshot은 MODEL_VERSION_STATE_INVALID(503)로 명시적으로 실패하며 임의 기본 버전을 반환하지 않는다. 신규 등록은 계속 완전한 평가 기록을 요구한다.

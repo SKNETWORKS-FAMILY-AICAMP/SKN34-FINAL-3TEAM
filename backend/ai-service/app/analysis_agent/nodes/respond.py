@@ -6,7 +6,7 @@ LLM 답변은 조각마다 delta로 임시 표시하고, 대조를 통과해야�
 
 from langgraph.runtime import Runtime
 
-from app.analysis_agent import prompts, templates
+from app.analysis_agent import templates
 from app.analysis_agent.calculators import Computation
 from app.analysis_agent.models import (
     AnalysisResult,
@@ -29,10 +29,12 @@ async def answer(state: AnalysisState, runtime: Runtime[AgentContext]) -> Analys
     runtime.stream_writer(status("답변을 쓰는 중"))
     request = state["request"]
     stream = runtime.context.llm.stream(
-        system=prompts.ANSWER_SYSTEM,
-        user=prompts.build_answer_user(request, state["intent"], state["computation"]),
+        system=runtime.context.prompt.body.ANSWER_SYSTEM,
+        user=runtime.context.prompt.body.build_answer_user(
+            request, state["intent"], state["computation"]
+        ),
         call_type="ANALYSIS",
-        prompt_version=prompts.PROMPT_VERSION,
+        prompt_version=runtime.context.prompt.version,
         max_tokens=1024,
         deadline=runtime.context.deadline,
     )
@@ -152,5 +154,5 @@ def _result(
         evidence=evidence,
         verification=verification,
         record_count=computation.record_count,
-        versions=LlmVersions(model=state.get("model"), prompt=prompts.PROMPT_VERSION),
+        versions=LlmVersions(model=state.get("model"), prompt=state["prompt_version"]),
     )

@@ -82,7 +82,7 @@
 | `report.started` | 이벤트 | report | core | 작업 상태 처리 중 |
 | `report.completed` / `report.failed` | 이벤트 | report | core | 작업 상태 갱신, 학부모 알림 |
 | `llm.usage.recorded` | 이벤트 | ai, scoring | core | 호출 종류별 토큰·지연·실패·버전 집계 (학생 ID·원문 미포함) |
-| `model.version.activated` | 이벤트 | core | ai, scoring (Pod별 수신) | 모든 레플리카가 활성 모델·프롬프트 버전 교체 (기동 시 core 내부 API로 현재 버전 조회) |
+| `model.version.activated` | 이벤트 | core | ai, scoring (Pod별 수신) | 모든 레플리카가 승인 scope의 활성 모델·프롬프트 버전 교체 (기동 시 core 내부 API로 현재 버전 조회) |
 | `student.deleted` | 이벤트 | core | learning, report | 삭제 확정 학생의 학습 기록·리포트 물리 삭제, 처리 후 core 내부 API로 완료 보고. 페이로드에 `deletionRequestId`·`scope` 포함 (P09) |
 
 ### 1.5 핵심 흐름
@@ -127,6 +127,8 @@
   - #43 계약: 내부 조회와 이벤트는 같은 kind·name별 revision·적용 scopes를 제공한다. 소비자는 초기 조회 중 이벤트를 보존·조정하고 더 높은 revision만 적용하며 승인 scope 밖에는 적용하지 않는다. core는 Pod 공유 소비 큐를 추가하지 않는다. scoring 소비·readiness는 #86에서 구현하며 ai는 #68 범위다.
   - scoring #86: 큐 바인딩·소비 시작 후 snapshot을 조회한다. 조회·로딩 중 이벤트는 이름별 최신 revision을 보존하고 readiness 전에 조정한다. 재연결 때 새 exclusive 큐를 바인딩하고 snapshot을 다시 조회하여 연결 중단 중 변경도 복구한다.
   - scoring 교체·롤백은 #85와 동일하게 S3/MinIO에서 재다운로드 → 메모리 로딩 → 임시 파일 정리 방식이다. 성공 후 참조를 교체하며 로딩 실패 시 기존 모델과 새 승인 범위의 교집합만 사용한다. 정상 기동 후 교체 실패는 기존 모델을 유지하고 재시도한다. 최초 조회·로딩 실패 또는 재연결 조정 중에는 readiness false다.
+  - ai #68: `PROMPT`의 `name`은 `judgment`·`followup`·`analysis`·`reportNarrative`, 각 승인 scope는 `ai/judgment`·`ai/followup`·`ai/analysis`·`ai/report-narrative`다. 해당 scope가 없는 항목은 적용하지 않는다. 각 버전의 실제 system/user 프롬프트 본문은 ai 이미지의 코드에 함께 보관한다. core에 활성 항목이 없으면 현재 내장 버전을 사용한다. 활성 버전 본문이 이미지에 없으면 다른 본문에 그 버전명을 붙이지 않고 해당 기능의 새 요청을 503으로 거부하며 readiness는 false다. 요청마다 선택한 본문과 버전을 고정해 응답·사용량에 같은 버전을 기록한다.
+  - ai도 큐 바인딩·소비 시작 후 snapshot을 조회하고 그사이 이벤트를 revision으로 조정한다. 재연결마다 새 큐를 먼저 바인딩하고 snapshot으로 유실 구간을 복구한다. readiness는 이 백그라운드 상태만 읽으며 probe가 core를 호출하지 않는다.
   - core 조회 실패 시 프로세스 종료 없이 readiness false 유지·재시도 (core 장애가 ai·scoring 기동 실패로 번지지 않게)
 - **이벤트 봉투**: CloudEvents 형식 `id, specversion, type, source, time, subject, dataschema, traceparent, data` → `contracts/events/*.schema.json`
 - **스키마 버전**: 파일 `<message>.v<N>.schema.json`, `dataschema`에 버전 표기. 하위 호환 변경(선택 필드 추가)만 같은 버전, 그 외는 새 버전 병행 발행 후 소비자 전환
@@ -340,7 +342,7 @@ backend/ai-service/
 │  ├─ config.py
 │  ├─ errors.py                 # Problem Details 예외 핸들러
 │  ├─ security.py               # 내부 토큰·사용자 컨텍스트·학생 범위 검사
-│  ├─ versions.py               # 활성 프롬프트 버전 조회. model.version.activated 수신 시 교체는 예정
+│  ├─ versions.py               # 활성 프롬프트 본문·버전 선택과 내부 조회 (#68)
 │  ├─ judgment/
 │  │  ├─ router.py
 │  │  ├─ service.py
@@ -373,7 +375,7 @@ backend/ai-service/
 │  │  ├─ base.py                 # 내부 토큰·컨텍스트 헤더 전달 httpx 클라이언트
 │  │  ├─ learning_client.py
 │  │  ├─ scoring_client.py       # (예정) M2·M1 교차 확인
-│  │  └─ core_client.py          # (예정) 기동 시 활성 버전 조회
+│  │  └─ core_client.py          # 기동·재연결 시 core 활성 버전 조회 (#68)
 │  ├─ llm/                       # LLM 클라이언트 래퍼 (제공자 교체 지점)
 │  │  ├─ base.py                 # 공통 인터페이스·재시도·타임아웃·사용량 기록
 │  │  └─ providers.py            # Claude·OpenAI·OpenAI 호환 sLLM, LLM_PROVIDER로 선택
@@ -382,7 +384,7 @@ backend/ai-service/
 │  │  ├─ connection.py
 │  │  ├─ publisher.py            # llm.usage.recorded
 │  │  ├─ usage_recorder.py       # LlmClient 사용량 → 백그라운드 발행
-│  │  └─ consumer.py             # (예정) model.version.activated, Pod별 exclusive 큐
+│  │  └─ consumer.py             # model.version.activated, Pod별 exclusive 큐 (#68)
 │  └─ health/
 │     └─ router.py
 ├─ tests/                        # app과 동일 기능 폴더 구조
@@ -554,7 +556,7 @@ backend/report-service/
 - Cluster Autoscaler: Pending Pod 발생 시 application 노드 증설
 - 종료 처리: core는 preStop 지연 + terminationGracePeriod로 SSE 정리 시간 확보 (롤링 배포·축소 시 단절은 클라이언트 재연결로 처리)
   - 피드백 executor 종료 대기는 최대 85초, heartbeat timer 종료 대기는 최대 5초다. 배포 시 `terminationGracePeriodSeconds`는 preStop 지연 + Spring/Tomcat 종료 단계의 예산 + 이 최대 90초 + 안전 여유보다 길게 설정하고 실제 롤링 종료로 검증한다. 현재 앱 Deployment의 수치가 저장소에 확정돼 있지 않아 이 작업에서 임의의 배포 설정은 추가하지 않는다. SIGKILL·프로세스 강제 종료 후에도 진행 중 호출이 보존된다는 의미는 아니다.
-- probe: readiness는 자기 상태(DB·브로커 연결)만 확인, 하위 서비스 호출 금지 (연쇄 NotReady 방지)
+- probe: readiness는 자기 연결과 백그라운드 초기화 상태만 확인, 요청마다 하위 서비스 호출 금지. ai는 RabbitMQ 구독·core 활성 버전 snapshot 조정·사용 가능한 프롬프트 본문을 완료해야 Ready이며 core 조회 실패·재연결 조정·미보유 활성 본문은 NotReady다(#68).
 - 공통 보안: 리소스 limit, non-root, readOnlyRootFilesystem
 
 ### 4.5 CI/CD

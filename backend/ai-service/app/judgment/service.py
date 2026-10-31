@@ -6,7 +6,7 @@
 
 from app.config import Settings
 from app.errors import ApiError
-from app.judgment import extractor, prompts, verifier
+from app.judgment import extractor, verifier
 from app.judgment.models import (
     HeldReason,
     JudgmentElement,
@@ -17,25 +17,30 @@ from app.judgment.models import (
     Versions,
 )
 from app.llm.base import LlmClient, LlmUnavailable
+from app.versions import ActiveVersions
 
 
 class JudgmentService:
-    def __init__(self, llm: LlmClient, settings: Settings) -> None:
+    def __init__(
+        self, llm: LlmClient, settings: Settings, versions: ActiveVersions | None = None
+    ) -> None:
         self._llm = llm
         self._settings = settings
+        self._versions = versions or ActiveVersions()
 
     async def judge(self, request: JudgmentRequest) -> JudgmentResponse:
+        prompt = self._versions.prompt("judgment")
         trial = not all(element.judge_verified for element in request.rubric.elements)
         held = self._held_before_llm(request)
         if held is not None:
             return _held(held, request.versions, trial)
 
         try:
-            extraction = await extractor.extract(self._llm, request)
+            extraction = await extractor.extract(self._llm, request, prompt)
         except LlmUnavailable as exc:
             raise ApiError(503, "AI_UNAVAILABLE", "AI 처리 실패", retryable=exc.retryable) from exc
         versions = request.versions.model_copy(
-            update={"model": extraction.model, "prompt": prompts.PROMPT_VERSION}
+            update={"model": extraction.model, "prompt": prompt.version}
         )
 
         evidence: dict[str, extractor.ElementEvidence] = {}

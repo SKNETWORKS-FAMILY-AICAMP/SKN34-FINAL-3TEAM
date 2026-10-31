@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.config import get_settings
 from app.followup.models import FollowupRequest, FollowupResponse
@@ -11,8 +11,10 @@ from app.llm.providers import get_llm
 router = APIRouter(prefix="/internal/followups", tags=["followup"])
 
 
-def get_followup_service(llm: Annotated[LlmClient, Depends(get_llm)]) -> FollowupService:
-    return FollowupService(llm, get_settings())
+def get_followup_service(
+    request: Request, llm: Annotated[LlmClient, Depends(get_llm)]
+) -> FollowupService:
+    return FollowupService(llm, get_settings(), request.app.state.active_versions)
 
 
 @router.post("", response_model=FollowupResponse)
