@@ -120,6 +120,7 @@
 - 최초 2xx~4xx 상태·응답 원문·Content-Type·ETag·Retry-After·Location을 저장해 재사용한다. 5xx·전송 실패·core 응답 저장 실패는 성공으로 확정하지 않고 같은 키 재요청을 허용한다. core가 생성한 장애는 `503 LEARNING_UNAVAILABLE` / `503 IDEMPOTENCY_UNAVAILABLE`, 시간 초과는 `504 LEARNING_TIMEOUT`, 서킷 차단은 `503 LEARNING_CIRCUIT_OPEN`이다. learning에서 받은 오류 상태·Problem Details는 그대로 전달한다.
 - core는 답변의 `Idempotency-Key`를 learning에 그대로 전달한다. learning은 `(attempt_id, idempotency_key)` UK와 답변·PENDING 판정의 동일 트랜잭션으로 최초 응답을 재구성하고, 키 중복 시 본문 불일치를 422로 거부해야 한다. core 저장 실패·만료·연결 장애 후 재요청도 이 계약으로 중복 반영을 막는다. learning의 실제 구현·통합 검증은 #24에서 충족해야 한다.
 - 초안은 `ETag`/`If-Match`(초안 버전)로 처리. 불일치 시 409를 반환하고 조용히 덮어쓰지 않음
+- 학생 `GET /attempts/{attemptId}`는 `Cache-Control: no-store`로 반환한다. 이 응답의 ETag는 초안 동시성용이며 피드백·마무리·돌아보기 변경을 나타내는 전체 표현 버전이 아니다. 웹의 상세 조회와 답변 제출·마무리·돌아보기 후 재조회는 `cache: 'no-store'`로 기존 HTTP 캐시도 사용하지 않는다. 초안 ETag/If-Match와 409 계약은 유지한다.
 - 피드백 요청은 키 대신 answerId의 판정 처리 상태로 중복 방지 (실패 후 재시도가 같은 요청이므로 키 재사용 불가)
   - `DONE`: 저장된 결과 반환
   - `RUNNING`: 새로 실행하지 않고 `status` 이벤트 후 종료, 클라이언트가 잠시 후 재요청. 그사이 다른 요청의 처리가 실패(`FAILED`)한 경우도 처리 중으로 응답하고, 다시 요청하면 실행
@@ -197,6 +198,7 @@
 | GET | `/auth/google/callback` | 공개 | Google 코드 교환·ID 토큰 검증 → refresh 쿠키 → web 복귀 | ACC-03 | 제안 |
 | POST | `/auth/refresh` | 쿠키 | access token 재발급 | ACC-04 | 제안 |
 | POST | `/auth/logout` | 인증 | refresh token 폐기 | ACC-04 | 제안 |
+| POST | `/auth/student/logout` | 학생 Bearer | 해당 학생 세션만 폐기, 보호자 refresh·기기 쿠키 유지 | ACC-04, ACC-05 | 핵심 |
 | POST | `/auth/student-sessions` | 학부모 | 학생 진입(동석): `{childId}` 연결 자녀 확인 후 학생 세션(`STUDENT` 토큰) 발급. 시연 링크·URL 식별값 진입 없음 (P01) | ACC-05 | 제안 |
 | POST | `/auth/student/devices` | 공개 | 페어링 코드로 기기 등록 `{pairingCode, label}` → 기기 자격증명 쿠키 발급, 등록 자녀 프로필 반환 (P01, 3.11) | ACC-14 | 제안 |
 | GET | `/auth/student/profiles` | 기기 쿠키 | 이 기기에 등록된 자녀 프로필 `{childId, nickname, pinSet, pinLocked}` (P01, `/children` 확장과 같은 필드명) | ACC-05 | 제안 |
@@ -876,6 +878,8 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - web/API 동일 origin. refresh 쿠키 `sagomungchi_refresh`: HttpOnly·Secure·SameSite=Strict·Path=/api/v1/auth. OAuth 상태 쿠키 `sagomungchi_oauth`: HttpOnly·Secure·SameSite=Lax·Path=/api/v1/auth/google, 10분. 로컬 HTTP만 Secure=false.
 - Google state·nonce·PKCE S256 및 ID 토큰 JWKS 서명·iss·aud·exp·nonce 검증. 서비스 토큰을 URL에 넣지 않는다. callback 성공은 `/oauth/complete`, 실패는 `/login?oauthError=<고정 코드>`.
 - 부모/관리자 refresh는 Web Locks로 탭 간 직렬화한다. 학생 전환·로그아웃 알림을 받은 다른 탭은 토큰·캐시를 지우며 학생 refresh로 다시 로그인하지 않는다. 학생→부모 복귀는 Google 로그인부터 시작한다.
+- PIN/동석 학생의 종료는 `POST /auth/student/logout`을 사용한다. `Origin`·`X-Requested-With`와 유효한 학생 Bearer를 검증하고 그 세션만 폐기한다(204, Cache-Control: no-store, Set-Cookie 없음). 누락·만료·위조 Bearer는 401, 다른 역할·출처는 403이며 동반된 보호자 refresh로 대체 인증하거나 보호자 세션을 폐기하지 않는다. 기존 `/auth/logout`의 보호자·관리자 로그아웃 계약은 유지한다.
+- 학생에서 보호자 로그인 화면으로 전환할 때는 해당 탭의 access·화면 캐시만 정리하며 전역 LOGOUT을 방송하지 않는다. 탭별 비밀정보 없는 `sessionStorage` 전환 표식으로 새로고침 후에도 보호자 쿠키 자동 복원을 차단하고, Google OAuth 완료 후에만 보호자 역할을 복원한다. PIN 진입 및 학생 만료 경로는 유지한다.
 - 계정 복구·비밀번호 변경 API는 Google 단일 로그인 범위에서 제외(기기·PIN 저장은 core V13, Google 재인증은 5.6).
 
 

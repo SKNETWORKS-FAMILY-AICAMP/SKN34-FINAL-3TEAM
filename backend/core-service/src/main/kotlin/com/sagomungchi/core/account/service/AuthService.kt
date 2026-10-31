@@ -119,6 +119,14 @@ class AuthService(
         return requireNotNull(outcome.issued)
     }
 
+    fun logoutStudent(access: String?) {
+        transactions.executeWithoutResult {
+            val identity = authenticate(access ?: throw unauthenticated())
+            if (identity.session.role != "STUDENT") throw forbidden()
+            repository.revoke(identity.session.id, now())
+        }
+    }
+
     fun logout(raw: String?, access: String? = null) {
         transactions.executeWithoutResult {
             if (access != null) {

@@ -49,6 +49,36 @@ test('공개 core 경로만 호출, 메모리 토큰·ETag·If-Match·멱등 키
   assert.equal(JSON.parse(String(calls[1].init.body)).memo, undefined)
   setAccessToken(null)
 })
+test('동일 초안 ETag에서도 제출·마무리·돌아보기 후 상세 HTTP 캐시를 재사용하지 않는다', async (t) => {
+  let current = { ...attempt, finishedAt: null as string | null, reflection: null as unknown }
+  let cached: typeof current | undefined
+  const reads: RequestInit[] = []
+  t.mock.method(globalThis, 'fetch', async (path: string, init: RequestInit) => {
+    if (path.endsWith('/answers')) return json({}, 201)
+    if (path.endsWith('/finish')) {
+      current = { ...current, finishedAt: '2026-10-30T08:09:12Z' }
+      return json({})
+    }
+    if (path.endsWith('/reflection')) {
+      current = { ...current, status: 'COMPLETED', reflection: { difficulty: '쉬웠어', text: '검증 돌아보기' } }
+      return json({})
+    }
+    reads.push(init)
+    // Model a browser holding the old representation with the same draft ETag.
+    if (cached && init.cache !== 'no-store') return json(cached, 200, { ETag: '"2"' })
+    cached ??= structuredClone(current)
+    return json(current, 200, { ETag: '"2"' })
+  })
+  const api = createApiGateway()
+  assert.equal((await api.attempt('a-1')).finishedAt, null)
+  await api.submit('a-1', answer, 'cache-regression')
+  assert.equal((await api.finish('a-1')).finishedAt, '2026-10-30T08:09:12Z')
+  const completed = await api.reflect('a-1', { difficulty: '쉬웠어', text: '검증 돌아보기' })
+  assert.equal(completed.status, 'COMPLETED')
+  assert.equal(reads.length, 4)
+  assert.ok(reads.every((init) => init.cache === 'no-store'))
+})
+
 test('404는 예시나 빈 배열로 대체하지 않음', async (t) => {
   let requests = 0
   t.mock.method(globalThis, 'fetch', async () => {

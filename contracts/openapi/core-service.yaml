@@ -2907,6 +2907,31 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /auth/student/logout:
+    post:
+      operationId: logoutStudentSession
+      tags: [Auth]
+      summary: 학생 세션만 종료
+      description: 학생 Bearer로 식별한 세션만 폐기한다. 보호자 refresh 쿠키와 등록 기기 쿠키는 읽거나 만료시키지 않는다. 만료·위조·누락 Bearer를 보호자 쿠키로 대체 인증하지 않는다.
+      security:
+      - BearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/WebOrigin'
+      - $ref: '#/components/parameters/RequestedWith'
+      responses:
+        '204':
+          description: 학생 세션 폐기. Set-Cookie 없음.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /auth/student-sessions:
     post:
       operationId: enterAccompaniedStudentSession

@@ -101,6 +101,21 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
             content?.let { req.contentType(MediaType.APPLICATION_JSON).content(it) }
         })
 
+    @Test fun `attempt details disable storage while preserving draft ETag across completion changes`() {
+        listOf(
+            "{\"finishedAt\":null,\"status\":\"IN_PROGRESS\"}",
+            "{\"finishedAt\":\"2026-10-30T08:09:12Z\",\"status\":\"IN_PROGRESS\"}",
+            "{\"finishedAt\":\"2026-10-30T08:09:12Z\",\"status\":\"COMPLETED\"}",
+        ).forEach { detail ->
+            stub.respond = { LearningHttpStub.Reply(body = detail,
+                headers = mapOf("Content-Type" to "application/json", "ETag" to "\"2\"")) }
+            call("GET", "/api/v1/attempts/$attempt").andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().string("ETag", "\"2\""))
+                .andExpect(content().string(detail))
+        }
+    }
+
     @Test fun `all ten routes forward verified context method body and ETag`() {
         val mission = UUID.randomUUID()
         val routes = listOf("GET" to "/missions", "GET" to "/missions/$mission", "POST" to "/missions/$mission/attempts",

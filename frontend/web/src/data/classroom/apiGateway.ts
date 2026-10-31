@@ -1,5 +1,5 @@
 import { assertVerifiedAnalysis } from '../../domain/parent.ts'
-import { refreshAccessToken, notifyAuthChange, hasAccessToken } from '../apiClient.ts'
+import { refreshAccessToken, notifyAuthChange, hasAccessToken, isStudentSession, requireParentLogin } from '../apiClient.ts'
 import { ApiError, apiFetch, apiResponse, setAccessToken } from '../apiClient.ts'
 import { streamSse } from '../sse.ts'
 import { blankAnswer, publicAttempt } from '../../domain/classroom.ts'
@@ -153,6 +153,18 @@ export function createApiGateway(): ClassroomGateway {
       /* UI 시연 전용. 실제 API 결과를 변조하지 않는다. */
     },
     async logout() {
+      if (isStudentSession()) {
+        if (hasAccessToken()) {
+          try { await apiFetch('/auth/student/logout', body({})) }
+          catch (error) {
+            // Already-expired/revoked student credentials can be cleared locally; never use parent refresh.
+            if (!(error instanceof ApiError) || error.problem.status !== 401) throw error
+          }
+        }
+        conversations.clear()
+        requireParentLogin()
+        return
+      }
       try {
         await apiFetch('/auth/logout', body({}))
         notifyAuthChange('LOGOUT')
@@ -255,7 +267,7 @@ export function createApiGateway(): ClassroomGateway {
       return attemptDto(await apiFetch<unknown>(`/missions/${mission.id}/attempts`, body({})))
     },
     async attempt(id) {
-      const response = await apiResponse<unknown>(`/attempts/${id}`)
+      const response = await apiResponse<unknown>(`/attempts/${id}`, { cache: 'no-store' })
       const a = attemptDto(response.data)
       if (a.draft && response.etag) a.draft.version = response.etag
       return a
@@ -292,7 +304,7 @@ export function createApiGateway(): ClassroomGateway {
         ...body(payload(answer, followupId)),
         headers: { 'Idempotency-Key': key },
       })
-      return attemptDto(await apiFetch<unknown>(`/attempts/${id}`))
+      return attemptDto(await apiFetch<unknown>(`/attempts/${id}`, { cache: 'no-store' }))
     },
     async feedback(_id, answerId, onStatus, signal) {
       let result: Feedback | undefined
@@ -320,14 +332,14 @@ export function createApiGateway(): ClassroomGateway {
     },
     async finish(id) {
       await apiFetch(`/attempts/${id}/finish`, body({}))
-      return attemptDto(await apiFetch<unknown>(`/attempts/${id}`))
+      return attemptDto(await apiFetch<unknown>(`/attempts/${id}`, { cache: 'no-store' }))
     },
     async reflect(id, reflection) {
       await apiFetch(
         `/attempts/${id}/reflection`,
         body({ difficulty: reflection.difficulty, text: reflection.text }),
       )
-      return attemptDto(await apiFetch<unknown>(`/attempts/${id}`))
+      return attemptDto(await apiFetch<unknown>(`/attempts/${id}`, { cache: 'no-store' }))
     },
     async report(child, period, revision) {
       const reports = list(await apiFetch<unknown>(`/children/${child.id}/reports`)).map(object)

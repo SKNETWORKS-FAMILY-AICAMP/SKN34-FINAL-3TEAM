@@ -17,7 +17,7 @@ class AuthOpenApiTests(unittest.TestCase):
             (ROOT / "contracts/openapi/core-service.yaml").read_text(encoding="utf-8")
         )
 
-    def test_paths_match_the_six_implemented_controller_operations(self):
+    def test_paths_match_the_seven_implemented_controller_operations(self):
         source = (
             ROOT
             / "backend/core-service/src/main/kotlin/com/sagomungchi/core/account/controller/AuthController.kt"
@@ -33,7 +33,7 @@ class AuthOpenApiTests(unittest.TestCase):
             if method in {"get", "post", "patch", "delete", "put"}
             and ("Auth" in operation.get("tags", []) or (path == "/me" and method == "get"))
         }
-        self.assertEqual(len(actual), 6)
+        self.assertEqual(len(actual), 7)
         device_source = (ROOT / "backend/core-service/src/main/kotlin/com/sagomungchi/core/account/controller/StudentDeviceController.kt").read_text(encoding="utf-8")
         actual.update((method.lower(), path.removeprefix("/api/v1"))
                       for method, path in re.findall(r'@(Get|Post)Mapping\("([^\"]+)"\)', device_source)
@@ -98,8 +98,15 @@ class AuthOpenApiTests(unittest.TestCase):
             ["PARENT", "ADMIN"],
         )
 
+    def test_student_logout_has_bearer_only_without_refresh_cookie_mutation(self):
+        operation = self.spec["paths"]["/auth/student/logout"]["post"]
+        self.assertEqual(operation["security"], [{"BearerAuth": []}])
+        self.assertNotIn("Set-Cookie", operation["responses"]["204"]["headers"])
+        self.assertIn("401", operation["responses"])
+        self.assertIn("403", operation["responses"])
+
     def test_cookie_posts_require_origin_and_requested_with(self):
-        for path in ("/auth/refresh", "/auth/logout", "/auth/student-sessions"):
+        for path in ("/auth/refresh", "/auth/logout", "/auth/student/logout", "/auth/student-sessions"):
             refs = {value["$ref"] for value in self.spec["paths"][path]["post"]["parameters"]}
             self.assertEqual(
                 refs,
