@@ -23,12 +23,12 @@ class PublicAuthFilter(private val auth: AuthService, private val properties: Au
         val studentDeviceEntry = (request.method == "GET" && path == "/auth/student/profiles") ||
             (request.method == "POST" && path in setOf("/auth/student/devices", "/auth/student/login"))
         try {
-            if (request.method == "POST" && (studentDeviceEntry || path in setOf("/auth/refresh", "/auth/logout", "/auth/student-sessions", "/me/reauth"))) {
+            if (request.method == "POST" && (studentDeviceEntry || path in setOf("/auth/refresh", "/auth/logout", "/auth/student/logout", "/auth/student-sessions", "/me/reauth"))) {
                 if (request.getHeader("Origin") != properties.webOrigin || request.getHeader("X-Requested-With") != "XMLHttpRequest")
                     throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "허용되지 않은 요청 출처입니다.")
             }
             val public = (request.method == "GET" && path in setOf("/auth/google/authorize", "/auth/google/callback", "/auth/google/reauth/callback", "/consent-documents", "/products")) ||
-                (request.method == "POST" && path in setOf("/auth/refresh", "/auth/logout", "/webhooks/tosspayments")) || studentDeviceEntry
+                (request.method == "POST" && path in setOf("/auth/refresh", "/auth/logout", "/auth/student/logout", "/webhooks/tosspayments")) || studentDeviceEntry
             val withdrawalReceipt = request.method == "GET" && path == "/me/withdrawal" && request.getHeader("X-Withdrawal-Status-Token") != null
             if (public || withdrawalReceipt) { chain.doFilter(request, response); return }
             val bearer = request.getHeader("Authorization")?.takeIf { it.startsWith("Bearer ") }?.removePrefix("Bearer ")

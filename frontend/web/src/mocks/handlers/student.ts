@@ -158,6 +158,17 @@ export const studentHandlers = [
       return { accessToken: issueToken(), role: mockRole }
     }),
   ),
+  http.post('/api/v1/auth/student/logout', ({ request }) =>
+    respond(async () => {
+      guard(request)
+      if (mockRole !== 'STUDENT') throw new ApiError({ status: 403, code: 'FORBIDDEN', title: '학생 세션이 필요합니다.' })
+      await store.logout()
+      mockRole = undefined
+      token = ''
+      child = undefined
+      return undefined
+    }, 204),
+  ),
   http.post('/api/v1/auth/logout', () =>
     respond(async () => {
       await store.logout()

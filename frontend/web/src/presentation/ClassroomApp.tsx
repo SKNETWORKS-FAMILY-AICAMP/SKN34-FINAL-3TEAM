@@ -97,14 +97,14 @@ export function ClassroomApp() {
     try {
       await auth.logout.mutateAsync()
     } catch {
+      if (session?.role === 'STUDENT') return // Keep the student session and show the mutation error.
       /* 세션은 항상 정리, 시연 데이터로 대체하지 않는다. */
-    } finally {
-      setSession(null)
-      setExpired(false)
-      navigate('/login', { replace: true })
-      setDetail(null)
-      setPassword(isDemo ? 'demo-only' : '')
     }
+    setSession(null)
+    setExpired(false)
+    navigate('/login', { replace: true })
+    setDetail(null)
+    setPassword(isDemo ? 'demo-only' : '')
   }
   async function enter(c: Child) {
     try {
@@ -340,6 +340,7 @@ export function ClassroomApp() {
               void leave()
             }}
           >
+            <ErrorNotice error={auth.logout.error} />
             {work ? (
               <StudentWorkPage
                 key={work}

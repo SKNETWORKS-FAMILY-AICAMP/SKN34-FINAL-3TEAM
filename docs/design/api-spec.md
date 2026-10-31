@@ -198,6 +198,7 @@
 | GET | `/auth/google/callback` | 공개 | Google 코드 교환·ID 토큰 검증 → refresh 쿠키 → web 복귀 | ACC-03 | 제안 |
 | POST | `/auth/refresh` | 쿠키 | access token 재발급 | ACC-04 | 제안 |
 | POST | `/auth/logout` | 인증 | refresh token 폐기 | ACC-04 | 제안 |
+| POST | `/auth/student/logout` | 학생 Bearer | 해당 학생 세션만 폐기, 보호자 refresh·기기 쿠키 유지 | ACC-04, ACC-05 | 핵심 |
 | POST | `/auth/student-sessions` | 학부모 | 학생 진입(동석): `{childId}` 연결 자녀 확인 후 학생 세션(`STUDENT` 토큰) 발급. 시연 링크·URL 식별값 진입 없음 (P01) | ACC-05 | 제안 |
 | POST | `/auth/student/devices` | 공개 | 페어링 코드로 기기 등록 `{pairingCode, label}` → 기기 자격증명 쿠키 발급, 등록 자녀 프로필 반환 (P01, 3.11) | ACC-14 | 제안 |
 | GET | `/auth/student/profiles` | 기기 쿠키 | 이 기기에 등록된 자녀 프로필 `{childId, nickname, pinSet, pinLocked}` (P01, `/children` 확장과 같은 필드명) | ACC-05 | 제안 |
@@ -877,6 +878,8 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - web/API 동일 origin. refresh 쿠키 `sagomungchi_refresh`: HttpOnly·Secure·SameSite=Strict·Path=/api/v1/auth. OAuth 상태 쿠키 `sagomungchi_oauth`: HttpOnly·Secure·SameSite=Lax·Path=/api/v1/auth/google, 10분. 로컬 HTTP만 Secure=false.
 - Google state·nonce·PKCE S256 및 ID 토큰 JWKS 서명·iss·aud·exp·nonce 검증. 서비스 토큰을 URL에 넣지 않는다. callback 성공은 `/oauth/complete`, 실패는 `/login?oauthError=<고정 코드>`.
 - 부모/관리자 refresh는 Web Locks로 탭 간 직렬화한다. 학생 전환·로그아웃 알림을 받은 다른 탭은 토큰·캐시를 지우며 학생 refresh로 다시 로그인하지 않는다. 학생→부모 복귀는 Google 로그인부터 시작한다.
+- PIN/동석 학생의 종료는 `POST /auth/student/logout`을 사용한다. `Origin`·`X-Requested-With`와 유효한 학생 Bearer를 검증하고 그 세션만 폐기한다(204, Cache-Control: no-store, Set-Cookie 없음). 누락·만료·위조 Bearer는 401, 다른 역할·출처는 403이며 동반된 보호자 refresh로 대체 인증하거나 보호자 세션을 폐기하지 않는다. 기존 `/auth/logout`의 보호자·관리자 로그아웃 계약은 유지한다.
+- 학생에서 보호자 로그인 화면으로 전환할 때는 해당 탭의 access·화면 캐시만 정리하며 전역 LOGOUT을 방송하지 않는다. 탭별 비밀정보 없는 `sessionStorage` 전환 표식으로 새로고침 후에도 보호자 쿠키 자동 복원을 차단하고, Google OAuth 완료 후에만 보호자 역할을 복원한다. PIN 진입 및 학생 만료 경로는 유지한다.
 - 계정 복구·비밀번호 변경 API는 Google 단일 로그인 범위에서 제외(기기·PIN 저장은 core V13, Google 재인증은 5.6).
 
 
