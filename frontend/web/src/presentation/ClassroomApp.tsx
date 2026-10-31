@@ -155,7 +155,7 @@ export function ClassroomApp() {
       <div className="ux-preview">
         <span>
           {isDemo
-            ? 'MSW 목업 모드 · 실제 API 요청을 가로채는 가상 응답 · 운영 서버 호출 없음'
+            ? import.meta.env.VITE_PAYMENT_TEST === 'true' ? '결제 테스트 모드 · 학습 데이터는 가상 · 토스 테스트 결제 연동' : 'MSW 목업 모드 · 실제 API 요청을 가로채는 가상 응답 · 운영 서버 호출 없음'
             : 'API 연결 모드 · core 공개 API만 호출 · 오류 시 예시 데이터 대체 없음'}
         </span>
         {isDemo && (

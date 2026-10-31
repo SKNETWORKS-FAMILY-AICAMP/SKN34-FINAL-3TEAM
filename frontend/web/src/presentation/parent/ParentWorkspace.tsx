@@ -17,6 +17,7 @@ import { StudentDevices } from './StudentDevices.tsx'
 import { ParentDashboard } from './ParentDashboard.tsx'
 import { AccountLifecycle } from '../service/AccountLifecycle.tsx'
 import { Withdrawal } from '../service/Withdrawal.tsx'
+import { ParentPayments } from './ParentPayments.tsx'
 export function ParentWorkspace() {
   const [params, setParams] = useSearchParams(),
     location = useLocation(),
@@ -51,6 +52,7 @@ export function ParentWorkspace() {
       { path: '/parent/report', label: '주간 리포트' },
       { path: '/parent/settings', label: '정보 관리' },
       { path: '/parent/devices', label: '자녀 기기·PIN' },
+      { path: '/parent/billing', label: '이용권·결제' },
     ]
   return (
     <Workspace
@@ -125,7 +127,7 @@ export function ParentWorkspace() {
       {child?.hasRecords === false && child.recordState === 'AVAILABLE' && <p>아직 학습 기록이 없습니다. 이 자녀로 첫 학습을 시작해 주세요.</p>}
       {child?.guardianConsentRequired && <p role="alert">법정대리인 동의가 필요합니다. 정보 관리에서 현재 문서에 동의해 주세요.</p>}
       {page === 'settings' && <ConsentSettings key={child?.id} child={child} />}
-      <PeriodFilter
+      {page !== 'billing' && <PeriodFilter
         key={`${scope.from}:${scope.to}`}
         period={scope}
         onApply={({ from, to }) => {
@@ -134,11 +136,11 @@ export function ParentWorkspace() {
           next.set('to', to)
           setParams(next)
         }}
-      />
-      <span className="ws-scope">
+      />}
+      {page !== 'billing' && <span className="ws-scope">
         선택 범위 · {child?.nickname ?? '자녀 미선택'} · {scope.from} ~ {scope.to}
-      </span>
-      {children.data && !children.error && !children.data.items.length ? (
+      </span>}
+      {page === 'billing' ? <ParentPayments key={child?.id ?? 'all'} child={child} /> : children.data && !children.error && !children.data.items.length ? (
         <section className="ws-card">
           <h1>먼저 자녀를 등록해 주세요.</h1>
           <p>연결된 자녀가 없어 아직 기록을 조회하지 않습니다.</p>
