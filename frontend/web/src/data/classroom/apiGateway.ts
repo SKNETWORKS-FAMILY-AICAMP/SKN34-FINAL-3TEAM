@@ -255,7 +255,7 @@ export function createApiGateway(): ClassroomGateway {
       return attemptDto(await apiFetch<unknown>(`/missions/${mission.id}/attempts`, body({})))
     },
     async attempt(id) {
-      const response = await apiResponse<unknown>(`/attempts/${id}`)
+      const response = await apiResponse<unknown>(`/attempts/${id}`, { cache: 'no-store' })
       const a = attemptDto(response.data)
       if (a.draft && response.etag) a.draft.version = response.etag
       return a
@@ -292,7 +292,7 @@ export function createApiGateway(): ClassroomGateway {
         ...body(payload(answer, followupId)),
         headers: { 'Idempotency-Key': key },
       })
-      return attemptDto(await apiFetch<unknown>(`/attempts/${id}`))
+      return attemptDto(await apiFetch<unknown>(`/attempts/${id}`, { cache: 'no-store' }))
     },
     async feedback(_id, answerId, onStatus, signal) {
       let result: Feedback | undefined
@@ -320,14 +320,14 @@ export function createApiGateway(): ClassroomGateway {
     },
     async finish(id) {
       await apiFetch(`/attempts/${id}/finish`, body({}))
-      return attemptDto(await apiFetch<unknown>(`/attempts/${id}`))
+      return attemptDto(await apiFetch<unknown>(`/attempts/${id}`, { cache: 'no-store' }))
     },
     async reflect(id, reflection) {
       await apiFetch(
         `/attempts/${id}/reflection`,
         body({ difficulty: reflection.difficulty, text: reflection.text }),
       )
-      return attemptDto(await apiFetch<unknown>(`/attempts/${id}`))
+      return attemptDto(await apiFetch<unknown>(`/attempts/${id}`, { cache: 'no-store' }))
     },
     async report(child, period, revision) {
       const reports = list(await apiFetch<unknown>(`/children/${child.id}/reports`)).map(object)
