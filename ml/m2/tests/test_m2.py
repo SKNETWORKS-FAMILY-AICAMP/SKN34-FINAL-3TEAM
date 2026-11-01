@@ -161,6 +161,28 @@ def test_detail_to_areas_skips_unscored_items():
         t.USE_DETAIL = monkeypatch_detail
 
 
+# ---------- 영역 3개 + 세부 11개 함께 (train_545 --both) ----------
+def test_both_uses_first_three_as_areas():
+    pytest.importorskip("torch")
+    pytest.importorskip("transformers")
+    import train_545 as t
+
+    old = (t.USE_DETAIL, t.USE_BOTH)
+    t.USE_DETAIL, t.USE_BOTH = True, True
+    try:
+        df = pd.DataFrame({"essay_id": ["E1"]})
+        for c in t.AREAS + t.DETAIL:
+            for r in (1, 2, 3):
+                df[f"{c}_r{r}"] = float(r)  # 채점자 평균 = 2.0
+        y = t.train_target(df)
+        assert y.shape == (1, 3 + len(t.DETAIL))
+        assert y[0, :3] == pytest.approx([2.0, 2.0, 2.0])
+        pred = np.arange(3 + len(t.DETAIL), dtype=float)[None, :]
+        assert t.to_areas(pred, df).tolist() == [[0.0, 1.0, 2.0]]
+    finally:
+        t.USE_DETAIL, t.USE_BOTH = old
+
+
 # ---------- 표 만들기 (build_tables): 합성 JSON·zip으로 ----------
 def _fake_json(answer_id="A1", item_name="내용 설명"):
     return {

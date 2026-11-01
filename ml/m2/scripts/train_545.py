@@ -37,6 +37,8 @@ AREAS = ["org", "cont", "exp"]
 # 손실에서 빠짐
 DETAIL = [f"{a}_{j}" for a, n in (("org", 4), ("cont", 4), ("exp", 3)) for j in range(n)]
 USE_DETAIL = False
+# --both: 영역 3개 + 세부 11개 = 14칸을 함께 학습. 영역 점수는 앞 3칸을 그대로 씀 (3.1 후보)
+USE_BOTH = False
 
 
 def target(df):
@@ -50,10 +52,11 @@ def train_target(df):
     """학습 정답: 기본은 영역 3개, --detail이면 세부 11개(빈칸은 NaN)"""
     if not USE_DETAIL:
         return target(df)
-    return np.stack(
+    det = np.stack(
         [df[[f"{c}_r{r}" for r in (1, 2, 3)]].mean(axis=1, skipna=False) for c in DETAIL],
         1,
     ).astype("float32")
+    return np.concatenate([target(df), det], 1) if USE_BOTH else det
 
 
 def to_areas(pred, df):
@@ -63,6 +66,8 @@ def to_areas(pred, df):
     """
     if not USE_DETAIL:
         return pred
+    if USE_BOTH:  # 앞 3칸이 영역 점수
+        return pred[:, :3]
     valid = ~np.isnan(train_target(df))
     out = []
     for a in AREAS:
@@ -203,6 +208,12 @@ def main():
         "build_545_detail.py). 평가는 영역 3개로 묶어서 기존과 같게",
     )
     ap.add_argument(
+        "--both",
+        action="store_true",
+        help="영역 3개 + 세부 11개 = 14칸을 함께 학습 (세부 항목이 영역 점수를 돕는지 확인용). "
+        "평가는 앞 3칸(영역 점수)을 그대로 씀. --detail과 같은 세부 점수 파일 필요",
+    )
+    ap.add_argument(
         "--lora",
         type=int,
         default=0,
@@ -240,9 +251,11 @@ def main():
         torch.backends.cuda.matmul.allow_tf32 = True
 
     df = pd.read_csv(args.data_dir / "에세이545_답안.csv.gz", dtype={"essay_id": str})
-    if args.detail:
-        global USE_DETAIL
-        USE_DETAIL = True
+    if args.detail and args.both:
+        ap.error("--detail과 --both는 함께 쓸 수 없음")
+    if args.detail or args.both:
+        global USE_DETAIL, USE_BOTH
+        USE_DETAIL, USE_BOTH = True, args.both
         det = pd.read_csv(args.data_dir / "에세이545_세부.csv.gz", dtype={"essay_id": str})
         df = df.merge(det, on="essay_id", how="left", validate="one_to_one")
         assert df[[f"{c}_r1" for c in DETAIL]].notna().any(axis=1).all(), "세부 점수 없는 글 있음"
@@ -263,6 +276,8 @@ def main():
         tag += f"_{Path(args.model).name}_lora{args.lora}"
     if args.detail:
         tag += "_detail"
+    if args.both:
+        tag += "_both"
     if args.data_dir.name != "data":  # 예: data/clean → _clean (원래 결과를 덮어쓰지 않게)
         tag += f"_{args.data_dir.name}"
     if args.mask_disagree:
@@ -302,7 +317,7 @@ def main():
     tok = AutoTokenizer.from_pretrained(args.model)
     if tok.pad_token is None:  # LLM 토크나이저는 pad가 없는 경우가 많음
         tok.pad_token = tok.eos_token
-    n_out = len(DETAIL) if args.detail else 3
+    n_out = 3 + len(DETAIL) if args.both else len(DETAIL) if args.detail else 3
     model = build_model(args, n_out, tok).to(dev)
     # 시작값 = 학습 정답 평균. LoRA면 점수 칸 사본(modules_to_save)까지 모두 같은 값으로
     heads = [
@@ -330,7 +345,9 @@ def main():
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
     steps = len(dls["train"]) * args.epochs
     sch = get_linear_schedule_with_warmup(opt, int(steps * 0.1), steps)
-    out_dir = args.out_dir or M2 / "checkpoints" / f"e545{tag}"
+    # 세부 항목 실험은 시드별로 폴더를 나눔 (11/1 시드 42가 시드 43 폴더를 덮어쓴 일 이후)
+    seed_dir = f"_seed{args.seed}" if args.detail or args.both else ""
+    out_dir = args.out_dir or M2 / "checkpoints" / f"e545{tag}{seed_dir}"
     out_dir.mkdir(parents=True, exist_ok=True)
     best, start = -1.0, time.time()
     for ep in range(1, args.epochs + 1):
@@ -374,13 +391,14 @@ def main():
         raw = predict(model, dls[name], dev)
         p = to_areas(raw, sets[name])
         preds[name], preds[name + "_id"] = p, sets[name]["essay_id"].to_numpy(dtype=str)
-        if args.detail:
-            preds[name + "_detail"] = raw
+        if args.detail or args.both:
+            off = 3 if args.both else 0  # --both면 세부 항목은 4번째 칸부터
+            preds[name + "_detail"] = raw[:, off:]
             y = train_target(sets[name])
             r = {
-                c: round(float(np.corrcoef(raw[ok, i], y[ok, i])[0, 1]), 3)
+                c: round(float(np.corrcoef(raw[ok, off + i], y[ok, off + i])[0, 1]), 3)
                 for i, c in enumerate(DETAIL)
-                if (ok := ~np.isnan(y[:, i])).sum() > 100
+                if (ok := ~np.isnan(y[:, off + i])).sum() > 100
             }
             print(f"{name} 세부 항목 Pearson (채점자 평균 대비): {r}")
         rows += scores(sets[name], p, name)
