@@ -26,11 +26,11 @@ async def classify(state: AnalysisState, runtime: Runtime[AgentContext]) -> Anal
     request = state["request"]
     try:
         result = await runtime.context.llm.generate(
-            system=prompts.CLASSIFY_SYSTEM,
-            user=prompts.build_classify_user(request),
+            system=runtime.context.prompt.body.CLASSIFY_SYSTEM,
+            user=runtime.context.prompt.body.build_classify_user(request),
             output=prompts.Classification,
             call_type="ANALYSIS",
-            prompt_version=prompts.PROMPT_VERSION,
+            prompt_version=runtime.context.prompt.version,
             max_tokens=256,
             deadline=runtime.context.deadline,
         )

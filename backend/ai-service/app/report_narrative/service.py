@@ -19,23 +19,28 @@ from app.report_narrative.models import (
     NarrativeRequest,
     NarrativeResponse,
 )
+from app.versions import ActiveVersions
 
 logger = logging.getLogger(__name__)
 
 
 class NarrativeService:
-    def __init__(self, llm: LlmClient, settings: Settings) -> None:
+    def __init__(
+        self, llm: LlmClient, settings: Settings, versions: ActiveVersions | None = None
+    ) -> None:
         self._llm = llm
         self._settings = settings
+        self._versions = versions or ActiveVersions()
 
     async def generate(self, request: NarrativeRequest) -> NarrativeResponse:
+        prompt = self._versions.prompt("reportNarrative")
         try:
             generated = await self._llm.generate(
-                system=prompts.SYSTEM,
-                user=prompts.build_user(request),
+                system=prompt.body.SYSTEM,
+                user=prompt.body.build_user(request),
                 output=prompts.GeneratedNarrative,
                 call_type="REPORT_NARRATIVE",
-                prompt_version=prompts.PROMPT_VERSION,
+                prompt_version=prompt.version,
                 max_tokens=2048,
                 deadline=time.monotonic() + self._settings.narrative_deadline,
             )
@@ -65,5 +70,5 @@ class NarrativeService:
             narrative=Narrative(text=narrative),
             evening_question=evening_question,
             cited_quotes=list(cited.values()),
-            versions=LlmVersions(model=generated.model, prompt=prompts.PROMPT_VERSION),
+            versions=LlmVersions(model=generated.model, prompt=prompt.version),
         )

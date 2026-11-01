@@ -8,6 +8,18 @@ let refreshInFlight: Promise<void> | null = null
 let tokenRevision = 0
 let accessRole: 'PARENT' | 'STUDENT' | 'ADMIN' | undefined
 let studentMode = false
+const parentLoginKey = 'sagomungchi:parent-login-required'
+let parentLoginPending = false
+export function parentLoginRequired() {
+  return parentLoginPending || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(parentLoginKey) === 'true')
+}
+export function requireParentLogin() {
+  setAccessToken(null)
+  parentLoginPending = true
+  if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(parentLoginKey, 'true')
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('sagomungchi:parent-login-required'))
+}
+export function isStudentSession() { return studentMode }
 export function hasAccessToken() { return accessToken !== null }
 export function studentAuthenticationRequired() {
   setAccessToken(null)
@@ -21,6 +33,10 @@ export function setAccessToken(token: string | null, role?: 'PARENT' | 'STUDENT'
   studentMode = accessRole === 'STUDENT'
   accessToken = token
   tokenRevision++
+  if (token && (accessRole === 'PARENT' || accessRole === 'ADMIN')) {
+    parentLoginPending = false
+    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(parentLoginKey)
+  }
 }
 
 // Web Locks serialize cookie rotation across tabs; no tokens are persisted.
@@ -42,6 +58,8 @@ export function notifyAuthChange(mode: 'PARENT' | 'STUDENT' | 'ADMIN' | 'LOGOUT'
 export function watchAuthChange(listener: (mode: string) => void) {
   const target = authChannel()
   const handler = (event: MessageEvent) => {
+    // A different tab's parent login must not switch a student/guardian-entry tab's role.
+    if (event.data === 'PARENT' && (studentMode || parentLoginRequired() || window.location.pathname.startsWith('/student/'))) return
     setAccessToken(null)
     if (event.data === 'STUDENT') studentMode = true
     listener(typeof event.data === 'string' ? event.data : 'PARENT')
@@ -51,6 +69,8 @@ export function watchAuthChange(listener: (mode: string) => void) {
 }
 export async function refreshAccessToken() {
   if (studentMode) throw studentAuthenticationRequired()
+  if (parentLoginRequired() && (typeof window === 'undefined' || window.location.pathname !== '/oauth/complete'))
+    throw new ApiError({ status: 401, code: 'PARENT_LOGIN_REQUIRED', title: 'Google 계정으로 보호자 로그인을 진행해 주세요.', retryable: false })
   if (!refreshInFlight) {
     const revision = tokenRevision
     const hadAccess = accessToken !== null

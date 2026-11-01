@@ -472,6 +472,8 @@ stateDiagram-v2
 - 상태 컬럼 없이 `published_at IS NULL` = 미발행 (인덱스 `(created_at) WHERE published_at IS NULL`)
 - confirm 후 `published_at` 기록 전 중단되면 같은 이벤트가 다시 발행됨 → 소비자는 `processed_event`로 멱등 처리 (at-least-once)
 
+report #131은 위 미발행 상태를 `next_attempt_at`·`quarantined_at`으로 세분한다. 별도 status 컬럼은 추가하지 않는다. 최초 실패 후 1·5·15분으로 재시도하고 총 4회 실패 시 격리한다. 해당 학생의 후속 이벤트는 선두를 추월하지 않으며 다른 학생의 발행은 계속된다. 운영 CLI의 수동 재처리는 같은 id·payload·순서 위치를 유지하면서 실패 횟수·대기·격리를 초기화하고 수동 처리 횟수와 시각을 남긴다. [상세 정책](../report/issue-131-outbox-recovery.md)
+
 ---
 
 ## 8. 클라이언트 상태 (DB 미저장)
@@ -509,6 +511,10 @@ CONFIRMING은 PG 조회로만 확정하며, APPROVED/RECOVERY_REQUIRED는 추가
 ### #46 core 정정 실행 기록
 
 신고 상태는 기존 RECEIVED → IN_REVIEW → RESOLVED를 유지한다. core `SupportService.correct`는 신고 검토 중 correction.processing_status=PENDING 의도를 먼저 저장하고 HTTP를 트랜잭션 밖에서 실행한다. HTTP 실패 시 FAILED이며 신고는 IN_REVIEW다. 동일 correction UUID로 공급자가 성공을 확인하고 core 완료 트랜잭션까지 커밋될 때만 correction=COMPLETED·신고=RESOLVED·알림을 함께 기록한다. 응답 유실이나 core 저장 실패는 완료가 아니며 같은 의도로 재개한다. 원본 답변·판정은 변경하지 않는다.
+
+### #47 REPORT 관리자 재처리
+
+원래 FAILED report_job은 종료 상태를 유지한다. 명시적인 재처리는 별도 ADMIN_RETRY job을 QUEUED로 만들고 core report_job_retry로 연결한다. 새 job에 기존 QUEUED→RUNNING→COMPLETED/FAILED 전이를 적용하며 실행 번호는 새 job 기준이다. 기존 job의 attempt_no를 증가시키거나 오래된 종료 이벤트를 새 job에 재적용하지 않는다. 이미 재처리한 원작업은 재사용하지 않고 재실패한 자식 job에서 다음 관계를 만든다. 202는 접수이며 완료가 아니다.
 
 ### 4.1 보완: 종료 유실·삭제 (#132)
 

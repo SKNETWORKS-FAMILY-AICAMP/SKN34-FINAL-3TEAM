@@ -4,10 +4,6 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, Query, Request, Security
 from fastapi.security import APIKeyHeader
 
-from app.clients.base import internal_client
-from app.clients.learning_client import LearningClient
-from app.clients.storage import ObjectStorage
-from app.concurrency import run_blocking
 from app.config import get_settings
 from app.errors import problem_responses
 from app.generation.models import ReportStatus
@@ -23,27 +19,12 @@ router = APIRouter(
 
 async def query_service(request: Request):
     settings = get_settings()
-    created = []
-
-    def storage():
-        existing = getattr(request.app.state, "storage", None)
-        if existing is not None:
-            return existing
-        if not created:
-            created.append(ObjectStorage.configured())
-        return created[0]
-
-    async with internal_client(settings.learning_url) as client:
-        try:
-            yield QueryService(
-                request.app.state.session_factory,
-                LearningClient(client),
-                storage,
-                settings.report_download_ttl_seconds,
-            )
-        finally:
-            for instance in created:
-                await run_blocking(instance.close)
+    return QueryService(
+        request.app.state.session_factory,
+        request.app.state.learning_client,
+        lambda: request.app.state.storage,
+        settings.report_download_ttl_seconds,
+    )
 
 
 Service = Annotated[QueryService, Depends(query_service)]

@@ -19,7 +19,7 @@ data class OutboxEvent(
 interface OutboxEventRepository {
     fun insert(event: OutboxEvent)
 
-    /** 다른 레플리카가 잡은 행은 건너뜀 (FOR UPDATE SKIP LOCKED) */
+    /** 잠금 없는 조회, 레플리카 간 단일 실행은 OutboxRelay의 ShedLock이 보장 */
     fun findUnpublished(@Param("limit") limit: Int): List<OutboxEvent>
 
     fun markPublished(@Param("id") id: UUID, @Param("publishedAt") publishedAt: OffsetDateTime)

@@ -12,6 +12,7 @@ import type {
   Report,
 } from '../../domain/classroom.ts'
 import { createApiGateway } from './apiGateway.ts'
+import { saveReflection } from './learningApi.ts'
 import { demoEmailLogin } from './demoLogin.ts'
 import { calendarPeriods } from '../../domain/classroom.ts'
 import { pollFeedback } from './feedbackPolling.ts'
@@ -205,7 +206,7 @@ export function useLearningActions() {
   const finish = useMutation({ mutationFn: (id: string) => gateway.finish(id), onSuccess: update })
   const reflect = useMutation({
     mutationFn: ({ id, reflection }: { id: string; reflection: Reflection }) =>
-      gateway.reflect(id, reflection),
+      saveReflection(id, reflection).then(() => gateway.attempt(id)),
     onSuccess: update,
   })
   return { start, save, hint, submit, feedback, finish, reflect }

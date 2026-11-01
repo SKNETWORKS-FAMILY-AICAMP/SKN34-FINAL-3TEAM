@@ -97,14 +97,14 @@ export function ClassroomApp() {
     try {
       await auth.logout.mutateAsync()
     } catch {
+      if (session?.role === 'STUDENT') return // Keep the student session and show the mutation error.
       /* 세션은 항상 정리, 시연 데이터로 대체하지 않는다. */
-    } finally {
-      setSession(null)
-      setExpired(false)
-      navigate('/login', { replace: true })
-      setDetail(null)
-      setPassword(isDemo ? 'demo-only' : '')
     }
+    setSession(null)
+    setExpired(false)
+    navigate('/login', { replace: true })
+    setDetail(null)
+    setPassword(isDemo ? 'demo-only' : '')
   }
   async function enter(c: Child) {
     try {
@@ -155,7 +155,7 @@ export function ClassroomApp() {
       <div className="ux-preview">
         <span>
           {isDemo
-            ? 'MSW 목업 모드 · 실제 API 요청을 가로채는 가상 응답 · 운영 서버 호출 없음'
+            ? import.meta.env.VITE_PAYMENT_TEST === 'true' ? '결제 테스트 모드 · 학습 데이터는 가상 · 토스 테스트 결제 연동' : 'MSW 목업 모드 · 실제 API 요청을 가로채는 가상 응답 · 운영 서버 호출 없음'
             : 'API 연결 모드 · core 공개 API만 호출 · 오류 시 예시 데이터 대체 없음'}
         </span>
         {isDemo && (
@@ -251,7 +251,10 @@ export function ClassroomApp() {
               <section className="ux-login-form">
                 <h2>학부모·관리자 로그인</h2>
                 <a className="cj-primary" href="/api/v1/auth/google/authorize">Google 계정으로 계속하기</a>
-                <Link to="/login-help">로그인 도움말</Link>
+                <nav className="ux-login-links" aria-label="로그인 도움 메뉴">
+                  <Link to="/login-help">로그인 도움말</Link>
+                  <Link to="/admin/login">관리자 로그인</Link>
+                </nav>
                 <p>처음 로그인하면 이용 동의와 자녀 등록을 진행합니다.</p>
                 {new URLSearchParams(location.search).has('oauthError') &&
                   <p role="alert">{new URLSearchParams(location.search).get('oauthError') === 'CANCELLED'
@@ -292,12 +295,15 @@ export function ClassroomApp() {
                 <ArrowRight />
               </button>
               <ErrorNotice error={auth.login.error} />
-              <Link to="/login-help">로그인 도움말</Link>
-              <button type="button" className="cj-secondary" onClick={() => navigate('/signup')}>
+              <nav className="ux-login-links" aria-label="로그인 도움 메뉴">
+                  <Link to="/login-help">로그인 도움말</Link>
+                  <Link to="/admin/login">관리자 로그인</Link>
+                </nav>
+              <button type="button" className="cj-secondary ux-login-signup" onClick={() => navigate('/signup')}>
                 처음이신가요? 이용 등록
               </button>
               {isDemo && (
-                <small>
+                <small className="ux-login-demo-note">
                   관리자 시연: admin / content / ops / payment / refund@example.test · 비밀번호
                   demo-only
                 </small>
@@ -334,6 +340,7 @@ export function ClassroomApp() {
               void leave()
             }}
           >
+            <ErrorNotice error={auth.logout.error} />
             {work ? (
               <StudentWorkPage
                 key={work}

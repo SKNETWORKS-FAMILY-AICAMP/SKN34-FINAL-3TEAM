@@ -31,62 +31,75 @@ class AnalysisStreamService(private val conversations: ConversationService, priv
             }, delivery = { deliver ->
                 conversations.transport(ticket, deliver)
             }) { stream ->
-                call.attachThread()
-                val deadline = timer.schedule({ call.cancel("ANALYSIS_TIMEOUT") }, 120, TimeUnit.SECONDS)
-                var result: ObjectNode? = null
-                var clarification: JsonNode? = null
-                var terminal = false
-                var sawStatus = false
-                try {
-                    conversations.guard(ticket)
-                    stream.event("status", mapOf("state" to "RUNNING", "messageId" to ticket.message.id, "message" to "기록을 조회하는 중"))
-                    ai.stream(conversations.request(ticket), call) { name, data ->
-                        call.checkActive()
-                        conversations.guard(ticket)
-                        run {
-                            if (!stream.isConnected) call.cancel("STREAM_INTERRUPTED")
-                            call.checkActive()
-                            if (terminal && name != "done") invalid()
-                            when (name) {
-                                "status" -> {
-                                    if (data.path("state").asText() != "RUNNING" || !data.path("message").isTextual) invalid()
-                                    sawStatus = true
-                                    stream.event("status", mapOf("state" to "RUNNING", "messageId" to ticket.message.id, "message" to data.path("message").asText()))
-                                }
-                                "delta" -> {
-                                    if (!sawStatus || !data.path("text").isTextual) invalid()
-                                    stream.event("delta", mapOf("text" to data.path("text").asText()))
-                                }
-                                "result" -> { if (!sawStatus) invalid(); result = conversations.validateResult(ticket, data); terminal = true }
-                                "clarification" -> { clarification = conversations.validateClarification(ticket, data); terminal = true }
-                                "error" -> {
-                                    // Only a bounded public code/title crosses this boundary. No raw upstream body or exception text.
-                                    val code = data.path("code").asText()
-                                    if (!code.matches(Regex("[A-Z][A-Z0-9_]{0,79}"))) invalid()
-                                    throw BusinessException(org.springframework.http.HttpStatus.BAD_GATEWAY, code, "분석 처리를 완료하지 못했습니다.")
-                                }
-                                "done" -> { if (!terminal) invalid() }
-                                else -> invalid()
-                            }
-                        }
-                    }
-                    call.checkActive()
-                    if (!terminal) invalid()
-                    conversations.verifyEvidence(ticket, result)
-                    call.checkActive()
-                    conversations.complete(ticket, result, clarification)
-                    committed.set(true)
-                    result?.let { stream.event("result", it) }
-                    clarification?.let { stream.event("clarification", it) }
-                } catch (ex: Exception) {
-                    Thread.interrupted()
-                    val code = call.failure.get() ?: (ex as? BusinessException)?.code ?: "ANALYSIS_FAILED"
-                    conversations.fail(ticket, code)
-                    if (stream.isConnected) stream.event("error", mapOf("type" to "about:blank", "title" to "분석 처리를 완료하지 못했습니다.",
-                        "status" to ((ex as? BusinessException)?.status?.value() ?: 502), "code" to code, "retryable" to true, "messageId" to ticket.message.id))
-                } finally { deadline.cancel(false); call.finish(); Thread.interrupted() }
+                execute(ticket,call,{ stream.isConnected },{ name,data -> stream.event(name,data) },{ committed.set(true) })
             }
         } catch (ex: Exception) { conversations.fail(ticket, "STREAM_INTERRUPTED"); throw ex }
+    }
+    fun runBackground(ticket: AnalysisTicket) {
+        val previous=com.sagomungchi.core._common.security.UserContextHolder.currentOrNull()
+        try {
+            com.sagomungchi.core._common.security.UserContextHolder.set(ticket.context)
+            execute(ticket,AnalysisCall(),{ true },{ _,_ -> },{})
+        } finally {
+            if(previous==null) com.sagomungchi.core._common.security.UserContextHolder.clear()
+            else com.sagomungchi.core._common.security.UserContextHolder.set(previous)
+        }
+    }
+    private fun execute(ticket: AnalysisTicket,call: AnalysisCall,connected: () -> Boolean,emit: (String,Any) -> Unit,committed: () -> Unit) {
+        call.attachThread()
+        val deadline = timer.schedule({ call.cancel("ANALYSIS_TIMEOUT") }, 120, TimeUnit.SECONDS)
+        var result: ObjectNode? = null
+        var clarification: JsonNode? = null
+        var terminal = false
+        var sawStatus = false
+        try {
+            conversations.guard(ticket)
+            emit("status", mapOf("state" to "RUNNING", "messageId" to ticket.message.id, "message" to "기록을 조회하는 중"))
+            ai.stream(conversations.request(ticket), call) { name, data ->
+                call.checkActive()
+                conversations.guard(ticket)
+                run {
+                    if (!connected()) call.cancel("STREAM_INTERRUPTED")
+                    call.checkActive()
+                    if (terminal && name != "done") invalid()
+                    when (name) {
+                        "status" -> {
+                            if (data.path("state").asText() != "RUNNING" || !data.path("message").isTextual) invalid()
+                            sawStatus = true
+                            emit("status", mapOf("state" to "RUNNING", "messageId" to ticket.message.id, "message" to data.path("message").asText()))
+                        }
+                        "delta" -> {
+                            if (!sawStatus || !data.path("text").isTextual) invalid()
+                            emit("delta", mapOf("text" to data.path("text").asText()))
+                        }
+                        "result" -> { if (!sawStatus) invalid(); result = conversations.validateResult(ticket, data); terminal = true }
+                        "clarification" -> { clarification = conversations.validateClarification(ticket, data); terminal = true }
+                        "error" -> {
+                            // Only a bounded public code/title crosses this boundary. No raw upstream body or exception text.
+                            val code = data.path("code").asText()
+                            if (!code.matches(Regex("[A-Z][A-Z0-9_]{0,79}"))) invalid()
+                            throw BusinessException(org.springframework.http.HttpStatus.BAD_GATEWAY, code, "분석 처리를 완료하지 못했습니다.")
+                        }
+                        "done" -> { if (!terminal) invalid() }
+                        else -> invalid()
+                    }
+                }
+            }
+            call.checkActive()
+            if (!terminal) invalid()
+            conversations.verifyEvidence(ticket, result)
+            call.checkActive()
+            conversations.complete(ticket, result, clarification)
+            committed()
+            result?.let { emit("result", it) }
+            clarification?.let { emit("clarification", it) }
+        } catch (ex: Exception) {
+            Thread.interrupted()
+            val code = call.failure.get() ?: (ex as? BusinessException)?.code ?: "ANALYSIS_FAILED"
+            conversations.fail(ticket, code)
+            if (connected()) emit("error", mapOf("type" to "about:blank", "title" to "분석 처리를 완료하지 못했습니다.",
+                "status" to ((ex as? BusinessException)?.status?.value() ?: 502), "code" to code, "retryable" to true, "messageId" to ticket.message.id))
+        } finally { deadline.cancel(false); call.finish(); Thread.interrupted() }
     }
     private fun invalid(): Nothing = throw BusinessException(org.springframework.http.HttpStatus.BAD_GATEWAY,
         "AI_INVALID_RESPONSE", "AI 분석 이벤트 순서가 올바르지 않습니다.")

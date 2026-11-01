@@ -1,25 +1,30 @@
 package com.sagomungchi.core._common.messaging
 
+import net.javacrumbs.shedlock.core.LockAssert
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.springframework.amqp.core.Message
 import org.springframework.amqp.core.MessageProperties
 import org.springframework.amqp.rabbit.core.RabbitTemplate
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
-import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import java.time.OffsetDateTime
 
 /**
  * 미발행 outbox_event를 발행하고 publisher confirm 후 published_at 기록.
+ * 레플리카 간 단일 실행은 ShedLock이 보장, 발행·confirm 대기는 DB 트랜잭션 밖, 기록만 짧은 트랜잭션 (아키텍처 2.2).
  * 발행 후 기록 전 장애 시 재발행될 수 있으므로 소비자는 멱등 처리 (아키텍처 1.6).
  */
 @Component
 class OutboxRelay(
     private val repository: OutboxEventRepository,
     private val rabbitTemplate: RabbitTemplate,
+    private val transactionTemplate: TransactionTemplate,
 ) {
     @Scheduled(fixedDelayString = "\${app.messaging.outbox-relay-interval}")
-    @Transactional
+    @SchedulerLock(name = "core-outbox-relay", lockAtMostFor = "PT1M")
     fun relay() {
+        LockAssert.assertLocked()
         val events = repository.findUnpublished(BATCH_SIZE)
         if (events.isEmpty()) return
         rabbitTemplate.invoke { ops ->
@@ -27,7 +32,7 @@ class OutboxRelay(
             ops.waitForConfirmsOrDie(MessagingConfig.CONFIRM_TIMEOUT_MS)
         }
         val publishedAt = OffsetDateTime.now()
-        events.forEach { repository.markPublished(it.id, publishedAt) }
+        transactionTemplate.executeWithoutResult { events.forEach { repository.markPublished(it.id, publishedAt) } }
     }
 
     private fun toMessage(event: OutboxEvent): Message {

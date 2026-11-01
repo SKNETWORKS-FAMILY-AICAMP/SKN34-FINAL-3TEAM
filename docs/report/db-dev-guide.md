@@ -6,11 +6,11 @@
 
 ## 1. 마이그레이션 CI (`ci-db-schema.yml`)
 
-마이그레이션·ERD·검증 스크립트·`scripts/tests`·관련 설정이 바뀐 PR에서만 실행(보고서만 바꾼 PR 제외). PR별 이전 실행 취소, 제한 3분.
+마이그레이션·ERD·검증 스크립트·`test_verify_db_schema.py`·검증 fixture·관련 설정이 바뀐 PR에서만 실행(보고서만 바꾼 PR 제외). PR별 이전 실행 취소, 제한 3분. 전체 `scripts/tests` 계약 회귀는 별도 `ci-contracts.yml`에서도 실행하며 DB 변경에만 묶이지 않는다(#143).
 
 1. PostgreSQL 17.11 서비스 컨테이너(CI 전용 임시 계정, Secrets 불필요)
 2. report-service `uv.lock`으로 Python 3.12·마이그레이션 의존성 준비
-3. `python -O`로 검증기 회귀 테스트
+3. `python -O -m unittest discover -s scripts/tests -p test_verify_db_schema.py`로 DB 검증기 회귀 테스트
 4. `scripts/check_db_migrations.py`가 core_db·learning_db·report_db 생성(같은 이름 DB가 있으면 중단, 삭제·초기화하지 않음)
 5. core·learning Flyway(이미지는 `compose.yaml`과 같은 버전인지 확인), report Alembic 적용
 6. ERD·실제 스키마 대조, 합성 데이터 제약 위반 검사

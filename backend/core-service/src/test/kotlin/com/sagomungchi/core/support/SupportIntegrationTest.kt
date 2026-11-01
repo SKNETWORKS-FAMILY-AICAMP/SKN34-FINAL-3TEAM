@@ -241,6 +241,120 @@ class SupportIntegrationTest: IntegrationTestSupport() {
   }
   assertEquals(0,count("SELECT count(*) FROM notification WHERE user_id=?",user))
  }
+ private fun lookupProblem(status: Int, code: String=if(status==403) "FORBIDDEN" else "NOT_FOUND") = LearningHttpStub.Reply(status,
+  """{"status":$status,"code":"$code","title":"supplier private title","detail":"private student secret","studentId":"secret","instance":"/internal/private","traceId":"supplier-secret"}""",
+  mapOf("Content-Type" to "Application/Problem+Json; charset=UTF-8"))
+ private fun assertLookupError(error: JsonNode,status: Int) {
+  assertEquals(status,error["status"].asInt());assertEquals(if(status==403) "FORBIDDEN" else "NOT_FOUND",error["code"].asText())
+  assertEquals(if(status==403) "지원 대상에 접근할 권한이 없습니다." else "지원 대상 기록을 찾을 수 없습니다.",error["title"].asText())
+  assertFalse(error.toString().contains("secret"));assertFalse(error.toString().contains("private"));assertNull(error["studentId"])
+ }
+ @Test fun `support target permission and not found propagate through report inquiry and correction preflight HTTP`() {
+  val normal=stub.respond
+  val id=submit()["reportId"].asText();review(id)
+  val before=count("SELECT count(*) FROM error_report WHERE reporter_user_id=?",user)
+  for(status in listOf(403,404)) {
+   stub.respond={ req -> if(req.target.contains("/support/targets/")) lookupProblem(status) else normal(req) }
+   assertLookupError(call("POST","/error-reports",body=mapOf("targetType" to "JUDGMENT","targetId" to judgment,"category" to "OTHER"),key=UUID.randomUUID(),expected=status,snapshot="lookup-target-$status"),status)
+   assertLookupError(submit(studentToken,expected=status),status)
+   assertEquals(student.toString(),stub.requests.last().header("X-Student-Scope"))
+   assertEquals("STUDENT",stub.requests.last().header("X-User-Role"))
+   assertLookupError(call("POST","/inquiries",body=InquirySubmission("USAGE","연결 문의","확인",student,attempt),expected=status),status)
+   assertLookupError(correction(id,UUID.randomUUID(),status),status)
+   val req=stub.requests.last();assertEquals("ADMIN",req.header("X-User-Role"));assertEquals(student.toString(),req.header("X-Student-Scope"))
+   assertEquals("IN_REVIEW",call("GET","/error-reports/$id")["status"].asText())
+  }
+  assertEquals(before,count("SELECT count(*) FROM error_report WHERE reporter_user_id=?",user))
+  assertEquals(0,count("SELECT count(*) FROM inquiry WHERE user_id=?",user))
+  assertEquals(0,count("SELECT count(*) FROM correction WHERE error_report_id=?",UUID.fromString(id)))
+  assertEquals(0,count("SELECT count(*) FROM notification WHERE user_id=?",user))
+  assertTrue(stub.requests.none { it.target.endsWith("/corrections") })
+ }
+ @Test fun `support original permission and not found propagate through both administrator detail HTTP paths without audit success`() {
+  val report=submit()["reportId"].asText()
+  val inquiry=call("POST","/inquiries",body=InquirySubmission("USAGE","연결 문의","확인",student,attempt),expected=201)["inquiryId"].asText()
+  val normal=stub.respond
+  for(status in listOf(403,404)) {
+   stub.respond={ req -> if(req.target.contains("/support/attempts/")) lookupProblem(status) else normal(req) }
+   for(path in listOf("/admin/error-reports/$report","/admin/inquiries/$inquiry")) {
+    assertLookupError(call("GET",path,adminToken,expected=status),status)
+    val req=stub.requests.last();assertEquals("ADMIN",req.header("X-User-Role"));assertEquals(student.toString(),req.header("X-Student-Scope"))
+   }
+  }
+  assertEquals(0,count("SELECT count(*) FROM audit_log WHERE action='SUPPORT_ORIGINAL_VIEW' AND target_id IN (?,?)",UUID.fromString(report),UUID.fromString(inquiry)))
+ }
+ @Test fun `support GET malformed permission or not found and other HTTP failures remain unavailable`() {
+  val normal=stub.respond;val id=submit()["reportId"].asText()
+  val replies=mutableListOf<LearningHttpStub.Reply>()
+  for(status in listOf(403,404)) {
+   val code=if(status==403) "FORBIDDEN" else "NOT_FOUND"
+   for(body in listOf("not-json","[]","null","{}","""{"code":"$code"}""",
+       """{"status":"$status","code":"$code"}""", """{"status":$status.0,"code":"$code"}""",
+       """{"status":500,"code":"$code"}""", """{"status":$status,"code":"PRIVATE_SECRET"}""",
+       """{"status":$status,"code":403}""", """{"status":18446744073709552020,"code":"$code"}"""))
+    replies+=LearningHttpStub.Reply(status,body,mapOf("Content-Type" to "application/problem+json"))
+   for(type in listOf("application/json","text/html","application/problem+jsonx")) replies+=lookupProblem(status).copy(headers=mapOf("Content-Type" to type))
+   replies+=lookupProblem(status).copy(headers=emptyMap())
+  }
+  for(status in listOf(400,401,405,409,422,500,501,503)) replies+=lookupProblem(status)
+  for(reply in replies) {
+   stub.respond={ reply }
+   val error=submit(expected=503);assertEquals("SUPPORT_DEPENDENCY_UNAVAILABLE",error["code"].asText());assertFalse(error.toString().contains("secret"))
+   stub.respond={ req -> if(req.target.contains("/support/attempts/")) reply else normal(req) }
+   val original=call("GET","/admin/error-reports/$id",adminToken,expected=503)
+   assertEquals("SUPPORT_DEPENDENCY_UNAVAILABLE",original["code"].asText());assertFalse(original.toString().contains("secret"))
+  }
+  assertEquals(0,count("SELECT count(*) FROM audit_log WHERE action='SUPPORT_ORIGINAL_VIEW' AND target_id=?",UUID.fromString(id)))
+ }
+ @Test fun `malformed support GET success stays invalid response through public HTTP`() {
+  val normal=stub.respond;val id=submit()["reportId"].asText()
+  for(body in listOf("not-json","[]","{}","""{"studentId":"invalid","attemptId":"invalid"}""")) {
+   stub.respond={ LearningHttpStub.Reply(body=body) }
+   assertEquals("SUPPORT_INVALID_RESPONSE",submit(expected=502)["code"].asText())
+   stub.respond={ req -> if(req.target.contains("/support/attempts/")) LearningHttpStub.Reply(body=body) else normal(req) }
+   assertEquals("SUPPORT_INVALID_RESPONSE",call("GET","/admin/error-reports/$id",adminToken,expected=502)["code"].asText())
+  }
+  assertEquals(0,count("SELECT count(*) FROM audit_log WHERE action='SUPPORT_ORIGINAL_VIEW' AND target_id=?",UUID.fromString(id)))
+ }
+ @Test fun `actual correction POST permission and not found retain unavailable mapping`() {
+  val normal=stub.respond;val id=submit()["reportId"].asText();review(id);val key=UUID.randomUUID()
+  for(status in listOf(403,404)) {
+   stub.respond={ req -> if(req.target.endsWith("/corrections")) lookupProblem(status) else normal(req) }
+   val error=correction(id,key,503);assertEquals("SUPPORT_DEPENDENCY_UNAVAILABLE",error["code"].asText())
+   assertFalse(error.toString().contains("secret"))
+   assertEquals("FAILED",jdbc.queryForObject("SELECT processing_status FROM correction WHERE error_report_id=?",String::class.java,UUID.fromString(id)))
+   assertEquals("IN_REVIEW",call("GET","/error-reports/$id")["status"].asText())
+  }
+  assertEquals(0,count("SELECT count(*) FROM notification WHERE user_id=?",user))
+ }
+ @Test fun `scoped calls restore previous scope after errors success and transaction rejection`() {
+  val previous=com.sagomungchi.core._common.security.UserContext(user.toString(),"ADMIN",setOf(student.toString(),sibling.toString()),null)
+  val normal=stub.respond
+  UserContextHolder.set(previous)
+  try {
+   for(status in listOf(403,404)) {
+    stub.respond={ lookupProblem(status) }
+    for(action in listOf<()->JsonNode>({ supportClient.target("JUDGMENT",judgment,student) },{ supportClient.original(attempt,student) })) {
+     assertFailsWith<com.sagomungchi.core._common.exception.BusinessException> { action() }
+     assertEquals(previous,UserContextHolder.currentOrNull());assertEquals(student.toString(),stub.requests.last().header("X-Student-Scope"))
+    }
+   }
+   stub.respond=normal
+   supportClient.original(attempt,student);assertEquals(previous,UserContextHolder.currentOrNull())
+   val before=stub.requests.size
+   TransactionTemplate(manager).executeWithoutResult {
+    assertFailsWith<IllegalStateException> { supportClient.original(attempt,student) }
+    assertEquals(previous,UserContextHolder.currentOrNull())
+   }
+   assertEquals(before,stub.requests.size)
+  } finally { UserContextHolder.clear() }
+ }
+ @Test fun `support lookup transport and circuit failures retain learning error codes`() {
+  stub.respond={ throw java.io.IOException("private transport secret") }
+  val error=submit(expected=503);assertEquals("LEARNING_UNAVAILABLE",error["code"].asText());assertFalse(error.toString().contains("secret"))
+  client.circuit.transitionToOpenState()
+  try { assertEquals("LEARNING_CIRCUIT_OPEN",submit(expected=503)["code"].asText()) } finally { client.circuit.reset() }
+ }
  @Test fun `non correction HTTP failures remain 503 and malformed correction success remains 502`() {
   val normal=stub.respond
   listOf(409,422).forEach { status ->

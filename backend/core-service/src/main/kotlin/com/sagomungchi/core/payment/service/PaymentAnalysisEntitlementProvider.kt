@@ -15,10 +15,10 @@ import java.util.UUID
 class PaymentAnalysisEntitlementProvider(private val products: ProductEntitlementService): AnalysisEntitlementProvider {
     override fun entitlement(parentId: UUID,childId: UUID): AnalysisEntitlement {
         val value=products.forParent(parentId,childId)
-        val limit=value.product.limits.path("dailyConversations")
-        if(!limit.isIntegralNumber || !limit.canConvertToInt() || limit.intValue()<0) unavailable("PAYMENT_ENTITLEMENT_UNAVAILABLE")
+        val limit=value.product.limits["dailyConversations"]
+        if(limit !is Int || limit<0) unavailable("PAYMENT_ENTITLEMENT_UNAVAILABLE")
         val end=when(value.status) { "ACTIVE" -> value.periodEnd; "RENEWAL_FAILED" -> value.graceUntil; else -> null }
-        return AnalysisEntitlement(value.product.id,limit.intValue(),end?.atTime(9,0)?.atZone(ZoneId.of("Asia/Seoul"))?.toInstant(),value.conversationEnabled)
+        return AnalysisEntitlement(value.product.id,limit,end?.atTime(9,0)?.atZone(ZoneId.of("Asia/Seoul"))?.toInstant(),value.conversationEnabled)
     }
     @Transactional(propagation=Propagation.MANDATORY)
     override fun recordAttempt(parentId: UUID,childId: UUID,sourceId: UUID) {

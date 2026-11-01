@@ -1,4 +1,4 @@
-import type { Metric, Period, PublicAttempt, ThinkingType } from './classroom.ts'
+import type { Metric, Period, PublicAttempt, ThinkingType, AnalysisVerification, AnalysisFallback, AnalysisNotice } from './classroom.ts'
 import type { QueryState } from './queryState.ts'
 export interface Page<T> {
   items: T[]
@@ -62,8 +62,9 @@ export interface RecordPage extends Page<PublicAttempt> {
 export interface Evidence {
   attemptId: string
   missionTitle?: string
-  answerId: string
-  answerVersion?: number
+  kind?: 'ANSWER' | 'REFLECTION'
+  answerId: string | null
+  answerVersion?: number | null
   submittedAt?: string
   quote?: string
   available: boolean
@@ -76,8 +77,9 @@ export interface MessageResult {
   evidence: Evidence[]
   recordCount: number
   source: 'LLM' | 'LLM_RETRY' | 'TEMPLATE'
-  fallback?: { reason: string }
-  verification: { numbersMatched: boolean; quotesMatched: boolean }
+  fallback?: AnalysisFallback | null
+  notice?: AnalysisNotice | null
+  verification: AnalysisVerification
 }
 export interface ConversationMessage extends Partial<MessageResult> {
   messageId: string
@@ -200,8 +202,8 @@ export function reduceAnalysis(
   if (event.event === 'error') return { ...s, phase: 'FAILED', temporary: '', result: undefined }
   if (event.event === 'result') {
     const r = data as unknown as MessageResult
-    if (!r.scope || !r.verification?.numbersMatched || !r.verification.quotesMatched)
-      throw new Error('숫자·인용 대조가 완료되지 않은 결과입니다.')
+    if (!r.scope) throw new Error('답변 범위가 없습니다.')
+    assertVerifiedAnalysis(r)
     return {
       ...s,
       phase: 'DONE',
@@ -212,4 +214,28 @@ export function reduceAnalysis(
     }
   }
   return s
+}
+
+export function assertVerifiedAnalysis(r: Pick<MessageResult, 'source' | 'verification' | 'fallback' | 'notice'>): void {
+  const fail = () => { throw new Error('숫자·인용·표현 대조 또는 응답 출처 계약이 올바르지 않습니다.') }
+  if (r.verification?.numbersMatched !== true || r.verification.quotesMatched !== true || r.verification.contentAllowed !== true) fail()
+  if (!['LLM', 'LLM_RETRY', 'TEMPLATE'].includes(r.source)) fail()
+  if (r.source === 'TEMPLATE' ? Boolean(r.fallback) === Boolean(r.notice) : Boolean(r.fallback || r.notice)) fail()
+  if (r.fallback) {
+    const draft = r.fallback.draftVerification
+    if (r.fallback.reason === 'VERIFICATION_FAILED') {
+      if (!draft || [draft.numbersMatched, draft.quotesMatched, draft.contentAllowed].some(v => typeof v !== 'boolean') ||
+        [draft.numbersMatched, draft.quotesMatched, draft.contentAllowed].every(v => v === true)) fail()
+    } else if (r.fallback.reason !== 'AI_UNAVAILABLE' || draft !== null) fail()
+  }
+  if (r.notice && !['NO_RECORD', 'NO_CHANGES', 'NO_REFLECTIONS', 'UNSUPPORTED', 'MATH_CHECK'].includes(r.notice.reason)) fail()
+}
+export function analysisResultLabel(r: { source?: string; fallback?: AnalysisFallback | null; notice?: AnalysisNotice | null }): string {
+  if (r.notice) return {
+    NO_RECORD: '기록 없음 안내', NO_CHANGES: '비교할 보완 답변 없음', NO_REFLECTIONS: '돌아보기 없음',
+    UNSUPPORTED: '제공 범위 안내', MATH_CHECK: '수학 점검 제공 범위 안내',
+  }[r.notice.reason]
+  if (r.fallback?.reason === 'AI_UNAVAILABLE') return 'AI 응답 불가 · 확인된 기록으로 만든 규칙 응답'
+  if (r.fallback?.reason === 'VERIFICATION_FAILED') return 'AI 초안 대조 실패 · 확인된 기록으로 만든 규칙 응답'
+  return r.source === 'TEMPLATE' ? '확인된 기록으로 만든 규칙 응답' : '숫자·인용 대조 완료'
 }

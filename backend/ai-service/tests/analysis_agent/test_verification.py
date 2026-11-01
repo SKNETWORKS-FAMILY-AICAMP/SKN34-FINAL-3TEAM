@@ -56,3 +56,11 @@ def test_level_words_fail() -> None:
     checked = verify("사고력이 좋아졌어요.", CHANGES)
     assert not checked.verification.content_allowed
     assert not checked.passed
+
+
+def test_generated_fallback_with_small_denominator_has_no_unverified_threshold():
+    from app.analysis_agent.templates import fallback_answer
+
+    text = fallback_answer("VERIFICATION_FAILED", CHANGES, SCOPE)
+    assert "5개" not in text
+    assert verify(text, CHANGES).passed

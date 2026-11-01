@@ -1,7 +1,7 @@
 package com.sagomungchi.learning.mission.domain
 
 import com.sagomungchi.learning._common.exception.BusinessException
-import org.springframework.http.HttpStatus
+import com.sagomungchi.learning._common.exception.ErrorKind
 import java.util.UUID
 
 enum class MissionStatus { DRAFT, REVIEW_REQUIRED, PUBLISHED, UNPUBLISHED }
@@ -10,7 +10,7 @@ enum class ReviewResult { APPROVED, CHANGES_REQUESTED }
 
 /** 게시 필수 누락 (FN-ADM-11). missingFields는 영문 코드(core 프록시 통과·프론트가 한글 표시, class-diagram 4.1) */
 class MissionPublishIncompleteException(val missingFields: List<String>) :
-    BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "MISSION_PUBLISH_INCOMPLETE", "게시 필수 항목 누락", missingFields.joinToString(", "))
+    BusinessException(ErrorKind.UNPROCESSABLE, "MISSION_PUBLISH_INCOMPLETE", "게시 필수 항목 누락", missingFields.joinToString(", "))
 
 /**
  * 미션 상태 전이 (class-diagram 4.1 Mission, state-diagram 3.1). 버전은 번호.
@@ -43,7 +43,7 @@ class Mission(
     /** 검토 요청·검토 본문의 버전이 지금 편집 중인 버전인지 (다르면 화면이 낡은 버전을 보고 있음) */
     fun requireCurrent(missionVersion: Int, rubricVersion: Int) {
         if (missionVersion != currentVersion || rubricVersion != currentRubricVersion) {
-            throw BusinessException(HttpStatus.CONFLICT, "MISSION_VERSION_CONFLICT", "현재 버전과 다름",
+            throw BusinessException(ErrorKind.CONFLICT, "MISSION_VERSION_CONFLICT", "현재 버전과 다름",
                 "현재 미션 v$currentVersion·기준표 v${currentRubricVersion ?: "-"}")
         }
     }
@@ -92,7 +92,7 @@ class Mission(
     }
 
     private fun conflict(detail: String): Nothing =
-        throw BusinessException(HttpStatus.CONFLICT, "CONFLICT", "미션 상태 충돌", "$detail: $status")
+        throw BusinessException(ErrorKind.CONFLICT, "CONFLICT", "미션 상태 충돌", "$detail: $status")
 }
 
 /** 게시 검사 대상: 현재 미션·기준표 버전과 그 버전의 최신 검토 결과 */

@@ -100,7 +100,7 @@ class ModelVersionHttpTest : PostgresRepositoryTest() {
     @Test fun `usage HTTP returns the selected period failures latency tokens and null cost`() {
         val (_, access) = adminToken()
         usage.record(com.sagomungchi.core._common.messaging.EventEnvelope(type = "llm.usage.recorded", source = "ai-service",
-            dataschema = "llm.usage.recorded.v1", data = com.sagomungchi.core.usage.consumer.LlmUsageRecorded(
+            dataschema = "llm.usage.recorded.v1", data = com.sagomungchi.core.usage.domain.LlmUsageRecorded(
                 "ai", "FOLLOWUP", "no-price", "followup@1", 10, 20, 300, false, "TIMEOUT", OffsetDateTime.parse("2040-01-01T12:00:00+09:00"))))
         mvc.get("/api/v1/admin/ai-usage?from=2040-01-01&to=2040-01-01&callType=FOLLOWUP") {
             header("Authorization", "Bearer $access")

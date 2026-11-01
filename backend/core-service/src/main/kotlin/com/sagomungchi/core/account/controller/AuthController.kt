@@ -53,6 +53,12 @@ class AuthController(
             .cacheControl(CacheControl.noStore()).build()
     }
 
+    @PostMapping("/api/v1/auth/student/logout")
+    fun studentLogout(request: HttpServletRequest): ResponseEntity<Void> {
+        service.logoutStudent(request.getHeader("Authorization")?.takeIf { it.startsWith("Bearer ") }?.removePrefix("Bearer "))
+        return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build()
+    }
+
     @PostMapping("/api/v1/auth/student-sessions")
     fun student(@RequestBody body: StudentSessionRequest, request: HttpServletRequest, response: HttpServletResponse): Map<String, Any?> =
         issue(service.enterStudent(cookies.read(request, AuthCookies.REFRESH), body.childId, identity(request)), response)

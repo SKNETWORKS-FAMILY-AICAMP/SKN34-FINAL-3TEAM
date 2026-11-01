@@ -6,7 +6,6 @@ import com.sagomungchi.core._common.web.IdempotencyService
 import com.sagomungchi.core._common.security.UserContextHolder
 import com.sagomungchi.core.account.controller.AuthController
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
-import com.sagomungchi.core.payment.domain.PaymentView
 import com.sagomungchi.core.payment.service.*
 import com.sagomungchi.core.payment.service.PaymentTransactions.Companion.forbidden
 import jakarta.servlet.http.HttpServletRequest
@@ -38,14 +37,14 @@ class PaymentController(private val payments: PaymentService,private val refunds
         cached(request,key,"POST /orders",body,201) { payments.create(parent(request),body.childId,body.productId) }
     @PostMapping("/api/v1/payments/confirm")
     fun confirm(@Valid @RequestBody body: ConfirmPaymentRequest,@RequestHeader("Idempotency-Key") key: UUID,request: HttpServletRequest)=
-        cached(request,key,"POST /payments/confirm",body) { payments.confirm(parent(request),body.orderId,body.paymentKey,body.amount) }
+        cached(request,key,"POST /payments/confirm",body) { PaymentViewResponse.from(payments.confirm(parent(request),body.orderId,body.paymentKey,body.amount)) }
     @GetMapping("/api/v1/payments/{orderId}")
-    fun status(@PathVariable orderId: String,request: HttpServletRequest): PaymentView {
-        val user=parent(request);refunds.refreshOwned(user,orderId);return payments.status(user,orderId)
+    fun status(@PathVariable orderId: String,request: HttpServletRequest): PaymentViewResponse {
+        val user=parent(request);refunds.refreshOwned(user,orderId);return PaymentViewResponse.from(payments.status(user,orderId))
     }
     @GetMapping("/api/v1/payments")
     fun list(request: HttpServletRequest,@RequestParam(defaultValue="0") page: Int,@RequestParam(defaultValue="20") size: Int)=
-        mapOf("items" to payments.list(parent(request),null,null,null,page,size))
+        mapOf("items" to payments.list(parent(request),null,null,null,page,size).map(PaymentViewResponse::from))
     @GetMapping("/api/v1/subscriptions") fun subscriptions(request: HttpServletRequest)=mapOf("items" to payments.subscriptions(parent(request)))
     @GetMapping("/api/v1/subscriptions/{subscriptionId}/billing-key")
     fun setup(@PathVariable subscriptionId: UUID,request: HttpServletRequest)=payments.billingSetup(parent(request),subscriptionId)
@@ -59,11 +58,11 @@ class PaymentController(private val payments: PaymentService,private val refunds
     fun resume(@PathVariable subscriptionId: UUID,request: HttpServletRequest)=payments.autoRenew(parent(request),subscriptionId,true)
     @PostMapping("/api/v1/payments/{paymentId}/refund-requests")
     fun refund(@PathVariable paymentId: UUID,@Valid @RequestBody body: RefundReason,@RequestHeader("Idempotency-Key") key: UUID,request: HttpServletRequest)=
-        cached(request,key,"POST /payments/$paymentId/refund-requests",body,201) { refunds.request(parent(request),paymentId,body.reason) }
+        cached(request,key,"POST /payments/$paymentId/refund-requests",body,201) { RefundRequestResponse.from(refunds.request(parent(request),paymentId,body.reason)) }
     @GetMapping("/api/v1/admin/payments")
     fun adminPayments(request: HttpServletRequest,@RequestParam(required=false) status: String?,@RequestParam(required=false) from: LocalDate?,
         @RequestParam(required=false) to: LocalDate?,@RequestParam(defaultValue="0") page: Int,@RequestParam(defaultValue="20") size: Int): Any {
-        admin(request,"PAYMENT_VIEW"); return mapOf("items" to payments.list(null,status,from,to,page,size))
+        admin(request,"PAYMENT_VIEW"); return mapOf("items" to payments.list(null,status,from,to,page,size).map(PaymentViewResponse::from))
     }
     @GetMapping("/api/v1/admin/payments/reconciliation")
     fun reconciliation(request: HttpServletRequest,@RequestParam(required=false) from: LocalDate?,@RequestParam(required=false) to: LocalDate?,
@@ -72,12 +71,12 @@ class PaymentController(private val payments: PaymentService,private val refunds
     }
     @GetMapping("/api/v1/admin/refund-requests")
     fun adminRefunds(request: HttpServletRequest,@RequestParam(required=false) status: String?,@RequestParam(defaultValue="0") page: Int,
-        @RequestParam(defaultValue="20") size: Int): Any { admin(request,"PAYMENT_VIEW"); return mapOf("items" to refunds.list(status,page,size)) }
+        @RequestParam(defaultValue="20") size: Int): Any { admin(request,"PAYMENT_VIEW"); return mapOf("items" to refunds.list(status,page,size).map(RefundRequestResponse::from)) }
     @PostMapping("/api/v1/admin/refund-requests/{requestId}/approve")
     fun approve(@PathVariable requestId: UUID,@RequestHeader("Idempotency-Key") key: UUID,request: HttpServletRequest)=
-        cached(request,key,"POST /admin/refund-requests/$requestId/approve",mapOf("id" to requestId)) { refunds.approve(admin(request,"PAYMENT_REFUND"),requestId) }
+        cached(request,key,"POST /admin/refund-requests/$requestId/approve",mapOf("id" to requestId)) { RefundRequestResponse.from(refunds.approve(admin(request,"PAYMENT_REFUND"),requestId)) }
     @PostMapping("/api/v1/admin/refund-requests/{requestId}/reject")
-    fun reject(@PathVariable requestId: UUID,@Valid @RequestBody body: RefundReason,request: HttpServletRequest)=refunds.reject(admin(request,"PAYMENT_REFUND"),requestId,body.reason)
+    fun reject(@PathVariable requestId: UUID,@Valid @RequestBody body: RefundReason,request: HttpServletRequest)=RefundRequestResponse.from(refunds.reject(admin(request,"PAYMENT_REFUND"),requestId,body.reason))
     @PostMapping("/api/v1/webhooks/tosspayments")
     fun webhook(@RequestBody raw: ByteArray,@RequestHeader("tosspayments-webhook-transmission-id") id: String,
         @RequestHeader("tosspayments-webhook-transmission-time") time: String,@RequestHeader("tosspayments-webhook-signature") signature: String): Map<String,Boolean> {
@@ -91,8 +90,8 @@ class PaymentController(private val payments: PaymentService,private val refunds
         val result=idempotency.execute(key,identity.account.id,endpoint,identity.studentScope.map(UUID::toString).toSet(),json.writeValueAsBytes(body)) {
           try {
             val value=operation()
-            val actual=when { value is PaymentView && value.status=="CONFIRMING" -> 202
-                value is com.sagomungchi.core.payment.domain.RefundRequest && value.status=="APPROVED" -> 202
+            val actual=when { value is PaymentViewResponse && value.status=="CONFIRMING" -> 202
+                value is RefundRequestResponse && value.status=="APPROVED" -> 202
                 else -> status }
             HttpExchangeResult(actual,mapOf("Content-Type" to listOf("application/json"),"Cache-Control" to listOf("no-store")),json.writeValueAsBytes(value))
           } catch(e: com.sagomungchi.core._common.exception.BusinessException) {

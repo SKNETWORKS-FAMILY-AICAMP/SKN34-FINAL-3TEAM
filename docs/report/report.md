@@ -4,6 +4,8 @@
 
 계약은 [API 명세](../design/api-spec.md) 3.4·4.1.1·4.2.1·4.4·5.5, 메시지는 [report-messages](../../contracts/events/report-messages.md).
 
+#135 조회 API는 lifespan 소유 learning HTTP·S3 클라이언트를 요청 간 재사용하고 종료 때 정리한다. 권한 헤더는 요청마다 읽어 전달한다. 설정 유지 근거와 #139·#140 테스트 보강은 [통합 검토](issues-135-139-140.md)를 따른다.
+
 #152 관리자 실패 작업 재처리는 새 jobId·ADMIN_RETRY와 기존 생성/revision을 재사용한다. 원작업 연결·관리자 접수는 core #47, report 실행·중복 방어·기존 판 보존은 [#152 검토](issue-152-report-admin-retry.md)를 따른다. 기존 #50의 종료 작업 단순 재전달 종료 정책은 유지한다.
 
 ## 1. core 주간 리포트 (#42)
@@ -21,7 +23,7 @@
 - report-worker가 `report.generate`를 받아 작업 상태·결과 이벤트를 중복 없이 저장·발행. 공유 v1 스키마를 재사용(`report.generate` data는 `jobId·studentId·periodFrom·periodTo·trigger·narrativeEnabled` 6개, 요청 시각은 봉투 `time`)
 - `narrativeEnabled`는 필수 boolean. 누락·잘못된 형식은 DLQ
 - `app/messaging/contracts.py`는 엄격한 수신 DTO, `app/generation/codec.py`가 payload를 내부 모델로 변환. `requested_at`은 봉투 time을 보존(삭제 장벽에서 사용)
-- Outbox는 처리 중인 앞 100개 후보를 건너뛰어 다른 행을 선점, 발행은 최대 15초. 브로커 대기 동안 트랜잭션·행 잠금은 없지만 session lock용 연결 1개 사용(연결 풀과 worker 동시 실행 수를 함께 관리)
+- Outbox는 학생별 미발행 선두 중 적격 후보 100개에서 선점하며, 발행은 최대 15초다. #131에서 학생별 순서를 유지하고 실패한 학생만 1·5·15분 지연 후 격리한다. 다른 학생은 계속 처리한다. 브로커 대기 동안 트랜잭션·행 잠금은 없지만 학생별 session lock용 연결 1개를 사용한다(연결 풀과 worker 동시 실행 수를 함께 관리). [격리 조회·수동 재처리·마이그레이션](issue-131-outbox-recovery.md)
 - #56에서 기본 진입점에 core 별명 조회 → 기록 집계 → 서술 검증 → 파일 저장 생성기를 연결했다. 테스트용 `run(generator=...)` 주입도 유지한다.
 
 ## 3. 수치 계산 (#51)
@@ -206,3 +208,15 @@ JDK 기본 h2c 업그레이드를 포함한 POST를 Uvicorn이 400으로 거부�
 
 - 최종 통합 core 전체 `test bootJar`: **329개 통과, 실패·오류·생략 0**, Docker JDK 21·Gradle/Test heap 512MiB·CPU 2·단일 worker, 5분 26초. 실제 HTTP 11개 시나리오에서 사용한 JAR와 최종 JAR의 SHA-256이 같다.
 - 최종 변경분의 서비스 의존 방향, 학생 → 작업 잠금 순서, 트랜잭션 밖 HTTP·새 트랜잭션 반영, v1 계약·#129 조회/이용권 로직 보존, 문서 링크·`git diff --check`를 확인했다. 운영 성능·배포·원격 CI 완료를 의미하지 않는다. 서비스 CI는 feature push에서 실행하지 않고 PR 생성 후 실행되는 저장소 설정이다.
+
+## #167 하위 호출 서킷 브레이커 (2026-10-30)
+
+report-query와 report-recovery를 분리한다. 4xx·DATA_UNAVAILABLE 매핑, 2xx BUSY/FAILED, 학생 scope 복원을 보존한다. OPEN은 REPORT_UNAVAILABLE이며 복구는 다음 점검으로 남긴다. 관리자 재처리는 기존 Outbox 경로다.
+
+최근/최소 20건·실패율 50%·30초 차단·half-open 1건. 신규 production 의존성·오류 코드·Retry-After 없음. 최종 검증 결과는 아래와 같다.
+
+최종 검증: JDK 21 전용 Docker에서 `bash gradlew test bootJar --no-daemon --max-workers=1 --no-watch-fs --console=plain -Pkotlin.compiler.execution.strategy=in-process "-Dorg.gradle.jvmargs=-Xmx640m -XX:ActiveProcessorCount=2" -I /workspace/limits.gradle` 성공(17분 22초). 54개 클래스/346개 테스트, 실패·오류·생략 0. 검증 전용 init script는 test heap 640MiB·fork 1·8개 클래스마다 fork 교체·Spring context cache 4·CPU 2로 제한하며 저장소 실행 설정/테스트 제한 시간은 변경하지 않았다. `python -O -m unittest discover -s scripts/tests -p 'test_*contract.py' -v` 31개, `test_*openapi.py` 35개 통과. 실행한 core Kotlin/YAML/SQL 260개 파일이 최종 로컬 소스와 바이트 단위로 일치했다. `git diff --check` 통과.
+
+core HTTP·DB/Redis/RabbitMQ 통합 테스트이며 AI/report는 로컬 HTTP 대역, PG는 HttpClient/TossGateway 대역이다. 실제 AI·report 프로세스·토스 API 호출, 브라우저·원격 CI·운영 배포·성능 측정은 이번 검증에 포함하지 않는다. 기존 분석/결제 사용량·복구 흐름은 전체 테스트와 변경 없음 대조로 확인했다. 통합 브랜치 a5b72f7의 factory 선택 인자와 AI HTTP/1.1 변경을 보존했고, #168 d6ebee1에는 TossClient 변경이 없어 직접 파일 충돌이 없음을 읽기 전용으로 확인했다.
+
+#167 최신 develop b35b22e 접합 후 core 전체 400개 테스트·bootJar 통과(실패/오류/생략 0). 최초 환경 실패와 단일 JVM 재실행, 검증 대역/미검증 범위는 [분석 대화 보고서](issue-41-analysis-conversations.md)의 “#167 최신 develop 접합” 최종 검증 절을 따른다. 결제/report 서비스 및 #168 계층 변경은 develop 그대로 보존했다.

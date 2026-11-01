@@ -67,3 +67,22 @@ class SupportContractTest(unittest.TestCase):
   responses=public['paths']['/admin/error-reports/{reportId}/corrections']['post']['responses']
   self.assertIn('SUPPORT_CORRECTION_CONFLICT',responses['409']['description'])
   self.assertIn('SUPPORT_CORRECTION_REJECTED',responses['422']['description'])
+
+ def test_issue_163_get_errors_are_explicit_on_every_affected_public_operation(self):
+  public=yaml.safe_load((ROOT/'contracts/openapi/core-service.yaml').read_text(encoding='utf-8'))
+  operations={'/error-reports':'post','/inquiries':'post','/admin/error-reports/{reportId}':'get',
+              '/admin/inquiries/{inquiryId}':'get','/admin/error-reports/{reportId}/corrections':'post'}
+  for path,method in operations.items():
+   responses=public['paths'][path][method]['responses']
+   for status,code in [('403','FORBIDDEN'),('404','NOT_FOUND'),('502','SUPPORT_INVALID_RESPONSE'),
+                       ('503','SUPPORT_DEPENDENCY_UNAVAILABLE'),('504','LEARNING_TIMEOUT')]:
+    self.assertIn(code,responses[status]['description'],(path,status))
+    self.assertEqual(responses[status]['content']['application/problem+json']['schema'],{'$ref':'#/components/schemas/Problem'})
+   self.assertIn('사전 대상 GET',responses['404']['description'])
+   self.assertIn('실제 learning 정정 POST의 403/404도 기존 503',responses['503']['description'])
+  consumer=yaml.safe_load((ROOT/'contracts/openapi/support-learning-required.yaml').read_text(encoding='utf-8'))
+  for path in ('/support/targets/{targetType}/{targetId}','/support/attempts/{attemptId}'):
+   for status,code in [('403','FORBIDDEN'),('404','NOT_FOUND')]:
+    description=consumer['paths'][path]['get']['responses'][status]['description']
+    self.assertIn(code,description);self.assertIn('application/problem+json',description)
+    self.assertIn('503 SUPPORT_DEPENDENCY_UNAVAILABLE',description)

@@ -24,7 +24,7 @@ def fallback_answer(reason: FallbackReason, computation: Computation, scope: Sco
     quotes = fallback_evidence(computation)
     if quotes:
         lines.append("아이가 쓴 글:")
-        lines += [f"- {e.mission_title}: “{e.quote}”" for e in quotes]
+        lines += [f"- {e.mission_title}: 「{e.quote}」" for e in quotes]
     return "\n".join(lines)
 
 
@@ -65,7 +65,7 @@ def metric_line(metric: Metric) -> str:
         return f"{metric.label}: 해당하는 시도가 없어요"
     line = f"{metric.label}: {metric.denominator}개 중 {metric.numerator}개"
     if metric.value is None:
-        return f"{line} (5개보다 적어 비율은 표시하지 않아요)"
+        return f"{line} (기록이 적어 비율은 표시하지 않아요)"
     return f"{line} ({metric.value * 100:.0f}%)"
 
 

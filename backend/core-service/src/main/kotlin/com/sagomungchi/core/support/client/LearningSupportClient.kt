@@ -41,6 +41,18 @@ class LearningSupportClient(private val http: LearningClient, private val json: 
   // Preserve correction business failures without exposing the supplier's private Problem body.
   if(correction && response.status==409) throw BusinessException(HttpStatus.CONFLICT,"SUPPORT_CORRECTION_CONFLICT","판정 상태 또는 기존 정정 요청과 충돌합니다.")
   if(correction && response.status==422) throw BusinessException(HttpStatus.UNPROCESSABLE_ENTITY,"SUPPORT_CORRECTION_REJECTED","학습 서비스가 정정 요청을 수용하지 않았습니다.")
+  // Only the two support GETs opt into public permission/not-found errors.
+  if(method=="GET" && response.status in setOf(403,404)) {
+   val contentType=response.headers.entries.firstOrNull { it.key.equals("Content-Type",true) }
+    ?.value?.firstOrNull()?.substringBefore(';')?.trim()
+   val problem=try { json.readTree(response.body) } catch (_: com.fasterxml.jackson.core.JsonProcessingException) { null }
+   val code=if(response.status==403) "FORBIDDEN" else "NOT_FOUND"
+   if(contentType.equals("application/problem+json",true) && problem?.isObject==true &&
+       problem.path("status").isIntegralNumber && problem.path("status").canConvertToInt() && problem.path("status").asInt()==response.status &&
+       problem.path("code").isTextual && problem.path("code").asText()==code)
+    throw BusinessException(HttpStatus.valueOf(response.status),code,
+     if(response.status==403) "지원 대상에 접근할 권한이 없습니다." else "지원 대상 기록을 찾을 수 없습니다.")
+  }
   if(response.status !in 200..299) throw BusinessException(HttpStatus.SERVICE_UNAVAILABLE,"SUPPORT_DEPENDENCY_UNAVAILABLE","학습 지원 API 처리를 확인하지 못했습니다.")
   return try { json.readTree(response.body)?.takeIf { it.isObject } ?: invalid() } catch (_: com.fasterxml.jackson.core.JsonProcessingException) { invalid() }
  }

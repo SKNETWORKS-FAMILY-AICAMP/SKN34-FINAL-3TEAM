@@ -269,3 +269,59 @@ data: {}
 ## 6. scoring 기동 모델 로딩 (#85)
 
 `feature/scoring-model-registry`는 core 활성 snapshot 조회, 승인 scope·revision 검사, 실제 S3/MinIO 가중치 CPU 로딩 및 `/internal/versions`를 구현한다. 활성 모델이 없으면 준비 완료, 최초 조회·로딩 실패 시 준비 안 됨으로 재시도하며 프로세스는 유지한다. 같은 모델 교체 실패 시 기존 모델은 보존한다. 기동 이후 활성화 이벤트는 #86, M2 채점 API는 #87, M1 계약은 #88 범위다. 상세 증거는 [#85 검증](issue-85-scoring-model-registry.md)을 따른다.
+
+## #67·#41 최종 응답 검증 후속
+
+기준 develop dd8bbc8(PR #158/#145, #159/#66 포함), feature/ai-analysis-verification. 사용자가 기존 AI 검증/모델/템플릿/응답 노드, core 수신·저장·조회, 관련 계약/테스트 및 필요한 프론트 표시 변경을 승인했다. verification.py/templates.py를 재사용하며 이슈의 예정 파일명으로 중복 구현하지 않는다. 최종 응답 검사와 LLM 초안 실패값을 분리하고 notice로 정상 안내를 구분한다. 기존 REPORT 후속 브랜치는 별도 보존한다. 사용자가 돌아보기 참조 및 fallback/notice 저장의 DB 확장도 승인했다. 기존 ANSWER 참조를 유지하고 REFLECTION만 answer_id/version NULL을 허용하며 종류 CHECK를 추가한다. 별도 REPORT 브랜치의 V17과 충돌하지 않도록 V18을 사용한다. 구현·테스트를 마친 뒤 일괄 검증한다.
+
+배포 순서: 별도 REPORT 브랜치의 V17을 먼저 통합·적용한 뒤 이 브랜치의 V18을 적용한다. V18을 먼저 적용한 환경에 나중에 낮은 번호 V17을 투입하는 방식은 사용하지 않는다. 최종 통합에서 두 migration의 공존을 검증한다. 기존 migration checksum은 유지한다. 최종 응답 검증 실패는 result 없이 error로 전달하며 기존 core의 수동 재시도/사용량 제한 정책을 유지한다.
+
+V18의 kind는 임시 DEFAULT로 기존 행을 ANSWER로 채운 뒤 DEFAULT를 제거한다. 저장소의 DB 기본값 없음 규칙을 유지하며 새 쓰기는 core가 kind를 명시한다. verifier는 허용된 숫자 값·인용 원문·금지 표현을 검사한다. 자연어 문장 전체의 의미 정합성을 증명하거나 실제 모델 품질 향상을 측정한 것은 아니다.
+
+### #67·#162 최종 검증 (2026-10-30)
+
+#67은 AI 최종 verification·fallback.draftVerification·notice 생산을, #162는 core 수신·저장·근거 조회·DB·프론트·HTTP 연결을 담당한다. #47 관리자 기능은 별도 브랜치에서 진행한다.
+
+사용자의 명시적 승인 후 InternalRestClientFactory에 선택적인 HTTP 버전 인자를 추가하고 AiClient 분석 스트림만 HTTP/1.1로 지정했다. 다른 서비스는 인자를 생략하므로 기존 JDK 기본 동작·토큰·타임아웃·재시도 정책을 유지한다. 실제 HTTP 테스트에서 AI 요청의 Upgrade·HTTP2-Settings 헤더 부재를 확인했다.
+
+인계받은 최종 검증 산출물 기준:
+
+- AI: pytest 226개, Ruff check/format 통과.
+- core: HTTP/1.1 적용 후 전체 52클래스 333개 test, 실패·오류·생략 0, bootJar 통과.
+- 프론트: test 114개, lint/build 통과.
+- DB: 전체 migration cycle에서 core 42테이블/393컬럼, learning 19/160, report 8/56 대조. 63개 위반 입력, 75 CHECK 집합, 23 인덱스, 재적용 이력, report downgrade/upgrade 통과. V16 기존 답변 근거에 V18을 적용해 answerId/version 보존·kind=ANSWER·fallback/notice null·영구 기본값 없음을 확인했다. 별도 DB에서 REPORT V17→분석 V18 공존 검사도 통과했다.
+- 실제 core→AI 그래프→learning 연결 9개 시나리오: 정상, 숫자/인용 불일치, 키 미설정, 기록 없음, 지원 외, 돌아보기, 범위 확인, 조회 장애 후 재시도 통과. 추가로 스트림 연결 해제 시 FAILED 및 부분 답변 미저장, 다른 자녀 403, 인증 없음 401을 확인했다.
+- 브라우저: 규칙 응답 두 종류·지원 외 안내·돌아보기 근거·기록 없음 5개 시나리오, 실제 API 응답 28건, pageerror 0. 프론트 MSW 대역은 사용하지 않았다.
+
+LLM은 테스트 dependency override 또는 실제 키 미설정 분기다. 실제 외부 유료 LLM 호출·모델 품질·배포·원격 CI 검증이 아니다. 자동 테스트와 연동 통과를 자연어 전체 의미의 정합성이나 모델 품질 향상으로 해석하지 않는다. 검증 로그·XML·실제 SSE 응답·브라우저 결과는 로컬 issue67-verification에 보존했다.
+
+인계 후 마지막 스키마 보완을 포함해 `python -O -m unittest discover -s scripts/tests -v` 79개가 통과했다. core/AI OpenAPI 표준 검사와 `scripts/validate_analysis_contracts.py`의 실제 SSE 최종 응답 8종 검사도 통과했다. 최종 `git diff --check`를 확인했다. 실행 코드 변경 없이 보고서만 최신 결과로 정리했으므로 이미 통과한 AI·core·프론트·DB·브라우저 검증은 반복하지 않았다. 최종 파일의 SHA-256 목록은 로컬 검증 산출물에 갱신했다.
+
+최신 origin/develop 640e0a2와 대조했다. 추가된 #146은 learning 신고 지원 조회·피드백 판정 ID 범위이며 이번 실행 코드 변경과 겹치지 않는다. 이 작업은 검증한 develop dd8bbc8 기반을 유지한다. REPORT V17을 먼저 통합·적용한 뒤 분석 V18을 적용하는 순서는 유지한다. PR의 base는 develop이며 PR은 사용자가 생성한다.
+
+#47·#67·#162의 최신 develop 통합·관리자 실행·추가 브라우저 검증 결과는 [관리자 운영 통합 최종 검증](issue-47-admin-operations.md#통합-최종-검증)을 따른다. 이 절 이전의 dd8bbc8 결과는 기능 브랜치 검증 이력이다.
+
+## 7. AI 활성 프롬프트 버전 수신 (#68)
+
+core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1` data는 같은 `id·kind·name·version·refId·artifactUri·scopes·revision·activatedAt` 필드를 사용한다. 이벤트에만 `previousVersionId`가 추가된다. 이미 있는 스키마를 재작성하지 않는다. core는 kind·name별 revision을 증가시키므로 ai는 네 `PROMPT` 이름만 골라 높은 revision을 적용하고 각 기능의 승인 scope를 정확히 검사한다. 형식 오류 이벤트는 원문·URI 없이 경고하고 ACK하여 재시도하지 않는다.
+
+| name | 승인 scope | ai 이미지에 포함된 기본 본문·버전 |
+|---|---|---|
+| `judgment` | `ai/judgment` | `judgment/prompts.py`, `judge@2` |
+| `followup` | `ai/followup` | `followup/prompts.py`, `followup@4` |
+| `analysis` | `ai/analysis` | `analysis_agent/prompts.py`, `analysis@2` |
+| `reportNarrative` | `ai/report-narrative` | `report_narrative/prompts.py`, `report@1` |
+
+각 버전은 실제 system 문구와 user 본문 구성 함수를 이미지 코드에 함께 넣은 뒤에만 활성화할 수 있다. 현재 이미지는 위 기본 버전의 본문만 보유한다. core snapshot에 해당 활성 항목이 없으면 기본 버전을 사용한다. 보유하지 않은 활성 버전은 다른 본문에 새 버전명만 붙이지 않고 해당 기능 요청과 `/internal/versions`를 `503 AI_PROMPT_VERSION_UNAVAILABLE`로 거부한다. 구독·core snapshot·이벤트 조정 또는 본문 준비가 되지 않으면 `/health/ready`의 `versions`는 DOWN이다. 요청 시작 때 본문·버전 참조를 잡아 분석의 분류/답변 두 LLM 호출과 되묻기 재생성까지 같은 버전을 사용한다.
+
+기동·재연결마다 Pod 고유의 exclusive·auto-delete 큐를 `events.topic`의 `model.version.*`에 먼저 바인딩하고 소비를 시작한다. 그 다음 기존 `internal_client`로 core snapshot을 조회한다. 조회 중 이벤트를 이름별 최신 revision으로 보존했다가 snapshot에 조정한다. 최초 조회 실패는 백그라운드에서 재시도하며 프로세스는 유지한다. health 요청은 메모리 상태만 확인한다. 새 production 패키지나 core API·이벤트 스키마 변경은 없다.
+
+배포 연결 요구: ai HTTP 내부 포트 `8000`과 `/health/live`·`/health/ready` 경로는 그대로다. `CORE_URL`·`INTERNAL_TOKEN`으로 core 내부 조회가 가능해야 하고 RabbitMQ `events.topic` 접근과 Pod별 임시 큐 선언 권한이 필요하다. #171 chart·NetworkPolicy는 ai→core HTTP와 ai→RabbitMQ를 열고, `versions=DOWN`인 Pod는 Ready로 취급하지 않아야 한다. AI 계측 SDK·수집 endpoint는 #171 후속 단계다.
+
+### 작업 브랜치 검증 기록 (2026-10-30)
+
+- 기준 `cc2ccc6`, 브랜치 `feature/ai-active-version-events`. Ruff check·format check와 `git diff --check`는 통과했다. uv는 샌드박스 캐시 권한과 패키지 다운로드 DNS 제한으로 실행하지 못해, #67 작업환경에 설치된 동일 AI 의존성의 Python 3.12·Ruff 0.17.2를 읽기 전용으로 사용했다.
+- 초기 전체 AI pytest 240개는 두 차례 모두 239개 통과, 기존 `tests/llm/test_base.py::test_stream_stalls_past_timeout`만 `0.2000000000116 > 0.2` 부동소수점 경계 비교로 실패했다. 사용자의 후속 진행 요청에 따라 해당 테스트 상한에 1나노초 허용 오차만 적용했다. production LLM 시간 제한은 변경하지 않았다. 추가 경로 테스트를 포함한 최종 AI 전체 pytest **241개 통과**(184.52초), Ruff check·format check도 통과했다.
+- 저장소 계약 unittest 93개 중 AI OpenAPI·core 모델 이벤트 관련 검사는 통과했다. 전체 실행에서는 샌드박스 임시 폴더 권한 때문에 별도 검증 스크립트 테스트 7개의 설정·정리에서 오류 14건이 났고, 그 7개를 임시 경로를 바꿔 재실행해 통과했다.
+- 전용 Docker 네트워크·RabbitMQ 4.3.7 컨테이너와 Windows AI 프로세스 2개를 사용한 실제 AMQP 연결 검증 통과. 관리 API에서 독립 exclusive·auto-delete 큐 2개, 각 소비자 1개, `events.topic`의 `model.version.*` 바인딩 2개를 확인했다. 전용 core HTTP 대역을 503→`{items:[]}`로 바꿔 두 AI의 `versions=DOWN`→Ready 회복을 확인하고, 미보유 `judge@future` revision 1 이벤트에 두 AI가 NotReady·`/internal/versions` 503으로 반응한 뒤 보유 `judge@2` revision 2에서 Ready로 회복하는 것을 확인했다. 전용 브로커의 두 AMQP 연결을 관리 API로 종료하자 두 AI가 각각 새 큐를 만들고 snapshot 조정 뒤 Ready가 됐다. 검증 자원은 자체 컨테이너·네트워크만 정리했다.
+- 재연결의 첫 시도에서 전용 Docker 컨테이너 재시작 후 Windows 임시 포트가 다시 열리지 않아 검증 방법을 AMQP 연결 종료로 바꿨다. 이는 전용 브로커와 AI의 실제 재연결 검증이며, core는 대역이다. 실제 core DB·관리자 활성화 API, 유료 외부 LLM, 원격 CI·배포는 검증하지 않았다. 모델 품질이나 운영 배포 준비 완료를 의미하지 않는다.

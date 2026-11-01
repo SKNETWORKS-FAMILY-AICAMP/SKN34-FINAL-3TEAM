@@ -11,7 +11,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -21,6 +21,7 @@ from app.analysis_agent.state import AgentContext, AnalysisState
 from app.analysis_agent.tools import RecordTools
 from app.clients.learning_client import LearningClient
 from app.config import get_settings
+from app.errors import ApiError
 from app.llm.base import LlmClient
 from app.llm.providers import get_llm
 from app.security import UserContext, get_user_context
@@ -38,6 +39,7 @@ def get_record_tools(
 
 @router.post("/stream")
 async def stream(
+    request: Request,
     body: AnalysisRequest,
     user: Annotated[UserContext, Depends(get_user_context)],
     llm: Annotated[LlmClient, Depends(get_llm)],
@@ -46,7 +48,12 @@ async def stream(
     # 질문마다 권한 확인 (FN-AGT-02). 스트림 시작 전이라 일반 403 응답
     user.require_student(body.scope.student_id)
     deadline = time.monotonic() + get_settings().analysis_deadline
-    context = AgentContext(llm=llm, tools=tools, deadline=deadline)
+    try:
+        prompt = request.app.state.active_versions.prompt("analysis")
+    except ApiError:
+        await tools.aclose()
+        raise
+    context = AgentContext(llm=llm, tools=tools, deadline=deadline, prompt=prompt)
     return StreamingResponse(
         _events(body, context),
         media_type="text/event-stream",
@@ -66,7 +73,9 @@ async def _run(body: AnalysisRequest, context: AgentContext) -> AsyncIterator[st
     final: AnalysisState = {}
     try:
         async for mode, chunk in build_graph().astream(
-            {"request": body}, context=context, stream_mode=["custom", "values"]
+            {"request": body, "prompt_version": context.prompt.version},
+            context=context,
+            stream_mode=["custom", "values"],
         ):
             if mode == "custom":
                 yield sse(chunk["event"], chunk["data"])

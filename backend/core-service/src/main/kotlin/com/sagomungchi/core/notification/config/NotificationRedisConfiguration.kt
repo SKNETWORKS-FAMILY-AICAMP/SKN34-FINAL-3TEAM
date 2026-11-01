@@ -1,5 +1,6 @@
-package com.sagomungchi.core.notification.messaging
+package com.sagomungchi.core.notification.config
 
+import com.sagomungchi.core.notification.consumer.NotificationRedisSubscriber
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.data.redis.connection.RedisConnectionFactory

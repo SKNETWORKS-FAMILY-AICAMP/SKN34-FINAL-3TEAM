@@ -9,11 +9,23 @@ import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClientException
 import org.springframework.web.client.RestClientResponseException
+import io.github.resilience4j.circuitbreaker.CircuitBreaker
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException
+import org.springframework.web.client.ResourceAccessException
 import java.util.UUID
 
 @Component
 class ReportClient(factory: InternalRestClientFactory, private val json: ObjectMapper,
     properties: com.sagomungchi.core._common.config.AppProperties) {
+    private val circuitConfig = CircuitBreakerConfig.custom()
+        .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
+        .slidingWindowSize(20).minimumNumberOfCalls(20).failureRateThreshold(50f)
+        .waitDurationInOpenState(java.time.Duration.ofSeconds(30)).permittedNumberOfCallsInHalfOpenState(1)
+        .recordException { it is ResourceAccessException || (it is RestClientResponseException && it.statusCode.is5xxServerError) }
+        .build()
+    internal val queryCircuit = CircuitBreaker.of("report-query", circuitConfig)
+    internal val recoveryCircuit = CircuitBreaker.of("report-recovery", circuitConfig)
     private val http = factory.create("report")
     // Uvicorn does not support h2c upgrade on a POST with a body. Retain the factory's
     // internal authentication/context interceptors and configured timeout budgets.
@@ -29,14 +41,15 @@ class ReportClient(factory: InternalRestClientFactory, private val json: ObjectM
         UserContextHolder.set(context.copy(studentScope = setOf(studentId.toString())))
         try {
             val body = try {
-                http.get().uri { builder ->
+                queryCircuit.executeSupplier { http.get().uri { builder ->
                     builder.path(path)
                     query.forEach { (key, value) -> builder.queryParam(key, value) }
                     builder.build()
                 }.headers { headers ->
                     // Only the application service supplies this value; never copy public request headers.
                     narrativeEnabled?.let { headers.set("X-Report-Narrative-Enabled", it.toString()) }
-                }.retrieve().body(String::class.java)
+                }.retrieve().body(String::class.java) }
+            } catch (_: CallNotPermittedException) { throw unavailable()
             } catch (ex: RestClientResponseException) {
                 val code = runCatching { json.readTree(ex.responseBodyAsString)?.get("code")?.textValue() }.getOrNull()
                 val status = ex.statusCode.value()
@@ -61,9 +74,10 @@ class ReportClient(factory: InternalRestClientFactory, private val json: ObjectM
         UserContextHolder.set(com.sagomungchi.core._common.security.UserContext(null, "SYSTEM", setOf(job.studentId.toString()), null))
         try {
             val body = try {
-                recoveryHttp.post().uri("/internal/report-jobs/{id}/reconcile", job.id)
+                recoveryCircuit.executeSupplier { recoveryHttp.post().uri("/internal/report-jobs/{id}/reconcile", job.id)
                     .body(mapOf("studentId" to job.studentId, "periodFrom" to job.periodFrom, "periodTo" to job.periodTo))
-                    .retrieve().body(String::class.java)
+                    .retrieve().body(String::class.java) }
+            } catch (_: CallNotPermittedException) { throw unavailable()
             } catch (ex: RestClientResponseException) {
                 if (ex.statusCode.value() == 409 && runCatching { json.readTree(ex.responseBodyAsString).path("code").asText() }.getOrNull() == "REPORT_JOB_IDENTITY_MISMATCH")
                     throw BusinessException(HttpStatus.CONFLICT, "REPORT_JOB_IDENTITY_MISMATCH", "리포트 작업 식별자가 일치하지 않습니다.")

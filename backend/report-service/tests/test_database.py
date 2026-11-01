@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Column, DateTime, MetaData, String, Table, inspect, select, text
+from sqlalchemy import Column, DateTime, Integer, MetaData, String, Table, inspect, select, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.exc import IntegrityError
 
@@ -23,6 +23,8 @@ outbox = Table(
     Column("payload", JSONB, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("published_at", DateTime(timezone=True)),
+    Column("failure_count", Integer, nullable=False),
+    Column("manual_retry_count", Integer, nullable=False),
 )
 
 
@@ -35,6 +37,8 @@ def event():
         "payload": {"message": "직접 만든 테스트", "nested": {"values": [1, True, None]}},
         "created_at": datetime(2026, 1, 2, 3, 4, 5, 123456, tzinfo=timezone(timedelta(hours=9))),
         "published_at": None,
+        "failure_count": 0,
+        "manual_retry_count": 0,
     }
 
 

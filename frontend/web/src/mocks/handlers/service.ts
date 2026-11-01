@@ -12,10 +12,10 @@ import { reports,conversations } from '../fixtures/parent.ts'
 const deletions = new Map<string, DeletionRequest & { owner: string }>()
 const withdrawalReceipts = new Map<string, {withdrawalRequestId:string;status:string}>()
 type OwnedCase = SupportCase & { owner: string; kind: string }
-const cases: OwnedCase[] = []
+export const cases: OwnedCase[] = []
 const inbox = new Map<string, NotificationItem[]>()
 const settings = new Map<string, NotificationSettings>()
-const notices: Notice[]=[{id:'demo-notice',title:'가상 데이터 시연 안내',content:'현재 개발 시연에서는 직접 만든 예시 학생과 학습 기록을 사용합니다. 실제 개인정보를 입력하지 마세요.',roles:['PARENT','STUDENT','ADMIN'],startsAt:'2026-10-29T00:00:00+09:00',endsAt:null}]
+export const notices: Notice[]=[{id:'demo-notice',title:'가상 데이터 시연 안내',content:'현재 개발 시연에서는 직접 만든 예시 학생과 학습 기록을 사용합니다. 실제 개인정보를 입력하지 마세요.',roles:['PARENT','STUDENT','ADMIN'],startsAt:'2026-10-29T00:00:00+09:00',endsAt:null}]
 const owner = () => [mockIdentity.email, store.snapshot().session?.role, store.snapshot().session?.child?.id ?? ''].join(':')
 function auth(request: Request) { guard(request); return store.snapshot().session! }
 function adult(request: Request) { const s = auth(request); if (s.role === 'STUDENT') fail('FORBIDDEN','학생 알림함은 제공하지 않습니다.',403); return s }
@@ -77,14 +77,7 @@ export const serviceHandlers = [
   })),
   http.get('/api/v1/admin/inquiries',({request})=>respond(async()=>{ops(request);return page(cases.filter(c=>c.kind==='inquiries'))})),
   http.patch('/api/v1/admin/inquiries/:id',({request,params})=>respond(async()=>{
-    ops(request);const c=cases.find(c=>c.id===params.id&&c.kind==='inquiries'),data=await request.json() as {answer:string}
-    if(!c)fail('NOT_FOUND','문의가 없습니다.',404)
-    if(!data.answer?.trim()||data.answer.length>2000)fail('VALIDATION_FAILED','답변 내용을 확인해 주세요.',422)
-    c!.answer=data.answer;c!.status='RESOLVED'
-    const targetInbox=inbox.get(c!.owner)??[]
-    const enabled=settings.get(c!.owner)?.items.find(s=>s.type==='INQUIRY_ANSWERED')?.enabled??true
-    if(enabled&&!targetInbox.some(n=>n.id==='inquiry-'+c!.id))targetInbox.unshift({id:'inquiry-'+c!.id,childId:null,type:'INQUIRY_ANSWERED',title:'문의에 답변이 등록되었습니다.',link:'/parent/support',readAt:null,createdAt:new Date().toISOString()})
-    inbox.set(c!.owner,targetInbox);return c
+    ops(request);const data=await request.json() as {answer:string};return answerCase(String(params.id),data.answer)
   })),
   http.post('/api/v1/admin/notices',({request})=>respond(async()=>{
     ops(request);const data=await request.json() as Notice
@@ -137,3 +130,14 @@ export const serviceHandlers = [
     return result
   })),
 ]
+
+export function answerCase(key:string,answer:string){
+    const c=cases.find(c=>c.id===key&&c.kind==='inquiries'),data={answer}
+    if(!c)fail('NOT_FOUND','문의가 없습니다.',404)
+    if(!data.answer?.trim()||data.answer.length>4000)fail('VALIDATION_FAILED','답변 내용을 확인해 주세요.',422)
+    c!.answer=data.answer;c!.status='RESOLVED'
+    const targetInbox=inbox.get(c!.owner)??[]
+    const enabled=settings.get(c!.owner)?.items.find(s=>s.type==='INQUIRY_ANSWERED')?.enabled??true
+    if(enabled&&!targetInbox.some(n=>n.id==='inquiry-'+c!.id))targetInbox.unshift({id:'inquiry-'+c!.id,childId:null,type:'INQUIRY_ANSWERED',title:'문의에 답변이 등록되었습니다.',link:'/parent/support',readAt:null,createdAt:new Date().toISOString()})
+    inbox.set(c!.owner,targetInbox);return c
+}

@@ -3,6 +3,7 @@ package com.sagomungchi.core._common.persistence
 import com.fasterxml.jackson.databind.JavaType
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.sagomungchi.core._common.json.JsonObject
 import org.apache.ibatis.type.BaseTypeHandler
 import org.apache.ibatis.type.JdbcType
 import java.sql.CallableStatement
@@ -30,6 +31,10 @@ open class JacksonJsonbTypeHandler<T>(
 
 class JsonNodeTypeHandler(objectMapper: ObjectMapper) : JacksonJsonbTypeHandler<JsonNode>(
     objectMapper, objectMapper.typeFactory.constructType(JsonNode::class.java),
+)
+
+class JsonObjectTypeHandler(objectMapper: ObjectMapper) : JacksonJsonbTypeHandler<JsonObject>(
+    objectMapper, objectMapper.typeFactory.constructType(JsonObject::class.java),
 )
 
 /** pgJDBC supports OffsetDateTime directly; convert Instant through UTC without JVM timezone dependence. */

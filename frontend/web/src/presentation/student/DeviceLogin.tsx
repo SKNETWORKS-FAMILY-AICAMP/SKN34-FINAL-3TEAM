@@ -2,7 +2,7 @@ import { lazy, Suspense, useState } from 'react'
 import { ThemeFrame } from './world/StudentWorld.tsx'
 import { useLocation, useNavigate, useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { ApiError } from '../../data/apiClient.ts'
+import { ApiError, requireParentLogin } from '../../data/apiClient.ts'
 import { isDemo } from '../../data/classroom/useClassroom.ts'
 import { useDeviceProfiles, useDeviceRegistration, usePinLogin } from '../../data/studentDevice/queries.ts'
 import {
@@ -250,9 +250,8 @@ function LoginMessage({ state }: { state: DeviceLoginState | null }) {
 
 /** 학생 → 학부모 화면 전환은 항상 학부모 로그인을 거친다 (FN-ACC-05). */
 function GuardianLinks({ inline = false }: { inline?: boolean }) {
-  const navigate = useNavigate()
   const button = (
-    <button type="button" className="cj-secondary" onClick={() => navigate('/login')}>
+    <button type="button" className="cj-secondary" onClick={requireParentLogin}>
       보호자 로그인
     </button>
   )

@@ -48,6 +48,11 @@ data class ReportJob(
 data class ReportJobFinished(val sourceEventId: UUID, val jobId: UUID, val studentId: UUID,
     val reportId: UUID, val status: ReportJobStatus)
 
+/** Every committed terminal transition, including recovery/deletion without a report ID. */
+data class ReportJobOutcomeRecorded(val sourceEventId: UUID, val jobId: UUID, val status: ReportJobStatus) {
+    init { require(status in setOf(ReportJobStatus.COMPLETED, ReportJobStatus.FAILED)) }
+}
+
 /** Validated lifecycle command. Transport envelopes/JSON remain in the consumer. */
 data class ReportLifecycleEvent(val eventId: UUID, val jobId: UUID, val studentId: UUID,
     val reportId: UUID, val status: ReportJobStatus, val failureReason: String? = null) {

@@ -16,10 +16,12 @@ class InternalRestClientFactory(
     private val properties: AppProperties,
     private val builder: RestClient.Builder,
 ) {
-    fun create(service: String, readTimeout: Duration = properties.internal.readTimeout): RestClient {
+    fun create(service: String, readTimeout: Duration = properties.internal.readTimeout,
+               httpVersion: HttpClient.Version? = null): RestClient {
         val baseUrl = requireNotNull(properties.services[service]) { "app.services.$service 설정 없음" }
         val httpClient = HttpClient.newBuilder()
             .connectTimeout(properties.internal.connectTimeout)
+            .apply { httpVersion?.let { version(it) } }
             .build()
         val requestFactory = JdkClientHttpRequestFactory(httpClient).apply {
             setReadTimeout(readTimeout)

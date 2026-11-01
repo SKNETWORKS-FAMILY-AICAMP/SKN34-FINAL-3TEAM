@@ -22,6 +22,28 @@ export interface Job {
     finishedAt: string | null
   }[]
 }
+export type JobRetryResult = Job | {
+  jobId: string
+  type: 'REPORT'
+  originalJobId: string
+  status: 'QUEUED'
+  acceptedAt: string
+} | {
+  jobId: string
+  type: 'CONVERSATION'
+  retryRequestId: string
+  generation: number
+  status: 'QUEUED'
+  acceptedAt: string
+}
+export function jobRetryMessage(status: JobStatus): string {
+  return {
+    QUEUED: '재처리를 접수했습니다. 작업 상태를 조회해 결과를 확인해 주세요.',
+    RUNNING: '재처리 중입니다. 아직 완료되지 않았습니다.',
+    COMPLETED: '서버에서 재처리 완료를 확인했습니다.',
+    FAILED: '재처리 실패 · 완료로 표시하지 않습니다.',
+  }[status]
+}
 export interface OperationQueue {
   name: string
   kind: 'WORK' | 'RETRY' | 'DLQ'
@@ -55,28 +77,35 @@ export interface MissionVersion {
   thinkingType: ThinkingType
   inputType: InputType
   question: string
-  guide: string
-  scene: Mission['scene']
-  sceneUri: string
-  staticSceneUri: string
+  guide: string | null
+  answerUnit?: string | null
+  inputTemplate?: string[]
+  sceneUri: string | null
+  staticSceneUri: string | null
   achievementStandards: string[]
   choices?: Mission['choices']
   categories?: Mission['categories']
   createdAt: string
+}
+/** Kotlin AnswerKey의 사용하지 않는 필드는 응답에서 null일 수 있습니다. */
+export interface AnswerKey {
+  choiceIds?: string[] | null
+  assignments?: { choiceId: string; categoryId: string }[] | null
+  finalAnswer?: string | null
 }
 export interface Rubric {
   version: number
   elements: {
     code: string
     label: string
-    description: string
+    description: string | null
     points: number
     commonErrors: string[]
     goodThought: boolean
     judgeVerified: boolean
   }[]
-  answerKey?: string
-  exampleAnswer?: string
+  answerKey?: AnswerKey | null
+  exampleAnswer?: string | null
   forbiddenTerms: string[]
   hints: string[]
 }
@@ -87,13 +116,14 @@ export interface AdminMission {
   currentVersion: number
   currentRubricVersion: number | null
   publishedVersion: number | null
+  publishedRubricVersion: number | null
   versions: MissionVersion[]
   rubrics: Rubric[]
   reviews: {
     missionVersion: number
     rubricVersion: number
     result: 'APPROVED' | 'CHANGES_REQUESTED'
-    comment: string
+    comment: string | null
     createdAt: string
   }[]
 }
@@ -178,35 +208,59 @@ export const missionLabels: Record<MissionStatus, string> = {
   PUBLISHED: '공개',
   UNPUBLISHED: '비공개',
 }
+/** core는 영문 missingFields 코드만 전달합니다. */
+export const missingFieldLabels: Record<string, string> = {
+  title: '제목', question: '질문', subject: '교과', grade: '지원 학년 (논술 5~6학년)',
+  achievementStandards: '성취기준', choices: '선택 항목', categories: '분류 그룹',
+  rubric: '기준표 버전', 'rubric.elements': '기준표 요소 (풀이 단계는 최종 답 외 요소 포함)',
+  'rubric.elements.points': '요소 이름·양의 배점', answerKey: '정답 키',
+  exampleAnswer: '예시 답', review: '현재 버전 검토 승인',
+}
+export function missingFieldLabel(code: string) {
+  if (missingFieldLabels[code]) return missingFieldLabels[code]
+  const indexed = code.replace(/\[\d+\]/g, '')
+  return missingFieldLabels[indexed] ?? `확인이 필요한 항목: ${code}`
+}
+export function validAnswerKey(v: MissionVersion, key: Rubric['answerKey']): boolean {
+  if (!key || typeof key !== 'object' || Array.isArray(key)) return false
+  const ids = v.choices?.map((c) => c.id) ?? []
+  if (v.inputType === 'CHOICE' || v.inputType === 'ORDERING') {
+    if (!('choiceIds' in key) || !Array.isArray(key.choiceIds)) return false
+    const chosen = key.choiceIds
+    return chosen.length > 0 && new Set(chosen).size === chosen.length &&
+      chosen.every((id) => ids.includes(id)) &&
+      (v.inputType === 'CHOICE' ? chosen.length === 1 : chosen.length === ids.length)
+  }
+  if (v.inputType === 'CLASSIFICATION') {
+    if (!Array.isArray(key.assignments)) return false
+    const groups = v.categories?.map((g) => g.id) ?? []
+    const assignments = key.assignments
+    return ids.length > 0 && assignments.length === ids.length &&
+      new Set(assignments.map((a) => a.choiceId)).size === ids.length &&
+      assignments.every((a) => ids.includes(a.choiceId) && groups.includes(a.categoryId))
+  }
+  return v.inputType === 'SOLUTION_STEPS' && 'finalAnswer' in key &&
+    typeof key.finalAnswer === 'string' && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(key.finalAnswer.trim())
+}
 export function missingMissionFields(m: AdminMission): string[] {
   const v = m.versions.find((v) => v.version === m.currentVersion),
-    r = m.rubrics.find((r) => r.version === m.currentRubricVersion),
-    missing: string[] = []
-  if (!v?.title.trim()) missing.push('제목')
-  if (!v?.question.trim()) missing.push('질문')
-  if (!v?.subject.trim()) missing.push('교과')
-  if (!v || v.gradeMin < 3 || v.gradeMax > 6 || v.gradeMin > v.gradeMax)
-    missing.push('지원 학년 3~6')
-  if (v?.inputType === 'ESSAY' && v.gradeMin < 5) missing.push('논술 학년 5~6')
-  if (!v?.achievementStandards.some((s) => s.trim())) missing.push('성취기준')
-  if (!r) missing.push('기준표 버전')
-  if (v && ['CHOICE', 'ORDERING', 'CLASSIFICATION'].includes(v.inputType) && !v.choices?.length)
-    missing.push('선택 항목')
-  if (v?.inputType === 'CLASSIFICATION' && !v.categories?.length) missing.push('분류 그룹')
-  if (v && ['NARRATIVE', 'ESSAY'].includes(v.inputType) && !r?.elements.length)
-    missing.push('기준표 요소')
-  if (v && !['NARRATIVE', 'ESSAY'].includes(v.inputType) && !r?.answerKey?.trim())
-    missing.push('정답 키')
-  if (v && ['NARRATIVE', 'ESSAY'].includes(v.inputType) && !r?.exampleAnswer?.trim())
-    missing.push('예시 답')
-  if (r?.elements.some((e) => !e.label.trim() || e.points <= 0)) missing.push('요소 이름·양의 배점')
-  if (
-    m.reviews
-      .filter(
-        (x) => x.missionVersion === m.currentVersion && x.rubricVersion === m.currentRubricVersion,
-      )
-      .at(-1)?.result !== 'APPROVED'
-  )
-    missing.push('현재 버전 검토 승인')
+    r = m.rubrics.find((r) => r.version === m.currentRubricVersion), missing: string[] = []
+  if (!v?.title.trim()) missing.push('title')
+  if (!v?.question.trim()) missing.push('question')
+  if (!v?.subject.trim()) missing.push('subject')
+  if (!v || !Number.isInteger(v.gradeMin) || !Number.isInteger(v.gradeMax) || v.gradeMin < 3 ||
+      v.gradeMax > 6 || v.gradeMin > v.gradeMax || (v.inputType === 'ESSAY' && v.gradeMin < 5)) missing.push('grade')
+  if (!v?.achievementStandards.some((s) => s.trim())) missing.push('achievementStandards')
+  if (!r) missing.push('rubric')
+  if (v && ['CHOICE', 'ORDERING', 'CLASSIFICATION'].includes(v.inputType) && !v.choices?.length) missing.push('choices')
+  if (v?.inputType === 'CLASSIFICATION' && !v.categories?.length) missing.push('categories')
+  if (r && (!r.elements.length ||
+      (v?.inputType === 'SOLUTION_STEPS' && !r.elements.some((e) => e.code !== 'FINAL_ANSWER')) ||
+      (v?.inputType !== 'SOLUTION_STEPS' && r.elements.some((e) => e.code === 'FINAL_ANSWER')))) missing.push('rubric.elements')
+  if (v && r && !['NARRATIVE', 'ESSAY'].includes(v.inputType) && !validAnswerKey(v, r.answerKey)) missing.push('answerKey')
+  if (v && r && ['NARRATIVE', 'ESSAY'].includes(v.inputType) && !r.exampleAnswer?.trim()) missing.push('exampleAnswer')
+  if (r?.elements.some((e) => !e.label.trim() || !Number.isInteger(e.points) || e.points <= 0)) missing.push('rubric.elements.points')
+  if (m.reviews.filter((x) => x.missionVersion === m.currentVersion && x.rubricVersion === m.currentRubricVersion)
+      .at(-1)?.result !== 'APPROVED') missing.push('review')
   return missing
 }

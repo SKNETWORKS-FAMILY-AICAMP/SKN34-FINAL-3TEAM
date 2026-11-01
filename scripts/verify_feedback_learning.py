@@ -1,10 +1,11 @@
-"""Run real core/learning JARs with disposable PostgreSQL and an AI HTTP double.
+"""Run real core/learning JARs with disposable PostgreSQL/Redis and an AI HTTP double.
 
 Requires JDK 21 and Docker. No compose services, real credentials or external LLMs
 are used. The learning JAR/source may explicitly refer to an unmerged PR; report
 that ref separately rather than claiming the implementation has been merged.
-For a Linux runner without Docker CLI, --db-host accepts a caller-owned disposable
-sidecar and needs psycopg in that test runtime. The caller must remove the sidecar.
+For a Linux runner without Docker CLI, --db-host and --redis-host accept caller-owned
+disposable sidecars on its private network (Redis without authentication, port 6379).
+This mode needs psycopg in the test runtime. The caller must remove both sidecars.
 """
 import argparse
 import base64
@@ -18,6 +19,7 @@ from pathlib import Path
 import re
 import socket
 import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -45,6 +47,16 @@ def wait_for(check, seconds=45):
     raise TimeoutError("Verification readiness deadline exceeded")
 
 
+def redis_ready(host, port):
+    try:
+        with socket.create_connection((host, port), timeout=2) as connection:
+            connection.sendall(b"*1\r\n$4\r\nPING\r\n")
+            with connection.makefile("rb") as response:
+                return response.readline(64) == b"+PONG\r\n"
+    except OSError:
+        return False
+
+
 def verify(args):
     root = Path(__file__).resolve().parents[1]
     core_jar, learning_jar = args.core_jar.resolve(), args.learning_jar.resolve()
@@ -52,19 +64,25 @@ def verify(args):
     require(core_jar.is_file() and learning_jar.is_file(), "Both executable JARs are required")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     container = "issue39-feedback-db-" + uuid.uuid4().hex[:8]
+    redis_container = "issue39-feedback-redis-" + uuid.uuid4().hex[:8]
     core_db, learning_db = "issue39_core_feedback", "issue39_learning_feedback"
     internal = "issue39-disposable-internal-token"
     processes, logs, cases = [], [], []
     server = None
-    created = False
+    created = []
+    infrastructure = {"ownership": "caller" if args.db_host else "script", "anonymousVolumes": [], "cleanup": []}
     external_db = args.db_host
+    external_redis = args.redis_host
+    require(bool(external_db) == bool(external_redis),
+            "--db-host and --redis-host must be supplied together for dedicated caller-owned sidecars")
     if external_db:
         require(external_db.startswith("issue39-feedback-db-"), "External host must be a dedicated issue39 container")
+        require(external_redis.startswith("issue39-feedback-redis-"), "External Redis must be a dedicated issue39 container")
         import psycopg  # Test-runtime dependency only, for an isolated Linux runner without Docker CLI.
 
     def docker(*command, sql=None):
         result = subprocess.run(["docker", *command], input=sql, text=True, encoding="utf-8",
-                                capture_output=True)
+                                capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if result.returncode:
             raise RuntimeError(f"Verification docker {command[0]} failed: {result.stderr.strip()}")
         return result.stdout.strip()
@@ -91,12 +109,14 @@ def verify(args):
                    INTERNAL_TOKEN=internal, RABBITMQ_USERNAME="unused", RABBITMQ_PASSWORD="unused",
                    AUTH_JWT_SECRET=base64.b64encode(b"issue39-only-disposable-jwt-secret-32bytes").decode(),
                    AUTH_WEB_ORIGIN=core_url, AUTH_COOKIE_SECURE="false", AI_URL=ai_url,
-                   LEARNING_URL=learning_url)
+                   LEARNING_URL=learning_url, CORE_URL=core_url,
+                   REDIS_HOST=redis_host, REDIS_PORT=str(redis_port), REDIS_PASSWORD="")
+        readiness = "readinessState,db,redis" if database == core_db else "readinessState,db"
         process = subprocess.Popen([args.java, "-XX:ActiveProcessorCount=2", "-Xmx512m", "-jar", str(jar),
                                     f"--server.port={port}", "--server.address=127.0.0.1",
                                     "--spring.rabbitmq.listener.simple.auto-startup=false",
                                     "--management.health.rabbit.enabled=false",
-                                    "--management.endpoint.health.group.readiness.include=readinessState,db", *extra],
+                                    f"--management.endpoint.health.group.readiness.include={readiness}", *extra],
                                    env=env, stdout=log, stderr=subprocess.STDOUT,
                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         processes.append(process)
@@ -104,7 +124,7 @@ def verify(args):
         def ready():
             require(process.poll() is None, f"{database} JVM exited; inspect its verification log")
             try:
-                with urllib.request.urlopen(f"http://127.0.0.1:{port}/actuator/health/liveness", timeout=2) as response:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/actuator/health/readiness", timeout=2) as response:
                     return response.status == 200
             except (OSError, urllib.error.URLError):
                 return False
@@ -169,13 +189,28 @@ def verify(args):
 
     try:
         if not external_db:
-            docker("run", "--rm", "-d", "--name", container, "-p", "127.0.0.1::5432",
-                   "-e", "POSTGRES_DB=" + core_db, "-e", "POSTGRES_USER=issue39",
-                   "-e", "POSTGRES_PASSWORD=issue39-disposable-password", "postgres:17.11-alpine")
-            created = True
+            # Register each exact container ID before starting it, so startup failure also cleans up.
+            created.append(docker("create", "--rm", "--name", container, "-p", "127.0.0.1::5432",
+                                  "--cpus=0.5", "--memory=256m",
+                                  "-e", "POSTGRES_DB=" + core_db, "-e", "POSTGRES_USER=issue39",
+                                  "-e", "POSTGRES_PASSWORD=issue39-disposable-password", "postgres:17.11-alpine"))
+            docker("start", created[-1])
             # The image's temporary init server accepts Unix sockets before its final restart, but not TCP.
             wait_for(lambda: subprocess.run(["docker", "exec", container, "pg_isready", "-h", "127.0.0.1", "-U", "issue39", "-d", core_db],
-                                            capture_output=True).returncode == 0)
+                                            capture_output=True,
+                                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).returncode == 0)
+            created.append(docker("create", "--rm", "--name", redis_container, "-p", "127.0.0.1::6379",
+                                  "--cpus=0.5", "--memory=64m", "redis:8.2.10-alpine",
+                                  "redis-server", "--save", "", "--appendonly", "no"))
+            docker("start", created[-1])
+            for owned in created:
+                mounts = json.loads(docker("inspect", "--format", "{{json .Mounts}}", owned))
+                infrastructure["anonymousVolumes"].extend(mount["Name"] for mount in mounts if mount["Type"] == "volume")
+        redis_host = external_redis or "127.0.0.1"
+        redis_port = 6379 if external_redis else int(docker("port", redis_container, "6379/tcp").split(":")[-1])
+        wait_for(lambda: redis_ready(redis_host, redis_port))
+        infrastructure.update(postgres=external_db or container, redis=external_redis or redis_container,
+                              redisHost=redis_host, redisPort=redis_port)
         db(core_db, "CREATE DATABASE " + learning_db)
         db_port = 5432 if external_db else int(docker("port", container, "5432/tcp").split(":")[-1])
         for database, base in ((core_db, root), (learning_db, learning_source)):
@@ -193,6 +228,7 @@ def verify(args):
         core_port, learning_port, ai_port = free_port(), free_port(), free_port()
         core_url, learning_url, ai_url = (f"http://127.0.0.1:{p}" for p in (core_port, learning_port, ai_port))
         server = ThreadingHTTPServer(("127.0.0.1", ai_port), AiHandler)
+        infrastructure.update(coreUrl=core_url, learningUrl=learning_url, aiUrl=ai_url)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         start_app(learning_jar, learning_port, learning_db, [])
         start_app(core_jar, core_port, core_db, [])
@@ -339,27 +375,49 @@ def verify(args):
         cases.append({"case": "actual_permanent_AI_failure_preserved", "passed": True})
         return {"status": "PASS", "coreRef": args.core_ref, "learningRef": args.learning_ref,
                 "learningMerged": args.learning_merged,
-                "source": "real core and learning JARs, two disposable PostgreSQL databases, synthetic AI HTTP double; no real AI/LLM",
+                "source": "real core and learning JARs, two disposable PostgreSQL databases, dedicated Redis, synthetic AI HTTP double; no real AI/LLM",
+                "infrastructure": infrastructure,
                 "migrationSetup": "all SQL migrations in numeric order, one transaction per file; application auto-migration remains disabled",
                 "coreJarSha256": hashlib.sha256(core_jar.read_bytes()).hexdigest(),
                 "learningJarSha256": hashlib.sha256(learning_jar.read_bytes()).hexdigest(), "cases": cases}
     finally:
+        original_error = sys.exception()
+        cleanup_errors = []
         ai.release.set()
         for process in reversed(processes):
-            if process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=15)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=5)
+            try:
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=15)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)
+            except Exception as error:
+                cleanup_errors.append(f"JVM {process.pid}: {error}")
         for log in logs:
-            log.close()
+            try:
+                log.close()
+            except Exception as error:
+                cleanup_errors.append(f"Log {log.name}: {error}")
         if server:
-            server.shutdown()
-            server.server_close()
-        if created:
-            docker("stop", "-t", "5", container)  # --rm removes only this invocation's disposable DB.
+            try:
+                server.shutdown()
+                server.server_close()
+            except Exception as error:
+                cleanup_errors.append(f"AI HTTP double: {error}")
+        for owned in reversed(created):
+            try:
+                docker("rm", "-f", "-v", owned)  # Remove these exact containers and their anonymous volumes only.
+                infrastructure["cleanup"].append(owned)
+            except Exception as error:
+                cleanup_errors.append(f"Container {owned}: {error}")
+        if cleanup_errors:
+            message = "Verification cleanup failed: " + "; ".join(cleanup_errors)
+            if original_error is not None:
+                original_error.add_note(message)
+            else:
+                raise RuntimeError(message)
 
 
 if __name__ == "__main__":
@@ -372,6 +430,7 @@ if __name__ == "__main__":
     parser.add_argument("--learning-merged", action="store_true")
     parser.add_argument("--java", default="java")
     parser.add_argument("--db-host", help="Dedicated issue39-feedback-db-* sidecar; requires test-runtime psycopg")
+    parser.add_argument("--redis-host", help="Dedicated issue39-feedback-redis-* sidecar, port 6379, no password; requires --db-host")
     parser.add_argument("--output", type=Path, required=True)
     arguments = parser.parse_args()
     result = verify(arguments)

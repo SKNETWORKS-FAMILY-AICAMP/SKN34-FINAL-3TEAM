@@ -12,9 +12,8 @@
         SELECT id, event_type, routing_key, subject, payload::text AS payload, created_at
         FROM outbox_event
         WHERE published_at IS NULL
-        ORDER BY created_at
+        ORDER BY created_at, id
         LIMIT #{limit}
-        FOR UPDATE SKIP LOCKED
     </select>
 
     <update id="markPublished">

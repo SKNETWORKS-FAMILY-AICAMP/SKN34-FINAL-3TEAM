@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { studentDeviceApi } from './api.ts'
+import { prepareDemoStudentDevice, studentDeviceApi } from './api.ts'
 
 export const qrDemoEnabled = import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true' &&
   import.meta.env.VITE_SHARED_DEVICE_MOCK === 'true'
@@ -78,4 +78,13 @@ export function useDeviceAdmin() {
       onSuccess: refresh,
     }),
   }
+}
+
+/** 시연 등록이 성공한 뒤 실제 등록과 같은 프로필 쿼리를 다시 읽습니다. */
+export function useDemoStudentEntry() {
+  const cache = useQueryClient()
+  return useMutation({
+    mutationFn: prepareDemoStudentDevice,
+    onSuccess: () => cache.invalidateQueries({ queryKey: ['student-device'] }),
+  })
 }

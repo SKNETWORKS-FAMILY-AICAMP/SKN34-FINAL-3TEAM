@@ -67,7 +67,7 @@ export function Workspace({
   )
   const demo = isDemo && (
     <div className="ws-demo">
-      <span>개발 목업 · 가상 데이터만 사용 · 실제 서버·AI 호출 없음</span>
+      <span>{import.meta.env.VITE_PAYMENT_TEST === 'true' ? '결제 테스트 모드 · 학습 데이터는 가상 · 결제는 토스 테스트 API 사용' : '개발 목업 · 가상 데이터만 사용 · 실제 서버·AI 호출 없음'}</span>
       <label>
         상태 시연{' '}
         <select
@@ -84,6 +84,9 @@ export function Workspace({
         >
           {[
             ['normal', '정상'],
+            ['payment-confirming', '결제 승인 확인 중'],
+            ['payment-renewal-failed', '구독 갱신 실패·유예'],
+            ['payment-refund-failed', '환불 처리 실패'],
             ['no-children', '자녀 없음'],
             ['empty', '기록 없음'],
             ['small', '표본 부족'],
@@ -239,7 +242,7 @@ export function EvidenceItems({ items }: { items: Evidence[] }) {
         <article className="ws-card" key={i}>
           <strong>{e.missionTitle ?? '관련 미션'}</strong>
           <p>
-            답변 {e.answerVersion ?? '확인 전'} · {e.submittedAt ?? '시점 정보 없음'}
+            {e.kind === 'REFLECTION' ? '돌아보기' : `답변 ${e.answerVersion ?? '확인 전'}`} · {e.submittedAt ?? '시점 정보 없음'}
           </p>
           {e.available ? (
             <blockquote>{e.quote ?? '인용 정보 없음'}</blockquote>

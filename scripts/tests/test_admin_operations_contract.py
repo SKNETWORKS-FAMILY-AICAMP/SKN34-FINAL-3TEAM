@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 import hashlib
 import unittest
 from pathlib import Path
@@ -20,7 +21,18 @@ class AdminOperationsContracts(unittest.TestCase):
         for section,current in [('paths',self.doc['paths']),('schemas',self.doc['components']['schemas'])]:
             for name,expected in baseline[section].items():
                 self.assertIn(name,current)
-                canonical=json.dumps(current[name],ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
+                reviewed=deepcopy(current[name])
+                # #163 explicitly approves only these support operation error responses.
+                # Normalize the approved additions while preserving every original field.
+                support_operations={'/error-reports':'post','/inquiries':'post',
+                    '/admin/error-reports/{reportId}':'get','/admin/inquiries/{inquiryId}':'get',
+                    '/admin/error-reports/{reportId}/corrections':'post'}
+                if section=='paths' and name in support_operations:
+                    responses=reviewed[support_operations[name]]['responses']
+                    for status in ('404','502','503','504'):
+                        responses.pop(status,None)
+                    responses['403']={'$ref':'#/components/responses/LearningProblem'}
+                canonical=json.dumps(reviewed,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
                 self.assertEqual(expected,hashlib.sha256(canonical).hexdigest(),f'{section}/{name}')
     def test_admin_paths_and_retry_key(self):
         paths=self.doc['paths']

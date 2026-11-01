@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router'
 import type { Session, DemoScenario } from '../../domain/classroom.ts'
 import { restoreSession } from '../../data/classroom/useClassroom.ts'
 import { queryClient } from '../../data/queryClient.ts'
-import { ApiError, watchAuthChange, waitForPendingRefresh, hasAccessToken } from '../../data/apiClient.ts'
+import { ApiError, watchAuthChange, waitForPendingRefresh, hasAccessToken, parentLoginRequired } from '../../data/apiClient.ts'
 import { AuthContext } from './sessionContext.ts'
 
 export function SessionProvider({ children }: { children: ReactNode }) {
@@ -21,6 +21,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     let revision = 0
     let active = true
     const clear = () => { setSession(null); setSelected(''); queryClient.clear(); setRestoreError('') }
+    const parentEntry = () => {
+      setLoginPath('/login'); revision++; clear(); setReady(true); setExpired(false)
+      navigate('/login', { replace: true })
+    }
     const studentEntry = () => {
       setLoginPath('/student/login')
       revision++
@@ -36,6 +40,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
     const expire = () => { setLoginPath('/login'); revision++; clear(); setReady(true); setExpired(true) }
     const restore = async (fresh: boolean) => {
+      if (parentLoginRequired() && window.location.pathname !== '/oauth/complete' && !window.location.pathname.startsWith('/student/')) {
+        parentEntry(); return
+      }
       if (!fresh && window.location.pathname.startsWith('/student/') && !hasAccessToken()) { studentEntry(); return }
       const current = ++revision
       setReady(false)
@@ -65,6 +72,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     })
     window.addEventListener('sagomungchi:session-expired', expire)
     window.addEventListener('sagomungchi:student-auth-required', studentEntry)
+    window.addEventListener('sagomungchi:parent-login-required', parentEntry)
     window.addEventListener('sagomungchi:session-changed', changed)
     window.addEventListener('sagomungchi:consent-required', changed)
     void restore(false)
@@ -73,6 +81,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       stop()
       window.removeEventListener('sagomungchi:session-expired', expire)
       window.removeEventListener('sagomungchi:student-auth-required', studentEntry)
+      window.removeEventListener('sagomungchi:parent-login-required', parentEntry)
       window.removeEventListener('sagomungchi:session-changed', changed)
       window.removeEventListener('sagomungchi:consent-required', changed)
     }

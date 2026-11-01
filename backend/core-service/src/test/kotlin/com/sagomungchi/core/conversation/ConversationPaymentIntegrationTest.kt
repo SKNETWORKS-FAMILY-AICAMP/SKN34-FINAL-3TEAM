@@ -2,6 +2,7 @@ package com.sagomungchi.core.conversation
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core.IntegrationTestSupport
+import com.sagomungchi.core._common.json.JsonObject
 import com.sagomungchi.core._common.messaging.OutboxRelay
 import com.sagomungchi.core.account.service.TokenService
 import com.sagomungchi.core.admin.session
@@ -78,8 +79,8 @@ class ConversationPaymentIntegrationTest : IntegrationTestSupport() {
     }
     @AfterEach fun noPgCalls() { verifyNoInteractions(pg) }
     private fun product(id: UUID, paid: Boolean): Product {
-        val limits = json.readTree("""{"dailyMissions":3,"dailyFeedback":50,"dailyConversations":${if(paid) 2 else 0},"reportNarrative":$paid}""")
-        val row = Product(id, "analysis-fixture-$id", "합성 상품", if(paid) 14900 else 0, "MONTHLY", 1, json.createObjectNode(), limits, true)
+        val limits = json.readValue("""{"dailyMissions":3,"dailyFeedback":50,"dailyConversations":${if(paid) 2 else 0},"reportNarrative":$paid}""", JsonObject::class.java)
+        val row = Product(id, "analysis-fixture-$id", "합성 상품", if(paid) 14900 else 0, "MONTHLY", 1, JsonObject(emptyMap()), limits, true)
         jdbc.update("""INSERT INTO product(id,code,name,price,billing_cycle,child_limit,features,limits,active,created_at)
             VALUES(?,?,?,?,'MONTHLY',1,'{}',?::jsonb,true,now()) ON CONFLICT(id) DO NOTHING""",
             row.id,row.code,row.name,row.price,json.writeValueAsString(limits))

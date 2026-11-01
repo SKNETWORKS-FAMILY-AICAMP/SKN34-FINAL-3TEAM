@@ -11,6 +11,7 @@ class AnalysisHttpStub : AutoCloseable {
         fun header(name: String) = headers.entries.firstOrNull { it.key.equals(name, true) }?.value?.firstOrNull()
     }
     val requests = CopyOnWriteArrayList<Request>()
+    @Volatile var status = 200
     @Volatile var respond: (HttpExchange, Request) -> Unit = { _, _ -> }
     private val executor = Executors.newVirtualThreadPerTaskExecutor()
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
@@ -20,7 +21,7 @@ class AnalysisHttpStub : AutoCloseable {
                 val request = Request(exchange.requestBody.readBytes().toString(Charsets.UTF_8), exchange.requestHeaders.mapValues { it.value.toList() })
                 requests.add(request)
                 exchange.responseHeaders.set("Content-Type", "text/event-stream;charset=UTF-8")
-                exchange.sendResponseHeaders(200, 0)
+                exchange.sendResponseHeaders(status, 0)
                 respond(exchange, request)
             } catch (_: Exception) { } finally { exchange.close() }
         }

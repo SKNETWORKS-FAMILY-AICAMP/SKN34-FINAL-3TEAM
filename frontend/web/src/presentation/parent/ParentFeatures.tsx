@@ -1,3 +1,4 @@
+import { analysisResultLabel } from '../../domain/parent.ts'
 import { useState } from 'react'
 import { ArrowUpRight, MessagesSquare, RefreshCw } from 'lucide-react'
 import {
@@ -325,13 +326,11 @@ export function ParentAnalysis({
               {result && !actions.analyze.isPending && !actions.analyze.error && (
                 <section aria-live="polite" className="ux-analysis-result">
                   <small>
-                    {result.source === 'TEMPLATE'
-                      ? `규칙 응답 모드 · ${result.fallback?.reason ?? '대조 실패 또는 LLM 장애'}`
-                      : '숫자·인용 대조 완료'}
+                    {analysisResultLabel(result)}
                   </small>
                   <p>{result.answer}</p>
                   {result.evidence.map((e) => (
-                    <div className="cj-quote" key={e.answerId}>
+                    <div className="cj-quote" key={e.answerId ?? e.attemptId}>
                       {e.available ? (
                         <>
                           {e.quote}

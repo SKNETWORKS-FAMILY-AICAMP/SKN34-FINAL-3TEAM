@@ -4,6 +4,13 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.core.account.client.GoogleOAuthClient
+import com.sagomungchi.core.account.controller.AuthCookies
+import com.sagomungchi.core.account.config.AuthProperties
+import com.nimbusds.jose.JWSAlgorithm
+import com.nimbusds.jose.JWSHeader
+import com.nimbusds.jose.crypto.MACSigner
+import com.nimbusds.jwt.JWTClaimsSet
+import com.nimbusds.jwt.SignedJWT
 import com.sagomungchi.core.account.domain.*
 import com.sagomungchi.core.account.repository.PairingRepository
 import com.sagomungchi.core.account.service.*
@@ -57,6 +64,7 @@ class StudentDeviceAuthTest : PostgresRepositoryTest() {
     }
     @Autowired lateinit var auth: AuthService
     @Autowired lateinit var tokens: TokenService
+    @Autowired lateinit var authProperties: AuthProperties
     @Autowired lateinit var service: StudentAuthService
     @Autowired lateinit var pins: StudentPinService
     @Autowired lateinit var reauth: ReauthenticationService
@@ -132,6 +140,53 @@ class StudentDeviceAuthTest : PostgresRepositoryTest() {
         kids.forEach { jdbc.update("DELETE FROM student WHERE id=?",it) }
         documents.forEach { jdbc.update("DELETE FROM consent_document WHERE id=?",it) }
     }
+    @Test fun `student logout revokes only its bearer and preserves parent refresh and sibling student`() {
+        val p=parent(); val c=child(p.identity.account.id); set(p.identity,c)
+        val d=device(p.identity,c)
+        val first=service.login(d.credential,c,"4831").accessToken
+        val second=service.login(d.credential,c,"4831").accessToken
+        mvc.post("/api/v1/auth/student/logout") {
+            header("Origin","http://localhost:5173");header("X-Requested-With","XMLHttpRequest")
+            header("Authorization","Bearer $first");cookie(Cookie(AuthCookies.REFRESH,p.refreshToken))
+        }.andExpect { status { isNoContent() };header { doesNotExist("Set-Cookie");string("Cache-Control","no-store") } }
+        assertFailsWith<BusinessException> { auth.authenticate(first) }
+        assertEquals("STUDENT",auth.authenticate(second).session.role)
+        assertEquals(p.identity.session.id,auth.authenticate(p.accessToken).session.id)
+        assertEquals(p.identity.session.id,auth.refresh(p.refreshToken).identity.session.id)
+        assertEquals(c,service.profiles(d.credential).single().childId)
+    }
+
+    @Test fun `student logout never falls back to parent cookie for missing forged expired or parent bearer`() {
+        val p=parent();val c=child(p.identity.account.id);set(p.identity,c);val d=device(p.identity,c)
+        val student=service.login(d.credential,c,"4831").accessToken
+        val session=auth.authenticate(student).session
+        val expired=SignedJWT(JWSHeader(JWSAlgorithm.HS256), JWTClaimsSet.Builder()
+            .issuer(TokenService.ISSUER).audience("access").subject(session.userId.toString())
+            .claim("sid",session.id.toString()).claim("role","STUDENT").claim("ver",session.version)
+            .claim("studentId",c.toString())
+            .issueTime(java.util.Date.from(java.time.Instant.now().minusSeconds(120)))
+            .expirationTime(java.util.Date.from(java.time.Instant.now().minusSeconds(60))).build()).apply {
+                sign(MACSigner(java.util.Base64.getDecoder().decode(authProperties.jwtSecret)))
+            }.serialize()
+        listOf(null,"forged",expired,p.accessToken).forEach { access ->
+            mvc.post("/api/v1/auth/student/logout") {
+                header("Origin","http://localhost:5173");header("X-Requested-With","XMLHttpRequest")
+                access?.let { header("Authorization","Bearer $it") };cookie(Cookie(AuthCookies.REFRESH,p.refreshToken))
+            }.andExpect {
+                status { if(access==p.accessToken) isForbidden() else isUnauthorized() }
+                header { doesNotExist("Set-Cookie") }
+            }
+            assertEquals("PARENT",auth.authenticate(p.accessToken).session.role)
+            assertEquals("STUDENT",auth.authenticate(student).session.role)
+        }
+        mvc.post("/api/v1/auth/student/logout") {
+            header("Origin","https://untrusted.invalid");header("X-Requested-With","XMLHttpRequest")
+            header("Authorization","Bearer $student");cookie(Cookie(AuthCookies.REFRESH,p.refreshToken))
+        }.andExpect { status { isForbidden() } }
+        assertEquals("STUDENT",auth.authenticate(student).session.role)
+        assertEquals("PARENT",auth.refresh(p.refreshToken).identity.session.role)
+    }
+
     @Test fun `pairing expires is single use and concurrent registration has one winner`() {
         val p=parent();val c=child(p.identity.account.id)
         val pairing=service.pairing(p.identity,listOf(c))

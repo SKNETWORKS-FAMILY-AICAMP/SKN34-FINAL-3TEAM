@@ -25,7 +25,7 @@ class LearningController(private val service: LearningProxyService, private val 
     fun start(@PathVariable missionId: UUID) = service.exchange("POST", "/missions/$missionId/attempts").http()
 
     @GetMapping("/api/v1/attempts/{attemptId}")
-    fun attempt(@PathVariable attemptId: UUID) = service.exchange("GET", "/attempts/$attemptId").http()
+    fun attempt(@PathVariable attemptId: UUID) = service.exchange("GET", "/attempts/$attemptId").http(noStore = true)
 
     @PutMapping("/api/v1/attempts/{attemptId}/draft")
     fun draft(@PathVariable attemptId: UUID, @RequestHeader("If-Match") ifMatch: String, @RequestBody body: ByteArray) =
@@ -56,7 +56,9 @@ class LearningController(private val service: LearningProxyService, private val 
         return body
     }
 
-    private fun HttpExchangeResult.http() = ResponseEntity(body, HttpHeaders().also { target ->
+    private fun HttpExchangeResult.http(noStore: Boolean = false) = ResponseEntity(body, HttpHeaders().also { target ->
         headers.forEach { (name, values) -> target[name] = values }
+        // ETag is the draft concurrency version, not the version of feedback or completion.
+        if (noStore) target.cacheControl = "no-store"
     }, HttpStatusCode.valueOf(status))
 }

@@ -2,7 +2,7 @@ package com.sagomungchi.core.usage.service
 
 import com.sagomungchi.core._common.config.AppProperties
 import com.sagomungchi.core._common.messaging.EventEnvelope
-import com.sagomungchi.core.usage.consumer.LlmUsageRecorded
+import com.sagomungchi.core.usage.domain.LlmUsageRecorded
 import com.sagomungchi.core.usage.repository.LlmUsage
 import com.sagomungchi.core.usage.repository.LlmUsageRepository
 import org.springframework.stereotype.Service

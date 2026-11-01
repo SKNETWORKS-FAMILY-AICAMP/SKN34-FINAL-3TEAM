@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { reduceAnalysis, metricText, validPeriod, changeCounts } from '../src/domain/parent.ts'
 import type { StreamState, MessageResult } from '../src/domain/parent.ts'
 import type { AdminMission } from '../src/domain/admin/operations.ts'
-import { hasPermission, missingMissionFields } from '../src/domain/admin/operations.ts'
+import { hasPermission, missingMissionFields, jobRetryMessage } from '../src/domain/admin/operations.ts'
 import { createDemoGateway, demoMissions } from '../src/data/classroom/demoGateway.ts'
 import { parentApi } from '../src/data/parent/api.ts'
 import { adminApi } from '../src/data/admin/api.ts'
@@ -17,7 +17,8 @@ const result: MessageResult = {
   evidence: [],
   recordCount: 0,
   source: 'TEMPLATE',
-  verification: { numbersMatched: true, quotesMatched: true },
+  fallback: { reason: 'AI_UNAVAILABLE', draftVerification: null },
+  verification: { numbersMatched: true, quotesMatched: true, contentAllowed: true },
 }
 test('분석 delta는 임시·result로 교체·error/clarification에서 폐기', () => {
   const initial: StreamState = { phase: 'IDLE', temporary: '' }
@@ -76,6 +77,7 @@ const complete = (): AdminMission => ({
   currentVersion: 1,
   currentRubricVersion: 1,
   publishedVersion: null,
+          publishedRubricVersion: null,
   versions: [
     {
       version: 1,
@@ -87,7 +89,8 @@ const complete = (): AdminMission => ({
       inputType: 'NARRATIVE',
       question: '까닭을 설명해 주세요.',
       guide: '',
-      scene: 'korean',
+      answerUnit: null,
+      inputTemplate: [],
       sceneUri: '',
       staticSceneUri: '',
       achievementStandards: ['자체 기준'],
@@ -128,12 +131,12 @@ test('게시 필수 누락·현재 버전 승인·논술 학년·정답 키 검�
   assert.deepEqual(missingMissionFields(m), [])
   m.currentVersion = 2
   m.versions.push({ ...m.versions[0], version: 2 })
-  assert.ok(missingMissionFields(m).includes('현재 버전 검토 승인'))
+  assert.ok(missingMissionFields(m).includes('review'))
   m.versions.at(-1)!.inputType = 'ESSAY'
-  assert.ok(missingMissionFields(m).includes('논술 학년 5~6'))
+  assert.ok(missingMissionFields(m).includes('grade'))
   m.versions.at(-1)!.inputType = 'CHOICE'
-  assert.ok(missingMissionFields(m).includes('선택 항목'))
-  assert.ok(missingMissionFields(m).includes('정답 키'))
+  assert.ok(missingMissionFields(m).includes('choices'))
+  assert.ok(missingMissionFields(m).includes('answerKey'))
 })
 test('게시본 변경·중단은 진행 중 시도의 문항 스냅샷을 바꾸지 않음', async () => {
   const api = createDemoGateway()
@@ -210,4 +213,28 @@ test('SSE 실패 재시도 경로·임시 출력 폐기·AbortSignal 전달', as
   assert.equal(signal, controller.signal)
   assert.equal(states.at(-1)?.temporary, '')
   assert.equal(states.at(-1)?.result, undefined)
+})
+
+
+test('관리자 접수·실행·완료를 구분하고 REPORT와 CONVERSATION 결과 ID로 조회한다', async (t) => {
+  assert.match(jobRetryMessage('QUEUED'), /접수/)
+  assert.doesNotMatch(jobRetryMessage('QUEUED'), /완료를 확인/)
+  assert.match(jobRetryMessage('RUNNING'), /아직 완료되지/)
+  assert.match(jobRetryMessage('COMPLETED'), /완료를 확인/)
+  assert.match(jobRetryMessage('FAILED'), /실패/)
+  setAccessToken('memory-test-token')
+  const calls: string[] = []
+  t.mock.method(globalThis, 'fetch', async (url: string) => {
+    calls.push(url)
+    const jobId = url.includes('report-original') ? 'report-new' : 'conversation-original'
+    return new Response(JSON.stringify({ jobId, type: jobId === 'report-new' ? 'REPORT' : 'CONVERSATION', status: 'QUEUED' }), { status: url.endsWith('/retry') ? 202 : 200 })
+  })
+  try {
+    for (const id of ['report-original', 'conversation-original']) {
+      const accepted = await adminApi.retry(id, 'stable-key')
+      assert.equal(accepted.status, 'QUEUED')
+      await adminApi.job(accepted.jobId)
+    }
+    assert.deepEqual(calls, ['/api/v1/admin/jobs/report-original/retry', '/api/v1/admin/jobs/report-new', '/api/v1/admin/jobs/conversation-original/retry', '/api/v1/admin/jobs/conversation-original'])
+  } finally { setAccessToken(null) }
 })

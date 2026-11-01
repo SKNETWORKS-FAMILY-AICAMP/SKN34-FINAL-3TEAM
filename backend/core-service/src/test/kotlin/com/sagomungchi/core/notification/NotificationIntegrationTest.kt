@@ -7,6 +7,8 @@ import com.sagomungchi.core._common.web.SseEmitters
 import com.sagomungchi.core.account.service.AuthService
 import com.sagomungchi.core.account.service.TokenService
 import com.sagomungchi.core.admin.session
+import com.sagomungchi.core.notification.config.NotificationRedisConfiguration
+import com.sagomungchi.core.notification.consumer.NotificationRedisSubscriber
 import com.sagomungchi.core.notification.domain.*
 import com.sagomungchi.core.notification.messaging.*
 import com.sagomungchi.core.notification.service.*

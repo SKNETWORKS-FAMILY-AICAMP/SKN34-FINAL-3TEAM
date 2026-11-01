@@ -103,3 +103,35 @@ python -X utf8 scripts/verify_report_compose.py --admin-retry --output ../tmp/is
 [요청·결과 JSON 7개와 설명](../../contracts/examples/report-admin-retry/)을 사용한다. 성공/재실패는 서로 다른 jobId의 예시다. 각 실행은 started와 completed 또는 failed 하나로 종료한다.
 
 원작업 연결 및 감사 저장 형식은 core #47이 결정한다. 현재 report는 새 jobId의 생산자가 적법한 재처리를 발행했다고 신뢰하며 원작업을 core DB에서 직접 조회하지 않는다. 삭제와 경쟁한 core queued job의 취소·정리도 core 범위다. 기존 삭제 장벽은 #152에서 해제하지 않는다.
+
+## 2026-10-30 최신 develop 재검증
+
+PR #156 병합 여부만으로 완료를 판단하지 않고, 최신 develop `18c9c11`에서 #152의 해야 할 일과 완료 조건을 다시 대조하고 실행했다. 별도 브랜치 `feature/report-admin-retry-verification`에서 검증했으며, 아래 결과는 로컬 실행 결과다. GitHub Actions 통과를 의미하지 않는다.
+
+| 검사 | 결과 |
+|---|---|
+| report 전체 pytest (실제 Docker PostgreSQL·RabbitMQ 포함) | 278개 통과, 96.27초. `test_admin_retry.py` 12개 포함 |
+| Ruff check / format | 통과 / 86개 파일 통과 |
+| 루트 `scripts/tests` 계약·검증 테스트 | 83개 통과 |
+| 현재 core·learning 소스 JDK21 bootJar | 두 서비스 모두 빌드 성공 |
+| `verify_report_compose.py --admin-retry` | 실제 연동 8개 시나리오 및 요청·결과 이벤트 스키마 통과 |
+| 최신 develop 기준 및 diff 검사 | `18c9c11` 기준 일치, `git diff --check` 통과 |
+
+실제 연동은 core·learning·report API·worker 2개·PostgreSQL·RabbitMQ·MinIO를 사용했다. 이전 완료 판과 실제 파일을 만든 뒤 원작업 실패 → 새 작업 성공 → 별도 새 작업 재실패 → 현재 무료 권한 재처리를 확인했다. 원작업의 늦은 결과와 완료 후 늦은 시작 이벤트를 실제 core에 전달해 종료 상태가 바뀌지 않는 것도 검사했다.
+
+중복 경합 메시지는 기존 지연 큐에서 재전달되도록 기다렸다. 큐가 소진된 뒤 리포트 5개·Outbox 10개가 유지되고, 기존 판의 행과 MinIO 파일 바이트가 보존되는 검사를 통과했다. 성공 기록만 확인한 것이 아니라 실패·중복·동시 전달·지연 이벤트·상태/Outbox 원자성 회귀를 함께 검사했다. 이번 재검증에서 제품 코드나 계약을 수정해야 할 오류는 발견되지 않아 검증 기록만 추가한다.
+
+### 완료 범위와 남은 연결 작업
+
+- **#152 report 범위:** 기존 새 job/revision 경로로 요구조건 충족. 요청·결과 예시는 위 링크의 JSON 7개를 그대로 사용한다. 원작업 연결은 core 소유, 현재 `narrativeEnabled` 계산은 core, 삭제 장벽은 report가 유지하는 기존 합의와 일치한다.
+- **#47 core 범위:** `OperationRetryService`는 아직 NOTIFICATION 외 재처리를 `JOB_RETRY_UNAVAILABLE`로 차단한다. 검증 생산자가 core job을 준비하고 명령을 발행했으므로 관리자 HTTP 권한·Idempotency-Key·원작업 연결·감사 및 버튼 전체 경로를 완료했다고 볼 수 없다. AI 서술 응답도 합성 대역이다.
+- #152 이슈 체크리스트 정리와 #47 담당자에게 예시·검증 결과 전달은 별도 마무리 작업이다. 이번 재검증만으로 이슈 종료나 담당자 수신 확인을 대신하지 않는다.
+
+### 재현 및 산출물
+
+저장소 루트에서 report Python 환경으로 `python -X utf8 scripts/verify_report_compose.py --admin-retry --output ../tmp/issue152-recheck-compose-20261030`을 실행했다. 기존 실행 절의 pytest·Ruff 명령과 `python -m unittest discover -s scripts/tests -q`도 실행했다.
+
+- pytest XML: 저장소 밖 `../tmp/issue152-recheck-20261030.xml`
+- 실제 연동 결과·로그: 저장소 밖 `../tmp/issue152-recheck-compose-20261030/`
+- 합성 학생·검증용 자격 증명만 사용했으며, 실제 데이터·모델·AWS 자격 증명은 사용하거나 커밋하지 않았다.
+- report 테스트에서 외부 Starlette/httpx 사용 중단 예정 경고 1개가 있었으나 실패·건너뛴 테스트는 없었다.

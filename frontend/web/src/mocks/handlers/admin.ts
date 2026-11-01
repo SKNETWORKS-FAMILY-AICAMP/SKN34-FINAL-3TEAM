@@ -8,6 +8,7 @@ import type {
   ModelVersion,
 } from '../../domain/admin/operations.ts'
 import { missingMissionFields } from '../../domain/admin/operations.ts'
+import type { LearningMission } from '../../domain/learning.ts'
 import type { Period } from '../../domain/classroom.ts'
 import { validPeriod } from '../../domain/parent.ts'
 import { workspaceScenario as mode } from '../fixtures/accounts.ts'
@@ -25,6 +26,8 @@ import {
 } from '../fixtures/admin/operations.ts'
 import { guard, respond } from './student.ts'
 import { fail, page } from './parent.ts'
+const unpublishedChanges = (m: AdminMission) => m.currentVersion !== m.publishedVersion || m.currentRubricVersion !== m.publishedRubricVersion
+const reviewable = (m: AdminMission) => m.status === 'REVIEW_REQUIRED' || m.status === 'PUBLISHED' && unpublishedChanges(m)
 function allow(request: Request, permission?: Permission) {
   guard(request)
   const s = store.snapshot().session
@@ -89,7 +92,8 @@ function versionData(d: Partial<MissionVersion>, version: number): MissionVersio
     inputType,
     question: d.question ?? '',
     guide: d.guide ?? '',
-    scene: d.scene ?? 'korean',
+    answerUnit: d.answerUnit ?? null,
+    inputTemplate: d.inputTemplate ?? [],
     sceneUri: d.sceneUri ?? '',
     staticSceneUri: d.staticSceneUri ?? '',
     achievementStandards: d.achievementStandards ?? [],
@@ -228,27 +232,20 @@ export const adminHandlers = [
   ),
   http.get('/api/v1/admin/missions', ({ request }) =>
     respond(async () => {
-      allow(request, 'CONTENT')
-      queryFault()
+      allow(request, 'CONTENT'); queryFault()
       const q = new URL(request.url).searchParams
-      return {
-        ...page(
-          mode === 'empty'
-            ? []
-            : missions.filter((m) => {
-                const v = m.versions.at(-1)!
-                return (
-                  (!q.get('status') || m.status === q.get('status')) &&
-                  (!q.get('grade') ||
-                    (v.gradeMin <= Number(q.get('grade')) &&
-                      v.gradeMax >= Number(q.get('grade')))) &&
-                  (!q.get('thinkingType') || v.thinkingType === q.get('thinkingType'))
-                )
-              }),
-        ),
+      const index = Number(q.get('page') ?? 0), size = Number(q.get('size') ?? 20)
+      if (!Number.isInteger(index) || index < 0 || !Number.isInteger(size) || size < 1 || size > 100)
+        fail('VALIDATION_FAILED', '페이지를 확인해 주세요.')
+      const rows = mode === 'empty' ? [] : missions.filter((m) => {
+        const v = m.versions.find((v) => v.version === m.currentVersion)!
+        return (!q.get('status') || m.status === q.get('status')) &&
+          (!q.get('grade') || (v.gradeMin <= Number(q.get('grade')) && v.gradeMax >= Number(q.get('grade')))) &&
+          (!q.get('thinkingType') || v.thinkingType === q.get('thinkingType'))
+      })
+      return { items: rows.slice(index * size, (index + 1) * size), page: index, size, totalElements: rows.length,
         counts: (['DRAFT', 'REVIEW_REQUIRED', 'PUBLISHED', 'UNPUBLISHED'] as const).map(
-          (status) => ({ status, count: missions.filter((m) => m.status === status).length }),
-        ),
+          (status) => ({ status, count: missions.filter((m) => m.status === status).length })),
       }
     }),
   ),
@@ -264,6 +261,7 @@ export const adminHandlers = [
           currentVersion: 1,
           currentRubricVersion: null,
           publishedVersion: null,
+          publishedRubricVersion: null,
           versions: [v],
           rubrics: [],
           reviews: [],
@@ -288,7 +286,7 @@ export const adminHandlers = [
       m.versions.push(versionData(d, m.currentVersion + 1))
       m.currentVersion++
       m.demoOnly = d.demoOnly
-      m.status = 'DRAFT'
+      if (m.status === 'REVIEW_REQUIRED') m.status = 'DRAFT'
       audit(
         'MISSION_UPDATE',
         'MISSION',
@@ -308,7 +306,7 @@ export const adminHandlers = [
         fail('VALIDATION_FAILED', '요소 이름과 양의 정수 배점을 확인해 주세요.')
       m.currentRubricVersion = (m.currentRubricVersion ?? 0) + 1
       m.rubrics.push({ ...d, version: m.currentRubricVersion })
-      m.status = 'DRAFT'
+      if (m.status === 'REVIEW_REQUIRED') m.status = 'DRAFT'
       audit(
         'RUBRIC_UPDATE',
         'MISSION',
@@ -334,7 +332,9 @@ export const adminHandlers = [
           inputType: v.inputType,
           question: v.question,
           hint: '',
-          scene: v.scene,
+          scene: v.subject === '수학' ? 'math' : v.subject === '과학' ? 'science' : v.subject === '영어' ? 'english' : 'korean',
+          answerUnit: v.answerUnit,
+          inputTemplate: v.inputTemplate,
           sceneUri: v.sceneUri,
           staticSceneUri: v.staticSceneUri,
           choices: v.choices,
@@ -354,7 +354,8 @@ export const adminHandlers = [
           const d = (await request.json()) as { missionVersion: number; rubricVersion: number }
           if (d.missionVersion !== m.currentVersion || d.rubricVersion !== m.currentRubricVersion)
             fail('VALIDATION_FAILED', '현재 미션·기준표 버전을 확인해 주세요.')
-          m.status = 'REVIEW_REQUIRED'
+          if (m.status === 'DRAFT' || m.status === 'UNPUBLISHED') m.status = 'REVIEW_REQUIRED'
+          else if (!(m.status === 'PUBLISHED' && unpublishedChanges(m))) fail('CONFLICT', '검토 요청할 수정본이 없습니다.', 409)
         }
         if (action === 'review') {
           const d = (await request.json()) as {
@@ -364,18 +365,19 @@ export const adminHandlers = [
             comment: string
           }
           if (
-            m.status !== 'REVIEW_REQUIRED' ||
+            !reviewable(m) ||
             d.missionVersion !== m.currentVersion ||
             d.rubricVersion !== m.currentRubricVersion ||
             !['APPROVED', 'CHANGES_REQUESTED'].includes(d.result)
           )
             fail('VALIDATION_FAILED', '검토 요청된 현재 버전을 확인해 주세요.')
           m.reviews.push({ ...d, createdAt: stamp() })
-          if (d.result === 'CHANGES_REQUESTED') m.status = 'DRAFT'
+          if (d.result === 'CHANGES_REQUESTED' && m.status !== 'PUBLISHED') m.status = 'DRAFT'
         }
         if (action === 'publish') {
+          if (!reviewable(m)) fail('CONFLICT', '검토 가능한 상태가 아닙니다.', 409)
           const missing = missingMissionFields(m)
-          if (mode === 'publish-missing') missing.push('장면 정적 대체 검토(시험)')
+          if (mode === 'publish-missing') missing.push('staticSceneUri')
           if (missing.length) {
             audit('MISSION_PUBLISH', 'MISSION', m.missionId, 'FAILURE', missing.join(', '))
             throw new ApiError({
@@ -388,6 +390,7 @@ export const adminHandlers = [
           }
           m.status = 'PUBLISHED'
           m.publishedVersion = m.currentVersion
+          m.publishedRubricVersion = m.currentRubricVersion
           const v = m.versions.at(-1)!,
             r = m.rubrics.at(-1)!
           store.publishCatalog(m.missionId, {
@@ -400,14 +403,17 @@ export const adminHandlers = [
             inputType: v.inputType,
             question: v.question,
             hint: r.hints[0] ?? '장면을 다시 살펴보세요.',
-            scene: v.scene,
+            scene: v.subject === '수학' ? 'math' : v.subject === '과학' ? 'science' : v.subject === '영어' ? 'english' : 'korean',
+          answerUnit: v.answerUnit,
+          inputTemplate: v.inputTemplate,
             sceneUri: v.sceneUri,
             staticSceneUri: v.staticSceneUri,
             choices: v.choices,
             categories: v.categories,
-          })
+          } as LearningMission)
         }
         if (action === 'unpublish') {
+          if (m.status !== 'PUBLISHED') fail('CONFLICT', '공개 중인 미션이 아닙니다.', 409)
           m.status = 'UNPUBLISHED'
           store.publishCatalog(m.missionId, null)
         }

@@ -41,7 +41,7 @@ class RenewalService(private val repository: PaymentRepository, private val tx: 
                 unavailable("PAYMENT_RENEWAL_DATA_UNAVAILABLE")
             if(last!=null && last.status!="FAILED") return@locked nullResult()
             val order=existing ?: PaymentOrder(UUID.randomUUID(),"renew-${UUID.randomUUID()}",sub.parentUserId,sub.studentId,
-                sub.productId,sub.id,"RENEWAL",sub.periodEnd,sub.productSnapshot.path("price").intValue(),sub.productSnapshot,tx.now()).also {
+                sub.productId,sub.id,"RENEWAL",sub.periodEnd,((sub.productSnapshot["price"] as? Number)?.toInt() ?: 0),sub.productSnapshot,tx.now()).also {
                     if(it.amount<=0) conflict("PAYMENT_PRODUCT_UNAVAILABLE")
                     check(repository.insertOrder(it)==1)
                 }

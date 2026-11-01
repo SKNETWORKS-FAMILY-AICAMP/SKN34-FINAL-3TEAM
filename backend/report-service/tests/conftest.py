@@ -13,6 +13,11 @@ from app.database import create_db_engine
 os.environ.setdefault("INTERNAL_TOKEN", "test-token")
 os.environ.setdefault("RABBITMQ_URL", "amqp://guest:guest@127.0.0.1:1/")
 os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://u:p@127.0.0.1:1/x")
+# 앱 lifespan의 S3 클라이언트 생성은 합성 자격 증명으로만 수행한다.
+# 실제 MinIO 테스트도 테스트 버킷의 자격 증명을 별도로 사용한다.
+os.environ.setdefault("AWS_ACCESS_KEY_ID", "synthetic-report-test")
+os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "synthetic-report-test-only")
+os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
 
 
 @pytest.fixture(scope="session")

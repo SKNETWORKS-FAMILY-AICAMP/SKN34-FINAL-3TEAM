@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router'
 import { adminApi } from '../../data/admin/api.ts'
 import { useAdminQuery, useAdminMutation } from '../../data/admin/queries.ts'
 import type { Permission } from '../../domain/admin/operations.ts'
-import { hasPermission, jobLabels } from '../../domain/admin/operations.ts'
+import { hasPermission, jobLabels, jobRetryMessage } from '../../domain/admin/operations.ts'
 import type { Period } from '../../domain/classroom.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
@@ -144,18 +144,19 @@ function Jobs() {
       )}
       {id && (
         <Modal title="작업 상세·재처리" onClose={() => setId(null)}>
-          <JobDetail id={id} />
+          <JobDetail key={id} id={id} />
         </Modal>
       )}
     </>
   )
 }
 function JobDetail({ id }: { id: string }) {
-  const q = useAdminQuery(['job', id], (signal) => adminApi.job(id, signal)),
+  const [selectedId, setSelectedId] = useState(id)
+  const q = useAdminQuery(['job', selectedId], (signal) => adminApi.job(selectedId, signal)),
     key = useRef<string | null>(null),
     retry = useAdminMutation(() => {
       key.current ??= crypto.randomUUID()
-      return adminApi.retry(id, key.current)
+      return adminApi.retry(selectedId, key.current)
     }),
     [notice, setNotice] = useState('')
   function run() {
@@ -163,11 +164,8 @@ function JobDetail({ id }: { id: string }) {
       .mutateAsync(undefined)
       .then((j) => {
         key.current = null
-        setNotice(
-          j.status === 'FAILED'
-            ? '재처리 실패 · 완료로 표시하지 않습니다.'
-            : '서버에서 재처리 완료를 확인했습니다.',
-        )
+        setSelectedId(j.jobId)
+        setNotice(jobRetryMessage(j.status))
       })
       .catch(() => {})
   }
@@ -197,6 +195,16 @@ function JobDetail({ id }: { id: string }) {
           )}
         </>
       )}
+      <button disabled={q.isFetching} onClick={() => {
+        void q.refetch().then(({ data, error }) => {
+          if (data && !error) setNotice(jobRetryMessage(data.status))
+        })
+      }}>작업 상태 새로고침</button>
+      {selectedId !== id && <button onClick={() => {
+        key.current = null
+        setSelectedId(id)
+        setNotice('')
+      }}>원래 작업 보기</button>}
       <p role="status">{notice}</p>
       <ErrorNotice error={retry.error} retry={run} />
     </>

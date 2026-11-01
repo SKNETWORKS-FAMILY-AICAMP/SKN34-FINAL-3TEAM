@@ -1,4 +1,4 @@
-package com.sagomungchi.core.notification.messaging
+package com.sagomungchi.core.notification.consumer
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core.notification.domain.NotificationStored
