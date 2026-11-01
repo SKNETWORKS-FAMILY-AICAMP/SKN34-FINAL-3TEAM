@@ -4,7 +4,8 @@
 - 50개 주제 중 10개를 시드로 떼어 '처음 보는 주제'로 둔다 (학습에 한 건도 안 씀)
 - 학습: TL 중 나머지 40개 주제 (5%는 검증용, 가장 좋은 에폭 고르기)
 - 평가 ① 같은 주제: VL 중 40개 주제 / 평가 ② 처음 보는 주제: 10개 주제의 TL+VL 전부
-- 입력: "[학년] 초5 [글 종류] 설명글" + 학생 글 (지시문 문장은 넣지 않음, 10/29 서술형 문장 외움 확인 때문)
+- 입력: "[학년] 초5 [글 종류] 설명글" + 학생 글
+  (지시문 문장은 넣지 않음, 10/29 서술형 문장 외움 확인 때문)
 - 출력: 구성·내용·표현 3개 영역 (각 채점자 세부 점수 평균, 0~3), 정답 = 채점자 3명 평균
 - 비교: 채점자 1명 vs 나머지 2명 평균 (같은 평가 글에서)
 결과는 숫자만 출력·저장 (results/e545/). 학생 글은 출력하지 않음.
@@ -20,8 +21,11 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader
+from train import (  # --lora (LLM + LoRA)는 train.py와 같은 방식
+    build_model,
+    load_trained,
+)
 from transformers import (
-    AutoModelForSequenceClassification,
     AutoTokenizer,
     DataCollatorWithPadding,
     get_linear_schedule_with_warmup,
@@ -29,25 +33,58 @@ from transformers import (
 
 M2 = Path(__file__).resolve().parent.parent
 AREAS = ["org", "cont", "exp"]
+# --detail: 세부 항목 11개 (구성 4·내용 4·표현 3). 학년군상 채점 안 하는 항목은 빈칸(NaN) →
+# 손실에서 빠짐
+DETAIL = [f"{a}_{j}" for a, n in (("org", 4), ("cont", 4), ("exp", 3)) for j in range(n)]
+USE_DETAIL = False
 
 
 def target(df):
+    """영역 3개 정답 (평가는 항상 이것). 채점자 3명 평균"""
+    return np.stack([df[[f"{a}_r{r}" for r in (1, 2, 3)]].mean(axis=1) for a in AREAS], 1).astype(
+        "float32"
+    )
+
+
+def train_target(df):
+    """학습 정답: 기본은 영역 3개, --detail이면 세부 11개(빈칸은 NaN)"""
+    if not USE_DETAIL:
+        return target(df)
     return np.stack(
-        [df[[f"{a}_r{r}" for r in (1, 2, 3)]].mean(1) for a in AREAS], 1
+        [df[[f"{c}_r{r}" for r in (1, 2, 3)]].mean(axis=1, skipna=False) for c in DETAIL],
+        1,
     ).astype("float32")
+
+
+def to_areas(pred, df):
+    """--detail 예측 11개 → 영역 3개.
+
+    그 글에서 채점하는 세부 항목만 평균 (build_545.py v2와 같은 방식).
+    """
+    if not USE_DETAIL:
+        return pred
+    valid = ~np.isnan(train_target(df))
+    out = []
+    for a in AREAS:
+        idx = [i for i, c in enumerate(DETAIL) if c.startswith(a + "_")]
+        p, v = pred[:, idx], valid[:, idx]
+        out.append((p * v).sum(1) / v.sum(1).clip(min=1))
+    return np.stack(out, 1)
 
 
 def loader(df, tok, bs, shuffle, max_len, mask_disagree=0.0):
     first = ("[학년] " + df["grade"] + " [글 종류] " + df["essay_type"]).tolist()
     enc = tok(first, df["text"].tolist(), truncation="only_second", max_length=max_len)
-    y = target(df)
+    y = train_target(df)
     if mask_disagree:
-        # --mask-disagree: 채점자 3명 최고-최저 차이가 X 초과인 영역은 정답을 NaN으로 → 손실에서 빠짐 (학습용에만)
+        # --mask-disagree: 채점자 3명 최고-최저 차이가 X 초과인 영역은 정답을 NaN으로 → 손실에서
+        # 빠짐 (학습용에만)
         for j, a in enumerate(AREAS):
             v = df[[f"{a}_r{r}" for r in (1, 2, 3)]]
             y[(v.max(axis=1) - v.min(axis=1)).to_numpy() > mask_disagree, j] = np.nan
         print(
-            f"  학습에서 뺀 칸: {int(np.isnan(y).sum()):,} / {y.size:,} (채점자 차이 {mask_disagree:g} 초과)"
+            f"  학습에서 뺀 칸: {int(np.isnan(y).sum()):,} / {y.size:,} (채점자 차이 "
+            f"{mask_disagree:g} 초과)"
         )
     rows = [
         {
@@ -76,9 +113,7 @@ def predict(model, dl, dev):
     model.eval()
     out = []
     for b in dl:
-        with torch.autocast(
-            device_type=dev.type, dtype=torch.bfloat16, enabled=dev.type == "cuda"
-        ):
+        with torch.autocast(device_type=dev.type, dtype=torch.bfloat16, enabled=dev.type == "cuda"):
             out.append(
                 model(
                     input_ids=b["input_ids"].to(dev),
@@ -101,10 +136,10 @@ def scores(df, pred, name):
     y = target(df)
     rows = []
     for j, a in enumerate(AREAS + ["total"]):
-        g = y[:, j] if a != "total" else y.mean(1)
-        p = pred[:, j] if a != "total" else pred.mean(1)
+        g = y[:, j] if a != "total" else y.mean(axis=1)
+        p = pred[:, j] if a != "total" else pred.mean(axis=1)
         if a == "total":
-            r = [df[[f"{x}_r{k}" for x in AREAS]].mean(1).to_numpy() for k in (1, 2, 3)]
+            r = [df[[f"{x}_r{k}" for x in AREAS]].mean(axis=1).to_numpy() for k in (1, 2, 3)]
         else:
             r = [df[f"{a}_r{k}"].to_numpy() for k in (1, 2, 3)]
         one_vs_two = np.mean(
@@ -142,7 +177,42 @@ def main():
     ap.add_argument("--batch-size", type=int, default=16)
     ap.add_argument("--max-length", type=int, default=512)
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--n-new", type=int, default=10, help="처음 보는 주제로 뗄 주제 수")
+    ap.add_argument(
+        "--n-new",
+        type=int,
+        default=10,
+        help="처음 보는 주제로 뗄 주제 수 (0이면 50개 주제 전부 학습 = 서비스용, 처음 보는 주제 "
+        "평가는 건너뜀)",
+    )
+    ap.add_argument(
+        "--out-dir",
+        type=Path,
+        default=None,
+        help="모델 저장 폴더 (기본 checkpoints/e545<태그>). 서비스용은 예: "
+        "models/m2-klue-essay/3.0_seed42",
+    )
+    ap.add_argument(
+        "--save-preds",
+        action="store_true",
+        help="검증·평가 예측값(소수, 0~3)을 모델 폴더 preds.npz에 저장 (점수 보정·검증용)",
+    )
+    ap.add_argument(
+        "--detail",
+        action="store_true",
+        help="세부 항목 11개를 따로 학습 (data/clean/에세이545_세부.csv.gz 필요, "
+        "build_545_detail.py). 평가는 영역 3개로 묶어서 기존과 같게",
+    )
+    ap.add_argument(
+        "--lora",
+        type=int,
+        default=0,
+        help="LoRA rank (예: 16). LLM(Qwen3 등)을 LoRA로 학습. 0이면 끔 (roberta 전체 학습)",
+    )
+    ap.add_argument(
+        "--grad-ckpt",
+        action="store_true",
+        help="gradient checkpointing (--lora에서 메모리 절약, 대신 느려짐)",
+    )
     ap.add_argument(
         "--data-dir",
         type=Path,
@@ -153,12 +223,14 @@ def main():
         "--mask-disagree",
         type=float,
         default=0.0,
-        help="채점자 3명 최고-최저 차이가 X 초과인 영역을 학습 손실에서만 뺌 (평가 정답은 그대로, 0이면 끔. 예: 1)",
+        help="채점자 3명 최고-최저 차이가 X 초과인 영역을 학습 손실에서만 뺌 (평가 정답은 그대로, "
+        "0이면 끔. 예: 1)",
     )
     ap.add_argument(
         "--add-71819",
         action="store_true",
-        help="AI Hub 71819 논술형(89문항)을 학습에만 추가: 구성=organization_1·2, 내용=task_1·content_1~3, 표현=expression_1·2, 1~5점을 0~3점으로",
+        help="AI Hub 71819 논술형(89문항)을 학습에만 추가: 구성=organization_1·2, "
+        "내용=task_1·content_1~3, 표현=expression_1·2, 1~5점을 0~3점으로",
     )
     args = ap.parse_args()
     torch.manual_seed(args.seed)
@@ -167,7 +239,13 @@ def main():
     if dev.type == "cuda":
         torch.backends.cuda.matmul.allow_tf32 = True
 
-    df = pd.read_csv(args.data_dir / "에세이545_답안.csv.gz")
+    df = pd.read_csv(args.data_dir / "에세이545_답안.csv.gz", dtype={"essay_id": str})
+    if args.detail:
+        global USE_DETAIL
+        USE_DETAIL = True
+        det = pd.read_csv(args.data_dir / "에세이545_세부.csv.gz", dtype={"essay_id": str})
+        df = df.merge(det, on="essay_id", how="left", validate="one_to_one")
+        assert df[[f"{c}_r1" for c in DETAIL]].notna().any(axis=1).all(), "세부 점수 없는 글 있음"
     topics = np.sort(df["subject"].unique())
     new = set(np.random.RandomState(args.seed).permutation(topics)[: args.n_new])
     tl = df[(df["split"] == "TL") & ~df["subject"].isin(new)]
@@ -175,18 +253,23 @@ def main():
     sets = {
         "train": tl[~pick].reset_index(drop=True),
         "valid": tl[pick].reset_index(drop=True),
-        "same_topic": df[(df["split"] == "VL") & ~df["subject"].isin(new)].reset_index(
-            drop=True
-        ),
+        "same_topic": df[(df["split"] == "VL") & ~df["subject"].isin(new)].reset_index(drop=True),
         "new_topic": df[df["subject"].isin(new)].reset_index(drop=True),
     }
     tag = ""
+    if args.n_new != 10:
+        tag += f"_nnew{args.n_new}"
+    if args.lora:
+        tag += f"_{Path(args.model).name}_lora{args.lora}"
+    if args.detail:
+        tag += "_detail"
     if args.data_dir.name != "data":  # 예: data/clean → _clean (원래 결과를 덮어쓰지 않게)
         tag += f"_{args.data_dir.name}"
     if args.mask_disagree:
         tag += f"_mask{args.mask_disagree:g}"
     if args.add_71819:
-        # 평가는 545 그대로, 학습에만 71819를 더해 주제 수를 늘림 (50 → 50+89, 10/29 처음 보는 주제 0.510 개선 시도)
+        # 평가는 545 그대로, 학습에만 71819를 더해 주제 수를 늘림 (50 → 50+89, 10/29 처음 보는 주제
+        # 0.510 개선 시도)
         e = pd.read_csv(M2 / "data" / "논술형_답안.csv.gz")
         groups = {
             "org": ["organization_1", "organization_2"],
@@ -203,33 +286,36 @@ def main():
         )
         for a, cols in groups.items():
             for k in (1, 2):
-                add[f"{a}_r{k}"] = (e[[f"{c}_r{k}" for c in cols]].mean(1) - 1) * 0.75
+                add[f"{a}_r{k}"] = (e[[f"{c}_r{k}" for c in cols]].mean(axis=1) - 1) * 0.75
             # 채점자 2명이라 3번째 칸은 두 명 평균 (정답 = 두 명 평균이 됨)
             add[f"{a}_r3"] = (add[f"{a}_r1"] + add[f"{a}_r2"]) / 2
         sets["train"] = pd.concat([sets["train"], add], ignore_index=True)
         tag += "_add71819"
-        print(
-            f"71819 논술형 {len(add):,}건 (문항 {e['prompt_id'].nunique()}개)을 학습에 추가"
-        )
+        print(f"71819 논술형 {len(add):,}건 (문항 {e['prompt_id'].nunique()}개)을 학습에 추가")
     print(
         {k: len(v) for k, v in sets.items()},
         f"주제 {len(topics)}개 중 처음 보는 주제 {len(new)}개",
     )
 
+    # 빈 묶음(--n-new 0이면 new_topic)은 건너뜀 (10/30까지 여기서 에러)
+    sets = {k: v for k, v in sets.items() if len(v)}
     tok = AutoTokenizer.from_pretrained(args.model)
-    model = AutoModelForSequenceClassification.from_pretrained(
-        args.model,
-        num_labels=3,
-        problem_type="regression",
-        ignore_mismatched_sizes=True,
-    ).to(dev)
-    head = [
+    if tok.pad_token is None:  # LLM 토크나이저는 pad가 없는 경우가 많음
+        tok.pad_token = tok.eos_token
+    n_out = len(DETAIL) if args.detail else 3
+    model = build_model(args, n_out, tok).to(dev)
+    # 시작값 = 학습 정답 평균. LoRA면 점수 칸 사본(modules_to_save)까지 모두 같은 값으로
+    heads = [
         m
         for m in model.modules()
-        if isinstance(m, torch.nn.Linear) and m.out_features == 3
-    ][-1]
+        if isinstance(m, torch.nn.Linear) and m.out_features == n_out and m.bias is not None
+    ]
     with torch.no_grad():
-        head.bias.copy_(torch.tensor(target(sets["train"]).mean(0)))
+        for h in heads if args.lora else heads[-1:]:
+            # 학습 글에 한 번도 채점 안 된 항목은 1.5(0~3 가운데)로 시작 (nan이면 예측이 전부 nan)
+            h.bias.copy_(
+                torch.tensor(np.nan_to_num(np.nanmean(train_target(sets["train"]), 0), nan=1.5))
+            )
     dls = {
         k: loader(
             v,
@@ -244,7 +330,7 @@ def main():
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
     steps = len(dls["train"]) * args.epochs
     sch = get_linear_schedule_with_warmup(opt, int(steps * 0.1), steps)
-    out_dir = M2 / "checkpoints" / f"e545{tag}"
+    out_dir = args.out_dir or M2 / "checkpoints" / f"e545{tag}"
     out_dir.mkdir(parents=True, exist_ok=True)
     best, start = -1.0, time.time()
     for ep in range(1, args.epochs + 1):
@@ -254,15 +340,11 @@ def main():
             with torch.autocast(
                 device_type=dev.type, dtype=torch.bfloat16, enabled=dev.type == "cuda"
             ):
-                logits = model(
-                    input_ids=b["input_ids"], attention_mask=b["attention_mask"]
-                ).logits
+                logits = model(input_ids=b["input_ids"], attention_mask=b["attention_mask"]).logits
             # NaN 칸(--mask-disagree)은 빼고 평균. NaN이 없으면 mse_loss와 같음
             lab = b["labels"]
             keep = ~torch.isnan(lab)
-            loss = ((logits.float() - lab.nan_to_num()) ** 2 * keep).sum() / keep.sum().clamp(
-                min=1
-            )
+            loss = ((logits.float() - lab.nan_to_num()) ** 2 * keep).sum() / keep.sum().clamp(min=1)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
@@ -270,28 +352,49 @@ def main():
             opt.zero_grad()
             if step % 200 == 0:
                 print(
-                    f"  에폭 {ep} 스텝 {step}/{len(dls['train'])} loss {loss.item():.3f} ({(time.time() - start) / 60:.1f}분)"
+                    f"  에폭 {ep} 스텝 {step}/{len(dls['train'])} loss {loss.item():.3f} "
+                    f"({(time.time() - start) / 60:.1f}분)"
                 )
-        pv = predict(model, dls["valid"], dev)
+        pv = to_areas(predict(model, dls["valid"], dev), sets["valid"])
         yv = target(sets["valid"])
         r = float(np.mean([np.corrcoef(pv[:, j], yv[:, j])[0, 1] for j in range(3)]))
         print(f"에폭 {ep} 검증 평균 상관 {r:.3f} ({(time.time() - start) / 60:.1f}분)")
-        if r > best:
+        if best == -1.0 or r > best:  # 첫 에폭은 항상 저장 (검증 상관이 nan이어도)
             best = r
             model.save_pretrained(out_dir)
             tok.save_pretrained(out_dir)
-    model = AutoModelForSequenceClassification.from_pretrained(out_dir).to(dev)
-    rows = []
-    for name in ["same_topic", "new_topic"]:
-        p = predict(model, dls[name], dev)
+    del model, opt
+    torch.cuda.empty_cache()
+    model = load_trained(args, out_dir, n_out, tok).to(dev)
+    rows, preds = [], {}
+    if args.save_preds:
+        preds["valid"] = to_areas(predict(model, dls["valid"], dev), sets["valid"])
+        preds["valid_id"] = sets["valid"]["essay_id"].to_numpy(dtype=str)
+    for name in [n for n in ["same_topic", "new_topic"] if n in sets]:
+        raw = predict(model, dls[name], dev)
+        p = to_areas(raw, sets[name])
+        preds[name], preds[name + "_id"] = p, sets[name]["essay_id"].to_numpy(dtype=str)
+        if args.detail:
+            preds[name + "_detail"] = raw
+            y = train_target(sets[name])
+            r = {
+                c: round(float(np.corrcoef(raw[ok, i], y[ok, i])[0, 1]), 3)
+                for i, c in enumerate(DETAIL)
+                if (ok := ~np.isnan(y[:, i])).sum() > 100
+            }
+            print(f"{name} 세부 항목 Pearson (채점자 평균 대비): {r}")
         rows += scores(sets[name], p, name)
         elem = sets[name]["grade"].str.startswith("초").to_numpy()
         rows += scores(sets[name][elem].reset_index(drop=True), p[elem], name + "_elem")
+    if args.save_preds:
+        np.savez(out_dir / "preds.npz", **preds)
+        print(f"예측값 저장: {out_dir / 'preds.npz'} ({', '.join(preds)})")
     res = pd.DataFrame(rows)
     (M2 / "results" / "e545").mkdir(parents=True, exist_ok=True)
     res.to_csv(M2 / "results" / "e545" / f"e545_seed{args.seed}{tag}.csv", index=False)
     print(
-        f"\n545 에세이 결과 (정답 = 채점자 3명 평균, 학습 {(time.time() - start) / 60:.1f}분):\n{res.to_string(index=False)}"
+        f"\n545 에세이 결과 (정답 = 채점자 3명 평균, 학습 "
+        f"{(time.time() - start) / 60:.1f}분):\n{res.to_string(index=False)}"
     )
 
 

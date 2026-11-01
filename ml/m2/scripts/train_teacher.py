@@ -15,7 +15,8 @@
 
 출력 (커밋 금지)
   results/teacher/teacher_<dataset>[_agree].csv      항목별 교사 성적 (숫자만)
-  checkpoints/teacher/<이름>/teacher_preds.csv.gz     answer_id × 9항목 교사 점수 (train.py --distill 입력)
+  checkpoints/teacher/<이름>/teacher_preds.csv.gz     answer_id × 9항목 교사 점수 (train.py
+  --distill 입력)
 
 실행 (RunPod):
   uv run python scripts/train_teacher.py --dataset descriptive --data-dir data/clean
@@ -23,7 +24,6 @@
 """
 
 import argparse
-import re
 import time
 from pathlib import Path
 
@@ -93,9 +93,7 @@ def predict(model, dl, dev):
     model.eval()
     out = []
     for b in dl:
-        with torch.autocast(
-            device_type=dev.type, dtype=torch.bfloat16, enabled=dev.type == "cuda"
-        ):
+        with torch.autocast(device_type=dev.type, dtype=torch.bfloat16, enabled=dev.type == "cuda"):
             out.append(
                 model(
                     input_ids=b["input_ids"].to(dev),
@@ -115,13 +113,14 @@ def predict(model, dl, dev):
 
 def train_one(rows, args, dev, tok):
     model = AutoModelForSequenceClassification.from_pretrained(
-        args.model, num_labels=1, problem_type="regression", ignore_mismatched_sizes=True
+        args.model,
+        num_labels=1,
+        problem_type="regression",
+        ignore_mismatched_sizes=True,
     ).to(dev)
-    head = [
-        m
-        for m in model.modules()
-        if isinstance(m, torch.nn.Linear) and m.out_features == 1
-    ][-1]
+    head = [m for m in model.modules() if isinstance(m, torch.nn.Linear) and m.out_features == 1][
+        -1
+    ]
     with torch.no_grad():
         head.bias.fill_(float(rows["y"].mean()))
     dl = loader(rows, tok, args.batch_size, True, args.max_length)
@@ -136,9 +135,7 @@ def train_one(rows, args, dev, tok):
             with torch.autocast(
                 device_type=dev.type, dtype=torch.bfloat16, enabled=dev.type == "cuda"
             ):
-                logits = model(
-                    input_ids=b["input_ids"], attention_mask=b["attention_mask"]
-                ).logits
+                logits = model(input_ids=b["input_ids"], attention_mask=b["attention_mask"]).logits
             loss = torch.nn.functional.mse_loss(logits.float(), b["labels"])
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -147,7 +144,8 @@ def train_one(rows, args, dev, tok):
             opt.zero_grad()
             if step % 500 == 0:
                 print(
-                    f"    에폭 {ep} 스텝 {step}/{len(dl)} loss {loss.item():.3f} ({(time.time() - start) / 60:.1f}분)"
+                    f"    에폭 {ep} 스텝 {step}/{len(dl)} loss {loss.item():.3f} "
+                    f"({(time.time() - start) / 60:.1f}분)"
                 )
     return model
 
@@ -218,14 +216,13 @@ def main():
         answers = answers.sample(n=args.limit, random_state=args.seed)
     fb = pd.read_csv(args.feedback_dir / FEEDBACK[args.dataset])
     fb["answer_id"] = fb["answer_id"].astype(str)
-    fb["feedback"] = (
-        fb["feedback"].fillna("").str.replace(DEFAULT_MARKER, "○○", regex=True)
-    )
+    fb["feedback"] = fb["feedback"].fillna("").str.replace(DEFAULT_MARKER, "○○", regex=True)
     rows = make_rows(answers, fb)
     tl = rows[rows["split_new"] != "test"].reset_index(drop=True)
     vl = rows[rows["split_new"] == "test"].reset_index(drop=True)
     print(
-        f"교사 학습용(TL) {len(tl):,}줄 / 평가용(VL) {len(vl):,}줄 (답×항목), 이유 문장 짝 못 찾은 답×항목 {len(answers) * len(ITEMS) - len(rows):,}"
+        f"교사 학습용(TL) {len(tl):,}줄 / 평가용(VL) {len(vl):,}줄 (답×항목), 이유 문장 짝 못 찾은 "
+        f"답×항목 {len(answers) * len(ITEMS) - len(rows):,}"
     )
 
     ids = np.sort(tl["answer_id"].unique())
@@ -233,6 +230,7 @@ def main():
         zip(
             np.random.RandomState(args.seed).permutation(ids),
             np.arange(len(ids)) % args.folds,
+            strict=False,
         )
     )
     tl["fold"] = tl["answer_id"].map(fold_of)
@@ -245,12 +243,15 @@ def main():
         if args.agree_only:
             fit = fit[fit["r1"] == fit["r2"]]
         print(
-            f"\n== 교사 {k + 1}/{args.folds}: 학습 {len(fit):,}줄 ({(time.time() - start) / 60:.1f}분)"
+            f"\n== 교사 {k + 1}/{args.folds}: 학습 {len(fit):,}줄 "
+            f"({(time.time() - start) / 60:.1f}분)"
         )
         model = train_one(fit.reset_index(drop=True), args, dev, tok)
         hold = tl["fold"] == k
         oof[hold.to_numpy()] = predict(
-            model, loader(tl[hold].reset_index(drop=True), tok, 256, False, args.max_length), dev
+            model,
+            loader(tl[hold].reset_index(drop=True), tok, 256, False, args.max_length),
+            dev,
         )
         vl_preds.append(predict(model, loader(vl, tok, 256, False, args.max_length), dev))
         del model
@@ -274,7 +275,8 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     wide.to_csv(out_dir / "teacher_preds.csv.gz", index=False)
     print(
-        f"\n교사 성적 (정답 = 두 전문가 평균, {(time.time() - start) / 60:.1f}분):\n{res.to_string(index=False)}"
+        f"\n교사 성적 (정답 = 두 전문가 평균, "
+        f"{(time.time() - start) / 60:.1f}분):\n{res.to_string(index=False)}"
     )
     print(f"교사 점수 저장: {out_dir / 'teacher_preds.csv.gz'}")
 

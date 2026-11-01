@@ -9,9 +9,11 @@
 
 주의
 - 보정 학습은 에폭·학습률을 고정한다. 평가용 답으로 에폭을 고르면 누수라서.
-  설정을 고르고 싶으면 --split valid 로 검증용 문항에서 같은 실험을 돌려 정하고, 그 설정으로 test를 한 번만 돌린다
+  설정을 고르고 싶으면 --split valid 로 검증용 문항에서 같은 실험을 돌려 정하고, 그 설정으로 test를
+  한 번만 돌린다
 - 보고할 때 "학습 답 k개 = 선생님 채점량 k개"다 (검증용 답은 따로 쓰지 않음)
-- 연구 조사 6-2: 다른 연구의 개선폭을 우리 기대치로 쓰지 않는다. 이 실험이 그 숫자를 우리 데이터로 재는 것
+- 연구 조사 6-2: 다른 연구의 개선폭을 우리 기대치로 쓰지 않는다. 이 실험이 그 숫자를 우리 데이터로
+재는 것
 
 실행 (RunPod):
     uv run python scripts/calibrate.py --dataset descriptive --with-keyword \
@@ -20,7 +22,8 @@
 동작 확인 (PC CPU, 1~3분):
     uv run python scripts/calibrate.py --dataset descriptive --with-keyword \
         --model <2.0 폴더> --limit-prompts 1 --ks 16 --epochs 1 --eval-limit 40
-결과: results/calibrate/calib_<이름>.csv (k별·항목별 지표), calib_<이름>_summary.csv, preds_<이름>.npz (커밋 금지)
+결과: results/calibrate/calib_<이름>.csv (k별·항목별 지표), calib_<이름>_summary.csv,
+preds_<이름>.npz (커밋 금지)
 """
 
 import argparse
@@ -30,14 +33,17 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
-from baseline import DATASETS, ITEMS, gold
+from baseline import DATASETS, gold
 from report_table import expert_rows, model_rows
 from train import M2_DIR, load, make_loader, pick_device, predict, set_seed
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 
 def balanced_pool(part: pd.DataFrame, n: int, seed: int) -> pd.DataFrame:
-    """점수대(총점 반올림)마다 돌아가며 하나씩 뽑는다. 앞에서 k개를 잘라도 점수대가 고르게 섞인다."""
+    """점수대(총점 반올림)마다 돌아가며 하나씩 뽑는다.
+
+    앞에서 k개를 잘라도 점수대가 고르게 섞인다.
+    """
     rng = np.random.RandomState(seed)
     g = gold(part, "hol")
     groups = [list(rng.permutation(np.where(g == s)[0])) for s in sorted(set(g))]
@@ -93,12 +99,8 @@ def main() -> None:
     p.add_argument("--max-length", type=int, default=512)
     p.add_argument("--seed", type=int, default=42, help="채점할 답 뽑기·학습 시드")
     p.add_argument("--split-seed", type=int, default=42)
-    p.add_argument(
-        "--limit-prompts", type=int, default=0, help="문항 N개만 (동작 확인용)"
-    )
-    p.add_argument(
-        "--eval-limit", type=int, default=0, help="문항마다 평가 답 N개만 (동작 확인용)"
-    )
+    p.add_argument("--limit-prompts", type=int, default=0, help="문항 N개만 (동작 확인용)")
+    p.add_argument("--eval-limit", type=int, default=0, help="문항마다 평가 답 N개만 (동작 확인용)")
     p.add_argument("--device", default="auto")
     p.add_argument("--data-dir", type=Path, default=M2_DIR / "data")
     p.add_argument("--split-dir", type=Path, default=M2_DIR / "splits")
@@ -122,7 +124,8 @@ def main() -> None:
     if args.limit_prompts:
         prompt_ids = prompt_ids[: args.limit_prompts]
     print(
-        f"{args.dataset} {args.split} 문항 {len(prompt_ids)}개, k = {ks}, 에폭 {args.epochs}, lr {args.lr}"
+        f"{args.dataset} {args.split} 문항 {len(prompt_ids)}개, k = {ks}, 에폭 {args.epochs}, lr "
+        f"{args.lr}"
     )
 
     eval_parts, preds = [], {k: [] for k in [0] + ks}
@@ -132,9 +135,9 @@ def main() -> None:
         pool = balanced_pool(part, max(ks), args.seed)
         ev = part.drop(index=pool.index).reset_index(drop=True)
         if args.eval_limit:
-            ev = ev.sample(
-                n=min(args.eval_limit, len(ev)), random_state=args.seed
-            ).reset_index(drop=True)
+            ev = ev.sample(n=min(args.eval_limit, len(ev)), random_state=args.seed).reset_index(
+                drop=True
+            )
         if len(ev) < 20:
             print(f"  {pid}: 평가 답 {len(ev)}개뿐이라 건너뜀")
             continue
@@ -148,9 +151,7 @@ def main() -> None:
             **input_opts,
         )
         for k in [0] + ks:
-            model = AutoModelForSequenceClassification.from_pretrained(args.model).to(
-                device
-            )
+            model = AutoModelForSequenceClassification.from_pretrained(args.model).to(device)
             if k:
                 tr = pool.iloc[:k]
                 loader = make_loader(
@@ -170,7 +171,8 @@ def main() -> None:
                 torch.cuda.empty_cache()
         eval_parts.append(ev)
         print(
-            f"  [{n}/{len(prompt_ids)}] {pid}: 채점 풀 {len(pool)}개, 평가 {len(ev)}개 ({(time.time() - start) / 60:.1f}분)"
+            f"  [{n}/{len(prompt_ids)}] {pid}: 채점 풀 {len(pool)}개, 평가 {len(ev)}개 "
+            f"({(time.time() - start) / 60:.1f}분)"
         )
 
     ev_all = pd.concat(eval_parts, ignore_index=True)
@@ -196,9 +198,7 @@ def main() -> None:
             )[0, 1]
             for pid in ev_all["prompt_id"].unique()
         ]
-        per_prompt.append(
-            {"k": k, "per_prompt_hol_pearson_mean": round(float(np.nanmean(rs)), 3)}
-        )
+        per_prompt.append({"k": k, "per_prompt_hol_pearson_mean": round(float(np.nanmean(rs)), 3)})
 
     # 활성화 기준 (사람 대비 저하 ≤ 0.10) 통과 항목 수, QWK·Pearson 각각
     exp = table[table["k"] == "expert"].set_index("item")
@@ -227,7 +227,8 @@ def main() -> None:
         **{f"k{k}": np.concatenate(preds[k]) for k in [0] + ks},
     )
     print(
-        f"\n평가 답 {len(ev_all)}개 (문항 {ev_all['prompt_id'].nunique()}개). 전문가끼리 총점 Pearson {exp.loc['hol', 'pearson']}"
+        f"\n평가 답 {len(ev_all)}개 (문항 {ev_all['prompt_id'].nunique()}개). 전문가끼리 총점 "
+        f"Pearson {exp.loc['hol', 'pearson']}"
     )
     print(summary.to_string(index=False))
     print(f"\n저장: {args.result_dir / f'calib_{name}.csv'}")

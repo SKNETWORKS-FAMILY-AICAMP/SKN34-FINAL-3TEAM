@@ -22,22 +22,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="M2 앙상블 평가")
     parser.add_argument("--dataset", choices=list(DATASETS), default="descriptive")
     parser.add_argument("--preds", type=Path, nargs="+", required=True)
-    parser.add_argument(
-        "--weights", type=float, nargs="+", help="모델별 가중치 (기본: 같게)"
-    )
+    parser.add_argument("--weights", type=float, nargs="+", help="모델별 가중치 (기본: 같게)")
     parser.add_argument("--data-dir", type=Path, default=M2_DIR / "data")
     parser.add_argument("--split-dir", type=Path, default=M2_DIR / "splits")
-    parser.add_argument(
-        "--result-dir", type=Path, default=M2_DIR / "results" / "ensemble"
-    )
+    parser.add_argument("--result-dir", type=Path, default=M2_DIR / "results" / "ensemble")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
     df = load(args)
-    sets = {
-        name: df[df["split_new"] == name].reset_index(drop=True)
-        for name in ["valid", "test"]
-    }
+    sets = {name: df[df["split_new"] == name].reset_index(drop=True) for name in ["valid", "test"]}
 
     names, valids, tests = [], [], []
     for path in args.preds:
@@ -60,7 +53,7 @@ def main() -> None:
 
     preds = {}
     for name, v, t in zip(
-        names + ["ensemble"], valids + [raw_valid], tests + [raw_test]
+        names + ["ensemble"], valids + [raw_valid], tests + [raw_test], strict=False
     ):
         for i, it in enumerate(ITEMS):
             cuts = fit_cuts(sets["valid"], it, v[:, i])

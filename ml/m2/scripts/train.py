@@ -11,7 +11,8 @@
 - 평가용(test) 성적은 학습이 끝난 뒤 한 번만 낸다 (baseline.py와 같은 형식)
 - 가중치는 checkpoints/에 저장 (커밋 금지)
 
-- 에폭은 길게(기본 20) 두고, 검증 9항목 평균 상관(Pearson)이 --patience 에폭 연속 안 오르면 멈춘다 (early stop)
+- 에폭은 길게(기본 20) 두고, 검증 9항목 평균 상관(Pearson)이 --patience 에폭 연속 안 오르면 멈춘다
+(early stop)
 - 에폭마다 학습 loss·검증 loss·검증 상관을 history.csv에 남긴다 → scripts/plot_curve.py로 그래프
 - 배치마다 그 배치에서 가장 긴 글 길이로만 채운다 (512로 다 채우지 않아 짧은 서술형이 빨라짐)
 
@@ -66,25 +67,20 @@ def load(args: argparse.Namespace) -> pd.DataFrame:
     answer_file, prompt_file = DATASETS[args.dataset]
     df = pd.read_csv(args.data_dir / answer_file)
     prompts = pd.read_csv(args.data_dir / prompt_file)
-    split = pd.read_csv(
-        args.split_dir / f"{args.dataset}_split_seed{args.split_seed}.csv"
-    )
+    split = pd.read_csv(args.split_dir / f"{args.dataset}_split_seed{args.split_seed}.csv")
     df = df.merge(prompts[["prompt_id", "prompt", "keyword"]], on="prompt_id")
     df = df.merge(split[["prompt_id", "split_new"]], on="prompt_id")
     if args.extra_adult:
-        # 71817 성인 글을 공부용에만 더함 (검증·평가는 그대로 학생 글만). build_tables.py --adult-zip로 만든 표
+        # 71817 성인 글을 공부용에만 더함 (검증·평가는 그대로 학생 글만). build_tables.py
+        # --adult-zip로 만든 표
         adult = pd.read_csv(args.data_dir / "성인_답안.csv.gz")
         adult_p = pd.read_csv(args.data_dir / "성인_문항.csv")
         adult = adult.merge(adult_p[["prompt_id", "prompt", "keyword"]], on="prompt_id")
         adult["split_new"] = "train"
         adult["answer_id"] = adult["answer_id"].astype(str)
         df["answer_id"] = df["answer_id"].astype(str)
-        print(
-            f"성인 글 {len(adult):,}건 (문항 {adult['prompt_id'].nunique()}개)을 공부용에 추가"
-        )
-        df = pd.concat(
-            [df, adult[df.columns.intersection(adult.columns)]], ignore_index=True
-        )
+        print(f"성인 글 {len(adult):,}건 (문항 {adult['prompt_id'].nunique()}개)을 공부용에 추가")
+        df = pd.concat([df, adult[df.columns.intersection(adult.columns)]], ignore_index=True)
     return df
 
 
@@ -147,7 +143,8 @@ def pick_exemplars(df: pd.DataFrame, seed: int) -> pd.DataFrame:
 
     고르는 기준: 두 전문가 총점 평균이 가장 높고, 같으면 8개 항목 평균이 높은 답.
     서비스에서 '선생님이 좋은 답 예시 하나를 같이 입력'하는 상황을 흉내 낸다.
-    고른 답은 그 문항의 다른 답 입력에 붙이고, 학습·평가 대상에서는 뺀다 (자기 자신을 보고 채점하면 커닝).
+    고른 답은 그 문항의 다른 답 입력에 붙이고, 학습·평가 대상에서는 뺀다 (자기 자신을 보고 채점하면
+    커닝).
     """
     hol = (df["hol_r1"] + df["hol_r2"]) / 2
     rest = np.mean([(df[f"{it}_r1"] + df[f"{it}_r2"]) / 2 for it in ITEMS[1:]], axis=0)
@@ -159,22 +156,20 @@ def pick_exemplars(df: pd.DataFrame, seed: int) -> pd.DataFrame:
     return best[["prompt_id", "answer_id", "text"]].rename(columns={"text": "exemplar"})
 
 
-def first_segment(
-    df, with_keyword=False, with_purpose=False, exemplar_chars=0, no_prompt=False
-):
-    # --no-prompt: 지시문 문장을 빼서 모델이 문장을 외우지 못하게 함 (10/29 바꾼 문장 시험에서 서술형이 문장을 외운 것 확인)
+def first_segment(df, with_keyword=False, with_purpose=False, exemplar_chars=0, no_prompt=False):
+    # --no-prompt: 지시문 문장을 빼서 모델이 문장을 외우지 못하게 함 (10/29 바꾼 문장 시험에서
+    # 서술형이 문장을 외운 것 확인)
     first = "[학년] " + df["grade"] + ("" if no_prompt else " [지시문] " + df["prompt"])
     if with_purpose:
-        # 논술형 글 목적(설명/주장/정서). 루브릭이 글 목적별로 3가지라 '어느 기준으로 채점되는지' 알려줌
+        # 논술형 글 목적(설명/주장/정서). 루브릭이 글 목적별로 3가지라 '어느 기준으로 채점되는지'
+        # 알려줌
         first = first + " [글 목적] " + df["essay_type"].astype(str)
     if with_keyword:
         # 문항 핵심어(채점 기준)를 같이 보여줌. 서술형만 핵심어가 있음
         first = first + " [핵심어] " + df["keyword"].fillna("").astype(str)
     if exemplar_chars:
         # 예시 답안은 앞부분만 (학생 글이 512토큰 안에 들어갈 자리를 남기려고)
-        first = (
-            first + " [예시 답안] " + df["exemplar"].astype(str).str[:exemplar_chars]
-        )
+        first = first + " [예시 답안] " + df["exemplar"].astype(str).str[:exemplar_chars]
     return first.tolist()
 
 
@@ -190,7 +185,8 @@ def build_model(args, n_out, tokenizer):
         return model
     from peft import LoraConfig, get_peft_model
 
-    # transformers 5는 LLM을 bf16으로 불러옴 → 새 점수 칸(fp32)과 섞이면 평가 때 에러. 학습 계산은 autocast bf16 그대로
+    # transformers 5는 LLM을 bf16으로 불러옴 → 새 점수 칸(fp32)과 섞이면 평가 때 에러. 학습 계산은
+    # autocast bf16 그대로
     model = model.float()
     # LLM은 pad 토큰이 없는 경우가 많음. 분류 모델이 "마지막 진짜 토큰"을 찾을 때 씀
     model.config.pad_token_id = tokenizer.pad_token_id
@@ -201,9 +197,7 @@ def build_model(args, n_out, tokenizer):
         with torch.no_grad():
             model.score.weight.copy_(old.weight)
     if args.grad_ckpt:
-        model.gradient_checkpointing_enable(
-            gradient_checkpointing_kwargs={"use_reentrant": False}
-        )
+        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
         model.enable_input_require_grads()
     cfg = LoraConfig(
         r=args.lora,
@@ -238,9 +232,7 @@ def load_trained(args, ckpt_dir, n_out, tokenizer):
     args.grad_ckpt, args.lora = args_g, lora
     base.config.pad_token_id = tokenizer.pad_token_id
     if base.score.bias is None:
-        base.score = torch.nn.Linear(
-            base.score.in_features, base.score.out_features, bias=True
-        )
+        base.score = torch.nn.Linear(base.score.in_features, base.score.out_features, bias=True)
     return PeftModel.from_pretrained(base, ckpt_dir)
 
 
@@ -266,18 +258,21 @@ def make_loader(
     # 분류면 (9항목 x 5점) 분포를 45칸으로 펴서, 회귀면 9개 평균 점수
     y = soft_targets(df).reshape(len(df), -1) if head == "cls" else targets(df)
     if distill is not None and head != "cls":
-        # --distill: 정답 = (1-w) x 전문가 평균 + w x 교사 점수 (교사 점수가 없는 칸은 전문가 평균 그대로)
+        # --distill: 정답 = (1-w) x 전문가 평균 + w x 교사 점수 (교사 점수가 없는 칸은 전문가 평균
+        # 그대로)
         t = distill.to_numpy(dtype="float32")
         has = ~np.isnan(t)
         y = np.where(has, (1 - distill_weight) * y + distill_weight * t, y).astype("float32")
         print(f"  교사 점수 섞은 칸: {int(has.sum()):,} / {y.size:,} (가중치 {distill_weight:g})")
     if mask_disagree:
-        # --mask-disagree: 두 전문가 점수 차이가 N점 이상인 칸은 정답을 NaN으로 → 손실에서 빠짐 (학습용에만)
+        # --mask-disagree: 두 전문가 점수 차이가 N점 이상인 칸은 정답을 NaN으로 → 손실에서 빠짐
+        # (학습용에만)
         for j, it in enumerate(ITEMS):
             far = (df[f"{it}_r1"] - df[f"{it}_r2"]).abs().to_numpy() >= mask_disagree
             y[far, j] = np.nan
         print(
-            f"  학습에서 뺀 칸: {int(np.isnan(y).sum()):,} / {y.size:,} (두 점수 차이 {mask_disagree:g}점 이상)"
+            f"  학습에서 뺀 칸: {int(np.isnan(y).sum()):,} / {y.size:,} (두 점수 차이 "
+            f"{mask_disagree:g}점 이상)"
         )
     rows = [
         {
@@ -295,9 +290,7 @@ def make_loader(
         order = None
     # 배치 안에서 가장 긴 글 길이까지만 채움 (예전엔 항상 512까지 채워 짧은 글도 느렸음)
     collate = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8)
-    loader = DataLoader(
-        rows, batch_size=batch_size, shuffle=shuffle, collate_fn=collate
-    )
+    loader = DataLoader(rows, batch_size=batch_size, shuffle=shuffle, collate_fn=collate)
     loader.order = order
     return loader
 
@@ -325,9 +318,7 @@ def to_scores(raw: np.ndarray) -> dict:
     if raw.shape[1] == len(ITEMS) * N_CLASS:
         # 분류: 항목마다 가장 확률 높은 점수 (총점은 1~4점 안에서 고름)
         prob = raw.reshape(len(raw), len(ITEMS), N_CLASS)
-        return {
-            it: prob[:, i, : top_score(it)].argmax(-1) + 1 for i, it in enumerate(ITEMS)
-        }
+        return {it: prob[:, i, : top_score(it)].argmax(-1) + 1 for i, it in enumerate(ITEMS)}
     # 회귀: 숫자 → 반올림 → 항목별 점수 범위로 자르기
     return {
         it: np.clip(np.floor(raw[:, i] + 0.5), 1, top_score(it)).astype(int)
@@ -369,7 +360,10 @@ def fit_cuts(df: pd.DataFrame, item: str, raw_col: np.ndarray) -> list[float]:
 
 
 def cont_scores(raw: np.ndarray) -> np.ndarray:
-    """소수 점수 (답안 수, 9). 회귀는 그대로, 분류는 확률로 낸 기댓값 (예: 3점 60% 4점 40% → 3.4)."""
+    """소수 점수 (답안 수, 9).
+
+    회귀는 그대로, 분류는 확률로 낸 기댓값 (예: 3점 60% 4점 40% → 3.4).
+    """
     if raw.shape[1] == len(ITEMS) * N_CLASS:
         z = raw.reshape(len(raw), len(ITEMS), N_CLASS)
         p = np.exp(z - z.max(-1, keepdims=True))
@@ -391,11 +385,7 @@ def cont_metrics(df: pd.DataFrame, raw: np.ndarray) -> pd.DataFrame:
                 "mae": round(float(np.mean(np.abs(err))), 3),
                 "pearson": round(float(np.corrcoef(pred[:, i], gold[:, i])[0, 1]), 3),
                 "spearman": round(
-                    float(
-                        pd.Series(pred[:, i]).corr(
-                            pd.Series(gold[:, i]), method="spearman"
-                        )
-                    ),
+                    float(pd.Series(pred[:, i]).corr(pd.Series(gold[:, i]), method="spearman")),
                     3,
                 ),
             }
@@ -412,9 +402,7 @@ def load_override(path: Path, df: pd.DataFrame) -> pd.DataFrame:
     """--prompt-override CSV(prompt_id, prompt)를 읽고 검사한다. 문장 내용은 출력하지 않음."""
     ov = pd.read_csv(path, dtype={"prompt_id": str})
     if not {"prompt_id", "prompt"} <= set(ov.columns):
-        raise SystemExit(
-            f"{path}: prompt_id, prompt 열이 필요함 (지금 {list(ov.columns)})"
-        )
+        raise SystemExit(f"{path}: prompt_id, prompt 열이 필요함 (지금 {list(ov.columns)})")
     ov["prompt_id"] = ov["prompt_id"].str.strip()
     ov["prompt"] = ov["prompt"].astype(str).str.strip()
     ov = ov[ov["prompt"].ne("") & ov["prompt"].ne("nan")]
@@ -425,9 +413,7 @@ def load_override(path: Path, df: pd.DataFrame) -> pd.DataFrame:
     unknown = sorted(set(ov["prompt_id"]) - set(df["prompt_id"]))
     if unknown:
         raise SystemExit(f"{path}: 데이터에 없는 prompt_id {unknown}")
-    same = ov.merge(
-        df[["prompt_id", "prompt"]].drop_duplicates("prompt_id"), on="prompt_id"
-    )
+    same = ov.merge(df[["prompt_id", "prompt"]].drop_duplicates("prompt_id"), on="prompt_id")
     n_same = int((same["prompt_x"] == same["prompt_y"]).sum())
     if n_same:
         print(f"  주의: 원래 문장과 똑같은 지시문 {n_same}개 (비교 의미 없음)")
@@ -444,7 +430,7 @@ def override_eval(model, tokenizer, test, ov, args, device, input_opts, run_name
         print("  바꾼 지시문 문항이 평가용에 하나도 없어서 비교 생략")
         return
     new = sub.copy()
-    new["prompt"] = sub["prompt_id"].map(dict(zip(ov["prompt_id"], ov["prompt"])))
+    new["prompt"] = sub["prompt_id"].map(dict(zip(ov["prompt_id"], ov["prompt"], strict=False)))
     raws = {}
     rows = []
     for cond, part in [("original", sub), ("override", new)]:
@@ -460,16 +446,12 @@ def override_eval(model, tokenizer, test, ov, args, device, input_opts, run_name
         raws[cond] = predict(model, loader, device)
         cm = cont_metrics(part, raws[cond])
         scores = to_scores(raws[cond])
-        cm["qwk"] = [
-            round(float(evaluate(part, it, scores[it])["qwk"]), 3) for it in cm["item"]
-        ]
+        cm["qwk"] = [round(float(evaluate(part, it, scores[it])["qwk"]), 3) for it in cm["item"]]
         cm.insert(0, "condition", cond)
         rows.append(cm)
     out = pd.concat(rows, ignore_index=True)
     # 두 조건 예측이 답마다 얼마나 달라졌는지 (0에 가까우면 모델이 지시문 문장을 거의 안 봄)
-    shift = np.abs(cont_scores(raws["override"]) - cont_scores(raws["original"])).mean(
-        0
-    )
+    shift = np.abs(cont_scores(raws["override"]) - cont_scores(raws["original"])).mean(0)
     # 총점 Pearson 차이의 짝 부트스트랩 95% 구간 (같은 답을 뽑아 두 조건을 함께 계산)
     gold = targets(sub)[:, ITEMS.index("hol")]
     po = cont_scores(raws["original"])[:, ITEMS.index("hol")]
@@ -478,9 +460,7 @@ def override_eval(model, tokenizer, test, ov, args, device, input_opts, run_name
     diffs = []
     for _ in range(2000):
         i = rs.randint(0, len(sub), len(sub))
-        diffs.append(
-            np.corrcoef(pn[i], gold[i])[0, 1] - np.corrcoef(po[i], gold[i])[0, 1]
-        )
+        diffs.append(np.corrcoef(pn[i], gold[i])[0, 1] - np.corrcoef(po[i], gold[i])[0, 1])
     lo, hi = np.nanpercentile(diffs, [2.5, 97.5])
     piv = out.pivot(index="item", columns="condition", values="pearson").reindex(ITEMS)
     piv["diff"] = (piv["override"] - piv["original"]).round(3)
@@ -489,7 +469,8 @@ def override_eval(model, tokenizer, test, ov, args, device, input_opts, run_name
     out.to_csv(args.result_dir / f"override_{run_name}.csv", index=False)
     piv.to_csv(args.result_dir / f"override_{run_name}_diff.csv")
     print(
-        f"\n지시문 교체 비교 (문항 {sub['prompt_id'].nunique()}개, 답 {len(sub):,}개, 소수 Pearson):\n"
+        f"\n지시문 교체 비교 (문항 {sub['prompt_id'].nunique()}개, 답 {len(sub):,}개, 소수 "
+        "Pearson):\n"
         f"{piv.to_string()}\n총점 차이(바꾼-원래) 95% 구간: [{lo:.3f}, {hi:.3f}]"
     )
 
@@ -535,12 +516,14 @@ def main() -> None:
     parser.add_argument(
         "--merge-valid",
         action="store_true",
-        help="검증 문항도 학습에 합침. early stop 판단이 불가능해서 --epochs로 정한 에폭까지 학습하고 마지막 에폭을 씀",
+        help="검증 문항도 학습에 합침. early stop 판단이 불가능해서 --epochs로 정한 에폭까지 "
+        "학습하고 마지막 에폭을 씀",
     )
     parser.add_argument(
         "--aihub-split",
         action="store_true",
-        help="AI Hub 원래 구분으로 학습·평가 (TL 90%% 학습, TL 10%% 검증, VL 평가). 같은 지시문 조건 비교용",
+        help="AI Hub 원래 구분으로 학습·평가 (TL 90%% 학습, TL 10%% 검증, VL 평가). 같은 지시문 "
+        "조건 비교용",
     )
     parser.add_argument(
         "--split-seed",
@@ -548,9 +531,7 @@ def main() -> None:
         default=42,
         help="문항 분할 파일의 시드 (--seed만 바꾸면 같은 분할에서 초기값·순서만 달라짐)",
     )
-    parser.add_argument(
-        "--limit", type=int, default=0, help="세트마다 답 N개만 (동작 확인용)"
-    )
+    parser.add_argument("--limit", type=int, default=0, help="세트마다 답 N개만 (동작 확인용)")
     parser.add_argument(
         "--with-keyword", action="store_true", help="입력에 문항 핵심어 추가 (서술형만)"
     )
@@ -578,7 +559,8 @@ def main() -> None:
     parser.add_argument(
         "--extra-adult",
         action="store_true",
-        help="71817 성인 글(data/성인_답안.csv.gz)을 공부용에만 추가 (논술형만, 평가는 학생 글 그대로)",
+        help="71817 성인 글(data/성인_답안.csv.gz)을 공부용에만 추가 (논술형만, 평가는 학생 글 "
+        "그대로)",
     )
     parser.add_argument(
         "--train-prompts",
@@ -590,7 +572,8 @@ def main() -> None:
         "--lora",
         type=int,
         default=0,
-        help="LoRA rank (예: 16). LLM(kakaocorp/kanana-1.5-2.1b-base 등)을 LoRA로 학습. 0이면 끔 (roberta 전체 학습)",
+        help="LoRA rank (예: 16). LLM(kakaocorp/kanana-1.5-2.1b-base 등)을 LoRA로 학습. 0이면 끔 "
+        "(roberta 전체 학습)",
     )
     parser.add_argument(
         "--grad-ckpt",
@@ -601,30 +584,35 @@ def main() -> None:
         "--train-answers",
         type=int,
         default=0,
-        help="공부용 답을 전체 N개로 무작위로 줄임 (--train-prompts와 같이: 답 수를 고정하고 문항 수만 바꾸는 대조 실험, 0이면 전부)",
+        help="공부용 답을 전체 N개로 무작위로 줄임 (--train-prompts와 같이: 답 수를 고정하고 문항 "
+        "수만 바꾸는 대조 실험, 0이면 전부)",
     )
     parser.add_argument(
         "--prompt-override",
         type=Path,
         default=None,
-        help="CSV(prompt_id, prompt). 학습은 원래 지시문, 평가 때만 이 문장으로 바꿔 원래 문장과 비교 (--aihub-split와 같이)",
+        help="CSV(prompt_id, prompt). 학습은 원래 지시문, 평가 때만 이 문장으로 바꿔 원래 문장과 "
+        "비교 (--aihub-split와 같이)",
     )
     parser.add_argument(
         "--eval-only",
         action="store_true",
-        help="학습 없이 --out-dir/<run 이름>에 저장된 모델로 평가만 (같은 옵션으로 먼저 학습해 둔 모델). 보통 --prompt-override와 같이",
+        help="학습 없이 --out-dir/<run 이름>에 저장된 모델로 평가만 (같은 옵션으로 먼저 학습해 둔 "
+        "모델). 보통 --prompt-override와 같이",
     )
     parser.add_argument(
         "--mask-disagree",
         type=float,
         default=0.0,
-        help="두 전문가 점수 차이가 N점 이상인 칸을 학습 손실에서만 뺌 (검증·평가 정답은 그대로, 0이면 끔. 예: 2)",
+        help="두 전문가 점수 차이가 N점 이상인 칸을 학습 손실에서만 뺌 (검증·평가 정답은 그대로, "
+        "0이면 끔. 예: 2)",
     )
     parser.add_argument(
         "--distill",
         type=Path,
         default=None,
-        help="교사 점수 파일(train_teacher.py 출력 teacher_preds.csv.gz). 학습 답의 정답에만 섞음 (검증·평가 정답·입력은 그대로)",
+        help="교사 점수 파일(train_teacher.py 출력 teacher_preds.csv.gz). 학습 답의 정답에만 섞음 "
+        "(검증·평가 정답·입력은 그대로)",
     )
     parser.add_argument(
         "--distill-weight",
@@ -639,33 +627,25 @@ def main() -> None:
     )
     args = parser.parse_args()
     if args.with_keyword and args.dataset != "descriptive":
-        parser.error(
-            "--with-keyword는 서술형(descriptive)만 가능 (논술형은 핵심어 없음)"
-        )
+        parser.error("--with-keyword는 서술형(descriptive)만 가능 (논술형은 핵심어 없음)")
     if args.extra_adult and args.dataset != "essay":
         parser.error(
             "--extra-adult는 논술형(essay)만 (성인 글은 논술형과 같은 루브릭, 핵심어 없음)"
         )
     if args.aihub_split and args.extra_adult:
-        parser.error(
-            "--aihub-split와 --extra-adult는 같이 못 씀 (성인 글 VL이 평가용에 섞임)"
-        )
+        parser.error("--aihub-split와 --extra-adult는 같이 못 씀 (성인 글 VL이 평가용에 섞임)")
     if args.distill and (args.head == "cls" or args.corr_loss):
         parser.error("--distill은 회귀(--head reg)·--corr-loss 없이만")
     if args.mask_disagree and (args.head == "cls" or args.corr_loss):
         parser.error("--mask-disagree는 회귀(--head reg)·--corr-loss 없이만")
     if args.with_purpose and args.dataset != "essay":
-        parser.error(
-            "--with-purpose는 논술형(essay)만 가능 (서술형은 글 목적 구분 없음)"
-        )
+        parser.error("--with-purpose는 논술형(essay)만 가능 (서술형은 글 목적 구분 없음)")
 
     set_seed(args.seed)
     device = pick_device(args.device)
     # 허브 이름(klue/roberta-base)이면 klue_roberta-base, 로컬 폴더면 폴더 이름
     model_name = (
-        Path(args.model).name
-        if Path(args.model).exists()
-        else args.model.replace("/", "_")
+        Path(args.model).name if Path(args.model).exists() else args.model.replace("/", "_")
     )
     run_name = f"{model_name}_{args.dataset}_seed{args.seed}"
     if args.head == "cls":
@@ -711,9 +691,7 @@ def main() -> None:
         print("AI Hub 구분 사용:", df["split_new"].value_counts().to_dict())
     if args.with_exemplar:
         ex = pick_exemplars(df, args.seed)
-        df = df[
-            ~df["answer_id"].isin(ex["answer_id"])
-        ]  # 예시로 쓴 답은 채점 대상에서 뺌
+        df = df[~df["answer_id"].isin(ex["answer_id"])]  # 예시로 쓴 답은 채점 대상에서 뺌
         df = df.merge(ex[["prompt_id", "exemplar"]], on="prompt_id")
         print(f"예시 답안 {len(ex)}개 (문항당 1개)를 학습·평가에서 빼고 입력에 붙임")
     input_opts = {
@@ -743,21 +721,22 @@ def main() -> None:
             .reset_index(drop=True)
         )
         print(
-            f"공부용 답 {args.train_answers}개로 줄임 (문항 {sets['train']['prompt_id'].nunique()}개)"
+            f"공부용 답 {args.train_answers}개로 줄임 (문항 "
+            f"{sets['train']['prompt_id'].nunique()}개)"
         )
     if args.merge_valid:
         sets["train"] = pd.concat([sets["train"], sets["valid"]], ignore_index=True)
         print(
-            f"검증 문항도 학습에 합침 (에폭 {args.epochs} 고정, 검증 점수는 학습에 쓴 글이라 참고만)"
+            f"검증 문항도 학습에 합침 (에폭 {args.epochs} 고정, 검증 점수는 학습에 쓴 글이라 "
+            "참고만)"
         )
     print({k: len(v) for k, v in sets.items()})
 
     if args.eval_only:
-        # 저장된 모델을 불러와 평가용 성적 + (있으면) 지시문 교체 비교만. 학습 결과 파일은 건드리지 않음
+        # 저장된 모델을 불러와 평가용 성적 + (있으면) 지시문 교체 비교만. 학습 결과 파일은 건드리지
+        # 않음
         ckpt_dir = args.out_dir / run_name
-        if not any(
-            (ckpt_dir / f).exists() for f in ("config.json", "adapter_config.json")
-        ):
+        if not any((ckpt_dir / f).exists() for f in ("config.json", "adapter_config.json")):
             raise SystemExit(
                 f"--eval-only: 저장된 모델이 없음 ({ckpt_dir}). 같은 옵션으로 먼저 학습"
             )
@@ -778,14 +757,26 @@ def main() -> None:
             head=args.head,
             **input_opts,
         )
-        cont = cont_metrics(test, predict(model, loader, device))
+        raw_test = predict(model, loader, device)
+        cont = cont_metrics(test, raw_test)
         print(
-            f"\n평가용 소수 점수 성적 (학습 때 cont_{run_name}.csv와 같아야 함):\n{cont.to_string(index=False)}"
+            f"\n평가용 소수 점수 성적 (학습 때 cont_{run_name}.csv와 같아야 "
+            f"함):\n{cont.to_string(index=False)}"
         )
-        if override is not None:
-            override_eval(
-                model, tokenizer, test, override, args, device, input_opts, run_name
+        if args.save_preds:
+            # 학습 후 평가가 끊긴 모델 살리기용 (11/1 Kanana): 평가용 예측만 저장, 결과 파일이 없을
+            # 때만 cont 저장
+            np.savez(
+                ckpt_dir / "preds.npz",
+                test=raw_test,
+                test_id=test["answer_id"].to_numpy(dtype=str),
             )
+            out = args.result_dir / f"cont_{run_name}.csv"
+            if not out.exists():
+                cont.to_csv(out, index=False)
+            print(f"예측값 저장: {ckpt_dir / 'preds.npz'}")
+        if override is not None:
+            override_eval(model, tokenizer, test, override, args, device, input_opts, run_name)
         else:
             print("  --prompt-override가 없어서 지시문 교체 비교는 생략")
         return
@@ -801,17 +792,13 @@ def main() -> None:
     # 출력이 9칸인 Linear를 찾음. "맨 마지막 Linear"로 찾으면 xlm-roberta는 부품 순서가 달라서
     # 엉뚱한 층(768칸)을 잡음 (10/26 RunPod에서 에러)
     head = [
-        m
-        for m in model.modules()
-        if isinstance(m, torch.nn.Linear) and m.out_features == n_out
+        m for m in model.modules() if isinstance(m, torch.nn.Linear) and m.out_features == n_out
     ][-1]
     with torch.no_grad():
         if args.head == "cls":
             # 시작값 = 공부용 점수 비율의 log (처음부터 '흔한 점수'를 많이 고르게)
             prior = soft_targets(sets["train"]).mean(axis=0) + 1e-4
-            head.bias.copy_(
-                torch.tensor(np.log(prior / prior.sum(-1, keepdims=True))).view(-1)
-            )
+            head.bias.copy_(torch.tensor(np.log(prior / prior.sum(-1, keepdims=True))).view(-1))
         else:
             head.bias.copy_(torch.tensor(targets(sets["train"]).mean(axis=0)))
 
@@ -843,9 +830,7 @@ def main() -> None:
         for name, part in sets.items()
     }
     if device.type == "cuda":
-        torch.backends.cuda.matmul.allow_tf32 = (
-            True  # 정확도 영향 거의 없이 행렬곱이 빨라짐
-        )
+        torch.backends.cuda.matmul.allow_tf32 = True  # 정확도 영향 거의 없이 행렬곱이 빨라짐
         torch.backends.cudnn.allow_tf32 = True
 
     optimizer = torch.optim.AdamW(
@@ -854,9 +839,7 @@ def main() -> None:
         weight_decay=0.01,
     )
     total_steps = len(loaders["train"]) * args.epochs
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer, int(total_steps * 0.1), total_steps
-    )
+    scheduler = get_linear_schedule_with_warmup(optimizer, int(total_steps * 0.1), total_steps)
     # GPU에서는 16비트 계산으로 빠르게. bf16을 지원하면(RTX 30·40, A100 등) bf16,
     # 아니면(T4 등) fp16 + GradScaler (fp16은 작은 기울기가 0으로 사라질 수 있어서)
     amp_dtype = None
@@ -892,11 +875,11 @@ def main() -> None:
                     # NaN 칸(--mask-disagree)은 빼고 평균. NaN이 없으면 mse_loss와 같음
                     lab = batch["labels"]
                     keep = ~torch.isnan(lab)
-                    loss = ((logits.float() - lab.nan_to_num()) ** 2 * keep).sum() / keep.sum().clamp(min=1)
+                    loss = (
+                        (logits.float() - lab.nan_to_num()) ** 2 * keep
+                    ).sum() / keep.sum().clamp(min=1)
                     if args.corr_loss:
-                        loss = loss + args.corr_loss * corr_loss(
-                            logits.float(), batch["labels"]
-                        )
+                        loss = loss + args.corr_loss * corr_loss(logits.float(), batch["labels"])
             scaler.scale(loss).backward()  # GradScaler가 꺼져 있으면 그냥 backward
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -951,17 +934,17 @@ def main() -> None:
             best_qwk, best_epoch = stop_score, epoch
             model.save_pretrained(ckpt_dir)
             tokenizer.save_pretrained(ckpt_dir)
-        elif (
-            not args.merge_valid
-            and args.patience
-            and epoch - best_epoch >= args.patience
-        ):
+        elif not args.merge_valid and args.patience and epoch - best_epoch >= args.patience:
             print(
                 f"검증 상관이 {args.patience}에폭 연속 안 올라서 멈춤 (가장 좋은 에폭 {best_epoch})"
             )
             break
 
     # 검증 기준 가장 좋았던 에폭의 가중치로 평가용 성적을 한 번만 낸다
+    # 학습하던 모델·옵티마이저를 먼저 지움 (11/1 Kanana 3B: 그대로 두고 다시 불러오다 메모리 부족)
+    del model, optimizer, scheduler
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
     model = load_trained(args, ckpt_dir, n_out, tokenizer).to(device)
     raw_valid = predict(model, loaders["valid"], device)
     raw_test = predict(model, loaders["test"], device)
@@ -979,10 +962,7 @@ def main() -> None:
     cuts = {}
     if args.head == "reg":
         # 회귀일 때만: 점수 경계는 검증용으로만 찾고, 평가용엔 적용만 한다 (참고용)
-        cuts = {
-            it: fit_cuts(sets["valid"], it, raw_valid[:, i])
-            for i, it in enumerate(ITEMS)
-        }
+        cuts = {it: fit_cuts(sets["valid"], it, raw_valid[:, i]) for i, it in enumerate(ITEMS)}
         (ckpt_dir / "score_cuts.json").write_text(
             json.dumps(cuts, ensure_ascii=False, indent=2), encoding="utf-8"
         )
@@ -993,19 +973,16 @@ def main() -> None:
     table = score_table(test, preds, group_cols)
     args.result_dir.mkdir(parents=True, exist_ok=True)
     table.to_csv(args.result_dir / f"train_{run_name}.csv", index=False)
-    pd.DataFrame(history).to_csv(
-        args.result_dir / f"history_{run_name}.csv", index=False
-    )
+    pd.DataFrame(history).to_csv(args.result_dir / f"history_{run_name}.csv", index=False)
     cont = cont_metrics(test, raw_test)
     cont.to_csv(args.result_dir / f"cont_{run_name}.csv", index=False)
     print(
-        f"\n평가용 소수 점수 성적 (반올림 없음, 정답=두 전문가 평균):\n{cont.to_string(index=False)}"
+        f"\n평가용 소수 점수 성적 (반올림 없음, 정답=두 전문가 "
+        f"평균):\n{cont.to_string(index=False)}"
     )
 
     if override is not None:
-        override_eval(
-            model, tokenizer, test, override, args, device, input_opts, run_name
-        )
+        override_eval(model, tokenizer, test, override, args, device, input_opts, run_name)
 
     info = {
         **{k: str(v) for k, v in vars(args).items()},
@@ -1029,9 +1006,7 @@ def main() -> None:
         f"{run_name}_cut": "경계 조정",
     }
     overall.columns = [names[c] for c in overall.columns]
-    print(
-        f"\n평가용 QWK (가장 좋은 에폭 {best_epoch}):\n{overall.reindex(ITEMS).to_string()}"
-    )
+    print(f"\n평가용 QWK (가장 좋은 에폭 {best_epoch}):\n{overall.reindex(ITEMS).to_string()}")
 
 
 if __name__ == "__main__":

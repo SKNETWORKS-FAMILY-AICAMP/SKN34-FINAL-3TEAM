@@ -61,9 +61,7 @@ def summary(df: pd.DataFrame, name: str) -> None:
             "있음": by["has"].mean().map("{:.1%}".format),
             "길이 중앙값": by["length"].median().astype(int),
             "두 점수 같음": by["agree"].mean().map("{:.1%}".format),
-            "서로 다른 문장 비율": by["feedback"].agg(
-                lambda s: f"{s.nunique() / len(s):.1%}"
-            ),
+            "서로 다른 문장 비율": by["feedback"].agg(lambda s: f"{s.nunique() / len(s):.1%}"),
             # 품질 점검: 이유 문장에 점수가 적혀 있으면 교사가 문장 대신 숫자를 읽음
             "숫자 포함": by["feedback"].agg(
                 lambda s: f"{s.str.contains(r'[0-9０-９]').mean():.1%}"
@@ -75,9 +73,7 @@ def summary(df: pd.DataFrame, name: str) -> None:
         }
     )
     print(table.reindex(ITEMS).to_string())
-    print(
-        "※ 점수 표현(N점)이 몇 %라도 있으면 교사 학습 전에 그 표현을 지우는 처리가 필요"
-    )
+    print("※ 점수 표현(N점)이 몇 %라도 있으면 교사 학습 전에 그 표현을 지우는 처리가 필요")
 
 
 def main() -> None:
@@ -93,9 +89,7 @@ def main() -> None:
     for zip_path, name in jobs:
         if zip_path is None:
             continue
-        df = pd.DataFrame(
-            [r for _, j in iter_label_json(zip_path) for r in rows_of(j)]
-        )
+        df = pd.DataFrame([r for _, j in iter_label_json(zip_path) for r in rows_of(j)])
         out = args.out_dir / f"{name}_이유.csv.gz"
         df.to_csv(out, index=False, encoding="utf-8-sig")
         summary(df, name)

@@ -1,11 +1,13 @@
 """학습 곡선 그리기: train.py가 남긴 history.csv → PNG.
 
 위 그래프: 학습 loss와 검증 loss (MSE). 학습 loss만 계속 내려가고 검증 loss가 다시 오르면 과적합.
-아래 그래프: 검증 평균 상관과 총점 상관 (Pearson, 소수 점수). 가장 높은 에폭에 점선 (그 에폭의 가중치를 저장함).
+아래 그래프: 검증 평균 상관과 총점 상관 (Pearson, 소수 점수). 가장 높은 에폭에 점선 (그 에폭의
+가중치를 저장함).
 
 사용법 (matplotlib 필요: uv add matplotlib):
     uv run python scripts/plot_curve.py results/history_klue_roberta-base_descriptive_seed42_kw.csv
-    uv run python scripts/plot_curve.py results/history_*.csv     # 여러 개면 총점 상관을 한 그래프에 겹쳐 그림
+    uv run python scripts/plot_curve.py results/history_*.csv     # 여러 개면 총점 상관을 한
+    그래프에 겹쳐 그림
 """
 
 import sys
@@ -14,8 +16,8 @@ from pathlib import Path
 import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import pandas as pd  # noqa: E402
+import matplotlib.pyplot as plt
+import pandas as pd
 
 # 한글 라벨이 네모로 깨지지 않게 (윈도우 맑은 고딕, 리눅스는 나눔 계열이 있으면 사용)
 plt.rcParams["font.family"] = ["Malgun Gothic", "NanumGothic", "DejaVu Sans"]
@@ -47,9 +49,7 @@ def plot_one(path: Path) -> Path:
     for ax in (ax1, ax2):
         ax.axvline(best, color="gray", linestyle="--", linewidth=1)
         ax.grid(alpha=0.3)
-    fig.suptitle(
-        f"{label(path)} (가장 좋은 에폭 {best}, {h['minutes'].iloc[-1]:.1f}분)"
-    )
+    fig.suptitle(f"{label(path)} (가장 좋은 에폭 {best}, {h['minutes'].iloc[-1]:.1f}분)")
     fig.tight_layout()
     out = path.with_suffix(".png")
     fig.savefig(out, dpi=150)

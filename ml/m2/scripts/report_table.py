@@ -100,14 +100,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="M2 보고용 성적표")
     parser.add_argument("--dataset", choices=list(DATASETS), default="descriptive")
     parser.add_argument("--preds", type=Path, nargs="+", required=True)
-    parser.add_argument(
-        "--name", default="", help="결과 파일 이름 (기본: 첫 preds 폴더 이름)"
-    )
+    parser.add_argument("--name", default="", help="결과 파일 이름 (기본: 첫 preds 폴더 이름)")
     parser.add_argument("--data-dir", type=Path, default=M2_DIR / "data")
     parser.add_argument("--split-dir", type=Path, default=M2_DIR / "splits")
-    parser.add_argument(
-        "--result-dir", type=Path, default=M2_DIR / "results" / "report"
-    )
+    parser.add_argument("--result-dir", type=Path, default=M2_DIR / "results" / "report")
     parser.add_argument("--seed", type=int, default=42, help="분할 파일 시드")
     parser.add_argument(
         "--aihub-split",
@@ -128,9 +124,7 @@ def main() -> None:
     for path in args.preds:
         z = np.load(path)
         if not np.array_equal(z["test_id"], ids):
-            raise SystemExit(
-                f"{path}: 평가용 답안 순서가 다름 (같은 분할로 학습했는지 확인)"
-            )
+            raise SystemExit(f"{path}: 평가용 답안 순서가 다름 (같은 분할로 학습했는지 확인)")
         raws.append(cont_scores(z["test"]))
     raw = np.mean(raws, axis=0)
 
@@ -148,12 +142,12 @@ def main() -> None:
         labels = list(range(1, top_score(it) + 1))
         pred_int = np.floor(np.clip(raw[:, i], 1, top_score(it)) + 0.5).astype(int)
         cm = confusion_matrix(gold(test, it), pred_int, labels=labels)
-        for g_, row in zip(labels, cm):
+        for g_, row in zip(labels, cm, strict=False):
             cms.append(
                 {
                     "item": it,
                     "gold": g_,
-                    **{f"pred_{p}": int(c) for p, c in zip(labels, row)},
+                    **{f"pred_{p}": int(c) for p, c in zip(labels, row, strict=False)},
                 }
             )
     cm_df = pd.DataFrame(cms)
@@ -161,12 +155,7 @@ def main() -> None:
 
     print(table[table["item"] == "hol"].drop(columns="item").to_string(index=False))
     print("\n총점 혼동 행렬 (행 = 정답, 열 = 예측):")
-    print(
-        cm_df[cm_df["item"] == "hol"]
-        .drop(columns="item")
-        .dropna(axis=1)
-        .to_string(index=False)
-    )
+    print(cm_df[cm_df["item"] == "hol"].drop(columns="item").dropna(axis=1).to_string(index=False))
     print(f"\n저장: {out}")
 
 

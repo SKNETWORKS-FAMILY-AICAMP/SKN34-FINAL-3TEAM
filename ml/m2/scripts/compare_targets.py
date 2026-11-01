@@ -1,4 +1,5 @@
-"""멘토 요청: 사람 점수와 교사(생성) 점수를 구분해 기록하고, 학생 모델이 무엇과의 일치도를 높였는지 본다.
+"""멘토 요청: 사람 점수와 교사(생성) 점수를 구분해 기록하고,
+학생 모델이 무엇과의 일치도를 높였는지 본다.
 
 평가용(AI Hub VL) 답에서 항목별 Pearson:
   학생 vs 전문가 평균 / 학생 vs 교사 / 교사 vs 전문가 평균 / 전문가1 vs 전문가2
@@ -14,8 +15,17 @@ import numpy as np
 import pandas as pd
 
 M2 = Path(__file__).resolve().parents[1]
-ITEMS = ["hol", "task_1", "content_1", "content_2", "content_3",
-         "organization_1", "organization_2", "expression_1", "expression_2"]
+ITEMS = [
+    "hol",
+    "task_1",
+    "content_1",
+    "content_2",
+    "content_3",
+    "organization_1",
+    "organization_2",
+    "expression_1",
+    "expression_2",
+]
 BASE = "klue_roberta-base_descriptive_seed42_kw_noprompt_aihub_clean"
 
 
@@ -38,9 +48,15 @@ def r(a, b) -> float:
 
 def main():
     cols = ["answer_id"] + [f"{it}_r{k}" for it in ITEMS for k in (1, 2)]
-    exp = pd.read_csv(M2 / "data" / "clean" / "서술형_답안.csv", usecols=cols, dtype={"answer_id": str})
-    teacher = pd.read_csv(M2 / "checkpoints" / "teacher" / "descriptive" / "teacher_preds.csv.gz",
-                          dtype={"answer_id": str})
+    exp = pd.read_csv(
+        M2 / "data" / "clean" / "서술형_답안.csv",
+        usecols=cols,
+        dtype={"answer_id": str},
+    )
+    teacher = pd.read_csv(
+        M2 / "checkpoints" / "teacher" / "descriptive" / "teacher_preds.csv.gz",
+        dtype={"answer_id": str},
+    )
     students = {"D①(증류 없음)": load_student(find_preds(BASE))}
     distill = sorted(M2.glob(f"checkpoints/**/{BASE.replace('_clean', '')}*distill*/preds.npz"))
     for p in distill:
@@ -49,8 +65,10 @@ def main():
     rows = []
     for it in ITEMS:
         base = exp[["answer_id", f"{it}_r1", f"{it}_r2"]].merge(
-            teacher[["answer_id", it]].rename(columns={it: "teacher"}), on="answer_id", how="left")
-        avg = base[[f"{it}_r1", f"{it}_r2"]].mean(axis=1).to_numpy(float)
+            teacher[["answer_id", it]].rename(columns={it: "teacher"}),
+            on="answer_id",
+            how="left",
+        )
         row = {"item": it}
         first = True
         for name, s in students.items():
@@ -62,7 +80,9 @@ def main():
             if first:
                 row["n"] = len(d)
                 row["교사 vs 전문가"] = r(te, a)
-                row["전문가1 vs 전문가2"] = r(d[f"{it}_r1"].to_numpy(float), d[f"{it}_r2"].to_numpy(float))
+                row["전문가1 vs 전문가2"] = r(
+                    d[f"{it}_r1"].to_numpy(float), d[f"{it}_r2"].to_numpy(float)
+                )
                 row["교사 빈칸"] = int(np.isnan(te).sum())
                 first = False
         rows.append(row)

@@ -4,14 +4,16 @@
   1. 글 정리 (맞춤법·띄어쓰기는 고치지 않음 — 표현·맞춤법 항목이 그 실수를 채점하므로)
      - 유니코드 NFC 통일, 제어 문자 삭제, 연속 공백·탭을 공백 하나로 (줄바꿈은 남김)
      - `#@...#` 표시 (10/30 11:07 개수 확인: 세 데이터 모두 100% `#@`로 열고 `#`로 닫힘, 5~9자)
-       · 서술·71819: 가림 표시로 보임(뒤에 조사가 바로 붙는 비율 87~88%, 모양 15종) → "○○"로 바꿈 (문장 유지)
+       · 서술·71819: 가림 표시로 보임(뒤에 조사가 바로 붙는 비율 87~88%, 모양 15종)
+         → "○○"로 바꿈 (문장 유지)
        · 545: 구분 기호로 보임(한 편에 약 10개, 모양 8종, 전부 7자) → 지움
        · 성격은 추정. 데이터 설명서로 확정 후 --marker-pattern·바꿀 말 조정
   2. 중복 (C ①): 정리한 글이 완전히 같은 답은 1건만 남김 (평가 쪽(AI Hub VL) 것을 우선)
      - 545: 채점자별 점수를 묶음 평균 (점수가 원래 소수)
      - 서술·71819: 남긴 1건의 점수 그대로 (정수여야 QWK 계산이 됨, 묶음 2·19개뿐)
   3. 채점자 차이 큰 칸 (D)은 여기서 빼지 않음 → 학습 때 --mask-disagree 옵션으로 학습에서만 제외
-  4. 문단 경계(B)는 이번엔 그대로 (--keep-paragraph는 아직 없음, 545는 원본 zip에서 다시 만들어야 함)
+  4. 문단 경계(B)는 이번엔 그대로 (--keep-paragraph는 아직 없음, 545는 원본 zip에서 다시 만들어야
+  함)
   5. 기타 잡음(HTML 태그·가림 표시·이모지 등, E)은 종류 확인 전이라 건드리지 않음
 
 화면에는 처리 건수만 낸다 (글 내용 출력 X).
@@ -63,9 +65,7 @@ def clean_text(s: pd.Series, marker: str, repl: str) -> tuple[pd.Series, dict]:
     return t, stats
 
 
-def dedupe(
-    df: pd.DataFrame, eval_value: str, average: bool
-) -> tuple[pd.DataFrame, dict]:
+def dedupe(df: pd.DataFrame, eval_value: str, average: bool) -> tuple[pd.DataFrame, dict]:
     score_cols = [c for c in df.columns if re.search(r"_r[123]$", c)]
     key = df["text"].str.replace(r"\s+", " ", regex=True)
     df = df.assign(_k=key, _eval=(df["split"] == eval_value).astype(int))

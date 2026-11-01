@@ -60,7 +60,8 @@ def iter_label_json(zip_path: Path):
         for name in inner.namelist():
             if name.endswith(".json"):
                 j = json.loads(inner.read(name).decode("utf-8-sig"))
-                # 여러 데이터가 한 zip에 섞여 있어도 글쓰기 평가 JSON만 쓴다 (동화 질의응답 등은 건너뜀)
+                # 여러 데이터가 한 zip에 섞여 있어도 글쓰기 평가 JSON만 쓴다 (동화 질의응답 등은
+                # 건너뜀)
                 if isinstance(j, dict) and "essay_question" in j and "score" in j:
                     yield split, j
 
@@ -113,9 +114,7 @@ def build(
         df["grade"] = "성인"
     # 문항 정보는 답마다 반복되므로 문항 표로 따로 뺀다 (prompt_id로 연결)
     id_cols = ["prompt_id", "subject", "grade"] + (["essay_type"] if with_type else [])
-    prompts = (
-        df[id_cols + PROMPT_COLS].drop_duplicates("prompt_id").sort_values("prompt_id")
-    )
+    prompts = df[id_cols + PROMPT_COLS].drop_duplicates("prompt_id").sort_values("prompt_id")
     answers = df.drop(columns=PROMPT_COLS)
     return answers, prompts
 
@@ -140,12 +139,8 @@ def main() -> None:
         if zip_path is None:
             continue
         answers, prompts = build(zip_path, with_type, adult)
-        answers.to_csv(
-            args.out_dir / f"{name}_답안{ext}", index=False, encoding="utf-8-sig"
-        )
-        prompts.to_csv(
-            args.out_dir / f"{name}_문항.csv", index=False, encoding="utf-8-sig"
-        )
+        answers.to_csv(args.out_dir / f"{name}_답안{ext}", index=False, encoding="utf-8-sig")
+        prompts.to_csv(args.out_dir / f"{name}_문항.csv", index=False, encoding="utf-8-sig")
         print(f"{name}: 답 {len(answers):,}건, 문항 {len(prompts)}개")
 
 

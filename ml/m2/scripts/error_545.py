@@ -1,8 +1,12 @@
-"""545 오차 분석 (10/30, 계획 밖·수빈 님 승인 12:30): 저장된 모델로 예측만 다시 뽑아 어디서 틀리는지 숫자로 본다.
+"""545 오차 분석 (10/30, 계획 밖·수빈 님 승인 12:30).
 
-checkpoints/e545_clean 는 시드 42·43이 같은 폴더를 써서 마지막(시드 43) 모델이다 → 분할도 --seed 43으로 똑같이 만든다.
+저장된 모델로 예측만 다시 뽑아 어디서 틀리는지 숫자로 본다.
+
+checkpoints/e545_clean 는 시드 42·43이 같은 폴더를 써서 마지막(시드 43) 모델이다 → 분할도 --seed
+43으로 똑같이 만든다.
 보는 것: ① 512토큰 잘림 여부 ② 정답 점수 구간(가운데로 몰리는지) ③ 학년 ④ 글 종류 ⑤ 처음 보는 주제별
-학생 글·지시문·주제 이름은 출력하지 않음(주제는 T01.. 번호로). 숫자만 results/e545/error_*.csv 에 저장.
+학생 글·지시문·주제 이름은 출력하지 않음(주제는 T01.. 번호로). 숫자만 results/e545/error_*.csv 에
+저장.
 
 사용 (Pod, /workspace/m2):  uv run python scripts/error_545.py --seed 43
 """
@@ -17,7 +21,7 @@ import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from train_545 import AREAS, loader, predict, target  # noqa: E402
+from train_545 import AREAS, loader, predict, target
 
 M2 = Path(__file__).resolve().parent.parent
 
@@ -63,22 +67,44 @@ def main():
         p = predict(model, loader(s, tok, 64, False, args.max_length), dev)
         y = target(s)
         first = ("[학년] " + s["grade"] + " [글 종류] " + s["essay_type"]).tolist()
-        ntok = np.array([len(x) for x in tok(first, s["text"].tolist(), truncation=False)["input_ids"]])
-        d = pd.DataFrame({
-            "essay_id": s["essay_id"], "topic": s["subject"].map(code),
-            "grade": s["grade"], "school": s["grade"].str[0], "essay_type": s["essay_type"],
-            "ntok": ntok, "truncated": np.where(ntok > args.max_length, "512 넘음(잘림)", "512 이하"),
-        })
+        ntok = np.array(
+            [len(x) for x in tok(first, s["text"].tolist(), truncation=False)["input_ids"]]
+        )
+        d = pd.DataFrame(
+            {
+                "essay_id": s["essay_id"],
+                "topic": s["subject"].map(code),
+                "grade": s["grade"],
+                "school": s["grade"].str[0],
+                "essay_type": s["essay_type"],
+                "ntok": ntok,
+                "truncated": np.where(ntok > args.max_length, "512 넘음(잘림)", "512 이하"),
+            }
+        )
         for j, a in enumerate(AREAS):
             d[f"y_{a}"], d[f"p_{a}"] = y[:, j], p[:, j]
         d["y_total"], d["p_total"] = y.mean(1), p.mean(1)
-        d["score_band"] = pd.qcut(d["y_total"], 5, duplicates="drop").astype(str)  # 정답 총점 5구간 (낮은 → 높은)
+        d["score_band"] = pd.qcut(d["y_total"], 5, duplicates="drop").astype(
+            str
+        )  # 정답 총점 5구간 (낮은 → 높은)
         d["eval"] = name
         per.append(d)
-        all_rows.append({"eval": name, "by": "전체", "group": "전체", "n": len(d),
-                         **{f"{a}_r": round(float(np.corrcoef(d[f'p_{a}'], d[f'y_{a}'])[0, 1]), 3) for a in AREAS + ["total"]},
-                         "pred_std/true_std": round(float(d["p_total"].std() / d["y_total"].std()), 3)})
-        for by in ["truncated", "score_band", "school", "grade", "essay_type"] + (["topic"] if name == "new_topic" else []):
+        all_rows.append(
+            {
+                "eval": name,
+                "by": "전체",
+                "group": "전체",
+                "n": len(d),
+                **{
+                    f"{a}_r": round(float(np.corrcoef(d[f"p_{a}"], d[f"y_{a}"])[0, 1]), 3)
+                    for a in AREAS + ["total"]
+                },
+                "pred_std/true_std": round(float(d["p_total"].std() / d["y_total"].std()), 3),
+            }
+        )
+        for by in ["truncated", "score_band", "school", "grade", "essay_type"] + (
+            ["topic"] if name == "new_topic" else []
+        ):
             all_rows += summarize(d, by, name)
 
     out = pd.DataFrame(all_rows)
@@ -86,11 +112,25 @@ def main():
     dst = M2 / "results" / "e545" / f"error_seed{args.seed}_clean.csv"
     out.to_csv(dst, index=False)
     # 글별 예측(숫자만, 글 없음). AI Hub 파생이라 커밋하지 않음
-    pd.concat(per).drop(columns=["essay_id"]).to_csv(args.ckpt / f"error_preds_seed{args.seed}.csv.gz", index=False)
+    pd.concat(per).drop(columns=["essay_id"]).to_csv(
+        args.ckpt / f"error_preds_seed{args.seed}.csv.gz", index=False
+    )
 
     pd.set_option("display.width", 220)
     pd.set_option("display.max_rows", 200)
-    show = ["eval", "by", "group", "n", "total_r", "total_bias", "org_r", "cont_r", "exp_r", "exp_mae", "pred_std/true_std"]
+    show = [
+        "eval",
+        "by",
+        "group",
+        "n",
+        "total_r",
+        "total_bias",
+        "org_r",
+        "cont_r",
+        "exp_r",
+        "exp_mae",
+        "pred_std/true_std",
+    ]
     print(out[[c for c in show if c in out]].to_string(index=False))
     print(f"\n저장: {dst}")
 
