@@ -13,7 +13,9 @@ spring:
     name: learning-service
   threads:
     virtual:
-      enabled: true
+      # JDK 21: concurrent Kotlin/Jackson cold serialization can pin every carrier.
+      # Use Tomcat's bounded platform pool; see docs/report/learning-cold-start.md.
+      enabled: false
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/learning_db}
     username: ${DB_USERNAME}
