@@ -159,3 +159,67 @@ def test_detail_to_areas_skips_unscored_items():
         assert areas[0, 0] == pytest.approx(pred[0, org_idx].mean())
     finally:
         t.USE_DETAIL = monkeypatch_detail
+
+
+# ---------- 표 만들기 (build_tables): 합성 JSON·zip으로 ----------
+def _fake_json(answer_id="A1", item_name="내용 설명"):
+    return {
+        "essay_question": {"id": "P1", "subject": "국어", "grade": "초5", "prompt": "가짜"},
+        "essay_answer": {"id": answer_id, "text": "가짜 글", "len_syllable": 4},
+        "rubric": {"analytic": {"content_1": {"name": item_name}}},
+        "score": {
+            "personal": {
+                "holistic": {"score": [3, 4]},
+                "analytic": {"task_1": {"score": [2, 3]}, "content_1": {"score": [4, 4]}},
+            }
+        },
+    }
+
+
+def test_build_tables_to_row_and_type():
+    import build_tables
+
+    row = build_tables.to_row("train", _fake_json(item_name="주장의 타당성"), with_type=True)
+    assert row["essay_type"] == "주장"
+    assert (row["hol_r1"], row["hol_r2"]) == (3, 4)
+    assert (row["task_1_r1"], row["task_1_r2"]) == (2, 3)  # _r1 = 전문가 1, _r2 = 전문가 2
+    assert build_tables.essay_type_of("감정 표현") == "정서"
+    assert build_tables.decode_name("#Uc11c#Uc220") == "서술"
+
+
+def test_build_tables_reads_nested_zip_and_skips_other_json(tmp_path):
+    import io
+    import json
+    import zipfile
+
+    import build_tables
+
+    def inner(items):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            for name, obj in items:
+                z.writestr(name, json.dumps(obj, ensure_ascii=False))
+        return buf.getvalue()
+
+    outer = tmp_path / "data.zip"
+    with zipfile.ZipFile(outer, "w") as z:
+        z.writestr(
+            "02.라벨링/TL_1.zip", inner([("a.json", _fake_json("A1")), ("x.json", {"q": 1})])
+        )
+        z.writestr("02.라벨링/VL_1.zip", inner([("b.json", _fake_json("B1"))]))
+        z.writestr("01.원천/TS_1.zip", inner([("c.json", _fake_json("C1"))]))  # 라벨 zip 아님
+    got = [(s, j["essay_answer"]["id"]) for s, j in build_tables.iter_label_json(outer)]
+    assert sorted(got) == [("train", "A1"), ("valid", "B1")]
+
+
+# ---------- 모델 입력 첫 문장 (train.first_segment): 서비스 입력 형식과 같아야 함 ----------
+def test_first_segment_no_prompt_with_keyword():
+    pytest.importorskip("torch")
+    pytest.importorskip("transformers")
+    import train
+
+    df = pd.DataFrame({"grade": ["초5"], "prompt": ["지시문"], "keyword": ["가, 나"]})
+    assert train.first_segment(df, with_keyword=True, no_prompt=True) == [
+        "[학년] 초5 [핵심어] 가, 나"
+    ]
+    assert train.first_segment(df) == ["[학년] 초5 [지시문] 지시문"]
