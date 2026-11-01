@@ -11,9 +11,14 @@ spec:
     targetRevision: 2.21.0
     helm:
       releaseName: keda
+      valuesObject:
+        crds:
+          additionalAnnotations:
+            argocd.argoproj.io/sync-options: Replace=true
   destination:
     server: https://kubernetes.default.svc
     namespace: keda
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true

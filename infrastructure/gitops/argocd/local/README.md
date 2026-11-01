@@ -6,6 +6,7 @@ Argo CD itself is a prerequisite in namespace `argocd`. The root app has no auto
 
 1. Existing `platform-data` chart in the new cluster; verify Postgres, RabbitMQ definitions and MinIO initialization.
 2. `local-keda` Application; verify its CRDs and operator. The `report-worker` ScaledObject cannot be applied before this.
+   KEDA 2.21's `scaledjobs.keda.sh` CRD exceeds the client-side apply annotation limit. This local Application enables server-side apply and uses the chart's CRD-only `Replace=true` annotation so Argo CD 3.5 can create that CRD. Check CRD compatibility before upgrading KEDA; this setting is limited to the disposable local environment.
 3. `local-platform-network` after platform initialization; verify allowed and denied paths before app traffic.
 4. `local-observability` after the `observability-credentials` Secret exists. Sync optional `local-metrics-server` only for HPA verification; its kubelet TLS bypass is restricted to the disposable kind cluster.
 5. Six app Applications after local images have been loaded and `app/app-service-credentials` exists. Core and learning migrations use dedicated Flyway images; report uses the report image's Alembic command.

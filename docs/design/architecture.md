@@ -562,7 +562,7 @@ backend/report-service/
 ### 4.5 CI/CD
 - GitHub Actions: 경로 필터로 변경 서비스만 테스트·빌드 → GHCR/ECR 푸시(OIDC로 AWS 인증). 현재는 테스트·빌드까지, 푸시·태그 갱신은 예정
 - `infrastructure/gitops/environments/<env>/` 이미지 태그 갱신 커밋 → Argo CD 자동 동기화
-- #171 브랜치에 local 앱·KEDA·NetworkPolicy·관측 Application 등록 정의를 추가했다. 전용 kind에 Argo CD v3.5.5의 Pod 7개를 Ready로 설치했고, 실제 Application sync는 feature 브랜치의 Git 게시 전이라 남아 있다. 이미지 게시·승인 흐름은 #186 범위다
+- #171 브랜치에 local 앱·KEDA·NetworkPolicy·관측 Application 등록 정의를 추가했다. 전용 kind의 Argo CD v3.5.5에서 KEDA·platform 정책·관측·metrics-server·여섯 앱의 하위 Application을 feature ref로 수동 sync해 실제 Pod와 선행 migration Job을 확인했다. root와 하위 Git 참조는 시험을 위해 서로 달라 root는 OutOfSync이며, 병합 뒤 `develop` 참조의 재동기화는 남아 있다. 이미지 게시·승인 흐름은 #186 범위다
 - Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret (LLM·토스 키는 저장소에 미포함, NFR-SEC-04)
 
 ### 4.6 관측
