@@ -14,6 +14,7 @@ from pydantic.alias_generators import to_camel
 
 from app.messaging.connection import AmqpConnection
 from app.messaging.envelope import EventEnvelope
+from app.security import current_user_context
 
 logger = logging.getLogger(__name__)
 
@@ -86,10 +87,12 @@ class UsagePublisher:
         prompt_version: str | None = None,
         error_code: str | None = None,
     ) -> bool:
+        context = current_user_context()
         envelope = EventEnvelope[LlmUsageRecorded](
             type=LLM_USAGE_RECORDED,
             source=self._source,
             dataschema=f"{LLM_USAGE_RECORDED}.v1",
+            traceparent=context.traceparent if context else None,
             data=LlmUsageRecorded(
                 service=self._service,
                 call_type=call_type,

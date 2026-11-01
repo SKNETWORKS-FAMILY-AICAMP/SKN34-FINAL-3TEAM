@@ -7,15 +7,20 @@
 
 import asyncio
 import logging
+import re
 import time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
+from langfuse import Langfuse
 from pydantic import BaseModel
 
+from app.security import current_user_context
+
 logger = logging.getLogger(__name__)
+TRACEPARENT = re.compile(r"00-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}")
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -121,6 +126,7 @@ class LlmClient(ABC):
         self._recorder = recorder
         self._backoff_seconds = backoff_seconds
         self._timeout = timeout
+        self.langfuse: Langfuse | None = None
 
     @property
     def model(self) -> str:
@@ -151,21 +157,39 @@ class LlmClient(ABC):
                 system, user, output, call_type, prompt_version, max_tokens, timeout
             )
             started = time.monotonic()
+            observation = self._start_observation(request)
+            retry = False
             try:
-                response = await self._request(request)
-            except LlmError as exc:
-                if exc.sent:
+                try:
+                    response = await self._request(request)
+                except LlmError as exc:
+                    if exc.sent:
+                        self._record(
+                            request,
+                            started,
+                            exc.model,
+                            exc.input_tokens,
+                            exc.output_tokens,
+                            exc,
+                            observation=observation,
+                        )
+                    if not exc.retryable or attempt == self._max_retries:
+                        raise LlmUnavailable(exc.code, exc.retryable) from exc
+                    retry = True
+                else:
                     self._record(
-                        request, started, exc.model, exc.input_tokens, exc.output_tokens, exc
+                        request,
+                        started,
+                        response.model,
+                        response.input_tokens,
+                        response.output_tokens,
+                        observation=observation,
                     )
-                if not exc.retryable or attempt == self._max_retries:
-                    raise LlmUnavailable(exc.code, exc.retryable) from exc
+                    return LlmResult(response.data, response.model)
+            finally:
+                self._end_observation(observation)
+            if retry:
                 await asyncio.sleep(self._backoff_seconds * 2**attempt)
-                continue
-            self._record(
-                request, started, response.model, response.input_tokens, response.output_tokens
-            )
-            return LlmResult(response.data, response.model)
         raise AssertionError("unreachable")
 
     def stream(
@@ -189,6 +213,36 @@ class LlmClient(ABC):
         """스트림 요청 1회: 텍스트 조각들 → StreamEnd. 실패는 LlmError로 변환해 던짐."""
         raise NotImplementedError
 
+    def _start_observation(self, request: LlmRequest[Any]) -> Any:
+        """원문 없이 제공자 요청 1회의 generation만 만든다."""
+        if self.langfuse is None:
+            return None
+        context = current_user_context()
+        trace_context = None
+        if context and context.traceparent:
+            match = TRACEPARENT.fullmatch(context.traceparent.lower())
+            if match and int(match.group(1), 16) and int(match.group(2), 16):
+                trace_context = {"trace_id": match.group(1), "parent_span_id": match.group(2)}
+        try:
+            return self.langfuse.start_observation(
+                name=f"llm.{request.call_type.lower()}",
+                as_type="generation",
+                trace_context=trace_context,
+                model=self._model,
+                metadata={"callType": request.call_type, "promptVersion": request.prompt_version},
+            )
+        except Exception:  # noqa: BLE001 - 관측 장애가 LLM 호출을 막지 않음
+            logger.warning("Langfuse observation 시작 실패: call_type=%s", request.call_type)
+            return None
+
+    def _end_observation(self, observation: Any) -> None:
+        if observation is None:
+            return
+        try:
+            observation.end()
+        except Exception:  # noqa: BLE001 - 관측 장애가 LLM 결과를 바꾸지 않음
+            logger.warning("Langfuse observation 종료 실패")
+
     def _record(
         self,
         request: LlmRequest[T],
@@ -197,6 +251,8 @@ class LlmClient(ABC):
         input_tokens: int | None,
         output_tokens: int | None,
         error: LlmError | None = None,
+        *,
+        observation: Any = None,
     ) -> None:
         usage = LlmUsage(
             call_type=request.call_type,
@@ -208,6 +264,21 @@ class LlmClient(ABC):
             success=error is None,
             error_code=error.code if error else None,
         )
+        if observation is not None:
+            try:
+                details = {}
+                if input_tokens is not None:
+                    details["input"] = input_tokens
+                if output_tokens is not None:
+                    details["output"] = output_tokens
+                observation.update(
+                    model=usage.model,
+                    usage_details=details or None,
+                    level="ERROR" if error else "DEFAULT",
+                    status_message=error.code if error else None,
+                )
+            except Exception:  # noqa: BLE001 - 관측 장애가 사용량 이벤트를 막지 않음
+                logger.warning("Langfuse observation 갱신 실패: call_type=%s", request.call_type)
         try:
             self._recorder(usage)
         except Exception:  # noqa: BLE001 - 사용량 기록 실패가 응답을 막지 않음 (best-effort)
@@ -245,12 +316,19 @@ class LlmTextStream:
                 system, user, BaseModel, call_type, prompt_version, max_tokens, timeout
             )
             started = time.monotonic()
+            observation = llm._start_observation(request)
             sent = False  # 조각을 하나라도 넘겼으면 재시도하지 않음 (받은 쪽이 이미 표시)
+            retry = False
             try:
                 async for item in _within(llm._stream(request), started + timeout):
                     if isinstance(item, StreamEnd):
                         llm._record(
-                            request, started, item.model, item.input_tokens, item.output_tokens
+                            request,
+                            started,
+                            item.model,
+                            item.input_tokens,
+                            item.output_tokens,
+                            observation=observation,
                         )
                         self.model = item.model
                         return
@@ -260,10 +338,20 @@ class LlmTextStream:
             except LlmError as exc:
                 if exc.sent:
                     llm._record(
-                        request, started, exc.model, exc.input_tokens, exc.output_tokens, exc
+                        request,
+                        started,
+                        exc.model,
+                        exc.input_tokens,
+                        exc.output_tokens,
+                        exc,
+                        observation=observation,
                     )
                 if sent or not exc.retryable or attempt == llm._max_retries:
                     raise LlmUnavailable(exc.code, exc.retryable) from exc
+                retry = True
+            finally:
+                llm._end_observation(observation)
+            if retry:
                 await asyncio.sleep(llm._backoff_seconds * 2**attempt)
         raise AssertionError("unreachable")
 

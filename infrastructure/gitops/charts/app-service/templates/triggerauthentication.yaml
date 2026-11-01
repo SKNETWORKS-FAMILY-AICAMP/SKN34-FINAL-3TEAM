@@ -1,0 +1,13 @@
+{{- if .Values.keda.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ include "app-service.name" . }}-rabbitmq
+  labels:
+    {{- include "app-service.labels" . | nindent 4 }}
+spec:
+  secretTargetRef:
+    - parameter: host
+      name: {{ required "keda.rabbitmqSecret.name is required" .Values.keda.rabbitmqSecret.name }}
+      key: {{ .Values.keda.rabbitmqSecret.key }}
+{{- end }}

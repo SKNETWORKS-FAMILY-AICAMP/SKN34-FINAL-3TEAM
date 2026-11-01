@@ -529,7 +529,7 @@ backend/report-service/
 - 외부 호출(LLM API·토스페이먼츠): Pod → NAT GW → Internet GW
 - Namespace: `app`(core·learning·ai·scoring·report), `platform`(RabbitMQ·Redis), `observability`, `argocd`
 - 노드그룹: `application`, `platform-observability` 분리 (참고 레포 2그룹 구성 계승)
-- NetworkPolicy: 기본 거부 + 아래 허용만 (호출 관계는 [API 명세서](api-spec.md) 4장). 앱 Helm chart·Ingress·NetworkPolicy는 예정이며 현재 저장소에는 `platform-data` chart와 kind 설정만 있다(#171)
+- NetworkPolicy: 기본 거부 + 아래 허용만 (호출 관계는 [API 명세서](api-spec.md) 4장). #171 브랜치에 공통 앱 chart·local Ingress·app/platform/observability NetworkPolicy 정의를 추가했다. 전용 kind의 합성 Pod로 core·scoring의 일부 platform 허용·차단을, 실제 core Pod로 공개 `/api` 전달과 외부 `/internal` 차단을 확인했다. 실제 scoring Pod는 core 활성 목록 조회와 MinIO 모델 버킷 접근에 성공했으며 빈 활성 목록에서 Ready였다. 실제 앱 전체 호출 표와 운영 값 접합은 남아 있다([검증 범위](../report/issue-171-app-deployment.md)).
 
 | 대상 | ingress 허용 | egress 허용 |
 |---|---|---|
@@ -547,7 +547,7 @@ backend/report-service/
   - migration-job: RDS egress / local: LLM API·토스 대신 `<target>-stub` Service로 egress
 
 ### 4.4 확장
-- 현재 저장소에 HPA·KEDA·PDB·Cluster Autoscaler 구성은 없다(예정, #171). 아래는 설계 기준
+- #171 브랜치에 HPA·KEDA·PDB 템플릿과 local report-worker KEDA 0–1 설정을 추가했다. 전용 kind의 합성 worker로 두 큐 각각의 0→1→0 확장, 합성 CPU Pod로 HPA 1→2와 PDB 허용 중단 수 변화를 확인했다. 실제 AI Pod 2개의 Ready·버전 일치·core 초기 조회 실패 후 복구·Rabbit 재연결도 확인했으나 HPA에 의한 실제 앱 확장과 진행 중 SSE 종료는 미검증이다. local 상시 값의 HPA·PDB는 자원 한도로 비활성화한다. Cluster Autoscaler의 EKS 구성은 #185 범위다. 아래는 제품 설계 기준
 - HPA(CPU): core, learning, ai, scoring, report-api — 최소 2(scoring은 메모리 고려해 최소 1, report-api 최소 1), PDB `minAvailable: 1`
 - **KEDA(RabbitMQ 큐 길이)**: report-worker — 0~N 확장, EDA와 K8s 연계 지점
   - report 조회 API는 core가 동기 호출하므로 0으로 줄지 않는 `report-api`로 분리 (같은 이미지, 진입점만 다름). core `ReportClient` 대상 Service = report-api
@@ -562,10 +562,11 @@ backend/report-service/
 ### 4.5 CI/CD
 - GitHub Actions: 경로 필터로 변경 서비스만 테스트·빌드 → GHCR/ECR 푸시(OIDC로 AWS 인증). 현재는 테스트·빌드까지, 푸시·태그 갱신은 예정
 - `infrastructure/gitops/environments/<env>/` 이미지 태그 갱신 커밋 → Argo CD 자동 동기화
+- #171 브랜치에 local 앱·KEDA·NetworkPolicy·관측 Application 등록 정의를 추가했다. 전용 kind의 Argo CD v3.5.5에서 KEDA·platform 정책·관측·metrics-server·여섯 앱의 하위 Application을 feature ref로 수동 sync해 실제 Pod와 선행 migration Job을 확인했다. root와 하위 Git 참조는 시험을 위해 서로 달라 root는 OutOfSync이며, 병합 뒤 `develop` 참조의 재동기화는 남아 있다. 이미지 게시·승인 흐름은 #186 범위다
 - Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret (LLM·토스 키는 저장소에 미포함, NFR-SEC-04)
 
 ### 4.6 관측
-- 현재 서비스에 OpenTelemetry·Prometheus·Langfuse 의존성과 구성은 없다(예정, #171). `traceparent` 헤더·이벤트 봉투 전파만 구현돼 있다
+- #171 브랜치의 local 관측 chart에서 전용 kind Collector·Prometheus·Grafana가 기동했고, 합성 OTLP gauge의 Collector 수신→Prometheus 값 조회, RabbitMQ scrape와 Grafana datasource 등록을 확인했다. 공통 앱 chart의 Java agent로 실제 core·learning JVM/HTTP metrics도 `exported_job` 라벨을 대조해 조회했다. AI에는 기본 비활성 Langfuse v4 LLM 계측을 추가했다. scoring·report exporter와 Langfuse backend·trace 저장은 아직 없고, AI의 실제 trace 저장·조회도 미검증이다. `traceparent` 헤더와 AI 사용량 이벤트 봉투는 연결했으며 서비스 간 단일 trace 저장 검증은 남아 있다
 - Langfuse: LLM 호출·토큰·비용·trace
 - OpenTelemetry → Prometheus + Grafana: 서비스 지표, 큐 길이·DLQ 적재량, 판정·피드백·리포트 처리 지연
 - 경보: Grafana Alerting → 팀 디스코드 웹훅. 오류율·지연·작업 적체·월 LLM 비용 예산 80% 도달, 담당은 인프라 1명 + 서비스별 담당 (P10, P13)
@@ -619,7 +620,7 @@ SKN34-FINAL-3TEAM/
 ├─ infrastructure/
 │  ├─ gitops/
 │  │  ├─ charts/
-│  │  │  ├─ app-service/         # (예정) 공통 서비스 chart
+│  │  │  ├─ app-service/         # 공통 서비스 chart (#171, kind 검증 대기)
 │  │  │  │  ├─ templates/
 │  │  │  │  │  ├─ deployment.yaml
 │  │  │  │  │  ├─ service.yaml
@@ -641,12 +642,12 @@ SKN34-FINAL-3TEAM/
 │  │  │  │  │  └─ postgres/
 │  │  │  │  │     └─ init.sql              # 로컬 전용 서비스별 DB 생성
 │  │  │  │  └─ values.yaml
-│  │  │  └─ observability/       # (예정) OTel Collector·Prometheus·Grafana·Langfuse
+│  │  │  └─ observability/       # local OTel metrics·Prometheus·Grafana (#171), Langfuse는 운영 준비 대기
 │  │  │     ├─ templates/
 │  │  │     └─ values.yaml
 │  │  ├─ environments/           # 앱별 values·이미지 태그
 │  │  │  ├─ local/
-│  │  │  │  ├─ core-service.yaml     # (예정) 앱별 파일 전부 예정, 현재 platform-data.yaml만 존재
+│  │  │  │  ├─ core-service.yaml     # #171 브랜치 local 앱별 values, 기동 검증 대기
 │  │  │  │  ├─ learning-service.yaml
 │  │  │  │  ├─ ai-service.yaml
 │  │  │  │  ├─ scoring-service.yaml
@@ -654,9 +655,9 @@ SKN34-FINAL-3TEAM/
 │  │  │  │  ├─ report-worker.yaml
 │  │  │  │  ├─ <target>-stub.yaml
 │  │  │  │  ├─ platform-data.yaml
-│  │  │  │  └─ observability.yaml
+│  │  │  │  └─ observability.yaml     # local metrics 기반, Langfuse 제외
 │  │  │  └─ prod/                # (예정) local과 동일 구성, stub 제외
-│  │  └─ argocd/                 # (예정)
+│  │  └─ argocd/                 # local 앱 등록 정의 추가, sync 검증 대기
 │  │     ├─ local/
 │  │     │  └─ root-app.yaml     # kind Argo CD 진입점
 │  │     ├─ prod/

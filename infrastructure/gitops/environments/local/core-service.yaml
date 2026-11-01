@@ -1,0 +1,87 @@
+nameOverride: core-service
+image:
+  repository: sagomungchi/core-service
+  tag: local
+javaAgent:
+  enabled: true
+replicaCount: 1
+service:
+  port: 8080
+  targetPort: 8080
+probes:
+  startup: {enabled: true, path: /actuator/health/liveness, periodSeconds: 10, failureThreshold: 30}
+  liveness: {enabled: true, path: /actuator/health/liveness, periodSeconds: 10, timeoutSeconds: 5}
+  readiness: {enabled: true, path: /actuator/health/readiness, periodSeconds: 10, timeoutSeconds: 5}
+terminationGracePeriodSeconds: 180
+lifecycle:
+  preStop:
+    exec:
+      command: [/bin/sh, -c, "sleep 15"]
+resources:
+  requests: {cpu: 150m, memory: 384Mi}
+  limits: {cpu: "1", memory: 768Mi}
+env:
+  - {name: DB_URL, value: "jdbc:postgresql://postgres.platform.svc.cluster.local:5432/core_db"}
+  - {name: DB_USERNAME, valueFrom: {secretKeyRef: {name: app-service-credentials, key: DB_USERNAME}}}
+  - {name: DB_PASSWORD, valueFrom: {secretKeyRef: {name: app-service-credentials, key: DB_PASSWORD}}}
+  - {name: RABBITMQ_HOST, value: rabbitmq.platform.svc.cluster.local}
+  - {name: RABBITMQ_USERNAME, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_USERNAME}}}
+  - {name: RABBITMQ_PASSWORD, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_PASSWORD}}}
+  - {name: REDIS_HOST, value: redis.platform.svc.cluster.local}
+  - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN}}}
+  - {name: AUTH_JWT_SECRET, valueFrom: {secretKeyRef: {name: app-service-credentials, key: AUTH_JWT_SECRET}}}
+  - {name: AUTH_WEB_ORIGIN, value: "http://localhost:5173"}
+  - {name: AUTH_COOKIE_SECURE, value: "false"}
+  - {name: SERVER_SHUTDOWN, value: graceful}
+  - {name: SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE, value: 30s}
+  - {name: LEARNING_URL, value: "http://learning-service.app.svc.cluster.local:8081"}
+  - {name: AI_URL, value: "http://ai-service.app.svc.cluster.local:8000"}
+  - {name: REPORT_URL, value: "http://report-api.app.svc.cluster.local:8002"}
+hpa:
+  enabled: false
+pdb:
+  enabled: false
+ingress:
+  enabled: true
+  className: nginx
+  host: api.sagomungchi.local
+  path: /api
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "150"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "150"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+networkPolicy:
+  enabled: true
+  namespaceDefaultDeny: true
+  ingressFromApps: [ai-service, scoring-service, learning-service, report-worker]
+  ingressFromIngressController: true
+  egressToApps:
+    - {name: learning-service, port: 8081}
+    - {name: ai-service, port: 8000}
+    - {name: report-api, port: 8002}
+  egressToPlatform:
+    - {name: postgres, port: 5432}
+    - {name: rabbitmq, port: 5672}
+    - {name: rabbitmq, port: 15672}
+    - {name: redis, port: 6379}
+  egressToCollector: true
+  migrationEgress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: platform}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: postgres, app.kubernetes.io/instance: platform-data}
+      ports: [{protocol: TCP, port: 5432}]
+migration:
+  enabled: true
+  revision: v19
+  image:
+    repository: sagomungchi/core-migrate
+    tag: local
+  env:
+    - {name: FLYWAY_URL, value: "jdbc:postgresql://postgres.platform.svc.cluster.local:5432/core_db"}
+    - {name: FLYWAY_USER, valueFrom: {secretKeyRef: {name: app-service-credentials, key: DB_USERNAME}}}
+    - {name: FLYWAY_PASSWORD, valueFrom: {secretKeyRef: {name: app-service-credentials, key: DB_PASSWORD}}}
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 250m, memory: 256Mi}

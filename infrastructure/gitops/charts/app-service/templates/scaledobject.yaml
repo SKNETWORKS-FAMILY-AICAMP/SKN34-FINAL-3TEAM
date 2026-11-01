@@ -1,0 +1,28 @@
+{{- if .Values.keda.enabled }}
+{{- if .Values.hpa.enabled }}{{ fail "HPA and KEDA cannot both own one Deployment" }}{{- end }}
+{{- if not .Values.keda.queues }}{{ fail "keda.queues must include each consumed queue" }}{{- end }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "app-service.name" . }}
+  labels:
+    {{- include "app-service.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "app-service.name" . }}
+  minReplicaCount: {{ .Values.keda.minReplicaCount }}
+  maxReplicaCount: {{ .Values.keda.maxReplicaCount }}
+  pollingInterval: {{ .Values.keda.pollingInterval }}
+  cooldownPeriod: {{ .Values.keda.cooldownPeriod }}
+  triggers:
+    {{- range .Values.keda.queues }}
+    - type: rabbitmq
+      metadata:
+        protocol: amqp
+        mode: QueueLength
+        queueName: {{ . | quote }}
+        value: {{ $.Values.keda.queueLength | quote }}
+      authenticationRef:
+        name: {{ include "app-service.name" $ }}-rabbitmq
+    {{- end }}
+{{- end }}

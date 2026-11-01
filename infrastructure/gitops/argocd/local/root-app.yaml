@@ -1,0 +1,18 @@
+# Bootstrap only in a dedicated local verification cluster after Argo CD is installed.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sagomungchi-local-apps
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM.git
+    targetRevision: develop
+    path: infrastructure/gitops/argocd/local/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true

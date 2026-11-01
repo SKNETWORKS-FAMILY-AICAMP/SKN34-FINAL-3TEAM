@@ -1,0 +1,5 @@
+apiVersion: v2
+name: app-service
+description: One application workload per release
+type: application
+version: 0.1.0
