@@ -170,7 +170,7 @@
   - 중간 서비스(ai)는 받은 컨텍스트 헤더를 하위 호출(learning)에 그대로 전달
   - 사용자 요청 없는 호출(report-worker 등 이벤트 소비): `X-User-Role: SYSTEM`, `X-Student-Scope` = 이벤트 `subject` 학생
 - 스레드 모델
-  - Spring(core·learning): JDK 21 virtual threads 사용 (LLM 대기·SSE 연결 동안 스레드 점유)
+  - Spring core: JDK 21 virtual threads 사용 (LLM 대기·SSE 연결). learning: JDK 21에서는 Tomcat의 제한된 플랫폼 스레드 풀을 사용한다. Kotlin reflection/Jackson의 초기 직렬화 잠금 대기로 모든 virtual carrier가 고정되는 콜드 스타트 무응답이 재현됐기 때문이다. core 설정·공개 API·DB 계약은 유지하며, carrier 수 증가나 순차 예열을 해결책으로 삼지 않는다. 근거·재현·재검증은 [learning 콜드 스타트](../report/learning-cold-start.md).
   - FastAPI: 외부 호출은 async httpx. scoring CPU 추론은 동기 함수(스레드풀)로 실행해 이벤트 루프 차단 방지
 - 범위 검사: learning은 조회 대상 학생이 `X-Student-Scope`에 없으면 403. ai 에이전트 도구도 실행 전 같은 검사 (FN-AGT-02)
 - 대화 상태: ai-service는 상태 없음, core가 요청마다 대화 이력·허용 범위 전달
