@@ -7,6 +7,10 @@ on:
       app-path:
         required: true
         type: string
+      source-ref:
+        description: Immutable source SHA for an approved CD candidate (CI uses the event ref)
+        default: ""
+        type: string
 
 jobs:
   build:
@@ -16,6 +20,8 @@ jobs:
         working-directory: ${{ inputs.app-path }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source-ref }}
       - uses: actions/setup-node@v7
         with:
           node-version: "22"

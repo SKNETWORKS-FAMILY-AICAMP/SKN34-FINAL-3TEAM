@@ -1,0 +1,20 @@
+{
+  "environment": "local",
+  "target_source_sha": "REPLACE_WITH_FULL_REVIEWED_COMMIT_SHA",
+  "current_deployment": null,
+  "rollback_target": null,
+  "config_sha256": "REPLACE_WITH_CD_INSPECT_OUTPUT",
+  "reviewer": "",
+  "reason": "",
+  "checked_at": "REPLACE_WITH_UTC_ISO_TIMESTAMP",
+  "expires_at": "REPLACE_WITH_UTC_ISO_TIMESTAMP_WITHIN_24_HOURS",
+  "database_restore": false,
+  "checks": {
+    "database": {"status": "unknown", "summary": "", "evidence": ""},
+    "api": {"status": "unknown", "summary": "", "evidence": ""},
+    "events": {"status": "unknown", "summary": "", "evidence": ""},
+    "configuration": {"status": "unknown", "summary": "", "evidence": ""},
+    "inflight_learning": {"status": "unknown", "summary": "", "evidence": ""},
+    "inflight_payments": {"status": "unknown", "summary": "", "evidence": ""}
+  }
+}

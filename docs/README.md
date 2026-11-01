@@ -51,6 +51,7 @@
 | [issue-143-contract-ci](report/issue-143-contract-ci.md) | 웹 단위 테스트·독립 계약 CI·실제 core 산출물 검증 및 로컬 실행 안내(#143) |
 | [local-platform](report/local-platform.md) | kind·Calico·ingress·MinIO 설정과 자원 예산(#17) |
 | [issue-171-app-deployment](report/issue-171-app-deployment.md) | 앱 chart·local NetworkPolicy·확장·관측 수집 기반과 검증 경계(#171) |
+| [issue-186-cd-release](report/issue-186-cd-release.md) | CD 승인·digest 게시·GitOps 이력·호환성 기반 롤백과 실제 검증 준비(#186) |
 | [frontend](report/frontend.md) | 웹 공통 기반·학생·학부모·관리자 화면(#7~#9·#59), 테마·대시보드, QR 시연 |
 | [audit](report/audit.md) | develop 종합 검증(c608f52·640e0a2)과 설계 문서 정합성 점검, 남은 결함·테스트 공백 |
 

@@ -560,8 +560,9 @@ backend/report-service/
 - 공통 보안: 리소스 limit, non-root, readOnlyRootFilesystem
 
 ### 4.5 CI/CD
-- GitHub Actions: 경로 필터로 변경 서비스만 테스트·빌드 → GHCR/ECR 푸시(OIDC로 AWS 인증). 현재는 테스트·빌드까지, 푸시·태그 갱신은 예정
+- GitHub Actions: PR CI는 경로 필터로 변경 서비스만 테스트·빌드한다. #186의 `cd-release.yml`은 develop 수동 실행 → 기존 재사용 CI → Environment 승인 → GHCR(local)/ECR(prod, AWS OIDC) 게시 → digest 고정 GitOps commit → Argo·공개 API 검증·이력 기록을 구현한다. 실제 원격 게시·배포 검증은 환경 연결 후 수행해야 한다.
 - `infrastructure/gitops/environments/<env>/` 이미지 태그 갱신 커밋 → Argo CD 자동 동기화
+- 운영 승인자는 김동섭(`20220348-kim`)이다. DB·API·이벤트·설정·진행 중 학습/결제 호환성 근거를 검토하고, 이전 성공 승인 앱의 digest로만 복구한다. rollback 때 현재 migration 이미지·revision은 보존하고 실행을 비활성화하며 DB 자동 다운그레이드·복원은 하지 않는다. 미확인/비호환은 차단한다. 환경 설정·배포 기록·검증 경계는 [#186 보고서](../report/issue-186-cd-release.md)를 따른다.
 - #171 브랜치에 local 앱·KEDA·NetworkPolicy·관측 Application 등록 정의를 추가했다. 전용 kind의 Argo CD v3.5.5에서 KEDA·platform 정책·관측·metrics-server·여섯 앱의 하위 Application을 feature ref로 수동 sync해 실제 Pod와 선행 migration Job을 확인했다. root와 하위 Git 참조는 시험을 위해 서로 달라 root는 OutOfSync이며, 병합 뒤 `develop` 참조의 재동기화는 남아 있다. 이미지 게시·승인 흐름은 #186 범위다
 - Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret (LLM·토스 키는 저장소에 미포함, NFR-SEC-04)
 

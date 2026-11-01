@@ -1,0 +1,224 @@
+name: cd-release
+run-name: ${{ inputs.operation }} ${{ inputs.environment }} by ${{ github.actor }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [local, prod]
+        required: true
+      operation:
+        type: choice
+        options: [deploy, rollback]
+        required: true
+      source_sha:
+        description: Full reviewed source commit (ignored for rollback)
+        type: string
+        default: ""
+      target_deployment:
+        description: Previous successful deployment ID for rollback
+        type: string
+        default: ""
+      review:
+        description: Committed infrastructure/gitops/reviews/<environment>/*.json
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+# An active rollout must never be cancelled by the next requested rollout.
+concurrency:
+  group: cd-release-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    if: github.ref == 'refs/heads/develop' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      source: ${{ steps.plan.outputs.source }}
+      spring: ${{ steps.plan.outputs.spring }}
+      python: ${{ steps.plan.outputs.python }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install PyYAML==6.0.3
+      - id: plan
+        env:
+          TARGET_ENV: ${{ inputs.environment }}
+          OPERATION: ${{ inputs.operation }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          TARGET_DEPLOYMENT: ${{ inputs.target_deployment }}
+          REVIEW: ${{ inputs.review }}
+        run: |
+          python scripts/cd_release.py plan --environment "$TARGET_ENV" --operation "$OPERATION" \
+            --source-sha "$SOURCE_SHA" --target-deployment "$TARGET_DEPLOYMENT" \
+            --review "$REVIEW" --deployment-id "$GITHUB_RUN_ID-1"
+          cat local_data/cd/release.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cd-plan
+          path: local_data/cd/release.json
+          if-no-files-found: error
+          retention-days: 90
+
+  spring:
+    needs: plan
+    if: inputs.operation == 'deploy' && needs.plan.outputs.spring != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.plan.outputs.spring) }}
+    uses: ./.github/workflows/_spring.yml
+    with:
+      service-path: backend/${{ matrix.service }}
+      source-ref: ${{ needs.plan.outputs.source }}
+
+  python:
+    needs: plan
+    if: inputs.operation == 'deploy' && needs.plan.outputs.python != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.plan.outputs.python) }}
+    uses: ./.github/workflows/_python.yml
+    with:
+      service-path: backend/${{ matrix.service }}
+      source-ref: ${{ needs.plan.outputs.source }}
+
+  web:
+    needs: plan
+    if: inputs.operation == 'deploy'
+    uses: ./.github/workflows/_web.yml
+    with:
+      app-path: frontend/web
+      source-ref: ${{ needs.plan.outputs.source }}
+
+  release:
+    needs: [plan, spring, python, web]
+    if: >-
+      always() && needs.plan.result == 'success' &&
+      !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    # A trusted runner with access to that environment's Argo/API, never a PR runner.
+    runs-on: ${{ fromJSON(inputs.environment == 'prod' && (vars.CD_PROD_RUNNERS || '["self-hosted","linux","cd-prod"]') || (vars.CD_LOCAL_RUNNERS || '["self-hosted","linux","cd-local"]')) }}
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      actions: read
+    env:
+      CD_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install PyYAML==6.0.3
+      - uses: actions/download-artifact@v4
+        with:
+          name: cd-plan
+          path: local_data/cd
+      - name: Verify the actual environment approval before using deployment credentials
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/cd_release.py approve
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.source }}
+          path: local_data/cd-source
+          persist-credentials: false
+      - name: Validate AWS configuration
+        if: inputs.environment == 'prod' && inputs.operation == 'deploy'
+        env:
+          AWS_ROLE: ${{ vars.CD_AWS_ROLE_ARN }}
+          AWS_REGION: ${{ vars.CD_AWS_REGION }}
+          IMAGE_PREFIX: ${{ vars.CD_ECR_IMAGE_PREFIX }}
+        run: |
+          test -n "$AWS_ROLE"
+          test -n "$AWS_REGION"
+          test -n "$IMAGE_PREFIX"
+      - uses: aws-actions/configure-aws-credentials@v5
+        if: inputs.environment == 'prod' && inputs.operation == 'deploy'
+        with:
+          role-to-assume: ${{ vars.CD_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.CD_AWS_REGION }}
+          role-session-name: cd-${{ github.run_id }}
+      - uses: aws-actions/amazon-ecr-login@v2
+        if: inputs.environment == 'prod' && inputs.operation == 'deploy'
+      - name: Login to GHCR
+        if: inputs.environment == 'local' && inputs.operation == 'deploy'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - uses: docker/setup-buildx-action@v4
+        if: inputs.operation == 'deploy'
+      - name: Publish service and matching migration images
+        if: inputs.operation == 'deploy'
+        env:
+          ECR_PREFIX: ${{ vars.CD_ECR_IMAGE_PREFIX }}
+          TARGET_ENV: ${{ inputs.environment }}
+        run: |
+          if [ "$TARGET_ENV" = prod ]; then
+            export CD_IMAGE_PREFIX="$ECR_PREFIX"
+          else
+            export CD_IMAGE_PREFIX="ghcr.io/${GITHUB_REPOSITORY,,}"
+          fi
+          python scripts/cd_release.py publish --source-dir local_data/cd-source
+      - name: Capture existing in-flight demo learning and payment state
+        env:
+          CD_BASE_URL: ${{ vars.CD_BASE_URL }}
+          CD_SMOKE_FIXTURE: ${{ secrets.CD_SMOKE_FIXTURE }}
+        run: python scripts/verify_cd_deployment.py baseline --output local_data/cd
+      - name: Commit the approved image digests to GitOps
+        id: gitops
+        env:
+          TARGET_ENV: ${{ inputs.environment }}
+        run: |
+          git fetch origin develop
+          test "$(git rev-parse origin/develop)" = "$GITHUB_SHA"
+          python scripts/cd_release.py apply --source-dir local_data/cd-source
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "infrastructure/gitops/environments/$TARGET_ENV" "infrastructure/gitops/deployments/$TARGET_ENV"
+          git commit -m "chore(cd): $TARGET_ENV deployment $GITHUB_RUN_ID"
+          git push origin HEAD:refs/heads/develop
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Verify exact Argo revision and public flows
+        id: verify
+        env:
+          CD_BASE_URL: ${{ vars.CD_BASE_URL }}
+          CD_SMOKE_FIXTURE: ${{ secrets.CD_SMOKE_FIXTURE }}
+          ARGOCD_SERVER: ${{ vars.ARGOCD_SERVER }}
+          ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
+          GITOPS_COMMIT: ${{ steps.gitops.outputs.commit }}
+        run: python scripts/verify_cd_deployment.py verify --output local_data/cd --gitops-commit "$GITOPS_COMMIT"
+      - name: Record success or failure without an automatic rollback
+        if: always() && steps.gitops.outputs.commit != ''
+        env:
+          GITOPS_COMMIT: ${{ steps.gitops.outputs.commit }}
+          TARGET_ENV: ${{ inputs.environment }}
+        run: |
+          git pull --ff-only origin develop
+          python scripts/cd_release.py finish --gitops-commit "$GITOPS_COMMIT"
+          git add "infrastructure/gitops/deployments/$TARGET_ENV/$GITHUB_RUN_ID-1.json"
+          git commit -m "chore(cd): record verification for $GITHUB_RUN_ID"
+          git push origin HEAD:refs/heads/develop
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cd-evidence-${{ github.run_id }}
+          path: local_data/cd/*.json
+          if-no-files-found: warn
+          retention-days: 90
