@@ -8,7 +8,8 @@ const {studentHandlers}=await import('../src/mocks/handlers/student.ts')
 const {parentHandlers}=await import('../src/mocks/handlers/parent.ts')
 const {studentDeviceHandlers}=await import('../src/mocks/handlers/studentDevice.ts')
 const {adminHandlers}=await import('../src/mocks/handlers/admin.ts')
-const server=setupServer(...serviceHandlers,...studentDeviceHandlers,...parentHandlers,...adminHandlers,...studentHandlers)
+const {adminServiceHandlers}=await import('../src/mocks/handlers/adminService.ts')
+const server=setupServer(...serviceHandlers,...studentDeviceHandlers,...parentHandlers,...adminHandlers,...adminServiceHandlers,...studentHandlers)
 server.listen({onUnhandledRequest:'error'});test.after(()=>server.close())
 let token=''
 async function call(path:string,method='GET',data?:unknown,headers:Record<string,string>={}) {
@@ -27,7 +28,7 @@ test('본인 문의·운영 답변·처리 상태와 알림의 연결, 타 계�
   assert.equal((await call('/error-reports','POST',{targetType:'JUDGMENT',targetId:'foreign-answer',category:'OTHER',comment:'타인 기록 요청'})).status,404)
   await login('admin@example.test')
   assert.equal((await call('/admin/inquiries')).data.items.some((c:{id:string})=>c.id===created.data.id),true)
-  assert.equal((await call('/admin/inquiries/'+created.data.id,'PATCH',{answer:'기록은 내 공책에서 확인해 주세요.'})).status,200)
+  assert.equal((await call('/admin/inquiries/'+created.data.id+'/answer','POST',{answer:'기록은 내 공책에서 확인해 주세요.'})).status,200)
   await login()
   const own=(await call('/inquiries')).data.items.find((c:{id:string})=>c.id===created.data.id)
   assert.equal(own.status,'RESOLVED');assert.ok(own.answer.includes('내 공책'))

@@ -12,7 +12,7 @@
 
 - 매주 월요일 07:00 Asia/Seoul, 직전 월~일 `LocalDate`, 집계 경계 `[월 00:00 KST, 다음 월 00:00 KST)`. 기록 없는 자녀도 대상
 - ShedLock(Spring/JDBC, 기존 `shedlock` 테이블, `usingDbTime`) + SCHEDULE 부분 UK로 재실행 중복 방지, 자녀·기간별 advisory transaction lock으로 정기·재생성 직렬화. 자녀별 실패는 격리하고 실행 끝에 전파
-- 작업 저장과 `OutboxWriter.append`는 같은 트랜잭션, HTTP는 밖. 기존 core `OutboxRelay`는 `@Transactional` 안에서 브로커 발행·confirm을 기다리는 제약이 있음(공통 기반, 미변경)
+- 작업 저장과 `OutboxWriter.append`는 같은 트랜잭션, HTTP는 밖. core `OutboxRelay`는 #166 이후 DB 트랜잭션 밖에서 발행·confirm을 기다리고 발행 시각만 짧은 트랜잭션으로 기록
 - 재생성: 부모는 자녀·주 계열 REGENERATE 1회(재생성 결과로 다시 요청해도 우회 불가), SERVICE_OPS 관리자는 ADMIN_RETRY 무제한. revision은 report가 배정
 - 상품 권한: #48에서 `ReportEntitlementService → ProductEntitlementService`를 연결했다. 생성 시 실제 상품·구독의 narrativeEnabled를 사용하며 설정·판정 오류는 job·Outbox 생성 전에 전파한다. 조회 연결은 11장(#129)을 따른다.
 - lifecycle 이벤트 data는 `jobId·studentId·reportId`(failed는 `failureReason`). core는 식별자 대조 후 `processed_event`·조건부 전이·`job_execution`을 원자 저장. 종료 후 늦은 started·상반된 종료 이벤트는 무시. 종료 전이가 반영될 때만 `ReportJobFinished` 발행(알림 연결점)
@@ -43,7 +43,7 @@
 - `verification`은 `numbersMatched`·`quotesMatched`·`contentAllowed` 보존
 - evidence는 50건 단위 조회, 410·삭제 표식은 이용 불가(원문 미반환), 누락·다른 버전·예상 밖 답변은 거부
 - ai 요청 `quotes[]`에는 근거 링크의 `answerVersion`을 붙여 보냄(ai `citedQuotes` 버전 출처, #64). 저장 payload·상세 `quotes`에는 넣지 않음
-- 무료·NO_RECORD는 AI 생략. 알려진 닉네임은 본문에서 가리고 이름·학생 식별 필드는 요청에 넣지 않음. 닉네임 공급 경로는 미연결(공유 메시지에 임의로 추가하지 않음)
+- 무료·NO_RECORD는 AI 생략. 알려진 닉네임은 본문에서 가리고 이름·학생 식별 필드는 요청에 넣지 않음. 닉네임은 공유 메시지에 추가하지 않고 core 내부 별명 조회(#119)로 공급(#56, 9장)
 
 ## 5. 렌더링·파일 저장 (#53)
 

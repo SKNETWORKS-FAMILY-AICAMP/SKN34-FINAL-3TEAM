@@ -81,7 +81,7 @@
 | `REPORT_REGENERATION_LIMIT` / `REPORT_GENERATION_IN_PROGRESS` | 409 / 409 | 학부모의 같은 자녀·주 리포트 재생성 1회 초과 (FN-RPT-12, P06) / 같은 주 생성 작업 진행 중 (5.5) |
 | `WITHDRAWAL_BLOCKED` | 409 | 진행 중 구독·미처리 환불이 있어 탈퇴 불가, 정리 대상 포함 (FN-ACC-12, P09) |
 | `USAGE_LIMIT_REACHED` | 429 | 요금제 사용 한도 도달(무료: 하루 미션 3개·분석 대화 없음, 프리미엄: 하루 피드백 50회·분석 대화 30회), 가능 범위·사유·초기화 시점 포함 (FN-ADM-19, P13) |
-| `AI_UNAVAILABLE` | 503 | AI 처리 실패, `retryable` 포함 (처리 실패 상태, 보류와 구분) |
+| `AI_UNAVAILABLE` | 503 / 502 | AI 처리 실패, `retryable` 포함 (처리 실패 상태, 보류와 구분). ai·learning 피드백은 503, core 분석 대화의 ai 연결 실패·서킷 차단·스트림 중단은 502 (#167) |
 | `SESSION_CHANGED` | 401 | 다른 탭에서 역할·세션이 바뀌어 access의 세션 version 불일치 (5.1) |
 | `REFRESH_REUSED` | 401 | 이미 사용된 refresh 재사용 → 해당 세션 전체 폐기 (5.1) |
 | `OAUTH_FAILED` / `OAUTH_UNAVAILABLE` | 401 / 503 | Google 인증 실패 / Google 로그인 미설정·연결 실패. 콜백은 `/auth/complete?error=<code>`로 전달 (5.1) |
@@ -97,8 +97,11 @@
 | `SUPPORT_CORRECTION_CONFLICT` / `SUPPORT_CORRECTION_REJECTED` | 409 / 422 | learning 정정 POST의 업무 충돌 / 요청 거부. 공급자 본문은 공개하지 않음 (5.7) |
 | `SUPPORT_DEPENDENCY_UNAVAILABLE` / `SUPPORT_INVALID_RESPONSE` | 503 / 502 | 지원 GET의 검증된 403·404를 제외한 비-2xx / 잘못된 2xx 성공 응답 (5.7) |
 | `REPORT_NOT_FOUND` / `REPORT_SCOPE_REJECTED` | 404 / 403 | 없는 리포트 / report-api가 학생 범위를 거부 (5.5) |
-| `REPORT_ENTITLEMENT_UNAVAILABLE` | 503 | 리포트 상품 권한 확인 불가. 작업·Outbox를 만들지 않음 (5.5) |
+| `PAYMENT_ENTITLEMENT_CONFIRMING` / `PAYMENT_PRODUCT_UNAVAILABLE` / `PAYMENT_FREE_PRODUCT_UNAVAILABLE` | 503 | 상품 권한 확인 불가(결제 확정 중·상품 정보 누락·무료 상품 미설정). 리포트 생성은 작업·Outbox를 만들지 않음 (5.5, #48) |
 | `REPORT_UNAVAILABLE` / `REPORT_CONTRACT_INVALID` | 503 / 502 | report-api 연결 실패·그 밖의 오류 응답 / 응답 JSON·식별·기간 계약 위반 (5.5) |
+| `JOB_NOT_FOUND` / `JOB_ID_AMBIGUOUS` | 404 / 409 | 관리자 작업 조회·재처리 대상 없음 / UUID가 작업 종류 간 중복 (2.8) |
+| `JOB_NOT_FAILED` / `JOB_RETRY_IN_PROGRESS` / `REPORT_ALREADY_RETRIED` / `REPORT_RETRY_STUDENT_UNAVAILABLE` | 409 | FAILED가 아닌 작업 재처리 / 알림 재처리 선점 실패 / 이미 새 작업으로 재처리된 리포트 / 삭제 요청·비활성 학생 (2.8) |
+| `JOB_RETRY_UNAVAILABLE` / `JOB_RETRY_OUTCOME_UNKNOWN` | 503 | 재처리를 지원하지 않는 작업 종류 / 알림 재처리 후 결과 상태 미확정 (2.8) |
 | `RATE_LIMITED` / `STUDENT_AUTH_UNAVAILABLE` | 429 / 503 | 기기 등록·페어링 발급 10분 한도 초과 / 기기·페어링 저장소(Redis) 장애 (3.11) |
 | `REAUTH_PENDING` | 409 | Google 재인증 callback 전에 재인증 토큰 수령 시도 (5.6) |
 | `METHOD_NOT_ALLOWED` / `UNSUPPORTED_MEDIA_TYPE` / `REQUEST_FAILED` | 405 / 415 / 그 밖의 4xx·5xx | 허용되지 않는 메서드 / 지원하지 않는 Content-Type / 위 표에 없는 프레임워크 기본 오류 |
@@ -169,7 +172,7 @@
 
 // Versions: 결과에 연결된 버전 (NFR-DAT-02)
 // model: M2 활성 판정은 M2 버전, M2 미활성 판정·되묻기는 LLM 모델 ID(예: gpt-6.1-terra), 규칙 판정은 null
-{ "mission": "m-12@3", "rubric": "r-12@2", "model": "m2-klue-narrative@1.0", "prompt": "judge@4" }
+{ "mission": "m-12@3", "rubric": "r-12@2", "model": "m2-klue-narrative@1.0", "prompt": "judge@2" }
 ```
 
 - SSE 이벤트
@@ -329,6 +332,7 @@
 | GET | `/payments/{orderId}` | 학부모 | 결제 상태 (`CONFIRMING`이면 PG 상태 조회 후 갱신) | PAY-04 | 우선2 |
 | GET | `/payments` | 학부모 | 본인 거래 내역(결제·취소·환불) | PAY-07 | 우선2 |
 | GET | `/subscriptions` | 학부모 | 구독 상태·대상 자녀·이용 기간·다음 결제 예정일 | PAY-07 | 우선2 |
+| GET | `/subscriptions/{subscriptionId}/billing-key` | 학부모 | 자동결제 수단 등록 준비 `{subscriptionId, customerKey}` (PG 결제위젯 빌링 인증 요청에 사용) | PAY-08 | 우선2 |
 | POST | `/subscriptions/{subscriptionId}/billing-key` | 학부모 | 자동결제 수단 등록·변경 (PG `authKey` → 빌링키 발급, 카드 정보 미저장) | PAY-08 | 우선2 |
 | DELETE | `/subscriptions/{subscriptionId}/auto-renewal` | 학부모 | 자동 갱신 해지, 해지 시점·남은 기간 반환. `period_end`까지 이용 유지 (P14) | PAY-09 | 우선2 |
 | PUT | `/subscriptions/{subscriptionId}/auto-renewal` | 학부모 | 해지 철회(자동 갱신 재설정), `period_end` 전 `ACTIVE` 구독만 (P14) | PAY-09 | 우선2 |
@@ -377,7 +381,7 @@
 ##### #47 REPORT 실패 작업 재처리 (core, #152 연결)
 
 - SERVICE_OPS 관리자만 실패한 report_job ID로 `POST /admin/jobs/{jobId}/retry`를 요청한다. reportId가 없어도 가능하며 원래 FAILED 작업·기존 report 판은 바꾸지 않는다. 학부모 regenerate 경로와 제한은 유지한다.
-- REPORT 성공 접수는 **202** `{originalJobId,jobId,type:"REPORT",status:"QUEUED",acceptedAt}`와 `Location: /api/v1/admin/jobs/{새jobId}`다. 이는 실행 완료가 아니다. 알림의 기존 200 작업 상세 응답은 유지한다. CONVERSATION은 계속 JOB_RETRY_UNAVAILABLE다.
+- REPORT 성공 접수는 **202** `{originalJobId,jobId,type:"REPORT",status:"QUEUED",acceptedAt}`와 `Location: /api/v1/admin/jobs/{새jobId}`다. 이는 실행 완료가 아니다. 알림의 기존 200 작업 상세 응답은 유지한다. CONVERSATION은 하단 [#47 CONVERSATION 관리자 재처리](#47-conversation-관리자-재처리)의 202 접수를 따른다.
 - 원작업↔새 ADMIN_RETRY 작업 관계와 수행자·Idempotency-Key·접수 시각은 core report_job_retry에 영속 저장한다. 원작업당 새 작업 1개, 새 작업 ID·수행자+요청 키 각각 UNIQUE다. 같은 키의 응답 저장 유실/24시간 만료 뒤에도 최초 202를 복원한다. 다른 키로 이미 재처리한 원작업을 요청하면 409 REPORT_ALREADY_RETRIED다. 새 작업이 다시 FAILED면 그 새 jobId를 대상으로 다음 재처리를 요청한다.
 - 기존 학생·주 잠금과 원작업 행 잠금을 사용하고 다른 QUEUED/RUNNING 주간 작업이 있으면 409 REPORT_GENERATION_IN_PROGRESS다. 학생 활성 상태·삭제 요청 이력을 학생 행 잠금 아래 확인하며 삭제/비활성은 409 REPORT_RETRY_STUDENT_UNAVAILABLE다. 현재 상품의 narrativeEnabled를 기존 ReportEntitlementService로 확정하며 설정/조회 장애는 기존 명시적 오류다.
 - 새 report_job·관계·요청 감사 JOB_RETRY_REQUESTED·기존 OutboxWriter의 report.generate를 한 트랜잭션에 기록한다. 외부 HTTP/브로커 호출은 이 트랜잭션에서 하지 않는다. 기존 v1 이벤트 필드만 사용하며 원작업 연결은 core가 소유한다.
@@ -390,7 +394,7 @@
 - overview/jobs/audit 기간은 KST 날짜 양 끝 포함(저장 조회는 시작 이상·다음날 미만), 둘 다 생략하면 최근 7일, 한쪽만 입력하거나 역순·366일 초과는 400. page=0, size=20(1~100), page 최대 1000. 정렬은 createdAt DESC, id DESC다.
 - overview는 `{period,inclusionRule,learning:{attempts,completedAttempts,students,inclusionRule},jobCounts:[{type,status,count}],missionCounts:[{status,count}],missionInclusionRule}`다. learning은 P08, core 작업은 생성 시각이 기간 안인 작업의 현재 상태를 센다. 미션은 learning 관리자 목록의 전체 현재 상태별 건수로 기간·필터·페이지와 무관하다. learning 장애/계약 위반은 오류다.
 - jobs는 `{items,page,size,totalElements}`, 상세는 `{jobId,type,status,retryCount,failureReason,createdAt,executions,retryable,retryUnavailableReason}`다. CONVERSATION ID는 conversation_message.id, REPORT는 report_job.id, NOTIFICATION은 notification.id다. updatedAt은 존재하지 않아 반환하지 않는다. executions는 실제 job_execution을 attemptNo 순으로 반환한다. error_detail·원문 실패 메시지·감사 detail은 공개하지 않고 알려진 오류 코드만 노출하며 그 외는 REDACTED_ERROR다. UUID가 종류 간 충돌하면 409 JOB_ID_AMBIGUOUS다.
-- retry는 UUID Idempotency-Key 필수, 실패 상태만 허용한다. NOTIFICATION은 동일 ID를 RUNNING으로 원자 선점하고 새 job_execution을 남긴 뒤 트랜잭션 밖에서 기존 Redis publisher/DeliveryService를 호출한다. Redis 확인은 브라우저 수신 확인이 아니다. 실제 결과를 200 작업 상세로 반환하고 감사 기록을 남긴다. RUNNING 고착은 자동 재실행하지 않는다. REPORT는 위 REPORT 접수 계약에 따라 새 jobId로 재처리하며 원작업을 보존한다. CONVERSATION은 아래 후속 계약대로 DB 대기 작업으로 202 접수한다. 리포트 regenerate를 대신 호출하지 않는다. 실패한 요청은 실행 이력으로 위장하지 않으며 거절 감사만 남긴다.
+- retry는 UUID Idempotency-Key 필수, 실패 상태만 허용한다. NOTIFICATION은 동일 ID를 RUNNING으로 원자 선점하고 새 job_execution을 남긴 뒤 트랜잭션 밖에서 기존 Redis publisher/DeliveryService를 호출한다. Redis 확인은 브라우저 수신 확인이 아니다. 실제 결과를 200 작업 상세로 반환하고 감사 기록을 남긴다. RUNNING 고착은 자동 재실행하지 않는다. REPORT는 위 REPORT 접수 계약에 따라 새 jobId로 재처리하며 원작업을 보존한다. CONVERSATION은 하단 계약대로 DB 대기 작업으로 202 접수한다. 리포트 regenerate를 대신 호출하지 않는다. 실패한 요청은 실행 이력으로 위장하지 않으며 거절 감사만 남긴다.
 - audit-logs는 targetType/targetId 및 기간·페이지 필터. 항목은 `{id,actorUserId,action,targetType,targetId,result,createdAt}`이며 자유형 detail은 노출하지 않는다. 기존 감사 저장 경로를 교체하지 않는다.
 - queues는 `{vhost,items:[{name,kind:WORK|RETRY|DLQ,messages,messagesReady,messagesUnacknowledged,consumers,state}]}`다. definitions.json의 `/` vhost와 고정 25개 큐만 읽는다. 누락·인증·HTTP·타임아웃·잘못된 응답은 명시적인 503/504이며 0으로 치환하지 않는다. `ADMIN_RABBIT_MANAGEMENT_URL`, `ADMIN_RABBIT_MANAGEMENT_USERNAME`, `ADMIN_RABBIT_MANAGEMENT_PASSWORD`를 환경에서 읽는다(기본 자격 증명 없음). 기존 AMQP 설정과 독립이며 production 의존성은 추가하지 않는다.
 - missions는 표의 명시된 메서드/경로만 `/internal/admin/missions`로 프록시한다. 검증된 ADMIN 사용자 컨텍스트, 빈 학생 범위, 내부 토큰과 trace를 기존 LearningClient/InternalRestClientFactory로 전달한다. JSON object 본문과 목록 status/grade/thinkingType/page/size만 전달한다. 버전·기준표·검토·게시 정책/DTO는 learning 소유다. learning 공급자 계약은 4.1 `/internal/admin/missions…`(#145)와 learning OpenAPI다. 404는 application/problem+json JSON 객체의 status=404·code=NOT_FOUND가 일치할 때 404 NOT_FOUND와 고정 문구 "미션을 찾을 수 없습니다."로 반환한다(#163). 불명확한 404와 API 미지원 405/501은 기존 503 ADMIN_MISSIONS_UNAVAILABLE다. 나머지 Problem Details는 기존 code/status와 구조화된 missingFields만 허용하며 자유형 오류 문구는 전달하지 않는다. 성공 응답은 learning 관리자 콘텐츠 계약을 그대로 반환한다. 쓰기는 요청 감사 후 호출하고 응답 missionId·버전으로 결과 감사를 남긴다(하단 #47 미션 운영 후속 계약). 서비스 간 재시도는 없다.
@@ -473,7 +477,7 @@ data: {
   },
   "followup":{"followupId":"f-32","type":"TELL_MORE","question":"왜 그렇게 생각했는지 하나 더 말해 볼까?","source":"LLM"},
   "nextActions":["ANSWER_FOLLOWUP","FINISH"],
-  "versions":{"mission":"m-12@3","rubric":"r-12@2","model":"gpt-6.1-terra","prompt":"judge@4"}
+  "versions":{"mission":"m-12@3","rubric":"r-12@2","model":"gpt-6.1-terra","prompt":"judge@2"}
 }
 
 event: done
@@ -551,7 +555,7 @@ data: {}
   "eveningQuestion": "...",
   "narrative": { "text": "...", "source": "LLM", "modelExplanation": null },   // 대조 실패 시 source=TEMPLATE (P16), 무료 플랜은 null (P13)
   "verification": { "numbersMatched": true, "quotesMatched": true },
-  "versions": { "prompt": "report@2", "model": null },
+  "versions": { "prompt": "report@1", "model": null },
   "generatedAt": "2026-11-09T07:00:00+09:00"
 }
 ```
@@ -699,7 +703,7 @@ ERD 3.2·3.5·4.1을 camelCase로 매핑. 학생 이름·답변 원문·메모�
 - `GET /help?role`: `{items:[{id,title,content}]}`. 현재 인증 역할만 요청한다.
 - `GET /notices`: `{items:[{id,title,content,roles[],startsAt,endsAt:null|string}]}`. 현재 역할·공개 기간을 만족하는 공지만 반환한다.
 - `POST/GET /error-reports`, `POST/GET /inquiries`: 요청은 2.7을 따른다. 화면의 공통 목록 항목은 `{id,targetType?,targetId?,category,comment,status,answer?,createdAt}`, 상태는 RECEIVED/IN_REVIEW/RESOLVED. 기존 관리자 오류 신고의 reportId는 별도 계약으로 유지한다. 목업에서 사용자 신고를 관리자 검토 목록과 연결하며 답변 원문은 수정하지 않는다.
-- `GET /admin/inquiries`: SERVICE_OPS, `{items:[공통 목록 항목]}`. `PATCH /admin/inquiries/{id}`: `{answer,status:RESOLVED}` → 갱신 항목. 일반 문의와 판정 오류 검토를 구분한다.
+- `GET /admin/inquiries`: SERVICE_OPS, `{items:[공통 목록 항목]}`. 답변 등록은 2.8 `POST /admin/inquiries/{inquiryId}/answer`를 사용한다. 일반 문의와 판정 오류 검토를 구분한다.
 - `POST /admin/notices`: SERVICE_OPS, `{title,content,roles[],startsAt,endsAt}` → 공지 항목(201). 공개 역할·기간을 검증한다.
 - 알림은 2.7의 실제 #44 계약을 그대로 사용한다. 학생에게 요청하지 않으며 읽음·수신 설정은 서버 확인 후 갱신한다. SSE 구독은 이번 화면 보완에 포함하지 않고 목록·새로고침으로 확인한다.
 - 계정·삭제·탈퇴는 5.6 실제 #45 계약을 따른다. 사전 확인 경로는 `GET /me/withdrawal/precheck`이며 `{canWithdraw,activeSubscriptions,unresolvedRefunds,retainedTransactionsYears}`를 반환한다. 삭제 목업은 CONFIRMED와 서비스별 완료 상태를 구분하고 자동으로 완료를 만들지 않는다. 탈퇴 조회 영수증은 URL·영구 저장소 대신 현재 화면 메모리에만 보관한다.
@@ -847,6 +851,8 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 |---|---|---|
 | GET | `/internal/model-versions/active` | 기동 시 활성 모델·프롬프트 버전 조회 |
 | POST | `/internal/deletion-requests/{deletionRequestId}/completions` | learning·report가 `student.deleted` 처리 후 완료 보고 `{service}`. 두 서비스 모두 보고 시 `COMPLETED` (멱등, P09) |
+| POST | `/internal/payment-usage/reservations` | learning 피드백 실행 전 프리미엄 사용 예약 `{studentId,sourceId}` → `{reservationId,premium}` (STUDENT+본인 scope, #48) |
+| POST | `/internal/payment-usage/completions` | learning 피드백 DONE 저장 후 사용 확정 `{studentId,reservationId,used}` (#48) |
 
 - 비동기 메시지(`report.generate` 등)는 [아키텍처 1.4](architecture.md#14-메시지-목록) 참고
 - report 삭제: PROFILE·RECORDS 모두 리포트 내용·파일을 물리 삭제하고 `report_deletion_guard`에 식별 UUID·범위·기준 시각·상태만 남김. core가 RECORDS 후에도 학습을 자동 재개하지 않으므로 두 scope 모두 이후 생성을 차단(재개는 별도 계약 필요)
@@ -940,7 +946,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - started/completed/failed는 **받은 새 jobId**, 학생 ID 및 그 실행에 배정한 같은 reportId를 반환한다. 원래 실패 jobId·revision·관리자 ID는 report 이벤트에 추가하지 않는다. core는 jobId로 실행을 구분해 지연된 원작업 이벤트가 새 작업에 반영되지 않게 한다. report에는 core 결과 이벤트를 다시 적용하는 API가 없다.
 - 시작 행과 started Outbox, 종료 상태/항목/파일과 terminal Outbox는 각각 같은 DB 트랜잭션이다. Outbox 발행은 at-least-once이므로 core는 봉투 id와 조건부 상태 전이로 중복·순서 역전을 방어한다. 새 이벤트 ID를 붙여 같은 jobId를 다시 보내도 업무 실행은 늘어나지 않는다.
 - report는 기존 삭제 장벽과 core ACTIVE 프로필 조회를 유지한다. 삭제 장벽으로 거부된 작업은 기존 정책대로 생성·성공 이벤트를 만들지 않는다. 삭제와 경쟁한 core 작업의 취소·정리는 core 책임이며 #152에서 삭제 정책이나 거짓 실패/완료 이벤트를 임의 추가하지 않는다.
-- 새 HTTP API·이벤트 버전·DB 컬럼은 필요 없다. `/admin/jobs/{id}/retry`의 실제 요청 접수·원작업 연결·감사 처리는 #47 후속이며, 이 공급 계약만으로 현재 core의 `JOB_RETRY_UNAVAILABLE` 차단을 해제하지 않는다.
+- 새 HTTP API·이벤트 버전·DB 컬럼은 필요 없다. `/admin/jobs/{id}/retry`의 실제 요청 접수·원작업 연결·감사 처리는 core #47에서 구현했다(2.8 #47 REPORT 실패 작업 재처리).
 - 요청·결과 예시: [report-admin-retry](../../contracts/examples/report-admin-retry/). 기존 [공유 메시지 계약](../../contracts/events/report-messages.md)과 같은 스키마를 사용한다.
 
 ### 5.6 #45 계정 관리·Google 재확인·삭제·탈퇴 계약

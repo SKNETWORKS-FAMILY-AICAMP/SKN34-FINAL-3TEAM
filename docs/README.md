@@ -51,7 +51,7 @@
 | [issue-143-contract-ci](report/issue-143-contract-ci.md) | 웹 단위 테스트·독립 계약 CI·실제 core 산출물 검증 및 로컬 실행 안내(#143) |
 | [local-platform](report/local-platform.md) | kind·Calico·ingress·MinIO 설정과 자원 예산(#17) |
 | [frontend](report/frontend.md) | 웹 공통 기반·학생·학부모·관리자 화면(#7~#9·#59), 테마·대시보드, QR 시연 |
-| [audit](report/audit.md) | develop 종합 검증(c608f52·640e0a2)과 설계 문서 정합성 점검, 남은 결함·테스트 공백 |
+| [audit](report/audit.md) | develop 종합 검증(c608f52·640e0a2·2db122c)과 설계 문서 정합성 점검, 남은 결함·테스트 공백 |
 
 - [이슈 #46 신고·문의·공지·도움말](report/issue-46-support.md): 요청 역할·학생 scope, 정정 재시도·감사, 알림 연결과 공급자 필요 계약
 
@@ -72,6 +72,13 @@
 - [#56 리포트 worker 통합](report/report-worker-integration.md): 기본 worker 생성 파이프라인 연결과 완료 조건 검증
 - [프론트 요구사항 대조](report/frontend-requirements-20261029.md): 요구사항 정의서 기능 ID별 화면 대조·구현
 - [웹 develop 통합 PR](report/pr-web-develop-integration.md): 프론트 요구사항 보완과 develop 통합(#93·#97·#134)
+- [이슈 #41 분석 대화·SSE·한도](report/issue-41-analysis-conversations.md): core 대화·SSE·권한·사용 한도와 공급자 연동 검증
+- [이슈 #131 report Outbox 복구](report/issue-131-outbox-recovery.md): 학생별 순서·지연 재시도·격리·수동 재처리와 DB 적용 절차
+- [이슈 #184 학부모 결제·구독 화면](report/tosspayments-checkout.md): 토스 결제위젯 결제·자동결제 수단·해지·환불 화면과 검증
+- [이슈 #195 시도 상세 캐시](report/issue-195-attempt-cache.md): 시도 상세 no-store와 돌아보기 전환
+- [이슈 #196 학생 종료](report/issue-196-student-logout.md): 학생 세션만 종료하고 보호자 로그인 전환 분리
+- [관리자 화면 완성 PR](report/pr-admin-screen-completion.md): 관리자 로그인·문의/공지·결제/환불 화면, 학생 자기 평가(#145·#146·#82)
+- [learning 연동 프론트 정렬](report/learning-frontend-alignment.md): learning 계약 변경의 프론트 반영 인수인계(2026-10-29)
 
 ## 개발 규칙
 
@@ -123,13 +130,3 @@ feature/* → develop → main
 - `feature/*`는 `develop`으로만 병합
 - `main`은 `develop`에서만 병합
 - 순서를 건너뛴 병합(`feature/*` → `main`) 금지
-
-#### core 임시 통합 경로
-
-- core 병렬 작업의 통합 검증에 한해 `feature/* → feature/core-integration → develop` 경로를 사용한다.
-- `feature/core-integration`은 최신 develop에서 만들며, 개별 core PR의 base로 사용한다. 이후 develop의 변경을 merge하고 통합 검증한 뒤 develop 대상 최종 PR로 반영한다.
-- 이 경로는 core 병렬 작업이 develop에 모두 반영되면 종료하는 임시 예외다. main 반영은 기존 `develop → main` 흐름을 유지하고, 기존 기능 커밋을 임의로 squash·rebase하지 않는다.
-- 기본 브랜치가 아닌 통합 브랜치 대상 PR의 `Closes`는 이슈를 자동 종료하지 않는다. 실제 해결 범위를 확인한 최종 develop PR에도 해당 `Closes #이슈번호`를 포함한다.
-
-- [이슈 #41 분석 대화·SSE·한도](report/issue-41-analysis-conversations.md): core 대화·SSE·권한·사용 한도와 공급자 연동 검증
-- [이슈 #131 report Outbox 복구](report/issue-131-outbox-recovery.md): 학생별 순서·지연 재시도·격리·수동 재처리와 DB 적용 절차

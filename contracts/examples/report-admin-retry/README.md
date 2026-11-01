@@ -12,7 +12,7 @@
 | 06-another-retry-started.json | report → core | C 시작, reportId 7777… 배정 |
 | 07-another-retry-failed.json | report → core | C 재실패, 원문 없는 failureReason |
 
-core가 관리할 연결은 `A → B`, `A → C`다. report 메시지에 originalJobId를 추가하지 않는다. 원작업 연결·저장 방식은 core #47에서 구현한다.
+core가 관리할 연결은 `A → B`, `A → C`다. report 메시지에 originalJobId를 추가하지 않는다. 원작업 연결은 core #47이 `report_job_retry`에 저장한다.
 
 - 요청: exchange `cmd.direct`, routing key `report.generate`, queue `report.report.generate`.
 - 결과: exchange `events.topic`, routing key `report.started|completed|failed`, queue `core.report.events`.

@@ -227,7 +227,7 @@ data: {}
 - 사용량 조회: KST 양 끝 포함 최대 366일(사용자 결정), 범위 밖은 DB 조회 전 400. 미산정 비용이 섞이면 `costUsd` null + `unpricedCalls`
 - scope 배열의 null 요소는 Kotlin 제네릭만으로 차단되지 않아 명시적으로 422
 - 기존 NULL 평가 행은 목록에 null로 남기고 활성화·복귀는 422, 불완전한 기존 ACTIVE는 내부 snapshot에서 503 `MODEL_VERSION_STATE_INVALID`
-- scoring은 #86에서 Pod별 큐 바인딩 → snapshot 조회 → 더 높은 revision 적용·재연결을 구현했다. ai 소비 흐름은 #68 후속이다. [scoring #86 검증](issue-86-scoring-model-events.md)을 참고한다.
+- scoring은 #86에서 Pod별 큐 바인딩 → snapshot 조회 → 더 높은 revision 적용·재연결을 구현했다. ai 소비 흐름은 #68에서 구현했다(7장). [scoring #86 검증](issue-86-scoring-model-events.md)을 참고한다.
 
 ## 4. M2 모델과 API 정렬 (#4)
 
@@ -264,7 +264,7 @@ data: {}
 | 돌아보기 난이도 | `EASY·NORMAL·HARD` 코드를 프롬프트에서 "쉬웠어·보통·어려웠어"로, 표시값이 오면 그대로 | report 저장 payload는 코드 유지 |
 | 빈 서술·빈 저녁 질문 | 503 `AI_UNAVAILABLE`(`retryable: true`) | report는 AI 실패를 `FAILED`로 처리 |
 
-- 후속: `model.version.activated` 수신 시 서술 프롬프트 버전 교체는 #68, 실제 LLM 연동 E2E는 report worker 생성기 조립 후
+- `model.version.activated` 수신 시 서술 프롬프트 버전 교체는 #68에서 구현(7장). 후속: 실제 LLM 연동 E2E
 
 ## 6. scoring 기동 모델 로딩 (#85)
 
