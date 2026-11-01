@@ -76,9 +76,6 @@ export const serviceHandlers = [
     return { items:items.slice(current*size,(current+1)*size),page:current,size,hasNext:(current+1)*size<items.length }
   })),
   http.get('/api/v1/admin/inquiries',({request})=>respond(async()=>{ops(request);return page(cases.filter(c=>c.kind==='inquiries'))})),
-  http.patch('/api/v1/admin/inquiries/:id',({request,params})=>respond(async()=>{
-    ops(request);const data=await request.json() as {answer:string};return answerCase(String(params.id),data.answer)
-  })),
   http.post('/api/v1/admin/notices',({request})=>respond(async()=>{
     ops(request);const data=await request.json() as Notice
     if(!data.title?.trim()||!data.content?.trim()||!Array.isArray(data.roles)||!data.roles.length||data.roles.some(r=>!['PARENT','STUDENT','ADMIN'].includes(r))||!Number.isFinite(Date.parse(data.startsAt))||(data.endsAt&&(!Number.isFinite(Date.parse(data.endsAt))||Date.parse(data.endsAt)<=Date.parse(data.startsAt))))fail('VALIDATION_FAILED','공지 내용·역할·공개 기간을 확인해 주세요.',422)

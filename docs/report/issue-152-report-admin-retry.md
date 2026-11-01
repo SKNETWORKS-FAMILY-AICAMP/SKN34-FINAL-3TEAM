@@ -7,7 +7,7 @@
 - core #47: 관리자 요청 접수·권한·멱등, 원래 실패 작업과 새 재처리 작업 연결, 생성 요청 발행, 결과별 작업 상태·실행·감사 기록.
 - report #152: 새 jobId 요청 실행, 중복·동시 전달 방어, 이전 판 보존, 요청 jobId에 맞는 시작·성공·실패 이벤트.
 - core는 **새 jobId**를 발행하며 같은 관리자 요청의 재전송에는 그 ID를 유지한다. report 이벤트에 originalJobId를 추가하지 않는다.
-- 현재 core 관리자 재처리 HTTP 경로는 여전히 REPORT를 JOB_RETRY_UNAVAILABLE로 차단한다. 이번 report 공급 검증을 관리자 버튼 전체 완료로 표현하지 않는다.
+- 검증 당시 core 관리자 재처리 HTTP 경로는 REPORT를 JOB_RETRY_UNAVAILABLE로 차단했다. 이번 report 공급 검증을 관리자 버튼 전체 완료로 표현하지 않는다. (이후 core #47이 REPORT 접수를 구현, api-spec 2.8)
 
 ## 기존 코드 재사용 판정
 
@@ -124,7 +124,7 @@ PR #156 병합 여부만으로 완료를 판단하지 않고, 최신 develop `18
 ### 완료 범위와 남은 연결 작업
 
 - **#152 report 범위:** 기존 새 job/revision 경로로 요구조건 충족. 요청·결과 예시는 위 링크의 JSON 7개를 그대로 사용한다. 원작업 연결은 core 소유, 현재 `narrativeEnabled` 계산은 core, 삭제 장벽은 report가 유지하는 기존 합의와 일치한다.
-- **#47 core 범위:** `OperationRetryService`는 아직 NOTIFICATION 외 재처리를 `JOB_RETRY_UNAVAILABLE`로 차단한다. 검증 생산자가 core job을 준비하고 명령을 발행했으므로 관리자 HTTP 권한·Idempotency-Key·원작업 연결·감사 및 버튼 전체 경로를 완료했다고 볼 수 없다. AI 서술 응답도 합성 대역이다.
+- **#47 core 범위:** 검증 당시 `OperationRetryService`는 NOTIFICATION 외 재처리를 `JOB_RETRY_UNAVAILABLE`로 차단했다(이후 #47에서 REPORT·CONVERSATION 접수 구현). 검증 생산자가 core job을 준비하고 명령을 발행했으므로 관리자 HTTP 권한·Idempotency-Key·원작업 연결·감사 및 버튼 전체 경로를 완료했다고 볼 수 없다. AI 서술 응답도 합성 대역이다.
 - #152 이슈 체크리스트 정리와 #47 담당자에게 예시·검증 결과 전달은 별도 마무리 작업이다. 이번 재검증만으로 이슈 종료나 담당자 수신 확인을 대신하지 않는다.
 
 ### 재현 및 산출물
