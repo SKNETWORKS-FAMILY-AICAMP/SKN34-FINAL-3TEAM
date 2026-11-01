@@ -1,0 +1,13 @@
+{{- if .Values.networkPolicy.namespaceDefaultDeny }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: app-default-deny
+  labels:
+    {{- include "app-service.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+{{- end }}

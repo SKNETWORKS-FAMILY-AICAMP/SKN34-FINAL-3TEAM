@@ -1,0 +1,13 @@
+# Local metrics-only stack. Langfuse is scheduled for the EKS environment (#185).
+# The images are pinned to versions verified against official releases on 2026-10-30.
+collector:
+  image: otel/opentelemetry-collector-contrib:0.164.0
+prometheus:
+  image: prom/prometheus:v3.15.1
+  retention: 1d
+grafana:
+  image: grafana/grafana:13.3.0
+  adminSecret:
+    name: observability-credentials
+    userKey: GRAFANA_ADMIN_USER
+    passwordKey: GRAFANA_ADMIN_PASSWORD

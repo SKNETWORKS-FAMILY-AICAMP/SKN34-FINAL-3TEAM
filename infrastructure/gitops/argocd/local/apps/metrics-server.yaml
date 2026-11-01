@@ -1,0 +1,21 @@
+# Optional prerequisite for one-service-at-a-time local HPA verification.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: local-metrics-server
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://kubernetes-sigs.github.io/metrics-server/
+    chart: metrics-server
+    targetRevision: 3.14.0
+    helm:
+      releaseName: metrics-server
+      values: |
+        args:
+          - --kubelet-insecure-tls
+          - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system

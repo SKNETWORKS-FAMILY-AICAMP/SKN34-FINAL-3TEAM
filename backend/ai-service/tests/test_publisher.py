@@ -6,6 +6,7 @@ from typing import Any
 from app.messaging.connection import AmqpConnection
 from app.messaging.envelope import EventEnvelope
 from app.messaging.publisher import EventPublisher, UsagePublisher
+from app.security import UserContext
 
 CONTRACT = Path(__file__).parents[3] / "contracts/events/llm.usage.recorded.v1.schema.json"
 
@@ -48,3 +49,30 @@ def test_publish_without_connection_returns_false() -> None:
     envelope = EventEnvelope[dict[str, str]](type="t", source="s", dataschema="t.v1", data={})
 
     assert asyncio.run(publisher.publish(envelope, "t")) is False
+
+
+def test_usage_event_keeps_traceparent_without_user_identifiers(monkeypatch) -> None:
+    from app.messaging import publisher as publisher_module
+
+    traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+    monkeypatch.setattr(
+        publisher_module,
+        "current_user_context",
+        lambda: UserContext("private-student-id", "STUDENT", frozenset(), traceparent),
+    )
+    capturing = CapturingPublisher()
+    usage = UsagePublisher(capturing, service="ai", source="ai-service")
+    asyncio.run(
+        usage.publish(
+            "JUDGMENT",
+            "test-model",
+            input_tokens=10,
+            output_tokens=20,
+            latency_ms=300,
+            success=True,
+            prompt_version="judge@1",
+        )
+    )
+    [(body, _)] = capturing.sent
+    assert body["traceparent"] == traceparent
+    assert "private-student-id" not in json.dumps(body)

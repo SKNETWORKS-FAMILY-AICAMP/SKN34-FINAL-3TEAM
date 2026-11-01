@@ -1,0 +1,56 @@
+nameOverride: report-api
+image:
+  repository: sagomungchi/report-service
+  tag: local
+replicaCount: 1
+service:
+  port: 8002
+  targetPort: 8002
+probes:
+  startup: {enabled: true, path: /health/live, periodSeconds: 10, failureThreshold: 30}
+  liveness: {enabled: true, path: /health/live, periodSeconds: 10, timeoutSeconds: 5}
+  readiness: {enabled: true, path: /health/ready, periodSeconds: 10, timeoutSeconds: 5}
+resources:
+  requests: {cpu: 100m, memory: 256Mi}
+  limits: {cpu: 500m, memory: 768Mi}
+env:
+  - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN}}}
+  - {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: app-service-credentials, key: REPORT_DATABASE_URL}}}
+  - {name: CORE_URL, value: "http://core-service.app.svc.cluster.local:8080"}
+  - {name: LEARNING_URL, value: "http://learning-service.app.svc.cluster.local:8081"}
+  - {name: AI_URL, value: "http://ai-service.app.svc.cluster.local:8000"}
+  - {name: S3_ENDPOINT_URL, value: "http://minio.platform.svc.cluster.local:9000"}
+  - {name: S3_PUBLIC_ENDPOINT_URL, value: "http://127.0.0.1:19000"}
+  - {name: S3_BUCKET, value: sagomungchi-local-reports}
+  - {name: S3_REGION, value: ap-northeast-2}
+  - {name: AWS_ACCESS_KEY_ID, valueFrom: {secretKeyRef: {name: app-service-credentials, key: MINIO_ROOT_USER}}}
+  - {name: AWS_SECRET_ACCESS_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: MINIO_ROOT_PASSWORD}}}
+hpa:
+  enabled: false
+pdb:
+  enabled: false
+networkPolicy:
+  enabled: true
+  ingressFromApps: [core-service]
+  egressToPlatform:
+    - {name: postgres, port: 5432}
+    - {name: minio, port: 9000}
+  migrationEgress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: platform}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: postgres, app.kubernetes.io/instance: platform-data}
+      ports: [{protocol: TCP, port: 5432}]
+migration:
+  enabled: true
+  revision: "20261030-04"
+  image:
+    repository: sagomungchi/report-service
+    tag: local
+  command: [alembic, upgrade, head]
+  env:
+    - {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: app-service-credentials, key: REPORT_ALEMBIC_DATABASE_URL}}}
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 250m, memory: 256Mi}

@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     scoring_url: str = "http://localhost:8001"  # #69 M2/M1 교차 확인 연결용으로 유지
     core_url: str = "http://localhost:8080"  # #68 활성 버전 조회 연결용으로 유지
 
+    # #171: LLM 메타데이터만 Collector를 거쳐 Langfuse로 전송한다.
+    langfuse_enabled: bool = False
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_otlp_endpoint: str | None = None  # OTLP/HTTP /v1/traces 전체 URL
+
     # LLM: 제공자 교체는 llm_provider만 변경, 키·모델은 제공자별로 보관
     llm_provider: str = "openai"
     anthropic_api_key: str | None = None  # 비어 있으면 503 AI_UNAVAILABLE

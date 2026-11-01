@@ -1,0 +1,111 @@
+nameOverride: ""
+
+image:
+  repository: ""
+  tag: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+command: []
+args: []
+env: []
+imagePullSecrets: []
+
+javaAgent:
+  enabled: false
+  image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-java@sha256:2c4f7a70de1f18b6d87e3ec7aea3a66250f70ca96101d8a4128df0fe586880e5
+  collectorEndpoint: http://otel-collector.observability.svc.cluster.local:4318
+
+serviceAccount:
+  create: true
+  annotations: {}
+  automountToken: false
+
+service:
+  enabled: true
+  port: 0
+  targetPort: 0
+
+probes:
+  startup:
+    enabled: false
+    path: /health/ready
+    periodSeconds: 10
+    failureThreshold: 18
+  liveness:
+    enabled: false
+    path: /health/live
+    periodSeconds: 10
+    timeoutSeconds: 5
+  readiness:
+    enabled: false
+    path: /health/ready
+    periodSeconds: 10
+    timeoutSeconds: 5
+
+terminationGracePeriodSeconds: 30
+lifecycle: {}
+resources: {}
+extraVolumes: []
+extraVolumeMounts: []
+
+hpa:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 2
+  cpuUtilization: 70
+
+keda:
+  enabled: false
+  minReplicaCount: 0
+  maxReplicaCount: 2
+  pollingInterval: 30
+  cooldownPeriod: 300
+  queueLength: "1"
+  queues: []
+  rabbitmqSecret:
+    name: ""
+    key: RABBITMQ_URL
+
+pdb:
+  enabled: false
+  minAvailable: 1
+
+ingress:
+  enabled: false
+  className: ""
+  host: ""
+  path: /api
+  pathType: Prefix
+  annotations: {}
+  tls: []
+
+networkPolicy:
+  enabled: false
+  namespaceDefaultDeny: false
+  ingressFromApps: []
+  ingressFromIngressController: false
+  ingressFromPrometheus: false
+  egressToApps: []
+  egressToPlatform: []
+  egressToCollector: false
+  egressToLangfuse: false
+  ingress: []
+  egress: []
+  migrationEgress: []
+
+migration:
+  enabled: false
+  # Change revision only when the migration set changes. The named PreSync Job
+  # remains after success, so a routine sync does not run it again.
+  revision: ""
+  image:
+    repository: ""
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  command: []
+  args: []
+  env: []
+  resources: {}

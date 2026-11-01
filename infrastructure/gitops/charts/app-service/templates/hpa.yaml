@@ -1,0 +1,23 @@
+{{- if .Values.hpa.enabled }}
+{{- if .Values.keda.enabled }}{{ fail "HPA and KEDA cannot both own one Deployment" }}{{- end }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "app-service.name" . }}
+  labels:
+    {{- include "app-service.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "app-service.name" . }}
+  minReplicas: {{ .Values.hpa.minReplicas }}
+  maxReplicas: {{ .Values.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.hpa.cpuUtilization }}
+{{- end }}
