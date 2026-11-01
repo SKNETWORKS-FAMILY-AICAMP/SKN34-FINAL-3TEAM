@@ -4,6 +4,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from langfuse import Langfuse
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
 from app.analysis_agent.router import router as analysis_router
 from app.clients.base import internal_client
@@ -27,6 +29,22 @@ from app.versions import router as versions_router
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
+    langfuse: Langfuse | None = None
+    if settings.langfuse_enabled:
+        if not all(
+            (
+                settings.langfuse_public_key,
+                settings.langfuse_secret_key,
+                settings.langfuse_otlp_endpoint,
+            )
+        ):
+            raise ValueError("Langfuse 계측에 public/secret key와 OTLP endpoint가 필요합니다")
+        langfuse = Langfuse(
+            public_key=settings.langfuse_public_key,
+            secret_key=settings.langfuse_secret_key,
+            span_exporter=OTLPSpanExporter(endpoint=settings.langfuse_otlp_endpoint),
+            should_export_span=lambda span: span.instrumentation_scope.name == "langfuse-sdk",
+        )
     amqp = AmqpConnection(settings.rabbitmq_url)
     amqp.start()
     app.state.amqp = amqp
@@ -36,6 +54,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # LLM 요청마다 사용량 이벤트 발행 (백그라운드, best-effort)
     usage_recorder = BackgroundUsageRecorder(app.state.usage_publisher)
     app.state.llm = create_llm(settings, recorder=usage_recorder)
+    app.state.llm.langfuse = langfuse
 
     async def rabbitmq_ready() -> bool:
         return amqp.is_connected
@@ -52,6 +71,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await consumer.close()
             await usage_recorder.close()
             await amqp.close()
+            if langfuse is not None:
+                langfuse.shutdown()
 
 
 def create_app() -> FastAPI:

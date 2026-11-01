@@ -1,10 +1,14 @@
 import asyncio
+import json
 import time
 from collections.abc import AsyncIterator
 
 import pytest
+from langfuse import Langfuse
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic import BaseModel
 
+from app.llm import base as llm_base
 from app.llm.base import (
     LlmClient,
     LlmError,
@@ -16,6 +20,7 @@ from app.llm.base import (
     T,
     UnconfiguredLlm,
 )
+from app.security import UserContext
 
 
 class Answer(BaseModel):
@@ -244,3 +249,75 @@ def test_unconfigured_stream_is_unavailable_without_usage() -> None:
     with pytest.raises(LlmUnavailable) as exc:
         collect(UnconfiguredLlm("gpt", usages.append))
     assert (exc.value.code, usages) == ("LLM_NOT_CONFIGURED", [])
+
+
+def test_langfuse_records_attempts_without_prompt_or_response(monkeypatch) -> None:
+    trace_id = "4bf92f3577b34da6a3ce929d0e0e4736"
+    parent_id = "00f067aa0ba902b7"
+    monkeypatch.setattr(
+        llm_base,
+        "current_user_context",
+        lambda: UserContext(
+            user_id="private-student-id",
+            role="STUDENT",
+            student_scope=frozenset({"private-student-id"}),
+            traceparent=f"00-{trace_id}-{parent_id}-01",
+        ),
+    )
+    exporter = InMemorySpanExporter()
+    client = Langfuse(
+        public_key="pk-issue171-test",
+        secret_key="sk-issue171-test",
+        span_exporter=exporter,
+        should_export_span=lambda span: span.instrumentation_scope.name == "langfuse-sdk",
+    )
+    try:
+        llm = ScriptedLlm([LlmError("LLM_TIMEOUT", retryable=True), Answer(value="ok")])
+        llm.langfuse = client
+        result = asyncio.run(
+            llm.generate(
+                system="private-system-prompt",
+                user="private-student-answer",
+                output=Answer,
+                call_type="JUDGMENT",
+                prompt_version="judge@1",
+            )
+        )
+        assert result.data.value == "ok"
+        client.flush()
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 2
+        assert all(f"{span.context.trace_id:032x}" == trace_id for span in spans)
+        assert all(f"{span.parent.span_id:016x}" == parent_id for span in spans)
+        attributes = json.dumps([dict(span.attributes) for span in spans], ensure_ascii=False)
+        assert "judge@1" in attributes
+        assert "LLM_TIMEOUT" in attributes
+        assert "private-system-prompt" not in attributes
+        assert "private-student-answer" not in attributes
+        assert "private-student-id" not in attributes
+        assert "input" in attributes and "10" in attributes
+    finally:
+        client.shutdown()
+
+
+def test_langfuse_stream_records_metadata_only(monkeypatch) -> None:
+    monkeypatch.setattr(llm_base, "current_user_context", lambda: None)
+    exporter = InMemorySpanExporter()
+    client = Langfuse(
+        public_key="pk-issue171-stream-test",
+        secret_key="sk-issue171-stream-test",
+        span_exporter=exporter,
+        should_export_span=lambda span: span.instrumentation_scope.name == "langfuse-sdk",
+    )
+    try:
+        llm = StreamingLlm([["private-response-chunk"]])
+        llm.langfuse = client
+        assert collect(llm)[0] == ["private-response-chunk"]
+        client.flush()
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        attributes = json.dumps(dict(spans[0].attributes), ensure_ascii=False)
+        assert "analysis@2" in attributes
+        assert "private-response-chunk" not in attributes
+    finally:
+        client.shutdown()

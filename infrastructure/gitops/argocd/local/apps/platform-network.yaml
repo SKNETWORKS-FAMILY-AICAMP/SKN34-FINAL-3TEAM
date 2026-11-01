@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: local-platform-network
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM.git
+    targetRevision: develop
+    path: infrastructure/gitops/policies/local
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform
