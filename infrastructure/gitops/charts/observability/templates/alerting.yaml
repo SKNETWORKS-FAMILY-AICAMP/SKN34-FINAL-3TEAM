@@ -1,0 +1,30 @@
+{{- if .Values.grafana.alerting.enabled }}
+{{- $uid := required "grafana.datasourceUid is required for alerting" .Values.grafana.datasourceUid }}
+{{- $provisioning := required "grafana.alerting.provisioning must be generated before enabling alerting" .Values.grafana.alerting.provisioning }}
+{{- if ne (int $provisioning.apiVersion) 1 }}
+{{- fail "alerting provisioning apiVersion must be 1" }}
+{{- end }}
+{{- range (required "alerting rule groups are required" $provisioning.groups) }}
+{{- range (required "alerting rules are required" .rules) }}
+{{- range .data }}
+{{- if and (ne .datasourceUid "__expr__") (ne .datasourceUid $uid) }}
+{{- fail "alert rule datasource UID must match grafana.datasourceUid" }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- range (required "alerting contact points are required" $provisioning.contactPoints) }}
+{{- range .receivers }}
+{{- if or (ne .type "discord") (ne .settings.url "$OPS_DISCORD_WEBHOOK_URL") }}
+{{- fail "alerting contact point must use the Discord environment reference" }}
+{{- end }}
+{{- end }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ops187-alerting
+data:
+  alerting.json: |
+    {{- toPrettyJson $provisioning | nindent 4 }}
+{{- end }}

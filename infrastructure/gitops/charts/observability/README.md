@@ -11,3 +11,17 @@ Grafana 13.3.0의 저메모리 첫 기동은 60초를 넘어 startup probe를 30
 EKS에서 Langfuse web과 프로젝트 키가 준비되면 `collector.traces.enabled`를 켜고 내부 `/api/public/otel` endpoint 및 기존 Secret의 Basic Authorization 헤더를 지정한다. 이때 Collector는 OTLP traces를 Langfuse v4 ingestion으로 보내며 `x-langfuse-ingestion-version: 4`를 붙인다. 현재 local values는 이 경로를 활성화하지 않는다. endpoint·Secret·Langfuse Pod label·NetworkPolicy를 실제 #185 배포 결과와 대조하고 저장·조회가 확인되기 전에는 trace 완료로 보지 않는다.
 
 이미지 고정 근거: [OTel Collector v0.164.0](https://github.com/open-telemetry/opentelemetry-collector/releases/tag/v0.164.0), [Prometheus v3.15.1](https://github.com/prometheus/prometheus/releases/tag/v3.15.1), [Grafana v13.3.0](https://github.com/grafana/grafana/releases/tag/v13.3.0).
+
+## 선택 경보 연결 (#187)
+
+`grafana.alerting.enabled`는 기본 false다. [경보 생성기](../../operational-alerts/README.md)의
+`helm-values.json`을 추가 values로 전달하면 기존 Grafana에 rule/contact provisioning ConfigMap을 mount하고
+필수 Secret 환경 참조·빈 값 시작 차단과 명시적 Prometheus datasource UID를 연결한다.
+기존 환경에서는 Grafana API로 확인한 기존 datasource UID를 사용하며 UID를 임의 변경하지 않는다.
+규칙과 datasource UID가 다르거나 Secret 참조·provisioning이 누락되면 Helm 렌더가 실패한다.
+알림은 규칙별 직접 라우팅을 사용하며 조직 전체 notification policy tree는 덮어쓰지 않는다.
+
+local values/Argo 경보 활성화·실제 클러스터 적용·Discord 수신은 수행하지 않았다.
+현재 Grafana NetworkPolicy에는 Discord HTTPS egress가 없으므로 이 값만 켜도 운영 발송이 되는 것은 아니다.
+운영 임계값·Secret·담당·egress 승인과 실제 발송 허락 후 통합 검증한다.
+전체 요청·오류율·DLQ별 경보·월 비용·trace 저장은 [#187 보고서](../../../../docs/report/issue-187-operational-alerts.md)의 후속 범위다.

@@ -132,7 +132,20 @@ spec:
       containers:
         - name: grafana
           image: {{ .Values.grafana.image | quote }}
+          {{- if .Values.grafana.alerting.enabled }}
+          command: [/bin/sh, -ec]
+          args:
+            - 'test -n "$OPS_DISCORD_WEBHOOK_URL" || { echo "OPS Discord Secret value is required" >&2; exit 1; }; exec /run.sh'
+          {{- end }}
           env:
+            {{- if .Values.grafana.alerting.enabled }}
+            - name: OPS_DISCORD_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "grafana.alerting.secretName is required" .Values.grafana.alerting.secretName | quote }}
+                  key: {{ required "grafana.alerting.secretKey is required" .Values.grafana.alerting.secretKey | quote }}
+                  optional: false
+            {{- end }}
             - {name: GF_SECURITY_ADMIN_USER, valueFrom: {secretKeyRef: {name: {{ .Values.grafana.adminSecret.name }}, key: {{ .Values.grafana.adminSecret.userKey }}}}}
             - {name: GF_SECURITY_ADMIN_PASSWORD, valueFrom: {secretKeyRef: {name: {{ .Values.grafana.adminSecret.name }}, key: {{ .Values.grafana.adminSecret.passwordKey }}}}}
             - {name: GF_PATHS_DATA, value: /var/lib/grafana}
@@ -158,6 +171,9 @@ spec:
             - {name: data, mountPath: /var/lib/grafana}
             - {name: tmp, mountPath: /tmp}
             - {name: datasources, mountPath: /etc/grafana/provisioning/datasources, readOnly: true}
+            {{- if .Values.grafana.alerting.enabled }}
+            - {name: ops187-alerting, mountPath: /etc/grafana/provisioning/alerting, readOnly: true}
+            {{- end }}
       volumes:
         - name: data
           emptyDir: {}
@@ -165,3 +181,7 @@ spec:
           emptyDir: {}
         - name: datasources
           configMap: {name: grafana-datasources}
+        {{- if .Values.grafana.alerting.enabled }}
+        - name: ops187-alerting
+          configMap: {name: ops187-alerting}
+        {{- end }}

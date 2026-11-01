@@ -73,6 +73,9 @@ data:
     apiVersion: 1
     datasources:
       - name: Prometheus
+        {{- if .Values.grafana.alerting.enabled }}
+        uid: {{ required "grafana.datasourceUid is required for alerting (use the existing datasource UID)" .Values.grafana.datasourceUid | quote }}
+        {{- end }}
         type: prometheus
         access: proxy
         url: http://prometheus.observability.svc.cluster.local:9090
