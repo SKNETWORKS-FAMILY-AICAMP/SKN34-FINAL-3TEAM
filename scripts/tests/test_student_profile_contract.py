@@ -37,10 +37,10 @@ class StudentProfileContractTest(unittest.TestCase):
             self.assertIn(code, response["description"])
             self.assertEqual(response["content"]["application/problem+json"]["schema"]["$ref"], "#/components/schemas/Problem")
 
-    def test_response_has_exactly_two_fields_and_no_store(self):
+    def test_response_has_exactly_three_fields_and_no_store(self):
         schema = self.spec["components"]["schemas"]["InternalStudentProfile"]
-        self.assertEqual(set(schema["properties"]), {"studentId", "nickname"})
-        self.assertEqual(set(schema["required"]), {"studentId", "nickname"})
+        self.assertEqual(set(schema["properties"]), {"studentId", "nickname", "parentSharingEnabled"})
+        self.assertEqual(set(schema["required"]), {"studentId", "nickname", "parentSharingEnabled"})
         self.assertFalse(schema["additionalProperties"])
         self.assertEqual(self.op["responses"]["200"]["content"]["application/json"]["schema"]["$ref"], "#/components/schemas/InternalStudentProfile")
         self.assertEqual(self.op["responses"]["200"]["headers"]["Cache-Control"]["schema"]["const"], "no-store")

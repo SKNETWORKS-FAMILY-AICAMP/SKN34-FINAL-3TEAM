@@ -51,7 +51,7 @@ class AttemptComparisonIntegrationTest : PostgresRepositoryTest() {
         val before = attempts.get(previous.id)
         val current = attempts.start(student, mission.id, 3, false).attempt
         assertNotEquals(previous.id, current.id)
-        submit(current.id, "새 까닭과 다른 생각", listOf(elements[0] to "새 까닭", elements[1] to "다른 생각"))
+        submit(current.id, "새로운 까닭과 다른 생각", listOf(elements[0] to "새로운 까닭", elements[1] to "다른 생각"))
         attempts.finish(current.id)
         val result = attempts.comparison(current.id)
         assertEquals(ComparisonState.COMPARABLE, result.state)
@@ -59,7 +59,7 @@ class AttemptComparisonIntegrationTest : PostgresRepositoryTest() {
         assertEquals(listOf(ElementChange.RETAINED, ElementChange.ADDED), result.elements.map { it.change })
         assertEquals(before, attempts.get(previous.id))
         assertEquals("예전 까닭", result.previous!!.answers.single().text)
-        assertEquals("새 까닭과 다른 생각", result.current.answers.single().text)
+        assertEquals("새로운 까닭과 다른 생각", result.current.answers.single().text)
     }
 
     @Test fun `마무리 전에는 비교를 공개하지 않고 첫 마무리는 이전 결과 없음`() {

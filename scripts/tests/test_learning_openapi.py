@@ -15,13 +15,13 @@ class LearningOpenApiTests(unittest.TestCase):
         cls.spec = yaml.safe_load((ROOT / "contracts/openapi/core-service.yaml").read_text(encoding="utf-8"))
         cls.source = (ROOT / "backend/core-service/src/main/kotlin/com/sagomungchi/core/learning/controller/LearningController.kt").read_text(encoding="utf-8")
 
-    def test_ten_operations_match_controller_and_keep_feedback_out(self):
+    def test_eleven_operations_match_controller_and_keep_feedback_out(self):
         actual = {(method.lower(), path.removeprefix("/api/v1")) for method, path in
                   re.findall(r'@(Get|Post|Put)Mapping\("([^\"]+)"\)', self.source)}
         documented = {(method, path) for path, methods in self.spec["paths"].items()
                       for method, operation in methods.items()
                       if method in {"get", "post", "put"} and "Learning" in operation.get("tags", [])}
-        self.assertEqual(len(actual), 10)
+        self.assertEqual(len(actual), 11)
         self.assertEqual(actual, documented)
         self.assertFalse(any("feedback" in path for _, path in documented))
 
