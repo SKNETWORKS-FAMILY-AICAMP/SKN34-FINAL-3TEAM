@@ -1,6 +1,8 @@
 # 비밀 값은 환경 변수로만 주입, 그 외 기본값은 compose 인프라(localhost) 기준
 server:
   port: 8080
+  # 직전 연결이 사설 대역(ALB·ingress)일 때만 X-Forwarded-For를 오른쪽부터 해석 (Tomcat RemoteIpValve, architecture 4.3)
+  forward-headers-strategy: native
 
 spring:
   # Schema changes belong to migration-job; never initialize from application startup.

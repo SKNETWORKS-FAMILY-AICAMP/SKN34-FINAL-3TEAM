@@ -90,8 +90,9 @@ class ConversationService(private val repository: ConversationRepository, privat
             val selected = actual.copy(changed = changed)
             val clean = previous?.question ?: question?.trim().orEmpty()
             if (clean.isBlank() || clean.length > 1000) invalid("질문은 1~1000자입니다.")
-            // Reserve one attempt atomically before admitting it. No refunds on an accepted attempt.
-            if(charge) usage.consume(parent, actual.childId) else usage.requireEntitlement(parent,actual.childId)
+            // Each new question or retry is one paid attempt, debited once before admission in this parent/student-locked
+            // transaction. No refunds on an accepted attempt; a rollback of this admission also removes the debit.
+            if(charge) usage.consume(parent, actual.childId, UUID.randomUUID()) else usage.requireEntitlement(parent,actual.childId)
             val row = if (previous == null) {
                 MessageRow(UUID.randomUUID(), id, (messages.maxOfOrNull { it.seq } ?: 0) + 1, clean, null,
                     actual.childId, actual.from, actual.to, changed, "RUNNING", null, null, null, null,
@@ -100,8 +101,6 @@ class ConversationService(private val repository: ConversationRepository, privat
                 if (!repository.retry(previous.id, previous.retryCount)) conflict()
                 previous.copy(status = "RUNNING", retryCount = previous.retryCount + 1, failureCode = null, completedAt = null)
             }
-            // Each retry is a fresh paid attempt; provider persists it within this same parent-locked transaction.
-            if(charge) usage.recordAttempt(parent, actual.childId, UUID.randomUUID())
             repository.scope(id, selected)
             val history = messages.filter { it.seq < row.seq && it.status == "COMPLETED" && it.answer != null &&
                 it.scopeStudentId == selected.childId && it.scopeFrom == selected.from && it.scopeTo == selected.to }
@@ -152,8 +151,8 @@ class ConversationService(private val repository: ConversationRepository, privat
             val message=repository.message(id) ?: missing()
             if(message.status!="RUNNING" || message.retryCount!=generation) conflict()
             val scope=message.scope() ?: conversation.scope()
-            usage.consumeAdminRetry(owner.parentUserId,scope.childId,request)
-            usage.recordAttempt(owner.parentUserId,scope.childId,request)
+            // The durable request ID is the usage source, so a re-claimed request is debited only once.
+            usage.consume(owner.parentUserId,scope.childId,request)
             repository.scope(owner.id,scope)
             val history=repository.messages(owner.id).filter { it.seq<message.seq && it.status=="COMPLETED" && it.answer!=null &&
                 it.scopeStudentId==scope.childId && it.scopeFrom==scope.from && it.scopeTo==scope.to }.takeLast(10)

@@ -683,7 +683,7 @@ ERD 3.2·3.5·4.1을 camelCase로 매핑. 학생 이름·답변 원문·메모�
 - 기기 등록·해제·PIN 설정은 `audit_log` 기록 (FN-ACC-10). PIN 잠금 시 학부모 알림은 미정
 - 응답 형식: 프로필 `{items:[{childId,nickname,pinSet,pinLocked}]}`, 기기 목록 `{items:[{deviceId,label,children:[{childId,nickname}],createdAt,lastUsedAt,expiresAt}]}`(해제 기기 제외). PIN 설정·변경은 204(잠금 해제 포함), 별도 해제 API 없음
 - PIN 변경은 현재 세션·버전·`PIN_CHANGE`·자녀에 결합된 5분 재인증 grant를 같은 트랜잭션에서 1회 소비
-- 한도: 등록은 IP별, 페어링 발급은 보호자별 10분간 20회(설정 가능). 초과 429 `RATE_LIMITED`, Redis 장애 503 `STUDENT_AUTH_UNAVAILABLE`. 신뢰 프록시 설정 전에는 X-Forwarded-For 미사용
+- 한도: 등록은 IP별, 페어링 발급은 보호자별 10분간 20회(설정 가능). 초과 429 `RATE_LIMITED`, Redis 장애 503 `STUDENT_AUTH_UNAVAILABLE`. IP는 직전 연결이 사설 대역(신뢰 프록시)일 때만 X-Forwarded-For를 오른쪽부터 해석한 첫 비신뢰 주소로 판정 (운영 조건 [아키텍처](architecture.md) 4.3)
 - 코드 소비는 Redis 원자적 GET+DEL. 이후 DB 등록이 실패해도 코드는 복원하지 않음(새 코드 발급)
 - 기기·학생 검사는 계정 행 잠금과 함께 재검사. PIN 실패는 커밋 후 오류 응답
 - 등록·프로필·로그인 응답은 `Cache-Control: no-store`. PIN 로그인은 refresh 쿠키를 발급하거나 보호자 세션을 바꾸지 않음
@@ -1039,7 +1039,7 @@ core 자체의 권한·상태·본문 충돌 오류는 기존 계약을 유지�
 
 ### 이슈 #41 분석 대화 구현 계약
 
-대화·SSE·범위 확인·payment 소비 port·Redis 차감 정책은 [#41 계약](../report/issue-41-analysis-conversations.md)을 따른다. 내부 history는 `{role:USER|ASSISTANT,text}`이며 core messageId를 요청에 추가한다. 같은 대화의 자녀는 고정하며 자녀 변경은 새 대화로 확인한다. 기간 명시는 사용자 확인이고 동일 기간 완료 이력만 AI에 전달한다.
+대화·SSE·범위 확인·payment 소비 port·차감 정책은 [#41 계약](../report/issue-41-analysis-conversations.md)을 따른다. 일일 한도는 Redis 카운터가 아니라 결제 사용 이력(`payment_premium_usage`)의 KST 일자 집계로 판정한다([#225](../report/core-gateway.md#분석-대화-사용량-db-이관-구현-225)). 내부 history는 `{role:USER|ASSISTANT,text}`이며 core messageId를 요청에 추가한다. 같은 대화의 자녀는 고정하며 자녀 변경은 새 대화로 확인한다. 기간 명시는 사용자 확인이고 동일 기간 완료 이력만 AI에 전달한다.
 
 #41 보완(P08): 시작일 이전 답변은 현재 기간의 집계 대상 시도에 포함되는 경우에만 비교 근거로 허용하며 종료일 이후 답변은 거부한다. AI가 contentAllowed를 보내면 false인 결과는 확정하지 않는다.
 
@@ -1087,7 +1087,7 @@ SERVICE_OPS는 실패 message ID에 UUID Idempotency-Key로 재처리를 접수�
 
 접수는 현재 학부모 계정·연결·동의·상품 권한을 검사하고 메시지를 새 RUNNING 세대로 선점하며 새 요청 표의 QUEUED·요청 감사를 같은 DB 트랜잭션으로 저장한다. 작업 조회는 대기 요청을 QUEUED로 투영한다. DB 대기 작업을 core 내부 작업자가 실행하며 실제 실행 시 권한·상품·사용량을 재검사한다. 한도 부족 등 실행 전 거절은 비동기 FAILED이며 임의 성공으로 바꾸지 않는다. 실제 실행부터 job_execution을 기록한다.
 
-사용량 Redis와 DB는 분산 원자 트랜잭션이 아니다. 관리자 실행은 영속 요청 ID의 Redis 원자 중복 방지 표식으로 한 번만 차감한다. 표식 TTL보다 짧은 130초 대기·실행 만료를 적용하며 중단 작업은 실패 처리하고 자동 AI 재실행하지 않는다. 부모 SSE는 기존 소비 정책을 보존한다. 결제 사용 증빙은 실행 세대 요청 ID로 기존 provider에 기록한다.
+사용량 차감은 실행 선점 트랜잭션 안의 결제 사용 이력 행이라 DB 저장과 함께 커밋·롤백된다(#225). 관리자 실행은 영속 요청 ID를 사용 이력 source ID로 써서 한 번만 차감하며, 이미 기록된 요청 ID는 추가 차감·한도 재판정을 하지 않는다. 130초 대기·실행 만료(대화 RUNNING 고착 판정과 같은 값)를 적용하며 중단 작업은 실패 처리하고 자동 AI 재실행하지 않는다. 부모 SSE는 기존 소비 정책을 보존한다.
 
 학부모 SSE와 관리자 실행은 같은 AI 이벤트 순서·최종 검증·근거 확인·저장 경로를 사용한다. 관리자는 학생 원문을 수신하지 않는다. 내부 실행 컨텍스트는 권한을 재검사한 대화 소유 학부모이며 요청 관리자는 별도 감사에 보존한다. 성공·실패·stale 세대 종료 감사는 상태/실행 이력과 같은 트랜잭션이며, 늦은 세대 결과는 현재 실행을 덮어쓰지 못한다. #162의 fallback·notice·ANSWER/REFLECTION 계약은 최종 통합에서 그대로 유지한다.
 

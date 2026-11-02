@@ -23,7 +23,6 @@ import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.web.server.LocalServerPort
-import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
@@ -49,12 +48,10 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
     @Autowired lateinit var json: ObjectMapper
     @Autowired lateinit var tokens: TokenService
     @Autowired lateinit var service: ConversationService
-    @Autowired lateinit var usage: AnalysisUsageService
     @Autowired lateinit var repository: ConversationRepository
     @Autowired lateinit var deletion: ConversationDeletionService
     @Autowired lateinit var accounts: AccountAccessService
     @Autowired lateinit var tx: TransactionTemplate
-    @Autowired lateinit var redis: StringRedisTemplate
     @MockitoBean lateinit var entitlement: AnalysisEntitlementProvider
     @MockitoBean lateinit var outbox: OutboxRelay
     private lateinit var user: UUID
@@ -231,17 +228,9 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
             assertEquals(1, futures.count { it.get(20, TimeUnit.SECONDS) })
         } finally { executor.close() }
         assertEquals(1, rows(id).size); assertEquals(1, rows(id).single().retryCount)
-        assertEquals("2", redis.opsForValue().get("analysis:daily:v1:$student:$today"))
-    }
-    @Test fun `Redis atomically admits only product daily count across concurrent callers and expires on KST boundary`() {
-        `when`(entitlement.entitlement(user, student)).thenReturn(AnalysisEntitlement(UUID.randomUUID(), 3, null, true))
-        val executor = Executors.newVirtualThreadPerTaskExecutor()
-        try {
-            val tasks = (1..30).map { executor.submit<Boolean> { try { usage.consume(user, student); true } catch (_: BusinessException) { false } } }
-            assertEquals(3, tasks.count { it.get(5, TimeUnit.SECONDS) })
-        } finally { executor.close() }
-        val key = "analysis:daily:v1:$student:$today"
-        assertEquals("3", redis.opsForValue().get(key)); assertTrue(redis.getExpire(key) in 86400..172800)
+        // Only the original question and the single admitted retry reach the payment ledger, each with its own source.
+        val sources = org.mockito.Mockito.mockingDetails(entitlement).invocations.filter { it.method.name == "recordAttempt" }.map { it.arguments[2] }
+        assertEquals(2, sources.size); assertEquals(2, sources.toSet().size)
     }
     @Test fun `delete racing stream cancels and cannot resurrect rows or deliver post-delete raw text`() {
         val id = create(); val entered = CountDownLatch(1); val release = CountDownLatch(1)

@@ -48,6 +48,7 @@ interface PaymentMapper {
     fun reserve(row: PremiumUsage): Int
     fun usageFinish(@Param("id") id: UUID, @Param("student") student: UUID, @Param("used") used: Boolean, @Param("now") now: OffsetDateTime): Int
     fun usageCount(@Param("student") student: UUID, @Param("since") since: OffsetDateTime): Int
+    fun usageCountSince(@Param("student") student: UUID, @Param("kind") kind: String, @Param("since") since: OffsetDateTime): Int
     fun audit(@Param("id") id: UUID, @Param("actor") actor: UUID, @Param("action") action: String, @Param("target") target: UUID, @Param("now") now: OffsetDateTime): Int
 }
 
