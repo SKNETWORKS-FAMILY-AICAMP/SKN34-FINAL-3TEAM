@@ -44,12 +44,12 @@ export function ParentConversation({
       controller.current?.abort()
     }
   }, [])
-  async function ask(selectedScope?: Scope, retry?: ConversationMessage) {
+  async function ask(selectedScope?: Scope, retry?: ConversationMessage, example?: string) {
     const confirmedScope =
       selectedScope ??
       state.result?.scope ??
       (detail.data ? { ...detail.data.period, childId: child.id } : scope)
-    const text = retry?.question ?? (state.phase === 'CLARIFICATION' && !question.trim() ? lastQuestion : question)
+    const text = example ?? retry?.question ?? (state.phase === 'CLARIFICATION' && !question.trim() ? lastQuestion : question)
     if (!text.trim() || child.plan === 'FREE') return
     controller.current?.abort()
     const abort = new AbortController()
@@ -275,6 +275,15 @@ export function ParentConversation({
             <button className="cj-primary" disabled={pending || startingTemplate}>
               기록으로 답변 받기
             </button>
+            <ExampleQuestions
+              childId={child.id}
+              disabled={pending || startingTemplate}
+              onPick={(text) => {
+                // 현재 자녀·기간(대화 범위)을 그대로 두고 질문만 채워 보낸다.
+                setQuestion(text)
+                void ask(undefined, undefined, text)
+              }}
+            />
             <small>
               다른 화면으로 이동하면 스트림을 취소합니다. 임시 문장을 확정 답변으로 남기지
               않습니다.
@@ -294,6 +303,35 @@ export function ParentConversation({
         </Modal>
       )}
     </>
+  )
+}
+/** 예시 질문 (FN-AGT-12, 선택). 기록이 없어 답할 수 없는 질문은 보내지 않고 가능 범위를 안내한다. */
+function ExampleQuestions({ childId, disabled, onPick }: { childId: string; disabled: boolean; onPick: (question: string) => void }) {
+  const examples = useParentQuery(['analysis-examples', childId], (signal) => parentApi.examples(childId, signal))
+  if (examples.isPending || examples.error || !examples.data.length) return null
+  const unavailable = examples.data.some((e) => !e.available)
+  return (
+    <div className="ws-examples" role="group" aria-label="예시 질문">
+      <small>예시 질문</small>
+      <div className="ws-actions">
+        {examples.data.map((e) => (
+          <button
+            key={e.question}
+            type="button"
+            className="cj-secondary"
+            disabled={disabled || !e.available}
+            onClick={() => onPick(e.question)}
+          >
+            {e.question}
+          </button>
+        ))}
+      </div>
+      {unavailable && (
+        <small>
+          흐리게 표시한 질문은 이 자녀의 학습 기록이 아직 없어 답할 수 없습니다. 기록이 생긴 뒤 다시 선택해 주세요.
+        </small>
+      )}
+    </div>
   )
 }
 export function EvidenceQuery({

@@ -82,6 +82,13 @@ export const parentApi = {
   conversation: (id: string, signal?: AbortSignal) =>
     apiFetch<Conversation>(`/conversations/${item(id)}`, { signal }),
   create: (scope: Scope) => apiFetch<Conversation>('/conversations', json(scope)),
+  /** 분석 대화 예시 질문 (api-spec 2.4 AGT-12, 선택). available=false는 이 자녀의 기록이 없어 답할 수 없는 질문이다. */
+  examples: async (childId: string, signal?: AbortSignal) => {
+    const raw = await apiFetch<{ items?: unknown }>(`/agent/example-questions?childId=${item(childId)}`, { signal })
+    if (!Array.isArray(raw?.items) || raw.items.some((i) => !i || typeof i.question !== 'string' || typeof i.available !== 'boolean'))
+      throw new ApiError({ status: 502, code: 'CONTRACT_NOT_READY', title: '예시 질문 응답을 확인하지 못했습니다.' })
+    return raw.items as { question: string; available: boolean }[]
+  },
   reportTemplate: async (id: string, signal?: AbortSignal) =>
     templateSnapshot(await apiFetch(`/conversations/${item(id)}/report-template`, { signal })),
   proposeReportTemplate: async (id: string, question: string, signal?: AbortSignal) =>

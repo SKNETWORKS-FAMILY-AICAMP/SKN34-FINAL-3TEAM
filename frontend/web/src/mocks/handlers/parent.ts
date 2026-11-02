@@ -479,6 +479,15 @@ export const parentHandlers = [
       return { ...visible, state: 'OK', period: period(request) }
     }),
   ),
+  // core AGT-12 응답 모양(#240): 질문 문구는 core와 같고, 기록이 하나도 없으면 모두 available=false
+  http.get('/api/v1/agent/example-questions', ({ request }) =>
+    respond(async () => {
+      const c = await parentChild(request, new URL(request.url).searchParams.get('childId') ?? '')
+      const exists = (await store.records(c, 'PARENT', { from: '2000-01-01', to: '2099-12-31' })).length > 0
+      return { items: ['이번 주 학습 횟수는?', '어떤 생각 활동을 했어?', '아이가 쓴 생각을 보여줘', '되묻기 전후 무엇이 달라졌어?', '돌아보기에 뭐라고 썼어?']
+        .map((question) => ({ question, available: exists })) }
+    }),
+  ),
   http.get('/api/v1/conversations', ({ request }) =>
     respond(async () => {
       const childId = new URL(request.url).searchParams.get('childId') ?? ''

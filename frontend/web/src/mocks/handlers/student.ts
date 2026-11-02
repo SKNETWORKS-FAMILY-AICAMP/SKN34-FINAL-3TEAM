@@ -21,6 +21,7 @@ import {
 } from '../fixtures/student.ts'
 import { mockLooks, persistLooks } from '../fixtures/studentLook.ts'
 import { DEFAULT_LOOK, isCompanionId, isThemeId } from '../../domain/studentLook.ts'
+import { difficultyCodes } from '../../domain/learning.ts'
 
 let child: Child | undefined = store.snapshot().session?.child,
   token = '',
@@ -436,6 +437,19 @@ export const studentHandlers = [
       const rows = await store.records(child!, 'STUDENT', period)
       return { items: rows.slice(index * size, (index + 1) * size), page: index, size, totalElements: rows.length,
         studentId: child!.id, state: rows.length ? 'OK' : 'NO_RECORD', period, inclusionRule: 'P08' }
+    }),
+  ),
+  // core DSH-04 응답 모양(#240): 학생 토큰 전용, 돌아보기는 EASY/NORMAL/HARD 코드와 nullable text
+  http.get('/api/v1/students/me/thinking-activities', ({ request }) =>
+    respond(async () => {
+      guard(request)
+      const me = studentOnly(), q = new URL(request.url).searchParams
+      const period = { from: q.get('from') ?? thisWeek.from, to: q.get('to') ?? thisWeek.to }
+      const rows = await store.records(me, 'STUDENT', period)
+      return { studentId: me.id, state: rows.length ? 'OK' : 'NO_RECORD', period, items: rows.map(r => ({
+        attemptId: r.attemptId, thinkingType: r.mission.thinkingType, missionTitle: r.mission.title,
+        reflection: r.reflection ? { difficulty: difficultyCodes[r.reflection.difficulty], text: r.reflection.text || null } : null,
+      })) }
     }),
   ),
   // 이전 학부모 시안의 조회를 유지하는 호환 목. 별도 학부모 이슈 완료를 의미하지 않는다.

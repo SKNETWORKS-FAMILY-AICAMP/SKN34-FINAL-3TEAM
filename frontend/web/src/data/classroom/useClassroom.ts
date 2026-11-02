@@ -12,7 +12,7 @@ import type {
   Report,
 } from '../../domain/classroom.ts'
 import { createApiGateway } from './apiGateway.ts'
-import { saveReflection } from './learningApi.ts'
+import { getThinkingActivities, saveReflection } from './learningApi.ts'
 import { demoEmailLogin } from './demoLogin.ts'
 import { calendarPeriods } from '../../domain/classroom.ts'
 import { pollFeedback } from './feedbackPolling.ts'
@@ -97,6 +97,15 @@ export function useRecords(child: Child | undefined, role: 'STUDENT' | 'PARENT',
   return useQuery({
     queryKey: ['records', role, child?.id, period.from, period.to],
     queryFn: () => gateway.records(child!, role, period),
+    enabled: !!child,
+    retry: false,
+  })
+}
+/** 학생 생각 활동. 'records' 아래 키라 시도 시작·제출·마무리·돌아보기 뒤 함께 다시 읽힌다. */
+export function useThinkingActivities(child: Child | undefined, period: Period) {
+  return useQuery({
+    queryKey: ['records', 'thinking-activities', child?.id, period.from, period.to],
+    queryFn: ({ signal }) => getThinkingActivities(child!, period, signal),
     enabled: !!child,
     retry: false,
   })
