@@ -4,6 +4,12 @@
 
 - 기준: develop `9595e8f`.
 - #255 계층 정리: 신고·문의 결과 조회는 `data/support/{api,queries}.ts`, 결제 결과 상태 조회·폴링·승인·빌링 등록은 `data/payment/queries.ts`, 결제창 복귀용 대기 정보 저장은 `data/payment/checkoutStorage.ts`로 옮겼습니다. `domain/payment.ts`에는 `validPending`·`validBilling`·`checkoutConfirmation`·`billingConfirmation` 같은 순수 검증만 남겼습니다. 폴링 조건(PENDING·CONFIRMING·APPROVED+RECOVERY_REQUIRED, 3초, 첫 응답 뒤 최대 10회, 오류 시 중단)과 StrictMode 중복 요청 공유 Map은 그대로입니다. 승인 응답을 결과 캐시에 넣어 승인 직후 상태를 한 번 더 묻지 않으므로 API 호출 순서는 이전과 같습니다.
+- #247 번들 분할: 라우터에서 학생(`ClassroomApp`)·학부모·관리자 작업 공간과 로그인 외 계정·결제 결과·가입·관리자 로그인 화면을 `lazy`로 받습니다. 학생 기기 로그인(`DeviceLogin`)·도움말·공지·신고 화면은 첫 묶음에 남겼습니다. 코드를 받는 동안 `RoleLayout`과 최상위 `Suspense`가 "화면을 불러오고 있습니다."를 표시합니다. vendor chunk는 분리하지 않았습니다(분할만으로 경고 해소).
+
+  | 빌드 (vite 8, 압축 전) | 가장 큰 JS | 주요 청크 |
+  |---|---|---|
+  | 분할 전 | `index` 686.40 kB (gzip 207.34 kB), 500 kB 경고 | 단일 청크 |
+  | 분할 후 | `index` 278.04 kB (gzip 87.56 kB), 경고 없음 | `ClassroomParts` 169.59 kB, `ParentWorkspace` 68.30 kB, `AdminWorkspace` 63.58 kB, `ClassroomApp` 38.56 kB, `StudentWorkPage` 34.85 kB, `ParentPayments` 19.01 kB |
 
 ## 학생 공개 설정·재시도 비교 화면 (#206·#207, 2026-11-01)
 

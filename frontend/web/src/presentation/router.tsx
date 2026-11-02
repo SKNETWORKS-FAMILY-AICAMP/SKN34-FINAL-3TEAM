@@ -1,23 +1,27 @@
-import { BillingResult } from './parent/BillingResult.tsx'
-import { AdminLoginPage } from './admin/AdminLoginPage.tsx'
 import { createBrowserRouter, Navigate, Outlet } from 'react-router'
-import { ClassroomApp } from './ClassroomApp.tsx'
 import { SessionProvider } from './auth/SessionProvider.tsx'
-import { LoginGate, RoleLayout } from './common/RoleLayout.tsx'
-import { SignupPage } from './parent/AccountForms.tsx'
-import { ParentWorkspace } from './parent/ParentWorkspace.tsx'
-import { PaymentResult } from './parent/ParentPayments.tsx'
-import { AdminWorkspace } from './admin/AdminWorkspace.tsx'
+import { LoginGate, PageLoading, RoleLayout } from './common/RoleLayout.tsx'
 import { OAuthCompletePage } from './auth/OAuthCompletePage.tsx'
-import { AuthOnboarding } from './auth/AuthOnboarding.tsx'
 import { SupportEntry } from './support/SupportEntry.tsx'
 import { SupportResults } from './support/SupportResults.tsx'
 import { DeviceLogin } from './student/DeviceLogin.tsx'
 import { ServiceCenter } from './service/ServiceCenter.tsx'
 import { WithdrawalReceipt } from './service/Withdrawal.tsx'
-import { AccountPage } from './service/AccountPage.tsx'
 import { LoginHelp } from './service/LoginHelp.tsx'
 import { lazy, Suspense } from 'react'
+import type { ComponentType } from 'react'
+
+// 역할별 작업 공간과 결제·계정 화면은 들어갈 때 받는다(#247). 학생 기기 첫 화면은 학부모·관리자 코드를 받지 않는다.
+const page = <P extends object>(load: () => Promise<ComponentType<P>>) => lazy(async () => ({ default: await load() }))
+const ClassroomApp = page(() => import('./ClassroomApp.tsx').then(m => m.ClassroomApp))
+const ParentWorkspace = page(() => import('./parent/ParentWorkspace.tsx').then(m => m.ParentWorkspace))
+const AdminWorkspace = page(() => import('./admin/AdminWorkspace.tsx').then(m => m.AdminWorkspace))
+const AdminLoginPage = page(() => import('./admin/AdminLoginPage.tsx').then(m => m.AdminLoginPage))
+const SignupPage = page(() => import('./parent/AccountForms.tsx').then(m => m.SignupPage))
+const PaymentResult = page(() => import('./parent/ParentPayments.tsx').then(m => m.PaymentResult))
+const BillingResult = page(() => import('./parent/BillingResult.tsx').then(m => m.BillingResult))
+const AccountPage = page(() => import('./service/AccountPage.tsx').then(m => m.AccountPage))
+const AuthOnboarding = page(() => import('./auth/AuthOnboarding.tsx').then(m => m.AuthOnboarding))
 const ReviewPage = import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true' ? lazy(() => import('./service/ReviewPage.tsx').then(m => ({ default: m.ReviewPage }))) : null
 
 // URL 입력만으로 역할을 부여하지 않는다. 로그인 응답/학생 세션으로 진입한다.
@@ -25,7 +29,9 @@ export const router = createBrowserRouter([
   {
     element: (
       <SessionProvider>
-        <Outlet />
+        <Suspense fallback={<PageLoading />}>
+          <Outlet />
+        </Suspense>
       </SessionProvider>
     ),
     children: [

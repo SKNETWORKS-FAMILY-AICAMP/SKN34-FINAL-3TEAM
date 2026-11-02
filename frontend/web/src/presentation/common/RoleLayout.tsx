@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router'
 import type { Role } from '../../domain/classroom.ts'
 import { useSession } from '../auth/sessionContext.ts'
@@ -23,9 +24,15 @@ export function RoleLayout({ role }: { role: Role }) {
             : '관리자 운영 공간'
       }
     >
-      <Outlet />
+      <Suspense fallback={<PageLoading />}>
+        <Outlet />
+      </Suspense>
     </section>
   )
+}
+/** 지연 로딩하는 화면 코드를 받는 동안 표시한다. */
+export function PageLoading() {
+  return <p role="status">화면을 불러오고 있습니다.</p>
 }
 export function LoginGate() {
   const { session, ready, loginPath } = useSession()
