@@ -412,6 +412,8 @@ core·learning은 import를 레이어로 분류해 전수 검사, Python·웹은
 | A14 | 웹 컴포넌트 API 직접 호출·서버 상태 직접 보관 | 3장 | `presentation/support/SupportResults.tsx`의 `apiFetch`, `parent/ParentPayments.tsx`(`PaymentResult`)·`BillingResult.tsx`의 `useState`·폴링, `domain/payment.ts`의 `sessionStorage` 접근 |
 | A15 | 설계 문서상 위치와 다른 구현 | 2.6 | learning `student.deleted` 소비가 `deletion/`이 아닌 `record/consumer`·`record/service`(빈 `deletion/` 폴더 잔존). 트리에 실제 위치 표기 |
 
+- A15 처리: #256에서 빈 `deletion/` 폴더를 지우고 architecture 2.6·class-diagram 4.3을 `record/` 기준으로 정리했다(코드 변경 없음, [learning 보고서](learning.md) 9절).
+
 ### 4.6 남은 공백
 
 | 대상 | 내용 |

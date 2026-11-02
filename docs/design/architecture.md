@@ -351,17 +351,14 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 │  │  └─ PaymentUsageClient.kt   # core 프리미엄 사용 예약·확정 (#48)
 │  └─ facade/
 │     └─ FeedbackFacade.kt
-├─ record/                       # 대시보드·에이전트 도구·리포트용 조회 API, student.deleted 소비(#128)
-│  ├─ controller/                # 기록 조회·존재 확인·결제 사용 증빙
-│  ├─ consumer/                  # StudentDeletedConsumer
-│  ├─ service/                   # RecordService, StudentDeletionService 등
-│  ├─ domain/
-│  ├─ repository/
-│  └─ client/
-│     └─ CoreClient.kt           # 삭제 완료 보고
-└─ deletion/                     # 빈 폴더(.gitkeep). student.deleted 소비는 record/에 구현(#128)
-   ├─ consumer/
-   └─ service/
+└─ record/                       # 대시보드·에이전트 도구·리포트용 조회 API, student.deleted 소비(#128)
+   ├─ controller/                # 기록 조회·존재 확인·결제 사용 증빙
+   ├─ consumer/                  # StudentDeletedConsumer
+   ├─ service/                   # RecordService, StudentDeletionService 등
+   ├─ domain/
+   ├─ repository/
+   └─ client/
+      └─ CoreClient.kt           # 삭제 완료 보고
 ```
 
 Python (ai)
