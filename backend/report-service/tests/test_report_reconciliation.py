@@ -11,7 +11,9 @@ from sqlalchemy import func, select
 
 from app.bootstrap import create_app
 from app.database import transaction
-from app.deletion.state import DeleteStudent, DeletionRepository, deletion_guard
+from app.deletion.repository import DeletionRepository
+from app.deletion.service import finish_deletion
+from app.deletion.state import DeleteStudent, deletion_guard
 from app.errors import ApiError
 from app.generation.locking import JobLocks
 from app.generation.models import GenerationResult, JobConflict, ReportState
@@ -128,7 +130,7 @@ def test_deletion_guard_replaces_job_guard_without_resurrecting_data(
         lease.close()
     assert recover(report_factory, db_engine, command).status == "BUSY"
     with transaction(report_factory) as session:
-        DeletionRepository().finish(session, deletion)
+        finish_deletion(session, deletion)
     result = recover(report_factory, db_engine, command)
     assert result.failure_reason == "STUDENT_DELETED"
     with report_factory() as session:

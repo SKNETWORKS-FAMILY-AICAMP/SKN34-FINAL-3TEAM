@@ -4,7 +4,32 @@ import asyncio
 
 from app.concurrency import run_blocking
 from app.database import transaction
-from app.deletion.state import DeleteStudent, DeletionRepository
+from app.deletion.repository import DeletionRepository, delete_processed_before, guard_status
+from app.deletion.state import DeleteStudent, generation_allowed
+from app.errors import ApiError
+from app.outbox.service import delete_subject
+
+
+def ensure_generation_allowed(session, student_id, requested_at=None):
+    return generation_allowed(guard_status(session, student_id))
+
+
+def ensure_query_allowed(session, student_id):
+    if guard_status(session, student_id) == "PENDING":
+        raise ApiError(409, "DELETION_IN_PROGRESS", "학생 기록을 삭제 중입니다")
+
+
+def prune_processed(session, before):
+    return delete_processed_before(session, before)
+
+
+def finish_deletion(session, command, repository=None):
+    # 생성 서비스도 삭제 장벽을 사용하므로 이 호출 경계에서 지연 import한다.
+    from app.generation.service import delete_student
+
+    delete_student(session, command.student_id)
+    delete_subject(session, str(command.student_id))
+    (repository or DeletionRepository()).finish(session, command)
 
 
 class DeletionService:
@@ -44,4 +69,4 @@ class DeletionService:
 
     def _finish(self, command):
         with transaction(self._factory) as session:
-            self._repository.finish(session, command)
+            finish_deletion(session, command, self._repository)
