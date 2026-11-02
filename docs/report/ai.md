@@ -325,3 +325,8 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 - 저장소 계약 unittest 93개 중 AI OpenAPI·core 모델 이벤트 관련 검사는 통과했다. 전체 실행에서는 샌드박스 임시 폴더 권한 때문에 별도 검증 스크립트 테스트 7개의 설정·정리에서 오류 14건이 났고, 그 7개를 임시 경로를 바꿔 재실행해 통과했다.
 - 전용 Docker 네트워크·RabbitMQ 4.3.7 컨테이너와 Windows AI 프로세스 2개를 사용한 실제 AMQP 연결 검증 통과. 관리 API에서 독립 exclusive·auto-delete 큐 2개, 각 소비자 1개, `events.topic`의 `model.version.*` 바인딩 2개를 확인했다. 전용 core HTTP 대역을 503→`{items:[]}`로 바꿔 두 AI의 `versions=DOWN`→Ready 회복을 확인하고, 미보유 `judge@future` revision 1 이벤트에 두 AI가 NotReady·`/internal/versions` 503으로 반응한 뒤 보유 `judge@2` revision 2에서 Ready로 회복하는 것을 확인했다. 전용 브로커의 두 AMQP 연결을 관리 API로 종료하자 두 AI가 각각 새 큐를 만들고 snapshot 조정 뒤 Ready가 됐다. 검증 자원은 자체 컨테이너·네트워크만 정리했다.
 - 재연결의 첫 시도에서 전용 Docker 컨테이너 재시작 후 Windows 임시 포트가 다시 열리지 않아 검증 방법을 AMQP 연결 종료로 바꿨다. 이는 전용 브로커와 AI의 실제 재연결 검증이며, core는 대역이다. 실제 core DB·관리자 활성화 API, 유료 외부 LLM, 원격 CI·배포는 검증하지 않았다. 모델 품질이나 운영 배포 준비 완료를 의미하지 않는다.
+
+
+## #209 리포트 표시 설정 변경안 (로컬 구현 후보)
+
+`POST /internal/analysis/report-template`은 현재 설정과 학부모 요청만 받아 구조화한 변경안 또는 확인 질문을 반환한다. 학습 원문·학생 ID를 이 요청에 넣지 않는다. 학생 공개 설정·섹션 숨김·메모·계산식 변경은 허용하지 않는다. 저장과 확인 토큰 검증은 core가 소유한다. 실제 UI/서비스 간 연동 및 #206 공개 차단 검증은 [report 보고서 #209 절](report.md)을 따른다. 합성 LLM 테스트 통과는 실제 모델의 모든 자연어 해석 정확도를 보장하지 않는다.

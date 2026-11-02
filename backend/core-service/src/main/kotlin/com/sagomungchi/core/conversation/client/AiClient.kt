@@ -46,6 +46,14 @@ class AiClient internal constructor(factory: InternalRestClientFactory, private 
     private val timer = ScheduledThreadPoolExecutor(1, Thread.ofPlatform().daemon().name("analysis-deadline").factory())
         .apply { removeOnCancelPolicy = true }
 
+    fun reportTemplate(request: Any): JsonNode = try {
+        factoryClient.post().uri("/internal/analysis/report-template").contentType(MediaType.APPLICATION_JSON)
+            .body(request).retrieve().body(JsonNode::class.java) ?: invalid()
+    } catch (ex: BusinessException) { throw ex } catch (_: Exception) {
+        throw BusinessException(HttpStatus.BAD_GATEWAY, "AI_UNAVAILABLE", "설정 변경안을 만들지 못했습니다.")
+    }
+    private val factoryClient = factory.create("ai", Duration.ofSeconds(25), java.net.http.HttpClient.Version.HTTP_1_1)
+
     fun stream(request: Any, call: AnalysisCall, event: (String, JsonNode) -> Unit) {
         call.attachThread()
         if (!circuit.tryAcquirePermission()) throw BusinessException(HttpStatus.BAD_GATEWAY,

@@ -233,3 +233,54 @@ core HTTP·DB/Redis/RabbitMQ 통합 테스트이며 AI/report는 로컬 HTTP 대
 ### #206 최종 인가와 외부 요청 경계
 
 리포트 HTTP는 DB 트랜잭션 밖에서 실행합니다. HTTP 완료 뒤 `ReportViewService.recordWithSharing` 또는 파일 최종 기록 단계가 parent → student 순서로 현재 상품/공개 권한을 다시 확인합니다. 조회 도중 비공개 전환 시 과거 원문을 제거하고, 파일 서명 도중 전환 시 URL을 반환하지 않습니다. 기존 #129의 환불/다운그레이드 회귀와 새 공개 설정 경합 회귀를 함께 통과했습니다.
+
+## 16. 학부모 대화 기반 리포트 표시 설정 (#209, #72)
+
+### 결정과 적용 범위
+
+2026-11-02 develop `db6395a` 및 #206(PR #222)을 통합했다. [#72](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/72)의 보고서 챗봇 논의를 [#209](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/209)의 11/1 결정과 사용자가 전달한 김태윤님 승인 답변 범위로 구현한다. #72 원격 본문에는 최종 결론이 없으므로 임의로 회의 결론이나 이슈 종료를 주장하지 않는다.
+
+- 원문 공개는 학생 본인의 전역 설정(#206)이다. 학부모 설정으로 공개를 강제하거나 섹션을 임의 삭제하지 않는다. 메모는 제외한다.
+- 순서: 생각 유형·전후 변화·돌아보기·원문 인용·요약·저녁 질문 6개 전체 순열. 학생·기간·상태·집계 기준·수치 표는 유지한다.
+- 강조: 기존 ATTEMPTS·COMPLETED·UNASSISTED 지표의 표시만 조정한다. 계산식·판정 기준은 바꾸지 않는다.
+- 톤: DEFAULT·EASY·CONCISE만 허용한다. 숫자·인용 대조와 기존 실패/대체 정책을 유지한다.
+
+### 요청·저장·생성 흐름
+
+기존 학부모 분석 대화 화면에서 자연어 요청 → 변경안 또는 확인 질문 → 명시적 확인 → 저장한다. 취소·만료·입력 수정·대화 전환·오류에는 자동 저장하지 않는다. AI는 허용 목록만 해석하며 학생 기록을 입력으로 보내지 않는다. 프롬프트 식별자는 `analysis-template@1`이다.
+
+core는 기존 대화 소유권·연결·동의·이용권과 학부모 행 잠금을 재사용한다. 외부 AI HTTP 동안 DB 잠금을 유지하지 않고 응답 후 권한을 다시 확인한다. 제안은 10분 만료·대화 ID 일치·일회성 확인·revision 검사를 거친다. 제안 접수는 기존 분석 사용 한도와 사용 증빙에 기록하며 조회·확정에는 추가 차감하지 않는다.
+
+학부모별 `parent_report_template`은 **V22**에 추가한다. 이미 병합된 #208 V20, #206 V21을 변경하지 않는다. report의 `CoreClient`는 현재 학생 공개 상태와 학부모 확정 설정을 모두 읽고, `NamedGenerator`가 두 값을 독립적으로 전달한다. 비공개면 기존 `RecordGenerator`가 원문·근거를 제거하고 AI 서술 호출을 생략한다. 설정 조회 오류를 기본값으로 숨기지 않는다.
+
+새 리포트에 `versions.template={settings,revision}`을 저장하고 full/free HTML·PDF·Markdown에 순서·강조를 반영한다. 톤은 허용된 AI 서술 요청에만 전달한다. 과거 판은 다시 쓰지 않고 현재 권한으로 과거 원문/파일 접근을 막는 #206 로직을 유지한다. 배포는 core V22와 내부 설정 API를 먼저 제공한 후 report worker를 갱신한다.
+
+### 완료 조건 대조
+
+| 이슈 조건 | 구현·검증 근거 |
+|---|---|
+| 조정 가능 항목 정의 | 위 승인 범위와 API·기능 명세의 허용 목록 |
+| 대화 요청 → 확인 → 저장 | core 실제 HTTP·DB와 웹 6개 확인/취소/만료/오류 시나리오 |
+| 다음 리포트 반영, 숫자·인용 대조 유지 | core 저장 설정을 실제 HTTP로 조회해 report 생성·대조·3형식 full/free 생성 |
+| 테스트 | 아래 서비스·계약·웹 검증 결과 |
+| 바꾼 설정이 다음 리포트에 반영 | revision 스냅샷·톤 전달·순서·강조 검사, 기존 결과 불변 검사 |
+| #72 연결 및 결정 근거 기록 | #72 선행 논의와 #209 결정·전달받은 승인을 이 절에 연결 |
+
+### 검증 (2026-11-02)
+
+- AI 전체 **310 passed**. 외부 LLM은 합성 응답으로 대체했다.
+- report 전체 **336 passed**. 실제 PostgreSQL·RabbitMQ·MinIO 및 Chromium 테스트를 포함한다. 비공개 학생의 세 가지 톤·역순·강조 설정에도 DB 원문/근거 및 HTML/PDF/Markdown 원문이 없고 수치는 유지되는 추가 회귀를 포함한다.
+- core 관련 report·conversation·StudentSharing **140 passed**, 실패·오류·생략 0, bootJar 성공. V20~V22의 격리 PostgreSQL 적용과 공개 설정 경합·현재 권한 회귀를 포함한다. core 전체 모든 패키지 검증은 아니다.
+- 추가 공개/비공개 core→report 연결 실행을 포함한 설정 집중 테스트 **8개 통과**, 각 상태에서 full/free 6개 파일 생성 확인.
+- 웹 **188 tests passed**, build·test:types·lint 통과. 기존 AdminOperations 불변성 경고 1개와 500kB 청크 경고는 남는다. 운영 산출물 목업 제외 검사 통과.
+- 운영 빌드와 Chrome의 HTTP 대역 브라우저 검사 **6개 통과**. 화면 확인/취소, 확인 질문, 만료, 502/409, 입력 수정/대화 전환, 무료 플랜을 검사했다.
+- 공통 계약 **94 tests passed**. AI/report Ruff check·format 통과.
+- 처음 웹/AI 실행은 새 의존성(happy-dom·Playwright, langfuse) 누락으로 실패했다. 각각 잠금 파일대로 npm ci 및 uv sync --frozen으로 복원하고 위 결과로 재검증했다. 의존성 선언/잠금 파일은 변경하지 않았다.
+
+### 실제 core → report 연결 재현과 한계
+
+`REPORT_TEMPLATE_PROBE_PYTHON`에 report-service 가상환경 Python 절대 경로를 지정하고 core에서 `gradlew test --tests '*ReportTemplate*' --rerun-tasks`를 실행한다. Python 환경이 없으면 기본 CI는 core HTTP/DB 테스트만 수행하며 연결 검증을 수행했다고 집계하지 않는다.
+
+`ReportTemplateHttpIntegrationTest`가 실제 core HTTP/JWT·PostgreSQL·Redis에서 제안 확인 후 revision 1을 저장한다. 보조 실행기 `scripts/verify_report_template_rendering.py`는 해당 core의 profile/template을 HTTP 조회해 report 생성 파이프라인과 실제 Chromium 파일 렌더링까지 실행한다. 공개·비공개 상태를 각각 확인하며 비공개는 AI 미호출·원문 제외, 공개는 EASY 톤 전달·숫자/인용 대조·무료 AI 문구 제외를 검사한다.
+
+이 연결 검증의 학습 기록·AI HTTP 응답/서술·파일 저장소는 합성이다. 실제 외부 LLM 품질, PG, 운영 S3, 운영 배포, 브라우저부터 실제 모든 서비스까지 이어지는 단일 종단 시나리오는 검증하지 않았다. 실제 API 키나 학생 원문·모델 파일은 커밋하지 않는다. GitHub 이슈 체크박스·PR·병합은 사용자가 직접 처리한다.

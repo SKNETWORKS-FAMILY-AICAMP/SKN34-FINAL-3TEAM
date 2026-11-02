@@ -27,7 +27,10 @@ class RenderingGenerator:
         result = await self._previous.generate(command, report)
         if not command.display_name:
             raise ValueError("Report rendering requires a trusted display name")
-        result = replace(result, generated_at=datetime.now(UTC))
+        versions = dict(result.versions or {"prompt": None, "model": None})
+        if command.template_snapshot is not None:
+            versions["template"] = command.template_snapshot
+        result = replace(result, generated_at=datetime.now(UTC), versions=versions)
         detail = from_result(report, result)
         return await run_blocking(lambda: self._render_and_store(detail, result, command, report))
 

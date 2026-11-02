@@ -9,6 +9,7 @@ import { useParentQuery } from '../../data/parent/queries.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { QueryFeedback, MetricCards, EvidenceItems } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
+import { ReportTemplateEditor } from './ReportTemplateEditor.tsx'
 export function ParentConversation({
   child,
   scope,
@@ -34,7 +35,8 @@ export function ParentConversation({
     [proof, setProof] = useState<{ conversationId: string; messageId: string } | null>(null),
     controller = useRef<AbortController | null>(null),
     active = useRef(true),
-    [lastQuestion, setLastQuestion] = useState('')
+    [lastQuestion, setLastQuestion] = useState(''),
+    [startingTemplate, setStartingTemplate] = useState(false)
   useEffect(() => {
     active.current = true
     return () => {
@@ -90,6 +92,20 @@ export function ParentConversation({
     setState({ phase: 'IDLE', temporary: '' })
     setError(null)
   }
+  async function startTemplate() {
+    if (startingTemplate || child.plan === 'FREE') return
+    const abort = new AbortController()
+    controller.current?.abort(); controller.current = abort
+    setStartingTemplate(true); setError(null)
+    try {
+      const conversation = await parentApi.create(scope)
+      if (!active.current || abort.signal.aborted) return
+      setId(conversation.conversationId)
+      void cache.invalidateQueries({ queryKey: ['parent', 'conversations'] })
+    } catch (e) {
+      if (active.current && !abort.signal.aborted) setError(e)
+    } finally { if (active.current) setStartingTemplate(false) }
+  }
   const messages = detail.data?.childId === child.id && !detail.error ? detail.data.messages : [],
     pending = state.phase === 'RUNNING'
   return (
@@ -127,6 +143,9 @@ export function ParentConversation({
         </aside>
         <section className="ws-stack">
           {id && <QueryFeedback query={detail} />}
+          {child.plan !== 'FREE' && (id
+            ? <ReportTemplateEditor key={id} conversationId={id} />
+            : <button className="cj-secondary" disabled={pending || startingTemplate} onClick={() => { void startTemplate() }}>리포트 설정 대화 시작</button>)}
           {messages.map((m) => (
             <article className="ws-card" key={m.messageId}>
               <h3>보호자의 질문</h3>
@@ -253,7 +272,7 @@ export function ParentConversation({
                 required
               />
             </label>
-            <button className="cj-primary" disabled={pending}>
+            <button className="cj-primary" disabled={pending || startingTemplate}>
               기록으로 답변 받기
             </button>
             <small>

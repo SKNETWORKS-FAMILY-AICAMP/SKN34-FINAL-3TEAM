@@ -18,6 +18,11 @@ from pydantic import BaseModel
 from app.analysis_agent.graph import build_graph
 from app.analysis_agent.models import AnalysisRequest, StreamError
 from app.analysis_agent.state import AgentContext, AnalysisState
+from app.analysis_agent.template_settings import (
+    TemplateProposal,
+    TemplateProposalRequest,
+    propose_template,
+)
 from app.analysis_agent.tools import RecordTools
 from app.clients.learning_client import LearningClient
 from app.config import get_settings
@@ -107,3 +112,14 @@ async def _run(body: AnalysisRequest, context: AgentContext) -> AsyncIterator[st
 def sse(event: str, data: BaseModel | dict[str, Any]) -> str:
     payload = data.model_dump(mode="json", by_alias=True) if isinstance(data, BaseModel) else data
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+@router.post("/report-template", response_model=TemplateProposal)
+async def report_template(
+    body: TemplateProposalRequest,
+    user: Annotated[UserContext, Depends(get_user_context)],
+    llm: Annotated[LlmClient, Depends(get_llm)],
+) -> TemplateProposal:
+    if user.role != "PARENT" or not user.user_id:
+        raise ApiError(403, "FORBIDDEN", "학부모 컨텍스트가 필요합니다.")
+    return await propose_template(body, llm)

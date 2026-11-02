@@ -9,6 +9,32 @@ servers:
 security:
 - InternalToken: []
 paths:
+  /analysis/report-template:
+    post:
+      operationId: proposeReportTemplate
+      summary: 학부모 리포트 설정 변경안 제안
+      description: 내부 토큰과 PARENT 역할·사용자 ID 필요. core가 연결·동의·이용권·한도 검사. 공개 설정 변경 불가.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateProposalRequest'
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateProposal'
+        '400':
+          description: 입력 오류
+        '401':
+          description: 인증 실패
+        '403':
+          description: 역할 오류
+        '503':
+          description: AI 장애
   /judgments:
     post:
       summary: 판정 근거 추출·원문 대조·요소 판정 (api-spec 4.2)
@@ -227,6 +253,65 @@ components:
       in: header
       name: X-Internal-Token
   schemas:
+    TemplateSettings:
+      additionalProperties: false
+      properties:
+        sectionOrder:
+          items:
+            type: string
+          title: Sectionorder
+          type: array
+        highlightMetrics:
+          items:
+            enum:
+            - ATTEMPTS
+            - COMPLETED
+            - UNASSISTED
+            type: string
+          title: Highlightmetrics
+          type: array
+        tone:
+          default: DEFAULT
+          enum:
+          - DEFAULT
+          - EASY
+          - CONCISE
+          title: Tone
+          type: string
+      title: TemplateSettings
+      type: object
+    TemplateProposalRequest:
+      additionalProperties: false
+      properties:
+        question:
+          maxLength: 1000
+          minLength: 1
+          title: Question
+          type: string
+        current:
+          $ref: '#/components/schemas/TemplateSettings'
+      required:
+      - question
+      - current
+      title: TemplateProposalRequest
+      type: object
+    TemplateProposal:
+      additionalProperties: false
+      properties:
+        settings:
+          anyOf:
+          - $ref: '#/components/schemas/TemplateSettings'
+          - type: 'null'
+          default: null
+        clarification:
+          anyOf:
+          - maxLength: 400
+            type: string
+          - type: 'null'
+          default: null
+          title: Clarification
+      title: TemplateProposal
+      type: object
     AnalysisNotice:
       type: object
       additionalProperties: false
@@ -1032,6 +1117,14 @@ components:
           items:
             $ref: '#/components/schemas/NarrativeQuote'
           type: array
+        tone:
+          default: DEFAULT
+          enum:
+          - DEFAULT
+          - EASY
+          - CONCISE
+          title: Tone
+          type: string
       type: object
       required:
       - metrics

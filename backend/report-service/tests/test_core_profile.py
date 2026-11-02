@@ -30,10 +30,15 @@ def call(handler):
 
 def test_profile_uses_scoped_internal_headers():
     def handler(request):
-        assert request.url.path == f"/internal/students/{command.student_id}/profile"
+        assert request.url.path in {
+            f"/internal/students/{command.student_id}/profile",
+            f"/internal/students/{command.student_id}/report-template",
+        }
         assert request.headers["X-Internal-Token"]
         assert request.headers["X-User-Role"] == "SYSTEM"
         assert request.headers["X-Student-Scope"] == str(command.student_id)
+        if request.url.path.endswith("/report-template"):
+            return httpx.Response(200, json={"settings": {}, "revision": 0})
         return httpx.Response(200, json={"studentId": str(command.student_id), "nickname": "학생"})
 
     command, previous, run = call(handler)

@@ -20,6 +20,165 @@ tags:
 security:
 - BearerAuth: []
 paths:
+  /conversations/{id}/report-template:
+    get:
+      operationId: getReportTemplate
+      tags:
+      - ReportTemplates
+      description: 대화 소유권·학생 연결·동의 검사. 제안·확정에는 분석 이용권 필요. 제안은 10분 만료, 확인 후 저장.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportTemplateSnapshot'
+        '400':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '401':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '403':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '404':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '409':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '429':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '502':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '503':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+  /conversations/{id}/report-template/proposals:
+    post:
+      operationId: proposeReportTemplate
+      tags:
+      - ReportTemplates
+      description: 대화 소유권·학생 연결·동의 검사. 제안·확정에는 분석 이용권 필요. 제안은 10분 만료, 확인 후 저장.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportTemplateProposal'
+        '400':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '401':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '403':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '404':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '409':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '429':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '502':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '503':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - question
+              properties:
+                question:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+  /conversations/{id}/report-template/confirm:
+    post:
+      operationId: confirmReportTemplate
+      tags:
+      - ReportTemplates
+      description: 대화 소유권·학생 연결·동의 검사. 제안·확정에는 분석 이용권 필요. 제안은 10분 만료, 확인 후 저장.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportTemplateSnapshot'
+        '400':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '401':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '403':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '404':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '409':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '429':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '502':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+        '503':
+          description: '입력·권한·만료·한도·상위 서비스 오류 (api-spec #209)'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - proposalId
+              properties:
+                proposalId:
+                  type: string
+                  format: uuid
+  /internal/students/{studentId}/report-template:
+    servers:
+    - url: /
+    get:
+      operationId: getInternalReportTemplate
+      description: SYSTEM 및 대상 학생 scope 필수. 현재 연결된 활성 학부모 설정 반환.
+      security:
+      - InternalToken: []
+      parameters:
+      - name: studentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportTemplateSnapshot'
+        '403':
+          description: 역할·scope 오류
+        '404':
+          description: 활성 연결 없음
   /students/me/sharing-preferences:
     get:
       tags: [Students]
@@ -5894,6 +6053,64 @@ components:
         type: string
         const: XMLHttpRequest
   schemas:
+    ReportTemplateSettings:
+      additionalProperties: false
+      properties:
+        sectionOrder:
+          items:
+            type: string
+          title: Sectionorder
+          type: array
+        highlightMetrics:
+          items:
+            enum:
+            - ATTEMPTS
+            - COMPLETED
+            - UNASSISTED
+            type: string
+          title: Highlightmetrics
+          type: array
+        tone:
+          default: DEFAULT
+          enum:
+          - DEFAULT
+          - EASY
+          - CONCISE
+          title: Tone
+          type: string
+      title: TemplateSettings
+      type: object
+    ReportTemplateSnapshot:
+      type: object
+      required:
+      - settings
+      - revision
+      properties:
+        settings:
+          $ref: '#/components/schemas/ReportTemplateSettings'
+        revision:
+          type: integer
+          minimum: 0
+    ReportTemplateProposal:
+      type: object
+      properties:
+        proposalId:
+          type: string
+          format: uuid
+        settings:
+          $ref: '#/components/schemas/ReportTemplateSettings'
+        expiresAt:
+          type: string
+          format: date-time
+        clarification:
+          type: string
+      oneOf:
+      - required:
+        - proposalId
+        - settings
+        - expiresAt
+      - required:
+        - clarification
     StudentSharingPreference:
       type: object
       additionalProperties: false

@@ -72,6 +72,8 @@ class NarrativeGenerator:
             ]
             for kind, name in groups.items()
         }
+        if command.template_snapshot is not None:
+            payload["tone"] = command.template_snapshot["settings"]["tone"]
         response = await self._ai.narrative(scrub(payload, command.display_name))
         links = tuple(
             link for item in result.items if item.type == ItemType.QUOTE for link in item.evidence
