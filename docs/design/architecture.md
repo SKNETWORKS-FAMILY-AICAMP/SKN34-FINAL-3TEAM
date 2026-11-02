@@ -610,6 +610,7 @@ backend/report-service/
 - GitHub Actions: 경로 필터로 변경 서비스만 테스트·빌드 → GHCR/ECR 푸시(OIDC로 AWS 인증). 현재는 테스트·빌드까지, 푸시·태그 갱신은 예정
 - `infrastructure/gitops/environments/<env>/` 이미지 태그 갱신 커밋 → Argo CD 자동 동기화
 - #171 브랜치에 local 앱·KEDA·NetworkPolicy·관측 Application 등록 정의를 추가했다. 전용 kind의 Argo CD v3.5.5에서 KEDA·platform 정책·관측·metrics-server·여섯 앱의 하위 Application을 feature ref로 수동 sync해 실제 Pod와 선행 migration Job을 확인했다. root와 하위 Git 참조는 시험을 위해 서로 달라 root는 OutOfSync이며, 병합 뒤 `develop` 참조의 재동기화는 남아 있다. 이미지 게시·승인 흐름은 #186 범위다
+- #186 로컬 준비: `cd-candidate.yml`은 기존 재사용 CI로 후보를 검사하며 푸시·태그 갱신·배포는 하지 않는다. `scripts/cd_release.py`는 호환성 근거와 계획 형식을 검사하고 실행을 항상 차단한다. 운영 승인자는 미정이며 승인 게이트·실제 배포 실행기는 아직 미연결이다. [준비 범위와 롤백 정책](../report/issue-186-cd-approval-rollback.md)을 따른다.
 - Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret (LLM·토스 키는 저장소에 미포함, NFR-SEC-04)
 
 ### 4.6 관측

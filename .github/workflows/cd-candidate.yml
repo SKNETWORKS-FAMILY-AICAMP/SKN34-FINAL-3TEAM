@@ -1,0 +1,72 @@
+# #186 준비 단계: 테스트·이미지 빌드만 수행하며 publish/배포는 하지 않는다.
+name: cd-candidate
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/cd-release-preparation]
+    paths:
+      - ".github/workflows/cd-candidate.yml"
+      - "scripts/cd_release.py"
+      - "scripts/tests/test_cd_release.py"
+      - "infrastructure/cd/**"
+  pull_request:
+    paths:
+      - '.github/workflows/cd-candidate.yml'
+      - 'scripts/cd_release.py'
+      - 'scripts/tests/test_cd_release.py'
+      - 'infrastructure/cd/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cd-candidate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s scripts/tests -p test_cd_release.py -v
+      - name: 실행 차단 상태 확인
+        run: |
+          python -c "import json; p=json.load(open('infrastructure/cd/policy.json')); assert p['executionEnabled'] is False, '배포 실행기는 아직 연결하지 않았습니다'"
+      - name: 합성 계획의 실행 차단 기록
+        run: |
+          python scripts/cd_release.py --plan infrastructure/cd/plan.example.json --policy infrastructure/cd/policy.json --output /tmp/cd-plan-record.json
+          python -c "import json; r=json.load(open('/tmp/cd-plan-record.json')); assert r['executable'] is False and r['blocks']"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: synthetic-cd-plan-record
+          path: /tmp/cd-plan-record.json
+          retention-days: 7
+      - name: 준비 상태 기록
+        run: |
+          echo '## #186 배포 후보 검사' >> "$GITHUB_STEP_SUMMARY"
+          echo '승인자 미정, 인프라 미연결. 이미지 푸시·GitOps 갱신·배포·롤백은 실행하지 않습니다.' >> "$GITHUB_STEP_SUMMARY"
+  spring:
+    needs: policy
+    strategy:
+      matrix:
+        service: [core-service, learning-service]
+    uses: ./.github/workflows/_spring.yml
+    with:
+      service-path: backend/${{ matrix.service }}
+  python:
+    needs: policy
+    strategy:
+      matrix:
+        service: [ai-service, scoring-service, report-service]
+    uses: ./.github/workflows/_python.yml
+    with:
+      service-path: backend/${{ matrix.service }}
+  web:
+    needs: policy
+    uses: ./.github/workflows/_web.yml
+    with:
+      app-path: frontend/web
