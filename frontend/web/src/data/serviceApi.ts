@@ -1,13 +1,11 @@
 import { apiFetch } from './apiClient.ts'
 import { json } from './parent/api.ts'
 import type { Page } from '../domain/parent.ts'
-import type { SupportCase, SupportTarget, Notice, NotificationItem, NotificationSettings, ReauthPurpose, DeletionScope, DeletionRequest } from '../domain/service.ts'
+import type { HelpItem, Notice, NotificationItem, NotificationSettings, ReauthPurpose, DeletionScope, DeletionRequest } from '../domain/service.ts'
 const id = encodeURIComponent
 export const serviceApi = {
-  help: (role: string, signal?: AbortSignal) => apiFetch<{ items: { id: string; title: string; content: string }[] }>(`/help?role=${id(role)}`, { signal }),
-  notices: (signal?: AbortSignal) => apiFetch<{ items: Notice[] }>('/notices', { signal }),
-  cases: (kind: 'error-reports' | 'inquiries', signal?: AbortSignal) => apiFetch<Page<SupportCase>>('/' + kind, { signal }),
-  createCase: (kind: 'error-reports' | 'inquiries', data: { targetType?: SupportTarget; targetId?: string; category: string; comment: string }) => apiFetch<SupportCase>('/' + kind, json(data)),
+  help: (role: string, signal?: AbortSignal) => apiFetch<{ role: string; items: HelpItem[] }>(`/help?role=${id(role)}`, { signal }),
+  notices: (signal?: AbortSignal) => apiFetch<Page<Notice>>('/notices', { signal }),
   notifications: (unreadOnly: boolean, page: number, signal?: AbortSignal) => apiFetch<{ items: NotificationItem[]; page: number; size: number; hasNext: boolean }>(`/notifications?unreadOnly=${unreadOnly}&page=${page}&size=20`, { signal }),
   read: (key: string) => apiFetch<void>(`/notifications/${id(key)}/read`, json({}, 'PATCH')),
   readAll: () => apiFetch<void>('/notifications/read-all', json({})),
