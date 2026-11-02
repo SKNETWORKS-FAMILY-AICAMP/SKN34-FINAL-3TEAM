@@ -52,6 +52,13 @@ class DeleteStudent:
             raise RecordContractError("Invalid student deletion scope/time")
 
 
+def delete_processed_before(session, before: datetime) -> int:
+    """보존 기간 정리(#208). 삭제 장벽 report_deletion_guard는 지우지 않는다."""
+    return session.execute(
+        delete(processed_event).where(processed_event.c.processed_at < before)
+    ).rowcount
+
+
 def generation_allowed(session, student_id, requested_at):
     row = (
         session.execute(select(deletion_guard).where(deletion_guard.c.student_id == student_id))

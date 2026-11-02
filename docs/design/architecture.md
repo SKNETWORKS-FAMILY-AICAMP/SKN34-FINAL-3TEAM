@@ -85,6 +85,8 @@
 | `model.version.activated` | 이벤트 | core | ai, scoring (Pod별 수신) | 모든 레플리카가 승인 scope의 활성 모델·프롬프트 버전 교체 (기동 시 core 내부 API로 현재 버전 조회) |
 | `student.deleted` | 이벤트 | core | learning, report | 삭제 확정 학생의 학습 기록·리포트 물리 삭제, 처리 후 core 내부 API로 완료 보고. 페이로드에 `deletionRequestId`·`scope` 포함 (P09) |
 
+- 위 메시지는 모두 core 감사 큐 `core.event.audit`에도 바인딩되어 `event_log`에 기록된다(#208). 바인딩은 routing key별로 두며 `#` 와일드카드는 쓰지 않는다(report 발행자의 unroutable 감지 유지). 메시지를 추가하면 감사 바인딩도 함께 추가하고 `RabbitDefinitionsTest`가 누락을 검사한다.
+
 ### 1.5 핵심 흐름
 1. **미션 학습**
    - 학생이 미션 시작 → learning이 학습 시도 생성 (진행 중 시도가 있으면 반환)
@@ -113,6 +115,7 @@
 - **report 발행 복구(#131)**: 학생별 선두만 발행한다. 실패한 학생은 1·5·15분 재시도 후 격리하고 다른 학생은 계속 처리한다. 격리된 선두와 그 뒤 이벤트는 운영 CLI로 원래 이벤트 id를 재처리할 때까지 대기한다. 소비 재시도 큐/DLQ와 별개로 Outbox DB에 실패·격리 상태를 저장한다. [정책·운영 명령](../report/issue-131-outbox-recovery.md)
 - **상태 없는 서비스(ai, scoring)**: 이벤트 발행은 처리 결과 반환 후 best-effort (사용량 집계용), 유실 시 Langfuse trace로 보정(Langfuse는 예정, 저장소 미구성)
 - **멱등 소비**: 소비자별 `processed_event(event_id UK)` 테이블 또는 DB 상태 전이 조건(`QUEUED→RUNNING`)
+- **이벤트 기록·보존(#208)**: core가 감사 큐로 모든 업무 메시지의 id·type·source·subject·봉투 시각·수신 시각을 `event_log`에 저장한다(payload 제외). 발행은 각 서비스 `outbox_event`, 소비는 `processed_event`·`llm_usage`·작업 상태와 `event_id`로 조인한다. ai·scoring은 DB 없이 유지하며, 브로커에 도달하지 못한 발행 실패는 `event_log`에 없고 서비스 로그로만 확인한다. `model.version.activated`의 Pod별 적용은 기록하지 않는다(readiness·snapshot 재조회로 보장). 발행 완료 outbox·processed_event·event_log는 90일 후 삭제하고 미발행·격리 행은 남긴다. [결정 근거](../report/issue-208-event-log.md)
 - **재시도**: 소비 실패 시 지연 재시도 3회(1·5·15분, P12) 후 DLQ 이동. `report.generate` 확정값을 모든 큐에 동일 적용
 - **명시적 관리자 재처리(#152/#47)**: 위 메시지 전송 재시도와 구분한다. core가 새 jobId·ADMIN_RETRY로 기존 명령을 발행하고 원작업 연결을 보관한다. report는 기존 생성·revision·Outbox를 재사용한다. 같은 jobId의 종료 상태 재전달은 ACK 후 종료하며, 새 관리자 HTTP API·큐·스키마를 report에 추가하지 않는다. core 관리자 접수(`POST /admin/jobs/{jobId}/retry`)는 #47에서 구현했다.
   - 큐마다 `<큐>.retry.1`(1분)·`.retry.2`(5분)·`.retry.3`(15분)을 `definitions.json`에 선언 (`x-message-ttl` = 지연, 만료 시 기본 exchange로 원래 큐 복귀)

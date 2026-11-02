@@ -12,4 +12,6 @@ interface ProcessedEventMapper {
         @Param("eventType") eventType: String,
         @Param("processedAt") processedAt: Instant,
     ): Int
+
+    fun deleteProcessedBefore(@Param("before") before: Instant): Int
 }

@@ -164,6 +164,24 @@ class MessagingIntegrationTest(
     }
 
     @Test
+    fun `events topic과 report generate 메시지는 event_log에 메타데이터만 1행 기록`() {
+        val usage = usageEnvelope(UUID.randomUUID())
+        repeat(2) { publish(MessagingConfig.EVENTS_EXCHANGE, USAGE_ROUTING_KEY, objectMapper.writeValueAsBytes(usage)) }
+        // report.report.generate 큐에 남는 사본을 다른 테스트가 jobId로 걸러낼 수 있게 함
+        val command = usageEnvelope(UUID.randomUUID(), mapOf("jobId" to UUID.randomUUID().toString()))
+            .copy(type = "report.generate", source = "core-service", subject = "student-1")
+        publish(MessagingConfig.COMMAND_EXCHANGE, "report.generate", objectMapper.writeValueAsBytes(command))
+
+        val usageRow = await { eventLog(UUID.fromString(usage.id)) }
+        val commandRow = await { eventLog(UUID.fromString(command.id)) }
+        Thread.sleep(1_000)
+
+        assertEquals(listOf(USAGE_ROUTING_KEY, "ai-service", null), listOf(usageRow["event_type"], usageRow["source"], usageRow["subject"]))
+        assertEquals(listOf("report.generate", "core-service", "student-1"), listOf(commandRow["event_type"], commandRow["source"], commandRow["subject"]))
+        assertEquals(1, jdbcTemplate.queryForObject("SELECT count(*) FROM event_log WHERE event_id = ?", Int::class.java, UUID.fromString(usage.id)))
+    }
+
+    @Test
     fun `processed_event는 첫 기록만 true`() {
         val eventId = UUID.randomUUID()
 
@@ -200,6 +218,9 @@ class MessagingIntegrationTest(
     /** 다른 테스트의 DLQ 메시지는 건너뜀 */
     private fun receiveDead(timeout: Duration, matches: (Message) -> Boolean): Message =
         await(timeout) { rabbitTemplate.receive("$USAGE_QUEUE.dlq", 500)?.takeIf(matches) }
+
+    private fun eventLog(eventId: UUID): Map<String, Any?>? =
+        jdbcTemplate.queryForList("SELECT event_type, source, subject FROM event_log WHERE event_id = ?", eventId).firstOrNull()
 
     private fun countUsage(eventId: UUID): Int =
         jdbcTemplate.queryForObject("SELECT count(*) FROM llm_usage WHERE event_id = ?", Int::class.java, eventId)!!

@@ -198,6 +198,62 @@
       }
     },
     {
+      "name": "core.event.audit",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "core.event.audit"
+      }
+    },
+    {
+      "name": "core.event.audit.retry.1",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 60000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "core.event.audit"
+      }
+    },
+    {
+      "name": "core.event.audit.retry.2",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 300000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "core.event.audit"
+      }
+    },
+    {
+      "name": "core.event.audit.retry.3",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 900000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "core.event.audit"
+      }
+    },
+    {
+      "name": "core.event.audit.dlq",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum"
+      }
+    },
+    {
       "name": "learning.student.deleted",
       "vhost": "/",
       "durable": true,
@@ -405,6 +461,70 @@
       "destination": "report.student.deleted.dlq",
       "destination_type": "queue",
       "routing_key": "report.student.deleted",
+      "arguments": {}
+    },
+    {
+      "source": "dlx",
+      "vhost": "/",
+      "destination": "core.event.audit.dlq",
+      "destination_type": "queue",
+      "routing_key": "core.event.audit",
+      "arguments": {}
+    },
+    {
+      "source": "cmd.direct",
+      "vhost": "/",
+      "destination": "core.event.audit",
+      "destination_type": "queue",
+      "routing_key": "report.generate",
+      "arguments": {}
+    },
+    {
+      "source": "events.topic",
+      "vhost": "/",
+      "destination": "core.event.audit",
+      "destination_type": "queue",
+      "routing_key": "report.started",
+      "arguments": {}
+    },
+    {
+      "source": "events.topic",
+      "vhost": "/",
+      "destination": "core.event.audit",
+      "destination_type": "queue",
+      "routing_key": "report.completed",
+      "arguments": {}
+    },
+    {
+      "source": "events.topic",
+      "vhost": "/",
+      "destination": "core.event.audit",
+      "destination_type": "queue",
+      "routing_key": "report.failed",
+      "arguments": {}
+    },
+    {
+      "source": "events.topic",
+      "vhost": "/",
+      "destination": "core.event.audit",
+      "destination_type": "queue",
+      "routing_key": "llm.usage.recorded",
+      "arguments": {}
+    },
+    {
+      "source": "events.topic",
+      "vhost": "/",
+      "destination": "core.event.audit",
+      "destination_type": "queue",
+      "routing_key": "student.deleted",
+      "arguments": {}
+    },
+    {
+      "source": "events.topic",
+      "vhost": "/",
+      "destination": "core.event.audit",
+      "destination_type": "queue",
+      "routing_key": "model.version.activated",
       "arguments": {}
     }
   ]
