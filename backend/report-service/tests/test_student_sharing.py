@@ -86,8 +86,9 @@ def test_private_generation_retains_numbers_without_originals_evidence_or_ai():
     assert "합성비밀" not in ReportRenderer.markdown(report, "별명")
 
 
+@pytest.mark.parametrize("tone", ["DEFAULT", "EASY", "CONCISE"])
 def test_private_generation_commits_only_redacted_items_and_renders_private_files(
-    report_factory, db_engine, report_student_id
+    report_factory, db_engine, report_student_id, tone
 ):
     from sqlalchemy import select
 
@@ -110,6 +111,18 @@ def test_private_generation_commits_only_redacted_items_and_renders_private_file
         def delete_prefix(self, prefix):
             self.files = {k: v for k, v in self.files.items() if not k.startswith(prefix)}
 
+    from app.generation.template_settings import SECTIONS, validate_snapshot
+
+    snapshot = validate_snapshot(
+        {
+            "settings": {
+                "tone": tone,
+                "sectionOrder": list(reversed(SECTIONS)),
+                "highlightMetrics": ["ATTEMPTS"],
+            },
+            "revision": 3,
+        }
+    )
     command = replace(command_for(report_student_id), narrative_enabled=True)
     data = records_for(
         report_student_id,
@@ -117,7 +130,7 @@ def test_private_generation_commits_only_redacted_items_and_renders_private_file
     )
     storage = Storage()
     generator = NamedGenerator(
-        Names(StudentDisplayName(report_student_id, "합성 별명", False)),
+        Names(StudentDisplayName(report_student_id, "합성 별명", False, snapshot)),
         RenderingGenerator(
             NarrativeGenerator(
                 RecordGenerator(Records(data)), NoExternalCalls(), NoExternalCalls()
@@ -143,15 +156,17 @@ def test_private_generation_commits_only_redacted_items_and_renders_private_file
         items = session.execute(select(report_item)).mappings().all()
         evidence = session.execute(select(report_item_evidence)).mappings().all()
     assert report["status"] == "COMPLETED"
+    assert report["versions"]["template"] == snapshot
     assert report["narrative"] is None
     assert not evidence
     assert "합성비밀" not in json.dumps([i["payload"] for i in items], ensure_ascii=False)
     assert any(i["item_type"] == "METRIC" for i in items)
     assert len(storage.files) == 6  # full/free × HTML, PDF, Markdown
     for key, body in storage.files.items():
-        if key.lower().endswith((".html", ".md")):
+        if key.lower().endswith(("/html", "/md")):
             assert "합성비밀" not in body.decode("utf-8")
-        elif key.lower().endswith(".pdf"):
+            assert "[강조]" in body.decode("utf-8")
+        elif key.lower().endswith("/pdf"):
             from io import BytesIO
 
             from pypdf import PdfReader

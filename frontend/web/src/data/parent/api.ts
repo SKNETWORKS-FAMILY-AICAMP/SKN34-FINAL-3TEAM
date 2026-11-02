@@ -2,6 +2,7 @@ import { apiFetch, ApiError } from '../apiClient.ts'
 import { recordDto } from '../recordDto.ts'
 import { streamSse } from '../sse.ts'
 import { reduceAnalysis } from '../../domain/parent.ts'
+import { templateProposal, templateSnapshot } from '../../domain/reportTemplate.ts'
 import type { Child, Period, PublicAttempt } from '../../domain/classroom.ts'
 import type {
   Consent,
@@ -81,6 +82,12 @@ export const parentApi = {
   conversation: (id: string, signal?: AbortSignal) =>
     apiFetch<Conversation>(`/conversations/${item(id)}`, { signal }),
   create: (scope: Scope) => apiFetch<Conversation>('/conversations', json(scope)),
+  reportTemplate: async (id: string, signal?: AbortSignal) =>
+    templateSnapshot(await apiFetch(`/conversations/${item(id)}/report-template`, { signal })),
+  proposeReportTemplate: async (id: string, question: string, signal?: AbortSignal) =>
+    templateProposal(await apiFetch(`/conversations/${item(id)}/report-template/proposals`, { ...json({ question }), signal })),
+  confirmReportTemplate: async (id: string, proposalId: string, signal?: AbortSignal) =>
+    templateSnapshot(await apiFetch(`/conversations/${item(id)}/report-template/confirm`, { ...json({ proposalId }), signal })),
   async message(
     id: string,
     question: string,

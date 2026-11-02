@@ -36,7 +36,14 @@ class NarrativeService:
         prompt = self._versions.prompt("reportNarrative")
         try:
             generated = await self._llm.generate(
-                system=prompt.body.SYSTEM,
+                system=prompt.body.SYSTEM
+                + {
+                    "DEFAULT": "",
+                    "EASY": "\n말투: 짧고 익숙한 낱말로 쉽게 설명한다."
+                    " 숫자·인용·금지 표현 규칙은 그대로 지킨다.",
+                    "CONCISE": "\n말투: 핵심을 간결하게 쓴다."
+                    " 숫자·인용·금지 표현 규칙은 그대로 지킨다.",
+                }[request.tone],
                 user=prompt.body.build_user(request),
                 output=prompts.GeneratedNarrative,
                 call_type="REPORT_NARRATIVE",

@@ -53,7 +53,9 @@ class EvidenceReader:
         return self.data
 
 
-def run_generator(student, result, response, evidence, *, enabled=True, status=200):
+def run_generator(
+    student, result, response, evidence, *, enabled=True, status=200, template_snapshot=None
+):
     sent = []
 
     async def scenario():
@@ -67,7 +69,10 @@ def run_generator(student, result, response, evidence, *, enabled=True, status=2
             )
             return await generator.generate(
                 replace(
-                    command_for(student), narrative_enabled=enabled, display_name="합성학생비밀별명"
+                    command_for(student),
+                    narrative_enabled=enabled,
+                    display_name="합성학생비밀별명",
+                    template_snapshot=template_snapshot,
                 ),
                 None,
             )
@@ -293,3 +298,17 @@ def test_pipeline_persists_narrative_or_api_failure(
         assert row["versions"] == response["versions"]
     else:
         assert row["narrative"] is None and row["failure_reason"] == "GENERATION_FAILED"
+
+
+@pytest.mark.parametrize("invalid_number", [False, True])
+def test_template_tone_preserves_numeric_verification(invalid_number):
+    from app.generation.template_settings import validate_snapshot
+
+    student, _, result, response, evidence = fixture()
+    if invalid_number:
+        response["narrative"]["text"] = "답변 제출 시도 999건이 확인되었습니다."
+    snapshot = validate_snapshot({"settings": {"tone": "EASY"}, "revision": 3})
+    generated, sent = run_generator(student, result, response, evidence, template_snapshot=snapshot)
+    assert sent[0]["tone"] == "EASY"
+    assert generated.narrative["source"] == ("TEMPLATE" if invalid_number else "LLM")
+    assert "999" not in generated.narrative["text"]

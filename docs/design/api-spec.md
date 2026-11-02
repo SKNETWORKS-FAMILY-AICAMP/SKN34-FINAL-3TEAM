@@ -1096,3 +1096,47 @@ SERVICE_OPS는 실패 message ID에 UUID Idempotency-Key로 재처리를 접수�
 관리자 재처리 화면은 202 QUEUED를 접수로 안내하고 REPORT는 응답의 새 jobId, CONVERSATION은 기존 jobId의 상세를 조회한다. 사용자가 상태를 새로 조회할 수 있고 실제 COMPLETED 응답에만 완료 문구를 표시한다. NOTIFICATION의 200 완료/실패 구분은 유지한다.
 
 #163·#47 통합: 검증된 미션 404는 GET/쓰기 모두 고정 문구의 404 NOT_FOUND를 반환한다. 쓰기는 요청 감사와 REJECTED 결과 감사 및 X-Admin-Operation-Id를 보존한다. 불명확한 404·405·501은 503이며 쓰기 결과 감사는 UNKNOWN이다.
+
+
+### #209 학부모 리포트 템플릿 설정 (로컬 구현 계약)
+
+2026-11-02 사용자 전달 승인: 원문 공개는 #206 학생 전역 설정만 사용(학생 본인 변경,
+기본 비공개), 메모 제외. 섹션 숨김은 승인하지 않음. 기존 권한·숫자·인용 대조 유지.
+설정은 학부모별이며 자녀 전반의 다음 생성에 사용. 기존 리포트 판은 변경하지 않는다.
+
+- `sectionOrder`: `thinkingTypes, changes, reflections, quotes, narrative, eveningQuestion`의
+  중복 없는 전체 순열. 학생·기간·상태·집계 기준과 수치 표는 고정한다.
+- `highlightMetrics`: 기존 지표 코드 `ATTEMPTS`, `COMPLETED`, `UNASSISTED` 중 중복 없는 목록.
+  계산식·값은 바꾸지 않는다. 순서대로 답변 제출 시도 수·완료한 시도 수·도움 없이 시작한 비율.
+- `tone`: `DEFAULT`(기본), `EASY`(쉬운 설명), `CONCISE`(간결).
+- 공개 여부·메모·섹션 삭제·임의 계산식 필드는 받지 않는다.
+
+`POST /api/v1/conversations/{id}/report-template/proposals` `{question}`:
+기존 대화 소유권·연결·동의·분석 권한 및 사용 한도 확인 후 AI가 변경안을 해석한다.
+접수된 제안 요청은 기존 분석 대화와 같이 한도를 차감하고 결제 사용 증빙을 기록한다.
+AI 실패·확인 질문도 접수된 시도로 취급하며, 설정 조회와 제안 확정은 추가 차감하지 않는다.
+모호하거나 지원 밖이면 clarification만 반환하고 저장 설정을 변경하지 않는다.
+명확하면 `{proposalId, settings, expiresAt}` 반환. 초안은 10분 유효하며 새 제안이 기존 것을 대체한다.
+`POST /api/v1/conversations/{id}/report-template/confirm` `{proposalId}`:
+현재 권한 재확인 후 서버에 저장된 초안만 확정. 다른 대화·만료·덮어쓴 초안은 409.
+클라이언트가 설정을 바꿔 보내는 방식이 아니다.
+`GET /api/v1/conversations/{id}/report-template`: 현재 확정 설정과 revision.
+
+`POST /internal/analysis/report-template` `{question,current}` →
+`{settings,clarification}` (둘 중 하나만 존재). PARENT 내부 컨텍스트, ANALYSIS 사용량.
+`GET /internal/students/{studentId}/report-template`: SYSTEM + 대상 학생 scope,
+현재 연결 학부모의 `{settings,revision}`. 권한·조회 장애를 기본 설정으로 대체하지 않는다.
+report-worker는 생성 시작 시 한 번 조회하여 command에 고정한다. 메시지 v1은 변경하지 않는다.
+생성 결과 `versions.template`에 `{settings,revision}`을 보존하여 과거 판을 재해석하지 않는다.
+서술 요청에 `tone`을 추가하며 생략 시 DEFAULT. 무료·NO_RECORD AI 생략, 대조 실패 처리 유지.
+
+선행 #206은 develop 미병합: 원문 비공개 생성·기존 파일 접근의 실제 결합 검증은 대기.
+이 계약이 학생 공개 설정 구현을 대신하지 않는다.
+
+학부모 `기록에 물어보기` 화면에서 기존 대화를 선택하거나 `리포트 설정 대화 시작`으로
+대화를 만든 뒤, `리포트 표시 설정`에 자연어 요청을 입력한다. 현재 설정과 변경안을 구분해
+표시하고 `확인하고 저장`을 눌렀을 때만 proposalId를 전송한다. 취소·입력 변경·대화 전환은
+미확정 변경안을 화면에서 제거하며 서버 설정을 변경하지 않는다. 변경안 만료 시 다시
+요청하도록 안내하고, 요청/저장 실패를 성공으로 표시하지 않는다. 무료 플랜에는 이 입력을
+표시하지 않으며 서버도 기존 분석 권한을 재검사한다. 학부모 전체 자녀의 다음 생성부터
+적용되고 기존 파일은 바뀌지 않음을 안내한다. 원문 공개를 바꾸는 화면 항목은 추가하지 않는다.

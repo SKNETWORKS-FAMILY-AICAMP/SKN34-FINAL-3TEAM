@@ -22,6 +22,7 @@ class StudentDisplayName:
     student_id: UUID
     nickname: str
     parent_sharing_enabled: bool = False
+    template_snapshot: dict | None = None
 
 
 class DisplayNameProvider(Protocol):
@@ -52,6 +53,7 @@ class NamedGenerator:
                 display_name=profile.nickname,
                 parent_sharing_enabled=profile.parent_sharing_enabled,
                 narrative_enabled=command.narrative_enabled and profile.parent_sharing_enabled,
+                template_snapshot=profile.template_snapshot,
             ),
             report,
         )

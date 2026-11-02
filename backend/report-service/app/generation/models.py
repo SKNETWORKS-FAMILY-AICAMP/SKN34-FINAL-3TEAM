@@ -31,6 +31,8 @@ class GenerateReport:
     requested_at: datetime | None = None
     parent_sharing_enabled: bool = False
 
+    template_snapshot: dict[str, Any] | None = None
+
     def __post_init__(self) -> None:
         if self.period_from > self.period_to:
             raise ValueError("Report period is reversed")
@@ -59,7 +61,7 @@ class GenerationResult:
     items: tuple["ReportItem", ...] = ()
     narrative: dict[str, Any] | None = None
     verification: dict[str, bool] | None = None
-    versions: dict[str, str | None] | None = None
+    versions: dict[str, Any] | None = None
     evening_question: str | None = None
     generated_at: datetime | None = None
     files: tuple["ReportFile", ...] = ()

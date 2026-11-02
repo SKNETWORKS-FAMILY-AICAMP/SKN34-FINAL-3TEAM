@@ -257,6 +257,19 @@ erDiagram
   user_account ||--o{ report_view : views
   user_account |o--o{ job_execution : "재처리 요청자"
 
+  user_account ||--o| parent_report_template : configures
+  conversation |o--o{ parent_report_template : pending_confirmation
+  parent_report_template {
+    uuid parent_user_id PK,FK
+    jsonb settings "sectionOrder, highlightMetrics, tone"
+    bigint revision "0 이상 · 확정 시 증가"
+    uuid proposal_id "NULL 허용"
+    uuid proposal_conversation_id FK "NULL 허용 · 삭제 시 SET NULL"
+    jsonb proposal_settings "NULL 허용"
+    timestamptz proposal_expires_at "NULL 허용 · 10분"
+    timestamptz updated_at
+  }
+
   conversation {
     uuid id PK
     uuid parent_user_id FK
@@ -1192,3 +1205,9 @@ conversation_job_retry는 UK(message_id,generation), UK(requested_by,idempotency
 ## 학생 전역 공개 설정 (#206, core V21)
 
 `student.parent_sharing_enabled`는 기존/신규 모두 비공개(false)로 시작합니다. 이 열은 비공개 기본값을 보장하기 위한 SQL DEFAULT false의 명시적 예외이며, 다른 열의 기본값 금지 검증은 유지합니다. 학생 본인만 바꾸며 원문을 제공하는 경로는 같은 학생 행의 현재 설정을 다시 확인합니다.
+
+### #209 표시 설정 저장 (로컬 구현 후보)
+
+학부모별 확정 설정과 마지막 미확정 제안을 `parent_report_template`에 저장한다. 기존 parent 계정 행 잠금으로 직렬화하고, 제안 ID·대화 소유권·만료를 확인한 뒤에만 revision을 증가시킨다. 학생 원문 공개 여부·메모·학습 원문은 저장하지 않는다. 확정 설정은 다음 리포트 `versions.template` JSONB에 복사하여 기존 판을 보존한다.
+
+V22는 #208 V20과 #206 V21 뒤에 적용한다. 학생 공개 설정을 보존하며 학부모 표시 설정은 별도 테이블에 저장한다.
