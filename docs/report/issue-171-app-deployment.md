@@ -223,3 +223,19 @@ migration 이미지는 저장소 루트에서 `docker build -f infrastructure/gi
 | 카탈로그에 없는 CRD | 임의의 `example.invalid/v1` `Widget` 추가 | 통과, `Widget/probe` 건너뜀 목록과 경고 출력 |
 
 migration Dockerfile 2개는 전용 임시 태그로 빌드에 성공했고 태그는 삭제했다. actionlint 1.7.12(shellcheck 포함)는 `ci-gitops.yml`에서 오류가 없었다. 원격 GitHub Actions 결과는 브랜치 push 후 별도로 확인한다.
+
+## kind 클러스터 통합 (#273)
+
+#171은 병합 전 chart를 기존 `sagomungchi-local`의 platform-data·PVC와 분리해 시험하려고 전용 `sagomungchi-issue171` 클러스터와 전용 Secret 원본을 두었다. 두 클러스터는 호스트 포트(80/443 ↔ 18080/18443)와 Pod/Service CIDR만 달랐고 Kubernetes·Calico·Ingress 버전은 같았다. #171 병합 후에도 이 분리가 정식 절차로 남아 앱 배포 경로가 전용 클러스터에만 있었고, Secret 원본도 루트 `.env`와 별도 파일로 나뉘었다. Docker 메모리 한도(약 7.6GiB)에서는 두 클러스터를 동시에 운영하기 어렵다.
+
+로컬 kind는 `sagomungchi-local` 하나로 통합한다.
+
+| 항목 | 변경 |
+|---|---|
+| 앱 Secret | `create-issue-171-secrets.ps1` → `create-app-secrets.ps1`. 대상 context·노드를 `kind-sagomungchi-local`·`sagomungchi-local-control-plane`으로 고정 검사하고 기본 입력을 루트 `.env`로 한다. UTF-8 stdin 전달, 기존 Secret 값 대조 후 불일치 시 중단은 유지한다 |
+| platform Secret | 기존 `create-platform-secret.ps1`이 계속 담당한다. 두 스크립트가 같은 `.env`를 읽어 platform·app 계정 원본이 하나가 된다 |
+| 관측 Secret | `.env`에 `GRAFANA_ADMIN_USER`·`GRAFANA_ADMIN_PASSWORD`가 둘 다 있을 때만 만든다. 하나만 있으면 실패한다 |
+| 제거 | `issue-171-verification.yaml`, `calico-issue-171-installation.yaml`, `issue-171-secrets.env.example`, `README-issue-171.md`. 유지할 이미지 로드·context 명시·기동 순서는 [kind 안내](../../infrastructure/kind/README.md) 5절로 옮겼다 |
+| 적용 대상 문구 | chart·local Argo CD 안내의 "기존 클러스터 적용 금지"를 `sagomungchi-local` 정식 절차로 바꿨다 |
+
+누락 환경값(Google·토스·LLM 공급자 등)과 외부 egress는 #236 범위로 남긴다. 이 절 위의 검증 기록은 당시 전용 클러스터 기준이다. 이미 만들어진 `sagomungchi-issue171` 클러스터·Docker 네트워크 `kind-issue171`은 저장소 변경과 별개이며, 담당자가 직접 `kind delete cluster --name sagomungchi-issue171`과 `docker network rm kind-issue171`로 정리한다.
