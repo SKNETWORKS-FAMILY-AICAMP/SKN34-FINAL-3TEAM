@@ -492,7 +492,8 @@ def main() -> None:
     parser.add_argument(
         "--valid-topics",
         action="store_true",
-        help="--aihub-split와 같이: 검증을 분할 파일의 검증 주제(처음 보는 주제)로, 그 주제는 학습·평가에서 뺌",
+        help="--aihub-split와 같이: 검증을 분할 파일의 검증 주제(처음 보는 주제)로, "
+        "그 주제는 학습·평가에서 뺌",
     )
     parser.add_argument(
         "--valid-from-train",
@@ -710,7 +711,8 @@ def main() -> None:
         held = df.loc[df["split_new"] == "valid", "prompt_id"].unique()  # 분할 파일의 검증 주제
         df = aihub_split(df, args.split_seed)
         if args.valid_topics:
-            # 11/2 개선 실험: 학습 멈춤·경계를 '처음 보는 주제'로 정함. 분할 파일의 검증 주제(10개)는
+            # 11/2 개선 실험: 학습 멈춤·경계를 '처음 보는 주제'로 정함.
+            # 분할 파일의 검증 주제(10개)는
             # 학습·평가에서 빼고 그 주제의 글 전부를 검증으로, 나머지 주제는 TL 전부 학습·VL 평가
             in_held = df["prompt_id"].isin(held)
             df.loc[~in_held & (df["split_new"] == "valid"), "split_new"] = "train"
