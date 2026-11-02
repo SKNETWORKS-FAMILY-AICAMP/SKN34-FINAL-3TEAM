@@ -561,9 +561,9 @@ backend/report-service/
 | 배포 | `docker compose up` | Argo CD (local env) | Argo CD (prod env) |
 | Ingress | - | ingress-nginx | AWS LB Controller (ALB) |
 | CNI (NetworkPolicy) | - | Calico (기본 CNI 정책 지원 버전별 상이) | VPC CNI `enableNetworkPolicy: "true"` |
-| 외부 연동 | stub (LLM·토스) | stub 또는 테스트 키 | LLM API, 토스페이먼츠 테스트 키 |
+| 외부 연동 | stub (LLM·토스·Google OAuth, E2E 오버레이) | stub 또는 테스트 키 | LLM API, 토스페이먼츠 테스트 키 |
 
-- 현재 stub(`infrastructure/stubs`)은 미구성이다. Docker Compose의 ai-service는 `.env`의 `LLM_PROVIDER`·API 키로 실제 LLM을 호출하고, 키가 없으면 판정·되묻기가 `AI_UNAVAILABLE`로 실패한다(6장 LLM 제공자).
+- stub(`infrastructure/stubs`)은 실서버 E2E 오버레이 `compose.e2e.yaml`에서만 연결한다(google·llm·toss-stub, 합성 값 `infrastructure/stubs/e2e.env`). 기본 Docker Compose의 ai-service는 그대로 `.env`의 `LLM_PROVIDER`·API 키로 실제 LLM을 호출하고, 키가 없으면 판정·되묻기가 `AI_UNAVAILABLE`로 실패한다(6장 LLM 제공자). kind의 `<target>-stub` Service는 미구성이다. [이슈 #246 보고서](../report/issue-246-e2e-stubs.md)
 
 - 로컬 자원 시작 기준: i5-1135G7(4코어·8스레드)·16GB급 PC, WSL 2 Docker 메모리 상한 약 7.62GiB. 저장소·Ingress·초기화 작업과 기반 구성에 약 6GiB를 계획하며, 앱·관측·모델 추론의 동시 실행 보장은 아니다. [이슈 #17 자원 설계](../report/local-platform.md)의 제안값을 구현·실측 후 조정한다.
 - 로컬 MinIO는 `sagomungchi-local-missions`·`sagomungchi-local-reports`·`sagomungchi-local-models` 버킷 세 개를 단일 MinIO 저장 공간 안에 구성한다. 운영 S3 이름은 AWS 자원 작업에서 별도 확정한다.
@@ -649,7 +649,7 @@ SKN34-FINAL-3TEAM/
 │  └─ web/                       # React 웹
 │     ├─ src/                    # 3장 참고
 │     ├─ tests/
-│     │  └─ e2e/                 # (예정) Playwright 대표 시나리오 (NFR-QA-01). 현재 빈 폴더
+│     │  └─ e2e/                 # 실서버 Playwright 대표 시나리오 (NFR-QA-01, playwright.e2e.config.ts·seed/, #246)
 │     ├─ package.json
 │     ├─ vite.config.ts
 │     └─ tsconfig.json
@@ -735,8 +735,8 @@ SKN34-FINAL-3TEAM/
 │  │  └─ local.yaml              # kind 클러스터 설정
 │  ├─ eks/                       # (예정) eksctl 클러스터·노드그룹·IRSA·StorageClass
 │  ├─ aws/                       # (예정) eksctl 범위 밖 자원: RDS·S3·CloudFront·ECR·Secrets Manager·GitHub OIDC IAM (도구 미정)
-│  └─ stubs/                     # (예정)
-│     └─ <target>-stub/          # LLM·토스페이먼츠 대역 (테스트·무료 시연용)
+│  └─ stubs/                     # compose.e2e.yaml 전용 대역, e2e.env(합성 값)
+│     └─ <target>-stub/          # google·llm·toss-stub: Google OAuth·LLM·토스페이먼츠 대역 (로컬·CI E2E)
 │        └─ Dockerfile
 ├─ .github/
 │  └─ workflows/
@@ -745,13 +745,15 @@ SKN34-FINAL-3TEAM/
 │     ├─ _web.yml
 │     ├─ ci-<service>.yml        # 서비스·stub별 경로 필터(<경로>/**, contracts/**) → 재사용 워크플로 호출
 │     ├─ ci-db-schema.yml        # 마이그레이션 적용·ERD 대조 (scripts/check_db_migrations.py)
-│     └─ ci-contracts.yml        # 저장소 계약 회귀·core 실제 테스트 산출물 대조 (#143); asyncapi 검사는 미구현
+│     ├─ ci-contracts.yml        # 저장소 계약 회귀·core 실제 테스트 산출물 대조 (#143); asyncapi 검사는 미구현
+│     └─ e2e.yml                 # 실서버 E2E: 수동·야간·E2E 구성 변경 PR (#246)
 ├─ docs/
 │  ├─ README.md                  # 개발 규칙
 │  ├─ design/                    # 아키텍처·기능명세·API 명세 등 설계 문서
 │  └─ adr/                       # (예정) NNNN-<제목>.md
 ├─ compose.yaml                  # 로컬 통합 실행 진입점
 ├─ compose.minio.yaml            # 로컬 MinIO 선택 실행 (기본 파일과 함께 지정)
+├─ compose.e2e.yaml              # 실서버 E2E: stub·시드 연결 (compose.yaml·compose.minio.yaml과 함께 지정)
 ├─ .env.example
 └─ README.md
 ```
@@ -786,7 +788,7 @@ SKN34-FINAL-3TEAM/
 | 확장 | HPA, KEDA, Cluster Autoscaler, PDB | CPU 기반 API 확장 + 큐 기반 워커 확장 |
 | AWS | EKS(eksctl), EC2, VPC, ALB(LB Controller), CloudFront, S3, RDS, ECR, EBS gp3, Secrets Manager | 관리형 control plane(자체 구축 대비 운영 부담 제거)·AWS 연동 기본 지원, 참고 레포 EKS 구성 계승 + 관리형 DB |
 | GitOps·CI | GitHub Actions(OIDC), GHCR, Argo CD, External Secrets | 변경 서비스만 빌드, Git 기준 배포 |
-| 테스트 | JUnit5, Testcontainers, pytest, Playwright(E2E, 예정) | 기획서 4.4 |
+| 테스트 | JUnit5, Testcontainers, pytest, Playwright(MSW 화면 회귀·실서버 E2E) | 기획서 4.4 |
 | 관측·LLMOps | Langfuse, OpenTelemetry, Prometheus, Grafana | LLM trace + 서비스·큐 지표 |
 
 ---

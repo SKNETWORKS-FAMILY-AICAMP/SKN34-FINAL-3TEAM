@@ -71,6 +71,7 @@ app:
     toss-billing-secret: ${TOSS_TEST_BILLING_SECRET_KEY:}
     toss-mid: ${TOSS_TEST_MID:}
     toss-billing-mid: ${TOSS_TEST_BILLING_MID:}
+    toss-base-url: ${TOSS_API_BASE_URL:https://api.tosspayments.com}
     webhook-security-key: ${TOSS_TEST_WEBHOOK_SECURITY_KEY:}
     billing-webhook-security-key: ${TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY:}
     billing-encryption-key: ${PAYMENT_BILLING_ENCRYPTION_KEY:}

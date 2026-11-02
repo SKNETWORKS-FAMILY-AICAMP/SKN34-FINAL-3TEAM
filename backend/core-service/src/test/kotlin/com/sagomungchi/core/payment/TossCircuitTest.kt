@@ -66,4 +66,18 @@ class TossCircuitTest {
             assertEquals("Basic " + java.util.Base64.getEncoder().encodeToString(key.toByteArray()), request.headers().firstValue("Authorization").orElseThrow())
         }
     }
+    @Suppress("UNCHECKED_CAST")
+    @Test fun `base url defaults to toss and can point to a local stub`() {
+        val http = mock(HttpClient::class.java)
+        val response = mock(HttpResponse::class.java) as HttpResponse<ByteArray>
+        val requests = mutableListOf<HttpRequest>()
+        `when`(response.statusCode()).thenReturn(404)
+        `when`(response.body()).thenReturn("""{"code":"NOT_FOUND_PAYMENT"}""".toByteArray())
+        doAnswer { invocation -> requests.add(invocation.getArgument(0)); response }
+            .`when`(http).send(any(HttpRequest::class.java), any<HttpResponse.BodyHandler<ByteArray>>())
+        TossClient(jacksonObjectMapper(), "test_sk_fixture", "test_sk_billing", http).lookup("order", false)
+        TossClient(jacksonObjectMapper(), "test_sk_fixture", "test_sk_billing", http, "", "http://toss-stub:8080/").lookup("order", false)
+        assertEquals(listOf("https://api.tosspayments.com/v1/payments/orders/order", "http://toss-stub:8080/v1/payments/orders/order"),
+            requests.map { it.uri().toString() })
+    }
 }
