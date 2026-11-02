@@ -489,6 +489,18 @@ def main() -> None:
     parser.add_argument("--split-dir", type=Path, default=M2_DIR / "splits")
     parser.add_argument("--out-dir", type=Path, default=M2_DIR / "checkpoints")
     parser.add_argument("--result-dir", type=Path, default=M2_DIR / "results")
+    parser.add_argument(
+        "--valid-topics",
+        action="store_true",
+        help="--aihub-split와 같이: 검증을 분할 파일의 검증 주제(처음 보는 주제)로, 그 주제는 학습·평가에서 뺌",
+    )
+    parser.add_argument(
+        "--valid-from-train",
+        type=float,
+        default=0.0,
+        help="분할 파일의 검증 주제도 평가로 쓰고, 검증은 학습 주제 답에서 이 비율만큼 뗌 "
+        "(처음 보는 주제 20개 평가, --aihub-split 없이)",
+    )
     parser.add_argument("--device", default="auto", help="auto / cpu / cuda")
     parser.add_argument(
         "--epochs",
@@ -632,6 +644,10 @@ def main() -> None:
         parser.error(
             "--extra-adult는 논술형(essay)만 (성인 글은 논술형과 같은 루브릭, 핵심어 없음)"
         )
+    if args.valid_topics and not args.aihub_split:
+        parser.error("--valid-topics는 --aihub-split와 같이 씀")
+    if args.aihub_split and args.valid_from_train:
+        parser.error("--aihub-split와 --valid-from-train은 같이 못 씀")
     if args.aihub_split and args.extra_adult:
         parser.error("--aihub-split와 --extra-adult는 같이 못 씀 (성인 글 VL이 평가용에 섞임)")
     if args.distill and (args.head == "cls" or args.corr_loss):
@@ -662,6 +678,10 @@ def main() -> None:
         run_name += "_adult"
     if args.aihub_split:
         run_name += "_aihub"
+    if args.valid_from_train:
+        run_name += f"_vft{args.valid_from_train:g}"
+    if args.valid_topics:
+        run_name += f"_vtopic{args.split_seed}"
     if args.corr_loss:
         run_name += f"_corr{args.corr_loss:g}"
     if args.merge_valid:
@@ -687,8 +707,24 @@ def main() -> None:
         if not args.aihub_split:
             print("  주의: --aihub-split 없이 쓰면 평가 문항이 학습에 없던 지시문임")
     if args.aihub_split:
+        held = df.loc[df["split_new"] == "valid", "prompt_id"].unique()  # 분할 파일의 검증 주제
         df = aihub_split(df, args.split_seed)
+        if args.valid_topics:
+            # 11/2 개선 실험: 학습 멈춤·경계를 '처음 보는 주제'로 정함. 분할 파일의 검증 주제(10개)는
+            # 학습·평가에서 빼고 그 주제의 글 전부를 검증으로, 나머지 주제는 TL 전부 학습·VL 평가
+            in_held = df["prompt_id"].isin(held)
+            df.loc[~in_held & (df["split_new"] == "valid"), "split_new"] = "train"
+            df.loc[in_held, "split_new"] = "valid"
+            print(f"검증 = 처음 보는 주제 {len(held)}개")
         print("AI Hub 구분 사용:", df["split_new"].value_counts().to_dict())
+    elif args.valid_from_train:
+        # 11/2 처음 보는 주제 B안: 빼 둔 20개 주제(검증 10 + 평가 10)를 모두 평가로 쓰고,
+        # 학습 멈춤·경계용 검증은 학습 주제 답에서 일부를 뗌 (평가 주제가 2배라 숫자가 덜 흔들림)
+        df.loc[df["split_new"] == "valid", "split_new"] = "test"
+        tr = df.index[df["split_new"] == "train"]
+        pick = np.random.RandomState(args.seed).rand(len(tr)) < args.valid_from_train
+        df.loc[tr[pick], "split_new"] = "valid"
+        print("학습 주제에서 검증 뗌:", df["split_new"].value_counts().to_dict())
     if args.with_exemplar:
         ex = pick_exemplars(df, args.seed)
         df = df[~df["answer_id"].isin(ex["answer_id"])]  # 예시로 쓴 답은 채점 대상에서 뺌

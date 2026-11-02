@@ -238,6 +238,14 @@ def main():
         "0이면 끔. 예: 1)",
     )
     ap.add_argument(
+        "--valid-topics",
+        type=int,
+        default=0,
+        help="학습 주제 중 K개를 통째로 검증용으로 뺌(그 주제 TL+VL 전부). 학습 멈춤·점수 경계를 "
+        "'처음 보는 주제' 기준으로 고르기 위함(11/2, 서술 --valid-topics와 같은 생각). 처음 보는 주제 "
+        "평가(--n-new)와는 겹치지 않음. 0이면 끔(기존: 학습 주제 TL 5%%)",
+    )
+    ap.add_argument(
         "--add-71819",
         action="store_true",
         help="AI Hub 71819 논술형(89문항)을 학습에만 추가: 구성=organization_1·2, "
@@ -269,6 +277,14 @@ def main():
         "same_topic": df[(df["split"] == "VL") & ~df["subject"].isin(new)].reset_index(drop=True),
         "new_topic": df[df["subject"].isin(new)].reset_index(drop=True),
     }
+    if args.valid_topics:
+        rest = np.sort([t for t in topics if t not in new])
+        vt = set(np.random.RandomState(args.seed + 1).permutation(rest)[: args.valid_topics])
+        print(f"검증 주제 {len(vt)}개 (학습·처음 보는 주제와 안 겹침)")
+        known = ~df["subject"].isin(new | vt)
+        sets["train"] = df[(df["split"] == "TL") & known].reset_index(drop=True)
+        sets["valid"] = df[df["subject"].isin(vt)].reset_index(drop=True)
+        sets["same_topic"] = df[(df["split"] == "VL") & known].reset_index(drop=True)
     tag = ""
     if args.n_new != 10:
         tag += f"_nnew{args.n_new}"
@@ -282,6 +298,8 @@ def main():
         tag += f"_{args.data_dir.name}"
     if args.mask_disagree:
         tag += f"_mask{args.mask_disagree:g}"
+    if args.valid_topics:
+        tag += f"_vtopic{args.valid_topics}"
     if args.add_71819:
         # 평가는 545 그대로, 학습에만 71819를 더해 주제 수를 늘림 (50 → 50+89, 10/29 처음 보는 주제
         # 0.510 개선 시도)
