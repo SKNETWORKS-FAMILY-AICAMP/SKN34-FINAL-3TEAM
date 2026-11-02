@@ -68,6 +68,9 @@ abstract class IntegrationTestSupport {
             registry.add("spring.rabbitmq.port", rabbit::getAmqpPort)
             registry.add("spring.rabbitmq.username", rabbit::getAdminUsername)
             registry.add("spring.rabbitmq.password", rabbit::getAdminPassword)
+            registry.add("ADMIN_RABBIT_MANAGEMENT_URL", rabbit::getHttpUrl)
+            registry.add("ADMIN_RABBIT_MANAGEMENT_USERNAME", rabbit::getAdminUsername)
+            registry.add("ADMIN_RABBIT_MANAGEMENT_PASSWORD", rabbit::getAdminPassword)
             registry.add("app.internal.token") { "test-token" }
         }
     }
