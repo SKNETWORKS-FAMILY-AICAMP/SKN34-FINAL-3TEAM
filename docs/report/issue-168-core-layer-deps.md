@@ -108,3 +108,42 @@ domain 예외가 더는 `BusinessException`이 아니므로, `BusinessException`
 - 그사이 develop에 들어온 코드(#267·#270)에 예외를 잡거나 `.status`를 읽는 곳이 새로 없음을 확인
 - 추가 3곳을 원래 코드로 되돌리면 새 테스트가 각각 실패함을 확인(위 테스트 절)
 - scripts/tests 통과, `git diff --check` 통과
+
+## #251 기능 간 controller·config 직접 참조 제거 (core·learning, 11/03)
+
+[점검 기록](audit.md) 4.5 A10: 아키텍처 2.2 "기능 간 호출은 상대 기능의 service로만"과 달리 core 컨트롤러가 account의 `AuthController.IDENTITY`를, guardianship이 account 설정을, `_common/security/PublicAuthFilter`가 account의 controller·service·config를 참조했고, learning attempt·record가 다른 기능 controller의 응답 DTO를 import했다. #249(PR #272)와 `PublicAuthFilter`가 겹쳐 그 브랜치 위에서 작업했다(이슈 "#249 병합 후 진행").
+
+### 정한 내용
+
+| 항목 | 내용 | 근거 |
+|---|---|---|
+| 요청 속성 상수 | `_common/security/RequestAttributes.IDENTITY`(값 `sagomungchi.identity` 그대로). `AuthController.IDENTITY` 제거, 컨트롤러 12개(account 3·다른 기능 9)와 필터를 교체 | 이슈 해야 할 일 1, 헤더 상수 방식(`UserContext`) |
+| `PublicAuthFilter` | `_common/security` → `account/controller`(Presentation, 새 계층을 만들지 않음). 등록(`account/config/AuthConfig`)은 import만. 테스트도 같은 패키지로 이동 | 이슈 해야 할 일 2, 아키텍처 2.1 |
+| PIN 실패 한도 | guardianship `PinRules.FAILURE_LIMIT = 5`(api-spec 1.3 `STUDENT_PIN_LOCKED` "PIN 연속 5회 실패"). `StudentPinService`의 account 설정 의존 제거, `StudentDeviceProperties.pinFailureLimit`·`application.yml`의 `pin-failure-limit` 삭제 | 이슈 해야 할 일 3. 값이 정책으로 5 고정(기존 설정도 `== 5`만 허용)이라 상수 |
+| 확인 필요(account도 쓰는지) | account `StudentAuthService`는 `pinFailureLimit`을 쓰지 않음(코드 확인) → 한 곳만 소유 | 이슈 해야 할 일 4 |
+| 공유 응답 DTO | `MissionResponse`·`MissionListItemResponse`·`AnswerItem`을 learning `_common/web/SharedResponses.kt`로. 기능 타입 없이 열거값은 이름 문자열, `Choice`·`Category`는 같은 모양의 `OptionResponse`, `AnswerItem<F>`의 피드백은 타입 인자 | 이슈 해야 할 일 5, 완료 조건 "`_common`의 기능 import 0건" |
+| 변환 | domain → DTO 변환은 쓰는 기능 controller에 companion 확장 `from`으로(mission `SharedResponseMapping.kt`, attempt `AttemptResponses.kt`, record `RecordResponses.kt`). 호출 코드 `MissionResponse.from(...)`은 그대로, 함수 참조(`::from`)는 람다로 | 이슈 "DTO 매핑은 데이터 표현이라 중복 허용" |
+| `RecordAttemptResponse` | `AttemptResponse.from` 경유 없이 `AttemptDetail`에서 직접 생성(같은 값) | 이슈 해야 할 일 6 |
+| 설계 | architecture 2.2: `_common`은 기능 패키지를 참조하지 않음, 응답 DTO 기준. 2.6: core account/controller에 필터, learning `_common/web`. class-diagram 1장: `PublicAuthFilter` 위치, `RequestAttributes` | 이슈 해야 할 일 7 |
+
+### 완료 조건 해석 (사용자와 정함)
+
+- 완료 조건의 "(`_common`의 기능 import 0건)"과 해야 할 일 "공유 DTO를 `_common/web`으로"는, DTO 필드가 mission·judgment domain 타입이라 그대로 옮기면 부딪혔다. 아키텍처 2.2는 "Domain은 모든 레이어가 참조 가능"이라 domain 참조를 허용하는 해석도 가능했으나, 해석 없이 둘 다 지키도록 `_common/web` DTO에서 기능 타입을 뺐다(위 표)
+- 피드백 결과(`FeedbackResult`)는 복사하지 않고 타입 인자로 받아, 피드백 API와 시도 상세의 판정 JSON이 한 구조로 유지됨
+
+### 이슈와 다른 점
+
+- `Choice`·`Category`를 하나의 `OptionResponse`로(같은 `{id, label}` 모양), `MissionListItemResponse.of`(상세 칸 복사)를 `_common/web`에 둠
+- 변환이 세 기능에 중복됨(이슈가 허용한 매핑 중복). 세 변환이 같은 JSON을 내는지 테스트로 묶음(아래)
+- PIN 한도의 설정 키(`app.student-device.pin-failure-limit`)를 지움. 다른 설정 파일·배포 값에는 없었음(저장소 검색)
+
+### 테스트
+
+- learning `SharedResponsesJsonTest`: 옮기기 전 DTO(domain 타입 필드)로 직렬화한 JSON을 기대값으로 기록한 뒤, 옮긴 DTO가 mission·attempt·record 변환 모두에서 같은 JSON을 냄
+- 기존 컨트롤러·서비스 테스트(응답 JSON 포함) 그대로 통과, core `PublicAuthFilterTest`는 패키지만 이동
+
+### 검증
+
+- #272(#249) 브랜치 위에서 core `./gradlew test bootJar` 455개 통과, learning `./gradlew test bootJar` 285개 통과
+- core·learning에서 다른 기능의 `controller`·`config` import 0건(전: core 13·learning 6), `_common`의 기능 패키지 import 0건(전: core `PublicAuthFilter` 3), import 없이 전체 이름으로 쓴 참조도 0건
+- `pin-failure-limit`·`pinFailureLimit`은 바꾸기 전에도 `application.yml`·`StudentDeviceProperties`·`StudentPinService`에만 있었음(`git grep HEAD`)
