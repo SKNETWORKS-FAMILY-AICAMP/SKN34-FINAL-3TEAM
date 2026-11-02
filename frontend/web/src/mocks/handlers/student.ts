@@ -1,4 +1,5 @@
 import { http, HttpResponse } from 'msw/http'
+import { isShared, saveSharing, requireShared } from '../fixtures/sharing.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { DraftConflictError } from '../../data/classroom/errors.ts'
 import type { Child, DemoScenario, Feedback, Period } from '../../domain/classroom.ts'
@@ -222,6 +223,25 @@ export const studentHandlers = [
       return look
     }),
   ),
+  http.get('/api/v1/students/me/sharing-preferences', ({ request }) => respond(async () => {
+    guard(request)
+    if (store.snapshot().session?.role !== 'STUDENT' || !child) throw new ApiError({ status: 403, code: 'FORBIDDEN', title: '학생 본인만 설정할 수 있습니다.' })
+    return { studentId: child.id, parentSharingEnabled: isShared(child.id) }
+  })),
+  http.put('/api/v1/students/me/sharing-preferences', ({ request }) => respond(async () => {
+    guard(request)
+    if (store.snapshot().session?.role !== 'STUDENT' || !child) throw new ApiError({ status: 403, code: 'FORBIDDEN', title: '학생 본인만 설정할 수 있습니다.' })
+    const data = await request.json() as Record<string, unknown>
+    if (typeof data.parentSharingEnabled !== 'boolean') throw new Error('공개 여부를 확인해 주세요.')
+    saveSharing(child.id, data.parentSharingEnabled)
+    return { studentId: child.id, parentSharingEnabled: isShared(child.id) }
+  })),
+  http.get('/api/v1/children/:childId/sharing-preferences', ({ request, params }) => respond(async () => {
+    guard(request)
+    if (store.snapshot().session?.role !== 'PARENT') throw new ApiError({ status: 403, code: 'FORBIDDEN', title: '학부모 권한이 필요합니다.' })
+    const selected = await linked(id(params.childId))
+    return { studentId: selected.id, parentSharingEnabled: isShared(selected.id) }
+  })),
   http.get('/api/v1/children', ({ request }) =>
     respond(async () => {
       guard(request)
@@ -268,6 +288,32 @@ export const studentHandlers = [
       return wireAttempt(await store.attempt(id(params.attemptId)))
     }),
   ),
+  http.get('/api/v1/attempts/:attemptId/comparison', ({ request, params }) => respond(async () => {
+    guard(request)
+    if (store.snapshot().session?.role !== 'STUDENT') throw new ApiError({ status: 403, code: 'FORBIDDEN', title: '학생 본인만 비교할 수 있습니다.' })
+    const current = await store.attempt(id(params.attemptId))
+    if (!current.finishedAt) throw new ApiError({ status: 409, code: 'REVEAL_CONDITION_UNMET', title: '마무리 뒤 비교할 수 있습니다.' })
+    const attempts = store.snapshot().attempts
+    const index = attempts.findIndex(a => a.attemptId === current.attemptId)
+    // 가상 저장소는 시도 생성 순서로 보관한다. 실서버의 시점 조건은 learning DB에서 검사한다.
+    const previous = attempts.slice(0, index).reverse().filter(a => a.studentId === current.studentId &&
+      a.mission.id === current.mission.id && a.finishedAt).sort((a, b) => b.finishedAt!.localeCompare(a.finishedAt!))[0]
+    const snapshot = (a: typeof current) => ({ attemptId: a.attemptId, finishedAt: a.finishedAt!, mission: { ...a.mission, choices: a.mission.choices ?? [], categories: a.mission.categories ?? [], answerUnit: (a.mission as { answerUnit?: string }).answerUnit ?? null },
+      answers: a.answers.map(answer => ({ answerId: answer.answerId, version: answer.version, text: answer.text,
+        content: answer.content ?? { text: answer.text } })),
+      judgment: a.answers.toReversed().find(answer => answer.feedback.judgment)?.feedback.judgment?.result ?? null,
+      elements: a.checklist ?? [] })
+    const same = previous && previous.mission.inputType === current.mission.inputType &&
+      previous.mission.question === current.mission.question &&
+      JSON.stringify(previous.checklist?.map(e => e.elementId)) === JSON.stringify(current.checklist?.map(e => e.elementId))
+    const elements = !same ? [] : (current.checklist ?? []).map(e => {
+      const before = previous!.checklist?.find(old => old.elementId === e.elementId)?.satisfied === true
+      return { elementId: e.elementId, label: e.label, previousSatisfied: before, currentSatisfied: e.satisfied,
+        change: e.satisfied ? before ? 'RETAINED' : 'ADDED' : before ? 'NOT_CONFIRMED_NOW' : 'NOT_CONFIRMED' }
+    })
+    return { attemptId: current.attemptId, state: !previous ? 'NO_PREVIOUS' : same ? 'COMPARABLE' : 'CRITERIA_CHANGED',
+      previous: previous ? snapshot(previous) : null, current: snapshot(current), elements }
+  })),
   http.put('/api/v1/attempts/:attemptId/draft', ({ request, params }) =>
     respond(async () => {
       guard(request)
@@ -397,6 +443,7 @@ export const studentHandlers = [
     respond(async () => {
       guard(request)
       const url = new URL(request.url)
+      requireShared(id(params.childId))
       return page(
         await store.records(await linked(id(params.childId)), 'PARENT', {
           from: url.searchParams.get('from')!,
@@ -408,7 +455,9 @@ export const studentHandlers = [
   http.get('/api/v1/children/:childId/attempts/:attemptId', ({ request, params }) =>
     respond(async () => {
       guard(request)
-      return store.record(await linked(id(params.childId)), id(params.attemptId))
+      const selected = await linked(id(params.childId))
+      requireShared(selected.id)
+      return store.record(selected, id(params.attemptId))
     }),
   ),
   http.get('/api/v1/children/:childId/reports', ({ request, params }) =>
@@ -436,9 +485,9 @@ export const studentHandlers = [
         revision ? Number(revision) : undefined,
       )
       return {
-        ...r,
+        ...(isShared(context.child.id) ? r : { ...r, records: [], narrative: null, eveningQuestion: null }),
         revisions: r.revisions.map((revision) => ({ revision })),
-        narrative: r.narrative ? { text: r.narrative, source: 'TEMPLATE' } : null,
+        narrative: isShared(context.child.id) && r.narrative ? { text: r.narrative, source: 'TEMPLATE' } : null,
         verification: { numbersMatched: true, quotesMatched: true },
       }
     }),

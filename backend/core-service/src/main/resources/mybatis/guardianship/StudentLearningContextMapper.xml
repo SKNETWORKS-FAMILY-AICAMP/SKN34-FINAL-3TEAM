@@ -13,4 +13,10 @@
         WHERE s.id=#{studentId} AND g.parent_user_id=#{userId}
           AND g.status='LINKED' AND s.status='ACTIVE'
     </select>
+    <select id="sharingEnabled" resultType="java.lang.Boolean" useCache="false" flushCache="true">
+        SELECT parent_sharing_enabled FROM student WHERE id=#{studentId} AND status='ACTIVE' FOR UPDATE
+    </select>
+    <update id="updateSharing">
+        UPDATE student SET parent_sharing_enabled=#{enabled}, updated_at=now() WHERE id=#{studentId} AND status='ACTIVE'
+    </update>
 </mapper>

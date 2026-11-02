@@ -246,14 +246,14 @@ function ReportDetail({
                   )}
                 </>
               )}
-              <p>다운로드는 서버가 제공하는 최신판 파일입니다.</p>
+              <p>{r.parentSharingEnabled === false ? '원문 비공개 중에는 기존 파일을 제공하지 않습니다. 위 학습 수치는 계속 확인할 수 있습니다.' : '다운로드는 서버가 제공하는 최신판 파일입니다.'}</p>
               <div className="ws-actions">
                 <button className="cj-secondary" onClick={() => onAnalysis(r.period)}>
                   이 기간의 기록에 질문
                 </button>
                 <button
                   className="cj-secondary"
-                  disabled={download.isPending}
+                  disabled={download.isPending || r.parentSharingEnabled === false}
                   onClick={() => {
                     void file('pdf')
                   }}
@@ -262,7 +262,7 @@ function ReportDetail({
                 </button>
                 <button
                   className="cj-secondary"
-                  disabled={download.isPending}
+                  disabled={download.isPending || r.parentSharingEnabled === false}
                   onClick={() => {
                     void file('md')
                   }}

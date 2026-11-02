@@ -13,6 +13,7 @@ interface AttemptMapper {
     fun insertIfNoneInProgress(attempt: Attempt): Int
     fun findInProgress(@Param("studentId") studentId: UUID, @Param("missionId") missionId: UUID): Attempt?
     fun findById(id: UUID): Attempt?
+    fun findPreviousFinished(current: Attempt): Attempt?
     fun findByIdForUpdate(id: UUID): Attempt?
     fun finish(attempt: Attempt): Int
     fun complete(attempt: Attempt): Int

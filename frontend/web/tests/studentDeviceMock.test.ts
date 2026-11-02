@@ -12,7 +12,7 @@ const { studentHandlers } = await import('../src/mocks/handlers/student.ts')
 const { deviceState, setDeviceScenario } = await import('../src/mocks/fixtures/studentDevice.ts')
 
 const server = setupServer(...studentDeviceHandlers, ...parentHandlers, ...studentHandlers)
-server.listen({ onUnhandledRequest: 'error' })
+server.listen({ onUnhandledFrame: 'error' })
 test.after(() => server.close())
 
 const base = 'http://localhost/api/v1'

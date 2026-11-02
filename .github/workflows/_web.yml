@@ -25,3 +25,27 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+
+  browser:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.app-path }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ${{ inputs.app-path }}/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: web-playwright-failure
+          path: |
+            ${{ inputs.app-path }}/playwright-report/
+            ${{ inputs.app-path }}/test-results/
+          retention-days: 7

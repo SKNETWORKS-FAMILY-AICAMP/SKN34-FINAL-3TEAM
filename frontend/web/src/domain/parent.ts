@@ -118,6 +118,7 @@ export interface ReportItem {
   generatedAt?: string | null
 }
 export interface WeeklyReport extends ReportItem {
+  parentSharingEnabled?: boolean
   revisions: { revision: number; generatedAt?: string }[]
   inclusionRule: string
   metrics: (Metric & { itemId?: string })[]
@@ -126,14 +127,14 @@ export interface WeeklyReport extends ReportItem {
     itemId?: string
     attemptId: string
     followup: string | null
-    first: { answerId: string; text: string }
-    revised: { answerId: string; text: string }
+    first: { answerId?: string; text: string | null }
+    revised: { answerId?: string; text: string | null }
     counts: { chars: number[]; sentences: number[]; reasonConnectives: number[] }
   }[]
   reflections: {
     attemptId: string
-    difficulty: string
-    text: string
+    difficulty: string | null
+    text: string | null
     written: boolean
     itemId?: string
   }[]

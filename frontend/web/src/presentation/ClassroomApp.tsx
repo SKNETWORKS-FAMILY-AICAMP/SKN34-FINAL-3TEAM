@@ -37,13 +37,14 @@ import {
 import { inputLabels, shortRange, thinkingLabels } from '../domain/classroom.ts'
 import type { Child, DemoScenario, Period, PublicAttempt } from '../domain/classroom.ts'
 import { ActivityPaper, Brand, ErrorNotice, Modal } from './shared/ClassroomParts.tsx'
+import { StudentSharingPage } from './student/StudentSharingPage.tsx'
 import { StudentWorkPage } from './student/StudentWorkPage.tsx'
 import { ParentAnalysis, ParentReport } from './parent/ParentFeatures.tsx'
 import './classroom.css'
 import { QueryStateNotice } from './common/QueryStateNotice.tsx'
 
 const { recentPeriod, previousWeek } = displayPeriods
-type Page = 'home' | 'journal' | 'missions' | 'report' | 'analysis'
+type Page = 'home' | 'journal' | 'missions' | 'report' | 'analysis' | 'settings'
 export function ClassroomApp() {
   const auth = useAuthentication(),
     { session, setSession, selected, setSelected, expired, setExpired, scenario, setScenario } =
@@ -55,7 +56,7 @@ export function ClassroomApp() {
   const work = location.pathname.startsWith('/student/attempts/')
     ? location.pathname.split('/')[3]
     : null
-  const studentPage: StudentPage = (['home', 'missions'] as const).find((p) => p === page) ?? 'journal'
+  const studentPage: StudentPage = (['home', 'missions', 'settings'] as const).find((p) => p === page) ?? 'journal'
   const typeFilter = new URLSearchParams(location.search).get('type')
   const setPage = (page: Page) => navigate(`/${session?.role.toLowerCase() ?? 'parent'}/${page}`)
   const setWork = (id: string | null) =>
@@ -350,6 +351,7 @@ export function ClassroomApp() {
                   setPage('journal')
                 }}
               />
+            ) : studentPage === 'settings' ? (<StudentSharingPage key={child.id} child={child} />
             ) : studentPage === 'home' ? (
               <ThinkingMap
                 child={child}
@@ -917,9 +919,9 @@ function RecordCard({
           <MessagesSquare />
           처음 답·질문·추가 답
         </button>
-        {onContinue && r.status === 'IN_PROGRESS' ? (
+        {onContinue ? (
           <button type="button" className="cj-primary" onClick={onContinue}>
-            이어서 하기
+            {r.finishedAt ? '결과 다시 보기' : '이어서 하기'}
           </button>
         ) : (
           <span className="cj-badge">

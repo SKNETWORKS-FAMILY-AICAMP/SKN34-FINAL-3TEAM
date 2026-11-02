@@ -1,4 +1,5 @@
 import { http, HttpResponse } from 'msw/http'
+import { requireShared, isShared, privateReport } from '../fixtures/sharing.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { counts } from '../../domain/classroom.ts'
 import type { Child, Period } from '../../domain/classroom.ts'
@@ -116,6 +117,7 @@ const conv = (id: string) => {
 async function conversationGuard(request: Request, id: string) {
   const c = conv(id)
   const child = await parentChild(request, c.childId)
+  requireShared(c.childId)
   if (request.method === 'POST' && child.plan !== 'PREMIUM')
     fail('USAGE_LIMIT_REACHED', '무료 플랜은 분석 대화를 제공하지 않습니다.', 429)
   return c
@@ -452,6 +454,7 @@ export const parentHandlers = [
       queryFault()
       const p = period(request),
         rows = scopedRows(c, p)
+      requireShared(c.id)
       const query = new URL(request.url).searchParams
       const index = Number(query.get('page') ?? 0), size = Number(query.get('size') ?? 20)
       if (!Number.isInteger(index) || index < 0 || !Number.isInteger(size) || size < 1 || size > 100) fail('VALIDATION_FAILED', '페이지를 확인해 주세요.')
@@ -467,6 +470,7 @@ export const parentHandlers = [
   http.get('/api/v1/children/:childId/attempts/:attemptId', ({ request, params }) =>
     respond(async () => {
       const c = await parentChild(request, String(params.childId))
+      requireShared(c.id)
       const a = store
         .snapshot()
         .attempts.find((a) => a.attemptId === params.attemptId && a.studentId === c.id)
@@ -479,6 +483,7 @@ export const parentHandlers = [
     respond(async () => {
       const childId = new URL(request.url).searchParams.get('childId') ?? ''
       await parentChild(request, childId)
+      requireShared(childId)
       queryFault()
       return page([...conversations.values()].filter((c) => c.childId === childId))
     }),
@@ -487,6 +492,7 @@ export const parentHandlers = [
     respond(async () => {
       const scope = (await request.json()) as Scope,
         c = await parentChild(request, scope.childId)
+      requireShared(c.id)
       if (c.plan !== 'PREMIUM')
         fail('USAGE_LIMIT_REACHED', '무료 플랜은 분석 대화를 제공하지 않습니다.', 429)
       if (!validPeriod(scope)) fail('VALIDATION_FAILED', '기간을 확인해 주세요.')
@@ -586,12 +592,13 @@ export const parentHandlers = [
       const c = await parentChild(request, r!.childId)
       const recomputed =
         mode === 'empty' || mode === 'small' ? makeWeekly(c, r!.period, r!.revision) : r!
-      return {
+      const result = {
         ...recomputed,
         revisions: versions.map((v) => ({ revision: v.revision, generatedAt: v.generatedAt })),
         status:
           mode === 'report-running' ? 'RUNNING' : mode === 'report-failed' ? 'FAILED' : r!.status,
       }
+      return isShared(c.id) ? { ...result, parentSharingEnabled: true } : privateReport(result)
     }),
   ),
   http.post('/api/v1/reports/:reportId/regenerate', ({ request, params }) =>
@@ -616,6 +623,7 @@ export const parentHandlers = [
         c = await parentChild(request, r.childId),
         rows = scopedRows(c, r.period),
         key = String(params.itemId)
+      requireShared(c.id)
       return evidenceResponse(
         evidence(
           rows.filter(
@@ -628,6 +636,7 @@ export const parentHandlers = [
   http.get('/api/v1/reports/:reportId/download', ({ request, params }) =>
     respond(async () => {
       const versions = await reportGuard(request, String(params.reportId))
+      requireShared(versions.at(-1)!.childId)
       if (
         versions.at(-1)!.status !== 'COMPLETED' ||
         mode === 'report-running' ||
@@ -659,6 +668,7 @@ export const parentHandlers = [
     if (
       !ticket ||
       ticket.file !== file ||
+      !isShared(ticket.childId) ||
       ticket.expires <= Date.now() ||
       store.snapshot().session?.role !== 'PARENT' ||
       !store.snapshot().children?.some((c) => c.id === ticket.childId) ||

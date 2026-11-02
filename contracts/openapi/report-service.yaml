@@ -1435,18 +1435,31 @@
       "TextAnswer": {
         "properties": {
           "answerId": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Answerid"
           },
           "text": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Text"
           }
         },
         "type": "object",
         "required": [
-          "answerId",
           "text"
         ],
         "title": "TextAnswer"

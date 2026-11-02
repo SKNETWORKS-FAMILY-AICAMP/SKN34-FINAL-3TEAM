@@ -25,7 +25,7 @@ export function restoreSession(fresh = false) {
     throw error
   }))
 }
-export const isDemo = import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true'
+export const isDemo = typeof import.meta.env !== 'undefined' && import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true'
 export const displayPeriods = calendarPeriods(
   isDemo ? new Date('2026-10-26T12:00:00+09:00') : new Date(),
 )

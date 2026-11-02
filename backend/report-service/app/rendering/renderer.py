@@ -118,8 +118,8 @@ class ReportRenderer:
                     lines.extend(
                         [
                             safe(value["followup"] or ""),
-                            safe(value["first"]["text"]),
-                            safe(value["revised"]["text"]),
+                            safe(value["first"]["text"] or "원문 비공개"),
+                            safe(value["revised"]["text"] or "원문 비공개"),
                             " · ".join(
                                 f"{label} {value['counts'][key][0]} → {value['counts'][key][1]}"
                                 for key, label in (

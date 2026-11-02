@@ -94,6 +94,25 @@ test('무료 응답(narrative·eveningQuestion null)은 수치만', async (t) =>
   setAccessToken(null)
 })
 
+test('오래된 자녀 plan과 관계없이 core의 현재 리포트 제공 범위를 따른다', async (t) => {
+  serve(t, detail({
+    eveningQuestion: '현재 구독으로 제공된 질문',
+    narrative: { text: '현재 구독으로 제공된 요약', source: 'LLM', modelExplanation: null },
+  }))
+  const report = await createApiGateway().report({ ...child, plan: 'FREE' }, previousWeek)
+  assert.equal(report.narrative, '현재 구독으로 제공된 요약')
+  assert.equal(report.eveningQuestion, '현재 구독으로 제공된 질문')
+  setAccessToken(null)
+})
+
+test('오래된 PREMIUM 표시가 있어도 core의 무료 응답에 서술을 덧붙이지 않는다', async (t) => {
+  serve(t, detail({}))
+  const report = await createApiGateway().report({ ...child, plan: 'PREMIUM' }, previousWeek)
+  assert.equal(report.narrative, null)
+  assert.equal(report.eveningQuestion, undefined)
+  setAccessToken(null)
+})
+
 test('리포트 목록은 {items} 그대로, 자녀 수정은 바꾼 필드만 헤더 없이', async (t) => {
   const sent: { url: string; init: RequestInit }[] = []
   setAccessToken('memory-test-token')
@@ -115,6 +134,19 @@ test('학생 PIN 로그인 응답에 plan이 없으면 미확인', async (t) => 
     json({ role: 'STUDENT', accessToken: 'student-token', child: { childId: child.id, nickname: child.nickname, grade: 3 } }),
   )
   const session = await studentDeviceApi.login(child.id, '1234')
-  assert.equal(session.role === 'STUDENT' && session.child.plan, undefined)
+  assert.equal(session.role === 'STUDENT' && session.child?.plan, undefined)
   setAccessToken(null)
+})
+
+
+test('비공개 리포트는 수치를 표시하면서 학부모 원문을 추가 조회하지 않는다', async t => {
+  const requests: string[] = []
+  setAccessToken('synthetic', 'PARENT')
+  t.mock.method(globalThis, 'fetch', async (url: string) => {
+    requests.push(String(url))
+    return json(String(url).includes('/children/') ? { items: [summary] } : detail({ parentSharingEnabled: false }))
+  })
+  const result = await createApiGateway().report(child, previousWeek)
+  assert.deepEqual(result.records, [])
+  assert.ok(requests.every(url => !url.includes('/attempts')))
 })

@@ -20,6 +20,52 @@ tags:
 security:
 - BearerAuth: []
 paths:
+  /students/me/sharing-preferences:
+    get:
+      tags: [Students]
+      operationId: getStudentSharingPreference
+      summary: 학생 본인의 전역 학부모 공개 설정
+      responses:
+        '200':
+          description: 현재 공개 설정 (Cache-Control no-store)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StudentSharingPreference'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+    put:
+      tags: [Students]
+      operationId: updateStudentSharingPreference
+      summary: 학생 본인만 공개 설정 변경 (기본 비공개)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [parentSharingEnabled]
+              properties:
+                parentSharingEnabled: {type: boolean}
+      responses:
+        '200':
+          description: 저장된 공개 설정 (Cache-Control no-store)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StudentSharingPreference'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /children/{childId}/sharing-preferences:
+    get:
+      tags: [Children]
+      operationId: getChildSharingPreference
+      summary: 연결된 자녀 공개 상태 조회 (학부모 변경 불가)
+      parameters:
+      - {name: childId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: 자녀 공개 상태 (Cache-Control no-store)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StudentSharingPreference'}
+        default: {$ref: '#/components/responses/LearningProblem'}
   /internal/students/{studentId}/profile:
     servers:
     - url: /
@@ -2677,6 +2723,21 @@ paths:
       description: STUDENT 전용. learning의 상태·응답·ETag를 보존한다. 대상 학생의 소유권은 learning이 X-Student-Scope와 대조한다.
       responses:
         '200': {$ref: '#/components/responses/LearningResult'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /attempts/{attemptId}/comparison:
+    parameters:
+    - {$ref: '#/components/parameters/AttemptId'}
+    get:
+      operationId: getAttemptComparison
+      tags: [Learning]
+      summary: 같은 미션의 직전 마무리 시도와 비교
+      description: STUDENT 전용. 현재 시도 마무리 이후만 공개. 이전 원문·판정·피드백은 보존하며 기준 버전이 다르면 요소 변화는 비교하지 않는다. Cache-Control no-store.
+      responses:
+        '200':
+          description: 이전 결과 또는 NO_PREVIOUS
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AttemptComparison'}
         default: {$ref: '#/components/responses/LearningProblem'}
   /attempts/{attemptId}/draft:
     parameters:
@@ -5809,6 +5870,63 @@ components:
         type: string
         const: XMLHttpRequest
   schemas:
+    StudentSharingPreference:
+      type: object
+      additionalProperties: false
+      required: [studentId, parentSharingEnabled]
+      properties:
+        studentId: {type: string, format: uuid}
+        parentSharingEnabled: {type: boolean, default: false}
+    AttemptComparison:
+      type: object
+      required: [attemptId, state, previous, current, elements]
+      properties:
+        attemptId: {type: string, format: uuid}
+        state: {type: string, enum: [NO_PREVIOUS, COMPARABLE, CRITERIA_CHANGED]}
+        previous:
+          anyOf:
+          - {$ref: '#/components/schemas/ComparisonSnapshot'}
+          - {type: 'null'}
+        current: {$ref: '#/components/schemas/ComparisonSnapshot'}
+        elements:
+          type: array
+          items:
+            type: object
+            required: [elementId, label, previousSatisfied, currentSatisfied, change]
+            properties:
+              elementId: {type: string, format: uuid}
+              label: {type: string}
+              previousSatisfied: {type: boolean}
+              currentSatisfied: {type: boolean}
+              change: {type: string, enum: [ADDED, RETAINED, NOT_CONFIRMED, NOT_CONFIRMED_NOW]}
+    ComparisonSnapshot:
+      type: object
+      required: [attemptId, finishedAt, answers, judgment, elements, mission]
+      properties:
+        attemptId: {type: string, format: uuid}
+        finishedAt: {type: string, format: date-time}
+        mission:
+          type: object
+          required: [title, question, inputType, choices, categories, answerUnit]
+          properties:
+            title: {type: string}
+            question: {type: string}
+            inputType: {type: string, enum: [CHOICE, ORDERING, CLASSIFICATION, NARRATIVE, SOLUTION_STEPS, ESSAY]}
+            choices: {type: array, items: {type: object, required: [id, label], properties: {id: {type: string}, label: {type: string}}}}
+            categories: {type: array, items: {type: object, required: [id, label], properties: {id: {type: string}, label: {type: string}}}}
+            answerUnit: {type: [string, 'null']}
+        judgment: {type: [string, 'null'], enum: [CORRECT, PARTIAL, RETHINK, HELD, null]}
+        answers:
+          type: array
+          items:
+            type: object
+            required: [answerId, version, text, content]
+            properties:
+              answerId: {type: string, format: uuid}
+              version: {type: integer, minimum: 1}
+              text: {type: [string, 'null']}
+              content: {type: object, additionalProperties: true}
+        elements: {type: array, items: {type: object, additionalProperties: true}}
     AnalysisFinalResult:
       type: object
       required:
@@ -6185,10 +6303,11 @@ components:
     InternalStudentProfile:
       type: object
       additionalProperties: false
-      required: [studentId, nickname]
+      required: [studentId, nickname, parentSharingEnabled]
       properties:
         studentId: {type: string, format: uuid}
         nickname: {type: string}
+        parentSharingEnabled: {type: boolean, default: false}
     OperationPeriod:
       type: object
       additionalProperties: false

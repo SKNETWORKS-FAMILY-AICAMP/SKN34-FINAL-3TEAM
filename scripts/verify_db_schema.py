@@ -677,7 +677,13 @@ def verify_schema(query):
                 (col["nullable"] == "YES") == expected_col["nullable"],
                 f"{database}.{key}: NULL allowance differs",
             )
-            require(col["default"] is None, f"{database}.{key}: unexpected default")
+            # #206 is the explicit fail-closed migration exception; other defaults stay forbidden.
+            expected_default = (
+                "false"
+                if database == "core_db" and key == ("student", "parent_sharing_enabled")
+                else None
+            )
+            require(col["default"] == expected_default, f"{database}.{key}: unexpected default")
 
         constraints = (
             json.loads(

@@ -15,7 +15,10 @@ class CoreClient:
         response = await self._client.get(f"/internal/students/{student_id}/profile")
         response.raise_for_status()
         profile = response.json()
-        return StudentDisplayName(UUID(profile["studentId"]), profile["nickname"])
+        sharing = profile.get("parentSharingEnabled", False)
+        if not isinstance(sharing, bool):
+            raise ValueError("Invalid student sharing preference")
+        return StudentDisplayName(UUID(profile["studentId"]), profile["nickname"], sharing)
 
     async def report_deletion_completed(self, request_id: UUID):
         response = await self._client.post(
