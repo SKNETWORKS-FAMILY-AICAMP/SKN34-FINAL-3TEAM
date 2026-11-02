@@ -956,6 +956,8 @@ components:
       properties:
         attemptId:
           type: string
+        title:
+          type: string
       type: object
       required:
       - attemptId

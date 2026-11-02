@@ -305,6 +305,30 @@ paths:
           $ref: '#/components/responses/LearningProblem'
         '403':
           $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: JOB_NOT_FOUND(없는 작업·삭제된 학생의 작업)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: JOB_ID_AMBIGUOUS·JOB_NOT_FAILED·JOB_RETRY_IN_PROGRESS·REPORT_ALREADY_RETRIED·REPORT_RETRY_STUDENT_UNAVAILABLE·REPORT_GENERATION_IN_PROGRESS
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: IDEMPOTENCY_KEY_REUSED(같은 키에 다른 작업)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: JOB_RETRY_UNAVAILABLE·JOB_RETRY_OUTCOME_UNKNOWN 또는 상품 권한 확인 불가
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
       summary: adminOperationsRetry (SERVICE_OPS)
   /admin/queues:
     get:
@@ -4120,7 +4144,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '503':
-          description: REPORT_ENTITLEMENT_UNAVAILABLE 또는 REPORT_UNAVAILABLE
+          description: PAYMENT_ENTITLEMENT_CONFIRMING·PAYMENT_PRODUCT_UNAVAILABLE·PAYMENT_FREE_PRODUCT_UNAVAILABLE(상품 권한 확인 불가) 또는 REPORT_UNAVAILABLE
           content:
             application/problem+json:
               schema:
@@ -4188,7 +4212,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '503':
-          description: REPORT_ENTITLEMENT_UNAVAILABLE 또는 REPORT_UNAVAILABLE
+          description: PAYMENT_ENTITLEMENT_CONFIRMING·PAYMENT_PRODUCT_UNAVAILABLE·PAYMENT_FREE_PRODUCT_UNAVAILABLE(상품 권한 확인 불가) 또는 REPORT_UNAVAILABLE
           content:
             application/problem+json:
               schema:
@@ -4256,7 +4280,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '503':
-          description: REPORT_ENTITLEMENT_UNAVAILABLE 또는 REPORT_UNAVAILABLE, DATA_UNAVAILABLE(근거 원문·파일 저장소 장애)
+          description: PAYMENT_ENTITLEMENT_CONFIRMING·PAYMENT_PRODUCT_UNAVAILABLE·PAYMENT_FREE_PRODUCT_UNAVAILABLE(상품 권한 확인 불가) 또는 REPORT_UNAVAILABLE, DATA_UNAVAILABLE(근거 원문·파일 저장소 장애)
           content:
             application/problem+json:
               schema:
@@ -4325,7 +4349,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '503':
-          description: REPORT_ENTITLEMENT_UNAVAILABLE 또는 REPORT_UNAVAILABLE, DATA_UNAVAILABLE(근거 원문·파일 저장소 장애)
+          description: PAYMENT_ENTITLEMENT_CONFIRMING·PAYMENT_PRODUCT_UNAVAILABLE·PAYMENT_FREE_PRODUCT_UNAVAILABLE(상품 권한 확인 불가) 또는 REPORT_UNAVAILABLE, DATA_UNAVAILABLE(근거 원문·파일 저장소 장애)
           content:
             application/problem+json:
               schema:
@@ -4381,7 +4405,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '503':
-          description: REPORT_ENTITLEMENT_UNAVAILABLE 또는 REPORT_UNAVAILABLE
+          description: PAYMENT_ENTITLEMENT_CONFIRMING·PAYMENT_PRODUCT_UNAVAILABLE·PAYMENT_FREE_PRODUCT_UNAVAILABLE(상품 권한 확인 불가) 또는 REPORT_UNAVAILABLE
           content:
             application/problem+json:
               schema:

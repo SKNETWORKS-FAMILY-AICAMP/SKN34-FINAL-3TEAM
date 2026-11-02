@@ -1113,7 +1113,7 @@ erDiagram
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V16(V10·V11 결번), learning Flyway V1~V7, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`. 현재 69개 테이블·613개 컬럼(core 42/390, learning 19/160, report 8/63). 결정 경위는 [DB 스키마 보고서](../report/db-schema.md)
+- 버전: core Flyway V1~V9·V12~V19(V10·V11 결번), learning Flyway V1~V7, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`. 현재 71개 테이블·630개 컬럼(core 44/407, learning 19/160, report 8/63). 결정 경위는 [DB 스키마 보고서](../report/db-schema.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11은 #58이 처음 V10을 썼다가 V12가 적용된 DB에서 Flyway가 거부해 V13으로 옮긴 결번이며, V12 첫 줄 주석의 "V10은 #58"은 당시 기록
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT

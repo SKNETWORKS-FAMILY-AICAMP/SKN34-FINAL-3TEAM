@@ -1,0 +1,10 @@
+{
+  "preds": [
+    "checkpoints\\ens\\klue_roberta-base_descriptive_seed42_kw\\preds.npz",
+    "checkpoints\\ens\\klue_roberta-large_descriptive_seed42_kw\\preds.npz"
+  ],
+  "weights": [
+    0.5,
+    0.5
+  ]
+}

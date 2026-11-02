@@ -70,7 +70,7 @@
   - 피드백: 클라이언트가 끊겨도 learning 처리는 끝까지 진행·저장, 재요청 시 저장 결과 반환
   - 분석 대화: 클라이언트가 끊기면 core가 ai 스트림 취소, 메시지 `FAILED`(재시도 가능) 저장
   - 알림: 재연결 시 `/notifications`로 누락분 재조회
-- core 피드백: `FeedbackService` → `LearningProxyService` → `LearningClient`(read timeout 80초, 일반 JSON 경로의 30초·멱등성은 유지). `_common/web/SseEmitters`는 연결 시간(피드백 90초 `open`, 알림 5분 `subscribe`, 분석 대화 120초 + 여유는 #41 미구현)·15초 heartbeat·종료만 소유하고 판정 상태는 저장하지 않음. 요청 컨텍스트를 작업 virtual thread에 설정·정리. 연결 종료는 heartbeat만 취소하며 learning 작업은 취소하지 않음
+- core 피드백: `FeedbackService` → `LearningProxyService` → `LearningClient`(read timeout 80초, 일반 JSON 경로의 30초·멱등성은 유지). `_common/web/SseEmitters`는 연결 시간(피드백 90초 `open`, 알림 5분 `subscribe`, 분석 대화 125초 `open`·120초 취소 hook, #41)·15초 heartbeat·종료만 소유하고 판정 상태는 저장하지 않음. 요청 컨텍스트를 작업 virtual thread에 설정·정리. 연결 종료는 heartbeat만 취소하며 learning 작업은 취소하지 않음
 - 피드백의 별도 서킷 이름은 `learning-feedback`이다. 전송 오류·시간 초과·계약된 Problem Details가 아닌 5xx를 실패로 센다. Content-Type `application/problem+json`의 JSON 객체에 비어 있지 않은 문자열 code가 있으면 정상 HTTP 전달로 집계하되 업무 결과는 error로 유지한다. 따라서 learning이 보낸 AI_UNAVAILABLE·INTERNAL_ERROR를 core 서킷이 다시 차단하지 않고 같은 답변 재요청은 learning으로 전달할 수 있다. AI 서킷은 learning이 소유하며 일반 `learning-json`의 기존 5xx 집계는 바꾸지 않는다.
 - JDK 21 SSE 전송·종료의 상호 배제는 `ReentrantLock`을 사용한다. 블로킹 소켓 전송을 synchronized monitor 안에서 실행해 virtual thread의 carrier가 고정되지 않게 한다.
 
@@ -114,7 +114,7 @@
 - **상태 없는 서비스(ai, scoring)**: 이벤트 발행은 처리 결과 반환 후 best-effort (사용량 집계용), 유실 시 Langfuse trace로 보정(Langfuse는 예정, 저장소 미구성)
 - **멱등 소비**: 소비자별 `processed_event(event_id UK)` 테이블 또는 DB 상태 전이 조건(`QUEUED→RUNNING`)
 - **재시도**: 소비 실패 시 지연 재시도 3회(1·5·15분, P12) 후 DLQ 이동. `report.generate` 확정값을 모든 큐에 동일 적용
-- **명시적 관리자 재처리(#152/#47)**: 위 메시지 전송 재시도와 구분한다. core가 새 jobId·ADMIN_RETRY로 기존 명령을 발행하고 원작업 연결을 보관한다. report는 기존 생성·revision·Outbox를 재사용한다. 같은 jobId의 종료 상태 재전달은 ACK 후 종료하며, 새 관리자 HTTP API·큐·스키마를 report에 추가하지 않는다. core 관리자 접수 연결은 #47 후속이다.
+- **명시적 관리자 재처리(#152/#47)**: 위 메시지 전송 재시도와 구분한다. core가 새 jobId·ADMIN_RETRY로 기존 명령을 발행하고 원작업 연결을 보관한다. report는 기존 생성·revision·Outbox를 재사용한다. 같은 jobId의 종료 상태 재전달은 ACK 후 종료하며, 새 관리자 HTTP API·큐·스키마를 report에 추가하지 않는다. core 관리자 접수(`POST /admin/jobs/{jobId}/retry`)는 #47에서 구현했다.
   - 큐마다 `<큐>.retry.1`(1분)·`.retry.2`(5분)·`.retry.3`(15분)을 `definitions.json`에 선언 (`x-message-ttl` = 지연, 만료 시 기본 exchange로 원래 큐 복귀)
   - 처리 실패: 소비자가 `x-retry-count` 헤더 +1 후 `<큐>.retry.<회차>`로 재발행하고 ACK. 3회 초과 시 `reject(requeue=false)` → `dlx` → `<큐>.dlq`
   - 횟수는 자체 헤더로 셈 (클라이언트 재발행 시 `x-death`가 승계되지 않음). 지연은 `definitions.json`, 최대 횟수는 서비스 설정(3)으로 단계 큐 개수와 일치
@@ -211,12 +211,18 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ security/
 │  ├─ messaging/                 # 이벤트 봉투, OutboxRelay, 멱등 소비
 │  ├─ json/                      # JsonObject: domain이 드는 jsonb 객체 값 (#168)
+│  ├─ persistence/               # MyBatis 설정·PostgreSQL 타입 핸들러
 │  └─ web/                       # IdempotencyService, SseEmitters (core만)
+│     └─ repository/             # IdempotencyRepository
 ├─ account/                      # Google 로그인·세션·탈퇴
 │  ├─ controller/
 │  ├─ service/
+│  │  └─ dto/
 │  ├─ domain/
-│  └─ repository/
+│  ├─ repository/
+│  ├─ config/                    # AuthProperties·StudentDeviceProperties
+│  └─ client/
+│     └─ GoogleOAuthClient.kt
 ├─ consent/
 │  ├─ controller/
 │  ├─ service/
@@ -225,6 +231,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 ├─ guardianship/                 # 자녀 등록·연결·권한 확인, 삭제 요청 → student.deleted
 │  ├─ controller/
 │  ├─ service/
+│  │  └─ dto/
 │  ├─ domain/
 │  └─ repository/
 ├─ learning/                     # learning 프록시 (미션·시도·대시보드)
@@ -236,6 +243,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │     └─ LearningRecordClient.kt
 ├─ conversation/                 # 분석 대화, 예시 질문
 │  ├─ controller/                # SSE
+│  ├─ scheduler/                 # ConversationRetryWorker: 관리자 재처리 대기 요청 DB 선점·실행 (#47)
 │  ├─ service/
 │  ├─ domain/
 │  ├─ repository/
@@ -244,7 +252,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 ├─ report/
 │  ├─ controller/
 │  ├─ consumer/                  # report.started·completed·failed
-│  ├─ scheduler/                 # ShedLock
+│  ├─ scheduler/                 # 주간 생성·종료 유실 복구 (ShedLock)
 │  ├─ service/
 │  ├─ domain/
 │  ├─ repository/
@@ -272,23 +280,22 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ domain/
 │  ├─ repository/
 │  ├─ client/
-│  │  └─ TossClient.kt
+│  │  ├─ TossClient.kt
+│  │  └─ PremiumUsageClient.kt   # learning 프리미엄 사용 증빙 조회
 │  └─ scheduler/                 # 정기 청구
 ├─ usage/                        # LLM 사용량 집계
 │  ├─ consumer/
 │  ├─ service/
+│  ├─ domain/                    # LlmUsageRecorded·UsageSummary
 │  └─ repository/
 └─ admin/                        # 운영 현황·재처리·모델 버전 레지스트리·감사 이력·큐/DLQ
    ├─ controller/
+   ├─ consumer/                  # 재처리 감사 리스너(BEFORE_COMMIT 내부 이벤트, AMQP 아님)
    ├─ service/
    ├─ domain/
-   └─ repository/
-
-backend/core-service/src/main/resources/
-├─ application.yml               # 현재 단일 파일, 환경별 application-<env>.yml은 예정
-├─ db/
-│  └─ migration/                 # Flyway
-└─ mybatis/
+   ├─ repository/
+   └─ client/
+      └─ QueueManagementClient.kt  # RabbitMQ 관리 API 큐 현황
 ```
 
 Spring (learning)
@@ -298,7 +305,8 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 │  ├─ config/
 │  ├─ exception/
 │  ├─ security/
-│  └─ messaging/                 # 멱등 소비 (발행 없음)
+│  ├─ messaging/                 # 멱등 소비 (발행 없음)
+│  └─ persistence/               # MyBatis 설정·PostgreSQL 타입 핸들러
 ├─ mission/                      # 미션·기준표·예시 답·생각 열기 질문 버전, 관리자 작성·검토·공개
 │  ├─ controller/
 │  ├─ service/
@@ -321,14 +329,20 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 │  ├─ repository/
 │  ├─ rule/                      # 고르기·수학 동치
 │  ├─ client/
-│  │  └─ AiClient.kt
+│  │  ├─ AiClient.kt
+│  │  ├─ AiModels.kt
+│  │  └─ PaymentUsageClient.kt   # core 프리미엄 사용 예약·확정 (#48)
 │  └─ facade/
 │     └─ FeedbackFacade.kt
-├─ record/                       # 대시보드·에이전트 도구·리포트용 조회 API
-│  ├─ controller/
-│  ├─ service/
-│  └─ repository/
-└─ deletion/                     # student.deleted 소비
+├─ record/                       # 대시보드·에이전트 도구·리포트용 조회 API, student.deleted 소비(#128)
+│  ├─ controller/                # 기록 조회·존재 확인·결제 사용 증빙
+│  ├─ consumer/                  # StudentDeletedConsumer
+│  ├─ service/                   # RecordService, StudentDeletionService 등
+│  ├─ domain/
+│  ├─ repository/
+│  └─ client/
+│     └─ CoreClient.kt           # 삭제 완료 보고
+└─ deletion/                     # 빈 폴더(.gitkeep). student.deleted 소비는 record/에 구현(#128)
    ├─ consumer/
    └─ service/
 ```
@@ -370,6 +384,7 @@ backend/ai-service/
 │  ├─ report_narrative/
 │  │  ├─ router.py
 │  │  ├─ service.py
+│  │  ├─ models.py               # 요청·응답 스키마
 │  │  └─ prompts.py
 │  ├─ clients/
 │  │  ├─ base.py                 # 내부 토큰·컨텍스트 헤더 전달 httpx 클라이언트
@@ -404,14 +419,21 @@ backend/scoring-service/
 │  ├─ security.py
 │  ├─ m2/
 │  │  ├─ router.py
-│  │  └─ service.py
+│  │  ├─ service.py
+│  │  └─ models.py
 │  ├─ m1/
 │  │  ├─ router.py
-│  │  └─ service.py
-│  ├─ model_registry.py          # 활성 버전·가중치 로딩
+│  │  ├─ service.py
+│  │  └─ models.py
+│  ├─ model_registry.py          # 모델별 revision·승인 범위·로딩 완료 후 교체
+│  ├─ model_versions.py          # core snapshot·이벤트의 scoring 대상 계약
+│  ├─ model_startup.py           # 기동 시 snapshot 조회·최초 로딩 재시도
+│  ├─ model_loader.py            # CPU 모델 로딩
+│  ├─ versions.py                # 로딩 완료한 모델 버전 조회
 │  ├─ clients/
 │  │  ├─ base.py
-│  │  └─ core_client.py          # 기동 시 활성 버전 조회
+│  │  ├─ core_client.py          # 기동 시 활성 버전 조회
+│  │  └─ model_artifacts.py      # S3 가중치 임시 경로 다운로드
 │  ├─ messaging/
 │  │  ├─ envelope.py
 │  │  ├─ connection.py
@@ -435,36 +457,58 @@ backend/report-service/
 │  ├─ config.py
 │  ├─ errors.py
 │  ├─ security.py
+│  ├─ database.py                # 공통 DB 연결 (트랜잭션 범위는 서비스 소유)
+│  ├─ concurrency.py             # 취소 전 블로킹 작업 완료 후 잠금 해제
 │  ├─ generation/
 │  │  ├─ consumer.py
 │  │  ├─ service.py
+│  │  ├─ pipeline.py             # 기록 조회·계산·서술·렌더링 단계 조립 (#56)
+│  │  ├─ record_generator.py     # 기록 조회·계산 단계
+│  │  ├─ narrative_generator.py  # ai 서술·대조, 대조 실패 시 템플릿
+│  │  ├─ records.py              # P06·P08 정규화 기록
 │  │  ├─ metrics.py
 │  │  ├─ verifier.py
+│  │  ├─ presentation.py         # 조회·파일 렌더링 공통 조립
+│  │  ├─ reconciliation.py       # core 상태 복구 대조 (#132)
+│  │  ├─ router.py               # 복구 대조 내부 API (#132)
+│  │  ├─ locking.py              # 작업별 session 잠금
+│  │  ├─ codec.py                # v1 이벤트 변환
+│  │  ├─ ports.py
+│  │  ├─ unconfigured.py         # 생성기 미설정 시 FAILED
 │  │  ├─ models.py
 │  │  └─ repository.py
 │  ├─ rendering/
 │  │  ├─ templates/
-│  │  └─ renderer.py
+│  │  ├─ renderer.py
+│  │  └─ generator.py            # 파일 렌더링·저장
 │  ├─ query/
 │  │  ├─ router.py
-│  │  └─ service.py              # 학생 범위 검사·조회
+│  │  ├─ service.py              # 학생 범위 검사·조회
+│  │  └─ schemas.py
 │  ├─ deletion/
 │  │  ├─ consumer.py
-│  │  └─ service.py
+│  │  ├─ service.py
+│  │  └─ state.py                # 삭제 장벽·processed_event
 │  ├─ outbox/                    # report.started·completed·failed
+│  │  ├─ repository.py
+│  │  ├─ relay.py                # 학생별 선두 발행·재시도·격리 (#131)
+│  │  └─ manage.py               # 격리 이벤트 운영 CLI (#131)
 │  ├─ clients/
 │  │  ├─ base.py
 │  │  ├─ learning_client.py
 │  │  ├─ ai_client.py
+│  │  ├─ core_client.py          # 학생 별명 조회(#119)·삭제 완료 보고
 │  │  └─ storage.py              # S3·로컬 MinIO
 │  ├─ messaging/
 │  │  ├─ envelope.py
+│  │  ├─ contracts.py            # 수신 이벤트 엄격 검증
 │  │  ├─ connection.py
 │  │  ├─ publisher.py
 │  │  └─ consumer.py
 │  └─ health/
 │     └─ router.py
 ├─ migrations/                   # Alembic
+├─ alembic.ini
 ├─ tests/
 ├─ pyproject.toml
 ├─ uv.lock

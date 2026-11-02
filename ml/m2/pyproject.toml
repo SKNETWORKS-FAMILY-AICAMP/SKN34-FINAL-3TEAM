@@ -3,6 +3,7 @@ name = "m2"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "matplotlib>=3.11.2",
     "pandas>=3.1.0",
     "scikit-learn>=1.9.1",
     "torch>=2.14.1",
@@ -12,5 +13,20 @@ dependencies = [
 [dependency-groups]
 dev = [
     "ipykernel>=7.4.0",
+    "pytest>=9.2.0",
     "ruff>=0.17.2",
 ]
+
+[tool.ruff]
+# backend/*/pyproject.toml과 같은 설정 (#4 작업 위치 지침)
+line-length = 100
+target-version = "py312"
+# 확인용·보류 스크립트(커밋 안 함)는 검사에서 뺌
+extend-exclude = ["scripts/_*.py", "scripts/keyword_sim.py", "notebooks", "_pod_results_*", "_upload"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+
+[tool.pytest.ini_options]
+pythonpath = ["scripts"]
+testpaths = ["tests"]
