@@ -495,10 +495,10 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 4장과 같이 
 | B29 | 설정(중간) | GitOps local `migration.revision`이 core `v19`·learning `v7`·report `20261030-04`. 이름이 revision으로 고정된 PreSync Job이 성공 후 남아 core V20~V23·learning V8·report `20261102_05`가 일반 sync에서 적용되지 않음(#171 검증 기록의 v19·v7·`20261030_04` 그대로) | `v23`·`v8`·`20261102-05`로 갱신. `scripts/tests/test_core_migration_versions.py`에 최신 마이그레이션 ↔ revision 검사 추가(수정 전 실패 확인) |
 | B30 | 설정(낮음) | GitOps local core에 `ADMIN_RABBIT_MANAGEMENT_URL`·`_USERNAME`·`_PASSWORD` 없음 → kind `/admin/queues` 503(4장 B24의 GitOps판, 15672 egress는 이미 허용) | local core env에 RabbitMQ 관리 API URL과 기존 secret 키 연결. helm template 렌더 확인 |
 | B31 | 결함(낮음) | `ReportTemplateService.forStudent`가 학생 삭제 요청·비활성 시 409 `TEMPLATE_PROPOSAL_EXPIRED`(제안 만료 코드) | 409 `STUDENT_UNAVAILABLE`(기존 꾸미기·공개 설정과 같은 코드), OpenAPI 409 선언. 테스트: `ReportTemplateHttpIntegrationTest`(삭제 요청 접수 직후 내부 조회) |
-| B32 | 잠재 결함(낮음) | `forStudent`가 `activeParents().singleOrNull()`로 학부모 2명 이상 연결 시 404 → report 주간 생성 실패. 현재 연결은 `REGISTER` 경로뿐이라 발생하지 않음 | 미수정(다중 보호자 정책 결정 필요, 이슈 후보) |
+| B32 | 잠재 결함(낮음) | `forStudent`가 `activeParents().singleOrNull()`로 학부모 2명 이상 연결 시 404 → report 주간 생성 실패. 현재 연결은 `REGISTER` 경로뿐이라 발생하지 않음 | 미수정(다중 보호자 정책 결정 필요). 이슈 #275 |
 | B33 | 확인(결함 아님) | 리포트 설정 제안이 AI 호출 전 분석 사용량 차감, AI 실패 시 환원 없음 | api-spec #209 절 "AI 실패·확인 질문도 접수된 시도로 취급" 결정과 일치. 조치 없음 |
-| B34 | 결함(낮음) | learning `PaymentUsageClient:30`이 core 409 전부를 `REFUND_IN_PROGRESS`로 변환. `PAYMENT_USAGE_RETRY_REQUIRES_NEW_SOURCE`·`PAYMENT_USAGE_STATE_CHANGED`도 "환불 처리 중" 안내 | 미수정(학생 화면 안내 문구·코드 전달 범위 결정 필요). api-spec 1.3에 현재 동작 기재 |
-| B35 | 결함(낮음) | `SupportService.adminNotices`가 입력 검사(400)를 권한 검사(403)보다 먼저 수행. 비관리자의 잘못된 `status`에 400(OpenAPI는 403) | 미수정(MSW·테스트도 같은 순서. 순서 변경 시 함께 수정) |
+| B34 | 결함(낮음) | learning `PaymentUsageClient:30`이 core 409 전부를 `REFUND_IN_PROGRESS`로 변환. `PAYMENT_USAGE_RETRY_REQUIRES_NEW_SOURCE`·`PAYMENT_USAGE_STATE_CHANGED`도 "환불 처리 중" 안내 | 미수정(학생 화면 안내 문구·코드 전달 범위 결정 필요). api-spec 1.3에 현재 동작 기재. 이슈 #276 |
+| B35 | 결함(낮음) | `SupportService.adminNotices`가 입력 검사(400)를 권한 검사(403)보다 먼저 수행. 비관리자의 잘못된 `status`에 400(OpenAPI는 403) | 미수정(MSW·테스트도 같은 순서. 순서 변경 시 함께 수정). 이슈 #277 |
 | A16 | 아키텍처(낮음) | core `report/domain/ReportTemplate.kt`가 `org.springframework.http.HttpStatus` 직접 import(#168 이후 회귀) | `ErrorKind.INVALID`(같은 400) |
 | C35 | 코드↔문서 | api-spec 1.3 누락 오류 코드: 신규 `STUDENT_RECORDS_PRIVATE`·`STUDENT_UNAVAILABLE`·`INVALID_TEMPLATE_SETTINGS`·`TEMPLATE_PROPOSAL_EXPIRED`, 4장 4.6의 결제 약 32종·`QUEUE_MANAGEMENT_*` 5종·`EVIDENCE_UNAVAILABLE` 등, 본문에만 있던 관리자 미션·프롬프트·scoring 코드 | 1.3 표에 실제 상태·조건으로 추가 |
 | C36 | 코드↔문서 | api-spec 1.3 `VALIDATION_FAILED`는 400만 기재. PIN 규칙·꾸미기 선택값은 422 | 400 / 422 구분 기재. MSW 꾸미기 주석의 "목업 계약" 정정 |
@@ -537,9 +537,9 @@ core·learning은 import를 레이어로 분류해 전수 검사, Python·웹은
 
 | # | 내용 | 원칙 | 근거 |
 |---|---|---|---|
-| A17 | #208 이벤트 기록·보존 정리가 Presentation·진입점에서 repository 직접 호출. learning 정리 작업은 `@Scheduled`가 service 패키지에 위치(#241 `StuckJudgmentScheduler` 분리 방식과 다름) | 2.1·2.2 | core `_common/messaging/EventAuditConsumer.kt`·`EventRetentionCleanup.kt`, learning `record/service/ProcessedEventCleanup.kt`, report `worker.py` `prune_event_records` |
-| A18 | 기능 간 client·repository 직접 참조 | 2.2 기능 간은 service로만 | core `report/service/ReportTemplateService.kt` → `conversation.client.AiClient`·`guardianship.repository.StudentAccessRepository` |
-| A19 | ai 리포트 설정 제안이 프롬프트 레지스트리 밖 고정 버전(`analysis-template@1`)이라 #68 활성 본문 검사 대상 밖. core `AiClient.reportTemplate`은 서킷 브레이커 없음(`ai-analysis`는 `stream`만) | 1.3·1.5 | ai `analysis_agent/template_settings.py`, core `conversation/client/AiClient.kt` |
+| A17 | #208 이벤트 기록·보존 정리가 Presentation·진입점에서 repository 직접 호출. learning 정리 작업은 `@Scheduled`가 service 패키지에 위치(#241 `StuckJudgmentScheduler` 분리 방식과 다름) | 2.1·2.2 | core `_common/messaging/EventAuditConsumer.kt`·`EventRetentionCleanup.kt`, learning `record/service/ProcessedEventCleanup.kt`, report `worker.py` `prune_event_records`. 이슈 #278 |
+| A18 | 기능 간 client·repository 직접 참조 | 2.2 기능 간은 service로만 | core `report/service/ReportTemplateService.kt` → `conversation.client.AiClient`·`guardianship.repository.StudentAccessRepository`. 이슈 #279 |
+| A19 | ai 리포트 설정 제안이 프롬프트 레지스트리 밖 고정 버전(`analysis-template@1`)이라 #68 활성 본문 검사 대상 밖. core `AiClient.reportTemplate`은 서킷 브레이커 없음(`ai-analysis`는 `stream`만) | 1.3·1.5 | ai `analysis_agent/template_settings.py`, core `conversation/client/AiClient.kt`. 이슈 #280 |
 
 ### 5.6 남은 공백
 
@@ -551,4 +551,4 @@ core·learning은 import를 레이어로 분류해 전수 검사, Python·웹은
 | CI | `e2e.yml` 야간 실행은 main 병합 전까지 동작하지 않음. `tests/*-browser.mjs`·JDK 21 `verify_*`는 수동 |
 | 수동 브라우저 스크립트 | `tests/requirements-browser.mjs`가 develop에서 이미 실패: 지원 단계(목록 제목 엄격 모드 중복)와 계정 화면 자녀 정보 저장 단계(`자녀 정보를 저장했습니다.` 미표시). 지원 단계는 B28과 함께 수정, 계정 단계는 남음(worktree로 develop 재현) |
 | 번호 체계 밖 절 | api-spec 첫 절(2026-11-01 #206·#207)·functional-spec #206·#207·#209 절(5.2 D16) |
-| 이슈 후보 | B32·B34·B35, A17~A19 |
+| 발행 이슈 | B32 #275, B34 #276, B35 #277, A17 #278, A18 #279, A19 #280 |
