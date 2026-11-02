@@ -1,0 +1,17 @@
+{
+  "status": "UNCREATED_DO_NOT_REUSE_ACROSS_ACCOUNTS",
+  "accountId": null,
+  "region": "ap-northeast-2",
+  "cluster": {"arn": null, "endpoint": null, "oidcIssuer": null},
+  "network": {"vpcId": null, "publicSubnetIds": [], "privateSubnetIds": [], "securityGroupIds": {}, "natGatewayId": null},
+  "database": {"identifier": null, "arn": null, "endpoint": null, "kmsKeyArn": null, "snapshotArns": []},
+  "buckets": {"web": null, "missions": null, "reports": null, "models": null},
+  "ecr": {"registry": null, "imagePrefix": null, "repositoryArns": {}},
+  "roles": {"githubDeployment": null, "externalSecrets": null, "loadBalancerController": null, "clusterAutoscaler": null, "ebsCsi": null, "serviceStorage": {}},
+  "edge": {"albArn": null, "albDnsName": null, "cloudfrontDistributionId": null, "cloudfrontDomainName": null, "cloudfrontCertificateArn": null, "albCertificateArn": null},
+  "secretsManagerArns": {},
+  "volumes": [],
+  "cloudFormationStackIds": [],
+  "gitHubVariables": {"CD_AWS_ROLE_ARN": null, "CD_AWS_REGION": "ap-northeast-2", "CD_ECR_IMAGE_PREFIX": null, "CD_BASE_URL": null, "ARGOCD_SERVER": null},
+  "recordedAt": null
+}

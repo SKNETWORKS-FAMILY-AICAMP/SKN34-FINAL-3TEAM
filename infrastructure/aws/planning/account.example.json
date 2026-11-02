@@ -1,0 +1,34 @@
+{
+  "status": "UNVERIFIED_NO_EXECUTION_AUTHORITY",
+  "accountKey": null,
+  "accountId": null,
+  "awsProfile": null,
+  "authentication": {
+    "method": null,
+    "loginUrl": null,
+    "ssoRegion": null,
+    "ssoRoleName": null,
+    "suppliedRoleArn": null
+  },
+  "verifiedIdentity": {
+    "accountId": null,
+    "principalArn": null,
+    "verifiedAt": null,
+    "method": null
+  },
+  "constraints": {
+    "accountExpiresAt": null,
+    "creditAmount": null,
+    "creditCurrency": null,
+    "creditExpiresAt": null,
+    "coveredServices": null,
+    "organizationsManagementAllowed": null,
+    "identityCenterManagementAllowed": null,
+    "iamRoleCreationAllowed": null,
+    "oidcProviderManagementAllowed": null,
+    "crossAccountExportAllowed": null
+  },
+  "network": {"vpcCidr": null, "availabilityZones": [], "administratorCidrs": []},
+  "dns": {"provider": null, "domainName": null, "hostedZoneId": null},
+  "readOnlyInventoryCompletedAt": null
+}

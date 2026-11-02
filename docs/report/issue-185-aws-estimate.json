@@ -1,0 +1,1292 @@
+{
+  "status": "DRAFT_NOT_EXECUTABLE_NOT_APPROVED",
+  "as_of_kst": "2026-11-02",
+  "region": "ap-northeast-2",
+  "aws_resources_created": false,
+  "assumptions": {
+    "operation_window": "2026-11-02 00:00 to 2026-12-11 00:00 KST, costing assumption only",
+    "operation_hours": 936,
+    "post_retention_window": "2026-12-11 00:00 to 2027-02-11 00:00 KST (includes Feb 10)",
+    "post_retention_hours": 1488,
+    "month_hours_for_storage_proration": 730,
+    "active_hours": 240,
+    "active_windows_assumption": "72h intermediate + 144h final/cleanup + 24h setup/recovery; actual dates unknown",
+    "fx_krw_per_usd": 1500,
+    "fx_kind": "planning assumption, not spot quote",
+    "vat_fraction": 0.1,
+    "domain_krw_tax_inclusive_allowance": 30000,
+    "reserve_krw": 60000,
+    "free_credit_or_free_tier_applied": false,
+    "llm_cost": "separate budget per user 2026-11-02",
+    "langfuse_hobby_usd": 0,
+    "runner": "existing dedicated trusted Linux host assumed, no AWS runner included",
+    "post_retention_condition": "requires approved compute/volume cleanup and final snapshot validation; no execution authorized"
+  },
+  "rates": {
+    "eks": {
+      "usd": 0.1,
+      "unit": "Hours",
+      "sku": "8HAE52ZNS3QC3Q8Q",
+      "rate_code": "8HAE52ZNS3QC3Q8Q.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-AmazonEKS-Hours:perCluster",
+      "operation": "CreateOperation",
+      "effective_date": "2026-10-01",
+      "description": "Amazon EKS cluster usage in Asia Pacific (Seoul)",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEKS/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-10-27T19:16:39Z"
+    },
+    "app": {
+      "usd": 0.236,
+      "unit": "Hrs",
+      "sku": "Q6HXHW4DPS5JVYN3",
+      "rate_code": "Q6HXHW4DPS5JVYN3.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-BoxUsage:m6i.xlarge",
+      "operation": "RunInstances",
+      "effective_date": "2026-10-01",
+      "description": "$0.236 per On Demand Linux m6i.xlarge Instance Hour",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-10-29T17:56:34Z"
+    },
+    "platform": {
+      "usd": 0.118,
+      "unit": "Hrs",
+      "sku": "YNF8U8R6NK3DHPTM",
+      "rate_code": "YNF8U8R6NK3DHPTM.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-BoxUsage:m6i.large",
+      "operation": "RunInstances",
+      "effective_date": "2026-10-01",
+      "description": "$0.118 per On Demand Linux m6i.large Instance Hour",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-10-29T17:56:34Z"
+    },
+    "rds": {
+      "usd": 0.102,
+      "unit": "Hrs",
+      "sku": "4ZDDNAKXUY992B26",
+      "rate_code": "4ZDDNAKXUY992B26.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-InstanceUsage:db.t4g.medium",
+      "operation": "CreateDBInstance:0014",
+      "effective_date": "2026-10-01",
+      "description": "$ 0.102 per RDS db.t4g.medium Single-AZ instance hour (or partial hour) running PostgreSQL",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-10-29T07:06:35Z"
+    },
+    "rds_small": {
+      "usd": 0.051,
+      "unit": "Hrs",
+      "sku": "UMH398UHTY46K8BK",
+      "rate_code": "UMH398UHTY46K8BK.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-InstanceUsage:db.t4g.small",
+      "operation": "CreateDBInstance:0014",
+      "effective_date": "2026-10-01",
+      "description": "$ 0.051 per RDS db.t4g.small Single-AZ instance hour (or partial hour) running PostgreSQL",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-10-29T07:06:35Z"
+    },
+    "rds_large": {
+      "usd": 0.203,
+      "unit": "Hrs",
+      "sku": "D3JPS5HFEVWQ2BSZ",
+      "rate_code": "D3JPS5HFEVWQ2BSZ.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-InstanceUsage:db.t4g.large",
+      "operation": "CreateDBInstance:0014",
+      "effective_date": "2026-10-01",
+      "description": "$ 0.203 per RDS db.t4g.large Single-AZ instance hour (or partial hour) running PostgreSQL",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-10-29T07:06:35Z"
+    },
+    "nat": {
+      "usd": 0.059,
+      "unit": "Hrs",
+      "sku": "P63FHTYZXQBC6HX5",
+      "rate_code": "P63FHTYZXQBC6HX5.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-NatGateway-Hours",
+      "operation": "NatGateway",
+      "effective_date": "2026-10-01",
+      "description": "$0.059 per NAT Gateway Hour",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-10-29T17:56:34Z"
+    },
+    "nat_data": {
+      "usd": 0.059,
+      "unit": "GB",
+      "sku": "HC3MBQKUG7PB4BYX",
+      "rate_code": "HC3MBQKUG7PB4BYX.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-NatGateway-Bytes",
+      "operation": "NatGateway",
+      "effective_date": "2026-10-01",
+      "description": "$0.059 per GB Data Processed by NAT Gateways",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-10-29T17:56:34Z"
+    },
+    "alb": {
+      "usd": 0.0225,
+      "unit": "Hrs",
+      "sku": "VUV9M7PZ543S2SC9",
+      "rate_code": "VUV9M7PZ543S2SC9.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-LoadBalancerUsage",
+      "operation": "LoadBalancing:Application",
+      "effective_date": "2026-08-01",
+      "description": "$0.0225 per Application LoadBalancer-hour (or partial hour)",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSELB/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-09-11T12:45:44Z"
+    },
+    "lcu": {
+      "usd": 0.008,
+      "unit": "LCU-Hrs",
+      "sku": "CX4ZBV2SE6F5HJV3",
+      "rate_code": "CX4ZBV2SE6F5HJV3.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-LCUUsage",
+      "operation": "LoadBalancing:Application",
+      "effective_date": "2026-08-01",
+      "description": "$0.008 per used Application load balancer capacity unit-hour (or partial hour)",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSELB/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-09-11T12:45:44Z"
+    },
+    "ipv4": {
+      "usd": 0.005,
+      "unit": "Hrs",
+      "sku": "ZKBHEVDXYBRCKFQ8",
+      "rate_code": "ZKBHEVDXYBRCKFQ8.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-PublicIPv4:InUseAddress",
+      "operation": "",
+      "effective_date": "2026-10-01",
+      "description": "$0.005 per In-use public IPv4 address per hour",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonVPC/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-10-16T22:43:21Z"
+    },
+    "ebs": {
+      "usd": 0.0912,
+      "unit": "GB-Mo",
+      "sku": "MTK7D9SGKGYR3JD6",
+      "rate_code": "MTK7D9SGKGYR3JD6.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-EBS:VolumeUsage.gp3",
+      "operation": "",
+      "effective_date": "2026-10-01",
+      "description": "$0.0912 per GB-month of General Purpose (gp3) provisioned storage - Asia Pacific (Seoul)",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-10-29T17:56:34Z"
+    },
+    "ebs_snapshot": {
+      "usd": 0.05,
+      "unit": "GB-Mo",
+      "sku": "JC4HQPKR4ATMSY93",
+      "rate_code": "JC4HQPKR4ATMSY93.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-EBS:SnapshotUsage",
+      "operation": "",
+      "effective_date": "2026-10-01",
+      "description": "$0.05 per GB-Month of snapshot data stored - Asia Pacific (Seoul)",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-10-29T17:56:34Z"
+    },
+    "rds_storage": {
+      "usd": 0.131,
+      "unit": "GB-Mo",
+      "sku": "8TFTRRBWJSP95DQP",
+      "rate_code": "8TFTRRBWJSP95DQP.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-RDS:GP3-Storage",
+      "operation": "CreateDBInstance:0014",
+      "effective_date": "2026-10-01",
+      "description": "$0.131 per GB-month of provisioned GP3 storage running PostgreSQL",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-10-29T07:06:35Z"
+    },
+    "rds_backup": {
+      "usd": 0.095,
+      "unit": "GB-Mo",
+      "sku": "7HKPHUGB8PUTJWAW",
+      "rate_code": "7HKPHUGB8PUTJWAW.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-RDS:ChargedBackupUsage",
+      "operation": "CreateDBInstance:0014",
+      "effective_date": "2026-10-01",
+      "description": "$0.095 per additional GB-month of backup storage exceeding free allocation running PostgreSQL",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-10-29T07:06:35Z"
+    },
+    "s3": {
+      "usd": 0.025,
+      "unit": "GB-Mo",
+      "sku": "3JSN7K7UDDNCYCDM",
+      "rate_code": "3JSN7K7UDDNCYCDM.JRTCKXETXF.PGHJ3S3EYE",
+      "usage_type": "APN2-TimedStorage-ByteHrs",
+      "operation": "",
+      "effective_date": "2026-10-01",
+      "description": "$0.025 per GB - first 50 TB / month of storage used",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-10-15T17:35:40Z"
+    },
+    "s3_put": {
+      "usd": 4.5e-06,
+      "unit": "Requests",
+      "sku": "D3S5DN86CFPGUM5G",
+      "rate_code": "D3S5DN86CFPGUM5G.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-Requests-Tier1",
+      "operation": "",
+      "effective_date": "2026-10-01",
+      "description": "$0.0045 per 1,000 PUT, COPY, POST, or LIST requests",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-10-15T17:35:40Z"
+    },
+    "s3_get": {
+      "usd": 3.5e-07,
+      "unit": "Requests",
+      "sku": "84G6KSFBGCU9CEC9",
+      "rate_code": "84G6KSFBGCU9CEC9.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-Requests-Tier2",
+      "operation": "",
+      "effective_date": "2026-10-01",
+      "description": "$0.0035 per 10,000 GET and all other requests",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-10-15T17:35:40Z"
+    },
+    "ecr": {
+      "usd": 0.1,
+      "unit": "GB-Mo",
+      "sku": "FP58BXCX2RHZR3B2",
+      "rate_code": "FP58BXCX2RHZR3B2.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-TimedStorage-ByteHrs",
+      "operation": "",
+      "effective_date": "2025-11-01",
+      "description": "$0.10 per GB-month of data storage",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECR/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-09-11T12:44:25Z"
+    },
+    "secrets": {
+      "usd": 0.4,
+      "unit": "Secrets",
+      "sku": "8TY6BPQ52JVYCRQD",
+      "rate_code": "8TY6BPQ52JVYCRQD.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-AWSSecretsManager-Secrets",
+      "operation": "",
+      "effective_date": "2025-07-01",
+      "description": "$0.40 per Secret",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSSecretsManager/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-09-11T12:46:10Z"
+    },
+    "secrets_api": {
+      "usd": 5e-06,
+      "unit": "API Requests",
+      "sku": "9779GVGYGTKZ2UJA",
+      "rate_code": "9779GVGYGTKZ2UJA.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-AWSSecretsManagerAPIRequest",
+      "operation": "",
+      "effective_date": "2025-07-01",
+      "description": "$0.05 per 10000 API Requests",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSSecretsManager/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-09-11T12:46:10Z"
+    },
+    "cf_data": {
+      "usd": 0.12,
+      "unit": "GB",
+      "sku": "A86N9S7CGUKZHH8P",
+      "rate_code": "A86N9S7CGUKZHH8P.JRTCKXETXF.Q3Z75P77EN",
+      "usage_type": "AP-DataTransfer-Out-Bytes",
+      "operation": "",
+      "effective_date": "2026-10-01",
+      "description": "$0.120 per GB - first 10 TB / month data transfer out",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudFront/current/index.csv",
+      "publication_date": "2026-10-19T15:05:00Z"
+    },
+    "cf_https": {
+      "usd": 1.2e-06,
+      "unit": "Requests",
+      "sku": "W6KHTEW6VCKTZFTR",
+      "rate_code": "W6KHTEW6VCKTZFTR.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "AP-Requests-Tier2-HTTPS",
+      "operation": "",
+      "effective_date": "2026-10-01",
+      "description": "$0.012 per 10,000 HTTPS Requests",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudFront/current/index.csv",
+      "publication_date": "2026-10-19T15:05:00Z"
+    },
+    "cf_origin": {
+      "usd": 0.06,
+      "unit": "GB",
+      "sku": "U8P37H38743VG7RS",
+      "rate_code": "U8P37H38743VG7RS.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "AP-DataTransfer-Out-OBytes",
+      "operation": "",
+      "effective_date": "2026-10-01",
+      "description": "$0.060 per GB - All data transfer out to Origin (Asia)",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudFront/current/index.csv",
+      "publication_date": "2026-10-19T15:05:00Z"
+    },
+    "internet": {
+      "usd": 0.126,
+      "unit": "GB",
+      "sku": "9AS8NERTGECRPGT7",
+      "rate_code": "9AS8NERTGECRPGT7.JRTCKXETXF.Q3Z75P77EN",
+      "usage_type": "APN2-DataTransfer-Out-Bytes",
+      "operation": "",
+      "effective_date": "2026-06-01",
+      "description": "$0.126 per GB - first 10 TB / month data transfer out beyond the global free tier",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSDataTransfer/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-09-16T13:22:08Z"
+    },
+    "cross_az": {
+      "usd": 0.01,
+      "unit": "GB",
+      "sku": "KH5CW7JT9VHRSUXC",
+      "rate_code": "KH5CW7JT9VHRSUXC.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-DataTransfer-Regional-Bytes",
+      "operation": "",
+      "effective_date": "2026-10-01",
+      "description": "$0.01 per GB Regional Data Transfer - in/out/between AZs or when using public IP or Elastic IP addresses",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-10-29T17:56:34Z"
+    },
+    "logs_ingest": {
+      "usd": 0.76,
+      "unit": "GB",
+      "sku": "5P9Q77R2ADUJCNJ2",
+      "rate_code": "5P9Q77R2ADUJCNJ2.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-DataProcessing-Bytes",
+      "operation": "PutLogEvents",
+      "effective_date": "2026-10-01",
+      "description": "$0.76 per GB custom log data ingested in Standard log class - Asia Pacific (Seoul)",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudWatch/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-10-07T11:55:40Z"
+    },
+    "logs_storage": {
+      "usd": 0.0314,
+      "unit": "GB-Mo",
+      "sku": "E7V5NF3GN7MQKCB6",
+      "rate_code": "E7V5NF3GN7MQKCB6.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-TimedStorage-ByteHrs",
+      "operation": "",
+      "effective_date": "2026-10-01",
+      "description": "$0.0314 per GB-mo of log storage - Asia Pacific (Seoul)",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudWatch/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-10-07T11:55:40Z"
+    },
+    "logs_query": {
+      "usd": 0.0076,
+      "unit": "GB",
+      "sku": "RM8PWXJUH7AKMWHX",
+      "rate_code": "RM8PWXJUH7AKMWHX.JRTCKXETXF.6YS6EN2CT7",
+      "usage_type": "APN2-DataScanned-Bytes",
+      "operation": "StartQuery",
+      "effective_date": "2026-10-01",
+      "description": "$0.0076 per GB log data scanned by CloudWatch Logs Insights queries - Asia Pacific (Seoul)",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudWatch/current/ap-northeast-2/index.csv",
+      "publication_date": "2026-10-07T11:55:40Z"
+    },
+    "rds_cpu_credit": {
+      "usd": 0.075,
+      "unit": "vCPU-hour",
+      "source_url": "https://aws.amazon.com/rds/postgresql/pricing/",
+      "description": "T4g Unlimited excess CPU credits; scenario allowance, not measured usage"
+    }
+  },
+  "scenarios": {
+    "A_keep_infra": {
+      "infrastructure_hours": 936,
+      "node_active_hours": 240,
+      "rds_running_hours": 248,
+      "db_storage_hours": 936,
+      "items": [
+        {
+          "item": "EKS",
+          "rate_key": "eks",
+          "quantity": 936.0,
+          "quantity_formula": "infrastructure_hours",
+          "period": "operation",
+          "usd": 93.6
+        },
+        {
+          "item": "Application node",
+          "rate_key": "app",
+          "quantity": 240.0,
+          "quantity_formula": "active_hours * 1",
+          "period": "operation",
+          "usd": 56.64
+        },
+        {
+          "item": "Platform node",
+          "rate_key": "platform",
+          "quantity": 240.0,
+          "quantity_formula": "active_hours * 1",
+          "period": "operation",
+          "usd": 28.32
+        },
+        {
+          "item": "RDS compute",
+          "rate_key": "rds",
+          "quantity": 248.0,
+          "quantity_formula": "rds_running_hours",
+          "period": "operation",
+          "usd": 25.296
+        },
+        {
+          "item": "NAT",
+          "rate_key": "nat",
+          "quantity": 936.0,
+          "quantity_formula": "infrastructure_hours",
+          "period": "operation",
+          "usd": 55.224
+        },
+        {
+          "item": "ALB",
+          "rate_key": "alb",
+          "quantity": 936.0,
+          "quantity_formula": "infrastructure_hours",
+          "period": "operation",
+          "usd": 21.06
+        },
+        {
+          "item": "Public IPv4",
+          "rate_key": "ipv4",
+          "quantity": 2808.0,
+          "quantity_formula": "infrastructure_hours * 3",
+          "period": "operation",
+          "usd": 14.04
+        },
+        {
+          "item": "ALB LCU",
+          "rate_key": "lcu",
+          "quantity": 240.0,
+          "quantity_formula": "active_hours * assumed 1 LCU",
+          "period": "operation",
+          "usd": 1.92
+        },
+        {
+          "item": "NAT processed data",
+          "rate_key": "nat_data",
+          "quantity": 20.0,
+          "quantity_formula": "20 GB total",
+          "period": "operation",
+          "usd": 1.18
+        },
+        {
+          "item": "Node root EBS",
+          "rate_key": "ebs",
+          "quantity": 26.301369863013697,
+          "quantity_formula": "80 GB * active_hours / 730",
+          "period": "operation",
+          "usd": 2.3986849315068492
+        },
+        {
+          "item": "Persistent EBS",
+          "rate_key": "ebs",
+          "quantity": 30.77260273972603,
+          "quantity_formula": "24 GB * 936 / 730",
+          "period": "operation",
+          "usd": 2.8064613698630136
+        },
+        {
+          "item": "EBS snapshot",
+          "rate_key": "ebs_snapshot",
+          "quantity": 30.77260273972603,
+          "quantity_formula": "24 GB * 936 / 730",
+          "period": "operation",
+          "usd": 1.5386301369863014
+        },
+        {
+          "item": "RDS allocated storage",
+          "rate_key": "rds_storage",
+          "quantity": 25.643835616438356,
+          "quantity_formula": "20 GB * db_storage_hours / 730",
+          "period": "operation",
+          "usd": 3.3593424657534245
+        },
+        {
+          "item": "RDS backups",
+          "rate_key": "rds_backup",
+          "quantity": 25.643835616438356,
+          "quantity_formula": "20 GB * 936 / 730, no free offset",
+          "period": "operation",
+          "usd": 2.436164383561644
+        },
+        {
+          "item": "S3 storage",
+          "rate_key": "s3",
+          "quantity": 25.643835616438356,
+          "quantity_formula": "20 GB including versions * 936 / 730",
+          "period": "operation",
+          "usd": 0.6410958904109589
+        },
+        {
+          "item": "ECR storage",
+          "rate_key": "ecr",
+          "quantity": 12.821917808219178,
+          "quantity_formula": "10 GB * 936 / 730",
+          "period": "operation",
+          "usd": 1.2821917808219179
+        },
+        {
+          "item": "Secrets",
+          "rate_key": "secrets",
+          "quantity": 10.257534246575343,
+          "quantity_formula": "8 secrets * 936 / 730",
+          "period": "operation",
+          "usd": 4.103013698630137
+        },
+        {
+          "item": "Secrets API",
+          "rate_key": "secrets_api",
+          "quantity": 20000.0,
+          "quantity_formula": "20000 API requests",
+          "period": "operation",
+          "usd": 0.1
+        },
+        {
+          "item": "S3 PUT",
+          "rate_key": "s3_put",
+          "quantity": 10000.0,
+          "quantity_formula": "10000 requests",
+          "period": "operation",
+          "usd": 0.045
+        },
+        {
+          "item": "S3 GET",
+          "rate_key": "s3_get",
+          "quantity": 100000.0,
+          "quantity_formula": "100000 requests",
+          "period": "operation",
+          "usd": 0.035
+        },
+        {
+          "item": "CloudFront outbound",
+          "rate_key": "cf_data",
+          "quantity": 20.0,
+          "quantity_formula": "20 GB, free tier not deducted",
+          "period": "operation",
+          "usd": 2.4
+        },
+        {
+          "item": "CloudFront HTTPS",
+          "rate_key": "cf_https",
+          "quantity": 100000.0,
+          "quantity_formula": "100000 requests, free tier not deducted",
+          "period": "operation",
+          "usd": 0.12
+        },
+        {
+          "item": "CloudFront to origin",
+          "rate_key": "cf_origin",
+          "quantity": 1.0,
+          "quantity_formula": "1 GB request payload",
+          "period": "operation",
+          "usd": 0.06
+        },
+        {
+          "item": "Direct internet outbound",
+          "rate_key": "internet",
+          "quantity": 6.0,
+          "quantity_formula": "5 GB report + 1 GB external services, excluding CloudFront origin transfer",
+          "period": "operation",
+          "usd": 0.756
+        },
+        {
+          "item": "Cross AZ",
+          "rate_key": "cross_az",
+          "quantity": 20.0,
+          "quantity_formula": "20 billed GB (10 GB physical path counted twice where applicable)",
+          "period": "operation",
+          "usd": 0.2
+        },
+        {
+          "item": "CloudWatch ingest",
+          "rate_key": "logs_ingest",
+          "quantity": 3.0,
+          "quantity_formula": "3 GB total",
+          "period": "operation",
+          "usd": 2.28
+        },
+        {
+          "item": "CloudWatch stored",
+          "rate_key": "logs_storage",
+          "quantity": 1.2821917808219179,
+          "quantity_formula": "1 GB average * 936 / 730",
+          "period": "operation",
+          "usd": 0.04026082191780822
+        },
+        {
+          "item": "CloudWatch query",
+          "rate_key": "logs_query",
+          "quantity": 5.0,
+          "quantity_formula": "5 GB scanned",
+          "period": "operation",
+          "usd": 0.038
+        },
+        {
+          "item": "RDS credit allowance",
+          "rate_key": "rds_cpu_credit",
+          "quantity": 10.0,
+          "quantity_formula": "10 excess vCPU-hours allowance",
+          "period": "operation",
+          "usd": 0.75
+        },
+        {
+          "item": "Final RDS snapshot",
+          "rate_key": "rds_backup",
+          "quantity": 40.76712328767123,
+          "quantity_formula": "20 GB * 1488 / 730",
+          "period": "post_operation",
+          "usd": 3.8728767123287673
+        },
+        {
+          "item": "Final EBS snapshot",
+          "rate_key": "ebs_snapshot",
+          "quantity": 48.92054794520548,
+          "quantity_formula": "24 GB * 1488 / 730",
+          "period": "post_operation",
+          "usd": 2.446027397260274
+        },
+        {
+          "item": "S3 retained",
+          "rate_key": "s3",
+          "quantity": 40.76712328767123,
+          "quantity_formula": "20 GB * 1488 / 730",
+          "period": "post_operation",
+          "usd": 1.0191780821917809
+        },
+        {
+          "item": "ECR retained",
+          "rate_key": "ecr",
+          "quantity": 20.383561643835616,
+          "quantity_formula": "10 GB * 1488 / 730",
+          "period": "post_operation",
+          "usd": 2.0383561643835617
+        },
+        {
+          "item": "Secrets retained",
+          "rate_key": "secrets",
+          "quantity": 16.306849315068494,
+          "quantity_formula": "8 secrets * 1488 / 730",
+          "period": "post_operation",
+          "usd": 6.522739726027397
+        },
+        {
+          "item": "Logs retained",
+          "rate_key": "logs_storage",
+          "quantity": 2.0383561643835617,
+          "quantity_formula": "1 GB * 1488 / 730",
+          "period": "post_operation",
+          "usd": 0.06400438356164384
+        }
+      ],
+      "operation_usd": 322.6698454794521,
+      "post_operation_usd": 15.963182465753425,
+      "aws_total_usd": 338.63302794520547,
+      "cost_krw_with_vat_domain": 588744.496109589,
+      "funding_krw_with_60000_reserve": 648744.496109589,
+      "fx_sensitivity_funding_krw": {
+        "1400": 611494.8630356165,
+        "1500": 648744.496109589,
+        "1600": 685994.1291835617
+      }
+    },
+    "B_recreate_between_windows": {
+      "infrastructure_hours": 240,
+      "node_active_hours": 240,
+      "rds_running_hours": 240,
+      "db_storage_hours": 240,
+      "items": [
+        {
+          "item": "EKS",
+          "rate_key": "eks",
+          "quantity": 240.0,
+          "quantity_formula": "infrastructure_hours",
+          "period": "operation",
+          "usd": 24.0
+        },
+        {
+          "item": "Application node",
+          "rate_key": "app",
+          "quantity": 240.0,
+          "quantity_formula": "active_hours * 1",
+          "period": "operation",
+          "usd": 56.64
+        },
+        {
+          "item": "Platform node",
+          "rate_key": "platform",
+          "quantity": 240.0,
+          "quantity_formula": "active_hours * 1",
+          "period": "operation",
+          "usd": 28.32
+        },
+        {
+          "item": "RDS compute",
+          "rate_key": "rds",
+          "quantity": 240.0,
+          "quantity_formula": "rds_running_hours",
+          "period": "operation",
+          "usd": 24.48
+        },
+        {
+          "item": "NAT",
+          "rate_key": "nat",
+          "quantity": 240.0,
+          "quantity_formula": "infrastructure_hours",
+          "period": "operation",
+          "usd": 14.16
+        },
+        {
+          "item": "ALB",
+          "rate_key": "alb",
+          "quantity": 240.0,
+          "quantity_formula": "infrastructure_hours",
+          "period": "operation",
+          "usd": 5.4
+        },
+        {
+          "item": "Public IPv4",
+          "rate_key": "ipv4",
+          "quantity": 720.0,
+          "quantity_formula": "infrastructure_hours * 3",
+          "period": "operation",
+          "usd": 3.6
+        },
+        {
+          "item": "ALB LCU",
+          "rate_key": "lcu",
+          "quantity": 240.0,
+          "quantity_formula": "active_hours * assumed 1 LCU",
+          "period": "operation",
+          "usd": 1.92
+        },
+        {
+          "item": "NAT processed data",
+          "rate_key": "nat_data",
+          "quantity": 20.0,
+          "quantity_formula": "20 GB total",
+          "period": "operation",
+          "usd": 1.18
+        },
+        {
+          "item": "Node root EBS",
+          "rate_key": "ebs",
+          "quantity": 26.301369863013697,
+          "quantity_formula": "80 GB * active_hours / 730",
+          "period": "operation",
+          "usd": 2.3986849315068492
+        },
+        {
+          "item": "Persistent EBS",
+          "rate_key": "ebs",
+          "quantity": 30.77260273972603,
+          "quantity_formula": "24 GB * 936 / 730",
+          "period": "operation",
+          "usd": 2.8064613698630136
+        },
+        {
+          "item": "EBS snapshot",
+          "rate_key": "ebs_snapshot",
+          "quantity": 30.77260273972603,
+          "quantity_formula": "24 GB * 936 / 730",
+          "period": "operation",
+          "usd": 1.5386301369863014
+        },
+        {
+          "item": "RDS allocated storage",
+          "rate_key": "rds_storage",
+          "quantity": 6.575342465753424,
+          "quantity_formula": "20 GB * db_storage_hours / 730",
+          "period": "operation",
+          "usd": 0.8613698630136987
+        },
+        {
+          "item": "RDS backups",
+          "rate_key": "rds_backup",
+          "quantity": 25.643835616438356,
+          "quantity_formula": "20 GB * 936 / 730, no free offset",
+          "period": "operation",
+          "usd": 2.436164383561644
+        },
+        {
+          "item": "S3 storage",
+          "rate_key": "s3",
+          "quantity": 25.643835616438356,
+          "quantity_formula": "20 GB including versions * 936 / 730",
+          "period": "operation",
+          "usd": 0.6410958904109589
+        },
+        {
+          "item": "ECR storage",
+          "rate_key": "ecr",
+          "quantity": 12.821917808219178,
+          "quantity_formula": "10 GB * 936 / 730",
+          "period": "operation",
+          "usd": 1.2821917808219179
+        },
+        {
+          "item": "Secrets",
+          "rate_key": "secrets",
+          "quantity": 10.257534246575343,
+          "quantity_formula": "8 secrets * 936 / 730",
+          "period": "operation",
+          "usd": 4.103013698630137
+        },
+        {
+          "item": "Secrets API",
+          "rate_key": "secrets_api",
+          "quantity": 20000.0,
+          "quantity_formula": "20000 API requests",
+          "period": "operation",
+          "usd": 0.1
+        },
+        {
+          "item": "S3 PUT",
+          "rate_key": "s3_put",
+          "quantity": 10000.0,
+          "quantity_formula": "10000 requests",
+          "period": "operation",
+          "usd": 0.045
+        },
+        {
+          "item": "S3 GET",
+          "rate_key": "s3_get",
+          "quantity": 100000.0,
+          "quantity_formula": "100000 requests",
+          "period": "operation",
+          "usd": 0.035
+        },
+        {
+          "item": "CloudFront outbound",
+          "rate_key": "cf_data",
+          "quantity": 20.0,
+          "quantity_formula": "20 GB, free tier not deducted",
+          "period": "operation",
+          "usd": 2.4
+        },
+        {
+          "item": "CloudFront HTTPS",
+          "rate_key": "cf_https",
+          "quantity": 100000.0,
+          "quantity_formula": "100000 requests, free tier not deducted",
+          "period": "operation",
+          "usd": 0.12
+        },
+        {
+          "item": "CloudFront to origin",
+          "rate_key": "cf_origin",
+          "quantity": 1.0,
+          "quantity_formula": "1 GB request payload",
+          "period": "operation",
+          "usd": 0.06
+        },
+        {
+          "item": "Direct internet outbound",
+          "rate_key": "internet",
+          "quantity": 6.0,
+          "quantity_formula": "5 GB report + 1 GB external services, excluding CloudFront origin transfer",
+          "period": "operation",
+          "usd": 0.756
+        },
+        {
+          "item": "Cross AZ",
+          "rate_key": "cross_az",
+          "quantity": 20.0,
+          "quantity_formula": "20 billed GB (10 GB physical path counted twice where applicable)",
+          "period": "operation",
+          "usd": 0.2
+        },
+        {
+          "item": "CloudWatch ingest",
+          "rate_key": "logs_ingest",
+          "quantity": 3.0,
+          "quantity_formula": "3 GB total",
+          "period": "operation",
+          "usd": 2.28
+        },
+        {
+          "item": "CloudWatch stored",
+          "rate_key": "logs_storage",
+          "quantity": 1.2821917808219179,
+          "quantity_formula": "1 GB average * 936 / 730",
+          "period": "operation",
+          "usd": 0.04026082191780822
+        },
+        {
+          "item": "CloudWatch query",
+          "rate_key": "logs_query",
+          "quantity": 5.0,
+          "quantity_formula": "5 GB scanned",
+          "period": "operation",
+          "usd": 0.038
+        },
+        {
+          "item": "RDS credit allowance",
+          "rate_key": "rds_cpu_credit",
+          "quantity": 10.0,
+          "quantity_formula": "10 excess vCPU-hours allowance",
+          "period": "operation",
+          "usd": 0.75
+        },
+        {
+          "item": "Final RDS snapshot",
+          "rate_key": "rds_backup",
+          "quantity": 40.76712328767123,
+          "quantity_formula": "20 GB * 1488 / 730",
+          "period": "post_operation",
+          "usd": 3.8728767123287673
+        },
+        {
+          "item": "Final EBS snapshot",
+          "rate_key": "ebs_snapshot",
+          "quantity": 48.92054794520548,
+          "quantity_formula": "24 GB * 1488 / 730",
+          "period": "post_operation",
+          "usd": 2.446027397260274
+        },
+        {
+          "item": "S3 retained",
+          "rate_key": "s3",
+          "quantity": 40.76712328767123,
+          "quantity_formula": "20 GB * 1488 / 730",
+          "period": "post_operation",
+          "usd": 1.0191780821917809
+        },
+        {
+          "item": "ECR retained",
+          "rate_key": "ecr",
+          "quantity": 20.383561643835616,
+          "quantity_formula": "10 GB * 1488 / 730",
+          "period": "post_operation",
+          "usd": 2.0383561643835617
+        },
+        {
+          "item": "Secrets retained",
+          "rate_key": "secrets",
+          "quantity": 16.306849315068494,
+          "quantity_formula": "8 secrets * 1488 / 730",
+          "period": "post_operation",
+          "usd": 6.522739726027397
+        },
+        {
+          "item": "Logs retained",
+          "rate_key": "logs_storage",
+          "quantity": 2.0383561643835617,
+          "quantity_formula": "1 GB * 1488 / 730",
+          "period": "post_operation",
+          "usd": 0.06400438356164384
+        }
+      ],
+      "operation_usd": 182.59187287671233,
+      "post_operation_usd": 15.963182465753425,
+      "aws_total_usd": 198.55505534246575,
+      "cost_krw_with_vat_domain": 357615.8413150685,
+      "funding_krw_with_60000_reserve": 417615.8413150685,
+      "fx_sensitivity_funding_krw": {
+        "1400": 395774.7852273973,
+        "1500": 417615.8413150685,
+        "1600": 439456.89740273973
+      }
+    },
+    "C_conditional_one_window_96h": {
+      "infrastructure_hours": 96,
+      "node_active_hours": 96,
+      "rds_running_hours": 96,
+      "db_storage_hours": 96,
+      "items": [
+        {
+          "item": "EKS",
+          "rate_key": "eks",
+          "quantity": 96.0,
+          "quantity_formula": "infrastructure_hours",
+          "period": "operation",
+          "usd": 9.6
+        },
+        {
+          "item": "Application node",
+          "rate_key": "app",
+          "quantity": 96.0,
+          "quantity_formula": "active_hours * 1",
+          "period": "operation",
+          "usd": 22.656
+        },
+        {
+          "item": "Platform node",
+          "rate_key": "platform",
+          "quantity": 96.0,
+          "quantity_formula": "active_hours * 1",
+          "period": "operation",
+          "usd": 11.328
+        },
+        {
+          "item": "RDS compute",
+          "rate_key": "rds",
+          "quantity": 96.0,
+          "quantity_formula": "rds_running_hours",
+          "period": "operation",
+          "usd": 9.792
+        },
+        {
+          "item": "NAT",
+          "rate_key": "nat",
+          "quantity": 96.0,
+          "quantity_formula": "infrastructure_hours",
+          "period": "operation",
+          "usd": 5.664
+        },
+        {
+          "item": "ALB",
+          "rate_key": "alb",
+          "quantity": 96.0,
+          "quantity_formula": "infrastructure_hours",
+          "period": "operation",
+          "usd": 2.16
+        },
+        {
+          "item": "Public IPv4",
+          "rate_key": "ipv4",
+          "quantity": 288.0,
+          "quantity_formula": "infrastructure_hours * 3",
+          "period": "operation",
+          "usd": 1.44
+        },
+        {
+          "item": "ALB LCU",
+          "rate_key": "lcu",
+          "quantity": 96.0,
+          "quantity_formula": "active_hours * assumed 1 LCU",
+          "period": "operation",
+          "usd": 0.768
+        },
+        {
+          "item": "NAT processed data",
+          "rate_key": "nat_data",
+          "quantity": 20.0,
+          "quantity_formula": "20 GB total",
+          "period": "operation",
+          "usd": 1.18
+        },
+        {
+          "item": "Node root EBS",
+          "rate_key": "ebs",
+          "quantity": 10.520547945205479,
+          "quantity_formula": "80 GB * active_hours / 730",
+          "period": "operation",
+          "usd": 0.9594739726027397
+        },
+        {
+          "item": "Persistent EBS",
+          "rate_key": "ebs",
+          "quantity": 30.77260273972603,
+          "quantity_formula": "24 GB * 936 / 730",
+          "period": "operation",
+          "usd": 2.8064613698630136
+        },
+        {
+          "item": "EBS snapshot",
+          "rate_key": "ebs_snapshot",
+          "quantity": 30.77260273972603,
+          "quantity_formula": "24 GB * 936 / 730",
+          "period": "operation",
+          "usd": 1.5386301369863014
+        },
+        {
+          "item": "RDS allocated storage",
+          "rate_key": "rds_storage",
+          "quantity": 2.6301369863013697,
+          "quantity_formula": "20 GB * db_storage_hours / 730",
+          "period": "operation",
+          "usd": 0.34454794520547943
+        },
+        {
+          "item": "RDS backups",
+          "rate_key": "rds_backup",
+          "quantity": 25.643835616438356,
+          "quantity_formula": "20 GB * 936 / 730, no free offset",
+          "period": "operation",
+          "usd": 2.436164383561644
+        },
+        {
+          "item": "S3 storage",
+          "rate_key": "s3",
+          "quantity": 25.643835616438356,
+          "quantity_formula": "20 GB including versions * 936 / 730",
+          "period": "operation",
+          "usd": 0.6410958904109589
+        },
+        {
+          "item": "ECR storage",
+          "rate_key": "ecr",
+          "quantity": 12.821917808219178,
+          "quantity_formula": "10 GB * 936 / 730",
+          "period": "operation",
+          "usd": 1.2821917808219179
+        },
+        {
+          "item": "Secrets",
+          "rate_key": "secrets",
+          "quantity": 10.257534246575343,
+          "quantity_formula": "8 secrets * 936 / 730",
+          "period": "operation",
+          "usd": 4.103013698630137
+        },
+        {
+          "item": "Secrets API",
+          "rate_key": "secrets_api",
+          "quantity": 20000.0,
+          "quantity_formula": "20000 API requests",
+          "period": "operation",
+          "usd": 0.1
+        },
+        {
+          "item": "S3 PUT",
+          "rate_key": "s3_put",
+          "quantity": 10000.0,
+          "quantity_formula": "10000 requests",
+          "period": "operation",
+          "usd": 0.045
+        },
+        {
+          "item": "S3 GET",
+          "rate_key": "s3_get",
+          "quantity": 100000.0,
+          "quantity_formula": "100000 requests",
+          "period": "operation",
+          "usd": 0.035
+        },
+        {
+          "item": "CloudFront outbound",
+          "rate_key": "cf_data",
+          "quantity": 20.0,
+          "quantity_formula": "20 GB, free tier not deducted",
+          "period": "operation",
+          "usd": 2.4
+        },
+        {
+          "item": "CloudFront HTTPS",
+          "rate_key": "cf_https",
+          "quantity": 100000.0,
+          "quantity_formula": "100000 requests, free tier not deducted",
+          "period": "operation",
+          "usd": 0.12
+        },
+        {
+          "item": "CloudFront to origin",
+          "rate_key": "cf_origin",
+          "quantity": 1.0,
+          "quantity_formula": "1 GB request payload",
+          "period": "operation",
+          "usd": 0.06
+        },
+        {
+          "item": "Direct internet outbound",
+          "rate_key": "internet",
+          "quantity": 6.0,
+          "quantity_formula": "5 GB report + 1 GB external services, excluding CloudFront origin transfer",
+          "period": "operation",
+          "usd": 0.756
+        },
+        {
+          "item": "Cross AZ",
+          "rate_key": "cross_az",
+          "quantity": 20.0,
+          "quantity_formula": "20 billed GB (10 GB physical path counted twice where applicable)",
+          "period": "operation",
+          "usd": 0.2
+        },
+        {
+          "item": "CloudWatch ingest",
+          "rate_key": "logs_ingest",
+          "quantity": 3.0,
+          "quantity_formula": "3 GB total",
+          "period": "operation",
+          "usd": 2.28
+        },
+        {
+          "item": "CloudWatch stored",
+          "rate_key": "logs_storage",
+          "quantity": 1.2821917808219179,
+          "quantity_formula": "1 GB average * 936 / 730",
+          "period": "operation",
+          "usd": 0.04026082191780822
+        },
+        {
+          "item": "CloudWatch query",
+          "rate_key": "logs_query",
+          "quantity": 5.0,
+          "quantity_formula": "5 GB scanned",
+          "period": "operation",
+          "usd": 0.038
+        },
+        {
+          "item": "RDS credit allowance",
+          "rate_key": "rds_cpu_credit",
+          "quantity": 10.0,
+          "quantity_formula": "10 excess vCPU-hours allowance",
+          "period": "operation",
+          "usd": 0.75
+        },
+        {
+          "item": "Final RDS snapshot",
+          "rate_key": "rds_backup",
+          "quantity": 40.76712328767123,
+          "quantity_formula": "20 GB * 1488 / 730",
+          "period": "post_operation",
+          "usd": 3.8728767123287673
+        },
+        {
+          "item": "Final EBS snapshot",
+          "rate_key": "ebs_snapshot",
+          "quantity": 48.92054794520548,
+          "quantity_formula": "24 GB * 1488 / 730",
+          "period": "post_operation",
+          "usd": 2.446027397260274
+        },
+        {
+          "item": "S3 retained",
+          "rate_key": "s3",
+          "quantity": 40.76712328767123,
+          "quantity_formula": "20 GB * 1488 / 730",
+          "period": "post_operation",
+          "usd": 1.0191780821917809
+        },
+        {
+          "item": "ECR retained",
+          "rate_key": "ecr",
+          "quantity": 20.383561643835616,
+          "quantity_formula": "10 GB * 1488 / 730",
+          "period": "post_operation",
+          "usd": 2.0383561643835617
+        },
+        {
+          "item": "Secrets retained",
+          "rate_key": "secrets",
+          "quantity": 16.306849315068494,
+          "quantity_formula": "8 secrets * 1488 / 730",
+          "period": "post_operation",
+          "usd": 6.522739726027397
+        },
+        {
+          "item": "Logs retained",
+          "rate_key": "logs_storage",
+          "quantity": 2.0383561643835617,
+          "quantity_formula": "1 GB * 1488 / 730",
+          "period": "post_operation",
+          "usd": 0.06400438356164384
+        }
+      ],
+      "operation_usd": 85.52384,
+      "post_operation_usd": 15.963182465753425,
+      "aws_total_usd": 101.48702246575343,
+      "cost_krw_with_vat_domain": 197453.58706849316,
+      "funding_krw_with_60000_reserve": 257453.58706849316,
+      "fx_sensitivity_funding_krw": {
+        "1400": 246290.01459726028,
+        "1500": 257453.58706849316,
+        "1600": 268617.15953972604
+      }
+    }
+  },
+  "optional_runner": {
+    "type": "m6i.xlarge On-Demand",
+    "hours": 12,
+    "root_gb": 30,
+    "usd": 2.8769753424657534,
+    "not_approved": true
+  },
+  "limitations": [
+    "Storage GB-month proration uses 730h; actual monthly billing may differ.",
+    "No actual AWS inventory, quotas, token usage, traffic or selected-model peak was measured.",
+    "RDS restart delay and automatic restart can increase compute hours.",
+    "Snapshots/versions are assumed bounded to the stated total billed sizes; growth adds cost.",
+    "B requires separately approved quiesced RDS deletion/restore and retained-volume reattachment rehearsal.",
+    "All cluster recreation, DNS/IAM/Secret changes and cleanup require execution approval."
+  ]
+}

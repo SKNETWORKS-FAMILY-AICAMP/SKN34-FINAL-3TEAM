@@ -1,0 +1,49 @@
+{
+  "status": "DRAFT_NOT_DEPLOYABLE",
+  "project": "sagomungchi",
+  "environment": "demo",
+  "partition": "aws",
+  "region": "ap-northeast-2",
+  "cloudfrontCertificateRegion": "us-east-1",
+  "clusterName": "sagomungchi-demo",
+  "eksVersionCandidate": "1.35",
+  "nodeGroups": {
+    "application": {"capacityType": "ON_DEMAND", "instanceTypeCandidate": "m6i.xlarge", "desiredNodesCandidate": 1, "rootVolumeGiB": 50},
+    "platform-observability": {"capacityType": "ON_DEMAND", "instanceTypeCandidate": "m6i.large", "desiredNodesCandidate": 1, "rootVolumeGiB": 30}
+  },
+  "database": {
+    "engine": "postgres",
+    "engineMajorCandidate": "17",
+    "instanceClassCandidate": "db.t4g.medium",
+    "multiAz": false,
+    "storageType": "gp3",
+    "allocatedStorageGiBCandidate": 20,
+    "backupRetentionDays": 7,
+    "databases": ["core_db", "learning_db", "report_db"]
+  },
+  "storage": {
+    "class": "STANDARD",
+    "bucketNamePattern": "sagomungchi-demo-{accountId}-{purpose}",
+    "purposes": ["web", "missions", "reports", "models"],
+    "dataRetentionThroughKst": "2027-02-10",
+    "automaticExpirationEnabled": false
+  },
+  "images": {
+    "architecture": "linux/amd64",
+    "repositoryPrefix": "sagomungchi",
+    "registryPattern": "{accountId}.dkr.ecr.{region}.amazonaws.com",
+    "runtimeServices": ["core-service", "learning-service", "ai-service", "scoring-service", "report-service"],
+    "migrationServices": ["core-service", "learning-service"]
+  },
+  "githubOidc": {
+    "audience": "sts.amazonaws.com",
+    "subject": "repo:SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM:environment:prod"
+  },
+  "kubernetesSecrets": {
+    "platform": "platform-data-credentials",
+    "app": "app-service-credentials",
+    "observability": "observability-credentials"
+  },
+  "langfuse": {"hosting": "cloud", "plan": "Hobby", "users": 2, "region": null, "endpoint": null, "sendOriginalContent": false},
+  "payments": {"mode": "test"}
+}
