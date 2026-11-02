@@ -16,8 +16,7 @@ from app.concurrency import run_blocking
 from app.config import get_settings
 from app.database import create_db_engine, create_session_factory, run_db, transaction
 from app.deletion.consumer import DELETION_QUEUE, StudentDeletedConsumer
-from app.deletion.service import DeletionService
-from app.deletion.state import delete_processed_before
+from app.deletion.service import DeletionService, prune_processed
 from app.generation.codec import ReportV1Codec
 from app.generation.consumer import GENERATE_QUEUE, GenerationConsumer
 from app.generation.locking import JobLocks
@@ -43,7 +42,7 @@ def prune_event_records(factory, retention_days: int, now: datetime | None = Non
     with transaction(factory) as session:
         return (
             OutboxRepository().delete_published_before(session, before),
-            delete_processed_before(session, before),
+            prune_processed(session, before),
         )
 
 
