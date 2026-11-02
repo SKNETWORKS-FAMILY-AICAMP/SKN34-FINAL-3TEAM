@@ -81,6 +81,51 @@ def guard(factory, student):
         )
 
 
+def test_cross_feature_deletion_rolls_back_together_and_can_retry(
+    deletion_setup, report_factory, db_engine, report_student_id
+):
+    from app.deletion.repository import DeletionRepository
+
+    new_command, _, storage, core = deletion_setup
+    request = command_for(report_student_id)
+    asyncio.run(make_service(report_factory, db_engine, request).generate(request))
+    before = stored(report_factory, report_student_id)
+    command = new_command()
+
+    class FailingFinish(DeletionRepository):
+        def finish(self, session, command):
+            super().finish(session, command)
+            raise RuntimeError("synthetic finish failure")
+
+    service = DeletionService(
+        report_factory,
+        JobLocks(db_engine),
+        lambda: storage,
+        core,
+        repository=FailingFinish(),
+    )
+    with pytest.raises(RuntimeError, match="synthetic finish failure"):
+        asyncio.run(service.delete(command))
+    # generation 삭제·outbox 삭제·장벽 완료·처리 기록이 모두 같은 트랜잭션이다.
+    assert stored(report_factory, report_student_id) == before
+    assert guard(report_factory, report_student_id)["status"] == "PENDING"
+    with report_factory() as session:
+        assert (
+            session.scalar(
+                select(processed_event.c.event_id).where(
+                    processed_event.c.event_id == command.event_id
+                )
+            )
+            is None
+        )
+    assert core.calls == []
+    retry = DeletionService(report_factory, JobLocks(db_engine), lambda: storage, core)
+    asyncio.run(retry.delete(command))
+    assert stored(report_factory, report_student_id) == ([], [])
+    assert guard(report_factory, report_student_id)["status"] == "COMPLETED"
+    assert core.calls == [command.request_id]
+
+
 def envelope(command):
     return EventEnvelope(
         type="student.deleted",
