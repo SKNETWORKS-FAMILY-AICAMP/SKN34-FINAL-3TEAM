@@ -410,7 +410,9 @@ core·learning은 import를 레이어로 분류해 전수 검사, Python·웹은
 | A12 | ai 분석 에이전트 Application 계층 부재 | 2.2 계층 건너뛰기 금지 | `analysis_agent/router.py`가 `LearningClient` 생성·그래프 실행, `state.py`가 `tools`·`llm`·`versions` 참조 |
 | A13 | ai·scoring 소비자에 revision 조정 업무 로직, ai `versions.py`에 router·모델·상태 저장 혼재 | 2.1 Presentation 업무 로직 금지 | `ai-service/app/messaging/consumer.py`, `scoring-service/app/messaging/consumer.py`, `ai-service/app/versions.py`. ai는 #254에서 `prompt_versions/`(models·registry·service·router)로 분리하고 `versions.py` 제거, 소비자는 검증·ACK·`PromptSync.offer`만. scoring 소비자의 `ModelStartup` 생성·조정은 남음 |
 | A14 | 웹 컴포넌트 API 직접 호출·서버 상태 직접 보관 | 3장 | `presentation/support/SupportResults.tsx`의 `apiFetch`, `parent/ParentPayments.tsx`(`PaymentResult`)·`BillingResult.tsx`의 `useState`·폴링, `domain/payment.ts`의 `sessionStorage` 접근 |
-| A15 | 설계 문서상 위치와 다른 구현 — #256 해결(빈 `deletion/` 삭제, `record/` 확정) | 2.6 | learning `student.deleted` 소비가 `deletion/`이 아닌 `record/consumer`·`record/service`(빈 `deletion/` 폴더 잔존). 트리에 실제 위치 표기 |
+| A15 | 설계 문서상 위치와 다른 구현 | 2.6 | learning `student.deleted` 소비가 `deletion/`이 아닌 `record/consumer`·`record/service`(빈 `deletion/` 폴더 잔존). 트리에 실제 위치 표기 |
+
+- A15 처리: #256에서 빈 `deletion/` 폴더를 지우고 architecture 2.6·class-diagram 4.3을 `record/` 기준으로 정리했다(코드 변경 없음, [learning 보고서](learning.md) 9절).
 
 ### 4.6 남은 공백
 
