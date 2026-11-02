@@ -240,6 +240,16 @@ stateDiagram-v2
 - 종료 후 늦게 온 `report.started`는 영향 0행 → 무시 (역순 도착 허용)
 - `QUEUED` 고착(메시지 DLQ 이동)은 #132 복구 점검으로 실제 report 상태와 대조한 뒤 종료한다. 관리자는 `/admin/queues`·`/admin/jobs`에서 확인하며 자동 재생성은 하지 않는다.
 
+#### 4.1.1 종료 유실·삭제 (#132)
+
+QUEUED/RUNNING → COMPLETED|FAILED: 복구 API의 저장된 종료 결과를 조건부 반영한다. BUSY/DB·HTTP 오류/식별 불일치는 상태를 보존한다. 학생 삭제 확정은 `STUDENT_DELETED`로 FAILED 및 실행 이력을 원자 기록한다. 종료 상태는 늦은 started/completed/failed와 복구 응답으로 바뀌지 않는다.
+
+report에서 잠금 소유자가 없는 RUNNING만 `REPORT_EXECUTION_ABANDONED`로 FAILED 전이한다. 행이 없으면 `REPORT_NOT_CREATED` 차단 기록을 저장해 같은 job의 지연 메시지는 ACK 종료한다. 차단 기록의 학생·기간이 다르면 오류다. 실행 중인 생성은 BUSY로 유지한다. 자동 재생성은 하지 않는다.
+
+#### 4.1.2 REPORT 관리자 재처리 (#47)
+
+원래 FAILED report_job은 종료 상태를 유지한다. 명시적인 재처리는 별도 ADMIN_RETRY job을 QUEUED로 만들고 core report_job_retry로 연결한다. 새 job에 기존 QUEUED→RUNNING→COMPLETED/FAILED 전이를 적용하며 실행 번호는 새 job 기준이다. 기존 job의 attempt_no를 증가시키거나 오래된 종료 이벤트를 새 job에 재적용하지 않는다. 이미 재처리한 원작업은 재사용하지 않고 재실패한 자식 job에서 다음 관계를 만든다. 202는 접수이며 완료가 아니다.
+
 ### 4.2 `weekly_report.status` · `state` (report)
 
 ```mermaid
@@ -359,6 +369,10 @@ stateDiagram-v2
 - `R_*`·`Q_*` 접두어 = 각 테이블 `status` 값
 - 접수만으로 판정 변경 금지, `RECEIVED → RESOLVED` 직행 금지 (검토 기록 필수, FN-SUP-02)
 
+### 5.1 core 정정 실행 기록 (#46)
+
+신고 상태는 기존 RECEIVED → IN_REVIEW → RESOLVED를 유지한다. core `SupportService.correct`는 신고 검토 중 correction.processing_status=PENDING 의도를 먼저 저장하고 HTTP를 트랜잭션 밖에서 실행한다. HTTP 실패 시 FAILED이며 신고는 IN_REVIEW다. 동일 correction UUID로 공급자가 성공을 확인하고 core 완료 트랜잭션까지 커밋될 때만 correction=COMPLETED·신고=RESOLVED·알림을 함께 기록한다. 응답 유실이나 core 저장 실패는 완료가 아니며 같은 의도로 재개한다. 원본 답변·판정은 변경하지 않는다.
+
 ---
 
 ## 6. 결제·구독
@@ -445,6 +459,10 @@ stateDiagram-v2
 - `REQUESTED → APPROVED`: 승인된 환불 합계 + 요청 금액 ≤ `payment.amount`, 아니면 `409 REFUND_NOT_ALLOWED` (FN-ADM-16)
 - `FAILED`는 종료, 재시도는 새 요청 행 (중복 취소 방지). 모든 전이에 `decided_by`·`audit_log`
 
+### 6.4 결제 상태 적용 보완 (#48)
+
+CONFIRMING은 PG 조회로만 확정하며, APPROVED/RECOVERY_REQUIRED는 추가 청구 없이 구독 반영을 재시도한다. REQUESTED 환불은 프리미엄 사용 동결 상태이며 증빙 미확인은 503이다. APPROVED 환불의 PG 결과 불명확은 FAILED로 바꾸지 않고 조회 복구한다. REFUNDED/CANCELED는 지연 DONE 통지로 되돌리지 않는다. PG 호출 중 parent 잠금은 유지하지 않으며 준비된 거래/환불이 탈퇴를 차단한다. 상세 계약은 [#48 보고서](../report/issue-48-payments.md)를 따른다.
+
 ---
 
 ## 7. 운영
@@ -514,23 +532,4 @@ stateDiagram-v2
 - 문의 `RECEIVED → IN_REVIEW`: API 2.8에 상태 변경 엔드포인트 없음 → 필요 시 API 명세에 추가
 - 돌아보기를 마무리 전에 저장하면 `409 REVEAL_CONDITION_UNMET`으로 거부 (기존 오류 코드 재사용)
 - 정기 청구 재청구: ERD 부분 UK `(subscription_id, billing_period_start) WHERE kind = 'RENEWAL'`로 같은 기간 새 주문 불가. 가정은 "기존 주문의 결제가 `FAILED`면 같은 주문으로 재청구", PG 주문번호 재사용 가능 여부 확인 후 ERD 반영 필요
-- `QUEUED` 고착 작업은 #132 내부 복구 API와 영구 재실행 차단 기록으로 정리한다(4.1 보완). 시간만으로 SUPERSEDED 처리하는 가정은 사용하지 않는다.
-
-
-### #48 결제 상태 적용 보완
-
-CONFIRMING은 PG 조회로만 확정하며, APPROVED/RECOVERY_REQUIRED는 추가 청구 없이 구독 반영을 재시도한다. REQUESTED 환불은 프리미엄 사용 동결 상태이며 증빙 미확인은 503이다. APPROVED 환불의 PG 결과 불명확은 FAILED로 바꾸지 않고 조회 복구한다. REFUNDED/CANCELED는 지연 DONE 통지로 되돌리지 않는다. PG 호출 중 parent 잠금은 유지하지 않으며 준비된 거래/환불이 탈퇴를 차단한다. 상세 계약은 [#48 보고서](../report/issue-48-payments.md)를 따른다.
-
-### #46 core 정정 실행 기록
-
-신고 상태는 기존 RECEIVED → IN_REVIEW → RESOLVED를 유지한다. core `SupportService.correct`는 신고 검토 중 correction.processing_status=PENDING 의도를 먼저 저장하고 HTTP를 트랜잭션 밖에서 실행한다. HTTP 실패 시 FAILED이며 신고는 IN_REVIEW다. 동일 correction UUID로 공급자가 성공을 확인하고 core 완료 트랜잭션까지 커밋될 때만 correction=COMPLETED·신고=RESOLVED·알림을 함께 기록한다. 응답 유실이나 core 저장 실패는 완료가 아니며 같은 의도로 재개한다. 원본 답변·판정은 변경하지 않는다.
-
-### #47 REPORT 관리자 재처리
-
-원래 FAILED report_job은 종료 상태를 유지한다. 명시적인 재처리는 별도 ADMIN_RETRY job을 QUEUED로 만들고 core report_job_retry로 연결한다. 새 job에 기존 QUEUED→RUNNING→COMPLETED/FAILED 전이를 적용하며 실행 번호는 새 job 기준이다. 기존 job의 attempt_no를 증가시키거나 오래된 종료 이벤트를 새 job에 재적용하지 않는다. 이미 재처리한 원작업은 재사용하지 않고 재실패한 자식 job에서 다음 관계를 만든다. 202는 접수이며 완료가 아니다.
-
-### 4.1 보완: 종료 유실·삭제 (#132)
-
-QUEUED/RUNNING → COMPLETED|FAILED: 복구 API의 저장된 종료 결과를 조건부 반영한다. BUSY/DB·HTTP 오류/식별 불일치는 상태를 보존한다. 학생 삭제 확정은 `STUDENT_DELETED`로 FAILED 및 실행 이력을 원자 기록한다. 종료 상태는 늦은 started/completed/failed와 복구 응답으로 바뀌지 않는다.
-
-report에서 잠금 소유자가 없는 RUNNING만 `REPORT_EXECUTION_ABANDONED`로 FAILED 전이한다. 행이 없으면 `REPORT_NOT_CREATED` 차단 기록을 저장해 같은 job의 지연 메시지는 ACK 종료한다. 차단 기록의 학생·기간이 다르면 오류다. 실행 중인 생성은 BUSY로 유지한다. 자동 재생성은 하지 않는다.
+- `QUEUED` 고착 작업은 #132 내부 복구 API와 영구 재실행 차단 기록으로 정리한다(4.1.1). 시간만으로 SUPERSEDED 처리하는 가정은 사용하지 않는다.

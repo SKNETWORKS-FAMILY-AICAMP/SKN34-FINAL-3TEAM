@@ -419,7 +419,7 @@ core·learning은 import를 레이어로 분류해 전수 검사, Python·웹은
 | 오류 코드 문서 | 결제(약 30종: `PAYMENT_PG_UNAVAILABLE`·`PAYMENT_NOT_FOUND`·`SUBSCRIPTION_NOT_ACTIVE`·`REFUND_STATE_CHANGED`·`BILLING_KEY_REQUIRED` 등)·`QUEUE_MANAGEMENT_*`·`EVIDENCE_UNAVAILABLE`(410)·`SUPPORT_STATE_CONFLICT`·`LEARNING_STATS_UNAVAILABLE`·`ANALYSIS_USAGE_UNAVAILABLE`이 api-spec 1.3에 없음 |
 | 목업 계약 | `GET/PUT /students/me/preferences`(api-spec 3.12)는 백엔드 미구현 |
 | 종료 이슈 문구 | #171 종료 후 architecture "(예정, #171)", #184 종료 후 `tosspayments-checkout.md` "자동 종료하지 않음" 문구(과거 기록) |
-| 번호 체계 밖 절(#165) | architecture `### #46`·`## 이슈 #41`·`## 이슈 #132`·`### #47 관리자 대화 재처리`, erd `### #45`·`### #47 …`(2개)·`### 이슈 #41`·`### report_job_guard`, state 9장 아래 `### #48`·`### #46`·`### #47 REPORT`·`### 4.1 보완`, api-spec·sequence·class·ai 보고서의 이슈별 절 |
+| 번호 체계 밖 절(#165) | erd·architecture·state-diagram은 #165에서 번호 절로 이동 완료. api-spec·sequence·class·ai 보고서의 이슈별 절은 남음 |
 | 보고서 정리 | `learning-frontend-alignment.md`의 다른 PC 절대경로, `pr-admin-screen-completion.md` 제목(H1) 없음, `issue-47-admin-operations.md`·`issue-46-support.md`의 #163 절 중복 |
 | 인프라·설계 차이 | 멘토링 결정(#211 Karpenter·#212 S3 Gateway, 열림)과 architecture의 Cluster Autoscaler·NAT 단독 기술 |
 | 테스트 공백 | ai `analysis_agent` 노드는 #138로 보강. 웹 `presentation` 화면·Playwright 스크립트는 여전히 수동 실행만 가능 |
