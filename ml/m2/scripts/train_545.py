@@ -14,6 +14,7 @@
 """
 
 import argparse
+import json
 import time
 from pathlib import Path
 
@@ -134,6 +135,42 @@ def predict(model, dl, dev):
         back[dl.order] = raw
         raw = back
     return raw
+
+
+def qwk4(a, b):
+    """0~3점 가중치 2차 kappa (sklearn cohen_kappa_score(weights="quadratic")와 같은 식)"""
+    o = np.zeros((4, 4))
+    np.add.at(o, (a, b), 1)
+    w = np.subtract.outer(np.arange(4), np.arange(4)) ** 2 / 9
+    e = np.outer(o.sum(1), o.sum(0)) / o.sum()
+    return 1 - (w * o).sum() / (w * e).sum()
+
+
+def fit_cuts(pred, raters):
+    """검증용에서 QWK(채점자 3명 각각과의 평균)가 가장 높아지는 점수 경계 (train.py fit_cuts와 같은 방식).
+
+    점수 = bisect_right(경계, 소수 예측) → 0~3점. 채점자 점수(소수 평균)는 반올림해서 0~3 정수로.
+    """
+    r = [np.clip(np.floor(x + 0.5), 0, 3).astype(int) for x in raters]
+
+    def q(c):
+        return float(np.mean([qwk4(x, np.digitize(pred, c)) for x in r]))
+
+    cuts = [0.5, 1.5, 2.5]
+    best = q(cuts)
+    for _ in range(3):  # 경계끼리 영향을 주므로 몇 바퀴 반복
+        for j in range(3):
+            low = cuts[j - 1] + 0.05 if j else -0.5
+            high = cuts[j + 1] - 0.05 if j < 2 else 3.5
+            for c in np.arange(cuts[j] - 0.5, cuts[j] + 0.51, 0.05):
+                if not low <= c <= high:
+                    continue
+                trial = cuts.copy()
+                trial[j] = round(float(c), 2)
+                v = q(trial)
+                if v > best + 1e-6:
+                    best, cuts = v, trial
+    return cuts
 
 
 def scores(df, pred, name):
@@ -367,7 +404,7 @@ def main():
     seed_dir = f"_seed{args.seed}" if args.detail or args.both else ""
     out_dir = args.out_dir or M2 / "checkpoints" / f"e545{tag}{seed_dir}"
     out_dir.mkdir(parents=True, exist_ok=True)
-    best, start = -1.0, time.time()
+    best, best_ep, start = -1.0, 0, time.time()
     for ep in range(1, args.epochs + 1):
         model.train()
         for step, b in enumerate(dls["train"], 1):
@@ -395,15 +432,48 @@ def main():
         r = float(np.mean([np.corrcoef(pv[:, j], yv[:, j])[0, 1] for j in range(3)]))
         print(f"에폭 {ep} 검증 평균 상관 {r:.3f} ({(time.time() - start) / 60:.1f}분)")
         if best == -1.0 or r > best:  # 첫 에폭은 항상 저장 (검증 상관이 nan이어도)
-            best = r
+            best, best_ep = r, ep
             model.save_pretrained(out_dir)
             tok.save_pretrained(out_dir)
     del model, opt
     torch.cuda.empty_cache()
     model = load_trained(args, out_dir, n_out, tok).to(dev)
     rows, preds = [], {}
+    # 서비스 로더가 읽는 파일 2개 (#228): 점수 경계(검증용으로 찾음)·학습 설정
+    pv = to_areas(predict(model, dls["valid"], dev), sets["valid"])
+    cuts = {
+        a: fit_cuts(pv[:, j], [sets["valid"][f"{a}_r{k}"].to_numpy() for k in (1, 2, 3)])
+        for j, a in enumerate(AREAS)
+    }
+    (out_dir / "score_cuts.json").write_text(json.dumps(cuts, indent=2), encoding="utf-8")
+    info = {k: str(v) for k, v in vars(args).items()}
+    info.update(
+        head="reg",
+        dataset="essay545",
+        no_prompt="True",
+        with_keyword="False",
+        with_purpose="False",
+        with_exemplar="False",
+        input_first="[학년] {grade} [글 종류] {essay_type}",
+        grade_values=sorted(df["grade"].unique().tolist()),
+        essay_type_values=sorted(df["essay_type"].unique().tolist()),
+        outputs=AREAS + (DETAIL if args.both or args.detail else []),
+        use_outputs=AREAS,
+        output_names={"org": "구성", "cont": "내용", "exp": "표현"},
+        output_range=[0, 3],
+        num_outputs=n_out,
+        best_epoch=best_ep,
+        best_valid_mean_pearson=round(best, 3),
+        valid_rows=len(sets["valid"]),
+        score_cuts=cuts,
+        score_rule="점수 = bisect_right(score_cuts[영역], 소수 예측) → 0~3점",
+    )
+    (out_dir / "train_info.json").write_text(
+        json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(f"점수 경계 저장 (검증용 {len(sets['valid']):,}편): {cuts}")
     if args.save_preds:
-        preds["valid"] = to_areas(predict(model, dls["valid"], dev), sets["valid"])
+        preds["valid"] = pv
         preds["valid_id"] = sets["valid"]["essay_id"].to_numpy(dtype=str)
     for name in [n for n in ["same_topic", "new_topic"] if n in sets]:
         raw = predict(model, dls[name], dev)
