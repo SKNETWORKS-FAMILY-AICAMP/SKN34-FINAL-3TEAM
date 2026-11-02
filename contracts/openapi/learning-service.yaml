@@ -290,7 +290,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '422':
-          description: ANSWER_INCOMPLETE 또는 IDEMPOTENCY_KEY_REUSED
+          description: ANSWER_INCOMPLETE, ANSWER_INAPPROPRIATE(욕설·비속어·성적·혐오·위협 표현이나 연락처, 저장하지 않음) 또는 IDEMPOTENCY_KEY_REUSED
           content:
             application/problem+json:
               schema:
@@ -1563,7 +1563,8 @@ components:
       description: >-
         NARRATIVE는 text, SOLUTION_STEPS는 finalAnswer·steps, ESSAY는 essay,
         CHOICE·ORDERING은 choiceIds, CLASSIFICATION은 assignments를 쓴다. 그 외 필드는 저장하지 않는다.
-        누락·미완성은 422 ANSWER_INCOMPLETE.
+        누락·미완성은 422 ANSWER_INCOMPLETE. 학생이 쓴 글(text·finalAnswer·steps·essay)에 욕설·비속어·성적·혐오·위협 표현이나
+        연락처(전화번호·이메일)가 있으면 저장하지 않고 422 ANSWER_INAPPROPRIATE(detail은 범주별 고정 문구).
       properties:
         inputType: {$ref: '#/components/schemas/InputType'}
         text: {type: [string, 'null']}

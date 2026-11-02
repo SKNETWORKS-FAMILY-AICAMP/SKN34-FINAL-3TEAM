@@ -1,0 +1,312 @@
+{
+ "source": "국립국어원 우리말샘 https://opendict.korean.go.kr Open API 뜻풀이 검색(2026-11-01 조회)",
+ "license": "CC BY-SA 2.0 KR (저작자 국립국어원). 이 파일도 같은 조건을 따름",
+ "rule": "뜻풀이가 '욕하여 이르는 말'·'욕으로 하는 말'·'비속하게 이르는 말'로 끝나는 3자 이상 일반어. targetCode로 원 항목 확인",
+ "words": [
+  {
+   "word": "개갈보",
+   "targetCode": "718332",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "개기름",
+   "targetCode": "560005",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "개도둑년",
+   "targetCode": "718337",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "개망나니짓",
+   "targetCode": "718340",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "개매너",
+   "targetCode": "1369383",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "개머슴",
+   "targetCode": "616518",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "개백장",
+   "targetCode": "518112",
+   "definitionEnds": "욕하여 이르는 말"
+  },
+  {
+   "word": "개백정",
+   "targetCode": "32590",
+   "definitionEnds": "욕하여 이르는 말"
+  },
+  {
+   "word": "개상놈",
+   "targetCode": "718347",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "개서방",
+   "targetCode": "718349",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "개소리",
+   "targetCode": "376244",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "개아들",
+   "targetCode": "81013",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "개자식",
+   "targetCode": "80919",
+   "definitionEnds": "욕하여 이르는 말"
+  },
+  {
+   "word": "개잡년",
+   "targetCode": "339605",
+   "definitionEnds": "욕하여 이르는 말"
+  },
+  {
+   "word": "개잡놈",
+   "targetCode": "449974",
+   "definitionEnds": "욕하여 이르는 말"
+  },
+  {
+   "word": "거지새끼",
+   "targetCode": "339766",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "결창이터지다",
+   "targetCode": "600946",
+   "definitionEnds": "욕으로 하는 말"
+  },
+  {
+   "word": "계집년",
+   "targetCode": "87648",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "고기나되었으면남이나먹지",
+   "targetCode": "607731",
+   "definitionEnds": "욕하여 이르는 말"
+  },
+  {
+   "word": "난장맞을",
+   "targetCode": "597550",
+   "definitionEnds": "욕으로 하는 말"
+  },
+  {
+   "word": "난장칠",
+   "targetCode": "591982",
+   "definitionEnds": "욕으로 하는 말"
+  },
+  {
+   "word": "넨장맞을",
+   "targetCode": "416655",
+   "definitionEnds": "욕으로 하는 말"
+  },
+  {
+   "word": "넨장칠",
+   "targetCode": "114960",
+   "definitionEnds": "욕으로 하는 말"
+  },
+  {
+   "word": "덴둥이",
+   "targetCode": "38447",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "독루생",
+   "targetCode": "129648",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "똥갈보",
+   "targetCode": "346334",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "명문집어먹고휴지똥눌놈",
+   "targetCode": "602891",
+   "definitionEnds": "욕하여 이르는 말"
+  },
+  {
+   "word": "무지개매너",
+   "targetCode": "1388796",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "미친년",
+   "targetCode": "552142",
+   "definitionEnds": "욕하여 이르는 말"
+  },
+  {
+   "word": "미친놈",
+   "targetCode": "9032",
+   "definitionEnds": "욕하여 이르는 말"
+  },
+  {
+   "word": "배라먹을",
+   "targetCode": "165022",
+   "definitionEnds": "욕으로 하는 말"
+  },
+  {
+   "word": "보험빵",
+   "targetCode": "700349",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "불상년",
+   "targetCode": "387009",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "불쌍놈",
+   "targetCode": "497441",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "빌어먹을",
+   "targetCode": "178770",
+   "definitionEnds": "욕으로 하는 말"
+  },
+  {
+   "word": "뺨따귀",
+   "targetCode": "571474",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "뿔다귀",
+   "targetCode": "182113",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "뿔따구",
+   "targetCode": "182117",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "사이코",
+   "targetCode": "599304",
+   "definitionEnds": "욕하여 이르는 말"
+  },
+  {
+   "word": "씹구멍",
+   "targetCode": "405536",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "씹하다",
+   "targetCode": "390990",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "아비없는후레자식",
+   "targetCode": "613172",
+   "definitionEnds": "욕하여 이르는 말"
+  },
+  {
+   "word": "애새끼",
+   "targetCode": "16719",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "염병에땀을못낼놈",
+   "targetCode": "613607",
+   "definitionEnds": "욕하여 이르는 말"
+  },
+  {
+   "word": "염병할",
+   "targetCode": "232699",
+   "definitionEnds": "욕으로 하는 말"
+  },
+  {
+   "word": "오라지다",
+   "targetCode": "592708",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "오라질",
+   "targetCode": "393456",
+   "definitionEnds": "욕으로 하는 말"
+  },
+  {
+   "word": "우라질",
+   "targetCode": "430256",
+   "definitionEnds": "욕으로 하는 말"
+  },
+  {
+   "word": "육시랄",
+   "targetCode": "243732",
+   "definitionEnds": "욕으로 하는 말"
+  },
+  {
+   "word": "이마빡",
+   "targetCode": "248611",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "잡녀석",
+   "targetCode": "543240",
+   "definitionEnds": "욕하여 이르는 말"
+  },
+  {
+   "word": "제기랄",
+   "targetCode": "270144",
+   "definitionEnds": "욕으로 하는 말"
+  },
+  {
+   "word": "제미붙을",
+   "targetCode": "434029",
+   "definitionEnds": "욕으로 하는 말"
+  },
+  {
+   "word": "제밀할",
+   "targetCode": "270566",
+   "definitionEnds": "욕으로 하는 말"
+  },
+  {
+   "word": "젠장맞을",
+   "targetCode": "271334",
+   "definitionEnds": "욕으로 하는 말"
+  },
+  {
+   "word": "젠장칠",
+   "targetCode": "360842",
+   "definitionEnds": "욕으로 하는 말"
+  },
+  {
+   "word": "주책망나니",
+   "targetCode": "508395",
+   "definitionEnds": "욕하여 이르는 말"
+  },
+  {
+   "word": "천하잡년",
+   "targetCode": "436439",
+   "definitionEnds": "욕하여 이르는 말"
+  },
+  {
+   "word": "천하잡놈",
+   "targetCode": "291842",
+   "definitionEnds": "욕하여 이르는 말"
+  },
+  {
+   "word": "판상놈",
+   "targetCode": "401220",
+   "definitionEnds": "비속하게 이르는 말"
+  },
+  {
+   "word": "화냥년",
+   "targetCode": "403219",
+   "definitionEnds": "비속하게 이르는 말"
+  }
+ ]
+}

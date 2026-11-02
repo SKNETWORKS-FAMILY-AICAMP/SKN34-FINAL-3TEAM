@@ -68,6 +68,14 @@ class AnswerContentTest {
     }
 
     @Test
+    fun `표현 검사 대상은 학생이 쓴 칸마다 따로, 고르기·분류는 넣지 않음`() {
+        assertEquals(listOf("글"), AnswerContent(text = "글").writtenTexts())
+        assertEquals(listOf("6", "2씩", "더함"), AnswerContent(finalAnswer = "6", steps = listOf("2씩", "더함")).writtenTexts())
+        assertEquals(listOf("찬성", "안전", "편리", "그래도"), AnswerContent(essay = Essay("찬성", listOf("안전", "편리"), "그래도")).writtenTexts())
+        assertEquals(emptyList(), AnswerContent(choiceIds = listOf("a"), assignments = listOf(Assignment("a", "g1"))).writtenTexts())
+    }
+
+    @Test
     fun `원문은 입력 틀의 칸 이름과 답 단위를 붙이고, 고르기는 선택지 이름, 분류는 그룹 이름으로`() {
         val steps = AnswerContent(finalAnswer = "6", steps = listOf("2씩 3묶음", "", "더함"))
         assertEquals(
