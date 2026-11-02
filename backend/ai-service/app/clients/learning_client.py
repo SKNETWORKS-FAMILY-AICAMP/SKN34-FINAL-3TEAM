@@ -16,7 +16,6 @@ from app.analysis_agent.models import (
     Metric,
     RecordAttempt,
     RecordChange,
-    RecordEvidence,
     Scope,
     ThinkingActivity,
     ThinkingTypeItem,
@@ -64,11 +63,6 @@ class LearningClient:
     async def thinking_activities(self, scope: Scope) -> list[ThinkingActivity]:
         body = await self._get_student(scope, "thinking-activities", {})
         return _parse(ThinkingActivity, body.get("items"))
-
-    async def evidence(self, answer_ids: list[str]) -> list[RecordEvidence]:
-        """요청 순서대로. 없는 답변·삭제 학생은 available=false(원문 없음) 그대로 반환."""
-        body = await self._get("/internal/records/evidence", {"answerIds": ",".join(answer_ids)})
-        return _parse(RecordEvidence, body.get("items"))
 
     async def aclose(self) -> None:
         if self._client is not None:
