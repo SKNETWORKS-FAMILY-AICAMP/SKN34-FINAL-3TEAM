@@ -5,7 +5,7 @@ from datetime import date
 from uuid import UUID
 
 from app.database import transaction
-from app.deletion.state import generation_allowed
+from app.deletion.service import ensure_generation_allowed
 from app.errors import ApiError
 from app.generation.codec import ReportV1Codec
 from app.generation.models import GenerationBusy, JobConflict, ReportEvent, ReportStatus
@@ -61,7 +61,7 @@ class ReconciliationService:
                     raise JobConflict("Report job student/period does not match")
                 guard = self._repository.guard(session, job_id, student_id, period_from, period_to)
                 try:
-                    allowed = generation_allowed(session, student_id, None)
+                    allowed = ensure_generation_allowed(session, student_id, None)
                 except GenerationBusy:
                     return result("BUSY")
                 if not allowed:
