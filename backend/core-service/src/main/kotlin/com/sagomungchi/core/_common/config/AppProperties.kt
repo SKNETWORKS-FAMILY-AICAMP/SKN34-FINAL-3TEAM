@@ -19,6 +19,8 @@ data class AppProperties(
 
     data class Messaging(
         val maxRetries: Int = 3,
+        /** 발행 완료 outbox_event·processed_event·event_log 보존 일수 */
+        val eventRetentionDays: Long = 90,
     )
 
     /** 100만 토큰당 USD */

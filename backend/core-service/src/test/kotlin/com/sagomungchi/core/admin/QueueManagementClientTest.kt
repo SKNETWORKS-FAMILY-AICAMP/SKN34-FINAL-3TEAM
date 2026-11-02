@@ -38,7 +38,7 @@ class QueueManagementClientTest {
             }
             assertNotNull(result)
             val node=json.valueToTree<com.fasterxml.jackson.databind.JsonNode>(result)
-            assertEquals(25,node.path("items").size());assertEquals(5,node.path("items").count { it.path("kind").asText()=="DLQ" })
+            assertEquals(30,node.path("items").size());assertEquals(6,node.path("items").count { it.path("kind").asText()=="DLQ" })
             assertTrue(node.path("items").all { it.path("messages").asLong()==0L })
         }
     }
