@@ -16,6 +16,7 @@ import {
   validateAnswer,
 } from '../src/domain/classroom.ts'
 import type { Child } from '../src/domain/classroom.ts'
+import { ApiError } from '../src/data/apiClient.ts'
 
 async function setup(index = 0) {
   const api = createDemoGateway()
@@ -94,6 +95,33 @@ test('초안 실패 입력 보존 / 버전 충돌 / 메모는 학부모·리포�
     JSON.stringify(await api.analyze(child, recentPeriod, '원문')).includes('SECRET'),
     false,
   )
+})
+test('표현 차단 시연은 저장하지 않고 범주별 안내, 고쳐 내면 저장', async () => {
+  const { api, child } = await setup()
+  api.setScenario('submit-inappropriate')
+  const blocked = (detail: string) => (e: unknown) =>
+    e instanceof ApiError &&
+    e.problem.status === 422 &&
+    e.problem.code === 'ANSWER_INAPPROPRIATE' &&
+    e.problem.title === '고쳐야 할 말이 있어요' &&
+    e.problem.detail === detail
+  const rude = await api.start(demoMissions(child.grade)[3], child)
+  const contact = await api.start(demoMissions(child.grade)[4], child)
+
+  const text = (value: string) => ({ ...blankAnswer('NARRATIVE'), text: value })
+
+  await assert.rejects(
+    api.submit(rude.attemptId, text('시연용 거친 말'), 'rude'),
+    blocked('고운 말로 바꿔서 다시 적어 주세요.'),
+  )
+  await assert.rejects(
+    api.submit(contact.attemptId, text('내 번호는 010-1234-5678'), 'contact'),
+    blocked('전화번호나 이메일 같은 개인정보는 빼고 다시 적어 주세요.'),
+  )
+  assert.equal((await api.attempt(rude.attemptId)).answers.length, 0)
+  assert.equal((await api.attempt(contact.attemptId)).answers.length, 0)
+  const fixed = await api.submit(rude.attemptId, text('고운 말로 고친 답'), 'fixed')
+  assert.equal(fixed.answers.length, 1)
 })
 test('고르기 정답은 추가 질문 없이 마무리, 학생 자녀 범위 검증', async () => {
   const { api, child } = await setup()
