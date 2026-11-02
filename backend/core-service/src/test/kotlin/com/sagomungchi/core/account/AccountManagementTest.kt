@@ -195,13 +195,18 @@ class AccountManagementTest : PostgresRepositoryTest() {
  @Test fun `deletion and Outbox are atomic and failed mutation does not consume grant`() {
   val p=parent();val c=child(p.identity.account.id); val token=grant(p.identity,ReauthPurpose.CHILD_DELETE,c,"PROFILE")
   val constraint="test_issue45_"+c.toString().replace("-","")
+  jdbc.update("UPDATE student SET look_theme='sea',look_companion='kongi',look_updated_at=now() WHERE id=?",c)
+  val lookSaved="SELECT count(*) FROM student WHERE id=? AND look_theme IS NOT NULL"
   jdbc.execute("ALTER TABLE outbox_event ADD CONSTRAINT $constraint CHECK (subject != '$c')")
   try { assertFails { children.delete(p.identity,c,DeletionScope.PROFILE,token) } }
   finally { jdbc.execute("ALTER TABLE outbox_event DROP CONSTRAINT $constraint") }
   assertEquals(0,count("SELECT count(*) FROM deletion_request WHERE student_id=?",c))
   assertEquals(0,count("SELECT count(*) FROM reauth_grant WHERE token_hash=? AND used_at IS NOT NULL",tokens.hash(token)))
   assertEquals("ACTIVE",jdbc.queryForObject("SELECT status FROM student WHERE id=?",String::class.java,c))
+  assertEquals(1,count(lookSaved,c))
   val request=children.delete(p.identity,c,DeletionScope.PROFILE,token)
+  // #234 꾸미기 설정은 삭제 확정과 같은 트랜잭션에서 기본값으로 되돌린다.
+  assertEquals(0,count(lookSaved,c))
   val event=json.readTree(jdbc.queryForObject("SELECT payload::text FROM outbox_event WHERE subject=?",String::class.java,c.toString()))
   assertEquals(request.deletionRequestId.toString(),event["data"]["deletionRequestId"].asText())
   assertEquals("PROFILE",event["data"]["scope"].asText());assertEquals(c.toString(),event["data"]["studentId"].asText())

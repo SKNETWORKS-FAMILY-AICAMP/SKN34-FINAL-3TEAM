@@ -417,7 +417,7 @@ core·learning은 import를 레이어로 분류해 전수 검사, Python·웹은
 | 대상 | 내용 |
 |---|---|
 | 오류 코드 문서 | 결제(약 30종: `PAYMENT_PG_UNAVAILABLE`·`PAYMENT_NOT_FOUND`·`SUBSCRIPTION_NOT_ACTIVE`·`REFUND_STATE_CHANGED`·`BILLING_KEY_REQUIRED` 등)·`QUEUE_MANAGEMENT_*`·`EVIDENCE_UNAVAILABLE`(410)·`SUPPORT_STATE_CONFLICT`·`LEARNING_STATS_UNAVAILABLE`·`ANALYSIS_USAGE_UNAVAILABLE`이 api-spec 1.3에 없음 |
-| 목업 계약 | `GET/PUT /students/me/preferences`(api-spec 3.12)는 백엔드 미구현 |
+| 목업 계약 | `GET/PUT /students/me/preferences`(api-spec 3.12)는 백엔드 미구현 → **#234 해결**(core V23·OpenAPI `StudentLook`) |
 | 종료 이슈 문구 | #171 종료 후 architecture "(예정, #171)", #184 종료 후 `tosspayments-checkout.md` "자동 종료하지 않음" 문구(과거 기록) |
 | 번호 체계 밖 절(#165) | erd·architecture·state-diagram은 #165에서 번호 절로 이동 완료. api-spec·sequence·class·ai 보고서의 이슈별 절은 남음 |
 | 보고서 정리 | `learning-frontend-alignment.md`의 다른 PC 절대경로, `pr-admin-screen-completion.md` 제목(H1) 없음, `issue-47-admin-operations.md`·`issue-46-support.md`의 #163 절 중복 |

@@ -18,7 +18,8 @@ class ChildManagementService(private val repository: ChildManagementRepository,
  private val access: ChildAuthorizationService, private val accounts: AccountManagementService,
  private val reauth: ReauthenticationService, private val outbox: OutboxWriter,
  private val reports: com.sagomungchi.core.report.service.ReportLifecycleService,
- private val conversations: ConversationDeletionService, private val devices: StudentDeviceCleanupService, private val pins: StudentPinService) {
+ private val conversations: ConversationDeletionService, private val devices: StudentDeviceCleanupService, private val pins: StudentPinService,
+ private val looks: StudentLookService) {
  @Transactional
  fun update(identity: AuthenticatedAccount, id: UUID, nickname: String?, grade: Int?): LinkedStudent {
   accounts.lock(identity); access.requireCurrent(identity.account.id,id)
@@ -66,7 +67,7 @@ class ChildManagementService(private val repository: ChildManagementRepository,
   val now=now(); val request=DeletionRequest(UUID.randomUUID(),user,id,scope.name,"CONFIRMED",now,now,null)
   repository.insert(request); repository.block(id,now); accounts.revokeStudent(id)
   if(scope==DeletionScope.PROFILE) repository.unlink(user,id,now)
-  devices.removeChild(id); pins.clear(id)
+  devices.removeChild(id); pins.clear(id); looks.clear(id)
   reports.failForDeletion(id)
   conversations.deleteStudent(id)
   outbox.append("student.deleted","student.deleted",id.toString(),mapOf("studentId" to id,"deletionRequestId" to request.id,"scope" to scope.name))

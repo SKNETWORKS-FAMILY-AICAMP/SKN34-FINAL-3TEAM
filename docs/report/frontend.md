@@ -12,6 +12,8 @@
   | 분할 후 | `index` 278.04 kB (gzip 87.56 kB), 경고 없음 | `ClassroomParts` 169.59 kB, `ParentWorkspace` 68.30 kB, `AdminWorkspace` 63.58 kB, `ClassroomApp` 38.56 kB, `StudentWorkPage` 34.85 kB, `ParentPayments` 19.01 kB |
 
 - #239 실시간 알림: `data/notifications.ts`의 `useNotificationStream`을 `RoleLayout`에서 호출해 학부모·관리자 로그인 중 기존 `streamSse`로 `GET /notifications/stream` 1개를 유지합니다. 학생, 동의·자녀 등록 전 학부모, 로그아웃 상태에서는 요청하지 않습니다. `ready`·`notification`을 받으면 `['parent','notifications']` 캐시만 무효화해 알림 화면과 메뉴의 "알림 · 읽지 않음 N"(`unreadOnly=true` 첫 쪽, 알림 화면과 같은 키)을 다시 읽습니다. 서버가 5분 뒤 닫으면 1초 뒤, 실패가 이어지면 2·4·…·30초 간격으로 다시 연결하고 401·403은 멈춥니다. MSW는 `ready`만 보내고 연결을 유지합니다. 이벤트를 캐시에 직접 병합하지 않고 목록을 다시 읽는 것은 api-spec 2.7의 "id로 병합·Last-Event-ID 없음" 규칙을 목록 API 한 곳에서 지키기 위해서입니다.
+- #242 관리자 공지: core에 `GET /admin/notices`(SERVICE_OPS, 상태·대상 역할 필터, 페이지)를 추가하고 관리자 공지 화면을 이 목록으로 바꿨습니다. 세션 안 작성 목록(`['admin','notice-session']`)과 브라우저 시각 기준 상태 계산을 없애고 서버가 준 `status`(예약·공개 중·종료)를 표시합니다. 저장·종료 뒤에는 admin 캐시 무효화로 서버 목록을 다시 읽으므로 새로고침해도 예약 공지가 남습니다. 상세는 [#46 보고서](issue-46-support.md) 끝 절.
+- #234 꾸미기 설정: core `GET/PUT /students/me/preferences`를 구현해 목업 계약을 확정했습니다(core V23 `student.look_*`, 값 목록은 코드 상수+CHECK, 학생 삭제 확정 시 초기화). 웹 경로·응답 모양은 그대로이며, 저장 실패 시 이전 모습으로 되돌린 뒤 "저장하지 못해서 전에 고른 모습으로 돌아갔어요." 안내를 추가했습니다. 대응 FN이 없는 화면 개선이라 요구사항 ID는 만들지 않았습니다.
 
 ## 학생 공개 설정·재시도 비교 화면 (#206·#207, 2026-11-01)
 
