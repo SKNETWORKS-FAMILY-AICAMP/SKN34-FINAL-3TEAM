@@ -84,6 +84,9 @@ class Judgment(
     companion object {
         /** [P12] 리스 90초: core→learning 피드백 80초보다 길게 (state-diagram 3.3) */
         val LEASE: Duration = Duration.ofSeconds(90)
+
+        /** 리스가 끝난 채 남은 RUNNING을 주기 탐지가 실패로 기록할 때의 실패 코드 (state-diagram 3.3, #241) */
+        const val LEASE_EXPIRED = "LEASE_EXPIRED"
     }
 }
 

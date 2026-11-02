@@ -341,6 +341,7 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 │  └─ repository/
 ├─ judgment/
 │  ├─ controller/                # 피드백·정정 내부 API
+│  ├─ scheduler/                 # StuckJudgmentScheduler: 고착 RUNNING 판정 1분 주기 탐지 (#241)
 │  ├─ service/
 │  ├─ domain/
 │  ├─ repository/

@@ -176,7 +176,7 @@ stateDiagram-v2
   FAILED --> RUNNING: 피드백 재요청
   RUNNING --> RUNNING: 리스 만료 후 재획득
   RUNNING --> DONE: 판정·되묻기 저장
-  RUNNING --> FAILED: ai·LLM 실패·타임아웃
+  RUNNING --> FAILED: ai·LLM 실패·타임아웃, 리스 만료 고착 탐지(1분 주기)
   DONE --> [*]
   note right of DONE
     result = CORRECT | PARTIAL | RETHINK | HELD
@@ -190,9 +190,12 @@ stateDiagram-v2
 | `PENDING·FAILED → RUNNING`, 만료 `RUNNING → RUNNING` | `POST /answers/{id}/feedback` | `Judgment.acquire(now, lease)` | `SET process_status='RUNNING', lease_until=:until WHERE answer_id=:id AND (process_status IN ('PENDING','FAILED') OR (process_status='RUNNING' AND (lease_until IS NULL OR lease_until < now())))`. 리스 없는 `RUNNING`도 만료로 봄(엔티티 판단과 같게) |
 | `RUNNING → DONE` | 처리 완료 | `Judgment.done(...)`·`hold(reason)` | `WHERE id=:id AND process_status='RUNNING' AND lease_until=:until` (획득한 리스 값으로 늦게 끝난 이전 처리의 덮어쓰기 방지) |
 | `RUNNING → FAILED` | 예외·타임아웃 | `Judgment.fail(code)` | 위와 같은 리스 조건, `retry_count + 1` |
+| 만료 `RUNNING → FAILED` | 1분 주기 고착 탐지 (#241) | `StuckJudgmentScheduler` → `JudgmentService.failStuck(now)` | `SET process_status='FAILED', failure_code='LEASE_EXPIRED', retry_count=retry_count+1 WHERE process_status='RUNNING' AND (lease_until IS NULL OR lease_until < now)`. 만료 조건은 재획득과 같음(리스 없는 `RUNNING` 포함) |
 
 - 전이 실패(영향 0행) 시 현재 상태로 응답: `DONE` → 저장 결과, 유효 `RUNNING` → `status` 이벤트 후 종료 (API 1.4)
-- 고착 `RUNNING` 탐지 인덱스 `(process_status, lease_until)`, 리스 90초·탐지 주기 1분 (P12). 주기 탐지 작업은 미구현(운영 작업 후속)이며 현재는 다음 피드백 요청 때 만료 리스를 재획득 ([이슈 #25 보고서](../report/learning.md))
+- 고착 `RUNNING` 탐지 인덱스 `(process_status, lease_until)`, 리스 90초·탐지 주기 1분 (P12). 탐지 전에 피드백 재요청이 오면 지금처럼 만료 리스를 재획득하고, 탐지가 먼저면 `FAILED`가 돼 재요청이 `FAILED → RUNNING`으로 처음부터 실행 (#241, [learning 보고서](../report/learning.md))
+  - 자동 재실행은 하지 않음(core 분석 대화도 130초 넘은 `RUNNING`을 실패 `STREAM_INTERRUPTED`로 바꾸고 자동 재실행하지 않음, api-spec #47 절). 처리 Pod 종료·결과 기록 실패 뒤 학생이 떠난 판정이 시도 상세·학습 기록 집계·결제 사용 증빙에서 처리 중으로 남지 않게 함(마무리 조건 P04는 `RUNNING`·`FAILED` 모두 `DONE`이 아니라 같음)
+  - 조건부 UPDATE라 여러 Pod가 같은 주기에 실행해도 한 번만 바뀜. 재획득과 겹치면 행 잠금 뒤 조건을 다시 봐 새 리스가 잡힌 행은 바꾸지 않음. 탐지 뒤 늦게 끝난 이전 처리는 리스 조건 때문에 저장·실패 기록 0행
 - 리스 시간은 core→learning 피드백 호출 타임아웃보다 길게 설정. 짧으면 처리 중인 판정을 다른 요청이 재획득해 LLM 호출이 중복됨
 - 정정(`POST /internal/judgments/{id}/corrections`, #80)은 `DONE` 판정만 받고 그 전이면 `409 JUDGMENT_STATE_CONFLICT`. `process_status`·`result`는 바꾸지 않고 `judgment_correction` 행을 추가하며, 조회 때 최신 정정 결과를 `result`로 보여 줌 (FN-SUP-03)
 
@@ -207,7 +210,7 @@ stateDiagram-v2
 
 - `HELD`는 정상 처리 결과(`DONE`), API 실패는 `FAILED` → 서로 다른 컬럼 (NFR-REL-04)
 - 풀이 단계(`SOLUTION_STEPS`)는 풀이를 ai 요소 판정, 최종 답을 `MathEquivalenceJudge`로 보고 위처럼 합침. ai가 보류하면 보류(최종 답 결과는 쓰지 않음). 최종 답 결과는 기준표의 `FINAL_ANSWER` 요소(ai에 보내지 않음)에 정답 키 근거(`ANSWER_KEY`, 근거 글자는 학생이 쓴 최종 답)로 기록해, 답이 틀려 `PARTIAL`이면 마무리 체크리스트에도 "최종 답"이 빠진 것으로 보임 (FN-JDG-02, [이슈 #79 보고서](../report/learning.md))
-- `FAILED`의 `failure_code`: `AI_TIMEOUT`·`AI_UNAVAILABLE`(연결 실패·ai 5xx)·`AI_BAD_RESPONSE`(ai 4xx·계약 밖 응답)·`AI_CIRCUIT_OPEN`·`INTERNAL_ERROR`
+- `FAILED`의 `failure_code`: `AI_TIMEOUT`·`AI_UNAVAILABLE`(연결 실패·ai 5xx)·`AI_BAD_RESPONSE`(ai 4xx·계약 밖 응답)·`AI_CIRCUIT_OPEN`·`INTERNAL_ERROR`·`LEASE_EXPIRED`(고착 탐지, #241)
 
 ---
 

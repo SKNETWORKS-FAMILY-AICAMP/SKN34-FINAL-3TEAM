@@ -1299,6 +1299,10 @@ classDiagram
     <<facade>>
     +feedback(answerId) FeedbackResult
   }
+  class StuckJudgmentScheduler {
+    <<scheduler>>
+    +detect()
+  }
   class JudgmentService {
     <<service>>
     +createPending(answerId, rubricVersionId)
@@ -1310,6 +1314,7 @@ classDiagram
     +bankQuestion(attemptId, type) BankQuestion
     +saveResult(judgment, judged, followup) Boolean
     +markFailed(judgment, code) Boolean
+    +failStuck(now) List~UUID~
     +result(answerId) FeedbackResult
     +results(attemptId) Map
     +correct(judgmentId, command, idempotencyKey) JudgmentCorrection
@@ -1352,6 +1357,7 @@ classDiagram
   class JudgmentRepository {
     <<repository>>
     +acquire(answerId, now, leaseUntil) Int
+    +failExpired(now, code) List~UUID~
   }
   class FollowupRepository { <<repository>> }
   class CorrectionRepository { <<repository>> }
@@ -1362,6 +1368,7 @@ classDiagram
   CorrectionController --> JudgmentService
   SupportController --> JudgmentService
   FeedbackFacade --> JudgmentService
+  StuckJudgmentScheduler --> JudgmentService
   FeedbackFacade --> AttemptService : 타임라인
   FeedbackFacade --> MissionService : 기준표·정답 키
   FeedbackFacade --> RuleJudge
@@ -1383,6 +1390,7 @@ classDiagram
   3. 트랜잭션 밖: 시도 내 되묻기 2회 미만이고 고르기 `CORRECT`가 아니면 `AiClient.followup` (정답·금지어 유출 검사는 ai 담당, P04). 마무리·완료한 시도에는 만들지 않음. 유출 검사용 정답은 학생에게 보이는 글자(선택지 이름·정답 순서·답 단위를 붙인 최종 답·"선택지 이름: 그룹 이름")로 보냄. 재생성까지 검사 실패하면 learning이 `followup_bank_question`에서 같은 `type` 질문 선택(`BANK`, P16), 이 시도에서 아직 쓰지 않은 것부터
   4. `JudgmentService.saveResult`: 판정·요소·되묻기·버전 저장 + `DONE`. 먼저 시도 행을 잠그고(`FOR UPDATE`, 답변 제출·마무리와 같은 "시도 → 판정" 순서) 다시 확인해, 3 이후 마무리·완료된 시도면 되묻기는 저장하지 않음(P04). 예외 시 `markFailed`(실패 기록 자체가 실패해도 원래 오류로 응답)
 - 전이는 `Judgment` 엔티티가 허용 여부를 판단하고 `JudgmentRepository`가 조건부 UPDATE로 저장 (#23 초안 `AttemptDraft.update` + `updateIfVersion`과 같은 방식). `saveResult`·`markFailed`는 획득한 리스 값을 비교해야 해 `judgmentId` 대신 `acquire`로 얻은 `judgment`를 받음. `markFailed`는 DB에서 다시 읽은 판정으로 기록(저장 중 롤백돼 엔티티만 `DONE`이 된 경우)
+- 고착 탐지 (#241, state-diagram 3.3): `StuckJudgmentScheduler`(Presentation `scheduler`, 아키텍처 2.1)가 1분마다 `JudgmentService.failStuck(now)` 호출 → `JudgmentRepository.failExpired`가 만료 `RUNNING`(리스 없음 포함)을 한 번의 조건부 UPDATE로 `FAILED`(`LEASE_EXPIRED`, `retry_count + 1`)로 바꾸고 바뀐 `answerId` 반환. 만료 조건은 `Judgment.isLeaseExpired`·`acquire` SQL과 같고, 실패 코드는 `Judgment.LEASE_EXPIRED`. 주기 `app.judgment.stuck-detection-interval`(기본 `PT1M`), 끄기 `app.judgment.stuck-detection-enabled`
 - `done`·`hold`의 `by`: 판정 방법(`RULE`·`LLM`)·`trial`·모델·프롬프트 버전 (ERD judgment.method·trial·model_version·prompt_version)
 - `AiClient`: 응답 35초, 서비스 간 재시도 없음, 서킷 브레이커 최근 20건 중 실패 50% 이상이면 30초 차단(전송 오류·5xx만 실패로 셈, 아키텍처 1.3)
 - `JudgmentElement`: `verified = false`면 `satisfy()` 거부 (ERD CHECK와 동일 규칙을 Domain에서도 검사)

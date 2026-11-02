@@ -24,6 +24,7 @@ import com.sagomungchi.learning.judgment.domain.Versions
 import com.sagomungchi.learning.judgment.repository.CorrectionRepository
 import com.sagomungchi.learning.judgment.repository.FollowupRepository
 import com.sagomungchi.learning.judgment.repository.JudgmentRepository
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -50,6 +51,8 @@ class JudgmentService(
     private val followupRepository: FollowupRepository,
     private val correctionRepository: CorrectionRepository,
 ) {
+    private val log = LoggerFactory.getLogger(javaClass)
+
     /** class-diagram 4.1 createPending. 호출한 쪽 트랜잭션 안에서 답변과 함께 저장 */
     fun createPending(answerId: UUID, rubricVersionId: UUID, now: Instant) =
         judgmentRepository.insertPending(answerId, rubricVersionId, now)
@@ -119,6 +122,17 @@ class JudgmentService(
         current.fail(code)
         return judgmentRepository.fail(current, lease)
     }
+
+    /**
+     * 고착 탐지 (state-diagram 3.3, #241): 리스가 끝난 RUNNING(리스 없음 포함)을 FAILED(`LEASE_EXPIRED`, retry_count + 1)로.
+     * 처리 Pod 종료·결과 기록 실패 뒤 학생이 떠나 남은 판정 대상, 자동 재실행은 없고 다시 요청하면 FAILED → RUNNING.
+     * 로그는 답변 ID·건수만 (학생 원문 없음)
+     */
+    @Transactional
+    fun failStuck(now: Instant): List<UUID> =
+        judgmentRepository.failExpired(now, Judgment.LEASE_EXPIRED).also {
+            if (it.isNotEmpty()) log.warn("고착 판정 FAILED 처리: {}건, answerIds={}", it.size, it)
+        }
 
     /** 한 답변의 피드백 결과 (class-diagram 4.2 result) */
     @Transactional(readOnly = true)
