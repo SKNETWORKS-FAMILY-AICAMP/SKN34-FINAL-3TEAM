@@ -82,6 +82,7 @@
 - [이슈 #196 학생 종료](report/issue-196-student-logout.md): 학생 세션만 종료하고 보호자 로그인 전환 분리
 - [관리자 화면 완성 PR](report/pr-admin-screen-completion.md): 관리자 로그인·문의/공지·결제/환불 화면, 학생 자기 평가(#145·#146·#82)
 - [learning 연동 프론트 정렬](report/learning-frontend-alignment.md): learning 계약 변경의 프론트 반영 인수인계(2026-10-29)
+- [이슈 #213 국어(M2) 우선·중간 발표 근거](report/issue-213-korean-priority-midterm.md): 생각 유형 국어 매핑·설계 반영, 기획 근거·구현 흐름·준비 현황, 10/29 멘토링 결정 요약
 
 ## 개발 규칙
 
