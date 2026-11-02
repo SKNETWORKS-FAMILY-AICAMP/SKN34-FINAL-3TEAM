@@ -189,7 +189,27 @@ erDiagram
 - 로그인 수단·자녀 연결 변경 결과·시점은 `audit_log`에 기록 (FN-ACC-10)
 - `user_account.is_demo`·`student.is_demo` 행은 운영 현황·사용량·결제 집계에서 제외 (NFR-OPS-01)
 
-### #45 재인증·삭제 완료 저장
+### 3.1.1 로그인 세션 (#36)
+
+```mermaid
+erDiagram
+  user_account ||--o{ auth_session : owns
+  auth_session ||--o{ refresh_token : rotates
+  auth_session {
+    uuid id PK
+    uuid user_id FK
+    varchar role "PARENT|STUDENT|ADMIN"
+    uuid student_id FK "NULL 허용 · STUDENT에만 필수"
+    bigint version
+    timestamptz expires_at
+    timestamptz revoked_at "NULL 허용"
+    timestamptz created_at
+  }
+```
+
+- `auth_session` CHECK: `version > 0`, `ck_auth_session_student`(role이 STUDENT면 `student_id` 필수, 그 외 역할은 NULL) (V8)
+
+### 3.1.2 재인증·삭제 완료 저장 (#45)
 
 ```mermaid
 erDiagram
@@ -220,26 +240,6 @@ erDiagram
 ```
 
 `withdrawal_request.status_token_hash varchar NULL 허용`을 추가한다(신규 요청은 해시 필수). PROFILE 완료 후 student의 nickname/grade/birth_year는 NULL로 지우며, DELETED가 아닌 행의 필수 프로필은 CHECK로 보존한다. 재인증 challenge의 purpose/자녀/scope 조합도 CHECK한다.
-
-### 3.1.1 로그인 세션 (#36)
-
-```mermaid
-erDiagram
-  user_account ||--o{ auth_session : owns
-  auth_session ||--o{ refresh_token : rotates
-  auth_session {
-    uuid id PK
-    uuid user_id FK
-    varchar role "PARENT|STUDENT|ADMIN"
-    uuid student_id FK "NULL 허용 · STUDENT에만 필수"
-    bigint version
-    timestamptz expires_at
-    timestamptz revoked_at "NULL 허용"
-    timestamptz created_at
-  }
-```
-
-- `auth_session` CHECK: `version > 0`, `ck_auth_session_student`(role이 STUDENT면 `student_id` 필수, 그 외 역할은 NULL) (V8)
 
 ### 3.2 분석 대화·리포트 작업 (FN-AGT, FN-RPT)
 
@@ -383,6 +383,20 @@ erDiagram
 - `clarification`이 있는 메시지는 범위 확인 후 종료된 질문, 사용자 선택은 다음 메시지의 `scope_*`에 저장 (FN-AGT-03)
 - `shedlock`은 name varchar(64) PK, lock_until·locked_at timestamptz, locked_by varchar(255), 모두 NOT NULL (주간 리포트·정기 청구 스케줄).
 - `conversation_message.scope_student_id`는 같은 core DB의 `student.id` FK. 미확정 범위·처리 중 출력은 NULL로 두며 임시 결과를 채우지 않는다.
+
+### 3.2.1 분석 대화 저장 규칙 (#41)
+
+기존 conversation/message/evidence 스키마를 사용하며 마이그레이션을 추가하지 않는다. retry_count를 실행 세대 fencing 값으로 사용하고 실패/취소는 UPDATE만 수행한다. clarification은 COMPLETED(답변 NULL), delta는 미저장이다. 한도는 `payment_premium_usage`의 `CONVERSATION`·`RESERVED/USED` 행 KST 일자 집계다(#225, 마이그레이션 없음, 기존 `ix_payment_usage_refund` 인덱스 사용). [계약](../report/issue-41-analysis-conversations.md).
+
+### 3.2.2 REPORT 재처리 관계 (#47)
+
+core report_job_retry의 original_job_id는 report_job(id) PK/FK, retry_job_id는 report_job(id) UNIQUE/FK다. requested_by는 user_account(id) FK이며 `(requested_by,idempotency_key)` UNIQUE를 둔다. original_job_id와 retry_job_id는 달라야 한다. 두 작업은 삭제하지 않고 원래 FAILED 상태와 기존 판을 보존한다. 재실패 작업을 다시 처리할 때는 이전 새 작업이 다음 관계의 original_job_id가 된다. 새 작업·관계·접수 감사·Outbox는 원자 저장한다.
+
+### 3.2.3 관리자 대화 재처리 요청 (#47, V19)
+
+conversation_job_retry는 UK(message_id,generation), UK(requested_by,idempotency_key), generation>0, 상태와 시각의 일치 및 시각 순서 CHECK를 둔다. `ix_conversation_job_retry_pending`은 (status,accepted_at) 조회 인덱스다. message_id는 conversation_message FK ON DELETE CASCADE, requested_by는 user_account FK다. 기존 V17·V18은 수정하지 않는다. 질문·답변 원문을 저장하지 않는다.
+
+학생 삭제 시 진행 요청의 실패 이력·감사를 같은 삭제 트랜잭션에 기록하고 요청 행을 CASCADE로 정리한다. 삭제 후 작업 조회와 새 접수는 404다. 기존 공통 멱등 캐시에 남은 과거 202는 재전달될 수 있으나 재실행하지 않는다. 요청 행 삭제 이후 영구 재접수 응답 복원은 보장하지 않는다. 요청 감사는 접수 시, job_execution은 실제 실행 선점 시 기록한다. 사용량은 요청 ID를 `payment_premium_usage.source_id`로 써서 `UNIQUE(kind,source_id)`로 중복 차감을 막고 실행 선점 트랜잭션과 함께 커밋·롤백된다(#225).
 
 ### 3.3 알림·신고·문의·공지 (FN-SUP)
 
@@ -1099,6 +1113,20 @@ erDiagram
 - `report_file` UK `(report_id, format)`. 다운로드는 `s3_key`로 presigned URL 발급 (FN-RPT-13)
 - #55의 `20261027_02`는 `report_deletion_guard`를 추가한다. 삭제 중 생성·조회를 막고 완료 후에도 PROFILE·RECORDS 모두 생성을 차단한다. 최신 #45의 자동 학습 재개 금지와 일치시키며 재개는 별도 계약이 필요하다. 학생 UUID·삭제 요청 UUID·범위·시각·처리 상태만 남기며 원문·이름·리포트 내용은 저장하지 않는다.
 
+### 5.1 report_job_guard (#132, 신규 migration 20261029_03)
+
+| 컬럼 | 제약/의미 |
+|---|---|
+| job_id | uuid PK, core 작업 논리 참조 |
+| student_id | uuid NOT NULL, 학생별 삭제 인덱스 |
+| period_from / period_to | date NOT NULL, 월~일 7일 |
+| failure_reason | varchar(100) NOT NULL, REPORT_NOT_CREATED |
+| created_at | timestamptz NOT NULL |
+
+리포트 행 생성 전 실패의 재실행 차단 기록이다. 원문·이름·파일 경로는 저장하지 않는다. DLQ 수동 재전달의 상한이 없으므로 자동 TTL 없이 유지한다. 학생 PROFILE/RECORDS 삭제 완료 트랜잭션에서 이 기록도 제거하며 영구 `report_deletion_guard(COMPLETED)`가 이후 모든 생성을 차단한다. 삭제 표식이 완료된 학생에 복구 요청이 와도 job guard를 새로 만들지 않는다. 삭제 표식 제거/학습 재개는 이번 범위 밖이다. migration downgrade는 재실행 장벽을 없애므로 운영 중 임의 실행하지 않는다.
+
+core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. job_execution은 기존 attempt_no=1 upsert로 종료를 기록하며 동일 복구/늦은 이벤트가 이력을 늘리거나 종료를 되돌리지 않는다.
+
 ---
 
 ## 6. 인덱스
@@ -1172,41 +1200,11 @@ erDiagram
 
 - V14는 SPEECH 사용량 CHECK 제거, V15는 결제 실행·권한, V16은 신고·문의 주체와 정정 의도 저장이다. V16은 통합 전 지원 V14의 SQL 원문을 유지한 경로 변경이며 V15와 의존 관계가 없다. 이전 지원 V14를 적용한 임시 DB에는 자동 repair·이력 변경 없이 새 격리 DB를 사용한다.
 
-### 이슈 #41 저장 규칙
-
-기존 conversation/message/evidence 스키마를 사용하며 마이그레이션을 추가하지 않는다. retry_count를 실행 세대 fencing 값으로 사용하고 실패/취소는 UPDATE만 수행한다. clarification은 COMPLETED(답변 NULL), delta는 미저장이다. 한도는 `payment_premium_usage`의 `CONVERSATION`·`RESERVED/USED` 행 KST 일자 집계다(#225, 마이그레이션 없음, 기존 `ix_payment_usage_refund` 인덱스 사용). [계약](../report/issue-41-analysis-conversations.md).
-
-### #47 REPORT 재처리 관계
-
-core report_job_retry의 original_job_id는 report_job(id) PK/FK, retry_job_id는 report_job(id) UNIQUE/FK다. requested_by는 user_account(id) FK이며 `(requested_by,idempotency_key)` UNIQUE를 둔다. original_job_id와 retry_job_id는 달라야 한다. 두 작업은 삭제하지 않고 원래 FAILED 상태와 기존 판을 보존한다. 재실패 작업을 다시 처리할 때는 이전 새 작업이 다음 관계의 original_job_id가 된다. 새 작업·관계·접수 감사·Outbox는 원자 저장한다.
-
-### report_job_guard (#132, 신규 migration 20261029_03)
-
-| 컬럼 | 제약/의미 |
-|---|---|
-| job_id | uuid PK, core 작업 논리 참조 |
-| student_id | uuid NOT NULL, 학생별 삭제 인덱스 |
-| period_from / period_to | date NOT NULL, 월~일 7일 |
-| failure_reason | varchar(100) NOT NULL, REPORT_NOT_CREATED |
-| created_at | timestamptz NOT NULL |
-
-리포트 행 생성 전 실패의 재실행 차단 기록이다. 원문·이름·파일 경로는 저장하지 않는다. DLQ 수동 재전달의 상한이 없으므로 자동 TTL 없이 유지한다. 학생 PROFILE/RECORDS 삭제 완료 트랜잭션에서 이 기록도 제거하며 영구 `report_deletion_guard(COMPLETED)`가 이후 모든 생성을 차단한다. 삭제 표식이 완료된 학생에 복구 요청이 와도 job guard를 새로 만들지 않는다. 삭제 표식 제거/학습 재개는 이번 범위 밖이다. migration downgrade는 재실행 장벽을 없애므로 운영 중 임의 실행하지 않는다.
-
-core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. job_execution은 기존 attempt_no=1 upsert로 종료를 기록하며 동일 복구/늦은 이벤트가 이력을 늘리거나 종료를 되돌리지 않는다.
-
-
-### #47 관리자 대화 재처리 요청 (V19)
-
-conversation_job_retry는 UK(message_id,generation), UK(requested_by,idempotency_key), generation>0, 상태와 시각의 일치 및 시각 순서 CHECK를 둔다. `ix_conversation_job_retry_pending`은 (status,accepted_at) 조회 인덱스다. message_id는 conversation_message FK ON DELETE CASCADE, requested_by는 user_account FK다. 기존 V17·V18은 수정하지 않는다. 질문·답변 원문을 저장하지 않는다.
-
-학생 삭제 시 진행 요청의 실패 이력·감사를 같은 삭제 트랜잭션에 기록하고 요청 행을 CASCADE로 정리한다. 삭제 후 작업 조회와 새 접수는 404다. 기존 공통 멱등 캐시에 남은 과거 202는 재전달될 수 있으나 재실행하지 않는다. 요청 행 삭제 이후 영구 재접수 응답 복원은 보장하지 않는다. 요청 감사는 접수 시, job_execution은 실제 실행 선점 시 기록한다. 사용량은 요청 ID를 `payment_premium_usage.source_id`로 써서 `UNIQUE(kind,source_id)`로 중복 차감을 막고 실행 선점 트랜잭션과 함께 커밋·롤백된다(#225).
-
-
-## 학생 전역 공개 설정 (#206, core V21)
+## 13. 학생 전역 공개 설정 (core V21, #206)
 
 `student.parent_sharing_enabled`는 기존/신규 모두 비공개(false)로 시작합니다. 이 열은 비공개 기본값을 보장하기 위한 SQL DEFAULT false의 명시적 예외이며, 다른 열의 기본값 금지 검증은 유지합니다. 학생 본인만 바꾸며 원문을 제공하는 경로는 같은 학생 행의 현재 설정을 다시 확인합니다.
 
-### #209 표시 설정 저장 (로컬 구현 후보)
+## 14. 학부모 리포트 표시 설정 (core V22, #209, 로컬 구현 후보)
 
 학부모별 확정 설정과 마지막 미확정 제안을 `parent_report_template`에 저장한다. 기존 parent 계정 행 잠금으로 직렬화하고, 제안 ID·대화 소유권·만료를 확인한 뒤에만 revision을 증가시킨다. 학생 원문 공개 여부·메모·학습 원문은 저장하지 않는다. 확정 설정은 다음 리포트 `versions.template` JSONB에 복사하여 기존 판을 보존한다.
 

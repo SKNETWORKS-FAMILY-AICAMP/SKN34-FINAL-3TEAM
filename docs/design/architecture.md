@@ -74,6 +74,10 @@
 - 피드백의 별도 서킷 이름은 `learning-feedback`이다. 전송 오류·시간 초과·계약된 Problem Details가 아닌 5xx를 실패로 센다. Content-Type `application/problem+json`의 JSON 객체에 비어 있지 않은 문자열 code가 있으면 정상 HTTP 전달로 집계하되 업무 결과는 error로 유지한다. 따라서 learning이 보낸 AI_UNAVAILABLE·INTERNAL_ERROR를 core 서킷이 다시 차단하지 않고 같은 답변 재요청은 learning으로 전달할 수 있다. AI 서킷은 learning이 소유하며 일반 `learning-json`의 기존 5xx 집계는 바꾸지 않는다.
 - JDK 21 SSE 전송·종료의 상호 배제는 `ReentrantLock`을 사용한다. 블로킹 소켓 전송을 synchronized monitor 안에서 실행해 virtual thread의 carrier가 고정되지 않게 한다.
 
+### 1.3.1 분석 대화 수명 (#41)
+
+분석 전용 SseEmitters.open의 연결 시간·취소 hook을 사용한다. 피드백과 알림 수명은 유지한다. AI HTTP body는 취소 시 닫는다. 계정→학생→대화 잠금과 시도 fencing으로 삭제/중복 재시도를 직렬화한다. 상세 계약은 [#41 보고서](../report/issue-41-analysis-conversations.md).
+
 ### 1.4 메시지 목록
 
 | 메시지 | 종류 | 생산 | 소비 | 소비 측 처리 |
@@ -136,6 +140,16 @@
 - **이벤트 봉투**: CloudEvents 형식 `id, specversion, type, source, time, subject, dataschema, traceparent, data` → `contracts/events/*.schema.json`
 - **스키마 버전**: 파일 `<message>.v<N>.schema.json`, `dataschema`에 버전 표기. 하위 호환 변경(선택 필드 추가)만 같은 버전, 그 외는 새 버전 병행 발행 후 소비자 전환
 - **SSE 다중 레플리카**: 알림은 리포트 종료 전이 트랜잭션에서 저장 → AFTER_COMMIT으로 Redis 채널 `core:notifications:v1` 발행 → 구독 레플리카가 SSE 전달(5분·15초 heartbeat). 유실은 `ready` 후 목록 재조회로 보완 (api-spec 2.7)
+
+### 1.6.1 리포트 종료 유실 복구 (#132)
+
+core report의 `ReportRecoveryScheduler`(ShedLock) → `ReportRecoveryService` → `ReportClient`가 상태를 대조한다. report generation의 router → `ReconciliationService` → 기존 `ReportRepository`/`JobLocks`를 재사용한다. HTTP 동안 core 트랜잭션은 없고 report는 session 잠금 아래 짧은 DB 트랜잭션만 사용한다. 새 production 의존성은 없다.
+
+core의 생성은 guardianship `StudentAccessService`를 통해 ACTIVE 학생 행을 먼저 잠근 뒤 주 단위 잠금·작업 저장을 수행한다. lifecycle/복구 반영도 학생 → job 순서다. 삭제는 기존 parent → student 순서를 유지하며 `ReportLifecycleService.failForDeletion`을 호출해 같은 트랜잭션에서 미종료 작업과 실행 이력을 FAILED로 만든다. 상대 기능 repository 직접 접근 없이 service 경계로 연결한다. 삭제 종료와 reportId 없는 실패는 알림을 발행하지 않는다.
+
+### 1.6.2 관리자 대화 재처리 실행 경계 (#47)
+
+CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 기존 AnalysisStreamService의 공통 실행을 호출한다. 학부모 SSE와 같은 검증·근거 확인·저장을 사용하며 관리자에게 원문 이벤트를 전달하지 않는다. RabbitMQ 큐나 외부 실행 서비스를 추가하지 않는다. 요청·종료 감사는 BEFORE_COMMIT이며 외부 AI 호출은 DB 트랜잭션 밖이다. 사용량은 영속 요청 ID를 결제 사용 이력 source ID로 써서 실행 선점 트랜잭션 안에서 한 번만 차감한다(#225). 중단 실행은 세대를 확인해 실패로 종료하고 자동 AI 재실행하지 않는다.
 
 ---
 
@@ -792,21 +806,6 @@ SKN34-FINAL-3TEAM/
 #48은 ReportEntitlementService를 payment 소유 ProductEntitlementService에 연결한다. 외부 PG 호출과 learning 사용 증빙 조회는 DB 트랜잭션 밖, 주문/구독/환불·프리미엄 사용 예약은 공통 parent 계정 행 잠금 안이다. payment repository는 payment 패키지만 사용한다. 신규 의존성 없이 기존 HTTP·MyBatis·ShedLock·IdempotencyService·NotificationService를 사용한다. [결제 경계·복구](../report/issue-48-payments.md).
 
 
-### #46 신고·지원 연결 경계
+### 7.2 신고·지원 연결 경계 (#46)
 
 support/controller → SupportService → support/repository를 사용한다. 대상 검증은 상대 기능 service(StudentAccessService·ConversationSupportService·ReportSupportService)를 호출하며 다른 기능 repository를 직접 참조하지 않는다. support/client는 기존 learning LearningClient·InternalRestClientFactory를 재사용한다. 정정 의도 저장·완료 저장 사이 HTTP는 트랜잭션 밖이며, core 영속 correction UUID가 공급자 요청 식별자다. 원문 응답 전 감사 저장이 실패하면 원문을 반환하지 않는다. 알림은 NotificationService.support로 저장·수신 설정·중복 방지·NotificationStored·커밋 후 Redis 전달을 재사용한다. 자세한 범위와 공급자 미구현은 [#46 보고서](../report/issue-46-support.md)에 기록한다.
-
-## 이슈 #41 분석 대화 수명
-
-분석 전용 SseEmitters.open의 연결 시간·취소 hook을 사용한다. 피드백과 알림 수명은 유지한다. AI HTTP body는 취소 시 닫는다. 계정→학생→대화 잠금과 시도 fencing으로 삭제/중복 재시도를 직렬화한다. 상세 계약은 [#41 보고서](../report/issue-41-analysis-conversations.md).
-
-## 이슈 #132 리포트 종료 유실 복구
-
-core report의 `ReportRecoveryScheduler`(ShedLock) → `ReportRecoveryService` → `ReportClient`가 상태를 대조한다. report generation의 router → `ReconciliationService` → 기존 `ReportRepository`/`JobLocks`를 재사용한다. HTTP 동안 core 트랜잭션은 없고 report는 session 잠금 아래 짧은 DB 트랜잭션만 사용한다. 새 production 의존성은 없다.
-
-core의 생성은 guardianship `StudentAccessService`를 통해 ACTIVE 학생 행을 먼저 잠근 뒤 주 단위 잠금·작업 저장을 수행한다. lifecycle/복구 반영도 학생 → job 순서다. 삭제는 기존 parent → student 순서를 유지하며 `ReportLifecycleService.failForDeletion`을 호출해 같은 트랜잭션에서 미종료 작업과 실행 이력을 FAILED로 만든다. 상대 기능 repository 직접 접근 없이 service 경계로 연결한다. 삭제 종료와 reportId 없는 실패는 알림을 발행하지 않는다.
-
-
-### #47 관리자 대화 재처리 실행 경계
-
-CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 기존 AnalysisStreamService의 공통 실행을 호출한다. 학부모 SSE와 같은 검증·근거 확인·저장을 사용하며 관리자에게 원문 이벤트를 전달하지 않는다. RabbitMQ 큐나 외부 실행 서비스를 추가하지 않는다. 요청·종료 감사는 BEFORE_COMMIT이며 외부 AI 호출은 DB 트랜잭션 밖이다. 사용량은 영속 요청 ID를 결제 사용 이력 source ID로 써서 실행 선점 트랜잭션 안에서 한 번만 차감한다(#225). 중단 실행은 세대를 확인해 실패로 종료하고 자동 AI 재실행하지 않는다.
