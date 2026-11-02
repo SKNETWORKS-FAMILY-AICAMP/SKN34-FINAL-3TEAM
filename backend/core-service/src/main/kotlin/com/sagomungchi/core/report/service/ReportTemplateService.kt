@@ -68,7 +68,8 @@ class ReportTemplateService(private val conversations: ConversationService, priv
             ?: throw BusinessException(HttpStatus.NOT_FOUND,"NOT_FOUND","연결된 학부모가 없습니다.")
         return tx.execute {
             accounts.lockParent(parent)
-            if (students.lockReportRetryStudent(student)==null) conflict()
+            if (students.lockReportRetryStudent(student)==null)
+                throw BusinessException(HttpStatus.CONFLICT,"STUDENT_UNAVAILABLE","학생 상태를 다시 확인해 주세요.")
             children.requireCurrent(parent,student)
             repository.get(parent)
         }!!

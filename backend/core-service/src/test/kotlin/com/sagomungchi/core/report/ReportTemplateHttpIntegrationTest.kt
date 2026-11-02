@@ -120,6 +120,11 @@ class ReportTemplateHttpIntegrationTest : IntegrationTestSupport() {
         assertEquals(student,recorded.single().arguments[1])
         assertIs<UUID>(recorded.single().arguments[2])
         assertEquals(403,call("/internal/students/$student/report-template",headers=headers+mapOf("X-Student-Scope" to UUID.randomUUID().toString())).statusCode())
+        // 삭제 요청 접수 직후(학생 행 아직 ACTIVE)에는 제안 만료가 아닌 학생 상태 충돌로 응답한다.
+        jdbc.update("INSERT INTO deletion_request(id,requested_by,student_id,scope,status,requested_at) VALUES(?,?,?,'RECORDS','REQUESTED',CURRENT_TIMESTAMP)",UUID.randomUUID(),owner,student)
+        val unavailable=call("/internal/students/$student/report-template",headers=headers)
+        assertEquals(409,unavailable.statusCode())
+        assertEquals("STUDENT_UNAVAILABLE",json.readTree(unavailable.body())["code"].asText())
     }
     @Test fun `다른 학부모는 설정 조회와 제안 확인을 할 수 없다`() {
         val id=proposal(); val other=parent(jdbc)
