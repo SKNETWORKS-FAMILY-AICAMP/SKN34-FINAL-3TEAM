@@ -4,10 +4,13 @@ import type { Role } from '../../domain/classroom.ts'
 import { useSession } from '../auth/sessionContext.ts'
 import { roleStart } from '../../domain/navigation.ts'
 import { parentLoginRequired } from '../../data/apiClient.ts'
+import { useNotificationStream } from '../../data/notifications.ts'
 
 export function RoleLayout({ role }: { role: Role }) {
   const { session, ready, loginPath } = useSession(),
     location = useLocation()
+  // 동의·자녀 등록 전 학부모는 연결하지 않는다(동의 필요 응답이 온보딩 이동을 다시 일으키지 않도록).
+  useNotificationStream(ready && session?.role === role && role !== 'STUDENT' && (session.nextAction ?? 'READY') === 'READY' ? role : null)
   if (!ready) return <p role="status">로그인 상태를 확인하고 있습니다.</p>
   if (!session) return <Navigate to={parentLoginRequired() ? '/login' : role === 'STUDENT' ? '/student/login' : loginPath} replace state={{ from: location.pathname + location.search }} />
   if (session.role === 'PARENT' && session.nextAction && session.nextAction !== 'READY' && location.pathname !== session.startPath && !['/parent/account','/parent/help','/parent/support','/parent/billing'].includes(location.pathname))

@@ -21,6 +21,7 @@ const { useStudentLook, useSaveLook } = await import('../src/data/studentLook/qu
 const classroom = await import('../src/data/classroom/useClassroom.ts')
 const { useSupportResults } = await import('../src/data/support/queries.ts')
 const payment = await import('../src/data/payment/queries.ts')
+const { useNotificationStream, reconnectDelay } = await import('../src/data/notifications.ts')
 const { queryClient } = await import('../src/data/queryClient.ts')
 const { setAccessToken } = await import('../src/data/apiClient.ts')
 
@@ -330,6 +331,34 @@ test('결제 승인은 같은 주문의 중복 요청을 합치고 승인 응답
   enabled = true; await h.render(); await act(async () => { await pause(30) })
   assert.deepEqual(calls, ['POST /api/v1/payments/confirm'])
   assert.deepEqual(h.get().result.data, approved)
+})
+
+test('알림 스트림은 역할이 있을 때만 연결하고 새 알림을 받으면 알림 캐시만 다시 읽게 한다', async t => {
+  const calls: string[] = []
+  const cache = client()
+  cache.setQueryData(['parent', 'notifications', true, 0], { items: [] }); cache.setQueryData(['parent', 'records'], [])
+  mockFetch(t, (url, init) => {
+    calls.push(`${init.method} ${url}`)
+    assert.equal(new Headers(init.headers).get('Accept'), 'text/event-stream')
+    return new Response(': ping\n\nevent: notification\ndata: {"id":"n-1","type":"REPORT_COMPLETED"}\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
+  })
+  let role: 'PARENT' | null = null
+  const h = await mount(t, () => useNotificationStream(role), cache)
+  await act(async () => { await pause(30) })
+  assert.equal(calls.length, 0)
+  role = 'PARENT'; await h.render()
+  await until(() => cache.getQueryState(['parent', 'notifications', true, 0])?.isInvalidated === true)
+  assert.equal(cache.getQueryState(['parent', 'records'])?.isInvalidated, false)
+  assert.deepEqual(calls, ['GET /api/v1/notifications/stream'])
+})
+
+test('알림 스트림 권한 오류는 다시 연결하지 않고, 실패가 이어지면 재연결 간격을 30초까지 늘린다', async t => {
+  assert.deepEqual([0, 1, 2, 5, 10].map(reconnectDelay), [1000, 2000, 4000, 30000, 30000])
+  let calls = 0
+  mockFetch(t, () => { calls++; return Response.json({ status: 403, code: 'FORBIDDEN', title: '권한 없음' }, { status: 403 }) })
+  await mount(t, () => useNotificationStream('ADMIN'))
+  await act(async () => { await pause(1200) })
+  assert.equal(calls, 1)
 })
 
 test('공통 QueryClient는 같은 쿼리의 동시 HTTP를 합치고 명시적 clear 후 결과를 제거한다', async () => {

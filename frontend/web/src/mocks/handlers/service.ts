@@ -1,4 +1,4 @@
-import { http } from 'msw/http'
+import { http, HttpResponse } from 'msw/http'
 import { fixtureStore as store } from '../fixtures/student.ts'
 import { mockIdentity } from '../fixtures/accounts.ts'
 import { guard, respond } from './student.ts'
@@ -75,6 +75,15 @@ export const serviceHandlers = [
     const items = notifications().filter(n => q.get('unreadOnly') !== 'true' || !n.readAt)
     return { items:items.slice(current*size,(current+1)*size),page:current,size,hasNext:(current+1)*size<items.length }
   })),
+  // 실제 core처럼 구독 준비(ready)만 먼저 보내고 연결을 유지한다. 학생은 403.
+  http.get('/api/v1/notifications/stream', async ({ request }) => {
+    try { adult(request) } catch (error) { return respond(async () => { throw error }) }
+    const body = new ReadableStream<Uint8Array>({ start(controller) {
+      controller.enqueue(new TextEncoder().encode('event: ready\ndata: {"reconcile":"/api/v1/notifications"}\n\n'))
+      request.signal.addEventListener('abort', () => { try { controller.close() } catch { /* 이미 닫힘 */ } }, { once: true })
+    } })
+    return new HttpResponse(body, { headers: { 'Content-Type': 'text/event-stream' } })
+  }),
   http.get('/api/v1/admin/inquiries',({request})=>respond(async()=>{ops(request);return page(cases.filter(c=>c.kind==='inquiries'))})),
   http.post('/api/v1/admin/notices',({request})=>respond(async()=>{
     ops(request);const data=await request.json() as Notice

@@ -11,6 +11,8 @@
   | 분할 전 | `index` 686.40 kB (gzip 207.34 kB), 500 kB 경고 | 단일 청크 |
   | 분할 후 | `index` 278.04 kB (gzip 87.56 kB), 경고 없음 | `ClassroomParts` 169.59 kB, `ParentWorkspace` 68.30 kB, `AdminWorkspace` 63.58 kB, `ClassroomApp` 38.56 kB, `StudentWorkPage` 34.85 kB, `ParentPayments` 19.01 kB |
 
+- #239 실시간 알림: `data/notifications.ts`의 `useNotificationStream`을 `RoleLayout`에서 호출해 학부모·관리자 로그인 중 기존 `streamSse`로 `GET /notifications/stream` 1개를 유지합니다. 학생, 동의·자녀 등록 전 학부모, 로그아웃 상태에서는 요청하지 않습니다. `ready`·`notification`을 받으면 `['parent','notifications']` 캐시만 무효화해 알림 화면과 메뉴의 "알림 · 읽지 않음 N"(`unreadOnly=true` 첫 쪽, 알림 화면과 같은 키)을 다시 읽습니다. 서버가 5분 뒤 닫으면 1초 뒤, 실패가 이어지면 2·4·…·30초 간격으로 다시 연결하고 401·403은 멈춥니다. MSW는 `ready`만 보내고 연결을 유지합니다. 이벤트를 캐시에 직접 병합하지 않고 목록을 다시 읽는 것은 api-spec 2.7의 "id로 병합·Last-Event-ID 없음" 규칙을 목록 API 한 곳에서 지키기 위해서입니다.
+
 ## 학생 공개 설정·재시도 비교 화면 (#206·#207, 2026-11-01)
 
 - 기존 호수/숲/공장/소행성/바닷속 테마와 공책 UI를 유지합니다. 디자인 검토는 design-taste-frontend 앱 지침을 적용했으며 새 캐릭터·학생 로고를 추가하지 않았습니다. 설정은 학생 메뉴의 ‘공개 설정’, 비교는 마무리 결과의 이전/이번 공책으로 연결합니다.
