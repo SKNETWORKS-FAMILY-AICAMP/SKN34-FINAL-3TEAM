@@ -4,7 +4,7 @@ import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.util.UUID
-import com.sagomungchi.core._common.exception.BusinessException
+import com.sagomungchi.core._common.exception.DomainException
 import com.sagomungchi.core._common.exception.ErrorKind
 
 data class AnalysisScope(val childId: UUID, val from: LocalDate, val to: LocalDate, val changed: Boolean = false) {
@@ -30,6 +30,6 @@ data class MessageRow(val id: UUID, val conversationId: UUID, val seq: Int, val 
     fun scope() = scopeStudentId?.let { AnalysisScope(it, scopeFrom!!, scopeTo!!, scopeChanged) }
 }
 data class EvidenceRow(val id: UUID, val messageId: UUID, val attemptId: UUID, val answerId: UUID?, val answerVersion: Int?, val kind: String = "ANSWER")
-fun invalid(message: String): Nothing = throw BusinessException(ErrorKind.INVALID, "VALIDATION_FAILED", message)
-fun missing(): Nothing = throw BusinessException(ErrorKind.NOT_FOUND, "NOT_FOUND", "대화 또는 메시지를 찾을 수 없습니다.")
-fun conflict(): Nothing = throw BusinessException(ErrorKind.CONFLICT, "ANALYSIS_IN_PROGRESS", "진행 중인 질문이 있거나 재시도할 수 없는 메시지입니다.")
+fun invalid(message: String): Nothing = throw DomainException(ErrorKind.INVALID, "VALIDATION_FAILED", message)
+fun missing(): Nothing = throw DomainException(ErrorKind.NOT_FOUND, "NOT_FOUND", "대화 또는 메시지를 찾을 수 없습니다.")
+fun conflict(): Nothing = throw DomainException(ErrorKind.CONFLICT, "ANALYSIS_IN_PROGRESS", "진행 중인 질문이 있거나 재시도할 수 없는 메시지입니다.")

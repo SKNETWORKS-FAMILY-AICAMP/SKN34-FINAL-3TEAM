@@ -1,7 +1,7 @@
 package com.sagomungchi.learning.attempt.service
 
 import com.sagomungchi.learning.TestRows
-import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning._common.exception.errorCodeOf
 import com.sagomungchi.learning._common.security.UserContext
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.answer.domain.AnswerContent
@@ -186,8 +186,8 @@ class AttemptConcurrencyTest {
                     go.await()
                     service.saveReflection(attempt.id, Reflection(Difficulty.NORMAL, null))
                     "COMPLETED"
-                } catch (closed: BusinessException) {
-                    closed.code
+                } catch (closed: RuntimeException) {
+                    errorCodeOf(closed) ?: throw closed
                 } finally {
                     UserContextHolder.clear()
                 }
@@ -243,8 +243,8 @@ class AttemptConcurrencyTest {
             UserContextHolder.set(context)
             try {
                 service.saveDraft(attempt.id, ifMatch = before["version"] as Int, content = DraftContent(mapOf("text" to "완료 뒤 초안"), "메모"))
-            } catch (closed: BusinessException) {
-                closed.code
+            } catch (closed: RuntimeException) {
+                errorCodeOf(closed) ?: throw closed
             } finally {
                 UserContextHolder.clear()
             }

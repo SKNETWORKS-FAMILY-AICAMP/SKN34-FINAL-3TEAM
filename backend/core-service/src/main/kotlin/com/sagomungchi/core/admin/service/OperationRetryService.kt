@@ -1,7 +1,7 @@
 package com.sagomungchi.core.admin.service
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.sagomungchi.core._common.exception.errorInfoOf
 import com.sagomungchi.core._common.web.HttpExchangeResult
-import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core.report.service.ReportAdminRetryService
 import com.sagomungchi.core._common.web.IdempotencyService
@@ -26,18 +26,21 @@ class OperationRetryService(private val jobs: OperationsService,private val noti
                     val accepted=reports.request(id,key,identity)
                     HttpExchangeResult(202,mapOf("Content-Type" to listOf("application/json"),
                         "Location" to listOf("/api/v1/admin/jobs/${accepted.jobId}")),json.writeValueAsBytes(accepted))
-                } catch(ex: BusinessException) {
+                } catch(ex: RuntimeException) {
+                    val error=errorInfoOf(ex) ?: throw ex
                     tx.executeWithoutResult { audit.audit(actor,job.type,id,"FAILURE") }
-                    problem(ex.status.value(),ex.code)
+                    problem(error.status.value(),error.code)
                 }
             } else if(job.type==OperationJobType.CONVERSATION) {
                 try {
                     val accepted=conversations.request(id,key,identity)
                     HttpExchangeResult(202,mapOf("Content-Type" to listOf("application/json"),
                         "Location" to listOf("/api/v1/admin/jobs/$id")),json.writeValueAsBytes(accepted))
-                } catch(ex: BusinessException) {
+                } catch(ex: RuntimeException) {
+                    // 대화 재처리는 domain 충돌·없음(DomainException)도 여기서 같은 실패 감사·응답으로 (#249)
+                    val error=errorInfoOf(ex) ?: throw ex
                     tx.executeWithoutResult { audit.audit(actor,job.type,id,"FAILURE") }
-                    problem(ex.status.value(),ex.code)
+                    problem(error.status.value(),error.code)
                 }
             } else if(job.status!="FAILED") {
                 tx.executeWithoutResult { audit.audit(actor,job.type,id,"FAILURE") }

@@ -1,6 +1,8 @@
 package com.sagomungchi.learning.mission.service
 
 import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning._common.exception.errorCodeOf
+import com.sagomungchi.learning._common.exception.httpStatusOf
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.learning._common.security.UserContext
 import com.sagomungchi.learning._common.security.UserContextHolder
@@ -163,7 +165,7 @@ class AdminMissionServiceTest : PostgresRepositoryTest() {
     private fun status(id: UUID) = service.getForAdmin(id).status
 
     private fun assertCode(status: Int, code: String, block: () -> Unit) =
-        assertEquals(status to code, assertThrows<BusinessException> { block() }.let { it.status.value() to it.code })
+        assertEquals(status to code, assertThrows<RuntimeException> { block() }.let { httpStatusOf(it)?.value() to errorCodeOf(it) })
 
     private fun command(title: String = "미션", grade: Pair<Int, Int> = 5 to 5, thinking: ThinkingType = ThinkingType.ANALYZE) = MissionCommand(
         authorId = admin, title = title, subject = "과학", gradeMin = grade.first, gradeMax = grade.second, thinkingType = thinking,

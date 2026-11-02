@@ -2,7 +2,9 @@ package com.sagomungchi.core._common.security
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core._common.exception.BusinessException
+import com.sagomungchi.core._common.exception.DomainException
 import com.sagomungchi.core._common.exception.Problems
+import com.sagomungchi.core._common.exception.errorInfoOf
 import com.sagomungchi.core.account.config.AuthProperties
 import com.sagomungchi.core.account.controller.AuthController
 import com.sagomungchi.core.account.service.AuthService
@@ -76,11 +78,9 @@ class PublicAuthFilter(private val auth: AuthService, private val properties: Au
                 identity.studentScope.map { it.toString() }.toSet(), request.getHeader("traceparent")))
             chain.doFilter(request, response)
         } catch (ex: BusinessException) {
-            if (!response.isCommitted) {
-                response.status = ex.status.value(); response.contentType = MediaType.APPLICATION_PROBLEM_JSON_VALUE
-                response.characterEncoding = "UTF-8"
-                json.writeValue(response.outputStream, Problems.of(ex.status, ex.code, ex.title, ex.detail, request))
-            }
+            writeProblem(ex, request, response)
+        } catch (ex: DomainException) {
+            writeProblem(ex, request, response)
         } catch (_: DataAccessException) {
             if (!response.isCommitted) {
                 response.status = 503; response.contentType = MediaType.APPLICATION_PROBLEM_JSON_VALUE
@@ -88,6 +88,16 @@ class PublicAuthFilter(private val auth: AuthService, private val properties: Au
                 json.writeValue(response.outputStream, Problems.of(HttpStatus.SERVICE_UNAVAILABLE, "AUTH_UNAVAILABLE", "인증 상태를 확인하지 못했습니다.", null, request))
             }
         } finally { UserContextHolder.clear() }
+    }
+
+    /** 업무·domain 예외를 같은 Problem 응답으로 (#249) */
+    private fun writeProblem(ex: RuntimeException, request: HttpServletRequest, response: HttpServletResponse) {
+        val error = errorInfoOf(ex) ?: throw ex
+        if (!response.isCommitted) {
+            response.status = error.status.value(); response.contentType = MediaType.APPLICATION_PROBLEM_JSON_VALUE
+            response.characterEncoding = "UTF-8"
+            json.writeValue(response.outputStream, Problems.of(error.status, error.code, error.title, error.detail, request))
+        }
     }
 
     private fun permission(path: String, method: String) = when {
