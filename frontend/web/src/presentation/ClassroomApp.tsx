@@ -176,6 +176,7 @@ export function ClassroomApp() {
                 ['draft-fail', '초안 저장 실패'],
                 ['draft-conflict', '초안 충돌'],
                 ['submit-fail', '답변 저장 실패'],
+                ['submit-inappropriate', '답변 표현 차단'],
                 ['ai-fail', '피드백 처리 실패'],
                 ['ai-fail-final', '피드백 처리 실패(다시 요청 불가)'],
                 ['held', '판정 보류'],

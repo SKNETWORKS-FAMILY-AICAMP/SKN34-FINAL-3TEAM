@@ -1,0 +1,955 @@
+{
+ "note": "#205 팀 조정. 수치는 Curse-detection-data(MIT, 욕설 표시 cursePos·정상 표시 curseNeg 문장 수)와 NSMC test(CC0, 리뷰 5만 문장)에서 센 값. 변형·위협 표현은 팀이 지어내지 않고 데이터에 나온 것만",
+ "categoryOf": {
+  "general": "PROFANITY",
+  "minor": "PROFANITY",
+  "parent": "PROFANITY",
+  "sexual": "SEXUAL",
+  "race": "HATE",
+  "belittle": "HATE",
+  "urimalsaem": "PROFANITY"
+ },
+ "contextWords": [
+  {
+   "word": "새끼",
+   "reason": "동물 새끼 뜻이 있어 혐오 범주처럼 미션 본문에 나오면 허용(청소년 보호법 시행령 [별표 2] 1.가 맥락 고려)",
+   "alwaysForms": [
+    {
+     "form": "개새끼",
+     "cursePos": 28,
+     "curseNeg": 2,
+     "nsmc": 1
+    },
+    {
+     "form": "이새끼",
+     "cursePos": 32,
+     "curseNeg": 0,
+     "nsmc": 5
+    },
+    {
+     "form": "저새끼",
+     "cursePos": 10,
+     "curseNeg": 0,
+     "nsmc": 1
+    },
+    {
+     "form": "그새끼",
+     "cursePos": 7,
+     "curseNeg": 0,
+     "nsmc": 1
+    },
+    {
+     "form": "새끼야",
+     "cursePos": 31,
+     "curseNeg": 0,
+     "nsmc": 4
+    },
+    {
+     "form": "새끼들아",
+     "cursePos": 18,
+     "curseNeg": 0,
+     "nsmc": 5
+    },
+    {
+     "form": "씹새끼",
+     "cursePos": 10,
+     "curseNeg": 0,
+     "nsmc": 0
+    },
+    {
+     "form": "이런새끼",
+     "cursePos": 6,
+     "curseNeg": 0,
+     "nsmc": 0
+    }
+   ],
+   "alwaysFormsRule": "korcen은 맨 '새끼' 하나로 결합형을 잡으므로, 미션 본문 허용과 관계없이 막을 결합형. Curse 욕설 문장 5회 이상·동물 새끼로 읽히지 않는 것(saekki205.py)"
+  }
+ ],
+ "removePatterns": [
+  {
+   "pattern": "qt",
+   "categories": [
+    "general"
+   ],
+   "reason": "영문 두 글자라 다른 글자 사이에서 잘못 걸림(2023판 부분 일치형)",
+   "cursePos": 1,
+   "curseNeg": 5,
+   "nsmc": 27
+  },
+  {
+   "pattern": "tq",
+   "categories": [
+    "general"
+   ],
+   "reason": "영문 두 글자라 다른 글자 사이에서 잘못 걸림(2023판 부분 일치형)",
+   "cursePos": 1,
+   "curseNeg": 1,
+   "nsmc": 8
+  },
+  {
+   "pattern": "ㅅㅅ",
+   "categories": [
+    "sexual"
+   ],
+   "reason": "자음 줄임말이라 뜻을 가릴 수 없음, 정상 글에 많음",
+   "cursePos": 16,
+   "curseNeg": 18,
+   "nsmc": 964
+  },
+  {
+   "pattern": "텐가",
+   "categories": [
+    "sexual"
+   ],
+   "reason": "'같이 갈텐가'",
+   "cursePos": 0,
+   "curseNeg": 0,
+   "nsmc": 5
+  },
+  {
+   "pattern": "리발",
+   "categories": [
+    "general"
+   ],
+   "reason": "'꼬리발'",
+   "cursePos": 0,
+   "curseNeg": 0,
+   "nsmc": 5
+  },
+  {
+   "pattern": "자위",
+   "categories": [
+    "sexual"
+   ],
+   "reason": "'자위권'",
+   "cursePos": 3,
+   "curseNeg": 0,
+   "nsmc": 9
+  },
+  {
+   "pattern": "세끼",
+   "categories": [
+    "general"
+   ],
+   "reason": "'하루 세끼 밥을 먹는다'",
+   "cursePos": 8,
+   "curseNeg": 1,
+   "nsmc": 10
+  },
+  {
+   "pattern": "보지",
+   "categories": [
+    "sexual"
+   ],
+   "reason": "'책을 보지 않았다'",
+   "cursePos": 31,
+   "curseNeg": 8,
+   "nsmc": 450
+  },
+  {
+   "pattern": "자지",
+   "categories": [
+    "sexual"
+   ],
+   "reason": "'잠을 자지 못했다'",
+   "cursePos": 9,
+   "curseNeg": 2,
+   "nsmc": 23
+  },
+  {
+   "pattern": "시바",
+   "categories": [
+    "general"
+   ],
+   "reason": "'시바견', '낚시바늘'",
+   "cursePos": 3,
+   "curseNeg": 1,
+   "nsmc": 11
+  },
+  {
+   "pattern": "운지",
+   "categories": [
+    "belittle"
+   ],
+   "reason": "'행운지수'",
+   "cursePos": 1,
+   "curseNeg": 1,
+   "nsmc": 20
+  },
+  {
+   "pattern": "시방",
+   "categories": [
+    "general"
+   ],
+   "reason": "'시방' 사투리(지금)",
+   "cursePos": 1,
+   "curseNeg": 0,
+   "nsmc": 3
+  },
+  {
+   "pattern": "야스",
+   "categories": [
+    "sexual"
+   ],
+   "reason": "'야스쿠니'",
+   "cursePos": 4,
+   "curseNeg": 1,
+   "nsmc": 4
+  },
+  {
+   "pattern": "랄지",
+   "categories": [
+    "general"
+   ],
+   "reason": "Curse 욕설 문장에 없음, 정상 글에서만 나옴",
+   "cursePos": 0,
+   "curseNeg": 0,
+   "nsmc": 2
+  },
+  {
+   "pattern": "좋같",
+   "categories": [
+    "general"
+   ],
+   "reason": "Curse 욕설 문장에 없음, '좋같이' 오타와 겹침",
+   "cursePos": 0,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "pattern": "깔보",
+   "categories": [
+    "belittle"
+   ],
+   "reason": "'친구를 깔보지 마'(욕이 아닌 일반어)",
+   "cursePos": 0,
+   "curseNeg": 0,
+   "nsmc": 2
+  },
+  {
+   "pattern": "줫",
+   "categories": [
+    "general"
+   ],
+   "reason": "'선물을 해줫다' 오타와 겹침",
+   "cursePos": 0,
+   "curseNeg": 0,
+   "nsmc": 23
+  },
+  {
+   "pattern": "뒤져",
+   "categories": [
+    "minor"
+   ],
+   "reason": "'가방을 뒤져 보았다'(뒤지다=찾다). 위협 쓰임은 threat의 '뒤져라'·'뒤질래'로 막음",
+   "cursePos": 8,
+   "curseNeg": 2,
+   "nsmc": 0
+  }
+ ],
+ "narrowFalsePositives": [
+  {
+   "pattern": "씨발라",
+   "replacedBy": "수박씨발라",
+   "reason": "'씨발라'를 통째로 지워 그 안의 '씨발'을 놓침. 의도한 '수박씨 발라'만 남김"
+  }
+ ],
+ "falsePositives": [
+  {
+   "pattern": "새끼손가락",
+   "reason": "신체 이름"
+  },
+  {
+   "pattern": "새끼발가락",
+   "reason": "신체 이름"
+  },
+  {
+   "pattern": "새끼줄",
+   "reason": "물건 이름"
+  },
+  {
+   "pattern": "새끼를낳",
+   "reason": "동물이 새끼를 낳음"
+  },
+  {
+   "pattern": "새끼를배",
+   "reason": "동물이 새끼를 뱀"
+  },
+  {
+   "pattern": "새끼들을낳",
+   "reason": "동물이 새끼를 낳음"
+  },
+  {
+   "pattern": "새끼치",
+   "reason": "새끼를 침(번식)"
+  },
+  {
+   "pattern": "조까지",
+   "reason": "'강조까지'·'구조까지'"
+  },
+  {
+   "pattern": "글자지",
+   "reason": "'글자지만'"
+  },
+  {
+   "pattern": "전개같",
+   "reason": "'이야기 전개같다'"
+  },
+  {
+   "pattern": "마이애미",
+   "reason": "지명"
+  },
+  {
+   "pattern": "수박씨발라",
+   "reason": "'수박씨 발라 먹기'"
+  },
+  {
+   "pattern": "닥쳐올",
+   "reason": "'닥쳐올 위험'(닥치다=다가오다)"
+  },
+  {
+   "pattern": "닥쳐온",
+   "reason": "'닥쳐온 위기'"
+  },
+  {
+   "pattern": "닥쳐오는",
+   "reason": "'닥쳐오는 위기'"
+  },
+  {
+   "pattern": "닥쳐왔",
+   "reason": "'위기가 닥쳐왔다'(NSMC 정상 쓰임 1)"
+  },
+  {
+   "pattern": "등신대",
+   "reason": "실물 크기 인형·판"
+  },
+  {
+   "pattern": "등신불",
+   "reason": "불상 이름"
+  },
+  {
+   "pattern": "팔등신",
+   "reason": "몸 비율"
+  },
+  {
+   "pattern": "눈깔사탕",
+   "reason": "사탕 이름"
+  },
+  {
+   "pattern": "0등신",
+   "reason": "몸 비율(korcen 예외와 같음)"
+  },
+  {
+   "pattern": "1등신",
+   "reason": "몸 비율(korcen 예외와 같음)"
+  },
+  {
+   "pattern": "2등신",
+   "reason": "몸 비율(korcen 예외와 같음)"
+  },
+  {
+   "pattern": "3등신",
+   "reason": "몸 비율(korcen 예외와 같음)"
+  },
+  {
+   "pattern": "4등신",
+   "reason": "몸 비율(korcen 예외와 같음)"
+  },
+  {
+   "pattern": "5등신",
+   "reason": "몸 비율(korcen 예외와 같음)"
+  },
+  {
+   "pattern": "6등신",
+   "reason": "몸 비율(korcen 예외와 같음)"
+  },
+  {
+   "pattern": "7등신",
+   "reason": "몸 비율(korcen 예외와 같음)"
+  },
+  {
+   "pattern": "8등신",
+   "reason": "몸 비율(korcen 예외와 같음)"
+  },
+  {
+   "pattern": "9등신",
+   "reason": "몸 비율(korcen 예외와 같음)"
+  },
+  {
+   "pattern": "고양이새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "강아지새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "오리새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "곰새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "사자새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "호랑이새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "토끼새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "소새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "말새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "양새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "닭새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "물고기새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "펭귄새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "여우새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "늑대새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "원숭이새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "코끼리새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "고래새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "다람쥐새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "참새새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "제비새끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼고양이",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼강아지",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼오리",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼곰",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼사자",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼호랑이",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼토끼",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼소",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼말",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼양",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼닭",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼새",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼물고기",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼펭귄",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼여우",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼늑대",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼원숭이",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼코끼리",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼고래",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼다람쥐",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼참새",
+   "reason": "동물 새끼"
+  },
+  {
+   "pattern": "새끼제비",
+   "reason": "동물 새끼"
+  }
+ ],
+ "variants": [
+  {
+   "word": "븅신",
+   "root": "병신",
+   "category": "PROFANITY",
+   "cursePos": 25,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "빙신",
+   "root": "병신",
+   "category": "PROFANITY",
+   "cursePos": 8,
+   "curseNeg": 1,
+   "nsmc": 1
+  },
+  {
+   "word": "벙신",
+   "root": "병신",
+   "category": "PROFANITY",
+   "cursePos": 1,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "병시나",
+   "root": "병신",
+   "category": "PROFANITY",
+   "cursePos": 1,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "새낀",
+   "root": "새끼",
+   "category": "PROFANITY",
+   "cursePos": 5,
+   "curseNeg": 0,
+   "nsmc": 3
+  },
+  {
+   "word": "생키",
+   "root": "새끼",
+   "category": "PROFANITY",
+   "cursePos": 1,
+   "curseNeg": 0,
+   "nsmc": 1
+  },
+  {
+   "word": "색기",
+   "root": "새끼",
+   "category": "PROFANITY",
+   "cursePos": 7,
+   "curseNeg": 0,
+   "nsmc": 8
+  },
+  {
+   "word": "니에미",
+   "root": "니애미",
+   "category": "PROFANITY",
+   "cursePos": 4,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "애미",
+   "root": "니애미",
+   "category": "PROFANITY",
+   "cursePos": 36,
+   "curseNeg": 0,
+   "nsmc": 6
+  },
+  {
+   "word": "젖같",
+   "root": "좆같",
+   "category": "PROFANITY",
+   "cursePos": 2,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "잣같",
+   "root": "좆같",
+   "category": "PROFANITY",
+   "cursePos": 1,
+   "curseNeg": 0,
+   "nsmc": 1
+  },
+  {
+   "word": "좟되",
+   "root": "좆되",
+   "category": "PROFANITY",
+   "cursePos": 1,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "ㅈ될",
+   "root": "좆되",
+   "category": "PROFANITY",
+   "cursePos": 2,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "ㅈ되",
+   "root": "좆되",
+   "category": "PROFANITY",
+   "cursePos": 2,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "쌍년",
+   "root": "썅년",
+   "category": "PROFANITY",
+   "cursePos": 2,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "존니",
+   "root": "존나",
+   "category": "PROFANITY",
+   "cursePos": 2,
+   "curseNeg": 0,
+   "nsmc": 2
+  },
+  {
+   "word": "졵나",
+   "root": "존나",
+   "category": "PROFANITY",
+   "cursePos": 1,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "조온나",
+   "root": "존나",
+   "category": "PROFANITY",
+   "cursePos": 1,
+   "curseNeg": 0,
+   "nsmc": 5
+  },
+  {
+   "word": "조낸",
+   "root": "존나",
+   "category": "PROFANITY",
+   "cursePos": 1,
+   "curseNeg": 0,
+   "nsmc": 18
+  },
+  {
+   "word": "씨이발",
+   "root": "씨발",
+   "category": "PROFANITY",
+   "cursePos": 1,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "씨밸",
+   "root": "씨발",
+   "category": "PROFANITY",
+   "cursePos": 1,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "젖탱이",
+   "root": null,
+   "category": "SEXUAL",
+   "cursePos": 3,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "꼴리",
+   "root": null,
+   "category": "SEXUAL",
+   "cursePos": 11,
+   "curseNeg": 0,
+   "nsmc": 13
+  },
+  {
+   "word": "오나홀",
+   "root": null,
+   "category": "SEXUAL",
+   "cursePos": 2,
+   "curseNeg": 0,
+   "nsmc": 0
+  }
+ ],
+ "dictionaryAdded": [
+  {
+   "word": "등신",
+   "category": "PROFANITY",
+   "targetCode": "135550",
+   "definition": "나무, 돌, 흙, 쇠 따위로 만든 사람의 형상이라는 뜻으로, 몹시 어리석은 사람을 낮잡아 이르는 말.",
+   "cursePos": 3,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "아가리",
+   "category": "PROFANITY",
+   "targetCode": "479542",
+   "definition": "‘입’을 속되게 이르는 말.",
+   "cursePos": 15,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "개쓰레기",
+   "category": "PROFANITY",
+   "targetCode": "1278149",
+   "definition": "인격적으로 매우 심한 결함이 있거나 도덕적으로 타락한 사람을 낮잡아 이르는 말.",
+   "cursePos": 3,
+   "curseNeg": 0,
+   "nsmc": 29
+  },
+  {
+   "word": "눈깔",
+   "category": "PROFANITY",
+   "targetCode": "491167",
+   "definition": "‘눈알’을 속되게 이르는 말.",
+   "cursePos": 3,
+   "curseNeg": 0,
+   "nsmc": 1
+  },
+  {
+   "word": "갈보",
+   "category": "SEXUAL",
+   "targetCode": "339216",
+   "definition": "남자들에게 몸을 파는 여자를 속되게 이르는 말.",
+   "cursePos": 4,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "돌림빵",
+   "category": "SEXUAL",
+   "targetCode": "668664",
+   "definition": "‘윤간’을 속되게 이르는 말.",
+   "cursePos": 4,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "저능아",
+   "category": "HATE",
+   "targetCode": "543478",
+   "definition": "지능이 떨어지는 아이를 낮잡아 이르는 말.",
+   "cursePos": 8,
+   "curseNeg": 0,
+   "nsmc": 5
+  }
+ ],
+ "dictionaryAddedRule": "우리말샘(CC BY-SA 2.0 KR) 뜻풀이가 '낮잡아 이르는 말'·'속되게 이르는 말'인 일반어 중 Curse 욕설 문장 3회 이상·정상 표시 0, 정상 낱말과 겹치지 않는 것",
+ "dictionaryExcluded": [
+  {
+   "word": "깡통",
+   "reason": "정상 낱말(캔)",
+   "cursePos": 3,
+   "curseNeg": 0,
+   "nsmc": 4
+  },
+  {
+   "word": "나발",
+   "reason": "악기 나발, '나발 불다'",
+   "cursePos": 3,
+   "curseNeg": 0,
+   "nsmc": 16
+  },
+  {
+   "word": "똥꼬",
+   "reason": "아이들이 장난으로 흔히 쓰는 말",
+   "cursePos": 5,
+   "curseNeg": 0,
+   "nsmc": 5
+  }
+ ],
+ "threat": [
+  {
+   "word": "자살해라",
+   "cursePos": 4,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "뒈지",
+   "cursePos": 1,
+   "curseNeg": 0,
+   "nsmc": 1
+  },
+  {
+   "word": "뒈져",
+   "cursePos": 5,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "뒤져라",
+   "cursePos": 3,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "뒤질래",
+   "cursePos": 2,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "디져라",
+   "cursePos": 1,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "찢어죽",
+   "cursePos": 2,
+   "curseNeg": 0,
+   "nsmc": 1
+  },
+  {
+   "word": "때려죽",
+   "cursePos": 1,
+   "curseNeg": 0,
+   "nsmc": 2
+  },
+  {
+   "word": "패죽",
+   "cursePos": 1,
+   "curseNeg": 0,
+   "nsmc": 1
+  },
+  {
+   "word": "처죽",
+   "cursePos": 1,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "불태워죽",
+   "cursePos": 1,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "조져",
+   "cursePos": 4,
+   "curseNeg": 0,
+   "nsmc": 1
+  },
+  {
+   "word": "족쳐",
+   "cursePos": 1,
+   "curseNeg": 0,
+   "nsmc": 1
+  },
+  {
+   "word": "뒤지게패",
+   "cursePos": 1,
+   "curseNeg": 0,
+   "nsmc": 0
+  }
+ ],
+ "threatExcluded": [
+  {
+   "word": "쳐죽",
+   "reason": "띄어쓰기를 지우면 '지나쳐 죽'·'부딪쳐 죽었다'와 겹침",
+   "cursePos": 0,
+   "curseNeg": 0,
+   "nsmc": 10
+  },
+  {
+   "word": "자살해버려",
+   "reason": "'자살해라'와 같은 쓰임, 데이터에 따로 나오지 않음",
+   "cursePos": 0,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "디질래",
+   "reason": "데이터에 나오지 않음",
+   "cursePos": 0,
+   "curseNeg": 0,
+   "nsmc": 0
+  },
+  {
+   "word": "밟아죽",
+   "reason": "'개미를 밟아 죽였다' 같은 정상 문장과 겹침",
+   "cursePos": 0,
+   "curseNeg": 0,
+   "nsmc": 0
+  }
+ ]
+}

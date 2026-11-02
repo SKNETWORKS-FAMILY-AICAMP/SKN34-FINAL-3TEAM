@@ -19,14 +19,20 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.api.extension.ExtendWith
 import org.mybatis.spring.SqlSessionTemplate
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.system.CapturedOutput
+import org.springframework.boot.test.system.OutputCaptureExtension
 import org.springframework.http.HttpStatus
 import org.springframework.jdbc.core.JdbcTemplate
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
+@ExtendWith(OutputCaptureExtension::class)
 class AnswerServiceTest : PostgresRepositoryTest() {
     @Autowired lateinit var service: AnswerService
     @Autowired lateinit var attemptService: AttemptService
@@ -112,6 +118,42 @@ class AnswerServiceTest : PostgresRepositoryTest() {
         assertError(HttpStatus.UNPROCESSABLE_ENTITY, "ANSWER_INCOMPLETE") { service.submit(attempt.id, UUID.randomUUID(), narrative(" ")) }
 
         assertEquals(saved, attemptService.get(attempt.id).draft)
+    }
+
+    @Test
+    fun `욕설·연락처가 있는 답변은 저장·판정 없이 422 ANSWER_INAPPROPRIATE와 범주별 안내, 초안은 그대로`(output: CapturedOutput) {
+        val attempt = start()
+        val saved = attemptService.saveDraft(attempt.id, ifMatch = 0, content = DraftContent(mapOf("text" to "쓰던 답"), "메모"))
+
+        val profanity = assertError(HttpStatus.UNPROCESSABLE_ENTITY, "ANSWER_INAPPROPRIATE") {
+            service.submit(attempt.id, UUID.randomUUID(), narrative("이 문제 존나 어렵다"))
+        }
+        val contact = assertError(HttpStatus.UNPROCESSABLE_ENTITY, "ANSWER_INAPPROPRIATE") {
+            service.submit(attempt.id, UUID.randomUUID(), narrative("내 번호는 010-1234-5678"))
+        }
+
+        assertEquals("고쳐야 할 말이 있어요" to "고운 말로 바꿔서 다시 적어 주세요.", profanity.title to profanity.detail)
+        assertEquals("전화번호나 이메일 같은 개인정보는 빼고 다시 적어 주세요.", contact.detail)
+        assertEquals(0, count("SELECT count(*) FROM answer WHERE attempt_id = ?", attempt.id))
+        assertEquals(saved, attemptService.get(attempt.id).draft)
+        assertTrue("attemptId=${attempt.id} category=PROFANITY" in output.out)
+        assertFalse("존나" in output.out || "1234-5678" in output.out)
+    }
+
+    @Test
+    fun `보완 답변도 같은 검사, 되묻기 연결 검사보다 먼저이고 판정을 만들지 않음`() {
+        val attempt = start()
+        val first = service.submit(attempt.id, UUID.randomUUID(), narrative("처음"))
+
+        assertError(HttpStatus.UNPROCESSABLE_ENTITY, "ANSWER_INAPPROPRIATE") { service.submit(attempt.id, UUID.randomUUID(), narrative("씨발")) }
+        val followup = followup(attempt.id, first.id)
+        assertError(HttpStatus.UNPROCESSABLE_ENTITY, "ANSWER_INAPPROPRIATE") {
+            service.submit(attempt.id, UUID.randomUUID(), narrative("자살해라", followupId = followup))
+        }
+
+        assertEquals(listOf(1), attemptService.get(attempt.id).answers.map { it.version })
+        assertEquals(1, count("SELECT count(*) FROM judgment j JOIN answer a ON a.id = j.answer_id WHERE a.attempt_id = ?", attempt.id))
+        assertEquals(2, service.submit(attempt.id, UUID.randomUUID(), narrative("고운 말로 고친 보완", followupId = followup)).version)
     }
 
     @Test

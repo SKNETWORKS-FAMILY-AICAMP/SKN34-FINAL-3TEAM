@@ -3,11 +3,14 @@ package com.sagomungchi.learning.answer.service
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning.answer.domain.Answer
 import com.sagomungchi.learning.answer.domain.AnswerContent
+import com.sagomungchi.learning.answer.domain.ExpressionPolicy
 import com.sagomungchi.learning.answer.repository.AnswerRepository
 import com.sagomungchi.learning.attempt.service.AttemptService
 import com.sagomungchi.learning.judgment.service.JudgmentService
 import com.sagomungchi.learning.mission.domain.InputType
+import com.sagomungchi.learning.mission.domain.MissionView
 import com.sagomungchi.learning.mission.service.MissionService
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -29,7 +32,10 @@ class AnswerService(
     private val attemptService: AttemptService,
     private val missionService: MissionService,
     private val judgmentService: JudgmentService,
+    private val expressionPolicy: ExpressionPolicy,
 ) {
+    private val log = LoggerFactory.getLogger(javaClass)
+
     /**
      * 답변 제출 (FN-LRN-04·05·08~10, class-diagram 4.1). 한 트랜잭션에서 답변 버전 추가 + 판정 PENDING + 초안 답 칸 비우기.
      * 시도 행을 잠가 같은 시도의 제출을 한 줄로 세우므로 같은 키 동시 요청도 1건만 저장
@@ -56,6 +62,7 @@ class AnswerService(
             throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "미션의 입력 방식과 다름", "미션 입력 방식: ${mission.inputType}")
         }
         content.requireComplete(command.inputType, mission)
+        requireKindExpression(attemptId, content, mission)
         val previous = answerRepository.findLatest(attemptId)
         requireFollowupLink(previous, command.followupId, judgmentService.unansweredLatestFollowupId(attemptId))
 
@@ -75,6 +82,16 @@ class AnswerService(
         judgmentService.createPending(answer.id, attempt.rubricVersionId, now)
         attemptService.clearSubmittedDraft(attemptId, now)
         return answer
+    }
+
+    /**
+     * 학생이 쓴 글에 막는 표현이 있으면 저장·판정 없이 422 ANSWER_INAPPROPRIATE (#205, api-spec 1.3).
+     * 응답에는 범주별 고정 문구만, 로그에는 범주와 시도만 남기고 걸린 말·원문은 남기지 않음 (NFR-SEC-05)
+     */
+    private fun requireKindExpression(attemptId: UUID, content: AnswerContent, mission: MissionView) {
+        val category = expressionPolicy.blockedCategory(content.writtenTexts(), mission) ?: return
+        log.info("답변 표현 차단 attemptId={} category={}", attemptId, category)
+        throw BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "ANSWER_INAPPROPRIATE", "고쳐야 할 말이 있어요", category.detail)
     }
 
     /**
