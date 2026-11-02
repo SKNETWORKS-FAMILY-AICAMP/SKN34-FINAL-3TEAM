@@ -1,4 +1,4 @@
-# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82·#169·#137·#205)
+# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82·#169·#137·#205·#241)
 
 ## 같은 미션 재시도 비교 (#207, 2026-11-01)
 
@@ -92,13 +92,13 @@
 | 질문 은행 | ai가 재생성까지 유출이면 같은 유형 활성 질문 중 이 시도에서 안 쓴 것을 생성 순으로(`source=BANK`). 비었으면 `INTERNAL_ERROR` |
 | 유출 검사 정답 | 학생에게 보이는 글자로 변환: 고르기 선택지 이름, 순서 전체, 수학 최종 답+단위, 분류 "선택지: 그룹" |
 | 되묻기만 실패 | 판정도 저장하지 않고 `FAILED`, 재요청 시 판정부터 |
-| 실패 코드 | `AI_TIMEOUT`·`AI_UNAVAILABLE`·`AI_BAD_RESPONSE`·`AI_CIRCUIT_OPEN`·`INTERNAL_ERROR`. `retryable`은 ai 503 본문 값, 시간 초과·연결 실패·차단 true, 4xx·계약 밖 false |
+| 실패 코드 | `AI_TIMEOUT`·`AI_UNAVAILABLE`·`AI_BAD_RESPONSE`·`AI_CIRCUIT_OPEN`·`INTERNAL_ERROR`, 고착 탐지는 `LEASE_EXPIRED`(#241, 17절). `retryable`은 ai 503 본문 값, 시간 초과·연결 실패·차단 true, 4xx·계약 밖 false |
 | `nextActions` | 읽는 시점 기준: 답하지 않은 되묻기 있음 `[ANSWER_FOLLOWUP, FINISH]`, 없음 `[FINISH]`, 마무리·완료 `[]`, 처리 중·실패 `[]` |
 | 버전 | `versions{mission:"미션 code@버전", rubric:"미션 code@기준표 버전", model, prompt}`(기준표에 code 컬럼이 없어 미션 code 사용) |
 | ai 호출 | 응답 35초, 재시도 없음, 서킷 20건·50%·30초(core와 같은 값). 요청 본문에 학생 이름·ID 없음(학년만) |
 | 결과 조회 순서 | 판정 행을 먼저 읽고 요소·되묻기를 읽음(READ COMMITTED에서 섞임 방지) |
 
-- 후속(이슈 분리): 판정 정정 수신 API(#80, 8절에서 구현), 미션 공개 검사(#81, 고르기도 요소 1개 이상 등), 판정 요청에 미션 질문 넣기, 고착 `RUNNING` 1분 주기 탐지(현재는 요청 때 리스 만료로 재획득)
+- 후속(이슈 분리): 판정 정정 수신 API(#80, 8절에서 구현), 미션 공개 검사(#81, 고르기도 요소 1개 이상 등), 판정 요청에 미션 질문 넣기, 고착 `RUNNING` 1분 주기 탐지(#241, 17절에서 구현)
 
 ## 5. 마무리·돌아보기·자기 평가 (#26)
 
@@ -480,3 +480,60 @@ python scripts/verify_feedback_learning.py `
 - 한계: 욕 없는 모욕·비꼼·돌려 말한 성적 표현·특정 친구 놀림은 단어로 못 막음(후속 검수 LLM). 맥락 허용은 미션 본문에 같은 말이 있는지만 봄. 낱자 `ㅗ`는 korcen 손가락 욕 패턴이라 낱자를 섞어 쓴 글(`ㄱㅗㅏ자`)이 걸림(원래 동작). korcen 원본 오탐 예외 중 숫자가 든 것(`8등신`)은 korcen 정규화 때문에 원본에서도 동작하지 않음(팀 예외는 정규화해서 비교). 측정 데이터의 분포가 초중등 답변과 다름
 - 확인 필요: ① `ANSWER_INAPPROPRIATE`(범주별 `detail`) 팀 공지(api-spec 공유 계약, PR 전 사용자) ② 초안 자동 저장·돌아보기 글에는 걸리는 말이 남을 수 있음(학생 본인만 열람) ③ 학생 자기 감정 표현("죽고 싶다")의 보호자 알림 여부(아동 안전, 별도 기능) ④ korcen의 MIT·Apache는 코드 라이선스라 단어 데이터의 출처까지 보증하지 않음 ⑤ core 동의 문서 시드 부재(로컬 실행 시 발견, core 담당) ⑥ KISO KSS 신청 여부
 - 후속: 검수 LLM(제출 전 별도 검사, ai-service 검수 API·장애 시 처리·오탐·우회·비용 설계), 판정 LLM 응답에 "부적절 표현 의심" 표시(저장 후 보호자·관리자 확인), KISO KSS
+
+## 17. 고착 RUNNING 판정 1분 주기 탐지 (#241)
+
+P12 "판정 리스 90초·고착 탐지 1분"의 탐지 작업. 지금까지는 같은 답변에 피드백을 다시 요청할 때만 만료 리스를 재획득해서, 처리 Pod 종료·결과 기록 실패(`FeedbackFacade` 실패 기록) 뒤 학생이 떠난 판정은 `RUNNING`으로 계속 남았다.
+
+### 사용자 결정 (11/02)
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 탐지 후 동작 | `FAILED`로 전이, 실패 코드 `LEASE_EXPIRED`, `retry_count + 1`, 자동 재실행 없음 | 설계 문서에 동작이 없어 이슈 지침(`Judgment.fail`의 실패 기록 규칙)과 core 분석 대화의 고착 처리(130초 넘은 `RUNNING`을 `STREAM_INTERRUPTED` 실패로, 자동 재실행 없음, api-spec #47 절)를 따름. 로그만 남기는 안은 상태 표시·집계·결제 사용 증빙이 그대로라 탐지 의미가 없어 택하지 않음 |
+| 클래스 위치 | `judgment/scheduler/StuckJudgmentScheduler` → `JudgmentService.failStuck` → `JudgmentRepository.failExpired` | 아키텍처 2.1: 스케줄 수신은 Presentation `scheduler`, DB 접근 금지. core 스케줄러(`report/scheduler` 등)와 같은 구조 |
+
+### 구현
+
+| 위치 | 내용 |
+|---|---|
+| `judgment/scheduler/StuckJudgmentScheduler` | `@Scheduled` 주기 `app.judgment.stuck-detection-interval`(기본 `PT1M`, 첫 실행도 1분 뒤), `app.judgment.stuck-detection-enabled=false`면 실행하지 않음. ShedLock 없음(조건부 UPDATE라 레플리카 동시 실행 안전, `ProcessedEventCleanup`과 같은 방식) |
+| `JudgmentService.failStuck(now)` | 트랜잭션 하나에서 일괄 전이, 바뀐 답변 ID 반환. 1건 이상이면 `warn` 로그에 건수와 `answerId`만(학생 원문 없음) |
+| `JudgmentMapper.failExpired` | `UPDATE judgment SET process_status='FAILED', failure_code=:code, retry_count=retry_count+1 WHERE process_status='RUNNING' AND (lease_until IS NULL OR lease_until < :now) RETURNING answer_id`. 만료 조건은 `acquire` SQL·`Judgment.isLeaseExpired`와 같음(리스 없는 `RUNNING`도 만료). 탐지용 인덱스 `(process_status, lease_until)`는 기존(V2) |
+| `Judgment.LEASE_EXPIRED` | 실패 코드 상수 |
+| `AppProperties.Judgment`, `application.yml` | `stuck-detection-enabled: true`, `stuck-detection-interval: PT1M` |
+| 설계 | state-diagram 3.3(전이·표·설명), class-diagram 4.2(`StuckJudgmentScheduler`, `failStuck`, `failExpired`, 설명), architecture 2.6 learning 트리(`judgment/scheduler/`) |
+
+### 겹칠 때
+
+| 상황 | 결과 |
+|---|---|
+| 재획득이 먼저 행을 잡음 | 탐지 UPDATE가 행 잠금을 기다린 뒤 조건을 다시 봐 새 리스가 잡힌 행은 건너뜀(READ COMMITTED) |
+| 탐지가 먼저 행을 잡음 | 재획득 UPDATE가 기다린 뒤 `FAILED`를 보고 `FAILED → RUNNING`으로 가져감 |
+| 두 Pod가 같은 주기에 탐지 | 한쪽만 바뀌고 `retry_count`는 1만 오름 |
+| 탐지 뒤 이전 처리가 늦게 끝남 | 저장·실패 기록 모두 획득한 리스 조건(`process_status='RUNNING' AND lease_until=:until`)이라 0행, 결과 버림(재획득 때와 같음) |
+
+### 영향
+
+- 결제 사용 증빙(`GET /internal/payment-usage/students/{id}`, #48): `RUNNING` 판정을 사용으로 보므로 고착 판정이 있으면 계속 `used=true`였음. 탐지 뒤에는 ai 실패로 `FAILED`가 된 판정처럼 사용으로 보지 않음. core 결제 쪽 코드 변경은 없고 값만 달라짐 → core 담당에게 알림(PR)
+- 학습 기록 집계: 조회 종료일까지 답변이 모두 `FAILED`인 시도를 빼는 기존 규칙(P08)에 고착 시도도 들어감
+- 학생 화면: 화면에 있는 동안은 web이 `RUNNING`이면 피드백을 다시 요청해(`feedbackPolling.ts`) 지금도 리스 만료 뒤 재획득됨. 차이는 떠났다 돌아온 학생의 시도 상세가 "처리 중" 대신 실패로 보이고 다시 요청할 수 있다는 점
+
+### 설계·이슈와 다른 점
+
+- 이슈 작업 위치는 `judgment/service/`(새 스케줄 클래스)였으나 아키텍처 2.1대로 `judgment/scheduler/`에 둠(사용자 결정). 이슈가 따르라고 한 `ProcessedEventCleanup` "방식"(설정 가능한 주기·조건부 UPDATE·잠금 없음)은 그대로 따름
+- 이슈 배경의 "남은 `RUNNING`은 마무리 조건(P04)·다음 행동 계산에서 처리 중으로 보임": 마무리 조건은 `DONE` 1회 이상이라 `RUNNING`·`FAILED` 모두 충족하지 않고, `nextActions`도 둘 다 `[]`라 이 부분은 탐지 전후가 같음. 달라지는 것은 위 "영향"
+- 일괄 UPDATE라 엔티티 `Judgment.fail`을 거치지 않음. 이슈 작업 위치의 "조건부 일괄 전이"를 따르고, 전이 결과(`FAILED`·실패 코드·`retry_count + 1`)와 만료 조건은 엔티티·`acquire` SQL과 같게 맞춤(`acquire`도 엔티티 판단과 같은 조건을 SQL에 둠)
+- 기존 파일 수정: `Judgment`(상수), `JudgmentService`(`failStuck`, 로거), `JudgmentRepository`·`JudgmentMapper`·`JudgmentMapper.xml`(`failExpired`), `AppProperties`(`judgment`), `application.yml`, 테스트 `JudgmentServiceTest`(3개 추가)
+
+### 검증
+
+- learning `./gradlew test` 278개 통과(새 8개). `JudgmentServiceTest`: 만료·리스 없음만 전이하고 미만료·`PENDING`은 그대로, 두 번 실행해도 한 번만, 탐지 뒤 재요청이 `FAILED → RUNNING` 후 정상 저장. `StuckJudgmentSchedulerTest`: 켜면 탐지, 끄면 그대로. `StuckJudgmentConcurrencyTest`(실제 커밋, 별도 컨테이너): 재획득과 탐지가 서로 행을 잡은 두 순서, 두 인스턴스 동시 탐지
+- SQL에서 리스 조건을 빼면 새 테스트 2개(미만료 유지, 재획득 먼저)가 실패하는 것을 확인 후 되돌림
+- scripts/tests 96개 통과, `git diff --check` 통과
+
+### 알려진 한계
+
+- 리스 90초를 넘겨 아직 살아 있는 처리가 있으면 탐지가 먼저 `FAILED`로 바꿔 그 결과가 버려짐. 탐지 전에는 다른 요청이 가져가지 않았다면 저장됐음. learning→ai 판정·되묻기가 각 35초라 정상 처리는 약 70초 안에 끝나고, 탐지는 리스 획득 90~150초 뒤라 드묾
+- 만료 판단은 각 Pod의 시각 기준(재획득과 같음). Pod 사이 시각 차이만큼 탐지가 앞당겨지거나 늦어짐
+- learning의 기존 `record/service/ProcessedEventCleanup`은 스케줄 클래스가 service 패키지에서 repository를 바로 부름(아키텍처 2.1과 다름). 이번 범위 밖이라 그대로 둠
+- 탐지 건수는 로그로만 남음(지표 수집 없음). DB에서는 `failure_code='LEASE_EXPIRED'`로 셀 수 있음

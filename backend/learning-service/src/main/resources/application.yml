@@ -64,3 +64,6 @@ app:
     max-retries: 3 # P12: 1·5·15분 3회. definitions.json의 <큐>.retry.1~3 개수와 일치
     event-retention-days: 90 # processed_event 보존 (#208)
     event-retention-cleanup-interval: 3600000
+  judgment:
+    stuck-detection-enabled: true # 고착 RUNNING 판정 탐지 (#241)
+    stuck-detection-interval: PT1M # [P12] 판정 리스 90초·고착 탐지 1분
