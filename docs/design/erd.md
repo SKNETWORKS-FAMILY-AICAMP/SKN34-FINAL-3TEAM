@@ -1,9 +1,9 @@
 # ERD
 
-- 근거: [기능명세서](functional-spec.md), [API 명세서](api-spec.md), [유스케이스](usecase.md), [아키텍처 설계](architecture.md), [프로젝트 기획서](<../outputs/프로젝트 기획서_사고뭉치_최종.pdf>) 4.5
+- 근거: [기능명세서](functional-spec.md), [API 명세서](api-spec.md), [유스케이스](usecase.md), [아키텍처 설계](architecture.md), [프로젝트 기획서](<../outputs/프로젝트_기획서_사고뭉치.pdf>) 4.5
 - 범위: DB를 소유한 서비스 3개(core_db · learning_db · report_db). ai·scoring은 상태 없음 (아키텍처 1.1)
 - AI Hub 원본·가공본은 `ml/` 학습용으로 서비스 DB에 넣지 않음 (NFR-DAT-03)
-- `[P..]`는 미확정 정책. 확정 전에는 컬럼 자리만 두거나 테이블을 만들지 않음
+- `(P04)` 형태는 확정 정책 번호, 내용은 [기능명세서 1.4](functional-spec.md#14-확정-정책)
 
 ---
 
@@ -13,18 +13,23 @@
 |---|---|
 | DBMS | PostgreSQL. 마이그레이션은 core·learning Flyway, report Alembic (아키텍처 5장) |
 | 이름 | 테이블·컬럼 snake_case, 테이블명 단수형 |
-| PK | `id uuid` (API 식별자와 동일). 예외: 복합 PK 테이블, `shedlock` |
+| PK | UUID는 앱에서 생성해 전달하며 DB UUID 기본값은 두지 않음. `id uuid`는 API 식별자와 동일. 예외: 복합 PK·이벤트 ID·`shedlock.name` |
 | 시각·날짜 | 시각 `timestamptz`, 기간 `date`(KST, 양 끝 포함) |
 | 상태값 | [API 명세 1.5](api-spec.md#15-상태-코드값-fn-12-대응) 코드값 그대로 `varchar` + CHECK |
 | 서비스 간 참조 | 다른 DB의 ID는 FK 없는 논리 참조 (2장). 같은 DB 안에서만 FK |
-| 덮어쓰기 금지 | 답변·판정·기준표·미션·리포트는 수정 대신 새 버전 행 추가 (NFR-DAT-01, 02) |
+| 덮어쓰기 금지 | 제출 답변·콘텐츠 버전·확정 결과는 보존. 처리 중 상태 갱신은 허용하며 판정 정정은 `judgment_correction`, 리포트 재생성은 새 `revision`으로 기록 (NFR-DAT-01, 02) |
 | 버전 연결 | 판정·되묻기·분석·리포트 행에 당시 미션·기준표·모델·프롬프트 버전 저장 (NFR-DAT-02) |
 | 개인정보 | 학생은 가명 닉네임만 저장, 실명 컬럼 없음. 결제수단 민감 정보 미저장 (NFR-SEC-06) |
 | JSONB | 구조가 응답 스키마와 같고 조회 조건에 쓰지 않는 값만 (Metric[], verification, versions 등) |
+| NULL·기본값 | `NULL 허용` 표시 컬럼 외에는 NOT NULL. UUID·시각·상태·카운터의 SQL DEFAULT는 두지 않고 앱에서 전달. 정책 값(기능명세서 1.4)을 SQL 기본값으로 고정하지 않고 앱 설정·`product` 데이터로 전달 |
+| 문자열·금액 | varchar는 길이 제한 없는 PostgreSQL varchar. ShedLock만 name varchar(64), locked_by varchar(255). 원화는 int, cost_usd는 반올림 정책 없는 numeric |
+| FK 삭제·순환 참조 | 기본 ON DELETE/UPDATE NO ACTION. mission.current_*·published_*와 answer.followup_id만 DEFERRABLE INITIALLY IMMEDIATE. 삭제는 P09에 따라 `student.deleted` 이벤트로 서비스별 물리 삭제. learning 하위 기록은 CASCADE 없이 서비스가 한 트랜잭션에서 순서대로 삭제(4.3, #128) |
 
-- 테이블 없이 Redis에 두는 값: `reauthToken`(단기), 계정 복구 확인 코드, SSE 알림 중계 (아키텍처 1.6)
-- 서버에 저장하지 않는 값: 생각 메모 `[P05]`, 음성 원음 (FN-LRN-07, 18)
-- 테이블 미생성: 학생 별도 계정·학생 세션 방식 `[P01]` → `student.user_account_id` 자리만 둠
+- 테이블 없이 Redis에 두는 값: SSE 알림 중계 (아키텍처 1.6), 요금제 사용 한도 일 단위 카운터 (P13)
+- 생각 메모는 `attempt_draft.content.memo`에 저장 (P05). 음성 시범 미구현으로 음성 데이터 없음 (P03)
+- 학생 별도 계정 없음: 학생 세션은 `student.id`로 발급하는 토큰만. 발급 경로는 학부모 인증(동석) 또는 학부모 등록 기기 + 자녀 PIN(단독). PIN·기기 저장 구조는 3.1 (P01)
+- 학생 기기 페어링 코드(10분·1회용)는 테이블 없이 Redis 저장
+- 코드 CHECK는 Mermaid 주석의 `A|B` 목록 또는 `CHECK[A]` 명시 표기로 자동 검증한다. 허용값이 하나인 경우에도 `CHECK[A]`로 표시해 일반 설명과 구분한다.
 
 ---
 
@@ -42,7 +47,7 @@
 | `error_report_id` | core `error_report.id` | learning `judgment_correction` |
 | 사용자 ID | core `user_account.id` | learning `mission.created_by`·`mission_review.reviewer_id`·`judgment_correction.corrected_by` |
 
-- 삭제 전파: core가 삭제 확정 시 `student.deleted` 발행 → learning·report가 해당 학생 기록 삭제 (아키텍처 1.4, `[P09]`)
+- 삭제 전파: core가 삭제 확정 시 `student.deleted` 발행 → learning·report가 해당 학생 기록 삭제 (아키텍처 1.4, P09)
 - 삭제된 기록을 참조하면 learning 근거 조회가 `available: false` 반환 (FN-ACC-13)
 
 ---
@@ -53,9 +58,11 @@
 
 ```mermaid
 erDiagram
+  user_account ||--o{ student_device : registers
+  student_device ||--o{ student_device_child : allows
+  student ||--o{ student_device_child : uses
   user_account ||--o{ admin_permission : has
   user_account ||--o{ refresh_token : issues
-  user_account |o--o| student : "학생 계정 [P01]"
   user_account ||--o{ consent : agrees
   consent_document ||--o{ consent : "문서 버전"
   student |o--o{ consent : "법정대리인 동의 대상"
@@ -69,13 +76,15 @@ erDiagram
     uuid id PK
     varchar role "STUDENT|PARENT|ADMIN"
     varchar login_id UK "로그인 ID(이메일)"
-    varchar password_hash
-    varchar display_name
+    varchar password_hash "NULL 허용 · 기존 데이터 보존, 로그인 미사용"
+    varchar oauth_provider "NULL 허용 · GOOGLE"
+    varchar oauth_subject "NULL 허용 · provider와 복합 UK"
+    varchar display_name "NULL 허용"
     varchar status "ACTIVE|WITHDRAWAL_REQUESTED|WITHDRAWN"
     boolean is_demo "시연 계정"
     timestamptz created_at
     timestamptz updated_at
-    timestamptz withdrawn_at
+    timestamptz withdrawn_at "NULL 허용"
   }
   admin_permission {
     uuid user_id PK,FK
@@ -85,22 +94,43 @@ erDiagram
   }
   refresh_token {
     uuid id PK
+    uuid session_id FK "NULL 허용 · 기존 토큰, 신규는 필수"
+    timestamptz used_at "NULL 허용"
     uuid user_id FK
     varchar token_hash UK
     timestamptz expires_at
-    timestamptz revoked_at
+    timestamptz revoked_at "NULL 허용"
     timestamptz created_at
   }
   student {
     uuid id PK "전 서비스 공통 학생 ID"
-    uuid user_account_id FK,UK "nullable [P01]"
-    varchar nickname "가명"
-    int grade "이후 제공 문제에만 적용"
+    varchar pin_hash "NULL 허용"
+    int pin_failed_count "0 이상"
+    timestamptz pin_locked_at "NULL 허용"
+    timestamptz pin_updated_at "NULL 허용"
+    varchar nickname "가명, DELETED 표식은 NULL 허용"
+    int grade "3~6, 이후 제공 문제에만 적용 (P03), DELETED 표식은 NULL 허용"
+    int birth_year "출생연도 (P01), DELETED 표식은 NULL 허용"
     boolean is_demo "시연 가상 학생"
+    boolean parent_sharing_enabled "NOT NULL DEFAULT false, 학생 본인만 변경 (#206)"
     varchar status "ACTIVE|DELETION_REQUESTED|DELETED"
     timestamptz created_at
     timestamptz updated_at
-    timestamptz deleted_at
+    timestamptz deleted_at "NULL 허용"
+  }
+  student_device {
+    uuid id PK
+    uuid parent_user_id FK
+    varchar token_hash UK
+    varchar label
+    timestamptz created_at
+    timestamptz expires_at
+    timestamptz last_used_at "NULL 허용"
+    timestamptz revoked_at "NULL 허용"
+  }
+  student_device_child {
+    uuid device_id PK,FK
+    uuid student_id PK,FK
   }
   consent_document {
     uuid id PK
@@ -116,20 +146,20 @@ erDiagram
     uuid id PK
     uuid document_id FK
     uuid subject_user_id FK "동의 주체(학부모)"
-    uuid student_id FK "nullable, 자녀 동의일 때"
+    uuid student_id FK "NULL 허용 · 자녀 동의일 때"
     boolean agreed
     varchar status "AGREED|WITHDRAWN"
     timestamptz agreed_at
-    timestamptz withdrawn_at
+    timestamptz withdrawn_at "NULL 허용"
   }
   guardianship {
     uuid id PK
     uuid parent_user_id FK
     uuid student_id FK
-    varchar method "REGISTER|LINK"
+    varchar method "CHECK[REGISTER] (P02: LINK 미지원)"
     varchar status "LINKED|UNLINKED"
     timestamptz linked_at
-    timestamptz unlinked_at
+    timestamptz unlinked_at "NULL 허용"
   }
   deletion_request {
     uuid id PK
@@ -138,24 +168,78 @@ erDiagram
     varchar scope "PROFILE|RECORDS"
     varchar status "REQUESTED|CONFIRMED|COMPLETED"
     timestamptz requested_at
-    timestamptz confirmed_at
-    timestamptz completed_at
+    timestamptz confirmed_at "NULL 허용"
+    timestamptz completed_at "NULL 허용"
   }
   withdrawal_request {
     uuid id PK
     uuid user_id FK
     varchar status "REQUESTED|COMPLETED"
     timestamptz requested_at
-    timestamptz completed_at
+    timestamptz completed_at "NULL 허용"
+    varchar status_token_hash UK "NULL 허용, 조회 전용 토큰 해시"
   }
 ```
 
+- #37: 동의 권한은 문서·주체·student_id별 agreed_at·id 내림차순 최신 행 기준이다. 같은 보호자의 동의 저장·철회·자녀 등록은 user_account 행 잠금으로 직렬화한다. 기존 스키마를 사용하며 V1~V8을 수정하지 않는다.
 - `consent_document` UK `(kind, version)`. 동의는 철회해도 행 유지 → `status`·`withdrawn_at` 갱신 (FN-ACC-02)
 - `guardianship` 부분 UK `(parent_user_id, student_id) WHERE status = 'LINKED'`. 권한 확인은 이 테이블의 `LINKED` 행 기준 (아키텍처 1.1)
 - 연결 해제는 행 삭제 대신 `UNLINKED` 전환 → 해제 이후 조회 차단, 이력 보존 (FN-DSH-06)
 - `deletion_request`가 `CONFIRMED`가 되면 같은 트랜잭션에서 `outbox_event(student.deleted)` 저장
 - 로그인 수단·자녀 연결 변경 결과·시점은 `audit_log`에 기록 (FN-ACC-10)
 - `user_account.is_demo`·`student.is_demo` 행은 운영 현황·사용량·결제 집계에서 제외 (NFR-OPS-01)
+
+### #45 재인증·삭제 완료 저장
+
+```mermaid
+erDiagram
+  reauth_challenge {
+    uuid id PK
+    uuid user_id FK
+    uuid session_id FK
+    bigint session_version
+    varchar purpose "PIN_CHANGE|CHILD_UNLINK|CHILD_DELETE|WITHDRAWAL"
+    uuid student_id FK "NULL 허용"
+    varchar scope "NULL 허용, CHECK[PROFILE|RECORDS]"
+    varchar state_hash UK
+    timestamptz expires_at
+    timestamptz verified_at "NULL 허용"
+    timestamptz issued_at "NULL 허용"
+  }
+  reauth_grant {
+    varchar token_hash PK
+    uuid challenge_id FK,UK
+    timestamptz expires_at
+    timestamptz used_at "NULL 허용"
+  }
+  deletion_completion {
+    uuid request_id PK,FK
+    varchar service PK "learning|report"
+    timestamptz completed_at
+  }
+```
+
+`withdrawal_request.status_token_hash varchar NULL 허용`을 추가한다(신규 요청은 해시 필수). PROFILE 완료 후 student의 nickname/grade/birth_year는 NULL로 지우며, DELETED가 아닌 행의 필수 프로필은 CHECK로 보존한다. 재인증 challenge의 purpose/자녀/scope 조합도 CHECK한다.
+
+### 3.1.1 로그인 세션 (#36)
+
+```mermaid
+erDiagram
+  user_account ||--o{ auth_session : owns
+  auth_session ||--o{ refresh_token : rotates
+  auth_session {
+    uuid id PK
+    uuid user_id FK
+    varchar role "PARENT|STUDENT|ADMIN"
+    uuid student_id FK "NULL 허용 · STUDENT에만 필수"
+    bigint version
+    timestamptz expires_at
+    timestamptz revoked_at "NULL 허용"
+    timestamptz created_at
+  }
+```
+
+- `auth_session` CHECK: `version > 0`, `ck_auth_session_student`(role이 STUDENT면 `student_id` 필수, 그 외 역할은 NULL) (V8)
 
 ### 3.2 분석 대화·리포트 작업 (FN-AGT, FN-RPT)
 
@@ -167,6 +251,9 @@ erDiagram
   conversation_message ||--o{ message_evidence : cites
   student ||--o{ report_job : target
   user_account |o--o{ report_job : "재생성 요청자"
+  report_job ||--o| report_job_retry : original
+  report_job ||--o| report_job_retry : retry
+  user_account ||--o{ report_job_retry : requests
   user_account ||--o{ report_view : views
   user_account |o--o{ job_execution : "재처리 요청자"
 
@@ -184,31 +271,34 @@ erDiagram
     uuid conversation_id FK
     int seq
     text question
-    text answer "대조 통과한 확정 답변만"
-    uuid scope_student_id
-    date scope_from
-    date scope_to
+    text answer "NULL 허용 · 대조 통과한 확정 답변만"
+    uuid scope_student_id FK "NULL 허용"
+    date scope_from "NULL 허용"
+    date scope_to "NULL 허용"
     boolean scope_changed
     varchar status "QUEUED|RUNNING|COMPLETED|FAILED"
-    varchar source "LLM|LLM_RETRY|TEMPLATE"
-    jsonb clarification "범위 확인 질문·선택지"
-    jsonb metrics "Metric[]"
-    jsonb verification "numbersMatched, quotesMatched"
-    int record_count
-    varchar prompt_version
-    varchar model_version
-    varchar failure_code
+    varchar source "NULL 허용 · LLM|LLM_RETRY|TEMPLATE"
+    jsonb clarification "NULL 허용 · 범위 확인 질문·선택지"
+    jsonb fallback "NULL 허용 · 대체 사유와 초안 검증 결과"
+    jsonb notice "NULL 허용 · 기록 부족/지원 외 정상 안내"
+    jsonb metrics "NULL 허용 · Metric[]"
+    jsonb verification "NULL 허용 · numbersMatched, quotesMatched"
+    int record_count "NULL 허용"
+    varchar prompt_version "NULL 허용"
+    varchar model_version "NULL 허용"
+    varchar failure_code "NULL 허용"
     int retry_count
-    varchar trace_id
+    varchar trace_id "NULL 허용"
     timestamptz created_at
-    timestamptz completed_at
+    timestamptz completed_at "NULL 허용"
   }
   message_evidence {
     uuid id PK
     uuid message_id FK
     uuid attempt_id "learning 논리 참조"
-    uuid answer_id "learning 논리 참조"
-    int answer_version
+    uuid answer_id "NULL 허용 · ANSWER의 learning 논리 참조"
+    int answer_version "NULL 허용 · ANSWER 필수"
+    varchar kind "ANSWER|REFLECTION"
   }
   report_job {
     uuid id PK "= report.generate job_id"
@@ -216,15 +306,33 @@ erDiagram
     date period_from
     date period_to
     varchar trigger "SCHEDULE|REGENERATE|ADMIN_RETRY"
-    uuid requested_by FK "nullable"
+    uuid requested_by FK "NULL 허용"
     varchar status "QUEUED|RUNNING|COMPLETED|FAILED"
-    uuid report_id "report 논리 참조"
-    varchar failure_reason
+    uuid report_id "NULL 허용 · report 논리 참조"
+    varchar failure_reason "NULL 허용"
     int retry_count
-    varchar trace_id
+    varchar trace_id "NULL 허용"
     timestamptz created_at
-    timestamptz started_at
-    timestamptz completed_at
+    timestamptz started_at "NULL 허용"
+    timestamptz completed_at "NULL 허용"
+  }
+  report_job_retry {
+    uuid original_job_id PK,FK "원래 FAILED 작업, 원작업당 재처리 1개"
+    uuid retry_job_id FK,UK "새 ADMIN_RETRY 작업"
+    uuid requested_by FK
+    uuid idempotency_key "수행자와 복합 UNIQUE"
+    timestamptz accepted_at
+  }
+  conversation_job_retry {
+    uuid id PK
+    uuid message_id FK "삭제 시 CASCADE"
+    int generation
+    uuid requested_by FK
+    uuid idempotency_key
+    varchar status "QUEUED|RUNNING|COMPLETED|FAILED"
+    timestamptz accepted_at
+    timestamptz started_at "NULL 허용"
+    timestamptz finished_at "NULL 허용"
   }
   job_execution {
     uuid id PK
@@ -232,11 +340,11 @@ erDiagram
     uuid job_id "message·report_job·notification id"
     int attempt_no
     varchar status "RUNNING|COMPLETED|FAILED"
-    varchar error_code
-    text error_detail "원문·민감 정보 미포함"
-    uuid triggered_by FK "nullable, 관리자 재처리"
+    varchar error_code "NULL 허용"
+    text error_detail "NULL 허용 · 원문·민감 정보 미포함"
+    uuid triggered_by FK "NULL 허용 · 관리자 재처리"
     timestamptz started_at
-    timestamptz finished_at
+    timestamptz finished_at "NULL 허용"
   }
   report_view {
     uuid id PK
@@ -245,22 +353,23 @@ erDiagram
     timestamptz viewed_at
   }
   shedlock {
-    varchar name PK
+    varchar(64) name PK
     timestamptz lock_until
     timestamptz locked_at
-    varchar locked_by
+    varchar(255) locked_by
   }
 ```
 
 - `conversation_message` UK `(conversation_id, seq)`. 실패 메시지는 `FAILED`로 남기고 재시도 시 같은 행 상태 전이 (FN-AGT-10)
-- `message_evidence`는 ID만 저장, 원문은 근거 조회 시 learning에서 읽음 → 삭제된 기록이 core에 남지 않음 (FN-ACC-13)
+- `message_evidence`는 ID만 저장하고 원문은 learning에서 조회한다. 대화 본문에 포함된 인용·집계와 파일의 삭제 범위는 별도 P09 확인 대상이며, 근거 ID만으로 파생 내용의 삭제까지 보장하지 않는다 (FN-ACC-13)
 - 관리자 작업 목록(`/admin/jobs`)은 `conversation_message`·`report_job`·`notification`의 상태 컬럼을 조회 (FN-ADM-03)
 - `report_job` 상태 전이: `report.started` 수신 시 `QUEUED→RUNNING`, `report.completed|failed` 수신 시 종료 상태 + `report_id` 저장 (아키텍처 1.6 조건부 전이)
 - `report_job` 부분 UK `(student_id, period_from) WHERE trigger = 'SCHEDULE'` → 정기 생성 중복 방지. 재생성·재처리는 새 행 (FN-RPT-01, 12)
 - `job_execution`: 작업 실행 1회당 1행, UK `(job_type, job_id, attempt_no)`. 관리자 실패 원인·처리 이력 조회 근거 (FN-ADM-07)
 - `report_view`: 학부모 리포트 상세 조회 시 기록, 주간 리포트 열람률 지표 근거 (기획서 3.9)
 - `clarification`이 있는 메시지는 범위 확인 후 종료된 질문, 사용자 선택은 다음 메시지의 `scope_*`에 저장 (FN-AGT-03)
-- `shedlock`은 ShedLock 기본 스키마 (주간 리포트·정기 청구 스케줄)
+- `shedlock`은 name varchar(64) PK, lock_until·locked_at timestamptz, locked_by varchar(255), 모두 NOT NULL (주간 리포트·정기 청구 스케줄).
+- `conversation_message.scope_student_id`는 같은 core DB의 `student.id` FK. 미확정 범위·처리 중 출력은 NULL로 두며 임시 결과를 채우지 않는다.
 
 ### 3.3 알림·신고·문의·공지 (FN-SUP)
 
@@ -277,59 +386,73 @@ erDiagram
   notification {
     uuid id PK
     uuid user_id FK
-    uuid child_id FK "nullable"
-    varchar type "REPORT_COMPLETED|ERROR_REPORT_RESOLVED|INQUIRY_ANSWERED|PAYMENT_CHANGED|SUBSCRIPTION_CHANGED"
+    uuid child_id FK "NULL 허용"
+    varchar type "REPORT_COMPLETED|REPORT_FAILED|ERROR_REPORT_RESOLVED|INQUIRY_ANSWERED|PAYMENT_CHANGED|SUBSCRIPTION_CHANGED"
     uuid source_event_id "사건 ID"
     varchar title "원문·결제 민감 정보 미포함"
     varchar link "상세 화면 경로"
     varchar status "QUEUED|RUNNING|COMPLETED|FAILED"
     int retry_count
-    varchar failure_reason
-    timestamptz read_at
+    varchar failure_reason "NULL 허용"
+    timestamptz read_at "NULL 허용"
     timestamptz created_at
   }
   notification_setting {
     uuid user_id PK,FK
     varchar type PK
-    varchar channel PK "IN_APP|EMAIL|PUSH [P10]"
+    varchar channel PK "CHECK[IN_APP] (P10)"
     boolean enabled
     timestamptz updated_at
   }
   error_report {
     uuid id PK
     uuid reporter_user_id FK
-    uuid student_id FK "nullable"
+    varchar requester_role "NULL 허용 · STUDENT|PARENT, legacy 미추정"
+    uuid requester_student_id FK "NULL 허용 · 학생 요청 주체"
+    uuid attempt_id "NULL 허용 · 검증한 learning 시도"
+    uuid submission_key "NULL 허용 · 접수 중복 방지"
+    uuid student_id FK "NULL 허용"
     varchar target_type "FOLLOWUP|JUDGMENT|ANALYSIS|REPORT"
     uuid target_id "learning·core·report 논리 참조"
-    varchar category "[P10]"
-    text comment
+    varchar category "WRONG_JUDGMENT|ODD_QUESTION|MISMATCH|INAPPROPRIATE|OTHER (P10)"
+    text comment "NULL 허용"
     varchar status "RECEIVED|IN_REVIEW|RESOLVED"
-    text review_result
-    text resolution_reason
-    uuid reviewed_by FK
+    text review_result "NULL 허용"
+    text resolution_reason "NULL 허용"
+    uuid reviewed_by FK "NULL 허용"
     timestamptz created_at
-    timestamptz resolved_at
+    timestamptz resolved_at "NULL 허용"
   }
   correction {
     uuid id PK
     uuid error_report_id FK
+    uuid request_key "NULL 허용 · 기존 이력 보존"
+    varchar corrected "NULL 허용 · CORRECT|PARTIAL|RETHINK|HELD"
+    varchar previous_result "NULL 허용"
+    varchar processing_status "NULL 허용 · PENDING|FAILED|COMPLETED"
+    jsonb provider_result "NULL 허용 · 공급자 처리 결과"
+    timestamptz completed_at "NULL 허용"
     varchar target_type
     uuid target_id
     text reason
-    jsonb impact "대화·집계·리포트 반영 여부"
+    jsonb impact "NULL 허용 · 대화·집계·리포트 반영 여부"
     uuid corrected_by FK
     timestamptz created_at
   }
   inquiry {
     uuid id PK
     uuid user_id FK
+    varchar requester_role "NULL 허용 · STUDENT|PARENT, legacy 미추정"
+    uuid student_id FK "NULL 허용 · 대상 학생"
+    uuid requester_student_id FK "NULL 허용 · 학생 요청 주체"
+    uuid attempt_id "NULL 허용 · 검증한 learning 시도"
     varchar category "ACCOUNT|USAGE|PAYMENT"
     varchar title
     text body
     varchar status "RECEIVED|IN_REVIEW|RESOLVED"
-    text answer
-    uuid answered_by FK
-    timestamptz answered_at
+    text answer "NULL 허용"
+    uuid answered_by FK "NULL 허용"
+    timestamptz answered_at "NULL 허용"
     timestamptz created_at
   }
   notice {
@@ -339,18 +462,22 @@ erDiagram
     text body
     jsonb target_roles
     timestamptz visible_from
-    timestamptz visible_to
+    timestamptz visible_to "NULL 허용"
     uuid created_by FK
     timestamptz created_at
-    timestamptz ended_at
+    timestamptz ended_at "NULL 허용"
   }
 ```
 
+- #44: V12는 notification·notification_setting의 type CHECK에 REPORT_FAILED를 추가한다. V9는 #45, V13은 #58의 student_device_auth. 기존 마이그레이션은 수정하지 않는다. 알림 status는 Redis 발행 상태이며 읽음은 read_at으로 별도 관리한다.
 - `notification` UK `(user_id, type, source_event_id)` → 같은 사건 재처리 시 중복 생성 방지 (FN-SUP-08)
 - 판정 정정 원본은 learning `judgment_correction`, core `correction`은 신고 단위 정정 사유·영향 범위 기록 (FN-SUP-03)
 - 도움말(`/help`)은 정적 콘텐츠로 테이블 없음
 
 ### 3.4 결제·구독 (FN-PAY) — 토스페이먼츠 테스트
+
+#48: 무료 상품 버전은 PAYMENT_FREE_PRODUCT_ID로 지정한다(2026-10-28 사용자 확정). 상품·주문·구독 조건은 snapshot으로 보존한다. V15의 payment_charge_attempt는 논리 주문당 확정 실패 재청구 이력을 분리하며 `(order_id,attempt_no)`·pg_order_no·멱등키 UK를 갖는다. 기존 정기 주문 기간 UK는 유지한다. subscription.billing_anchor_day는 최초 일자를 보존한다. payment_premium_usage는 환불과 경합하는 사용 예약·완료 증빙을 소유한다. 상세 경계는 [보고서](../report/issue-48-payments.md)를 따른다.
+
 
 ```mermaid
 erDiagram
@@ -364,41 +491,65 @@ erDiagram
   payment_order ||--o| payment : "승인"
   payment ||--o{ refund_request : refunds
 
+  payment_charge_attempt {
+    uuid id PK
+    uuid order_id FK
+    int attempt_no
+    varchar pg_order_no UK
+    uuid idempotency_key UK
+    varchar status "CONFIRMING|APPROVED|FAILED|CANCELED"
+    varchar payment_key "NULL 허용"
+    varchar failure_code "NULL 허용"
+    timestamptz started_at
+    timestamptz updated_at
+  }
+  payment_premium_usage {
+    uuid id PK
+    uuid student_id FK
+    uuid subscription_id FK
+    varchar kind "FEEDBACK|CONVERSATION|REPORT_VIEW"
+    uuid source_id
+    varchar status "RESERVED|USED|FAILED"
+    timestamptz created_at
+    timestamptz updated_at
+  }
   product {
     uuid id PK
-    varchar code UK "BASIC|PLUS"
+    varchar code UK "상품 행별 고유 코드, 초기 FREE, PREMIUM 등 (P13); 고정 enum 아님"
     varchar name
-    int price "원, [P13]"
+    int price "원, FREE = 0, PREMIUM = 14900 (P13)"
     varchar billing_cycle "MONTHLY|YEARLY"
     int child_limit
     jsonb features
+    jsonb limits "dailyMissions, dailyFeedback, dailyConversations, reportNarrative (P13)"
     boolean active
     timestamptz created_at
   }
   payment_order {
     uuid id PK
-    varchar order_no UK "PG orderId"
+    varchar order_no UK "논리 주문 ID, PG 주문은 charge attempt에 보존"
     uuid parent_user_id FK
     uuid student_id FK
     uuid product_id FK
-    uuid subscription_id FK "최초 결제는 구독 생성 후 연결"
+    uuid subscription_id FK "NULL 허용 · 최초 결제는 구독 생성 후 연결"
     varchar kind "INITIAL|RENEWAL"
-    date billing_period_start "갱신 청구 대상 기간"
+    date billing_period_start "NULL 허용 · 갱신 청구 대상 기간"
     int amount
-    varchar trace_id
+    jsonb product_snapshot "NULL 허용 · 과거 거래는 승인된 backfill 필요"
+    varchar trace_id "NULL 허용"
     timestamptz created_at
   }
   payment {
     uuid id PK
     uuid order_id FK,UK
-    varchar payment_key UK "PG paymentKey"
+    varchar payment_key UK "NULL 허용 · PG paymentKey"
     int amount "승인 금액"
     varchar status "APPROVED|CONFIRMING|FAILED|CANCELED|REFUND_REVIEW|REFUNDED"
-    varchar method "결제수단 종류만"
-    varchar entitlement_status "APPLIED|RECOVERY_REQUIRED"
-    varchar failure_code
-    timestamptz approved_at
-    timestamptz canceled_at
+    varchar method "NULL 허용 · 결제수단 종류만"
+    varchar entitlement_status "NULL 허용 · APPLIED|RECOVERY_REQUIRED"
+    varchar failure_code "NULL 허용"
+    timestamptz approved_at "NULL 허용"
+    timestamptz canceled_at "NULL 허용"
     timestamptz updated_at
   }
   subscription {
@@ -409,14 +560,18 @@ erDiagram
     varchar status "ACTIVE|RENEWAL_FAILED|CANCELED"
     date period_start
     date period_end
-    date next_billing_date
+    jsonb product_snapshot "NULL 허용 · 과거 구독은 승인된 backfill 필요"
+    int billing_anchor_day "NULL 허용 · 최초 결제일 일자"
+    bigint revision "빌링 발급 중 해지/변경을 감지하는 단조 증가 버전"
+    date last_billing_attempt_date "NULL 허용"
+    date next_billing_date "NULL 허용"
     boolean auto_renew
-    varchar customer_key "PG customerKey"
-    varchar billing_key_enc "암호화 저장"
-    int renewal_retry_count "[P13]"
-    date grace_until "이용 제한 예정일 [P13]"
-    timestamptz auto_renew_canceled_at "자동 갱신 해지 요청"
-    timestamptz canceled_at "해지 효력 [P14]"
+    varchar customer_key "NULL 허용 · PG customerKey"
+    varchar billing_key_enc "NULL 허용 · 암호화 저장"
+    int renewal_retry_count "NULL 허용 · 최대 3 (P13)"
+    date grace_until "NULL 허용 · 갱신 실패일 + 3일 (P13)"
+    timestamptz auto_renew_canceled_at "NULL 허용 · 자동 갱신 해지 요청"
+    timestamptz canceled_at "NULL 허용 · 해지 효력 (period_end 경과·환불 완료 시점, P14)"
     timestamptz created_at
     timestamptz updated_at
   }
@@ -427,28 +582,34 @@ erDiagram
     int amount
     text reason
     varchar status "REQUESTED|APPROVED|REJECTED|COMPLETED|FAILED"
-    uuid decided_by FK
-    text reject_reason
-    varchar pg_status
-    timestamptz decided_at
+    uuid decided_by FK "NULL 허용"
+    uuid cancel_key UK "NULL 허용"
+    timestamptz usage_verified_at "NULL 허용"
+    text reject_reason "NULL 허용"
+    varchar pg_status "NULL 허용"
+    timestamptz decided_at "NULL 허용"
     timestamptz created_at
   }
   pg_webhook_event {
     uuid id PK
     varchar transmission_id UK "PG 통지 ID"
     varchar event_type
-    varchar order_no
+    varchar order_no "NULL 허용"
     varchar result "APPLIED|IGNORED|FAILED"
     timestamptz received_at
-    timestamptz processed_at
+    timestamptz processed_at "NULL 허용"
   }
 ```
 
 - `subscription` 부분 UK `(student_id) WHERE status IN ('ACTIVE','RENEWAL_FAILED')` → 같은 자녀 중복 구독 409 (FN-PAY-02)
+- 유효 구독이 없는 자녀는 무료 플랜, 한도는 `PAYMENT_FREE_PRODUCT_ID`로 지정한 활성 0원 product의 limits (P13, #48 확정)
+- 가격·한도 변경은 기존 `product` 행 수정 대신 새 행 추가 후 기존 행 `active = false`. 기존 구독은 `product_id`·`payment_order.amount`로 결제 당시 조건 유지 (P13)
 - 승인 처리 순서: `payment_order.amount`·대상 자녀 대조 → PG 승인 → `payment` 저장 → 구독 생성·반영 → `payment_order.subscription_id` 연결. 반영 실패 시 `entitlement_status = RECOVERY_REQUIRED` (FN-PAY-03, 05)
 - `payment_order` 부분 UK `(subscription_id, billing_period_start) WHERE kind = 'RENEWAL'` → 정기 청구 중복 실행 시 이중 청구 방지 (FN-PAY-06, NFR-REL-01)
-- 자동 갱신 해지는 `auto_renew = false` + `auto_renew_canceled_at` 기록, 남은 기간 이후 `status = CANCELED` + `canceled_at` (FN-PAY-09)
-- 갱신 실패 시 `RENEWAL_FAILED` + `renewal_retry_count`·`grace_until` 갱신, 재시도 횟수·유예 기간 값은 `[P13]` (FN-PAY-08)
+- 자동 갱신 해지는 `auto_renew = false` + `auto_renew_canceled_at` 기록, 남은 기간 이후 `status = CANCELED` + `canceled_at`. `period_end` 전 해지 철회 시 `auto_renew = true`, `auto_renew_canceled_at = NULL` (FN-PAY-09, P14)
+- 환불 완료(`payment.status = REFUNDED`) 시 구독 즉시 `CANCELED` + `canceled_at` (P14)
+- 갱신 실패 시 `RENEWAL_FAILED` + `grace_until = 실패일 + 3일`, 매일 1회 재청구마다 `renewal_retry_count + 1`, 3회 실패 시 `CANCELED` (FN-PAY-08, P13)
+- 재청구 주문: 같은 기간 부분 UK 때문에 기존 `RENEWAL` 주문으로 재청구하는 것으로 가정. 토스 자동결제의 `orderId` 재사용 가능 여부 확인 후 확정 (기술 확인 사항)
 - 웹훅은 `transmission_id`로 1회만 반영, 본문 대신 PG 조회 결과로 상태 갱신 (FN-PAY-04)
 - 환불 중복·초과 방지: 승인된 `refund_request.amount` 합계 ≤ `payment.amount` 검사 (FN-ADM-16)
 - 카드번호 등 결제수단 원본 미저장, 빌링키는 암호화 (NFR-SEC-06)
@@ -463,14 +624,14 @@ erDiagram
   model_version {
     uuid id PK
     varchar kind "RUBRIC|MODEL|PROMPT|GENERATION"
-    varchar name "judge, m2-klue 등"
+    varchar name "judge, m2-klue-narrative, m2-klue-essay 등"
     varchar version
-    uuid ref_id "RUBRIC이면 learning rubric_version"
-    varchar artifact_uri "S3 가중치 경로"
-    jsonb eval_result "승인 근거 평가"
+    uuid ref_id "NULL 허용 · RUBRIC이면 learning rubric_version"
+    varchar artifact_uri "NULL 허용 · S3 가중치 경로"
+    jsonb eval_result "NULL 허용 · 승인 근거 평가"
     varchar status "REGISTERED|ACTIVE|INACTIVE"
-    uuid approved_by FK
-    timestamptz activated_at
+    uuid approved_by FK "NULL 허용"
+    timestamptz activated_at "NULL 허용"
     timestamptz created_at
   }
   audit_log {
@@ -478,24 +639,24 @@ erDiagram
     uuid actor_user_id FK
     varchar action "MISSION_PUBLISH, JOB_RETRY, MODEL_ACTIVATE 등"
     varchar target_type
-    uuid target_id
+    uuid target_id "NULL 허용"
     varchar result "SUCCESS|FAILURE"
-    jsonb detail "주요 변경 내용, 재분석 여부"
+    jsonb detail "NULL 허용 · 주요 변경 내용, 재분석 여부"
     timestamptz created_at
   }
   llm_usage {
     uuid id PK
     uuid event_id UK "llm.usage.recorded id"
     varchar service "ai|scoring"
-    varchar call_type "JUDGMENT|FOLLOWUP|ANALYSIS|REPORT_NARRATIVE|M2|M1|SPEECH"
+    varchar call_type "JUDGMENT|FOLLOWUP|ANALYSIS|REPORT_NARRATIVE|M2|M1"
     varchar model
-    varchar prompt_version
-    int input_tokens
-    int output_tokens
+    varchar prompt_version "NULL 허용"
+    int input_tokens "NULL 허용"
+    int output_tokens "NULL 허용"
     int latency_ms
-    numeric cost_usd "소비 시점 단가 기준"
+    numeric cost_usd "NULL 허용 · 소비 시점 단가 기준"
     boolean success
-    varchar error_code
+    varchar error_code "NULL 허용"
     timestamptz occurred_at
   }
   outbox_event {
@@ -505,31 +666,44 @@ erDiagram
     varchar subject "학생 ID 등"
     jsonb payload
     timestamptz created_at
-    timestamptz published_at
+    timestamptz published_at "NULL 허용"
   }
   processed_event {
     uuid event_id PK
     varchar event_type
     timestamptz processed_at
   }
+  event_log {
+    uuid event_id PK "CloudEvents id"
+    varchar event_type
+    varchar source
+    varchar subject "NULL 허용 · 학생 ID 등"
+    timestamptz event_time "봉투 time"
+    timestamptz received_at "감사 큐 수신 시각"
+  }
   idempotency_record {
     uuid idempotency_key PK
-    uuid user_id PK
+    uuid user_id PK,FK
     varchar endpoint
     varchar request_hash
-    int response_status
-    jsonb response_body
+    int response_status "NULL 허용"
+    jsonb response_body "NULL 허용"
     timestamptz created_at
-    timestamptz expires_at "[P12]"
+    timestamptz expires_at "NULL 허용 · created_at + 24시간 (P12)"
   }
 ```
 
 - `model_version` UK `(kind, name, version)`, 부분 UK `(kind, name) WHERE status = 'ACTIVE'`. 롤백은 이전 버전 재활성화 + `audit_log` 기록 (FN-ADM-18)
+- #43 `eval_result`는 API 5.2의 불변 평가 근거·최초 승인과 현재 적용 범위·그룹 revision을 저장한다. DDL·기존 ACTIVE 부분 UK는 유지한다. 교체는 동일 그룹 transaction advisory lock 이후 상태·감사·Outbox를 원자적으로 저장한다.
 - 기준표 원본은 learning `rubric_version`, core는 `kind = RUBRIC` 행의 `ref_id`로 연결해 승인·활성 상태만 관리
 - `llm_usage`에 학생 ID·답변 원문 컬럼 없음 (NFR-PRF-02). 수집 데이터 보고서의 예정 필드 `llm_usage_log(call_type, model, input_tokens, output_tokens, ts)` 대응
 - `cost_usd`는 core 설정의 모델별 토큰 단가(기획서 3.9)로 소비 시 계산, 단가 변경 후에도 과거 값 유지 (FN-ADM-19)
 - `outbox_event`: 상태 변경과 같은 트랜잭션에 저장, 릴레이가 publisher confirm 후 `published_at` 기록 (아키텍처 1.6)
+- #208 `event_log`: 감사 큐 `core.event.audit`로 받은 모든 업무 메시지(ai·scoring 발행 포함)의 메타데이터. payload·원문은 저장하지 않음. 같은 id 재발행·재전달은 첫 행 유지. `outbox_event`·`processed_event`·`llm_usage`와 `event_id`로 조인해 발행·전달·소비를 추적 ([보고서](../report/issue-208-event-log.md))
+- #208 보존: 발행 완료 `outbox_event`, `processed_event`, `event_log`는 90일 뒤 1시간 주기로 삭제(`app.messaging.event-retention-days`). 미발행 outbox 행은 삭제하지 않음. `llm_usage`·`job_execution`은 정리 대상이 아님
+- `idempotency_record.user_id`는 core `user_account.id` FK. 요청 접수 후 응답 확정 전에는 response_status·response_body를 NULL로 둔다. expires_at은 created_at + 24시간이다 (P12).
 - `idempotency_record`: 공개 API의 `Idempotency-Key` 대상(답변 제출·주문·승인·환불·재처리·신고) 공통. 같은 키·다른 본문은 `request_hash` 불일치로 422 (API 1.4)
+- #38의 response_body는 원문 보존용 JSON 봉투 `{body: base64, headers: {이름: [값]}}`다. response_status가 NULL이면 미확정이며 봉투도 NULL이다. expires_at은 DB 시계 기준 24시간이며 만료 행은 같은 키 접수 시와 주기 청소에서 제거한다. 세션 advisory lock은 테이블을 추가하지 않으며 사용자·키 해시로 잠근다. endpoint에는 메서드와 실제 공개 경로를 저장한다.
 
 ---
 
@@ -549,14 +723,16 @@ erDiagram
     uuid id PK
     varchar code UK
     varchar status "DRAFT|REVIEW_REQUIRED|PUBLISHED|UNPUBLISHED"
-    uuid current_version_id FK
-    uuid current_rubric_version_id FK
+    uuid current_version_id FK "NULL 허용 · 편집 중 최신"
+    uuid current_rubric_version_id FK "NULL 허용 · 편집 중 최신"
+    uuid published_version_id FK "NULL 허용 · 학생에게 제공하는 공개 버전"
+    uuid published_rubric_version_id FK "NULL 허용 · 공개 기준표 버전"
     boolean demo_only "시연 전용"
     int sort_order "목록 순서·이전·다음"
     uuid created_by "core 사용자"
     timestamptz created_at
     timestamptz updated_at
-    timestamptz published_at
+    timestamptz published_at "NULL 허용"
   }
   mission_version {
     uuid id PK
@@ -567,15 +743,17 @@ erDiagram
     int grade_min
     int grade_max
     varchar thinking_type "ANALYZE|EVALUATE|CREATE|SOLVE|REFLECT"
-    jsonb basic_skills "비교·분류·순서·규칙·원인과 결과·추론"
+    jsonb basic_skills "NULL 허용 · 비교·분류·순서·규칙·원인과 결과·추론"
     varchar input_type "CHOICE|ORDERING|CLASSIFICATION|NARRATIVE|SOLUTION_STEPS|ESSAY"
     text question
-    text guide
-    varchar scene_uri "S3 애니메이션"
-    varchar static_scene_uri "움직임 줄이기"
-    jsonb choices
-    jsonb input_template "풀이 단계·논술 틀"
-    jsonb achievement_standards "성취기준 코드"
+    text guide "NULL 허용"
+    varchar scene_uri "NULL 허용 · S3 애니메이션"
+    varchar static_scene_uri "NULL 허용 · 움직임 줄이기"
+    jsonb choices "NULL 허용"
+    jsonb categories "NULL 허용 · 분류 그룹 [{id, label}]"
+    varchar answer_unit "NULL 허용 · 수학 최종 답 단위, 답 칸 뒤 고정 표시"
+    jsonb input_template "NULL 허용 · 풀이 단계·논술 틀"
+    jsonb achievement_standards "NULL 허용 · 성취기준 코드"
     uuid created_by
     timestamptz created_at
   }
@@ -583,20 +761,20 @@ erDiagram
     uuid id PK
     uuid mission_id FK
     int version
-    jsonb answer_key "정답·동치 표현"
-    text example_answer
-    jsonb forbidden_terms "되묻기 유출 검사 금지어"
+    jsonb answer_key "NULL 허용 · 정답·동치 표현"
+    text example_answer "NULL 허용"
+    jsonb forbidden_terms "NULL 허용 · 되묻기 유출 검사 금지어"
     uuid created_by
     timestamptz created_at
   }
   rubric_element {
     uuid id PK
     uuid rubric_version_id FK
-    varchar code "e1"
+    varchar code "e1 · FINAL_ANSWER는 수학 최종 답 요소"
     varchar label
-    text description
+    text description "NULL 허용"
     int points
-    jsonb common_errors
+    jsonb common_errors "NULL 허용"
     boolean good_thought "들어가면 좋은 생각"
     boolean judge_verified "AI 판정 검증 통과"
     int sort_order
@@ -614,16 +792,18 @@ erDiagram
     uuid rubric_version_id FK
     uuid reviewer_id "core 사용자"
     varchar result "APPROVED|CHANGES_REQUESTED"
-    text comment
+    text comment "NULL 허용"
     timestamptz created_at
   }
 ```
 
 - `mission_version`·`rubric_version` UK `(mission_id, version)`. 수정은 새 버전 추가 후 `mission.current_*` 갱신, 이전 버전 불변 (FN-ADM-10, 12)
-- 공개(`PUBLISHED`) 전 필수 항목 검사: 현재 미션·기준표 버전 존재, 기준표 요소 1개 이상(서술·논술) 또는 `answer_key`(고르기·수학) (FN-ADM-11)
+- 공개 버전(#145, P07): 학생 목록·상세·시도 시작은 `published_*`, 관리자 편집은 `current_*`. 게시 때 `published_*` ← `current_*`라 공개 중 수정본은 재검토·재게시 전까지 학생에게 보이지 않음. learning V7이 칸을 추가하고 기존 `PUBLISHED` 미션은 `current_*`로 채움
+- 공개(`PUBLISHED`) 전 필수 항목 검사(FN-ADM-11, #145): 현재 미션·기준표 버전 존재, 제목·질문·교과·성취기준, 학년 3~6(논술 5~6), **기준표 요소 1개 이상(입력 방식 무관, 구 #81)**·요소 이름·양의 배점, 풀이 단계는 `FINAL_ANSWER` 외 요소 1개 이상·`FINAL_ANSWER`는 풀이 단계만, 고르기·순서·분류는 선택지(분류는 그룹), 서술·논술이 아니면 `answer_key`(입력 방식 모양), 서술·논술은 `example_answer`, 현재 버전 최신 검토 `APPROVED`. 누락은 `422 MISSION_PUBLISH_INCOMPLETE` + `missingFields`(class-diagram 4.1)
 - `mission.sort_order`: 학년군 안의 목록 순서, 이전·다음 이동과 진행 위치 계산 (FN-LRN-02)
-- `rubric_element.judge_verified = false` 요소는 AI 판정 시 충족 표시 금지 → `HELD (UNVERIFIED_SCOPE)`. 평가 통과 후 관리자가 갱신 (FN-JDG-04, 05, NFR-AIQ-01)
+- `rubric_element.judge_verified = false` 요소는 AI 판정 시 충족 표시 금지 → `HELD (UNVERIFIED_SCOPE)`. 평가 통과 후 관리자가 갱신 (FN-JDG-04, 05, NFR-AIQ-01). 사람 검증(P11) 도입 전에는 ai `JUDGE_REQUIRE_VERIFIED=false`(기본)로 끄고 `trial = true`로 시범 표시
 - `forbidden_terms`: 정답 키와 함께 ai `followups` 유출 검사 입력 (FN-JDG-06)
+- #79: V6는 `mission_version`에 `categories`(분류 그룹, `answer_key.assignments`의 `categoryId`가 가리킴)·`answer_unit`(수학 최종 답 단위)을 추가한다. 기존 마이그레이션은 수정하지 않는다. 수학 `answer_key.finalAnswer`는 수만 담고 단위는 비교하지 않는다(FN-JDG-02). 풀이 단계 기준표의 `code = 'FINAL_ANSWER'` 요소는 ai에 보내지 않고 정답 키로 충족을 정한다
 - AI Hub 문항·답안·피드백 원문은 어떤 컬럼에도 저장하지 않음 (FN-ADM-09)
 
 ### 4.2 학습 시도·답변·판정 (FN-LRN, FN-JDG)
@@ -644,6 +824,7 @@ erDiagram
   rubric_element ||--o{ judgment_element : "기준 요소"
   judgment ||--o| followup : generates
   attempt ||--o{ followup : timeline
+  followup_bank_question |o--o{ followup : "질문 은행 (P16)"
   judgment ||--o{ judgment_correction : corrected
   attempt ||--o| reflection : reflects
   attempt ||--o{ self_assessment : "자기 체크"
@@ -658,14 +839,14 @@ erDiagram
     int grade "시작 당시 학년"
     varchar status "IN_PROGRESS|COMPLETED"
     timestamptz started_at
-    timestamptz finished_at "마무리·정답 공개"
-    timestamptz completed_at "돌아보기 저장"
+    timestamptz finished_at "NULL 허용 · 마무리·정답 공개"
+    timestamptz completed_at "NULL 허용 · 돌아보기 저장"
     timestamptz updated_at
   }
   attempt_draft {
     uuid attempt_id PK,FK
     int version "ETag"
-    jsonb content
+    jsonb content "answer, memo (P05)"
     timestamptz saved_at
   }
   hint_usage {
@@ -678,13 +859,12 @@ erDiagram
     uuid id PK
     uuid attempt_id FK
     int version "1 = 최초 답변"
-    uuid followup_id FK "보완 답변이 답한 되묻기"
-    uuid previous_answer_id FK
+    uuid followup_id FK "NULL 허용 · 보완 답변이 답한 되묻기"
+    uuid previous_answer_id FK "NULL 허용"
     varchar input_type
-    jsonb content "text, essay, choiceIds"
-    text plain_text "인용 대조용 원문"
+    jsonb content "text, essay, choiceIds, finalAnswer, steps, assignments"
+    text plain_text "NULL 허용 · 인용 대조용 원문"
     boolean dictated_by_guardian
-    boolean speech_transcribed "음성 시범, 판정 제외"
     uuid idempotency_key
     timestamptz submitted_at
   }
@@ -692,29 +872,29 @@ erDiagram
     uuid id PK
     uuid answer_id FK,UK
     varchar process_status "PENDING|RUNNING|DONE|FAILED"
-    timestamptz lease_until "RUNNING 리스 [P12]"
-    varchar result "CORRECT|PARTIAL|RETHINK|HELD"
-    varchar held_reason "INSUFFICIENT_EVIDENCE|QUOTE_MISMATCH|TOO_SHORT|UNVERIFIED_SCOPE|MODEL_DISAGREEMENT|LOW_CONFIDENCE"
-    varchar method "RULE|LLM"
-    boolean trial "AI 채점(시범)"
-    jsonb model_scores "M2·M1 결과(AI 관찰)"
+    timestamptz lease_until "NULL 허용 · RUNNING 리스, 획득 시각 + 90초 (P12)"
+    varchar result "NULL 허용 · CORRECT|PARTIAL|RETHINK|HELD"
+    varchar held_reason "NULL 허용 · INSUFFICIENT_EVIDENCE|QUOTE_MISMATCH|TOO_SHORT|UNVERIFIED_SCOPE|MODEL_DISAGREEMENT|LOW_CONFIDENCE"
+    varchar method "NULL 허용 · RULE|LLM"
+    boolean trial "NULL 허용 · AI 채점(시범)"
+    jsonb model_scores "NULL 허용 · M2·M1 결과(AI 관찰)"
     uuid rubric_version_id FK
-    varchar model_version
-    varchar prompt_version
-    varchar failure_code
+    varchar model_version "NULL 허용"
+    varchar prompt_version "NULL 허용"
+    varchar failure_code "NULL 허용"
     int retry_count
-    varchar trace_id
+    varchar trace_id "NULL 허용"
     timestamptz created_at
-    timestamptz completed_at
+    timestamptz completed_at "NULL 허용"
   }
   judgment_element {
     uuid id PK
     uuid judgment_id FK
     uuid rubric_element_id FK
-    text quote "LLM 추출 구절"
+    text quote "NULL 허용 · LLM 추출 구절"
     boolean verified "코드 원문 대조"
     boolean satisfied
-    varchar source_type "RECORD|RULE|ANSWER_KEY|AI_OBSERVATION"
+    varchar source_type "NULL 허용 · RECORD|RULE|ANSWER_KEY|AI_OBSERVATION"
   }
   followup {
     uuid id PK
@@ -722,10 +902,18 @@ erDiagram
     uuid judgment_id FK,UK
     varchar type "ONE_STEP_MORE|TELL_MORE|LOOK_AGAIN"
     text question
-    varchar source "LLM|LLM_RETRY|BANK|TEMPLATE"
+    varchar source "LLM|LLM_RETRY|BANK (P16)"
+    uuid bank_question_id FK "NULL 허용 · source = BANK일 때"
     boolean leak_check_passed
-    varchar prompt_version
-    varchar model_version
+    varchar prompt_version "NULL 허용"
+    varchar model_version "NULL 허용"
+    timestamptz created_at
+  }
+  followup_bank_question {
+    uuid id PK
+    varchar type "ONE_STEP_MORE|TELL_MORE|LOOK_AGAIN"
+    text question "미션 무관 중립 질문"
+    boolean active
     timestamptz created_at
   }
   judgment_correction {
@@ -742,8 +930,8 @@ erDiagram
   reflection {
     uuid id PK
     uuid attempt_id FK,UK
-    varchar difficulty "EASY|NORMAL|HARD"
-    text changed_text "달라진 점"
+    varchar difficulty "NULL 허용 · EASY|NORMAL|HARD"
+    text changed_text "NULL 허용 · 달라진 점"
     timestamptz created_at
   }
   self_assessment {
@@ -759,13 +947,18 @@ erDiagram
 - `attempt`는 시작 시점의 미션·기준표 버전을 고정 → 기준 변경 후에도 과거 결과 재현 (NFR-DAT-02)
 - `attempt_draft`는 시도당 1행, `UPDATE ... WHERE version = :ifMatch` 실패 시 409 (FN-LRN-17)
 - `answer` UK `(attempt_id, version)`, `(attempt_id, idempotency_key)`. 수정·삭제 없이 추가만 (FN-LRN-08~10)
-- `speech_transcribed = true` 답변은 판정하지 않음 (FN-LRN-18, 범위 `[P03]`)
+- `followup`은 시도당 최대 2행 (P04). 고르기 `CORRECT`면 생성하지 않음
+- `followup_bank_question`은 ai 유출 검사 재실패 시 learning이 `type`이 같은 활성 질문 중 선택, 시드 데이터로 관리 (P16)
+- `attempt_draft.content.memo`는 학생 본인 조회에만 사용, 판정·리포트·학부모 조회 대상 아님 (P05)
 - `judgment`는 답변 제출 시 `PENDING`으로 함께 생성. 피드백 요청 시 `PENDING|FAILED|리스 만료 RUNNING → RUNNING` 조건부 전이 (API 1.4)
 - 판정 보류는 `result = HELD`, 처리 실패는 `process_status = FAILED` → 서로 다른 컬럼 (NFR-REL-04)
-- `judgment_element` UK `(judgment_id, rubric_element_id)`. `verified = false`면 `satisfied = true` 금지 (CHECK, FN-JDG-03)
+- `judgment_element` UK `(judgment_id, rubric_element_id)`. verified·satisfied는 NOT NULL이며 CHECK (verified OR NOT satisfied)로 미검증 충족을 금지한다. 근거가 없으면 quote·source_type은 NULL 가능 (API 3.2, FN-JDG-03).
+- `judgment.result`는 process_status = DONE일 때만 NOT NULL (상태 다이어그램 3.3). result = HELD이면 held_reason 필수, 그 외에는 NULL. 규칙 판정의 model_version·prompt_version은 NULL 가능.
+- `answer.input_type`은 mission_version.input_type과 같은 코드 집합을 CHECK한다. notification_setting.type은 notification.type, correction.target_type은 error_report.target_type과 같은 집합이다.
 - 정정은 `judgment`를 직접 바꾸지 않고 `judgment_correction` 추가, 최신 정정을 조회 시 반영 (FN-SUP-03)
+  - `previous`·`corrected`는 `{"result": "PARTIAL"}` 모양. `previous`는 정정 직전에 보이던 결과(앞선 정정이 있으면 그 결과), 최신 정정은 `created_at` 가장 늦은 행 (#80)
 - `self_assessment` UK `(attempt_id, rubric_element_id)`. AI 판정·원본 답변과 별도 저장 (FN-LRN-13)
-- 도움 이용 비율 집계 근거 = `hint_usage.opened_at` vs 최초 `answer.submitted_at` (집계 규칙 `[P08]`)
+- 도움 이용 비율 집계 근거 = `hint_usage.opened_at` vs 최초 `answer.submitted_at` (최초 답변 전 열람 없는 시도 / 집계 대상 시도, P08)
 
 ### 4.3 삭제·공통
 
@@ -784,8 +977,11 @@ erDiagram
   }
 ```
 
-- `student.deleted` 소비: 해당 학생 `attempt` 이하 기록 삭제 + `deleted_student` 저장 → 근거 조회 시 `available: false` (삭제 방식 `[P09]`)
+- `student.deleted` 소비: 해당 학생 `attempt` 이하 기록 삭제 + `deleted_student` 저장 → 근거 조회 시 `available: false` (물리 삭제 + 표식, P09). 처리 완료는 core 내부 API `POST /internal/deletion-requests/{id}/completions`로 알림
+  - 삭제 방식(#128): FK는 NO ACTION 그대로 두고 서비스가 한 트랜잭션에서 `judgment_correction`·`judgment_element` → `self_assessment`·`reflection`·`hint_usage`·`attempt_draft` → `followup`(`answer.followup_id`는 `SET CONSTRAINTS … DEFERRED`로 커밋 때 검사) → `judgment` → `answer` → `attempt` 순서로 삭제. `processed_event`에 이벤트 `id`를 같은 트랜잭션에 기록해 재전달 때 다시 지우지 않음
+  - `deleted_student`는 학생당 한 행: 다시 받으면 `event_id`·`deleted_at`을 갱신하고 `scope`는 이미 `PROFILE`이면 유지(report 삭제 장벽과 같은 규칙)
 - learning은 이벤트를 발행하지 않으므로 `outbox_event` 없음 (아키텍처 1.6)
+- #208 `processed_event`는 90일 뒤 삭제(V8 `processed_at` 인덱스). 재처리 방지 표식 `deleted_student`는 유지되므로 90일 이후 재전달도 삭제를 반복할 뿐 기록을 되살리지 않음
 - 멱등은 `answer`·`judgment_correction`의 `idempotency_key` UK로 처리, 별도 `idempotency_record` 없음
 
 ---
@@ -798,6 +994,24 @@ erDiagram
   report_item ||--o{ report_item_evidence : cites
   weekly_report ||--o{ report_file : files
 
+  report_job_guard {
+    uuid job_id PK "core 작업 논리 참조"
+    uuid student_id "core 학생 논리 참조"
+    date period_from
+    date period_to
+    varchar failure_reason "REPORT_NOT_CREATED"
+    timestamptz created_at
+  }
+
+  report_deletion_guard {
+    uuid student_id PK "core 논리 참조 · 삭제 장벽"
+    varchar scope "PROFILE|RECORDS"
+    timestamptz cutoff_at
+    uuid deletion_request_id "core 논리 참조"
+    varchar status "PENDING|COMPLETED"
+    timestamptz updated_at
+  }
+
   weekly_report {
     uuid id PK
     uuid job_id UK "core report_job"
@@ -806,15 +1020,15 @@ erDiagram
     date period_to
     int revision "재생성 회차"
     varchar status "RUNNING|COMPLETED|FAILED"
-    varchar state "OK|NO_RECORD|INSUFFICIENT_SAMPLE"
-    text inclusion_rule "포함 기준 [P06][P08]"
-    text evening_question
-    jsonb narrative "text, source, modelExplanation"
-    jsonb verification "numbersMatched, quotesMatched"
-    jsonb versions "prompt, model"
-    varchar failure_reason
+    varchar state "NULL 허용 · OK|NO_RECORD|INSUFFICIENT_SAMPLE"
+    text inclusion_rule "NULL 허용 · 포함 기준 (P06, P08)"
+    text evening_question "NULL 허용"
+    jsonb narrative "NULL 허용 · text, source, modelExplanation"
+    jsonb verification "NULL 허용 · numbersMatched, quotesMatched, contentAllowed"
+    jsonb versions "NULL 허용 · prompt, model"
+    varchar failure_reason "NULL 허용"
     timestamptz created_at
-    timestamptz generated_at
+    timestamptz generated_at "NULL 허용"
   }
   report_item {
     uuid id PK "evidence itemId"
@@ -847,7 +1061,14 @@ erDiagram
     varchar subject
     jsonb payload
     timestamptz created_at
-    timestamptz published_at
+    timestamptz published_at "NULL 허용"
+    int failure_count
+    timestamptz next_attempt_at "NULL 허용"
+    varchar last_error_code "NULL 허용, 원문 없는 안전 오류 코드"
+    timestamptz last_failed_at "NULL 허용"
+    timestamptz quarantined_at "NULL 허용"
+    int manual_retry_count
+    timestamptz last_requeued_at "NULL 허용"
   }
   processed_event {
     uuid event_id PK
@@ -856,11 +1077,14 @@ erDiagram
   }
 ```
 
+- #208 보존: worker가 1시간 주기로 90일 지난 발행 완료 `outbox_event`·`processed_event` 삭제(`EVENT_RETENTION_DAYS`). 미발행·격리(`published_at IS NULL`) 행과 `report_deletion_guard`는 유지
 - `weekly_report.job_id` UK → 같은 `report.generate` 재전달 시 1회만 생성. 상태 전이 `RUNNING → COMPLETED|FAILED`와 `outbox_event(report.*)`를 같은 트랜잭션에 저장
-- 재생성은 기존 행을 덮지 않고 `revision` 증가 행 추가, UK `(student_id, period_from, revision)` (보존 방식 `[P06]` `[P09]`)
-- 기록 없는 주·표본 부족 주는 `status = COMPLETED` + `state`로 구분, 생성 실패(`FAILED`)와 분리 (FN-RPT-11)
+- #152 관리자 재처리는 새 jobId로 다음 revision을 만든다. 원래 실패 행·기존 파일은 보존한다. 원작업↔재처리 연결은 core #47 소유이며 report DB에 교차 서비스 FK·원작업 컬럼을 추가하지 않는다. 현재 core의 연결 저장 구조를 이 문서에서 임의 확정하지 않는다.
+- 재생성은 기존 행을 덮지 않고 `revision` 증가 행 추가, UK `(student_id, period_from, revision)` (기존 판 보존·최신판 기본 조회, P06). 학부모 요청 재생성은 리포트당 1회 → core `report_job(REGENERATE)` 건수로 확인
+- 기록 없는 주·표본 부족 주는 `status = COMPLETED` + `state`로 구분, 생성 실패(`FAILED`)와 분리 (FN-RPT-11). state는 COMPLETED일 때만 NOT NULL (상태 다이어그램 4.2).
 - `report_item` UK `(report_id, item_type, seq)`. 상세 응답(API 3.4)은 `item_type`별로 묶어 조립
 - `report_file` UK `(report_id, format)`. 다운로드는 `s3_key`로 presigned URL 발급 (FN-RPT-13)
+- #55의 `20261027_02`는 `report_deletion_guard`를 추가한다. 삭제 중 생성·조회를 막고 완료 후에도 PROFILE·RECORDS 모두 생성을 차단한다. 최신 #45의 자동 학습 재개 금지와 일치시키며 재개는 별도 계약이 필요하다. 학생 UUID·삭제 요청 UUID·범위·시각·처리 상태만 남기며 원문·이름·리포트 내용은 저장하지 않는다.
 
 ---
 
@@ -868,30 +1092,103 @@ erDiagram
 
 | DB | 테이블 | 인덱스 | 용도 |
 |---|---|---|---|
+| core | `student_device` | `(parent_user_id) WHERE revoked_at IS NULL` | 등록 기기 목록 |
+| core | `student_device_child` | `(student_id)` | 삭제 시 매핑 정리 |
 | core | `guardianship` | `(parent_user_id) WHERE status='LINKED'` | 요청마다 자녀 연결 확인 |
 | core | `conversation` | `(parent_user_id, student_id, created_at)` | 대화 목록 |
 | core | `report_job` | `(student_id, period_from)`, `(status, created_at)` | 리포트 목록, 관리자 작업 현황 |
 | core | `job_execution` | `(job_type, job_id)` | 작업별 처리 이력 |
+| core | `conversation_job_retry` | `(status, accepted_at)` | 관리자 대화 대기·중단 작업 조회 |
 | core | `report_view` | `(report_id)`, `(user_id, viewed_at)` | 열람률 집계 |
 | core | `notification` | `(user_id, read_at, created_at)` | 읽지 않은 알림 |
 | core | `payment` | `(status, updated_at)` | `CONFIRMING` 재조회, 결제 운영 조회 |
 | core | `subscription` | `(next_billing_date) WHERE auto_renew` | 정기 청구 대상 |
+| core | `auth_session` | `(user_id)` | 사용자별 세션 폐기 |
+| core | `refresh_token` | `(session_id)` | 세션별 토큰 폐기·재사용 탐지 |
 | core | `llm_usage` | `(occurred_at, call_type)` | 사용량·비용 집계 |
-| core | `outbox_event` | `(created_at) WHERE published_at IS NULL` | 릴레이 대상 |
+| core | `outbox_event` | `(created_at) WHERE published_at IS NULL`, `(published_at) WHERE published_at IS NOT NULL` | 릴레이 대상, 보존 기간 정리 |
+| core | `processed_event` | `(processed_at)` | 보존 기간 정리 |
+| core | `event_log` | `(received_at)`, `(event_type, event_time)` | 보존 기간 정리, 유형·기간별 추적 |
 | learning | `mission` | `(status, sort_order)`, `mission_version (thinking_type, grade_min, grade_max)` | 학년·유형별 공개 미션 목록 |
 | learning | `attempt` | `(student_id, started_at)` | 기간별 기록 조회 (대시보드·에이전트·리포트) |
 | learning | `answer` | `(attempt_id, submitted_at)` | 시도 타임라인 |
 | learning | `judgment` | `(process_status, lease_until)` | 고착 `RUNNING` 탐지 |
+| learning | `processed_event` | `(processed_at)` | 보존 기간 정리 |
 | report | `weekly_report` | `(student_id, status, period_from)` | 자녀별 리포트 목록 |
+| report | `outbox_event` | `(created_at) WHERE published_at IS NULL`, `(subject, created_at, id) WHERE published_at IS NULL`, `(published_at) WHERE published_at IS NOT NULL` | 학생별 선두·발행 순서 및 재시도 대상, 보존 기간 정리 |
+| report | `processed_event` | `(processed_at)` | 보존 기간 정리 |
 
 ---
 
 ## 7. 확인 필요 가정
-- `[P01]` 학생 별도 계정: 확정 전 `student.user_account_id` NULL, 학생 진입은 학부모 계정 하위 세션으로 가정. 만 14세 확인 방식 확정 시 `student.birth_year` 추가
-- `[P02]` 기존 학생 연결 절차: 연결 코드 방식 확정 시 연결 코드 테이블 추가
-- `[P05]` 메모 보관: 확정 시 `attempt_draft.content`에 포함 또는 별도 테이블
-- `[P16]` 중립 질문 은행: 사용 합의 시 learning에 질문 은행 테이블 추가 (`followup.source = BANK`)
 - PG 거래 대조(FN-ADM-15): 조회 시 PG API와 계산, 결과 테이블 없음
-- `[P09]` 삭제 방식: 물리 삭제 + `deleted_student` 표식으로 가정. 보관 기간 확정 시 대화·리포트 삭제 범위 반영
-- `[P12]` `idempotency_record.expires_at`·`judgment.lease_until` 값
-- `[P13]` 상품·가격: `product` 시드 데이터로만 관리, 스키마 변경 없음
+- 정기 청구는 월별 payment_order를 재사용하며, 확정 실패 후의 일별 재청구마다 payment_charge_attempt에 새 PG 주문과 멱등키를 보존한다. 불명확한 거래는 재청구하지 않고 조회 복구한다(#48).
+- 정책 확정에 따른 DDL은 core V6~V7·learning V4~V5로 추가한다(9장). 기존 데이터의 출생연도·상품 한도·폐기 코드/음성 기록은 임의 변환하지 않고 적용 전 정비가 필요하다.
+- `product.code`는 상품 행별 UK이며 P13의 요금제 추가·가격/한도별 새 행을 위해 확장 가능한 코드다. 새 상품 행은 새 고유 코드를 사용한다. 무료 상품 교체는 PAYMENT_FREE_PRODUCT_ID를 명시적으로 변경한다(#48 사용자 확정).
+
+
+## 8. 마이그레이션 원칙
+
+- 버전: core Flyway V1~V9·V12~V19(V10·V11 결번), learning Flyway V1~V7, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`. 현재 71개 테이블·630개 컬럼(core 44/407, learning 19/160, report 8/63). 결정 경위는 [DB 스키마 보고서](../report/db-schema.md)
+- 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11은 #58이 처음 V10을 썼다가 V12가 적용된 DB에서 Flyway가 거부해 V13으로 옮긴 결번이며, V12 첫 줄 주석의 "V10은 #58"은 당시 기록
+- 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
+- NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT
+- FK는 같은 DB 내부만 연결. 다중 참조의 소속 일치·공개 조건·환불 합계 검사는 서비스 검증. 순환 참조는 같은 마이그레이션에서 테이블을 모두 만든 뒤 FK 추가(자동 삭제 설정 아님)
+- 정책 변경으로 기존 데이터 정비가 필요하면 준비 버전(nullable 추가·제약 제거)과 최종 버전(정비 검사 후 NOT NULL·CHECK)으로 나누고, 기존 값을 임의 변환하지 않음(core V6~V7, learning V4~V5). 실제 학생 답안·수집본은 마이그레이션에 넣지 않음
+
+## 9. 확정 정책 반영 (core V6~V7, learning V4~V5)
+
+- core: `student.birth_year`·`product.limits` NOT NULL, `product.code` 확장 가능 UK, 학년 3~6 CHECK, `student.user_account_id` 제거. 기존 상품 코드·금액·참조 ID는 자동 변경하지 않음
+- learning: `followup_bank_question`·`followup.bank_question_id` 추가(BANK일 때만 필수 CHECK, 삭제 FK는 NO ACTION), `answer.speech_transcribed` 제거, source는 LLM·LLM_RETRY·BANK. 은행 질문의 type 일치·활성 여부는 서비스가 검사
+
+## 10. 학생 기기·PIN (core V13, #58)
+
+- 저장 구조는 3.1·6장. 기존 student는 PIN 미설정(NULL)·실패 횟수 0으로 옮기고 임의 PIN·기기는 만들지 않음. 신규 student의 `pin_failed_count`는 앱이 0을 전달(SQL DEFAULT 없음)
+- 삭제 확정 때 `student_device_child` 제거·PIN 해시·잠금 삭제, 탈퇴 시 모든 기기 폐기. 연결·동의 해제는 세션 검사로 즉시 차단
+- 재인증은 V9 `reauth_challenge`·`reauth_grant`. 페어링 코드와 시도 제한만 Redis
+
+## 11. OAuth·로그인 세션 (core V8, #36)
+
+- `user_account.oauth_provider`·`oauth_subject`는 함께 NULL(기존 계정) 또는 GOOGLE·Google sub이며 복합 UNIQUE. `password_hash`는 nullable로 보존하고 이메일로 OAuth 계정을 자동 연결하지 않음
+- `refresh_token.session_id`(FK `auth_session.id`)·`used_at` 추가. 기존 토큰은 `revoked_at`을 채워 재로그인시키고, 새 토큰은 `session_id` 필수·만료는 세션 최초 만료 이내. 사용 이력은 재사용 탐지를 위해 세션 만료까지 보존
+- 학생 전환은 세션 version을 올리고 만료를 학생 access TTL로 줄이며 부모 refresh를 소비(학생 refresh 미발급). 관리자 권한·동의·자녀 연결은 최신 테이블로 확인. OAuth subject를 추정하는 백필은 하지 않음
+
+## 12. 신고·지원 요청 범위 (core V16, #46)
+
+#46 V16: develop의 V14와 결제 V15를 포함한 기존 마이그레이션 SQL은 보존한다. 소유 역할·학생 세션 범위를 추가하여 공유 보호자 ID의 학생/형제/보호자 노출을 분리한다. legacy NULL 역할은 본인 목록에 추정하지 않는다. error_report UK(reporter_user_id,submission_key), correction 부분 UK(error_report_id WHERE request_key IS NOT NULL)·UK(request_key)로 결과 저장 실패 후 재시도를 보존한다. notice DELETE는 ended_at 종료, 변경 전후는 audit_log에 기록한다.
+
+- V14는 SPEECH 사용량 CHECK 제거, V15는 결제 실행·권한, V16은 신고·문의 주체와 정정 의도 저장이다. V16은 통합 전 지원 V14의 SQL 원문을 유지한 경로 변경이며 V15와 의존 관계가 없다. 이전 지원 V14를 적용한 임시 DB에는 자동 repair·이력 변경 없이 새 격리 DB를 사용한다.
+
+### 이슈 #41 저장 규칙
+
+기존 conversation/message/evidence 스키마를 사용하며 마이그레이션을 추가하지 않는다. retry_count를 실행 세대 fencing 값으로 사용하고 실패/취소는 UPDATE만 수행한다. clarification은 COMPLETED(답변 NULL), delta는 미저장이다. 한도는 분석 전용 Redis KST 일자 카운터다. [계약](../report/issue-41-analysis-conversations.md).
+
+### #47 REPORT 재처리 관계
+
+core report_job_retry의 original_job_id는 report_job(id) PK/FK, retry_job_id는 report_job(id) UNIQUE/FK다. requested_by는 user_account(id) FK이며 `(requested_by,idempotency_key)` UNIQUE를 둔다. original_job_id와 retry_job_id는 달라야 한다. 두 작업은 삭제하지 않고 원래 FAILED 상태와 기존 판을 보존한다. 재실패 작업을 다시 처리할 때는 이전 새 작업이 다음 관계의 original_job_id가 된다. 새 작업·관계·접수 감사·Outbox는 원자 저장한다.
+
+### report_job_guard (#132, 신규 migration 20261029_03)
+
+| 컬럼 | 제약/의미 |
+|---|---|
+| job_id | uuid PK, core 작업 논리 참조 |
+| student_id | uuid NOT NULL, 학생별 삭제 인덱스 |
+| period_from / period_to | date NOT NULL, 월~일 7일 |
+| failure_reason | varchar(100) NOT NULL, REPORT_NOT_CREATED |
+| created_at | timestamptz NOT NULL |
+
+리포트 행 생성 전 실패의 재실행 차단 기록이다. 원문·이름·파일 경로는 저장하지 않는다. DLQ 수동 재전달의 상한이 없으므로 자동 TTL 없이 유지한다. 학생 PROFILE/RECORDS 삭제 완료 트랜잭션에서 이 기록도 제거하며 영구 `report_deletion_guard(COMPLETED)`가 이후 모든 생성을 차단한다. 삭제 표식이 완료된 학생에 복구 요청이 와도 job guard를 새로 만들지 않는다. 삭제 표식 제거/학습 재개는 이번 범위 밖이다. migration downgrade는 재실행 장벽을 없애므로 운영 중 임의 실행하지 않는다.
+
+core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. job_execution은 기존 attempt_no=1 upsert로 종료를 기록하며 동일 복구/늦은 이벤트가 이력을 늘리거나 종료를 되돌리지 않는다.
+
+
+### #47 관리자 대화 재처리 요청 (V19)
+
+conversation_job_retry는 UK(message_id,generation), UK(requested_by,idempotency_key), generation>0, 상태와 시각의 일치 및 시각 순서 CHECK를 둔다. `ix_conversation_job_retry_pending`은 (status,accepted_at) 조회 인덱스다. message_id는 conversation_message FK ON DELETE CASCADE, requested_by는 user_account FK다. 기존 V17·V18은 수정하지 않는다. 질문·답변 원문을 저장하지 않는다.
+
+학생 삭제 시 진행 요청의 실패 이력·감사를 같은 삭제 트랜잭션에 기록하고 요청 행을 CASCADE로 정리한다. 삭제 후 작업 조회와 새 접수는 404다. 기존 공통 멱등 캐시에 남은 과거 202는 재전달될 수 있으나 재실행하지 않는다. 요청 행 삭제 이후 영구 재접수 응답 복원은 보장하지 않는다. 요청 감사는 접수 시, job_execution은 실제 실행 선점 시 기록한다. Redis quota는 요청 ID 원자 표식으로 중복 차감을 방지하며 DB와 분산 원자 트랜잭션이라고 간주하지 않는다.
+
+
+## 학생 전역 공개 설정 (#206, core V21)
+
+`student.parent_sharing_enabled`는 기존/신규 모두 비공개(false)로 시작합니다. 이 열은 비공개 기본값을 보장하기 위한 SQL DEFAULT false의 명시적 예외이며, 다른 열의 기본값 금지 검증은 유지합니다. 학생 본인만 바꾸며 원문을 제공하는 경로는 같은 학생 행의 현재 설정을 다시 확인합니다.

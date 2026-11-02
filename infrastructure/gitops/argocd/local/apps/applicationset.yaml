@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: sagomungchi-local-apps
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - {name: core-service}
+          - {name: learning-service}
+          - {name: ai-service}
+          - {name: scoring-service}
+          - {name: report-api}
+          - {name: report-worker}
+  template:
+    metadata:
+      name: 'local-{{name}}'
+      namespace: argocd
+    spec:
+      project: default
+      sources:
+        - repoURL: https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM.git
+          targetRevision: develop
+          path: infrastructure/gitops/charts/app-service
+          helm:
+            releaseName: '{{name}}'
+            valueFiles:
+              - '$values/infrastructure/gitops/environments/local/{{name}}.yaml'
+        - repoURL: https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM.git
+          targetRevision: develop
+          ref: values
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: app
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=true

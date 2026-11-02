@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "report.failed.v1.schema.json",
+  "title": "report.failed v1 data",
+  "description": "report-service → events.topic → core; subject=studentId; 종료 상태는 되돌리지 않는다.",
+  "type": "object",
+  "required": [
+    "jobId",
+    "studentId",
+    "reportId",
+    "failureReason"
+  ],
+  "properties": {
+    "jobId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "studentId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "reportId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "failureReason": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{0,99}$",
+      "description": "오류 코드. 학생 원문·LLM 응답·비밀 정보 금지"
+    }
+  },
+  "additionalProperties": false
+}

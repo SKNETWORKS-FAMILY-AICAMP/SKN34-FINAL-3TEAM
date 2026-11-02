@@ -32,7 +32,7 @@ def test_ready_down_without_dependencies() -> None:
     with make_client() as client:
         response = client.get("/health/ready")
     assert response.status_code == 503
-    assert response.json()["checks"]["rabbitmq"] == "DOWN"
+    assert response.json()["checks"] == {"database": "DOWN"}
 
 
 def test_internal_without_token_is_401_problem() -> None:

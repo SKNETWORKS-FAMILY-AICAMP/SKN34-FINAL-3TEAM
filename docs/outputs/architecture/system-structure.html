@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>사고뭉치 시스템 구조도</title>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; background:#fff; font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif; color:#1d2329; }
+  #canvas { width:1600px; padding:28px 36px 22px; position:relative; }
+  .layer { position:relative; border:1.5px solid var(--b); background:var(--bg); border-radius:18px; padding:34px 22px 20px; margin-bottom:34px; }
+  .layer:not(:last-of-type)::after { content:""; position:absolute; left:50%; bottom:-35px; width:2px; height:34px; background:#c9d1d8; }
+  .pill { position:absolute; top:-15px; left:24px; background:#fff; border:1.5px solid var(--b); color:var(--c); font-weight:800; font-size:15px; letter-spacing:.06em; border-radius:16px; padding:3px 16px; }
+  .row { display:grid; gap:16px; }
+  .card { background:#fff; border:1px solid #e3e8ec; border-radius:12px; padding:14px 16px; box-shadow:0 1px 2px rgba(0,0,0,.05); }
+  .card h3 { margin:0 0 4px; font-size:17px; display:flex; align-items:center; gap:8px; justify-content:space-between; }
+  .card h3 .t { display:flex; align-items:center; gap:8px; }
+  .dot { width:28px; height:28px; border-radius:8px; background:var(--soft); color:var(--c); display:inline-flex; align-items:center; justify-content:center; font-size:14px; font-weight:800; flex:none; }
+  .chip { font-size:12px; font-weight:700; color:var(--c); background:var(--soft); border-radius:10px; padding:2px 9px; white-space:nowrap; }
+  .card p { margin:4px 0 0; font-size:13px; color:#4a5560; line-height:1.55; }
+  .card ul { margin:6px 0 0; padding-left:16px; font-size:13px; color:#3a454f; line-height:1.6; }
+  .card li::marker { color:var(--c); }
+  .center { text-align:center; }
+  .center h3 { justify-content:center; }
+  .flow { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:6px; font-size:12.5px; }
+  .flow span { background:var(--soft); color:#2b3640; border-radius:7px; padding:2px 8px; }
+  .flow i { color:#9aa5af; font-style:normal; }
+  .side { position:absolute; right:-12px; }
+  .note { font-size:12px; color:#6b7680; margin-top:2px; }
+  .l1 { --b:#bfd7f5; --bg:#f3f8ff; --c:#2f6fbd; --soft:#e4effc; }
+  .l2 { --b:#bfe3cf; --bg:#f2fbf6; --c:#2f7d5b; --soft:#e1f3e9; }
+  .l3 { --b:#f6d3b4; --bg:#fff8f1; --c:#c25a12; --soft:#fde9d7; }
+  .l4 { --b:#d9cdf3; --bg:#f8f5ff; --c:#6a4fc2; --soft:#ece6fb; }
+  .l5 { --b:#bfe5e1; --bg:#f1fbfa; --c:#18897c; --soft:#dff3f0; }
+  .foot { font-size:12px; color:#6b7680; }
+</style>
+</head>
+<body>
+<div id="canvas">
+
+  <section class="layer l1"><span class="pill">CLIENT LAYER · React 웹</span>
+    <div class="row" style="grid-template-columns:repeat(3,1fr)">
+      <div class="card center"><h3><span class="t"><span class="dot">학</span>학생 화면</span></h3><p>등록 기기 + PIN 로그인 · 생각 지도 · 미션 수행<br>피드백·되묻기 · 마무리·돌아보기 · 내 공책</p></div>
+      <div class="card center"><h3><span class="t"><span class="dot">부</span>학부모 화면</span></h3><p>Google 로그인 · 대시보드 · 기록에 물어보기(분석 대화)<br>주간 리포트 · 자녀 기기·PIN · 문의·알림</p></div>
+      <div class="card center"><h3><span class="t"><span class="dot">관</span>관리자 화면</span></h3><p>운영 현황 · 작업 재처리 · 미션·기준표 관리<br>모델·프롬프트 버전 · AI 사용량 · 결제·환불</p></div>
+    </div>
+  </section>
+
+  <section class="layer l2"><span class="pill">SERVICE LAYER · API</span>
+    <div class="row" style="grid-template-columns:1.25fr 1fr 1fr">
+      <div class="card"><h3><span class="t"><span class="dot">C</span>core-service</span><span class="chip">유일한 공개 API</span></h3>
+        <ul><li>인증(Google OAuth·학생 기기 PIN)·동의 · 학부모-자녀 권한</li><li>피드백·분석 대화 SSE 중계 · 알림 · 신고·문의·공지</li><li>리포트 일정(Outbox) · 결제·구독 · 모델 버전 레지스트리</li></ul><p class="note">Spring Boot · Kotlin · core_db · Redis</p></div>
+      <div class="card"><h3><span class="t"><span class="dot">L</span>learning-service</span><span class="chip">학습 기록</span></h3>
+        <ul><li>미션·기준표 버전 · 시도·답변 버전·초안</li><li>규칙 판정(고르기·수학 동치) · 판정·되묻기 저장</li><li>학습 기록 조회 API (대시보드·에이전트·리포트)</li></ul><p class="note">Spring Boot · Kotlin · learning_db · S3</p></div>
+      <div class="card"><h3><span class="t"><span class="dot">R</span>report-service</span><span class="chip">주간 리포트</span></h3>
+        <ul><li>기간·포함 기록 확정 · 수치·전후 변화 코드 계산</li><li>숫자·인용 대조 · 실패 시 템플릿 요약</li><li>HTML·PDF·Markdown 렌더링 · KEDA 워커</li></ul><p class="note">FastAPI · report_db · S3</p></div>
+    </div>
+  </section>
+
+  <section class="layer l3"><span class="pill">AI LAYER · 판정 · 되묻기 · 분석 · 서술</span>
+    <div class="row" style="grid-template-columns:repeat(2,1fr)">
+      <div class="card"><h3><span class="t"><span class="dot">판</span>판정 · 되묻기</span><span class="chip">LLM 추출 + 코드 검증</span></h3>
+        <div class="flow"><span>LLM 근거 구절 추출</span><i>→</i><span>코드 원문 대조</span><i>→</i><span>M2 교차 확인</span><i>→</i><span>정답·부분·다시·보류</span></div>
+        <div class="flow"><span>되묻기 생성</span><i>→</i><span>정답·금지어 유출 검사</span><i>→</i><span>재생성 1회</span><i>→</i><span>질문 은행 대체</span></div>
+        <p class="note">ai-service (FastAPI) · LlmClient: OpenAI·Claude·sLLM 교체, 재시도·사용량 기록</p></div>
+      <div class="card"><h3><span class="t"><span class="dot">분</span>분석 에이전트</span><span class="chip">LangGraph</span></h3>
+        <div class="flow"><span>질문 분류·범위 확인</span><i>→</i><span>기록 조회 도구(권한 재확인)</span><i>→</i><span>코드 계산</span><i>→</i><span>답변</span><i>→</i><span>숫자·인용 대조</span></div>
+        <div class="flow"><span>대조 실패·LLM 장애</span><i>→</i><span>규칙 응답(계산 수치·원문 템플릿)</span></div>
+        <p class="note">SSE status → result · 범위 불명확 시 clarification · 리포트 서술·저녁 질문 생성</p></div>
+    </div>
+    <div class="row" style="grid-template-columns:1fr;margin-top:14px">
+      <div class="card"><h3><span class="t"><span class="dot">S</span>scoring-service</span><span class="chip">모델 추론</span></h3><p>M2 항목 점수(klue/roberta) · M1 수학 풀이 점검(활성 범위만) · CPU 추론 · S3 가중치 · 모델 미활성 시 ai-service 영향 없음</p></div>
+    </div>
+  </section>
+
+  <section class="layer l4"><span class="pill">MESSAGING LAYER · RabbitMQ</span>
+    <div class="row" style="grid-template-columns:1fr 1.6fr">
+      <div class="card"><h3><span class="t"><span class="dot">명</span>cmd.direct</span><span class="chip">작업 큐 · 소비자 1</span></h3><p><b>report.generate</b> — core 스케줄·재생성·재처리 → report 워커<br>재시도 3회(1·5·15분) 후 DLQ</p></div>
+      <div class="card"><h3><span class="t"><span class="dot">이</span>events.topic</span><span class="chip">fan-out · 소비자 N</span></h3><p><b>report.started·completed·failed</b> → core 상태·알림 · <b>llm.usage.recorded</b> → core 사용량 집계<br><b>model.version.activated</b> → ai·scoring 버전 교체 · <b>student.deleted</b> → learning·report 물리 삭제</p></div>
+    </div>
+  </section>
+
+  <section class="layer l5"><span class="pill">DATA ARCHITECTURE LAYER</span>
+    <div class="row" style="grid-template-columns:repeat(3,1fr)">
+      <div class="card"><h3><span class="t"><span class="dot">DB</span>PostgreSQL (RDS)</span></h3><p>core_db · learning_db · report_db<br>서비스별 DB 분리 · 판정 근거·기준표 JSONB</p></div>
+      <div class="card"><h3><span class="t"><span class="dot">R</span>Redis</span></h3><p>SSE 중계 · 캐시<br>(core 연동 예정)</p></div>
+      <div class="card"><h3><span class="t"><span class="dot">S3</span>S3 (로컬 MinIO)</span></h3><p>미션 장면 · 리포트 파일(PDF·MD)<br>모델 가중치 · 웹 정적 파일</p></div>
+    </div>
+  </section>
+
+  <div class="foot">설계 기준: docs/design/architecture.md 1장(서비스 경계·통신·메시지·핵심 흐름), 6장(사용 기술) · 관측: Langfuse(LLM trace) · OpenTelemetry → Prometheus·Grafana</div>
+</div>
+</body>
+</html>

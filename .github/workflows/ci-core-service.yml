@@ -5,11 +5,15 @@ on:
     branches: [develop, main]
     paths:
       - "backend/core-service/**"
+      - "contracts/**"
+      - "infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json"
       - ".github/workflows/ci-core-service.yml"
       - ".github/workflows/_spring.yml"
   pull_request:
     paths:
       - "backend/core-service/**"
+      - "contracts/**"
+      - "infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json"
       - ".github/workflows/ci-core-service.yml"
       - ".github/workflows/_spring.yml"
 

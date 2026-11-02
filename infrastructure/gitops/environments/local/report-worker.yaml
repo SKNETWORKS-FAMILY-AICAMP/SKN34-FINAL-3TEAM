@@ -1,0 +1,45 @@
+nameOverride: report-worker
+image:
+  repository: sagomungchi/report-service
+  tag: local
+replicaCount: 0
+command: [python, -m, app.worker]
+service:
+  enabled: false
+resources:
+  requests: {cpu: 100m, memory: 256Mi}
+  limits: {cpu: 500m, memory: 768Mi}
+env:
+  - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN}}}
+  - {name: RABBITMQ_URL, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_URL}}}
+  - {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: app-service-credentials, key: REPORT_DATABASE_URL}}}
+  - {name: CORE_URL, value: "http://core-service.app.svc.cluster.local:8080"}
+  - {name: LEARNING_URL, value: "http://learning-service.app.svc.cluster.local:8081"}
+  - {name: AI_URL, value: "http://ai-service.app.svc.cluster.local:8000"}
+  - {name: S3_ENDPOINT_URL, value: "http://minio.platform.svc.cluster.local:9000"}
+  - {name: S3_BUCKET, value: sagomungchi-local-reports}
+  - {name: S3_REGION, value: ap-northeast-2}
+  - {name: CONSUMER_PREFETCH, value: "1"}
+  - {name: AWS_ACCESS_KEY_ID, valueFrom: {secretKeyRef: {name: app-service-credentials, key: MINIO_ROOT_USER}}}
+  - {name: AWS_SECRET_ACCESS_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: MINIO_ROOT_PASSWORD}}}
+keda:
+  enabled: true
+  minReplicaCount: 0
+  maxReplicaCount: 1
+  queueLength: "1"
+  queues:
+    - report.report.generate
+    - report.student.deleted
+  rabbitmqSecret:
+    name: app-service-credentials
+    key: RABBITMQ_URL
+networkPolicy:
+  enabled: true
+  egressToApps:
+    - {name: core-service, port: 8080}
+    - {name: learning-service, port: 8081}
+    - {name: ai-service, port: 8000}
+  egressToPlatform:
+    - {name: postgres, port: 5432}
+    - {name: rabbitmq, port: 5672}
+    - {name: minio, port: 9000}

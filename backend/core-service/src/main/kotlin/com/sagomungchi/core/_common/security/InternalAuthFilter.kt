@@ -22,7 +22,7 @@ class InternalAuthFilter(
     private val objectMapper: ObjectMapper,
 ) : OncePerRequestFilter() {
     override fun shouldNotFilter(request: HttpServletRequest): Boolean =
-        !request.requestURI.startsWith("/internal/")
+        !matchedPath(request).startsWith("/internal/")
 
     override fun doFilterInternal(
         request: HttpServletRequest,

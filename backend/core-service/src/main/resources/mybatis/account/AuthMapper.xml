@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.account.repository.AuthMapper">
+    <resultMap id="account" type="com.sagomungchi.core.account.domain.AuthAccount">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="role" javaType="java.lang.String"/>
+            <arg column="login_id" javaType="java.lang.String"/>
+            <arg column="display_name" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="oauth_subject" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="session" type="com.sagomungchi.core.account.domain.AuthSession">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="user_id" javaType="java.util.UUID"/>
+            <arg column="role" javaType="java.lang.String"/>
+            <arg column="student_id" javaType="java.util.UUID"/>
+            <arg column="version" javaType="_long"/>
+            <arg column="expires_at" javaType="java.time.OffsetDateTime"/>
+            <arg column="revoked_at" javaType="java.time.OffsetDateTime"/>
+            <arg column="created_at" javaType="java.time.OffsetDateTime"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="refresh" type="com.sagomungchi.core.account.domain.RefreshToken">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="user_id" javaType="java.util.UUID"/>
+            <arg column="session_id" javaType="java.util.UUID"/>
+            <arg column="token_hash" javaType="java.lang.String"/>
+            <arg column="expires_at" javaType="java.time.OffsetDateTime"/>
+            <arg column="revoked_at" javaType="java.time.OffsetDateTime"/>
+            <arg column="used_at" javaType="java.time.OffsetDateTime"/>
+            <arg column="created_at" javaType="java.time.OffsetDateTime"/>
+        </constructor>
+    </resultMap>
+    <select id="findAccount" resultMap="account">
+        SELECT id, role, login_id, display_name, status, oauth_subject FROM user_account WHERE id = #{id}
+    </select>
+    <select id="findGoogleAccount" resultMap="account">
+        SELECT id, role, login_id, display_name, status, oauth_subject FROM user_account
+        WHERE oauth_provider = 'GOOGLE' AND oauth_subject = #{subject}
+    </select>
+    <insert id="insertAccount">
+        INSERT INTO user_account(id, role, login_id, password_hash, display_name, status, is_demo,
+                                 oauth_provider, oauth_subject, created_at, updated_at)
+        VALUES(#{account.id}, 'PARENT', #{account.email}, NULL, #{account.name}, 'ACTIVE', false,
+               'GOOGLE', #{account.subject}, #{now}, #{now}) ON CONFLICT DO NOTHING
+    </insert>
+    <select id="permissions" resultType="string">SELECT permission FROM admin_permission WHERE user_id = #{userId}</select>
+    <insert id="insertSession">
+        INSERT INTO auth_session(id, user_id, role, student_id, version, expires_at, revoked_at, created_at)
+        VALUES(#{id}, #{userId}, #{role}, #{studentId,jdbcType=OTHER}, #{version}, #{expiresAt}, #{revokedAt,jdbcType=TIMESTAMP_WITH_TIMEZONE}, #{createdAt})
+    </insert>
+    <select id="findSession" resultMap="session">
+        SELECT id, user_id, role, student_id, version, expires_at, revoked_at, created_at FROM auth_session WHERE id = #{id}
+        <if test="lock">FOR UPDATE</if>
+    </select>
+    <update id="updateSession">
+        UPDATE auth_session SET role=#{role}, student_id=#{studentId,jdbcType=OTHER}, version=#{version}, expires_at=#{expiresAt} WHERE id=#{id}
+    </update>
+    <insert id="insertRefresh">
+        INSERT INTO refresh_token(id, user_id, session_id, token_hash, expires_at, revoked_at, used_at, created_at)
+        VALUES(#{id}, #{userId}, #{sessionId}, #{tokenHash}, #{expiresAt}, NULL, NULL, #{createdAt})
+    </insert>
+    <select id="findRefresh" resultMap="refresh" flushCache="true" useCache="false">
+        SELECT id, user_id, session_id, token_hash, expires_at, revoked_at, used_at, created_at FROM refresh_token WHERE token_hash=#{hash}
+    </select>
+    <update id="consumeRefresh">UPDATE refresh_token SET used_at=#{now} WHERE id=#{id} AND used_at IS NULL AND revoked_at IS NULL</update>
+    <update id="revokeSession">UPDATE auth_session SET revoked_at=#{now} WHERE id=#{id} AND revoked_at IS NULL</update>
+</mapper>

@@ -9,6 +9,7 @@ import java.net.http.HttpClient
 /**
  * 서비스 간 내부 호출용 RestClient 생성.
  * 내부 토큰·사용자 컨텍스트 헤더·traceparent를 자동으로 붙이고, 재시도는 하지 않음 (아키텍처 1.3).
+ * HTTP/1.1 고정: JDK 기본값(HTTP/2)은 http 주소에 h2c 업그레이드를 요청하고, uvicorn(ai·scoring·report)은 이를 거절함
  */
 @Component
 class InternalRestClientFactory(
@@ -18,6 +19,7 @@ class InternalRestClientFactory(
     fun create(service: String): RestClient {
         val baseUrl = requireNotNull(properties.services[service]) { "app.services.$service 설정 없음" }
         val httpClient = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(properties.internal.connectTimeout)
             .build()
         val requestFactory = JdkClientHttpRequestFactory(httpClient).apply {

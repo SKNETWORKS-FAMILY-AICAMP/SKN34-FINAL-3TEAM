@@ -5,11 +5,13 @@ on:
     branches: [develop, main]
     paths:
       - "backend/ai-service/**"
+      - "contracts/**"
       - ".github/workflows/ci-ai-service.yml"
       - ".github/workflows/_python.yml"
   pull_request:
     paths:
       - "backend/ai-service/**"
+      - "contracts/**"
       - ".github/workflows/ci-ai-service.yml"
       - ".github/workflows/_python.yml"
 

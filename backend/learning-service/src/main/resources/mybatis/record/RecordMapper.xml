@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.learning.record.repository.RecordMapper">
+    <resultMap id="eligible" type="com.sagomungchi.learning.record.repository.EligibleAttempt">
+        <constructor>
+            <idArg column="attempt_id" javaType="java.util.UUID"/>
+            <arg column="mission_title" javaType="java.lang.String"/>
+            <arg column="thinking_type" javaType="com.sagomungchi.learning.mission.domain.ThinkingType"/>
+            <arg column="status" javaType="com.sagomungchi.learning.attempt.domain.AttemptStatus"/>
+            <arg column="completed" javaType="_boolean"/>
+            <arg column="helped_before_first_answer" javaType="_boolean"/>
+            <arg column="received_followup" javaType="_boolean"/>
+            <arg column="revised" javaType="_boolean"/>
+            <arg column="last_submitted_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="answerPair" type="com.sagomungchi.learning.record.repository.AnswerPair">
+        <constructor>
+            <idArg column="attempt_id" javaType="java.util.UUID"/>
+            <arg column="followup" javaType="java.lang.String"/>
+            <arg column="first_id" javaType="java.util.UUID"/>
+            <arg column="first_text" javaType="java.lang.String"/>
+            <arg column="first_content" javaType="com.sagomungchi.learning.answer.domain.AnswerContent"/>
+            <arg column="last_id" javaType="java.util.UUID"/>
+            <arg column="last_text" javaType="java.lang.String"/>
+            <arg column="last_content" javaType="com.sagomungchi.learning.answer.domain.AnswerContent"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="evidence" type="com.sagomungchi.learning.record.repository.EvidenceRow">
+        <constructor>
+            <idArg column="answer_id" javaType="java.util.UUID"/>
+            <arg column="attempt_id" javaType="java.util.UUID"/>
+            <arg column="student_id" javaType="java.util.UUID"/>
+            <arg column="mission_title" javaType="java.lang.String"/>
+            <arg column="answer_version" javaType="_int"/>
+            <arg column="submitted_at" javaType="java.time.Instant"/>
+            <arg column="text" javaType="java.lang.String"/>
+            <arg column="deleted" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="stats" type="com.sagomungchi.learning.record.repository.StatsRow">
+        <constructor>
+            <arg column="attempts" javaType="_int"/>
+            <arg column="completed_attempts" javaType="_int"/>
+            <arg column="students" javaType="_int"/>
+        </constructor>
+    </resultMap>
+
+    <!--
+        P08 집계 대상: 기간 안에 답변 제출이 있는 시도(미완료 포함, 판정 상태 무관).
+        제외: 조회 종료일까지의 답변이 모두 처리 실패(FAILED)인 시도, 삭제 학생. 메모·초안은 읽지 않음
+    -->
+    <sql id="recordedInPeriod">
+        NOT EXISTS (SELECT 1 FROM deleted_student d WHERE d.student_id = a.student_id)
+        AND EXISTS (
+            SELECT 1 FROM answer ans
+            WHERE ans.attempt_id = a.id AND ans.submitted_at &gt;= #{start} AND ans.submitted_at &lt; #{end}
+        )
+        AND EXISTS (
+            SELECT 1 FROM answer ok
+            LEFT JOIN judgment j ON j.answer_id = ok.id
+            WHERE ok.attempt_id = a.id AND ok.submitted_at &lt; #{end}
+              AND (j.process_status IS NULL OR j.process_status &lt;&gt; 'FAILED')
+        )
+    </sql>
+
+    <select id="findEligible" resultMap="eligible" flushCache="true" useCache="false">
+        <!-- 시도별 사실은 조회 종료일까지 일어난 것만: 지난 기간을 조회해도 그 뒤의 답변·완료로 바뀌지 않음 (FN-RPT-02) -->
+        SELECT a.id AS attempt_id, v.title AS mission_title, v.thinking_type, a.status,
+               (a.status = 'COMPLETED' AND a.completed_at &lt; #{end}) AS completed,
+               EXISTS (
+                   SELECT 1 FROM hint_usage h
+                   WHERE h.attempt_id = a.id
+                     AND h.opened_at &lt; (SELECT min(f.submitted_at) FROM answer f WHERE f.attempt_id = a.id)
+               ) AS helped_before_first_answer,
+               EXISTS (SELECT 1 FROM followup fu WHERE fu.attempt_id = a.id AND fu.created_at &lt; #{end}) AS received_followup,
+               EXISTS (
+                   SELECT 1 FROM answer r
+                   WHERE r.attempt_id = a.id AND r.followup_id IS NOT NULL AND r.submitted_at &lt; #{end}
+               ) AS revised,
+               (SELECT max(l.submitted_at) FROM answer l WHERE l.attempt_id = a.id AND l.submitted_at &lt; #{end}) AS last_submitted_at
+        FROM attempt a
+        JOIN mission_version v ON v.id = a.mission_version_id
+        WHERE a.student_id = #{studentId}
+          AND <include refid="recordedInPeriod"/>
+        ORDER BY last_submitted_at DESC, a.id
+    </select>
+
+    <select id="findAnswerPairs" resultMap="answerPair" flushCache="true" useCache="false">
+        SELECT a.id AS attempt_id, fu.question AS followup,
+               fa.id AS first_id, coalesce(fa.plain_text, '') AS first_text, fa.content AS first_content,
+               la.id AS last_id, coalesce(la.plain_text, '') AS last_text, la.content AS last_content
+        FROM attempt a
+        JOIN answer fa ON fa.attempt_id = a.id AND fa.version = (SELECT min(x.version) FROM answer x WHERE x.attempt_id = a.id)
+        JOIN answer la ON la.attempt_id = a.id
+            AND la.version = (SELECT max(y.version) FROM answer y WHERE y.attempt_id = a.id AND y.submitted_at &lt; #{end})
+        LEFT JOIN followup fu ON fu.id = la.followup_id
+        WHERE a.student_id = #{studentId}
+          AND la.version &gt; fa.version
+          AND <include refid="recordedInPeriod"/>
+        ORDER BY la.submitted_at DESC, a.id
+    </select>
+
+    <!-- 기록 상세: 이 학생의 시도이고 처리 실패만 있는 시도가 아님 (기간과 무관) -->
+    <select id="isRecorded" resultType="_boolean" flushCache="true" useCache="false">
+        SELECT EXISTS (
+            SELECT 1 FROM attempt a
+            WHERE a.id = #{attemptId} AND a.student_id = #{studentId}
+              AND NOT EXISTS (SELECT 1 FROM deleted_student d WHERE d.student_id = a.student_id)
+              AND EXISTS (
+                  SELECT 1 FROM answer ans
+                  LEFT JOIN judgment j ON j.answer_id = ans.id
+                  WHERE ans.attempt_id = a.id AND (j.process_status IS NULL OR j.process_status &lt;&gt; 'FAILED')
+              )
+        )
+    </select>
+
+    <select id="findEvidence" resultMap="evidence" flushCache="true" useCache="false">
+        SELECT ans.id AS answer_id, ans.attempt_id, a.student_id, v.title AS mission_title, ans.version AS answer_version,
+               ans.submitted_at, coalesce(ans.plain_text, '') AS text,
+               EXISTS (SELECT 1 FROM deleted_student d WHERE d.student_id = a.student_id) AS deleted
+        FROM answer ans
+        JOIN attempt a ON a.id = ans.attempt_id
+        JOIN mission_version v ON v.id = a.mission_version_id
+        WHERE ans.id IN
+        <foreach collection="answerIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <resultMap id="openedAt" type="com.sagomungchi.learning.record.repository.AttemptTime">
+        <constructor>
+            <arg column="attempt_id" javaType="java.util.UUID"/>
+            <arg column="at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 생각 열기 열람 시각 (report #51: 최초 답변 전 열람 여부를 report가 판단) -->
+    <select id="findHintUsages" resultMap="openedAt" flushCache="true" useCache="false">
+        SELECT attempt_id, opened_at AS at FROM hint_usage WHERE attempt_id IN
+        <foreach collection="attemptIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY opened_at
+    </select>
+
+    <resultMap id="reflection" type="com.sagomungchi.learning.record.repository.ReflectionRow">
+        <constructor>
+            <arg column="attempt_id" javaType="java.util.UUID"/>
+            <arg column="difficulty" javaType="com.sagomungchi.learning.attempt.domain.Difficulty"/>
+            <arg column="text" javaType="java.lang.String"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 돌아보기와 작성 시각 (기간 안에 쓴 돌아보기만 목록·생각 활동에 넣으려고) -->
+    <select id="findReflections" resultMap="reflection" flushCache="true" useCache="false">
+        SELECT attempt_id, difficulty, changed_text AS text, created_at FROM reflection WHERE attempt_id IN
+        <foreach collection="attemptIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <!--
+        이어할 시도 (FN-DSH-02, FN-LRN-16): 진행 중 시도 중 시작·답변 제출·초안 저장 중 가장 늦은 시각이 가장 최근인 것.
+        기간과 무관하고 초안만 있는 시도도 포함. 초안은 저장 시각만 읽고 내용(메모 포함)은 읽지 않음 (P05)
+    -->
+    <select id="findResume" resultType="java.util.UUID" flushCache="true" useCache="false">
+        SELECT a.id
+        FROM attempt a
+        LEFT JOIN attempt_draft d ON d.attempt_id = a.id
+        WHERE a.student_id = #{studentId} AND a.status = 'IN_PROGRESS'
+          AND NOT EXISTS (SELECT 1 FROM deleted_student x WHERE x.student_id = a.student_id)
+        ORDER BY greatest(a.started_at, d.saved_at, (SELECT max(s.submitted_at) FROM answer s WHERE s.attempt_id = a.id)) DESC, a.id
+        LIMIT 1
+    </select>
+
+    <!-- 운영 현황 (FN-ADM-02): 학생 원문 없이 건수만 -->
+    <select id="stats" resultMap="stats" flushCache="true" useCache="false">
+        SELECT count(*) AS attempts, count(*) FILTER (WHERE a.status = 'COMPLETED' AND a.completed_at &lt; #{end}) AS completed_attempts,
+               count(DISTINCT a.student_id) AS students
+        FROM attempt a
+        WHERE <include refid="recordedInPeriod"/>
+    </select>
+</mapper>

@@ -1,0 +1,5 @@
+apiVersion: v2
+name: observability
+description: Local OpenTelemetry metrics receiver, Prometheus, and Grafana
+type: application
+version: 0.1.0

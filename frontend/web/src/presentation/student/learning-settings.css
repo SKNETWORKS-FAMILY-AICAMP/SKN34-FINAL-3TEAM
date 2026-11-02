@@ -1,0 +1,19 @@
+.st-comparison { margin-block: 24px; padding-block: 20px; border-block: 1px solid var(--cj-line, #ddd); }
+.st-comparison h3 { margin: 0 0 12px; }
+/* Two equal notebook columns: (available width - 20px gutter) / 2. */
+.st-comparison-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin-block: 20px; align-items: start; }
+.st-comparison-pair article { min-width: 0; padding: 16px; border: 1px solid var(--cj-line, #ddd); border-radius: 8px; }
+.st-comparison-pair h4 { margin: 0 0 8px; }
+.st-comparison blockquote { margin: 8px 0 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.st-comparison-meta { font-size: 13px; color: #595959; }
+.st-comparison-elements { list-style: none; padding: 0; }
+.st-comparison-elements li { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; padding-block: 12px; border-bottom: 1px solid var(--cj-line, #ddd); }
+.st-sharing { margin-block: 20px; padding: 20px; border: 1px solid var(--cj-line, #ddd); border-radius: 8px; }
+.st-sharing label { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+.st-sharing input { width: 20px; height: 20px; }
+@media (max-width: 700px) { .st-comparison-pair { grid-template-columns: 1fr; } }
+
+.st-sharing fieldset { margin-block: 24px; padding: 16px; border: 1px solid var(--cj-line, #ddd); }
+.st-sharing p { max-width: 64ch; line-height: 1.65; }
+
+.st-world .st-paper.st-sharing h1 { font-size: 28px; }

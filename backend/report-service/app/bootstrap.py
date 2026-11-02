@@ -1,28 +1,26 @@
-"""앱 조립: 예외 핸들러·내부 인증·라우터·AMQP·DB 연결 수명 주기."""
+"""앱 조립: 예외 핸들러·내부 인증·라우터·DB 연결 수명 주기.
+
+조회 API는 AMQP를 쓰지 않는다(발행·소비는 worker).
+"""
 
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, text
 
+from app.clients.base import internal_client
+from app.clients.learning_client import LearningClient
+from app.clients.storage import ObjectStorage
+from app.concurrency import run_blocking
 from app.config import get_settings
-from app.errors import register_error_handlers
+from app.database import create_db_engine, create_session_factory
+from app.errors import install_problem_openapi, register_error_handlers
+from app.generation.router import router as reconciliation_router
 from app.health.router import router as health_router
-from app.messaging.connection import AmqpConnection
+from app.query.router import router as query_router
 from app.security import InternalAuthMiddleware
-
-DB_CONNECT_TIMEOUT_SECONDS = 3
-
-
-def create_db_engine() -> Engine:
-    # readiness 확인이 오래 막히지 않도록 연결 타임아웃 지정
-    return create_engine(
-        get_settings().database_url,
-        pool_pre_ping=True,
-        connect_args={"connect_timeout": DB_CONNECT_TIMEOUT_SECONDS},
-    )
 
 
 def _ping(engine: Engine) -> bool:
@@ -36,28 +34,33 @@ def _ping(engine: Engine) -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    amqp = AmqpConnection(get_settings().rabbitmq_url)
-    amqp.start()
     engine = create_db_engine()
-    app.state.amqp = amqp
     app.state.engine = engine
-
-    async def rabbitmq_ready() -> bool:
-        return amqp.is_connected
+    app.state.session_factory = create_session_factory(engine)
 
     async def database_ready() -> bool:
         return await asyncio.to_thread(_ping, engine)
 
-    app.state.readiness_checks = {"rabbitmq": rabbitmq_ready, "database": database_ready}
-    yield
-    await amqp.close()
-    engine.dispose()
+    app.state.readiness_checks = {"database": database_ready}
+    try:
+        async with AsyncExitStack() as clients:
+            http = await clients.enter_async_context(internal_client(get_settings().learning_url))
+            storage = await run_blocking(ObjectStorage.configured)
+            clients.push_async_callback(run_blocking, storage.close)
+            app.state.learning_client = LearningClient(http)
+            app.state.storage = storage
+            yield
+    finally:
+        engine.dispose()
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title=get_settings().service_name, lifespan=lifespan)
     register_error_handlers(app)
+    install_problem_openapi(app)
     app.add_middleware(InternalAuthMiddleware)
     app.include_router(health_router)
+    app.include_router(query_router)
+    app.include_router(reconciliation_router)
     # 기능 라우터는 여기에 등록
     return app

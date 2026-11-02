@@ -5,7 +5,7 @@ import uuid
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.exceptions import RequestValidationError
+from fastapi.exceptions import RequestValidationError, ResponseValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -20,6 +20,68 @@ STATUS_CODES = {
     405: "METHOD_NOT_ALLOWED",
     415: "UNSUPPORTED_MEDIA_TYPE",
 }
+
+
+PROBLEM_SCHEMA = {
+    "type": "object",
+    "required": ["type", "title", "status", "code", "instance", "traceId"],
+    "properties": {
+        "type": {"type": "string", "format": "uri"},
+        "title": {"type": "string"},
+        "status": {"type": "integer"},
+        "code": {"type": "string"},
+        "detail": {"type": "string"},
+        "instance": {"type": "string"},
+        "traceId": {"type": "string"},
+        "errors": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"field": {"type": "string"}, "reason": {"type": "string"}},
+            },
+        },
+    },
+}
+PROBLEM_DESCRIPTIONS = {
+    400: "VALIDATION_FAILED",
+    401: "UNAUTHENTICATED (내부 토큰 불일치)",
+    403: "FORBIDDEN (학생 범위 밖)",
+    404: "NOT_FOUND",
+    409: "DELETION_IN_PROGRESS (학생 기록 삭제 중)",
+    503: "DATA_UNAVAILABLE (근거 원문·파일 저장소 장애)",
+}
+
+
+def problem_responses(*statuses: int) -> dict[int | str, dict[str, Any]]:
+    """OpenAPI 오류 응답 선언. 실제 응답은 register_error_handlers의 problem+json."""
+    return {
+        status: {
+            "description": PROBLEM_DESCRIPTIONS[status],
+            "content": {
+                "application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}
+            },
+        }
+        for status in statuses
+    }
+
+
+def install_problem_openapi(app: FastAPI) -> None:
+    """FastAPI 기본 422 대신 실제 400 problem+json 계약을 OpenAPI에 반영."""
+    generate = app.openapi
+
+    def openapi() -> dict[str, Any]:
+        if app.openapi_schema is None:
+            schema = generate()
+            for operations in schema["paths"].values():
+                for operation in operations.values():
+                    operation["responses"].pop("422", None)
+            schemas = schema.setdefault("components", {}).setdefault("schemas", {})
+            schemas.pop("HTTPValidationError", None)
+            schemas.pop("ValidationError", None)
+            schemas["Problem"] = PROBLEM_SCHEMA
+        return app.openapi_schema
+
+    app.openapi = openapi
 
 
 class ApiError(Exception):
@@ -73,6 +135,14 @@ def problem(
 
 
 def register_error_handlers(app: FastAPI) -> None:
+    @app.exception_handler(ResponseValidationError)
+    async def handle_response_validation(
+        request: Request, exc: ResponseValidationError
+    ) -> JSONResponse:
+        # Validation error repr can contain student answer text; do not log its body.
+        logger.error("리포트 응답 스키마 검증 실패")
+        return problem(request, 500, "INTERNAL_ERROR", "응답 데이터를 확인해야 합니다")
+
     @app.exception_handler(ApiError)
     async def handle_api_error(request: Request, exc: ApiError) -> JSONResponse:
         return problem(request, exc.status, exc.code, exc.title, exc.detail, **exc.extra)

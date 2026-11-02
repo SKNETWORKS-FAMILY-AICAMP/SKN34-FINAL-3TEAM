@@ -1,0 +1,68 @@
+{{- if .Values.rabbitmq.enabled }}
+{{- $content := printf "%s%s%s%s" (.Files.Get "files/rabbitmq/definitions.json") (.Files.Get "files/rabbitmq/import-definitions.sh") (.Values.rabbitmq | toJson) .Values.existingSecret }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rabbitmq-init-{{ $content | sha256sum | trunc 10 }}
+  labels:
+    app.kubernetes.io/name: rabbitmq-init
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  backoffLimit: {{ .Values.rabbitmq.initialization.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.rabbitmq.initialization.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rabbitmq-init
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: initialize
+          image: {{ .Values.rabbitmq.initialization.image | quote }}
+          command: [/bin/sh, /definitions/import-definitions.sh]
+          env:
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "existingSecret must be set" .Values.existingSecret }}
+                  key: {{ .Values.rabbitmq.usernameKey }}
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: {{ .Values.rabbitmq.passwordKey }}
+            - name: RABBITMQ_MANAGEMENT_URL
+              value: {{ printf "http://rabbitmq:%v" .Values.rabbitmq.managementPort | quote }}
+            - name: WAIT_TIMEOUT_SECONDS
+              value: {{ .Values.rabbitmq.initialization.waitTimeoutSeconds | quote }}
+            - name: HOME
+              value: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+{{ include "platform-data.resources" .Values.rabbitmq.initialization.resources | indent 12 }}
+          volumeMounts:
+            - name: definitions
+              mountPath: /definitions
+              readOnly: true
+            - name: temporary
+              mountPath: /tmp
+      volumes:
+        - name: definitions
+          configMap:
+            name: rabbitmq-definitions
+        - name: temporary
+          emptyDir: {}
+{{- end }}

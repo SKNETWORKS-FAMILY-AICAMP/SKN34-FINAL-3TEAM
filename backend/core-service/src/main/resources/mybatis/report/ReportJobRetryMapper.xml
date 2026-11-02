@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.report.repository.ReportJobRetryMapper">
+ <resultMap id="retry" type="com.sagomungchi.core.report.domain.ReportJobRetry"><constructor>
+  <idArg column="original_job_id" javaType="java.util.UUID"/>
+  <arg column="retry_job_id" javaType="java.util.UUID"/>
+  <arg column="requested_by" javaType="java.util.UUID"/>
+  <arg column="idempotency_key" javaType="java.util.UUID"/>
+  <arg column="accepted_at" javaType="java.time.Instant"/>
+ </constructor></resultMap>
+ <select id="byOriginal" resultMap="retry" useCache="false" flushCache="true">SELECT * FROM report_job_retry WHERE original_job_id=#{id}</select>
+ <select id="byJob" resultMap="retry" useCache="false" flushCache="true">SELECT * FROM report_job_retry WHERE retry_job_id=#{id}</select>
+ <select id="byKey" resultMap="retry" useCache="false" flushCache="true">SELECT * FROM report_job_retry WHERE requested_by=#{actor} AND idempotency_key=#{key}</select>
+ <insert id="insert">INSERT INTO report_job_retry(original_job_id,retry_job_id,requested_by,idempotency_key,accepted_at)
+  VALUES(#{originalJobId},#{jobId},#{requestedBy},#{idempotencyKey},#{acceptedAt})</insert>
+</mapper>

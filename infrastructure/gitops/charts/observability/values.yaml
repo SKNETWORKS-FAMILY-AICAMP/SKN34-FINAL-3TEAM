@@ -1,0 +1,31 @@
+collector:
+  image: otel/opentelemetry-collector-contrib:0.164.0
+  traces:
+    enabled: false
+    # EKS values supply the internal Langfuse web endpoint and an existing
+    # observability namespace Secret with a precomputed Basic auth header.
+    endpoint: ""
+    authSecretName: ""
+    authSecretKey: AUTHORIZATION
+    langfusePodLabels:
+      app.kubernetes.io/instance: langfuse
+      app.kubernetes.io/component: web
+    langfusePort: 3000
+  resources:
+    requests: {cpu: 50m, memory: 96Mi}
+    limits: {cpu: 250m, memory: 256Mi}
+prometheus:
+  image: prom/prometheus:v3.15.1
+  retention: 1d
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+grafana:
+  image: grafana/grafana:13.3.0
+  adminSecret:
+    name: observability-credentials
+    userKey: GRAFANA_ADMIN_USER
+    passwordKey: GRAFANA_ADMIN_PASSWORD
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: 250m, memory: 384Mi}

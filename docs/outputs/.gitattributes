@@ -1,0 +1,2 @@
+# Generated PDF artifacts must be treated as binary, even when their header is ASCII.
+*.pdf binary

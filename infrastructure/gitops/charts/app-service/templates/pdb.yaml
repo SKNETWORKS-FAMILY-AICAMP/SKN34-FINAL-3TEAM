@@ -1,0 +1,14 @@
+{{- if .Values.pdb.enabled }}
+{{- if .Values.keda.enabled }}{{ fail "A workload scaling to zero cannot have a minAvailable PDB" }}{{- end }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "app-service.name" . }}
+  labels:
+    {{- include "app-service.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "app-service.selectorLabels" . | nindent 6 }}
+{{- end }}

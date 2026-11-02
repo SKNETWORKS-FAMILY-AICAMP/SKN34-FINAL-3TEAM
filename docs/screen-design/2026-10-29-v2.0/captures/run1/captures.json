@@ -1,0 +1,728 @@
+{
+  "base": "http://127.0.0.1:5231",
+  "shots": [
+    {
+      "id": "C01",
+      "file": "C01.jpg",
+      "url": "/login",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 256,
+          "y": 516.5
+        },
+        {
+          "label": "2",
+          "x": 806,
+          "y": 189.8125
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1440,
+          900
+        ],
+        "errors": [],
+        "warnings": [
+          {
+            "type": "touching-controls",
+            "a": "로그인 도움말",
+            "b": "처음이신가요? 이용 등록",
+            "gap": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "C02",
+      "file": "C02.jpg",
+      "url": "/signup",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 409,
+          "y": 412.484375
+        },
+        {
+          "label": "2",
+          "x": 409,
+          "y": 668.828125
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1440,
+          900
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "P01",
+      "file": "P01.jpg",
+      "url": "/parent/journal?childId=demo-seoyun&from=2026-10-20&to=2026-10-26",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 951.03125,
+          "y": 76
+        },
+        {
+          "label": "2",
+          "x": 275,
+          "y": 502.046875
+        },
+        {
+          "label": "3",
+          "x": 275,
+          "y": 681.6875
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1440,
+          900
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "P02",
+      "file": "P02.jpg",
+      "url": "/parent/journal?childId=demo-seoyun&from=2026-10-20&to=2026-10-26",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 472,
+          "y": 309.640625
+        },
+        {
+          "label": "2",
+          "x": 472,
+          "y": 571.890625
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1440,
+          900
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "P03",
+      "file": "P03.jpg",
+      "url": "/parent/journal?childId=demo-seoyun&from=2026-10-20&to=2026-10-26",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 421,
+          "y": 51
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1440,
+          900
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "P04",
+      "file": "P04.jpg",
+      "url": "/parent/analysis?childId=demo-seoyun&from=2026-10-20&to=2026-10-26",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 298,
+          "y": 421.171875
+        },
+        {
+          "label": "2",
+          "x": 875.5,
+          "y": 451.421875
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1440,
+          900
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "P05",
+      "file": "P05.jpg",
+      "url": "/parent/analysis?childId=demo-seoyun&from=2026-10-20&to=2026-10-26",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "markers": [],
+      "layout": {
+        "viewport": [
+          1440,
+          900
+        ],
+        "errors": [],
+        "warnings": [
+          {
+            "type": "touching-controls",
+            "a": "2026-10-20 ~ 2026-10-26 · 1개 질문",
+            "b": "새 대화",
+            "gap": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "P06",
+      "file": "P06.jpg",
+      "url": "/parent/analysis?childId=demo-seoyun&from=2026-10-20&to=2026-10-26",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 421,
+          "y": 51
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1440,
+          900
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "P07",
+      "file": "P07.jpg",
+      "url": "/parent/report?childId=demo-seoyun&from=2026-10-20&to=2026-10-26",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 343.46875,
+          "y": 419.671875
+        },
+        {
+          "label": "2",
+          "x": 298,
+          "y": 649.359375
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1440,
+          900
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "P08",
+      "file": "P08.jpg",
+      "url": "/parent/report?childId=demo-seoyun&from=2026-10-20&to=2026-10-26",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 298,
+          "y": 6.359375
+        },
+        {
+          "label": "2",
+          "x": 366.46875,
+          "y": 113.5
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1440,
+          900
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "P09",
+      "file": "P09.jpg",
+      "url": "/parent/settings?childId=demo-seoyun&from=2026-10-20&to=2026-10-26",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 298,
+          "y": 434.703125
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1440,
+          900
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "P10",
+      "file": "P10.jpg",
+      "url": "/parent/devices?childId=demo-seoyun&from=2026-10-20&to=2026-10-26",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 298,
+          "y": 328.671875
+        },
+        {
+          "label": "2",
+          "x": 875.5,
+          "y": 328.671875
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1440,
+          900
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "P11",
+      "file": "P11.jpg",
+      "url": "/parent/devices?childId=demo-seoyun&from=2026-10-20&to=2026-10-26",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 875.5,
+          "y": 726.96875
+        },
+        {
+          "label": "2",
+          "x": 1129.53125,
+          "y": 638.3125
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1440,
+          900
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "S01",
+      "file": "S01.jpg",
+      "url": "/student/login",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 266,
+          "y": 369.203125
+        },
+        {
+          "label": "2",
+          "x": 266,
+          "y": 511.984375
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1024,
+          768
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "S02",
+      "file": "S02.jpg",
+      "url": "/student/login",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 266,
+          "y": 414.28125
+        },
+        {
+          "label": "2",
+          "x": 266,
+          "y": 477.28125
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1024,
+          768
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "S03",
+      "file": "S03.jpg",
+      "url": "/student/login",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 398,
+          "y": 582.9375
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1024,
+          768
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "S04",
+      "file": "S04.jpg",
+      "url": "/student/home",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 55,
+          "y": 757.421875
+        },
+        {
+          "label": "2",
+          "x": 293.140625,
+          "y": 197.796875
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1024,
+          768
+        ],
+        "errors": [
+          {
+            "type": "button-text-overflow",
+            "control": "새로 만들기끝낸 미션 0"
+          },
+          {
+            "type": "button-text-overflow",
+            "control": "문제 해결하기끝낸 미션 0오늘 여기!"
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "id": "S05",
+      "file": "S05.jpg",
+      "url": "/student/home",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 88,
+          "y": 44.390625
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1024,
+          768
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "S06",
+      "file": "S06.jpg",
+      "url": "/student/missions",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 95,
+          "y": 447.796875
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1024,
+          768
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "S07",
+      "file": "S07.jpg",
+      "url": "/student/missions",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 213,
+          "y": 44.390625
+        },
+        {
+          "label": "2",
+          "x": 511.6875,
+          "y": 573.8125
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1024,
+          768
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "S08",
+      "file": "S08.jpg",
+      "url": "/student/attempts/new-1",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "markers": [
+        {
+          "label": "2",
+          "x": 98,
+          "y": 416.265625
+        },
+        {
+          "label": "3",
+          "x": 801.0625,
+          "y": 625.453125
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1024,
+          768
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "S09",
+      "file": "S09.jpg",
+      "url": "/student/attempts/new-1",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 98,
+          "y": 350.65625
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1024,
+          768
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "S10",
+      "file": "S10.jpg",
+      "url": "/student/attempts/new-1",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "markers": [],
+      "layout": {
+        "viewport": [
+          1024,
+          768
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "S11",
+      "file": "S11.jpg",
+      "url": "/student/attempts/new-1",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "markers": [],
+      "layout": {
+        "viewport": [
+          1024,
+          768
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "S12",
+      "file": "S12.jpg",
+      "url": "/student/attempts/new-1",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 213,
+          "y": 44.390625
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1024,
+          768
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "S13",
+      "file": "S13.jpg",
+      "url": "/student/journal",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "markers": [],
+      "layout": {
+        "viewport": [
+          1024,
+          768
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    },
+    {
+      "id": "S14",
+      "file": "S14.jpg",
+      "url": "/student/journal",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "markers": [
+        {
+          "label": "1",
+          "x": 209.5,
+          "y": 202.796875
+        }
+      ],
+      "layout": {
+        "viewport": [
+          1024,
+          768
+        ],
+        "errors": [],
+        "warnings": []
+      }
+    }
+  ],
+  "errors": []
+}

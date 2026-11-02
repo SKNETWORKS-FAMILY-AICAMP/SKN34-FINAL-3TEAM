@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.account.repository.AccountManagementMapper">
+<resultMap id="withdrawal" type="com.sagomungchi.core.account.repository.WithdrawalRow"><constructor><arg column="id" javaType="java.util.UUID"/><arg column="user_id" javaType="java.util.UUID"/><arg column="status" javaType="java.lang.String"/></constructor></resultMap>
+ <select id="lockAny" resultType="java.util.UUID" flushCache="true" useCache="false">SELECT id FROM user_account WHERE id=#{id} FOR UPDATE</select>
+ <select id="lock" resultType="java.util.UUID" flushCache="true" useCache="false">SELECT id FROM user_account WHERE id=#{id} AND status='ACTIVE' FOR UPDATE</select>
+ <update id="rename">UPDATE user_account SET display_name=#{name},updated_at=#{now} WHERE id=#{id} AND status='ACTIVE'</update>
+ <update id="revokeStudent">UPDATE auth_session SET revoked_at=#{now} WHERE student_id=#{id} AND revoked_at IS NULL</update>
+ <update id="revokeAll">UPDATE auth_session SET revoked_at=#{now} WHERE user_id=#{id} AND revoked_at IS NULL</update>
+ <update id="revokeRefresh">UPDATE refresh_token SET revoked_at=#{now} WHERE user_id=#{id} AND revoked_at IS NULL</update>
+ <update id="withdraw">UPDATE user_account SET status='WITHDRAWAL_REQUESTED',withdrawn_at=#{now},updated_at=#{now} WHERE id=#{id} AND status='ACTIVE'</update>
+ <insert id="request">INSERT INTO withdrawal_request(id,user_id,status,requested_at,status_token_hash) VALUES(#{id},#{user},'REQUESTED',#{now},#{hash})</insert>
+ <select id="latest" resultMap="withdrawal" flushCache="true" useCache="false">SELECT id,user_id,status FROM withdrawal_request WHERE user_id=#{user} ORDER BY requested_at DESC,id DESC LIMIT 1</select>
+ <select id="receipt" resultMap="withdrawal" flushCache="true" useCache="false">SELECT id,user_id,status FROM withdrawal_request WHERE status_token_hash=#{hash}</select>
+ <update id="complete">UPDATE withdrawal_request SET status='COMPLETED',completed_at=#{now} WHERE user_id=#{user} AND status='REQUESTED'</update>
+ <update id="withdrawn">UPDATE user_account SET status='WITHDRAWN',display_name=NULL,login_id='withdrawn:' || id::text,updated_at=#{now} WHERE id=#{user} AND status='WITHDRAWAL_REQUESTED'</update>
+ <insert id="audit">INSERT INTO audit_log(id,actor_user_id,action,target_type,target_id,result,created_at) VALUES(#{id},#{actor},#{action},'ACCOUNT_MANAGEMENT',#{target},'SUCCESS',#{now})</insert>
+
+</mapper>

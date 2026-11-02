@@ -1,0 +1,995 @@
+@import url('https://fonts.googleapis.com/css2?family=Do+Hyeon&family=Gaegu:wght@400;700&family=Gothic+A1:wght@400;600;800&display=swap');
+
+/* 학생 화면 (테마 캔버스). 테마 색은 StudentWorld가 --st-* 변수로 넣는다. */
+#class-journal .cj-app-student {
+  --cj-green: #b8551c;
+  --cj-light: #f6e3d4;
+  --cj-ink: #1f2421;
+  --cj-muted: #4a4a45;
+  --cj-paper: #fffdf7;
+  --cj-white: #fffdf7;
+  --st-paper: #f4ecdc;
+  --st-ink: #1f2421;
+  --st-accent: #b8551c;
+  --st-display: 'Do Hyeon', 'Gothic A1', 'Malgun Gothic', sans-serif;
+  --st-hand: 'Gaegu', 'Malgun Gothic', cursive;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+  font-family: 'Gothic A1', 'Malgun Gothic', sans-serif;
+}
+#class-journal .cj-app-student .cj-modal {
+  background: var(--st-paper);
+  color: var(--st-ink);
+  border-radius: 18px;
+}
+#class-journal .cj-app-student .cj-modal-head h2 {
+  font-family: var(--st-display);
+  font-weight: 400;
+  font-size: 24px;
+}
+#class-journal .cj-app-student .cj-primary {
+  min-height: 48px;
+  padding: 0 22px;
+  border-radius: 12px;
+  font-family: var(--st-display);
+  font-weight: 400;
+  font-size: 18px;
+}
+#class-journal .cj-app-student .cj-secondary {
+  min-height: 44px;
+  border: 2px solid var(--st-ink);
+  border-radius: 999px;
+  color: var(--st-ink);
+  font-family: var(--st-display);
+  font-size: 16px;
+}
+
+#class-journal .st-world {
+  position: relative;
+  isolation: isolate;
+  min-height: min(834px, calc(100vh - 80px));
+  border-radius: 24px;
+  overflow: clip;
+  background: var(--st-bg);
+  color: #fffdf7;
+  font-family: 'Gothic A1', 'Malgun Gothic', sans-serif;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+#class-journal .st-companion {
+  width: var(--c);
+  height: var(--c);
+  stroke-width: initial;
+}
+#class-journal .st-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  pointer-events: none;
+}
+#class-journal .st-world h1,
+#class-journal .st-world h2,
+#class-journal .st-world h3 {
+  margin: 0;
+  font-family: 'Do Hyeon', 'Gothic A1', sans-serif;
+  font-weight: 400;
+}
+#class-journal .st-world button {
+  font-family: inherit;
+}
+#class-journal .st-world :focus-visible {
+  outline: 3px solid #f2a65a;
+  outline-offset: 3px;
+}
+.st-visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── 위쪽: 이름과 메뉴 ── */
+#class-journal .st-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px 24px;
+  flex-wrap: wrap;
+  padding: 28px 36px 8px;
+}
+#class-journal .st-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+#class-journal .st-wordmark {
+  font-family: 'Gaegu', cursive;
+  font-weight: 700;
+  font-size: 52px;
+  line-height: 1;
+  color: #fffdf7;
+}
+#class-journal .st-sub {
+  font-family: 'Do Hyeon', sans-serif;
+  font-size: 18px;
+  color: var(--st-light2);
+}
+#class-journal .st-nav {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+#class-journal .st-nav button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 72px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #fffdf7;
+  font-family: 'Do Hyeon', sans-serif;
+  font-size: 15px;
+}
+#class-journal .st-tile {
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--st-paper);
+  color: var(--st-ink);
+  box-shadow: 0 3px 0 rgb(0 0 0 / 0.18);
+  clip-path: polygon(2% 10%, 30% 2%, 70% 6%, 98% 0%, 100% 88%, 72% 100%, 35% 94%, 0% 100%);
+}
+#class-journal .st-tile svg {
+  width: 30px;
+  height: 30px;
+}
+#class-journal .st-nav button[aria-current='page'] .st-tile {
+  background: var(--st-accent);
+  color: var(--st-paper);
+}
+#class-journal .st-nav .st-leave .st-tile {
+  background: transparent;
+  color: #fffdf7;
+  box-shadow: inset 0 0 0 2px rgb(255 253 247 / 0.6);
+}
+#class-journal .st-stage {
+  padding: 12px 36px 40px;
+}
+#class-journal .st-stage-focus {
+  padding-top: 24px;
+}
+
+/* ── 공통 부품 ── */
+#class-journal .st-paper {
+  background: var(--st-paper);
+  color: var(--st-ink);
+  border-radius: 6px;
+  box-shadow: 0 10px 24px rgb(0 0 0 / 0.28);
+}
+#class-journal .st-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 32px 40px 40px;
+}
+#class-journal .st-sheet-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px 20px;
+  flex-wrap: wrap;
+}
+#class-journal .st-sheet h1 {
+  font-size: 36px;
+}
+#class-journal .st-sheet h2 {
+  font-size: 22px;
+}
+#class-journal .st-sheet-head p,
+#class-journal .st-meta {
+  margin: 4px 0 0;
+  font-size: 15px;
+  color: #4a4a45;
+}
+#class-journal .st-kicker {
+  margin: 0;
+  font-family: 'Do Hyeon', sans-serif;
+  font-size: 15px;
+  color: #3f6400;
+}
+#class-journal .st-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 0 26px;
+  border: 2px solid var(--st-ink);
+  border-radius: 12px;
+  background: #fffdf7;
+  color: var(--st-ink);
+  font-family: 'Do Hyeon', sans-serif;
+  font-size: 19px;
+}
+#class-journal .st-button.st-primary {
+  border-color: var(--st-accent);
+  background: var(--st-accent);
+  color: #fff;
+}
+#class-journal .st-photo {
+  margin: 0;
+  padding: 8px 8px 10px;
+  background: #fff;
+  box-shadow: 0 4px 10px rgb(0 0 0 / 0.15);
+  transform: rotate(-1.2deg);
+}
+#class-journal .st-photo svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+#class-journal .st-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Do Hyeon', sans-serif;
+  font-size: 17px;
+}
+#class-journal .st-select select {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 2px solid var(--st-ink);
+  border-radius: 12px;
+  background: #fffdf7;
+  font-size: 16px;
+}
+#class-journal .st-notice {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+#class-journal .st-empty {
+  margin: 0;
+  padding: 24px;
+  border: 2px dashed rgb(31 36 33 / 0.3);
+  border-radius: 14px;
+  font-size: 16px;
+}
+
+/* ── 생각 지도 (홈) ── */
+#class-journal .st-home-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 430px) minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+#class-journal .st-today {
+  position: relative;
+  filter: drop-shadow(0 8px 14px rgb(0 0 0 / 0.25));
+  margin-top: 12px;
+}
+#class-journal .st-torn {
+  background: var(--st-paper);
+  color: var(--st-ink);
+  clip-path: polygon(0% 2%, 6% 0%, 14% 1.5%, 22% 0%, 31% 1%, 40% 0%, 52% 1.6%, 63% 0.2%, 74% 1.4%, 86% 0%, 94% 1.2%, 100% 0%, 99.2% 12%, 100% 26%, 99% 41%, 100% 57%, 99.3% 72%, 100% 88%, 99% 100%, 88% 98.6%, 77% 100%, 65% 98.8%, 52% 100%, 40% 98.6%, 28% 100%, 16% 98.8%, 6% 100%, 0% 98.5%, 0.8% 84%, 0% 68%, 1% 52%, 0% 36%, 0.7% 20%);
+}
+#class-journal .st-torn-back {
+  position: absolute;
+  inset: 10px -8px -6px 12px;
+  background: #e6dac2;
+  transform: rotate(2deg);
+}
+#class-journal .st-today-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px 30px 30px;
+  transform: rotate(-1deg);
+}
+#class-journal .st-today-card h2 {
+  font-size: 30px;
+  line-height: 1.15;
+}
+#class-journal .st-today-card .st-meta {
+  margin: 0;
+}
+#class-journal .st-today-card .st-button {
+  align-self: flex-start;
+  margin-top: 6px;
+}
+#class-journal .st-map {
+  position: relative;
+  min-height: 640px;
+}
+#class-journal .st-map-path {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+#class-journal .st-map-path path {
+  fill: none;
+  stroke: rgb(255 255 255 / 0.55);
+  stroke-width: 3;
+  stroke-dasharray: 2 12;
+  stroke-linecap: round;
+}
+#class-journal .st-islands {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+#class-journal .st-islands li {
+  position: absolute;
+  width: 200px;
+}
+#class-journal .st-islands li[data-type='ANALYZE'] {
+  left: 2%;
+  top: 20px;
+}
+#class-journal .st-islands li[data-type='EVALUATE'] {
+  left: 40%;
+  top: 0;
+}
+#class-journal .st-islands li[data-type='CREATE'] {
+  right: 0;
+  top: 130px;
+}
+#class-journal .st-islands li[data-type='SOLVE'] {
+  left: 28%;
+  top: 250px;
+}
+#class-journal .st-islands li[data-type='REFLECT'] {
+  right: 4%;
+  top: 380px;
+}
+#class-journal .st-island {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--st-ink);
+}
+#class-journal .st-island-art {
+  width: 100%;
+  height: auto;
+  transition: transform 0.2s ease;
+}
+#class-journal .st-island:hover .st-island-art {
+  transform: translateY(-3px);
+}
+#class-journal .st-island-name {
+  margin-top: -8px;
+  white-space: nowrap;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: #fffdf7;
+  box-shadow: 0 2px 0 rgb(0 0 0 / 0.15);
+}
+#class-journal .st-island-name strong {
+  font-family: 'Do Hyeon', sans-serif;
+  font-weight: 400;
+  font-size: 20px;
+}
+#class-journal .st-island-name small {
+  font-size: 13px;
+  color: #4a4a45;
+}
+#class-journal .st-today-flag {
+  position: absolute;
+  top: -16px;
+  right: -4px;
+  padding: 6px 12px;
+  background: var(--st-accent);
+  color: #fff;
+  font-family: 'Do Hyeon', sans-serif;
+  font-size: 16px;
+  clip-path: polygon(2% 10%, 30% 2%, 70% 6%, 98% 0%, 100% 88%, 72% 100%, 35% 94%, 0% 100%);
+}
+#class-journal .st-buddy {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+#class-journal .st-buddy-figure {
+  position: relative;
+  width: 170px;
+  height: 170px;
+  flex: none;
+}
+#class-journal .st-ride {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 170px;
+  height: auto;
+}
+#class-journal .st-buddy-figure .st-companion {
+  position: absolute;
+  left: 32px;
+  bottom: 36px;
+}
+#class-journal .st-bubble {
+  margin: 0 0 110px;
+  max-width: 260px;
+  padding: 12px 16px;
+  border-radius: 18px 18px 18px 4px;
+  background: #fffdf7;
+  color: var(--st-ink);
+  font-family: 'Gaegu', cursive;
+  font-size: 21px;
+  line-height: 1.3;
+  box-shadow: 0 3px 0 rgb(0 0 0 / 0.15);
+}
+
+/* ── 미션 고르기 ── */
+#class-journal .st-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+#class-journal .st-chips button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 2px solid var(--st-ink);
+  border-radius: 999px;
+  background: #fffdf7;
+  color: var(--st-ink);
+  font-family: 'Do Hyeon', sans-serif;
+  font-size: 17px;
+}
+#class-journal .st-chips button[aria-pressed='true'] {
+  background: var(--st-ink);
+  color: #fffdf7;
+}
+#class-journal .st-chips i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #fffdf7;
+}
+#class-journal .st-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 22px;
+}
+#class-journal .st-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 16px;
+  border-radius: 16px;
+  background: #fffdf7;
+  box-shadow: 0 2px 0 rgb(0 0 0 / 0.08);
+}
+#class-journal .st-card .st-photo {
+  margin: 4px 4px 8px;
+}
+#class-journal .st-card h2 {
+  font-size: 24px;
+  line-height: 1.2;
+}
+#class-journal .st-question {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #3a3a36;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+#class-journal .st-card-foot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 8px;
+}
+#class-journal .st-status {
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1.5px solid rgb(31 36 33 / 0.4);
+  font-family: 'Do Hyeon', sans-serif;
+  font-size: 15px;
+}
+#class-journal .st-card[data-status='COMPLETED'] .st-status {
+  border-color: #3f6400;
+  color: #3f6400;
+}
+#class-journal .st-card[data-status='IN_PROGRESS'] .st-status {
+  border-color: var(--st-accent);
+  color: #9a4416;
+}
+
+/* ── 꾸미기 (첫 화면에서 여는 창) ── */
+#class-journal .st-decorate {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  background: var(--st-paper);
+}
+#class-journal .st-decorate svg {
+  width: 22px;
+  height: 22px;
+}
+#class-journal .cj-app-student .cj-modal:has(.st-custom) {
+  max-width: 860px;
+}
+#class-journal .st-custom {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+#class-journal .st-custom h3 {
+  font-family: 'Do Hyeon', sans-serif;
+  font-weight: 400;
+  font-size: 20px;
+  margin: 0;
+}
+#class-journal .st-custom .st-pick-grid {
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+}
+#class-journal .st-custom .st-pick {
+  border-color: rgb(31 36 33 / 0.12);
+}
+#class-journal .st-custom .st-pick[aria-pressed='true'] {
+  border-color: var(--st-accent);
+}
+#class-journal .st-pick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+  margin-top: 10px;
+}
+#class-journal .st-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 3px solid transparent;
+  border-radius: 18px;
+  background: #fffdf7;
+  color: var(--st-ink);
+  text-align: left;
+}
+#class-journal .st-pick[aria-pressed='true'] {
+  border-color: var(--st-accent);
+}
+#class-journal .st-pick-buddy {
+  align-items: center;
+  text-align: center;
+}
+#class-journal .st-pick strong {
+  font-family: 'Do Hyeon', sans-serif;
+  font-weight: 400;
+  font-size: 20px;
+}
+#class-journal .st-pick small {
+  font-size: 13px;
+  color: #4a4a45;
+}
+#class-journal .st-swatch {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* ── 내 공책 (기존 기록 카드를 종이 위에) ── */
+#class-journal .st-sheet .cj-feedbar {
+  background: none;
+  border: 0;
+  padding: 0;
+}
+#class-journal .st-sheet .cj-feedbar h1 {
+  font-size: 36px;
+}
+#class-journal .st-sheet .cj-feed {
+  padding: 0;
+  background: none;
+}
+#class-journal .st-sheet .cj-post {
+  border-radius: 16px;
+  background: #fffdf7;
+}
+
+/* ── 미션 작성 (위에서 아래로: 질문 → 장면 → 도움 버튼 → 내 생각) ── */
+#class-journal .st-work.cj-editor {
+  background: none;
+}
+#class-journal .st-work-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  flex-wrap: wrap;
+  max-width: 920px;
+  margin: 0 auto 18px;
+}
+#class-journal .st-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  color: #fffdf7;
+  font-family: 'Do Hyeon', sans-serif;
+  font-size: 18px;
+}
+#class-journal .st-back svg {
+  width: 26px;
+  height: 26px;
+}
+#class-journal .st-steps {
+  display: flex;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  flex-wrap: wrap;
+}
+#class-journal .st-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--st-shade);
+  color: #f4ecdc;
+  font-family: 'Do Hyeon', sans-serif;
+  font-size: 16px;
+  clip-path: polygon(2% 10%, 30% 2%, 70% 6%, 98% 0%, 100% 88%, 72% 100%, 35% 94%, 0% 100%);
+}
+#class-journal .st-steps li[data-done] {
+  background: var(--st-paper);
+  color: var(--st-ink);
+}
+#class-journal .st-steps li[data-done] svg {
+  width: 16px;
+  height: 16px;
+  color: #3f6400;
+}
+#class-journal .st-steps li[aria-current='step'] {
+  background: var(--st-accent);
+  color: #fff;
+}
+#class-journal .st-work-paper {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 0;
+}
+#class-journal .st-work .ux-answer-paper {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  min-height: 0;
+  padding: 34px 40px 12px;
+}
+#class-journal .st-work .ux-paper-question {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-bottom: 2px dashed rgb(31 36 33 / 0.18);
+  padding-bottom: 22px;
+  margin-bottom: 8px;
+}
+#class-journal .st-work .ux-paper-question h1 {
+  font-size: 34px;
+  line-height: 1.15;
+}
+#class-journal .st-ask {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+#class-journal .st-ask .st-companion {
+  flex: none;
+}
+#class-journal .st-say {
+  max-width: 640px;
+  padding: 12px 18px;
+  border-radius: 4px 18px 18px 18px;
+  background: #fff;
+  box-shadow: 0 2px 0 rgb(0 0 0 / 0.08);
+  font-size: 16px;
+  line-height: 1.55;
+}
+#class-journal .st-work .st-say h2 {
+  margin: 0;
+  font-family: 'Gothic A1', sans-serif;
+  font-weight: 600;
+  font-size: 19px;
+  line-height: 1.6;
+  max-width: none;
+}
+#class-journal .st-say strong {
+  font-family: 'Do Hyeon', sans-serif;
+  font-weight: 400;
+  font-size: 16px;
+  color: #9a4416;
+}
+#class-journal .st-say p {
+  margin: 4px 0 0;
+}
+#class-journal .st-say small {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 10px;
+  border: 1.5px solid var(--st-accent);
+  border-radius: 999px;
+  color: #9a4416;
+  font-family: 'Do Hyeon', sans-serif;
+  font-size: 13px;
+}
+#class-journal .st-work .ux-scene {
+  margin: 0;
+  max-width: 640px;
+  padding: 10px 10px 12px;
+  background: #fff;
+  box-shadow: 0 6px 14px rgb(0 0 0 / 0.16);
+  transform: rotate(-0.8deg);
+}
+#class-journal .st-work .ux-scene figcaption {
+  font-size: 13px;
+  color: #4a4a45;
+}
+#class-journal .st-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+#class-journal .st-tools button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 2px solid var(--st-ink);
+  border-radius: 999px;
+  background: #fffdf7;
+  color: var(--st-ink);
+  font-family: 'Do Hyeon', sans-serif;
+  font-size: 16px;
+}
+#class-journal .st-tools button svg {
+  width: 20px;
+  height: 20px;
+}
+#class-journal .st-tools button[aria-pressed='true'] {
+  background: var(--st-ink);
+  color: #fffdf7;
+}
+#class-journal .st-tools button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+#class-journal .st-work .ux-answer-fields {
+  max-width: none;
+}
+#class-journal .st-work .cj-field {
+  font-family: 'Do Hyeon', sans-serif;
+  font-size: 18px;
+  color: var(--st-ink);
+}
+#class-journal .st-work .cj-field input,
+#class-journal .st-work .cj-field textarea {
+  border: 2px solid var(--st-ink);
+  border-radius: 14px;
+  background: #fffdf7;
+  font-family: 'Gaegu', 'Malgun Gothic', cursive;
+  font-size: 22px;
+  line-height: 1.5;
+}
+#class-journal .st-work .ux-feedback {
+  background: #fff;
+  border-radius: 14px;
+}
+#class-journal .st-work .ux-feedback .st-ask {
+  margin-top: 12px;
+}
+#class-journal .st-work .ux-feedback .st-say {
+  background: #f4ecdc;
+}
+#class-journal .st-work .ux-choices button[aria-pressed='true'],
+#class-journal .st-work .cj-difficulties button[aria-pressed='true'] {
+  background: #f6e3d4;
+  box-shadow: inset 0 0 0 2px var(--st-accent);
+  color: var(--st-ink);
+}
+#class-journal .st-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  flex-wrap: wrap;
+  padding: 14px 40px 18px;
+  background: var(--st-paper);
+  border-top: 2px dashed rgb(31 36 33 / 0.18);
+  border-radius: 0 0 6px 6px;
+}
+#class-journal .st-actions .ux-save-line {
+  margin: 0;
+  flex: 1 1 260px;
+  font-size: 13px;
+  color: #4a4a45;
+}
+#class-journal .st-actions .st-button {
+  margin-left: auto;
+}
+@media (max-width: 640px) {
+  #class-journal .st-work .ux-answer-paper {
+    padding: 22px 16px 8px;
+  }
+  #class-journal .st-work .ux-paper-question h1 {
+    font-size: 26px;
+  }
+  #class-journal .st-actions {
+    padding: 10px 16px 12px;
+  }
+  #class-journal .st-actions .ux-save-line {
+    flex-basis: 100%;
+  }
+}
+
+/* ── 자녀 기기 로그인 (기본 테마 위 종이 카드) ── */
+#class-journal .st-world .device-login {
+  min-height: min(834px, calc(100vh - 40px));
+}
+#class-journal .st-world .device-card {
+  background: var(--st-paper);
+  color: var(--st-ink);
+  border: 0;
+  border-radius: 6px;
+  box-shadow: 0 10px 24px rgb(0 0 0 / 0.28);
+}
+#class-journal .st-world .device-card h1 {
+  font-size: 30px;
+}
+#class-journal .st-world .pin-keys button {
+  border: 2px solid var(--st-ink);
+  background: #fffdf7;
+  font-family: 'Do Hyeon', sans-serif;
+  font-weight: 400;
+}
+#class-journal .st-world .pin-keys .pin-ok {
+  background: var(--st-accent);
+  border-color: var(--st-accent);
+}
+
+/* ── 태블릿: 오늘의 미션을 지도 위로 ── */
+@media (max-width: 1240px) {
+  #class-journal .st-home-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  #class-journal .st-today {
+    max-width: 560px;
+  }
+}
+/* ── 좁은 화면: 지도를 목록으로 접는다 ── */
+@media (max-width: 820px) {
+  #class-journal .st-map {
+    min-height: 0;
+  }
+  #class-journal .st-map-path {
+    display: none;
+  }
+  #class-journal .st-islands {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 18px 12px;
+    margin-top: 16px;
+  }
+  #class-journal .st-islands li {
+    position: static;
+    width: auto;
+  }
+  #class-journal .st-island-name {
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    border-radius: 18px;
+  }
+  #class-journal .st-buddy {
+    position: static;
+    margin-top: 16px;
+  }
+  #class-journal .st-decorate {
+    position: static;
+    margin-top: 12px;
+  }
+  #class-journal .st-bubble {
+    margin-bottom: 90px;
+  }
+}
+@media (max-width: 640px) {
+  #class-journal .st-top {
+    padding: 20px 16px 4px;
+  }
+  #class-journal .st-wordmark {
+    font-size: 40px;
+  }
+  #class-journal .st-nav {
+    gap: 6px;
+  }
+  #class-journal .st-nav button {
+    min-width: 56px;
+    font-size: 13px;
+  }
+  #class-journal .st-tile {
+    width: 48px;
+    height: 48px;
+  }
+  #class-journal .st-tile svg {
+    width: 24px;
+    height: 24px;
+  }
+  #class-journal .st-stage {
+    padding: 8px 12px 28px;
+  }
+  #class-journal .st-sheet {
+    padding: 22px 16px 28px;
+  }
+  #class-journal .st-sheet h1 {
+    font-size: 28px;
+  }
+  #class-journal .st-today-card {
+    padding: 22px 20px 24px;
+  }
+  #class-journal .st-buddy-figure {
+    width: 130px;
+    height: 140px;
+  }
+  #class-journal .st-ride {
+    width: 130px;
+  }
+  #class-journal .st-buddy-figure .st-companion {
+    width: 80px;
+    height: 80px;
+    left: 24px;
+    bottom: 28px;
+  }
+  #class-journal .st-bubble {
+    font-size: 18px;
+    margin-bottom: 70px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #class-journal .st-island-art {
+    transition: none;
+  }
+}

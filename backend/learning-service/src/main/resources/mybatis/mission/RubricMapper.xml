@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 관리자 기준표 (#145): rubric_version·rubric_element·hint_question. 새 버전만 넣고 이전 버전은 바꾸지 않음 -->
+<mapper namespace="com.sagomungchi.learning.mission.repository.RubricMapper">
+    <resultMap id="rubric" type="com.sagomungchi.learning.mission.repository.RubricRow">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="version" javaType="_int"/>
+            <arg column="answer_key" javaType="com.sagomungchi.learning.mission.domain.AnswerKey"
+                 typeHandler="com.sagomungchi.learning.mission.repository.AnswerKeyTypeHandler"/>
+            <arg column="example_answer" javaType="java.lang.String"/>
+            <arg column="forbidden_terms" javaType="java.util.List"
+                 typeHandler="com.sagomungchi.learning.mission.repository.StringListTypeHandler"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+    <!-- 평평한 행으로 읽음: 중첩 resultMap은 구분 ID가 없으면 같은 기준표 버전의 요소를 한 행으로 합침 -->
+    <resultMap id="element" type="com.sagomungchi.learning.mission.repository.ElementRow">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="rubric_version_id" javaType="java.util.UUID"/>
+            <arg column="code" javaType="java.lang.String"/>
+            <arg column="label" javaType="java.lang.String"/>
+            <arg column="description" javaType="java.lang.String"/>
+            <arg column="points" javaType="_int"/>
+            <arg column="common_errors" javaType="java.util.List"
+                 typeHandler="com.sagomungchi.learning.mission.repository.StringListTypeHandler"/>
+            <arg column="good_thought" javaType="_boolean"/>
+            <arg column="judge_verified" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="hint" type="com.sagomungchi.learning.mission.repository.HintRow">
+        <constructor>
+            <arg column="rubric_version_id" javaType="java.util.UUID"/>
+            <arg column="content" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <select id="findRubrics" resultMap="rubric" flushCache="true" useCache="false">
+        SELECT id, version, answer_key, example_answer, COALESCE(forbidden_terms, '[]'::jsonb) AS forbidden_terms, created_at
+        FROM rubric_version WHERE mission_id = #{missionId} ORDER BY version
+    </select>
+
+    <select id="findElements" resultMap="element" flushCache="true" useCache="false">
+        SELECT e.id, e.rubric_version_id, e.code, e.label, e.description, e.points,
+               COALESCE(e.common_errors, '[]'::jsonb) AS common_errors, e.good_thought, e.judge_verified
+        FROM rubric_element e
+        JOIN rubric_version rv ON rv.id = e.rubric_version_id
+        WHERE rv.mission_id = #{missionId}
+        ORDER BY e.rubric_version_id, e.sort_order
+    </select>
+
+    <select id="findHints" resultMap="hint" flushCache="true" useCache="false">
+        SELECT h.rubric_version_id, h.content
+        FROM hint_question h
+        JOIN rubric_version rv ON rv.id = h.rubric_version_id
+        WHERE rv.mission_id = #{missionId}
+        ORDER BY h.rubric_version_id, h.seq
+    </select>
+
+    <select id="nextVersion" resultType="int" flushCache="true" useCache="false">
+        SELECT COALESCE(max(version), 0) + 1 FROM rubric_version WHERE mission_id = #{missionId}
+    </select>
+
+    <insert id="insertRubricVersion">
+        INSERT INTO rubric_version (id, mission_id, version, answer_key, example_answer, forbidden_terms, created_by, created_at)
+        VALUES (#{id}, #{missionId}, #{version},
+                #{command.answerKey,typeHandler=com.sagomungchi.learning.mission.repository.AnswerKeyTypeHandler,jdbcType=OTHER},
+                #{command.exampleAnswer,jdbcType=VARCHAR},
+                #{command.forbiddenTerms,typeHandler=com.sagomungchi.learning.mission.repository.StringListTypeHandler},
+                #{command.authorId}, #{now})
+    </insert>
+
+    <!-- sort_order는 보낸 순서 -->
+    <insert id="insertElements">
+        INSERT INTO rubric_element (id, rubric_version_id, code, label, description, points, common_errors, good_thought,
+                                    judge_verified, sort_order)
+        VALUES
+        <foreach collection="elements" item="r" separator=",">
+            (#{r.id}, #{rubricVersionId}, #{r.value.code}, #{r.value.label}, #{r.value.description,jdbcType=VARCHAR}, #{r.value.points},
+             #{r.value.commonErrors,typeHandler=com.sagomungchi.learning.mission.repository.StringListTypeHandler},
+             #{r.value.goodThought}, #{r.value.judgeVerified}, #{r.order})
+        </foreach>
+    </insert>
+
+    <!-- seq는 보낸 순서 (생각 열기 순서, FN-LRN-06) -->
+    <insert id="insertHints">
+        INSERT INTO hint_question (id, rubric_version_id, seq, content)
+        VALUES
+        <foreach collection="hints" item="r" separator=",">
+            (#{r.id}, #{rubricVersionId}, #{r.order}, #{r.value})
+        </foreach>
+    </insert>
+
+    <update id="updateCurrentRubric">
+        UPDATE mission SET current_rubric_version_id = #{rubricVersionId}, updated_at = #{now} WHERE id = #{missionId}
+    </update>
+</mapper>

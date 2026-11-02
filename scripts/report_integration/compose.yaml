@@ -1,0 +1,161 @@
+# #56 전용 격리 환경. 합성 자격 증명만 사용하며 팀 compose/기존 볼륨은 건드리지 않는다.
+x-report: &report
+  image: local/report56-verification
+  build: ../../backend/report-service
+  environment: &env
+    INTERNAL_TOKEN: report56-test-only
+    DATABASE_URL: postgresql+psycopg://verify:synthetic-only@postgres:5432/report_db
+    RABBITMQ_URL: amqp://verify:synthetic-only@rabbitmq:5672/
+    LEARNING_URL: http://learning:8081
+    AI_URL: http://fixture:8010
+    CORE_URL: http://core:8080
+    S3_ENDPOINT_URL: http://minio:9000
+    S3_PUBLIC_ENDPOINT_URL: http://minio:9000
+    S3_BUCKET: report56-synthetic
+    AWS_ACCESS_KEY_ID: report56-verify
+    AWS_SECRET_ACCESS_KEY: report56-synthetic-only
+    AWS_DEFAULT_REGION: us-east-1
+    S3_REGION: us-east-1
+  volumes:
+    - .:/verification:ro
+    - ../../contracts:/contracts:ro
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+    rabbit-init:
+      condition: service_completed_successfully
+
+services:
+  redis:
+    image: redis:8.2.10-alpine
+  core-migrate:
+    image: flyway/flyway:13.11.1-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../../backend/core-service/src/main/resources/db/migration:/flyway/sql:ro
+    command: [-url=jdbc:postgresql://postgres:5432/core_db, -user=verify, -password=synthetic-only, migrate]
+  core:
+    image: eclipse-temurin:21-jdk
+    user: "10001"
+    depends_on:
+      redis:
+        condition: service_started
+      core-migrate:
+        condition: service_completed_successfully
+      rabbit-init:
+        condition: service_completed_successfully
+    volumes:
+      - ../../backend/core-service/build/libs/core-service-0.0.1-SNAPSHOT.jar:/app/core.jar:ro
+    command: [java, -Xmx512m, -jar, /app/core.jar]
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/core_db
+      DB_USERNAME: verify
+      DB_PASSWORD: synthetic-only
+      INTERNAL_TOKEN: report56-test-only
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: verify
+      RABBITMQ_PASSWORD: synthetic-only
+      REDIS_HOST: redis
+      # base64 of a public synthetic test value; never use outside this isolated fixture.
+      AUTH_JWT_SECRET: cmVwb3J0NTYtc3ludGhldGljLWp3dC1zZWNyZXQtYXQtbGVhc3QtMzItY2hhcmFjdGVycw==
+  postgres:
+    image: postgres:17.11-alpine
+    environment:
+      POSTGRES_USER: verify
+      POSTGRES_PASSWORD: synthetic-only
+    volumes:
+      - ../../infrastructure/gitops/charts/platform-data/files/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U verify]
+      interval: 2s
+      timeout: 3s
+      retries: 40
+  rabbitmq:
+    image: rabbitmq:4.3.7-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: verify
+      RABBITMQ_DEFAULT_PASS: synthetic-only
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, check_port_connectivity]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+  rabbit-init:
+    image: curlimages/curl:8.17.0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_USER: verify
+      RABBITMQ_PASSWORD: synthetic-only
+    volumes:
+      - ../../infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json:/definitions/definitions.json:ro
+      - ../../infrastructure/gitops/charts/platform-data/files/rabbitmq/import-definitions.sh:/definitions/import-definitions.sh:ro
+    entrypoint: [/bin/sh, /definitions/import-definitions.sh]
+  learning-migrate:
+    image: flyway/flyway:13.11.1-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../../backend/learning-service/src/main/resources/db/migration:/flyway/sql:ro
+    command: [-url=jdbc:postgresql://postgres:5432/learning_db, -user=verify, -password=synthetic-only, migrate]
+  learning:
+    image: eclipse-temurin:21-jdk
+    user: "10001"
+    depends_on:
+      learning-migrate:
+        condition: service_completed_successfully
+      rabbit-init:
+        condition: service_completed_successfully
+    volumes:
+      - ../../backend/learning-service/build/libs/learning-service-0.0.1-SNAPSHOT.jar:/app/learning.jar:ro
+    command: [java, -Xmx512m, -jar, /app/learning.jar]
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/learning_db
+      DB_USERNAME: verify
+      DB_PASSWORD: synthetic-only
+      INTERNAL_TOKEN: report56-test-only
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: verify
+      RABBITMQ_PASSWORD: synthetic-only
+  migrate:
+    image: local/report56-verification
+    build: ../../backend/report-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://verify:synthetic-only@postgres:5432/report_db
+    command: [alembic, upgrade, head]
+  minio:
+    image: cgr.dev/chainguard/minio@sha256:98c819b873cbd455860c1fb5a9171a62b2f48d86554a4b2c6847e60a14a9ef30
+    environment:
+      MINIO_ROOT_USER: report56-verify
+      MINIO_ROOT_PASSWORD: report56-synthetic-only
+    tmpfs:
+      - /data:uid=65532,gid=65532,mode=0700
+    command: [--certs-dir, /tmp/certs, server, --address, ':9000', /data]
+  fixture:
+    image: local/report56-verification
+    environment: *env
+    volumes:
+      - .:/verification:ro
+    command: [uvicorn, fixtures:app, --app-dir, /verification, --host, 0.0.0.0, --port, '8010']
+  report-api:
+    <<: *report
+  report-worker:
+    <<: *report
+    environment:
+      <<: *env
+      PYTHONPATH: /app
+    command: [python, -m, app.worker]
+  verify:
+    <<: *report
+    profiles: [verify]
+    environment:
+      <<: *env
+      PYTHONPATH: /app
+    command: [python, /verification/scenario.py]

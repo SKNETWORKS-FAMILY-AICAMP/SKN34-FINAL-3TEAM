@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -9,11 +10,23 @@ class Settings(BaseSettings):
     service_name: str = "report-service"
     internal_token: str
     rabbitmq_url: str = "amqp://localhost:5672/"
+    # P12: 재시도 3회(1·5·15분). definitions.json의 <큐>.retry.1~3 개수와 일치
+    consumer_max_retries: int = 3
+    # 레플리카 수 × prefetch = learning·ai 동시 호출 상한, 값은 실측 후 결정 (아키텍처 4.4)
+    consumer_prefetch: int = 1
+    # 발행 완료 outbox_event·processed_event 보존 일수 (#208)
+    event_retention_days: int = Field(default=90, ge=1)
     http_connect_timeout: float = 2.0
-    http_read_timeout: float = 30.0  # [P12] 확정 전 임시값
+    http_read_timeout: float = 30.0  # 내부 호출 기본값 (P12 목록 밖)
     database_url: str
     learning_url: str = "http://localhost:8081"
     ai_url: str = "http://localhost:8000"
+    core_url: str = "http://localhost:8080"
+    s3_endpoint_url: str | None = None
+    s3_public_endpoint_url: str | None = None
+    s3_bucket: str = "sagomungchi-local-reports"
+    s3_region: str = "ap-northeast-2"
+    report_download_ttl_seconds: int = Field(default=300, ge=1, le=3600)
 
 
 @lru_cache

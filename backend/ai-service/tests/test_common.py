@@ -1,9 +1,12 @@
 from typing import Annotated
 
+import pytest
 from fastapi import APIRouter, Depends
 from fastapi.testclient import TestClient
 
+from app import bootstrap
 from app.bootstrap import create_app
+from app.config import Settings
 from app.security import UserContext, get_user_context
 
 probe = APIRouter()
@@ -62,3 +65,14 @@ def test_not_found_uses_traceparent() -> None:
         body = client.get("/internal/unknown", headers=headers).json()
     assert body["code"] == "NOT_FOUND"
     assert body["traceId"] == "4bf92f3577b34da6a3ce929d0e0e4736"
+
+
+def test_langfuse_enabled_requires_keys_and_collector_endpoint(monkeypatch) -> None:
+    monkeypatch.setattr(
+        bootstrap,
+        "get_settings",
+        lambda: Settings(internal_token="test-token", langfuse_enabled=True),
+    )
+    with pytest.raises(ValueError, match="Langfuse 계측에"):
+        with TestClient(create_app()):
+            pass

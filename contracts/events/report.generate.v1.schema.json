@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "report.generate.v1.schema.json",
+  "title": "report.generate v1 data",
+  "description": "core-service → cmd.direct → report-worker. revision은 report가 자녀/주별로 직렬 배정한다.",
+  "type": "object",
+  "required": [
+    "jobId",
+    "studentId",
+    "periodFrom",
+    "periodTo",
+    "trigger",
+    "narrativeEnabled"
+  ],
+  "properties": {
+    "jobId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "studentId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "periodFrom": {
+      "type": "string",
+      "format": "date"
+    },
+    "periodTo": {
+      "type": "string",
+      "format": "date"
+    },
+    "trigger": {
+      "enum": [
+        "SCHEDULE",
+        "REGENERATE",
+        "ADMIN_RETRY"
+      ]
+    },
+    "narrativeEnabled": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}

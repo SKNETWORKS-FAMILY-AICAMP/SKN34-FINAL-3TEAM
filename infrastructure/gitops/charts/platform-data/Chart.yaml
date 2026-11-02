@@ -1,0 +1,5 @@
+apiVersion: v2
+name: platform-data
+description: RabbitMQ and Redis with optional local PostgreSQL and MinIO.
+type: application
+version: 0.1.0

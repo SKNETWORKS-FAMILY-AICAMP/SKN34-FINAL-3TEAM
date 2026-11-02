@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.learning.answer.repository.AnswerMapper">
+    <resultMap id="answer" type="com.sagomungchi.learning.answer.domain.Answer">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="attempt_id" javaType="java.util.UUID"/>
+            <arg column="version" javaType="_int"/>
+            <arg column="followup_id" javaType="java.util.UUID"/>
+            <arg column="previous_answer_id" javaType="java.util.UUID"/>
+            <arg column="input_type" javaType="com.sagomungchi.learning.mission.domain.InputType"/>
+            <arg column="content" javaType="com.sagomungchi.learning.answer.domain.AnswerContent"/>
+            <arg column="plain_text" javaType="java.lang.String"/>
+            <arg column="dictated_by_guardian" javaType="_boolean"/>
+            <arg column="idempotency_key" javaType="java.util.UUID"/>
+            <arg column="submitted_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="columns">
+        id, attempt_id, version, followup_id, previous_answer_id, input_type, content, plain_text,
+        dictated_by_guardian, idempotency_key, submitted_at
+    </sql>
+
+    <insert id="insert">
+        INSERT INTO answer (<include refid="columns"/>)
+        VALUES (#{id}, #{attemptId}, #{version}, #{followupId,jdbcType=OTHER}, #{previousAnswerId,jdbcType=OTHER},
+                #{inputType}, #{content}, #{plainText,jdbcType=VARCHAR}, #{dictatedByGuardian}, #{idempotencyKey},
+                #{submittedAt})
+    </insert>
+
+    <select id="findByIdempotencyKey" resultMap="answer">
+        SELECT <include refid="columns"/> FROM answer WHERE attempt_id = #{attemptId} AND idempotency_key = #{key}
+    </select>
+
+    <select id="findLatest" resultMap="answer">
+        SELECT <include refid="columns"/> FROM answer WHERE attempt_id = #{attemptId} ORDER BY version DESC LIMIT 1
+    </select>
+</mapper>

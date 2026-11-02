@@ -59,18 +59,12 @@ services:
       rabbitmq:
         condition: service_healthy
     volumes:
-      - ./infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json:/definitions.json:ro
-    command:
-      - -fsS
-      - -u
-      - ${RABBITMQ_USER}:${RABBITMQ_PASSWORD}
-      - -H
-      - "content-type: application/json"
-      - -X
-      - POST
-      - --data-binary
-      - "@/definitions.json"
-      - http://rabbitmq:15672/api/definitions
+      - ./infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json:/definitions/definitions.json:ro
+      - ./infrastructure/gitops/charts/platform-data/files/rabbitmq/import-definitions.sh:/definitions/import-definitions.sh:ro
+    environment:
+      RABBITMQ_USER: ${RABBITMQ_USER:?.env 설정 필요}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?.env 설정 필요}
+    entrypoint: [/bin/sh, /definitions/import-definitions.sh]
 
   redis:
     image: redis:8.2.10-alpine
@@ -132,6 +126,33 @@ services:
       LEARNING_URL: http://learning-service:8081
       AI_URL: http://ai-service:8000
       REPORT_URL: http://report-api:8002
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?base64 JWT 서명 키 설정 필요}
+      AUTH_WEB_ORIGIN: ${AUTH_WEB_ORIGIN:-http://localhost:5173}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+      AUTH_ACCESS_TTL: ${AUTH_ACCESS_TTL:-15m}
+      AUTH_STUDENT_ACCESS_TTL: ${AUTH_STUDENT_ACCESS_TTL:-15m}
+      AUTH_REAUTH_TTL: ${AUTH_REAUTH_TTL:-5m}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      STUDENT_DEVICE_TTL: ${STUDENT_DEVICE_TTL:-90d}
+      STUDENT_DEVICE_ATTEMPT_LIMIT: ${STUDENT_DEVICE_ATTEMPT_LIMIT:-20}
+      AUTH_REFRESH_TTL: ${AUTH_REFRESH_TTL:-7d}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      PAYMENT_FREE_PRODUCT_ID: ${PAYMENT_FREE_PRODUCT_ID:-}
+      TOSS_TEST_SECRET_KEY: ${TOSS_TEST_SECRET_KEY:-}
+      TOSSPAYMENTS_SECRET_KEY: ${TOSSPAYMENTS_SECRET_KEY:-}
+      TOSS_TEST_BILLING_SECRET_KEY: ${TOSS_TEST_BILLING_SECRET_KEY:-}
+      TOSS_TEST_MID: ${TOSS_TEST_MID:-}
+      TOSS_TEST_BILLING_MID: ${TOSS_TEST_BILLING_MID:-}
+      TOSS_TEST_WEBHOOK_SECURITY_KEY: ${TOSS_TEST_WEBHOOK_SECURITY_KEY:-}
+      TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY: ${TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY:-}
+      PAYMENT_BILLING_ENCRYPTION_KEY: ${PAYMENT_BILLING_ENCRYPTION_KEY:-}
+      # 관리자 큐 현황(GET /admin/queues): RabbitMQ 관리 API, 로컬은 기존 브로커 계정 재사용
+      ADMIN_RABBIT_MANAGEMENT_URL: http://rabbitmq:15672
+      ADMIN_RABBIT_MANAGEMENT_USERNAME: ${RABBITMQ_USER}
+      ADMIN_RABBIT_MANAGEMENT_PASSWORD: ${RABBITMQ_PASSWORD}
     ports:
       - "${CORE_HOST_PORT:-8080}:8080"
     healthcheck:
@@ -150,6 +171,7 @@ services:
     environment:
       <<: *spring-env
       DB_URL: jdbc:postgresql://postgres:5432/learning_db
+      CORE_URL: http://core-service:8080
       AI_URL: http://ai-service:8000
     ports:
       - "${LEARNING_HOST_PORT:-8081}:8081"
@@ -169,7 +191,15 @@ services:
       LEARNING_URL: http://learning-service:8081
       SCORING_URL: http://scoring-service:8001
       CORE_URL: http://core-service:8080
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5-5}
+      ANTHROPIC_EFFORT: ${ANTHROPIC_EFFORT:-medium}
+      ANTHROPIC_FALLBACK: ${ANTHROPIC_FALLBACK:-true}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-6.1-terra}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_JSON_MODE: ${OPENAI_JSON_MODE:-json_schema}
     ports:
       - "${AI_HOST_PORT:-8000}:8000"
     healthcheck:
@@ -184,6 +214,9 @@ services:
     environment:
       <<: *python-env
       CORE_URL: http://core-service:8080
+      S3_BUCKET: ${SCORING_S3_BUCKET:-sagomungchi-local-models}
+      S3_REGION: ${SCORING_S3_REGION:-ap-northeast-2}
+      MODEL_CACHE_DIR: /tmp/scoring-models
     ports:
       - "${SCORING_HOST_PORT:-8001}:8001"
     healthcheck:
@@ -202,6 +235,10 @@ services:
       DATABASE_URL: *report-db-url
       LEARNING_URL: http://learning-service:8081
       AI_URL: http://ai-service:8000
+      CORE_URL: http://core-service:8080
+      S3_BUCKET: ${REPORT_S3_BUCKET:-sagomungchi-local-reports}
+      S3_REGION: ${REPORT_S3_REGION:-ap-northeast-2}
+      REPORT_DOWNLOAD_TTL_SECONDS: ${REPORT_DOWNLOAD_TTL_SECONDS:-300}
     ports:
       - "${REPORT_HOST_PORT:-8002}:8002"
     healthcheck:

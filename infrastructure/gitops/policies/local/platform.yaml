@@ -1,0 +1,119 @@
+# Apply only in a dedicated #171 cluster after platform-data is healthy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: platform-default-deny, namespace: platform}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: platform-rabbitmq, namespace: platform}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: rabbitmq, app.kubernetes.io/instance: platform-data}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: app}
+          podSelector:
+            matchExpressions:
+              - {key: app.kubernetes.io/name, operator: In, values: [core-service, learning-service, ai-service, scoring-service, report-worker]}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: keda}
+      ports: [{protocol: TCP, port: 5672}]
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: app}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: core-service}
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: rabbitmq-init}
+      ports: [{protocol: TCP, port: 15672}]
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: observability}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: prometheus}
+      ports: [{protocol: TCP, port: 15692}]
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: platform-postgres, namespace: platform}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: postgres, app.kubernetes.io/instance: platform-data}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: app}
+          podSelector:
+            matchExpressions:
+              - {key: app.kubernetes.io/name, operator: In, values: [core-service, learning-service, report-api, report-worker, core-service-migration, learning-service-migration, report-api-migration]}
+      ports: [{protocol: TCP, port: 5432}]
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: platform-redis, namespace: platform}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: redis, app.kubernetes.io/instance: platform-data}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: app}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: core-service}
+      ports: [{protocol: TCP, port: 6379}]
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: platform-minio, namespace: platform}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: minio, app.kubernetes.io/instance: platform-data}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: app}
+          podSelector:
+            matchExpressions:
+              - {key: app.kubernetes.io/name, operator: In, values: [scoring-service, report-api, report-worker]}
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: minio-init}
+      ports: [{protocol: TCP, port: 9000}]
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: platform-initializers, namespace: platform}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [rabbitmq-init, minio-init]}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: rabbitmq, app.kubernetes.io/instance: platform-data}
+      ports: [{protocol: TCP, port: 15672}]
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: minio, app.kubernetes.io/instance: platform-data}
+      ports: [{protocol: TCP, port: 9000}]

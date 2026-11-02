@@ -1,0 +1,52 @@
+{{- range $name := list "postgres" "rabbitmq" "redis" "minio" }}
+{{- $service := index $.Values $name }}
+{{- if $service.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+  ports:
+    - name: {{ if eq $name "minio" }}api{{ else if eq $name "rabbitmq" }}amqp{{ else }}{{ $name }}{{ end }}
+      port: {{ $service.servicePort }}
+      targetPort: {{ if eq $name "minio" }}api{{ else if eq $name "rabbitmq" }}amqp{{ else }}{{ $name }}{{ end }}
+    {{- if eq $name "rabbitmq" }}
+    - name: management
+      port: {{ $service.managementPort }}
+      targetPort: management
+    - name: prometheus
+      port: {{ $service.prometheusPort }}
+      targetPort: prometheus
+    {{- else if eq $name "minio" }}
+    - name: console
+      port: {{ $service.consolePort }}
+      targetPort: console
+    {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-headless
+  labels:
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+  ports:
+    - name: {{ if eq $name "minio" }}api{{ else if eq $name "rabbitmq" }}amqp{{ else }}{{ $name }}{{ end }}
+      port: {{ $service.servicePort }}
+      targetPort: {{ if eq $name "minio" }}api{{ else if eq $name "rabbitmq" }}amqp{{ else }}{{ $name }}{{ end }}
+{{- end }}
+{{- end }}

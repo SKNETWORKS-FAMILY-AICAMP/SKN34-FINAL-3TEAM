@@ -17,9 +17,14 @@ async def _attach_headers(request: httpx.Request) -> None:
         request.headers.update(context.to_headers())
 
 
-def internal_client(base_url: str) -> httpx.AsyncClient:
+def internal_client(
+    base_url: str, *, transport: httpx.AsyncBaseTransport | None = None
+) -> httpx.AsyncClient:
     settings = get_settings()
     timeout = httpx.Timeout(settings.http_read_timeout, connect=settings.http_connect_timeout)
     return httpx.AsyncClient(
-        base_url=base_url, timeout=timeout, event_hooks={"request": [_attach_headers]}
+        base_url=base_url,
+        timeout=timeout,
+        event_hooks={"request": [_attach_headers]},
+        transport=transport,
     )
