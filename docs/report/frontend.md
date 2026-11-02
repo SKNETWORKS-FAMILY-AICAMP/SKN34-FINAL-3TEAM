@@ -111,7 +111,7 @@ node tests/qr-device-browser.mjs
 - `/admin/payments`: 환불 요청/거래 내역/PG 대조 탭, 페이지 이동, 체크리스트·최종 확인, 반려 사유와 조회/환불 승인 권한 분리.
 - 실제 `PaymentController`의 승인 POST는 body 없이 Idempotency-Key를 사용한다. 반려는 `{reason}`. APPROVED/202는 PG 확인 중이며 COMPLETED만 환불 완료로 표시한다. 적격 여부는 서버가 재검증하며 UI에서 가짜 withinSevenDays·premiumUnused 값을 만들지 않는다.
 - 실제 `SupportController`의 문의 상태 RESOLVED, `noticeId/kind/body/targetRoles/visibleFrom/visibleTo/endedAt`와 POST 답변 계약을 반영했다.
-- 현재 core에는 `GET /admin/notices` 전체 목록이 없다. `GET /notices`의 관리자 대상 공개 공지 첫 20건과 로그인 세션에서 작성·수정한 공지만 관리한다. 예약/종료 공지 전체 조회 API는 후속이다.
+- (2026-11-02 #242로 대체) 공지 관리는 core `GET /admin/notices` 전체 목록을 사용한다. 이전의 `GET /notices` 첫 20건 + 세션 안 작성 목록 방식은 제거했다.
 - 새 기능은 실제 공개 API 어댑터를 호출한다. DEV는 별도 adminServiceHandlers가 가상 응답을 처리하고 운영 빌드에는 포함되지 않는다. 실서버 오류 때 데모 데이터로 자동 전환하지 않는다.
 
 검증: 단위·계약 114개, TypeScript·운영 빌드·lint·운영 목업 제외 검사 통과. 관리자 브라우저에서 로그인·문의 답변·공지 생성/수정/종료·환불 PG 대기·거래/대조·권한 분리, 9개 화면×1440/1024/768/390의 가로 넘침을 확인했다. Google 관리자 로그인은 운영 빌드/API 대역으로 확인했다. 실제 DB·Google OAuth·PG 결제/취소 통합 검증은 하지 않았다. 청크 500kB 경고는 남아 있다.

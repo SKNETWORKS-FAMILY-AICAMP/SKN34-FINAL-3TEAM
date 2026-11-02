@@ -412,6 +412,31 @@ class SupportIntegrationTest: IntegrationTestSupport() {
   call("GET","/notices",null,expected=401);call("GET","/help?role=ADMIN",null,expected=401)
   call("GET","/help?role=ADMIN",studentToken,expected=403);call("GET","/help?role=PARENT",snapshot="help")
  }
+ @Test fun `admin notice list shows scheduled active and ended notices with filters for SERVICE_OPS only`() {
+  val now=OffsetDateTime.now()
+  fun create(title: String,roles: List<String>,from: OffsetDateTime,to: OffsetDateTime?)=
+   call("POST","/admin/notices",adminToken,NoticeCommand("NOTICE",title,"내용",roles,from,to),expected=201)["noticeId"].asText()
+  val scheduled=create("예약 공지",listOf("PARENT"),now.plusDays(1),null)
+  val active=create("공개 공지",listOf("STUDENT","PARENT"),now.minusHours(1),now.plusHours(1))
+  val expired=create("기간 끝난 공지",listOf("ADMIN"),now.minusDays(2),now.minusDays(1))
+  val ended=create("종료한 공지",listOf("PARENT"),now.minusHours(1),null);call("DELETE","/admin/notices/$ended",adminToken)
+  val mine=setOf(scheduled,active,expired,ended)
+  // 다른 테스트가 만든 공지가 있어도 이 테스트의 공지만 비교한다.
+  fun statuses(query: String=""): Map<String,String> =
+   call("GET","/admin/notices?size=100$query",adminToken)["items"].associate { it["noticeId"].asText() to it["status"].asText() }.filterKeys { it in mine }
+  assertEquals(mapOf(scheduled to "SCHEDULED",active to "ACTIVE",expired to "ENDED",ended to "ENDED"),statuses())
+  assertEquals(setOf(scheduled),statuses("&status=SCHEDULED").keys)
+  assertEquals(setOf(active),statuses("&status=ACTIVE").keys)
+  assertEquals(setOf(expired,ended),statuses("&status=ENDED").keys)
+  assertEquals(setOf(scheduled,active,ended),statuses("&role=PARENT").keys)
+  assertEquals(setOf(scheduled),statuses("&status=SCHEDULED&role=PARENT").keys)
+  val page=call("GET","/admin/notices?status=ACTIVE&page=0&size=1",adminToken,snapshot="admin-notices")
+  assertEquals(1,page["items"].size());assertTrue(page["totalElements"].asLong()>=1)
+  for(query in listOf("status=OPEN","role=SYSTEM","size=0","size=101","page=-1")) call("GET","/admin/notices?$query",adminToken,expected=400)
+  call("GET","/admin/notices",parentToken,expected=403);call("GET","/admin/notices",studentToken,expected=403)
+  call("GET","/admin/notices",tokens.access(session(jdbc,account(jdbc,"ADMIN",null),"ADMIN")),expected=403)
+  call("GET","/admin/notices",null,expected=401)
+ }
  @Test fun `parent processing notification honors opt out rollback and current linked consent`() {
   val actor=auth.authenticate(parentToken)
   notifications.settings(actor,listOf(NotificationSetting(NotificationType.INQUIRY_ANSWERED,false)))

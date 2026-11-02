@@ -47,3 +47,18 @@ test('공지 생성·수정·종료: 범위·기간 검증, 종료 공지 비노
  assert.equal((await call('/admin/notices/'+n.data.noticeId,'PATCH',data)).status,409)
  await login('payment@example.test');assert.equal((await call('/admin/inquiries')).status,403)
 })
+test('관리자 공지 전체 목록: 예약·종료 공지와 다른 대상 역할도 보이고 상태·역할로 거른다 (#242)',async()=>{
+ await login('admin@example.test')
+ const base={kind:'NOTICE',body:'가상 공지 내용',visibleTo:null}
+ const scheduled=(await call('/admin/notices','POST',{...base,title:'예약 학부모 공지',targetRoles:['PARENT'],visibleFrom:'2099-01-01T00:00:00+09:00'})).data.noticeId
+ const ended=(await call('/admin/notices','POST',{...base,title:'종료 공지',targetRoles:['STUDENT'],visibleFrom:'2026-01-01T00:00:00+09:00'})).data.noticeId
+ await call('/admin/notices/'+ended,'DELETE')
+ const statuses=async(query='')=>Object.fromEntries((await call('/admin/notices?size=100'+query)).data.items.filter((v:{noticeId:string})=>[scheduled,ended].includes(v.noticeId)).map((v:{noticeId:string;status:string})=>[v.noticeId,v.status]))
+ assert.deepEqual(await statuses(),{[scheduled]:'SCHEDULED',[ended]:'ENDED'})
+ assert.deepEqual(Object.keys(await statuses('&status=SCHEDULED')),[scheduled])
+ assert.deepEqual(Object.keys(await statuses('&role=STUDENT')),[ended])
+ assert.equal((await call('/notices')).data.items.some((v:{noticeId:string})=>v.noticeId===scheduled),false)
+ assert.equal((await call('/admin/notices?status=OPEN')).status,400)
+ await login('payment@example.test');assert.equal((await call('/admin/notices')).status,403)
+ await login('parent@example.test');assert.equal((await call('/admin/notices')).status,403)
+})
