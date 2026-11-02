@@ -326,6 +326,9 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 - 전용 Docker 네트워크·RabbitMQ 4.3.7 컨테이너와 Windows AI 프로세스 2개를 사용한 실제 AMQP 연결 검증 통과. 관리 API에서 독립 exclusive·auto-delete 큐 2개, 각 소비자 1개, `events.topic`의 `model.version.*` 바인딩 2개를 확인했다. 전용 core HTTP 대역을 503→`{items:[]}`로 바꿔 두 AI의 `versions=DOWN`→Ready 회복을 확인하고, 미보유 `judge@future` revision 1 이벤트에 두 AI가 NotReady·`/internal/versions` 503으로 반응한 뒤 보유 `judge@2` revision 2에서 Ready로 회복하는 것을 확인했다. 전용 브로커의 두 AMQP 연결을 관리 API로 종료하자 두 AI가 각각 새 큐를 만들고 snapshot 조정 뒤 Ready가 됐다. 검증 자원은 자체 컨테이너·네트워크만 정리했다.
 - 재연결의 첫 시도에서 전용 Docker 컨테이너 재시작 후 Windows 임시 포트가 다시 열리지 않아 검증 방법을 AMQP 연결 종료로 바꿨다. 이는 전용 브로커와 AI의 실제 재연결 검증이며, core는 대역이다. 실제 core DB·관리자 활성화 API, 유료 외부 LLM, 원격 CI·배포는 검증하지 않았다. 모델 품질이나 운영 배포 준비 완료를 의미하지 않는다.
 
+### 계층 분리 (#254)
+
+`app/versions.py`와 소비자에 섞여 있던 처리를 scoring(`model_versions`·`model_registry`·`model_startup`·`versions`)과 같은 구조로 `app/prompt_versions/`에 나눴다. `models.py`는 활성 버전 계약·`PromptChoice`, `registry.py`는 이미지 본문과 `ActiveVersions`(revision 규칙), `service.py`의 `PromptSync`는 snapshot 조회·재시도와 snapshot 전 이벤트의 이름별 최신 revision 보존·재적용, `router.py`는 `GET /internal/versions`다. `messaging/consumer.py`는 구독·재연결, 봉투 검증, `PromptSync.offer`, ACK만 맡는다. 응답 모양·경로·이벤트 계약·readiness·OpenAPI는 바꾸지 않았고 `versions.py`는 남기지 않았다.
 
 ## #209 리포트 표시 설정 변경안 (로컬 구현 후보)
 

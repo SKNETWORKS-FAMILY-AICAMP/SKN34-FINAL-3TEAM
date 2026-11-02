@@ -20,10 +20,11 @@ from app.messaging.connection import AmqpConnection
 from app.messaging.consumer import ModelVersionConsumer
 from app.messaging.publisher import EventPublisher, UsagePublisher
 from app.messaging.usage_recorder import BackgroundUsageRecorder
+from app.prompt_versions.registry import ActiveVersions
+from app.prompt_versions.router import router as versions_router
+from app.prompt_versions.service import PromptSync
 from app.report_narrative.router import router as report_narrative_router
 from app.security import InternalAuthMiddleware
-from app.versions import ActiveVersions
-from app.versions import router as versions_router
 
 
 @asynccontextmanager
@@ -61,7 +62,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     async with internal_client(settings.core_url) as http:
         versions = ActiveVersions()
-        consumer = ModelVersionConsumer(amqp, CoreClient(http), versions)
+        consumer = ModelVersionConsumer(amqp, PromptSync(CoreClient(http), versions))
         app.state.active_versions = versions
         app.state.readiness_checks = {"rabbitmq": rabbitmq_ready, "versions": consumer.is_ready}
         consumer.start()

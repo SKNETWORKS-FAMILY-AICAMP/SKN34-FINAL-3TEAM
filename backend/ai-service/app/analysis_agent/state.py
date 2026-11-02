@@ -21,7 +21,7 @@ from app.analysis_agent.models import (
 )
 from app.analysis_agent.tools import RecordTools
 from app.llm.base import LlmClient
-from app.versions import PromptChoice
+from app.prompt_versions.models import PromptChoice
 
 
 class AnalysisState(TypedDict, total=False):
