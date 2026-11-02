@@ -531,6 +531,18 @@ export function createDemoGateway(): ClassroomGateway & {
       if (!canAddAnswer(a)) fail('ATTEMPT_CLOSED', '현재는 답변을 더 제출할 수 없어요.')
       const message = validateAnswer(answer, a.mission)
       if (message) fail('ANSWER_INCOMPLETE', message, 422)
+      // #205 표현 검사는 서버(learning)만 함. 시연은 단어 목록 없이 첫 제출 1회만 막고,
+      // 연락처처럼 보이면 연락처 안내
+      if (scenario === 'submit-inappropriate' && once('inappropriate-' + id))
+        throw new ApiError({
+          status: 422,
+          code: 'ANSWER_INAPPROPRIATE',
+          title: '고쳐야 할 말이 있어요',
+          detail: /01[016789][\s.-]?\d{3,4}[\s.-]?\d{4}|@/.test(answerText(answer))
+            ? '전화번호나 이메일 같은 개인정보는 빼고 다시 적어 주세요.'
+            : '고운 말로 바꿔서 다시 적어 주세요.',
+          retryable: false,
+        })
       if (a.answers.length && followupId !== a.answers.at(-1)?.feedback.followup?.followupId)
         fail('ANSWER_INCOMPLETE', '현재 추가 질문에 연결해 주세요.', 422)
       if (scenario === 'submit-fail' && once('submit-' + id))
