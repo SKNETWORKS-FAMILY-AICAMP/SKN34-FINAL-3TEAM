@@ -178,6 +178,9 @@ core가 자녀 삭제·탈퇴를 확정하면 `student.deleted`를 보내고, le
 - 설계 문서: class-diagram 4.3(구현 상태·소비자 검증·삭제 흐름·`deleteByStudent` 순서·`delete` 시그니처), ERD 1장 FK 줄·4.3 비고·7장 확인 필요 줄 삭제, api-spec 5.6 마지막 줄(B3 해소), 아키텍처 1.6 수동 ACK 줄
 - 검증: learning 테스트 217개(새 11: 삭제 4·소비자 3·재시도 4)·scripts/tests 74개, 보호 장치 16개를 빼면 각각 실패(삭제 순서 4·멱등·보고 3·표식 1·소비자 5·재시도 3). 통합 확인은 #148의 격리 compose(`scripts/report_integration/compose.yaml`, 합성 값, 프로젝트 `learning128`)에 learning `CORE_URL`만 덮어써서: core DB에 보호자·학생 2명과 `CONFIRMED` PROFILE 삭제 요청·outbox 행 저장 → core 중계가 `student.deleted` 발행 → learning·report 둘 다 보고하고 core 요청 `COMPLETED`(2초)·학생 `DELETED`, learning은 대상 학생 시도·초안·답변·판정 0행·다른 학생 그대로·표식 PROFILE. 같은 이벤트 재전달은 처리 뒤 만든 시도를 지우지 않고 보고만(재시도·DLQ 0), source가 다른 봉투는 재시도 없이 learning DLQ 1건. readiness에 rabbit 포함 UP. 확인 뒤 격리 환경 삭제
 
+- 위치 정리(#256, 11/02): 원래 설계(architecture 2.6, 10/24)는 별도 `deletion/` 패키지였으나 #128에서 `record/consumer`·`record/service`에 구현했다(이슈 #128 작업 위치 "`record/` 또는 삭제 기능 패키지"). 위치를 고른 이유는 당시 기록하지 않았다. 종합 검증(audit 4.5 A15)이 설계를 `record/`로 맞췄고, #256에서 빈 `deletion/` 폴더(`.gitkeep` 2개)를 지우고 architecture 2.6 트리·class-diagram 4.3을 `record/` 기준으로 정리했다. 코드 변경은 없다
+- 알려진 한계(#256): `record/`가 기록 조회와 함께 삭제 소비(쓰기)·이벤트 처리 기록(`processed_event`와 정리 작업)·결제 사용 증빙을 맡아 "조회 API" 패키지 설명과 다르다. report-service는 같은 기능을 `deletion/`에 둬 서비스 간 위치도 다르다. `processed_event`는 모든 이벤트 소비자가 쓸 수 있는 중복 처리 방지 테이블이라 다른 소비자가 생기면 `_common/messaging` 쪽이 맞을 수 있다. 조회 SQL(`RecordMapper.xml`·`RecordExistsMapper.xml`)은 `deleted_student`로 삭제된 학생을 거르므로 위치를 옮겨도 이 읽기는 남는다. 경계 정리는 별도 리팩터로 다룬다
+
 ## 10. 관리자 미션 API (#145, 구 #81 흡수)
 
 core #126(#47)이 관리자 미션 요청 10개(경로 8개)를 learning `/internal/admin/missions`로 넘기지만 learning에 받는 API가 없어 관리자 미션 화면이 동작하지 않던 문제를 고침. 클래스 다이어그램 4.1 이름(`AdminMissionController`·`MissionService`·`Mission.requirePublishable`·`MissionRepository`·`RubricRepository`)과 상태 다이어그램 3.1 전이 그대로. 계약은 api-spec 4.1 `/internal/admin/missions…` 줄과 learning OpenAPI(`/admin/missions…` 10개). 프론트·core와 계약 합의 뒤 구현
