@@ -1,6 +1,6 @@
 package com.sagomungchi.core.notification.controller
 
-import com.sagomungchi.core.account.controller.AuthController
+import com.sagomungchi.core._common.security.RequestAttributes
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core.notification.domain.NotificationType
 import jakarta.validation.Valid
@@ -20,21 +20,21 @@ class NotificationController(private val service: NotificationService, private v
     data class SettingInput(val type: NotificationType, @field:NotNull val enabled: Boolean?)
     data class Page(val items: List<NotificationView>, val page: Int, val size: Int, val hasNext: Boolean)
     @GetMapping("/notifications")
-    fun list(@RequestAttribute(AuthController.IDENTITY) identity: AuthenticatedAccount,
+    fun list(@RequestAttribute(RequestAttributes.IDENTITY) identity: AuthenticatedAccount,
         @RequestParam(defaultValue="false") unreadOnly: Boolean, @RequestParam(defaultValue="0") page: Int,
         @RequestParam(defaultValue="20") size: Int): Page {
         val items = service.list(identity, unreadOnly, page, size)
         return Page(items.take(size).map { it.view() }, page, size, items.size > size)
     }
     @PatchMapping("/notifications/{notificationId}/read") @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun read(@RequestAttribute(AuthController.IDENTITY) identity: AuthenticatedAccount, @PathVariable notificationId: UUID) = service.read(identity, notificationId)
+    fun read(@RequestAttribute(RequestAttributes.IDENTITY) identity: AuthenticatedAccount, @PathVariable notificationId: UUID) = service.read(identity, notificationId)
     @PostMapping("/notifications/read-all") @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun readAll(@RequestAttribute(AuthController.IDENTITY) identity: AuthenticatedAccount) = service.readAll(identity)
+    fun readAll(@RequestAttribute(RequestAttributes.IDENTITY) identity: AuthenticatedAccount) = service.readAll(identity)
     @GetMapping("/notification-settings")
-    fun settings(@RequestAttribute(AuthController.IDENTITY) identity: AuthenticatedAccount) = Settings(service.settings(identity))
+    fun settings(@RequestAttribute(RequestAttributes.IDENTITY) identity: AuthenticatedAccount) = Settings(service.settings(identity))
     @PutMapping("/notification-settings")
-    fun settings(@RequestAttribute(AuthController.IDENTITY) identity: AuthenticatedAccount, @Valid @RequestBody body: SettingsInput) = Settings(service.settings(identity, body.items.map { NotificationSetting(it.type, it.enabled!!) }))
+    fun settings(@RequestAttribute(RequestAttributes.IDENTITY) identity: AuthenticatedAccount, @Valid @RequestBody body: SettingsInput) = Settings(service.settings(identity, body.items.map { NotificationSetting(it.type, it.enabled!!) }))
     @GetMapping("/notifications/stream", produces=[MediaType.TEXT_EVENT_STREAM_VALUE])
-    fun stream(@RequestAttribute(AuthController.IDENTITY) identity: AuthenticatedAccount,
+    fun stream(@RequestAttribute(RequestAttributes.IDENTITY) identity: AuthenticatedAccount,
         @RequestHeader("Authorization") authorization: String) = streams.open(identity, authorization.removePrefix("Bearer ")).emitter
 }

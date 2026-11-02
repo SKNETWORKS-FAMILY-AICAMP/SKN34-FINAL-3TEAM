@@ -1,6 +1,8 @@
 package com.sagomungchi.learning.mission.controller
 
 import com.sagomungchi.learning._common.security.UserContextHolder
+import com.sagomungchi.learning._common.web.MissionListItemResponse
+import com.sagomungchi.learning._common.web.MissionResponse
 import com.sagomungchi.learning.mission.service.MissionService
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
@@ -31,7 +33,7 @@ class MissionController(
         // page * size가 Int 범위를 넘으면 음수가 되므로 Long으로 계산
         val offset = (page.toLong() * size).coerceAtMost(items.size.toLong()).toInt()
         return PageResponse(
-            items = items.drop(offset).take(size).map(MissionListItemResponse::from),
+            items = items.drop(offset).take(size).map { MissionListItemResponse.from(it) },
             page = page,
             size = size,
             totalElements = items.size.toLong(),

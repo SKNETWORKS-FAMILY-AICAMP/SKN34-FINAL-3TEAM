@@ -7,7 +7,6 @@ import java.time.Duration
 data class StudentDeviceProperties(
     val ttl: Duration = Duration.ofDays(90),
     val attemptLimit: Int = 20,
-    val pinFailureLimit: Int = 5,
 ) {
-    init { require(ttl > Duration.ZERO && attemptLimit > 0 && pinFailureLimit == 5) }
+    init { require(ttl > Duration.ZERO && attemptLimit > 0) }
 }

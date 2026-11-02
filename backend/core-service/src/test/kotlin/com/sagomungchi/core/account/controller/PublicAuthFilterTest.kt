@@ -1,11 +1,11 @@
-package com.sagomungchi.core._common.security
+package com.sagomungchi.core.account.controller
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.exception.GlobalExceptionHandler
+import com.sagomungchi.core._common.security.RequestAttributes
+import com.sagomungchi.core._common.security.UserContextHolder
 import com.sagomungchi.core.account.config.AuthProperties
-import com.sagomungchi.core.account.controller.AuthController
-import com.sagomungchi.core.account.controller.AuthCookies
 import com.sagomungchi.core.account.service.AuthService
 import jakarta.servlet.http.Cookie
 import jakarta.servlet.http.HttpServletRequest
@@ -75,7 +75,7 @@ class PublicAuthFilterTest {
             if (request.cookies?.none { it.name == "student_device" && it.value == "test-device" } != false)
                 throw BusinessException(HttpStatus.UNAUTHORIZED, "STUDENT_DEVICE_INVALID", "기기 인증이 필요합니다.")
             return mapOf("handledBy" to "device-cookie-probe",
-                "jwtIdentityPresent" to (request.getAttribute(AuthController.IDENTITY) != null),
+                "jwtIdentityPresent" to (request.getAttribute(RequestAttributes.IDENTITY) != null),
                 "userContextPresent" to (UserContextHolder.currentOrNull() != null))
         }
     }

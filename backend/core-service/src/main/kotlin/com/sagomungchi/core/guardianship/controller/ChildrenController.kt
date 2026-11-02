@@ -1,7 +1,7 @@
 package com.sagomungchi.core.guardianship.controller
 
 import com.sagomungchi.core._common.exception.BusinessException
-import com.sagomungchi.core.account.controller.AuthController
+import com.sagomungchi.core._common.security.RequestAttributes
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core.consent.domain.ConsentChoice
 import com.sagomungchi.core.guardianship.service.GuardianshipService
@@ -25,7 +25,7 @@ class ChildrenController(private val service: GuardianshipService) {
         ResponseEntity.status(HttpStatus.CREATED).cacheControl(CacheControl.noStore()).body(
             service.register(parent(request), body.nickname, requireNotNull(body.grade), requireNotNull(body.birthYear), body.consents.map { it.toChoice() }))
     private fun parent(request: HttpServletRequest): UUID {
-        val identity = request.getAttribute(AuthController.IDENTITY) as AuthenticatedAccount
+        val identity = request.getAttribute(RequestAttributes.IDENTITY) as AuthenticatedAccount
         if (identity.session.role != "PARENT") throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "학부모 세션이 필요합니다.")
         return identity.account.id
     }

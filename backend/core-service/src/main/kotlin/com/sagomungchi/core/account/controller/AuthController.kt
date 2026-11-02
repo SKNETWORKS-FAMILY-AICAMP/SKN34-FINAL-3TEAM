@@ -1,6 +1,7 @@
 package com.sagomungchi.core.account.controller
 
 import com.sagomungchi.core._common.exception.BusinessException
+import com.sagomungchi.core._common.security.RequestAttributes
 import com.sagomungchi.core.account.config.AuthProperties
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core.account.service.AuthService
@@ -86,9 +87,8 @@ class AuthController(
             "role" to issued.identity.session.role, "nextAction" to destination.nextAction, "startPath" to destination.startPath)
     }
 
-    private fun identity(request: HttpServletRequest) = request.getAttribute(IDENTITY) as AuthenticatedAccount
+    private fun identity(request: HttpServletRequest) = request.getAttribute(RequestAttributes.IDENTITY) as AuthenticatedAccount
     private fun redirect(location: String) = ResponseEntity.status(HttpStatus.FOUND).location(URI(location))
         .cacheControl(CacheControl.noStore()).header("Referrer-Policy", "no-referrer")
     data class StudentSessionRequest(val childId: UUID)
-    companion object { const val IDENTITY = "sagomungchi.identity" }
 }

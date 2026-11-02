@@ -1,7 +1,7 @@
 package com.sagomungchi.core.consent.controller
 
 import com.sagomungchi.core._common.exception.BusinessException
-import com.sagomungchi.core.account.controller.AuthController
+import com.sagomungchi.core._common.security.RequestAttributes
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core.consent.domain.ConsentChoice
 import com.sagomungchi.core.consent.service.ConsentService
@@ -28,7 +28,7 @@ class ConsentController(private val service: ConsentService) {
     @PostMapping("/api/v1/me/consents/{consentId}/withdrawal")
     fun withdraw(@PathVariable consentId: UUID, request: HttpServletRequest) = result(service.withdraw(parent(request), consentId))
     private fun parent(request: HttpServletRequest): UUID {
-        val identity = request.getAttribute(AuthController.IDENTITY) as AuthenticatedAccount
+        val identity = request.getAttribute(RequestAttributes.IDENTITY) as AuthenticatedAccount
         if (identity.session.role != "PARENT") throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "학부모 세션이 필요합니다.")
         return identity.account.id
     }

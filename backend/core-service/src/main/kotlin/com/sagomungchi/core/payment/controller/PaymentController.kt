@@ -1,10 +1,10 @@
 package com.sagomungchi.core.payment.controller
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.sagomungchi.core._common.security.RequestAttributes
 import com.sagomungchi.core._common.web.HttpExchangeResult
 import com.sagomungchi.core._common.web.IdempotencyService
 import com.sagomungchi.core._common.security.UserContextHolder
-import com.sagomungchi.core.account.controller.AuthController
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core.payment.service.*
 import com.sagomungchi.core.payment.service.PaymentTransactions.Companion.forbidden
@@ -84,7 +84,7 @@ class PaymentController(private val payments: PaymentService,private val refunds
     }
     private fun parent(r: HttpServletRequest): UUID=identity(r).also { if(it.session.role!="PARENT") forbidden() }.account.id
     private fun admin(r: HttpServletRequest,permission: String): UUID=identity(r).also { if(it.session.role!="ADMIN" || permission !in it.permissions) forbidden() }.account.id
-    private fun identity(r: HttpServletRequest)=r.getAttribute(AuthController.IDENTITY) as AuthenticatedAccount
+    private fun identity(r: HttpServletRequest)=r.getAttribute(RequestAttributes.IDENTITY) as AuthenticatedAccount
     private fun cached(request: HttpServletRequest,key: UUID,endpoint: String,body: Any,status: Int=200,operation: ()->Any): ResponseEntity<ByteArray> {
         val identity=identity(request)
         val result=idempotency.execute(key,identity.account.id,endpoint,identity.studentScope.map(UUID::toString).toSet(),json.writeValueAsBytes(body)) {

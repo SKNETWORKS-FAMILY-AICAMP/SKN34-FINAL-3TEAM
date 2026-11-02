@@ -1,4 +1,5 @@
 package com.sagomungchi.core.account.controller
+import com.sagomungchi.core._common.security.RequestAttributes
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core.account.service.AccountManagementService
 import com.sagomungchi.core.account.service.AccountWithdrawalService
@@ -20,6 +21,6 @@ class AccountManagementController(private val accounts: AccountManagementService
    .body(withdrawals.request(identity(request),token))
  @GetMapping("/api/v1/me/withdrawal")
  fun status(@RequestHeader(value="X-Withdrawal-Status-Token",required=false) receipt: String?, request: HttpServletRequest)=
-  ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(withdrawals.status(request.getAttribute(AuthController.IDENTITY) as? AuthenticatedAccount,receipt))
- private fun identity(request: HttpServletRequest)=request.getAttribute(AuthController.IDENTITY) as AuthenticatedAccount
+  ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(withdrawals.status(request.getAttribute(RequestAttributes.IDENTITY) as? AuthenticatedAccount,receipt))
+ private fun identity(request: HttpServletRequest)=request.getAttribute(RequestAttributes.IDENTITY) as AuthenticatedAccount
 }

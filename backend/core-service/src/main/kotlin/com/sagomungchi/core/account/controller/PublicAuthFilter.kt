@@ -1,12 +1,15 @@
-package com.sagomungchi.core._common.security
+package com.sagomungchi.core.account.controller
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.exception.DomainException
 import com.sagomungchi.core._common.exception.Problems
 import com.sagomungchi.core._common.exception.errorInfoOf
+import com.sagomungchi.core._common.security.RequestAttributes
+import com.sagomungchi.core._common.security.matchedPath
+import com.sagomungchi.core._common.security.UserContext
+import com.sagomungchi.core._common.security.UserContextHolder
 import com.sagomungchi.core.account.config.AuthProperties
-import com.sagomungchi.core.account.controller.AuthController
 import com.sagomungchi.core.account.service.AuthService
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
@@ -36,7 +39,7 @@ class PublicAuthFilter(private val auth: AuthService, private val properties: Au
             val bearer = request.getHeader("Authorization")?.takeIf { it.startsWith("Bearer ") }?.removePrefix("Bearer ")
                 ?: throw BusinessException(HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "로그인이 필요합니다.")
             val identity = auth.authenticate(bearer)
-            request.setAttribute(AuthController.IDENTITY, identity)
+            request.setAttribute(RequestAttributes.IDENTITY, identity)
             val adminReportRegeneration = identity.session.role == "ADMIN" && request.method == "POST" &&
                 Regex("/reports/[0-9a-fA-F-]{36}/regenerate").matches(path)
             if (adminReportRegeneration) auth.requirePermission(identity, "SERVICE_OPS")
