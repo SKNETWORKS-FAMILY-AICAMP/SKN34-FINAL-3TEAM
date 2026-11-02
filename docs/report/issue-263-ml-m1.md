@@ -27,7 +27,7 @@ M1(수학 풀이 점검) 학습·평가 코드가 저장소 밖 로컬 MVP 폴�
 | `m1/requirements-m1.txt` | `pyproject.toml`·`uv.lock` | 로컬 실행 환경과 같은 버전으로 고정: torch 2.14.1, transformers 5.20.2, tokenizers 0.23.3, python-dotenv 1.2.4(`ml/m2`와도 같음) |
 
 - 코드 모양: `ml/m2`와 같은 ruff 설정(줄 100자, E·F·I·B)을 맞추느라 `ruff format`으로 줄바꿈·import 순서가 바뀌었고, `zip()`에 기본값과 같은 `strict=False`를 명시(B905), 한글 폭 때문에 긴 문자열은 이어 붙이기로 나눔(출력 문자열 동일). 한 줄은 f-string 안 식이라 `# noqa: E501`
-- 그 밖: `ml/m1/.gitignore`(`data/`·`work/`·`models/`·`checkpoints/`·`*.csv`·`*.zip`·`*.pt`), `README.md`, `.github/workflows/ci-ml-m1.yml`, architecture 5장 트리의 `m1/` 설명
+- 그 밖: `ml/m1/.gitignore`(`data/`·`work/`·`models/`·`checkpoints/`·`*.csv`·`*.zip`·`*.pt`), `README.md`(로컬 MVP README의 M1 절 중 데이터에서 확인한 것·실행 순서를 옮기고 현재 상태·다음 단계 추가, 앱 전용 `judge_route` 전환·`M1_CONFIDENCE` 단계는 제외), `.github/workflows/ci-ml-m1.yml`, architecture 5장 트리의 `m1/` 설명
 
 ## 넣지 않은 것
 
