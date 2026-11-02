@@ -107,44 +107,6 @@ def test_attempts_without_size_read_all_pages(monkeypatch) -> None:
     assert attempts[2].reflection.created_at == "2026-10-22T19:30:00+09:00"
 
 
-def test_evidence_passes_deleted_items_through(monkeypatch) -> None:
-    items = [
-        {
-            "answerId": "a-2",
-            "attemptId": "t-1",
-            "missionTitle": "쉬는 시간 토론",
-            "answerVersion": 2,
-            "submittedAt": "2026-10-22T19:00:00+09:00",
-            "quote": "나는 찬성해.",
-            "available": True,
-        },
-        {
-            "answerId": "a-9",
-            "attemptId": None,
-            "missionTitle": None,
-            "answerVersion": None,
-            "submittedAt": None,
-            "quote": None,
-            "available": False,
-        },
-    ]
-    seen = use_transport(monkeypatch, lambda request: httpx.Response(200, json={"items": items}))
-    evidence = asyncio.run(run(lambda client: client.evidence(["a-2", "a-9"])))
-    assert seen[0].url.path == "/internal/records/evidence"
-    assert dict(seen[0].url.params) == {"answerIds": "a-2,a-9"}
-    assert [(e.answer_id, e.available, e.quote) for e in evidence] == [
-        ("a-2", True, "나는 찬성해."),
-        ("a-9", False, None),  # 삭제된 근거는 원문 없이 그대로
-    ]
-
-
-def test_evidence_forbidden(monkeypatch) -> None:
-    use_transport(monkeypatch, lambda request: httpx.Response(403))
-    with pytest.raises(RecordsUnavailable) as caught:
-        asyncio.run(run(lambda client: client.evidence(["a-1"])))
-    assert (caught.value.code, caught.value.retryable) == ("FORBIDDEN", False)
-
-
 @pytest.mark.parametrize(
     ("response", "code", "retryable"),
     [

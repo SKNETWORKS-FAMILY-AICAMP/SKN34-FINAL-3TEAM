@@ -1615,7 +1615,6 @@ classDiagram
     +attempts(scope, size) list
     +changes(scope) list
     +thinking_activities(scope) list
-    +evidence(scope, answer_ids) list~RecordEvidence~
   }
   class calculators {
     <<module>>
@@ -1642,7 +1641,6 @@ classDiagram
     +attempts(scope, size) list
     +changes(scope) list
     +thinking_activities(scope) list
-    +evidence(answer_ids) list
   }
   class LlmClient { <<client>> }
   class UserContext { <<value>> }
@@ -1663,7 +1661,7 @@ classDiagram
 
 - 그래프 흐름 `classify → clarify_scope → plan → run_tools → compute → answer → verify` (아키텍처 1.5, 구현 노드 이름은 아래 구현 이름), 분기는 [시퀀스 다이어그램 5](sequence-diagram.md#5-분석-대화-sse)
 - `RecordTools`(`analysis_agent/tools.py`): 도구 실행마다 `require_student` 검사 후 `LearningClient` 호출, 범위 밖이면 learning 미호출 (FN-AGT-02). `scope`는 core가 확인한 `{studentId, from, to}`
-- `LearningClient`(`clients/learning_client.py`): 받은 컨텍스트 헤더 그대로 전달, 재시도 없음, 응답의 학생·기간·처리 상태 대조. 조회 실패는 빈 기록이 아닌 오류 (FN-AGT-10). `evidence`의 `available: false` 항목은 원문 없이 그대로 반환
+- `LearningClient`(`clients/learning_client.py`): 받은 컨텍스트 헤더 그대로 전달, 재시도 없음, 응답의 학생·기간·처리 상태 대조. 조회 실패는 빈 기록이 아닌 오류 (FN-AGT-10). 근거 재조회·삭제 여부(`available`)는 core가 learning `evidence`로 처리
 - `calculators`: 건수·비율은 LLM이 아닌 코드 계산 (FN-AGT-05), `Metric` 형식은 learning과 동일(분모 0 `NO_RECORD`, 5 미만 `value: null`). 집계 대상·전후 변화 수(글자·문장·까닭을 잇는 말)는 learning `summary`·`changes.counts` 값을 그대로 사용해 대시보드·리포트와 숫자를 맞춤 ([ai 보고서 2장](../report/ai.md#2-분석-대화-에이전트-langgraph))
 - `AnswerVerifier`(`analysis_agent/verification.py`의 `verify`): 답변 속 숫자 ↔ `metrics`, 인용 ↔ `evidence` 원문 대조. 실패 시 규칙 응답으로 전환 (FN-AGT-06)
 - 규칙 응답(`analysis_agent/templates.py`): 대조 실패·LLM 키 부재·호출 실패 시 계산된 `metrics`·`evidence`만 템플릿 문장으로 구성, `source = TEMPLATE`·`fallback` 표시 (FN-AGT-10, P16)
