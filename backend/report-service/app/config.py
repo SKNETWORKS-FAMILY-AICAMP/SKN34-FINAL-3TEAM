@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     consumer_max_retries: int = 3
     # 레플리카 수 × prefetch = learning·ai 동시 호출 상한, 값은 실측 후 결정 (아키텍처 4.4)
     consumer_prefetch: int = 1
+    # 발행 완료 outbox_event·processed_event 보존 일수 (#208)
+    event_retention_days: int = Field(default=90, ge=1)
     http_connect_timeout: float = 2.0
     http_read_timeout: float = 30.0  # 내부 호출 기본값 (P12 목록 밖)
     database_url: str

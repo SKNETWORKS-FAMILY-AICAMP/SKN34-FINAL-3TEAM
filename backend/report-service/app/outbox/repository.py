@@ -175,6 +175,12 @@ class OutboxRepository:
             .values(published_at=self._clock(), next_attempt_at=None)
         )
 
+    def delete_published_before(self, session: Session, before: datetime) -> int:
+        """보존 기간 정리(#208). 미발행·격리 행은 published_at이 없어 남는다."""
+        return session.execute(
+            outbox_event.delete().where(outbox_event.c.published_at < before)
+        ).rowcount
+
     def record_failure(self, session: Session, event_id: UUID, error_code: str):
         if error_code not in {"PUBLISH_FAILED", "PUBLISH_TIMEOUT", "BROKER_UNAVAILABLE"}:
             raise ValueError("Only safe publication error codes may be stored")

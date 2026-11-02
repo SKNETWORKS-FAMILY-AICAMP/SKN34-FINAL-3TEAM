@@ -13,4 +13,7 @@ class ProcessedEventRepository(private val mapper: ProcessedEventMapper) {
      */
     fun markProcessed(eventId: UUID, eventType: String, now: Instant): Boolean =
         mapper.insertIfAbsent(eventId, eventType, now) == 1
+
+    /** 보존 기간 정리 (아키텍처 1.6). 삭제 표식 deleted_student는 별도로 유지 */
+    fun deleteProcessedBefore(before: Instant): Int = mapper.deleteProcessedBefore(before)
 }

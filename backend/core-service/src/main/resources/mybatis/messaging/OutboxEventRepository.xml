@@ -19,4 +19,8 @@
     <update id="markPublished">
         UPDATE outbox_event SET published_at = #{publishedAt} WHERE id = #{id}
     </update>
+
+    <delete id="deletePublishedBefore">
+        DELETE FROM outbox_event WHERE published_at IS NOT NULL AND published_at &lt; #{before}
+    </delete>
 </mapper>

@@ -21,6 +21,8 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
+import java.nio.ByteBuffer
+import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -266,16 +268,36 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
 
     @Test fun `learning committed but core result storage failed retries same downstream key without duplicate effect`() {
         val key = UUID.randomUUID(); val writes = AtomicInteger(); var saved: LearningHttpStub.Reply? = null
+        val lockId = ByteBuffer.wrap(MessageDigest.getInstance("SHA-256").digest("$user:$key".toByteArray())).long
         stub.respond = { request ->
-            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND state='idle in transaction'", Int::class.java))
+            // Only this request's lease must stay outside a transaction during HTTP.
+            // Cached contexts can legitimately run unrelated transactions in the same DB.
+            assertEquals(listOf(true), jdbc.queryForList("""
+                SELECT activity.xact_start IS NULL
+                FROM pg_locks locks JOIN pg_stat_activity activity ON activity.pid=locks.pid
+                WHERE locks.locktype='advisory' AND locks.granted AND locks.objsubid=1
+                  AND locks.database=activity.datid AND activity.datname=current_database()
+                  AND ((locks.classid::bigint << 32) | locks.objid::bigint)=?
+            """.trimIndent(), Boolean::class.javaObjectType, lockId))
             assertEquals(key.toString(), request.header("Idempotency-Key"))
             saved ?: LearningHttpStub.Reply(201, "{\"version\":${writes.incrementAndGet()}}").also { saved = it }
         }
         // A real PostgreSQL write failure, restricted to this fixture/key; no production fault hook.
         jdbc.execute("ALTER TABLE idempotency_record ADD CONSTRAINT issue38_fail_store CHECK (idempotency_key<>'$key' OR response_status IS NULL) NOT VALID")
         try {
-            call("POST", answerPath, key, body).andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.code").value("IDEMPOTENCY_UNAVAILABLE"))
+            // Reproduce another context's idle transaction without relying on scheduler timing.
+            jdbc.dataSource!!.connection.use { unrelated ->
+                try {
+                    unrelated.autoCommit = false
+                    val pid = unrelated.createStatement().use { statement ->
+                        statement.executeQuery("SELECT pg_backend_pid()").use { result -> result.next(); result.getInt(1) }
+                    }
+                    assertEquals("idle in transaction", jdbc.queryForObject(
+                        "SELECT state FROM pg_stat_activity WHERE pid=?", String::class.java, pid))
+                    call("POST", answerPath, key, body).andExpect(status().isServiceUnavailable())
+                        .andExpect(jsonPath("$.code").value("IDEMPOTENCY_UNAVAILABLE"))
+                } finally { unrelated.rollback() }
+            }
         } finally { jdbc.execute("ALTER TABLE idempotency_record DROP CONSTRAINT issue38_fail_store") }
         call("POST", answerPath, key, body).andExpect(status().isCreated()).andExpect(jsonPath("$.version").value(1))
         call("POST", answerPath, key, body).andExpect(status().isCreated())

@@ -14,8 +14,8 @@ import kotlin.test.assertTrue
  * definitions.json이 재시도 단계(1·5·15분, P12)·DLQ를 모든 소비 큐에 갖추는지 확인.
  */
 class RabbitDefinitionsTest {
-    private val queues: Map<String, JsonNode> =
-        ObjectMapper().readTree(DEFINITIONS.toFile())["queues"].associateBy { it["name"].asText() }
+    private val definitions: JsonNode = ObjectMapper().readTree(DEFINITIONS.toFile())
+    private val queues: Map<String, JsonNode> = definitions["queues"].associateBy { it["name"].asText() }
 
     @Test
     fun `모든 소비 큐에 재시도 단계 큐와 DLQ가 있음`() {
@@ -38,6 +38,22 @@ class RabbitDefinitionsTest {
         val tiers = queues.keys.filter { it.startsWith("core.llm.usage.recorded.retry.") }
         assertEquals(RETRY_DELAYS_MS.size, tiers.size)
         assertEquals(RETRY_DELAYS_MS.size, AppProperties.Messaging().maxRetries)
+    }
+
+    /**
+     * #208 감사 큐는 '#' 대신 키별로 바인딩 (report 발행자의 unroutable 감지 유지).
+     * 업무 큐가 받는 키는 감사 큐도 받아야 event_log에 빠짐없이 남음. model.version.activated는 Pod별 임시 큐라 정의에 없어 별도 확인
+     */
+    @Test
+    fun `업무 바인딩 키마다 감사 큐 바인딩이 있고 와일드카드는 없음`() {
+        val bindings = definitions["bindings"]
+            .filter { it["source"].asText() in setOf(MessagingConfig.EVENTS_EXCHANGE, MessagingConfig.COMMAND_EXCHANGE) }
+            .map { Triple(it["source"].asText(), it["routing_key"].asText(), it["destination"].asText()) }
+        val audited = bindings.filter { it.third == EventAuditConsumer.QUEUE }.map { it.first to it.second }.toSet()
+        val business = bindings.filter { it.third != EventAuditConsumer.QUEUE }.map { it.first to it.second }.toSet()
+
+        assertEquals(emptySet(), business + (MessagingConfig.EVENTS_EXCHANGE to "model.version.activated") - audited)
+        assertTrue(audited.none { '#' in it.second || '*' in it.second }, "감사 큐 와일드카드 바인딩: $audited")
     }
 
     companion object {

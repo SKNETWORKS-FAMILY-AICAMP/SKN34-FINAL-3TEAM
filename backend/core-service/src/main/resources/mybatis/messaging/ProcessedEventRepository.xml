@@ -7,4 +7,8 @@
         VALUES (#{eventId}, #{eventType}, #{processedAt})
         ON CONFLICT (event_id) DO NOTHING
     </insert>
+
+    <delete id="deleteProcessedBefore">
+        DELETE FROM processed_event WHERE processed_at &lt; #{before}
+    </delete>
 </mapper>
