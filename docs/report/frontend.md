@@ -1,5 +1,10 @@
 # 웹 프론트 (#7·#8·#9·#59, 테마·대시보드·QR 시연)
 
+## 할당 이슈 #234·#239·#240·#242·#247·#255 (2026-11-02)
+
+- 기준: develop `9595e8f`.
+- #255 계층 정리: 신고·문의 결과 조회는 `data/support/{api,queries}.ts`, 결제 결과 상태 조회·폴링·승인·빌링 등록은 `data/payment/queries.ts`, 결제창 복귀용 대기 정보 저장은 `data/payment/checkoutStorage.ts`로 옮겼습니다. `domain/payment.ts`에는 `validPending`·`validBilling`·`checkoutConfirmation`·`billingConfirmation` 같은 순수 검증만 남겼습니다. 폴링 조건(PENDING·CONFIRMING·APPROVED+RECOVERY_REQUIRED, 3초, 첫 응답 뒤 최대 10회, 오류 시 중단)과 StrictMode 중복 요청 공유 Map은 그대로입니다. 승인 응답을 결과 캐시에 넣어 승인 직후 상태를 한 번 더 묻지 않으므로 API 호출 순서는 이전과 같습니다.
+
 ## 학생 공개 설정·재시도 비교 화면 (#206·#207, 2026-11-01)
 
 - 기존 호수/숲/공장/소행성/바닷속 테마와 공책 UI를 유지합니다. 디자인 검토는 design-taste-frontend 앱 지침을 적용했으며 새 캐릭터·학생 로고를 추가하지 않았습니다. 설정은 학생 메뉴의 ‘공개 설정’, 비교는 마무리 결과의 이전/이번 공책으로 연결합니다.

@@ -19,6 +19,8 @@ const { useAdminQuery, useAdminMutation } = await import('../src/data/admin/quer
 const device = await import('../src/data/studentDevice/queries.ts')
 const { useStudentLook, useSaveLook } = await import('../src/data/studentLook/queries.ts')
 const classroom = await import('../src/data/classroom/useClassroom.ts')
+const { useSupportResults } = await import('../src/data/support/queries.ts')
+const payment = await import('../src/data/payment/queries.ts')
 const { queryClient } = await import('../src/data/queryClient.ts')
 const { setAccessToken } = await import('../src/data/apiClient.ts')
 
@@ -277,6 +279,57 @@ test('시도 시작은 상세 캐시를 갱신하고 학습 홈·기록·미션�
   assert.deepEqual(cache.getQueryData(['attempt', attempt.attemptId]), { ...attempt, reflection: undefined })
   assert.equal(cache.getQueryState(['student-home', child.id])?.isInvalidated, true)
   assert.equal(cache.getQueryState(['missions', child.id, 3])?.isInvalidated, true)
+})
+
+test('신고·문의 결과는 목록 두 개를 받고 선택한 건만 상세 조회한다', async t => {
+  const calls: string[] = []
+  mockFetch(t, url => {
+    calls.push(url)
+    return url.endsWith('/error-reports/report-a')
+      ? Response.json({ reportId: 'report-a', status: 'RESOLVED', comment: '확인 요청', reviewReason: '판정을 다시 확인했습니다.' })
+      : Response.json({ items: [] })
+  })
+  let reportId: string | null = null
+  const h = await mount(t, () => useSupportResults('session-a', reportId, null))
+  await until(() => h.get().reports.isSuccess && h.get().inquiries.isSuccess)
+  assert.equal(h.get().detail.fetchStatus, 'idle')
+  reportId = 'report-a'; await h.render(); await until(() => h.get().detail.isSuccess)
+  assert.deepEqual(calls.sort(), ['/api/v1/error-reports', '/api/v1/error-reports/report-a', '/api/v1/inquiries'])
+  assert.equal((h.get().detail.data as { reviewReason: string }).reviewReason, '판정을 다시 확인했습니다.')
+})
+
+test('결제 결과 재조회는 승인 대기·이용권 복구만 3초 간격 최대 10회, 오류 뒤에는 멈춘다', () => {
+  const state = (status: string, entitlementStatus: string | null = null) =>
+    ({ paymentId: null, orderId: 'order-a', childId: child.id, amount: 9900, status, entitlementStatus, approvedAt: null, failureCode: null })
+  assert.equal(payment.paymentPollDelay(state('PENDING'), 1, false), 3000)
+  assert.equal(payment.paymentPollDelay(state('CONFIRMING'), 10, false), 3000)
+  assert.equal(payment.paymentPollDelay(state('APPROVED', 'RECOVERY_REQUIRED'), 1, false), 3000)
+  assert.equal(payment.paymentPollDelay(state('PENDING'), 11, false), false)
+  assert.equal(payment.paymentPollDelay(state('PENDING'), 1, true), false)
+  assert.equal(payment.paymentPollDelay(state('APPROVED', 'APPLIED'), 1, false), false)
+  assert.equal(payment.paymentPollDelay(state('FAILED'), 1, false), false)
+  assert.equal(payment.paymentPollDelay(undefined, 0, false), false)
+})
+
+test('결제 승인은 같은 주문의 중복 요청을 합치고 승인 응답으로 결과를 채워 바로 다시 조회하지 않는다', async t => {
+  const calls: string[] = []
+  const approved = { paymentId: 'pay-a', orderId: 'order-dedupe', childId: child.id, amount: 9900, status: 'APPROVED',
+    entitlementStatus: 'APPLIED', approvedAt: '2026-11-02T00:00:00Z', failureCode: null }
+  mockFetch(t, (url, init) => {
+    calls.push(`${init.method ?? 'GET'} ${url}`)
+    assert.equal(new Headers(init.headers).get('Idempotency-Key'), 'confirm-key')
+    return Response.json(approved)
+  })
+  let enabled = false
+  const h = await mount(t, () => ({ confirm: payment.usePaymentConfirmation(), result: payment.usePaymentResult('order-dedupe', enabled) }))
+  const body = { orderId: 'order-dedupe', amount: 9900, paymentKey: 'synthetic-key' }
+  await act(async () => {
+    const [a, b] = await Promise.all([h.get().confirm.mutateAsync({ body, key: 'confirm-key' }), h.get().confirm.mutateAsync({ body, key: 'confirm-key' })])
+    assert.equal(a, b)
+  })
+  enabled = true; await h.render(); await act(async () => { await pause(30) })
+  assert.deepEqual(calls, ['POST /api/v1/payments/confirm'])
+  assert.deepEqual(h.get().result.data, approved)
 })
 
 test('공통 QueryClient는 같은 쿼리의 동시 HTTP를 합치고 명시적 clear 후 결과를 제거한다', async () => {
