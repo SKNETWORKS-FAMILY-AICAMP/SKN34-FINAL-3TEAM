@@ -501,7 +501,7 @@ P12 "판정 리스 90초·고착 탐지 1분"의 탐지 작업. 지금까지는 
 | `JudgmentMapper.failExpired` | `UPDATE judgment SET process_status='FAILED', failure_code=:code, retry_count=retry_count+1 WHERE process_status='RUNNING' AND (lease_until IS NULL OR lease_until < :now) RETURNING answer_id`. 만료 조건은 `acquire` SQL·`Judgment.isLeaseExpired`와 같음(리스 없는 `RUNNING`도 만료). 탐지용 인덱스 `(process_status, lease_until)`는 기존(V2) |
 | `Judgment.LEASE_EXPIRED` | 실패 코드 상수 |
 | `AppProperties.Judgment`, `application.yml` | `stuck-detection-enabled: true`, `stuck-detection-interval: PT1M` |
-| 설계 | state-diagram 3.3(전이·표·설명), class-diagram 4.2(`StuckJudgmentScheduler`, `failStuck`, `failExpired`, 설명), architecture 2.6 learning 트리(`judgment/scheduler/`) |
+| 설계 | state-diagram 3.3(전이·표·설명·`failure_code` 목록), class-diagram 4.2(`StuckJudgmentScheduler`, `failStuck`, `failExpired`, 설명), architecture 2.6 learning 트리(`judgment/scheduler/`) |
 
 ### 겹칠 때
 
@@ -527,7 +527,7 @@ P12 "판정 리스 90초·고착 탐지 1분"의 탐지 작업. 지금까지는 
 
 ### 검증
 
-- learning `./gradlew test` 278개 통과(새 8개). `JudgmentServiceTest`: 만료·리스 없음만 전이하고 미만료·`PENDING`은 그대로, 두 번 실행해도 한 번만, 탐지 뒤 재요청이 `FAILED → RUNNING` 후 정상 저장. `StuckJudgmentSchedulerTest`: 켜면 탐지, 끄면 그대로. `StuckJudgmentConcurrencyTest`(실제 커밋, 별도 컨테이너): 재획득과 탐지가 서로 행을 잡은 두 순서, 두 인스턴스 동시 탐지
+- learning `./gradlew test` 279개 통과(새 9개). `JudgmentServiceTest`: 만료·리스 없음만 전이하고 미만료·`PENDING`은 그대로, 두 번 실행해도 한 번만, 탐지 뒤 재요청이 `FAILED → RUNNING` 후 정상 저장. `StuckJudgmentSchedulerTest`: 켜면 탐지, 끄면 그대로, 로그에 건수·답변 ID만 있고 학생 원문 없음. `StuckJudgmentConcurrencyTest`(실제 커밋, 별도 컨테이너): 재획득과 탐지가 서로 행을 잡은 두 순서, 두 인스턴스 동시 탐지
 - SQL에서 리스 조건을 빼면 새 테스트 2개(미만료 유지, 재획득 먼저)가 실패하는 것을 확인 후 되돌림
 - scripts/tests 96개 통과, `git diff --check` 통과
 
