@@ -29,8 +29,7 @@ class ReportTemplateService(private val conversations: ConversationService, priv
     fun propose(conversation: UUID, question: String): Map<String, Any> {
         val parent = conversations.parent()
         val current = conversations.locked(parent,conversation) { row ->
-            usage.consume(parent,row.studentId)
-            usage.recordAttempt(parent,row.studentId,UUID.randomUUID())
+            usage.consume(parent,row.studentId,UUID.randomUUID())
             repository.get(parent)
         }
         val result = ai.reportTemplate(mapOf("question" to question,"current" to current.settings))

@@ -762,7 +762,7 @@ SKN34-FINAL-3TEAM/
 | AI API | Python 3.12, FastAPI, Pydantic, uv, LangGraph, LangChain, OpenAI API(기본 `gpt-6.1-terra`)·Claude API(`LLM_PROVIDER`로 교체), aio-pika, httpx | 에이전트 그래프·도구 호출, 비동기 AMQP |
 | 모델 추론 | PyTorch, Hugging Face Transformers (M2 klue/roberta, M1) | 기획서 5장 모델 |
 | 리포트 | SQLAlchemy, Alembic, Jinja2, Playwright(Chromium PDF) | HTML 템플릿 → PDF·Markdown |
-| 저장소 | PostgreSQL(RDS), S3(로컬 MinIO), Redis(core 알림 중계·학생 기기 페어링·기기 등록 rate limit) | 서비스별 DB 분리, 판정 근거·기준표 JSONB, 파일 분리. Redis는 SSE 중계와 짧은 TTL 값만 담당하고 조회 캐시로 쓰지 않음, 사용량 카운터는 PostgreSQL로 이전 결정(#210, 구현은 후속 이슈) |
+| 저장소 | PostgreSQL(RDS), S3(로컬 MinIO), Redis(core 알림 중계·학생 기기 페어링·기기 등록 rate limit) | 서비스별 DB 분리, 판정 근거·기준표 JSONB, 파일 분리. Redis는 SSE 중계와 짧은 TTL 값만 담당하고 조회 캐시로 쓰지 않음, 분석 대화 사용량은 PostgreSQL 결제 사용 이력 집계로 이전(#210 결정, #225 구현) |
 | 메시징 | RabbitMQ (quorum queue, topic/direct exchange, DLX) | 작업 큐 + fan-out 동시 지원, Kafka 대비 운영 부담 작음 |
 | 결제 | 토스페이먼츠 테스트 환경 (결제위젯·자동결제·웹훅) | 실결제 미연동 |
 | 컨테이너·오케스트레이션 | Docker, Compose, kind, Kubernetes, Helm | 로컬 → 운영 동일 chart |
@@ -787,7 +787,7 @@ SKN34-FINAL-3TEAM/
 - 인증([auth-account](../report/auth-account.md)): `PublicAuthFilter`(판정 경로는 Spring 매칭 경로로 정규화) → `AuthService` → Repository. JWT는 Spring Security JOSE HS256, Google 코드 교환·JWKS 검증은 트랜잭션 밖, 계정·세션·refresh 회전만 트랜잭션 안. 학생 단독 인증은 `StudentAuthService`(기기·페어링)와 `StudentPinService`(PIN·잠금)로 나누고 PIN 변경의 재인증 소비·갱신·감사는 한 트랜잭션
 - 주간 리포트([report](../report/report.md)): `ReportScheduleService` → 자녀별 트랜잭션의 `ReportJobService` → `ReportJobRepository` + `OutboxWriter`(ShedLock, 자녀별 실패 격리). 소비는 `RetryingConsumer` → `ReportLifecycleService`. 조회의 내부 HTTP와 열람 저장 트랜잭션은 분리. `ReportEntitlementService`는 payment 소유 `ProductEntitlementService`에 위임한다. 상품·구독 repository를 직접 참조하지 않으며 권한 조회 실패는 명시적인 오류로 처리한다. report Outbox는 학생별 advisory lock·AUTOCOMMIT 선점, publisher confirm 뒤 짧은 트랜잭션으로 발행 시각 기록
 - 삭제·재인증([auth-account](../report/auth-account.md)): `student.deleted.v1` data `{studentId,deletionRequestId,scope}`. 요청 CONFIRMED와 Outbox 기록은 한 트랜잭션, learning·report 완료 보고를 서비스별 UNIQUE 행으로 기록해 둘 다 있을 때만 COMPLETED. 기능 간 정리는 각 service 경유
-- Redis 사용 범위([core-gateway #210](../report/core-gateway.md#6-redis-사용-필요성과-postgresql-대체-비교-210), 2026-11-02 부분 대체 결정): DB 저장과 함께 커밋·롤백되어야 하는 분석 대화 일일 사용량·관리자 재처리 중복 차감 표식은 PostgreSQL로 옮기고, 미구현 무료 플랜 미션 일일 한도(P13)도 PostgreSQL로 구현한다. 학생 기기 페어링 코드·기기 등록 rate limit·알림 Pub/Sub은 Redis에 유지한다. 구현과 API 명세·ERD 갱신은 후속 이슈이며 그 전까지 현재 Redis 구현이 동작 기준이다
+- Redis 사용 범위([core-gateway #210](../report/core-gateway.md#6-redis-사용-필요성과-postgresql-대체-비교-210), 2026-11-02 부분 대체 결정): DB 저장과 함께 커밋·롤백되어야 하는 분석 대화 일일 사용량·관리자 재처리 중복 차감 표식은 PostgreSQL로 옮기고, 미구현 무료 플랜 미션 일일 한도(P13)의 PostgreSQL 구현은 후속 미정이다. 학생 기기 페어링 코드·기기 등록 rate limit·알림 Pub/Sub은 Redis에 유지한다. 분석 대화 사용량·재처리 표식은 #225에서 새 테이블 없이 기존 `payment_premium_usage` 집계와 source ID 중복 방지로 구현했다
 
 #48은 ReportEntitlementService를 payment 소유 ProductEntitlementService에 연결한다. 외부 PG 호출과 learning 사용 증빙 조회는 DB 트랜잭션 밖, 주문/구독/환불·프리미엄 사용 예약은 공통 parent 계정 행 잠금 안이다. payment repository는 payment 패키지만 사용한다. 신규 의존성 없이 기존 HTTP·MyBatis·ShedLock·IdempotencyService·NotificationService를 사용한다. [결제 경계·복구](../report/issue-48-payments.md).
 
@@ -809,4 +809,4 @@ core의 생성은 guardianship `StudentAccessService`를 통해 ACTIVE 학생 �
 
 ### #47 관리자 대화 재처리 실행 경계
 
-CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 기존 AnalysisStreamService의 공통 실행을 호출한다. 학부모 SSE와 같은 검증·근거 확인·저장을 사용하며 관리자에게 원문 이벤트를 전달하지 않는다. RabbitMQ 큐나 외부 실행 서비스를 추가하지 않는다. 요청·종료 감사는 BEFORE_COMMIT이며 외부 AI 호출은 DB 트랜잭션 밖이다. Redis 사용량은 영속 요청 ID 원자 표식으로 중복 차감을 방지한다. 중단 실행은 세대를 확인해 실패로 종료하고 자동 AI 재실행하지 않는다.
+CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 기존 AnalysisStreamService의 공통 실행을 호출한다. 학부모 SSE와 같은 검증·근거 확인·저장을 사용하며 관리자에게 원문 이벤트를 전달하지 않는다. RabbitMQ 큐나 외부 실행 서비스를 추가하지 않는다. 요청·종료 감사는 BEFORE_COMMIT이며 외부 AI 호출은 DB 트랜잭션 밖이다. 사용량은 영속 요청 ID를 결제 사용 이력 source ID로 써서 실행 선점 트랜잭션 안에서 한 번만 차감한다(#225). 중단 실행은 세대를 확인해 실패로 종료하고 자동 AI 재실행하지 않는다.
