@@ -45,6 +45,8 @@ class SupportController(private val service: SupportService) {
  fun answer(request: HttpServletRequest,@PathVariable inquiryId: UUID,@RequestBody body: AnswerCommand)=service.answer(actor(request),inquiryId,body)
  @GetMapping("/api/v1/notices")
  fun notices(request: HttpServletRequest,@RequestParam(defaultValue="0") page: Int,@RequestParam(defaultValue="20") size: Int)=service.notices(actor(request),page,size)
+ @GetMapping("/api/v1/admin/notices")
+ fun adminNotices(request: HttpServletRequest,@RequestParam(required=false) status: String?,@RequestParam(required=false) role: String?,@RequestParam(defaultValue="0") page: Int,@RequestParam(defaultValue="20") size: Int)=service.adminNotices(actor(request),status,role,page,size)
  @PostMapping("/api/v1/admin/notices")
  @ResponseStatus(HttpStatus.CREATED)
  fun createNotice(request: HttpServletRequest,@RequestBody body: NoticeCommand)=service.notice(actor(request),null,body)

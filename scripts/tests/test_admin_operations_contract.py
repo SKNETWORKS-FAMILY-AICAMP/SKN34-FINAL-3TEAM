@@ -32,6 +32,9 @@ class AdminOperationsContracts(unittest.TestCase):
                     for status in ('404','502','503','504'):
                         responses.pop(status,None)
                     responses['403']={'$ref':'#/components/responses/LearningProblem'}
+                # #242 adds only the GET list operation; the original POST stays fingerprinted.
+                if section=='paths' and name=='/admin/notices':
+                    reviewed.pop('get',None)
                 canonical=json.dumps(reviewed,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
                 self.assertEqual(expected,hashlib.sha256(canonical).hexdigest(),f'{section}/{name}')
     def test_admin_paths_and_retry_key(self):
