@@ -412,6 +412,35 @@ class SupportIntegrationTest: IntegrationTestSupport() {
   call("GET","/notices",null,expected=401);call("GET","/help?role=ADMIN",null,expected=401)
   call("GET","/help?role=ADMIN",studentToken,expected=403);call("GET","/help?role=PARENT",snapshot="help")
  }
+ @Test fun `admin notice list derives scheduled active ended with role filter page and service ops only`() {
+  // Other tests leave notices behind; end them so status sets below are exact.
+  jdbc.update("UPDATE notice SET ended_at=CURRENT_TIMESTAMP WHERE ended_at IS NULL")
+  val now=OffsetDateTime.now()
+  fun create(roles: List<String>,from: OffsetDateTime,to: OffsetDateTime?)=call("POST","/admin/notices",adminToken,NoticeCommand("NOTICE","목록 확인","내용",roles,from,to),expected=201)["noticeId"].asText()
+  val scheduled=create(listOf("PARENT"),now.plusHours(1),now.plusHours(2))
+  val active=create(listOf("STUDENT","ADMIN"),now.minusHours(1),null)
+  val expired=create(listOf("PARENT"),now.minusHours(2),now.minusHours(1))
+  val ended=create(listOf("PARENT"),now.minusHours(1),now.plusHours(1));call("DELETE","/admin/notices/$ended",adminToken)
+  fun ids(query: String)=call("GET","/admin/notices$query",adminToken)["items"].map { it["noticeId"].asText() }.toSet()
+  assertEquals(setOf(scheduled),ids("?status=SCHEDULED"))
+  assertEquals(setOf(active),ids("?status=ACTIVE"))
+  val endedIds=ids("?status=ENDED&size=100")
+  assertTrue(endedIds.containsAll(listOf(expired,ended)));assertFalse(scheduled in endedIds || active in endedIds)
+  val parent=ids("?role=PARENT&size=100")
+  assertTrue(parent.containsAll(listOf(scheduled,expired,ended)));assertFalse(active in parent)
+  assertEquals(setOf(active),ids("?status=ACTIVE&role=STUDENT"));assertEquals(emptySet(),ids("?status=SCHEDULED&role=STUDENT"))
+  val item=call("GET","/admin/notices?status=SCHEDULED",adminToken,snapshot="admin-notices")["items"][0]
+  assertEquals(setOf("noticeId","kind","title","body","targetRoles","visibleFrom","visibleTo","endedAt"),item.fieldNames().asSequence().toSet())
+  val total=count("SELECT count(*) FROM notice WHERE ended_at IS NOT NULL OR visible_to<=CURRENT_TIMESTAMP")
+  val first=call("GET","/admin/notices?status=ENDED&page=0&size=1",adminToken);val second=call("GET","/admin/notices?status=ENDED&page=1&size=1",adminToken)
+  assertEquals(total.toLong(),first["totalElements"].asLong());assertEquals(1,first["items"].size());assertEquals(1,first["size"].asInt());assertEquals(1,second["page"].asInt())
+  assertNotEquals(first["items"][0]["noticeId"].asText(),second["items"][0]["noticeId"].asText())
+  for(query in listOf("?status=PUBLISHED","?role=SYSTEM","?size=0","?size=101","?page=-1")) call("GET","/admin/notices$query",adminToken,expected=400)
+  val contentAdmin=tokens.access(session(jdbc,account(jdbc,permission="CONTENT"),"ADMIN"))
+  for(token in listOf(parentToken,studentToken,contentAdmin)) call("GET","/admin/notices",token,expected=403)
+  call("GET","/admin/notices",null,expected=401)
+  listOf(scheduled,active).forEach { call("DELETE","/admin/notices/$it",adminToken) }
+ }
  @Test fun `parent processing notification honors opt out rollback and current linked consent`() {
   val actor=auth.authenticate(parentToken)
   notifications.settings(actor,listOf(NotificationSetting(NotificationType.INQUIRY_ANSWERED,false)))

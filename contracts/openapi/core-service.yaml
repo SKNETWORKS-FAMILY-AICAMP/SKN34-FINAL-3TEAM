@@ -5721,6 +5721,71 @@ paths:
           default: 20
       summary: 인증 GET /notices
   /admin/notices:
+    get:
+      tags:
+      - Support
+      operationId: getAdminNotices
+      description: >-
+        #242 SERVICE_OPS 전용 전체 공지 목록. 항목은 GET /notices와 같은 SupportNotice이며 상태는 저장 컬럼이 아니라
+        조회 시각으로 계산한다. SCHEDULED=endedAt 없음·now<visibleFrom, ACTIVE=endedAt 없음·visibleFrom<=now·(visibleTo 없음 또는 now<visibleTo),
+        ENDED=endedAt 있음 또는 visibleTo<=now. 정렬은 visibleFrom DESC, id DESC.
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportNoticePage'
+        '400':
+          description: VALIDATION_FAILED — 정의 밖 status·role, page<0, size 1~100 밖.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: UNAUTHENTICATED / TOKEN_EXPIRED — Bearer 토큰 없음·만료.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: FORBIDDEN — SERVICE_OPS 권한이 없는 관리자, 학부모·학생 토큰.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      parameters:
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - SCHEDULED
+          - ACTIVE
+          - ENDED
+      - in: query
+        name: role
+        description: targetRoles에 이 역할이 포함된 공지만.
+        schema:
+          type: string
+          enum:
+          - STUDENT
+          - PARENT
+          - ADMIN
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - in: query
+        name: size
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      summary: SERVICE_OPS GET /admin/notices
     post:
       tags:
       - Support

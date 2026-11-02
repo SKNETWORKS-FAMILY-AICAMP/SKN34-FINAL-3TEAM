@@ -15,7 +15,7 @@ from app.bootstrap import create_app
 from app.clients.learning_client import RecordsUnavailable
 from app.llm.base import LlmError
 from app.llm.providers import get_llm
-from app.versions import ActiveVersions
+from app.prompt_versions.registry import ActiveVersions
 from tests.analysis_agent.records_fixture import FakeRecords
 from tests.fakes import FakeLlm
 

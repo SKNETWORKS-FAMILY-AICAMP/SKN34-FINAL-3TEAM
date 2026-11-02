@@ -152,3 +152,74 @@ KEDA Application의 첫 sync는 `scaledjobs.keda.sh` CRD가 client-side apply의
 core·learning의 Argo PreSync Flyway Job은 각각 v19·v7에서 Complete, report-api의 Alembic Job은 `20261030_04`에서 Complete였다. core·learning·AI·scoring·report-api 하위 Application은 모두 Synced·Healthy, 실제 API Pod 5개는 각각 1/1 Ready·재시작 0이었다. report-worker Application도 Synced·Healthy이고 KEDA ScaledObject가 Ready였으며 빈 두 큐에서 worker Deployment는 설정대로 0/0이었다. metrics-server도 Synced·Healthy, `kubectl top node`가 CPU 766m·메모리 5630Mi(조회 시점)를 반환했다. 외부 Ingress는 `/api/v1/me`에 인증되지 않은 401, `/internal/model-versions/active`에 nginx 404를 반환했다. 실제 AI Pod에서 core·learning·scoring readiness가 모두 200, report-api의 DB readiness가 200, scoring Pod의 MinIO 버킷 접근이 성공했다. 실제 모델 버킷은 비어 있어 가중치 로딩·추론은 여전히 미검증이고, 실제 사용자 로그인·LLM·PDF 생성·SSE 진행 중 종료도 실행하지 않았다.
 
 KEDA CRD·Grafana local 보완과 기록은 `2e25b7cb7e2efb07d73cc3188e45d69a7d4879af`(`fix: Argo KEDA CRD와 로컬 Grafana 기동 보완`)로 같은 feature 브랜치에 push했다. Argo repo-server가 새 SHA를 읽은 뒤 관측 Application은 수정된 Grafana CPU `1`과 live Deployment가 일치해 Synced·Healthy로 전환됐다. 마지막 조회에서 root 이외의 하위 Application 10개(KEDA·platform 정책·metrics-server·관측·여섯 앱)는 모두 Synced·Healthy였다. Grafana·Collector·Prometheus는 각 1/1 Ready이고 새 Grafana Pod는 재시작 0, core·learning·AI·scoring·report-api도 각 1/1 Ready였다. 세 migration Job은 Complete, report-worker는 빈 큐에서 0/0, ScaledObject는 Ready·Inactive였다. `kubectl top node`의 마지막 값은 CPU 647m·메모리 5486Mi(70%)였다. root만 전용 검증용 하위 targetRevision 패치 때문에 OutOfSync·Healthy이며, 저장소에는 병합 후 사용할 `develop` 참조를 유지한다. PR 생성·원격 CI·EKS 배포·실제 Langfuse 저장 조회는 수행하지 않았다.
+
+## GitOps chart CI (#238)
+
+[이슈 #238](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/238)에 따라 `.github/workflows/ci-gitops.yml`을 추가했다. `infrastructure/gitops/**`, migration 이미지가 복사하는 core·learning의 `db/migration/**`, 워크플로 파일이 바뀐 PR과 `develop`·`main` push에서 실행한다. 기존 chart·values·다른 워크플로는 수정하지 않았다.
+
+### 검사 항목
+
+| job | 검사 | 실패 조건 |
+|---|---|---|
+| charts | Helm v4.3.1·kubeconform v0.8.0을 공식 배포본에서 받아 SHA256 대조 | 체크섬 불일치 |
+| charts | `environments/<env>/*.yaml`마다 `helm lint --strict`와 `helm template` | 렌더 실패, `values.schema.json` 위반, lint 경고 |
+| charts | 렌더 결과와 `argocd/`·`policies/` 원본 manifest의 kubeconform `-strict` | 스키마 위반, 정의되지 않은 필드 |
+| migrations | `migrations/*.Dockerfile`을 저장소 루트 context로 `docker build`(push 없음) | 빌드 실패 |
+
+렌더 조합은 Argo CD 정의를 그대로 따른다. 환경 파일 이름과 같은 chart가 있으면(`observability`·`platform-data`) 그 chart, 나머지는 ApplicationSet처럼 파일 이름을 릴리스 이름으로 `app-service` chart에 넘긴다. namespace는 app-service `app`, observability `observability`, platform-data `platform`이다. platform-data는 Argo Application이 아니라 #17 README의 Helm 릴리스로 설치하지만 같은 환경 values로 함께 렌더한다. 새 chart를 추가하면 워크플로의 namespace 대응을 함께 넣어야 하며, 빠지면 CI가 오류로 알린다. 의존 chart가 있으면 `helm dependency build`를 먼저 실행한다(현재 세 chart 모두 없음).
+
+`app-service` 기본 values는 `image.repository`가 빈 문자열이라 환경 values 없이 단독 lint하면 자체 스키마의 `minLength`에서 실패한다. 환경별 이미지를 반드시 넣게 한 설계이므로 chart 오류로 보지 않았다. chart lint는 실제 배포 조합으로 하고, 어떤 환경 파일도 쓰지 않는 chart만 기본 values로 lint한다.
+
+### CRD 처리 결정
+
+kubeconform은 기본 Kubernetes 스키마와 공개 CRD 카탈로그를 순서대로 찾고, 둘 다 없는 종류만 `-ignore-missing-schemas`로 건너뛴다. 이 방식은 KEDA·Argo CD 리소스도 실제 필드까지 검사하면서, 아직 카탈로그에 없는 CRD를 추가할 때 CI가 막히지 않는다. CRD 스키마를 저장소에 복사하는 방식은 KEDA·Argo 업그레이드마다 별도 갱신이 필요해 택하지 않았다. 건너뛴 리소스는 `Kind/이름 (파일)` 목록과 경고 annotation으로 남는다.
+
+| 항목 | 고정 값 | 근거 |
+|---|---|---|
+| Kubernetes 스키마 | [yannh/kubernetes-json-schema](https://github.com/yannh/kubernetes-json-schema) `e0c72a1`의 `v1.35.8-standalone-strict` | kind 노드 이미지 v1.35.8([local-platform](local-platform.md))과 같은 버전 |
+| CRD 스키마 | [datreeio/CRDs-catalog](https://github.com/datreeio/CRDs-catalog) `27233a5` | KEDA 2.21.0 CRD 갱신(2026-11-01)을 포함하고 Argo CD `Application`·`ApplicationSet`이 있음 |
+
+두 저장소는 커밋 SHA로 고정했으므로 upstream 변경이 CI 결과를 바꾸지 않는다. KEDA chart 버전을 올리면 카탈로그 커밋도 같은 버전 이후로 갱신한다. 카탈로그의 Argo CD 스키마 버전과 전용 kind에 설치한 v3.5.5의 일치 여부는 확인하지 않았다.
+
+### 로컬 실행
+
+Linux 셸(WSL 또는 컨테이너)에서 위 두 도구를 같은 버전으로 설치한 뒤 저장소 루트에서 실행한다. 워크플로의 run 블록과 같은 명령이다.
+
+```bash
+cd infrastructure/gitops
+out=/tmp/gitops-rendered; mkdir -p "$out/local"
+for values in environments/local/*.yaml; do
+  release="$(basename "$values" .yaml)"
+  if [ -d "charts/$release" ]; then chart="$release"; else chart=app-service; fi
+  case "$chart" in app-service) ns=app ;; observability) ns=observability ;; platform-data) ns=platform ;; esac
+  helm lint --strict "charts/$chart" --namespace "$ns" -f "$values"
+  helm template "$release" "charts/$chart" --namespace "$ns" --kube-version 1.35.8 -f "$values" > "$out/local/$release.yaml"
+done
+kubeconform -strict -summary -kubernetes-version 1.35.8 \
+  -schema-location 'https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/{{.NormalizedKubernetesVersion}}-standalone{{.StrictSuffix}}/{{.ResourceKind}}{{.KindSuffix}}.json' \
+  -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/27233a506de0085e71c7f9702597806a7f95eb24/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+  -ignore-missing-schemas "$out" argocd policies
+```
+
+migration 이미지는 저장소 루트에서 `docker build -f infrastructure/gitops/migrations/core.Dockerfile .`처럼 확인한다.
+
+### 검사하지 않는 항목
+
+- Argo CD가 받는 외부 chart(KEDA 2.21.0, metrics-server 3.14.0)의 렌더링. 외부 저장소 다운로드가 필요하고 저장소 변경으로 바뀌지 않는다.
+- 실제 클러스터 적용, Argo sync, admission webhook·NetworkPolicy 동작. 스키마 검사는 필드 형식만 본다.
+- migration 이미지의 실행·게시. 빌드만 확인하며 레지스트리 push와 태그 갱신은 #186 범위다.
+- `kubeconform -strict`는 manifest의 정의되지 않은 필드를 잡지만, values의 오타는 그 값이 렌더되는 경로에서만 드러난다. 스키마가 있는 `app-service`만 values 단계에서 막는다.
+
+### 검증 (2026-11-02)
+
+워크플로 charts job의 env와 run 블록을 그대로 추출해 전용 `buildpack-deps:noble-curl` 컨테이너(저장소 읽기 전용 mount)에서 실행했다. 두 도구의 SHA256이 일치했고, local 환경 파일 8개의 lint·template가 통과했다. kubeconform은 15개 파일 76개 리소스를 검사해 Valid 76, Skipped 0이었다. `ScaledObject`·`TriggerAuthentication`·`Application`·`ApplicationSet`도 카탈로그 스키마로 실제 검사됐다.
+
+일부러 넣은 값 오류는 `infrastructure/gitops` 복사본에만 넣고 같은 컨테이너 명령을 실행했다. 저장소 파일은 바꾸지 않았다.
+
+| 사례 | 변경 | 결과 |
+|---|---|---|
+| 스키마 타입 오류 | `ai-service.yaml`의 `replicaCount: "one"` | `helm lint`가 `/replicaCount: got string, want integer`로 실패, 종료 코드 1 |
+| 스키마 없는 chart 필드 오타 | `observability.yaml` Grafana `limits` → `limit` | lint·template는 통과, kubeconform이 `additional properties 'limit' not allowed`로 실패, 종료 코드 1 |
+| 카탈로그에 없는 CRD | 임의의 `example.invalid/v1` `Widget` 추가 | 통과, `Widget/probe` 건너뜀 목록과 경고 출력 |
+
+migration Dockerfile 2개는 전용 임시 태그로 빌드에 성공했고 태그는 삭제했다. actionlint 1.7.12(shellcheck 포함)는 `ci-gitops.yml`에서 오류가 없었다. 원격 GitHub Actions 결과는 브랜치 push 후 별도로 확인한다.

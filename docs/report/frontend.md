@@ -1,6 +1,6 @@
 # 웹 프론트 (#7·#8·#9·#59, 테마·대시보드·QR 시연)
 
-## 할당 이슈 #234·#239·#240·#242·#247·#255 (2026-11-02)
+## 할당 이슈 #234·#239·#240·#247·#255 (2026-11-02)
 
 - 기준: develop `9595e8f`.
 - #255 계층 정리: 신고·문의 결과 조회는 `data/support/{api,queries}.ts`, 결제 결과 상태 조회·폴링·승인·빌링 등록은 `data/payment/queries.ts`, 결제창 복귀용 대기 정보 저장은 `data/payment/checkoutStorage.ts`로 옮겼습니다. `domain/payment.ts`에는 `validPending`·`validBilling`·`checkoutConfirmation`·`billingConfirmation` 같은 순수 검증만 남겼습니다. 폴링 조건(PENDING·CONFIRMING·APPROVED+RECOVERY_REQUIRED, 3초, 첫 응답 뒤 최대 10회, 오류 시 중단)과 StrictMode 중복 요청 공유 Map은 그대로입니다. 승인 응답을 결과 캐시에 넣어 승인 직후 상태를 한 번 더 묻지 않으므로 API 호출 순서는 이전과 같습니다.
@@ -12,7 +12,7 @@
   | 분할 후 | `index` 278.04 kB (gzip 87.56 kB), 경고 없음 | `ClassroomParts` 169.59 kB, `ParentWorkspace` 68.30 kB, `AdminWorkspace` 63.58 kB, `ClassroomApp` 38.56 kB, `StudentWorkPage` 34.85 kB, `ParentPayments` 19.01 kB |
 
 - #239 실시간 알림: `data/notifications.ts`의 `useNotificationStream`을 `RoleLayout`에서 호출해 학부모·관리자 로그인 중 기존 `streamSse`로 `GET /notifications/stream` 1개를 유지합니다. 학생, 동의·자녀 등록 전 학부모, 로그아웃 상태에서는 요청하지 않습니다. `ready`·`notification`을 받으면 `['parent','notifications']` 캐시만 무효화해 알림 화면과 메뉴의 "알림 · 읽지 않음 N"(`unreadOnly=true` 첫 쪽, 알림 화면과 같은 키)을 다시 읽습니다. 서버가 5분 뒤 닫으면 1초 뒤, 실패가 이어지면 2·4·…·30초 간격으로 다시 연결하고 401·403은 멈춥니다. MSW는 `ready`만 보내고 연결을 유지합니다. 이벤트를 캐시에 직접 병합하지 않고 목록을 다시 읽는 것은 api-spec 2.7의 "id로 병합·Last-Event-ID 없음" 규칙을 목록 API 한 곳에서 지키기 위해서입니다.
-- #242 관리자 공지: core에 `GET /admin/notices`(SERVICE_OPS, 상태·대상 역할 필터, 페이지)를 추가하고 관리자 공지 화면을 이 목록으로 바꿨습니다. 세션 안 작성 목록(`['admin','notice-session']`)과 브라우저 시각 기준 상태 계산을 없애고 서버가 준 `status`(예약·공개 중·종료)를 표시합니다. 저장·종료 뒤에는 admin 캐시 무효화로 서버 목록을 다시 읽으므로 새로고침해도 예약 공지가 남습니다. 상세는 [#46 보고서](issue-46-support.md) 끝 절.
+- #242(관리자 공지 전체 목록)는 공동 담당자 PR #266으로 develop에 먼저 반영되어, 이 브랜치의 중복 구현은 되돌리고 #266을 그대로 사용합니다.
 - #234 꾸미기 설정: core `GET/PUT /students/me/preferences`를 구현해 목업 계약을 확정했습니다(core V23 `student.look_*`, 값 목록은 코드 상수+CHECK, 학생 삭제 확정 시 초기화). 웹 경로·응답 모양은 그대로이며, 저장 실패 시 이전 모습으로 되돌린 뒤 "저장하지 못해서 전에 고른 모습으로 돌아갔어요." 안내를 추가했습니다. 대응 FN이 없는 화면 개선이라 요구사항 ID는 만들지 않았습니다.
 - #240 생각 활동·예시 질문 (담당자 결정: 생각 활동은 섬 화면 안과 별도 화면 모두, 예시 질문 포함): core `GET /students/me/thinking-activities`를 `learningApi.getThinkingActivities`·`useThinkingActivities`로 연결했습니다(키가 `['records', …]` 아래라 시도·돌아보기 저장 뒤 함께 다시 읽음). 학생 메뉴에 "생각 활동"(최근 7일·지난주, 생각 유형별 묶음)을 추가하고, 미션 고르기에서 섬(유형)을 고르면 아래에 "최근 7일 이 섬에서 해 본 생각"을 보여 줍니다. 미션 제목과 돌아보기(난이도·내가 쓴 말)만 표시하며 숫자 레벨·등급·순위·점수는 없습니다. 학부모 분석 대화에는 `GET /agent/example-questions` 다섯 문구를 버튼으로 붙여, 고르면 질문을 채우고 현재 자녀·기간 범위 그대로 보냅니다. `available=false`(기록 없음)는 비활성화하고 가능 범위를 안내합니다. MSW 두 경로는 core 응답 모양(돌아보기 `EASY/NORMAL/HARD`·nullable text, 질문 문구)과 맞췄습니다.
 
@@ -114,7 +114,7 @@ node tests/qr-device-browser.mjs
 - `/admin/payments`: 환불 요청/거래 내역/PG 대조 탭, 페이지 이동, 체크리스트·최종 확인, 반려 사유와 조회/환불 승인 권한 분리.
 - 실제 `PaymentController`의 승인 POST는 body 없이 Idempotency-Key를 사용한다. 반려는 `{reason}`. APPROVED/202는 PG 확인 중이며 COMPLETED만 환불 완료로 표시한다. 적격 여부는 서버가 재검증하며 UI에서 가짜 withinSevenDays·premiumUnused 값을 만들지 않는다.
 - 실제 `SupportController`의 문의 상태 RESOLVED, `noticeId/kind/body/targetRoles/visibleFrom/visibleTo/endedAt`와 POST 답변 계약을 반영했다.
-- 현재 core에는 `GET /admin/notices` 전체 목록이 없다. `GET /notices`의 관리자 대상 공개 공지 첫 20건과 로그인 세션에서 작성·수정한 공지만 관리한다. 예약/종료 공지 전체 조회 API는 후속이다.
+- 당시에는 core에 `GET /admin/notices` 전체 목록이 없어 `GET /notices`의 관리자 대상 공개 공지 첫 20건과 로그인 세션에서 작성·수정한 공지만 관리했다. #242에서 SERVICE_OPS 전용 전체 목록(상태·대상 필터, 페이지)으로 교체하고 세션 임시 목록을 제거했다. 예약·공개 중·종료를 구분해 표시한다([issue-46-support #242](issue-46-support.md#242-관리자-공지-전체-목록-2026-11-02)).
 - 새 기능은 실제 공개 API 어댑터를 호출한다. DEV는 별도 adminServiceHandlers가 가상 응답을 처리하고 운영 빌드에는 포함되지 않는다. 실서버 오류 때 데모 데이터로 자동 전환하지 않는다.
 
 검증: 단위·계약 114개, TypeScript·운영 빌드·lint·운영 목업 제외 검사 통과. 관리자 브라우저에서 로그인·문의 답변·공지 생성/수정/종료·환불 PG 대기·거래/대조·권한 분리, 9개 화면×1440/1024/768/390의 가로 넘침을 확인했다. Google 관리자 로그인은 운영 빌드/API 대역으로 확인했다. 실제 DB·Google OAuth·PG 결제/취소 통합 검증은 하지 않았다. 청크 500kB 경고는 남아 있다.

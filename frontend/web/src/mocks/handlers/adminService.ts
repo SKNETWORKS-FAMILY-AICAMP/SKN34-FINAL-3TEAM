@@ -4,7 +4,7 @@ import { fail } from './parent.ts'
 import { cases, notices, answerCase } from './service.ts'
 import { fixtureStore as store } from '../fixtures/student.ts'
 import { workspaceScenario } from '../fixtures/accounts.ts'
-import type { AdminNotice, AdminPayment, RefundRequest, NoticeCommand } from '../../domain/admin/service.ts'
+import { noticeStatus, type AdminNotice, type AdminPayment, type RefundRequest, type NoticeCommand } from '../../domain/admin/service.ts'
 const stamp=new Date().toISOString()
 const seedInquiry={id:'demo-admin-inquiry',owner:'parent@example.test:PARENT:',kind:'inquiries',category:'USAGE',comment:'학습 기록은 어디서 확인하나요?',status:'RECEIVED' as const,createdAt:stamp}
 if(!cases.some(c=>c.id===seedInquiry.id))cases.push(seedInquiry)
@@ -22,6 +22,14 @@ export const adminServiceHandlers=[
  http.get('/api/v1/admin/inquiries',({request})=>respond(async()=>{admin(request,'SERVICE_OPS');return list(request,cases.filter(c=>c.kind==='inquiries').map(inquiryView))})),
  http.post('/api/v1/admin/inquiries/:id/answer',({request,params})=>respond(async()=>{admin(request,'SERVICE_OPS');const data=await request.json() as {answer:string};const c=cases.find(c=>c.id===params.id);if(!c)fail('NOT_FOUND','문의가 없습니다.',404);if(c!.status==='RESOLVED'&&c!.answer!==data.answer)fail('CONFLICT','처리 완료한 답변은 바꿀 수 없습니다.',409);return inquiryView(answerCase(String(params.id),data.answer)!)})),
  http.get('/api/v1/notices',({request})=>respond(async()=>{guard(request);const role=store.snapshot().session!.role;const rows=notices.filter(n=>n.roles.includes(role)&&Date.parse(n.startsAt)<=Date.now()&&(!n.endsAt||Date.parse(n.endsAt)>Date.now())&&!(n as unknown as AdminNotice).endedAt);return list(request,rows.map(n=>({...n,...noticeView(n)})))})),
+ // Mirrors core GET /admin/notices: status derived at query time, targetRoles filter, visibleFrom DESC.
+ http.get('/api/v1/admin/notices',({request})=>respond(async()=>{
+  const q=new URL(request.url).searchParams,status=q.get('status'),role=q.get('role')
+  if((status&&!['SCHEDULED','ACTIVE','ENDED'].includes(status))||(role&&!['STUDENT','PARENT','ADMIN'].includes(role)))fail('VALIDATION_FAILED','공지 상태·대상을 확인해 주세요.',400)
+  admin(request,'SERVICE_OPS');const now=Date.now()
+  const rows=notices.map(noticeView).filter(n=>(!status||noticeStatus(n,now)===status)&&(!role||n.targetRoles.includes(role as AdminNotice['targetRoles'][number]))).sort((a,b)=>Date.parse(b.visibleFrom)-Date.parse(a.visibleFrom)||b.noticeId.localeCompare(a.noticeId))
+  return list(request,rows)
+ })),
  ...(['post','patch'] as const).map(method=>http[method]('/api/v1/admin/notices'+(method==='patch'?'/:id':''),({request,params})=>respond(async()=>{
   admin(request,'SERVICE_OPS');const d=await request.json() as NoticeCommand
   if(!['NOTICE','MAINTENANCE'].includes(d.kind)||!d.title?.trim()||d.title.length>200||!d.body?.trim()||d.body.length>4000||!Array.isArray(d.targetRoles)||!d.targetRoles.length||new Set(d.targetRoles).size!==d.targetRoles.length||d.targetRoles.some(r=>!['PARENT','STUDENT','ADMIN'].includes(r))||!Number.isFinite(Date.parse(d.visibleFrom))||(d.visibleTo&&Date.parse(d.visibleTo)<=Date.parse(d.visibleFrom)))fail('VALIDATION_FAILED','공지 내용·공개 기간을 확인해 주세요.',400)

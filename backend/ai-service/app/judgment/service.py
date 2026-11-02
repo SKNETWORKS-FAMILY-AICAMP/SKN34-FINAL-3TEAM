@@ -17,7 +17,7 @@ from app.judgment.models import (
     Versions,
 )
 from app.llm.base import LlmClient, LlmUnavailable
-from app.versions import ActiveVersions
+from app.prompt_versions.registry import ActiveVersions
 
 
 class JudgmentService:

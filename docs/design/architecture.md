@@ -373,7 +373,6 @@ backend/ai-service/
 │  ├─ config.py
 │  ├─ errors.py                 # Problem Details 예외 핸들러
 │  ├─ security.py               # 내부 토큰·사용자 컨텍스트·학생 범위 검사
-│  ├─ versions.py               # 활성 프롬프트 본문·버전 선택과 내부 조회 (#68)
 │  ├─ judgment/
 │  │  ├─ router.py
 │  │  ├─ service.py
@@ -403,6 +402,11 @@ backend/ai-service/
 │  │  ├─ service.py
 │  │  ├─ models.py               # 요청·응답 스키마
 │  │  └─ prompts.py
+│  ├─ prompt_versions/           # 활성 프롬프트 버전 (#68, #254 분리)
+│  │  ├─ router.py               # GET /internal/versions
+│  │  ├─ service.py              # PromptSync: core snapshot·대기 이벤트 조정
+│  │  ├─ registry.py             # ActiveVersions: 이미지 본문·이름별 revision 상태
+│  │  └─ models.py               # 활성 버전 계약·PromptChoice
 │  ├─ clients/
 │  │  ├─ base.py                 # 내부 토큰·컨텍스트 헤더 전달 httpx 클라이언트
 │  │  ├─ learning_client.py
@@ -416,7 +420,7 @@ backend/ai-service/
 │  │  ├─ connection.py
 │  │  ├─ publisher.py            # llm.usage.recorded
 │  │  ├─ usage_recorder.py       # LlmClient 사용량 → 백그라운드 발행
-│  │  └─ consumer.py             # model.version.activated, Pod별 exclusive 큐 (#68)
+│  │  └─ consumer.py             # model.version.activated, Pod별 exclusive 큐 (#68), 검증·ACK 후 PromptSync.offer
 │  └─ health/
 │     └─ router.py
 ├─ tests/                        # app과 동일 기능 폴더 구조

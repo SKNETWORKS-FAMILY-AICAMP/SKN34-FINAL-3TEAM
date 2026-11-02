@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { adminServiceApi as api } from '../src/data/admin/serviceApi.ts'
 import { setAccessToken } from '../src/data/apiClient.ts'
+import { noticeStatus, noticeStatusLabel } from '../src/domain/admin/service.ts'
 Object.defineProperty(globalThis,'location',{value:new URL('http://localhost/'),configurable:true})
 const {setupServer}=await import('msw/node')
 const {adminServiceHandlers,demoRefunds}=await import('../src/mocks/handlers/adminService.ts')
@@ -46,4 +47,35 @@ test('공지 생성·수정·종료: 범위·기간 검증, 종료 공지 비노
  assert.equal((await call('/notices')).data.items.some((v:{noticeId:string})=>v.noticeId===n.data.noticeId),false)
  assert.equal((await call('/admin/notices/'+n.data.noticeId,'PATCH',data)).status,409)
  await login('payment@example.test');assert.equal((await call('/admin/inquiries')).status,403)
+})
+test('공지 상태는 공개 기간·endedAt으로 계산: 예약·공개 중·종료',()=>{
+ const now=Date.parse('2026-11-02T12:00:00+09:00')
+ assert.equal(noticeStatus({visibleFrom:'2026-11-03T00:00:00+09:00',visibleTo:null,endedAt:null},now),'SCHEDULED')
+ assert.equal(noticeStatus({visibleFrom:'2026-11-01T00:00:00+09:00',visibleTo:null,endedAt:null},now),'ACTIVE')
+ assert.equal(noticeStatus({visibleFrom:'2026-11-02T12:00:00+09:00',visibleTo:'2026-11-02T12:00:01+09:00',endedAt:null},now),'ACTIVE')
+ assert.equal(noticeStatus({visibleFrom:'2026-11-01T00:00:00+09:00',visibleTo:'2026-11-02T12:00:00+09:00',endedAt:null},now),'ENDED')
+ assert.equal(noticeStatus({visibleFrom:'2026-11-03T00:00:00+09:00',visibleTo:null,endedAt:'2026-11-02T01:00:00Z'},now),'ENDED')
+ assert.deepEqual(noticeStatusLabel,{SCHEDULED:'예약',ACTIVE:'공개 중',ENDED:'종료'})
+})
+test('관리자 공지 목록 어댑터는 GET /admin/notices에 상태·대상·페이지만 보낸다',async(t)=>{
+ const urls:URL[]=[];setAccessToken('contract-admin','ADMIN')
+ t.mock.method(globalThis,'fetch',async(url:string)=>{urls.push(new URL(String(url),'http://localhost/'));return Response.json({items:[],page:0,size:20,totalElements:0})})
+ await api.notices();await api.notices({status:'SCHEDULED',role:'PARENT'},2)
+ assert.equal(urls[0].pathname,'/api/v1/admin/notices');assert.deepEqual([...urls[0].searchParams],[['page','0'],['size','20']])
+ assert.deepEqual(Object.fromEntries(urls[1].searchParams),{status:'SCHEDULED',role:'PARENT',page:'2',size:'20'})
+ setAccessToken(null)
+})
+test('관리자 공지 전체 목록: 예약·종료 공지도 새로 조회되고 SERVICE_OPS만 허용',async()=>{
+ await login('admin@example.test');const base={kind:'NOTICE',body:'목록 공지',targetRoles:['PARENT']}
+ const day=86400000,iso=(ms:number)=>new Date(ms).toISOString()
+ const scheduled=(await call('/admin/notices','POST',{...base,title:'예약 공지',visibleFrom:iso(Date.now()+day),visibleTo:null})).data.noticeId
+ const ended=(await call('/admin/notices','POST',{...base,title:'종료 공지',visibleFrom:iso(Date.now()-day),visibleTo:null})).data.noticeId
+ await call('/admin/notices/'+ended,'DELETE')
+ const ids=async(q:string)=>{const r=await call('/admin/notices'+q);assert.equal(r.status,200);for(const k of ['items','page','size','totalElements'])assert.ok(k in r.data,k);return r.data.items.map((v:{noticeId:string})=>v.noticeId) as string[]}
+ assert.ok((await ids('?status=SCHEDULED')).includes(scheduled));assert.equal((await ids('?status=ACTIVE')).includes(scheduled),false)
+ assert.ok((await ids('?status=ENDED')).includes(ended));assert.equal((await ids('?status=ACTIVE')).includes(ended),false)
+ assert.equal((await ids('?role=STUDENT')).includes(scheduled),false);assert.ok((await ids('?role=PARENT&size=100')).includes(scheduled))
+ assert.equal((await call('/admin/notices?status=PUBLISHED')).status,400);assert.equal((await call('/admin/notices?size=101')).status,400)
+ for(const email of ['payment@example.test','parent@example.test']){await login(email);assert.equal((await call('/admin/notices')).status,403)}
+ assert.equal((await call('/notices')).data.items.some((v:{noticeId:string})=>v.noticeId===scheduled||v.noticeId===ended),false)
 })

@@ -24,10 +24,12 @@ from app.judgment.extractor import Extraction
 from app.judgment.service import JudgmentService
 from app.llm.providers import get_llm
 from app.messaging.consumer import ModelVersionConsumer
+from app.prompt_versions.models import PROMPT_SCOPES, ActiveVersionItem
+from app.prompt_versions.registry import BUILTIN_PROMPTS, ActiveVersions
+from app.prompt_versions.service import PromptSync
 from app.report_narrative import prompts as narrative_prompts
 from app.report_narrative.models import NarrativeRequest
 from app.report_narrative.service import NarrativeService
-from app.versions import BUILTIN_PROMPTS, PROMPT_SCOPES, ActiveVersionItem, ActiveVersions
 from tests.analysis_agent.records_fixture import FakeRecords
 from tests.analysis_agent.test_router import BODY as ANALYSIS_BODY
 from tests.fakes import FakeLlm
@@ -224,8 +226,9 @@ def test_event_changes_subsequent_http_prompt_and_versions_endpoint() -> None:
     with TestClient(app) as client:
         registry = installed("judgment", "judge@next")
         app.state.active_versions = registry
-        consumer = ModelVersionConsumer(None, None, registry)
-        consumer._initialized = True
+        sync = PromptSync(None, registry)
+        sync.initialized = True
+        consumer = ModelVersionConsumer(None, sync)
         data = version("judgment", "judge@next", 2).model_dump(mode="json", by_alias=True)
         data["previousVersionId"] = None
         payload = {
