@@ -315,7 +315,7 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 
 기동·재연결마다 Pod 고유의 exclusive·auto-delete 큐를 `events.topic`의 `model.version.*`에 먼저 바인딩하고 소비를 시작한다. 그 다음 기존 `internal_client`로 core snapshot을 조회한다. 조회 중 이벤트를 이름별 최신 revision으로 보존했다가 snapshot에 조정한다. 최초 조회 실패는 백그라운드에서 재시도하며 프로세스는 유지한다. health 요청은 메모리 상태만 확인한다. 새 production 패키지나 core API·이벤트 스키마 변경은 없다.
 
-배포 연결 요구: ai HTTP 내부 포트 `8000`과 `/health/live`·`/health/ready` 경로는 그대로다. `CORE_URL`·`INTERNAL_TOKEN`으로 core 내부 조회가 가능해야 하고 RabbitMQ `events.topic` 접근과 Pod별 임시 큐 선언 권한이 필요하다. #171 chart·NetworkPolicy는 ai→core HTTP와 ai→RabbitMQ를 열고, `versions=DOWN`인 Pod는 Ready로 취급하지 않아야 한다. AI 계측 SDK·수집 endpoint는 #171 후속 단계다.
+배포 연결 요구: ai HTTP 내부 포트 `8000`과 `/health/live`·`/health/ready` 경로는 그대로다. `CORE_URL`·`INTERNAL_TOKEN`으로 core 내부 조회가 가능해야 하고 RabbitMQ `events.topic` 접근과 Pod별 임시 큐 선언 권한이 필요하다. #171 chart·NetworkPolicy는 ai→core HTTP와 ai→RabbitMQ를 열고, `versions=DOWN`인 Pod는 Ready로 취급하지 않아야 한다. AI 계측은 #171 이후 `langfuse`·OTLP 의존성과 `LANGFUSE_*` 설정으로 추가됐다(기본 비활성, local 관측 chart는 Langfuse 제외).
 
 ### 작업 브랜치 검증 기록 (2026-10-30)
 

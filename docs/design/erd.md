@@ -25,7 +25,7 @@
 | 문자열·금액 | varchar는 길이 제한 없는 PostgreSQL varchar. ShedLock만 name varchar(64), locked_by varchar(255). 원화는 int, cost_usd는 반올림 정책 없는 numeric |
 | FK 삭제·순환 참조 | 기본 ON DELETE/UPDATE NO ACTION. mission.current_*·published_*와 answer.followup_id만 DEFERRABLE INITIALLY IMMEDIATE. 삭제는 P09에 따라 `student.deleted` 이벤트로 서비스별 물리 삭제. learning 하위 기록은 CASCADE 없이 서비스가 한 트랜잭션에서 순서대로 삭제(4.3, #128) |
 
-- 테이블 없이 Redis에 두는 값: SSE 알림 중계 (아키텍처 1.6), 요금제 사용 한도 일 단위 카운터 (P13, 분석 대화 제외: `payment_premium_usage` KST 일자 집계, #225)
+- 테이블 없이 Redis에 두는 값: SSE 알림 중계 (아키텍처 1.6). 분석 대화 일일 사용량은 `payment_premium_usage` KST 일자 집계(#225), 무료 플랜 미션 일일 한도(P13)는 미구현·저장소 미정(#210)
 - 생각 메모는 `attempt_draft.content.memo`에 저장 (P05). 음성 시범 미구현으로 음성 데이터 없음 (P03)
 - 학생 별도 계정 없음: 학생 세션은 `student.id`로 발급하는 토큰만. 발급 경로는 학부모 인증(동석) 또는 학부모 등록 기기 + 자녀 PIN(단독). PIN·기기 저장 구조는 3.1 (P01)
 - 학생 기기 페어링 코드(10분·1회용)는 테이블 없이 Redis 저장
@@ -1173,7 +1173,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V19(V10·V11 결번), learning Flyway V1~V7, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`. 현재 71개 테이블·630개 컬럼(core 44/407, learning 19/160, report 8/63). 결정 경위는 [DB 스키마 보고서](../report/db-schema.md)
+- 버전: core Flyway V1~V9·V12~V23(V10·V11 결번), learning Flyway V1~V8, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`. 현재 73개 테이블·648개 컬럼(core 46/425, learning 19/160, report 8/63). 결정 경위는 [DB 스키마 보고서](../report/db-schema.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11은 #58이 처음 V10을 썼다가 V12가 적용된 DB에서 Flyway가 거부해 V13으로 옮긴 결번이며, V12 첫 줄 주석의 "V10은 #58"은 당시 기록
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT
@@ -1207,7 +1207,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 `student.parent_sharing_enabled`는 기존/신규 모두 비공개(false)로 시작합니다. 이 열은 비공개 기본값을 보장하기 위한 SQL DEFAULT false의 명시적 예외이며, 다른 열의 기본값 금지 검증은 유지합니다. 학생 본인만 바꾸며 원문을 제공하는 경로는 같은 학생 행의 현재 설정을 다시 확인합니다.
 
-## 14. 학부모 리포트 표시 설정 (core V22, #209, 로컬 구현 후보)
+## 14. 학부모 리포트 표시 설정 (core V22, #209)
 
 학부모별 확정 설정과 마지막 미확정 제안을 `parent_report_template`에 저장한다. 기존 parent 계정 행 잠금으로 직렬화하고, 제안 ID·대화 소유권·만료를 확인한 뒤에만 revision을 증가시킨다. 학생 원문 공개 여부·메모·학습 원문은 저장하지 않는다. 확정 설정은 다음 리포트 `versions.template` JSONB에 복사하여 기존 판을 보존한다.
 

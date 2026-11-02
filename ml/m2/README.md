@@ -394,7 +394,7 @@ uv run python scripts/train.py --model klue/roberta-base --dataset essay --epoch
 | xlm-roberta-base | 서술형 | 3 | 0.262 | 7.6분 |
 | xlm-roberta-base | 논술형 | 2 | 0.176 | 3.4분 |
 
-- 위 표는 10/26 기본값 1회 학습. 10/27 학습률 탐색과 재학습 결과는 [위 최신 결과](#최신-kluerobertabase-학습률-1e-5--점수-경계-조정-2026-10-27) 참고
+- 위 표는 10/26 기본값 1회 학습. 10/27 학습률 탐색과 재학습 결과는 [위 최신 결과](#최신-klueroberta-base-학습률-1e-5--점수-경계-조정-2026-10-27) 참고
 
 ### 가중치 보관
 

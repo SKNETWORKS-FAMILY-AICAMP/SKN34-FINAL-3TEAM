@@ -53,7 +53,8 @@
 | [local-platform](report/local-platform.md) | kind·Calico·ingress·MinIO 설정과 자원 예산(#17) |
 | [issue-171-app-deployment](report/issue-171-app-deployment.md) | 앱 chart·local NetworkPolicy·확장·관측 수집 기반과 검증 경계(#171), GitOps chart lint·렌더·스키마 CI(#238) |
 | [frontend](report/frontend.md) | 웹 공통 기반·학생·학부모·관리자 화면(#7~#9·#59), 테마·대시보드, QR 시연 |
-| [audit](report/audit.md) | develop 종합 검증(c608f52·640e0a2·2db122c)과 설계 문서 정합성 점검, 남은 결함·테스트 공백 |
+| [mentoring-20261029](report/mentoring-20261029.md) | 10/29 오프라인 멘토링 결정과 후속 이슈(#205~#213) 관리 |
+| [audit](report/audit.md) | develop 종합 검증(c608f52·640e0a2·2db122c·92d522b)과 설계 문서 정합성 점검, 남은 결함·테스트 공백 |
 
 - [이슈 #46 신고·문의·공지·도움말](report/issue-46-support.md): 요청 역할·학생 scope, 정정 재시도·감사, 알림 연결과 공급자 필요 계약
 
@@ -72,6 +73,8 @@
 - [이슈 #48 결제·구독](report/issue-48-payments.md): 토스페이먼츠 테스트 결제·정기 청구·환불과 실제 상품 권한 공급
 - [이슈 #119 학생 별명 조회](report/issue-119-student-profile.md): 리포트 생성용 core 내부 학생 별명 API
 - [이슈 #168 core 레이어 의존 정리](report/issue-168-core-layer-deps.md): domain 오류 종류·결제 응답 경계·JsonObject·역방향 의존 정리
+- [이슈 #208 이벤트 발행·소비 기록](report/issue-208-event-log.md): RabbitMQ 업무 메시지 감사 큐·`event_log`·보존 정리
+- [learning 초기 무응답](report/learning-cold-start.md): cold start 후 learning 무응답 원인과 JDK 21 실행 모델 설정(#201)
 - [이슈 #136 core HTTP 경로 테스트](report/issue-136-core-http-tests.md): 계정·기기·Google 시작 경로의 HTTP 성공·권한 실패 확인
 - [#56 리포트 worker 통합](report/report-worker-integration.md): 기본 worker 생성 파이프라인 연결과 완료 조건 검증
 - [프론트 요구사항 대조](report/frontend-requirements-20261029.md): 요구사항 정의서 기능 ID별 화면 대조·구현
