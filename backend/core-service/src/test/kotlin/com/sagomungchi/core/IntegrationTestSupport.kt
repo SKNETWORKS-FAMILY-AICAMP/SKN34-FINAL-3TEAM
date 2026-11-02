@@ -19,7 +19,11 @@ import java.util.Base64
  * core 통합 테스트 공통: PostgreSQL(Flyway 전체 스키마)·RabbitMQ(definitions.json) 컨테이너.
  * 컨테이너는 JVM당 1회 기동, 테스트별 설정은 하위 클래스에서 @TestPropertySource로 추가.
  */
-@SpringBootTest
+@SpringBootTest(properties = [
+    // Cached Spring contexts share one PostgreSQL; bound each pool without reserving idle connections.
+    "spring.datasource.hikari.maximum-pool-size=5",
+    "spring.datasource.hikari.minimum-idle=0",
+])
 abstract class IntegrationTestSupport {
     companion object {
         private val TTL_PATTERN = Regex(""""x-message-ttl": \d+""")
