@@ -8,7 +8,7 @@
 - SSE status→delta*→result 또는 clarification 또는 error→done. delta는 저장하지 않는다. result는 scope 일치·verification 둘 다 true·source 및 근거 식별자 형식을 검사한다. 숫자/인용 대조·TEMPLATE 생성은 AI 책임이다. 완료 이벤트를 받을 때까지 result를 임시 보관하고 done 이후 DB 확정 후 공개한다. EOF·잘못된 순서·중복 terminal은 실패다.
 - 첫 AI 이벤트 20초, 전체 120초. heartbeat 15초는 첫 응답에 포함하지 않는다. 연결 종료·권한 소실·삭제·시간초과 시 HTTP body를 닫고 작업 thread를 interrupt한다. 피드백은 기존대로 취소하지 않는다. 실패는 같은 message 행 FAILED, retry_count로 시도 fencing한다.
 - 보호자 계정→학생→대화 잠금으로 시작/확정/취소를 직렬화한다. 동시에 하나의 RUNNING만 허용한다. 삭제된 행은 UPDATE만 하므로 재생성하지 않는다. 권한 확인과 전송은 짧은 트랜잭션 안에서 삭제와 직렬화한다. 네트워크가 지연되면 해당 트랜잭션도 지연될 수 있다.
-- 사용 한도: 대화 생성은 권한/0 한도 확인만 하고 차감하지 않는다. 새 질문 및 재시도마다 AI 호출 직전 자녀별 KST 일자 Redis 카운터를 Lua로 원자 증가한다. 실패·취소·clarification도 실제 호출 시도 비용이므로 환급하지 않는다. AI 호출 전 거부는 차감하지 않는다. 키 analysis:daily:v1:{childId}:{yyyy-MM-dd}, 만료 다음 KST 자정+1일(진행 중 요청 유예). 무제한 암묵값 없음. Redis 장애 503.
+- 사용 한도: 대화 생성은 권한/0 한도 확인만 하고 차감하지 않는다. 새 질문 및 재시도마다 AI 호출 직전 자녀별 KST 일자 Redis 카운터를 Lua로 원자 증가한다. 실패·취소·clarification도 실제 호출 시도 비용이므로 환급하지 않는다. AI 호출 전 거부는 차감하지 않는다. 키 analysis:daily:v1:{childId}:{yyyy-MM-dd}, 만료 다음 KST 자정+1일(진행 중 요청 유예). 무제한 암묵값 없음. Redis 장애 503. (#225 이후: 카운터는 `payment_premium_usage` KST 일자 집계로 대체, 차감 정책은 유지. [core-gateway](core-gateway.md#분석-대화-사용량-db-이관-구현-225))
 
 ## payment 공급 계약 (#48)
 #41은 conversation.service.AnalysisEntitlementProvider 소비 port만 선언한다. 구현 bean은 #48 소유다. fun entitlement(parentId: UUID, childId: UUID): AnalysisEntitlement. 반환 productId: UUID, dailyConversations: Int(product.limits.dailyConversations, 0 무료 차단), validUntil: Instant?(무료 null 가능). 음수·누락·만료는 503. 구현이 없으면 PAYMENT_ENTITLEMENT_UNAVAILABLE 503. 무료·프리미엄·유예·해지 기간 판정과 상품 선택은 payment가 소유한다. repository 직접 참조·가짜 상품·성공 fallback 없음. premium 사용 추적은 실패/취소도 포함한 시도이며 향후 환불 판단 공급 연결은 #48과 통합 검증해야 한다.

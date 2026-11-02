@@ -134,7 +134,7 @@
 | 구분 | 대상 |
 |---|---|
 | PostgreSQL로 이전 | 분석 대화 일일 사용량, 관리자 대화 재처리 중복 차감 방지 표식 |
-| PostgreSQL로 신규 구현 | 무료 플랜 미션 일일 한도(P13) |
+| PostgreSQL로 신규 구현(후속 미정) | 무료 플랜 미션 일일 한도(P13). 구현 이슈 미정이며 그 전까지 API 명세의 "core Redis 책임" 문구는 바꾸지 않는다 |
 | Redis 유지 | 학생 기기 페어링 코드, 기기 등록·페어링 발급 rate limit, 알림 Pub/Sub `core:notifications:v1` |
 
 - 근거 1: 분석 사용량은 이미 보호자·학생 행 잠금 트랜잭션 안에서 차감되므로 PostgreSQL 조건부 UPSERT로 동시성 요구를 같은 수준으로 충족하면서 롤백 불일치와 분산 원자성 제약을 함께 없앤다. 아직 구현되지 않은 미션 한도도 같은 패턴으로 만들면 Redis 의존 기능을 새로 늘리지 않는다
@@ -145,5 +145,38 @@
 결정 반영과 후속 작업:
 
 - [아키텍처](../design/architecture.md) 6장 사용 기술의 Redis 용도와 7.1 구현 결정 요약에 반영했다. 1.1 서비스 표(core_db, Redis)·1.6 SSE 다중 레플리카·4장 상태 저장소 배치는 Redis를 유지하므로 바꾸지 않았다
-- 후속 구현 이슈(별도): 분석 사용량·재처리 표식 PostgreSQL 이전과 미션 일일 한도 구현. 구현 전에 API 명세(P13 일일 한도 "core Redis 카운터 책임", #47 CONVERSATION 관리자 재처리의 Redis 표식·분산 원자성 문구)와 ERD의 Redis 보관 항목(요금제 사용 한도 일 단위 카운터)을 먼저 갱신하고 마이그레이션을 추가한다
+- 후속 구현 이슈(별도): 분석 사용량·재처리 표식 PostgreSQL 이전은 #225로 구현했다([아래](#분석-대화-사용량-db-이관-구현-225)). 미션 일일 한도 구현은 미정이다. 구현 전에 API 명세(P13 일일 한도 "core Redis 카운터 책임", #47 CONVERSATION 관리자 재처리의 Redis 표식·분산 원자성 문구)와 ERD의 Redis 보관 항목(요금제 사용 한도 일 단위 카운터)을 먼저 갱신하고 마이그레이션을 추가한다
 - platform-data chart README의 "캐시·실시간 알림 중계" 표현은 실제 용도(페어링·rate limit·알림 중계)로 별도 정리한다
+
+### 분석 대화 사용량 DB 이관 구현 (#225)
+
+위 대체안 표의 "새 일일 사용량 테이블 조건부 UPSERT" 대신, **새 테이블·마이그레이션 없이 기존 결제 사용 이력 `payment_premium_usage` 집계**로 구현했다. 유료 구독의 분석 시도는 이미 같은 트랜잭션에서 이 표에 `CONVERSATION` 행을 남기고 있었으므로(`PaymentAnalysisEntitlementProvider.recordAttempt`) 그 행 수가 곧 일 사용량이다. 구독이 없는 무료 경로는 행이 없지만 무료 상품은 분석 대화 0회(P13)라 기존 0 한도 차단으로 처리된다.
+
+| 구분 | 변경 |
+|---|---|
+| 한도 판정 | `payment/service/ProductEntitlementService.reserve`가 보호자 잠금 안에서 같은 source 기존 행 확인 뒤, 오늘(KST 0시, `PaymentTransactions.today()` 기준) `CONVERSATION`·`RESERVED/USED` 행 수가 `limits.dailyConversations` 이상이면 `429 USAGE_LIMIT_REACHED`. 집계 쿼리는 `PaymentMapper.xml` `usageCountSince`(기존 `ix_payment_usage_refund(student_id,created_at,status)` 인덱스 사용) |
+| Redis 제거 | `conversation/service/AnalysisUsageService`의 `CONSUME`·`CONSUME_RETRY` Lua 스크립트, `counterWindow`, `StringRedisTemplate` 의존 삭제. `consume(parent,child,source)` 하나가 0 한도·유효기간 확인 후 provider에 기록 |
+| 호출 순서 정리 | `ConversationService.prepareFor`는 Redis 차감(기존 94행)과 메시지 저장 뒤 `recordAttempt`(기존 104행)를 따로 하던 것을 메시지 저장 전 `consume` 1회로 합쳤다. 리포트 설정 제안(#209 `ReportTemplateService.propose`)도 같은 두 호출을 `consume` 1회로 바꿨다 |
+| 관리자 재시도 | `resumeAdminRetry`가 영속 요청 ID(`conversation_job_retry.id`)를 source ID로 `consume`. 이미 기록된 source는 `UNIQUE(kind,source_id)`의 기존 행을 재사용해 추가 차감·한도 재판정이 없다 |
+| 문서 | API 명세 #41·#47 CONVERSATION 계약 문단, ERD Redis 보관 항목·#41·#47 절, 아키텍처 6장 저장소 행·7.1 #210 항목·#47 CONVERSATION 문단, 클래스 다이어그램 요금제 사용 한도, [#41 보고서](issue-41-analysis-conversations.md) 사용 한도 |
+
+유지한 정책과 동작:
+
+- 차감 정책: 새 질문·재시도마다 1회, 실패·취소·clarification도 차감(행은 즉시 `USED`), AI 호출 전 거부(권한·범위·진행 중·입력 오류)는 차감하지 않는다. 무료 0 한도는 대화 생성·질문 모두 429
+- 동시성: 분석 접수는 보호자 행 잠금(`tx.locked(parent)`)과 학생 행 잠금(`ConversationService.access`) 안에서 집계와 INSERT를 한다. 같은 자녀의 접수는 직렬화되고, READ COMMITTED에서 잠금을 얻은 뒤 실행하는 집계는 앞 트랜잭션의 커밋 행을 본다
+- 롤백 정합성: 차감 행은 메시지 저장·실행 선점과 같은 트랜잭션이라 함께 롤백된다. 6절 표에서 지적한 "차감 뒤 같은 트랜잭션 실패 시 Redis 카운트만 남는" 불일치와 "분산 원자 트랜잭션이 아니다" 제약이 없어졌다
+- Redis 장애는 분석 대화에 영향이 없다. Redis는 페어링 코드·기기 등록 rate limit·알림 Pub/Sub에만 남는다
+- 일 경계는 계속 KST 자정이다. 집계는 자녀 기준이며 같은 날 구독이 바뀌어도 합산한다(Redis 키도 자녀·일자 기준이었다)
+- 배포 전환: 유료 시도는 이미 사용 이력 행이 있으므로 당일 사용량이 그대로 이어진다. 남은 `analysis:daily:v1:*`·`analysis:retry:v1:*` 키는 읽지 않으며 최대 2일 안에 만료된다
+
+확인 필요 항목의 결정(2026-11-02, 담당자):
+
+- `ANALYSIS_USAGE_UNAVAILABLE`: 더는 발생하지 않는다. API 명세 1.3에 없던 코드([audit](audit.md))라 문서화된 계약 변경은 아니다. 과거 작업 실행 기록 표시를 위해 `admin/domain/Operations.kt`의 안전 코드 목록에는 남겼다
+- 관리자 재실행 130초 만료: Redis 표식 TTL 전제가 아니라 실행 만료(대화 RUNNING 고착 판정 `ConversationService.kt:82`와 같은 값)로 유지한다. API 명세에서 "표식 TTL보다 짧은" 전제 문구만 지웠다
+- 무료 미션 3회·프리미엄 피드백 50회 한도(P13, 미구현): 이번 범위가 아니다. API 명세 2.2·4.1의 "core Redis 책임" 문구는 그대로 두고, 저장소와 문구는 해당 구현 이슈에서 정한다
+
+검증:
+
+- 테스트: `AnalysisUsageContractTest`(Redis 없이 provider만으로 `consume`, 0 한도 미기록, provider 부재 503), `ConversationPaymentIntegrationTest`(실제 provider: 30개 동시 접수 중 한도 2회만 차감, KST 자정 직전·`FAILED` 행 미집계, 초과 재시도 429, `analysis:*` Redis 키 없음), `AdminConversationRetryTest`(실제 provider·사용 이력으로 전환: 같은 요청 ID 재실행 1회 차감, 롤백된 선점은 차감도 롤백, 접수 후 한도 축소 시 실행 전 실패), `ConversationIntegrationTest`(원 질문·재시도 source가 서로 다른 2건)
+- 실행: JDK 21(`eclipse-temurin:21-jdk`) 격리 Docker 컨테이너에서 `bash gradlew test bootJar --no-daemon --max-workers=1 --no-watch-fs --console=plain -Pkotlin.compiler.execution.strategy=in-process`. core 전체 **67클래스·438개** 통과, 실패·오류·생략 0, `bootJar` 성공. IntegrationTestSupport의 실제 PostgreSQL·Redis·RabbitMQ를 사용하고 AI·PG는 대역이다
+- 미검증: 실제 AI·토스 연동, 브라우저 화면, 다중 레플리카 배포 환경의 동시성, 원격 CI
