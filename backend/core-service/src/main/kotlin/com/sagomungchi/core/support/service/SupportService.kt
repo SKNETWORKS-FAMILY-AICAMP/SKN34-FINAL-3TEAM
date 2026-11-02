@@ -192,18 +192,6 @@ class SupportService(private val repository: SupportRepository,private val acces
  fun notices(actor: AuthenticatedAccount,page: Int,size: Int): Page<Map<String,Any?>> {
   paging(page,size);return Page(db.notices(actor.session.role,page.toLong()*size,size).map(::noticeView),page,size,db.noticeCount(actor.session.role))
  }
- /** 관리자 전체 목록: 공개 기간·종료와 관계없이 예약(SCHEDULED)·공개 중(ACTIVE)·종료(ENDED)를 모두 본다. */
- fun adminNotices(actor: AuthenticatedAccount,status: String?,role: String?,page: Int,size: Int): Page<Map<String,Any?>> {
-  access.admin(actor);paging(page,size)
-  if(status!=null && status !in setOf("SCHEDULED","ACTIVE","ENDED") || role!=null && role !in setOf("STUDENT","PARENT","ADMIN")) invalid()
-  val at=now()
-  return Page(db.adminNotices(status,role,at,page.toLong()*size,size).map { noticeView(it)+("status" to noticeStatus(it,at)) },page,size,db.adminNoticeCount(status,role,at))
- }
- private fun noticeStatus(value: Notice,at: OffsetDateTime)=when {
-  value.endedAt!=null || value.visibleTo?.isAfter(at)==false -> "ENDED"
-  value.visibleFrom.isAfter(at) -> "SCHEDULED"
-  else -> "ACTIVE"
- }
  fun notice(actor: AuthenticatedAccount,id: UUID?,command: NoticeCommand): Map<String,Any?> {
   access.admin(actor);text(command.title,200);text(command.body)
   if(command.kind !in setOf("NOTICE","MAINTENANCE") || command.targetRoles.isEmpty() || command.targetRoles.distinct().size!=command.targetRoles.size || command.targetRoles.any { it !in setOf("STUDENT","PARENT","ADMIN") } || command.visibleTo?.let { !it.isAfter(command.visibleFrom) }==true) invalid()

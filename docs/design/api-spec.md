@@ -434,7 +434,6 @@
 | POST | `/admin/error-reports/{reportId}/corrections` | SERVICE_OPS | 정정: 기존 결과·사유·시점 보존, 영향받는 대화·집계·리포트 반영 여부 (원본 답변 불변) | SUP-03 | 우선1 |
 | GET | `/admin/inquiries?status` | SERVICE_OPS | 문의 목록 | SUP-06 | 우선2 |
 | POST | `/admin/inquiries/{inquiryId}/answer` | SERVICE_OPS | 문의 답변 | SUP-06 | 우선2 |
-| GET | `/admin/notices?status&role&page&size` | SERVICE_OPS | 공지 전체 목록 (예약·공개 중·종료, 대상 역할 필터) (#242) | SUP-07 | 우선2 |
 | POST / PATCH / DELETE | `/admin/notices`, `/admin/notices/{noticeId}` | SERVICE_OPS | 공지 등록·수정·종료 (공개 기간·대상 역할) | SUP-07 | 우선2 |
 | GET | `/admin/payments?status&from&to` | PAYMENT_VIEW | 결제·구독 상태, 대상 자녀 권한 반영 여부 | ADM-14 | 우선2 |
 | GET | `/admin/payments/reconciliation?from&to` | PAYMENT_VIEW | 내부 기록 vs PG 상태 대조, 누락·중복·불일치 분리 | ADM-15 | 우선2 |
@@ -717,7 +716,6 @@ ERD 3.2·3.5·4.1을 camelCase로 매핑. 학생 이름·답변 원문·메모�
 - `POST/GET /error-reports`, `POST/GET /inquiries`: 요청은 2.7을 따른다. 화면의 공통 목록 항목은 `{id,targetType?,targetId?,category,comment,status,answer?,createdAt}`, 상태는 RECEIVED/IN_REVIEW/RESOLVED. 기존 관리자 오류 신고의 reportId는 별도 계약으로 유지한다. 목업에서 사용자 신고를 관리자 검토 목록과 연결하며 답변 원문은 수정하지 않는다.
 - `GET /admin/inquiries`: SERVICE_OPS, `{items:[공통 목록 항목]}`. 답변 등록은 2.8 `POST /admin/inquiries/{inquiryId}/answer`를 사용한다. 일반 문의와 판정 오류 검토를 구분한다.
 - `POST /admin/notices`: SERVICE_OPS, `{title,content,roles[],startsAt,endsAt}` → 공지 항목(201). 공개 역할·기간을 검증한다.
-- `GET /admin/notices` (#242, 실제 core): SERVICE_OPS, `status`=`SCHEDULED|ACTIVE|ENDED`(생략 시 전체), `role`=`STUDENT|PARENT|ADMIN`(대상 역할 포함), `page`·`size`(1~100) → `{items:[{noticeId,kind,title,body,targetRoles,visibleFrom,visibleTo,endedAt,status}],page,size,totalElements}`. 상태는 서버 시각 기준으로 예약=`visibleFrom` 이후, 종료=`endedAt` 있음 또는 `visibleTo` 지남, 나머지는 공개 중. `visibleFrom`·id 내림차순. 잘못된 값 400, SERVICE_OPS 아닌 관리자·학부모·학생 403. 관리자 화면은 이 목록만 쓰고 세션 안 임시 목록을 두지 않는다.
 - 알림은 2.7의 실제 #44 계약을 그대로 사용한다. 학생에게 요청하지 않으며 읽음·수신 설정은 서버 확인 후 갱신한다. 웹은 학부모·관리자 로그인 중(동의·자녀 등록 완료 후) `/notifications/stream`을 1개만 구독하고 로그아웃·역할 전환 때 닫는다(#239). `ready`·`notification`을 받으면 알림 목록과 메뉴의 안 읽은 알림(`unreadOnly=true` 첫 쪽)을 다시 조회한다. 끊기면 1초부터 최대 30초 간격으로 다시 연결하고 401·403이면 멈추며, 스트림이 없어도 목록·새로고침은 그대로 동작한다.
 - 계정·삭제·탈퇴는 5.6 실제 #45 계약을 따른다. 사전 확인 경로는 `GET /me/withdrawal/precheck`이며 `{canWithdraw,activeSubscriptions,unresolvedRefunds,retainedTransactionsYears}`를 반환한다. 삭제 목업은 CONFIRMED와 서비스별 완료 상태를 구분하고 자동으로 완료를 만들지 않는다. 탈퇴 조회 영수증은 URL·영구 저장소 대신 현재 화면 메모리에만 보관한다.
 - 점검표 `/review`와 가상 계정 진입은 DEV+MSW에서만 제공하고 운영 번들에서 제외한다. 역할 URL만으로 권한을 부여하지 않고 기존 시연 로그인·학생 동석 API를 호출한다.

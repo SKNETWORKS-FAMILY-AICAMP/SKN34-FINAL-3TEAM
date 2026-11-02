@@ -3,7 +3,6 @@ package com.sagomungchi.core.support.repository
 import com.sagomungchi.core.support.domain.*
 import org.apache.ibatis.annotations.*
 import org.springframework.stereotype.Repository
-import java.time.OffsetDateTime
 import java.util.UUID
 
 @Mapper
@@ -29,8 +28,6 @@ interface SupportMapper {
  fun updateCorrection(value: Correction): Int
  fun notices(@Param("role") role: String, @Param("offset") offset: Long, @Param("limit") limit: Int): List<Notice>
  fun noticeCount(role: String): Long
- fun adminNotices(@Param("status") status: String?, @Param("role") role: String?, @Param("at") at: OffsetDateTime, @Param("offset") offset: Long, @Param("limit") limit: Int): List<Notice>
- fun adminNoticeCount(@Param("status") status: String?, @Param("role") role: String?, @Param("at") at: OffsetDateTime): Long
  fun lockNotice(id: UUID): Notice?
  fun insertNotice(value: Notice): Int
  fun updateNotice(value: Notice): Int

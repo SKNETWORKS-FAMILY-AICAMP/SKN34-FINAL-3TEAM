@@ -34,13 +34,6 @@
 <sql id="visible">ended_at IS NULL AND visible_from &lt;= CURRENT_TIMESTAMP AND (visible_to IS NULL OR visible_to &gt; CURRENT_TIMESTAMP) AND target_roles @&gt; jsonb_build_array(CAST(#{role} AS text))</sql>
 <select id="notices" resultMap="notice">SELECT * FROM notice WHERE <include refid="visible"/> ORDER BY visible_from DESC,id DESC LIMIT #{limit} OFFSET #{offset}</select>
 <select id="noticeCount" resultType="long">SELECT count(*) FROM notice WHERE <include refid="visible"/></select>
-<sql id="adminNoticeFilter"><where>
-  <if test="status == 'SCHEDULED'">ended_at IS NULL AND visible_from &gt; #{at}</if>
-  <if test="status == 'ACTIVE'">ended_at IS NULL AND visible_from &lt;= #{at} AND (visible_to IS NULL OR visible_to &gt; #{at})</if>
-  <if test="status == 'ENDED'">(ended_at IS NOT NULL OR visible_to &lt;= #{at})</if>
-  <if test="role != null">AND target_roles @&gt; jsonb_build_array(CAST(#{role} AS text))</if></where></sql>
-<select id="adminNotices" resultMap="notice">SELECT * FROM notice<include refid="adminNoticeFilter"/> ORDER BY visible_from DESC,id DESC LIMIT #{limit} OFFSET #{offset}</select>
-<select id="adminNoticeCount" resultType="long">SELECT count(*) FROM notice<include refid="adminNoticeFilter"/></select>
 <select id="lockNotice" resultMap="notice">SELECT * FROM notice WHERE id=#{id} FOR UPDATE</select>
 <update id="updateNotice">UPDATE notice SET kind=#{kind},title=#{title},body=#{body},target_roles=CAST(#{targetRoles} AS jsonb),visible_from=#{visibleFrom},visible_to=#{visibleTo},ended_at=#{endedAt} WHERE id=#{id}</update>
 <insert id="audit">INSERT INTO audit_log(id,actor_user_id,action,target_type,target_id,result,detail,created_at) VALUES(#{id},#{actor},#{action},#{type},#{target},'SUCCESS',CAST(#{detail} AS jsonb),CURRENT_TIMESTAMP)</insert>

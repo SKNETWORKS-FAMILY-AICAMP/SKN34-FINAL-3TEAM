@@ -5721,54 +5721,6 @@ paths:
           default: 20
       summary: 인증 GET /notices
   /admin/notices:
-    get:
-      tags:
-      - Support
-      operationId: getAdminNotices
-      description: 공개 기간·종료와 관계없는 전체 공지. 상태는 서버 시각 기준 예약(SCHEDULED)·공개 중(ACTIVE)·종료(ENDED, 종료 처리 또는 공개 기간 지남).
-      responses:
-        '200':
-          description: 성공
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AdminNoticePage'
-        default:
-          $ref: '#/components/responses/LearningProblem'
-        '403':
-          $ref: '#/components/responses/LearningProblem'
-      parameters:
-      - in: query
-        name: page
-        schema:
-          type: integer
-          minimum: 0
-          default: 0
-      - in: query
-        name: size
-        schema:
-          type: integer
-          minimum: 1
-          maximum: 100
-          default: 20
-      - in: query
-        name: status
-        schema:
-          type: string
-          enum:
-          - SCHEDULED
-          - ACTIVE
-          - ENDED
-      - in: query
-        name: role
-        description: 대상 역할에 이 역할이 포함된 공지만
-        schema:
-          type: string
-          enum:
-          - STUDENT
-          - PARENT
-          - ADMIN
-      summary: SERVICE_OPS GET /admin/notices
     post:
       tags:
       - Support
@@ -9943,38 +9895,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SupportNotice'
-        page:
-          type: integer
-        size:
-          type: integer
-        totalElements:
-          type: integer
-          format: int64
-    AdminNotice:
-      allOf:
-      - $ref: '#/components/schemas/SupportNotice'
-      - type: object
-        required:
-        - status
-        properties:
-          status:
-            type: string
-            enum:
-            - SCHEDULED
-            - ACTIVE
-            - ENDED
-    AdminNoticePage:
-      type: object
-      required:
-      - items
-      - page
-      - size
-      - totalElements
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/AdminNotice'
         page:
           type: integer
         size:

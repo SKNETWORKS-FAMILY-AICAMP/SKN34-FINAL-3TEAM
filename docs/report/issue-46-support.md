@@ -177,10 +177,3 @@ PR 메타데이터 후보(최종 준비 시 실제 등록값 재조회): `enhanc
 초기 저장공간 부족/Docker API 500으로 중단된 실행과, 잘못된 127.0.0.1 host override로 Ryuk 연결에 실패한 실행은 최종 통과 집계에 넣지 않았다. 복구 후 선행 #47의 Docker 사용 종료를 확인하고, 브리지 네트워크의 `TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal` 및 위 검증 전용 자원 설정으로 core 전체를 다시 통과했다. core와 learning 빌드는 같은 전용 Gradle 캐시를 사용하므로 순차 실행해 초기 캐시 잠금 충돌을 피했다. 실제 연동의 전용 컨테이너/네트워크와 중지한 #163 빌드 컨테이너를 정리해 **Docker 검증 사용을 종료**했다. 재현용 소스·캐시 볼륨만 보존했다.
 
 검증 기준은 최초 develop `7f1549a`다. 종료 전 확인한 최신 origin/develop 및 repository default branch는 `d651aa1`·`develop`이며, 후속 develop 변경과 이번 13개 변경 파일의 경로 겹침이 없음을 확인했다. 후속 develop 및 #47·#67·#162 기능을 이번 브랜치에 병합하지 않았으므로 최신 develop 통합 검증이나 원격 CI·배포 완료를 주장하지 않는다. 최종 문서 기록 뒤 `git diff --check`를 확인하고 현재 feature 브랜치에만 커밋·push하며 PR은 생성하지 않는다.
-
-## #242 관리자 공지 전체 목록 (2026-11-02)
-
-- 배경: 관리자 화면이 `GET /notices`(관리자 대상 공개 공지 첫 20건)와 세션 안 작성 목록만 보여 예약·종료 공지와 학부모·학생 대상 공지를 놓쳤다.
-- 추가: `GET /api/v1/admin/notices?status&role&page&size` (SERVICE_OPS). 기존 `notice` 테이블을 그대로 읽으며 마이그레이션은 없다. 상태는 요청 시각(`at`) 하나로 SQL 필터와 응답 `status`를 함께 계산해 경계 시각에 목록과 표시가 어긋나지 않는다. 예약=`visible_from > at`, 종료=`ended_at` 있음 또는 `visible_to <= at`, 나머지는 공개 중이며 공개 목록(`/notices`)의 노출 조건과 같은 경계다.
-- 계약: OpenAPI `/admin/notices` get, `AdminNotice`(=`SupportNotice`+`status`)·`AdminNoticePage`. 기존 경로 fingerprint 검사는 #242가 추가한 `get`만 제외하고 기존 post 계약 보존을 계속 확인한다. `validate_support_contracts.py`에 실제 MockMvc 응답 `admin-notices` 검사를 추가했다.
-- 검증: `SupportIntegrationTest` 23개 통과(예약·공개 중·기간 종료·종료 처리 상태, 상태·역할 필터, 400, 학부모·학생·SERVICE_OPS 없는 관리자 403, 미인증 401). 저장소 계약 단위 테스트 94개, 지원 실제 응답 스키마 8종 통과.
