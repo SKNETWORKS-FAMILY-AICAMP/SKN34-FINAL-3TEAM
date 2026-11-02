@@ -284,3 +284,35 @@ core는 기존 대화 소유권·연결·동의·이용권과 학부모 행 잠�
 `ReportTemplateHttpIntegrationTest`가 실제 core HTTP/JWT·PostgreSQL·Redis에서 제안 확인 후 revision 1을 저장한다. 보조 실행기 `scripts/verify_report_template_rendering.py`는 해당 core의 profile/template을 HTTP 조회해 report 생성 파이프라인과 실제 Chromium 파일 렌더링까지 실행한다. 공개·비공개 상태를 각각 확인하며 비공개는 AI 미호출·원문 제외, 공개는 EASY 톤 전달·숫자/인용 대조·무료 AI 문구 제외를 검사한다.
 
 이 연결 검증의 학습 기록·AI HTTP 응답/서술·파일 저장소는 합성이다. 실제 외부 LLM 품질, PG, 운영 S3, 운영 배포, 브라우저부터 실제 모든 서비스까지 이어지는 단일 종단 시나리오는 검증하지 않았다. 실제 API 키나 학생 원문·모델 파일은 커밋하지 않는다. GitHub 이슈 체크박스·PR·병합은 사용자가 직접 처리한다.
+
+
+## #252 report 기능 간 DB 직접 접근 제거
+
+기준은 #237 PR #257이 병합된 develop `5033f48`이다. 사용자 응답(code·status·본문), 이벤트 계약, DB 스키마·마이그레이션은 변경하지 않는다.
+
+- query의 SQL을 generation의 `ReportRepository`로 이동하고 `ReportReadService`를 통해 호출한다. 최신 판을 먼저 고른 뒤 상태 필터를 적용하는 순서, 기간별 정렬·페이지, revision 선택, 항목 소속 검사, 파일 경로 검사는 유지한다.
+- deletion의 테이블·DB 접근은 `deletion/repository.py`로 이동한다. state에는 삭제 명령과 DB를 사용하지 않는 중복·경합·생성 허용 판정을 둔다. HTTP 409 오류는 deletion service에서 만든다.
+- 생성·복구는 `ensure_generation_allowed`, 조회는 `ensure_query_allowed`, worker의 보존 기간 정리는 `prune_processed`를 호출한다. 호출 서비스가 소유한 세션을 전달하고 repository에서 commit하지 않는다.
+- 삭제 완료는 generation service의 학생 리포트 삭제 → outbox service의 subject 삭제 → 삭제 장벽 완료·처리 이력 저장을 기존 한 트랜잭션에서 실행한다. 잠금 → 장벽 저장 → S3 삭제 → DB 삭제 → core 완료 보고 순서를 유지한다.
+- 이전 테스트의 `deletion.state` 테이블 import 호환은 `__getattr__`의 지연 재노출 두 이름만 남긴다. 업무 코드에서는 이 호환 경로를 사용하지 않는다. state에 SQLAlchemy·ApiError·DB 함수는 없다. 테이블의 정식 소유자는 deletion.repository다.
+- generation과 deletion은 서로의 서비스 기능이 필요하므로 삭제 완료 조합 함수에서만 generation service를 지연 import한다. 새 공통 라이브러리 없이 기존 서비스 경계를 사용한다.
+- repository의 `finish`는 자기 장벽·이력만 저장한다. 여러 기능을 정리하는 테스트는 서비스의 `finish_deletion`을 호출하도록 갱신했다.
+
+검증은 report 전체 테스트와 삭제 완료 실패 주입을 사용한다. 실패 주입은 리포트·Outbox 삭제 이후 장벽 완료 기록 단계에서 오류를 발생시켜 DB 전체 롤백, PENDING 장벽 유지, 완료 콜백 미전송, 같은 명령 재시도 성공을 확인한다. 실제 학생 데이터·운영 DB는 사용하지 않는다.
+
+
+### #252 로컬 완료 조건과 검증 결과
+
+- [x] deletion.repository에 테이블·begin/finish·처리 이력 및 보존 기간 DB 작업 이동
+- [x] state의 DB·HTTP 오류 처리 제거 및 순수 판정 분리 (테이블 호환 경로만 유지)
+- [x] deletion 서비스에 생성/조회 허용 검사·처리 이력 정리 제공
+- [x] generation repository에 조회 6종·학생 삭제 추가, service를 통해 노출
+- [x] OutboxRepository.delete_subject 및 서비스 진입점 추가
+- [x] query·generation·reconciliation·worker 호출 교체
+- [x] 기존 테이블 import 호환 및 architecture 트리·audit A11 갱신
+- [x] 금지된 참조 0건, repository의 commit 없음 정적 확인
+- [x] uv sync --frozen, Ruff check·format 통과
+- [x] 기존 report 전체 테스트 336개 통과(129.29초), 이후 추가한 삭제 롤백·재시도 회귀 1개 별도 통과(5.96초)
+- [x] git diff --check 통과
+
+검증은 실제 격리 PostgreSQL·RabbitMQ·MinIO 및 기존 테스트 대역을 사용했다. 기존 Starlette/httpx 폐기 예정 경고 1건은 남는다. 위 결과는 로컬 검증이며, GitHub 원격 CI 결과는 PR에서 별도로 확인한다.
