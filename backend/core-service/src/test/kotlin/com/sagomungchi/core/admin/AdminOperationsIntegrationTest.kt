@@ -56,6 +56,27 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
     }
     @BeforeEach fun resetHttp() { requests.clear(); statsStatus=200; statsBody=STATS; missionStatus=200; missionContentType=null; missionBody=MISSIONS }
 
+    @Test fun `관리자 실제 HTTP 응답 다섯 종류를 계약 검사에 제공한다`() {
+        val (actor, access) = token()
+        val id = notification(actor)
+        val paths = linkedMapOf(
+            "OperationOverview" to "/overview?from=2026-01-01&to=2026-01-03",
+            "OperationJobPage" to "/jobs?from=2026-01-01&to=2026-01-03&type=NOTIFICATION&status=FAILED",
+            "OperationJob" to "/jobs/$id",
+            "OperationQueues" to "/queues",
+            "OperationAuditPage" to "/audit-logs",
+        )
+        val responses = paths.mapValues { (_, path) ->
+            val body = mvc.get("/api/v1/admin$path") {
+                header("Authorization", "Bearer $access")
+            }.andExpect { status { isOk() } }.andReturn().response.contentAsString
+            json.readTree(body)
+        }
+        val output = java.nio.file.Path.of("build/generated-contracts/admin-operations.json")
+        java.nio.file.Files.createDirectories(output.parent)
+        json.writerWithDefaultPrettyPrinter().writeValue(output.toFile(), responses)
+    }
+
     @Test fun `401 403 permissions and exact general administrator reads`() {
         val id=UUID.randomUUID()
         val paths=listOf("/overview","/jobs","/jobs/$id","/queues","/audit-logs","/missions")
