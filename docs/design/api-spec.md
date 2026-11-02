@@ -434,6 +434,7 @@
 | POST | `/admin/error-reports/{reportId}/corrections` | SERVICE_OPS | 정정: 기존 결과·사유·시점 보존, 영향받는 대화·집계·리포트 반영 여부 (원본 답변 불변) | SUP-03 | 우선1 |
 | GET | `/admin/inquiries?status` | SERVICE_OPS | 문의 목록 | SUP-06 | 우선2 |
 | POST | `/admin/inquiries/{inquiryId}/answer` | SERVICE_OPS | 문의 답변 | SUP-06 | 우선2 |
+| GET | `/admin/notices?status=SCHEDULED\|ACTIVE\|ENDED&role=STUDENT\|PARENT\|ADMIN` | SERVICE_OPS | 예약·공개 중·종료 공지 전체 목록 (상태·대상 역할 필터, 페이지, #242) | SUP-07 | 우선2 |
 | POST / PATCH / DELETE | `/admin/notices`, `/admin/notices/{noticeId}` | SERVICE_OPS | 공지 등록·수정·종료 (공개 기간·대상 역할) | SUP-07 | 우선2 |
 | GET | `/admin/payments?status&from&to` | PAYMENT_VIEW | 결제·구독 상태, 대상 자녀 권한 반영 여부 | ADM-14 | 우선2 |
 | GET | `/admin/payments/reconciliation?from&to` | PAYMENT_VIEW | 내부 기록 vs PG 상태 대조, 누락·중복·불일치 분리 | ADM-15 | 우선2 |
@@ -716,6 +717,7 @@ ERD 3.2·3.5·4.1을 camelCase로 매핑. 학생 이름·답변 원문·메모�
 - `POST/GET /error-reports`, `POST/GET /inquiries`: 요청은 2.7을 따른다. 화면의 공통 목록 항목은 `{id,targetType?,targetId?,category,comment,status,answer?,createdAt}`, 상태는 RECEIVED/IN_REVIEW/RESOLVED. 기존 관리자 오류 신고의 reportId는 별도 계약으로 유지한다. 목업에서 사용자 신고를 관리자 검토 목록과 연결하며 답변 원문은 수정하지 않는다.
 - `GET /admin/inquiries`: SERVICE_OPS, `{items:[공통 목록 항목]}`. 답변 등록은 2.8 `POST /admin/inquiries/{inquiryId}/answer`를 사용한다. 일반 문의와 판정 오류 검토를 구분한다.
 - `POST /admin/notices`: SERVICE_OPS, `{title,content,roles[],startsAt,endsAt}` → 공지 항목(201). 공개 역할·기간을 검증한다.
+- 관리자 공지 화면(#242)은 위 목업 DTO가 아니라 5.7 실제 공지 항목 `{noticeId,kind,title,body,targetRoles[],visibleFrom,visibleTo,endedAt}`과 `GET /admin/notices` 전체 목록(공통 page/size 봉투)을 사용한다. 세션 안에서만 기억하던 작성 목록은 제거했다. 예약·공개 중·종료 표시는 같은 항목의 기간·endedAt으로 계산한다.
 - 알림은 2.7의 실제 #44 계약을 그대로 사용한다. 학생에게 요청하지 않으며 읽음·수신 설정은 서버 확인 후 갱신한다. SSE 구독은 이번 화면 보완에 포함하지 않고 목록·새로고침으로 확인한다.
 - 계정·삭제·탈퇴는 5.6 실제 #45 계약을 따른다. 사전 확인 경로는 `GET /me/withdrawal/precheck`이며 `{canWithdraw,activeSubscriptions,unresolvedRefunds,retainedTransactionsYears}`를 반환한다. 삭제 목업은 CONFIRMED와 서비스별 완료 상태를 구분하고 자동으로 완료를 만들지 않는다. 탈퇴 조회 영수증은 URL·영구 저장소 대신 현재 화면 메모리에만 보관한다.
 - 점검표 `/review`와 가상 계정 진입은 DEV+MSW에서만 제공하고 운영 번들에서 제외한다. 역할 URL만으로 권한을 부여하지 않고 기존 시연 로그인·학생 동석 API를 호출한다.
@@ -990,6 +992,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 정정 POST는 UUID Idempotency-Key + `{reason,corrected:CORRECT|PARTIAL|RETHINK|HELD}`. 이번 공급자 계약은 JUDGMENT만 지원하며 다른 targetType은 422. 검토 중 신고에 정정 의도·이전 결과·고정 요청 ID를 먼저 커밋 → 트랜잭션 밖 learning HTTP → 성공 결과와 영향·신고 완료·알림을 같은 트랜잭션으로 저장한다. 실패/응답 유실은 완료하지 않으며 동일 ID로 재시도한다. 신고당 정정 1건, 다른 본문 재사용 409. 원본 학생 답변·판정은 덮어쓰지 않는다.
 - 관리자 상세 원문은 저장된 attemptId·studentId에서만 조회한다. 임의 attemptId query를 받지 않는다. 목록·쓰기 응답에는 원문 없음. 원문은 draft·memo 제외 답변·판정만, 응답 전에 audit_log 저장(실패 시 원문 응답 실패). 문의 원문은 추가 `GET /admin/inquiries/{inquiryId}`를 동일하게 처리한다.
 - 공지 POST/PATCH `{kind:NOTICE|MAINTENANCE,title,body,targetRoles:[STUDENT|PARENT|ADMIN],visibleFrom,visibleTo?}`. 역할·기간 검증, 종료 후 수정 금지. DELETE는 endedAt 기록이며 물리 삭제하지 않는다. 사용자 GET은 현재 역할과 `visibleFrom <= now < visibleTo`, endedAt 없음만 조회한다. 목록은 공통 page/size 봉투.
+- #242 관리자 전체 목록 `GET /admin/notices?status&role&page=0&size=20`: SERVICE_OPS 전용(그 외 관리자·학부모·학생 403, 미인증 401). 응답은 사용자 GET과 같은 공지 항목의 `{items,page,size,totalElements}`이며 새 필드를 추가하지 않는다. 상태는 저장 컬럼이 아니라 조회 시각(DB `CURRENT_TIMESTAMP`)으로 계산한다: `SCHEDULED` = endedAt 없음·`now < visibleFrom`, `ACTIVE` = endedAt 없음·`visibleFrom <= now`·(visibleTo 없음 또는 `now < visibleTo`), `ENDED` = endedAt 있음 또는 `visibleTo <= now`. status 생략 시 세 상태 전체, role은 targetRoles에 해당 역할 포함. 정렬은 visibleFrom DESC, id DESC. 정의 밖 status·role, page<0, size 1~100 밖은 400 VALIDATION_FAILED. 조회만 하며 감사 기록을 남기지 않는다.
 - 보호자 신고 완료·문의 답변만 기존 알림 service로 연결한다. 학생 건은 본인 결과 조회, 보호자 알림으로 우회하지 않는다. sourceEventId는 신고/문의 UUID이며 완료 여부만 알린다. 링크는 `/parent/support?reportId=...` 또는 `?inquiryId=...`, 소비자에서 본인 상세 API를 호출한다.
 
 ### learning 공급자 계약
