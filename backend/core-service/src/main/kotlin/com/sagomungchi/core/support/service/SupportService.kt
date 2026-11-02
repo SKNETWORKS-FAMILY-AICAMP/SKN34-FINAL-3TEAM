@@ -192,6 +192,13 @@ class SupportService(private val repository: SupportRepository,private val acces
  fun notices(actor: AuthenticatedAccount,page: Int,size: Int): Page<Map<String,Any?>> {
   paging(page,size);return Page(db.notices(actor.session.role,page.toLong()*size,size).map(::noticeView),page,size,db.noticeCount(actor.session.role))
  }
+ fun adminNotices(actor: AuthenticatedAccount,status: String?,role: String?,page: Int,size: Int): Page<Map<String,Any?>> {
+  paging(page,size)
+  if(status!=null && status !in setOf("SCHEDULED","ACTIVE","ENDED") || role!=null && role !in setOf("STUDENT","PARENT","ADMIN")) invalid()
+  access.admin(actor)
+  // Status is derived from the stored interval and endedAt at query time, never persisted.
+  return Page(db.adminNotices(status,role,page.toLong()*size,size).map(::noticeView),page,size,db.adminNoticeCount(status,role))
+ }
  fun notice(actor: AuthenticatedAccount,id: UUID?,command: NoticeCommand): Map<String,Any?> {
   access.admin(actor);text(command.title,200);text(command.body)
   if(command.kind !in setOf("NOTICE","MAINTENANCE") || command.targetRoles.isEmpty() || command.targetRoles.distinct().size!=command.targetRoles.size || command.targetRoles.any { it !in setOf("STUDENT","PARENT","ADMIN") } || command.visibleTo?.let { !it.isAfter(command.visibleFrom) }==true) invalid()

@@ -28,6 +28,8 @@ interface SupportMapper {
  fun updateCorrection(value: Correction): Int
  fun notices(@Param("role") role: String, @Param("offset") offset: Long, @Param("limit") limit: Int): List<Notice>
  fun noticeCount(role: String): Long
+ fun adminNotices(@Param("status") status: String?, @Param("role") role: String?, @Param("offset") offset: Long, @Param("limit") limit: Int): List<Notice>
+ fun adminNoticeCount(@Param("status") status: String?, @Param("role") role: String?): Long
  fun lockNotice(id: UUID): Notice?
  fun insertNotice(value: Notice): Int
  fun updateNotice(value: Notice): Int
