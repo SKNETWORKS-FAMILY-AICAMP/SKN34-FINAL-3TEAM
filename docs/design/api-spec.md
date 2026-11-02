@@ -683,7 +683,7 @@ ERD 3.2·3.5·4.1을 camelCase로 매핑. 학생 이름·답변 원문·메모�
 - 기기 등록·해제·PIN 설정은 `audit_log` 기록 (FN-ACC-10). PIN 잠금 시 학부모 알림은 미정
 - 응답 형식: 프로필 `{items:[{childId,nickname,pinSet,pinLocked}]}`, 기기 목록 `{items:[{deviceId,label,children:[{childId,nickname}],createdAt,lastUsedAt,expiresAt}]}`(해제 기기 제외). PIN 설정·변경은 204(잠금 해제 포함), 별도 해제 API 없음
 - PIN 변경은 현재 세션·버전·`PIN_CHANGE`·자녀에 결합된 5분 재인증 grant를 같은 트랜잭션에서 1회 소비
-- 한도: 등록은 IP별, 페어링 발급은 보호자별 10분간 20회(설정 가능). 초과 429 `RATE_LIMITED`, Redis 장애 503 `STUDENT_AUTH_UNAVAILABLE`. 신뢰 프록시 설정 전에는 X-Forwarded-For 미사용
+- 한도: 등록은 IP별, 페어링 발급은 보호자별 10분간 20회(설정 가능). 초과 429 `RATE_LIMITED`, Redis 장애 503 `STUDENT_AUTH_UNAVAILABLE`. IP는 직전 연결이 사설 대역(신뢰 프록시)일 때만 X-Forwarded-For를 오른쪽부터 해석한 첫 비신뢰 주소로 판정 (운영 조건 [아키텍처](architecture.md) 4.3)
 - 코드 소비는 Redis 원자적 GET+DEL. 이후 DB 등록이 실패해도 코드는 복원하지 않음(새 코드 발급)
 - 기기·학생 검사는 계정 행 잠금과 함께 재검사. PIN 실패는 커밋 후 오류 응답
 - 등록·프로필·로그인 응답은 `Cache-Control: no-store`. PIN 로그인은 refresh 쿠키를 발급하거나 보호자 세션을 바꾸지 않음

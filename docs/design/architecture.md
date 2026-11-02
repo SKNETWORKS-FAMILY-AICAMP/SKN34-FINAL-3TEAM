@@ -587,6 +587,7 @@ backend/report-service/
 - CloudFront: 웹과 API를 한 배포·한 도메인에서 경로로 분기 (refresh 쿠키 `SameSite=Strict` 전제)
   - `/api/*` 동작: 캐시 비활성, `Authorization`·`Idempotency-Key`·`If-Match`·`X-Reauth-Token`·`Origin`·`X-Requested-With`(쿠키 API 검사, API 5.1) 헤더와 쿠키 전달, 압축 비활성(SSE 버퍼링 방지)
   - 타임아웃: CloudFront origin 응답 60초, ALB idle 120초 (SSE heartbeat 15초, 1.3)
+  - 클라이언트 IP(기기 등록 IP별 한도, API 3.11): CloudFront가 X-Forwarded-For 끝에 viewer IP를 붙이고, ALB는 `routing.http.xff_header_processing.mode=preserve`(Ingress annotation `alb.ingress.kubernetes.io/load-balancer-attributes`)로 CloudFront 엣지 IP를 덧붙이지 않음. ALB 보안그룹 inbound는 `com.amazonaws.global.cloudfront.origin-facing` prefix list만 허용해 XFF 위조 경로 차단. core는 `server.forward-headers-strategy: native`로 사설 대역 직전 연결만 신뢰(Tomcat 기본 internal-proxies). 운영 적용은 #185
 - 외부 호출(LLM API·토스페이먼츠): Pod → NAT GW → Internet GW
 - Namespace: `app`(core·learning·ai·scoring·report), `platform`(RabbitMQ·Redis), `observability`, `argocd`
 - 노드그룹: `application`, `platform-observability` 분리 (참고 레포 2그룹 구성 계승)
