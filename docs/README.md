@@ -49,6 +49,7 @@
 | [db-schema](report/db-schema.md) | DB 기술 결정(#5), 확정 정책 반영과 기존 데이터 전환 절차(#19) |
 | [db-dev-guide](report/db-dev-guide.md) | 마이그레이션 CI(#13), Repository·SQLAlchemy 사용법(#14) |
 | [issue-143-contract-ci](report/issue-143-contract-ci.md) | 웹 단위 테스트·독립 계약 CI·실제 core 산출물 검증 및 로컬 실행 안내(#143) |
+| [issue-246-e2e-stubs](report/issue-246-e2e-stubs.md) | 실서버 브라우저 E2E·Google·LLM·토스 스텁·E2E CI(#246) |
 | [local-platform](report/local-platform.md) | kind·Calico·ingress·MinIO 설정과 자원 예산(#17) |
 | [issue-171-app-deployment](report/issue-171-app-deployment.md) | 앱 chart·local NetworkPolicy·확장·관측 수집 기반과 검증 경계(#171) |
 | [frontend](report/frontend.md) | 웹 공통 기반·학생·학부모·관리자 화면(#7~#9·#59), 테마·대시보드, QR 시연 |
