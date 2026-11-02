@@ -9,7 +9,7 @@ const {serviceHandlers}=await import('../src/mocks/handlers/service.ts')
 const {studentHandlers}=await import('../src/mocks/handlers/student.ts')
 const {parentHandlers}=await import('../src/mocks/handlers/parent.ts')
 const server=setupServer(...adminServiceHandlers,...serviceHandlers,...parentHandlers,...studentHandlers)
-server.listen({onUnhandledRequest:'error'});test.after(()=>server.close())
+server.listen({onUnhandledFrame:'error'});test.after(()=>server.close())
 let token=''
 async function call(path:string,method='GET',data?:unknown,extra:Record<string,string>={}){const r=await fetch('http://localhost/api/v1'+path,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',...extra},...(data===undefined?{}:{body:JSON.stringify(data)})});return {status:r.status,data:r.status===204?null:await r.json()}}
 async function login(email:string){const r=await call('/auth/login','POST',{email,password:'demo-only'});assert.equal(r.status,200);token=r.data.accessToken}

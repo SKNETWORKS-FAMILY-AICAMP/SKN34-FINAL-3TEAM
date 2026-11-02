@@ -1,14 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { prepareDemoStudentDevice, studentDeviceApi } from './api.ts'
 
-export const qrDemoEnabled = import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true' &&
+export const qrDemoEnabled = typeof import.meta.env !== 'undefined' && import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true' &&
   import.meta.env.VITE_SHARED_DEVICE_MOCK === 'true'
 
 export function usePairingOrigins() {
   return useQuery({
     queryKey: ['device-demo-addresses'], enabled: qrDemoEnabled, retry: false, staleTime: Infinity,
     queryFn: async () => {
-      if (import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true' &&
+      if (typeof import.meta.env !== 'undefined' && import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true' &&
           import.meta.env.VITE_SHARED_DEVICE_MOCK === 'true')
         return (await import('../../mocks/sharedDevice.ts')).deviceDemoConfig()
       return null

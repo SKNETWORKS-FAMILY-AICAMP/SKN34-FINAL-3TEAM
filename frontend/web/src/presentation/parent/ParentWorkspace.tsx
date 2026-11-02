@@ -1,3 +1,4 @@
+import { ParentSharingNotice } from './ParentSharingNotice.tsx'
 import { useEffect, useState } from 'react'
 import { useSearchParams, useLocation, useNavigate } from 'react-router'
 import { useSession } from '../auth/sessionContext.ts'
@@ -155,6 +156,7 @@ export function ParentWorkspace() {
         </section>
       ) : child && validPeriod(scope) && !children.error ? (
         <div key={`${scope.childId}:${scope.from}:${scope.to}`}>
+          <ParentSharingNotice studentId={child.id} />
           {page === 'analysis' ? (
             <ParentConversation
               child={child}

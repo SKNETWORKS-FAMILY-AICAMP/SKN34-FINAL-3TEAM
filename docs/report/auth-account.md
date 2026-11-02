@@ -1,5 +1,13 @@
 # 인증·계정 (#36·#37·#45·#58, P01 개정)
 
+## 학생 전역 학부모 공개 설정 (#206, 2026-11-01)
+
+- 사용자 확정: **비공개로 시작하고 학생이 공개를 선택**합니다. core V21은 기존/신규 학생 모두 `parent_sharing_enabled NOT NULL DEFAULT false`를 적용합니다. `StudentLearningContext`의 기존 조회 계층을 재사용하며, 공개 상태를 추정하는 프론트 전용 필드는 만들지 않습니다.
+- 학생 `GET·PUT /students/me/sharing-preferences`, 학부모 읽기 전용 `GET /children/{childId}/sharing-preferences`를 제공합니다. 세션의 단일 학생·활성 보호 관계·역할·범위를 확인하며 nullable 본문은 400, 학부모/관리자의 학생 설정 변경은 403입니다. no-store 응답입니다.
+- 학생 설정 변경은 학생 행을 잠급니다. 분석은 기존 parent → student → conversation 순서로 생성·기존 대화·근거·스트림 전송/완료를 재검사합니다. 기록 API는 외부 HTTP 전후에 공개 설정을 확인하며, 리포트는 외부 HTTP를 마친 뒤 별도 parent → student 트랜잭션에서 최종 공개/상품 권한을 확인합니다. 외부 요청 중 DB 트랜잭션을 열어 두지 않습니다.
+- 비공개 시 학부모 답변 목록·상세·근거와 기존 분석 대화는 `STUDENT_RECORDS_PRIVATE`로 차단합니다. 요약·생각 유형 집계는 유지합니다. 부모 화면에는 상태만 안내하며 변경 스위치를 제공하지 않습니다.
+- 단위/HTTP 설정·권한 회귀와 원문 경계 테스트, MSW 공개→비공개 재차단 및 브라우저 저장 흐름을 추가했습니다. Docker 복구 후 실제 PostgreSQL 기본값·설정 영속화·리포트 조회 중 비공개 전환·파일 서명 중 비공개 전환까지 검증했습니다. core 관련 단위·HTTP·DB 회귀 64건이 통과했습니다. 운영 반영/병합 완료를 의미하지 않습니다.
+
 통합 원본: issue-36-google-auth, issue-37-consent-children, issue-37-record-existence, issue-37-review-followup, issue-37-pr-preparation, issue-45-account-management, issue-58-student-device-auth, student-login-separation
 
 계약은 [API 명세](../design/api-spec.md) 3.11·5.1·5.3·5.4·5.6과 [core OpenAPI](../../contracts/openapi/core-service.yaml), 저장 구조는 [ERD](../design/erd.md) 3.1·10·11장.

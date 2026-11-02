@@ -1,5 +1,13 @@
 # learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82·#169·#137·#205)
 
+## 같은 미션 재시도 비교 (#207, 2026-11-01)
+
+- 사용자 확정: 같은 학생·미션의 **직전 마무리 시도**와 비교합니다. 현재 시작 시점 이전에 마무리한 시도를 `finished_at DESC, started_at DESC, id DESC`로 한 건 선택합니다. 다른 학생/미션·현재 시도·현재 시작 뒤에 마무리한 시도는 제외합니다. 돌아보기 완료만을 기준으로 잘못 좁히지 않습니다.
+- 기존 진행 중 시도 재사용·돌아보기 완료 규칙은 유지합니다. 완료한 결과에서 ‘이 미션 다시 풀기’는 기존 시작 API로 새 시도를 생성합니다. 예전 답변·판정·피드백·초안은 수정하거나 삭제하지 않습니다.
+- `GET /internal/attempts/{attemptId}/comparison`과 core `GET /api/v1/attempts/{attemptId}/comparison`을 추가했습니다. 학생 본인만, 마무리 이후에 조회합니다. core는 상세 캐시와 마찬가지로 no-store입니다.
+- 응답 `NO_PREVIOUS | COMPARABLE | CRITERIA_CHANGED`, 이전/현재의 전체 제출 답변·마무리 시각·마지막 판정·기준표와 각 시도에 고정된 문항을 담습니다. 문항/기준표 버전이 같을 때만 항목별 추가 확인·유지·이번 미확인·양쪽 미확인을 표시합니다. 기준 변경이면 원문만 나란히 읽고 충족 개수를 직접 비교하지 않습니다. 이를 능력 점수나 향상률로 바꾸지 않습니다.
+- 도메인 비교 4건과 웹 API/직렬화·실제 MSW 화면 검증을 추가했습니다. PostgreSQL 통합 테스트는 원문/판정 보존·첫 시도·타 학생·시점 제외를 포함해 3건 통과했습니다. 도메인 4건과 합쳐 learning 비교 검증 7건이 통과했습니다.
+
 통합 원본: learning-mission, learning-attempt, learning-answer, learning-feedback, learning-reflection, learning-records, learning-judgment-rules
 
 계약은 [API 명세](../design/api-spec.md) 2.2·3.1~3.8·4.1과 [learning OpenAPI](../../contracts/openapi/learning-service.yaml), 판정 상태는 [상태 다이어그램](../design/state-diagram.md) 3장.

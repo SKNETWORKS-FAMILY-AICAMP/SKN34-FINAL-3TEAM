@@ -49,8 +49,8 @@ class Thinking(ItemResponse):
 
 
 class TextAnswer(Response):
-    answer_id: UUID
-    text: str
+    answer_id: UUID | None = None
+    text: str | None
 
 
 class Change(ItemResponse):

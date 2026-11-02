@@ -25,7 +25,8 @@ data class AnalysisTicket(val parent: UUID, val conversation: ConversationRow, v
 class ConversationService(private val repository: ConversationRepository, private val accounts: AccountAccessService,
     private val children: ChildAuthorizationService, private val usage: AnalysisUsageService,
     private val records: LearningRecordService, private val tx: TransactionTemplate, private val json: ObjectMapper,
-    private val events: org.springframework.context.ApplicationEventPublisher) {
+    private val events: org.springframework.context.ApplicationEventPublisher,
+    private val learningContext: com.sagomungchi.core.guardianship.service.StudentLearningContextService) {
 
     fun parent(): UUID {
         val context = UserContextHolder.currentOrNull()
@@ -36,6 +37,7 @@ class ConversationService(private val repository: ConversationRepository, privat
         accounts.lockParent(parent)
         if (repository.lockStudent(child) == null) forbidden()
         children.requireCurrent(parent, child)
+        learningContext.requireShared(child)
     }
     fun create(child: UUID, from: java.time.LocalDate?, to: java.time.LocalDate?): Map<String, Any> {
         val parent = parent(); val scope = AnalysisScope.of(child, from, to)
@@ -308,6 +310,7 @@ class ConversationService(private val repository: ConversationRepository, privat
             val scope = it.path("scope"); val parent = parent()
             val child = uuid(scope, "childId")
             children.requireCurrent(parent, child)
+            learningContext.requireShared(child)
             try { AnalysisScope(child, java.time.LocalDate.parse(scope.path("from").asText()), java.time.LocalDate.parse(scope.path("to").asText())) }
             catch (_: Exception) { invalidAi() }
         }

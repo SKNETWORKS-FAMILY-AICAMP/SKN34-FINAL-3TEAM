@@ -4,6 +4,7 @@ import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.exception.Problems
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.attempt.domain.AttemptStatus
+import com.sagomungchi.learning.attempt.domain.AttemptComparison
 import com.sagomungchi.learning.attempt.domain.SelfAssessmentItem
 import com.sagomungchi.learning.attempt.domain.SelfCheck
 import com.sagomungchi.learning.attempt.service.AttemptService
@@ -55,6 +56,12 @@ class AttemptController(
     fun get(@PathVariable attemptId: UUID): ResponseEntity<AttemptResponse> {
         UserContextHolder.current().requireSelfStudent()
         return withDraftETag(ResponseEntity.ok(), AttemptResponse.from(attemptService.get(attemptId)))
+    }
+
+    @GetMapping("/attempts/{attemptId}/comparison")
+    fun comparison(@PathVariable attemptId: UUID): AttemptComparison {
+        UserContextHolder.current().requireSelfStudent()
+        return attemptService.comparison(attemptId)
     }
 
     @PutMapping("/attempts/{attemptId}/draft")

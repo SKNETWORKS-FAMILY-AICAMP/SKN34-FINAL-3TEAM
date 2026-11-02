@@ -27,6 +27,9 @@ class LearningController(private val service: LearningProxyService, private val 
     @GetMapping("/api/v1/attempts/{attemptId}")
     fun attempt(@PathVariable attemptId: UUID) = service.exchange("GET", "/attempts/$attemptId").http(noStore = true)
 
+    @GetMapping("/api/v1/attempts/{attemptId}/comparison")
+    fun comparison(@PathVariable attemptId: UUID) = service.exchange("GET", "/attempts/$attemptId/comparison").http(noStore = true)
+
     @PutMapping("/api/v1/attempts/{attemptId}/draft")
     fun draft(@PathVariable attemptId: UUID, @RequestHeader("If-Match") ifMatch: String, @RequestBody body: ByteArray) =
         service.exchange("PUT", "/attempts/$attemptId/draft", body = objectBody(body), ifMatch = ifMatch).http()

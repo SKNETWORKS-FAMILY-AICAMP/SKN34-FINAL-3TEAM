@@ -30,6 +30,7 @@ import kotlin.test.assertNull
 @TestPropertySource(properties = ["app.internal.token=profile-test-token"])
 class InternalStudentProfileHttpTest(@Autowired private val mvc: MockMvc, @Autowired private val json: ObjectMapper) {
     @MockitoBean lateinit var repository: ChildManagementRepository
+    @MockitoBean lateinit var learningContext: com.sagomungchi.core.guardianship.service.StudentLearningContextService
     private val student = UUID.randomUUID()
     private val path get() = "/internal/students/$student/profile"
 
@@ -85,7 +86,7 @@ class InternalStudentProfileHttpTest(@Autowired private val mvc: MockMvc, @Autow
     }
 
     @Test
-    fun `authorized request exposes only UUID and nickname and next request cannot reuse scope`() {
+    fun `authorized request exposes only UUID nickname and sharing flag and next request cannot reuse scope`() {
         `when`(repository.profile(student)).thenReturn(LinkedStudent(student, "합성 별명", 3, 2017))
         val response = mvc.get(path) {
             header("X-Internal-Token", "profile-test-token")
@@ -97,7 +98,7 @@ class InternalStudentProfileHttpTest(@Autowired private val mvc: MockMvc, @Autow
             jsonPath("$.studentId") { value(student.toString()) }
             jsonPath("$.nickname") { value("합성 별명") }
         }.andReturn().response
-        assertEquals(setOf("studentId", "nickname"), json.readTree(response.contentAsByteArray).fieldNames().asSequence().toSet())
+        assertEquals(setOf("studentId", "nickname", "parentSharingEnabled"), json.readTree(response.contentAsByteArray).fieldNames().asSequence().toSet())
         assertNull(UserContextHolder.currentOrNull())
         mvc.get(path) {
             header("X-Internal-Token", "profile-test-token")

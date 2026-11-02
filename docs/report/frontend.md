@@ -1,8 +1,25 @@
 # 웹 프론트 (#7·#8·#9·#59, 테마·대시보드·QR 시연)
 
+## 학생 공개 설정·재시도 비교 화면 (#206·#207, 2026-11-01)
+
+- 기존 호수/숲/공장/소행성/바닷속 테마와 공책 UI를 유지합니다. 디자인 검토는 design-taste-frontend 앱 지침을 적용했으며 새 캐릭터·학생 로고를 추가하지 않았습니다. 설정은 학생 메뉴의 ‘공개 설정’, 비교는 마무리 결과의 이전/이번 공책으로 연결합니다.
+- 공개 상태는 저장 성공 응답을 기준으로 표시하고 저장 중 중복 조작을 막습니다. 실패를 기본값 저장 성공으로 표시하지 않습니다. 공유 브라우저의 parent/records/report 캐시를 설정 변경 시 제거합니다. 부모 화면에는 자녀별 읽기 전용 안내를 제공합니다.
+- 비교는 같은 폭 두 공책과 20px 간격이며 700px 이하에서 한 열로 바뀝니다. 각 시도의 문항·선택지로 원문을 표시합니다. 첫 시도/기준 변경/조회 실패를 정상 비교와 구분합니다.
+- Playwright에서 1440×900, 1024×768 및 새 패널의 390×844 폭을 검증하고 PNG를 `frontend/web/test-results/`에 저장합니다. API/권한은 MSW 합성 데이터 검증이며 실서비스 E2E로 표기하지 않습니다.
+
 통합 원본: frontend-backend-ux-alignment, issue-7-fe-common, issue-7-student-completion, issue-8-9-parent-admin, unchecked-followup, pr-fe-workspace, issue-59-student-device, parent-dashboard, student-theme-world, qr-device-demo
 
 실행 방법과 브라우저 테스트 경로는 [frontend/web/README](../../frontend/web/README.md), 목업 계약은 [API 명세](../design/api-spec.md) 3.7~3.12.
+
+## 할당 이슈 #134·#141 재점검 (2026-11-01)
+
+- 기준: develop `b35e381`. 기존 화면설계서 v2.2·v2.3 미커밋 작업은 다른 worktree에 그대로 보존했습니다.
+- #134: 리포트 목록 `{items}`, MSW 응답, 선택 필드 자녀 PATCH와 재인증 헤더 제거는 이미 반영돼 있었습니다. 남아 있던 `child.plan`의 리포트 표시 재판단을 제거했습니다. #129 core가 현재 상품 권한으로 선택한 `narrative`·`eveningQuestion`을 사용하며 서술의 숫자·인용 검증은 계속 필수입니다. 별도 브라우저용 이용권 API를 추가하지 않습니다. 오래된 FREE/PREMIUM 양방향 회귀를 추가했습니다.
+- #141: 실제 React root와 TanStack Query를 실행해 parent/admin/studentDevice/studentLook/classroom 훅의 키·범위·disabled·실패·무효화·낙관 갱신 롤백·처리 중 폴링 종료·세션 복원 병합을 검증합니다. Node import는 Vite env 없이 가능하며 DEV 조건식은 운영 빌드의 목업 제거를 유지합니다.
+- 관리자 MSW 권한·모델 등록/활성화/복귀·평가 범위·감사·멱등 재처리·목록 counts 테스트, 학생 꾸미기 API 어댑터 테스트를 보강했습니다. 기존 관리자 registerModel/modelAction 요청 계약 테스트도 함께 실행했습니다.
+- `tsconfig.tests.json`을 build reference에 포함해 테스트·Playwright 설정/시나리오를 타입 검사합니다. 드러난 기존 MSW 2 옵션 `onUnhandledRequest`는 현재 MSW 3의 `onUnhandledFrame`으로 수정했고 무시하던 미처리 요청을 오류로 검사합니다.
+- 사용자 결정: 화면 테스트는 `npm test`와 분리된 `npm run test:browser`, 별도 CI job으로 실행합니다. Playwright를 개발 의존성으로 고정하고 기존 로그인·학생 PIN·학부모 결제 진입·관리자 메뉴/권한을 1440×900 및 1024×768에서 검증하고 새 설정/비교 패널은 390×844도 포함합니다. CI 실패 시 trace·스크린샷을 보관합니다.
+- 로컬 검증: 계약 회귀 10개, 훅·꾸미기 어댑터 22개, 관리자 회귀 포함 단위 전체 검증, 테스트 타입 검사·lint·build·운영 목업 제외 검사 통과. 웹 단위 184개·브라우저 14개 통과. 실제 Google·PG·전체 서비스 E2E가 아니라 합성 MSW 화면 검증입니다. 기존 AdminOperations immutability 경고와 500kB 청크 경고는 남아 있습니다. 원격 CI 실행은 PR 반영 뒤 별도 확인해야 합니다.
 
 ## 1. 공통 기반 (#7)
 
@@ -112,3 +129,12 @@ node tests/qr-device-browser.mjs
 - 개발 화면은 기존 DEV+MSW 조건부 지연 로딩을 유지하며 준비 후 PIN을 표시합니다. `/auth/student/demo-device`의 요청·응답은 변경하지 않았습니다. 실제 인증 API 계약 변경은 없습니다.
 - `npm test` 125개·lint·운영 빌드·`node tests/production-mocks.mjs` 통과. 운영 JS에 시연 경로·fixture·시연 PIN 문자열이 포함되지 않음을 확인했습니다. JS 청크 500kB 경고는 기존과 같습니다.
 - Chrome 가상 데이터 검증: 시연 준비 → 프로필 재조회 → PIN 안내 → 5090 로그인 → 학생 홈 통과. 캡처는 `C:/Users/playdata2/outputs/issue170-20261030/`에 보존했습니다. 실제 DB/OAuth 검증을 수행한 것은 아닙니다.
+
+
+## 이번 작업의 검증 및 인수인계 (2026-11-01)
+
+- 작업 브랜치 `codex/assigned-web-issues-20261101`, 시작 기준 `b35e381`. 작업 중 원격 develop에 `dfc4837`(#214)이 추가됐습니다. 새 원격 파일은 AccountHttpTest·#136 보고서·docs/README이며 이번 수정 파일과 직접 겹치지 않습니다. 로컬 수정이 있어 자동 pull/병합은 하지 않았습니다. PR 전에는 최신 develop을 보존 병합한 뒤 검증해야 합니다.
+- 웹 단위 184건, 전체 브라우저 14건, 테스트 포함 타입 검사·lint·build·운영 JS의 목업 제외 검사를 통과했습니다. 새 UI는 설정 저장→재조회, 공책 비교→다시 풀기→기존 답변 보존도 화면 테스트로 검증합니다. 기존 AdminOperations immutability·큰 JS 청크 경고는 유지합니다.
+- core 설정·내부 프로필·리포트 권한·분석 대화 관련 64건, learning 비교 7건(실제 PostgreSQL 3건 포함), report 전체 315건, 스키마 검증기 회귀 18건이 통과했습니다. 별도 비공개 회귀에서는 PostgreSQL 저장과 HTML/PDF/Markdown 원문 제외도 확인했습니다. 실제 AI/운영 S3/외부 결제 호출이나 운영 배포 E2E는 포함하지 않습니다.
+- 로컬 목업 확인: `http://127.0.0.1:5272/student/login` → 가상 학생 준비 → PIN `5090` → 공개 설정. 같은 미션을 마무리·돌아보기 완료한 뒤 다시 풀면 두 번째 결과에서 비교할 수 있습니다. 내 공책의 ‘결과 다시 보기’에서도 비교/재시도 화면으로 돌아갑니다.
+- 이슈 #134·#141은 로컬 검증 기준 체크를 갱신했습니다. #206·#207도 Docker 복구 후 DB 통합 검증을 마쳐 모든 체크박스를 갱신했습니다. push·PR·develop 반영은 하지 않았습니다.

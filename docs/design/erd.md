@@ -112,6 +112,7 @@ erDiagram
     int grade "3~6, 이후 제공 문제에만 적용 (P03), DELETED 표식은 NULL 허용"
     int birth_year "출생연도 (P01), DELETED 표식은 NULL 허용"
     boolean is_demo "시연 가상 학생"
+    boolean parent_sharing_enabled "NOT NULL DEFAULT false, 학생 본인만 변경 (#206)"
     varchar status "ACTIVE|DELETION_REQUESTED|DELETED"
     timestamptz created_at
     timestamptz updated_at
@@ -1186,3 +1187,8 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 conversation_job_retry는 UK(message_id,generation), UK(requested_by,idempotency_key), generation>0, 상태와 시각의 일치 및 시각 순서 CHECK를 둔다. `ix_conversation_job_retry_pending`은 (status,accepted_at) 조회 인덱스다. message_id는 conversation_message FK ON DELETE CASCADE, requested_by는 user_account FK다. 기존 V17·V18은 수정하지 않는다. 질문·답변 원문을 저장하지 않는다.
 
 학생 삭제 시 진행 요청의 실패 이력·감사를 같은 삭제 트랜잭션에 기록하고 요청 행을 CASCADE로 정리한다. 삭제 후 작업 조회와 새 접수는 404다. 기존 공통 멱등 캐시에 남은 과거 202는 재전달될 수 있으나 재실행하지 않는다. 요청 행 삭제 이후 영구 재접수 응답 복원은 보장하지 않는다. 요청 감사는 접수 시, job_execution은 실제 실행 선점 시 기록한다. Redis quota는 요청 ID 원자 표식으로 중복 차감을 방지하며 DB와 분산 원자 트랜잭션이라고 간주하지 않는다.
+
+
+## 학생 전역 공개 설정 (#206, core V21)
+
+`student.parent_sharing_enabled`는 기존/신규 모두 비공개(false)로 시작합니다. 이 열은 비공개 기본값을 보장하기 위한 SQL DEFAULT false의 명시적 예외이며, 다른 열의 기본값 금지 검증은 유지합니다. 학생 본인만 바꾸며 원문을 제공하는 경로는 같은 학생 행의 현재 설정을 다시 확인합니다.

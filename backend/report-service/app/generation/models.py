@@ -29,6 +29,7 @@ class GenerateReport:
     narrative_enabled: bool
     display_name: str | None = None
     requested_at: datetime | None = None
+    parent_sharing_enabled: bool = False
 
     def __post_init__(self) -> None:
         if self.period_from > self.period_to:

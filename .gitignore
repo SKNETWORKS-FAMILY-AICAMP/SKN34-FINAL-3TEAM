@@ -3,6 +3,8 @@ dist/
 node_modules/
 .venv/
 __pycache__/
+playwright-report/
+test-results/
 .gradle/
 .kotlin/
 
@@ -18,3 +20,6 @@ ai_hub/
 25.서술형 글쓰기 평가 데이터*
 26.논술형 글쓰기 평가 데이터*
 110.수학 과목 자동 풀이 데이터*
+
+# Local UI inspection artifacts
+.taste-skill/

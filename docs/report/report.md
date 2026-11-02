@@ -1,5 +1,13 @@
 # 주간 리포트 (#42·#50~#55)
 
+## 학생 공개 설정과 원문 제외 (#206, 2026-11-01)
+
+- 생성 입력은 메시지의 과거 공개 값에 의존하지 않습니다. `NamedGenerator`가 내부 core 프로필의 현재 `parentSharingEnabled`를 조회하며 누락은 비공개입니다. 생성 직전 원문·돌아보기 문장·인용 후보·근거 링크를 제거하고 AI 서술 호출을 생략합니다. 이후 저장·HTML/PDF/Markdown 렌더링에도 제거된 항목만 전달됩니다.
+- 학습 횟수·분모/분자·기간·유형과 전후 글자/문장 수는 동일하게 유지합니다. 원문을 새 문장으로 대체 생성하지 않습니다. nullable 원문 형태를 조회 스키마와 렌더러에 반영했습니다.
+- 이미 공개 상태에서 만든 리포트도 core 상세에서 현재 설정을 다시 검사해 원문·인용·파생 서술을 제거합니다. 비공개 중 기존 파일 URL 재발급과 근거 조회는 403으로 막습니다. 수치 화면은 계속 제공하며 이미 전달한 파일 자체를 회수하지는 못합니다.
+- 이번 구현은 비공개 전용 파일 재생성/다운로드 상품을 추가하지 않습니다. 다시 공개해도 비공개 중 생성한 리포트에 과거 원문을 자동 복원하지 않으며 필요하면 기존 재생성 규칙을 따릅니다.
+- 공개/비공개 생성, AI·근거 호출 차단, 수치 동등성, nullable Markdown 렌더링 회귀를 추가했습니다. report 전체 315건과 비공개 전용 회귀 4건을 통과했습니다. 실제 PostgreSQL 저장에 원문·근거가 남지 않고, HTML/PDF/Markdown full/free 6개 파일에도 원문이 없음을 검사했습니다. 스토리지 경계는 기존 테스트 대역/moto를 사용하며 운영 S3 배포 검증은 아닙니다.
+
 통합 원본: issue-42-weekly-reports, report-generation-foundation, report-metrics, report-narrative, report-rendering, report-query, report-deletion, report-deletion-schema, report-learning-integration, report-required-inputs, report-service-handoff, report-epic-readiness
 
 계약은 [API 명세](../design/api-spec.md) 3.4·4.1.1·4.2.1·4.4·5.5, 메시지는 [report-messages](../../contracts/events/report-messages.md).
@@ -220,3 +228,8 @@ report-query와 report-recovery를 분리한다. 4xx·DATA_UNAVAILABLE 매핑, 2
 core HTTP·DB/Redis/RabbitMQ 통합 테스트이며 AI/report는 로컬 HTTP 대역, PG는 HttpClient/TossGateway 대역이다. 실제 AI·report 프로세스·토스 API 호출, 브라우저·원격 CI·운영 배포·성능 측정은 이번 검증에 포함하지 않는다. 기존 분석/결제 사용량·복구 흐름은 전체 테스트와 변경 없음 대조로 확인했다. 통합 브랜치 a5b72f7의 factory 선택 인자와 AI HTTP/1.1 변경을 보존했고, #168 d6ebee1에는 TossClient 변경이 없어 직접 파일 충돌이 없음을 읽기 전용으로 확인했다.
 
 #167 최신 develop b35b22e 접합 후 core 전체 400개 테스트·bootJar 통과(실패/오류/생략 0). 최초 환경 실패와 단일 JVM 재실행, 검증 대역/미검증 범위는 [분석 대화 보고서](issue-41-analysis-conversations.md)의 “#167 최신 develop 접합” 최종 검증 절을 따른다. 결제/report 서비스 및 #168 계층 변경은 develop 그대로 보존했다.
+
+
+### #206 최종 인가와 외부 요청 경계
+
+리포트 HTTP는 DB 트랜잭션 밖에서 실행합니다. HTTP 완료 뒤 `ReportViewService.recordWithSharing` 또는 파일 최종 기록 단계가 parent → student 순서로 현재 상품/공개 권한을 다시 확인합니다. 조회 도중 비공개 전환 시 과거 원문을 제거하고, 파일 서명 도중 전환 시 URL을 반환하지 않습니다. 기존 #129의 환불/다운그레이드 회귀와 새 공개 설정 경합 회귀를 함께 통과했습니다.

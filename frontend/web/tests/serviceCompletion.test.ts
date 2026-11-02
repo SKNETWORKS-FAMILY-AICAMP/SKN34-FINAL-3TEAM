@@ -10,7 +10,7 @@ const {studentDeviceHandlers}=await import('../src/mocks/handlers/studentDevice.
 const {adminHandlers}=await import('../src/mocks/handlers/admin.ts')
 const {adminServiceHandlers}=await import('../src/mocks/handlers/adminService.ts')
 const server=setupServer(...serviceHandlers,...studentDeviceHandlers,...parentHandlers,...adminHandlers,...adminServiceHandlers,...studentHandlers)
-server.listen({onUnhandledRequest:'error'});test.after(()=>server.close())
+server.listen({onUnhandledFrame:'error'});test.after(()=>server.close())
 let token=''
 async function call(path:string,method='GET',data?:unknown,headers:Record<string,string>={}) {
   const r=await fetch('http://localhost/api/v1'+path,{method,headers:{...(token?{Authorization:'Bearer '+token}:{}),'Content-Type':'application/json',...headers},...(data===undefined?{}:{body:JSON.stringify(data)})})
