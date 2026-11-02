@@ -1,0 +1,29 @@
+# ml/m1 (수학 풀이 점검 모델) 린트·단위 테스트 (이슈 #263, ci-ml-m2.yml과 같은 방식)
+# torch·transformers(수 GB)는 설치하지 않음 → 모델 구조 테스트는 건너뜀. AI Hub 데이터 없이 가짜 zip만 사용
+name: ci-ml-m1
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - "ml/m1/**"
+      - ".github/workflows/ci-ml-m1.yml"
+  pull_request:
+    paths:
+      - "ml/m1/**"
+      - ".github/workflows/ci-ml-m1.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ml/m1
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+      - run: uv venv --python 3.12
+      - run: uv pip install "python-dotenv>=1.2.4" "pytest>=9.2.0" "ruff==0.17.2"
+      - run: uv run --no-sync ruff check .
+      - run: uv run --no-sync ruff format --check .
+      - run: uv run --no-sync pytest -q

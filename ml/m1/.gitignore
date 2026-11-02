@@ -1,0 +1,9 @@
+# AI Hub 원본·가공본·가중치는 커밋하지 않음 (NFR-DAT-03, architecture 5장: 가중치는 승인 후 S3)
+data/
+work/
+models/
+checkpoints/
+*.csv
+*.zip
+*.pt
+.venv/

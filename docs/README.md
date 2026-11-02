@@ -63,6 +63,7 @@
 
 - [scoring #87](report/issue-87-scoring-m2.md): M2 채점 계약·실제 모델 검증
 - [scoring #88](report/issue-88-scoring-m1.md): 미학습 M1 비활성 계약·입력 검증 및 활성화 후속 범위
+- [이슈 #263 M1 학습 코드 이관](report/issue-263-ml-m1.md): 로컬 M1 학습·평가 코드를 `ml/m1`로, 평가용 함수·EDA 출력 위치·CI, 실제 데이터 재실행 동일 확인
 - [scoring #85~#88 통합 제출](report/scoring-85-88-integration.md): 통합 브랜치·PR 범위·검증 결과·후속 연동 구분
 - [report #152 관리자 실패 재처리](report/issue-152-report-admin-retry.md): 새 jobId 재사용·중복/판 보존·실제 연동 및 #47 요청·결과 예시
 - [report #130 기본 worker 완료 근거](report/issue-130-worker-closure.md): 기존 생성기·별명 조회 재사용 및 최신 검증

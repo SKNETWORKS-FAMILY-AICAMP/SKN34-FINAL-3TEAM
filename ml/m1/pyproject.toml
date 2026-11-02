@@ -1,0 +1,28 @@
+[project]
+name = "m1"
+version = "0.1.0"
+requires-python = ">=3.12"
+# 로컬 MVP에서 확인용 실행에 쓴 버전과 같음(torch 2.14.1·transformers 5.20.2, ml/m2와도 같음)
+dependencies = [
+    "python-dotenv>=1.2.4",
+    "torch>=2.14.1",
+    "transformers>=5.20.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.17.2",
+]
+
+[tool.ruff]
+# ml/m2/pyproject.toml과 같은 설정
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+
+[tool.pytest.ini_options]
+pythonpath = ["scripts"]
+testpaths = ["tests"]
