@@ -18,9 +18,7 @@ import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 PROMPT = "[학년] 초5 [지시문] 글을 쓸 때 통일성이 무엇이며 왜 필요한지 설명하세요."
-SENTENCE = (
-    "친구와 이야기할 때 서로의 생각을 존중하면 오해가 줄어들고 의사소통이 잘 된다. "
-)
+SENTENCE = "친구와 이야기할 때 서로의 생각을 존중하면 오해가 줄어들고 의사소통이 잘 된다. "
 
 
 def main() -> None:
@@ -40,9 +38,7 @@ def main() -> None:
     )
     model.eval()
 
-    print(
-        f"CPU: {platform.processor() or platform.machine()} / 스레드 {torch.get_num_threads()}"
-    )
+    print(f"CPU: {platform.processor() or platform.machine()} / 스레드 {torch.get_num_threads()}")
     print(f"모델: {args.model} / 반복 {args.runs}회\n")
     print("글자 수 | 토큰 수 | 중앙값(ms) | 95%(ms)")
 
@@ -67,9 +63,7 @@ def main() -> None:
         times.sort()
         p95 = times[int(len(times) * 0.95) - 1]
         n_tokens = enc["input_ids"].shape[1]
-        print(
-            f"{n_chars:>6} | {n_tokens:>6} | {statistics.median(times):>10.0f} | {p95:>7.0f}"
-        )
+        print(f"{n_chars:>6} | {n_tokens:>6} | {statistics.median(times):>10.0f} | {p95:>7.0f}")
 
 
 if __name__ == "__main__":

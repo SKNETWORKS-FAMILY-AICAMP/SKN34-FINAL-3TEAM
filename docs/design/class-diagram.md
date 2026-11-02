@@ -135,12 +135,12 @@ classDiagram
 | `InternalAuthFilter`, `UserContext`, `UserContextHolder` | `_common/security` | 구현됨 | `/internal/**` 토큰 검사, `X-User-*`·`X-Student-Scope` 컨텍스트 |
 | `BusinessException`, `GlobalExceptionHandler`, `Problems` | `_common/exception` | 구현됨 | RFC 9457 오류 응답. domain은 HTTP 상태 대신 `ErrorKind`를 받는 보조 생성자 사용(core 400·404·409 #168, learning 400·409·422 #169) |
 | `EventEnvelope`, `MessagingConfig` | `_common/messaging` | 구현됨 | CloudEvents 봉투, JSON 변환기 |
-| `OutboxWriter`, `OutboxRelay`, `OutboxEventRepository` | `_common/messaging` | 구현됨 (core만) | 같은 트랜잭션 `outbox_event` 저장 → 릴레이가 미발행 행 발행(`FOR UPDATE SKIP LOCKED`), publisher confirm 후 `published_at` 기록 |
+| `OutboxWriter`, `OutboxRelay`, `OutboxEventRepository` | `_common/messaging` | 구현됨 (core만) | 같은 트랜잭션 `outbox_event` 저장 → 릴레이(ShedLock 단일 실행)가 DB 트랜잭션 밖에서 미발행 행 발행·publisher confirm 대기 후 짧은 트랜잭션으로 `published_at` 기록(#166) |
 | `ProcessedEventRepository` | `_common/messaging` | 구현됨 (core) | `processed_event` INSERT 성공 여부로 멱등 소비 |
 | `RetryingConsumer` | `_common/messaging` | 구현됨 (core) | 수동 ACK. 처리 실패 시 `x-retry-count` +1 후 `<큐>.retry.<회차>` 재발행, 최대 횟수 초과 시 reject → DLQ (아키텍처 1.6) |
 | `PublicAuthFilter` | `_common/security` | 구현됨 (core만) | `/api/v1/**` Bearer 검증(`AuthService.authenticate`), 쿠키 API Origin·`X-Requested-With` 검사, 역할·관리자 권한·필수 동의 확인 → `UserContext(userId, role, studentScope)` 설정. JWT 발급·검증은 `account/service/TokenService` (3.1) |
 | `IdempotencyService` | `_common/web` | 구현됨 (core만, #38) | `idempotency_record` 조회·저장, 같은 키·다른 본문 422 |
-| `SseEmitters` | `_common/web` | 구현됨 (core만, #39) | SSE 생성, 15초 heartbeat `: ping`, 연결 종료 콜백. 연결 시간은 용도별: 피드백 90초(`open`), 알림 구독 5분(`subscribe`), 분석 대화 120초 + 여유(#41 미구현). `open(context, …)`이 요청 스레드의 `UserContext`를 작업 스레드에 설정·해제 |
+| `SseEmitters` | `_common/web` | 구현됨 (core만, #39) | SSE 생성, 15초 heartbeat `: ping`, 연결 종료 콜백. 연결 시간은 용도별: 피드백 90초(`open`), 알림 구독 5분(`subscribe`), 분석 대화 125초(`open`, 120초 취소 hook, #41). `open(context, …)`이 요청 스레드의 `UserContext`를 작업 스레드에 설정·해제 |
 
 ### 2.2 Python 공통 (`app/`, ai·scoring·report 동일)
 
@@ -216,7 +216,7 @@ classDiagram
 ```
 
 - 위 클래스는 모두 구현됨 (`config.py`·`errors.py`·`security.py`·`clients/base.py`·`messaging/connection.py`·`messaging/envelope.py`)
-- 신규 공통: `messaging/publisher.py` `EventPublisher.publish(envelope, routing_key)`(ai 구현됨, best-effort), `messaging/consumer.py` `EventConsumer.consume(queue, handler)`(report 구현됨, 수동 ACK, 처리 실패 시 `<큐>.retry.<회차>` 재발행 → 3회 초과 시 reject → DLQ)
+- 신규 공통: `messaging/publisher.py` `EventPublisher.publish(envelope, routing_key)`(ai 구현됨, best-effort), `messaging/consumer.py` `EventConsumer.consume(queue, handler)`(report 구현됨; ai·scoring은 `model.version.activated` Pod별 exclusive 큐 소비자 별도 구현, 수동 ACK, 처리 실패 시 `<큐>.retry.<회차>` 재발행 → 3회 초과 시 reject → DLQ)
 - 이벤트 소비 처리에서는 `bind_user_context(UserContext(role="SYSTEM", student_scope={subject}))` 후 하위 호출 (아키텍처 2.3)
 
 ---
@@ -625,7 +625,7 @@ classDiagram
 - 구현 상태: `LearningController`·`LearningProxyService`·`StudentLearningContextService`·`FeedbackController`·`FeedbackService`·`LearningRecordService`·`LearningRecordClient`·`LearningClient.exchange` 구현됨(마무리·돌아보기·자기 평가 포함). 분석 대화(#41)는 `ConversationController`·`ConversationService`(`prepare`·`transport`·`complete`·`fail`·`evidence`·`examples`)·`AnalysisStreamService`(SSE 실행)·`ConversationRepository`·`AiClient.stream`으로 구현됨. 그림의 `ConversationMessageRepository`는 `ConversationRepository`에, `Conversation`·`ConversationMessage` 엔티티 메서드는 서비스 검증에 포함되고, `JobExecutionService` 없이 `conversation_message` 상태·`retry_count`로 실행을 기록한다. `LearningClient.evidence`는 `LearningRecordClient.evidence`, `correctJudgment`는 `support/client/LearningSupportClient.correct`(3.5)
 - `DashboardController`(학생 3개·학부모 4개 조회) → `LearningRecordService` → `LearningRecordClient` → `LearningClient`. 집계·home·상세는 learning 기록 API가 계산하고 core는 수치를 계산하지 않음 ([core 보고서](../report/core-gateway.md))
 - `FeedbackController`: learning 동기 응답을 기다리는 동안 heartbeat만 전송, 응답을 `status`·`result`·`error`·`done` 이벤트로 변환. 클라이언트 단절과 무관하게 learning 호출 유지 (아키텍처 1.3)
-- `ConversationService.stream`: ai SSE 이벤트를 그대로 중계, `result` 수신 시 `complete`(트랜잭션), 클라이언트 단절 시 `AiClient.cancel` + `fail(CLIENT_DISCONNECTED)` (재시도 가능)
+- `ConversationService.stream`: ai SSE 이벤트를 그대로 중계, `result` 수신 시 `complete`(트랜잭션), 클라이언트 단절 시 `AiClient.cancel` + `fail(STREAM_INTERRUPTED)` (재시도 가능)
 - 근거 원문은 저장하지 않고 `message_evidence` ID로 learning `/internal/records/evidence` 조회 (ERD 3.2)
 - SSE 처리를 별도 스레드(executor)에서 실행하면 `UserContextHolder`(ThreadLocal) 값이 전달되지 않음 → `SseEmitters.open(context, …)`이 요청 스레드에서 캡처한 컨텍스트를 작업 스레드에서 설정·해제 (#39)
 

@@ -105,7 +105,7 @@ def predict_all(train: pd.DataFrame, test: pd.DataFrame) -> dict:
 
     if test["keyword"].notna().all():
         # 채점 기준표: 핵심어 4개 이상 5점, 3개 4점, 2개 3점, 1개 2점, 없음 1점
-        n = [count_keywords(t, k) for t, k in zip(test["text"], test["keyword"])]
+        n = [count_keywords(t, k) for t, k in zip(test["text"], test["keyword"], strict=False)]
         preds[("rule", "content_3")] = np.clip(np.array(n), 0, 4) + 1
 
     return preds

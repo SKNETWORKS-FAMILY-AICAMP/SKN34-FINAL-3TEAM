@@ -299,3 +299,127 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 1장과 같이 
 | A5 | 시연 컴포넌트 `presentation/student/DemoStudentEntry.tsx`가 `apiFetch` 직접 호출·`mocks/fixtures` 참조 | 3장 컴포넌트 API 직접 호출 금지 | `frontend/web/src/presentation/student/DemoStudentEntry.tsx:2-10` | 이슈 #170 |
 | A6 | ai→scoring 교차 확인 호출자 없음(ai `scoring_url` 미사용), ai `model.version.activated` 소비 없음 | 1.2·1.5 판정 흐름, 1.6 브로드캐스트 | `ai-service/app/config.py:16-17`, `versions.py` | 기존 #69·#68 |
 | A7 | 저장소 인프라가 `platform-data` chart·kind뿐. 앱 Helm chart·Ingress·NetworkPolicy·HPA·KEDA·PDB·Argo CD 앱 배포, OpenTelemetry·Prometheus·Langfuse 의존성 없음 | 4.3·4.4·4.6, 1.6 Langfuse 보정 | `infrastructure/`, 각 `pyproject.toml`·`build.gradle.kts` | 이슈 #171, architecture 해당 절에 "(예정, 저장소 미구성)" 표기 |
+
+## 4. develop 종합 검증 (2db122c)
+
+3장 이후 PR(#161·#172~#198, 73커밋·281파일) 병합 직후 develop `2db122c`의 테스트·코드↔문서·문서 간·아키텍처 정합성 점검. 번호는 3장에 이어 결함 B22~, 코드↔문서 C22~, 문서 간 D17~, 아키텍처 A8~.
+
+### 4.1 실행 결과
+
+Windows 11 로컬 실행. CI와 같은 명령, core·learning은 3장과 같이 `gradle:8.14.6-jdk21` 컨테이너(저장소 마운트, Docker 소켓, `TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal`).
+
+| 대상 | 명령 | 결과 |
+|---|---|---|
+| ai-service | `uv sync --frozen` → `ruff check` → `ruff format --check` → `pytest` | 통과. 298건(135초) |
+| scoring-service | 동일 | 통과. 144건(30초) |
+| report-service | 동일 + `playwright install chromium` | 통과. 311건(137초), 경고 1건(`starlette.testclient`의 httpx 사용 폐기 예정) |
+| core-service | `./gradlew test bootJar` | 404건 중 400건 통과, `SupportIntegrationTest` 4건 실패(25분). 원인은 공유 PostgreSQL 연결 고갈(B27). 같은 클래스 단독 재실행 22/22 통과, 같은 커밋 CI 통과 |
+| learning-service | 동일 | 통과(8분 8초) |
+| web | `npm ci` → `npm run lint` → `npm test` → `npm run build` | 통과(수정 전·후). lint 경고 1건(4.3 B23), 단위 148건, 빌드 성공(번들 673 kB, 500 kB 초과 경고) |
+| web 운영 산출물 | `node tests/production-mocks.mjs` | 통과 |
+| 루트 계약 테스트 | PyYAML 6.0.3·jsonschema 4.26.0, `python -O -m unittest discover -s scripts/tests` | 통과. 94건(수정 후. 지문 갱신은 4.3 C24) |
+| DB 마이그레이션 | 임시 `postgres:17.11-alpine`에서 `scripts/check_db_migrations.py`·`check_policy_migrations.py` | 통과. core 44/407, learning 19/160, report 8/63(테이블/컬럼), 위반 입력 63건, CHECK 값 76종, 인덱스 25개, 재실행·Alembic 왕복(20초). 정책 마이그레이션 통과(87초) |
+| 계약 산출물 | core 테스트 산출물로 `validate_{report,notification,support,payment,analysis}_contracts.py` | report·notification·payment·support 통과. `validate_analysis_contracts.py`는 실제 SSE 실행 결과 파일이 필요해 미실행 |
+
+정적 대조:
+
+| 대상 | 결과 |
+|---|---|
+| core·learning 컨트롤러 경로 ↔ OpenAPI | core 128/128(학생 로그아웃 추가), learning 35/35 일치 |
+| ai·report·scoring 라우트 ↔ OpenAPI | ai 5/5, report 7/7, scoring 3/3. 스키마 차이는 ai `NarrativeMissionRef.title` 1건(C22) |
+| api-spec 엔드포인트 표 ↔ OpenAPI | 149행 대조. 누락 3건(C26), 목업 `students/me/preferences`·시연 전용 경로 외 일치 |
+| 웹 API 호출 ↔ core OpenAPI | 결제(#184)·관리자 재처리·학생 로그아웃·분석 일치. 도달 불가 화면의 없는 PATCH 1건(B22) |
+| 이벤트·큐 | `definitions.json` exchange 3·큐 25·바인딩 12 ↔ 발행자·소비자·`QueueManagementClient` 일치. ai `model.version.activated` 봉투 ↔ 스키마 일치 |
+| 환경 변수 | compose·`.env.example`·`application.yml`·Python `Settings` 일치. 예외: 관리자 큐 조회 변수 compose 누락(B24) |
+| 상태 값 | state-diagram ↔ ERD CHECK 일치. 예외 D19·D20 |
+| 문서 링크 | 상대 링크·앵커 229개 깨짐 0건(추적 md 전체) |
+| P12 값·포트·FN/UC/NFR/P ID·오류 코드 | 문서 간 일치. 설계 문서의 상태 접두 오류 코드 90종 모두 코드에 존재 |
+
+실행하지 않은 것: JDK 21 JAR 전제 `verify_*`·모델 archive 전제 `verify_scoring_*`·웹 Playwright 스크립트(3장과 같은 사유).
+
+### 4.2 3장 미해결 항목 재판정
+
+| # | 현재 상태 | 근거 |
+|---|---|---|
+| B8 | 해결 | #131 병합(#175). 학생별 선두 발행·1/5/15분 재시도·격리·운영 CLI(`outbox/manage.py`) |
+| B10 | 미해결(#133 열림) | `StudentDeviceController`가 `remoteAddr` 사용 |
+| B17 | 해결 | #135 병합(#177). ai `scoring_url`은 #69 예정 설정으로 유지 |
+| B18·B19 | 해결 | #163. 관리자 미션 404 전달·지원 403 구분([#46 보고서](issue-46-support.md)) |
+| A1 | 해결 | #166. `OutboxRelay.relay`는 트랜잭션 밖 발행·confirm 후 짧은 트랜잭션 기록 |
+| A2 | 해결 | #167·#192. `ai-analysis`·`report-query`·`report-recovery`·`toss-lookup`·`toss-transactions` 서킷 추가, 토스 쓰기는 예외 유지 |
+| A3 | 일부 해결 | #168·#169로 domain의 `HttpStatus`·Jackson 직접 import 0건. `BusinessException`(HttpStatus 필드) 간접 의존은 남음(A8) |
+| A4 | 일부 해결 | `LlmUsageRecorded`→`usage/domain`, `PremiumUsageClient` 역참조 제거, Redis 구독→`notification/consumer`. `NotificationRedisPublisher`→service는 남음(A9) |
+| A5 | 해결 | #170. 같은 종류 위반이 `SupportResults.tsx`에 있음(A14) |
+| A6 | 일부 해결 | ai `model.version.activated` 소비 #68(#194). ai→scoring 교차 확인은 #69 예정 |
+| A7 | 유지 | #171은 "EKS 사용 확정"으로 종료됐으나 앱 chart·Ingress·NetworkPolicy·HPA·KEDA는 저장소에 없음. architecture "(예정)" 표기 유지 |
+| D16 | 미해결(#165 열림) | 번호 체계 밖 절이 #47·#48 절 추가로 늘어남(4.5) |
+
+### 4.3 발견 항목과 처리
+
+| # | 종류 | 내용 | 처리 |
+|---|---|---|---|
+| B22 | 결함(낮음) | 웹 `data/serviceApi.ts` `answerInquiry`가 core에 없는 `PATCH /admin/inquiries/{id}` 호출. 사용처 `ServiceCenter.tsx` `AdminHelpdesk`는 ADMIN에 `support` 경로가 없어 도달 불가, MSW만 지원. 실제 관리자 답변은 `data/admin/serviceApi.ts`의 `POST …/answer` | 도달 불가 `AdminHelpdesk`와 전용 API 3개(`adminInquiries`·`answerInquiry`·`publishNotice`)·MSW PATCH 핸들러 제거, `tests/serviceCompletion.test.ts`를 MSW `POST …/answer`로 전환, api-spec 3.13 PATCH 문장을 2.8 `POST …/answer`로 교체 |
+| B23 | lint(낮음) | `AdminOperations.tsx:204` `key.current = null`에 oxlint `react(immutability)` 경고. `useRef` 값을 이벤트 처리기에서 바꾸는 정상 코드로 판단 | 미수정(동작 문제 없음) |
+| B24 | 설정(낮음) | core가 읽는 `ADMIN_RABBIT_MANAGEMENT_URL`·`_USERNAME`·`_PASSWORD`가 compose에 없어 로컬 `GET /admin/queues`가 항상 503 `QUEUE_MANAGEMENT_NOT_CONFIGURED` | compose core 환경에 `http://rabbitmq:15672`와 기존 `RABBITMQ_USER`·`RABBITMQ_PASSWORD` 연결 |
+| B25 | 확인(결함 아님) | `ConversationRetryWorker.poll`은 stale 종료 예외 시 그 회차 pending 처리를 건너뜀. `failGeneration`은 DB 예외만 던지고 메시지 삭제 시 요청 행도 CASCADE 삭제되므로 영구 정지 경로 없음 | 조치 없음 |
+| B26 | 확인(낮음) | ai `messaging/consumer.py` `receive`가 `ValueError`·`TypeError` 외 예외에서 ACK하지 않음. 현재 `ActiveVersions.apply`·pydantic 검증 경로에서 다른 예외는 발생하지 않음 | 조치 없음(처리 로직 변경 시 재확인) |
+| B27 | 테스트 환경(중간) | core 전체 테스트 중 `SupportIntegrationTest` 4건이 `FATAL: sorry, too many clients already`로 30초 연결 대기 후 500. 테스트별 설정이 다른 Spring 컨텍스트가 캐시에 누적(HikariPool-28)되어 JVM당 1개인 PostgreSQL 컨테이너의 연결 한도(기본 100)를 소진. 실행 순서·속도에 따라 재현(같은 커밋 CI는 통과) | 미수정. 컨텍스트 캐시 상한·테스트 풀 크기·컨테이너 `max_connections` 중 선택 필요(이슈 후보) |
+| C22 | 코드↔문서 | `ai-service.yaml` `NarrativeMissionRef`가 `title`을 required에만 두고 properties에 없음(코드 `report_narrative/models.py`는 `title: str`) | properties에 `title` 추가 |
+| C23 | 코드↔문서 | `POST /admin/jobs/{jobId}/retry` OpenAPI에 실제 404·409·422·503 응답 미선언, 재처리 오류 코드 7종이 api-spec 1.3 표에 없음 | OpenAPI 응답 선언, api-spec 1.3에 `JOB_*`·`REPORT_ALREADY_RETRIED`·`REPORT_RETRY_STUDENT_UNAVAILABLE` 추가 |
+| C24 | 코드↔문서 | api-spec 1.3·core OpenAPI 리포트 5개 경로의 `REPORT_ENTITLEMENT_UNAVAILABLE`은 테스트 대역에서만 사용. 실제 `ProductEntitlementService`는 503 `PAYMENT_ENTITLEMENT_CONFIRMING`·`PAYMENT_PRODUCT_UNAVAILABLE`·`PAYMENT_FREE_PRODUCT_UNAVAILABLE` | 문서·OpenAPI 설명을 실제 코드로 정정. `test_admin_operations_contract`의 검토 지문 5개 경로 갱신(설명 문자열 변경만) |
+| C25 | 코드↔문서 | api-spec 1.3 `AI_UNAVAILABLE` 503. core 분석 대화 `AiClient`는 502 | 503/502 구분 기재 |
+| C26 | 코드↔문서 | api-spec 표에 `GET /subscriptions/{id}/billing-key`, `POST /internal/payment-usage/reservations`·`completions` 행 없음 | 2.6·4.5 표에 추가 |
+| C27 | 코드↔문서 | CONVERSATION·REPORT 관리자 재처리가 구현됐는데 "JOB_RETRY_UNAVAILABLE 차단·#47 후속"으로 남음: api-spec 2.8·5.5.1, architecture 1.6, sequence 6.1, `report-admin-retry/README.md`, `report-messages.md`, `issue-152-report-admin-retry.md` | 구현 상태로 정정(보고서는 "검증 당시" 표기로 보존) |
+| C28 | 코드↔문서 | 분석 대화 SSE 수명 "120초 + 여유(#41 미구현)": architecture 1.3, class-diagram 2.1. 코드는 125초 `open`·120초 취소 | 정정 |
+| C29 | 코드↔문서 | `OutboxRelay`를 `FOR UPDATE SKIP LOCKED`·`@Transactional` 안 발행으로 기술: class-diagram 2.1, report 보고서 1장(#166 이후 코드와 다름) | 정정 |
+| C30 | 코드↔문서 | 분석 대화 단절 실패 코드 `CLIENT_DISCONNECTED`(state 4.3·sequence 5장·class 3.2). 코드는 `STREAM_INTERRUPTED` | 정정 |
+| C31 | 코드↔문서 | ERD 8장 버전·수치가 V16·69/613. 실제 V19·71/630(core 44/407) | 갱신 |
+| C32 | 코드↔문서 | user-flow 7장 "학부모 구독 결제·관리 화면 없음". #184로 `/parent/billing`·`/payment/*` 구현 | 구현 흐름으로 정정 |
+| C33 | 코드↔문서 | architecture 2.6 트리 누락: core `_common/persistence`·`_common/web/repository`·`account/client`·`account/config`·`admin/client`·`admin/consumer`·`conversation/scheduler`·`usage/domain`·`payment/client/PremiumUsageClient.kt`, learning `_common/persistence`·`record/{client,consumer,domain}`, learning `deletion/`은 빈 폴더(실제 소비는 `record/`), scoring·report 실제 파일 다수 | 실제 구조로 트리 갱신 |
+| C34 | 코드↔문서 | 상태 서술 잔존: ai 보고서 3장·5장 "#68 후속"(7장에서 구현), learning 보고서 미션 감사 "#47 후속"(`MissionAuditService` 구현), report 보고서 닉네임 "미연결"(#56 연결), api-spec 프롬프트 예시 `judge@4`·`report@2`(실제 `judge@2`·`report@1`), class-diagram 2.2 소비자 "report 구현됨"(ai·scoring 포함), ai `connection.py` "서비스 코드에서 큐 선언 안 함" 주석 | 정정 |
+| D17 | 문서 간 | `docs/README.md` 색인 누락 5개(#184·#195·#196·관리자 화면 PR·learning 프론트 정렬), #41·#131 항목이 브랜치 규칙 아래에 위치 | 색인에 추가·이동 |
+| D18 | 문서 간 | `docs/README.md` "core 임시 통합 경로" 규칙의 `feature/core-integration` 브랜치가 원격에 없음 | 종료된 임시 예외로 절 삭제 |
+| D19 | 문서 간 | state 4.4 Mermaid에 `notification.status` `RUNNING` 없음(본문·ERD CHECK에는 있음) | 관리자 재처리 전이 추가 |
+| D20 | 문서 간 | `conversation_job_retry.status`(V19) 상태 표 없음, state 4.3이 관리자 재처리를 사용자 재시도와 같은 `retry()`로 기술 | 4.3에 관리자 세대 선점 행과 요청 상태 표 추가 |
+| D21 | 문서 간 | 루트 `MERGE_RESOLUTION_20261029.md`가 다른 PC 절대경로·"커밋 전" 상태의 인수인계 파일. 내용은 [웹 통합 PR](pr-web-develop-integration.md)에 있음 | 삭제 |
+
+### 4.4 API 변경
+
+없음. 코드 동작 변경은 웹 도달 불가 화면 제거와 compose 환경 변수뿐이다. OpenAPI는 실제 응답 선언·설명 정정만이다.
+
+### 4.5 아키텍처 원칙 정합성
+
+core·learning은 import를 레이어로 분류해 전수 검사, Python·웹은 grep으로 확인.
+
+지켜지는 원칙: 3장 3.7 표의 항목 유지. 추가 확인:
+- domain 파일의 Spring·Jackson·MyBatis 직접 import 0건, Presentation→Infrastructure 직접 import 0건(`_common/messaging` ACK 제외), `@Transactional`은 service·facade·`OutboxWriter(MANDATORY)`만
+- 트랜잭션 안 외부 호출 없음(1단계 호출까지): Google·토스·learning·ai·report HTTP, Redis 페어링·분석 사용량. `PremiumUsageClient`·`PaymentUsageClient`·learning `CoreClient`는 트랜잭션 비활성을 단언
+- 재시도: ai LLM 1회(1초)·되묻기 유출 재생성 1회만. provider SDK `max_retries=0`, report boto3 `total_max_attempts=1`
+- Outbox는 core·report만, `@RabbitListener` 3개 모두 `RetryingConsumer`, 수동 ACK·`missing-queues-fatal: false`
+- `ConversationRetryWorker`(#47)는 ShedLock 대신 메시지 행 잠금·조건부 UPDATE로 레플리카 간 1회 선점
+- 웹: 전역 상태 라이브러리 없음, access token 메모리 보관, `domain`이 `data`·`presentation`을 참조하지 않음, presentation의 `mocks`·raw `fetch` 참조 없음
+
+원칙과 다른 구현(이번에 수정하지 않음, 리팩터 범위 결정 필요):
+
+| # | 내용 | 원칙 | 근거 |
+|---|---|---|---|
+| A8 | domain이 `BusinessException(ErrorKind…)`을 던지고 `BusinessException`이 `HttpStatus` 필드를 가짐(간접 프레임워크 의존) | 2.1 Domain 프레임워크 의존 금지 | core `conversation/domain/Conversations.kt`, learning `answer/domain/AnswerContent.kt`·`attempt/domain/Attempt.kt`·`judgment/domain/Judgment.kt`·`mission/domain/Mission.kt`·`record/domain/Period.kt`, 양쪽 `_common/exception/BusinessException.kt` |
+| A9 | Infrastructure→Application 역참조 | 2.2 단방향 | core `notification/messaging/NotificationRedisPublisher.kt`가 `NotificationDeliveryService.record` 호출 |
+| A10 | 기능 간 controller·config 참조 | 2.2 기능 간은 service로만 | core 9개 컨트롤러가 `account.controller.AuthController.IDENTITY` 참조, `guardianship/service/StudentPinService`→`account.config.StudentDeviceProperties`, `_common/security/PublicAuthFilter`→account 기능, learning `attempt/controller/AttemptResponses.kt`·`record/controller/RecordResponses.kt`가 다른 기능 controller DTO 참조 |
+| A11 | report 기능 간 DB 직접 접근 | 2.1·2.2 | `query/service.py`가 generation 테이블로 직접 SQL, `generation/service.py`·`query/service.py`가 `deletion.state`의 DB 조회 직접 호출, `deletion/state.py`가 테이블·repository·generation/outbox 테이블 참조 |
+| A12 | ai 분석 에이전트 Application 계층 부재 | 2.2 계층 건너뛰기 금지 | `analysis_agent/router.py`가 `LearningClient` 생성·그래프 실행, `state.py`가 `tools`·`llm`·`versions` 참조 |
+| A13 | ai·scoring 소비자에 revision 조정 업무 로직, ai `versions.py`에 router·모델·상태 저장 혼재 | 2.1 Presentation 업무 로직 금지 | `ai-service/app/messaging/consumer.py`, `scoring-service/app/messaging/consumer.py`, `ai-service/app/versions.py` |
+| A14 | 웹 컴포넌트 API 직접 호출·서버 상태 직접 보관 | 3장 | `presentation/support/SupportResults.tsx`의 `apiFetch`, `parent/ParentPayments.tsx`(`PaymentResult`)·`BillingResult.tsx`의 `useState`·폴링, `domain/payment.ts`의 `sessionStorage` 접근 |
+| A15 | 설계 문서상 위치와 다른 구현 | 2.6 | learning `student.deleted` 소비가 `deletion/`이 아닌 `record/consumer`·`record/service`(빈 `deletion/` 폴더 잔존). 트리에 실제 위치 표기 |
+
+### 4.6 남은 공백
+
+| 대상 | 내용 |
+|---|---|
+| 오류 코드 문서 | 결제(약 30종: `PAYMENT_PG_UNAVAILABLE`·`PAYMENT_NOT_FOUND`·`SUBSCRIPTION_NOT_ACTIVE`·`REFUND_STATE_CHANGED`·`BILLING_KEY_REQUIRED` 등)·`QUEUE_MANAGEMENT_*`·`EVIDENCE_UNAVAILABLE`(410)·`SUPPORT_STATE_CONFLICT`·`LEARNING_STATS_UNAVAILABLE`·`ANALYSIS_USAGE_UNAVAILABLE`이 api-spec 1.3에 없음 |
+| 목업 계약 | `GET/PUT /students/me/preferences`(api-spec 3.12)는 백엔드 미구현 |
+| 종료 이슈 문구 | #171 종료 후 architecture "(예정, #171)", #184 종료 후 `tosspayments-checkout.md` "자동 종료하지 않음" 문구(과거 기록) |
+| 번호 체계 밖 절(#165) | architecture `### #46`·`## 이슈 #41`·`## 이슈 #132`·`### #47 관리자 대화 재처리`, erd `### #45`·`### #47 …`(2개)·`### 이슈 #41`·`### report_job_guard`, state 9장 아래 `### #48`·`### #46`·`### #47 REPORT`·`### 4.1 보완`, api-spec·sequence·class·ai 보고서의 이슈별 절 |
+| 보고서 정리 | `learning-frontend-alignment.md`의 다른 PC 절대경로, `pr-admin-screen-completion.md` 제목(H1) 없음, `issue-47-admin-operations.md`·`issue-46-support.md`의 #163 절 중복 |
+| 인프라·설계 차이 | 멘토링 결정(#211 Karpenter·#212 S3 Gateway, 열림)과 architecture의 Cluster Autoscaler·NAT 단독 기술 |
+| 테스트 공백 | ai `analysis_agent` 노드는 #138로 보강. 웹 `presentation` 화면·Playwright 스크립트는 여전히 수동 실행만 가능 |

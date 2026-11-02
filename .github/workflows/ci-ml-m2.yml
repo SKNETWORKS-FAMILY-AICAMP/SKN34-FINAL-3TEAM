@@ -1,0 +1,29 @@
+# ml/m2 (글 점수 모델) 린트·단위 테스트 (이슈 #142)
+# torch·transformers(수 GB)는 설치하지 않음 → train_545 관련 테스트는 건너뜀. AI Hub 데이터 없이 합성 데이터만 사용
+name: ci-ml-m2
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - "ml/m2/**"
+      - ".github/workflows/ci-ml-m2.yml"
+  pull_request:
+    paths:
+      - "ml/m2/**"
+      - ".github/workflows/ci-ml-m2.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ml/m2
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+      - run: uv venv --python 3.12
+      - run: uv pip install "pandas>=3.1.0" "scikit-learn>=1.9.1" "pytest>=9.2.0" "ruff==0.17.2"
+      - run: uv run --no-sync ruff check .
+      - run: uv run --no-sync ruff format --check .
+      - run: uv run --no-sync pytest -q

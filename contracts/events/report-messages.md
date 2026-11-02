@@ -13,7 +13,7 @@ routing key=type. 큐의 정확한 이름과 retry/DLQ는 기존 definitions.jso
 
 report.started는 weekly_report RUNNING 저장과 같은 트랜잭션의 Outbox에 저장한다. 완료/실패도 상태와 Outbox를 원자 저장한다. failureReason은 원문 없는 1~100자 대문자 오류 코드다. 모든 lifecycle 이벤트의 reportId는 시작 시 배정된 같은 UUID이며 core는 job/student/report 일치 여부를 대조한다. started 지연/유실 시 completed/failed가 QUEUED에서 바로 종료할 수 있다. 먼저 반영된 종료 상태는 이후 이벤트로 바꾸지 않는다. 같은 id의 재전달과 다른 id의 중복 전이 모두 1회만 반영한다.
 
-narrativeEnabled는 core의 현재 상품 권한 조회로 결정한다. 무료=false / 프리미엄=true이며 권한 조회 실패 시 명령을 발행하지 않고 명시적으로 실패한다. report는 NO_RECORD에서 true여도 AI를 호출하지 않는다. #47 관리자 재처리 접수에도 같은 계산을 연결해야 한다.
+narrativeEnabled는 core의 현재 상품 권한 조회로 결정한다. 무료=false / 프리미엄=true이며 권한 조회 실패 시 명령을 발행하지 않고 명시적으로 실패한다. report는 NO_RECORD에서 true여도 AI를 호출하지 않는다. #47 관리자 재처리 접수도 같은 계산을 사용한다(`ReportAdminRetryService`).
 
 이 문서는 #42 v1 계약이며, report-service의 소비·발행 codec·생성 파이프라인과 ai 서술 API가 develop에 구현되어 있다. 각 검증의 실제 서비스/대역 범위는 report 검증 보고서를 따른다.
 

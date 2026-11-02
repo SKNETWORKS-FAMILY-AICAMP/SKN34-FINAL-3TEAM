@@ -285,8 +285,18 @@ stateDiagram-v2
 | → `QUEUED` | `POST /conversations/{id}/messages` | `ConversationService.startMessage` | UK `(conversation_id, seq)` |
 | `QUEUED → RUNNING` | ai 호출 직전 | `ConversationMessage.start()` | `WHERE status='QUEUED'` + `job_execution(RUNNING)` |
 | `RUNNING → COMPLETED` | `result`·`clarification` 이벤트 | `complete(...)`·`clarify(...)` | `WHERE status='RUNNING'`, 확정 답변·`message_evidence` 같은 트랜잭션 |
-| `RUNNING → FAILED` | `error` 이벤트·예외·단절 | `fail(code)` | `failure_code` (`AI_UNAVAILABLE`·`CLIENT_DISCONNECTED`). 대조 실패·LLM 장애는 규칙 응답으로 `COMPLETED` (P16) |
-| `FAILED → RUNNING` | `/messages/{id}/retry`, `/admin/jobs/{id}/retry` | `retry()` | `WHERE status='FAILED'`, `retry_count + 1` |
+| `RUNNING → FAILED` | `error` 이벤트·예외·단절 | `fail(code)` | `failure_code` (`AI_UNAVAILABLE`·`STREAM_INTERRUPTED` 등). 대조 실패·LLM 장애는 규칙 응답으로 `COMPLETED` (P16) |
+| `FAILED → RUNNING` | `/messages/{id}/retry` | `retry()` | `WHERE status='FAILED'`, `retry_count + 1` |
+| `FAILED → RUNNING` (관리자, #47) | `/admin/jobs/{id}/retry` | `ConversationService.prepareAdminRetry` | 접수 트랜잭션에서 새 세대(`retry_count + 1`)로 선점하고 `conversation_job_retry`에 `QUEUED` 요청 저장. 실행은 `ConversationRetryWorker`가 같은 세대만 이어받고, 늦은 세대 결과는 현재 실행을 덮어쓰지 않음 |
+
+#### `conversation_job_retry.status` (관리자 대화 재처리 요청, V19)
+
+| 전이 | 트리거 | 담당 | 조건 |
+|---|---|---|---|
+| → `QUEUED` | 관리자 재처리 접수 | `ConversationAdminRetryService.request` | UK `(message_id, generation)`·`(requested_by, idempotency_key)` |
+| `QUEUED → RUNNING` | 작업자 선점 | `ConversationAdminRetryService.claim` | `WHERE status='QUEUED'` + 접수 130초 이내, `job_execution(RUNNING)` |
+| `QUEUED·RUNNING → COMPLETED·FAILED` | 실행 결과·실행 전 거절 | `finish`(결과와 같은 트랜잭션) | `WHERE status IN ('QUEUED','RUNNING')` |
+| `QUEUED·RUNNING → FAILED` | 130초 만료·학생 삭제 | `ConversationRetryWorker`(`STREAM_INTERRUPTED`)·`beforeStudentDeletion`(`STUDENT_DELETED`) | 자동 AI 재실행 없음 |
 
 - `answer` 컬럼에는 대조 통과한 확정 답변 또는 규칙 응답 템플릿(`source = TEMPLATE`)만 저장 (`delta` 임시 텍스트 미저장)
 
@@ -298,6 +308,9 @@ stateDiagram-v2
     [*] --> N_QUEUED: 리포트 전이 트랜잭션에서 저장 (UK 중복·수신 거부 시 생성 안 함)
     N_QUEUED --> N_COMPLETED: 커밋 후 Redis 발행 성공
     N_QUEUED --> N_FAILED: 발행 실패 (REDIS_PUBLISH_FAILED)
+    N_FAILED --> N_RUNNING: 관리자 재처리 선점 (#47)
+    N_RUNNING --> N_COMPLETED: 재발행 성공
+    N_RUNNING --> N_FAILED: 재발행 실패
     N_COMPLETED --> [*]
     N_FAILED --> [*]
   }

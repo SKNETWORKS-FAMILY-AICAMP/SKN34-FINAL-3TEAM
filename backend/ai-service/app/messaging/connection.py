@@ -1,7 +1,8 @@
 """RabbitMQ 연결.
 
 브로커 장애 시 프로세스를 종료하지 않고 재연결 시도, 상태는 readiness로 노출 (아키텍처 1.6).
-큐·exchange 선언은 definitions.json만 담당, 서비스 코드에서 선언하지 않음.
+큐·exchange 선언은 definitions.json 담당.
+예외: Pod별 exclusive·auto-delete 큐는 consumer.py가 선언 (아키텍처 1.6).
 """
 
 import asyncio
