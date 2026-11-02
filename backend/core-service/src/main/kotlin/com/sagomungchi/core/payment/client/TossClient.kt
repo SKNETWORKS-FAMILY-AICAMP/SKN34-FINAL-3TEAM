@@ -45,12 +45,15 @@ interface TossGateway {
 
 @Component
 class TossClient internal constructor(private val json: ObjectMapper, private val secret: String,
-    private val billingSecret: String, private val http: HttpClient, private val widgetSecret: String = ""): TossGateway {
+    private val billingSecret: String, private val http: HttpClient, private val widgetSecret: String = "",
+    private val baseUrl: String = "https://api.tosspayments.com"): TossGateway {
     @Autowired constructor(json: ObjectMapper,
         @Value("\${app.payment.toss-secret:}") secret: String,
         @Value("\${app.payment.toss-billing-secret:}") billingSecret: String,
-        @Value("\${app.payment.toss-widget-secret:}") widgetSecret: String = "") :
-        this(json, secret, billingSecret, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build(), widgetSecret)
+        @Value("\${app.payment.toss-widget-secret:}") widgetSecret: String = "",
+        // 로컬·CI E2E에서만 toss-stub으로 재정의 (#246)
+        @Value("\${app.payment.toss-base-url:https://api.tosspayments.com}") baseUrl: String = "https://api.tosspayments.com") :
+        this(json, secret, billingSecret, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build(), widgetSecret, baseUrl)
     private val circuitConfig = CircuitBreakerConfig.custom()
         .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
         .slidingWindowSize(20).minimumNumberOfCalls(20).failureRateThreshold(50f)
@@ -97,7 +100,7 @@ class TossClient internal constructor(private val json: ObjectMapper, private va
         val credential = if(billing) billingSecret else secret.ifBlank { widgetSecret }
         if(!(credential.startsWith("test_sk_") || (!billing && credential.startsWith("test_gsk_")))) unavailable()
         return try {
-            val request = HttpRequest.newBuilder(URI.create("https://api.tosspayments.com$path"))
+            val request = HttpRequest.newBuilder(URI.create(baseUrl.trimEnd('/') + path))
                 .timeout(timeout).header("Authorization","Basic " + Base64.getEncoder().encodeToString("$credential:".toByteArray()))
                 .header("Content-Type","application/json")
             key?.let { request.header("Idempotency-Key",it.toString()) }
