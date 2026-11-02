@@ -1,0 +1,84 @@
+# 실서버 E2E 전용 오버레이 (#246): 외부 의존(Google·LLM·토스)을 infrastructure/stubs 대역으로 교체, 합성 시드 적용
+# 실행: docker compose -p sagomungchi-e2e --env-file infrastructure/stubs/e2e.env \
+#         -f compose.yaml -f compose.minio.yaml -f compose.e2e.yaml \
+#         up -d --build --wait core-service learning-service ai-service report-api report-worker
+# 종료: 같은 옵션으로 down -v. 인프라 포트가 고정이라 기본 compose 스택과 동시 실행 불가
+services:
+  google-stub:
+    build: ./infrastructure/stubs/google-stub
+    environment:
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?e2e.env 필요}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?e2e.env 필요}
+
+  llm-stub:
+    build: ./infrastructure/stubs/llm-stub
+
+  toss-stub:
+    build: ./infrastructure/stubs/toss-stub
+    environment:
+      TOSS_TEST_MID: ${TOSS_TEST_MID:?e2e.env 필요}
+      TOSS_TEST_BILLING_MID: ${TOSS_TEST_BILLING_MID:?e2e.env 필요}
+      TOSS_TEST_BILLING_SECRET_KEY: ${TOSS_TEST_BILLING_SECRET_KEY:?e2e.env 필요}
+
+  # 동의 문서·상품·관리자(core_db)와 기존 데모 미션(learning_db) 적용
+  e2e-seed:
+    image: postgres:17.11-alpine
+    depends_on:
+      core-migrate:
+        condition: service_completed_successfully
+      learning-migrate:
+        condition: service_completed_successfully
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      FREE_PRODUCT_ID: ${PAYMENT_FREE_PRODUCT_ID:?e2e.env 필요}
+    volumes:
+      - ./frontend/web/tests/e2e/seed/core.sql:/seed/core.sql:ro
+      - ./backend/learning-service/db/seed/demo_missions.sql:/seed/demo_missions.sql:ro
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - >-
+        psql -v ON_ERROR_STOP=1 -v free_product_id="$$FREE_PRODUCT_ID" -d core_db -f /seed/core.sql &&
+        psql -v ON_ERROR_STOP=1 -d learning_db -f /seed/demo_missions.sql
+
+  core-service:
+    depends_on:
+      e2e-seed:
+        condition: service_completed_successfully
+      google-stub:
+        condition: service_healthy
+      toss-stub:
+        condition: service_healthy
+    environment:
+      APP_AUTH_GOOGLETOKENURL: http://google-stub:8080/token
+      APP_AUTH_GOOGLEJWKURL: http://google-stub:8080/jwks
+      TOSS_API_BASE_URL: http://toss-stub:8080
+
+  # 실제 LLM 키가 셸 환경에 있어도 쓰이지 않도록 고정
+  ai-service:
+    depends_on:
+      llm-stub:
+        condition: service_healthy
+    environment:
+      LLM_PROVIDER: openai
+      OPENAI_BASE_URL: http://llm-stub:8080/v1
+      OPENAI_API_KEY: ""
+      OPENAI_MODEL: e2e-stub
+      OPENAI_JSON_MODE: json_schema
+      ANTHROPIC_API_KEY: ""
+
+  learning-service:
+    depends_on:
+      e2e-seed:
+        condition: service_completed_successfully
+
+  report-api:
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+  report-worker:
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
