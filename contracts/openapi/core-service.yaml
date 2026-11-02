@@ -179,6 +179,8 @@ paths:
           description: 역할·scope 오류
         '404':
           description: 활성 연결 없음
+        '409':
+          description: 학생 삭제 진행·비활성(`STUDENT_UNAVAILABLE`)
   /students/me/sharing-preferences:
     get:
       tags: [Students]

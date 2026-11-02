@@ -1,7 +1,7 @@
 package com.sagomungchi.core.report.domain
 
 import com.sagomungchi.core._common.exception.BusinessException
-import org.springframework.http.HttpStatus
+import com.sagomungchi.core._common.exception.ErrorKind
 
 data class ReportTemplateSettings(
     val sectionOrder: List<String> = SECTIONS,
@@ -12,7 +12,7 @@ data class ReportTemplateSettings(
         if (sectionOrder.size != SECTIONS.size || sectionOrder.toSet() != SECTIONS.toSet() ||
             highlightMetrics.size != highlightMetrics.toSet().size ||
             !METRICS.containsAll(highlightMetrics) || tone !in setOf("DEFAULT", "EASY", "CONCISE"))
-            throw BusinessException(HttpStatus.BAD_REQUEST, "INVALID_TEMPLATE_SETTINGS", "허용되지 않은 리포트 설정입니다.")
+            throw BusinessException(ErrorKind.INVALID, "INVALID_TEMPLATE_SETTINGS", "허용되지 않은 리포트 설정입니다.")
         return this
     }
     companion object {

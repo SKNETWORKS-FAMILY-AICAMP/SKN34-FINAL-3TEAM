@@ -204,7 +204,7 @@ export const studentHandlers = [
       return { ...h, resume: h.resume ? wireAttempt(h.resume) : null }
     }),
   ),
-  // 꾸미기 설정 (API 명세 3.12 목업 계약): 학생 토큰 전용
+  // 꾸미기 설정 (API 명세 3.12, core #234와 같은 계약): 학생 토큰 전용
   http.get('/api/v1/students/me/preferences', ({ request }) =>
     respond(async () => {
       guard(request)

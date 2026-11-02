@@ -44,7 +44,7 @@ networkPolicy:
       ports: [{protocol: TCP, port: 5432}]
 migration:
   enabled: true
-  revision: "20261030-04"
+  revision: "20261102-05"
   image:
     repository: sagomungchi/report-service
     tag: local

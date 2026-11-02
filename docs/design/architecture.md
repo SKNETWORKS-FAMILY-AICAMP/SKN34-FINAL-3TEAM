@@ -226,7 +226,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ config/
 │  ├─ exception/
 │  ├─ security/
-│  ├─ messaging/                 # 이벤트 봉투, OutboxRelay, 멱등 소비
+│  ├─ messaging/                 # 이벤트 봉투, OutboxRelay, 멱등 소비, 이벤트 감사 기록·보존 정리(EventAuditConsumer·EventRetentionCleanup, #208)
 │  ├─ json/                      # JsonObject: domain이 드는 jsonb 객체 값 (#168)
 │  ├─ persistence/               # MyBatis 설정·PostgreSQL 타입 핸들러
 │  └─ web/                       # IdempotencyService, SseEmitters (core만)
@@ -394,6 +394,7 @@ backend/ai-service/
 │  │  ├─ calculators.py
 │  │  ├─ verification.py         # 답변 숫자·인용 ↔ 조회·계산 결과 대조
 │  │  ├─ templates.py            # 규칙 응답
+│  │  ├─ template_settings.py    # 리포트 표시 설정 제안 (#209)
 │  │  └─ prompts.py
 │  ├─ report_narrative/
 │  │  ├─ router.py
@@ -471,7 +472,7 @@ Python (report)
 backend/report-service/
 ├─ app/
 │  ├─ main.py                    # report-api 진입점 (조회 API)
-│  ├─ worker.py                  # report-worker 진입점 (report.generate·student.deleted 소비)
+│  ├─ worker.py                  # report-worker 진입점 (report.generate·student.deleted 소비, 발행·처리 기록 보존 정리 #208)
 │  ├─ bootstrap.py
 │  ├─ config.py
 │  ├─ errors.py
@@ -488,6 +489,7 @@ backend/report-service/
 │  │  ├─ metrics.py
 │  │  ├─ verifier.py
 │  │  ├─ presentation.py         # 조회·파일 렌더링 공통 조립
+│  │  ├─ template_settings.py    # 리포트 표시 설정 검증·적용 (#209)
 │  │  ├─ reconciliation.py       # core 상태 복구 대조 (#132)
 │  │  ├─ router.py               # 복구 대조 내부 API (#132)
 │  │  ├─ locking.py              # 작업별 session 잠금
@@ -579,7 +581,7 @@ backend/report-service/
   - 설계 구성 요소(ALB LB Controller, IRSA, EBS CSI, Cluster Autoscaler, ECR, Secrets Manager) AWS 기본 연동
   - control plane HA·etcd 백업·업그레이드를 AWS가 관리 → 12/7 일정 내 운영 부담 제거
   - 자체 구축도 control plane EC2 필요 → 비용 차이 작음 (EKS 수수료 $0.10/시간)
-- 구성: eksctl(`infrastructure/eks/`), 관리형 노드그룹 2개(4.3), EKS add-on(VPC CNI·CoreDNS·kube-proxy·EBS CSI), IRSA, LB Controller·Cluster Autoscaler는 Argo CD `addons/prod/`
+- 구성: eksctl(`infrastructure/eks/`), 관리형 노드그룹 2개(4.3), EKS add-on(VPC CNI·CoreDNS·kube-proxy·EBS CSI), IRSA, LB Controller·Cluster Autoscaler는 Argo CD prod 앱(예정, 5장 `argocd/prod/`)
 - 비용 절감
   - 데모 외 기간: 노드그룹 최소값 축소 또는 클러스터 삭제 후 eksctl 재생성
   - `platform-observability` 노드그룹 Spot 적용
@@ -595,7 +597,7 @@ backend/report-service/
 - 외부 호출(LLM API·토스페이먼츠): Pod → NAT GW → Internet GW
 - Namespace: `app`(core·learning·ai·scoring·report), `platform`(RabbitMQ·Redis), `observability`, `argocd`
 - 노드그룹: `application`, `platform-observability` 분리 (참고 레포 2그룹 구성 계승)
-- NetworkPolicy: 기본 거부 + 아래 허용만 (호출 관계는 [API 명세서](api-spec.md) 4장). #171 브랜치에 공통 앱 chart·local Ingress·app/platform/observability NetworkPolicy 정의를 추가했다. 전용 kind의 합성 Pod로 core·scoring의 일부 platform 허용·차단을, 실제 core Pod로 공개 `/api` 전달과 외부 `/internal` 차단을 확인했다. 실제 scoring Pod는 core 활성 목록 조회와 MinIO 모델 버킷 접근에 성공했으며 빈 활성 목록에서 Ready였다. 실제 앱 전체 호출 표와 운영 값 접합은 남아 있다([검증 범위](../report/issue-171-app-deployment.md)).
+- NetworkPolicy: 기본 거부 + 아래 허용만 (호출 관계는 [API 명세서](api-spec.md) 4장). #171(PR #204 병합)로 공통 앱 chart·local Ingress·app/platform/observability NetworkPolicy 정의를 추가했다. 전용 kind의 합성 Pod로 core·scoring의 일부 platform 허용·차단을, 실제 core Pod로 공개 `/api` 전달과 외부 `/internal` 차단을 확인했다. 실제 scoring Pod는 core 활성 목록 조회와 MinIO 모델 버킷 접근에 성공했으며 빈 활성 목록에서 Ready였다. 실제 앱 전체 호출 표와 운영 값 접합은 남아 있다([검증 범위](../report/issue-171-app-deployment.md)).
 
 | 대상 | ingress 허용 | egress 허용 |
 |---|---|---|
@@ -610,10 +612,10 @@ backend/report-service/
   - 전 Pod 공통 egress: kube-dns(53), OTel Collector·Langfuse(`observability`)
   - report-api·report-worker는 라벨이 달라 허용 대상에 각각 명시
   - learning·report-worker → core는 삭제 완료 보고(`/internal/deletion-requests/.../completions`)만 사용 (P09)
-  - migration-job: RDS egress / local: LLM API·토스 대신 `<target>-stub` Service로 egress
+  - migration-job: RDS egress / local: LLM API·토스 stub는 compose E2E 전용이며 kind에는 없음(4.1)
 
 ### 4.4 확장
-- #171 브랜치에 HPA·KEDA·PDB 템플릿과 local report-worker KEDA 0–1 설정을 추가했다. 전용 kind의 합성 worker로 두 큐 각각의 0→1→0 확장, 합성 CPU Pod로 HPA 1→2와 PDB 허용 중단 수 변화를 확인했다. 실제 AI Pod 2개의 Ready·버전 일치·core 초기 조회 실패 후 복구·Rabbit 재연결도 확인했으나 HPA에 의한 실제 앱 확장과 진행 중 SSE 종료는 미검증이다. local 상시 값의 HPA·PDB는 자원 한도로 비활성화한다. Cluster Autoscaler의 EKS 구성은 #185 범위다. 아래는 제품 설계 기준
+- #171(PR #204 병합)로 HPA·KEDA·PDB 템플릿과 local report-worker KEDA 0–1 설정을 추가했다. 전용 kind의 합성 worker로 두 큐 각각의 0→1→0 확장, 합성 CPU Pod로 HPA 1→2와 PDB 허용 중단 수 변화를 확인했다. 실제 AI Pod 2개의 Ready·버전 일치·core 초기 조회 실패 후 복구·Rabbit 재연결도 확인했으나 HPA에 의한 실제 앱 확장과 진행 중 SSE 종료는 미검증이다. local 상시 값의 HPA·PDB는 자원 한도로 비활성화한다. Cluster Autoscaler의 EKS 구성은 #185 범위다. 아래는 제품 설계 기준
 - HPA(CPU): core, learning, ai, scoring, report-api — 최소 2(scoring은 메모리 고려해 최소 1, report-api 최소 1), PDB `minAvailable: 1`
 - **KEDA(RabbitMQ 큐 길이)**: report-worker — 0~N 확장, EDA와 K8s 연계 지점
   - report 조회 API는 core가 동기 호출하므로 0으로 줄지 않는 `report-api`로 분리 (같은 이미지, 진입점만 다름). core `ReportClient` 대상 Service = report-api
@@ -628,11 +630,11 @@ backend/report-service/
 ### 4.5 CI/CD
 - GitHub Actions: 경로 필터로 변경 서비스만 테스트·빌드 → GHCR/ECR 푸시(OIDC로 AWS 인증). 현재는 테스트·빌드까지, 푸시·태그 갱신은 예정
 - `infrastructure/gitops/environments/<env>/` 이미지 태그 갱신 커밋 → Argo CD 자동 동기화
-- #171 브랜치에 local 앱·KEDA·NetworkPolicy·관측 Application 등록 정의를 추가했다. 전용 kind의 Argo CD v3.5.5에서 KEDA·platform 정책·관측·metrics-server·여섯 앱의 하위 Application을 feature ref로 수동 sync해 실제 Pod와 선행 migration Job을 확인했다. root와 하위 Git 참조는 시험을 위해 서로 달라 root는 OutOfSync이며, 병합 뒤 `develop` 참조의 재동기화는 남아 있다. 이미지 게시·승인 흐름은 #186 범위다
+- #171(PR #204 병합)로 local 앱·KEDA·NetworkPolicy·관측 Application 등록 정의를 추가했다. 전용 kind의 Argo CD v3.5.5에서 KEDA·platform 정책·관측·metrics-server·여섯 앱의 하위 Application을 feature ref로 수동 sync해 실제 Pod와 선행 migration Job을 확인했다. root와 하위 Git 참조는 시험을 위해 서로 달라 root는 OutOfSync이며, 병합 뒤 `develop` 참조의 재동기화는 남아 있다. 이미지 게시·승인 흐름은 #186 범위다
 - Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret (LLM·토스 키는 저장소에 미포함, NFR-SEC-04)
 
 ### 4.6 관측
-- #171 브랜치의 local 관측 chart에서 전용 kind Collector·Prometheus·Grafana가 기동했고, 합성 OTLP gauge의 Collector 수신→Prometheus 값 조회, RabbitMQ scrape와 Grafana datasource 등록을 확인했다. 공통 앱 chart의 Java agent로 실제 core·learning JVM/HTTP metrics도 `exported_job` 라벨을 대조해 조회했다. AI에는 기본 비활성 Langfuse v4 LLM 계측을 추가했다. scoring·report exporter와 Langfuse backend·trace 저장은 아직 없고, AI의 실제 trace 저장·조회도 미검증이다. `traceparent` 헤더와 AI 사용량 이벤트 봉투는 연결했으며 서비스 간 단일 trace 저장 검증은 남아 있다
+- #171(PR #204 병합) local 관측 chart에서 전용 kind Collector·Prometheus·Grafana가 기동했고, 합성 OTLP gauge의 Collector 수신→Prometheus 값 조회, RabbitMQ scrape와 Grafana datasource 등록을 확인했다. 공통 앱 chart의 Java agent로 실제 core·learning JVM/HTTP metrics도 `exported_job` 라벨을 대조해 조회했다. AI에는 기본 비활성 Langfuse v4 LLM 계측을 추가했다. scoring·report exporter와 Langfuse backend·trace 저장은 아직 없고, AI의 실제 trace 저장·조회도 미검증이다. `traceparent` 헤더와 AI 사용량 이벤트 봉투는 연결했으며 서비스 간 단일 trace 저장 검증은 남아 있다
 - Langfuse: LLM 호출·토큰·비용·trace
 - OpenTelemetry → Prometheus + Grafana: 서비스 지표, 큐 길이·DLQ 적재량, 판정·피드백·리포트 처리 지연
 - 경보: Grafana Alerting → 팀 디스코드 웹훅. 오류율·지연·작업 적체·월 LLM 비용 예산 80% 도달, 담당은 인프라 1명 + 서비스별 담당 (P10, P13)
@@ -686,8 +688,9 @@ SKN34-FINAL-3TEAM/
 ├─ infrastructure/
 │  ├─ gitops/
 │  │  ├─ charts/
-│  │  │  ├─ app-service/         # 공통 서비스 chart (#171, kind 검증 대기)
+│  │  │  ├─ app-service/         # 공통 서비스 chart (#171)
 │  │  │  │  ├─ templates/
+│  │  │  │  │  ├─ _helpers.tpl
 │  │  │  │  │  ├─ deployment.yaml
 │  │  │  │  │  ├─ service.yaml
 │  │  │  │  │  ├─ serviceaccount.yaml          # IRSA (S3 접근 서비스)
@@ -696,15 +699,19 @@ SKN34-FINAL-3TEAM/
 │  │  │  │  │  ├─ triggerauthentication.yaml   # KEDA RabbitMQ 인증
 │  │  │  │  │  ├─ pdb.yaml
 │  │  │  │  │  ├─ networkpolicy.yaml
-│  │  │  │  │  ├─ externalsecret.yaml
+│  │  │  │  │  ├─ namespace-default-deny.yaml
+│  │  │  │  │  ├─ migration-networkpolicy.yaml
 │  │  │  │  │  ├─ ingress.yaml
-│  │  │  │  │  └─ migration-job.yaml           # Argo CD PreSync hook
-│  │  │  │  └─ values.yaml
+│  │  │  │  │  ├─ migration-job.yaml           # Argo CD PreSync hook (이름에 values `migration.revision` 포함)
+│  │  │  │  │  └─ externalsecret.yaml          # (예정) 운영 Secrets Manager 연동
+│  │  │  │  ├─ values.yaml
+│  │  │  │  └─ values.schema.json
 │  │  │  ├─ platform-data/       # RabbitMQ·Redis (+ 로컬 전용 PostgreSQL·MinIO)
 │  │  │  │  ├─ templates/
 │  │  │  │  ├─ files/
 │  │  │  │  │  ├─ rabbitmq/
 │  │  │  │  │  │  └─ definitions.json      # exchange·queue·DLX 단일 기준
+│  │  │  │  │  ├─ minio/                  # 로컬 버킷 생성
 │  │  │  │  │  └─ postgres/
 │  │  │  │  │     └─ init.sql              # 로컬 전용 서비스별 DB 생성
 │  │  │  │  └─ values.yaml
@@ -713,28 +720,31 @@ SKN34-FINAL-3TEAM/
 │  │  │     └─ values.yaml
 │  │  ├─ environments/           # 앱별 values·이미지 태그
 │  │  │  ├─ local/
-│  │  │  │  ├─ core-service.yaml     # #171 브랜치 local 앱별 values, 기동 검증 대기
+│  │  │  │  ├─ core-service.yaml     # local 앱별 values (#171). 마이그레이션 추가 시 `migration.revision` 갱신(scripts/tests 검사)
 │  │  │  │  ├─ learning-service.yaml
 │  │  │  │  ├─ ai-service.yaml
 │  │  │  │  ├─ scoring-service.yaml
 │  │  │  │  ├─ report-api.yaml
 │  │  │  │  ├─ report-worker.yaml
-│  │  │  │  ├─ <target>-stub.yaml
 │  │  │  │  ├─ platform-data.yaml
 │  │  │  │  └─ observability.yaml     # local metrics 기반, Langfuse 제외
 │  │  │  └─ prod/                # (예정) local과 동일 구성, stub 제외
-│  │  └─ argocd/                 # local 앱 등록 정의 추가, sync 검증 대기
+│  │  ├─ migrations/             # core·learning Flyway PreSync 이미지 Dockerfile
+│  │  ├─ policies/
+│  │  │  └─ local/platform.yaml  # platform namespace NetworkPolicy
+│  │  └─ argocd/
 │  │     ├─ local/
-│  │     │  └─ root-app.yaml     # kind Argo CD 진입점
-│  │     ├─ prod/
-│  │     │  └─ root-app.yaml     # EKS Argo CD 진입점
-│  │     ├─ apps/
-│  │     │  └─ applicationset.yaml  # env 파라미터로 environments/<env>/* Application 생성
-│  │     └─ addons/              # 외부 Helm chart
-│  │        ├─ common/           # KEDA
-│  │        └─ prod/             # External Secrets·AWS LB Controller·Cluster Autoscaler
+│  │     │  ├─ root-app.yaml     # kind Argo CD 진입점
+│  │     │  └─ apps/
+│  │     │     ├─ applicationset.yaml  # environments/local/* Application 생성
+│  │     │     ├─ keda.yaml
+│  │     │     ├─ metrics-server.yaml
+│  │     │     ├─ observability.yaml
+│  │     │     └─ platform-network.yaml
+│  │     └─ prod/                # (예정) EKS Argo CD 진입점, External Secrets·AWS LB Controller·Cluster Autoscaler
 │  ├─ kind/
-│  │  └─ local.yaml              # kind 클러스터 설정
+│  │  ├─ local.yaml              # kind 클러스터 설정
+│  │  └─ *-issue-171*·hpa-check-values.yaml  # #171 전용 kind 검증 자료
 │  ├─ eks/                       # (예정) eksctl 클러스터·노드그룹·IRSA·StorageClass
 │  ├─ aws/                       # (예정) eksctl 범위 밖 자원: RDS·S3·CloudFront·ECR·Secrets Manager·GitHub OIDC IAM (도구 미정)
 │  └─ stubs/                     # compose.e2e.yaml 전용 대역, e2e.env(합성 값)
@@ -745,10 +755,12 @@ SKN34-FINAL-3TEAM/
 │     ├─ _spring.yml             # 재사용 워크플로: 테스트→빌드 (푸시·태그 갱신은 예정)
 │     ├─ _python.yml
 │     ├─ _web.yml
-│     ├─ ci-<service>.yml        # 서비스·stub별 경로 필터(<경로>/**, contracts/**) → 재사용 워크플로 호출
+│     ├─ ci-<service>.yml        # 서비스별 경로 필터(<경로>/**와 해당 서비스 계약 파일; learning·web은 자기 경로만) → 재사용 워크플로 호출
 │     ├─ ci-db-schema.yml        # 마이그레이션 적용·ERD 대조 (scripts/check_db_migrations.py)
-│     ├─ ci-contracts.yml        # 저장소 계약 회귀·core 실제 테스트 산출물 대조 (#143); asyncapi 검사는 미구현
-│     └─ e2e.yml                 # 실서버 E2E: 수동·야간·E2E 구성 변경 PR (#246)
+│     ├─ ci-contracts.yml        # 저장소 계약 회귀·core 실제 테스트 산출물 대조 (#143·#237); asyncapi 검사는 미구현
+│     ├─ ci-gitops.yml           # chart lint·렌더·스키마 검증, migration 이미지 빌드 (#238)
+│     ├─ ci-ml-m1.yml · ci-ml-m2.yml  # ml/m1·ml/m2 ruff·pytest
+│     └─ e2e.yml                 # 실서버 E2E: 수동·E2E 구성 변경 PR (#246). 야간 schedule은 기본 브랜치(main)에 병합된 뒤부터 동작
 ├─ docs/
 │  ├─ README.md                  # 개발 규칙
 │  ├─ design/                    # 아키텍처·기능명세·API 명세 등 설계 문서

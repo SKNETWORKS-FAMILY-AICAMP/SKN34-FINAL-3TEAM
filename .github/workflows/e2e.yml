@@ -1,5 +1,5 @@
 # 실서버 브라우저 E2E (#246): compose 전체 스택 + infrastructure/stubs 대역(Google·LLM·토스), 실제 키·secrets 미사용
-# 실행 시점: 수동, 매일 03:00 KST(develop), E2E 구성 파일을 바꾼 PR
+# 실행 시점: 수동, E2E 구성 파일을 바꾼 PR, 매일 03:00 KST(schedule은 기본 브랜치 main에 이 파일이 병합된 뒤부터 main 기준으로 실행)
 name: e2e
 
 on:

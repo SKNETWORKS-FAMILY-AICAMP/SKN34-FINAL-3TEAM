@@ -76,7 +76,7 @@
 | `NOT_FOUND` | 404 | 리소스 없음 |
 | `DATA_UNAVAILABLE` | 410 / 503 | 삭제된 근거 → "이용 불가" 표시(410), report 원문 조회·파일 저장소 장애는 재시도 가능한 503 |
 | `DELETION_IN_PROGRESS` | 409 | report 학생 삭제가 진행 중이므로 리포트 조회를 잠시 차단(core가 같은 코드로 전달), core 자녀 삭제 요청이 이미 진행 중 (5.6) |
-| `VALIDATION_FAILED` | 400 | 형식 오류 (`errors[]`에 필드별 사유) |
+| `VALIDATION_FAILED` | 400 / 422 | 형식 오류 (`errors[]`에 필드별 사유). 형식은 맞지만 업무 규칙에 어긋난 PIN(3.11)·꾸미기 선택값(3.12)은 422 |
 | `ANSWER_INCOMPLETE` | 422 | 필요한 선택·입력 누락 (FN-LRN-04) |
 | `ANSWER_INAPPROPRIATE` | 422 | 학생이 쓴 답변(최초·보완)에 욕설·비속어·성적·혐오·위협 표현이나 연락처(전화번호·이메일) → 저장·판정 요청 없이 차단. `detail`은 범주별 고정 안내 문구, 걸린 단어·원문은 응답에 넣지 않음 (#205) |
 | `IDEMPOTENCY_KEY_REUSED` | 422 | 같은 키에 다른 요청 본문 |
@@ -115,6 +115,23 @@
 | `JOB_RETRY_UNAVAILABLE` / `JOB_RETRY_OUTCOME_UNKNOWN` | 503 | 재처리를 지원하지 않는 작업 종류 / 알림 재처리 후 결과 상태 미확정 (2.8) |
 | `RATE_LIMITED` / `STUDENT_AUTH_UNAVAILABLE` | 429 / 503 | 기기 등록·페어링 발급 10분 한도 초과 / 기기·페어링 저장소(Redis) 장애 (3.11) |
 | `REAUTH_PENDING` | 409 | Google 재인증 callback 전에 재인증 토큰 수령 시도 (5.6) |
+| `STUDENT_RECORDS_PRIVATE` / `STUDENT_UNAVAILABLE` / `STUDENT_DELETED` | 403 / 409 / 409 | 학생이 학부모 공개를 끈 기록·비교 조회(#206) / 학생 삭제 진행·비활성(꾸미기·공개 설정·리포트 설정 내부 조회) / 삭제 차단된 학생의 리포트 생성(관리자 재처리) |
+| `INVALID_TEMPLATE_SETTINGS` / `TEMPLATE_PROPOSAL_EXPIRED` | 400 / 409 | 리포트 표시 설정 값 오류 / 다른 대화·만료·덮어쓴 변경안 확정, 설정 revision 변경 (#209) |
+| `ANALYSIS_IN_PROGRESS` / `EVIDENCE_UNAVAILABLE` / `AI_INVALID_RESPONSE` | 409 / 410 / 502 | 같은 대화에서 분석 생성 중 / 삭제된 분석 근거 / ai 응답 형식 오류 (2.4) |
+| `REPORT_PREMIUM_REQUIRED` / `REPORT_JOB_IDENTITY_MISMATCH` | 403 / 409 | 무료 이용권에서 프리미엄 리포트 항목 요청 / report 복구 응답의 작업 식별자 불일치 (5.9) |
+| `SUPPORT_STATE_CONFLICT` / `CORRECTION_TARGET_UNSUPPORTED` | 409 / 422 | 신고·문의 처리 상태 전이 위반·완료 답변 변경 / 정정할 수 없는 신고 대상 (5.7) |
+| `CORRECTION_REPORT_CONFLICT` / `JUDGMENT_STATE_CONFLICT` | 409 | learning: 같은 신고로 이미 정정함 / 판정 처리 상태 충돌 (5.7) |
+| `MISSION_VERSION_CONFLICT` / `CONFLICT` | 409 | learning 미션 버전 충돌 / 현재 미션 상태에서 허용되지 않는 전이 (2.8 #47 미션 운영) |
+| `ADMIN_MISSIONS_UNAVAILABLE` / `MISSION_AUDIT_UNAVAILABLE` / `LEARNING_STATS_UNAVAILABLE` / `LEARNING_REQUEST_FAILED` | 503 / 503 / 503 / learning 상태 | core 관리자 미션·감사·통계 조회의 learning 실패 / 허용 목록 밖 learning 오류 코드 대체 (2.8) |
+| `QUEUE_MANAGEMENT_NOT_CONFIGURED` / `QUEUE_MANAGEMENT_UNAVAILABLE` / `QUEUE_MANAGEMENT_TIMEOUT` / `QUEUE_MANAGEMENT_INVALID_RESPONSE` / `QUEUE_MANAGEMENT_INCOMPLETE` | 503 / 503 / 504 / 503 / 503 | 관리자 큐 조회: RabbitMQ 관리 API 미설정 / 연결 실패 / 5초 초과 / 응답 형식 오류 / 정의된 큐 누락 (2.8) |
+| `AI_PROMPT_VERSION_UNAVAILABLE` / `SCORING_UNAVAILABLE` | 503 | ai 활성 프롬프트 본문 없음 / scoring 모델 미준비 (내부 API, 4.2·4.3) |
+| `PAYMENT_ENTITLEMENT_UNAVAILABLE` / `PAYMENT_USAGE_UNAVAILABLE` / `REFUND_IN_PROGRESS` | 503 / 503 / 409 | 분석·피드백 이용권 확인 실패 / learning→core 사용 증빙 실패 / 환불 진행 중 프리미엄 사용 (learning은 core 409를 모두 이 코드로 전달) |
+| `PAYMENT_NOT_FOUND` / `BILLING_KEY_REQUIRED` / `INVALID_PAGE` / `INVALID_DATE_RANGE` / `PAYMENT_RECONCILIATION_RANGE_REQUIRED` | 404 / 409 / 409 / 409 / 409 | 결제 없음 / 빌링키 등록 전 자동 갱신 켜기 / 페이지 범위 오류 / 조회 기간 오류 / 대사 조회 기간 누락 (2.6) |
+| `SUBSCRIPTION_NOT_ACTIVE` / `SUBSCRIPTION_STATE_CHANGED` / `PRODUCT_NOT_PURCHASABLE` / `PRODUCT_TERMS_INVALID` / `PRODUCT_FEATURE_DISABLED` | 409 | 활성 구독 아님 / 처리 중 구독 상태 변경 / 월 단위·자녀 1명 유료 상품이 아님 / 상품 한도 설정 형식 오류 / 현재 이용권에 없는 기능 (2.6) |
+| `PAYMENT_KEY_MISMATCH` / `PAYMENT_ORDER_KIND_MISMATCH` / `PAYMENT_USAGE_STATE_CHANGED` / `PAYMENT_USAGE_RETRY_REQUIRES_NEW_SOURCE` | 409 | 이미 승인된 주문에 다른 paymentKey / 최초 결제가 아닌 주문 승인 / 사용 증빙 상태 변경 / 실패한 사용 증빙은 새 요청으로 재시도 (2.6·4.5) |
+| `REFUND_NOT_READY` / `REFUND_STATE_CHANGED` / `REFUND_PREMIUM_USAGE_PRESENT` | 409 | 사용 이력 확인 전 또는 REQUESTED가 아닌 환불 승인 / 처리 중 환불 상태 변경 / 프리미엄 기능 사용 이력 있음 (P14) |
+| `PAYMENT_PG_UNAVAILABLE` / `PAYMENT_PG_MISMATCH` / `PAYMENT_PG_KEY_UNAVAILABLE` / `PAYMENT_KEY_UNAVAILABLE` / `PAYMENT_CUSTOMER_UNAVAILABLE` | 503 | 토스 설정·연결 실패 / 토스 응답과 주문·금액·MID·상태 불일치 / 토스 키 미설정 / 빌링키 암호화 키 미설정 / 구독의 고객 키 없음 (2.6) |
+| `PAYMENT_STORAGE_UNAVAILABLE` / `PAYMENT_WEBHOOK_UNAVAILABLE` / `PAYMENT_WEBHOOK_LOOKUP_UNAVAILABLE` / `PAYMENT_RECONCILIATION_UNAVAILABLE` / `PAYMENT_RENEWAL_DATA_UNAVAILABLE` / `REFUND_USAGE_UNAVAILABLE` | 503 | 결제 저장소 장애 / 웹훅 처리 실패 / 웹훅 결제 조회 실패 / 대사 조회 실패 / 갱신 데이터 확인 실패 / 환불 전 사용 이력 확인 실패 (2.6) |
 | `METHOD_NOT_ALLOWED` / `UNSUPPORTED_MEDIA_TYPE` / `REQUEST_FAILED` | 405 / 415 / 그 밖의 4xx·5xx | 허용되지 않는 메서드 / 지원하지 않는 Content-Type / 위 표에 없는 프레임워크 기본 오류 |
 | `INTERNAL_ERROR` | 500 | 예상하지 못한 서버 오류 (SSE `error` 이벤트는 `retryable: true`) |
 
@@ -258,6 +275,7 @@
 | POST | `/attempts/{attemptId}/finish` | 학생 | 마무리 → 정답(닫힌 문제)·예시 답(열린 문제)·근거 확인된 체크리스트 공개. 판정 `DONE` 1회 이상 아니면 409 (P04) | LRN-11, JDG-09 | 핵심 |
 | POST | `/attempts/{attemptId}/self-assessment` | 학생 | 자기 체크 저장 → AI 확인 항목과 나란히 반환 (원본·판정 불변) | LRN-13 | 선택 |
 | POST | `/attempts/{attemptId}/reflection` | 학생 | 돌아보기 `{difficulty(필수), text(선택)}` 저장 → 학습 완료 처리 (P04) | LRN-12, LRN-14 | 핵심 |
+| GET | `/attempts/{attemptId}/comparison` | 학생 · 학부모 | 같은 학생·미션의 직전 마무리 시도와 현재 시도 비교 `NO_PREVIOUS\|COMPARABLE\|CRITERIA_CHANGED` (#207, 문서 첫 절). 학부모는 학생 공개 설정을 따름 | LRN-09, LRN-11 | — |
 
 - #38 미션 조회의 `grade`·`demo`는 검증된 STUDENT의 연결된 활성 학생을 core DB에서 읽어 결정한다. 공개 요청의 동일 이름 query는 사용하지 않는다. 목록은 `page`·`size`만 learning에 전달하고, 상세도 같은 학생 학년·시연 여부를 붙인다. 학년별 문항 노출·시연 전용 미션 판단은 learning 소유다.
 
@@ -314,7 +332,10 @@
 | POST | `/conversations/{conversationId}/messages` | 학부모 | **SSE**. 질문 → 범위 확인 → 기록 조회·계산 → 숫자·인용 대조 → 확정 답변. 범위 변경 시 `scope` 동봉 | AGT-02~06, AGT-08~10 | 핵심 |
 | POST | `/conversations/{conversationId}/messages/{messageId}/retry` | 학부모 | **SSE**. 실패한 질문 재처리 | AGT-10 | 핵심 |
 | GET | `/conversations/{conversationId}/messages/{messageId}/evidence` | 학부모 | 답변 근거(미션·답변 시점·원문, 전후 답변 연결) | AGT-07 | 핵심 |
-| GET | `/agent/example-questions?childId` | 학부모 | 예시 질문(숫자·유형별 활동·아이가 쓴 생각·전후 변화·돌아보기·수학 점검), 가능 여부 표시 | AGT-12 | 선택 |
+| GET | `/agent/example-questions?childId` | 학부모 | 예시 질문(숫자·유형별 활동·아이가 쓴 생각·전후 변화·돌아보기), 가능 여부 표시. 현재 구현은 고정 5문항이며 기록 유무 하나로 모두의 가능 여부를 정함(수학 점검 질문 없음) | AGT-12 | 선택 |
+| GET | `/conversations/{id}/report-template` | 학부모 | 현재 확정 리포트 표시 설정 `{settings, revision}` (#209) | — (기능 명세 #209 절) | — |
+| POST | `/conversations/{id}/report-template/proposals` | 학부모 | 자연어 요청 `{question}` → 변경안 `{proposalId, settings, expiresAt}` 또는 `{clarification}`. 분석 사용량 차감 (#209) | — (기능 명세 #209 절) | — |
+| POST | `/conversations/{id}/report-template/confirm` | 학부모 | 서버에 저장된 변경안 확정 `{proposalId}` → `{settings, revision}`. 만료·대체·다른 대화는 409 `TEMPLATE_PROPOSAL_EXPIRED` (#209) | — (기능 명세 #209 절) | — |
 
 - 예시 질문(FN-AGT-12): core `conversation`이 learning `/internal/records/...`로 기록 유무 확인 후 가능 여부 표시
 - 대화 이력은 이용 중 보관, 탈퇴·자녀 삭제 시 파기. 삭제된 근거는 `available: false` (P09)
@@ -433,6 +454,7 @@
 | PATCH | `/admin/error-reports/{reportId}` | SERVICE_OPS | 상태·검토 결과·처리 이유 (접수만으로 판정 변경 없음) | SUP-02 | 우선1 |
 | POST | `/admin/error-reports/{reportId}/corrections` | SERVICE_OPS | 정정: 기존 결과·사유·시점 보존, 영향받는 대화·집계·리포트 반영 여부 (원본 답변 불변) | SUP-03 | 우선1 |
 | GET | `/admin/inquiries?status` | SERVICE_OPS | 문의 목록 | SUP-06 | 우선2 |
+| GET | `/admin/inquiries/{inquiryId}` | SERVICE_OPS | 문의 상세 (5.7) | SUP-06 | 우선2 |
 | POST | `/admin/inquiries/{inquiryId}/answer` | SERVICE_OPS | 문의 답변 | SUP-06 | 우선2 |
 | GET | `/admin/notices?status=SCHEDULED\|ACTIVE\|ENDED&role=STUDENT\|PARENT\|ADMIN` | SERVICE_OPS | 예약·공개 중·종료 공지 전체 목록 (상태·대상 역할 필터, 페이지, #242) | SUP-07 | 우선2 |
 | POST / PATCH / DELETE | `/admin/notices`, `/admin/notices/{noticeId}` | SERVICE_OPS | 공지 등록·수정·종료 (공개 기간·대상 역할) | SUP-07 | 우선2 |
@@ -708,18 +730,17 @@ ERD 3.2·3.5·4.1을 camelCase로 매핑. 학생 이름·답변 원문·메모�
 - 숫자 레벨·보상·잠금 해제 조건 없이 언제든 바꿀 수 있다 (기능 명세 1.3의 숫자 레벨·등급·순위 비표시 원칙과 충돌하지 않음)
 - 저장: core `student.look_theme`·`look_companion`·`look_updated_at`(V23, 세 열 함께 NULL 또는 함께 값). 값 목록은 코드 상수와 DB CHECK로 고정한다. 학생 삭제 확정 시 기본값(NULL)으로 되돌린다. OpenAPI `StudentLook`
 
-### 3.13 요구사항 화면 보완용 지원 DTO (프론트 목업, 백엔드 확인 대기)
+### 3.13 요구사항 화면 지원 연결 (#46 core 계약)
 
-2026-10-29 첨부 요구사항 정의서 대조에 따라 아래 지원 화면을 연결했다. 경로·역할은 2.7·2.8을 따르며 이 절의 DTO는 프론트 목업 계약이다. 실제 서버 Controller 구현이나 저장·전달 완료를 뜻하지 않는다. API 모드 실패를 시연 응답으로 대체하지 않는다.
+2026-10-29 첨부 요구사항 정의서 대조에 따라 지원 화면을 연결했다. 경로·역할·DTO는 2.7·2.8·5.7과 core OpenAPI를 따르며 목업(MSW)도 같은 모양을 쓴다. API 모드 실패를 시연 응답으로 대체하지 않는다.
 
-- `GET /help?role`: `{items:[{id,title,content}]}`. 현재 인증 역할만 요청한다.
-- `GET /notices`: `{items:[{id,title,content,roles[],startsAt,endsAt:null|string}]}`. 현재 역할·공개 기간을 만족하는 공지만 반환한다.
-- `POST/GET /error-reports`, `POST/GET /inquiries`: 요청은 2.7을 따른다. 화면의 공통 목록 항목은 `{id,targetType?,targetId?,category,comment,status,answer?,createdAt}`, 상태는 RECEIVED/IN_REVIEW/RESOLVED. 기존 관리자 오류 신고의 reportId는 별도 계약으로 유지한다. 목업에서 사용자 신고를 관리자 검토 목록과 연결하며 답변 원문은 수정하지 않는다.
-- `GET /admin/inquiries`: SERVICE_OPS, `{items:[공통 목록 항목]}`. 답변 등록은 2.8 `POST /admin/inquiries/{inquiryId}/answer`를 사용한다. 일반 문의와 판정 오류 검토를 구분한다.
-- `POST /admin/notices`: SERVICE_OPS, `{title,content,roles[],startsAt,endsAt}` → 공지 항목(201). 공개 역할·기간을 검증한다.
-- 관리자 공지 화면(#242)은 위 목업 DTO가 아니라 5.7 실제 공지 항목 `{noticeId,kind,title,body,targetRoles[],visibleFrom,visibleTo,endedAt}`과 `GET /admin/notices` 전체 목록(공통 page/size 봉투)을 사용한다. 세션 안에서만 기억하던 작성 목록은 제거했다. 예약·공개 중·종료 표시는 같은 항목의 기간·endedAt으로 계산한다.
+- `GET /help?role`: `{role,items:[{title,body}]}`. 현재 인증 역할만 요청한다.
+- `GET /notices`: 공통 page 봉투의 공지 항목 `{noticeId,kind,title,body,targetRoles[],visibleFrom,visibleTo,endedAt}`. 현재 역할·공개 기간을 만족하는 공지만 반환한다.
+- `POST /error-reports`(`Idempotency-Key` 필수, `{targetType,targetId,category,comment}`)·`POST /inquiries`(`{category: ACCOUNT|USAGE|PAYMENT,title,body}`)와 각 목록·상세는 OpenAPI `SupportReport`·`SupportInquiry`를 쓴다. 화면은 같은 신고 내용을 다시 보낼 때 같은 키를 쓴다. 상태는 RECEIVED/IN_REVIEW/RESOLVED.
+- `GET /admin/inquiries`: SERVICE_OPS, `SupportInquiry` page. 답변 등록은 2.8 `POST /admin/inquiries/{inquiryId}/answer`를 사용한다.
+- 관리자 공지 화면(#242)은 5.7 실제 공지 항목 `{noticeId,kind,title,body,targetRoles[],visibleFrom,visibleTo,endedAt}`과 `GET /admin/notices` 전체 목록(공통 page/size 봉투)을 사용한다. 세션 안에서만 기억하던 작성 목록은 제거했다. 예약·공개 중·종료 표시는 같은 항목의 기간·endedAt으로 계산한다.
 - 알림은 2.7의 실제 #44 계약을 그대로 사용한다. 학생에게 요청하지 않으며 읽음·수신 설정은 서버 확인 후 갱신한다. 웹은 학부모·관리자 로그인 중(동의·자녀 등록 완료 후) `/notifications/stream`을 1개만 구독하고 로그아웃·역할 전환 때 닫는다(#239). `ready`·`notification`을 받으면 알림 목록과 메뉴의 안 읽은 알림(`unreadOnly=true` 첫 쪽)을 다시 조회한다. 끊기면 1초부터 최대 30초 간격으로 다시 연결하고 401·403이면 멈추며, 스트림이 없어도 목록·새로고침은 그대로 동작한다.
-- 계정·삭제·탈퇴는 5.6 실제 #45 계약을 따른다. 사전 확인 경로는 `GET /me/withdrawal/precheck`이며 `{canWithdraw,activeSubscriptions,unresolvedRefunds,retainedTransactionsYears}`를 반환한다. 삭제 목업은 CONFIRMED와 서비스별 완료 상태를 구분하고 자동으로 완료를 만들지 않는다. 탈퇴 조회 영수증은 URL·영구 저장소 대신 현재 화면 메모리에만 보관한다.
+- 계정·삭제·탈퇴는 5.6 실제 #45 계약을 따른다. 사전 확인 경로는 `GET /me/withdrawal/precheck`이며 `{canWithdraw,activeSubscriptions,unresolvedRefunds,retainedTransactionsYears,pendingPayments}`를 반환한다(`pendingPayments`는 승인 확인 중·권한 복구 필요 결제 수, #48). 삭제 목업은 CONFIRMED와 서비스별 완료 상태를 구분하고 자동으로 완료를 만들지 않는다. 탈퇴 조회 영수증은 URL·영구 저장소 대신 현재 화면 메모리에만 보관한다.
 - 점검표 `/review`와 가상 계정 진입은 DEV+MSW에서만 제공하고 운영 번들에서 제외한다. 역할 URL만으로 권한을 부여하지 않고 기존 시연 로그인·학생 동석 API를 호출한다.
 
 ## 4. 내부 API (`/internal`)
@@ -764,6 +785,7 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 | GET | `/internal/records/evidence?answerIds=` | core, report | 원문 근거 조회 → `{items: Evidence[]}`(1.6·3.9). 요청한 순서대로, 없는 답변·삭제 학생은 `available:false`(원문 없음), 범위 밖 학생의 답변이면 `403` |
 | GET | `/internal/stats?from&to` | core | 운영 현황용 집계 (학생 원문 없음) → `{period, inclusionRule, attempts, completedAttempts, students}`(FN-ADM-02). 역할 `ADMIN`·`SYSTEM`, 학생 범위 없음 |
 | GET · POST · PATCH · PUT | `/internal/admin/missions…` | core | 관리자 미션(2.8, #145). core가 `ADMIN` + `X-User-Id`(작성자·검토자 ID) + 빈 학생 범위로 넘김(CONTENT 검사는 core). 경로는 2.8 표와 1:1. 목록 `GET ?status&grade&thinkingType&page&size` → `{items: AdminMission[], page, size, totalElements, counts:[{status, count}]}`(`counts`는 페이지·status·grade·thinkingType 어느 필터와도 무관한 전체 상태별 건수), 상세 `GET /{id}` → `AdminMission`. 작성 `POST`(201)·수정 `PATCH /{id}` 본문 `{title, subject, gradeMin, gradeMax, thinkingType, inputType, question, guide?, sceneUri?, staticSceneUri?, achievementStandards[], choices?, categories?, answerUnit?, inputTemplate?, demoOnly}`, 기준표 `PUT /{id}/rubric` `{elements:[{code, label, description?, points, commonErrors[], goodThought, judgeVerified}], answerKey?, exampleAnswer?, forbiddenTerms[], hints[]}`(`answerKey`는 입력 방식 모양 객체 `{choiceIds}`·`{assignments}`·`{finalAnswer}`), 검토 요청 `POST /{id}/review-request` `{missionVersion, rubricVersion}`, 검토 `POST /{id}/review` `{missionVersion, rubricVersion, result: APPROVED|CHANGES_REQUESTED, comment}`, 게시·중단 `POST /{id}/publish`·`/unpublish` `{}` → 모두 `AdminMission`. 미리보기 `GET /{id}/preview` → `{mission(4.1 학생 미션 상세 모양, 정답·예시 없음), missionVersion, rubricVersion}`. `AdminMission` = `{missionId, code, status, demoOnly, currentVersion, currentRubricVersion, publishedVersion, publishedRubricVersion, versions[], rubrics[], reviews:[{missionVersion, rubricVersion, result, comment, reviewerId, createdAt}]}`(생성·변경 응답의 `missionId`·버전 번호로 core가 감사 기록). 수정·기준표는 새 불변 버전(`current*`), 학생에게는 `published*` 버전(P07). 오류: 형식 `400 VALIDATION_FAILED`, 없는 미션 `404 NOT_FOUND`, 요청 버전이 현재와 다름 `409 MISSION_VERSION_CONFLICT`, 상태상 불가 전이 `409 CONFLICT`, 게시 필수 누락 `422 MISSION_PUBLISH_INCOMPLETE` + `missingFields`(영문 코드, class-diagram 4.1). 업로드 없음(URI 입력) |
+| GET | `/internal/payment-usage/students/{studentId}?since` | core | SYSTEM + 해당 학생 scope. 결제 후 피드백 사용(DONE·RUNNING) 여부, 원문 미포함 (#48 환불 사용 확인) |
 
 - 기록 조회 공통 (#27): 학생 경로는 역할 `PARENT`·`STUDENT`·`SYSTEM`(`home`은 학생 본인 `STUDENT`만)이고 `X-Student-Scope`에 대상 학생이 없으면 `403`. `from`·`to`는 KST 날짜(양 끝 포함), 둘 다 주거나 둘 다 생략(생략하면 오늘 포함 최근 7일, P06), 한쪽만 주거나 `from > to`면 `400`. 응답 `period`는 실제 조회 기간. 집계 대상은 P08(기간 안에 답변 제출이 있는 시도, 미완료 포함·판정 상태 무관. 조회 종료일까지의 답변이 모두 처리 실패인 시도와 삭제 기록은 제외). 시도별 사실(완료·되묻기 받음·보완 답변·최근 답변)은 조회 종료일까지 일어난 것만. `state`는 집계 대상(비율은 분모) 0건 `NO_RECORD`, 1~4건 `INSUFFICIENT_SAMPLE`(비율 `value: null`), 5건 이상 `OK`. 메모·초안은 반환하지 않음(P05). 최상위 학생 식별자는 호출 역할과 무관하게 `studentId`(학부모 공개 응답의 `childId`는 core가 바꿈, core #40·report #51과 합의). 조회 장애는 `state`가 아니라 HTTP 오류(Problem Details)로 반환. 까닭을 잇는 말은 `왜냐하면`·`때문`·`그래서`·`따라서`(report와 확정)
 
@@ -793,8 +815,9 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | POST | `/internal/judgments` | learning | `{answerText, inputType, grade, rubric{elements[]}, versions}` → `{result, elements[{elementId, quote, verified, satisfied}], heldReason, trial, versions}` (M2 활성 시 scoring 교차 확인) |
 | POST | `/internal/followups` | learning | `{timeline[], judgment, rubric, mission, grade}` → `{type, question, source, leakCheck{passed}, versions}` (정답·금지어 검사 실패 시 1회 재생성 `LLM_RETRY`, 재실패 시 `question` 없이 `leakCheck.passed = false` → learning이 질문 은행 `BANK` 선택, P16) |
 | POST | `/internal/analysis/stream` | core | **SSE**. `{conversationId, question, scope{studentId, from, to}, history[]}` → 3.3과 같은 이벤트 |
-| POST | `/internal/report-narratives` | report | `{metrics[], thinkingTypes[], changes[], reflections[], quotes[]}` → `{narrative, eveningQuestion, citedQuotes[], versions}` (4.2.1) |
+| POST | `/internal/report-narratives` | report | `{metrics[], thinkingTypes[], changes[], reflections[], quotes[], tone?}`(tone 생략 시 DEFAULT, #209) → `{narrative, eveningQuestion, citedQuotes[], versions}` (4.2.1) |
 | GET | `/internal/versions` | core | 현재 호출에 사용하는 프롬프트 버전 `{prompts:{judgment,followup,analysis,reportNarrative}}` |
+| POST | `/internal/analysis/report-template` | core | `{question, current}` → `{settings}` 또는 `{clarification}` 중 하나 (#209, 2.4) |
 
 - #68 프롬프트 레지스트리의 `PROMPT name`은 위 응답의 네 키와 같다. 승인 scope는 차례대로 `ai/judgment`·`ai/followup`·`ai/analysis`·`ai/report-narrative`이며 요청 범위 밖 이벤트는 적용하지 않는다. core에 해당 활성 항목이 없으면 ai 이미지에 포함된 기존 본문·버전을 사용한다. 활성화된 버전의 실제 본문이 이미지에 없으면 해당 기능의 새 요청과 `/internal/versions`는 `503 AI_PROMPT_VERSION_UNAVAILABLE`로 실패하고 `/health/ready`의 `versions`는 DOWN이다. 기존 본문을 새 버전명으로 보고하지 않는다. 진행 중인 요청은 시작 때 선택한 본문·버전으로 완료한다.
 
@@ -854,6 +877,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | GET | `/internal/reports/{reportId}?revision` | 상세 (3.4 스키마), 기본 최신판·양의 revision으로 이전판 조회 |
 | GET | `/internal/reports/{reportId}/evidence/{itemId}` | 항목 근거 |
 | GET | `/internal/reports/{reportId}/files/{format}` | 단기 presigned URL 발급 → `{url, expiresAt}` |
+| POST | `/internal/report-jobs/{jobId}/reconcile` | core 작업 복구: `{studentId, periodFrom, periodTo}` 대조 후 현재 상태 반환, 불일치 409 `REPORT_JOB_IDENTITY_MISMATCH` (5.9) |
 
 - core는 현재 이용 권한으로 `X-Report-Narrative-Enabled:true|false`를 설정해야 함(공개 요청의 같은 헤더는 전달하지 않음). report는 누락 시 false로 처리해 응답·다운로드에서 AI 서술·생각 유형 summary·저녁 질문을 가림
 - 목록은 학생/대상 주별 최신 revision을 고른 뒤 status를 적용하며 1.1 페이지 봉투를 사용한다. 상세의 기본값은 같은 학생·대상 주 최신판, `revision` 지정 시 해당 판이다. evidence/files 경로는 전달한 실제 reportId 판에 속한 항목·파일을 조회한다.
@@ -866,6 +890,8 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | POST | `/internal/deletion-requests/{deletionRequestId}/completions` | learning·report가 `student.deleted` 처리 후 완료 보고 `{service}`. 두 서비스 모두 보고 시 `COMPLETED` (멱등, P09) |
 | POST | `/internal/payment-usage/reservations` | learning 피드백 실행 전 프리미엄 사용 예약 `{studentId,sourceId}` → `{reservationId,premium}` (STUDENT+본인 scope, #48) |
 | POST | `/internal/payment-usage/completions` | learning 피드백 DONE 저장 후 사용 확정 `{studentId,reservationId,used}` (#48) |
+| GET | `/internal/students/{studentId}/profile` | report-worker: 학생 별명·`parentSharingEnabled` (4.0, #206) |
+| GET | `/internal/students/{studentId}/report-template` | report-worker: 현재 연결 학부모의 리포트 표시 설정 `{settings, revision}`. 학생 삭제 진행·비활성 409 `STUDENT_UNAVAILABLE` (#209) |
 
 - 비동기 메시지(`report.generate` 등)는 [아키텍처 1.4](architecture.md#14-메시지-목록) 참고
 - report 삭제: PROFILE·RECORDS 모두 리포트 내용·파일을 물리 삭제하고 `report_deletion_guard`에 식별 UUID·범위·기준 시각·상태만 남김. core가 RECORDS 후에도 학습을 자동 재개하지 않으므로 두 scope 모두 이후 생성을 차단(재개는 별도 계약 필요)
@@ -1133,7 +1159,7 @@ report-worker는 생성 시작 시 한 번 조회하여 command에 고정한다.
 생성 결과 `versions.template`에 `{settings,revision}`을 보존하여 과거 판을 재해석하지 않는다.
 서술 요청에 `tone`을 추가하며 생략 시 DEFAULT. 무료·NO_RECORD AI 생략, 대조 실패 처리 유지.
 
-선행 #206은 develop 미병합: 원문 비공개 생성·기존 파일 접근의 실제 결합 검증은 대기.
+선행 #206은 병합됨(core V21): 원문 비공개 생성·기존 파일 접근은 #206 계약을 따른다.
 이 계약이 학생 공개 설정 구현을 대신하지 않는다.
 
 학부모 `기록에 물어보기` 화면에서 기존 대화를 선택하거나 `리포트 설정 대화 시작`으로

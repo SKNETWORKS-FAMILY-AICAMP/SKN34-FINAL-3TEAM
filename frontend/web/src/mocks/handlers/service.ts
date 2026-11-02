@@ -4,56 +4,65 @@ import { mockIdentity } from '../fixtures/accounts.ts'
 import { guard, respond } from './student.ts'
 import { parentGuard, parentChild, fail, page, consumeActionReauth } from './parent.ts'
 import { notificationLabels } from '../../domain/service.ts'
-import type { SupportCase, NotificationItem, NotificationSettings } from '../../domain/service.ts'
+import type { SupportTarget, NotificationItem, NotificationSettings } from '../../domain/service.ts'
 import type { DeletionRequest } from '../../domain/service.ts'
-import type { Notice } from '../../domain/service.ts'
 import { errorReports,reportedAttemptIds } from '../fixtures/admin/operations.ts'
 import { reports,conversations } from '../fixtures/parent.ts'
 const deletions = new Map<string, DeletionRequest & { owner: string }>()
 const withdrawalReceipts = new Map<string, {withdrawalRequestId:string;status:string}>()
-type OwnedCase = SupportCase & { owner: string; kind: string }
+// 시연 저장 모양. 응답은 아래 *View로 core OpenAPI(`SupportReport`·`SupportInquiry`) 모양으로 바꿔 보낸다.
+type OwnedCase = { id: string; owner: string; kind: string; key?: string; targetType?: SupportTarget; targetId?: string; category: string; title?: string; comment: string; status: 'RECEIVED' | 'IN_REVIEW' | 'RESOLVED'; answer?: string; createdAt: string }
+type MockNotice = { id: string; title: string; content: string; roles: string[]; startsAt: string; endsAt: string | null }
 export const cases: OwnedCase[] = []
 const inbox = new Map<string, NotificationItem[]>()
 const settings = new Map<string, NotificationSettings>()
-export const notices: Notice[]=[{id:'demo-notice',title:'가상 데이터 시연 안내',content:'현재 개발 시연에서는 직접 만든 예시 학생과 학습 기록을 사용합니다. 실제 개인정보를 입력하지 마세요.',roles:['PARENT','STUDENT','ADMIN'],startsAt:'2026-10-29T00:00:00+09:00',endsAt:null}]
+export const notices: MockNotice[]=[{id:'demo-notice',title:'가상 데이터 시연 안내',content:'현재 개발 시연에서는 직접 만든 예시 학생과 학습 기록을 사용합니다. 실제 개인정보를 입력하지 마세요.',roles:['PARENT','STUDENT','ADMIN'],startsAt:'2026-10-29T00:00:00+09:00',endsAt:null}]
 const owner = () => [mockIdentity.email, store.snapshot().session?.role, store.snapshot().session?.child?.id ?? ''].join(':')
 function auth(request: Request) { guard(request); return store.snapshot().session! }
 function adult(request: Request) { const s = auth(request); if (s.role === 'STUDENT') fail('FORBIDDEN','학생 알림함은 제공하지 않습니다.',403); return s }
-function ops(request: Request) { const s=auth(request);if(s.role!=='ADMIN'||!s.permissions?.includes('SERVICE_OPS'))fail('FORBIDDEN','서비스 운영 권한이 필요합니다.',403) }
 function notifications() {
   const key = owner()
   if (!inbox.has(key)) inbox.set(key, [{id:crypto.randomUUID(),childId:null,type:'REPORT_COMPLETED',title:'가상 리포트 알림 예시',link:'/' + store.snapshot().session!.role.toLowerCase() + '/report',readAt:null,createdAt:new Date().toISOString()}])
   return inbox.get(key)!
 }
+function reportView(c: OwnedCase) {
+  const r = errorReports.find(r => r.reportId === c.id)
+  return { reportId:c.id,status:r?.status ?? c.status,targetType:c.targetType,targetId:c.targetId,category:c.category,comment:c.comment,reviewReason:r?.reviewReason ?? null,createdAt:c.createdAt }
+}
+const inquiryView = (c: OwnedCase) => ({ inquiryId:c.id,category:c.category,title:c.title ?? c.comment.slice(0,60),body:c.comment,status:c.status,answer:c.answer ?? null,createdAt:c.createdAt })
+const view = (c: OwnedCase) => c.kind === 'error-reports' ? reportView(c) : inquiryView(c)
 const preferences = () => settings.get(owner()) ?? { items: Object.keys(notificationLabels).map(type => ({ type: type as keyof typeof notificationLabels, enabled: true })) }
 export const serviceHandlers = [
   http.get('/api/v1/help', ({ request }) => respond(async () => {
     const s = auth(request)
     if (new URL(request.url).searchParams.get('role') !== s.role) fail('FORBIDDEN','현재 역할의 안내만 열 수 있습니다.',403)
-    return { items: s.role === 'STUDENT' ? [
-      { id:'start',title:'미션은 어떻게 시작하나요?',content:'생각 지도에서 미션을 고르고 질문을 읽어 주세요. 답을 쓰거나 보기에서 고른 뒤 제출할 수 있습니다.' },
-      { id:'save',title:'쓰던 답은 어디에 있나요?',content:'저장 완료 표시를 확인해 주세요. 저장 실패 때는 화면을 닫기 전에 다시 저장해 주세요. 내 공책에서 이어할 수 있습니다.' },
-      { id:'finish',title:'정답과 예시 답은 언제 보나요?',content:'생각을 적고 필요한 질문에 답한 뒤 마무리하면 볼 수 있습니다. 마지막에는 내 생각을 돌아봐 주세요.' },
+    return { role: s.role, items: s.role === 'STUDENT' ? [
+      { title:'미션은 어떻게 시작하나요?',body:'생각 지도에서 미션을 고르고 질문을 읽어 주세요. 답을 쓰거나 보기에서 고른 뒤 제출할 수 있습니다.' },
+      { title:'쓰던 답은 어디에 있나요?',body:'저장 완료 표시를 확인해 주세요. 저장 실패 때는 화면을 닫기 전에 다시 저장해 주세요. 내 공책에서 이어할 수 있습니다.' },
+      { title:'정답과 예시 답은 언제 보나요?',body:'생각을 적고 필요한 질문에 답한 뒤 마무리하면 볼 수 있습니다. 마지막에는 내 생각을 돌아봐 주세요.' },
     ] : [
-      { id:'scope',title:'자녀와 조회 기간',content:'선택한 자녀와 기간의 기록만 조회합니다. 다른 자녀로 바꾸면 분석 범위를 다시 확인해 주세요.' },
-      { id:'metrics',title:'숫자와 분석의 한계',content:'활동 건수와 답변 근거를 확인합니다. 기록이 적거나 판정이 보류된 경우 능력 점수로 해석하지 않습니다.' },
-      { id:'device',title:'QR과 PIN으로 자녀 기기 등록',content:'자녀 기기·PIN에서 자녀별 본인 확인 후 PIN을 정하고 등록 코드를 발급합니다. 자녀 기기에서 QR을 열고 등록한 뒤 PIN을 입력해 주세요.' },
+      { title:'자녀와 조회 기간',body:'선택한 자녀와 기간의 기록만 조회합니다. 다른 자녀로 바꾸면 분석 범위를 다시 확인해 주세요.' },
+      { title:'숫자와 분석의 한계',body:'활동 건수와 답변 근거를 확인합니다. 기록이 적거나 판정이 보류된 경우 능력 점수로 해석하지 않습니다.' },
+      { title:'QR과 PIN으로 자녀 기기 등록',body:'자녀 기기·PIN에서 자녀별 본인 확인 후 PIN을 정하고 등록 코드를 발급합니다. 자녀 기기에서 QR을 열고 등록한 뒤 PIN을 입력해 주세요.' },
     ] }
   })),
-  http.get('/api/v1/notices', ({ request }) => respond(async () => {
-    const s = auth(request)
-    return { items:notices.filter(n=>n.roles.includes(s.role)&&Date.parse(n.startsAt)<=Date.now()&&(!n.endsAt||Date.parse(n.endsAt)>=Date.now())) }
-  })),
   ...(['error-reports','inquiries'] as const).flatMap(kind => [
-    http.get('/api/v1/' + kind, ({ request }) => respond(async () => { auth(request); return page(cases.filter(c => c.owner === owner() && c.kind === kind).map(c=>{const r=errorReports.find(r=>r.reportId===c.id);return r?{...c,status:r.status,answer:r.reviewReason}:c})) })),
+    http.get('/api/v1/' + kind, ({ request }) => respond(async () => { auth(request); return page(cases.filter(c => c.owner === owner() && c.kind === kind).map(view)) })),
+    http.get('/api/v1/' + kind + '/:id', ({ request,params }) => respond(async () => { auth(request); const c = cases.find(c => c.id === params.id && c.owner === owner() && c.kind === kind); if (!c) fail('NOT_FOUND','접수 내역이 없습니다.',404); return view(c!) })),
     http.post('/api/v1/' + kind, ({ request }) => respond(async () => {
       const s = auth(request)
       if (s.role === 'ADMIN') fail('FORBIDDEN','사용자 계정으로 문의해 주세요.',403)
-      const data = await request.json() as SupportCase
-      if (!data.comment?.trim() || data.comment.length > 2000 || !data.category) fail('VALIDATION_FAILED','유형과 내용을 확인해 주세요.',422)
-      if (kind === 'error-reports' && (!data.targetId?.trim() || !['FOLLOWUP','JUDGMENT','ANALYSIS','REPORT'].includes(data.targetType ?? ''))) fail('VALIDATION_FAILED','신고 대상을 확인해 주세요.',422)
+      const data = await request.json() as Partial<OwnedCase> & { body?: string }
+      const key = request.headers.get('Idempotency-Key') ?? ''
+      if (kind === 'inquiries' && (!['ACCOUNT','USAGE','PAYMENT'].includes(data.category ?? '') || !data.title?.trim() || data.title.length > 200 || !data.body?.trim())) fail('VALIDATION_FAILED','유형·제목·내용을 확인해 주세요.',400)
+      if (kind === 'error-reports') {
+        if (!key) fail('VALIDATION_FAILED','Idempotency-Key가 필요합니다.',400)
+        const previous = cases.find(c => c.kind === kind && c.owner === owner() && c.key === key)
+        if (previous) return reportView(previous)
+        if (!data.targetId?.trim() || !['FOLLOWUP','JUDGMENT','ANALYSIS','REPORT'].includes(data.targetType ?? '') || !['WRONG_JUDGMENT','ODD_QUESTION','MISMATCH','INAPPROPRIATE','OTHER'].includes(data.category ?? '') || (data.comment?.length ?? 0) > 10000) fail('VALIDATION_FAILED','신고 대상·유형을 확인해 주세요.',400)
+      }
       // 시연 범위 밖의 대상 번호를 실제로 확인했다고 표시하지 않는다.
-      const c: OwnedCase = { ...data,id:crypto.randomUUID(),owner:owner(),kind,status:'RECEIVED',createdAt:new Date().toISOString() }
+      const c: OwnedCase = { id:crypto.randomUUID(),owner:owner(),kind,...(kind==='error-reports'?{key,targetType:data.targetType,targetId:data.targetId,comment:data.comment??''}:{title:data.title,comment:data.body!}),category:data.category!,status:'RECEIVED',createdAt:new Date().toISOString() }
       if(kind==='error-reports'){
         const owned=(store.snapshot().children??[]).map(c=>c.id)
         const attempts=store.snapshot().attempts.filter(a=>owned.includes(a.studentId)&&(s.role!=='STUDENT'||a.studentId===s.child?.id))
@@ -61,11 +70,11 @@ export const serviceHandlers = [
         if(['JUDGMENT','FOLLOWUP'].includes(data.targetType??'')&&!linked)fail('NOT_FOUND','본인의 신고 대상 기록을 확인하지 못했습니다.',404)
         if(data.targetType==='REPORT'&&(s.role!=='PARENT'||!reports.get(data.targetId!)?.some(v=>owned.includes(v.childId))))fail('NOT_FOUND','본인의 리포트를 확인하지 못했습니다.',404)
         if(data.targetType==='ANALYSIS'&&(s.role!=='PARENT'||![...conversations.values()].some(c=>owned.includes(c.childId)&&c.messages.some(m=>m.messageId===data.targetId))))fail('NOT_FOUND','본인의 분석 답변을 확인하지 못했습니다.',404)
-        errorReports.unshift({reportId:c.id,status:'RECEIVED',targetType:data.targetType!,targetId:data.targetId!,category:data.category,comment:data.comment,corrections:[]})
+        errorReports.unshift({reportId:c.id,status:'RECEIVED',targetType:data.targetType!,targetId:data.targetId!,category:c.category,comment:c.comment,corrections:[]})
         if(linked)reportedAttemptIds.set(c.id,linked.attemptId)
       }
       cases.unshift(c)
-      return c
+      return view(c)
     },201)),
   ]),
   http.get('/api/v1/notifications', ({ request }) => respond(async () => {
@@ -84,12 +93,6 @@ export const serviceHandlers = [
     } })
     return new HttpResponse(body, { headers: { 'Content-Type': 'text/event-stream' } })
   }),
-  http.get('/api/v1/admin/inquiries',({request})=>respond(async()=>{ops(request);return page(cases.filter(c=>c.kind==='inquiries'))})),
-  http.post('/api/v1/admin/notices',({request})=>respond(async()=>{
-    ops(request);const data=await request.json() as Notice
-    if(!data.title?.trim()||!data.content?.trim()||!Array.isArray(data.roles)||!data.roles.length||data.roles.some(r=>!['PARENT','STUDENT','ADMIN'].includes(r))||!Number.isFinite(Date.parse(data.startsAt))||(data.endsAt&&(!Number.isFinite(Date.parse(data.endsAt))||Date.parse(data.endsAt)<=Date.parse(data.startsAt))))fail('VALIDATION_FAILED','공지 내용·역할·공개 기간을 확인해 주세요.',422)
-    const result={...data,id:crypto.randomUUID()};notices.unshift(result);return result
-  },201)),
   http.patch('/api/v1/notifications/:id/read', ({ request,params }) => respond(async () => {
     adult(request); const n = notifications().find(n => n.id === params.id)
     if (!n) fail('NOT_FOUND','알림이 없습니다.',404)
