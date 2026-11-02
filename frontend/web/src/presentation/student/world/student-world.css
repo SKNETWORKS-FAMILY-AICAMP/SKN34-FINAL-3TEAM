@@ -993,3 +993,42 @@
     transition: none;
   }
 }
+
+/* 생각 활동 (FN-DSH-04, #240): 해 본 미션과 돌아보기. 숫자·순위 없이 공책 쪽지처럼 늘어놓는다. */
+#class-journal .st-activity-group + .st-activity-group,
+#class-journal .st-island-activities {
+  margin-top: 28px;
+}
+#class-journal .st-activities {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+#class-journal .st-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #fffdf7;
+  box-shadow: 0 2px 0 rgb(0 0 0 / 0.08);
+}
+#class-journal .st-activity .st-kicker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#class-journal .st-activity .st-kicker i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+#class-journal .st-activity-note {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--st-hand);
+  font-size: 1.15rem;
+}

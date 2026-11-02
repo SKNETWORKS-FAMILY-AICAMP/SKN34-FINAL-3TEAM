@@ -1,4 +1,9 @@
-import type { Mission, Reflection } from './classroom.ts'
+import type { Mission, Period, Reflection, ThinkingType } from './classroom.ts'
+import type { QueryState } from './queryState.ts'
+
+/** FN-DSH-04 학생 생각 활동·돌아보기. 수행한 미션과 본인 돌아보기만 담고 레벨·등급·순위는 없다. */
+export interface ThinkingActivity { attemptId: string; thinkingType: ThinkingType; missionTitle: string; reflection: Reflection | null }
+export interface ThinkingActivities { state: QueryState; period: Period; items: ThinkingActivity[] }
 
 /** #82 소유 파일을 수정하지 않는 확장 계약. 공통 타입 통합 시 이 확장만 제거합니다. */
 export type LearningMission = Mission & { answerUnit?: string | null; inputTemplate?: string[] }

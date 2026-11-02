@@ -1,6 +1,9 @@
 export type SupportTarget = 'FOLLOWUP' | 'JUDGMENT' | 'ANALYSIS' | 'REPORT'
 export type SupportCase = { id: string; targetType?: SupportTarget; targetId?: string; category: string; comment: string; status: 'RECEIVED' | 'IN_REVIEW' | 'RESOLVED'; answer?: string; createdAt: string }
-export type Notice = { id: string; title: string; content: string; roles: string[]; startsAt: string; endsAt: string | null }
+/** 본인 신고·문의 처리 결과 (core OpenAPI `SupportReport`·`SupportInquiry`에서 화면이 쓰는 필드). */
+export type SupportReport = { reportId: string; status: string; comment: string | null; reviewReason: string | null }
+export type SupportInquiry = { inquiryId: string; status: string; title: string; body: string; answer: string | null }
+export type Notice ={ id: string; title: string; content: string; roles: string[]; startsAt: string; endsAt: string | null }
 export const notificationLabels = {
   REPORT_COMPLETED: '리포트 생성 완료', REPORT_FAILED: '리포트 생성 실패', ERROR_REPORT_RESOLVED: '오류 신고 처리',
   INQUIRY_ANSWERED: '문의 답변', PAYMENT_CHANGED: '결제 변경', SUBSCRIPTION_CHANGED: '구독 변경',

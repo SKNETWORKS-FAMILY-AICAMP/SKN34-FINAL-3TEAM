@@ -236,3 +236,13 @@
     font-size: 22px;
   }
 }
+
+/* 분석 대화 예시 질문 (FN-AGT-12, #240) */
+#class-journal .ws-examples {
+  display: grid;
+  gap: 8px;
+}
+#class-journal .ws-examples .ws-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+}

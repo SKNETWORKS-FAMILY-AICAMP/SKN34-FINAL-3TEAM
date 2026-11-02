@@ -211,6 +211,39 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/StudentSharingPreference'}
         default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/preferences:
+    get:
+      tags: [Students]
+      operationId: getStudentLook
+      summary: 학생 본인의 생각 지도 테마·동행 캐릭터 (#234). 저장한 적 없으면 기본값과 updatedAt null
+      responses:
+        '200':
+          description: 현재 꾸미기 설정 (Cache-Control no-store)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StudentLook'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+    put:
+      tags: [Students]
+      operationId: updateStudentLook
+      summary: 학생 본인만 꾸미기 설정 전체 교체. 목록 외 값 422, 학부모·관리자 403
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [theme, companion]
+              properties:
+                theme: {$ref: '#/components/schemas/StudentLookTheme'}
+                companion: {$ref: '#/components/schemas/StudentLookCompanion'}
+      responses:
+        '200':
+          description: 저장된 꾸미기 설정 (Cache-Control no-store)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StudentLook'}
+        default: {$ref: '#/components/responses/LearningProblem'}
   /children/{childId}/sharing-preferences:
     get:
       tags: [Children]
@@ -6183,6 +6216,16 @@ components:
       properties:
         studentId: {type: string, format: uuid}
         parentSharingEnabled: {type: boolean, default: false}
+    StudentLookTheme: {type: string, enum: [lake, forest, factory, space, sea]}
+    StudentLookCompanion: {type: string, enum: [mungchi, tori, mongdol, kongi, monggeul]}
+    StudentLook:
+      type: object
+      additionalProperties: false
+      required: [theme, companion, updatedAt]
+      properties:
+        theme: {$ref: '#/components/schemas/StudentLookTheme'}
+        companion: {$ref: '#/components/schemas/StudentLookCompanion'}
+        updatedAt: {type: [string, 'null'], format: date-time}
     AttemptComparison:
       type: object
       required: [attemptId, state, previous, current, elements]

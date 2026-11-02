@@ -349,7 +349,7 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 3장과 같이 
 | A2 | 해결 | #167·#192. `ai-analysis`·`report-query`·`report-recovery`·`toss-lookup`·`toss-transactions` 서킷 추가, 토스 쓰기는 예외 유지 |
 | A3 | 일부 해결 | #168·#169로 domain의 `HttpStatus`·Jackson 직접 import 0건. `BusinessException`(HttpStatus 필드) 간접 의존은 남음(A8) |
 | A4 | 일부 해결 | `LlmUsageRecorded`→`usage/domain`, `PremiumUsageClient` 역참조 제거, Redis 구독→`notification/consumer`. `NotificationRedisPublisher`→service는 남음(A9) |
-| A5 | 해결 | #170. 같은 종류 위반이 `SupportResults.tsx`에 있음(A14) |
+| A5 | 해결 | #170. 같은 종류 위반이던 `SupportResults.tsx`(A14)도 #255에서 해결 |
 | A6 | 일부 해결 | ai `model.version.activated` 소비 #68(#194). ai→scoring 교차 확인은 #69 예정 |
 | A7 | 유지 | #171은 "EKS 사용 확정"으로 종료됐으나 앱 chart·Ingress·NetworkPolicy·HPA·KEDA는 저장소에 없음. architecture "(예정)" 표기 유지 |
 | D16 | 미해결(#165 열림) | 번호 체계 밖 절이 #47·#48 절 추가로 늘어남(4.5) |
@@ -409,7 +409,7 @@ core·learning은 import를 레이어로 분류해 전수 검사, Python·웹은
 | A11 | report 기능 간 DB 직접 접근 — #252 로컬 해결·미병합 | 2.1·2.2 | query는 generation service, 생성·조회·복구·worker는 deletion service 경유. 삭제 DB 작업은 deletion.repository, 리포트·Outbox 삭제는 각 소유 service/repository로 분리. 기존 테이블 import 호환만 state의 지연 재노출로 유지. 검증 근거: [report #252 기록](report.md#252-report-기능-간-db-직접-접근-제거) |
 | A12 | ai 분석 에이전트 Application 계층 부재 | 2.2 계층 건너뛰기 금지 | `analysis_agent/router.py`가 `LearningClient` 생성·그래프 실행, `state.py`가 `tools`·`llm`·`versions` 참조 |
 | A13 | ai·scoring 소비자에 revision 조정 업무 로직, ai `versions.py`에 router·모델·상태 저장 혼재 | 2.1 Presentation 업무 로직 금지 | `ai-service/app/messaging/consumer.py`, `scoring-service/app/messaging/consumer.py`, `ai-service/app/versions.py`. ai는 #254에서 `prompt_versions/`(models·registry·service·router)로 분리하고 `versions.py` 제거, 소비자는 검증·ACK·`PromptSync.offer`만. scoring 소비자의 `ModelStartup` 생성·조정은 남음 |
-| A14 | 웹 컴포넌트 API 직접 호출·서버 상태 직접 보관 | 3장 | `presentation/support/SupportResults.tsx`의 `apiFetch`, `parent/ParentPayments.tsx`(`PaymentResult`)·`BillingResult.tsx`의 `useState`·폴링, `domain/payment.ts`의 `sessionStorage` 접근 |
+| A14 | 웹 컴포넌트 API 직접 호출·서버 상태 직접 보관 | 3장 | `presentation/support/SupportResults.tsx`의 `apiFetch`, `parent/ParentPayments.tsx`(`PaymentResult`)·`BillingResult.tsx`의 `useState`·폴링, `domain/payment.ts`의 `sessionStorage` 접근. **#255 해결**: `data/support/{api,queries}.ts`, `data/payment/{queries,checkoutStorage}.ts`로 이동 |
 | A15 | 설계 문서상 위치와 다른 구현 | 2.6 | learning `student.deleted` 소비가 `deletion/`이 아닌 `record/consumer`·`record/service`(빈 `deletion/` 폴더 잔존). 트리에 실제 위치 표기 |
 
 - A15 처리: #256에서 빈 `deletion/` 폴더를 지우고 architecture 2.6·class-diagram 4.3을 `record/` 기준으로 정리했다(코드 변경 없음, [learning 보고서](learning.md) 9절).
@@ -419,7 +419,7 @@ core·learning은 import를 레이어로 분류해 전수 검사, Python·웹은
 | 대상 | 내용 |
 |---|---|
 | 오류 코드 문서 | 결제(약 30종: `PAYMENT_PG_UNAVAILABLE`·`PAYMENT_NOT_FOUND`·`SUBSCRIPTION_NOT_ACTIVE`·`REFUND_STATE_CHANGED`·`BILLING_KEY_REQUIRED` 등)·`QUEUE_MANAGEMENT_*`·`EVIDENCE_UNAVAILABLE`(410)·`SUPPORT_STATE_CONFLICT`·`LEARNING_STATS_UNAVAILABLE`·`ANALYSIS_USAGE_UNAVAILABLE`이 api-spec 1.3에 없음 |
-| 목업 계약 | `GET/PUT /students/me/preferences`(api-spec 3.12)는 백엔드 미구현 |
+| 목업 계약 | `GET/PUT /students/me/preferences`(api-spec 3.12)는 백엔드 미구현 → **#234 해결**(core V23·OpenAPI `StudentLook`) |
 | 종료 이슈 문구 | #171 종료 후 architecture "(예정, #171)", #184 종료 후 `tosspayments-checkout.md` "자동 종료하지 않음" 문구(과거 기록) |
 | 번호 체계 밖 절(#165) | erd·architecture·state-diagram은 #165에서 번호 절로 이동 완료. api-spec·sequence·class·ai 보고서의 이슈별 절은 남음 |
 | 보고서 정리 | `learning-frontend-alignment.md`의 다른 PC 절대경로, `pr-admin-screen-completion.md` 제목(H1) 없음, `issue-47-admin-operations.md`·`issue-46-support.md`의 #163 절 중복 |

@@ -113,6 +113,9 @@ erDiagram
     int birth_year "출생연도 (P01), DELETED 표식은 NULL 허용"
     boolean is_demo "시연 가상 학생"
     boolean parent_sharing_enabled "NOT NULL DEFAULT false, 학생 본인만 변경 (#206)"
+    varchar look_theme "NULL 허용, CHECK[lake|forest|factory|space|sea], 학생 꾸미기 (#234)"
+    varchar look_companion "NULL 허용, CHECK[mungchi|tori|mongdol|kongi|monggeul], 학생 꾸미기 (#234)"
+    timestamptz look_updated_at "NULL 허용, 꾸미기 저장 시각 (#234)"
     varchar status "ACTIVE|DELETION_REQUESTED|DELETED"
     timestamptz created_at
     timestamptz updated_at
@@ -1209,3 +1212,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 학부모별 확정 설정과 마지막 미확정 제안을 `parent_report_template`에 저장한다. 기존 parent 계정 행 잠금으로 직렬화하고, 제안 ID·대화 소유권·만료를 확인한 뒤에만 revision을 증가시킨다. 학생 원문 공개 여부·메모·학습 원문은 저장하지 않는다. 확정 설정은 다음 리포트 `versions.template` JSONB에 복사하여 기존 판을 보존한다.
 
 V22는 #208 V20과 #206 V21 뒤에 적용한다. 학생 공개 설정을 보존하며 학부모 표시 설정은 별도 테이블에 저장한다.
+
+## 15. 학생 꾸미기 설정 (core V23, #234)
+
+`student.look_theme`·`look_companion`·`look_updated_at`은 학생 본인이 고른 생각 지도 테마·동행 캐릭터와 저장 시각이다. 세 열은 함께 NULL(저장한 적 없음, API는 기본값 `lake`·`mungchi`와 `updatedAt:null`)이거나 함께 값이 있다(`student_look_saved_together`). 값 목록은 코드 상수(core `StudentLook`, 웹 `domain/studentLook.ts`)와 CHECK로 고정한다. 학습 기록·판정·리포트·학부모 화면에 쓰지 않는다. 학생 삭제 확정(`ChildManagementService.confirm`) 때 PIN 삭제와 같은 트랜잭션에서 NULL로 되돌린다. 기본값 금지 규칙은 그대로이며 이 열들은 SQL DEFAULT 없이 NULL로 시작한다.
