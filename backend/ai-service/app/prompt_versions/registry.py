@@ -1,71 +1,24 @@
-"""Core의 활성 PROMPT revision과 이미지에 포함된 실제 프롬프트 본문."""
+"""이미지에 포함된 프롬프트 본문과 이름별 활성 revision 상태."""
 
 import logging
-from dataclasses import dataclass
 from types import ModuleType
-from typing import Annotated, Literal, Mapping
-from uuid import UUID
-
-from fastapi import APIRouter, Request
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from typing import Mapping
 
 from app.analysis_agent import prompts as analysis_prompts
 from app.errors import ApiError
 from app.followup import prompts as followup_prompts
 from app.judgment import prompts as judgment_prompts
+from app.prompt_versions.models import PROMPT_SCOPES, ActiveVersionItem, PromptChoice
 from app.report_narrative import prompts as report_narrative_prompts
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/internal/versions", tags=["versions"])
 
-Scope = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9._:/-]{0,199}$")]
-PROMPT_SCOPES = {
-    "judgment": "ai/judgment",
-    "followup": "ai/followup",
-    "analysis": "ai/analysis",
-    "reportNarrative": "ai/report-narrative",
-}
 BUILTIN_PROMPTS: dict[str, ModuleType] = {
     "judgment": judgment_prompts,
     "followup": followup_prompts,
     "analysis": analysis_prompts,
     "reportNarrative": report_narrative_prompts,
 }
-
-
-class ActiveVersionItem(BaseModel):
-    """core snapshot과 이벤트가 공유하는 확정 필드."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
-
-    id: UUID
-    kind: Literal["RUBRIC", "MODEL", "PROMPT", "GENERATION"]
-    name: str = Field(min_length=1)
-    version: str = Field(min_length=1)
-    ref_id: UUID | None = Field(alias="refId")
-    artifact_uri: str | None = Field(alias="artifactUri")
-    scopes: tuple[Scope, ...] = Field(min_length=1, max_length=100)
-    revision: int = Field(strict=True, ge=1)
-    activated_at: AwareDatetime = Field(alias="activatedAt")
-
-    @field_validator("scopes")
-    @classmethod
-    def unique_scopes(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        if len(value) != len(set(value)):
-            raise ValueError("duplicate scopes")
-        return value
-
-
-class ActiveSnapshot(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    items: list[ActiveVersionItem]
-
-
-@dataclass(frozen=True)
-class PromptChoice:
-    version: str
-    body: ModuleType
 
 
 class ActiveVersions:
@@ -135,8 +88,3 @@ class ActiveVersions:
 
     def active_prompt_versions(self) -> dict[str, str]:
         return {name: self.prompt(name).version for name in PROMPT_SCOPES}
-
-
-@router.get("")
-async def versions(request: Request) -> dict[str, dict[str, str]]:
-    return {"prompts": request.app.state.active_versions.active_prompt_versions()}

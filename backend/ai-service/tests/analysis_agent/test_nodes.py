@@ -15,7 +15,7 @@ from app.analysis_agent.prompts import Classification
 from app.analysis_agent.state import AgentContext
 from app.clients.learning_client import RecordsUnavailable
 from app.llm.base import LlmError
-from app.versions import ActiveVersions
+from app.prompt_versions.registry import ActiveVersions
 from tests.analysis_agent.records_fixture import PERIOD, SCOPE, STUDENT, FakeRecords, records
 from tests.fakes import FakeLlm
 
