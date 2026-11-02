@@ -9,7 +9,6 @@ from app.analysis_agent.models import (
     Metric,
     RecordAttempt,
     RecordChange,
-    RecordEvidence,
     Scope,
     ThinkingActivity,
     ThinkingTypeItem,
@@ -48,11 +47,6 @@ class RecordTools:
     async def thinking_activities(self, scope: Scope) -> list[ThinkingActivity]:
         self._require(scope)
         return await self._client.thinking_activities(scope)
-
-    async def evidence(self, scope: Scope, answer_ids: list[str]) -> list[RecordEvidence]:
-        """답변별 학생 범위는 learning이 다시 확인 (범위 밖 답변이면 403)."""
-        self._require(scope)
-        return await self._client.evidence(answer_ids)
 
     async def aclose(self) -> None:
         await self._client.aclose()

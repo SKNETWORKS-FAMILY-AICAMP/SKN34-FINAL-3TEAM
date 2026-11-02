@@ -63,7 +63,6 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
   | 아이가 쓴 생각 | + `attempts` 첫 페이지 8건 |
   | 전후 변화 | + `changes` 전체 페이지, `thinking-activities` |
   | 돌아보기 | + `attempts` 전체 페이지 (#66: 근거 작성 시각 `reflection.createdAt`이 attempts에만 있음) |
-  | (#67 대조용, 그래프 미연결) | `evidence(answerIds)` — 삭제된 근거는 `available: false`·원문 null 그대로 |
 
 - 수치는 learning이 P08로 계산한 값을 그대로 사용(대시보드·리포트와 일치). 분모 5 미만이면 비율 null, 건수 지표에는 분자·분모를 넘기지 않음
 - #65 결정(사용자): 전후 변화 수(글자·문장·까닭을 잇는 말)는 ai가 다시 세지 않고 learning `changes.counts`를 그대로 사용. 이슈의 `calculators.change_counts`는 만들지 않고 class-diagram 5.2에서 제거. 까닭을 잇는 말 목록·문장 구분 규칙은 learning·report만 보유
