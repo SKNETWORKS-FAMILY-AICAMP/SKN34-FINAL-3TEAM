@@ -1,18 +1,18 @@
 #requires -Version 7.0
 [CmdletBinding()]
-param([Parameter(Mandatory = $true)][string]$EnvFile)
+param([string]$EnvFile = (Join-Path $PSScriptRoot '../../.env'))
 
 $ErrorActionPreference = 'Stop'
-$contextName = 'kind-sagomungchi-issue171'
+$contextName = 'kind-sagomungchi-local'
+$nodeName = 'sagomungchi-local-control-plane'
 $requiredKeys = @(
     'POSTGRES_USER', 'POSTGRES_PASSWORD', 'RABBITMQ_USER', 'RABBITMQ_PASSWORD',
-    'MINIO_ROOT_USER', 'MINIO_ROOT_PASSWORD', 'INTERNAL_TOKEN',
-    'AUTH_JWT_SECRET', 'GRAFANA_ADMIN_USER', 'GRAFANA_ADMIN_PASSWORD'
+    'MINIO_ROOT_USER', 'MINIO_ROOT_PASSWORD', 'INTERNAL_TOKEN', 'AUTH_JWT_SECRET'
 )
-$optionalKeys = @('OPENAI_API_KEY')
+$optionalKeys = @('OPENAI_API_KEY', 'GRAFANA_ADMIN_USER', 'GRAFANA_ADMIN_PASSWORD')
 
 # Pass manifests through UTF-8 stdin so no credential appears in a command argument or temp file.
-function Invoke-Issue171Kubectl {
+function Invoke-LocalKubectl {
     param([string[]]$KubectlArguments, [string]$InputJson)
     $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = (Get-Command kubectl -ErrorAction Stop).Source
@@ -32,19 +32,17 @@ function Invoke-Issue171Kubectl {
     $errorTask = $process.StandardError.ReadToEndAsync()
     if (-not $process.WaitForExit(30000)) {
         $process.Kill($true)
-        throw 'kubectl timed out; verify the dedicated cluster.'
+        throw 'kubectl timed out. Check the local cluster and retry.'
     }
     $output = $outputTask.GetAwaiter().GetResult()
     $null = $errorTask.GetAwaiter().GetResult()
     if ($process.ExitCode -ne 0) {
-        throw "kubectl failed (exit $($process.ExitCode)); credential details are suppressed."
+        throw "kubectl failed (exit $($process.ExitCode)). Check local context and permissions; credential details are suppressed."
     }
     return $output
 }
 
-if (-not (Test-Path -LiteralPath $EnvFile -PathType Leaf)) {
-    throw 'The dedicated verification environment file does not exist.'
-}
+if (-not (Test-Path -LiteralPath $EnvFile -PathType Leaf)) { throw 'Environment file does not exist.' }
 $credentials = @{}
 foreach ($line in [System.IO.File]::ReadAllLines((Resolve-Path -LiteralPath $EnvFile).Path)) {
     if ($line -notmatch '^\s*([A-Z_]+)\s*=(.*)$') { continue }
@@ -54,9 +52,9 @@ foreach ($line in [System.IO.File]::ReadAllLines((Resolve-Path -LiteralPath $Env
     $value = $Matches[2].Trim()
     if ($value.StartsWith("'") -and $value.EndsWith("'") -and $value.Length -ge 2) {
         $value = $value.Substring(1, $value.Length - 2)
-        if ($value.Contains("'")) { throw "Embedded single quote is not supported: $key" }
+        if ($value.Contains("'")) { throw "Use a literal value without embedded single quotes: $key" }
     } elseif ($value -match '[\$"\x27]' -or $value -match '\s#') {
-        throw "Use an unquoted or single-quoted literal value: $key"
+        throw "Use an unquoted literal or single-quoted literal value: $key"
     }
     if ($value -match '[\r\n\x00]') { throw "Invalid environment value: $key" }
     $credentials[$key] = $value
@@ -68,7 +66,7 @@ foreach ($key in $requiredKeys) {
 }
 if ($credentials.RABBITMQ_USER.Contains(':')) { throw 'RABBITMQ_USER must not contain a colon.' }
 if ($credentials.MINIO_ROOT_USER.Length -lt 3 -or $credentials.MINIO_ROOT_PASSWORD.Length -lt 8) {
-    throw 'MinIO username or password does not meet the required length.'
+    throw 'MinIO requires a username of at least 3 characters and password of at least 8 characters.'
 }
 if ($credentials.INTERNAL_TOKEN.Length -lt 16) { throw 'INTERNAL_TOKEN must have at least 16 characters.' }
 try {
@@ -78,22 +76,18 @@ try {
 } catch [System.FormatException] {
     throw 'AUTH_JWT_SECRET must be valid base64.'
 }
+# Grafana credentials are needed only for the observability release; set both or neither.
+$hasGrafanaUser = -not [string]::IsNullOrWhiteSpace($credentials.GRAFANA_ADMIN_USER)
+$hasGrafanaPassword = -not [string]::IsNullOrWhiteSpace($credentials.GRAFANA_ADMIN_PASSWORD)
+if ($hasGrafanaUser -ne $hasGrafanaPassword) { throw 'Set both GRAFANA_ADMIN_USER and GRAFANA_ADMIN_PASSWORD, or neither.' }
 
 # Verify the selected context is the expected node before creating any resource.
-$nodesJson = Invoke-Issue171Kubectl -KubectlArguments @('get', 'nodes', '-o', 'json')
+$nodesJson = Invoke-LocalKubectl -KubectlArguments @('get', 'nodes', '-o', 'json')
 $nodes = ($nodesJson | ConvertFrom-Json -AsHashtable).items
-if ($nodes.Count -ne 1 -or $nodes[0].metadata.name -cne 'sagomungchi-issue171-control-plane') {
-    throw 'Context does not point to the dedicated #171 kind cluster.'
+if ($nodes.Count -ne 1 -or $nodes[0].metadata.name -cne $nodeName) {
+    throw 'Context does not point to the sagomungchi-local kind cluster.'
 }
 
-$platform = @{
-    POSTGRES_USER = $credentials.POSTGRES_USER
-    POSTGRES_PASSWORD = $credentials.POSTGRES_PASSWORD
-    RABBITMQ_USER = $credentials.RABBITMQ_USER
-    RABBITMQ_PASSWORD = $credentials.RABBITMQ_PASSWORD
-    MINIO_ROOT_USER = $credentials.MINIO_ROOT_USER
-    MINIO_ROOT_PASSWORD = $credentials.MINIO_ROOT_PASSWORD
-}
 $dbUser = [Uri]::EscapeDataString($credentials.POSTGRES_USER)
 $dbPassword = [Uri]::EscapeDataString($credentials.POSTGRES_PASSWORD)
 $mqUser = [Uri]::EscapeDataString($credentials.RABBITMQ_USER)
@@ -113,28 +107,29 @@ $app = @{
     MINIO_ROOT_PASSWORD = $credentials.MINIO_ROOT_PASSWORD
 }
 if ($credentials.OPENAI_API_KEY) { $app.OPENAI_API_KEY = $credentials.OPENAI_API_KEY }
-$observability = @{
-    GRAFANA_ADMIN_USER = $credentials.GRAFANA_ADMIN_USER
-    GRAFANA_ADMIN_PASSWORD = $credentials.GRAFANA_ADMIN_PASSWORD
+# The platform Secret stays with create-platform-secret.ps1; both read the same .env.
+$targets = @(@{Namespace = 'app'; Name = 'app-service-credentials'; Values = $app})
+if ($hasGrafanaUser) {
+    $targets += @{Namespace = 'observability'; Name = 'observability-credentials'; Values = @{
+        GRAFANA_ADMIN_USER = $credentials.GRAFANA_ADMIN_USER
+        GRAFANA_ADMIN_PASSWORD = $credentials.GRAFANA_ADMIN_PASSWORD
+    }}
+} else {
+    Write-Output 'GRAFANA_ADMIN_USER is empty; observability/observability-credentials is skipped.'
 }
-$targets = @(
-    @{Namespace = 'platform'; Name = 'platform-data-credentials'; Values = $platform},
-    @{Namespace = 'app'; Name = 'app-service-credentials'; Values = $app},
-    @{Namespace = 'observability'; Name = 'observability-credentials'; Values = $observability}
-)
 foreach ($target in $targets) {
-    $namespaceJson = Invoke-Issue171Kubectl -KubectlArguments @(
+    $namespaceJson = Invoke-LocalKubectl -KubectlArguments @(
         'get', 'namespace', $target.Namespace, '--ignore-not-found', '-o', 'json'
     )
     if ([string]::IsNullOrWhiteSpace($namespaceJson)) {
         $manifest = @{apiVersion='v1'; kind='Namespace'; metadata=@{name=$target.Namespace}} |
             ConvertTo-Json -Depth 4 -Compress
-        $null = Invoke-Issue171Kubectl -KubectlArguments @('create', '-f', '-') -InputJson $manifest
+        $null = Invoke-LocalKubectl -KubectlArguments @('create', '-f', '-') -InputJson $manifest
     }
 }
 # Compare every existing Secret before creating any new Secret.
 foreach ($target in $targets) {
-    $existingJson = Invoke-Issue171Kubectl -KubectlArguments @(
+    $existingJson = Invoke-LocalKubectl -KubectlArguments @(
         '-n', $target.Namespace, 'get', 'secret', $target.Name, '--ignore-not-found', '-o', 'json'
     )
     if (-not [string]::IsNullOrWhiteSpace($existingJson)) {
@@ -160,6 +155,6 @@ foreach ($target in $targets) {
         type = 'Opaque'
         stringData = $target.Values
     } | ConvertTo-Json -Depth 5 -Compress
-    $null = Invoke-Issue171Kubectl -KubectlArguments @('create', '-f', '-') -InputJson $manifest
+    $null = Invoke-LocalKubectl -KubectlArguments @('create', '-f', '-') -InputJson $manifest
     Write-Output "Secret $($target.Namespace)/$($target.Name) created."
 }
