@@ -130,3 +130,35 @@ mount 이벤트로 본인 소유가 확인된 별도 시험 volume 1개만 정�
 실제 Kubernetes 적용·Secret 누락 Pod 상태·NetworkPolicy 허용 검증·팀 Discord 수신·AWS·Langfuse는 미검증이다.
 local/Argo 경보는 비활성이고 원격 CI·배포 결과로 해석하지 않는다.
 #187 전체 완료 조건과 이슈 종료는 보류한다. 예산·담당·업무별 지표·DLQ 라벨·trace 저장/조회·운영 발송은 위 후속 목록을 따른다.
+
+## 최신 develop 반영과 후속 대조 (2026-11-02)
+
+작업 시작 시 `feature/infra-operational-alerts`는 clean이고 기존 기능 커밋 `24f5b9705efe112e0b546a7dff77e1ee05192e8e`가 보존돼 있었다.
+origin의 기존 head 브랜치 PR 검색 결과는 없었고 #187은 open, 댓글 0개로 새 정책 결정이 등록되지 않았다.
+fetch한 develop `26948215fa8c5e4b5308db26e2d5fbb378db57f9`와 이력이 분기되어
+`git merge --no-edit origin/develop`으로 merge commit `e25ca04f3fe54c6a1b1416398fc9403c750a13db`를 만들었다.
+충돌은 없었고 rebase·reset·force push 없이 기존 기능 커밋과 develop 변경을 보존했다.
+
+이전 기준 `b35e381`부터 최신 develop까지 `infrastructure/gitops/`, AI Langfuse 설정·LLM 계측·사용량 publisher 변경은 없었다.
+AI 메시징 연결 파일의 변경은 Pod별 exclusive 큐 선언 예외를 설명하는 주석 정정이며 경보 지표·trace backend를 추가하지 않았다.
+architecture 4.6과 API 4.6을 다시 대조했으며 local traces=false, queue 라벨 부재,
+업무별 오류율·지연 수집 공백, 비용 null/미산정 의미와 예산·담당 미확정 조건은 유지된다.
+따라서 추가 운영 규칙이나 exporter·외부 서비스·AWS 자원·HTTPS egress·실채널 발송을 임의 추가하지 않았다.
+
+승인 범위 내 독립 보완으로 검증기에 `--baseline`을 추가했다. 전달한 ref를 실제 commit SHA로 고정하고
+현재 HEAD의 ancestor인지 검사한 뒤 해당 기준의 chart와 비활성 리소스를 비교한다.
+최초 #171 기준은 기본값으로 유지하고, 이번 재검증에는 최신 develop SHA를 명시한다.
+production chart·공개 계약·기존 앱 로직은 이번 재개 작업에서 추가 수정하지 않았다.
+
+최종 명령은 `python infrastructure/gitops/operational-alerts/verify_chart.py --helm <Helm-4.3.1-실행파일> --baseline 26948215fa8c5e4b5308db26e2d5fbb378db57f9`이며 exit 0으로 완료됐다.
+최신 develop의 default/local 비활성 리소스 동일성, 생성기→chart UID/mount/Secret 연결,
+필수 입력 오류 시 Helm 실패, 실제 RabbitMQ 지표, Grafana/Prometheus 정상→발생→유지→회복,
+로컬 대역 발생·회복/NoData/조회 오류 수신, 잘못된 datasource UID,
+재적용 중복 방지, target 장애와 job 제거 경보를 모두 통과했다.
+이번 검증은 앞 절과 같은 시험 전용 임계값·10초 lookback을 사용했다.
+최종 `git diff --check`와 문서 상대 링크를 확인하며, 시험 container/network는 종료 후 남지 않았다.
+기존 kind·다른 작업 자원·이전 익명 volume 후보는 변경하지 않았다.
+
+예산·담당·운영 임계값·실제 Discord 수신 및 trace 저장/조회 결정 대기는 계속 유지한다.
+실제 Kubernetes 적용·AWS 자원 생성·외부 전송·Langfuse 저장 검증·원격 CI는 이번 로컬 시험에 포함하지 않는다.
+PR 생성이나 #187 종료는 수행하지 않았다.

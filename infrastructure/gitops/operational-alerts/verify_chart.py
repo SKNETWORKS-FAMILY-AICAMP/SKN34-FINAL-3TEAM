@@ -19,11 +19,14 @@ def run(*args, expect_success=True):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--helm", required=True)
+    parser.add_argument("--baseline", default="b35e381aa37cf22b5816d2750b46d18f2c11fa5c",
+                        help="Fetched base commit whose disabled resources must remain unchanged")
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[3]
     chart_path = "infrastructure/gitops/charts/observability"
     chart = repo / chart_path
-    base = "b35e381aa37cf22b5816d2750b46d18f2c11fa5c"
+    base = run("git", "-C", str(repo), "rev-parse", "--verify", args.baseline + "^{commit}").strip()
+    run("git", "-C", str(repo), "merge-base", "--is-ancestor", base, "HEAD")
     local = repo / "infrastructure/gitops/environments/local/observability.yaml"
     load = lambda text: [doc for doc in yaml.safe_load_all(text) if doc]
     with tempfile.TemporaryDirectory(prefix="issue187-chart-") as directory:
@@ -40,7 +43,7 @@ def main():
             identify = lambda docs: {(d["kind"], d["metadata"]["name"]): d for d in docs}
             assert identify(before) == identify(after), "Disabled mode changed existing resources"
         run(args.helm, "lint", str(chart))
-        print("PASS Helm default/local disabled resources identical to merged #171", flush=True)
+        print("PASS Helm default/local disabled resources identical to baseline " + base, flush=True)
         config = dict(environment="verification", datasource_uid="issue187-prometheus", backlog_messages=10,
                       pending_seconds=10, interval_seconds=10, group_wait_seconds=1, group_interval_seconds=10,
                       repeat_interval_seconds=300, secret_name="issue187-test", secret_key="DISCORD_WEBHOOK_URL")

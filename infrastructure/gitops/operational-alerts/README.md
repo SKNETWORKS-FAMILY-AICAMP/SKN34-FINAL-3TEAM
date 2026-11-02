@@ -59,6 +59,7 @@ NoData/Error도 정상으로 숨기지 않는다. Grafana 자체가 중단되면
 ```powershell
 python infrastructure/gitops/operational-alerts/verify.py
 python infrastructure/gitops/operational-alerts/verify_chart.py --helm <helm-실행파일>
+python infrastructure/gitops/operational-alerts/verify_chart.py --helm <helm-실행파일> --baseline <반영한-develop-SHA>
 git diff --check
 ```
 
@@ -83,6 +84,8 @@ job 제거 시험은 lookback을 시험 전용 10초로 단축한다. #171 기�
 `--scrape-only`는 수집 실패·job 제거 시험만 재개한다.
 
 chart 검증에는 Helm과 검증용 PyYAML이 필요하다(운영 의존성 아님).
+`--baseline`은 현재 HEAD에 반영된 commit만 허용하며, 생략하면 최초 #171 병합 SHA와 비교한다.
+develop 갱신 후에는 반영한 SHA를 명시해 최신 기준의 비활성 동작 보존도 확인한다.
 기본/local 비활성 렌더 결과를 병합 #171 SHA와 리소스 단위로 비교하고,
 생성기 CLI 출력의 활성화 values·Secret/UID 오류를 검사한다.
 이어 실제 렌더된 ConfigMap의 provisioning/datasource와 Grafana command를 격리 Docker 시험에 전달한다.
