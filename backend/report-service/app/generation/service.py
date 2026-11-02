@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.database import run_db, transaction
-from app.deletion.state import generation_allowed
+from app.deletion.service import ensure_generation_allowed
 from app.generation.locking import JobLocks
 from app.generation.models import (
     GenerateReport,
@@ -82,7 +82,7 @@ class GenerationService:
 
     def _start(self, command: GenerateReport) -> WeeklyReport | None:
         with transaction(self._factory) as session:
-            if not generation_allowed(session, command.student_id, command.requested_at):
+            if not ensure_generation_allowed(session, command.student_id, command.requested_at):
                 return None
             if (
                 self._repository.guard(
@@ -114,3 +114,32 @@ class GenerationService:
             if report is not None:
                 event_type = "report.completed" if result is not None else "report.failed"
                 self._record_event(session, ReportEvent(event_type, report, failure_reason))
+
+
+class ReportReadService:
+    """조회 기능에 제공하는 generation 소유 데이터 접근."""
+
+    def __init__(self):
+        self._repository = ReportRepository()
+
+    def latest_page(self, session, student_id, status, page, size):
+        return self._repository.latest_page(session, student_id, status, page, size)
+
+    def find(self, session, report_id):
+        return self._repository.find(session, report_id)
+
+    def revisions(self, session, student_id, period_from):
+        return self._repository.revisions(session, student_id, period_from)
+
+    def items(self, session, report_id):
+        return self._repository.items(session, report_id)
+
+    def evidence(self, session, report_id, item_id):
+        return self._repository.evidence(session, report_id, item_id)
+
+    def file(self, session, report_id, format):
+        return self._repository.file(session, report_id, format)
+
+
+def delete_student(session, student_id):
+    ReportRepository().delete_student(session, student_id)

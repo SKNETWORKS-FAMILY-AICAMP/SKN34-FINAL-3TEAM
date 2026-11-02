@@ -4,5 +4,5 @@
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tests.tsbuildinfo",
     "types": ["node", "vite/client"]
   },
-  "include": ["tests/**/*.ts", "playwright.config.ts", "src/vite-env.d.ts"]
+  "include": ["tests/**/*.ts", "playwright.config.ts", "playwright.e2e.config.ts", "src/vite-env.d.ts"]
 }

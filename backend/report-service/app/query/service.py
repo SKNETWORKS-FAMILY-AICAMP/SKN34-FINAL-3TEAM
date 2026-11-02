@@ -4,17 +4,16 @@ from uuid import UUID
 
 import httpx
 from pydantic import ValidationError
-from sqlalchemy import func, select
 
 from app.clients.storage import report_key
 from app.concurrency import run_blocking
 from app.database import run_db
-from app.deletion.state import query_allowed
+from app.deletion.service import ensure_query_allowed
 from app.errors import ApiError
 from app.generation.models import EvidenceLink
 from app.generation.presentation import assemble, without_ai
 from app.generation.records import RecordContractError
-from app.generation.repository import report_file, report_item, report_item_evidence, weekly_report
+from app.generation.service import ReportReadService
 from app.security import current_user_context
 
 
@@ -40,37 +39,15 @@ class QueryService:
     def __init__(self, factory, learning, storage_loader, ttl: int | None):
         self._factory, self._learning = factory, learning
         self._storage, self._ttl = storage_loader, ttl
+        self._reports = ReportReadService()
 
     async def list(self, student_id: UUID, status: str | None, page: int, size: int):
         require_student(student_id)
 
         def query():
-            ranked = (
-                select(
-                    weekly_report,
-                    func.row_number()
-                    .over(
-                        partition_by=(weekly_report.c.student_id, weekly_report.c.period_from),
-                        order_by=weekly_report.c.revision.desc(),
-                    )
-                    .label("rank"),
-                )
-                .where(weekly_report.c.student_id == student_id)
-                .subquery()
-            )
-            condition = ranked.c.rank == 1
-            if status:
-                condition &= ranked.c.status == status
             with self._factory() as session:
-                query_allowed(session, student_id)
-                total = session.scalar(select(func.count()).select_from(ranked).where(condition))
-                rows = session.execute(
-                    select(ranked)
-                    .where(condition)
-                    .order_by(ranked.c.period_from.desc())
-                    .offset(page * size)
-                    .limit(size)
-                ).mappings()
+                ensure_query_allowed(session, student_id)
+                rows, total = self._reports.latest_page(session, student_id, status, page, size)
                 return {
                     "items": [summary(row) for row in rows],
                     "page": page,
@@ -81,47 +58,26 @@ class QueryService:
         return await run_db(query)
 
     def _anchor(self, session, report_id):
-        row = (
-            session.execute(select(weekly_report).where(weekly_report.c.id == report_id))
-            .mappings()
-            .one_or_none()
-        )
+        row = self._reports.find(session, report_id)
         if row is None:
             raise ApiError(404, "NOT_FOUND", "리포트가 없습니다")
         require_student(row["student_id"])
-        query_allowed(session, row["student_id"])
+        ensure_query_allowed(session, row["student_id"])
         return row
 
     async def detail(self, report_id: UUID, revision: int | None, narrative_enabled: bool):
         def query():
             with self._factory() as session:
                 anchor = self._anchor(session, report_id)
-                family = (weekly_report.c.student_id == anchor["student_id"]) & (
-                    weekly_report.c.period_from == anchor["period_from"]
-                )
-                versions = (
-                    session.execute(
-                        select(weekly_report)
-                        .where(family)
-                        .order_by(weekly_report.c.revision.desc())
-                    )
-                    .mappings()
-                    .all()
+                versions = self._reports.revisions(
+                    session, anchor["student_id"], anchor["period_from"]
                 )
                 row = next(
                     (r for r in versions if revision is None or r["revision"] == revision), None
                 )
                 if row is None:
                     raise ApiError(404, "NOT_FOUND", "요청한 리포트 판이 없습니다")
-                items = (
-                    session.execute(
-                        select(report_item)
-                        .where(report_item.c.report_id == row["id"])
-                        .order_by(report_item.c.item_type, report_item.c.seq)
-                    )
-                    .mappings()
-                    .all()
-                )
+                items = self._reports.items(session, row["id"])
                 metadata = {
                     **summary(row),
                     "revisions": [
@@ -151,22 +107,9 @@ class QueryService:
         def query():
             with self._factory() as session:
                 report = self._anchor(session, report_id)
-                item = session.scalar(
-                    select(report_item.c.id).where(
-                        report_item.c.id == item_id, report_item.c.report_id == report_id
-                    )
-                )
-                if item is None:
+                rows = self._reports.evidence(session, report_id, item_id)
+                if rows is None:
                     raise ApiError(404, "NOT_FOUND", "리포트 항목이 없습니다")
-                rows = (
-                    session.execute(
-                        select(report_item_evidence).where(
-                            report_item_evidence.c.item_id == item_id
-                        )
-                    )
-                    .mappings()
-                    .all()
-                )
                 return report["student_id"], tuple(
                     EvidenceLink(r["attempt_id"], r["answer_id"], r["answer_version"]) for r in rows
                 )
@@ -201,16 +144,7 @@ class QueryService:
         def query():
             with self._factory() as session:
                 report = self._anchor(session, report_id)
-                row = (
-                    session.execute(
-                        select(report_file).where(
-                            report_file.c.report_id == report_id,
-                            report_file.c.format == format.upper(),
-                        )
-                    )
-                    .mappings()
-                    .one_or_none()
-                )
+                row = self._reports.file(session, report_id, format)
                 if row is None:
                     raise ApiError(404, "NOT_FOUND", "리포트 파일이 없습니다")
                 expected = report_key(

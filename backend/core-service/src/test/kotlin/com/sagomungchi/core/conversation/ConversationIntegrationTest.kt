@@ -367,6 +367,7 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
     }
     @Test fun `five final response categories preserve verification draft failure and notice on reload`() {
         val modes = listOf("LLM","VERIFICATION_FAILED","AI_UNAVAILABLE","NO_RECORD","UNSUPPORTED")
+        val exported = linkedMapOf<String, Any>()
         for(mode in modes) {
             val id=create()
             ai.respond = { exchange, request ->
@@ -386,6 +387,15 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
             }
             val response=message(id)
             assertTrue("result" in events(response.body()),response.body())
+            // AI 대역 원본이 아닌 core가 검증·직렬화해 전송한 최종 SSE 응답을 검사한다.
+            val frames = response.body().replace("\r\n", "\n").split("\n\n").mapNotNull { frame ->
+                val lines = frame.lines()
+                val event = lines.firstOrNull { it.startsWith("event:") }?.substringAfter(":")?.trim()
+                val data = lines.filter { it.startsWith("data:") }.joinToString("\n") { it.substringAfter(":").trimStart() }
+                if (event == "result") listOf(event, json.readTree(data)) else null
+            }
+            assertEquals(1, frames.size, response.body())
+            exported[mode] = mapOf("events" to frames)
             val saved=rows(id).single();assertEquals("COMPLETED",saved.status)
             val detail=json.readTree(call("/conversations/$id").body()).path("messages")[0]
             assertTrue(detail.path("verification").path("contentAllowed").asBoolean())
@@ -395,6 +405,9 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
                 "NO_RECORD","UNSUPPORTED" -> { assertEquals(mode,detail.path("notice").path("reason").asText());assertTrue(detail.path("fallback").isNull) }
             }
         }
+        val output = java.nio.file.Path.of("build/generated-contracts/analysis.json")
+        java.nio.file.Files.createDirectories(output.parent)
+        json.writerWithDefaultPrettyPrinter().writeValue(output.toFile(), exported)
     }
     @Test fun `contradictory source metadata and forged quotes are rejected before persistence`() {
         for(mode in listOf("BOTH","DRAFT_PASSED","LLM_NOTICE","UNKNOWN_NOTICE","FORGED_QUOTE")) {

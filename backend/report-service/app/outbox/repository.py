@@ -79,6 +79,9 @@ class OutboxClaim:
 
 
 class OutboxRepository:
+    def delete_subject(self, session, subject):
+        session.execute(outbox_event.delete().where(outbox_event.c.subject == subject))
+
     def __init__(self, clock: Callable[[], datetime] | None = None):
         self._clock = clock or (lambda: datetime.now(UTC))
 
