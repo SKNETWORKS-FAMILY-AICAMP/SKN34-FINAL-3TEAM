@@ -197,7 +197,7 @@ develop `e65c9726cb7cc78e59649e2489766f2bb8a6e4b9`를 `git merge --no-edit`로 �
 | 범위 | 방식 | 결과 |
 |---|---|---|
 | kind `sagomungchi-local`의 실제 RabbitMQ 4.3.7 | `rabbitmq-0`에서 읽기 전용 `wget`으로 `/metrics/detailed?family=queue_coarse_metrics` 조회 | 6개 DLQ와 retry 큐에 `vhost`·`queue` 라벨, `rabbitmq_detailed_queue_messages` gauge 확인. 값 변경 없음 |
-| kind 관측 설치·규칙 평가 | 미수행 | `.env`에 `GRAFANA_ADMIN_USER`·`GRAFANA_ADMIN_PASSWORD` 값이 없어 Grafana Secret을 만들 수 없음 |
+| kind 관측 설치·규칙 평가 | 처음에는 미수행 | `.env`에 Grafana 관리자 값이 없었음. 값이 준비된 뒤 아래 절에서 수행 |
 | Helm 4.3.1 | `verify_chart.py --baseline e65c9726…` | 기본/local 동일, DLQ job·relabel이 definitions의 6개 DLQ만 유지, scrape 꺼진 DLQ 규칙 렌더 실패 |
 | 격리 Docker(실제 RabbitMQ 4.3.7·Prometheus 3.15.1·Grafana 13.3.0) | chart 모드와 단독 모드 각각 | 저장소 definitions를 import한 실제 detailed 출력→Prometheus relabel→6개 시계열만 유지, 한 DLQ만 발생·로컬 대역 수신·회복, 기존 적체·NoData·조회 오류·UID 오류·재적용·scrape 장애 분기 모두 통과 |
 | 계약 테스트 | `-O -m unittest discover -s scripts/tests` | 100개 통과 |
@@ -212,3 +212,44 @@ kind 클러스터·`kind236-web`·`pmw-*` container는 변경하지 않았다.
 - kind 관측 설치를 위한 Grafana 관리자 값 `.env` 준비, 이후 실제 scrape·규칙 평가 확인
 - A(월 LLM 비용)·B(담당·연락처·Discord Secret·HTTPS egress·실채널 시험 발송)·C(trace 저장·조회, #185)는 앞 절 그대로 유지
 - 업무별 오류율·지연 규칙은 각 서비스의 endpoint/status 지표 공급 확정 후 추가
+
+## kind 실제 경보 평가 (2026-11-03)
+
+사용자가 루트 `.env`에 Grafana 관리자 값을 준비한 뒤 kind `sagomungchi-local`(context `kind-sagomungchi-local`)에서 확인했다.
+자격 증명 값은 출력하지 않았고 Pod 환경 안에서만 사용했다. 시작 시 Docker 메모리 30GiB 중 kind 노드 사용 4.4GiB, 노드 요청 메모리 11%였다.
+
+### 절차
+
+1. `create-app-secrets.ps1`을 다시 실행: `app/app-service-credentials`는 값이 같아 그대로 두고 `observability/observability-credentials`만 생성.
+2. `helm upgrade --install observability … -f environments/local/observability.yaml`(경보 비활성)로 설치, Collector·Prometheus·Grafana 1/1 Running.
+3. Grafana API에서 기존 datasource UID를 조회해 시험 설정을 생성했다. 시험값은 적체 1건, DLQ 0건, 지속 10초, 평가 10초, 묶음 1/10초, 반복 300초다(운영 정책 아님).
+   webhook Secret은 실제 Discord 주소가 아닌 클러스터 내부의 존재하지 않는 시험 주소로 만든 `ops187-discord-test`다.
+4. 생성한 `helm-values.json`으로 upgrade.
+
+### 발견과 수정
+
+첫 upgrade 뒤 Prometheus Pod가 재시작되지 않아 `rabbitmq-dlq` job이 로드되지 않았다. Prometheus는 ConfigMap 변경을 다시 읽지 않고
+chart에 reload 장치나 checksum annotation이 없기 때문이다. `prometheus.rabbitmqDlqMetrics.enabled`일 때만 Prometheus Pod template에
+annotation을 붙이도록 수정해 켜고 끌 때 Pod가 다시 만들어지게 했다. 기본/local 렌더는 그대로이며 `verify_chart.py`가 annotation 존재를 검사한다.
+local Prometheus는 `emptyDir`이라 이 재생성 때 수집 이력이 초기화된다.
+
+### kind에서 직접 확인한 것
+
+| 항목 | 결과 |
+|---|---|
+| `rabbitmq-dlq` target | 실제 NetworkPolicy를 거쳐 `rabbitmq.platform:15692/metrics/detailed?family=queue_coarse_metrics` up |
+| 수집 시계열 | `rabbitmq_detailed_queue_messages` 6개(정의된 `<큐>.dlq` 전부)만 존재 |
+| 규칙 4개 평가 | Prometheus 재생성 직후에는 `up` 부재로 RabbitMQ·Collector 수집 장애 규칙이 일시 발생/pending, 적체 규칙이 NoData 상태였다가 수집 시작 후 모두 Normal·health ok |
+| DLQ 규칙 인스턴스 | 큐 6개마다 Normal 인스턴스 생성 |
+| 실제 적재 | 비어 있던 `report.report.generate.dlq`에 표식 payload 2건 publish(management API, Pod 안 자격 증명 사용, 소비자 0) |
+| 발생 | 약 40초 안에 DLQ 규칙이 해당 큐 하나만 Alerting, 전체 적체 규칙(2>1)도 Alerting. 나머지 5개 DLQ는 Normal |
+| 알림 전송 경로 | Grafana가 `ops187-discord` contact point로 전송을 시도했고 시험 주소 DNS 조회 실패로 기록됨(실제 발송 아님) |
+| 정리 | 표식 2건을 `ack_requeue_false`로 꺼내 payload 확인 후 제거, DLQ 6개 모두 0 |
+| 회복 | 제거 후 약 30초 안에 4개 규칙 모두 Normal |
+| 원상 복구 | 경보 비활성 local values로 다시 upgrade(revision 4), 시험 Secret 삭제. observability 스택은 local values 상태로 남김 |
+
+### 대역으로만 확인한 것
+
+- Discord protocol 수신과 회복 알림 수신, NoData·조회 오류 알림, 잘못된 datasource UID, 재provision 중복 방지, scrape job 제거: 격리 Docker 시험.
+- 실제 팀 Discord 수신, Grafana의 HTTPS egress 허용(현재 NetworkPolicy에 없음), AWS·Langfuse trace 저장은 미검증이다.
+  kind의 전송 시도는 시험 주소 조회 단계에서 끝났으므로 NetworkPolicy가 외부 443을 막는지도 이번에 따로 확인하지 않았다.
