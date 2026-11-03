@@ -1389,7 +1389,7 @@ components:
     AdminRubric:
       type: object
       additionalProperties: false
-      required: [version, elements, answerKey, exampleAnswer, forbiddenTerms, hints, createdAt]
+      required: [version, elements, answerKey, exampleAnswer, forbiddenTerms, hints, createdAt, keywords, essayType]
       properties:
         version: {type: integer}
         elements: {type: array, items: {$ref: '#/components/schemas/AdminRubricElement'}}
@@ -1401,6 +1401,8 @@ components:
         forbiddenTerms: {type: array, items: {type: string}}
         hints: {type: array, items: {type: string}, description: 생각 열기 질문 순서대로}
         createdAt: {type: string, format: date-time}
+        keywords: {type: array, items: {type: string}, description: '#69 서술 M2 핵심어 묶음'}
+        essayType: {type: [string, 'null'], enum: [설명글, 글짓기, 주장, 찬성반대, 대안제시, null], description: '#69 논술 M2 글 종류'}
     AdminMissionPage:
       type: object
       additionalProperties: false
@@ -1459,6 +1461,8 @@ components:
         exampleAnswer: {type: [string, 'null']}
         forbiddenTerms: {type: array, items: {type: string}}
         hints: {type: array, items: {type: string}}
+        keywords: {type: array, maxItems: 100, items: {type: string, minLength: 1, maxLength: 200}, description: '#69 서술 M2 핵심어 묶음 (괄호 안 대체어 포함)'}
+        essayType: {type: [string, 'null'], enum: [설명글, 글짓기, 주장, 찬성반대, 대안제시, null], description: '#69 논술 M2 글 종류'}
     AdminReviewRequest:
       type: object
       required: [missionVersion, rubricVersion]

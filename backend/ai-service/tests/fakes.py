@@ -24,20 +24,35 @@ class FakeLlm(LlmClient):
 
     generate 단계: BaseModel(응답)·LlmError(실패)
     stream 단계: str(조각 여러 개로 나눠 보냄)·list(조각·실패를 순서대로)·LlmError(첫 조각 전 실패)
+    hang=True면 generate의 LLM_TIMEOUT 단계는 요청 timeout을 다 기다린 뒤 실패 (제공자 시간 초과)
     """
 
-    def __init__(self, *steps: Step, max_retries: int = 0, delay: float = 0) -> None:
+    def __init__(
+        self,
+        *steps: Step,
+        max_retries: int = 0,
+        delay: float = 0,
+        timeout: float = 15,
+        backoff_seconds: float = 0,
+        hang: bool = False,
+    ) -> None:
         self.usages: list[LlmUsage] = []
         super().__init__(
-            "fake-model", max_retries, self.usages.append, backoff_seconds=0, timeout=15
+            "fake-model",
+            max_retries,
+            self.usages.append,
+            backoff_seconds=backoff_seconds,
+            timeout=timeout,
         )
         self._steps = list(steps)
         self._delay = delay
+        self._hang = hang
         self.requests: list[LlmRequest] = []
 
     async def _request(self, request: LlmRequest[T]) -> ProviderResponse[T]:
         step = self._next(request)
-        await asyncio.sleep(self._delay)
+        timed_out = isinstance(step, LlmError) and step.code == "LLM_TIMEOUT"
+        await asyncio.sleep(request.timeout if self._hang and timed_out else self._delay)
         if isinstance(step, LlmError):
             raise step
         assert isinstance(step, BaseModel)
