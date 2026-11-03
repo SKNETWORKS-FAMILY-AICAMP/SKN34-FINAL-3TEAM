@@ -26,7 +26,7 @@ class ReauthenticationService(private val repository: ReauthenticationRepository
  data class Started(val challengeId: UUID, val authorizationUrl: String, val expiresAt: OffsetDateTime, val stateCookie: String)
  data class Issued(val reauthToken: String, val expiresAt: OffsetDateTime)
  fun start(identity: AuthenticatedAccount, purpose: ReauthPurpose, childId: UUID?, scope: String?): Started {
-  val accountWide=purpose in setOf(ReauthPurpose.WITHDRAWAL,ReauthPurpose.GUARDIAN_PASSWORD)
+  val accountWide=purpose in setOf(ReauthPurpose.WITHDRAWAL,ReauthPurpose.GUARDIAN_PASSWORD,ReauthPurpose.TRANSFER_ACCEPT)
   if((accountWide && (childId!=null || scope!=null)) ||
    (!accountWide && childId==null) ||
    (purpose==ReauthPurpose.CHILD_DELETE && scope !in setOf("PROFILE","RECORDS")) ||

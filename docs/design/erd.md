@@ -1,5 +1,7 @@
 # ERD
 
+> #289: `V26__guardian_transfer.sql`은 `guardian_transfer`에 요청 당사자·자녀·상담 포함 여부·상태·시각을 기록하고, 대기 요청을 자녀당 하나로 제한한다. `guardianship.transferred_at`은 이관으로 종료된 연결을 일반 연결 해제와 구분한다. `student_id WHERE status='LINKED'`의 고유 인덱스로 자녀당 현재 보호자 한 명을 보장하며 기존 중복 데이터는 자동 정리하지 않고 migration을 실패시킨다. 기존 V1~V25, 학생 ID, learning/report DB 스키마는 변경하지 않는다. V24의 GUARDIAN_PASSWORD 재인증을 보존하고 이관 목적만 추가한다. 상세 범위와 검증은 [이관 구현 기록](../report/guardian-transfer-local.md)을 따른다.
+
 - 근거: [기능명세서](functional-spec.md), [API 명세서](api-spec.md), [유스케이스](usecase.md), [아키텍처 설계](architecture.md), [프로젝트 기획서](<../outputs/프로젝트_기획서_사고뭉치.pdf>) 4.5
 - 범위: DB를 소유한 서비스 3개(core_db · learning_db · report_db). ai·scoring은 상태 없음 (아키텍처 1.1)
 - AI Hub 원본·가공본은 `ml/` 학습용으로 서비스 DB에 넣지 않음 (NFR-DAT-03)
@@ -68,6 +70,9 @@ erDiagram
   student |o--o{ consent : "법정대리인 동의 대상"
   user_account ||--o{ guardianship : parent
   student ||--o{ guardianship : child
+  student ||--o{ guardian_transfer : transfer_target
+  user_account ||--o{ guardian_transfer : sender
+  user_account ||--o{ guardian_transfer : recipient
   user_account ||--o{ deletion_request : requests
   student ||--o{ deletion_request : target
   user_account ||--o{ withdrawal_request : requests
@@ -159,10 +164,21 @@ erDiagram
     uuid id PK
     uuid parent_user_id FK
     uuid student_id FK
-    varchar method "CHECK[REGISTER] (P02: LINK 미지원)"
+    varchar method "CHECK[REGISTER|TRANSFER] (#289, 임의 LINK 미지원)"
     varchar status "LINKED|UNLINKED"
     timestamptz linked_at
     timestamptz unlinked_at "NULL 허용"
+    timestamptz transferred_at "NULL 허용 · 이관으로 종료된 연결, UNLINKED만"
+  }
+  guardian_transfer {
+    uuid id PK
+    uuid student_id FK
+    uuid sender_id FK
+    uuid recipient_id FK
+    boolean include_conversations "앱에서 상담 포함 여부 전달, 기본 미포함"
+    varchar status "PENDING|ACCEPTED|REJECTED|CANCELLED"
+    timestamptz created_at
+    timestamptz resolved_at "NULL 허용 · PENDING이면 NULL, 종료 상태면 필수"
   }
   deletion_request {
     uuid id PK
@@ -187,6 +203,7 @@ erDiagram
 - #37: 동의 권한은 문서·주체·student_id별 agreed_at·id 내림차순 최신 행 기준이다. 같은 보호자의 동의 저장·철회·자녀 등록은 user_account 행 잠금으로 직렬화한다. 기존 스키마를 사용하며 V1~V8을 수정하지 않는다.
 - `consent_document` UK `(kind, version)`. V25가 1.0 문서 3종을 게시(#235), 개정은 행 수정 없이 새 version 행 추가. 동의는 철회해도 행 유지 → `status`·`withdrawn_at` 갱신 (FN-ACC-02)
 - `guardianship` 부분 UK `(parent_user_id, student_id) WHERE status = 'LINKED'`. 권한 확인은 이 테이블의 `LINKED` 행 기준 (아키텍처 1.1)
+- #289 V26: 추가 부분 UK `(student_id) WHERE status='LINKED'`로 현재 보호자 한 명을 보장한다. `guardian_transfer`는 `(student_id) WHERE status='PENDING'` 고유 인덱스, `(sender_id,created_at)`·`(recipient_id,created_at)` 조회 인덱스를 가진다. 발신자·수신자는 서로 달라야 하며 모두 실제 계정 FK다.
 - 연결 해제는 행 삭제 대신 `UNLINKED` 전환 → 해제 이후 조회 차단, 이력 보존 (FN-DSH-06)
 - `deletion_request`가 `CONFIRMED`가 되면 같은 트랜잭션에서 `outbox_event(student.deleted)` 저장
 - 로그인 수단·자녀 연결 변경 결과·시점은 `audit_log`에 기록 (FN-ACC-10)
@@ -234,7 +251,7 @@ erDiagram
     uuid user_id FK
     uuid session_id FK
     bigint session_version
-    varchar purpose "PIN_CHANGE|CHILD_UNLINK|CHILD_DELETE|WITHDRAWAL|GUARDIAN_PASSWORD"
+    varchar purpose "PIN_CHANGE|CHILD_UNLINK|CHILD_DELETE|WITHDRAWAL|GUARDIAN_PASSWORD|CHILD_TRANSFER|TRANSFER_ACCEPT"
     uuid student_id FK "NULL 허용"
     varchar scope "NULL 허용, CHECK[PROFILE|RECORDS]"
     varchar state_hash UK
@@ -1152,6 +1169,8 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | core | `student_device` | `(parent_user_id) WHERE revoked_at IS NULL` | 등록 기기 목록 |
 | core | `student_device_child` | `(student_id)` | 삭제 시 매핑 정리 |
 | core | `guardianship` | `(parent_user_id) WHERE status='LINKED'` | 요청마다 자녀 연결 확인 |
+| core | `guardianship` | `(student_id) WHERE status='LINKED'` | 자녀당 현재 보호자 한 명 보장 (#289, UNIQUE) |
+| core | `guardian_transfer` | `(student_id) WHERE status='PENDING'`, `(sender_id, created_at)`, `(recipient_id, created_at)` | 자녀당 대기 요청 하나(UNIQUE), 보내고 받은 요청 조회 (#289) |
 | core | `conversation` | `(parent_user_id, student_id, created_at)` | 대화 목록 |
 | core | `report_job` | `(student_id, period_from)`, `(status, created_at)` | 리포트 목록, 관리자 작업 현황 |
 | core | `job_execution` | `(job_type, job_id)` | 작업별 처리 이력 |
@@ -1187,7 +1206,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V23(V10·V11 결번), learning Flyway V1~V8, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`. 현재 73개 테이블·648개 컬럼(core 46/425, learning 19/160, report 8/63). 결정 경위는 [DB 스키마 보고서](../report/db-schema.md)
+- 버전: core Flyway V1~V9·V12~V26(V10·V11 결번), learning Flyway V1~V8, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`. 현재 75개 테이블·664개 컬럼(core 48/441, learning 19/160, report 8/63). 결정 경위는 [DB 스키마 보고서](../report/db-schema.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11은 #58이 처음 V10을 썼다가 V12가 적용된 DB에서 Flyway가 거부해 V13으로 옮긴 결번이며, V12 첫 줄 주석의 "V10은 #58"은 당시 기록
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT

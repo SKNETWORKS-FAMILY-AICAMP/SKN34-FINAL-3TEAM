@@ -3876,6 +3876,8 @@ paths:
                     - CHILD_DELETE
                     - WITHDRAWAL
                     - GUARDIAN_PASSWORD
+                    - CHILD_TRANSFER
+                    - TRANSFER_ACCEPT
                   childId:
                     type: string
                     format: uuid
@@ -6247,6 +6249,277 @@ paths:
         schema:
           type: string
           format: uuid
+  /guardian-transfers/recipient:
+    post:
+      operationId: findGuardianTransferRecipient
+      description: 격리된 로컬 이관 실험. app.guardian-transfer.enabled=true에서만 제공. 학부모와 필수 이용 동의 필요.
+      responses:
+        '200':
+          description: 성공
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuardianTransferRecipient'
+        '400':
+          description: 입력 또는 동의 문서 오류
+        '401':
+          description: 로그인 필요
+        '403':
+          description: 권한·동의·재인증 오류
+        '404':
+          description: 대상 없음 또는 기능 비활성
+        '409':
+          description: 인원·진행 상태·결제·동의 버전 충돌
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  maxLength: 254
+  /guardian-transfers:
+    get:
+      operationId: listGuardianTransfers
+      description: 격리된 로컬 이관 실험. app.guardian-transfer.enabled=true에서만 제공. 학부모와 필수 이용 동의 필요.
+      responses:
+        '200':
+          description: 성공
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GuardianTransferView'
+        '400':
+          description: 입력 또는 동의 문서 오류
+        '401':
+          description: 로그인 필요
+        '403':
+          description: 권한·동의·재인증 오류
+        '404':
+          description: 대상 없음 또는 기능 비활성
+        '409':
+          description: 인원·진행 상태·결제·동의 버전 충돌
+    post:
+      operationId: requestGuardianTransfer
+      description: 격리된 로컬 이관 실험. app.guardian-transfer.enabled=true에서만 제공. 학부모와 필수 이용 동의 필요.
+      responses:
+        '200':
+          description: 성공
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuardianTransferView'
+        '400':
+          description: 입력 또는 동의 문서 오류
+        '401':
+          description: 로그인 필요
+        '403':
+          description: 권한·동의·재인증 오류
+        '404':
+          description: 대상 없음 또는 기능 비활성
+        '409':
+          description: 인원·진행 상태·결제·동의 버전 충돌
+      parameters:
+      - name: X-Reauth-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - childId
+              - recipientId
+              properties:
+                childId:
+                  type: string
+                  format: uuid
+                recipientId:
+                  type: string
+                  format: uuid
+                includeConversations:
+                  type: boolean
+                  default: false
+  /guardian-transfers/{id}/accept:
+    post:
+      operationId: acceptGuardianTransfer
+      description: 격리된 로컬 이관 실험. app.guardian-transfer.enabled=true에서만 제공. 학부모와 필수 이용 동의 필요.
+      responses:
+        '200':
+          description: 성공
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuardianTransferView'
+        '400':
+          description: 입력 또는 동의 문서 오류
+        '401':
+          description: 로그인 필요
+        '403':
+          description: 권한·동의·재인증 오류
+        '404':
+          description: 대상 없음 또는 기능 비활성
+        '409':
+          description: 인원·진행 상태·결제·동의 버전 충돌
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: X-Reauth-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - consents
+              properties:
+                consents:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ConsentChoice'
+  /guardian-transfers/{id}/reject:
+    post:
+      operationId: rejectGuardianTransfer
+      description: 격리된 로컬 이관 실험. app.guardian-transfer.enabled=true에서만 제공. 학부모와 필수 이용 동의 필요.
+      responses:
+        '200':
+          description: 성공
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuardianTransferView'
+        '400':
+          description: 입력 또는 동의 문서 오류
+        '401':
+          description: 로그인 필요
+        '403':
+          description: 권한·동의·재인증 오류
+        '404':
+          description: 대상 없음 또는 기능 비활성
+        '409':
+          description: 인원·진행 상태·결제·동의 버전 충돌
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /guardian-transfers/{id}/cancel:
+    post:
+      operationId: cancelGuardianTransfer
+      description: 격리된 로컬 이관 실험. app.guardian-transfer.enabled=true에서만 제공. 학부모와 필수 이용 동의 필요.
+      responses:
+        '200':
+          description: 성공
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuardianTransferView'
+        '400':
+          description: 입력 또는 동의 문서 오류
+        '401':
+          description: 로그인 필요
+        '403':
+          description: 권한·동의·재인증 오류
+        '404':
+          description: 대상 없음 또는 기능 비활성
+        '409':
+          description: 인원·진행 상태·결제·동의 버전 충돌
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /guardian-transfers/cancel-outgoing:
+    post:
+      operationId: cancelOutgoingGuardianTransfers
+      description: 격리된 로컬 이관 실험. app.guardian-transfer.enabled=true에서만 제공. 학부모와 필수 이용 동의 필요.
+      responses:
+        '200':
+          description: 성공
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - cancelled
+                properties:
+                  cancelled:
+                    type: integer
+                    minimum: 0
+        '400':
+          description: 입력 또는 동의 문서 오류
+        '401':
+          description: 로그인 필요
+        '403':
+          description: 권한·동의·재인증 오류
+        '404':
+          description: 대상 없음 또는 기능 비활성
+        '409':
+          description: 인원·진행 상태·결제·동의 버전 충돌
 components:
   securitySchemes:
     StudentDeviceCookie: {type: apiKey, in: cookie, name: student_device}
@@ -6296,6 +6569,80 @@ components:
         type: string
         const: XMLHttpRequest
   schemas:
+    GuardianTransferView:
+      type: object
+      required:
+      - id
+      - childId
+      - childName
+      - senderName
+      - recipientName
+      - recipientEmail
+      - direction
+      - includeConversations
+      - status
+      - createdAt
+      - resolvedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        childId:
+          type: string
+          format: uuid
+        childName:
+          type: string
+          nullable: true
+        senderName:
+          type: string
+          nullable: true
+        recipientName:
+          type: string
+          nullable: true
+        recipientEmail:
+          type: string
+        direction:
+          type: string
+          enum:
+          - INCOMING
+          - OUTGOING
+        includeConversations:
+          type: boolean
+        status:
+          type: string
+          enum:
+          - PENDING
+          - ACCEPTED
+          - REJECTED
+          - CANCELLED
+        createdAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+    GuardianTransferRecipient:
+      type: object
+      required:
+      - id
+      - name
+      - email
+      - childCount
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+        childCount:
+          type: integer
+          minimum: 0
+          maximum: 3
     ReportTemplateSettings:
       additionalProperties: false
       properties:

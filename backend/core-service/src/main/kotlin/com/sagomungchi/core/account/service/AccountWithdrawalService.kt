@@ -14,7 +14,10 @@ import java.util.UUID
 class AccountWithdrawalService(private val accounts: AccountManagementService,
  private val repository: AccountManagementRepository, private val children: ChildManagementService,
  private val payment: WithdrawalEligibilityService, private val reauth: ReauthenticationService,
- private val tokens: TokenService, private val devices: StudentDeviceCleanupService, private val passwords: GuardianPasswordService) {
+ private val tokens: TokenService, private val devices: StudentDeviceCleanupService,
+ private val passwords: GuardianPasswordService,
+ private val transfers: com.sagomungchi.core.guardianship.service.GuardianTransferAccessService,
+ private val conversations: com.sagomungchi.core.conversation.service.ConversationTransferService) {
  data class State(val withdrawalRequestId: UUID, val status: String)
  data class Requested(val withdrawalRequestId: UUID, val status: String, val statusToken: String)
  @Transactional
@@ -22,6 +25,7 @@ class AccountWithdrawalService(private val accounts: AccountManagementService,
  @Transactional
  fun request(identity: AuthenticatedAccount, token: String?): Requested {
   accounts.lock(identity)
+  transfers.requireNoOutgoing(identity.account.id)
   payment.requireEligible(identity.account.id)
   reauth.consume(identity,token,ReauthPurpose.WITHDRAWAL)
   val id=UUID.randomUUID(); val receipt=tokens.randomToken(); val now=AccountManagementService.now()
@@ -30,6 +34,7 @@ class AccountWithdrawalService(private val accounts: AccountManagementService,
   devices.revokeOwner(identity.account.id)
   passwords.clear(identity.account.id)
   children.deleteForWithdrawal(identity.account.id)
+  conversations.deleteRemainingForParent(identity.account.id)
   if(!children.hasRemaining(identity.account.id)) accounts.completeWithdrawal(identity.account.id)
   accounts.audit(identity.account.id,"WITHDRAWAL_REQUESTED",id)
   return Requested(id,repository.latest(identity.account.id)!!.status,receipt)

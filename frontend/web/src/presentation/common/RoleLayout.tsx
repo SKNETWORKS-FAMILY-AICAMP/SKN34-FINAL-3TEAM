@@ -13,7 +13,8 @@ export function RoleLayout({ role }: { role: Role }) {
   useNotificationStream(ready && session?.role === role && role !== 'STUDENT' && (session.nextAction ?? 'READY') === 'READY' ? role : null)
   if (!ready) return <p role="status">로그인 상태를 확인하고 있습니다.</p>
   if (!session) return <Navigate to={parentLoginRequired() ? '/login' : role === 'STUDENT' ? '/student/login' : loginPath} replace state={{ from: location.pathname + location.search }} />
-  if (session.role === 'PARENT' && session.nextAction && session.nextAction !== 'READY' && location.pathname !== session.startPath && !['/parent/account','/parent/help','/parent/support','/parent/billing'].includes(location.pathname))
+  const transferInbox = import.meta.env.VITE_GUARDIAN_TRANSFER_ENABLED === 'true' && session.nextAction === 'CHILD_REGISTRATION_REQUIRED' && location.pathname === '/parent/transfers'
+  if (session.role === 'PARENT' && session.nextAction && session.nextAction !== 'READY' && !transferInbox && location.pathname !== session.startPath && !['/parent/account','/parent/help','/parent/support','/parent/billing'].includes(location.pathname))
     return <Navigate to={session.startPath ?? '/parent/onboarding'} replace />
   if (session.role !== role) return <Navigate to={roleStart(session.role)} replace />
   return (

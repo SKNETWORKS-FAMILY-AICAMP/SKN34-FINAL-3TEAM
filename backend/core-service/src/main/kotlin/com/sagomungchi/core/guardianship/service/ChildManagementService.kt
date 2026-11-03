@@ -19,7 +19,7 @@ class ChildManagementService(private val repository: ChildManagementRepository,
  private val reauth: ReauthenticationService, private val outbox: OutboxWriter,
  private val reports: com.sagomungchi.core.report.service.ReportLifecycleService,
  private val conversations: ConversationDeletionService, private val devices: StudentDeviceCleanupService, private val pins: StudentPinService,
- private val looks: StudentLookService) {
+ private val looks: StudentLookService, private val transfers: GuardianTransferAccessService) {
  @Transactional
  fun update(identity: AuthenticatedAccount, id: UUID, nickname: String?, grade: Int?): LinkedStudent {
   accounts.lock(identity); access.requireCurrent(identity.account.id,id)
@@ -44,6 +44,7 @@ class ChildManagementService(private val repository: ChildManagementRepository,
   accounts.lock(identity); access.requireOwned(identity.account.id,id,true)
   if(repository.lock(id)==null) throw unavailable()
   reauth.consume(identity,token,ReauthPurpose.CHILD_UNLINK,id)
+  transfers.requireNoPendingStudent(id)
   repository.unlink(identity.account.id,id,now()); accounts.revokeStudent(id); accounts.audit(identity.account.id,"CHILD_UNLINKED",id)
  }
  @Transactional
@@ -51,6 +52,7 @@ class ChildManagementService(private val repository: ChildManagementRepository,
   accounts.lock(identity); access.requireOwned(identity.account.id,id)
   if(repository.lock(id)==null) throw unavailable()
   if(repository.pending(id)!=null) throw inProgress()
+  transfers.requireNoPendingStudent(id)
   reauth.consume(identity,token,ReauthPurpose.CHILD_DELETE,id,scope.name)
   return state(confirm(identity.account.id,id,scope))
  }

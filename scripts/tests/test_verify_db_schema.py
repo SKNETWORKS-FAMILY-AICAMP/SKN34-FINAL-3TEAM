@@ -60,7 +60,9 @@ class ContractTests(unittest.TestCase):
         contract = erd_contract()
         core = contract["core_db"]
         learning = contract["learning_db"]
-        self.assertEqual(core["guardianship"]["method"]["values"], {"REGISTER"})
+        self.assertEqual(core["guardianship"]["method"]["values"], {"REGISTER", "TRANSFER"})
+        self.assertTrue(core["guardianship"]["transferred_at"]["nullable"])
+        self.assertEqual(core["guardian_transfer"]["status"]["values"], {"PENDING", "ACCEPTED", "REJECTED", "CANCELLED"})
         self.assertEqual(core["notification_setting"]["channel"]["values"], {"IN_APP"})
         self.assertIsNone(core["product"]["code"]["values"])
         self.assertTrue(core["student"]["birth_year"]["nullable"])  # #45 erases DELETED profile; live rows are CHECK constrained.

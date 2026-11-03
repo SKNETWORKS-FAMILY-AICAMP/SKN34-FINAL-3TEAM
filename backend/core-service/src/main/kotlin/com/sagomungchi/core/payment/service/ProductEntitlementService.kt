@@ -23,6 +23,11 @@ class ProductEntitlementService(private val repository: PaymentRepository, priva
     private val students: StudentAccessService, private val json: ObjectMapper,
     @Value("\${app.payment.free-product-id:}") private val freeProductId: String) {
     fun forParent(parent: UUID, student: UUID): ProductEntitlement { students.requireLinked(parent,student); return forStudent(student) }
+    /** Ownership cannot change while usage/renewal still resolves the former subscription owner. */
+    fun requireTransferReady(student: UUID) {
+        if(repository.active(student)!=null || repository.confirmingStudent(student) || repository.refundPending(student))
+            throw BusinessException(HttpStatus.CONFLICT,"TRANSFER_PAYMENT_BLOCKED","자녀의 구독·결제·환불 처리가 모두 끝난 뒤 이관해 주세요.")
+    }
     fun forStudent(student: UUID): ProductEntitlement {
         val current=repository.active(student)
         if(current!=null && !BillingDates.entitled(current,tx.now()) && repository.confirmingStudent(student)) unavailable("PAYMENT_ENTITLEMENT_CONFIRMING")
