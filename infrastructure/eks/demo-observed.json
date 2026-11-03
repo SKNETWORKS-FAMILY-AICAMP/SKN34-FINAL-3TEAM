@@ -96,8 +96,8 @@
       "endpointPublicAccess": true,
       "endpointPrivateAccess": true,
       "publicAccessCidrs": [
-        "58.140.229.1/32",
-        "58.140.229.196/32"
+        "__OPERATOR_PUBLIC_IP_1__/32",
+        "__OPERATOR_PUBLIC_IP_2__/32"
       ],
       "controlPlaneEgressMode": "AWS_MANAGED"
     },

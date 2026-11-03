@@ -1,6 +1,6 @@
 # EKS 데모 관측 구성
 
-`demo-observed.json`은 2026-11-03 AWS API의 선택 필드만 저장한 인벤토리다. **eksctl 생성 파일이 아니며, 이 파일만으로 클러스터를 재생성할 수 없다.** `gp3.json`은 Kubernetes StorageClass manifest다.
+`demo-observed.json`은 2026-11-03 AWS API의 선택 필드만 저장한 인벤토리다. **eksctl 생성 파일이 아니며, 이 파일만으로 클러스터를 재생성할 수 없다.** `gp3.json`은 Kubernetes StorageClass manifest다. EKS API 공개 접근 허용 CIDR(`publicAccessCidrs`)은 작업자 공인 IP이므로 `__OPERATOR_PUBLIC_IP_n__`으로 치환했다. 실제 값은 `aws eks describe-cluster`로 확인한다.
 
 - 계정 `347161580747`, 리전 `ap-northeast-2`, 클러스터 `sagomungchi-demo-eks`, Kubernetes 1.35.
 - 현재 관리형 노드그룹은 `application` 하나. ON_DEMAND t3.medium 2대, min/desired/max 모두 2, private subnet 배치, 노드 디스크 20GiB.
