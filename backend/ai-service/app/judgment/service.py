@@ -3,9 +3,11 @@
 보류 판단 순서: TOO_SHORT → UNVERIFIED_SCOPE → INSUFFICIENT_EVIDENCE → QUOTE_MISMATCH
 → MODEL_DISAGREEMENT(M2) · LOW_CONFIDENCE(M1).
 앞의 둘은 LLM 호출 전에 확인해 비용을 쓰지 않음. LLM 보류면 scoring을 부르지 않음.
+M2·M1 입력이 있으면 LLM은 판정 마감에서 scoring 몫(scoring_reserve)을 뺀 시각까지만 씀 (P12).
 """
 
 import time
+from typing import Any
 
 from app.clients.scoring_client import ScoringClient, ScoringUnavailable
 from app.config import Settings
@@ -27,6 +29,8 @@ from app.llm.base import LlmClient, LlmUnavailable
 from app.prompt_versions.registry import ActiveVersions
 
 MIN_SCORING_SECONDS = 1.0  # 남은 판정 시간이 이보다 짧으면 scoring을 부르지 않고 실패
+
+ScoringBodies = tuple[dict[str, Any] | None, dict[str, Any] | None]  # (M2 본문, M1 본문)
 
 
 class JudgmentService:
@@ -51,8 +55,10 @@ class JudgmentService:
         if held is not None:
             return _held(held, request.versions, trial)
 
+        bodies = self._scoring_bodies(request)
+        llm_deadline = deadline - self._settings.scoring_reserve if bodies else deadline
         try:
-            extraction = await extractor.extract(self._llm, request, prompt)
+            extraction = await extractor.extract(self._llm, request, prompt, llm_deadline)
         except LlmUnavailable as exc:
             raise ApiError(503, "AI_UNAVAILABLE", "AI 처리 실패", retryable=exc.retryable) from exc
         versions = request.versions.model_copy(
@@ -75,7 +81,7 @@ class JudgmentService:
             return _held("QUOTE_MISMATCH", versions, trial)
 
         result = _result(request.rubric.elements, elements)
-        scores = await self._model_scores(request, result, deadline)
+        scores = await self._model_scores(bodies, result, deadline) if bodies else None
         if scores is not None:
             # 활성 모델이 응답하면 판정 버전은 그 모델, LLM 모델 ID는 사용량 이벤트에만 (#69)
             observed = scores.m2 or scores.m1
@@ -93,16 +99,22 @@ class JudgmentService:
             model_scores=scores,
         )
 
-    async def _model_scores(
-        self, request: JudgmentRequest, result: JudgmentResult, deadline: float
-    ) -> ModelScores | None:
-        """M2(서술·논술)·M1(풀이 단계) 활성 결과. 부를 입력이 없거나 비활성이면 None."""
+    def _scoring_bodies(self, request: JudgmentRequest) -> ScoringBodies | None:
+        """scoring에 보낼 M2·M1 본문. scoring 미연결이거나 부를 입력이 없으면 None."""
         if self._scoring is None:
             return None
         m2_body = cross_check.m2_body(request)
         m1_body = cross_check.m1_body(request) if self._settings.m1_check_enabled else None
         if m2_body is None and m1_body is None:
             return None
+        return m2_body, m1_body
+
+    async def _model_scores(
+        self, bodies: ScoringBodies, result: JudgmentResult, deadline: float
+    ) -> ModelScores | None:
+        """M2(서술·논술)·M1(풀이 단계) 활성 결과. 비활성이면 None."""
+        assert self._scoring is not None
+        m2_body, m1_body = bodies
         timeout = min(self._settings.scoring_timeout, deadline - time.monotonic())
         try:
             if timeout < MIN_SCORING_SECONDS:

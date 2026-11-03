@@ -33,7 +33,8 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-6.1-terra"  # 판정·되묻기 실제 호출 확인 (2026-10-27)
     openai_base_url: str | None = None  # 비우면 OpenAI 기본 주소
     openai_json_mode: Literal["json_schema", "json_object"] = "json_schema"  # sLLM은 json_object
-    # 판정 최악 15 + 1 + 15 = 31초 < learning→ai 35초 (P12)
+    # LLM 최악 15 + 1 + 15 = 31초. 판정은 judge_deadline 33초 안에서 scoring 몫을 먼저 떼어
+    # LLM 30초(두 번째 시도 14초로 줄어듦) + scoring 3초 = 33초 < learning→ai 35초 (P12)
     llm_timeout: float = 15.0  # LLM 1회 15초 (P12)
     llm_max_retries: int = 1  # 재시도 1회 (P12)
     llm_retry_backoff: float = 1.0  # 재시도 전 1초 대기 (P12)
@@ -45,6 +46,8 @@ class Settings(BaseSettings):
     # #69 판정 모델 교차 확인 (api-spec 4.2.2). 판정 전체 마감은 learning→ai 35초(P12)보다 짧게
     judge_deadline: float = 33.0
     scoring_timeout: float = 10.0  # scoring 호출 1회 한도, 남은 마감 시간과 작은 값을 씀
+    # M2·M1 입력이 있으면 LLM 추출 마감을 이만큼 앞당겨 scoring 몫으로 남김 (#87 예열 후 최대 1.7초)
+    scoring_reserve: float = 3.0
     m2_cross_check_enabled: bool = False  # false면 M2 점수·불일치를 modelScores에 기록만
     # 불일치 경계(임시, M2 담당 확인 전): scores 평균. 서술 9항목 1~5(hol 1~4), 논술 3영역 0~3
     m2_narrative_low: float = 2.0

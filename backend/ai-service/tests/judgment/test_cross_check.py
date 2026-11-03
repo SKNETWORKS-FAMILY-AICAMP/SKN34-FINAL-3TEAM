@@ -1,6 +1,7 @@
 """#69 M2·M1 교차 확인 분기 (api-spec 4.2.2). scoring은 대역으로 대체."""
 
 import asyncio
+import time
 from typing import Any
 
 import pytest
@@ -8,9 +9,11 @@ import pytest
 from app.clients.scoring_client import M1Check, M2Scores, ScoringUnavailable
 from app.config import Settings
 from app.errors import ApiError
+from app.judgment import service as judgment_service
 from app.judgment.extractor import Extraction
 from app.judgment.models import JudgmentRequest
 from app.judgment.service import JudgmentService
+from app.llm.base import LlmError
 from tests.fakes import FakeLlm
 
 ANSWER = "나는 찬성해. 왜냐하면 쉬는 시간이 길면 더 잘 놀 수 있기 때문이야."
@@ -91,21 +94,23 @@ def make_request(**overrides: Any) -> JudgmentRequest:
     return JudgmentRequest.model_validate(body)
 
 
-def found_both() -> FakeLlm:
-    return FakeLlm(
-        Extraction.model_validate(
-            {
-                "elements": [
-                    {"elementId": "e1", "status": "FOUND", "quote": "나는 찬성해"},
-                    {
-                        "elementId": "e2",
-                        "status": "FOUND",
-                        "quote": "쉬는 시간이 길면 더 잘 놀 수 있기 때문이야",
-                    },
-                ]
-            }
-        )
+def both_extraction() -> Extraction:
+    return Extraction.model_validate(
+        {
+            "elements": [
+                {"elementId": "e1", "status": "FOUND", "quote": "나는 찬성해"},
+                {
+                    "elementId": "e2",
+                    "status": "FOUND",
+                    "quote": "쉬는 시간이 길면 더 잘 놀 수 있기 때문이야",
+                },
+            ]
+        }
     )
+
+
+def found_both() -> FakeLlm:
+    return FakeLlm(both_extraction())
 
 
 def found_none() -> FakeLlm:
@@ -225,10 +230,59 @@ def test_scoring_timeout_uses_remaining_deadline() -> None:
 def test_exhausted_deadline_fails_without_calling_scoring() -> None:
     scoring = FakeScoring(m2=narrative(4))
     with pytest.raises(ApiError) as caught:
-        judge(scoring, judge_deadline=0.5)
+        judge(scoring, judge_deadline=0.5, scoring_reserve=0)
     assert caught.value.code == "SCORING_UNAVAILABLE"
     assert caught.value.extra == {"retryable": True}
     assert scoring.calls == []
+
+
+def test_llm_deadline_leaves_scoring_reserve() -> None:
+    llm = found_both()
+    judge(FakeScoring(m2=None), llm=llm, judge_deadline=10.0, scoring_reserve=3.0)
+    # LLM 1회 15초보다 (판정 마감 - scoring 몫)이 짧아 그 시각까지만 씀
+    assert 6.5 < llm.requests[0].timeout <= 7.0
+
+
+def test_llm_uses_whole_deadline_without_cross_check_inputs() -> None:
+    llm = found_both()
+    scoring = FakeScoring(m2=narrative(4))
+    judge(scoring, make_request(keywords=[]), llm=llm, judge_deadline=10.0, scoring_reserve=3.0)
+    assert scoring.calls == []
+    assert 9.5 < llm.requests[0].timeout <= 10.0
+
+
+class SlowScoring(FakeScoring):
+    """받은 timeout을 거의 다 쓰고 응답하는 scoring (첫 요청 지연 등 최악 대역)."""
+
+    async def m2_scores(self, body: dict[str, Any], timeout: float) -> M2Scores | None:
+        await asyncio.sleep(timeout * 0.9)
+        return await super().m2_scores(body, timeout)
+
+
+def test_llm_retry_worst_path_still_leaves_scoring_reserve(monkeypatch) -> None:
+    # 실제 설정(LLM 15초·대기 1초·마감 33초·scoring 몫 3초·최소 1초)을 1/10로 줄여 실제 시간 확인
+    monkeypatch.setattr(judgment_service, "MIN_SCORING_SECONDS", 0.1)
+    llm = FakeLlm(
+        LlmError("LLM_TIMEOUT", retryable=True),
+        both_extraction(),
+        max_retries=1,
+        timeout=1.5,
+        backoff_seconds=0.1,
+        hang=True,  # 첫 시도는 1.5초를 다 쓰고 시간 초과
+        delay=1.3,  # 재시도는 줄어든 마감(약 1.4초) 직전에 응답
+    )
+    scoring = SlowScoring(m2=narrative(4))
+    started = time.monotonic()
+    response = judge(scoring, llm=llm, judge_deadline=3.3, scoring_reserve=0.3, scoring_timeout=1.0)
+    elapsed = time.monotonic() - started
+    assert response.result == "CORRECT"
+    assert response.model_scores.m2 is not None
+    first, second = llm.requests
+    assert first.timeout == 1.5
+    assert second.timeout <= 3.3 - 0.3 - 1.6 + 0.05  # 재시도는 scoring 몫 앞에서 끊김
+    [(_, _, scoring_timeout)] = scoring.calls
+    assert scoring_timeout >= 0.3  # LLM이 마감까지 써도 scoring 몫은 남음
+    assert elapsed < 3.3
 
 
 def solution_request(**overrides: Any) -> JudgmentRequest:
