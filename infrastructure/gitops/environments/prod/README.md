@@ -58,6 +58,17 @@ kubectl --kubeconfig $kubeconfig get pods,pvc -n platform
 
 NetworkPolicy는 기존 chart 정책과 **합집합**으로 동작한다. 정책 변경은 별도 검토 후 `platform-network.json`, `core-alb-network.json`을 적용한다. 현재 app namespace 전체 default-deny 여부와 서비스별 egress 허용 범위는 [누락 점검](../../../../docs/report/issue-185-aws.md)을 따른다.
 
+## 다음 core 재배포 입력: 토스·신규 가입자 demo (#185, 미적용)
+
+`core-next/`는 현재 release에 아직 반영하지 않은 입력이다. `core-service.json`은 실제 release와 같게 유지하고, 다음 core 재배포 때 함께 적용한다.
+
+- `core-next/core-service-env.json`: `core-service.json`의 `env` 끝에 추가할 항목. 결제 키 8개는 `payment-credentials` Secret을 `optional: true`로 참조하므로 Secret이 없으면 결제만 미설정 상태로 기동한다. `AUTH_NEW_ACCOUNT_DEMO=true`는 `feature/demo-signup-flag`가 들어간 core 이미지에서만 동작한다.
+- `core-next/payment-external-secret.json`: Secrets Manager `sagomungchi/demo/app/payment`의 JSON 키 전체를 `app/payment-credentials`로 동기화한다(`dataFrom.extract`). 키 이름은 core 환경변수와 같게 넣는다: `PAYMENT_BILLING_ENCRYPTION_KEY`, `TOSS_TEST_SECRET_KEY`, `TOSSPAYMENTS_SECRET_KEY`, `TOSS_TEST_MID`, `TOSS_TEST_WEBHOOK_SECURITY_KEY`, `TOSS_TEST_BILLING_SECRET_KEY`, `TOSS_TEST_BILLING_MID`, `TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY`. 테스트 키만 넣는다.
+- ESO 역할 권한: [`external-secrets-role.inline.external-secrets-payment-read.json`](../../../aws/iam/external-secrets-role.inline.external-secrets-payment-read.json)을 `sagomungchi-demo-external-secrets-role` inline 정책 `sagomungchi-demo-external-secrets-payment-read`로 추가하고 `demo-stack.json`에 등록한다.
+- 토스 개발자센터 웹훅 URL: `https://d3jf0rnm6vhd9v.cloudfront.net/api/v1/webhooks/tosspayments`. core egress는 이미 외부 443을 허용한다.
+
+적용 순서: Secret 값 입력(담당자) → IAM inline 정책 → ExternalSecret 적용·Ready 확인 → `core-service.json` env 추가와 새 core digest → `redeploy-app.ps1` dry-run → `-Apply` → 테스트 결제·`audit-demo-data.sql` 재확인.
+
 ## 보존과 환경 경계
 
 - Secret 실제 값, Google/LLM 키, DB 비밀번호, JWT·내부 토큰은 Git에 넣지 않는다. ESO가 Secrets Manager에서 읽는다.

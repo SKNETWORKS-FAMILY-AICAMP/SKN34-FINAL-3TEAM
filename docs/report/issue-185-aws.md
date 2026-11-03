@@ -169,3 +169,10 @@
 **결정(2026-11-03):** 사용자가 노드그룹을 t3.medium **3대**(min/desired/max 3)로 정했다. RDS는 db.t4g.small Single-AZ를 유지한다. 추가 비용은 공개 단가 기준 노드 1대 $0.052/h(월 약 $38, 세금·크레딧·EBS 제외)다. 노드그룹 1개·Pod Identity 구조는 데모 사양으로 유지하며, 설계의 `platform-observability` 그룹·IRSA와의 차이는 이 결정으로 받아들인다. `cluster.json`·`demo-stack.json`은 3대 기준이다.
 
 **적용(2026-11-03 23:18 KST):** 사용자 승인 후 `eks update-nodegroup-config`로 application을 3/3/3으로 변경했다. update 0f021ef6는 Successful, 23:19에 새 노드(2b)가 Ready였다. DaemonSet 5종 3/3 Ready, 기존 앱 6개는 같은 Pod·restart 0으로 유지, CloudFront 200, `demo_stack.py plan` 55/55 일치. 새 노드는 Pod 5개·메모리 예약 4%로 여유가 생겼으나 **2a 노드는 여전히 Pod 17/17·메모리 예약 90%**다. 2a PVC를 쓰는 RabbitMQ·Prometheus·Grafana는 2a 노드에만 배치될 수 있으므로, 새 Pod 배치·rolling update는 새 노드로 가는 무상태 앱부터 여유가 생긴 것이다. 기존 Pod는 재배치하지 않았다.
+
+## 남은 항목 처리 (2026-11-04)
+
+- **신규 Google 가입자 demo 표시:** `feature/demo-signup-flag`(5538173)에 `AUTH_NEW_ACCOUNT_DEMO`(기본 false)를 추가했다. true인 환경에서만 새 Google 부모를 `is_demo=true`로 저장하고 기존 계정은 바꾸지 않는다. 학생은 기존처럼 부모 값을 따른다. JDK 21 컨테이너의 Testcontainers로 관련 테스트 27개(신규 1개 포함)가 통과했다. AWS 반영은 core 재빌드가 필요하며, 현재 배포 core의 미커밋 이용권 수정이 정리된 뒤 진행한다.
+- **토스 테스트 결제:** 저장소 입력만 준비했다([prod README](../../infrastructure/gitops/environments/prod/README.md#다음-core-재배포-입력-토스신규-가입자-demo-185-미적용)). Secret 값 입력 전이라 AWS·클러스터에는 적용하지 않았다.
+- **eksctl 검증:** eksctl 0.231.0 공식 배포 파일을 checksum으로 확인했으나 AWS 로그인 세션 만료로 `--dry-run`을 실행하지 못했다. 재로그인 후 실행한다.
+- 남은 사용자 작업: AWS 재로그인, 결제 Secret 값 입력, 부모 계정 다운로드 확인, 이용권 수정 정리. core-migrate 재빌드와 시연 데이터 재감사는 그 다음 순서다.
