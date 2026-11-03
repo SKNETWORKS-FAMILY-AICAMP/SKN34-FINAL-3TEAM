@@ -73,6 +73,8 @@
 
 ### 사용처와 장애 시 동작
 
+#210 검토 당시 코드 기준이다. 분석 대화 일일 사용량·관리자 재처리 중복 차감 행은 #225 이후 PostgreSQL `payment_premium_usage`로 옮겨져 Redis를 쓰지 않는다([#225 구현](#분석-대화-사용량-db-이관-구현-225)).
+
 | 사용처 | 코드 위치 | Redis가 보장하는 성질 | Redis 장애 시 현재 동작 |
 |---|---|---|---|
 | 학생 기기 페어링 코드 | `account/repository/PairingRepository.kt:12-17`, `account/service/StudentAuthService.kt:41-58` | 해시 키 `SET NX`·10분 TTL, Lua `GET`+`DEL` 1회 소비 | `DataAccessException` → 503 `STUDENT_AUTH_UNAVAILABLE`(`StudentAuthService.kt:121,127`). 등록된 기기의 프로필·PIN 로그인은 DB만 사용해 영향 없음(`:69-89`) |

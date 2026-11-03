@@ -37,6 +37,9 @@ env:
   - {name: LEARNING_URL, value: "http://learning-service.app.svc.cluster.local:8081"}
   - {name: AI_URL, value: "http://ai-service.app.svc.cluster.local:8000"}
   - {name: REPORT_URL, value: "http://report-api.app.svc.cluster.local:8002"}
+  - {name: ADMIN_RABBIT_MANAGEMENT_URL, value: "http://rabbitmq.platform.svc.cluster.local:15672"}
+  - {name: ADMIN_RABBIT_MANAGEMENT_USERNAME, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_USERNAME}}}
+  - {name: ADMIN_RABBIT_MANAGEMENT_PASSWORD, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_PASSWORD}}}
 hpa:
   enabled: false
 pdb:
@@ -74,7 +77,7 @@ networkPolicy:
       ports: [{protocol: TCP, port: 5432}]
 migration:
   enabled: true
-  revision: v19
+  revision: v23
   image:
     repository: sagomungchi/core-migrate
     tag: local

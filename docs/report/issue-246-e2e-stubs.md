@@ -6,7 +6,7 @@
 - 외부 의존(Google OAuth·LLM·토스페이먼츠)을 `infrastructure/stubs/` 대역으로 바꾼 compose 스택에서 핵심 흐름 E2E 실행
 - 담당자 결정 (2026-11-02)
   - 로그인 대체: Google 스텁(token·JWKS) + Playwright의 authorize 리다이렉트 재작성. 테스트 전용 로그인 API 미추가
-  - CI 실행 시점: 수동·매일 03:00 KST(develop)·E2E 구성 파일 변경 PR
+  - CI 실행 시점: 수동·E2E 구성 파일 변경 PR. 매일 03:00 KST schedule은 GitHub가 기본 브랜치(main)의 워크플로만 예약 실행하므로 main 병합 후부터 동작(develop 대상 아님)
   - 토스: core에 PG 주소 설정 추가, toss-stub, 결제 승인 E2E 1건
 - 실제 Google·토스·LLM 키와 GitHub secrets 미사용. 모든 값은 `infrastructure/stubs/e2e.env`의 합성 값
 
