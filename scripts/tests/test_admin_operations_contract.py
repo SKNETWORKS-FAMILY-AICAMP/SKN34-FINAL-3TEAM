@@ -56,6 +56,19 @@ class AdminOperationsContracts(unittest.TestCase):
                     for purpose in ('CHILD_TRANSFER','TRANSFER_ACCEPT'):
                         self.assertIn(purpose,purposes)
                         purposes.remove(purpose)
+                # #310 corrects the shared refresh cookie sentence to the V24 behavior (student switch keeps the locked
+                # parent cookie) and lists PARENT_SESSION_LOCKED on /auth/refresh 401. Restore only those approved fields.
+                if section=='paths':
+                    for operation in reviewed.values():
+                        for response in (operation.get('responses') or {}).values() if isinstance(operation,dict) else ():
+                            cookie=(response.get('headers') or {}).get('Set-Cookie') if isinstance(response,dict) else None
+                            if cookie and 'description' in cookie:
+                                cookie['description']=cookie['description'].replace(
+                                    '로그아웃은 refresh 쿠키를 만료시킨다. 학생 전환(/auth/student-sessions)은 잠긴 부모 refresh 쿠키를 지우지 않는다(V24).',
+                                    '학생 전환·로그아웃은 refresh 쿠키를 만료시킨다.')
+                if section=='paths' and name=='/auth/refresh':
+                    self.assertIn('PARENT_SESSION_LOCKED',reviewed['post']['responses']['401']['description'])
+                    reviewed['post']['responses']['401']={'$ref':'#/components/responses/Unauthenticated'}
                 canonical=json.dumps(reviewed,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
                 self.assertEqual(expected,hashlib.sha256(canonical).hexdigest(),f'{section}/{name}')
     def test_admin_paths_and_retry_key(self):

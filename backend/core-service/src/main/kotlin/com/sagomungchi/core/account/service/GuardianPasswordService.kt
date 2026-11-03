@@ -23,11 +23,15 @@ class GuardianPasswordService(private val repository: GuardianPasswordRepository
         val row=repository.find(identity.account.id)
         return GuardianPasswordState(row!=null,row?.lockedAt!=null,row?.updatedAt)
     }
-    /** Setting or changing always needs a fresh Google reauthentication; it also clears the failure lock. */
+    /**
+     * Setting or changing always needs a fresh Google reauthentication; it also clears the failure lock.
+     * The parent check runs before the rule check so non-parents get 403 regardless of input (#310, same order as #277),
+     * and the rule check runs before the one-time grant is consumed.
+     */
     @Transactional
     fun set(identity: AuthenticatedAccount, password: String, token: String?): GuardianPasswordState {
-        if(!PinRules.valid(password)) throw BusinessException(HttpStatus.UNPROCESSABLE_ENTITY,"VALIDATION_FAILED","보호자 비밀번호는 반복·연속되지 않는 숫자 4~6자리입니다.")
         accounts.lock(identity)
+        if(!PinRules.valid(password)) throw BusinessException(HttpStatus.UNPROCESSABLE_ENTITY,"VALIDATION_FAILED","보호자 비밀번호는 반복·연속되지 않는 숫자 4~6자리입니다.")
         reauth.consume(identity,token,ReauthPurpose.GUARDIAN_PASSWORD)
         val now=AccountManagementService.now()
         repository.set(identity.account.id,hasher.hash(password),now)
