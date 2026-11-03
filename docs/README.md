@@ -55,7 +55,7 @@
 | [issue-171-app-deployment](report/issue-171-app-deployment.md) | 앱 chart·local NetworkPolicy·확장·관측 수집 기반과 검증 경계(#171), GitOps chart lint·렌더·스키마 CI(#238), kind 클러스터 통합(#273) |
 | [frontend](report/frontend.md) | 웹 공통 기반·학생·학부모·관리자 화면(#7~#9·#59), 테마·대시보드, QR 시연 |
 | [mentoring-20261029](report/mentoring-20261029.md) | 10/29 오프라인 멘토링 결정과 후속 이슈(#205~#213) 관리 |
-| [audit](report/audit.md) | develop 종합 검증(c608f52·640e0a2·2db122c·92d522b)과 설계 문서 정합성 점검, 남은 결함·테스트 공백 |
+| [audit](report/audit.md) | develop 종합 검증(c608f52·640e0a2·2db122c·92d522b·b97cc67)과 설계 문서 정합성 점검, 남은 결함·테스트 공백 |
 
 - [이슈 #46 신고·문의·공지·도움말](report/issue-46-support.md): 요청 역할·학생 scope, 정정 재시도·감사, 알림 연결과 공급자 필요 계약
 
