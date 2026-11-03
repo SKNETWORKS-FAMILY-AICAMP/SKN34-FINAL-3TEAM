@@ -13,6 +13,7 @@ PROMPT_SCOPES = {
     "followup": "ai/followup",
     "analysis": "ai/analysis",
     "reportNarrative": "ai/report-narrative",
+    "reportTemplate": "ai/report-template",
 }
 
 

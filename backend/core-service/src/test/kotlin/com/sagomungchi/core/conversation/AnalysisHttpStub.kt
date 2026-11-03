@@ -13,6 +13,7 @@ class AnalysisHttpStub : AutoCloseable {
     val requests = CopyOnWriteArrayList<Request>()
     @Volatile var status = 200
     @Volatile var respond: (HttpExchange, Request) -> Unit = { _, _ -> }
+    @Volatile var templateBody = """{"settings":null,"clarification":"확인"}"""
     private val executor = Executors.newVirtualThreadPerTaskExecutor()
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
         this.executor = this@AnalysisHttpStub.executor
@@ -23,6 +24,15 @@ class AnalysisHttpStub : AutoCloseable {
                 exchange.responseHeaders.set("Content-Type", "text/event-stream;charset=UTF-8")
                 exchange.sendResponseHeaders(status, 0)
                 respond(exchange, request)
+            } catch (_: Exception) { } finally { exchange.close() }
+        }
+        createContext("/internal/analysis/report-template") { exchange ->
+            try {
+                requests.add(Request(exchange.requestBody.readBytes().toString(Charsets.UTF_8), exchange.requestHeaders.mapValues { it.value.toList() }))
+                val bytes = templateBody.toByteArray(Charsets.UTF_8)
+                exchange.responseHeaders.set("Content-Type", "application/json")
+                exchange.sendResponseHeaders(status, bytes.size.toLong())
+                exchange.responseBody.write(bytes)
             } catch (_: Exception) { } finally { exchange.close() }
         }
         start()

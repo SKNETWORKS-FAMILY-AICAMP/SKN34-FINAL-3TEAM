@@ -48,6 +48,7 @@ PG·learning HTTP는 트랜잭션 밖에서 실행한다. 준비 거래·권한 
 - `payment_premium_usage`는 FEEDBACK/CONVERSATION/REPORT_VIEW의 RESERVED/USED 증빙을 소유한다. 미완료 예약을 미사용으로 간주하지 않는다.
 - learning의 SYSTEM+정확한 학생 scope 증빙 API는 결제 이후 DONE 및 진행 중 피드백을 실제 learning DB에서 확인한다. MyBatis 캐시를 사용하지 않고 매번 조회한다. 원문은 반환하지 않는다.
 - FeedbackFacade는 답변·시도 소유권 확인 → core 사용 예약 → 판정 리스/처리·DB commit → core 완료 순서다. 다른 자녀의 답변으로 사용 예약을 만들지 못한다. 응답 유실은 예약을 남겨 보수적으로 판단한다.
+- core 예약·완료 409는 Problem Details `code`로 구분한다(#276). `REFUND_IN_PROGRESS`·`PAYMENT_USAGE_RETRY_REQUIRES_NEW_SOURCE`·`PAYMENT_USAGE_STATE_CHANGED`는 같은 코드 409와 코드별 학생 안내로 전달하고, 그 밖의 코드·형식 오류 409는 환불로 안내하지 않고 기존 사용 증빙 실패 `PAYMENT_USAGE_UNAVAILABLE` 503으로 처리한다. 계약 밖 응답을 새 공개 코드로 만들지 않고 이미 fail-closed로 쓰는 코드를 재사용했다.
 - 환불 완료는 즉시 구독 종료·무료 전환이다. 반려는 사용 동결을 해제하며 확정 실패와 불명확 취소를 구분한다.
 
 ## #41·#42 권한 공급
