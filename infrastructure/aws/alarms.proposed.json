@@ -1,0 +1,144 @@
+[
+  {
+    "AlarmName": "sagomungchi-demo-alb-no-healthy-target",
+    "AlarmDescription": "PROPOSED ONLY: review monitoring-plan.md and bind confirmed SNS actions before enabling.",
+    "ActionsEnabled": false,
+    "AlarmActions": [],
+    "OKActions": [],
+    "InsufficientDataActions": [],
+    "Namespace": "AWS/ApplicationELB",
+    "MetricName": "HealthyHostCount",
+    "Dimensions": [
+      {
+        "Name": "LoadBalancer",
+        "Value": "app/sagomungchi-demo-core/1eda1209ceafe116"
+      },
+      {
+        "Name": "TargetGroup",
+        "Value": "targetgroup/k8s-app-coreserv-98f92e4f50/ea8f0fa098ea9200"
+      }
+    ],
+    "Statistic": "Minimum",
+    "Period": 60,
+    "EvaluationPeriods": 3,
+    "DatapointsToAlarm": 3,
+    "Threshold": 1,
+    "ComparisonOperator": "LessThanThreshold",
+    "TreatMissingData": "missing"
+  },
+  {
+    "AlarmName": "sagomungchi-demo-alb-5xx",
+    "AlarmDescription": "PROPOSED ONLY: review monitoring-plan.md and bind confirmed SNS actions before enabling.",
+    "ActionsEnabled": false,
+    "AlarmActions": [],
+    "OKActions": [],
+    "InsufficientDataActions": [],
+    "Namespace": "AWS/ApplicationELB",
+    "MetricName": "HTTPCode_ELB_5XX_Count",
+    "Dimensions": [
+      {
+        "Name": "LoadBalancer",
+        "Value": "app/sagomungchi-demo-core/1eda1209ceafe116"
+      }
+    ],
+    "Statistic": "Sum",
+    "Period": 300,
+    "EvaluationPeriods": 1,
+    "DatapointsToAlarm": 1,
+    "Threshold": 5,
+    "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+    "TreatMissingData": "notBreaching"
+  },
+  {
+    "AlarmName": "sagomungchi-demo-target-5xx",
+    "AlarmDescription": "PROPOSED ONLY: review monitoring-plan.md and bind confirmed SNS actions before enabling.",
+    "ActionsEnabled": false,
+    "AlarmActions": [],
+    "OKActions": [],
+    "InsufficientDataActions": [],
+    "Namespace": "AWS/ApplicationELB",
+    "MetricName": "HTTPCode_Target_5XX_Count",
+    "Dimensions": [
+      {
+        "Name": "LoadBalancer",
+        "Value": "app/sagomungchi-demo-core/1eda1209ceafe116"
+      }
+    ],
+    "Statistic": "Sum",
+    "Period": 300,
+    "EvaluationPeriods": 1,
+    "DatapointsToAlarm": 1,
+    "Threshold": 5,
+    "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+    "TreatMissingData": "notBreaching"
+  },
+  {
+    "AlarmName": "sagomungchi-demo-rds-cpu-high",
+    "AlarmDescription": "PROPOSED ONLY: review monitoring-plan.md and bind confirmed SNS actions before enabling.",
+    "ActionsEnabled": false,
+    "AlarmActions": [],
+    "OKActions": [],
+    "InsufficientDataActions": [],
+    "Namespace": "AWS/RDS",
+    "MetricName": "CPUUtilization",
+    "Dimensions": [
+      {
+        "Name": "DBInstanceIdentifier",
+        "Value": "sagomungchi-demo-db"
+      }
+    ],
+    "Statistic": "Average",
+    "Period": 300,
+    "EvaluationPeriods": 3,
+    "DatapointsToAlarm": 3,
+    "Threshold": 80,
+    "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+    "TreatMissingData": "missing"
+  },
+  {
+    "AlarmName": "sagomungchi-demo-rds-storage-low",
+    "AlarmDescription": "PROPOSED ONLY: review monitoring-plan.md and bind confirmed SNS actions before enabling.",
+    "ActionsEnabled": false,
+    "AlarmActions": [],
+    "OKActions": [],
+    "InsufficientDataActions": [],
+    "Namespace": "AWS/RDS",
+    "MetricName": "FreeStorageSpace",
+    "Dimensions": [
+      {
+        "Name": "DBInstanceIdentifier",
+        "Value": "sagomungchi-demo-db"
+      }
+    ],
+    "Statistic": "Minimum",
+    "Period": 300,
+    "EvaluationPeriods": 2,
+    "DatapointsToAlarm": 2,
+    "Threshold": 5368709120,
+    "ComparisonOperator": "LessThanThreshold",
+    "TreatMissingData": "missing"
+  },
+  {
+    "AlarmName": "sagomungchi-demo-rds-connections-high",
+    "AlarmDescription": "PROPOSED ONLY: review monitoring-plan.md and bind confirmed SNS actions before enabling.",
+    "ActionsEnabled": false,
+    "AlarmActions": [],
+    "OKActions": [],
+    "InsufficientDataActions": [],
+    "Namespace": "AWS/RDS",
+    "MetricName": "DatabaseConnections",
+    "Dimensions": [
+      {
+        "Name": "DBInstanceIdentifier",
+        "Value": "sagomungchi-demo-db"
+      }
+    ],
+    "Statistic": "Maximum",
+    "Period": 300,
+    "EvaluationPeriods": 3,
+    "DatapointsToAlarm": 3,
+    "Threshold": 60,
+    "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+    "TreatMissingData": "missing"
+  }
+]

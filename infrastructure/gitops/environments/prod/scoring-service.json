@@ -1,0 +1,214 @@
+{
+  "env": [
+    {
+      "name": "CORE_URL",
+      "value": "http://core-service.app.svc.cluster.local:8080"
+    },
+    {
+      "name": "S3_BUCKET",
+      "value": "sagomungchi-demo-347161580747-models"
+    },
+    {
+      "name": "S3_REGION",
+      "value": "ap-northeast-2"
+    },
+    {
+      "name": "AWS_REGION",
+      "value": "ap-northeast-2"
+    },
+    {
+      "name": "AWS_DEFAULT_REGION",
+      "value": "ap-northeast-2"
+    },
+    {
+      "name": "MODEL_CACHE_DIR",
+      "value": "/tmp/scoring-models"
+    },
+    {
+      "name": "OMP_NUM_THREADS",
+      "value": "1"
+    },
+    {
+      "name": "MKL_NUM_THREADS",
+      "value": "1"
+    },
+    {
+      "name": "TOKENIZERS_PARALLELISM",
+      "value": "false"
+    },
+    {
+      "name": "INTERNAL_TOKEN",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "INTERNAL_TOKEN",
+          "name": "internal-service-credentials"
+        }
+      }
+    },
+    {
+      "name": "RABBITMQ_URL",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "RABBITMQ_URL",
+          "name": "rabbitmq-credentials"
+        }
+      }
+    }
+  ],
+  "image": {
+    "digest": "sha256:6fc49256b8c32f96be2dc13ccc6547e25b94e1f6bdb7c3cf08bf5ff9d8175eed",
+    "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/scoring-service"
+  },
+  "nameOverride": "scoring-service",
+  "networkPolicy": {
+    "egress": [
+      {
+        "ports": [
+          {
+            "port": 443,
+            "protocol": "TCP"
+          }
+        ],
+        "to": [
+          {
+            "ipBlock": {
+              "cidr": "52.219.202.0/23"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "52.219.144.0/22"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "52.219.204.0/22"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "3.5.144.0/23"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "3.5.140.0/22"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "52.219.148.0/23"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "52.219.60.0/23"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "3.5.184.0/21"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "52.219.56.0/22"
+            }
+          }
+        ]
+      },
+      {
+        "ports": [
+          {
+            "port": 80,
+            "protocol": "TCP"
+          }
+        ],
+        "to": [
+          {
+            "ipBlock": {
+              "cidr": "169.254.170.23/32"
+            }
+          }
+        ]
+      }
+    ],
+    "egressToApps": [
+      {
+        "name": "core-service",
+        "port": 8080
+      }
+    ],
+    "egressToPlatform": [
+      {
+        "name": "rabbitmq",
+        "port": 5672
+      }
+    ],
+    "enabled": true,
+    "ingress": [
+      {
+        "from": [
+          {
+            "podSelector": {
+              "matchLabels": {
+                "deployment-check": "scoring-check"
+              }
+            }
+          }
+        ],
+        "ports": [
+          {
+            "port": 8001,
+            "protocol": "TCP"
+          }
+        ]
+      }
+    ],
+    "ingressFromApps": [
+      "ai-service"
+    ]
+  },
+  "probes": {
+    "liveness": {
+      "enabled": true,
+      "path": "/health/live",
+      "periodSeconds": 10,
+      "timeoutSeconds": 5
+    },
+    "readiness": {
+      "enabled": true,
+      "path": "/health/ready",
+      "periodSeconds": 10,
+      "timeoutSeconds": 5
+    },
+    "startup": {
+      "enabled": true,
+      "failureThreshold": 60,
+      "path": "/health/live",
+      "periodSeconds": 10
+    }
+  },
+  "replicaCount": 1,
+  "resources": {
+    "limits": {
+      "cpu": "1",
+      "ephemeral-storage": "4Gi",
+      "memory": "2Gi"
+    },
+    "requests": {
+      "cpu": "500m",
+      "ephemeral-storage": "2Gi",
+      "memory": "2Gi"
+    }
+  },
+  "service": {
+    "enabled": true,
+    "port": 8001,
+    "targetPort": 8001
+  },
+  "serviceAccount": {
+    "automountToken": false,
+    "create": false
+  }
+}

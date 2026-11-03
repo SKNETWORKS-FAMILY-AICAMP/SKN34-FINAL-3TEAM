@@ -1,0 +1,147 @@
+{
+  "addons": [
+    {
+      "name": "aws-ebs-csi-driver",
+      "version": "v1.67.2-eksbuild.1",
+      "status": "ACTIVE",
+      "configuration": null
+    },
+    {
+      "name": "coredns",
+      "version": "v1.13.2-eksbuild.62",
+      "status": "ACTIVE",
+      "configuration": null
+    },
+    {
+      "name": "eks-node-monitoring-agent",
+      "version": "v1.7.6-eksbuild.1",
+      "status": "ACTIVE",
+      "configuration": null
+    },
+    {
+      "name": "eks-pod-identity-agent",
+      "version": "v1.4.1-eksbuild.3",
+      "status": "ACTIVE",
+      "configuration": null
+    },
+    {
+      "name": "kube-proxy",
+      "version": "v1.35.3-eksbuild.62",
+      "status": "ACTIVE",
+      "configuration": null
+    },
+    {
+      "name": "vpc-cni",
+      "version": "v1.22.4-eksbuild.10",
+      "status": "ACTIVE",
+      "configuration": "{\n  \"enableNetworkPolicy\": \"true\"\n}"
+    }
+  ],
+  "podIdentity": [
+    {
+      "namespace": "app",
+      "serviceAccount": "scoring-service",
+      "roleArn": "arn:aws:iam::347161580747:role/sagomungchi-demo-scoring-s3-role",
+      "disableSessionTags": false
+    },
+    {
+      "namespace": "kube-system",
+      "serviceAccount": "aws-node",
+      "roleArn": "arn:aws:iam::347161580747:role/sagomungchi-demo-eks-vpc-cni-role",
+      "disableSessionTags": false
+    },
+    {
+      "namespace": "app",
+      "serviceAccount": "report-worker",
+      "roleArn": "arn:aws:iam::347161580747:role/sagomungchi-demo-report-s3-role",
+      "disableSessionTags": false
+    },
+    {
+      "namespace": "external-secrets",
+      "serviceAccount": "external-secrets",
+      "roleArn": "arn:aws:iam::347161580747:role/sagomungchi-demo-external-secrets-role",
+      "disableSessionTags": false
+    },
+    {
+      "namespace": "kube-system",
+      "serviceAccount": "aws-load-balancer-controller",
+      "roleArn": "arn:aws:iam::347161580747:role/sagomungchi-demo-lb-controller-role",
+      "disableSessionTags": false
+    },
+    {
+      "namespace": "app",
+      "serviceAccount": "report-api",
+      "roleArn": "arn:aws:iam::347161580747:role/sagomungchi-demo-report-s3-role",
+      "disableSessionTags": false
+    },
+    {
+      "namespace": "kube-system",
+      "serviceAccount": "ebs-csi-controller-sa",
+      "roleArn": "arn:aws:iam::347161580747:role/sagomungchi-demo-eks-ebs-csi-role",
+      "disableSessionTags": false
+    }
+  ],
+  "cluster": {
+    "name": "sagomungchi-demo-eks",
+    "version": "1.35",
+    "status": "ACTIVE",
+    "resourcesVpcConfig": {
+      "subnetIds": [
+        "subnet-0573cf0b2fd58a126",
+        "subnet-0674d0daefc86442f"
+      ],
+      "securityGroupIds": [],
+      "clusterSecurityGroupId": "sg-086c7c83b3638da59",
+      "vpcId": "vpc-0f4d9134097830b4b",
+      "endpointPublicAccess": true,
+      "endpointPrivateAccess": true,
+      "publicAccessCidrs": [
+        "58.140.229.1/32",
+        "58.140.229.196/32"
+      ],
+      "controlPlaneEgressMode": "AWS_MANAGED"
+    },
+    "accessConfig": {
+      "authenticationMode": "API"
+    },
+    "logging": {
+      "clusterLogging": [
+        {
+          "types": [
+            "audit",
+            "authenticator"
+          ],
+          "enabled": true
+        },
+        {
+          "types": [
+            "api",
+            "controllerManager",
+            "scheduler"
+          ],
+          "enabled": false
+        }
+      ]
+    }
+  },
+  "nodegroup": {
+    "name": "application",
+    "status": "ACTIVE",
+    "scaling": {
+      "minSize": 2,
+      "maxSize": 2,
+      "desiredSize": 2
+    },
+    "types": [
+      "t3.medium"
+    ],
+    "capacity": "ON_DEMAND",
+    "subnets": [
+      "subnet-0573cf0b2fd58a126",
+      "subnet-0674d0daefc86442f"
+    ],
+    "disk": 20,
+    "nodeRole": "arn:aws:iam::347161580747:role/sagomungchi-demo-eks-node-role"
+  },
+  "observedAt": "2026-11-03"
+}
