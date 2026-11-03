@@ -48,6 +48,15 @@ export function usePinLogin() {
   })
 }
 
+/** 학부모: 보호자 비밀번호 설정 여부·잠금 */
+export function useGuardianPassword() {
+  return useQuery({
+    queryKey: ['parent', 'guardian-password'],
+    queryFn: ({ signal }) => studentDeviceApi.guardianPassword(signal),
+    retry: false,
+  })
+}
+
 /** 학부모: 등록 기기 목록 */
 export function useStudentDevices() {
   return useQuery({

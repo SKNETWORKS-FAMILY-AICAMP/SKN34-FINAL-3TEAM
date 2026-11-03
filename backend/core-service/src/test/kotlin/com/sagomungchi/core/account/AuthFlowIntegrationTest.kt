@@ -118,15 +118,17 @@ class AuthFlowIntegrationTest : IntegrationTestSupport() {
             assertFailsWith<BusinessException> { auth.authenticate(outcomes.single { it.isSuccess }.getOrThrow().accessToken) }
         } finally { executor.shutdownNow() }
     }
-    @Test fun `student transition issues no refresh and cannot restore parent credentials`() {
+    @Test fun `student transition issues no refresh and locks parent credentials`() {
         val first = login(); consent(first.identity.account.id)
         val id = child(first.identity.account.id)
-        val student = auth.enterStudent(first.refreshToken, id, auth.authenticate(first.accessToken))
+        val student = auth.enterStudent(id, auth.authenticate(first.accessToken))
         assertNull(student.refreshToken)
         assertNull(student.refreshExpiresAt)
         assertEquals("SESSION_CHANGED", assertFailsWith<BusinessException> { auth.authenticate(first.accessToken) }.code)
-        assertFailsWith<BusinessException> { auth.refresh(first.refreshToken) }
+        assertEquals("PARENT_SESSION_LOCKED", assertFailsWith<BusinessException> { auth.refresh(first.refreshToken) }.code)
+        assertEquals("PARENT_SESSION_LOCKED", assertFailsWith<BusinessException> { auth.refresh(first.refreshToken) }.code)
         assertEquals("STUDENT", auth.authenticate(student.accessToken).session.role)
+        assertNotEquals(first.identity.session.id, auth.authenticate(student.accessToken).session.id)
         assertEquals(setOf(id), student.identity.studentScope)
         mvc.get("/api/v1/me") { header("Authorization", "Bearer ${student.accessToken}") }.andExpect {
             status { isOk() }; jsonPath("$.child.id") { value(id.toString()) }; jsonPath("$.role") { value("STUDENT") }
@@ -141,7 +143,7 @@ class AuthFlowIntegrationTest : IntegrationTestSupport() {
         }.andExpect { status { isNoContent() } }
         assertFailsWith<BusinessException> { auth.authenticate(student.accessToken) }
     }
-    @Test fun `student HTTP response clears parent refresh cookie and guardian withdrawal blocks student`() {
+    @Test fun `student HTTP response keeps the locked parent refresh cookie and guardian withdrawal blocks student`() {
         val first = login(); consent(first.identity.account.id)
         val id = child(first.identity.account.id)
         val response = mvc.post("/api/v1/auth/student-sessions") {
@@ -150,7 +152,7 @@ class AuthFlowIntegrationTest : IntegrationTestSupport() {
             contentType = org.springframework.http.MediaType.APPLICATION_JSON; content = "{\"childId\":\"$id\"}"
         }.andExpect {
             status { isOk() }; jsonPath("$.role") { value("STUDENT") }; jsonPath("$.refreshToken") { doesNotExist() }
-            header { string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")) }
+            header { doesNotExist("Set-Cookie") }
         }.andReturn().response
         val access = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().readTree(response.contentAsString).get("accessToken").asText()
         jdbc.update("UPDATE consent SET status='WITHDRAWN',withdrawn_at=? WHERE student_id=?", OffsetDateTime.now(), id)

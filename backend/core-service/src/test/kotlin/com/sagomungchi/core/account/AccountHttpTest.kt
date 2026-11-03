@@ -78,7 +78,7 @@ class AccountHttpTest : PostgresRepositoryTest() {
     /** 같은 보호자의 다른 로그인 세션에서 동석 학생으로 전환한 학생 access */
     private fun student(p: IssuedAuth,c: UUID): String {
         val login=auth.login(GoogleProfile(p.identity.account.subject!!,p.identity.account.email,null),null)
-        return auth.enterStudent(login.refreshToken,c,login.identity).accessToken
+        return auth.enterStudent(c,login.identity).accessToken
     }
     private fun grant(identity: AuthenticatedAccount,purpose: ReauthPurpose,child: UUID?=null): String {
         `when`(google.reauthAuthorizationUrl(anyString(),anyString(),anyString())).thenReturn("https://accounts.google.com/reauth")

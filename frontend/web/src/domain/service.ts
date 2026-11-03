@@ -13,7 +13,7 @@ export const notificationLabels = {
 export type NotificationType = keyof typeof notificationLabels
 export type NotificationItem = { id: string; childId: string | null; type: NotificationType; title: string; link: string; readAt: string | null; createdAt: string }
 export type NotificationSettings = { items: { type: NotificationType; enabled: boolean }[] }
-export type ReauthPurpose = 'PIN_CHANGE' | 'CHILD_UNLINK' | 'CHILD_DELETE' | 'WITHDRAWAL'
+export type ReauthPurpose = 'PIN_CHANGE' | 'CHILD_UNLINK' | 'CHILD_DELETE' | 'WITHDRAWAL' | 'GUARDIAN_PASSWORD'
 export type DeletionScope = 'PROFILE' | 'RECORDS'
 export type DeletionRequest = { deletionRequestId: string; childId: string; scope: DeletionScope; status: string; completedServices: string[] }
 /** 알림 링크도 같은 출처와 현재 역할의 화면만 허용한다. */

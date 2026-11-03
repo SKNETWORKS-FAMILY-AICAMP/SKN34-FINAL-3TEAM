@@ -21,4 +21,5 @@ interface AuthMapper {
     fun findRefresh(hash: String): RefreshToken?
     fun consumeRefresh(@Param("id") id: UUID, @Param("now") now: OffsetDateTime): Int
     fun revokeSession(@Param("id") id: UUID, @Param("now") now: OffsetDateTime): Int
+    fun revokeGuardianEntries(@Param("parent") parent: UUID, @Param("now") now: OffsetDateTime): Int
 }

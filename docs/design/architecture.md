@@ -139,7 +139,7 @@
   - core 조회 실패 시 프로세스 종료 없이 readiness false 유지·재시도 (core 장애가 ai·scoring 기동 실패로 번지지 않게)
 - **이벤트 봉투**: CloudEvents 형식 `id, specversion, type, source, time, subject, dataschema, traceparent, data` → `contracts/events/*.schema.json`
 - **스키마 버전**: 파일 `<message>.v<N>.schema.json`, `dataschema`에 버전 표기. 하위 호환 변경(선택 필드 추가)만 같은 버전, 그 외는 새 버전 병행 발행 후 소비자 전환
-- **SSE 다중 레플리카**: 알림은 리포트 종료 전이 트랜잭션에서 저장 → AFTER_COMMIT으로 Redis 채널 `core:notifications:v1` 발행 → 구독 레플리카가 SSE 전달(5분·15초 heartbeat). 유실은 `ready` 후 목록 재조회로 보완 (api-spec 2.7)
+- **SSE 다중 레플리카**: 알림은 리포트 종료 전이 트랜잭션에서 저장 → AFTER_COMMIT에 `NotificationDispatchService`가 Redis 채널 `core:notifications:v1` 발행 후 `COMPLETED`·`FAILED` 기록(관리자 재처리도 같은 경로, 발행기 `NotificationRedisPublisher`는 Redis 발행만, #250) → 구독 레플리카가 SSE 전달(5분·15초 heartbeat). 유실은 `ready` 후 목록 재조회로 보완 (api-spec 2.7)
 
 ### 1.6.1 리포트 종료 유실 복구 (#132)
 
@@ -284,10 +284,10 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ controller/                # SSE
 │  ├─ consumer/                  # Redis 구독(다른 레플리카 알림 수신, #168)
 │  ├─ config/                    # Redis 구독 연결·채널 이름
-│  ├─ service/
+│  ├─ service/                   # NotificationDispatchService: 커밋 후 발행·결과 기록 (#250)
 │  ├─ domain/
 │  ├─ repository/
-│  └─ messaging/                 # Redis 발행(커밋 후)
+│  └─ messaging/                 # Redis 발행만 (#250)
 ├─ support/                      # 신고·문의·공지·도움말·정정
 │  ├─ controller/
 │  ├─ service/

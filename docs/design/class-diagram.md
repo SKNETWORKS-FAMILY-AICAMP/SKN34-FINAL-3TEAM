@@ -499,7 +499,8 @@ classDiagram
 - 공개 API 컨텍스트는 `PublicAuthFilter`가 설정하고 finally에서 해제 (`InternalAuthFilter`와 같은 방식)
 - 이메일·비밀번호 가입·로그인·로그인 수단 변경 없음. Google 계정은 `(oauth_provider, oauth_subject)`로 식별, 최초 콜백에서 `AuthService.login`이 PARENT 계정 생성 (API 명세 5.1)
 - 재확인 토큰(`reauthToken`)은 Google 재인증 기반(#45), DB reauth_challenge/reauth_grant 저장
-- `AuthService.enterStudent` (`POST /auth/student-sessions`): 학부모 Bearer와 같은 세션의 refresh로 연결·활성 자녀·필수·법정대리인 동의 확인 → 부모 refresh 소비, `auth_session` role·studentId·version 변경 → `STUDENT` access만 발급, refresh 쿠키 삭제 (P01, 학부모 동석). 학생 계정·시연 링크 없음
+- `AuthService.enterStudent` (`POST /auth/student-sessions`): 학부모 Bearer 세션 행을 잠그고 연결·활성 자녀·필수·법정대리인 동의 확인 → 학부모 세션 `locked_at`·version 증가, `parent_session_id`를 가진 학생 세션 생성 → `STUDENT` access만 발급, 학부모 refresh 쿠키는 유지(잠김) (P01, 학부모 동석). 학생 계정·시연 링크 없음
+- `AuthService.unlockParent` (`POST /auth/parent-unlock`): 잠긴 학부모 refresh + `GuardianPasswordService.attempt`(PIN과 같은 해시·5회 잠금) → 잠금 해제·학생 세션 폐기·refresh 회전. `GuardianPasswordService.set`은 `GUARDIAN_PASSWORD` 재인증 grant를 1회 소비 (FN-ACC-05, 2026-11-03)
 - `StudentAuthService.login`: 기기 쿠키 해시로 `StudentDevice` 조회 → `isUsable`(미해제·미만료)·자녀 등록 확인 → `ChildAuthorizationService.requireCurrent`·`StudentAccessService.requireLinked` → 잠금·PIN 검사 → 동석 경로와 같은 `STUDENT` 토큰 발급, refresh 미발급 (P01, API 명세 3.11)
 - `StudentPinService.attempt`: 학생 행 잠금으로 실패 횟수 증가, 5회 도달 시 `pin_locked_at` 기록. `set`은 DB 재인증 소비와 해시·실패 횟수 0·잠금 해제를 한 번에 처리
 - 페어링 코드는 Redis(10분·1회용), 기기 자격증명은 `student_device.token_hash`만 저장. 저장 구조는 ERD 3.1·6장(core V13)
@@ -726,13 +727,17 @@ classDiagram
   class NotificationRepository {
     <<repository>>
   }
+  class NotificationDispatchService {
+    <<service>>
+    +dispatch(NotificationStored) AFTER_COMMIT
+  }
   class NotificationRedisPublisher {
     <<messaging>>
-    +publish(NotificationStored) AFTER_COMMIT
+    +publish(NotificationStored) Boolean
   }
   class NotificationDeliveryService {
     <<service>>
-    +record(id, published)
+    +record(id, failed)
   }
   class NotificationRedisSubscriber { <<consumer>> }
   class NotificationStreams {
@@ -760,15 +765,16 @@ classDiagram
   NotificationController --> NotificationService
   NotificationController --> NotificationStreams
   NotificationService --> NotificationRepository
-  NotificationService ..> NotificationRedisPublisher : NotificationStored
-  NotificationRedisPublisher --> NotificationDeliveryService
+  NotificationService ..> NotificationDispatchService : NotificationStored
+  NotificationDispatchService --> NotificationRedisPublisher
+  NotificationDispatchService --> NotificationDeliveryService
   NotificationRedisSubscriber --> NotificationStreams
   class GuardianshipService { <<service>> }
 ```
 
 - `ReportScheduler`: `@Scheduled` + `@SchedulerLock`(ShedLock), 매주 월 07:00 KST, 직전 월~일(KST) 대상, 기록 없는 학생 포함 (P06). 학생별 `report_job(SCHEDULE)` + outbox 저장, 부분 UK로 중복 방지
 - `ReportEventConsumer`: 큐 `core.report.events`, `processed_event`로 멱등, 상태 전이는 조건부 UPDATE (상태 다이어그램 4.1)
-- 알림: 리포트 종료 전이 트랜잭션에서 `QUEUED` 저장 → 커밋 후 `NotificationRedisPublisher`가 `core:notifications:v1` 발행 → `NotificationDeliveryService`가 `COMPLETED`·`FAILED` 기록. 다른 레플리카의 `NotificationRedisSubscriber`(`notification/consumer`, 구독 연결·채널 이름은 `notification/config/NotificationRedisConfiguration`, #168)가 `NotificationStreams`로 SSE 전달 (아키텍처 1.6)
+- 알림: 리포트 종료 전이 트랜잭션에서 `QUEUED` 저장 → 커밋 후 `NotificationDispatchService`가 `NotificationRedisPublisher`로 `core:notifications:v1` 발행(발행기는 Redis 발행만) → `NotificationDeliveryService`로 `COMPLETED`·`FAILED` 기록. 관리자 재처리 `NotificationRetryService`도 `dispatch`를 호출(#250). 다른 레플리카의 `NotificationRedisSubscriber`(`notification/consumer`, 구독 연결·채널 이름은 `notification/config/NotificationRedisConfiguration`, #168)가 `NotificationStreams`로 SSE 전달 (아키텍처 1.6)
 - 리포트 조회 API에 `ReportQueryService`를 둬서 controller → client 직접 호출 금지 규칙 준수 (리포트 열람 기록 `report_view` 저장 포함)
 - `ReportController`의 `reportId` 경로는 `GuardianshipService.authorizeLinkedChildren()` 사용 (3.1)
 - 구현 이름: `ReportScheduler` = `report/scheduler/WeeklyReportScheduler` + `ReportScheduleService`, `ReportEventConsumer` = `report/consumer/ReportLifecycleConsumer` + `ReportLifecycleService`, `ReportCommandWriter` = `report/messaging/ReportGenerateWriter`, `ReportViewRepository` = `ReportJobRepository`(`report_view` 포함). 종료 이벤트 유실 복구(#132)는 `ReportRecoveryScheduler` + `ReportRecoveryService`. 학부모 리포트 표시 설정(#209)은 `ReportTemplateController`·`ReportTemplateService`(제안은 `conversation/client/AiClient.reportTemplate`)·`ReportTemplateRepository`·domain `ReportTemplateSettings`

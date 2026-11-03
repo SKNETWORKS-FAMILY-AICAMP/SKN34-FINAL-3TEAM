@@ -139,18 +139,42 @@ sequenceDiagram
   participant DB as core_db
 
   Note over W: 학부모 로그인 상태에서 상단 자녀 전환으로 자녀 선택
-  W->>C: POST /auth/student-sessions {childId} (학부모 Bearer + refresh 쿠키)
-  C->>DB: auth_session 잠금·Bearer와 같은 세션 확인, guardianship (parent, childId, LINKED)·student ACTIVE·필수·법정대리인 동의 확인
+  W->>C: POST /auth/student-sessions {childId} (학부모 Bearer)
+  C->>DB: 학부모 auth_session 행 잠금·Bearer version 확인, guardianship (parent, childId, LINKED)·student ACTIVE·필수·법정대리인 동의 확인
   alt 미연결·삭제·필수 동의 철회
     C-->>W: 403 CHILD_NOT_LINKED
   else
     rect rgba(128,128,128,0.12)
-      C->>DB: 부모 refresh 소비, auth_session role=STUDENT·student_id·version+1·만료=학생 access TTL
+      C->>DB: 학부모 auth_session locked_at·version+1, 학생 auth_session(parent_session_id) 생성·만료=학생 access TTL
     end
-    C-->>W: 200 {accessToken, expiresIn, role STUDENT, child, nextAction READY, startPath} + refresh 쿠키 삭제
+    C-->>W: 200 {accessToken, expiresIn, role STUDENT, child, nextAction READY, startPath} (Set-Cookie 없음)
   end
-  Note over W: 학생 refresh 미발급. 기존 부모 access는 version 불일치로 거부
+  Note over W: 학생 refresh 미발급. 기존 부모 access는 version 불일치, 부모 refresh는 PARENT_SESSION_LOCKED로 거부
   Note over W: 이후 학생 API는 학생 토큰으로 호출. URL 식별값(?student=) 진입 없음
+```
+
+학부모 화면 복귀 (보호자 비밀번호, 2026-11-03)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web
+  participant C as core
+  participant DB as core_db
+
+  W->>C: POST /auth/student/logout (학생 Bearer)
+  Note over W: 로그인 화면에 "학부모 화면으로 돌아가기"
+  W->>C: POST /auth/parent-unlock {password} (잠긴 학부모 refresh 쿠키)
+  C->>DB: refresh·학부모 세션 행 잠금, guardian_password 확인
+  alt 불일치
+    C->>DB: failed_count+1 (5회째 locked_at) 커밋
+    C-->>W: 401 GUARDIAN_PASSWORD_INVALID {remainingAttempts} / 423 LOCKED
+  else 미설정
+    C-->>W: 409 GUARDIAN_PASSWORD_NOT_SET → Google 로그인
+  else 일치
+    C->>DB: locked_at=NULL·version+1, parent_session_id 학생 세션 폐기, refresh 소비·새 refresh
+    C-->>W: 200 {accessToken, role PARENT, …} + 회전 refresh 쿠키
+  end
 ```
 
 기기 등록 (학부모 1회 승인)

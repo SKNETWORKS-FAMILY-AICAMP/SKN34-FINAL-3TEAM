@@ -3,14 +3,16 @@ import com.sagomungchi.core._common.security.RequestAttributes
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core.account.service.AccountManagementService
 import com.sagomungchi.core.account.service.AccountWithdrawalService
+import com.sagomungchi.core.account.service.GuardianPasswordService
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.*
 import org.springframework.web.bind.annotation.*
 
 @RestController
 class AccountManagementController(private val accounts: AccountManagementService, private val withdrawals: AccountWithdrawalService,
- private val cookies: AuthCookies) {
+ private val passwords: GuardianPasswordService, private val cookies: AuthCookies) {
  data class NameRequest(val name: String)
+ data class GuardianPasswordRequest(val password: String)
  @PatchMapping("/api/v1/me")
  fun rename(@RequestBody body: NameRequest, request: HttpServletRequest)=ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(accounts.rename(identity(request),body.name))
  @GetMapping("/api/v1/me/withdrawal/precheck")
@@ -22,5 +24,10 @@ class AccountManagementController(private val accounts: AccountManagementService
  @GetMapping("/api/v1/me/withdrawal")
  fun status(@RequestHeader(value="X-Withdrawal-Status-Token",required=false) receipt: String?, request: HttpServletRequest)=
   ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(withdrawals.status(request.getAttribute(RequestAttributes.IDENTITY) as? AuthenticatedAccount,receipt))
+ @GetMapping("/api/v1/me/guardian-password")
+ fun guardianPassword(request: HttpServletRequest)=ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(passwords.state(identity(request)))
+ @PutMapping("/api/v1/me/guardian-password")
+ fun setGuardianPassword(@RequestBody body: GuardianPasswordRequest, @RequestHeader(value="X-Reauth-Token",required=false) token: String?, request: HttpServletRequest)=
+  ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(passwords.set(identity(request),body.password,token))
  private fun identity(request: HttpServletRequest)=request.getAttribute(RequestAttributes.IDENTITY) as AuthenticatedAccount
 }

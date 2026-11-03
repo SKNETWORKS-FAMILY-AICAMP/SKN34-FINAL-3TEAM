@@ -194,7 +194,7 @@ class ConsentChildrenTest : PostgresRepositoryTest() {
     }
     @Test fun `guardian withdrawal blocks current student token and parent resource scope then renewal restores access`() {
         val p = login(); val user = p.identity.account.id; agree(user); val child = register(user)
-        val student = auth.enterStudent(p.refreshToken, child.id, auth.authenticate(p.accessToken))
+        val student = auth.enterStudent(child.id, auth.authenticate(p.accessToken))
         val other = auth.login(GoogleProfile(p.identity.account.subject!!, p.identity.account.email, "합성 보호자"), null)
         val guardian = consent.history(user).first { it.studentId == child.id }
         consent.withdraw(user, guardian.consentId)

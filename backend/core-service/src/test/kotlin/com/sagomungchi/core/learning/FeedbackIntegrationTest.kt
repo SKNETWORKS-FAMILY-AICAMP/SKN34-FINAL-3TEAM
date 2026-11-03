@@ -79,7 +79,7 @@ class FeedbackIntegrationTest : PostgresRepositoryTest() {
             jdbc.update("INSERT INTO consent(id,document_id,subject_user_id,student_id,agreed,status,agreed_at) VALUES(?,?,?,?,true,'AGREED',now())",
                 UUID.randomUUID(), doc["id"], user, if (doc["kind"] == "GUARDIAN") child else null)
         }
-        access = auth.enterStudent(parent.refreshToken, child, auth.authenticate(parent.accessToken)).accessToken
+        access = auth.enterStudent(child, auth.authenticate(parent.accessToken)).accessToken
     }
 
     @AfterEach fun cleanup() {

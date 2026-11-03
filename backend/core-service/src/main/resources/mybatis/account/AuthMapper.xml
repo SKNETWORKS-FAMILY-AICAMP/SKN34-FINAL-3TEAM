@@ -21,6 +21,8 @@
             <arg column="expires_at" javaType="java.time.OffsetDateTime"/>
             <arg column="revoked_at" javaType="java.time.OffsetDateTime"/>
             <arg column="created_at" javaType="java.time.OffsetDateTime"/>
+            <arg column="locked_at" javaType="java.time.OffsetDateTime"/>
+            <arg column="parent_session_id" javaType="java.util.UUID"/>
         </constructor>
     </resultMap>
     <resultMap id="refresh" type="com.sagomungchi.core.account.domain.RefreshToken">
@@ -50,15 +52,16 @@
     </insert>
     <select id="permissions" resultType="string">SELECT permission FROM admin_permission WHERE user_id = #{userId}</select>
     <insert id="insertSession">
-        INSERT INTO auth_session(id, user_id, role, student_id, version, expires_at, revoked_at, created_at)
-        VALUES(#{id}, #{userId}, #{role}, #{studentId,jdbcType=OTHER}, #{version}, #{expiresAt}, #{revokedAt,jdbcType=TIMESTAMP_WITH_TIMEZONE}, #{createdAt})
+        INSERT INTO auth_session(id, user_id, role, student_id, version, expires_at, revoked_at, created_at, locked_at, parent_session_id)
+        VALUES(#{id}, #{userId}, #{role}, #{studentId,jdbcType=OTHER}, #{version}, #{expiresAt}, #{revokedAt,jdbcType=TIMESTAMP_WITH_TIMEZONE}, #{createdAt},
+               #{lockedAt,jdbcType=TIMESTAMP_WITH_TIMEZONE}, #{parentSessionId,jdbcType=OTHER})
     </insert>
     <select id="findSession" resultMap="session">
-        SELECT id, user_id, role, student_id, version, expires_at, revoked_at, created_at FROM auth_session WHERE id = #{id}
+        SELECT id, user_id, role, student_id, version, expires_at, revoked_at, created_at, locked_at, parent_session_id FROM auth_session WHERE id = #{id}
         <if test="lock">FOR UPDATE</if>
     </select>
     <update id="updateSession">
-        UPDATE auth_session SET role=#{role}, student_id=#{studentId,jdbcType=OTHER}, version=#{version}, expires_at=#{expiresAt} WHERE id=#{id}
+        UPDATE auth_session SET version=#{version}, locked_at=#{lockedAt,jdbcType=TIMESTAMP_WITH_TIMEZONE} WHERE id=#{id}
     </update>
     <insert id="insertRefresh">
         INSERT INTO refresh_token(id, user_id, session_id, token_hash, expires_at, revoked_at, used_at, created_at)
@@ -69,4 +72,5 @@
     </select>
     <update id="consumeRefresh">UPDATE refresh_token SET used_at=#{now} WHERE id=#{id} AND used_at IS NULL AND revoked_at IS NULL</update>
     <update id="revokeSession">UPDATE auth_session SET revoked_at=#{now} WHERE id=#{id} AND revoked_at IS NULL</update>
+    <update id="revokeGuardianEntries">UPDATE auth_session SET revoked_at=#{now} WHERE parent_session_id=#{parent} AND revoked_at IS NULL</update>
 </mapper>
