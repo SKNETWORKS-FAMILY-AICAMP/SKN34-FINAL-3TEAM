@@ -1,6 +1,7 @@
 package com.sagomungchi.learning.mission.domain
 
-import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning._common.exception.DomainException
+import com.sagomungchi.learning._common.exception.ErrorKind
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.time.Instant
@@ -92,18 +93,20 @@ class MissionTest {
     }
 
     @Test
-    fun `게시 필수 누락은 422 MISSION_PUBLISH_INCOMPLETE와 missingFields`() {
+    fun `게시 필수 누락은 UNPROCESSABLE(422) MISSION_PUBLISH_INCOMPLETE와 missingFields`() {
         val mission = Mission(java.util.UUID.randomUUID(), MissionStatus.REVIEW_REQUIRED, 1, 1, null, null)
 
         val error = assertThrows<MissionPublishIncompleteException> { mission.publish(PublishSnapshot(version(InputType.CHOICE), rubric(elements = emptyList()), null)) }
 
-        assertEquals(Triple(422, "MISSION_PUBLISH_INCOMPLETE", listOf("rubric.elements", "review")), Triple(error.status.value(), error.code, error.missingFields))
+        assertEquals(Triple(ErrorKind.UNPROCESSABLE, "MISSION_PUBLISH_INCOMPLETE", listOf("rubric.elements", "review")), Triple(error.kind, error.code, error.missingFields))
         assertEquals(MissionStatus.REVIEW_REQUIRED, mission.status)
     }
 
     private fun ready() = PublishSnapshot(version(InputType.CHOICE), rubric(), ReviewResult.APPROVED)
 
-    private fun assertCode(code: String, block: () -> Unit) = assertEquals(code, assertThrows<BusinessException> { block() }.code)
+    /** domain 충돌은 HTTP 상태 대신 오류 종류(CONFLICT)와 code로 확인. 409 변환은 ErrorStatusTest (#249) */
+    private fun assertCode(code: String, block: () -> Unit) =
+        assertEquals(ErrorKind.CONFLICT to code, assertThrows<DomainException> { block() }.let { it.kind to it.code })
 
     private fun version(
         type: InputType,

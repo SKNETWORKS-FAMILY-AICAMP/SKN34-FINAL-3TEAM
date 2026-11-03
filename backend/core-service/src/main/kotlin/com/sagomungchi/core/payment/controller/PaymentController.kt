@@ -94,7 +94,8 @@ class PaymentController(private val payments: PaymentService,private val refunds
                 value is RefundRequestResponse && value.status=="APPROVED" -> 202
                 else -> status }
             HttpExchangeResult(actual,mapOf("Content-Type" to listOf("application/json"),"Cache-Control" to listOf("no-store")),json.writeValueAsBytes(value))
-          } catch(e: com.sagomungchi.core._common.exception.BusinessException) {
+          } catch(ex: RuntimeException) {
+            val e=com.sagomungchi.core._common.exception.errorInfoOf(ex) ?: throw ex
             HttpExchangeResult(e.status.value(),mapOf("Content-Type" to listOf("application/problem+json"),"Cache-Control" to listOf("no-store")),
                 json.writeValueAsBytes(com.sagomungchi.core._common.exception.Problems.of(e.status,e.code,e.title,e.detail,request)))
           }

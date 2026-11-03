@@ -403,7 +403,7 @@ core·learning은 import를 레이어로 분류해 전수 검사, Python·웹은
 
 | # | 내용 | 원칙 | 근거 |
 |---|---|---|---|
-| A8 | domain이 `BusinessException(ErrorKind…)`을 던지고 `BusinessException`이 `HttpStatus` 필드를 가짐(간접 프레임워크 의존) | 2.1 Domain 프레임워크 의존 금지 | core `conversation/domain/Conversations.kt`, learning `answer/domain/AnswerContent.kt`·`attempt/domain/Attempt.kt`·`judgment/domain/Judgment.kt`·`mission/domain/Mission.kt`·`record/domain/Period.kt`, 양쪽 `_common/exception/BusinessException.kt` |
+| A8 | domain이 `BusinessException(ErrorKind…)`을 던지고 `BusinessException`이 `HttpStatus` 필드를 가짐(간접 프레임워크 의존) — #249 해결(HTTP 상태 없는 `DomainException`, [#249 절](issue-168-core-layer-deps.md#249-domain-예외-분리-corelearning-1102)) | 2.1 Domain 프레임워크 의존 금지 | core `conversation/domain/Conversations.kt`, learning `answer/domain/AnswerContent.kt`·`attempt/domain/Attempt.kt`·`judgment/domain/Judgment.kt`·`mission/domain/Mission.kt`·`record/domain/Period.kt`, 양쪽 `_common/exception/BusinessException.kt` |
 | A9 | Infrastructure→Application 역참조 | 2.2 단방향 | core `notification/messaging/NotificationRedisPublisher.kt`가 `NotificationDeliveryService.record` 호출 |
 | A10 | 기능 간 controller·config 참조 | 2.2 기능 간은 service로만 | core 9개 컨트롤러가 `account.controller.AuthController.IDENTITY` 참조, `guardianship/service/StudentPinService`→`account.config.StudentDeviceProperties`, `_common/security/PublicAuthFilter`→account 기능, learning `attempt/controller/AttemptResponses.kt`·`record/controller/RecordResponses.kt`가 다른 기능 controller DTO 참조 |
 | A11 | report 기능 간 DB 직접 접근 — #252 로컬 해결·미병합 → **#258 병합** | 2.1·2.2 | query는 generation service, 생성·조회·복구·worker는 deletion service 경유. 삭제 DB 작업은 deletion.repository, 리포트·Outbox 삭제는 각 소유 service/repository로 분리. 기존 테이블 import 호환만 state의 지연 재노출로 유지. 검증 근거: [report #252 기록](report.md#252-report-기능-간-db-직접-접근-제거) |
@@ -474,7 +474,7 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 4장과 같이 
 | B23 | 유지 | `AdminOperations.tsx:204` oxlint 경고 1건(동작 문제 없음) |
 | B27 | 재현 안 됨 | #218(core 통합 테스트 연결 풀) 이후 core 전체 449건 실행에서 연결 고갈 실패 없음 |
 | A7 | 해결(local) | #204(#171) app-service chart·NetworkPolicy·HPA·KEDA·PDB·Argo CD local·관측 chart. 운영(EKS·prod) 구성은 "(예정)" |
-| A8 | 유지 | domain 6개 파일이 `BusinessException(ErrorKind…)` 사용, `BusinessException`이 `HttpStatus` 보유 |
+| A8 | 해결 | #272(#249). domain은 HTTP 상태 없는 `DomainException` 사용(`ReportTemplate.kt` 포함), [#249 절](issue-168-core-layer-deps.md#249-domain-예외-분리-corelearning-1102) |
 | A9 | 유지 | `NotificationRedisPublisher` → `NotificationDeliveryService` |
 | A10 | 유지 | core 9개 컨트롤러의 `AuthController.IDENTITY`, `StudentPinService`→`StudentDeviceProperties`, learning `AttemptResponses`·`RecordResponses`·`RecordController`의 다른 기능 DTO |
 | A11 | 해결 | #258(#252) 병합 |
@@ -499,7 +499,7 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 4장과 같이 
 | B33 | 확인(결함 아님) | 리포트 설정 제안이 AI 호출 전 분석 사용량 차감, AI 실패 시 환원 없음 | api-spec #209 절 "AI 실패·확인 질문도 접수된 시도로 취급" 결정과 일치. 조치 없음 |
 | B34 | 결함(낮음) | learning `PaymentUsageClient:30`이 core 409 전부를 `REFUND_IN_PROGRESS`로 변환. `PAYMENT_USAGE_RETRY_REQUIRES_NEW_SOURCE`·`PAYMENT_USAGE_STATE_CHANGED`도 "환불 처리 중" 안내 | 미수정(학생 화면 안내 문구·코드 전달 범위 결정 필요). api-spec 1.3에 현재 동작 기재. 이슈 #276 |
 | B35 | 결함(낮음) | `SupportService.adminNotices`가 입력 검사(400)를 권한 검사(403)보다 먼저 수행. 비관리자의 잘못된 `status`에 400(OpenAPI는 403) | 미수정(MSW·테스트도 같은 순서. 순서 변경 시 함께 수정). 이슈 #277 |
-| A16 | 아키텍처(낮음) | core `report/domain/ReportTemplate.kt`가 `org.springframework.http.HttpStatus` 직접 import(#168 이후 회귀) | `ErrorKind.INVALID`(같은 400) |
+| A16 | 아키텍처(낮음) | core `report/domain/ReportTemplate.kt`가 `org.springframework.http.HttpStatus` 직접 import(#168 이후 회귀) | `ErrorKind.INVALID`(같은 400). #272(#249)에서 `DomainException(ErrorKind.INVALID)`로 정리 |
 | C35 | 코드↔문서 | api-spec 1.3 누락 오류 코드: 신규 `STUDENT_RECORDS_PRIVATE`·`STUDENT_UNAVAILABLE`·`INVALID_TEMPLATE_SETTINGS`·`TEMPLATE_PROPOSAL_EXPIRED`, 4장 4.6의 결제 약 32종·`QUEUE_MANAGEMENT_*` 5종·`EVIDENCE_UNAVAILABLE` 등, 본문에만 있던 관리자 미션·프롬프트·scoring 코드 | 1.3 표에 실제 상태·조건으로 추가 |
 | C36 | 코드↔문서 | api-spec 1.3 `VALIDATION_FAILED`는 400만 기재. PIN 규칙·꾸미기 선택값은 422 | 400 / 422 구분 기재. MSW 꾸미기 주석의 "목업 계약" 정정 |
 | C37 | 코드↔문서 | api-spec 표에 없는 경로: `/attempts/{id}/comparison`, `/conversations/{id}/report-template`·`/proposals`·`/confirm`, `/admin/inquiries/{id}`, 내부 `/internal/analysis/report-template`·`/internal/students/{id}/profile`·`/report-template`·`/internal/report-jobs/{id}/reconcile`·learning `/internal/payment-usage/students/{id}`, 서술 요청 `tone` | 2.2·2.4·2.8·4.1·4.2·4.4·4.5 표에 추가. sharing-preferences 3개는 문서 첫 절(#206) 서술 유지 |

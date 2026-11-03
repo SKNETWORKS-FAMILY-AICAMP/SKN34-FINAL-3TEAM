@@ -1,6 +1,7 @@
 package com.sagomungchi.core.report
 
-import com.sagomungchi.core._common.exception.BusinessException
+import com.sagomungchi.core._common.exception.DomainException
+import com.sagomungchi.core._common.exception.ErrorKind
 import com.sagomungchi.core.report.domain.ReportTemplateSettings
 import org.junit.jupiter.api.Test
 import kotlin.test.*
@@ -15,6 +16,6 @@ class ReportTemplateSettingsTest {
             ReportTemplateSettings(highlightMetrics = listOf("SCORE")),
             ReportTemplateSettings(highlightMetrics = listOf("ATTEMPTS", "ATTEMPTS")),
             ReportTemplateSettings(tone = "ARBITRARY"),
-        )) assertFailsWith<BusinessException> { invalid.validate() }
+        )) assertEquals(ErrorKind.INVALID to "INVALID_TEMPLATE_SETTINGS", assertFailsWith<DomainException> { invalid.validate() }.let { it.kind to it.code })
     }
 }
