@@ -311,7 +311,16 @@ class AdminConversationRetryTest : IntegrationTestSupport() {
             val accepted=accept()
             assertNotNull(retries.claim(accepted.retryRequestId))
             assertEquals(1,count("SELECT count(*) FROM conversation_job_retry WHERE id=? AND accepted_at<=CURRENT_TIMESTAMP AND started_at>=accepted_at",accepted.retryRequestId))
+            retries.fail(requireNotNull(retries.find(accepted.retryRequestId)),"STREAM_INTERRUPTED")
+            assertEquals(1,count("SELECT count(*) FROM conversation_job_retry WHERE id=? AND status='FAILED' AND finished_at>=started_at",accepted.retryRequestId))
         } finally { reset(retryRows) }
+    }
+    @Test fun `claim judges expiry on the database clock and leaves an expired request queued`() {
+        val accepted=accept()
+        jdbc.update("UPDATE conversation_job_retry SET accepted_at=CURRENT_TIMESTAMP-interval '131 seconds' WHERE id=?",accepted.retryRequestId)
+        assertNull(retries.claim(accepted.retryRequestId))
+        assertEquals(1,count("SELECT count(*) FROM conversation_job_retry WHERE id=? AND status='QUEUED' AND started_at IS NULL",accepted.retryRequestId))
+        assertEquals(0,count("SELECT count(*) FROM job_execution WHERE job_id=?",message));assertEquals(1,quota())
     }
     @Test fun `removed linkage after admission fails before AI or quota`() {
         val accepted=accept();jdbc.update("DELETE FROM guardianship WHERE parent_user_id=? AND student_id=?",owner,student)
