@@ -1,0 +1,53 @@
+{
+  "migration": {
+    "enabled": true,
+    "revision": "b67d8a462b6b",
+    "image": {
+      "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/report-service",
+      "digest": "sha256:87cb1d57edb3acd8b70dcdb17b1d2d587b1a92fd2040070a1178a61c6eb33eee",
+      "pullPolicy": "IfNotPresent"
+    },
+    "command": [
+      "alembic"
+    ],
+    "args": [
+      "upgrade",
+      "head"
+    ],
+    "env": [
+      {
+        "name": "DATABASE_URL",
+        "valueFrom": {
+          "secretKeyRef": {
+            "name": "report-migrate-credentials",
+            "key": "REPORT_ALEMBIC_DATABASE_URL"
+          }
+        }
+      }
+    ],
+    "resources": {
+      "requests": {
+        "cpu": "100m",
+        "memory": "128Mi"
+      },
+      "limits": {
+        "memory": "512Mi"
+      }
+    },
+    "extraVolumes": [
+      {
+        "name": "rds-ca",
+        "configMap": {
+          "name": "rds-ca"
+        }
+      }
+    ],
+    "extraVolumeMounts": [
+      {
+        "name": "rds-ca",
+        "mountPath": "/rds-ca",
+        "readOnly": true
+      }
+    ]
+  }
+}
