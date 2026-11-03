@@ -1,13 +1,14 @@
 """Guard -> physical object deletion -> atomic DB deletion -> core completion."""
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 
 from app.concurrency import run_blocking
 from app.database import transaction
 from app.deletion.repository import DeletionRepository, delete_processed_before, guard_status
 from app.deletion.state import DeleteStudent, generation_allowed
 from app.errors import ApiError
-from app.outbox.service import delete_subject
+from app.outbox.service import delete_subject, prune_published
 
 
 def ensure_generation_allowed(session, student_id, requested_at=None):
@@ -21,6 +22,16 @@ def ensure_query_allowed(session, student_id):
 
 def prune_processed(session, before):
     return delete_processed_before(session, before)
+
+
+def prune_event_records(factory, retention_days: int, now: datetime | None = None):
+    """보존 기간이 지난 발행 완료 outbox_event·processed_event 삭제(#208).
+
+    조건부 DELETE라 레플리카가 동시에 실행해도 결과가 같다. worker는 주기 호출만 한다(#278).
+    """
+    before = (now or datetime.now(UTC)) - timedelta(days=retention_days)
+    with transaction(factory) as session:
+        return prune_published(session, before), prune_processed(session, before)
 
 
 def finish_deletion(session, command, repository=None):

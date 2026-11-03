@@ -1,7 +1,7 @@
 package com.sagomungchi.learning.record.repository
 
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
-import com.sagomungchi.learning.record.service.ProcessedEventCleanup
+import com.sagomungchi.learning.record.scheduler.ProcessedEventCleanupScheduler
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.jdbc.core.JdbcTemplate
@@ -13,7 +13,7 @@ import kotlin.test.assertEquals
 /** #208 processed_event 90일 보존 정리 */
 class ProcessedEventRepositoryTest : PostgresRepositoryTest() {
     @Autowired lateinit var repository: ProcessedEventRepository
-    @Autowired lateinit var cleanup: ProcessedEventCleanup
+    @Autowired lateinit var cleanup: ProcessedEventCleanupScheduler
     @Autowired lateinit var jdbc: JdbcTemplate
 
     @Test

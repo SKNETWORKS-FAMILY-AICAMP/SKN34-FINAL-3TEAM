@@ -7,9 +7,10 @@ from uuid import uuid4
 
 from sqlalchemy import insert, select
 
+from app.deletion.service import prune_event_records
 from app.deletion.state import processed_event
 from app.outbox.repository import outbox_event
-from app.worker import prune_event_records, serve
+from app.worker import serve
 
 NOW = datetime(2026, 11, 2, tzinfo=UTC)
 OLD = NOW - timedelta(days=91)
