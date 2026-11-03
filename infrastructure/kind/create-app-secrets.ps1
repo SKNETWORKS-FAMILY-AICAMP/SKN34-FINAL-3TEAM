@@ -9,7 +9,14 @@ $requiredKeys = @(
     'POSTGRES_USER', 'POSTGRES_PASSWORD', 'RABBITMQ_USER', 'RABBITMQ_PASSWORD',
     'MINIO_ROOT_USER', 'MINIO_ROOT_PASSWORD', 'INTERNAL_TOKEN', 'AUTH_JWT_SECRET'
 )
-$optionalKeys = @('OPENAI_API_KEY', 'GRAFANA_ADMIN_USER', 'GRAFANA_ADMIN_PASSWORD')
+# External credentials copied as-is when set (#236). Keep in sync with environments/local/*.yaml.
+$passthroughKeys = @(
+    'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET',
+    'PAYMENT_FREE_PRODUCT_ID', 'PAYMENT_BILLING_ENCRYPTION_KEY',
+    'TOSS_TEST_SECRET_KEY', 'TOSSPAYMENTS_SECRET_KEY', 'TOSS_TEST_MID', 'TOSS_TEST_WEBHOOK_SECURITY_KEY',
+    'TOSS_TEST_BILLING_SECRET_KEY', 'TOSS_TEST_BILLING_MID', 'TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY'
+)
+$optionalKeys = $passthroughKeys + @('GRAFANA_ADMIN_USER', 'GRAFANA_ADMIN_PASSWORD')
 
 # Pass manifests through UTF-8 stdin so no credential appears in a command argument or temp file.
 function Invoke-LocalKubectl {
@@ -80,6 +87,10 @@ try {
 $hasGrafanaUser = -not [string]::IsNullOrWhiteSpace($credentials.GRAFANA_ADMIN_USER)
 $hasGrafanaPassword = -not [string]::IsNullOrWhiteSpace($credentials.GRAFANA_ADMIN_PASSWORD)
 if ($hasGrafanaUser -ne $hasGrafanaPassword) { throw 'Set both GRAFANA_ADMIN_USER and GRAFANA_ADMIN_PASSWORD, or neither.' }
+# Local kind accepts Toss test keys only.
+foreach ($key in $passthroughKeys | Where-Object { $_ -like 'TOSS*' }) {
+    if ($credentials[$key] -and $credentials[$key].StartsWith('live_')) { throw "Live Toss keys are not allowed: $key" }
+}
 
 # Verify the selected context is the expected node before creating any resource.
 $nodesJson = Invoke-LocalKubectl -KubectlArguments @('get', 'nodes', '-o', 'json')
@@ -106,7 +117,9 @@ $app = @{
     MINIO_ROOT_USER = $credentials.MINIO_ROOT_USER
     MINIO_ROOT_PASSWORD = $credentials.MINIO_ROOT_PASSWORD
 }
-if ($credentials.OPENAI_API_KEY) { $app.OPENAI_API_KEY = $credentials.OPENAI_API_KEY }
+foreach ($key in $passthroughKeys) {
+    if (-not [string]::IsNullOrWhiteSpace($credentials[$key])) { $app[$key] = $credentials[$key] }
+}
 # The platform Secret stays with create-platform-secret.ps1; both read the same .env.
 $targets = @(@{Namespace = 'app'; Name = 'app-service-credentials'; Values = $app})
 if ($hasGrafanaUser) {

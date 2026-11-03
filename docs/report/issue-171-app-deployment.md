@@ -239,3 +239,49 @@ migration Dockerfile 2개는 전용 임시 태그로 빌드에 성공했고 태�
 | 적용 대상 문구 | chart·local Argo CD 안내의 "기존 클러스터 적용 금지"를 `sagomungchi-local` 정식 절차로 바꿨다 |
 
 누락 환경값(Google·토스·LLM 공급자 등)과 외부 egress는 #236 범위로 남긴다. 이 절 위의 검증 기록은 당시 전용 클러스터 기준이다. 이미 만들어진 `sagomungchi-issue171` 클러스터·Docker 네트워크 `kind-issue171`은 저장소 변경과 별개이며, 담당자가 직접 `kind delete cluster --name sagomungchi-issue171`과 `docker network rm kind-issue171`로 정리한다.
+
+## kind 환경값·외부 egress 보완 (#236)
+
+kind/GitOps local values가 `compose.yaml`보다 적어 클러스터에서 Google 로그인·토스 결제·LLM 판정이 동작하지 않았다. 위 "외부 LLM·토스 호출을 허용하는 local stub이 아직 저장소에 없으므로" 결정은 이 절로 대체한다.
+
+### compose 대비 환경값 차이 (develop f6250bd 기준)
+
+| 서비스 | compose에만 있던 값 | 처리 |
+|---|---|---|
+| core | `GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET` | 앱 Secret 선택 키 |
+| core | `TOSS_TEST_SECRET_KEY`·`TOSSPAYMENTS_SECRET_KEY`·`TOSS_TEST_MID`·`TOSS_TEST_WEBHOOK_SECURITY_KEY`, 빌링 `TOSS_TEST_BILLING_*` 3종 | 앱 Secret 선택 키, `live_` 키 거부 |
+| core | `PAYMENT_BILLING_ENCRYPTION_KEY`·`PAYMENT_FREE_PRODUCT_ID` | 앱 Secret 선택 키 (상품 UUID는 환경마다 다름) |
+| core | `AUTH_ACCESS_TTL`·`AUTH_STUDENT_ACCESS_TTL`·`AUTH_REAUTH_TTL`·`AUTH_REFRESH_TTL`·`REDIS_PORT`·`STUDENT_DEVICE_TTL`·`STUDENT_DEVICE_ATTEMPT_LIMIT` | values에 compose 기본값 |
+| core | `REDIS_PASSWORD` | 추가하지 않음. compose·platform-data Redis 모두 비밀번호 없음 |
+| ai | `LLM_PROVIDER`·`OPENAI_MODEL`·`OPENAI_JSON_MODE`·`ANTHROPIC_MODEL`·`ANTHROPIC_EFFORT`·`ANTHROPIC_FALLBACK` | values에 compose 기본값 (`LLM_PROVIDER=openai`) |
+| ai | `ANTHROPIC_API_KEY` | 앱 Secret 선택 키 (`OPENAI_API_KEY`는 기존 선택 키) |
+| ai | `OPENAI_BASE_URL` | 추가하지 않음. compose 기본값이 빈 값(OpenAI 기본 주소)이고 sLLM 사용 시에만 필요 |
+| report-api | `REPORT_DOWNLOAD_TTL_SECONDS` | 추가하지 않음. 앱 기본값 300과 compose 기본값이 같음 |
+| report-api | `RABBITMQ_URL` | 추가하지 않음. 메시지 소비는 report-worker만 하며 worker values에 있음 |
+| learning·scoring | 없음 | — |
+
+### 결정
+
+- 외부 키는 루트 `.env` 하나를 원본으로 `create-app-secrets.ps1`이 값이 있을 때만 앱 Secret에 복사한다. values는 `optional: true`로 참조해 키가 없으면 환경 변수를 만들지 않는다(compose의 빈 기본값과 같은 동작).
+- egress: core·ai에만 `0.0.0.0/0`에서 사설(10/8·172.16/12·192.168/16)·CGNAT(100.64/10)·link-local(169.254/16)·loopback을 뺀 TCP 443을 허용한다. Calico 오픈소스판과 기본 NetworkPolicy는 FQDN 규칙이 없고, 공급자 IP 대역 목록은 자주 바뀌어 유지하기 어렵다. 클러스터 내부·platform 접근은 기존 앱·platform 허용 규칙만 따른다. 운영 EKS의 NAT·도메인 제한은 #185에서 정한다.
+- 웹은 호스트 Vite에서 실행하고 `CORE_PROXY_TARGET`·`CORE_PROXY_HOST`로 `/api`를 kind Ingress(`api.sagomungchi.local`)에 보낸다. 지정하지 않으면 기존 compose 대상(`localhost:CORE_HOST_PORT`)을 유지한다. Google 콜백은 `AUTH_WEB_ORIGIN` 기준이라 기존 리디렉션 URI를 그대로 쓴다.
+- 토스 웹훅은 외부에서 로컬 kind로 들어올 수 없어 kind 확인 범위가 아니다. 결제 승인은 core가 토스 API를 직접 호출해 확인한다.
+
+### kind 실제 확인 (2026-11-03)
+
+이 브랜치의 values·스크립트로 Windows 11 PC의 새 `sagomungchi-local`(kind v0.33.0, Kubernetes v1.35.8, Calico v3.33.0, ingress-nginx 4.15.1, Docker 메모리 약 30GiB)에서 확인했다. Argo CD 설치는 이 이슈 범위가 아니어서 같은 chart·values를 Helm으로 직접 설치했다. local Argo 정의와 같은 KEDA 2.21.0과 `policies/local`도 적용했다. Helm은 Argo PreSync 훅을 쓰지 않으므로 core·learning·report-api를 먼저 설치하고 migration Job 완료(core v23·learning v8·report)를 기다린 뒤 나머지를 설치했다.
+
+확인용 데이터는 이 PC의 kind DB에만 넣었고 저장소에는 넣지 않았다. 무료(0원)·프리미엄(14,900원) 상품 2개, #235 전까지 가입을 막지 않도록 "Synthetic non-binding notice" 동의 문서 3종, learning `db/seed/demo_missions.sql`이다. 웹은 Node 컨테이너의 Vite를 `CORE_PROXY_TARGET`·`CORE_PROXY_HOST`로 kind Ingress에 연결했다.
+
+| 항목 | 결과 |
+|---|---|
+| 배포 | platform 4종 Ready·초기화 Job 2개 완료, 앱 6종 Running(report-worker는 큐가 비어 KEDA 0개) |
+| Ingress | `/api` 200, 외부 `/internal` 404 |
+| egress | core → Google OAuth·토스 API 응답 수신, ai → OpenAI 응답 수신(인증 없이 401). learning의 외부 443과 core의 외부 80은 시간 초과로 차단 |
+| Google 로그인 | 학부모 로그인·동의·자녀 등록, PIN 변경용 Google 재인증 콜백 VERIFIED |
+| LLM 판정 | 초3 서술형 미션 답변 3건 모두 `method=LLM`·`gpt-6.1-terra`·`judge@2`, `DONE`(CORRECT·RETHINK·PARTIAL), 실패 코드 없음. core `llm_usage`에 JUDGMENT·FOLLOWUP 호출이 성공으로 기록 |
+| 토스 결제 승인 | 학부모 프리미엄(14,900원) 테스트 결제 승인. 주문·결제·시도 `APPROVED`, 이용권 `APPLIED`, 구독 `ACTIVE`(PREMIUM, 2026-11-03~12-03) |
+
+토스: 결제위젯 키(`test_gck_`·`test_gsk_`)는 공식 안내상 전자결제 신청 이후에만 개발자센터에 보이고, 신청 전에는 문서의 테스트 키로 연동하도록 되어 있다. 담당자 계정에는 API 개별 연동 키(`test_ck_`·`test_sk_`)만 있어 문서 테스트 키(`test_gck_docs_`·`test_gsk_docs_`)를 사용했다. 이 키의 결제는 공용 문서 상점 `tgen_docs`에 기록된다. 첫 결제는 `TOSS_TEST_MID`가 다른 값이어서 core의 MID 대조에서 `PAYMENT_PG_MISMATCH`가 됐고(토스 결제 키 조회로는 `DONE`·`mId=tgen_docs` 확인), `TOSS_TEST_MID=tgen_docs`로 바꾼 뒤 새 결제가 승인됐다. 문서 테스트 키는 주문번호 조회(`GET /v1/payments/orders/{orderId}`)에 `NOT_FOUND_MERCHANT`를 반환하므로 "결제 상태 다시 확인"·복구·관리자 대조처럼 이 조회를 쓰는 경로는 이 키로 검증할 수 없다. 그래서 확인 중으로 남은 첫 주문은 kind DB에서만 FAILED로 정리해 같은 자녀의 새 결제 차단을 풀었다. 웹훅·빌링·환불은 확인 범위 밖이다.
+
+사용성 관찰(#236 범위 밖): Google 재인증 팝업은 콜백 JSON만 보여 주고 원래 화면으로 돌아오지 않는다. 같은 콜백 주소를 다시 열면 403 `REAUTH_REQUIRED`가 된다. 학생 기기 등록에서 기기 이름이 비어 있으면 어느 칸인지 없이 `VALIDATION_FAILED`만 보인다. 관측 chart를 설치하지 않은 환경에서는 core·learning Java agent가 Collector 주소를 찾지 못한다는 경고를 남기지만 앱 동작에는 영향이 없다.

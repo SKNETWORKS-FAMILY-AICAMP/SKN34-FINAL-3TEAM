@@ -40,8 +40,12 @@ export default defineConfig(({ mode }) => {
   server: {
     ...(paymentTest ? { host: '127.0.0.1', strictPort: true } : {}),
     // 공개 API는 core-service만 호출 (compose 실행 시 localhost:8080, CORE_HOST_PORT로 변경 가능)
+    // kind(#236): CORE_PROXY_TARGET=http://127.0.0.1, CORE_PROXY_HOST=api.sagomungchi.local로 Ingress 호스트 규칙에 맞춤
     proxy: {
-      '/api': `http://localhost:${process.env.CORE_HOST_PORT ?? 8080}`,
+      '/api': {
+        target: process.env.CORE_PROXY_TARGET || `http://localhost:${process.env.CORE_HOST_PORT ?? 8080}`,
+        ...(process.env.CORE_PROXY_HOST ? { headers: { host: process.env.CORE_PROXY_HOST } } : {}),
+      },
     },
   },
   }
