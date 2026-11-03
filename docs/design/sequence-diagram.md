@@ -595,6 +595,29 @@ sequenceDiagram
 - `report.started`보다 `report.completed`가 먼저 도착해도 `QUEUED → COMPLETED` 허용 (상태 다이어그램 4.1)
 - KEDA가 `report.report.generate` 큐 길이로 report-worker 0~N 확장
 
+#### 6.1.1 종료 이벤트 누락 복구 (#132)
+
+```mermaid
+sequenceDiagram
+  participant S as core recovery scheduler
+  participant C as core DB
+  participant R as report API
+  participant D as report DB
+  S->>C: 생성 60분 이상 미종료 후보 조회
+  S->>R: POST reconcile (트랜잭션 밖)
+  R->>D: 학생 shared/job exclusive session 잠금 시도
+  alt 실행/삭제 잠금 사용 중
+    R-->>S: BUSY
+  else 잠금 획득
+    R->>D: 학생·기간 대조, 종료 결과 조회/고아 RUNNING 종료/없는 행 guard 저장
+    R-->>S: 저장된 종료 결과
+    S->>C: 새 트랜잭션: 학생 → job 잠금, 식별·종료 재검사
+    S->>C: 조건부 종료 + 실행 이력 (삭제·ID 없음은 알림 생략)
+  end
+```
+
+삭제 확정은 기존 parent → student 잠금 아래 학생 차단과 미종료 작업 종료를 함께 커밋한다. 복구 HTTP 도중 삭제가 확정되면 최종 반영은 이미 FAILED인 작업을 유지한다. 생성도 student → 주 잠금을 사용하므로 삭제 뒤 새 QUEUED 작업을 남기지 않는다.
+
 ### 6.2 알림 전달 (SSE 다중 레플리카)
 
 ```mermaid
@@ -650,6 +673,10 @@ sequenceDiagram
 - `reportId`처럼 경로에 자녀 ID가 없는 API는 core가 연결 자녀 전체를 범위로 전달하고, 소유 서비스(report-api)가 리소스의 학생 ID로 검사
 - 상세 조회 시 core가 `report_view` 저장 (열람률 지표)
 - 재생성(`/regenerate`): 새 `report_job(REGENERATE)` + outbox → 6.1과 같은 흐름, `weekly_report.revision` 증가 (기존 판 보존·최신판 기본 조회. 학부모는 리포트당 1회, 초과 시 409 REPORT_REGENERATION_LIMIT, 관리자 무제한, P06)
+
+### 6.4 #47 REPORT 관리자 재처리 접수
+
+ADMIN/SERVICE_OPS → OperationsController → 공통 IdempotencyService → ReportAdminRetryService → 학생 상태 잠금 service·report 학생/주/원작업 잠금 → 새 report_job + report_job_retry + report.generate Outbox + JOB_RETRY_REQUESTED 감사 커밋 → 202/Location. 이후 기존 Outbox relay → report(#152) → 새 jobId의 report.* → 기존 ReportLifecycleService → processed_event + report_job + job_execution + 결과 감사가 같은 트랜잭션으로 커밋된다. DB 트랜잭션 안에서 report HTTP·브로커 네트워크 호출을 하지 않는다.
 
 ---
 
@@ -958,30 +985,3 @@ sequenceDiagram
 - 웹훅 처리 실패 시 5xx 응답으로 PG 재전송 유도(7.2): 토스페이먼츠 재전송 정책 확인 필요
 
 #58 단독 로그인은 계정 행 잠금 → 기기 유효/등록 자녀 → 현재 연결·활성·동의 → PIN 설정·잠금·일치 순으로 재검사한다. 실패 횟수 커밋 후 401/423 응답한다. 성공은 별도 STUDENT auth_session을 생성하며 부모 세션을 변경하지 않는다. PIN 변경은 계정 잠금 → 현재 자녀 권한 → 학생 잠금 → DB 재인증 consume → PIN 갱신·감사 기록을 한 트랜잭션으로 실행한다.
-
-### #47 REPORT 관리자 재처리 접수
-
-ADMIN/SERVICE_OPS → OperationsController → 공통 IdempotencyService → ReportAdminRetryService → 학생 상태 잠금 service·report 학생/주/원작업 잠금 → 새 report_job + report_job_retry + report.generate Outbox + JOB_RETRY_REQUESTED 감사 커밋 → 202/Location. 이후 기존 Outbox relay → report(#152) → 새 jobId의 report.* → 기존 ReportLifecycleService → processed_event + report_job + job_execution + 결과 감사가 같은 트랜잭션으로 커밋된다. DB 트랜잭션 안에서 report HTTP·브로커 네트워크 호출을 하지 않는다.
-
-### 6.1 보완: 종료 이벤트 누락 복구 (#132)
-
-```mermaid
-sequenceDiagram
-  participant S as core recovery scheduler
-  participant C as core DB
-  participant R as report API
-  participant D as report DB
-  S->>C: 생성 60분 이상 미종료 후보 조회
-  S->>R: POST reconcile (트랜잭션 밖)
-  R->>D: 학생 shared/job exclusive session 잠금 시도
-  alt 실행/삭제 잠금 사용 중
-    R-->>S: BUSY
-  else 잠금 획득
-    R->>D: 학생·기간 대조, 종료 결과 조회/고아 RUNNING 종료/없는 행 guard 저장
-    R-->>S: 저장된 종료 결과
-    S->>C: 새 트랜잭션: 학생 → job 잠금, 식별·종료 재검사
-    S->>C: 조건부 종료 + 실행 이력 (삭제·ID 없음은 알림 생략)
-  end
-```
-
-삭제 확정은 기존 parent → student 잠금 아래 학생 차단과 미종료 작업 종료를 함께 커밋한다. 복구 HTTP 도중 삭제가 확정되면 최종 반영은 이미 FAILED인 작업을 유지한다. 생성도 student → 주 잠금을 사용하므로 삭제 뒤 새 QUEUED 작업을 남기지 않는다.
