@@ -3,7 +3,7 @@
 `cluster.json`은 현재 클러스터와 같은 eksctl `ClusterConfig`다(1.35, application 노드그룹, add-on 버전, Pod Identity). VPC·subnet ID와 공개 접근 CIDR은 placeholder이며 `infrastructure/aws/demo_stack.py render-eksctl`이 채운다. 기존 클러스터는 콘솔에서 만들어 eksctl CloudFormation stack이 없으므로, 이 파일은 **새 환경 생성과 `demo_stack.py plan`의 대조 기준**이고 기존 클러스터를 eksctl로 관리하지 않는다. `demo-observed.json`은 2026-11-03 AWS API의 선택 필드만 저장한 인벤토리다. `gp3.json`은 Kubernetes StorageClass manifest다. EKS API 공개 접근 허용 CIDR(`publicAccessCidrs`)은 작업자 공인 IP이므로 `__OPERATOR_PUBLIC_IP_n__`으로 치환했다. 실제 값은 `aws eks describe-cluster`로 확인한다.
 
 - 계정 `347161580747`, 리전 `ap-northeast-2`, 클러스터 `sagomungchi-demo-eks`, Kubernetes 1.35.
-- 현재 관리형 노드그룹은 `application` 하나. ON_DEMAND t3.medium. 2026-11-03 데모 사양을 **3대(min/desired/max 모두 3)**로 결정했다(`cluster.json`). 결정 시점 실제 값은 2/2/2이며 증설 적용 전까지 `plan`은 nodegroup DIFF를 보고한다. private subnet 배치, 노드 디스크 20GiB.
+- 현재 관리형 노드그룹은 `application` 하나. ON_DEMAND t3.medium. 2026-11-03 데모 사양을 **3대(min/desired/max 모두 3)**로 결정했다(`cluster.json`). 2026-11-03 23:18 KST 실제 적용 완료(새 노드 2b, 노드 3대 Ready). private subnet 배치, 노드 디스크 20GiB.
 - VPC CNI의 `enableNetworkPolicy=true`; CoreDNS, kube-proxy, EBS CSI, Pod Identity Agent, node monitoring add-on의 실제 버전은 JSON에 기록했다.
 - public/private API endpoint 모두 활성. public CIDR은 관측 시점 작업자 IP 제한으로, 이후 접속 IP가 바뀌면 별도 접근 검토가 필요하다.
 - IRSA annotation 대신 EKS Pod Identity를 사용한다. JSON의 namespace·ServiceAccount·roleArn 연결을 그대로 확인한다. IAM 정책·trust는 여기서 생성하지 않는다.

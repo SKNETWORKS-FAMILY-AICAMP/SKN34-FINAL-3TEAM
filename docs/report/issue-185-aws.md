@@ -166,4 +166,6 @@
 
 예산은 조직 SCP가 `budgets:ViewBudget`을 막아 조회하지 못했다.
 
-**결정(2026-11-03):** 사용자가 노드그룹을 t3.medium **3대**(min/desired/max 3)로 정했다. RDS는 db.t4g.small Single-AZ를 유지한다. 추가 비용은 공개 단가 기준 노드 1대 $0.052/h(월 약 $38, 세금·크레딧·EBS 제외)다. 노드그룹 1개·Pod Identity 구조는 데모 사양으로 유지하며, 설계의 `platform-observability` 그룹·IRSA와의 차이는 이 결정으로 받아들인다. `cluster.json`·`demo-stack.json`은 3대 기준이고, 실제 노드그룹 적용 결과는 아래에 별도로 기록한다.
+**결정(2026-11-03):** 사용자가 노드그룹을 t3.medium **3대**(min/desired/max 3)로 정했다. RDS는 db.t4g.small Single-AZ를 유지한다. 추가 비용은 공개 단가 기준 노드 1대 $0.052/h(월 약 $38, 세금·크레딧·EBS 제외)다. 노드그룹 1개·Pod Identity 구조는 데모 사양으로 유지하며, 설계의 `platform-observability` 그룹·IRSA와의 차이는 이 결정으로 받아들인다. `cluster.json`·`demo-stack.json`은 3대 기준이다.
+
+**적용(2026-11-03 23:18 KST):** 사용자 승인 후 `eks update-nodegroup-config`로 application을 3/3/3으로 변경했다. update 0f021ef6는 Successful, 23:19에 새 노드(2b)가 Ready였다. DaemonSet 5종 3/3 Ready, 기존 앱 6개는 같은 Pod·restart 0으로 유지, CloudFront 200, `demo_stack.py plan` 55/55 일치. 새 노드는 Pod 5개·메모리 예약 4%로 여유가 생겼으나 **2a 노드는 여전히 Pod 17/17·메모리 예약 90%**다. 2a PVC를 쓰는 RabbitMQ·Prometheus·Grafana는 2a 노드에만 배치될 수 있으므로, 새 Pod 배치·rolling update는 새 노드로 가는 무상태 앱부터 여유가 생긴 것이다. 기존 Pod는 재배치하지 않았다.
