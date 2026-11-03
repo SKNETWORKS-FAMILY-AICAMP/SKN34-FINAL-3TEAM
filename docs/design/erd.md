@@ -397,7 +397,7 @@ core report_job_retry의 original_job_id는 report_job(id) PK/FK, retry_job_id�
 
 ### 3.2.3 관리자 대화 재처리 요청 (#47, V19)
 
-conversation_job_retry는 UK(message_id,generation), UK(requested_by,idempotency_key), generation>0, 상태와 시각의 일치 및 시각 순서 CHECK를 둔다. `ix_conversation_job_retry_pending`은 (status,accepted_at) 조회 인덱스다. message_id는 conversation_message FK ON DELETE CASCADE, requested_by는 user_account FK다. 기존 V17·V18은 수정하지 않는다. 질문·답변 원문을 저장하지 않는다.
+conversation_job_retry는 UK(message_id,generation), UK(requested_by,idempotency_key), generation>0, 상태와 시각의 일치 및 시각 순서 CHECK를 둔다. 순서 CHECK가 앱·DB 시계 차이로 깨지지 않도록 accepted_at·started_at·finished_at은 모두 DB `CURRENT_TIMESTAMP`로 기록한다. `ix_conversation_job_retry_pending`은 (status,accepted_at) 조회 인덱스다. message_id는 conversation_message FK ON DELETE CASCADE, requested_by는 user_account FK다. 기존 V17·V18은 수정하지 않는다. 질문·답변 원문을 저장하지 않는다.
 
 학생 삭제 시 진행 요청의 실패 이력·감사를 같은 삭제 트랜잭션에 기록하고 요청 행을 CASCADE로 정리한다. 삭제 후 작업 조회와 새 접수는 404다. 기존 공통 멱등 캐시에 남은 과거 202는 재전달될 수 있으나 재실행하지 않는다. 요청 행 삭제 이후 영구 재접수 응답 복원은 보장하지 않는다. 요청 감사는 접수 시, job_execution은 실제 실행 선점 시 기록한다. 사용량은 요청 ID를 `payment_premium_usage.source_id`로 써서 `UNIQUE(kind,source_id)`로 중복 차감을 막고 실행 선점 트랜잭션과 함께 커밋·롤백된다(#225).
 

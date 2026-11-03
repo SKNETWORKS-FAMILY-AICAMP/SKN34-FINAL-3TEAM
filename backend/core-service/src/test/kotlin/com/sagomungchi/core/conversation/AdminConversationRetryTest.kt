@@ -16,6 +16,7 @@ import com.sagomungchi.core.conversation.domain.*
 import com.sagomungchi.core.conversation.service.*
 import com.sagomungchi.core.conversation.scheduler.ConversationRetryWorker
 import com.sagomungchi.core.conversation.repository.ConversationRepository
+import com.sagomungchi.core.conversation.repository.ConversationRetryMapper
 import com.sagomungchi.core.conversation.repository.ConversationRetryRepository
 import com.sagomungchi.core.report.parent
 import com.sagomungchi.core.report.child
@@ -62,6 +63,7 @@ class AdminConversationRetryTest : IntegrationTestSupport() {
     @MockitoBean lateinit var outbox: OutboxRelay
     @MockitoSpyBean lateinit var audits: ConversationRetryAuditRepository
     @MockitoSpyBean lateinit var retryRows: ConversationRetryRepository
+    @Autowired lateinit var retryMapper: ConversationRetryMapper
     private lateinit var owner: UUID
     private lateinit var student: UUID
     private lateinit var admin: AuthenticatedAccount
@@ -300,6 +302,16 @@ class AdminConversationRetryTest : IntegrationTestSupport() {
             failure.get(10,TimeUnit.SECONDS);remove.get(10,TimeUnit.SECONDS)
             assertNull(messages.message(message));assertEquals(1,count("SELECT count(*) FROM audit_log WHERE target_id=? AND action='JOB_RETRY_FAILED'",message))
         } finally { release.countDown();pool.shutdownNow() }
+    }
+    @Test fun `accepted time uses the database clock so an app clock ahead cannot break claim order`() {
+        // Hand the mapper a row stamped 5 seconds ahead of PostgreSQL, as a fast app clock would.
+        doAnswer { val row=it.getArgument<ConversationRetry>(0);check(retryMapper.insert(row.copy(acceptedAt=row.acceptedAt.plusSeconds(5)))==1);null }
+            .`when`(retryRows).insert(anyRetry())
+        try {
+            val accepted=accept()
+            assertNotNull(retries.claim(accepted.retryRequestId))
+            assertEquals(1,count("SELECT count(*) FROM conversation_job_retry WHERE id=? AND accepted_at<=CURRENT_TIMESTAMP AND started_at>=accepted_at",accepted.retryRequestId))
+        } finally { reset(retryRows) }
     }
     @Test fun `removed linkage after admission fails before AI or quota`() {
         val accepted=accept();jdbc.update("DELETE FROM guardianship WHERE parent_user_id=? AND student_id=?",owner,student)
