@@ -5,6 +5,7 @@ from types import ModuleType
 from typing import Mapping
 
 from app.analysis_agent import prompts as analysis_prompts
+from app.analysis_agent import template_prompts
 from app.errors import ApiError
 from app.followup import prompts as followup_prompts
 from app.judgment import prompts as judgment_prompts
@@ -18,6 +19,7 @@ BUILTIN_PROMPTS: dict[str, ModuleType] = {
     "followup": followup_prompts,
     "analysis": analysis_prompts,
     "reportNarrative": report_narrative_prompts,
+    "reportTemplate": template_prompts,
 }
 
 

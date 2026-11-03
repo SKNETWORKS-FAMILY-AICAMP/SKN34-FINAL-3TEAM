@@ -15,6 +15,11 @@ from app.analysis_agent.models import AnalysisRequest
 from app.analysis_agent.prompts import Classification
 from app.analysis_agent.router import get_analysis_service, sse
 from app.analysis_agent.service import AnalysisService
+from app.analysis_agent.template_settings import (
+    TemplateProposal,
+    TemplateProposalRequest,
+    TemplateSettings,
+)
 from app.bootstrap import create_app
 from app.config import Settings, get_settings
 from app.errors import ApiError
@@ -97,7 +102,7 @@ def test_scope_revision_and_unknown_body() -> None:
     assert versions.is_ready()
 
 
-def test_all_four_functions_use_selected_body_and_report_its_version() -> None:
+def test_all_functions_use_selected_body_and_report_its_version() -> None:
     async def run() -> None:
         settings = Settings(internal_token="test-token")
 
@@ -161,6 +166,18 @@ def test_all_four_functions_use_selected_body_and_report_its_version() -> None:
         ]
         assert llm.requests[0].system.startswith("alternate analysis:")
         assert llm.requests[1].system.startswith("alternate analysis:")
+
+        versions = installed("reportTemplate", "analysis-template@next")
+        versions.apply(version("reportTemplate", "analysis-template@next"))
+        llm = FakeLlm(TemplateProposal(settings=TemplateSettings(tone="EASY")))
+        service = AnalysisService(llm, settings, versions)
+        proposal = await service.propose_template(
+            TemplateProposalRequest(question="쉽게", current=TemplateSettings()),
+            UserContext(user_id="p-1", role="PARENT", student_scope=frozenset()),
+        )
+        assert proposal.settings.tone == "EASY"
+        assert llm.requests[0].prompt_version == "analysis-template@next"
+        assert llm.requests[0].system.startswith("alternate reportTemplate:")
 
     asyncio.run(run())
 
@@ -274,3 +291,19 @@ def test_unknown_analysis_prompt_opens_no_record_client() -> None:
     assert response.status_code == 503
     assert response.json()["code"] == "AI_PROMPT_VERSION_UNAVAILABLE"
     assert opened == []  # 프롬프트 선택 실패 시 learning 연결을 만들지 않음
+
+
+def test_unknown_report_template_prompt_is_explicit_http_error() -> None:
+    llm = FakeLlm()
+    app = create_app()
+    app.dependency_overrides[get_llm] = lambda: llm
+    with TestClient(app) as client:
+        app.state.active_versions.apply(version("reportTemplate", "analysis-template@unknown"))
+        response = client.post(
+            "/internal/analysis/report-template",
+            json={"question": "간결하게", "current": TemplateSettings().model_dump(by_alias=True)},
+            headers={"X-Internal-Token": "test-token", "X-User-Id": "p-1", "X-User-Role": "PARENT"},
+        )
+    assert response.status_code == 503
+    assert response.json()["code"] == "AI_PROMPT_VERSION_UNAVAILABLE"
+    assert llm.requests == []
