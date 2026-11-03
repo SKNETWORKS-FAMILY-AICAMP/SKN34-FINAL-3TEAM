@@ -13,6 +13,7 @@ def test_versions_returns_active_prompt_versions() -> None:
             "followup": "followup@4",
             "analysis": "analysis@2",
             "reportNarrative": "report@1",
+            "reportTemplate": "analysis-template@1",
         }
     }
 
