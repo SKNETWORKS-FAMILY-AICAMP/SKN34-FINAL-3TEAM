@@ -30,5 +30,10 @@ Grafana의 Discord HTTPS egress는 #171 기본 거부 정책에 없어 운영 �
 
 현재 scrape는 RabbitMQ 기본 /metrics 집계이므로 전체 ready 메시지 gauge의 합계만 사용한다.
 이는 DLQ·retry·일반 큐를 구분하지 못하고 메시지 나이·업무 지연도 의미하지 않는다.
-DLQ별 경보는 큐 라벨이 있는 별도 /metrics/detailed scrape와 definitions의 큐 목록 대조 후 추가한다.
+DLQ 적재는 별도 opt-in scrape job `rabbitmq-dlq`로 본다. 같은 RabbitMQ 15692 포트의 `/metrics/detailed`에서
+`queue_coarse_metrics` family만 요청하고, metric relabel로 `rabbitmq_detailed_queue_messages` 중 `<큐>.dlq`(architecture 1.6 명명)만 남긴다.
+#171 기본 `rabbitmq` job과 전체 per-object 지표는 바꾸지 않는다. 시계열은 정의된 DLQ 수(현재 6개)만큼이다.
+규칙은 `max by (vhost, queue)`로 큐마다 경보 인스턴스를 만들고 임계값 `dlq_messages`는 필수 입력이다(0 허용, 숨은 기본값 없음).
+메시지 수는 ready+unacked 합계이며 메시지 나이·재처리 지연은 의미하지 않는다. scrape 실패나 지표 부재는 0이 아니라 NoData로 남는다.
+업무 ID·메시지 내용은 label에 넣지 않으며 큐 이름만 쓴다.
 업무별 오류율·지연, 월 비용, 동기·비동기 trace 저장 검증은 이 독립 기능의 완료 범위가 아니다.

@@ -27,7 +27,7 @@ local trace=false, Prometheus retention=1d, Grafana/Prometheus emptyDir다.
 |---|---|---|---|---|
 | NFR-OPS-04 수집 장애 | Prometheus `up`, job/instance; target별 0/1 | `1-up` 또는 job 부재 `absent` >0; 지속 필수 입력 | NoData/Error 별도 상태 | rabbitmq→service=rabbitmq, Collector→observability; 독립 규칙 준비 |
 | 작업 적체 | `rabbitmq_queue_messages_ready{job="rabbitmq"}`, 기본 endpoint의 전체 집계 gauge; 메시지 건수 | sum > 필수 입력 임계값; 지속 필수 입력 | 지표 부재는 NoData, query 실패 Error | rabbitmq 인프라 신호; 독립 규칙 준비 |
-| DLQ 적재 | 현재 기본 집계에는 queue 라벨 없음 | 현재 구현 불가 | 0으로 치환하지 않음 | 후속 detailed scrape+큐 목록 대조 |
+| DLQ 적재 | 기본 집계에는 queue 라벨 없음 → 2026-11-03 opt-in `rabbitmq-dlq` job이 `/metrics/detailed` queue_coarse_metrics에서 `<큐>.dlq`의 `rabbitmq_detailed_queue_messages{vhost,queue}`만 수집; 메시지 건수 | 큐별 max > 필수 입력 `dlq_messages`(0 허용); 지속 필수 입력 | 지표 부재는 NoData, 0으로 치환하지 않음 | rabbitmq 인프라 신호, 큐별 경보 인스턴스; 규칙 준비(운영 임계값 미정) |
 | 인증/학습 저장/AI/리포트/결제 오류율·지연 | core·learning JVM 및 HTTP 집계 수집 기록만 존재; endpoint/status/단위/histogram 실측 미확정, 나머지 공급 공백 | 업무별 분모·오류 정의·bucket·최소 표본·지속 미정 | 결측을 정상 처리하지 않음 | 각 생산 서비스 계측 확인 후 추가; JVM으로 대체하지 않음 |
 | FN-ADM-19/P13 월 비용 80% | core usage HTTP API, 비용 USD/null·unpricedCalls; 현재 Prometheus 공급 없음 | 80%만 확정; 예산/월 경계 미정 | null을 0으로 합산하지 않음 | 비활성·별도 설계/승인 대기 |
 | NFR-OPS-05 실패 요청 추적 | HTTP·event traceparent 전달 코드; 실제 저장 backend 미검증 | 실패 요청→업무 ID→동기/비동기 span 조회 필요 | 저장 실패를 trace 완료로 취급하지 않음 | #171/#185 환경 후속 |
@@ -162,3 +162,53 @@ production chart·공개 계약·기존 앱 로직은 이번 재개 작업에서
 예산·담당·운영 임계값·실제 Discord 수신 및 trace 저장/조회 결정 대기는 계속 유지한다.
 실제 Kubernetes 적용·AWS 자원 생성·외부 전송·Langfuse 저장 검증·원격 CI는 이번 로컬 시험에 포함하지 않는다.
 PR 생성이나 #187 종료는 수행하지 않았다.
+
+## 담당 전환 후 최신 develop 반영과 DLQ 적재 규칙 (2026-11-03)
+
+2026-11-03 담당 결정에 따라 #185를 제외한 인수인계 이슈를 이어서 진행한다. 기존 기능 커밋 `24f5b97`·`e25ca04`·`ab0f412`를 보존한 채
+develop `e65c9726cb7cc78e59649e2489766f2bb8a6e4b9`를 `git merge --no-edit`로 반영했다(merge commit `706644f`, 충돌 없음, rebase·reset·force push 없음).
+
+### 전제 재대조
+
+| 전제 | 최신 develop 결과 |
+|---|---|
+| observability chart 기본 동작 | develop 쪽 변경 없음. 기본/local 렌더가 새 기준 SHA와 리소스 단위로 동일 |
+| local traces=false, local Langfuse 없음 | 유지(`environments/local/observability.yaml`, chart values) |
+| 업무별 오류율·지연 지표 | backend 변경에 Micrometer·OTel span·histogram 추가 없음. 공급 공백 유지 |
+| 월 LLM 비용 공급 | #225 사용량 DB는 분석 대화 사용량 제한이며 Prometheus 공급·예산 결정 아님. 공백 유지 |
+| 기본 RabbitMQ 집계의 queue 라벨 부재 | 유지. 대신 `/metrics/detailed`에는 큐 라벨이 있음을 kind에서 확인 |
+| 큐 정의 | #208로 `core.event.audit` 계열이 추가되어 `<큐>.dlq`는 6개 |
+| kind(#273·#236) | 같은 `sagomungchi-local` 클러스터에 관측 설치 절차가 있으나 `observability` namespace 미설치 |
+| #187 이슈 | open, 예산·담당 확인 필요 항목 결정 등록 없음 |
+
+### 구현
+
+- observability chart `prometheus.rabbitmqDlqMetrics.enabled`(기본 false): 기존 `rabbitmq` job은 그대로 두고 같은 15692 포트의
+  `/metrics/detailed?family=queue_coarse_metrics`를 `rabbitmq-dlq` job으로 수집한다. metric relabel로
+  `rabbitmq_detailed_queue_messages` 중 `<큐>.dlq`만 남긴다. 기존 Prometheus→RabbitMQ 15692 NetworkPolicy 범위 안이다.
+- 생성기 규칙 `ops187-rabbitmq-dlq`: `max by (vhost, queue)`로 큐마다 경보 인스턴스, 임계값 `dlq_messages`는 필수 입력(0 허용),
+  지속·평가·알림 간격은 기존 공통 필수 입력을 따른다. 숨은 기본값이 없고 생략하면 생성기가 거부한다.
+- 생성된 `helm-values.json`이 DLQ scrape를 함께 켠다. DLQ 규칙이 있는데 scrape가 꺼져 있으면 Helm 렌더가 실패한다.
+- 메시지 수는 ready+unacked 합계다. 메시지 나이·재처리 지연을 뜻하지 않고 업무 ID·메시지 내용은 label에 넣지 않는다.
+  quorum 큐의 다중 노드 보고 방식은 단일 노드 기준으로만 확인했으므로 다중 노드 확대 전 재확인한다.
+
+### 검증
+
+| 범위 | 방식 | 결과 |
+|---|---|---|
+| kind `sagomungchi-local`의 실제 RabbitMQ 4.3.7 | `rabbitmq-0`에서 읽기 전용 `wget`으로 `/metrics/detailed?family=queue_coarse_metrics` 조회 | 6개 DLQ와 retry 큐에 `vhost`·`queue` 라벨, `rabbitmq_detailed_queue_messages` gauge 확인. 값 변경 없음 |
+| kind 관측 설치·규칙 평가 | 미수행 | `.env`에 `GRAFANA_ADMIN_USER`·`GRAFANA_ADMIN_PASSWORD` 값이 없어 Grafana Secret을 만들 수 없음 |
+| Helm 4.3.1 | `verify_chart.py --baseline e65c9726…` | 기본/local 동일, DLQ job·relabel이 definitions의 6개 DLQ만 유지, scrape 꺼진 DLQ 규칙 렌더 실패 |
+| 격리 Docker(실제 RabbitMQ 4.3.7·Prometheus 3.15.1·Grafana 13.3.0) | chart 모드와 단독 모드 각각 | 저장소 definitions를 import한 실제 detailed 출력→Prometheus relabel→6개 시계열만 유지, 한 DLQ만 발생·로컬 대역 수신·회복, 기존 적체·NoData·조회 오류·UID 오류·재적용·scrape 장애 분기 모두 통과 |
+| 계약 테스트 | `-O -m unittest discover -s scripts/tests` | 100개 통과 |
+
+DLQ 발생 시험의 값 변화는 실제 broker 출력을 캡처한 대역에서 만들었다. 실제 broker DLQ에 메시지를 넣는 시험,
+kind에서의 Prometheus scrape·Grafana 평가, 팀 Discord 수신은 수행하지 않았다. 시험 container·network는 종료 후 남지 않았고
+kind 클러스터·`kind236-web`·`pmw-*` container는 변경하지 않았다.
+
+### 남은 결정·후속
+
+- 운영 `dlq_messages`·지속·알림 간격과 severity 승인(시험값 0건/10초는 운영 정책 아님)
+- kind 관측 설치를 위한 Grafana 관리자 값 `.env` 준비, 이후 실제 scrape·규칙 평가 확인
+- A(월 LLM 비용)·B(담당·연락처·Discord Secret·HTTPS egress·실채널 시험 발송)·C(trace 저장·조회, #185)는 앞 절 그대로 유지
+- 업무별 오류율·지연 규칙은 각 서비스의 endpoint/status 지표 공급 확정 후 추가
