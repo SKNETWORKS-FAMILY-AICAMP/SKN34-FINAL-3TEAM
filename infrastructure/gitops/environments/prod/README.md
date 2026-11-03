@@ -20,11 +20,11 @@
 
 ## 선행 조건
 
-1. [EKS 관측 구성](../../../eks/README.md)의 클러스터·add-on·Pod Identity·IAM 역할을 준비한다. 이 디렉토리는 IAM 권한을 생성하지 않는다.
+1. [EKS 관측 구성](../../../eks/README.md)의 클러스터·add-on·Pod Identity·IAM 역할을 준비한다. 이 디렉토리는 IAM 권한을 생성하지 않는다. 생성은 [AWS IaC](../../../aws/README.md#iac-eksctl--aws-cli-스크립트-185)가 담당한다.
 2. `app`, `platform`, `external-secrets` namespace, gp3 StorageClass 및 기존 Secrets Manager 비밀을 준비한다. 기존 DB·RabbitMQ 비밀번호를 임의로 새로 만들지 않는다.
 3. ESO chart를 설치한 뒤 SecretStore·ExternalSecret을 적용한다. `SecretSynced` / `Ready=True`를 확인한 뒤 앱을 배포한다. CRD 버전은 `external-secrets.io/v1`이다.
 4. `app/rds-ca` ConfigMap에 AWS RDS 공개 CA bundle을 `global-bundle.pem` 키로 준비한다. DB URL은 `sslmode=verify-full`과 이 파일을 참조한다. CA 출처: https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
-5. RDS 서비스별 DB·app/migrate 계정·권한과 migration을 먼저 준비한다. 이 values 적용은 DB 초기화·관리자 등록·동의 문서·FREE 상품·모델 활성화를 재현하지 않는다. DB 데이터 준비는 별도 작업이다.
+5. RDS 서비스별 DB·app/migrate 계정·권한과 migration을 먼저 준비한다. 이 values 적용은 DB 초기화·관리자 등록·동의 문서·FREE 상품·모델 활성화를 재현하지 않는다. DB 데이터 준비는 별도 작업이다. 계정·권한은 `demo_stack.py rds-bootstrap`, migration은 아래 3절을 따른다.
 6. [AWS 진입 구성](../../../aws/README.md)의 ALB와 CloudFront를 준비한다. Google OAuth 클라이언트에는 해당 CloudFront origin과 callback/reauth callback을 등록한다.
 
 ## 렌더링과 기존 클러스터 적용
@@ -119,7 +119,7 @@ helm upgrade --install platform-data infrastructure/gitops/charts/platform-data 
 
 빈 RDS에는 core_db·learning_db·report_db를 만들고 서비스별 migration(DDL)·app(DML) 계정을 준비한다. DB별 PUBLIC CONNECT를 회수하고 해당 두 계정만 접속시키며, schema 사용 권한과 앱의 테이블·sequence 권한을 부여한다. 앞으로 migration 계정이 만드는 객체에도 앱 권한이 적용되도록 해당 객체 생성자 기준 default privileges를 설정한다. RDS 관리자는 초기 설정에만 사용하며 앱 Secret에 넣지 않는다. 비밀번호는 승인된 비밀 입력 경로로 전달한다.
 
-`charts/platform-data/files/postgres/init.sql`은 로컬 DB 3개 생성만 담당하므로 운영 권한 초기화 스크립트로 사용하지 않는다. 기존 RDS에는 생성 SQL을 재실행하지 않고 현재 role·CONNECT·schema·migration 이력을 대조한다. 실제 비밀번호 주입을 포함한 RDS bootstrap 자동화는 아직 없다.
+`charts/platform-data/files/postgres/init.sql`은 로컬 DB 3개 생성만 담당하므로 운영 권한 초기화 스크립트로 사용하지 않는다. RDS 초기화는 [`demo_stack.py rds-bootstrap`](../../../aws/README.md#iac-eksctl--aws-cli-스크립트-185)과 `rds-bootstrap*.sql`이 담당한다. ESO Secret 6개와 `app/rds-ca`가 준비된 뒤 실행하고, migration 성공 후 한 번 더 실행해 기존 테이블 권한을 맞춘다. SQL은 이미 있는 계정의 비밀번호를 바꾸지 않으므로 기존 RDS에도 안전하게 재실행되도록 작성했지만, 현재 RDS에서는 아직 실행하지 않았다. 로컬 PostgreSQL 17.11의 비-superuser(CREATEROLE·CREATEDB) 관리자로 두 번 실행해 멱등성, app 계정의 DML 허용·DDL 거부·다른 DB 접속 거부, 이력 테이블 권한 회수를 확인했다.
 
 2026-11-03 읽기 전용 조회에서 다음 Job은 succeeded=1이었다. 이는 과거 실행 이력이며 새 DB에서 재실행한 결과는 아니다.
 
@@ -131,7 +131,14 @@ helm upgrade --install platform-data infrastructure/gitops/charts/platform-data 
 
 core/learning migration 이미지는 [core.Dockerfile](../../migrations/core.Dockerfile)·[learning.Dockerfile](../../migrations/learning.Dockerfile)로 같은 소스 revision에서 빌드한다. 현재 develop의 migration을 과거 배포 digest와 임의 조합하지 않는다. Flyway validate/migrate와 report Alembic upgrade head는 각 DB migration 계정·TLS로 별도 Job에서 실행하고 성공 이력을 확인한 후 앱을 올린다.
 
-**현재 prod 앱 values의 migration.enabled=false이고 공통 migration Job 템플릿에는 rds-ca mount가 없다.** local migration.enabled=true 값을 그대로 가져오면 RDS TLS·계정·실행 순서를 충족하지 못한다. 초기 재현을 실행하기 전에 RDS CA mount·Secret 참조·고정 migration digest를 가진 Job 입력을 준비해야 한다. Argo PreSync annotation은 수동 Helm 실행에서 migration 선행을 보장하지 않는다. 따라서 빈 DB에 앱부터 설치하지 않는다.
+prod 앱 values는 `migration.enabled=false`를 유지한다(실제 release와 일치). migration 입력은 [`migrations/`](migrations/)의 덮어쓰기 values이며, 공통 chart의 `migration.extraVolumes`·`extraVolumeMounts`로 `rds-ca`를 마운트하고 migrate Secret·고정 digest를 사용한다. Argo PreSync는 수동 Helm에서 선행을 보장하지 않으므로 Job만 렌더링해 먼저 적용한다.
+
+```powershell
+helm template core-service infrastructure/gitops/charts/app-service -n app -f "$envDir/core-service.json" -f "$envDir/migrations/core-service.json" --show-only templates/migration-job.yaml | kubectl --kubeconfig $kubeconfig apply -f -
+kubectl --kubeconfig $kubeconfig -n app wait --for=condition=complete job/core-service-migrate-b67d8a462b6b --timeout=600s
+```
+
+learning-service·report-api도 같은 방식이다. **core-migrate 고정 digest는 V23까지만 포함한다.** 현재 RDS의 V24·V25는 기존 Job이 별도 ConfigMap SQL로 적용했다. 빈 DB 재현에는 배포할 core 이미지와 같은 소스로 core-migrate를 다시 빌드해 digest와 `revision`을 바꿔야 한다(core 이미지의 미커밋 이용권 수정과 같은 소스 재현성 문제). 빈 DB에 앱부터 설치하지 않는다.
 
 ### 4. 앱 → 초기 운영 데이터 → 외부 진입
 
@@ -149,4 +156,4 @@ core/learning migration 이미지는 [core.Dockerfile](../../migrations/core.Doc
 
 실패 시 실패 단계 이후 진행을 멈추고 그 단계의 원인을 수정한다. migration 실패를 앱 재시작으로 숨기지 않고 DB restore나 down migration을 자동 수행하지 않는다. 기존 데이터가 있는 환경의 재배포는 앱 하나씩 preview/적용하며, 초기 설치와 혼동하지 않는다.
 
-현재 완료된 것은 **입력·순서·검증·실패 경계가 있는 절차 정리와 기존 앱 6개 server dry-run**이다. 빈 환경 자동 생성, RDS bootstrap/migration Job 입력 완성, 초기 운영 데이터 seed, core·웹 소스 재빌드 동일성, 신규 환경 전체 재현 실행은 미완료다.
+현재 완료된 것은 **절차 정리, 기존 앱 6개 server dry-run, AWS 자원·EKS 생성 정의(`demo_stack.py`·`cluster.json`), RDS bootstrap SQL·Job, migration Job 입력**이다. 초기 운영 데이터 seed, core·웹 소스 재빌드 동일성(core-migrate V24·V25 포함), 신규 환경 전체 재현 실행은 미완료다.

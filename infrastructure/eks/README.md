@@ -1,6 +1,6 @@
 # EKS 데모 관측 구성
 
-`demo-observed.json`은 2026-11-03 AWS API의 선택 필드만 저장한 인벤토리다. **eksctl 생성 파일이 아니며, 이 파일만으로 클러스터를 재생성할 수 없다.** `gp3.json`은 Kubernetes StorageClass manifest다. EKS API 공개 접근 허용 CIDR(`publicAccessCidrs`)은 작업자 공인 IP이므로 `__OPERATOR_PUBLIC_IP_n__`으로 치환했다. 실제 값은 `aws eks describe-cluster`로 확인한다.
+`cluster.json`은 현재 클러스터와 같은 eksctl `ClusterConfig`다(1.35, application 노드그룹, add-on 버전, Pod Identity). VPC·subnet ID와 공개 접근 CIDR은 placeholder이며 `infrastructure/aws/demo_stack.py render-eksctl`이 채운다. 기존 클러스터는 콘솔에서 만들어 eksctl CloudFormation stack이 없으므로, 이 파일은 **새 환경 생성과 `demo_stack.py plan`의 대조 기준**이고 기존 클러스터를 eksctl로 관리하지 않는다. `demo-observed.json`은 2026-11-03 AWS API의 선택 필드만 저장한 인벤토리다. `gp3.json`은 Kubernetes StorageClass manifest다. EKS API 공개 접근 허용 CIDR(`publicAccessCidrs`)은 작업자 공인 IP이므로 `__OPERATOR_PUBLIC_IP_n__`으로 치환했다. 실제 값은 `aws eks describe-cluster`로 확인한다.
 
 - 계정 `347161580747`, 리전 `ap-northeast-2`, 클러스터 `sagomungchi-demo-eks`, Kubernetes 1.35.
 - 현재 관리형 노드그룹은 `application` 하나. ON_DEMAND t3.medium 2대, min/desired/max 모두 2, private subnet 배치, 노드 디스크 20GiB.
@@ -9,9 +9,9 @@
 - IRSA annotation 대신 EKS Pod Identity를 사용한다. JSON의 namespace·ServiceAccount·roleArn 연결을 그대로 확인한다. IAM 정책·trust는 여기서 생성하지 않는다.
 - LB Controller는 1.14.1 chart / v2.14.1, ESO는 2.14.0 chart / v2.14.0. values는 [prod](../gitops/environments/prod/README.md)에 있다.
 
-## 재생성 전에 남은 일
+## 재생성 범위
 
-VPC·서브넷·라우팅·SG·IAM·access entry와 eksctl 생성 설정을 코드로 연결하는 작업은 미완료다. 현재 객체를 새 IaC가 소유한다고 가정하거나 같은 이름으로 다시 만들지 않는다. 기존 리소스 인벤토리와 생성/관리 책임을 대조한 후 별도 변경으로 진행한다.
+VPC·subnet·route·NAT·SG·IAM·RDS·S3·ECR은 [AWS IaC](../aws/README.md#iac-eksctl--aws-cli-스크립트-185), 클러스터는 `cluster.json`이 정의한다. 2026-11-03 `plan`에서 55개 항목이 현재 자원과 일치했다. 같은 계정에서 `apply`는 이미 있는 자원을 건너뛰며, 현재 객체를 다른 IaC가 소유하도록 import하지 않는다. 새 계정 재생성은 실행하지 않았으므로 성공을 주장하지 않는다. eksctl은 작업자 IAM 사용자의 access entry를 자동으로 만들며, 콘솔에서 만든 현재 클러스터의 `student` access entry와 같은 권한인지는 생성 후 확인한다.
 
 설계의 `platform-observability` 그룹, Spot, Cluster Autoscaler는 아직 없다. 비용·가용성 결정 없이 생성하지 않는다. 노드를 0으로 줄여도 EKS control plane·NAT·RDS·EBS 비용은 남는다. RDS 복원 테스트와 데이터 백업을 확인하기 전 클러스터/PVC를 삭제하지 않는다.
 
@@ -41,7 +41,7 @@ aws eks list-pod-identity-associations --cluster-name sagomungchi-demo-eks --reg
 
 ## 데모 종료·축소·재개 실행안 (#185)
 
-2026-11-03 작성한 **미실행 계획**이다. 현재 노드그룹·Pod Identity 구조를 바꾸지 않는다. 서비스 중단 일시·재개 일시·실행 담당·백업 보관 위치를 기록한 뒤 실행하며, 이번 문서 정리만으로 노드 축소·RDS 정지·자원 삭제를 실행하지 않는다.
+2026-11-03 작성한 **미실행 계획**이다. 아래 정상 종료·재개 순서는 `python infrastructure/aws/demo_stack.py pause|resume --kubeconfig <파일> --state <저장소 밖 파일>`로 자동화했다. 기본은 현재 상태와 단계만 출력하고(2026-11-03 dry-run 확인), `--execute --confirm-account 347161580747`일 때만 RabbitMQ 미처리 메시지 확인 → 워크로드 0 → RDS·EBS snapshot → 노드그룹 0/0/2 → RDS 정지를 실행한다. resume은 저장한 replica·노드 수로 되돌린다. 유입 차단·Grafana silence는 스크립트에 없으므로 작업자가 먼저 처리한다. 현재 노드그룹·Pod Identity 구조를 바꾸지 않는다. 서비스 중단 일시·재개 일시·실행 담당·백업 보관 위치를 기록한 뒤 실행하며, 이번 문서 정리만으로 노드 축소·RDS 정지·자원 삭제를 실행하지 않는다.
 
 ### 선택지와 남는 비용
 

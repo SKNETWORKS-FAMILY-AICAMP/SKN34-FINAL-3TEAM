@@ -144,3 +144,24 @@
 - 브라우저·앱·IAM·노드·DB·S3 내용은 변경하지 않았다. 검증은 문서 상대 경로/링크·기존 설정과 설명 대조·git diff --check로 한정한다. 실제 신규 배포·종료/재개·복원 성능·부모 다운로드·원격 CI는 미실행이다.
 
 이번 범위의 절차 작성은 완료했으며, 절차가 있다는 이유로 초기 배포 재현 성공이나 #185 전체 완료를 주장하지 않는다. 실제 실행 전 미완료 선행 조건과 중단/재개 일시·담당·백업 보관 위치를 확정해야 한다.
+
+## IaC·RDS 초기화·중단 자동화 (2026-11-03)
+
+사용자가 IaC 방식을 eksctl + AWS CLI 스크립트로, 데모 외 기간 축소를 "노드 0대 + RDS 정지"로 정했다. 도메인은 기본 cloudfront.net, CloudFront→ALB는 HTTP를 유지한다(ALB SG는 CloudFront prefix list만 허용, origin 헤더 규칙 적용 확인). 이번 단계는 저장소 작업이며 AWS 자원은 변경하지 않았다.
+
+- [eksctl 설정](../../infrastructure/eks/cluster.json)과 [AWS 정의·스크립트](../../infrastructure/aws/README.md#iac-eksctl--aws-cli-스크립트-185)를 추가했다. 실제 IAM trust·정책 원문 16개를 `infrastructure/aws/iam/`에 보존했다.
+- `demo_stack.py plan`(읽기 전용)을 실제 계정에 실행해 VPC·subnet 4·NAT·IGW·S3 endpoint, S3 4, ECR 7, Secret 이름 11, RDS·SG·subnet group, IAM 역할 8, EKS·노드그룹·add-on 6·Pod Identity 7의 **55개 항목이 모두 일치**했다. `apply`는 가짜 AWS 단위 테스트로 빈 계정 생성 순서, 완성된 계정에서 변경 호출 0건, private route의 NAT·S3 endpoint 연결을 확인했다. 실제 새 계정 생성과 eksctl 실행은 하지 않았다(eksctl 미설치, `--dry-run` 미검증).
+- RDS 초기화: `rds-bootstrap.sql`을 로컬 PostgreSQL 17.11의 비-superuser 관리자로 두 번 실행해 멱등성, app 계정 DML 허용·DDL 거부·다른 DB 접속 거부, migration 이력 테이블 권한 회수를 확인했다. 실제 RDS에서는 실행하지 않았다(`rds-bootstrap` dry-run에서 입력 Secret 6개·`rds-ca` 존재 확인).
+- migration: app-service chart에 Job 전용 `migration.extraVolumes`·`extraVolumeMounts`를 추가했다(기존 local·prod 렌더링 결과 동일). `environments/prod/migrations/`에 core·learning·report Job 입력을 두었고 helm lint 통과. core-migrate 고정 digest는 V23까지라 빈 DB 재현에는 재빌드가 필요하다.
+- 중단·재개: `pause`/`resume` dry-run을 실제 클러스터에 실행해 노드그룹 2/2/2, RDS available, RabbitMQ 미처리 메시지 0, 대상 워크로드 11개·PV 4개를 확인했다. `--execute`는 실행하지 않았다.
+
+### 데모 사양 판단 근거 (결정 대기)
+
+| 항목 | 2026-11-03 조회 | 해석 |
+|---|---|---|
+| 노드 메모리 예약 | 2a 2970Mi(90%), 2b 3054Mi(92%) | 새 Pod·rolling update 여유가 거의 없음 |
+| Pod 슬롯 | 2a 17/17, 2b 12/17 | 2a 노드는 Pod를 더 받을 수 없음. AZ 고정 PVC(RabbitMQ·관측 2a, Redis 2b) 때문에 재배치도 제한 |
+| RDS(최근 3일, 1시간 단위) | CPU 최대 28%, 여유 메모리 최소 약 956MiB, 연결 최대 28 | db.t4g.small 유지 가능 |
+| 공개 단가(서울, On-Demand) | t3.medium $0.052/h, t3.large $0.104/h, db.t4g.small $0.051/h, db.t4g.medium $0.102/h | 세금·크레딧·저장소 제외 |
+
+예산은 조직 SCP가 `budgets:ViewBudget`을 막아 조회하지 못했다.

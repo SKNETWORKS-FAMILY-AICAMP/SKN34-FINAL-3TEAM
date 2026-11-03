@@ -2,6 +2,27 @@
 
 2026-11-03 실제 계정의 설정 보존이다. Terraform/CloudFormation 등 새 실행 계층을 도입하지 않았다. `demo-observed.json`은 RDS·S3 관측 결과이며 배포 명령 입력이 아니다.
 
+## IaC: eksctl + AWS CLI 스크립트 (#185)
+
+EKS는 [eksctl 설정](../eks/cluster.json), 나머지는 `demo-stack.json`(원하는 상태)과 `iam/`(trust·policy 원문)이 정의한다. `demo_stack.py`는 Python 표준 라이브러리와 aws CLI·kubectl만 쓴다. 저장소 루트에서 실행한다.
+
+| 명령 | 동작 | AWS 변경 |
+|---|---|---|
+| `plan` | VPC·subnet·route·NAT·S3 endpoint, S3 4개, ECR 7개, Secret 이름 11개, RDS·SG·subnet group, IAM 역할 8개(trust·정책 원문), EKS·노드그룹·add-on·Pod Identity를 실제와 비교. 차이가 있으면 exit 1 | 없음 |
+| `apply --confirm-account 347161580747` | `plan`에서 MISSING인 자원만 생성. 기존 자원은 변경·삭제하지 않는다. Secret 값과 EKS는 만들지 않는다 | 생성만 |
+| `render-eksctl --operator-cidr <IP>/32 --out <저장소 밖>` | 현재 subnet ID를 채운 eksctl 설정 출력 → `eksctl create cluster -f <파일>` | 없음 |
+| `apply --after-eksctl ...` | 새 클러스터의 cluster SG에서 RDS 5432 허용 | 생성만 |
+| `rds-bootstrap --kubeconfig <파일>` | 입력(ESO Secret 6개·`rds-ca`) 확인. `--execute`일 때 RDS 관리 master secret을 임시 Secret으로 넣고 `rds-bootstrap*.sql` Job 실행 후 삭제 | `--execute`일 때만 |
+| `pause` / `resume --state <저장소 밖 파일>` | [EKS 중단·재개 절차](../eks/README.md#데모-종료축소재개-실행안-185) 자동화. 기본은 계획 출력 | `--execute --confirm-account`일 때만 |
+
+```powershell
+python infrastructure/aws/demo_stack.py --profile sagomungchi-provided plan
+```
+
+새 환경 순서: `apply` → 비밀 값 입력(Secrets Manager, 담당자) → `render-eksctl` → `eksctl create cluster` → `apply --after-eksctl` → [prod 초기 배포 절차](../gitops/environments/prod/README.md#초기-배포-재현-절차-185)(ESO·LB Controller·`rds-bootstrap`·migration·앱). CloudFront 배포·OAC·Function, ALB Ingress의 origin 헤더, 웹 업로드, Google OAuth 등록은 이 스크립트 범위 밖이며 아래 redacted 설정과 절차로 수동 구성한다. 계정 ID와 이름이 고정이므로 다른 계정에는 `demo-stack.json`·`iam/`·`cluster.json`을 먼저 바꾼다.
+
+`rds-bootstrap.sql`은 DB 3개, DB별 migration(DDL)·app(DML) 계정, PUBLIC CONNECT 회수, migration 계정 소유 객체의 default privileges를 멱등으로 만든다. 계정 이름·비밀번호는 ESO Secret에서 환경변수로만 받고, 이미 있는 계정의 비밀번호는 바꾸지 않는다. migration 후 한 번 더 실행하면 기존 테이블 권한을 맞추고 `flyway_schema_history`·`alembic_version`의 app 권한을 회수한다.
+
 ## 외부 요청 흐름
 
 `https://d3jf0rnm6vhd9v.cloudfront.net` → 정적 경로는 비공개 S3 웹 버킷(OAC), `/api/*`는 ALB → app/core-service:8080.
@@ -23,7 +44,7 @@
 - RDS `sagomungchi-demo-db`: PostgreSQL 17.11, db.t4g.small, Single-AZ, 비공개, 암호화, 백업 7일. 삭제 보호 false. PITR 복원 시각은 JSON에 기록했지만 실제 복원 시간·RPO/RTO 달성은 미검증이다.
 - `sagomungchi-demo-347161580747-{web,missions,reports,models}`: 버전 관리·Public Access Block 상태는 JSON 참고. 웹만 CloudFront OAC로 제공하며 reports/models는 앱 IAM 및 서비스 권한 검사를 통한다.
 - VPC의 available NAT GW는 1개이며 JSON에 ID·subnet을 기록했다. AZ 장애 시 외부 호출 복구 검증은 하지 않았다.
-- S3 bucket policy, lifecycle, IAM policy 전체와 RDS 생성 절차의 IaC는 아직 미완료다. 관측 파일을 재생성 완료 근거로 사용하지 않는다.
+- RDS·S3·IAM 생성은 위 `demo_stack.py apply`로 정의했다. 웹 버킷 policy(CloudFront 배포 ID 필요)와 lifecycle은 정의하지 않았다. 관측 파일을 재생성 완료 근거로 사용하지 않는다.
 
 ## 배포·복구 유의 사항
 
