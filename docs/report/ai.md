@@ -304,7 +304,7 @@ LLM은 테스트 dependency override 또는 실제 키 미설정 분기다. 실�
 
 ## 7. AI 활성 프롬프트 버전 수신 (#68)
 
-core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1` data는 같은 `id·kind·name·version·refId·artifactUri·scopes·revision·activatedAt` 필드를 사용한다. 이벤트에만 `previousVersionId`가 추가된다. 이미 있는 스키마를 재작성하지 않는다. core는 kind·name별 revision을 증가시키므로 ai는 네 `PROMPT` 이름만 골라 높은 revision을 적용하고 각 기능의 승인 scope를 정확히 검사한다. 형식 오류 이벤트는 원문·URI 없이 경고하고 ACK하여 재시도하지 않는다.
+core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1` data는 같은 `id·kind·name·version·refId·artifactUri·scopes·revision·activatedAt` 필드를 사용한다. 이벤트에만 `previousVersionId`가 추가된다. 이미 있는 스키마를 재작성하지 않는다. core는 kind·name별 revision을 증가시키므로 ai는 정해진 `PROMPT` 이름(#280 이후 다섯 개)만 골라 높은 revision을 적용하고 각 기능의 승인 scope를 정확히 검사한다. 형식 오류 이벤트는 원문·URI 없이 경고하고 ACK하여 재시도하지 않는다.
 
 | name | 승인 scope | ai 이미지에 포함된 기본 본문·버전 |
 |---|---|---|
@@ -312,6 +312,7 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 | `followup` | `ai/followup` | `followup/prompts.py`, `followup@4` |
 | `analysis` | `ai/analysis` | `analysis_agent/prompts.py`, `analysis@2` |
 | `reportNarrative` | `ai/report-narrative` | `report_narrative/prompts.py`, `report@1` |
+| `reportTemplate` | `ai/report-template` | `analysis_agent/template_prompts.py`, `analysis-template@1` (#280) |
 
 각 버전은 실제 system 문구와 user 본문 구성 함수를 이미지 코드에 함께 넣은 뒤에만 활성화할 수 있다. 현재 이미지는 위 기본 버전의 본문만 보유한다. core snapshot에 해당 활성 항목이 없으면 기본 버전을 사용한다. 보유하지 않은 활성 버전은 다른 본문에 새 버전명만 붙이지 않고 해당 기능 요청과 `/internal/versions`를 `503 AI_PROMPT_VERSION_UNAVAILABLE`로 거부한다. 구독·core snapshot·이벤트 조정 또는 본문 준비가 되지 않으면 `/health/ready`의 `versions`는 DOWN이다. 요청 시작 때 본문·버전 참조를 잡아 분석의 분류/답변 두 LLM 호출과 되묻기 재생성까지 같은 버전을 사용한다.
 
@@ -334,3 +335,10 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 ## 8. 리포트 표시 설정 변경안 (#209, 로컬 구현 후보)
 
 `POST /internal/analysis/report-template`은 현재 설정과 학부모 요청만 받아 구조화한 변경안 또는 확인 질문을 반환한다. 학습 원문·학생 ID를 이 요청에 넣지 않는다. 학생 공개 설정·섹션 숨김·메모·계산식 변경은 허용하지 않는다. 저장과 확인 토큰 검증은 core가 소유한다. 실제 UI/서비스 간 연동 및 #206 공개 차단 검증은 [report 보고서 #209 절](report.md)을 따른다. 합성 LLM 테스트 통과는 실제 모델의 모든 자연어 해석 정확도를 보장하지 않는다.
+
+### 프롬프트 레지스트리 등록과 core 서킷 (#280)
+
+- 설정 제안 본문을 `analysis_agent/template_prompts.py`(`SYSTEM`·`build_user`·`PROMPT_VERSION = "analysis-template@1"`)로 옮기고 `prompt_versions`에 이름 `reportTemplate`, 승인 scope `ai/report-template`로 등록했다. `AnalysisService.propose_template`은 PARENT 확인 뒤 `ActiveVersions.prompt("reportTemplate")`로 본문·버전을 한 번 골라 LLM 호출에 그대로 쓴다. 버전 문자열은 바꾸지 않아 사용량 기록의 `promptVersion`은 이전과 같다.
+- 영향: `/internal/versions` 응답에 `reportTemplate` 키가 추가된다(OpenAPI `required` 갱신). 미보유 활성 버전이면 설정 제안·`/internal/versions`가 `503 AI_PROMPT_VERSION_UNAVAILABLE`이고 readiness `versions`는 DOWN이다. core 관리자 모델 레지스트리는 이름·scope를 자유 입력으로 받으므로 core·웹 변경 없이 `PROMPT`/`reportTemplate`/`ai/report-template`으로 활성화·롤백할 수 있다. core는 `/internal/versions`를 호출하지 않는다.
+- core `AiClient.reportTemplate`에는 분석 스트림 `ai-analysis`와 분리한 `ai-report-template` 서킷(최근/최소 10건·실패율 50%·30초·half-open 1건)을 두었다. 공유하면 설정 제안 실패가 분석 대화를 막고, 설정 제안은 호출량이 적어 20건 창으로는 거의 열리지 않기 때문이다. 4xx는 성공, 전송 오류·시간 초과·5xx·빈 본문은 실패로 센다. 기준은 아키텍처 1.3.
+- 검증: ai `tests/test_active_versions.py`(활성 본문 선택·미보유 503), `tests/test_versions.py`, core `AiClientTest`(서킷 열림·HTTP 미호출·half-open 회복·4xx 미집계, `ai-analysis` 서킷 유지).

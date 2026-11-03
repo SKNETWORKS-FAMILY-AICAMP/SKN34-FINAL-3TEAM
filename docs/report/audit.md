@@ -538,8 +538,8 @@ core·learning은 import를 레이어로 분류해 전수 검사, Python·웹은
 | # | 내용 | 원칙 | 근거 |
 |---|---|---|---|
 | A17 | #208 이벤트 기록·보존 정리가 Presentation·진입점에서 repository 직접 호출. learning 정리 작업은 `@Scheduled`가 service 패키지에 위치(#241 `StuckJudgmentScheduler` 분리 방식과 다름) | 2.1·2.2 | core `_common/messaging/EventAuditConsumer.kt`·`EventRetentionCleanup.kt`, learning `record/service/ProcessedEventCleanup.kt`, report `worker.py` `prune_event_records`. 이슈 #278 |
-| A18 | 기능 간 client·repository 직접 참조 | 2.2 기능 간은 service로만 | core `report/service/ReportTemplateService.kt` → `conversation.client.AiClient`·`guardianship.repository.StudentAccessRepository`. 이슈 #279 |
-| A19 | ai 리포트 설정 제안이 프롬프트 레지스트리 밖 고정 버전(`analysis-template@1`)이라 #68 활성 본문 검사 대상 밖. core `AiClient.reportTemplate`은 서킷 브레이커 없음(`ai-analysis`는 `stream`만) | 1.3·1.5 | ai `analysis_agent/template_settings.py`, core `conversation/client/AiClient.kt`. 이슈 #280 |
+| A18 | 기능 간 client·repository 직접 참조 | 2.2 기능 간은 service로만 | core `report/service/ReportTemplateService.kt` → `conversation.client.AiClient`·`guardianship.repository.StudentAccessRepository`. 이슈 #279 → **#279 처리**: AI 제안은 `conversation/service/AnalysisTemplateService`, 학생 잠금·활성 학부모 조회는 `guardianship/service/StudentAccessService` 경유. 다른 기능 client·repository import 0건, 동작 동일 |
+| A19 | ai 리포트 설정 제안이 프롬프트 레지스트리 밖 고정 버전(`analysis-template@1`)이라 #68 활성 본문 검사 대상 밖. core `AiClient.reportTemplate`은 서킷 브레이커 없음(`ai-analysis`는 `stream`만) | 1.3·1.5 | ai `analysis_agent/template_settings.py`, core `conversation/client/AiClient.kt`. 이슈 #280 → **#280 처리**: 레지스트리 이름 `reportTemplate`·scope `ai/report-template`(본문 `template_prompts.py`, 버전 `analysis-template@1` 유지)로 등록해 활성 본문 503·관리자 활성화·롤백 대상. core는 별도 서킷 `ai-report-template`(10건·50%·30초) 적용, `ai-analysis`와 독립 |
 
 ### 5.6 남은 공백
 
