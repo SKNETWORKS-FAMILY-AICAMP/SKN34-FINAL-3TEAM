@@ -120,4 +120,29 @@ class AiClientTest {
             assertEquals(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.CLOSED, ai.circuit.state)
         } finally { ai.close() }
     }
+
+    @Test fun `report template failures open only its own circuit and half open recovers`() = AnalysisHttpStub().use { stub ->
+        val ai = client(stub)
+        try {
+            stub.status = 503
+            repeat(10) { assertEquals("AI_UNAVAILABLE", assertFailsWith<BusinessException> { ai.reportTemplate(emptyMap<String, String>()) }.code) }
+            assertEquals(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.OPEN, ai.templateCircuit.state)
+            assertEquals(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.CLOSED, ai.circuit.state)
+            assertEquals("AI_UNAVAILABLE", assertFailsWith<BusinessException> { ai.reportTemplate(emptyMap<String, String>()) }.code)
+            assertEquals(10, stub.requests.size)
+            ai.templateCircuit.transitionToHalfOpenState()
+            stub.status = 200
+            assertEquals("확인", ai.reportTemplate(emptyMap<String, String>()).get("clarification").asText())
+            assertEquals(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.CLOSED, ai.templateCircuit.state)
+        } finally { ai.close() }
+    }
+    @Test fun `report template HTTP 4xx is not a circuit failure`() = AnalysisHttpStub().use { stub ->
+        val ai = client(stub)
+        try {
+            stub.status = 400
+            repeat(10) { assertEquals("AI_UNAVAILABLE", assertFailsWith<BusinessException> { ai.reportTemplate(emptyMap<String, String>()) }.code) }
+            assertEquals(0, ai.templateCircuit.metrics.numberOfFailedCalls)
+            assertEquals(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.CLOSED, ai.templateCircuit.state)
+        } finally { ai.close() }
+    }
 }
