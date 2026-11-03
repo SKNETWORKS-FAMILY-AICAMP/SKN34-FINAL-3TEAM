@@ -3,6 +3,9 @@ package com.sagomungchi.learning.attempt.service
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.attempt.domain.Attempt
+import com.sagomungchi.learning.attempt.domain.AttemptComparison
+import com.sagomungchi.learning.attempt.domain.ComparisonAnswer
+import com.sagomungchi.learning.attempt.domain.ComparisonSnapshot
 import com.sagomungchi.learning.attempt.domain.AttemptDraft
 import com.sagomungchi.learning.attempt.domain.Checklist
 import com.sagomungchi.learning.attempt.domain.DraftContent
@@ -95,6 +98,25 @@ class AttemptService(
             revealed = attempt.finishedAt?.let { revealed(attempt, it, mission, answers, feedbacks) },
             reflection = attemptRepository.findReflection(attempt.id),
         )
+    }
+
+    @Transactional(readOnly = true)
+    fun comparison(attemptId: UUID): AttemptComparison {
+        val current = requireOwned(attemptId)
+        if (current.finishedAt == null) throw BusinessException(HttpStatus.CONFLICT,
+            "REVEAL_CONDITION_UNMET", "마무리한 뒤 이전 결과와 비교할 수 있습니다.")
+        val previous = attemptRepository.findPreviousFinished(current)
+        fun snapshot(attempt: Attempt): ComparisonSnapshot {
+            val detail = get(attempt.id)
+            val judgment = detail.answers.asReversed().firstNotNullOfOrNull { detail.feedbacks[it.answerId]?.judgment?.result }
+            return ComparisonSnapshot(attempt.id, checkNotNull(attempt.finishedAt),
+                detail.answers.map { ComparisonAnswer(it.answerId, it.version, it.text, it.content) },
+                judgment, detail.revealed?.checklist.orEmpty(), detail.mission.let {
+                    com.sagomungchi.learning.attempt.domain.ComparisonMission(it.title, it.question, it.inputType.name, it.choices, it.categories, it.answerUnit)
+                })
+        }
+        return AttemptComparison.of(snapshot(current), previous?.let(::snapshot),
+            previous != null && previous.rubricVersionId == current.rubricVersionId && previous.missionVersionId == current.missionVersionId)
     }
 
     /**

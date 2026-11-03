@@ -1432,21 +1432,88 @@
         ],
         "title": "Revision"
       },
+      "TemplateSettings": {
+        "properties": {
+          "sectionOrder": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sectionorder"
+          },
+          "highlightMetrics": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "ATTEMPTS",
+                "COMPLETED",
+                "UNASSISTED"
+              ]
+            },
+            "type": "array",
+            "title": "Highlightmetrics"
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "DEFAULT",
+              "EASY",
+              "CONCISE"
+            ],
+            "title": "Tone",
+            "default": "DEFAULT"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TemplateSettings"
+      },
+      "TemplateSnapshot": {
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/TemplateSettings"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Revision"
+          }
+        },
+        "type": "object",
+        "required": [
+          "settings",
+          "revision"
+        ],
+        "title": "TemplateSnapshot"
+      },
       "TextAnswer": {
         "properties": {
           "answerId": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Answerid"
           },
           "text": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Text"
           }
         },
         "type": "object",
         "required": [
-          "answerId",
           "text"
         ],
         "title": "TextAnswer"
@@ -1540,6 +1607,16 @@
       },
       "Versions": {
         "properties": {
+          "template": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "prompt": {
             "anyOf": [
               {

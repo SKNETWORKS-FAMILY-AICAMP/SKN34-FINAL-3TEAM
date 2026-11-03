@@ -9,6 +9,8 @@ import com.sagomungchi.learning.answer.domain.Essay
 import com.sagomungchi.learning.answer.service.AnswerService
 import com.sagomungchi.learning.answer.service.SubmitCommand
 import com.sagomungchi.learning.mission.domain.InputType
+import org.hamcrest.Matchers.containsString
+import org.hamcrest.Matchers.not
 import org.junit.jupiter.api.Test
 import org.mockito.BDDMockito.given
 import org.mockito.Mockito.verifyNoInteractions
@@ -130,6 +132,21 @@ class AnswerControllerTest(@Autowired private val mockMvc: MockMvc) {
             status { isUnprocessableEntity() }
             jsonPath("$.code") { value("ANSWER_INCOMPLETE") }
             jsonPath("$.detail") { value("내 생각을 먼저 적어 주세요.") }
+        }
+    }
+
+    @Test
+    fun `표현 차단은 422 ANSWER_INAPPROPRIATE와 고정 안내만, 쓴 글은 응답에 없음`() {
+        val rude = SubmitCommand(InputType.NARRATIVE, AnswerContent(text = "존나 어렵다"), dictatedByGuardian = false, followupId = null)
+        given(service.submit(attemptId, key, rude))
+            .willThrow(BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "ANSWER_INAPPROPRIATE", "고쳐야 할 말이 있어요", "고운 말로 바꿔서 다시 적어 주세요."))
+
+        mockMvc.post("/internal/attempts/$attemptId/answers") { submission("""{"inputType":"NARRATIVE","text":"존나 어렵다"}""") }.andExpect {
+            status { isUnprocessableEntity() }
+            jsonPath("$.code") { value("ANSWER_INAPPROPRIATE") }
+            jsonPath("$.title") { value("고쳐야 할 말이 있어요") }
+            jsonPath("$.detail") { value("고운 말로 바꿔서 다시 적어 주세요.") }
+            content { string(not(containsString("존나"))) }
         }
     }
 

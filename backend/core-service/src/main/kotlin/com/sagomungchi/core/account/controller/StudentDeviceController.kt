@@ -1,6 +1,7 @@
 package com.sagomungchi.core.account.controller
 
 import com.sagomungchi.core._common.exception.Problems
+import com.sagomungchi.core._common.security.RequestAttributes
 import com.sagomungchi.core.account.config.AuthProperties
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core.account.service.StudentAuthService
@@ -53,6 +54,6 @@ class StudentDeviceController(private val service: StudentAuthService,private va
         ex.remainingAttempts?.let { problem.setProperty("remainingAttempts",it) }
         return ResponseEntity.status(ex.status).cacheControl(CacheControl.noStore()).body(problem)
     }
-    private fun identity(request: HttpServletRequest)=request.getAttribute(AuthController.IDENTITY) as AuthenticatedAccount
+    private fun identity(request: HttpServletRequest)=request.getAttribute(RequestAttributes.IDENTITY) as AuthenticatedAccount
     private fun ok(body: Any): ResponseEntity<Any> = ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(body)
 }

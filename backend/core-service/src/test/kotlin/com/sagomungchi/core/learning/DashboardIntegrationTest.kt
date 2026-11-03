@@ -57,6 +57,8 @@ class DashboardIntegrationTest : PostgresRepositoryTest() {
         child = UUID.randomUUID()
         jdbc.update("INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,created_at,updated_at,pin_failed_count) VALUES(?,'테스트 학생',3,2017,false,'ACTIVE',now(),now(),0)", child)
         jdbc.update("INSERT INTO guardianship(id,parent_user_id,student_id,method,status,linked_at) VALUES(?,?,?,'REGISTER','LINKED',now())", UUID.randomUUID(), user, child)
+        // 이 클래스는 공개 학생의 전달·계약을 검증한다. 비공개 차단은 StudentSharing*Test가 맡는다 (#206).
+        jdbc.update("UPDATE student SET parent_sharing_enabled=true WHERE id=?", child)
         listOf("TERMS", "PRIVACY", "GUARDIAN").forEach { kind ->
             val document = UUID.randomUUID(); documents.add(document)
             // Latest required policy, plus existing policies, are all granted to this unique fixture.
@@ -66,7 +68,7 @@ class DashboardIntegrationTest : PostgresRepositoryTest() {
             jdbc.update("INSERT INTO consent(id,document_id,subject_user_id,student_id,agreed,status,agreed_at) VALUES(?,?,?,?,true,'AGREED',now())",
                 UUID.randomUUID(), doc["id"], user, if (doc["kind"] == "GUARDIAN") child else null)
         }
-        access = auth.enterStudent(parent.refreshToken, child, auth.authenticate(parent.accessToken)).accessToken
+        access = auth.enterStudent(child, auth.authenticate(parent.accessToken)).accessToken
     }
 
     @AfterEach fun cleanup() {

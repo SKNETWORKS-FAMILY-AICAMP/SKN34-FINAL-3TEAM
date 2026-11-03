@@ -1,0 +1,60 @@
+# 실서버 브라우저 E2E (#246): compose 전체 스택 + infrastructure/stubs 대역(Google·LLM·토스), 실제 키·secrets 미사용
+# 실행 시점: 수동, E2E 구성 파일을 바꾼 PR, 매일 03:00 KST(schedule은 기본 브랜치 main에 이 파일이 병합된 뒤부터 main 기준으로 실행)
+name: e2e
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 18 * * *"
+  pull_request:
+    paths:
+      - "compose.e2e.yaml"
+      - "infrastructure/stubs/**"
+      - "frontend/web/tests/e2e/**"
+      - "frontend/web/playwright.e2e.config.ts"
+      - ".github/workflows/e2e.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  COMPOSE: docker compose -p sagomungchi-e2e --env-file infrastructure/stubs/e2e.env -f compose.yaml -f compose.minio.yaml -f compose.e2e.yaml
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: 스택 기동 (빌드·마이그레이션·시드·헬스 대기)
+        run: $COMPOSE up -d --build --wait --wait-timeout 900 core-service learning-service ai-service report-api report-worker
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/web/package-lock.json
+      - working-directory: frontend/web
+        run: npm ci
+      - working-directory: frontend/web
+        run: npx playwright install --with-deps chromium
+      - working-directory: frontend/web
+        run: npm run test:e2e
+      - name: 실패 시 서비스 로그 수집
+        if: failure()
+        run: $COMPOSE logs --no-color > compose.log
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: e2e-failure
+          path: |
+            compose.log
+            frontend/web/playwright-report/
+            frontend/web/test-results/
+          retention-days: 7
+      - name: 스택 정리
+        if: always()
+        run: $COMPOSE down -v

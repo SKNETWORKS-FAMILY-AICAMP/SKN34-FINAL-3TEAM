@@ -1,7 +1,9 @@
 import { SelfAssessmentPanel } from './SelfAssessmentPanel.tsx'
+import { AttemptComparisonPanel } from './AttemptComparisonPanel.tsx'
 import type { LearningMission } from '../../domain/learning.ts'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useBlocker } from 'react-router'
+import { useSession } from '../auth/sessionContext.ts'
+import { useBlocker, useNavigate } from 'react-router'
 import { ReportProblem } from '../service/ReportProblem.tsx'
 import { ArrowLeft, Check, Lightbulb, NotebookPen, Pencil, Volume2 } from 'lucide-react'
 import { useAttempt, useLearningActions, isDemo } from '../../data/classroom/useClassroom.ts'
@@ -47,6 +49,8 @@ export function StudentWorkPage({ attemptId, onBack }: { attemptId: string; onBa
   return <StudentEditor key={attemptId} a={query.data} onBack={onBack} />
 }
 function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
+  const { session } = useSession()
+  const navigate = useNavigate()
   const attemptId = a.attemptId,
     actions = useLearningActions(),
     saveDraft = actions.save.mutateAsync
@@ -540,14 +544,21 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                     {!a.checklist?.length && (
                       <p>근거로 확인한 항목이 아직 없습니다. 낮은 결과를 뜻하지는 않아요.</p>
                     )}
+                    <AttemptComparisonPanel attempt={a} />
                     <SelfAssessmentPanel key={a.attemptId} attempt={a} onBusyChange={setSelfAssessmentPending} />
                     <ActivityPaper mission={a.mission} text={a.answers.at(-1)?.text} />
                     {a.status === 'COMPLETED' ? (
-                      <p>
+                      <div><p>
                         돌아보기 완료 · {a.reflection?.difficulty}
                         <br />
                         {a.reflection?.text}
                       </p>
+                      <button type="button" className="cj-secondary" disabled={actions.start.isPending || !session?.child}
+                        onClick={() => { if (session?.child) void actions.start.mutateAsync({ mission: a.mission, child: session.child })
+                          .then(next => navigate(`/student/attempts/${encodeURIComponent(next.attemptId)}`)).catch(() => {}) }}>
+                        이 미션 다시 풀기
+                      </button><p>이번 답은 공책에 남고, 새 답으로 시작합니다.</p>
+                      <ErrorNotice error={actions.start.error} /></div>
                     ) : (
                       <button
                         type="button"

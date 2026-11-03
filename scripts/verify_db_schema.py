@@ -3,6 +3,7 @@
 Compose mode uses the container's psql; direct mode uses report-service's psycopg.
 All fixtures are invented schema-test values, not AI Hub or student records.
 Fixture transactions are rolled back; this does not install seed data.
+Only reference rows published by migrations (MIGRATION_SEED_ROWS) may exist beforehand.
 """
 
 import argparse
@@ -23,6 +24,29 @@ class ValidationError(RuntimeError):
 def require(condition, message):
     if not condition:
         raise ValidationError(message)
+
+
+# Reference rows that migrations publish on purpose (#235 V25 consent documents 1.0).
+# Only these exact ids may exist before the fixtures run; anything else means a non-isolated DB.
+MIGRATION_SEED_ROWS = {
+    "core_db": {
+        "consent_document": (
+            "00000000-0000-4000-8000-000002350001",
+            "00000000-0000-4000-8000-000002350002",
+            "00000000-0000-4000-8000-000002350003",
+        ),
+    },
+}
+
+
+def populated_sql(tables, seeds):
+    """Name each table holding rows other than its migration seed rows."""
+    parts = []
+    for name in tables:
+        ids = seeds.get(name)
+        where = f" WHERE id NOT IN ({', '.join(repr(i) for i in ids)})" if ids else ""
+        parts.append(f"SELECT '{name}' WHERE EXISTS (SELECT 1 FROM {name}{where})")
+    return " UNION ALL ".join(parts) + ";"
 
 
 EXPECT_ERROR = """
@@ -110,6 +134,30 @@ INSERT INTO guardianship (id, parent_user_id, student_id, method, status, linked
 SELECT '00000000-0000-4000-8000-000000000005', parent_user_id, student_id,
        method, 'UNLINKED', linked_at, now() FROM guardianship
 WHERE id = '00000000-0000-4000-8000-000000000003';
+
+-- #289: only one current parent; transfer request state and reauthentication targets.
+INSERT INTO user_account(id,role,login_id,status,is_demo,created_at,updated_at)
+VALUES ('00000000-0000-4000-8000-000000000289','PARENT','recipient@example.invalid','ACTIVE',true,now(),now());
+SELECT pg_temp.expect_sqlstate($$INSERT INTO guardianship(id,parent_user_id,student_id,method,status,linked_at)
+VALUES ('00000000-0000-4000-8000-000000000290','00000000-0000-4000-8000-000000000289',
+        '00000000-0000-4000-8000-000000000002','TRANSFER','LINKED',now())$$,'23505');
+SELECT pg_temp.expect_sqlstate($$UPDATE guardianship SET transferred_at=now() WHERE status='LINKED'$$,'23514');
+INSERT INTO guardian_transfer(id,student_id,sender_id,recipient_id,include_conversations,status,created_at)
+VALUES ('00000000-0000-4000-8000-000000000291','00000000-0000-4000-8000-000000000002',
+        '00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000289',false,'PENDING',now());
+SELECT pg_temp.expect_sqlstate($$UPDATE guardian_transfer SET recipient_id=sender_id$$,'23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE guardian_transfer SET status='ACCEPTED'$$,'23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE guardian_transfer SET resolved_at=now()$$,'23514');
+SELECT pg_temp.expect_sqlstate($$INSERT INTO guardian_transfer
+SELECT '00000000-0000-4000-8000-000000000292',student_id,sender_id,recipient_id,include_conversations,status,created_at,resolved_at
+FROM guardian_transfer$$,'23505');
+UPDATE guardian_transfer SET status='ACCEPTED',resolved_at=now();
+UPDATE reauth_challenge SET purpose='GUARDIAN_PASSWORD';
+UPDATE reauth_challenge SET purpose='TRANSFER_ACCEPT';
+SELECT pg_temp.expect_sqlstate($$UPDATE reauth_challenge SET student_id='00000000-0000-4000-8000-000000000002'$$,'23514');
+UPDATE reauth_challenge SET purpose='CHILD_TRANSFER',student_id='00000000-0000-4000-8000-000000000002';
+SELECT pg_temp.expect_sqlstate($$UPDATE reauth_challenge SET student_id=NULL$$,'23514');
+UPDATE reauth_challenge SET purpose='WITHDRAWAL',student_id=NULL;
 
 INSERT INTO notification_setting (user_id, type, channel, enabled, updated_at)
 VALUES ('00000000-0000-4000-8000-000000000001', 'REPORT_COMPLETED', 'IN_APP', true, now());
@@ -677,7 +725,13 @@ def verify_schema(query):
                 (col["nullable"] == "YES") == expected_col["nullable"],
                 f"{database}.{key}: NULL allowance differs",
             )
-            require(col["default"] is None, f"{database}.{key}: unexpected default")
+            # #206 is the explicit fail-closed migration exception; other defaults stay forbidden.
+            expected_default = (
+                "false"
+                if database == "core_db" and key == ("student", "parent_sharing_enabled")
+                else None
+            )
+            require(col["default"] == expected_default, f"{database}.{key}: unexpected default")
 
         constraints = (
             json.loads(
@@ -738,13 +792,14 @@ def verify_schema(query):
             or []
         )
         index_count += check_indexes(database, indexes[database], actual_indexes)
-        populated = query(
-            database,
-            " UNION ALL ".join(
-                f"SELECT '{name}' WHERE EXISTS (SELECT 1 FROM {name})" for name in tables
+        seeds = MIGRATION_SEED_ROWS.get(database, {})
+        populated = query(database, populated_sql(tables, seeds))
+        for name, ids in seeds.items():
+            seeded = query(
+                database,
+                f"SELECT count(*) FROM {name} WHERE id IN ({', '.join(repr(i) for i in ids)});",
             )
-            + ";",
-        )
+            require(seeded.strip() == str(len(ids)), f"{database}.{name}: migration seed rows missing")
         if populated:
             raise RuntimeError(
                 f"{database}: use an empty, isolated verification DB; populated tables: {populated}"

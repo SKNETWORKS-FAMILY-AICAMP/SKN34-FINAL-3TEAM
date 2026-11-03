@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { adminApi } from '../src/data/admin/api.ts'
 import { correctionImpactText } from '../src/domain/admin/operations.ts'
-import { serviceApi } from '../src/data/serviceApi.ts'
+import { supportApi } from '../src/data/support/api.ts'
 import { setAccessToken } from '../src/data/apiClient.ts'
 
 test('정정 재시도는 동일한 Idempotency-Key와 enum 결과를 전달한다', async () => {
@@ -76,7 +76,7 @@ test('지원 GET에서 나온 공개 403·404는 신고 접수·관리자 상세
   try {
     for (const [status, code, title] of [[403, 'FORBIDDEN', '지원 대상에 접근할 권한이 없습니다.'], [404, 'NOT_FOUND', '지원 대상 기록을 찾을 수 없습니다.']] as const) {
       for (const invoke of [
-        () => serviceApi.createCase('error-reports', { targetType: 'JUDGMENT', targetId: 'j', category: 'OTHER', comment: '확인' }),
+        () => supportApi.submitReport({ targetType: 'JUDGMENT', targetId: 'j', category: 'OTHER', comment: '확인' }, crypto.randomUUID()),
         () => adminApi.error('r'),
         () => adminApi.correction('r', '확인', 'CORRECT', crypto.randomUUID()),
       ]) {

@@ -139,18 +139,42 @@ sequenceDiagram
   participant DB as core_db
 
   Note over W: 학부모 로그인 상태에서 상단 자녀 전환으로 자녀 선택
-  W->>C: POST /auth/student-sessions {childId} (학부모 Bearer + refresh 쿠키)
-  C->>DB: auth_session 잠금·Bearer와 같은 세션 확인, guardianship (parent, childId, LINKED)·student ACTIVE·필수·법정대리인 동의 확인
+  W->>C: POST /auth/student-sessions {childId} (학부모 Bearer)
+  C->>DB: 학부모 auth_session 행 잠금·Bearer version 확인, guardianship (parent, childId, LINKED)·student ACTIVE·필수·법정대리인 동의 확인
   alt 미연결·삭제·필수 동의 철회
     C-->>W: 403 CHILD_NOT_LINKED
   else
     rect rgba(128,128,128,0.12)
-      C->>DB: 부모 refresh 소비, auth_session role=STUDENT·student_id·version+1·만료=학생 access TTL
+      C->>DB: 학부모 auth_session locked_at·version+1, 학생 auth_session(parent_session_id) 생성·만료=학생 access TTL
     end
-    C-->>W: 200 {accessToken, expiresIn, role STUDENT, child, nextAction READY, startPath} + refresh 쿠키 삭제
+    C-->>W: 200 {accessToken, expiresIn, role STUDENT, child, nextAction READY, startPath} (Set-Cookie 없음)
   end
-  Note over W: 학생 refresh 미발급. 기존 부모 access는 version 불일치로 거부
+  Note over W: 학생 refresh 미발급. 기존 부모 access는 version 불일치, 부모 refresh는 PARENT_SESSION_LOCKED로 거부
   Note over W: 이후 학생 API는 학생 토큰으로 호출. URL 식별값(?student=) 진입 없음
+```
+
+학부모 화면 복귀 (보호자 비밀번호, 2026-11-03)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web
+  participant C as core
+  participant DB as core_db
+
+  W->>C: POST /auth/student/logout (학생 Bearer)
+  Note over W: 로그인 화면에 "학부모 화면으로 돌아가기"
+  W->>C: POST /auth/parent-unlock {password} (잠긴 학부모 refresh 쿠키)
+  C->>DB: refresh·학부모 세션 행 잠금, guardian_password 확인
+  alt 불일치
+    C->>DB: failed_count+1 (5회째 locked_at) 커밋
+    C-->>W: 401 GUARDIAN_PASSWORD_INVALID {remainingAttempts} / 423 LOCKED
+  else 미설정
+    C-->>W: 409 GUARDIAN_PASSWORD_NOT_SET → Google 로그인
+  else 일치
+    C->>DB: locked_at=NULL·version+1, parent_session_id 학생 세션 폐기, refresh 소비·새 refresh
+    C-->>W: 200 {accessToken, role PARENT, …} + 회전 refresh 쿠키
+  end
 ```
 
 기기 등록 (학부모 1회 승인)
@@ -274,6 +298,7 @@ sequenceDiagram
       L->>DB: attempt 행 잠금(FOR UPDATE)·본인 시도 확인
       L->>DB: 같은 시도·키의 answer 조회 (같은 본문이면 201 그 답변, 다른 본문이면 422 IDEMPOTENCY_KEY_REUSED)
       L->>L: 마무리·완료 409 ATTEMPT_CLOSED · 입력 방식 다름 400 · 누락 422 ANSWER_INCOMPLETE
+      L->>L: 학생이 쓴 글 표현 검사(ExpressionPolicy) 걸리면 422 ANSWER_INAPPROPRIATE (저장·판정 없음)
       L->>DB: 보완이면 가장 최근 미답 되묻기와 followupId 확인 (아니면 422 ANSWER_INCOMPLETE)
       L->>DB: answer 저장 (version = 이전+1, previous_answer_id·followup_id 연결)
       L->>DB: judgment 저장 (PENDING)
@@ -287,6 +312,7 @@ sequenceDiagram
 
 - 저장 성공(201)과 이후 피드백 처리 성공을 분리 (FN-LRN-10). 피드백은 3.2의 별도 요청
 - learning도 시도·키(ERD UK)로 같은 키를 처리. core가 learning 응답을 받기 전에 끊겨 다시 보내도 답변은 1건
+- 표현 검사(#205)는 learning 안의 단어 목록 대조라 외부 호출이 없음. 막힌 요청은 저장하지 않고, core는 그 422(범주별 안내, 원문 없음)를 같은 키의 응답으로 저장. 웹은 답이 바뀌면 새 키를 만들어 고친 답은 새 요청이 됨. 초안 자동 저장은 검사하지 않음 (learning.md #205)
 - 메모는 초안 `content.memo`로 함께 저장, 학생 본인 조회에만 포함 (P05)
 - 무료 플랜은 하루 신규 미션 시도 3개까지 허용 (P13). 신규 생성 `201`만 집계하고 이어하기 `200`은 항상 허용, 한도 초과 신규 생성만 `429 USAGE_LIMIT_REACHED` (API 2.2, core Redis 카운터는 후속 구현)
 
@@ -593,6 +619,29 @@ sequenceDiagram
 - `report.started`보다 `report.completed`가 먼저 도착해도 `QUEUED → COMPLETED` 허용 (상태 다이어그램 4.1)
 - KEDA가 `report.report.generate` 큐 길이로 report-worker 0~N 확장
 
+#### 6.1.1 종료 이벤트 누락 복구 (#132)
+
+```mermaid
+sequenceDiagram
+  participant S as core recovery scheduler
+  participant C as core DB
+  participant R as report API
+  participant D as report DB
+  S->>C: 생성 60분 이상 미종료 후보 조회
+  S->>R: POST reconcile (트랜잭션 밖)
+  R->>D: 학생 shared/job exclusive session 잠금 시도
+  alt 실행/삭제 잠금 사용 중
+    R-->>S: BUSY
+  else 잠금 획득
+    R->>D: 학생·기간 대조, 종료 결과 조회/고아 RUNNING 종료/없는 행 guard 저장
+    R-->>S: 저장된 종료 결과
+    S->>C: 새 트랜잭션: 학생 → job 잠금, 식별·종료 재검사
+    S->>C: 조건부 종료 + 실행 이력 (삭제·ID 없음은 알림 생략)
+  end
+```
+
+삭제 확정은 기존 parent → student 잠금 아래 학생 차단과 미종료 작업 종료를 함께 커밋한다. 복구 HTTP 도중 삭제가 확정되면 최종 반영은 이미 FAILED인 작업을 유지한다. 생성도 student → 주 잠금을 사용하므로 삭제 뒤 새 QUEUED 작업을 남기지 않는다.
+
 ### 6.2 알림 전달 (SSE 다중 레플리카)
 
 ```mermaid
@@ -648,6 +697,10 @@ sequenceDiagram
 - `reportId`처럼 경로에 자녀 ID가 없는 API는 core가 연결 자녀 전체를 범위로 전달하고, 소유 서비스(report-api)가 리소스의 학생 ID로 검사
 - 상세 조회 시 core가 `report_view` 저장 (열람률 지표)
 - 재생성(`/regenerate`): 새 `report_job(REGENERATE)` + outbox → 6.1과 같은 흐름, `weekly_report.revision` 증가 (기존 판 보존·최신판 기본 조회. 학부모는 리포트당 1회, 초과 시 409 REPORT_REGENERATION_LIMIT, 관리자 무제한, P06)
+
+### 6.4 #47 REPORT 관리자 재처리 접수
+
+ADMIN/SERVICE_OPS → OperationsController → 공통 IdempotencyService → ReportAdminRetryService → 학생 상태 잠금 service·report 학생/주/원작업 잠금 → 새 report_job + report_job_retry + report.generate Outbox + JOB_RETRY_REQUESTED 감사 커밋 → 202/Location. 이후 기존 Outbox relay → report(#152) → 새 jobId의 report.* → 기존 ReportLifecycleService → processed_event + report_job + job_execution + 결과 감사가 같은 트랜잭션으로 커밋된다. DB 트랜잭션 안에서 report HTTP·브로커 네트워크 호출을 하지 않는다.
 
 ---
 
@@ -956,30 +1009,3 @@ sequenceDiagram
 - 웹훅 처리 실패 시 5xx 응답으로 PG 재전송 유도(7.2): 토스페이먼츠 재전송 정책 확인 필요
 
 #58 단독 로그인은 계정 행 잠금 → 기기 유효/등록 자녀 → 현재 연결·활성·동의 → PIN 설정·잠금·일치 순으로 재검사한다. 실패 횟수 커밋 후 401/423 응답한다. 성공은 별도 STUDENT auth_session을 생성하며 부모 세션을 변경하지 않는다. PIN 변경은 계정 잠금 → 현재 자녀 권한 → 학생 잠금 → DB 재인증 consume → PIN 갱신·감사 기록을 한 트랜잭션으로 실행한다.
-
-### #47 REPORT 관리자 재처리 접수
-
-ADMIN/SERVICE_OPS → OperationsController → 공통 IdempotencyService → ReportAdminRetryService → 학생 상태 잠금 service·report 학생/주/원작업 잠금 → 새 report_job + report_job_retry + report.generate Outbox + JOB_RETRY_REQUESTED 감사 커밋 → 202/Location. 이후 기존 Outbox relay → report(#152) → 새 jobId의 report.* → 기존 ReportLifecycleService → processed_event + report_job + job_execution + 결과 감사가 같은 트랜잭션으로 커밋된다. DB 트랜잭션 안에서 report HTTP·브로커 네트워크 호출을 하지 않는다.
-
-### 6.1 보완: 종료 이벤트 누락 복구 (#132)
-
-```mermaid
-sequenceDiagram
-  participant S as core recovery scheduler
-  participant C as core DB
-  participant R as report API
-  participant D as report DB
-  S->>C: 생성 60분 이상 미종료 후보 조회
-  S->>R: POST reconcile (트랜잭션 밖)
-  R->>D: 학생 shared/job exclusive session 잠금 시도
-  alt 실행/삭제 잠금 사용 중
-    R-->>S: BUSY
-  else 잠금 획득
-    R->>D: 학생·기간 대조, 종료 결과 조회/고아 RUNNING 종료/없는 행 guard 저장
-    R-->>S: 저장된 종료 결과
-    S->>C: 새 트랜잭션: 학생 → job 잠금, 식별·종료 재검사
-    S->>C: 조건부 종료 + 실행 이력 (삭제·ID 없음은 알림 생략)
-  end
-```
-
-삭제 확정은 기존 parent → student 잠금 아래 학생 차단과 미종료 작업 종료를 함께 커밋한다. 복구 HTTP 도중 삭제가 확정되면 최종 반영은 이미 FAILED인 작업을 유지한다. 생성도 student → 주 잠금을 사용하므로 삭제 뒤 새 QUEUED 작업을 남기지 않는다.

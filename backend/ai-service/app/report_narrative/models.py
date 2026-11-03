@@ -80,6 +80,7 @@ class Quote(ApiModel):
 
 
 class NarrativeRequest(ApiModel):
+    tone: Literal["DEFAULT", "EASY", "CONCISE"] = "DEFAULT"
     metrics: list[Metric]
     thinking_types: list[ThinkingTypeSummary]
     changes: list[Change]

@@ -188,6 +188,7 @@ export type DemoScenario =
   | 'draft-fail'
   | 'draft-conflict'
   | 'submit-fail'
+  | 'submit-inappropriate'
   | 'ai-fail'
   | 'ai-fail-final'
   | 'held'

@@ -18,6 +18,10 @@ class StudentAccessService(private val repository: StudentAccessRepository, priv
             throw BusinessException(HttpStatus.CONFLICT,"REPORT_RETRY_STUDENT_UNAVAILABLE","삭제 요청 또는 학생 상태로 재처리할 수 없습니다.")
     }
 
+    /** #279: lock only; callers keep their own error code (report template uses STUDENT_UNAVAILABLE). */
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun lockReportRetryStudent(studentId: UUID): UUID? = repository.lockReportRetryStudent(studentId)
+
     @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
     fun lockStatus(studentId: UUID): String? = repository.lockStatus(studentId)
 
@@ -25,6 +29,9 @@ class StudentAccessService(private val repository: StudentAccessRepository, priv
         if (lockStatus(studentId) != "ACTIVE")
             throw BusinessException(HttpStatus.CONFLICT, "STUDENT_DELETED", "삭제 차단된 학생의 리포트를 생성할 수 없습니다.")
     }
+
+    /** Raw active links; callers apply their own consent check (report template: ChildAuthorizationService). */
+    fun activeParents(studentId: UUID) = repository.activeParents(studentId)
 
     fun notificationParents(studentId: UUID) = repository.activeParents(studentId).filter {
         consents.hasRequiredConsents(it) && consents.hasGuardianConsent(it, studentId)

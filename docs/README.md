@@ -42,17 +42,20 @@
 | 보고서 | 내용 |
 |---|---|
 | [auth-account](report/auth-account.md) | Google OAuth·토큰(#36), 동의·자녀(#37), 재인증·삭제·탈퇴(#45), 학생 기기·PIN(P01 개정·#58) |
-| [core-gateway](report/core-gateway.md) | core 학습 프록시·멱등성(#38), 피드백 SSE(#39), 대시보드(#40), 알림(#44) |
-| [learning](report/learning.md) | 미션·데모 시드·성취기준(#22), 시도·초안(#23), 답변(#24), 피드백(#25), 마무리(#26), 기록 조회(#27), 판정 규칙(#79), 판정 정정 수신(#80), 학생 삭제 소비(#128), 관리자 미션(#145), 신고 지원 조회(#146), 학생 피드백 화면 계약(#82), domain 프레임워크 의존 정리(#169), 공통 예외·초안 경합 테스트(#137) |
+| [guardian-transfer-local](report/guardian-transfer-local.md) | #275 전제를 바로잡은 자녀 이관(#289), 최신 보호자 비밀번호·동의 문서와의 통합 검증 |
+| [core-gateway](report/core-gateway.md) | core 학습 프록시·멱등성(#38), 피드백 SSE(#39), 대시보드(#40), 알림(#44), Redis 사용처와 PostgreSQL 대체 비교(#210), 분석 대화 사용량 DB 이관 구현(#225) |
+| [learning](report/learning.md) | 미션·데모 시드·성취기준(#22), 시도·초안(#23), 답변(#24), 피드백(#25), 마무리(#26), 기록 조회(#27), 판정 규칙(#79), 판정 정정 수신(#80), 학생 삭제 소비(#128), 관리자 미션(#145), 신고 지원 조회(#146), 학생 피드백 화면 계약(#82), domain 프레임워크 의존 정리(#169), 공통 예외·초안 경합 테스트(#137), 답변 표현 필터링(#205) |
 | [ai](report/ai.md) | 판정·되묻기(#6)·OpenAI 전환, 분석 대화 에이전트, 모델 레지스트리·AI 사용량(#43), 활성 프롬프트 버전 수신(#68), M2 정렬(#4) |
 | [report](report/report.md) | core 주간 리포트(#42), 생성·계산·서술·렌더링·조회·삭제(#50~#55), 이용권 연결(#129), 종료 유실 복구(#132), 연결 상태 |
 | [db-schema](report/db-schema.md) | DB 기술 결정(#5), 확정 정책 반영과 기존 데이터 전환 절차(#19) |
 | [db-dev-guide](report/db-dev-guide.md) | 마이그레이션 CI(#13), Repository·SQLAlchemy 사용법(#14) |
 | [issue-143-contract-ci](report/issue-143-contract-ci.md) | 웹 단위 테스트·독립 계약 CI·실제 core 산출물 검증 및 로컬 실행 안내(#143) |
+| [issue-246-e2e-stubs](report/issue-246-e2e-stubs.md) | 실서버 브라우저 E2E·Google·LLM·토스 스텁·E2E CI(#246) |
 | [local-platform](report/local-platform.md) | kind·Calico·ingress·MinIO 설정과 자원 예산(#17) |
-| [issue-171-app-deployment](report/issue-171-app-deployment.md) | 앱 chart·local NetworkPolicy·확장·관측 수집 기반과 검증 경계(#171) |
+| [issue-171-app-deployment](report/issue-171-app-deployment.md) | 앱 chart·local NetworkPolicy·확장·관측 수집 기반과 검증 경계(#171), GitOps chart lint·렌더·스키마 CI(#238), kind 클러스터 통합(#273) |
 | [frontend](report/frontend.md) | 웹 공통 기반·학생·학부모·관리자 화면(#7~#9·#59), 테마·대시보드, QR 시연 |
-| [audit](report/audit.md) | develop 종합 검증(c608f52·640e0a2·2db122c)과 설계 문서 정합성 점검, 남은 결함·테스트 공백 |
+| [mentoring-20261029](report/mentoring-20261029.md) | 10/29 오프라인 멘토링 결정과 후속 이슈(#205~#213) 관리 |
+| [audit](report/audit.md) | develop 종합 검증(c608f52·640e0a2·2db122c·92d522b)과 설계 문서 정합성 점검, 남은 결함·테스트 공백 |
 
 - [이슈 #46 신고·문의·공지·도움말](report/issue-46-support.md): 요청 역할·학생 scope, 정정 재시도·감사, 알림 연결과 공급자 필요 계약
 
@@ -62,6 +65,7 @@
 
 - [scoring #87](report/issue-87-scoring-m2.md): M2 채점 계약·실제 모델 검증
 - [scoring #88](report/issue-88-scoring-m1.md): 미학습 M1 비활성 계약·입력 검증 및 활성화 후속 범위
+- [이슈 #263 M1 학습 코드 이관](report/issue-263-ml-m1.md): 로컬 M1 학습·평가 코드를 `ml/m1`로, 평가용 함수·EDA 출력 위치·CI, 실제 데이터 재실행 동일 확인
 - [scoring #85~#88 통합 제출](report/scoring-85-88-integration.md): 통합 브랜치·PR 범위·검증 결과·후속 연동 구분
 - [report #152 관리자 실패 재처리](report/issue-152-report-admin-retry.md): 새 jobId 재사용·중복/판 보존·실제 연동 및 #47 요청·결과 예시
 - [report #130 기본 worker 완료 근거](report/issue-130-worker-closure.md): 기존 생성기·별명 조회 재사용 및 최신 검증
@@ -69,7 +73,9 @@
 - [이슈 #47 관리자 운영](report/issue-47-admin-operations.md): 운영 현황·작업 재처리·감사 이력·큐 조회·관리자 미션 프록시
 - [이슈 #48 결제·구독](report/issue-48-payments.md): 토스페이먼츠 테스트 결제·정기 청구·환불과 실제 상품 권한 공급
 - [이슈 #119 학생 별명 조회](report/issue-119-student-profile.md): 리포트 생성용 core 내부 학생 별명 API
-- [이슈 #168 core 레이어 의존 정리](report/issue-168-core-layer-deps.md): domain 오류 종류·결제 응답 경계·JsonObject·역방향 의존 정리
+- [이슈 #168 core 레이어 의존 정리](report/issue-168-core-layer-deps.md): domain 오류 종류·결제 응답 경계·JsonObject·역방향 의존 정리, domain 예외 분리(#249, core·learning), 알림 발행·결과 기록 분리(#250)
+- [이슈 #208 이벤트 발행·소비 기록](report/issue-208-event-log.md): RabbitMQ 업무 메시지 감사 큐·`event_log`·보존 정리
+- [learning 초기 무응답](report/learning-cold-start.md): cold start 후 learning 무응답 원인과 JDK 21 실행 모델 설정(#201)
 - [이슈 #136 core HTTP 경로 테스트](report/issue-136-core-http-tests.md): 계정·기기·Google 시작 경로의 HTTP 성공·권한 실패 확인
 - [#56 리포트 worker 통합](report/report-worker-integration.md): 기본 worker 생성 파이프라인 연결과 완료 조건 검증
 - [프론트 요구사항 대조](report/frontend-requirements-20261029.md): 요구사항 정의서 기능 ID별 화면 대조·구현
@@ -81,6 +87,7 @@
 - [이슈 #196 학생 종료](report/issue-196-student-logout.md): 학생 세션만 종료하고 보호자 로그인 전환 분리
 - [관리자 화면 완성 PR](report/pr-admin-screen-completion.md): 관리자 로그인·문의/공지·결제/환불 화면, 학생 자기 평가(#145·#146·#82)
 - [learning 연동 프론트 정렬](report/learning-frontend-alignment.md): learning 계약 변경의 프론트 반영 인수인계(2026-10-29)
+- [이슈 #213 국어(M2) 우선·중간 발표 근거](report/issue-213-korean-priority-midterm.md): 생각 유형 국어 매핑·설계 반영, 기획 근거·구현 흐름·준비 현황, 10/29 멘토링 결정 요약
 
 ## 개발 규칙
 

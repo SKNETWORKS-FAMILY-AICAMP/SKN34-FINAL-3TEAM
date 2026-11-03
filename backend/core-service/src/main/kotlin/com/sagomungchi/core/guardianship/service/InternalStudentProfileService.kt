@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service
 import java.util.UUID
 
 @Service
-class InternalStudentProfileService(private val repository: ChildManagementRepository) {
+class InternalStudentProfileService(private val repository: ChildManagementRepository, private val learningContext: StudentLearningContextService) {
     fun profile(studentId: UUID): InternalStudentProfile {
         val context = UserContextHolder.current()
         if (context.role != "SYSTEM") {
@@ -18,6 +18,6 @@ class InternalStudentProfileService(private val repository: ChildManagementRepos
         context.requireStudent(studentId.toString())
         val student = repository.profile(studentId)
             ?: throw BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "활성 학생을 찾을 수 없습니다.")
-        return InternalStudentProfile(student.id, student.nickname)
+        return InternalStudentProfile(student.id, student.nickname, learningContext.sharingEnabled(student.id))
     }
 }

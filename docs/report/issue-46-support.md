@@ -177,3 +177,34 @@ PR 메타데이터 후보(최종 준비 시 실제 등록값 재조회): `enhanc
 초기 저장공간 부족/Docker API 500으로 중단된 실행과, 잘못된 127.0.0.1 host override로 Ryuk 연결에 실패한 실행은 최종 통과 집계에 넣지 않았다. 복구 후 선행 #47의 Docker 사용 종료를 확인하고, 브리지 네트워크의 `TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal` 및 위 검증 전용 자원 설정으로 core 전체를 다시 통과했다. core와 learning 빌드는 같은 전용 Gradle 캐시를 사용하므로 순차 실행해 초기 캐시 잠금 충돌을 피했다. 실제 연동의 전용 컨테이너/네트워크와 중지한 #163 빌드 컨테이너를 정리해 **Docker 검증 사용을 종료**했다. 재현용 소스·캐시 볼륨만 보존했다.
 
 검증 기준은 최초 develop `7f1549a`다. 종료 전 확인한 최신 origin/develop 및 repository default branch는 `d651aa1`·`develop`이며, 후속 develop 변경과 이번 13개 변경 파일의 경로 겹침이 없음을 확인했다. 후속 develop 및 #47·#67·#162 기능을 이번 브랜치에 병합하지 않았으므로 최신 develop 통합 검증이나 원격 CI·배포 완료를 주장하지 않는다. 최종 문서 기록 뒤 `git diff --check`를 확인하고 현재 feature 브랜치에만 커밋·push하며 PR은 생성하지 않는다.
+
+## #242 관리자 공지 전체 목록 (2026-11-02)
+
+### 배경
+- core 관리자 공지는 `POST·PATCH·DELETE /admin/notices`만 있었다. 관리자 화면은 `GET /notices`의 관리자 대상 공개 공지와 현재 로그인 세션에서 작성·수정한 공지만 보여 줬다. 그래서 예약·종료 공지와 다른 관리자가 쓴 학부모·학생 대상 공지는 새로고침하면 보이지 않았다.
+
+### 결정
+- `GET /api/v1/admin/notices?status&role&page&size`를 추가한다. 권한은 쓰기 API와 같은 `SupportAccessService.admin`(ADMIN 역할 + SERVICE_OPS)이다. 다른 관리자 권한(CONTENT 등)·학부모·학생은 403, 미인증은 401이다.
+- 응답은 기존 `GET /notices`의 공지 항목과 공통 목록 봉투 `{items,page,size,totalElements}`를 그대로 쓴다(OpenAPI `SupportNoticePage`). 상태 필드를 새로 넣지 않는다.
+- 상태는 저장 컬럼이 아니라 조회 시각으로 계산한다. 사용자 GET의 공개 규칙(`ended_at IS NULL`·`visible_from <= now < visible_to`)과 같은 기준이다. `SCHEDULED` = 종료 기록 없음·공개 시작 전, `ACTIVE` = 사용자 GET에 보이는 조건, `ENDED` = 종료 기록 있음 또는 공개 기간 지남. 명시 종료와 기간 만료는 같은 `ENDED`이고, 구분은 항목의 `endedAt`으로 한다.
+- 역할 필터는 `target_roles`에 해당 역할이 포함된 공지다. 정렬은 기존 사용자 목록과 같은 `visible_from DESC, id DESC`다. 정의 밖 status·role과 page/size 범위 오류는 기존 `VALIDATION_FAILED` 400이다. 권한 검사가 입력 검사보다 먼저라, 권한 없는 요청은 값이 잘못돼도 403이다(#277).
+- 조회는 원문·개인정보가 없는 공지만 반환하므로 감사 기록을 남기지 않는다. 기존 notice 테이블과 컬럼만 조회해 마이그레이션이 없다.
+
+### API 변경
+- `docs/design/api-spec.md` 2.8 표에 경로 추가, 5.7에 상태 계산·필터·오류 규칙, 3.13에 관리자 화면이 실제 공지 DTO와 새 목록을 쓴다는 문구를 추가했다.
+- `contracts/openapi/core-service.yaml`에 `GET /admin/notices`(status·role·page·size, 200·400·401·403)를 등록했다. 기존 컨트롤러↔OpenAPI 일치 테스트에 새 경로가 포함된다.
+
+### 구현
+- core: `SupportController`·`SupportService.adminNotices`·`SupportMapper.adminNotices/adminNoticeCount`(MyBatis 동적 조건). 기존 `noticeView`·`Page`·`paging`·`invalid` 재사용.
+- 웹: `adminServiceApi.notices(filter,page)`가 `/admin/notices`를 호출한다. `SupportManager`는 세션 캐시(`notice-session`)를 제거하고 상태·대상 필터·페이지 이동을 제공한다. 저장·종료 후에는 기존 `useAdminMutation`의 관리자 쿼리 무효화로 서버 목록을 다시 읽는다. 표시 상태는 `domain/admin/service.ts`의 `noticeStatus`(core와 같은 규칙, 목록 수신 시각 기준)로 예약·공개 중·종료를 구분한다. DEV MSW 핸들러도 같은 검증·필터·정렬·봉투로 응답한다.
+- 계약 테스트: `test_admin_operations_contract`의 기존 경로 fingerprint는 #163처럼 승인된 추가(`/admin/notices`의 `get`)만 제외하고 기존 `post`는 그대로 대조한다. `validate_support_contracts.py`에 실제 MockMvc 응답 `support-admin-notices.json`↔`SupportNoticePage` 대조를 추가했다.
+
+### #242 검증 결과 (2026-11-02, 기준 develop `9595e8f`)
+
+| 검증 | 결과 |
+|---|---|
+| core | `gradle:8.14.6-jdk21` 컨테이너(Docker 소켓, `TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal`)에서 `bash gradlew test bootJar` BUILD SUCCESSFUL. 69클래스 443개, 실패·오류·생략 0. 신규 테스트는 예약·공개 중·종료 상태 계산, 역할·상태 결합 필터, 페이지·totalElements, 항목 필드 동일성, 잘못된 status·role·page·size 400, 학부모·학생·CONTENT 관리자 403, 미인증 401을 확인한다. |
+| 계약 | `python -O -m unittest discover -s scripts/tests` 95개 통과. `validate_support_contracts.py`로 테스트가 생성한 실제 응답 8종(신규 admin-notices 포함) 스키마 통과. |
+| 웹 | `node:22` 컨테이너에서 `npm ci`·`npm run lint`(오류 0, 기존 `AdminOperations` 경고 1건)·`npm test` 191개 통과·`npm run build` 성공(기존 500kB 청크 경고). 상태 계산 경계, 어댑터 요청 URL, MSW 전체 목록 필터·400·403을 확인했다. |
+
+- 미검증: 실서버 모드 브라우저에서 예약 공지 작성 후 새로고침 확인, `SupportManager` 컴포넌트 렌더링 테스트(node 테스트 러너가 `.tsx`를 직접 불러오지 못해 화면 로직은 `noticeStatus`·어댑터·MSW 단위로 검증했다).

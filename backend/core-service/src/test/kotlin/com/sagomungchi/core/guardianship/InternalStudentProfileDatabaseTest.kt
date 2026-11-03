@@ -58,7 +58,7 @@ class InternalStudentProfileDatabaseTest : IntegrationTestSupport() {
         assertEquals(200, response.statusCode())
         assertEquals("no-store", response.headers().firstValue("Cache-Control").orElse(null))
         val body = json.readTree(response.body())
-        assertEquals(setOf("studentId", "nickname"), body.fieldNames().asSequence().toSet())
+        assertEquals(setOf("studentId", "nickname", "parentSharingEnabled"), body.fieldNames().asSequence().toSet())
         assertEquals(id.toString(), body["studentId"].asText())
         assertEquals("합성 프로필", body["nickname"].asText())
         // A following HTTP request has to supply its own context.

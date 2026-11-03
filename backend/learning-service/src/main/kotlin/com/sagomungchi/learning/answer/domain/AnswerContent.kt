@@ -1,6 +1,6 @@
 package com.sagomungchi.learning.answer.domain
 
-import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning._common.exception.DomainException
 import com.sagomungchi.learning._common.exception.ErrorKind
 import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.domain.MissionView
@@ -57,8 +57,12 @@ data class AnswerContent(
                 }
             }
         }
-        if (message != null) throw BusinessException(ErrorKind.UNPROCESSABLE, "ANSWER_INCOMPLETE", "답변 미완성", message)
+        if (message != null) throw DomainException(ErrorKind.UNPROCESSABLE, "ANSWER_INCOMPLETE", "답변 미완성", message)
     }
+
+    /** 학생이 직접 쓴 글 (#205 표현 검사 대상). 칸마다 따로 돌려줌. 고르기·순서·분류는 선택지라 넣지 않음 */
+    fun writtenTexts(): List<String> =
+        listOfNotNull(text, finalAnswer) + steps.orEmpty() + listOfNotNull(essay?.claim) + essay?.reasons.orEmpty() + listOfNotNull(essay?.rebuttal)
 
     /**
      * 판정 인용 대조용 원문 (ERD answer.plain_text, #25 판정 입력). 논술·풀이 단계는 미션 입력 틀의 칸 이름을 붙임.

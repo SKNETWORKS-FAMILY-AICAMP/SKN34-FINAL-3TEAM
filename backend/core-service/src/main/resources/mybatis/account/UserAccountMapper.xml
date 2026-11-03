@@ -29,4 +29,9 @@
         SELECT id, role, login_id, password_hash, display_name, status, is_demo,
                created_at, updated_at, withdrawn_at FROM user_account WHERE id = #{id} FOR UPDATE
     </select>
+    <select id="findTransferRecipients" resultMap="account" useCache="false" flushCache="true">
+        SELECT id,role,login_id,password_hash,display_name,status,is_demo,created_at,updated_at,withdrawn_at
+        FROM user_account WHERE lower(login_id)=lower(#{email}) AND role='PARENT' AND status='ACTIVE'
+        AND oauth_provider='GOOGLE' AND oauth_subject IS NOT NULL LIMIT 2
+    </select>
 </mapper>

@@ -1,4 +1,5 @@
 import { http, HttpResponse } from 'msw/http'
+import { requireShared, isShared, privateReport } from '../fixtures/sharing.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { counts } from '../../domain/classroom.ts'
 import type { Child, Period } from '../../domain/classroom.ts'
@@ -25,6 +26,8 @@ import {
   inclusionRule,
 } from '../fixtures/parent.ts'
 import { guard, respond, problem } from './student.ts'
+import { guardianPasswordState, setGuardianPassword } from '../fixtures/guardianPassword.ts'
+import { pinProblem } from '../../domain/studentDevice.ts'
 export const page = <T>(items: T[]) => ({ items, page: 0, size: 20, totalElements: items.length })
 export const fail = (code: string, title: string, status = 400, retryable = false): never => {
   throw new ApiError({ code, title, status, retryable })
@@ -116,6 +119,7 @@ const conv = (id: string) => {
 async function conversationGuard(request: Request, id: string) {
   const c = conv(id)
   const child = await parentChild(request, c.childId)
+  requireShared(c.childId)
   if (request.method === 'POST' && child.plan !== 'PREMIUM')
     fail('USAGE_LIMIT_REACHED', '무료 플랜은 분석 대화를 제공하지 않습니다.', 429)
   return c
@@ -396,13 +400,24 @@ export const parentHandlers = [
       return { ...mockIdentity, role: 'PARENT' }
     }),
   ),
+  http.get('/api/v1/me/guardian-password', ({ request }) => respond(async () => { parentGuard(request); return guardianPasswordState() })),
+  http.put('/api/v1/me/guardian-password', ({ request }) =>
+    respond(async () => {
+      parentGuard(request)
+      const { password } = (await request.json()) as { password?: unknown }
+      // core와 같이 규칙 위반은 재인증 grant를 소비하지 않는다.
+      if (typeof password !== 'string' || pinProblem(password)) fail('VALIDATION_FAILED', '보호자 비밀번호는 반복·연속되지 않는 숫자 4~6자리입니다.', 422)
+      consumeActionReauth(request, 'GUARDIAN_PASSWORD')
+      return setGuardianPassword(password as string)
+    }),
+  ),
   http.post('/api/v1/me/reauth', ({ request }) =>
     respond(async () => {
       parentGuard(request)
       const body = (await request.json()) as { password?: string; purpose?: string; childId?: string; challengeId?: string; scope?: string }
       const bearer = request.headers.get('Authorization') ?? ''
-      if (body.purpose && ['PIN_CHANGE','CHILD_UNLINK','CHILD_DELETE','WITHDRAWAL'].includes(body.purpose)) {
-        if (body.purpose !== 'WITHDRAWAL') { if (!body.childId) fail('VALIDATION_FAILED','대상 자녀가 필요합니다.',422); await parentChild(request, body.childId!) }
+      if (body.purpose && ['PIN_CHANGE','CHILD_UNLINK','CHILD_DELETE','WITHDRAWAL','GUARDIAN_PASSWORD'].includes(body.purpose)) {
+        if (!['WITHDRAWAL','GUARDIAN_PASSWORD'].includes(body.purpose)) { if (!body.childId) fail('VALIDATION_FAILED','대상 자녀가 필요합니다.',422); await parentChild(request, body.childId!) }
         if (body.purpose==='CHILD_DELETE' && !['PROFILE','RECORDS'].includes(body.scope ?? '')) fail('VALIDATION_FAILED','삭제 범위가 필요합니다.',422)
         const challengeId = crypto.randomUUID()
         pinChallenges.set(challengeId, { childId: body.childId, purpose:body.purpose,scope:body.scope,bearer,expires:Date.now()+600000 })
@@ -452,6 +467,7 @@ export const parentHandlers = [
       queryFault()
       const p = period(request),
         rows = scopedRows(c, p)
+      requireShared(c.id)
       const query = new URL(request.url).searchParams
       const index = Number(query.get('page') ?? 0), size = Number(query.get('size') ?? 20)
       if (!Number.isInteger(index) || index < 0 || !Number.isInteger(size) || size < 1 || size > 100) fail('VALIDATION_FAILED', '페이지를 확인해 주세요.')
@@ -467,6 +483,7 @@ export const parentHandlers = [
   http.get('/api/v1/children/:childId/attempts/:attemptId', ({ request, params }) =>
     respond(async () => {
       const c = await parentChild(request, String(params.childId))
+      requireShared(c.id)
       const a = store
         .snapshot()
         .attempts.find((a) => a.attemptId === params.attemptId && a.studentId === c.id)
@@ -475,10 +492,20 @@ export const parentHandlers = [
       return { ...visible, state: 'OK', period: period(request) }
     }),
   ),
+  // core AGT-12 응답 모양(#240): 질문 문구는 core와 같고, 기록이 하나도 없으면 모두 available=false
+  http.get('/api/v1/agent/example-questions', ({ request }) =>
+    respond(async () => {
+      const c = await parentChild(request, new URL(request.url).searchParams.get('childId') ?? '')
+      const exists = (await store.records(c, 'PARENT', { from: '2000-01-01', to: '2099-12-31' })).length > 0
+      return { items: ['이번 주 학습 횟수는?', '어떤 생각 활동을 했어?', '아이가 쓴 생각을 보여줘', '되묻기 전후 무엇이 달라졌어?', '돌아보기에 뭐라고 썼어?']
+        .map((question) => ({ question, available: exists })) }
+    }),
+  ),
   http.get('/api/v1/conversations', ({ request }) =>
     respond(async () => {
       const childId = new URL(request.url).searchParams.get('childId') ?? ''
       await parentChild(request, childId)
+      requireShared(childId)
       queryFault()
       return page([...conversations.values()].filter((c) => c.childId === childId))
     }),
@@ -487,6 +514,7 @@ export const parentHandlers = [
     respond(async () => {
       const scope = (await request.json()) as Scope,
         c = await parentChild(request, scope.childId)
+      requireShared(c.id)
       if (c.plan !== 'PREMIUM')
         fail('USAGE_LIMIT_REACHED', '무료 플랜은 분석 대화를 제공하지 않습니다.', 429)
       if (!validPeriod(scope)) fail('VALIDATION_FAILED', '기간을 확인해 주세요.')
@@ -586,12 +614,13 @@ export const parentHandlers = [
       const c = await parentChild(request, r!.childId)
       const recomputed =
         mode === 'empty' || mode === 'small' ? makeWeekly(c, r!.period, r!.revision) : r!
-      return {
+      const result = {
         ...recomputed,
         revisions: versions.map((v) => ({ revision: v.revision, generatedAt: v.generatedAt })),
         status:
           mode === 'report-running' ? 'RUNNING' : mode === 'report-failed' ? 'FAILED' : r!.status,
       }
+      return isShared(c.id) ? { ...result, parentSharingEnabled: true } : privateReport(result)
     }),
   ),
   http.post('/api/v1/reports/:reportId/regenerate', ({ request, params }) =>
@@ -616,6 +645,7 @@ export const parentHandlers = [
         c = await parentChild(request, r.childId),
         rows = scopedRows(c, r.period),
         key = String(params.itemId)
+      requireShared(c.id)
       return evidenceResponse(
         evidence(
           rows.filter(
@@ -628,6 +658,7 @@ export const parentHandlers = [
   http.get('/api/v1/reports/:reportId/download', ({ request, params }) =>
     respond(async () => {
       const versions = await reportGuard(request, String(params.reportId))
+      requireShared(versions.at(-1)!.childId)
       if (
         versions.at(-1)!.status !== 'COMPLETED' ||
         mode === 'report-running' ||
@@ -659,6 +690,7 @@ export const parentHandlers = [
     if (
       !ticket ||
       ticket.file !== file ||
+      !isShared(ticket.childId) ||
       ticket.expires <= Date.now() ||
       store.snapshot().session?.role !== 'PARENT' ||
       !store.snapshot().children?.some((c) => c.id === ticket.childId) ||

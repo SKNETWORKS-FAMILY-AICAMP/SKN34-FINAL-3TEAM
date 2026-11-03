@@ -11,8 +11,9 @@ import type {
   Reflection,
   Report,
 } from '../../domain/classroom.ts'
+import { unlockParentSession } from '../apiClient.ts'
 import { createApiGateway } from './apiGateway.ts'
-import { saveReflection } from './learningApi.ts'
+import { getThinkingActivities, saveReflection } from './learningApi.ts'
 import { demoEmailLogin } from './demoLogin.ts'
 import { calendarPeriods } from '../../domain/classroom.ts'
 import { pollFeedback } from './feedbackPolling.ts'
@@ -25,7 +26,7 @@ export function restoreSession(fresh = false) {
     throw error
   }))
 }
-export const isDemo = import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true'
+export const isDemo = typeof import.meta.env !== 'undefined' && import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true'
 export const displayPeriods = calendarPeriods(
   isDemo ? new Date('2026-10-26T12:00:00+09:00') : new Date(),
 )
@@ -47,7 +48,15 @@ export function useAuthentication() {
     mutationFn: (child: Child) => gateway.enterStudent(child),
     onSuccess: () => cache.clear(),
   })
-  return { login, logout, enter }
+  // 학생 화면 → 학부모 화면: 보호자 비밀번호로 잠긴 학부모 세션을 풀고 /me로 세션을 다시 읽는다.
+  const unlock = useMutation({
+    mutationFn: async (password: string) => {
+      await unlockParentSession(password)
+      return restoreSession(true)
+    },
+    onSuccess: () => cache.clear(),
+  })
+  return { login, logout, enter, unlock }
 }
 export function useMockInvalidation() {
   const cache = useQueryClient()
@@ -97,6 +106,15 @@ export function useRecords(child: Child | undefined, role: 'STUDENT' | 'PARENT',
   return useQuery({
     queryKey: ['records', role, child?.id, period.from, period.to],
     queryFn: () => gateway.records(child!, role, period),
+    enabled: !!child,
+    retry: false,
+  })
+}
+/** 학생 생각 활동. 'records' 아래 키라 시도 시작·제출·마무리·돌아보기 뒤 함께 다시 읽힌다. */
+export function useThinkingActivities(child: Child | undefined, period: Period) {
+  return useQuery({
+    queryKey: ['records', 'thinking-activities', child?.id, period.from, period.to],
+    queryFn: ({ signal }) => getThinkingActivities(child!, period, signal),
     enabled: !!child,
     retry: false,
   })

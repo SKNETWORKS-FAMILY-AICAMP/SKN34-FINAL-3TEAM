@@ -9,7 +9,9 @@ import com.sagomungchi.core.admin.session
 import com.sagomungchi.core.report.parent
 import com.sagomungchi.core.report.child
 import com.sagomungchi.core.conversation.repository.ConversationRepository
+import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core.conversation.service.AnalysisEntitlementProvider
+import com.sagomungchi.core.conversation.service.AnalysisUsageService
 import com.sagomungchi.core.payment.client.TossGateway
 import com.sagomungchi.core.payment.domain.Product
 import com.sagomungchi.core.payment.scheduler.PaymentScheduler
@@ -26,6 +28,7 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
+import org.springframework.transaction.support.TransactionTemplate
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -33,9 +36,13 @@ import java.net.http.HttpResponse
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
-/** Real payment provider, product/subscription DB, Redis, JWT and core HTTP; only AI and PG boundaries are doubles. */
+/** Real payment provider, product/subscription DB ledger, JWT and core HTTP; only AI and PG boundaries are doubles.
+ *  #225: analysis daily usage is the ledger count, so no `analysis:*` Redis key may appear. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = [
     "spring.rabbitmq.listener.simple.auto-startup=false", "spring.datasource.hikari.maximum-pool-size=5", "spring.datasource.hikari.minimum-idle=0"])
 class ConversationPaymentIntegrationTest : IntegrationTestSupport() {
@@ -45,6 +52,8 @@ class ConversationPaymentIntegrationTest : IntegrationTestSupport() {
     @Autowired lateinit var tokens: TokenService
     @Autowired lateinit var repository: ConversationRepository
     @Autowired lateinit var provider: AnalysisEntitlementProvider
+    @Autowired lateinit var usage: AnalysisUsageService
+    @Autowired lateinit var tx: TransactionTemplate
     @Autowired lateinit var redis: StringRedisTemplate
     @MockitoBean lateinit var pg: TossGateway
     @MockitoBean lateinit var scheduler: PaymentScheduler
@@ -107,12 +116,20 @@ class ConversationPaymentIntegrationTest : IntegrationTestSupport() {
         return UUID.fromString(json.readTree(response.body()).path("conversationId").asText())
     }
     private fun uses() = jdbc.queryForObject("SELECT count(*) FROM payment_premium_usage WHERE student_id=? AND kind='CONVERSATION' AND status='USED'",Int::class.java,student)
+    private fun noRedisCounter() = assertTrue(redis.keys("analysis:*").isEmpty())
+    private fun ledger(subscription: UUID, at: java.time.OffsetDateTime, status: String) = jdbc.update("""INSERT INTO payment_premium_usage
+        (id,student_id,subscription_id,kind,source_id,status,created_at,updated_at) VALUES(?,?,?,'CONVERSATION',?,?,?,?)""",
+        UUID.randomUUID(),student,subscription,UUID.randomUUID(),status,at,at)
+    /** Same admission entry point as ConversationService: parent lock, then the provider joins this transaction. */
+    private fun charge(): Boolean = try {
+        tx.execute { usage.consume(owner,student,UUID.randomUUID()) }; true
+    } catch (ex: BusinessException) { assertEquals("USAGE_LIMIT_REACHED",ex.code); assertEquals(429,ex.status.value()); false }
     @Test fun `actual free product blocks core creation without AI counter or premium ledger`() {
         assertEquals(free,provider.entitlement(owner,student).productId)
         val response = call("/conversations",mapOf("childId" to student))
         assertEquals(429,response.statusCode());assertEquals("USAGE_LIMIT_REACHED",json.readTree(response.body()).path("code").asText())
         assertTrue(ai.requests.isEmpty());assertEquals(0,uses())
-        assertNull(redis.opsForValue().get("analysis:daily:v1:$student:$today"))
+        noRedisCounter()
     }
     @Test fun `unavailable configured free product is an explicit error without fake premium access`() {
         jdbc.update("UPDATE product SET active=false WHERE id=?",free)
@@ -122,7 +139,7 @@ class ConversationPaymentIntegrationTest : IntegrationTestSupport() {
             assertTrue(ai.requests.isEmpty());assertEquals(0,uses())
         } finally { jdbc.update("UPDATE product SET active=true WHERE id=?",free) }
     }
-    @Test fun `real provider joins admission transaction and records failed attempts while Redis rejects excess retry`() {
+    @Test fun `real provider joins admission transaction and records failed attempts while the ledger rejects excess retry`() {
         subscribe();assertEquals(premium.id,provider.entitlement(owner,student).productId)
         val id=create()
         val success=call("/conversations/$id/messages",mapOf("question" to "합성 질문"))
@@ -134,7 +151,26 @@ class ConversationPaymentIntegrationTest : IntegrationTestSupport() {
         val blocked=call("/conversations/$id/messages/${failed.id}/retry",emptyMap<String,String>())
         assertEquals(429,blocked.statusCode());assertEquals("USAGE_LIMIT_REACHED",json.readTree(blocked.body()).path("code").asText())
         assertEquals(2,uses());assertEquals(0,repository.messages(id).last().retryCount)
-        assertEquals("2",redis.opsForValue().get("analysis:daily:v1:$student:$today"));assertEquals(2,ai.requests.size)
+        assertEquals(2,ai.requests.size);noRedisCounter()
+    }
+    @Test fun `concurrent admissions never debit beyond the product daily count`() {
+        subscribe()
+        val executor=Executors.newFixedThreadPool(8);val gate=CountDownLatch(1)
+        try {
+            val tasks=(1..30).map { executor.submit<Boolean> { gate.await();charge() } }
+            gate.countDown()
+            assertEquals(2,tasks.count { it.get(30,TimeUnit.SECONDS) })
+        } finally { executor.shutdownNow() }
+        assertEquals(2,uses());noRedisCounter()
+    }
+    @Test fun `daily count starts at KST midnight and ignores failed reservations`() {
+        val sub=subscribe()
+        val midnight=today.atStartOfDay(ZoneId.of("Asia/Seoul")).toOffsetDateTime()
+        ledger(sub,midnight.minusSeconds(1),"USED");ledger(sub,midnight.minusDays(1),"USED")
+        ledger(sub,midnight,"FAILED");ledger(sub,midnight,"USED")
+        assertTrue(charge());assertFalse(charge())
+        assertEquals(2,jdbc.queryForObject("""SELECT count(*) FROM payment_premium_usage WHERE student_id=? AND kind='CONVERSATION'
+            AND status IN ('RESERVED','USED') AND created_at>=?""",Int::class.java,student,midnight))
     }
     @Test fun `provider supplies KST nine oclock expiry and grace while expired subscription falls back to configured free product`() {
         val sub=subscribe()

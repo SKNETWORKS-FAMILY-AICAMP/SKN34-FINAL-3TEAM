@@ -1,6 +1,7 @@
 package com.sagomungchi.learning.record
 
-import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning._common.exception.DomainException
+import com.sagomungchi.learning._common.exception.ErrorKind
 import com.sagomungchi.learning.record.domain.Metric
 import com.sagomungchi.learning.record.domain.Period
 import com.sagomungchi.learning.record.domain.QueryState
@@ -40,7 +41,7 @@ class RecordDomainTest {
             { Period.of(null, LocalDate.parse("2026-11-07"), today) },
             { Period.of(LocalDate.parse("2026-11-01"), null, today) },
             { Period.of(LocalDate.parse("2026-11-08"), LocalDate.parse("2026-11-02")) },
-        ).forEach { assertEquals("VALIDATION_FAILED", assertThrows<BusinessException> { it() }.code) }
+        ).forEach { assertEquals(ErrorKind.INVALID to "VALIDATION_FAILED", assertThrows<DomainException> { it() }.let { e -> e.kind to e.code }) }
     }
 
     @Test

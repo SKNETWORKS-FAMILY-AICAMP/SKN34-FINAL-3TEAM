@@ -1,8 +1,8 @@
 package com.sagomungchi.core.conversation.scheduler
 
+import com.sagomungchi.core._common.exception.errorCodeOf
 import com.sagomungchi.core.conversation.service.ConversationAdminRetryService
 import com.sagomungchi.core.conversation.service.AnalysisStreamService
-import com.sagomungchi.core._common.exception.BusinessException
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
@@ -39,7 +39,7 @@ class ConversationRetryWorker(private val retries: ConversationAdminRetryService
         } catch(ex: Exception) {
             Thread.interrupted()
             // DB failure may leave a durable RUNNING lease; the next recovery pass closes it.
-            try { retries.fail(row,(ex as? BusinessException)?.code ?: "ANALYSIS_FAILED") }
+            try { retries.fail(row,errorCodeOf(ex) ?: "ANALYSIS_FAILED") }
             catch(_: Exception) { log.error("Conversation retry termination could not be recorded: requestId={}",id) }
         }
     }

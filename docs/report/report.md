@@ -1,5 +1,13 @@
 # 주간 리포트 (#42·#50~#55)
 
+## 학생 공개 설정과 원문 제외 (#206, 2026-11-01)
+
+- 생성 입력은 메시지의 과거 공개 값에 의존하지 않습니다. `NamedGenerator`가 내부 core 프로필의 현재 `parentSharingEnabled`를 조회하며 누락은 비공개입니다. 생성 직전 원문·돌아보기 문장·인용 후보·근거 링크를 제거하고 AI 서술 호출을 생략합니다. 이후 저장·HTML/PDF/Markdown 렌더링에도 제거된 항목만 전달됩니다.
+- 학습 횟수·분모/분자·기간·유형과 전후 글자/문장 수는 동일하게 유지합니다. 원문을 새 문장으로 대체 생성하지 않습니다. nullable 원문 형태를 조회 스키마와 렌더러에 반영했습니다.
+- 이미 공개 상태에서 만든 리포트도 core 상세에서 현재 설정을 다시 검사해 원문·인용·파생 서술을 제거합니다. 비공개 중 기존 파일 URL 재발급과 근거 조회는 403으로 막습니다. 수치 화면은 계속 제공하며 이미 전달한 파일 자체를 회수하지는 못합니다.
+- 이번 구현은 비공개 전용 파일 재생성/다운로드 상품을 추가하지 않습니다. 다시 공개해도 비공개 중 생성한 리포트에 과거 원문을 자동 복원하지 않으며 필요하면 기존 재생성 규칙을 따릅니다.
+- 공개/비공개 생성, AI·근거 호출 차단, 수치 동등성, nullable Markdown 렌더링 회귀를 추가했습니다. report 전체 315건과 비공개 전용 회귀 4건을 통과했습니다. 실제 PostgreSQL 저장에 원문·근거가 남지 않고, HTML/PDF/Markdown full/free 6개 파일에도 원문이 없음을 검사했습니다. 스토리지 경계는 기존 테스트 대역/moto를 사용하며 운영 S3 배포 검증은 아닙니다.
+
 통합 원본: issue-42-weekly-reports, report-generation-foundation, report-metrics, report-narrative, report-rendering, report-query, report-deletion, report-deletion-schema, report-learning-integration, report-required-inputs, report-service-handoff, report-epic-readiness
 
 계약은 [API 명세](../design/api-spec.md) 3.4·4.1.1·4.2.1·4.4·5.5, 메시지는 [report-messages](../../contracts/events/report-messages.md).
@@ -220,3 +228,91 @@ report-query와 report-recovery를 분리한다. 4xx·DATA_UNAVAILABLE 매핑, 2
 core HTTP·DB/Redis/RabbitMQ 통합 테스트이며 AI/report는 로컬 HTTP 대역, PG는 HttpClient/TossGateway 대역이다. 실제 AI·report 프로세스·토스 API 호출, 브라우저·원격 CI·운영 배포·성능 측정은 이번 검증에 포함하지 않는다. 기존 분석/결제 사용량·복구 흐름은 전체 테스트와 변경 없음 대조로 확인했다. 통합 브랜치 a5b72f7의 factory 선택 인자와 AI HTTP/1.1 변경을 보존했고, #168 d6ebee1에는 TossClient 변경이 없어 직접 파일 충돌이 없음을 읽기 전용으로 확인했다.
 
 #167 최신 develop b35b22e 접합 후 core 전체 400개 테스트·bootJar 통과(실패/오류/생략 0). 최초 환경 실패와 단일 JVM 재실행, 검증 대역/미검증 범위는 [분석 대화 보고서](issue-41-analysis-conversations.md)의 “#167 최신 develop 접합” 최종 검증 절을 따른다. 결제/report 서비스 및 #168 계층 변경은 develop 그대로 보존했다.
+
+
+### #206 최종 인가와 외부 요청 경계
+
+리포트 HTTP는 DB 트랜잭션 밖에서 실행합니다. HTTP 완료 뒤 `ReportViewService.recordWithSharing` 또는 파일 최종 기록 단계가 parent → student 순서로 현재 상품/공개 권한을 다시 확인합니다. 조회 도중 비공개 전환 시 과거 원문을 제거하고, 파일 서명 도중 전환 시 URL을 반환하지 않습니다. 기존 #129의 환불/다운그레이드 회귀와 새 공개 설정 경합 회귀를 함께 통과했습니다.
+
+## 16. 학부모 대화 기반 리포트 표시 설정 (#209, #72)
+
+### 결정과 적용 범위
+
+2026-11-02 develop `db6395a` 및 #206(PR #222)을 통합했다. [#72](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/72)의 보고서 챗봇 논의를 [#209](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/209)의 11/1 결정과 사용자가 전달한 김태윤님 승인 답변 범위로 구현한다. #72 원격 본문에는 최종 결론이 없으므로 임의로 회의 결론이나 이슈 종료를 주장하지 않는다.
+
+- 원문 공개는 학생 본인의 전역 설정(#206)이다. 학부모 설정으로 공개를 강제하거나 섹션을 임의 삭제하지 않는다. 메모는 제외한다.
+- 순서: 생각 유형·전후 변화·돌아보기·원문 인용·요약·저녁 질문 6개 전체 순열. 학생·기간·상태·집계 기준·수치 표는 유지한다.
+- 강조: 기존 ATTEMPTS·COMPLETED·UNASSISTED 지표의 표시만 조정한다. 계산식·판정 기준은 바꾸지 않는다.
+- 톤: DEFAULT·EASY·CONCISE만 허용한다. 숫자·인용 대조와 기존 실패/대체 정책을 유지한다.
+
+### 요청·저장·생성 흐름
+
+기존 학부모 분석 대화 화면에서 자연어 요청 → 변경안 또는 확인 질문 → 명시적 확인 → 저장한다. 취소·만료·입력 수정·대화 전환·오류에는 자동 저장하지 않는다. AI는 허용 목록만 해석하며 학생 기록을 입력으로 보내지 않는다. 프롬프트 식별자는 `analysis-template@1`이다.
+
+core는 기존 대화 소유권·연결·동의·이용권과 학부모 행 잠금을 재사용한다. 외부 AI HTTP 동안 DB 잠금을 유지하지 않고 응답 후 권한을 다시 확인한다. 제안은 10분 만료·대화 ID 일치·일회성 확인·revision 검사를 거친다. 제안 접수는 기존 분석 사용 한도와 사용 증빙에 기록하며 조회·확정에는 추가 차감하지 않는다.
+
+학부모별 `parent_report_template`은 **V22**에 추가한다. 이미 병합된 #208 V20, #206 V21을 변경하지 않는다. report의 `CoreClient`는 현재 학생 공개 상태와 학부모 확정 설정을 모두 읽고, `NamedGenerator`가 두 값을 독립적으로 전달한다. 비공개면 기존 `RecordGenerator`가 원문·근거를 제거하고 AI 서술 호출을 생략한다. 설정 조회 오류를 기본값으로 숨기지 않는다.
+
+새 리포트에 `versions.template={settings,revision}`을 저장하고 full/free HTML·PDF·Markdown에 순서·강조를 반영한다. 톤은 허용된 AI 서술 요청에만 전달한다. 과거 판은 다시 쓰지 않고 현재 권한으로 과거 원문/파일 접근을 막는 #206 로직을 유지한다. 배포는 core V22와 내부 설정 API를 먼저 제공한 후 report worker를 갱신한다.
+
+### 완료 조건 대조
+
+| 이슈 조건 | 구현·검증 근거 |
+|---|---|
+| 조정 가능 항목 정의 | 위 승인 범위와 API·기능 명세의 허용 목록 |
+| 대화 요청 → 확인 → 저장 | core 실제 HTTP·DB와 웹 6개 확인/취소/만료/오류 시나리오 |
+| 다음 리포트 반영, 숫자·인용 대조 유지 | core 저장 설정을 실제 HTTP로 조회해 report 생성·대조·3형식 full/free 생성 |
+| 테스트 | 아래 서비스·계약·웹 검증 결과 |
+| 바꾼 설정이 다음 리포트에 반영 | revision 스냅샷·톤 전달·순서·강조 검사, 기존 결과 불변 검사 |
+| #72 연결 및 결정 근거 기록 | #72 선행 논의와 #209 결정·전달받은 승인을 이 절에 연결 |
+
+### 검증 (2026-11-02)
+
+- AI 전체 **310 passed**. 외부 LLM은 합성 응답으로 대체했다.
+- report 전체 **336 passed**. 실제 PostgreSQL·RabbitMQ·MinIO 및 Chromium 테스트를 포함한다. 비공개 학생의 세 가지 톤·역순·강조 설정에도 DB 원문/근거 및 HTML/PDF/Markdown 원문이 없고 수치는 유지되는 추가 회귀를 포함한다.
+- core 관련 report·conversation·StudentSharing **140 passed**, 실패·오류·생략 0, bootJar 성공. V20~V22의 격리 PostgreSQL 적용과 공개 설정 경합·현재 권한 회귀를 포함한다. core 전체 모든 패키지 검증은 아니다.
+- 추가 공개/비공개 core→report 연결 실행을 포함한 설정 집중 테스트 **8개 통과**, 각 상태에서 full/free 6개 파일 생성 확인.
+- 웹 **188 tests passed**, build·test:types·lint 통과. 기존 AdminOperations 불변성 경고 1개와 500kB 청크 경고는 남는다. 운영 산출물 목업 제외 검사 통과.
+- 운영 빌드와 Chrome의 HTTP 대역 브라우저 검사 **6개 통과**. 화면 확인/취소, 확인 질문, 만료, 502/409, 입력 수정/대화 전환, 무료 플랜을 검사했다.
+- 공통 계약 **94 tests passed**. AI/report Ruff check·format 통과.
+- 처음 웹/AI 실행은 새 의존성(happy-dom·Playwright, langfuse) 누락으로 실패했다. 각각 잠금 파일대로 npm ci 및 uv sync --frozen으로 복원하고 위 결과로 재검증했다. 의존성 선언/잠금 파일은 변경하지 않았다.
+
+### 실제 core → report 연결 재현과 한계
+
+`REPORT_TEMPLATE_PROBE_PYTHON`에 report-service 가상환경 Python 절대 경로를 지정하고 core에서 `gradlew test --tests '*ReportTemplate*' --rerun-tasks`를 실행한다. Python 환경이 없으면 기본 CI는 core HTTP/DB 테스트만 수행하며 연결 검증을 수행했다고 집계하지 않는다.
+
+`ReportTemplateHttpIntegrationTest`가 실제 core HTTP/JWT·PostgreSQL·Redis에서 제안 확인 후 revision 1을 저장한다. 보조 실행기 `scripts/verify_report_template_rendering.py`는 해당 core의 profile/template을 HTTP 조회해 report 생성 파이프라인과 실제 Chromium 파일 렌더링까지 실행한다. 공개·비공개 상태를 각각 확인하며 비공개는 AI 미호출·원문 제외, 공개는 EASY 톤 전달·숫자/인용 대조·무료 AI 문구 제외를 검사한다.
+
+이 연결 검증의 학습 기록·AI HTTP 응답/서술·파일 저장소는 합성이다. 실제 외부 LLM 품질, PG, 운영 S3, 운영 배포, 브라우저부터 실제 모든 서비스까지 이어지는 단일 종단 시나리오는 검증하지 않았다. 실제 API 키나 학생 원문·모델 파일은 커밋하지 않는다. GitHub 이슈 체크박스·PR·병합은 사용자가 직접 처리한다.
+
+
+## #252 report 기능 간 DB 직접 접근 제거
+
+기준은 #237 PR #257이 병합된 develop `5033f48`이다. 사용자 응답(code·status·본문), 이벤트 계약, DB 스키마·마이그레이션은 변경하지 않는다.
+
+- query의 SQL을 generation의 `ReportRepository`로 이동하고 `ReportReadService`를 통해 호출한다. 최신 판을 먼저 고른 뒤 상태 필터를 적용하는 순서, 기간별 정렬·페이지, revision 선택, 항목 소속 검사, 파일 경로 검사는 유지한다.
+- deletion의 테이블·DB 접근은 `deletion/repository.py`로 이동한다. state에는 삭제 명령과 DB를 사용하지 않는 중복·경합·생성 허용 판정을 둔다. HTTP 409 오류는 deletion service에서 만든다.
+- 생성·복구는 `ensure_generation_allowed`, 조회는 `ensure_query_allowed`, worker의 보존 기간 정리는 `prune_processed`를 호출한다. 호출 서비스가 소유한 세션을 전달하고 repository에서 commit하지 않는다.
+- 삭제 완료는 generation service의 학생 리포트 삭제 → outbox service의 subject 삭제 → 삭제 장벽 완료·처리 이력 저장을 기존 한 트랜잭션에서 실행한다. 잠금 → 장벽 저장 → S3 삭제 → DB 삭제 → core 완료 보고 순서를 유지한다.
+- 이전 테스트의 `deletion.state` 테이블 import 호환은 `__getattr__`의 지연 재노출 두 이름만 남긴다. 업무 코드에서는 이 호환 경로를 사용하지 않는다. state에 SQLAlchemy·ApiError·DB 함수는 없다. 테이블의 정식 소유자는 deletion.repository다.
+- generation과 deletion은 서로의 서비스 기능이 필요하므로 삭제 완료 조합 함수에서만 generation service를 지연 import한다. 새 공통 라이브러리 없이 기존 서비스 경계를 사용한다.
+- repository의 `finish`는 자기 장벽·이력만 저장한다. 여러 기능을 정리하는 테스트는 서비스의 `finish_deletion`을 호출하도록 갱신했다.
+
+검증은 report 전체 테스트와 삭제 완료 실패 주입을 사용한다. 실패 주입은 리포트·Outbox 삭제 이후 장벽 완료 기록 단계에서 오류를 발생시켜 DB 전체 롤백, PENDING 장벽 유지, 완료 콜백 미전송, 같은 명령 재시도 성공을 확인한다. 실제 학생 데이터·운영 DB는 사용하지 않는다.
+
+
+### #252 로컬 완료 조건과 검증 결과
+
+- [x] deletion.repository에 테이블·begin/finish·처리 이력 및 보존 기간 DB 작업 이동
+- [x] state의 DB·HTTP 오류 처리 제거 및 순수 판정 분리 (테이블 호환 경로만 유지)
+- [x] deletion 서비스에 생성/조회 허용 검사·처리 이력 정리 제공
+- [x] generation repository에 조회 6종·학생 삭제 추가, service를 통해 노출
+- [x] OutboxRepository.delete_subject 및 서비스 진입점 추가
+- [x] query·generation·reconciliation·worker 호출 교체
+- [x] 기존 테이블 import 호환 및 architecture 트리·audit A11 갱신
+- [x] 금지된 참조 0건, repository의 commit 없음 정적 확인
+- [x] uv sync --frozen, Ruff check·format 통과
+- [x] 기존 report 전체 테스트 336개 통과(129.29초), 이후 추가한 삭제 롤백·재시도 회귀 1개 별도 통과(5.96초)
+- [x] git diff --check 통과
+
+검증은 실제 격리 PostgreSQL·RabbitMQ·MinIO 및 기존 테스트 대역을 사용했다. 기존 Starlette/httpx 폐기 예정 경고 1건은 남는다. 위 결과는 로컬 검증이며, GitHub 원격 CI 결과는 PR에서 별도로 확인한다.

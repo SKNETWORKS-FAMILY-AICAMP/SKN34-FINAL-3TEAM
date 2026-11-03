@@ -7,7 +7,7 @@ const { setupServer } = await import('msw/node')
 const { studentHandlers } = await import('../src/mocks/handlers/student.ts')
 
 const server = setupServer(...studentHandlers)
-server.listen({ onUnhandledRequest: 'error' })
+server.listen({ onUnhandledFrame: 'error' })
 test.after(() => server.close())
 
 const base = 'http://localhost/api/v1'

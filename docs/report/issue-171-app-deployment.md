@@ -152,3 +152,136 @@ KEDA Application의 첫 sync는 `scaledjobs.keda.sh` CRD가 client-side apply의
 core·learning의 Argo PreSync Flyway Job은 각각 v19·v7에서 Complete, report-api의 Alembic Job은 `20261030_04`에서 Complete였다. core·learning·AI·scoring·report-api 하위 Application은 모두 Synced·Healthy, 실제 API Pod 5개는 각각 1/1 Ready·재시작 0이었다. report-worker Application도 Synced·Healthy이고 KEDA ScaledObject가 Ready였으며 빈 두 큐에서 worker Deployment는 설정대로 0/0이었다. metrics-server도 Synced·Healthy, `kubectl top node`가 CPU 766m·메모리 5630Mi(조회 시점)를 반환했다. 외부 Ingress는 `/api/v1/me`에 인증되지 않은 401, `/internal/model-versions/active`에 nginx 404를 반환했다. 실제 AI Pod에서 core·learning·scoring readiness가 모두 200, report-api의 DB readiness가 200, scoring Pod의 MinIO 버킷 접근이 성공했다. 실제 모델 버킷은 비어 있어 가중치 로딩·추론은 여전히 미검증이고, 실제 사용자 로그인·LLM·PDF 생성·SSE 진행 중 종료도 실행하지 않았다.
 
 KEDA CRD·Grafana local 보완과 기록은 `2e25b7cb7e2efb07d73cc3188e45d69a7d4879af`(`fix: Argo KEDA CRD와 로컬 Grafana 기동 보완`)로 같은 feature 브랜치에 push했다. Argo repo-server가 새 SHA를 읽은 뒤 관측 Application은 수정된 Grafana CPU `1`과 live Deployment가 일치해 Synced·Healthy로 전환됐다. 마지막 조회에서 root 이외의 하위 Application 10개(KEDA·platform 정책·metrics-server·관측·여섯 앱)는 모두 Synced·Healthy였다. Grafana·Collector·Prometheus는 각 1/1 Ready이고 새 Grafana Pod는 재시작 0, core·learning·AI·scoring·report-api도 각 1/1 Ready였다. 세 migration Job은 Complete, report-worker는 빈 큐에서 0/0, ScaledObject는 Ready·Inactive였다. `kubectl top node`의 마지막 값은 CPU 647m·메모리 5486Mi(70%)였다. root만 전용 검증용 하위 targetRevision 패치 때문에 OutOfSync·Healthy이며, 저장소에는 병합 후 사용할 `develop` 참조를 유지한다. PR 생성·원격 CI·EKS 배포·실제 Langfuse 저장 조회는 수행하지 않았다.
+
+## GitOps chart CI (#238)
+
+[이슈 #238](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/238)에 따라 `.github/workflows/ci-gitops.yml`을 추가했다. `infrastructure/gitops/**`, migration 이미지가 복사하는 core·learning의 `db/migration/**`, 워크플로 파일이 바뀐 PR과 `develop`·`main` push에서 실행한다. 기존 chart·values·다른 워크플로는 수정하지 않았다.
+
+### 검사 항목
+
+| job | 검사 | 실패 조건 |
+|---|---|---|
+| charts | Helm v4.3.1·kubeconform v0.8.0을 공식 배포본에서 받아 SHA256 대조 | 체크섬 불일치 |
+| charts | `environments/<env>/*.yaml`마다 `helm lint --strict`와 `helm template` | 렌더 실패, `values.schema.json` 위반, lint 경고 |
+| charts | 렌더 결과와 `argocd/`·`policies/` 원본 manifest의 kubeconform `-strict` | 스키마 위반, 정의되지 않은 필드 |
+| migrations | `migrations/*.Dockerfile`을 저장소 루트 context로 `docker build`(push 없음) | 빌드 실패 |
+
+렌더 조합은 Argo CD 정의를 그대로 따른다. 환경 파일 이름과 같은 chart가 있으면(`observability`·`platform-data`) 그 chart, 나머지는 ApplicationSet처럼 파일 이름을 릴리스 이름으로 `app-service` chart에 넘긴다. namespace는 app-service `app`, observability `observability`, platform-data `platform`이다. platform-data는 Argo Application이 아니라 #17 README의 Helm 릴리스로 설치하지만 같은 환경 values로 함께 렌더한다. 새 chart를 추가하면 워크플로의 namespace 대응을 함께 넣어야 하며, 빠지면 CI가 오류로 알린다. 의존 chart가 있으면 `helm dependency build`를 먼저 실행한다(현재 세 chart 모두 없음).
+
+`app-service` 기본 values는 `image.repository`가 빈 문자열이라 환경 values 없이 단독 lint하면 자체 스키마의 `minLength`에서 실패한다. 환경별 이미지를 반드시 넣게 한 설계이므로 chart 오류로 보지 않았다. chart lint는 실제 배포 조합으로 하고, 어떤 환경 파일도 쓰지 않는 chart만 기본 values로 lint한다.
+
+### CRD 처리 결정
+
+kubeconform은 기본 Kubernetes 스키마와 공개 CRD 카탈로그를 순서대로 찾고, 둘 다 없는 종류만 `-ignore-missing-schemas`로 건너뛴다. 이 방식은 KEDA·Argo CD 리소스도 실제 필드까지 검사하면서, 아직 카탈로그에 없는 CRD를 추가할 때 CI가 막히지 않는다. CRD 스키마를 저장소에 복사하는 방식은 KEDA·Argo 업그레이드마다 별도 갱신이 필요해 택하지 않았다. 건너뛴 리소스는 `Kind/이름 (파일)` 목록과 경고 annotation으로 남는다.
+
+| 항목 | 고정 값 | 근거 |
+|---|---|---|
+| Kubernetes 스키마 | [yannh/kubernetes-json-schema](https://github.com/yannh/kubernetes-json-schema) `e0c72a1`의 `v1.35.8-standalone-strict` | kind 노드 이미지 v1.35.8([local-platform](local-platform.md))과 같은 버전 |
+| CRD 스키마 | [datreeio/CRDs-catalog](https://github.com/datreeio/CRDs-catalog) `27233a5` | KEDA 2.21.0 CRD 갱신(2026-11-01)을 포함하고 Argo CD `Application`·`ApplicationSet`이 있음 |
+
+두 저장소는 커밋 SHA로 고정했으므로 upstream 변경이 CI 결과를 바꾸지 않는다. KEDA chart 버전을 올리면 카탈로그 커밋도 같은 버전 이후로 갱신한다. 카탈로그의 Argo CD 스키마 버전과 전용 kind에 설치한 v3.5.5의 일치 여부는 확인하지 않았다.
+
+### 로컬 실행
+
+Linux 셸(WSL 또는 컨테이너)에서 위 두 도구를 같은 버전으로 설치한 뒤 저장소 루트에서 실행한다. 워크플로의 run 블록과 같은 명령이다.
+
+```bash
+cd infrastructure/gitops
+out=/tmp/gitops-rendered; mkdir -p "$out/local"
+for values in environments/local/*.yaml; do
+  release="$(basename "$values" .yaml)"
+  if [ -d "charts/$release" ]; then chart="$release"; else chart=app-service; fi
+  case "$chart" in app-service) ns=app ;; observability) ns=observability ;; platform-data) ns=platform ;; esac
+  helm lint --strict "charts/$chart" --namespace "$ns" -f "$values"
+  helm template "$release" "charts/$chart" --namespace "$ns" --kube-version 1.35.8 -f "$values" > "$out/local/$release.yaml"
+done
+kubeconform -strict -summary -kubernetes-version 1.35.8 \
+  -schema-location 'https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/{{.NormalizedKubernetesVersion}}-standalone{{.StrictSuffix}}/{{.ResourceKind}}{{.KindSuffix}}.json' \
+  -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/27233a506de0085e71c7f9702597806a7f95eb24/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+  -ignore-missing-schemas "$out" argocd policies
+```
+
+migration 이미지는 저장소 루트에서 `docker build -f infrastructure/gitops/migrations/core.Dockerfile .`처럼 확인한다.
+
+### 검사하지 않는 항목
+
+- Argo CD가 받는 외부 chart(KEDA 2.21.0, metrics-server 3.14.0)의 렌더링. 외부 저장소 다운로드가 필요하고 저장소 변경으로 바뀌지 않는다.
+- 실제 클러스터 적용, Argo sync, admission webhook·NetworkPolicy 동작. 스키마 검사는 필드 형식만 본다.
+- migration 이미지의 실행·게시. 빌드만 확인하며 레지스트리 push와 태그 갱신은 #186 범위다.
+- `kubeconform -strict`는 manifest의 정의되지 않은 필드를 잡지만, values의 오타는 그 값이 렌더되는 경로에서만 드러난다. 스키마가 있는 `app-service`만 values 단계에서 막는다.
+
+### 검증 (2026-11-02)
+
+워크플로 charts job의 env와 run 블록을 그대로 추출해 전용 `buildpack-deps:noble-curl` 컨테이너(저장소 읽기 전용 mount)에서 실행했다. 두 도구의 SHA256이 일치했고, local 환경 파일 8개의 lint·template가 통과했다. kubeconform은 15개 파일 76개 리소스를 검사해 Valid 76, Skipped 0이었다. `ScaledObject`·`TriggerAuthentication`·`Application`·`ApplicationSet`도 카탈로그 스키마로 실제 검사됐다.
+
+일부러 넣은 값 오류는 `infrastructure/gitops` 복사본에만 넣고 같은 컨테이너 명령을 실행했다. 저장소 파일은 바꾸지 않았다.
+
+| 사례 | 변경 | 결과 |
+|---|---|---|
+| 스키마 타입 오류 | `ai-service.yaml`의 `replicaCount: "one"` | `helm lint`가 `/replicaCount: got string, want integer`로 실패, 종료 코드 1 |
+| 스키마 없는 chart 필드 오타 | `observability.yaml` Grafana `limits` → `limit` | lint·template는 통과, kubeconform이 `additional properties 'limit' not allowed`로 실패, 종료 코드 1 |
+| 카탈로그에 없는 CRD | 임의의 `example.invalid/v1` `Widget` 추가 | 통과, `Widget/probe` 건너뜀 목록과 경고 출력 |
+
+migration Dockerfile 2개는 전용 임시 태그로 빌드에 성공했고 태그는 삭제했다. actionlint 1.7.12(shellcheck 포함)는 `ci-gitops.yml`에서 오류가 없었다. 원격 GitHub Actions 결과는 브랜치 push 후 별도로 확인한다.
+
+## kind 클러스터 통합 (#273)
+
+#171은 병합 전 chart를 기존 `sagomungchi-local`의 platform-data·PVC와 분리해 시험하려고 전용 `sagomungchi-issue171` 클러스터와 전용 Secret 원본을 두었다. 두 클러스터는 호스트 포트(80/443 ↔ 18080/18443)와 Pod/Service CIDR만 달랐고 Kubernetes·Calico·Ingress 버전은 같았다. #171 병합 후에도 이 분리가 정식 절차로 남아 앱 배포 경로가 전용 클러스터에만 있었고, Secret 원본도 루트 `.env`와 별도 파일로 나뉘었다. Docker 메모리 한도(약 7.6GiB)에서는 두 클러스터를 동시에 운영하기 어렵다.
+
+로컬 kind는 `sagomungchi-local` 하나로 통합한다.
+
+| 항목 | 변경 |
+|---|---|
+| 앱 Secret | `create-issue-171-secrets.ps1` → `create-app-secrets.ps1`. 대상 context·노드를 `kind-sagomungchi-local`·`sagomungchi-local-control-plane`으로 고정 검사하고 기본 입력을 루트 `.env`로 한다. UTF-8 stdin 전달, 기존 Secret 값 대조 후 불일치 시 중단은 유지한다 |
+| platform Secret | 기존 `create-platform-secret.ps1`이 계속 담당한다. 두 스크립트가 같은 `.env`를 읽어 platform·app 계정 원본이 하나가 된다 |
+| 관측 Secret | `.env`에 `GRAFANA_ADMIN_USER`·`GRAFANA_ADMIN_PASSWORD`가 둘 다 있을 때만 만든다. 하나만 있으면 실패한다 |
+| 제거 | `issue-171-verification.yaml`, `calico-issue-171-installation.yaml`, `issue-171-secrets.env.example`, `README-issue-171.md`. 유지할 이미지 로드·context 명시·기동 순서는 [kind 안내](../../infrastructure/kind/README.md) 5절로 옮겼다 |
+| 적용 대상 문구 | chart·local Argo CD 안내의 "기존 클러스터 적용 금지"를 `sagomungchi-local` 정식 절차로 바꿨다 |
+
+누락 환경값(Google·토스·LLM 공급자 등)과 외부 egress는 #236 범위로 남긴다. 이 절 위의 검증 기록은 당시 전용 클러스터 기준이다. 이미 만들어진 `sagomungchi-issue171` 클러스터·Docker 네트워크 `kind-issue171`은 저장소 변경과 별개이며, 담당자가 직접 `kind delete cluster --name sagomungchi-issue171`과 `docker network rm kind-issue171`로 정리한다.
+
+## kind 환경값·외부 egress 보완 (#236)
+
+kind/GitOps local values가 `compose.yaml`보다 적어 클러스터에서 Google 로그인·토스 결제·LLM 판정이 동작하지 않았다. 위 "외부 LLM·토스 호출을 허용하는 local stub이 아직 저장소에 없으므로" 결정은 이 절로 대체한다.
+
+### compose 대비 환경값 차이 (develop f6250bd 기준)
+
+| 서비스 | compose에만 있던 값 | 처리 |
+|---|---|---|
+| core | `GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET` | 앱 Secret 선택 키 |
+| core | `TOSS_TEST_SECRET_KEY`·`TOSSPAYMENTS_SECRET_KEY`·`TOSS_TEST_MID`·`TOSS_TEST_WEBHOOK_SECURITY_KEY`, 빌링 `TOSS_TEST_BILLING_*` 3종 | 앱 Secret 선택 키, `live_` 키 거부 |
+| core | `PAYMENT_BILLING_ENCRYPTION_KEY`·`PAYMENT_FREE_PRODUCT_ID` | 앱 Secret 선택 키 (상품 UUID는 환경마다 다름) |
+| core | `AUTH_ACCESS_TTL`·`AUTH_STUDENT_ACCESS_TTL`·`AUTH_REAUTH_TTL`·`AUTH_REFRESH_TTL`·`REDIS_PORT`·`STUDENT_DEVICE_TTL`·`STUDENT_DEVICE_ATTEMPT_LIMIT` | values에 compose 기본값 |
+| core | `REDIS_PASSWORD` | 추가하지 않음. compose·platform-data Redis 모두 비밀번호 없음 |
+| ai | `LLM_PROVIDER`·`OPENAI_MODEL`·`OPENAI_JSON_MODE`·`ANTHROPIC_MODEL`·`ANTHROPIC_EFFORT`·`ANTHROPIC_FALLBACK` | values에 compose 기본값 (`LLM_PROVIDER=openai`) |
+| ai | `ANTHROPIC_API_KEY` | 앱 Secret 선택 키 (`OPENAI_API_KEY`는 기존 선택 키) |
+| ai | `OPENAI_BASE_URL` | 추가하지 않음. compose 기본값이 빈 값(OpenAI 기본 주소)이고 sLLM 사용 시에만 필요 |
+| report-api | `REPORT_DOWNLOAD_TTL_SECONDS` | 추가하지 않음. 앱 기본값 300과 compose 기본값이 같음 |
+| report-api | `RABBITMQ_URL` | 추가하지 않음. 메시지 소비는 report-worker만 하며 worker values에 있음 |
+| learning·scoring | 없음 | — |
+
+### 결정
+
+- 외부 키는 루트 `.env` 하나를 원본으로 `create-app-secrets.ps1`이 값이 있을 때만 앱 Secret에 복사한다. values는 `optional: true`로 참조해 키가 없으면 환경 변수를 만들지 않는다(compose의 빈 기본값과 같은 동작).
+- egress: core·ai에만 `0.0.0.0/0`에서 사설(10/8·172.16/12·192.168/16)·CGNAT(100.64/10)·link-local(169.254/16)·loopback을 뺀 TCP 443을 허용한다. Calico 오픈소스판과 기본 NetworkPolicy는 FQDN 규칙이 없고, 공급자 IP 대역 목록은 자주 바뀌어 유지하기 어렵다. 클러스터 내부·platform 접근은 기존 앱·platform 허용 규칙만 따른다. 운영 EKS의 NAT·도메인 제한은 #185에서 정한다.
+- 웹은 호스트 Vite에서 실행하고 `CORE_PROXY_TARGET`·`CORE_PROXY_HOST`로 `/api`를 kind Ingress(`api.sagomungchi.local`)에 보낸다. 지정하지 않으면 기존 compose 대상(`localhost:CORE_HOST_PORT`)을 유지한다. Google 콜백은 `AUTH_WEB_ORIGIN` 기준이라 기존 리디렉션 URI를 그대로 쓴다.
+- 토스 웹훅은 외부에서 로컬 kind로 들어올 수 없어 kind 확인 범위가 아니다. 결제 승인은 core가 토스 API를 직접 호출해 확인한다.
+
+### kind 실제 확인 (2026-11-03)
+
+이 브랜치의 values·스크립트로 Windows 11 PC의 새 `sagomungchi-local`(kind v0.33.0, Kubernetes v1.35.8, Calico v3.33.0, ingress-nginx 4.15.1, Docker 메모리 약 30GiB)에서 확인했다. Argo CD 설치는 이 이슈 범위가 아니어서 같은 chart·values를 Helm으로 직접 설치했다. local Argo 정의와 같은 KEDA 2.21.0과 `policies/local`도 적용했다. Helm은 Argo PreSync 훅을 쓰지 않으므로 core·learning·report-api를 먼저 설치하고 migration Job 완료(core v23·learning v8·report)를 기다린 뒤 나머지를 설치했다.
+
+확인용 데이터는 이 PC의 kind DB에만 넣었고 저장소에는 넣지 않았다. 무료(0원)·프리미엄(14,900원) 상품 2개, #235 전까지 가입을 막지 않도록 "Synthetic non-binding notice" 동의 문서 3종, learning `db/seed/demo_missions.sql`이다. 웹은 Node 컨테이너의 Vite를 `CORE_PROXY_TARGET`·`CORE_PROXY_HOST`로 kind Ingress에 연결했다.
+
+| 항목 | 결과 |
+|---|---|
+| 배포 | platform 4종 Ready·초기화 Job 2개 완료, 앱 6종 Running(report-worker는 큐가 비어 KEDA 0개) |
+| Ingress | `/api` 200, 외부 `/internal` 404 |
+| egress | core → Google OAuth·토스 API 응답 수신, ai → OpenAI 응답 수신(인증 없이 401). learning의 외부 443과 core의 외부 80은 시간 초과로 차단 |
+| Google 로그인 | 학부모 로그인·동의·자녀 등록, PIN 변경용 Google 재인증 콜백 VERIFIED |
+| LLM 판정 | 초3 서술형 미션 답변 3건 모두 `method=LLM`·`gpt-6.1-terra`·`judge@2`, `DONE`(CORRECT·RETHINK·PARTIAL), 실패 코드 없음. core `llm_usage`에 JUDGMENT·FOLLOWUP 호출이 성공으로 기록 |
+| 토스 결제 승인 | 학부모 프리미엄(14,900원) 테스트 결제 승인. 주문·결제·시도 `APPROVED`, 이용권 `APPLIED`, 구독 `ACTIVE`(PREMIUM, 2026-11-03~12-03) |
+
+토스: 결제위젯 키(`test_gck_`·`test_gsk_`)는 공식 안내상 전자결제 신청 이후에만 개발자센터에 보이고, 신청 전에는 문서의 테스트 키로 연동하도록 되어 있다. 담당자 계정에는 API 개별 연동 키(`test_ck_`·`test_sk_`)만 있어 문서 테스트 키(`test_gck_docs_`·`test_gsk_docs_`)를 사용했다. 이 키의 결제는 공용 문서 상점 `tgen_docs`에 기록된다. 첫 결제는 `TOSS_TEST_MID`가 다른 값이어서 core의 MID 대조에서 `PAYMENT_PG_MISMATCH`가 됐고(토스 결제 키 조회로는 `DONE`·`mId=tgen_docs` 확인), `TOSS_TEST_MID=tgen_docs`로 바꾼 뒤 새 결제가 승인됐다. 문서 테스트 키는 주문번호 조회(`GET /v1/payments/orders/{orderId}`)에 `NOT_FOUND_MERCHANT`를 반환하므로 "결제 상태 다시 확인"·복구·관리자 대조처럼 이 조회를 쓰는 경로는 이 키로 검증할 수 없다. 그래서 확인 중으로 남은 첫 주문은 kind DB에서만 FAILED로 정리해 같은 자녀의 새 결제 차단을 풀었다. 웹훅·빌링·환불은 확인 범위 밖이다.
+
+사용성 관찰(#236 범위 밖): Google 재인증 팝업은 콜백 JSON만 보여 주고 원래 화면으로 돌아오지 않는다. 같은 콜백 주소를 다시 열면 403 `REAUTH_REQUIRED`가 된다. 학생 기기 등록에서 기기 이름이 비어 있으면 어느 칸인지 없이 `VALIDATION_FAILED`만 보인다. 관측 chart를 설치하지 않은 환경에서는 core·learning Java agent가 Collector 주소를 찾지 못한다는 경고를 남기지만 앱 동작에는 영향이 없다.

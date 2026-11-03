@@ -101,6 +101,29 @@ helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx --version 4.15.
 - 최종 검증에서 Node·CNI·DNS, 실제 허용·차단 통신, HTTP 라우팅, HTTPS 처리, 저장소·Job 결과를 확인한다. 앱 미구현 상태의 임시 테스트 backend 결과와 실제 core·SSE·쿠키 검증을 구분한다.
 - 볼륨은 kind 노드의 수명과 연결된다. 별도 보존 구성을 하지 않은 상태에서 클러스터를 삭제하면 데이터를 잃을 수 있다. 이 문서는 자동 삭제 절차를 제공하지 않는다.
 
+### 5. 앱 배포
+
+앱 6종·관측도 같은 `sagomungchi-local` 클러스터에 배포한다. 별도 검증 클러스터를 두지 않는다. Secret 원본은 Compose와 같은 루트 `.env` 하나다.
+
+```powershell
+pwsh -File infrastructure/kind/create-app-secrets.ps1
+```
+
+- 스크립트는 context·노드 이름을 검사한 뒤 `app/app-service-credentials`를 만든다. `.env`에 `GRAFANA_ADMIN_USER`·`GRAFANA_ADMIN_PASSWORD`가 있으면 `observability/observability-credentials`도 만든다. 값은 kubectl의 UTF-8 stdin으로만 전달하고, 같은 이름의 Secret이 이미 있으면 값을 대조해 다르면 아무것도 바꾸지 않고 멈춘다.
+- 앱 이미지는 `environments/local/*.yaml`의 `sagomungchi/*:local` 이름으로 빌드한다. Docker의 다중 플랫폼 캐시 이미지는 `kind load docker-image`가 누락 digest로 실패할 수 있으므로 `docker image save --platform linux/amd64 -o <임시 archive> <이미지:local>` 뒤 `kind load image-archive <임시 archive> --name sagomungchi-local`로 로드하고 archive를 지운다.
+- Helm·kubectl 명령은 모든 호출에 `--kube-context kind-sagomungchi-local` 또는 `--context kind-sagomungchi-local`을 명시한다. 동기화 순서는 [local Argo CD 안내](../gitops/argocd/local/README.md)를 따른다.
+- 전체 앱·모델·관측을 한 번에 기동할 메모리 예산은 검증되지 않았다. platform → migration·core·learning → 나머지 API → worker·KEDA → 관측 순으로 자원을 확인하며 올린다.
+- 외부 연동 키(#236): `.env`에 값이 있는 Google·OpenAI/Anthropic·토스 테스트 키·`PAYMENT_*`만 앱 Secret에 넣는다. 토스는 `test_` 키만 허용하며 `live_` 키는 스크립트가 거부한다. 키를 바꾸면 기존 Secret과 값이 달라 스크립트가 멈추므로, 저장된 데이터와 무관한 앱 Secret만 `kubectl --context kind-sagomungchi-local -n app delete secret app-service-credentials`로 지운 뒤 다시 만들고 core·ai를 재시작한다. platform Secret은 지우지 않는다.
+- 토스 결제위젯 키는 전자결제 신청 이후에만 개발자센터에 보인다. 신청 전에는 공식 문서의 테스트 키(`test_gck_docs_`·`test_gsk_docs_`)와 그 공용 상점 MID `TOSS_TEST_MID=tgen_docs`로 결제 승인을 확인한다. 이 키는 주문번호 조회를 지원하지 않아 결제 상태 재확인·복구는 확인할 수 없다.
+- 외부 호출: core(Google·토스)와 ai(LLM)만 공인 IPv4의 TCP 443으로 나갈 수 있다. 사설·CGNAT·link-local·loopback 대역은 제외한다. Calico 오픈소스판은 도메인 단위 제한이 없어 대상 도메인으로 좁히지 않았다.
+
+웹은 호스트에서 Vite 개발 서버로 실행하고 `/api`만 kind Ingress로 보낸다. core의 `AUTH_WEB_ORIGIN`(`http://localhost:5173`)이 그대로라 Google 콘솔의 기존 리디렉션 URI를 쓴다.
+
+```powershell
+cd frontend/web
+$env:CORE_PROXY_TARGET = 'http://127.0.0.1'; $env:CORE_PROXY_HOST = 'api.sagomungchi.local'; npm run dev
+```
+
 ## 로컬 자원 공유
 
 16GB급 PC에서는 전체 Compose와 kind 실행을 분리하고, 사용하지 않는 로컬 클러스터는 노드 컨테이너를 정지해 보관할 수 있다. 다음 명령은 노드 컨테이너를 삭제하지 않으며 같은 노드를 다시 시작한다.

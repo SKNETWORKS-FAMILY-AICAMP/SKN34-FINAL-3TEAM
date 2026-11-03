@@ -7,6 +7,7 @@ import { StudentWorld } from './student/world/StudentWorld.tsx'
 import type { StudentPage } from './student/world/StudentWorld.tsx'
 import { ThinkingMap } from './student/world/ThinkingMap.tsx'
 import { StudentMissions } from './student/world/StudentMissions.tsx'
+import { ThinkingActivitiesPage } from './student/world/ThinkingActivities.tsx'
 import { isThinkingType } from '../domain/studentLook.ts'
 import {
   ArrowLeft,
@@ -37,13 +38,15 @@ import {
 import { inputLabels, shortRange, thinkingLabels } from '../domain/classroom.ts'
 import type { Child, DemoScenario, Period, PublicAttempt } from '../domain/classroom.ts'
 import { ActivityPaper, Brand, ErrorNotice, Modal } from './shared/ClassroomParts.tsx'
+import { StudentSharingPage } from './student/StudentSharingPage.tsx'
 import { StudentWorkPage } from './student/StudentWorkPage.tsx'
 import { ParentAnalysis, ParentReport } from './parent/ParentFeatures.tsx'
 import './classroom.css'
 import { QueryStateNotice } from './common/QueryStateNotice.tsx'
+import { ParentUnlock } from './auth/ParentUnlock.tsx'
 
 const { recentPeriod, previousWeek } = displayPeriods
-type Page = 'home' | 'journal' | 'missions' | 'report' | 'analysis'
+type Page = 'home' | 'journal' | 'missions' | 'report' | 'analysis' | 'activities' | 'settings'
 export function ClassroomApp() {
   const auth = useAuthentication(),
     { session, setSession, selected, setSelected, expired, setExpired, scenario, setScenario } =
@@ -55,7 +58,7 @@ export function ClassroomApp() {
   const work = location.pathname.startsWith('/student/attempts/')
     ? location.pathname.split('/')[3]
     : null
-  const studentPage: StudentPage = (['home', 'missions'] as const).find((p) => p === page) ?? 'journal'
+  const studentPage: StudentPage = (['home', 'missions', 'activities', 'settings'] as const).find((p) => p === page) ?? 'journal'
   const typeFilter = new URLSearchParams(location.search).get('type')
   const setPage = (page: Page) => navigate(`/${session?.role.toLowerCase() ?? 'parent'}/${page}`)
   const setWork = (id: string | null) =>
@@ -175,6 +178,7 @@ export function ClassroomApp() {
                 ['draft-fail', '초안 저장 실패'],
                 ['draft-conflict', '초안 충돌'],
                 ['submit-fail', '답변 저장 실패'],
+                ['submit-inappropriate', '답변 표현 차단'],
                 ['ai-fail', '피드백 처리 실패'],
                 ['ai-fail-final', '피드백 처리 실패(다시 요청 불가)'],
                 ['held', '판정 보류'],
@@ -247,6 +251,12 @@ export function ClassroomApp() {
                   : 'Google 계정으로 로그인하고 자녀를 등록해 주세요.'}
               </p>
             </div>
+            <div className="ux-login-forms">
+            <ParentUnlock onUnlocked={(next) => {
+              setSession(next)
+              setSelected('')
+              navigate(roleStart(next.role), { replace: true })
+            }} />
             {!isDemo ? (
               <section className="ux-login-form">
                 <h2>학부모·관리자 로그인</h2>
@@ -309,6 +319,7 @@ export function ClassroomApp() {
                 </small>
               )}
             </form>}
+            </div>
           </main>
         ) : session.role === 'ADMIN' ? (
           <main className="cj-sheet">
@@ -350,6 +361,9 @@ export function ClassroomApp() {
                   setPage('journal')
                 }}
               />
+            ) : studentPage === 'settings' ? (<StudentSharingPage key={child.id} child={child} />
+            ) : studentPage === 'activities' ? (
+              <ThinkingActivitiesPage key={child.id} child={child} />
             ) : studentPage === 'home' ? (
               <ThinkingMap
                 child={child}
@@ -917,9 +931,9 @@ function RecordCard({
           <MessagesSquare />
           처음 답·질문·추가 답
         </button>
-        {onContinue && r.status === 'IN_PROGRESS' ? (
+        {onContinue ? (
           <button type="button" className="cj-primary" onClick={onContinue}>
-            이어서 하기
+            {r.finishedAt ? '결과 다시 보기' : '이어서 하기'}
           </button>
         ) : (
           <span className="cj-badge">

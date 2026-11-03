@@ -2,6 +2,7 @@ import { apiFetch, ApiError } from '../apiClient.ts'
 import { recordDto } from '../recordDto.ts'
 import { streamSse } from '../sse.ts'
 import { reduceAnalysis } from '../../domain/parent.ts'
+import { templateProposal, templateSnapshot } from '../../domain/reportTemplate.ts'
 import type { Child, Period, PublicAttempt } from '../../domain/classroom.ts'
 import type {
   Consent,
@@ -81,6 +82,19 @@ export const parentApi = {
   conversation: (id: string, signal?: AbortSignal) =>
     apiFetch<Conversation>(`/conversations/${item(id)}`, { signal }),
   create: (scope: Scope) => apiFetch<Conversation>('/conversations', json(scope)),
+  /** 분석 대화 예시 질문 (api-spec 2.4 AGT-12, 선택). available=false는 이 자녀의 기록이 없어 답할 수 없는 질문이다. */
+  examples: async (childId: string, signal?: AbortSignal) => {
+    const raw = await apiFetch<{ items?: unknown }>(`/agent/example-questions?childId=${item(childId)}`, { signal })
+    if (!Array.isArray(raw?.items) || raw.items.some((i) => !i || typeof i.question !== 'string' || typeof i.available !== 'boolean'))
+      throw new ApiError({ status: 502, code: 'CONTRACT_NOT_READY', title: '예시 질문 응답을 확인하지 못했습니다.' })
+    return raw.items as { question: string; available: boolean }[]
+  },
+  reportTemplate: async (id: string, signal?: AbortSignal) =>
+    templateSnapshot(await apiFetch(`/conversations/${item(id)}/report-template`, { signal })),
+  proposeReportTemplate: async (id: string, question: string, signal?: AbortSignal) =>
+    templateProposal(await apiFetch(`/conversations/${item(id)}/report-template/proposals`, { ...json({ question }), signal })),
+  confirmReportTemplate: async (id: string, proposalId: string, signal?: AbortSignal) =>
+    templateSnapshot(await apiFetch(`/conversations/${item(id)}/report-template/confirm`, { ...json({ proposalId }), signal })),
   async message(
     id: string,
     question: string,

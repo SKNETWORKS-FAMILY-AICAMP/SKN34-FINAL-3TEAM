@@ -8,14 +8,14 @@ from langgraph.runtime import Runtime
 
 from app.analysis_agent import templates
 from app.analysis_agent.calculators import THOUGHT_LIMIT, compute
+from app.analysis_agent.context import AgentContext
 from app.analysis_agent.models import AnalysisRequest, StreamError, Verification
 from app.analysis_agent.nodes import respond, retrieve, understand
 from app.analysis_agent.nodes.events import delta, status
 from app.analysis_agent.prompts import Classification
-from app.analysis_agent.state import AgentContext
 from app.clients.learning_client import RecordsUnavailable
 from app.llm.base import LlmError
-from app.versions import ActiveVersions
+from app.prompt_versions.registry import ActiveVersions
 from tests.analysis_agent.records_fixture import PERIOD, SCOPE, STUDENT, FakeRecords, records
 from tests.fakes import FakeLlm
 

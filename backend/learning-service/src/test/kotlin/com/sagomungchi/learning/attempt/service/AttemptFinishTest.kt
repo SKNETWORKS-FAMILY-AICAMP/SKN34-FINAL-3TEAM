@@ -2,6 +2,8 @@ package com.sagomungchi.learning.attempt.service
 
 import com.sagomungchi.learning.TestRows
 import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning._common.exception.errorCodeOf
+import com.sagomungchi.learning._common.exception.httpStatusOf
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.learning._common.security.UserContext
 import com.sagomungchi.learning._common.security.UserContextHolder
@@ -55,8 +57,8 @@ class AttemptFinishTest : PostgresRepositoryTest() {
         UserContextHolder.set(UserContext(null, "STUDENT", setOf(studentId.toString()), null))
 
     private fun assertError(status: HttpStatus, code: String, block: () -> Unit) {
-        val error = assertThrows<BusinessException> { block() }
-        assertEquals(status to code, error.status to error.code)
+        val error = assertThrows<RuntimeException> { block() }
+        assertEquals(status to code, httpStatusOf(error) to errorCodeOf(error))
     }
 
     private class Setup(val attempt: Attempt, val elements: List<UUID>)

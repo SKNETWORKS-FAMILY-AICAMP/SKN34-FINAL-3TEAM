@@ -5,6 +5,8 @@ from uuid import UUID
 import httpx
 
 from app.generation.pipeline import StudentDisplayName
+from app.generation.records import RecordContractError
+from app.generation.template_settings import validate_snapshot
 
 
 class CoreClient:
@@ -15,7 +17,23 @@ class CoreClient:
         response = await self._client.get(f"/internal/students/{student_id}/profile")
         response.raise_for_status()
         profile = response.json()
-        return StudentDisplayName(UUID(profile["studentId"]), profile["nickname"])
+        sharing = profile.get("parentSharingEnabled", False)
+        if not isinstance(sharing, bool):
+            raise ValueError("Invalid student sharing preference")
+        if (
+            profile.get("studentId") != str(student_id)
+            or not isinstance(profile.get("nickname"), str)
+            or not profile["nickname"].strip()
+        ):
+            raise RecordContractError("Invalid student profile")
+        settings = await self._client.get(f"/internal/students/{student_id}/report-template")
+        settings.raise_for_status()
+        return StudentDisplayName(
+            student_id=UUID(profile["studentId"]),
+            nickname=profile["nickname"],
+            parent_sharing_enabled=sharing,
+            template_snapshot=validate_snapshot(settings.json()),
+        )
 
     async def report_deletion_completed(self, request_id: UUID):
         response = await self._client.post(

@@ -1178,6 +1178,13 @@ body {
   line-height: 2;
   margin-bottom: 18px;
 }
+#class-journal .ux-login-forms {
+  display: grid;
+  gap: 16px;
+}
+#class-journal .ux-login-forms [role='alert'] {
+  margin: 14px 0 6px;
+}
 #class-journal .ux-login-form {
   background: white;
   border: 1px solid var(--cj-line);

@@ -54,6 +54,14 @@
         SELECT <include refid="columns"/> FROM attempt WHERE id = #{id}
     </select>
 
+    <!-- #207: 현재 시도 시작 당시 이미 마무리한 같은 학생·미션의 직전 시도만 비교한다. -->
+    <select id="findPreviousFinished" resultMap="attempt">
+        SELECT <include refid="columns"/> FROM attempt
+        WHERE student_id = #{studentId} AND mission_id = #{missionId} AND id != #{id}
+          AND finished_at IS NOT NULL AND finished_at &lt;= #{startedAt}
+        ORDER BY finished_at DESC, started_at DESC, id DESC LIMIT 1
+    </select>
+
     <!-- 같은 시도의 동시 답변 제출은 이 잠금을 기다려 같은 키 확인·버전 계산이 겹치지 않음 -->
     <select id="findByIdForUpdate" resultMap="attempt">
         SELECT <include refid="columns"/> FROM attempt WHERE id = #{id} FOR UPDATE

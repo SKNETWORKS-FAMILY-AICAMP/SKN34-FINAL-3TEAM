@@ -1,7 +1,7 @@
 import { ApiError, apiFetch, setAccessToken } from '../apiClient.ts'
 import { json } from '../parent/api.ts'
 import type { Child, Session } from '../../domain/classroom.ts'
-import type { Pairing, StudentDevice, StudentProfile } from '../../domain/studentDevice.ts'
+import type { GuardianPasswordState, Pairing, StudentDevice, StudentProfile } from '../../domain/studentDevice.ts'
 
 const contractError = (detail: string): never => {
   throw new ApiError({
@@ -24,6 +24,20 @@ export const studentDeviceApi = {
     '/me/reauth', json({ purpose: 'PIN_CHANGE', childId })),
   finishPinReauth: (challengeId: string) => apiFetch<{ reauthToken: string; expiresAt: string }>(
     '/me/reauth', json({ challengeId })),
+  // 보호자 비밀번호: 학생 화면에서 잠긴 학부모 화면으로 돌아올 때 쓴다 (FN-ACC-05). 재인증은 계정 단위다.
+  startGuardianReauth: () => apiFetch<{ challengeId: string; authorizationUrl: string; expiresAt: string }>(
+    '/me/reauth', json({ purpose: 'GUARDIAN_PASSWORD' })),
+  guardianPassword: async (signal?: AbortSignal) => {
+    const raw = await apiFetch<GuardianPasswordState>('/me/guardian-password', { signal })
+    if (typeof raw?.set !== 'boolean' || typeof raw.locked !== 'boolean')
+      return contractError('보호자 비밀번호 상태의 set·locked가 필요합니다.')
+    return raw
+  },
+  setGuardianPassword: ({ password, reauthToken }: { password: string; reauthToken: string }) =>
+    apiFetch<GuardianPasswordState>('/me/guardian-password', {
+      ...json({ password }, 'PUT'),
+      headers: { 'Content-Type': 'application/json', 'X-Reauth-Token': reauthToken },
+    }),
   // ── 학부모 ─────────────────────────────────────────
   createPairing: (childIds: string[]) =>
     apiFetch<Pairing>('/student-devices/pairings', json({ childIds })),

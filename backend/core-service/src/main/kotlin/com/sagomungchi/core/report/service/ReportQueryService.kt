@@ -17,7 +17,8 @@ import java.util.UUID
 
 @Service
 class ReportQueryService(private val repository: ReportJobRepository, private val access: ReportAccessService,
-    private val client: ReportClient, private val views: ReportViewService,private val entitlements: ReportEntitlementService) {
+    private val client: ReportClient, private val views: ReportViewService,private val entitlements: ReportEntitlementService,
+    private val learningContext: com.sagomungchi.core.guardianship.service.StudentLearningContextService) {
     fun list(childId: UUID, status: ReportJobStatus?): JsonNode {
         // report-api lists generated reports only (RUNNING·COMPLETED·FAILED); a QUEUED job has no report yet.
         if (status == ReportJobStatus.QUEUED) invalidRequest()
@@ -38,7 +39,8 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
         val job = owned(reportId)
         val parent = access.parent(job.studentId)
         val query = revision?.let { mapOf("revision" to it.toString()) } ?: emptyMap()
-        val requestedNarrative = entitlements.narrativeEnabled(job.studentId)
+        val shared = learningContext.sharingEnabled(job.studentId)
+        val requestedNarrative = shared && entitlements.narrativeEnabled(job.studentId)
         val body = client.get(job.studentId, "/internal/reports/$reportId", query, requestedNarrative)
         contract {
             validateIdentity(body)
@@ -46,24 +48,31 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
             require(body["period"]["from"].textValue() == job.periodFrom.toString() && body["period"]["to"].textValue() == job.periodTo.toString())
             if (revision != null) require(body["revision"].intValue() == revision)
         }
-        val narrative = views.record(UUID.fromString(body["reportId"].textValue()), job.studentId, parent, requestedNarrative)
-        if (!narrative) (body as ObjectNode).apply {
+        val allowed = views.recordWithSharing(UUID.fromString(body["reportId"].textValue()), job.studentId, parent, requestedNarrative)
+        if (!allowed.narrativeEnabled) (body as ObjectNode).apply {
             putNull("narrative")
             putNull("eveningQuestion")
             path("thinkingTypes").forEach { (it as? ObjectNode)?.remove("summary") }
         }
+        if (!allowed.parentSharingEnabled) withoutOriginals(body as ObjectNode)
+        (body as ObjectNode).put("parentSharingEnabled", allowed.parentSharingEnabled)
         return body
     }
 
     fun evidence(reportId: UUID, itemId: UUID): JsonNode {
         val job = owned(reportId)
-        return client.get(job.studentId, "/internal/reports/$reportId/evidence/$itemId")
+        learningContext.requireShared(job.studentId)
+        return client.get(job.studentId, "/internal/reports/$reportId/evidence/$itemId").also {
+            access.parent(job.studentId)
+            learningContext.requireShared(job.studentId)
+        }
     }
 
     fun download(reportId: UUID, format: String): JsonNode {
         if (format !in setOf("pdf", "md")) invalidRequest()
         val job = owned(reportId)
         val parent = access.parent(job.studentId)
+        learningContext.requireShared(job.studentId)
         val requestedNarrative = entitlements.narrativeEnabled(job.studentId)
         val metadata = client.get(job.studentId, "/internal/reports/$reportId", narrativeEnabled = requestedNarrative)
         contract {
@@ -77,7 +86,25 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
             val uri = URI(body["url"]?.textValue())
             require(uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank() && uri.userInfo == null)
             OffsetDateTime.parse(body["expiresAt"]?.textValue())
-        }; views.record(actual, job.studentId, parent, requestedNarrative, premiumRequired = requestedNarrative) }
+        }; views.record(actual, job.studentId, parent, requestedNarrative, premiumRequired = requestedNarrative, sharingRequired = true) }
+    }
+
+    /** Whitelist numerical summaries; do not forward arbitrary derived text from old reports. */
+    private fun withoutOriginals(body: ObjectNode) {
+        body.putNull("narrative"); body.putNull("eveningQuestion")
+        body.putArray("quotes")
+        body.path("thinkingTypes").forEach { node ->
+            (node as? ObjectNode)?.retain("type", "state", "missions", "itemId")
+        }
+        body.path("changes").forEach { node ->
+            (node as? ObjectNode)?.apply {
+                retain("attemptId", "counts", "itemId")
+                putNull("followup"); putObject("first").putNull("text"); putObject("revised").putNull("text")
+            }
+        }
+        body.path("reflections").forEach { node ->
+            (node as? ObjectNode)?.apply { retain("attemptId", "written", "difficulty", "itemId"); putNull("text") }
+        }
     }
 
     private fun owned(reportId: UUID): ReportJob = (repository.byReport(reportId)

@@ -1,6 +1,7 @@
 package com.sagomungchi.learning.answer.domain
 
-import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning._common.exception.DomainException
+import com.sagomungchi.learning._common.exception.ErrorKind
 import com.sagomungchi.learning.mission.domain.Category
 import com.sagomungchi.learning.mission.domain.Choice
 import com.sagomungchi.learning.mission.domain.InputType
@@ -8,7 +9,6 @@ import com.sagomungchi.learning.mission.missionView
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertDoesNotThrow
 import org.junit.jupiter.api.assertThrows
-import org.springframework.http.HttpStatus
 import kotlin.test.assertEquals
 
 class AnswerContentTest {
@@ -21,8 +21,8 @@ class AnswerContentTest {
             .copy(choices = choices, inputTemplate = inputTemplate, categories = categories, answerUnit = answerUnit)
 
     private fun assertIncomplete(inputType: InputType, content: AnswerContent, message: String) {
-        val error = assertThrows<BusinessException> { content.requireComplete(inputType, mission(inputType)) }
-        assertEquals(Triple(HttpStatus.UNPROCESSABLE_ENTITY, "ANSWER_INCOMPLETE", message), Triple(error.status, error.code, error.detail))
+        val error = assertThrows<DomainException> { content.requireComplete(inputType, mission(inputType)) }
+        assertEquals(Triple(ErrorKind.UNPROCESSABLE, "ANSWER_INCOMPLETE", message), Triple(error.kind, error.code, error.detail))
     }
 
     @Test
@@ -65,6 +65,14 @@ class AnswerContentTest {
             AnswerContent(assignments = choices.map { Assignment(it.id, "g1") })
                 .requireComplete(InputType.CLASSIFICATION, mission(InputType.CLASSIFICATION))
         }
+    }
+
+    @Test
+    fun `표현 검사 대상은 학생이 쓴 칸마다 따로, 고르기·분류는 넣지 않음`() {
+        assertEquals(listOf("글"), AnswerContent(text = "글").writtenTexts())
+        assertEquals(listOf("6", "2씩", "더함"), AnswerContent(finalAnswer = "6", steps = listOf("2씩", "더함")).writtenTexts())
+        assertEquals(listOf("찬성", "안전", "편리", "그래도"), AnswerContent(essay = Essay("찬성", listOf("안전", "편리"), "그래도")).writtenTexts())
+        assertEquals(emptyList(), AnswerContent(choiceIds = listOf("a"), assignments = listOf(Assignment("a", "g1"))).writtenTexts())
     }
 
     @Test

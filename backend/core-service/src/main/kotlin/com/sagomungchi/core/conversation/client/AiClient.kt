@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Component
+import org.springframework.web.client.HttpClientErrorException
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig
 import java.io.InputStream
@@ -45,6 +46,34 @@ class AiClient internal constructor(factory: InternalRestClientFactory, private 
     private val client = factory.create("ai", total, java.net.http.HttpClient.Version.HTTP_1_1)
     private val timer = ScheduledThreadPoolExecutor(1, Thread.ofPlatform().daemon().name("analysis-deadline").factory())
         .apply { removeOnCancelPolicy = true }
+
+    /** #280: separate small circuit so report-template failures never open the analysis stream circuit. */
+    internal val templateCircuit = CircuitBreaker.of("ai-report-template", CircuitBreakerConfig.custom()
+        .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
+        .slidingWindowSize(10).minimumNumberOfCalls(10).failureRateThreshold(50f)
+        .waitDurationInOpenState(Duration.ofSeconds(30)).permittedNumberOfCallsInHalfOpenState(1).build())
+
+    fun reportTemplate(request: Any): JsonNode {
+        if (!templateCircuit.tryAcquirePermission()) templateUnavailable()
+        val started = System.nanoTime()
+        try {
+            val body = factoryClient.post().uri("/internal/analysis/report-template").contentType(MediaType.APPLICATION_JSON)
+                .body(request).retrieve().body(JsonNode::class.java)
+            if (body == null) {
+                templateCircuit.onError(System.nanoTime() - started, TimeUnit.NANOSECONDS, java.io.IOException("AI empty body"))
+                invalid()
+            }
+            templateCircuit.onSuccess(System.nanoTime() - started, TimeUnit.NANOSECONDS)
+            return body
+        } catch (ex: BusinessException) { throw ex } catch (ex: Exception) {
+            // Same rule as stream: HTTP 4xx is a request problem, not AI availability.
+            if (ex is HttpClientErrorException) templateCircuit.onSuccess(System.nanoTime() - started, TimeUnit.NANOSECONDS)
+            else templateCircuit.onError(System.nanoTime() - started, TimeUnit.NANOSECONDS, ex)
+            templateUnavailable()
+        }
+    }
+    private fun templateUnavailable(): Nothing = throw BusinessException(HttpStatus.BAD_GATEWAY, "AI_UNAVAILABLE", "설정 변경안을 만들지 못했습니다.")
+    private val factoryClient = factory.create("ai", Duration.ofSeconds(25), java.net.http.HttpClient.Version.HTTP_1_1)
 
     fun stream(request: Any, call: AnalysisCall, event: (String, JsonNode) -> Unit) {
         call.attachThread()

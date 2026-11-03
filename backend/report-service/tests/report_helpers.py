@@ -16,6 +16,8 @@ def command_for(student_id):
         period_to=date(2026, 10, 25),
         trigger="SCHEDULE",
         narrative_enabled=False,
+        # These pre-existing fixtures explicitly exercise public records.
+        parent_sharing_enabled=True,
     )
 
 

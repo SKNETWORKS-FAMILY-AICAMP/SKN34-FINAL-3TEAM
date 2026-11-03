@@ -4,6 +4,18 @@ React + TanStack Query 기반 학생·학부모 화면입니다. 화면은 Seesa
 
 ## 실행
 
+### 자동 검증 (#141)
+
+```powershell
+npm test             # Node 단위·HTTP 계약·React 쿼리 훅 테스트
+npm run test:types   # tests/와 Playwright 설정까지 타입 검사
+npm run build        # 앱·테스트 타입 검사 + 운영 빌드
+npx playwright install chromium
+npm run test:browser # 별도 MSW 서버를 자동 실행, 노트북·태블릿 화면 검증
+```
+
+화면 테스트는 사용자 결정에 따라 단위 테스트와 분리했습니다. `_web.yml`의 별도 `browser` job이 Chromium을 설치해 실행합니다. 로컬에 설치된 Chrome을 사용할 때는 `CHROME_PATH`를 지정할 수 있습니다. 테스트 서버는 localhost 5271에만 열고 재사용하지 않으며 실제 PG·Google 인증은 호출하지 않습니다. 실패 시 `test-results/`에 스크린샷·trace가 남습니다. 해당 폴더와 `playwright-report/`는 Git에서 제외합니다.
+
 Node.js 24 기준입니다.
 
 ```powershell
@@ -126,3 +138,21 @@ node tests/api-mode-browser.mjs
 
 ### P01 정렬
 부모·관리자만 refresh로 복원한다. 학생 동석 진입은 access 전용이며 서버가 부모 refresh를 폐기한다. 등록 기기·PIN 로그인은 #104의 별도 학생 access 세션을 사용하며 보호자 세션을 유지한다. 학생 만료·새로고침 시 `/student/login`에서 PIN을 다시 입력한다. 학생 원문 작성 요청은 만료 후 부모 refresh로 자동 재시도하지 않는다. MSW도 학생 refresh를 거부한다.
+
+
+### 학생 공개 설정·재시도 결과 확인 (#206·#207)
+
+개발 목업에서 학생 기기 준비 후 PIN `5090`으로 진입하여 ‘공개 설정’을 확인합니다. 설정은 기본 비공개이며 저장 실패를 성공으로 처리하지 않습니다. 같은 미션을 마무리하고 돌아보기까지 완료한 뒤 다시 풀면 마무리 결과에 이전/현재 답변이 나란히 표시됩니다. 내 공책의 ‘결과 다시 보기’에서 완료된 결과도 다시 열 수 있습니다. 실서버에서는 core V21 마이그레이션과 새 비교 API 배포가 필요합니다.
+
+# 리포트 표시 설정 검증
+
+학부모 `기록에 물어보기`에서 리포트 설정 대화를 시작하거나 기존 대화를 선택합니다.
+변경 요청을 입력하고 변경안을 확인한 뒤 저장하면 연결된 자녀의 다음 리포트 생성에 적용됩니다.
+학생 원문 공개 설정은 이 화면에서 변경하지 않습니다. API 계약은 `docs/design/api-spec.md`의 #209 절을 따릅니다.
+
+`npm test`, `npm run build`, `npm run lint`로 기본 검증합니다.
+빌드 후 `PLAYWRIGHT_PACKAGE`에 설치된 Playwright의 package.json 경로를 지정하여
+`node tests/report-template-browser.mjs`를 실행하면 6개 브라우저 시나리오를 검사합니다.
+필요한 경우 `CHROME_PATH`와 `QA_OUTPUT_DIR`를 지정할 수 있습니다.
+이 스크립트는 운영 빌드를 임시 localhost 포트에서 제공하며 HTTP 응답만 대역으로 사용합니다.
+실제 core·#206 공개 설정·외부 LLM의 종단 검증 결과와 구분합니다.

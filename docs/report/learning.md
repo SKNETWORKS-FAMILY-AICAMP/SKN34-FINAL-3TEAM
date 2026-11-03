@@ -1,4 +1,12 @@
-# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82·#169·#137)
+# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82·#169·#137·#205·#241)
+
+## 같은 미션 재시도 비교 (#207, 2026-11-01)
+
+- 사용자 확정: 같은 학생·미션의 **직전 마무리 시도**와 비교합니다. 현재 시작 시점 이전에 마무리한 시도를 `finished_at DESC, started_at DESC, id DESC`로 한 건 선택합니다. 다른 학생/미션·현재 시도·현재 시작 뒤에 마무리한 시도는 제외합니다. 돌아보기 완료만을 기준으로 잘못 좁히지 않습니다.
+- 기존 진행 중 시도 재사용·돌아보기 완료 규칙은 유지합니다. 완료한 결과에서 ‘이 미션 다시 풀기’는 기존 시작 API로 새 시도를 생성합니다. 예전 답변·판정·피드백·초안은 수정하거나 삭제하지 않습니다.
+- `GET /internal/attempts/{attemptId}/comparison`과 core `GET /api/v1/attempts/{attemptId}/comparison`을 추가했습니다. 학생 본인만, 마무리 이후에 조회합니다. core는 상세 캐시와 마찬가지로 no-store입니다.
+- 응답 `NO_PREVIOUS | COMPARABLE | CRITERIA_CHANGED`, 이전/현재의 전체 제출 답변·마무리 시각·마지막 판정·기준표와 각 시도에 고정된 문항을 담습니다. 문항/기준표 버전이 같을 때만 항목별 추가 확인·유지·이번 미확인·양쪽 미확인을 표시합니다. 기준 변경이면 원문만 나란히 읽고 충족 개수를 직접 비교하지 않습니다. 이를 능력 점수나 향상률로 바꾸지 않습니다.
+- 도메인 비교 4건과 웹 API/직렬화·실제 MSW 화면 검증을 추가했습니다. PostgreSQL 통합 테스트는 원문/판정 보존·첫 시도·타 학생·시점 제외를 포함해 3건 통과했습니다. 도메인 4건과 합쳐 learning 비교 검증 7건이 통과했습니다.
 
 통합 원본: learning-mission, learning-attempt, learning-answer, learning-feedback, learning-reflection, learning-records, learning-judgment-rules
 
@@ -84,13 +92,13 @@
 | 질문 은행 | ai가 재생성까지 유출이면 같은 유형 활성 질문 중 이 시도에서 안 쓴 것을 생성 순으로(`source=BANK`). 비었으면 `INTERNAL_ERROR` |
 | 유출 검사 정답 | 학생에게 보이는 글자로 변환: 고르기 선택지 이름, 순서 전체, 수학 최종 답+단위, 분류 "선택지: 그룹" |
 | 되묻기만 실패 | 판정도 저장하지 않고 `FAILED`, 재요청 시 판정부터 |
-| 실패 코드 | `AI_TIMEOUT`·`AI_UNAVAILABLE`·`AI_BAD_RESPONSE`·`AI_CIRCUIT_OPEN`·`INTERNAL_ERROR`. `retryable`은 ai 503 본문 값, 시간 초과·연결 실패·차단 true, 4xx·계약 밖 false |
+| 실패 코드 | `AI_TIMEOUT`·`AI_UNAVAILABLE`·`AI_BAD_RESPONSE`·`AI_CIRCUIT_OPEN`·`INTERNAL_ERROR`, 고착 탐지는 `LEASE_EXPIRED`(#241, 17절). `retryable`은 ai 503 본문 값, 시간 초과·연결 실패·차단 true, 4xx·계약 밖 false |
 | `nextActions` | 읽는 시점 기준: 답하지 않은 되묻기 있음 `[ANSWER_FOLLOWUP, FINISH]`, 없음 `[FINISH]`, 마무리·완료 `[]`, 처리 중·실패 `[]` |
 | 버전 | `versions{mission:"미션 code@버전", rubric:"미션 code@기준표 버전", model, prompt}`(기준표에 code 컬럼이 없어 미션 code 사용) |
 | ai 호출 | 응답 35초, 재시도 없음, 서킷 20건·50%·30초(core와 같은 값). 요청 본문에 학생 이름·ID 없음(학년만) |
 | 결과 조회 순서 | 판정 행을 먼저 읽고 요소·되묻기를 읽음(READ COMMITTED에서 섞임 방지) |
 
-- 후속(이슈 분리): 판정 정정 수신 API(#80, 8절에서 구현), 미션 공개 검사(#81, 고르기도 요소 1개 이상 등), 판정 요청에 미션 질문 넣기, 고착 `RUNNING` 1분 주기 탐지(현재는 요청 때 리스 만료로 재획득)
+- 후속(이슈 분리): 판정 정정 수신 API(#80, 8절에서 구현), 미션 공개 검사(#81, 고르기도 요소 1개 이상 등), 판정 요청에 미션 질문 넣기, 고착 `RUNNING` 1분 주기 탐지(#241, 17절에서 구현)
 
 ## 5. 마무리·돌아보기·자기 평가 (#26)
 
@@ -169,6 +177,9 @@ core가 자녀 삭제·탈퇴를 확정하면 `student.deleted`를 보내고, le
 - 기존 파일 수정: `EventEnvelope`(발행용 기본값 제거: `id`가 빠진 메시지에 무작위 id가 채워져 멱등 키가 매번 달라지는 문제, learning은 발행하지 않음), `MessagingConfig`(confirm 대기 시간), `AppProperties`(`messaging.maxRetries`), `application.yml`(수동 ACK·`missing-queues-fatal: false`·publisher confirm·readiness에 `rabbit`·`app.messaging.max-retries: 3`, read-timeout 주석을 core 호출까지로), `AttemptService`·`AttemptRepository`·`AttemptMapper`(`deleteByStudent`), 테스트 6개 클래스에 `spring.rabbitmq.listener.simple.auto-startup=false`(core 테스트와 같음, 리스너가 실제 RabbitMQ에 붙지 않게)
 - 설계 문서: class-diagram 4.3(구현 상태·소비자 검증·삭제 흐름·`deleteByStudent` 순서·`delete` 시그니처), ERD 1장 FK 줄·4.3 비고·7장 확인 필요 줄 삭제, api-spec 5.6 마지막 줄(B3 해소), 아키텍처 1.6 수동 ACK 줄
 - 검증: learning 테스트 217개(새 11: 삭제 4·소비자 3·재시도 4)·scripts/tests 74개, 보호 장치 16개를 빼면 각각 실패(삭제 순서 4·멱등·보고 3·표식 1·소비자 5·재시도 3). 통합 확인은 #148의 격리 compose(`scripts/report_integration/compose.yaml`, 합성 값, 프로젝트 `learning128`)에 learning `CORE_URL`만 덮어써서: core DB에 보호자·학생 2명과 `CONFIRMED` PROFILE 삭제 요청·outbox 행 저장 → core 중계가 `student.deleted` 발행 → learning·report 둘 다 보고하고 core 요청 `COMPLETED`(2초)·학생 `DELETED`, learning은 대상 학생 시도·초안·답변·판정 0행·다른 학생 그대로·표식 PROFILE. 같은 이벤트 재전달은 처리 뒤 만든 시도를 지우지 않고 보고만(재시도·DLQ 0), source가 다른 봉투는 재시도 없이 learning DLQ 1건. readiness에 rabbit 포함 UP. 확인 뒤 격리 환경 삭제
+
+- 위치 정리(#256, 11/02): 원래 설계(architecture 2.6, 10/24)는 별도 `deletion/` 패키지였으나 #128에서 `record/consumer`·`record/service`에 구현했다(이슈 #128 작업 위치 "`record/` 또는 삭제 기능 패키지", 현재 이슈 본문 기준이며 11/02 수정 기록 있음). 위치를 고른 이유는 당시 기록하지 않았다. 종합 검증(audit 4.5 A15)이 설계를 `record/`로 맞췄고, #256에서 빈 `deletion/` 폴더(`.gitkeep` 2개)를 지우고 architecture 2.6 트리·class-diagram 4.3을 `record/` 기준으로 정리했다. 코드 변경은 없다
+- 알려진 한계(#256): `record/`가 기록 조회와 함께 삭제 소비(쓰기)·이벤트 처리 기록(`processed_event`와 정리 작업)·결제 사용 증빙을 맡아 "조회 API" 패키지 설명과 다르다. report-service는 같은 기능을 `deletion/`에 둬 서비스 간 위치도 다르다. `processed_event`는 모든 이벤트 소비자가 쓸 수 있는 중복 처리 방지 테이블이라 다른 소비자가 생기면 `_common/messaging` 쪽이 맞을 수 있다. 조회 SQL(`RecordMapper.xml`·`RecordExistsMapper.xml`)은 `deleted_student`로 삭제된 학생을 거르므로 위치를 옮겨도 이 읽기는 남는다. 경계 정리는 별도 리팩터로 다룬다
 
 ## 10. 관리자 미션 API (#145, 구 #81 흡수)
 
@@ -262,6 +273,7 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 - 새 파일: `judgment/controller/SupportResponses.kt`. 기존 파일 수정: `_common/exception/BusinessException.kt`(보조 생성자·`ErrorKind`), domain 위 5개 파일(import·상태 인자), `judgment/domain/Support.kt`(`@JsonInclude` 제거), `judgment/controller/SupportController.kt`(응답 DTO)
 - 검증: domain(`*/domain/`)의 `org.springframework`·`com.fasterxml` import 0건. learning 테스트 246개 통과(테스트 코드 변경 없음, HTTP 상태·code 확인 그대로), scripts/tests 83개. 보호 장치 4개를 틀리게 하면 각각 실패(`INVALID`→400·`CONFLICT`→409·`UNPROCESSABLE`→422 변환, 응답 DTO의 없는 칸 생략)
 - 한계: 예외 객체는 실행 중에 HTTP 상태를 들고 있음(domain 코드는 모름). 오류 종류는 지금 domain에서 쓰는 세 가지뿐이고, 새 종류가 필요하면 `ErrorKind`와 변환을 함께 늘림
+- #249(11/02): 위 한계를 해소함. domain은 HTTP 상태가 없는 `DomainException(kind, code, …)`을 던지고, 상태 변환은 `_common/exception`의 `statusOf` 한 곳, 처리기·service 테스트는 `httpStatusOf`·`errorCodeOf`로 두 예외를 같게 다룸. 위 "별도 domain 예외를 두지 않은 이유"의 걱정(처리기·테스트 분리, HTTP 상태 확인 상실)을 이렇게 피함 ([#249 절](issue-168-core-layer-deps.md#249-domain-예외-분리-corelearning-1102))
 
 ## 14. 공통 예외·초안 저장 경합 테스트 (#137)
 
@@ -352,3 +364,180 @@ python scripts/verify_feedback_learning.py `
 - 충돌 해결에서 서비스 코드·설정·공개 계약·DB 스키마를 추가 수정하지 않는다. 최신 develop의 파일을 그대로 보존하고 #164 검증 스크립트·회귀 검사도 기존 기능 커밋의 바이트를 유지한다.
 - 병합 후 저장소 Python 계약·회귀 검사 `python -O -m unittest discover -s scripts/tests -v` 90개가 통과했다(27.320초). 기존 13·14절이 develop과 동일하고 #164 기록은 15절에 한 번만 존재하며, 10·11절과 audit B21의 이전 참조가 없고 상대 경로·앵커 대상이 유효한 것을 확인했다. 충돌 표시·미해결 index 항목이 없고 `git diff --check`도 통과했다.
 - 병합에서 수동으로 변경한 것은 learning·audit 보고서 두 파일이다. 서비스 코드·설정·계약·프론트·인프라·워크플로는 최신 develop과 같고, #164 스크립트·회귀 검사는 `6f2f392`와 같다. 문서 충돌 해결에 실행 변경이 없어 신규 JAR 빌드·Docker 전체 실행은 반복하지 않았다. 위 JAR 해시와 실연동 6사례·실패 후 정리는 최초 검증 소스 `18c9c11`의 이력이며, 이번 병합 소스의 신규 실연동 결과로 주장하지 않는다. 원본 JAR는 `build/issue164/merge-develop/pre-merge-jars/`에 보존했다.
+
+## 16. 학생 답변 표현 필터링 (#205)
+
+10/29 멘토링("초~중학생 대상이라 욕설·비속어 입력 대응 필수, 공신력 있는 가이드 기반 필터링·제출 차단")과 11/1 결정("유사 서비스 방식 탐색 후 답변 필터링, 필터 대상이면 제출 차단", [멘토링 기록](mentoring-20261029.md))에 따라 학생 답변(최초·보완)에 표현 검사를 넣음. 막는 답변은 저장·판정 요청 없이 `422 ANSWER_INAPPROPRIATE`. 계약은 [API 명세](../design/api-spec.md) 1.3과 4.1 답변 제출 줄, learning OpenAPI `submitAnswer` 422·`SubmitRequest`
+
+### 조사
+
+| 대상 | 방식 | 이번에 따른 것 |
+|---|---|---|
+| Scratch | 제출 차단, 걸린 단어 비공개, 예외 목록 | 제출 차단·걸린 말 비공개·오탐 예외 |
+| Roblox(13세 미만 채팅) | 가리기, 전화번호·주소 걸러 냄 | 연락처 범주 |
+| 네이버 클린봇·세이프봇 | AI 판단·가리기 | 따르지 않음(외부 AI 없이, 아래 사용자 결정) |
+| Code.org | 외부 필터 API | 따르지 않음 |
+| 국내 초중등 학습 서비스(밀크T·홈런·스마트올·클래스팅·엔트리·AI 디지털교과서) | 공개 자료 없음, 직접 시험 못 함 | 한계로 기록 |
+
+| 출처 | 라이선스·조건 | 결정 |
+|---|---|---|
+| [korcen](https://github.com/Tanat05/korcen) 2026판 `eecd9763` | MIT | 데이터·전처리 규칙만 JSON으로 옮김(코드·의존성 없음) |
+| korcen 2023판 `2cfdf958` | Apache 2.0 | 2026판에 없는 항목만. 2024-11 개편에서 `씨발`(오탐 예외로만 남음)·`존나`·`졸라`가 빠진 것을 측정에서 확인해 보충 |
+| 국립국어원 우리말샘 Open API | CC BY-SA 2.0 KR | 뜻풀이가 "욕하여·욕으로·비속하게 이르는 말"로 끝나는 3자 이상 일반어 61개 + "낮잡아·속되게 이르는 말" 중 데이터로 확인한 7개. 키는 `.env`, 응답 원자료는 저장소에 넣지 않음 |
+| Curse-detection-data, NSMC test | MIT, CC0 | 측정에만 씀. 저장소에 넣지 않음 |
+| KISO 이용자보호시스템(KSS) | 기업 신청 외부 API | 쓰지 않음. 학생 원문이 외부로 나가 NFR-SEC-03·architecture 4.3 허용 목록과 충돌, 장애 시 처리·키 관리·승인 시점 미정. 후속 |
+| LDNOOBW `ko` | CC BY 4.0 | 쓰지 않음. 72개, 검색 자동완성용이라 korcen·우리말샘으로 대신 |
+| hlog2e/bad_word_list, badwords-ko | 라이선스 없음, 단어 출처 불명 | 쓰지 않음 |
+| AI Hub 텍스트 윤리검증, K-MHaS | 신청·용도 제한(공개 저장소 재배포 불가), 원 저장소 라이선스 미확인 | 쓰지 않음 |
+
+### 기준과 범주
+
+| 범주(`ExpressionCategory`) | 근거 | 처리 | 안내(`detail`) |
+|---|---|---|---|
+| `PROFANITY` 욕설·비속어 | 청소년 보호법 시행령 [별표 2] 2.차, 방송심의에 관한 규정 제51조 제3항 | 항상 차단 | "고운 말로 바꿔서 다시 적어 주세요." |
+| `SEXUAL` 성적 표현 | [별표 2] 2.가·나·라, 같은 규정 제35조 제2항 | 항상 차단 | 같음 |
+| `HATE` 혐오·차별 | KISO 혐오표현 자율정책 가이드라인 제2조, 같은 규정 제21조 제3항 | 미션 본문에 나온 말이면 허용([별표 2] 1.가 맥락 고려) | 같음 |
+| `THREAT` 남을 향한 위협·자해 조장 | [별표 2] 2.바·사 | 항상 차단. 자기 감정 표현("죽고 싶다")은 막지 않음 | 같음 |
+| `PERSONAL_INFO` 연락처(휴대전화·이메일) | 유사 서비스(Roblox·Scratch)의 연락처 공유 금지, 이슈 제목 "금지 표현"과 11/1 결정의 해석(사용자 결정) | 항상 차단 | "전화번호나 이메일 같은 개인정보는 빼고 다시 적어 주세요." |
+
+- 응답 `title`은 범주와 관계없이 "고쳐야 할 말이 있어요"(목업·실제 화면 비교 후 사용자 결정). 걸린 말·원문은 응답·로그에 넣지 않음(NFR-SEC-05). 로그는 `답변 표현 차단 attemptId=… category=…`
+- [별표 2]의 나머지 항목(아·자·카·타·파·하)과 약물·폭력 묘사는 글의 내용을 봐야 해서 단어로 다루지 않음. 단어로 막으면 교과 답변("담배는 몸에 해롭다", "전쟁에서 많이 죽었다")이 막힘
+- 여러 범주에 걸리면 enum 순서(`PROFANITY` → … → `PERSONAL_INFO`)로 하나
+
+### 목록 (`backend/learning-service/src/main/resources/answer-filter/`)
+
+| 파일 | 내용 |
+|---|---|
+| `korcen.json` | 2026판 패턴 877·오탐 예외, 2023판에만 있는 패턴 54(`patterns2023`)·예외(`falsePositives2023`), 비슷한 글자 393·여러 글자 15, 범주별 남길 글자·치환. 범주 `general`·`minor`·`parent` → `PROFANITY`, `sexual` → `SEXUAL`, `race`·`belittle` → `HATE` |
+| `urimalsaem.json` | 61개, 항목마다 `targetCode`(우리말샘 원 항목) |
+| `team.json` | 팀 조정과 근거 수치(Curse 욕설·정상 표시 문장 수, NSMC 문장 수): 뺀 패턴 18, 좁힌 korcen 예외 1(`씨발라` → `수박씨발라`), 팀 오탐 예외 74, 맥락 단어 `새끼`와 항상 막는 결합형 8, 데이터로 더한 우리말샘 7, 철자 변형 24, 위협 14(뺀 후보 4) |
+| `korcen-LICENSE.txt`, `korcen-2023-LICENSE.txt` | MIT, Apache 2.0 원문 |
+
+- 원칙(사용자 결정): 팀이 낱말을 지어내지 않음. 더하는 말은 출처(korcen·우리말샘)나 측정 데이터에 실제로 나온 것만, 빼는 말은 겹치는 정상 문장 예와 횟수를 남김. 생성·측정 스크립트와 원자료는 저장소 밖
+- 뺀 korcen 패턴 예: `보지`(책을 보지)·`자지`(잠을 자지)·`세끼`(하루 세끼)·`시바`(시바견)·`자위`(자위권)·`운지`(행운지수)·`야스`(야스쿠니)·`깔보`·`뒤져`(가방을 뒤져, 위협 쓰임은 `THREAT`의 `뒤져라`·`뒤질래`로)·`ㅅㅅ`·`qt`·`tq` 등
+- 팀 오탐 예외 예: `새끼손가락`·`새끼줄`·`새끼를낳`·동물+`새끼`(22종), `강조까지`·`글자지`·`전개같`·`마이애미`, `닥쳐올`·`닥쳐왔`(닥치다=다가오다), `등신대`·`팔등신`·`0~9등신`, `눈깔사탕`
+- 맥락 단어 `새끼`: 동물 새끼 뜻이 있어 미션 본문에 나오면 허용. korcen은 맨 `새끼` 하나로 결합형을 잡아, 허용만 두면 미션에 `새끼`가 있을 때 `개새끼`까지 통과 → Curse에서 5회 이상 나온 결합형 8개(`개새끼`·`이새끼`·`저새끼`·`그새끼`·`새끼야`·`새끼들아`·`씹새끼`·`이런새끼`)는 항상 차단. 맨 `새끼`는 Curse 욕설 문장 322 / 정상 표시 8, 데모 미션에는 없음
+- 데이터로 더한 우리말샘 7개(실제 화면에서 `등신`이 통과해 기준을 세움): "낮잡아·속되게 이르는 말" 중 지금 목록으로 안 막히고 Curse 욕설 3회 이상·정상 표시 0 → `등신`·`아가리`·`개쓰레기`·`눈깔`(`PROFANITY`), `갈보`·`돌림빵`(`SEXUAL`), `저능아`(`HATE`). 같은 기준에 걸린 `깡통`·`나발`·`똥꼬`는 정상 낱말이라 뺌
+- 넣지 않은 말(사용자 결정): `바보`·`멍청이`·`호구`(비속어가 아닌 놀림말, `바보` NSMC 97회), 지역·장애를 낮잡는 우리말샘 22개(`봉사`·`장님`·`외다리`·`판수`·`벙어리`는 봉사활동·장님 코끼리 만지기·외다리 서기 같은 교과 문장과 겹치고 Curse 욕설에 거의 없음, 많이 나온 `정신병자`·`찐따`는 korcen에 있음), `홍어`(공신력 있는 출처에 없고 생선 이름)
+
+### 검사 흐름 (`ExpressionPolicy`)
+
+1. 대상은 학생이 쓴 칸(`AnswerContent.writtenTexts`: 서술 글, 풀이 최종 답·단계, 논술 4칸)이고 칸마다 따로 검사(칸 사이를 잇지 않음). 원문과 "우회 보기"(전각 → 보통 글자, 한글 바로 옆 영문 한 글자 → 글자 이름, 풀어 쓴 자모 → 글자) 두 글을 검사
+2. 정규화(korcen 전처리): 주소 지우기 → 소문자 → 비슷한 글자(코드포인트 기준, 보조평면 57자 포함) → 여러 글자 → 띄어쓰기 지우기
+3. korcen 범주마다 범주 안 치환 → 오탐 예외 지우기(korcen 원본 그대로 + 글과 같이 정규화한 팀 예외) → 남길 글자만 둔 보기와 한글·자모만 둔 보기에서 부분 일치. 한글·자모 보기는 `시1발`을 잡으려고 #205에서 더함
+4. 낱말 목록(우리말샘 61·더한 7·변형·결합형·위협): 팀 예외를 지운 뒤 자모 포함 보기·한글만 보기에서 부분 일치
+5. `HATE`와 맥락 단어는 같은 말이 미션 본문(제목·질문·안내·선택지·그룹)에 나오면 제외. 연락처는 이메일 형식, 휴대전화(구분 기호 `-`·`.`·괄호·띄어쓰기를 지우고 한글 숫자 `공일공…`을 숫자로)
+6. 위치: `AnswerService.submit`의 누락 검사 다음·되묻기 연결 검사 전(api-spec 4.1 순서). 단어 대조라 외부 호출 없음. 막힌 요청은 core가 422를 같은 키 응답으로 저장(원문 없음), 웹은 답이 바뀌면 새 키
+
+### 우회 표기 범위 (이슈 해야 할 일 3)
+
+| 막는 우회 | 예 | 근거 |
+|---|---|---|
+| 띄어쓰기·기호·숫자 끼우기 | `씨 발`, `씨.발`, `씨*발`, `시1발`, `씨8발` | korcen 전처리 + 한글 보기 |
+| 영문 표기·비슷한 글자·센소리·자음 줄임 | `sibal`, `tlqkf`, `씨빨`, `씌발`, `시ㅂ발`, `ㅅㅂ` | korcen 패턴·비슷한 글자 표 |
+| 데이터에서 나온 철자 변형 | `븅신`, `씨밸`, `졵나`, `조온나`, `새낀` | 핵심 욕과 자모 1~2개 다르고 Curse 욕설 문장에 나오며 정상 글·함정에 없는 것 |
+| 풀어 쓴 자모 | `ㅆㅣㅂㅏㄹ`, `ㅂㅕㅇㅅㅣㄴ`, `ㅆㅣ발` | 두벌식 규칙(겹모음·겹받침)으로 합침. `ㅋㅋ`·`ㅠㅠ`·`ㅇㅇ`은 안 합쳐짐. Curse 정상 +0, NSMC +3(모두 실제 욕) |
+| 전각 글자 | `ｓｉｂａｌ`, `０１０-１２３４-５６７８` | 전각 영문·숫자·기호 범위만(NFKC는 호환 자모를 바꿔 `ㅅㅂ` 패턴이 깨져 쓰지 않음). 오탐 +0 |
+| 한글 옆 영문 글자 소리 | `c발`, `C발`, `M창`, `돌I` | 앞뒤가 영문이 아닌 한 글자만 글자 이름으로. `PC방`·`TV에서`·`B형`·`비타민C를`·`K팝`은 그대로. Curse 정상 +0, 데모 0, NSMC +35(모두 실제 욕) |
+| 연락처 표기 | `010.1234.5678`, `(010)1234-5678`, `공일공 일이삼사 오육칠팔` | 구분 기호 지우기·한글 숫자 |
+
+| 막지 않는 우회 | 이유 |
+|---|---|
+| 영문 낱말을 자판 위치대로 친 글(`qudtls` = 병신) | 측정: Curse 욕 +3에 Curse 정상 +33·NSMC +203·데모 문장 47 오탐(`Hello` → `ㅗ디ㅣㅐ`, `ㅗ`가 korcen 손가락 욕 패턴), 주소도 바뀜 |
+| 이메일을 말로 쓰기(`abc 골뱅이 naver.com`), 집 전화번호 | `@` 형식·휴대전화만 봄 |
+| 정상 낱말과 겹치는 욕 | `졸라`(엄마를 졸라서), `병신년`(丙申年), `새 끼니`·`쌍년도`·`애미야`처럼 띄어쓰기를 지우면 생기는 말 |
+
+### 측정 (최종 목록, 기준 구현과 Kotlin 판정 같음)
+
+| 데이터 | 결과 |
+|---|---|
+| Curse-detection-data 욕설 표시 2,044문장 | 1,223 막음(59.8%). 라벨에 욕 없는 모욕·비꼼·정치 비하가 섞여 낮게 나옴. 명시적 욕만 본 새 표본에서는 약 94~95%(목록 9차 시점 표본 검토) |
+| Curse 정상 표시 3,781문장 | 49(1.3%) |
+| NSMC test 리뷰 50,000문장 | 1,030(2.06%). 대부분 리뷰 속 실제 욕이고, 표본 검토로 정상 글 오탐은 약 0.1%(목록 9차 시점) |
+| 우리 데모 문장 491(learning 데모 시드·웹 데모 데이터) | 0 |
+| 학생 글 함정 약 80문장(교과·이야기·계산 답·영어·자음 줄임) | 0. 미션 없이 쓴 "고양이가 새끼를 다섯 마리 낳았다"만 막히고, 미션 본문에 `새끼`가 있으면 허용 |
+| Kotlin(`ExpressionPolicy`)과 Python 기준 구현 | Curse+NSMC 55,825문장 판정이 모두 같음 |
+
+- 경과: korcen 2026판 네 범주만 47.8%(`씨발`·`존나`·패드립을 놓침) → 2023판 합침·`parent`·`minor`·한글 보기·오탐 정리·변형 59.1% → 우리말샘 7개 59.8%. 정상 표시 오탐은 49~50으로 거의 그대로
+- 측정 데이터는 성인 인터넷 글이라 초중등 답변과 다름. 그래서 우리 데모 문장과 학생 글 함정을 따로 검사하고 테스트(`ExpressionPolicyTest`)로 고정함
+
+### 실제 앱 확인 (11/02, 로컬 docker compose + web dev)
+
+- 학부모 Google 로그인 → 자녀(5학년) → 서술 미션에서 욕·연락처·`c발`·`ㅆㅣㅂㅏㄹ` 제출: 화면에 "고쳐야 할 말이 있어요"와 범주별 문구, 입력 유지, 다시 시도 버튼 없음(422). 정상 답은 저장·피드백 진행
+- 처음에 `등신`이 저장되어 위 "데이터로 더한 우리말샘 7개" 기준을 세움. 새 목록 배포(01:25:45 UTC) 뒤 `answer` 테이블에 막힌 답 없음, 로그는 `attemptId`·`category=PROFANITY`만
+- 화면에서 막혀도 "초안 저장 완료"가 보임: 초안 자동 저장(FN-LRN-15)은 검사하지 않아 `attempt_draft`에 남음(아래 사용자 결정)
+- 로컬 실행 중 발견(이 이슈 범위 밖): core에 동의 문서 시드가 없어 로그인 뒤 `CONSENT_DOCUMENTS_UNAVAILABLE` → 로컬 core DB에만 확인용 3개(TERMS·PRIVACY·GUARDIAN, `local-205`)를 넣음. 데모 미션 시드는 초3·초5만 공개라 6학년 자녀는 미션이 비어 보임
+
+### 사용자 결정 (11/01~11/02)
+
+- 기준은 공신력 있는 가이드([별표 2]·방송심의 규정·KISO), 목록은 korcen(2026+2023)·우리말샘, 변형·위협·추가 낱말은 데이터에 나온 것만
+- 외부 AI 없음(제출 경로 의존·지연·비용·검증 가능성). 제출 전 검수 LLM도 넣지 않음: 막을 글도 LLM으로 보내게 되어 완료 조건 "저장·판정 요청 없이 차단"과 어긋나고, 연락처가 LLM으로 넘어가며, 제출 경로에 ai 호출·장애 처리·비용 2배가 생김 → 후속 이슈로 설계 다시
+- 범주 5개(연락처 포함), 범주별 안내, 제목 "고쳐야 할 말이 있어요"
+- 서버만 검사: 단어 목록을 웹 번들에 넣지 않음. 웹 데모 모드는 시나리오 `submit-inappropriate`(첫 제출 1회 차단, 연락처처럼 보이면 연락처 안내)
+- 초안(`answer`·`memo`)과 돌아보기 글은 검사하지 않음. 초안 `answer` 검사안을 api-spec·OpenAPI에 넣었다가 되돌림(초안은 학생 본인만 보는 `attempt_draft` 한 행이고 제출에 성공하면 비워짐, 판정·학부모·리포트로 가지 않음)
+- 우회: 자모 합치기·전각·한글 옆 영문 글자 소리는 넣고 영문 자판 위치는 넣지 않음(위 측정)
+
+- 설계와 다른 점: 없음. 설계에 새로 더함: class-diagram 4.1(`ExpressionPolicy`, `AnswerContent.writtenTexts`, `AnswerService --> ExpressionPolicy`, 답변 표현 검사 설명), sequence-diagram 3.1(검사 줄·설명), functional-spec FN-LRN-05(예외·상태), api-spec 1.3·4.1, learning OpenAPI. 목록 읽기를 `answer/repository`의 설정으로 두고 domain은 Kotlin 정규식만 쓰는 것은 architecture 2.1(domain 의존 금지·데이터 적재는 infrastructure)과 `FinishPolicy` <<value>> 선례를 따름
+- 새 파일: `answer/domain/ExpressionCategory.kt`·`ExpressionPolicy.kt`, `answer/repository/ExpressionPolicyConfig.kt`, `resources/answer-filter/`(5개), `answer/domain/ExpressionPolicyTest`(8)
+- 기존 파일 수정: `AnswerContent`(`writtenTexts`), `AnswerService`(검사·로그, 생성자에 `ExpressionPolicy`), 테스트 `AnswerContentTest`(1)·`AnswerServiceTest`(2, 출력 확인 `OutputCaptureExtension`)·`AnswerControllerTest`(1). web `domain/classroom.ts`(`DemoScenario`)·`data/classroom/demoGateway.ts`(시나리오)·`presentation/ClassroomApp.tsx`(상태 시연 선택지)·`tests/classroom.test.ts`(1)
+- 검증: learning 테스트 262개, web 149개·`tsc -b`·oxlint(새 경고 없음), scripts/tests 94개. `AnswerService`의 검사 호출을 빼면 새 서비스 테스트 2개가 실패. 서비스 테스트는 막힌 제출 뒤 `answer` 행 0·판정 없음·초안 그대로·로그에 원문 없음을, 컨트롤러 테스트는 응답에 원문 없음을 확인
+- 한계: 욕 없는 모욕·비꼼·돌려 말한 성적 표현·특정 친구 놀림은 단어로 못 막음(후속 검수 LLM). 맥락 허용은 미션 본문에 같은 말이 있는지만 봄. 낱자 `ㅗ`는 korcen 손가락 욕 패턴이라 낱자를 섞어 쓴 글(`ㄱㅗㅏ자`)이 걸림(원래 동작). korcen 원본 오탐 예외 중 숫자가 든 것(`8등신`)은 korcen 정규화 때문에 원본에서도 동작하지 않음(팀 예외는 정규화해서 비교). 측정 데이터의 분포가 초중등 답변과 다름
+- 확인 필요: ① `ANSWER_INAPPROPRIATE`(범주별 `detail`) 팀 공지(api-spec 공유 계약, PR 전 사용자) ② 초안 자동 저장·돌아보기 글에는 걸리는 말이 남을 수 있음(학생 본인만 열람) ③ 학생 자기 감정 표현("죽고 싶다")의 보호자 알림 여부(아동 안전, 별도 기능) ④ korcen의 MIT·Apache는 코드 라이선스라 단어 데이터의 출처까지 보증하지 않음 ⑤ core 동의 문서 시드 부재(로컬 실행 시 발견, core 담당) ⑥ KISO KSS 신청 여부
+- 후속: 검수 LLM(제출 전 별도 검사, ai-service 검수 API·장애 시 처리·오탐·우회·비용 설계), 판정 LLM 응답에 "부적절 표현 의심" 표시(저장 후 보호자·관리자 확인), KISO KSS
+
+## 17. 고착 RUNNING 판정 1분 주기 탐지 (#241)
+
+P12 "판정 리스 90초·고착 탐지 1분"의 탐지 작업. 지금까지는 같은 답변에 피드백을 다시 요청할 때만 만료 리스를 재획득해서, 처리 Pod 종료·결과 기록 실패(`FeedbackFacade` 실패 기록) 뒤 학생이 떠난 판정은 `RUNNING`으로 계속 남았다.
+
+### 사용자 결정 (11/02)
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 탐지 후 동작 | `FAILED`로 전이, 실패 코드 `LEASE_EXPIRED`, `retry_count + 1`, 자동 재실행 없음 | 설계 문서에 동작이 없어 이슈 지침(`Judgment.fail`의 실패 기록 규칙)과 core 분석 대화의 고착 처리(130초 넘은 `RUNNING`을 `STREAM_INTERRUPTED` 실패로, 자동 재실행 없음, api-spec #47 절)를 따름. 로그만 남기는 안은 상태 표시·집계·결제 사용 증빙이 그대로라 탐지 의미가 없어 택하지 않음 |
+| 클래스 위치 | `judgment/scheduler/StuckJudgmentScheduler` → `JudgmentService.failStuck` → `JudgmentRepository.failExpired` | 아키텍처 2.1: 스케줄 수신은 Presentation `scheduler`, DB 접근 금지. core 스케줄러(`report/scheduler` 등)와 같은 구조 |
+
+### 구현
+
+| 위치 | 내용 |
+|---|---|
+| `judgment/scheduler/StuckJudgmentScheduler` | `@Scheduled` 주기 `app.judgment.stuck-detection-interval`(기본 `PT1M`, 첫 실행도 1분 뒤), `app.judgment.stuck-detection-enabled=false`면 실행하지 않음. ShedLock 없음(조건부 UPDATE라 레플리카 동시 실행 안전, `ProcessedEventCleanupScheduler`와 같은 방식) |
+| `JudgmentService.failStuck(now)` | 트랜잭션 하나에서 일괄 전이, 바뀐 답변 ID 반환. 1건 이상이면 `warn` 로그에 건수와 `answerId`만(학생 원문 없음) |
+| `JudgmentMapper.failExpired` | `UPDATE judgment SET process_status='FAILED', failure_code=:code, retry_count=retry_count+1 WHERE process_status='RUNNING' AND (lease_until IS NULL OR lease_until < :now) RETURNING answer_id`. 만료 조건은 `acquire` SQL·`Judgment.isLeaseExpired`와 같음(리스 없는 `RUNNING`도 만료). 탐지용 인덱스 `(process_status, lease_until)`는 기존(V2) |
+| `Judgment.LEASE_EXPIRED` | 실패 코드 상수 |
+| `AppProperties.Judgment`, `application.yml` | `stuck-detection-enabled: true`, `stuck-detection-interval: PT1M` |
+| 설계 | state-diagram 3.3(전이·표·설명·`failure_code` 목록), class-diagram 4.2(`StuckJudgmentScheduler`, `failStuck`, `failExpired`, 설명), architecture 2.6 learning 트리(`judgment/scheduler/`) |
+
+### 겹칠 때
+
+| 상황 | 결과 |
+|---|---|
+| 재획득이 먼저 행을 잡음 | 탐지 UPDATE가 행 잠금을 기다린 뒤 조건을 다시 봐 새 리스가 잡힌 행은 건너뜀(READ COMMITTED) |
+| 탐지가 먼저 행을 잡음 | 재획득 UPDATE가 기다린 뒤 `FAILED`를 보고 `FAILED → RUNNING`으로 가져감 |
+| 두 Pod가 같은 주기에 탐지 | 한쪽만 바뀌고 `retry_count`는 1만 오름 |
+| 탐지 뒤 이전 처리가 늦게 끝남 | 저장·실패 기록 모두 획득한 리스 조건(`process_status='RUNNING' AND lease_until=:until`)이라 0행, 결과 버림(재획득 때와 같음) |
+
+### 영향
+
+- 결제 사용 증빙(`GET /internal/payment-usage/students/{id}`, #48): `RUNNING` 판정을 사용으로 보므로 고착 판정이 있으면 계속 `used=true`였음. 탐지 뒤에는 ai 실패로 `FAILED`가 된 판정처럼 사용으로 보지 않음. core 결제 쪽 코드 변경은 없고 값만 달라짐 → core 담당에게 알림(PR)
+- 학습 기록 집계: 조회 종료일까지 답변이 모두 `FAILED`인 시도를 빼는 기존 규칙(P08)에 고착 시도도 들어감
+- 학생 화면: 화면에 있는 동안은 web이 `RUNNING`이면 피드백을 다시 요청해(`feedbackPolling.ts`) 지금도 리스 만료 뒤 재획득됨. 차이는 떠났다 돌아온 학생의 시도 상세가 "처리 중" 대신 실패로 보이고 다시 요청할 수 있다는 점
+
+### 설계·이슈와 다른 점
+
+- 이슈 작업 위치는 `judgment/service/`(새 스케줄 클래스)였으나 아키텍처 2.1대로 `judgment/scheduler/`에 둠(사용자 결정). 이슈가 따르라고 한 `ProcessedEventCleanup` "방식"(설정 가능한 주기·조건부 UPDATE·잠금 없음)은 그대로 따름
+- 이슈 배경의 "남은 `RUNNING`은 마무리 조건(P04)·다음 행동 계산에서 처리 중으로 보임": 마무리 조건은 `DONE` 1회 이상이라 `RUNNING`·`FAILED` 모두 충족하지 않고, `nextActions`도 둘 다 `[]`라 이 부분은 탐지 전후가 같음. 달라지는 것은 위 "영향"
+- 일괄 UPDATE라 엔티티 `Judgment.fail`을 거치지 않음. 이슈 작업 위치의 "조건부 일괄 전이"를 따르고, 전이 결과(`FAILED`·실패 코드·`retry_count + 1`)와 만료 조건은 엔티티·`acquire` SQL과 같게 맞춤(`acquire`도 엔티티 판단과 같은 조건을 SQL에 둠)
+- 기존 파일 수정: `Judgment`(상수), `JudgmentService`(`failStuck`, 로거), `JudgmentRepository`·`JudgmentMapper`·`JudgmentMapper.xml`(`failExpired`), `AppProperties`(`judgment`), `application.yml`, 테스트 `JudgmentServiceTest`(3개 추가)
+
+### 검증
+
+- learning `./gradlew test` 279개 통과(새 9개). `JudgmentServiceTest`: 만료·리스 없음만 전이하고 미만료·`PENDING`은 그대로, 두 번 실행해도 한 번만, 탐지 뒤 재요청이 `FAILED → RUNNING` 후 정상 저장. `StuckJudgmentSchedulerTest`: 켜면 탐지, 끄면 그대로, 로그에 건수·답변 ID만 있고 학생 원문 없음. `StuckJudgmentConcurrencyTest`(실제 커밋, 별도 컨테이너): 재획득과 탐지가 서로 행을 잡은 두 순서, 두 인스턴스 동시 탐지
+- SQL에서 리스 조건을 빼면 새 테스트 2개(미만료 유지, 재획득 먼저)가 실패하는 것을 확인 후 되돌림
+- scripts/tests 96개 통과, `git diff --check` 통과
+
+### 알려진 한계
+
+- 리스 90초를 넘겨 아직 살아 있는 처리가 있으면 탐지가 먼저 `FAILED`로 바꿔 그 결과가 버려짐. 탐지 전에는 다른 요청이 가져가지 않았다면 저장됐음. learning→ai 판정·되묻기가 각 35초라 정상 처리는 약 70초 안에 끝나고, 탐지는 리스 획득 90~150초 뒤라 드묾
+- 만료 판단은 각 Pod의 시각 기준(재획득과 같음). Pod 사이 시각 차이만큼 탐지가 앞당겨지거나 늦어짐
+- learning의 기존 `record/service/ProcessedEventCleanup`은 스케줄 클래스가 service 패키지에서 repository를 바로 부름(아키텍처 2.1과 다름). 이번 범위 밖이라 그대로 둠. #278에서 `record/scheduler/ProcessedEventCleanupScheduler` → `record/service/ProcessedEventCleanupService`로 분리
+- 탐지 건수는 로그로만 남음(지표 수집 없음). DB에서는 `failure_code='LEASE_EXPIRED'`로 셀 수 있음

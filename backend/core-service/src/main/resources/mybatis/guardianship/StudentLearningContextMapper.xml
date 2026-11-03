@@ -13,4 +13,28 @@
         WHERE s.id=#{studentId} AND g.parent_user_id=#{userId}
           AND g.status='LINKED' AND s.status='ACTIVE'
     </select>
+    <select id="sharingEnabled" resultType="java.lang.Boolean" useCache="false" flushCache="true">
+        SELECT parent_sharing_enabled FROM student WHERE id=#{studentId} AND status='ACTIVE' FOR UPDATE
+    </select>
+    <update id="updateSharing">
+        UPDATE student SET parent_sharing_enabled=#{enabled}, updated_at=now() WHERE id=#{studentId} AND status='ACTIVE'
+    </update>
+    <resultMap id="look" type="com.sagomungchi.core.guardianship.domain.StudentLook">
+        <constructor>
+            <arg column="look_theme" javaType="java.lang.String"/>
+            <arg column="look_companion" javaType="java.lang.String"/>
+            <arg column="look_updated_at" javaType="java.time.OffsetDateTime"/>
+        </constructor>
+    </resultMap>
+    <select id="look" resultMap="look">
+        SELECT look_theme, look_companion, look_updated_at FROM student
+        WHERE id=#{studentId} AND status='ACTIVE' AND look_theme IS NOT NULL
+    </select>
+    <update id="saveLook">
+        UPDATE student SET look_theme=#{look.theme}, look_companion=#{look.companion}, look_updated_at=#{look.updatedAt}
+        WHERE id=#{studentId} AND status='ACTIVE'
+    </update>
+    <update id="clearLook">
+        UPDATE student SET look_theme=NULL, look_companion=NULL, look_updated_at=NULL WHERE id=#{studentId}
+    </update>
 </mapper>

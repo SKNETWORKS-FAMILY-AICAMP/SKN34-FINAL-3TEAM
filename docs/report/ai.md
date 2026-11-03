@@ -39,6 +39,15 @@
 - 수정한 버그: compose가 빈 `OPENAI_BASE_URL`을 넘기면 SDK가 빈 주소를 사용 → 주소가 비면 `https://api.openai.com/v1`을 직접 전달
 - 남은 확인: `gpt-6.1-terra`와 Claude의 판정 결과 유형·되묻기 4유형 비교(현재 1건씩만 확인)
 
+### 판정 품질 평가 도구 (#199)
+
+- 러너 [`evaluation/runners/judgment_eval.py`](../../evaluation/runners/judgment_eval.py), 자료 형식 [`evaluation/datasets/judgment/`](../../evaluation/datasets/judgment/README.md). `/internal/judgments`를 그대로 호출하고 테스트는 `tests/test_judgment_eval_runner.py`(대역 LLM)
+- 지표: 결과 QWK(RETHINK<PARTIAL<CORRECT, 사람 결과는 평가자 요소 표시에 서비스 `_result` 규칙 적용), 요소 일치율·kappa, 보류 비율·사유, 인용 불일치 보류 비율. 사람-AI 일치도는 평가자 2명 각각과 비교한 평균이며 HELD는 빼고 따로 셈(FN-JDG-04)
+- 묶음: 전체·범위 키별·미션별(기준 미달 미션은 판정하지 않고 기록, 기능명세 3.5)·미션/요소별 일치율(검증 통과 요소만 충족 표시, NFR-AIQ-01 → `judgeVerified` 결정 근거)
+- 출력: 버전별 요약 JSON(학생 원문 없음), `--baseline`으로 이전 결과와 차이, 모델 레지스트리 `evaluation` 9개 필드(api-spec 5.2)와 범위 키 `judgment/grade-N/<inputType>`
+- 정한 값: 계산 정확성은 "해당 없음"(판정은 계산 없음), 학습·평가 분리는 "학습 없는 프롬프트, 평가 답안은 프롬프트에 미포함"으로 기록
+- 남은 일: 실제 평가 자료(P11, 5미션×20답안×평가자 2명) 준비 담당·일정, 평가 미션 범위·QWK 허용 기준(NFR-AIQ-06, 11/22) 확인 후 `judge@2` 실제 기준선 1회 실행·이 절에 결과 추가
+
 ## 2. 분석 대화 에이전트 (LangGraph)
 
 ```
@@ -52,7 +61,7 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
                                                       └(통과)→ END [result: LLM]
 ```
 
-- 구성: `analysis_agent/graph.py`(조립), `state.py`, `nodes/`(understand·retrieve·respond), `tools.py`(`RecordTools`, 호출마다 권한 재확인), `calculators.py`, `verification.py`, `templates.py`, `prompts.py`(`analysis@2`), `router.py`(SSE), `clients/learning_client.py`(learning 기록 조회 HTTP, #65)
+- 구성: `analysis_agent/graph.py`(조립), `service.py`(`AnalysisService`: 범위·기한·프롬프트 선택, 그래프 실행·최종 상태 → 이벤트, #253), `state.py`, `context.py`(`AgentContext`), `nodes/`(understand·retrieve·respond), `tools.py`(`RecordTools`, 호출마다 권한 재확인), `calculators.py`, `verification.py`, `templates.py`, `prompts.py`(`analysis@2`), `router.py`(SSE), `clients/learning_client.py`(learning 기록 조회 HTTP, #65)
 - LLM 호출은 기존 `LlmClient` 사용(재시도·사용량 이벤트 `ANALYSIS`·대체 모델 유지). classify는 `generate`(구조화 출력), answer는 `stream`(일반 텍스트). LangGraph는 분기·상태·스트리밍만
 - 도구 선택은 질문 유형 → 도구 표(6유형). 학생·기간은 LLM이 아니라 core가 확인한 `scope`만 사용
 
@@ -63,7 +72,6 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
   | 아이가 쓴 생각 | + `attempts` 첫 페이지 8건 |
   | 전후 변화 | + `changes` 전체 페이지, `thinking-activities` |
   | 돌아보기 | + `attempts` 전체 페이지 (#66: 근거 작성 시각 `reflection.createdAt`이 attempts에만 있음) |
-  | (#67 대조용, 그래프 미연결) | `evidence(answerIds)` — 삭제된 근거는 `available: false`·원문 null 그대로 |
 
 - 수치는 learning이 P08로 계산한 값을 그대로 사용(대시보드·리포트와 일치). 분모 5 미만이면 비율 null, 건수 지표에는 분자·분모를 넘기지 않음
 - #65 결정(사용자): 전후 변화 수(글자·문장·까닭을 잇는 말)는 ai가 다시 세지 않고 learning `changes.counts`를 그대로 사용. 이슈의 `calculators.change_counts`는 만들지 않고 class-diagram 5.2에서 제거. 까닭을 잇는 말 목록·문장 구분 규칙은 learning·report만 보유
@@ -219,6 +227,37 @@ data: {}
 ```
 
 
+### #67·#41 최종 응답 검증 후속
+
+기준 develop dd8bbc8(PR #158/#145, #159/#66 포함), feature/ai-analysis-verification. 사용자가 기존 AI 검증/모델/템플릿/응답 노드, core 수신·저장·조회, 관련 계약/테스트 및 필요한 프론트 표시 변경을 승인했다. verification.py/templates.py를 재사용하며 이슈의 예정 파일명으로 중복 구현하지 않는다. 최종 응답 검사와 LLM 초안 실패값을 분리하고 notice로 정상 안내를 구분한다. 기존 REPORT 후속 브랜치는 별도 보존한다. 사용자가 돌아보기 참조 및 fallback/notice 저장의 DB 확장도 승인했다. 기존 ANSWER 참조를 유지하고 REFLECTION만 answer_id/version NULL을 허용하며 종류 CHECK를 추가한다. 별도 REPORT 브랜치의 V17과 충돌하지 않도록 V18을 사용한다. 구현·테스트를 마친 뒤 일괄 검증한다.
+
+배포 순서: 별도 REPORT 브랜치의 V17을 먼저 통합·적용한 뒤 이 브랜치의 V18을 적용한다. V18을 먼저 적용한 환경에 나중에 낮은 번호 V17을 투입하는 방식은 사용하지 않는다. 최종 통합에서 두 migration의 공존을 검증한다. 기존 migration checksum은 유지한다. 최종 응답 검증 실패는 result 없이 error로 전달하며 기존 core의 수동 재시도/사용량 제한 정책을 유지한다.
+
+V18의 kind는 임시 DEFAULT로 기존 행을 ANSWER로 채운 뒤 DEFAULT를 제거한다. 저장소의 DB 기본값 없음 규칙을 유지하며 새 쓰기는 core가 kind를 명시한다. verifier는 허용된 숫자 값·인용 원문·금지 표현을 검사한다. 자연어 문장 전체의 의미 정합성을 증명하거나 실제 모델 품질 향상을 측정한 것은 아니다.
+
+#### #67·#162 최종 검증 (2026-10-30)
+
+#67은 AI 최종 verification·fallback.draftVerification·notice 생산을, #162는 core 수신·저장·근거 조회·DB·프론트·HTTP 연결을 담당한다. #47 관리자 기능은 별도 브랜치에서 진행한다.
+
+사용자의 명시적 승인 후 InternalRestClientFactory에 선택적인 HTTP 버전 인자를 추가하고 AiClient 분석 스트림만 HTTP/1.1로 지정했다. 다른 서비스는 인자를 생략하므로 기존 JDK 기본 동작·토큰·타임아웃·재시도 정책을 유지한다. 실제 HTTP 테스트에서 AI 요청의 Upgrade·HTTP2-Settings 헤더 부재를 확인했다.
+
+인계받은 최종 검증 산출물 기준:
+
+- AI: pytest 226개, Ruff check/format 통과.
+- core: HTTP/1.1 적용 후 전체 52클래스 333개 test, 실패·오류·생략 0, bootJar 통과.
+- 프론트: test 114개, lint/build 통과.
+- DB: 전체 migration cycle에서 core 42테이블/393컬럼, learning 19/160, report 8/56 대조. 63개 위반 입력, 75 CHECK 집합, 23 인덱스, 재적용 이력, report downgrade/upgrade 통과. V16 기존 답변 근거에 V18을 적용해 answerId/version 보존·kind=ANSWER·fallback/notice null·영구 기본값 없음을 확인했다. 별도 DB에서 REPORT V17→분석 V18 공존 검사도 통과했다.
+- 실제 core→AI 그래프→learning 연결 9개 시나리오: 정상, 숫자/인용 불일치, 키 미설정, 기록 없음, 지원 외, 돌아보기, 범위 확인, 조회 장애 후 재시도 통과. 추가로 스트림 연결 해제 시 FAILED 및 부분 답변 미저장, 다른 자녀 403, 인증 없음 401을 확인했다.
+- 브라우저: 규칙 응답 두 종류·지원 외 안내·돌아보기 근거·기록 없음 5개 시나리오, 실제 API 응답 28건, pageerror 0. 프론트 MSW 대역은 사용하지 않았다.
+
+LLM은 테스트 dependency override 또는 실제 키 미설정 분기다. 실제 외부 유료 LLM 호출·모델 품질·배포·원격 CI 검증이 아니다. 자동 테스트와 연동 통과를 자연어 전체 의미의 정합성이나 모델 품질 향상으로 해석하지 않는다. 검증 로그·XML·실제 SSE 응답·브라우저 결과는 로컬 issue67-verification에 보존했다.
+
+인계 후 마지막 스키마 보완을 포함해 `python -O -m unittest discover -s scripts/tests -v` 79개가 통과했다. core/AI OpenAPI 표준 검사와 `scripts/validate_analysis_contracts.py`의 실제 SSE 최종 응답 8종 검사도 통과했다. 최종 `git diff --check`를 확인했다. 실행 코드 변경 없이 보고서만 최신 결과로 정리했으므로 이미 통과한 AI·core·프론트·DB·브라우저 검증은 반복하지 않았다. 최종 파일의 SHA-256 목록은 로컬 검증 산출물에 갱신했다.
+
+최신 origin/develop 640e0a2와 대조했다. 추가된 #146은 learning 신고 지원 조회·피드백 판정 ID 범위이며 이번 실행 코드 변경과 겹치지 않는다. 이 작업은 검증한 develop dd8bbc8 기반을 유지한다. REPORT V17을 먼저 통합·적용한 뒤 분석 V18을 적용하는 순서는 유지한다. PR의 base는 develop이며 PR은 사용자가 생성한다.
+
+#47·#67·#162의 최신 develop 통합·관리자 실행·추가 브라우저 검증 결과는 [관리자 운영 통합 최종 검증](issue-47-admin-operations.md#통합-최종-검증)을 따른다. 이 절 이전의 dd8bbc8 결과는 기능 브랜치 검증 이력이다.
+
 ## 3. 모델 레지스트리·AI 사용량 (#43)
 
 - 정책(사용자 결정): 평가 근거 필수, SERVICE_OPS의 명시적 사람 승인, 평가 범위 안에서만 활성화, 복귀는 원 승인 범위의 부분 집합, 자동 합격선·새 승인 상태 없음. 근거의 사실성·통계적 합격은 운영자 판단(서버가 평가를 실행했다고 주장하지 않음). NFR-AIQ-06 수치는 별도 정책
@@ -231,10 +270,12 @@ data: {}
 
 ## 4. M2 모델과 API 정렬 (#4)
 
-2026-10-29 로컬 #87 후속 기준: 받은 2.0 모델은 핵심어 입력·score_cuts 보정·rawScores 반환을 적용한다. [#87 구현·검증](issue-87-scoring-m2.md)과 [API 4.3](../design/api-spec.md#43-scoring-service-호출-ai)을 따른다. scoring 이벤트 소비는 #86에 구현되어 있으며, AI #69의 실제 scoring 호출은 별도 후속이다. 아래 #4 기록을 새 모델의 반올림·핵심어 개수 대체 규칙으로 해석하지 않는다.
+2026-11-02 #228: 서술 3.0(9출력)·논술 3.1(14출력 중 앞 3영역)을 적용한다. 담당자 답변에 따라 논술도 `scores`(0~3 정수)와 `rawScores`(소수 원점수)를 함께 반환한다. [API 4.3](../design/api-spec.md#43-scoring-service-호출-ai), [#228 구현·검증](issue-228-m2-model-compat.md)이 현재 계약이며 [#87](issue-87-scoring-m2.md)의 2.0 결과는 과거 검증 이력이다.
 
-- `grade`(3~6)는 scoring이 `초{grade}`로 바꿔 모델 입력에 사용(모델은 `[학년] 초5` 문자열로 학습, 데이터에 중학생도 있어 정수로 재학습 불가). 학습 데이터 학년(초5·6) 밖은 활성 범위 밖. 변환을 빠뜨리면 오류 없이 성능만 떨어짐
-- 응답 점수: 총점 1~4점(데이터에 5점 없음)·8개 항목 1~5점
+- 서술 활성 학년은 초5·6, 논술은 초4·5·6. 서술 학습 데이터는 초5~중3이지만 서비스 범위를 중학생까지 확장하지 않는다.
+- 새 모델 입력에서 지시문 제외. 서술 `[학년] 초N [핵심어] ...`(쉼표+공백), 논술 `[학년] 초N [글 종류] ...`와 학생 글을 사용한다.
+- 서술은 기존 9항목 scores(hol 1~4, 그 외 1~5)·rawScores, 논술은 org·cont·exp의 scores(0~3)·rawScores. 원점수는 반올림·범위 자르기를 하지 않는다. 임시 score_cuts는 모델 담당자 제공값만 사용하며 경계 변경 시 재검증한다.
+- 2026-11-03 사용자가 전달한 담당자 후속 답변에서도 논술 3.1과 기존 score_cuts.json 유지가 확정됐다. 경계는 임시이며 담당자의 변경 통지 시 교체·재검증한다. PR #261의 두 JSON 파일 자동 저장은 담당자가 실제 학습에서도 확인했다고 보고했다([#228 후속 확인 기록](issue-228-m2-model-compat.md#담당자-후속-확인-2026-11-03-사용자-전달)). 화면 표시와 #69 판정 소비는 별도다.
 - 모델 버전 규칙: `uq_model_version_active`가 `(kind, name)` 단위라 서술·논술 모델을 `name`으로 분리
 
   | 항목 | 규칙 |
@@ -270,40 +311,9 @@ data: {}
 
 `feature/scoring-model-registry`는 core 활성 snapshot 조회, 승인 scope·revision 검사, 실제 S3/MinIO 가중치 CPU 로딩 및 `/internal/versions`를 구현한다. 활성 모델이 없으면 준비 완료, 최초 조회·로딩 실패 시 준비 안 됨으로 재시도하며 프로세스는 유지한다. 같은 모델 교체 실패 시 기존 모델은 보존한다. 기동 이후 활성화 이벤트는 #86, M2 채점 API는 #87, M1 계약은 #88 범위다. 상세 증거는 [#85 검증](issue-85-scoring-model-registry.md)을 따른다.
 
-## #67·#41 최종 응답 검증 후속
-
-기준 develop dd8bbc8(PR #158/#145, #159/#66 포함), feature/ai-analysis-verification. 사용자가 기존 AI 검증/모델/템플릿/응답 노드, core 수신·저장·조회, 관련 계약/테스트 및 필요한 프론트 표시 변경을 승인했다. verification.py/templates.py를 재사용하며 이슈의 예정 파일명으로 중복 구현하지 않는다. 최종 응답 검사와 LLM 초안 실패값을 분리하고 notice로 정상 안내를 구분한다. 기존 REPORT 후속 브랜치는 별도 보존한다. 사용자가 돌아보기 참조 및 fallback/notice 저장의 DB 확장도 승인했다. 기존 ANSWER 참조를 유지하고 REFLECTION만 answer_id/version NULL을 허용하며 종류 CHECK를 추가한다. 별도 REPORT 브랜치의 V17과 충돌하지 않도록 V18을 사용한다. 구현·테스트를 마친 뒤 일괄 검증한다.
-
-배포 순서: 별도 REPORT 브랜치의 V17을 먼저 통합·적용한 뒤 이 브랜치의 V18을 적용한다. V18을 먼저 적용한 환경에 나중에 낮은 번호 V17을 투입하는 방식은 사용하지 않는다. 최종 통합에서 두 migration의 공존을 검증한다. 기존 migration checksum은 유지한다. 최종 응답 검증 실패는 result 없이 error로 전달하며 기존 core의 수동 재시도/사용량 제한 정책을 유지한다.
-
-V18의 kind는 임시 DEFAULT로 기존 행을 ANSWER로 채운 뒤 DEFAULT를 제거한다. 저장소의 DB 기본값 없음 규칙을 유지하며 새 쓰기는 core가 kind를 명시한다. verifier는 허용된 숫자 값·인용 원문·금지 표현을 검사한다. 자연어 문장 전체의 의미 정합성을 증명하거나 실제 모델 품질 향상을 측정한 것은 아니다.
-
-### #67·#162 최종 검증 (2026-10-30)
-
-#67은 AI 최종 verification·fallback.draftVerification·notice 생산을, #162는 core 수신·저장·근거 조회·DB·프론트·HTTP 연결을 담당한다. #47 관리자 기능은 별도 브랜치에서 진행한다.
-
-사용자의 명시적 승인 후 InternalRestClientFactory에 선택적인 HTTP 버전 인자를 추가하고 AiClient 분석 스트림만 HTTP/1.1로 지정했다. 다른 서비스는 인자를 생략하므로 기존 JDK 기본 동작·토큰·타임아웃·재시도 정책을 유지한다. 실제 HTTP 테스트에서 AI 요청의 Upgrade·HTTP2-Settings 헤더 부재를 확인했다.
-
-인계받은 최종 검증 산출물 기준:
-
-- AI: pytest 226개, Ruff check/format 통과.
-- core: HTTP/1.1 적용 후 전체 52클래스 333개 test, 실패·오류·생략 0, bootJar 통과.
-- 프론트: test 114개, lint/build 통과.
-- DB: 전체 migration cycle에서 core 42테이블/393컬럼, learning 19/160, report 8/56 대조. 63개 위반 입력, 75 CHECK 집합, 23 인덱스, 재적용 이력, report downgrade/upgrade 통과. V16 기존 답변 근거에 V18을 적용해 answerId/version 보존·kind=ANSWER·fallback/notice null·영구 기본값 없음을 확인했다. 별도 DB에서 REPORT V17→분석 V18 공존 검사도 통과했다.
-- 실제 core→AI 그래프→learning 연결 9개 시나리오: 정상, 숫자/인용 불일치, 키 미설정, 기록 없음, 지원 외, 돌아보기, 범위 확인, 조회 장애 후 재시도 통과. 추가로 스트림 연결 해제 시 FAILED 및 부분 답변 미저장, 다른 자녀 403, 인증 없음 401을 확인했다.
-- 브라우저: 규칙 응답 두 종류·지원 외 안내·돌아보기 근거·기록 없음 5개 시나리오, 실제 API 응답 28건, pageerror 0. 프론트 MSW 대역은 사용하지 않았다.
-
-LLM은 테스트 dependency override 또는 실제 키 미설정 분기다. 실제 외부 유료 LLM 호출·모델 품질·배포·원격 CI 검증이 아니다. 자동 테스트와 연동 통과를 자연어 전체 의미의 정합성이나 모델 품질 향상으로 해석하지 않는다. 검증 로그·XML·실제 SSE 응답·브라우저 결과는 로컬 issue67-verification에 보존했다.
-
-인계 후 마지막 스키마 보완을 포함해 `python -O -m unittest discover -s scripts/tests -v` 79개가 통과했다. core/AI OpenAPI 표준 검사와 `scripts/validate_analysis_contracts.py`의 실제 SSE 최종 응답 8종 검사도 통과했다. 최종 `git diff --check`를 확인했다. 실행 코드 변경 없이 보고서만 최신 결과로 정리했으므로 이미 통과한 AI·core·프론트·DB·브라우저 검증은 반복하지 않았다. 최종 파일의 SHA-256 목록은 로컬 검증 산출물에 갱신했다.
-
-최신 origin/develop 640e0a2와 대조했다. 추가된 #146은 learning 신고 지원 조회·피드백 판정 ID 범위이며 이번 실행 코드 변경과 겹치지 않는다. 이 작업은 검증한 develop dd8bbc8 기반을 유지한다. REPORT V17을 먼저 통합·적용한 뒤 분석 V18을 적용하는 순서는 유지한다. PR의 base는 develop이며 PR은 사용자가 생성한다.
-
-#47·#67·#162의 최신 develop 통합·관리자 실행·추가 브라우저 검증 결과는 [관리자 운영 통합 최종 검증](issue-47-admin-operations.md#통합-최종-검증)을 따른다. 이 절 이전의 dd8bbc8 결과는 기능 브랜치 검증 이력이다.
-
 ## 7. AI 활성 프롬프트 버전 수신 (#68)
 
-core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1` data는 같은 `id·kind·name·version·refId·artifactUri·scopes·revision·activatedAt` 필드를 사용한다. 이벤트에만 `previousVersionId`가 추가된다. 이미 있는 스키마를 재작성하지 않는다. core는 kind·name별 revision을 증가시키므로 ai는 네 `PROMPT` 이름만 골라 높은 revision을 적용하고 각 기능의 승인 scope를 정확히 검사한다. 형식 오류 이벤트는 원문·URI 없이 경고하고 ACK하여 재시도하지 않는다.
+core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1` data는 같은 `id·kind·name·version·refId·artifactUri·scopes·revision·activatedAt` 필드를 사용한다. 이벤트에만 `previousVersionId`가 추가된다. 이미 있는 스키마를 재작성하지 않는다. core는 kind·name별 revision을 증가시키므로 ai는 정해진 `PROMPT` 이름(#280 이후 다섯 개)만 골라 높은 revision을 적용하고 각 기능의 승인 scope를 정확히 검사한다. 형식 오류 이벤트는 원문·URI 없이 경고하고 ACK하여 재시도하지 않는다.
 
 | name | 승인 scope | ai 이미지에 포함된 기본 본문·버전 |
 |---|---|---|
@@ -311,12 +321,13 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 | `followup` | `ai/followup` | `followup/prompts.py`, `followup@4` |
 | `analysis` | `ai/analysis` | `analysis_agent/prompts.py`, `analysis@2` |
 | `reportNarrative` | `ai/report-narrative` | `report_narrative/prompts.py`, `report@1` |
+| `reportTemplate` | `ai/report-template` | `analysis_agent/template_prompts.py`, `analysis-template@1` (#280) |
 
 각 버전은 실제 system 문구와 user 본문 구성 함수를 이미지 코드에 함께 넣은 뒤에만 활성화할 수 있다. 현재 이미지는 위 기본 버전의 본문만 보유한다. core snapshot에 해당 활성 항목이 없으면 기본 버전을 사용한다. 보유하지 않은 활성 버전은 다른 본문에 새 버전명만 붙이지 않고 해당 기능 요청과 `/internal/versions`를 `503 AI_PROMPT_VERSION_UNAVAILABLE`로 거부한다. 구독·core snapshot·이벤트 조정 또는 본문 준비가 되지 않으면 `/health/ready`의 `versions`는 DOWN이다. 요청 시작 때 본문·버전 참조를 잡아 분석의 분류/답변 두 LLM 호출과 되묻기 재생성까지 같은 버전을 사용한다.
 
 기동·재연결마다 Pod 고유의 exclusive·auto-delete 큐를 `events.topic`의 `model.version.*`에 먼저 바인딩하고 소비를 시작한다. 그 다음 기존 `internal_client`로 core snapshot을 조회한다. 조회 중 이벤트를 이름별 최신 revision으로 보존했다가 snapshot에 조정한다. 최초 조회 실패는 백그라운드에서 재시도하며 프로세스는 유지한다. health 요청은 메모리 상태만 확인한다. 새 production 패키지나 core API·이벤트 스키마 변경은 없다.
 
-배포 연결 요구: ai HTTP 내부 포트 `8000`과 `/health/live`·`/health/ready` 경로는 그대로다. `CORE_URL`·`INTERNAL_TOKEN`으로 core 내부 조회가 가능해야 하고 RabbitMQ `events.topic` 접근과 Pod별 임시 큐 선언 권한이 필요하다. #171 chart·NetworkPolicy는 ai→core HTTP와 ai→RabbitMQ를 열고, `versions=DOWN`인 Pod는 Ready로 취급하지 않아야 한다. AI 계측 SDK·수집 endpoint는 #171 후속 단계다.
+배포 연결 요구: ai HTTP 내부 포트 `8000`과 `/health/live`·`/health/ready` 경로는 그대로다. `CORE_URL`·`INTERNAL_TOKEN`으로 core 내부 조회가 가능해야 하고 RabbitMQ `events.topic` 접근과 Pod별 임시 큐 선언 권한이 필요하다. #171 chart·NetworkPolicy는 ai→core HTTP와 ai→RabbitMQ를 열고, `versions=DOWN`인 Pod는 Ready로 취급하지 않아야 한다. AI 계측은 #171 이후 `langfuse`·OTLP 의존성과 `LANGFUSE_*` 설정으로 추가됐다(기본 비활성, local 관측 chart는 Langfuse 제외).
 
 ### 작업 브랜치 검증 기록 (2026-10-30)
 
@@ -325,3 +336,18 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 - 저장소 계약 unittest 93개 중 AI OpenAPI·core 모델 이벤트 관련 검사는 통과했다. 전체 실행에서는 샌드박스 임시 폴더 권한 때문에 별도 검증 스크립트 테스트 7개의 설정·정리에서 오류 14건이 났고, 그 7개를 임시 경로를 바꿔 재실행해 통과했다.
 - 전용 Docker 네트워크·RabbitMQ 4.3.7 컨테이너와 Windows AI 프로세스 2개를 사용한 실제 AMQP 연결 검증 통과. 관리 API에서 독립 exclusive·auto-delete 큐 2개, 각 소비자 1개, `events.topic`의 `model.version.*` 바인딩 2개를 확인했다. 전용 core HTTP 대역을 503→`{items:[]}`로 바꿔 두 AI의 `versions=DOWN`→Ready 회복을 확인하고, 미보유 `judge@future` revision 1 이벤트에 두 AI가 NotReady·`/internal/versions` 503으로 반응한 뒤 보유 `judge@2` revision 2에서 Ready로 회복하는 것을 확인했다. 전용 브로커의 두 AMQP 연결을 관리 API로 종료하자 두 AI가 각각 새 큐를 만들고 snapshot 조정 뒤 Ready가 됐다. 검증 자원은 자체 컨테이너·네트워크만 정리했다.
 - 재연결의 첫 시도에서 전용 Docker 컨테이너 재시작 후 Windows 임시 포트가 다시 열리지 않아 검증 방법을 AMQP 연결 종료로 바꿨다. 이는 전용 브로커와 AI의 실제 재연결 검증이며, core는 대역이다. 실제 core DB·관리자 활성화 API, 유료 외부 LLM, 원격 CI·배포는 검증하지 않았다. 모델 품질이나 운영 배포 준비 완료를 의미하지 않는다.
+
+### 계층 분리 (#254)
+
+`app/versions.py`와 소비자에 섞여 있던 처리를 scoring(`model_versions`·`model_registry`·`model_startup`·`versions`)과 같은 구조로 `app/prompt_versions/`에 나눴다. `models.py`는 활성 버전 계약·`PromptChoice`, `registry.py`는 이미지 본문과 `ActiveVersions`(revision 규칙), `service.py`의 `PromptSync`는 snapshot 조회·재시도와 snapshot 전 이벤트의 이름별 최신 revision 보존·재적용, `router.py`는 `GET /internal/versions`다. `messaging/consumer.py`는 구독·재연결, 봉투 검증, `PromptSync.offer`, ACK만 맡는다. 응답 모양·경로·이벤트 계약·readiness·OpenAPI는 바꾸지 않았고 `versions.py`는 남기지 않았다.
+
+## 8. 리포트 표시 설정 변경안 (#209, 로컬 구현 후보)
+
+`POST /internal/analysis/report-template`은 현재 설정과 학부모 요청만 받아 구조화한 변경안 또는 확인 질문을 반환한다. 학습 원문·학생 ID를 이 요청에 넣지 않는다. 학생 공개 설정·섹션 숨김·메모·계산식 변경은 허용하지 않는다. 저장과 확인 토큰 검증은 core가 소유한다. 실제 UI/서비스 간 연동 및 #206 공개 차단 검증은 [report 보고서 #209 절](report.md)을 따른다. 합성 LLM 테스트 통과는 실제 모델의 모든 자연어 해석 정확도를 보장하지 않는다.
+
+### 프롬프트 레지스트리 등록과 core 서킷 (#280)
+
+- 설정 제안 본문을 `analysis_agent/template_prompts.py`(`SYSTEM`·`build_user`·`PROMPT_VERSION = "analysis-template@1"`)로 옮기고 `prompt_versions`에 이름 `reportTemplate`, 승인 scope `ai/report-template`로 등록했다. `AnalysisService.propose_template`은 PARENT 확인 뒤 `ActiveVersions.prompt("reportTemplate")`로 본문·버전을 한 번 골라 LLM 호출에 그대로 쓴다. 버전 문자열은 바꾸지 않아 사용량 기록의 `promptVersion`은 이전과 같다.
+- 영향: `/internal/versions` 응답에 `reportTemplate` 키가 추가된다(OpenAPI `required` 갱신). 미보유 활성 버전이면 설정 제안·`/internal/versions`가 `503 AI_PROMPT_VERSION_UNAVAILABLE`이고 readiness `versions`는 DOWN이다. core 관리자 모델 레지스트리는 이름·scope를 자유 입력으로 받으므로 core·웹 변경 없이 `PROMPT`/`reportTemplate`/`ai/report-template`으로 활성화·롤백할 수 있다. core는 `/internal/versions`를 호출하지 않는다.
+- core `AiClient.reportTemplate`에는 분석 스트림 `ai-analysis`와 분리한 `ai-report-template` 서킷(최근/최소 10건·실패율 50%·30초·half-open 1건)을 두었다. 공유하면 설정 제안 실패가 분석 대화를 막고, 설정 제안은 호출량이 적어 20건 창으로는 거의 열리지 않기 때문이다. 4xx는 성공, 전송 오류·시간 초과·5xx·빈 본문은 실패로 센다. 기준은 아키텍처 1.3.
+- 검증: ai `tests/test_active_versions.py`(활성 본문 선택·미보유 503), `tests/test_versions.py`, core `AiClientTest`(서킷 열림·HTTP 미호출·half-open 회복·4xx 미집계, `ai-analysis` 서킷 유지).

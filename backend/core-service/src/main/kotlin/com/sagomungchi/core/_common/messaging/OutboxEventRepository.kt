@@ -23,4 +23,7 @@ interface OutboxEventRepository {
     fun findUnpublished(@Param("limit") limit: Int): List<OutboxEvent>
 
     fun markPublished(@Param("id") id: UUID, @Param("publishedAt") publishedAt: OffsetDateTime)
+
+    /** 보존 기간 정리: 발행 완료 행만 삭제 */
+    fun deletePublishedBefore(@Param("before") before: OffsetDateTime): Int
 }

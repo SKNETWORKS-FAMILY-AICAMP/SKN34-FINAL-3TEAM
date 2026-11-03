@@ -36,7 +36,11 @@ class NarrativeGenerator:
 
     async def generate(self, command: GenerateReport, report: WeeklyReport) -> GenerationResult:
         result = await self._previous.generate(command, report)
-        if not command.narrative_enabled or result.state == ReportState.NO_RECORD:
+        if (
+            not command.narrative_enabled
+            or not command.parent_sharing_enabled
+            or result.state == ReportState.NO_RECORD
+        ):
             return replace(
                 result,
                 narrative=None,
@@ -68,6 +72,8 @@ class NarrativeGenerator:
             ]
             for kind, name in groups.items()
         }
+        if command.template_snapshot is not None:
+            payload["tone"] = command.template_snapshot["settings"]["tone"]
         response = await self._ai.narrative(scrub(payload, command.display_name))
         links = tuple(
             link for item in result.items if item.type == ItemType.QUOTE for link in item.evidence

@@ -25,7 +25,8 @@ data class AnalysisTicket(val parent: UUID, val conversation: ConversationRow, v
 class ConversationService(private val repository: ConversationRepository, private val accounts: AccountAccessService,
     private val children: ChildAuthorizationService, private val usage: AnalysisUsageService,
     private val records: LearningRecordService, private val tx: TransactionTemplate, private val json: ObjectMapper,
-    private val events: org.springframework.context.ApplicationEventPublisher) {
+    private val events: org.springframework.context.ApplicationEventPublisher,
+    private val learningContext: com.sagomungchi.core.guardianship.service.StudentLearningContextService) {
 
     fun parent(): UUID {
         val context = UserContextHolder.currentOrNull()
@@ -36,6 +37,7 @@ class ConversationService(private val repository: ConversationRepository, privat
         accounts.lockParent(parent)
         if (repository.lockStudent(child) == null) forbidden()
         children.requireCurrent(parent, child)
+        learningContext.requireShared(child)
     }
     fun create(child: UUID, from: java.time.LocalDate?, to: java.time.LocalDate?): Map<String, Any> {
         val parent = parent(); val scope = AnalysisScope.of(child, from, to)
@@ -88,8 +90,9 @@ class ConversationService(private val repository: ConversationRepository, privat
             val selected = actual.copy(changed = changed)
             val clean = previous?.question ?: question?.trim().orEmpty()
             if (clean.isBlank() || clean.length > 1000) invalid("질문은 1~1000자입니다.")
-            // Reserve one attempt atomically before admitting it. No refunds on an accepted attempt.
-            if(charge) usage.consume(parent, actual.childId) else usage.requireEntitlement(parent,actual.childId)
+            // Each new question or retry is one paid attempt, debited once before admission in this parent/student-locked
+            // transaction. No refunds on an accepted attempt; a rollback of this admission also removes the debit.
+            if(charge) usage.consume(parent, actual.childId, UUID.randomUUID()) else usage.requireEntitlement(parent,actual.childId)
             val row = if (previous == null) {
                 MessageRow(UUID.randomUUID(), id, (messages.maxOfOrNull { it.seq } ?: 0) + 1, clean, null,
                     actual.childId, actual.from, actual.to, changed, "RUNNING", null, null, null, null,
@@ -98,8 +101,6 @@ class ConversationService(private val repository: ConversationRepository, privat
                 if (!repository.retry(previous.id, previous.retryCount)) conflict()
                 previous.copy(status = "RUNNING", retryCount = previous.retryCount + 1, failureCode = null, completedAt = null)
             }
-            // Each retry is a fresh paid attempt; provider persists it within this same parent-locked transaction.
-            if(charge) usage.recordAttempt(parent, actual.childId, UUID.randomUUID())
             repository.scope(id, selected)
             val history = messages.filter { it.seq < row.seq && it.status == "COMPLETED" && it.answer != null &&
                 it.scopeStudentId == selected.childId && it.scopeFrom == selected.from && it.scopeTo == selected.to }
@@ -150,8 +151,8 @@ class ConversationService(private val repository: ConversationRepository, privat
             val message=repository.message(id) ?: missing()
             if(message.status!="RUNNING" || message.retryCount!=generation) conflict()
             val scope=message.scope() ?: conversation.scope()
-            usage.consumeAdminRetry(owner.parentUserId,scope.childId,request)
-            usage.recordAttempt(owner.parentUserId,scope.childId,request)
+            // The durable request ID is the usage source, so a re-claimed request is debited only once.
+            usage.consume(owner.parentUserId,scope.childId,request)
             repository.scope(owner.id,scope)
             val history=repository.messages(owner.id).filter { it.seq<message.seq && it.status=="COMPLETED" && it.answer!=null &&
                 it.scopeStudentId==scope.childId && it.scopeFrom==scope.from && it.scopeTo==scope.to }.takeLast(10)
@@ -308,6 +309,7 @@ class ConversationService(private val repository: ConversationRepository, privat
             val scope = it.path("scope"); val parent = parent()
             val child = uuid(scope, "childId")
             children.requireCurrent(parent, child)
+            learningContext.requireShared(child)
             try { AnalysisScope(child, java.time.LocalDate.parse(scope.path("from").asText()), java.time.LocalDate.parse(scope.path("to").asText())) }
             catch (_: Exception) { invalidAi() }
         }

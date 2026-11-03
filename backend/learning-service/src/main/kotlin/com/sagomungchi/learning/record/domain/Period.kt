@@ -1,6 +1,6 @@
 package com.sagomungchi.learning.record.domain
 
-import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning._common.exception.DomainException
 import com.sagomungchi.learning._common.exception.ErrorKind
 import java.time.Clock
 import java.time.Instant
@@ -13,7 +13,7 @@ import java.time.ZoneId
  */
 data class Period(val from: LocalDate, val to: LocalDate) {
     init {
-        if (from.isAfter(to)) throw BusinessException(ErrorKind.INVALID, "VALIDATION_FAILED", "기간 오류", "from이 to보다 늦음")
+        if (from.isAfter(to)) throw DomainException(ErrorKind.INVALID, "VALIDATION_FAILED", "기간 오류", "from이 to보다 늦음")
     }
 
     fun start(): Instant = from.atStartOfDay(KST).toInstant()
@@ -27,7 +27,7 @@ data class Period(val from: LocalDate, val to: LocalDate) {
         fun of(from: LocalDate?, to: LocalDate?, clock: Clock = Clock.system(KST)): Period {
             if (from != null && to != null) return Period(from, to)
             if (from != null || to != null) {
-                throw BusinessException(ErrorKind.INVALID, "VALIDATION_FAILED", "기간 오류", "from과 to는 함께 주거나 함께 생략")
+                throw DomainException(ErrorKind.INVALID, "VALIDATION_FAILED", "기간 오류", "from과 to는 함께 주거나 함께 생략")
             }
             val today = LocalDate.now(clock)
             return Period(today.minusDays(DEFAULT_DAYS - 1), today)

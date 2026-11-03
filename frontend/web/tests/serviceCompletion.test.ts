@@ -10,7 +10,7 @@ const {studentDeviceHandlers}=await import('../src/mocks/handlers/studentDevice.
 const {adminHandlers}=await import('../src/mocks/handlers/admin.ts')
 const {adminServiceHandlers}=await import('../src/mocks/handlers/adminService.ts')
 const server=setupServer(...serviceHandlers,...studentDeviceHandlers,...parentHandlers,...adminHandlers,...adminServiceHandlers,...studentHandlers)
-server.listen({onUnhandledRequest:'error'});test.after(()=>server.close())
+server.listen({onUnhandledFrame:'error'});test.after(()=>server.close())
 let token=''
 async function call(path:string,method='GET',data?:unknown,headers:Record<string,string>={}) {
   const r=await fetch('http://localhost/api/v1'+path,{method,headers:{...(token?{Authorization:'Bearer '+token}:{}),'Content-Type':'application/json',...headers},...(data===undefined?{}:{body:JSON.stringify(data)})})
@@ -23,14 +23,18 @@ test('알림 링크는 동일 출처·현재 역할만 허용',()=>{
 })
 test('본인 문의·운영 답변·처리 상태와 알림의 연결, 타 계정 격리',async()=>{
   await login()
-  const created=await call('/inquiries','POST',{category:'USAGE',comment:'시연 문의 내용'})
-  assert.equal(created.status,201)
-  assert.equal((await call('/error-reports','POST',{targetType:'JUDGMENT',targetId:'foreign-answer',category:'OTHER',comment:'타인 기록 요청'})).status,404)
+  assert.equal((await call('/inquiries','POST',{category:'OTHER',title:'문의',body:'옛 유형'})).status,400)
+  const created=await call('/inquiries','POST',{category:'USAGE',title:'기록 확인',body:'시연 문의 내용'})
+  assert.equal(created.status,201);assert.equal(created.data.title,'기록 확인');assert.equal(created.data.body,'시연 문의 내용')
+  const report={targetType:'JUDGMENT',targetId:'foreign-answer',category:'OTHER',comment:'타인 기록 요청'}
+  assert.equal((await call('/error-reports','POST',report)).status,400)
+  assert.equal((await call('/error-reports','POST',report,{'Idempotency-Key':crypto.randomUUID()})).status,404)
   await login('admin@example.test')
-  assert.equal((await call('/admin/inquiries')).data.items.some((c:{id:string})=>c.id===created.data.id),true)
-  assert.equal((await call('/admin/inquiries/'+created.data.id+'/answer','POST',{answer:'기록은 내 공책에서 확인해 주세요.'})).status,200)
+  assert.equal((await call('/admin/inquiries')).data.items.some((c:{inquiryId:string})=>c.inquiryId===created.data.inquiryId),true)
+  assert.equal((await call('/admin/inquiries/'+created.data.inquiryId+'/answer','POST',{answer:'기록은 내 공책에서 확인해 주세요.'})).status,200)
   await login()
-  const own=(await call('/inquiries')).data.items.find((c:{id:string})=>c.id===created.data.id)
+  const own=(await call('/inquiries')).data.items.find((c:{inquiryId:string})=>c.inquiryId===created.data.inquiryId)
+  assert.deepEqual((await call('/inquiries/'+created.data.inquiryId)).data,own)
   assert.equal(own.status,'RESOLVED');assert.ok(own.answer.includes('내 공책'))
   const notifications=await call('/notifications?unreadOnly=true&page=0&size=20')
   const n=notifications.data.items.find((n:{type:string})=>n.type==='INQUIRY_ANSWERED')

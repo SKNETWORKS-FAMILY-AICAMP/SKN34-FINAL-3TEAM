@@ -50,7 +50,13 @@ export function Customize({ child, onDone }: { child: Child; onDone: () => void 
         </div>
       </section>
       <p className="st-meta" role="status">
-        {save.isPending ? '저장하는 중이에요.' : save.isSuccess ? '골랐어요. 다른 기기에서도 그대로 보여요.' : ''}
+        {save.isPending
+          ? '저장하는 중이에요.'
+          : save.isSuccess
+            ? '골랐어요. 다른 기기에서도 그대로 보여요.'
+            : save.isError
+              ? '저장하지 못해서 전에 고른 모습으로 돌아갔어요. 잠시 뒤에 다시 골라 주세요.'
+              : ''}
       </p>
       <ErrorNotice error={save.error} />
       <div className="cj-modal-actions">

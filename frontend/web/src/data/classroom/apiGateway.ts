@@ -1,5 +1,5 @@
 import { assertVerifiedAnalysis } from '../../domain/parent.ts'
-import { refreshAccessToken, notifyAuthChange, hasAccessToken, isStudentSession, requireParentLogin } from '../apiClient.ts'
+import { refreshAccessToken, notifyAuthChange, hasAccessToken, isStudentSession, requireParentLogin, markParentSessionLocked } from '../apiClient.ts'
 import { ApiError, apiFetch, apiResponse, setAccessToken } from '../apiClient.ts'
 import { streamSse } from '../sse.ts'
 import { blankAnswer, publicAttempt } from '../../domain/classroom.ts'
@@ -234,6 +234,8 @@ export function createApiGateway(): ClassroomGateway {
       )
       if (raw.role !== 'STUDENT') return contractError('학생 세션 role이 필요합니다.')
       setAccessToken(text(raw.accessToken, 'accessToken'), 'STUDENT')
+      // 학부모 세션은 잠긴 채 남는다. 이 탭은 보호자 비밀번호로 돌아갈 수 있다 (FN-ACC-05).
+      markParentSessionLocked(true)
       notifyAuthChange('STUDENT')
       return { role: 'STUDENT', entry: 'GUARDIAN', child }
     },
@@ -364,7 +366,8 @@ export function createApiGateway(): ClassroomGateway {
         reportPeriod.to !== period.to
       )
         return contractError('요청한 자녀·기간과 리포트 범위가 다릅니다.')
-      // 이용권 계약(#129) 전에는 서버가 내려준 서술 유무로 판단한다. 무료는 서버가 narrative: null(api-spec 2.5).
+      // #129: core가 현재 상품 권한을 확인해 무료/프리미엄 필드를 선택한다.
+      // /children에 없는 plan이나 오래된 화면 상태로 서버의 제공 범위를 다시 판단하지 않는다.
       if (raw.status === 'COMPLETED' && raw.narrative) {
         const verification = object(raw.verification)
         if (verification.numbersMatched !== true || verification.quotesMatched !== true)
@@ -375,7 +378,7 @@ export function createApiGateway(): ClassroomGateway {
         if (Number(raw.revision) <= baseline && raw.status === 'COMPLETED') raw.status = 'QUEUED'
         else if (raw.status === 'FAILED' || Number(raw.revision) > baseline) regenerating.delete(id)
       }
-      const records = raw.status === 'COMPLETED' ? await childRecords(child, 'PARENT', period) : []
+      const records = raw.status === 'COMPLETED' && raw.parentSharingEnabled !== false ? await childRecords(child, 'PARENT', period) : []
       return {
         reportId: id,
         childId: child.id,
@@ -388,16 +391,10 @@ export function createApiGateway(): ClassroomGateway {
         state: raw.state,
         metrics: Array.isArray(raw.metrics) ? raw.metrics : [],
         records,
-        eveningQuestion:
-          child.plan !== 'FREE' && typeof raw.eveningQuestion === 'string'
-            ? raw.eveningQuestion
-            : undefined,
-        narrative:
-          child.plan === 'FREE'
-            ? null
-            : typeof object(raw.narrative ?? {}).text === 'string'
-              ? object(raw.narrative).text
-              : null,
+        eveningQuestion: typeof raw.eveningQuestion === 'string' ? raw.eveningQuestion : undefined,
+        narrative: typeof object(raw.narrative ?? {}).text === 'string'
+          ? object(raw.narrative).text
+          : null,
         regenerations: Math.max(0, (Array.isArray(raw.revisions) ? raw.revisions.length : 1) - 1),
       } as Report
     },

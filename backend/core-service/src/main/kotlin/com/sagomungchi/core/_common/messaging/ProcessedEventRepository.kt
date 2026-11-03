@@ -14,6 +14,8 @@ interface ProcessedEventRepository {
         @Param("processedAt") processedAt: OffsetDateTime,
     ): Int
 
+    fun deleteProcessedBefore(@Param("before") before: OffsetDateTime): Int
+
     fun markProcessed(eventId: UUID, eventType: String): Boolean =
         insertIfAbsent(eventId, eventType, OffsetDateTime.now()) == 1
 }

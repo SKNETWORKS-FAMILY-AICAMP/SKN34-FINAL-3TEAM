@@ -6,7 +6,7 @@ from pydantic import Field
 
 from app.judgment.models import ApiModel, JudgmentRequest
 from app.llm.base import LlmClient, LlmResult
-from app.versions import PromptChoice
+from app.prompt_versions.models import PromptChoice
 
 EvidenceStatus = Literal["FOUND", "NOT_FOUND", "UNCLEAR"]
 

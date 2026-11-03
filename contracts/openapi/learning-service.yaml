@@ -167,6 +167,24 @@ paths:
                 $ref: '#/components/schemas/Attempt'
         '403': {$ref: '#/components/responses/Problem'}
         '404': {$ref: '#/components/responses/Problem'}
+  /attempts/{attemptId}/comparison:
+    get:
+      operationId: getAttemptComparison
+      summary: 학생 본인의 직전 마무리 시도와 현재 결과 비교
+      parameters:
+      - {$ref: '#/components/parameters/AttemptId'}
+      - {$ref: '#/components/parameters/UserId'}
+      - {$ref: '#/components/parameters/StudentRole'}
+      - {$ref: '#/components/parameters/StudentScope'}
+      responses:
+        '200':
+          description: 직전 결과 또는 NO_PREVIOUS; 기준표 변경이면 CRITERIA_CHANGED
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AttemptComparison'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
   /attempts/{attemptId}/draft:
     put:
       operationId: saveDraft
@@ -290,7 +308,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '422':
-          description: ANSWER_INCOMPLETE 또는 IDEMPOTENCY_KEY_REUSED
+          description: ANSWER_INCOMPLETE, ANSWER_INAPPROPRIATE(욕설·비속어·성적·혐오·위협 표현이나 연락처, 저장하지 않음) 또는 IDEMPOTENCY_KEY_REUSED
           content:
             application/problem+json:
               schema:
@@ -437,14 +455,16 @@ paths:
         '403': {$ref: '#/components/responses/Problem'}
         '404': {$ref: '#/components/responses/Problem'}
         '409':
-          description: JUDGMENT_STATE_CONFLICT
+          description: >-
+            JUDGMENT_STATE_CONFLICT, 또는 core 사용 예약·확정 409의 code 전달
+            (REFUND_IN_PROGRESS, PAYMENT_USAGE_RETRY_REQUIRES_NEW_SOURCE, PAYMENT_USAGE_STATE_CHANGED)
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
         '500': {$ref: '#/components/responses/Problem'}
         '503':
-          description: AI_UNAVAILABLE (`retryable` 포함)
+          description: AI_UNAVAILABLE (`retryable` 포함) 또는 PAYMENT_USAGE_UNAVAILABLE(core 사용 증빙 실패·목록 밖 409)
           content:
             application/problem+json:
               schema:
@@ -1231,6 +1251,56 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
   schemas:
+    AttemptComparison:
+      type: object
+      required: [attemptId, state, previous, current, elements]
+      properties:
+        attemptId: {type: string, format: uuid}
+        state: {type: string, enum: [NO_PREVIOUS, COMPARABLE, CRITERIA_CHANGED]}
+        previous:
+          anyOf:
+          - {$ref: '#/components/schemas/ComparisonSnapshot'}
+          - {type: 'null'}
+        current: {$ref: '#/components/schemas/ComparisonSnapshot'}
+        elements:
+          type: array
+          items:
+            type: object
+            required: [elementId, label, previousSatisfied, currentSatisfied, change]
+            properties:
+              elementId: {type: string, format: uuid}
+              label: {type: string}
+              previousSatisfied: {type: boolean}
+              currentSatisfied: {type: boolean}
+              change: {type: string, enum: [ADDED, RETAINED, NOT_CONFIRMED, NOT_CONFIRMED_NOW]}
+    ComparisonSnapshot:
+      type: object
+      required: [attemptId, finishedAt, answers, judgment, elements, mission]
+      properties:
+        attemptId: {type: string, format: uuid}
+        finishedAt: {type: string, format: date-time}
+        mission:
+          type: object
+          required: [title, question, inputType, choices, categories, answerUnit]
+          properties:
+            title: {type: string}
+            question: {type: string}
+            inputType: {type: string, enum: [CHOICE, ORDERING, CLASSIFICATION, NARRATIVE, SOLUTION_STEPS, ESSAY]}
+            choices: {type: array, items: {type: object, required: [id, label], properties: {id: {type: string}, label: {type: string}}}}
+            categories: {type: array, items: {type: object, required: [id, label], properties: {id: {type: string}, label: {type: string}}}}
+            answerUnit: {type: [string, 'null']}
+        judgment: {type: [string, 'null'], enum: [CORRECT, PARTIAL, RETHINK, HELD, null]}
+        answers:
+          type: array
+          items:
+            type: object
+            required: [answerId, version, text, content]
+            properties:
+              answerId: {type: string, format: uuid}
+              version: {type: integer, minimum: 1}
+              text: {type: [string, 'null']}
+              content: {type: object, additionalProperties: true}
+        elements: {type: array, items: {type: object, additionalProperties: true}}
     MissionStatus:
       type: string
       enum: [DRAFT, REVIEW_REQUIRED, PUBLISHED, UNPUBLISHED]
@@ -1299,7 +1369,7 @@ components:
         sceneUri: {type: [string, 'null'], description: URI 입력(업로드 없음)}
         staticSceneUri: {type: [string, 'null']}
         achievementStandards: {type: array, items: {type: string}}
-        choices: {type: array, items: {$ref: '#/components/schemas/Choice'}}
+        choices: {type: array, items: {type: object, required: [id, label], properties: {id: {type: string}, label: {type: string}}}}
         categories: {type: array, items: {$ref: '#/components/schemas/Choice'}}
         answerUnit: {type: [string, 'null']}
         inputTemplate: {type: array, items: {type: string}}
@@ -1364,7 +1434,7 @@ components:
         sceneUri: {type: [string, 'null']}
         staticSceneUri: {type: [string, 'null']}
         achievementStandards: {type: array, items: {type: string}}
-        choices: {type: array, items: {$ref: '#/components/schemas/Choice'}}
+        choices: {type: array, items: {type: object, required: [id, label], properties: {id: {type: string}, label: {type: string}}}}
         categories: {type: array, items: {$ref: '#/components/schemas/Choice'}}
         answerUnit: {type: [string, 'null']}
         inputTemplate: {type: array, items: {type: string}}
@@ -1563,7 +1633,8 @@ components:
       description: >-
         NARRATIVE는 text, SOLUTION_STEPS는 finalAnswer·steps, ESSAY는 essay,
         CHOICE·ORDERING은 choiceIds, CLASSIFICATION은 assignments를 쓴다. 그 외 필드는 저장하지 않는다.
-        누락·미완성은 422 ANSWER_INCOMPLETE.
+        누락·미완성은 422 ANSWER_INCOMPLETE. 학생이 쓴 글(text·finalAnswer·steps·essay)에 욕설·비속어·성적·혐오·위협 표현이나
+        연락처(전화번호·이메일)가 있으면 저장하지 않고 422 ANSWER_INAPPROPRIATE(detail은 범주별 고정 문구).
       properties:
         inputType: {$ref: '#/components/schemas/InputType'}
         text: {type: [string, 'null']}

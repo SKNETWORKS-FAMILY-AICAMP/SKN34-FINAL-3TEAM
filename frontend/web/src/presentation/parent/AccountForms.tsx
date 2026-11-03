@@ -164,8 +164,9 @@ export function ChildRegistration({ onCreated }: { onCreated: (c: Child) => void
     <section className="ws-card">
       <h2>자녀 등록</h2>
       <p>
-        다른 보호자가 등록한 학생 연결은 지원하지 않습니다. 등록한 보호자 한 분에게만 소속되며 최대
-        3명까지 등록할 수 있습니다.
+        {import.meta.env?.VITE_GUARDIAN_TRANSFER_ENABLED === 'true'
+          ? '자녀는 학부모 한 분에게 연결되며, 한 학부모는 최대 3명까지 등록할 수 있습니다. 다른 학부모의 자녀는 이관 요청을 받고 동의한 뒤 연결됩니다.'
+          : '다른 보호자가 등록한 학생 연결은 지원하지 않습니다. 등록한 보호자 한 분에게만 소속되며 최대 3명까지 등록할 수 있습니다.'}
       </p>
       <form
         className="ws-form"

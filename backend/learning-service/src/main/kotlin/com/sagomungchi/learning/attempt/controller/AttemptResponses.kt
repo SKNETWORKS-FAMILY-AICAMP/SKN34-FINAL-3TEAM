@@ -1,5 +1,8 @@
 package com.sagomungchi.learning.attempt.controller
 
+import com.sagomungchi.learning._common.web.AnswerItem
+import com.sagomungchi.learning._common.web.MissionResponse
+import com.sagomungchi.learning._common.web.OptionResponse
 import com.sagomungchi.learning.attempt.domain.AttemptDraft
 import com.sagomungchi.learning.attempt.domain.AttemptStatus
 import com.sagomungchi.learning.attempt.domain.Difficulty
@@ -13,8 +16,7 @@ import com.sagomungchi.learning.judgment.domain.ElementView
 import com.sagomungchi.learning.judgment.domain.FeedbackResult
 import com.sagomungchi.learning.judgment.domain.NextAction
 import com.sagomungchi.learning.judgment.domain.TimelineAnswer
-import com.sagomungchi.learning.mission.domain.InputType
-import com.sagomungchi.learning.mission.controller.MissionResponse
+import com.sagomungchi.learning.mission.domain.MissionView
 import java.time.Instant
 import java.util.UUID
 
@@ -44,7 +46,7 @@ data class AttemptResponse(
     val mission: MissionResponse,
     val status: AttemptStatus,
     val finishedAt: Instant?,
-    val answers: List<AnswerItem>,
+    val answers: List<AnswerItem<FeedbackResult>>,
     val helped: Boolean,
     val draft: DraftResponse,
     val nextActions: List<NextAction>,
@@ -122,27 +124,33 @@ data class HintResponse(
     }
 }
 
-/** 시도 타임라인의 답변 (프론트 Answer 모델). feedback은 피드백 API와 같은 모양 (api-spec 3.2) */
-data class AnswerItem(
-    val answerId: UUID,
-    val version: Int,
-    val submittedAt: Instant,
-    val inputType: InputType,
-    val text: String,
-    val followupId: UUID?,
-    val content: Map<String, Any?>,
-    val feedback: FeedbackResult,
-) {
-    companion object {
-        fun from(answer: TimelineAnswer, feedback: FeedbackResult) = AnswerItem(
-            answerId = answer.answerId,
-            version = answer.version,
-            submittedAt = answer.submittedAt,
-            inputType = answer.inputType,
-            text = answer.text.orEmpty(),
-            followupId = answer.followupId,
-            content = answer.content,
-            feedback = feedback,
-        )
-    }
-}
+/* 공유 응답 DTO 변환 (#251, mission·record와 같은 변환을 이 기능이 둠) */
+
+internal fun MissionResponse.Companion.from(mission: MissionView) = MissionResponse(
+    id = mission.id,
+    title = mission.title,
+    subject = mission.subject,
+    grade = mission.gradeMin,
+    gradeMax = mission.gradeMax,
+    thinkingType = mission.thinkingType.name,
+    inputType = mission.inputType.name,
+    question = mission.question,
+    hint = mission.guide,
+    sceneUri = mission.sceneUri,
+    staticSceneUri = mission.staticSceneUri,
+    choices = mission.choices.map { OptionResponse(it.id, it.label) },
+    inputTemplate = mission.inputTemplate,
+    categories = mission.categories.map { OptionResponse(it.id, it.label) },
+    answerUnit = mission.answerUnit,
+)
+
+internal fun AnswerItem.Companion.from(answer: TimelineAnswer, feedback: FeedbackResult) = AnswerItem(
+    answerId = answer.answerId,
+    version = answer.version,
+    submittedAt = answer.submittedAt,
+    inputType = answer.inputType.name,
+    text = answer.text.orEmpty(),
+    followupId = answer.followupId,
+    content = answer.content,
+    feedback = feedback,
+)

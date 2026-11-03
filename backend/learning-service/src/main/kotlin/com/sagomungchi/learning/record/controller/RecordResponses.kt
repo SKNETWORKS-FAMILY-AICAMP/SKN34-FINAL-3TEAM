@@ -1,17 +1,20 @@
 package com.sagomungchi.learning.record.controller
 
-import com.sagomungchi.learning.attempt.controller.AttemptResponse
-import com.sagomungchi.learning.attempt.controller.AnswerItem
 import com.fasterxml.jackson.annotation.JsonUnwrapped
+import com.sagomungchi.learning._common.web.AnswerItem
+import com.sagomungchi.learning._common.web.MissionListItemResponse
+import com.sagomungchi.learning._common.web.MissionResponse
+import com.sagomungchi.learning._common.web.OptionResponse
 import com.sagomungchi.learning.attempt.domain.AttemptStatus
 import com.sagomungchi.learning.attempt.domain.Difficulty
 import com.sagomungchi.learning.attempt.domain.Reflection
 import com.sagomungchi.learning.attempt.domain.RevealKind
-import com.sagomungchi.learning.attempt.service.AttemptDetail
 import com.sagomungchi.learning.judgment.domain.ElementView
+import com.sagomungchi.learning.judgment.domain.FeedbackResult
 import com.sagomungchi.learning.judgment.domain.NextAction
-import com.sagomungchi.learning.mission.controller.MissionListItemResponse
-import com.sagomungchi.learning.mission.controller.MissionResponse
+import com.sagomungchi.learning.judgment.domain.TimelineAnswer
+import com.sagomungchi.learning.mission.domain.MissionListItem
+import com.sagomungchi.learning.mission.domain.MissionView
 import com.sagomungchi.learning.mission.domain.ThinkingType
 import com.sagomungchi.learning.record.domain.Metric
 import com.sagomungchi.learning.record.domain.Period
@@ -78,7 +81,7 @@ data class RecordAttemptResponse(
     val mission: MissionResponse,
     val status: AttemptStatus,
     val finishedAt: Instant?,
-    val answers: List<AnswerItem>,
+    val answers: List<AnswerItem<FeedbackResult>>,
     val helped: Boolean,
     val nextActions: List<NextAction>,
     val reveal: String?,
@@ -89,13 +92,24 @@ data class RecordAttemptResponse(
     val hintUsages: List<HintUsage>,
 ) {
     companion object {
-        fun from(record: RecordAttempt): RecordAttemptResponse = AttemptResponse.from(record.detail).let {
-            RecordAttemptResponse(
-                it.attemptId, it.studentId, it.mission, it.status, it.finishedAt, it.answers, it.helped,
-                it.nextActions, it.reveal, it.revealKind, it.checklist,
-                it.reflection?.let { reflection -> RecordReflection(reflection.difficulty, reflection.text, checkNotNull(record.reflectionCreatedAt)) },
-                record.detail.attempt.completedAt,
-                record.hintUsages.map(::HintUsage),
+        /** 시도 상세(AttemptResponse)와 같은 값을 AttemptDetail에서 직접 만듦: 다른 기능 controller DTO를 거치지 않음 (#251) */
+        fun from(record: RecordAttempt): RecordAttemptResponse {
+            val detail = record.detail
+            return RecordAttemptResponse(
+                attemptId = detail.attempt.id,
+                studentId = detail.attempt.studentId,
+                mission = MissionResponse.from(detail.mission),
+                status = detail.attempt.status,
+                finishedAt = detail.attempt.finishedAt,
+                answers = detail.answers.map { AnswerItem.from(it, detail.feedbacks.getValue(it.answerId)) },
+                helped = detail.helped,
+                nextActions = detail.answers.lastOrNull()?.let { detail.feedbacks.getValue(it.answerId).nextActions }.orEmpty(),
+                reveal = detail.revealed?.reveal,
+                revealKind = detail.revealed?.revealKind,
+                checklist = detail.revealed?.checklist,
+                reflection = detail.reflection?.let { RecordReflection(it.difficulty, it.text, checkNotNull(record.reflectionCreatedAt)) },
+                completedAt = detail.attempt.completedAt,
+                hintUsages = record.hintUsages.map(::HintUsage),
             )
         }
     }
@@ -180,4 +194,38 @@ data class StatsResponse(
     val attempts: Int,
     val completedAttempts: Int,
     val students: Int,
+)
+
+/* 공유 응답 DTO 변환 (#251, mission·attempt와 같은 변환을 이 기능이 둠) */
+
+internal fun MissionResponse.Companion.from(mission: MissionView) = MissionResponse(
+    id = mission.id,
+    title = mission.title,
+    subject = mission.subject,
+    grade = mission.gradeMin,
+    gradeMax = mission.gradeMax,
+    thinkingType = mission.thinkingType.name,
+    inputType = mission.inputType.name,
+    question = mission.question,
+    hint = mission.guide,
+    sceneUri = mission.sceneUri,
+    staticSceneUri = mission.staticSceneUri,
+    choices = mission.choices.map { OptionResponse(it.id, it.label) },
+    inputTemplate = mission.inputTemplate,
+    categories = mission.categories.map { OptionResponse(it.id, it.label) },
+    answerUnit = mission.answerUnit,
+)
+
+internal fun MissionListItemResponse.Companion.from(item: MissionListItem) =
+    MissionListItemResponse.of(MissionResponse.from(item.mission), item.progress.status.name, item.progress.attemptId, item.position, item.total)
+
+internal fun AnswerItem.Companion.from(answer: TimelineAnswer, feedback: FeedbackResult) = AnswerItem(
+    answerId = answer.answerId,
+    version = answer.version,
+    submittedAt = answer.submittedAt,
+    inputType = answer.inputType.name,
+    text = answer.text.orEmpty(),
+    followupId = answer.followupId,
+    content = answer.content,
+    feedback = feedback,
 )

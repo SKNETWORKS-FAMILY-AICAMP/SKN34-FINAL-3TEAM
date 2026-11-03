@@ -166,6 +166,44 @@ class ReportEntitlementIntegrationTest : IntegrationTestSupport() {
         assertEquals("true", requests.single().narrative); assertEquals(0, used()); assertEquals(1, views())
     }
 
+    @Test fun `student revokes sharing during detail and old originals are removed at final authorization`() {
+        subscribe()
+        val raw = json.readTree(detail) as com.fasterxml.jackson.databind.node.ObjectNode
+        raw.putArray("quotes").addObject().put("text", "합성 비밀 원문")
+        raw.putArray("changes").addObject().apply {
+            putObject("first").put("text", "합성 비밀 첫답")
+            putObject("revised").put("text", "합성 비밀 새답")
+            putObject("counts").putArray("chars").add(1).add(2)
+        }
+        detail = raw.toString()
+        duringRequest = { jdbc.update("UPDATE student SET parent_sharing_enabled=false WHERE id=?", student) }
+        read().andExpect {
+            status { isOk() }
+            jsonPath("$.parentSharingEnabled") { value(false) }
+            jsonPath("$.narrative") { value(null) }
+            jsonPath("$.quotes.length()") { value(0) }
+            jsonPath("$.changes[0].first.text") { value(null) }
+            jsonPath("$.changes[0].revised.text") { value(null) }
+            jsonPath("$.metrics[0].count") { value(3) }
+        }
+        assertEquals(0, used())
+        assertEquals(1, views())
+    }
+
+    @Test fun `student revokes sharing during file signing and the URL is never returned`() {
+        subscribe()
+        duringRequest = { path -> if (path.contains("/files/")) {
+            jdbc.update("UPDATE student SET parent_sharing_enabled=false WHERE id=?", student)
+        } }
+        download().andExpect {
+            status { isForbidden() }
+            jsonPath("$.code") { value("STUDENT_RECORDS_PRIVATE") }
+            jsonPath("$.url") { doesNotExist() }
+        }
+        assertEquals(0, used())
+        assertEquals(0, views())
+    }
+
     @Test fun `upgrade during a free request never records premium usage or returns a full file`() {
         duringRequest = { duringRequest = null; subscribe() }
         read().andExpect { status { isOk() }; jsonPath("$.narrative") { value(null) } }

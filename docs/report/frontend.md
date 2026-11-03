@@ -1,8 +1,41 @@
 # 웹 프론트 (#7·#8·#9·#59, 테마·대시보드·QR 시연)
 
+## 할당 이슈 #234·#239·#240·#247·#255 (2026-11-02)
+
+- 기준: develop `9595e8f`.
+- #255 계층 정리: 신고·문의 결과 조회는 `data/support/{api,queries}.ts`, 결제 결과 상태 조회·폴링·승인·빌링 등록은 `data/payment/queries.ts`, 결제창 복귀용 대기 정보 저장은 `data/payment/checkoutStorage.ts`로 옮겼습니다. `domain/payment.ts`에는 `validPending`·`validBilling`·`checkoutConfirmation`·`billingConfirmation` 같은 순수 검증만 남겼습니다. 폴링 조건(PENDING·CONFIRMING·APPROVED+RECOVERY_REQUIRED, 3초, 첫 응답 뒤 최대 10회, 오류 시 중단)과 StrictMode 중복 요청 공유 Map은 그대로입니다. 승인 응답을 결과 캐시에 넣어 승인 직후 상태를 한 번 더 묻지 않으므로 API 호출 순서는 이전과 같습니다.
+- #247 번들 분할: 라우터에서 학생(`ClassroomApp`)·학부모·관리자 작업 공간과 로그인 외 계정·결제 결과·가입·관리자 로그인 화면을 `lazy`로 받습니다. 학생 기기 로그인(`DeviceLogin`)·도움말·공지·신고 화면은 첫 묶음에 남겼습니다. 코드를 받는 동안 `RoleLayout`과 최상위 `Suspense`가 "화면을 불러오고 있습니다."를 표시합니다. vendor chunk는 분리하지 않았습니다(분할만으로 경고 해소).
+
+  | 빌드 (vite 8, 압축 전) | 가장 큰 JS | 주요 청크 |
+  |---|---|---|
+  | 분할 전 | `index` 686.40 kB (gzip 207.34 kB), 500 kB 경고 | 단일 청크 |
+  | 분할 후 | `index` 278.04 kB (gzip 87.56 kB), 경고 없음 | `ClassroomParts` 169.59 kB, `ParentWorkspace` 68.30 kB, `AdminWorkspace` 63.58 kB, `ClassroomApp` 38.56 kB, `StudentWorkPage` 34.85 kB, `ParentPayments` 19.01 kB |
+
+- #239 실시간 알림: `data/notifications.ts`의 `useNotificationStream`을 `RoleLayout`에서 호출해 학부모·관리자 로그인 중 기존 `streamSse`로 `GET /notifications/stream` 1개를 유지합니다. 학생, 동의·자녀 등록 전 학부모, 로그아웃 상태에서는 요청하지 않습니다. `ready`·`notification`을 받으면 `['parent','notifications']` 캐시만 무효화해 알림 화면과 메뉴의 "알림 · 읽지 않음 N"(`unreadOnly=true` 첫 쪽, 알림 화면과 같은 키)을 다시 읽습니다. 서버가 5분 뒤 닫으면 1초 뒤, 실패가 이어지면 2·4·…·30초 간격으로 다시 연결하고 401·403은 멈춥니다. MSW는 `ready`만 보내고 연결을 유지합니다. 이벤트를 캐시에 직접 병합하지 않고 목록을 다시 읽는 것은 api-spec 2.7의 "id로 병합·Last-Event-ID 없음" 규칙을 목록 API 한 곳에서 지키기 위해서입니다.
+- #242(관리자 공지 전체 목록)는 공동 담당자 PR #266으로 develop에 먼저 반영되어, 이 브랜치의 중복 구현은 되돌리고 #266을 그대로 사용합니다.
+- #234 꾸미기 설정: core `GET/PUT /students/me/preferences`를 구현해 목업 계약을 확정했습니다(core V23 `student.look_*`, 값 목록은 코드 상수+CHECK, 학생 삭제 확정 시 초기화). 웹 경로·응답 모양은 그대로이며, 저장 실패 시 이전 모습으로 되돌린 뒤 "저장하지 못해서 전에 고른 모습으로 돌아갔어요." 안내를 추가했습니다. 대응 FN이 없는 화면 개선이라 요구사항 ID는 만들지 않았습니다.
+- #240 생각 활동·예시 질문 (담당자 결정: 생각 활동은 섬 화면 안과 별도 화면 모두, 예시 질문 포함): core `GET /students/me/thinking-activities`를 `learningApi.getThinkingActivities`·`useThinkingActivities`로 연결했습니다(키가 `['records', …]` 아래라 시도·돌아보기 저장 뒤 함께 다시 읽음). 학생 메뉴에 "생각 활동"(최근 7일·지난주, 생각 유형별 묶음)을 추가하고, 미션 고르기에서 섬(유형)을 고르면 아래에 "최근 7일 이 섬에서 해 본 생각"을 보여 줍니다. 미션 제목과 돌아보기(난이도·내가 쓴 말)만 표시하며 숫자 레벨·등급·순위·점수는 없습니다. 학부모 분석 대화에는 `GET /agent/example-questions` 다섯 문구를 버튼으로 붙여, 고르면 질문을 채우고 현재 자녀·기간 범위 그대로 보냅니다. `available=false`(기록 없음)는 비활성화하고 가능 범위를 안내합니다. MSW 두 경로는 core 응답 모양(돌아보기 `EASY/NORMAL/HARD`·nullable text, 질문 문구)과 맞췄습니다.
+
+## 학생 공개 설정·재시도 비교 화면 (#206·#207, 2026-11-01)
+
+- 기존 호수/숲/공장/소행성/바닷속 테마와 공책 UI를 유지합니다. 디자인 검토는 design-taste-frontend 앱 지침을 적용했으며 새 캐릭터·학생 로고를 추가하지 않았습니다. 설정은 학생 메뉴의 ‘공개 설정’, 비교는 마무리 결과의 이전/이번 공책으로 연결합니다.
+- 공개 상태는 저장 성공 응답을 기준으로 표시하고 저장 중 중복 조작을 막습니다. 실패를 기본값 저장 성공으로 표시하지 않습니다. 공유 브라우저의 parent/records/report 캐시를 설정 변경 시 제거합니다. 부모 화면에는 자녀별 읽기 전용 안내를 제공합니다.
+- 비교는 같은 폭 두 공책과 20px 간격이며 700px 이하에서 한 열로 바뀝니다. 각 시도의 문항·선택지로 원문을 표시합니다. 첫 시도/기준 변경/조회 실패를 정상 비교와 구분합니다.
+- Playwright에서 1440×900, 1024×768 및 새 패널의 390×844 폭을 검증하고 PNG를 `frontend/web/test-results/`에 저장합니다. API/권한은 MSW 합성 데이터 검증이며 실서비스 E2E로 표기하지 않습니다.
+
 통합 원본: frontend-backend-ux-alignment, issue-7-fe-common, issue-7-student-completion, issue-8-9-parent-admin, unchecked-followup, pr-fe-workspace, issue-59-student-device, parent-dashboard, student-theme-world, qr-device-demo
 
 실행 방법과 브라우저 테스트 경로는 [frontend/web/README](../../frontend/web/README.md), 목업 계약은 [API 명세](../design/api-spec.md) 3.7~3.12.
+
+## 할당 이슈 #134·#141 재점검 (2026-11-01)
+
+- 기준: develop `b35e381`. 기존 화면설계서 v2.2·v2.3 미커밋 작업은 다른 worktree에 그대로 보존했습니다.
+- #134: 리포트 목록 `{items}`, MSW 응답, 선택 필드 자녀 PATCH와 재인증 헤더 제거는 이미 반영돼 있었습니다. 남아 있던 `child.plan`의 리포트 표시 재판단을 제거했습니다. #129 core가 현재 상품 권한으로 선택한 `narrative`·`eveningQuestion`을 사용하며 서술의 숫자·인용 검증은 계속 필수입니다. 별도 브라우저용 이용권 API를 추가하지 않습니다. 오래된 FREE/PREMIUM 양방향 회귀를 추가했습니다.
+- #141: 실제 React root와 TanStack Query를 실행해 parent/admin/studentDevice/studentLook/classroom 훅의 키·범위·disabled·실패·무효화·낙관 갱신 롤백·처리 중 폴링 종료·세션 복원 병합을 검증합니다. Node import는 Vite env 없이 가능하며 DEV 조건식은 운영 빌드의 목업 제거를 유지합니다.
+- 관리자 MSW 권한·모델 등록/활성화/복귀·평가 범위·감사·멱등 재처리·목록 counts 테스트, 학생 꾸미기 API 어댑터 테스트를 보강했습니다. 기존 관리자 registerModel/modelAction 요청 계약 테스트도 함께 실행했습니다.
+- `tsconfig.tests.json`을 build reference에 포함해 테스트·Playwright 설정/시나리오를 타입 검사합니다. 드러난 기존 MSW 2 옵션 `onUnhandledRequest`는 현재 MSW 3의 `onUnhandledFrame`으로 수정했고 무시하던 미처리 요청을 오류로 검사합니다.
+- 사용자 결정: 화면 테스트는 `npm test`와 분리된 `npm run test:browser`, 별도 CI job으로 실행합니다. Playwright를 개발 의존성으로 고정하고 기존 로그인·학생 PIN·학부모 결제 진입·관리자 메뉴/권한을 1440×900 및 1024×768에서 검증하고 새 설정/비교 패널은 390×844도 포함합니다. CI 실패 시 trace·스크린샷을 보관합니다.
+- 로컬 검증: 계약 회귀 10개, 훅·꾸미기 어댑터 22개, 관리자 회귀 포함 단위 전체 검증, 테스트 타입 검사·lint·build·운영 목업 제외 검사 통과. 웹 단위 184개·브라우저 14개 통과. 실제 Google·PG·전체 서비스 E2E가 아니라 합성 MSW 화면 검증입니다. 기존 AdminOperations immutability 경고와 500kB 청크 경고는 남아 있습니다. 원격 CI 실행은 PR 반영 뒤 별도 확인해야 합니다.
 
 ## 1. 공통 기반 (#7)
 
@@ -81,7 +114,7 @@ node tests/qr-device-browser.mjs
 - `/admin/payments`: 환불 요청/거래 내역/PG 대조 탭, 페이지 이동, 체크리스트·최종 확인, 반려 사유와 조회/환불 승인 권한 분리.
 - 실제 `PaymentController`의 승인 POST는 body 없이 Idempotency-Key를 사용한다. 반려는 `{reason}`. APPROVED/202는 PG 확인 중이며 COMPLETED만 환불 완료로 표시한다. 적격 여부는 서버가 재검증하며 UI에서 가짜 withinSevenDays·premiumUnused 값을 만들지 않는다.
 - 실제 `SupportController`의 문의 상태 RESOLVED, `noticeId/kind/body/targetRoles/visibleFrom/visibleTo/endedAt`와 POST 답변 계약을 반영했다.
-- 현재 core에는 `GET /admin/notices` 전체 목록이 없다. `GET /notices`의 관리자 대상 공개 공지 첫 20건과 로그인 세션에서 작성·수정한 공지만 관리한다. 예약/종료 공지 전체 조회 API는 후속이다.
+- 당시에는 core에 `GET /admin/notices` 전체 목록이 없어 `GET /notices`의 관리자 대상 공개 공지 첫 20건과 로그인 세션에서 작성·수정한 공지만 관리했다. #242에서 SERVICE_OPS 전용 전체 목록(상태·대상 필터, 페이지)으로 교체하고 세션 임시 목록을 제거했다. 예약·공개 중·종료를 구분해 표시한다([issue-46-support #242](issue-46-support.md#242-관리자-공지-전체-목록-2026-11-02)).
 - 새 기능은 실제 공개 API 어댑터를 호출한다. DEV는 별도 adminServiceHandlers가 가상 응답을 처리하고 운영 빌드에는 포함되지 않는다. 실서버 오류 때 데모 데이터로 자동 전환하지 않는다.
 
 검증: 단위·계약 114개, TypeScript·운영 빌드·lint·운영 목업 제외 검사 통과. 관리자 브라우저에서 로그인·문의 답변·공지 생성/수정/종료·환불 PG 대기·거래/대조·권한 분리, 9개 화면×1440/1024/768/390의 가로 넘침을 확인했다. Google 관리자 로그인은 운영 빌드/API 대역으로 확인했다. 실제 DB·Google OAuth·PG 결제/취소 통합 검증은 하지 않았다. 청크 500kB 경고는 남아 있다.
@@ -112,3 +145,12 @@ node tests/qr-device-browser.mjs
 - 개발 화면은 기존 DEV+MSW 조건부 지연 로딩을 유지하며 준비 후 PIN을 표시합니다. `/auth/student/demo-device`의 요청·응답은 변경하지 않았습니다. 실제 인증 API 계약 변경은 없습니다.
 - `npm test` 125개·lint·운영 빌드·`node tests/production-mocks.mjs` 통과. 운영 JS에 시연 경로·fixture·시연 PIN 문자열이 포함되지 않음을 확인했습니다. JS 청크 500kB 경고는 기존과 같습니다.
 - Chrome 가상 데이터 검증: 시연 준비 → 프로필 재조회 → PIN 안내 → 5090 로그인 → 학생 홈 통과. 캡처는 `C:/Users/playdata2/outputs/issue170-20261030/`에 보존했습니다. 실제 DB/OAuth 검증을 수행한 것은 아닙니다.
+
+
+## 이번 작업의 검증 및 인수인계 (2026-11-01)
+
+- 작업 브랜치 `codex/assigned-web-issues-20261101`, 시작 기준 `b35e381`. 작업 중 원격 develop에 `dfc4837`(#214)이 추가됐습니다. 새 원격 파일은 AccountHttpTest·#136 보고서·docs/README이며 이번 수정 파일과 직접 겹치지 않습니다. 로컬 수정이 있어 자동 pull/병합은 하지 않았습니다. PR 전에는 최신 develop을 보존 병합한 뒤 검증해야 합니다.
+- 웹 단위 184건, 전체 브라우저 14건, 테스트 포함 타입 검사·lint·build·운영 JS의 목업 제외 검사를 통과했습니다. 새 UI는 설정 저장→재조회, 공책 비교→다시 풀기→기존 답변 보존도 화면 테스트로 검증합니다. 기존 AdminOperations immutability·큰 JS 청크 경고는 유지합니다.
+- core 설정·내부 프로필·리포트 권한·분석 대화 관련 64건, learning 비교 7건(실제 PostgreSQL 3건 포함), report 전체 315건, 스키마 검증기 회귀 18건이 통과했습니다. 별도 비공개 회귀에서는 PostgreSQL 저장과 HTML/PDF/Markdown 원문 제외도 확인했습니다. 실제 AI/운영 S3/외부 결제 호출이나 운영 배포 E2E는 포함하지 않습니다.
+- 로컬 목업 확인: `http://127.0.0.1:5272/student/login` → 가상 학생 준비 → PIN `5090` → 공개 설정. 같은 미션을 마무리·돌아보기 완료한 뒤 다시 풀면 두 번째 결과에서 비교할 수 있습니다. 내 공책의 ‘결과 다시 보기’에서도 비교/재시도 화면으로 돌아갑니다.
+- 이슈 #134·#141은 로컬 검증 기준 체크를 갱신했습니다. #206·#207도 Docker 복구 후 DB 통합 검증을 마쳐 모든 체크박스를 갱신했습니다. push·PR·develop 반영은 하지 않았습니다.

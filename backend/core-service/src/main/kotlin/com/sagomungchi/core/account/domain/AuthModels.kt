@@ -21,6 +21,10 @@ data class AuthSession(
     val expiresAt: OffsetDateTime,
     val revokedAt: OffsetDateTime?,
     val createdAt: OffsetDateTime,
+    /** PARENT only: set while a guardian-entry student session is in use; cleared by the guardian password. */
+    val lockedAt: OffsetDateTime? = null,
+    /** STUDENT only: the locked parent session this guardian entry came from. */
+    val parentSessionId: UUID? = null,
 )
 
 data class RefreshToken(

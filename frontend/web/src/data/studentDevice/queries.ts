@@ -1,14 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { prepareDemoStudentDevice, studentDeviceApi } from './api.ts'
 
-export const qrDemoEnabled = import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true' &&
+export const qrDemoEnabled = typeof import.meta.env !== 'undefined' && import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true' &&
   import.meta.env.VITE_SHARED_DEVICE_MOCK === 'true'
 
 export function usePairingOrigins() {
   return useQuery({
     queryKey: ['device-demo-addresses'], enabled: qrDemoEnabled, retry: false, staleTime: Infinity,
     queryFn: async () => {
-      if (import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true' &&
+      if (typeof import.meta.env !== 'undefined' && import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true' &&
           import.meta.env.VITE_SHARED_DEVICE_MOCK === 'true')
         return (await import('../../mocks/sharedDevice.ts')).deviceDemoConfig()
       return null
@@ -45,6 +45,15 @@ export function usePinLogin() {
       studentDeviceApi.login(childId, pin),
     // 실패 횟수·잠금이 바뀌므로 프로필을 다시 받는다. 성공 시에는 학생 데이터만 새로 받도록 캐시를 비운다.
     onError: () => cache.invalidateQueries({ queryKey: ['student-device', 'profiles'] }),
+  })
+}
+
+/** 학부모: 보호자 비밀번호 설정 여부·잠금 */
+export function useGuardianPassword() {
+  return useQuery({
+    queryKey: ['parent', 'guardian-password'],
+    queryFn: ({ signal }) => studentDeviceApi.guardianPassword(signal),
+    retry: false,
   })
 }
 

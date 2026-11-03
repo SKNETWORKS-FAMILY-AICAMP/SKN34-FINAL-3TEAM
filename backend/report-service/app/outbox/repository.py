@@ -79,6 +79,9 @@ class OutboxClaim:
 
 
 class OutboxRepository:
+    def delete_subject(self, session, subject):
+        session.execute(outbox_event.delete().where(outbox_event.c.subject == subject))
+
     def __init__(self, clock: Callable[[], datetime] | None = None):
         self._clock = clock or (lambda: datetime.now(UTC))
 
@@ -174,6 +177,12 @@ class OutboxRepository:
             .where(outbox_event.c.id == event_id, outbox_event.c.published_at.is_(None))
             .values(published_at=self._clock(), next_attempt_at=None)
         )
+
+    def delete_published_before(self, session: Session, before: datetime) -> int:
+        """보존 기간 정리(#208). 미발행·격리 행은 published_at이 없어 남는다."""
+        return session.execute(
+            outbox_event.delete().where(outbox_event.c.published_at < before)
+        ).rowcount
 
     def record_failure(self, session: Session, event_id: UUID, error_code: str):
         if error_code not in {"PUBLISH_FAILED", "PUBLISH_TIMEOUT", "BROKER_UNAVAILABLE"}:

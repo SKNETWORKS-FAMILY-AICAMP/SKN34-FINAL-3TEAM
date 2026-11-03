@@ -1,6 +1,6 @@
 package com.sagomungchi.core.support.controller
 
-import com.sagomungchi.core.account.controller.AuthController
+import com.sagomungchi.core._common.security.RequestAttributes
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core.support.service.*
 import jakarta.servlet.http.HttpServletRequest
@@ -11,7 +11,7 @@ import java.util.UUID
 
 @RestController
 class SupportController(private val service: SupportService) {
- private fun actor(request: HttpServletRequest)=request.getAttribute(AuthController.IDENTITY) as AuthenticatedAccount
+ private fun actor(request: HttpServletRequest)=request.getAttribute(RequestAttributes.IDENTITY) as AuthenticatedAccount
  @PostMapping("/api/v1/error-reports")
  fun submitReport(request: HttpServletRequest,@RequestHeader("Idempotency-Key") key: UUID,@RequestBody body: ByteArray): ResponseEntity<ByteArray> {
   val result=service.submitReport(actor(request),key,body)
@@ -45,6 +45,8 @@ class SupportController(private val service: SupportService) {
  fun answer(request: HttpServletRequest,@PathVariable inquiryId: UUID,@RequestBody body: AnswerCommand)=service.answer(actor(request),inquiryId,body)
  @GetMapping("/api/v1/notices")
  fun notices(request: HttpServletRequest,@RequestParam(defaultValue="0") page: Int,@RequestParam(defaultValue="20") size: Int)=service.notices(actor(request),page,size)
+ @GetMapping("/api/v1/admin/notices")
+ fun adminNotices(request: HttpServletRequest,@RequestParam(required=false) status: String?,@RequestParam(required=false) role: String?,@RequestParam(defaultValue="0") page: Int,@RequestParam(defaultValue="20") size: Int)=service.adminNotices(actor(request),status,role,page,size)
  @PostMapping("/api/v1/admin/notices")
  @ResponseStatus(HttpStatus.CREATED)
  fun createNotice(request: HttpServletRequest,@RequestBody body: NoticeCommand)=service.notice(actor(request),null,body)

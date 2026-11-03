@@ -32,6 +32,30 @@ class AdminOperationsContracts(unittest.TestCase):
                     for status in ('404','502','503','504'):
                         responses.pop(status,None)
                     responses['403']={'$ref':'#/components/responses/LearningProblem'}
+                # #242 adds only the GET list operation; the original POST stays fingerprinted.
+                if section=='paths' and name=='/admin/notices':
+                    reviewed.pop('get',None)
+                # FN-ACC-05 guardian password (2026-11-03): guardian entry locks the parent session instead of
+                # consuming its refresh cookie, and reauth gains GUARDIAN_PASSWORD. Restore only those approved fields.
+                if section=='paths' and name=='/auth/student-sessions':
+                    post=reviewed['post']
+                    post['description']=('부모 Bearer와 같은 세션의 refresh로 연결·활성 자녀 및 현재 필수/법정대리인 동의를 확인한다. '
+                        '학생 access만 발급하고 부모 refresh를 소비·삭제하며 기존 부모 access를 거부한다. PIN 단독 진입은 #58 소유다.')
+                    post['security']=[{'BearerAuth':[],'RefreshCookie':[]}]
+                    ok=post['responses']['200']
+                    ok['description']='학생 access 전용 응답. refresh 쿠키는 만료되며 원문 refresh를 응답하지 않는다.'
+                    ok['headers']['Set-Cookie']={'description':'HttpOnly 쿠키. 성공 콜백은 OAuth 상태 쿠키 삭제와 refresh 설정의 복수 Set-Cookie를 반환한다. '
+                        '학생 전환·로그아웃은 refresh 쿠키를 만료시킨다.','schema':{'type':'string'}}
+                if section=='paths' and name=='/me/reauth':
+                    for option in reviewed['post']['requestBody']['content']['application/json']['schema']['oneOf']:
+                        purpose=option['properties'].get('purpose')
+                        if purpose: purpose['enum'].remove('GUARDIAN_PASSWORD')
+                # #289 extends reauthentication without removing guardian password support.
+                if section=='paths' and name=='/me/reauth':
+                    purposes=reviewed['post']['requestBody']['content']['application/json']['schema']['oneOf'][0]['properties']['purpose']['enum']
+                    for purpose in ('CHILD_TRANSFER','TRANSFER_ACCEPT'):
+                        self.assertIn(purpose,purposes)
+                        purposes.remove(purpose)
                 canonical=json.dumps(reviewed,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
                 self.assertEqual(expected,hashlib.sha256(canonical).hexdigest(),f'{section}/{name}')
     def test_admin_paths_and_retry_key(self):
@@ -49,5 +73,5 @@ class AdminOperationsContracts(unittest.TestCase):
             if name.startswith('Operation'): Draft202012Validator.check_schema(schema)
     def test_queue_allowlist(self):
         definition=json.loads((ROOT/'infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json').read_text())
-        self.assertEqual(25,len(definition['queues']))
+        self.assertEqual(30,len(definition['queues']))
         self.assertEqual({'/'},{q['vhost'] for q in definition['queues']})

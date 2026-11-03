@@ -21,6 +21,8 @@ from app.security import current_user_context
 class StudentDisplayName:
     student_id: UUID
     nickname: str
+    parent_sharing_enabled: bool = False
+    template_snapshot: dict | None = None
 
 
 class DisplayNameProvider(Protocol):
@@ -46,7 +48,14 @@ class NamedGenerator:
             raise RecordContractError("Display name lookup returned an invalid student/name")
         # Resolve once before privacy filtering and rendering; never trust a message nickname.
         return await self._previous.generate(
-            replace(command, display_name=profile.nickname), report
+            replace(
+                command,
+                display_name=profile.nickname,
+                parent_sharing_enabled=profile.parent_sharing_enabled,
+                narrative_enabled=command.narrative_enabled and profile.parent_sharing_enabled,
+                template_snapshot=profile.template_snapshot,
+            ),
+            report,
         )
 
 

@@ -9,4 +9,5 @@ interface UserAccountMapper {
     fun insert(account: UserAccount): Int
     fun findById(id: UUID): UserAccount?
     fun lockById(id: UUID): UserAccount?
+    fun findTransferRecipients(email: String): List<UserAccount>
 }

@@ -1,8 +1,8 @@
 package com.sagomungchi.core.payment
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.sagomungchi.core._common.security.PublicAuthFilter
 import com.sagomungchi.core.account.config.AuthProperties
+import com.sagomungchi.core.account.controller.PublicAuthFilter
 import com.sagomungchi.core.account.domain.*
 import com.sagomungchi.core.account.service.AuthService
 import org.junit.jupiter.api.Test
