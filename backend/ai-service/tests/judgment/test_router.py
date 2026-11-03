@@ -54,6 +54,7 @@ def test_judgment_response_uses_camel_case() -> None:
             "model": "fake-model",
             "prompt": "judge@2",
         },
+        "modelScores": None,
     }
 
 
