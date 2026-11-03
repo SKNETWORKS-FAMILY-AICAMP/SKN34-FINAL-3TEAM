@@ -52,7 +52,7 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
                                                       └(통과)→ END [result: LLM]
 ```
 
-- 구성: `analysis_agent/graph.py`(조립), `state.py`, `nodes/`(understand·retrieve·respond), `tools.py`(`RecordTools`, 호출마다 권한 재확인), `calculators.py`, `verification.py`, `templates.py`, `prompts.py`(`analysis@2`), `router.py`(SSE), `clients/learning_client.py`(learning 기록 조회 HTTP, #65)
+- 구성: `analysis_agent/graph.py`(조립), `service.py`(`AnalysisService`: 범위·기한·프롬프트 선택, 그래프 실행·최종 상태 → 이벤트, #253), `state.py`, `context.py`(`AgentContext`), `nodes/`(understand·retrieve·respond), `tools.py`(`RecordTools`, 호출마다 권한 재확인), `calculators.py`, `verification.py`, `templates.py`, `prompts.py`(`analysis@2`), `router.py`(SSE), `clients/learning_client.py`(learning 기록 조회 HTTP, #65)
 - LLM 호출은 기존 `LlmClient` 사용(재시도·사용량 이벤트 `ANALYSIS`·대체 모델 유지). classify는 `generate`(구조화 출력), answer는 `stream`(일반 텍스트). LangGraph는 분기·상태·스트리밍만
 - 도구 선택은 질문 유형 → 도구 표(6유형). 학생·기간은 LLM이 아니라 core가 확인한 `scope`만 사용
 

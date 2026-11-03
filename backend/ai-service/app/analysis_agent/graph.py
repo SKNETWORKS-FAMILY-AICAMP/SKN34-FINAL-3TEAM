@@ -15,8 +15,9 @@ from functools import lru_cache
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from app.analysis_agent.context import AgentContext
 from app.analysis_agent.nodes import respond, retrieve, understand
-from app.analysis_agent.state import AgentContext, AnalysisState
+from app.analysis_agent.state import AnalysisState
 
 UNSUPPORTED_INTENTS = ("MATH_CHECK", "OTHER")
 

@@ -8,14 +8,15 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 
 from app.analysis_agent.models import AnalysisRequest
 from app.analysis_agent.prompts import Classification
-from app.analysis_agent.router import _events, get_record_tools
-from app.analysis_agent.state import AgentContext
+from app.analysis_agent.router import get_analysis_service, sse
+from app.analysis_agent.service import AnalysisService
 from app.bootstrap import create_app
-from app.config import Settings
+from app.config import Settings, get_settings
 from app.errors import ApiError
 from app.followup import prompts as followup_prompts
 from app.followup.service import FollowupService
@@ -30,6 +31,7 @@ from app.prompt_versions.service import PromptSync
 from app.report_narrative import prompts as narrative_prompts
 from app.report_narrative.models import NarrativeRequest
 from app.report_narrative.service import NarrativeService
+from app.security import UserContext
 from tests.analysis_agent.records_fixture import FakeRecords
 from tests.analysis_agent.test_router import BODY as ANALYSIS_BODY
 from tests.fakes import FakeLlm
@@ -144,14 +146,13 @@ def test_all_four_functions_use_selected_body_and_report_its_version() -> None:
             "3개 시도 중 1개에서 되묻기 뒤에 답을 다시 썼어요. "
             "“왜냐하면 쉬는 시간이 길면”이라는 까닭을 더했어요.",
         )
-        context = AgentContext(
-            llm=llm,
-            tools=FakeRecords(),
-            deadline=asyncio.get_running_loop().time() + 60,
-            prompt=versions.prompt("analysis"),
-        )
+        service = AnalysisService(llm, settings, versions, lambda user: FakeRecords())  # type: ignore[arg-type]
+        user = UserContext(user_id="p-1", role="PARENT", student_scope=frozenset({"s-1"}))
         response = [
-            event async for event in _events(AnalysisRequest.model_validate(ANALYSIS_BODY), context)
+            sse(name, data)
+            async for name, data in service.stream(
+                AnalysisRequest.model_validate(ANALYSIS_BODY), user
+            )
         ]
         assert any('"prompt": "analysis@next"' in event for event in response)
         assert [request.prompt_version for request in llm.requests] == [
@@ -252,11 +253,17 @@ def test_event_changes_subsequent_http_prompt_and_versions_endpoint() -> None:
     assert active.json()["prompts"]["judgment"] == "judge@next"
 
 
-def test_unknown_analysis_prompt_closes_prepared_record_client() -> None:
-    records = FakeRecords()
+def test_unknown_analysis_prompt_opens_no_record_client() -> None:
+    opened: list[UserContext] = []
+
+    def service(request: Request) -> AnalysisService:
+        versions = request.app.state.active_versions
+        return AnalysisService(
+            FakeLlm(), get_settings(), versions, lambda user: opened.append(user) or FakeRecords()
+        )  # type: ignore[arg-type]
+
     app = create_app()
-    app.dependency_overrides[get_llm] = lambda: FakeLlm()
-    app.dependency_overrides[get_record_tools] = lambda: records
+    app.dependency_overrides[get_analysis_service] = service
     with TestClient(app) as client:
         app.state.active_versions.apply(version("analysis", "analysis@unknown"))
         response = client.post(
@@ -266,4 +273,4 @@ def test_unknown_analysis_prompt_closes_prepared_record_client() -> None:
         )
     assert response.status_code == 503
     assert response.json()["code"] == "AI_PROMPT_VERSION_UNAVAILABLE"
-    assert records.closed
+    assert opened == []  # 프롬프트 선택 실패 시 learning 연결을 만들지 않음
