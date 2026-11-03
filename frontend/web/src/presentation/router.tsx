@@ -10,6 +10,7 @@ import { WithdrawalReceipt } from './service/Withdrawal.tsx'
 import { LoginHelp } from './service/LoginHelp.tsx'
 import { lazy, Suspense } from 'react'
 import type { ComponentType } from 'react'
+import { guardianTransferEnabled } from './service/GuardianTransferUi.tsx'
 
 // 역할별 작업 공간과 결제·계정 화면은 들어갈 때 받는다(#247). 학생 기기 첫 화면은 학부모·관리자 코드를 받지 않는다.
 const page = <P extends object>(load: () => Promise<ComponentType<P>>) => lazy(async () => ({ default: await load() }))
@@ -21,6 +22,7 @@ const SignupPage = page(() => import('./parent/AccountForms.tsx').then(m => m.Si
 const PaymentResult = page(() => import('./parent/ParentPayments.tsx').then(m => m.PaymentResult))
 const BillingResult = page(() => import('./parent/BillingResult.tsx').then(m => m.BillingResult))
 const AccountPage = page(() => import('./service/AccountPage.tsx').then(m => m.AccountPage))
+const GuardianTransfers = page(() => import('./service/GuardianTransfers.tsx').then(m => m.GuardianTransfers))
 const AuthOnboarding = page(() => import('./auth/AuthOnboarding.tsx').then(m => m.AuthOnboarding))
 const ReviewPage = import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true' ? lazy(() => import('./service/ReviewPage.tsx').then(m => ({ default: m.ReviewPage }))) : null
 
@@ -65,6 +67,7 @@ export const router = createBrowserRouter([
           ...(role !== 'ADMIN' ? [{ path: 'support/results', element: <SupportResults /> }] : []),
           ...(role === 'PARENT' ? [
             { path: 'account', element: <AccountPage /> },
+            ...(guardianTransferEnabled ? [{ path: 'transfers', element: <GuardianTransfers /> }] : []),
             { path: 'onboarding', element: <AuthOnboarding /> },
             { path: 'children/new', element: <AuthOnboarding /> },
           ] : []),

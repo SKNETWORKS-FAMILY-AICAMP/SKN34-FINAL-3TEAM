@@ -135,6 +135,30 @@ SELECT '00000000-0000-4000-8000-000000000005', parent_user_id, student_id,
        method, 'UNLINKED', linked_at, now() FROM guardianship
 WHERE id = '00000000-0000-4000-8000-000000000003';
 
+-- #289: only one current parent; transfer request state and reauthentication targets.
+INSERT INTO user_account(id,role,login_id,status,is_demo,created_at,updated_at)
+VALUES ('00000000-0000-4000-8000-000000000289','PARENT','recipient@example.invalid','ACTIVE',true,now(),now());
+SELECT pg_temp.expect_sqlstate($$INSERT INTO guardianship(id,parent_user_id,student_id,method,status,linked_at)
+VALUES ('00000000-0000-4000-8000-000000000290','00000000-0000-4000-8000-000000000289',
+        '00000000-0000-4000-8000-000000000002','TRANSFER','LINKED',now())$$,'23505');
+SELECT pg_temp.expect_sqlstate($$UPDATE guardianship SET transferred_at=now() WHERE status='LINKED'$$,'23514');
+INSERT INTO guardian_transfer(id,student_id,sender_id,recipient_id,include_conversations,status,created_at)
+VALUES ('00000000-0000-4000-8000-000000000291','00000000-0000-4000-8000-000000000002',
+        '00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000289',false,'PENDING',now());
+SELECT pg_temp.expect_sqlstate($$UPDATE guardian_transfer SET recipient_id=sender_id$$,'23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE guardian_transfer SET status='ACCEPTED'$$,'23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE guardian_transfer SET resolved_at=now()$$,'23514');
+SELECT pg_temp.expect_sqlstate($$INSERT INTO guardian_transfer
+SELECT '00000000-0000-4000-8000-000000000292',student_id,sender_id,recipient_id,include_conversations,status,created_at,resolved_at
+FROM guardian_transfer$$,'23505');
+UPDATE guardian_transfer SET status='ACCEPTED',resolved_at=now();
+UPDATE reauth_challenge SET purpose='GUARDIAN_PASSWORD';
+UPDATE reauth_challenge SET purpose='TRANSFER_ACCEPT';
+SELECT pg_temp.expect_sqlstate($$UPDATE reauth_challenge SET student_id='00000000-0000-4000-8000-000000000002'$$,'23514');
+UPDATE reauth_challenge SET purpose='CHILD_TRANSFER',student_id='00000000-0000-4000-8000-000000000002';
+SELECT pg_temp.expect_sqlstate($$UPDATE reauth_challenge SET student_id=NULL$$,'23514');
+UPDATE reauth_challenge SET purpose='WITHDRAWAL',student_id=NULL;
+
 INSERT INTO notification_setting (user_id, type, channel, enabled, updated_at)
 VALUES ('00000000-0000-4000-8000-000000000001', 'REPORT_COMPLETED', 'IN_APP', true, now());
 INSERT INTO notification_setting (user_id, type, channel, enabled, updated_at)

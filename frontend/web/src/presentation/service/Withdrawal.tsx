@@ -7,8 +7,37 @@ import { useSession } from '../auth/sessionContext.ts'
 import { useParentMutation } from '../../data/parent/queries.ts'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import { GoogleRecheck } from './AccountLifecycle.tsx'
+import { guardianTransfers } from '../../data/guardianTransfers.ts'
+import { parentApi } from '../../data/parent/api.ts'
+import { TransferDialog, guardianTransferEnabled } from './GuardianTransferUi.tsx'
 let receipt: { statusToken:string;withdrawalRequestId:string;status:string } | null = null
 export function Withdrawal() {
+  return guardianTransferEnabled ? <TransferWithdrawal/> : <ConfirmedWithdrawal/>
+}
+function TransferWithdrawal() {
+  const [step,setStep]=useState<'IDLE'|'PENDING'|'CHOICE'|'DELETE'>('IDLE')
+  const start=useParentMutation(async()=>{
+    const rows=await guardianTransfers.list()
+    if(rows.items.some(r=>r.direction==='OUTGOING'&&r.status==='PENDING'))return 'PENDING' as const
+    return (await parentApi.children()).items.length ? 'CHOICE' as const : 'DELETE' as const
+  })
+  const cancel=useParentMutation(async()=>{
+    await guardianTransfers.cancelOutgoing()
+    return (await parentApi.children()).items.length ? 'CHOICE' as const : 'DELETE' as const
+  })
+  return <section className="svc-page ws-card ws-form"><h2>회원 탈퇴</h2>
+    {step==='DELETE' ? <><button onClick={()=>setStep('IDLE')}>탈퇴 절차 나가기</button><ConfirmedWithdrawal/></> : <button disabled={start.isPending||cancel.isPending} onClick={()=>void start.mutateAsync(undefined).then(setStep).catch(()=>{})}>탈퇴 절차 시작</button>}
+    <ErrorNotice error={start.error??cancel.error}/>
+    {step==='PENDING'&&<TransferDialog title="진행 중인 이관 요청"><p>진행 중인 자녀 이관 요청이 있습니다. 이관 요청을 취소하고 탈퇴 절차를 다시 시작하시겠습니까?</p>
+      <button disabled={cancel.isPending} onClick={()=>setStep('IDLE')}>이관 유지</button>
+      <button disabled={cancel.isPending} onClick={()=>void cancel.mutateAsync(undefined).then(setStep).catch(()=>{})}>이관 취소 후 탈퇴 절차 진행</button><ErrorNotice error={cancel.error}/>
+    </TransferDialog>}
+    {step==='CHOICE'&&<TransferDialog title="자녀를 이관하시겠습니까?"><p>다른 학부모에게 자녀 프로필·학습 기록·리포트를 이관할 수 있습니다. 이관하지 않으면 최종 탈퇴 확인 후 기존 삭제 절차를 진행합니다.</p>
+      <Link to="/parent/transfers">이관 페이지로 이동</Link><button onClick={()=>setStep('DELETE')}>이관하지 않고 탈퇴 절차 진행</button><button onClick={()=>setStep('IDLE')}>닫기</button>
+    </TransferDialog>}
+  </section>
+}
+function ConfirmedWithdrawal() {
   const navigate=useNavigate()
   const [token,setToken]=useState(''),[confirmed,setConfirmed]=useState(false)
   const precheck=useParentMutation(serviceApi.precheck),withdraw=useMutation({mutationFn:()=>serviceApi.withdraw(token)})

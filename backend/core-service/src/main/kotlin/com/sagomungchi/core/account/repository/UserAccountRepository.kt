@@ -10,4 +10,5 @@ class UserAccountRepository(private val mapper: UserAccountMapper) {
     fun insert(account: UserAccount) { check(mapper.insert(account) == 1) }
     fun findById(id: UUID): UserAccount? = mapper.findById(id)
     fun lockById(id: UUID): UserAccount? = mapper.lockById(id)
+    fun transferRecipients(email: String) = mapper.findTransferRecipients(email)
 }

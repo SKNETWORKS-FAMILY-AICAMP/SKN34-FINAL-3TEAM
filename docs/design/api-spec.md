@@ -914,6 +914,33 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 ## 5. 구현 계약
 
+### #289 학부모 탈퇴 전 자녀 이관
+
+이 절은 #275의 잘못된 다중 보호자 전제를 정정한 #289의 구현 계약이다. 서버
+`app.guardian-transfer.enabled=true`와 웹 `VITE_GUARDIAN_TRANSFER_ENABLED=true`에서만
+진입점을 제공한다. 두 설정의 기본값은 false이며, V26 마이그레이션은 기존 V24 보호자 비밀번호와 V25 동의 문서를 보존한다. 기능 플래그는 DB 롤백 수단이 아니다.
+
+- `POST /guardian-transfers/recipient` `{email}`: 가입 Google 이메일의 활성 학부모를 정확히 조회.
+  본인/비학부모/미가입/중복 이메일 후보는 거부하며 자녀 3명 제한을 확인한다.
+- `GET /guardian-transfers`: 본인이 보낸/받은 요청만 반환. 자녀가 없어도 필수 이용 동의 후 접근 가능.
+- `POST /guardian-transfers` `{childId,recipientId,includeConversations}`와
+  `X-Reauth-Token`(CHILD_TRANSFER, 해당 자녀): 자녀별 PENDING 요청 생성.
+- `POST /guardian-transfers/{id}/accept` `{consents}`와 `X-Reauth-Token`(TRANSFER_ACCEPT):
+  수신자가 현재 GUARDIAN 문서에 동의하면 연결·동의·선택 대화 소유권을 같은 트랜잭션에서 변경.
+- `POST /guardian-transfers/{id}/reject`, `/cancel`: 수신자 거절/발신자 취소. 종료 상태는 되돌리지 않는다.
+- `POST /guardian-transfers/cancel-outgoing`: 탈퇴 재진입 확인 시 본인의 대기 요청만 취소.
+  이 호출 자체는 탈퇴·삭제를 수행하지 않는다.
+- 기본 이관은 동일 학생 ID의 프로필·학습·리포트 유지. 상담 대화 포함은 기본 false이며
+  발신자와 해당 자녀의 대화만 이관한다. 결제·구독·리포트 표시 설정은 학부모 간 이전하지 않는다.
+- 발신자의 기존 탈퇴 사전 검사 및 자녀의 활성 구독 정리가 요청/수락 시 모두 필요하다.
+  삭제 요청이 있는 자녀, 실행 중 상담/관리자 재처리는 이관하지 않는다.
+- PENDING 동안 자녀 삭제·연결 해제·발신자 탈퇴를 거부한다. 수락 전 기록 접근은 허용하지 않는다.
+- 이전 연결은 이관 완료 표식을 남겨 일반 연결 해제와 구분한다. 이전 학부모는 삭제 권한을 잃고,
+  탈퇴해도 이관된 자녀/대화는 유지한다. 미이관 대화는 이전 학부모 탈퇴 시 별도 정리한다.
+- 기존 학생 세션·기기 연결은 종료하며 새 학부모가 기기를 등록한다. 새 보호자의 기존 리포트 설정을 사용한다.
+- 수락·취소·동시 자녀 등록은 계정 ID 정렬 잠금 → 학생 → 요청 순서로 직렬화하고 DB에서 활성 보호자 1명을 강제한다.
+- 새 이관 경로는 기존 개인정보·보호자 동의·재인증을 우회하지 않는다. 기존 삭제/탈퇴 경로는 그대로 유지한다.
+
 ### 5.1 #36 Google OAuth·토큰 구현 계약 (개정 P01 정렬)
 
 인증 경로의 정식 공개 계약은 [core-service OpenAPI](../../contracts/openapi/core-service.yaml). 이 절은 부모·관리자 Google 인증과 동석 학생 진입, 학생 기기·PIN은 3.11.

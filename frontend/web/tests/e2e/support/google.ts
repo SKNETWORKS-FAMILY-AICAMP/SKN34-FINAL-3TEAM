@@ -32,6 +32,6 @@ export async function useGoogleIdentity(context: BrowserContext, identity: Googl
     if (response.status() !== 302 || !location) throw new Error(`authorize 응답 확인 필요: ${response.status()}`)
     await route.fulfill({ response, headers: { ...response.headers(), location: callback(location, identity) } })
   })
-  await context.route('https://accounts.google.com/**', (route) =>
+  await context.route(/^(https:\/\/accounts\.google\.com\/|http:\/\/127\.0\.0\.1:(5185|5195)\/trial\/google\/authorize)/, (route) =>
     route.fulfill({ status: 302, headers: { location: callback(route.request().url(), identity) } }))
 }

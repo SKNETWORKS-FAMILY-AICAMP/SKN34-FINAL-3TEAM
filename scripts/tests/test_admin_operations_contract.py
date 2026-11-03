@@ -50,6 +50,12 @@ class AdminOperationsContracts(unittest.TestCase):
                     for option in reviewed['post']['requestBody']['content']['application/json']['schema']['oneOf']:
                         purpose=option['properties'].get('purpose')
                         if purpose: purpose['enum'].remove('GUARDIAN_PASSWORD')
+                # #289 extends reauthentication without removing guardian password support.
+                if section=='paths' and name=='/me/reauth':
+                    purposes=reviewed['post']['requestBody']['content']['application/json']['schema']['oneOf'][0]['properties']['purpose']['enum']
+                    for purpose in ('CHILD_TRANSFER','TRANSFER_ACCEPT'):
+                        self.assertIn(purpose,purposes)
+                        purposes.remove(purpose)
                 canonical=json.dumps(reviewed,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
                 self.assertEqual(expected,hashlib.sha256(canonical).hexdigest(),f'{section}/{name}')
     def test_admin_paths_and_retry_key(self):

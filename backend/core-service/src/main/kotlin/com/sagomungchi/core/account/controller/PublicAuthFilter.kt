@@ -46,7 +46,7 @@ class PublicAuthFilter(private val auth: AuthService, private val properties: Au
             if (path.startsWith("/students/") || path.startsWith("/missions") || path.startsWith("/attempts/") || path.startsWith("/answers/")) {
                 if (identity.session.role != "STUDENT") throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "학생 세션이 필요합니다.")
             }
-            if (listOf("/student-devices", "/children", "/conversations", "/reports", "/agent/", "/orders", "/payments", "/subscriptions").any { path.startsWith(it) }) {
+            if (listOf("/guardian-transfers", "/student-devices", "/children", "/conversations", "/reports", "/agent/", "/orders", "/payments", "/subscriptions").any { path.startsWith(it) }) {
                 if (identity.session.role != "PARENT" && !adminReportRegeneration) throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "학부모 세션이 필요합니다.")
             }
             if (identity.session.role == "STUDENT" && (path.startsWith("/me/") || (path == "/me" && request.method != "GET")))
