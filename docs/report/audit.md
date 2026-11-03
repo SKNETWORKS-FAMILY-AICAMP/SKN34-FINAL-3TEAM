@@ -159,11 +159,11 @@ PR `feature/develop-verification`에서 단계별 1커밋으로 처리.
 
 | 이슈 | 내용 | 상태 |
 |---|---|---|
-| #93 | 웹 관리자 모델 레지스트리 요청 모양이 OpenAPI와 다름 | 미해결(1.2 B12) |
+| #93 | 웹 관리자 모델 레지스트리 요청 모양이 OpenAPI와 다름 | 미해결(1.2 B12) → **해결**(3.2 B12) |
 | #94 | 토큰 미기록 비용을 0으로 계산 | 해결: 입력·출력 토큰 중 하나라도 null이면 `cost_usd` null(부분 계산값은 완전한 비용과 구분되지 않아서). API 계약 변경 없음 |
 | #95 | `SPEECH` 호출 종류 잔존 | 해결: 이벤트 스키마·ai·core enum·OpenAPI에서 제거(`callType=SPEECH`는 400), DB CHECK는 core V14(#99) |
 | #96 | P12 "확정 전 임시값" 주석 | 해결: 서비스 공통 내부 호출 기본값 30초는 P12 목록 밖이라 값 유지, 주석만 정리 |
-| #97 | 웹 `/auth/login`·`/auth/signup`·`/me/reauth {password}` 잔존 호출 | 미해결(1.2 B12) |
+| #97 | 웹 `/auth/login`·`/auth/signup`·`/me/reauth {password}` 잔존 호출 | 미해결(1.2 B12) → **해결**(3.2 B12) |
 
 ### #56 후속 반영 (2026-10-29)
 
@@ -343,14 +343,14 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 3장과 같이 
 |---|---|---|
 | B8 | 해결 | #131 병합(#175). 학생별 선두 발행·1/5/15분 재시도·격리·운영 CLI(`outbox/manage.py`) |
 | B10 | 미해결(#133 열림) → **#133 해결**(5장) | `StudentDeviceController`가 `remoteAddr` 사용 |
-| B17 | 해결 | #135 병합(#177). ai `scoring_url`은 #69 예정 설정으로 유지 |
+| B17 | 해결 | #135 병합(#177). ai `scoring_url`은 #69 예정 설정으로 유지 → **#69에서 사용**(6.2) |
 | B18·B19 | 해결 | #163. 관리자 미션 404 전달·지원 403 구분([#46 보고서](issue-46-support.md)) |
 | A1 | 해결 | #166. `OutboxRelay.relay`는 트랜잭션 밖 발행·confirm 후 짧은 트랜잭션 기록 |
 | A2 | 해결 | #167·#192. `ai-analysis`·`report-query`·`report-recovery`·`toss-lookup`·`toss-transactions` 서킷 추가, 토스 쓰기는 예외 유지 |
 | A3 | 일부 해결 | #168·#169로 domain의 `HttpStatus`·Jackson 직접 import 0건. `BusinessException`(HttpStatus 필드) 간접 의존은 남음(A8) |
 | A4 | 일부 해결 | `LlmUsageRecorded`→`usage/domain`, `PremiumUsageClient` 역참조 제거, Redis 구독→`notification/consumer`. `NotificationRedisPublisher`→service는 남음(A9) |
 | A5 | 해결 | #170. 같은 종류 위반이던 `SupportResults.tsx`(A14)도 #255에서 해결 |
-| A6 | 일부 해결 | ai `model.version.activated` 소비 #68(#194). ai→scoring 교차 확인은 #69 예정 |
+| A6 | 일부 해결 → **#69 해결**(6.2) | ai `model.version.activated` 소비 #68(#194). ai→scoring 교차 확인은 #69 예정 |
 | A7 | 유지 → **#204(#171) 병합으로 local 앱 chart·Ingress·NetworkPolicy·HPA·KEDA·PDB·관측 구성**(5장) | #171은 "EKS 사용 확정"으로 종료됐으나 앱 chart·Ingress·NetworkPolicy·HPA·KEDA는 저장소에 없음. architecture "(예정)" 표기 유지 |
 | D16 | 미해결(#165 열림) → **#165 일부 해결**(#229, 4.6) | 번호 체계 밖 절이 #47·#48 절 추가로 늘어남(4.5) |
 
@@ -551,4 +551,146 @@ core·learning은 import를 레이어로 분류해 전수 검사, Python·웹은
 | CI | `e2e.yml` 야간 실행은 main 병합 전까지 동작하지 않음. `tests/*-browser.mjs`·JDK 21 `verify_*`는 수동 |
 | 수동 브라우저 스크립트 | `tests/requirements-browser.mjs`가 develop에서 이미 실패: 지원 단계(목록 제목 엄격 모드 중복)와 계정 화면 자녀 정보 저장 단계(`자녀 정보를 저장했습니다.` 미표시). 지원 단계는 B28과 함께 수정, 계정 단계는 남음(worktree로 develop 재현) |
 | 번호 체계 밖 절 | api-spec 첫 절(2026-11-01 #206·#207)·functional-spec #206·#207·#209 절(5.2 D16) → **#245 정리**(functional-spec 맨 위 변경 요약 절은 유지) |
-| 발행 이슈 | B32 #275, B34 #276, B35 #277, A17 #278, A18 #279, A19 #280 |
+| 발행 이슈 | B32 #275, B34 #276, B35 #277, A17 #278, A18 #279, A19 #280 → **모두 종료**(6.2) |
+
+## 6. develop 종합 검증 (b97cc67)
+
+5장 이후 PR 22개(#272~#304 범위, 84커밋·307파일) 병합 직후 develop `b97cc67`의 테스트·코드↔코드·코드↔문서·문서 간·아키텍처 정합성 점검. 이번 점검은 코드·설계 문서를 수정하지 않고 발견 항목을 모두 이슈로 발행함(이 문서의 낡은 상태 표기만 정정, D29). 번호는 5장에 이어 결함 B36~, 코드↔문서 C45~, 문서 간 D26~, 아키텍처 A20~, 테스트 공백 T1~.
+
+### 6.1 실행 결과
+
+Windows 11 로컬 실행. CI와 같은 명령, core·learning은 5장과 같이 `gradle:8.14.6-jdk21` 컨테이너(저장소 마운트, Docker 소켓, `TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal`, 서비스별 Gradle 캐시 볼륨. 두 서비스가 캐시 볼륨 하나를 함께 쓰면 Gradle 잠금 충돌로 learning 빌드가 시작 전 실패), helm은 `alpine/helm:4.3.1` 컨테이너. develop CI도 `b97cc67`·`8636a4d` 기준 전 워크플로 통과.
+
+| 대상 | 명령 | 결과 |
+|---|---|---|
+| ai-service | `uv sync --frozen` → `ruff check` → `ruff format --check` → `pytest` | 통과. 343건(295초) |
+| scoring-service | 동일 | 통과. 199건(74초) |
+| report-service | 동일 + `playwright install chromium` | 통과. 337건(226초), 경고 1건(`starlette.testclient`의 httpx 사용 폐기 예정) |
+| core-service | `./gradlew test bootJar` | 통과. 476건(23분) |
+| learning-service | 동일 | 통과. 290건(10분) |
+| web | `npm ci` → `npm run lint` → `npm test` → `npm run test:types` → `npm run build` → `npm run test:browser` | 통과. lint 경고 1건(B23), 단위 209건, 타입 검사·빌드 통과(500 kB 경고 없음), 브라우저 24건 |
+| web 운영 산출물 | `node tests/production-mocks.mjs` | 통과 |
+| web 수동 브라우저 | `VITE_API_MOCK=true` 개발 서버 + `node tests/requirements-browser.mjs` | 실패(B43, 5.6 계정 단계와 같은 지점) |
+| 루트 계약 테스트 | PyYAML 6.0.3·jsonschema 4.26.0, `python -O -m unittest discover -s scripts/tests` | 통과. 100건(69초) |
+| DB 마이그레이션 | 임시 `postgres:17.11-alpine`에서 `check_db_migrations.py`·`check_policy_migrations.py` | 통과. core 48/441, learning 19/162, report 8/63(테이블/컬럼), 위반 입력 71건, CHECK 값 79종, 인덱스 37개, 재실행·Alembic 왕복(41초). 정책 마이그레이션 통과(133초) |
+| GitOps | `ci-gitops.yml`과 같은 local 환경별 `helm lint --strict`·`helm template`(Kubernetes 1.35.8) | 통과(8개 release). kubeconform은 원격 스키마 카탈로그가 필요해 미실행(develop CI 통과) |
+| ml | `ci-ml-m1.yml`·`ci-ml-m2.yml`과 같은 `ruff check`·`ruff format --check`·`pytest` | 통과. m1 3건(1건 건너뜀), m2 9건(3건 건너뜀) |
+
+정적 대조:
+
+| 대상 | 결과 |
+|---|---|
+| core·learning 컨트롤러 경로 ↔ OpenAPI | core 149/149, learning 36/36 일치(#289 이관 7개 경로 포함) |
+| ai·report·scoring 라우트 ↔ OpenAPI | ai 6/6, report 7/7, scoring 3/3. ai `/versions` 프롬프트 키 5종(`reportTemplate` 포함). ai `JudgmentSummary.heldReason` enum 1건(C51) |
+| 요청·응답 DTO | #289 이관·`/auth/parent-unlock`·보호자 비밀번호 DTO가 컨트롤러·OpenAPI·웹 타입 일치. 이관 상태·재인증 purpose 7종이 V26 CHECK·Kotlin·OpenAPI·웹 일치 |
+| api-spec ↔ OpenAPI·코드 | #289 오류 코드·경로 표·재인증 purpose 누락(C45~C47), V24 refresh 쿠키 서술(C50) |
+| 웹 API 호출 ↔ core OpenAPI | 경로는 시연 전용(`/auth/login`·`/auth/signup`·`/auth/student/demo-device`·`/__payment-test`) 외 일치. #304 돌아보기·분석 요청 정렬 확인. 관리자 기준표 요청 필드 누락(B37), MSW 차이(C48·C50) |
+| 서비스 간 HTTP 클라이언트 ↔ 호출 대상 | core→learning·ai·report, learning→ai·core, ai→learning·scoring(#69 `M2Request`·점수 키·`{active:false}`), report→core·learning·ai 경로·DTO 일치. scoring 오류 전파 1건(A20·B36) |
+| 이벤트·큐 | `definitions.json` exchange 3·큐 30 ↔ 발행자·소비자 일치. 5장 이후 이벤트 스키마 변경 없음. #250 이후 Redis 알림 채널 발행·구독 일치 |
+| 공유 상수 | 내부 헤더(`X-Internal-Token`·`X-User-*`·`X-Student-Scope`·`traceparent`) ai→scoring 포함 일치. P12 시간 제한과 #69 시간 예산(ai `judge_deadline` 33초 < learning→ai 35초, scoring 시간은 남은 시간으로 제한) 일치. `essay_type` 값 V9 CHECK·learning·ai·scoring 일치 |
+| 환경 변수 | compose·`.env.example`·`application.yml`·Python `Settings`·GitOps 대조. GitOps `secretKeyRef` 키는 `create-app-secrets.ps1`이 모두 생성. 전달 누락 1건(B41) |
+| 마이그레이션 revision | GitOps local `v26`·`v9`·`20261102-05` = 최신 마이그레이션(`test_core_migration_versions.py` 검사) |
+| 상태 값 | ERD CHECK ↔ 코드 enum 일치. state-diagram에 이관·세션 잠금 없음(C49) |
+| FN/NFR/UC ID | 참조 ID 모두 정의됨(FN 120·NFR 39·UC 28), 중복 정의 없음 |
+| 문서 링크 | 상대 링크·앵커 343개 중 깨짐 0건 |
+
+실행하지 않은 것: JDK 21 JAR 전제 `verify_*`, 모델 archive 전제 `verify_scoring_*`, `requirements-browser.mjs` 외 `tests/*-browser.mjs`, compose 전체 스택 E2E(`e2e.yml`, main 미병합 C43), kubeconform.
+
+### 6.2 5장 미해결 항목 재판정
+
+| # | 현재 상태 | 근거 |
+|---|---|---|
+| A6 | 해결 | #69(#303). ai 판정이 scoring M2·M1 교차 확인 호출(기본 꺼짐), `clients/scoring_client.py`·`judgment/cross_check.py`. 4.2 B17의 "`scoring_url`은 #69 예정"도 해소 |
+| A13 | 유지 | scoring `messaging/consumer.py`가 `ModelStartup` 생성·revision 조정을 계속 담당 |
+| B23 | 유지 | `AdminOperations.tsx:204` oxlint 경고 1건(동작 문제 없음). 같은 관리자 화면 이슈(B37)에 함께 기재 |
+| B32·B34·B35·A17·A18·A19 | 해결 | #275·#276·#277·#278·#279·#280 모두 종료 |
+| 5.6 OpenAPI | 유지 | `STUDENT_RECORDS_PRIVATE`가 core OpenAPI에 0건(C59) |
+| 5.6 요구사항 차이 | 유지 | FN-AGT-12 수학 점검 예시 질문 차이, api-spec 2.4에 현재 동작 기재 |
+| 5.6 테스트 공백 | 유지 | core HTTP 테스트 없음: `/attempts/{id}/comparison` 프록시, sharing-preferences(T1) |
+| 5.6 CI | 유지 | main(`91664fd`)에 `e2e.yml` 없음. `tests/*-browser.mjs`·JDK 21 `verify_*`는 수동 |
+| 5.6 수동 브라우저 스크립트 | 원인 확인 | 계정 단계 실패 재현. 목업 자녀 별명이 이미 `서윤`이고 #134 이후 화면은 바뀐 필드만 보내므로 "바뀐 내용이 없습니다." 표시. 스크립트 입력값 문제(B43) |
+| 4.6 인프라·설계 차이 | 유지 | #211(Karpenter)·#212(S3 Gateway) 열림 |
+
+### 6.3 발견 항목과 처리
+
+| # | 종류 | 내용 | 처리 |
+|---|---|---|---|
+| A20·B36 | 아키텍처·결함(중간) | scoring 장애·시간 초과·5xx와 scoring 400(learning이 허용하는 keywords 100개×200자가 M2 토큰 한도 초과)을 ai가 모두 503 `SCORING_UNAVAILABLE`로 변환. learning `AiClient`는 판정·되묻기 공용 `ai` 서킷에서 5xx를 실패로 집계해 LLM 단독 판정·되묻기까지 30초 차단. `M2_CROSS_CHECK_ENABLED=false`여도 keywords·essayType이 있으면 scoring 호출(플래그는 HELD 여부만 결정). architecture 1.3 구간 독립·1.1 scoring 분리 취지와 다름. ai `judgment/service.py:63-71,111-153`, `clients/scoring_client.py:79-84`, learning `judgment/client/AiClient.kt:40,49,68`, `mission/controller/AdminMissionController.kt:239,255-256`, scoring `m2/service.py:39-40` | 이슈 #305 |
+| B37 | 결함(중간) | 웹 관리자 기준표 저장이 `keywords`·`essayType`을 보내지 않아 새 rubric_version에서 빈 값으로 저장, 해당 미션 M2 교차 확인이 조용히 중단. 웹 `Rubric` 타입·편집 UI에 두 필드 없음. 웹 `data/admin/api.ts:60-61`, `domain/admin/operations.ts:96-108`, learning `AdminMissionController.kt:77-79,238-244`, `learning-service.yaml` `AdminRubric` | 이슈 #306(B23 함께 기재) |
+| B38 | 결함(낮음) | `/guardian-transfers*`가 `PublicAuthFilter` 동의 요구 대상이라, 서비스가 동의 없이 허용한 취소(`{id}/cancel`·`cancel-outgoing`)가 403 `CONSENT_REQUIRED`. 필수 동의가 빠진 학부모는 탈퇴 409 `TRANSFER_PENDING`과 취소 403 사이에서 막힘. core `account/controller/PublicAuthFilter.kt:49,58-67`, `guardianship/service/GuardianTransferService.kt:101-116`, `AccountWithdrawalService.kt:28` | 이슈 #307 |
+| B39 | 결함(낮음) | `GuardianTransferController`는 `app.guardian-transfer.enabled`일 때만 등록되지만 `GuardianTransferAccessService` 대기 검사는 항상 동작. 플래그를 끄면 남은 PENDING 행이 탈퇴·연결 해제·삭제를 409로 막고 취소 API는 404. `ChildManagementService.kt:47,55` | 이슈 #307 |
+| B40 | 결함(낮음) | `PUT /me/guardian-password`가 비밀번호 규칙 검사(422)를 역할 확인(403)보다 먼저 수행(#277과 같은 유형). core `GuardianPasswordService.kt:28-30` | 이슈 #310 |
+| B41 | 설정(낮음) | ai #69 설정(`M2_CROSS_CHECK_ENABLED`·`M1_CHECK_ENABLED`·M2 임계값·`M1_MIN_CONFIDENCE`·`JUDGE_DEADLINE`·`SCORING_TIMEOUT`·`SCORING_RESERVE`)이 compose·`.env.example`·GitOps 어디에도 없어 `.env`로 켤 수 없음. GitOps local core `APP_GUARDIAN_TRANSFER_ENABLED`·scoring `M2_CONTENT3_RULE_ENABLED` 없음(compose·`.env.example`에는 있음, 기본 false). `compose.transfer-local.yaml`은 scoring을 끄지만 ai `SCORING_URL`은 유지. ai `config.py:47-58` | 이슈 #312 |
+| B42 | 결함(낮음) | #199 평가 러너 `evaluatedScopes`가 M2 모델 scope(`judgment/grade-N/{type}`, api-spec 4.3.1)인데 평가 대상은 LLM 판정 프롬프트(scope `ai/judgment`, api-spec 4.2). 산출 `evaluation`으로 PROMPT 등록 후 `ai/judgment` 활성화 시 core `evidence.covers` 실패 400. `evaluation/runners/judgment_eval.py:60-62,267`, core `ModelVersionService.kt:46` | 이슈 #313 |
+| B43 | 테스트(낮음) | `tests/requirements-browser.mjs`가 목업 자녀 별명과 같은 `서윤`을 입력해 저장 성공 문구를 기다림. 화면은 "바뀐 내용이 없습니다." 표시 후 15초 시간 초과(`requirements-browser.mjs:44-46`, `AccountForms.tsx:285-293`) | 이슈 #318 |
+| C45 | 코드↔문서 | #289 오류 코드 6종(`TRANSFER_PENDING`·`TRANSFER_ALREADY_RESOLVED`·`TRANSFER_CHILD_UNAVAILABLE`·`TRANSFER_RECIPIENT_NOT_FOUND`·`TRANSFER_ACTIVITY_IN_PROGRESS`·`TRANSFER_PAYMENT_BLOCKED`)이 api-spec 1.3·OpenAPI 응답 설명에 없음. 탈퇴·연결 해제·삭제 요청 행에 `TRANSFER_PENDING` 409 미기재 | 이슈 #308 |
+| C46 | 코드↔문서 | 이관 7개 경로가 api-spec 2.1 표에 없음(본문 서술만). OpenAPI는 "격리된 로컬 이관 실험", api-spec은 구현 계약으로 기술. api-spec 1.5 상태 값에 이관 상태 없음 | 이슈 #308 |
+| C47 | 코드↔문서 | api-spec 재인증 purpose 목록(1041행)에 `CHILD_TRANSFER`·`TRANSFER_ACCEPT` 없음(코드·OpenAPI·ERD는 7종) | 이슈 #308 |
+| C48 | 코드↔코드 | MSW에 `/guardian-transfers*` 핸들러 없음, MSW `/me/reauth`가 `CHILD_TRANSFER`·`TRANSFER_ACCEPT`를 비밀번호 분기로 보내 401. 목업 모드에서 이관 화면 동작 안 함 | 이슈 #308 |
+| C49 | 코드↔문서 | #289·V24가 state-diagram(이관 상태 머신, 2.3 TRANSFER·`transferred_at`·V26 부분 UK, 탈퇴 조건, `auth_session` 잠금)·class-diagram(이관 클래스·`GuardianPasswordService`)·sequence(이관 흐름)·usecase(UC-03·05)·user-flow(`/parent/transfers`·`ParentUnlock`·보호자 비밀번호 설정)에 없음. "다른 보호자 연결 없음" 문장(class 507·state 97·sequence 104행)에 이관 예외 없음 | 이슈 #309 |
+| C50 | 코드↔문서 | core OpenAPI 4곳이 "학생 전환은 refresh 쿠키를 만료"(V24 이후 `keepRefresh=true`로 유지), `/auth/refresh` 401에 `PARENT_SESSION_LOCKED` 미기재. MSW `parent-unlock`은 잠기지 않은 세션에 401(core는 200) | 이슈 #310 |
+| C51 | 코드↔코드 | ai-service.yaml `JudgmentSummary.heldReason` enum 4종, 코드 `HeldReason`은 6종(`MODEL_DISAGREEMENT`·`LOW_CONFIDENCE`) | 이슈 #311 |
+| C52 | 코드↔문서 | class-diagram `ScoringClient` 시그니처(1566-1569행)가 코드 `m2_scores(body, timeout)`·`m1_check(body, timeout)`와 다름. `ai.md:288` 논술 text 조합 "미정"(api-spec 4.2.2에서 `answerText`로 결정) | 이슈 #311 |
+| C53 | 코드↔문서 | ERD 1213행 "learning Flyway V1~V8, 75개 테이블·664개 컬럼, learning 19/160" → 실제 V9·19/162·666 | 이슈 #311 |
+| C54 | 코드↔문서 | architecture 2.6 트리: `scoring_client.py` "(예정)" 잔존, `judgment/cross_check.py`·scoring `m2/metadata.py`·`content3_rule.py`·notification `messaging/`·#289 클래스 없음 | 이슈 #315 |
+| C55 | 코드↔문서 | architecture 4.3 "learning·report-worker → core는 삭제 완료 보고만"(625행). 실제로 learning `/internal/payment-usage/*`, report-worker `/internal/students/{id}/profile`·`/report-template` 호출(NetworkPolicy는 허용) | 이슈 #315 |
+| C56 | 코드↔문서 | architecture 5장 트리에 삭제된 `kind/*-issue-171*` 잔존, 실제 kind 파일(`README.md`·`calico-installation.yaml`·`create-*-secret*.ps1`·`ingress-nginx-values.yaml`)·`compose.transfer-local.yaml`·`scripts/`·`playwright.transfer-local.config.ts` 누락. 768행 "`ci-<service>`는 해당 서비스 계약 파일" → ai·core는 `contracts/**` 전체, ai는 `evaluation/**`도 감시 | 이슈 #315 |
+| C57 | 문서 간 | class-diagram 1706행 "`AnalysisService` 없이 `router.py`가 그래프를 실행" — #253 이후 `analysis_agent/service.py` `AnalysisService`(같은 문서 1618·1686행, architecture 397행과 모순) | 이슈 #315 |
+| C58 | 코드↔문서 | README 53행 "동의 문서 미게시는 503"(V25 시드로 1.0 게시), 54행 "앱 Deployment는 저장소에 없음"(app-service chart 존재), 환경 변수 표에 `APP_GUARDIAN_TRANSFER_ENABLED`·`VITE_GUARDIAN_TRANSFER_ENABLED` 없음 | 이슈 #316 |
+| C59 | 코드↔문서 | `STUDENT_RECORDS_PRIVATE`(403)가 api-spec·코드에만 있고 core OpenAPI 응답 설명에 없음(5.6 이월) | 이슈 #317 |
+| T1 | 테스트 공백 | core HTTP 테스트 없음: `/attempts/{id}/comparison` 프록시, `/students/me/sharing-preferences`(서비스·DB 테스트만, 5.6 이월) | 이슈 #317 |
+| D26 | 문서 간 | api-spec 929행 번호 없는 `### #289` 절(#245 번호 체계 정리 회귀) | 이슈 #308 |
+| D27 | 문서 간 | FN-ACC-11 "다른 연결 계정 권한 영향 확인"이 P02(학생당 보호자 1명)·V26 부분 UK와 모순 | 이슈 #309 |
+| D28 | 문서 간 | `docs/README.md` 색인에 `issue-228-m2-model-compat.md` 없음, issue-168 항목에 #251 절 미언급 | 이슈 #316 |
+| D29 | 문서 간 | 이 문서의 낡은 상태: 2.1 #93·#97 "미해결"(3.2에서 해결), 4.2 A6·B17 "#69 예정", 5.6 발행 이슈 종료 미표기 | 이번 PR에서 해당 행 정정 |
+| A21 | 아키텍처(낮음) | core `_common/web/IdempotencyService.kt:62-66` `IdempotencyCleanup`의 `@Scheduled`가 scheduler 패키지 밖(2.1). #278 예외는 `_common/messaging`만. 만료 행 DELETE라 레플리카 중복 실행은 안전 | 이슈 #314 |
+
+발행 이슈와 담당자(관련 기존 이슈 담당자):
+
+| 이슈 | 항목 | 담당자 | 근거 이슈 |
+|---|---|---|---|
+| #305 | A20·B36 | 20220348-kim | #69 |
+| #306 | B37·B23 | kim-4480, 20220348-kim | #242(관리자 화면), #69 |
+| #307 | B38·B39 | inyoung9629 | #289 |
+| #308 | C45~C48·D26 | inyoung9629 | #289 |
+| #309 | C49·D27 | inyoung9629, kim-4480 | #289, PR #290(관련 이슈 없음) |
+| #310 | B40·C50 | kim-4480 | PR #290(관련 이슈 없음) |
+| #311 | C51~C53 | 20220348-kim | #69 |
+| #312 | B41 | 20220348-kim, inyoung9629 | #236, #289·#298 |
+| #313 | B42 | subinss838 | #199 |
+| #314 | A21 | 20220348-kim | #278 |
+| #315 | C54~C57 | 20220348-kim, kty2001 | #245·#273, #253 |
+| #316 | C58·D28 | 20220348-kim, inyoung9629 | #235·#171, #228·#289 |
+| #317 | C59·T1 | kim-4480, 20220348-kim | #206·#207 |
+| #318 | B43 | kim-4480 | #134 |
+
+### 6.4 아키텍처 원칙 정합성
+
+core·learning은 import를 레이어로 분류해 전수 검사, Python·웹은 grep으로 확인.
+
+지켜지는 원칙: 3장 3.7·4장 4.5·5장 5.5 항목 유지. 5장 이후 코드 추가 확인:
+- 레이어: #289 이관·V24 보호자 비밀번호·#286 재처리 코드 포함 presentation→repository/client 0건, domain의 Spring·Jackson·`HttpStatus` import 0건, infrastructure→service 0건, 다른 기능은 service로만 참조. 예외는 기존 결정(`_common/messaging` #278, support의 learning client #46)뿐
+- 트랜잭션 안 외부 호출 없음: #289 `request`·`accept`·`cancel`은 DB만, `ReportTemplateService`는 잠금 블록 사이 AI 호출, #286 `claim`은 트랜잭션·`runBackground`는 트랜잭션 밖
+- 클라이언트: core·learning·ai 모든 클라이언트에 타임아웃, #280 `ai-report-template` 별도 서킷, 재시도는 ai LLM 호출만
+- 주기 작업: ShedLock 또는 레플리카 안전 조건부 UPDATE·DELETE. #286 선점 만료는 DB 시계
+- DB 경계: 서비스별 자기 DB만, #289 SQL은 자기 기능 테이블만. report #252 경계 유지
+- Python: ai #253·#254 구조 유지, #69 교차 확인은 Application(`judgment/service.py`·`cross_check.py`)·클라이언트는 `clients/`
+- 웹: domain이 data·presentation 미참조, presentation의 `apiFetch`·mocks 참조 0건(이관·보호자 비밀번호·지원 화면 포함), access token 메모리 보관
+- readiness는 하위 서비스 호출 없음(ai readiness가 scoring 미확인), Outbox는 core·report만, `@RabbitListener` 4개 모두 `RetryingConsumer`·수동 ACK
+- GitOps: ai→`scoring-service:8001` egress와 scoring의 ai ingress 선언
+
+원칙과 다른 구현:
+
+| # | 내용 | 원칙 | 근거 |
+|---|---|---|---|
+| A20 | scoring 장애가 learning→ai 단일 서킷으로 번져 scoring과 무관한 판정·되묻기까지 차단 | 1.3 구간 독립, 1.1 scoring 분리 | 6.3 A20·B36, 이슈 #305 |
+| A21 | `IdempotencyCleanup` `@Scheduled`가 `_common/web`에 위치 | 2.1 scheduler 진입점 | 6.3 A21, 이슈 #314 |
+
+### 6.5 남은 공백
+
+| 대상 | 내용 |
+|---|---|
+| CI | `e2e.yml` 야간 실행은 main 병합 전까지 동작하지 않음. `tests/*-browser.mjs`·JDK 21 `verify_*`는 수동 |
+| 요구사항 차이 | FN-AGT-12(5.6과 같음) |
+| 인프라·설계 차이 | #211·#212 열림, architecture 4.2~4.4는 Cluster Autoscaler·NAT 기술 |
+| 기존 아키텍처 항목 | A13(scoring 소비자의 `ModelStartup` 생성·revision 조정) |
