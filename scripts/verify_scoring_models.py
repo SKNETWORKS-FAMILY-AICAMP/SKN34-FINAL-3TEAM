@@ -8,6 +8,7 @@ import argparse
 import base64
 import hashlib
 import hmac
+import io
 import json
 import subprocess
 import tarfile
@@ -47,14 +48,22 @@ def wait(url, predicate, headers=None, seconds=240):
 
 
 def verify(
-    archive, core_root, output, image, *, events=False, scores=False, epic=False
+    archive,
+    core_root,
+    output,
+    image,
+    *,
+    events=False,
+    scores=False,
+    epic=False,
+    releases=None,
+    essay_cuts=None,
 ):
+    releases = releases or {name: "2.0" for name in NAMES}
     if archive.is_relative_to(ROOT) or archive.is_relative_to(core_root):
         raise ValueError("Model archive must be outside repository checkouts")
     if output.is_relative_to(ROOT) or output.is_relative_to(core_root):
-        raise ValueError(
-            "Local Compose credentials/results must be outside repository checkouts"
-        )
+        raise ValueError("Local Compose credentials/results must be outside repository checkouts")
     jar = core_root / "backend/core-service/build/libs/core-service-0.0.1-SNAPSHOT.jar"
     if not jar.is_file() or any(
         p.is_file() and p.stat().st_mtime > jar.stat().st_mtime
@@ -121,10 +130,7 @@ def verify(
                     "RABBITMQ_PASSWORD": password,
                 },
                 "volumes": [
-                    str(
-                        core_root
-                        / "infrastructure/gitops/charts/platform-data/files/rabbitmq"
-                    )
+                    str(core_root / "infrastructure/gitops/charts/platform-data/files/rabbitmq")
                     + ":/definitions:ro"
                 ],
                 "entrypoint": ["/bin/sh", "/definitions/import-definitions.sh"],
@@ -134,10 +140,7 @@ def verify(
                 "image": "flyway/flyway:13.11.1-alpine",
                 "depends_on": healthy("postgres"),
                 "volumes": [
-                    str(
-                        core_root
-                        / "backend/core-service/src/main/resources/db/migration"
-                    )
+                    str(core_root / "backend/core-service/src/main/resources/db/migration")
                     + ":/flyway/sql:ro"
                 ],
                 "command": [
@@ -225,9 +228,7 @@ def verify(
             (output / "failed-command.log").write_text(
                 result.stdout + result.stderr, encoding="utf-8"
             )
-            raise RuntimeError(
-                "Local Docker command failed; inspect failed-command.log"
-            )
+            raise RuntimeError("Local Docker command failed; inspect failed-command.log")
         return result.stdout
 
     def url(service, port):
@@ -249,9 +250,7 @@ def verify(
         headers = {"X-Internal-Token": token}
         wait(core + "/actuator/health/readiness", lambda r: r.status_code == 200)
         wait(scoring + "/health/ready", lambda r: r.status_code == 200)
-        assert httpx.get(scoring + "/internal/versions", headers=headers).json() == {
-            "items": []
-        }
+        assert httpx.get(scoring + "/internal/versions", headers=headers).json() == {"items": []}
         assert httpx.get(scoring + "/internal/versions").status_code == 401
         passed("empty active snapshot ready; unauthenticated versions 401")
         if epic:
@@ -265,11 +264,10 @@ def verify(
                         "grade": 5,
                         "inputType": input_type,
                         "keywords": ["생각"],
+                        "essayType": "주장",
                     },
                 )
-                assert response.status_code == 200 and response.json() == {
-                    "active": False
-                }
+                assert response.status_code == 200 and response.json() == {"active": False}
             passed("both M2 input types return inactive before any model is activated")
         user, session = str(uuid4()), str(uuid4())
         sql = f"""INSERT INTO user_account(id,role,login_id,status,is_demo,created_at,updated_at)
@@ -320,11 +318,7 @@ def verify(
         access = (
             message
             + "."
-            + b64(
-                hmac.new(
-                    base64.b64decode(jwt_key), message.encode(), hashlib.sha256
-                ).digest()
-            )
+            + b64(hmac.new(base64.b64decode(jwt_key), message.encode(), hashlib.sha256).digest())
         )
         with httpx.Client(
             base_url=core, headers={"Authorization": "Bearer " + access}, timeout=30
@@ -348,14 +342,22 @@ def verify(
                         "humanReview",
                     )
                 }
-                evidence["evaluatedScopes"] = [scope]
-                uri = f"s3://{BUCKET}/models/{name}/2.0/"
+                scopes = (
+                    [
+                        f"judgment/grade-{g}/{name.removeprefix('m2-klue-')}"
+                        for g in ((5, 6) if name.endswith("narrative") else (4, 5, 6))
+                    ]
+                    if releases[name] != "2.0"
+                    else [scope]
+                )
+                evidence["evaluatedScopes"] = scopes
+                uri = f"s3://{BUCKET}/models/{name}/{releases[name]}/"
                 response = client.post(
                     "/api/v1/admin/model-versions",
                     json={
                         "kind": "MODEL",
                         "name": name,
-                        "version": "2.0",
+                        "version": releases[name],
                         "artifactUri": uri,
                         "evaluation": evidence,
                     },
@@ -366,14 +368,14 @@ def verify(
                     f"/api/v1/admin/model-versions/{model_id}/activate",
                     json={
                         "approved": True,
-                        "scopes": [scope],
+                        "scopes": scopes,
                         "reason": "Local transport/load verification only",
                         "reanalysisPlanned": False,
                     },
                 )
                 response.raise_for_status()
                 results["models"].append(
-                    {"name": name, "version": "2.0", "artifactUri": uri, "scope": scope}
+                    {"name": name, "version": releases[name], "artifactUri": uri, "scope": scope}
                 )
         results["snapshot"] = httpx.get(
             core + "/internal/model-versions/active", headers=headers
@@ -383,14 +385,10 @@ def verify(
         scoring = url("scoring", 8001)
         wait(
             scoring + "/health/ready",
-            lambda r: (
-                r.status_code == 503 and r.json()["checks"].get("models") == "DOWN"
-            ),
+            lambda r: r.status_code == 503 and r.json()["checks"].get("models") == "DOWN",
         )
         assert httpx.get(scoring + "/health/live").status_code == 200
-        assert httpx.get(scoring + "/internal/versions", headers=headers).json() == {
-            "items": []
-        }
+        assert httpx.get(scoring + "/internal/versions", headers=headers).json() == {"items": []}
         passed(
             "actual core registration/activation; missing files keep models DOWN and process live"
         )
@@ -409,8 +407,28 @@ def verify(
             with tarfile.open(archive, "r:*") as source:
                 for name in NAMES:
                     for filename in FILES:
-                        key = f"models/{name}/2.0/{filename}"
-                        member = source.getmember(key)
+                        key = f"models/{name}/{releases[name]}/{filename}"
+                        if name.endswith("essay") and filename == "score_cuts.json" and essay_cuts:
+                            payload = essay_cuts.read_bytes()
+                            cuts = json.loads(payload)
+                            results.setdefault("cuts", {})[name] = cuts
+                            s3.upload_fileobj(io.BytesIO(payload), BUCKET, key)
+                            assert s3.head_object(Bucket=BUCKET, Key=key)["ContentLength"] == len(
+                                payload
+                            )
+                            manifest.append(
+                                {
+                                    "key": key,
+                                    "bytes": len(payload),
+                                    "sha256": hashlib.sha256(payload).hexdigest(),
+                                    "source": "model owner supplied temporary boundaries",
+                                }
+                            )
+                            continue
+                        try:
+                            member = source.getmember(key)
+                        except KeyError:
+                            member = source.getmember("./" + key)
                         if filename == "score_cuts.json":
                             results.setdefault("cuts", {})[name] = json.load(
                                 source.extractfile(member)
@@ -422,35 +440,26 @@ def verify(
                         with source.extractfile(member) as stream:
                             s3.upload_fileobj(stream, BUCKET, key)
                         assert (
-                            s3.head_object(Bucket=BUCKET, Key=key)["ContentLength"]
-                            == member.size
+                            s3.head_object(Bucket=BUCKET, Key=key)["ContentLength"] == member.size
                         )
-                        manifest.append(
-                            {"key": key, "bytes": member.size, "sha256": digest}
-                        )
+                        manifest.append({"key": key, "bytes": member.size, "sha256": digest})
                     print("Uploaded locally: " + name, flush=True)
             results["manifest"] = manifest
         finally:
             s3.close()
-        ready = wait(
-            scoring + "/health/ready", lambda r: r.status_code == 200, seconds=300
-        )
+        ready = wait(scoring + "/health/ready", lambda r: r.status_code == 200, seconds=300)
         versions = httpx.get(scoring + "/internal/versions", headers=headers).json()
         assert versions == {
-            "items": [
-                {"name": n, "version": "2.0", "revision": 1} for n in sorted(NAMES)
-            ]
+            "items": [{"name": n, "version": releases[n], "revision": 1} for n in sorted(NAMES)]
         }
         after = json.loads(run(["ps", "--format", "json", "scoring"]))
         assert before["ID"] == after["ID"]
         results["versions"], results["readiness"] = versions, ready.json()
-        passed("real 2.0 checkpoints loaded; readiness recovered; versions match")
+        passed("real checkpoints loaded; readiness recovered; versions match")
         if scores:
             from verify_scoring_m2 import check_scores
 
-            check_scores(
-                run, url, core, access, headers, password, results, passed, epic=epic
-            )
+            check_scores(run, url, core, access, headers, password, results, passed, epic=epic)
             (output / "results.json").write_text(
                 json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8"
             )
@@ -494,9 +503,7 @@ def verify(
                 if line.startswith("PROBE_JSON=")
             )
         )
-        passed(
-            "CPU loader: finite 1x9 outputs, metadata, scope rejection, temporary cleanup"
-        )
+        passed("CPU loader: finite 1x9 outputs, metadata, scope rejection, temporary cleanup")
         logs = run(["logs", "--no-color", "scoring"])
         assert (
             token not in logs

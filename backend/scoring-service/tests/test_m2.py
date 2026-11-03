@@ -56,6 +56,7 @@ def body(**changes):
         "grade": 5,
         "inputType": "NARRATIVE",
         "keywords": ["통일성", "주제"],
+        "essayType": "주장",
         **changes,
     }
 
@@ -271,3 +272,91 @@ def test_usage_schema_and_disconnected_broker():
         await down.close()
 
     asyncio.run(run())
+
+
+def modern_model(kind="ESSAY", scopes=None):
+    from dataclasses import replace
+
+    old = model(kind, scopes=scopes)
+    config = dict(old.training_config, no_prompt="True")
+    cuts = old.score_cuts
+    if kind == "ESSAY":
+        config.update(
+            dataset="essay545",
+            num_outputs=14,
+            use_outputs=["org", "cont", "exp"],
+            outputs=["org", "cont", "exp"]
+            + [f"{key}_{i}" for key, n in (("org", 4), ("cont", 4), ("exp", 3)) for i in range(n)],
+        )
+        cuts = {"org": [0.5, 2.15, 2.55], "cont": [0.5, 2.15, 2.5], "exp": [0.5, 2.1, 2.55]}
+    return replace(old, training_config=config, score_cuts=cuts)
+
+
+@pytest.mark.parametrize(
+    "value,expected", [(-0.4, 0), (0.5, 1), (2.15, 2), (2.37, 2), (2.55, 3), (3.4, 3)]
+)
+def test_essay_14_outputs_integer_boundaries_and_unclipped_raw(monkeypatch, value, expected):
+    loaded = modern_model()
+    monkeypatch.setattr(LoadedModel, "predict", lambda *_: [[value, 1.25, 2.7] + [99.0] * 11])
+    result = infer(loaded, M2Request(**body(inputType="ESSAY")))
+    assert result.scores.model_dump() == {"org": expected, "cont": 1, "exp": 3}
+    assert result.rawScores.model_dump() == {"org": value, "cont": 1.25, "exp": 2.7}
+    assert loaded.tokenizer.first == "[학년] 초5 [글 종류] 주장"
+    assert loaded.tokenizer.text == "합성 학생 글"
+
+
+def test_narrative_new_input_removes_prompt_and_joins_keywords(monkeypatch):
+    loaded = modern_model("NARRATIVE")
+    monkeypatch.setattr(LoadedModel, "predict", lambda *_: [[2.5] * 9])
+    result = infer(loaded, M2Request(**body()))
+    assert loaded.tokenizer.first == "[학년] 초5 [핵심어] 통일성, 주제"
+    assert len(result.scores.model_dump()) == 9
+
+
+@pytest.mark.parametrize("grade,active", [(3, False), (4, True), (5, True), (6, True)])
+def test_modern_essay_grade_scope(monkeypatch, grade, active):
+    loaded = modern_model(scopes=tuple(f"judgment/grade-{n}/essay" for n in (4, 5, 6)))
+    monkeypatch.setattr(LoadedModel, "predict", lambda *_: [[2.37] * 14])
+    registry = ModelRegistry(lambda _: loaded)
+    asyncio.run(registry.load(loaded.metadata))
+    result = asyncio.run(
+        M2Service(registry, Usage()).score(M2Request(**body(inputType="ESSAY", grade=grade)))
+    )
+    assert result.active is active
+
+
+@pytest.mark.parametrize("essay_type", [None, "", "논술", 3])
+def test_essay_type_required_and_enum(monkeypatch, essay_type):
+    client, _, _, _ = setup(monkeypatch, "ESSAY")
+    r = client.post(
+        "/internal/m2/scores",
+        json=body(inputType="ESSAY", essayType=essay_type),
+        headers={"X-Internal-Token": "test-token"},
+    )
+    assert r.status_code == 400
+
+
+@pytest.mark.parametrize("fault", ["width", "nan", "cuts", "order", "no_prompt"])
+def test_modern_essay_rejects_incompatible_artifacts(monkeypatch, fault):
+    loaded = modern_model()
+    raw = [2.0] * 14
+    if fault == "width":
+        raw = [2.0] * 9
+    if fault == "nan":
+        raw[-1] = float("nan")
+    if fault == "cuts":
+        loaded.score_cuts["org"] = [0.5, 2.15]
+    if fault == "order":
+        loaded.training_config["outputs"][0] = "cont"
+    if fault == "no_prompt":
+        loaded.training_config["no_prompt"] = "False"
+    monkeypatch.setattr(LoadedModel, "predict", lambda *_: [raw])
+    with pytest.raises(ValueError):
+        infer(loaded, M2Request(**body(inputType="ESSAY")))
+
+
+def test_legacy_essay_grade_four_inactive_without_usage(monkeypatch):
+    _, service, _, usage = setup(monkeypatch, "ESSAY", scopes=("judgment/grade-4/essay",))
+    monkeypatch.setattr(LoadedModel, "predict", lambda *_: pytest.fail("inactive must not infer"))
+    result = asyncio.run(service.score(M2Request(**body(inputType="ESSAY", grade=4))))
+    assert not result.active and not usage.calls

@@ -32,6 +32,8 @@ def test_documented_operations_and_response_models_match_runtime():
         "M2Active",
         "M2Inactive",
         "Scores",
+        "EssayScores",
+        "EssayRawScores",
         "RawScores",
         "ModelIdentity",
         "M1Request",
