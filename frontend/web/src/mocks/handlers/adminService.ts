@@ -24,9 +24,9 @@ export const adminServiceHandlers=[
  http.get('/api/v1/notices',({request})=>respond(async()=>{guard(request);const role=store.snapshot().session!.role;const rows=notices.filter(n=>n.roles.includes(role)&&Date.parse(n.startsAt)<=Date.now()&&(!n.endsAt||Date.parse(n.endsAt)>Date.now())&&!(n as unknown as AdminNotice).endedAt);return list(request,rows.map(noticeView))})),
  // Mirrors core GET /admin/notices: status derived at query time, targetRoles filter, visibleFrom DESC.
  http.get('/api/v1/admin/notices',({request})=>respond(async()=>{
-  const q=new URL(request.url).searchParams,status=q.get('status'),role=q.get('role')
+  admin(request,'SERVICE_OPS');const q=new URL(request.url).searchParams,status=q.get('status'),role=q.get('role')
   if((status&&!['SCHEDULED','ACTIVE','ENDED'].includes(status))||(role&&!['STUDENT','PARENT','ADMIN'].includes(role)))fail('VALIDATION_FAILED','공지 상태·대상을 확인해 주세요.',400)
-  admin(request,'SERVICE_OPS');const now=Date.now()
+  const now=Date.now()
   const rows=notices.map(noticeView).filter(n=>(!status||noticeStatus(n,now)===status)&&(!role||n.targetRoles.includes(role as AdminNotice['targetRoles'][number]))).sort((a,b)=>Date.parse(b.visibleFrom)-Date.parse(a.visibleFrom)||b.noticeId.localeCompare(a.noticeId))
   return list(request,rows)
  })),
