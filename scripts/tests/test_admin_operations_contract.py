@@ -69,6 +69,17 @@ class AdminOperationsContracts(unittest.TestCase):
                 if section=='paths' and name=='/auth/refresh':
                     self.assertIn('PARENT_SESSION_LOCKED',reviewed['post']['responses']['401']['description'])
                     reviewed['post']['responses']['401']={'$ref':'#/components/responses/Unauthenticated'}
+                # #317 documents STUDENT_RECORDS_PRIVATE on the parent record/conversation/report evidence 403s.
+                # Remove only that approved suffix or the added 403 entry before default.
+                if section=='paths':
+                    for operation in reviewed.values():
+                        responses=operation.get('responses') if isinstance(operation,dict) else None
+                        forbidden=(responses or {}).get('403')
+                        if not isinstance(forbidden,dict) or 'description' not in forbidden: continue
+                        if forbidden['description'].startswith('권한 없음(FORBIDDEN·CHILD_NOT_LINKED 등) 또는 STUDENT_RECORDS_PRIVATE'):
+                            responses.pop('403')
+                        else:
+                            forbidden['description']=forbidden['description'].replace(' · 학생 비공개 STUDENT_RECORDS_PRIVATE(#206)','')
                 canonical=json.dumps(reviewed,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
                 self.assertEqual(expected,hashlib.sha256(canonical).hexdigest(),f'{section}/{name}')
     def test_admin_paths_and_retry_key(self):
