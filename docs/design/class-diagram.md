@@ -727,13 +727,17 @@ classDiagram
   class NotificationRepository {
     <<repository>>
   }
+  class NotificationDispatchService {
+    <<service>>
+    +dispatch(NotificationStored) AFTER_COMMIT
+  }
   class NotificationRedisPublisher {
     <<messaging>>
-    +publish(NotificationStored) AFTER_COMMIT
+    +publish(NotificationStored) Boolean
   }
   class NotificationDeliveryService {
     <<service>>
-    +record(id, published)
+    +record(id, failed)
   }
   class NotificationRedisSubscriber { <<consumer>> }
   class NotificationStreams {
@@ -761,15 +765,16 @@ classDiagram
   NotificationController --> NotificationService
   NotificationController --> NotificationStreams
   NotificationService --> NotificationRepository
-  NotificationService ..> NotificationRedisPublisher : NotificationStored
-  NotificationRedisPublisher --> NotificationDeliveryService
+  NotificationService ..> NotificationDispatchService : NotificationStored
+  NotificationDispatchService --> NotificationRedisPublisher
+  NotificationDispatchService --> NotificationDeliveryService
   NotificationRedisSubscriber --> NotificationStreams
   class GuardianshipService { <<service>> }
 ```
 
 - `ReportScheduler`: `@Scheduled` + `@SchedulerLock`(ShedLock), 매주 월 07:00 KST, 직전 월~일(KST) 대상, 기록 없는 학생 포함 (P06). 학생별 `report_job(SCHEDULE)` + outbox 저장, 부분 UK로 중복 방지
 - `ReportEventConsumer`: 큐 `core.report.events`, `processed_event`로 멱등, 상태 전이는 조건부 UPDATE (상태 다이어그램 4.1)
-- 알림: 리포트 종료 전이 트랜잭션에서 `QUEUED` 저장 → 커밋 후 `NotificationRedisPublisher`가 `core:notifications:v1` 발행 → `NotificationDeliveryService`가 `COMPLETED`·`FAILED` 기록. 다른 레플리카의 `NotificationRedisSubscriber`(`notification/consumer`, 구독 연결·채널 이름은 `notification/config/NotificationRedisConfiguration`, #168)가 `NotificationStreams`로 SSE 전달 (아키텍처 1.6)
+- 알림: 리포트 종료 전이 트랜잭션에서 `QUEUED` 저장 → 커밋 후 `NotificationDispatchService`가 `NotificationRedisPublisher`로 `core:notifications:v1` 발행(발행기는 Redis 발행만) → `NotificationDeliveryService`로 `COMPLETED`·`FAILED` 기록. 관리자 재처리 `NotificationRetryService`도 `dispatch`를 호출(#250). 다른 레플리카의 `NotificationRedisSubscriber`(`notification/consumer`, 구독 연결·채널 이름은 `notification/config/NotificationRedisConfiguration`, #168)가 `NotificationStreams`로 SSE 전달 (아키텍처 1.6)
 - 리포트 조회 API에 `ReportQueryService`를 둬서 controller → client 직접 호출 금지 규칙 준수 (리포트 열람 기록 `report_view` 저장 포함)
 - `ReportController`의 `reportId` 경로는 `GuardianshipService.authorizeLinkedChildren()` 사용 (3.1)
 - 구현 이름: `ReportScheduler` = `report/scheduler/WeeklyReportScheduler` + `ReportScheduleService`, `ReportEventConsumer` = `report/consumer/ReportLifecycleConsumer` + `ReportLifecycleService`, `ReportCommandWriter` = `report/messaging/ReportGenerateWriter`, `ReportViewRepository` = `ReportJobRepository`(`report_view` 포함). 종료 이벤트 유실 복구(#132)는 `ReportRecoveryScheduler` + `ReportRecoveryService`. 학부모 리포트 표시 설정(#209)은 `ReportTemplateController`·`ReportTemplateService`(제안은 `conversation/client/AiClient.reportTemplate`)·`ReportTemplateRepository`·domain `ReportTemplateSettings`

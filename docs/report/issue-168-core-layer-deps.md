@@ -50,7 +50,7 @@
 - 진행 중 작업과 합치기
   - #162 `origin/feature/ai-analysis-verification`과 합치면 `Conversations.kt`만 충돌(실제 merge-tree로 확인). 해결: `EvidenceRow`는 #162 줄(`answerId`·`answerVersion` nullable, `kind`), 아래 `invalid`·`missing`·`conflict` 세 줄은 이 브랜치(`ErrorKind`) 줄. import는 자동으로 합쳐짐
   - #47 미커밋 구현은 볼 수 없어 겹침을 확인하지 못함. 합친 뒤 core 전체 테스트와 계약 검사를 다시 돌려야 함
-- 이번 기준보다 엄격한 검사에서 1건이 더 나옴: `notification/messaging/NotificationRedisPublisher`(커밋 후 이벤트 수신·Redis 발행)가 `NotificationDeliveryService.record`를 부름(Infrastructure → Application). 이슈·audit A4 목록 밖이고 #47 `NotificationRetryService`가 이 Publisher를 직접 써서 이번에는 바꾸지 않음. core 담당자 판단 필요
+- 이번 기준보다 엄격한 검사에서 1건이 더 나옴: `notification/messaging/NotificationRedisPublisher`(커밋 후 이벤트 수신·Redis 발행)가 `NotificationDeliveryService.record`를 부름(Infrastructure → Application). 이슈·audit A4 목록 밖이고 #47 `NotificationRetryService`가 이 Publisher를 직접 써서 이번에는 바꾸지 않음. core 담당자 판단 필요 → [#250](#250-알림-발행결과-기록-분리-core-1103)에서 정리
 - service에서 Jackson `convertValue`를 쓰는 것은 develop의 `treeToValue`·`valueToTree`와 같은 자리(db-dev-guide "Jackson 변환은 Infrastructure 안에서만"과 원래부터 다름, 이번에 늘리지 않음)
 - db-dev-guide 2장 표(jsonb ↔ `JsonNode`)에 "domain이 드는 jsonb 객체는 `JsonObject`" 한 줄을 더할지는 문서 담당 확인 필요
 
@@ -147,3 +147,38 @@ domain 예외가 더는 `BusinessException`이 아니므로, `BusinessException`
 - #272(#249) 브랜치 위에서 core `./gradlew test bootJar` 455개 통과, learning `./gradlew test bootJar` 285개 통과
 - core·learning에서 다른 기능의 `controller`·`config` import 0건(전: core 13·learning 6), `_common`의 기능 패키지 import 0건(전: core `PublicAuthFilter` 3), import 없이 전체 이름으로 쓴 참조도 0건
 - `pin-failure-limit`·`pinFailureLimit`은 바꾸기 전에도 `application.yml`·`StudentDeviceProperties`·`StudentPinService`에만 있었음(`git grep HEAD`)
+
+## #250 알림 발행·결과 기록 분리 (core, 11/03)
+
+[점검 기록](audit.md) 4.5 A9: `notification/messaging/NotificationRedisPublisher`(Infrastructure)가 커밋 후 이벤트 수신·Redis 발행·결과 기록을 모두 맡아 `NotificationDeliveryService.record`(Application)를 불렀다(아키텍처 2.2 단방향과 다름). 관리자 재처리 `NotificationRetryService.deliver`도 이 발행기를 직접 불렀다. 위 #168 절 끝 메모에서 "core 담당자 판단 필요"로 남긴 건이다.
+
+### 정한 내용
+
+| 항목 | 내용 | 근거 |
+|---|---|---|
+| 발행기 | `NotificationRedisPublisher.publish(value): Boolean`: Redis 발행만 하고 `true` = Redis가 받음(구독자 0명도 성공, 기존 주석 그대로). 발행 실패 로그는 그대로, `NotificationDeliveryService` 의존과 `@TransactionalEventListener` 제거 | 이슈 해야 할 일 1 |
+| 조합 service | 새 `notification/service/NotificationDispatchService.dispatch(value)`: `@TransactionalEventListener(AFTER_COMMIT)`로 커밋 후 이벤트를 받아 발행 → `delivery.record(id, failed)`. 기록 실패는 로그만 남기고 밖으로 던지지 않음(기존 동작·문구 그대로) | 이슈 해야 할 일 2 |
+| 재처리 | `NotificationRetryService.deliver`가 `dispatch` 호출(트랜잭션 밖 확인 `check`는 그대로) | 이슈 해야 할 일 3 |
+| 설계 | architecture 1.6 SSE 다중 레플리카 항목, 2.6 트리 notification `service/`·`messaging/` 주석, class-diagram 3.3 그림·알림 설명 | 이슈 해야 할 일 4 |
+
+이벤트를 받는 위치는 이슈대로 service다. 아키텍처 2.1 표의 Presentation 수신은 HTTP·메시지(1.4 브로커 메시지)·스케줄이고, Application 금지 항목은 HTTP 요청·AMQP 채널 객체 직접 사용뿐이라 프로세스 안 이벤트를 service가 받는 것을 막지 않는다. 설계에 service 리스너(`report/service/ReportNotificationListener`, class-diagram 3.3)와 consumer 리스너(`admin/consumer`, 2.6) 사례가 모두 있어 규칙이 정해져 있지 않고, 이슈가 위치를 정했으므로 이슈를 따랐다.
+
+### 이슈와 다른 점
+
+- `publish`가 돌려주는 `Boolean`의 뜻은 이슈에 없어 `true` = 발행 성공으로 정했다. 관리자 재처리 실패 테스트의 가짜 발행기가 값을 돌려주지 않아(`null` → Mockito가 `false`로 돌려줌) 이 뜻이면 실패 기록 경로가 그대로 맞다
+- 완료 조건 "audit 4.5 A9의 처리 열 갱신": 4.5 표에는 처리 열이 없어 A8·A10·A11처럼 내용 칸에 "#250 해결"을 적었다. #281이 추가한 5.2 재판정 표의 A9도 "해결"로 맞췄다
+- class-diagram의 `NotificationDeliveryService.record(id, published)`를 실제 코드 인자 이름 `record(id, failed)`로 고쳤다
+
+### 테스트
+
+- 새 `NotificationDispatchServiceTest`(단위): 발행 성공 → `record(id, false)`, 발행 실패 → `record(id, true)`, 기록이 예외를 던져도 `dispatch`는 던지지 않음
+- `NotificationIntegrationTest`의 실제 Redis 장애 테스트: 직접 만들던 발행기 생성자가 바뀌어 `NotificationDispatchService(NotificationRedisPublisher(...), delivery).dispatch(...)`로 고침(확인 내용 그대로)
+- 관리자 재처리(`AdminOperationsIntegrationTest`)·결제·리포트 재처리 테스트는 그대로 통과. 발행기 대역(`@MockitoSpyBean`·`@MockitoBean`)과 `verify(publisher).publish(...)`가 같은 메서드를 가리킴
+- 결제(`PaymentIntegrationTest`)·리포트 재처리(`AdminReportRetryIntegrationTest`)는 발행기를 `@MockitoBean`으로 바꿔 쓴다. 전에는 발행기가 커밋 후 수신까지 맡아 대역이 되면 기록도 건너뛰어 알림이 `QUEUED`로 남았고, 이제는 `dispatch`가 대역의 `false`를 받아 `FAILED`로 기록한다. 두 테스트는 알림 개수만 확인해 결과는 같음(테스트 코드 수정 없음)
+- 되돌려서 실패 확인: 기록 실패 처리(try/catch) 제거 → 단위 테스트 1개 실패, 발행 결과를 반대로 기록 → 단위 3개·실제 Redis 통합 3개 실패, 재처리가 예전처럼 발행기만 부름(기록 없음) → 관리자 재처리 테스트 2개 실패
+
+### 검증
+
+- core `./gradlew test bootJar` 461개 통과(새 3개, develop `dce6dc1` 기준). `AiClientTest`의 시간 제한 테스트 1개는 develop에서도 단독 5회 중 3회 실패하는 시간 의존 테스트라 이번 변경과 무관(전체 실행에서 한 번 실패, 재실행 통과)
+- `notification/messaging`에서 `notification/service` import 0건, core 전체 `messaging`·`repository`·`client`에서 `service` import 0건
+- API·이벤트 계약 변경 없음(Redis 채널 `core:notifications:v1`·payload `NotificationStored` 그대로) → api-spec·OpenAPI 변경 없음
