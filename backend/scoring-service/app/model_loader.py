@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.clients.model_artifacts import S3ModelArtifacts
+from app.m2.metadata import validate_metadata
 from app.model_versions import ActiveModelVersion
 
 
@@ -54,10 +55,8 @@ class ModelLoader:
                 for key in ("missing_keys", "unexpected_keys", "mismatched_keys", "error_msgs")
             ):
                 raise ValueError("incomplete model weights")
-            if model.config.num_labels != 9 or model.config.problem_type != "regression":
-                raise ValueError("expected M2 nine-score regression checkpoint")
             model.to("cpu").eval()
-            # train.py가 쓰는 실제 파일을 읽는다. 입력 길이·핵심어·점수 변환 적용은 #87.
+            # train.py/train_545.py의 학습 입력·출력·경계를 서비스 계약과 대조한다.
             training = json.loads((directory / "train_info.json").read_text(encoding="utf-8"))
             if not isinstance(training, dict):
                 raise ValueError("invalid training metadata")
@@ -65,4 +64,7 @@ class ModelLoader:
             cuts = json.loads(cuts_path.read_text(encoding="utf-8")) if cuts_path.exists() else None
             if cuts is not None and not isinstance(cuts, dict):
                 raise ValueError("invalid score cuts")
+            _, width, _, _ = validate_metadata(version.name, training, cuts)
+            if model.config.num_labels != width or model.config.problem_type != "regression":
+                raise ValueError("unexpected M2 regression checkpoint shape")
             return LoadedModel(version, model, tokenizer, training, cuts)
