@@ -182,3 +182,18 @@
 - 테스트: `AnalysisUsageContractTest`(Redis 없이 provider만으로 `consume`, 0 한도 미기록, provider 부재 503), `ConversationPaymentIntegrationTest`(실제 provider: 30개 동시 접수 중 한도 2회만 차감, KST 자정 직전·`FAILED` 행 미집계, 초과 재시도 429, `analysis:*` Redis 키 없음), `AdminConversationRetryTest`(실제 provider·사용 이력으로 전환: 같은 요청 ID 재실행 1회 차감, 롤백된 선점은 차감도 롤백, 접수 후 한도 축소 시 실행 전 실패), `ConversationIntegrationTest`(원 질문·재시도 source가 서로 다른 2건)
 - 실행: JDK 21(`eclipse-temurin:21-jdk`) 격리 Docker 컨테이너에서 `bash gradlew test bootJar --no-daemon --max-workers=1 --no-watch-fs --console=plain -Pkotlin.compiler.execution.strategy=in-process`. core 전체 **67클래스·438개** 통과, 실패·오류·생략 0, `bootJar` 성공. IntegrationTestSupport의 실제 PostgreSQL·Redis·RabbitMQ를 사용하고 AI·PG는 대역이다
 - 미검증: 실제 AI·토스 연동, 브라우저 화면, 다중 레플리카 배포 환경의 동시성, 원격 CI
+
+## 7. 관리자 대화 재처리 시각 출처 통일 (#286)
+
+#284 병합 후 `AdminConversationRetryTest`에서 `ck_conversation_job_retry_order`(V19, `started_at >= accepted_at`) 위반이 간헐적으로 났다. 접수 시각 `accepted_at`은 앱 `Instant.now()`, 선점·종료 시각 `started_at`·`finished_at`은 DB `CURRENT_TIMESTAMP`라 앱 시계가 DB보다 앞서면 순서가 역전됐다. 이슈의 두 안 중 안 A(DB 시계로 통일)를 택했다. V19 CHECK와 기존 마이그레이션은 바꾸지 않았다.
+
+| 위치 | 변경 |
+|---|---|
+| 접수 `insert` (#287) | `accepted_at`을 매퍼에서 DB `CURRENT_TIMESTAMP`로 기록. 서비스가 만드는 행의 `acceptedAt`(`Instant.now()`)은 INSERT에 쓰이지 않는 자리값이다 |
+| 202 응답 `acceptedAt` | 변경 없음. 접수 직후 `find`로 다시 읽은 행을 응답·이벤트에 쓰므로 이미 DB 저장값이다 |
+| 선점 전 만료 판정 | 서비스 `claim`이 앱 `Instant.now()-130초`와 DB `accepted_at`을 비교하던 것을 매퍼 `claimable`로 바꿨다. `claim` UPDATE와 같은 조건·같은 트랜잭션 `CURRENT_TIMESTAMP`를 쓰므로 사전 판정과 UPDATE가 어긋나지 않는다 |
+| `pending`·`stale`·`claim`·`finish` | 원래 DB 시계 기준이라 변경 없음 |
+
+만료 판정까지 바꾼 이유: 시계 차이가 수 ms여도 130초 경계 근처에서는 앱 판정이 "유효", DB `claim`이 "만료"로 갈릴 수 있다. 이때 `resumeAdminRetry`(사용량 차감 포함)를 지난 뒤 `check(requests.claim(...))`가 예외로 트랜잭션 전체를 롤백했다. 반대로 앱 시계가 앞서면 DB 기준으로 아직 유효한 요청을 건너뛰었다. 어느 쪽이든 데이터 손상은 없고 `stale` 회수로 정리되지만, 판정 기준을 하나로 두면 이런 경계 예외가 사라진다.
+
+검증: `AdminConversationRetryTest`에 앱 시각이 DB보다 5초 앞선 행으로 선점·종료(`started_at >= accepted_at`, `finished_at >= started_at`) 회귀 테스트(#287 추가, 이번에 종료 확인 보강)와 DB 기준 131초 지난 요청은 예외 없이 선점되지 않고 `QUEUED`·실행 기록·차감 없음으로 남는 테스트를 두었다.
