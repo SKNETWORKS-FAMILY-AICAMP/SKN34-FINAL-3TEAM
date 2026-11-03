@@ -131,9 +131,9 @@
       "name": "application",
       "amiFamily": "AmazonLinux2023",
       "instanceType": "t3.medium",
-      "minSize": 2,
-      "desiredCapacity": 2,
-      "maxSize": 2,
+      "minSize": 3,
+      "desiredCapacity": 3,
+      "maxSize": 3,
       "volumeSize": 20,
       "privateNetworking": true,
       "availabilityZones": [

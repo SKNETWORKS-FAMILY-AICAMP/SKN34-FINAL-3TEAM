@@ -3,7 +3,7 @@
 `cluster.json`은 현재 클러스터와 같은 eksctl `ClusterConfig`다(1.35, application 노드그룹, add-on 버전, Pod Identity). VPC·subnet ID와 공개 접근 CIDR은 placeholder이며 `infrastructure/aws/demo_stack.py render-eksctl`이 채운다. 기존 클러스터는 콘솔에서 만들어 eksctl CloudFormation stack이 없으므로, 이 파일은 **새 환경 생성과 `demo_stack.py plan`의 대조 기준**이고 기존 클러스터를 eksctl로 관리하지 않는다. `demo-observed.json`은 2026-11-03 AWS API의 선택 필드만 저장한 인벤토리다. `gp3.json`은 Kubernetes StorageClass manifest다. EKS API 공개 접근 허용 CIDR(`publicAccessCidrs`)은 작업자 공인 IP이므로 `__OPERATOR_PUBLIC_IP_n__`으로 치환했다. 실제 값은 `aws eks describe-cluster`로 확인한다.
 
 - 계정 `347161580747`, 리전 `ap-northeast-2`, 클러스터 `sagomungchi-demo-eks`, Kubernetes 1.35.
-- 현재 관리형 노드그룹은 `application` 하나. ON_DEMAND t3.medium 2대, min/desired/max 모두 2, private subnet 배치, 노드 디스크 20GiB.
+- 현재 관리형 노드그룹은 `application` 하나. ON_DEMAND t3.medium. 2026-11-03 데모 사양을 **3대(min/desired/max 모두 3)**로 결정했다(`cluster.json`). 결정 시점 실제 값은 2/2/2이며 증설 적용 전까지 `plan`은 nodegroup DIFF를 보고한다. private subnet 배치, 노드 디스크 20GiB.
 - VPC CNI의 `enableNetworkPolicy=true`; CoreDNS, kube-proxy, EBS CSI, Pod Identity Agent, node monitoring add-on의 실제 버전은 JSON에 기록했다.
 - public/private API endpoint 모두 활성. public CIDR은 관측 시점 작업자 IP 제한으로, 이후 접속 IP가 바뀌면 별도 접근 검토가 필요하다.
 - IRSA annotation 대신 EKS Pod Identity를 사용한다. JSON의 namespace·ServiceAccount·roleArn 연결을 그대로 확인한다. IAM 정책·trust는 여기서 생성하지 않는다.
@@ -41,7 +41,7 @@ aws eks list-pod-identity-associations --cluster-name sagomungchi-demo-eks --reg
 
 ## 데모 종료·축소·재개 실행안 (#185)
 
-2026-11-03 작성한 **미실행 계획**이다. 아래 정상 종료·재개 순서는 `python infrastructure/aws/demo_stack.py pause|resume --kubeconfig <파일> --state <저장소 밖 파일>`로 자동화했다. 기본은 현재 상태와 단계만 출력하고(2026-11-03 dry-run 확인), `--execute --confirm-account 347161580747`일 때만 RabbitMQ 미처리 메시지 확인 → 워크로드 0 → RDS·EBS snapshot → 노드그룹 0/0/2 → RDS 정지를 실행한다. resume은 저장한 replica·노드 수로 되돌린다. 유입 차단·Grafana silence는 스크립트에 없으므로 작업자가 먼저 처리한다. 현재 노드그룹·Pod Identity 구조를 바꾸지 않는다. 서비스 중단 일시·재개 일시·실행 담당·백업 보관 위치를 기록한 뒤 실행하며, 이번 문서 정리만으로 노드 축소·RDS 정지·자원 삭제를 실행하지 않는다.
+2026-11-03 작성한 **미실행 계획**이다. 아래 정상 종료·재개 순서는 `python infrastructure/aws/demo_stack.py pause|resume --kubeconfig <파일> --state <저장소 밖 파일>`로 자동화했다. 기본은 현재 상태와 단계만 출력하고(2026-11-03 dry-run 확인), `--execute --confirm-account 347161580747`일 때만 RabbitMQ 미처리 메시지 확인 → 워크로드 0 → RDS·EBS snapshot → 노드그룹 0/0/3 → RDS 정지를 실행한다. resume은 저장한 replica·노드 수로 되돌린다. 유입 차단·Grafana silence는 스크립트에 없으므로 작업자가 먼저 처리한다. 현재 노드그룹·Pod Identity 구조를 바꾸지 않는다. 서비스 중단 일시·재개 일시·실행 담당·백업 보관 위치를 기록한 뒤 실행하며, 이번 문서 정리만으로 노드 축소·RDS 정지·자원 삭제를 실행하지 않는다.
 
 ### 선택지와 남는 비용
 
@@ -62,7 +62,7 @@ NAT는 정지 버튼이 있는 자원이 아니다. 시간 요금을 없애려�
 
 ### 종료 전 보존 목록
 
-- Git SHA·미커밋 변경 보관, 앱/migration 이미지 digest·ECR 존재, 웹 build 산출물·S3 version ID, Helm release revision·비밀을 제외한 values, Deployment/StatefulSet replica 수와 nodegroup min/desired/max를 기록한다. 현재 application은 2/2/2, 앱 6개와 RabbitMQ·Redis·관측 Deployment는 각각 1 replica였으므로 실행 직전에 다시 읽는다.
+- Git SHA·미커밋 변경 보관, 앱/migration 이미지 digest·ECR 존재, 웹 build 산출물·S3 version ID, Helm release revision·비밀을 제외한 values, Deployment/StatefulSet replica 수와 nodegroup min/desired/max를 기록한다. 현재 application은 2/2/2(목표 3/3/3), 앱 6개와 RabbitMQ·Redis·관측 Deployment는 각각 1 replica였으므로 실행 직전에 다시 읽는다.
 - DB snapshot/PITR 범위와 복구 접근 권한, S3 버전 관리와 필요한 객체, EBS volume/snapshot ID·AZ·PVC 대응을 기록한다. RDS 자동 백업이 있다는 사실만으로 실제 복원 성공을 주장하지 않는다.
 - 관측 Secret 2개는 ESO 외부 동기화 대상이 아니므로 현재 클러스터 삭제 전에 별도 안전한 보관·재주입 경로가 필요하다. Secret/Helm release 전체 YAML을 일반 파일로 내보내지 않는다.
 - 관리형 노드그룹의 EC2 root disk는 종료 시 유지된다고 가정하지 않는다. 필요한 데이터가 PVC/S3/RDS 밖 노드 로컬에 없는지 확인한다.
@@ -90,7 +90,7 @@ NAT는 정지 버튼이 있는 자원이 아니다. 시간 요금을 없애려�
 ### 재개 순서와 완료 기준
 
 1. NAT·라우팅·Secret·ECR·S3가 유지되는지 확인하고 RDS를 시작해 available, endpoint·TLS·백업 설정을 확인한다.
-2. application min/desired/max를 기록한 기존 값(현재 2/2/2)으로 복구한다. 노드 Ready와 VPC CNI·CoreDNS·EBS CSI·Pod Identity Agent를 확인한다. **노드 두 대만으로 AZ 배치가 보장되는 것은 아니다.** 2a/2b 양쪽 PVC를 연결할 수 있는 노드가 있는지 확인한다. 없으면 볼륨 affinity를 지우지 말고 해당 AZ 용량 문제를 해결한다.
+2. application min/desired/max를 기록한 기존 값(pause 때 저장한 값)으로 복구한다. 노드 Ready와 VPC CNI·CoreDNS·EBS CSI·Pod Identity Agent를 확인한다. **노드 수만으로 AZ 배치가 보장되는 것은 아니다.** 2a/2b 양쪽 PVC를 연결할 수 있는 노드가 있는지 확인한다. 없으면 볼륨 affinity를 지우지 말고 해당 AZ 용량 문제를 해결한다.
 3. ESO 동기화·LB Controller 준비, RabbitMQ·Redis StatefulSet 원래 replica 복구와 PVC 연결·데이터 보존을 확인한다. 새 PVC나 비밀번호로 대체하지 않는다. 복원 DB가 아니라 동일 DB 재개라면 seed/migration을 무조건 재실행하지 않는다.
 4. core·learning·report-api 등 의존 서비스를 복구하고 scoring·ai·report-worker를 원래 replica로 복구한다. 모델·프롬프트·큐·DB 연결과 모든 앱 readiness를 확인한다. observability도 원래 replica로 복구하고 datasource·경보 평가 상태를 확인한다.
 5. 외부 유입 차단을 해제하기 전에 로그인→학습 제출→리포트 조회를 확인한다. 검증 계정·횟수를 미리 정해 사용 한도와 실제 데이터 영향을 기록한다. 경보 silence를 종료하고 잔여 작업·DLQ·오류를 점검한다.

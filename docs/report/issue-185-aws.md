@@ -165,3 +165,5 @@
 | 공개 단가(서울, On-Demand) | t3.medium $0.052/h, t3.large $0.104/h, db.t4g.small $0.051/h, db.t4g.medium $0.102/h | 세금·크레딧·저장소 제외 |
 
 예산은 조직 SCP가 `budgets:ViewBudget`을 막아 조회하지 못했다.
+
+**결정(2026-11-03):** 사용자가 노드그룹을 t3.medium **3대**(min/desired/max 3)로 정했다. RDS는 db.t4g.small Single-AZ를 유지한다. 추가 비용은 공개 단가 기준 노드 1대 $0.052/h(월 약 $38, 세금·크레딧·EBS 제외)다. 노드그룹 1개·Pod Identity 구조는 데모 사양으로 유지하며, 설계의 `platform-observability` 그룹·IRSA와의 차이는 이 결정으로 받아들인다. `cluster.json`·`demo-stack.json`은 3대 기준이고, 실제 노드그룹 적용 결과는 아래에 별도로 기록한다.

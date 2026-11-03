@@ -180,7 +180,7 @@
     "nodegroupScaling": {
       "minSize": 0,
       "desiredSize": 0,
-      "maxSize": 2
+      "maxSize": 3
     },
     "drainOrder": [
       ["app", "deployment", "report-worker"],
