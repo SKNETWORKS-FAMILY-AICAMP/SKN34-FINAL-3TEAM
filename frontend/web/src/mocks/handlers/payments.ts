@@ -60,6 +60,19 @@ function approve(a: Account, p: PaymentRecord) {
   setMockChildPlan({ childId: p.childId, plan: 'PREMIUM' }); return p
 }
 export const paymentHandlers = [
+  http.get('/api/v1/children/:childId/entitlement', ({ request, params }) => respond(async () => {
+    const childId = String(params.childId)
+    await parentChild(request, childId)
+    const a = account(request)
+    const sub = a.subscriptions.find(s => s.childId === childId &&
+      ((s.status === 'ACTIVE' && s.periodEnd > day(0)) || (s.status === 'RENEWAL_FAILED' && (s.graceUntil ?? '') > day(0))))
+    const product = sub?.product ?? free
+    const refundPending = a.payments.some(p => p.childId === childId && p.status === 'REFUND_REVIEW')
+    return { childId, product, subscriptionId: sub?.subscriptionId ?? null, status: sub?.status ?? 'FREE',
+      autoRenew: sub?.autoRenew ?? false, periodEnd: sub?.periodEnd ?? null, graceUntil: sub?.graceUntil ?? null,
+      refundPending, conversationEnabled: !refundPending && Number(product.limits.dailyConversations) > 0,
+      narrativeEnabled: !refundPending && product.limits.reportNarrative === true }
+  })),
   http.get('/api/v1/products', () => respond(async () => ({ items: [free, premium] }))),
   http.get('/api/v1/subscriptions', ({ request }) => respond(async () => ({ items: account(request).subscriptions.map(s => workspaceScenario === 'payment-renewal-failed' && s.status === 'ACTIVE' ? { ...s, status: 'RENEWAL_FAILED', renewalRetryCount: 1, graceUntil: new Date(Date.now() + 2 * 86400000).toISOString(), nextBillingDate: s.autoRenew ? day(1) : null } : s) }))),
   http.get('/api/v1/payments', ({ request }) => respond(async () => {

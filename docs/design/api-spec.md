@@ -357,6 +357,7 @@
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
 | GET | `/products` | 공개 | 상품 목록(무료·프리미엄 월 14,900원): 가격·청구 주기·기능·사용 한도·대상 자녀 수·기간. 값은 `product` 데이터 (P13) | PAY-01 | 우선2 |
+| GET | `/children/{childId}/entitlement` | 연결 학부모 | 실제 상품·구독의 `childId, product, subscriptionId, status, autoRenew, periodEnd, graceUntil, refundPending, conversationEnabled, narrativeEnabled` 조회. `Cache-Control: no-store`. 기본 무료 상품 미설정은 `PAYMENT_FREE_PRODUCT_UNAVAILABLE` 503이며 임의 무료 값으로 대체하지 않음 | PAY-01 | 우선2 |
 | POST | `/orders` | 학부모 | 결제 요청 생성 `{productId, childId}` → `orderId`·금액·위젯 파라미터. 중복 구독 409. `Idempotency-Key` | PAY-02, PAY-03 | 우선2 |
 | POST | `/payments/confirm` | 학부모 | 위젯 성공 리다이렉트 값(`paymentKey, orderId, amount`)으로 서버 승인 → 금액 대조 → 구독·권한 반영. `Idempotency-Key` | PAY-03, PAY-04, PAY-05 | 우선2 |
 | GET | `/payments/{orderId}` | 학부모 | 결제 상태 (`CONFIRMING`이면 PG 상태 조회 후 갱신) | PAY-04 | 우선2 |

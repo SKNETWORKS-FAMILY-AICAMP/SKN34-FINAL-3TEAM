@@ -1,5 +1,15 @@
 # #48 결제·구독과 실제 상품 권한 공급
 
+## 학부모 이용권 표시
+
+`GET /api/v1/children/{childId}/entitlement`는 학부모 역할과 연결 자녀를 확인하고
+`ProductEntitlementService.forParent`의 실제 상품·구독·기능 허용 상태를 반환한다.
+응답은 `Cache-Control: no-store`이며 기본 무료 상품 미설정은 503
+`PAYMENT_FREE_PRODUCT_UNAVAILABLE`로 유지한다. 구독이 없다는 이유로 임의 상품을 선택하지 않는다.
+학부모 사이드바와 대시보드 리포트 안내는 이 API의 상품명·한도·`narrativeEnabled`를 사용한다.
+조회는 자녀별 캐시 키로 구분하며 오류가 발생하면 이전 상품 안내 대신 재시도 가능한 오류를 표시한다.
+`/children`의 선택적 목업 `plan` 값은 이 표시의 권한 근거로 사용하지 않는다.
+
 ## 범위·기준
 
 전용 `feature/core-payments` worktree에서 구현했다. 최초 기준은 origin/develop b344797, 최종 검증 기준은 `7f30c2ee0691b301d32e7ef757eff2547e73eb3a`다. 기존 checkout은 전환하지 않았다. 최신 develop 반영 전에 전체 source/sha256 백업과 stash `28b9a93f7dd5dd36eccf14b32a63f7070245f233`를 보존했고, architecture 문서의 #50/#48 내용을 함께 유지하여 충돌을 해결했다. 기능 PR base와 GitHub 실제 기본 브랜치는 develop이다.

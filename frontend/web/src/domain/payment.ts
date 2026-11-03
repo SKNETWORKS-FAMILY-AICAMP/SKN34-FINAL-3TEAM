@@ -2,6 +2,11 @@ export interface PaymentProduct {
   id: string; code: string; name: string; price: number; billingCycle: string
   childLimit: number; active: boolean; features: Record<string, unknown>; limits: Record<string, unknown>
 }
+export interface ChildEntitlement {
+  childId: string; product: PaymentProduct; subscriptionId: string | null; status: string
+  autoRenew: boolean; periodEnd: string | null; graceUntil: string | null
+  refundPending: boolean; conversationEnabled: boolean; narrativeEnabled: boolean
+}
 export interface PaymentOrder {
   orderId: string; amount: number; orderName: string; childId: string; productId: string
 }
