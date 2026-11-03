@@ -455,14 +455,16 @@ paths:
         '403': {$ref: '#/components/responses/Problem'}
         '404': {$ref: '#/components/responses/Problem'}
         '409':
-          description: JUDGMENT_STATE_CONFLICT
+          description: >-
+            JUDGMENT_STATE_CONFLICT, 또는 core 사용 예약·확정 409의 code 전달
+            (REFUND_IN_PROGRESS, PAYMENT_USAGE_RETRY_REQUIRES_NEW_SOURCE, PAYMENT_USAGE_STATE_CHANGED)
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
         '500': {$ref: '#/components/responses/Problem'}
         '503':
-          description: AI_UNAVAILABLE (`retryable` 포함)
+          description: AI_UNAVAILABLE (`retryable` 포함) 또는 PAYMENT_USAGE_UNAVAILABLE(core 사용 증빙 실패·목록 밖 409)
           content:
             application/problem+json:
               schema:
