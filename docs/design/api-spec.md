@@ -951,7 +951,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 ### 5.3 #37 동의·자녀 구현 계약
 
-- 문서 조회·저장·철회·자녀 등록의 정식 스키마는 core OpenAPI를 따른다. GET /consent-documents는 3종 현재 문서를 목록 봉투로 반환한다. 현재=KST 시행일 이하에서 effective_from·created_at·id 내림차순 첫 문서. 게시 문서가 없거나 불완전하면 503 CONSENT_DOCUMENTS_UNAVAILABLE이며 가짜 본문을 생성하지 않는다.
+- 문서 조회·저장·철회·자녀 등록의 정식 스키마는 core OpenAPI를 따른다. GET /consent-documents는 3종 현재 문서를 목록 봉투로 반환한다. 현재=KST 시행일 이하에서 effective_from·created_at·id 내림차순 첫 문서. 게시 문서가 없거나 불완전하면 503 CONSENT_DOCUMENTS_UNAVAILABLE이며 가짜 본문을 생성하지 않는다. 1.0 문서 3종(공식 원문 기반, 시연용·법률 검토 없음)은 core V25 마이그레이션이 게시한다(#235, 출처는 auth-account 보고서). 개정은 기존 행을 고치지 않고 새 version 행을 추가한다.
 - POST /me/consents: `{consents:[{documentId,version,agreed}],childId?}`. childId 없음=TERMS·PRIVACY, 있음=소유한 자녀 GUARDIAN 재동의. 필요한 범위의 모든 현재 항목을 정확히 1개씩 보낸다. 필수 거부/누락은 400 VALIDATION_FAILED, 오래된 문서/범위 불일치는 409 CONSENT_DOCUMENT_CHANGED. 200은 해당 범위 동의 목록 봉투다. 재전송은 현재 선택과 같으면 행을 중복 생성하지 않는다.
 - GET /me/consents: 주체·문서 메타데이터·studentId·agreed·status·agreedAt·withdrawnAt의 전체 이력(최대 항목 제한 없이 1개 목록 봉투). POST /me/consents/{consentId}/withdrawal: 본인 이력만 철회, 반복 요청은 같은 행 반환. 타인/없는 ID는 403 FORBIDDEN. 필수 철회 후에는 계정/해당 자녀의 현재 동의 검사로 접근을 차단한다. 삭제·탈퇴는 #45에서 별도 요청하며 자동 삭제하지 않는다.
 - 권한 판정은 같은 문서·주체·자녀의 최신 이력만 사용한다. 필수 계정 동의 전에는 본인 조회·로그아웃·동의 관리만 허용한다. 현재 계정 동의가 있어야 POST /children을 사용한다. /me nextAction은 CONSENT_REQUIRED → CHILD_REGISTRATION_REQUIRED → READY다. 연결은 있으나 GUARDIAN 철회인 자녀는 목록에 guardianConsentRequired=true로 남기고 재동의를 안내한다.
