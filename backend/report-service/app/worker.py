@@ -5,7 +5,6 @@ import contextlib
 import logging
 import signal
 from contextlib import AsyncExitStack
-from datetime import UTC, datetime, timedelta
 
 from app.clients.ai_client import AiClient
 from app.clients.base import internal_client
@@ -14,9 +13,9 @@ from app.clients.learning_client import LearningClient
 from app.clients.storage import ObjectStorage
 from app.concurrency import run_blocking
 from app.config import get_settings
-from app.database import create_db_engine, create_session_factory, run_db, transaction
+from app.database import create_db_engine, create_session_factory, run_db
 from app.deletion.consumer import DELETION_QUEUE, StudentDeletedConsumer
-from app.deletion.service import DeletionService, prune_processed
+from app.deletion.service import DeletionService, prune_event_records
 from app.generation.codec import ReportV1Codec
 from app.generation.consumer import GENERATE_QUEUE, GenerationConsumer
 from app.generation.locking import JobLocks
@@ -26,24 +25,10 @@ from app.messaging.connection import AmqpConnection
 from app.messaging.consumer import EventConsumer
 from app.messaging.publisher import EventPublisher
 from app.outbox.relay import OutboxRelay
-from app.outbox.repository import OutboxRepository
 
 logger = logging.getLogger(__name__)
 
 CLEANUP_INTERVAL_SECONDS = 3600
-
-
-def prune_event_records(factory, retention_days: int, now: datetime | None = None):
-    """보존 기간이 지난 발행 완료 outbox_event·processed_event 삭제(#208).
-
-    조건부 DELETE라 레플리카가 동시에 실행해도 결과가 같다.
-    """
-    before = (now or datetime.now(UTC)) - timedelta(days=retention_days)
-    with transaction(factory) as session:
-        return (
-            OutboxRepository().delete_published_before(session, before),
-            prune_processed(session, before),
-        )
 
 
 async def serve(amqp, consumer, handlers, relay, stop, cleanup=None):
