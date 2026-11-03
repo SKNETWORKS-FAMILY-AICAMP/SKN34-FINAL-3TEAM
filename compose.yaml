@@ -201,6 +201,7 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-6.1-terra}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_JSON_MODE: ${OPENAI_JSON_MODE:-json_schema}
+      OPENAI_DISABLE_THINKING: ${OPENAI_DISABLE_THINKING:-false}
     ports:
       - "${AI_HOST_PORT:-8000}:8000"
     healthcheck:

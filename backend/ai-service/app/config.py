@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-6.1-terra"  # 판정·되묻기 실제 호출 확인 (2026-10-27)
     openai_base_url: str | None = None  # 비우면 OpenAI 기본 주소
     openai_json_mode: Literal["json_schema", "json_object"] = "json_schema"  # sLLM은 json_object
+    openai_disable_thinking: bool = False  # vLLM 생각 모델(Qwen3 계열 등)의 생각 끄기
     # LLM 최악 15 + 1 + 15 = 31초. 판정은 judge_deadline 33초 안에서 scoring 몫을 먼저 떼어
     # LLM 30초(두 번째 시도 14초로 줄어듦) + scoring 3초 = 33초 < learning→ai 35초 (P12)
     llm_timeout: float = 15.0  # LLM 1회 15초 (P12)

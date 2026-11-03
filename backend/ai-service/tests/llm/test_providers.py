@@ -196,7 +196,7 @@ def completion(
 
 
 def make_openai(
-    result: Any, json_mode: str = "json_schema"
+    result: Any, json_mode: str = "json_schema", disable_thinking: bool = False
 ) -> tuple[OpenAICompatibleLlm, FakeCompletions]:
     completions = FakeCompletions(result)
     client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
@@ -209,6 +209,7 @@ def make_openai(
         max_retries=0,
         backoff_seconds=0,
         recorder=recorder,
+        disable_thinking=disable_thinking,
         client=client,  # type: ignore[arg-type]
     )
     return llm, completions
@@ -238,6 +239,23 @@ def test_openai_json_object_mode_puts_schema_in_system() -> None:
     openai_once(llm)
     assert completions.kwargs["response_format"] == {"type": "json_object"}
     assert '"value"' in completions.kwargs["messages"][0]["content"]
+
+
+NO_THINKING = {"chat_template_kwargs": {"enable_thinking": False}}
+
+
+def test_openai_sends_no_extra_body_by_default() -> None:
+    # OpenAI는 모르는 필드를 거절할 수 있어 기본은 보내지 않음
+    llm, completions = make_openai(completion('{"value": "ok"}'))
+    openai_once(llm)
+    assert completions.kwargs["extra_body"] is None
+
+
+def test_openai_disable_thinking_sends_template_kwargs() -> None:
+    # vLLM 생각 모델: 생각이 본문에 섞이지 않게 채팅 템플릿에서 끔
+    llm, completions = make_openai(completion('{"value": "ok"}'), disable_thinking=True)
+    openai_once(llm)
+    assert completions.kwargs["extra_body"] == NO_THINKING
 
 
 @pytest.mark.parametrize(
@@ -337,6 +355,16 @@ def test_sllm_server_works_without_key() -> None:
     assert isinstance(llm, OpenAICompatibleLlm)
     assert str(llm._client.base_url).startswith("http://vllm:8000/v1")
     assert llm._client.api_key == NO_KEY
+    assert llm._extra_body is None  # 생각 끄기는 설정으로만
+
+
+def test_factory_passes_disable_thinking() -> None:
+    settings = openai_settings(
+        openai_model="qwen", openai_base_url="http://vllm:8000/v1", openai_disable_thinking=True
+    )
+    llm = create_llm(settings, recorder)
+    assert isinstance(llm, OpenAICompatibleLlm)
+    assert llm._extra_body == NO_THINKING
 
 
 def test_default_provider_is_openai_gpt_6_1_terra() -> None:
@@ -440,6 +468,12 @@ def test_openai_stream_yields_text_then_usage() -> None:
     assert completions.kwargs["stream_options"] == {"include_usage": True}
     assert "response_format" not in completions.kwargs
     assert completions.kwargs["timeout"] == 7.5
+
+
+def test_openai_stream_disable_thinking_sends_template_kwargs() -> None:
+    llm, completions = make_openai(chunks([chunk("답", "stop")]), disable_thinking=True)
+    asyncio.run(drain(llm))
+    assert completions.kwargs["extra_body"] == NO_THINKING
 
 
 @pytest.mark.parametrize(

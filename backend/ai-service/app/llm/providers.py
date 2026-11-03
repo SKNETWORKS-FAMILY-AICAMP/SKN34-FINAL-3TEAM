@@ -142,6 +142,8 @@ class OpenAICompatibleLlm(LlmClient):
 
     JSON 출력은 json_schema(스키마 강제, 기본) 또는 json_object(JSON 모드, 스키마 강제를
     지원하지 않는 sLLM 서버용).
+    disable_thinking: 생각 모델(Qwen3 계열 등)을 vLLM에 올렸을 때 생각 과정 끔. 켜 두면 생각이
+    답 본문에 섞이거나 토큰 한도를 다 써서 JSON 검증·마감에 걸림. OpenAI에는 켜지 않음.
     """
 
     def __init__(
@@ -155,6 +157,7 @@ class OpenAICompatibleLlm(LlmClient):
         max_retries: int,
         backoff_seconds: float,
         recorder: UsageRecorder,
+        disable_thinking: bool = False,
         client: openai.AsyncOpenAI | None = None,
     ) -> None:
         super().__init__(model, max_retries, recorder, backoff_seconds, timeout)
@@ -163,6 +166,10 @@ class OpenAICompatibleLlm(LlmClient):
             api_key=api_key or NO_KEY, base_url=base_url or OPENAI_DEFAULT_BASE_URL, max_retries=0
         )
         self._json_mode = json_mode
+        # vLLM은 chat_template_kwargs를 채팅 템플릿에 넘김
+        self._extra_body = (
+            {"chat_template_kwargs": {"enable_thinking": False}} if disable_thinking else None
+        )
 
     async def _request(self, request: LlmRequest[T]) -> ProviderResponse[T]:
         system, response_format = self._output_format(request)
@@ -176,6 +183,7 @@ class OpenAICompatibleLlm(LlmClient):
                 response_format=response_format,  # type: ignore[arg-type]
                 max_completion_tokens=request.max_tokens,
                 timeout=request.timeout,
+                extra_body=self._extra_body,
             )
         except openai.APIConnectionError as exc:
             code = "LLM_TIMEOUT" if isinstance(exc, openai.APITimeoutError) else "LLM_CONNECTION"
@@ -211,6 +219,7 @@ class OpenAICompatibleLlm(LlmClient):
                 timeout=request.timeout,
                 stream=True,
                 stream_options={"include_usage": True},  # 마지막 조각에 사용량
+                extra_body=self._extra_body,
             )
             async for chunk in chunks:
                 model = chunk.model or model
@@ -316,6 +325,7 @@ def create_llm(settings: Settings, recorder: UsageRecorder) -> LlmClient:
             model=settings.openai_model,
             base_url=base_url,
             json_mode=settings.openai_json_mode,
+            disable_thinking=settings.openai_disable_thinking,
             timeout=settings.llm_timeout,
             max_retries=settings.llm_max_retries,
             backoff_seconds=settings.llm_retry_backoff,
