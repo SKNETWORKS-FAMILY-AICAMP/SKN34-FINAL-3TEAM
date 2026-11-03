@@ -602,7 +602,7 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 5장과 같이 
 |---|---|---|
 | A6 | 해결 | #69(#303). ai 판정이 scoring M2·M1 교차 확인 호출(기본 꺼짐), `clients/scoring_client.py`·`judgment/cross_check.py`. 4.2 B17의 "`scoring_url`은 #69 예정"도 해소 |
 | A13 | 유지 | scoring `messaging/consumer.py`가 `ModelStartup` 생성·revision 조정을 계속 담당 |
-| B23 | 유지 | `AdminOperations.tsx:204` oxlint 경고 1건(동작 문제 없음). 같은 관리자 화면 이슈(B37)에 함께 기재 |
+| B23 | 해결(#306) | `AdminOperations.tsx` 작업 재처리 멱등 키를 `useAdminMutation` 인자 클로저에서 읽지 않고 mutation 변수로 넘김(실패 후 재시도는 같은 키, 성공·원래 작업 복귀 때만 폐기 동작 유지). oxlint 경고 0 |
 | B32·B34·B35·A17·A18·A19 | 해결 | #275·#276·#277·#278·#279·#280 모두 종료 |
 | 5.6 OpenAPI | 유지 | `STUDENT_RECORDS_PRIVATE`가 core OpenAPI에 0건(C59) |
 | 5.6 요구사항 차이 | 유지 | FN-AGT-12 수학 점검 예시 질문 차이, api-spec 2.4에 현재 동작 기재 |
@@ -616,7 +616,7 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 5장과 같이 
 | # | 종류 | 내용 | 처리 |
 |---|---|---|---|
 | A20·B36 | 아키텍처·결함(중간) | scoring 장애·시간 초과·5xx와 scoring 400(learning이 허용하는 keywords 100개×200자가 M2 토큰 한도 초과)을 ai가 모두 503 `SCORING_UNAVAILABLE`로 변환. learning `AiClient`는 판정·되묻기 공용 `ai` 서킷에서 5xx를 실패로 집계해 LLM 단독 판정·되묻기까지 30초 차단. `M2_CROSS_CHECK_ENABLED=false`여도 keywords·essayType이 있으면 scoring 호출(플래그는 HELD 여부만 결정). architecture 1.3 구간 독립·1.1 scoring 분리 취지와 다름. ai `judgment/service.py:63-71,111-153`, `clients/scoring_client.py:79-84`, learning `judgment/client/AiClient.kt:40,49,68`, `mission/controller/AdminMissionController.kt:239,255-256`, scoring `m2/service.py:39-40` | 이슈 #305 |
-| B37 | 결함(중간) | 웹 관리자 기준표 저장이 `keywords`·`essayType`을 보내지 않아 새 rubric_version에서 빈 값으로 저장, 해당 미션 M2 교차 확인이 조용히 중단. 웹 `Rubric` 타입·편집 UI에 두 필드 없음. 웹 `data/admin/api.ts:60-61`, `domain/admin/operations.ts:96-108`, learning `AdminMissionController.kt:77-79,238-244`, `learning-service.yaml` `AdminRubric` | 이슈 #306(B23 함께 기재) |
+| B37 | 결함(중간) | 웹 관리자 기준표 저장이 `keywords`·`essayType`을 보내지 않아 새 rubric_version에서 빈 값으로 저장, 해당 미션 M2 교차 확인이 조용히 중단. 웹 `Rubric` 타입·편집 UI에 두 필드 없음. 웹 `data/admin/api.ts:60-61`, `domain/admin/operations.ts:96-108`, learning `AdminMissionController.kt:77-79,238-244`, `learning-service.yaml` `AdminRubric` | #306 해결(편집 UI 없이 기존 값 보존으로 결정): 웹 `Rubric`에 `keywords`·`essayType`(선택) 추가, `rubricWritePayload`가 불러온 값을 그대로 보내고 없으면 `[]`·`null` 명시. 기준표 화면에 "핵심어 n개·글 종류" 보존 안내. MSW는 learning `AdminRubricRequest`와 같은 검사(핵심어 ≤100개·1~200자, 글 종류 5종)·빈 값 기본값, 시연 기준표에 핵심어 추가. 계약 변경 없음. 테스트: `adminMockLifecycle`(불러와 저장해도 두 필드 유지, 빈 기준표 `[]`·`null`, 잘못된 글 종류 400) |
 | B38 | 결함(낮음) | `/guardian-transfers*`가 `PublicAuthFilter` 동의 요구 대상이라, 서비스가 동의 없이 허용한 취소(`{id}/cancel`·`cancel-outgoing`)가 403 `CONSENT_REQUIRED`. 필수 동의가 빠진 학부모는 탈퇴 409 `TRANSFER_PENDING`과 취소 403 사이에서 막힘. core `account/controller/PublicAuthFilter.kt:49,58-67`, `guardianship/service/GuardianTransferService.kt:101-116`, `AccountWithdrawalService.kt:28` | 이슈 #307 |
 | B39 | 결함(낮음) | `GuardianTransferController`는 `app.guardian-transfer.enabled`일 때만 등록되지만 `GuardianTransferAccessService` 대기 검사는 항상 동작. 플래그를 끄면 남은 PENDING 행이 탈퇴·연결 해제·삭제를 409로 막고 취소 API는 404. `ChildManagementService.kt:47,55` | 이슈 #307 |
 | B40 | 결함(낮음) | `PUT /me/guardian-password`가 비밀번호 규칙 검사(422)를 역할 확인(403)보다 먼저 수행(#277과 같은 유형). core `GuardianPasswordService.kt:28-30` | #310 해결: `set`이 `accounts.lock`(학부모·활성 세션 확인)을 규칙 검사보다 먼저 수행하고, 규칙 검사는 여전히 재인증 grant 소비 전. MSW는 이미 `parentGuard`가 먼저. api-spec 3절 표·core OpenAPI 설명에 순서 기재. 테스트: `AccountManagementTest`(학생 세션 + 잘못된·올바른 값 → 403 `FORBIDDEN`, 저장 없음) |

@@ -107,3 +107,25 @@ test('목록 필터와 무관한 전체 미션 counts·조회 장애·권한 거
   assert.equal((await call('/admin/missions')).status, 403)
   setWorkspaceScenario('normal')
 })
+
+test('기준표 저장은 화면에서 편집하지 않는 keywords·essayType을 그대로 다시 보낸다 (#306)', async () => {
+  const { rubricWritePayload } = await import('../src/data/admin/api.ts')
+  await login('admin@example.test')
+  const list = await call('/admin/missions')
+  const withRubric = list.data.items.find((m: { rubrics: { keywords?: string[] }[] }) => m.rubrics.some((r) => r.keywords?.length))
+  assert.ok(withRubric, '핵심어가 있는 시연 기준표')
+  const mission = (await call('/admin/missions/' + withRubric.missionId)).data
+  const { version: _version, ...current } = mission.rubrics.find((r: { version: number }) => r.version === mission.currentRubricVersion)
+  const body = rubricWritePayload({ ...current, hints: [...current.hints, '새 생각 열기 질문'] })
+  assert.deepEqual(body.keywords, current.keywords)
+  assert.equal(body.essayType, current.essayType ?? null)
+  const saved = (await call('/admin/missions/' + mission.missionId + '/rubric', body, 'PUT')).data
+  const latest = saved.rubrics.find((r: { version: number }) => r.version === saved.currentRubricVersion)
+  assert.equal(saved.currentRubricVersion, mission.currentRubricVersion + 1)
+  assert.deepEqual(latest.keywords, current.keywords)
+  assert.equal(latest.essayType, current.essayType ?? null)
+  // 값이 없던 기준표도 learning 계약대로 [] · null을 명시해 보낸다.
+  const empty = rubricWritePayload({ elements: [], answerKey: null, exampleAnswer: '', forbiddenTerms: [], hints: [] })
+  assert.deepEqual([empty.keywords, empty.essayType], [[], null])
+  assert.equal((await call('/admin/missions/' + mission.missionId + '/rubric', { ...body, essayType: '일기' }, 'PUT')).status, 400)
+})
