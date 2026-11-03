@@ -437,8 +437,8 @@ class SupportIntegrationTest: IntegrationTestSupport() {
   assertNotEquals(first["items"][0]["noticeId"].asText(),second["items"][0]["noticeId"].asText())
   for(query in listOf("?status=PUBLISHED","?role=SYSTEM","?size=0","?size=101","?page=-1")) call("GET","/admin/notices$query",adminToken,expected=400)
   val contentAdmin=tokens.access(session(jdbc,account(jdbc,permission="CONTENT"),"ADMIN"))
-  for(token in listOf(parentToken,studentToken,contentAdmin)) call("GET","/admin/notices",token,expected=403)
-  call("GET","/admin/notices",null,expected=401)
+  for(token in listOf(parentToken,studentToken,contentAdmin)) for(query in listOf("","?status=PUBLISHED","?role=SYSTEM","?size=101")) call("GET","/admin/notices$query",token,expected=403)
+  call("GET","/admin/notices?status=PUBLISHED",null,expected=401)
   listOf(scheduled,active).forEach { call("DELETE","/admin/notices/$it",adminToken) }
  }
  @Test fun `parent processing notification honors opt out rollback and current linked consent`() {

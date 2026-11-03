@@ -193,9 +193,8 @@ class SupportService(private val repository: SupportRepository,private val acces
   paging(page,size);return Page(db.notices(actor.session.role,page.toLong()*size,size).map(::noticeView),page,size,db.noticeCount(actor.session.role))
  }
  fun adminNotices(actor: AuthenticatedAccount,status: String?,role: String?,page: Int,size: Int): Page<Map<String,Any?>> {
-  paging(page,size)
+  access.admin(actor);paging(page,size)
   if(status!=null && status !in setOf("SCHEDULED","ACTIVE","ENDED") || role!=null && role !in setOf("STUDENT","PARENT","ADMIN")) invalid()
-  access.admin(actor)
   // Status is derived from the stored interval and endedAt at query time, never persisted.
   return Page(db.adminNotices(status,role,page.toLong()*size,size).map(::noticeView),page,size,db.adminNoticeCount(status,role))
  }

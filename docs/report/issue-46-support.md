@@ -187,7 +187,7 @@ PR 메타데이터 후보(최종 준비 시 실제 등록값 재조회): `enhanc
 - `GET /api/v1/admin/notices?status&role&page&size`를 추가한다. 권한은 쓰기 API와 같은 `SupportAccessService.admin`(ADMIN 역할 + SERVICE_OPS)이다. 다른 관리자 권한(CONTENT 등)·학부모·학생은 403, 미인증은 401이다.
 - 응답은 기존 `GET /notices`의 공지 항목과 공통 목록 봉투 `{items,page,size,totalElements}`를 그대로 쓴다(OpenAPI `SupportNoticePage`). 상태 필드를 새로 넣지 않는다.
 - 상태는 저장 컬럼이 아니라 조회 시각으로 계산한다. 사용자 GET의 공개 규칙(`ended_at IS NULL`·`visible_from <= now < visible_to`)과 같은 기준이다. `SCHEDULED` = 종료 기록 없음·공개 시작 전, `ACTIVE` = 사용자 GET에 보이는 조건, `ENDED` = 종료 기록 있음 또는 공개 기간 지남. 명시 종료와 기간 만료는 같은 `ENDED`이고, 구분은 항목의 `endedAt`으로 한다.
-- 역할 필터는 `target_roles`에 해당 역할이 포함된 공지다. 정렬은 기존 사용자 목록과 같은 `visible_from DESC, id DESC`다. 정의 밖 status·role과 page/size 범위 오류는 기존 `VALIDATION_FAILED` 400이다.
+- 역할 필터는 `target_roles`에 해당 역할이 포함된 공지다. 정렬은 기존 사용자 목록과 같은 `visible_from DESC, id DESC`다. 정의 밖 status·role과 page/size 범위 오류는 기존 `VALIDATION_FAILED` 400이다. 권한 검사가 입력 검사보다 먼저라, 권한 없는 요청은 값이 잘못돼도 403이다(#277).
 - 조회는 원문·개인정보가 없는 공지만 반환하므로 감사 기록을 남기지 않는다. 기존 notice 테이블과 컬럼만 조회해 마이그레이션이 없다.
 
 ### API 변경

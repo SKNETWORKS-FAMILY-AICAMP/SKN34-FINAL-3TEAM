@@ -76,6 +76,6 @@ test('관리자 공지 전체 목록: 예약·종료 공지도 새로 조회되�
  assert.ok((await ids('?status=ENDED')).includes(ended));assert.equal((await ids('?status=ACTIVE')).includes(ended),false)
  assert.equal((await ids('?role=STUDENT')).includes(scheduled),false);assert.ok((await ids('?role=PARENT&size=100')).includes(scheduled))
  assert.equal((await call('/admin/notices?status=PUBLISHED')).status,400);assert.equal((await call('/admin/notices?size=101')).status,400)
- for(const email of ['payment@example.test','parent@example.test']){await login(email);assert.equal((await call('/admin/notices')).status,403)}
+ for(const email of ['payment@example.test','parent@example.test']){await login(email);for(const q of ['','?status=PUBLISHED','?role=SYSTEM'])assert.equal((await call('/admin/notices'+q)).status,403)}
  assert.equal((await call('/notices')).data.items.some((v:{noticeId:string})=>v.noticeId===scheduled||v.noticeId===ended),false)
 })
