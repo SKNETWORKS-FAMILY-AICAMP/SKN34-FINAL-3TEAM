@@ -20,3 +20,11 @@
 [data-role-layout="admin"] .svc-page .cj-primary { background: #222; color: white; }
 [data-role-layout="admin"] .svc-page .ws-card { border-color: #ddd; }
 @media(max-width: 640px) { .svc-page { gap: 16px; } .svc-page button { min-height: 44px; } }
+.transfer-page { max-width: 900px; margin: 32px auto; padding: 24px; }
+.transfer-page nav { display: flex; gap: 12px; flex-wrap: wrap; }
+.transfer-overlay { position: fixed; inset: 0; z-index: 1000; background: #122a2466; display: grid; place-items: center; padding: 20px; }
+.transfer-dialog { background: white; width: min(100%, 620px); max-height: 90vh; overflow: auto; padding: 28px; border-radius: 12px; box-shadow: 0 16px 60px #0003; }
+.transfer-request { border-top: 1px solid #d8e2dd; padding: 18px 0; }
+.transfer-request button { margin-right: 8px; }
+#class-journal .transfer-page button, #class-journal .transfer-dialog button { border: 1px solid #b8c2bd; border-radius: 6px; background: white; padding: 8px 14px; min-height: 42px; }
+#class-journal .transfer-page button:disabled, #class-journal .transfer-dialog button:disabled { opacity: .55; cursor: default; }

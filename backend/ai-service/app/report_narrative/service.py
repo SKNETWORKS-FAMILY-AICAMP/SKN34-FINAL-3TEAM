@@ -12,6 +12,7 @@ from app.config import Settings
 from app.errors import ApiError
 from app.followup.models import LlmVersions
 from app.llm.base import LlmClient, LlmUnavailable
+from app.prompt_versions.registry import ActiveVersions
 from app.report_narrative import prompts
 from app.report_narrative.models import (
     Citation,
@@ -19,7 +20,6 @@ from app.report_narrative.models import (
     NarrativeRequest,
     NarrativeResponse,
 )
-from app.versions import ActiveVersions
 
 logger = logging.getLogger(__name__)
 

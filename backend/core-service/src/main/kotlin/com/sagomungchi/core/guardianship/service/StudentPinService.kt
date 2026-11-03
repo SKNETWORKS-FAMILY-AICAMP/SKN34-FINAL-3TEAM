@@ -5,7 +5,6 @@ import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core.account.domain.ReauthPurpose
 import com.sagomungchi.core.account.service.AccountManagementService
 import com.sagomungchi.core.account.service.ReauthenticationService
-import com.sagomungchi.core.account.config.StudentDeviceProperties
 import com.sagomungchi.core.guardianship.domain.*
 import com.sagomungchi.core.guardianship.repository.StudentPinRepository
 import org.springframework.http.HttpStatus
@@ -17,7 +16,7 @@ import java.util.UUID
 @Service
 class StudentPinService(private val repository: StudentPinRepository, private val hasher: PinHasher,
     private val accounts: AccountManagementService, private val reauth: ReauthenticationService,
-    private val children: ChildAuthorizationService, private val properties: StudentDeviceProperties) {
+    private val children: ChildAuthorizationService) {
     @Transactional
     fun set(identity: AuthenticatedAccount, child: UUID, pin: String, token: String?) {
         if(!PinRules.valid(pin)) throw BusinessException(HttpStatus.UNPROCESSABLE_ENTITY,"VALIDATION_FAILED","PIN은 반복·연속되지 않는 숫자 4~6자리입니다.")
@@ -43,9 +42,9 @@ class StudentPinService(private val repository: StudentPinRepository, private va
             return PinAttempt(true)
         }
         val count=row.pinFailedCount+1
-        val locked=count>=properties.pinFailureLimit
+        val locked=count>=PinRules.FAILURE_LIMIT
         repository.attempt(child,count,if(locked) AccountManagementService.now() else null)
-        return PinAttempt(false,if(locked) "STUDENT_PIN_LOCKED" else "STUDENT_PIN_INVALID",(properties.pinFailureLimit-count).coerceAtLeast(0))
+        return PinAttempt(false,if(locked) "STUDENT_PIN_LOCKED" else "STUDENT_PIN_INVALID",(PinRules.FAILURE_LIMIT-count).coerceAtLeast(0))
     }
     @Transactional(propagation=Propagation.MANDATORY)
     fun clear(child: UUID) { repository.clear(child) }

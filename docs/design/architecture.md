@@ -19,7 +19,7 @@
 | core-service | Spring Boot (Kotlin) | **유일한 공개 API**. 계정·인증·동의, 학부모-자녀 연결(권한 기준), 분석 대화 세션·이력, 주간 리포트 작업·일정, 알림(SSE·인앱), 신고·문의·공지, 결제·구독(토스페이먼츠 테스트), 관리자 운영·모델 버전 레지스트리, LLM 사용량 집계 | core_db, Redis |
 | learning-service | Spring Boot (Kotlin) | 미션·기준표·예시 답·생각 열기 질문(버전 관리), 학습 시도·답변 버전·초안·도움 이용·돌아보기·자기 평가, 규칙 판정(고르기·수학 동치), 판정·되묻기 저장, 학습 기록 조회 API(대시보드·에이전트 도구·리포트 소재) | learning_db, S3(미션 장면) |
 | ai-service | FastAPI | 서술 근거 구절 추출(LLM) + 원문 대조 판정(코드), 되묻기 생성·정답/금지어 유출 검사, LangGraph 분석 에이전트, 리포트 서술·저녁 질문 생성, 프롬프트 버전 | 없음 (상태 없음) |
-| scoring-service | FastAPI | M2 항목 점수(klue/roberta), M1 수학 풀이 점검(활성 범위만) 추론, CPU 추론 | 없음 (S3 가중치 읽기) |
+| scoring-service | FastAPI | M2 항목 점수(klue/roberta, 국어 우선), M1 수학 풀이 점검(후순위, 활성 범위만) 추론, CPU 추론 | 없음 (S3 가중치 읽기) |
 | report-service | FastAPI | 주간 리포트 기간·포함 기록 확정, 수치·전후 변화 코드 계산, 숫자·인용 대조, 렌더링(HTML/PDF/Markdown)·저장 | report_db, S3 |
 
 - 언어 분담 근거: 트랜잭션·권한·버전 관리·Outbox·스케줄·결제 = Spring 생태계(Spring AMQP, Flyway, ShedLock) 성숙 / LLM·모델 추론·렌더링 = Python 생태계
@@ -61,6 +61,7 @@
 
 - 동기 호출 장애 대응: 타임아웃 + 재시도 제한 + 서킷 브레이커(Spring Resilience4j / Python httpx 타임아웃·재시도). 값(P12): LLM 1회 15초·재시도 1회(1초 대기), learning→ai 판정·되묻기 각 35초, core→learning 피드백 80초, 분석 대화 core→ai 첫 응답 20초·전체 120초, 서킷 브레이커 최근 20건 중 실패 50% 이상 시 30초 차단, 리포트 작업 재시도 3회(1·5·15분) 후 DLQ. 실패 시 "처리 실패"로 기록·SSE 전달, 판정 보류·기록 없음과 구분
   - 서킷 브레이커 적용 구간은 core→learning(`learning-json`·`learning-feedback`), learning→ai, core→ai(`ai-analysis`), core→report(`report-query`·`report-recovery`), core→토스 조회(`toss-lookup`·`toss-transactions`)다(#167). 각 core 인스턴스 안에서 구간별 상태를 공유하며 구간 사이는 독립이다. 최근/최소 20건·실패율 50%·30초 차단·half-open 1건을 사용한다. HTTP 4xx는 실패로 세지 않고 전송 오류·시간 초과·5xx는 실패로 센다. report 2xx 복구 결과 FAILED/BUSY는 정상 통신 결과다. 토스 쓰기(승인·청구·취소·빌링키 발급)는 예외로 기존 타임아웃만 유지한다. 준비 상태 저장 후 전송을 차단하면 PG 거래가 없어 조회만으로 복구할 수 없으므로, 전송 전 차단 상태/복구 설계를 별도로 확정하기 전에는 적용하지 않는다. 서비스 간 재시도는 추가하지 않는다.
+- #280 core→ai 리포트 설정 제안(`AiClient.reportTemplate`, 25초)은 분석 스트림과 분리한 작은 서킷 `ai-report-template`(최근/최소 10건·실패율 50%·30초 차단·half-open 1건)을 쓴다. 설정 제안 실패가 분석 대화 스트림을 차단하지 않게 하기 위해서다. HTTP 4xx는 성공으로, 전송 오류·시간 초과·5xx(ai `AI_UNAVAILABLE`·`AI_PROMPT_VERSION_UNAVAILABLE` 포함)·빈 본문은 실패로 센다. OPEN은 기존 502 `AI_UNAVAILABLE`로 실패하며 이미 차감한 분석 사용량은 그대로 둔다. 재시도는 추가하지 않는다.
 - #167 분석 서킷은 헤더/첫 이벤트가 아닌 스트림 종료 결과를 집계한다. 중간 EOF·잘못된 스트림·시간 초과·error 이벤트는 실패, 정상 done/clarification 및 기존 TEMPLATE 결과는 성공이다. 사용자 취소·core 권한/저장/전송 처리 오류는 AI 실패 집계에서 제외하고 half-open 허가를 반환한다. OPEN은 기존 AI_UNAVAILABLE로 실패하며, 이미 접수한 분석 시도의 한도/사용 이력 차감은 보존한다. HTTP/1.1과 기존 body 종료·timer 취소를 유지한다.
 - 타임아웃 예산: 바깥 호출 타임아웃 > 안쪽 호출 합계 (예: core→learning > learning→ai judgments + followups). 전체 상한은 CloudFront·ALB 타임아웃(4.3) 이내. 이를 넘는 SSE(피드백 80초, 분석 대화 120초)는 15초 heartbeat가 유휴 타이머를 갱신하는 것을 전제로 함
 - 재시도 계층: ai의 LLM 호출에서만 재시도, core·learning·report의 서비스 간 호출은 재시도 없음 (계층별 재시도 시 호출 수 곱셈 증폭)
@@ -73,6 +74,10 @@
 - core 피드백: `FeedbackService` → `LearningProxyService` → `LearningClient`(read timeout 80초, 일반 JSON 경로의 30초·멱등성은 유지). `_common/web/SseEmitters`는 연결 시간(피드백 90초 `open`, 알림 5분 `subscribe`, 분석 대화 125초 `open`·120초 취소 hook, #41)·15초 heartbeat·종료만 소유하고 판정 상태는 저장하지 않음. 요청 컨텍스트를 작업 virtual thread에 설정·정리. 연결 종료는 heartbeat만 취소하며 learning 작업은 취소하지 않음
 - 피드백의 별도 서킷 이름은 `learning-feedback`이다. 전송 오류·시간 초과·계약된 Problem Details가 아닌 5xx를 실패로 센다. Content-Type `application/problem+json`의 JSON 객체에 비어 있지 않은 문자열 code가 있으면 정상 HTTP 전달로 집계하되 업무 결과는 error로 유지한다. 따라서 learning이 보낸 AI_UNAVAILABLE·INTERNAL_ERROR를 core 서킷이 다시 차단하지 않고 같은 답변 재요청은 learning으로 전달할 수 있다. AI 서킷은 learning이 소유하며 일반 `learning-json`의 기존 5xx 집계는 바꾸지 않는다.
 - JDK 21 SSE 전송·종료의 상호 배제는 `ReentrantLock`을 사용한다. 블로킹 소켓 전송을 synchronized monitor 안에서 실행해 virtual thread의 carrier가 고정되지 않게 한다.
+
+### 1.3.1 분석 대화 수명 (#41)
+
+분석 전용 SseEmitters.open의 연결 시간·취소 hook을 사용한다. 피드백과 알림 수명은 유지한다. AI HTTP body는 취소 시 닫는다. 계정→학생→대화 잠금과 시도 fencing으로 삭제/중복 재시도를 직렬화한다. 상세 계약은 [#41 보고서](../report/issue-41-analysis-conversations.md).
 
 ### 1.4 메시지 목록
 
@@ -130,12 +135,22 @@
   - #43 계약: 내부 조회와 이벤트는 같은 kind·name별 revision·적용 scopes를 제공한다. 소비자는 초기 조회 중 이벤트를 보존·조정하고 더 높은 revision만 적용하며 승인 scope 밖에는 적용하지 않는다. core는 Pod 공유 소비 큐를 추가하지 않는다. scoring 소비·readiness는 #86에서 구현하며 ai는 #68 범위다.
   - scoring #86: 큐 바인딩·소비 시작 후 snapshot을 조회한다. 조회·로딩 중 이벤트는 이름별 최신 revision을 보존하고 readiness 전에 조정한다. 재연결 때 새 exclusive 큐를 바인딩하고 snapshot을 다시 조회하여 연결 중단 중 변경도 복구한다.
   - scoring 교체·롤백은 #85와 동일하게 S3/MinIO에서 재다운로드 → 메모리 로딩 → 임시 파일 정리 방식이다. 성공 후 참조를 교체하며 로딩 실패 시 기존 모델과 새 승인 범위의 교집합만 사용한다. 정상 기동 후 교체 실패는 기존 모델을 유지하고 재시도한다. 최초 조회·로딩 실패 또는 재연결 조정 중에는 readiness false다.
-  - ai #68: `PROMPT`의 `name`은 `judgment`·`followup`·`analysis`·`reportNarrative`, 각 승인 scope는 `ai/judgment`·`ai/followup`·`ai/analysis`·`ai/report-narrative`다. 해당 scope가 없는 항목은 적용하지 않는다. 각 버전의 실제 system/user 프롬프트 본문은 ai 이미지의 코드에 함께 보관한다. core에 활성 항목이 없으면 현재 내장 버전을 사용한다. 활성 버전 본문이 이미지에 없으면 다른 본문에 그 버전명을 붙이지 않고 해당 기능의 새 요청을 503으로 거부하며 readiness는 false다. 요청마다 선택한 본문과 버전을 고정해 응답·사용량에 같은 버전을 기록한다.
+  - ai #68: `PROMPT`의 `name`은 `judgment`·`followup`·`analysis`·`reportNarrative`·`reportTemplate`(#280 리포트 설정 제안), 각 승인 scope는 `ai/judgment`·`ai/followup`·`ai/analysis`·`ai/report-narrative`·`ai/report-template`다. 해당 scope가 없는 항목은 적용하지 않는다. 각 버전의 실제 system/user 프롬프트 본문은 ai 이미지의 코드에 함께 보관한다. core에 활성 항목이 없으면 현재 내장 버전을 사용한다. 활성 버전 본문이 이미지에 없으면 다른 본문에 그 버전명을 붙이지 않고 해당 기능의 새 요청을 503으로 거부하며 readiness는 false다. 요청마다 선택한 본문과 버전을 고정해 응답·사용량에 같은 버전을 기록한다.
   - ai도 큐 바인딩·소비 시작 후 snapshot을 조회하고 그사이 이벤트를 revision으로 조정한다. 재연결마다 새 큐를 먼저 바인딩하고 snapshot으로 유실 구간을 복구한다. readiness는 이 백그라운드 상태만 읽으며 probe가 core를 호출하지 않는다.
   - core 조회 실패 시 프로세스 종료 없이 readiness false 유지·재시도 (core 장애가 ai·scoring 기동 실패로 번지지 않게)
 - **이벤트 봉투**: CloudEvents 형식 `id, specversion, type, source, time, subject, dataschema, traceparent, data` → `contracts/events/*.schema.json`
 - **스키마 버전**: 파일 `<message>.v<N>.schema.json`, `dataschema`에 버전 표기. 하위 호환 변경(선택 필드 추가)만 같은 버전, 그 외는 새 버전 병행 발행 후 소비자 전환
-- **SSE 다중 레플리카**: 알림은 리포트 종료 전이 트랜잭션에서 저장 → AFTER_COMMIT으로 Redis 채널 `core:notifications:v1` 발행 → 구독 레플리카가 SSE 전달(5분·15초 heartbeat). 유실은 `ready` 후 목록 재조회로 보완 (api-spec 2.7)
+- **SSE 다중 레플리카**: 알림은 리포트 종료 전이 트랜잭션에서 저장 → AFTER_COMMIT에 `NotificationDispatchService`가 Redis 채널 `core:notifications:v1` 발행 후 `COMPLETED`·`FAILED` 기록(관리자 재처리도 같은 경로, 발행기 `NotificationRedisPublisher`는 Redis 발행만, #250) → 구독 레플리카가 SSE 전달(5분·15초 heartbeat). 유실은 `ready` 후 목록 재조회로 보완 (api-spec 2.7)
+
+### 1.6.1 리포트 종료 유실 복구 (#132)
+
+core report의 `ReportRecoveryScheduler`(ShedLock) → `ReportRecoveryService` → `ReportClient`가 상태를 대조한다. report generation의 router → `ReconciliationService` → 기존 `ReportRepository`/`JobLocks`를 재사용한다. HTTP 동안 core 트랜잭션은 없고 report는 session 잠금 아래 짧은 DB 트랜잭션만 사용한다. 새 production 의존성은 없다.
+
+core의 생성은 guardianship `StudentAccessService`를 통해 ACTIVE 학생 행을 먼저 잠근 뒤 주 단위 잠금·작업 저장을 수행한다. lifecycle/복구 반영도 학생 → job 순서다. 삭제는 기존 parent → student 순서를 유지하며 `ReportLifecycleService.failForDeletion`을 호출해 같은 트랜잭션에서 미종료 작업과 실행 이력을 FAILED로 만든다. 상대 기능 repository 직접 접근 없이 service 경계로 연결한다. 삭제 종료와 reportId 없는 실패는 알림을 발행하지 않는다.
+
+### 1.6.2 관리자 대화 재처리 실행 경계 (#47)
+
+CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 기존 AnalysisStreamService의 공통 실행을 호출한다. 학부모 SSE와 같은 검증·근거 확인·저장을 사용하며 관리자에게 원문 이벤트를 전달하지 않는다. RabbitMQ 큐나 외부 실행 서비스를 추가하지 않는다. 요청·종료 감사는 BEFORE_COMMIT이며 외부 AI 호출은 DB 트랜잭션 밖이다. 사용량은 영속 요청 ID를 결제 사용 이력 source ID로 써서 실행 선점 트랜잭션 안에서 한 번만 차감한다(#225). 중단 실행은 세대를 확인해 실패로 종료하고 자동 AI 재실행하지 않는다.
 
 ---
 
@@ -153,6 +168,9 @@
 | Domain | `domain` | `models.py`, `state.py` | 엔티티·값 객체, 상태 전이 규칙(`QUEUED→RUNNING`, 판정 상태 등) | 프레임워크·외부 라이브러리 의존 |
 | Infrastructure | `repository`, `client`, `messaging` | `repository.py`, `clients/`, `messaging/`, `llm/` | DB, 외부 API, 브로커, LLM, PG, S3 연동 | 업무 판단 |
 
+- 공통 메시징 인프라 예외(#278): `_common/messaging`의 이벤트 감사 기록·보존 정리(core `EventAuditConsumer`·`EventRetentionCleanup`)는 `_common`이 소유한 메시징 테이블(`event_log`·`outbox_event`·`processed_event`)만 다루고 업무 판단이 없어 service 없이 같은 패키지의 `_common` repository를 직접 호출한다. 같은 패키지의 `OutboxRelay`·`ProcessedEventRepository` 멱등 소비와 같은 공통 인프라로 보며, `_common`에 service 계층을 새로 두지 않는다. 이 예외는 `_common/messaging` 안에만 적용하고, 기능 패키지의 controller·consumer·scheduler는 항상 자기 기능 service만 호출한다(learning `record/scheduler/ProcessedEventCleanupScheduler` → `ProcessedEventCleanupService`, report `worker.py` → `deletion/service.py` `prune_event_records`)
+- Domain 오류(Spring): domain은 HTTP 상태가 없는 `_common/exception`의 `DomainException(ErrorKind, code, title, detail)`만 던진다. `ErrorKind` → HTTP 상태 변환은 `_common/exception` 한 곳에서 하고(2.3), HTTP 상태를 직접 받는 `BusinessException`은 application·presentation에서만 쓴다. 예외의 상태·code를 읽는 곳은 두 예외를 함께 처리하는 공통 함수(`httpStatusOf`·`errorCodeOf`)를 쓴다 (#249)
+
 ### 2.2 의존 규칙
 - `Presentation → Application → Infrastructure` 단방향, 계층 건너뛰기 금지 (controller → repository 직접 호출 금지)
 - Domain은 모든 레이어가 참조 가능, Domain은 다른 레이어를 참조하지 않음
@@ -160,6 +178,8 @@
 - 기능 간 호출 예: 자녀 기록 존재 조회는 `GuardianshipService` → `LearningRecordService` → `LearningRecordClient` → `LearningClient`(학생 전용 `LearningProxyService` 권한과 분리, 서킷·타임아웃 공유, 최대 3명 병렬). 학생 학년·시연 여부는 `StudentLearningContextService`로 조회. 전체 구현 경로는 class-diagram 3장
 - 여러 기능에 걸친 흐름은 `facade`로 조합 (참고 레포 `applicationpreparation/facade` 패턴)
 - 공통 코드: Spring `_common/`, Python `app/` 루트의 `config.py`·`errors.py`·`security.py`·`messaging/`·`clients/base.py`
+  - `_common`은 기능 패키지를 참조하지 않는다. 기능에 의존하는 공통 처리는 그 기능에 둔다(예: `PublicAuthFilter` → account, #251)
+  - 응답 DTO(Spring): 여러 기능 응답이 같은 OpenAPI component를 공유하면 `_common/web`(예: learning `MissionResponse`·`MissionListItemResponse`·`AnswerItem`), 스키마가 다르면 기능별 controller DTO. `_common/web` DTO는 기능 타입 없이 열거값은 이름 문자열, 값 객체는 같은 모양의 DTO, 기능 타입이 필요한 칸은 타입 인자로 두고, domain → DTO 변환은 쓰는 기능의 controller에 둔다(데이터 표현이라 매핑 중복 허용, 업무 로직은 service 재사용) (#251)
 - DB 트랜잭션은 Application 레이어에서만 시작, 트랜잭션 안에서 외부 HTTP·AMQP 호출 금지
 - 멱등성: `_common/web/IdempotencyService`가 `idempotency_record`와 PostgreSQL 세션 잠금을 관리. HTTP 동안 auto-commit 연결 1개만 보유하고 트랜잭션·행 잠금은 보유하지 않음 (api-spec 1.4)
 - 서비스 간 내부 호출: 내부 토큰 헤더 필터(참고 레포 `CatalogInternalAuthFilter` 패턴) + NetworkPolicy
@@ -212,13 +232,13 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ config/
 │  ├─ exception/
 │  ├─ security/
-│  ├─ messaging/                 # 이벤트 봉투, OutboxRelay, 멱등 소비
+│  ├─ messaging/                 # 이벤트 봉투, OutboxRelay, 멱등 소비, 이벤트 감사 기록·보존 정리(EventAuditConsumer·EventRetentionCleanup, #208, repository 직접 호출은 2.1 공통 인프라 예외 #278)
 │  ├─ json/                      # JsonObject: domain이 드는 jsonb 객체 값 (#168)
 │  ├─ persistence/               # MyBatis 설정·PostgreSQL 타입 핸들러
 │  └─ web/                       # IdempotencyService, SseEmitters (core만)
 │     └─ repository/             # IdempotencyRepository
 ├─ account/                      # Google 로그인·세션·탈퇴
-│  ├─ controller/
+│  ├─ controller/                # PublicAuthFilter(공개 API 인증, #251) 포함
 │  ├─ service/
 │  │  └─ dto/
 │  ├─ domain/
@@ -266,10 +286,10 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ controller/                # SSE
 │  ├─ consumer/                  # Redis 구독(다른 레플리카 알림 수신, #168)
 │  ├─ config/                    # Redis 구독 연결·채널 이름
-│  ├─ service/
+│  ├─ service/                   # NotificationDispatchService: 커밋 후 발행·결과 기록 (#250)
 │  ├─ domain/
 │  ├─ repository/
-│  └─ messaging/                 # Redis 발행(커밋 후)
+│  └─ messaging/                 # Redis 발행만 (#250)
 ├─ support/                      # 신고·문의·공지·도움말·정정
 │  ├─ controller/
 │  ├─ service/
@@ -309,7 +329,8 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 │  ├─ exception/
 │  ├─ security/
 │  ├─ messaging/                 # 멱등 소비 (발행 없음)
-│  └─ persistence/               # MyBatis 설정·PostgreSQL 타입 핸들러
+│  ├─ persistence/               # MyBatis 설정·PostgreSQL 타입 핸들러
+│  └─ web/                       # 공유 응답 DTO: MissionResponse·MissionListItemResponse·AnswerItem (#251)
 ├─ mission/                      # 미션·기준표·예시 답·생각 열기 질문 버전, 관리자 작성·검토·공개
 │  ├─ controller/
 │  ├─ service/
@@ -327,6 +348,7 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 │  └─ repository/
 ├─ judgment/
 │  ├─ controller/                # 피드백·정정 내부 API
+│  ├─ scheduler/                 # StuckJudgmentScheduler: 고착 RUNNING 판정 1분 주기 탐지 (#241)
 │  ├─ service/
 │  ├─ domain/
 │  ├─ repository/
@@ -337,17 +359,15 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 │  │  └─ PaymentUsageClient.kt   # core 프리미엄 사용 예약·확정 (#48)
 │  └─ facade/
 │     └─ FeedbackFacade.kt
-├─ record/                       # 대시보드·에이전트 도구·리포트용 조회 API, student.deleted 소비(#128)
-│  ├─ controller/                # 기록 조회·존재 확인·결제 사용 증빙
-│  ├─ consumer/                  # StudentDeletedConsumer
-│  ├─ service/                   # RecordService, StudentDeletionService 등
-│  ├─ domain/
-│  ├─ repository/
-│  └─ client/
-│     └─ CoreClient.kt           # 삭제 완료 보고
-└─ deletion/                     # 빈 폴더(.gitkeep). student.deleted 소비는 record/에 구현(#128)
-   ├─ consumer/
-   └─ service/
+└─ record/                       # 대시보드·에이전트 도구·리포트용 조회 API, student.deleted 소비(#128)
+   ├─ controller/                # 기록 조회·존재 확인·결제 사용 증빙
+   ├─ consumer/                  # StudentDeletedConsumer
+   ├─ scheduler/                 # ProcessedEventCleanupScheduler: processed_event 보존 정리 주기 실행 (#208, #278)
+   ├─ service/                   # RecordService, StudentDeletionService, ProcessedEventCleanupService 등
+   ├─ domain/
+   ├─ repository/
+   └─ client/
+      └─ CoreClient.kt           # 삭제 완료 보고
 ```
 
 Python (ai)
@@ -359,7 +379,6 @@ backend/ai-service/
 │  ├─ config.py
 │  ├─ errors.py                 # Problem Details 예외 핸들러
 │  ├─ security.py               # 내부 토큰·사용자 컨텍스트·학생 범위 검사
-│  ├─ versions.py               # 활성 프롬프트 본문·버전 선택과 내부 조회 (#68)
 │  ├─ judgment/
 │  │  ├─ router.py
 │  │  ├─ service.py
@@ -374,21 +393,30 @@ backend/ai-service/
 │  │  ├─ leak_guard.py
 │  │  └─ prompts.py
 │  ├─ analysis_agent/
-│  │  ├─ router.py               # SSE, 그래프 실행
+│  │  ├─ router.py               # SSE 형식 변환만
+│  │  ├─ service.py              # AnalysisService: 범위·기한·프롬프트 선택, 그래프 실행·최종 상태 → 이벤트, 템플릿 제안 역할 확인 (#253)
 │  │  ├─ models.py
 │  │  ├─ graph.py
 │  │  ├─ nodes/                  # understand·retrieve·respond·events
-│  │  ├─ state.py
+│  │  ├─ state.py                # 그래프 상태 (models·calculators만 참조)
+│  │  ├─ context.py              # AgentContext: LLM·기록 도구·기한·프롬프트
 │  │  ├─ tools.py
 │  │  ├─ calculators.py
 │  │  ├─ verification.py         # 답변 숫자·인용 ↔ 조회·계산 결과 대조
 │  │  ├─ templates.py            # 규칙 응답
+│  │  ├─ template_settings.py    # 리포트 표시 설정 제안 (#209)
+│  │  ├─ template_prompts.py     # 설정 제안 프롬프트 본문·버전 (#280 reportTemplate)
 │  │  └─ prompts.py
 │  ├─ report_narrative/
 │  │  ├─ router.py
 │  │  ├─ service.py
 │  │  ├─ models.py               # 요청·응답 스키마
 │  │  └─ prompts.py
+│  ├─ prompt_versions/           # 활성 프롬프트 버전 (#68, #254 분리)
+│  │  ├─ router.py               # GET /internal/versions
+│  │  ├─ service.py              # PromptSync: core snapshot·대기 이벤트 조정
+│  │  ├─ registry.py             # ActiveVersions: 이미지 본문·이름별 revision 상태
+│  │  └─ models.py               # 활성 버전 계약·PromptChoice
 │  ├─ clients/
 │  │  ├─ base.py                 # 내부 토큰·컨텍스트 헤더 전달 httpx 클라이언트
 │  │  ├─ learning_client.py
@@ -402,7 +430,7 @@ backend/ai-service/
 │  │  ├─ connection.py
 │  │  ├─ publisher.py            # llm.usage.recorded
 │  │  ├─ usage_recorder.py       # LlmClient 사용량 → 백그라운드 발행
-│  │  └─ consumer.py             # model.version.activated, Pod별 exclusive 큐 (#68)
+│  │  └─ consumer.py             # model.version.activated, Pod별 exclusive 큐 (#68), 검증·ACK 후 PromptSync.offer
 │  └─ health/
 │     └─ router.py
 ├─ tests/                        # app과 동일 기능 폴더 구조
@@ -455,7 +483,7 @@ Python (report)
 backend/report-service/
 ├─ app/
 │  ├─ main.py                    # report-api 진입점 (조회 API)
-│  ├─ worker.py                  # report-worker 진입점 (report.generate·student.deleted 소비)
+│  ├─ worker.py                  # report-worker 진입점 (report.generate·student.deleted 소비, 발행·처리 기록 보존 정리 주기 호출 #208)
 │  ├─ bootstrap.py
 │  ├─ config.py
 │  ├─ errors.py
@@ -472,6 +500,7 @@ backend/report-service/
 │  │  ├─ metrics.py
 │  │  ├─ verifier.py
 │  │  ├─ presentation.py         # 조회·파일 렌더링 공통 조립
+│  │  ├─ template_settings.py    # 리포트 표시 설정 검증·적용 (#209)
 │  │  ├─ reconciliation.py       # core 상태 복구 대조 (#132)
 │  │  ├─ router.py               # 복구 대조 내부 API (#132)
 │  │  ├─ locking.py              # 작업별 session 잠금
@@ -490,9 +519,11 @@ backend/report-service/
 │  │  └─ schemas.py
 │  ├─ deletion/
 │  │  ├─ consumer.py
-│  │  ├─ service.py
-│  │  └─ state.py                # 삭제 장벽·processed_event
+│  │  ├─ service.py              # 삭제 조합·생성/조회 허용 검사·발행·처리 기록 보존 정리(prune_event_records, #278)
+│  │  ├─ repository.py           # 삭제 장벽·processed_event DB 작업 (#252)
+│  │  └─ state.py                # DeleteStudent·순수 삭제/생성 허용 규칙
 │  ├─ outbox/                    # report.started·completed·failed
+│  │  ├─ service.py              # 동일 트랜잭션의 subject별 삭제·발행 완료 보존 정리 진입점 (#252, #278)
 │  │  ├─ repository.py
 │  │  ├─ relay.py                # 학생별 선두 발행·재시도·격리 (#131)
 │  │  └─ manage.py               # 격리 이벤트 운영 CLI (#131)
@@ -545,9 +576,9 @@ backend/report-service/
 | 배포 | `docker compose up` | Argo CD (local env) | Argo CD (prod env) |
 | Ingress | - | ingress-nginx | AWS LB Controller (ALB) |
 | CNI (NetworkPolicy) | - | Calico (기본 CNI 정책 지원 버전별 상이) | VPC CNI `enableNetworkPolicy: "true"` |
-| 외부 연동 | stub (LLM·토스) | stub 또는 테스트 키 | LLM API, 토스페이먼츠 테스트 키 |
+| 외부 연동 | stub (LLM·토스·Google OAuth, E2E 오버레이) | stub 또는 테스트 키 | LLM API, 토스페이먼츠 테스트 키 |
 
-- 현재 stub(`infrastructure/stubs`)은 미구성이다. Docker Compose의 ai-service는 `.env`의 `LLM_PROVIDER`·API 키로 실제 LLM을 호출하고, 키가 없으면 판정·되묻기가 `AI_UNAVAILABLE`로 실패한다(6장 LLM 제공자).
+- stub(`infrastructure/stubs`)은 실서버 E2E 오버레이 `compose.e2e.yaml`에서만 연결한다(google·llm·toss-stub, 합성 값 `infrastructure/stubs/e2e.env`). 기본 Docker Compose의 ai-service는 그대로 `.env`의 `LLM_PROVIDER`·API 키로 실제 LLM을 호출하고, 키가 없으면 판정·되묻기가 `AI_UNAVAILABLE`로 실패한다(6장 LLM 제공자). kind의 `<target>-stub` Service는 미구성이다. [이슈 #246 보고서](../report/issue-246-e2e-stubs.md)
 
 - 로컬 자원 시작 기준: i5-1135G7(4코어·8스레드)·16GB급 PC, WSL 2 Docker 메모리 상한 약 7.62GiB. 저장소·Ingress·초기화 작업과 기반 구성에 약 6GiB를 계획하며, 앱·관측·모델 추론의 동시 실행 보장은 아니다. [이슈 #17 자원 설계](../report/local-platform.md)의 제안값을 구현·실측 후 조정한다.
 - 로컬 MinIO는 `sagomungchi-local-missions`·`sagomungchi-local-reports`·`sagomungchi-local-models` 버킷 세 개를 단일 MinIO 저장 공간 안에 구성한다. 운영 S3 이름은 AWS 자원 작업에서 별도 확정한다.
@@ -561,7 +592,7 @@ backend/report-service/
   - 설계 구성 요소(ALB LB Controller, IRSA, EBS CSI, Cluster Autoscaler, ECR, Secrets Manager) AWS 기본 연동
   - control plane HA·etcd 백업·업그레이드를 AWS가 관리 → 12/7 일정 내 운영 부담 제거
   - 자체 구축도 control plane EC2 필요 → 비용 차이 작음 (EKS 수수료 $0.10/시간)
-- 구성: eksctl(`infrastructure/eks/`), 관리형 노드그룹 2개(4.3), EKS add-on(VPC CNI·CoreDNS·kube-proxy·EBS CSI), IRSA, LB Controller·Cluster Autoscaler는 Argo CD `addons/prod/`
+- 구성: eksctl(`infrastructure/eks/`), 관리형 노드그룹 2개(4.3), EKS add-on(VPC CNI·CoreDNS·kube-proxy·EBS CSI), IRSA, LB Controller·Cluster Autoscaler는 Argo CD prod 앱(예정, 5장 `argocd/prod/`)
 - 비용 절감
   - 데모 외 기간: 노드그룹 최소값 축소 또는 클러스터 삭제 후 eksctl 재생성
   - `platform-observability` 노드그룹 Spot 적용
@@ -573,10 +604,11 @@ backend/report-service/
 - CloudFront: 웹과 API를 한 배포·한 도메인에서 경로로 분기 (refresh 쿠키 `SameSite=Strict` 전제)
   - `/api/*` 동작: 캐시 비활성, `Authorization`·`Idempotency-Key`·`If-Match`·`X-Reauth-Token`·`Origin`·`X-Requested-With`(쿠키 API 검사, API 5.1) 헤더와 쿠키 전달, 압축 비활성(SSE 버퍼링 방지)
   - 타임아웃: CloudFront origin 응답 60초, ALB idle 120초 (SSE heartbeat 15초, 1.3)
+  - 클라이언트 IP(기기 등록 IP별 한도, API 3.11): CloudFront가 X-Forwarded-For 끝에 viewer IP를 붙이고, ALB는 `routing.http.xff_header_processing.mode=preserve`(Ingress annotation `alb.ingress.kubernetes.io/load-balancer-attributes`)로 CloudFront 엣지 IP를 덧붙이지 않음. ALB 보안그룹 inbound는 `com.amazonaws.global.cloudfront.origin-facing` prefix list만 허용해 XFF 위조 경로 차단. core는 `server.forward-headers-strategy: native`로 사설 대역 직전 연결만 신뢰(Tomcat 기본 internal-proxies). 운영 적용은 #185
 - 외부 호출(LLM API·토스페이먼츠): Pod → NAT GW → Internet GW
 - Namespace: `app`(core·learning·ai·scoring·report), `platform`(RabbitMQ·Redis), `observability`, `argocd`
 - 노드그룹: `application`, `platform-observability` 분리 (참고 레포 2그룹 구성 계승)
-- NetworkPolicy: 기본 거부 + 아래 허용만 (호출 관계는 [API 명세서](api-spec.md) 4장). #171 브랜치에 공통 앱 chart·local Ingress·app/platform/observability NetworkPolicy 정의를 추가했다. 전용 kind의 합성 Pod로 core·scoring의 일부 platform 허용·차단을, 실제 core Pod로 공개 `/api` 전달과 외부 `/internal` 차단을 확인했다. 실제 scoring Pod는 core 활성 목록 조회와 MinIO 모델 버킷 접근에 성공했으며 빈 활성 목록에서 Ready였다. 실제 앱 전체 호출 표와 운영 값 접합은 남아 있다([검증 범위](../report/issue-171-app-deployment.md)).
+- NetworkPolicy: 기본 거부 + 아래 허용만 (호출 관계는 [API 명세서](api-spec.md) 4장). #171(PR #204 병합)로 공통 앱 chart·local Ingress·app/platform/observability NetworkPolicy 정의를 추가했다. 전용 kind의 합성 Pod로 core·scoring의 일부 platform 허용·차단을, 실제 core Pod로 공개 `/api` 전달과 외부 `/internal` 차단을 확인했다. 실제 scoring Pod는 core 활성 목록 조회와 MinIO 모델 버킷 접근에 성공했으며 빈 활성 목록에서 Ready였다. 실제 앱 전체 호출 표와 운영 값 접합은 남아 있다([검증 범위](../report/issue-171-app-deployment.md)).
 
 | 대상 | ingress 허용 | egress 허용 |
 |---|---|---|
@@ -591,10 +623,10 @@ backend/report-service/
   - 전 Pod 공통 egress: kube-dns(53), OTel Collector·Langfuse(`observability`)
   - report-api·report-worker는 라벨이 달라 허용 대상에 각각 명시
   - learning·report-worker → core는 삭제 완료 보고(`/internal/deletion-requests/.../completions`)만 사용 (P09)
-  - migration-job: RDS egress / local: LLM API·토스 대신 `<target>-stub` Service로 egress
+  - migration-job: RDS egress / local: LLM API·토스 stub는 compose E2E 전용이며 kind에는 없음(4.1)
 
 ### 4.4 확장
-- #171 브랜치에 HPA·KEDA·PDB 템플릿과 local report-worker KEDA 0–1 설정을 추가했다. 전용 kind의 합성 worker로 두 큐 각각의 0→1→0 확장, 합성 CPU Pod로 HPA 1→2와 PDB 허용 중단 수 변화를 확인했다. 실제 AI Pod 2개의 Ready·버전 일치·core 초기 조회 실패 후 복구·Rabbit 재연결도 확인했으나 HPA에 의한 실제 앱 확장과 진행 중 SSE 종료는 미검증이다. local 상시 값의 HPA·PDB는 자원 한도로 비활성화한다. Cluster Autoscaler의 EKS 구성은 #185 범위다. 아래는 제품 설계 기준
+- #171(PR #204 병합)로 HPA·KEDA·PDB 템플릿과 local report-worker KEDA 0–1 설정을 추가했다. 전용 kind의 합성 worker로 두 큐 각각의 0→1→0 확장, 합성 CPU Pod로 HPA 1→2와 PDB 허용 중단 수 변화를 확인했다. 실제 AI Pod 2개의 Ready·버전 일치·core 초기 조회 실패 후 복구·Rabbit 재연결도 확인했으나 HPA에 의한 실제 앱 확장과 진행 중 SSE 종료는 미검증이다. local 상시 값의 HPA·PDB는 자원 한도로 비활성화한다. Cluster Autoscaler의 EKS 구성은 #185 범위다. 아래는 제품 설계 기준
 - HPA(CPU): core, learning, ai, scoring, report-api — 최소 2(scoring은 메모리 고려해 최소 1, report-api 최소 1), PDB `minAvailable: 1`
 - **KEDA(RabbitMQ 큐 길이)**: report-worker — 0~N 확장, EDA와 K8s 연계 지점
   - report 조회 API는 core가 동기 호출하므로 0으로 줄지 않는 `report-api`로 분리 (같은 이미지, 진입점만 다름). core `ReportClient` 대상 Service = report-api
@@ -609,12 +641,12 @@ backend/report-service/
 ### 4.5 CI/CD
 - GitHub Actions: 경로 필터로 변경 서비스만 테스트·빌드 → GHCR/ECR 푸시(OIDC로 AWS 인증). 현재는 테스트·빌드까지, 푸시·태그 갱신은 예정
 - `infrastructure/gitops/environments/<env>/` 이미지 태그 갱신 커밋 → Argo CD 자동 동기화
-- #171 브랜치에 local 앱·KEDA·NetworkPolicy·관측 Application 등록 정의를 추가했다. 전용 kind의 Argo CD v3.5.5에서 KEDA·platform 정책·관측·metrics-server·여섯 앱의 하위 Application을 feature ref로 수동 sync해 실제 Pod와 선행 migration Job을 확인했다. root와 하위 Git 참조는 시험을 위해 서로 달라 root는 OutOfSync이며, 병합 뒤 `develop` 참조의 재동기화는 남아 있다. 이미지 게시·승인 흐름은 #186 범위다
+- #171(PR #204 병합)로 local 앱·KEDA·NetworkPolicy·관측 Application 등록 정의를 추가했다. 전용 kind의 Argo CD v3.5.5에서 KEDA·platform 정책·관측·metrics-server·여섯 앱의 하위 Application을 feature ref로 수동 sync해 실제 Pod와 선행 migration Job을 확인했다. root와 하위 Git 참조는 시험을 위해 서로 달라 root는 OutOfSync이며, 병합 뒤 `develop` 참조의 재동기화는 남아 있다. 이미지 게시·승인 흐름은 #186 범위다
 - #186 로컬 준비: `cd-candidate.yml`은 기존 재사용 CI로 후보를 검사하며 푸시·태그 갱신·배포는 하지 않는다. `scripts/cd_release.py`는 호환성 근거와 계획 형식을 검사하고 실행을 항상 차단한다. 운영 승인자는 미정이며 승인 게이트·실제 배포 실행기는 아직 미연결이다. [준비 범위와 롤백 정책](../report/issue-186-cd-approval-rollback.md)을 따른다.
 - Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret (LLM·토스 키는 저장소에 미포함, NFR-SEC-04)
 
 ### 4.6 관측
-- #171 브랜치의 local 관측 chart에서 전용 kind Collector·Prometheus·Grafana가 기동했고, 합성 OTLP gauge의 Collector 수신→Prometheus 값 조회, RabbitMQ scrape와 Grafana datasource 등록을 확인했다. 공통 앱 chart의 Java agent로 실제 core·learning JVM/HTTP metrics도 `exported_job` 라벨을 대조해 조회했다. AI에는 기본 비활성 Langfuse v4 LLM 계측을 추가했다. scoring·report exporter와 Langfuse backend·trace 저장은 아직 없고, AI의 실제 trace 저장·조회도 미검증이다. `traceparent` 헤더와 AI 사용량 이벤트 봉투는 연결했으며 서비스 간 단일 trace 저장 검증은 남아 있다
+- #171(PR #204 병합) local 관측 chart에서 전용 kind Collector·Prometheus·Grafana가 기동했고, 합성 OTLP gauge의 Collector 수신→Prometheus 값 조회, RabbitMQ scrape와 Grafana datasource 등록을 확인했다. 공통 앱 chart의 Java agent로 실제 core·learning JVM/HTTP metrics도 `exported_job` 라벨을 대조해 조회했다. AI에는 기본 비활성 Langfuse v4 LLM 계측을 추가했다. scoring·report exporter와 Langfuse backend·trace 저장은 아직 없고, AI의 실제 trace 저장·조회도 미검증이다. `traceparent` 헤더와 AI 사용량 이벤트 봉투는 연결했으며 서비스 간 단일 trace 저장 검증은 남아 있다
 - Langfuse: LLM 호출·토큰·비용·trace
 - OpenTelemetry → Prometheus + Grafana: 서비스 지표, 큐 길이·DLQ 적재량, 판정·피드백·리포트 처리 지연
 - 경보: Grafana Alerting → 팀 디스코드 웹훅. 오류율·지연·작업 적체·월 LLM 비용 예산 80% 도달, 담당은 인프라 1명 + 서비스별 담당 (P10, P13)
@@ -633,7 +665,7 @@ SKN34-FINAL-3TEAM/
 │  └─ web/                       # React 웹
 │     ├─ src/                    # 3장 참고
 │     ├─ tests/
-│     │  └─ e2e/                 # (예정) Playwright 대표 시나리오 (NFR-QA-01). 현재 빈 폴더
+│     │  └─ e2e/                 # 실서버 Playwright 대표 시나리오 (NFR-QA-01, playwright.e2e.config.ts·seed/, #246)
 │     ├─ package.json
 │     ├─ vite.config.ts
 │     └─ tsconfig.json
@@ -659,17 +691,18 @@ SKN34-FINAL-3TEAM/
 │     └─ <service>.yaml          # api-spec.md 기준 생성. core-service(공개 API), 나머지(내부 API)
 ├─ ml/                           # 모델 학습 (클러스터 밖 실행, 이미지 빌드·배포 대상 아님)
 │  ├─ m2/
-│  ├─ m1/                        # (예정)
+│  ├─ m1/                        # 수학 풀이 점검 학습·평가 코드(#263, 기준선까지·본 학습 전)
 │  └─ sllm/                      # (예정)
-├─ evaluation/                   # (예정) 판정 일치도(QWK)·되묻기 유출·에이전트 숫자/인용 대조 평가
+├─ evaluation/                   # 판정 일치도(QWK, #199)·(예정) 되묻기 유출·에이전트 숫자/인용 대조 평가
 │  ├─ datasets/                  # 평가셋별 cases.jsonl·fixtures (자체 작성 예시 답안, AI Hub 원문 미포함)
-│  ├─ runners/                   # 서비스 호출·채점 스크립트
+│  ├─ runners/                   # 서비스 호출·채점 스크립트 (judgment_eval.py, 테스트는 ai-service tests)
 │  └─ results/                   # 실행 결과 요약
 ├─ infrastructure/
 │  ├─ gitops/
 │  │  ├─ charts/
-│  │  │  ├─ app-service/         # 공통 서비스 chart (#171, kind 검증 대기)
+│  │  │  ├─ app-service/         # 공통 서비스 chart (#171)
 │  │  │  │  ├─ templates/
+│  │  │  │  │  ├─ _helpers.tpl
 │  │  │  │  │  ├─ deployment.yaml
 │  │  │  │  │  ├─ service.yaml
 │  │  │  │  │  ├─ serviceaccount.yaml          # IRSA (S3 접근 서비스)
@@ -678,15 +711,19 @@ SKN34-FINAL-3TEAM/
 │  │  │  │  │  ├─ triggerauthentication.yaml   # KEDA RabbitMQ 인증
 │  │  │  │  │  ├─ pdb.yaml
 │  │  │  │  │  ├─ networkpolicy.yaml
-│  │  │  │  │  ├─ externalsecret.yaml
+│  │  │  │  │  ├─ namespace-default-deny.yaml
+│  │  │  │  │  ├─ migration-networkpolicy.yaml
 │  │  │  │  │  ├─ ingress.yaml
-│  │  │  │  │  └─ migration-job.yaml           # Argo CD PreSync hook
-│  │  │  │  └─ values.yaml
+│  │  │  │  │  ├─ migration-job.yaml           # Argo CD PreSync hook (이름에 values `migration.revision` 포함)
+│  │  │  │  │  └─ externalsecret.yaml          # (예정) 운영 Secrets Manager 연동
+│  │  │  │  ├─ values.yaml
+│  │  │  │  └─ values.schema.json
 │  │  │  ├─ platform-data/       # RabbitMQ·Redis (+ 로컬 전용 PostgreSQL·MinIO)
 │  │  │  │  ├─ templates/
 │  │  │  │  ├─ files/
 │  │  │  │  │  ├─ rabbitmq/
 │  │  │  │  │  │  └─ definitions.json      # exchange·queue·DLX 단일 기준
+│  │  │  │  │  ├─ minio/                  # 로컬 버킷 생성
 │  │  │  │  │  └─ postgres/
 │  │  │  │  │     └─ init.sql              # 로컬 전용 서비스별 DB 생성
 │  │  │  │  └─ values.yaml
@@ -695,47 +732,54 @@ SKN34-FINAL-3TEAM/
 │  │  │     └─ values.yaml
 │  │  ├─ environments/           # 앱별 values·이미지 태그
 │  │  │  ├─ local/
-│  │  │  │  ├─ core-service.yaml     # #171 브랜치 local 앱별 values, 기동 검증 대기
+│  │  │  │  ├─ core-service.yaml     # local 앱별 values (#171). 마이그레이션 추가 시 `migration.revision` 갱신(scripts/tests 검사)
 │  │  │  │  ├─ learning-service.yaml
 │  │  │  │  ├─ ai-service.yaml
 │  │  │  │  ├─ scoring-service.yaml
 │  │  │  │  ├─ report-api.yaml
 │  │  │  │  ├─ report-worker.yaml
-│  │  │  │  ├─ <target>-stub.yaml
 │  │  │  │  ├─ platform-data.yaml
 │  │  │  │  └─ observability.yaml     # local metrics 기반, Langfuse 제외
 │  │  │  └─ prod/                # (예정) local과 동일 구성, stub 제외
-│  │  └─ argocd/                 # local 앱 등록 정의 추가, sync 검증 대기
+│  │  ├─ migrations/             # core·learning Flyway PreSync 이미지 Dockerfile
+│  │  ├─ policies/
+│  │  │  └─ local/platform.yaml  # platform namespace NetworkPolicy
+│  │  └─ argocd/
 │  │     ├─ local/
-│  │     │  └─ root-app.yaml     # kind Argo CD 진입점
-│  │     ├─ prod/
-│  │     │  └─ root-app.yaml     # EKS Argo CD 진입점
-│  │     ├─ apps/
-│  │     │  └─ applicationset.yaml  # env 파라미터로 environments/<env>/* Application 생성
-│  │     └─ addons/              # 외부 Helm chart
-│  │        ├─ common/           # KEDA
-│  │        └─ prod/             # External Secrets·AWS LB Controller·Cluster Autoscaler
+│  │     │  ├─ root-app.yaml     # kind Argo CD 진입점
+│  │     │  └─ apps/
+│  │     │     ├─ applicationset.yaml  # environments/local/* Application 생성
+│  │     │     ├─ keda.yaml
+│  │     │     ├─ metrics-server.yaml
+│  │     │     ├─ observability.yaml
+│  │     │     └─ platform-network.yaml
+│  │     └─ prod/                # (예정) EKS Argo CD 진입점, External Secrets·AWS LB Controller·Cluster Autoscaler
 │  ├─ kind/
-│  │  └─ local.yaml              # kind 클러스터 설정
+│  │  ├─ local.yaml              # kind 클러스터 설정
+│  │  └─ *-issue-171*·hpa-check-values.yaml  # #171 전용 kind 검증 자료
 │  ├─ eks/                       # (예정) eksctl 클러스터·노드그룹·IRSA·StorageClass
 │  ├─ aws/                       # (예정) eksctl 범위 밖 자원: RDS·S3·CloudFront·ECR·Secrets Manager·GitHub OIDC IAM (도구 미정)
-│  └─ stubs/                     # (예정)
-│     └─ <target>-stub/          # LLM·토스페이먼츠 대역 (테스트·무료 시연용)
+│  └─ stubs/                     # compose.e2e.yaml 전용 대역, e2e.env(합성 값)
+│     └─ <target>-stub/          # google·llm·toss-stub: Google OAuth·LLM·토스페이먼츠 대역 (로컬·CI E2E)
 │        └─ Dockerfile
 ├─ .github/
 │  └─ workflows/
 │     ├─ _spring.yml             # 재사용 워크플로: 테스트→빌드 (푸시·태그 갱신은 예정)
 │     ├─ _python.yml
 │     ├─ _web.yml
-│     ├─ ci-<service>.yml        # 서비스·stub별 경로 필터(<경로>/**, contracts/**) → 재사용 워크플로 호출
+│     ├─ ci-<service>.yml        # 서비스별 경로 필터(<경로>/**와 해당 서비스 계약 파일; learning·web은 자기 경로만) → 재사용 워크플로 호출
 │     ├─ ci-db-schema.yml        # 마이그레이션 적용·ERD 대조 (scripts/check_db_migrations.py)
-│     └─ ci-contracts.yml        # 저장소 계약 회귀·core 실제 테스트 산출물 대조 (#143); asyncapi 검사는 미구현
+│     ├─ ci-contracts.yml        # 저장소 계약 회귀·core 실제 테스트 산출물 대조 (#143·#237); asyncapi 검사는 미구현
+│     ├─ ci-gitops.yml           # chart lint·렌더·스키마 검증, migration 이미지 빌드 (#238)
+│     ├─ ci-ml-m1.yml · ci-ml-m2.yml  # ml/m1·ml/m2 ruff·pytest
+│     └─ e2e.yml                 # 실서버 E2E: 수동·E2E 구성 변경 PR (#246). 야간 schedule은 기본 브랜치(main)에 병합된 뒤부터 동작
 ├─ docs/
 │  ├─ README.md                  # 개발 규칙
 │  ├─ design/                    # 아키텍처·기능명세·API 명세 등 설계 문서
 │  └─ adr/                       # (예정) NNNN-<제목>.md
 ├─ compose.yaml                  # 로컬 통합 실행 진입점
 ├─ compose.minio.yaml            # 로컬 MinIO 선택 실행 (기본 파일과 함께 지정)
+├─ compose.e2e.yaml              # 실서버 E2E: stub·시드 연결 (compose.yaml·compose.minio.yaml과 함께 지정)
 ├─ .env.example
 └─ README.md
 ```
@@ -763,14 +807,14 @@ SKN34-FINAL-3TEAM/
 | AI API | Python 3.12, FastAPI, Pydantic, uv, LangGraph, LangChain, OpenAI API(기본 `gpt-6.1-terra`)·Claude API(`LLM_PROVIDER`로 교체), aio-pika, httpx | 에이전트 그래프·도구 호출, 비동기 AMQP |
 | 모델 추론 | PyTorch, Hugging Face Transformers (M2 klue/roberta, M1) | 기획서 5장 모델 |
 | 리포트 | SQLAlchemy, Alembic, Jinja2, Playwright(Chromium PDF) | HTML 템플릿 → PDF·Markdown |
-| 저장소 | PostgreSQL(RDS), S3(로컬 MinIO), Redis(core 알림 중계·학생 기기 페어링) | 서비스별 DB 분리, 판정 근거·기준표 JSONB, 파일 분리, SSE 중계·캐시 |
+| 저장소 | PostgreSQL(RDS), S3(로컬 MinIO), Redis(core 알림 중계·학생 기기 페어링·기기 등록 rate limit) | 서비스별 DB 분리, 판정 근거·기준표 JSONB, 파일 분리. Redis는 SSE 중계와 짧은 TTL 값만 담당하고 조회 캐시로 쓰지 않음, 분석 대화 사용량은 PostgreSQL 결제 사용 이력 집계로 이전(#210 결정, #225 구현) |
 | 메시징 | RabbitMQ (quorum queue, topic/direct exchange, DLX) | 작업 큐 + fan-out 동시 지원, Kafka 대비 운영 부담 작음 |
 | 결제 | 토스페이먼츠 테스트 환경 (결제위젯·자동결제·웹훅) | 실결제 미연동 |
 | 컨테이너·오케스트레이션 | Docker, Compose, kind, Kubernetes, Helm | 로컬 → 운영 동일 chart |
 | 확장 | HPA, KEDA, Cluster Autoscaler, PDB | CPU 기반 API 확장 + 큐 기반 워커 확장 |
 | AWS | EKS(eksctl), EC2, VPC, ALB(LB Controller), CloudFront, S3, RDS, ECR, EBS gp3, Secrets Manager | 관리형 control plane(자체 구축 대비 운영 부담 제거)·AWS 연동 기본 지원, 참고 레포 EKS 구성 계승 + 관리형 DB |
 | GitOps·CI | GitHub Actions(OIDC), GHCR, Argo CD, External Secrets | 변경 서비스만 빌드, Git 기준 배포 |
-| 테스트 | JUnit5, Testcontainers, pytest, Playwright(E2E, 예정) | 기획서 4.4 |
+| 테스트 | JUnit5, Testcontainers, pytest, Playwright(MSW 화면 회귀·실서버 E2E) | 기획서 4.4 |
 | 관측·LLMOps | Langfuse, OpenTelemetry, Prometheus, Grafana | LLM trace + 서비스·큐 지표 |
 
 ---
@@ -788,25 +832,11 @@ SKN34-FINAL-3TEAM/
 - 인증([auth-account](../report/auth-account.md)): `PublicAuthFilter`(판정 경로는 Spring 매칭 경로로 정규화) → `AuthService` → Repository. JWT는 Spring Security JOSE HS256, Google 코드 교환·JWKS 검증은 트랜잭션 밖, 계정·세션·refresh 회전만 트랜잭션 안. 학생 단독 인증은 `StudentAuthService`(기기·페어링)와 `StudentPinService`(PIN·잠금)로 나누고 PIN 변경의 재인증 소비·갱신·감사는 한 트랜잭션
 - 주간 리포트([report](../report/report.md)): `ReportScheduleService` → 자녀별 트랜잭션의 `ReportJobService` → `ReportJobRepository` + `OutboxWriter`(ShedLock, 자녀별 실패 격리). 소비는 `RetryingConsumer` → `ReportLifecycleService`. 조회의 내부 HTTP와 열람 저장 트랜잭션은 분리. `ReportEntitlementService`는 payment 소유 `ProductEntitlementService`에 위임한다. 상품·구독 repository를 직접 참조하지 않으며 권한 조회 실패는 명시적인 오류로 처리한다. report Outbox는 학생별 advisory lock·AUTOCOMMIT 선점, publisher confirm 뒤 짧은 트랜잭션으로 발행 시각 기록
 - 삭제·재인증([auth-account](../report/auth-account.md)): `student.deleted.v1` data `{studentId,deletionRequestId,scope}`. 요청 CONFIRMED와 Outbox 기록은 한 트랜잭션, learning·report 완료 보고를 서비스별 UNIQUE 행으로 기록해 둘 다 있을 때만 COMPLETED. 기능 간 정리는 각 service 경유
+- Redis 사용 범위([core-gateway #210](../report/core-gateway.md#6-redis-사용-필요성과-postgresql-대체-비교-210), 2026-11-02 부분 대체 결정): DB 저장과 함께 커밋·롤백되어야 하는 분석 대화 일일 사용량·관리자 재처리 중복 차감 표식은 PostgreSQL로 옮기고, 미구현 무료 플랜 미션 일일 한도(P13)의 PostgreSQL 구현은 후속 미정이다. 학생 기기 페어링 코드·기기 등록 rate limit·알림 Pub/Sub은 Redis에 유지한다. 분석 대화 사용량·재처리 표식은 #225에서 새 테이블 없이 기존 `payment_premium_usage` 집계와 source ID 중복 방지로 구현했다
 
 #48은 ReportEntitlementService를 payment 소유 ProductEntitlementService에 연결한다. 외부 PG 호출과 learning 사용 증빙 조회는 DB 트랜잭션 밖, 주문/구독/환불·프리미엄 사용 예약은 공통 parent 계정 행 잠금 안이다. payment repository는 payment 패키지만 사용한다. 신규 의존성 없이 기존 HTTP·MyBatis·ShedLock·IdempotencyService·NotificationService를 사용한다. [결제 경계·복구](../report/issue-48-payments.md).
 
 
-### #46 신고·지원 연결 경계
+### 7.2 신고·지원 연결 경계 (#46)
 
 support/controller → SupportService → support/repository를 사용한다. 대상 검증은 상대 기능 service(StudentAccessService·ConversationSupportService·ReportSupportService)를 호출하며 다른 기능 repository를 직접 참조하지 않는다. support/client는 기존 learning LearningClient·InternalRestClientFactory를 재사용한다. 정정 의도 저장·완료 저장 사이 HTTP는 트랜잭션 밖이며, core 영속 correction UUID가 공급자 요청 식별자다. 원문 응답 전 감사 저장이 실패하면 원문을 반환하지 않는다. 알림은 NotificationService.support로 저장·수신 설정·중복 방지·NotificationStored·커밋 후 Redis 전달을 재사용한다. 자세한 범위와 공급자 미구현은 [#46 보고서](../report/issue-46-support.md)에 기록한다.
-
-## 이슈 #41 분석 대화 수명
-
-분석 전용 SseEmitters.open의 연결 시간·취소 hook을 사용한다. 피드백과 알림 수명은 유지한다. AI HTTP body는 취소 시 닫는다. 계정→학생→대화 잠금과 시도 fencing으로 삭제/중복 재시도를 직렬화한다. 상세 계약은 [#41 보고서](../report/issue-41-analysis-conversations.md).
-
-## 이슈 #132 리포트 종료 유실 복구
-
-core report의 `ReportRecoveryScheduler`(ShedLock) → `ReportRecoveryService` → `ReportClient`가 상태를 대조한다. report generation의 router → `ReconciliationService` → 기존 `ReportRepository`/`JobLocks`를 재사용한다. HTTP 동안 core 트랜잭션은 없고 report는 session 잠금 아래 짧은 DB 트랜잭션만 사용한다. 새 production 의존성은 없다.
-
-core의 생성은 guardianship `StudentAccessService`를 통해 ACTIVE 학생 행을 먼저 잠근 뒤 주 단위 잠금·작업 저장을 수행한다. lifecycle/복구 반영도 학생 → job 순서다. 삭제는 기존 parent → student 순서를 유지하며 `ReportLifecycleService.failForDeletion`을 호출해 같은 트랜잭션에서 미종료 작업과 실행 이력을 FAILED로 만든다. 상대 기능 repository 직접 접근 없이 service 경계로 연결한다. 삭제 종료와 reportId 없는 실패는 알림을 발행하지 않는다.
-
-
-### #47 관리자 대화 재처리 실행 경계
-
-CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 기존 AnalysisStreamService의 공통 실행을 호출한다. 학부모 SSE와 같은 검증·근거 확인·저장을 사용하며 관리자에게 원문 이벤트를 전달하지 않는다. RabbitMQ 큐나 외부 실행 서비스를 추가하지 않는다. 요청·종료 감사는 BEFORE_COMMIT이며 외부 AI 호출은 DB 트랜잭션 밖이다. Redis 사용량은 영속 요청 ID 원자 표식으로 중복 차감을 방지한다. 중단 실행은 세대를 확인해 실패로 종료하고 자동 AI 재실행하지 않는다.

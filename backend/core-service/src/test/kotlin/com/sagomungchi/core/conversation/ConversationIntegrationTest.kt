@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core.IntegrationTestSupport
 import com.sagomungchi.core._common.exception.BusinessException
+import com.sagomungchi.core._common.exception.DomainException
 import com.sagomungchi.core._common.messaging.OutboxRelay
 import com.sagomungchi.core._common.security.UserContext
 import com.sagomungchi.core._common.security.UserContextHolder
@@ -23,7 +24,6 @@ import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.web.server.LocalServerPort
-import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
@@ -49,12 +49,10 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
     @Autowired lateinit var json: ObjectMapper
     @Autowired lateinit var tokens: TokenService
     @Autowired lateinit var service: ConversationService
-    @Autowired lateinit var usage: AnalysisUsageService
     @Autowired lateinit var repository: ConversationRepository
     @Autowired lateinit var deletion: ConversationDeletionService
     @Autowired lateinit var accounts: AccountAccessService
     @Autowired lateinit var tx: TransactionTemplate
-    @Autowired lateinit var redis: StringRedisTemplate
     @MockitoBean lateinit var entitlement: AnalysisEntitlementProvider
     @MockitoBean lateinit var outbox: OutboxRelay
     private lateinit var user: UUID
@@ -221,27 +219,19 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
     @Test fun `single running message and duplicate retries are serialized without consuming rejected requests`() {
         val id = create()
         val first = verified { service.prepare(id, "진행 질문", null) }
-        assertEquals("ANALYSIS_IN_PROGRESS", verified { assertFailsWith<BusinessException> { service.prepare(id, "중복", null) } }.code)
+        assertEquals("ANALYSIS_IN_PROGRESS", verified { assertFailsWith<DomainException> { service.prepare(id, "중복", null) } }.code)
         service.fail(first, "AI_UNAVAILABLE")
         val executor = Executors.newVirtualThreadPerTaskExecutor()
         try {
             val futures = (1..8).map { executor.submit<Boolean> { verified {
-                try { service.prepare(id, null, null, first.message.id); true } catch (_: BusinessException) { false }
+                try { service.prepare(id, null, null, first.message.id); true } catch (_: BusinessException) { false } catch (_: DomainException) { false }
             } } }
             assertEquals(1, futures.count { it.get(20, TimeUnit.SECONDS) })
         } finally { executor.close() }
         assertEquals(1, rows(id).size); assertEquals(1, rows(id).single().retryCount)
-        assertEquals("2", redis.opsForValue().get("analysis:daily:v1:$student:$today"))
-    }
-    @Test fun `Redis atomically admits only product daily count across concurrent callers and expires on KST boundary`() {
-        `when`(entitlement.entitlement(user, student)).thenReturn(AnalysisEntitlement(UUID.randomUUID(), 3, null, true))
-        val executor = Executors.newVirtualThreadPerTaskExecutor()
-        try {
-            val tasks = (1..30).map { executor.submit<Boolean> { try { usage.consume(user, student); true } catch (_: BusinessException) { false } } }
-            assertEquals(3, tasks.count { it.get(5, TimeUnit.SECONDS) })
-        } finally { executor.close() }
-        val key = "analysis:daily:v1:$student:$today"
-        assertEquals("3", redis.opsForValue().get(key)); assertTrue(redis.getExpire(key) in 86400..172800)
+        // Only the original question and the single admitted retry reach the payment ledger, each with its own source.
+        val sources = org.mockito.Mockito.mockingDetails(entitlement).invocations.filter { it.method.name == "recordAttempt" }.map { it.arguments[2] }
+        assertEquals(2, sources.size); assertEquals(2, sources.toSet().size)
     }
     @Test fun `delete racing stream cancels and cannot resurrect rows or deliver post-delete raw text`() {
         val id = create(); val entered = CountDownLatch(1); val release = CountDownLatch(1)
@@ -378,6 +368,7 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
     }
     @Test fun `five final response categories preserve verification draft failure and notice on reload`() {
         val modes = listOf("LLM","VERIFICATION_FAILED","AI_UNAVAILABLE","NO_RECORD","UNSUPPORTED")
+        val exported = linkedMapOf<String, Any>()
         for(mode in modes) {
             val id=create()
             ai.respond = { exchange, request ->
@@ -397,6 +388,15 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
             }
             val response=message(id)
             assertTrue("result" in events(response.body()),response.body())
+            // AI 대역 원본이 아닌 core가 검증·직렬화해 전송한 최종 SSE 응답을 검사한다.
+            val frames = response.body().replace("\r\n", "\n").split("\n\n").mapNotNull { frame ->
+                val lines = frame.lines()
+                val event = lines.firstOrNull { it.startsWith("event:") }?.substringAfter(":")?.trim()
+                val data = lines.filter { it.startsWith("data:") }.joinToString("\n") { it.substringAfter(":").trimStart() }
+                if (event == "result") listOf(event, json.readTree(data)) else null
+            }
+            assertEquals(1, frames.size, response.body())
+            exported[mode] = mapOf("events" to frames)
             val saved=rows(id).single();assertEquals("COMPLETED",saved.status)
             val detail=json.readTree(call("/conversations/$id").body()).path("messages")[0]
             assertTrue(detail.path("verification").path("contentAllowed").asBoolean())
@@ -406,6 +406,9 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
                 "NO_RECORD","UNSUPPORTED" -> { assertEquals(mode,detail.path("notice").path("reason").asText());assertTrue(detail.path("fallback").isNull) }
             }
         }
+        val output = java.nio.file.Path.of("build/generated-contracts/analysis.json")
+        java.nio.file.Files.createDirectories(output.parent)
+        json.writerWithDefaultPrettyPrinter().writeValue(output.toFile(), exported)
     }
     @Test fun `contradictory source metadata and forged quotes are rejected before persistence`() {
         for(mode in listOf("BOTH","DRAFT_PASSED","LLM_NOTICE","UNKNOWN_NOTICE","FORGED_QUOTE")) {

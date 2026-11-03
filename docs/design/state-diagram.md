@@ -176,7 +176,7 @@ stateDiagram-v2
   FAILED --> RUNNING: 피드백 재요청
   RUNNING --> RUNNING: 리스 만료 후 재획득
   RUNNING --> DONE: 판정·되묻기 저장
-  RUNNING --> FAILED: ai·LLM 실패·타임아웃
+  RUNNING --> FAILED: ai·LLM 실패·타임아웃, 리스 만료 고착 탐지(1분 주기)
   DONE --> [*]
   note right of DONE
     result = CORRECT | PARTIAL | RETHINK | HELD
@@ -190,9 +190,12 @@ stateDiagram-v2
 | `PENDING·FAILED → RUNNING`, 만료 `RUNNING → RUNNING` | `POST /answers/{id}/feedback` | `Judgment.acquire(now, lease)` | `SET process_status='RUNNING', lease_until=:until WHERE answer_id=:id AND (process_status IN ('PENDING','FAILED') OR (process_status='RUNNING' AND (lease_until IS NULL OR lease_until < now())))`. 리스 없는 `RUNNING`도 만료로 봄(엔티티 판단과 같게) |
 | `RUNNING → DONE` | 처리 완료 | `Judgment.done(...)`·`hold(reason)` | `WHERE id=:id AND process_status='RUNNING' AND lease_until=:until` (획득한 리스 값으로 늦게 끝난 이전 처리의 덮어쓰기 방지) |
 | `RUNNING → FAILED` | 예외·타임아웃 | `Judgment.fail(code)` | 위와 같은 리스 조건, `retry_count + 1` |
+| 만료 `RUNNING → FAILED` | 1분 주기 고착 탐지 (#241) | `StuckJudgmentScheduler` → `JudgmentService.failStuck(now)` | `SET process_status='FAILED', failure_code='LEASE_EXPIRED', retry_count=retry_count+1 WHERE process_status='RUNNING' AND (lease_until IS NULL OR lease_until < now)`. 만료 조건은 재획득과 같음(리스 없는 `RUNNING` 포함) |
 
 - 전이 실패(영향 0행) 시 현재 상태로 응답: `DONE` → 저장 결과, 유효 `RUNNING` → `status` 이벤트 후 종료 (API 1.4)
-- 고착 `RUNNING` 탐지 인덱스 `(process_status, lease_until)`, 리스 90초·탐지 주기 1분 (P12). 주기 탐지 작업은 미구현(운영 작업 후속)이며 현재는 다음 피드백 요청 때 만료 리스를 재획득 ([이슈 #25 보고서](../report/learning.md))
+- 고착 `RUNNING` 탐지 인덱스 `(process_status, lease_until)`, 리스 90초·탐지 주기 1분 (P12). 탐지 전에 피드백 재요청이 오면 지금처럼 만료 리스를 재획득하고, 탐지가 먼저면 `FAILED`가 돼 재요청이 `FAILED → RUNNING`으로 처음부터 실행 (#241, [learning 보고서](../report/learning.md))
+  - 자동 재실행은 하지 않음(core 분석 대화도 130초 넘은 `RUNNING`을 실패 `STREAM_INTERRUPTED`로 바꾸고 자동 재실행하지 않음, api-spec #47 절). 처리 Pod 종료·결과 기록 실패 뒤 학생이 떠난 판정이 시도 상세·학습 기록 집계·결제 사용 증빙에서 처리 중으로 남지 않게 함(마무리 조건 P04는 `RUNNING`·`FAILED` 모두 `DONE`이 아니라 같음)
+  - 조건부 UPDATE라 여러 Pod가 같은 주기에 실행해도 한 번만 바뀜. 재획득과 겹치면 행 잠금 뒤 조건을 다시 봐 새 리스가 잡힌 행은 바꾸지 않음. 탐지 뒤 늦게 끝난 이전 처리는 리스 조건 때문에 저장·실패 기록 0행
 - 리스 시간은 core→learning 피드백 호출 타임아웃보다 길게 설정. 짧으면 처리 중인 판정을 다른 요청이 재획득해 LLM 호출이 중복됨
 - 정정(`POST /internal/judgments/{id}/corrections`, #80)은 `DONE` 판정만 받고 그 전이면 `409 JUDGMENT_STATE_CONFLICT`. `process_status`·`result`는 바꾸지 않고 `judgment_correction` 행을 추가하며, 조회 때 최신 정정 결과를 `result`로 보여 줌 (FN-SUP-03)
 
@@ -207,7 +210,7 @@ stateDiagram-v2
 
 - `HELD`는 정상 처리 결과(`DONE`), API 실패는 `FAILED` → 서로 다른 컬럼 (NFR-REL-04)
 - 풀이 단계(`SOLUTION_STEPS`)는 풀이를 ai 요소 판정, 최종 답을 `MathEquivalenceJudge`로 보고 위처럼 합침. ai가 보류하면 보류(최종 답 결과는 쓰지 않음). 최종 답 결과는 기준표의 `FINAL_ANSWER` 요소(ai에 보내지 않음)에 정답 키 근거(`ANSWER_KEY`, 근거 글자는 학생이 쓴 최종 답)로 기록해, 답이 틀려 `PARTIAL`이면 마무리 체크리스트에도 "최종 답"이 빠진 것으로 보임 (FN-JDG-02, [이슈 #79 보고서](../report/learning.md))
-- `FAILED`의 `failure_code`: `AI_TIMEOUT`·`AI_UNAVAILABLE`(연결 실패·ai 5xx)·`AI_BAD_RESPONSE`(ai 4xx·계약 밖 응답)·`AI_CIRCUIT_OPEN`·`INTERNAL_ERROR`
+- `FAILED`의 `failure_code`: `AI_TIMEOUT`·`AI_UNAVAILABLE`(연결 실패·ai 5xx)·`AI_BAD_RESPONSE`(ai 4xx·계약 밖 응답)·`AI_CIRCUIT_OPEN`·`INTERNAL_ERROR`·`LEASE_EXPIRED`(고착 탐지, #241)
 
 ---
 
@@ -239,6 +242,16 @@ stateDiagram-v2
 
 - 종료 후 늦게 온 `report.started`는 영향 0행 → 무시 (역순 도착 허용)
 - `QUEUED` 고착(메시지 DLQ 이동)은 #132 복구 점검으로 실제 report 상태와 대조한 뒤 종료한다. 관리자는 `/admin/queues`·`/admin/jobs`에서 확인하며 자동 재생성은 하지 않는다.
+
+#### 4.1.1 종료 유실·삭제 (#132)
+
+QUEUED/RUNNING → COMPLETED|FAILED: 복구 API의 저장된 종료 결과를 조건부 반영한다. BUSY/DB·HTTP 오류/식별 불일치는 상태를 보존한다. 학생 삭제 확정은 `STUDENT_DELETED`로 FAILED 및 실행 이력을 원자 기록한다. 종료 상태는 늦은 started/completed/failed와 복구 응답으로 바뀌지 않는다.
+
+report에서 잠금 소유자가 없는 RUNNING만 `REPORT_EXECUTION_ABANDONED`로 FAILED 전이한다. 행이 없으면 `REPORT_NOT_CREATED` 차단 기록을 저장해 같은 job의 지연 메시지는 ACK 종료한다. 차단 기록의 학생·기간이 다르면 오류다. 실행 중인 생성은 BUSY로 유지한다. 자동 재생성은 하지 않는다.
+
+#### 4.1.2 REPORT 관리자 재처리 (#47)
+
+원래 FAILED report_job은 종료 상태를 유지한다. 명시적인 재처리는 별도 ADMIN_RETRY job을 QUEUED로 만들고 core report_job_retry로 연결한다. 새 job에 기존 QUEUED→RUNNING→COMPLETED/FAILED 전이를 적용하며 실행 번호는 새 job 기준이다. 기존 job의 attempt_no를 증가시키거나 오래된 종료 이벤트를 새 job에 재적용하지 않는다. 이미 재처리한 원작업은 재사용하지 않고 재실패한 자식 job에서 다음 관계를 만든다. 202는 접수이며 완료가 아니다.
 
 ### 4.2 `weekly_report.status` · `state` (report)
 
@@ -294,7 +307,7 @@ stateDiagram-v2
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
 | → `QUEUED` | 관리자 재처리 접수 | `ConversationAdminRetryService.request` | UK `(message_id, generation)`·`(requested_by, idempotency_key)` |
-| `QUEUED → RUNNING` | 작업자 선점 | `ConversationAdminRetryService.claim` | `WHERE status='QUEUED'` + 접수 130초 이내, `job_execution(RUNNING)` |
+| `QUEUED → RUNNING` | 작업자 선점 | `ConversationAdminRetryService.claim` | `WHERE status='QUEUED'` + 접수 130초 이내(DB 시계 기준, #286), `job_execution(RUNNING)` |
 | `QUEUED·RUNNING → COMPLETED·FAILED` | 실행 결과·실행 전 거절 | `finish`(결과와 같은 트랜잭션) | `WHERE status IN ('QUEUED','RUNNING')` |
 | `QUEUED·RUNNING → FAILED` | 130초 만료·학생 삭제 | `ConversationRetryWorker`(`STREAM_INTERRUPTED`)·`beforeStudentDeletion`(`STUDENT_DELETED`) | 자동 AI 재실행 없음 |
 
@@ -358,6 +371,10 @@ stateDiagram-v2
 
 - `R_*`·`Q_*` 접두어 = 각 테이블 `status` 값
 - 접수만으로 판정 변경 금지, `RECEIVED → RESOLVED` 직행 금지 (검토 기록 필수, FN-SUP-02)
+
+### 5.1 core 정정 실행 기록 (#46)
+
+신고 상태는 기존 RECEIVED → IN_REVIEW → RESOLVED를 유지한다. core `SupportService.correct`는 신고 검토 중 correction.processing_status=PENDING 의도를 먼저 저장하고 HTTP를 트랜잭션 밖에서 실행한다. HTTP 실패 시 FAILED이며 신고는 IN_REVIEW다. 동일 correction UUID로 공급자가 성공을 확인하고 core 완료 트랜잭션까지 커밋될 때만 correction=COMPLETED·신고=RESOLVED·알림을 함께 기록한다. 응답 유실이나 core 저장 실패는 완료가 아니며 같은 의도로 재개한다. 원본 답변·판정은 변경하지 않는다.
 
 ---
 
@@ -445,6 +462,10 @@ stateDiagram-v2
 - `REQUESTED → APPROVED`: 승인된 환불 합계 + 요청 금액 ≤ `payment.amount`, 아니면 `409 REFUND_NOT_ALLOWED` (FN-ADM-16)
 - `FAILED`는 종료, 재시도는 새 요청 행 (중복 취소 방지). 모든 전이에 `decided_by`·`audit_log`
 
+### 6.4 결제 상태 적용 보완 (#48)
+
+CONFIRMING은 PG 조회로만 확정하며, APPROVED/RECOVERY_REQUIRED는 추가 청구 없이 구독 반영을 재시도한다. REQUESTED 환불은 프리미엄 사용 동결 상태이며 증빙 미확인은 503이다. APPROVED 환불의 PG 결과 불명확은 FAILED로 바꾸지 않고 조회 복구한다. REFUNDED/CANCELED는 지연 DONE 통지로 되돌리지 않는다. PG 호출 중 parent 잠금은 유지하지 않으며 준비된 거래/환불이 탈퇴를 차단한다. 상세 계약은 [#48 보고서](../report/issue-48-payments.md)를 따른다.
+
 ---
 
 ## 7. 운영
@@ -514,23 +535,4 @@ stateDiagram-v2
 - 문의 `RECEIVED → IN_REVIEW`: API 2.8에 상태 변경 엔드포인트 없음 → 필요 시 API 명세에 추가
 - 돌아보기를 마무리 전에 저장하면 `409 REVEAL_CONDITION_UNMET`으로 거부 (기존 오류 코드 재사용)
 - 정기 청구 재청구: ERD 부분 UK `(subscription_id, billing_period_start) WHERE kind = 'RENEWAL'`로 같은 기간 새 주문 불가. 가정은 "기존 주문의 결제가 `FAILED`면 같은 주문으로 재청구", PG 주문번호 재사용 가능 여부 확인 후 ERD 반영 필요
-- `QUEUED` 고착 작업은 #132 내부 복구 API와 영구 재실행 차단 기록으로 정리한다(4.1 보완). 시간만으로 SUPERSEDED 처리하는 가정은 사용하지 않는다.
-
-
-### #48 결제 상태 적용 보완
-
-CONFIRMING은 PG 조회로만 확정하며, APPROVED/RECOVERY_REQUIRED는 추가 청구 없이 구독 반영을 재시도한다. REQUESTED 환불은 프리미엄 사용 동결 상태이며 증빙 미확인은 503이다. APPROVED 환불의 PG 결과 불명확은 FAILED로 바꾸지 않고 조회 복구한다. REFUNDED/CANCELED는 지연 DONE 통지로 되돌리지 않는다. PG 호출 중 parent 잠금은 유지하지 않으며 준비된 거래/환불이 탈퇴를 차단한다. 상세 계약은 [#48 보고서](../report/issue-48-payments.md)를 따른다.
-
-### #46 core 정정 실행 기록
-
-신고 상태는 기존 RECEIVED → IN_REVIEW → RESOLVED를 유지한다. core `SupportService.correct`는 신고 검토 중 correction.processing_status=PENDING 의도를 먼저 저장하고 HTTP를 트랜잭션 밖에서 실행한다. HTTP 실패 시 FAILED이며 신고는 IN_REVIEW다. 동일 correction UUID로 공급자가 성공을 확인하고 core 완료 트랜잭션까지 커밋될 때만 correction=COMPLETED·신고=RESOLVED·알림을 함께 기록한다. 응답 유실이나 core 저장 실패는 완료가 아니며 같은 의도로 재개한다. 원본 답변·판정은 변경하지 않는다.
-
-### #47 REPORT 관리자 재처리
-
-원래 FAILED report_job은 종료 상태를 유지한다. 명시적인 재처리는 별도 ADMIN_RETRY job을 QUEUED로 만들고 core report_job_retry로 연결한다. 새 job에 기존 QUEUED→RUNNING→COMPLETED/FAILED 전이를 적용하며 실행 번호는 새 job 기준이다. 기존 job의 attempt_no를 증가시키거나 오래된 종료 이벤트를 새 job에 재적용하지 않는다. 이미 재처리한 원작업은 재사용하지 않고 재실패한 자식 job에서 다음 관계를 만든다. 202는 접수이며 완료가 아니다.
-
-### 4.1 보완: 종료 유실·삭제 (#132)
-
-QUEUED/RUNNING → COMPLETED|FAILED: 복구 API의 저장된 종료 결과를 조건부 반영한다. BUSY/DB·HTTP 오류/식별 불일치는 상태를 보존한다. 학생 삭제 확정은 `STUDENT_DELETED`로 FAILED 및 실행 이력을 원자 기록한다. 종료 상태는 늦은 started/completed/failed와 복구 응답으로 바뀌지 않는다.
-
-report에서 잠금 소유자가 없는 RUNNING만 `REPORT_EXECUTION_ABANDONED`로 FAILED 전이한다. 행이 없으면 `REPORT_NOT_CREATED` 차단 기록을 저장해 같은 job의 지연 메시지는 ACK 종료한다. 차단 기록의 학생·기간이 다르면 오류다. 실행 중인 생성은 BUSY로 유지한다. 자동 재생성은 하지 않는다.
+- `QUEUED` 고착 작업은 #132 내부 복구 API와 영구 재실행 차단 기록으로 정리한다(4.1.1). 시간만으로 SUPERSEDED 처리하는 가정은 사용하지 않는다.

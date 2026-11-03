@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.model_loader import LoadedModel, ModelLoader
+from tests.test_m2 import model as fixture_model
 from tests.test_model_registry import version
 
 
@@ -21,8 +22,8 @@ class FakeModel:
 
 
 def test_loader_uses_local_cpu_checkpoint_and_preserves_training_files(tmp_path, monkeypatch):
-    (tmp_path / "train_info.json").write_text(json.dumps({"max_length": "512"}))
-    (tmp_path / "score_cuts.json").write_text(json.dumps({"holistic": [1.5, 2.5, 3.5]}))
+    (tmp_path / "train_info.json").write_text(json.dumps(fixture_model().training_config))
+    (tmp_path / "score_cuts.json").write_text(json.dumps(fixture_model().score_cuts))
     calls = []
 
     def model_load(path, **kwargs):
@@ -53,13 +54,15 @@ def test_loader_uses_local_cpu_checkpoint_and_preserves_training_files(tmp_path,
     model = ModelLoader(Artifacts())(version())
     assert model.metadata == version()
     assert model.training_config["max_length"] == "512"
-    assert model.score_cuts == {"holistic": [1.5, 2.5, 3.5]}
+    assert model.score_cuts == fixture_model().score_cuts
     assert all(call["local_files_only"] and not call["trust_remote_code"] for call in calls)
     assert calls[1]["use_safetensors"]
 
 
 @pytest.mark.parametrize("fault", ["missing_weights", "wrong_head"])
 def test_incomplete_checkpoint_not_published(tmp_path, monkeypatch, fault):
+    (tmp_path / "train_info.json").write_text(json.dumps(fixture_model().training_config))
+    (tmp_path / "score_cuts.json").write_text(json.dumps(fixture_model().score_cuts))
     model = FakeModel()
     if fault == "wrong_head":
         model.config = SimpleNamespace(num_labels=2, problem_type="regression")
@@ -112,3 +115,35 @@ def test_predict_is_sync_cpu_and_never_passes_token_type_ids():
     ) == [[1.0] * 9]
     assert set(seen[0]) == {"input_ids", "attention_mask"}
     assert all(value.device.type == "cpu" for value in seen[0].values())
+
+
+@pytest.mark.parametrize("width,valid", [(14, True), (9, False)])
+def test_essay_loader_checks_checkpoint_and_metadata_width(tmp_path, monkeypatch, width, valid):
+    from tests.test_m2 import modern_model
+
+    fixture = modern_model()
+    (tmp_path / "train_info.json").write_text(json.dumps(fixture.training_config))
+    (tmp_path / "score_cuts.json").write_text(json.dumps(fixture.score_cuts))
+    checkpoint = FakeModel()
+    checkpoint.config = SimpleNamespace(num_labels=width, problem_type="regression")
+    monkeypatch.setitem(
+        sys.modules,
+        "transformers",
+        SimpleNamespace(
+            AutoModelForSequenceClassification=SimpleNamespace(
+                from_pretrained=lambda *a, **k: (checkpoint, {})
+            ),
+            AutoTokenizer=SimpleNamespace(from_pretrained=lambda *a, **k: object()),
+        ),
+    )
+
+    class Artifacts:
+        @contextmanager
+        def download(self, uri):
+            yield tmp_path
+
+    if valid:
+        assert ModelLoader(Artifacts())(fixture.metadata).model is checkpoint
+    else:
+        with pytest.raises(ValueError):
+            ModelLoader(Artifacts())(fixture.metadata)

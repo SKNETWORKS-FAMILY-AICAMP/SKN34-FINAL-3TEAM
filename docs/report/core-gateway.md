@@ -66,3 +66,134 @@
 - 최종 JAR 2개와 전용 DB/Redis/RabbitMQ에서 실제 core→learning 사용 증빙, 환불 동결의 learning→core 차단, 관리자 반려 후 피드백 core→learning→core DONE/USED, 사용 후 409 환불 거부, 실제 구독 기반 탈퇴 차단, 상품 기반 report Outbox narrativeEnabled true/false를 확인했다. 관리자 운영 5종·25큐 응답을 실제 서비스로 조회했다. 세미콜론/인코딩 관리자 경로의 학부모 403 및 내부 경로의 무토큰 401, SYSTEM·학생 scope 프로필 조회/no-store와 scope 불일치 403도 실제 HTTP로 확인했다.
 - 실제 연동의 결제 상태·인증 계정은 합성 DB fixture이며 Toss/Google/AI API는 호출하지 않았다. learning 피드백은 CHOICE 규칙을 사용했다. Java 테스트·위 HTTP 호출자를 실제 report-worker·브라우저 E2E로 집계하지 않는다. #46 실제 지원 공급자, #47 REPORT/CONVERSATION 재처리·learning 관리자 미션 공급자, #119 실제 worker/제목/AI payload 가림, 배포는 계속 미검증이다.
 - 격리 빌드 입력 501파일과 현재 runtime/contract 소스 바이트 일치, 설계 문서 링크·충돌 표시·마이그레이션 이전 경로 참조·`git diff --check`를 확인했다. 이전 V14 지원 경로는 이 절의 이동 설명에만 남기고 기능 보고서의 V14/V15 수치는 당시 이력으로 보존한다. 원격 CI는 push 후 새 head에서 별도 확인한다.
+
+## 6. Redis 사용 필요성과 PostgreSQL 대체 비교 (#210)
+
+10/29 [멘토링](mentoring-20261029.md)의 재검토 권고에 따라 core의 Redis 사용처와 PostgreSQL 대체안을 비교한다. 담당자 결정은 **B. 부분 대체**(2026-11-02, [선택지와 결정](#선택지와-결정))이며, 대체 구현은 별도 이슈로 진행한다. 이 절 작성 시 코드·설정·계약·마이그레이션은 바꾸지 않았다. 부하·비용 수치는 실측이 없어 모두 추정이다. 코드 위치는 `backend/core-service/src/main/kotlin/com/sagomungchi/core/` 기준이다.
+
+### 사용처와 장애 시 동작
+
+#210 검토 당시 코드 기준이다. 분석 대화 일일 사용량·관리자 재처리 중복 차감 행은 #225 이후 PostgreSQL `payment_premium_usage`로 옮겨져 Redis를 쓰지 않는다([#225 구현](#분석-대화-사용량-db-이관-구현-225)).
+
+| 사용처 | 코드 위치 | Redis가 보장하는 성질 | Redis 장애 시 현재 동작 |
+|---|---|---|---|
+| 학생 기기 페어링 코드 | `account/repository/PairingRepository.kt:12-17`, `account/service/StudentAuthService.kt:41-58` | 해시 키 `SET NX`·10분 TTL, Lua `GET`+`DEL` 1회 소비 | `DataAccessException` → 503 `STUDENT_AUTH_UNAVAILABLE`(`StudentAuthService.kt:121,127`). 등록된 기기의 프로필·PIN 로그인은 DB만 사용해 영향 없음(`:69-89`) |
+| 기기 등록·페어링 발급 rate limit | `PairingRepository.kt:18,21`, `StudentAuthService.kt:42,55,120` | Lua `INCR` 후 첫 증가에만 `EXPIRE 600`(10분 고정 창, 기본 20회 `account/config/StudentDeviceProperties.kt:9`) | 한도 확인이 먼저라 발급·등록 모두 위와 같은 503 |
+| 분석 대화 일일 사용량 | `conversation/service/AnalysisUsageService.kt:26-32,43-47,57-63` | Lua 확인+증가 원자 처리, 키 `analysis:daily:v1:{childId}:{KST 일자}`, `EXPIREAT` 다음 KST 자정+1일 | 503 `ANALYSIS_USAGE_UNAVAILABLE`(`:30`). 대화 생성·조회는 권한 확인만 해 영향 없음(`conversation/service/ConversationService.kt:43`) |
+| 관리자 대화 재처리 중복 차감 방지 | `AnalysisUsageService.kt:33-39,48-56`, `ConversationService.kt:153` | 요청 ID 표식 `analysis:retry:v1:{requestId}` 확인·증가·표식 저장을 한 스크립트로 처리 | 같은 503, 재처리 실행 실패 |
+| 알림 다중 레플리카 SSE 중계 | `notification/messaging/NotificationRedisPublisher.kt:17-26`, `notification/config/NotificationRedisConfiguration.kt:13-18`, `notification/consumer/NotificationRedisSubscriber.kt:14-17`, `notification/service/NotificationStreams.kt:29-33` | 채널 `core:notifications:v1` fan-out(at-most-once, 구독자 0명도 발행 성공), 커밋 후 발행 | 발행 예외 → `FAILED`·`REDIS_PUBLISH_FAILED`(`notification/service/NotificationDeliveryService.kt:12`). 알림 행·리포트 상태는 유지되고 목록 재조회로 복구. 관리자 재처리(`admin/service/OperationRetryService.kt:59`)도 같은 publisher 사용 |
+| 무료 플랜 미션 일일 한도(미구현) | 설계만 존재([API 명세](../design/api-spec.md) 2.2 P13·4.1 `/internal/missions/{id}/attempts`) | 설계상 core Redis 카운터, 신규 `201`만 집계 | 코드 없음 |
+
+전수 확인 결과(`StringRedisTemplate`·`RedisTemplate`·`RedisConnectionFactory`·`@Cacheable`·`spring.data.redis` 검색):
+
+- 운영 코드의 Redis 접근은 위 4개 파일뿐이다. `@Cacheable`·`CacheManager`·세션 저장소 사용은 없어 Redis를 **조회 캐시로는 쓰지 않는다**. learning·ai·scoring·report 서비스는 Redis를 쓰지 않는다
+- 연결은 `application.yml:21-27`(연결·명령 timeout 2초). readiness 그룹은 `readinessState,db,rabbit`(`application.yml:57-58`)으로 Redis를 포함하지 않아 Redis 장애 시 Pod는 Ready를 유지하고 기능별로만 503이 난다
+- 배포·실행 설정: `compose.yaml:69-77,135-137`, platform-data chart `templates/redis.yaml`(replicas 1 `:11`, AOF·`maxmemory`·`noeviction` `:44-49`), `values.yaml:43-53`, local `environments/local/platform-data.yaml:42-52`, `environments/local/core-service.yaml:30,66`, NetworkPolicy `policies/local/platform.yaml:61`
+- 테스트·검증: `IntegrationTestSupport.kt:38,61-62` Redis 컨테이너, `scripts/verify_*.py`, `scripts/report_integration/compose.yaml:29-60`
+- 문서 표현 차이: [아키텍처](../design/architecture.md) 6장 사용 기술 표의 "SSE 중계·캐시", platform-data chart README의 "캐시·실시간 알림 중계"는 실제 사용(캐시 없음)과 다르다. 결정 후 함께 정리한다
+- #133(기기 등록 rate limit의 IP 기준)은 키를 무엇으로 정할지의 문제라 저장소 선택과 무관하며, 어느 쪽을 택해도 같은 키 정의를 적용한다
+
+### 사용처별 PostgreSQL 대체안
+
+| 사용처 | 대체 방식 | 현재와의 차이 | 변경 규모(추정) |
+|---|---|---|---|
+| 페어링 코드 | 테이블(`code_hash` PK·보호자·자녀 목록·`expires_at`). 발급 `INSERT … ON CONFLICT DO NOTHING`(충돌 시 현재처럼 최대 5회 재생성), 소비 `DELETE … WHERE code_hash=? AND expires_at>now() RETURNING …` | TTL은 만료 컬럼 조건으로 대신하고 만료 행은 기존 `_common/web/IdempotencyService.kt:64`·`_common/web/repository/IdempotencyRepository.kt:70`의 주기 `DELETE` 방식으로 정리. 정리가 늦어도 조회 조건 때문에 기능 영향 없음. 소비와 기기 저장을 한 트랜잭션에 넣으면 "등록 실패 시 코드 소멸"(API 명세 3.11)을 없앨 수 있으나 계약 변경이라 선택 사항 | 마이그레이션 1개, `PairingRepository` 교체, 기기 테스트 수정. 소 |
+| rate limit 카운터 | 테이블(`key` PK·`window_start`·`count`). `INSERT … ON CONFLICT (key) DO UPDATE SET count = CASE WHEN 창 만료 THEN 1 ELSE count+1 END, window_start = … RETURNING count` | 행 잠금으로 동시 증가 보장, 10분 고정 창 동작 동등. 비인증 `register` 요청마다 RDS 쓰기 1건이 생겨 남용 트래픽이 DB 쓰기로 바뀜 | 마이그레이션 1개(페어링과 합칠 수 있음), 정리 작업. 소 |
+| 분석 일일 사용량 | `(student_id, usage_date)` PK 테이블에 조건부 UPSERT `… DO UPDATE SET used = used+1 WHERE used < :limit RETURNING used`(0행이면 한도 도달). 날짜 컬럼이라 TTL 불필요, 보관 기간 정리만 | 차감은 이미 보호자·학생 행 잠금 트랜잭션 안에서 호출된다(`ConversationService.kt:62-69,92`). 현재 Redis 증가는 이 트랜잭션과 별개라, 차감 뒤 같은 트랜잭션이 실패하면(예: `recordAttempt`의 상품 충돌 `:102`) 카운트만 남는다(코드 읽기 기준, 테스트로 재현하지 않음). PostgreSQL로 옮기면 메시지 저장·사용 이력과 함께 커밋·롤백된다. 유료 구독은 같은 트랜잭션에서 사용 이력 행을 이미 남기지만(`payment/service/PaymentAnalysisEntitlementProvider.kt:24-29`) 구독이 없으면 행이 없어(`payment/service/ProductEntitlementService.kt:53`) 그것만으로 일 카운트를 대신할 수 없다 | 마이그레이션 1개, `AnalysisUsageService` 내부 교체(공급자 포트 유지), `AnalysisUsageContractTest` 갱신. 소~중 |
+| 관리자 재처리 표식 | 요청 ID UNIQUE 행 삽입을 사용량 증가와 같은 트랜잭션에서 수행 | "사용량 Redis와 DB는 분산 원자 트랜잭션이 아니다"(API 명세 "#47 CONVERSATION 관리자 재처리")라는 제약과 표식 TTL·130초 실행 만료의 결합이 사라짐 | 위 테이블과 함께. 소 |
+| 미션 일일 한도(미구현) | 분석 사용량과 같은 테이블 패턴(종류 컬럼으로 공용화 가능) | 어느 저장소든 신규 구현량은 비슷. learning 응답 `201` 이후 집계는 core 단독 트랜잭션 | 신규 구현과 같음 |
+| 알림 Pub/Sub | `LISTEN/NOTIFY`(채널 예: `core_notifications_v1`) | 아래 별도 정리 | 마이그레이션 없음. publisher 교체 + 리스너 신규(전용 연결·재연결·종료 처리) + 다중 레플리카 통합 테스트 신규. 중 |
+
+`LISTEN/NOTIFY` 대체 시 확인 사항(PostgreSQL 동작 기준, 이 저장소에서 시험하지 않음):
+
+- 전달 시점: 트랜잭션 안의 `NOTIFY`는 커밋될 때만 전달되고 롤백되면 버려진다. 알림 저장 트랜잭션 안에서 `pg_notify`를 호출하면 현재 AFTER_COMMIT 발행과 같은 "커밋 후 전달"을 DB가 보장하지만, 발행 실패가 곧 커밋 실패가 되므로 `FAILED`·`REDIS_PUBLISH_FAILED` 상태의 의미를 다시 정해야 한다. 커밋 후 별도 `NOTIFY`(현재 구조 유지)도 가능하다
+- payload: 기본 설정에서 8000바이트 미만. 현재 메시지는 UUID 2개(`notification/domain/Notifications.kt:10`)라 제한과 무관하다
+- 수신 연결: 레플리카마다 `LISTEN`을 유지하는 상시 연결 1개가 필요하다. Hikari 풀 연결은 반납 후 다른 요청이 쓰므로 풀 밖 전용 연결에서 PgJDBC 알림 대기 루프, 끊김 감지·재연결·재`LISTEN`을 직접 구현해야 한다. Spring Data Redis의 `RedisMessageListenerContainer`에 해당하는 표준 구성이 core 의존성에는 없다
+- 유실 특성: 리스너가 끊긴 동안의 알림은 Redis Pub/Sub과 마찬가지로 유실된다. 기존 `ready` 후 목록 재조회 복구([API 명세](../design/api-spec.md) 2.7)가 그대로 필요하고 그대로 유효하다
+- 연결 경유: PgBouncer transaction pooling·RDS Proxy처럼 연결을 다중화하는 프록시를 거치면 `LISTEN` 세션이 유지되지 않거나 세션이 고정된다. 현재 설계에는 프록시가 없으나 도입 시 제약이 된다
+- 커밋 경합: `NOTIFY`를 포함한 트랜잭션은 커밋 시 전역 잠금으로 서로 직렬화되는 것으로 알려져 있다. 리포트 종료·지원 알림 빈도에서는 영향이 작을 것으로 추정한다
+
+### 운영 비용·부하
+
+- 배치: Redis는 ElastiCache가 아니라 EKS `platform` namespace의 StatefulSet + EBS gp3 PVC이며 replicas 1이다([아키텍처](../design/architecture.md) 4.1·4.3, `templates/redis.yaml:11`). 운영 values는 저장소에 없고 local 값만 있다(requests 50m·64Mi, limits 250m·256Mi, `maxmemory 128mb`, PVC 512Mi)
+- 유지 비용(추정): Pod 자원과 소용량 EBS의 금액은 작다. 실제 비용은 운영 항목 수다. 이미지 버전 갱신, AOF·PVC 보존, `REDIS_PASSWORD` Secret, NetworkPolicy, 관측·알람, 장애 대응 절차를 RabbitMQ와 별도로 유지해야 한다
+- 장애 영향 범위: 단일 replica·복제 없음이라 노드 장애나 재스케줄 동안 페어링·기기 등록·분석 질문이 503이 되고 알림 실시간 전달이 멈춘다(AOF로 재시작 후 키 복원). 대체하면 상태 저장소 장애 지점이 RDS 하나로 모인다. RDS 장애 시에는 readiness에 `db`가 있어 core가 이미 대부분 실패하므로 대체로 추가로 잃는 기능은 적다(추정)
+- 데이터 크기(추정): 12/7 배포는 데모 계정만 운영하므로 페어링·카운터·일 사용량 키는 수천 개 이하, 메모리 수 MB 미만으로 본다
+- RDS 쓰기 부하(추정): 페어링 발급·등록당 1~2건, rate limit 요청당 1건, 분석 질문당 UPSERT 1건(같은 트랜잭션에 이미 메시지 INSERT·사용 이력이 있어 증분이 작음), 시간당 정리 `DELETE` 1회. 데모 규모에서는 무시할 수준으로 본다. 위험 요소는 비인증 `register` 경로 남용 시의 쓰기 증가다
+- RDS 연결 수(추정): `application.yml`에 풀 설정이 없어 Hikari 기본 최대 10개 × core 레플리카다. `LISTEN/NOTIFY`를 쓰면 레플리카당 전용 연결 1개가 더해진다(HPA 최소 2, 아키텍처 4.4). RDS 최대 연결 수 대비 영향은 작다
+- 테스트·로컬: 전부 대체하면 compose·`IntegrationTestSupport`·검증 스크립트의 Redis 컨테이너가 빠진다. 과거 검증에서 Redis 최초 연결 지연으로 인한 실패가 있었다([#41](issue-41-analysis-conversations.md)·[#47](issue-47-admin-operations.md) 보고서)
+
+### 선택지와 결정
+
+| 선택지 | 내용 | 장점 | 단점 | 후속 규모(추정) |
+|---|---|---|---|---|
+| A. 전부 유지 | 현재 구조 유지, 미션 한도도 Redis로 구현 | 추가 작업 없음, 검증된 경로 유지 | 운영 항목 유지, 분석 사용량과 DB 트랜잭션 불일치·재처리 표식 제약 유지 | 문서 정리만 |
+| B. 부분 대체 | 분석 사용량·재처리 표식(+미션 한도 신규)은 PostgreSQL, 페어링·rate limit·알림 중계는 Redis 유지 | DB 트랜잭션과 정합해야 하는 값만 DB로 옮겨 롤백 정합성 확보, 휘발성·fan-out 용도는 Redis 그대로 | Redis 운영 부담은 그대로 | 마이그레이션 1개, core 1개 서비스·테스트. 소~중 |
+| C. 전부 대체 | 위 표의 대체안 전부 + `LISTEN/NOTIFY` | StatefulSet·Secret·NetworkPolicy·테스트 컨테이너 제거, 상태 저장소 하나 | 알림 리스너 직접 구현·다중 레플리카 재검증, 비인증 경로의 DB 쓰기, 프록시 도입 시 제약 | 마이그레이션 1~2개, 3개 기능·테스트·compose·chart·NetworkPolicy. 중 |
+
+결정(2026-11-02, 담당자): **B. 부분 대체**. 기준은 "DB 저장과 함께 커밋·롤백되어야 하는 값은 PostgreSQL, 짧은 수명 값과 레플리카 간 fan-out은 Redis"다.
+
+| 구분 | 대상 |
+|---|---|
+| PostgreSQL로 이전 | 분석 대화 일일 사용량, 관리자 대화 재처리 중복 차감 방지 표식 |
+| PostgreSQL로 신규 구현(후속 미정) | 무료 플랜 미션 일일 한도(P13). 구현 이슈 미정이며 그 전까지 API 명세의 "core Redis 책임" 문구는 바꾸지 않는다 |
+| Redis 유지 | 학생 기기 페어링 코드, 기기 등록·페어링 발급 rate limit, 알림 Pub/Sub `core:notifications:v1` |
+
+- 근거 1: 분석 사용량은 이미 보호자·학생 행 잠금 트랜잭션 안에서 차감되므로 PostgreSQL 조건부 UPSERT로 동시성 요구를 같은 수준으로 충족하면서 롤백 불일치와 분산 원자성 제약을 함께 없앤다. 아직 구현되지 않은 미션 한도도 같은 패턴으로 만들면 Redis 의존 기능을 새로 늘리지 않는다
+- 근거 2: 페어링·rate limit은 TTL·짧은 수명 데이터라 Redis에 자연스럽고, 남용 트래픽을 RDS 쓰기로 옮기지 않는다
+- 근거 3: 알림 중계를 `LISTEN/NOTIFY`로 바꾸면 전용 연결·재연결 코드를 새로 만들어야 하고, 유실 특성은 같아 기능상 이득이 없다. 12/7 배포 전 위험이 가장 크다
+- 남는 부담: Redis StatefulSet 운영 항목은 그대로다. 운영 항목 축소가 우선이 되면 C를 다시 검토하며, 이때 알림 리스너 구현과 다중 레플리카 검증을 먼저 별도 이슈로 진행한다
+
+결정 반영과 후속 작업:
+
+- [아키텍처](../design/architecture.md) 6장 사용 기술의 Redis 용도와 7.1 구현 결정 요약에 반영했다. 1.1 서비스 표(core_db, Redis)·1.6 SSE 다중 레플리카·4장 상태 저장소 배치는 Redis를 유지하므로 바꾸지 않았다
+- 후속 구현 이슈(별도): 분석 사용량·재처리 표식 PostgreSQL 이전은 #225로 구현했다([아래](#분석-대화-사용량-db-이관-구현-225)). 미션 일일 한도 구현은 미정이다. 구현 전에 API 명세(P13 일일 한도 "core Redis 카운터 책임", #47 CONVERSATION 관리자 재처리의 Redis 표식·분산 원자성 문구)와 ERD의 Redis 보관 항목(요금제 사용 한도 일 단위 카운터)을 먼저 갱신하고 마이그레이션을 추가한다
+- platform-data chart README의 "캐시·실시간 알림 중계" 표현은 실제 용도(페어링·rate limit·알림 중계)로 별도 정리한다 → #245에서 정리
+
+### 분석 대화 사용량 DB 이관 구현 (#225)
+
+위 대체안 표의 "새 일일 사용량 테이블 조건부 UPSERT" 대신, **새 테이블·마이그레이션 없이 기존 결제 사용 이력 `payment_premium_usage` 집계**로 구현했다. 유료 구독의 분석 시도는 이미 같은 트랜잭션에서 이 표에 `CONVERSATION` 행을 남기고 있었으므로(`PaymentAnalysisEntitlementProvider.recordAttempt`) 그 행 수가 곧 일 사용량이다. 구독이 없는 무료 경로는 행이 없지만 무료 상품은 분석 대화 0회(P13)라 기존 0 한도 차단으로 처리된다.
+
+| 구분 | 변경 |
+|---|---|
+| 한도 판정 | `payment/service/ProductEntitlementService.reserve`가 보호자 잠금 안에서 같은 source 기존 행 확인 뒤, 오늘(KST 0시, `PaymentTransactions.today()` 기준) `CONVERSATION`·`RESERVED/USED` 행 수가 `limits.dailyConversations` 이상이면 `429 USAGE_LIMIT_REACHED`. 집계 쿼리는 `PaymentMapper.xml` `usageCountSince`(기존 `ix_payment_usage_refund(student_id,created_at,status)` 인덱스 사용) |
+| Redis 제거 | `conversation/service/AnalysisUsageService`의 `CONSUME`·`CONSUME_RETRY` Lua 스크립트, `counterWindow`, `StringRedisTemplate` 의존 삭제. `consume(parent,child,source)` 하나가 0 한도·유효기간 확인 후 provider에 기록 |
+| 호출 순서 정리 | `ConversationService.prepareFor`는 Redis 차감(기존 94행)과 메시지 저장 뒤 `recordAttempt`(기존 104행)를 따로 하던 것을 메시지 저장 전 `consume` 1회로 합쳤다. 리포트 설정 제안(#209 `ReportTemplateService.propose`)도 같은 두 호출을 `consume` 1회로 바꿨다 |
+| 관리자 재시도 | `resumeAdminRetry`가 영속 요청 ID(`conversation_job_retry.id`)를 source ID로 `consume`. 이미 기록된 source는 `UNIQUE(kind,source_id)`의 기존 행을 재사용해 추가 차감·한도 재판정이 없다 |
+| 문서 | API 명세 #41·#47 CONVERSATION 계약 문단, ERD Redis 보관 항목·#41·#47 절, 아키텍처 6장 저장소 행·7.1 #210 항목·#47 CONVERSATION 문단, 클래스 다이어그램 요금제 사용 한도, [#41 보고서](issue-41-analysis-conversations.md) 사용 한도 |
+
+유지한 정책과 동작:
+
+- 차감 정책: 새 질문·재시도마다 1회, 실패·취소·clarification도 차감(행은 즉시 `USED`), AI 호출 전 거부(권한·범위·진행 중·입력 오류)는 차감하지 않는다. 무료 0 한도는 대화 생성·질문 모두 429
+- 동시성: 분석 접수는 보호자 행 잠금(`tx.locked(parent)`)과 학생 행 잠금(`ConversationService.access`) 안에서 집계와 INSERT를 한다. 같은 자녀의 접수는 직렬화되고, READ COMMITTED에서 잠금을 얻은 뒤 실행하는 집계는 앞 트랜잭션의 커밋 행을 본다
+- 롤백 정합성: 차감 행은 메시지 저장·실행 선점과 같은 트랜잭션이라 함께 롤백된다. 6절 표에서 지적한 "차감 뒤 같은 트랜잭션 실패 시 Redis 카운트만 남는" 불일치와 "분산 원자 트랜잭션이 아니다" 제약이 없어졌다
+- Redis 장애는 분석 대화에 영향이 없다. Redis는 페어링 코드·기기 등록 rate limit·알림 Pub/Sub에만 남는다
+- 일 경계는 계속 KST 자정이다. 집계는 자녀 기준이며 같은 날 구독이 바뀌어도 합산한다(Redis 키도 자녀·일자 기준이었다)
+- 배포 전환: 유료 시도는 이미 사용 이력 행이 있으므로 당일 사용량이 그대로 이어진다. 남은 `analysis:daily:v1:*`·`analysis:retry:v1:*` 키는 읽지 않으며 최대 2일 안에 만료된다
+
+확인 필요 항목의 결정(2026-11-02, 담당자):
+
+- `ANALYSIS_USAGE_UNAVAILABLE`: 더는 발생하지 않는다. API 명세 1.3에 없던 코드([audit](audit.md))라 문서화된 계약 변경은 아니다. 과거 작업 실행 기록 표시를 위해 `admin/domain/Operations.kt`의 안전 코드 목록에는 남겼다
+- 관리자 재실행 130초 만료: Redis 표식 TTL 전제가 아니라 실행 만료(대화 RUNNING 고착 판정 `ConversationService.kt:82`와 같은 값)로 유지한다. API 명세에서 "표식 TTL보다 짧은" 전제 문구만 지웠다
+- 무료 미션 3회·프리미엄 피드백 50회 한도(P13, 미구현): 이번 범위가 아니다. API 명세 2.2·4.1의 "core Redis 책임" 문구는 그대로 두고, 저장소와 문구는 해당 구현 이슈에서 정한다
+
+검증:
+
+- 테스트: `AnalysisUsageContractTest`(Redis 없이 provider만으로 `consume`, 0 한도 미기록, provider 부재 503), `ConversationPaymentIntegrationTest`(실제 provider: 30개 동시 접수 중 한도 2회만 차감, KST 자정 직전·`FAILED` 행 미집계, 초과 재시도 429, `analysis:*` Redis 키 없음), `AdminConversationRetryTest`(실제 provider·사용 이력으로 전환: 같은 요청 ID 재실행 1회 차감, 롤백된 선점은 차감도 롤백, 접수 후 한도 축소 시 실행 전 실패), `ConversationIntegrationTest`(원 질문·재시도 source가 서로 다른 2건)
+- 실행: JDK 21(`eclipse-temurin:21-jdk`) 격리 Docker 컨테이너에서 `bash gradlew test bootJar --no-daemon --max-workers=1 --no-watch-fs --console=plain -Pkotlin.compiler.execution.strategy=in-process`. core 전체 **67클래스·438개** 통과, 실패·오류·생략 0, `bootJar` 성공. IntegrationTestSupport의 실제 PostgreSQL·Redis·RabbitMQ를 사용하고 AI·PG는 대역이다
+- 미검증: 실제 AI·토스 연동, 브라우저 화면, 다중 레플리카 배포 환경의 동시성, 원격 CI
+
+## 7. 관리자 대화 재처리 시각 출처 통일 (#286)
+
+#284 병합 후 `AdminConversationRetryTest`에서 `ck_conversation_job_retry_order`(V19, `started_at >= accepted_at`) 위반이 간헐적으로 났다. 접수 시각 `accepted_at`은 앱 `Instant.now()`, 선점·종료 시각 `started_at`·`finished_at`은 DB `CURRENT_TIMESTAMP`라 앱 시계가 DB보다 앞서면 순서가 역전됐다. 이슈의 두 안 중 안 A(DB 시계로 통일)를 택했다. V19 CHECK와 기존 마이그레이션은 바꾸지 않았다.
+
+| 위치 | 변경 |
+|---|---|
+| 접수 `insert` (#287) | `accepted_at`을 매퍼에서 DB `CURRENT_TIMESTAMP`로 기록. 서비스가 만드는 행의 `acceptedAt`(`Instant.now()`)은 INSERT에 쓰이지 않는 자리값이다 |
+| 202 응답 `acceptedAt` | 변경 없음. 접수 직후 `find`로 다시 읽은 행을 응답·이벤트에 쓰므로 이미 DB 저장값이다 |
+| 선점 전 만료 판정 | 서비스 `claim`이 앱 `Instant.now()-130초`와 DB `accepted_at`을 비교하던 것을 매퍼 `claimable`로 바꿨다. `claim` UPDATE와 같은 조건·같은 트랜잭션 `CURRENT_TIMESTAMP`를 쓰므로 사전 판정과 UPDATE가 어긋나지 않는다 |
+| `pending`·`stale`·`claim`·`finish` | 원래 DB 시계 기준이라 변경 없음 |
+
+만료 판정까지 바꾼 이유: 시계 차이가 수 ms여도 130초 경계 근처에서는 앱 판정이 "유효", DB `claim`이 "만료"로 갈릴 수 있다. 이때 `resumeAdminRetry`(사용량 차감 포함)를 지난 뒤 `check(requests.claim(...))`가 예외로 트랜잭션 전체를 롤백했다. 반대로 앱 시계가 앞서면 DB 기준으로 아직 유효한 요청을 건너뛰었다. 어느 쪽이든 데이터 손상은 없고 `stale` 회수로 정리되지만, 판정 기준을 하나로 두면 이런 경계 예외가 사라진다.
+
+검증: `AdminConversationRetryTest`에 앱 시각이 DB보다 5초 앞선 행으로 선점·종료(`started_at >= accepted_at`, `finished_at >= started_at`) 회귀 테스트(#287 추가, 이번에 종료 확인 보강)와 DB 기준 131초 지난 요청은 예외 없이 선점되지 않고 `QUEUED`·실행 기록·차감 없음으로 남는 테스트를 두었다.

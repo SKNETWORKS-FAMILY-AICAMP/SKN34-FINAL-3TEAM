@@ -2,6 +2,8 @@ package com.sagomungchi.learning.answer.service
 
 import com.sagomungchi.learning.TestRows
 import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning._common.exception.ErrorInfo
+import com.sagomungchi.learning._common.exception.errorInfoOf
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.learning._common.security.UserContext
 import com.sagomungchi.learning._common.security.UserContextHolder
@@ -55,8 +57,8 @@ class AnswerServiceTest : PostgresRepositoryTest() {
     private fun actAs(studentId: UUID) =
         UserContextHolder.set(UserContext(null, "STUDENT", setOf(studentId.toString()), null))
 
-    private fun assertError(status: HttpStatus, code: String, block: () -> Unit): BusinessException {
-        val error = assertThrows<BusinessException> { block() }
+    private fun assertError(status: HttpStatus, code: String, block: () -> Unit): ErrorInfo {
+        val error = checkNotNull(errorInfoOf(assertThrows<RuntimeException> { block() }))
         assertEquals(status to code, error.status to error.code)
         return error
     }

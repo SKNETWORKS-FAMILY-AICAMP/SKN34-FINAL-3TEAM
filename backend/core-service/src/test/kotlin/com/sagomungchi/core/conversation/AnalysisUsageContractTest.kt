@@ -4,24 +4,33 @@ import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core.conversation.service.*
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
-import org.springframework.data.redis.core.StringRedisTemplate
 import java.util.UUID
 import kotlin.test.*
 
 class AnalysisUsageContractTest {
-    @Test fun `KST midnight selects a fresh day key and advances expiry independently of UTC date`() {
-        val child = UUID.randomUUID()
-        val before = AnalysisUsageService.counterWindow(child, java.time.Instant.parse("2026-10-28T14:59:59Z"))
-        val after = AnalysisUsageService.counterWindow(child, java.time.Instant.parse("2026-10-28T15:00:00Z"))
-        assertEquals("analysis:daily:v1:$child:2026-10-28", before.first)
-        assertEquals("analysis:daily:v1:$child:2026-10-29", after.first)
-        assertEquals(86400L, after.second - before.second)
-        assertEquals(java.time.Instant.parse("2026-10-29T15:00:00Z").epochSecond, before.second)
+    private class Recording(val daily: Int) : AnalysisEntitlementProvider {
+        val sources = mutableListOf<UUID>()
+        override fun entitlement(parentId: UUID, childId: UUID) = AnalysisEntitlement(UUID.randomUUID(), daily, null, true)
+        override fun recordAttempt(parentId: UUID, childId: UUID, sourceId: UUID) { sources += sourceId }
+    }
+    private fun service(provider: AnalysisEntitlementProvider?): AnalysisUsageService {
+        val factory = DefaultListableBeanFactory()
+        provider?.let { factory.registerSingleton("provider", it) }
+        return AnalysisUsageService(factory.getBeanProvider(AnalysisEntitlementProvider::class.java))
     }
     @Test fun `missing payment provider fails closed with service unavailable rather than unlimited or free default`() {
-        val factory = DefaultListableBeanFactory()
-        val service = AnalysisUsageService(factory.getBeanProvider(AnalysisEntitlementProvider::class.java), StringRedisTemplate())
-        val failure = assertFailsWith<BusinessException> { service.requireEntitlement(UUID.randomUUID(), UUID.randomUUID()) }
+        val failure = assertFailsWith<BusinessException> { service(null).requireEntitlement(UUID.randomUUID(), UUID.randomUUID()) }
         assertEquals(503, failure.status.value()); assertEquals("PAYMENT_ENTITLEMENT_UNAVAILABLE", failure.code)
+    }
+    @Test fun `consume needs only the payment provider and hands it the attempt source without Redis`() {
+        val provider = Recording(30); val source = UUID.randomUUID()
+        service(provider).consume(UUID.randomUUID(), UUID.randomUUID(), source)
+        assertEquals(listOf(source), provider.sources)
+    }
+    @Test fun `zero daily limit is rejected before any ledger record`() {
+        val provider = Recording(0)
+        val failure = assertFailsWith<BusinessException> { service(provider).consume(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID()) }
+        assertEquals(429, failure.status.value()); assertEquals("USAGE_LIMIT_REACHED", failure.code)
+        assertTrue(provider.sources.isEmpty())
     }
 }

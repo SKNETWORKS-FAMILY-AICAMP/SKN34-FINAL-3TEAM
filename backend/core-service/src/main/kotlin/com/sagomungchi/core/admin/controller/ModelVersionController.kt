@@ -1,6 +1,6 @@
 package com.sagomungchi.core.admin.controller
 
-import com.sagomungchi.core.account.controller.AuthController
+import com.sagomungchi.core._common.security.RequestAttributes
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core.admin.domain.*
 import com.sagomungchi.core.admin.service.*
@@ -30,7 +30,7 @@ class ModelVersionController(private val service: ModelVersionService) {
     fun rollback(@PathVariable versionId: UUID, @Valid @RequestBody body: RollbackRequest, request: HttpServletRequest) =
         service.rollback(versionId, RollbackVersion(body.scopes, body.reason, requireNotNull(body.reanalysisPlanned)), actor(request))
 
-    private fun actor(request: HttpServletRequest) = (request.getAttribute(AuthController.IDENTITY) as AuthenticatedAccount).account.id
+    private fun actor(request: HttpServletRequest) = (request.getAttribute(RequestAttributes.IDENTITY) as AuthenticatedAccount).account.id
 }
 
 data class RegisterRequest(val kind: ModelKind, val name: String, val version: String, val refId: UUID? = null,

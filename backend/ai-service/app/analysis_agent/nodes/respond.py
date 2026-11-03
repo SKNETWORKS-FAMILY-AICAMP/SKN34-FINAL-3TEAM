@@ -8,6 +8,7 @@ from langgraph.runtime import Runtime
 
 from app.analysis_agent import templates
 from app.analysis_agent.calculators import Computation
+from app.analysis_agent.context import AgentContext
 from app.analysis_agent.models import (
     AnalysisResult,
     Evidence,
@@ -20,7 +21,7 @@ from app.analysis_agent.models import (
     Verification,
 )
 from app.analysis_agent.nodes.events import delta, status
-from app.analysis_agent.state import AgentContext, AnalysisState
+from app.analysis_agent.state import AnalysisState
 from app.analysis_agent.verification import verify
 from app.llm.base import LlmUnavailable
 

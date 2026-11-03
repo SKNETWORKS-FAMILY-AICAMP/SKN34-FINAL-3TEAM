@@ -59,6 +59,22 @@ export function remaining(expiresAt: string, now: number): string | null {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+/** 보호자 비밀번호 상태 (API 명세 2.1 `/me/guardian-password`). 값·해시는 받지 않는다. */
+export interface GuardianPasswordState {
+  set: boolean
+  locked: boolean
+  updatedAt: string | null
+}
+
+/** 학생 화면 → 학부모 화면 복귀 실패 코드를 학부모가 읽을 문장으로 바꾼다 (FN-ACC-05). */
+export function unlockProblem(code: string, remainingAttempts?: number): string {
+  if (code === 'GUARDIAN_PASSWORD_INVALID')
+    return `보호자 비밀번호가 맞지 않습니다.${Number.isInteger(remainingAttempts) ? ` 남은 기회는 ${remainingAttempts}번입니다.` : ''}`
+  if (code === 'GUARDIAN_PASSWORD_LOCKED') return '보호자 비밀번호를 5번 틀려 잠겼습니다. Google로 다시 로그인한 뒤 자녀 기기·PIN 화면에서 새로 정해 주세요.'
+  if (code === 'GUARDIAN_PASSWORD_NOT_SET') return '보호자 비밀번호를 아직 정하지 않았습니다. Google로 다시 로그인해 주세요.'
+  return '학부모 화면으로 돌아가지 못했습니다. Google로 다시 로그인해 주세요.'
+}
+
 /** 학생 기기 화면이 보여 줄 상태. 서버 오류 코드를 아이가 읽을 문장으로 바꾼다. */
 export type DeviceLoginState =
   | { kind: 'invalid-device' }

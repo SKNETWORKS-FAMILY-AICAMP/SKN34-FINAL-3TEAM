@@ -8,6 +8,7 @@ data class AppProperties(
     val internal: Internal,
     val services: Map<String, String> = emptyMap(),
     val messaging: Messaging = Messaging(),
+    val judgment: Judgment = Judgment(),
 ) {
     data class Internal(
         val token: String,
@@ -20,5 +21,10 @@ data class AppProperties(
         val maxRetries: Int = 3,
         /** processed_event 보존 일수 */
         val eventRetentionDays: Long = 90,
+    )
+
+    /** 고착 RUNNING 판정 주기 탐지 (P12 탐지 1분, #241). 주기는 app.judgment.stuck-detection-interval (StuckJudgmentScheduler) */
+    data class Judgment(
+        val stuckDetectionEnabled: Boolean = true,
     )
 }

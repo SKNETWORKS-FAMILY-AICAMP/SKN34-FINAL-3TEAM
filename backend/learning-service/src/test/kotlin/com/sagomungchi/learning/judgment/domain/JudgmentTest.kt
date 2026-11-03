@@ -1,9 +1,9 @@
 package com.sagomungchi.learning.judgment.domain
 
-import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning._common.exception.DomainException
+import com.sagomungchi.learning._common.exception.ErrorKind
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import org.springframework.http.HttpStatus
 import java.time.Instant
 import java.util.UUID
 import kotlin.test.assertEquals
@@ -19,8 +19,8 @@ class JudgmentTest {
         Judgment(UUID.randomUUID(), UUID.randomUUID(), status, leaseUntil, retryCount = 0)
 
     private fun assertConflict(block: () -> Unit) {
-        val error = assertThrows<BusinessException> { block() }
-        assertEquals(HttpStatus.CONFLICT to "JUDGMENT_STATE_CONFLICT", error.status to error.code)
+        val error = assertThrows<DomainException> { block() }
+        assertEquals(ErrorKind.CONFLICT to "JUDGMENT_STATE_CONFLICT", error.kind to error.code)
     }
 
     @Test

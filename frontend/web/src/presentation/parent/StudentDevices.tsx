@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import { studentDeviceApi } from '../../data/studentDevice/api.ts'
 import { useParentMutation } from '../../data/parent/queries.ts'
-import { qrDemoEnabled, useDeviceAdmin, usePairingOrigins, useStudentDevices } from '../../data/studentDevice/queries.ts'
+import { qrDemoEnabled, useDeviceAdmin, useGuardianPassword, usePairingOrigins, useStudentDevices } from '../../data/studentDevice/queries.ts'
 import type { Child } from '../../domain/classroom.ts'
 import {
   PIN_MAX,
@@ -36,10 +36,96 @@ function useNow(active: boolean) {
 export function StudentDevices({ items }: { items: Child[] }) {
   return (
     <div className="ws-grid">
+      <GuardianPasswordSettings />
       <PinSettings items={items} />
       <PairingIssue items={items} />
       <DeviceList />
     </div>
+  )
+}
+
+/** 학생 화면에서 잠긴 학부모 화면으로 돌아올 때 쓰는 보호자 비밀번호 (FN-ACC-05). */
+function GuardianPasswordSettings() {
+  const state = useGuardianPassword()
+  const [challenge, setChallenge] = useState('')
+  const [grant, setGrant] = useState<{ reauthToken: string; expiresAt: string } | null>(null)
+  const [notice, setNotice] = useState('')
+  const [password, setPassword] = useState(''),
+    [again, setAgain] = useState(''),
+    [problem, setProblem] = useState<string | null>(null)
+  const start = useParentMutation(studentDeviceApi.startGuardianReauth)
+  const finish = useParentMutation(studentDeviceApi.finishPinReauth)
+  const save = useParentMutation(studentDeviceApi.setGuardianPassword)
+  useEffect(() => {
+    if (!grant) return
+    const timeout = window.setTimeout(() => setGrant(null), Math.max(0, Date.parse(grant.expiresAt) - Date.now()))
+    return () => window.clearTimeout(timeout)
+  }, [grant])
+  const token = grant?.reauthToken ?? ''
+  const current = state.data
+  const status = !current ? '확인 중' : current.locked ? '잠김 · 다시 정해야 풀려요' : current.set ? '설정됨' : '아직 없음'
+  function begin() {
+    const popup = window.open('about:blank', '_blank')
+    if (!popup) { setNotice('팝업을 허용한 뒤 다시 시도해 주세요.'); return }
+    popup.opener = null
+    setGrant(null); setChallenge(''); setNotice('')
+    void start.mutateAsync(undefined).then((result) => {
+      const url = new URL(result.authorizationUrl, window.location.origin)
+      if (url.protocol !== 'https:' && url.origin !== window.location.origin) throw new Error('잘못된 재인증 주소입니다.')
+      popup.location.href = url.href
+      setChallenge(result.challengeId)
+      setNotice('Google 확인을 마친 뒤 이 화면에서 완료 확인을 눌러 주세요.')
+    }).catch(() => { popup.close(); setNotice('Google 재확인을 시작하지 못했습니다.') })
+  }
+  return (
+    <section className="ws-card" aria-labelledby="guardian-password-h">
+      <h2 id="guardian-password-h">보호자 비밀번호</h2>
+      <p>자녀가 학습을 마친 뒤 Google 로그인 없이 학부모 화면으로 돌아올 때 입력합니다. 자녀가 모르는 숫자 4~6자리로 정해 주세요. 5번 틀리면 잠기고, 여기서 다시 정하면 풀립니다.</p>
+      <QueryFeedback query={state} />
+      <form
+        className="ws-form"
+        aria-label="보호자 비밀번호 설정"
+        onSubmit={(e) => {
+          e.preventDefault()
+          const p = pinProblem(password)?.replace('PIN', '비밀번호') ?? (password !== again ? '두 번 입력한 비밀번호가 다릅니다.' : null)
+          setProblem(p)
+          if (p) return
+          save.mutate({ password, reauthToken: token }, {
+            onSuccess: () => {
+              setPassword(''); setAgain(''); setGrant(null); setChallenge('')
+              setNotice(`보호자 비밀번호를 저장했습니다.${current?.locked ? ' 잠금도 풀렸습니다.' : ''}`)
+            },
+          })
+        }}
+      >
+        <p>현재 상태: <strong data-guardian-password-state={current ? (current.locked ? 'locked' : current.set ? 'set' : 'none') : 'unknown'}>{status}</strong></p>
+        <button type="button" className="cj-secondary" disabled={start.isPending || finish.isPending} onClick={begin}>
+          보호자 비밀번호 Google 본인 확인
+        </button>
+        {challenge && !token && <button type="button" className="cj-secondary" disabled={finish.isPending}
+          onClick={() => { void finish.mutateAsync(challenge).then((value) => { setGrant(value); setNotice('재확인을 완료했습니다. 5분 안에 비밀번호를 정해 주세요.') }).catch(() => {}) }}>
+          보호자 비밀번호 완료 확인
+        </button>}
+        <ErrorNotice error={start.error ?? finish.error} />
+        <p role="status">{notice}</p>
+        <label>
+          새 보호자 비밀번호
+          <input aria-label="새 보호자 비밀번호" type="password" inputMode="numeric" autoComplete="new-password" maxLength={PIN_MAX}
+            value={password} onChange={(e) => setPassword(e.target.value.replace(/\D/g, ''))} />
+        </label>
+        <label>
+          새 보호자 비밀번호 다시 입력
+          <input aria-label="새 보호자 비밀번호 확인" type="password" inputMode="numeric" autoComplete="new-password" maxLength={PIN_MAX}
+            value={again} onChange={(e) => setAgain(e.target.value.replace(/\D/g, ''))} />
+        </label>
+        {problem && <p role="alert">{problem}</p>}
+        <button className="cj-primary" disabled={!token || save.isPending || start.isPending || finish.isPending}>
+          {current?.set ? '보호자 비밀번호 바꾸기' : '보호자 비밀번호 정하기'}
+        </button>
+        {!token && <small>본인 재확인 후 저장할 수 있습니다.</small>}
+        <ErrorNotice error={save.error} />
+      </form>
+    </section>
   )
 }
 

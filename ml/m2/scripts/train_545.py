@@ -14,6 +14,7 @@
 """
 
 import argparse
+import json
 import time
 from pathlib import Path
 
@@ -136,6 +137,44 @@ def predict(model, dl, dev):
     return raw
 
 
+def qwk4(a, b):
+    """0~3점 가중치 2차 kappa (sklearn cohen_kappa_score(weights="quadratic")와 같은 식)"""
+    o = np.zeros((4, 4))
+    np.add.at(o, (a, b), 1)
+    w = np.subtract.outer(np.arange(4), np.arange(4)) ** 2 / 9
+    e = np.outer(o.sum(1), o.sum(0)) / o.sum()
+    return 1 - (w * o).sum() / (w * e).sum()
+
+
+def fit_cuts(pred, raters):
+    """검증용에서 QWK(채점자 3명 각각과의 평균)가 가장 높아지는 점수 경계.
+
+    train.py fit_cuts와 같은 방식.
+
+    점수 = bisect_right(경계, 소수 예측) → 0~3점. 채점자 점수(소수 평균)는 반올림해서 0~3 정수로.
+    """
+    r = [np.clip(np.floor(x + 0.5), 0, 3).astype(int) for x in raters]
+
+    def q(c):
+        return float(np.mean([qwk4(x, np.digitize(pred, c)) for x in r]))
+
+    cuts = [0.5, 1.5, 2.5]
+    best = q(cuts)
+    for _ in range(3):  # 경계끼리 영향을 주므로 몇 바퀴 반복
+        for j in range(3):
+            low = cuts[j - 1] + 0.05 if j else -0.5
+            high = cuts[j + 1] - 0.05 if j < 2 else 3.5
+            for c in np.arange(cuts[j] - 0.5, cuts[j] + 0.51, 0.05):
+                if not low <= c <= high:
+                    continue
+                trial = cuts.copy()
+                trial[j] = round(float(c), 2)
+                v = q(trial)
+                if v > best + 1e-6:
+                    best, cuts = v, trial
+    return cuts
+
+
 def scores(df, pred, name):
     """영역별 + 총점(3개 영역 평균) Pearson·MAE, 같은 글의 채점자끼리 비교 포함."""
     y = target(df)
@@ -238,6 +277,14 @@ def main():
         "0이면 끔. 예: 1)",
     )
     ap.add_argument(
+        "--valid-topics",
+        type=int,
+        default=0,
+        help="학습 주제 중 K개를 통째로 검증용으로 뺌(그 주제 TL+VL 전부). 학습 멈춤·점수 경계를 "
+        "'처음 보는 주제' 기준으로 고르기 위함(11/2, 서술 --valid-topics와 같은 생각). "
+        "처음 보는 주제 평가(--n-new)와는 겹치지 않음. 0이면 끔(기존: 학습 주제 TL 5%%)",
+    )
+    ap.add_argument(
         "--add-71819",
         action="store_true",
         help="AI Hub 71819 논술형(89문항)을 학습에만 추가: 구성=organization_1·2, "
@@ -269,6 +316,14 @@ def main():
         "same_topic": df[(df["split"] == "VL") & ~df["subject"].isin(new)].reset_index(drop=True),
         "new_topic": df[df["subject"].isin(new)].reset_index(drop=True),
     }
+    if args.valid_topics:
+        rest = np.sort([t for t in topics if t not in new])
+        vt = set(np.random.RandomState(args.seed + 1).permutation(rest)[: args.valid_topics])
+        print(f"검증 주제 {len(vt)}개 (학습·처음 보는 주제와 안 겹침)")
+        known = ~df["subject"].isin(new | vt)
+        sets["train"] = df[(df["split"] == "TL") & known].reset_index(drop=True)
+        sets["valid"] = df[df["subject"].isin(vt)].reset_index(drop=True)
+        sets["same_topic"] = df[(df["split"] == "VL") & known].reset_index(drop=True)
     tag = ""
     if args.n_new != 10:
         tag += f"_nnew{args.n_new}"
@@ -282,6 +337,8 @@ def main():
         tag += f"_{args.data_dir.name}"
     if args.mask_disagree:
         tag += f"_mask{args.mask_disagree:g}"
+    if args.valid_topics:
+        tag += f"_vtopic{args.valid_topics}"
     if args.add_71819:
         # 평가는 545 그대로, 학습에만 71819를 더해 주제 수를 늘림 (50 → 50+89, 10/29 처음 보는 주제
         # 0.510 개선 시도)
@@ -349,7 +406,7 @@ def main():
     seed_dir = f"_seed{args.seed}" if args.detail or args.both else ""
     out_dir = args.out_dir or M2 / "checkpoints" / f"e545{tag}{seed_dir}"
     out_dir.mkdir(parents=True, exist_ok=True)
-    best, start = -1.0, time.time()
+    best, best_ep, start = -1.0, 0, time.time()
     for ep in range(1, args.epochs + 1):
         model.train()
         for step, b in enumerate(dls["train"], 1):
@@ -377,15 +434,48 @@ def main():
         r = float(np.mean([np.corrcoef(pv[:, j], yv[:, j])[0, 1] for j in range(3)]))
         print(f"에폭 {ep} 검증 평균 상관 {r:.3f} ({(time.time() - start) / 60:.1f}분)")
         if best == -1.0 or r > best:  # 첫 에폭은 항상 저장 (검증 상관이 nan이어도)
-            best = r
+            best, best_ep = r, ep
             model.save_pretrained(out_dir)
             tok.save_pretrained(out_dir)
     del model, opt
     torch.cuda.empty_cache()
     model = load_trained(args, out_dir, n_out, tok).to(dev)
     rows, preds = [], {}
+    # 서비스 로더가 읽는 파일 2개 (#228): 점수 경계(검증용으로 찾음)·학습 설정
+    pv = to_areas(predict(model, dls["valid"], dev), sets["valid"])
+    cuts = {
+        a: fit_cuts(pv[:, j], [sets["valid"][f"{a}_r{k}"].to_numpy() for k in (1, 2, 3)])
+        for j, a in enumerate(AREAS)
+    }
+    (out_dir / "score_cuts.json").write_text(json.dumps(cuts, indent=2), encoding="utf-8")
+    info = {k: str(v) for k, v in vars(args).items()}
+    info.update(
+        head="reg",
+        dataset="essay545",
+        no_prompt="True",
+        with_keyword="False",
+        with_purpose="False",
+        with_exemplar="False",
+        input_first="[학년] {grade} [글 종류] {essay_type}",
+        grade_values=sorted(df["grade"].unique().tolist()),
+        essay_type_values=sorted(df["essay_type"].unique().tolist()),
+        outputs=AREAS + (DETAIL if args.both or args.detail else []),
+        use_outputs=AREAS,
+        output_names={"org": "구성", "cont": "내용", "exp": "표현"},
+        output_range=[0, 3],
+        num_outputs=n_out,
+        best_epoch=best_ep,
+        best_valid_mean_pearson=round(best, 3),
+        valid_rows=len(sets["valid"]),
+        score_cuts=cuts,
+        score_rule="점수 = bisect_right(score_cuts[영역], 소수 예측) → 0~3점",
+    )
+    (out_dir / "train_info.json").write_text(
+        json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(f"점수 경계 저장 (검증용 {len(sets['valid']):,}편): {cuts}")
     if args.save_preds:
-        preds["valid"] = to_areas(predict(model, dls["valid"], dev), sets["valid"])
+        preds["valid"] = pv
         preds["valid_id"] = sets["valid"]["essay_id"].to_numpy(dtype=str)
     for name in [n for n in ["same_topic", "new_topic"] if n in sets]:
         raw = predict(model, dls[name], dev)

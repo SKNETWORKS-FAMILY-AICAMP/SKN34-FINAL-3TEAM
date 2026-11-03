@@ -12,7 +12,6 @@ export interface PaymentState {
   paymentId: string | null; orderId: string; childId: string; amount: number
   status: string; entitlementStatus: string | null; approvedAt: string | null; failureCode: string | null
 }
-export const checkoutStorageKey = 'sagomungchi:checkout:v1'
 export function validPending(value: unknown): value is PendingCheckout {
   if (!value || typeof value !== 'object') return false
   const v = value as PendingCheckout
@@ -21,10 +20,6 @@ export function validPending(value: unknown): value is PendingCheckout {
     && typeof v.orderName === 'string' && typeof v.productId === 'string'
     && typeof v.confirmKey === 'string' && /^[0-9a-f-]{36}$/i.test(v.confirmKey)
     && Number.isFinite(v.createdAt) && Date.now() - v.createdAt < 3_600_000 && v.createdAt <= Date.now()
-}
-export function readCheckout(): PendingCheckout | null {
-  try { const v: unknown = JSON.parse(sessionStorage.getItem(checkoutStorageKey) ?? 'null'); return validPending(v) ? v : null }
-  catch { return null }
 }
 export function checkoutConfirmation(search: string, pending: PendingCheckout | null) {
   const q = new URLSearchParams(search)
@@ -61,14 +56,12 @@ export interface PaymentRecord extends PaymentState {
 export interface PendingBilling {
   subscriptionId: string; customerKey: string; idempotencyKey: string; createdAt: number
 }
-export const billingStorageKey = 'sagomungchi:billing:v1'
-export function readBilling(): PendingBilling | null {
-  try {
-    const p = JSON.parse(sessionStorage.getItem(billingStorageKey) ?? 'null') as PendingBilling | null
-    return p && typeof p.subscriptionId === 'string' && typeof p.customerKey === 'string'
-      && typeof p.idempotencyKey === 'string' && /^[0-9a-f-]{36}$/i.test(p.idempotencyKey)
-      && Number.isFinite(p.createdAt) && p.createdAt <= Date.now() && Date.now() - p.createdAt < 600000 ? p : null
-  } catch { return null }
+export function validBilling(value: unknown): value is PendingBilling {
+  if (!value || typeof value !== 'object') return false
+  const p = value as PendingBilling
+  return typeof p.subscriptionId === 'string' && typeof p.customerKey === 'string'
+    && typeof p.idempotencyKey === 'string' && /^[0-9a-f-]{36}$/i.test(p.idempotencyKey)
+    && Number.isFinite(p.createdAt) && p.createdAt <= Date.now() && Date.now() - p.createdAt < 600000
 }
 export function billingConfirmation(search: string, p: PendingBilling | null) {
   const q = new URLSearchParams(search)

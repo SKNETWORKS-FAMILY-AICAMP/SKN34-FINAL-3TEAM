@@ -21,4 +21,5 @@ class AuthRepository(private val mapper: AuthMapper) {
     fun refresh(hash: String) = mapper.findRefresh(hash)
     fun consume(id: UUID, now: OffsetDateTime) = mapper.consumeRefresh(id, now)
     fun revoke(id: UUID, now: OffsetDateTime) { mapper.revokeSession(id, now) }
+    fun revokeGuardianEntries(parent: UUID, now: OffsetDateTime) { mapper.revokeGuardianEntries(parent, now) }
 }

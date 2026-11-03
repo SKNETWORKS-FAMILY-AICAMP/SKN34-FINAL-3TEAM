@@ -17,7 +17,7 @@ class AuthOpenApiTests(unittest.TestCase):
             (ROOT / "contracts/openapi/core-service.yaml").read_text(encoding="utf-8")
         )
 
-    def test_paths_match_the_seven_implemented_controller_operations(self):
+    def test_paths_match_the_eight_implemented_controller_operations(self):
         source = (
             ROOT
             / "backend/core-service/src/main/kotlin/com/sagomungchi/core/account/controller/AuthController.kt"
@@ -33,7 +33,7 @@ class AuthOpenApiTests(unittest.TestCase):
             if method in {"get", "post", "patch", "delete", "put"}
             and ("Auth" in operation.get("tags", []) or (path == "/me" and method == "get"))
         }
-        self.assertEqual(len(actual), 7)
+        self.assertEqual(len(actual), 8)
         device_source = (ROOT / "backend/core-service/src/main/kotlin/com/sagomungchi/core/account/controller/StudentDeviceController.kt").read_text(encoding="utf-8")
         actual.update((method.lower(), path.removeprefix("/api/v1"))
                       for method, path in re.findall(r'@(Get|Post)Mapping\("([^\"]+)"\)', device_source)
@@ -89,10 +89,10 @@ class AuthOpenApiTests(unittest.TestCase):
     def test_refresh_and_accompanied_entry_have_distinct_security(self):
         paths = self.spec["paths"]
         self.assertEqual(paths["/auth/refresh"]["post"]["security"], [{"RefreshCookie": []}])
-        self.assertEqual(
-            paths["/auth/student-sessions"]["post"]["security"],
-            [{"BearerAuth": [], "RefreshCookie": []}],
-        )
+        # Guardian entry no longer reads the refresh cookie; it locks the parent session (FN-ACC-05).
+        self.assertEqual(paths["/auth/student-sessions"]["post"]["security"], [{"BearerAuth": []}])
+        self.assertNotIn("Set-Cookie", paths["/auth/student-sessions"]["post"]["responses"]["200"]["headers"])
+        self.assertEqual(paths["/auth/parent-unlock"]["post"]["security"], [{"RefreshCookie": []}])
         self.assertEqual(
             self.spec["components"]["schemas"]["ParentTokenResponse"]["properties"]["role"]["enum"],
             ["PARENT", "ADMIN"],
@@ -106,7 +106,7 @@ class AuthOpenApiTests(unittest.TestCase):
         self.assertIn("403", operation["responses"])
 
     def test_cookie_posts_require_origin_and_requested_with(self):
-        for path in ("/auth/refresh", "/auth/logout", "/auth/student/logout", "/auth/student-sessions"):
+        for path in ("/auth/refresh", "/auth/parent-unlock", "/auth/logout", "/auth/student/logout", "/auth/student-sessions"):
             refs = {value["$ref"] for value in self.spec["paths"][path]["post"]["parameters"]}
             self.assertEqual(
                 refs,

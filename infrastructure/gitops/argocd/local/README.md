@@ -1,10 +1,10 @@
 # #171 local Argo CD applications
 
-`root-app.yaml` registers the six `app-service` releases, local KEDA, local platform NetworkPolicy, and a metrics-only observability release. All Git sources pin `develop`; this is the post-merge desired state. Before merge, a dedicated verification cluster must use a temporary copy whose Git `targetRevision` fields point at the pushed `feature/infra-app-deployment` commit. Do not apply this root application to the existing `sagomungchi-local` cluster.
+`root-app.yaml` registers the six `app-service` releases, local KEDA, local platform NetworkPolicy, and a metrics-only observability release. All Git sources pin `develop`. The target is the single local kind cluster `sagomungchi-local` ([kind setup](../../../kind/README.md)). To check an unmerged branch, use a temporary local copy whose Git `targetRevision` fields point at the pushed branch commit, and do not commit that copy.
 
-Argo CD itself is a prerequisite in namespace `argocd`. The root app has no automated sync. Sync in this order after preparing the new cluster and its credentials:
+Argo CD itself is a prerequisite in namespace `argocd`. The root app has no automated sync. Sync in this order after preparing the cluster and its credentials (`create-platform-secret.ps1`, then `create-app-secrets.ps1`, both reading the root `.env`):
 
-1. Existing `platform-data` chart in the new cluster; verify Postgres, RabbitMQ definitions and MinIO initialization.
+1. Existing `platform-data` chart; verify Postgres, RabbitMQ definitions and MinIO initialization.
 2. `local-keda` Application; verify its CRDs and operator. The `report-worker` ScaledObject cannot be applied before this.
    KEDA 2.21's `scaledjobs.keda.sh` CRD exceeds the client-side apply annotation limit. This local Application enables server-side apply and uses the chart's CRD-only `Replace=true` annotation so Argo CD 3.5 can create that CRD. Check CRD compatibility before upgrading KEDA; this setting is limited to the disposable local environment.
 3. `local-platform-network` after platform initialization; verify allowed and denied paths before app traffic.

@@ -11,6 +11,8 @@ import com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
 import com.sagomungchi.learning.TestRows
 import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning._common.exception.errorCodeOf
+import com.sagomungchi.learning._common.exception.httpStatusOf
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.learning._common.security.UserContext
 import com.sagomungchi.learning._common.security.UserContextHolder
@@ -578,10 +580,10 @@ class FeedbackFacadeTest : PostgresRepositoryTest() {
             listOf("햇빛: 하늘에서 와요", "물: 하늘에서 와요", "흙: 땅에 있어요"),
             lastBody("/internal/followups")["rubric"]["answerKey"].map { it.asText() },
         )
-        val unknown = assertThrows<BusinessException> {
+        val unknown = assertThrows<RuntimeException> {
             submit(setup.attempt, AnswerContent(assignments = listOf(Assignment("c1", "g1"), Assignment("c2", "g1"), Assignment("c3", "g9"))), InputType.CLASSIFICATION, rethink.followup!!.followupId)
         }
-        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY to "ANSWER_INCOMPLETE", unknown.status to unknown.code)
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY to "ANSWER_INCOMPLETE", httpStatusOf(unknown) to errorCodeOf(unknown))
 
         val right = submit(setup.attempt, AnswerContent(assignments = listOf(Assignment("c3", "g2"), Assignment("c1", "g1"), Assignment("c2", "g1"))), InputType.CLASSIFICATION, rethink.followup!!.followupId)
         assertEquals(JudgmentResult.CORRECT, facade.feedback(right.id).judgment?.result)

@@ -9,7 +9,9 @@ from bisect import bisect_right
 from starlette.concurrency import run_in_threadpool
 
 from app.errors import ApiError
-from app.m2.models import ITEMS, M2Active, M2Inactive, M2Request
+from app.m2.content3_rule import content3_score
+from app.m2.metadata import validate_metadata
+from app.m2.models import M2Active, M2Inactive, M2Request
 
 logger = logging.getLogger(__name__)
 
@@ -18,40 +20,19 @@ def unavailable():
     return ApiError(503, "SCORING_UNAVAILABLE", "채점 처리 실패")
 
 
-def flag(value):
-    if value is True or value == "True":
-        return True
-    if value is False or value == "False":
-        return False
-    raise ValueError("invalid training flag")
-
-
-def infer(loaded, request: M2Request) -> M2Active:
+def infer(loaded, request: M2Request, *, content3_rule_enabled: bool = False) -> M2Active:
     config, cuts = loaded.training_config, loaded.score_cuts
     narrative = request.inputType == "NARRATIVE"
-    if (
-        config.get("head") != "reg"
-        or config.get("dataset") != ("descriptive" if narrative else "essay")
-        or flag(config.get("with_keyword")) != narrative
-        or flag(config.get("with_purpose"))
-        or flag(config.get("with_exemplar"))
-    ):
-        raise ValueError("unsupported training configuration")
-    length = int(config["max_length"])
-    if not 8 <= length <= 512 or not isinstance(cuts, dict) or set(cuts) != set(ITEMS):
-        raise ValueError("invalid scoring metadata")
-    for item in ITEMS:
-        edges = cuts[item]
-        if (
-            not isinstance(edges, list)
-            or len(edges) != (3 if item == "hol" else 4)
-            or any(type(x) not in (int, float) or not math.isfinite(x) for x in edges)
-            or any(a >= b for a, b in zip(edges, edges[1:], strict=False))
-        ):
-            raise ValueError("invalid score cuts")
-    first = f"[학년] 초{request.grade} [지시문] {request.prompt}"
+    items, width, no_prompt, length = validate_metadata(loaded.metadata.name, config, cuts)
+    if narrative != (loaded.metadata.name == "m2-klue-narrative"):
+        raise ValueError("model and request type mismatch")
+    first = f"[학년] 초{request.grade}"
+    if not no_prompt:
+        first += f" [지시문] {request.prompt}"
     if narrative:
-        first += " [핵심어] " + ",".join(request.keywords)
+        first += " [핵심어] " + (", " if no_prompt else ",").join(request.keywords)
+    elif no_prompt:
+        first += f" [글 종류] {request.essayType}"
     tokenizer = loaded.tokenizer
     # only_second는 첫 문장을 자르지 않는다. 문항이 너무 길면 추론 장애와 구분한다.
     first_ids = tokenizer(first, add_special_tokens=False)["input_ids"]
@@ -65,10 +46,23 @@ def infer(loaded, request: M2Request) -> M2Active:
         return_tensors="pt",
     )
     raw = loaded.predict(inputs)
-    if len(raw) != 1 or len(raw[0]) != len(ITEMS) or not all(math.isfinite(x) for x in raw[0]):
+    if len(raw) != 1 or len(raw[0]) != width or not all(math.isfinite(x) for x in raw[0]):
         raise ValueError("invalid model outputs")
-    raw_scores = dict(zip(ITEMS, raw[0], strict=True))
-    scores = {item: bisect_right(cuts[item], value) + 1 for item, value in raw_scores.items()}
+    raw_scores = dict(zip(items, raw[0][: len(items)], strict=True))
+    scores = {
+        item: bisect_right(cuts[item], value) + (0 if width == 14 else 1)
+        for item, value in raw_scores.items()
+    }
+    if (
+        content3_rule_enabled
+        and narrative
+        and request.grade in (5, 6)
+        and loaded.metadata.name == "m2-klue-narrative"
+        and loaded.metadata.version == "3.0"
+    ):
+        raw_scores["content_3"], scores["content_3"] = content3_score(
+            raw_scores["content_3"], request.text, request.keywords
+        )
     return M2Active(
         inputType=request.inputType,
         scores=scores,
@@ -82,13 +76,14 @@ def infer(loaded, request: M2Request) -> M2Active:
 
 
 class M2Service:
-    def __init__(self, registry, usage, *, queue_timeout=1.0):
+    def __init__(self, registry, usage, *, queue_timeout=1.0, content3_rule_enabled: bool = False):
         self.registry, self.usage = registry, usage
         self._gate = asyncio.Semaphore(1)
         self._queue_timeout = queue_timeout
+        self._content3_rule_enabled = content3_rule_enabled
 
     async def score(self, request: M2Request):
-        if request.grade not in (5, 6) or (
+        if request.grade not in ((5, 6) if request.inputType == "NARRATIVE" else (4, 5, 6)) or (
             request.inputType == "NARRATIVE" and not request.keywords
         ):
             return M2Inactive()
@@ -105,7 +100,12 @@ class M2Service:
             loaded = self.registry.get(name, scope)
             if loaded is None:
                 return M2Inactive()
-            result = await run_in_threadpool(infer, loaded, request)
+            if request.grade == 4 and loaded.training_config.get("dataset") != "essay545":
+                loaded = None  # 비활성 경로는 추론하지 않아 사용량도 발행하지 않는다.
+                return M2Inactive()
+            result = await run_in_threadpool(
+                infer, loaded, request, content3_rule_enabled=self._content3_rule_enabled
+            )
             success = True
             return result
         except ApiError as exc:

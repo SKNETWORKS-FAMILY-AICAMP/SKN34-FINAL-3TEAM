@@ -67,9 +67,20 @@ classDiagram
     +title String
     +detail String
   }
+  class DomainException {
+    <<exception>>
+    +kind ErrorKind
+    +code String
+    +title String
+    +detail String
+  }
+  class ErrorKind {
+    <<enumeration>>
+  }
   class GlobalExceptionHandler {
     <<advice>>
     +handleBusiness(ex, request) ProblemDetail
+    +handleDomain(ex, request) ProblemDetail
     +handleUnexpected(ex, request) ProblemDetail
   }
   class Problems {
@@ -122,7 +133,9 @@ classDiagram
   InternalAuthFilter --> UserContextHolder : set·clear
   InternalAuthFilter ..> UserContext
   UserContext ..> BusinessException : 403
+  DomainException --> ErrorKind
   GlobalExceptionHandler --> Problems
+  GlobalExceptionHandler ..> DomainException : httpStatusOf
   OutboxWriter ..> EventEnvelope
   OutboxWriter --> OutboxEventRepository : insert
   OutboxRelay --> OutboxEventRepository : 미발행 조회·발행 기록
@@ -133,12 +146,14 @@ classDiagram
 |---|---|---|---|
 | `AppProperties`, `InternalRestClientFactory` | `_common/config` | 구현됨 | 내부 호출 RestClient(내부 토큰·컨텍스트 헤더·타임아웃, 재시도 없음) |
 | `InternalAuthFilter`, `UserContext`, `UserContextHolder` | `_common/security` | 구현됨 | `/internal/**` 토큰 검사, `X-User-*`·`X-Student-Scope` 컨텍스트 |
-| `BusinessException`, `GlobalExceptionHandler`, `Problems` | `_common/exception` | 구현됨 | RFC 9457 오류 응답. domain은 HTTP 상태 대신 `ErrorKind`를 받는 보조 생성자 사용(core 400·404·409 #168, learning 400·409·422 #169) |
+| `BusinessException`, `DomainException`, `ErrorKind`, `GlobalExceptionHandler`, `Problems` | `_common/exception` | 구현됨 | RFC 9457 오류 응답. domain은 Spring 타입이 없는 `DomainException(kind, code, …)`만 던지고, `ErrorKind` → HTTP 상태는 `_common/exception`의 `statusOf` 하나가 정함(core 400·404·409, learning 400·409·422, #249). 예외에서 상태·code를 읽는 곳은 `httpStatusOf`·`errorCodeOf`(두 예외 모두 처리). `BusinessException`은 application·presentation 전용 |
 | `EventEnvelope`, `MessagingConfig` | `_common/messaging` | 구현됨 | CloudEvents 봉투, JSON 변환기 |
 | `OutboxWriter`, `OutboxRelay`, `OutboxEventRepository` | `_common/messaging` | 구현됨 (core만) | 같은 트랜잭션 `outbox_event` 저장 → 릴레이(ShedLock 단일 실행)가 DB 트랜잭션 밖에서 미발행 행 발행·publisher confirm 대기 후 짧은 트랜잭션으로 `published_at` 기록(#166) |
 | `ProcessedEventRepository` | `_common/messaging` | 구현됨 (core) | `processed_event` INSERT 성공 여부로 멱등 소비 |
+| `EventAuditConsumer`, `EventLogRepository`, `EventRetentionCleanup` | `_common/messaging` | 구현됨 (core, #208) | 감사 큐의 모든 업무 메시지 봉투 메타데이터를 `event_log`에 저장, 주기 정리(발행 완료 Outbox·처리 이벤트·이벤트 기록 보존 기간). listener·`@Scheduled`가 같은 패키지 repository를 직접 호출하는 것은 공통 메시징 인프라 예외(아키텍처 2.1, #278)이며 `_common`에 service를 두지 않음. learning은 `record/scheduler/ProcessedEventCleanupScheduler` → `record/service/ProcessedEventCleanupService`, report는 `worker.py` → `deletion/service.py` `prune_event_records` |
 | `RetryingConsumer` | `_common/messaging` | 구현됨 (core) | 수동 ACK. 처리 실패 시 `x-retry-count` +1 후 `<큐>.retry.<회차>` 재발행, 최대 횟수 초과 시 reject → DLQ (아키텍처 1.6) |
-| `PublicAuthFilter` | `_common/security` | 구현됨 (core만) | `/api/v1/**` Bearer 검증(`AuthService.authenticate`), 쿠키 API Origin·`X-Requested-With` 검사, 역할·관리자 권한·필수 동의 확인 → `UserContext(userId, role, studentScope)` 설정. JWT 발급·검증은 `account/service/TokenService` (3.1) |
+| `PublicAuthFilter` | `account/controller` (#251, 이전 `_common/security`) | 구현됨 (core만) | `/api/v1/**` Bearer 검증(`AuthService.authenticate`), 쿠키 API Origin·`X-Requested-With` 검사, 역할·관리자 권한·필수 동의 확인 → `UserContext(userId, role, studentScope)` 설정. JWT 발급·검증은 `account/service/TokenService` (3.1) |
+| `RequestAttributes` | `_common/security` | 구현됨 (core, #251) | 요청 속성 이름 상수. `IDENTITY`(인증된 계정 `AuthenticatedAccount`, `PublicAuthFilter`가 설정하고 공개 컨트롤러가 읽음). 이전 `AuthController.IDENTITY` |
 | `IdempotencyService` | `_common/web` | 구현됨 (core만, #38) | `idempotency_record` 조회·저장, 같은 키·다른 본문 422 |
 | `SseEmitters` | `_common/web` | 구현됨 (core만, #39) | SSE 생성, 15초 heartbeat `: ping`, 연결 종료 콜백. 연결 시간은 용도별: 피드백 90초(`open`), 알림 구독 5분(`subscribe`), 분석 대화 125초(`open`, 120초 취소 hook, #41). `open(context, …)`이 요청 스레드의 `UserContext`를 작업 스레드에 설정·해제 |
 
@@ -478,13 +493,14 @@ classDiagram
 - `GuardianshipService.authorizeChild(childId)`: 학부모는 `guardianship LINKED` 확인 후 `studentScope = {childId}`로 컨텍스트 갱신, 학생은 본인 ID만. 미연결 시 `403 CHILD_NOT_LINKED` (FN-AGT-02, NFR-SEC-02)
 - 자녀 범위가 필요한 모든 controller는 하위 호출 전에 `authorizeChild` 호출 → `InternalRestClientFactory`가 그 컨텍스트를 헤더로 전달
 - `authorizeLinkedChildren()`: 경로에 자녀 ID가 없는 API(`/reports/{reportId}` 등)용. `studentScope = 연결 자녀 전체`로 전달하고 소유 서비스가 리소스의 학생 ID로 검사, 403은 core가 `CHILD_NOT_LINKED`로 변환
-- 구현 상태: 인증(`AuthController`·`AuthService`·`TokenService`·`GoogleOAuthClient`), 동의·자녀(`ConsentController`·`ConsentService`·`ChildrenController`·`GuardianshipService`), 기기·PIN(`StudentDeviceController`·`StudentAuthService`·`StudentPinService`·`StudentDeviceCleanupService`), 계정 관리(`ReauthenticationService`·`AccountManagementService`·`AccountWithdrawalService`·`ChildManagementService`) 구현됨. 그림의 `MeController`·`AccountService`와 Student entity 메서드명은 추상 이름
+- 구현 상태: 인증(`AuthController`·`AuthService`·`TokenService`·`GoogleOAuthClient`), 동의·자녀(`ConsentController`·`ConsentService`·`ChildrenController`·`GuardianshipService`), 기기·PIN(`StudentDeviceController`·`StudentAuthService`·`StudentPinService`·`StudentDeviceCleanupService`), 학생 공개 설정(#206 `StudentSharingController` + `StudentLearningContextService.ownSharing`·`requireShared`), 꾸미기 설정(#234 `StudentLookController`·`StudentLookService`·domain `StudentLook`), 계정 관리(`ReauthenticationService`·`AccountManagementService`·`AccountWithdrawalService`·`ChildManagementService`) 구현됨. 그림의 `MeController`·`AccountService`와 Student entity 메서드명은 추상 이름
 - 동의는 별도 entity 없이 선택마다 새 `consent` 행(AGREED·WITHDRAWN)을 저장하고 최신 행으로 판정 (상태 다이어그램 2.3, [이슈 #37 보고서](../report/auth-account.md))
 - `StudentAccessService`·`ConsentAccessService`는 인증용 읽기 전용 확인. 쓰기(자녀 등록·동의 저장)는 `GuardianshipService`·`ConsentService`(#37) 소유
 - 공개 API 컨텍스트는 `PublicAuthFilter`가 설정하고 finally에서 해제 (`InternalAuthFilter`와 같은 방식)
 - 이메일·비밀번호 가입·로그인·로그인 수단 변경 없음. Google 계정은 `(oauth_provider, oauth_subject)`로 식별, 최초 콜백에서 `AuthService.login`이 PARENT 계정 생성 (API 명세 5.1)
 - 재확인 토큰(`reauthToken`)은 Google 재인증 기반(#45), DB reauth_challenge/reauth_grant 저장
-- `AuthService.enterStudent` (`POST /auth/student-sessions`): 학부모 Bearer와 같은 세션의 refresh로 연결·활성 자녀·필수·법정대리인 동의 확인 → 부모 refresh 소비, `auth_session` role·studentId·version 변경 → `STUDENT` access만 발급, refresh 쿠키 삭제 (P01, 학부모 동석). 학생 계정·시연 링크 없음
+- `AuthService.enterStudent` (`POST /auth/student-sessions`): 학부모 Bearer 세션 행을 잠그고 연결·활성 자녀·필수·법정대리인 동의 확인 → 학부모 세션 `locked_at`·version 증가, `parent_session_id`를 가진 학생 세션 생성 → `STUDENT` access만 발급, 학부모 refresh 쿠키는 유지(잠김) (P01, 학부모 동석). 학생 계정·시연 링크 없음
+- `AuthService.unlockParent` (`POST /auth/parent-unlock`): 잠긴 학부모 refresh + `GuardianPasswordService.attempt`(PIN과 같은 해시·5회 잠금) → 잠금 해제·학생 세션 폐기·refresh 회전. `GuardianPasswordService.set`은 `GUARDIAN_PASSWORD` 재인증 grant를 1회 소비 (FN-ACC-05, 2026-11-03)
 - `StudentAuthService.login`: 기기 쿠키 해시로 `StudentDevice` 조회 → `isUsable`(미해제·미만료)·자녀 등록 확인 → `ChildAuthorizationService.requireCurrent`·`StudentAccessService.requireLinked` → 잠금·PIN 검사 → 동석 경로와 같은 `STUDENT` 토큰 발급, refresh 미발급 (P01, API 명세 3.11)
 - `StudentPinService.attempt`: 학생 행 잠금으로 실패 횟수 증가, 5회 도달 시 `pin_locked_at` 기록. `set`은 DB 재인증 소비와 해시·실패 횟수 0·잠금 해제를 한 번에 처리
 - 페어링 코드는 Redis(10분·1회용), 기기 자격증명은 `student_device.token_hash`만 저장. 저장 구조는 ERD 3.1·6장(core V13)
@@ -711,13 +727,17 @@ classDiagram
   class NotificationRepository {
     <<repository>>
   }
+  class NotificationDispatchService {
+    <<service>>
+    +dispatch(NotificationStored) AFTER_COMMIT
+  }
   class NotificationRedisPublisher {
     <<messaging>>
-    +publish(NotificationStored) AFTER_COMMIT
+    +publish(NotificationStored) Boolean
   }
   class NotificationDeliveryService {
     <<service>>
-    +record(id, published)
+    +record(id, failed)
   }
   class NotificationRedisSubscriber { <<consumer>> }
   class NotificationStreams {
@@ -745,18 +765,26 @@ classDiagram
   NotificationController --> NotificationService
   NotificationController --> NotificationStreams
   NotificationService --> NotificationRepository
-  NotificationService ..> NotificationRedisPublisher : NotificationStored
-  NotificationRedisPublisher --> NotificationDeliveryService
+  NotificationService ..> NotificationDispatchService : NotificationStored
+  NotificationDispatchService --> NotificationRedisPublisher
+  NotificationDispatchService --> NotificationDeliveryService
   NotificationRedisSubscriber --> NotificationStreams
   class GuardianshipService { <<service>> }
 ```
 
 - `ReportScheduler`: `@Scheduled` + `@SchedulerLock`(ShedLock), 매주 월 07:00 KST, 직전 월~일(KST) 대상, 기록 없는 학생 포함 (P06). 학생별 `report_job(SCHEDULE)` + outbox 저장, 부분 UK로 중복 방지
 - `ReportEventConsumer`: 큐 `core.report.events`, `processed_event`로 멱등, 상태 전이는 조건부 UPDATE (상태 다이어그램 4.1)
-- 알림: 리포트 종료 전이 트랜잭션에서 `QUEUED` 저장 → 커밋 후 `NotificationRedisPublisher`가 `core:notifications:v1` 발행 → `NotificationDeliveryService`가 `COMPLETED`·`FAILED` 기록. 다른 레플리카의 `NotificationRedisSubscriber`(`notification/consumer`, 구독 연결·채널 이름은 `notification/config/NotificationRedisConfiguration`, #168)가 `NotificationStreams`로 SSE 전달 (아키텍처 1.6)
+- 알림: 리포트 종료 전이 트랜잭션에서 `QUEUED` 저장 → 커밋 후 `NotificationDispatchService`가 `NotificationRedisPublisher`로 `core:notifications:v1` 발행(발행기는 Redis 발행만) → `NotificationDeliveryService`로 `COMPLETED`·`FAILED` 기록. 관리자 재처리 `NotificationRetryService`도 `dispatch`를 호출(#250). 다른 레플리카의 `NotificationRedisSubscriber`(`notification/consumer`, 구독 연결·채널 이름은 `notification/config/NotificationRedisConfiguration`, #168)가 `NotificationStreams`로 SSE 전달 (아키텍처 1.6)
 - 리포트 조회 API에 `ReportQueryService`를 둬서 controller → client 직접 호출 금지 규칙 준수 (리포트 열람 기록 `report_view` 저장 포함)
 - `ReportController`의 `reportId` 경로는 `GuardianshipService.authorizeLinkedChildren()` 사용 (3.1)
-- 구현 이름: `ReportScheduler` = `report/scheduler/WeeklyReportScheduler` + `ReportScheduleService`, `ReportEventConsumer` = `report/consumer/ReportLifecycleConsumer` + `ReportLifecycleService`, `ReportCommandWriter` = `report/messaging/ReportGenerateWriter`, `ReportViewRepository` = `ReportJobRepository`(`report_view` 포함). 종료 이벤트 유실 복구(#132)는 `ReportRecoveryScheduler` + `ReportRecoveryService`
+- 구현 이름: `ReportScheduler` = `report/scheduler/WeeklyReportScheduler` + `ReportScheduleService`, `ReportEventConsumer` = `report/consumer/ReportLifecycleConsumer` + `ReportLifecycleService`, `ReportCommandWriter` = `report/messaging/ReportGenerateWriter`, `ReportViewRepository` = `ReportJobRepository`(`report_view` 포함). 종료 이벤트 유실 복구(#132)는 `ReportRecoveryScheduler` + `ReportRecoveryService`. 학부모 리포트 표시 설정(#209)은 `ReportTemplateController`·`ReportTemplateService`(제안은 `conversation/service/AnalysisTemplateService.reportTemplate` → `AiClient.reportTemplate`, 학생 잠금·활성 학부모 조회는 `guardianship/service/StudentAccessService`, #279)·`ReportTemplateRepository`·domain `ReportTemplateSettings`
+
+#### 3.3.1 리포트 복구 호출 구조 (#132)
+
+- `ReportRecoveryScheduler` → `ReportRecoveryService`(후보 조회·오류 격리) → `ReportClient.reconcile`(SYSTEM/단일 scope, DTO 검증) → report generation router → `ReconciliationService` → `ReportRepository`/`JobLocks`.
+- 응답 반영은 별도 `ReportLifecycleService.reconcile` 트랜잭션. 이벤트 apply와 삭제 종료도 기존 lifecycle service에 둔다. HTTP 전후의 트랜잭션을 분리한다.
+- `ReportJobService` → `StudentAccessService.lockActive` → 학생 행 잠금, 이후 주 잠금/권한/이용권/Outbox. 관리자도 ACTIVE 검사를 우회하지 않는다.
+- `ChildManagementService.confirm` → `ReportLifecycleService.failForDeletion` (기존 삭제 트랜잭션 필수). 알림 이벤트의 non-null reportId 계약은 유지하고 ID 없는 종료는 실행 이력에만 남긴다.
 
 ### 3.4 결제·구독 (payment)
 
@@ -1299,6 +1327,10 @@ classDiagram
     <<facade>>
     +feedback(answerId) FeedbackResult
   }
+  class StuckJudgmentScheduler {
+    <<scheduler>>
+    +detect()
+  }
   class JudgmentService {
     <<service>>
     +createPending(answerId, rubricVersionId)
@@ -1310,6 +1342,7 @@ classDiagram
     +bankQuestion(attemptId, type) BankQuestion
     +saveResult(judgment, judged, followup) Boolean
     +markFailed(judgment, code) Boolean
+    +failStuck(now) List~UUID~
     +result(answerId) FeedbackResult
     +results(attemptId) Map
     +correct(judgmentId, command, idempotencyKey) JudgmentCorrection
@@ -1352,6 +1385,7 @@ classDiagram
   class JudgmentRepository {
     <<repository>>
     +acquire(answerId, now, leaseUntil) Int
+    +failExpired(now, code) List~UUID~
   }
   class FollowupRepository { <<repository>> }
   class CorrectionRepository { <<repository>> }
@@ -1362,6 +1396,7 @@ classDiagram
   CorrectionController --> JudgmentService
   SupportController --> JudgmentService
   FeedbackFacade --> JudgmentService
+  StuckJudgmentScheduler --> JudgmentService
   FeedbackFacade --> AttemptService : 타임라인
   FeedbackFacade --> MissionService : 기준표·정답 키
   FeedbackFacade --> RuleJudge
@@ -1383,6 +1418,7 @@ classDiagram
   3. 트랜잭션 밖: 시도 내 되묻기 2회 미만이고 고르기 `CORRECT`가 아니면 `AiClient.followup` (정답·금지어 유출 검사는 ai 담당, P04). 마무리·완료한 시도에는 만들지 않음. 유출 검사용 정답은 학생에게 보이는 글자(선택지 이름·정답 순서·답 단위를 붙인 최종 답·"선택지 이름: 그룹 이름")로 보냄. 재생성까지 검사 실패하면 learning이 `followup_bank_question`에서 같은 `type` 질문 선택(`BANK`, P16), 이 시도에서 아직 쓰지 않은 것부터
   4. `JudgmentService.saveResult`: 판정·요소·되묻기·버전 저장 + `DONE`. 먼저 시도 행을 잠그고(`FOR UPDATE`, 답변 제출·마무리와 같은 "시도 → 판정" 순서) 다시 확인해, 3 이후 마무리·완료된 시도면 되묻기는 저장하지 않음(P04). 예외 시 `markFailed`(실패 기록 자체가 실패해도 원래 오류로 응답)
 - 전이는 `Judgment` 엔티티가 허용 여부를 판단하고 `JudgmentRepository`가 조건부 UPDATE로 저장 (#23 초안 `AttemptDraft.update` + `updateIfVersion`과 같은 방식). `saveResult`·`markFailed`는 획득한 리스 값을 비교해야 해 `judgmentId` 대신 `acquire`로 얻은 `judgment`를 받음. `markFailed`는 DB에서 다시 읽은 판정으로 기록(저장 중 롤백돼 엔티티만 `DONE`이 된 경우)
+- 고착 탐지 (#241, state-diagram 3.3): `StuckJudgmentScheduler`(Presentation `scheduler`, 아키텍처 2.1)가 1분마다 `JudgmentService.failStuck(now)` 호출 → `JudgmentRepository.failExpired`가 만료 `RUNNING`(리스 없음 포함)을 한 번의 조건부 UPDATE로 `FAILED`(`LEASE_EXPIRED`, `retry_count + 1`)로 바꾸고 바뀐 `answerId` 반환. 만료 조건은 `Judgment.isLeaseExpired`·`acquire` SQL과 같고, 실패 코드는 `Judgment.LEASE_EXPIRED`. 주기 `app.judgment.stuck-detection-interval`(기본 `PT1M`), 끄기 `app.judgment.stuck-detection-enabled`
 - `done`·`hold`의 `by`: 판정 방법(`RULE`·`LLM`)·`trial`·모델·프롬프트 버전 (ERD judgment.method·trial·model_version·prompt_version)
 - `AiClient`: 응답 35초, 서비스 간 재시도 없음, 서킷 브레이커 최근 20건 중 실패 50% 이상이면 30초 차단(전송 오류·5xx만 실패로 셈, 아키텍처 1.3)
 - `JudgmentElement`: `verified = false`면 `satisfy()` 거부 (ERD CHECK와 동일 규칙을 Domain에서도 검사)
@@ -1395,7 +1431,7 @@ classDiagram
   - `supportOriginal`: 관리자 원문. 답변 버전·원문·피드백 결과(`results()`와 같은 모양)만, 초안·메모·이름 없음. 학생 전용 `AttemptService.get`과 별도
   - 피드백 결과의 `judgment`에 `judgmentId`(신고 대상 ID)
 
-### 4.3 기록 조회·삭제 (record · deletion)
+### 4.3 기록 조회·삭제 (record)
 
 ```mermaid
 classDiagram
@@ -1469,9 +1505,9 @@ classDiagram
   StudentDeletionService --> CoreClient : 삭제 완료 보고
 ```
 
-- 구현 상태: `record/`의 `RecordExistsController`·`RecordExistsService`·`RecordExistsRepository`와 `RecordController`·`RecordService`·`RecordRepository`·`Metric` 구현됨. 삭제 소비(`StudentDeletedConsumer`·`StudentDeletionService`·`CoreClient`, #128) 구현됨 ([learning 보고서](../report/learning.md))
+- 구현 상태: `record/`의 `RecordExistsController`·`RecordExistsService`·`RecordExistsRepository`와 `RecordController`·`RecordService`·`RecordRepository`·`Metric` 구현됨. 삭제 소비(`StudentDeletedConsumer`·`StudentDeletionService`·`CoreClient`, #128)도 `record/`에 구현됨. 원래 설계의 별도 `deletion/` 패키지는 두지 않는다(#256) ([learning 보고서](../report/learning.md))
 - `RecordController`: 모든 경로에서 `UserContextHolder.current().requireStudent(studentId)` 먼저 실행 (아키텍처 2.3 범위 검사). `home`은 미션 목록과 같은 기준으로 `requireSelfStudent()`가 경로의 학생과 같아야 함
-- `RecordRepository`는 여러 기능 테이블을 읽는 조회 전용 MyBatis 매퍼 (쓰기 없음). 기능 간 repository 참조 금지 규칙의 예외로, 조회 전용 `record/`에 한정
+- `RecordRepository`는 여러 기능 테이블을 읽는 조회 전용 MyBatis 매퍼 (쓰기 없음). 기능 간 repository 참조 금지 규칙의 예외로, 조회 전용 `record/`에 한정. 단 `record/` 패키지에는 삭제 소비(쓰기, #128)도 있어 패키지 전체가 조회 전용은 아니며, 이 예외는 `RecordRepository`에만 적용한다(#256)
 - `Metric.ratio`: 분모 5 미만이면 `value = null`, `count`만 (P08, API 1.6). `Metric.count`도 계산식을 받음(기능 명세 1.3 "모든 건수·비율은 계산식과 함께")
 - `RecordRepository.findEligible`: 집계 대상 시도(P08: 기간 안 답변 제출, 미완료 포함, 조회 종료일까지 모두 처리 실패인 시도·삭제 학생 제외)와 시도별 사실(완료, 최초 답변 전 생각 열기 열람, 되묻기 받음, 보완 답변, 모두 조회 종료일까지)을 한 번 읽고 summary·thinkingTypes·attempts가 같이 씀. `isRecorded`는 기간과 무관한 상세용, `stats`는 운영 집계
 - `RecordService.attempts`·`attempt`: 학생 시도 상세(`AttemptService.get`)를 그대로 쓰고 응답에서 초안(메모 포함)만 뺌(P05). 목록은 답변·생각 열기 열람을 조회 종료일까지로 자르고 돌아보기는 기간 안에 쓴 것만 남김. 시도 항목에 `completedAt`·`hintUsages`·돌아보기 `createdAt`을 붙임(report #51). 상세는 이력을 자르지 않음(core #40) 그래서 `findAttemptsWithTimeline`은 두지 않음
@@ -1566,7 +1602,7 @@ classDiagram
 | `JudgmentService` | `judgment/service.py` | 사전 보류(`TOO_SHORT`·`UNVERIFIED_SCOPE`) → 추출 → 대조 → 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정 (업무 판단은 service, 아키텍처 2.1) → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`) → 응답. M2·M1 교차 확인(`ScoringClient`)은 미구현 |
 | `LeakGuard` | `followup/leak_guard.py` | 모듈 함수 `find_leaks()`. 정답 키·예시 답·금지어 포함 검사. 실패 시 1회 재생성(`LLM_RETRY`), 재실패 시 `question` 없이 `leakCheck.passed = false` 반환 → learning이 질문 은행 선택 (`BANK`, P16) |
 | `LlmClient` | `llm/base.py`, 제공자는 `llm/providers.py` | 제공자 교체 지점(Claude·OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`), LLM 호출 재시도는 이 클래스에서만 (아키텍처 1.3), 호출마다 사용량 콜백(`BackgroundUsageRecorder` → `UsagePublisher`, 발행 실패는 로그만). `stream`은 분석 대화 답변의 일반 텍스트 조각(첫 조각 전 실패만 재시도) |
-| `ActiveVersions` | `versions.py` | #68에서 내장 버전과 core 활성 `PROMPT` 네 이름·승인 scope를 조정한다. 선택한 실제 본문·버전을 요청 동안 고정하고 `/internal/versions`에 같은 버전을 제공한다. 미보유 활성 버전은 명시적 503과 readiness DOWN |
+| `ActiveVersions` | `prompt_versions/registry.py` (#254, 조정은 `prompt_versions/service.py` `PromptSync`) | #68에서 내장 버전과 core 활성 `PROMPT` 다섯 이름(#280 `reportTemplate` 포함)·승인 scope를 조정한다. 선택한 실제 본문·버전을 요청 동안 고정하고 `/internal/versions`에 같은 버전을 제공한다. 미보유 활성 버전은 명시적 503과 readiness DOWN |
 
 ### 5.2 분석 에이전트·리포트 서술 (analysis_agent · report_narrative)
 
@@ -1615,7 +1651,6 @@ classDiagram
     +attempts(scope, size) list
     +changes(scope) list
     +thinking_activities(scope) list
-    +evidence(scope, answer_ids) list~RecordEvidence~
   }
   class calculators {
     <<module>>
@@ -1642,7 +1677,6 @@ classDiagram
     +attempts(scope, size) list
     +changes(scope) list
     +thinking_activities(scope) list
-    +evidence(answer_ids) list
   }
   class LlmClient { <<client>> }
   class UserContext { <<value>> }
@@ -1663,7 +1697,7 @@ classDiagram
 
 - 그래프 흐름 `classify → clarify_scope → plan → run_tools → compute → answer → verify` (아키텍처 1.5, 구현 노드 이름은 아래 구현 이름), 분기는 [시퀀스 다이어그램 5](sequence-diagram.md#5-분석-대화-sse)
 - `RecordTools`(`analysis_agent/tools.py`): 도구 실행마다 `require_student` 검사 후 `LearningClient` 호출, 범위 밖이면 learning 미호출 (FN-AGT-02). `scope`는 core가 확인한 `{studentId, from, to}`
-- `LearningClient`(`clients/learning_client.py`): 받은 컨텍스트 헤더 그대로 전달, 재시도 없음, 응답의 학생·기간·처리 상태 대조. 조회 실패는 빈 기록이 아닌 오류 (FN-AGT-10). `evidence`의 `available: false` 항목은 원문 없이 그대로 반환
+- `LearningClient`(`clients/learning_client.py`): 받은 컨텍스트 헤더 그대로 전달, 재시도 없음, 응답의 학생·기간·처리 상태 대조. 조회 실패는 빈 기록이 아닌 오류 (FN-AGT-10). 근거 재조회·삭제 여부(`available`)는 core가 learning `evidence`로 처리
 - `calculators`: 건수·비율은 LLM이 아닌 코드 계산 (FN-AGT-05), `Metric` 형식은 learning과 동일(분모 0 `NO_RECORD`, 5 미만 `value: null`). 집계 대상·전후 변화 수(글자·문장·까닭을 잇는 말)는 learning `summary`·`changes.counts` 값을 그대로 사용해 대시보드·리포트와 숫자를 맞춤 ([ai 보고서 2장](../report/ai.md#2-분석-대화-에이전트-langgraph))
 - `AnswerVerifier`(`analysis_agent/verification.py`의 `verify`): 답변 속 숫자 ↔ `metrics`, 인용 ↔ `evidence` 원문 대조. 실패 시 규칙 응답으로 전환 (FN-AGT-06)
 - 규칙 응답(`analysis_agent/templates.py`): 대조 실패·LLM 키 부재·호출 실패 시 계산된 `metrics`·`evidence`만 템플릿 문장으로 구성, `source = TEMPLATE`·`fallback` 표시 (FN-AGT-10, P16)
@@ -1699,7 +1733,7 @@ classDiagram
   EventPublisher --> AmqpConnection
 ```
 
-- 기동 순서: exclusive 큐 선언·바인딩·소비 시작 → `CoreClient.active_versions()` → 조회 중 이벤트 revision 조정 → `ActiveVersions.replace`. 조회 실패·미보유 활성 본문은 readiness false, 프로세스 유지. 재연결도 새 큐 바인딩 후 snapshot으로 조정한다 (아키텍처 1.6).
+- 기동 순서: exclusive 큐 선언·바인딩·소비 시작 → `CoreClient.active_versions()` → 조회 중 이벤트 revision 조정 → `ActiveVersions.replace`. 조회·조정은 `PromptSync`가 맡고 소비자는 검증한 이벤트를 `PromptSync.offer`로만 넘긴다(#254). 조회 실패·미보유 활성 본문은 readiness false, 프로세스 유지. 재연결도 새 큐 바인딩 후 snapshot으로 조정한다 (아키텍처 1.6).
 - `UsagePublisher`: 응답 반환 후 best-effort 발행, 학생 ID·원문 미포함 (NFR-PRF-02)
 
 ---
@@ -1945,7 +1979,7 @@ classDiagram
 | `ReportRenderer` | `rendering/renderer.py` (Jinja2 → HTML, Playwright → PDF, Markdown) | report-worker |
 | `OutboxRelay`, `OutboxRepository` | `outbox/` | report-worker (서비스의 종료 트랜잭션이 `OutboxRepository.add` 호출) |
 | `StudentDeletedConsumer`, `DeletionService` | `deletion/` | report-worker |
-| `DeletionRepository` | `deletion/state.py` | report-worker (삭제 장벽·processed_event·물리 삭제 트랜잭션) |
+| `DeletionRepository` | `deletion/repository.py` (#252) | report-worker (삭제 장벽·processed_event·물리 삭제 트랜잭션) |
 | `query_router`, `QueryService` | `query/router.py`, `query/service.py` (신규) | report-api |
 | `ObjectStorage` | `clients/storage.py` (신규, S3·로컬 MinIO) | 공통 |
 
@@ -1959,14 +1993,7 @@ classDiagram
 ---
 
 ## 8. 확인 필요 가정
-- 요금제 사용 한도(P13): core가 Redis 일 단위 카운터(학생별 미션 시작·피드백, 학부모별 분석 대화)와 `product.limits`로 확인 후 `USAGE_LIMIT_REACHED`. 담당 클래스는 구현 시 `usage/`에 추가
+- 요금제 사용 한도(P13): core가 `product.limits`로 확인 후 `USAGE_LIMIT_REACHED`. 분석 대화는 `ProductEntitlementService.reserve`가 보호자 잠금 안에서 자녀별 `payment_premium_usage` KST 일자 집계로 판정(#225, `AnalysisUsageService`는 Redis 미사용). 학생별 미션 시작·피드백은 Redis 일 단위 카운터(미구현)이며 담당 클래스는 구현 시 `usage/`에 추가
 - core `conversation`(근거 원문 조회)·`admin`(미션 관리 프록시)의 learning 호출: core `learning/service`(#37·#38에서 추가)를 거칠지, 기능별 client를 둘지 구현 시 결정
 - learning `record/RecordRepository`가 여러 기능 테이블을 조회: 조회 전용 기능 한정 예외
 - 클래스 분할 단위(관리자 controller 등)는 구현 시 조정 가능, 레이어·의존 방향은 고정
-
-### 리포트 복구 호출 구조 (#132)
-
-- `ReportRecoveryScheduler` → `ReportRecoveryService`(후보 조회·오류 격리) → `ReportClient.reconcile`(SYSTEM/단일 scope, DTO 검증) → report generation router → `ReconciliationService` → `ReportRepository`/`JobLocks`.
-- 응답 반영은 별도 `ReportLifecycleService.reconcile` 트랜잭션. 이벤트 apply와 삭제 종료도 기존 lifecycle service에 둔다. HTTP 전후의 트랜잭션을 분리한다.
-- `ReportJobService` → `StudentAccessService.lockActive` → 학생 행 잠금, 이후 주 잠금/권한/이용권/Outbox. 관리자도 ACTIVE 검사를 우회하지 않는다.
-- `ChildManagementService.confirm` → `ReportLifecycleService.failForDeletion` (기존 삭제 트랜잭션 필수). 알림 이벤트의 non-null reportId 계약은 유지하고 ID 없는 종료는 실행 이력에만 남긴다.

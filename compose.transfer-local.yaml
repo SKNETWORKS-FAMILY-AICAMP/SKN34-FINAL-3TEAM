@@ -1,0 +1,40 @@
+# Only with -p guardian-transfer-289 and the synthetic infrastructure/stubs/e2e.env.
+# Every published port is replaced. No original sagomungchi volume/network is attached.
+services:
+  postgres:
+    ports: !override ["127.0.0.1:15495:5432"]
+  rabbitmq:
+    ports: !override []
+  redis:
+    ports: !override []
+  core-service:
+    ports: !override ["127.0.0.1:18095:8080"]
+    environment:
+      AUTH_WEB_ORIGIN: http://127.0.0.1:5195
+      AUTH_COOKIE_SECURE: "false"
+      APP_GUARDIAN_TRANSFER_ENABLED: "true"
+      APP_AUTH_GOOGLEAUTHORIZEURL: http://127.0.0.1:5195/trial/google/authorize
+      JAVA_TOOL_OPTIONS: -Xmx384m
+  google-stub:
+    ports: !override ["127.0.0.1:18096:8080"]
+    environment:
+      LOCAL_TRANSFER_TRIAL: "true"
+      TRIAL_WEB_ORIGIN: http://127.0.0.1:5195
+  learning-service:
+    ports: !override ["127.0.0.1:18097:8081"]
+    environment:
+      JAVA_TOOL_OPTIONS: -Xmx384m
+  ai-service:
+    ports: !override ["127.0.0.1:18098:8000"]
+  scoring-service:
+    ports: !override []
+    profiles: [unused-scoring]
+  report-api:
+    ports: !override ["127.0.0.1:18099:8002"]
+    environment:
+      S3_PUBLIC_ENDPOINT_URL: http://127.0.0.1:19095
+  report-worker:
+    environment:
+      S3_PUBLIC_ENDPOINT_URL: http://127.0.0.1:19095
+  minio:
+    ports: !override ["127.0.0.1:19095:9000", "127.0.0.1:19096:9001"]

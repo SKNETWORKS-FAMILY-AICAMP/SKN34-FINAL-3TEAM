@@ -1,23 +1,12 @@
-import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router'
-import { apiFetch } from '../../data/apiClient.ts'
+import { useSupportResults } from '../../data/support/queries.ts'
 import { useSession } from '../auth/sessionContext.ts'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 
-type Report = { reportId: string; status: string; comment: string | null; reviewReason: string | null }
-type Inquiry = { inquiryId: string; status: string; title: string; body: string; answer: string | null }
 export function SupportResults() {
   const [params] = useSearchParams(), { session } = useSession()
   const reportId = params.get('reportId'), inquiryId = params.get('inquiryId')
-  const reports = useQuery({ queryKey: ['support', session, 'reports'], retry: false,
-    queryFn: ({ signal }) => apiFetch<{ items: Report[] }>('/error-reports', { signal }) })
-  const inquiries = useQuery({ queryKey: ['support', session, 'inquiries'], retry: false,
-    queryFn: ({ signal }) => apiFetch<{ items: Inquiry[] }>('/inquiries', { signal }) })
-  const detail = useQuery<Report | Inquiry>({ queryKey: ['support', session, reportId, inquiryId], retry: false,
-    enabled: !!reportId || !!inquiryId,
-    queryFn: ({ signal }) => reportId
-      ? apiFetch<Report>(`/error-reports/${encodeURIComponent(reportId)}`, { signal })
-      : apiFetch<Inquiry>(`/inquiries/${encodeURIComponent(inquiryId!)}`, { signal }) })
+  const { reports, inquiries, detail } = useSupportResults(session, reportId, inquiryId)
   return <main className="ws-card">
     <h1>내 신고·문의 처리 결과</h1>
     <p>학생의 신고·문의는 본인 화면에서 결과를 확인합니다. 신고 접수만으로 판정은 바뀌지 않습니다.</p>

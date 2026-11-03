@@ -36,7 +36,7 @@ class GoogleOAuthClient(private val properties: AuthProperties) {
     private fun authorizationAt(state: String, nonce: String, verifier: String, callback: String): String {
         if (!properties.googleConfigured) throw BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "OAUTH_UNAVAILABLE", "Google 로그인이 설정되지 않았습니다.")
         val challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.US_ASCII)))
-        return UriComponentsBuilder.fromUriString("https://accounts.google.com/o/oauth2/v2/auth")
+        return UriComponentsBuilder.fromUriString(properties.googleAuthorizeUrl)
             .queryParam("client_id", properties.googleClientId).queryParam("redirect_uri", callback)
             .queryParam("response_type", "code").queryParam("scope", "openid email profile")
             .queryParam("state", state).queryParam("nonce", nonce)

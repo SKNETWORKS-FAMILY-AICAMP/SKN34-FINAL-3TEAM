@@ -20,7 +20,9 @@ import {
   mockSubmissionReceipts,
 } from '../fixtures/student.ts'
 import { mockLooks, persistLooks } from '../fixtures/studentLook.ts'
+import { attemptGuardianPassword, lockParentSession, parentSessionLocked } from '../fixtures/guardianPassword.ts'
 import { DEFAULT_LOOK, isCompanionId, isThemeId } from '../../domain/studentLook.ts'
+import { difficultyCodes } from '../../domain/learning.ts'
 
 let child: Child | undefined = store.snapshot().session?.child,
   token = '',
@@ -137,6 +139,7 @@ export const studentHandlers = [
           title: '시연 계정을 확인해 주세요.',
         })
       const session = await store.login(data.email, data.password)
+      lockParentSession(false)
       if (!permissionsFor(data.email).length)
         store.replaceChildren(structuredClone(mockAccountChildren.get(data.email) ?? []))
       mockIdentity.email = data.email
@@ -154,9 +157,31 @@ export const studentHandlers = [
   http.post('/api/v1/auth/refresh', () =>
     respond(async () => {
       // 실제 쿠키/보안 속성 검증은 백엔드 통합 대상. 목은 로그인 상태만 모사한다.
+      // 동석 진입으로 잠긴 학부모 세션은 refresh로 풀리지 않는다 (core PARENT_SESSION_LOCKED).
+      if (parentSessionLocked())
+        throw new ApiError({ status: 401, code: 'PARENT_SESSION_LOCKED', title: '보호자 비밀번호로 돌아와 주세요.' })
       if (scenario === 'refresh-fail' || !store.snapshot().session || mockRole === 'STUDENT')
         throw new ApiError({ status: 401, code: 'UNAUTHENTICATED', title: '다시 로그인해 주세요.' })
       return { accessToken: issueToken(), role: mockRole }
+    }),
+  ),
+  http.post('/api/v1/auth/parent-unlock', ({ request }) =>
+    respond(async () => {
+      if (!parentSessionLocked()) throw new ApiError({ status: 401, code: 'UNAUTHENTICATED', title: '다시 로그인해 주세요.' })
+      const data = (await request.json()) as { password?: unknown }
+      const result = attemptGuardianPassword(typeof data.password === 'string' ? data.password : '')
+      if (result.code)
+        throw new ApiError({
+          status: result.code === 'GUARDIAN_PASSWORD_LOCKED' ? 423 : result.code === 'GUARDIAN_PASSWORD_NOT_SET' ? 409 : 401,
+          code: result.code,
+          title: '보호자 비밀번호를 확인해 주세요.',
+          ...(result.remainingAttempts === undefined ? {} : { remainingAttempts: result.remainingAttempts }),
+        })
+      lockParentSession(false)
+      await store.login(mockIdentity.email, 'demo-only')
+      mockRole = 'PARENT'
+      child = undefined
+      return { accessToken: issueToken(), role: 'PARENT', child: null, nextAction: 'READY', startPath: '/parent/journal' }
     }),
   ),
   http.post('/api/v1/auth/student/logout', ({ request }) =>
@@ -172,6 +197,7 @@ export const studentHandlers = [
   ),
   http.post('/api/v1/auth/logout', () =>
     respond(async () => {
+      lockParentSession(false)
       await store.logout()
       mockRole = undefined
       token = ''
@@ -203,7 +229,7 @@ export const studentHandlers = [
       return { ...h, resume: h.resume ? wireAttempt(h.resume) : null }
     }),
   ),
-  // 꾸미기 설정 (API 명세 3.12 목업 계약): 학생 토큰 전용
+  // 꾸미기 설정 (API 명세 3.12, core #234와 같은 계약): 학생 토큰 전용
   http.get('/api/v1/students/me/preferences', ({ request }) =>
     respond(async () => {
       guard(request)
@@ -256,6 +282,7 @@ export const studentHandlers = [
       if (mockGuardianConsentRequired(data.childId)) throw new ApiError({ status: 403, code: 'CHILD_NOT_LINKED', title: '법정대리인 동의가 필요합니다.' })
       const selected = await linked(data.childId)
       const session = await store.enterStudent(selected)
+      lockParentSession(true)
       mockRole = 'STUDENT'
       child = selected
       return { role: session.role, accessToken: issueToken() }
@@ -436,6 +463,19 @@ export const studentHandlers = [
       const rows = await store.records(child!, 'STUDENT', period)
       return { items: rows.slice(index * size, (index + 1) * size), page: index, size, totalElements: rows.length,
         studentId: child!.id, state: rows.length ? 'OK' : 'NO_RECORD', period, inclusionRule: 'P08' }
+    }),
+  ),
+  // core DSH-04 응답 모양(#240): 학생 토큰 전용, 돌아보기는 EASY/NORMAL/HARD 코드와 nullable text
+  http.get('/api/v1/students/me/thinking-activities', ({ request }) =>
+    respond(async () => {
+      guard(request)
+      const me = studentOnly(), q = new URL(request.url).searchParams
+      const period = { from: q.get('from') ?? thisWeek.from, to: q.get('to') ?? thisWeek.to }
+      const rows = await store.records(me, 'STUDENT', period)
+      return { studentId: me.id, state: rows.length ? 'OK' : 'NO_RECORD', period, items: rows.map(r => ({
+        attemptId: r.attemptId, thinkingType: r.mission.thinkingType, missionTitle: r.mission.title,
+        reflection: r.reflection ? { difficulty: difficultyCodes[r.reflection.difficulty], text: r.reflection.text || null } : null,
+      })) }
     }),
   ),
   // 이전 학부모 시안의 조회를 유지하는 호환 목. 별도 학부모 이슈 완료를 의미하지 않는다.

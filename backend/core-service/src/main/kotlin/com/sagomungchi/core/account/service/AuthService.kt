@@ -26,6 +26,7 @@ class AuthService(
     private val properties: AuthProperties,
     private val students: StudentAccessService,
     private val consents: ConsentAccessService,
+    private val passwords: GuardianPasswordService,
     transactionManager: PlatformTransactionManager,
 ) {
     private val transactions = TransactionTemplate(transactionManager)
@@ -54,7 +55,8 @@ class AuthService(
         }
         requireActive(account)
         if (account.role !in setOf("PARENT", "ADMIN")) throw unauthenticated()
-        previousRefresh?.let { repository.refresh(tokens.hash(it))?.sessionId }?.let { repository.revoke(it, now) }
+        // Replacing a locked parent session also ends the student sessions entered from it.
+        previousRefresh?.let { repository.refresh(tokens.hash(it))?.sessionId }?.let { repository.revoke(it, now); repository.revokeGuardianEntries(it, now) }
         val session = AuthSession(UUID.randomUUID(), account.id, account.role, null, 1, now.plus(properties.refreshTtl), null, now)
         repository.insertSession(session)
         issue(session)
@@ -83,20 +85,32 @@ class AuthService(
 
     fun refresh(raw: String?): IssuedAuth = useRefresh(raw) { session -> issue(session) }
 
-    fun enterStudent(raw: String?, studentId: UUID, expected: AuthenticatedAccount): IssuedAuth = useRefresh(raw) { session ->
-        if (expected.session.id != session.id || expected.session.version != session.version) throw changed()
-        if (session.role != "PARENT") throw forbidden()
+    /**
+     * Guardian entry (FN-ACC-05): lock the parent session and issue a separate access-only student session.
+     * The parent refresh cookie stays, but refresh is refused until [unlockParent] verifies the guardian password.
+     */
+    fun enterStudent(studentId: UUID, expected: AuthenticatedAccount): IssuedAuth = requireNotNull(transactions.execute {
+        val parent = repository.session(expected.session.id, lock = true) ?: throw unauthenticated()
+        if (parent.version != expected.session.version) throw changed()
+        if (parent.role != "PARENT") throw forbidden()
+        identity(parent)
         requireConsents(expected)
-        students.requireLinked(session.userId, studentId)
-        requireGuardian(session.userId, studentId)
-        val target = session.copy(role = "STUDENT", studentId = studentId, version = session.version + 1,
-            expiresAt = now().plus(properties.studentAccessTtl))
-        repository.updateSession(target)
-        IssuedAuth(tokens.access(target), null, null, identity(target))
-    }
+        students.requireLinked(parent.userId, studentId)
+        requireGuardian(parent.userId, studentId)
+        val now = now()
+        // A version bump ends parent access tokens in every tab while the student screen is open.
+        repository.updateSession(parent.copy(version = parent.version + 1, lockedAt = now))
+        val session = AuthSession(UUID.randomUUID(), parent.userId, "STUDENT", studentId, 1, now.plus(properties.studentAccessTtl), null, now,
+            parentSessionId = parent.id)
+        repository.insertSession(session)
+        IssuedAuth(tokens.access(session), null, null, identity(session))
+    })
+
+    /** Return from the student screen: the parent refresh cookie plus the guardian password unlock the parent session. */
+    fun unlockParent(raw: String?, password: String): IssuedAuth = useRefresh(raw, password) { session -> issue(session) }
 
     /** The row lock plus a fresh refresh-token read serialize rotation across core replicas. */
-    private fun useRefresh(raw: String?, action: (AuthSession) -> IssuedAuth): IssuedAuth {
+    private fun useRefresh(raw: String?, password: String? = null, action: (AuthSession) -> IssuedAuth): IssuedAuth {
         val token = raw?.takeIf { it.isNotBlank() && it.length <= 128 } ?: throw unauthenticated()
         val outcome = requireNotNull(transactions.execute {
             val hash = tokens.hash(token)
@@ -110,11 +124,22 @@ class AuthService(
                 return@execute Outcome(null, "REFRESH_REUSED")
             }
             if (current.revokedAt != null || !current.expiresAt.isAfter(now())) throw unauthenticated()
-            identity(session)
+            var active = session
+            if (session.lockedAt != null) {
+                // Plain refresh never unlocks; the refresh token stays unused for the password attempt.
+                if (password == null) throw parentLocked()
+                val attempt = passwords.attempt(session.userId, password)
+                if (!attempt.accepted) return@execute Outcome(null, attempt.code, attempt.remainingAttempts)
+                active = session.copy(version = session.version + 1, lockedAt = null)
+                repository.updateSession(active)
+                repository.revokeGuardianEntries(session.id, now())
+            }
+            identity(active)
             check(repository.consume(current.id, now()) == 1)
-            Outcome(action(session), null)
+            Outcome(action(active), null)
         })
-        // Throw after commit so replay detection does not roll back session revocation.
+        // Throw after commit so replay detection and password failure counters are not rolled back.
+        outcome.failure?.takeIf { it.startsWith("GUARDIAN_PASSWORD_") }?.let { throw GuardianPasswordFailure(it, outcome.remainingAttempts) }
         if (outcome.failure != null) throw BusinessException(HttpStatus.UNAUTHORIZED, outcome.failure, "로그인 세션이 종료되었습니다. 다시 로그인해 주세요.")
         return requireNotNull(outcome.issued)
     }
@@ -133,7 +158,7 @@ class AuthService(
                 val identity = try { authenticate(access) } catch (_: BusinessException) { null }
                 identity?.let { repository.revoke(it.session.id, now()) }
             }
-            raw?.let { repository.refresh(tokens.hash(it))?.sessionId }?.let { repository.revoke(it, now()) }
+            raw?.let { repository.refresh(tokens.hash(it))?.sessionId }?.let { repository.revoke(it, now()); repository.revokeGuardianEntries(it, now()) }
         }
     }
 
@@ -158,6 +183,7 @@ class AuthService(
 
     private fun identity(session: AuthSession): AuthenticatedAccount {
         if (session.revokedAt != null || !session.expiresAt.isAfter(now())) throw unauthenticated()
+        if (session.lockedAt != null) throw parentLocked()
         val account = repository.account(session.userId) ?: throw unauthenticated()
         requireActive(account)
         if ((session.role == "ADMIN" && account.role != "ADMIN") ||
@@ -192,5 +218,6 @@ class AuthService(
     private fun unauthenticated() = BusinessException(HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "로그인이 필요합니다.")
     private fun changed() = BusinessException(HttpStatus.UNAUTHORIZED, "SESSION_CHANGED", "다른 탭에서 로그인 상태가 변경되었습니다.")
     private fun forbidden() = BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "이 작업을 수행할 권한이 없습니다.")
-    private data class Outcome(val issued: IssuedAuth?, val failure: String?)
+    private fun parentLocked() = BusinessException(HttpStatus.UNAUTHORIZED, "PARENT_SESSION_LOCKED", "학생 화면을 사용하고 있습니다. 보호자 비밀번호로 돌아와 주세요.")
+    private data class Outcome(val issued: IssuedAuth?, val failure: String?, val remainingAttempts: Int? = null)
 }

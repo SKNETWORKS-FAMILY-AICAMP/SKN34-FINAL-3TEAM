@@ -9,6 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from verify_db_schema import (  # noqa: E402
+    MIGRATION_SEED_ROWS,
     ROOT,
     ValidationError,
     allowed_values,
@@ -17,10 +18,22 @@ from verify_db_schema import (  # noqa: E402
     check_indexes,
     erd_contract,
     index_contract,
+    populated_sql,
 )
 
 
 class ContractTests(unittest.TestCase):
+    def test_only_exact_migration_seed_rows_are_exempt_from_the_empty_check(self):
+        seeds = MIGRATION_SEED_ROWS["core_db"]
+        sql = populated_sql(["consent_document", "consent"], seeds)
+        self.assertIn("SELECT 1 FROM consent)", sql)
+        self.assertIn("FROM consent_document WHERE id NOT IN ('00000000-0000-4000-8000-000002350001'", sql)
+        migration = (ROOT / "backend/core-service/src/main/resources/db/migration/V25__seed_consent_documents.sql")
+        text = migration.read_text(encoding="utf-8")
+        self.assertEqual(len(seeds["consent_document"]), 3)
+        for seed in seeds["consent_document"]:
+            self.assertIn(f"('{seed}', ", text)
+
     def test_empty_erd_cannot_succeed_without_checks(self):
         with self.assertRaises(ValidationError):
             erd_contract("")
@@ -47,7 +60,9 @@ class ContractTests(unittest.TestCase):
         contract = erd_contract()
         core = contract["core_db"]
         learning = contract["learning_db"]
-        self.assertEqual(core["guardianship"]["method"]["values"], {"REGISTER"})
+        self.assertEqual(core["guardianship"]["method"]["values"], {"REGISTER", "TRANSFER"})
+        self.assertTrue(core["guardianship"]["transferred_at"]["nullable"])
+        self.assertEqual(core["guardian_transfer"]["status"]["values"], {"PENDING", "ACCEPTED", "REJECTED", "CANCELLED"})
         self.assertEqual(core["notification_setting"]["channel"]["values"], {"IN_APP"})
         self.assertIsNone(core["product"]["code"]["values"])
         self.assertTrue(core["student"]["birth_year"]["nullable"])  # #45 erases DELETED profile; live rows are CHECK constrained.

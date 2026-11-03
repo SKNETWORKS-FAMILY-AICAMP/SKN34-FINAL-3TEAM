@@ -53,7 +53,7 @@
 
 ## 확인 필요
 
-- precheck 응답 칸: api-spec 3.13은 `{canWithdraw,activeSubscriptions,unresolvedRefunds,retainedTransactionsYears}` 4칸인데 실제 응답은 #48에서 더한 `pendingPayments`까지 5칸([#48 리포트](issue-48-payments.md)에만 기록). api-spec에 칸을 더할지는 결제·계정 담당 확인 필요
+- precheck 응답 칸: api-spec 3.13은 `{canWithdraw,activeSubscriptions,unresolvedRefunds,retainedTransactionsYears}` 4칸인데 실제 응답은 #48에서 더한 `pendingPayments`까지 5칸([#48 리포트](issue-48-payments.md)에만 기록). api-spec에 칸을 더할지는 결제·계정 담당 확인 필요 → api-spec 3.13에 `pendingPayments` 반영됨(#245 확인)
 - Google 503: 이 파일은 재인증 준비 때문에 `GoogleOAuthClient`를 mock으로 바꿔 써서, HTTP 테스트는 client가 던진 503이 응답으로 바뀌는 것만 확인. "설정이 없으면 client가 503"은 기존 `GoogleOAuthClientTest`가 확인
 - [점검 기록](audit.md) 1.6 표의 해당 줄 처리 표시는 audit 담당 확인 후 반영
 - `IntegrationTestSupport` DB 연결 한도: develop 원본(`2db122c`)만으로 최대 99/100(98개가 idle). 설정이 다른 클래스마다 캐시된 Spring 컨텍스트가 연결 10개(Hikari 기본값)를 계속 쥠. `PostgresRepositoryTest`처럼 연결 풀 상한(`maximum-pool-size=5`·`minimum-idle=0`)이 없어, 이 기반을 쓰는 클래스가 하나 더 생기면 PostgreSQL이 `too many clients`로 거절(로컬에서 develop `7eb829d`도 27개 실패한 적 있음). 공통 기반 조정은 이 이슈 밖이라 core 담당 판단 필요

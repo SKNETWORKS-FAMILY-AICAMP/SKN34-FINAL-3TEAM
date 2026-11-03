@@ -4,11 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.security.UserContextHolder
 import com.sagomungchi.core.account.service.AccountAccessService
-import com.sagomungchi.core.conversation.client.AiClient
 import com.sagomungchi.core.conversation.service.ConversationService
+import com.sagomungchi.core.conversation.service.AnalysisTemplateService
 import com.sagomungchi.core.conversation.service.AnalysisUsageService
-import com.sagomungchi.core.guardianship.repository.StudentAccessRepository
 import com.sagomungchi.core.guardianship.service.ChildAuthorizationService
+import com.sagomungchi.core.guardianship.service.StudentAccessService
 import com.sagomungchi.core.report.domain.*
 import com.sagomungchi.core.report.repository.ReportTemplateRepository
 import org.springframework.http.HttpStatus
@@ -19,8 +19,8 @@ import java.util.UUID
 
 @Service
 class ReportTemplateService(private val conversations: ConversationService, private val repository: ReportTemplateRepository,
-    private val usage: AnalysisUsageService, private val ai: AiClient, private val json: ObjectMapper,
-    private val students: StudentAccessRepository, private val children: ChildAuthorizationService,
+    private val usage: AnalysisUsageService, private val ai: AnalysisTemplateService, private val json: ObjectMapper,
+    private val students: StudentAccessService, private val children: ChildAuthorizationService,
     private val accounts: AccountAccessService, private val tx: TransactionTemplate) {
     fun get(conversation: UUID): ReportTemplateSnapshot {
         val parent = conversations.parent()
@@ -29,8 +29,7 @@ class ReportTemplateService(private val conversations: ConversationService, priv
     fun propose(conversation: UUID, question: String): Map<String, Any> {
         val parent = conversations.parent()
         val current = conversations.locked(parent,conversation) { row ->
-            usage.consume(parent,row.studentId)
-            usage.recordAttempt(parent,row.studentId,UUID.randomUUID())
+            usage.consume(parent,row.studentId,UUID.randomUUID())
             repository.get(parent)
         }
         val result = ai.reportTemplate(mapOf("question" to question,"current" to current.settings))
@@ -69,7 +68,8 @@ class ReportTemplateService(private val conversations: ConversationService, priv
             ?: throw BusinessException(HttpStatus.NOT_FOUND,"NOT_FOUND","연결된 학부모가 없습니다.")
         return tx.execute {
             accounts.lockParent(parent)
-            if (students.lockReportRetryStudent(student)==null) conflict()
+            if (students.lockReportRetryStudent(student)==null)
+                throw BusinessException(HttpStatus.CONFLICT,"STUDENT_UNAVAILABLE","학생 상태를 다시 확인해 주세요.")
             children.requireCurrent(parent,student)
             repository.get(parent)
         }!!

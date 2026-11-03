@@ -37,6 +37,29 @@ env:
   - {name: LEARNING_URL, value: "http://learning-service.app.svc.cluster.local:8081"}
   - {name: AI_URL, value: "http://ai-service.app.svc.cluster.local:8000"}
   - {name: REPORT_URL, value: "http://report-api.app.svc.cluster.local:8002"}
+  - {name: ADMIN_RABBIT_MANAGEMENT_URL, value: "http://rabbitmq.platform.svc.cluster.local:15672"}
+  - {name: ADMIN_RABBIT_MANAGEMENT_USERNAME, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_USERNAME}}}
+  - {name: ADMIN_RABBIT_MANAGEMENT_PASSWORD, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_PASSWORD}}}
+  # #236: compose.yaml core-service defaults
+  - {name: AUTH_ACCESS_TTL, value: 15m}
+  - {name: AUTH_STUDENT_ACCESS_TTL, value: 15m}
+  - {name: AUTH_REAUTH_TTL, value: 5m}
+  - {name: AUTH_REFRESH_TTL, value: 7d}
+  - {name: REDIS_PORT, value: "6379"}
+  - {name: STUDENT_DEVICE_TTL, value: 90d}
+  - {name: STUDENT_DEVICE_ATTEMPT_LIMIT, value: "20"}
+  # #236: external credentials from the root .env via create-app-secrets.ps1; absent keys stay unset
+  - {name: GOOGLE_CLIENT_ID, valueFrom: {secretKeyRef: {name: app-service-credentials, key: GOOGLE_CLIENT_ID, optional: true}}}
+  - {name: GOOGLE_CLIENT_SECRET, valueFrom: {secretKeyRef: {name: app-service-credentials, key: GOOGLE_CLIENT_SECRET, optional: true}}}
+  - {name: PAYMENT_FREE_PRODUCT_ID, valueFrom: {secretKeyRef: {name: app-service-credentials, key: PAYMENT_FREE_PRODUCT_ID, optional: true}}}
+  - {name: PAYMENT_BILLING_ENCRYPTION_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: PAYMENT_BILLING_ENCRYPTION_KEY, optional: true}}}
+  - {name: TOSS_TEST_SECRET_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: TOSS_TEST_SECRET_KEY, optional: true}}}
+  - {name: TOSSPAYMENTS_SECRET_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: TOSSPAYMENTS_SECRET_KEY, optional: true}}}
+  - {name: TOSS_TEST_MID, valueFrom: {secretKeyRef: {name: app-service-credentials, key: TOSS_TEST_MID, optional: true}}}
+  - {name: TOSS_TEST_WEBHOOK_SECURITY_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: TOSS_TEST_WEBHOOK_SECURITY_KEY, optional: true}}}
+  - {name: TOSS_TEST_BILLING_SECRET_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: TOSS_TEST_BILLING_SECRET_KEY, optional: true}}}
+  - {name: TOSS_TEST_BILLING_MID, valueFrom: {secretKeyRef: {name: app-service-credentials, key: TOSS_TEST_BILLING_MID, optional: true}}}
+  - {name: TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY, optional: true}}}
 hpa:
   enabled: false
 pdb:
@@ -65,6 +88,13 @@ networkPolicy:
     - {name: rabbitmq, port: 15672}
     - {name: redis, port: 6379}
   egressToCollector: true
+  # #236: Google OAuth and Toss over HTTPS. Calico OSS has no FQDN rules, so allow public 443 only.
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16, 127.0.0.0/8]
+      ports: [{protocol: TCP, port: 443}]
   migrationEgress:
     - to:
         - namespaceSelector:
@@ -74,7 +104,7 @@ networkPolicy:
       ports: [{protocol: TCP, port: 5432}]
 migration:
   enabled: true
-  revision: v19
+  revision: v26
   image:
     repository: sagomungchi/core-migrate
     tag: local

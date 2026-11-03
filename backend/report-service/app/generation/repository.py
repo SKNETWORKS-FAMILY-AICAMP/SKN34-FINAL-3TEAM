@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    delete,
     func,
     select,
     text,
@@ -109,6 +110,107 @@ def _report(row) -> WeeklyReport:
 
 
 class ReportRepository:
+    def latest_page(self, session, student_id, status, page, size):
+        ranked = (
+            select(
+                weekly_report,
+                func.row_number()
+                .over(
+                    partition_by=(weekly_report.c.student_id, weekly_report.c.period_from),
+                    order_by=weekly_report.c.revision.desc(),
+                )
+                .label("rank"),
+            )
+            .where(weekly_report.c.student_id == student_id)
+            .subquery()
+        )
+        condition = ranked.c.rank == 1
+        if status:
+            condition &= ranked.c.status == status
+        total = session.scalar(select(func.count()).select_from(ranked).where(condition))
+        rows = (
+            session.execute(
+                select(ranked)
+                .where(condition)
+                .order_by(ranked.c.period_from.desc())
+                .offset(page * size)
+                .limit(size)
+            )
+            .mappings()
+            .all()
+        )
+        return rows, total
+
+    def find(self, session, report_id):
+        return (
+            session.execute(select(weekly_report).where(weekly_report.c.id == report_id))
+            .mappings()
+            .one_or_none()
+        )
+
+    def revisions(self, session, student_id, period_from):
+        return (
+            session.execute(
+                select(weekly_report)
+                .where(
+                    weekly_report.c.student_id == student_id,
+                    weekly_report.c.period_from == period_from,
+                )
+                .order_by(weekly_report.c.revision.desc())
+            )
+            .mappings()
+            .all()
+        )
+
+    def items(self, session, report_id):
+        return (
+            session.execute(
+                select(report_item)
+                .where(report_item.c.report_id == report_id)
+                .order_by(report_item.c.item_type, report_item.c.seq)
+            )
+            .mappings()
+            .all()
+        )
+
+    def evidence(self, session, report_id, item_id):
+        item = session.scalar(
+            select(report_item.c.id).where(
+                report_item.c.id == item_id, report_item.c.report_id == report_id
+            )
+        )
+        if item is None:
+            return None
+        return (
+            session.execute(
+                select(report_item_evidence).where(report_item_evidence.c.item_id == item_id)
+            )
+            .mappings()
+            .all()
+        )
+
+    def file(self, session, report_id, format):
+        return (
+            session.execute(
+                select(report_file).where(
+                    report_file.c.report_id == report_id, report_file.c.format == format.upper()
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+
+    def delete_student(self, session, student_id):
+        session.execute(delete(report_job_guard).where(report_job_guard.c.student_id == student_id))
+        reports = select(weekly_report.c.id).where(weekly_report.c.student_id == student_id)
+        items = select(report_item.c.id).where(report_item.c.report_id.in_(reports))
+        session.execute(
+            delete(report_item_evidence).where(report_item_evidence.c.item_id.in_(items))
+        )
+        session.execute(delete(report_item).where(report_item.c.report_id.in_(reports)))
+        session.execute(delete(report_file).where(report_file.c.report_id.in_(reports)))
+        session.execute(delete(weekly_report).where(weekly_report.c.student_id == student_id))
+
     def guard(self, session, job_id, student_id, period_from, period_to):
         row = (
             session.execute(select(report_job_guard).where(report_job_guard.c.job_id == job_id))

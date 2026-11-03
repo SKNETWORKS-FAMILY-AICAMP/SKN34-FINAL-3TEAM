@@ -26,8 +26,9 @@ class ReauthenticationService(private val repository: ReauthenticationRepository
  data class Started(val challengeId: UUID, val authorizationUrl: String, val expiresAt: OffsetDateTime, val stateCookie: String)
  data class Issued(val reauthToken: String, val expiresAt: OffsetDateTime)
  fun start(identity: AuthenticatedAccount, purpose: ReauthPurpose, childId: UUID?, scope: String?): Started {
-  if((purpose==ReauthPurpose.WITHDRAWAL && (childId!=null || scope!=null)) ||
-   (purpose!=ReauthPurpose.WITHDRAWAL && childId==null) ||
+  val accountWide=purpose in setOf(ReauthPurpose.WITHDRAWAL,ReauthPurpose.GUARDIAN_PASSWORD,ReauthPurpose.TRANSFER_ACCEPT)
+  if((accountWide && (childId!=null || scope!=null)) ||
+   (!accountWide && childId==null) ||
    (purpose==ReauthPurpose.CHILD_DELETE && scope !in setOf("PROFILE","RECORDS")) ||
    (purpose!=ReauthPurpose.CHILD_DELETE && scope!=null))
    throw BusinessException(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED","재인증 대상과 작업 범위를 확인해 주세요.")

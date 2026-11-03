@@ -61,6 +61,7 @@ flowchart TD
   AN -->|"질문 입력·예시 질문"| ANS["SC-03-005 답변<br/>(SSE 진행 표시)"]
   ANS -->|"근거 선택"| EV["SC-03-006 답변 근거<br/>미션·답변 시점·원문"]
   ANS -->|"후속 질문 (자녀·기간 유지)"| ANS
+  AN -->|"리포트 표시 설정 (#209)"| TPL["리포트 표시 설정 대화<br/>변경안 비교 후 확인 시 저장"]
 
   PJ --> RP["SC-03-007 주간 리포트<br/>/parent/report"]
   RP --> RD["SC-03-008 리포트 상세<br/>판 선택·재생성·PDF/MD 다운로드"]
@@ -82,6 +83,7 @@ flowchart TD
 ```
 
 - 분석 대화·리포트 답변 화면에서 바로 오류 신고 가능 (`targetType` ANALYSIS·REPORT)
+- 학생이 공개 설정을 끈 동안 원문·근거·원문 인용은 보이지 않고 수치만 표시 (#206)
 - 무료 자녀는 분석 대화 진입 시 프리미엄 안내만 표시, 리포트는 수치만 표시 (P13)
 
 ### 3.2 학생
@@ -99,6 +101,8 @@ flowchart TD
   E3 --> H["SC-02-004 생각 지도<br/>/student/home"]
   PG --> H
   H -->|"꾸미기"| DECO["SC-02-005 꾸미기"]
+  H -->|"생각 활동 (FN-DSH-04, #240)"| ACT["생각 활동<br/>/student/activities"]
+  H -->|"공개 설정 (#206)"| SHR["내 답 공개 설정<br/>/student/settings (기본 비공개)"]
   H -->|"생각 유형 선택"| MS["SC-02-006 미션 고르기<br/>/student/missions?type="]
   MS --> MG["SC-02-007 미션 안내"]
   MG -->|"시작 (새 시도 또는 이어하기)"| W["SC-02-008 답변 작성<br/>/student/attempts/{id}"]

@@ -1,6 +1,6 @@
 package com.sagomungchi.learning.judgment.domain
 
-import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning._common.exception.DomainException
 import com.sagomungchi.learning._common.exception.ErrorKind
 import java.time.Duration
 import java.time.Instant
@@ -77,13 +77,16 @@ class Judgment(
     /** 전이 검사: 처리 중(RUNNING)인 판정만 끝내거나 실패로 기록 (state-diagram 1.3 불허 시 409) */
     private fun requireRunning() {
         if (status != ProcessStatus.RUNNING) {
-            throw BusinessException(ErrorKind.CONFLICT, "JUDGMENT_STATE_CONFLICT", "판정 상태 충돌", "처리 중인 판정이 아님: $status")
+            throw DomainException(ErrorKind.CONFLICT, "JUDGMENT_STATE_CONFLICT", "판정 상태 충돌", "처리 중인 판정이 아님: $status")
         }
     }
 
     companion object {
         /** [P12] 리스 90초: core→learning 피드백 80초보다 길게 (state-diagram 3.3) */
         val LEASE: Duration = Duration.ofSeconds(90)
+
+        /** 리스가 끝난 채 남은 RUNNING을 주기 탐지가 실패로 기록할 때의 실패 코드 (state-diagram 3.3, #241) */
+        const val LEASE_EXPIRED = "LEASE_EXPIRED"
     }
 }
 

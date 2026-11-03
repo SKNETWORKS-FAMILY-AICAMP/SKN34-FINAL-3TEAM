@@ -36,6 +36,7 @@ interface JudgmentMapper {
     ): Int
     fun insertElements(@Param("judgmentId") judgmentId: UUID, @Param("elements") elements: List<JudgmentElement>): Int
     fun fail(@Param("judgment") judgment: Judgment, @Param("leaseUntil") leaseUntil: Instant): Int
+    fun failExpired(@Param("now") now: Instant, @Param("code") code: String): List<UUID>
     fun findStored(@Param("attemptId") attemptId: UUID?, @Param("answerId") answerId: UUID?): List<StoredJudgment>
     fun findStoredElements(@Param("attemptId") attemptId: UUID?, @Param("answerId") answerId: UUID?): List<StoredElement>
     fun findSupportTarget(@Param("type") type: SupportTargetType, @Param("id") id: UUID): SupportTarget?

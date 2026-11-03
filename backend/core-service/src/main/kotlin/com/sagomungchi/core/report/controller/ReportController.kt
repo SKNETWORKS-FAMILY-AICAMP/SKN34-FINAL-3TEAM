@@ -1,6 +1,6 @@
 package com.sagomungchi.core.report.controller
 
-import com.sagomungchi.core.account.controller.AuthController
+import com.sagomungchi.core._common.security.RequestAttributes
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core.report.domain.ReportJobStatus
 import com.sagomungchi.core.report.service.ReportJobService
@@ -27,5 +27,5 @@ class ReportController(private val query: ReportQueryService, private val jobs: 
     @PostMapping("/api/v1/reports/{reportId}/regenerate")
     @ResponseStatus(HttpStatus.ACCEPTED)
     fun regenerate(@PathVariable reportId: UUID, request: HttpServletRequest) = jobs.regenerate(reportId,
-        request.getAttribute(AuthController.IDENTITY) as AuthenticatedAccount)
+        request.getAttribute(RequestAttributes.IDENTITY) as AuthenticatedAccount)
 }

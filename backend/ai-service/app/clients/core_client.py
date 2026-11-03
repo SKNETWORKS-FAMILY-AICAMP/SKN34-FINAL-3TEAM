@@ -2,7 +2,7 @@
 
 import httpx
 
-from app.versions import ActiveSnapshot, ActiveVersionItem
+from app.prompt_versions.models import ActiveSnapshot, ActiveVersionItem
 
 
 class CoreClient:
