@@ -108,6 +108,7 @@
 | `STUDENT_RECORDS_PRIVATE` / `STUDENT_UNAVAILABLE` / `STUDENT_DELETED` | 403 / 409 / 409 | 학생이 학부모 공개를 끈 기록·비교 조회(#206) / 학생 삭제 진행·비활성(꾸미기·공개 설정·리포트 설정 내부 조회) / 삭제 차단된 학생의 리포트 생성(관리자 재처리) |
 | `INVALID_TEMPLATE_SETTINGS` / `TEMPLATE_PROPOSAL_EXPIRED` | 400 / 409 | 리포트 표시 설정 값 오류 / 다른 대화·만료·덮어쓴 변경안 확정, 설정 revision 변경 (#209) |
 | `ANALYSIS_IN_PROGRESS` / `EVIDENCE_UNAVAILABLE` / `AI_INVALID_RESPONSE` | 409 / 410 / 502 | 같은 대화에서 분석 생성 중 / 삭제된 분석 근거 / ai 응답 형식 오류 (2.4) |
+| `ANALYSIS_FIRST_RESPONSE_TIMEOUT` / `ANALYSIS_TIMEOUT` / `ANALYSIS_FAILED` | 504 / 504 / 502 | 분석 대화 SSE `error` 이벤트 전용: ai 첫 이벤트 20초 안에 없음 / 전체 120초 초과 / 원인 코드가 없는 처리 실패(원래 오류 상태가 있으면 그 상태). `retryable: true`, 메시지는 FAILED로 저장 (3.3) |
 | `REPORT_PREMIUM_REQUIRED` / `REPORT_JOB_IDENTITY_MISMATCH` | 403 / 409 | 무료 이용권에서 프리미엄 리포트 항목 요청 / report 복구 응답의 작업 식별자 불일치 (5.9) |
 | `SUPPORT_STATE_CONFLICT` / `CORRECTION_TARGET_UNSUPPORTED` | 409 / 422 | 신고·문의 처리 상태 전이 위반·완료 답변 변경 / 정정할 수 없는 신고 대상 (5.7) |
 | `CORRECTION_REPORT_CONFLICT` / `JUDGMENT_STATE_CONFLICT` | 409 | learning: 같은 신고로 이미 정정함 / 판정 처리 상태 충돌 (5.7) |
