@@ -196,10 +196,14 @@ test('관리자 재처리 키 유지·자녀 정보 수정은 재확인 헤더 �
 test('SSE 실패 재시도 경로·임시 출력 폐기·AbortSignal 전달', async (t) => {
   const states: StreamState[] = []
   let url = '',
-    signal: AbortSignal | undefined
+    signal: AbortSignal | undefined,
+    sentBody: BodyInit | null | undefined,
+    sentHeaders: Headers | undefined
   t.mock.method(globalThis, 'fetch', async (path: string, init: RequestInit) => {
     url = path
     signal = init.signal as AbortSignal
+    sentBody = init.body
+    sentHeaders = new Headers(init.headers)
     return new Response(
       'event: delta\ndata: {"text":"임시"}\n\nevent: error\ndata: {"status":503,"code":"VERIFICATION_FAILED","title":"대조 실패","retryable":true}\n\nevent: done\ndata: {}\n\n',
       { headers: { 'Content-Type': 'text/event-stream' } },
@@ -211,6 +215,8 @@ test('SSE 실패 재시도 경로·임시 출력 폐기·AbortSignal 전달', as
   )
   assert.equal(url, '/api/v1/conversations/c1/messages/msg1/retry')
   assert.equal(signal, controller.signal)
+  assert.equal(sentBody, undefined) // 재시도는 서버에 저장된 원래 질문·범위를 사용한다.
+  assert.equal(sentHeaders?.get('Content-Type'), null)
   assert.equal(states.at(-1)?.temporary, '')
   assert.equal(states.at(-1)?.result, undefined)
 })
