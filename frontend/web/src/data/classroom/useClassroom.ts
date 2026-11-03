@@ -11,6 +11,7 @@ import type {
   Reflection,
   Report,
 } from '../../domain/classroom.ts'
+import { unlockParentSession } from '../apiClient.ts'
 import { createApiGateway } from './apiGateway.ts'
 import { getThinkingActivities, saveReflection } from './learningApi.ts'
 import { demoEmailLogin } from './demoLogin.ts'
@@ -47,7 +48,15 @@ export function useAuthentication() {
     mutationFn: (child: Child) => gateway.enterStudent(child),
     onSuccess: () => cache.clear(),
   })
-  return { login, logout, enter }
+  // 학생 화면 → 학부모 화면: 보호자 비밀번호로 잠긴 학부모 세션을 풀고 /me로 세션을 다시 읽는다.
+  const unlock = useMutation({
+    mutationFn: async (password: string) => {
+      await unlockParentSession(password)
+      return restoreSession(true)
+    },
+    onSuccess: () => cache.clear(),
+  })
+  return { login, logout, enter, unlock }
 }
 export function useMockInvalidation() {
   const cache = useQueryClient()

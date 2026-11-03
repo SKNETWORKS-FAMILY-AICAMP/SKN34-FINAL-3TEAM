@@ -1,5 +1,31 @@
 # 인증·계정 (#36·#37·#45·#58, P01 개정)
 
+## 동석 학습 뒤 보호자 비밀번호로 학부모 화면 복귀 (2026-11-03)
+
+### 배경
+- 팀 피드백: 학부모가 "이 자녀로 학습 시작"을 누르면 학부모 화면이 사라지고, 학습 뒤 학부모 화면으로 돌아가려면 Google 로그인을 다시 해야 했다. core가 학부모 세션 자체를 학생 세션으로 바꾸고 학부모 refresh 쿠키를 지웠기 때문이다(FN-ACC-05 "학부모 화면 전환 시 학부모 로그인 필요").
+- 새 창으로 열어 학부모 세션을 그대로 두는 방식은 같은 기기에서 아이가 학부모 탭으로 바로 넘어갈 수 있어, 담당자 결정으로 **학부모 세션은 잠근 채 유지하고 보호자 비밀번호만 입력하면 돌아오는 방식**을 택했다. 학부모 계정은 Google 로그인만 있어 서비스 비밀번호가 없으므로, **보호자 비밀번호를 새로 정하는 방식**(숫자 4~6자리)을 택했다.
+
+### 결정
+- 동석 진입 `POST /auth/student-sessions`는 학부모 세션을 바꾸지 않고 `locked_at`·version 증가로 잠그고, `parent_session_id`를 가진 별도 학생 세션을 만든다. 학부모 refresh 쿠키는 지우지 않는다. 잠긴 동안 `/auth/refresh`는 refresh 토큰을 소비하지 않고 401 `PARENT_SESSION_LOCKED`, 기존 학부모 access는 `SESSION_CHANGED`다. 학생 세션 권한·만료(15분)는 그대로다.
+- 복귀 `POST /auth/parent-unlock {password}`: refresh 쿠키의 잠긴 세션과 보호자 비밀번호를 확인한다. 성공하면 잠금 해제·version 증가, 그 세션에서 들어간 학생 세션 폐기, refresh 회전. 실패 횟수는 오류 전에 커밋하며 5회째부터 423 `GUARDIAN_PASSWORD_LOCKED`, 미설정은 409 `GUARDIAN_PASSWORD_NOT_SET`이다. 이때는 Google 로그인으로 돌아오고, 새 로그인은 이전(잠긴) 세션과 학생 세션을 함께 폐기한다.
+- 보호자 비밀번호는 학생 PIN과 같은 규칙(숫자 4~6자리, 반복·연속 불가)·PBKDF2 해시·5회 잠금을 재사용한다. `GET·PUT /me/guardian-password`, 설정·변경은 기존 Google 재인증에 `GUARDIAN_PASSWORD` 목적을 추가해 1회 소비한다. 저장은 core V24 `guardian_password`(계정당 1행), 탈퇴 요청 시 삭제한다.
+- 웹: 학생 화면의 "학부모 로그인" 버튼은 그대로 로그인 화면으로 가고, 이 탭에서 동석 진입했으면 로그인 화면 위에 "학부모 화면으로 돌아가기"(보호자 비밀번호 입력)를 띄운다. 잠금 여부 표시는 탭의 sessionStorage에 여부만 두며 토큰은 저장하지 않는다. 비밀번호 설정은 "자녀 기기·PIN" 화면의 "보호자 비밀번호" 카드(Google 본인 확인 → 두 번 입력)다.
+
+### API·문서 변경
+- api-spec 1.3 오류 코드 4종, 2.1 표 3행, 5.1 동석 진입·복귀 계약, 5.6 재인증 목적. OpenAPI `/auth/student-sessions`(Bearer만, Set-Cookie 없음)·`/auth/parent-unlock`·`/me/guardian-password`·`GuardianPasswordState`·재인증 목적. 기존 계약 지문 테스트(`test_admin_operations_contract.py`)에는 승인된 변경 필드만 원래 값으로 되돌리는 정규화를 추가했다.
+- functional-spec FN-ACC-05, ERD 3.1.1(`auth_session.locked_at`·`parent_session_id`, `guardian_password`)·3.1.2 재인증 목적·6장 인덱스, GitOps local `migration.revision` v24.
+
+### 검증
+- core: `AccountManagementTest`에 재인증 필요·규칙 422(grant 미소비)·잠금 refresh 거부(토큰 미소비)·틀린 비밀번호 남은 횟수·성공 시 학생 세션 폐기와 refresh 쿠키 회전·5회 잠금·미설정·새 로그인 시 학생 세션 폐기 테스트. `AuthFlowIntegrationTest` 동석 진입 테스트를 잠금·쿠키 유지로 갱신.
+- web: `guardianPassword.test.ts`(잠금 표시·복귀 요청 모양·남은 횟수·잠김/미설정 시 입력 닫기·MSW 전체 흐름), Playwright "동석 학습 뒤 보호자 비밀번호로 Google 로그인 없이 학부모 화면에 돌아온다"(laptop·tablet·compact).
+
+### 한계
+- 같은 기기에서 아이가 보호자 비밀번호를 알면 학부모 화면에 들어갈 수 있다. 비밀번호는 아이가 모르는 값으로 정하도록 안내한다.
+- 학생 화면을 새로고침하거나 학생 access(15분)가 만료되면 기존처럼 학생 진입 화면으로 간다. 학부모는 로그인 화면의 보호자 비밀번호로 돌아올 수 있다(같은 탭).
+- 다른 탭에 열려 있던 학부모 화면은 잠금 동안 쓸 수 없고 로그인·학생 진입 화면으로 이동한다. 보호자 비밀번호 입력은 동석 진입한 탭의 로그인 화면에서 보인다.
+- 실서버 모드 브라우저 확인은 하지 않았다(MSW·core 통합 테스트 기준).
+
 ## 학생 전역 학부모 공개 설정 (#206, 2026-11-01)
 
 - 사용자 확정: **비공개로 시작하고 학생이 공개를 선택**합니다. core V21은 기존/신규 학생 모두 `parent_sharing_enabled NOT NULL DEFAULT false`를 적용합니다. `StudentLearningContext`의 기존 조회 계층을 재사용하며, 공개 상태를 추정하는 프론트 전용 필드는 만들지 않습니다.

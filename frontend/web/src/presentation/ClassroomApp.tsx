@@ -43,6 +43,7 @@ import { StudentWorkPage } from './student/StudentWorkPage.tsx'
 import { ParentAnalysis, ParentReport } from './parent/ParentFeatures.tsx'
 import './classroom.css'
 import { QueryStateNotice } from './common/QueryStateNotice.tsx'
+import { ParentUnlock } from './auth/ParentUnlock.tsx'
 
 const { recentPeriod, previousWeek } = displayPeriods
 type Page = 'home' | 'journal' | 'missions' | 'report' | 'analysis' | 'activities' | 'settings'
@@ -250,6 +251,12 @@ export function ClassroomApp() {
                   : 'Google 계정으로 로그인하고 자녀를 등록해 주세요.'}
               </p>
             </div>
+            <div className="ux-login-forms">
+            <ParentUnlock onUnlocked={(next) => {
+              setSession(next)
+              setSelected('')
+              navigate(roleStart(next.role), { replace: true })
+            }} />
             {!isDemo ? (
               <section className="ux-login-form">
                 <h2>학부모·관리자 로그인</h2>
@@ -312,6 +319,7 @@ export function ClassroomApp() {
                 </small>
               )}
             </form>}
+            </div>
           </main>
         ) : session.role === 'ADMIN' ? (
           <main className="cj-sheet">
