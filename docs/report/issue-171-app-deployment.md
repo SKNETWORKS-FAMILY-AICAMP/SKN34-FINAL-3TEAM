@@ -280,8 +280,8 @@ kind/GitOps local values가 `compose.yaml`보다 적어 클러스터에서 Googl
 | egress | core → Google OAuth·토스 API 응답 수신, ai → OpenAI 응답 수신(인증 없이 401). learning의 외부 443과 core의 외부 80은 시간 초과로 차단 |
 | Google 로그인 | 학부모 로그인·동의·자녀 등록, PIN 변경용 Google 재인증 콜백 VERIFIED |
 | LLM 판정 | 초3 서술형 미션 답변 3건 모두 `method=LLM`·`gpt-6.1-terra`·`judge@2`, `DONE`(CORRECT·RETHINK·PARTIAL), 실패 코드 없음. core `llm_usage`에 JUDGMENT·FOLLOWUP 호출이 성공으로 기록 |
-| 토스 결제 승인 | 미확인. 아래 참고 |
+| 토스 결제 승인 | 학부모 프리미엄(14,900원) 테스트 결제 승인. 주문·결제·시도 `APPROVED`, 이용권 `APPLIED`, 구독 `ACTIVE`(PREMIUM, 2026-11-03~12-03) |
 
-토스: 처음 넣은 키가 공식 문서의 공용 예시 키(`test_gck_docs_`·`test_gsk_docs_`)여서 결제창은 열렸지만 core의 승인 재조회에 토스가 `NOT_FOUND_MERCHANT`를 반환해 `PAYMENT_PG_MISMATCH`가 됐다. 담당자 계정의 키는 API 개별 연동 키(`test_ck_`·`test_sk_`)뿐이었고, 그 시크릿 키는 kind 밖에서 없는 주문 조회에 `NOT_FOUND_PAYMENT`로 정상 인증됐다. 일반 결제 화면은 결제위젯(`widgets()`)이라 `test_gck_`·`test_gsk_` 키가 필요하며, 공식 안내상 전자결제 신청 전에는 보이지 않는다. 위젯 키를 확보하면 같은 절차로 결제 승인 1회를 확인한다.
+토스: 결제위젯 키(`test_gck_`·`test_gsk_`)는 공식 안내상 전자결제 신청 이후에만 개발자센터에 보이고, 신청 전에는 문서의 테스트 키로 연동하도록 되어 있다. 담당자 계정에는 API 개별 연동 키(`test_ck_`·`test_sk_`)만 있어 문서 테스트 키(`test_gck_docs_`·`test_gsk_docs_`)를 사용했다. 이 키의 결제는 공용 문서 상점 `tgen_docs`에 기록된다. 첫 결제는 `TOSS_TEST_MID`가 다른 값이어서 core의 MID 대조에서 `PAYMENT_PG_MISMATCH`가 됐고(토스 결제 키 조회로는 `DONE`·`mId=tgen_docs` 확인), `TOSS_TEST_MID=tgen_docs`로 바꾼 뒤 새 결제가 승인됐다. 문서 테스트 키는 주문번호 조회(`GET /v1/payments/orders/{orderId}`)에 `NOT_FOUND_MERCHANT`를 반환하므로 "결제 상태 다시 확인"·복구·관리자 대조처럼 이 조회를 쓰는 경로는 이 키로 검증할 수 없다. 그래서 확인 중으로 남은 첫 주문은 kind DB에서만 FAILED로 정리해 같은 자녀의 새 결제 차단을 풀었다. 웹훅·빌링·환불은 확인 범위 밖이다.
 
 사용성 관찰(#236 범위 밖): Google 재인증 팝업은 콜백 JSON만 보여 주고 원래 화면으로 돌아오지 않는다. 같은 콜백 주소를 다시 열면 403 `REAUTH_REQUIRED`가 된다. 학생 기기 등록에서 기기 이름이 비어 있으면 어느 칸인지 없이 `VALIDATION_FAILED`만 보인다. 관측 chart를 설치하지 않은 환경에서는 core·learning Java agent가 Collector 주소를 찾지 못한다는 경고를 남기지만 앱 동작에는 영향이 없다.
