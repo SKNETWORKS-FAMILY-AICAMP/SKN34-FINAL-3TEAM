@@ -570,7 +570,7 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 5장과 같이 
 | learning-service | 동일 | 통과. 290건(10분) |
 | web | `npm ci` → `npm run lint` → `npm test` → `npm run test:types` → `npm run build` → `npm run test:browser` | 통과. lint 경고 1건(B23), 단위 209건, 타입 검사·빌드 통과(500 kB 경고 없음), 브라우저 24건 |
 | web 운영 산출물 | `node tests/production-mocks.mjs` | 통과 |
-| web 수동 브라우저 | `VITE_API_MOCK=true` 개발 서버 + `node tests/requirements-browser.mjs` | 실패(B43, 5.6 계정 단계와 같은 지점) |
+| web 수동 브라우저 | `VITE_API_MOCK=true` 개발 서버 + `node tests/requirements-browser.mjs` | 실패(B43, 5.6 계정 단계와 같은 지점). #318 이후 통과(9단계) |
 | 루트 계약 테스트 | PyYAML 6.0.3·jsonschema 4.26.0, `python -O -m unittest discover -s scripts/tests` | 통과. 100건(69초) |
 | DB 마이그레이션 | 임시 `postgres:17.11-alpine`에서 `check_db_migrations.py`·`check_policy_migrations.py` | 통과. core 48/441, learning 19/162, report 8/63(테이블/컬럼), 위반 입력 71건, CHECK 값 79종, 인덱스 37개, 재실행·Alembic 왕복(41초). 정책 마이그레이션 통과(133초) |
 | GitOps | `ci-gitops.yml`과 같은 local 환경별 `helm lint --strict`·`helm template`(Kubernetes 1.35.8) | 통과(8개 release). kubeconform은 원격 스키마 카탈로그가 필요해 미실행(develop CI 통과) |
@@ -622,7 +622,7 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 5장과 같이 
 | B40 | 결함(낮음) | `PUT /me/guardian-password`가 비밀번호 규칙 검사(422)를 역할 확인(403)보다 먼저 수행(#277과 같은 유형). core `GuardianPasswordService.kt:28-30` | 이슈 #310 |
 | B41 | 설정(낮음) | ai #69 설정(`M2_CROSS_CHECK_ENABLED`·`M1_CHECK_ENABLED`·M2 임계값·`M1_MIN_CONFIDENCE`·`JUDGE_DEADLINE`·`SCORING_TIMEOUT`·`SCORING_RESERVE`)이 compose·`.env.example`·GitOps 어디에도 없어 `.env`로 켤 수 없음. GitOps local core `APP_GUARDIAN_TRANSFER_ENABLED`·scoring `M2_CONTENT3_RULE_ENABLED` 없음(compose·`.env.example`에는 있음, 기본 false). `compose.transfer-local.yaml`은 scoring을 끄지만 ai `SCORING_URL`은 유지. ai `config.py:47-58` | 이슈 #312 |
 | B42 | 결함(낮음) | #199 평가 러너 `evaluatedScopes`가 M2 모델 scope(`judgment/grade-N/{type}`, api-spec 4.3.1)인데 평가 대상은 LLM 판정 프롬프트(scope `ai/judgment`, api-spec 4.2). 산출 `evaluation`으로 PROMPT 등록 후 `ai/judgment` 활성화 시 core `evidence.covers` 실패 400. `evaluation/runners/judgment_eval.py:60-62,267`, core `ModelVersionService.kt:46` | 이슈 #313 |
-| B43 | 테스트(낮음) | `tests/requirements-browser.mjs`가 목업 자녀 별명과 같은 `서윤`을 입력해 저장 성공 문구를 기다림. 화면은 "바뀐 내용이 없습니다." 표시 후 15초 시간 초과(`requirements-browser.mjs:44-46`, `AccountForms.tsx:285-293`) | 이슈 #318 |
+| B43 | 테스트(낮음) | `tests/requirements-browser.mjs`가 목업 자녀 별명과 같은 `서윤`을 입력해 저장 성공 문구를 기다림. 화면은 "바뀐 내용이 없습니다." 표시 후 15초 시간 초과(`requirements-browser.mjs:44-46`, `AccountForms.tsx:285-293`) | #318 해결: 새 별명 `서윤이`로 저장 성공 경로를 확인하고 삭제 확인 별명도 같은 값 사용. 끝까지 실행하며 드러난 후속 실패도 정리: 관리자 메뉴 링크의 기간 쿼리(`/admin/support?from=…`)를 링크 선택에 허용, 관리자 화면에 `/review` 링크가 없어 링크가 없으면 새로고침 없이 앱 안에서 이동(목업 상태 유지), 시연 로그인 후 화면 이동을 기다려 다음 이동이 덮어써지지 않게 함, 문의 답변 단계를 현재 화면 문구(`문의 답변과 공지 관리`·`문의 선택`·`답변 저장`)에 맞춤. `VITE_API_MOCK=true` 개발 서버에서 9단계 모두 통과 |
 | C45 | 코드↔문서 | #289 오류 코드 6종(`TRANSFER_PENDING`·`TRANSFER_ALREADY_RESOLVED`·`TRANSFER_CHILD_UNAVAILABLE`·`TRANSFER_RECIPIENT_NOT_FOUND`·`TRANSFER_ACTIVITY_IN_PROGRESS`·`TRANSFER_PAYMENT_BLOCKED`)이 api-spec 1.3·OpenAPI 응답 설명에 없음. 탈퇴·연결 해제·삭제 요청 행에 `TRANSFER_PENDING` 409 미기재 | 이슈 #308 |
 | C46 | 코드↔문서 | 이관 7개 경로가 api-spec 2.1 표에 없음(본문 서술만). OpenAPI는 "격리된 로컬 이관 실험", api-spec은 구현 계약으로 기술. api-spec 1.5 상태 값에 이관 상태 없음 | 이슈 #308 |
 | C47 | 코드↔문서 | api-spec 재인증 purpose 목록(1041행)에 `CHILD_TRANSFER`·`TRANSFER_ACCEPT` 없음(코드·OpenAPI·ERD는 7종) | 이슈 #308 |
