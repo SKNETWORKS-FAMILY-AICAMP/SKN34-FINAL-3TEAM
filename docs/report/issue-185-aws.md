@@ -183,3 +183,10 @@
 - PR #320·#321·#322를 develop ef79289에 로컬 merge한 트리로 core·core-migrate 이미지와 웹을 빌드했다(push 없음). core jar의 `new-account-demo`·이용권 API·V26, core-migrate의 V1~V26, 웹의 공개 클라이언트 키 포함과 시크릿 키 형태 문자열 부재를 확인했다.
 - V26(보호자 이관)은 unique index·CHECK 제약을 추가하므로 [사전 점검 SQL](../../infrastructure/aws/check-v26-preconditions.sql)을 만들었다. 로컬 PostgreSQL에 V25까지 적용한 스키마에서 위반 0·최신 25로 동작을 확인했고, 실제 RDS에서는 배포 직전에 실행한다. 이관 기능은 `app.guardian-transfer.enabled`가 없으면 로드되지 않는다.
 - ESO 결제 정책 추가는 세션 권한 규칙상 작업자가 직접 실행한다. 재배포 절차는 [prod README](../../infrastructure/gitops/environments/prod/README.md#다음-core웹-재배포-절차-320321322-병합-후)에 정리했다.
+
+## 부모 리포트 다운로드 실제 확인 (2026-11-04)
+
+- 학생이 원문 비공개일 때 부모 화면의 PDF·Markdown 버튼이 비활성이고 "원문 비공개 중에는 기존 파일을 제공하지 않습니다" 안내가 표시됨을 CloudFront 실제 화면에서 확인했다(`parentSharingEnabled=false`).
+- 학생 화면에서 "학부모님께 공개할게요"로 바꾼 뒤 부모 계정으로 주간 리포트 2판(2026-11-02~11-08)의 **PDF·Markdown을 실제로 내려받았다.** 부모 서명 URL 다운로드 경로가 동작한다.
+- 내려받은 PDF는 2쪽이며 Markdown과 내용이 같다: 수치 3개(표본 부족이라 비율 대신 개수, 분자/분모 3/3), 생각 유형 5개, 전후 변화 수치, 돌아보기 3건. 2판은 비공개 상태에서 생성됐으므로 원문 자리는 "원문 비공개"로 남아 있다. 파일은 생성 시점의 공개 범위를 따르며, 공개 후 원문이 들어간 파일을 보려면 새 판 생성(학부모 재생성 한도 사용)이 필요하다. 재생성은 하지 않았다.
+- 확인 후 공개 설정은 사용자가 원래대로(비공개) 되돌리기로 했다.
