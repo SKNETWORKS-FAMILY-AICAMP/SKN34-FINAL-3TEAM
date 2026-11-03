@@ -49,7 +49,7 @@ class AuthService(
         val now = now()
         var account = repository.googleAccount(profile.subject)
         if (account == null) {
-            repository.insertAccount(AuthAccount(UUID.randomUUID(), "PARENT", profile.email, profile.name, "ACTIVE", profile.subject), now)
+            repository.insertAccount(AuthAccount(UUID.randomUUID(), "PARENT", profile.email, profile.name, "ACTIVE", profile.subject), now, properties.newAccountDemo)
             account = repository.googleAccount(profile.subject)
                 ?: throw BusinessException(HttpStatus.CONFLICT, "ACCOUNT_EXISTS", "같은 이메일의 기존 계정은 자동 연결하지 않습니다.")
         }
