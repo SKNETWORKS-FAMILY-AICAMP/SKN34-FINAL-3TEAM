@@ -830,18 +830,19 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 ### 4.3 scoring-service (호출: ai)
 
-#### 4.3.1 #87 M2 확정 계약 (2026-10-29 담당자 답변 반영)
+#### 4.3.1 #228 M2 확정 계약 (2026-11-02 담당자 답변 반영)
 
-- `POST /internal/m2/scores`: `{prompt:string, text:string, grade:integer(3~6), inputType:"NARRATIVE"|"ESSAY", keywords:string[]}`. keywords 생략은 빈 배열. 문자열은 공백만 허용하지 않는다. 요청 보호 한도는 prompt 10,000자, text 50,000자, keywords 100개·각 200자이다.
-- learning은 관리자가 입력한 `rubric_version.keywords`(문자열 배열, 서술형 전용)와 `mission_version.question`을 AI의 `keywords`·`question`으로 전달하고, AI는 question을 scoring의 prompt로 매핑한다. 이 저장 컬럼·관리자 입력·learning DTO·AI 연결은 **후속 서비스 변경 필요**이며 #87 scoring 구현이 제공했다고 해석하지 않는다.
-- 모델 이름은 `NARRATIVE → m2-klue-narrative`, `ESSAY → m2-klue-essay`. 초3·4, 미활성 모델, 승인 scope 밖, 핵심어 없는 서술형은 **200 `{active:false}`**. 논술형은 핵심어를 사용하지 않는다.
-- 승인 scope는 기존 core 논리 키 형식에 맞춘 `judgment/grade-{grade}/{narrative|essay}`의 **정확한 일치**로 검사한다. 학생 권한 헤더와 모델 승인 scope는 다른 개념이다. 문항별 승인 제한이 필요한 경우 현재 요청에는 문항 ID가 없으므로 별도 계약 확장 전에는 그 모델을 넓은 학년 scope로 승인하지 않는다.
-- 성공 응답: `{active:true, inputType, scores:{hol,task_1,content_1,content_2,content_3,organization_1,organization_2,expression_1,expression_2}, rawScores:{동일한 9개 키}, model:{name,version,revision}}`. scores.hol은 1~4 정수, 나머지는 1~5 정수. rawScores는 변환 전 유한 소수값이며 범위 자르지 않는다. 원점수 저장은 소비 측 `judgment.model_scores` 연결이 필요하다(scoring은 무상태).
-- 받은 회귀 2.0은 train_info의 max_length·with_keyword와 score_cuts.json을 사용한다. 학습 입력은 `[학년] 초N [지시문] ...` + 서술형일 때 ` [핵심어] `와 쉼표로 결합한 핵심어, 두 번째 문장은 학생 글이다. `truncation=only_second`, token_type_ids 제외. 컷 경계와 같으면 위 점수로 변환한다. 서술형 content_3도 **모델 점수**를 쓰며 예전 핵심어 개수 규칙으로 대체하지 않는다(수빈님 답변). 메타데이터·컷이 잘못되면 반올림으로 대체하지 않고 실패한다.
-- 401 내부 토큰 오류, 400 요청/첫 문장 토큰 길이 오류, 503 `SCORING_UNAVAILABLE` 모델 설정·추론 장애 또는 처리 용량 초과. AI는 장애·시간 초과를 판정 처리 실패로 다루며 active:false로 바꾸거나 재시도하지 않는다(태윤님 답변). learning→AI 35초는 전체 예산으로, M2 단독 지연 측정과 구분한다.
-- 사용량은 실제 추론 시도 후 성공/실패 모두 best-effort 발행한다. 토큰 수 null, model=`name@version`, 학생 원문·ID·핵심어 없음. 비활성 응답은 추론하지 않아 사용량 이벤트를 만들지 않는다.
+- `POST /internal/m2/scores`: `{prompt:string, text:string, grade:integer(3~6), inputType:"NARRATIVE"|"ESSAY", keywords:string[], essayType?:string}`. keywords 생략은 빈 배열. ESSAY에는 essayType(설명글·글짓기·주장·찬성반대·대안제시)이 필수다. prompt는 기존 요청 호환을 위해 유지하지만 새 모델 입력에는 넣지 않는다. prompt 10,000자, text 50,000자, keywords 100개·각 200자이며 공백만 있는 문자열은 거부한다.
+- 서술 `m2-klue-narrative` 3.0은 초5·6, 논술 `m2-klue-essay` 3.1은 초4·5·6을 지원한다. 지원 학년 밖·미활성·승인 scope 밖·핵심어 없는 서술은 200 `{active:false}`. 논술은 핵심어를 사용하지 않는다.
+- 승인 scope는 `judgment/grade-{grade}/{narrative|essay}` 정확 일치. 로컬 검증 승인은 운영 품질 승인으로 간주하지 않는다.
+- 성공 응답은 `{active:true,inputType,scores,rawScores,model:{name,version,revision}}`. 서술의 두 점수 객체는 기존 9개 키(hol·task_1·content_1~3·organization_1~2·expression_1~2), 정수 hol 1~4·나머지 1~5를 유지한다. 논술 3.1은 두 객체 모두 `{org,cont,exp}`(구성·내용·표현)이며 scores는 0~3 정수다. rawScores는 유한 소수 원점수를 반올림하거나 범위로 자르지 않고 그대로 전달한다. 논술 학습 목표 범위는 0~3이나 회귀 예측의 범위 초과도 보존한다. 14출력 중 앞 3개만 반환하고 뒤 11개는 노출하지 않는다.
+- 점수 변환은 score_cuts.json의 경계에 `bisect_right` 적용: 서술은 +1, 논술은 +0. 경계와 같으면 위 점수다. 논술 경계는 담당자가 제공한 임시 기준으로, 업데이트 시 파일 교체와 재검증이 필요하다. 화면에 정수/소수 중 무엇을 표시할지는 소비 측 결정이다.
+- 새 서술 입력은 `[학년] 초N [핵심어] ` + `", ".join(keywords)`, 논술은 `[학년] 초N [글 종류] {essayType}`. 두 번째 문장은 text다. train_info의 no_prompt·max_length와 체크포인트 구조를 검증하며 truncation=only_second, token_type_ids 제외를 유지한다. 기존 2.0 rollback 호환 시에는 기존 지시문 입력·9항목 응답을 유지하고 논술 4학년은 비활성이다.
+- 모델 파일은 버전 폴더 바로 아래 config.json·model.safetensors·tokenizer.json·tokenizer_config.json·train_info.json·score_cuts.json 6개다. 로더는 서술 9출력, essay545 논술 14출력과 메타데이터·경계 형식을 검사한다. 잘못된 파일은 반올림이나 임의값으로 대체하지 않는다. 새 모델 호환 코드 배포 전에 core 활성화하지 않는다.
+- learning→AI의 핵심어·essayType 전달 및 구조화 논술 답변을 text로 합치는 규칙은 #69 소비 측 연동 범위다. scoring은 전달받은 text를 그대로 사용하며 이 변경으로 전체 판정 연동을 완료했다고 간주하지 않는다.
+- 내부 토큰 오류 401, 요청/첫 문장 토큰 길이 오류 400, 모델 설정·추론·처리 용량 장애 503 SCORING_UNAVAILABLE. 장애를 active:false로 바꾸지 않는다. 사용량은 추론 성공/실패 후 best-effort 발행하며 원문·학생 ID·핵심어를 넣지 않는다. 비활성 시 추론·사용량 발행 없음.
 
-구현된 내부 API 계약은 [contracts/openapi/scoring-service.yaml](../../contracts/openapi/scoring-service.yaml)에 기록한다. #85 버전 조회, #87 M2 점수, #88 M1 비활성 계약을 구현했다. M1은 미학습 상태로 활성 추론을 제공하지 않는다. 계약 테스트가 실제 FastAPI 경로·응답 스키마와 대조한다.
+구현 계약은 [scoring OpenAPI](../../contracts/openapi/scoring-service.yaml), 변경·검증 기록은 [#228](../report/issue-228-m2-model-compat.md)을 따른다.
 
 #### 4.3.2 #88 M1 미학습 상태의 구현 계약
 
@@ -853,7 +854,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 | Method | Path | 설명 |
 |---|---|---|
-| POST | `/internal/m2/scores` | `{prompt, text, grade, inputType, keywords}` → 총점 1~4점·8개 항목 1~5점·버전 (활성 범위 밖이면 `{active:false}`). `inputType`(`NARRATIVE`·`ESSAY`)으로 모델 선택(`m2-klue-narrative`·`m2-klue-essay`). `grade`(3~6)는 scoring이 `초{grade}`로 바꿔 모델 입력에 사용, 학습 데이터 학년(초5·6) 밖은 활성 범위 밖 |
+| POST | `/internal/m2/scores` | 위 #228 계약. 서술 9항목·논술 3영역의 정수/소수 점수와 실제 모델 버전 반환 |
 | POST | `/internal/m1/checks` | `{problem, answerKey, solution:{steps,finalAnswer}}` → 현재 미학습이므로 `{active:false}`. 활성 추론·확신도 처리는 후속 범위(P15) |
 | GET | `/internal/versions` | 로딩 완료한 활성 모델 `{items:[{name,version,revision}]}`. name 순 정렬, 없으면 `{items:[]}`. 내부 토큰 필수 |
 
