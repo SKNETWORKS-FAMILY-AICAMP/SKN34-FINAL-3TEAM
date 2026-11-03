@@ -67,7 +67,9 @@ NetworkPolicy는 기존 chart 정책과 **합집합**으로 동작한다. 정책
 - ESO 역할 권한: [`external-secrets-role.inline.external-secrets-payment-read.json`](../../../aws/iam/external-secrets-role.inline.external-secrets-payment-read.json)을 `sagomungchi-demo-external-secrets-role` inline 정책 `sagomungchi-demo-external-secrets-payment-read`로 추가하고 `demo-stack.json`에 등록한다.
 - 토스 개발자센터 웹훅 URL: `https://d3jf0rnm6vhd9v.cloudfront.net/api/v1/webhooks/tosspayments`. core egress는 이미 외부 443을 허용한다.
 
-적용 순서: Secret 값 입력(담당자) → IAM inline 정책 → ExternalSecret 적용·Ready 확인 → `core-service.json` env 추가와 새 core digest → `redeploy-app.ps1` dry-run → `-Apply` → 테스트 결제·`audit-demo-data.sql` 재확인.
+2026-11-04 Secret은 공용 문서 테스트 키(`TOSS_TEST_SECRET_KEY`·`TOSS_TEST_MID`)와 `PAYMENT_BILLING_ENCRYPTION_KEY` 3개로 생성했다. 빌링·웹훅 키는 실제 상점 계약 전까지 비어 있다. 웹 빌드에는 공개 클라이언트 키 `TOSSPAYMENTS_CLIENT_KEY`가 필요하다.
+
+적용 순서: IAM inline 정책 → ExternalSecret 적용·Ready 확인 → `core-service.json` env 추가와 새 core digest → `redeploy-app.ps1` dry-run → `-Apply` → 테스트 결제·`audit-demo-data.sql` 재확인.
 
 ## 보존과 환경 경계
 

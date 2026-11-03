@@ -175,4 +175,5 @@
 - **신규 Google 가입자 demo 표시:** `feature/demo-signup-flag`(5538173)에 `AUTH_NEW_ACCOUNT_DEMO`(기본 false)를 추가했다. true인 환경에서만 새 Google 부모를 `is_demo=true`로 저장하고 기존 계정은 바꾸지 않는다. 학생은 기존처럼 부모 값을 따른다. JDK 21 컨테이너의 Testcontainers로 관련 테스트 27개(신규 1개 포함)가 통과했다. AWS 반영은 core 재빌드가 필요하며, 현재 배포 core의 미커밋 이용권 수정이 정리된 뒤 진행한다.
 - **토스 테스트 결제:** 저장소 입력만 준비했다([prod README](../../infrastructure/gitops/environments/prod/README.md#다음-core-재배포-입력-토스신규-가입자-demo-185-미적용)). Secret 값 입력 전이라 AWS·클러스터에는 적용하지 않았다.
 - **eksctl 검증:** eksctl 0.231.0 공식 배포 파일을 checksum으로 확인하고, `render-eksctl` 결과로 `eksctl create cluster --dry-run`을 실제 계정에 실행해 exit 0을 확인했다. 정규화된 출력에 버전 1.35, add-on 6개 버전, Pod Identity 7개, 노드그룹 t3.medium 3/3/3·20GiB·private, 서비스 역할·노드 역할, VPC·subnet 4개가 그대로 유지됐다. dry-run은 자원을 만들지 않는다.
-- 남은 사용자 작업: 결제 Secret 값 입력, 부모 계정 다운로드 확인, 이용권 수정 정리. core-migrate 재빌드와 시연 데이터 재감사는 그 다음 순서다.
+- **결제 Secret (2026-11-04 01:47 KST):** 사용자가 로컬 `.env`의 공용 문서 테스트 키(`test_gsk_docs_`, MID `tgen_docs`)와 빌링 암호화 키로 `sagomungchi/demo/app/payment`를 직접 생성했다(값 비출력). `demo-stack.json`에 추가했고 `plan` 56/56 일치. 공용 키라 일반 결제 승인만 시연 가능하고 빌링·웹훅·주문 조회 복구는 실제 상점 계약 전까지 미검증이다. ESO 권한·ExternalSecret·core env는 다음 core 재배포 때 적용하며, 웹 재빌드에는 공개 클라이언트 키 `TOSSPAYMENTS_CLIENT_KEY`(`test_gck_docs_`)가 필요하다.
+- 남은 사용자 작업: 부모 계정 다운로드 확인, 이용권 수정 정리. core-migrate 재빌드와 시연 데이터 재감사는 그 다음 순서다.

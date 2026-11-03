@@ -66,6 +66,7 @@
     "sagomungchi/demo/app/auth",
     "sagomungchi/demo/app/google",
     "sagomungchi/demo/app/internal",
+    "sagomungchi/demo/app/payment",
     "sagomungchi/demo/db/core-app",
     "sagomungchi/demo/db/core-migrate",
     "sagomungchi/demo/db/learning-app",
