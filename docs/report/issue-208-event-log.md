@@ -32,8 +32,8 @@
 4. **model.version.activated 소비는 예외**: 모든 Pod가 각자 임시 큐로 받아 메모리 버전을 교체하며 DB가 없음. 기동·재연결 때 core snapshot을 다시 조회해 누락을 복구하고 적용 전에는 readiness가 false이므로 Pod별 적용 기록은 남기지 않음
 5. **보존 90일**: 발행 완료 `outbox_event`, `processed_event`, `event_log`를 90일 뒤 1시간 주기로 삭제. 미발행·격리 outbox 행은 기간과 무관하게 유지. `llm_usage`·`job_execution`은 정리 대상이 아님
    - core: `EventRetentionCleanup` (`app.messaging.event-retention-days`, 기본 90)
-   - learning: `ProcessedEventCleanup` (`app.messaging.event-retention-days`, 기본 90). 삭제 표식 `deleted_student`는 유지
-   - report: worker cleanup 루프 (`EVENT_RETENTION_DAYS`, 기본 90). `report_deletion_guard`는 유지
+   - learning: `ProcessedEventCleanupScheduler` → `ProcessedEventCleanupService` (`app.messaging.event-retention-days`, 기본 90, #278에서 scheduler·service 분리). 삭제 표식 `deleted_student`는 유지
+   - report: worker cleanup 루프가 `deletion/service.py` `prune_event_records` 호출 (`EVENT_RETENTION_DAYS`, 기본 90, #278에서 service로 이동). `report_deletion_guard`는 유지
    - 조건부 DELETE라 레플리카가 동시에 실행해도 결과가 같아 ShedLock을 쓰지 않음 (기존 `IdempotencyCleanup`과 같은 방식)
 6. **학생 식별자**: event_log.subject에 학생 UUID가 들어갈 수 있으나 payload·원문은 없음. 학생 삭제 시 즉시 지우지 않고 90일 보존 후 삭제함
 

@@ -168,6 +168,7 @@ CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 �
 | Domain | `domain` | `models.py`, `state.py` | 엔티티·값 객체, 상태 전이 규칙(`QUEUED→RUNNING`, 판정 상태 등) | 프레임워크·외부 라이브러리 의존 |
 | Infrastructure | `repository`, `client`, `messaging` | `repository.py`, `clients/`, `messaging/`, `llm/` | DB, 외부 API, 브로커, LLM, PG, S3 연동 | 업무 판단 |
 
+- 공통 메시징 인프라 예외(#278): `_common/messaging`의 이벤트 감사 기록·보존 정리(core `EventAuditConsumer`·`EventRetentionCleanup`)는 `_common`이 소유한 메시징 테이블(`event_log`·`outbox_event`·`processed_event`)만 다루고 업무 판단이 없어 service 없이 같은 패키지의 `_common` repository를 직접 호출한다. 같은 패키지의 `OutboxRelay`·`ProcessedEventRepository` 멱등 소비와 같은 공통 인프라로 보며, `_common`에 service 계층을 새로 두지 않는다. 이 예외는 `_common/messaging` 안에만 적용하고, 기능 패키지의 controller·consumer·scheduler는 항상 자기 기능 service만 호출한다(learning `record/scheduler/ProcessedEventCleanupScheduler` → `ProcessedEventCleanupService`, report `worker.py` → `deletion/service.py` `prune_event_records`)
 - Domain 오류(Spring): domain은 HTTP 상태가 없는 `_common/exception`의 `DomainException(ErrorKind, code, title, detail)`만 던진다. `ErrorKind` → HTTP 상태 변환은 `_common/exception` 한 곳에서 하고(2.3), HTTP 상태를 직접 받는 `BusinessException`은 application·presentation에서만 쓴다. 예외의 상태·code를 읽는 곳은 두 예외를 함께 처리하는 공통 함수(`httpStatusOf`·`errorCodeOf`)를 쓴다 (#249)
 
 ### 2.2 의존 규칙
@@ -231,7 +232,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ config/
 │  ├─ exception/
 │  ├─ security/
-│  ├─ messaging/                 # 이벤트 봉투, OutboxRelay, 멱등 소비, 이벤트 감사 기록·보존 정리(EventAuditConsumer·EventRetentionCleanup, #208)
+│  ├─ messaging/                 # 이벤트 봉투, OutboxRelay, 멱등 소비, 이벤트 감사 기록·보존 정리(EventAuditConsumer·EventRetentionCleanup, #208, repository 직접 호출은 2.1 공통 인프라 예외 #278)
 │  ├─ json/                      # JsonObject: domain이 드는 jsonb 객체 값 (#168)
 │  ├─ persistence/               # MyBatis 설정·PostgreSQL 타입 핸들러
 │  └─ web/                       # IdempotencyService, SseEmitters (core만)
@@ -361,7 +362,8 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 └─ record/                       # 대시보드·에이전트 도구·리포트용 조회 API, student.deleted 소비(#128)
    ├─ controller/                # 기록 조회·존재 확인·결제 사용 증빙
    ├─ consumer/                  # StudentDeletedConsumer
-   ├─ service/                   # RecordService, StudentDeletionService 등
+   ├─ scheduler/                 # ProcessedEventCleanupScheduler: processed_event 보존 정리 주기 실행 (#208, #278)
+   ├─ service/                   # RecordService, StudentDeletionService, ProcessedEventCleanupService 등
    ├─ domain/
    ├─ repository/
    └─ client/
@@ -481,7 +483,7 @@ Python (report)
 backend/report-service/
 ├─ app/
 │  ├─ main.py                    # report-api 진입점 (조회 API)
-│  ├─ worker.py                  # report-worker 진입점 (report.generate·student.deleted 소비, 발행·처리 기록 보존 정리 #208)
+│  ├─ worker.py                  # report-worker 진입점 (report.generate·student.deleted 소비, 발행·처리 기록 보존 정리 주기 호출 #208)
 │  ├─ bootstrap.py
 │  ├─ config.py
 │  ├─ errors.py
@@ -517,11 +519,11 @@ backend/report-service/
 │  │  └─ schemas.py
 │  ├─ deletion/
 │  │  ├─ consumer.py
-│  │  ├─ service.py              # 삭제 조합·생성/조회 허용 검사·처리 이력 정리
+│  │  ├─ service.py              # 삭제 조합·생성/조회 허용 검사·발행·처리 기록 보존 정리(prune_event_records, #278)
 │  │  ├─ repository.py           # 삭제 장벽·processed_event DB 작업 (#252)
 │  │  └─ state.py                # DeleteStudent·순수 삭제/생성 허용 규칙
 │  ├─ outbox/                    # report.started·completed·failed
-│  │  ├─ service.py              # 동일 트랜잭션의 subject별 삭제 진입점 (#252)
+│  │  ├─ service.py              # 동일 트랜잭션의 subject별 삭제·발행 완료 보존 정리 진입점 (#252, #278)
 │  │  ├─ repository.py
 │  │  ├─ relay.py                # 학생별 선두 발행·재시도·격리 (#131)
 │  │  └─ manage.py               # 격리 이벤트 운영 CLI (#131)

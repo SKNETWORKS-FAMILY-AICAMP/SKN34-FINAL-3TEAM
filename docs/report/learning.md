@@ -500,7 +500,7 @@ P12 "판정 리스 90초·고착 탐지 1분"의 탐지 작업. 지금까지는 
 
 | 위치 | 내용 |
 |---|---|
-| `judgment/scheduler/StuckJudgmentScheduler` | `@Scheduled` 주기 `app.judgment.stuck-detection-interval`(기본 `PT1M`, 첫 실행도 1분 뒤), `app.judgment.stuck-detection-enabled=false`면 실행하지 않음. ShedLock 없음(조건부 UPDATE라 레플리카 동시 실행 안전, `ProcessedEventCleanup`과 같은 방식) |
+| `judgment/scheduler/StuckJudgmentScheduler` | `@Scheduled` 주기 `app.judgment.stuck-detection-interval`(기본 `PT1M`, 첫 실행도 1분 뒤), `app.judgment.stuck-detection-enabled=false`면 실행하지 않음. ShedLock 없음(조건부 UPDATE라 레플리카 동시 실행 안전, `ProcessedEventCleanupScheduler`와 같은 방식) |
 | `JudgmentService.failStuck(now)` | 트랜잭션 하나에서 일괄 전이, 바뀐 답변 ID 반환. 1건 이상이면 `warn` 로그에 건수와 `answerId`만(학생 원문 없음) |
 | `JudgmentMapper.failExpired` | `UPDATE judgment SET process_status='FAILED', failure_code=:code, retry_count=retry_count+1 WHERE process_status='RUNNING' AND (lease_until IS NULL OR lease_until < :now) RETURNING answer_id`. 만료 조건은 `acquire` SQL·`Judgment.isLeaseExpired`와 같음(리스 없는 `RUNNING`도 만료). 탐지용 인덱스 `(process_status, lease_until)`는 기존(V2) |
 | `Judgment.LEASE_EXPIRED` | 실패 코드 상수 |
@@ -539,5 +539,5 @@ P12 "판정 리스 90초·고착 탐지 1분"의 탐지 작업. 지금까지는 
 
 - 리스 90초를 넘겨 아직 살아 있는 처리가 있으면 탐지가 먼저 `FAILED`로 바꿔 그 결과가 버려짐. 탐지 전에는 다른 요청이 가져가지 않았다면 저장됐음. learning→ai 판정·되묻기가 각 35초라 정상 처리는 약 70초 안에 끝나고, 탐지는 리스 획득 90~150초 뒤라 드묾
 - 만료 판단은 각 Pod의 시각 기준(재획득과 같음). Pod 사이 시각 차이만큼 탐지가 앞당겨지거나 늦어짐
-- learning의 기존 `record/service/ProcessedEventCleanup`은 스케줄 클래스가 service 패키지에서 repository를 바로 부름(아키텍처 2.1과 다름). 이번 범위 밖이라 그대로 둠
+- learning의 기존 `record/service/ProcessedEventCleanup`은 스케줄 클래스가 service 패키지에서 repository를 바로 부름(아키텍처 2.1과 다름). 이번 범위 밖이라 그대로 둠. #278에서 `record/scheduler/ProcessedEventCleanupScheduler` → `record/service/ProcessedEventCleanupService`로 분리
 - 탐지 건수는 로그로만 남음(지표 수집 없음). DB에서는 `failure_code='LEASE_EXPIRED'`로 셀 수 있음
