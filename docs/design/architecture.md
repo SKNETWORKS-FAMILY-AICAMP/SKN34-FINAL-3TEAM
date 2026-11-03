@@ -692,9 +692,9 @@ SKN34-FINAL-3TEAM/
 │  ├─ m2/
 │  ├─ m1/                        # 수학 풀이 점검 학습·평가 코드(#263, 기준선까지·본 학습 전)
 │  └─ sllm/                      # (예정)
-├─ evaluation/                   # (예정) 판정 일치도(QWK)·되묻기 유출·에이전트 숫자/인용 대조 평가
+├─ evaluation/                   # 판정 일치도(QWK, #199)·(예정) 되묻기 유출·에이전트 숫자/인용 대조 평가
 │  ├─ datasets/                  # 평가셋별 cases.jsonl·fixtures (자체 작성 예시 답안, AI Hub 원문 미포함)
-│  ├─ runners/                   # 서비스 호출·채점 스크립트
+│  ├─ runners/                   # 서비스 호출·채점 스크립트 (judgment_eval.py, 테스트는 ai-service tests)
 │  └─ results/                   # 실행 결과 요약
 ├─ infrastructure/
 │  ├─ gitops/
