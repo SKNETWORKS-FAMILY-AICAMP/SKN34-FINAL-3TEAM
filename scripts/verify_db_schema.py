@@ -3,6 +3,7 @@
 Compose mode uses the container's psql; direct mode uses report-service's psycopg.
 All fixtures are invented schema-test values, not AI Hub or student records.
 Fixture transactions are rolled back; this does not install seed data.
+Only reference rows published by migrations (MIGRATION_SEED_ROWS) may exist beforehand.
 """
 
 import argparse
@@ -23,6 +24,29 @@ class ValidationError(RuntimeError):
 def require(condition, message):
     if not condition:
         raise ValidationError(message)
+
+
+# Reference rows that migrations publish on purpose (#235 V25 consent documents 1.0).
+# Only these exact ids may exist before the fixtures run; anything else means a non-isolated DB.
+MIGRATION_SEED_ROWS = {
+    "core_db": {
+        "consent_document": (
+            "00000000-0000-4000-8000-000002350001",
+            "00000000-0000-4000-8000-000002350002",
+            "00000000-0000-4000-8000-000002350003",
+        ),
+    },
+}
+
+
+def populated_sql(tables, seeds):
+    """Name each table holding rows other than its migration seed rows."""
+    parts = []
+    for name in tables:
+        ids = seeds.get(name)
+        where = f" WHERE id NOT IN ({', '.join(repr(i) for i in ids)})" if ids else ""
+        parts.append(f"SELECT '{name}' WHERE EXISTS (SELECT 1 FROM {name}{where})")
+    return " UNION ALL ".join(parts) + ";"
 
 
 EXPECT_ERROR = """
@@ -744,13 +768,14 @@ def verify_schema(query):
             or []
         )
         index_count += check_indexes(database, indexes[database], actual_indexes)
-        populated = query(
-            database,
-            " UNION ALL ".join(
-                f"SELECT '{name}' WHERE EXISTS (SELECT 1 FROM {name})" for name in tables
+        seeds = MIGRATION_SEED_ROWS.get(database, {})
+        populated = query(database, populated_sql(tables, seeds))
+        for name, ids in seeds.items():
+            seeded = query(
+                database,
+                f"SELECT count(*) FROM {name} WHERE id IN ({', '.join(repr(i) for i in ids)});",
             )
-            + ";",
-        )
+            require(seeded.strip() == str(len(ids)), f"{database}.{name}: migration seed rows missing")
         if populated:
             raise RuntimeError(
                 f"{database}: use an empty, isolated verification DB; populated tables: {populated}"
