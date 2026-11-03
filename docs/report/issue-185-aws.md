@@ -174,5 +174,5 @@
 
 - **신규 Google 가입자 demo 표시:** `feature/demo-signup-flag`(5538173)에 `AUTH_NEW_ACCOUNT_DEMO`(기본 false)를 추가했다. true인 환경에서만 새 Google 부모를 `is_demo=true`로 저장하고 기존 계정은 바꾸지 않는다. 학생은 기존처럼 부모 값을 따른다. JDK 21 컨테이너의 Testcontainers로 관련 테스트 27개(신규 1개 포함)가 통과했다. AWS 반영은 core 재빌드가 필요하며, 현재 배포 core의 미커밋 이용권 수정이 정리된 뒤 진행한다.
 - **토스 테스트 결제:** 저장소 입력만 준비했다([prod README](../../infrastructure/gitops/environments/prod/README.md#다음-core-재배포-입력-토스신규-가입자-demo-185-미적용)). Secret 값 입력 전이라 AWS·클러스터에는 적용하지 않았다.
-- **eksctl 검증:** eksctl 0.231.0 공식 배포 파일을 checksum으로 확인했으나 AWS 로그인 세션 만료로 `--dry-run`을 실행하지 못했다. 재로그인 후 실행한다.
-- 남은 사용자 작업: AWS 재로그인, 결제 Secret 값 입력, 부모 계정 다운로드 확인, 이용권 수정 정리. core-migrate 재빌드와 시연 데이터 재감사는 그 다음 순서다.
+- **eksctl 검증:** eksctl 0.231.0 공식 배포 파일을 checksum으로 확인하고, `render-eksctl` 결과로 `eksctl create cluster --dry-run`을 실제 계정에 실행해 exit 0을 확인했다. 정규화된 출력에 버전 1.35, add-on 6개 버전, Pod Identity 7개, 노드그룹 t3.medium 3/3/3·20GiB·private, 서비스 역할·노드 역할, VPC·subnet 4개가 그대로 유지됐다. dry-run은 자원을 만들지 않는다.
+- 남은 사용자 작업: 결제 Secret 값 입력, 부모 계정 다운로드 확인, 이용권 수정 정리. core-migrate 재빌드와 시연 데이터 재감사는 그 다음 순서다.
