@@ -1,15 +1,5 @@
 # API 명세서
 
-## 2026-11-01 확정 변경: #206·#207
-
-- `GET /api/v1/students/me/sharing-preferences`와 `PUT /api/v1/students/me/sharing-preferences`는 학생 세션의 단일 학생만 대상으로 합니다. PUT 본문은 `{parentSharingEnabled: boolean}`, 응답은 `{studentId, parentSharingEnabled}`이며 누락/null은 400입니다. 기본값은 false입니다. 학부모는 `GET /api/v1/children/{childId}/sharing-preferences`로 연결된 자녀의 상태만 조회할 수 있습니다.
-- 비공개 상태에서 학부모의 답변 목록·상세·분석 대화·근거·기존 다운로드 URL 재발급은 `403 STUDENT_RECORDS_PRIVATE`입니다. 요약·유형 집계와 리포트의 수치는 유지합니다. 리포트 상세의 답변·돌아보기·인용·파생 문구는 제거하며, 기존 원문 포함 파일은 비공개 중 재발급하지 않습니다. 이미 전달된 파일은 회수할 수 없습니다.
-- 내부 학생 프로필에 `parentSharingEnabled`를 추가합니다. report는 생성 시 현재 값을 조회하고 false 또는 누락이면 원문·근거 링크·원문 기반 AI 문구를 생성/파일 렌더링 전에 제거합니다. 기존 리포트의 조회도 core에서 현재 설정을 다시 확인합니다.
-
-- #206 사용자 확정: 학생 전역 학부모 공개 설정은 **기본 비공개**, 학생 본인만 공개/비공개를 변경한다. 수치·활동 건수는 유지하며 답변·돌아보기 원문, 원문 인용과 그 원문을 포함할 수 있는 파생 서술은 비공개 설정을 따른다. 학부모가 이 설정을 변경할 수 없다. 기존 원문 포함 대화/리포트·근거·파일도 조회 시 현재 설정을 다시 확인한다.
-- #207 조회 경로: core `GET /api/v1/attempts/{attemptId}/comparison` → learning `GET /internal/attempts/{attemptId}/comparison`. 응답 상태는 `NO_PREVIOUS | COMPARABLE | CRITERIA_CHANGED`, 각 스냅샷에 고정 문항·제출 답변·마지막 판정·기준표를 포함합니다.
-- #207 사용자 확정: 같은 학생·미션의 **직전 마무리 시도**를 비교 기준으로 삼는다. 기준은 현재 시도 시작 이전에 마무리한 시도 중 finishedAt 내림차순(동률은 startedAt·ID 순) 첫 건이다. 이전 답변·판정·피드백을 덮어쓰지 않는다. 현재 시도의 마무리 이후에만 비교를 공개한다. 기준표 버전이 다르면 요소 충족 변화는 직접 비교하지 않고 기준 변경을 안내한다. 이전 시도가 없으면 명시적으로 비교 기록 없음이다.
-
 - 근거: [기능명세서](functional-spec.md), [유스케이스](usecase.md), [프로젝트 기획서](<../outputs/프로젝트_기획서_사고뭉치.pdf>), [아키텍처 설계](architecture.md)
 - 범위: 공개 API(core-service, 웹이 호출) 전체 + 서비스 간 내부 API
 - 우선순위: 유스케이스 우선순위(핵심·제안·우선1·우선2·선택)
@@ -118,6 +108,7 @@
 | `STUDENT_RECORDS_PRIVATE` / `STUDENT_UNAVAILABLE` / `STUDENT_DELETED` | 403 / 409 / 409 | 학생이 학부모 공개를 끈 기록·비교 조회(#206) / 학생 삭제 진행·비활성(꾸미기·공개 설정·리포트 설정 내부 조회) / 삭제 차단된 학생의 리포트 생성(관리자 재처리) |
 | `INVALID_TEMPLATE_SETTINGS` / `TEMPLATE_PROPOSAL_EXPIRED` | 400 / 409 | 리포트 표시 설정 값 오류 / 다른 대화·만료·덮어쓴 변경안 확정, 설정 revision 변경 (#209) |
 | `ANALYSIS_IN_PROGRESS` / `EVIDENCE_UNAVAILABLE` / `AI_INVALID_RESPONSE` | 409 / 410 / 502 | 같은 대화에서 분석 생성 중 / 삭제된 분석 근거 / ai 응답 형식 오류 (2.4) |
+| `ANALYSIS_FIRST_RESPONSE_TIMEOUT` / `ANALYSIS_TIMEOUT` / `ANALYSIS_FAILED` | 504 / 504 / 502 | 분석 대화 SSE `error` 이벤트 전용: ai 첫 이벤트 20초 안에 없음 / 전체 120초 초과 / 원인 코드가 없는 처리 실패(원래 오류 상태가 있으면 그 상태). `retryable: true`, 메시지는 FAILED로 저장 (3.3) |
 | `REPORT_PREMIUM_REQUIRED` / `REPORT_JOB_IDENTITY_MISMATCH` | 403 / 409 | 무료 이용권에서 프리미엄 리포트 항목 요청 / report 복구 응답의 작업 식별자 불일치 (5.9) |
 | `SUPPORT_STATE_CONFLICT` / `CORRECTION_TARGET_UNSUPPORTED` | 409 / 422 | 신고·문의 처리 상태 전이 위반·완료 답변 변경 / 정정할 수 없는 신고 대상 (5.7) |
 | `CORRECTION_REPORT_CONFLICT` / `JUDGMENT_STATE_CONFLICT` | 409 | learning: 같은 신고로 이미 정정함 / 판정 처리 상태 충돌 (5.7) |
@@ -408,12 +399,12 @@
 
 ### 2.8 관리자 (FN-ADM, FN-SUP 관리 측) — `/api/v1/admin`
 
-#### #47 구현 계약
+#### 2.8.1 #47 구현 계약
 
 ##### #47 REPORT 실패 작업 재처리 (core, #152 연결)
 
 - SERVICE_OPS 관리자만 실패한 report_job ID로 `POST /admin/jobs/{jobId}/retry`를 요청한다. reportId가 없어도 가능하며 원래 FAILED 작업·기존 report 판은 바꾸지 않는다. 학부모 regenerate 경로와 제한은 유지한다.
-- REPORT 성공 접수는 **202** `{originalJobId,jobId,type:"REPORT",status:"QUEUED",acceptedAt}`와 `Location: /api/v1/admin/jobs/{새jobId}`다. 이는 실행 완료가 아니다. 알림의 기존 200 작업 상세 응답은 유지한다. CONVERSATION은 하단 [#47 CONVERSATION 관리자 재처리](#47-conversation-관리자-재처리)의 202 접수를 따른다.
+- REPORT 성공 접수는 **202** `{originalJobId,jobId,type:"REPORT",status:"QUEUED",acceptedAt}`와 `Location: /api/v1/admin/jobs/{새jobId}`다. 이는 실행 완료가 아니다. 알림의 기존 200 작업 상세 응답은 유지한다. CONVERSATION은 하단 [#47 CONVERSATION 관리자 재처리](#514-47-conversation-관리자-재처리)의 202 접수를 따른다.
 - 원작업↔새 ADMIN_RETRY 작업 관계와 수행자·Idempotency-Key·접수 시각은 core report_job_retry에 영속 저장한다. 원작업당 새 작업 1개, 새 작업 ID·수행자+요청 키 각각 UNIQUE다. 같은 키의 응답 저장 유실/24시간 만료 뒤에도 최초 202를 복원한다. 다른 키로 이미 재처리한 원작업을 요청하면 409 REPORT_ALREADY_RETRIED다. 새 작업이 다시 FAILED면 그 새 jobId를 대상으로 다음 재처리를 요청한다.
 - 기존 학생·주 잠금과 원작업 행 잠금을 사용하고 다른 QUEUED/RUNNING 주간 작업이 있으면 409 REPORT_GENERATION_IN_PROGRESS다. 학생 활성 상태·삭제 요청 이력을 학생 행 잠금 아래 확인하며 삭제/비활성은 409 REPORT_RETRY_STUDENT_UNAVAILABLE다. 현재 상품의 narrativeEnabled를 기존 ReportEntitlementService로 확정하며 설정/조회 장애는 기존 명시적 오류다.
 - 새 report_job·관계·요청 감사 JOB_RETRY_REQUESTED·기존 OutboxWriter의 report.generate를 한 트랜잭션에 기록한다. 외부 HTTP/브로커 호출은 이 트랜잭션에서 하지 않는다. 기존 v1 이벤트 필드만 사용하며 원작업 연결은 core가 소유한다.
@@ -832,7 +823,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 ### 4.3 scoring-service (호출: ai)
 
-#### #87 M2 확정 계약 (2026-10-29 담당자 답변 반영)
+#### 4.3.1 #87 M2 확정 계약 (2026-10-29 담당자 답변 반영)
 
 - `POST /internal/m2/scores`: `{prompt:string, text:string, grade:integer(3~6), inputType:"NARRATIVE"|"ESSAY", keywords:string[]}`. keywords 생략은 빈 배열. 문자열은 공백만 허용하지 않는다. 요청 보호 한도는 prompt 10,000자, text 50,000자, keywords 100개·각 200자이다.
 - learning은 관리자가 입력한 `rubric_version.keywords`(문자열 배열, 서술형 전용)와 `mission_version.question`을 AI의 `keywords`·`question`으로 전달하고, AI는 question을 scoring의 prompt로 매핑한다. 이 저장 컬럼·관리자 입력·learning DTO·AI 연결은 **후속 서비스 변경 필요**이며 #87 scoring 구현이 제공했다고 해석하지 않는다.
@@ -845,7 +836,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 구현된 내부 API 계약은 [contracts/openapi/scoring-service.yaml](../../contracts/openapi/scoring-service.yaml)에 기록한다. #85 버전 조회, #87 M2 점수, #88 M1 비활성 계약을 구현했다. M1은 미학습 상태로 활성 추론을 제공하지 않는다. 계약 테스트가 실제 FastAPI 경로·응답 스키마와 대조한다.
 
-#### #88 M1 미학습 상태의 구현 계약
+#### 4.3.2 #88 M1 미학습 상태의 구현 계약
 
 - `problem`은 mission_version.question, `answerKey`는 answer_key.finalAnswer 문자열이다. `solution`은 정답 풀이가 아닌 학생의 `{steps: 문자열 배열, finalAnswer: 문자열}`이다. 단계 순서와 빈 단계의 위치를 보존하며, 최소 한 단계는 공백 아닌 내용이 있어야 한다. 세 최상위 항목과 두 solution 항목은 필수이며 알 수 없는 필드·잘못된 타입·공백만 있는 문제/정답/최종 답은 400이다.
 - 내부 토큰 누락·불일치는 401. 유효한 요청은 현재 항상 HTTP 200 `{active:false}`를 반환한다. M1 학습·평가·로더·승인 범위 계약이 없으므로 core에 모델 메타데이터를 등록하는 것만으로 활성화되지 않는다. M2 모델을 대신 사용하거나 문자열 비교로 정답 판정을 흉내 내지 않는다.
@@ -859,7 +850,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | POST | `/internal/m1/checks` | `{problem, answerKey, solution:{steps,finalAnswer}}` → 현재 미학습이므로 `{active:false}`. 활성 추론·확신도 처리는 후속 범위(P15) |
 | GET | `/internal/versions` | 로딩 완료한 활성 모델 `{items:[{name,version,revision}]}`. name 순 정렬, 없으면 `{items:[]}`. 내부 토큰 필수 |
 
-#### #85 scoring 모델 조회·로딩 기준 (2026-10-28)
+#### 4.3.3 #85 scoring 모델 조회·로딩 기준 (2026-10-28)
 
 - core의 활성 snapshot에서 `kind=MODEL`, 이름이 `m2-` 또는 `m1-`로 시작하는 항목만 처리한다. `artifactUri`의 S3 디렉터리를 내려받아 로컬 파일로만 로딩하며 외부 모델 저장소로 대체하지 않는다.
 - `/internal/versions`는 core가 요구한 버전이 아니라 **실제로 로딩 완료한 버전**을 반환한다. 초기 조회·로딩 전에는 빈 목록이며 준비 여부는 `/health/ready`의 `models` 항목으로 구분한다. S3 경로·평가 자료·비밀 값은 반환하지 않는다.
@@ -1021,7 +1012,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - #242 관리자 전체 목록 `GET /admin/notices?status&role&page=0&size=20`: SERVICE_OPS 전용(그 외 관리자·학부모·학생 403, 미인증 401). 응답은 사용자 GET과 같은 공지 항목의 `{items,page,size,totalElements}`이며 새 필드를 추가하지 않는다. 상태는 저장 컬럼이 아니라 조회 시각(DB `CURRENT_TIMESTAMP`)으로 계산한다: `SCHEDULED` = endedAt 없음·`now < visibleFrom`, `ACTIVE` = endedAt 없음·`visibleFrom <= now`·(visibleTo 없음 또는 `now < visibleTo`), `ENDED` = endedAt 있음 또는 `visibleTo <= now`. status 생략 시 세 상태 전체, role은 targetRoles에 해당 역할 포함. 정렬은 visibleFrom DESC, id DESC. 정의 밖 status·role, page<0, size 1~100 밖은 400 VALIDATION_FAILED. 조회만 하며 감사 기록을 남기지 않는다.
 - 보호자 신고 완료·문의 답변만 기존 알림 service로 연결한다. 학생 건은 본인 결과 조회, 보호자 알림으로 우회하지 않는다. sourceEventId는 신고/문의 UUID이며 완료 여부만 알린다. 링크는 `/parent/support?reportId=...` 또는 `?inquiryId=...`, 소비자에서 본인 상세 API를 호출한다.
 
-### learning 공급자 계약
+#### 5.7.1 learning 공급자 계약
 
 learning 구현 명세는 4.1 표와 learning OpenAPI다(정정 #80, 대상·원문 조회 #146). 학생 전용 `/internal/attempts/{id}`를 관리자로 위장 호출하지 않는다. 별도 `contracts/openapi/support-learning-required.yaml`은 협의용 계약이며 현재 learning 구현 명세와 구분한다.
 
@@ -1035,7 +1026,7 @@ learning 구현 명세는 4.1 표와 learning OpenAPI다(정정 #80, 대상·원
 - **모든 impact가 UNKNOWN이어도 판정 정정 성공과 신고 RESOLVED 전이가 가능**하다. core는 공급자가 확인한 정정 성공을 기준으로 완료 처리하고 impact는 그대로 보존한다. 관리자 화면은 이를 대화·집계·리포트까지 모두 반영됐다는 의미로 표시하지 않는다.
 - `/support/targets/...`(신고 대상 확인·최초 정정 전 조회)와 `/support/attempts/...`(관리자 원문 조회)는 **#80 범위 밖의 별도 공급자 이슈**다. #80만으로 실제 정정 E2E가 완료되지는 않는다(#146에서 구현).
 
-#### #163 지원 GET 공개 오류 매핑 (2026-10-30 사용자 승인)
+#### 5.7.2 #163 지원 GET 공개 오류 매핑 (2026-10-30 사용자 승인)
 
 대상 GET과 원문 GET에만 적용한다. 정상 오류는 Content-Type `application/problem+json`(매개변수 허용)의 JSON 객체이며 HTTP 상태와 정수 `status`, 문자열 `code`가 아래 쌍과 정확히 일치해야 한다. 공급자의 title/detail/instance/traceId·추가 필드와 임의 code는 공개하지 않고 core가 고정 문구의 Problem Details를 만든다.
 
@@ -1050,7 +1041,7 @@ learning 구현 명세는 4.1 표와 learning OpenAPI다(정정 #80, 대상·원
 
 기존 FORBIDDEN·NOT_FOUND를 재사용하며 신규 오류 코드는 없다. learning의 FORBIDDEN은 학생 범위·역할·scope 형식 거부를 구별하지 않으므로 학생 범위 오류로 단정하지 않는다. 프레임워크의 경로 없음도 NOT_FOUND여서 정상 Problem Details만으로 리소스 부재와 완전히 구분할 수 없다. 인증된 요청자가 403/404로 권한 거부와 대상 부재를 구별할 수 있는 공개 정보 차이는 승인된 정책이며 학생 식별자·원문은 오류에 추가하지 않는다. 학생 scope 설정·복원, 트랜잭션 밖 호출, 성공 응답 allowlist·감사 저장은 그대로다.
 
-#### #46 관리자 정정 공개 오류 계약
+#### 5.7.3 #46 관리자 정정 공개 오류 계약
 
 기존 구현은 공급자의 모든 비-2xx를 `503 SUPPORT_DEPENDENCY_UNAVAILABLE`로 변환했다. 정정 POST에 한해 다음처럼 구분한다. 공급자 오류 본문·내부 상세·임의 code는 공개 응답에 전달하지 않는다.
 
@@ -1065,12 +1056,6 @@ learning 구현 명세는 4.1 표와 learning OpenAPI다(정정 #80, 대상·원
 core 자체의 권한·상태·본문 충돌 오류는 기존 계약을 유지한다. 이 표는 공급자 HTTP 응답 변환에 대한 계약이며 learning 공급자 구현 완료를 의미하지 않는다.
 
 #46 신고 POST의 최초 접수 응답은 RECEIVED·검토 결과 없음·정정 이력 없음으로 고정한다. 공통 멱등 응답 저장 실패 후 재구성해도 이미 진행된 관리자 처리 결과를 최초 접수 응답에 섞지 않는다. 생성 시각은 PostgreSQL과 같은 UTC 마이크로초 정밀도를 사용한다. 최신 learning #27의 기록 상세는 ADMIN을 허용하지 않으므로 이를 보호자/SYSTEM으로 위장 호출하지 않는다.
-
-### 이슈 #41 분석 대화 구현 계약
-
-대화·SSE·범위 확인·payment 소비 port·차감 정책은 [#41 계약](../report/issue-41-analysis-conversations.md)을 따른다. 일일 한도는 Redis 카운터가 아니라 결제 사용 이력(`payment_premium_usage`)의 KST 일자 집계로 판정한다([#225](../report/core-gateway.md#분석-대화-사용량-db-이관-구현-225)). 내부 history는 `{role:USER|ASSISTANT,text}`이며 core messageId를 요청에 추가한다. 같은 대화의 자녀는 고정하며 자녀 변경은 새 대화로 확인한다. 기간 명시는 사용자 확인이고 동일 기간 완료 이력만 AI에 전달한다.
-
-#41 보완(P08): 시작일 이전 답변은 현재 기간의 집계 대상 시도에 포함되는 경우에만 비교 근거로 허용하며 종료일 이후 답변은 거부한다. AI가 contentAllowed를 보내면 false인 결과는 확정하지 않는다.
 
 ### 5.8 리포트 현재 이용권 연결 (#129)
 
@@ -1091,12 +1076,18 @@ core 자체의 권한·상태·본문 충돌 오류는 기존 계약을 유지�
 
 core는 생성 후 60분 이상 QUEUED/RUNNING을 기본 1분마다 점검한다(`app.report.recovery.stale-after`, `app.report.recovery.interval`). 60분은 운영 후보 선정 정책이며 실행 시간 측정값/강제 중단 제한이 아니다. HTTP는 DB 트랜잭션·행 잠금 밖에서 수행하고 새 트랜잭션에서 학생·작업·종료 상태를 재검사한다. 자동 재생성·재생성 횟수 정책은 변경하지 않는다.
 
-## #167 하위 호출 차단
+### 5.10 #41 분석 대화 구현 계약
+
+대화·SSE·범위 확인·payment 소비 port·차감 정책은 [#41 계약](../report/issue-41-analysis-conversations.md)을 따른다. 일일 한도는 Redis 카운터가 아니라 결제 사용 이력(`payment_premium_usage`)의 KST 일자 집계로 판정한다([#225](../report/core-gateway.md#분석-대화-사용량-db-이관-구현-225)). 내부 history는 `{role:USER|ASSISTANT,text}`이며 core messageId를 요청에 추가한다. 같은 대화의 자녀는 고정하며 자녀 변경은 새 대화로 확인한다. 기간 명시는 사용자 확인이고 동일 기간 완료 이력만 AI에 전달한다.
+
+#41 보완(P08): 시작일 이전 답변은 현재 기간의 집계 대상 시도에 포함되는 경우에만 비교 근거로 허용하며 종료일 이후 답변은 거부한다. AI가 contentAllowed를 보내면 false인 결과는 확정하지 않는다.
+
+### 5.11 #167 하위 호출 차단
 
 분석 AI OPEN은 기존 SSE error의 502 AI_UNAVAILABLE 및 FAILED 저장으로 처리한다. 접수 시 한도·사용 이력 차감은 유지한다. report 조회/복구 OPEN은 기존 503 REPORT_UNAVAILABLE이며 신규 오류 코드나 Retry-After는 추가하지 않는다. 기존 403/404/409/503 DATA_UNAVAILABLE 매핑은 보존한다. 토스 조회 OPEN은 기존 미확정 결과(결제 상태 유지), 거래 대조 OPEN은 기존 PAYMENT_RECONCILIATION_UNAVAILABLE로 처리하며 성공/거절로 치환하지 않는다. 승인·청구·취소·빌링키 발급은 차단 대상이 아니다.
 
 
-### #47 미션 운영 후속 계약
+### 5.12 #47 미션 운영 후속 계약
 
 - overview의 `missionCounts`는 learning 관리자 목록의 전체 DRAFT/REVIEW_REQUIRED/PUBLISHED/UNPUBLISHED 건수를 허용 목록으로 투영한다. 기간·목록 필터·페이지와 무관한 현재 상태이며 학생·미션 본문은 포함하지 않는다. 누락·중복·음수 등 잘못된 집계는 503으로 처리한다.
 - 실제 미션 404는 안전한 NOT_FOUND 오류로 전달한다. 405/501은 제공 기능 불가로 유지한다.
@@ -1104,13 +1095,13 @@ core는 생성 후 60분 이상 QUEUED/RUNNING을 기본 1분마다 점검한다
 - 감사 action은 MISSION_{CREATE,UPDATE,RUBRIC,REVIEW_REQUEST,REVIEW,PUBLISH,UNPUBLISH}_{REQUESTED,SUCCEEDED,REJECTED,UNKNOWN}. REQUESTED의 SUCCESS는 요청 기록 성공만 뜻한다. 계약에 맞는 4xx 문제 응답은 REJECTED, 5xx·통신 단절·해석할 수 없는 응답은 UNKNOWN이다. 요청 원문·공급자 오류 원문은 저장하지 않는다.
 - 쓰기 응답의 X-Admin-Operation-Id는 요청 감사 ID다. 연결 실패 오류는 detail에 같은 확인 번호를 제공한다. 결과 감사 저장 실패는 503 MISSION_AUDIT_UNAVAILABLE이며 요청 기록이 남는다. 성공으로 응답하거나 자동으로 쓰기를 재호출하지 않는다. REQUESTED만 남은 작업은 결과 미확정으로 운영자가 learning에서 확인한다.
 - 공개 감사 목록은 기존대로 detail을 제외한다. 새 DB migration, learning 작성·게시 로직, 프론트 변경은 없다.
-### #67·#41 분석 최종 응답 계약 보완
+### 5.13 #67·#41 분석 최종 응답 계약 보완
 
 `verification`은 source와 관계없이 최종 answer를 실제 검사한 numbersMatched/quotesMatched/contentAllowed다. 최종 검사를 통과한 응답만 result로 확정한다. 대조 실패 초안은 fallback.draftVerification에 보존하며 값을 true로 덮어쓰지 않는다. 정상 LLM은 fallback/notice=null, 규칙 응답은 fallback.reason=VERIFICATION_FAILED 또는 AI_UNAVAILABLE와 notice=null, 기록 부족·지원 외 안내는 fallback=null과 notice.reason=NO_RECORD|NO_CHANGES|NO_REFLECTIONS|UNSUPPORTED|MATH_CHECK다. LLM 장애의 draftVerification은 null이다. 최종 템플릿/안내 검사 실패는 FINAL_RESPONSE_VERIFICATION_FAILED error이며 result/done으로 대체하지 않는다. learning 조회 실패도 기존 error다. LLM 장애 후 기본 조회가 비어 있더라도 AI_UNAVAILABLE를 보존한다. 임시 delta는 최종 result.answer로 교체하고 error/clarification 시 폐기한다. 숫자 검사는 계산 결과와 허용 기간 숫자, 인용 검사는 원문 공백 정규화 범위를 사용한다. 계산에 없는 고정 임계 숫자는 안내에 넣지 않는다.
 
 #67 돌아보기 근거: kind=ANSWER는 answerId/answerVersion 필수, kind=REFLECTION은 둘 다 null이며 attemptId로 식별한다. core는 기존 learning 시도 상세 API의 reflection.text/createdAt, 현재 학생 권한 및 요청 기간의 시도 포함 여부를 검증한다. 근거 원문은 별도 복제하지 않고 참조만 저장한다. 기존 ANSWER 근거는 그대로 유지한다. conversation_message의 fallback/notice는 JSONB로 저장해 다시 조회해도 초안 실패 정보·정상 안내를 보존한다. 최종 템플릿 검증 실패도 오류이며 임시 delta는 폐기한다.
 
-### #47 CONVERSATION 관리자 재처리
+### 5.14 #47 CONVERSATION 관리자 재처리
 
 SERVICE_OPS는 실패 message ID에 UUID Idempotency-Key로 재처리를 접수한다. 202는 `{jobId,type:CONVERSATION,retryRequestId,generation,status:QUEUED,acceptedAt}`이며 Location은 기존 작업 상세다. 같은 관리자·키는 완료 후에도 같은 접수 응답을 반환하고 다른 메시지에 재사용하면 422다. 새 키의 동시 요청은 한 세대만 접수한다. 관리자 화면에 질문·답변 원문을 반환하지 않는다.
 
@@ -1127,7 +1118,17 @@ SERVICE_OPS는 실패 message ID에 UUID Idempotency-Key로 재처리를 접수�
 #163·#47 통합: 검증된 미션 404는 GET/쓰기 모두 고정 문구의 404 NOT_FOUND를 반환한다. 쓰기는 요청 감사와 REJECTED 결과 감사 및 X-Admin-Operation-Id를 보존한다. 불명확한 404·405·501은 503이며 쓰기 결과 감사는 UNKNOWN이다.
 
 
-### #209 학부모 리포트 템플릿 설정 (로컬 구현 계약)
+### 5.15 2026-11-01 확정 변경: #206·#207
+
+- `GET /api/v1/students/me/sharing-preferences`와 `PUT /api/v1/students/me/sharing-preferences`는 학생 세션의 단일 학생만 대상으로 합니다. PUT 본문은 `{parentSharingEnabled: boolean}`, 응답은 `{studentId, parentSharingEnabled}`이며 누락/null은 400입니다. 기본값은 false입니다. 학부모는 `GET /api/v1/children/{childId}/sharing-preferences`로 연결된 자녀의 상태만 조회할 수 있습니다.
+- 비공개 상태에서 학부모의 답변 목록·상세·분석 대화·근거·기존 다운로드 URL 재발급은 `403 STUDENT_RECORDS_PRIVATE`입니다. 요약·유형 집계와 리포트의 수치는 유지합니다. 리포트 상세의 답변·돌아보기·인용·파생 문구는 제거하며, 기존 원문 포함 파일은 비공개 중 재발급하지 않습니다. 이미 전달된 파일은 회수할 수 없습니다.
+- 내부 학생 프로필에 `parentSharingEnabled`를 추가합니다. report는 생성 시 현재 값을 조회하고 false 또는 누락이면 원문·근거 링크·원문 기반 AI 문구를 생성/파일 렌더링 전에 제거합니다. 기존 리포트의 조회도 core에서 현재 설정을 다시 확인합니다.
+
+- #206 사용자 확정: 학생 전역 학부모 공개 설정은 **기본 비공개**, 학생 본인만 공개/비공개를 변경한다. 수치·활동 건수는 유지하며 답변·돌아보기 원문, 원문 인용과 그 원문을 포함할 수 있는 파생 서술은 비공개 설정을 따른다. 학부모가 이 설정을 변경할 수 없다. 기존 원문 포함 대화/리포트·근거·파일도 조회 시 현재 설정을 다시 확인한다.
+- #207 조회 경로: core `GET /api/v1/attempts/{attemptId}/comparison` → learning `GET /internal/attempts/{attemptId}/comparison`. 응답 상태는 `NO_PREVIOUS | COMPARABLE | CRITERIA_CHANGED`, 각 스냅샷에 고정 문항·제출 답변·마지막 판정·기준표를 포함합니다.
+- #207 사용자 확정: 같은 학생·미션의 **직전 마무리 시도**를 비교 기준으로 삼는다. 기준은 현재 시도 시작 이전에 마무리한 시도 중 finishedAt 내림차순(동률은 startedAt·ID 순) 첫 건이다. 이전 답변·판정·피드백을 덮어쓰지 않는다. 현재 시도의 마무리 이후에만 비교를 공개한다. 기준표 버전이 다르면 요소 충족 변화는 직접 비교하지 않고 기준 변경을 안내한다. 이전 시도가 없으면 명시적으로 비교 기록 없음이다.
+
+### 5.16 #209 학부모 리포트 템플릿 설정 (로컬 구현 계약)
 
 2026-11-02 사용자 전달 승인: 원문 공개는 #206 학생 전역 설정만 사용(학생 본인 변경,
 기본 비공개), 메모 제외. 섹션 숨김은 승인하지 않음. 기존 권한·숫자·인용 대조 유지.

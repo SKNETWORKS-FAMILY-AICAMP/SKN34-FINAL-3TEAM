@@ -148,7 +148,7 @@
 
 - [아키텍처](../design/architecture.md) 6장 사용 기술의 Redis 용도와 7.1 구현 결정 요약에 반영했다. 1.1 서비스 표(core_db, Redis)·1.6 SSE 다중 레플리카·4장 상태 저장소 배치는 Redis를 유지하므로 바꾸지 않았다
 - 후속 구현 이슈(별도): 분석 사용량·재처리 표식 PostgreSQL 이전은 #225로 구현했다([아래](#분석-대화-사용량-db-이관-구현-225)). 미션 일일 한도 구현은 미정이다. 구현 전에 API 명세(P13 일일 한도 "core Redis 카운터 책임", #47 CONVERSATION 관리자 재처리의 Redis 표식·분산 원자성 문구)와 ERD의 Redis 보관 항목(요금제 사용 한도 일 단위 카운터)을 먼저 갱신하고 마이그레이션을 추가한다
-- platform-data chart README의 "캐시·실시간 알림 중계" 표현은 실제 용도(페어링·rate limit·알림 중계)로 별도 정리한다
+- platform-data chart README의 "캐시·실시간 알림 중계" 표현은 실제 용도(페어링·rate limit·알림 중계)로 별도 정리한다 → #245에서 정리
 
 ### 분석 대화 사용량 DB 이관 구현 (#225)
 

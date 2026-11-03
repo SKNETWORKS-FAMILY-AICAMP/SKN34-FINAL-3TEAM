@@ -418,11 +418,11 @@ core·learning은 import를 레이어로 분류해 전수 검사, Python·웹은
 
 | 대상 | 내용 |
 |---|---|
-| 오류 코드 문서 | 결제(약 30종: `PAYMENT_PG_UNAVAILABLE`·`PAYMENT_NOT_FOUND`·`SUBSCRIPTION_NOT_ACTIVE`·`REFUND_STATE_CHANGED`·`BILLING_KEY_REQUIRED` 등)·`QUEUE_MANAGEMENT_*`·`EVIDENCE_UNAVAILABLE`(410)·`SUPPORT_STATE_CONFLICT`·`LEARNING_STATS_UNAVAILABLE`·`ANALYSIS_USAGE_UNAVAILABLE`이 api-spec 1.3에 없음 → **5장 C35 반영**(`ANALYSIS_USAGE_UNAVAILABLE`은 #225로 미사용) |
+| 오류 코드 문서 | 결제(약 30종: `PAYMENT_PG_UNAVAILABLE`·`PAYMENT_NOT_FOUND`·`SUBSCRIPTION_NOT_ACTIVE`·`REFUND_STATE_CHANGED`·`BILLING_KEY_REQUIRED` 등)·`QUEUE_MANAGEMENT_*`·`EVIDENCE_UNAVAILABLE`(410)·`SUPPORT_STATE_CONFLICT`·`LEARNING_STATS_UNAVAILABLE`·`ANALYSIS_USAGE_UNAVAILABLE`이 api-spec 1.3에 없음 → **5장 C35 반영**(`ANALYSIS_USAGE_UNAVAILABLE`은 #225로 미사용). #245 재대조(예외 생성 코드 122종 + core SSE 오류 이벤트): 분석 대화 SSE `error` 전용 `ANALYSIS_FIRST_RESPONSE_TIMEOUT`·`ANALYSIS_TIMEOUT`(504)·`ANALYSIS_FAILED`(502) 3종을 1.3에 추가, 그 외 공개 응답 누락 0. `AI_BAD_RESPONSE`·`AI_CIRCUIT_OPEN`은 learning 판정 실패 기록 코드, `FINAL_RESPONSE_VERIFICATION_FAILED`는 ai→core 스트림 내부 코드로 공개 응답은 `AI_UNAVAILABLE` |
 | 목업 계약 | `GET/PUT /students/me/preferences`(api-spec 3.12)는 백엔드 미구현 → **#234 해결**(core V23·OpenAPI `StudentLook`) |
-| 종료 이슈 문구 | #171 종료 후 architecture "(예정, #171)", #184 종료 후 `tosspayments-checkout.md` "자동 종료하지 않음" 문구(과거 기록) |
-| 번호 체계 밖 절(#165) | erd·architecture·state-diagram은 #165에서 번호 절로 이동 완료. api-spec·sequence·class·ai 보고서의 이슈별 절은 남음 |
-| 보고서 정리 | `learning-frontend-alignment.md`의 다른 PC 절대경로, `pr-admin-screen-completion.md` 제목(H1) 없음, `issue-47-admin-operations.md`·`issue-46-support.md`의 #163 절 중복 |
+| 종료 이슈 문구 | #171 종료 후 architecture "(예정, #171)", #184 종료 후 `tosspayments-checkout.md` "자동 종료하지 않음" 문구(과거 기록) → **#245 정리**(architecture 문구는 이미 제거됨, tosspayments는 당시 결정임을 표기) |
+| 번호 체계 밖 절(#165) | erd·architecture·state-diagram은 #165에서 번호 절로 이동 완료. api-spec·sequence·class·ai 보고서의 이슈별 절은 남음 → **#245 정리**: api-spec 2.8.1·4.3.1~4.3.3·5.7.1~5.7.3·5.10~5.16(첫 절 #206·#207은 5.15), sequence 6.1.1·6.4, class 3.3.1, ai 2장 하위·8장, functional-spec 2.6.1. 본문 변경 없음(제목·위치만) |
+| 보고서 정리 | `learning-frontend-alignment.md`의 다른 PC 절대경로, `pr-admin-screen-completion.md` 제목(H1) 없음, `issue-47-admin-operations.md`·`issue-46-support.md`의 #163 절 중복 → **#245 정리**(절대경로 → 당시 검증 PC의 로컬 산출물 폴더, H1 추가, #163 절은 #46 보고서에 두고 #47 보고서는 링크) |
 | 인프라·설계 차이 | 멘토링 결정(#211 Karpenter·#212 S3 Gateway, 열림)과 architecture의 Cluster Autoscaler·NAT 단독 기술 |
 | 테스트 공백 | ai `analysis_agent` 노드는 #138로 보강. 웹 `presentation` 화면·Playwright 스크립트는 여전히 수동 실행만 가능 → **`_web.yml` `test:browser`(tests/browser)로 CI 실행**, `tests/*-browser.mjs`는 수동 |
 
@@ -481,10 +481,10 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 4장과 같이 
 | A12 | 유지 | ai `analysis_agent/router.py`가 `LearningClient` 생성·그래프 실행 |
 | A13 | 일부 해결 | ai는 #254(`prompt_versions/`). scoring 소비자의 `ModelStartup` 생성·revision 조정은 남음 |
 | A15 | 해결 | #256 |
-| D16 | 일부 해결 | #165(#229)로 erd·architecture·state-diagram 정리. api-spec 첫 절(#206·#207)·이슈별 절, functional-spec #206·#207·#209 절은 번호 체계 밖 |
+| D16 | 해결 | #165(#229)로 erd·architecture·state-diagram, #245로 api-spec·sequence·class·ai·functional-spec #209 정리. functional-spec 맨 위 "추가 확정"(#206·#207·#213)은 해당 FN 항목에 반영된 변경 요약으로 유지 |
 | 4.6 오류 코드 | 해결 | 5.3 C35 |
 | 4.6 테스트 공백 | 일부 해결 | 웹 `tests/browser`(Playwright)가 `_web.yml`에서 실행. `tests/*-browser.mjs`는 수동 |
-| 4.6 보고서 정리 | 유지 | `learning-frontend-alignment.md`의 다른 PC 절대경로(검증 당시 기록), `pr-admin-screen-completion.md` H1 없음 |
+| 4.6 보고서 정리 | 해결 | #245 |
 | 4.6 인프라·설계 차이 | 유지 | #211(Karpenter)·#212(S3 Gateway) 열림, architecture 4.2~4.4는 Cluster Autoscaler·NAT 기술 |
 
 ### 5.3 발견 항목과 처리
@@ -550,5 +550,5 @@ core·learning은 import를 레이어로 분류해 전수 검사, Python·웹은
 | 테스트 공백 | core HTTP 테스트 없음: `/attempts/{id}/comparison` 프록시(learning은 `AttemptComparisonIntegrationTest`), sharing-preferences(서비스 테스트만) |
 | CI | `e2e.yml` 야간 실행은 main 병합 전까지 동작하지 않음. `tests/*-browser.mjs`·JDK 21 `verify_*`는 수동 |
 | 수동 브라우저 스크립트 | `tests/requirements-browser.mjs`가 develop에서 이미 실패: 지원 단계(목록 제목 엄격 모드 중복)와 계정 화면 자녀 정보 저장 단계(`자녀 정보를 저장했습니다.` 미표시). 지원 단계는 B28과 함께 수정, 계정 단계는 남음(worktree로 develop 재현) |
-| 번호 체계 밖 절 | api-spec 첫 절(2026-11-01 #206·#207)·functional-spec #206·#207·#209 절(5.2 D16) |
+| 번호 체계 밖 절 | api-spec 첫 절(2026-11-01 #206·#207)·functional-spec #206·#207·#209 절(5.2 D16) → **#245 정리**(functional-spec 맨 위 변경 요약 절은 유지) |
 | 발행 이슈 | B32 #275, B34 #276, B35 #277, A17 #278, A18 #279, A19 #280 |
