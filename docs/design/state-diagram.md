@@ -307,7 +307,7 @@ stateDiagram-v2
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
 | → `QUEUED` | 관리자 재처리 접수 | `ConversationAdminRetryService.request` | UK `(message_id, generation)`·`(requested_by, idempotency_key)` |
-| `QUEUED → RUNNING` | 작업자 선점 | `ConversationAdminRetryService.claim` | `WHERE status='QUEUED'` + 접수 130초 이내, `job_execution(RUNNING)` |
+| `QUEUED → RUNNING` | 작업자 선점 | `ConversationAdminRetryService.claim` | `WHERE status='QUEUED'` + 접수 130초 이내(DB 시계 기준, #286), `job_execution(RUNNING)` |
 | `QUEUED·RUNNING → COMPLETED·FAILED` | 실행 결과·실행 전 거절 | `finish`(결과와 같은 트랜잭션) | `WHERE status IN ('QUEUED','RUNNING')` |
 | `QUEUED·RUNNING → FAILED` | 130초 만료·학생 삭제 | `ConversationRetryWorker`(`STREAM_INTERRUPTED`)·`beforeStudentDeletion`(`STUDENT_DELETED`) | 자동 AI 재실행 없음 |
 
