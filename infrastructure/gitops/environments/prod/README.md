@@ -69,7 +69,23 @@ NetworkPolicy는 기존 chart 정책과 **합집합**으로 동작한다. 정책
 
 2026-11-04 Secret은 공용 문서 테스트 키(`TOSS_TEST_SECRET_KEY`·`TOSS_TEST_MID`)와 `PAYMENT_BILLING_ENCRYPTION_KEY` 3개로 생성했다. 빌링·웹훅 키는 실제 상점 계약 전까지 비어 있다. 웹 빌드에는 공개 클라이언트 키 `TOSSPAYMENTS_CLIENT_KEY`가 필요하다.
 
-적용 순서: IAM inline 정책 → ExternalSecret 적용·Ready 확인 → `core-service.json` env 추가와 새 core digest → `redeploy-app.ps1` dry-run → `-Apply` → 테스트 결제·`audit-demo-data.sql` 재확인.
+### 다음 core·웹 재배포 절차 (#320·#321·#322 병합 후)
+
+2026-11-04 사전 확인: develop ef79289에 세 PR을 로컬 merge한 트리(1312f82, 미푸시)로 core·core-migrate 이미지와 웹을 빌드했다. core jar에 `new-account-demo` 설정·이용권 API·V26 migration이 들어 있고, core-migrate에는 V1~V26 SQL이 있으며, 웹 산출물에는 공개 클라이언트 키만 있고 시크릿 키 형태 문자열은 없었다. 실제 배포는 **병합된 develop SHA로 다시 빌드**해 소스와 digest를 일치시킨다.
+
+1. 결제 Secret 연결(작업자 권한): ESO 역할에 inline 정책을 넣고 ExternalSecret을 적용한다.
+   ```powershell
+   aws iam put-role-policy --role-name sagomungchi-demo-external-secrets-role --policy-name sagomungchi-demo-external-secrets-payment-read --policy-document file://infrastructure/aws/iam/external-secrets-role.inline.external-secrets-payment-read.json --profile sagomungchi-provided
+   kubectl --kubeconfig $kubeconfig apply -f "$envDir/core-next/payment-external-secret.json"
+   kubectl --kubeconfig $kubeconfig -n app wait --for=condition=Ready externalsecret/payment-credentials --timeout=120s
+   ```
+   이후 `demo-stack.json`의 ESO 역할 `inline`에 이 정책을 추가한다.
+2. 빌드·push: 병합 SHA `<sha>`로 `backend/core-service/Dockerfile`, `infrastructure/gitops/migrations/core.Dockerfile`을 빌드해 ECR `sagomungchi/core-service`·`core-migrate`에 `<sha>` 태그로 올리고 digest를 기록한다(태그 불변 저장소).
+3. V26 사전 점검: core_app 계정으로 [`check-v26-preconditions.sql`](../../../aws/check-v26-preconditions.sql)을 실행해 위반 0과 flyway 최신 25를 확인한다. 0이 아니면 중단하고 데이터를 임의로 고치지 않는다.
+4. migration: `migrations/core-service.json`의 digest·`revision`을 새 값으로 바꾸고 Job만 렌더링해 적용한 뒤 complete를 확인한다(위 3절 명령). 실패 시 앱을 배포하지 않는다.
+5. core: `core-service.json`의 image digest를 바꾸고 `core-next/core-service-env.json` 항목을 `env` 끝에 추가한 뒤 `redeploy-app.ps1 -Service core-service` dry-run → `-Apply`. `APP_GUARDIAN_TRANSFER_ENABLED`는 넣지 않아 보호자 이관 기능은 꺼진 상태로 유지한다.
+6. 웹: 같은 SHA에서 공개 `TOSSPAYMENTS_CLIENT_KEY`(`test_gck_docs_`)만 주입해 `npm ci && npm run build` → S3 web 버킷에 assets 먼저, `index.html` 마지막 업로드. 이전 assets는 지우지 않는다.
+7. 확인: 신규 Google 가입 계정 `is_demo=true`, 학부모 이용권 표시, 공용 테스트 카드 결제 승인 1회, `audit-demo-data.sql` 재감사, `demo_stack.py plan`.
 
 ## 보존과 환경 경계
 

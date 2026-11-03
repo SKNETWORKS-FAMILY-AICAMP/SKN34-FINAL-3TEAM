@@ -177,3 +177,9 @@
 - **eksctl 검증:** eksctl 0.231.0 공식 배포 파일을 checksum으로 확인하고, `render-eksctl` 결과로 `eksctl create cluster --dry-run`을 실제 계정에 실행해 exit 0을 확인했다. 정규화된 출력에 버전 1.35, add-on 6개 버전, Pod Identity 7개, 노드그룹 t3.medium 3/3/3·20GiB·private, 서비스 역할·노드 역할, VPC·subnet 4개가 그대로 유지됐다. dry-run은 자원을 만들지 않는다.
 - **결제 Secret (2026-11-04 01:47 KST):** 사용자가 로컬 `.env`의 공용 문서 테스트 키(`test_gsk_docs_`, MID `tgen_docs`)와 빌링 암호화 키로 `sagomungchi/demo/app/payment`를 직접 생성했다(값 비출력). `demo-stack.json`에 추가했고 `plan` 56/56 일치. 공용 키라 일반 결제 승인만 시연 가능하고 빌링·웹훅·주문 조회 복구는 실제 상점 계약 전까지 미검증이다. ESO 권한·ExternalSecret·core env는 다음 core 재배포 때 적용하며, 웹 재빌드에는 공개 클라이언트 키 `TOSSPAYMENTS_CLIENT_KEY`(`test_gck_docs_`)가 필요하다.
 - 남은 사용자 작업: 부모 계정 다운로드 확인, 이용권 수정 정리. core-migrate 재빌드와 시연 데이터 재감사는 그 다음 순서다.
+
+## PR 병합 전 사전 확인 (2026-11-04)
+
+- PR #320·#321·#322를 develop ef79289에 로컬 merge한 트리로 core·core-migrate 이미지와 웹을 빌드했다(push 없음). core jar의 `new-account-demo`·이용권 API·V26, core-migrate의 V1~V26, 웹의 공개 클라이언트 키 포함과 시크릿 키 형태 문자열 부재를 확인했다.
+- V26(보호자 이관)은 unique index·CHECK 제약을 추가하므로 [사전 점검 SQL](../../infrastructure/aws/check-v26-preconditions.sql)을 만들었다. 로컬 PostgreSQL에 V25까지 적용한 스키마에서 위반 0·최신 25로 동작을 확인했고, 실제 RDS에서는 배포 직전에 실행한다. 이관 기능은 `app.guardian-transfer.enabled`가 없으면 로드되지 않는다.
+- ESO 결제 정책 추가는 세션 권한 규칙상 작업자가 직접 실행한다. 재배포 절차는 [prod README](../../infrastructure/gitops/environments/prod/README.md#다음-core웹-재배포-절차-320321322-병합-후)에 정리했다.
