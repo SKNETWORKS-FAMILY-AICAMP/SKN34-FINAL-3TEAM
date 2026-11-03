@@ -113,6 +113,15 @@ pwsh -File infrastructure/kind/create-app-secrets.ps1
 - 앱 이미지는 `environments/local/*.yaml`의 `sagomungchi/*:local` 이름으로 빌드한다. Docker의 다중 플랫폼 캐시 이미지는 `kind load docker-image`가 누락 digest로 실패할 수 있으므로 `docker image save --platform linux/amd64 -o <임시 archive> <이미지:local>` 뒤 `kind load image-archive <임시 archive> --name sagomungchi-local`로 로드하고 archive를 지운다.
 - Helm·kubectl 명령은 모든 호출에 `--kube-context kind-sagomungchi-local` 또는 `--context kind-sagomungchi-local`을 명시한다. 동기화 순서는 [local Argo CD 안내](../gitops/argocd/local/README.md)를 따른다.
 - 전체 앱·모델·관측을 한 번에 기동할 메모리 예산은 검증되지 않았다. platform → migration·core·learning → 나머지 API → worker·KEDA → 관측 순으로 자원을 확인하며 올린다.
+- 외부 연동 키(#236): `.env`에 값이 있는 Google·OpenAI/Anthropic·토스 테스트 키·`PAYMENT_*`만 앱 Secret에 넣는다. 토스는 `test_` 키만 허용하며 `live_` 키는 스크립트가 거부한다. 키를 바꾸면 기존 Secret과 값이 달라 스크립트가 멈추므로, 저장된 데이터와 무관한 앱 Secret만 `kubectl --context kind-sagomungchi-local -n app delete secret app-service-credentials`로 지운 뒤 다시 만들고 core·ai를 재시작한다. platform Secret은 지우지 않는다.
+- 외부 호출: core(Google·토스)와 ai(LLM)만 공인 IPv4의 TCP 443으로 나갈 수 있다. 사설·CGNAT·link-local·loopback 대역은 제외한다. Calico 오픈소스판은 도메인 단위 제한이 없어 대상 도메인으로 좁히지 않았다.
+
+웹은 호스트에서 Vite 개발 서버로 실행하고 `/api`만 kind Ingress로 보낸다. core의 `AUTH_WEB_ORIGIN`(`http://localhost:5173`)이 그대로라 Google 콘솔의 기존 리디렉션 URI를 쓴다.
+
+```powershell
+cd frontend/web
+$env:CORE_PROXY_TARGET = 'http://127.0.0.1'; $env:CORE_PROXY_HOST = 'api.sagomungchi.local'; npm run dev
+```
 
 ## 로컬 자원 공유
 

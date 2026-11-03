@@ -239,3 +239,30 @@ migration Dockerfile 2개는 전용 임시 태그로 빌드에 성공했고 태�
 | 적용 대상 문구 | chart·local Argo CD 안내의 "기존 클러스터 적용 금지"를 `sagomungchi-local` 정식 절차로 바꿨다 |
 
 누락 환경값(Google·토스·LLM 공급자 등)과 외부 egress는 #236 범위로 남긴다. 이 절 위의 검증 기록은 당시 전용 클러스터 기준이다. 이미 만들어진 `sagomungchi-issue171` 클러스터·Docker 네트워크 `kind-issue171`은 저장소 변경과 별개이며, 담당자가 직접 `kind delete cluster --name sagomungchi-issue171`과 `docker network rm kind-issue171`로 정리한다.
+
+## kind 환경값·외부 egress 보완 (#236)
+
+kind/GitOps local values가 `compose.yaml`보다 적어 클러스터에서 Google 로그인·토스 결제·LLM 판정이 동작하지 않았다. 위 "외부 LLM·토스 호출을 허용하는 local stub이 아직 저장소에 없으므로" 결정은 이 절로 대체한다.
+
+### compose 대비 환경값 차이 (develop f6250bd 기준)
+
+| 서비스 | compose에만 있던 값 | 처리 |
+|---|---|---|
+| core | `GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET` | 앱 Secret 선택 키 |
+| core | `TOSS_TEST_SECRET_KEY`·`TOSSPAYMENTS_SECRET_KEY`·`TOSS_TEST_MID`·`TOSS_TEST_WEBHOOK_SECURITY_KEY`, 빌링 `TOSS_TEST_BILLING_*` 3종 | 앱 Secret 선택 키, `live_` 키 거부 |
+| core | `PAYMENT_BILLING_ENCRYPTION_KEY`·`PAYMENT_FREE_PRODUCT_ID` | 앱 Secret 선택 키 (상품 UUID는 환경마다 다름) |
+| core | `AUTH_ACCESS_TTL`·`AUTH_STUDENT_ACCESS_TTL`·`AUTH_REAUTH_TTL`·`AUTH_REFRESH_TTL`·`REDIS_PORT`·`STUDENT_DEVICE_TTL`·`STUDENT_DEVICE_ATTEMPT_LIMIT` | values에 compose 기본값 |
+| core | `REDIS_PASSWORD` | 추가하지 않음. compose·platform-data Redis 모두 비밀번호 없음 |
+| ai | `LLM_PROVIDER`·`OPENAI_MODEL`·`OPENAI_JSON_MODE`·`ANTHROPIC_MODEL`·`ANTHROPIC_EFFORT`·`ANTHROPIC_FALLBACK` | values에 compose 기본값 (`LLM_PROVIDER=openai`) |
+| ai | `ANTHROPIC_API_KEY` | 앱 Secret 선택 키 (`OPENAI_API_KEY`는 기존 선택 키) |
+| ai | `OPENAI_BASE_URL` | 추가하지 않음. compose 기본값이 빈 값(OpenAI 기본 주소)이고 sLLM 사용 시에만 필요 |
+| report-api | `REPORT_DOWNLOAD_TTL_SECONDS` | 추가하지 않음. 앱 기본값 300과 compose 기본값이 같음 |
+| report-api | `RABBITMQ_URL` | 추가하지 않음. 메시지 소비는 report-worker만 하며 worker values에 있음 |
+| learning·scoring | 없음 | — |
+
+### 결정
+
+- 외부 키는 루트 `.env` 하나를 원본으로 `create-app-secrets.ps1`이 값이 있을 때만 앱 Secret에 복사한다. values는 `optional: true`로 참조해 키가 없으면 환경 변수를 만들지 않는다(compose의 빈 기본값과 같은 동작).
+- egress: core·ai에만 `0.0.0.0/0`에서 사설(10/8·172.16/12·192.168/16)·CGNAT(100.64/10)·link-local(169.254/16)·loopback을 뺀 TCP 443을 허용한다. Calico 오픈소스판과 기본 NetworkPolicy는 FQDN 규칙이 없고, 공급자 IP 대역 목록은 자주 바뀌어 유지하기 어렵다. 클러스터 내부·platform 접근은 기존 앱·platform 허용 규칙만 따른다. 운영 EKS의 NAT·도메인 제한은 #185에서 정한다.
+- 웹은 호스트 Vite에서 실행하고 `CORE_PROXY_TARGET`·`CORE_PROXY_HOST`로 `/api`를 kind Ingress(`api.sagomungchi.local`)에 보낸다. 지정하지 않으면 기존 compose 대상(`localhost:CORE_HOST_PORT`)을 유지한다. Google 콜백은 `AUTH_WEB_ORIGIN` 기준이라 기존 리디렉션 URI를 그대로 쓴다.
+- 토스 웹훅은 외부에서 로컬 kind로 들어올 수 없어 kind 확인 범위가 아니다. 결제 승인은 core가 토스 API를 직접 호출해 확인한다.
