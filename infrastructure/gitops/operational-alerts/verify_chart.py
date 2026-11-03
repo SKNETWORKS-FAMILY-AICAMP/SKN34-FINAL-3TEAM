@@ -71,6 +71,9 @@ def main():
         assert dlq_job["metrics_path"] == "/metrics/detailed"
         assert dlq_job["params"] == {"family": ["queue_coarse_metrics"]}
         assert [j["job_name"] for j in scrape["scrape_configs"]] == ["otel-collector", "rabbitmq", "rabbitmq-dlq"]
+        # Without a Pod template change an upgrade leaves Prometheus on the old scrape config.
+        prometheus_pod = by_name["Deployment", "prometheus"]["spec"]["template"]["metadata"]
+        assert prometheus_pod.get("annotations", {}).get("ops187/rabbitmq-dlq-scrape") == "enabled"
         keep = dlq_job["metric_relabel_configs"][0]
         definitions = json.loads((repo / "infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json")
                                  .read_text(encoding="utf-8"))

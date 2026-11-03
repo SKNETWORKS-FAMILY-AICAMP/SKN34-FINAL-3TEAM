@@ -24,6 +24,8 @@ EKS에서 Langfuse web과 프로젝트 키가 준비되면 `collector.traces.ena
 같은 `helm-values.json`은 `prometheus.rabbitmqDlqMetrics.enabled`도 켠다. 이 값은 기존 `rabbitmq` job을 그대로 두고
 같은 15692 포트의 `/metrics/detailed?family=queue_coarse_metrics`를 별도 `rabbitmq-dlq` job으로 수집해
 `<큐>.dlq`의 `rabbitmq_detailed_queue_messages`만 남긴다. DLQ 규칙이 있는데 이 값이 꺼져 있으면 Helm 렌더가 실패한다.
+Prometheus는 ConfigMap 변경을 스스로 다시 읽지 않으므로, 이 값이 켜질 때만 Pod template annotation을 붙여 upgrade 시 Prometheus Pod를 다시 만든다.
+local Prometheus는 `emptyDir`이라 이때 수집 이력이 초기화된다.
 
 local values/Argo 경보 활성화·실제 클러스터 적용·Discord 수신은 수행하지 않았다.
 현재 Grafana NetworkPolicy에는 Discord HTTPS egress가 없으므로 이 값만 켜도 운영 발송이 되는 것은 아니다.
