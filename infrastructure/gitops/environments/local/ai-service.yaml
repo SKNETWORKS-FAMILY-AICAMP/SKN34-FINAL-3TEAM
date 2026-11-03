@@ -20,6 +20,14 @@ env:
   - {name: SCORING_URL, value: "http://scoring-service.app.svc.cluster.local:8001"}
   - {name: CORE_URL, value: "http://core-service.app.svc.cluster.local:8080"}
   - {name: OPENAI_API_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: OPENAI_API_KEY, optional: true}}}
+  # #236: compose.yaml ai-service defaults; switch providers with LLM_PROVIDER and the matching key
+  - {name: LLM_PROVIDER, value: openai}
+  - {name: OPENAI_MODEL, value: gpt-6.1-terra}
+  - {name: OPENAI_JSON_MODE, value: json_schema}
+  - {name: ANTHROPIC_API_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: ANTHROPIC_API_KEY, optional: true}}}
+  - {name: ANTHROPIC_MODEL, value: claude-sonnet-5-5}
+  - {name: ANTHROPIC_EFFORT, value: medium}
+  - {name: ANTHROPIC_FALLBACK, value: "true"}
 hpa:
   enabled: false
 pdb:
@@ -33,3 +41,10 @@ networkPolicy:
     - {name: scoring-service, port: 8001}
   egressToPlatform:
     - {name: rabbitmq, port: 5672}
+  # #236: LLM API over HTTPS. Calico OSS has no FQDN rules, so allow public 443 only.
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16, 127.0.0.0/8]
+      ports: [{protocol: TCP, port: 443}]
