@@ -65,7 +65,7 @@ class AnalysisService:
     ) -> TemplateProposal:
         if user.role != "PARENT" or not user.user_id:
             raise ApiError(403, "FORBIDDEN", "학부모 컨텍스트가 필요합니다.")
-        return await propose_template(body, self._llm)
+        return await propose_template(body, self._llm, self._versions.prompt("reportTemplate"))
 
     async def _events(self, body: AnalysisRequest, context: AgentContext) -> AsyncIterator[Event]:
         try:
