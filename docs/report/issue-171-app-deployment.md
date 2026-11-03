@@ -266,3 +266,22 @@ kind/GitOps local values가 `compose.yaml`보다 적어 클러스터에서 Googl
 - egress: core·ai에만 `0.0.0.0/0`에서 사설(10/8·172.16/12·192.168/16)·CGNAT(100.64/10)·link-local(169.254/16)·loopback을 뺀 TCP 443을 허용한다. Calico 오픈소스판과 기본 NetworkPolicy는 FQDN 규칙이 없고, 공급자 IP 대역 목록은 자주 바뀌어 유지하기 어렵다. 클러스터 내부·platform 접근은 기존 앱·platform 허용 규칙만 따른다. 운영 EKS의 NAT·도메인 제한은 #185에서 정한다.
 - 웹은 호스트 Vite에서 실행하고 `CORE_PROXY_TARGET`·`CORE_PROXY_HOST`로 `/api`를 kind Ingress(`api.sagomungchi.local`)에 보낸다. 지정하지 않으면 기존 compose 대상(`localhost:CORE_HOST_PORT`)을 유지한다. Google 콜백은 `AUTH_WEB_ORIGIN` 기준이라 기존 리디렉션 URI를 그대로 쓴다.
 - 토스 웹훅은 외부에서 로컬 kind로 들어올 수 없어 kind 확인 범위가 아니다. 결제 승인은 core가 토스 API를 직접 호출해 확인한다.
+
+### kind 실제 확인 (2026-11-03)
+
+이 브랜치의 values·스크립트로 Windows 11 PC의 새 `sagomungchi-local`(kind v0.33.0, Kubernetes v1.35.8, Calico v3.33.0, ingress-nginx 4.15.1, Docker 메모리 약 30GiB)에서 확인했다. Argo CD 설치는 이 이슈 범위가 아니어서 같은 chart·values를 Helm으로 직접 설치했다. local Argo 정의와 같은 KEDA 2.21.0과 `policies/local`도 적용했다. Helm은 Argo PreSync 훅을 쓰지 않으므로 core·learning·report-api를 먼저 설치하고 migration Job 완료(core v23·learning v8·report)를 기다린 뒤 나머지를 설치했다.
+
+확인용 데이터는 이 PC의 kind DB에만 넣었고 저장소에는 넣지 않았다. 무료(0원)·프리미엄(14,900원) 상품 2개, #235 전까지 가입을 막지 않도록 "Synthetic non-binding notice" 동의 문서 3종, learning `db/seed/demo_missions.sql`이다. 웹은 Node 컨테이너의 Vite를 `CORE_PROXY_TARGET`·`CORE_PROXY_HOST`로 kind Ingress에 연결했다.
+
+| 항목 | 결과 |
+|---|---|
+| 배포 | platform 4종 Ready·초기화 Job 2개 완료, 앱 6종 Running(report-worker는 큐가 비어 KEDA 0개) |
+| Ingress | `/api` 200, 외부 `/internal` 404 |
+| egress | core → Google OAuth·토스 API 응답 수신, ai → OpenAI 응답 수신(인증 없이 401). learning의 외부 443과 core의 외부 80은 시간 초과로 차단 |
+| Google 로그인 | 학부모 로그인·동의·자녀 등록, PIN 변경용 Google 재인증 콜백 VERIFIED |
+| LLM 판정 | 초3 서술형 미션 답변 3건 모두 `method=LLM`·`gpt-6.1-terra`·`judge@2`, `DONE`(CORRECT·RETHINK·PARTIAL), 실패 코드 없음. core `llm_usage`에 JUDGMENT·FOLLOWUP 호출이 성공으로 기록 |
+| 토스 결제 승인 | 미확인. 아래 참고 |
+
+토스: 처음 넣은 키가 공식 문서의 공용 예시 키(`test_gck_docs_`·`test_gsk_docs_`)여서 결제창은 열렸지만 core의 승인 재조회에 토스가 `NOT_FOUND_MERCHANT`를 반환해 `PAYMENT_PG_MISMATCH`가 됐다. 담당자 계정의 키는 API 개별 연동 키(`test_ck_`·`test_sk_`)뿐이었고, 그 시크릿 키는 kind 밖에서 없는 주문 조회에 `NOT_FOUND_PAYMENT`로 정상 인증됐다. 일반 결제 화면은 결제위젯(`widgets()`)이라 `test_gck_`·`test_gsk_` 키가 필요하며, 공식 안내상 전자결제 신청 전에는 보이지 않는다. 위젯 키를 확보하면 같은 절차로 결제 승인 1회를 확인한다.
+
+사용성 관찰(#236 범위 밖): Google 재인증 팝업은 콜백 JSON만 보여 주고 원래 화면으로 돌아오지 않는다. 같은 콜백 주소를 다시 열면 403 `REAUTH_REQUIRED`가 된다. 학생 기기 등록에서 기기 이름이 비어 있으면 어느 칸인지 없이 `VALIDATION_FAILED`만 보인다. 관측 chart를 설치하지 않은 환경에서는 core·learning Java agent가 Collector 주소를 찾지 못한다는 경고를 남기지만 앱 동작에는 영향이 없다.
