@@ -11,9 +11,10 @@ from langgraph.runtime import Runtime
 
 from app.analysis_agent.calculators import THOUGHT_LIMIT
 from app.analysis_agent.calculators import compute as compute_metrics
+from app.analysis_agent.context import AgentContext
 from app.analysis_agent.models import Intent, Records, Scope, StreamError
 from app.analysis_agent.nodes.events import status
-from app.analysis_agent.state import AgentContext, AnalysisState
+from app.analysis_agent.state import AnalysisState
 from app.analysis_agent.tools import RecordTools
 from app.clients.learning_client import RecordsUnavailable
 

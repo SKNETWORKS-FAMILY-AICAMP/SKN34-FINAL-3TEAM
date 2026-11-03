@@ -407,7 +407,7 @@ core·learning은 import를 레이어로 분류해 전수 검사, Python·웹은
 | A9 | Infrastructure→Application 역참조 | 2.2 단방향 | core `notification/messaging/NotificationRedisPublisher.kt`가 `NotificationDeliveryService.record` 호출 |
 | A10 | 기능 간 controller·config 참조 | 2.2 기능 간은 service로만 | core 9개 컨트롤러가 `account.controller.AuthController.IDENTITY` 참조, `guardianship/service/StudentPinService`→`account.config.StudentDeviceProperties`, `_common/security/PublicAuthFilter`→account 기능, learning `attempt/controller/AttemptResponses.kt`·`record/controller/RecordResponses.kt`가 다른 기능 controller DTO 참조 |
 | A11 | report 기능 간 DB 직접 접근 — #252 로컬 해결·미병합 → **#258 병합** | 2.1·2.2 | query는 generation service, 생성·조회·복구·worker는 deletion service 경유. 삭제 DB 작업은 deletion.repository, 리포트·Outbox 삭제는 각 소유 service/repository로 분리. 기존 테이블 import 호환만 state의 지연 재노출로 유지. 검증 근거: [report #252 기록](report.md#252-report-기능-간-db-직접-접근-제거) |
-| A12 | ai 분석 에이전트 Application 계층 부재 | 2.2 계층 건너뛰기 금지 | `analysis_agent/router.py`가 `LearningClient` 생성·그래프 실행, `state.py`가 `tools`·`llm`·`versions` 참조 |
+| A12 | ai 분석 에이전트 Application 계층 부재 — #253 해결(`AnalysisService`가 learning 연결 생성·그래프 실행·이벤트 변환, `AgentContext`는 `context.py`로 이동) | 2.2 계층 건너뛰기 금지 | `analysis_agent/router.py`가 `LearningClient` 생성·그래프 실행, `state.py`가 `tools`·`llm`·`versions` 참조 |
 | A13 | ai·scoring 소비자에 revision 조정 업무 로직, ai `versions.py`에 router·모델·상태 저장 혼재 | 2.1 Presentation 업무 로직 금지 | `ai-service/app/messaging/consumer.py`, `scoring-service/app/messaging/consumer.py`, `ai-service/app/versions.py`. ai는 #254에서 `prompt_versions/`(models·registry·service·router)로 분리하고 `versions.py` 제거, 소비자는 검증·ACK·`PromptSync.offer`만. scoring 소비자의 `ModelStartup` 생성·조정은 남음 |
 | A14 | 웹 컴포넌트 API 직접 호출·서버 상태 직접 보관 | 3장 | `presentation/support/SupportResults.tsx`의 `apiFetch`, `parent/ParentPayments.tsx`(`PaymentResult`)·`BillingResult.tsx`의 `useState`·폴링, `domain/payment.ts`의 `sessionStorage` 접근. **#255 해결**: `data/support/{api,queries}.ts`, `data/payment/{queries,checkoutStorage}.ts`로 이동 |
 | A15 | 설계 문서상 위치와 다른 구현 | 2.6 | learning `student.deleted` 소비가 `deletion/`이 아닌 `record/consumer`·`record/service`(빈 `deletion/` 폴더 잔존). 트리에 실제 위치 표기 |
@@ -478,7 +478,7 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 4장과 같이 
 | A9 | 유지 | `NotificationRedisPublisher` → `NotificationDeliveryService` |
 | A10 | 유지 | core 9개 컨트롤러의 `AuthController.IDENTITY`, `StudentPinService`→`StudentDeviceProperties`, learning `AttemptResponses`·`RecordResponses`·`RecordController`의 다른 기능 DTO |
 | A11 | 해결 | #258(#252) 병합 |
-| A12 | 유지 | ai `analysis_agent/router.py`가 `LearningClient` 생성·그래프 실행 |
+| A12 | 해결 | #253. `analysis_agent/service.py`(`AnalysisService`), router는 의존성·SSE 형식만, `state.py`는 models·calculators만 참조 |
 | A13 | 일부 해결 | ai는 #254(`prompt_versions/`). scoring 소비자의 `ModelStartup` 생성·revision 조정은 남음 |
 | A15 | 해결 | #256 |
 | D16 | 해결 | #165(#229)로 erd·architecture·state-diagram, #245로 api-spec·sequence·class·ai·functional-spec #209 정리. functional-spec 맨 위 "추가 확정"(#206·#207·#213)은 해당 FN 항목에 반영된 변경 요약으로 유지 |

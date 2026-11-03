@@ -137,7 +137,7 @@ def records(empty: bool = False) -> Records:
 
 
 class FakeRecords:
-    """RecordTools 대역. fail에 오류를 넣으면 모든 조회가 실패."""
+    """LearningClient(노드 테스트에서는 RecordTools) 대역. fail에 오류를 넣으면 모든 조회가 실패."""
 
     def __init__(self, empty: bool = False, fail: RecordsUnavailable | None = None) -> None:
         self._records = records(empty)

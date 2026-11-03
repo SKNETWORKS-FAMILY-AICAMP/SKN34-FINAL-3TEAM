@@ -387,11 +387,13 @@ backend/ai-service/
 │  │  ├─ leak_guard.py
 │  │  └─ prompts.py
 │  ├─ analysis_agent/
-│  │  ├─ router.py               # SSE, 그래프 실행
+│  │  ├─ router.py               # SSE 형식 변환만
+│  │  ├─ service.py              # AnalysisService: 범위·기한·프롬프트 선택, 그래프 실행·최종 상태 → 이벤트, 템플릿 제안 역할 확인 (#253)
 │  │  ├─ models.py
 │  │  ├─ graph.py
 │  │  ├─ nodes/                  # understand·retrieve·respond·events
-│  │  ├─ state.py
+│  │  ├─ state.py                # 그래프 상태 (models·calculators만 참조)
+│  │  ├─ context.py              # AgentContext: LLM·기록 도구·기한·프롬프트
 │  │  ├─ tools.py
 │  │  ├─ calculators.py
 │  │  ├─ verification.py         # 답변 숫자·인용 ↔ 조회·계산 결과 대조

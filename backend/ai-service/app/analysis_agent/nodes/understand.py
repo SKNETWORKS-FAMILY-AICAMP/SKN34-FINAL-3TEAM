@@ -7,9 +7,10 @@ LLM 장애면 분류 없이 기본 수치(COUNT)만 계산해 규칙 응답 모�
 from langgraph.runtime import Runtime
 
 from app.analysis_agent import prompts
+from app.analysis_agent.context import AgentContext
 from app.analysis_agent.models import Clarification, ResultScope
 from app.analysis_agent.nodes.events import status
-from app.analysis_agent.state import AgentContext, AnalysisState
+from app.analysis_agent.state import AnalysisState
 from app.llm.base import LlmUnavailable
 
 CLARIFY_MESSAGES = {

@@ -2,20 +2,21 @@
 
 import asyncio
 import json
-import time
 
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 
 from app.analysis_agent.models import AnalysisRequest
 from app.analysis_agent.prompts import Classification
-from app.analysis_agent.router import _events, get_record_tools
-from app.analysis_agent.state import AgentContext
+from app.analysis_agent.router import get_analysis_service, sse
+from app.analysis_agent.service import AnalysisService
 from app.bootstrap import create_app
 from app.clients.learning_client import RecordsUnavailable
+from app.config import get_settings
 from app.llm.base import LlmError
-from app.llm.providers import get_llm
 from app.prompt_versions.registry import ActiveVersions
+from app.security import UserContext
 from tests.analysis_agent.records_fixture import FakeRecords
 from tests.fakes import FakeLlm
 
@@ -37,10 +38,19 @@ def classified(intent: str, issue: str = "NONE") -> Classification:
     return Classification(intent=intent, scope_issue=issue)
 
 
+def service_override(llm: FakeLlm, records: FakeRecords):
+    """앱의 활성 버전을 쓰고 learning 연결만 가짜 기록으로 바꾼 AnalysisService."""
+
+    def override(request: Request) -> AnalysisService:
+        versions = request.app.state.active_versions
+        return AnalysisService(llm, get_settings(), versions, lambda user: records)
+
+    return override
+
+
 def post(llm: FakeLlm, records: FakeRecords | None = None, body: dict = BODY, headers=HEADERS):
     app = create_app()
-    app.dependency_overrides[get_llm] = lambda: llm
-    app.dependency_overrides[get_record_tools] = lambda: records or FakeRecords()
+    app.dependency_overrides[get_analysis_service] = service_override(llm, records or FakeRecords())
     with TestClient(app) as client:
         return client.post("/internal/analysis/stream", json=body, headers=headers)
 
@@ -192,19 +202,16 @@ def test_cancelled_stream_stops_graph_and_llm() -> None:
     # core가 연결을 끊으면 Starlette가 응답 생성기를 취소함 (ASGI 2.3 disconnect 감지)
     llm = FakeLlm(classified("CHANGES"), ["답을 다시 썼어요. "] * 20, delay=0.01)
     records = FakeRecords()
-    context = AgentContext(
-        llm=llm,
-        tools=records,
-        deadline=time.monotonic() + 60,
-        prompt=ActiveVersions().prompt("analysis"),
-    )  # type: ignore[arg-type]
+    service = AnalysisService(llm, get_settings(), ActiveVersions(), lambda user: records)  # type: ignore[arg-type]
+    user = UserContext(user_id="p-1", role="PARENT", student_scope=frozenset({"s-1"}))
     seen: list[str] = []
 
     async def scenario() -> None:
         first_delta = asyncio.Event()
 
         async def consume() -> None:
-            async for event in _events(AnalysisRequest.model_validate(BODY), context):
+            async for name, data in service.stream(AnalysisRequest.model_validate(BODY), user):
+                event = sse(name, data)
                 seen.append(event.split("\n", 1)[0])
                 if event.startswith("event: delta"):
                     first_delta.set()
