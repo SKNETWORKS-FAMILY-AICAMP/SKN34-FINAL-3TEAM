@@ -15,6 +15,7 @@ interface ConversationRetryMapper {
     fun forStudent(student: UUID): List<ConversationRetry>
     fun pending(): List<ConversationRetry>
     fun stale(): List<ConversationRetry>
+    fun claimable(id: UUID): Boolean
     fun claim(id: UUID): Int
     fun finish(@Param("id") id: UUID,@Param("status") status: String): Int
     fun startExecution(row: ConversationRetry): Int
@@ -29,6 +30,7 @@ class ConversationRetryRepository(private val mapper: ConversationRetryMapper) {
     fun forStudent(student: UUID)=mapper.forStudent(student)
     fun pending()=mapper.pending()
     fun stale()=mapper.stale()
+    fun claimable(id: UUID)=mapper.claimable(id)
     fun claim(id: UUID)=mapper.claim(id)==1
     fun finish(id: UUID,status: String)=mapper.finish(id,status)==1
     fun startExecution(row: ConversationRetry) { check(mapper.startExecution(row)==1) }

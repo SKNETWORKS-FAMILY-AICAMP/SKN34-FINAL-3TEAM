@@ -15,6 +15,8 @@
  <select id="forStudent" resultMap="retry">SELECT r.* FROM conversation_job_retry r JOIN conversation_message m ON m.id=r.message_id JOIN conversation c ON c.id=m.conversation_id WHERE c.student_id=#{student} AND r.status IN ('QUEUED','RUNNING')</select>
  <select id="pending" resultMap="retry">SELECT * FROM conversation_job_retry WHERE status='QUEUED' AND accepted_at > CURRENT_TIMESTAMP-interval '130 seconds' ORDER BY accepted_at,id LIMIT 20</select>
  <select id="stale" resultMap="retry">SELECT * FROM conversation_job_retry WHERE status IN ('QUEUED','RUNNING') AND COALESCE(started_at,accepted_at) &lt;= CURRENT_TIMESTAMP-interval '130 seconds' ORDER BY accepted_at,id LIMIT 20</select>
+ <!-- Same predicate and transaction CURRENT_TIMESTAMP as claim, so the service pre-check and the UPDATE cannot disagree. -->
+ <select id="claimable" resultType="boolean">SELECT EXISTS(SELECT 1 FROM conversation_job_retry WHERE id=#{id} AND status='QUEUED' AND accepted_at > CURRENT_TIMESTAMP-interval '130 seconds')</select>
  <update id="claim">UPDATE conversation_job_retry SET status='RUNNING',started_at=CURRENT_TIMESTAMP WHERE id=#{id} AND status='QUEUED' AND accepted_at > CURRENT_TIMESTAMP-interval '130 seconds'</update>
  <update id="finish">UPDATE conversation_job_retry SET status=#{status},finished_at=CURRENT_TIMESTAMP WHERE id=#{id} AND status IN ('QUEUED','RUNNING')</update>
  <insert id="startExecution">INSERT INTO job_execution(id,job_type,job_id,attempt_no,status,triggered_by,started_at) VALUES(#{id},'CONVERSATION',#{messageId},#{generation},'RUNNING',#{requestedBy},CURRENT_TIMESTAMP)</insert>
