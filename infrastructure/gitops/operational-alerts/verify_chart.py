@@ -2,6 +2,7 @@
 import argparse
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -44,7 +45,7 @@ def main():
             assert identify(before) == identify(after), "Disabled mode changed existing resources"
         run(args.helm, "lint", str(chart))
         print("PASS Helm default/local disabled resources identical to baseline " + base, flush=True)
-        config = dict(environment="verification", datasource_uid="issue187-prometheus", backlog_messages=10,
+        config = dict(environment="verification", datasource_uid="issue187-prometheus", backlog_messages=10, dlq_messages=0,
                       pending_seconds=10, interval_seconds=10, group_wait_seconds=1, group_interval_seconds=10,
                       repeat_interval_seconds=300, secret_name="issue187-test", secret_key="DISCORD_WEBHOOK_URL")
         config_file = root / "config.json"
@@ -65,6 +66,21 @@ def main():
         assert any(v.get("configMap", {}).get("name") == "ops187-alerting" for v in pod["volumes"])
         assert any(v["mountPath"] == "/etc/grafana/provisioning/alerting" for v in container["volumeMounts"])
         print("PASS generated CLI values connect datasource, provisioning mount and required Secret", flush=True)
+        scrape = yaml.safe_load(by_name["ConfigMap", "prometheus-config"]["data"]["prometheus.yml"])
+        dlq_job = next(j for j in scrape["scrape_configs"] if j["job_name"] == "rabbitmq-dlq")
+        assert dlq_job["metrics_path"] == "/metrics/detailed"
+        assert dlq_job["params"] == {"family": ["queue_coarse_metrics"]}
+        assert [j["job_name"] for j in scrape["scrape_configs"]] == ["otel-collector", "rabbitmq", "rabbitmq-dlq"]
+        keep = dlq_job["metric_relabel_configs"][0]
+        definitions = json.loads((repo / "infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json")
+                                 .read_text(encoding="utf-8"))
+        queues = [q["name"] for q in definitions["queues"]]
+        # Prometheus anchors relabel regexes; separator ';' joins source label values.
+        kept = [q for q in queues if re.fullmatch(keep["regex"], "rabbitmq_detailed_queue_messages;" + q)]
+        expected = [q for q in queues if q.endswith(".dlq")]
+        assert expected and kept == expected, "DLQ relabel must keep exactly the defined <queue>.dlq queues"
+        assert not re.fullmatch(keep["regex"], "rabbitmq_detailed_queue_messages_ready;" + expected[0])
+        print("PASS DLQ scrape keeps only total messages of " + str(len(expected)) + " defined <queue>.dlq queues", flush=True)
         values = json.loads(values_file.read_text(encoding="utf-8"))
         for key in ("secretName", "secretKey", "provisioning"):
             invalid = json.loads(json.dumps(values))
@@ -76,10 +92,14 @@ def main():
         invalid["grafana"]["datasourceUid"] = "different-uid"
         invalid_file.write_text(json.dumps(invalid), encoding="utf-8")
         run(args.helm, "template", "observability", str(chart), "-f", str(invalid_file), expect_success=False)
-        print("PASS Helm rejects missing Secret/provisioning and mismatched datasource UID", flush=True)
+        invalid = json.loads(json.dumps(values))
+        invalid["prometheus"]["rabbitmqDlqMetrics"]["enabled"] = False
+        invalid_file.write_text(json.dumps(invalid), encoding="utf-8")
+        run(args.helm, "template", "observability", str(chart), "-f", str(invalid_file), expect_success=False)
+        print("PASS Helm rejects missing Secret/provisioning, mismatched datasource UID and DLQ rule without its scrape", flush=True)
         bundle = root / "bundle.json"
         bundle.write_text(json.dumps({"alerting": alerting, "datasource_text": datasource,
-                                      "grafana_container": container}), encoding="utf-8")
+                                      "grafana_container": container, "dlq_job": dlq_job}), encoding="utf-8")
         subprocess.run([sys.executable, str(Path(__file__).with_name("verify.py")), "--chart-bundle", str(bundle)], check=True)
 
 

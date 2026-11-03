@@ -10,6 +10,9 @@
 {{- if and (ne .datasourceUid "__expr__") (ne .datasourceUid $uid) }}
 {{- fail "alert rule datasource UID must match grafana.datasourceUid" }}
 {{- end }}
+{{- if and (contains "job=\"rabbitmq-dlq\"" (toString .model.expr)) (not $.Values.prometheus.rabbitmqDlqMetrics.enabled) }}
+{{- fail "DLQ alert rule requires prometheus.rabbitmqDlqMetrics.enabled" }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- end }}

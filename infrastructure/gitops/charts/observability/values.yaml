@@ -17,6 +17,10 @@ collector:
 prometheus:
   image: prom/prometheus:v3.15.1
   retention: 1d
+  # Opt-in per-queue depth for <queue>.dlq only, from RabbitMQ /metrics/detailed.
+  # Enabled by the helm-values.json that operational-alerts/render.py generates.
+  rabbitmqDlqMetrics:
+    enabled: false
   resources:
     requests: {cpu: 100m, memory: 128Mi}
     limits: {cpu: 500m, memory: 512Mi}

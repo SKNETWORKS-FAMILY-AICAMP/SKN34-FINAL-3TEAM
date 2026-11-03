@@ -21,7 +21,11 @@ EKS에서 Langfuse web과 프로젝트 키가 준비되면 `collector.traces.ena
 규칙과 datasource UID가 다르거나 Secret 참조·provisioning이 누락되면 Helm 렌더가 실패한다.
 알림은 규칙별 직접 라우팅을 사용하며 조직 전체 notification policy tree는 덮어쓰지 않는다.
 
+같은 `helm-values.json`은 `prometheus.rabbitmqDlqMetrics.enabled`도 켠다. 이 값은 기존 `rabbitmq` job을 그대로 두고
+같은 15692 포트의 `/metrics/detailed?family=queue_coarse_metrics`를 별도 `rabbitmq-dlq` job으로 수집해
+`<큐>.dlq`의 `rabbitmq_detailed_queue_messages`만 남긴다. DLQ 규칙이 있는데 이 값이 꺼져 있으면 Helm 렌더가 실패한다.
+
 local values/Argo 경보 활성화·실제 클러스터 적용·Discord 수신은 수행하지 않았다.
 현재 Grafana NetworkPolicy에는 Discord HTTPS egress가 없으므로 이 값만 켜도 운영 발송이 되는 것은 아니다.
 운영 임계값·Secret·담당·egress 승인과 실제 발송 허락 후 통합 검증한다.
-전체 요청·오류율·DLQ별 경보·월 비용·trace 저장은 [#187 보고서](../../../../docs/report/issue-187-operational-alerts.md)의 후속 범위다.
+업무별 요청·오류율·지연·월 비용·trace 저장은 [#187 보고서](../../../../docs/report/issue-187-operational-alerts.md)의 후속 범위다.

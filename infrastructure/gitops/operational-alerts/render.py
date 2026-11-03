@@ -4,16 +4,22 @@ import json
 from pathlib import Path
 import re
 
+# Must match the opt-in scrape job in the observability chart's prometheus-config.
+DLQ_JOB = "rabbitmq-dlq"
+
 
 def build(config):
-    required = {"environment", "datasource_uid", "backlog_messages", "pending_seconds",
+    required = {"environment", "datasource_uid", "backlog_messages", "dlq_messages", "pending_seconds",
                 "interval_seconds", "group_wait_seconds", "group_interval_seconds",
                 "repeat_interval_seconds", "secret_name", "secret_key"}
     if set(config) != required:
         raise ValueError("configuration must contain exactly: " + ", ".join(sorted(required)))
-    for key in required - {"environment", "datasource_uid", "secret_name", "secret_key"}:
+    for key in required - {"environment", "datasource_uid", "secret_name", "secret_key", "dlq_messages"}:
         if type(config[key]) is not int or config[key] <= 0:
             raise ValueError(key + " must be a positive integer")
+    # 0 is a valid explicit choice: any dead-lettered message fires.
+    if type(config["dlq_messages"]) is not int or config["dlq_messages"] < 0:
+        raise ValueError("dlq_messages must be a non-negative integer")
     for key in ("environment", "datasource_uid", "secret_name", "secret_key"):
         if not isinstance(config[key], str) or not re.fullmatch(r"[a-zA-Z0-9_.-]+", config[key]):
             raise ValueError(key + " must be a nonempty identifier (never a secret value)")
@@ -25,23 +31,28 @@ def build(config):
         raise ValueError("evaluation interval must be a multiple of Grafana's 10-second base interval")
     uid = config["datasource_uid"]
     rules = []
+    scrape = "Infrastructure signal only; inspect scrape health before application diagnosis."
     specifications = [
         ("rabbitmq-down", "RabbitMQ scrape unavailable", "rabbitmq",
-         '(1 - up{job="rabbitmq"}) or absent(up{job="rabbitmq"})', 0),
+         '(1 - up{job="rabbitmq"}) or absent(up{job="rabbitmq"})', 0, scrape),
         ("collector-down", "Collector scrape unavailable", "observability",
-         '(1 - up{job="otel-collector"}) or absent(up{job="otel-collector"})', 0),
+         '(1 - up{job="otel-collector"}) or absent(up{job="otel-collector"})', 0, scrape),
         ("rabbitmq-backlog", "RabbitMQ aggregate ready backlog", "rabbitmq",
-         'sum(rabbitmq_queue_messages_ready{job="rabbitmq"})', config["backlog_messages"]),
+         'sum(rabbitmq_queue_messages_ready{job="rabbitmq"})', config["backlog_messages"], scrape),
+        # One alert instance per <queue>.dlq; max avoids double counting if a queue is reported twice.
+        ("rabbitmq-dlq", "RabbitMQ dead letter queue depth", "rabbitmq",
+         'max by (vhost, queue) (rabbitmq_detailed_queue_messages{job="' + DLQ_JOB + '"})',
+         config["dlq_messages"],
+         "Dead-lettered messages wait for manual inspection or reprocessing; check the queue label."),
     ]
-    for suffix, title, service, query, threshold in specifications:
+    for suffix, title, service, query, threshold, description in specifications:
         rules.append({
             "uid": "ops187-" + suffix, "title": title, "condition": "C",
             "for": f'{config["pending_seconds"]}s',
             "noDataState": "NoData", "execErrState": "Error",
             "labels": {"service": service, "environment": config["environment"],
                        "severity": "warning", "scope": "infra", "issue": "187"},
-            "annotations": {"summary": title,
-                            "description": "Infrastructure signal only; inspect scrape health before application diagnosis."},
+            "annotations": {"summary": title, "description": description},
             "notification_settings": {
                 "receiver": "ops187-discord",
                 "group_by": ["grafana_folder", "alertname", "service", "environment"],
@@ -92,7 +103,8 @@ def main():
         parser.exit(2, "Invalid configuration: check required identifiers and positive integer settings.\n")
     args.output.mkdir(parents=True, exist_ok=False)
     for name, value in (("alerting.json", provisioning), ("deployment-patch.json", patch),
-                        ("helm-values.json", {"grafana": {"datasourceUid": config["datasource_uid"],
+                        ("helm-values.json", {"prometheus": {"rabbitmqDlqMetrics": {"enabled": True}},
+                                              "grafana": {"datasourceUid": config["datasource_uid"],
                             "alerting": {"enabled": True,
                                 "secretName": config["secret_name"],
                                 "secretKey": config["secret_key"],

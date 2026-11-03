@@ -15,6 +15,7 @@ Python 표준 라이브러리만 사용하며 운영에 Python 서비스를 추�
   "environment": "verification",
   "datasource_uid": "issue187-prometheus",
   "backlog_messages": 10,
+  "dlq_messages": 0,
   "pending_seconds": 10,
   "interval_seconds": 10,
   "group_wait_seconds": 1,
@@ -29,6 +30,8 @@ Python 표준 라이브러리만 사용하며 운영에 Python 서비스를 추�
 python infrastructure/gitops/operational-alerts/render.py <승인된-설정.json> <새-출력-폴더>
 ```
 
+`dlq_messages`는 큐별 DLQ 메시지 수가 이 값을 넘으면 발생한다. 0은 한 건이라도 쌓이면 발생한다는 명시적 선택이며 생략할 수 없다.
+
 생성되는 `alerting.json`은 Grafana provisioning/alerting에 mount할 파일,
 `configmap.json`은 이를 포함하는 ConfigMap, `deployment-patch.json`은 #171 Grafana Deployment용 strategic merge patch다.
 같은 출력 폴더를 덮어쓰지 않는다. 출력 파일에 webhook 값은 없으며 `$OPS_DISCORD_WEBHOOK_URL` 참조만 있다.
@@ -37,7 +40,8 @@ Secret 미존재/키 누락은 Kubernetes optional=false로 차단하고 빈 값
 
 #171 병합과 사용자가 허락한 기존 chart의 opt-in 연결을 반영했다.
 생성한 `helm-values.json`을 `observability` chart의 추가 values로 전달하면
-ConfigMap·mount·Secret env·시작 guard·datasource UID가 함께 연결된다.
+ConfigMap·mount·Secret env·시작 guard·datasource UID와 DLQ 전용 scrape job(`prometheus.rabbitmqDlqMetrics.enabled`)이 함께 연결된다.
+DLQ 규칙이 들어 있는데 이 scrape job이 꺼져 있으면 Helm 렌더가 실패한다.
 기본 `grafana.alerting.enabled=false`이며 local/Argo values를 활성화하지 않았다.
 기존 datasource를 사용하는 환경에서는 기존 UID를 그대로 입력한다. 다른 UID로 교체하지 않는다.
 
@@ -78,6 +82,10 @@ job 제거 시험은 lookback을 시험 전용 10초로 단축한다. #171 기�
 최대 기본 5분의 잔존 기간과 pending/알림 대기가 더해질 수 있다.
 가속 시험값은 운영 정책이 아니다. Kubernetes Secret 누락의 실제 Pod 상태와 chart 통합,
 실제 Discord 수신·AWS·Langfuse는 이 검사에 포함되지 않는다.
+
+DLQ 시험은 실제 RabbitMQ에 저장소 `definitions.json`을 import한 뒤 `/metrics/detailed?family=queue_coarse_metrics` 출력을 캡처한다.
+모든 `<큐>.dlq`의 큐 라벨을 확인하고, 이 실제 출력을 대역이 제공해 Prometheus relabel이 DLQ 총 메시지 지표만 남기는지 확인한다.
+이어 한 DLQ 값만 올려 그 큐만 발생하고, 회복과 로컬 수신을 확인한다.
 
 실패한 fault 검증만 재개할 때는 `verify.py --faults-only`를 사용한다.
 발생·유지·회복 시험을 생략하고 새 격리 환경에서 NoData 이후 분기만 실행한다.

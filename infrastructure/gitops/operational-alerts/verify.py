@@ -3,30 +3,51 @@ import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import time
+import urllib.parse
 import uuid
 
-from render import build
+from render import DLQ_JOB, build
+
+DLQ = "report.report.generate.dlq"
+DEFINITIONS = Path(__file__).resolve().parents[1] / "charts/platform-data/files/rabbitmq/definitions.json"
+# Same shape as the chart job; --chart-bundle replaces it with the actually rendered one.
+STANDALONE_DLQ_JOB = {"job_name": DLQ_JOB, "metrics_path": "/metrics/detailed",
+                      "params": {"family": ["queue_coarse_metrics"]},
+                      "metric_relabel_configs": [{"source_labels": ["__name__", "queue"],
+                                                  "regex": r"rabbitmq_detailed_queue_messages;.+\.dlq",
+                                                  "action": "keep"}]}
 
 
 def serve():
-    state = {"ready": 0, "empty": False, "received": []}
+    # Until real RabbitMQ output is captured (or in fault-only runs), serve a minimal detailed sample.
+    detailed = "# TYPE rabbitmq_detailed_queue_messages gauge\n" + "".join(
+        f'rabbitmq_detailed_queue_messages{{vhost="/",queue="{q}"}} {n}\n'
+        for q, n in (("report.report.generate", 5), ("report.report.generate.retry.1", 1), (DLQ, 0)))
+    state = {"ready": 0, "empty": False, "received": [], "dlq": 0, "detailed": detailed, "detailed_query": None}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
             pass
 
         def do_GET(self):
-            if self.path == "/metrics":
+            url = urllib.parse.urlsplit(self.path)
+            if url.path == "/metrics/detailed":
+                # Kept independent of "empty" so NoData checks still target the backlog rule only.
+                state["detailed_query"] = url.query
+                body = re.sub(r'(rabbitmq_detailed_queue_messages\{vhost="/",queue="' + re.escape(DLQ) + r'"\}) \d+',
+                              lambda m: m.group(1) + " " + str(state["dlq"]), state["detailed"])
+            elif self.path == "/metrics":
                 body = "" if state["empty"] else (
                     "# TYPE rabbitmq_queue_messages_ready gauge\n"
                     f'rabbitmq_queue_messages_ready {state["ready"]}\n')
             else:
                 body = json.dumps(state)
             self.send_response(200)
-            self.send_header("Content-Type", "text/plain; version=0.0.4" if self.path == "/metrics" else "application/json")
+            self.send_header("Content-Type", "text/plain; version=0.0.4" if url.path.startswith("/metrics") else "application/json")
             self.end_headers()
             self.wfile.write(body.encode())
 
@@ -40,6 +61,7 @@ def serve():
                 state["received"].append({"firing": "FIRING" in text.upper(),
                                           "resolved": "RESOLVED" in text.upper(),
                                           "nodata": "DatasourceNoData" in text,
+                                          "dlq": DLQ in text,
                                           "error": "DatasourceError" in text})
             self.send_response(204)
             self.end_headers()
@@ -80,7 +102,7 @@ def integration(faults_only=False, scrape_only=False, chart_bundle=None):
         alert_dir.mkdir()
         ds_dir.mkdir()
         config = dict(environment="verification", datasource_uid="issue187-prometheus",
-                      backlog_messages=10, pending_seconds=10, interval_seconds=10,
+                      backlog_messages=10, dlq_messages=0, pending_seconds=10, interval_seconds=10,
                       group_wait_seconds=1, group_interval_seconds=10, repeat_interval_seconds=300,
                       secret_name="issue187-test", secret_key="DISCORD_WEBHOOK_URL")
         provisioning, patch = build(config)
@@ -89,7 +111,8 @@ def integration(faults_only=False, scrape_only=False, chart_bundle=None):
             provisioning = chart["alerting"]
             patch["spec"]["template"]["spec"]["containers"][0] = chart["grafana_container"]
         for invalid in ({}, dict(config, backlog_messages=0), dict(config, secret_name=""),
-                        dict(config, repeat_interval_seconds=11)):
+                        dict(config, repeat_interval_seconds=11), dict(config, dlq_messages=-1),
+                        dict(config, dlq_messages=True), {k: v for k, v in config.items() if k != "dlq_messages"}):
             try:
                 build(invalid)
             except ValueError:
@@ -103,10 +126,14 @@ def integration(faults_only=False, scrape_only=False, chart_bundle=None):
             "name": "Prometheus", "uid": config["datasource_uid"], "type": "prometheus",
             "url": "http://" + prefix + "-prom:9090", "access": "proxy", "isDefault": True}]})
         (ds_dir / "prometheus.yaml").write_text(chart["datasource_text"] if chart else datasource_text, encoding="utf-8")
-        (root / "prometheus.yml").write_text(
-            "global:\n  scrape_interval: 2s\nscrape_configs:\n"
-            f"  - job_name: rabbitmq\n    static_configs:\n      - targets: ['{prefix}-fixture:8080']\n"
-            f"  - job_name: otel-collector\n    static_configs:\n      - targets: ['{prefix}-fixture:8080']\n", encoding="utf-8")
+        dlq_job = dict(chart["dlq_job"] if chart else STANDALONE_DLQ_JOB,
+                       static_configs=[{"targets": [prefix + "-fixture:8080"]}])
+        dlq_queues = [q["name"] for q in json.loads(DEFINITIONS.read_text(encoding="utf-8"))["queues"]
+                      if q["name"].endswith(".dlq")]
+        # JSON is valid YAML for Prometheus.
+        (root / "prometheus.yml").write_text(json.dumps({"global": {"scrape_interval": "2s"}, "scrape_configs": [
+            {"job_name": job, "static_configs": [{"targets": [prefix + "-fixture:8080"]}]}
+            for job in ("rabbitmq", "otel-collector")] + [dlq_job]}), encoding="utf-8")
         try:
             docker("network", "create", "--internal", prefix)
             network_created = True
@@ -137,7 +164,8 @@ def integration(faults_only=False, scrape_only=False, chart_bundle=None):
                 (root / "enabled_plugins").write_text("[rabbitmq_prometheus].\n", encoding="utf-8")
                 rabbit = run("rabbit", "rabbitmq:4.3.7-management-alpine", options=(
                     "--memory", "384m", "--cpus", "0.5", "-e", "RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS=+S 1:1",
-                    "-v", str(root / "enabled_plugins") + ":/etc/rabbitmq/enabled_plugins:ro"))
+                    "-v", str(root / "enabled_plugins") + ":/etc/rabbitmq/enabled_plugins:ro",
+                    "-v", str(DEFINITIONS) + ":/defs/definitions.json:ro"))
 
                 def rabbit_metrics():
                     try:
@@ -152,6 +180,24 @@ def integration(faults_only=False, scrape_only=False, chart_bundle=None):
                         return False
 
                 eventually(rabbit_metrics, "RabbitMQ 4.3.7 actual aggregate gauge without queue labels", 120)
+                docker("exec", rabbit, "rabbitmqctl", "import_definitions", "/defs/definitions.json")
+
+                def rabbit_detailed():
+                    # Capture the real detailed output into the fixture so Prometheus relabels real lines.
+                    code = ("import json,urllib.request; s=urllib.request.urlopen('http://" + rabbit +
+                            ":15692/metrics/detailed?family=queue_coarse_metrics').read().decode(); "
+                            "assert '# TYPE rabbitmq_detailed_queue_messages gauge' in s; "
+                            "lines=s.splitlines(); "
+                            "assert all('rabbitmq_detailed_queue_messages{vhost=\"/\",queue=\"'+q+'\"} 0' in lines "
+                            "for q in " + repr(dlq_queues) + "); "
+                            "urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8080/control', "
+                            "data=json.dumps({'detailed': s}).encode())); print('detailed captured')")
+                    try:
+                        return docker("exec", fixture, "python", "-c", code) == "detailed captured"
+                    except RuntimeError:
+                        return False
+
+                eventually(rabbit_detailed, "RabbitMQ 4.3.7 detailed per-queue gauge for every defined DLQ", 60)
                 docker("stop", rabbit)
             run("prom", "prom/prometheus:v3.15.1", "--config.file=/etc/prometheus/prometheus.yml", "--query.lookback-delta=10s", options=(
                 "--memory", "256m", "--cpus", "0.5", "--network-alias", "prometheus.observability.svc.cluster.local",
@@ -188,9 +234,19 @@ def integration(faults_only=False, scrape_only=False, chart_bundle=None):
             def backlog():
                 return next(r for r in rules() if r["name"] == "RabbitMQ aggregate ready backlog")
 
-            eventually(lambda: len(rules()) == 3 and all(r["state"] == "inactive" and r["health"] == "ok"
-                       and not r["lastEvaluation"].startswith("0001") for r in rules()), "three real engine rules evaluated normal")
+            def dlq_rule():
+                return next(r for r in rules() if r["name"] == "RabbitMQ dead letter queue depth")
+
+            eventually(lambda: len(rules()) == 4 and all(r["state"] == "inactive" and r["health"] == "ok"
+                       and not r["lastEvaluation"].startswith("0001") for r in rules()), "four real engine rules evaluated normal")
             if not faults_only:
+                query = urllib.parse.quote('{job="' + DLQ_JOB + '",__name__!~"up|scrape_.+"}')
+                series = [r["metric"] for r in local_request(
+                    "http://" + prefix + "-prom:9090/api/v1/query?query=" + query)["data"]["result"]]
+                assert sorted(m["queue"] for m in series) == sorted(dlq_queues), "relabel kept unexpected queues"
+                assert {m["__name__"] for m in series} == {"rabbitmq_detailed_queue_messages"}
+                assert local_request(fixture_url)["detailed_query"] == "family=queue_coarse_metrics"
+                print("PASS Prometheus kept only total messages of the defined DLQs from real RabbitMQ output", flush=True)
                 local_request(fixture_url + "/control", {"ready": 20})
                 eventually(lambda: backlog()["state"] == "pending", "normal to pending")
                 eventually(lambda: backlog()["state"] == "firing", "pending to firing")
@@ -203,6 +259,17 @@ def integration(faults_only=False, scrape_only=False, chart_bundle=None):
                 local_request(fixture_url + "/control", {"ready": 0})
                 eventually(lambda: backlog()["state"] == "inactive", "recovery")
                 eventually(lambda: any(x["resolved"] for x in local_request(fixture_url)["received"]), "local resolved notification")
+                # After the backlog lifecycle, so its receiver checks are not satisfied by DLQ messages.
+                local_request(fixture_url + "/control", {"dlq": 2})
+                eventually(lambda: dlq_rule()["state"] == "firing" and {
+                    a["labels"]["queue"] for a in dlq_rule()["alerts"] if a["state"].lower() == "alerting"} == {DLQ},
+                    "DLQ depth fires only for the loaded queue")
+                eventually(lambda: any(x["firing"] and x["dlq"] for x in local_request(fixture_url)["received"]),
+                           "DLQ alert names its queue at the local receiver")
+                local_request(fixture_url + "/control", {"dlq": 0})
+                eventually(lambda: dlq_rule()["state"] == "inactive", "DLQ recovery")
+                eventually(lambda: any(x["resolved"] and x["dlq"] for x in local_request(fixture_url)["received"]),
+                           "local DLQ resolved notification")
             if not scrape_only:
                 local_request(fixture_url + "/control", {"empty": True})
                 # Prometheus instant queries may use a last sample for up to the lookback window.
@@ -232,7 +299,7 @@ def integration(faults_only=False, scrape_only=False, chart_bundle=None):
                 local_request(fixture_url + "/control", {"empty": False, "ready": 0})
                 reload()
                 reload()
-                eventually(lambda: len(rules()) == 3 and all(r["health"] == "ok" for r in rules()), "reapply restores three unique rules")
+                eventually(lambda: len(rules()) == 4 and all(r["health"] == "ok" for r in rules()), "reapply restores four unique rules")
                 contacts = api("/api/v1/provisioning/contact-points")
                 assert len([c for c in contacts if c["uid"] == "ops187-discord"]) == 1
                 print("PASS stable contact UID after reapply", flush=True)
