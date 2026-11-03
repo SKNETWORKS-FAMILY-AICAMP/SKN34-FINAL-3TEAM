@@ -154,3 +154,17 @@ node tests/qr-device-browser.mjs
 - core 설정·내부 프로필·리포트 권한·분석 대화 관련 64건, learning 비교 7건(실제 PostgreSQL 3건 포함), report 전체 315건, 스키마 검증기 회귀 18건이 통과했습니다. 별도 비공개 회귀에서는 PostgreSQL 저장과 HTML/PDF/Markdown 원문 제외도 확인했습니다. 실제 AI/운영 S3/외부 결제 호출이나 운영 배포 E2E는 포함하지 않습니다.
 - 로컬 목업 확인: `http://127.0.0.1:5272/student/login` → 가상 학생 준비 → PIN `5090` → 공개 설정. 같은 미션을 마무리·돌아보기 완료한 뒤 다시 풀면 두 번째 결과에서 비교할 수 있습니다. 내 공책의 ‘결과 다시 보기’에서도 비교/재시도 화면으로 돌아갑니다.
 - 이슈 #134·#141은 로컬 검증 기준 체크를 갱신했습니다. #206·#207도 Docker 복구 후 DB 통합 검증을 마쳐 모든 체크박스를 갱신했습니다. push·PR·develop 반영은 하지 않았습니다.
+
+
+## develop API 요청 재대조 (2026-11-03)
+
+기준은 `origin/develop`의 `cd7d9cd`이며 core OpenAPI와 공개 Controller, learning의 돌아보기 DTO를 웹 data 계층과 대조했다. 공개 경로의 이름을 바꿀 필요는 없었고, 남은 요청 본문 차이를 정리했다.
+
+- `createApiGateway().reflect`가 한글 표시값을 그대로 보내던 중복 구현을 제거하고 기존 `saveReflection`을 사용한다. `쉬웠어/보통/어려웠어`를 `EASY/NORMAL/HARD`로 보내며, 상세 재조회는 기존 `no-store`와 표시값 변환을 유지한다. 이미 `saveReflection`을 쓰는 학생 mutation과 같은 요청을 보낸다.
+- 게이트웨이 분석 요청도 `scope.childId`를 명시한다. core는 생략을 허용하지만 기존 MSW 분석 핸들러는 자녀 ID로 범위를 검사하므로, 학부모 어댑터와 동일하게 선택 자녀·기간을 함께 보낸다.
+- 분석 메시지 재시도는 core `ConversationController.retry`처럼 본문 없이 POST한다. 저장된 메시지 ID의 원래 질문·범위로 재시도하며 현재 화면의 질문·범위를 다시 보내지 않는다. 일반 메시지 전송 본문과 SSE 취소·실패 처리는 유지한다.
+- 자녀 이관(#289)은 기존 경로·메서드·DTO가 맞아 구현은 유지했다. 대상 조회/목록/요청/수락/거절/취소/일괄 취소, 요청·수락의 재인증 헤더, 대화 미포함 `false`, nullable 이름, 비활성 기능 404·이미 처리된 요청 409 전파를 대역 회귀 테스트로 보강했다.
+
+수정 전 새 회귀 검사에서 돌아보기 400, 분석 scope 누락, 재시도 본문 전송을 재현했고 수정 후 통과했다. 웹 단위 테스트 209건, 테스트 포함 TypeScript 검사, lint, 운영 빌드, 운영 목업 제외 검사, 저장소 계약 검사 100건, Chrome/MSW 브라우저 회귀 24건을 통과했다. lint에는 기존 `AdminOperations.tsx`의 immutability 경고 1건이 남는다.
+
+검증은 소스 계약 대조와 합성 HTTP/MSW 응답을 사용한다. 실제 core/learning/DB·Google OAuth·LLM·결제 연동 성공을 뜻하지 않는다. 원래 작업 폴더의 AI 커밋과 미커밋 파일은 별도 작업 폴더를 사용해 보존했으며 이번 PR에 포함하지 않는다.
