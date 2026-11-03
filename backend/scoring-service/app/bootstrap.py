@@ -1,5 +1,6 @@
 """앱 조립: 예외 핸들러·내부 인증·라우터·AMQP 연결 수명 주기."""
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -13,6 +14,7 @@ from app.errors import register_error_handlers
 from app.health.router import router as health_router
 from app.m1.router import router as m1_router
 from app.m1.service import M1Service
+from app.m2.content3_rule import RULE_VERSION
 from app.m2.router import router as m2_router
 from app.m2.service import M2Service
 from app.messaging.connection import AmqpConnection
@@ -22,6 +24,8 @@ from app.model_loader import ModelLoader
 from app.model_registry import ModelRegistry
 from app.security import InternalAuthMiddleware
 from app.versions import router as versions_router
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -41,7 +45,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         app.state.model_registry = registry
         usage = UsagePublisher(EventPublisher(amqp), "scoring", "scoring-service")
-        app.state.m2_service = M2Service(registry, usage)
+        app.state.m2_service = M2Service(
+            registry, usage, content3_rule_enabled=settings.m2_content3_rule_enabled
+        )
+        logger.info(
+            "M2 content_3 rule enabled=%s rule_version=%s",
+            settings.m2_content3_rule_enabled,
+            RULE_VERSION,
+        )
         app.state.m1_service = M1Service()
         app.state.readiness_checks = {"rabbitmq": rabbitmq_ready, "models": consumer.is_ready}
         consumer.start()

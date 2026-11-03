@@ -216,6 +216,7 @@ services:
       CORE_URL: http://core-service:8080
       S3_BUCKET: ${SCORING_S3_BUCKET:-sagomungchi-local-models}
       S3_REGION: ${SCORING_S3_REGION:-ap-northeast-2}
+      M2_CONTENT3_RULE_ENABLED: "${M2_CONTENT3_RULE_ENABLED:-false}"
       MODEL_CACHE_DIR: /tmp/scoring-models
     ports:
       - "${SCORING_HOST_PORT:-8001}:8001"

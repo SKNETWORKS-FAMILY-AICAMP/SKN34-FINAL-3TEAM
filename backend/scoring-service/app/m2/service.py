@@ -9,6 +9,7 @@ from bisect import bisect_right
 from starlette.concurrency import run_in_threadpool
 
 from app.errors import ApiError
+from app.m2.content3_rule import content3_score
 from app.m2.metadata import validate_metadata
 from app.m2.models import M2Active, M2Inactive, M2Request
 
@@ -19,7 +20,7 @@ def unavailable():
     return ApiError(503, "SCORING_UNAVAILABLE", "채점 처리 실패")
 
 
-def infer(loaded, request: M2Request) -> M2Active:
+def infer(loaded, request: M2Request, *, content3_rule_enabled: bool = False) -> M2Active:
     config, cuts = loaded.training_config, loaded.score_cuts
     narrative = request.inputType == "NARRATIVE"
     items, width, no_prompt, length = validate_metadata(loaded.metadata.name, config, cuts)
@@ -52,6 +53,16 @@ def infer(loaded, request: M2Request) -> M2Active:
         item: bisect_right(cuts[item], value) + (0 if width == 14 else 1)
         for item, value in raw_scores.items()
     }
+    if (
+        content3_rule_enabled
+        and narrative
+        and request.grade in (5, 6)
+        and loaded.metadata.name == "m2-klue-narrative"
+        and loaded.metadata.version == "3.0"
+    ):
+        raw_scores["content_3"], scores["content_3"] = content3_score(
+            raw_scores["content_3"], request.text, request.keywords
+        )
     return M2Active(
         inputType=request.inputType,
         scores=scores,
@@ -65,10 +76,11 @@ def infer(loaded, request: M2Request) -> M2Active:
 
 
 class M2Service:
-    def __init__(self, registry, usage, *, queue_timeout=1.0):
+    def __init__(self, registry, usage, *, queue_timeout=1.0, content3_rule_enabled: bool = False):
         self.registry, self.usage = registry, usage
         self._gate = asyncio.Semaphore(1)
         self._queue_timeout = queue_timeout
+        self._content3_rule_enabled = content3_rule_enabled
 
     async def score(self, request: M2Request):
         if request.grade not in ((5, 6) if request.inputType == "NARRATIVE" else (4, 5, 6)) or (
@@ -91,7 +103,9 @@ class M2Service:
             if request.grade == 4 and loaded.training_config.get("dataset") != "essay545":
                 loaded = None  # 비활성 경로는 추론하지 않아 사용량도 발행하지 않는다.
                 return M2Inactive()
-            result = await run_in_threadpool(infer, loaded, request)
+            result = await run_in_threadpool(
+                infer, loaded, request, content3_rule_enabled=self._content3_rule_enabled
+            )
             success = True
             return result
         except ApiError as exc:
