@@ -11,12 +11,12 @@
 - API·이벤트 계약, 진행 중 학습·결제 작업 영향과 검증 근거를 함께 기록한다.
 - DB 자동 downgrade 및 백업 자동 복원은 구현하지 않는다.
 - 비호환은 수정 버전 배포 또는 데이터 복구 등 별도 계획을 작성하고 승인받는다.
-- 운영 승인자는 미정이다. 담당자를 추정하여 지정하거나 승인 없이 실행하지 않는다.
+- 운영 승인자는 김동섭(`20220348-kim`)과 김태윤(`kty2001`) 2명이다(2026-11-03 담당자 결정). 둘 중 한 명의 GitHub Environment 승인 없이는 실행하지 않는다. 승인자 확정은 실행 허용이 아니며 실행 스위치·환경 보호·인프라 준비는 별도로 확인한다.
 
 ## 이번 구현
 
 - `scripts/cd_release.py`: 변경 서비스의 불변 이미지 digest, 전체 Git SHA, 대상 버전·사유, 여섯 호환성 검토 항목, 이전 승인 기록의 누락을 검증한다. UTC 시각·계획 해시·차단 사유를 JSON으로 남긴다.
-- `infrastructure/cd/policy.json`: 승인자 공란, 실행 비활성, Environment 보호 설정·인프라 준비 미확인으로 둔다.
+- `infrastructure/cd/policy.json`: 승인자 2명(`20220348-kim`·`kty2001`), 실행 비활성, Environment 보호 설정·인프라 준비 미확인으로 둔다.
 - `scripts/tests/test_cd_release.py`: 호환 계획, 비호환·미확인·근거 누락, 승인 기록 불일치, DB 변경 명령 거부, 이미지 digest·레지스트리 검사, 입력의 승인 위조 방어를 검증한다.
 - `.github/workflows/cd-candidate.yml`: 기존 `_spring.yml`, `_python.yml`, `_web.yml`을 재사용하는 후보 검사. 이 준비 파일·도구·정책 변경 PR과 수동 실행만 대상으로 한다. 서비스 소스 변경은 기존 서비스별 CI 경로 필터를 유지한다. 배포 시점 전체 후보 검사는 별도로 수행한다.
 
@@ -102,10 +102,17 @@ CLI 종료 코드 0은 JSON 계획의 형식 유효성만 뜻한다. 호환 여�
 
 ## 최신 develop 반영 (2026-11-03)
 
-- 담당자(`20220348-kim`)가 이 인계 브랜치를 기준으로 이어서 작업하기로 했다. 다른 브랜치 `feature/cd-release-186`(11/01, 승인자 확정본)은 기준으로 삼지 않으며 변경하지 않는다. 승인자는 계속 미정이다.
+- 담당자(`20220348-kim`)가 이 인계 브랜치를 기준으로 이어서 작업하기로 했다. 다른 브랜치 `feature/cd-release-186`(11/01, 승인자 확정본)은 기준으로 삼지 않으며 변경하지 않는다. 승인자는 아래 결정에 따라 2명으로 확정했다.
 - `origin/develop` `e65c972`를 merge commit `761f127`로 반영했다(rebase·force push 없음). 충돌 2건은 문서 목록 줄이며 양쪽 내용을 모두 유지했다: `docs/README.md`(#186·#246 보고서 줄), `docs/design/architecture.md` 4.5(#171 병합 문장 + #186 로컬 준비 문장).
 - 전제 재대조 결과 변경 필요 없음:
   - `cd-candidate.yml`의 재사용 workflow 입력(`_spring.yml`·`_python.yml`의 `service-path`, `_web.yml`의 `app-path`)과 서비스 목록(core·learning·ai·scoring·report·web)이 기존 서비스별 CI와 같다.
   - app-service chart의 `image.tag`/`image.digest`, `migration.image`·필수 `migration.revision`, `infrastructure/gitops/migrations/{core,learning}.Dockerfile`, `argocd/local/` 경로가 그대로다. 현재 local migration revision은 core `v26`, learning `v8`, report `20261102-05`다.
 - 그사이 develop에 들어온 관련 변경: #238 `ci-gitops.yml`(chart lint·렌더·스키마, migration 이미지 빌드 확인), #273 kind 단일 클러스터 `sagomungchi-local`, #236 kind 환경값·외부 443 egress, #246 `e2e.yml`. 이후 실행기 연결 때 #238의 migration 이미지 빌드 확인과 #246 E2E를 배포 후 기능 확인 후보로 검토한다. 이번에는 연결하지 않았다.
 - 검증: `python -O -m unittest discover -s scripts/tests` **113개 통과**(CD 계획 검사 13개 포함), 전체 workflow YAML 파싱 통과, 예시 CLI 종료 코드 0·`valid=true`·`executable=false`·차단 사유 18개 기록. 실제 이미지 게시·승인·GitOps 커밋·Argo CD 동기화·롤백 리허설은 실행하지 않았다.
+
+## 승인자 확정과 #185 대기 (2026-11-03)
+
+- 담당자 결정: 운영 배포 승인자는 김동섭(`20220348-kim`)·김태윤(`kty2001`) 2명. 한 명이 자리를 비워도 승인할 수 있도록 예비 승인자를 둔다. `policy.json`의 `approvers`에 반영했고 `executionEnabled`·`environmentProtectionVerified`·`infrastructureReady`는 계속 false다.
+- GitHub Environment `prod`의 필수 승인자 등록·허용 ref·관리자 우회 차단은 저장소 관리자 설정이며 이번에 변경하지 않았다. 등록 후 `environmentProtectionVerified`를 실제 조회 결과로 바꾼다.
+- 11/01 브랜치 `feature/cd-release-186`의 실제 배포 workflow(self-hosted runner·develop 직접 push·Argo CD 토큰 필요)는 가져오지 않았다. #185 PR(ECR·OIDC·prod 환경)이 먼저 병합된 뒤 필요한 부분(배포 후 기능 확인·배포 이력 형식)을 골라 옮긴다. 그때까지 실제 게시·배포·롤백 리허설은 대기한다.
+

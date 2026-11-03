@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location(
     "cd_release", Path(__file__).parents[1] / "cd_release.py"
 )
@@ -106,6 +107,15 @@ class ReleasePolicyTests(unittest.TestCase):
             + "c" * 64
         )
         self.assertTrue(cd.validate(self.plan, self.policy)["valid"])
+
+    def test_repository_policy_names_approvers_but_stays_blocked(self):
+        policy = json.loads((ROOT / "infrastructure/cd/policy.json").read_text(encoding="utf-8"))
+        self.assertEqual(policy["approvers"], ["20220348-kim", "kty2001"])
+        self.assertIs(policy["executionEnabled"], False)
+        result = cd.validate(self.plan, policy)
+        self.assertFalse(result["executable"])
+        self.assertNotIn("운영 연결 미완료: approvers", result["blocks"])
+        self.assertIn("실행 스위치 비활성", result["blocks"])
 
     def test_forged_approval_cannot_enable_execution(self):
         self.plan["approved"] = True

@@ -1,6 +1,6 @@
 {
   "executionEnabled": false,
-  "approvers": [],
+  "approvers": ["20220348-kim", "kty2001"],
   "environmentProtectionVerified": false,
   "infrastructureReady": false
 }
