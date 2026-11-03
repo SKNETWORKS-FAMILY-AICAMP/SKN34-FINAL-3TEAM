@@ -88,7 +88,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '503':
-          description: AI_UNAVAILABLE (LLM 미설정·호출 실패) 또는 AI_PROMPT_VERSION_UNAVAILABLE (미보유 활성 본문). `retryable` 포함
+          description: AI_UNAVAILABLE (LLM 미설정·호출 실패), AI_PROMPT_VERSION_UNAVAILABLE (미보유 활성 본문) 또는 SCORING_UNAVAILABLE (#69 scoring 장애·시간 초과·계약 밖 응답). `retryable` 포함
           content:
             application/problem+json:
               schema:
@@ -493,12 +493,122 @@ components:
           $ref: '#/components/schemas/Rubric'
         versions:
           $ref: '#/components/schemas/Versions'
+        question:
+          description: '#69 M2 prompt·M1 problem (mission_version.question). 없으면 교차 확인 안 함'
+          anyOf:
+          - type: string
+          - type: 'null'
+        keywords:
+          description: '#69 서술 M2 핵심어 묶음. 비어 있으면 서술 M2 호출 안 함'
+          type: array
+          items:
+            type: string
+          default: []
+        essayType:
+          description: '#69 논술 M2 글 종류. 없으면 논술 M2 호출 안 함'
+          anyOf:
+          - type: string
+            enum:
+            - 설명글
+            - 글짓기
+            - 주장
+            - 찬성반대
+            - 대안제시
+          - type: 'null'
+        answerKey:
+          description: '#69 M1 정답 (M1_CHECK_ENABLED일 때만 사용)'
+          anyOf:
+          - type: string
+          - type: 'null'
+        solution:
+          description: '#69 M1 학생 풀이 (M1_CHECK_ENABLED일 때만 사용)'
+          anyOf:
+          - $ref: '#/components/schemas/Solution'
+          - type: 'null'
       type: object
       required:
       - answerText
       - inputType
       - grade
       - rubric
+    Solution:
+      properties:
+        steps:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        finalAnswer:
+          type: string
+      type: object
+      required:
+      - steps
+      - finalAnswer
+    ModelIdentity:
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        revision:
+          type: integer
+          minimum: 1.0
+      type: object
+      required:
+      - name
+      - version
+      - revision
+    M2Observation:
+      properties:
+        inputType:
+          type: string
+          enum:
+          - NARRATIVE
+          - ESSAY
+        scores:
+          type: object
+          additionalProperties:
+            type: integer
+        rawScores:
+          type: object
+          additionalProperties:
+            type: number
+        model:
+          $ref: '#/components/schemas/ModelIdentity'
+        mean:
+          type: number
+        disagreement:
+          type: boolean
+      type: object
+      required:
+      - inputType
+      - scores
+      - rawScores
+      - model
+      - mean
+      - disagreement
+    M1Observation:
+      properties:
+        confidence:
+          type: number
+        model:
+          $ref: '#/components/schemas/ModelIdentity'
+      type: object
+      required:
+      - confidence
+      - model
+    ModelScores:
+      description: '#69 judgment.model_scores에 저장하는 AI 관찰 (api-spec 4.2.2)'
+      properties:
+        m2:
+          anyOf:
+          - $ref: '#/components/schemas/M2Observation'
+          - type: 'null'
+        m1:
+          anyOf:
+          - $ref: '#/components/schemas/M1Observation'
+          - type: 'null'
+      type: object
     JudgmentResponse:
       properties:
         result:
@@ -520,11 +630,17 @@ components:
             - QUOTE_MISMATCH
             - TOO_SHORT
             - UNVERIFIED_SCOPE
+            - MODEL_DISAGREEMENT
+            - LOW_CONFIDENCE
           - type: 'null'
         trial:
           type: boolean
         versions:
           $ref: '#/components/schemas/Versions'
+        modelScores:
+          anyOf:
+          - $ref: '#/components/schemas/ModelScores'
+          - type: 'null'
       type: object
       required:
       - result

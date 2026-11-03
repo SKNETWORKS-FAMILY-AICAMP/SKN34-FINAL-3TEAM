@@ -47,6 +47,7 @@ class MissionRepository(
             Rubric(
                 it.id, it.missionLabel, it.rubricLabel, it.answerKey, it.exampleAnswer, it.forbiddenTerms,
                 mapper.findRubricElements(rubricVersionId),
+                question = it.question, keywords = it.keywords, essayType = it.essayType,
             )
         }
 

@@ -182,3 +182,50 @@ test('숫자/인용 대조 실패를 성공 결과로 표시하지 않음', asyn
   )
   await assert.rejects(createApiGateway().analyze(child, previousWeek, '질문'))
 })
+
+
+test('게이트웨이 돌아보기도 서버 난이도 코드로 저장하고 wire 응답을 표시값으로 복원한다', async (t) => {
+  const requests: { path: string; init: RequestInit }[] = []
+  let saved = { difficulty: 'EASY', text: '' }
+  t.mock.method(globalThis, 'fetch', async (path: string, init: RequestInit) => {
+    requests.push({ path, init })
+    if (path.endsWith('/reflection')) {
+      saved = JSON.parse(String(init.body))
+      if (!['EASY', 'NORMAL', 'HARD'].includes(saved.difficulty)) return json({ code: 'VALIDATION_FAILED' }, 400)
+      return json({})
+    }
+    return json({ ...attempt, status: 'COMPLETED', finishedAt: '2026-11-03T00:00:00Z', reflection: saved })
+  })
+  const api = createApiGateway()
+  for (const [label, code] of [['쉬웠어', 'EASY'], ['보통', 'NORMAL'], ['어려웠어', 'HARD']] as const) {
+    const result = await api.reflect('a-1', { difficulty: label, text: '돌아보기 원문' })
+    assert.deepEqual(saved, { difficulty: code, text: '돌아보기 원문' })
+    assert.deepEqual(result.reflection, { difficulty: label, text: '돌아보기 원문' })
+  }
+  assert.equal(requests.length, 6)
+  for (const request of requests.filter(r => r.path.endsWith('/reflection'))) {
+    assert.equal(request.init.method, 'POST')
+    assert.equal(new Headers(request.init.headers).get('Content-Type'), 'application/json')
+  }
+})
+
+test('게이트웨이 분석 요청은 선택 자녀를 scope에 넣고 기존 대화의 기간별로 재사용한다', async (t) => {
+  const requests: { path: string; init: RequestInit }[] = []
+  t.mock.method(globalThis, 'fetch', async (path: string, init: RequestInit) => {
+    requests.push({ path, init })
+    if (path.endsWith('/conversations')) return json({ conversationId: 'c-1' })
+    const body = JSON.parse(String(init.body))
+    assert.deepEqual(body.scope, { childId: child.id, ...previousWeek })
+    return sse('event: result\ndata: ' + JSON.stringify({
+      source: 'LLM', answer: '검증된 답', scope: body.scope,
+      verification: { numbersMatched: true, quotesMatched: true, contentAllowed: true },
+    }) + '\n\nevent: done\ndata: {}\n\n')
+  })
+  const api = createApiGateway()
+  await api.analyze(child, previousWeek, '첫 질문')
+  await api.analyze(child, previousWeek, '다음 질문')
+  assert.deepEqual(requests.map(r => r.path), [
+    '/api/v1/conversations', '/api/v1/conversations/c-1/messages', '/api/v1/conversations/c-1/messages',
+  ])
+  assert.deepEqual(JSON.parse(String(requests[0].init.body)), { childId: child.id, ...previousWeek })
+})

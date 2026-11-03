@@ -4,7 +4,8 @@ import java.util.UUID
 
 /**
  * 판정용 기준표 (ERD rubric_version·rubric_element). 정답 키·예시 답이 있어 학생 응답에 담지 않음 (FN-LRN-03).
- * missionLabel·rubricLabel은 판정 응답 versions 표기 "미션 code@버전" (api-spec 1.6)
+ * missionLabel·rubricLabel은 판정 응답 versions 표기 "미션 code@버전" (api-spec 1.6).
+ * question·keywords·essayType은 ai M2·M1 교차 확인 입력 (#69, api-spec 4.2.2)
  */
 data class Rubric(
     val rubricVersionId: UUID,
@@ -14,6 +15,9 @@ data class Rubric(
     val exampleAnswer: String?,
     val forbiddenTerms: List<String>,
     val elements: List<RubricElement>,
+    val question: String? = null,
+    val keywords: List<String> = emptyList(),
+    val essayType: String? = null,
 ) {
     /** ai가 판정하는 요소. 최종 답 요소는 정답 키로 정하므로 뺌 (FN-JDG-02, #79) */
     val aiElements: List<RubricElement> get() = elements.filterNot { it.code == RubricElement.FINAL_ANSWER }

@@ -51,6 +51,9 @@ data class AdminRubric(
     val forbiddenTerms: List<String>,
     val hints: List<String>,
     val createdAt: Instant,
+    /** M2 교차 확인 입력 (#69): 서술 핵심어 묶음, 논술 글 종류 */
+    val keywords: List<String> = emptyList(),
+    val essayType: String? = null,
 )
 
 data class AdminRubricElement(
@@ -121,6 +124,8 @@ data class RubricCommand(
     val exampleAnswer: String?,
     val forbiddenTerms: List<String>,
     val hints: List<String>,
+    val keywords: List<String> = emptyList(),
+    val essayType: String? = null,
 )
 
 /** 미리보기: 학생 화면 미션(정답·예시 없음)과 그 버전 */

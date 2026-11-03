@@ -6,7 +6,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 JudgmentResult = Literal["CORRECT", "PARTIAL", "RETHINK", "HELD"]
-HeldReason = Literal["INSUFFICIENT_EVIDENCE", "QUOTE_MISMATCH", "TOO_SHORT", "UNVERIFIED_SCOPE"]
+HeldReason = Literal[
+    "INSUFFICIENT_EVIDENCE",
+    "QUOTE_MISMATCH",
+    "TOO_SHORT",
+    "UNVERIFIED_SCOPE",
+    "MODEL_DISAGREEMENT",
+    "LOW_CONFIDENCE",
+]
+EssayType = Literal["설명글", "글짓기", "주장", "찬성반대", "대안제시"]
 
 
 class ApiModel(BaseModel):
@@ -34,14 +42,24 @@ class Versions(ApiModel):
     prompt: str | None = None
 
 
+class Solution(ApiModel):
+    steps: list[str] = Field(min_length=1)
+    final_answer: str
+
+
 class JudgmentRequest(ApiModel):
     answer_text: str
     # 고르기·수학 최종 답은 learning 규칙 판정, ai는 서술·논술·풀이 단계 (sequence-diagram 피드백)
-    # 풀이 단계의 M1 수학 점검은 범위 밖, 같은 근거 추출·원문 대조로 판정
     input_type: Literal["NARRATIVE", "ESSAY", "SOLUTION_STEPS"]
     grade: int = Field(ge=3, le=6)  # 지원 학년 초3~6 (P03)
     rubric: Rubric
     versions: Versions = Field(default_factory=Versions)
+    # #69 교차 확인 입력 (api-spec 4.2.2). 없으면 해당 모델을 부르지 않음
+    question: str | None = None  # M2 prompt·M1 problem
+    keywords: list[str] = Field(default_factory=list)  # 서술 M2 핵심어 묶음
+    essay_type: EssayType | None = None  # 논술 M2 글 종류
+    answer_key: str | None = None  # M1 정답
+    solution: Solution | None = None  # M1 학생 풀이
 
 
 class JudgmentElement(ApiModel):
@@ -49,6 +67,37 @@ class JudgmentElement(ApiModel):
     quote: str | None
     verified: bool
     satisfied: bool
+
+
+class ModelIdentity(ApiModel):
+    name: str
+    version: str
+    revision: int = Field(ge=1)
+
+    @property
+    def label(self) -> str:
+        return f"{self.name}@{self.version}"
+
+
+class M2Observation(ApiModel):
+    input_type: Literal["NARRATIVE", "ESSAY"]
+    scores: dict[str, int]
+    raw_scores: dict[str, float]
+    model: ModelIdentity
+    mean: float  # scores 평균, 불일치 판단 기준
+    disagreement: bool  # LLM 결과와 불일치 (교차 확인을 꺼도 기록)
+
+
+class M1Observation(ApiModel):
+    confidence: float
+    model: ModelIdentity
+
+
+class ModelScores(ApiModel):
+    """judgment.model_scores에 그대로 저장하는 AI 관찰. 학생 화면에 보이지 않음."""
+
+    m2: M2Observation | None = None
+    m1: M1Observation | None = None
 
 
 class JudgmentResponse(ApiModel):
@@ -59,3 +108,5 @@ class JudgmentResponse(ApiModel):
     # 검증 전 "AI 채점(시범)" 표시 (FN-JDG-03). 모든 요소가 judgeVerified면 false
     trial: bool
     versions: Versions
+    # 활성 M2·M1 결과. 부르지 않았거나 비활성이면 null (api-spec 4.2.2)
+    model_scores: ModelScores | None = None

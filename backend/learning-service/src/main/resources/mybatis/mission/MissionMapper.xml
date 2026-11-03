@@ -48,6 +48,10 @@
             <arg column="example_answer" javaType="java.lang.String"/>
             <arg column="forbidden_terms" javaType="java.util.List"
                  typeHandler="com.sagomungchi.learning.mission.repository.StringListTypeHandler"/>
+            <arg column="question" javaType="java.lang.String"/>
+            <arg column="keywords" javaType="java.util.List"
+                 typeHandler="com.sagomungchi.learning.mission.repository.StringListTypeHandler"/>
+            <arg column="essay_type" javaType="java.lang.String"/>
         </constructor>
     </resultMap>
     <resultMap id="rubricElement" type="com.sagomungchi.learning.mission.domain.RubricElement">
@@ -125,7 +129,8 @@
     <!-- 판정용 (정답 키·예시 답 포함, 학생 응답에 쓰지 않음). 요소는 findRubricElements로 따로 읽어 Repository가 합침 -->
     <select id="findRubric" resultMap="rubric">
         SELECT rv.id, m.code || '@' || v.version AS mission_label, m.code || '@' || rv.version AS rubric_label,
-               rv.answer_key, rv.example_answer, COALESCE(rv.forbidden_terms, '[]'::jsonb) AS forbidden_terms
+               rv.answer_key, rv.example_answer, COALESCE(rv.forbidden_terms, '[]'::jsonb) AS forbidden_terms,
+               v.question, COALESCE(rv.keywords, '[]'::jsonb) AS keywords, rv.essay_type
         FROM rubric_version rv
         JOIN mission m ON m.id = rv.mission_id
         JOIN mission_version v ON v.mission_id = m.id AND v.id = #{missionVersionId}

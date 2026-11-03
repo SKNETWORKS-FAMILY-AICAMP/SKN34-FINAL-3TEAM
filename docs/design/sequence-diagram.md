@@ -346,10 +346,10 @@ sequenceDiagram
       LLM-->>A: quotes[]
       A->>A: QuoteVerifier 원문 대조 → JudgmentService 요소 충족·결과 결정 (JUDGE_REQUIRE_VERIFIED=true면 미검증 요소 HELD(UNVERIFIED_SCOPE))
       opt M2 활성 범위
-        Note over L,A: #69 후속: question·keywords 전달 추가 (scoring #87 계약)
+        Note over L,A: #69: learning이 question·keywords·essayType 전달, 판정 마감 33초 안에서 scoring 10초 (api-spec 4.2.2)
         A->>S: POST /internal/m2/scores {prompt, text, grade, inputType, keywords}
         S-->>A: scores·rawScores·model 또는 {active:false} (실제 장애는 503)
-        A->>A: LLM 관찰과 불일치 시 HELD(MODEL_DISAGREEMENT)
+        A->>A: LLM 관찰과 불일치 시 HELD(MODEL_DISAGREEMENT) (M2_CROSS_CHECK_ENABLED, 기본은 modelScores 기록만)
       end
       opt 풀이 단계(SOLUTION_STEPS) + M1 활성 범위
         A->>S: POST /internal/m1/checks {problem, answerKey, solution:{steps,finalAnswer}}

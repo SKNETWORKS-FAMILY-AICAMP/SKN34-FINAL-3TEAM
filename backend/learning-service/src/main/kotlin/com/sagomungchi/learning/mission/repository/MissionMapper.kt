@@ -31,6 +31,9 @@ data class RubricHeader(
     val answerKey: AnswerKey?,
     val exampleAnswer: String?,
     val forbiddenTerms: List<String>,
+    val question: String,
+    val keywords: List<String>,
+    val essayType: String?,
 )
 
 /** 미션별 가장 최근 시도 */

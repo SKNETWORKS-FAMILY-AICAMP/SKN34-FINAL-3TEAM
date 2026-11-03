@@ -11,12 +11,16 @@ enum class ElementSource { RECORD, RULE, ANSWER_KEY, AI_OBSERVATION }
 /** 학생이 지금 할 수 있는 행동 (api-spec 2.2). FINISH는 "이대로 돌아보기" */
 enum class NextAction { ANSWER_FOLLOWUP, FINISH }
 
-/** 누가 어떻게 판정했는지 (ERD judgment.method·trial·model_version·prompt_version). 규칙 판정이면 모델·프롬프트 없음 */
+/**
+ * 누가 어떻게 판정했는지 (ERD judgment.method·trial·model_version·prompt_version·model_scores).
+ * 규칙 판정이면 모델·프롬프트 없음. modelScores는 ai가 준 M2·M1 결과 JSON 그대로 (#69, 학생 화면에 보이지 않음)
+ */
 data class JudgedBy(
     val method: JudgmentMethod,
     val trial: Boolean,
     val model: String?,
     val prompt: String?,
+    val modelScores: String? = null,
 ) {
     companion object {
         val RULE = JudgedBy(JudgmentMethod.RULE, trial = false, model = null, prompt = null)
