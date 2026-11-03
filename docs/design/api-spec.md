@@ -829,7 +829,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - `modelScores`: `null` 또는 `{m2, m1}`. `m2`는 `{inputType, scores, rawScores, model{name,version,revision}, mean, disagreement}`, `m1`은 `{confidence, model}`이며 호출하지 않았거나 비활성이면 `null`이다. learning은 그대로 `judgment.model_scores`에 저장하고 학생 화면에 보이지 않는다(AI 관찰).
 - `versions.model`: M2(또는 M1)가 활성 응답을 주면 `"{name}@{version}"`, 아니면 LLM 모델 ID다. LLM 모델 ID는 사용량 이벤트에만 남는다.
 - 장애: scoring 5xx·시간 초과·연결 실패는 `503 SCORING_UNAVAILABLE`(`retryable:true`), 계약 밖 응답·4xx는 `503 SCORING_UNAVAILABLE`(`retryable:false`)이다. `{active:false}`로 바꾸지 않는다. 서비스 간 재시도는 없다(아키텍처 1.3).
-- 시간 예산(P12): 판정 전체 마감 `JUDGE_DEADLINE=33`초 안에서 scoring 호출 한도는 `SCORING_TIMEOUT=10`초와 남은 시간 중 작은 값이다. LLM 재시도로 남은 시간이 1초 미만이면 scoring을 부르지 않고 `503 SCORING_UNAVAILABLE`(`retryable:true`)로 끝낸다. learning→ai 35초 안에 끝나도록 하기 위함이다.
+- 시간 예산(P12): 판정 전체 마감은 `JUDGE_DEADLINE=33`초다. M2·M1을 부를 입력이 있으면 LLM 근거 추출은 마감에서 scoring 몫 `SCORING_RESERVE=3`초를 뺀 30초 안에서만 요청·재시도한다(LLM 1회 15초 + 대기 1초 + 재시도는 남은 14초로 줄어듦). 입력이 없으면 LLM이 33초 전체를 쓴다. scoring 호출 한도는 `SCORING_TIMEOUT=10`초와 남은 시간 중 작은 값이라 LLM이 최악 경로를 가도 3초 이상 남는다. 남은 시간이 1초 미만이면 scoring을 부르지 않고 `503 SCORING_UNAVAILABLE`(`retryable:true`)로 끝낸다. 최악 33초로 learning→ai 35초보다 2초 짧다.
 
 #### 4.2.1 report 서술 요청·응답
 
