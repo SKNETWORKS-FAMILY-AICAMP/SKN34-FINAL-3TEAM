@@ -1,5 +1,5 @@
 package com.sagomungchi.core.guardianship.controller
-import com.sagomungchi.core.account.controller.AuthController
+import com.sagomungchi.core._common.security.RequestAttributes
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core._common.security.UserContextHolder
 import com.sagomungchi.core.guardianship.domain.DeletionScope
@@ -34,5 +34,5 @@ class ChildManagementController(private val service: ChildManagementService) {
   val context=UserContextHolder.current()
   return service.complete(deletionRequestId,body.service,context.role,context.studentScope)
  }
- private fun identity(request: HttpServletRequest)=request.getAttribute(AuthController.IDENTITY) as AuthenticatedAccount
+ private fun identity(request: HttpServletRequest)=request.getAttribute(RequestAttributes.IDENTITY) as AuthenticatedAccount
 }

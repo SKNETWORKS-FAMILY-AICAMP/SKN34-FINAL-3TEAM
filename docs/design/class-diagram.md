@@ -152,7 +152,8 @@ classDiagram
 | `ProcessedEventRepository` | `_common/messaging` | 구현됨 (core) | `processed_event` INSERT 성공 여부로 멱등 소비 |
 | `EventAuditConsumer`, `EventLogRepository`, `EventRetentionCleanup` | `_common/messaging` | 구현됨 (core, #208) | 감사 큐의 모든 업무 메시지 봉투 메타데이터를 `event_log`에 저장, 주기 정리(발행 완료 Outbox·처리 이벤트·이벤트 기록 보존 기간). learning은 `record/service/ProcessedEventCleanup` |
 | `RetryingConsumer` | `_common/messaging` | 구현됨 (core) | 수동 ACK. 처리 실패 시 `x-retry-count` +1 후 `<큐>.retry.<회차>` 재발행, 최대 횟수 초과 시 reject → DLQ (아키텍처 1.6) |
-| `PublicAuthFilter` | `_common/security` | 구현됨 (core만) | `/api/v1/**` Bearer 검증(`AuthService.authenticate`), 쿠키 API Origin·`X-Requested-With` 검사, 역할·관리자 권한·필수 동의 확인 → `UserContext(userId, role, studentScope)` 설정. JWT 발급·검증은 `account/service/TokenService` (3.1) |
+| `PublicAuthFilter` | `account/controller` (#251, 이전 `_common/security`) | 구현됨 (core만) | `/api/v1/**` Bearer 검증(`AuthService.authenticate`), 쿠키 API Origin·`X-Requested-With` 검사, 역할·관리자 권한·필수 동의 확인 → `UserContext(userId, role, studentScope)` 설정. JWT 발급·검증은 `account/service/TokenService` (3.1) |
+| `RequestAttributes` | `_common/security` | 구현됨 (core, #251) | 요청 속성 이름 상수. `IDENTITY`(인증된 계정 `AuthenticatedAccount`, `PublicAuthFilter`가 설정하고 공개 컨트롤러가 읽음). 이전 `AuthController.IDENTITY` |
 | `IdempotencyService` | `_common/web` | 구현됨 (core만, #38) | `idempotency_record` 조회·저장, 같은 키·다른 본문 422 |
 | `SseEmitters` | `_common/web` | 구현됨 (core만, #39) | SSE 생성, 15초 heartbeat `: ping`, 연결 종료 콜백. 연결 시간은 용도별: 피드백 90초(`open`), 알림 구독 5분(`subscribe`), 분석 대화 125초(`open`, 120초 취소 hook, #41). `open(context, …)`이 요청 스레드의 `UserContext`를 작업 스레드에 설정·해제 |
 

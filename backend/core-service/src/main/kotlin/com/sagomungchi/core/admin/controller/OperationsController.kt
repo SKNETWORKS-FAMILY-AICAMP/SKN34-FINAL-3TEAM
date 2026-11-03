@@ -1,11 +1,11 @@
 package com.sagomungchi.core.admin.controller
+import com.sagomungchi.core._common.security.RequestAttributes
 import com.sagomungchi.core.admin.domain.*
 import com.sagomungchi.core.admin.service.resolveOperationPeriod
 import com.sagomungchi.core.admin.service.OperationsService
 import com.sagomungchi.core.admin.service.OperationRetryService
 import com.sagomungchi.core.admin.service.OperationsQueueService
 import com.sagomungchi.core._common.web.HttpExchangeResult
-import com.sagomungchi.core.account.controller.AuthController
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpHeaders
@@ -25,7 +25,7 @@ class OperationsController(private val operations: OperationsService,private val
     @GetMapping("/jobs/{jobId}") fun job(@PathVariable jobId: UUID)=operations.job(jobId)
     @PostMapping("/jobs/{jobId}/retry")
     fun retry(@PathVariable jobId: UUID,@RequestHeader("Idempotency-Key") key: UUID,request: HttpServletRequest)=
-        retries.retry(jobId,key,request.getAttribute(AuthController.IDENTITY) as AuthenticatedAccount).operationHttp()
+        retries.retry(jobId,key,request.getAttribute(RequestAttributes.IDENTITY) as AuthenticatedAccount).operationHttp()
     @GetMapping("/queues") fun queues()=queues.queues()
     @GetMapping("/audit-logs")
     fun audits(@RequestParam(required=false) from: String?,@RequestParam(required=false) to: String?,

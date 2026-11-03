@@ -1,6 +1,6 @@
 package com.sagomungchi.core.support.controller
 
-import com.sagomungchi.core.account.controller.AuthController
+import com.sagomungchi.core._common.security.RequestAttributes
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core.support.service.*
 import jakarta.servlet.http.HttpServletRequest
@@ -11,7 +11,7 @@ import java.util.UUID
 
 @RestController
 class SupportController(private val service: SupportService) {
- private fun actor(request: HttpServletRequest)=request.getAttribute(AuthController.IDENTITY) as AuthenticatedAccount
+ private fun actor(request: HttpServletRequest)=request.getAttribute(RequestAttributes.IDENTITY) as AuthenticatedAccount
  @PostMapping("/api/v1/error-reports")
  fun submitReport(request: HttpServletRequest,@RequestHeader("Idempotency-Key") key: UUID,@RequestBody body: ByteArray): ResponseEntity<ByteArray> {
   val result=service.submitReport(actor(request),key,body)

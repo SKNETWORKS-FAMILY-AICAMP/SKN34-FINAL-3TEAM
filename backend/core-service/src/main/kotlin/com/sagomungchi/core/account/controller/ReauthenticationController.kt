@@ -1,5 +1,6 @@
 package com.sagomungchi.core.account.controller
 
+import com.sagomungchi.core._common.security.RequestAttributes
 import com.sagomungchi.core.account.config.AuthProperties
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core.account.domain.ReauthPurpose
@@ -16,7 +17,7 @@ class ReauthenticationController(private val service: ReauthenticationService, p
  data class Request(val purpose: ReauthPurpose?=null,val childId: UUID?=null,val scope: String?=null,val challengeId: UUID?=null)
  @PostMapping("/api/v1/me/reauth")
  fun reauth(@RequestBody body: Request, request: HttpServletRequest): ResponseEntity<Any> {
-  val identity=request.getAttribute(AuthController.IDENTITY) as AuthenticatedAccount
+  val identity=request.getAttribute(RequestAttributes.IDENTITY) as AuthenticatedAccount
   if(body.challengeId!=null) {
    if(body.purpose!=null || body.childId!=null || body.scope!=null) throw invalid()
    return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(service.issue(identity,body.challengeId))
