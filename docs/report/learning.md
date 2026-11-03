@@ -477,3 +477,132 @@ P12 "판정 리스 90초·고착 탐지 1분"의 탐지 작업. 지금까지는 
 learning의 `spring.threads.virtual.enabled`를 false로 바꿔 기존 Tomcat의 제한된 플랫폼 스레드 풀을 사용한다. 캐리어 수 증가·순차 예열·가짜 정상 응답을 사용하지 않는다. core virtual threads, JDK 21 버전, 라이브러리 의존성, API/DTO/DB 및 서비스 경계는 변경하지 않는다. 이는 처리량 개선 주장이 아니라 콜드 초기화 시 서비스 전체 진행 정지를 피하는 변경이다.
 
 검증: 수정 전 JAR(2 CPU)은 첫 기록 API 16개 동시 요청이 모두 12초 시간 초과·readiness 무응답, 수정 JAR은 새 JVM 3회 모두 16/16 성공·readiness 200. `RecordColdStartHttpTest`가 내장 Tomcat에 4종 기록 API 16개 동시 요청과 platform 스레드 처리를 고정. 이후 예열 없는 원본 월요일 cron(테스트 시계)으로 주간 리포트 COMPLETED·LLM 서술 검증 통과까지 확인.
+
+## 20. 생각 요소 표준 코드 문서·계약 (#262)
+
+기준표 요소 code가 미션마다 자유 값(`e1` 등)이라 미션이 달라지면 같은 요소인지 알 수 없었다. 요구사항 FBF-38(요소 3회 연속 누락 시 그 유형 추천)·FAC-09(요소 지표)·기획서 5.3(4)(같은 유형 미션끼리 요소 비교)를 채우려고 표준 코드를 정했다. 이 이슈는 문서·계약만 고치고, 구현은 PM이 아래 "구현 인계"를 보고 learning·web 이슈로 발행한다.
+
+### 사용자 결정 (11/03)
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 이슈 범위 | 문서·계약만, 구현은 PM 발행 | 기획 변경 의견이 오면 코드 없이 문서만 고침. 사람 평가(#199)는 표준 코드·공통 설명만 있으면 시작 가능. 이슈 지침 "API 계약 변경은 api-spec 먼저" |
+| FAC-09 "같은 기준표" | 유형별 평가 요소로 해석, 기획서 5.3(4) "같은 유형·학년군 미션끼리"와 같은 뜻 | FAC-09가 "유형/학년군"을 함께 적음(같은 미션끼리면 둘은 하나뿐). 비교 대상(처음 답 충족·되묻기 후 새 요소·연결어 변화)이 기획서 5.3(3)·(4) 지표와 같음 |
+| 요소 3종류 | 유형 공통(표준 코드)·성취기준 고유(`e`+숫자)·정답(`ANSWER_KEY`·`FINAL_ANSWER`) | 기획서 5.3(2) "요소를 성취기준에 맞춰 구체화", 새 컬럼 없이 `FINAL_ANSWER` 선례 |
+| 공통 설명 | 표준 코드마다 한 줄 정의, 미션 요소 설명은 그 구체화 | 같은 코드가 미션마다 같은 뜻으로 판정되고 사람 평가의 "같은 요소표"(기획서 5.3(5))가 됨. 판정 프롬프트는 그대로(LLM은 요소 이름·설명으로 판정하고 code는 받지 않음, `FeedbackFacade` `AiRubricElement`) |
+| 분석하기 | 기획서 2요소 그대로(`ANALYZE_RELATION`·`ANALYZE_REASON`) | 블룸 개정 분류 원문(Anderson & Krathwohl 2001, Potsdam 사본): 분류·비교는 "이해"(Understanding: classifying, comparing), "분석"은 나눈 부분 사이의 관계까지(determining how the parts relate). 11/2 "기획서가 블룸 분석·성취기준(분류·비교)보다 좁다"는 판단을 바로잡음. 비교·분류는 기획서의 기초 사고력 쪽(후속) |
+| 돌아보기 | 바뀐 생각·바뀐 까닭·자기 생각 과정·경험과 연결 **[기획서 변경]** | 시드 M05·M10·M15 모두 바뀐 생각(e1)·바뀐 까닭(e2)·자기 경험 연결(e3, 들어가면 좋은 생각). 기획서 ① "자기 생각 과정"은 미션 질문이 묻지 않아(시드 질문은 등장인물의 변화를 물음, functional-spec 1.5 "요소는 미션 질문에서 요구") 세 번째 요소에 넣음 |
+| M20 | "나의 사용" `REFLECT_CONNECT`, "돌아본 점"·"앞으로의 계획" 고유 | M20은 바뀐 생각이 아니라 지금 습관을 돌아보는 미션. 계획·다짐은 실제 적용이 아님(VALUE Transfer 제외와 같은 이유) |
+| 충족률·보완률 분모 | 필수 요소만, 들어가면 좋은 생각은 따로 셈 **[기획서 변경]** | 판정 규칙이 들어가면 좋은 생각을 필수에서 뺌(ai `judgment/service.py` `_result`). 분모에 넣으면 정답인데 충족률이 100%가 아님 |
+| 정답 예약 코드 | `ANSWER_KEY` 하나로 고르기·순서·분류 | 세 입력 방식은 규칙 판정이라 요소를 모두 정답 키로 기록(`FeedbackFacade.withAnswerKey`, `AI_INPUT_TYPES` 밖). 이름은 판정 출처 `source_type = ANSWER_KEY`와 같게 |
+| 따져 보기 논술 | `EVALUATE_CLAIM`·`EVALUATE_EVIDENCE`·`EVALUATE_PERSPECTIVE` 필수 | 기획서 5.3(3) 논증 요소 충족률(주장·근거·반론). 유형이 다른 논술과 "같은 유형 코드만" 규칙이 부딪히지 않게 따져 보기로 한정 |
+| 기록 응답 필드 | 공통 `Element`에 `code`·`goodThought` | 기록 API는 판정 요소(`elementId`·`label`·`satisfied`·`quote`·`sourceType`)와 `trial`을 이미 줌. report 지표에 빠진 것은 이 둘뿐. 학생 화면과 같이 쓰는 구조라 하나로 유지(#251 `AnswerItem<F>`) |
+| 검사 위치 | 저장 때 code 모양 400, 게시 때 유형·입력 방식 맞춤 422 `rubric.elements.code` | 저장 때는 미션 유형을 모름(미션 내용 `PATCH`와 기준표 `PUT`이 따로). 기존 게시 검사(`Mission.requirePublishable`, `FINAL_ANSWER` 검사)와 같은 자리 |
+| 시범 판정 포함 여부 | report 후속에서 정함 | 이 이슈는 `trial`을 내보내기만 함 |
+| 검증 지표(카파·QWK) | #199에서 정함 | 이 이슈와 무관. 있음/없음처럼 값이 두 개인 판정은 두 값이 같음 |
+| 기록 방식 | 기획 변경 2건을 "확정"으로 쓰고 팀 채팅에 공유, 의견이 오면 수정 | 사용자 결정 |
+
+### 표준 코드와 근거
+
+VALUE 루브릭 문구는 이슈 근거 자료의 원문 PDF 4종에서 확인했다(11/03).
+
+| 유형 | 코드 | 요소 | 근거 |
+|---|---|---|---|
+| 분석하기 | `ANALYZE_RELATION` | 원인·특징·관계 | 기획서 5.3(1) ①, 블룸 "분석", `[6과07-02]` 원인을 추리 |
+| | `ANALYZE_REASON` | 까닭 잇기 | 기획서 5.3(1) ② |
+| 따져 보기 | `EVALUATE_CLAIM` | 주장 | VALUE Critical Thinking "Student's position" |
+| | `EVALUATE_EVIDENCE` | 근거 | 같은 루브릭 "Evidence" |
+| | `EVALUATE_PERSPECTIVE` | 다른 관점·반론 | 같은 루브릭 "Others' points of view are acknowledged" |
+| 새로 만들기 | `CREATE_NEW` | 새로운 생각 | VALUE Creative Thinking "Innovative Thinking" |
+| | `CREATE_WHY` | 왜 나은지 | 같은 루브릭 "Solving Problems … can articulate reason for choosing solution" |
+| | `CREATE_CONNECT` | 연결·변형 | 같은 루브릭 "Connecting, Synthesizing, Transforming" |
+| 문제 해결하기 | `SOLVE_DEFINE` | 문제 정하기 | VALUE Problem Solving "Define Problem" |
+| | `SOLVE_PLAN` | 방법 세우기 | "Identify Strategies"·"Propose Solutions/Hypotheses" |
+| | `SOLVE_CHECK` | 결과 확인 | "Evaluate Outcomes" |
+| 돌아보기 | `REFLECT_CHANGE` | 바뀐 생각 | 기획서 5.3(1) ②, VALUE Lifelong Learning "Reflection" |
+| | `REFLECT_REASON` | 바뀐 까닭 | 시드 M05·M10·M15 "바뀐/고친 까닭" |
+| | `REFLECT_CONNECT` | 생각 과정·경험과 연결 | 기획서 5.3(1) ①, "Reflection: Reviews prior learning (past experiences inside and outside of the classroom)", `[6국05-06]` |
+
+- 나이: 블룸은 학년이 아니라 생각 방식의 분류이고 VALUE는 대학생용이라, 학년 수준은 기획서 5.3대로 미션마다 연결한 성취기준이 맞춘다(functional-spec 1.5 한계)
+- 뺀 VALUE 항목: Curiosity·Initiative·Independence·Taking Risks·Acquiring Competencies(긴 기간의 행동이라 답 구절로 판정 어려움), Implement Solution(풀이 틀 계산·최종 답 규칙으로 대신), Transfer(돌아보기의 다짐은 실제 적용이 아님)
+
+### 시드 20문항 code 대조
+
+요소 56개: 표준 44개(79%), 정답 7개, 고유 5개. 같은 행의 code만 바꾸므로 지난 판정은 `judgment_element.rubric_element_id`로 이어지고, 필수·들어가면 좋은 생각 여부(`good_thought`)는 그대로다.
+
+| 미션 | 유형·입력 | e1 | e2 | e3 | e4 |
+|---|---|---|---|---|---|
+| M01·M06·M16 | 분석·고르기 | `ANSWER_KEY` | | | |
+| M02 | 따져·서술 | `EVALUATE_CLAIM` | `EVALUATE_EVIDENCE` | `EVALUATE_PERSPECTIVE` | |
+| M03·M08·M13·M18 | 새로·서술 | `CREATE_NEW` | `CREATE_WHY` | `CREATE_CONNECT` | |
+| M04 | 문제·순서 | `ANSWER_KEY` | | | |
+| M05·M10·M15 | 돌아·서술 | `REFLECT_CHANGE` | `REFLECT_REASON` | `REFLECT_CONNECT` | |
+| M07 | 따져·서술 | 고유 `e1`(사실과 의견) | `EVALUATE_CLAIM`(내 의견) | `EVALUATE_PERSPECTIVE`(의견 비교) | |
+| M09·M14·M19 | 문제·풀이 | `SOLVE_DEFINE` | `SOLVE_PLAN` | `SOLVE_CHECK` | `FINAL_ANSWER`(그대로) |
+| M11 | 분석·서술 | 고유 `e1`(관찰 사실) | `ANALYZE_RELATION`(원인) | `ANALYZE_REASON`(까닭 잇기) | |
+| M12 | 따져·논술 | `EVALUATE_CLAIM` | `EVALUATE_PERSPECTIVE`(근거 평가) | `EVALUATE_EVIDENCE` | |
+| M17 | 따져·논술 | `EVALUATE_CLAIM` | `EVALUATE_EVIDENCE` | `EVALUATE_PERSPECTIVE` | 고유 `e4`(근거 출처) |
+| M20 | 돌아·서술 | `REFLECT_CONNECT`(나의 사용) | 고유 `e2`(돌아본 점) | 고유 `e3`(앞으로의 계획) | |
+
+- M12 "근거 평가"는 논술 틀 "반대 의견에 답하기" 칸에서 지우의 까닭을 따지는 요소라(시드 안내 문구) 반론으로 본다
+- 모든 시드가 게시 검사(유형 맞춤, 고르기·순서는 `ANSWER_KEY` 하나, 따져 보기 논술 세 코드)를 통과한다
+
+### 영향 확인
+
+learning `Element`에 `code`·`goodThought`를 더했을 때 응답을 받는 곳을 모두 확인했다.
+
+| 받는 곳 | 결과 | 근거 |
+|---|---|---|
+| core 학생 시도 상세 | 영향 없음. 계약이 "learning 응답 보존" | core `LearningController` `exchange` |
+| core 학부모 대시보드 | 코드 변경 없음, 계약 `DashboardElement`에 두 필드 추가 | `LearningRecordClient`가 기록 JSON을 그대로 넘김(`memo`·`draft`만 제거) |
+| core 관리자 게시 실패 | 영향 없음. `rubric.elements.code`가 모양 검사 통과 | `AdminLearningService` `missingFields` 정규식 |
+| report | 영향 없음. 모르는 필드 무시, `feedback.status`만 읽음 | `report-service/app/clients/learning_client.py` `extra="ignore"` |
+| 분석 대화(ai 에이전트) | 영향 없음. 모르는 필드 무시 | `analysis_agent/models.py` `extra="ignore"` |
+| web | 영향 없음. 쓰는 필드만 검사 | `data/classroom/apiGateway.ts` |
+| 이전 시도 비교(#207) | 영향 없음. 요소를 자유 형식으로 받음 | core `ComparisonSnapshot.elements` |
+| CI | core 계약 지문 테스트에 `DashboardElement` 변경 허용 추가. learning 응답을 계약으로 검사하는 CI는 없어 구현 전 일시 불일치로 깨지지 않음 | `scripts/tests/test_admin_operations_contract.py`, `.github/workflows/ci-contracts.yml` |
+| ai 되묻기 "한 걸음 더 방향" | 변경 없음. 필수 요소를 다 쓴 뒤 쓰는 방향이고 분석하기("원인·특징·관계를 하나 더")·돌아보기("자기 생각이 어떻게 흘러갔는지")가 새 요소와 어긋나지 않음 | ai `followup/prompts.py` `THINKING_DIRECTION` |
+
+### 구현 인계 (PM 발행용)
+
+learning
+
+| 할 일 | 위치 | 테스트 |
+|---|---|---|
+| 시드 code 교체(위 대조표) | `db/seed/demo_missions.sql` | 게시 검사를 시드 20문항에 돌려 통과 |
+| 저장 때 code 모양 검사(표준 14개·`e`+숫자·`ANSWER_KEY`·`FINAL_ANSWER`, 아니면 400) | `mission/controller/AdminMissionController` `RubricRequest.toCommand`, 표준 코드 목록은 `mission/domain` | `AdminMissionControllerTest` |
+| 게시 때 `rubric.elements.code`(유형 맞춤, 고르기·순서·분류는 `ANSWER_KEY` 하나, 따져 보기 논술 세 코드) | `mission/domain/Mission` `PublishSnapshot.missingFields` | `AdminMissionServiceTest`·도메인 테스트 |
+| `Element`에 `code`·`goodThought` | `judgment/domain/FeedbackResult` `ElementView`, `FeedbackTarget` `StoredElement`와 그 조회 SQL(`rubric_element` 조인에 `code`·`good_thought`), `attempt/domain/FinishResult.of`(체크리스트), `_common/web/SharedResponses` | `SharedResponsesJsonTest` 기대 JSON(의도한 변경), `AttemptControllerTest`·`FeedbackControllerTest`·`AttemptFinishTest` |
+
+web
+
+| 할 일 | 위치 |
+|---|---|
+| 요소 종류(공통·고유·정답)와 code 고르기, 미션 유형에 맞는 표준 코드 목록, 공통 설명 안내 | `presentation/admin/MissionManager.tsx`, `domain/admin/operations.ts` |
+| 저장 전 code 모양 검사. core가 learning 400의 `detail`을 넘기지 않아(`AdminLearningService`) 화면에서 먼저 알려야 함 | 같은 위치 |
+| 게시 전 검사에 `rubric.elements.code` 추가, 한글 이름 | `operations.ts`(기존 `FINAL_ANSWER` 사전 검사 옆, 한글 표) |
+
+### 설계·이슈와 다른 점
+
+- 이슈 해야 할 일·작업 위치의 구현(관리자 검사·시드·기록 API·web)은 이 이슈에서 빼고 PM 발행으로 넘김(사용자 결정)
+- 작업 위치 밖 수정: `contracts/openapi/core-service.yaml` `DashboardElement`, `scripts/tests/test_admin_operations_contract.py`. core가 learning 기록을 그대로 넘겨 계약을 맞춰야 하고, core 계약을 바꾸면 지문 테스트가 실패해서(선례 #242·#289)
+- 이슈 "위반 시 400" → 저장 400·게시 422로 나눔(위 결정)
+- 이슈 "고르기 정답용 예약 코드" → 고르기·순서·분류 공통 `ANSWER_KEY`. 이슈의 정답 요소 "고르기 M04"는 순서 미션
+- 이슈 "기록 API에 요소별 판정 결과가 없음" → 판정 요소와 `trial`은 이미 있고 `code`·`goodThought`만 없음. api-spec 4.1.1 `answers[].feedback` 설명이 실제 계약보다 짧았던 것을 함께 맞춤. 이슈의 "검증 여부"는 `trial`로 정함(`judgment_element.verified`는 미검증 충족을 DB CHECK가 이미 막아 새 정보가 없음)
+- 이슈 설계 초안의 분석하기 3요소(`ANALYZE_PARTS` 포함)는 쓰지 않음(위 결정). 시드 대조도 M11 "관찰 사실"은 고유, M12 "근거 평가"는 `EVALUATE_PERSPECTIVE`로 바꿈
+- FN-RPT-05 요소 지표, FN-DSH-12 추천·13 생각 조각은 report·프론트가 구현할 기능이라 "(#262, 담당 확인)"으로 표시
+- DB CHECK를 두지 않음: 이전 기준표 버전은 불변이라 자유 code가 남고, 미션 유형이 `mission_version`에 있어 행 단위 CHECK로 맞춤을 볼 수 없음
+- 기존 파일 수정: `functional-spec.md`(1.5 표·표준 요소 소절과 기획서와 다른 점, FN-ADM-10·11, FN-RPT-05, FN-DSH-12·13), `erd.md`(`rubric_element.code`, 게시 검사, #262 메모), `api-spec.md`(2.8 기준표 PUT, 3.2 예시, 4.1 관리자 미션 게시 실패, 4.1.1 `answers[]`), `class-diagram.md`(게시 검사), `learning-service.yaml`(`missingFields`, 요소 code, `Element`), `core-service.yaml`(`DashboardElement`), `test_admin_operations_contract.py`, `planning-decisions.md`(#213 2.4 "생각 유형 평가 요소" 확인 필요 행을 #262 결과로 갱신), `docs/README.md`
+
+### 검증
+
+- scripts/tests 100개 통과, `git diff --check` 통과
+- 지문 테스트의 `DashboardElement` 허용 줄을 빼면 `schemas/DashboardElement`로 실패하는 것을 확인 후 되돌림
+- 코드 변경이 없어 gradle 테스트는 돌리지 않음
+
+### 알려진 한계
+
+- 이 이슈가 머지된 뒤 learning 구현이 머지될 때까지 계약(`code`·`goodThought` 필수, `rubric.elements.code`)과 실제 응답이 다름
+- 이전 기준표 버전·#262 전에 만든 미션의 자유 code는 표준 코드가 아니라 미션을 넘는 지표에서 빠짐(고유 요소처럼 그 미션 충족률에만)
+- 표준 요소는 사람 검증(P11) 전이라 AI 판정은 시범 표시
+- 후속: 기초 사고력(`mission_version.basic_skills`, 비교·분류) 연결, 성취수준 문장 연결, 기획서 6.2 미션 제작 흐름(LLM 초안 → 자동 검사 → APM 검수)의 FN-ADM-09 반영, 답 속 다른 유형 생각 기록

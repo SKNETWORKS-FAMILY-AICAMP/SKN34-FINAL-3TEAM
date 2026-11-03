@@ -56,6 +56,11 @@ class AdminOperationsContracts(unittest.TestCase):
                     for purpose in ('CHILD_TRANSFER','TRANSFER_ACCEPT'):
                         self.assertIn(purpose,purposes)
                         purposes.remove(purpose)
+                # #262 adds only rubric element code·goodThought: core relays learning records unchanged to the dashboard.
+                if section=='schemas' and name=='DashboardElement':
+                    for field in ('code','goodThought'):
+                        reviewed['required'].remove(field)
+                        reviewed['properties'].pop(field)
                 canonical=json.dumps(reviewed,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
                 self.assertEqual(expected,hashlib.sha256(canonical).hexdigest(),f'{section}/{name}')
     def test_admin_paths_and_retry_key(self):

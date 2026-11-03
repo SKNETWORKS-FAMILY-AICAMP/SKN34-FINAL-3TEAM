@@ -1301,6 +1301,7 @@ classDiagram
 - `Mission.requirePublishable(snapshot)` (FN-ADM-11, #145): 현재 미션·기준표 버전으로 검사하고 누락을 모두 모아 `422 MISSION_PUBLISH_INCOMPLETE` + `missingFields`(영문 코드, core 프록시가 영문 경로 모양만 통과시켜 프론트가 한글로 표시)
   - `title`·`question`·`subject`·`achievementStandards`: 비었음 / `grade`: 3~6 밖·`gradeMin > gradeMax`·논술인데 5 미만 / `rubric`: 기준표 버전 없음
   - `rubric.elements`: 요소 0개(**입력 방식 무관**, 고르기도 ai 되묻기가 요소를 요구, 구 #81), 풀이 단계인데 `FINAL_ANSWER` 외 요소 없음, 풀이 단계가 아닌데 `FINAL_ANSWER` 있음 / `rubric.elements.points`: 이름 비었음·배점 1 미만
+  - `rubric.elements.code` (FN 1.5 표준 요소, #262): 미션 유형과 다른 유형의 표준 코드, 고르기·순서·분류인데 요소가 `ANSWER_KEY` 하나가 아님, 따져 보기 논술인데 `EVALUATE_CLAIM`·`EVALUATE_EVIDENCE`·`EVALUATE_PERSPECTIVE` 중 빠짐. 기준표 저장(`AdminMissionController` `RubricRequest.toCommand`)은 미션 유형을 모르므로 code 모양(표준 코드·`e`+숫자·예약 코드)만 400
   - `choices`: 고르기·순서·분류인데 선택지 없음 / `categories`: 분류인데 그룹 없음
   - `answerKey`: 서술·논술이 아닌데 없음 또는 입력 방식 모양(`{choiceIds}`·`{assignments}`·`{finalAnswer}`)·선택지·그룹과 맞지 않음 / `exampleAnswer`: 서술·논술인데 없음
   - `review`: 현재 미션·기준표 버전의 최신 검토가 `APPROVED`가 아님
