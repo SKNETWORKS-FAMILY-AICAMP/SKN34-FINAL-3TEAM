@@ -19,6 +19,18 @@ export function requireParentLogin() {
   if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(parentLoginKey, 'true')
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('sagomungchi:parent-login-required'))
 }
+// 동석 학생 진입으로 학부모 세션이 잠긴 탭 표시. 값은 여부뿐이며 토큰은 저장하지 않는다 (FN-ACC-05).
+const parentLockedKey = 'sagomungchi:parent-session-locked'
+export function parentSessionLocked() {
+  try { return typeof sessionStorage !== 'undefined' && sessionStorage.getItem(parentLockedKey) === 'true' } catch { return false }
+}
+export function markParentSessionLocked(locked: boolean) {
+  try {
+    if (typeof sessionStorage === 'undefined') return
+    if (locked) sessionStorage.setItem(parentLockedKey, 'true')
+    else sessionStorage.removeItem(parentLockedKey)
+  } catch { /* 표시만 사라지며 Google 로그인은 그대로 가능 */ }
+}
 export function isStudentSession() { return studentMode }
 export function hasAccessToken() { return accessToken !== null }
 export function studentAuthenticationRequired() {
@@ -36,6 +48,7 @@ export function setAccessToken(token: string | null, role?: 'PARENT' | 'STUDENT'
   if (token && (accessRole === 'PARENT' || accessRole === 'ADMIN')) {
     parentLoginPending = false
     if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(parentLoginKey)
+    markParentSessionLocked(false)
   }
 }
 
@@ -97,6 +110,7 @@ export async function refreshAccessToken() {
     })
       .catch((error) => {
         if (error instanceof ApiError && error.problem.status >= 500) throw error
+        if (error instanceof ApiError && error.problem.code === 'PARENT_SESSION_LOCKED') markParentSessionLocked(true)
         if (revision === tokenRevision) {
           setAccessToken(null)
           if(hadAccess && typeof window!=='undefined') window.dispatchEvent(new Event('sagomungchi:session-expired'))
@@ -113,6 +127,31 @@ export async function refreshAccessToken() {
       })
   }
   return refreshInFlight
+}
+
+/** 학생 화면 → 학부모 화면 복귀. 잠긴 학부모 refresh 쿠키와 보호자 비밀번호로 새 학부모 access를 받는다. */
+export async function unlockParentSession(password: string) {
+  await withAuthLock(async () => {
+    const response = await fetch(API_BASE + '/auth/parent-unlock', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      body: JSON.stringify({ password }),
+    })
+    if (!response.ok) {
+      const error = await toApiError(response)
+      // 잠김·미설정이면 비밀번호로는 돌아갈 수 없다. Google 로그인만 남긴다.
+      if (['GUARDIAN_PASSWORD_LOCKED', 'GUARDIAN_PASSWORD_NOT_SET', 'UNAUTHENTICATED', 'REFRESH_REUSED'].includes(error.problem.code))
+        markParentSessionLocked(false)
+      throw error
+    }
+    const data: unknown = await response.json()
+    if (!data || typeof data !== 'object' || !('accessToken' in data) || typeof data.accessToken !== 'string')
+      throw new Error('학부모 화면 복귀 응답을 확인하지 못했습니다.')
+    markParentSessionLocked(false)
+    setAccessToken(data.accessToken, 'role' in data && data.role === 'ADMIN' ? 'ADMIN' : 'PARENT')
+  })
+  notifyAuthChange('PARENT')
 }
 
 export async function waitForPendingRefresh() {

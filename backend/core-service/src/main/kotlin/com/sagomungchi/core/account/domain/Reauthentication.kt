@@ -3,7 +3,7 @@ package com.sagomungchi.core.account.domain
 import java.time.OffsetDateTime
 import java.util.UUID
 
-enum class ReauthPurpose { PIN_CHANGE, CHILD_UNLINK, CHILD_DELETE, WITHDRAWAL }
+enum class ReauthPurpose { PIN_CHANGE, CHILD_UNLINK, CHILD_DELETE, WITHDRAWAL, GUARDIAN_PASSWORD }
 data class ReauthChallenge(
  val id: UUID, val userId: UUID, val sessionId: UUID, val sessionVersion: Long,
  val purpose: String, val studentId: UUID?, val scope: String?, val stateHash: String,

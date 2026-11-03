@@ -197,7 +197,9 @@ erDiagram
 ```mermaid
 erDiagram
   user_account ||--o{ auth_session : owns
+  user_account ||--o| guardian_password : sets
   auth_session ||--o{ refresh_token : rotates
+  auth_session ||--o{ auth_session : "guardian entry"
   auth_session {
     uuid id PK
     uuid user_id FK
@@ -207,10 +209,21 @@ erDiagram
     timestamptz expires_at
     timestamptz revoked_at "NULL 허용"
     timestamptz created_at
+    timestamptz locked_at "NULL 허용 · PARENT만, 동석 학생 화면 사용 중"
+    uuid parent_session_id FK "NULL 허용 · STUDENT만, 동석 진입한 학부모 세션"
+  }
+  guardian_password {
+    uuid user_id PK,FK
+    varchar password_hash
+    int failed_count
+    timestamptz locked_at "NULL 허용"
+    timestamptz updated_at
   }
 ```
 
-- `auth_session` CHECK: `version > 0`, `ck_auth_session_student`(role이 STUDENT면 `student_id` 필수, 그 외 역할은 NULL) (V8)
+- `auth_session` CHECK: `version > 0`, `ck_auth_session_student`(role이 STUDENT면 `student_id` 필수, 그 외 역할은 NULL) (V8), `ck_auth_session_lock`(`locked_at`은 PARENT만)·`ck_auth_session_parent`(`parent_session_id`는 STUDENT만) (V24)
+- 동석 진입(FN-ACC-05, V24): 학부모 세션을 바꾸지 않고 `locked_at`을 기록·version을 올려 잠그고, `parent_session_id`로 연결한 학생 세션을 새로 만든다. 학부모는 보호자 비밀번호(`POST /auth/parent-unlock`)로 잠금을 풀며, 이때 그 세션의 학생 세션을 폐기한다. 새 Google 로그인·로그아웃으로 이전 세션을 폐기할 때도 학생 세션을 함께 폐기한다
+- `guardian_password`(V24): 계정당 1행, PBKDF2 해시·`failed_count >= 0`·5회째 `locked_at`. 설정·변경 시 실패 횟수·잠금 초기화(`GUARDIAN_PASSWORD` 재인증), 탈퇴 요청 시 삭제
 
 ### 3.1.2 재인증·삭제 완료 저장 (#45)
 
@@ -221,7 +234,7 @@ erDiagram
     uuid user_id FK
     uuid session_id FK
     bigint session_version
-    varchar purpose "PIN_CHANGE|CHILD_UNLINK|CHILD_DELETE|WITHDRAWAL"
+    varchar purpose "PIN_CHANGE|CHILD_UNLINK|CHILD_DELETE|WITHDRAWAL|GUARDIAN_PASSWORD"
     uuid student_id FK "NULL 허용"
     varchar scope "NULL 허용, CHECK[PROFILE|RECORDS]"
     varchar state_hash UK
@@ -1148,6 +1161,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | core | `payment` | `(status, updated_at)` | `CONFIRMING` 재조회, 결제 운영 조회 |
 | core | `subscription` | `(next_billing_date) WHERE auto_renew` | 정기 청구 대상 |
 | core | `auth_session` | `(user_id)` | 사용자별 세션 폐기 |
+| core | `auth_session` | `(parent_session_id) WHERE parent_session_id IS NOT NULL` | 잠금 해제·재로그인 시 동석 학생 세션 폐기 (V24) |
 | core | `refresh_token` | `(session_id)` | 세션별 토큰 폐기·재사용 탐지 |
 | core | `llm_usage` | `(occurred_at, call_type)` | 사용량·비용 집계 |
 | core | `outbox_event` | `(created_at) WHERE published_at IS NULL`, `(published_at) WHERE published_at IS NOT NULL` | 릴레이 대상, 보존 기간 정리 |

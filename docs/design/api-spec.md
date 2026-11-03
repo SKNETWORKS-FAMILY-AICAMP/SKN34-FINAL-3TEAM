@@ -62,6 +62,10 @@
 | `STUDENT_PIN_INVALID` | 401 | PIN 불일치, `remainingAttempts` 포함 (FN-ACC-05) |
 | `STUDENT_PIN_LOCKED` | 423 | PIN 연속 5회 실패로 잠금, 학부모 PIN 재설정 필요 (FN-ACC-05) |
 | `STUDENT_PIN_NOT_SET` | 409 | PIN 미설정 자녀의 PIN 로그인 → 학부모 동석 진입 안내 (FN-ACC-05) |
+| `PARENT_SESSION_LOCKED` | 401 | 동석 학생 화면 사용 중 잠긴 학부모 세션의 refresh·access → 보호자 비밀번호로 복귀 안내. refresh 토큰은 소비하지 않음 (FN-ACC-05, 5.1) |
+| `GUARDIAN_PASSWORD_INVALID` | 401 | 보호자 비밀번호 불일치, `remainingAttempts` 포함 (FN-ACC-05) |
+| `GUARDIAN_PASSWORD_LOCKED` | 423 | 보호자 비밀번호 연속 5회 실패로 잠금 → Google 로그인, 비밀번호 재설정 시 해제 (FN-ACC-05) |
+| `GUARDIAN_PASSWORD_NOT_SET` | 409 | 보호자 비밀번호 미설정 → Google 로그인 안내 (FN-ACC-05) |
 | `PAIRING_CODE_INVALID` | 400 | 페어링 코드 없음·만료·이미 사용 (FN-ACC-14) |
 | `NOT_FOUND` | 404 | 리소스 없음 |
 | `DATA_UNAVAILABLE` | 410 / 503 | 삭제된 근거 → "이용 불가" 표시(410), report 원문 조회·파일 저장소 장애는 재시도 가능한 503 |
@@ -221,7 +225,10 @@
 | POST | `/auth/refresh` | 쿠키 | access token 재발급 | ACC-04 | 제안 |
 | POST | `/auth/logout` | 인증 | refresh token 폐기 | ACC-04 | 제안 |
 | POST | `/auth/student/logout` | 학생 Bearer | 해당 학생 세션만 폐기, 보호자 refresh·기기 쿠키 유지 | ACC-04, ACC-05 | 핵심 |
-| POST | `/auth/student-sessions` | 학부모 | 학생 진입(동석): `{childId}` 연결 자녀 확인 후 학생 세션(`STUDENT` 토큰) 발급. 시연 링크·URL 식별값 진입 없음 (P01) | ACC-05 | 제안 |
+| POST | `/auth/student-sessions` | 학부모 | 학생 진입(동석): `{childId}` 연결 자녀 확인 후 별도 학생 세션(`STUDENT` 토큰) 발급, 학부모 세션은 잠금(refresh 쿠키 유지). 시연 링크·URL 식별값 진입 없음 (P01, 5.1) | ACC-05 | 제안 |
+| POST | `/auth/parent-unlock` | 쿠키 | 학생 화면 → 학부모 화면 복귀: `{password}` 보호자 비밀번호 확인 후 잠긴 학부모 세션 해제, 그 세션에서 들어간 학생 세션 폐기, refresh 응답과 같은 형식 + 회전 쿠키 (5.1) | ACC-05 | 제안 |
+| GET | `/me/guardian-password` | 학부모 | 보호자 비밀번호 상태 `{set, locked, updatedAt}`. 값·해시는 반환하지 않음 | ACC-05 | 제안 |
+| PUT | `/me/guardian-password` | 학부모 | 보호자 비밀번호 설정·변경 `{password}` (`X-Reauth-Token`, 숫자 4~6자리·반복/연속 불가, PIN과 같은 규칙). 실패 횟수·잠금 해제 | ACC-05, ACC-10 | 제안 |
 | POST | `/auth/student/devices` | 공개 | 페어링 코드로 기기 등록 `{pairingCode, label}` → 기기 자격증명 쿠키 발급, 등록 자녀 프로필 반환 (P01, 3.11) | ACC-14 | 제안 |
 | GET | `/auth/student/profiles` | 기기 쿠키 | 이 기기에 등록된 자녀 프로필 `{childId, nickname, pinSet, pinLocked}` (P01, `/children` 확장과 같은 필드명) | ACC-05 | 제안 |
 | POST | `/auth/student/login` | 기기 쿠키 | 학생 진입(단독): `{childId, pin}` → 학생 세션(`STUDENT` 토큰) 발급. refresh 미발급 (P01, 3.11) | ACC-05 | 제안 |
@@ -905,10 +912,12 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 기기 진입 3개 경로(`POST /auth/student/devices`, `GET /auth/student/profiles`, `POST /auth/student/login`)만 Bearer 검사에서 제외. POST는 다른 쿠키 API와 같이 정확한 web Origin·`X-Requested-With` 검사 유지. 다른 메서드·유사 경로와 `/auth/student-sessions`는 제외하지 않음
 
 - 학부모·관리자: Google core 콜백 → refresh 쿠키 → web `/oauth/complete` → refresh → `/me`. access는 HS256, 기본 15분·메모리 보관. refresh는 256비트 난수·SHA-256 해시 저장, 최초 로그인부터 최대 7일이며 회전으로 연장하지 않는다. 재사용 시 해당 세션 폐기.
-- 학생(동석·단독 공통): access 전용, refresh 미발급. 동석 `/auth/student-sessions`는 부모 refresh를 소비하고 세션 버전·역할·학생 범위를 변경하며 부모 refresh 쿠키를 만료시킨다. 학생 상태에서 `/auth/refresh`는 401이다. 기존 부모 access도 거부한다. 단독 PIN 로그인은 별도 학생 auth_session을 생성하며 기존 부모 세션을 변경하지 않는다.
+- 학생(동석·단독 공통): access 전용, refresh 미발급. 동석 `/auth/student-sessions`는 별도 학생 auth_session(`parent_session_id` = 학부모 세션)을 만들고, 학부모 세션은 `locked_at`을 기록하고 version을 올려 잠근다. 학부모 refresh 쿠키는 지우지 않는다. 잠긴 세션의 `/auth/refresh`는 refresh 토큰을 소비하지 않고 401 `PARENT_SESSION_LOCKED`이며 기존 부모 access는 `SESSION_CHANGED`로 거부한다. 단독 PIN 로그인은 별도 학생 auth_session을 생성하며 기존 부모 세션을 변경하지 않는다.
+- 학부모 복귀(보호자 비밀번호, 2026-11-03): `POST /auth/parent-unlock {password}`는 refresh 쿠키의 잠긴 학부모 세션과 계정의 보호자 비밀번호를 확인한다. 성공하면 잠금을 풀고 version을 올리며, 그 세션에서 들어간 학생 세션을 폐기하고, refresh를 회전해 refresh 응답과 같은 본문·쿠키를 준다. 실패는 비밀번호 실패 횟수를 커밋한 뒤 401 `GUARDIAN_PASSWORD_INVALID`(`remainingAttempts`), 5회째와 이후는 423 `GUARDIAN_PASSWORD_LOCKED`, 미설정은 409 `GUARDIAN_PASSWORD_NOT_SET`이다. 이때는 Google 로그인으로 돌아오며, 새 로그인은 이전(잠긴) 세션과 그 학생 세션을 폐기한다. 잠기지 않은 세션은 refresh와 같이 처리한다.
+- 보호자 비밀번호는 `guardian_password`(계정당 1행)에 PBKDF2 해시·실패 횟수·잠금 시각만 저장한다. 설정·변경은 `PUT /me/guardian-password`에서 `GUARDIAN_PASSWORD` 재인증 grant(5.6)를 같은 트랜잭션에서 1회 소비하며, 성공 시 실패 횟수·잠금을 초기화한다. 탈퇴 요청 시 삭제한다.
 - JWT에는 `sub`(계정 UUID), `sid`, `ver`, `role`, `studentId`(학생만), `iss`, `aud`, `iat`, `exp`, `jti`를 넣는다. 매 요청에서 세션·현재 계정·자녀 연결·동의를 확인한다. 기기 해제 시 기존 학생 access를 즉시 폐기하는 별도 정책은 추가하지 않는다.
 - 학부모 access 기본 15분, 학생은 `AUTH_STUDENT_ACCESS_TTL`로 별도 관리하며 초기 기본값은 15분이다. 학생 만료·새로고침 시 자동 refresh하지 않고 학생 진입 화면으로 이동한다. 기기·PIN API로 단독 재진입하며 미등록 기기는 등록을 안내한다. 토큰을 영구 저장해 새로고침을 우회하지 않는다.
-- 부모 refresh 응답 `{accessToken,expiresIn,role,child:null,nextAction,startPath}` + 회전 쿠키. 동석 응답 `{accessToken,expiresIn,role:STUDENT,child,nextAction:READY,startPath:/student/home}` + refresh 쿠키 삭제. child는 `{id,nickname,grade,birthYear}`(기존 #7 소비자 계약)이다. 단독 PIN 로그인 응답(3.11)은 `child.childId`를 쓰므로 프론트 경계에서 정규화한다.
+- 부모 refresh 응답 `{accessToken,expiresIn,role,child:null,nextAction,startPath}` + 회전 쿠키. 동석 응답 `{accessToken,expiresIn,role:STUDENT,child,nextAction:READY,startPath:/student/home}`, Set-Cookie 없음(잠긴 학부모 refresh 유지). child는 `{id,nickname,grade,birthYear}`(기존 #7 소비자 계약)이다. 단독 PIN 로그인 응답(3.11)은 `child.childId`를 쓰므로 프론트 경계에서 정규화한다.
 - `GET /me`는 부모/관리자에게 `{userId,name,email,role,permissions,child:null,nextAction,startPath}`, 학생에게 `{role,child,nextAction,startPath}`만 반환한다. 학생에게 부모 개인정보·권한을 반환하지 않는다. 학생은 `/me/consents` 등 부모 계정 관리 API를 사용할 수 없다.
 - 로그아웃은 현재 쿠키의 부모 세션 또는 Bearer로 전달된 학생 세션을 종료하고 refresh 쿠키를 삭제한다. 다른 기기는 유지한다. 쿠키 API는 정확한 web Origin과 `X-Requested-With: XMLHttpRequest`를 요구한다.
 - web/API 동일 origin. refresh 쿠키 `sagomungchi_refresh`: HttpOnly·Secure·SameSite=Strict·Path=/api/v1/auth. OAuth 상태 쿠키 `sagomungchi_oauth`: HttpOnly·Secure·SameSite=Lax·Path=/api/v1/auth/google, 10분. 로컬 HTTP만 Secure=false.
@@ -981,7 +990,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 ### 5.6 #45 계정 관리·Google 재확인·삭제·탈퇴 계약
 
-- 기존 Google 로그인과 별도 재인증 흐름을 사용한다. `POST /me/reauth`에 `{purpose: PIN_CHANGE|CHILD_UNLINK|CHILD_DELETE|WITHDRAWAL, childId?, scope?}`를 보내면 `{challengeId,authorizationUrl,expiresAt}`를 반환하고 HttpOnly/Secure/SameSite=Lax 재인증 상태 쿠키를 설정한다. CHILD_DELETE는 PROFILE/RECORDS scope를 반드시 지정한다. WITHDRAWAL은 자녀/scope를 허용하지 않는다. 다른 자녀 작업은 childId 필수다.
+- 기존 Google 로그인과 별도 재인증 흐름을 사용한다. `POST /me/reauth`에 `{purpose: PIN_CHANGE|CHILD_UNLINK|CHILD_DELETE|WITHDRAWAL|GUARDIAN_PASSWORD, childId?, scope?}`를 보내면 `{challengeId,authorizationUrl,expiresAt}`를 반환하고 HttpOnly/Secure/SameSite=Lax 재인증 상태 쿠키를 설정한다. CHILD_DELETE는 PROFILE/RECORDS scope를 반드시 지정한다. WITHDRAWAL·GUARDIAN_PASSWORD는 자녀/scope를 허용하지 않는다. 다른 자녀 작업은 childId 필수다.
 - Google redirect URI는 web origin + `/api/v1/auth/google/reauth/callback`이다. 기존 GoogleOAuthClient의 code·PKCE·서명·iss·aud·exp·nonce 검증을 재사용한다. callback은 현재 계정의 Google sub와 일치할 때만 challenge를 VERIFIED로 바꾸며 로그인/refresh를 발급하지 않는다. 계정 선택은 비밀번호/MFA 재입력을 보장하지 않는다. 클라이언트는 원래 로그인 세션을 유지한 상태에서 `POST /me/reauth`에 `{challengeId}`를 보내 `{reauthToken,expiresAt}`를 한 번 수령한다. 아직 callback 전이면 409 REAUTH_PENDING이다. callback 응답은 완료 안내 JSON이다.
 - challenge 10분, reauthToken 5분(설정값, 세션 만료 이내). 토큰은 256비트 난수, DB에는 SHA-256 해시만 저장한다. 프론트는 메모리에만 보관한다. 사용자·세션 ID/version·purpose·childId·삭제 scope에 결합하며 변경 트랜잭션에서 정확히 1회 소비한다. 일반 access/로그인 상태는 재인증 증명이 아니다. 잘못된 계정·만료·위조·다른 범위·중복 사용은 403 REAUTH_REQUIRED다.
 - #58은 `ReauthenticationService.consume(identity, token, ReauthPurpose.PIN_CHANGE, childId)`를 PIN 변경의 같은 트랜잭션 안에서 호출한다(MANDATORY). 기존 인증/현재 자녀 권한 검사를 별도로 수행한다.

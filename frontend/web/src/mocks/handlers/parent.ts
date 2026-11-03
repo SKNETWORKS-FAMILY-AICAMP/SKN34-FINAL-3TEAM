@@ -26,6 +26,8 @@ import {
   inclusionRule,
 } from '../fixtures/parent.ts'
 import { guard, respond, problem } from './student.ts'
+import { guardianPasswordState, setGuardianPassword } from '../fixtures/guardianPassword.ts'
+import { pinProblem } from '../../domain/studentDevice.ts'
 export const page = <T>(items: T[]) => ({ items, page: 0, size: 20, totalElements: items.length })
 export const fail = (code: string, title: string, status = 400, retryable = false): never => {
   throw new ApiError({ code, title, status, retryable })
@@ -398,13 +400,24 @@ export const parentHandlers = [
       return { ...mockIdentity, role: 'PARENT' }
     }),
   ),
+  http.get('/api/v1/me/guardian-password', ({ request }) => respond(async () => { parentGuard(request); return guardianPasswordState() })),
+  http.put('/api/v1/me/guardian-password', ({ request }) =>
+    respond(async () => {
+      parentGuard(request)
+      const { password } = (await request.json()) as { password?: unknown }
+      // core와 같이 규칙 위반은 재인증 grant를 소비하지 않는다.
+      if (typeof password !== 'string' || pinProblem(password)) fail('VALIDATION_FAILED', '보호자 비밀번호는 반복·연속되지 않는 숫자 4~6자리입니다.', 422)
+      consumeActionReauth(request, 'GUARDIAN_PASSWORD')
+      return setGuardianPassword(password as string)
+    }),
+  ),
   http.post('/api/v1/me/reauth', ({ request }) =>
     respond(async () => {
       parentGuard(request)
       const body = (await request.json()) as { password?: string; purpose?: string; childId?: string; challengeId?: string; scope?: string }
       const bearer = request.headers.get('Authorization') ?? ''
-      if (body.purpose && ['PIN_CHANGE','CHILD_UNLINK','CHILD_DELETE','WITHDRAWAL'].includes(body.purpose)) {
-        if (body.purpose !== 'WITHDRAWAL') { if (!body.childId) fail('VALIDATION_FAILED','대상 자녀가 필요합니다.',422); await parentChild(request, body.childId!) }
+      if (body.purpose && ['PIN_CHANGE','CHILD_UNLINK','CHILD_DELETE','WITHDRAWAL','GUARDIAN_PASSWORD'].includes(body.purpose)) {
+        if (!['WITHDRAWAL','GUARDIAN_PASSWORD'].includes(body.purpose)) { if (!body.childId) fail('VALIDATION_FAILED','대상 자녀가 필요합니다.',422); await parentChild(request, body.childId!) }
         if (body.purpose==='CHILD_DELETE' && !['PROFILE','RECORDS'].includes(body.scope ?? '')) fail('VALIDATION_FAILED','삭제 범위가 필요합니다.',422)
         const challengeId = crypto.randomUUID()
         pinChallenges.set(challengeId, { childId: body.childId, purpose:body.purpose,scope:body.scope,bearer,expires:Date.now()+600000 })

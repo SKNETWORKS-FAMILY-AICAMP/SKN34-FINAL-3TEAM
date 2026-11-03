@@ -14,7 +14,7 @@ import java.util.UUID
 class AccountWithdrawalService(private val accounts: AccountManagementService,
  private val repository: AccountManagementRepository, private val children: ChildManagementService,
  private val payment: WithdrawalEligibilityService, private val reauth: ReauthenticationService,
- private val tokens: TokenService, private val devices: StudentDeviceCleanupService) {
+ private val tokens: TokenService, private val devices: StudentDeviceCleanupService, private val passwords: GuardianPasswordService) {
  data class State(val withdrawalRequestId: UUID, val status: String)
  data class Requested(val withdrawalRequestId: UUID, val status: String, val statusToken: String)
  @Transactional
@@ -28,6 +28,7 @@ class AccountWithdrawalService(private val accounts: AccountManagementService,
   repository.request(id,identity.account.id,tokens.hash(receipt),now)
   repository.withdraw(identity.account.id,now); repository.revokeAll(identity.account.id,now)
   devices.revokeOwner(identity.account.id)
+  passwords.clear(identity.account.id)
   children.deleteForWithdrawal(identity.account.id)
   if(!children.hasRemaining(identity.account.id)) accounts.completeWithdrawal(identity.account.id)
   accounts.audit(identity.account.id,"WITHDRAWAL_REQUESTED",id)

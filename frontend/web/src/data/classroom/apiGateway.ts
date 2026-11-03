@@ -1,5 +1,5 @@
 import { assertVerifiedAnalysis } from '../../domain/parent.ts'
-import { refreshAccessToken, notifyAuthChange, hasAccessToken, isStudentSession, requireParentLogin } from '../apiClient.ts'
+import { refreshAccessToken, notifyAuthChange, hasAccessToken, isStudentSession, requireParentLogin, markParentSessionLocked } from '../apiClient.ts'
 import { ApiError, apiFetch, apiResponse, setAccessToken } from '../apiClient.ts'
 import { streamSse } from '../sse.ts'
 import { blankAnswer, publicAttempt } from '../../domain/classroom.ts'
@@ -234,6 +234,8 @@ export function createApiGateway(): ClassroomGateway {
       )
       if (raw.role !== 'STUDENT') return contractError('학생 세션 role이 필요합니다.')
       setAccessToken(text(raw.accessToken, 'accessToken'), 'STUDENT')
+      // 학부모 세션은 잠긴 채 남는다. 이 탭은 보호자 비밀번호로 돌아갈 수 있다 (FN-ACC-05).
+      markParentSessionLocked(true)
       notifyAuthChange('STUDENT')
       return { role: 'STUDENT', entry: 'GUARDIAN', child }
     },

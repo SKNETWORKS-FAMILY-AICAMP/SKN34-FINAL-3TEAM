@@ -47,7 +47,7 @@ test.describe.serial('학생 미션 → 학부모 대시보드·리포트', () =
     await expect(page.getByRole('status').filter({ hasText: '현재 공개 상태입니다.' })).toBeVisible()
   })
 
-  // 학생 모드 진입 시 학부모 refresh 쿠키가 지워지므로 새 컨텍스트에서 다시 로그인한다.
+  // 학생 모드 진입 시 학부모 세션이 잠기므로(보호자 비밀번호 미설정) 새 컨텍스트에서 다시 로그인한다.
   test('학부모 대시보드 → 주간 리포트', async ({ context, page }) => {
     await useGoogleIdentity(context, parent)
     await page.goto('/login')
