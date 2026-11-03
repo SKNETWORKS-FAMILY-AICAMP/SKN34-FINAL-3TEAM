@@ -72,7 +72,7 @@
 - [이슈 #47 관리자 운영](report/issue-47-admin-operations.md): 운영 현황·작업 재처리·감사 이력·큐 조회·관리자 미션 프록시
 - [이슈 #48 결제·구독](report/issue-48-payments.md): 토스페이먼츠 테스트 결제·정기 청구·환불과 실제 상품 권한 공급
 - [이슈 #119 학생 별명 조회](report/issue-119-student-profile.md): 리포트 생성용 core 내부 학생 별명 API
-- [이슈 #168 core 레이어 의존 정리](report/issue-168-core-layer-deps.md): domain 오류 종류·결제 응답 경계·JsonObject·역방향 의존 정리
+- [이슈 #168 core 레이어 의존 정리](report/issue-168-core-layer-deps.md): domain 오류 종류·결제 응답 경계·JsonObject·역방향 의존 정리, domain 예외 분리(#249, core·learning)
 - [이슈 #208 이벤트 발행·소비 기록](report/issue-208-event-log.md): RabbitMQ 업무 메시지 감사 큐·`event_log`·보존 정리
 - [learning 초기 무응답](report/learning-cold-start.md): cold start 후 learning 무응답 원인과 JDK 21 실행 모델 설정(#201)
 - [이슈 #136 core HTTP 경로 테스트](report/issue-136-core-http-tests.md): 계정·기기·Google 시작 경로의 HTTP 성공·권한 실패 확인

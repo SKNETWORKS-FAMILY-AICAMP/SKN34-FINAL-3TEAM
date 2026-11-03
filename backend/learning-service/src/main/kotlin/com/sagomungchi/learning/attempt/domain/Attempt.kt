@@ -1,6 +1,6 @@
 package com.sagomungchi.learning.attempt.domain
 
-import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning._common.exception.DomainException
 import com.sagomungchi.learning._common.exception.ErrorKind
 import com.sagomungchi.learning.mission.domain.MissionSnapshot
 import java.time.Instant
@@ -29,7 +29,7 @@ data class Attempt(
     /** 완료된 시도에는 답변·초안·도움·돌아보기 쓰기 불가 (state-diagram 3.2) */
     fun requireOpen() {
         if (status == AttemptStatus.COMPLETED) {
-            throw BusinessException(ErrorKind.CONFLICT, "ATTEMPT_CLOSED", "완료된 학습 시도")
+            throw DomainException(ErrorKind.CONFLICT, "ATTEMPT_CLOSED", "완료된 학습 시도")
         }
     }
 
@@ -37,7 +37,7 @@ data class Attempt(
     fun requireAnswerable() {
         requireOpen()
         if (finishedAt != null) {
-            throw BusinessException(ErrorKind.CONFLICT, "ATTEMPT_CLOSED", "마무리한 학습 시도", "마무리 뒤에는 답변을 제출할 수 없음")
+            throw DomainException(ErrorKind.CONFLICT, "ATTEMPT_CLOSED", "마무리한 학습 시도", "마무리 뒤에는 답변을 제출할 수 없음")
         }
     }
 
@@ -64,7 +64,7 @@ data class Attempt(
     fun requireFinished() {
         requireOpen()
         if (finishedAt == null) {
-            throw BusinessException(ErrorKind.CONFLICT, "REVEAL_CONDITION_UNMET", "마무리 전", "마무리한 뒤에 할 수 있어요.")
+            throw DomainException(ErrorKind.CONFLICT, "REVEAL_CONDITION_UNMET", "마무리 전", "마무리한 뒤에 할 수 있어요.")
         }
     }
 

@@ -67,9 +67,20 @@ classDiagram
     +title String
     +detail String
   }
+  class DomainException {
+    <<exception>>
+    +kind ErrorKind
+    +code String
+    +title String
+    +detail String
+  }
+  class ErrorKind {
+    <<enumeration>>
+  }
   class GlobalExceptionHandler {
     <<advice>>
     +handleBusiness(ex, request) ProblemDetail
+    +handleDomain(ex, request) ProblemDetail
     +handleUnexpected(ex, request) ProblemDetail
   }
   class Problems {
@@ -122,7 +133,9 @@ classDiagram
   InternalAuthFilter --> UserContextHolder : set·clear
   InternalAuthFilter ..> UserContext
   UserContext ..> BusinessException : 403
+  DomainException --> ErrorKind
   GlobalExceptionHandler --> Problems
+  GlobalExceptionHandler ..> DomainException : httpStatusOf
   OutboxWriter ..> EventEnvelope
   OutboxWriter --> OutboxEventRepository : insert
   OutboxRelay --> OutboxEventRepository : 미발행 조회·발행 기록
@@ -133,7 +146,7 @@ classDiagram
 |---|---|---|---|
 | `AppProperties`, `InternalRestClientFactory` | `_common/config` | 구현됨 | 내부 호출 RestClient(내부 토큰·컨텍스트 헤더·타임아웃, 재시도 없음) |
 | `InternalAuthFilter`, `UserContext`, `UserContextHolder` | `_common/security` | 구현됨 | `/internal/**` 토큰 검사, `X-User-*`·`X-Student-Scope` 컨텍스트 |
-| `BusinessException`, `GlobalExceptionHandler`, `Problems` | `_common/exception` | 구현됨 | RFC 9457 오류 응답. domain은 HTTP 상태 대신 `ErrorKind`를 받는 보조 생성자 사용(core 400·404·409 #168, learning 400·409·422 #169) |
+| `BusinessException`, `DomainException`, `ErrorKind`, `GlobalExceptionHandler`, `Problems` | `_common/exception` | 구현됨 | RFC 9457 오류 응답. domain은 Spring 타입이 없는 `DomainException(kind, code, …)`만 던지고, `ErrorKind` → HTTP 상태는 `_common/exception`의 `statusOf` 하나가 정함(core 400·404·409, learning 400·409·422, #249). 예외에서 상태·code를 읽는 곳은 `httpStatusOf`·`errorCodeOf`(두 예외 모두 처리). `BusinessException`은 application·presentation 전용 |
 | `EventEnvelope`, `MessagingConfig` | `_common/messaging` | 구현됨 | CloudEvents 봉투, JSON 변환기 |
 | `OutboxWriter`, `OutboxRelay`, `OutboxEventRepository` | `_common/messaging` | 구현됨 (core만) | 같은 트랜잭션 `outbox_event` 저장 → 릴레이(ShedLock 단일 실행)가 DB 트랜잭션 밖에서 미발행 행 발행·publisher confirm 대기 후 짧은 트랜잭션으로 `published_at` 기록(#166) |
 | `ProcessedEventRepository` | `_common/messaging` | 구현됨 (core) | `processed_event` INSERT 성공 여부로 멱등 소비 |

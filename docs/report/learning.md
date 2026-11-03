@@ -273,6 +273,7 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 - 새 파일: `judgment/controller/SupportResponses.kt`. 기존 파일 수정: `_common/exception/BusinessException.kt`(보조 생성자·`ErrorKind`), domain 위 5개 파일(import·상태 인자), `judgment/domain/Support.kt`(`@JsonInclude` 제거), `judgment/controller/SupportController.kt`(응답 DTO)
 - 검증: domain(`*/domain/`)의 `org.springframework`·`com.fasterxml` import 0건. learning 테스트 246개 통과(테스트 코드 변경 없음, HTTP 상태·code 확인 그대로), scripts/tests 83개. 보호 장치 4개를 틀리게 하면 각각 실패(`INVALID`→400·`CONFLICT`→409·`UNPROCESSABLE`→422 변환, 응답 DTO의 없는 칸 생략)
 - 한계: 예외 객체는 실행 중에 HTTP 상태를 들고 있음(domain 코드는 모름). 오류 종류는 지금 domain에서 쓰는 세 가지뿐이고, 새 종류가 필요하면 `ErrorKind`와 변환을 함께 늘림
+- #249(11/02): 위 한계를 해소함. domain은 HTTP 상태가 없는 `DomainException(kind, code, …)`을 던지고, 상태 변환은 `_common/exception`의 `statusOf` 한 곳, 처리기·service 테스트는 `httpStatusOf`·`errorCodeOf`로 두 예외를 같게 다룸. 위 "별도 domain 예외를 두지 않은 이유"의 걱정(처리기·테스트 분리, HTTP 상태 확인 상실)을 이렇게 피함 ([#249 절](issue-168-core-layer-deps.md#249-domain-예외-분리-corelearning-1102))
 
 ## 14. 공통 예외·초안 저장 경합 테스트 (#137)
 

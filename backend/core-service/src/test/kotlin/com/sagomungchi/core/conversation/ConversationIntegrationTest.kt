@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core.IntegrationTestSupport
 import com.sagomungchi.core._common.exception.BusinessException
+import com.sagomungchi.core._common.exception.DomainException
 import com.sagomungchi.core._common.messaging.OutboxRelay
 import com.sagomungchi.core._common.security.UserContext
 import com.sagomungchi.core._common.security.UserContextHolder
@@ -218,12 +219,12 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
     @Test fun `single running message and duplicate retries are serialized without consuming rejected requests`() {
         val id = create()
         val first = verified { service.prepare(id, "진행 질문", null) }
-        assertEquals("ANALYSIS_IN_PROGRESS", verified { assertFailsWith<BusinessException> { service.prepare(id, "중복", null) } }.code)
+        assertEquals("ANALYSIS_IN_PROGRESS", verified { assertFailsWith<DomainException> { service.prepare(id, "중복", null) } }.code)
         service.fail(first, "AI_UNAVAILABLE")
         val executor = Executors.newVirtualThreadPerTaskExecutor()
         try {
             val futures = (1..8).map { executor.submit<Boolean> { verified {
-                try { service.prepare(id, null, null, first.message.id); true } catch (_: BusinessException) { false }
+                try { service.prepare(id, null, null, first.message.id); true } catch (_: BusinessException) { false } catch (_: DomainException) { false }
             } } }
             assertEquals(1, futures.count { it.get(20, TimeUnit.SECONDS) })
         } finally { executor.close() }

@@ -2,6 +2,7 @@ package com.sagomungchi.core.conversation
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core.IntegrationTestSupport
+import com.sagomungchi.core._common.exception.httpStatusOf
 import com.sagomungchi.core._common.messaging.OutboxRelay
 import com.sagomungchi.core._common.security.UserContext
 import com.sagomungchi.core._common.security.UserContextHolder
@@ -155,10 +156,17 @@ class AdminConversationRetryTest : IntegrationTestSupport() {
     @Test fun `different concurrent keys admit only one generation and charge only at execution`() {
         val pool=Executors.newFixedThreadPool(2);val gate=CountDownLatch(1)
         try {
-            val work=List(2) { pool.submit<Int> { gate.await();try { accept();202 } catch(ex: BusinessException) { ex.status.value() } } }
+            val work=List(2) { pool.submit<Int> { gate.await();try { accept();202 } catch(ex: RuntimeException) { httpStatusOf(ex)?.value() ?: throw ex } } }
             gate.countDown();assertEquals(listOf(202,409),work.map { it.get(15,TimeUnit.SECONDS) }.sorted())
         } finally { pool.shutdownNow() }
         assertEquals(1,count("SELECT count(*) FROM conversation_job_retry WHERE message_id=?",message));assertEquals(1,quota())
+    }
+    @Test fun `HTTP retry of an already admitted message keeps the domain conflict as 409 with a failure audit`() {
+        // #249: 대화 domain 충돌(DomainException)도 OperationRetryService가 BusinessException처럼 실패 감사·409 Problem으로 응답
+        post(UUID.randomUUID()).andExpect { status { isAccepted() } }
+        post(UUID.randomUUID()).andExpect { status { isConflict() };jsonPath("$.code") { value("ANALYSIS_IN_PROGRESS") } }
+        assertEquals(1,count("SELECT count(*) FROM audit_log WHERE target_id=? AND action='JOB_RETRY' AND result='FAILURE'",message))
+        assertEquals(1,count("SELECT count(*) FROM conversation_job_retry WHERE message_id=?",message))
     }
     @Test fun `same durable key cannot be applied to another message`() {
         val key=UUID.randomUUID();accept(key)

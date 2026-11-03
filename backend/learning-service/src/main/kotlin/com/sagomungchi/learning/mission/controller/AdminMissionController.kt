@@ -2,6 +2,7 @@ package com.sagomungchi.learning.mission.controller
 
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.exception.Problems
+import com.sagomungchi.learning._common.exception.statusOf
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.mission.domain.AdminMission
 import com.sagomungchi.learning.mission.domain.AdminMissionFilter
@@ -179,7 +180,7 @@ class AdminMissionController(
     /** 게시 필수 누락: api-spec 1.3 `missingFields[]` */
     @ExceptionHandler(MissionPublishIncompleteException::class)
     fun incomplete(error: MissionPublishIncompleteException, request: HttpServletRequest): ProblemDetail =
-        Problems.of(error.status, error.code, error.title, error.detail, request).apply { setProperty("missingFields", error.missingFields) }
+        Problems.of(statusOf(error.kind), error.code, error.title, error.detail, request).apply { setProperty("missingFields", error.missingFields) }
 
     /** ADMIN만. 작성자·검토자로 저장할 관리자 ID(X-User-Id)는 UUID */
     private fun requireAdmin(): UUID {

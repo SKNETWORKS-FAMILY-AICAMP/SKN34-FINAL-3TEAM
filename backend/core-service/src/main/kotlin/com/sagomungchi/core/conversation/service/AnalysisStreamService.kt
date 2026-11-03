@@ -3,6 +3,8 @@ package com.sagomungchi.core.conversation.service
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.sagomungchi.core._common.exception.BusinessException
+import com.sagomungchi.core._common.exception.errorCodeOf
+import com.sagomungchi.core._common.exception.httpStatusOf
 import com.sagomungchi.core._common.web.SseEmitters
 import com.sagomungchi.core.conversation.client.AiClient
 import com.sagomungchi.core.conversation.client.AnalysisCall
@@ -95,10 +97,10 @@ class AnalysisStreamService(private val conversations: ConversationService, priv
             clarification?.let { emit("clarification", it) }
         } catch (ex: Exception) {
             Thread.interrupted()
-            val code = call.failure.get() ?: (ex as? BusinessException)?.code ?: "ANALYSIS_FAILED"
+            val code = call.failure.get() ?: errorCodeOf(ex) ?: "ANALYSIS_FAILED"
             conversations.fail(ticket, code)
             if (connected()) emit("error", mapOf("type" to "about:blank", "title" to "분석 처리를 완료하지 못했습니다.",
-                "status" to ((ex as? BusinessException)?.status?.value() ?: 502), "code" to code, "retryable" to true, "messageId" to ticket.message.id))
+                "status" to (httpStatusOf(ex)?.value() ?: 502), "code" to code, "retryable" to true, "messageId" to ticket.message.id))
         } finally { deadline.cancel(false); call.finish(); Thread.interrupted() }
     }
     private fun invalid(): Nothing = throw BusinessException(org.springframework.http.HttpStatus.BAD_GATEWAY,

@@ -1,6 +1,7 @@
 package com.sagomungchi.learning.answer.domain
 
-import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning._common.exception.DomainException
+import com.sagomungchi.learning._common.exception.ErrorKind
 import com.sagomungchi.learning.mission.domain.Category
 import com.sagomungchi.learning.mission.domain.Choice
 import com.sagomungchi.learning.mission.domain.InputType
@@ -8,7 +9,6 @@ import com.sagomungchi.learning.mission.missionView
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertDoesNotThrow
 import org.junit.jupiter.api.assertThrows
-import org.springframework.http.HttpStatus
 import kotlin.test.assertEquals
 
 class AnswerContentTest {
@@ -21,8 +21,8 @@ class AnswerContentTest {
             .copy(choices = choices, inputTemplate = inputTemplate, categories = categories, answerUnit = answerUnit)
 
     private fun assertIncomplete(inputType: InputType, content: AnswerContent, message: String) {
-        val error = assertThrows<BusinessException> { content.requireComplete(inputType, mission(inputType)) }
-        assertEquals(Triple(HttpStatus.UNPROCESSABLE_ENTITY, "ANSWER_INCOMPLETE", message), Triple(error.status, error.code, error.detail))
+        val error = assertThrows<DomainException> { content.requireComplete(inputType, mission(inputType)) }
+        assertEquals(Triple(ErrorKind.UNPROCESSABLE, "ANSWER_INCOMPLETE", message), Triple(error.kind, error.code, error.detail))
     }
 
     @Test
