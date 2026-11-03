@@ -63,6 +63,9 @@ metadata:
   labels: {app.kubernetes.io/name: prometheus}
 spec:
   replicas: 1
+  {{- if .Values.prometheus.persistence.enabled }}
+  strategy: {type: Recreate}
+  {{- end }}
   selector:
     matchLabels: {app.kubernetes.io/name: prometheus}
   template:
@@ -83,6 +86,9 @@ spec:
             - --config.file=/etc/prometheus/prometheus.yml
             - --storage.tsdb.path=/prometheus
             - --storage.tsdb.retention.time={{ .Values.prometheus.retention }}
+            {{- if .Values.prometheus.retentionSize }}
+            - --storage.tsdb.retention.size={{ .Values.prometheus.retentionSize }}
+            {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -106,7 +112,11 @@ spec:
         - name: config
           configMap: {name: prometheus-config}
         - name: data
+          {{- if .Values.prometheus.persistence.enabled }}
+          persistentVolumeClaim: {claimName: prometheus-data}
+          {{- else }}
           emptyDir: {}
+          {{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -138,6 +148,15 @@ spec:
             - {name: GF_PATHS_DATA, value: /var/lib/grafana}
             - {name: GF_PATHS_LOGS, value: /tmp}
             - {name: GF_PATHS_PLUGINS, value: /var/lib/grafana/plugins}
+            - {name: GF_ANALYTICS_REPORTING_ENABLED, value: "false"}
+            - {name: GF_ANALYTICS_CHECK_FOR_UPDATES, value: "false"}
+            {{- if .Values.grafana.alerting.enabled }}
+            - name: DISCORD_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.grafana.alerting.discordSecretName }}
+                  key: {{ .Values.grafana.alerting.discordSecretKey }}
+            {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -158,10 +177,21 @@ spec:
             - {name: data, mountPath: /var/lib/grafana}
             - {name: tmp, mountPath: /tmp}
             - {name: datasources, mountPath: /etc/grafana/provisioning/datasources, readOnly: true}
+            {{- if .Values.grafana.alerting.enabled }}
+            - {name: alerting, mountPath: /etc/grafana/provisioning/alerting, readOnly: true}
+            {{- end }}
       volumes:
         - name: data
+          {{- if .Values.grafana.persistence.enabled }}
+          persistentVolumeClaim: {claimName: grafana-data}
+          {{- else }}
           emptyDir: {}
+          {{- end }}
         - name: tmp
           emptyDir: {}
         - name: datasources
           configMap: {name: grafana-datasources}
+        {{- if .Values.grafana.alerting.enabled }}
+        - name: alerting
+          configMap: {name: grafana-alerting}
+        {{- end }}
