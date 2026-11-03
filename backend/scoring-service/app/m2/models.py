@@ -102,8 +102,14 @@ class ModelIdentity(BaseModel):
 class M2Active(BaseModel):
     active: Literal[True] = True
     inputType: Literal["NARRATIVE", "ESSAY"]
-    scores: Scores | EssayScores
-    rawScores: RawScores | EssayRawScores
+    scores: Scores | EssayScores = Field(
+        description="기본은 score_cuts 경계 변환. M2_CONTENT3_RULE_ENABLED=true인 서술 3.0 초5·6의 "
+        "content_3만 결합 점수를 1~5로 자른 뒤 floor(mixed+0.5) 적용."
+    )
+    rawScores: RawScores | EssayRawScores = Field(
+        description="기본은 유한 모델 원점수 그대로. 선택 보정 적용 시 서술 content_3만 "
+        "결합 점수를 1~5로 자르고 소수 4자리로 반올림. 정수는 이 반올림 전 값으로 계산."
+    )
     model: ModelIdentity
 
     @model_validator(mode="after")

@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     s3_region: str = "ap-northeast-2"
     model_cache_dir: Path = Path("local_data/scoring-models")
     model_retry_interval: float = Field(default=5.0, gt=0)
+    m2_content3_rule_enabled: bool = False
 
 
 @lru_cache
