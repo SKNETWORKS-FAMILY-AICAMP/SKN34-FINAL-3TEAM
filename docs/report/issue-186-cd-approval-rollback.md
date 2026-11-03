@@ -1,6 +1,6 @@
 # #186 CD 배포 승인·이력과 이전 버전 복구
 
-문서 버전: v1.1.0 (2026-11-02). develop `4410007` 기준, 실행 없는 준비 도구·CI·인계 자료. 현재 #186 담당자는 `20220348-kim`이며 이 브랜치는 부분 작업 인계용이다.
+문서 버전: v1.2.0 (2026-11-03). develop `e65c972` 기준, 실행 없는 준비 도구·CI·인계 자료. 현재 #186 담당자는 `20220348-kim`이며 이 브랜치는 부분 작업 인계용이다.
 
 ## 확정 정책
 
@@ -99,3 +99,13 @@ CLI 종료 코드 0은 JSON 계획의 형식 유효성만 뜻한다. 호환 여�
 - 예시 CLI 실행은 valid=true, executable=false, 비호환/미확인·근거 누락·승인 미연결 차단 사유를 기록했다. JSON 형식 오류와 JSON 배열/null 입력도 코드 2로 차단 기록을 남기는 테스트를 통과했다.
 - 최초 Windows sandbox 임시 폴더 권한으로 CLI 테스트가 실패했으나 정상 권한에서 전체 재실행해 통과했다. 테스트를 생략하지 않았다.
 - 실제 이미지 build/push, GitHub Environment 승인, GitOps 커밋, Argo CD sync, 운영 DB 변경, 실제 로그인·학습·리포트 동작 및 롤백 리허설은 실행하지 않았다. #186 원격 체크박스와 종료 상태는 변경하지 않는다.
+
+## 최신 develop 반영 (2026-11-03)
+
+- 담당자(`20220348-kim`)가 이 인계 브랜치를 기준으로 이어서 작업하기로 했다. 다른 브랜치 `feature/cd-release-186`(11/01, 승인자 확정본)은 기준으로 삼지 않으며 변경하지 않는다. 승인자는 계속 미정이다.
+- `origin/develop` `e65c972`를 merge commit `761f127`로 반영했다(rebase·force push 없음). 충돌 2건은 문서 목록 줄이며 양쪽 내용을 모두 유지했다: `docs/README.md`(#186·#246 보고서 줄), `docs/design/architecture.md` 4.5(#171 병합 문장 + #186 로컬 준비 문장).
+- 전제 재대조 결과 변경 필요 없음:
+  - `cd-candidate.yml`의 재사용 workflow 입력(`_spring.yml`·`_python.yml`의 `service-path`, `_web.yml`의 `app-path`)과 서비스 목록(core·learning·ai·scoring·report·web)이 기존 서비스별 CI와 같다.
+  - app-service chart의 `image.tag`/`image.digest`, `migration.image`·필수 `migration.revision`, `infrastructure/gitops/migrations/{core,learning}.Dockerfile`, `argocd/local/` 경로가 그대로다. 현재 local migration revision은 core `v26`, learning `v8`, report `20261102-05`다.
+- 그사이 develop에 들어온 관련 변경: #238 `ci-gitops.yml`(chart lint·렌더·스키마, migration 이미지 빌드 확인), #273 kind 단일 클러스터 `sagomungchi-local`, #236 kind 환경값·외부 443 egress, #246 `e2e.yml`. 이후 실행기 연결 때 #238의 migration 이미지 빌드 확인과 #246 E2E를 배포 후 기능 확인 후보로 검토한다. 이번에는 연결하지 않았다.
+- 검증: `python -O -m unittest discover -s scripts/tests` **113개 통과**(CD 계획 검사 13개 포함), 전체 workflow YAML 파싱 통과, 예시 CLI 종료 코드 0·`valid=true`·`executable=false`·차단 사유 18개 기록. 실제 이미지 게시·승인·GitOps 커밋·Argo CD 동기화·롤백 리허설은 실행하지 않았다.
