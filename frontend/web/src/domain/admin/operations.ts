@@ -108,7 +108,14 @@ export interface Rubric {
   exampleAnswer?: string | null
   forbiddenTerms: string[]
   hints: string[]
+  /** #69 서술 M2 핵심어 묶음. 관리자 화면은 편집하지 않고 저장 때 기존 값을 그대로 다시 보낸다(#306). */
+  keywords?: string[]
+  /** #69 논술 M2 글 종류. keywords와 같이 보존만 한다. */
+  essayType?: EssayType | null
 }
+/** learning-service.yaml `AdminRubric.essayType` */
+export const essayTypes = ['설명글', '글짓기', '주장', '찬성반대', '대안제시'] as const
+export type EssayType = (typeof essayTypes)[number]
 export interface AdminMission {
   missionId: string
   status: MissionStatus

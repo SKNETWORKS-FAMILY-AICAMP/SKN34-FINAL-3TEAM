@@ -56,6 +56,30 @@ class AdminOperationsContracts(unittest.TestCase):
                     for purpose in ('CHILD_TRANSFER','TRANSFER_ACCEPT'):
                         self.assertIn(purpose,purposes)
                         purposes.remove(purpose)
+                # #310 corrects the shared refresh cookie sentence to the V24 behavior (student switch keeps the locked
+                # parent cookie) and lists PARENT_SESSION_LOCKED on /auth/refresh 401. Restore only those approved fields.
+                if section=='paths':
+                    for operation in reviewed.values():
+                        for response in (operation.get('responses') or {}).values() if isinstance(operation,dict) else ():
+                            cookie=(response.get('headers') or {}).get('Set-Cookie') if isinstance(response,dict) else None
+                            if cookie and 'description' in cookie:
+                                cookie['description']=cookie['description'].replace(
+                                    '로그아웃은 refresh 쿠키를 만료시킨다. 학생 전환(/auth/student-sessions)은 잠긴 부모 refresh 쿠키를 지우지 않는다(V24).',
+                                    '학생 전환·로그아웃은 refresh 쿠키를 만료시킨다.')
+                if section=='paths' and name=='/auth/refresh':
+                    self.assertIn('PARENT_SESSION_LOCKED',reviewed['post']['responses']['401']['description'])
+                    reviewed['post']['responses']['401']={'$ref':'#/components/responses/Unauthenticated'}
+                # #317 documents STUDENT_RECORDS_PRIVATE on the parent record/conversation/report evidence 403s.
+                # Remove only that approved suffix or the added 403 entry before default.
+                if section=='paths':
+                    for operation in reviewed.values():
+                        responses=operation.get('responses') if isinstance(operation,dict) else None
+                        forbidden=(responses or {}).get('403')
+                        if not isinstance(forbidden,dict) or 'description' not in forbidden: continue
+                        if forbidden['description'].startswith('권한 없음(FORBIDDEN·CHILD_NOT_LINKED 등) 또는 STUDENT_RECORDS_PRIVATE'):
+                            responses.pop('403')
+                        else:
+                            forbidden['description']=forbidden['description'].replace(' · 학생 비공개 STUDENT_RECORDS_PRIVATE(#206)','')
                 canonical=json.dumps(reviewed,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
                 self.assertEqual(expected,hashlib.sha256(canonical).hexdigest(),f'{section}/{name}')
     def test_admin_paths_and_retry_key(self):

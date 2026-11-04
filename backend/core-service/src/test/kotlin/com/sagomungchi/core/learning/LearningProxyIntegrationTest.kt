@@ -150,6 +150,33 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
         }
     }
 
+    @Test fun `attempt comparison forwards the verified student context and keeps learning results`() {
+        val comparison = "{\"status\":\"NO_PREVIOUS\",\"previous\":null}"
+        stub.respond = { LearningHttpStub.Reply(body = comparison) }
+        call("GET", "/api/v1/attempts/$attempt/comparison").andExpect(status().isOk())
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(content().string(comparison))
+        val received = stub.requests.single()
+        assertEquals("GET", received.method); assertEquals("/internal/attempts/$attempt/comparison", received.target)
+        assertEquals(user.toString(), received.header("X-User-Id")); assertEquals("STUDENT", received.header("X-User-Role"))
+        assertEquals(child.toString(), received.header("X-Student-Scope")); assertNull(received.header("Authorization"))
+        // Learning's own refusal (e.g. comparison before the attempt is finished) keeps its status and code.
+        stub.respond = { LearningHttpStub.Reply(409, "{\"status\":409,\"code\":\"REVEAL_CONDITION_UNMET\",\"title\":\"마무리한 뒤 이전 결과와 비교할 수 있습니다.\"}",
+            mapOf("Content-Type" to "application/problem+json")) }
+        call("GET", "/api/v1/attempts/$attempt/comparison").andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("REVEAL_CONDITION_UNMET"))
+    }
+
+    @Test fun `attempt comparison is student only so parents get 403 whether records are private or shared`() {
+        val parent = auth.login(GoogleProfile(subject, "$subject@example.test", null), null)
+        listOf(false, true).forEach { shared ->
+            jdbc.update("UPDATE student SET parent_sharing_enabled=? WHERE id=?", shared, child)
+            call("GET", "/api/v1/attempts/$attempt/comparison", bearer = parent.accessToken)
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("FORBIDDEN"))
+        }
+        assertTrue(stub.requests.isEmpty())
+    }
+
     @Test fun `parent admin invalid token withdrawn link and cached foreign student cannot bypass auth`() {
         val parent = auth.login(GoogleProfile(subject, "$subject@example.test", null), null)
         call("GET", "/api/v1/missions", bearer = parent.accessToken).andExpect(status().isForbidden())
