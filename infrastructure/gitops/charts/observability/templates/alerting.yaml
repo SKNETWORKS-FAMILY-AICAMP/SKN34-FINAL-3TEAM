@@ -20,16 +20,19 @@ data:
       - orgId: 1
         receiver: discord-aws-alerts
         group_by: [grafana_folder, alertname]
-        group_wait: 30s
-        group_interval: 5m
-        repeat_interval: 4h
+        group_wait: {{ .Values.grafana.alerting.groupWait }}
+        group_interval: {{ .Values.grafana.alerting.groupInterval }}
+        repeat_interval: {{ .Values.grafana.alerting.repeatInterval }}
     groups:
       - orgId: 1
         name: demo-platform
         folder: AWS Demo
-        interval: 1m
+        interval: {{ .Values.grafana.alerting.interval }}
         rules:
         {{- range .Values.grafana.alerting.rules }}
+        {{- if and (contains "job=\"rabbitmq-dlq\"" .expr) (not $.Values.prometheus.rabbitmqDlqMetrics.enabled) }}
+        {{- fail "DLQ alert rule requires prometheus.rabbitmqDlqMetrics.enabled" }}
+        {{- end }}
           - uid: {{ .uid }}
             title: {{ .title | quote }}
             condition: C

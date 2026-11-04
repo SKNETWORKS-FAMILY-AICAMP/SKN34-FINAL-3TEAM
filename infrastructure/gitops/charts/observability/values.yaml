@@ -24,6 +24,9 @@ prometheus:
   retention: 1d
   retentionSize: ""
   persistence: {enabled: false, storageClassName: gp3, size: 4Gi}
+  # Opt-in per-queue depth for <queue>.dlq only, from RabbitMQ /metrics/detailed (#187).
+  rabbitmqDlqMetrics:
+    enabled: false
   resources:
     requests: {cpu: 100m, memory: 128Mi}
     limits: {cpu: 500m, memory: 512Mi}
@@ -34,6 +37,11 @@ grafana:
     enabled: false
     discordSecretName: observability-credentials
     discordSecretKey: DISCORD_WEBHOOK_URL
+    # Evaluation and notification timing; defaults keep the #185 operating values.
+    interval: 1m
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
     rules: []
   adminSecret:
     name: observability-credentials

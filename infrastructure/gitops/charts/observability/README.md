@@ -18,6 +18,17 @@ Grafana contact point·notification policy·경보 3개를 파일로 provision�
 
 적용 순서: 관측 Secret 준비 → chart lint/template 및 정책 검토 → namespace·platform 수집 정책 → Helm 배포 → PVC/Ready·Prometheus target/query·Grafana 경보·Discord 수신·기존 앱 및 노드 자원 확인. 자원 압박이나 기존 앱 장애가 발생하면 관측 Deployment를 0으로 축소해 부하를 제거하고 PVC는 보존한다. 앱 자원 예약량을 낮추지 않는다.
 
+## DLQ 큐별 적재 경보 (#187)
+
+`prometheus.rabbitmqDlqMetrics.enabled`(기본 false)를 켜면 기존 `rabbitmq` job은 그대로 두고 같은 15692 포트의
+`/metrics/detailed?family=queue_coarse_metrics`를 `rabbitmq-dlq` job으로 수집한다. metric relabel로
+`rabbitmq_detailed_queue_messages` 중 `<큐>.dlq`만 남겨 시계열은 정의된 DLQ 수만큼이다. Prometheus→RabbitMQ 15692 허용 범위 안이다.
+`grafana.alerting.rules`에 `job="rabbitmq-dlq"` 규칙이 있는데 이 값이 꺼져 있으면 Helm 렌더가 실패한다.
+Prometheus는 ConfigMap 변경을 다시 읽지 않으므로 이 값이 켜질 때만 Pod template annotation을 붙여 켜고 끌 때 Pod를 다시 만든다.
+
+`grafana.alerting.interval`·`groupWait`·`groupInterval`·`repeatInterval`은 기본값이 위 운영값(1m·30s·5m·4h)과 같아 기존 렌더를 바꾸지 않는다.
+DLQ 규칙 예시·검증 절차는 [경보 검증](../../operational-alerts/README.md)을 따른다. prod values에는 아직 DLQ 수집·규칙을 넣지 않았다.
+
 ## 기존 로컬 구성과 검증 이력
 
 이 chart는 검증 전용 kind 클러스터의 `observability` namespace에 OTel Collector, Prometheus, Grafana를 배치한다. Collector의 OTLP 수신(4317/4318)과 Prometheus exporter(8889), RabbitMQ 기존 metrics(15692) 수집, Grafana Prometheus datasource만 포함한다. Grafana는 `observability-credentials` Secret의 `GRAFANA_ADMIN_USER`·`GRAFANA_ADMIN_PASSWORD`를 참조한다. UI는 외부 Ingress 없이 필요한 동안만 port-forward로 조회한다.
