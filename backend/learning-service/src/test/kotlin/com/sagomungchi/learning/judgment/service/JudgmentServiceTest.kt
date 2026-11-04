@@ -70,6 +70,66 @@ class JudgmentServiceTest : PostgresRepositoryTest() {
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM judgment WHERE answer_id = ? AND lease_until IS NOT NULL", Int::class.java, answer.id))
     }
 
+    @Test
+    fun `고착 탐지는 리스가 끝난 RUNNING과 리스 없는 RUNNING만 FAILED로 바꾸고 실패 기록처럼 retry_count를 올림 (#241)`() {
+        val now = Instant.now().truncatedTo(ChronoUnit.MICROS)
+        val expired = running(now.minusSeconds(1))
+        val noLease = running(null)
+        val alive = running(now.plusSeconds(30))
+        val pending = submitted().first.id
+
+        val failed = service.failStuck(now)
+
+        assertTrue(failed.containsAll(listOf(expired, noLease)))
+        assertFalse(failed.contains(alive) || failed.contains(pending))
+        assertEquals(listOf("FAILED", "LEASE_EXPIRED", 1), state(expired))
+        assertEquals(listOf("FAILED", "LEASE_EXPIRED", 1), state(noLease))
+        assertEquals(listOf("RUNNING", null, 0), state(alive))
+        assertEquals(listOf("PENDING", null, 0), state(pending))
+    }
+
+    @Test
+    fun `고착 탐지를 같은 시각에 두 번 실행해도 한 번만 바뀜 (#241)`() {
+        val now = Instant.now().truncatedTo(ChronoUnit.MICROS)
+        val expired = running(now.minusSeconds(1))
+
+        assertTrue(service.failStuck(now).contains(expired))
+        assertFalse(service.failStuck(now).contains(expired))
+        assertEquals(listOf("FAILED", "LEASE_EXPIRED", 1), state(expired))
+    }
+
+    @Test
+    fun `고착 탐지 뒤 다시 요청하면 FAILED에서 가져가 정상 저장 (#241)`() {
+        val (answer, element) = submitted()
+        val now = Instant.now().truncatedTo(ChronoUnit.MICROS)
+        jdbc.update("UPDATE judgment SET process_status = 'RUNNING', lease_until = ? WHERE answer_id = ?", java.sql.Timestamp.from(now.minusSeconds(1)), answer.id)
+        service.failStuck(now)
+
+        val judgment = assertIs<AcquireResult.Acquired>(service.acquire(answer.id, now.plusSeconds(1))).judgment
+        val judged = Judged(
+            JudgmentResult.PARTIAL, null,
+            listOf(JudgmentElement(element, "답", verified = true, sourceType = ElementSource.AI_OBSERVATION).satisfy()),
+            JudgedBy(JudgmentMethod.LLM, trial = true, model = "m", prompt = "p"),
+        )
+
+        assertTrue(service.saveResult(judgment, judged, null))
+        assertEquals(listOf("DONE", null, 1), state(answer.id))
+    }
+
+    /** 판정을 주어진 리스(null이면 리스 없음)의 RUNNING으로 만든 답변 ID */
+    private fun running(leaseUntil: Instant?): UUID {
+        val answer = submitted().first
+        if (leaseUntil == null) {
+            jdbc.update("UPDATE judgment SET process_status = 'RUNNING', lease_until = NULL WHERE answer_id = ?", answer.id)
+        } else {
+            jdbc.update("UPDATE judgment SET process_status = 'RUNNING', lease_until = ? WHERE answer_id = ?", java.sql.Timestamp.from(leaseUntil), answer.id)
+        }
+        return answer.id
+    }
+
+    private fun state(answerId: UUID): List<Any?> =
+        jdbc.queryForMap("SELECT process_status, failure_code, retry_count FROM judgment WHERE answer_id = ?", answerId).values.toList()
+
     /** 서술 답변 하나를 제출해 판정 PENDING을 만듦. 기준표 요소 ID와 함께 */
     private fun submitted(): Pair<Answer, UUID> {
         val rows = TestRows(jdbc)

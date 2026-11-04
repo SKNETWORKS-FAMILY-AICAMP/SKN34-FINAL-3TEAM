@@ -87,6 +87,25 @@ class PaymentIntegrationTest: PostgresRepositoryTest() {
             VALUES(?,?,?,?,'MONTHLY',1,'{}',?::jsonb,true,now())""",id,"synthetic-$id","합성 상품",price,
             """{"dailyMissions":3,"dailyFeedback":50,"dailyConversations":${if(paid) 30 else 0},"reportNarrative":$paid}""")
     }
+    @Test fun `child entitlement reads payment authority and rejects unavailable products and other children`() {
+        val bearer=tokens.access(session(jdbc,owner,"PARENT"))
+        fun get(id: UUID)=mvc.get("/api/v1/children/$id/entitlement") { header("Authorization","Bearer $bearer") }
+        get(student).andExpect {
+            status { isOk() }; header { string("Cache-Control","no-store") }
+            jsonPath("$.status") { value("FREE") }; jsonPath("$.product.id") { value(free.toString()) }
+            jsonPath("$.narrativeEnabled") { value(false) }
+        }
+        val other=parent(jdbc).also { actors+=it }
+        get(child(jdbc,other)).andExpect { status { isForbidden() } }
+        jdbc.update("UPDATE product SET active=false WHERE id=?",free)
+        get(student).andExpect { status { isServiceUnavailable() }; jsonPath("$.code") { value("PAYMENT_FREE_PRODUCT_UNAVAILABLE") } }
+        jdbc.update("UPDATE product SET active=true WHERE id=?",free)
+        approved()
+        get(student).andExpect {
+            status { isOk() }; jsonPath("$.product.id") { value(premium.toString()) }
+            jsonPath("$.narrativeEnabled") { value(true) }; jsonPath("$.conversationEnabled") { value(true) }
+        }
+    }
     private fun anyId(): UUID=any(UUID::class.java) ?: UUID(0,0)
     private fun anyTime(): OffsetDateTime=any(OffsetDateTime::class.java) ?: OffsetDateTime.MIN
     private fun anyDate(): LocalDate=any(LocalDate::class.java) ?: LocalDate.MIN

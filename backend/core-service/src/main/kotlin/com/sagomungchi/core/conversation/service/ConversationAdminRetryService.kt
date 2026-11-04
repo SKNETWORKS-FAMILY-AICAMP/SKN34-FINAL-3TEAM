@@ -39,7 +39,8 @@ class ConversationAdminRetryService(private val requests: ConversationRetryRepos
         if(first.status!="QUEUED") return null
         conversations.lockForAdminRetry(first.messageId)
         val row=requests.find(id) ?: return null
-        if(row.status!="QUEUED" || !row.acceptedAt.isAfter(Instant.now().minusSeconds(130))) return null
+        // Expiry is judged on the DB clock that stamped accepted_at and that claim re-checks.
+        if(row.status!="QUEUED" || !requests.claimable(row.id)) return null
         val ticket=conversations.resumeAdminRetry(row.messageId,row.generation,row.id)
         check(requests.claim(row.id))
         requests.startExecution(row)

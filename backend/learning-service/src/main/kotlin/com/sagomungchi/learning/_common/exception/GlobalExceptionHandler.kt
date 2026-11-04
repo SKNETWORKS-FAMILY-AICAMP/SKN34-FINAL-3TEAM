@@ -22,6 +22,11 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
     fun handleBusiness(ex: BusinessException, request: HttpServletRequest): ProblemDetail =
         Problems.of(ex.status, ex.code, ex.title, ex.detail, request)
 
+    /** domain 규칙 위반: 오류 종류를 HTTP 상태로 바꿔 같은 형식으로 응답 (#249) */
+    @ExceptionHandler(DomainException::class)
+    fun handleDomain(ex: DomainException, request: HttpServletRequest): ProblemDetail =
+        Problems.of(statusOf(ex.kind), ex.code, ex.title, ex.detail, request)
+
     @ExceptionHandler(Exception::class)
     fun handleUnexpected(ex: Exception, request: HttpServletRequest): ProblemDetail {
         log.error("처리되지 않은 예외", ex)

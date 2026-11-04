@@ -15,8 +15,11 @@ data class AuthProperties(
     val reauthTtl: Duration = Duration.ofMinutes(5),
     val googleClientId: String = "",
     val googleClientSecret: String = "",
+    val googleAuthorizeUrl: String = "https://accounts.google.com/o/oauth2/v2/auth",
     val googleTokenUrl: String = "https://oauth2.googleapis.com/token",
     val googleJwkUrl: String = "https://www.googleapis.com/oauth2/v3/certs",
+    /** Demo-only environments mark new Google parents as demo so they stay out of operating statistics. */
+    val newAccountDemo: Boolean = false,
 ) {
     init {
         val origin = URI(webOrigin)

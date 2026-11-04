@@ -1,9 +1,12 @@
 package com.sagomungchi.core.account.controller
 
 import com.sagomungchi.core._common.exception.BusinessException
+import com.sagomungchi.core._common.security.RequestAttributes
 import com.sagomungchi.core.account.config.AuthProperties
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
+import com.sagomungchi.core._common.exception.Problems
 import com.sagomungchi.core.account.service.AuthService
+import com.sagomungchi.core.account.service.GuardianPasswordFailure
 import com.sagomungchi.core.account.service.dto.IssuedAuth
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
@@ -59,9 +62,21 @@ class AuthController(
         return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build()
     }
 
+    /** The parent refresh cookie is kept (locked) so the guardian password can bring the parent screen back. */
     @PostMapping("/api/v1/auth/student-sessions")
     fun student(@RequestBody body: StudentSessionRequest, request: HttpServletRequest, response: HttpServletResponse): Map<String, Any?> =
-        issue(service.enterStudent(cookies.read(request, AuthCookies.REFRESH), body.childId, identity(request)), response)
+        issue(service.enterStudent(body.childId, identity(request)), response, keepRefresh = true)
+
+    @PostMapping("/api/v1/auth/parent-unlock")
+    fun unlock(@RequestBody body: ParentUnlockRequest, request: HttpServletRequest, response: HttpServletResponse): Map<String, Any?> =
+        issue(service.unlockParent(cookies.read(request, AuthCookies.REFRESH), body.password), response)
+
+    @ExceptionHandler(GuardianPasswordFailure::class)
+    fun failure(ex: GuardianPasswordFailure, request: HttpServletRequest): ResponseEntity<ProblemDetail> {
+        val problem = Problems.of(ex.status, ex.code, ex.title, ex.detail, request)
+        ex.remainingAttempts?.let { problem.setProperty("remainingAttempts", it) }
+        return ResponseEntity.status(ex.status).cacheControl(CacheControl.noStore()).body(problem)
+    }
 
     @GetMapping("/api/v1/me")
     fun me(request: HttpServletRequest, response: HttpServletResponse): Map<String, Any?> {
@@ -76,8 +91,8 @@ class AuthController(
             "child" to child, "nextAction" to destination.nextAction, "startPath" to destination.startPath)
     }
 
-    private fun issue(issued: IssuedAuth, response: HttpServletResponse): Map<String, Any?> {
-        response.addHeader(HttpHeaders.SET_COOKIE, (if (issued.identity.session.role == "STUDENT") cookies.clearRefresh()
+    private fun issue(issued: IssuedAuth, response: HttpServletResponse, keepRefresh: Boolean = false): Map<String, Any?> {
+        if (!keepRefresh) response.addHeader(HttpHeaders.SET_COOKIE, (if (issued.identity.session.role == "STUDENT") cookies.clearRefresh()
             else cookies.refresh(requireNotNull(issued.refreshToken), requireNotNull(issued.refreshExpiresAt))).toString())
         response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store")
         val destination = service.destination(issued.identity)
@@ -86,9 +101,9 @@ class AuthController(
             "role" to issued.identity.session.role, "nextAction" to destination.nextAction, "startPath" to destination.startPath)
     }
 
-    private fun identity(request: HttpServletRequest) = request.getAttribute(IDENTITY) as AuthenticatedAccount
+    private fun identity(request: HttpServletRequest) = request.getAttribute(RequestAttributes.IDENTITY) as AuthenticatedAccount
     private fun redirect(location: String) = ResponseEntity.status(HttpStatus.FOUND).location(URI(location))
         .cacheControl(CacheControl.noStore()).header("Referrer-Policy", "no-referrer")
     data class StudentSessionRequest(val childId: UUID)
-    companion object { const val IDENTITY = "sagomungchi.identity" }
+    data class ParentUnlockRequest(val password: String)
 }

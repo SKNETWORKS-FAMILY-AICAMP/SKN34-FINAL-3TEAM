@@ -52,6 +52,12 @@ class JudgmentRepository(private val mapper: JudgmentMapper) {
     /** 실패 기록. 획득한 리스 값이 그대로일 때만 */
     fun fail(judgment: Judgment, leaseUntil: Instant): Boolean = mapper.fail(judgment, leaseUntil) == 1
 
+    /**
+     * 리스가 끝난 RUNNING(리스 없음 포함)을 한 번에 FAILED로 (state-diagram 3.3 고착 탐지, #241). 바뀐 답변 ID.
+     * 조건부 UPDATE라 그사이 재획득해 새 리스가 잡힌 행은 바꾸지 않고, 여러 Pod가 같이 실행해도 한 번만 바뀜
+     */
+    fun failExpired(now: Instant, code: String): List<UUID> = mapper.failExpired(now, code)
+
     /** 시도의 모든 답변(attemptId) 또는 답변 하나(answerId) */
     fun findStored(attemptId: UUID?, answerId: UUID?): List<StoredJudgment> = mapper.findStored(attemptId, answerId)
 

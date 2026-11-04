@@ -6,6 +6,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoes
 from playwright.sync_api import sync_playwright
 
 from app.generation.presentation import DIFFICULTY_LABELS
+from app.generation.template_settings import METRICS, settings_for
 
 THINKING_LABELS = {
     "ANALYZE": "분석하기",
@@ -31,6 +32,8 @@ class ReportRenderer:
             undefined=StrictUndefined,
         )
         self._templates.globals.update(
+            template_settings=settings_for,
+            metric_labels=METRICS,
             thinking_labels=THINKING_LABELS,
             state_labels=STATE_LABELS,
             source_labels=SOURCE_LABELS,
@@ -85,6 +88,8 @@ class ReportRenderer:
             "## 수치와 계산 근거",
             "",
         ]
+        settings = settings_for(report)
+        highlighted = {METRICS[key] for key in settings.highlight_metrics}
         for metric in report["metrics"]:
             value = (
                 f"{metric['value'] * 100:.0f}%"
@@ -93,7 +98,8 @@ class ReportRenderer:
             )
             lines.extend(
                 [
-                    f"- {safe(metric['label'])}: {value}",
+                    f"- {'**[강조]** ' if metric['label'] in highlighted else ''}"
+                    f"{safe(metric['label'])}: {value}",
                     f"  - 분자 {metric['numerator']} / 분모 {metric['denominator']}",
                     f"  - 계산식: {safe(metric['formula'])}",
                     f"  - 출처: {safe(SOURCE_LABELS[metric['sourceType']])}",
@@ -150,4 +156,24 @@ class ReportRenderer:
             )
         if report.get("eveningQuestion"):
             lines.extend(["", "## 이번 주 저녁 질문", "", safe(report["eveningQuestion"])])
-        return "\n".join(lines) + "\n"
+        # Reorder generated section headings only; student text is Markdown-escaped above.
+        labels = {
+            "thinkingTypes": "생각 유형",
+            "changes": "전후 변화",
+            "reflections": "돌아보기",
+            "quotes": "원문 인용",
+            "narrative": "이번 주 요약",
+            "eveningQuestion": "이번 주 저녁 질문",
+        }
+        sections = {}
+        prefix = []
+        current = prefix
+        for line in lines:
+            if line in {"## " + label for label in labels.values()}:
+                current = []
+                sections[line] = current
+            current.append(line)
+        ordered = prefix + [
+            line for key in settings.section_order for line in sections.get("## " + labels[key], [])
+        ]
+        return "\n".join(ordered) + "\n"

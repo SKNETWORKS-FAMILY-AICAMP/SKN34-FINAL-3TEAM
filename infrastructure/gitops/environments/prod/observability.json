@@ -1,0 +1,71 @@
+{
+  "prometheus": {
+    "retention": "3d",
+    "retentionSize": "2GB",
+    "persistence": {
+      "enabled": true,
+      "storageClassName": "gp3",
+      "size": "4Gi"
+    },
+    "resources": {
+      "requests": {
+        "cpu": "100m",
+        "memory": "256Mi"
+      },
+      "limits": {
+        "cpu": "500m",
+        "memory": "512Mi"
+      }
+    }
+  },
+  "grafana": {
+    "persistence": {
+      "enabled": true,
+      "storageClassName": "gp3",
+      "size": "1Gi"
+    },
+    "resources": {
+      "requests": {
+        "cpu": "100m",
+        "memory": "192Mi"
+      },
+      "limits": {
+        "cpu": "500m",
+        "memory": "384Mi"
+      }
+    },
+    "alerting": {
+      "enabled": true,
+      "rules": [
+        {
+          "uid": "demo-metrics-target-down",
+          "title": "Metrics target unavailable",
+          "expr": "min(up{job=~\"otel-collector|rabbitmq\"})",
+          "operator": "lt",
+          "threshold": 1,
+          "for": "3m",
+          "summary": "Collector or RabbitMQ metrics target is unavailable for 3 minutes."
+        },
+        {
+          "uid": "demo-rabbit-backlog",
+          "title": "RabbitMQ ready messages backlog",
+          "expr": "sum(rabbitmq_queue_messages_ready)",
+          "operator": "gt",
+          "threshold": 100,
+          "for": "10m",
+          "summary": "RabbitMQ ready messages exceed 100 for 10 minutes. Inspect workers and DLQ before replaying."
+        },
+        {
+          "uid": "demo-rabbit-memory",
+          "title": "RabbitMQ memory near watermark",
+          "expr": "max(rabbitmq_process_resident_memory_bytes / rabbitmq_resident_memory_limit_bytes)",
+          "operator": "gt",
+          "threshold": 0.8,
+          "for": "5m",
+          "summary": "RabbitMQ resident memory exceeds 80 percent of its watermark for 5 minutes."
+        }
+      ],
+      "discordSecretName": "discord-alert-webhook"
+    }
+  }
+}

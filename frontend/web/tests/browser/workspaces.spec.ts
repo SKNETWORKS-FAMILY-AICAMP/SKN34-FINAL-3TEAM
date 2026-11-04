@@ -125,3 +125,110 @@ test('운영 전용 관리자는 결제 메뉴가 없고 모델 운영 화면을
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)
   expect(overflow).toBe(false)
 })
+
+test('학생 생각 활동 메뉴와 섬 화면의 해 본 생각 (#240) @responsive', async ({ page }, testInfo) => {
+  await studentLogin(page)
+  // 최근 7일 안에 답한 합성 시도 두 건(돌아보기 있음·없음)을 MSW fixture에만 넣는다.
+  await page.evaluate(async () => {
+    const path = '/src/mocks/fixtures/student.ts'
+    const { fixtureStore, persistFixtureState } = await import(path)
+    const data = fixtureStore.snapshot()
+    const base = data.attempts.find((a: { finishedAt?: string }) => a.finishedAt)
+    if (!base) throw new Error('생각 활동 화면용 완료 fixture가 없습니다.')
+    const reflected = structuredClone(base), plain = structuredClone(base)
+    for (const [a, id, type] of [[reflected, 'browser-activity-1', 'ANALYZE'], [plain, 'browser-activity-2', 'CREATE']] as const) {
+      a.studentId = data.session.child.id; a.attemptId = id; a.mission.thinkingType = type
+      a.answers[0].submittedAt = '2026-10-24T01:00:00Z'
+    }
+    reflected.mission.title = '합성 미션: 까닭 찾기'
+    reflected.reflection = { difficulty: '보통', text: '까닭을 하나 더 찾았어요.' }
+    plain.mission.title = '합성 미션: 새 방법 만들기'
+    delete plain.reflection
+    fixtureStore.restoreSnapshot({ ...data, attempts: [...data.attempts, reflected, plain] })
+    persistFixtureState()
+  })
+  await page.getByRole('button', { name: '생각 활동', exact: true }).click()
+  await expect(page).toHaveURL(/\/student\/activities/)
+  await expect(page.getByRole('heading', { name: '내 생각 활동', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '합성 미션: 까닭 찾기' })).toBeVisible()
+  await expect(page.getByText('까닭을 하나 더 찾았어요.')).toBeVisible()
+  await expect(page.getByRole('listitem').filter({ hasText: '합성 미션: 새 방법 만들기' }).getByText('아직 돌아보기를 쓰지 않았어요.')).toBeVisible()
+  await expect(page.getByText(/레벨|등급|순위|점수/)).toHaveCount(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+  await page.screenshot({ path: testInfo.outputPath('student-activities.png'), fullPage: true })
+  // 학생 세션은 새로고침하면 PIN을 다시 받으므로 메뉴로 이동해 섬(생각 유형)을 고른다.
+  await page.getByRole('button', { name: '미션 고르기', exact: true }).click()
+  await page.getByRole('group', { name: '생각 유형' }).getByRole('button').nth(1).click()
+  await expect(page.getByRole('heading', { name: /에서 해 본 생각$/ })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('student-island-activities.png'), fullPage: true })
+})
+
+test('학부모 분석 대화 예시 질문은 고른 질문을 현재 자녀·기간으로 보낸다 (#240)', async ({ page }, testInfo) => {
+  await login(page)
+  await page.goto('/parent/analysis')
+  const examples = page.getByRole('group', { name: '예시 질문' })
+  await expect(examples).toBeVisible()
+  await expect(examples.getByRole('button')).toHaveCount(5)
+  // 시연 학생은 기본 비공개(#206)라 대화 생성은 403이 될 수 있다. 여기서는 고른 질문과 범위만 확인한다.
+  const scope = await page.getByText(/^선택 범위 · /).textContent()
+  const create = page.waitForRequest(r => r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/conversations')
+  await examples.getByRole('button', { name: '이번 주 학습 횟수는?' }).click()
+  const body = (await create).postDataJSON()
+  expect(scope).toContain(`${body.from} ~ ${body.to}`)
+  expect(body.childId).toBeTruthy()
+  await expect(page.getByRole('textbox', { name: '기록에 대한 질문' })).toHaveValue('이번 주 학습 횟수는?')
+  await page.screenshot({ path: testInfo.outputPath('parent-example-questions.png'), fullPage: true })
+})
+
+test('학부모 도움말·공지·문의 접수는 core 계약 모양을 쓴다', async ({ page }) => {
+  await login(page)
+  await page.goto('/parent/help')
+  await page.getByText('자녀와 조회 기간', { exact: true }).click()
+  await expect(page.getByText('선택한 자녀와 기간의 기록만 조회합니다.', { exact: false })).toBeVisible()
+  await page.goto('/parent/notices')
+  await expect(page.getByText('현재 개발 시연에서는 직접 만든 예시 학생', { exact: false })).toBeVisible()
+  await page.goto('/parent/support')
+  await page.getByLabel('제목', { exact: true }).fill('기록 확인 문의')
+  await page.getByLabel('내용', { exact: true }).fill('학습 기록은 어디서 보나요?')
+  const sent = page.waitForRequest(r => r.url().endsWith('/api/v1/inquiries') && r.method() === 'POST')
+  await page.getByRole('button', { name: '접수하기', exact: true }).click()
+  expect((await sent).postDataJSON()).toEqual({ category: 'USAGE', title: '기록 확인 문의', body: '학습 기록은 어디서 보나요?' })
+  await expect(page.getByText('기록 확인 문의', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '판정·답변 오류', exact: true }).click()
+  await page.getByLabel('대상 기록 번호', { exact: true }).fill('00000000-0000-4000-8000-000000000000')
+  await page.getByLabel('내용', { exact: true }).fill('판정이 이상해요')
+  const report = page.waitForRequest(r => r.url().endsWith('/api/v1/error-reports') && r.method() === 'POST')
+  await page.getByRole('button', { name: '접수하기', exact: true }).click()
+  expect((await report).headers()['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/)
+})
+
+test('동석 학습 뒤 보호자 비밀번호로 Google 로그인 없이 학부모 화면에 돌아온다 @responsive', async ({ page }, testInfo) => {
+  await login(page)
+  await page.getByRole('link', { name: '자녀 기기·PIN', exact: true }).click()
+  const card = page.getByRole('region', { name: '보호자 비밀번호' })
+  await expect(card.getByText('아직 없음')).toBeVisible()
+  const popup = page.waitForEvent('popup')
+  await card.getByRole('button', { name: '보호자 비밀번호 Google 본인 확인' }).click()
+  await (await popup).close()
+  await card.getByRole('button', { name: '보호자 비밀번호 완료 확인' }).click()
+  await card.getByLabel('새 보호자 비밀번호', { exact: true }).fill('2580')
+  await card.getByLabel('새 보호자 비밀번호 확인').fill('2580')
+  await card.getByRole('button', { name: '보호자 비밀번호 정하기' }).click()
+  await expect(card.getByRole('status')).toHaveText('보호자 비밀번호를 저장했습니다.')
+  await expect(card.getByText('설정됨')).toBeVisible()
+
+  await page.getByRole('button', { name: '이 자녀로 학습 시작', exact: true }).click()
+  await expect(page).toHaveURL(/\/student\/home/)
+  await page.getByRole('button', { name: '학부모 로그인으로', exact: true }).click()
+  await expect(page).toHaveURL(/\/login/)
+  const unlock = page.getByRole('form', { name: '학부모 화면으로 돌아가기' })
+  await unlock.getByLabel('보호자 비밀번호').fill('1111')
+  await unlock.getByRole('button', { name: '학부모 화면으로', exact: true }).click()
+  await expect(unlock.getByRole('alert')).toContainText('남은 기회는 4번')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+  await page.screenshot({ path: testInfo.outputPath('parent-unlock.png'), fullPage: true })
+  await unlock.getByLabel('보호자 비밀번호').fill('2580')
+  await unlock.getByRole('button', { name: '학부모 화면으로', exact: true }).click()
+  await expect(page).toHaveURL(/\/parent\/journal/)
+  await expect(page.getByLabel('자녀 선택')).toBeVisible()
+})

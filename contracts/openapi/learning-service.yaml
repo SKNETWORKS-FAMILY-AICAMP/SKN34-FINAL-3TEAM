@@ -455,14 +455,16 @@ paths:
         '403': {$ref: '#/components/responses/Problem'}
         '404': {$ref: '#/components/responses/Problem'}
         '409':
-          description: JUDGMENT_STATE_CONFLICT
+          description: >-
+            JUDGMENT_STATE_CONFLICT, 또는 core 사용 예약·확정 409의 code 전달
+            (REFUND_IN_PROGRESS, PAYMENT_USAGE_RETRY_REQUIRES_NEW_SOURCE, PAYMENT_USAGE_STATE_CHANGED)
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
         '500': {$ref: '#/components/responses/Problem'}
         '503':
-          description: AI_UNAVAILABLE (`retryable` 포함)
+          description: AI_UNAVAILABLE (`retryable` 포함) 또는 PAYMENT_USAGE_UNAVAILABLE(core 사용 증빙 실패·목록 밖 409)
           content:
             application/problem+json:
               schema:
@@ -1387,7 +1389,7 @@ components:
     AdminRubric:
       type: object
       additionalProperties: false
-      required: [version, elements, answerKey, exampleAnswer, forbiddenTerms, hints, createdAt]
+      required: [version, elements, answerKey, exampleAnswer, forbiddenTerms, hints, createdAt, keywords, essayType]
       properties:
         version: {type: integer}
         elements: {type: array, items: {$ref: '#/components/schemas/AdminRubricElement'}}
@@ -1399,6 +1401,8 @@ components:
         forbiddenTerms: {type: array, items: {type: string}}
         hints: {type: array, items: {type: string}, description: 생각 열기 질문 순서대로}
         createdAt: {type: string, format: date-time}
+        keywords: {type: array, items: {type: string}, description: '#69 서술 M2 핵심어 묶음'}
+        essayType: {type: [string, 'null'], enum: [설명글, 글짓기, 주장, 찬성반대, 대안제시, null], description: '#69 논술 M2 글 종류'}
     AdminMissionPage:
       type: object
       additionalProperties: false
@@ -1457,6 +1461,8 @@ components:
         exampleAnswer: {type: [string, 'null']}
         forbiddenTerms: {type: array, items: {type: string}}
         hints: {type: array, items: {type: string}}
+        keywords: {type: array, maxItems: 100, items: {type: string, minLength: 1, maxLength: 200}, description: '#69 서술 M2 핵심어 묶음 (괄호 안 대체어 포함)'}
+        essayType: {type: [string, 'null'], enum: [설명글, 글짓기, 주장, 찬성반대, 대안제시, null], description: '#69 논술 M2 글 종류'}
     AdminReviewRequest:
       type: object
       required: [missionVersion, rubricVersion]

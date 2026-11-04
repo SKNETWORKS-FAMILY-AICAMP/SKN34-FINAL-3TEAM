@@ -66,5 +66,6 @@
  <insert id="reserve">INSERT INTO payment_premium_usage(id,student_id,subscription_id,kind,source_id,status,created_at,updated_at) VALUES(#{id},#{studentId},#{subscriptionId},#{kind},#{sourceId},#{status},#{createdAt},#{updatedAt})</insert>
  <update id="usageFinish">UPDATE payment_premium_usage SET status=CASE WHEN #{used} THEN 'USED' ELSE 'FAILED' END,updated_at=#{now} WHERE id=#{id} AND student_id=#{student} AND status='RESERVED'</update>
  <select id="usageCount" resultType="int">SELECT count(*) FROM payment_premium_usage WHERE student_id=#{student} AND created_at &gt;= #{since} AND status IN ('RESERVED','USED')</select>
+ <select id="usageCountSince" resultType="int" flushCache="true" useCache="false">SELECT count(*) FROM payment_premium_usage WHERE student_id=#{student} AND kind=#{kind} AND created_at &gt;= #{since} AND status IN ('RESERVED','USED')</select>
  <insert id="audit">INSERT INTO audit_log(id,actor_user_id,action,target_type,target_id,result,detail,created_at) VALUES(#{id},#{actor},#{action},'PAYMENT',#{target},'SUCCESS','{}'::jsonb,#{now})</insert>
 </mapper>

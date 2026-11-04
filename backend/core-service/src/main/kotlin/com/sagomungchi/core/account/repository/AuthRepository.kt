@@ -12,7 +12,7 @@ import java.util.UUID
 class AuthRepository(private val mapper: AuthMapper) {
     fun account(id: UUID) = mapper.findAccount(id)
     fun googleAccount(subject: String) = mapper.findGoogleAccount(subject)
-    fun insertAccount(account: AuthAccount, now: OffsetDateTime) = mapper.insertAccount(account, now)
+    fun insertAccount(account: AuthAccount, now: OffsetDateTime, demo: Boolean) = mapper.insertAccount(account, now, demo)
     fun permissions(userId: UUID) = mapper.permissions(userId)
     fun insertSession(session: AuthSession) { check(mapper.insertSession(session) == 1) }
     fun session(id: UUID, lock: Boolean = false) = mapper.findSession(id, lock)
@@ -21,4 +21,5 @@ class AuthRepository(private val mapper: AuthMapper) {
     fun refresh(hash: String) = mapper.findRefresh(hash)
     fun consume(id: UUID, now: OffsetDateTime) = mapper.consumeRefresh(id, now)
     fun revoke(id: UUID, now: OffsetDateTime) { mapper.revokeSession(id, now) }
+    fun revokeGuardianEntries(parent: UUID, now: OffsetDateTime) { mapper.revokeGuardianEntries(parent, now) }
 }

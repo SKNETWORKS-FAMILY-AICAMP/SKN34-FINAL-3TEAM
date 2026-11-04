@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useSession } from './sessionContext.ts'
 import { restoreSession, useAuthentication } from '../../data/classroom/useClassroom.ts'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { parentApi } from '../../data/parent/api.ts'
 import { useParentQuery, useParentMutation } from '../../data/parent/queries.ts'
 import { ChildRegistration, ConsentFields } from '../parent/AccountForms.tsx'
@@ -26,6 +26,7 @@ export function AuthOnboarding() {
   }
   return <main id="class-journal" style={{ maxWidth: 760, margin: '40px auto' }}><div className="ws-main ws-stack">
     <h1>{consent ? '이용 안내·필수 동의' : '자녀 등록'}</h1>
+    {!consent && import.meta.env.VITE_GUARDIAN_TRANSFER_ENABLED === 'true' && <Link to="/parent/transfers">받은 자녀 이관 요청 확인</Link>}
     {consent ? <section className="ws-card">
       <p>현재 문서를 확인하고 동의해 주세요. 필수 동의를 철회하면 계정 이용이 제한되며 삭제·탈퇴는 별도 요청이 필요합니다.</p>
       <QueryFeedback query={documents} />

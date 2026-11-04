@@ -1,0 +1,228 @@
+{
+  "env": [
+    {
+      "name": "INTERNAL_TOKEN",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "INTERNAL_TOKEN",
+          "name": "internal-service-credentials"
+        }
+      }
+    },
+    {
+      "name": "DATABASE_URL",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "REPORT_DATABASE_URL",
+          "name": "report-db-credentials"
+        }
+      }
+    },
+    {
+      "name": "CORE_URL",
+      "value": "http://core-service.app.svc.cluster.local:8080"
+    },
+    {
+      "name": "LEARNING_URL",
+      "value": "http://learning-service.app.svc.cluster.local:8081"
+    },
+    {
+      "name": "AI_URL",
+      "value": "http://ai-service.app.svc.cluster.local:8000"
+    },
+    {
+      "name": "S3_BUCKET",
+      "value": "sagomungchi-demo-347161580747-reports"
+    },
+    {
+      "name": "S3_REGION",
+      "value": "ap-northeast-2"
+    },
+    {
+      "name": "AWS_REGION",
+      "value": "ap-northeast-2"
+    },
+    {
+      "name": "CONSUMER_PREFETCH",
+      "value": "1"
+    }
+  ],
+  "extraVolumeMounts": [
+    {
+      "mountPath": "/rds-ca",
+      "name": "rds-ca",
+      "readOnly": true
+    }
+  ],
+  "extraVolumes": [
+    {
+      "configMap": {
+        "name": "rds-ca"
+      },
+      "name": "rds-ca"
+    }
+  ],
+  "hpa": {
+    "enabled": false
+  },
+  "image": {
+    "digest": "sha256:87cb1d57edb3acd8b70dcdb17b1d2d587b1a92fd2040070a1178a61c6eb33eee",
+    "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/report-service"
+  },
+  "keda": {
+    "enabled": false
+  },
+  "migration": {
+    "enabled": false
+  },
+  "nameOverride": "report-api",
+  "networkPolicy": {
+    "egress": [
+      {
+        "ports": [
+          {
+            "port": 5432,
+            "protocol": "TCP"
+          }
+        ],
+        "to": [
+          {
+            "ipBlock": {
+              "cidr": "10.20.128.0/20"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "10.20.144.0/20"
+            }
+          }
+        ]
+      },
+      {
+        "ports": [
+          {
+            "port": 443,
+            "protocol": "TCP"
+          }
+        ],
+        "to": [
+          {
+            "ipBlock": {
+              "cidr": "3.5.140.0/22"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "3.5.144.0/23"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "3.5.184.0/21"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "52.219.144.0/22"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "52.219.148.0/23"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "52.219.202.0/23"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "52.219.204.0/22"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "52.219.56.0/22"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "52.219.60.0/23"
+            }
+          }
+        ]
+      },
+      {
+        "ports": [
+          {
+            "port": 80,
+            "protocol": "TCP"
+          }
+        ],
+        "to": [
+          {
+            "ipBlock": {
+              "cidr": "169.254.170.23/32"
+            }
+          }
+        ]
+      }
+    ],
+    "egressToApps": [
+      {
+        "name": "learning-service",
+        "port": 8081
+      }
+    ],
+    "egressToPlatform": [],
+    "enabled": true,
+    "ingressFromApps": [
+      "core-service"
+    ]
+  },
+  "pdb": {
+    "enabled": false
+  },
+  "probes": {
+    "liveness": {
+      "enabled": true,
+      "path": "/health/live",
+      "periodSeconds": 10,
+      "timeoutSeconds": 5
+    },
+    "readiness": {
+      "enabled": true,
+      "path": "/health/ready",
+      "periodSeconds": 10,
+      "timeoutSeconds": 5
+    },
+    "startup": {
+      "enabled": true,
+      "failureThreshold": 30,
+      "path": "/health/live",
+      "periodSeconds": 10
+    }
+  },
+  "replicaCount": 1,
+  "resources": {
+    "limits": {
+      "cpu": "500m",
+      "memory": "768Mi"
+    },
+    "requests": {
+      "cpu": "100m",
+      "memory": "256Mi"
+    }
+  },
+  "service": {
+    "enabled": true,
+    "port": 8002,
+    "targetPort": 8002
+  },
+  "serviceAccount": {
+    "automountToken": false,
+    "create": false
+  },
+  "terminationGracePeriodSeconds": 180
+}

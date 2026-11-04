@@ -9,6 +9,7 @@ from pydantic.alias_generators import to_camel
 
 from app.generation.models import ReportState, ReportStatus
 from app.generation.records import ThinkingType
+from app.generation.template_settings import TemplateSettings
 
 
 class Response(BaseModel):
@@ -118,7 +119,13 @@ class Verification(Response):
     content_allowed: bool | None = None
 
 
+class TemplateSnapshot(Response):
+    settings: TemplateSettings
+    revision: int = Field(ge=0)
+
+
 class Versions(Response):
+    template: TemplateSnapshot | None = None
     prompt: str | None
     model: str | None
 

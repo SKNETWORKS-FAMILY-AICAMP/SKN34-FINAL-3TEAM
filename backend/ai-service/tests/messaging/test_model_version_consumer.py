@@ -13,7 +13,9 @@ import pytest
 from app.clients.base import internal_client
 from app.clients.core_client import CoreClient
 from app.messaging.consumer import ActivationEnvelope, ModelVersionConsumer
-from app.versions import PROMPT_SCOPES, ActiveVersions
+from app.prompt_versions.models import PROMPT_SCOPES
+from app.prompt_versions.registry import ActiveVersions
+from app.prompt_versions.service import PromptSync
 from tests.test_active_versions import installed, version
 
 
@@ -144,16 +146,17 @@ def test_buffer_retry_reconnect_and_two_pod_queues():
             broker = SimpleNamespace(is_connected=True, connection=connection)
             core = Core(order, fail)
             registry = installed("judgment", "judge@next")
-            consumer = ModelVersionConsumer(broker, core, registry, 0.005)
-            consumers.append((consumer, connection, core, registry, order, queues))
+            sync = PromptSync(core, registry, 0.005)
+            consumer = ModelVersionConsumer(broker, sync, 0.005)
+            consumers.append((consumer, connection, core, registry, order, queues, sync))
             consumer.start()
         try:
             await until(lambda: all(items[5] for items in consumers))
-            for _consumer, _, _, _, order, _ in consumers:
+            for _consumer, _, _, _, order, _, _ in consumers:
                 assert order[:4] == ["declare", "bind", "consume", "snapshot"]
             await until(lambda: consumers[0][2].calls >= 2)
             assert not await consumers[0][0].is_ready()
-            for _, _, _, _, _, queues in consumers:
+            for _, _, _, _, _, queues, _ in consumers:
                 msg = message(event(revision=3))
                 await queues[0].receiver(msg)
                 msg.ack.assert_awaited_once()
@@ -161,17 +164,17 @@ def test_buffer_retry_reconnect_and_two_pod_queues():
                 await queues[0].receiver(stale)
                 stale.ack.assert_awaited_once()
             consumers[0][2].release.set()
-            await until(lambda: all(items[0]._initialized for items in consumers))
+            await until(lambda: all(items[6].initialized for items in consumers))
             assert all(items[3].prompt("judgment").version == "judge@next" for items in consumers)
             assert all(items[3]._active["judgment"].revision == 3 for items in consumers)
             assert all([await consumer.is_ready() for consumer, *_ in consumers])
 
             # 재연결 동안 이벤트가 유실돼도 새 큐 뒤 snapshot을 다시 읽는다.
-            for _, connection, _, _, _, _ in consumers:
+            for _, connection, _, _, _, _, _ in consumers:
                 for callback in list(connection.close_callbacks):
                     callback()
             await until(lambda: all(len(items[5]) == 2 for items in consumers))
-            await until(lambda: all(items[0]._initialized for items in consumers))
+            await until(lambda: all(items[6].initialized for items in consumers))
             assert all(items[2].calls >= 2 for items in consumers)
             assert all(items[5][0].name != items[5][1].name for items in consumers)
             assert all(items[3].prompt("judgment").version == "judge@next" for items in consumers)
@@ -196,13 +199,14 @@ def test_buffer_retry_reconnect_and_two_pod_queues():
 )
 def test_invalid_event_ack_without_payload_log(mutate, caplog):
     async def run():
-        consumer = ModelVersionConsumer(None, None, ActiveVersions())
+        sync = PromptSync(None, ActiveVersions())
+        consumer = ModelVersionConsumer(None, sync)
         payload = event()
         mutate(payload)
         incoming = message(payload)
         await consumer.receive(incoming)
         incoming.ack.assert_awaited_once()
-        assert not consumer._pending
+        assert not sync._pending
 
     asyncio.run(run())
     assert "Invalid prompt activation event ignored" in caplog.text

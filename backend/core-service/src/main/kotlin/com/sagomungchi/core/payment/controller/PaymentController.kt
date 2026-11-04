@@ -1,10 +1,10 @@
 package com.sagomungchi.core.payment.controller
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.sagomungchi.core._common.security.RequestAttributes
 import com.sagomungchi.core._common.web.HttpExchangeResult
 import com.sagomungchi.core._common.web.IdempotencyService
 import com.sagomungchi.core._common.security.UserContextHolder
-import com.sagomungchi.core.account.controller.AuthController
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core.payment.service.*
 import com.sagomungchi.core.payment.service.PaymentTransactions.Companion.forbidden
@@ -26,12 +26,15 @@ data class RefundReason(@field:NotBlank @field:Size(max=200) val reason: String)
 
 @RestController
 class PaymentController(private val payments: PaymentService,private val refunds: RefundService,
-    private val webhook: PaymentWebhookService,private val idempotency: IdempotencyService,private val json: ObjectMapper) {
+    private val webhook: PaymentWebhookService,private val idempotency: IdempotencyService,private val json: ObjectMapper,
+    private val entitlements: ProductEntitlementService) {
     @ModelAttribute fun noStore(response: jakarta.servlet.http.HttpServletResponse) { response.setHeader("Cache-Control","no-store") }
     @ExceptionHandler(org.springframework.dao.DataAccessException::class)
     fun storageUnavailable(request: HttpServletRequest)=com.sagomungchi.core._common.exception.Problems.of(
         org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,"PAYMENT_STORAGE_UNAVAILABLE","거래 저장 결과를 확인하지 못했습니다. 같은 거래로 상태를 조회해 주세요.",null,request)
     @GetMapping("/api/v1/products") fun products()=mapOf("items" to payments.products())
+    @GetMapping("/api/v1/children/{childId}/entitlement")
+    fun entitlement(@PathVariable childId: UUID,request: HttpServletRequest)=entitlements.forParent(parent(request),childId)
     @PostMapping("/api/v1/orders")
     fun order(@Valid @RequestBody body: CreateOrderRequest,@RequestHeader("Idempotency-Key") key: UUID,request: HttpServletRequest)=
         cached(request,key,"POST /orders",body,201) { payments.create(parent(request),body.childId,body.productId) }
@@ -84,7 +87,7 @@ class PaymentController(private val payments: PaymentService,private val refunds
     }
     private fun parent(r: HttpServletRequest): UUID=identity(r).also { if(it.session.role!="PARENT") forbidden() }.account.id
     private fun admin(r: HttpServletRequest,permission: String): UUID=identity(r).also { if(it.session.role!="ADMIN" || permission !in it.permissions) forbidden() }.account.id
-    private fun identity(r: HttpServletRequest)=r.getAttribute(AuthController.IDENTITY) as AuthenticatedAccount
+    private fun identity(r: HttpServletRequest)=r.getAttribute(RequestAttributes.IDENTITY) as AuthenticatedAccount
     private fun cached(request: HttpServletRequest,key: UUID,endpoint: String,body: Any,status: Int=200,operation: ()->Any): ResponseEntity<ByteArray> {
         val identity=identity(request)
         val result=idempotency.execute(key,identity.account.id,endpoint,identity.studentScope.map(UUID::toString).toSet(),json.writeValueAsBytes(body)) {
@@ -94,7 +97,8 @@ class PaymentController(private val payments: PaymentService,private val refunds
                 value is RefundRequestResponse && value.status=="APPROVED" -> 202
                 else -> status }
             HttpExchangeResult(actual,mapOf("Content-Type" to listOf("application/json"),"Cache-Control" to listOf("no-store")),json.writeValueAsBytes(value))
-          } catch(e: com.sagomungchi.core._common.exception.BusinessException) {
+          } catch(ex: RuntimeException) {
+            val e=com.sagomungchi.core._common.exception.errorInfoOf(ex) ?: throw ex
             HttpExchangeResult(e.status.value(),mapOf("Content-Type" to listOf("application/problem+json"),"Cache-Control" to listOf("no-store")),
                 json.writeValueAsBytes(com.sagomungchi.core._common.exception.Problems.of(e.status,e.code,e.title,e.detail,request)))
           }

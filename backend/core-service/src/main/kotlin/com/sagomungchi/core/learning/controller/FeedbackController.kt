@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.sagomungchi.core._common.exception.BusinessException
+import com.sagomungchi.core._common.exception.errorInfoOf
 import com.sagomungchi.core._common.security.UserContextHolder
 import com.sagomungchi.core._common.web.SseEmitters
 import com.sagomungchi.core.learning.service.FeedbackService
@@ -41,8 +42,9 @@ class FeedbackController(private val feedback: FeedbackService, private val stre
                     "RUNNING" -> stream.event("status", running())
                     else -> invalid(stream)
                 }
-            } catch (ex: BusinessException) {
-                stream.event("error", problem(ex.status.value(), ex.code, ex.title))
+            } catch (ex: RuntimeException) {
+                val error = errorInfoOf(ex) ?: throw ex
+                stream.event("error", problem(error.status.value(), error.code, error.title))
             } catch (_: JsonProcessingException) { invalid(stream) }
         }
         return ResponseEntity.ok().header("Cache-Control", "no-store").header("X-Accel-Buffering", "no")

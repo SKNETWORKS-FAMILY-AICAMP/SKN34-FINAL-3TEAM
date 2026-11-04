@@ -49,7 +49,7 @@ pwsh -File infrastructure/kind/create-platform-secret.ps1
 |---|---|---|
 | `postgres` | 5432 | `core_db`·`learning_db`·`report_db` |
 | `rabbitmq` | 5672 / 15672 / 15692 | AMQP / 관리 API / Prometheus |
-| `redis` | 6379 | 캐시·실시간 알림 중계 |
+| `redis` | 6379 | 학생 페어링 코드·기기 등록 rate limit·실시간 알림 중계 (#210·#225) |
 | `minio` | 9000 / 9001 | S3 API / 관리 화면 |
 
 앱 namespace에서는 `postgres.platform`·`rabbitmq.platform`·`redis.platform`·`minio.platform`으로 접속한다. 고정된 Service 이름을 사용하므로 같은 namespace에 이 chart를 여러 release로 중복 배포하지 않는다.

@@ -27,6 +27,7 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.patch
+import org.springframework.test.web.servlet.put
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
@@ -119,6 +120,7 @@ class AccountManagementTest : PostgresRepositoryTest() {
    jdbc.update("DELETE FROM audit_log WHERE actor_user_id=?",id); jdbc.update("DELETE FROM withdrawal_request WHERE user_id=?",id)
    jdbc.update("DELETE FROM consent WHERE subject_user_id=?",id); jdbc.update("DELETE FROM guardianship WHERE parent_user_id=?",id)
    jdbc.update("DELETE FROM refresh_token WHERE user_id=?",id); jdbc.update("DELETE FROM auth_session WHERE user_id=?",id)
+   jdbc.update("DELETE FROM guardian_password WHERE user_id=?",id)
    jdbc.update("DELETE FROM user_account WHERE id=?",id)
   }
   students.forEach { jdbc.update("DELETE FROM student WHERE id=?",it) }
@@ -159,7 +161,7 @@ class AccountManagementTest : PostgresRepositoryTest() {
  @Test fun `session logout and role transition invalidate an unused reauth grant`() {
   val p=parent();val c=child(p.identity.account.id)
   val token=grant(p.identity,ReauthPurpose.PIN_CHANGE,c)
-  auth.enterStudent(p.refreshToken,c,p.identity)
+  auth.enterStudent(c,p.identity)
   assertFailsWith<BusinessException> { consume(p.identity,token,ReauthPurpose.PIN_CHANGE,c) }
  }
  @Test fun `concurrent one time grant consumption has one winner`() {
@@ -185,7 +187,7 @@ class AccountManagementTest : PostgresRepositoryTest() {
   val p=parent();val c=child(p.identity.account.id)
   val other=parent(); assertFailsWith<BusinessException> { children.impact(other.identity,c) }
   val studentLogin=auth.login(GoogleProfile(p.identity.account.subject!!,p.identity.account.email,null),null)
-  val student=auth.enterStudent(studentLogin.refreshToken,c,studentLogin.identity)
+  val student=auth.enterStudent(c,studentLogin.identity)
   children.unlink(p.identity,c,grant(p.identity,ReauthPurpose.CHILD_UNLINK,c))
   assertEquals(1,count("SELECT count(*) FROM guardianship WHERE student_id=? AND status='UNLINKED'",c))
   assertFailsWith<BusinessException> { auth.authenticate(student.accessToken) }
@@ -195,13 +197,18 @@ class AccountManagementTest : PostgresRepositoryTest() {
  @Test fun `deletion and Outbox are atomic and failed mutation does not consume grant`() {
   val p=parent();val c=child(p.identity.account.id); val token=grant(p.identity,ReauthPurpose.CHILD_DELETE,c,"PROFILE")
   val constraint="test_issue45_"+c.toString().replace("-","")
+  jdbc.update("UPDATE student SET look_theme='sea',look_companion='kongi',look_updated_at=now() WHERE id=?",c)
+  val lookSaved="SELECT count(*) FROM student WHERE id=? AND look_theme IS NOT NULL"
   jdbc.execute("ALTER TABLE outbox_event ADD CONSTRAINT $constraint CHECK (subject != '$c')")
   try { assertFails { children.delete(p.identity,c,DeletionScope.PROFILE,token) } }
   finally { jdbc.execute("ALTER TABLE outbox_event DROP CONSTRAINT $constraint") }
   assertEquals(0,count("SELECT count(*) FROM deletion_request WHERE student_id=?",c))
   assertEquals(0,count("SELECT count(*) FROM reauth_grant WHERE token_hash=? AND used_at IS NOT NULL",tokens.hash(token)))
   assertEquals("ACTIVE",jdbc.queryForObject("SELECT status FROM student WHERE id=?",String::class.java,c))
+  assertEquals(1,count(lookSaved,c))
   val request=children.delete(p.identity,c,DeletionScope.PROFILE,token)
+  // #234 꾸미기 설정은 삭제 확정과 같은 트랜잭션에서 기본값으로 되돌린다.
+  assertEquals(0,count(lookSaved,c))
   val event=json.readTree(jdbc.queryForObject("SELECT payload::text FROM outbox_event WHERE subject=?",String::class.java,c.toString()))
   assertEquals(request.deletionRequestId.toString(),event["data"]["deletionRequestId"].asText())
   assertEquals("PROFILE",event["data"]["scope"].asText());assertEquals(c.toString(),event["data"]["studentId"].asText())
@@ -265,7 +272,7 @@ class AccountManagementTest : PostgresRepositoryTest() {
  @Test fun `withdrawal revokes all sessions blocks refresh Google login and exposes receipt only status`() {
   val p=parent();val c=child(p.identity.account.id)
   val second=auth.login(GoogleProfile(p.identity.account.subject!!,p.identity.account.email,null),null)
-  val student=auth.enterStudent(second.refreshToken,c,second.identity)
+  val student=auth.enterStudent(c,second.identity)
   val requested=withdrawals.request(p.identity,grant(p.identity,ReauthPurpose.WITHDRAWAL))
   listOf(p.accessToken,student.accessToken).forEach { assertFailsWith<BusinessException> { auth.authenticate(it) } }
   assertFailsWith<BusinessException> { auth.refresh(p.refreshToken) }
@@ -351,7 +358,7 @@ class AccountManagementTest : PostgresRepositoryTest() {
   listOf("UNLINK","PROFILE").forEach { action ->
    val c=child(p.identity.account.id)
    val login=auth.login(GoogleProfile(p.identity.account.subject!!,p.identity.account.email,null),null)
-   val student=auth.enterStudent(login.refreshToken,c,login.identity)
+   val student=auth.enterStudent(c,login.identity)
    mvc.get("/api/v1/missions") { header("Authorization","Bearer ${student.accessToken}") }.andExpect { status { isOk() } }
    val requestsBefore=learning.requests.size
    assertEquals(c.toString(),learning.requests.last().header("X-Student-Scope"))
@@ -361,5 +368,52 @@ class AccountManagementTest : PostgresRepositoryTest() {
    assertEquals(requestsBefore,learning.requests.size)
   }
  }
+ private fun setGuardianPassword(p: com.sagomungchi.core.account.service.dto.IssuedAuth, password: String, token: String?)=
+  mvc.put("/api/v1/me/guardian-password") { header("Authorization","Bearer ${p.accessToken}");token?.let { header("X-Reauth-Token",it) }
+   contentType=MediaType.APPLICATION_JSON;content="{\"password\":\"$password\"}" }
+ private fun unlock(refresh: String?, password: String)=mvc.post("/api/v1/auth/parent-unlock") {
+  header("Origin","http://localhost:5173");header("X-Requested-With","XMLHttpRequest");cookie(Cookie(com.sagomungchi.core.account.controller.AuthCookies.REFRESH,refresh!!))
+  contentType=MediaType.APPLICATION_JSON;content="{\"password\":\"$password\"}" }
+ @Test fun `guardian password needs Google reauth and unlocks the parent session locked by guardian entry`() {
+  val p=parent();val c=child(p.identity.account.id)
+  setGuardianPassword(p,"2580",null).andExpect { status { isForbidden() };jsonPath("$.code") { value("REAUTH_REQUIRED") } }
+  val token=grant(p.identity,ReauthPurpose.GUARDIAN_PASSWORD)
+  // Rule failures are rejected before the one-time grant is consumed.
+  setGuardianPassword(p,"1234",token).andExpect { status { isUnprocessableEntity() };jsonPath("$.code") { value("VALIDATION_FAILED") } }
+  setGuardianPassword(p,"2580",token).andExpect { status { isOk() };jsonPath("$.set") { value(true) };jsonPath("$.locked") { value(false) } }
+  mvc.get("/api/v1/me/guardian-password") { header("Authorization","Bearer ${p.accessToken}") }.andExpect { status { isOk() };jsonPath("$.set") { value(true) };jsonPath("$.passwordHash") { doesNotExist() } }
+  assertTrue(jdbc.queryForObject("SELECT password_hash FROM guardian_password WHERE user_id=?",String::class.java,p.identity.account.id)!!.startsWith("pbkdf2-sha256$"))
 
+  val student=auth.enterStudent(c,p.identity)
+  assertEquals("SESSION_CHANGED",assertFailsWith<BusinessException> { auth.authenticate(p.accessToken) }.code)
+  // Plain refresh is refused without consuming the parent refresh token.
+  assertEquals("PARENT_SESSION_LOCKED",assertFailsWith<BusinessException> { auth.refresh(p.refreshToken) }.code)
+  unlock(p.refreshToken,"1111").andExpect { status { isUnauthorized() };jsonPath("$.code") { value("GUARDIAN_PASSWORD_INVALID") };jsonPath("$.remainingAttempts") { value(4) } }
+  assertEquals(1,count("SELECT failed_count FROM guardian_password WHERE user_id=?",p.identity.account.id))
+  assertEquals("STUDENT",auth.authenticate(student.accessToken).session.role)
+  val response=unlock(p.refreshToken,"2580").andExpect { status { isOk() };jsonPath("$.role") { value("PARENT") } }.andReturn().response
+  assertTrue(response.getHeaders("Set-Cookie").any { it.startsWith(com.sagomungchi.core.account.controller.AuthCookies.REFRESH+"=") && !it.contains("Max-Age=0") })
+  val access=json.readTree(response.contentAsString)["accessToken"].asText()
+  assertEquals("PARENT",auth.authenticate(access).session.role)
+  assertFailsWith<BusinessException> { auth.authenticate(student.accessToken) }
+  assertEquals(0,count("SELECT failed_count FROM guardian_password WHERE user_id=?",p.identity.account.id))
+  assertEquals(1,count("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action='GUARDIAN_PASSWORD_CHANGED'",p.identity.account.id))
+ }
+ @Test fun `five wrong guardian passwords lock the return and a missing password asks for Google login`() {
+  val p=parent();val c=child(p.identity.account.id)
+  setGuardianPassword(p,"2580",grant(p.identity,ReauthPurpose.GUARDIAN_PASSWORD)).andExpect { status { isOk() } }
+  auth.enterStudent(c,p.identity)
+  repeat(4) { attempt -> unlock(p.refreshToken,"1111").andExpect { status { isUnauthorized() };jsonPath("$.remainingAttempts") { value(4-attempt) } } }
+  unlock(p.refreshToken,"1111").andExpect { status { isLocked() };jsonPath("$.code") { value("GUARDIAN_PASSWORD_LOCKED") };jsonPath("$.remainingAttempts") { value(0) } }
+  unlock(p.refreshToken,"2580").andExpect { status { isLocked() };jsonPath("$.code") { value("GUARDIAN_PASSWORD_LOCKED") } }
+  assertEquals("PARENT_SESSION_LOCKED",assertFailsWith<BusinessException> { auth.refresh(p.refreshToken) }.code)
+
+  val q=parent();val d=child(q.identity.account.id)
+  val student=auth.enterStudent(d,q.identity)
+  unlock(q.refreshToken,"2580").andExpect { status { isConflict() };jsonPath("$.code") { value("GUARDIAN_PASSWORD_NOT_SET") } }
+  // A new Google login replaces the locked session and ends the student session entered from it.
+  val again=auth.login(GoogleProfile(q.identity.account.subject!!,q.identity.account.email,null),q.refreshToken)
+  assertEquals("PARENT",auth.authenticate(again.accessToken).session.role)
+  assertFailsWith<BusinessException> { auth.authenticate(student.accessToken) }
+ }
 }

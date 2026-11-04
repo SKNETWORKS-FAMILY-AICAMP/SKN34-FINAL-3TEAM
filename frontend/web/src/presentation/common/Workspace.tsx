@@ -1,10 +1,13 @@
 import { useState } from 'react'
 function ServiceLinks({ role }: { role?: string }) {
+  const { session } = useSession()
+  // 스트림(RoleLayout)이 새 알림을 받으면 이 캐시가 다시 읽힌다.
+  const unread = useUnreadNotifications(!!role && role !== 'STUDENT' && (session?.nextAction ?? 'READY') === 'READY').data
   if (!role) return null
   const root = '/' + role.toLowerCase()
   return <nav aria-label="이용 지원" className="ws-actions" style={{ marginBottom: 20, flexWrap: 'wrap', gap: 16 }}>
     <Link to={root + '/help'}>도움말</Link><Link to={root + '/support'}>문의·오류 신고</Link><Link to={root + '/notices'}>공지</Link>
-    {role !== 'STUDENT' && <Link to={root + '/notifications'}>알림</Link>}
+    {role !== 'STUDENT' && <Link to={root + '/notifications'}>알림{unread?.items.length ? ` · 읽지 않음 ${unread.items.length}${unread.hasNext ? '+' : ''}` : ''}</Link>}
     {role === 'PARENT' && <Link to="/parent/account">계정·자녀 관리</Link>}
     {isDemo && <Link to="/review">개발 점검표</Link>}
   </nav>
@@ -14,6 +17,7 @@ import { Link, useLocation, useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuthentication, isDemo } from '../../data/classroom/useClassroom.ts'
 import { useSession } from '../auth/sessionContext.ts'
+import { useUnreadNotifications } from '../../data/notifications.ts'
 import { Brand, ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { QueryStateNotice } from './QueryStateNotice.tsx'
 import type { Metric } from '../../domain/classroom.ts'

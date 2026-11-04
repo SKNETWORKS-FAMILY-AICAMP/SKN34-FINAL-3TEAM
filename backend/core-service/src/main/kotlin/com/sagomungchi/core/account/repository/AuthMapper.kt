@@ -12,7 +12,7 @@ import java.util.UUID
 interface AuthMapper {
     fun findAccount(id: UUID): AuthAccount?
     fun findGoogleAccount(subject: String): AuthAccount?
-    fun insertAccount(@Param("account") account: AuthAccount, @Param("now") now: OffsetDateTime): Int
+    fun insertAccount(@Param("account") account: AuthAccount, @Param("now") now: OffsetDateTime, @Param("demo") demo: Boolean): Int
     fun permissions(userId: UUID): Set<String>
     fun insertSession(session: AuthSession): Int
     fun findSession(@Param("id") id: UUID, @Param("lock") lock: Boolean): AuthSession?
@@ -21,4 +21,5 @@ interface AuthMapper {
     fun findRefresh(hash: String): RefreshToken?
     fun consumeRefresh(@Param("id") id: UUID, @Param("now") now: OffsetDateTime): Int
     fun revokeSession(@Param("id") id: UUID, @Param("now") now: OffsetDateTime): Int
+    fun revokeGuardianEntries(@Param("parent") parent: UUID, @Param("now") now: OffsetDateTime): Int
 }

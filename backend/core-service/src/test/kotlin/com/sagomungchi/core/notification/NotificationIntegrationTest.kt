@@ -216,7 +216,7 @@ class NotificationIntegrationTest : IntegrationTestSupport() {
             server.stop()
             lifecycle.apply(event(job(student), student))
             val id = jdbc.queryForObject("SELECT id FROM notification WHERE user_id=?", UUID::class.java, user)!!
-            NotificationRedisPublisher(isolated, json, delivery).publish(NotificationStored(id, user))
+            NotificationDispatchService(NotificationRedisPublisher(isolated, json), delivery).dispatch(NotificationStored(id, user))
             assertEquals("FAILED", jdbc.queryForObject("SELECT status FROM notification WHERE id=?", String::class.java, id))
             assertEquals("REDIS_PUBLISH_FAILED", jdbc.queryForObject("SELECT failure_reason FROM notification WHERE id=?", String::class.java, id))
             assertEquals(1, service.list(auth.authenticate(bearer(user)), false, 0, 20).size)

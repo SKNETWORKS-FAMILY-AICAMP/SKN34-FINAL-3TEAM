@@ -21,7 +21,7 @@ from app.followup.models import (
 )
 from app.judgment.models import JudgmentResult
 from app.llm.base import LlmClient, LlmUnavailable
-from app.versions import ActiveVersions
+from app.prompt_versions.registry import ActiveVersions
 
 logger = logging.getLogger(__name__)
 

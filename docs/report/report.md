@@ -1,20 +1,6 @@
-# 주간 리포트 (#42·#50~#55)
-
-## 학생 공개 설정과 원문 제외 (#206, 2026-11-01)
-
-- 생성 입력은 메시지의 과거 공개 값에 의존하지 않습니다. `NamedGenerator`가 내부 core 프로필의 현재 `parentSharingEnabled`를 조회하며 누락은 비공개입니다. 생성 직전 원문·돌아보기 문장·인용 후보·근거 링크를 제거하고 AI 서술 호출을 생략합니다. 이후 저장·HTML/PDF/Markdown 렌더링에도 제거된 항목만 전달됩니다.
-- 학습 횟수·분모/분자·기간·유형과 전후 글자/문장 수는 동일하게 유지합니다. 원문을 새 문장으로 대체 생성하지 않습니다. nullable 원문 형태를 조회 스키마와 렌더러에 반영했습니다.
-- 이미 공개 상태에서 만든 리포트도 core 상세에서 현재 설정을 다시 검사해 원문·인용·파생 서술을 제거합니다. 비공개 중 기존 파일 URL 재발급과 근거 조회는 403으로 막습니다. 수치 화면은 계속 제공하며 이미 전달한 파일 자체를 회수하지는 못합니다.
-- 이번 구현은 비공개 전용 파일 재생성/다운로드 상품을 추가하지 않습니다. 다시 공개해도 비공개 중 생성한 리포트에 과거 원문을 자동 복원하지 않으며 필요하면 기존 재생성 규칙을 따릅니다.
-- 공개/비공개 생성, AI·근거 호출 차단, 수치 동등성, nullable Markdown 렌더링 회귀를 추가했습니다. report 전체 315건과 비공개 전용 회귀 4건을 통과했습니다. 실제 PostgreSQL 저장에 원문·근거가 남지 않고, HTML/PDF/Markdown full/free 6개 파일에도 원문이 없음을 검사했습니다. 스토리지 경계는 기존 테스트 대역/moto를 사용하며 운영 S3 배포 검증은 아닙니다.
-
-통합 원본: issue-42-weekly-reports, report-generation-foundation, report-metrics, report-narrative, report-rendering, report-query, report-deletion, report-deletion-schema, report-learning-integration, report-required-inputs, report-service-handoff, report-epic-readiness
+# 주간 리포트 (#42·#50~#56·#129·#131·#132·#152·#167·#206·#209·#252)
 
 계약은 [API 명세](../design/api-spec.md) 3.4·4.1.1·4.2.1·4.4·5.5, 메시지는 [report-messages](../../contracts/events/report-messages.md).
-
-#135 조회 API는 lifespan 소유 learning HTTP·S3 클라이언트를 요청 간 재사용하고 종료 때 정리한다. 권한 헤더는 요청마다 읽어 전달한다. 설정 유지 근거와 #139·#140 테스트 보강은 [통합 검토](issues-135-139-140.md)를 따른다.
-
-#152 관리자 실패 작업 재처리는 새 jobId·ADMIN_RETRY와 기존 생성/revision을 재사용한다. 원작업 연결·관리자 접수는 core #47, report 실행·중복 방어·기존 판 보존은 [#152 검토](issue-152-report-admin-retry.md)를 따른다. 기존 #50의 종료 작업 단순 재전달 종료 정책은 유지한다.
 
 ## 1. core 주간 리포트 (#42)
 
@@ -22,7 +8,7 @@
 - ShedLock(Spring/JDBC, 기존 `shedlock` 테이블, `usingDbTime`) + SCHEDULE 부분 UK로 재실행 중복 방지, 자녀·기간별 advisory transaction lock으로 정기·재생성 직렬화. 자녀별 실패는 격리하고 실행 끝에 전파
 - 작업 저장과 `OutboxWriter.append`는 같은 트랜잭션, HTTP는 밖. core `OutboxRelay`는 #166 이후 DB 트랜잭션 밖에서 발행·confirm을 기다리고 발행 시각만 짧은 트랜잭션으로 기록
 - 재생성: 부모는 자녀·주 계열 REGENERATE 1회(재생성 결과로 다시 요청해도 우회 불가), SERVICE_OPS 관리자는 ADMIN_RETRY 무제한. revision은 report가 배정
-- 상품 권한: #48에서 `ReportEntitlementService → ProductEntitlementService`를 연결했다. 생성 시 실제 상품·구독의 narrativeEnabled를 사용하며 설정·판정 오류는 job·Outbox 생성 전에 전파한다. 조회 연결은 11장(#129)을 따른다.
+- 상품 권한: #48에서 `ReportEntitlementService → ProductEntitlementService`를 연결했다. 생성 시 실제 상품·구독의 narrativeEnabled를 사용하며 설정·판정 오류는 job·Outbox 생성 전에 전파한다. 조회 연결은 13장(#129)을 따른다.
 - lifecycle 이벤트 data는 `jobId·studentId·reportId`(failed는 `failureReason`). core는 식별자 대조 후 `processed_event`·조건부 전이·`job_execution`을 원자 저장. 종료 후 늦은 started·상반된 종료 이벤트는 무시. 종료 전이가 반영될 때만 `ReportJobFinished` 발행(알림 연결점)
 - 조회: Controller → `ReportQueryService` → `ReportClient`. reportId의 자녀는 core `report_job`으로 식별, 연결·동의 확인 후 scope를 그 자녀로 제한. 상세 응답의 자녀·기간·UUID 대조 후 실제 반환 판 ID로 `report_view` 저장(목록·다운로드는 열람 아님). 다운로드는 pdf·md만
 
@@ -31,7 +17,7 @@
 - report-worker가 `report.generate`를 받아 작업 상태·결과 이벤트를 중복 없이 저장·발행. 공유 v1 스키마를 재사용(`report.generate` data는 `jobId·studentId·periodFrom·periodTo·trigger·narrativeEnabled` 6개, 요청 시각은 봉투 `time`)
 - `narrativeEnabled`는 필수 boolean. 누락·잘못된 형식은 DLQ
 - `app/messaging/contracts.py`는 엄격한 수신 DTO, `app/generation/codec.py`가 payload를 내부 모델로 변환. `requested_at`은 봉투 time을 보존(삭제 장벽에서 사용)
-- Outbox는 학생별 미발행 선두 중 적격 후보 100개에서 선점하며, 발행은 최대 15초다. #131에서 학생별 순서를 유지하고 실패한 학생만 1·5·15분 지연 후 격리한다. 다른 학생은 계속 처리한다. 브로커 대기 동안 트랜잭션·행 잠금은 없지만 학생별 session lock용 연결 1개를 사용한다(연결 풀과 worker 동시 실행 수를 함께 관리). [격리 조회·수동 재처리·마이그레이션](issue-131-outbox-recovery.md)
+- Outbox는 학생별 미발행 선두 중 적격 후보 100개에서 선점하며, 발행은 최대 15초다. #131에서 학생별 순서를 유지하고 실패한 학생만 1·5·15분 지연 후 격리한다. 다른 학생은 계속 처리한다. 브로커 대기 동안 트랜잭션·행 잠금은 없지만 학생별 session lock용 연결 1개를 사용한다(연결 풀과 worker 동시 실행 수를 함께 관리). [격리 조회·수동 재처리·마이그레이션](report.md#11-outbox-실패-격리와-학생별-발행-순서-131)
 - #56에서 기본 진입점에 core 별명 조회 → 기록 집계 → 서술 검증 → 파일 저장 생성기를 연결했다. 테스트용 `run(generator=...)` 주입도 유지한다.
 
 ## 3. 수치 계산 (#51)
@@ -51,7 +37,7 @@
 - `verification`은 `numbersMatched`·`quotesMatched`·`contentAllowed` 보존
 - evidence는 50건 단위 조회, 410·삭제 표식은 이용 불가(원문 미반환), 누락·다른 버전·예상 밖 답변은 거부
 - ai 요청 `quotes[]`에는 근거 링크의 `answerVersion`을 붙여 보냄(ai `citedQuotes` 버전 출처, #64). 저장 payload·상세 `quotes`에는 넣지 않음
-- 무료·NO_RECORD는 AI 생략. 알려진 닉네임은 본문에서 가리고 이름·학생 식별 필드는 요청에 넣지 않음. 닉네임은 공유 메시지에 추가하지 않고 core 내부 별명 조회(#119)로 공급(#56, 9장)
+- 무료·NO_RECORD는 AI 생략. 알려진 닉네임은 본문에서 가리고 이름·학생 식별 필드는 요청에 넣지 않음. 닉네임은 공유 메시지에 추가하지 않고 core 내부 별명 조회(#119)로 공급(#56, 10장)
 
 ## 5. 렌더링·파일 저장 (#53)
 
@@ -72,7 +58,7 @@
 | 파일 | 판의 메타데이터·학생·형식·키를 검사하고 현재 권한의 full·free 파일만 서명 |
 
 - 범위 밖 403, 없는 보고서·판·항목·파일 404, 형식 오류 400(problem+json), 학생 삭제 진행 중 409 `DELETION_IN_PROGRESS`, 원문·저장소 장애 503 `DATA_UNAVAILABLE`. 응답 스키마 오류 로그에 원문을 남기지 않음
-- 이용 권한은 core가 `X-Report-Narrative-Enabled`로 전달(없으면 false). 생성 당시 유료였다는 이유로 유료 파일을 서명하지 않음. core의 상세·파일 요청에서 설정하며 반환 직전 권한 재확인도 수행한다(11장)
+- 이용 권한은 core가 `X-Report-Narrative-Enabled`로 전달(없으면 false). 생성 당시 유료였다는 이유로 유료 파일을 서명하지 않음. core의 상세·파일 요청에서 설정하며 반환 직전 권한 재확인도 수행한다(13장)
 
 ## 7. 학생 삭제 (#55)
 
@@ -100,136 +86,153 @@
 
 | 항목 | 담당 | 내용 |
 |---|---|---|
-| 상품 권한 | core·상품 | 연결됨: #48 `ProductEntitlementService` 판정, #129 조회 헤더·최종 권한 확인(11장) |
+| 상품 권한 | core·상품 | 연결됨: #48 `ProductEntitlementService` 판정, #129 조회 헤더·최종 권한 확인(13장) |
 | 표시 이름 | core | 연결됨(#56): core `/internal/students/{studentId}/profile` 닉네임 조회, AI 전송 전 이름 가림 |
 | 생성기 조립 | report | 연결됨(#56): worker 기본 생성기 계산 → 서술 → 렌더링, 실제 ai 서술 API는 #64 |
-| 삭제 전체 | learning·core | 연결됨: learning `student.deleted` 소비·완료 보고(#128), core 미종료 작업 정리·늦은 이벤트 차단(#132, 12장) |
+| 삭제 전체 | learning·core | 연결됨: learning `student.deleted` 소비·완료 보고(#128), core 미종료 작업 정리·늦은 이벤트 차단(#132, 14장) |
 | 운영 | 인프라 | 운영 S3·IAM/IRSA·공개 endpoint, Chromium `/tmp` writable volume, guard 표식 보존·SIGTERM 유예·DLQ 복구 |
 
-## 10. 로컬 #56 작업과 이전 통합 검증 기록
+## 10. 기본 worker 연결 (#56·#130)
 
-develop `f9df2d3` 기준 #56에서 기본 worker와 실제 core 별명 API를 연결했다. 최신 완료 조건 대조와 재현 방법은 [worker 통합 검증](report-worker-integration.md)을 따른다. 아래 결과는 **c608f52 기준 과거 실행 결과**다.
+- 기본 `python -m app.worker`가 `CoreClient.lookup` → `RecordGenerator` → `NarrativeGenerator` → `RenderingGenerator`를 실행(#130은 이 #56 구현으로 충족). 테스트용 생성기·별명 공급자 주입은 유지
+- core `GET /internal/students/{studentId}/profile`(#119)에 기존 내부 클라이언트로 내부 토큰·SYSTEM 역할·해당 학생 scope 전달. `NamedGenerator`가 ID 일치와 비어 있지 않은 별명을 검사하고 AI 입력 가림과 파일 표시에 같은 값 사용
+- 403·404·시간 초과·잘못된 응답은 `FAILED / GENERATION_FAILED`와 `report.failed`. 가짜 별명·NO_RECORD 대체, HTTP 재시도 추가 없음
+- worker가 HTTP·S3 클라이언트 수명 관리. 조회 API(#135)도 learning HTTP·S3 클라이언트를 lifespan에서 한 번 만들어 재사용하고, 권한 헤더는 요청마다 ContextVar에서 읽어 이전 학생 헤더를 공유하지 않음. S3 생성·종료는 `run_blocking`
+- 서비스 URL 설정(#135): report `ai_url`·`core_url`, scoring `core_url`, ai `scoring_url`·`core_url`·`learning_url` 모두 실제 사용처가 있어 유지
 
-## 2026-10-29 develop 통합 재검증
+### Compose 연동 검증 (`scripts/report_integration/compose.yaml`)
 
-목적은 #52 AI 서술 검증 → #53 파일 생성·저장 → #54 조회·다운로드 → #55 삭제의 누적 회귀와 문서 정합성 확인이다. 기준은 #52 PR #109, #53 PR #116, #54 PR #117, #55 PR #118이 병합된 develop `c608f52`이며, 로컬 `test/report-integration`에서 실행했다.
+고유 프로젝트·일회용 DB/볼륨에서 core·learning(최신 소스 JAR), report 운영 이미지(worker·API·Outbox·렌더러), 실제 PostgreSQL·RabbitMQ·MinIO, 합성 학생·학습 기록, AI HTTP 대역(정상·숫자 불일치·503). 팀 `.env`·AWS·실제 학생 데이터 미사용, 호스트 포트 미공개.
 
-| 검사 | 이번 결과 |
-|---|---|
-| 잠금 파일 기준 의존성 동기화, Ruff check/format | 통과, 78개 파일 포맷 일치 |
-| report 전체 pytest | **239 passed**, 196.38초, 실패·생략 없음. 기존 Starlette/httpx 폐기 예정 경고 1개 |
-| 공통 계약·스키마 검사 | 일반 및 `python -O` 실행 각각 **58개 통과** |
-| 일회용 DB 마이그레이션 | 세 DB ERD 대조, 제약 음성 사례 60개, CHECK 값 집합 67개, 인덱스 23개 통과. 반복 no-op 및 report downgrade/upgrade 통과, 23.9초 |
-| 운영 Docker 이미지 | `local/report-integration:20261029` 빌드 통과 |
-| 운영 이미지 렌더링 | UID 10001, read-only root, network none, `/tmp` tmpfs. HTML·MD·PDF 생성. 한글 PDF 191,409바이트·2쪽, 한글 텍스트·None 미출력 확인. 이번에는 PNG 시각 검사는 수행하지 않음 |
-| 실제 learning → report | 최신 JDK 21 bootJar 사용, **8개 항목 통과**. 여섯 입력 방식 집계·OpenAPI·근거 원문·403·무료/유료 상세·3종 파일·101건 페이지·삭제 표식 |
-| 문서/작업 상태 | 대상 14문서·57개 로컬 링크 확인. 충돌 표식 및 `git diff --check` 이상 없음 |
+```powershell
+# core·learning: Java 21 ./gradlew bootJar --no-daemon (runner는 JAR보다 소스가 최신이면 중단)
+& backend/report-service/.venv/Scripts/python.exe -X utf8 scripts/verify_report_compose.py --output <저장소 밖 경로>
+# 관리자 재처리(#152) 시나리오는 --admin-retry 추가(worker 2개)
+```
 
-실제 DB·RabbitMQ·MinIO 테스트와 AI/core HTTP 대역 검사는 구분한다. #52 API 장애 FAILED 및 대조 실패 TEMPLATE 정책, #53 파일/실패 처리, #54 권한·revision·nullable 응답, #55 중복·실패 재시도·다른 학생 보존은 전체 pytest에 포함된다. 실제 learning 연동의 삭제 표식 검사는 삭제 이벤트 소비자 전체 E2E가 아니다.
+검사: 직접 발행 → COMPLETED·`report.completed`, HTML/PDF/MD 메타데이터와 서명 URL 다운로드, 상세 응답 `ReportDetail` 스키마, 빈 기록 NO_RECORD·AI 호출 0회, 정상 LLM·대조 실패 TEMPLATE·AI 503 FAILED, core 내부 API 401·scope 403·no-store, AI 최종 payload의 별명·학생 ID 제거, 중복 메시지 단일 행, 저장 장애 시 파일 행 0개, 이벤트의 저장소 JSON Schema 검증.
 
-### 발견한 문제와 수정
+## 11. Outbox 실패 격리와 학생별 발행 순서 (#131)
 
-1. 이 컴퓨터의 Docker 시작이 오래된 `sailor-ingest.sock`·`engine.sock`으로 실패했다. 해당 런타임 폴더를 백업 후 재시작해 복구했다. 최초 실행의 **154 passed / 85 setup errors**는 환경 실패이며 최종 통과 수치에 합산하지 않는다. 이미지·볼륨·기존 저장소 `output/`은 삭제하지 않았다.
-2. `state-diagram.md` 2.2와 `sequence-diagram.md` 10.1은 PROFILE만 학생 차단한다고 설명했으나, 실제 `ChildManagementService.confirm`은 두 scope 모두 차단한다. 현재 구현대로 설명을 정정했다. RECORDS 학습 재개 정책을 새로 정하거나 서비스 코드를 변경하지 않았다.
-3. 실제 learning 연동 스크립트의 합성 분류 미션에 #79의 `categories`가 없어 제출이 422로 거부됐다. 미션에 g1/g2 그룹을 등록하도록 검증 데이터만 수정했고, 전체 8개 연동 검사를 재실행하여 통과했다. 제출 검증 규칙은 완화하지 않았다.
+승인된 정책:
 
-### 남은 외부 연동 및 보관
+- subject(학생 UUID)별 발행 순서 유지. 실패한 학생만 대기하고 다른 학생은 계속 처리
+- 최초 실패 후 1·5·15분으로 재시도 3회, 총 4번 실패하면 격리
+- 격리된 선두를 포함한 그 학생의 뒤 이벤트는 건너뛰지 않음. 운영자가 원인을 고친 뒤 선두를 수동 재처리하면 뒤 이벤트도 순서대로 진행
+- 원래 이벤트 id·payload 보존. 발행 후 DB 기록 전 장애 등은 동일 id 재전달이며 core 멱등 처리와 종료 상태 방어 유지
 
-당시 미연결이던 기본 worker와 core 별명 공급은 후속 #56에서 연결했다. #64 실제 AI API·core 상품 권한 헤더 전달·운영 AWS·전체 서비스 E2E는 별도 연동 검증 범위다. 이 검증 당시 core `ReportClient`는 상품 권한 헤더를 공급하지 않아 report가 무료 기본값을 적용했다. 후속 #129 연결은 11장을 따른다. #56의 직접 메시지 발행·report 내부 API 검증을 사용자 대상 전체 흐름 검증으로 해석하지 않는다.
+구현(기존 OutboxRepository·OutboxRelay·worker relay_loop 사용):
 
-결과는 저장소 밖 `C:/Users/playdata2/Desktop/final/tmp/`의 `report-integration-20261029-final.xml`, `report-integration-pdf-20261029/`, `report-learning-20261029-final/`에 보관했다. 테스트 자원은 정리했다. 문서와 검증 스크립트 수정은 로컬 테스트 브랜치에만 남기며 원격 push·PR·병합은 수행하지 않았다.
+- `published_at IS NULL`인 학생별 가장 앞 행(created_at, id)만 선점. 앞 행이 백오프/격리 상태여도 뒤 행을 선택하지 않음. 100개 조회 제한은 적격 학생별 선두에 적용
+- PG publish 세션 advisory lock을 학생별로 유지. AMQP를 기다리는 동안 DB 트랜잭션을 열어 두지 않음
+- enqueue는 별도 키의 짧은 PG 트랜잭션 잠금으로 생산자끼리 순서를 정함. 미커밋 선두가 뒤 커밋에 추월되지 않음
+- 발행 예외/timeout만 짧은 트랜잭션으로 실패 횟수·다음 시각 저장. confirm 이후 mark_published 저장 실패는 발행 실패로 오분류하지 않고 원래 id 재발행
+- CancelledError는 시도 횟수를 소모하지 않고 선점 해제. 학생 삭제로 없어진 Outbox는 되살리지 않음
+- `BROKER_UNAVAILABLE|PUBLISH_TIMEOUT|PUBLISH_FAILED`만 저장. 원문 예외·학생 내용·자격 증명은 DB/운영 로그에 넣지 않음. 격리는 ERROR 로그로 알리고 CLI에서 조회
 
+DB 적용과 롤백: Alembic `20261030_04`(직전 `20261029_03` #132 job guard). 기존 행의 두 카운터만 0으로 초기화, 영구 SQL DEFAULT 없음. 기존 worker를 멈춘 뒤 `alembic upgrade head` → 새 worker 기동(구버전 혼합 실행 미지원). 다운그레이드는 worker 중지 후 수행하며 실패/격리/수동 재처리 메타데이터가 사라지므로 먼저 운영 상태 보관.
 
-## 11. 현재 이용권 연결 (#129)
+수동 운영(HTTP 권한 우회 API 아님, 신뢰된 report 운영 환경의 DB 권한으로 실행):
 
-### 설계와 범위
+```powershell
+uv run python -m app.outbox.manage list --limit 100
+uv run python -m app.outbox.manage requeue <event-uuid>
+```
 
-시작 시점 develop `c364ed4` 기준, #48에서 상품 판정과 생성 명령 연결은 이미 반영됐지만 조회 클라이언트는 이용권 헤더를 보내지 않아 report가 기본 false를 적용한다. 기존 공급자를 재사용하고 상세·파일 요청에 검증된 현재 권한을 전달한다. API 명세 5.8의 요청 시 선택 범위와 반환 직전 재확인 규칙을 따른다.
+list는 payload·학생 식별자 없이 이벤트 id/type·실패 코드/횟수·격리 시각·수동 이력만 표시. 재처리는 격리된 미발행 행만 1회 조건부 갱신하며 경쟁 중/삭제됨/이미 발행됨은 NOT_REQUEUED(종료 코드 2). id·내용·순서 위치는 유지, 실패 카운터·백오프 초기화, `manual_retry_count`·`last_requeued_at` 기록. 관리자 작업 재생성(#152, 새 jobId)과 달리 이미 만들어진 결과 이벤트 전달만 다시 시도.
+
+## 12. 관리자 실패 리포트 재처리 (#152)
+
+- 경계: core #47은 관리자 요청 접수·권한·멱등, 원작업과 새 작업 연결, 생성 요청 발행, 결과별 상태·실행·감사 기록. report는 새 jobId 실행, 중복·동시 전달 방어, 이전 판 보존, 요청 jobId에 맞는 시작·성공·실패 이벤트
+- core는 새 jobId를 발행하며 같은 관리자 요청 재전송에는 그 ID 유지. report 이벤트에 originalJobId를 추가하지 않음. report는 생산자가 적법한 재처리를 발행했다고 신뢰하며 원작업을 core DB에서 조회하지 않음
+- 제품 실행 코드·DB·HTTP·이벤트 스키마 변경 없이 기존 경로 재사용
+
+| 요구 | 재사용 코드 | 판단 |
+|---|---|---|
+| ADMIN_RETRY 수신 | ReportV1Codec, GenerationConsumer | 기존 v1 enum·SYSTEM scope 그대로 |
+| 새 작업 실행 | GenerationService.generate | 기존 생성 파이프라인 |
+| 이전 실패 단순 재전달 종료 | get_or_create + RUNNING 검사 | 기존 COMPLETED/FAILED는 생성기·이벤트 추가 없이 반환 |
+| 같은 요청 동시 전달 | JobLocks의 PG 세션 advisory lock | 한 worker만 실행, 나머지는 consumer 지연 재시도 |
+| revision·이전 판 보존 | ReportRepository.get_or_create | 학생/주 PG 트랜잭션 잠금 + 다음 revision, 기존 행 수정 없음 |
+| 원자성 | GenerationService._start/_finish, OutboxRepository | 시작·종료 변경과 각 Outbox가 같은 트랜잭션 |
+| 현재 권한 | core의 narrativeEnabled 계산 | 요청 값을 그대로 사용, 과거 유료 값을 복사하지 않음 |
+| 삭제 | report_deletion_guard + core ACTIVE 프로필 조회 | 기존 장벽 유지 |
+
+테스트: `backend/report-service/tests/test_admin_retry.py`(실제 Alembic DB·JobLocks, 합성 생성기)와 Compose `--admin-retry`(성공·재실패·무료 재처리, 두 worker 중복 명령, 원작업의 늦은 이벤트에도 종료 상태 불변, 기존 S3 파일 바이트 보존). 요청·결과 예시 7개는 [contracts/examples/report-admin-retry](../../contracts/examples/report-admin-retry/).
+
+## 13. 현재 이용권 연결 (#129)
+
+조회 클라이언트가 이용권 헤더를 보내지 않으면 report는 기본 false를 적용하므로, 기존 공급자를 재사용하고 상세·파일 요청에 검증된 현재 권한을 전달한다. API 명세 5.8의 요청 시 선택 범위와 반환 직전 재확인 규칙을 따른다.
 
 - core의 `ReportClient`, `ReportQueryService`, `ReportViewService` 및 관련 테스트가 변경 대상이다. 기존 payment 판정·report 공급자·DB·메시지 형식은 유지한다.
 - 무료 상세의 AI 세 필드(서술·저녁 질문·생각 유형 summary)를 가리고, 무료 다운로드는 이미 생성된 free 파일을 사용한다. full URL은 최종 권한 상실 시 거부한다.
 - 무료 응답을 요청한 뒤 권한이 생긴 경우 프리미엄 사용을 기록하지 않는다. 환불과 같은 parent 잠금, 학생·동의 검사, 응답 학생·기간·판본 검사를 보존한다.
 - 데모 특례와 새로운 의존성은 추가하지 않는다. #132 작업 고착 정리는 별도 범위다.
 
-### 검증 계획
+## 14. 종료 이벤트 유실 복구 (#132)
 
-실제 상품·구독 공급자의 무료·프리미엄·유예·만료·환불 상태, 설정 오류, 정기·재생성 job/Outbox를 검증한다. HTTP 경로는 위조 헤더 무시, 무료/전체 전달, 상세·다운로드 도중 권한 변경, 동일 판본 파일 선택, 프리미엄 사용 기록을 검사한다. 구현 완료 후 core 전체 테스트·계약 검사·실제 core/report 연결·diff 검사를 수행하고 실행 결과를 여기에 기록한다.
-
-
-### develop 추가 반영
-
-작업 도중 병합된 #114의 develop `26f3788`을 fast-forward로 반영했다. API 명세 끝의 #41 계약과 #129 계약을 모두 보존해 문서 추가 위치 충돌만 해결했으며 분석 대화·공통 코드·OpenAPI는 새 develop 그대로다. 최종 core 전체·계약 검증은 이 통합 상태에서 수행한다.
-
-
-### #129 검증 범위와 결과
-
-- 공통 계약: `python -O -m unittest discover -s scripts/tests -q` — develop 추가 반영 후 76개 통과.
-- report 소비자: `python -m pytest tests/test_report_query.py -q` — 31개 통과. 임시 PostgreSQL을 사용하며 기존 Starlette/httpx 폐기 예정 경고 1개가 있다.
-- 실제 HTTP: 격리 PostgreSQL·RabbitMQ·Redis·MinIO와 실제 core/report 앱으로 5개 시나리오를 통과했다. 프리미엄 상세·full PDF/MD 다운로드, 무료 전환 후 AI 세 필드 제외·free PDF/MD 다운로드(위조 공개 헤더 포함), 무료 재생성 job/Outbox, 무료 상품 비활성 시 명시적 503, 무료 요청의 프리미엄 사용 미기록을 확인했다.
-- 위 실제 HTTP 검증은 합성 계정·상품·구독·저장 리포트·파일 바이트를 사용했다. 실제 PG·Google·AI 호출, worker 생성·렌더링, 브라우저·운영 배포·성능 검증은 아니다. 다운로드 URL을 실제 MinIO에 요청해 free/full 객체 내용까지 대조했다. 이 연동 검증은 최초 기준의 #129 구현 JAR이며, 이후 develop 반영에서도 report production 변경 3개 파일은 동일하다.
-- 환경 보완: 기존 가상환경에 pytest가 없어 전용 worktree에서 `uv sync --frozen`으로 준비했다. Windows JDK의 selector/socket 기동 오류를 피하려고 Docker JDK 21을 사용했다. 동시 검증 부하로 Redis 초기화가 2초를 넘겨, 실제 HTTP 검증 실행에만 Redis connect/command timeout을 10초로 설정했다. 저장소 기본값은 변경하지 않았다. 임시 연동 컨테이너·DB·파일은 검증 종료 시 제거했다.
-- 최초 core 전체 실행은 294개 중 새 환불 경합 테스트 1개가 실패했다. 합성 결제의 APPLIED 상태·상품 snapshot·charge attempt 누락을 보완한 뒤 해당 클래스 9개 모두 통과했다. 제품의 환불 검사를 완화하지 않았다.
-- 실제 core 테스트 산출물로 `validate_report_contracts.py`와 `validate_notification_contracts.py`를 실행해 report 명령·종료 이벤트·상세 응답 및 알림 HTTP 스키마를 대조했다.
-
-
-### 최종 통합 검증 (develop `26f3788` + #129)
-
-- Docker JDK 21: `bash gradlew test bootJar --no-daemon --max-workers=1 --no-watch-fs --console=plain`(검증 전용 Gradle/Test heap 512MiB·CPU 2 설정) — **323개 통과, 실패·오류·생략 0**, bootJar 성공. 새 분석 대화 경로와 #129 이용권 통합 9개를 포함한 전체 실행이다.
-- report production 변경 3개 파일은 실제 HTTP 연동 당시 소스와 바이트 단위로 동일함을 대조했다. 서비스 경계·payment service 호출·내부 헤더 생성·parent 잠금 밖 HTTP 호출·공개 계약 보존을 최종 변경분에서 확인했다.
-- `git diff --check` 통과, 미해결 충돌 없음. 원격 CI·운영 배포는 이 로컬 검증 결과에 포함하지 않는다.
-
-
-### PR 준비: 최신 develop `2538d19` 반영
-
-- #129 커밋 `2cf3bf9`을 유지하고 develop `2538d195c53c70a17af84aadea9a3ab1b348840a`를 일반 merge했다. 텍스트 충돌은 없었고 API 명세도 자동 병합됐다. squash·rebase·기존 이력 재작성은 수행하지 않았다.
-- 전체 파일 대조에서 최신 develop 대비 차이는 원래 #129의 7개 파일뿐이다. API 명세는 최신 develop 원문에 #129의 기존 문구 변경을 적용한 결과와 정확히 일치하며, 나머지 구현·테스트 변경은 `2cf3bf9`과 동일하다. AI·learning·scoring의 새 파일과 이동은 develop 그대로 보존했다.
-- 이번 병합 후 `python -O -m unittest discover -s scripts/tests -q` **76개 통과**, `git diff --check`·staged 공백 검사 통과, 미해결 충돌 없음. 이동된 ai 모듈의 이전 import·테스트 파일명 참조도 확인했다.
-- core/report의 전체 소스·테스트·빌드 트리가 이전 검증본과 동일해 core 323개·bootJar, report 조회 31개, 실제 연결 5개 시나리오는 반복하지 않았다. 위 결과는 이전 실행 결과이며 이번 병합에서 새로 실행한 것으로 집계하지 않는다. 새 upstream 기능 전체의 학습·모델·삭제 E2E는 #129의 변경 검증 범위가 아니다.
-- PR 대상과 저장소 기본 브랜치는 모두 develop이며, 전체 #129 완료 범위에 `Closes #129`를 사용한다. PR 생성은 사용자가 수행한다.
-
-## 12. 종료 이벤트 유실 복구 (#132)
-
-2026-10-29 사용자 승인: v1 이벤트 변경 대신 core 주기 점검과 report 실제 상태 복구, 삭제 연동을 채택한다. 기준 develop `14a97f8`. 기본 1분 주기/생성 후 60분 후보 선정은 운영 정책이며 성능 측정/강제 실행 종료 시간이 아니다. #129 이용권·full/free 파일 선택·최종 권한 확인은 보존한다.
+사용자 승인(10/29): v1 이벤트 변경 대신 core 주기 점검과 report 실제 상태 복구, 삭제 연동을 채택한다. 기본 1분 주기/생성 후 60분 후보 선정은 운영 정책이며 성능 측정/강제 실행 종료 시간이 아니다. #129 이용권·full/free 파일 선택·최종 권한 확인은 보존한다.
 
 - 종료 이벤트 유실은 저장된 결과 재조회, 행 생성 전 실패/DLQ는 영구 job guard, 고아 RUNNING은 기존 session 잠금 획득 후 실패 종료로 처리한다. 실행 중 BUSY/DB·통신 장애/식별 불일치는 종료로 단정하지 않는다.
 - guard의 보존·학생 삭제 시 제거와 영구 삭제 표식 승계는 ERD의 #132 절을 따른다. 원문은 저장하지 않는다. reportId 없는 실패는 내부 복구 응답으로만 처리하며 가짜 리포트/알림 링크를 생성하지 않는다.
 - core 학생 → 주/job 잠금을 생성·이벤트·복구에서 통일한다. 삭제의 기존 parent → student 순서와 기존 파일 삭제/완료 보고를 보존한다. 삭제 확정 트랜잭션에서 미종료 작업/실행 이력을 STUDENT_DELETED로 종료하며 새 실패 알림은 보내지 않는다.
-- 검증 계획: 실제 PostgreSQL의 잠금·중복/응답 유실·지연 재전달·삭제 경합, 실제 내부 HTTP 권한/계약·학생/기간 불일치, core 이벤트/실행 이력·삭제/생성·HTTP 도중 삭제, #129 회귀 및 전체 core/report 테스트. 구현 완료 후 한 단계로 실행하고 실제 결과/미실행을 별도 기록한다.
 
-### 실제 HTTP 검증에서 확인한 연결 보완
+- 복구 전용 ReportClient 요청 팩토리는 HTTP/1.1 고정: JDK 기본 h2c 업그레이드를 포함한 POST를 Uvicorn이 400으로 거부. 기존 InternalRestClientFactory의 내부 토큰·사용자 컨텍스트 interceptor와 설정된 connect/read timeout을 보존한다. 공통 HTTP 팩토리나 기존 조회 클라이언트는 변경하지 않는다. 테스트의 HTTP 서버도 Upgrade 헤더 부재를 확인한다. 장애 동안 작업은 미종료 상태를 유지하고 다음 점검으로 남았다.
 
-JDK 기본 h2c 업그레이드를 포함한 POST를 Uvicorn이 400으로 거부해 복구 점검이 실패했다. 복구 전용 ReportClient 요청 팩토리만 HTTP/1.1로 지정하며 기존 InternalRestClientFactory의 내부 토큰·사용자 컨텍스트 interceptor와 설정된 connect/read timeout을 보존한다. 공통 HTTP 팩토리나 기존 조회 클라이언트는 변경하지 않는다. 테스트의 HTTP 서버도 Upgrade 헤더 부재를 확인한다. 장애 동안 작업은 미종료 상태를 유지하고 다음 점검으로 남았다.
-
-### 검증 결과 (#132)
-
-- report 전체 최초 실행: 257 passed / 4 failed / 2 errors. 실패는 새 OpenAPI 산출물 누락 1개와 Chromium 실행 파일 미설치 5개였다. Chromium 설치·OpenAPI 갱신 후 영향 범위 53개 통과. 실제 RabbitMQ DLQ의 InvalidEvent·행 생성 전 예외·GenerationBusy 재시도 소진을 추가한 복구 테스트 11개도 통과했다. 테스트 ID별 최종 결과 합산은 **266개 통과, 미해결 실패/오류/생략 0**이며 266개를 한 번에 실행한 결과는 아니다. 기존 Starlette/httpx 폐기 예정 경고 1개는 남는다.
-- 신규 migration: 격리 PostgreSQL에서 core/learning/report 전체 스키마와 ERD 대조, 제약 음성 63개·CHECK 값 집합 74개·ERD 인덱스 23개, 반복 적용 no-op 및 report downgrade base/upgrade head 통과. 기존 migration 수정 없음.
-- 공통 계약: `python -O -m unittest discover -s scripts/tests -q` 76개 통과. report 기존 OpenAPI 경로·스키마가 develop과 같고 새 복구 경로만 추가됐음을 JSON 단위로 대조했다. 변경 문서 로컬 링크와 Ruff check/format 통과.
-- core 전체 최초 실행: Docker JDK 21 `test bootJar`, **329개 중 328개 통과/1개 실패**, bootJar 성공. 새 복구 테스트가 실제 커밋한 processed_event 7개를 남겨 기존 전역 건수 검사가 실패했다. 새 테스트가 자신이 만든 이벤트 ID만 정리하도록 수정했다. 기존 테스트·production 멱등성 조건은 완화하지 않았다.
-- 초기 core 스크립트의 CRLF와 재검증의 Gradle `--tests` 인자 위치 오류는 검증 도구 실행 실패로 구분하며 테스트 성공 수에 넣지 않았다.
-
-- core report 범위 재검증: `test --tests "com.sagomungchi.core.report.*" bootJar` **44개 통과**, 실패·오류·생략 0. 새 테스트의 이벤트 정리와 복구 요청의 Upgrade 헤더 부재를 포함한다.
-- 실제 HTTP 연동 **11개 시나리오 통과**: 실제 core/report 앱·PostgreSQL·RabbitMQ·Redis·MinIO를 사용해 무료/full 상세·PDF/MD 내용, 현재 이용권·설정 실패·사용 기록, 60분 이상 후보의 행 없는 실패 복구/지연 명령 차단, 중복 호출·권한·기간 불일치, COMPLETED/FAILED/고아 RUNNING 복구, 실제 advisory lock의 BUSY 후 다음 점검 종료를 확인했다. 생성 대역·합성 리포트/파일을 사용하며 실제 PG·AI 호출·worker 전체 생성/렌더링·브라우저·운영 배포·성능 측정은 이 연동 결과에 포함하지 않는다. 삭제/생성·복구 응답 경합은 core 실제 DB 서비스 테스트로 별도 검증했다.
-- 개발 중 병합된 #152 PR #156의 develop `deecc12`를 fast-forward로 통합했다. 이번 미커밋 변경은 stash/patch로 보존 후 재적용했으며 충돌은 없었다. 기존 #152 문서·계약 예시·검증 코드를 유지했고 #132 코드/테스트의 복원 전후 동일성을 대조했다. 최종 전체 검증은 이 통합 상태에서 수행한다.
-
-- 통합 후 report 전체 `python -m pytest -q`: **278 passed, 실패·오류·생략 0**, 148.81초. #152의 추가 관리자 재처리 검사와 #132 복구 11개를 포함한다. 공통 계약 76개도 재확인했고 실제 core 테스트 산출물로 report.generate/started/completed/failed v1·상세·알림 공개 응답 스키마가 모두 통과했다.
-
-- 최종 통합 core 전체 `test bootJar`: **329개 통과, 실패·오류·생략 0**, Docker JDK 21·Gradle/Test heap 512MiB·CPU 2·단일 worker, 5분 26초. 실제 HTTP 11개 시나리오에서 사용한 JAR와 최종 JAR의 SHA-256이 같다.
-- 최종 변경분의 서비스 의존 방향, 학생 → 작업 잠금 순서, 트랜잭션 밖 HTTP·새 트랜잭션 반영, v1 계약·#129 조회/이용권 로직 보존, 문서 링크·`git diff --check`를 확인했다. 운영 성능·배포·원격 CI 완료를 의미하지 않는다. 서비스 CI는 feature push에서 실행하지 않고 PR 생성 후 실행되는 저장소 설정이다.
-
-## #167 하위 호출 서킷 브레이커 (2026-10-30)
+## 15. 하위 호출 서킷 브레이커 (#167)
 
 report-query와 report-recovery를 분리한다. 4xx·DATA_UNAVAILABLE 매핑, 2xx BUSY/FAILED, 학생 scope 복원을 보존한다. OPEN은 REPORT_UNAVAILABLE이며 복구는 다음 점검으로 남긴다. 관리자 재처리는 기존 Outbox 경로다.
 
-최근/최소 20건·실패율 50%·30초 차단·half-open 1건. 신규 production 의존성·오류 코드·Retry-After 없음. 최종 검증 결과는 아래와 같다.
+최근/최소 20건·실패율 50%·30초 차단·half-open 1건. 신규 production 의존성·오류 코드·Retry-After 없음.
 
-최종 검증: JDK 21 전용 Docker에서 `bash gradlew test bootJar --no-daemon --max-workers=1 --no-watch-fs --console=plain -Pkotlin.compiler.execution.strategy=in-process "-Dorg.gradle.jvmargs=-Xmx640m -XX:ActiveProcessorCount=2" -I /workspace/limits.gradle` 성공(17분 22초). 54개 클래스/346개 테스트, 실패·오류·생략 0. 검증 전용 init script는 test heap 640MiB·fork 1·8개 클래스마다 fork 교체·Spring context cache 4·CPU 2로 제한하며 저장소 실행 설정/테스트 제한 시간은 변경하지 않았다. `python -O -m unittest discover -s scripts/tests -p 'test_*contract.py' -v` 31개, `test_*openapi.py` 35개 통과. 실행한 core Kotlin/YAML/SQL 260개 파일이 최종 로컬 소스와 바이트 단위로 일치했다. `git diff --check` 통과.
+## 16. 학생 공개 설정과 원문 제외 (#206)
 
-core HTTP·DB/Redis/RabbitMQ 통합 테스트이며 AI/report는 로컬 HTTP 대역, PG는 HttpClient/TossGateway 대역이다. 실제 AI·report 프로세스·토스 API 호출, 브라우저·원격 CI·운영 배포·성능 측정은 이번 검증에 포함하지 않는다. 기존 분석/결제 사용량·복구 흐름은 전체 테스트와 변경 없음 대조로 확인했다. 통합 브랜치 a5b72f7의 factory 선택 인자와 AI HTTP/1.1 변경을 보존했고, #168 d6ebee1에는 TossClient 변경이 없어 직접 파일 충돌이 없음을 읽기 전용으로 확인했다.
+- 생성 입력은 메시지의 과거 공개 값에 의존하지 않습니다. `NamedGenerator`가 내부 core 프로필의 현재 `parentSharingEnabled`를 조회하며 누락은 비공개입니다. 생성 직전 원문·돌아보기 문장·인용 후보·근거 링크를 제거하고 AI 서술 호출을 생략합니다. 이후 저장·HTML/PDF/Markdown 렌더링에도 제거된 항목만 전달됩니다.
+- 학습 횟수·분모/분자·기간·유형과 전후 글자/문장 수는 동일하게 유지합니다. 원문을 새 문장으로 대체 생성하지 않습니다. nullable 원문 형태를 조회 스키마와 렌더러에 반영했습니다.
+- 이미 공개 상태에서 만든 리포트도 core 상세에서 현재 설정을 다시 검사해 원문·인용·파생 서술을 제거합니다. 비공개 중 기존 파일 URL 재발급과 근거 조회는 403으로 막습니다. 수치 화면은 계속 제공하며 이미 전달한 파일 자체를 회수하지는 못합니다.
+- 이번 구현은 비공개 전용 파일 재생성/다운로드 상품을 추가하지 않습니다. 다시 공개해도 비공개 중 생성한 리포트에 과거 원문을 자동 복원하지 않으며 필요하면 기존 재생성 규칙을 따릅니다.
 
-#167 최신 develop b35b22e 접합 후 core 전체 400개 테스트·bootJar 통과(실패/오류/생략 0). 최초 환경 실패와 단일 JVM 재실행, 검증 대역/미검증 범위는 [분석 대화 보고서](issue-41-analysis-conversations.md)의 “#167 최신 develop 접합” 최종 검증 절을 따른다. 결제/report 서비스 및 #168 계층 변경은 develop 그대로 보존했다.
+리포트 HTTP는 DB 트랜잭션 밖에서 실행합니다. HTTP 완료 뒤 `ReportViewService.recordWithSharing` 또는 파일 최종 기록 단계가 parent → student 순서로 현재 상품/공개 권한을 다시 확인합니다. 조회 도중 비공개 전환 시 과거 원문을 제거하고, 파일 서명 도중 전환 시 URL을 반환하지 않습니다.
 
+## 17. 학부모 대화 기반 리포트 표시 설정 (#209, #72)
 
-### #206 최종 인가와 외부 요청 경계
+### 결정과 적용 범위
 
-리포트 HTTP는 DB 트랜잭션 밖에서 실행합니다. HTTP 완료 뒤 `ReportViewService.recordWithSharing` 또는 파일 최종 기록 단계가 parent → student 순서로 현재 상품/공개 권한을 다시 확인합니다. 조회 도중 비공개 전환 시 과거 원문을 제거하고, 파일 서명 도중 전환 시 URL을 반환하지 않습니다. 기존 #129의 환불/다운그레이드 회귀와 새 공개 설정 경합 회귀를 함께 통과했습니다.
+[#72](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/72)의 보고서 챗봇 논의를 [#209](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/209)의 11/1 결정과 사용자가 전달한 김태윤님 승인 답변 범위로 구현한다.
+
+- 원문 공개는 학생 본인의 전역 설정(#206)이다. 학부모 설정으로 공개를 강제하거나 섹션을 임의 삭제하지 않는다. 메모는 제외한다.
+- 순서: 생각 유형·전후 변화·돌아보기·원문 인용·요약·저녁 질문 6개 전체 순열. 학생·기간·상태·집계 기준·수치 표는 유지한다.
+- 강조: 기존 ATTEMPTS·COMPLETED·UNASSISTED 지표의 표시만 조정한다. 계산식·판정 기준은 바꾸지 않는다.
+- 톤: DEFAULT·EASY·CONCISE만 허용한다. 숫자·인용 대조와 기존 실패/대체 정책을 유지한다.
+
+### 요청·저장·생성 흐름
+
+기존 학부모 분석 대화 화면에서 자연어 요청 → 변경안 또는 확인 질문 → 명시적 확인 → 저장한다. 취소·만료·입력 수정·대화 전환·오류에는 자동 저장하지 않는다. AI는 허용 목록만 해석하며 학생 기록을 입력으로 보내지 않는다. 프롬프트 식별자는 `analysis-template@1`이다.
+
+core는 기존 대화 소유권·연결·동의·이용권과 학부모 행 잠금을 재사용한다. 외부 AI HTTP 동안 DB 잠금을 유지하지 않고 응답 후 권한을 다시 확인한다. 제안은 10분 만료·대화 ID 일치·일회성 확인·revision 검사를 거친다. 제안 접수는 기존 분석 사용 한도와 사용 증빙에 기록하며 조회·확정에는 추가 차감하지 않는다.
+
+학부모별 `parent_report_template`은 **V22**에 추가한다. 이미 병합된 #208 V20, #206 V21을 변경하지 않는다. report의 `CoreClient`는 현재 학생 공개 상태와 학부모 확정 설정을 모두 읽고, `NamedGenerator`가 두 값을 독립적으로 전달한다. 비공개면 기존 `RecordGenerator`가 원문·근거를 제거하고 AI 서술 호출을 생략한다. 설정 조회 오류를 기본값으로 숨기지 않는다.
+
+새 리포트에 `versions.template={settings,revision}`을 저장하고 full/free HTML·PDF·Markdown에 순서·강조를 반영한다. 톤은 허용된 AI 서술 요청에만 전달한다. 과거 판은 다시 쓰지 않고 현재 권한으로 과거 원문/파일 접근을 막는 #206 로직을 유지한다. 배포는 core V22와 내부 설정 API를 먼저 제공한 후 report worker를 갱신한다.
+
+### 실제 core → report 연결 재현과 한계
+
+`REPORT_TEMPLATE_PROBE_PYTHON`에 report-service 가상환경 Python 절대 경로를 지정하고 core에서 `gradlew test --tests '*ReportTemplate*' --rerun-tasks`를 실행한다. Python 환경이 없으면 기본 CI는 core HTTP/DB 테스트만 수행하며 연결 검증을 수행했다고 집계하지 않는다.
+
+`ReportTemplateHttpIntegrationTest`가 실제 core HTTP/JWT·PostgreSQL·Redis에서 제안 확인 후 revision 1을 저장한다. 보조 실행기 `scripts/verify_report_template_rendering.py`는 해당 core의 profile/template을 HTTP 조회해 report 생성 파이프라인과 실제 Chromium 파일 렌더링까지 실행한다. 공개·비공개 상태를 각각 확인하며 비공개는 AI 미호출·원문 제외, 공개는 EASY 톤 전달·숫자/인용 대조·무료 AI 문구 제외를 검사한다.
+
+이 연결 검증의 학습 기록·AI HTTP 응답/서술·파일 저장소는 합성이다. 실제 외부 LLM 품질, PG, 운영 S3, 운영 배포, 브라우저부터 실제 모든 서비스까지 이어지는 단일 종단 시나리오는 검증하지 않았다. 실제 API 키나 학생 원문·모델 파일은 커밋하지 않는다.
+
+## 18. report 기능 간 DB 직접 접근 제거 (#252)
+
+사용자 응답(code·status·본문), 이벤트 계약, DB 스키마·마이그레이션은 변경하지 않음.
+
+- query의 SQL을 generation의 `ReportRepository`로 이동하고 `ReportReadService`를 통해 호출한다. 최신 판을 먼저 고른 뒤 상태 필터를 적용하는 순서, 기간별 정렬·페이지, revision 선택, 항목 소속 검사, 파일 경로 검사는 유지한다.
+- deletion의 테이블·DB 접근은 `deletion/repository.py`로 이동한다. state에는 삭제 명령과 DB를 사용하지 않는 중복·경합·생성 허용 판정을 둔다. HTTP 409 오류는 deletion service에서 만든다.
+- 생성·복구는 `ensure_generation_allowed`, 조회는 `ensure_query_allowed`, worker의 보존 기간 정리는 `prune_processed`를 호출한다. 호출 서비스가 소유한 세션을 전달하고 repository에서 commit하지 않는다.
+- 삭제 완료는 generation service의 학생 리포트 삭제 → outbox service의 subject 삭제 → 삭제 장벽 완료·처리 이력 저장을 기존 한 트랜잭션에서 실행한다. 잠금 → 장벽 저장 → S3 삭제 → DB 삭제 → core 완료 보고 순서를 유지한다.
+- 이전 테스트의 `deletion.state` 테이블 import 호환은 `__getattr__`의 지연 재노출 두 이름만 남긴다. 업무 코드에서는 이 호환 경로를 사용하지 않는다. state에 SQLAlchemy·ApiError·DB 함수는 없다. 테이블의 정식 소유자는 deletion.repository다.
+- generation과 deletion은 서로의 서비스 기능이 필요하므로 삭제 완료 조합 함수에서만 generation service를 지연 import한다. 새 공통 라이브러리 없이 기존 서비스 경계를 사용한다.
+- repository의 `finish`는 자기 장벽·이력만 저장한다. 여러 기능을 정리하는 테스트는 서비스의 `finish_deletion`을 호출하도록 갱신했다.
+
+검증은 report 전체 테스트와 삭제 완료 실패 주입을 사용한다. 실패 주입은 리포트·Outbox 삭제 이후 장벽 완료 기록 단계에서 오류를 발생시켜 DB 전체 롤백, PENDING 장벽 유지, 완료 콜백 미전송, 같은 명령 재시도 성공을 확인한다. 실제 학생 데이터·운영 DB는 사용하지 않는다.

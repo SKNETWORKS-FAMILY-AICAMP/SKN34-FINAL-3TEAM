@@ -17,7 +17,6 @@ TOOL_CALLS = {
     "attempts": lambda tools: tools.attempts(SCOPE, 8),
     "changes": lambda tools: tools.changes(SCOPE),
     "thinking_activities": lambda tools: tools.thinking_activities(SCOPE),
-    "evidence": lambda tools: tools.evidence(SCOPE, ["a-1"]),
 }
 
 

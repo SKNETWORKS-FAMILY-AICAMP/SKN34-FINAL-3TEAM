@@ -2,7 +2,9 @@ package com.sagomungchi.learning.mission.controller
 
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.exception.Problems
+import com.sagomungchi.learning._common.exception.statusOf
 import com.sagomungchi.learning._common.security.UserContextHolder
+import com.sagomungchi.learning._common.web.MissionResponse
 import com.sagomungchi.learning.mission.domain.AdminMission
 import com.sagomungchi.learning.mission.domain.AdminMissionFilter
 import com.sagomungchi.learning.mission.domain.AdminMissionPage
@@ -72,6 +74,9 @@ data class RubricRequest(
     val exampleAnswer: String? = null,
     val forbiddenTerms: List<String>? = null,
     val hints: List<String>? = null,
+    /** M2 교차 확인 입력 (#69, api-spec 4.2.2). 서술 핵심어 묶음, 논술 글 종류 */
+    val keywords: List<String>? = null,
+    val essayType: String? = null,
 )
 
 /** 검토 요청·검토 본문: 화면이 보고 있는 버전 */
@@ -179,7 +184,7 @@ class AdminMissionController(
     /** 게시 필수 누락: api-spec 1.3 `missingFields[]` */
     @ExceptionHandler(MissionPublishIncompleteException::class)
     fun incomplete(error: MissionPublishIncompleteException, request: HttpServletRequest): ProblemDetail =
-        Problems.of(error.status, error.code, error.title, error.detail, request).apply { setProperty("missingFields", error.missingFields) }
+        Problems.of(statusOf(error.kind), error.code, error.title, error.detail, request).apply { setProperty("missingFields", error.missingFields) }
 
     /** ADMIN만. 작성자·검토자로 저장할 관리자 ID(X-User-Id)는 UUID */
     private fun requireAdmin(): UUID {
@@ -229,7 +234,15 @@ class AdminMissionController(
         }
         if (elements.map { it.code }.toSet().size != elements.size) invalid("요소 code가 겹침")
         if (hints.orEmpty().any { it.isBlank() }) invalid("생각 열기 질문은 비울 수 없음")
-        return RubricCommand(author, elements, answerKey, exampleAnswer, forbiddenTerms.orEmpty(), hints.orEmpty())
+        // scoring M2 계약과 같은 한도 (api-spec 4.3.1)
+        val keywords = keywords.orEmpty().map(String::trim)
+        if (keywords.any { it.isEmpty() || it.length > MAX_KEYWORD_LENGTH } || keywords.size > MAX_KEYWORDS) {
+            invalid("keywords는 비지 않은 ${MAX_KEYWORD_LENGTH}자 이하 ${MAX_KEYWORDS}개까지")
+        }
+        if (essayType != null && essayType !in ESSAY_TYPES) invalid("essayType은 ${ESSAY_TYPES.joinToString("·")} 중 하나")
+        return RubricCommand(
+            author, elements, answerKey, exampleAnswer, forbiddenTerms.orEmpty(), hints.orEmpty(), keywords, essayType,
+        )
     }
 
     private fun missing(field: String): Nothing = invalid("$field 필요")
@@ -239,5 +252,8 @@ class AdminMissionController(
     companion object {
         private const val ADMIN_ROLE = "ADMIN"
         private const val MAX_SIZE = 100
+        private const val MAX_KEYWORDS = 100
+        private const val MAX_KEYWORD_LENGTH = 200
+        private val ESSAY_TYPES = setOf("설명글", "글짓기", "주장", "찬성반대", "대안제시")
     }
 }

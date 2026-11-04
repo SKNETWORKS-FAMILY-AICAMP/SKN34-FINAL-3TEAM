@@ -97,6 +97,24 @@ class ConsentChildrenTest : PostgresRepositoryTest() {
         assertFalse(consent.documents().any { it.documentId == future })
         mvc.get("/api/v1/consent-documents").andExpect { status { isOk() }; jsonPath("$.totalElements") { value(3) } }
     }
+    @Test fun `migration seeds the three required 1_0 documents as the public publication`() {
+        val seeded = mapOf("TERMS" to "00000000-0000-4000-8000-000002350001",
+            "PRIVACY" to "00000000-0000-4000-8000-000002350002", "GUARDIAN" to "00000000-0000-4000-8000-000002350003")
+        // Synthetic fixtures (this class's or leftovers of other groups) move to the future and roll back with the test.
+        jdbc.update("UPDATE consent_document SET effective_from=effective_from+3650 WHERE id NOT IN (?,?,?)",
+            *seeded.values.map(UUID::fromString).toTypedArray())
+        val body = mvc.get("/api/v1/consent-documents").andExpect {
+            status { isOk() }; jsonPath("$.totalElements") { value(3) }
+        }.andReturn().response.contentAsString
+        val items = json.readTree(body)["items"].associateBy { it["kind"].asText() }
+        assertEquals(seeded.keys, items.keys)
+        seeded.forEach { (kind, id) ->
+            val doc = items.getValue(kind)
+            assertEquals(id, doc["documentId"].asText()); assertEquals("1.0", doc["version"].asText())
+            assertTrue(doc["required"].asBoolean()); assertEquals("2026-11-03", doc["effectiveFrom"].asText())
+            assertTrue(doc["content"].asText().startsWith("※ 이 문서는 교육 과정 시연용 문서이며 법률 검토를 거치지 않았습니다."))
+        }
+    }
     @Test fun `missing publication fails explicitly instead of allowing consent`() {
         // The shared DB may contain older published versions from other fixture groups.
         jdbc.update("UPDATE consent_document SET effective_from=(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date+1 WHERE kind='GUARDIAN'")
@@ -194,7 +212,7 @@ class ConsentChildrenTest : PostgresRepositoryTest() {
     }
     @Test fun `guardian withdrawal blocks current student token and parent resource scope then renewal restores access`() {
         val p = login(); val user = p.identity.account.id; agree(user); val child = register(user)
-        val student = auth.enterStudent(p.refreshToken, child.id, auth.authenticate(p.accessToken))
+        val student = auth.enterStudent(child.id, auth.authenticate(p.accessToken))
         val other = auth.login(GoogleProfile(p.identity.account.subject!!, p.identity.account.email, "합성 보호자"), null)
         val guardian = consent.history(user).first { it.studentId == child.id }
         consent.withdraw(user, guardian.consentId)

@@ -1,7 +1,8 @@
 import { apiFetch, ApiError } from '../apiClient.ts'
-import type { Reflection } from '../../domain/classroom.ts'
+import type { Child, Period, Reflection } from '../../domain/classroom.ts'
 import { difficultyCodes } from '../../domain/learning.ts'
-import type { SelfAssessment } from '../../domain/learning.ts'
+import type { SelfAssessment, ThinkingActivities } from '../../domain/learning.ts'
+import { recordContractError, recordReflection } from '../recordDto.ts'
 import type { AttemptComparison, ComparisonSnapshot } from '../../domain/learning.ts'
 
 export async function getAttemptComparison(id: string, signal?: AbortSignal): Promise<AttemptComparison> {
@@ -23,6 +24,19 @@ export async function getAttemptComparison(id: string, signal?: AbortSignal): Pr
         (e.currentSatisfied ? e.previousSatisfied ? 'RETAINED' : 'ADDED' : e.previousSatisfied ? 'NOT_CONFIRMED_NOW' : 'NOT_CONFIRMED'))
   if (!valid) throw new ApiError({ status: 502, code: 'CONTRACT_NOT_READY', title: '이전 결과 비교 응답을 확인하지 못했습니다.' })
   return value
+}
+
+const thinkingTypes = ['ANALYZE', 'EVALUATE', 'CREATE', 'SOLVE', 'REFLECT']
+const queryStates = ['OK', 'NO_RECORD', 'INSUFFICIENT_SAMPLE', 'PROCESSING', 'FAILED']
+/** 학생 생각 활동 (api-spec 2.3 DSH-04). 돌아보기 난이도 코드는 화면 표시값으로 바꾼다. */
+export async function getThinkingActivities(child: Child, period: Period, signal?: AbortSignal): Promise<ThinkingActivities> {
+  const raw = await apiFetch<Record<string, unknown>>(`/students/me/thinking-activities?${new URLSearchParams({ from: period.from, to: period.to })}`, { signal })
+  const items = raw?.items
+  if (raw?.studentId !== child.id || !queryStates.includes(raw.state as string) || !Array.isArray(items) ||
+      items.some(i => !i || typeof i.attemptId !== 'string' || !thinkingTypes.includes(i.thinkingType) || typeof i.missionTitle !== 'string'))
+    return recordContractError()
+  return { state: raw.state as ThinkingActivities['state'], period: raw.period as Period,
+    items: items.map(i => ({ attemptId: i.attemptId, thinkingType: i.thinkingType, missionTitle: i.missionTitle, reflection: recordReflection(i.reflection) ?? null })) }
 }
 
 export async function saveReflection(id: string, reflection: Reflection) {

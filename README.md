@@ -45,6 +45,7 @@ MinIO를 포함한 프로젝트를 중단할 때도 `docker compose -f compose.y
 | `GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET` | Google OAuth. 없으면 로그인 시작이 503 |
 | `AUTH_WEB_ORIGIN` | web origin(기본 `http://localhost:5173`, Vite `/api` 프록시) |
 | `AUTH_COOKIE_SECURE` | 로컬 HTTP만 `false`, 배포 HTTPS는 `true` |
+| `AUTH_NEW_ACCOUNT_DEMO` | 데모 전용 환경만 `true`. 새 Google 부모 계정을 `is_demo=true`로 저장해 운영 통계에서 제외(기본 `false`, 기존 계정은 변경 안 함) |
 | `AUTH_ACCESS_TTL`·`AUTH_STUDENT_ACCESS_TTL`·`AUTH_REFRESH_TTL`·`AUTH_REAUTH_TTL` | 부모 access 15m, 학생 access 15m, refresh 7d(부모·관리자만), 재인증 토큰 5m |
 | `REDIS_HOST`·`REDIS_PORT`·`REDIS_PASSWORD` | 알림 중계·학생 기기 페어링 |
 | `STUDENT_DEVICE_TTL`·`STUDENT_DEVICE_ATTEMPT_LIMIT` | 기기 고정 만료 90d, 페어링 발급·등록 10분당 20회 |

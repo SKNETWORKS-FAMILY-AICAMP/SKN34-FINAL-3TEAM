@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: scoring 내부 API
   version: 1.0.0
-  description: 실제 로딩된 버전 조회(#85), M2 채점(#87), 미학습 M1 비활성 계약(#88).
+  description: 실제 모델 버전 조회, 서술 3.0·논술 3.1 정수/원점수 채점(#228), M1 비활성 계약.
 servers:
 - url: /internal
 security:
@@ -166,9 +166,17 @@ components:
           - ESSAY
           title: Inputtype
         scores:
-          $ref: '#/components/schemas/Scores'
+          description: 기본은 score_cuts 경계 변환. M2_CONTENT3_RULE_ENABLED=true인 서술 3.0 초5·6의 content_3만 결합 점수를 1~5로 자른 뒤 floor(mixed+0.5) 적용.
+          anyOf:
+          - $ref: '#/components/schemas/Scores'
+          - $ref: '#/components/schemas/EssayScores'
+          title: Scores
         rawScores:
-          $ref: '#/components/schemas/RawScores'
+          description: 기본은 유한 모델 원점수 그대로. 선택 보정 적용 시 서술 content_3만 결합 점수를 1~5로 자르고 소수 4자리로 반올림. 정수는 이 반올림 전 값으로 계산.
+          anyOf:
+          - $ref: '#/components/schemas/RawScores'
+          - $ref: '#/components/schemas/EssayRawScores'
+          title: Rawscores
         model:
           $ref: '#/components/schemas/ModelIdentity'
       type: object
@@ -188,6 +196,19 @@ components:
       type: object
       title: M2Inactive
     M2Request:
+      allOf:
+      - if:
+          properties:
+            inputType:
+              const: ESSAY
+          required:
+          - inputType
+        then:
+          properties:
+            essayType:
+              type: string
+          required:
+          - essayType
       properties:
         prompt:
           type: string
@@ -219,6 +240,17 @@ components:
           type: array
           maxItems: 100
           title: Keywords
+        essayType:
+          anyOf:
+          - type: string
+            enum:
+            - 설명글
+            - 글짓기
+            - 주장
+            - 찬성반대
+            - 대안제시
+          - type: 'null'
+          title: Essaytype
       additionalProperties: false
       type: object
       required:
@@ -391,3 +423,45 @@ components:
       - steps
       - finalAnswer
       title: StudentSolution
+    EssayRawScores:
+      properties:
+        org:
+          type: number
+          title: Org
+        cont:
+          type: number
+          title: Cont
+        exp:
+          type: number
+          title: Exp
+      additionalProperties: false
+      type: object
+      required:
+      - org
+      - cont
+      - exp
+      title: EssayRawScores
+    EssayScores:
+      properties:
+        org:
+          type: integer
+          maximum: 3.0
+          minimum: 0.0
+          title: Org
+        cont:
+          type: integer
+          maximum: 3.0
+          minimum: 0.0
+          title: Cont
+        exp:
+          type: integer
+          maximum: 3.0
+          minimum: 0.0
+          title: Exp
+      additionalProperties: false
+      type: object
+      required:
+      - org
+      - cont
+      - exp
+      title: EssayScores

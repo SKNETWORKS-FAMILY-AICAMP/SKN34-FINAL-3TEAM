@@ -15,6 +15,16 @@ class SupportContractTest(unittest.TestCase):
    self.assertNotEqual(spec['paths'][p]['get'].get('security'),[])
   for p in ('/error-reports','/admin/error-reports/{reportId}/corrections'):
    self.assertTrue(any(v['name']=='Idempotency-Key' and v['required'] for v in spec['paths'][p]['post']['parameters']))
+ def test_admin_notice_list_reuses_notice_page_with_status_and_role_filters(self):
+  spec=yaml.safe_load((ROOT/'contracts/openapi/core-service.yaml').read_text(encoding='utf-8'))
+  op=spec['paths']['/admin/notices']['get']
+  self.assertEqual(op['responses']['200']['content']['application/json']['schema'],{'$ref':'#/components/schemas/SupportNoticePage'})
+  for status in ('400','401','403'):
+   self.assertEqual(op['responses'][status]['content']['application/problem+json']['schema'],{'$ref':'#/components/schemas/Problem'})
+  params={p['name']:p['schema'] for p in op['parameters']}
+  self.assertEqual(params['status']['enum'],['SCHEDULED','ACTIVE','ENDED'])
+  self.assertEqual(params['role']['enum'],['STUDENT','PARENT','ADMIN'])
+  self.assertEqual((params['size']['minimum'],params['size']['maximum']),(1,100))
  def test_supplier_contract_separated_from_implemented_learning(self):
   actual=yaml.safe_load((ROOT/'contracts/openapi/learning-service.yaml').read_text(encoding='utf-8'))
   required=yaml.safe_load((ROOT/'contracts/openapi/support-learning-required.yaml').read_text(encoding='utf-8'))

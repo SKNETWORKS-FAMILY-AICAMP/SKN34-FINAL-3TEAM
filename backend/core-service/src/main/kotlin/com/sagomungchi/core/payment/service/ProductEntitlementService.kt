@@ -6,19 +6,28 @@ import com.sagomungchi.core.payment.service.PaymentTransactions.Companion.confli
 import com.sagomungchi.core.payment.service.PaymentTransactions.Companion.forbidden
 import com.sagomungchi.core.payment.service.PaymentTransactions.Companion.unavailable
 import com.sagomungchi.core.guardianship.service.StudentAccessService
+import com.sagomungchi.core._common.exception.BusinessException
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.ZoneId
 import java.util.UUID
 
 data class UsagePermit(val reservationId: UUID?, val premium: Boolean)
+private val KST=ZoneId.of("Asia/Seoul")
 
 @Service
 class ProductEntitlementService(private val repository: PaymentRepository, private val tx: PaymentTransactions,
     private val students: StudentAccessService, private val json: ObjectMapper,
     @Value("\${app.payment.free-product-id:}") private val freeProductId: String) {
     fun forParent(parent: UUID, student: UUID): ProductEntitlement { students.requireLinked(parent,student); return forStudent(student) }
+    /** Ownership cannot change while usage/renewal still resolves the former subscription owner. */
+    fun requireTransferReady(student: UUID) {
+        if(repository.active(student)!=null || repository.confirmingStudent(student) || repository.refundPending(student))
+            throw BusinessException(HttpStatus.CONFLICT,"TRANSFER_PAYMENT_BLOCKED","자녀의 구독·결제·환불 처리가 모두 끝난 뒤 이관해 주세요.")
+    }
     fun forStudent(student: UUID): ProductEntitlement {
         val current=repository.active(student)
         if(current!=null && !BillingDates.entitled(current,tx.now()) && repository.confirmingStudent(student)) unavailable("PAYMENT_ENTITLEMENT_CONFIRMING")
@@ -59,6 +68,10 @@ class ProductEntitlementService(private val repository: PaymentRepository, priva
             // A failed reservation stays conservative until an explicit new source ID is used.
             return UsagePermit(it.id,true)
         }
+        // #225: the ledger is the daily analysis counter. Callers hold the parent lock (and, for conversations, the student lock).
+        if(kind=="CONVERSATION" && repository.usageCountSince(student,kind,tx.today().atStartOfDay(KST).toOffsetDateTime())>=
+            (entitlement.product.limits["dailyConversations"] as Number).toInt())
+            throw BusinessException(HttpStatus.TOO_MANY_REQUESTS,"USAGE_LIMIT_REACHED","분석 대화 사용 한도에 도달했습니다.")
         val row=PremiumUsage(UUID.randomUUID(),student,sub,kind,source,"RESERVED",tx.now(),tx.now())
         check(repository.reserve(row)==1)
         return UsagePermit(row.id,true)

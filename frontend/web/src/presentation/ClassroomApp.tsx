@@ -7,6 +7,7 @@ import { StudentWorld } from './student/world/StudentWorld.tsx'
 import type { StudentPage } from './student/world/StudentWorld.tsx'
 import { ThinkingMap } from './student/world/ThinkingMap.tsx'
 import { StudentMissions } from './student/world/StudentMissions.tsx'
+import { ThinkingActivitiesPage } from './student/world/ThinkingActivities.tsx'
 import { isThinkingType } from '../domain/studentLook.ts'
 import {
   ArrowLeft,
@@ -42,9 +43,10 @@ import { StudentWorkPage } from './student/StudentWorkPage.tsx'
 import { ParentAnalysis, ParentReport } from './parent/ParentFeatures.tsx'
 import './classroom.css'
 import { QueryStateNotice } from './common/QueryStateNotice.tsx'
+import { ParentUnlock } from './auth/ParentUnlock.tsx'
 
 const { recentPeriod, previousWeek } = displayPeriods
-type Page = 'home' | 'journal' | 'missions' | 'report' | 'analysis' | 'settings'
+type Page = 'home' | 'journal' | 'missions' | 'report' | 'analysis' | 'activities' | 'settings'
 export function ClassroomApp() {
   const auth = useAuthentication(),
     { session, setSession, selected, setSelected, expired, setExpired, scenario, setScenario } =
@@ -56,7 +58,7 @@ export function ClassroomApp() {
   const work = location.pathname.startsWith('/student/attempts/')
     ? location.pathname.split('/')[3]
     : null
-  const studentPage: StudentPage = (['home', 'missions', 'settings'] as const).find((p) => p === page) ?? 'journal'
+  const studentPage: StudentPage = (['home', 'missions', 'activities', 'settings'] as const).find((p) => p === page) ?? 'journal'
   const typeFilter = new URLSearchParams(location.search).get('type')
   const setPage = (page: Page) => navigate(`/${session?.role.toLowerCase() ?? 'parent'}/${page}`)
   const setWork = (id: string | null) =>
@@ -249,6 +251,12 @@ export function ClassroomApp() {
                   : 'Google 계정으로 로그인하고 자녀를 등록해 주세요.'}
               </p>
             </div>
+            <div className="ux-login-forms">
+            <ParentUnlock onUnlocked={(next) => {
+              setSession(next)
+              setSelected('')
+              navigate(roleStart(next.role), { replace: true })
+            }} />
             {!isDemo ? (
               <section className="ux-login-form">
                 <h2>학부모·관리자 로그인</h2>
@@ -311,6 +319,7 @@ export function ClassroomApp() {
                 </small>
               )}
             </form>}
+            </div>
           </main>
         ) : session.role === 'ADMIN' ? (
           <main className="cj-sheet">
@@ -353,6 +362,8 @@ export function ClassroomApp() {
                 }}
               />
             ) : studentPage === 'settings' ? (<StudentSharingPage key={child.id} child={child} />
+            ) : studentPage === 'activities' ? (
+              <ThinkingActivitiesPage key={child.id} child={child} />
             ) : studentPage === 'home' ? (
               <ThinkingMap
                 child={child}

@@ -9,6 +9,7 @@ import { useParentQuery } from '../../data/parent/queries.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { QueryFeedback, MetricCards, EvidenceItems } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
+import { ReportTemplateEditor } from './ReportTemplateEditor.tsx'
 export function ParentConversation({
   child,
   scope,
@@ -34,7 +35,8 @@ export function ParentConversation({
     [proof, setProof] = useState<{ conversationId: string; messageId: string } | null>(null),
     controller = useRef<AbortController | null>(null),
     active = useRef(true),
-    [lastQuestion, setLastQuestion] = useState('')
+    [lastQuestion, setLastQuestion] = useState(''),
+    [startingTemplate, setStartingTemplate] = useState(false)
   useEffect(() => {
     active.current = true
     return () => {
@@ -42,12 +44,12 @@ export function ParentConversation({
       controller.current?.abort()
     }
   }, [])
-  async function ask(selectedScope?: Scope, retry?: ConversationMessage) {
+  async function ask(selectedScope?: Scope, retry?: ConversationMessage, example?: string) {
     const confirmedScope =
       selectedScope ??
       state.result?.scope ??
       (detail.data ? { ...detail.data.period, childId: child.id } : scope)
-    const text = retry?.question ?? (state.phase === 'CLARIFICATION' && !question.trim() ? lastQuestion : question)
+    const text = example ?? retry?.question ?? (state.phase === 'CLARIFICATION' && !question.trim() ? lastQuestion : question)
     if (!text.trim() || child.plan === 'FREE') return
     controller.current?.abort()
     const abort = new AbortController()
@@ -90,6 +92,20 @@ export function ParentConversation({
     setState({ phase: 'IDLE', temporary: '' })
     setError(null)
   }
+  async function startTemplate() {
+    if (startingTemplate || child.plan === 'FREE') return
+    const abort = new AbortController()
+    controller.current?.abort(); controller.current = abort
+    setStartingTemplate(true); setError(null)
+    try {
+      const conversation = await parentApi.create(scope)
+      if (!active.current || abort.signal.aborted) return
+      setId(conversation.conversationId)
+      void cache.invalidateQueries({ queryKey: ['parent', 'conversations'] })
+    } catch (e) {
+      if (active.current && !abort.signal.aborted) setError(e)
+    } finally { if (active.current) setStartingTemplate(false) }
+  }
   const messages = detail.data?.childId === child.id && !detail.error ? detail.data.messages : [],
     pending = state.phase === 'RUNNING'
   return (
@@ -127,6 +143,9 @@ export function ParentConversation({
         </aside>
         <section className="ws-stack">
           {id && <QueryFeedback query={detail} />}
+          {child.plan !== 'FREE' && (id
+            ? <ReportTemplateEditor key={id} conversationId={id} />
+            : <button className="cj-secondary" disabled={pending || startingTemplate} onClick={() => { void startTemplate() }}>리포트 설정 대화 시작</button>)}
           {messages.map((m) => (
             <article className="ws-card" key={m.messageId}>
               <h3>보호자의 질문</h3>
@@ -253,9 +272,18 @@ export function ParentConversation({
                 required
               />
             </label>
-            <button className="cj-primary" disabled={pending}>
+            <button className="cj-primary" disabled={pending || startingTemplate}>
               기록으로 답변 받기
             </button>
+            <ExampleQuestions
+              childId={child.id}
+              disabled={pending || startingTemplate}
+              onPick={(text) => {
+                // 현재 자녀·기간(대화 범위)을 그대로 두고 질문만 채워 보낸다.
+                setQuestion(text)
+                void ask(undefined, undefined, text)
+              }}
+            />
             <small>
               다른 화면으로 이동하면 스트림을 취소합니다. 임시 문장을 확정 답변으로 남기지
               않습니다.
@@ -275,6 +303,35 @@ export function ParentConversation({
         </Modal>
       )}
     </>
+  )
+}
+/** 예시 질문 (FN-AGT-12, 선택). 기록이 없어 답할 수 없는 질문은 보내지 않고 가능 범위를 안내한다. */
+function ExampleQuestions({ childId, disabled, onPick }: { childId: string; disabled: boolean; onPick: (question: string) => void }) {
+  const examples = useParentQuery(['analysis-examples', childId], (signal) => parentApi.examples(childId, signal))
+  if (examples.isPending || examples.error || !examples.data.length) return null
+  const unavailable = examples.data.some((e) => !e.available)
+  return (
+    <div className="ws-examples" role="group" aria-label="예시 질문">
+      <small>예시 질문</small>
+      <div className="ws-actions">
+        {examples.data.map((e) => (
+          <button
+            key={e.question}
+            type="button"
+            className="cj-secondary"
+            disabled={disabled || !e.available}
+            onClick={() => onPick(e.question)}
+          >
+            {e.question}
+          </button>
+        ))}
+      </div>
+      {unavailable && (
+        <small>
+          흐리게 표시한 질문은 이 자녀의 학습 기록이 아직 없어 답할 수 없습니다. 기록이 생긴 뒤 다시 선택해 주세요.
+        </small>
+      )}
+    </div>
   )
 }
 export function EvidenceQuery({

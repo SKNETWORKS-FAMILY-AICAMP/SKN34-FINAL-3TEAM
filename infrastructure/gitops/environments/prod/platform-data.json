@@ -1,0 +1,61 @@
+{
+  "existingSecret": "platform-data-credentials",
+  "minio": {
+    "enabled": false
+  },
+  "postgres": {
+    "enabled": false
+  },
+  "rabbitmq": {
+    "enabled": true,
+    "initialization": {
+      "activeDeadlineSeconds": 600,
+      "backoffLimit": 0,
+      "resources": {
+        "limits": {
+          "cpu": "250m",
+          "memory": "128Mi"
+        },
+        "requests": {
+          "cpu": "25m",
+          "memory": "32Mi"
+        }
+      },
+      "waitTimeoutSeconds": 480
+    },
+    "memoryHighWatermark": "536870912",
+    "persistence": {
+      "size": "4Gi"
+    },
+    "resources": {
+      "limits": {
+        "cpu": "1",
+        "memory": "1Gi"
+      },
+      "requests": {
+        "cpu": "250m",
+        "memory": "512Mi"
+      }
+    }
+  },
+  "redis": {
+    "appendOnly": true,
+    "enabled": true,
+    "maxMemory": "128mb",
+    "maxMemoryPolicy": "noeviction",
+    "persistence": {
+      "size": "1Gi"
+    },
+    "resources": {
+      "limits": {
+        "cpu": "500m",
+        "memory": "384Mi"
+      },
+      "requests": {
+        "cpu": "100m",
+        "memory": "128Mi"
+      }
+    }
+  },
+  "storageClassName": "gp3"
+}

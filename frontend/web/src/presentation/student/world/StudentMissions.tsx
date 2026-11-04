@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useMissions } from '../../../data/classroom/useClassroom.ts'
+import { displayPeriods, useMissions } from '../../../data/classroom/useClassroom.ts'
+import { ThinkingActivityList } from './ThinkingActivities.tsx'
 import type { Child, Mission, ThinkingType } from '../../../domain/classroom.ts'
 import { thinkingLabels } from '../../../domain/classroom.ts'
 import { THINKING_ORDER, thinkingHue } from '../../../domain/studentLook.ts'
@@ -95,6 +96,12 @@ export function StudentMissions({
           </article>
         ))}
       </div>
+      {type && (
+        <section className="st-island-activities" aria-labelledby="island-activities-h">
+          <h2 id="island-activities-h">최근 7일 이 {t.place}에서 해 본 생각</h2>
+          <ThinkingActivityList child={child} period={displayPeriods.recentPeriod} type={type} />
+        </section>
+      )}
     </main>
   )
 }

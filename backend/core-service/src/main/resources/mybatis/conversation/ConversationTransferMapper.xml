@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.conversation.repository.ConversationTransferMapper">
+ <select id="busy" resultType="boolean" flushCache="true" useCache="false">
+ SELECT EXISTS(SELECT 1 FROM conversation c JOIN conversation_message m ON m.conversation_id=c.id
+ LEFT JOIN conversation_job_retry r ON r.message_id=m.id
+ WHERE c.parent_user_id=#{parent} AND c.student_id=#{student} AND (m.status='RUNNING' OR r.status IN ('QUEUED','RUNNING')))
+ </select>
+ <update id="move">UPDATE conversation SET parent_user_id=#{recipient},updated_at=CURRENT_TIMESTAMP WHERE parent_user_id=#{parent} AND student_id=#{student}</update>
+ <select id="students" resultType="java.util.UUID" flushCache="true" useCache="false">SELECT DISTINCT student_id FROM conversation WHERE parent_user_id=#{parent} ORDER BY student_id</select>
+ <delete id="deleteEvidence">DELETE FROM message_evidence WHERE message_id IN (SELECT m.id FROM conversation_message m JOIN conversation c ON c.id=m.conversation_id WHERE c.parent_user_id=#{parent})</delete>
+ <delete id="deleteMessages">DELETE FROM conversation_message WHERE conversation_id IN (SELECT id FROM conversation WHERE parent_user_id=#{parent})</delete>
+ <delete id="deleteConversations">DELETE FROM conversation WHERE parent_user_id=#{parent}</delete>
+</mapper>

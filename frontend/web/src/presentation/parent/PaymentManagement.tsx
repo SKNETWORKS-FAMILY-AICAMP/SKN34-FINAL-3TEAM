@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import type { Child } from '../../domain/classroom.ts'
 import type { PaymentRecord, PaymentSubscription } from '../../domain/payment.ts'
-import { billingStorageKey, paymentStateLabel, refundLabels, subscriptionLabels } from '../../domain/payment.ts'
+import { paymentStateLabel, refundLabels, subscriptionLabels } from '../../domain/payment.ts'
 import { billingClientKey, mockPaymentMode, paymentApi, paymentTestMode } from '../../data/payment/api.ts'
+import { saveBilling } from '../../data/payment/checkoutStorage.ts'
 import { loadToss } from '../../data/payment/toss.ts'
 import { useParentMutation, useParentQuery } from '../../data/parent/queries.ts'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
@@ -17,7 +18,7 @@ export function SubscriptionCard({ value: s, refundPending = false }: { value: P
   const register = useParentMutation(async () => {
     const setup = await paymentApi.billingSetup(s.subscriptionId)
     const pending = { ...setup, idempotencyKey: crypto.randomUUID(), createdAt: Date.now() }
-    sessionStorage.setItem(billingStorageKey, JSON.stringify(pending))
+    saveBilling(pending)
     if (mockPaymentMode) { navigate('/payment/billing/success?' + new URLSearchParams({ customerKey: setup.customerKey, authKey: 'mock-billing-' + setup.subscriptionId })); return }
     if (!/^test_ck_/.test(billingClientKey)) throw new Error('자동결제 상점의 테스트 클라이언트 키를 설정해 주세요.')
     await loadToss()

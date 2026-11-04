@@ -3,9 +3,11 @@ import { PaymentManagement } from './PaymentManagement.tsx'
 import { Link, useNavigate } from 'react-router'
 import { useSession } from '../auth/sessionContext.ts'
 import type { Child } from '../../domain/classroom.ts'
-import { checkoutConfirmation, checkoutStorageKey, paymentComplete, paymentStateLabel, readCheckout, duplicateSubscription } from '../../domain/payment.ts'
-import type { PendingCheckout, PaymentState } from '../../domain/payment.ts'
+import { checkoutConfirmation, paymentComplete, paymentStateLabel, duplicateSubscription } from '../../domain/payment.ts'
+import type { PendingCheckout } from '../../domain/payment.ts'
 import { paymentApi, paymentClientKey, paymentTestMode, mockPaymentMode } from '../../data/payment/api.ts'
+import { readCheckout, saveCheckout } from '../../data/payment/checkoutStorage.ts'
+import { usePaymentConfirmation, usePaymentResult } from '../../data/payment/queries.ts'
 import { loadToss } from '../../data/payment/toss.ts'
 import type { TossWidget } from '../../data/payment/toss.ts'
 import { useParentQuery } from '../../data/parent/queries.ts'
@@ -56,7 +58,7 @@ export function ParentPayments({ child }: { child?: Child }) {
     try {
       const created = await paymentApi.order(child.id, product.id, createKey.current)
       const pending = { ...created, confirmKey: crypto.randomUUID(), createdAt: Date.now() }
-      sessionStorage.setItem(checkoutStorageKey, JSON.stringify(pending))
+      saveCheckout(pending)
       setOrder(pending)
     } catch (e) { setError(e) } finally { setBusy(false) }
   }
@@ -94,47 +96,37 @@ export function ParentPayments({ child }: { child?: Child }) {
   </section>
 }
 
-// Share the in-flight request across React StrictMode effects; use the same stored idempotency key after reload.
-const confirmations = new Map<string, Promise<PaymentState>>()
 export function PaymentResult({ failed = false }: { failed?: boolean }) {
   const { ready: authReady, session } = useSession()
   const [callback] = useState(() => location.search), [pending] = useState(readCheckout)
-  const [state, setState] = useState<PaymentState | null>(null), [error, setError] = useState<unknown>(null), [busy, setBusy] = useState(!failed)
   const id = new URLSearchParams(callback).get('orderId') ?? pending?.orderId ?? ''
-  async function refresh() {
-    if (!id) return
-    setBusy(true); setError(null)
-    try { setState(await paymentApi.state(id)) } catch (e) { setError(e) } finally { setBusy(false) }
-  }
+  const returned = new URLSearchParams(callback).has('paymentKey')
+  const [request] = useState((): { body?: ReturnType<typeof checkoutConfirmation>; error?: unknown } | null => {
+    try {
+      if (returned) return { body: checkoutConfirmation(callback, pending) }
+      return id ? null : { error: new Error('확인할 주문이 없습니다.') }
+    } catch (error) { return { error } }
+  })
+  const parent = !failed && authReady && session?.role === 'PARENT'
+  const confirm = usePaymentConfirmation(), { mutate } = confirm
+  // 승인 요청이 실패해도 "다시 확인"은 승인 없이 상태만 조회한다.
+  const [manual, setManual] = useState(false), [refreshing, setRefreshing] = useState(false)
+  const result = usePaymentResult(id, parent && (!returned || confirm.isSuccess || manual))
   useEffect(() => {
     // Keep paymentKey out of subsequent navigation, copied URLs and referrers.
     history.replaceState(history.state, '', location.pathname + (id ? '?orderId=' + encodeURIComponent(id) : ''))
-    if (failed || !authReady || session?.role !== 'PARENT') return
-    let active = true
-    void (async () => {
-      const q = new URLSearchParams(callback)
-      if (!q.has('paymentKey')) {
-        if (!id) throw new Error('확인할 주문이 없습니다.')
-        return paymentApi.state(id)
-      }
-      const body = checkoutConfirmation(callback, pending)
-      const key = body.orderId
-      let promise = confirmations.get(key)
-      if (!promise) { promise = paymentApi.confirm(body, pending!.confirmKey); confirmations.set(key, promise) }
-      return promise
-    })().then(r => { if (active) setState(r) }).catch(e => { if (active) setError(e) }).finally(() => { if (active) setBusy(false) })
-    return () => { active = false }
-  }, [callback, pending, id, failed, authReady, session?.role])
-  const stateOrderId = state?.orderId, stateStatus = state?.status, entitlementStatus = state?.entitlementStatus
+  }, [id])
   useEffect(() => {
-    if (!stateOrderId || !['PENDING', 'CONFIRMING'].includes(stateStatus ?? '') && !(stateStatus === 'APPROVED' && entitlementStatus === 'RECOVERY_REQUIRED')) return
-    let active = true, tries = 0
-    const timer = setInterval(() => {
-      if (++tries > 10) { clearInterval(timer); return }
-      void paymentApi.state(stateOrderId).then(r => { if (active) setState(r) }).catch(e => { if (active) setError(e); clearInterval(timer) })
-    }, 3000)
-    return () => { active = false; clearInterval(timer) }
-  }, [stateOrderId, stateStatus, entitlementStatus])
+    if (parent && request?.body) mutate({ body: request.body, key: pending!.confirmKey })
+  }, [parent, request, pending, mutate])
+  const state = result.data ?? null
+  const error = parent ? (manual ? null : request?.error ?? confirm.error) ?? result.error : null
+  const busy = !failed && (!authReady || parent && !error && !state) || refreshing
+  async function refresh() {
+    if (!result.isEnabled) { setManual(true); return }
+    setRefreshing(true)
+    await result.refetch().finally(() => setRefreshing(false))
+  }
   const complete = state && (paymentComplete(state) || paymentTestMode && state.status === 'APPROVED')
   return <main className="payment-result payment-page" data-ui><Link to="/parent/billing">사고뭉치 · 이용권·결제</Link><h1>{failed ? '결제를 완료하지 못했습니다' : complete ? mockPaymentMode ? '모의 결제가 완료되었습니다' : '결제가 완료되었습니다' : '결제 결과 확인'}</h1>
     {mockPaymentMode && <p className="payment-test-note">모의 승인 결과입니다. 실제 PG 승인·청구가 아닙니다.</p>}

@@ -61,6 +61,7 @@ flowchart TD
   AN -->|"질문 입력·예시 질문"| ANS["SC-03-005 답변<br/>(SSE 진행 표시)"]
   ANS -->|"근거 선택"| EV["SC-03-006 답변 근거<br/>미션·답변 시점·원문"]
   ANS -->|"후속 질문 (자녀·기간 유지)"| ANS
+  AN -->|"리포트 표시 설정 (#209)"| TPL["리포트 표시 설정 대화<br/>변경안 비교 후 확인 시 저장"]
 
   PJ --> RP["SC-03-007 주간 리포트<br/>/parent/report"]
   RP --> RD["SC-03-008 리포트 상세<br/>판 선택·재생성·PDF/MD 다운로드"]
@@ -82,6 +83,7 @@ flowchart TD
 ```
 
 - 분석 대화·리포트 답변 화면에서 바로 오류 신고 가능 (`targetType` ANALYSIS·REPORT)
+- 학생이 공개 설정을 끈 동안 원문·근거·원문 인용은 보이지 않고 수치만 표시 (#206)
 - 무료 자녀는 분석 대화 진입 시 프리미엄 안내만 표시, 리포트는 수치만 표시 (P13)
 
 ### 3.2 학생
@@ -99,6 +101,8 @@ flowchart TD
   E3 --> H["SC-02-004 생각 지도<br/>/student/home"]
   PG --> H
   H -->|"꾸미기"| DECO["SC-02-005 꾸미기"]
+  H -->|"생각 활동 (FN-DSH-04, #240)"| ACT["생각 활동<br/>/student/activities"]
+  H -->|"공개 설정 (#206)"| SHR["내 답 공개 설정<br/>/student/settings (기본 비공개)"]
   H -->|"생각 유형 선택"| MS["SC-02-006 미션 고르기<br/>/student/missions?type="]
   MS --> MG["SC-02-007 미션 안내"]
   MG -->|"시작 (새 시도 또는 이어하기)"| W["SC-02-008 답변 작성<br/>/student/attempts/{id}"]
@@ -321,4 +325,3 @@ flowchart LR
 
 - 학부모 구독 결제·구독 관리(UC-17·UC-18, #184): `/parent/billing`(이용권·결제)에서 상품 선택 → 토스 결제위젯 결제 → `/payment/success`·`/payment/fail` 결과 확인, 같은 화면의 구독 관리에서 자동결제 수단 등록(`/payment/billing/success`·`/payment/billing/fail`)·자동 갱신 해지·철회·환불 요청. 테스트 키 환경만 사용(P14). 단계별 화면 흐름도는 미반영
 - 이용 동의 화면(`/parent/onboarding`)과 관리자 메뉴 큐·DLQ(`/admin/queues`)는 화면설계서 v2.1에 별도 화면 ID 없음
-- 학생 알림(UC-22)은 학생 고객센터 메뉴에 없음. 학생 알림 노출 여부는 요구사항 확인 필요

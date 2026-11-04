@@ -2,10 +2,10 @@ package com.sagomungchi.learning.record.controller
 
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.security.UserContextHolder
+import com.sagomungchi.learning._common.web.MissionListItemResponse
 import com.sagomungchi.learning.attempt.domain.AttemptStatus
 import com.sagomungchi.learning.record.domain.Period
 import com.sagomungchi.learning.record.domain.QueryState
-import com.sagomungchi.learning.mission.controller.MissionListItemResponse
 import com.sagomungchi.learning.record.service.RecordService
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
@@ -107,7 +107,7 @@ class RecordController(private val service: RecordService) {
         }
         val period = Period.of(from, to)
         val home = service.home(studentId, period, grade, demo)
-        return HomeResponse(studentId, home.state, period, home.resume?.let(RecordAttemptResponse::from), home.missions.map(MissionListItemResponse::from))
+        return HomeResponse(studentId, home.state, period, home.resume?.let(RecordAttemptResponse::from), home.missions.map { MissionListItemResponse.from(it) })
     }
 
     @GetMapping("/records/students/{studentId}/thinking-activities")

@@ -18,7 +18,8 @@ class ChildManagementService(private val repository: ChildManagementRepository,
  private val access: ChildAuthorizationService, private val accounts: AccountManagementService,
  private val reauth: ReauthenticationService, private val outbox: OutboxWriter,
  private val reports: com.sagomungchi.core.report.service.ReportLifecycleService,
- private val conversations: ConversationDeletionService, private val devices: StudentDeviceCleanupService, private val pins: StudentPinService) {
+ private val conversations: ConversationDeletionService, private val devices: StudentDeviceCleanupService, private val pins: StudentPinService,
+ private val looks: StudentLookService, private val transfers: GuardianTransferAccessService) {
  @Transactional
  fun update(identity: AuthenticatedAccount, id: UUID, nickname: String?, grade: Int?): LinkedStudent {
   accounts.lock(identity); access.requireCurrent(identity.account.id,id)
@@ -43,6 +44,7 @@ class ChildManagementService(private val repository: ChildManagementRepository,
   accounts.lock(identity); access.requireOwned(identity.account.id,id,true)
   if(repository.lock(id)==null) throw unavailable()
   reauth.consume(identity,token,ReauthPurpose.CHILD_UNLINK,id)
+  transfers.requireNoPendingStudent(id)
   repository.unlink(identity.account.id,id,now()); accounts.revokeStudent(id); accounts.audit(identity.account.id,"CHILD_UNLINKED",id)
  }
  @Transactional
@@ -50,6 +52,7 @@ class ChildManagementService(private val repository: ChildManagementRepository,
   accounts.lock(identity); access.requireOwned(identity.account.id,id)
   if(repository.lock(id)==null) throw unavailable()
   if(repository.pending(id)!=null) throw inProgress()
+  transfers.requireNoPendingStudent(id)
   reauth.consume(identity,token,ReauthPurpose.CHILD_DELETE,id,scope.name)
   return state(confirm(identity.account.id,id,scope))
  }
@@ -66,7 +69,7 @@ class ChildManagementService(private val repository: ChildManagementRepository,
   val now=now(); val request=DeletionRequest(UUID.randomUUID(),user,id,scope.name,"CONFIRMED",now,now,null)
   repository.insert(request); repository.block(id,now); accounts.revokeStudent(id)
   if(scope==DeletionScope.PROFILE) repository.unlink(user,id,now)
-  devices.removeChild(id); pins.clear(id)
+  devices.removeChild(id); pins.clear(id); looks.clear(id)
   reports.failForDeletion(id)
   conversations.deleteStudent(id)
   outbox.append("student.deleted","student.deleted",id.toString(),mapOf("studentId" to id,"deletionRequestId" to request.id,"scope" to scope.name))

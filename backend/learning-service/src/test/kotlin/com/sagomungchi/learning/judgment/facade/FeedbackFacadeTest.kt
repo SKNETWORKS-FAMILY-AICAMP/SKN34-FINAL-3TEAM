@@ -11,6 +11,8 @@ import com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
 import com.sagomungchi.learning.TestRows
 import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning._common.exception.errorCodeOf
+import com.sagomungchi.learning._common.exception.httpStatusOf
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.learning._common.security.UserContext
 import com.sagomungchi.learning._common.security.UserContextHolder
@@ -207,6 +209,69 @@ class FeedbackFacadeTest : PostgresRepositoryTest() {
         assertEquals(listOf("더 놀 수 있어서 좋아요", "NARRATIVE", "3"), listOf(judge["answerText"].asText(), judge["inputType"].asText(), judge["grade"].asText()))
         assertEquals(setup.elements.map { it.toString() }, judge["rubric"]["elements"].map { it["elementId"].asText() })
         assertEquals(result.versions!!.mission, judge["versions"]["mission"].asText())
+    }
+
+    @Test
+    fun `서술은 미션 질문·기준표 핵심어를 ai에 보내고 M2 결과를 model_scores에 그대로 저장 (#69)`() {
+        val setup = setup("NARRATIVE", grade = 5, elements = listOf("주장"))
+        jdbc.update(
+            "UPDATE rubric_version SET keywords = '[\"쉬는 시간\", \"놀이(놀기)\"]'::jsonb WHERE id = (SELECT rubric_version_id FROM attempt WHERE id = ?)",
+            setup.attempt.id,
+        )
+        val scores = """{"m2":{"inputType":"NARRATIVE","scores":{"hol":3},"rawScores":{"hol":3.2},""" +
+            """"model":{"name":"m2-klue-narrative","version":"3.0","revision":2},"mean":3.0,"disagreement":false},"m1":null}"""
+        ai.stubFor(
+            post(urlEqualTo("/internal/judgments")).willReturn(
+                okJson(
+                    """{"result":"CORRECT","elements":[{"elementId":"${setup.elements[0]}","quote":"좋아요","verified":true,"satisfied":true}],
+                        "heldReason":null,"trial":true,"versions":{"mission":null,"rubric":null,"model":"m2-klue-narrative@3.0","prompt":"judge@2"},
+                        "modelScores":$scores}""",
+                ),
+            ),
+        )
+        followupReturns("TELL_MORE", "왜 그렇게 생각했나요?")
+        val answer = narrative(setup.attempt, "쉬는 시간이 길면 좋아요")
+
+        facade.feedback(answer.id)
+
+        val judge = lastBody("/internal/judgments")
+        assertEquals("질문", judge["question"].asText())
+        assertEquals(listOf("쉬는 시간", "놀이(놀기)"), judge["keywords"].map { it.asText() })
+        assertTrue(judge["essayType"] == null || judge["essayType"].isNull)
+        val row = judgment(answer.id)
+        assertEquals("m2-klue-narrative@3.0", row["model_version"])
+        assertEquals(objectMapper.readTree(scores), objectMapper.readTree(row["model_scores"].toString()))
+    }
+
+    @Test
+    fun `기준표에 핵심어가 없으면 빈 목록을 보내고 modelScores가 없으면 model_scores는 NULL`() {
+        val setup = setup("NARRATIVE", elements = listOf("주장"))
+        judgeReturns("CORRECT", listOf(setup.elements[0] to "좋아요"))
+        followupReturns("TELL_MORE", "왜 그렇게 생각했나요?")
+        val answer = narrative(setup.attempt, "좋아요 정말로")
+
+        facade.feedback(answer.id)
+
+        assertEquals(0, lastBody("/internal/judgments")["keywords"].size())
+        assertNull(judgment(answer.id)["model_scores"])
+    }
+
+    @Test
+    fun `ai가 modelScores를 객체가 아닌 값으로 주면 AI_BAD_RESPONSE로 FAILED`() {
+        val setup = setup("NARRATIVE", elements = listOf("주장"))
+        ai.stubFor(
+            post(urlEqualTo("/internal/judgments")).willReturn(
+                okJson(
+                    """{"result":"CORRECT","elements":[{"elementId":"${setup.elements[0]}","quote":"좋아요","verified":true,"satisfied":true}],
+                        "heldReason":null,"trial":true,"versions":{"model":"m","prompt":"p"},"modelScores":[1]}""",
+                ),
+            ),
+        )
+        val answer = narrative(setup.attempt, "좋아요 정말로")
+
+        assertThrows<BusinessException> { facade.feedback(answer.id) }
+
+        assertEquals("FAILED" to "AI_BAD_RESPONSE", judgment(answer.id).let { it["process_status"] to it["failure_code"] })
     }
 
     @Test
@@ -578,10 +643,10 @@ class FeedbackFacadeTest : PostgresRepositoryTest() {
             listOf("햇빛: 하늘에서 와요", "물: 하늘에서 와요", "흙: 땅에 있어요"),
             lastBody("/internal/followups")["rubric"]["answerKey"].map { it.asText() },
         )
-        val unknown = assertThrows<BusinessException> {
+        val unknown = assertThrows<RuntimeException> {
             submit(setup.attempt, AnswerContent(assignments = listOf(Assignment("c1", "g1"), Assignment("c2", "g1"), Assignment("c3", "g9"))), InputType.CLASSIFICATION, rethink.followup!!.followupId)
         }
-        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY to "ANSWER_INCOMPLETE", unknown.status to unknown.code)
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY to "ANSWER_INCOMPLETE", httpStatusOf(unknown) to errorCodeOf(unknown))
 
         val right = submit(setup.attempt, AnswerContent(assignments = listOf(Assignment("c3", "g2"), Assignment("c1", "g1"), Assignment("c2", "g1"))), InputType.CLASSIFICATION, rethink.followup!!.followupId)
         assertEquals(JudgmentResult.CORRECT, facade.feedback(right.id).judgment?.result)

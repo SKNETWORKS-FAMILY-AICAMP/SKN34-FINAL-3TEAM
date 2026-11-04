@@ -126,6 +126,7 @@
         SET process_status = #{judgment.status}, result = #{judgment.result}, held_reason = #{judgment.heldReason,jdbcType=VARCHAR},
             method = #{judgment.by.method}, trial = #{judgment.by.trial},
             model_version = #{judgment.by.model,jdbcType=VARCHAR}, prompt_version = #{judgment.by.prompt,jdbcType=VARCHAR},
+            model_scores = CAST(#{judgment.by.modelScores,jdbcType=VARCHAR} AS jsonb),
             failure_code = NULL, trace_id = #{traceId,jdbcType=VARCHAR}, completed_at = #{now}
         WHERE id = #{judgment.id} AND process_status = 'RUNNING' AND lease_until = #{leaseUntil}
     </update>
@@ -144,6 +145,14 @@
                             retry_count = #{judgment.retryCount}
         WHERE id = #{judgment.id} AND process_status = 'RUNNING' AND lease_until = #{leaseUntil}
     </update>
+
+    <!-- state-diagram 3.3 고착 탐지(#241): 만료 조건은 acquire와 같음(리스 없는 RUNNING도 만료). 실패 기록처럼 retry_count + 1.
+         재획득과 겹치면 행 잠금 뒤 조건을 다시 봐 새 리스가 잡힌 행은 건너뜀 -->
+    <select id="failExpired" resultType="java.util.UUID" flushCache="true" useCache="false">
+        UPDATE judgment SET process_status = 'FAILED', failure_code = #{code}, retry_count = retry_count + 1
+        WHERE process_status = 'RUNNING' AND (lease_until IS NULL OR lease_until &lt; #{now})
+        RETURNING answer_id
+    </select>
 
     <!-- 시도의 모든 답변(attemptId) 또는 답변 하나(answerId) -->
     <sql id="storedScope">

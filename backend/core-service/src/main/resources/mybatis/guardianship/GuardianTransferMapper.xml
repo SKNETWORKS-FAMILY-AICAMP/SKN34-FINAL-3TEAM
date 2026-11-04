@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.guardianship.repository.GuardianTransferMapper">
+ <resultMap id="transfer" type="com.sagomungchi.core.guardianship.domain.GuardianTransfer"><constructor>
+  <idArg column="id" javaType="java.util.UUID"/><arg column="student_id" javaType="java.util.UUID"/>
+  <arg column="sender_id" javaType="java.util.UUID"/><arg column="recipient_id" javaType="java.util.UUID"/>
+  <arg column="include_conversations" javaType="_boolean"/><arg column="status" javaType="java.lang.String"/>
+  <arg column="created_at" javaType="java.time.OffsetDateTime"/><arg column="resolved_at" javaType="java.time.OffsetDateTime"/>
+ </constructor></resultMap>
+ <select id="find" resultMap="transfer" useCache="false" flushCache="true">SELECT * FROM guardian_transfer WHERE id=#{id}<if test="lock"> FOR UPDATE</if></select>
+ <select id="list" resultMap="transfer" useCache="false" flushCache="true">SELECT * FROM guardian_transfer WHERE sender_id=#{user} OR recipient_id=#{user} ORDER BY CASE WHEN status='PENDING' AND sender_id=#{user} THEN 0 WHEN status='PENDING' THEN 1 ELSE 2 END,created_at DESC,id DESC LIMIT 100</select>
+ <select id="pending" resultMap="transfer" useCache="false" flushCache="true">SELECT * FROM guardian_transfer WHERE student_id=#{student} AND status='PENDING'</select>
+ <select id="outgoing" resultMap="transfer" useCache="false" flushCache="true">SELECT * FROM guardian_transfer WHERE sender_id=#{user} AND status='PENDING' ORDER BY student_id</select>
+ <insert id="insert">INSERT INTO guardian_transfer(id,student_id,sender_id,recipient_id,include_conversations,status,created_at) VALUES(#{id},#{studentId},#{senderId},#{recipientId},#{includeConversations},'PENDING',CURRENT_TIMESTAMP)</insert>
+ <update id="resolve">UPDATE guardian_transfer SET status=#{status},resolved_at=CURRENT_TIMESTAMP WHERE id=#{id} AND status='PENDING'</update>
+ <update id="retire">UPDATE guardianship SET status='UNLINKED',unlinked_at=COALESCE(unlinked_at,CURRENT_TIMESTAMP),transferred_at=CURRENT_TIMESTAMP WHERE student_id=#{student} AND parent_user_id=#{sender} AND transferred_at IS NULL</update>
+ <insert id="link">INSERT INTO guardianship(id,parent_user_id,student_id,method,status,linked_at) VALUES(#{id},#{recipient},#{student},'TRANSFER','LINKED',CURRENT_TIMESTAMP)</insert>
+</mapper>

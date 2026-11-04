@@ -9,6 +9,55 @@ servers:
 security:
 - InternalToken: []
 paths:
+  /analysis/report-template:
+    post:
+      operationId: proposeReportTemplate
+      summary: 학부모 리포트 설정 변경안 제안
+      description: 내부 토큰과 PARENT 역할·사용자 ID 필요. core가 연결·동의·이용권·한도 검사. 공개 설정 변경 불가.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateProposalRequest'
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateProposal'
+        '400':
+          description: VALIDATION_FAILED (`errors[]`에 필드별 사유)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: UNAUTHENTICATED (내부 토큰 불일치)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: FORBIDDEN (PARENT 컨텍스트 아님)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: AI_UNAVAILABLE (LLM 미설정·호출 실패) 또는 AI_PROMPT_VERSION_UNAVAILABLE (미보유 활성 본문). `retryable` 포함
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Problem'
+                - type: object
+                  required:
+                  - retryable
+                  properties:
+                    retryable:
+                      type: boolean
   /judgments:
     post:
       summary: 판정 근거 추출·원문 대조·요소 판정 (api-spec 4.2)
@@ -39,7 +88,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '503':
-          description: AI_UNAVAILABLE (LLM 미설정·호출 실패) 또는 AI_PROMPT_VERSION_UNAVAILABLE (미보유 활성 본문). `retryable` 포함
+          description: AI_UNAVAILABLE (LLM 미설정·호출 실패), AI_PROMPT_VERSION_UNAVAILABLE (미보유 활성 본문) 또는 SCORING_UNAVAILABLE (#69 scoring 장애·시간 초과·계약 밖 응답). `retryable` 포함
           content:
             application/problem+json:
               schema:
@@ -199,6 +248,7 @@ paths:
                     - followup
                     - analysis
                     - reportNarrative
+                    - reportTemplate
                     properties:
                       judgment:
                         type: string
@@ -207,6 +257,8 @@ paths:
                       analysis:
                         type: string
                       reportNarrative:
+                        type: string
+                      reportTemplate:
                         type: string
         '401':
           description: UNAUTHENTICATED (내부 토큰 불일치)
@@ -227,6 +279,65 @@ components:
       in: header
       name: X-Internal-Token
   schemas:
+    TemplateSettings:
+      additionalProperties: false
+      properties:
+        sectionOrder:
+          items:
+            type: string
+          title: Sectionorder
+          type: array
+        highlightMetrics:
+          items:
+            enum:
+            - ATTEMPTS
+            - COMPLETED
+            - UNASSISTED
+            type: string
+          title: Highlightmetrics
+          type: array
+        tone:
+          default: DEFAULT
+          enum:
+          - DEFAULT
+          - EASY
+          - CONCISE
+          title: Tone
+          type: string
+      title: TemplateSettings
+      type: object
+    TemplateProposalRequest:
+      additionalProperties: false
+      properties:
+        question:
+          maxLength: 1000
+          minLength: 1
+          title: Question
+          type: string
+        current:
+          $ref: '#/components/schemas/TemplateSettings'
+      required:
+      - question
+      - current
+      title: TemplateProposalRequest
+      type: object
+    TemplateProposal:
+      additionalProperties: false
+      properties:
+        settings:
+          anyOf:
+          - $ref: '#/components/schemas/TemplateSettings'
+          - type: 'null'
+          default: null
+        clarification:
+          anyOf:
+          - maxLength: 400
+            type: string
+          - type: 'null'
+          default: null
+          title: Clarification
+      title: TemplateProposal
+      type: object
     AnalysisNotice:
       type: object
       additionalProperties: false
@@ -382,12 +493,122 @@ components:
           $ref: '#/components/schemas/Rubric'
         versions:
           $ref: '#/components/schemas/Versions'
+        question:
+          description: '#69 M2 prompt·M1 problem (mission_version.question). 없으면 교차 확인 안 함'
+          anyOf:
+          - type: string
+          - type: 'null'
+        keywords:
+          description: '#69 서술 M2 핵심어 묶음. 비어 있으면 서술 M2 호출 안 함'
+          type: array
+          items:
+            type: string
+          default: []
+        essayType:
+          description: '#69 논술 M2 글 종류. 없으면 논술 M2 호출 안 함'
+          anyOf:
+          - type: string
+            enum:
+            - 설명글
+            - 글짓기
+            - 주장
+            - 찬성반대
+            - 대안제시
+          - type: 'null'
+        answerKey:
+          description: '#69 M1 정답 (M1_CHECK_ENABLED일 때만 사용)'
+          anyOf:
+          - type: string
+          - type: 'null'
+        solution:
+          description: '#69 M1 학생 풀이 (M1_CHECK_ENABLED일 때만 사용)'
+          anyOf:
+          - $ref: '#/components/schemas/Solution'
+          - type: 'null'
       type: object
       required:
       - answerText
       - inputType
       - grade
       - rubric
+    Solution:
+      properties:
+        steps:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        finalAnswer:
+          type: string
+      type: object
+      required:
+      - steps
+      - finalAnswer
+    ModelIdentity:
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        revision:
+          type: integer
+          minimum: 1.0
+      type: object
+      required:
+      - name
+      - version
+      - revision
+    M2Observation:
+      properties:
+        inputType:
+          type: string
+          enum:
+          - NARRATIVE
+          - ESSAY
+        scores:
+          type: object
+          additionalProperties:
+            type: integer
+        rawScores:
+          type: object
+          additionalProperties:
+            type: number
+        model:
+          $ref: '#/components/schemas/ModelIdentity'
+        mean:
+          type: number
+        disagreement:
+          type: boolean
+      type: object
+      required:
+      - inputType
+      - scores
+      - rawScores
+      - model
+      - mean
+      - disagreement
+    M1Observation:
+      properties:
+        confidence:
+          type: number
+        model:
+          $ref: '#/components/schemas/ModelIdentity'
+      type: object
+      required:
+      - confidence
+      - model
+    ModelScores:
+      description: '#69 judgment.model_scores에 저장하는 AI 관찰 (api-spec 4.2.2)'
+      properties:
+        m2:
+          anyOf:
+          - $ref: '#/components/schemas/M2Observation'
+          - type: 'null'
+        m1:
+          anyOf:
+          - $ref: '#/components/schemas/M1Observation'
+          - type: 'null'
+      type: object
     JudgmentResponse:
       properties:
         result:
@@ -409,11 +630,17 @@ components:
             - QUOTE_MISMATCH
             - TOO_SHORT
             - UNVERIFIED_SCOPE
+            - MODEL_DISAGREEMENT
+            - LOW_CONFIDENCE
           - type: 'null'
         trial:
           type: boolean
         versions:
           $ref: '#/components/schemas/Versions'
+        modelScores:
+          anyOf:
+          - $ref: '#/components/schemas/ModelScores'
+          - type: 'null'
       type: object
       required:
       - result
@@ -1032,6 +1259,14 @@ components:
           items:
             $ref: '#/components/schemas/NarrativeQuote'
           type: array
+        tone:
+          default: DEFAULT
+          enum:
+          - DEFAULT
+          - EASY
+          - CONCISE
+          title: Tone
+          type: string
       type: object
       required:
       - metrics
