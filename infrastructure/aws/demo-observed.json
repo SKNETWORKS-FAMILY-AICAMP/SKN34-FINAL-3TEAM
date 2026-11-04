@@ -1,0 +1,70 @@
+{
+  "natGateway": "nat-0e2085c827c381d79",
+  "rds": {
+    "id": "sagomungchi-demo-db",
+    "status": "available",
+    "engine": "postgres",
+    "version": "17.11",
+    "class": "db.t4g.small",
+    "multiAZ": false,
+    "public": false,
+    "encrypted": true,
+    "backupDays": 7,
+    "deletionProtection": false,
+    "latestRestorableTime": "2026-11-03T19:22:50+09:00"
+  },
+  "buckets": [
+    {
+      "publicAccessBlock": {
+        "BlockPublicAcls": true,
+        "IgnorePublicAcls": true,
+        "BlockPublicPolicy": true,
+        "RestrictPublicBuckets": true
+      },
+      "name": "sagomungchi-demo-347161580747-web",
+      "versioning": {
+        "Status": "Enabled"
+      }
+    },
+    {
+      "publicAccessBlock": {
+        "BlockPublicAcls": true,
+        "IgnorePublicAcls": true,
+        "BlockPublicPolicy": true,
+        "RestrictPublicBuckets": true
+      },
+      "name": "sagomungchi-demo-347161580747-missions",
+      "versioning": {
+        "Status": "Enabled"
+      }
+    },
+    {
+      "publicAccessBlock": {
+        "BlockPublicAcls": true,
+        "IgnorePublicAcls": true,
+        "BlockPublicPolicy": true,
+        "RestrictPublicBuckets": true
+      },
+      "name": "sagomungchi-demo-347161580747-reports",
+      "versioning": {
+        "Status": "Enabled"
+      }
+    },
+    {
+      "publicAccessBlock": {
+        "BlockPublicAcls": true,
+        "IgnorePublicAcls": true,
+        "BlockPublicPolicy": true,
+        "RestrictPublicBuckets": true
+      },
+      "name": "sagomungchi-demo-347161580747-models",
+      "versioning": {
+        "Status": "Enabled"
+      }
+    }
+  ],
+  "observedAt": "2026-11-03",
+  "natSubnet": "subnet-0697edabcbce66f47",
+  "cloudFrontId": "EW2QD9OAPEVRK",
+  "url": "https://d3jf0rnm6vhd9v.cloudfront.net"
+}

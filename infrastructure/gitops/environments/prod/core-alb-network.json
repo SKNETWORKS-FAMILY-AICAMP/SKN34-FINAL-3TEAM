@@ -1,0 +1,41 @@
+{
+  "apiVersion": "networking.k8s.io/v1",
+  "metadata": {
+    "name": "core-demo-alb-ingress",
+    "namespace": "app"
+  },
+  "kind": "NetworkPolicy",
+  "spec": {
+    "ingress": [
+      {
+        "from": [
+          {
+            "ipBlock": {
+              "cidr": "10.20.0.0/20"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "10.20.16.0/20"
+            }
+          }
+        ],
+        "ports": [
+          {
+            "port": 8080,
+            "protocol": "TCP"
+          }
+        ]
+      }
+    ],
+    "podSelector": {
+      "matchLabels": {
+        "app.kubernetes.io/instance": "core-service",
+        "app.kubernetes.io/name": "core-service"
+      }
+    },
+    "policyTypes": [
+      "Ingress"
+    ]
+  }
+}

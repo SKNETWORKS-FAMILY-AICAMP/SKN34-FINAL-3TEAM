@@ -47,7 +47,7 @@
     <insert id="insertAccount">
         INSERT INTO user_account(id, role, login_id, password_hash, display_name, status, is_demo,
                                  oauth_provider, oauth_subject, created_at, updated_at)
-        VALUES(#{account.id}, 'PARENT', #{account.email}, NULL, #{account.name}, 'ACTIVE', false,
+        VALUES(#{account.id}, 'PARENT', #{account.email}, NULL, #{account.name}, 'ACTIVE', #{demo},
                'GOOGLE', #{account.subject}, #{now}, #{now}) ON CONFLICT DO NOTHING
     </insert>
     <select id="permissions" resultType="string">SELECT permission FROM admin_permission WHERE user_id = #{userId}</select>

@@ -26,12 +26,15 @@ data class RefundReason(@field:NotBlank @field:Size(max=200) val reason: String)
 
 @RestController
 class PaymentController(private val payments: PaymentService,private val refunds: RefundService,
-    private val webhook: PaymentWebhookService,private val idempotency: IdempotencyService,private val json: ObjectMapper) {
+    private val webhook: PaymentWebhookService,private val idempotency: IdempotencyService,private val json: ObjectMapper,
+    private val entitlements: ProductEntitlementService) {
     @ModelAttribute fun noStore(response: jakarta.servlet.http.HttpServletResponse) { response.setHeader("Cache-Control","no-store") }
     @ExceptionHandler(org.springframework.dao.DataAccessException::class)
     fun storageUnavailable(request: HttpServletRequest)=com.sagomungchi.core._common.exception.Problems.of(
         org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,"PAYMENT_STORAGE_UNAVAILABLE","거래 저장 결과를 확인하지 못했습니다. 같은 거래로 상태를 조회해 주세요.",null,request)
     @GetMapping("/api/v1/products") fun products()=mapOf("items" to payments.products())
+    @GetMapping("/api/v1/children/{childId}/entitlement")
+    fun entitlement(@PathVariable childId: UUID,request: HttpServletRequest)=entitlements.forParent(parent(request),childId)
     @PostMapping("/api/v1/orders")
     fun order(@Valid @RequestBody body: CreateOrderRequest,@RequestHeader("Idempotency-Key") key: UUID,request: HttpServletRequest)=
         cached(request,key,"POST /orders",body,201) { payments.create(parent(request),body.childId,body.productId) }
