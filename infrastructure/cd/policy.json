@@ -1,0 +1,7 @@
+{
+  "executionEnabled": true,
+  "releaseBranch": "main",
+  "approvers": ["20220348-kim", "kty2001"],
+  "environmentProtectionVerified": true,
+  "infrastructureReady": true
+}

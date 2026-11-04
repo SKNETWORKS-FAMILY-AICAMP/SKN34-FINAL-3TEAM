@@ -168,7 +168,7 @@ CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 �
 | Domain | `domain` | `models.py`, `state.py` | 엔티티·값 객체, 상태 전이 규칙(`QUEUED→RUNNING`, 판정 상태 등) | 프레임워크·외부 라이브러리 의존 |
 | Infrastructure | `repository`, `client`, `messaging` | `repository.py`, `clients/`, `messaging/`, `llm/` | DB, 외부 API, 브로커, LLM, PG, S3 연동 | 업무 판단 |
 
-- 공통 메시징 인프라 예외(#278): `_common/messaging`의 이벤트 감사 기록·보존 정리(core `EventAuditConsumer`·`EventRetentionCleanup`)는 `_common`이 소유한 메시징 테이블(`event_log`·`outbox_event`·`processed_event`)만 다루고 업무 판단이 없어 service 없이 같은 패키지의 `_common` repository를 직접 호출한다. 같은 패키지의 `OutboxRelay`·`ProcessedEventRepository` 멱등 소비와 같은 공통 인프라로 보며, `_common`에 service 계층을 새로 두지 않는다. 이 예외는 `_common/messaging` 안에만 적용하고, 기능 패키지의 controller·consumer·scheduler는 항상 자기 기능 service만 호출한다(learning `record/scheduler/ProcessedEventCleanupScheduler` → `ProcessedEventCleanupService`, report `worker.py` → `deletion/service.py` `prune_event_records`)
+- 공통 메시징 인프라 예외(#278): `_common/messaging`의 이벤트 감사 기록·보존 정리(core `EventAuditConsumer`·`EventRetentionCleanup`)는 `_common`이 소유한 메시징 테이블(`event_log`·`outbox_event`·`processed_event`)만 다루고 업무 판단이 없어 service 없이 같은 패키지의 `_common` repository를 직접 호출한다. 같은 패키지의 `OutboxRelay`·`ProcessedEventRepository` 멱등 소비와 같은 공통 인프라로 보며, `_common`에 service 계층을 새로 두지 않는다. 이 예외는 `_common/messaging` 안에만 적용한다. `_common`의 다른 주기 작업은 `_common/scheduler`에 두고 service를 호출한다(`IdempotencyCleanupScheduler` → `IdempotencyService.deleteExpired`, #314). 기능 패키지의 controller·consumer·scheduler는 항상 자기 기능 service만 호출한다(learning `record/scheduler/ProcessedEventCleanupScheduler` → `ProcessedEventCleanupService`, report `worker.py` → `deletion/service.py` `prune_event_records`)
 - Domain 오류(Spring): domain은 HTTP 상태가 없는 `_common/exception`의 `DomainException(ErrorKind, code, title, detail)`만 던진다. `ErrorKind` → HTTP 상태 변환은 `_common/exception` 한 곳에서 하고(2.3), HTTP 상태를 직접 받는 `BusinessException`은 application·presentation에서만 쓴다. 예외의 상태·code를 읽는 곳은 두 예외를 함께 처리하는 공통 함수(`httpStatusOf`·`errorCodeOf`)를 쓴다 (#249)
 
 ### 2.2 의존 규칙
@@ -233,6 +233,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ messaging/                 # 이벤트 봉투, OutboxRelay, 멱등 소비, 이벤트 감사 기록·보존 정리(EventAuditConsumer·EventRetentionCleanup, #208, repository 직접 호출은 2.1 공통 인프라 예외 #278)
 │  ├─ json/                      # JsonObject: domain이 드는 jsonb 객체 값 (#168)
 │  ├─ persistence/               # MyBatis 설정·PostgreSQL 타입 핸들러
+│  ├─ scheduler/                 # IdempotencyCleanupScheduler: 만료 멱등 키 정리 주기 실행 (#314)
 │  └─ web/                       # IdempotencyService, SseEmitters (core만)
 │     └─ repository/             # IdempotencyRepository
 ├─ account/                      # Google 로그인·세션·탈퇴
@@ -639,6 +640,7 @@ backend/report-service/
 - GitHub Actions: 경로 필터로 변경 서비스만 테스트·빌드 → GHCR/ECR 푸시(OIDC로 AWS 인증). 현재는 테스트·빌드까지, 푸시·태그 갱신은 예정
 - `infrastructure/gitops/environments/<env>/` 이미지 태그 갱신 커밋 → Argo CD 자동 동기화
 - #171로 local 앱·KEDA·NetworkPolicy·관측 Application 등록 정의. 이미지 게시·승인 흐름은 #186 범위다
+- #186 운영 배포: `cd-release.yml`(main에서 수동 실행)이 계획 검증 → main SHA 이미지 ECR 게시(GitHub OIDC) → GitHub Environment `prod` 승인(김동섭·김태윤) → 작업자 PC self-hosted runner에서 Helm 적용(`redeploy-app.ps1 -ImageDigest`) → 로그인·학습 제출·리포트 조회 확인 → 배포 이력 artifact 순으로 진행한다. prod는 Argo CD 없이 수동 Helm이다(#185). 자동 롤백은 없고 롤백도 같은 승인을 거친다. 운영 설정(AWS OIDC 역할·`prod` Environment·runner) 적용 후 실행 스위치를 켰다(2026-11-04). [설정·절차](../../infrastructure/cd/README.md), [결정 근거](../report/issue-186-cd-approval-rollback.md)
 - Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret (LLM·토스 키는 저장소에 미포함, NFR-SEC-04)
 
 ### 4.6 관측

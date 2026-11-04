@@ -76,7 +76,8 @@ def allowed_numbers(computation: Computation) -> set[str]:
 
 
 def _normalize_number(text: str) -> str:
-    return text.rstrip("0").rstrip(".") if "." in text else text
+    # 정수는 앞자리 0을 뗌: 날짜 2026-11-01의 01이 허용 목록의 1과 같게 (#337)
+    return text.rstrip("0").rstrip(".") if "." in text else str(int(text))
 
 
 def _contains(text: str, quote: str) -> bool:

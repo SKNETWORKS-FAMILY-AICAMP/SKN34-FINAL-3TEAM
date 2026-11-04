@@ -52,6 +52,7 @@
 | [frontend](report/frontend.md) | 웹 공통 기반·학생·학부모·관리자 화면(#7~#9·#59 이후), 번들 분할·실시간 알림, QR 시연 |
 | [testing-ci](report/testing-ci.md) | 계약 검사 CI(#143·#237), 실서버 E2E와 외부 스텁(#246), core 계정 HTTP 테스트(#136) |
 | [local-platform](report/local-platform.md) | kind·Calico·ingress·MinIO 설정과 자원 예산(#17), 앱 배포·네트워크·관측(#171), GitOps CI(#238), kind 통합(#273), 환경값·egress(#236) |
+| [issue-186-cd-approval-rollback](report/issue-186-cd-approval-rollback.md) | CD 배포 승인·이력·롤백: 계획 검증·후보 CI, 승인자 확정, main 릴리스 기준, 승인 후 적용·경로 확인·이력 실행기(#186) |
 | [db-dev-guide](report/db-dev-guide.md) | DB 기술 결정(#5)·확정 정책 반영(#19), 마이그레이션 CI(#13), Repository·SQLAlchemy 사용법(#14) |
 | [planning-decisions](report/planning-decisions.md) | 10/29 멘토링 결정·후속, 국어(M2) 우선·생각 유형 매핑·M2 중간 결과(#213) |
 | [audit](report/audit.md) | develop 종합 검증 결함 원장, 최신 회차(b97cc67) 결과, 아키텍처 원칙 점검 기준 |
