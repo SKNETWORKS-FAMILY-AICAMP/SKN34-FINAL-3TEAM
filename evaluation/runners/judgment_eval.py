@@ -34,9 +34,12 @@ sys.path.insert(0, str(ROOT / "backend" / "ai-service"))
 
 from app.judgment.models import JudgmentElement, RubricElement  # noqa: E402
 from app.judgment.service import _result  # noqa: E402
+from app.prompt_versions.models import PROMPT_SCOPES  # noqa: E402
 
 RESULT_LEVEL = {"RETHINK": 0, "PARTIAL": 1, "CORRECT": 2}
 RATERS = ("r1", "r2")
+# 평가 대상은 LLM 판정 프롬프트 → 레지스트리 등록·활성화 범위 (api-spec 4.2, #313)
+REGISTRY_SCOPE = PROMPT_SCOPES["judgment"]
 Judge = Callable[[dict], dict]
 
 
@@ -58,7 +61,10 @@ def load_cases(path: Path) -> list[dict]:
 
 
 def scope_key(case: dict) -> str:
-    """모델 레지스트리 범위 키 (api-spec 5.2 예: judgment/grade-3/narrative)."""
+    """요약 보고서의 학년·유형 묶음 키 (예: judgment/grade-3/narrative).
+
+    레지스트리 `evaluatedScopes`에는 쓰지 않는다 (그건 `REGISTRY_SCOPE`, #313).
+    """
     return f"judgment/grade-{case['grade']}/{case['inputType'].lower()}"
 
 
@@ -264,7 +270,8 @@ def registry_evaluation(summary: dict, args: argparse.Namespace, report_path: st
         "quoteAccuracy": f"인용 불일치 보류 비율 {o['quoteMismatchRatio']} (LLM 호출 사례 기준)",
         "calculationAccuracy": "해당 없음: 서술·논술 판정은 계산을 하지 않음",
         "humanReview": args.human_review,
-        "evaluatedScopes": sorted(summary["scopes"]),
+        # 학년·유형별 지표는 요약 보고서 `scopes`에만 둔다 (#313)
+        "evaluatedScopes": [REGISTRY_SCOPE],
     }
 
 

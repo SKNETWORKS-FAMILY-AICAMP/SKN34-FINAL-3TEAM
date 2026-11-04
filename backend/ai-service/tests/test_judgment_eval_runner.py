@@ -131,7 +131,8 @@ def test_run_reports_agreement_held_and_registry_evaluation(tmp_path: Path) -> N
         "humanReview", "evaluatedScopes",
     }  # fmt: skip
     assert all(isinstance(v, str) and v for k, v in ev.items() if k != "evaluatedScopes")
-    assert ev["evaluatedScopes"] == ["judgment/grade-4/narrative", "judgment/grade-5/essay"]
+    # 판정 프롬프트 등록·활성화 범위(ai/judgment)를 덮어야 core 활성화가 400이 안 남 (#313)
+    assert ev["evaluatedScopes"] == ["ai/judgment"]
 
 
 def test_compare_with_baseline_and_call_error_counted(tmp_path: Path) -> None:
