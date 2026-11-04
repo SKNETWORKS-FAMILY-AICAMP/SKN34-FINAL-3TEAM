@@ -45,6 +45,15 @@ class AiOpenApiTests(unittest.TestCase):
             documented = {value for option in schema["anyOf"] for value in option.get("enum", [])}
             self.assertEqual(documented, expected, name)
 
+    def test_cross_check_skipped_matches_ai_model(self):
+        source = (ROOT / "backend/ai-service/app/judgment/models.py").read_text(encoding="utf-8")
+        values = re.search(r"CrossCheckSkipped = Literal\[([^\]]*)\]", source)[1]
+        expected = set(re.findall(r'"([A-Z_]+)"', values))
+        schema = self.spec["components"]["schemas"]["ModelScores"]["properties"]["skipped"]
+        documented = {value for option in schema["anyOf"] for value in option.get("enum", [])}
+        self.assertEqual(documented, expected)
+        self.assertEqual(expected, {"SCORING_UNAVAILABLE", "SCORING_REJECTED"})
+
 
 if __name__ == "__main__":
     unittest.main()

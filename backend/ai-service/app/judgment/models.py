@@ -15,6 +15,8 @@ HeldReason = Literal[
     "LOW_CONFIDENCE",
 ]
 EssayType = Literal["설명글", "글짓기", "주장", "찬성반대", "대안제시"]
+# 교차 확인 생략 사유 (#305): 장애·5xx·시간 초과 / 4xx·계약 밖 응답
+CrossCheckSkipped = Literal["SCORING_UNAVAILABLE", "SCORING_REJECTED"]
 
 
 class ApiModel(BaseModel):
@@ -85,7 +87,7 @@ class M2Observation(ApiModel):
     raw_scores: dict[str, float]
     model: ModelIdentity
     mean: float  # scores 평균, 불일치 판단 기준
-    disagreement: bool  # LLM 결과와 불일치 (교차 확인을 꺼도 기록)
+    disagreement: bool  # LLM 결과와 불일치
 
 
 class M1Observation(ApiModel):
@@ -98,6 +100,8 @@ class ModelScores(ApiModel):
 
     m2: M2Observation | None = None
     m1: M1Observation | None = None
+    # scoring 실패로 교차 확인 없이 LLM 판정만 쓴 경우 사유 (#305). 정상이면 null
+    skipped: CrossCheckSkipped | None = None
 
 
 class JudgmentResponse(ApiModel):

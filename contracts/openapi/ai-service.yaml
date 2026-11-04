@@ -88,7 +88,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '503':
-          description: AI_UNAVAILABLE (LLM 미설정·호출 실패), AI_PROMPT_VERSION_UNAVAILABLE (미보유 활성 본문) 또는 SCORING_UNAVAILABLE (#69 scoring 장애·시간 초과·계약 밖 응답). `retryable` 포함
+          description: AI_UNAVAILABLE (LLM 미설정·호출 실패) 또는 AI_PROMPT_VERSION_UNAVAILABLE (미보유 활성 본문). `retryable` 포함. scoring 실패는 503이 아니라 200 `modelScores.skipped` (#305)
           content:
             application/problem+json:
               schema:
@@ -607,6 +607,14 @@ components:
         m1:
           anyOf:
           - $ref: '#/components/schemas/M1Observation'
+          - type: 'null'
+        skipped:
+          description: '#305 scoring 실패로 교차 확인을 생략하고 LLM 판정만 쓴 사유. SCORING_UNAVAILABLE은 장애·5xx·시간 초과·남은 시간 부족, SCORING_REJECTED는 4xx(입력 한도 초과 등)·계약 밖 응답. 정상이면 null'
+          anyOf:
+          - type: string
+            enum:
+            - SCORING_UNAVAILABLE
+            - SCORING_REJECTED
           - type: 'null'
       type: object
     JudgmentResponse:
