@@ -38,4 +38,17 @@
         <if test="callType != null">AND call_type = #{callType}</if>
         GROUP BY call_type ORDER BY call_type
     </select>
+    <resultMap id="monthToDate" type="com.sagomungchi.core.usage.domain.MonthToDateCost">
+        <constructor>
+            <arg column="priced_usd" javaType="java.math.BigDecimal"/>
+            <arg column="unpriced_calls" javaType="_long"/>
+        </constructor>
+    </resultMap>
+    <!-- 예산 경보용: 미산정 호출을 0으로 보지 않고 따로 센다 -->
+    <select id="monthToDate" resultMap="monthToDate">
+        SELECT coalesce(sum(cost_usd), 0) AS priced_usd,
+               count(*) FILTER (WHERE cost_usd IS NULL) AS unpriced_calls
+        FROM llm_usage
+        WHERE occurred_at &gt;= #{from} AND occurred_at &lt; #{until}
+    </select>
 </mapper>

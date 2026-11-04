@@ -26,7 +26,7 @@ spec:
             matchLabels: {app.kubernetes.io/name: prometheus}
       ports:
         - {protocol: TCP, port: 8889}
-  {{- if .Values.collector.traces.enabled }}
+  {{- if or .Values.collector.traces.enabled .Values.tempo.enabled }}
   egress:
     - to:
         - namespaceSelector:
@@ -36,12 +36,21 @@ spec:
       ports:
         - {protocol: UDP, port: 53}
         - {protocol: TCP, port: 53}
+    {{- if .Values.collector.traces.enabled }}
     - to:
         - podSelector:
             matchLabels:
               {{- toYaml .Values.collector.traces.langfusePodLabels | nindent 14 }}
       ports:
         - {protocol: TCP, port: {{ .Values.collector.traces.langfusePort }}}
+    {{- end }}
+    {{- if .Values.tempo.enabled }}
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: tempo}
+      ports:
+        - {protocol: TCP, port: 4317}
+    {{- end }}
   {{- else }}
   egress: []
   {{- end }}
@@ -105,6 +114,13 @@ spec:
             matchLabels: {app.kubernetes.io/name: prometheus}
       ports:
         - {protocol: TCP, port: 9090}
+    {{- if .Values.tempo.enabled }}
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: tempo}
+      ports:
+        - {protocol: TCP, port: 3200}
+    {{- end }}
     {{- if .Values.grafana.alerting.enabled }}
     - to:
         - ipBlock:

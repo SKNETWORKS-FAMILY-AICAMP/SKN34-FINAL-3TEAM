@@ -77,8 +77,13 @@ spec:
             - name: HOME
               value: /tmp
             {{- if .Values.javaAgent.enabled }}
+            {{- /* Merge a JAVA_TOOL_OPTIONS from env so a later duplicate cannot drop the agent. */}}
+            {{- $toolOptions := list "-javaagent:/otel/javaagent.jar" }}
+            {{- range .Values.env }}
+            {{- if eq .name "JAVA_TOOL_OPTIONS" }}{{ $toolOptions = append $toolOptions .value }}{{ end }}
+            {{- end }}
             - name: JAVA_TOOL_OPTIONS
-              value: -javaagent:/otel/javaagent.jar
+              value: {{ join " " $toolOptions }}
             - name: OTEL_SERVICE_NAME
               value: {{ include "app-service.name" . | quote }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -88,12 +93,24 @@ spec:
             - name: OTEL_METRICS_EXPORTER
               value: otlp
             - name: OTEL_TRACES_EXPORTER
-              value: none
+              value: {{ ternary "otlp" "none" .Values.tracing.enabled }}
             - name: OTEL_LOGS_EXPORTER
               value: none
+            {{- else if .Values.tracing.enabled }}
+            {{- /* Services without the Java agent read the same OTLP settings in their own SDK setup. */}}
+            - name: OTEL_SERVICE_NAME
+              value: {{ include "app-service.name" . | quote }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.javaAgent.collectorEndpoint | quote }}
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
             {{- end }}
-            {{- with .Values.env }}
-            {{- toYaml . | nindent 12 }}
+            {{- range .Values.env }}
+            {{- if not (and $.Values.javaAgent.enabled (eq .name "JAVA_TOOL_OPTIONS")) }}
+            - {{- toYaml . | nindent 14 }}
+            {{- end }}
             {{- end }}
           {{- with .Values.resources }}
           resources:

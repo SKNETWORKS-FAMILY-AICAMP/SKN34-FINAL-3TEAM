@@ -14,8 +14,10 @@ from typing import Any
 
 import aio_pika
 from aio_pika.abc import AbstractChannel, AbstractIncomingMessage
+from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 from pydantic import ValidationError
 
+from app import tracing
 from app.messaging.connection import AmqpConnection
 from app.messaging.contracts import InvalidEvent, ReceivedEnvelope
 from app.messaging.envelope import EventEnvelope
@@ -25,6 +27,18 @@ logger = logging.getLogger(__name__)
 RETRY_COUNT_HEADER = "x-retry-count"
 
 Handler = Callable[[EventEnvelope[dict[str, Any]]], Awaitable[None]]
+
+
+def _retry_count_attribute(headers: dict[str, Any]) -> int:
+    count = headers.get(RETRY_COUNT_HEADER, 0)
+    return count if type(count) is int else -1
+
+
+def _record_failure(span: Span, error: Exception, outcome: str) -> None:
+    """Exception type only; messages may hold report content (NFR-PRF-02)."""
+    span.set_attribute("messaging.outcome", outcome)
+    span.set_attribute("error.type", type(error).__name__)
+    span.set_status(Status(StatusCode.ERROR, type(error).__name__))
 
 
 class Subscription:
@@ -71,21 +85,43 @@ class EventConsumer:
             await message.reject(requeue=False)
             return
 
+        # 봉투 traceparent를 부모로 소비 span을 열고, 하위 호출·결과 이벤트에는 이 span을 전달한다
+        with tracing.tracer.start_as_current_span(
+            f"{queue_name} process",
+            context=tracing.parent_context(envelope.traceparent),
+            kind=SpanKind.CONSUMER,
+            attributes={
+                "messaging.system": "rabbitmq",
+                "messaging.destination.name": queue_name,
+                "messaging.message.id": envelope.id,
+                "messaging.rabbitmq.retry_count": _retry_count_attribute(message.headers),
+            },
+        ) as span:
+            traced = tracing.current_traceparent()
+            if traced:
+                envelope = envelope.model_copy(update={"traceparent": traced})
+            await self._handle(channel, queue_name, handler, message, envelope, span)
+
+    async def _handle(self, channel, queue_name, handler, message, envelope, span) -> None:
         try:
             await handler(envelope)
-        except InvalidEvent:
+        except InvalidEvent as error:
             logger.warning("메시지 계약 오류, DLQ 이동: queue=%s, id=%s", queue_name, envelope.id)
+            _record_failure(span, error, "dlq")
             await message.reject(requeue=False)
             return
-        except Exception:
+        except Exception as error:
             retry_count = message.headers.get(RETRY_COUNT_HEADER, 0)
             if type(retry_count) is not int or retry_count < 0:
+                _record_failure(span, error, "dlq")
                 await message.reject(requeue=False)
                 return
             if retry_count >= self._max_retries:
                 logger.error("메시지 처리 실패, DLQ 이동: queue=%s, id=%s", queue_name, envelope.id)
+                _record_failure(span, error, "dlq")
                 await message.reject(requeue=False)
                 return
+            _record_failure(span, error, "retry")
             logger.warning(
                 "메시지 처리 실패, 재시도 %s회차: queue=%s, id=%s",
                 retry_count + 1,

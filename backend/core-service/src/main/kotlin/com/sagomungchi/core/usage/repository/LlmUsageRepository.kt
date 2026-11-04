@@ -2,6 +2,7 @@ package com.sagomungchi.core.usage.repository
 
 import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
+import com.sagomungchi.core.usage.domain.MonthToDateCost
 import com.sagomungchi.core.usage.domain.UsageSummary
 import java.math.BigDecimal
 import java.time.OffsetDateTime
@@ -29,4 +30,5 @@ interface LlmUsageRepository {
     fun insertIfAbsent(usage: LlmUsage): Int
     fun summarize(@Param("from") from: OffsetDateTime, @Param("until") until: OffsetDateTime,
                   @Param("callType") callType: String?): List<UsageSummary>
+    fun monthToDate(@Param("from") from: OffsetDateTime, @Param("until") until: OffsetDateTime): MonthToDateCost
 }
