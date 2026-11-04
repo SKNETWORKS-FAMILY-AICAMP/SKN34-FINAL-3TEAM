@@ -235,6 +235,43 @@ kind/GitOps local values가 `compose.yaml`보다 적어 Google 로그인·토스
 - 문서 테스트 키는 주문번호 조회(`GET /v1/payments/orders/{orderId}`)에 `NOT_FOUND_MERCHANT` 반환 → 상태 다시 확인·복구·관리자 대조 경로는 이 키로 검증 불가
 - 관측 chart가 없는 환경에서는 core·learning Java agent가 Collector 주소 경고를 남기지만 앱 동작에는 영향 없음
 
+## 13. 교차 확인·이관·content_3 설정 전달 (#312)
+
+기준 develop `e583f86`에서 감사 B41을 수정했다. 구현 전에 #69·PR #303, [AI 보고서 4.3](ai.md#43-판정-모델-교차-확인-69)의 11/03 담당자 확정 내용, 앱 Settings 및 [이관 로컬 체험](auth-account.md#격리-로컬-체험)을 대조했다. 이슈에 적힌 개별 보고서는 현재 두 주제 보고서로 통합되어 있다.
+
+### 노출 범위와 기존 결정 적용
+
+- 플래그뿐 아니라 기존 #69 설정 10개(판정 마감·scoring timeout·reserve, M2 플래그·서술/논술 낮은·높은 경계, M1 플래그·신뢰도)를 Compose·`.env.example`·GitOps local AI values에 전달한다. 기존 Settings가 이미 환경 변수로 받는 값이며, 시간 배분·불일치 기준이 담당자 확정 보고서에 있어 새 판정 정책은 정하지 않았다. 값과 기본 false는 그대로다. 이 범위 선택은 기존 구현을 배포 설정에 노출하는 결정이며 추가 담당자 승인을 받았다는 뜻은 아니다.
+- GitOps local core에 `APP_GUARDIAN_TRANSFER_ENABLED=false`, scoring에 `M2_CONTENT3_RULE_ENABLED=false`를 추가한다. Compose·`.env.example`에 있던 값과 일치한다. 실제 활성화·원복은 [README](../../README.md#판정-교차-확인이관content_3-설정)의 서비스별 설정 방법을 따른다.
+- 기존 #69 계약에서 M2 플래그 off도 scoring을 호출한다. 따라서 transfer-local은 scoring 제외 프로필을 제거하고 AI의 `service_healthy` 의존성을 추가한다. 모델 미등록/승인 범위 밖이면 실제 scoring의 `active:false` 응답을 따른다. keywords·essayType을 제거하거나 실패를 비활성으로 위장하지 않는다. scoring 호스트 포트는 계속 닫아 둔다.
+- scoring을 끈 채 판정을 계속하게 만드는 정책(I1, 현재 #305 A20·B36)은 미확정이므로 변경하지 않았다. 임의 중지·장애는 기존 `503 SCORING_UNAVAILABLE`이다. 이번 변경은 함께 실행하여 해당 단절을 없애는 구성 보완이며 #305 해결로 집계하지 않는다.
+- API·DB·모델 가중치·score_cuts·승인 조건·운영 배포는 변경하지 않았다. 이관 체험은 기존 별도 프로젝트·볼륨·네트워크를 유지한다.
+
+### 검증
+
+계약 회귀 검사는 `scripts/tests/test_runtime_config.py`에서 앱 기본값과 예제·values를 대조하고, 합성 환경 파일로 실제 Compose 렌더링의 기본값/재설정 및 이관 서비스 의존성을 확인한다. 실제 개인 `.env`를 읽거나 서비스를 배포하지 않는다. 해당 환경 파일 변경도 계약 CI를 실행하도록 경로 필터를 보완했다.
+
+| 검사 (2026-11-04) | 결과 |
+|---|---|
+| `python -O -m unittest discover -s scripts/tests -v` | 155개 통과, 신규 설정 회귀 검사 4개 포함 |
+| Compose 기본값·명시적 false·변경값 렌더링 | AI 10개와 core/scoring 플래그 2개가 기대값으로 전달됨 |
+| 이관 오버레이 병합 | AI의 scoring 준비 의존성, scoring 프로필 제외 없음·호스트 포트 없음, 프로젝트 전용 볼륨·loopback 포트 유지 |
+| Helm 4.3.1 `lint --strict`·`template` | local values 8개 전체 통과, Kubernetes 1.35.8 기준 |
+| values 변경 렌더링 | AI·core·scoring 기본/변경 조합 6개 lint·template 통과. Deployment 환경 변수 12개 대조, AI Settings의 기본/변경 문자열 해석 확인 |
+| AI `ruff check .`·`ruff format --check .`·`pytest -q` | 린트·서식 통과, pytest 344개 통과. off 점수 기록·active:false·scoring 오류 503 회귀 포함 |
+| 새 계약 검사 Ruff·`git diff --check` | 통과 |
+
+AI 테스트 종료 시 aio-pika의 `RobustConnection.close` 미대기 RuntimeWarning 1건이 출력됐으며 테스트 종료 코드는 0이다. 이번 변경은 설정 전달·의존성 구성과 문서에 한정한다. 전체 이관 브라우저 E2E, 실제 클러스터 적용, 모델 추론 품질·운영 활성화는 재검증하지 않았다.
+
+### 이슈 체크리스트 대조
+
+- [x] 노출 범위 확인: 기존 확정 문서·Settings에 있는 플래그·임계값·시간 10개를 기본값 그대로 선택
+- [x] Compose·`.env.example`·GitOps local 전달 추가 및 기본값 유지
+- [x] transfer-local 입력 처리 정리: 기존 호출 계약을 유지하도록 scoring 함께 실행, 입력 삭제·장애 우회 없음
+- [x] `.env`·local values만으로 교차 확인·이관·content_3 설정 전달 가능
+- [x] GitOps `helm lint --strict`·`helm template` 통과
+- [x] audit B41 처리 열 갱신
+
 ## 근거
 
 - [ingress-nginx 지원 버전](https://github.com/kubernetes/ingress-nginx#supported-versions-table), [종료 공지](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/), [kind v0.33.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0)
