@@ -50,7 +50,7 @@ class GuardianTransferService(private val repository: GuardianTransferRepository
  }
  @Transactional
  fun list(identity: AuthenticatedAccount): Map<String,List<View>> {
-  requireEnabled();management.lock(identity);requireConsent(identity.account.id)
+  management.lock(identity)
   return mapOf("items" to repository.list(identity.account.id).map { view(it,identity.account.id) })
  }
  @Transactional
@@ -100,7 +100,7 @@ class GuardianTransferService(private val repository: GuardianTransferRepository
  }
  @Transactional
  fun resolve(identity: AuthenticatedAccount,id: UUID,reject: Boolean): View {
-  requireEnabled();val first=owned(identity,id)
+  val first=owned(identity,id)
   if(identity.account.id != if(reject) first.recipientId else first.senderId) forbidden()
   // Cancellation must still work if the other account has already withdrawn.
   accounts.lockTransferAccounts(listOf(first.senderId,first.recipientId));management.lock(identity)
@@ -112,7 +112,7 @@ class GuardianTransferService(private val repository: GuardianTransferRepository
  }
  @Transactional
  fun cancelOutgoing(identity: AuthenticatedAccount): Map<String,Int> {
-  requireEnabled();management.lock(identity)
+  management.lock(identity)
   // Holding the sender account also serializes acceptance; no opposite account lock is acquired here.
   val rows=repository.outgoing(identity.account.id)
   rows.forEach { children.lock(it.studentId);repository.resolve(it.id,"CANCELLED");management.audit(identity.account.id,"GUARDIAN_TRANSFER_CANCELLED",it.id) }

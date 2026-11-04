@@ -33,11 +33,11 @@ export const page = <T>(items: T[]) => ({ items, page: 0, size: 20, totalElement
 export const fail = (code: string, title: string, status = 400, retryable = false): never => {
   throw new ApiError({ code, title, status, retryable })
 }
-export function parentGuard(request: Request) {
+export function parentGuard(request: Request, consentRecovery = false) {
   guard(request)
   if (store.snapshot().session?.role !== 'PARENT')
     fail('FORBIDDEN', '학부모 권한이 필요합니다.', 403)
-  if (!new URL(request.url).pathname.startsWith('/api/v1/me/consents') && mockConsentRequired())
+  if (!consentRecovery && !new URL(request.url).pathname.startsWith('/api/v1/me/consents') && mockConsentRequired())
     fail('CONSENT_REQUIRED', '필수 동의를 먼저 완료해 주세요.', 403)
 }
 export async function parentChild(request: Request, id: string) {
@@ -415,7 +415,7 @@ export const parentHandlers = [
   ),
   http.post('/api/v1/me/reauth', ({ request }) =>
     respond(async () => {
-      parentGuard(request)
+      parentGuard(request, true)
       const body = (await request.json()) as { password?: string; purpose?: string; childId?: string; challengeId?: string; scope?: string }
       const bearer = request.headers.get('Authorization') ?? ''
       if (body.purpose && ['PIN_CHANGE','CHILD_UNLINK','CHILD_DELETE','WITHDRAWAL','GUARDIAN_PASSWORD','CHILD_TRANSFER','TRANSFER_ACCEPT'].includes(body.purpose)) {

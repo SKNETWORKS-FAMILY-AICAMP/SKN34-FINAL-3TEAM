@@ -6327,7 +6327,7 @@ paths:
   /guardian-transfers/recipient:
     post:
       operationId: findGuardianTransferRecipient
-      description: 정식 자녀 이관 흐름(#289·#309). app.guardian-transfer.enabled=true에서만 제공(기본 false, 노출 제어). 학부모와 필수 이용 동의 필요. 취소·조회도 동일 조건이며 조건 완화는 #307 후속 범위.
+      description: 정식 자녀 이관 흐름(#289·#309). 신규 대상 조회·요청·수락은 app.guardian-transfer.enabled=true(기본 false)와 필수 이용 동의가 필요. 본인의 목록 조회·거절·취소는 동의 회복 경로로 설정·동의 상태와 관계없이 제공(#307). 활성 학부모 인증과 소유권 검사는 유지.
       responses:
         '200':
           description: 성공
@@ -6366,7 +6366,7 @@ paths:
   /guardian-transfers:
     get:
       operationId: listGuardianTransfers
-      description: 정식 자녀 이관 흐름(#289·#309). app.guardian-transfer.enabled=true에서만 제공(기본 false, 노출 제어). 학부모와 필수 이용 동의 필요. 취소·조회도 동일 조건이며 조건 완화는 #307 후속 범위.
+      description: 정식 자녀 이관 흐름(#289·#309). 신규 대상 조회·요청·수락은 app.guardian-transfer.enabled=true(기본 false)와 필수 이용 동의가 필요. 본인의 목록 조회·거절·취소는 동의 회복 경로로 설정·동의 상태와 관계없이 제공(#307). 활성 학부모 인증과 소유권 검사는 유지.
       responses:
         '200':
           description: 성공
@@ -6391,14 +6391,14 @@ paths:
         '401':
           description: 로그인 필요
         '403':
-          description: 권한·동의·재인증 오류
+          description: FORBIDDEN — 학부모 역할 또는 요청 소유권 없음
         '404':
-          description: NOT_FOUND — 대상 계정 없음·비활성 또는 기능 비활성
+          description: NOT_FOUND — 대상 계정 없음
         '409':
           description: 계정 상태 충돌
     post:
       operationId: requestGuardianTransfer
-      description: 정식 자녀 이관 흐름(#289·#309). app.guardian-transfer.enabled=true에서만 제공(기본 false, 노출 제어). 학부모와 필수 이용 동의 필요. 취소·조회도 동일 조건이며 조건 완화는 #307 후속 범위.
+      description: 정식 자녀 이관 흐름(#289·#309). 신규 대상 조회·요청·수락은 app.guardian-transfer.enabled=true(기본 false)와 필수 이용 동의가 필요. 본인의 목록 조회·거절·취소는 동의 회복 경로로 설정·동의 상태와 관계없이 제공(#307). 활성 학부모 인증과 소유권 검사는 유지.
       responses:
         '200':
           description: 성공
@@ -6449,7 +6449,7 @@ paths:
   /guardian-transfers/{id}/accept:
     post:
       operationId: acceptGuardianTransfer
-      description: 정식 자녀 이관 흐름(#289·#309). app.guardian-transfer.enabled=true에서만 제공(기본 false, 노출 제어). 학부모와 필수 이용 동의 필요. 취소·조회도 동일 조건이며 조건 완화는 #307 후속 범위.
+      description: 정식 자녀 이관 흐름(#289·#309). 신규 대상 조회·요청·수락은 app.guardian-transfer.enabled=true(기본 false)와 필수 이용 동의가 필요. 본인의 목록 조회·거절·취소는 동의 회복 경로로 설정·동의 상태와 관계없이 제공(#307). 활성 학부모 인증과 소유권 검사는 유지.
       responses:
         '200':
           description: 성공
@@ -6500,7 +6500,7 @@ paths:
   /guardian-transfers/{id}/reject:
     post:
       operationId: rejectGuardianTransfer
-      description: 정식 자녀 이관 흐름(#289·#309). app.guardian-transfer.enabled=true에서만 제공(기본 false, 노출 제어). 학부모와 필수 이용 동의 필요. 취소·조회도 동일 조건이며 조건 완화는 #307 후속 범위.
+      description: 정식 자녀 이관 흐름(#289·#309). 신규 대상 조회·요청·수락은 app.guardian-transfer.enabled=true(기본 false)와 필수 이용 동의가 필요. 본인의 목록 조회·거절·취소는 동의 회복 경로로 설정·동의 상태와 관계없이 제공(#307). 활성 학부모 인증과 소유권 검사는 유지.
       responses:
         '200':
           description: 성공
@@ -6518,9 +6518,9 @@ paths:
         '401':
           description: 로그인 필요
         '403':
-          description: 권한·동의·재인증 오류
+          description: FORBIDDEN — 학부모 역할 또는 요청 소유권 없음
         '404':
-          description: NOT_FOUND — 본인 요청 없음 또는 기능 비활성
+          description: NOT_FOUND — 본인 요청 없음
         '409':
           description: TRANSFER_ALREADY_RESOLVED — 이미 다른 상태로 종료
       parameters:
@@ -6533,7 +6533,7 @@ paths:
   /guardian-transfers/{id}/cancel:
     post:
       operationId: cancelGuardianTransfer
-      description: 정식 자녀 이관 흐름(#289·#309). app.guardian-transfer.enabled=true에서만 제공(기본 false, 노출 제어). 학부모와 필수 이용 동의 필요. 취소·조회도 동일 조건이며 조건 완화는 #307 후속 범위.
+      description: 정식 자녀 이관 흐름(#289·#309). 신규 대상 조회·요청·수락은 app.guardian-transfer.enabled=true(기본 false)와 필수 이용 동의가 필요. 본인의 목록 조회·거절·취소는 동의 회복 경로로 설정·동의 상태와 관계없이 제공(#307). 활성 학부모 인증과 소유권 검사는 유지.
       responses:
         '200':
           description: 성공
@@ -6551,9 +6551,9 @@ paths:
         '401':
           description: 로그인 필요
         '403':
-          description: 권한·동의·재인증 오류
+          description: FORBIDDEN — 학부모 역할 또는 요청 소유권 없음
         '404':
-          description: NOT_FOUND — 본인 요청 없음 또는 기능 비활성
+          description: NOT_FOUND — 본인 요청 없음
         '409':
           description: TRANSFER_ALREADY_RESOLVED — 이미 다른 상태로 종료
       parameters:
@@ -6566,7 +6566,7 @@ paths:
   /guardian-transfers/cancel-outgoing:
     post:
       operationId: cancelOutgoingGuardianTransfers
-      description: 정식 자녀 이관 흐름(#289·#309). app.guardian-transfer.enabled=true에서만 제공(기본 false, 노출 제어). 학부모와 필수 이용 동의 필요. 취소·조회도 동일 조건이며 조건 완화는 #307 후속 범위.
+      description: 정식 자녀 이관 흐름(#289·#309). 신규 대상 조회·요청·수락은 app.guardian-transfer.enabled=true(기본 false)와 필수 이용 동의가 필요. 본인의 목록 조회·거절·취소는 동의 회복 경로로 설정·동의 상태와 관계없이 제공(#307). 활성 학부모 인증과 소유권 검사는 유지.
       responses:
         '200':
           description: 성공
@@ -6590,9 +6590,9 @@ paths:
         '401':
           description: 로그인 필요
         '403':
-          description: 권한·동의·재인증 오류
+          description: FORBIDDEN — 학부모 역할 또는 요청 소유권 없음
         '404':
-          description: NOT_FOUND — 기능 비활성
+          description: NOT_FOUND — 대상 없음
         '409':
           description: 계정 상태 충돌
 components:

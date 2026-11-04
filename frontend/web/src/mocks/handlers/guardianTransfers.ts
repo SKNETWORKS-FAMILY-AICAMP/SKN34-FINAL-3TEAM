@@ -11,9 +11,12 @@ import { respond } from './student.ts'
 import { requireMockTransferPaymentReady } from './payments.ts'
 
 function transferGuard(request: Request) {
-  if (!mockGuardianTransferConfig.enabled) fail('NOT_FOUND', '이관 기능이 비활성입니다.', 404)
-  // 현재 core와 같이 조회·거절·취소도 필수 동의 검사. #307 정책은 변경하지 않는다.
-  parentGuard(request)
+  const path = new URL(request.url).pathname
+  const recovery = (request.method === 'GET' && path === '/api/v1/guardian-transfers') ||
+    (request.method === 'POST' && (path === '/api/v1/guardian-transfers/cancel-outgoing' ||
+      /^\/api\/v1\/guardian-transfers\/[0-9a-f-]{36}\/(cancel|reject)$/i.test(path)))
+  parentGuard(request, recovery)
+  if (!recovery && !mockGuardianTransferConfig.enabled) fail('NOT_FOUND', '새 이관 기능이 비활성입니다.', 404)
 }
 async function reply(request: Request, action: () => Promise<unknown>) {
   const response = await respond(async () => { transferGuard(request); return action() })

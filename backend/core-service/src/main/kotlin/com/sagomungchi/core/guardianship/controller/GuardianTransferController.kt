@@ -5,14 +5,13 @@ import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core.consent.domain.ConsentChoice
 import com.sagomungchi.core.guardianship.service.GuardianTransferService
 import jakarta.servlet.http.HttpServletRequest
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.http.CacheControl
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import java.util.UUID
 
 @RestController
-@ConditionalOnProperty(prefix="app.guardian-transfer",name=["enabled"],havingValue="true")
+// Recovery endpoints remain registered when new transfers are disabled (#307).
 class GuardianTransferController(private val service: GuardianTransferService) {
  data class Recipient(val email: String)
  data class Create(val childId: UUID,val recipientId: UUID,val includeConversations: Boolean=false)
