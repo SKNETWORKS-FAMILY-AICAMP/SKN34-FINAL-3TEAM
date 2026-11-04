@@ -157,6 +157,23 @@ class AiClientTest {
         assertEquals(0, server.countRequestsMatching(postRequestedFor(urlEqualTo("/internal/followups")).build()).count)
     }
 
+    @Test
+    fun `scoring 실패로 교차 확인을 생략한 ai 200 응답은 서킷 실패로 세지 않음 (#305)`() {
+        val skipped = judged.removeSuffix("}") + ""","modelScores":{"m2":null,"m1":null,"skipped":"SCORING_UNAVAILABLE"}}"""
+        server.stubFor(post(urlEqualTo("/internal/judgments")).willReturn(okJson(skipped)))
+
+        val responses = List(20) { client.judge(request) }
+
+        assertEquals(CircuitBreaker.State.CLOSED, client.circuitBreaker.state)
+        assertEquals(0, client.circuitBreaker.metrics.numberOfFailedCalls)
+        assertEquals("SCORING_UNAVAILABLE", responses.last().modelScores!!["skipped"].asText())
+        // 같은 ai 서킷을 쓰는 되묻기도 그대로 호출됨
+        val followed = """{"type":"TELL_MORE","question":"왜 그렇게 생각했나요?","source":"LLM","leakCheck":{"passed":true},
+            "versions":{"model":"m","prompt":"followup@4"}}"""
+        server.stubFor(post(urlEqualTo("/internal/followups")).willReturn(okJson(followed)))
+        assertEquals("TELL_MORE", client.followup(followupRequest).type)
+    }
+
     private val followupRequest = AiFollowupRequest(
         timeline = listOf(AiTimelineItem("ANSWER", "답")),
         judgment = AiJudgmentSummary("PARTIAL", null, emptyList()),

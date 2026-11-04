@@ -39,9 +39,20 @@ class AiOpenApiTests(unittest.TestCase):
         source = (ROOT / "backend/ai-service/app/judgment/models.py").read_text(encoding="utf-8")
         reasons = re.search(r"HeldReason = Literal\[([^\]]*)\]", source)[1]
         expected = set(re.findall(r'"([A-Z_]+)"', reasons))
-        schema = self.spec["components"]["schemas"]["JudgmentResponse"]["properties"]["heldReason"]
+        # 판정 응답과 되묻기 요청의 직전 판정 요약은 같은 HeldReason을 쓴다
+        for name in ("JudgmentResponse", "JudgmentSummary"):
+            schema = self.spec["components"]["schemas"][name]["properties"]["heldReason"]
+            documented = {value for option in schema["anyOf"] for value in option.get("enum", [])}
+            self.assertEqual(documented, expected, name)
+
+    def test_cross_check_skipped_matches_ai_model(self):
+        source = (ROOT / "backend/ai-service/app/judgment/models.py").read_text(encoding="utf-8")
+        values = re.search(r"CrossCheckSkipped = Literal\[([^\]]*)\]", source)[1]
+        expected = set(re.findall(r'"([A-Z_]+)"', values))
+        schema = self.spec["components"]["schemas"]["ModelScores"]["properties"]["skipped"]
         documented = {value for option in schema["anyOf"] for value in option.get("enum", [])}
         self.assertEqual(documented, expected)
+        self.assertEqual(expected, {"SCORING_UNAVAILABLE", "SCORING_REJECTED"})
 
 
 if __name__ == "__main__":
