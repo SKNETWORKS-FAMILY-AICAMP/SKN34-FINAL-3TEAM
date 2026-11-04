@@ -4,8 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.web.repository.IdempotencyRepository
 import org.springframework.http.HttpStatus
-import org.springframework.scheduling.annotation.Scheduled
-import org.springframework.stereotype.Component
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.security.MessageDigest
@@ -57,10 +55,4 @@ class IdempotencyService(private val repository: IdempotencyRepository, private 
     private fun <T> storage(block: () -> T): T = try { block() } catch (ex: Exception) {
         throw BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "IDEMPOTENCY_UNAVAILABLE", "요청 결과를 확인하지 못했습니다. 같은 키로 다시 요청해 주세요.")
     }
-}
-
-@Component
-class IdempotencyCleanup(private val service: IdempotencyService) {
-    @Scheduled(fixedDelayString = "\${app.web.idempotency-cleanup-interval:3600000}", initialDelayString = "3600000")
-    fun cleanup() { service.deleteExpired() }
 }
