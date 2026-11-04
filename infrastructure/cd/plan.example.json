@@ -2,6 +2,7 @@
   "environment": "local",
   "operation": "rollback",
   "sourceCommit": "0000000000000000000000000000000000000000",
+  "sourceBranch": "develop",
   "currentRelease": "SYNTHETIC-current",
   "targetRelease": "SYNTHETIC-previous",
   "reason": "합성 입력 예시: 실제 릴리스·이미지·승인 근거로 교체 필요",

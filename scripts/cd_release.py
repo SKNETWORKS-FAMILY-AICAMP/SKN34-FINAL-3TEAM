@@ -40,6 +40,18 @@ def validate(plan, policy):
             errors.append(f"{field}가 필요합니다")
     if not re.fullmatch(r"[0-9a-f]{40}", str(plan.get("sourceCommit", ""))):
         errors.append("sourceCommit은 전체 Git SHA여야 합니다")
+    if (
+        not isinstance(plan.get("sourceBranch"), str)
+        or not plan["sourceBranch"].strip()
+    ):
+        errors.append("sourceBranch가 필요합니다")
+    # 운영은 develop → main 릴리스 병합 SHA만 배포한다 (#185). 이력 포함 여부는 실행기가 확인
+    elif plan.get("environment") == "prod" and plan["sourceBranch"] != policy.get(
+        "releaseBranch"
+    ):
+        errors.append(
+            "prod는 정책의 릴리스 브랜치(releaseBranch)에서 나온 커밋만 배포합니다"
+        )
     if plan.get("currentRelease") == plan.get("targetRelease"):
         errors.append("현재 버전과 대상 버전이 같습니다")
     images = plan.get("images")

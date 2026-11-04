@@ -23,6 +23,7 @@ class ReleasePolicyTests(unittest.TestCase):
             "environment": "local",
             "operation": "rollback",
             "sourceCommit": "a" * 40,
+            "sourceBranch": "develop",
             "currentRelease": "release-2",
             "targetRelease": "release-1",
             "reason": "합성 롤백 검증",
@@ -41,6 +42,7 @@ class ReleasePolicyTests(unittest.TestCase):
         }
         self.policy = {
             "executionEnabled": False,
+            "releaseBranch": "main",
             "approvers": [],
             "environmentProtectionVerified": False,
             "infrastructureReady": False,
@@ -102,15 +104,35 @@ class ReleasePolicyTests(unittest.TestCase):
 
     def test_prod_ecr_digest_accepted(self):
         self.plan["environment"] = "prod"
+        self.plan["sourceBranch"] = "main"
         self.plan["images"]["report-service"] = (
             "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/report@sha256:"
             + "c" * 64
         )
         self.assertTrue(cd.validate(self.plan, self.policy)["valid"])
 
+    def test_prod_requires_release_branch(self):
+        self.plan["environment"] = "prod"
+        self.plan["images"] = {
+            "core-service": "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/core@sha256:"
+            + "c" * 64
+        }
+        for branch in ("develop", "feature/x", None, " "):
+            with self.subTest(branch=branch):
+                self.plan["sourceBranch"] = branch
+                self.assertFalse(cd.validate(self.plan, self.policy)["valid"])
+        self.plan["sourceBranch"] = "main"
+        self.assertTrue(cd.validate(self.plan, self.policy)["valid"])
+        self.assertFalse(
+            cd.validate(self.plan, {**self.policy, "releaseBranch": None})["valid"]
+        )
+
     def test_repository_policy_names_approvers_but_stays_blocked(self):
-        policy = json.loads((ROOT / "infrastructure/cd/policy.json").read_text(encoding="utf-8"))
+        policy = json.loads(
+            (ROOT / "infrastructure/cd/policy.json").read_text(encoding="utf-8")
+        )
         self.assertEqual(policy["approvers"], ["20220348-kim", "kty2001"])
+        self.assertEqual(policy["releaseBranch"], "main")
         self.assertIs(policy["executionEnabled"], False)
         result = cd.validate(self.plan, policy)
         self.assertFalse(result["executable"])

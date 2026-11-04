@@ -1,6 +1,6 @@
 # #186 CD 배포 승인·이력과 이전 버전 복구
 
-문서 버전: v1.2.0 (2026-11-03). develop `e65c972` 기준, 실행 없는 준비 도구·CI·인계 자료. 현재 #186 담당자는 `20220348-kim`이며 이 브랜치는 부분 작업 인계용이다.
+문서 버전: v1.3.0 (2026-11-04). develop `de8e225` 기준, 실행 없는 준비 도구·CI·인계 자료. 현재 #186 담당자는 `20220348-kim`이며 이 브랜치는 부분 작업 인계용이다.
 
 ## 확정 정책
 
@@ -24,11 +24,11 @@
 
 ## 선행 연결과 구현 순서
 
-1. #171은 병합·종료되었다. 아래 실제 chart 연결표를 사용한다. prod values는 #185에서 제공될 때 연결하며 없는 운영 구조를 임의 생성하지 않는다.
-2. #185 ECR·OIDC IAM·Argo CD prod 환경·시연 URL이 제공되면 기존 테스트 통과 SHA의 이미지를 빌드·푸시하고 digest를 기록한다. 로컬 K8s 이미지는 GHCR을 사용한다. 비밀 키를 JSON·문서에 적지 않는다.
-3. GitHub Environment의 실제 필수 승인자·허용 배포 ref·보호 설정을 확인한다. 승인 게이트 **뒤에서** GitOps 변경을 수행해야 Argo CD가 승인 전에 동기화하지 않는다. 승인자가 없는 Environment 자동 생성에 의존하지 않는다.
+1. #171은 병합·종료되었다. 아래 실제 chart 연결표를 사용한다. prod values는 #185가 제공한 `infrastructure/gitops/environments/prod/`를 사용하며 없는 운영 구조를 임의 생성하지 않는다.
+2. 운영 배포 소스는 develop → main 릴리스 병합 SHA뿐이다(#185 결정). 그 SHA로 빌드한 이미지를 ECR에 `main-<SHA 12자리>` 태그로 올리고 values에는 digest를 고정한다. 로컬 K8s 이미지는 GHCR을 사용한다. 비밀 키를 JSON·문서에 적지 않는다.
+3. GitHub Environment `prod`의 필수 승인자(김동섭·김태윤)·허용 ref(main)·관리자 우회 차단을 확인한다. 현재 prod는 Argo CD 없이 수동 Helm(`redeploy-app.ps1`)이므로 승인 게이트 **뒤에서** Helm 적용을 수행한다. 승인자가 없는 Environment 자동 생성에 의존하지 않는다.
 4. 배포 계획은 대상 SHA·이미지 digest·현재 배포 버전·DB 상태·증거에 묶어 승인한다. 실행 직전 현재 상태가 달라졌다면 재검토한다. 환경 단위 직렬화로 배포/복귀의 경합을 막는다.
-5. 배포 이력에 수행자·승인 근거·UTC 시각·소스 SHA·전후 이미지·GitOps 커밋·Argo 동기화 결과·기능 확인 결과를 남긴다. 현재 로컬 계획 JSON은 이 실제 배포 이력을 대체하지 않는다.
+5. 배포 이력에 수행자·승인 근거·UTC 시각·소스 SHA·전후 이미지 digest·Helm revision(Argo 사용 시 GitOps 커밋·동기화 결과)·기능 확인 결과를 남긴다. 현재 로컬 계획 JSON은 이 실제 배포 이력을 대체하지 않는다.
 6. 실제 시연 URL에서 로그인·학습 제출·리포트 조회를 확인한다. health 응답만으로 완료 처리하지 않는다. 합성 계정·토스 테스트 거래를 사용하고 원문·토큰은 증거에 남기지 않는다.
 7. 승인된 이전 버전 복귀, 비호환 차단, 미확인 차단을 실행 환경에서 검증한다. DB 복구가 필요하면 일반 롤백과 분리된 승인 계획으로 진행한다.
 
@@ -44,7 +44,7 @@
 | #186 요구사항 | 현재 상태 |
 |---|---|
 | 서비스별 이미지 빌드·푸시 | 기존 빌드 CI 재사용 준비, GHCR/ECR 실제 푸시 미구현·미실행 |
-| GitOps 태그 갱신 → Argo CD | #171 구조 확인 완료, 실제 파일 갱신·승인·동기화는 미구현 |
+| GitOps 태그 갱신 → Argo CD | local은 #171 구조. prod는 #185 기준 Argo CD 없이 수동 Helm·digest 고정 values. 승인 뒤 적용 실행기는 미구현 |
 | 운영 승인 게이트·배포 이력 | 정책·계획 기록 준비, 실제 승인자·보호 설정·배포 기록 미완료 |
 | 배포 후 로그인·제출·조회 | 미실행 |
 | 롤백 절차·호환성 기준 | 정책 문서화·계획 검증 구현, 실행기 미연결 |
@@ -72,7 +72,7 @@
 | report migration | chart의 PreSync migration Job, Alembic | #131 worker 정지/순차 배포 제약 검토. 같은 report 이미지에 포함된 migration 경로 확인 |
 | Argo CD | `infrastructure/gitops/argocd/local/`, local 서비스별 values | 승인 이후 GitOps 커밋, 실제 동기화/상태 기록. 현재 파일은 변경하지 않음 |
 | 웹 | Vite 정적 빌드, 운영 S3/CloudFront는 #185 범위 | 이번 5개 backend 이미지 목록과 구분하여 웹 배포·복구 정책 연결 |
-| prod | 저장소에 prod values·EKS 구성 없음, #185 OPEN | OIDC role·ECR 저장소·대상 환경·URL·Secret 공급 및 실제 준비 상태 확인 |
+| prod | #185 병합: `environments/prod/` values·`redeploy-app.ps1`(기본 server dry-run, `-Apply` 명시), ECR 7개, EKS Pod Identity, 노드그룹 2개 On-Demand | main 릴리스 SHA 이미지 빌드·게시 경로(현재 CodeBuild→ECR) 자동화, 승인 뒤 Helm 적용, 배포 이력 기록 |
 
 승인자와 GitHub Environment 보호 설정이 확정되기 전에는 실행 게이트를 연결하지 않는다. 실행 가능한 배포 워크플로를 미리 켜거나 AWS 리소스를 생성하지 않는다.
 
@@ -116,3 +116,18 @@ CLI 종료 코드 0은 JSON 계획의 형식 유효성만 뜻한다. 호환 여�
 - GitHub Environment `prod`의 필수 승인자 등록·허용 ref·관리자 우회 차단은 저장소 관리자 설정이며 이번에 변경하지 않았다. 등록 후 `environmentProtectionVerified`를 실제 조회 결과로 바꾼다.
 - 11/01 브랜치 `feature/cd-release-186`의 실제 배포 workflow(self-hosted runner·develop 직접 push·Argo CD 토큰 필요)는 가져오지 않았다. #185 PR(ECR·OIDC·prod 환경)이 먼저 병합된 뒤 필요한 부분(배포 후 기능 확인·배포 이력 형식)을 골라 옮긴다. 그때까지 실제 게시·배포·롤백 리허설은 대기한다.
 
+## #185 결정 반영 (2026-11-04)
+
+- `origin/develop` `de8e225`(#185 PR #333 포함)를 merge commit으로 반영했다. 충돌 2건은 문서 목록 줄이며, develop의 통합 보고서 표를 따르고 #186 줄만 추가했다(`docs/README.md`), architecture 4.5는 develop 문장 + #186 준비 문장으로 정리했다.
+- #185 결정과의 대조:
+
+| #185 결정 | #186 설계 영향 | 반영 |
+|---|---|---|
+| 배포 기준 main. develop → main 릴리스 병합 후 그 SHA 이미지만 배포 | prod 계획은 main에서 나온 커밋이어야 함 | `policy.json` `releaseBranch: "main"`, 계획 필수 필드 `sourceBranch`, prod는 둘이 같아야 `valid`. SHA가 실제 main 이력에 있는지는 실행기가 `git merge-base --is-ancestor`로 확인할 후속 |
+| prod는 수동 Helm(`redeploy-app.ps1`), Argo CD prod 없음 | 승인 뒤 적용 대상이 GitOps 커밋이 아니라 Helm upgrade | 선행 연결 절·인계 표 갱신. 롤백도 이전 승인 digest values로 Helm upgrade하며 DB downgrade는 하지 않는다 |
+| IRSA 대신 EKS Pod Identity | CD는 앱 Pod 권한을 바꾸지 않음. 영향 없음 | 이미지 게시 자격(현재 CodeBuild)은 Pod Identity와 별개로 정한다 |
+| 노드그룹 2개(application 2대·최대 3, platform-observability 2대) 모두 On-Demand | rolling update·롤백 때 application 노드 여유가 작음(scoring 예약 1Gi로 조정됨) | 적용 전 `redeploy-app.ps1` dry-run의 용량·Pod 변경 확인을 계획 근거로 남긴다 |
+
+- 승인자는 김동섭(`20220348-kim`)·김태윤(`kty2001`) 2명 그대로이며 `executionEnabled`·`environmentProtectionVerified`·`infrastructureReady`는 false다.
+- 실제 EKS 배포·롤백 시험·GitHub Environment 설정은 하지 않았다. learning·ai·scoring·report의 main 기준 재배포는 #186 병합 후 이 절차로 진행한다.
+- 검증: `python -O -m unittest discover -s scripts/tests` **127개 통과**(CD 계획 검사 15개: main 릴리스 기준·저장소 정책 확인 포함), 변경 Python ruff check·format 통과, 전체 workflow YAML 파싱 통과, 예시 CLI 종료 코드 0·`valid=true`·`executable=false`·차단 사유 17개.
