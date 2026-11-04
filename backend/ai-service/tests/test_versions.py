@@ -14,6 +14,7 @@ def test_versions_returns_active_prompt_versions() -> None:
             "analysis": "analysis@2",
             "reportNarrative": "report@1",
             "reportTemplate": "analysis-template@1",
+            "missionDraft": "mission-draft@1",
         }
     }
 
