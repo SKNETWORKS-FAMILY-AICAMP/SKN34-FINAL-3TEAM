@@ -190,3 +190,31 @@
 - 학생 화면에서 "학부모님께 공개할게요"로 바꾼 뒤 부모 계정으로 주간 리포트 2판(2026-11-02~11-08)의 **PDF·Markdown을 실제로 내려받았다.** 부모 서명 URL 다운로드 경로가 동작한다.
 - 내려받은 PDF는 2쪽이며 Markdown과 내용이 같다: 수치 3개(표본 부족이라 비율 대신 개수, 분자/분모 3/3), 생각 유형 5개, 전후 변화 수치, 돌아보기 3건. 2판은 비공개 상태에서 생성됐으므로 원문 자리는 "원문 비공개"로 남아 있다. 파일은 생성 시점의 공개 범위를 따르며, 공개 후 원문이 들어간 파일을 보려면 새 판 생성(학부모 재생성 한도 사용)이 필요하다. 재생성은 하지 않았다.
 - 확인 후 사용자 결정으로 이 테스트 학생의 공개 설정은 "학부모님께 공개"로 유지한다. 이후 생성되는 판에는 원문 인용이 들어갈 수 있다.
+
+## main 기준 core·웹 재배포 (2026-11-04)
+
+- 배포 기준을 main으로 정했다(develop → main 릴리스 PR 병합 후 그 SHA만 배포). main `cc860eb`(CI 10개 통과)로 core·core-migrate를 빌드해 ECR에 `main-cc860eb2ee85` 태그로 올렸다.
+- 결제 Secret을 ESO로 연결했다(작업자가 IAM inline 정책 추가, `payment-credentials` Ready, 키 3개).
+- V26 사전 점검 위반 0건 확인 후 core migration Job으로 V25 → V26을 적용했다. 첫 적용은 렌더링 결과에 namespace가 없어 `default`에 생성됐고, 필요한 Secret·ConfigMap이 없어 컨테이너가 시작되기 전에 삭제했다. 이후 `-n app`으로 재실행해 성공했다.
+- core를 revision 5로 재배포했다(이용권 API, 신규 가입 demo 표시 `AUTH_NEW_ACCOUNT_DEMO=true`, 결제 키 연결). 앱 6개 Ready·재시작 0, core 로그 오류 0, Helm values와 저장소 일치, `demo_stack.py plan` 56/56.
+- 웹을 같은 SHA로 빌드해 S3에 assets 먼저·`index.html` 마지막으로 올렸다. CloudFront가 새 진입 파일을 제공함을 확인했다.
+- 남은 실제 확인: 학부모 이용권 표시, 신규 Google 가입자 `is_demo=true`, 공용 테스트 키 결제 승인 1회, `audit-demo-data.sql` 재감사. learning·ai·scoring·report의 main 기준 재배포는 후속이다.
+
+## 노드그룹·Pod 권한 설계 결정 (2026-11-04)
+
+PM 승인으로 다음을 반영했다.
+
+- 노드그룹 2개, 모두 On-Demand: `application` t3.medium 2대(최대 3), `platform-observability` t3.medium 2대(2a·2b 1대씩, `workload=platform:NoSchedule`). 설계의 "platform-observability Spot"은 상태 저장 서비스(replica 1, AZ에 묶인 EBS)에 맞지 않아 On-Demand로 바꾸고, Spot은 #211에서 무상태 앱 노드에 조건부로 다룬다.
+- `platform-data`·`observability` chart에 `scheduling`(nodeSelector·tolerations) 값을 추가했다. 기본값이 비어 있어 local·기존 prod 렌더링은 바뀌지 않음을 확인했다.
+- `cluster.json`·`demo-stack.json`·`demo_stack.py`를 2그룹 기준으로 바꿨다(plan의 label·taint 대조, apply의 기존 클러스터 노드그룹 생성, pause/resume의 그룹별 저장·복구). 단위 테스트 8개 통과.
+- 설계 문서의 IRSA 표기를 EKS Pod Identity로 바꾸고, EBS CSI·VPC CNI 역할 trust에 클러스터·namespace·SA 조건을 추가한 원문을 저장소에 반영했다.
+- AWS 적용은 [EKS 문서의 노드그룹 분리 적용](../../infrastructure/eks/README.md#노드그룹-분리-적용-2026-11-04-결정) 순서로 별도 진행한다.
+- 적용(2026-11-04): 위 절차대로 노드그룹을 분리했다. 축소 중 scoring 메모리 예약(2Gi)이 노드별 여유를 넘는 문제를 실측으로 확인해 예약을 1Gi로 조정했다. 최종 4대(application 2, platform-observability 2), `plan` 57/57. 상세는 EKS 문서의 적용 결과.
+
+## 완료 조건 재확인 (2026-11-04 12:10~12:20 KST)
+
+main 기준 core·웹 재배포와 노드그룹 분리 후 실제 화면과 서버 기록으로 다시 확인했다.
+
+- 시연 URL: 학부모 Google 로그인과 이용권 표시, 기존 주간 리포트 조회(report-api 목록 10건·상세 1건 200), 학생 화면에서 답변 3건 제출(12:14~12:15) → AI 판정 3건 200·`DONE`(PARTIAL 2, HELD 1), 후속 질문 2건 생성, 시도 1건 완료. core·learning·ai·scoring·report 로그 오류 0, 앱 재시작 0.
+- 시연 데이터 분리(core_app 읽기 전용): 부모 1명·학생 3명 모두 `is_demo=true`(11/04 추가된 학생 포함), 관리자 1명은 운영자 계정. 결제·주문·구독 0건으로 테스트 거래가 섞일 데이터가 없다. core에 `AUTH_NEW_ACCOUNT_DEMO=true`와 결제 키 연결을 확인했다. 실제 신규 Google 가입·공용 테스트 키 결제 승인은 실행하지 않았다.
+- 비밀 스캔: Gitleaks 8.30.1 이력·현재 파일 1,529개 0건.

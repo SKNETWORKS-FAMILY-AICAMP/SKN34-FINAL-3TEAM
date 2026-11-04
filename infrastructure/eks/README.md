@@ -3,21 +3,24 @@
 `cluster.json`은 현재 클러스터와 같은 eksctl `ClusterConfig`다(1.35, application 노드그룹, add-on 버전, Pod Identity). VPC·subnet ID와 공개 접근 CIDR은 placeholder이며 `infrastructure/aws/demo_stack.py render-eksctl`이 채운다. 기존 클러스터는 콘솔에서 만들어 eksctl CloudFormation stack이 없으므로, 이 파일은 **새 환경 생성과 `demo_stack.py plan`의 대조 기준**이고 기존 클러스터를 eksctl로 관리하지 않는다. `demo-observed.json`은 2026-11-03 AWS API의 선택 필드만 저장한 인벤토리다. `gp3.json`은 Kubernetes StorageClass manifest다. EKS API 공개 접근 허용 CIDR(`publicAccessCidrs`)은 작업자 공인 IP이므로 `__OPERATOR_PUBLIC_IP_n__`으로 치환했다. 실제 값은 `aws eks describe-cluster`로 확인한다.
 
 - 계정 `347161580747`, 리전 `ap-northeast-2`, 클러스터 `sagomungchi-demo-eks`, Kubernetes 1.35.
-- 현재 관리형 노드그룹은 `application` 하나. ON_DEMAND t3.medium. 2026-11-03 데모 사양을 **3대(min/desired/max 모두 3)**로 결정했다(`cluster.json`). 2026-11-03 23:18 KST 실제 적용 완료(새 노드 2b, 노드 3대 Ready). private subnet 배치, 노드 디스크 20GiB.
+- 관리형 노드그룹 2개, 모두 ON_DEMAND t3.medium, private subnet, 디스크 20GiB(2026-11-04 PM 결정, `cluster.json`).
+  - `application`: 2대(min 2 / max 3). 앱·ESO·LB Controller·CoreDNS 등.
+  - `platform-observability`: 2대 고정, label·taint `workload=platform:NoSchedule`. EBS PVC가 2a(RabbitMQ·Prometheus·Grafana)와 2b(Redis)에 있어 AZ마다 1대가 필요하다. Spot은 쓰지 않는다(회수 시 replica 1개인 상태 저장 서비스가 멈추고, EBS가 AZ에 묶여 다른 AZ로 옮길 수 없음). Spot은 #211에서 앱 노드에 조건부로 다룬다.
+  - 이전 구성은 application 1개(11/03 2→3대)였다. 분리 적용 절차는 아래 "노드그룹 분리 적용"을 따른다.
 - VPC CNI의 `enableNetworkPolicy=true`; CoreDNS, kube-proxy, EBS CSI, Pod Identity Agent, node monitoring add-on의 실제 버전은 JSON에 기록했다.
 - public/private API endpoint 모두 활성. public CIDR은 관측 시점 작업자 IP 제한으로, 이후 접속 IP가 바뀌면 별도 접근 검토가 필요하다.
-- IRSA annotation 대신 EKS Pod Identity를 사용한다. JSON의 namespace·ServiceAccount·roleArn 연결을 그대로 확인한다. IAM 정책·trust는 여기서 생성하지 않는다.
+- IRSA 대신 EKS Pod Identity를 사용한다(2026-11-04 설계 반영). 클러스터별 OIDC provider와 역할마다 OIDC 주소를 넣는 trust가 필요 없고, 연결을 EKS API 한곳에서 관리해 재생성·감사가 쉽다. JSON의 namespace·ServiceAccount·roleArn 연결을 그대로 확인한다. IAM 역할·정책은 [AWS IaC](../aws/README.md#iac-eksctl--aws-cli-스크립트-185)가 정의한다.
 - LB Controller는 1.14.1 chart / v2.14.1, ESO는 2.14.0 chart / v2.14.0. values는 [prod](../gitops/environments/prod/README.md)에 있다.
 
 ## 재생성 범위
 
 VPC·subnet·route·NAT·SG·IAM·RDS·S3·ECR은 [AWS IaC](../aws/README.md#iac-eksctl--aws-cli-스크립트-185), 클러스터는 `cluster.json`이 정의한다. 2026-11-03 `plan`에서 55개 항목이 현재 자원과 일치했다. 같은 계정에서 `apply`는 이미 있는 자원을 건너뛰며, 현재 객체를 다른 IaC가 소유하도록 import하지 않는다. 새 계정 재생성은 실행하지 않았으므로 성공을 주장하지 않는다. eksctl은 작업자 IAM 사용자의 access entry를 자동으로 만들며, 콘솔에서 만든 현재 클러스터의 `student` access entry와 같은 권한인지는 생성 후 확인한다.
 
-설계의 `platform-observability` 그룹, Spot, Cluster Autoscaler는 아직 없다. 비용·가용성 결정 없이 생성하지 않는다. 노드를 0으로 줄여도 EKS control plane·NAT·RDS·EBS 비용은 남는다. RDS 복원 테스트와 데이터 백업을 확인하기 전 클러스터/PVC를 삭제하지 않는다.
+Cluster Autoscaler(#211 Karpenter)는 아직 없다. 노드를 0으로 줄여도 EKS control plane·NAT·RDS·EBS 비용은 남는다. RDS 복원 테스트와 데이터 백업을 확인하기 전 클러스터/PVC를 삭제하지 않는다.
 
 ### IAM 추가 확인 (2026-11-03)
 
-`iam get-role`, `list-attached-role-policies`, `list-role-policies`로 Pod Identity 역할 6개와 노드 역할을 읽었다. report·scoring·ESO·LB Controller의 trust에는 클러스터 ARN·namespace·ServiceAccount 조건이 있다. **EBS CSI·VPC CNI 역할은 pods.eks.amazonaws.com과 AssumeRole/TagSession만 있고 해당 조건이 없다.** association의 SA 연결과 trust policy 자체의 제한을 구분한다. 이번에는 IAM을 변경하지 않았으며 조건 보강은 add-on 동작과 권한 영향을 검토한 뒤 진행한다.
+`iam get-role`, `list-attached-role-policies`, `list-role-policies`로 Pod Identity 역할 6개와 노드 역할을 읽었다. report·scoring·ESO·LB Controller의 trust에는 클러스터 ARN·namespace·ServiceAccount 조건이 있다. EBS CSI·VPC CNI 역할은 조회 당시 조건이 없었다. 저장소의 trust 원문(`iam/eks-ebs-csi-role.trust.json`, `iam/eks-vpc-cni-role.trust.json`)에 같은 형식의 클러스터·`kube-system`·SA(`ebs-csi-controller-sa`, `aws-node`) 조건을 추가했으며, 실제 반영은 아래 적용 절차의 IAM 단계로 한다. association의 SA 연결과 trust policy 자체의 제한을 구분한다. 이번에는 IAM을 변경하지 않았으며 조건 보강은 add-on 동작과 권한 영향을 검토한 뒤 진행한다.
 
 | 역할 (접두사 `sagomungchi-demo-`) | 확인한 권한 연결 |
 |---|---|
@@ -38,6 +41,28 @@ aws eks describe-cluster --name sagomungchi-demo-eks --region ap-northeast-2 --p
 aws eks list-nodegroups --cluster-name sagomungchi-demo-eks --region ap-northeast-2 --profile sagomungchi-provided
 aws eks list-pod-identity-associations --cluster-name sagomungchi-demo-eks --region ap-northeast-2 --profile sagomungchi-provided
 ```
+
+## 노드그룹 분리 적용 (2026-11-04 결정)
+
+application 1그룹(3대)에서 위 2그룹으로 옮기는 순서다. 상태 저장 서비스가 수 분 멈추며 데이터는 PVC에 남는다.
+
+1. **IAM trust 보강**(작업자): EBS CSI·VPC CNI 역할 trust를 저장소 원문으로 갱신한다. Pod Identity 연결의 namespace·SA와 같으므로 add-on 동작은 바뀌지 않아야 하며, 직후 `ebs-csi-controller`·`aws-node` Pod가 정상인지 확인한다.
+   ```powershell
+   aws iam update-assume-role-policy --role-name sagomungchi-demo-eks-ebs-csi-role --policy-document file://infrastructure/aws/iam/eks-ebs-csi-role.trust.json --profile sagomungchi-provided
+   aws iam update-assume-role-policy --role-name sagomungchi-demo-eks-vpc-cni-role --policy-document file://infrastructure/aws/iam/eks-vpc-cni-role.trust.json --profile sagomungchi-provided
+   ```
+2. **platform 그룹 생성**: `python infrastructure/aws/demo_stack.py --profile sagomungchi-provided apply --confirm-account 347161580747`는 없는 `platform-observability`만 만든다(private subnet 2a·2b, label·taint, 2/2/2). `aws eks wait nodegroup-active` 후 노드 2대가 Ready이고 **2a·2b에 1대씩**인지, taint가 붙었는지 확인한다. 한 AZ에 몰리면 다음 단계로 가지 않는다.
+3. **이동 준비**: RabbitMQ 미처리 메시지가 0인지 확인한다(`pause` dry-run의 pending queues). 리포트 생성 등 진행 중 작업이 없을 때 한다.
+4. **이동**: `platform-data`(platform)·`observability`(observability)를 prod values로 `helm upgrade`한다. RabbitMQ·Redis는 StatefulSet 순차 재시작, Prometheus·Grafana는 `Recreate`라 PVC 다중 연결 충돌이 없다. 새 Pod가 platform 노드에 뜨고 PVC가 Bound, RabbitMQ 큐·Redis 데이터·Grafana 로그인이 유지되는지 확인한다. 문제가 있으면 이전 revision으로 `helm rollback`한다(이전 노드는 아직 남아 있음).
+5. **application 축소**: 줄이기 전에 **노드별로** 남는 노드의 여유 메모리가 옮겨 갈 Pod 중 가장 큰 예약(현재 scoring 1Gi)보다 큰지 확인한다. 총량 합계로 판단하지 않는다. 지울 노드를 `kubectl drain`으로 비운 뒤 `aws autoscaling terminate-instance-in-auto-scaling-group --should-decrement-desired-capacity`로 그 인스턴스만 종료하고, 노드그룹을 min 2 / desired 2 / max 3으로 맞춘다(크기만 줄이면 임의 노드가 종료된다).
+6. **확인**: `demo_stack.py plan`(nodegroup 2개 OK), 앱 6개 Ready, CloudFront 로그인→학습 제출→리포트, Grafana 경보 상태.
+
+### 적용 결과 (2026-11-04 11:22~12:05 KST)
+
+- EBS CSI·VPC CNI trust 갱신 후 controller 재시작과 새 노드의 aws-node가 정상(권한 오류 0).
+- `platform-observability` 2대 생성(2a·2b 1대씩, taint 확인). RabbitMQ·Redis·Prometheus·Grafana·Collector를 이동했고 PVC 재연결, RabbitMQ 큐 32개·연결 5개 유지, 앱 재시작 0. RabbitMQ 초기화 Job은 같은 정의로 한 번 재실행됐다(chart 파일 해시 차이로 이름 변경).
+- application 첫 축소 때 scoring(예약 2Gi)이 남은 노드(여유 1.8~1.9Gi)에 들어가지 못해 약 5분 Pending이었다. 3대로 되돌려 복구했다. 실측(합성 논술 3회 추론) working set 629MiB, 프로세스 414MiB, 캐시 포함 최고 1,195MiB라 예약을 1Gi(상한 2Gi 유지)로 낮추고 재배포했다. 이후 빈 노드를 지정해 종료하고 2/2/3으로 맞췄다.
+- 최종: application 2대 + platform-observability 2대, 앱 6개 Ready, CloudFront 200, `demo_stack.py plan` 57/57.
 
 ## 데모 종료·축소·재개 실행안 (#185)
 
@@ -83,14 +108,14 @@ NAT는 정지 버튼이 있는 자원이 아니다. 시간 요금을 없애려�
 3. 기존 SSE·학습·AI·리포트 작업을 완료시킨다. 새 요청/생성자를 먼저 멈추되, report-worker가 호출하는 core·learning·ai와 DB/RabbitMQ는 drain 동안 유지한다. RabbitMQ ready/unacked, 실행 중 작업·outbox를 확인하고 처리 미완료 상태에서는 다음 단계로 진행하지 않는다. DLQ는 성공 큐처럼 비우거나 삭제하지 않고 건수·처리 계획을 보존한다.
 4. worker와 앱을 정상 종료해 DB 쓰기·큐 소비가 멈춘 것을 확인한다. 앱 grace period를 기다리고 노드 강제 종료로 대신하지 않는다. replica 수를 0으로 변경한 값은 임시 운영 상태로 기록하며 prod 기본값에 덮어쓰지 않는다.
 5. RDS 수동 snapshot을 만들고 available을 확인한다. RabbitMQ·Redis·Grafana·Prometheus는 정상 종료 후 Pod 종료·EBS 분리를 확인하고 필요한 EBS snapshot을 만들어 completed를 확인한다. snapshot에는 별도 비용이 들며 복원 시험이 없으면 그 한계를 기록한다. Redis AOF와 RabbitMQ 메시지 보존은 정상 종료·동일 PVC 재연결을 전제로 하며 임의 PVC 삭제를 하지 않는다.
-6. 데이터 보존 확인 후 application 그룹 min=0, desired=0, max=2로 변경하는 계획을 적용한다. **EKS scaling-config 변경은 PDB를 존중하는 안전한 순차 종료로 간주하지 않는다.** 앞 단계의 워크로드 종료가 선행돼야 한다. [AWS 관리형 노드그룹 scaling 주의사항](https://docs.aws.amazon.com/eks/latest/userguide/update-managed-node-group.html)
+6. 데이터 보존 확인 후 두 노드그룹을 min=0, desired=0(max 유지)으로 변경한다. **EKS scaling-config 변경은 PDB를 존중하는 안전한 순차 종료로 간주하지 않는다.** 앞 단계의 워크로드 종료가 선행돼야 한다. [AWS 관리형 노드그룹 scaling 주의사항](https://docs.aws.amazon.com/eks/latest/userguide/update-managed-node-group.html)
 7. 노드·워크로드 중단과 DB 연결 종료를 확인한 뒤 RDS를 일시 정지한다. status=stopped, 정지 시각과 7일 자동 재시작 확인 시점을 기록한다. 자동 재정지 작업은 이번 범위에서 만들지 않는다.
 8. nodegroup·RDS 상태와 보존 자원을 재조회하고 청구 대시보드에서 남는 비용을 확인한다. 검증 증거 없이 클러스터/PVC/RDS/S3/NAT를 삭제하지 않는다.
 
 ### 재개 순서와 완료 기준
 
 1. NAT·라우팅·Secret·ECR·S3가 유지되는지 확인하고 RDS를 시작해 available, endpoint·TLS·백업 설정을 확인한다.
-2. application min/desired/max를 기록한 기존 값(pause 때 저장한 값)으로 복구한다. 노드 Ready와 VPC CNI·CoreDNS·EBS CSI·Pod Identity Agent를 확인한다. **노드 수만으로 AZ 배치가 보장되는 것은 아니다.** 2a/2b 양쪽 PVC를 연결할 수 있는 노드가 있는지 확인한다. 없으면 볼륨 affinity를 지우지 말고 해당 AZ 용량 문제를 해결한다.
+2. 두 노드그룹의 min/desired/max를 pause 때 저장한 값으로 복구한다. 노드 Ready와 VPC CNI·CoreDNS·EBS CSI·Pod Identity Agent를 확인한다. **노드 수만으로 AZ 배치가 보장되는 것은 아니다.** 2a/2b 양쪽 PVC를 연결할 수 있는 노드가 있는지 확인한다. 없으면 볼륨 affinity를 지우지 말고 해당 AZ 용량 문제를 해결한다.
 3. ESO 동기화·LB Controller 준비, RabbitMQ·Redis StatefulSet 원래 replica 복구와 PVC 연결·데이터 보존을 확인한다. 새 PVC나 비밀번호로 대체하지 않는다. 복원 DB가 아니라 동일 DB 재개라면 seed/migration을 무조건 재실행하지 않는다.
 4. core·learning·report-api 등 의존 서비스를 복구하고 scoring·ai·report-worker를 원래 replica로 복구한다. 모델·프롬프트·큐·DB 연결과 모든 앱 readiness를 확인한다. observability도 원래 replica로 복구하고 datasource·경보 평가 상태를 확인한다.
 5. 외부 유입 차단을 해제하기 전에 로그인→학습 제출→리포트 조회를 확인한다. 검증 계정·횟수를 미리 정해 사용 한도와 실제 데이터 영향을 기록한다. 경보 silence를 종료하고 잔여 작업·DLQ·오류를 점검한다.

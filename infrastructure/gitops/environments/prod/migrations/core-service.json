@@ -1,10 +1,10 @@
 {
   "migration": {
     "enabled": true,
-    "revision": "b67d8a462b6b",
+    "revision": "main-cc860eb2ee85",
     "image": {
       "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/core-migrate",
-      "digest": "sha256:fc93bb566fb5f958da595df509f20c6ef7bda8c12194555d16776ede6a4381e6",
+      "digest": "sha256:8fc89e6aa497b45782162afa8bb552aca2cfc27ba57f5f41f73d1c8029158439",
       "pullPolicy": "IfNotPresent"
     },
     "args": [
