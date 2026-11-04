@@ -253,7 +253,7 @@
     "enabled": false
   },
   "javaAgent": {
-    "enabled": false
+    "enabled": true
   },
   "keda": {
     "enabled": false
@@ -377,7 +377,8 @@
       "report-worker",
       "scoring-service"
     ],
-    "namespaceDefaultDeny": false
+    "namespaceDefaultDeny": false,
+    "egressToCollector": true
   },
   "pdb": {
     "enabled": false

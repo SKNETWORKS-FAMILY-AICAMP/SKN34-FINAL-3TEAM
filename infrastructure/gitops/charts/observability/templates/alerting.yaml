@@ -37,7 +37,8 @@ data:
             title: {{ .title | quote }}
             condition: C
             for: {{ .for | quote }}
-            noDataState: NoData
+            {{- /* Traffic-ratio rules may set OK: no requests is not an outage. */}}
+            noDataState: {{ .noDataState | default "NoData" }}
             execErrState: Error
             annotations:
               summary: {{ .summary | quote }}

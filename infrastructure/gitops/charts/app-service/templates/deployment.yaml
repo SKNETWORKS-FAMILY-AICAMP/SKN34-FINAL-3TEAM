@@ -77,8 +77,13 @@ spec:
             - name: HOME
               value: /tmp
             {{- if .Values.javaAgent.enabled }}
+            {{- /* Merge a JAVA_TOOL_OPTIONS from env so a later duplicate cannot drop the agent. */}}
+            {{- $toolOptions := list "-javaagent:/otel/javaagent.jar" }}
+            {{- range .Values.env }}
+            {{- if eq .name "JAVA_TOOL_OPTIONS" }}{{ $toolOptions = append $toolOptions .value }}{{ end }}
+            {{- end }}
             - name: JAVA_TOOL_OPTIONS
-              value: -javaagent:/otel/javaagent.jar
+              value: {{ join " " $toolOptions }}
             - name: OTEL_SERVICE_NAME
               value: {{ include "app-service.name" . | quote }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -92,8 +97,10 @@ spec:
             - name: OTEL_LOGS_EXPORTER
               value: none
             {{- end }}
-            {{- with .Values.env }}
-            {{- toYaml . | nindent 12 }}
+            {{- range .Values.env }}
+            {{- if not (and $.Values.javaAgent.enabled (eq .name "JAVA_TOOL_OPTIONS")) }}
+            - {{- toYaml . | nindent 14 }}
+            {{- end }}
             {{- end }}
           {{- with .Values.resources }}
           resources:

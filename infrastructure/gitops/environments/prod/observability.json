@@ -16,6 +16,9 @@
         "cpu": "500m",
         "memory": "512Mi"
       }
+    },
+    "rabbitmqDlqMetrics": {
+      "enabled": true
     }
   },
   "grafana": {
@@ -63,6 +66,132 @@
           "threshold": 0.8,
           "for": "5m",
           "summary": "RabbitMQ resident memory exceeds 80 percent of its watermark for 5 minutes."
+        },
+        {
+          "uid": "rabbitmq-dlq-depth",
+          "title": "RabbitMQ dead letter queue depth",
+          "expr": "max by (vhost, queue) (rabbitmq_detailed_queue_messages{job=\"rabbitmq-dlq\"})",
+          "operator": "gt",
+          "threshold": 0,
+          "for": "5m",
+          "summary": "Dead-lettered messages wait for manual inspection or reprocessing; check the queue label."
+        },
+        {
+          "uid": "llm-budget-80",
+          "title": "Monthly LLM cost reached 80% of budget",
+          "expr": "max(llm_usage_month_to_date_priced_cost)",
+          "operator": "gt",
+          "threshold": 240,
+          "for": "1m",
+          "summary": "KST month-to-date priced LLM cost exceeds 240 USD (80% of the 300 USD monthly budget)."
+        },
+        {
+          "uid": "llm-unpriced-calls",
+          "title": "LLM calls without a stored cost",
+          "expr": "max(llm_usage_month_to_date_unpriced_calls)",
+          "operator": "gt",
+          "threshold": 0,
+          "for": "1m",
+          "summary": "Some LLM calls this month have no stored cost, so the budget total is a lower bound. Register model pricing."
+        },
+        {
+          "uid": "app-metrics-missing",
+          "title": "Core or learning HTTP metrics missing",
+          "expr": "max(absent(http_server_request_duration_seconds_count{exported_job=\"core-service\"}) or absent(http_server_request_duration_seconds_count{exported_job=\"learning-service\"}) or vector(0))",
+          "operator": "gt",
+          "threshold": 0,
+          "for": "10m",
+          "summary": "Java agent HTTP metrics are not reaching Prometheus; area error/latency alerts cannot evaluate."
+        },
+        {
+          "uid": "http-auth-errors",
+          "title": "Authentication 5xx error rate",
+          "expr": "(sum(rate(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/auth/.+\",http_response_status_code=~\"5..\"}[5m])) or vector(0)) / sum(rate(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/auth/.+\"}[5m])) and on() sum(increase(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/auth/.+\"}[5m])) >= 10",
+          "operator": "gt",
+          "threshold": 0.05,
+          "for": "5m",
+          "noDataState": "OK",
+          "summary": "Authentication API 5xx ratio exceeds 5% for 5 minutes (minimum 10 requests per 5 minutes)."
+        },
+        {
+          "uid": "http-auth-latency",
+          "title": "Authentication p95 latency",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{exported_job=\"core-service\",http_route=~\"/api/v1/auth/.+\"}[5m]))) and on() sum(increase(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/auth/.+\"}[5m])) >= 10",
+          "operator": "gt",
+          "threshold": 1,
+          "for": "5m",
+          "noDataState": "OK",
+          "summary": "Authentication API p95 latency exceeds 1 seconds for 5 minutes (minimum 10 requests per 5 minutes)."
+        },
+        {
+          "uid": "http-learning-errors",
+          "title": "Learning save 5xx error rate",
+          "expr": "(sum(rate(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/(attempts/.+|missions/.+/attempts)\",http_response_status_code=~\"5..\"}[5m])) or vector(0)) / sum(rate(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/(attempts/.+|missions/.+/attempts)\"}[5m])) and on() sum(increase(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/(attempts/.+|missions/.+/attempts)\"}[5m])) >= 10",
+          "operator": "gt",
+          "threshold": 0.05,
+          "for": "5m",
+          "noDataState": "OK",
+          "summary": "Learning save API 5xx ratio exceeds 5% for 5 minutes (minimum 10 requests per 5 minutes)."
+        },
+        {
+          "uid": "http-learning-latency",
+          "title": "Learning save p95 latency",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{exported_job=\"core-service\",http_route=~\"/api/v1/(attempts/.+|missions/.+/attempts)\"}[5m]))) and on() sum(increase(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/(attempts/.+|missions/.+/attempts)\"}[5m])) >= 10",
+          "operator": "gt",
+          "threshold": 2,
+          "for": "5m",
+          "noDataState": "OK",
+          "summary": "Learning save API p95 latency exceeds 2 seconds for 5 minutes (minimum 10 requests per 5 minutes)."
+        },
+        {
+          "uid": "http-ai-errors",
+          "title": "AI processing 5xx error rate",
+          "expr": "(sum(rate(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/(conversations.*|answers/.+/feedback)\",http_response_status_code=~\"5..\"}[5m])) or vector(0)) / sum(rate(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/(conversations.*|answers/.+/feedback)\"}[5m])) and on() sum(increase(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/(conversations.*|answers/.+/feedback)\"}[5m])) >= 10",
+          "operator": "gt",
+          "threshold": 0.05,
+          "for": "5m",
+          "noDataState": "OK",
+          "summary": "AI processing API 5xx ratio exceeds 5% for 5 minutes (minimum 10 requests per 5 minutes)."
+        },
+        {
+          "uid": "http-report-errors",
+          "title": "Report 5xx error rate",
+          "expr": "(sum(rate(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/reports/.+\",http_response_status_code=~\"5..\"}[5m])) or vector(0)) / sum(rate(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/reports/.+\"}[5m])) and on() sum(increase(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/reports/.+\"}[5m])) >= 10",
+          "operator": "gt",
+          "threshold": 0.05,
+          "for": "5m",
+          "noDataState": "OK",
+          "summary": "Report API 5xx ratio exceeds 5% for 5 minutes (minimum 10 requests per 5 minutes)."
+        },
+        {
+          "uid": "http-report-latency",
+          "title": "Report p95 latency",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{exported_job=\"core-service\",http_route=~\"/api/v1/reports/.+\"}[5m]))) and on() sum(increase(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/reports/.+\"}[5m])) >= 10",
+          "operator": "gt",
+          "threshold": 3,
+          "for": "5m",
+          "noDataState": "OK",
+          "summary": "Report API p95 latency exceeds 3 seconds for 5 minutes (minimum 10 requests per 5 minutes)."
+        },
+        {
+          "uid": "http-payment-errors",
+          "title": "Payment 5xx error rate",
+          "expr": "(sum(rate(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/(payments.*|subscriptions.*|orders|webhooks/tosspayments)\",http_response_status_code=~\"5..\"}[5m])) or vector(0)) / sum(rate(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/(payments.*|subscriptions.*|orders|webhooks/tosspayments)\"}[5m])) and on() sum(increase(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/(payments.*|subscriptions.*|orders|webhooks/tosspayments)\"}[5m])) >= 10",
+          "operator": "gt",
+          "threshold": 0.05,
+          "for": "5m",
+          "noDataState": "OK",
+          "summary": "Payment API 5xx ratio exceeds 5% for 5 minutes (minimum 10 requests per 5 minutes)."
+        },
+        {
+          "uid": "http-payment-latency",
+          "title": "Payment p95 latency",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{exported_job=\"core-service\",http_route=~\"/api/v1/(payments.*|subscriptions.*|orders|webhooks/tosspayments)\"}[5m]))) and on() sum(increase(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/(payments.*|subscriptions.*|orders|webhooks/tosspayments)\"}[5m])) >= 10",
+          "operator": "gt",
+          "threshold": 5,
+          "for": "5m",
+          "noDataState": "OK",
+          "summary": "Payment API p95 latency exceeds 5 seconds for 5 minutes (minimum 10 requests per 5 minutes)."
         }
       ],
       "discordSecretName": "discord-alert-webhook"

@@ -27,7 +27,12 @@ Grafana contact point·notification policy·경보 3개를 파일로 provision�
 Prometheus는 ConfigMap 변경을 다시 읽지 않으므로 이 값이 켜질 때만 Pod template annotation을 붙여 켜고 끌 때 Pod를 다시 만든다.
 
 `grafana.alerting.interval`·`groupWait`·`groupInterval`·`repeatInterval`은 기본값이 위 운영값(1m·30s·5m·4h)과 같아 기존 렌더를 바꾸지 않는다.
-DLQ 규칙 예시·검증 절차는 [경보 검증](../../operational-alerts/README.md)을 따른다. prod values에는 아직 DLQ 수집·규칙을 넣지 않았다.
+규칙마다 `noDataState`(기본 `NoData`)를 지정할 수 있다. 업무별 오류율·지연처럼 요청이 없으면 값이 없는 규칙은 `OK`로 둔다.
+지표 수집 자체의 부재는 별도 규칙(`app-metrics-missing`, target down)이 알린다.
+
+prod values에는 #187 규칙 13개(DLQ, 월 비용 80%·미산정 호출, core·learning HTTP 지표 부재, 인증·학습 저장·AI·리포트·결제 5xx 비율과 p95 지연)를 추가했다.
+임계값은 초기 기준이며 서비스 SLA가 아니다. 비용·업무 규칙은 core·learning의 Java agent 지표가 필요하므로 prod `core-service.json`·`learning-service.json`의
+`javaAgent.enabled`·`networkPolicy.egressToCollector`를 함께 켰다. 아직 AWS에 적용하지 않았다. 규칙 목록·검증은 [경보 검증](../../operational-alerts/README.md)을 따른다.
 
 ## 기존 로컬 구성과 검증 이력
 
