@@ -383,3 +383,28 @@ core `event_log`에는 이 시험 이벤트의 감사 메타데이터 3행이 �
 
 - 실패 요청 추적(동기·비동기 한 trace): kind에서 비동기 명령 → worker → 동기 HTTP → 결과 이벤트 → 실패·재시도·DLQ가 한 trace로 저장·조회됨. 사용자 HTTP 요청 시작점과 prod 실행은 남음
 - 경보 디스코드 수신: prod 적용 후 확인 필요(main 병합·배포 승인)
+
+## kind 경보 디스코드 수신 (2026-11-04)
+
+사용자 결정으로 #187은 kind 근거로 마무리한다. 사용자가 루트 `.env`에 `DISCORD_WEBHOOK_URL`(`aws-alerts` 채널)을 넣고 시험 발송을 허락했다.
+값은 형식만 확인했고(Discord webhook URL 형식, 출력 없음) stdin으로 시험 Secret `observability/issue187-discord`에만 넣었다. `.env.example`에 항목을 추가했다.
+
+| 시각(KST) | 내용 |
+|---|---|
+| 15:18 | 경보 활성화(revision 12): 규칙은 DLQ 1개, 제목 `[kind test #187] RabbitMQ dead letter queue depth`, 요약에 로컬 시험·운영 장애 아님을 명시. 지속 10초·평가 10초·묶음 1초/10초 |
+| 15:18:03 | 실제 kind DLQ 6개마다 Normal 인스턴스 |
+| 15:18:15 | `report.report.generate.dlq`에 표식 메시지 1건 적재 |
+| 15:18:41 | 해당 큐 인스턴스만 Alerting |
+| 15:18:54 | contact point `discord-aws-alerts` 전송, Grafana 기록 오류 없음(Discord 응답 성공) |
+| 15:20:00 | 표식 메시지 확인 후 제거, DLQ 합계 0 |
+| 15:20:24 | 회복(Resolved) 전송, 오류 없음 |
+| 15:21 | local values(revision 13, 경보 꺼짐)로 복구, 시험 Secret 삭제 |
+
+Grafana NetworkPolicy는 경보 활성화 시 공인 IPv4 443만 추가로 열며 kind Calico에서 실제 Discord로 나갔다.
+템플릿의 `environment: demo` 라벨은 #185 고정값이라 kind 메시지에도 그대로 붙는다.
+
+### 완료 조건 최종 상태(kind 기준)
+
+- 경보 발생 테스트(디스코드 수신): kind에서 실제 RabbitMQ DLQ 적재 → Grafana 규칙 발생 → `aws-alerts` 전송·회복 전송 성공
+- 실패 요청 추적 테스트(동기·비동기 한 trace): kind에서 명령 소비 → 동기 HTTP → 결과 이벤트 → 실패·재시도·DLQ가 한 trace(앞 절). 로그인 사용자 요청 시작점은 kind 데이터 부재로 미실행
+- prod 적용(규칙 16개, Java agent, Tempo, trace)은 values에만 반영됐고 main 릴리스 배포 때 승인 후 적용한다
