@@ -2,7 +2,7 @@
 
 이 chart는 검증 전용 kind 클러스터의 `observability` namespace에 OTel Collector, Prometheus, Grafana를 배치한다. Collector의 OTLP 수신(4317/4318)과 Prometheus exporter(8889), RabbitMQ 기존 metrics(15692) 수집, Grafana Prometheus datasource만 포함한다. Grafana는 `observability-credentials` Secret의 `GRAFANA_ADMIN_USER`·`GRAFANA_ADMIN_PASSWORD`를 참조한다. UI는 외부 Ingress 없이 필요한 동안만 port-forward로 조회한다.
 
-Grafana 13.3.0의 저메모리 첫 기동은 60초를 넘어 startup probe를 300초로 두고, local `emptyDir` 데이터 특성에 맞춰 `Recreate` 전략을 사용한다. 실제 전용 kind에서는 세 Pod가 Ready였고 Collector→Prometheus 합성 gauge 값 7과 Grafana datasource 등록을 확인했다. [검증 범위와 실패 수정 기록](../../../../docs/report/issue-171-app-deployment.md)을 따른다.
+Grafana 13.3.0의 저메모리 첫 기동은 60초를 넘어 startup probe를 300초로 두고, local `emptyDir` 데이터 특성에 맞춰 `Recreate` 전략을 사용한다. 실제 전용 kind에서는 세 Pod가 Ready였고 Collector→Prometheus 합성 gauge 값 7과 Grafana datasource 등록을 확인했다. [검증 범위와 실패 수정 기록](../../../../docs/report/local-platform.md#9-관측-171)을 따른다.
 
 로컬 Prometheus와 Grafana 데이터는 각각 `emptyDir`이어서 Pod 재생성 시 사라진다. 운영 장기 보관·EKS 자원과 Langfuse 자체 호스팅은 #185 환경에 맞춰 별도로 구성한다. Langfuse 공식 chart의 최소 자원 요구는 현재 Docker 메모리 한도보다 크므로 이 로컬 chart에 숨겨서 추가하지 않는다.
 

@@ -1,6 +1,4 @@
-# core 학습 프록시·피드백 SSE·대시보드·알림 (#38·#39·#40·#44)
-
-통합 원본: issue-38-core-learning-proxy, issue-39-core-feedback-sse, issue-40-dashboard, issue-44-notifications
+# core 학습 프록시·SSE·대시보드·알림·분석 대화·이벤트 기록 (#38·#39·#40·#41·#44·#119·#168·#195·#208·#210·#225·#286)
 
 계약은 [API 명세](../design/api-spec.md) 1.4·2.2·2.3·2.7·3.2, 구조는 [아키텍처](../design/architecture.md) 1.3·1.6.
 
@@ -13,7 +11,8 @@
   - 동시 재요청 409 + `Retry-After`, 같은 계정의 경로·학생·본문 불일치 422
   - 확정 응답은 원문·필수 헤더·상태를 보관. 미확정·5xx·전송 실패는 같은 키로 learning 재호출. core 저장 실패는 503(learning 성공을 성공으로 가장하지 않음)
   - learning이 키의 UK·본문 대조·최초 응답 재구성·답변/판정 원자적 저장을 제공해야 두 DB 사이 중복 생성이 없음(core TTL 24시간 이후에도 learning UK 유지)
-- 일일 한도(P13)는 core Redis 책임(미구현). learning의 신규 `201`·이어하기 `200`을 그대로 전달하고, 한도 연계 시 `201`만 집계·한도 도달 시 신규 생성만 차단
+- 시도 상세(#195): core 공개 `GET /attempts/{attemptId}`는 `Cache-Control: no-store`, 웹도 상세·제출·마무리·돌아보기 후 재조회에 `cache: 'no-store'`. 초안 버전은 피드백·마무리·돌아보기 상태의 버전이 아니라서 상세 표현의 HTTP 캐시 검증자(ETag)로 쓰면 304로 상태 변경을 놓침. 초안 ETag/If-Match·409 계약은 그대로
+- 일일 한도(P13): 미구현. #210 결정에 따라 PostgreSQL로 구현 예정(6장). learning의 신규 `201`·이어하기 `200`을 그대로 전달하고, 한도 연계 시 `201`만 집계·한도 도달 시 신규 생성만 차단
 
 ## 2. 피드백 SSE (#39)
 
@@ -44,32 +43,29 @@
 - 마이그레이션: 알림 유형 CHECK 확장은 V12
 - 남은 연결: 학생 PIN 잠금·새 기기 알림 정책, 웹이 알림 링크(`/parent/report?childId&reportId`)로 자녀·상세를 자동 선택하는 처리
 
+## 5. 분석 대화 계약 (#41·#167)
 
-## 5. 지원·결제·관리자·학생 프로필 통합과 최신 develop 반영
+계약 원본은 [API 명세](../design/api-spec.md) 5.10, 저장 규칙은 [ERD](../design/erd.md) 3.2.1.
 
-대상은 `feature/core-support-payments-integration`(기존 head `cd4f39b`)이며 develop `c44ace8`(#127)을 일반 merge한다. 기존 기능 커밋과 #127의 인증 경로 정규화·리포트 상태/오류 전달·자녀별 스케줄 실패 격리·알림 오류 코드·learning 잠금/readiness·report 삭제 멱등 처리를 보존한다. 지원·결제·운영·학생 프로필의 기존 API 및 공급자 미연결 경계도 유지한다. 설계 문서 충돌은 양쪽 계약을 보존하고, #48로 연결된 상품 권한을 미연결로 설명하던 문구만 실제 호출 경계에 맞춘다.
-
-마이그레이션은 develop의 `V14__remove_speech_call_type.sql`과 결제 V15 SQL/체크섬을 보존하며, 지원의 `V14__support_scope_and_correction_requests.sql`을 **SQL 바이트 변경 없이 V16**으로 옮긴다. V15/V16은 서로 의존하지 않는다. 기존 지원 V14를 적용한 임시 검증 DB와 새 develop 이력은 호환된다고 가정하지 않으며 공유 DB·Flyway 이력·체크섬을 repair하지 않는다. 빈 격리 DB에서 전체 migration/ERD 왕복을 검증한다. 구 버전 번호를 포함한 기능 보고서는 당시 검증 이력이며 현재 적용 순서는 이 절과 ERD 8·12장을 따른다.
-
-관리자 기존 계약 보존 fixture는 #127이 변경한 기존 경로/스키마의 fingerprint만 갱신하고 지원·결제 등 그 밖의 fingerprint는 유지한다. 최신 develop의 새 계약을 되돌려 통과시키지 않는다. 변경 파일은 sourceCommit(기존 기능 기준)과 upstreamSourceCommit(추가 develop 기준)을 함께 기록하며 얕은 CI checkout에서도 동작한다.
-
-최종 통합 검증은 아래 결과를 따른다. #46의 실제 learning 지원 공급자, #47 REPORT/CONVERSATION 재처리·learning 관리자 공급자, #119 report-worker 호출·제목·최종 AI 요청 가림은 이번 통합으로 구현하지 않는다. 실제 PG/Google·배포 검증과 로컬 대역/서비스 연동을 구분한다.
-
-
-### 최신 develop 통합 검증 결과
-
-- JDK 21 격리 Linux 환경의 core 전체 **46클래스·285개**, learning 전체 **28클래스·191개** 테스트와 양쪽 `bootJar` 통과. 실패·오류·생략 0. 실제 PostgreSQL/Redis/RabbitMQ를 사용하는 기존 인증·관리자·결제·지원·학생 프로필·리포트 회귀를 포함한다. Gradle 명령은 `bash gradlew test bootJar --no-daemon --max-workers=1 --no-watch-fs --console=plain -Pkotlin.compiler.execution.strategy=in-process`이며 검증 전용 JVM/fork 자원 제한을 사용했다.
-- `python -O -m unittest discover -s scripts/tests -q` **74개** 통과. 새 Flyway 버전 중복 검사 포함. core/learning/협의용 support-learning OpenAPI 표준 검사 통과. core OpenAPI 106경로·124스키마는 기존 feature 추가와 develop 변경을 재귀 비교한 의미상 합집합과 완전히 같다.
-- 실제 테스트 산출물의 지원 HTTP 7종·결제 5종·알림 2종·report 이벤트 4종/상세 응답, 실제 실행 core 관리자 HTTP 5종을 공개 계약과 대조해 통과했다.
-- 별도 PostgreSQL의 전체 migration/ERD cycle **39.4초** 통과: core 42테이블/390컬럼, learning 19/158, report 7/50. 위반 입력 60건·CHECK 값 집합 74개·ERD 인덱스 23개. 재실행 migration 0·이력 불변 및 report downgrade/upgrade 통과. 별도 core_upgrade_db에 develop의 원본 SQL로 V14까지 적용한 다음 최종 SQL로 V15/V16 **2개만 추가 적용**하는 경로도 통과했다. SQL 원문 보존을 확인했고 Flyway repair·공유 DB 변경은 없다.
-- 프론트 `npm test` **93개**, lint·build 통과. 최초 빌드는 기존 node_modules의 lockfile 의존성(qrcode) 누락으로 실패했고 `npm ci --ignore-scripts`로 lockfile 그대로 복원한 뒤 빌드 성공했다. package/lockfile 변경은 없다. 기존 500kB 초과 번들 경고는 남아 있다.
-- 최종 JAR 2개와 전용 DB/Redis/RabbitMQ에서 실제 core→learning 사용 증빙, 환불 동결의 learning→core 차단, 관리자 반려 후 피드백 core→learning→core DONE/USED, 사용 후 409 환불 거부, 실제 구독 기반 탈퇴 차단, 상품 기반 report Outbox narrativeEnabled true/false를 확인했다. 관리자 운영 5종·25큐 응답을 실제 서비스로 조회했다. 세미콜론/인코딩 관리자 경로의 학부모 403 및 내부 경로의 무토큰 401, SYSTEM·학생 scope 프로필 조회/no-store와 scope 불일치 403도 실제 HTTP로 확인했다.
-- 실제 연동의 결제 상태·인증 계정은 합성 DB fixture이며 Toss/Google/AI API는 호출하지 않았다. learning 피드백은 CHOICE 규칙을 사용했다. Java 테스트·위 HTTP 호출자를 실제 report-worker·브라우저 E2E로 집계하지 않는다. #46 실제 지원 공급자, #47 REPORT/CONVERSATION 재처리·learning 관리자 미션 공급자, #119 실제 worker/제목/AI payload 가림, 배포는 계속 미검증이다.
-- 격리 빌드 입력 501파일과 현재 runtime/contract 소스 바이트 일치, 설계 문서 링크·충돌 표시·마이그레이션 이전 경로 참조·`git diff --check`를 확인했다. 이전 V14 지원 경로는 이 절의 이동 설명에만 남기고 기능 보고서의 V14/V15 수치는 당시 이력으로 보존한다. 원격 CI는 push 후 새 head에서 별도 확인한다.
+- core가 conversation/message/evidence UUID 생성, AI messageId는 신뢰하지 않음
+- 기본 기간은 Asia/Seoul 오늘 포함 7일. scope를 본문에 명시하면 해당 범위에 대한 사용자 확인으로 취급. 자녀 변경은 새 대화, 기간 변경은 `scope.changed=true`. 이력은 정확히 같은 자녀·기간의 완료 메시지 최근 10쌍(20 turn `{role,text}`)만 전달, 질문 1,000자
+- SSE `status → delta* → result | clarification | error → done`. delta는 저장하지 않음. result는 scope 일치·verification 플래그 true·source 및 근거 식별자 형식을 검사(숫자/인용 대조·TEMPLATE 생성은 AI 책임). `verification.contentAllowed`가 명시되어 false/잘못된 형식이면 확정하지 않음(값이 없는 기존 두 플래그 계약은 보존). done 이후 DB 확정 후 공개. EOF·잘못된 순서·중복 terminal은 실패
+- clarification은 AI `{reason,message,current}`를 공개 `{question,options:[],reason,current}`로 변환. 사용자에게 없는 자녀·기간 선택지를 만들어 주지 않음
+- AI의 answerVersion이 null이면 현재 learning 응답의 실제 버전 사용(ID/기간 검사 유지). 시작일 이전 최초 답변은 evidence의 학생/시도/답변/버전·종료일 검증 뒤 해당 시도가 기간별 attempts 목록에 실제 포함되는지 확인
+- 시간: 첫 AI 이벤트 20초, 전체 120초(heartbeat 15초는 첫 응답에 포함하지 않음). 연결 종료·권한 소실·삭제·시간 초과 시 HTTP body를 닫고 작업 thread를 interrupt. 실패는 같은 message 행 FAILED, retry_count로 시도 fencing. 저장 확정 이후 연결 종료는 완료 메시지를 FAILED로 되돌리지 않음
+- 보호자 계정 → 학생 → 대화 잠금으로 시작/확정/취소 직렬화, 동시에 하나의 RUNNING만. 삭제된 행은 UPDATE만 하므로 재생성하지 않음. 원문 전송은 emitter lock → DB 잠금 순서로 삭제와 직렬화, 외부 AI/learning HTTP는 트랜잭션 밖
+- 사용 한도: 대화 생성은 권한/0 한도 확인만, 새 질문·재시도마다 AI 호출 직전 차감. 실패·취소·clarification도 차감, AI 호출 전 거부는 차감하지 않음. 저장은 `payment_premium_usage` KST 일자 집계(6장 #225)
+- 권한 공급: `conversation.service.AnalysisEntitlementProvider` 포트(`entitlement(parentId, childId)` → productId·dailyConversations·validUntil)는 payment 구현([payment](payment.md) 5장). 미연결·음수·누락·만료는 503 `PAYMENT_ENTITLEMENT_UNAVAILABLE`, `conversationEnabled=false`(환불 진행 포함)는 한도와 무관하게 차단
+- 내부 AI 호출 `POST /internal/analysis/stream {conversationId,messageId,question,scope:{studentId,from,to},history}`. 내부 토큰·검증된 PARENT context를 InternalRestClientFactory로 전달하고 studentScope는 대상 하나로 축소. 내부 result scope는 studentId, 공개 응답은 childId
+- 근거는 ID만 저장. `LearningRecordService`로 `/internal/records/evidence?answerIds=...`를 조회하며 현재 권한/삭제/ID 재검사. 삭제된 근거는 `available:false`만 표시하고 다른 원문으로 대체하지 않음
+- 대화 목록은 본인·현재 연결 자녀의 최신 100개(답변 본문 없음), 상세는 소유 conversationId로. 구독 만료 후에도 소유/연결/동의가 유효하면 저장된 이력 조회 가능, 신규 분석은 상품 권한 재검사
+- TEMPLATE fallback.reason은 COMPLETED 행 failure_code에 보존하고 공개 실패 코드는 FAILED에서만 노출
+- 하위 호출 서킷(#167): AI 전체 스트림 집계. OPEN은 기존 AI_UNAVAILABLE/FAILED, 사용자 취소·core 소비자 실패는 집계 제외, 차감은 보존. 최근/최소 20건·실패율 50%·30초 차단·half-open 1건
+- 재현: `scripts/verify_analysis_evidence.py`(실제 core·learning JAR로 근거 조회·타 보호자 404·위조 messageId 404·학생 범위 위조 403·삭제 후 `available:false` 확인)
 
 ## 6. Redis 사용 필요성과 PostgreSQL 대체 비교 (#210)
 
-10/29 [멘토링](mentoring-20261029.md)의 재검토 권고에 따라 core의 Redis 사용처와 PostgreSQL 대체안을 비교한다. 담당자 결정은 **B. 부분 대체**(2026-11-02, [선택지와 결정](#선택지와-결정))이며, 대체 구현은 별도 이슈로 진행한다. 이 절 작성 시 코드·설정·계약·마이그레이션은 바꾸지 않았다. 부하·비용 수치는 실측이 없어 모두 추정이다. 코드 위치는 `backend/core-service/src/main/kotlin/com/sagomungchi/core/` 기준이다.
+10/29 [멘토링](planning-decisions.md#1-1029-오프라인-멘토링-결정후속)의 재검토 권고에 따라 core의 Redis 사용처와 PostgreSQL 대체안을 비교한다. 담당자 결정은 **B. 부분 대체**(2026-11-02, [선택지와 결정](#선택지와-결정))이며, 대체 구현은 별도 이슈로 진행한다. 이 절 작성 시 코드·설정·계약·마이그레이션은 바꾸지 않았다. 부하·비용 수치는 실측이 없어 모두 추정이다. 코드 위치는 `backend/core-service/src/main/kotlin/com/sagomungchi/core/` 기준이다.
 
 ### 사용처와 장애 시 동작
 
@@ -121,7 +117,7 @@
 - 데이터 크기(추정): 12/7 배포는 데모 계정만 운영하므로 페어링·카운터·일 사용량 키는 수천 개 이하, 메모리 수 MB 미만으로 본다
 - RDS 쓰기 부하(추정): 페어링 발급·등록당 1~2건, rate limit 요청당 1건, 분석 질문당 UPSERT 1건(같은 트랜잭션에 이미 메시지 INSERT·사용 이력이 있어 증분이 작음), 시간당 정리 `DELETE` 1회. 데모 규모에서는 무시할 수준으로 본다. 위험 요소는 비인증 `register` 경로 남용 시의 쓰기 증가다
 - RDS 연결 수(추정): `application.yml`에 풀 설정이 없어 Hikari 기본 최대 10개 × core 레플리카다. `LISTEN/NOTIFY`를 쓰면 레플리카당 전용 연결 1개가 더해진다(HPA 최소 2, 아키텍처 4.4). RDS 최대 연결 수 대비 영향은 작다
-- 테스트·로컬: 전부 대체하면 compose·`IntegrationTestSupport`·검증 스크립트의 Redis 컨테이너가 빠진다. 과거 검증에서 Redis 최초 연결 지연으로 인한 실패가 있었다([#41](issue-41-analysis-conversations.md)·[#47](issue-47-admin-operations.md) 보고서)
+- 테스트·로컬: 전부 대체하면 compose·`IntegrationTestSupport`·검증 스크립트의 Redis 컨테이너가 빠진다. 과거 검증에서 Redis 최초 연결 지연으로 인한 테스트 실패가 있었다
 
 ### 선택지와 결정
 
@@ -136,7 +132,7 @@
 | 구분 | 대상 |
 |---|---|
 | PostgreSQL로 이전 | 분석 대화 일일 사용량, 관리자 대화 재처리 중복 차감 방지 표식 |
-| PostgreSQL로 신규 구현(후속 미정) | 무료 플랜 미션 일일 한도(P13). 구현 이슈 미정이며 그 전까지 API 명세의 "core Redis 책임" 문구는 바꾸지 않는다 |
+| PostgreSQL로 신규 구현(후속 미정) | 무료 플랜 미션 일일 한도(P13). 구현 이슈 미정. 설계 문서는 "미구현, PostgreSQL 구현 예정(#210)"으로 표기 |
 | Redis 유지 | 학생 기기 페어링 코드, 기기 등록·페어링 발급 rate limit, 알림 Pub/Sub `core:notifications:v1` |
 
 - 근거 1: 분석 사용량은 이미 보호자·학생 행 잠금 트랜잭션 안에서 차감되므로 PostgreSQL 조건부 UPSERT로 동시성 요구를 같은 수준으로 충족하면서 롤백 불일치와 분산 원자성 제약을 함께 없앤다. 아직 구현되지 않은 미션 한도도 같은 패턴으로 만들면 Redis 의존 기능을 새로 늘리지 않는다
@@ -160,7 +156,7 @@
 | Redis 제거 | `conversation/service/AnalysisUsageService`의 `CONSUME`·`CONSUME_RETRY` Lua 스크립트, `counterWindow`, `StringRedisTemplate` 의존 삭제. `consume(parent,child,source)` 하나가 0 한도·유효기간 확인 후 provider에 기록 |
 | 호출 순서 정리 | `ConversationService.prepareFor`는 Redis 차감(기존 94행)과 메시지 저장 뒤 `recordAttempt`(기존 104행)를 따로 하던 것을 메시지 저장 전 `consume` 1회로 합쳤다. 리포트 설정 제안(#209 `ReportTemplateService.propose`)도 같은 두 호출을 `consume` 1회로 바꿨다 |
 | 관리자 재시도 | `resumeAdminRetry`가 영속 요청 ID(`conversation_job_retry.id`)를 source ID로 `consume`. 이미 기록된 source는 `UNIQUE(kind,source_id)`의 기존 행을 재사용해 추가 차감·한도 재판정이 없다 |
-| 문서 | API 명세 #41·#47 CONVERSATION 계약 문단, ERD Redis 보관 항목·#41·#47 절, 아키텍처 6장 저장소 행·7.1 #210 항목·#47 CONVERSATION 문단, 클래스 다이어그램 요금제 사용 한도, [#41 보고서](issue-41-analysis-conversations.md) 사용 한도 |
+| 문서 | API 명세 #41·#47 CONVERSATION 계약 문단, ERD Redis 보관 항목·#41·#47 절, 아키텍처 6장 저장소 행·7.1 #210 항목·#47 CONVERSATION 문단, 클래스 다이어그램 요금제 사용 한도, 이 문서 5장 사용 한도 |
 
 유지한 정책과 동작:
 
@@ -175,13 +171,11 @@
 
 - `ANALYSIS_USAGE_UNAVAILABLE`: 더는 발생하지 않는다. API 명세 1.3에 없던 코드([audit](audit.md))라 문서화된 계약 변경은 아니다. 과거 작업 실행 기록 표시를 위해 `admin/domain/Operations.kt`의 안전 코드 목록에는 남겼다
 - 관리자 재실행 130초 만료: Redis 표식 TTL 전제가 아니라 실행 만료(대화 RUNNING 고착 판정 `ConversationService.kt:82`와 같은 값)로 유지한다. API 명세에서 "표식 TTL보다 짧은" 전제 문구만 지웠다
-- 무료 미션 3회·프리미엄 피드백 50회 한도(P13, 미구현): 이번 범위가 아니다. API 명세 2.2·4.1의 "core Redis 책임" 문구는 그대로 두고, 저장소와 문구는 해당 구현 이슈에서 정한다
+- 무료 미션 3회·프리미엄 피드백 50회 한도(P13, 미구현): 이번 범위가 아니다. 세부 저장 방식은 해당 구현 이슈에서 정한다
 
 검증:
 
 - 테스트: `AnalysisUsageContractTest`(Redis 없이 provider만으로 `consume`, 0 한도 미기록, provider 부재 503), `ConversationPaymentIntegrationTest`(실제 provider: 30개 동시 접수 중 한도 2회만 차감, KST 자정 직전·`FAILED` 행 미집계, 초과 재시도 429, `analysis:*` Redis 키 없음), `AdminConversationRetryTest`(실제 provider·사용 이력으로 전환: 같은 요청 ID 재실행 1회 차감, 롤백된 선점은 차감도 롤백, 접수 후 한도 축소 시 실행 전 실패), `ConversationIntegrationTest`(원 질문·재시도 source가 서로 다른 2건)
-- 실행: JDK 21(`eclipse-temurin:21-jdk`) 격리 Docker 컨테이너에서 `bash gradlew test bootJar --no-daemon --max-workers=1 --no-watch-fs --console=plain -Pkotlin.compiler.execution.strategy=in-process`. core 전체 **67클래스·438개** 통과, 실패·오류·생략 0, `bootJar` 성공. IntegrationTestSupport의 실제 PostgreSQL·Redis·RabbitMQ를 사용하고 AI·PG는 대역이다
-- 미검증: 실제 AI·토스 연동, 브라우저 화면, 다중 레플리카 배포 환경의 동시성, 원격 CI
 
 ## 7. 관리자 대화 재처리 시각 출처 통일 (#286)
 
@@ -197,3 +191,99 @@
 만료 판정까지 바꾼 이유: 시계 차이가 수 ms여도 130초 경계 근처에서는 앱 판정이 "유효", DB `claim`이 "만료"로 갈릴 수 있다. 이때 `resumeAdminRetry`(사용량 차감 포함)를 지난 뒤 `check(requests.claim(...))`가 예외로 트랜잭션 전체를 롤백했다. 반대로 앱 시계가 앞서면 DB 기준으로 아직 유효한 요청을 건너뛰었다. 어느 쪽이든 데이터 손상은 없고 `stale` 회수로 정리되지만, 판정 기준을 하나로 두면 이런 경계 예외가 사라진다.
 
 검증: `AdminConversationRetryTest`에 앱 시각이 DB보다 5초 앞선 행으로 선점·종료(`started_at >= accepted_at`, `finished_at >= started_at`) 회귀 테스트(#287 추가, 이번에 종료 확인 보강)와 DB 기준 131초 지난 요청은 예외 없이 선점되지 않고 `QUEUED`·실행 기록·차감 없음으로 남는 테스트를 두었다.
+
+## 8. 리포트용 학생 별명 내부 조회 (#119)
+
+`GET /internal/students/{studentId}/profile` → `200 {studentId, nickname}`, `Cache-Control: no-store`. 호출자는 report-worker([report](report.md) 10장).
+
+| 조건 | HTTP / code |
+|---|---|
+| 내부 토큰 누락·불일치, Bearer만 전달 | 401 UNAUTHENTICATED |
+| SYSTEM 외·역할 누락·학생 scope 누락/불일치 | 403 FORBIDDEN |
+| 잘못된 UUID (유효 내부 토큰 사용) | 400 VALIDATION_FAILED |
+| 미존재·ACTIVE 외 상태 | 404 NOT_FOUND |
+| 예상하지 못한 조회 실패 | 500 INTERNAL_ERROR |
+
+- 비활성이라는 이유로 임의 INACTIVE enum을 만들지 않으며 삭제 진행·완료 모두 404(RECORDS 완료 뒤에도 DELETION_REQUESTED 유지하는 #45 정책)
+- `InternalAuthFilter` → `InternalStudentProfileController` → `InternalStudentProfileService` → `ChildManagementRepository.profile`. 서비스가 SYSTEM 확인 후 `UserContext.requireStudent`로 scope 검사. 기존 LinkedStudent 전체를 노출하지 않고 전용 DTO로 studentId·nickname만. 별명·토큰·학생 UUID를 로그에 남기지 않음
+- report는 403·404를 생성 실패로 처리하고 UUID·빈 문자열·임의 별명으로 대체하지 않음. AI 요청 전 별명 가림은 report `NarrativeGenerator.scrub`
+
+## 9. RabbitMQ 발행·소비 기록 (#208)
+
+10/29 멘토링 의견에 따라 "이 메시지가 발행됐는지, 브로커를 거쳤는지, 누가 처리했는지"를 PostgreSQL에서 조회하도록 보완(11/1 결정). 기존 `outbox_event` + 작업 상태 + #131·#132 복구가 이미 재발행 역할을 하므로 작업 테이블에 컬럼을 추가하지 않고, 빠진 "통합 조회"와 "보존 정책"만 추가.
+
+| 메시지 | 생산 → 소비 | 발행 기록 | 브로커 전달 | 소비 기록 |
+|---|---|---|---|---|
+| report.generate | core → report | core outbox_event | event_log | core report_job 상태, report weekly_report.job_id |
+| report.started/completed/failed | report → core | report outbox_event (실패·격리 포함) | event_log | core processed_event |
+| student.deleted | core → learning·report | core outbox_event | event_log | learning·report processed_event, core 완료 보고 행 |
+| model.version.activated | core → ai·scoring 모든 Pod | core outbox_event | event_log | 기록 없음 (아래 4) |
+| llm.usage.recorded | ai·scoring → core | 없음 | event_log | core llm_usage(event_id) |
+
+1. **core 감사 큐 + `event_log`**: 큐 `core.event.audit`(재시도 1·5·15분, DLQ 포함)을 업무 routing key마다 바인딩. `EventAuditConsumer`가 봉투의 id·type·source·subject·time과 수신 시각만 저장(payload·원문 미저장), 같은 id는 `ON CONFLICT DO NOTHING`
+2. **`#` 와일드카드 미사용**: report 발행자는 `mandatory=True`로 unroutable 메시지를 실패로 보고 #131 재시도·격리를 적용하는데, `#`에 바인딩하면 잘못된 routing key도 성공으로 처리됨. 업무 바인딩 키마다 감사 바인딩이 있는지 `RabbitDefinitionsTest`가 검사
+3. **ai·scoring DB 신설 안 함**: 브로커에 도달한 발행은 event_log에 남고, 브로커 미연결·발행 실패 건은 서비스 로그(`이벤트 발행 실패`)로만 확인
+4. **model.version.activated 소비는 예외**: 모든 Pod가 임시 큐로 받아 메모리 버전을 교체하며 DB가 없음. 기동·재연결 때 core snapshot 재조회로 누락을 복구하고 적용 전 readiness false
+5. **보존 90일**: 발행 완료 `outbox_event`, `processed_event`, `event_log`를 90일 뒤 1시간 주기로 삭제(미발행·격리 outbox 행, `llm_usage`·`job_execution`은 유지). core `EventRetentionCleanup`, learning `ProcessedEventCleanupScheduler` → `ProcessedEventCleanupService`(`deleted_student` 유지), report worker cleanup 루프 `deletion/service.py` `prune_event_records`(`report_deletion_guard` 유지). 설정 `app.messaging.event-retention-days`·`EVENT_RETENTION_DAYS`(기본 90). 조건부 DELETE라 ShedLock 없음
+6. **학생 식별자**: event_log.subject에 학생 UUID가 들어갈 수 있으나 payload·원문은 없음. 학생 삭제 시 즉시 지우지 않고 90일 보존 후 삭제
+
+- 마이그레이션: core `V20__event_log_and_retention.sql`, learning `V8__processed_event_retention_index.sql`, report Alembic `20261102_05`(정리용 인덱스). RabbitMQ `definitions.json`에 큐 5개·바인딩 8개 추가(기존 환경은 definitions 재적용 필요), 관리자 큐 현황은 30개 큐
+- 남은 누락: core outbox 릴레이는 발행 실패 횟수·오류 코드를 저장하지 않음(report #131 같은 격리 없음), ai·scoring 발행 실패 건은 PostgreSQL에 남지 않음
+
+```sql
+-- 특정 이벤트의 발행(core)·브로커 전달·core 소비
+SELECT l.event_id, l.event_type, l.source, l.event_time, l.received_at,
+       o.published_at, p.processed_at, u.occurred_at AS usage_occurred_at
+FROM event_log l
+LEFT JOIN outbox_event o ON o.id = l.event_id
+LEFT JOIN processed_event p ON p.event_id = l.event_id
+LEFT JOIN llm_usage u ON u.event_id = l.event_id
+WHERE l.event_id = :event_id;
+
+-- core가 발행했으나 감사 큐에 도달하지 않은 이벤트
+SELECT o.id, o.event_type, o.published_at
+FROM outbox_event o LEFT JOIN event_log l ON l.event_id = o.id
+WHERE o.published_at IS NOT NULL AND l.event_id IS NULL;
+
+-- 유형별 최근 24시간 전달 건수
+SELECT event_type, count(*) FROM event_log
+WHERE received_at > now() - interval '1 day' GROUP BY event_type;
+```
+
+## 10. 레이어·예외 경계 (#168·#249·#250·#251)
+
+아키텍처 2.1·2.2 위반을 [점검 기록](audit.md)의 A3·A4·A8~A10에서 찾아 정리. 응답(code·status·본문)과 API·이벤트 계약은 변경 없음.
+
+### domain 예외 (#168·#249)
+
+- domain은 Spring 타입을 쓰지 않음. 각 서비스 `_common/exception/DomainException(kind, code, title, detail)`과 `ErrorKind`(core `INVALID·NOT_FOUND·CONFLICT`, learning `INVALID·CONFLICT·UNPROCESSABLE`)
+- 상태 변환은 `_common/exception/ErrorStatus.kt`의 `statusOf(kind)` 한 곳, `GlobalExceptionHandler.handleDomain`이 같은 Problem Details 형식으로 응답. `errorInfoOf(Throwable)`(+`httpStatusOf`·`errorCodeOf`)가 `BusinessException`·`DomainException`을 같게 다룸. `BusinessException`은 application·presentation 전용
+- domain 예외가 도달하는 catch 지점(core `AnalysisStreamService`, `ConversationRetryWorker`, `OperationRetryService` 대화 분기, `PublicAuthFilter`, learning `AdminMissionController` 게시 누락)은 `errorInfoOf`·`statusOf`로 처리. `BusinessException` 하위 클래스 전용 처리기는 `ex.status` 유지
+- service 테스트는 던진 층과 관계없이 `httpStatusOf`·`errorCodeOf`로 HTTP 상태·code를 계속 확인(#169의 "별도 domain 예외를 두면 처리기·테스트가 갈림" 걱정을 공통 함수로 해소)
+
+### 기타 경계 (#168)
+
+| 위반 | 정리 |
+|---|---|
+| `payment/domain/Payments.kt`가 Jackson `JsonNode`·`@JsonIgnore` 사용 | `_common/json/JsonObject`(프레임워크 없는 `Map<String, Any?>` 값 타입, Jackson은 `JsonObjectJsonComponent`, MyBatis는 `JsonObjectTypeHandler`를 이 타입에만 등록). `Any`·`Map` 전체 등록 금지 규칙([db-dev-guide](db-dev-guide.md) 5장) 때문 |
+| PG 키(cancelKey) 노출 위험 | `payment/controller/PaymentResponses.kt`의 `RefundRequestResponse`(cancelKey 없음)·`PaymentViewResponse`를 모든 결제 응답과 멱등 저장본이 직렬화. `Payment`·`RefundRequest`에 키 없는 `toString` |
+| `usage/service` → `usage.consumer.LlmUsageRecorded` | `usage/domain`으로 이동 |
+| `payment/client/PremiumUsageClient` → `PaymentTransactions.unavailable` | client 안 `unavailable`(503 `REFUND_USAGE_UNAVAILABLE`) |
+| `NotificationRedisSubscriber`가 Infrastructure에서 service 호출 | `notification/consumer`로, 구독 연결은 `notification/config` |
+
+service에서 Jackson `convertValue`를 쓰는 것은 기존 `treeToValue`·`valueToTree` 자리 그대로(새로 늘리지 않음).
+
+### 알림 발행·결과 기록 분리 (#250)
+
+- `NotificationRedisPublisher.publish(value): Boolean`은 Redis 발행만(`true` = Redis가 받음, 구독자 0명도 성공)
+- 새 `notification/service/NotificationDispatchService.dispatch(value)`가 `@TransactionalEventListener(AFTER_COMMIT)`로 커밋 후 이벤트를 받아 발행 → `delivery.record(id, failed)`. 기록 실패는 로그만 남기고 던지지 않음. 관리자 재처리 `NotificationRetryService.deliver`도 `dispatch` 호출
+- 프로세스 안 이벤트를 service가 받는 것은 아키텍처 2.1이 금지하지 않음(설계에 service 리스너와 consumer 리스너 사례가 모두 있어 이슈가 정한 위치를 따름)
+
+### 기능 간 controller·config 참조 제거 (#251)
+
+| 항목 | 내용 |
+|---|---|
+| 요청 속성 상수 | `_common/security/RequestAttributes.IDENTITY`(값 `sagomungchi.identity` 그대로), `AuthController.IDENTITY` 제거 |
+| `PublicAuthFilter` | `_common/security` → `account/controller`, 등록은 `account/config/AuthConfig` |
+| PIN 실패 한도 | guardianship `PinRules.FAILURE_LIMIT = 5`(정책 고정값). `app.student-device.pin-failure-limit` 설정 삭제 |
+| learning 공유 응답 DTO | `MissionResponse`·`MissionListItemResponse`·`AnswerItem`을 `_common/web/SharedResponses.kt`로. 기능 타입 없이 열거값은 이름 문자열, `Choice`·`Category`는 같은 모양의 `OptionResponse`, 피드백은 타입 인자 `AnswerItem<F>`. domain → DTO 변환은 쓰는 기능 controller의 companion 확장 `from`(매핑 중복 허용), `SharedResponsesJsonTest`가 세 변환의 JSON 동일성을 고정 |
