@@ -131,3 +131,25 @@ CLI 종료 코드 0은 JSON 계획의 형식 유효성만 뜻한다. 호환 여�
 - 승인자는 김동섭(`20220348-kim`)·김태윤(`kty2001`) 2명 그대로이며 `executionEnabled`·`environmentProtectionVerified`·`infrastructureReady`는 false다.
 - 실제 EKS 배포·롤백 시험·GitHub Environment 설정은 하지 않았다. learning·ai·scoring·report의 main 기준 재배포는 #186 병합 후 이 절차로 진행한다.
 - 검증: `python -O -m unittest discover -s scripts/tests` **127개 통과**(CD 계획 검사 15개: main 릴리스 기준·저장소 정책 확인 포함), 변경 Python ruff check·format 통과, 전체 workflow YAML 파싱 통과, 예시 CLI 종료 코드 0·`valid=true`·`executable=false`·차단 사유 17개.
+
+## 배포 실행기 구현 (2026-11-04)
+
+실행 단계(승인 → 적용 → 경로 확인 → 이력)를 코드로 구현했다. AWS·GitHub 설정은 바꾸지 않았고 실제 실행은 하지 않았다. 설정·명령은 [운영 배포 문서](../../infrastructure/cd/README.md)를 따른다.
+
+| 결정 | 내용 | 근거 |
+|---|---|---|
+| 적용 위치 | 작업자 PC의 전용 self-hosted runner(`cd-prod`) | EKS API 공개 접근이 작업자 공인 IP로 제한돼 GitHub 호스팅 runner에서 접근 불가. 기존 작업자 AWS 프로필·kubeconfig를 써서 EKS 권한을 새로 만들지 않는다 |
+| 승인 | GitHub Environment `prod` 필수 승인자 2명, main만 허용 | 승인 전에는 적용 job이 시작되지 않는다. 승인자는 GitHub 승인 기록 API로 읽어 이력에 남기며 계획 파일의 승인 표시는 읽지 않는다 |
+| 이미지 | publish job이 main SHA를 `main-<12자리>`로 ECR 게시, 이미 있으면 재사용 | ECR 태그 IMMUTABLE. GitHub OIDC 역할은 ECR 쓰기만, trust는 main의 `cd-release.yml`만 |
+| 계획 입력 | 실행 입력 JSON(커밋하지 않음) | 계획의 SHA가 그 계획을 담은 커밋 자신을 가리키는 순환을 피한다. 계획 원문은 artifact로 보관 |
+| 실행 게이트 | `cd_release.py`가 오류·차단 사유가 없을 때만 `executable=true`. validate에서 이미지 빌드 전 다른 차단이 있으면 게시 전에 중단, deploy에서 `--require-executable`로 재확인 | 실행 스위치·근거·승인자 미비 상태에서 ECR 게시나 적용을 하지 않는다 |
+| 적용 | release별 server dry-run 전체 → 순서대로 `redeploy-app.ps1 -ImageDigest -Apply` | 저장소 values를 바꾸지 않고 digest만 교체. 실패하면 다음 release는 적용하지 않고 자동 롤백도 하지 않는다 |
+| 경로 확인 | 학생 PIN 로그인 → 시도 시작 → 답변 제출 → 부모 refresh → 리포트 목록 | 판정(LLM)·결제는 호출하지 않는다. 부모 refresh 쿠키는 회전하므로 새 값을 fixture 파일에 즉시 저장한다 |
+| 이력 | 수행자·승인자·run URL·SHA·이미지·release 전후 revision·경로 확인 결과를 `history.json` artifact(90일)와 실행 요약에 기록 | Git 직접 push는 브랜치 보호와 충돌하므로 하지 않는다 |
+| 롤백 | 이전 승인 digest를 같은 workflow·승인으로 적용. 계획의 SHA는 이전 릴리스(현재 SHA 일치 검사는 배포에만) | DB downgrade·백업 복원은 하지 않는다 |
+
+- 11/01 브랜치 `feature/cd-release-186`의 workflow는 Argo CD·develop push 전제라 가져오지 않았고, 배포 후 확인 단계 구성만 참고했다.
+- migration과 웹(S3/CloudFront) 배포는 범위 밖이다. migration은 배포 전 prod README 절차로 적용하고 schema 근거에 적는다.
+- 검증: `python -O -m unittest discover -s scripts/tests` **149개 통과**(CD 37개: 실행 게이트·main 이력 확인·롤백 커밋 처리, 경로 확인 단계·쿠키 회전 저장·자격 증명 비노출·실패 중단, 이력 판정·승인 API, workflow 구조), 변경 Python ruff 통과, workflow YAML 파싱과 PowerShell 단계·`redeploy-app.ps1` 문법 검사 통과. actionlint와 실제 Actions 실행·AWS 적용은 하지 않았다.
+- 이슈 완료 조건(승인 → 배포 → 경로 확인 1회, 롤백 리허설 기록)은 설정 A~E 후 실제 실행으로 채운다.
+

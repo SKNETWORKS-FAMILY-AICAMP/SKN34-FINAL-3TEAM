@@ -31,6 +31,8 @@
 
 `redeploy-app.ps1`은 기존 앱 release 한 개의 재배포 진입점이다. AWS 계정·실제 EKS endpoint·고정 digest·기존 release 상태를 확인하고 기본 실행은 server dry-run만 수행한다. `-Apply`를 지정할 때만 ESO Ready 확인 후 배포한다. 새 클러스터·DB 초기화·Secret 생성·웹 빌드·Ingress 생성은 수행하지 않는다. 현재 노드의 Pod 슬롯과 메모리 여유가 작으므로 preview 성공을 실제 rollout 성공으로 해석하지 않는다. 적용 전에 기존 Pod와 비교할 계획을 검토한다.
 
+승인 절차를 거친 배포·롤백은 [#186 운영 배포](../../../cd/README.md)의 `cd-release` workflow가 이 스크립트를 `-ImageDigest`(저장소 values는 그대로 두고 digest만 바꾼 임시 사본)로 호출한다.
+
 ```powershell
 pwsh -File infrastructure/gitops/environments/prod/redeploy-app.ps1 -Service core-service -Kubeconfig '<AWS kubeconfig 절대 경로>' -Helm '<helm 실행 파일>'
 # 검토 후 같은 명령에 -Apply를 추가하면 해당 앱만 실제 재배포한다.
