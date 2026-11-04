@@ -33,6 +33,7 @@ dependencies {
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("io.github.resilience4j:resilience4j-circuitbreaker:2.3.0") // P12; no HTTP retry module
     implementation("org.jetbrains.kotlin:kotlin-reflect")
+    implementation("io.opentelemetry:opentelemetry-api") // Boot BOM version; bridged by the OTel Java agent when enabled
     runtimeOnly("org.postgresql:postgresql")
     // Test-only: production migrations run in the dedicated migration job.
     testImplementation("org.testcontainers:postgresql")
@@ -41,6 +42,7 @@ dependencies {
     testImplementation("org.flywaydb:flyway-database-postgresql:13.11.1")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.testcontainers:rabbitmq")
+    testImplementation("io.opentelemetry:opentelemetry-sdk-testing")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

@@ -5,13 +5,18 @@ import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.messaging.EventEnvelope
 import com.sagomungchi.core.usage.domain.LlmUsageRecorded
 import com.sagomungchi.core.usage.domain.CallType
+import com.sagomungchi.core.usage.service.LlmCostMetrics
 import com.sagomungchi.core.usage.service.LlmUsageService
+import io.opentelemetry.sdk.metrics.SdkMeterProvider
+import io.opentelemetry.sdk.testing.exporter.InMemoryMetricReader
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.test.context.TestPropertySource
 import java.math.BigDecimal
+import java.time.Instant
 import java.time.LocalDate
 import java.time.OffsetDateTime
+import java.time.ZoneOffset
 import kotlin.test.*
 
 @TestPropertySource(properties = ["app.llm-pricing.query-model.input=3", "app.llm-pricing.query-model.output=15"])
@@ -88,6 +93,34 @@ class LlmUsageQueryTest : PostgresRepositoryTest() {
             assertEquals(400, error.status.value())
             assertEquals("VALIDATION_FAILED", error.code)
         }
+    }
+
+    @Test fun `month to date starts at KST month start and counts unpriced calls separately`() {
+        usage.record(event("2026-10-31T14:59:59.999999Z"))
+        usage.record(event("2026-10-31T15:00:00Z"))
+        usage.record(event("2026-11-12T01:00:00Z", model = "unregistered"))
+        usage.record(event("2026-11-12T02:00:00Z", input = null))
+        usage.record(event("2026-11-12T02:30:00Z"))
+        val cost = usage.monthToDate(Instant.parse("2026-11-12T02:30:00Z"))
+        assertEquals(0, BigDecimal("0.033").compareTo(cost.pricedUsd))
+        assertEquals(2L, cost.unpricedCalls)
+        val empty = usage.monthToDate(Instant.parse("2026-10-31T15:00:00Z"))
+        assertEquals(0, BigDecimal.ZERO.compareTo(empty.pricedUsd))
+        assertEquals(0L, empty.unpricedCalls)
+    }
+
+    @Test fun `cost metrics export the current KST month through OpenTelemetry`() {
+        val now = OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(1).toString()
+        usage.record(event(now))
+        usage.record(event(now, model = "unregistered"))
+        val reader = InMemoryMetricReader.create()
+        val provider = SdkMeterProvider.builder().registerMetricReader(reader).build()
+        val metrics = LlmCostMetrics(usage, provider.get("test"))
+        val exported = reader.collectAllMetrics().associateBy { it.name }
+        assertEquals(0.033, exported.getValue("llm.usage.month_to_date.priced_cost").doubleGaugeData.points.single().value, 1e-9)
+        assertEquals(1L, exported.getValue("llm.usage.month_to_date.unpriced_calls").longGaugeData.points.single().value)
+        metrics.close()
+        provider.close()
     }
 
     @Test fun `reversed periods are rejected`() {
