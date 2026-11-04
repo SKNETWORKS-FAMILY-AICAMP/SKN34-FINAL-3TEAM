@@ -119,12 +119,14 @@ jobs:
     env:
       PLAN_JSON: ${{ inputs.plan }}
       IMAGES: ${{ needs.publish.outputs.images }}
-      WORK: ${{ runner.temp }}/cd-${{ github.run_id }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
+      - name: 작업 폴더
+        # job env에서는 runner 컨텍스트를 쓸 수 없어 step에서 정한다
+        run: Add-Content -LiteralPath $env:GITHUB_ENV -Value "WORK=$env:RUNNER_TEMP/cd-$env:GITHUB_RUN_ID" -Encoding utf8
       - name: 최종 실행 게이트 (실제 이미지·정책 실행 스위치)
         run: |
           New-Item -ItemType Directory -Force $env:WORK | Out-Null
@@ -202,10 +204,10 @@ jobs:
         with:
           name: cd-history-${{ github.run_id }}
           path: |
-            ${{ runner.temp }}/cd-${{ github.run_id }}/history.json
-            ${{ runner.temp }}/cd-${{ github.run_id }}/plan.json
-            ${{ runner.temp }}/cd-${{ github.run_id }}/plan-record.json
-            ${{ runner.temp }}/cd-${{ github.run_id }}/releases.json
-            ${{ runner.temp }}/cd-${{ github.run_id }}/smoke.json
+            ${{ env.WORK }}/history.json
+            ${{ env.WORK }}/plan.json
+            ${{ env.WORK }}/plan-record.json
+            ${{ env.WORK }}/releases.json
+            ${{ env.WORK }}/smoke.json
           retention-days: 90
           if-no-files-found: warn

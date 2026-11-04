@@ -466,6 +466,12 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("--require-executable", self.text)
         self.assertNotIn("helm rollback", self.text)
 
+    def test_job_env_uses_only_contexts_github_allows(self):
+        # job env에서 runner 컨텍스트를 쓰면 파일 오류로 모든 push에 실패 run이 생긴다
+        for name, job in self.jobs.items():
+            for value in job.get("env", {}).values():
+                self.assertNotIn("runner.", str(value), name)
+
 
 class CandidateWorkflowTests(unittest.TestCase):
     def test_runs_only_cd_tool_checks_once_per_change(self):
