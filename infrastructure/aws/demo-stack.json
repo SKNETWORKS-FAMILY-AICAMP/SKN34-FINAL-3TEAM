@@ -147,6 +147,7 @@
         "sagomungchi-demo-external-secrets-ai-read": "iam/external-secrets-role.inline.external-secrets-ai-read.json",
         "sagomungchi-demo-external-secrets-app-read": "iam/external-secrets-role.inline.external-secrets-app-read.json",
         "sagomungchi-demo-external-secrets-google-read": "iam/external-secrets-role.inline.external-secrets-google-read.json",
+        "sagomungchi-demo-external-secrets-payment-read": "iam/external-secrets-role.inline.external-secrets-payment-read.json",
         "sagomungchi-demo-external-secrets-rabbitmq-read": "iam/external-secrets-role.inline.external-secrets-rabbitmq-read.json"
       }
     },

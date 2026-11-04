@@ -141,6 +141,90 @@
     {
       "name": "PAYMENT_FREE_PRODUCT_ID",
       "value": "7acdc313-5eda-4161-821a-b4a51e8fe775"
+    },
+    {
+      "name": "PAYMENT_BILLING_ENCRYPTION_KEY",
+      "valueFrom": {
+        "secretKeyRef": {
+          "name": "payment-credentials",
+          "key": "PAYMENT_BILLING_ENCRYPTION_KEY",
+          "optional": true
+        }
+      }
+    },
+    {
+      "name": "TOSS_TEST_SECRET_KEY",
+      "valueFrom": {
+        "secretKeyRef": {
+          "name": "payment-credentials",
+          "key": "TOSS_TEST_SECRET_KEY",
+          "optional": true
+        }
+      }
+    },
+    {
+      "name": "TOSSPAYMENTS_SECRET_KEY",
+      "valueFrom": {
+        "secretKeyRef": {
+          "name": "payment-credentials",
+          "key": "TOSSPAYMENTS_SECRET_KEY",
+          "optional": true
+        }
+      }
+    },
+    {
+      "name": "TOSS_TEST_MID",
+      "valueFrom": {
+        "secretKeyRef": {
+          "name": "payment-credentials",
+          "key": "TOSS_TEST_MID",
+          "optional": true
+        }
+      }
+    },
+    {
+      "name": "TOSS_TEST_WEBHOOK_SECURITY_KEY",
+      "valueFrom": {
+        "secretKeyRef": {
+          "name": "payment-credentials",
+          "key": "TOSS_TEST_WEBHOOK_SECURITY_KEY",
+          "optional": true
+        }
+      }
+    },
+    {
+      "name": "TOSS_TEST_BILLING_SECRET_KEY",
+      "valueFrom": {
+        "secretKeyRef": {
+          "name": "payment-credentials",
+          "key": "TOSS_TEST_BILLING_SECRET_KEY",
+          "optional": true
+        }
+      }
+    },
+    {
+      "name": "TOSS_TEST_BILLING_MID",
+      "valueFrom": {
+        "secretKeyRef": {
+          "name": "payment-credentials",
+          "key": "TOSS_TEST_BILLING_MID",
+          "optional": true
+        }
+      }
+    },
+    {
+      "name": "TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY",
+      "valueFrom": {
+        "secretKeyRef": {
+          "name": "payment-credentials",
+          "key": "TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY",
+          "optional": true
+        }
+      }
+    },
+    {
+      "name": "AUTH_NEW_ACCOUNT_DEMO",
+      "value": "true"
     }
   ],
   "extraVolumeMounts": [
@@ -162,7 +246,7 @@
     "enabled": false
   },
   "image": {
-    "digest": "sha256:d6fdbc9d366c304b4874efea8e9f8ed7765a975b6d2bbbdd707de01bef0c0880",
+    "digest": "sha256:1e8e1d4b4d6270af094b0811d0c29e71cdbdb498c6132284637bdc5cad4a9997",
     "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/core-service"
   },
   "ingress": {

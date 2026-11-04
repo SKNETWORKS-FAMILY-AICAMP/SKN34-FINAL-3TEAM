@@ -190,3 +190,12 @@
 - 학생 화면에서 "학부모님께 공개할게요"로 바꾼 뒤 부모 계정으로 주간 리포트 2판(2026-11-02~11-08)의 **PDF·Markdown을 실제로 내려받았다.** 부모 서명 URL 다운로드 경로가 동작한다.
 - 내려받은 PDF는 2쪽이며 Markdown과 내용이 같다: 수치 3개(표본 부족이라 비율 대신 개수, 분자/분모 3/3), 생각 유형 5개, 전후 변화 수치, 돌아보기 3건. 2판은 비공개 상태에서 생성됐으므로 원문 자리는 "원문 비공개"로 남아 있다. 파일은 생성 시점의 공개 범위를 따르며, 공개 후 원문이 들어간 파일을 보려면 새 판 생성(학부모 재생성 한도 사용)이 필요하다. 재생성은 하지 않았다.
 - 확인 후 사용자 결정으로 이 테스트 학생의 공개 설정은 "학부모님께 공개"로 유지한다. 이후 생성되는 판에는 원문 인용이 들어갈 수 있다.
+
+## main 기준 core·웹 재배포 (2026-11-04)
+
+- 배포 기준을 main으로 정했다(develop → main 릴리스 PR 병합 후 그 SHA만 배포). main `cc860eb`(CI 10개 통과)로 core·core-migrate를 빌드해 ECR에 `main-cc860eb2ee85` 태그로 올렸다.
+- 결제 Secret을 ESO로 연결했다(작업자가 IAM inline 정책 추가, `payment-credentials` Ready, 키 3개).
+- V26 사전 점검 위반 0건 확인 후 core migration Job으로 V25 → V26을 적용했다. 첫 적용은 렌더링 결과에 namespace가 없어 `default`에 생성됐고, 필요한 Secret·ConfigMap이 없어 컨테이너가 시작되기 전에 삭제했다. 이후 `-n app`으로 재실행해 성공했다.
+- core를 revision 5로 재배포했다(이용권 API, 신규 가입 demo 표시 `AUTH_NEW_ACCOUNT_DEMO=true`, 결제 키 연결). 앱 6개 Ready·재시작 0, core 로그 오류 0, Helm values와 저장소 일치, `demo_stack.py plan` 56/56.
+- 웹을 같은 SHA로 빌드해 S3에 assets 먼저·`index.html` 마지막으로 올렸다. CloudFront가 새 진입 파일을 제공함을 확인했다.
+- 남은 실제 확인: 학부모 이용권 표시, 신규 Google 가입자 `is_demo=true`, 공용 테스트 키 결제 승인 1회, `audit-demo-data.sql` 재감사. learning·ai·scoring·report의 main 기준 재배포는 후속이다.
