@@ -80,7 +80,7 @@ class FeedbackControllerTest(@Autowired private val mockMvc: MockMvc) {
         given(facade.feedback(answerId)).willReturn(
             FeedbackResult(
                 ProcessStatus.DONE,
-                JudgmentView(judgmentId, JudgmentResult.CORRECT, false, listOf(ElementView(elementId, "원인", true, "물", ElementSource.ANSWER_KEY)), null),
+                JudgmentView(judgmentId, JudgmentResult.CORRECT, false, listOf(ElementView(elementId, "원인", "ANSWER_KEY", false, true, "물", ElementSource.ANSWER_KEY)), null),
                 null,
                 listOf(NextAction.FINISH),
                 Versions("DEMO-01@1", "DEMO-01@1", null, null),

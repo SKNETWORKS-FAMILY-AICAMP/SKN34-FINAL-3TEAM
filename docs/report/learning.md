@@ -569,10 +569,10 @@ learning
 
 | 할 일 | 위치 | 테스트 |
 |---|---|---|
-| 시드 code 교체(위 대조표) | `db/seed/demo_missions.sql` | 게시 검사를 시드 20문항에 돌려 통과 |
+| 시드 code 교체(위 대조표) **(#344 반영)** | `db/seed/demo_missions.sql` | 게시 검사를 시드 20문항에 돌려 통과 |
 | 저장 때 code 모양 검사(표준 14개·`e`+숫자·`ANSWER_KEY`·`FINAL_ANSWER`, 아니면 400) | `mission/controller/AdminMissionController` `RubricRequest.toCommand`, 표준 코드 목록은 `mission/domain` | `AdminMissionControllerTest` |
 | 게시 때 `rubric.elements.code`(유형 맞춤, 고르기·순서·분류는 `ANSWER_KEY` 하나, 따져 보기 논술 세 코드) | `mission/domain/Mission` `PublishSnapshot.missingFields` | `AdminMissionServiceTest`·도메인 테스트 |
-| `Element`에 `code`·`goodThought` | `judgment/domain/FeedbackResult` `ElementView`, `FeedbackTarget` `StoredElement`와 그 조회 SQL(`rubric_element` 조인에 `code`·`good_thought`), `attempt/domain/FinishResult.of`(체크리스트), `_common/web/SharedResponses` | `SharedResponsesJsonTest` 기대 JSON(의도한 변경), `AttemptControllerTest`·`FeedbackControllerTest`·`AttemptFinishTest` |
+| `Element`에 `code`·`goodThought` **(#344 반영)** | `judgment/domain/FeedbackResult` `ElementView`, `FeedbackTarget` `StoredElement`와 그 조회 SQL(`rubric_element` 조인에 `code`·`good_thought`), `attempt/domain/FinishResult.of`(체크리스트), `_common/web/SharedResponses` | `SharedResponsesJsonTest` 기대 JSON(의도한 변경), `AttemptControllerTest`·`FeedbackControllerTest`·`AttemptFinishTest` |
 
 web
 

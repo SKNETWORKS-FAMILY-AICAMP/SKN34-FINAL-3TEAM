@@ -337,3 +337,111 @@ def test_scope_is_checked_before_any_http_call():
 
     asyncio.run(scenario())
     assert calls == []
+
+
+def wire_judgment(*, result="PARTIAL", elements=None):
+    elements = elements or [
+        {"code": "ANALYZE_RELATION", "goodThought": False, "satisfied": True},
+        {"code": "ANALYZE_REASON", "goodThought": False, "satisfied": False},
+        {"code": "e2", "goodThought": True, "satisfied": True},
+    ]
+    return {
+        "judgmentId": str(uuid4()),
+        "result": result,
+        "trial": True,
+        "elements": [
+            {
+                "elementId": str(uuid4()),
+                "label": "합성 요소",
+                "quote": None,
+                "sourceType": None,
+                **e,
+            }
+            for e in elements
+        ],
+        "heldReason": "TOO_SHORT" if result == "HELD" else None,
+    }
+
+
+def with_judgment(judgment, *, status="DONE"):
+    def mutate(name, data):
+        if name == "attempts":
+            for item in data["items"]:
+                item["answers"][0]["feedback"] = {
+                    "status": status,
+                    "judgment": judgment,
+                    "followup": None,
+                    "nextActions": [],
+                    "versions": None,
+                }
+        return data
+
+    return mutate
+
+
+def test_judgment_elements_are_read_for_element_metrics():
+    student = uuid4()
+    attempts = [attempt_for(student) for _ in range(5)]
+    records = asyncio.run(
+        read(student, handler_for(student, attempts, [], with_judgment(wire_judgment())))
+    )
+    judgment = records.attempts[0].answers[0].judgment
+    assert judgment.result == "PARTIAL" and judgment.trial is True
+    assert [(e.code, e.good_thought, e.satisfied) for e in judgment.elements] == [
+        ("ANALYZE_RELATION", False, True),
+        ("ANALYZE_REASON", False, False),
+        ("e2", True, True),
+    ]
+    assert records.attempts[0].answers[0].input_type == "NARRATIVE"
+    metric = next(
+        i.payload
+        for i in MetricsCalculator().calculate(records).items
+        if i.type == ItemType.METRIC and i.payload["label"] == "처음 답에서 확인된 생각 요소"
+    )
+    assert (metric["numerator"], metric["denominator"], metric["state"]) == (5, 10, ReportState.OK)
+
+
+def test_judgment_is_ignored_unless_feedback_is_done():
+    student = uuid4()
+    records = asyncio.run(
+        read(
+            student,
+            handler_for(
+                student,
+                [attempt_for(student)],
+                [],
+                with_judgment(wire_judgment(), status="RUNNING"),
+            ),
+        )
+    )
+    assert records.attempts[0].answers[0].judgment is None
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        lambda j: j["elements"][0].pop("code"),
+        lambda j: j["elements"][0].pop("goodThought"),
+        lambda j: j["elements"][0].update(code=""),
+        lambda j: j["elements"][0].update(satisfied="true"),
+        lambda j: j.update(result="DONE"),
+    ],
+)
+def test_incomplete_judgment_fails_instead_of_being_dropped(fault):
+    student = uuid4()
+    judgment = wire_judgment()
+    fault(judgment)
+    with pytest.raises(ValidationError):
+        asyncio.run(
+            read(student, handler_for(student, [attempt_for(student)], [], with_judgment(judgment)))
+        )
+
+
+def test_duplicate_element_in_one_judgment_is_a_contract_error():
+    student = uuid4()
+    judgment = wire_judgment()
+    judgment["elements"][1]["elementId"] = judgment["elements"][0]["elementId"]
+    with pytest.raises(RecordContractError, match="Duplicate element"):
+        asyncio.run(
+            read(student, handler_for(student, [attempt_for(student)], [], with_judgment(judgment)))
+        )
