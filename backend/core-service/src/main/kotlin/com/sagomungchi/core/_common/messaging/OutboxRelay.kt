@@ -1,5 +1,6 @@
 package com.sagomungchi.core._common.messaging
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import net.javacrumbs.shedlock.core.LockAssert
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.springframework.amqp.core.Message
@@ -20,6 +21,7 @@ class OutboxRelay(
     private val repository: OutboxEventRepository,
     private val rabbitTemplate: RabbitTemplate,
     private val transactionTemplate: TransactionTemplate,
+    private val objectMapper: ObjectMapper,
 ) {
     @Scheduled(fixedDelayString = "\${app.messaging.outbox-relay-interval}")
     @SchedulerLock(name = "core-outbox-relay", lockAtMostFor = "PT1M")
@@ -28,12 +30,20 @@ class OutboxRelay(
         val events = repository.findUnpublished(BATCH_SIZE)
         if (events.isEmpty()) return
         rabbitTemplate.invoke { ops ->
-            events.forEach { ops.send(exchangeOf(it.eventType), it.routingKey, toMessage(it)) }
+            // 저장 시점 trace 아래에서 발행해야 agent가 소비자까지 같은 trace를 잇는다
+            events.forEach { event ->
+                TraceContexts.open(traceparentOf(event)).use {
+                    ops.send(exchangeOf(event.eventType), event.routingKey, toMessage(event))
+                }
+            }
             ops.waitForConfirmsOrDie(MessagingConfig.CONFIRM_TIMEOUT_MS)
         }
         val publishedAt = OffsetDateTime.now()
         transactionTemplate.executeWithoutResult { events.forEach { repository.markPublished(it.id, publishedAt) } }
     }
+
+    private fun traceparentOf(event: OutboxEvent): String? =
+        objectMapper.readTree(event.payload).path("traceparent").textValue()
 
     private fun toMessage(event: OutboxEvent): Message {
         val properties = MessageProperties().apply {

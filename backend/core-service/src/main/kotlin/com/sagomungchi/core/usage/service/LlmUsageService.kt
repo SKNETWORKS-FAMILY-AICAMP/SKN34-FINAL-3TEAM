@@ -10,10 +10,13 @@ import java.math.BigDecimal
 import java.util.UUID
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core.usage.domain.CallType
+import com.sagomungchi.core.usage.domain.MonthToDateCost
 import com.sagomungchi.core.usage.domain.UsageSummary
 import org.springframework.http.HttpStatus
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 
 @Service
@@ -29,6 +32,13 @@ class LlmUsageService(
         val zone = ZoneId.of("Asia/Seoul")
         return repository.summarize(from.atStartOfDay(zone).toOffsetDateTime(),
             to.plusDays(1).atStartOfDay(zone).toOffsetDateTime(), callType?.name)
+    }
+
+    /** KST 달력 월 1일 00:00부터 now까지 (P13 월 예산 기준) */
+    fun monthToDate(now: Instant): MonthToDateCost {
+        val zone = ZoneId.of("Asia/Seoul")
+        val monthStart = now.atZone(zone).toLocalDate().withDayOfMonth(1).atStartOfDay(zone)
+        return repository.monthToDate(monthStart.toOffsetDateTime(), now.atOffset(ZoneOffset.UTC))
     }
 
     /** 같은 이벤트 재전달은 event_id UK로 무시 */

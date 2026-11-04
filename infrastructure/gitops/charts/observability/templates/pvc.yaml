@@ -1,4 +1,4 @@
-{{- range $name := list "prometheus" "grafana" }}
+{{- range $name := list "prometheus" "grafana" "tempo" }}
 {{- $persistence := (index $.Values $name).persistence }}
 {{- if $persistence.enabled }}
 ---

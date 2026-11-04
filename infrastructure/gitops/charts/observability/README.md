@@ -18,6 +18,31 @@ Grafana contact point·notification policy·경보 3개를 파일로 provision�
 
 적용 순서: 관측 Secret 준비 → chart lint/template 및 정책 검토 → namespace·platform 수집 정책 → Helm 배포 → PVC/Ready·Prometheus target/query·Grafana 경보·Discord 수신·기존 앱 및 노드 자원 확인. 자원 압박이나 기존 앱 장애가 발생하면 관측 Deployment를 0으로 축소해 부하를 제거하고 PVC는 보존한다. 앱 자원 예약량을 낮추지 않는다.
 
+## DLQ 큐별 적재 경보 (#187)
+
+`prometheus.rabbitmqDlqMetrics.enabled`(기본 false)를 켜면 기존 `rabbitmq` job은 그대로 두고 같은 15692 포트의
+`/metrics/detailed?family=queue_coarse_metrics`를 `rabbitmq-dlq` job으로 수집한다. metric relabel로
+`rabbitmq_detailed_queue_messages` 중 `<큐>.dlq`만 남겨 시계열은 정의된 DLQ 수만큼이다. Prometheus→RabbitMQ 15692 허용 범위 안이다.
+`grafana.alerting.rules`에 `job="rabbitmq-dlq"` 규칙이 있는데 이 값이 꺼져 있으면 Helm 렌더가 실패한다.
+Prometheus는 ConfigMap 변경을 다시 읽지 않으므로 이 값이 켜질 때만 Pod template annotation을 붙여 켜고 끌 때 Pod를 다시 만든다.
+
+`grafana.alerting.interval`·`groupWait`·`groupInterval`·`repeatInterval`은 기본값이 위 운영값(1m·30s·5m·4h)과 같아 기존 렌더를 바꾸지 않는다.
+규칙마다 `noDataState`(기본 `NoData`)를 지정할 수 있다. 업무별 오류율·지연처럼 요청이 없으면 값이 없는 규칙은 `OK`로 둔다.
+지표 수집 자체의 부재는 별도 규칙(`app-metrics-missing`, target down)이 알린다.
+
+prod values에는 #187 규칙 13개(DLQ, 월 비용 80%·미산정 호출, core·learning HTTP 지표 부재, 인증·학습 저장·AI·리포트·결제 5xx 비율과 p95 지연)를 추가했다.
+임계값은 초기 기준이며 서비스 SLA가 아니다. 비용·업무 규칙은 core·learning의 Java agent 지표가 필요하므로 prod `core-service.json`·`learning-service.json`의
+`javaAgent.enabled`·`networkPolicy.egressToCollector`를 함께 켰다. 아직 AWS에 적용하지 않았다. 규칙 목록·검증은 [경보 검증](../../operational-alerts/README.md)을 따른다.
+
+## trace 저장 (Tempo, #187)
+
+`tempo.enabled`(기본 false)를 켜면 Tempo 2.10.10 단일 바이너리(OTLP gRPC 4317, HTTP API 3200)를 배치한다.
+Collector에 `otlp/tempo` exporter와 traces pipeline이 생기고, Grafana에 datasource `Tempo`(uid `tempo`)가 추가된다.
+NetworkPolicy는 Collector→Tempo 4317, Grafana→Tempo 3200만 연다. Collector·Grafana는 설정을 시작 시에만 읽으므로
+Tempo를 켜고 끌 때 Pod template annotation으로 재생성된다. 보존은 `tempo.retention`(기본 72h), prod는 gp3 2Gi PVC(Helm keep)다.
+앱 쪽은 app-service chart의 `tracing.enabled`와 `networkPolicy.egressToCollector`를 켠다. Langfuse 경로(`collector.traces`)와 함께 켜면 두 곳에 모두 보낸다.
+Tempo 3.x는 설정 형식 차이를 확인하지 않아 쓰지 않았다.
+
 ## 기존 로컬 구성과 검증 이력
 
 이 chart는 검증 전용 kind 클러스터의 `observability` namespace에 OTel Collector, Prometheus, Grafana를 배치한다. Collector의 OTLP 수신(4317/4318)과 Prometheus exporter(8889), RabbitMQ 기존 metrics(15692) 수집, Grafana Prometheus datasource만 포함한다. Grafana는 `observability-credentials` Secret의 `GRAFANA_ADMIN_USER`·`GRAFANA_ADMIN_PASSWORD`를 참조한다. UI는 외부 Ingress 없이 필요한 동안만 port-forward로 조회한다.
