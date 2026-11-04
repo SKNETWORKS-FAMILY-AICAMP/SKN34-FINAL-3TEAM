@@ -12,6 +12,7 @@ import { fixtureStore } from './student.ts'
 import { workspaceScenario } from './accounts.ts'
 export const inclusionRule =
   '기간 내 답변 제출이 있는 시도(미완료 포함), 처리 실패만 있는 시도·삭제 기록 제외'
+export const conversationOwners = new Map<string, string>()
 export const conversations = new Map<string, Conversation>()
 export const reports = new Map<string, WeeklyReport[]>()
 export const regenerateCounts = new Map<string, number>()

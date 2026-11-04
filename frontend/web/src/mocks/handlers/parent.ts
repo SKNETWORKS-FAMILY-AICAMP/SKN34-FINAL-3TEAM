@@ -15,6 +15,7 @@ import {
 } from '../fixtures/accounts.ts'
 import {
   conversations,
+  conversationOwners,
   reports,
   regenerateCounts,
   pendingReports,
@@ -46,7 +47,7 @@ export async function parentChild(request: Request, id: string) {
   if (!c || mockGuardianConsentRequired(id)) fail('CHILD_NOT_LINKED', '연결 또는 법정대리인 동의를 확인해 주세요.', 403)
   return c!
 }
-const docs: ConsentDocument[] = [
+export const docs: ConsentDocument[] = [
   {
     documentId: 'terms-v1',
     kind: 'TERMS',
@@ -73,12 +74,12 @@ const docs: ConsentDocument[] = [
     required: true,
   },
 ]
-function fixtureConsent(document: ConsentDocument, studentId: string | null = null, agreed = true): ConsentHistory {
+export function fixtureConsent(document: ConsentDocument, studentId: string | null = null, agreed = true): ConsentHistory {
   const now = new Date().toISOString()
   return { consentId: `msw-consent-${crypto.randomUUID()}`, subjectUserId: mockIdentity.userId, studentId,
     document, agreed, status: agreed ? 'AGREED' : 'WITHDRAWN', agreedAt: now, withdrawnAt: agreed ? null : now }
 }
-async function consentRows() {
+export async function consentRows() {
   let rows = mockConsentHistory.get(mockIdentity.email)
   if (!rows) {
     // Existing demo accounts/children are explicitly pre-consented synthetic fixtures.
@@ -94,7 +95,7 @@ export function mockChildConsentMetadata(c: Child) {
   return { ...c, guardianConsentRequired: blocked, hasRecords: blocked ? null : hasRecords,
     recordState: blocked ? 'CONSENT_REQUIRED' as const : 'AVAILABLE' as const }
 }
-function consentCheck(consents: Consent[], guardian = false) {
+export function consentCheck(consents: Consent[], guardian = false) {
   for (const d of docs.filter((d) => (guardian ? d.kind === 'GUARDIAN' : d.kind !== 'GUARDIAN')))
     if (
       !consents?.some((c) => c.documentId === d.documentId && c.version === d.version && c.agreed)
@@ -118,6 +119,7 @@ const conv = (id: string) => {
 }
 async function conversationGuard(request: Request, id: string) {
   const c = conv(id)
+  if (conversationOwners.has(id) && conversationOwners.get(id) !== mockIdentity.email) fail('NOT_FOUND', '본인의 대화를 찾을 수 없습니다.', 404)
   const child = await parentChild(request, c.childId)
   requireShared(c.childId)
   if (request.method === 'POST' && child.plan !== 'PREMIUM')
@@ -416,8 +418,10 @@ export const parentHandlers = [
       parentGuard(request)
       const body = (await request.json()) as { password?: string; purpose?: string; childId?: string; challengeId?: string; scope?: string }
       const bearer = request.headers.get('Authorization') ?? ''
-      if (body.purpose && ['PIN_CHANGE','CHILD_UNLINK','CHILD_DELETE','WITHDRAWAL','GUARDIAN_PASSWORD'].includes(body.purpose)) {
-        if (!['WITHDRAWAL','GUARDIAN_PASSWORD'].includes(body.purpose)) { if (!body.childId) fail('VALIDATION_FAILED','대상 자녀가 필요합니다.',422); await parentChild(request, body.childId!) }
+      if (body.purpose && ['PIN_CHANGE','CHILD_UNLINK','CHILD_DELETE','WITHDRAWAL','GUARDIAN_PASSWORD','CHILD_TRANSFER','TRANSFER_ACCEPT'].includes(body.purpose)) {
+        if (body.purpose === 'TRANSFER_ACCEPT' && (body.childId !== undefined || body.scope !== undefined)) fail('VALIDATION_FAILED', '이관 수락 재인증에는 자녀·삭제 범위를 지정하지 않습니다.')
+        if (body.purpose === 'CHILD_TRANSFER' && (!body.childId || body.scope !== undefined)) fail('VALIDATION_FAILED', '이관 재인증에는 대상 자녀만 지정합니다.')
+        if (!['WITHDRAWAL','GUARDIAN_PASSWORD','TRANSFER_ACCEPT'].includes(body.purpose)) { if (!body.childId) fail('VALIDATION_FAILED','대상 자녀가 필요합니다.',422); await parentChild(request, body.childId!) }
         if (body.purpose==='CHILD_DELETE' && !['PROFILE','RECORDS'].includes(body.scope ?? '')) fail('VALIDATION_FAILED','삭제 범위가 필요합니다.',422)
         const challengeId = crypto.randomUUID()
         pinChallenges.set(challengeId, { childId: body.childId, purpose:body.purpose,scope:body.scope,bearer,expires:Date.now()+600000 })
@@ -507,7 +511,7 @@ export const parentHandlers = [
       await parentChild(request, childId)
       requireShared(childId)
       queryFault()
-      return page([...conversations.values()].filter((c) => c.childId === childId))
+      return page([...conversations.values()].filter((c) => c.childId === childId && (!conversationOwners.has(c.conversationId) || conversationOwners.get(c.conversationId) === mockIdentity.email)))
     }),
   ),
   http.post('/api/v1/conversations', ({ request }) =>
@@ -527,6 +531,7 @@ export const parentHandlers = [
         messages: [],
       }
       conversations.set(v.conversationId, v)
+      conversationOwners.set(v.conversationId, mockIdentity.email)
       return v
     }, 201),
   ),

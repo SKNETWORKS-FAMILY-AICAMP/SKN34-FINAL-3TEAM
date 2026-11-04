@@ -1,3 +1,4 @@
+import { requireNoPendingTransfer, transferUnavailableChildren, replaceTransferChildren } from '../fixtures/guardianTransfers.ts'
 import { http, HttpResponse } from 'msw/http'
 import { fixtureStore as store } from '../fixtures/student.ts'
 import { mockIdentity } from '../fixtures/accounts.ts'
@@ -112,15 +113,16 @@ export const serviceHandlers = [
     return { childId:c.id,actions:[{ scope:'UNLINK',effect:'보호자 연결과 학생 이용을 중단합니다. 학습 기록 삭제와 다릅니다.' },{ scope:'PROFILE',effect:'프로필과 학습·대화·리포트 삭제를 요청합니다.' },{ scope:'RECORDS',effect:'프로필을 남기고 학습·대화·리포트 삭제를 요청합니다. 자동으로 학습이 재개되지는 않습니다.' }],retainedTransactionsYears:5,deviceCleanupPending:true }
   })),
   http.delete('/api/v1/children/:childId/link', ({request,params})=>respond(async()=>{
-    const c=await parentChild(request,String(params.childId));consumeActionReauth(request,'CHILD_UNLINK',c.id)
-    store.replaceChildren((await store.children()).filter(v=>v.id!==c.id))
+    const c=await parentChild(request,String(params.childId));requireNoPendingTransfer(c.id);consumeActionReauth(request,'CHILD_UNLINK',c.id)
+    replaceTransferChildren(mockIdentity.email,(await store.children()).filter(v=>v.id!==c.id))
   },204)),
   http.post('/api/v1/children/:childId/deletion-requests',({request,params})=>respond(async()=>{
     const c=await parentChild(request,String(params.childId)),data=await request.json() as {scope:'PROFILE'|'RECORDS'}
+    requireNoPendingTransfer(c.id)
     consumeActionReauth(request,'CHILD_DELETE',c.id,data.scope)
     if ([...deletions.values()].some(v=>v.childId===c.id&&v.status==='CONFIRMED')) fail('DELETION_IN_PROGRESS','이미 삭제 처리 중입니다.',409)
     const result={deletionRequestId:crypto.randomUUID(),childId:c.id,scope:data.scope,status:'CONFIRMED',completedServices:[],owner:owner()}
-    deletions.set(result.deletionRequestId,result);return result
+    deletions.set(result.deletionRequestId,result);transferUnavailableChildren.add(c.id);return result
   },202)),
   http.get('/api/v1/children/:childId/deletion-requests/:requestId',({request,params})=>respond(async()=>{
     parentGuard(request);const result=deletions.get(String(params.requestId))
@@ -129,7 +131,7 @@ export const serviceHandlers = [
   })),
   http.get('/api/v1/me/withdrawal/precheck', ({ request }) => respond(async () => { parentGuard(request); return { canWithdraw:true,activeSubscriptions:0,unresolvedRefunds:0,retainedTransactionsYears:5 } })),
   http.post('/api/v1/me/withdrawal',({request})=>respond(async()=>{
-    parentGuard(request);consumeActionReauth(request,'WITHDRAWAL')
+    parentGuard(request);requireNoPendingTransfer();consumeActionReauth(request,'WITHDRAWAL')
     const statusToken=crypto.randomUUID(),state={withdrawalRequestId:crypto.randomUUID(),status:'WITHDRAWAL_REQUESTED'}
     withdrawalReceipts.set(statusToken,state);return {...state,statusToken}
   },202)),

@@ -4064,7 +4064,7 @@ paths:
         '403':
           description: 권한/재인증 실패
         '409':
-          description: 정책/상태 충돌
+          description: TRANSFER_PENDING — 자녀 이관 대기 중 연결 해제 불가
       parameters:
       - in: path
         name: childId
@@ -4129,7 +4129,7 @@ paths:
         '403':
           description: 권한/재인증 실패
         '409':
-          description: 정책/상태 충돌
+          description: TRANSFER_PENDING — 이관 대기 중 삭제 불가. DELETION_IN_PROGRESS — 이미 삭제 처리 중
       parameters:
       - in: path
         name: childId
@@ -4346,7 +4346,7 @@ paths:
         '403':
           description: 권한/재인증 실패
         '409':
-          description: 정책/상태 충돌
+          description: TRANSFER_PENDING — 보낸 이관 대기 중 탈퇴 불가. WITHDRAWAL_BLOCKED — 구독·미처리 환불 정리 필요
       parameters:
       - in: header
         name: X-Reauth-Token
@@ -6327,7 +6327,7 @@ paths:
   /guardian-transfers/recipient:
     post:
       operationId: findGuardianTransferRecipient
-      description: 격리된 로컬 이관 실험. app.guardian-transfer.enabled=true에서만 제공. 학부모와 필수 이용 동의 필요.
+      description: 정식 자녀 이관 흐름(#289·#309). app.guardian-transfer.enabled=true에서만 제공(기본 false, 노출 제어). 학부모와 필수 이용 동의 필요. 취소·조회도 동일 조건이며 조건 완화는 #307 후속 범위.
       responses:
         '200':
           description: 성공
@@ -6347,9 +6347,9 @@ paths:
         '403':
           description: 권한·동의·재인증 오류
         '404':
-          description: 대상 없음 또는 기능 비활성
+          description: TRANSFER_RECIPIENT_NOT_FOUND — 활성 학부모 후보 없음·중복. NOT_FOUND — 기능 비활성
         '409':
-          description: 인원·진행 상태·결제·동의 버전 충돌
+          description: CHILD_LIMIT_REACHED — 수신자 자녀 3명 한도
       requestBody:
         required: true
         content:
@@ -6366,7 +6366,7 @@ paths:
   /guardian-transfers:
     get:
       operationId: listGuardianTransfers
-      description: 격리된 로컬 이관 실험. app.guardian-transfer.enabled=true에서만 제공. 학부모와 필수 이용 동의 필요.
+      description: 정식 자녀 이관 흐름(#289·#309). app.guardian-transfer.enabled=true에서만 제공(기본 false, 노출 제어). 학부모와 필수 이용 동의 필요. 취소·조회도 동일 조건이며 조건 완화는 #307 후속 범위.
       responses:
         '200':
           description: 성공
@@ -6393,12 +6393,12 @@ paths:
         '403':
           description: 권한·동의·재인증 오류
         '404':
-          description: 대상 없음 또는 기능 비활성
+          description: NOT_FOUND — 대상 계정 없음·비활성 또는 기능 비활성
         '409':
-          description: 인원·진행 상태·결제·동의 버전 충돌
+          description: 계정 상태 충돌
     post:
       operationId: requestGuardianTransfer
-      description: 격리된 로컬 이관 실험. app.guardian-transfer.enabled=true에서만 제공. 학부모와 필수 이용 동의 필요.
+      description: 정식 자녀 이관 흐름(#289·#309). app.guardian-transfer.enabled=true에서만 제공(기본 false, 노출 제어). 학부모와 필수 이용 동의 필요. 취소·조회도 동일 조건이며 조건 완화는 #307 후속 범위.
       responses:
         '200':
           description: 성공
@@ -6418,9 +6418,9 @@ paths:
         '403':
           description: 권한·동의·재인증 오류
         '404':
-          description: 대상 없음 또는 기능 비활성
+          description: NOT_FOUND — 대상 계정 없음·비활성 또는 기능 비활성
         '409':
-          description: 인원·진행 상태·결제·동의 버전 충돌
+          description: TRANSFER_PENDING — 다른 이관 대기 요청. TRANSFER_CHILD_UNAVAILABLE — 삭제 중·비활성 자녀. TRANSFER_PAYMENT_BLOCKED — 자녀 결제·구독 정리 필요. CHILD_LIMIT_REACHED — 수신자 3명 한도. WITHDRAWAL_BLOCKED — 발신자 구독·환불 정리 필요
       parameters:
       - name: X-Reauth-Token
         in: header
@@ -6449,7 +6449,7 @@ paths:
   /guardian-transfers/{id}/accept:
     post:
       operationId: acceptGuardianTransfer
-      description: 격리된 로컬 이관 실험. app.guardian-transfer.enabled=true에서만 제공. 학부모와 필수 이용 동의 필요.
+      description: 정식 자녀 이관 흐름(#289·#309). app.guardian-transfer.enabled=true에서만 제공(기본 false, 노출 제어). 학부모와 필수 이용 동의 필요. 취소·조회도 동일 조건이며 조건 완화는 #307 후속 범위.
       responses:
         '200':
           description: 성공
@@ -6469,9 +6469,9 @@ paths:
         '403':
           description: 권한·동의·재인증 오류
         '404':
-          description: 대상 없음 또는 기능 비활성
+          description: NOT_FOUND — 본인 요청·대상 계정 없음 또는 기능 비활성
         '409':
-          description: 인원·진행 상태·결제·동의 버전 충돌
+          description: TRANSFER_ALREADY_RESOLVED — 이미 다른 상태로 종료. TRANSFER_CHILD_UNAVAILABLE — 삭제 중·비활성 자녀. TRANSFER_ACTIVITY_IN_PROGRESS — 상담·관리자 재처리 중. TRANSFER_PAYMENT_BLOCKED — 자녀 결제·구독 정리 필요. CHILD_LIMIT_REACHED — 수신자 3명 한도. WITHDRAWAL_BLOCKED — 발신자 구독·환불 정리 필요. CONSENT_DOCUMENT_CHANGED — GUARDIAN 문서 버전 변경
       parameters:
       - name: id
         in: path
@@ -6500,7 +6500,7 @@ paths:
   /guardian-transfers/{id}/reject:
     post:
       operationId: rejectGuardianTransfer
-      description: 격리된 로컬 이관 실험. app.guardian-transfer.enabled=true에서만 제공. 학부모와 필수 이용 동의 필요.
+      description: 정식 자녀 이관 흐름(#289·#309). app.guardian-transfer.enabled=true에서만 제공(기본 false, 노출 제어). 학부모와 필수 이용 동의 필요. 취소·조회도 동일 조건이며 조건 완화는 #307 후속 범위.
       responses:
         '200':
           description: 성공
@@ -6520,9 +6520,9 @@ paths:
         '403':
           description: 권한·동의·재인증 오류
         '404':
-          description: 대상 없음 또는 기능 비활성
+          description: NOT_FOUND — 본인 요청 없음 또는 기능 비활성
         '409':
-          description: 인원·진행 상태·결제·동의 버전 충돌
+          description: TRANSFER_ALREADY_RESOLVED — 이미 다른 상태로 종료
       parameters:
       - name: id
         in: path
@@ -6533,7 +6533,7 @@ paths:
   /guardian-transfers/{id}/cancel:
     post:
       operationId: cancelGuardianTransfer
-      description: 격리된 로컬 이관 실험. app.guardian-transfer.enabled=true에서만 제공. 학부모와 필수 이용 동의 필요.
+      description: 정식 자녀 이관 흐름(#289·#309). app.guardian-transfer.enabled=true에서만 제공(기본 false, 노출 제어). 학부모와 필수 이용 동의 필요. 취소·조회도 동일 조건이며 조건 완화는 #307 후속 범위.
       responses:
         '200':
           description: 성공
@@ -6553,9 +6553,9 @@ paths:
         '403':
           description: 권한·동의·재인증 오류
         '404':
-          description: 대상 없음 또는 기능 비활성
+          description: NOT_FOUND — 본인 요청 없음 또는 기능 비활성
         '409':
-          description: 인원·진행 상태·결제·동의 버전 충돌
+          description: TRANSFER_ALREADY_RESOLVED — 이미 다른 상태로 종료
       parameters:
       - name: id
         in: path
@@ -6566,7 +6566,7 @@ paths:
   /guardian-transfers/cancel-outgoing:
     post:
       operationId: cancelOutgoingGuardianTransfers
-      description: 격리된 로컬 이관 실험. app.guardian-transfer.enabled=true에서만 제공. 학부모와 필수 이용 동의 필요.
+      description: 정식 자녀 이관 흐름(#289·#309). app.guardian-transfer.enabled=true에서만 제공(기본 false, 노출 제어). 학부모와 필수 이용 동의 필요. 취소·조회도 동일 조건이며 조건 완화는 #307 후속 범위.
       responses:
         '200':
           description: 성공
@@ -6592,9 +6592,9 @@ paths:
         '403':
           description: 권한·동의·재인증 오류
         '404':
-          description: 대상 없음 또는 기능 비활성
+          description: NOT_FOUND — 기능 비활성
         '409':
-          description: 인원·진행 상태·결제·동의 버전 충돌
+          description: 계정 상태 충돌
 components:
   securitySchemes:
     StudentDeviceCookie: {type: apiKey, in: cookie, name: student_device}
