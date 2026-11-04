@@ -59,7 +59,7 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
                                                       └(통과)→ END [result: LLM]
 ```
 
-- 구성: `analysis_agent/graph.py`(조립), `service.py`(`AnalysisService`: 범위·기한·프롬프트 선택, 그래프 실행·최종 상태 → 이벤트, #253), `state.py`, `context.py`(`AgentContext`), `nodes/`(understand·retrieve·respond), `tools.py`(`RecordTools`, 호출마다 권한 재확인), `calculators.py`, `verification.py`, `templates.py`, `prompts.py`(`analysis@2`), `router.py`(SSE), `clients/learning_client.py`(learning 기록 조회 HTTP, #65)
+- 구성: `analysis_agent/graph.py`(조립), `service.py`(`AnalysisService`: 범위·기한·프롬프트 선택, 그래프 실행·최종 상태 → 이벤트, #253), `state.py`, `context.py`(`AgentContext`), `nodes/`(understand·retrieve·respond), `tools.py`(`RecordTools`, 호출마다 권한 재확인), `calculators.py`, `verification.py`, `templates.py`, `prompts.py`(`analysis@3`), `router.py`(SSE), `clients/learning_client.py`(learning 기록 조회 HTTP, #65)
 - LLM 호출은 기존 `LlmClient` 사용(재시도·사용량 이벤트 `ANALYSIS`·대체 모델 유지). classify는 `generate`(구조화 출력), answer는 `stream`(일반 텍스트). LangGraph는 분기·상태·스트리밍만
 - 도구 선택은 질문 유형 → 도구 표(6유형). 학생·기간은 LLM이 아니라 core가 확인한 `scope`만 사용
 
@@ -236,7 +236,7 @@ uv run --frozen python ../../scripts/verify_scoring_m2.py --archive <m2_models.t
 
 ## 5. 리포트 서술·저녁 질문 (#64)
 
-- `POST /internal/report-narratives`(api-spec 4.2.1, `app/report_narrative/`). 서술·저녁 질문만 만들고 숫자 계산·대조·템플릿 전환은 report(class-diagram 5.2, P16). 사용량 `callType = REPORT_NARRATIVE`, 프롬프트 `report@1`(`/internal/versions`의 `reportNarrative`)
+- `POST /internal/report-narratives`(api-spec 4.2.1, `app/report_narrative/`). 서술·저녁 질문만 만들고 숫자 계산·대조·템플릿 전환은 report(class-diagram 5.2, P16). 사용량 `callType = REPORT_NARRATIVE`, 프롬프트 `report@2`(`/internal/versions`의 `reportNarrative`)
 - API 변경: 요청 `quotes[]`에 `answerVersion` 추가(report `NarrativeGenerator`가 근거 링크 버전으로 채움). 응답 `citedQuotes[].answerVersion`을 ai가 알 수 없던 문제 해소. 3.4 상세 `quotes`·저장 payload는 그대로
 - 인용: LLM이 `{후보 번호, 원문 구절}`을 고르고, 구절이 그 후보 원문의 부분 문자열이 아니거나 번호가 범위 밖이면 제외. ID·버전은 입력값. 서술 속 따옴표 문구와 `citedQuotes` 불일치는 report 대조에서 템플릿 전환
 - 프롬프트 규칙은 report `ReportVerifier` 통과 범위에 맞춤: 입력 수치·전후 변화 값만 아라비아 숫자로, 한글 수사·미션 제목·답 속 숫자(인용 밖) 금지, 점수·등급·레벨·순위 낱말과 사고력 향상 단정 금지, 기록 없는 유형은 "확인된 기록 없음", 미작성 돌아보기는 "쓰지 않음"
@@ -266,8 +266,8 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 |---|---|---|
 | `judgment` | `ai/judgment` | `judgment/prompts.py`, `judge@2` |
 | `followup` | `ai/followup` | `followup/prompts.py`, `followup@4` |
-| `analysis` | `ai/analysis` | `analysis_agent/prompts.py`, `analysis@2` |
-| `reportNarrative` | `ai/report-narrative` | `report_narrative/prompts.py`, `report@1` |
+| `analysis` | `ai/analysis` | `analysis_agent/prompts.py`, `analysis@3` |
+| `reportNarrative` | `ai/report-narrative` | `report_narrative/prompts.py`, `report@2` |
 | `reportTemplate` | `ai/report-template` | `analysis_agent/template_prompts.py`, `analysis-template@1` (#280) |
 
 각 버전은 실제 system 문구와 user 본문 구성 함수를 이미지 코드에 함께 넣은 뒤에만 활성화할 수 있다. 현재 이미지는 위 기본 버전의 본문만 보유한다. core snapshot에 해당 활성 항목이 없으면 기본 버전을 사용한다. 보유하지 않은 활성 버전은 다른 본문에 새 버전명만 붙이지 않고 해당 기능 요청과 `/internal/versions`를 `503 AI_PROMPT_VERSION_UNAVAILABLE`로 거부한다. 구독·core snapshot·이벤트 조정 또는 본문 준비가 되지 않으면 `/health/ready`의 `versions`는 DOWN이다. 요청 시작 때 본문·버전 참조를 잡아 분석의 분류/답변 두 LLM 호출과 되묻기 재생성까지 같은 버전을 사용한다.

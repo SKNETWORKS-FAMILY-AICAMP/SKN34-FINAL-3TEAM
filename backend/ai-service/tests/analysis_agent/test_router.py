@@ -94,7 +94,7 @@ def test_verified_llm_answer() -> None:
         "contentAllowed": True,
     }
     assert [(e["kind"], e["answerId"]) for e in result["evidence"]] == [("ANSWER", "a-2")]
-    assert result["versions"] == {"model": "fake-model", "prompt": "analysis@2"}
+    assert result["versions"] == {"model": "fake-model", "prompt": "analysis@3"}
     assert [r.call_type for r in llm.requests] == ["ANALYSIS", "ANALYSIS"]
     assert len(llm.usages) == 2  # 노드별 LLM 호출마다 사용량 1건
 

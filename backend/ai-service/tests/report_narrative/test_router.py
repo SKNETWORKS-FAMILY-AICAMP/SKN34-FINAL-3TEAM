@@ -37,7 +37,7 @@ def test_response_uses_camel_case() -> None:
         "citedQuotes": [
             {"attemptId": "t-9", "answerId": "a-201", "answerVersion": 1, "quote": "나는 반대야."}
         ],
-        "versions": {"model": "fake-model", "prompt": "report@1"},
+        "versions": {"model": "fake-model", "prompt": "report@2"},
     }
 
 

@@ -11,8 +11,8 @@ def test_versions_returns_active_prompt_versions() -> None:
         "prompts": {
             "judgment": "judge@2",
             "followup": "followup@4",
-            "analysis": "analysis@2",
-            "reportNarrative": "report@1",
+            "analysis": "analysis@3",
+            "reportNarrative": "report@2",
             "reportTemplate": "analysis-template@1",
         }
     }

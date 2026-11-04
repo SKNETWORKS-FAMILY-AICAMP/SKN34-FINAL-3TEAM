@@ -44,7 +44,7 @@ def run(node, state, llm: FakeLlm | None = None, tools: FakeRecords | None = Non
 def state(intent: str, empty: bool = False, **extra) -> dict:
     return {
         "request": REQUEST,
-        "prompt_version": "analysis@2",
+        "prompt_version": "analysis@3",
         "intent": intent,
         "computation": compute(intent, records(empty), SCOPE),
         **extra,
@@ -188,7 +188,7 @@ def test_check_confirms_verified_draft() -> None:
     assert result.fallback is None
     assert [e.answer_id for e in result.evidence] == ["a-2"]
     assert result.versions.model == "fake-model"
-    assert result.versions.prompt == "analysis@2"
+    assert result.versions.prompt == "analysis@3"
     assert written == [status("숫자와 인용을 기록과 맞춰 보는 중")]
 
 
