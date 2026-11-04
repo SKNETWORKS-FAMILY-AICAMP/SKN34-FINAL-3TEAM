@@ -296,6 +296,13 @@ def plan_iam(aws, spec, report):
             report.add('iam-role', name, 'OK')
 
 
+def eks_taints(group):
+    """eksctl taint (NoSchedule) -> EKS API form (NO_SCHEDULE)."""
+    effect = {'NoSchedule': 'NO_SCHEDULE', 'NoExecute': 'NO_EXECUTE', 'PreferNoSchedule': 'PREFER_NO_SCHEDULE'}
+    return sorted(({'key': t['key'], 'value': t['value'], 'effect': effect[t['effect']]} for t in group.get('taints', [])),
+                  key=json.dumps)
+
+
 def plan_eks(aws, spec, report):
     config = json.loads((HERE / spec['eks']['config']).read_text(encoding='utf-8'))
     name = config['metadata']['name']
@@ -324,6 +331,9 @@ def plan_eks(aws, spec, report):
                              node['scalingConfig'], 'scaling')
         good &= report.check('nodegroup', group['name'], group['volumeSize'], node.get('diskSize'), 'disk')
         good &= report.check('nodegroup', group['name'], group['iam']['instanceRoleARN'], node['nodeRole'], 'node role')
+        good &= report.check('nodegroup', group['name'], group.get('labels', {}), node.get('labels') or {}, 'labels')
+        good &= report.check('nodegroup', group['name'], eks_taints(group),
+                             sorted(node.get('taints') or [], key=json.dumps), 'taints')
         if good:
             report.add('nodegroup', group['name'], 'OK')
     wanted = {(a['namespace'], a['serviceAccountName']): a['roleARN'] for a in config['iam']['podIdentityAssociations']}
@@ -511,6 +521,34 @@ def allow_rds_from_cluster(aws, spec, ids):
     return True
 
 
+def create_missing_nodegroups(aws, spec):
+    """Managed node groups for an existing cluster (eksctl does not own the console-created one)."""
+    config = json.loads((HERE / spec['eks']['config']).read_text(encoding='utf-8'))
+    cluster = config['metadata']['name']
+    if not aws('eks', 'describe-cluster', '--name', cluster, check=False):
+        return []
+    ids, created = discover(aws, spec), []
+    private = {s['az']: ids['subnets'][s['name']]['SubnetId'] for s in spec['vpc']['subnets'] if s['tier'] == 'private'}
+    for group in config['managedNodeGroups']:
+        if aws('eks', 'describe-nodegroup', '--cluster-name', cluster, '--nodegroup-name', group['name'], check=False):
+            continue
+        args = ['--cluster-name', cluster, '--nodegroup-name', group['name'],
+                '--subnets', *[private[az] for az in group['availabilityZones']],
+                '--instance-types', group['instanceType'], '--ami-type', 'AL2023_x86_64_STANDARD',
+                '--capacity-type', 'ON_DEMAND', '--disk-size', str(group['volumeSize']),
+                '--node-role', group['iam']['instanceRoleARN'],
+                '--scaling-config', f'minSize={group["minSize"]},maxSize={group["maxSize"]},desiredSize={group["desiredCapacity"]}',
+                '--update-config', f'maxUnavailable={group["updateConfig"]["maxUnavailable"]}',
+                '--tags', ','.join(f'{k}={v}' for k, v in spec['tags'].items())]
+        if group.get('labels'):
+            args += ['--labels', ','.join(f'{k}={v}' for k, v in group['labels'].items())]
+        if group.get('taints'):
+            args += ['--taints', json.dumps(eks_taints(group))]
+        aws('eks', 'create-nodegroup', *args)
+        created.append(('nodegroup', group['name']))
+    return created
+
+
 def render_eksctl(aws, spec, operator_cidrs):
     ids = discover(aws, spec)
     config = (HERE / spec['eks']['config']).read_text(encoding='utf-8')
@@ -558,16 +596,16 @@ def persistent_volumes(kubectl):
 
 def pause(aws, kubectl, spec, state_path, execute, allow_pending=False, wait=time.sleep):
     eks, rds = spec['eks'], spec['rds']['id']
-    nodegroup = aws('eks', 'describe-nodegroup', '--cluster-name', eks['cluster'],
-                    '--nodegroup-name', eks['nodegroup'])['nodegroup']['scalingConfig']
-    state = {'nodegroup': nodegroup, 'workloads': workload_state(kubectl, spec),
+    nodegroups = {name: aws('eks', 'describe-nodegroup', '--cluster-name', eks['cluster'],
+                            '--nodegroup-name', name)['nodegroup']['scalingConfig'] for name in eks['nodegroups']}
+    state = {'nodegroups': nodegroups, 'workloads': workload_state(kubectl, spec),
              'rdsStatus': aws('rds', 'describe-db-instances', '--db-instance-identifier', rds)['DBInstances'][0]['DBInstanceStatus'],
              'volumes': persistent_volumes(kubectl), 'snapshots': {}}
     pending = pending_messages(kubectl)
     steps = ['scale workloads to 0 in drain order: ' + ', '.join(w['name'] for w in state['workloads']),
              f'RDS snapshot of {rds}', 'EBS snapshot of ' + ', '.join(v['claim'] for v in state['volumes']),
-             f'nodegroup {eks["nodegroup"]} {nodegroup} -> {spec["pause"]["nodegroupScaling"]}', f'stop RDS {rds}']
-    print('current:', json.dumps({k: state[k] for k in ('nodegroup', 'rdsStatus')}), 'pending queues:', pending or 'none')
+             'nodegroups -> 0 nodes: ' + ', '.join(f'{n} {c}' for n, c in nodegroups.items()), f'stop RDS {rds}']
+    print('current:', json.dumps({k: state[k] for k in ('nodegroups', 'rdsStatus')}), 'pending queues:', pending or 'none')
     for number, step in enumerate(steps, 1):
         print(f'{number}. {step}')
     if not execute:
@@ -597,10 +635,11 @@ def pause(aws, kubectl, spec, state_path, execute, allow_pending=False, wait=tim
     ebs = [v for k, v in state['snapshots'].items() if k != 'rds']
     if ebs:
         aws('ec2', 'wait', 'snapshot-completed', '--snapshot-ids', *ebs)
-    scaling = spec['pause']['nodegroupScaling']
-    aws('eks', 'update-nodegroup-config', '--cluster-name', eks['cluster'], '--nodegroup-name', eks['nodegroup'],
-        '--scaling-config', f'minSize={scaling["minSize"]},maxSize={scaling["maxSize"]},desiredSize={scaling["desiredSize"]}')
-    aws('eks', 'wait', 'nodegroup-active', '--cluster-name', eks['cluster'], '--nodegroup-name', eks['nodegroup'])
+    for name, scaling in nodegroups.items():
+        aws('eks', 'update-nodegroup-config', '--cluster-name', eks['cluster'], '--nodegroup-name', name,
+            '--scaling-config', f'minSize=0,maxSize={scaling["maxSize"]},desiredSize=0')
+    for name in nodegroups:
+        aws('eks', 'wait', 'nodegroup-active', '--cluster-name', eks['cluster'], '--nodegroup-name', name)
     aws('rds', 'stop-db-instance', '--db-instance-identifier', rds)
     print(f'paused; state saved to {state_path}. RDS restarts automatically after 7 days.')
     return state
@@ -609,11 +648,11 @@ def pause(aws, kubectl, spec, state_path, execute, allow_pending=False, wait=tim
 def resume(aws, kubectl, spec, state_path, execute, wait=time.sleep):
     state = json.loads(Path(state_path).read_text(encoding='utf-8'))
     eks, rds = spec['eks'], spec['rds']['id']
-    scaling = state['nodegroup']
+    nodegroups = state['nodegroups']
     ordered = sorted(state['workloads'], key=lambda w: w['kind'] != 'statefulset')
     stateful = [w for w in ordered if w['kind'] == 'statefulset']
     apps = list(reversed([w for w in ordered if w['kind'] != 'statefulset']))
-    print(f'1. start RDS {rds}\n2. nodegroup -> {scaling}\n3. statefulsets: {[w["name"] for w in stateful]}\n'
+    print(f'1. start RDS {rds}\n2. nodegroups -> {nodegroups}\n3. statefulsets: {[w["name"] for w in stateful]}\n'
           f'4. deployments: {[w["name"] for w in apps]}')
     if not execute:
         print('dry run: nothing changed (add --execute to run)')
@@ -622,9 +661,11 @@ def resume(aws, kubectl, spec, state_path, execute, wait=time.sleep):
     if status == 'stopped':
         aws('rds', 'start-db-instance', '--db-instance-identifier', rds)
     aws('rds', 'wait', 'db-instance-available', '--db-instance-identifier', rds)
-    aws('eks', 'update-nodegroup-config', '--cluster-name', eks['cluster'], '--nodegroup-name', eks['nodegroup'],
-        '--scaling-config', f'minSize={scaling["minSize"]},maxSize={scaling["maxSize"]},desiredSize={scaling["desiredSize"]}')
-    aws('eks', 'wait', 'nodegroup-active', '--cluster-name', eks['cluster'], '--nodegroup-name', eks['nodegroup'])
+    for name, scaling in nodegroups.items():
+        aws('eks', 'update-nodegroup-config', '--cluster-name', eks['cluster'], '--nodegroup-name', name,
+            '--scaling-config', f'minSize={scaling["minSize"]},maxSize={scaling["maxSize"]},desiredSize={scaling["desiredSize"]}')
+    for name in nodegroups:
+        aws('eks', 'wait', 'nodegroup-active', '--cluster-name', eks['cluster'], '--nodegroup-name', name)
     kubectl('wait', '--for=condition=Ready', 'node', '--all', '--timeout=600s')
     for workload in stateful + apps:
         target = f'{workload["kind"]}/{workload["name"]}'
@@ -749,7 +790,7 @@ def main(argv=None):
         report.print()
         return 0 if report.ok else 1
     if args.command == 'apply':
-        for kind, name in apply_missing(aws, spec):
+        for kind, name in apply_missing(aws, spec) + create_missing_nodegroups(aws, spec):
             print('created', kind, name)
         if args.after_eksctl and allow_rds_from_cluster(aws, spec, discover(aws, spec)):
             print('created rds ingress from EKS cluster security group')
