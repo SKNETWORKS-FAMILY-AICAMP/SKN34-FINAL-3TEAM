@@ -21,6 +21,7 @@ env:
   - {name: S3_BUCKET, value: sagomungchi-local-models}
   - {name: S3_REGION, value: ap-northeast-2}
   - {name: MODEL_CACHE_DIR, value: /tmp/scoring-models}
+  - {name: M2_CONTENT3_RULE_ENABLED, value: "false"}
   - {name: AWS_ACCESS_KEY_ID, valueFrom: {secretKeyRef: {name: app-service-credentials, key: MINIO_ROOT_USER}}}
   - {name: AWS_SECRET_ACCESS_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: MINIO_ROOT_PASSWORD}}}
 hpa:
