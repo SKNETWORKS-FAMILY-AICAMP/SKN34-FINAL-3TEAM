@@ -210,3 +210,11 @@ PM 승인으로 다음을 반영했다.
 - 설계 문서의 IRSA 표기를 EKS Pod Identity로 바꾸고, EBS CSI·VPC CNI 역할 trust에 클러스터·namespace·SA 조건을 추가한 원문을 저장소에 반영했다.
 - AWS 적용은 [EKS 문서의 노드그룹 분리 적용](../../infrastructure/eks/README.md#노드그룹-분리-적용-2026-11-04-결정) 순서로 별도 진행한다.
 - 적용(2026-11-04): 위 절차대로 노드그룹을 분리했다. 축소 중 scoring 메모리 예약(2Gi)이 노드별 여유를 넘는 문제를 실측으로 확인해 예약을 1Gi로 조정했다. 최종 4대(application 2, platform-observability 2), `plan` 57/57. 상세는 EKS 문서의 적용 결과.
+
+## 완료 조건 재확인 (2026-11-04 12:10~12:20 KST)
+
+main 기준 core·웹 재배포와 노드그룹 분리 후 실제 화면과 서버 기록으로 다시 확인했다.
+
+- 시연 URL: 학부모 Google 로그인과 이용권 표시, 기존 주간 리포트 조회(report-api 목록 10건·상세 1건 200), 학생 화면에서 답변 3건 제출(12:14~12:15) → AI 판정 3건 200·`DONE`(PARTIAL 2, HELD 1), 후속 질문 2건 생성, 시도 1건 완료. core·learning·ai·scoring·report 로그 오류 0, 앱 재시작 0.
+- 시연 데이터 분리(core_app 읽기 전용): 부모 1명·학생 3명 모두 `is_demo=true`(11/04 추가된 학생 포함), 관리자 1명은 운영자 계정. 결제·주문·구독 0건으로 테스트 거래가 섞일 데이터가 없다. core에 `AUTH_NEW_ACCOUNT_DEMO=true`와 결제 키 연결을 확인했다. 실제 신규 Google 가입·공용 테스트 키 결제 승인은 실행하지 않았다.
+- 비밀 스캔: Gitleaks 8.30.1 이력·현재 파일 1,529개 0건.
