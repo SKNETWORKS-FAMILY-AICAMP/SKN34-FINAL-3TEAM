@@ -238,7 +238,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │     └─ repository/             # IdempotencyRepository
 ├─ account/                      # Google 로그인·세션·탈퇴
 │  ├─ controller/                # PublicAuthFilter(공개 API 인증, #251) 포함
-│  ├─ service/
+│  ├─ service/                   # GuardianPasswordService: 학생 화면 → 학부모 복귀용 보호자 비밀번호 (V24)
 │  │  └─ dto/
 │  ├─ domain/
 │  ├─ repository/
@@ -250,9 +250,9 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ service/
 │  ├─ domain/
 │  └─ repository/
-├─ guardianship/                 # 자녀 등록·연결·권한 확인, 삭제 요청 → student.deleted
-│  ├─ controller/
-│  ├─ service/
+├─ guardianship/                 # 자녀 등록·연결·권한 확인, 삭제 요청 → student.deleted, 학부모 간 자녀 이관(#289)
+│  ├─ controller/                # GuardianTransferController: 받는 학부모 확인·이관 요청·수락·거절·취소
+│  ├─ service/                   # GuardianTransferService(이관 실행), GuardianTransferAccessService(대기 중 탈퇴·삭제 차단)
 │  │  └─ dto/
 │  ├─ domain/
 │  └─ repository/
@@ -266,7 +266,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 ├─ conversation/                 # 분석 대화, 예시 질문
 │  ├─ controller/                # SSE
 │  ├─ scheduler/                 # ConversationRetryWorker: 관리자 재처리 대기 요청 DB 선점·실행 (#47)
-│  ├─ service/
+│  ├─ service/                   # ConversationTransferService: 이관 시 진행 중 분석 확인·대화 이전, 탈퇴 시 남은 대화 삭제 (#289)
 │  ├─ domain/
 │  ├─ repository/
 │  └─ client/
@@ -384,6 +384,7 @@ backend/ai-service/
 │  │  ├─ models.py               # 요청·응답 스키마
 │  │  ├─ extractor.py            # LLM 근거 추출
 │  │  ├─ verifier.py             # 코드 원문 대조
+│  │  ├─ cross_check.py          # M2·M1 교차 확인 요청 본문·불일치 판단 (#69)
 │  │  └─ prompts.py
 │  ├─ followup/
 │  │  ├─ router.py
@@ -419,7 +420,7 @@ backend/ai-service/
 │  ├─ clients/
 │  │  ├─ base.py                 # 내부 토큰·컨텍스트 헤더 전달 httpx 클라이언트
 │  │  ├─ learning_client.py
-│  │  ├─ scoring_client.py       # (예정) M2·M1 교차 확인
+│  │  ├─ scoring_client.py       # ScoringClient: M2 점수·M1 점검 호출 (#69)
 │  │  └─ core_client.py          # 기동·재연결 시 core 활성 버전 조회 (#68)
 │  ├─ llm/                       # LLM 클라이언트 래퍼 (제공자 교체 지점)
 │  │  ├─ base.py                 # 공통 인터페이스·재시도·타임아웃·사용량 기록
@@ -450,7 +451,9 @@ backend/scoring-service/
 │  ├─ m2/
 │  │  ├─ router.py
 │  │  ├─ service.py
-│  │  └─ models.py
+│  │  ├─ models.py
+│  │  ├─ metadata.py             # 학습 산출물 입력·출력·경계 검증 (로딩·추론 공통)
+│  │  └─ content3_rule.py        # 서술 핵심어 포함 비율 결합 보정 규칙
 │  ├─ m1/
 │  │  ├─ router.py
 │  │  ├─ service.py
@@ -489,6 +492,7 @@ backend/report-service/
 │  ├─ security.py
 │  ├─ database.py                # 공통 DB 연결 (트랜잭션 범위는 서비스 소유)
 │  ├─ concurrency.py             # 취소 전 블로킹 작업 완료 후 잠금 해제
+│  ├─ tracing.py                 # OTLP trace 내보내기·traceparent 전파 (#187)
 │  ├─ generation/
 │  │  ├─ consumer.py
 │  │  ├─ service.py
@@ -530,7 +534,7 @@ backend/report-service/
 │  │  ├─ base.py
 │  │  ├─ learning_client.py
 │  │  ├─ ai_client.py
-│  │  ├─ core_client.py          # 학생 별명 조회(#119)·삭제 완료 보고
+│  │  ├─ core_client.py          # 학생 별명(#119)·리포트 표시 설정(#209) 조회, 삭제 완료 보고
 │  │  └─ storage.py              # S3·로컬 MinIO
 │  ├─ messaging/
 │  │  ├─ envelope.py
@@ -620,7 +624,14 @@ backend/report-service/
 
   - 전 Pod 공통 egress: kube-dns(53), OTel Collector·Langfuse(`observability`)
   - report-api·report-worker는 라벨이 달라 허용 대상에 각각 명시
-  - learning·report-worker → core는 삭제 완료 보고(`/internal/deletion-requests/.../completions`)만 사용 (P09)
+  - core 내부 API 호출(위 core ingress 허용의 근거, 경로는 [API 명세서](api-spec.md) 4장)
+
+    | 호출 서비스 | 클라이언트 | core 경로 |
+    |---|---|---|
+    | learning | `record/client/CoreClient.kt` | 삭제 완료 보고 `POST /internal/deletion-requests/{id}/completions` (P09) |
+    | learning | `judgment/client/PaymentUsageClient.kt` | 피드백 프리미엄 사용 예약·확정 `POST /internal/payment-usage/reservations`·`/completions` (#48) |
+    | report-worker | `app/clients/core_client.py` | 학생 별명 `GET /internal/students/{id}/profile`(#119)·리포트 표시 설정 `GET /internal/students/{id}/report-template`(#209) 조회, 삭제 완료 보고 |
+    | ai·scoring | `app/clients/core_client.py` | 기동·재연결 시 활성 버전 snapshot `GET /internal/model-versions/active` (ai #68, scoring #85) |
   - migration-job: RDS egress / local: LLM API·토스 stub는 compose E2E 전용이며 kind에는 없음(4.1)
 
 ### 4.4 확장
@@ -663,8 +674,12 @@ SKN34-FINAL-3TEAM/
 ├─ frontend/
 │  └─ web/                       # React 웹
 │     ├─ src/                    # 3장 참고
+│     ├─ scripts/                # 시연용 Vite 플러그인·QR 기기 시연·결제 테스트 서버
 │     ├─ tests/
-│     │  └─ e2e/                 # 실서버 Playwright 대표 시나리오 (NFR-QA-01, playwright.e2e.config.ts·seed/, #246)
+│     │  ├─ e2e/                 # 실서버 Playwright 대표 시나리오 (NFR-QA-01, playwright.e2e.config.ts·seed/, #246)
+│     │  ├─ transfer-local/      # #289 이관 격리 로컬 실서버 시나리오 (playwright.transfer-local.config.ts)
+│     │  └─ transfer-mock/       # #289 이관 MSW 시나리오 (playwright.transfer-mock.config.ts)
+│     ├─ playwright.config.ts    # 목업 API(VITE_API_MOCK) 브라우저 시나리오 tests/browser 기본 설정
 │     ├─ package.json
 │     ├─ vite.config.ts
 │     └─ tsconfig.json
@@ -684,10 +699,14 @@ SKN34-FINAL-3TEAM/
 ├─ contracts/
 │  ├─ events/
 │  │  ├─ envelope.schema.json    # CloudEvents 공통 봉투
+│  │  ├─ report-messages.md      # 리포트 메시지 계약 설명
 │  │  ├─ <message>.v1.schema.json  # 메시지 1개·버전 1개 = 파일 1개, 1.4 메시지 이름 그대로
 │  │  └─ asyncapi.yaml           # (예정) exchange·routing key·생산/소비 매핑
+│  ├─ examples/
+│  │  └─ report-admin-retry/     # 관리자 리포트 재처리 계약 예시
 │  └─ openapi/
-│     └─ <service>.yaml          # api-spec.md 기준 생성. core-service(공개 API), 나머지(내부 API)
+│     ├─ <service>.yaml          # api-spec.md 기준 생성. core-service(공개 API), 나머지(내부 API)
+│     └─ support-learning-required.yaml  # support↔learning 협의용 계약 (현재 learning 구현 명세와 구분)
 ├─ ml/                           # 모델 학습 (클러스터 밖 실행, 이미지 빌드·배포 대상 아님)
 │  ├─ m2/
 │  ├─ m1/                        # 수학 풀이 점검 학습·평가 코드(#263, 기준선까지·본 학습 전)
@@ -695,8 +714,9 @@ SKN34-FINAL-3TEAM/
 ├─ evaluation/                   # 판정 일치도(QWK, #199)·(예정) 되묻기 유출·에이전트 숫자/인용 대조 평가
 │  ├─ datasets/                  # 평가셋별 cases.jsonl·fixtures (자체 작성 예시 답안, AI Hub 원문 미포함)
 │  ├─ runners/                   # 서비스 호출·채점 스크립트 (judgment_eval.py, 테스트는 ai-service tests)
-│  └─ results/                   # 실행 결과 요약
+│  └─ results/                   # (예정) 실행 결과 요약
 ├─ infrastructure/
+│  ├─ cd/                        # #186 운영 배포 계획·정책 예시와 절차 (cd-release.yml)
 │  ├─ gitops/
 │  │  ├─ charts/
 │  │  │  ├─ app-service/         # 공통 서비스 chart (#171)
@@ -741,6 +761,7 @@ SKN34-FINAL-3TEAM/
 │  │  │  │  └─ observability.yaml     # local metrics 기반, Langfuse 제외
 │  │  │  └─ prod/                # AWS 데모 Helm values·ExternalSecret 참조·NetworkPolicy
 │  │  ├─ migrations/             # core·learning Flyway PreSync 이미지 Dockerfile
+│  │  ├─ operational-alerts/     # #187 경보 규칙 검증 스크립트·절차
 │  │  ├─ policies/
 │  │  │  └─ local/platform.yaml  # platform namespace NetworkPolicy
 │  │  └─ argocd/
@@ -754,8 +775,13 @@ SKN34-FINAL-3TEAM/
 │  │     │     └─ platform-network.yaml
 │  │     └─ prod/                # (예정) EKS Argo CD 진입점, External Secrets·AWS LB Controller·Cluster Autoscaler
 │  ├─ kind/
+│  │  ├─ README.md               # 클러스터 기준·설치 절차
 │  │  ├─ local.yaml              # kind 클러스터 설정
-│  │  └─ *-issue-171*·hpa-check-values.yaml  # #171 전용 kind 검증 자료
+│  │  ├─ calico-installation.yaml  # Calico CNI·IP pool
+│  │  ├─ ingress-nginx-values.yaml # ingress-nginx chart values
+│  │  ├─ create-platform-secret.ps1  # .env → platform namespace Secret
+│  │  ├─ create-app-secrets.ps1  # .env → app·observability namespace Secret
+│  │  └─ hpa-check-values.yaml   # #171 HPA 검증 전용 values
 │  ├─ eks/                       # eksctl ClusterConfig(cluster.json)·관측 인벤토리·gp3
 │  ├─ aws/                       # AWS CLI IaC(demo_stack.py·demo-stack.json·iam/), RDS bootstrap, CloudFront·ALB redacted 설정
 │  └─ stubs/                     # compose.e2e.yaml 전용 대역, e2e.env(합성 값)
@@ -766,23 +792,37 @@ SKN34-FINAL-3TEAM/
 │     ├─ _spring.yml             # 재사용 워크플로: 테스트→빌드 (푸시·태그 갱신은 예정)
 │     ├─ _python.yml
 │     ├─ _web.yml
-│     ├─ ci-<service>.yml        # 서비스별 경로 필터(<경로>/**와 해당 서비스 계약 파일; learning·web은 자기 경로만) → 재사용 워크플로 호출
+│     ├─ ci-<service>.yml        # 서비스별 경로 필터 → 재사용 워크플로 호출 (감시 경로는 아래 목록)
 │     ├─ ci-db-schema.yml        # 마이그레이션 적용·ERD 대조 (scripts/check_db_migrations.py)
 │     ├─ ci-contracts.yml        # 저장소 계약 회귀·core 실제 테스트 산출물 대조 (#143·#237); asyncapi 검사는 미구현
 │     ├─ ci-gitops.yml           # chart lint·렌더·스키마 검증, migration 이미지 빌드 (#238)
 │     ├─ ci-ml-m1.yml · ci-ml-m2.yml  # ml/m1·ml/m2 ruff·pytest
+│     ├─ cd-candidate.yml        # #186 CD 도구 검사(계획 검증·실행기 테스트, 배포 없음)
+│     ├─ cd-release.yml          # #186 운영 배포(main 수동 실행, 4.5)
 │     └─ e2e.yml                 # 실서버 E2E: 수동·E2E 구성 변경 PR (#246). 야간 schedule은 기본 브랜치(main)에 병합된 뒤부터 동작
 ├─ docs/
 │  ├─ README.md                  # 개발 규칙
 │  ├─ design/                    # 아키텍처·기능명세·API 명세 등 설계 문서
+│  ├─ report/                    # 영역별 구현·결정·검증 보고서
+│  ├─ screen-design/             # 화면 설계서 원본·빌드 스크립트
+│  ├─ outputs/                   # 기획·설계 산출물(PDF·XLSX·HTML)
 │  └─ adr/                       # (예정) NNNN-<제목>.md
 ├─ compose.yaml                  # 로컬 통합 실행 진입점
 ├─ compose.minio.yaml            # 로컬 MinIO 선택 실행 (기본 파일과 함께 지정)
 ├─ compose.e2e.yaml              # 실서버 E2E: stub·시드 연결 (compose.yaml·compose.minio.yaml과 함께 지정)
+├─ compose.transfer-local.yaml   # #289 이관 격리 로컬 실행: 포트 재지정 (compose.e2e.yaml 위에 지정, scripts/start_transfer_local.ps1)
+├─ scripts/                      # 저장소 계약·스키마 검사(check_db_migrations.py 등)·연동 검증·CD 도구, tests/는 ci-contracts 회귀 테스트
 ├─ .env.example
 └─ README.md
 ```
 
+- CI 경로 필터(각 `ci-<service>.yml`은 자기 workflow 파일과 재사용 워크플로도 감시)
+  - `ci-ai-service`: `backend/ai-service/**`·`contracts/**` 전체·`evaluation/**`
+  - `ci-core-service`: `backend/core-service/**`·`contracts/**` 전체·`definitions.json`
+  - `ci-report-service`: `backend/report-service/**`·`contracts/events/**`·`contracts/openapi/report-service.yaml`·`contracts/examples/report-admin-retry/**`·`definitions.json`
+  - `ci-scoring-service`: `backend/scoring-service/**`·`contracts/openapi/scoring-service.yaml`·이벤트 스키마 3개(`envelope`·`model.version.activated`·`llm.usage.recorded`)
+  - `ci-learning-service`·`ci-web`·`ci-ml-m1`·`ci-ml-m2`: 자기 경로만
+  - `ci-contracts`·`ci-db-schema`·`ci-gitops`·`e2e`·`cd-candidate`는 각 workflow의 `paths` 기준
 - DB 마이그레이션: 서비스별 Flyway(core·learning)·Alembic(report), 앱 기동이 아닌 `migration-job`(Argo CD PreSync hook)으로 1회 실행. 로컬 compose는 일회성 컨테이너로 동일 실행
 - 서비스 추가: `app-service` chart 재사용 + `environments/<env>/<service>.yaml` (ApplicationSet이 자동 생성, 서비스별 chart 미작성)
 - 한 서비스의 다중 Deployment(report-api·report-worker): 같은 이미지, values의 실행 명령·확장 방식만 다름

@@ -1688,8 +1688,8 @@ classDiagram
   }
   class ScoringClient {
     <<client>>
-    +m2_scores(prompt, text, grade, input_type, keywords) M2Result
-    +m1_check(problem, answer_key, solution) M1Result
+    +m2_scores(body, timeout) M2Scores
+    +m1_check(body, timeout) M1Check
   }
   class ActiveVersions {
     <<registry>>
@@ -1724,7 +1724,7 @@ classDiagram
 |---|---|---|
 | `EvidenceExtractor` | `judgment/extractor.py` | 모듈 함수 `extract()`. LLM에 기준표 요소별 근거 구절 추출 요청 (학생 이름 미포함) |
 | `QuoteVerifier` | `judgment/verifier.py` | 모듈 함수 `normalize`·`is_verbatim`·`visible_length`. 구절의 답변 원문 존재 확인(코드). LLM과 분리 (FN-JDG-03) |
-| `JudgmentService` | `judgment/service.py` | 사전 보류(`TOO_SHORT`·`UNVERIFIED_SCOPE`) → 추출 → 대조 → 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정 (업무 판단은 service, 아키텍처 2.1) → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`, `M2_CROSS_CHECK_ENABLED` 기본 꺼짐이면 기록만) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`, `M1_CHECK_ENABLED` 기본 꺼짐) → 응답. scoring 호출은 `clients/scoring_client.ScoringClient`, 불일치 계산은 `judgment/cross_check.py` (#69, api-spec 4.2.2) |
+| `JudgmentService` | `judgment/service.py` | 사전 보류(`TOO_SHORT`·`UNVERIFIED_SCOPE`) → 추출 → 대조 → 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정 (업무 판단은 service, 아키텍처 2.1) → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`, `M2_CROSS_CHECK_ENABLED` 기본 꺼짐이면 기록만) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`, `M1_CHECK_ENABLED` 기본 꺼짐) → 응답. scoring 호출은 `clients/scoring_client.ScoringClient`(`m2_scores(body, timeout)`·`m1_check(body, timeout)`, 요청 본문은 `cross_check.m2_body`·`m1_body`가 만들고 `timeout`은 `SCORING_TIMEOUT`과 남은 판정 시간 중 작은 값, 비활성 응답이면 `None`), 불일치 계산은 `judgment/cross_check.py` (#69, api-spec 4.2.2) |
 | `LeakGuard` | `followup/leak_guard.py` | 모듈 함수 `find_leaks()`. 정답 키·예시 답·금지어 포함 검사. 실패 시 1회 재생성(`LLM_RETRY`), 재실패 시 `question` 없이 `leakCheck.passed = false` 반환 → learning이 질문 은행 선택 (`BANK`, P16) |
 | `LlmClient` | `llm/base.py`, 제공자는 `llm/providers.py` | 제공자 교체 지점(Claude·OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`), LLM 호출 재시도는 이 클래스에서만 (아키텍처 1.3), 호출마다 사용량 콜백(`BackgroundUsageRecorder` → `UsagePublisher`, 발행 실패는 로그만). `stream`은 분석 대화 답변의 일반 텍스트 조각(첫 조각 전 실패만 재시도) |
 | `ActiveVersions` | `prompt_versions/registry.py` (#254, 조정은 `prompt_versions/service.py` `PromptSync`) | #68에서 내장 버전과 core 활성 `PROMPT` 다섯 이름(#280 `reportTemplate` 포함, #336 구현 때 `missionDraft` 추가, 5.4)·승인 scope를 조정한다. 선택한 실제 본문·버전을 요청 동안 고정하고 `/internal/versions`에 같은 버전을 제공한다. 미보유 활성 버전은 명시적 503과 readiness DOWN |
@@ -1826,7 +1826,7 @@ classDiagram
 - `calculators`: 건수·비율은 LLM이 아닌 코드 계산 (FN-AGT-05), `Metric` 형식은 learning과 동일(분모 0 `NO_RECORD`, 5 미만 `value: null`). 집계 대상·전후 변화 수(글자·문장·까닭을 잇는 말)는 learning `summary`·`changes.counts` 값을 그대로 사용해 대시보드·리포트와 숫자를 맞춤 ([ai 보고서 2장](../report/ai.md#2-분석-대화-에이전트-langgraph))
 - `AnswerVerifier`(`analysis_agent/verification.py`의 `verify`): 답변 속 숫자 ↔ `metrics`, 인용 ↔ `evidence` 원문 대조. 실패 시 규칙 응답으로 전환 (FN-AGT-06)
 - 규칙 응답(`analysis_agent/templates.py`): 대조 실패·LLM 키 부재·호출 실패 시 계산된 `metrics`·`evidence`만 템플릿 문장으로 구성, `source = TEMPLATE`·`fallback` 표시 (FN-AGT-10, P16)
-- 구현 이름(#65·#66): `AnalysisService` 없이 `router.py`가 그래프를 실행, `AgentState` = `state.py`의 `AnalysisState`. `nodes`는 `nodes/understand.py`(`classify`, 범위 확인 포함)·`nodes/retrieve.py`(`retrieve` = plan·run_tools, `compute`)·`nodes/respond.py`(`answer`·`check` = verify, `fallback`·`insufficient`·`unsupported`)로 나뉨. 실제 분기는 [ai 보고서 2장](../report/ai.md#2-분석-대화-에이전트-langgraph)
+- 구현 이름(#65·#66, #253): `router.py`는 SSE 형식 변환만 하고 `service.py`의 `AnalysisService`가 범위·기한 확인, 프롬프트 선택, 그래프 실행, 최종 상태의 이벤트 변환, 설정 제안(`propose_template`)을 맡는다. `AgentState` = `state.py`의 `AnalysisState`. `nodes`는 `nodes/understand.py`(`classify`, 범위 확인 포함)·`nodes/retrieve.py`(`retrieve` = plan·run_tools, `compute`)·`nodes/respond.py`(`answer`·`check` = verify, `fallback`·`insufficient`·`unsupported`)로 나뉨. 실제 분기는 [ai 보고서 2장](../report/ai.md#2-분석-대화-에이전트-langgraph)
 - `NarrativeService`: 서술·저녁 질문만 생성, 숫자 계산·대조는 report-service 담당
 
 ### 5.3 메시징·클라이언트

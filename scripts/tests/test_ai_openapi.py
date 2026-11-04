@@ -39,9 +39,11 @@ class AiOpenApiTests(unittest.TestCase):
         source = (ROOT / "backend/ai-service/app/judgment/models.py").read_text(encoding="utf-8")
         reasons = re.search(r"HeldReason = Literal\[([^\]]*)\]", source)[1]
         expected = set(re.findall(r'"([A-Z_]+)"', reasons))
-        schema = self.spec["components"]["schemas"]["JudgmentResponse"]["properties"]["heldReason"]
-        documented = {value for option in schema["anyOf"] for value in option.get("enum", [])}
-        self.assertEqual(documented, expected)
+        # 판정 응답과 되묻기 요청의 직전 판정 요약은 같은 HeldReason을 쓴다
+        for name in ("JudgmentResponse", "JudgmentSummary"):
+            schema = self.spec["components"]["schemas"][name]["properties"]["heldReason"]
+            documented = {value for option in schema["anyOf"] for value in option.get("enum", [])}
+            self.assertEqual(documented, expected, name)
 
 
 if __name__ == "__main__":
