@@ -9473,6 +9473,8 @@ components:
       required:
       - elementId
       - label
+      - code
+      - goodThought
       - satisfied
       - quote
       - sourceType
@@ -9483,6 +9485,12 @@ components:
           description: rubric_element.id
         label:
           type: string
+        code:
+          type: string
+          description: rubric_element.code. FN 1.5 표준 요소로 미션을 넘어 같은 요소를 셈 (report 지표, #262). 화면 표시용 아님
+        goodThought:
+          type: boolean
+          description: 들어가면 좋은 생각(필수 아님). 충족률 분모에서 뺌 (FN-RPT-05, #262)
         satisfied:
           type: boolean
         quote:
