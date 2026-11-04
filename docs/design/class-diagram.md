@@ -1304,7 +1304,7 @@ classDiagram
   - `choices`: 고르기·순서·분류인데 선택지 없음 / `categories`: 분류인데 그룹 없음
   - `answerKey`: 서술·논술이 아닌데 없음 또는 입력 방식 모양(`{choiceIds}`·`{assignments}`·`{finalAnswer}`)·선택지·그룹과 맞지 않음 / `exampleAnswer`: 서술·논술인데 없음
   - `review`: 현재 미션·기준표 버전의 최신 검토가 `APPROVED`가 아님
-- 관리자 API(#145): core가 `ADMIN` + `X-User-Id`(작성자·검토자 ID) + 빈 학생 범위로 넘김(CONTENT 검사는 core). 성공 응답은 모두 JSON 객체(core 프록시 요구): 목록 `{items, page, size, totalElements, counts}`, 나머지는 미션 전체 `AdminMission`(api-spec 3.10). `counts`는 페이지·`status`·`grade`·`thinkingType` 어느 필터와도 무관한 전체 상태별 건수
+- 관리자 API(#145): core가 `ADMIN` + `X-User-Id`(작성자·검토자 ID) + 빈 학생 범위로 넘김(CONTENT 검사는 core). 성공 응답은 모두 JSON 객체(core 프록시 요구): 목록 `{items, page, size, totalElements, counts}`, 나머지는 미션 전체 `AdminMission`(api-spec 4.1). `counts`는 페이지·`status`·`grade`·`thinkingType` 어느 필터와도 무관한 전체 상태별 건수
 - 버전: `update`·`putRubric`은 새 버전을 추가하고 `current_*`만 바꿈. 학생 목록·상세·`currentVersions`(시도 시작)는 공개 버전 `published_*`, `publish`가 `published_*` ← `current_*` (P07, ERD 4.1). 상태 전이는 state-diagram 3.1
 
 ### 4.2 판정·되묻기 (judgment)
@@ -1988,14 +1988,10 @@ classDiagram
 - `GenerationService.generate`: `job_id`로 기존 행 조회 → 없으면 `RUNNING` 생성, `COMPLETED·FAILED`면 ACK만, `RUNNING`이면 같은 행으로 재실행. 기록 없음·표본 부족은 `COMPLETED + state`, 실패는 `FAILED` (FN-RPT-11)
 - `query_router`·`QueryService`: 모든 조회에서 리포트의 `student_id`가 `X-Student-Scope`에 있는지 검사, 없으면 403 (API 4장)
 - 수치·전후 변화는 `MetricsCalculator`(코드)에서만 계산, ai는 서술·저녁 질문만 (FN-RPT-03, 05)
-- #51 구현의 `RecordGenerator`는 learning 조회 → `MetricsCalculator.calculate` → 항목·근거가 포함된 `GenerationResult`를 반환한다. `ReportRepository.finish`가 상태·항목·근거를 저장하며 종료 이벤트와 같은 트랜잭션에 참여한다. 입력 계약은 병합된 #27 코드·OpenAPI와 대조한 API 4.1.1이며, #51의 검증 범위는 `docs/report/report.md`에 기록한다.
-- #52~#55의 AI 서술·원문 재검증·렌더링·저장·조회·삭제 구현을 포함한다. #56의 `worker.run(generator=None)`은 #42 v1 codec, 생성·삭제 구독과 Outbox 및 `generation/pipeline.py`의 전체 생성기를 조립한다. 기본 실행은 #119 core 별명 조회를 사용하며 조회 실패·잘못된 학생/별명은 생성 실패로 종료한다. Compose 직접 발행 검증과 실제 AI·공개 API 전체 E2E는 구분한다.
 - `ReportVerifier`: 서술 속 숫자·인용을 계산 결과·learning 원문과 대조, 실패 시 서술을 템플릿 요약으로 교체(`narrative.source = TEMPLATE`, P16). `NO_RECORD`·무료 플랜(`narrativeEnabled = false`)은 ai 호출 생략 (P06·P13)
 
 ---
 
 ## 8. 확인 필요 가정
-- 요금제 사용 한도(P13): core가 `product.limits`로 확인 후 `USAGE_LIMIT_REACHED`. 분석 대화는 `ProductEntitlementService.reserve`가 보호자 잠금 안에서 자녀별 `payment_premium_usage` KST 일자 집계로 판정(#225, `AnalysisUsageService`는 Redis 미사용). 학생별 미션 시작·피드백은 Redis 일 단위 카운터(미구현)이며 담당 클래스는 구현 시 `usage/`에 추가
-- core `conversation`(근거 원문 조회)·`admin`(미션 관리 프록시)의 learning 호출: core `learning/service`(#37·#38에서 추가)를 거칠지, 기능별 client를 둘지 구현 시 결정
-- learning `record/RecordRepository`가 여러 기능 테이블을 조회: 조회 전용 기능 한정 예외
+- 요금제 사용 한도(P13): core가 `product.limits`로 확인 후 `USAGE_LIMIT_REACHED`. 분석 대화는 `ProductEntitlementService.reserve`가 보호자 잠금 안에서 자녀별 `payment_premium_usage` KST 일자 집계로 판정(#225, `AnalysisUsageService`는 Redis 미사용). 학생별 미션 시작·피드백 한도는 미구현이며 #210 결정에 따라 PostgreSQL로 구현 예정(담당 클래스는 구현 시 `usage/`에 추가)
 - 클래스 분할 단위(관리자 controller 등)는 구현 시 조정 가능, 레이어·의존 방향은 고정
