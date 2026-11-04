@@ -41,6 +41,8 @@ class MissionDraftService:
                 prompt_version=prompt.version,
                 max_tokens=self._settings.mission_draft_max_tokens,
                 deadline=time.monotonic() + self._settings.mission_draft_deadline,
+                timeout=self._settings.mission_draft_llm_timeout,
+                max_retries=self._settings.mission_draft_llm_retries,
             )
         except LlmUnavailable as exc:
             if exc.code == "LLM_INVALID_OUTPUT":

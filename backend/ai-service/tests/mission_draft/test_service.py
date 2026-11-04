@@ -44,6 +44,19 @@ def test_question_limit_setting_reaches_prompt_and_check() -> None:
     assert [f.reason for f in response.checks.failures] == ["TOO_LONG"]
 
 
+def test_mission_draft_waits_60_seconds_once_with_63_second_deadline() -> None:
+    # #353: 주기 작업이라 이 호출만 LLM 60초 1회(P12 예외). 재시도하지 않음
+    llm = FakeLlm(LlmError("LLM_TIMEOUT", retryable=True), narrative_draft(), max_retries=1)
+    with pytest.raises(ApiError) as error:
+        generate(llm)
+    assert error.value.status == 503
+    assert len(llm.requests) == 1
+    assert 59 < llm.requests[0].timeout <= 60
+    settings = Settings(internal_token="t")
+    assert (settings.mission_draft_deadline, settings.mission_draft_llm_retries) == (63.0, 0)
+    assert (settings.llm_timeout, settings.llm_max_retries) == (15.0, 1)  # 다른 호출은 그대로
+
+
 def test_invalid_output_is_502() -> None:
     with pytest.raises(ApiError) as error:
         generate(FakeLlm(LlmError("LLM_INVALID_OUTPUT", retryable=True)))

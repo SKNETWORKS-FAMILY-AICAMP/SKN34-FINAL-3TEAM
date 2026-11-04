@@ -64,8 +64,12 @@ class Settings(BaseSettings):
     narrative_deadline: float = 28.0
 
     # 미션 초안 생성 (#354, api-spec 4.2). 호출 1번에 생성 1회, 반복은 learning
-    mission_draft_deadline: float = 33.0  # learning→ai 35초(P12) 안, 되묻기와 같은 값
-    mission_draft_max_tokens: int = 4096
+    # 미션 초안만 P12 예외(#353): 주기 작업이라 기다리는 사람이 없고, 기본 모델 gpt-6-luna가
+    # 실제 성취기준으로 15~31.7초 걸림(14건). LLM 60초 1회, 마감 63초(learning 초안 ai 대기 70초 안)
+    mission_draft_deadline: float = 63.0
+    mission_draft_llm_timeout: float = 60.0
+    mission_draft_llm_retries: int = 0
+    mission_draft_max_tokens: int = 8192  # gpt-6-luna 실측 출력 최대 3,514토큰(4096에 가까움)
     # 학년별 질문 글자 수 상한 (QUESTION_LENGTH). P19(김동섭) 확정 전 MVP 기준안:
     # 데모 시드 최대 193자에 여유
     mission_draft_question_max_chars: dict[int, int] = {3: 200, 4: 200, 5: 200, 6: 200}
