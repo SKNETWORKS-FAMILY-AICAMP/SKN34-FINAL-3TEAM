@@ -498,6 +498,8 @@ function RubricForm({ mission, onSaved }: { mission: AdminMission; onSaved: () =
         exampleAnswer: '',
         forbiddenTerms: [],
         hints: [],
+        keywords: [],
+        essayType: null,
       },
     ),
     save = useAdminMutation(() => adminApi.rubric(mission.missionId, { ...r, answerKey: ['NARRATIVE', 'ESSAY'].includes(mission.versions.find((v) => v.version === mission.currentVersion)!.inputType) ? null : r.answerKey }))
@@ -662,6 +664,10 @@ function RubricForm({ mission, onSaved }: { mission: AdminMission; onSaved: () =
           }
         />
       </label>
+      {/* #69 교차 확인 입력은 이 화면에서 편집하지 않고 저장 때 그대로 유지한다 (#306). */}
+      <p>
+        교차 확인 입력 · 핵심어 {r.keywords?.length ?? 0}개 · 글 종류 {r.essayType ?? '없음'} (저장해도 유지됩니다)
+      </p>
       <button className="cj-primary" disabled={save.isPending}>
         새 기준표 버전 저장
       </button>

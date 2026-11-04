@@ -1112,7 +1112,7 @@ paths:
                         description: 영문 코드(class-diagram 4.1). 화면이 한글로 표시
                         items:
                           type: string
-                          enum: [title, question, subject, grade, achievementStandards, choices, categories, rubric, rubric.elements, rubric.elements.points, answerKey, exampleAnswer, review]
+                          enum: [title, question, subject, grade, achievementStandards, choices, categories, rubric, rubric.elements, rubric.elements.code, rubric.elements.points, answerKey, exampleAnswer, review]
   /admin/missions/{missionId}/unpublish:
     post:
       operationId: unpublishAdminMission
@@ -1379,7 +1379,7 @@ components:
       additionalProperties: false
       required: [code, label, description, points, commonErrors, goodThought, judgeVerified]
       properties:
-        code: {type: string, description: FINAL_ANSWER는 풀이 단계 최종 답 요소 (#79)}
+        code: {type: string, description: "FN 1.5 표준 요소: 표준 코드(ANALYZE_RELATION 등)·고유 e+숫자·정답 ANSWER_KEY(고르기·순서·분류)·FINAL_ANSWER(풀이 단계 최종 답, #79) (#262)"}
         label: {type: string}
         description: {type: [string, 'null']}
         points: {type: integer, minimum: 1}
@@ -1450,7 +1450,7 @@ components:
             type: object
             required: [code, label, points]
             properties:
-              code: {type: string}
+              code: {type: string, pattern: "^([A-Z]+_[A-Z]+|e[0-9]+)$", description: "표준 코드·e+숫자·ANSWER_KEY·FINAL_ANSWER (FN 1.5, #262). 목록 밖 대문자 코드도 400"}
               label: {type: string}
               description: {type: [string, 'null']}
               points: {type: integer, minimum: 1}
@@ -1717,10 +1717,12 @@ components:
     Element:
       type: object
       additionalProperties: false
-      required: [elementId, label, satisfied, quote, sourceType]
+      required: [elementId, label, code, goodThought, satisfied, quote, sourceType]
       properties:
         elementId: {type: string, format: uuid, description: rubric_element.id}
         label: {type: string}
+        code: {type: string, description: "rubric_element.code. FN 1.5 표준 요소로 미션을 넘어 같은 요소를 셈 (report 지표, #262). 화면 표시용 아님"}
+        goodThought: {type: boolean, description: "들어가면 좋은 생각(필수 아님). 충족률 분모에서 뺌 (FN-RPT-05, #262)"}
         satisfied: {type: boolean}
         quote: {type: [string, 'null'], description: 학생 답 원문 구절 또는 고른 답}
         sourceType:

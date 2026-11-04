@@ -103,5 +103,8 @@ test('목업: 보호자 비밀번호는 재인증 후 정하고, 동석 진입 �
     const back = await call('/auth/parent-unlock', 'POST', { password: '2580' })
     assert.equal(back.status, 200); assert.equal(back.data.role, 'PARENT')
     assert.equal((await call('/auth/refresh', 'POST')).status, 200)
+    // core와 같이 잠기지 않은 세션의 parent-unlock은 비밀번호 확인 없이 refresh처럼 200이다 (#310).
+    const unlocked = await call('/auth/parent-unlock', 'POST', { password: '1111' })
+    assert.equal(unlocked.status, 200); assert.equal(unlocked.data.role, 'PARENT')
   } finally { server.close() }
 })
