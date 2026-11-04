@@ -14,6 +14,7 @@ PROMPT_SCOPES = {
     "analysis": "ai/analysis",
     "reportNarrative": "ai/report-narrative",
     "reportTemplate": "ai/report-template",
+    "missionDraft": "ai/mission-draft",
 }
 
 

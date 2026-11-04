@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     # 리포트 서술 전체 마감(초). report→ai 읽기 30초보다 짧게, 재시도는 남은 시간 안에서만
     narrative_deadline: float = 28.0
 
+    # 미션 초안 생성 (#354, api-spec 4.2). 호출 1번에 생성 1회, 반복은 learning
+    mission_draft_deadline: float = 33.0  # learning→ai 35초(P12) 안, 되묻기와 같은 값
+    mission_draft_max_tokens: int = 4096
+    # 학년별 질문 글자 수 상한 (QUESTION_LENGTH). P19(김동섭) 확정 전 MVP 기준안:
+    # 데모 시드 최대 193자에 여유
+    mission_draft_question_max_chars: dict[int, int] = {3: 200, 4: 200, 5: 200, 6: 200}
+
     # 분석 대화 전체 마감(초). core 기준 전체 120초(P12)보다 짧게, LLM 호출은 이 안에서만
     analysis_deadline: float = 110.0
 

@@ -1725,9 +1725,9 @@ classDiagram
 | `EvidenceExtractor` | `judgment/extractor.py` | 모듈 함수 `extract()`. LLM에 기준표 요소별 근거 구절 추출 요청 (학생 이름 미포함) |
 | `QuoteVerifier` | `judgment/verifier.py` | 모듈 함수 `normalize`·`is_verbatim`·`visible_length`. 구절의 답변 원문 존재 확인(코드). LLM과 분리 (FN-JDG-03) |
 | `JudgmentService` | `judgment/service.py` | 사전 보류(`TOO_SHORT`·`UNVERIFIED_SCOPE`) → 추출 → 대조 → 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정 (업무 판단은 service, 아키텍처 2.1) → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`, `M2_CROSS_CHECK_ENABLED` 기본 꺼짐이면 기록만) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`, `M1_CHECK_ENABLED` 기본 꺼짐) → 응답. scoring 호출은 `clients/scoring_client.ScoringClient`(`m2_scores(body, timeout)`·`m1_check(body, timeout)`, 요청 본문은 `cross_check.m2_body`·`m1_body`가 만들고 `timeout`은 `SCORING_TIMEOUT`과 남은 판정 시간 중 작은 값, 비활성 응답이면 `None`), 불일치 계산은 `judgment/cross_check.py` (#69, api-spec 4.2.2) |
-| `LeakGuard` | `followup/leak_guard.py` | 모듈 함수 `find_leaks()`. 정답 키·예시 답·금지어 포함 검사. 실패 시 1회 재생성(`LLM_RETRY`), 재실패 시 `question` 없이 `leakCheck.passed = false` 반환 → learning이 질문 은행 선택 (`BANK`, P16) |
+| `LeakGuard` | `followup/leak_guard.py` | 모듈 함수 `find_leaks()`(글 하나 검사는 `find_text_leaks()`, 미션 초안 검사와 공유). 정답 키·예시 답·금지어 포함 검사. 실패 시 1회 재생성(`LLM_RETRY`), 재실패 시 `question` 없이 `leakCheck.passed = false` 반환 → learning이 질문 은행 선택 (`BANK`, P16) |
 | `LlmClient` | `llm/base.py`, 제공자는 `llm/providers.py` | 제공자 교체 지점(Claude·OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`), LLM 호출 재시도는 이 클래스에서만 (아키텍처 1.3), 호출마다 사용량 콜백(`BackgroundUsageRecorder` → `UsagePublisher`, 발행 실패는 로그만). `stream`은 분석 대화 답변의 일반 텍스트 조각(첫 조각 전 실패만 재시도) |
-| `ActiveVersions` | `prompt_versions/registry.py` (#254, 조정은 `prompt_versions/service.py` `PromptSync`) | #68에서 내장 버전과 core 활성 `PROMPT` 다섯 이름(#280 `reportTemplate` 포함, #336 구현 때 `missionDraft` 추가, 5.4)·승인 scope를 조정한다. 선택한 실제 본문·버전을 요청 동안 고정하고 `/internal/versions`에 같은 버전을 제공한다. 미보유 활성 버전은 명시적 503과 readiness DOWN |
+| `ActiveVersions` | `prompt_versions/registry.py` (#254, 조정은 `prompt_versions/service.py` `PromptSync`) | #68에서 내장 버전과 core 활성 `PROMPT` 여섯 이름(#280 `reportTemplate`, #354 `missionDraft` 포함, 5.4)·승인 scope를 조정한다. 선택한 실제 본문·버전을 요청 동안 고정하고 `/internal/versions`에 같은 버전을 제공한다. 미보유 활성 버전은 명시적 503과 readiness DOWN |
 
 ### 5.2 분석 에이전트·리포트 서술 (analysis_agent · report_narrative)
 
@@ -1861,7 +1861,7 @@ classDiagram
 - 기동 순서: exclusive 큐 선언·바인딩·소비 시작 → `CoreClient.active_versions()` → 조회 중 이벤트 revision 조정 → `ActiveVersions.replace`. 조회·조정은 `PromptSync`가 맡고 소비자는 검증한 이벤트를 `PromptSync.offer`로만 넘긴다(#254). 조회 실패·미보유 활성 본문은 readiness false, 프로세스 유지. 재연결도 새 큐 바인딩 후 snapshot으로 조정한다 (아키텍처 1.6).
 - `UsagePublisher`: 응답 반환 후 best-effort 발행, 학생 ID·원문 미포함 (NFR-PRF-02)
 
-### 5.4 미션 초안 (mission_draft, #336 구현 전)
+### 5.4 미션 초안 (mission_draft, #354)
 
 FN-ADM-20, api-spec 4.2 `POST /internal/mission-drafts`. 새 모듈 `app/mission_draft/`는 되묻기(5.1)와 같은 구성이다.
 
@@ -1878,7 +1878,7 @@ classDiagram
   }
   class DraftChecks {
     <<domain>>
-    +check(draft, request) list~Failure~
+    +check(draft, request, limits, overlap) list~Failure~
   }
   class LeakGuard { <<domain>> }
   class LlmClient { <<client>> }
@@ -1888,11 +1888,11 @@ classDiagram
   MissionDraftService --> LlmClient : 구조화 출력 1회
   MissionDraftService --> ActiveVersions : missionDraft 프롬프트
   MissionDraftService --> DraftChecks
-  DraftChecks --> LeakGuard : find_leaks 재사용
+  DraftChecks --> LeakGuard : find_text_leaks 재사용
 ```
 
 - `MissionDraftService.generate`: 요청 1번에 LLM 생성 1회(재시도 규칙은 기존 `LlmClient` 그대로, P12)와 검사만 하고 반복하지 않는다. 반복은 learning `MissionDraftService`(4.1.1)가 이전 실패 사유를 넣어 다시 부른다. 마감은 되묻기와 같은 33초(learning→ai 35초 안)
-- `DraftChecks`: `REQUIRED`(필수 항목·입력 방식별 선택지·정답 키·예시 답), `QUESTION_LENGTH`(학년별 길이, P19 확정 값을 설정으로 받음), `LEAK`(질문·안내에 대한 `followup/leak_guard.find_leaks`, 학생 답 없이 정답 키·금지어·예시 답만). 성취기준 실재·요소 code 규칙은 표와 규칙을 가진 learning이 검사
+- `DraftChecks`(`checks.py` 모듈 함수 `check`): `REQUIRED`(제목·질문·요소·생각 열기 질문, 입력 방식별 선택지·분류 칸·정답 키·예시 답), `QUESTION_LENGTH`(`gradeMin` 학년 상한, 설정 `mission_draft_question_max_chars` 기본 전 학년 200자, P19 확정 전 기준안), `LEAK`(질문·안내·생각 열기 질문 각각에 `followup/leak_guard.find_text_leaks`, 학생 답 없이 정답 키·금지어·예시 답만. 예시 답은 안내·생각 열기 질문만, 질문에 있는 글을 빼고 비교. 숫자뿐인 최종 답은 숫자 경계로 비교). 성취기준 실재·요소 code 규칙은 표와 규칙을 가진 learning이 검사
 - 프롬프트: `prompts.py` 내장 `mission-draft@1`, #68 레지스트리 이름 `missionDraft`·scope `ai/mission-draft`(`ActiveVersions`·`/internal/versions`에 추가). 입력은 성취기준 문장·(있으면) 성취수준 문장·생각 유형·그 유형 표준 요소 공통 설명·학년·입력 방식뿐이고 학생 정보는 없음
 - 사용량: `LlmClient` 콜백 → `UsagePublisher`, `callType = MISSION_DRAFT`(이벤트 스키마·core enum·core CHECK와 같이 추가, ERD 3.5)
 

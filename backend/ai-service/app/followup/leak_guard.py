@@ -25,15 +25,34 @@ def find_leaks(
     example_overlap_chars: int,
     student_answers: list[str],
 ) -> list[str]:
-    compact_question = _compact(question)
+    return find_text_leaks(
+        question,
+        rubric.answer_key,
+        rubric.forbidden_terms,
+        rubric.example_answer,
+        example_overlap_chars,
+        student_answers,
+    )
+
+
+def find_text_leaks(
+    text: str,
+    answer_key: list[str] | None,
+    forbidden_terms: list[str] | None,
+    example_answer: str | None,
+    example_overlap_chars: int,
+    student_answers: list[str],
+) -> list[str]:
+    """find_leaks와 같은 검사를 기준표 객체 없이 (미션 초안 검사 #354가 학생 답 없이 씀)."""
+    compact_question = _compact(text)
     leaks = []
-    if _contains_any(compact_question, rubric.answer_key):
+    if _contains_any(compact_question, answer_key):
         leaks.append("ANSWER_KEY")
-    if _contains_any(compact_question, rubric.forbidden_terms):
+    if _contains_any(compact_question, forbidden_terms):
         leaks.append("FORBIDDEN_TERM")
-    if rubric.example_answer and _overlaps(
+    if example_answer and _overlaps(
         compact_question,
-        _compact(rubric.example_answer),
+        _compact(example_answer),
         [_compact(answer) for answer in student_answers],
         example_overlap_chars,
     ):

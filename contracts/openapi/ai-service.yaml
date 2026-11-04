@@ -272,6 +272,61 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /mission-drafts:
+    post:
+      summary: '미션 초안 1회 생성·자동 검사 (api-spec 4.2, #354). 검사 실패도 200(checks.passed=false), 반복은 learning'
+      operationId: createMissionDraft
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MissionDraftRequest'
+        required: true
+      responses:
+        '200':
+          description: 성공 (검사 통과 여부는 checks)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissionDraftResponse'
+        '400':
+          description: VALIDATION_FAILED (`errors[]`에 필드별 사유)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: UNAUTHENTICATED (내부 토큰 불일치)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: AI_BAD_RESPONSE (LLM이 형식에 맞는 초안을 끝내 만들지 못함). `retryable` 포함
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Problem'
+                - type: object
+                  required:
+                  - retryable
+                  properties:
+                    retryable:
+                      type: boolean
+        '503':
+          description: AI_UNAVAILABLE (LLM 미설정·호출 실패·시간 초과) 또는 AI_PROMPT_VERSION_UNAVAILABLE (미보유 활성 본문). `retryable` 포함
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Problem'
+                - type: object
+                  required:
+                  - retryable
+                  properties:
+                    retryable:
+                      type: boolean
 components:
   securitySchemes:
     InternalToken:
@@ -279,6 +334,264 @@ components:
       in: header
       name: X-Internal-Token
   schemas:
+    MissionDraftElementCode:
+      description: '초안 요소에 쓸 수 있는 code.
+
+
+        learning이 FN 1.5 표에서 유형 코드와 입력 방식의 정답 코드를 채움.'
+      properties:
+        code:
+          minLength: 1
+          type: string
+        label:
+          minLength: 1
+          type: string
+        description:
+          default: ''
+          type: string
+      required:
+      - code
+      - label
+      type: object
+    MissionDraftFailure:
+      properties:
+        check:
+          minLength: 1
+          type: string
+        reason:
+          minLength: 1
+          type: string
+      required:
+      - check
+      - reason
+      type: object
+    MissionDraftStandard:
+      properties:
+        code:
+          minLength: 1
+          type: string
+        statement:
+          minLength: 1
+          type: string
+        level:
+          anyOf:
+          - $ref: '#/components/schemas/MissionDraftStandardLevel'
+          - type: 'null'
+          default: null
+      required:
+      - code
+      - statement
+      type: object
+    MissionDraftStandardLevel:
+      description: 성취수준 문장. 평가원 자료 이용 조건 확인 전에는 learning이 보내지 않음 (FN 1.5).
+      properties:
+        grade:
+          minLength: 1
+          type: string
+        text:
+          minLength: 1
+          type: string
+      required:
+      - grade
+      - text
+      type: object
+    MissionDraftRequest:
+      properties:
+        standards:
+          items:
+            $ref: '#/components/schemas/MissionDraftStandard'
+          minItems: 1
+          type: array
+        thinkingType:
+          enum:
+          - ANALYZE
+          - EVALUATE
+          - CREATE
+          - SOLVE
+          - REFLECT
+          type: string
+        elementCodes:
+          items:
+            $ref: '#/components/schemas/MissionDraftElementCode'
+          minItems: 1
+          type: array
+        gradeMin:
+          maximum: 6
+          minimum: 3
+          type: integer
+        gradeMax:
+          maximum: 6
+          minimum: 3
+          type: integer
+        inputType:
+          enum:
+          - CHOICE
+          - ORDERING
+          - CLASSIFICATION
+          - NARRATIVE
+          - SOLUTION_STEPS
+          - ESSAY
+          type: string
+        previousFailures:
+          items:
+            $ref: '#/components/schemas/MissionDraftFailure'
+          type: array
+      required:
+      - standards
+      - thinkingType
+      - elementCodes
+      - gradeMin
+      - gradeMax
+      - inputType
+      type: object
+    MissionDraftAnswerKey:
+      description: 'learning 관리자 기준표 정답 키와 같은 모양.
+
+
+        고르기·순서 choiceIds, 분류 assignments, 풀이 finalAnswer.'
+      properties:
+        choiceIds:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          default: null
+        assignments:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/MissionDraftAssignment'
+            type: array
+          - type: 'null'
+          default: null
+        finalAnswer:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+      type: object
+    MissionDraftAssignment:
+      properties:
+        choiceId:
+          type: string
+        categoryId:
+          type: string
+      required:
+      - choiceId
+      - categoryId
+      type: object
+    MissionDraftChecks:
+      properties:
+        passed:
+          type: boolean
+        failures:
+          items:
+            $ref: '#/components/schemas/MissionDraftFailure'
+          type: array
+      required:
+      - passed
+      - failures
+      type: object
+    MissionDraftChoice:
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+      required:
+      - id
+      - label
+      type: object
+    MissionDraftDraft:
+      properties:
+        title:
+          type: string
+        question:
+          type: string
+        guide:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+        sceneNote:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+        choices:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/MissionDraftChoice'
+            type: array
+          - type: 'null'
+          default: null
+        categories:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/MissionDraftChoice'
+            type: array
+          - type: 'null'
+          default: null
+        answerKey:
+          anyOf:
+          - $ref: '#/components/schemas/MissionDraftAnswerKey'
+          - type: 'null'
+          default: null
+        exampleAnswer:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+        forbiddenTerms:
+          items:
+            type: string
+          type: array
+        hints:
+          items:
+            type: string
+          type: array
+        elements:
+          items:
+            $ref: '#/components/schemas/MissionDraftDraftElement'
+          type: array
+      required:
+      - title
+      - question
+      type: object
+    MissionDraftDraftElement:
+      properties:
+        code:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        goodThought:
+          type: boolean
+        standardCode:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+      required:
+      - code
+      - label
+      - description
+      - goodThought
+      type: object
+    MissionDraftResponse:
+      properties:
+        draft:
+          $ref: '#/components/schemas/MissionDraftDraft'
+        checks:
+          $ref: '#/components/schemas/MissionDraftChecks'
+        versions:
+          $ref: '#/components/schemas/LlmVersions'
+      required:
+      - draft
+      - checks
+      - versions
+      type: object
     TemplateSettings:
       additionalProperties: false
       properties:
