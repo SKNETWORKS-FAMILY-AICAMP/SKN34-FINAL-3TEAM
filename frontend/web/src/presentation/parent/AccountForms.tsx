@@ -157,7 +157,7 @@ export function ChildRegistration({ onCreated }: { onCreated: (c: Child) => void
     register = useParentMutation(parentApi.register),
     [nickname, setNickname] = useState(''),
     [grade, setGrade] = useState(3),
-    [birthYear, setBirthYear] = useState(2017),
+    [birthYear, setBirthYear] = useState(() => new Date().getFullYear() - (3 + 6)),
     [maxYear] = useState(() => new Date().getFullYear()),
     [consents, setConsents] = useState<Consent[]>([])
   return (
@@ -192,7 +192,11 @@ export function ChildRegistration({ onCreated }: { onCreated: (c: Child) => void
           <select
             aria-label="자녀 학년"
             value={grade}
-            onChange={(e) => setGrade(Number(e.target.value))}
+            onChange={(e) => {
+              const nextGrade = Number(e.target.value)
+              setGrade(nextGrade)
+              setBirthYear(maxYear - (nextGrade + 6))
+            }}
           >
             {[3, 4, 5, 6].map((g) => (
               <option key={g} value={g}>
@@ -203,15 +207,20 @@ export function ChildRegistration({ onCreated }: { onCreated: (c: Child) => void
         </label>
         <label>
           출생연도
-          <input
+          <select
             aria-label="출생연도"
-            type="number"
-            min={1900}
-            max={maxYear}
             value={birthYear}
             required
             onChange={(e) => setBirthYear(Number(e.target.value))}
-          />
+          >
+            {Array.from({ length: maxYear - 1900 + 1 }, (_, index) => maxYear - index).map(
+              (year) => (
+                <option key={year} value={year}>
+                  {year}년 (연 나이 {maxYear - year}세)
+                </option>
+              ),
+            )}
+          </select>
         </label>
         <QueryFeedback query={documents} />
         {documents.data && !documents.error && (

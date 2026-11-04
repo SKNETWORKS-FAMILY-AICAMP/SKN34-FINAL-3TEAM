@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     anthropic_fallback: bool = True  # 안전 거절 시 Anthropic 권장 모델로 자동 재처리
     # OpenAI 또는 OpenAI 호환 sLLM 서버(vLLM·Ollama 등). 모델이 비어 있으면 503 AI_UNAVAILABLE
     openai_api_key: str | None = None  # sLLM 서버(openai_base_url 지정)는 비워도 됨
-    openai_model: str = "gpt-6.1-terra"  # 판정·되묻기 실제 호출 확인 (2026-10-27)
+    openai_model: str = "gpt-6-luna"  # 판정·되묻기 실제 호출 확인 (2026-10-27)
     openai_base_url: str | None = None  # 비우면 OpenAI 기본 주소
     openai_json_mode: Literal["json_schema", "json_object"] = "json_schema"  # sLLM은 json_object
     # LLM 최악 15 + 1 + 15 = 31초. 판정은 judge_deadline 33초 안에서 scoring 몫을 먼저 떼어
