@@ -1,10 +1,10 @@
 {
   "migration": {
     "enabled": true,
-    "revision": "b67d8a462b6b",
+    "revision": "main-a47a596247ad",
     "image": {
       "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/learning-migrate",
-      "digest": "sha256:5af016a5b9d07a4d2ef12d54017e29d0466e38312ca7a283edd865404ef4f8a6",
+      "digest": "sha256:80254f13f31cd243dd6079d232d5a39c5d126ed90c72e770a654aefcfe5d7bba",
       "pullPolicy": "IfNotPresent"
     },
     "args": [
