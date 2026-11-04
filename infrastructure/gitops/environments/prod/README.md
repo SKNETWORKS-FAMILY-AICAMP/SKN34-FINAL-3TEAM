@@ -31,6 +31,8 @@
 
 `redeploy-app.ps1`은 기존 앱 release 한 개의 재배포 진입점이다. AWS 계정·실제 EKS endpoint·고정 digest·기존 release 상태를 확인하고 기본 실행은 server dry-run만 수행한다. `-Apply`를 지정할 때만 ESO Ready 확인 후 배포한다. 새 클러스터·DB 초기화·Secret 생성·웹 빌드·Ingress 생성은 수행하지 않는다. 현재 노드의 Pod 슬롯과 메모리 여유가 작으므로 preview 성공을 실제 rollout 성공으로 해석하지 않는다. 적용 전에 기존 Pod와 비교할 계획을 검토한다.
 
+승인 절차를 거친 배포·롤백은 [#186 운영 배포](../../../cd/README.md)의 `cd-release` workflow가 이 스크립트를 `-ImageDigest`(저장소 values는 그대로 두고 digest만 바꾼 임시 사본)로 호출한다.
+
 ```powershell
 pwsh -File infrastructure/gitops/environments/prod/redeploy-app.ps1 -Service core-service -Kubeconfig '<AWS kubeconfig 절대 경로>' -Helm '<helm 실행 파일>'
 # 검토 후 같은 명령에 -Apply를 추가하면 해당 앱만 실제 재배포한다.
@@ -58,34 +60,28 @@ kubectl --kubeconfig $kubeconfig get pods,pvc -n platform
 
 NetworkPolicy는 기존 chart 정책과 **합집합**으로 동작한다. 정책 변경은 별도 검토 후 `platform-network.json`, `core-alb-network.json`을 적용한다. 현재 app namespace 전체 default-deny 여부와 서비스별 egress 허용 범위는 [누락 점검](../../../../docs/report/issue-185-aws.md)을 따른다.
 
-## 다음 core 재배포 입력: 토스·신규 가입자 demo (#185, 미적용)
+## main 기준 core·웹 재배포 (2026-11-04, #185)
 
-`core-next/`는 현재 release에 아직 반영하지 않은 입력이다. `core-service.json`은 실제 release와 같게 유지하고, 다음 core 재배포 때 함께 적용한다.
+배포 기준은 **main**이다. 기능 PR은 develop에 병합하고, 배포할 때 develop → main 릴리스 PR을 병합한 뒤 그 main SHA로 빌드한 이미지만 배포한다.
 
-- `core-next/core-service-env.json`: `core-service.json`의 `env` 끝에 추가할 항목. 결제 키 8개는 `payment-credentials` Secret을 `optional: true`로 참조하므로 Secret이 없으면 결제만 미설정 상태로 기동한다. `AUTH_NEW_ACCOUNT_DEMO=true`는 `feature/demo-signup-flag`가 들어간 core 이미지에서만 동작한다.
-- `core-next/payment-external-secret.json`: Secrets Manager `sagomungchi/demo/app/payment`의 JSON 키 전체를 `app/payment-credentials`로 동기화한다(`dataFrom.extract`). 키 이름은 core 환경변수와 같게 넣는다: `PAYMENT_BILLING_ENCRYPTION_KEY`, `TOSS_TEST_SECRET_KEY`, `TOSSPAYMENTS_SECRET_KEY`, `TOSS_TEST_MID`, `TOSS_TEST_WEBHOOK_SECURITY_KEY`, `TOSS_TEST_BILLING_SECRET_KEY`, `TOSS_TEST_BILLING_MID`, `TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY`. 테스트 키만 넣는다.
-- ESO 역할 권한: [`external-secrets-role.inline.external-secrets-payment-read.json`](../../../aws/iam/external-secrets-role.inline.external-secrets-payment-read.json)을 `sagomungchi-demo-external-secrets-role` inline 정책 `sagomungchi-demo-external-secrets-payment-read`로 추가하고 `demo-stack.json`에 등록한다.
-- 토스 개발자센터 웹훅 URL: `https://d3jf0rnm6vhd9v.cloudfront.net/api/v1/webhooks/tosspayments`. core egress는 이미 외부 443을 허용한다.
+| 항목 | 값 |
+|---|---|
+| 소스 | main `cc860eb2ee851e2998d25f38cfabd8926a1fb685` (develop bddccca와 동일 트리, CI 10개 통과) |
+| core 이미지 | ECR `sagomungchi/core-service:main-cc860eb2ee85` = `sha256:1e8e1d4b…a9997` |
+| core migration | ECR `sagomungchi/core-migrate:main-cc860eb2ee85` = `sha256:8fc89e6a…58439`, Job `core-service-migrate-main-cc860eb2ee85` |
+| 웹 | 같은 SHA, 공개 `TOSSPAYMENTS_CLIENT_KEY`(`test_gck_docs_`)만 주입. 이전 `index.html` 버전 `dOBiv3R_dos14ACh8LzsWN.YkAuY.Ok7` |
 
-2026-11-04 Secret은 공용 문서 테스트 키(`TOSS_TEST_SECRET_KEY`·`TOSS_TEST_MID`)와 `PAYMENT_BILLING_ENCRYPTION_KEY` 3개로 생성했다. 빌링·웹훅 키는 실제 상점 계약 전까지 비어 있다. 웹 빌드에는 공개 클라이언트 키 `TOSSPAYMENTS_CLIENT_KEY`가 필요하다.
+적용 순서와 결과:
 
-### 다음 core·웹 재배포 절차 (#320·#321·#322 병합 후)
+1. 결제 Secret: Secrets Manager `sagomungchi/demo/app/payment`(공용 문서 테스트 키 `TOSS_TEST_SECRET_KEY`·`TOSS_TEST_MID`와 `PAYMENT_BILLING_ENCRYPTION_KEY`) → ESO 역할 inline 정책 `sagomungchi-demo-external-secrets-payment-read`(작업자 실행) → `external-secret-resources.json`의 `payment-credentials` Ready, 키 3개 동기화.
+2. [V26 사전 점검](../../../aws/check-v26-preconditions.sql): core_app 읽기 전용 Job으로 위반 0건, flyway 25 확인 후 Job 삭제.
+3. migration: `helm template … -f core-service.json -f migrations/core-service.json --show-only templates/migration-job.yaml`을 **`-n app`으로** 적용한다(렌더링 결과에 namespace가 없어 생략하면 kubeconfig 기본 namespace에 생성된다). V25 → V26 성공.
+4. core: `core-service.json` digest 교체와 결제 키 8개(`payment-credentials`, `optional: true`)·`AUTH_NEW_ACCOUNT_DEMO=true` 추가 → `redeploy-app.ps1` dry-run → `-Apply`. release revision 5, 재시작 0. 보호자 이관(`APP_GUARDIAN_TRANSFER_ENABLED`)은 설정하지 않아 꺼져 있다.
+5. 웹: `npm ci && npm run build` → S3 web 버킷에 assets·정적 파일 먼저, `index.html` 마지막(`no-cache`). 이전 assets는 지우지 않았다.
 
-2026-11-04 사전 확인: develop ef79289에 세 PR을 로컬 merge한 트리(1312f82, 미푸시)로 core·core-migrate 이미지와 웹을 빌드했다. core jar에 `new-account-demo` 설정·이용권 API·V26 migration이 들어 있고, core-migrate에는 V1~V26 SQL이 있으며, 웹 산출물에는 공개 클라이언트 키만 있고 시크릿 키 형태 문자열은 없었다. 실제 배포는 **병합된 develop SHA로 다시 빌드**해 소스와 digest를 일치시킨다.
+되돌리기: core는 `helm rollback core-service 4 -n app`, 웹은 S3 `index.html` 이전 버전 복원. V26은 되돌리는 migration이 없다. V26은 컬럼·테이블·제약 추가뿐이라 이전 core로 rollback해도 동작할 것으로 보이나 검증하지 않았다.
 
-1. 결제 Secret 연결(작업자 권한): ESO 역할에 inline 정책을 넣고 ExternalSecret을 적용한다.
-   ```powershell
-   aws iam put-role-policy --role-name sagomungchi-demo-external-secrets-role --policy-name sagomungchi-demo-external-secrets-payment-read --policy-document file://infrastructure/aws/iam/external-secrets-role.inline.external-secrets-payment-read.json --profile sagomungchi-provided
-   kubectl --kubeconfig $kubeconfig apply -f "$envDir/core-next/payment-external-secret.json"
-   kubectl --kubeconfig $kubeconfig -n app wait --for=condition=Ready externalsecret/payment-credentials --timeout=120s
-   ```
-   이후 `demo-stack.json`의 ESO 역할 `inline`에 이 정책을 추가한다.
-2. 빌드·push: 병합 SHA `<sha>`로 `backend/core-service/Dockerfile`, `infrastructure/gitops/migrations/core.Dockerfile`을 빌드해 ECR `sagomungchi/core-service`·`core-migrate`에 `<sha>` 태그로 올리고 digest를 기록한다(태그 불변 저장소).
-3. V26 사전 점검: core_app 계정으로 [`check-v26-preconditions.sql`](../../../aws/check-v26-preconditions.sql)을 실행해 위반 0과 flyway 최신 25를 확인한다. 0이 아니면 중단하고 데이터를 임의로 고치지 않는다.
-4. migration: `migrations/core-service.json`의 digest·`revision`을 새 값으로 바꾸고 Job만 렌더링해 적용한 뒤 complete를 확인한다(위 3절 명령). 실패 시 앱을 배포하지 않는다.
-5. core: `core-service.json`의 image digest를 바꾸고 `core-next/core-service-env.json` 항목을 `env` 끝에 추가한 뒤 `redeploy-app.ps1 -Service core-service` dry-run → `-Apply`. `APP_GUARDIAN_TRANSFER_ENABLED`는 넣지 않아 보호자 이관 기능은 꺼진 상태로 유지한다.
-6. 웹: 같은 SHA에서 공개 `TOSSPAYMENTS_CLIENT_KEY`(`test_gck_docs_`)만 주입해 `npm ci && npm run build` → S3 web 버킷에 assets 먼저, `index.html` 마지막 업로드. 이전 assets는 지우지 않는다.
-7. 확인: 신규 Google 가입 계정 `is_demo=true`, 학부모 이용권 표시, 공용 테스트 카드 결제 승인 1회, `audit-demo-data.sql` 재감사, `demo_stack.py plan`.
+core 외 learning·ai·scoring·report는 b67d8a 이미지로 남아 있다. 서비스 간 호출 계약은 이번 core 변경과 호환됨을 확인했으며, 같은 main 기준으로 맞추는 일은 후속이다.
 
 ## 보존과 환경 경계
 

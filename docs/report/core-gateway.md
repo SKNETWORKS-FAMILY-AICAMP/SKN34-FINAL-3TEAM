@@ -250,7 +250,7 @@ SELECT event_type, count(*) FROM event_log
 WHERE received_at > now() - interval '1 day' GROUP BY event_type;
 ```
 
-## 10. 레이어·예외 경계 (#168·#249·#250·#251)
+## 10. 레이어·예외 경계 (#168·#249·#250·#251·#314)
 
 아키텍처 2.1·2.2 위반을 [점검 기록](audit.md)의 A3·A4·A8~A10에서 찾아 정리. 응답(code·status·본문)과 API·이벤트 계약은 변경 없음.
 
@@ -287,3 +287,9 @@ service에서 Jackson `convertValue`를 쓰는 것은 기존 `treeToValue`·`val
 | `PublicAuthFilter` | `_common/security` → `account/controller`, 등록은 `account/config/AuthConfig` |
 | PIN 실패 한도 | guardianship `PinRules.FAILURE_LIMIT = 5`(정책 고정값). `app.student-device.pin-failure-limit` 설정 삭제 |
 | learning 공유 응답 DTO | `MissionResponse`·`MissionListItemResponse`·`AnswerItem`을 `_common/web/SharedResponses.kt`로. 기능 타입 없이 열거값은 이름 문자열, `Choice`·`Category`는 같은 모양의 `OptionResponse`, 피드백은 타입 인자 `AnswerItem<F>`. domain → DTO 변환은 쓰는 기능 controller의 companion 확장 `from`(매핑 중복 허용), `SharedResponsesJsonTest`가 세 변환의 JSON 동일성을 고정 |
+
+### 멱등 키 정리 진입점 (#314)
+
+- 감사 A21: `_common/web/IdempotencyService.kt`의 `IdempotencyCleanup`(`@Scheduled`)이 scheduler 패키지 밖에 있었음. #278 예외는 `_common/messaging`(`EventAuditConsumer`·`EventRetentionCleanup`·`OutboxRelay`)만 해당
+- 결정: `_common` 예외 목록을 늘리지 않고 Presentation `scheduler`로 이동. 기능 소유자가 없는 공통 테이블(`idempotency_record`)이라 `_common/scheduler/IdempotencyCleanupScheduler`에 두고, 삭제는 기존 `IdempotencyService.deleteExpired` → `IdempotencyRepository.deleteExpired` 그대로
+- 동작 변경 없음: 설정 키 `app.web.idempotency-cleanup-interval`(기본 1시간)·첫 실행 지연 1시간 유지. 만료 행 조건부 DELETE라 ShedLock 없이 레플리카 중복 실행 안전. `IdempotencyCleanupSchedulerTest`가 만료 행만 지우고 유효·진행 중 키는 남기는지 확인

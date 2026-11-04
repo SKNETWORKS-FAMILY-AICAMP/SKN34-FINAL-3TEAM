@@ -12,6 +12,14 @@ spec:
       labels: {app.kubernetes.io/name: otel-collector}
     spec:
       automountServiceAccountToken: false
+      {{- with .Values.scheduling.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduling.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -73,6 +81,14 @@ spec:
       labels: {app.kubernetes.io/name: prometheus}
     spec:
       automountServiceAccountToken: false
+      {{- with .Values.scheduling.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduling.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 65534
@@ -133,6 +149,14 @@ spec:
       labels: {app.kubernetes.io/name: grafana}
     spec:
       automountServiceAccountToken: false
+      {{- with .Values.scheduling.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduling.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 472

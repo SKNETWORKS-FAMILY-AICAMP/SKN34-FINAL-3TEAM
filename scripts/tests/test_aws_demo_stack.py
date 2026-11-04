@@ -30,7 +30,7 @@ class FakeAws:
         self.spec, self.calls, self.ids = spec, [], itertools.count(1)
         self.vpcs, self.subnets, self.tables, self.igws, self.nats, self.endpoints, self.groups = ([] for _ in range(7))
         self.buckets, self.roles, self.policies, self.subnet_groups, self.dbs = {}, {}, {}, {}, {}
-        self.repositories = {}
+        self.repositories, self.nodegroups = {}, {}
         self.cluster = None
 
     def new(self, prefix):
@@ -267,6 +267,14 @@ class FakeAws:
     def eks_describe_cluster(self, a):
         return self.cluster
 
+    def eks_describe_nodegroup(self, a):
+        group = self.nodegroups.get(a['nodegroup-name'])
+        return group and {'nodegroup': group}
+
+    def eks_create_nodegroup(self, a):
+        self.nodegroups[a['nodegroup-name']] = a
+        return {}
+
 
 MUTATING = ('create', 'put', 'attach', 'associate', 'allocate', 'modify', 'authorize', 'update', 'delete', 'stop', 'start')
 
@@ -285,7 +293,7 @@ class DemoStackTest(unittest.TestCase):
         kinds = [kind for kind, _ in created]
         self.assertEqual(kinds.count('subnet'), 4)
         self.assertEqual(kinds.count('s3'), 4)
-        self.assertEqual(kinds.count('iam-role'), 8)
+        self.assertEqual(kinds.count('iam-role'), 9)
         self.assertEqual(kinds.count('ecr'), 7)
         self.assertIn(('rds', 'sagomungchi-demo-db'), created)
 
@@ -317,6 +325,35 @@ class DemoStackTest(unittest.TestCase):
                 self.assertEqual(default['GatewayId'], ids['igw'])
         self.assertEqual(ids['nat']['SubnetId'], ids['subnets'][self.spec['vpc']['natGateway']['subnet']]['SubnetId'])
 
+    def test_existing_cluster_gets_only_the_missing_platform_node_group(self):
+        aws = FakeAws(self.spec)
+        demo_stack.apply_missing(aws, self.spec, wait=lambda _: None)
+        self.assertEqual(demo_stack.create_missing_nodegroups(aws, self.spec), [])  # no cluster yet
+        aws.cluster = {'cluster': {'name': self.spec['eks']['cluster']}}
+        aws.nodegroups['application'] = {'name': 'application'}
+        self.assertEqual(demo_stack.create_missing_nodegroups(aws, self.spec), [('nodegroup', 'platform-observability')])
+        created = aws.nodegroups['platform-observability']
+        ids = demo_stack.discover(aws, self.spec)
+        private = sorted(s['SubnetId'] for n, s in ids['subnets'].items() if 'private' in n)
+        self.assertEqual(sorted(created['subnets']), private)
+        self.assertEqual(created['capacity-type'], 'ON_DEMAND')
+        self.assertEqual(created['labels'], 'workload=platform')
+        self.assertEqual(json.loads(created['taints']), [{'key': 'workload', 'value': 'platform', 'effect': 'NO_SCHEDULE'}])
+        self.assertEqual(created['scaling-config'], 'minSize=2,maxSize=2,desiredSize=2')
+        self.assertEqual(demo_stack.create_missing_nodegroups(aws, self.spec), [])
+
+    def test_platform_charts_and_node_group_agree_on_label_and_taint(self):
+        config = json.loads((demo_stack.HERE / self.spec['eks']['config']).read_text(encoding='utf-8'))
+        group = next(g for g in config['managedNodeGroups'] if g['name'] == 'platform-observability')
+        self.assertNotIn('spot', json.dumps(group).lower())
+        for name in ('platform-data', 'observability'):
+            values = json.loads((ROOT / f'infrastructure/gitops/environments/prod/{name}.json').read_text(encoding='utf-8'))
+            self.assertEqual(values['scheduling']['nodeSelector'], group['labels'])
+            taint = group['taints'][0]
+            self.assertIn({'key': taint['key'], 'operator': 'Equal', 'value': taint['value'], 'effect': taint['effect']},
+                          values['scheduling']['tolerations'])
+        self.assertEqual(self.spec['eks']['nodegroups'], [g['name'] for g in config['managedNodeGroups']])
+
     def test_iam_documents_compare_without_order_or_string_list_difference(self):
         a = {'Version': '2012-10-17', 'Statement': [{'Effect': 'Allow', 'Action': 's3:GetObject', 'Resource': ['b', 'a']}]}
         b = {'Statement': [{'Resource': ['a', 'b'], 'Action': ['s3:GetObject'], 'Effect': 'Allow'}], 'Version': '2012-10-17'}
@@ -333,7 +370,8 @@ class DemoStackTest(unittest.TestCase):
         used = [a['roleARN'] for a in config['iam']['podIdentityAssociations']]
         used += [p['roleARN'] for addon in config['addons'] for p in addon.get('podIdentityAssociations', [])]
         used += [config['iam']['serviceRoleARN'], config['managedNodeGroups'][0]['iam']['instanceRoleARN']]
-        self.assertEqual({arn.rsplit('/', 1)[1] for arn in used}, declared)
+        # GitHub Actions 게시 역할(#186)은 EKS가 아니라 cd-release workflow가 쓴다
+        self.assertEqual({arn.rsplit('/', 1)[1] for arn in used}, declared - {'sagomungchi-demo-github-cd-publish'})
         self.assertTrue(all(c.startswith('__') for c in config['vpc']['publicAccessCIDRs']))
 
     def test_bootstrap_job_reads_credentials_from_secrets_only(self):

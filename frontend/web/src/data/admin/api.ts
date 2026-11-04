@@ -58,7 +58,7 @@ export const adminApi = {
       json(missionWritePayload(data), id ? 'PATCH' : 'POST'),
     ),
   rubric: (id: string, data: Omit<Rubric, 'version'>) =>
-    apiFetch<AdminMission>(`/admin/missions/${p(id)}/rubric`, json({ elements: data.elements, answerKey: data.answerKey ?? null, exampleAnswer: data.exampleAnswer, forbiddenTerms: data.forbiddenTerms, hints: data.hints }, 'PUT')),
+    apiFetch<AdminMission>(`/admin/missions/${p(id)}/rubric`, json(rubricWritePayload(data), 'PUT')),
   preview: (id: string, signal?: AbortSignal) =>
     apiFetch<{ mission: Mission; missionVersion: number; rubricVersion: number | null }>(
       `/admin/missions/${p(id)}/preview`,
@@ -101,5 +101,17 @@ export function missionWritePayload(data: Omit<MissionVersion, 'version' | 'crea
     answerUnit: data.inputType === 'SOLUTION_STEPS' ? data.answerUnit?.trim() || null : null,
     inputTemplate: ['SOLUTION_STEPS', 'ESSAY'].includes(data.inputType) ? data.inputTemplate ?? [] : [],
     demoOnly: data.demoOnly,
+  }
+}
+
+/**
+ * PUT /admin/missions/{id}/rubric 본문. learning은 빠진 keywords·essayType을 빈 값으로 새 rubric_version에 저장하므로
+ * 화면에서 편집하지 않는 두 필드도 불러온 값을 그대로 보낸다 (#306, learning-service.yaml AdminRubricRequest).
+ */
+export function rubricWritePayload(data: Omit<Rubric, 'version'>) {
+  return {
+    elements: data.elements, answerKey: data.answerKey ?? null, exampleAnswer: data.exampleAnswer,
+    forbiddenTerms: data.forbiddenTerms, hints: data.hints,
+    keywords: data.keywords ?? [], essayType: data.essayType ?? null,
   }
 }

@@ -1,0 +1,32 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EcrLogin",
+      "Effect": "Allow",
+      "Action": "ecr:GetAuthorizationToken",
+      "Resource": "*"
+    },
+    {
+      "Sid": "PushAppImages",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
+        "ecr:CompleteLayerUpload",
+        "ecr:DescribeImages",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:InitiateLayerUpload",
+        "ecr:PutImage",
+        "ecr:UploadLayerPart"
+      ],
+      "Resource": [
+        "arn:aws:ecr:ap-northeast-2:347161580747:repository/sagomungchi/core-service",
+        "arn:aws:ecr:ap-northeast-2:347161580747:repository/sagomungchi/learning-service",
+        "arn:aws:ecr:ap-northeast-2:347161580747:repository/sagomungchi/ai-service",
+        "arn:aws:ecr:ap-northeast-2:347161580747:repository/sagomungchi/scoring-service",
+        "arn:aws:ecr:ap-northeast-2:347161580747:repository/sagomungchi/report-service"
+      ]
+    }
+  ]
+}

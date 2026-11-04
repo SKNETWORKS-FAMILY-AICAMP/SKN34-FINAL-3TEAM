@@ -1,0 +1,44 @@
+{
+  "environment": "local",
+  "operation": "rollback",
+  "sourceCommit": "0000000000000000000000000000000000000000",
+  "sourceBranch": "develop",
+  "services": ["report-service"],
+  "currentRelease": "SYNTHETIC-current",
+  "targetRelease": "SYNTHETIC-previous",
+  "reason": "합성 입력 예시: 실제 릴리스·이미지·승인 근거로 교체 필요",
+  "databaseAction": "none",
+  "images": {
+    "report-service": "ghcr.io/example/report-service@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "previousApproval": {
+    "release": "SYNTHETIC-previous",
+    "record": ""
+  },
+  "compatibility": {
+    "schema": {
+      "status": "unknown",
+      "evidence": ""
+    },
+    "data": {
+      "status": "unknown",
+      "evidence": ""
+    },
+    "api": {
+      "status": "unknown",
+      "evidence": ""
+    },
+    "events": {
+      "status": "unknown",
+      "evidence": ""
+    },
+    "ongoingLearning": {
+      "status": "unknown",
+      "evidence": ""
+    },
+    "payments": {
+      "status": "unknown",
+      "evidence": ""
+    }
+  }
+}

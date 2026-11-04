@@ -66,3 +66,25 @@ class DashboardContractTest(unittest.TestCase):
         self.assertIn('createdAt: value.createdAt', source)
         shape = spec('core')['components']['schemas']['DashboardAttemptDetail']['properties']
         self.assertTrue({'attemptId', 'studentId', 'mission', 'answers', 'state', 'period'}.issubset(shape))
+
+
+class StudentRecordsPrivateContract(unittest.TestCase):
+    """#317: every parent path that core guards with StudentLearningContextService.requireShared documents the 403."""
+
+    def test_private_records_code_is_documented_on_guarded_paths(self):
+        paths = spec('core')['paths']
+        guarded = {
+            '/children/{childId}/attempts': ['get'], '/children/{childId}/attempts/{attemptId}': ['get'],
+            '/conversations': ['get', 'post'], '/conversations/{conversationId}': ['get'],
+            '/conversations/{conversationId}/messages': ['post'],
+            '/conversations/{conversationId}/messages/{messageId}/retry': ['post'],
+            '/conversations/{conversationId}/messages/{messageId}/evidence': ['get'],
+            '/agent/example-questions': ['get'],
+            '/conversations/{id}/report-template': ['get'], '/conversations/{id}/report-template/proposals': ['post'],
+            '/conversations/{id}/report-template/confirm': ['post'],
+            '/reports/{reportId}/evidence/{itemId}': ['get'], '/reports/{reportId}/download': ['get'],
+        }
+        for path, methods in guarded.items():
+            for method in methods:
+                with self.subTest(path=path, method=method):
+                    self.assertIn('STUDENT_RECORDS_PRIVATE', paths[path][method]['responses']['403']['description'])

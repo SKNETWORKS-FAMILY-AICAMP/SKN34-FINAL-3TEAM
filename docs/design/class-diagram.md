@@ -419,6 +419,53 @@ classDiagram
     +unlink()
     +isLinked() Boolean
   }
+  class GuardianTransferController {
+    <<controller>>
+    +recipient(email) Recipient
+    +list() Map
+    +create(request, reauthToken) View
+    +accept(id, consents, reauthToken) View
+    +reject(id) View
+    +cancel(id) View
+    +cancelOutgoing() Map
+  }
+  class GuardianTransferService {
+    <<service>>
+    +request(identity, child, recipient, includeConversations, token) View
+    +accept(identity, id, consents, token) View
+    +resolve(identity, id, reject) View
+    +cancelOutgoing(identity) Map
+  }
+  class GuardianTransferAccessService {
+    <<service>>
+    +requireNoPendingStudent(student)
+    +requireNoOutgoing(user)
+  }
+  class GuardianTransfer {
+    <<entity>>
+    +status PENDING|ACCEPTED|REJECTED|CANCELLED
+    +includeConversations Boolean
+  }
+  class GuardianTransferRepository {
+    <<repository>>
+    +pending(student) GuardianTransfer
+    +outgoing(sender) List
+    +move(student, sender, recipient)
+    +resolve(id, status)
+  }
+  class ConversationTransferService {
+    <<service>>
+    +requireIdle(parent, student)
+    +transfer(parent, student, recipient)
+    +deleteRemainingForParent(parent)
+  }
+  class GuardianPasswordService {
+    <<service>>
+    +state(identity) GuardianPasswordState
+    +set(identity, password, token) GuardianPasswordState
+    +attempt(user, password) PinAttempt
+    +clear(user)
+  }
   class DeletionRequest {
     <<entity>>
     +confirm()
@@ -484,6 +531,17 @@ classDiagram
   GuardianshipService --> StudentAccessRepository : 연결 자녀·등록
   GuardianshipService --> DeletionRequestRepository
   GuardianshipService --> OutboxWriter : student.deleted
+  GuardianTransferController --> GuardianTransferService
+  GuardianTransferService --> GuardianTransferRepository : 연결 교체·상태
+  GuardianTransferService --> ReauthenticationService : CHILD_TRANSFER·TRANSFER_ACCEPT
+  GuardianTransferService --> ConsentService : 받는 학부모 보호자 동의
+  GuardianTransferService --> ConversationTransferService : 진행 중 분석 보류·상담 이전
+  GuardianTransferService ..> GuardianTransfer
+  GuardianTransferAccessService --> GuardianTransferRepository
+  AccountService --> GuardianTransferAccessService : 대기 중 탈퇴 차단
+  GuardianshipService --> GuardianTransferAccessService : 대기 중 해제·삭제 차단
+  AuthService --> GuardianPasswordService : 학부모 복귀
+  MeController --> GuardianPasswordService : 보호자 비밀번호 설정
   AccountService ..> UserAccount
   GuardianshipService ..> Student
   GuardianshipService ..> Guardianship
@@ -493,7 +551,7 @@ classDiagram
 - `GuardianshipService.authorizeChild(childId)`: 학부모는 `guardianship LINKED` 확인 후 `studentScope = {childId}`로 컨텍스트 갱신, 학생은 본인 ID만. 미연결 시 `403 CHILD_NOT_LINKED` (FN-AGT-02, NFR-SEC-02)
 - 자녀 범위가 필요한 모든 controller는 하위 호출 전에 `authorizeChild` 호출 → `InternalRestClientFactory`가 그 컨텍스트를 헤더로 전달
 - `authorizeLinkedChildren()`: 경로에 자녀 ID가 없는 API(`/reports/{reportId}` 등)용. `studentScope = 연결 자녀 전체`로 전달하고 소유 서비스가 리소스의 학생 ID로 검사, 403은 core가 `CHILD_NOT_LINKED`로 변환
-- 구현 상태: 인증(`AuthController`·`AuthService`·`TokenService`·`GoogleOAuthClient`), 동의·자녀(`ConsentController`·`ConsentService`·`ChildrenController`·`GuardianshipService`), 기기·PIN(`StudentDeviceController`·`StudentAuthService`·`StudentPinService`·`StudentDeviceCleanupService`), 학생 공개 설정(#206 `StudentSharingController` + `StudentLearningContextService.ownSharing`·`requireShared`), 꾸미기 설정(#234 `StudentLookController`·`StudentLookService`·domain `StudentLook`), 계정 관리(`ReauthenticationService`·`AccountManagementService`·`AccountWithdrawalService`·`ChildManagementService`) 구현됨. 그림의 `MeController`·`AccountService`와 Student entity 메서드명은 추상 이름
+- 구현 상태: 인증(`AuthController`·`AuthService`·`TokenService`·`GoogleOAuthClient`), 동의·자녀(`ConsentController`·`ConsentService`·`ChildrenController`·`GuardianshipService`), 기기·PIN(`StudentDeviceController`·`StudentAuthService`·`StudentPinService`·`StudentDeviceCleanupService`), 학생 공개 설정(#206 `StudentSharingController` + `StudentLearningContextService.ownSharing`·`requireShared`), 꾸미기 설정(#234 `StudentLookController`·`StudentLookService`·domain `StudentLook`), 계정 관리(`ReauthenticationService`·`AccountManagementService`·`AccountWithdrawalService`·`ChildManagementService`), 보호자 비밀번호(V24 `GuardianPasswordService`, `AccountManagementController`의 `/me/guardian-password`), 탈퇴 전 자녀 이관(#289 `GuardianTransferController`·`GuardianTransferService`·`GuardianTransferAccessService`·domain `GuardianTransfer`·`GuardianTransferRepository`, 상담 이전 `conversation/service/ConversationTransferService`) 구현됨. 그림의 `MeController`·`AccountService`와 Student entity 메서드명은 추상 이름이며, 탈퇴·자녀 해제/삭제의 이관 대기 차단은 실제로 `AccountWithdrawalService`·`ChildManagementService`가 `GuardianTransferAccessService`를 호출한다
 - 동의는 별도 entity 없이 선택마다 새 `consent` 행(AGREED·WITHDRAWN)을 저장하고 최신 행으로 판정 (상태 다이어그램 2.3, [이슈 #37 보고서](../report/auth-account.md))
 - `StudentAccessService`·`ConsentAccessService`는 인증용 읽기 전용 확인. 쓰기(자녀 등록·동의 저장)는 `GuardianshipService`·`ConsentService`(#37) 소유
 - 공개 API 컨텍스트는 `PublicAuthFilter`가 설정하고 finally에서 해제 (`InternalAuthFilter`와 같은 방식)
@@ -504,7 +562,8 @@ classDiagram
 - `StudentAuthService.login`: 기기 쿠키 해시로 `StudentDevice` 조회 → `isUsable`(미해제·미만료)·자녀 등록 확인 → `ChildAuthorizationService.requireCurrent`·`StudentAccessService.requireLinked` → 잠금·PIN 검사 → 동석 경로와 같은 `STUDENT` 토큰 발급, refresh 미발급 (P01, API 명세 3.11)
 - `StudentPinService.attempt`: 학생 행 잠금으로 실패 횟수 증가, 5회 도달 시 `pin_locked_at` 기록. `set`은 DB 재인증 소비와 해시·실패 횟수 0·잠금 해제를 한 번에 처리
 - 페어링 코드는 Redis(10분·1회용), 기기 자격증명은 `student_device.token_hash`만 저장. 저장 구조는 ERD 3.1·6장(core V13)
-- `GuardianshipService.register`: 학년 3~6·출생연도 검증, 보호자 행 잠금 후 `LINKED` 자녀 3명이면 `CHILD_LIMIT_REACHED`, GUARDIAN 동의 필수 (P01·P02·P03). 다른 보호자 연결(`link`) 없음
+- `GuardianshipService.register`: 학년 3~6·출생연도 검증, 보호자 행 잠금 후 `LINKED` 자녀 3명이면 `CHILD_LIMIT_REACHED`, GUARDIAN 동의 필수 (P01·P02·P03). 다른 보호자 연결(`link`) 없음. 예외는 #289 이관 수락뿐이며 기존 연결을 종료(`transferred_at`)하고 새 연결(`method=TRANSFER`)로 교체하므로 자녀당 현재 보호자는 계속 1명(V26 부분 UK)
+- `GuardianTransferService` (#289): 요청·수락·거절·취소 모두 계정→학생→이관 요청 행 잠금 순서로 직렬화한다. 수락은 한 트랜잭션에서 받는 학부모 필수 동의·3명 한도·보내는 학부모 탈퇴 가능 상태·진행 중 분석 없음을 다시 확인하고, 연결 교체·보호자 동의 저장(실패 시 롤백)·선택 상담 소유 이전·학생 세션과 등록 기기 해제를 수행한다. 상태 전이는 [상태 다이어그램 2.4](state-diagram.md#24-guardian_transferstatus-289-탈퇴-전-자녀-이관), 흐름은 [시퀀스 다이어그램](sequence-diagram.md)의 이관 절. 컨트롤러는 항상 등록하며, 본인 목록·취소·거절은 기능 off·동의 누락에도 허용한다. 신규 대상 조회·요청·수락의 기능·동의 검사는 유지한다(#307)
 
 ### 3.2 학습 프록시·분석 대화 (learning · conversation)
 
@@ -1301,6 +1360,7 @@ classDiagram
 - `Mission.requirePublishable(snapshot)` (FN-ADM-11, #145): 현재 미션·기준표 버전으로 검사하고 누락을 모두 모아 `422 MISSION_PUBLISH_INCOMPLETE` + `missingFields`(영문 코드, core 프록시가 영문 경로 모양만 통과시켜 프론트가 한글로 표시)
   - `title`·`question`·`subject`·`achievementStandards`: 비었음 / `grade`: 3~6 밖·`gradeMin > gradeMax`·논술인데 5 미만 / `rubric`: 기준표 버전 없음
   - `rubric.elements`: 요소 0개(**입력 방식 무관**, 고르기도 ai 되묻기가 요소를 요구, 구 #81), 풀이 단계인데 `FINAL_ANSWER` 외 요소 없음, 풀이 단계가 아닌데 `FINAL_ANSWER` 있음 / `rubric.elements.points`: 이름 비었음·배점 1 미만
+  - `rubric.elements.code` (FN 1.5 표준 요소, #262): 미션 유형과 다른 유형의 표준 코드, 고르기·순서·분류인데 요소가 `ANSWER_KEY` 하나가 아님, 따져 보기 논술인데 `EVALUATE_CLAIM`·`EVALUATE_EVIDENCE`·`EVALUATE_PERSPECTIVE` 중 빠짐. 기준표 저장(`AdminMissionController` `RubricRequest.toCommand`)은 미션 유형을 모르므로 code 모양(표준 코드·`e`+숫자·예약 코드)만 400
   - `choices`: 고르기·순서·분류인데 선택지 없음 / `categories`: 분류인데 그룹 없음
   - `answerKey`: 서술·논술이 아닌데 없음 또는 입력 방식 모양(`{choiceIds}`·`{assignments}`·`{finalAnswer}`)·선택지·그룹과 맞지 않음 / `exampleAnswer`: 서술·논술인데 없음
   - `review`: 현재 미션·기준표 버전의 최신 검토가 `APPROVED`가 아님

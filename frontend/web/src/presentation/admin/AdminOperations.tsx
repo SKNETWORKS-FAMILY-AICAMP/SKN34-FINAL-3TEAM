@@ -154,14 +154,13 @@ function JobDetail({ id }: { id: string }) {
   const [selectedId, setSelectedId] = useState(id)
   const q = useAdminQuery(['job', selectedId], (signal) => adminApi.job(selectedId, signal)),
     key = useRef<string | null>(null),
-    retry = useAdminMutation(() => {
-      key.current ??= crypto.randomUUID()
-      return adminApi.retry(selectedId, key.current)
-    }),
+    // 멱등 키는 실패 후 다시 시도할 때 재사용하고, 성공·원래 작업 복귀 때만 버린다. 훅 인자에서 ref를 읽지 않도록 변수로 넘긴다.
+    retry = useAdminMutation((idempotencyKey: string) => adminApi.retry(selectedId, idempotencyKey)),
     [notice, setNotice] = useState('')
   function run() {
+    key.current ??= crypto.randomUUID()
     void retry
-      .mutateAsync(undefined)
+      .mutateAsync(key.current)
       .then((j) => {
         key.current = null
         setSelectedId(j.jobId)

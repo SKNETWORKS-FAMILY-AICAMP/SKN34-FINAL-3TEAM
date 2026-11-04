@@ -69,6 +69,12 @@
 | `PAIRING_CODE_INVALID` | 400 | 페어링 코드 없음·만료·이미 사용 (FN-ACC-14) |
 | `NOT_FOUND` | 404 | 리소스 없음 |
 | `DATA_UNAVAILABLE` | 410 / 503 | 삭제된 근거 → "이용 불가" 표시(410), report 원문 조회·파일 저장소 장애는 재시도 가능한 503 |
+| `TRANSFER_PENDING` | 409 | 해당 자녀의 이관 대기 요청이 있어 다른 이관·연결 해제·삭제 불가, 발신자는 탈퇴 불가 (5.17) |
+| `TRANSFER_ALREADY_RESOLVED` | 409 | 이미 종료된 이관 요청에 다른 상태 전이 시도 (5.17) |
+| `TRANSFER_CHILD_UNAVAILABLE` | 409 | 삭제 요청 중이거나 비활성인 자녀의 이관 요청·수락 (5.17) |
+| `TRANSFER_RECIPIENT_NOT_FOUND` | 404 | 가입 이메일에 맞는 활성 학부모가 없거나 후보를 하나로 특정할 수 없음 (5.17) |
+| `TRANSFER_ACTIVITY_IN_PROGRESS` | 409 | 해당 자녀의 발신자 상담·관리자 재처리가 진행 중이어서 수락 불가 (5.17) |
+| `TRANSFER_PAYMENT_BLOCKED` | 409 | 해당 자녀의 구독·진행 중 결제·미처리 환불로 이관 요청·수락 불가 (5.17) |
 | `DELETION_IN_PROGRESS` | 409 | report 학생 삭제가 진행 중이므로 리포트 조회를 잠시 차단(core가 같은 코드로 전달), core 자녀 삭제 요청이 이미 진행 중 (5.6) |
 | `VALIDATION_FAILED` | 400 / 422 | 형식 오류 (`errors[]`에 필드별 사유). 형식은 맞지만 업무 규칙에 어긋난 PIN(3.11)·꾸미기 선택값(3.12)은 422 |
 | `ANSWER_INCOMPLETE` | 422 | 필요한 선택·입력 누락 (FN-LRN-04) |
@@ -162,6 +168,7 @@
 | 판정 결과 | `CORRECT` 정답 · `PARTIAL` 부분 정답 · `RETHINK` 다시 생각 · `HELD` 판정 보류 (처리 실패는 처리 상태 `FAILED`) |
 | 되묻기 유형 | `ONE_STEP_MORE` 한 걸음 더 · `TELL_MORE` 더 말해 보기 · `LOOK_AGAIN` 다시 살펴보기 |
 | 돌아보기 난이도 | `EASY` 쉬웠어 · `NORMAL` 보통 · `HARD` 어려웠어 (ERD `reflection.difficulty`) |
+| 자녀 이관 | `PENDING` 수락 대기 · `ACCEPTED` 수락 완료 · `REJECTED` 수신자 거절 · `CANCELLED` 발신자 취소 |
 | 작업 (대화·리포트·알림) | `QUEUED` 대기 · `RUNNING` 처리 중 · `COMPLETED` 완료 · `FAILED` 실패 |
 | 조회 결과 | `OK` · `NO_RECORD` 기록 없음(집계 대상 시도 0건) · `INSUFFICIENT_SAMPLE` 표본 부족(1~4건, 비율 대신 개수만, P08) · `PROCESSING` 처리 중 · `FAILED` 조회 실패 |
 | 신고 | `RECEIVED` 접수 · `IN_REVIEW` 검토 중 · `RESOLVED` 처리 완료 |
@@ -228,7 +235,7 @@
 | POST | `/auth/student-sessions` | 학부모 | 학생 진입(동석): `{childId}` 연결 자녀 확인 후 별도 학생 세션(`STUDENT` 토큰) 발급, 학부모 세션은 잠금(refresh 쿠키 유지). 시연 링크·URL 식별값 진입 없음 (P01, 5.1) | ACC-05 | 제안 |
 | POST | `/auth/parent-unlock` | 쿠키 | 학생 화면 → 학부모 화면 복귀: `{password}` 보호자 비밀번호 확인 후 잠긴 학부모 세션 해제, 그 세션에서 들어간 학생 세션 폐기, refresh 응답과 같은 형식 + 회전 쿠키 (5.1) | ACC-05 | 제안 |
 | GET | `/me/guardian-password` | 학부모 | 보호자 비밀번호 상태 `{set, locked, updatedAt}`. 값·해시는 반환하지 않음 | ACC-05 | 제안 |
-| PUT | `/me/guardian-password` | 학부모 | 보호자 비밀번호 설정·변경 `{password}` (`X-Reauth-Token`, 숫자 4~6자리·반복/연속 불가, PIN과 같은 규칙). 실패 횟수·잠금 해제 | ACC-05, ACC-10 | 제안 |
+| PUT | `/me/guardian-password` | 학부모 | 보호자 비밀번호 설정·변경 `{password}` (`X-Reauth-Token`, 숫자 4~6자리·반복/연속 불가, PIN과 같은 규칙). 실패 횟수·잠금 해제. 학부모가 아니면 입력과 관계없이 403(규칙 검사 422보다 먼저, #310) | ACC-05, ACC-10 | 제안 |
 | POST | `/auth/student/devices` | 공개 | 페어링 코드로 기기 등록 `{pairingCode, label}` → 기기 자격증명 쿠키 발급, 등록 자녀 프로필 반환 (P01, 3.11) | ACC-14 | 제안 |
 | GET | `/auth/student/profiles` | 기기 쿠키 | 이 기기에 등록된 자녀 프로필 `{childId, nickname, pinSet, pinLocked}` (P01, `/children` 확장과 같은 필드명) | ACC-05 | 제안 |
 | POST | `/auth/student/login` | 기기 쿠키 | 학생 진입(단독): `{childId, pin}` → 학생 세션(`STUDENT` 토큰) 발급. refresh 미발급 (P01, 3.11) | ACC-05 | 제안 |
@@ -247,12 +254,19 @@
 | GET | `/student-devices` | 학부모 | 등록 기기 목록 `{deviceId, label, children[], createdAt, lastUsedAt, expiresAt}` | ACC-14 | 제안 |
 | DELETE | `/student-devices/{deviceId}` | 학부모 | 기기 등록 해제 → 이후 해당 기기 PIN 로그인 거부 | ACC-14 | 제안 |
 | GET | `/children/{childId}/deletion-impact` | 학부모 | 연결 해제·프로필 삭제·기록 삭제별 범위·영향 안내 | ACC-11 | 우선2 |
-| DELETE | `/children/{childId}/link` | 학부모 | 연결 해제 (`X-Reauth-Token`) | ACC-11, ACC-10 | 우선2 |
-| POST | `/children/{childId}/deletion-requests` | 학부모 | 프로필·학습 기록 삭제 요청 `{scope: PROFILE\|RECORDS}` (`X-Reauth-Token`). 같은 요청에서 확정하고 `student.deleted` 발행, 별도 확인 API 없음. 사전 안내는 `deletion-impact` (P09) | ACC-11, ACC-13 | 우선2 |
+| DELETE | `/children/{childId}/link` | 학부모 | 연결 해제 (`X-Reauth-Token`). 이관 대기 중이면 409 `TRANSFER_PENDING` | ACC-11, ACC-10 | 우선2 |
+| POST | `/children/{childId}/deletion-requests` | 학부모 | 프로필·학습 기록 삭제 요청 `{scope: PROFILE\|RECORDS}` (`X-Reauth-Token`). 같은 요청에서 확정하고 `student.deleted` 발행, 별도 확인 API 없음. 사전 안내는 `deletion-impact` (P09). 이관 대기 중이면 409 `TRANSFER_PENDING` | ACC-11, ACC-13 | 우선2 |
 | GET | `/children/{childId}/deletion-requests/{requestId}` | 학부모 | 삭제 요청 처리 상태 (5.6) | ACC-11 | 우선2 |
 | GET | `/me/withdrawal/precheck` | 인증 | 탈퇴 전 진행 중 구독·미처리 환불·보관 거래(5년) 안내 (P09, P14) | ACC-12 | 우선2 |
-| POST | `/me/withdrawal` | 인증 | 탈퇴 요청 (`X-Reauth-Token`). 진행 중 구독·미처리 환불이 있으면 409, 요청 즉시 처리·이후 로그인 불가 (P09) | ACC-12 | 우선2 |
+| POST | `/me/withdrawal` | 인증 | 탈퇴 요청 (`X-Reauth-Token`). 진행 중 구독·미처리 환불은 409 `WITHDRAWAL_BLOCKED`, 보낸 이관이 대기 중이면 409 `TRANSFER_PENDING`. 요청 즉시 처리·이후 로그인 불가 (P09) | ACC-12 | 우선2 |
 | GET | `/me/withdrawal` | 인증 | 탈퇴 처리 상태 | ACC-12 | 우선2 |
+| POST | `/guardian-transfers/recipient` | 학부모 | 가입 이메일로 받는 학부모 조회 `{email}`. 404 `TRANSFER_RECIPIENT_NOT_FOUND`, 3명 한도 409 `CHILD_LIMIT_REACHED` (5.17) | ACC-15 | 우선2 |
+| GET | `/guardian-transfers` | 학부모 | 본인이 보낸·받은 요청 `{items}`. 자녀 없음·동의 누락·기능 비활성 상태에서도 조회 가능 (5.17) | ACC-15 | 우선2 |
+| POST | `/guardian-transfers` | 학부모 | `{childId,recipientId,includeConversations}` + CHILD_TRANSFER 재인증으로 요청, 409 이관·결제·인원 충돌 (5.17) | ACC-15 | 우선2 |
+| POST | `/guardian-transfers/{id}/accept` | 수신 학부모 | `{consents}` + TRANSFER_ACCEPT 재인증으로 수락. 현재 GUARDIAN 동의·결제·인원·진행 상태 재검사 (5.17) | ACC-15 | 우선2 |
+| POST | `/guardian-transfers/{id}/reject` | 수신 학부모 | 대기 요청 거절. 동의 누락·기능 비활성 상태에서도 가능. 다른 종료 상태이면 409 `TRANSFER_ALREADY_RESOLVED` (5.17) | ACC-15 | 우선2 |
+| POST | `/guardian-transfers/{id}/cancel` | 발신 학부모 | 대기 요청 취소. 동의 누락·기능 비활성 상태에서도 가능. 다른 종료 상태이면 409 `TRANSFER_ALREADY_RESOLVED` (5.17) | ACC-15 | 우선2 |
+| POST | `/guardian-transfers/cancel-outgoing` | 발신 학부모 | 본인의 보낸 대기 요청만 일괄 취소 `{cancelled}`. 동의 누락·기능 비활성 상태에서도 가능. 탈퇴·삭제는 실행하지 않음 (5.17) | ACC-15 | 우선2 |
 
 - 삭제 후 처리 (FN-ACC-13)
   - 삭제가 끝난 기록은 학습·대화·리포트·대시보드 응답에서 제외
@@ -440,7 +454,7 @@
 | POST | `/admin/missions` | CONTENT | 미션 작성 (학년·생각 유형·입력 방식·장면·질문·교과·성취기준, 시연 전용 여부) | ADM-09 | 제안 |
 | GET | `/admin/missions/{missionId}` | CONTENT | 미션 상세·버전 이력 | ADM-09, ADM-10 | 제안 |
 | PATCH | `/admin/missions/{missionId}` | CONTENT | 미션 수정 (새 버전 생성, 기존 학습은 당시 버전 유지) | ADM-09, ADM-12 | 제안 |
-| PUT | `/admin/missions/{missionId}/rubric` | CONTENT | 기준표(요소·배점·흔한 오답)·정답·예시 답·들어가면 좋은 생각·생각 열기 질문 → 새 기준 버전 | ADM-10 | 제안 |
+| PUT | `/admin/missions/{missionId}/rubric` | CONTENT | 기준표(요소·배점·흔한 오답)·정답·예시 답·들어가면 좋은 생각·생각 열기 질문 → 새 기준 버전. 요소 code는 FN 1.5 표준 요소 모양(표준 코드·`e`+숫자·`ANSWER_KEY`·`FINAL_ANSWER`), 아니면 400 (#262) | ADM-10 | 제안 |
 | GET | `/admin/missions/{missionId}/preview` | CONTENT | 학생 화면 미리보기 데이터 | ADM-09 | 제안 |
 | POST | `/admin/missions/{missionId}/review-request` | CONTENT | 검토 요청 `DRAFT → REVIEW_REQUIRED` (현재 미션·기준표 버전 필요) (P07) | ADM-11 | 제안 |
 | POST | `/admin/missions/{missionId}/review` | CONTENT | 검토 결과 기록, `CONTENT` 1인 가능(작성자 포함) (P07) | ADM-11 | 제안 |
@@ -501,8 +515,8 @@ data: {
   "judgment":{
     "judgmentId":"j-7", "result":"PARTIAL", "trial":true,
     "elements":[
-      {"elementId":"e1","label":"주장","satisfied":true,"quote":"나는 ...라고 생각해","sourceType":"AI_OBSERVATION"},
-      {"elementId":"e2","label":"까닭","satisfied":false,"quote":null}
+      {"elementId":"e1","label":"주장","code":"EVALUATE_CLAIM","goodThought":false,"satisfied":true,"quote":"나는 ...라고 생각해","sourceType":"AI_OBSERVATION"},
+      {"elementId":"e2","label":"까닭","code":"EVALUATE_EVIDENCE","goodThought":false,"satisfied":false,"quote":null}
     ],
     "heldReason":null
   },
@@ -760,7 +774,7 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 | GET | `/internal/records/students/{studentId}/changes?from&to&page&size` | ai, report | 되묻기 전후 답변 쌍 → 1.1 봉투 + `{studentId, state, period}`, `items:[{attemptId, followup(마지막 답변이 답한 되묻기), first{answerId, text}, revised{answerId, text}, counts{chars, sentences, reasonConnectives}}]}`(3.4). 조회 종료일까지 보완 답변이 있는 시도만, 최초 vs 종료일 이전 마지막 답변(P08, FN-RPT-02). `text`는 원문, 수는 학생이 쓴 칸 내용으로 셈 |
 | GET | `/internal/records/evidence?answerIds=` | core, report | 원문 근거 조회 → `{items: Evidence[]}`(1.6). 요청한 순서대로, 없는 답변·삭제 학생은 `available:false`(원문 없음), 범위 밖 학생의 답변이면 `403` |
 | GET | `/internal/stats?from&to` | core | 운영 현황용 집계 (학생 원문 없음) → `{period, inclusionRule, attempts, completedAttempts, students}`(FN-ADM-02). 역할 `ADMIN`·`SYSTEM`, 학생 범위 없음 |
-| GET · POST · PATCH · PUT | `/internal/admin/missions…` | core | 관리자 미션(2.8, #145). core가 `ADMIN` + `X-User-Id`(작성자·검토자 ID) + 빈 학생 범위로 넘김(CONTENT 검사는 core). 경로는 2.8 표와 1:1. 목록 `GET ?status&grade&thinkingType&page&size` → `{items: AdminMission[], page, size, totalElements, counts:[{status, count}]}`(`counts`는 페이지·status·grade·thinkingType 어느 필터와도 무관한 전체 상태별 건수), 상세 `GET /{id}` → `AdminMission`. 작성 `POST`(201)·수정 `PATCH /{id}` 본문 `{title, subject, gradeMin, gradeMax, thinkingType, inputType, question, guide?, sceneUri?, staticSceneUri?, achievementStandards[], choices?, categories?, answerUnit?, inputTemplate?, demoOnly}`, 기준표 `PUT /{id}/rubric` `{elements:[{code, label, description?, points, commonErrors[], goodThought, judgeVerified}], answerKey?, exampleAnswer?, forbiddenTerms[], keywords[], essayType?, hints[]}`(`keywords`·`essayType`은 M2 입력, 4.2.2. `essayType`은 논술 미션만)(`answerKey`는 입력 방식 모양 객체 `{choiceIds}`·`{assignments}`·`{finalAnswer}`), 검토 요청 `POST /{id}/review-request` `{missionVersion, rubricVersion}`, 검토 `POST /{id}/review` `{missionVersion, rubricVersion, result: APPROVED|CHANGES_REQUESTED, comment}`, 게시·중단 `POST /{id}/publish`·`/unpublish` `{}` → 모두 `AdminMission`. 미리보기 `GET /{id}/preview` → `{mission(4.1 학생 미션 상세 모양, 정답·예시 없음), missionVersion, rubricVersion}`. `AdminMission` = `{missionId, code, status, demoOnly, currentVersion, currentRubricVersion, publishedVersion, publishedRubricVersion, versions[], rubrics[], reviews:[{missionVersion, rubricVersion, result, comment, reviewerId, createdAt}]}`(생성·변경 응답의 `missionId`·버전 번호로 core가 감사 기록). 수정·기준표는 새 불변 버전(`current*`), 학생에게는 `published*` 버전(P07). 오류: 형식 `400 VALIDATION_FAILED`, 없는 미션 `404 NOT_FOUND`, 요청 버전이 현재와 다름 `409 MISSION_VERSION_CONFLICT`, 상태상 불가 전이 `409 CONFLICT`, 게시 필수 누락 `422 MISSION_PUBLISH_INCOMPLETE` + `missingFields`(영문 코드, class-diagram 4.1). 업로드 없음(URI 입력) |
+| GET · POST · PATCH · PUT | `/internal/admin/missions…` | core | 관리자 미션(2.8, #145). core가 `ADMIN` + `X-User-Id`(작성자·검토자 ID) + 빈 학생 범위로 넘김(CONTENT 검사는 core). 경로는 2.8 표와 1:1. 목록 `GET ?status&grade&thinkingType&page&size` → `{items: AdminMission[], page, size, totalElements, counts:[{status, count}]}`(`counts`는 페이지·status·grade·thinkingType 어느 필터와도 무관한 전체 상태별 건수), 상세 `GET /{id}` → `AdminMission`. 작성 `POST`(201)·수정 `PATCH /{id}` 본문 `{title, subject, gradeMin, gradeMax, thinkingType, inputType, question, guide?, sceneUri?, staticSceneUri?, achievementStandards[], choices?, categories?, answerUnit?, inputTemplate?, demoOnly}`, 기준표 `PUT /{id}/rubric` `{elements:[{code, label, description?, points, commonErrors[], goodThought, judgeVerified}], answerKey?, exampleAnswer?, forbiddenTerms[], keywords[], essayType?, hints[]}`(`keywords`·`essayType`은 M2 입력, 4.2.2. `essayType`은 논술 미션만)(`answerKey`는 입력 방식 모양 객체 `{choiceIds}`·`{assignments}`·`{finalAnswer}`), 검토 요청 `POST /{id}/review-request` `{missionVersion, rubricVersion}`, 검토 `POST /{id}/review` `{missionVersion, rubricVersion, result: APPROVED|CHANGES_REQUESTED, comment}`, 게시·중단 `POST /{id}/publish`·`/unpublish` `{}` → 모두 `AdminMission`. 미리보기 `GET /{id}/preview` → `{mission(4.1 학생 미션 상세 모양, 정답·예시 없음), missionVersion, rubricVersion}`. `AdminMission` = `{missionId, code, status, demoOnly, currentVersion, currentRubricVersion, publishedVersion, publishedRubricVersion, versions[], rubrics[], reviews:[{missionVersion, rubricVersion, result, comment, reviewerId, createdAt}]}`(생성·변경 응답의 `missionId`·버전 번호로 core가 감사 기록). 수정·기준표는 새 불변 버전(`current*`), 학생에게는 `published*` 버전(P07). 오류: 형식 `400 VALIDATION_FAILED`, 없는 미션 `404 NOT_FOUND`, 요청 버전이 현재와 다름 `409 MISSION_VERSION_CONFLICT`, 상태상 불가 전이 `409 CONFLICT`, 게시 필수 누락 `422 MISSION_PUBLISH_INCOMPLETE` + `missingFields`(영문 코드, class-diagram 4.1. 요소 code가 미션 유형·입력 방식에 맞지 않으면 `rubric.elements.code`, #262). 업로드 없음(URI 입력) |
 | GET | `/internal/payment-usage/students/{studentId}?since` | core | SYSTEM + 해당 학생 scope. 결제 후 피드백 사용(DONE·RUNNING) 여부, 원문 미포함 (#48 환불 사용 확인) |
 
 - 기록 조회 공통 (#27): 학생 경로는 역할 `PARENT`·`STUDENT`·`SYSTEM`(`home`은 학생 본인 `STUDENT`만)이고 `X-Student-Scope`에 대상 학생이 없으면 `403`. `from`·`to`는 KST 날짜(양 끝 포함), 둘 다 주거나 둘 다 생략(생략하면 오늘 포함 최근 7일, P06), 한쪽만 주거나 `from > to`면 `400`. 응답 `period`는 실제 조회 기간. 집계 대상은 P08(기간 안에 답변 제출이 있는 시도, 미완료 포함·판정 상태 무관. 조회 종료일까지의 답변이 모두 처리 실패인 시도와 삭제 기록은 제외). 시도별 사실(완료·되묻기 받음·보완 답변·최근 답변)은 조회 종료일까지 일어난 것만. `state`는 집계 대상(비율은 분모) 0건 `NO_RECORD`, 1~4건 `INSUFFICIENT_SAMPLE`(비율 `value: null`), 5건 이상 `OK`. 메모·초안은 반환하지 않음(P05). 최상위 학생 식별자는 호출 역할과 무관하게 `studentId`(학부모 공개 응답의 `childId`는 core가 바꿈, core #40·report #51과 합의). 조회 장애는 `state`가 아니라 HTTP 오류(Problem Details)로 반환. 까닭을 잇는 말은 `왜냐하면`·`때문`·`그래서`·`따라서`(report와 확정)
@@ -773,7 +787,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - `attempts`·`changes`는 1.1의 페이지 봉투를 사용한다. `page`는 0부터 시작하고 `totalElements`는 같은 학생·기간·포함 기준의 전체 항목 수다. report는 `size=100`으로 모든 페이지를 읽으며 실패/누락 페이지를 빈 기록으로 바꾸지 않는다. `thinking-types`는 `{studentId,state,period,items}` 형태를 사용한다.
 - `attempts.items[]`의 필수 입력:
   - `attemptId`, `studentId`, `mission:{title,thinkingType}`, `status:IN_PROGRESS|COMPLETED`, `answers[]`, `hintUsages:[{openedAt}]`. 학생 메모·초안은 포함하지 않는다. #27은 attempts에 삭제 표식 항목을 넣지 않는다. 삭제 뒤 정상 조회는 `NO_RECORD`, `items:[]`, `totalElements:0`이다. 이것은 evidence의 삭제된 답변 표시나 #55 삭제 완료 처리를 대신하지 않는다.
-  - `answers[]`: `{answerId,version,submittedAt,inputType,text,followupId,content,feedback:{status:PENDING|RUNNING|DONE|FAILED}}`. `text`는 표시·근거용 평문 전체이고 null이 아닌 문자열이다(내용이 없으면 `""`). 풀이·논술의 칸 이름과 고르기의 선택지 이름이 포함될 수 있다. 수치 재계산에는 `content`의 학생 작성 칸만 사용해야 하며 표시용 `text`를 그대로 세면 안 된다. 시도당 1번부터 조회 종료일 끝까지의 답변 버전을 제공한다. 최초 답변·도움 이용을 비교할 수 있도록 조회 시작일 이전의 답변도 포함한다. report는 종료일 이후 답변을 사용하지 않는다.
+  - `answers[]`: `{answerId,version,submittedAt,inputType,text,followupId,content,feedback}`. `feedback`은 학생 시도 상세와 같은 `{status:PENDING|RUNNING|DONE|FAILED,judgment,followup,nextActions,versions}`이고, `judgment`는 처리 전·실패면 null, 아니면 `{judgmentId,result,trial,elements[{elementId,label,code,goodThought,satisfied,quote,sourceType}],heldReason}`. 생각 요소 지표(FN-RPT-05)는 `code`(FN 1.5 표준 요소)로 미션을 넘어 같은 요소를 세고 `goodThought = false`인 필수 요소만 충족률·보완률 분모로 쓴다. 시범 판정(`trial`) 포함 여부는 report가 정한다 (#262). `text`는 표시·근거용 평문 전체이고 null이 아닌 문자열이다(내용이 없으면 `""`). 풀이·논술의 칸 이름과 고르기의 선택지 이름이 포함될 수 있다. 수치 재계산에는 `content`의 학생 작성 칸만 사용해야 하며 표시용 `text`를 그대로 세면 안 된다. 시도당 1번부터 조회 종료일 끝까지의 답변 버전을 제공한다. 최초 답변·도움 이용을 비교할 수 있도록 조회 시작일 이전의 답변도 포함한다. report는 종료일 이후 답변을 사용하지 않는다.
   - `hintUsages[]`는 조회 시작일 이전 기록을 포함하여 최초 답변 이전 열람 여부를 판정할 수 있는 전체 열람 시각을 제공한다. 열람이 없으면 빈 배열이며 단순 `helped` 값으로 대체하지 않는다. `submittedAt`·`openedAt`·`completedAt`·`createdAt`은 시간대 오프셋이 있는 ISO 8601 시각이다.
   - 완료 시도는 `completedAt`을 제공한다. learning **입력**의 `reflection`은 해당 기간에 작성한 `{difficulty:EASY|NORMAL|HARD,text:string|null,createdAt}` 또는 `null`이다. 미작성·기간 밖이면 `null`을 사용하고 report는 필드 생략도 허용한다. 선택 텍스트가 null이어도 난이도·작성 시각이 있는 돌아보기는 작성한 기록이다. `{written:false}`만 있는 객체는 입력 형식이 아니다.
   - report **출력/저장 항목**의 `reflections[]`는 미작성·기간 밖이면 `{attemptId,written:false,difficulty:null,text:null}`이다. 입력에 기간 밖 돌아보기가 포함되어도 report가 작성 시각으로 제외한다. 작성한 항목은 `written:true`이며 내부 계산·저장에는 난이도 코드를 유지한다. 입력과 3.4 출력 형식을 혼용하지 않는다.
@@ -902,33 +916,6 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 ## 5. 구현 계약
 
-### #289 학부모 탈퇴 전 자녀 이관
-
-이 절은 #275의 잘못된 다중 보호자 전제를 정정한 #289의 구현 계약이다. 서버
-`app.guardian-transfer.enabled=true`와 웹 `VITE_GUARDIAN_TRANSFER_ENABLED=true`에서만
-진입점을 제공한다. 두 설정의 기본값은 false이며, V26 마이그레이션은 기존 V24 보호자 비밀번호와 V25 동의 문서를 보존한다. 기능 플래그는 DB 롤백 수단이 아니다.
-
-- `POST /guardian-transfers/recipient` `{email}`: 가입 Google 이메일의 활성 학부모를 정확히 조회.
-  본인/비학부모/미가입/중복 이메일 후보는 거부하며 자녀 3명 제한을 확인한다.
-- `GET /guardian-transfers`: 본인이 보낸/받은 요청만 반환. 자녀가 없어도 필수 이용 동의 후 접근 가능.
-- `POST /guardian-transfers` `{childId,recipientId,includeConversations}`와
-  `X-Reauth-Token`(CHILD_TRANSFER, 해당 자녀): 자녀별 PENDING 요청 생성.
-- `POST /guardian-transfers/{id}/accept` `{consents}`와 `X-Reauth-Token`(TRANSFER_ACCEPT):
-  수신자가 현재 GUARDIAN 문서에 동의하면 연결·동의·선택 대화 소유권을 같은 트랜잭션에서 변경.
-- `POST /guardian-transfers/{id}/reject`, `/cancel`: 수신자 거절/발신자 취소. 종료 상태는 되돌리지 않는다.
-- `POST /guardian-transfers/cancel-outgoing`: 탈퇴 재진입 확인 시 본인의 대기 요청만 취소.
-  이 호출 자체는 탈퇴·삭제를 수행하지 않는다.
-- 기본 이관은 동일 학생 ID의 프로필·학습·리포트 유지. 상담 대화 포함은 기본 false이며
-  발신자와 해당 자녀의 대화만 이관한다. 결제·구독·리포트 표시 설정은 학부모 간 이전하지 않는다.
-- 발신자의 기존 탈퇴 사전 검사 및 자녀의 활성 구독 정리가 요청/수락 시 모두 필요하다.
-  삭제 요청이 있는 자녀, 실행 중 상담/관리자 재처리는 이관하지 않는다.
-- PENDING 동안 자녀 삭제·연결 해제·발신자 탈퇴를 거부한다. 수락 전 기록 접근은 허용하지 않는다.
-- 이전 연결은 이관 완료 표식을 남겨 일반 연결 해제와 구분한다. 이전 학부모는 삭제 권한을 잃고,
-  탈퇴해도 이관된 자녀/대화는 유지한다. 미이관 대화는 이전 학부모 탈퇴 시 별도 정리한다.
-- 기존 학생 세션·기기 연결은 종료하며 새 학부모가 기기를 등록한다. 새 보호자의 기존 리포트 설정을 사용한다.
-- 수락·취소·동시 자녀 등록은 계정 ID 정렬 잠금 → 학생 → 요청 순서로 직렬화하고 DB에서 활성 보호자 1명을 강제한다.
-- 새 이관 경로는 기존 개인정보·보호자 동의·재인증을 우회하지 않는다. 기존 삭제/탈퇴 경로는 그대로 유지한다.
-
 ### 5.1 #36 Google OAuth·토큰 구현 계약 (개정 P01 정렬)
 
 인증 경로의 정식 공개 계약은 [core-service OpenAPI](../../contracts/openapi/core-service.yaml). 이 절은 부모·관리자 Google 인증과 동석 학생 진입, 학생 기기·PIN은 3.11.
@@ -1009,7 +996,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 ### 5.6 #45 계정 관리·Google 재확인·삭제·탈퇴 계약
 
-- 기존 Google 로그인과 별도 재인증 흐름을 사용한다. `POST /me/reauth`에 `{purpose: PIN_CHANGE|CHILD_UNLINK|CHILD_DELETE|WITHDRAWAL|GUARDIAN_PASSWORD, childId?, scope?}`를 보내면 `{challengeId,authorizationUrl,expiresAt}`를 반환하고 HttpOnly/Secure/SameSite=Lax 재인증 상태 쿠키를 설정한다. CHILD_DELETE는 PROFILE/RECORDS scope를 반드시 지정한다. WITHDRAWAL·GUARDIAN_PASSWORD는 자녀/scope를 허용하지 않는다. 다른 자녀 작업은 childId 필수다.
+- 기존 Google 로그인과 별도 재인증 흐름을 사용한다. `POST /me/reauth`에 `{purpose: PIN_CHANGE|CHILD_UNLINK|CHILD_DELETE|WITHDRAWAL|GUARDIAN_PASSWORD|CHILD_TRANSFER|TRANSFER_ACCEPT, childId?, scope?}`를 보내면 `{challengeId,authorizationUrl,expiresAt}`를 반환하고 HttpOnly/Secure/SameSite=Lax 재인증 상태 쿠키를 설정한다. CHILD_DELETE는 PROFILE/RECORDS scope를 반드시 지정한다. WITHDRAWAL·GUARDIAN_PASSWORD·TRANSFER_ACCEPT는 자녀/scope를 허용하지 않는다. CHILD_TRANSFER를 포함한 다른 자녀 작업은 childId 필수이며 CHILD_DELETE 외에는 scope를 허용하지 않는다.
 - Google redirect URI는 web origin + `/api/v1/auth/google/reauth/callback`이다. 기존 GoogleOAuthClient의 code·PKCE·서명·iss·aud·exp·nonce 검증을 재사용한다. callback은 현재 계정의 Google sub와 일치할 때만 challenge를 VERIFIED로 바꾸며 로그인/refresh를 발급하지 않는다. 계정 선택은 비밀번호/MFA 재입력을 보장하지 않는다. 클라이언트는 원래 로그인 세션을 유지한 상태에서 `POST /me/reauth`에 `{challengeId}`를 보내 `{reauthToken,expiresAt}`를 한 번 수령한다. 아직 callback 전이면 409 REAUTH_PENDING이다. callback 응답은 완료 안내 JSON이다.
 - challenge 10분, reauthToken 5분(설정값, 세션 만료 이내). 토큰은 256비트 난수, DB에는 SHA-256 해시만 저장한다. 프론트는 메모리에만 보관한다. 사용자·세션 ID/version·purpose·childId·삭제 scope에 결합하며 변경 트랜잭션에서 정확히 1회 소비한다. 일반 access/로그인 상태는 재인증 증명이 아니다. 잘못된 계정·만료·위조·다른 범위·중복 사용은 403 REAUTH_REQUIRED다.
 - #58은 `ReauthenticationService.consume(identity, token, ReauthPurpose.PIN_CHANGE, childId)`를 PIN 변경의 같은 트랜잭션 안에서 호출한다(MANDATORY). 기존 인증/현재 자녀 권한 검사를 별도로 수행한다.
@@ -1018,7 +1005,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - PROFILE은 연결 해제·학생 이용 차단 후 두 서비스 완료 시 프로필 필드를 지우고 DELETED 표식을 남긴다(FK/거래 보존용 ID 유지). RECORDS는 프로필을 유지하되 CONFIRMED부터 이용을 차단한다. 완료 후에도 자동 학습 재개는 하지 않는다. learning의 삭제 표식 이후 새 기록 허용 계약은 후속 통합 사항이다. 두 scope 모두 core 분석 대화·근거와 learning/report 기록을 삭제한다. 삭제 확정 때 `student_device_child`를 제거하고 PIN 해시·잠금을 지운다(ERD 3.1).
 - GET /children/{id}/deletion-requests/{requestId}: 본인 소유 삭제 상태 조회. 삭제 후에도 본인이 요청한 상태는 조회 가능하다. 다른 보호자는 403이다.
 - 내부 완료 API는 기존 내부 토큰 + SYSTEM 컨텍스트/대상 학생 scope를 요구하며 `{service:learning|report}`만 허용한다. `(request_id,service)` UNIQUE 기록으로 중복/동시 보고를 멱등 처리한다. CONFIRMED인 요청만 완료할 수 있으며 두 서비스가 모두 있어야 COMPLETED다. 한 서비스 완료는 실제 전체 삭제 완료가 아니다.
-- 필수 동의 철회 뒤에도 재인증·삭제 영향·연결 해제·삭제/탈퇴 요청 및 상태 조회는 가능하다. 재동의를 파기의 선행 조건으로 요구하지 않는다. 이 경로는 계정 활성·보호자 소유권·재확인을 계속 검사한다. 정보 수정에는 기존 동의를 요구한다.
+- 필수 동의 철회 뒤에도 재인증·삭제 영향·연결 해제·삭제/탈퇴 요청 및 상태 조회, 본인의 이관 목록 조회·거절·취소는 가능하다. 재동의를 파기의 선행 조건으로 요구하지 않는다. 이 경로는 계정 활성·보호자 소유권·재확인을 계속 검사한다. 정보 수정에는 기존 동의를 요구한다.
 - 탈퇴 precheck는 core payment 소유 서비스로 현재 subscription/refund_request를 실제 조회한다. ACTIVE(기간 내/자동갱신), RENEWAL_FAILED, 취소됐어도 기간 내 구독 및 REQUESTED/APPROVED/FAILED 환불은 409 WITHDRAWAL_BLOCKED다. DB 오류는 성공으로 대체하지 않는다. #48은 결제/환불 쓰기 시 같은 parent 계정 행 잠금 규약에 참여해야 한다.
 - POST /me/withdrawal은 WITHDRAWAL 재인증, 계정 행 잠금 후 재확인한다. 즉시 WITHDRAWAL_REQUESTED·전체 세션/refresh 폐기·자녀 PROFILE 삭제 요청/Outbox를 같은 트랜잭션에 저장한다. 자녀가 모두 삭제되면 WITHDRAWN 및 withdrawal COMPLETED다. 자녀가 없으면 즉시 완료한다. 요청 즉시 로그인/취소 불가다.
 - 응답 `{withdrawalRequestId,status,statusToken}`의 statusToken은 별도 256비트 조회 전용 영수증이다(DB에는 해시). 세션 폐기 후 `GET /me/withdrawal`에 `X-Withdrawal-Status-Token`으로 해당 요청의 `{withdrawalRequestId,status}`만 조회한다. 로그인/사용자 정보 접근 권한을 주지 않는다. 헤더/응답은 no-store다. 인증 상태에서도 자신의 최신 요청을 조회할 수 있다.
@@ -1188,3 +1175,32 @@ report-worker는 생성 시작 시 한 번 조회하여 command에 고정한다.
 원문 비공개 생성·기존 파일 접근은 #206 계약(5.15)을 따른다.
 
 화면 동작은 [기능명세서](functional-spec.md) 2.6.1.
+
+### 5.17 #289 학부모 탈퇴 전 자녀 이관
+
+이 절은 #275의 잘못된 다중 보호자 전제를 정정한 #289의 정식 이관 흐름이다(#309·PR #325). 기능 플래그는 노출을 제어한다. 서버
+`app.guardian-transfer.enabled=true`와 웹 `VITE_GUARDIAN_TRANSFER_ENABLED=true`에서만
+신규 대상 조회·요청·수락 진입점을 제공한다. 본인의 기존 요청 조회·거절·취소는 설정과 필수 동의 상태에 관계없이 제공한다(#307). 두 설정의 기본값은 false이며, V26 마이그레이션은 기존 V24 보호자 비밀번호와 V25 동의 문서를 보존한다. 기능 플래그는 DB 롤백 수단이 아니다.
+
+- `POST /guardian-transfers/recipient` `{email}`: 가입 Google 이메일의 활성 학부모를 정확히 조회.
+  본인/비학부모/미가입/중복 이메일 후보는 거부하며 자녀 3명 제한을 확인한다.
+- `GET /guardian-transfers`: 본인이 보낸/받은 요청만 반환. 자녀가 없거나 필수 동의가 누락·철회되어도, 서버 플래그가 꺼져 있어도 조회 가능. 학습 기록·리포트 조회 권한은 부여하지 않는다.
+- `POST /guardian-transfers` `{childId,recipientId,includeConversations}`와
+  `X-Reauth-Token`(CHILD_TRANSFER, 해당 자녀): 자녀별 PENDING 요청 생성.
+- `POST /guardian-transfers/{id}/accept` `{consents}`와 `X-Reauth-Token`(TRANSFER_ACCEPT):
+  수신자가 현재 GUARDIAN 문서에 동의하면 연결·동의·선택 대화 소유권을 같은 트랜잭션에서 변경.
+- `POST /guardian-transfers/{id}/reject`, `/cancel`: 수신자 거절/발신자 취소. 종료 상태는 되돌리지 않는다.
+- `POST /guardian-transfers/cancel-outgoing`: 탈퇴 재진입 확인 시 본인의 대기 요청만 취소.
+  이 호출 자체는 탈퇴·삭제를 수행하지 않는다.
+- 기본 이관은 동일 학생 ID의 프로필·학습·리포트 유지. 상담 대화 포함은 기본 false이며
+  발신자와 해당 자녀의 대화만 이관한다. 결제·구독·리포트 표시 설정은 학부모 간 이전하지 않는다.
+- 발신자의 기존 탈퇴 사전 검사 및 자녀의 활성 구독 정리가 요청/수락 시 모두 필요하다.
+  삭제 요청이 있는 자녀, 실행 중 상담/관리자 재처리는 이관하지 않는다.
+- PENDING 동안 자녀 삭제·연결 해제·발신자 탈퇴를 거부한다. 수락 전 기록 접근은 허용하지 않는다.
+- 이전 연결은 이관 완료 표식을 남겨 일반 연결 해제와 구분한다. 이전 학부모는 삭제 권한을 잃고,
+  탈퇴해도 이관된 자녀/대화는 유지한다. 미이관 대화는 이전 학부모 탈퇴 시 별도 정리한다.
+- 기존 학생 세션·기기 연결은 종료하며 새 학부모가 기기를 등록한다. 새 보호자의 기존 리포트 설정을 사용한다.
+- 수락·취소·동시 자녀 등록은 계정 ID 정렬 잠금 → 학생 → 요청 순서로 직렬화하고 DB에서 활성 보호자 1명을 강제한다.
+- 새 이관 경로는 기존 개인정보·보호자 동의·재인증을 우회하지 않는다. 기존 삭제/탈퇴 경로는 그대로 유지한다.
+- 조회·수신자 거절·발신자 단건/일괄 취소는 동의 회복 경로다(#307). 활성 학부모 계정·유효 세션·요청 소유권은 계속 검사한다. 플래그 off여도 PENDING 삭제/탈퇴 차단은 유지하며, 명시적 취소/거절로 대기를 해소한 후 기존 재인증·최종 확인을 거쳐 삭제/탈퇴한다. 자동 취소·자동 탈퇴·대기 검사 우회는 하지 않는다.
+- 같은 대상·수신자·대화 선택의 대기 요청 재전송과 같은 종료 상태 재전송은 멱등 처리한다. 다른 종료 상태로 바꾸면 `409 TRANSFER_ALREADY_RESOLVED`다.

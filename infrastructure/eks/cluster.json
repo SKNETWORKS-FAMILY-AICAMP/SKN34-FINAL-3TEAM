@@ -131,14 +131,44 @@
       "name": "application",
       "amiFamily": "AmazonLinux2023",
       "instanceType": "t3.medium",
-      "minSize": 3,
-      "desiredCapacity": 3,
+      "minSize": 2,
+      "desiredCapacity": 2,
       "maxSize": 3,
       "volumeSize": 20,
       "privateNetworking": true,
       "availabilityZones": [
         "ap-northeast-2a",
         "ap-northeast-2b"
+      ],
+      "iam": {
+        "instanceRoleARN": "arn:aws:iam::347161580747:role/sagomungchi-demo-eks-node-role"
+      },
+      "updateConfig": {
+        "maxUnavailable": 1
+      }
+    },
+    {
+      "name": "platform-observability",
+      "amiFamily": "AmazonLinux2023",
+      "instanceType": "t3.medium",
+      "minSize": 2,
+      "desiredCapacity": 2,
+      "maxSize": 2,
+      "volumeSize": 20,
+      "privateNetworking": true,
+      "availabilityZones": [
+        "ap-northeast-2a",
+        "ap-northeast-2b"
+      ],
+      "labels": {
+        "workload": "platform"
+      },
+      "taints": [
+        {
+          "key": "workload",
+          "value": "platform",
+          "effect": "NoSchedule"
+        }
       ],
       "iam": {
         "instanceRoleARN": "arn:aws:iam::347161580747:role/sagomungchi-demo-eks-node-role"

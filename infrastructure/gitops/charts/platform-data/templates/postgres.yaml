@@ -23,6 +23,14 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
       automountServiceAccountToken: false
+      {{- with .Values.scheduling.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduling.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 70

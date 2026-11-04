@@ -168,7 +168,7 @@ CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 �
 | Domain | `domain` | `models.py`, `state.py` | 엔티티·값 객체, 상태 전이 규칙(`QUEUED→RUNNING`, 판정 상태 등) | 프레임워크·외부 라이브러리 의존 |
 | Infrastructure | `repository`, `client`, `messaging` | `repository.py`, `clients/`, `messaging/`, `llm/` | DB, 외부 API, 브로커, LLM, PG, S3 연동 | 업무 판단 |
 
-- 공통 메시징 인프라 예외(#278): `_common/messaging`의 이벤트 감사 기록·보존 정리(core `EventAuditConsumer`·`EventRetentionCleanup`)는 `_common`이 소유한 메시징 테이블(`event_log`·`outbox_event`·`processed_event`)만 다루고 업무 판단이 없어 service 없이 같은 패키지의 `_common` repository를 직접 호출한다. 같은 패키지의 `OutboxRelay`·`ProcessedEventRepository` 멱등 소비와 같은 공통 인프라로 보며, `_common`에 service 계층을 새로 두지 않는다. 이 예외는 `_common/messaging` 안에만 적용하고, 기능 패키지의 controller·consumer·scheduler는 항상 자기 기능 service만 호출한다(learning `record/scheduler/ProcessedEventCleanupScheduler` → `ProcessedEventCleanupService`, report `worker.py` → `deletion/service.py` `prune_event_records`)
+- 공통 메시징 인프라 예외(#278): `_common/messaging`의 이벤트 감사 기록·보존 정리(core `EventAuditConsumer`·`EventRetentionCleanup`)는 `_common`이 소유한 메시징 테이블(`event_log`·`outbox_event`·`processed_event`)만 다루고 업무 판단이 없어 service 없이 같은 패키지의 `_common` repository를 직접 호출한다. 같은 패키지의 `OutboxRelay`·`ProcessedEventRepository` 멱등 소비와 같은 공통 인프라로 보며, `_common`에 service 계층을 새로 두지 않는다. 이 예외는 `_common/messaging` 안에만 적용한다. `_common`의 다른 주기 작업은 `_common/scheduler`에 두고 service를 호출한다(`IdempotencyCleanupScheduler` → `IdempotencyService.deleteExpired`, #314). 기능 패키지의 controller·consumer·scheduler는 항상 자기 기능 service만 호출한다(learning `record/scheduler/ProcessedEventCleanupScheduler` → `ProcessedEventCleanupService`, report `worker.py` → `deletion/service.py` `prune_event_records`)
 - Domain 오류(Spring): domain은 HTTP 상태가 없는 `_common/exception`의 `DomainException(ErrorKind, code, title, detail)`만 던진다. `ErrorKind` → HTTP 상태 변환은 `_common/exception` 한 곳에서 하고(2.3), HTTP 상태를 직접 받는 `BusinessException`은 application·presentation에서만 쓴다. 예외의 상태·code를 읽는 곳은 두 예외를 함께 처리하는 공통 함수(`httpStatusOf`·`errorCodeOf`)를 쓴다 (#249)
 
 ### 2.2 의존 규칙
@@ -233,6 +233,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ messaging/                 # 이벤트 봉투, OutboxRelay, 멱등 소비, 이벤트 감사 기록·보존 정리(EventAuditConsumer·EventRetentionCleanup, #208, repository 직접 호출은 2.1 공통 인프라 예외 #278)
 │  ├─ json/                      # JsonObject: domain이 드는 jsonb 객체 값 (#168)
 │  ├─ persistence/               # MyBatis 설정·PostgreSQL 타입 핸들러
+│  ├─ scheduler/                 # IdempotencyCleanupScheduler: 만료 멱등 키 정리 주기 실행 (#314)
 │  └─ web/                       # IdempotencyService, SseEmitters (core만)
 │     └─ repository/             # IdempotencyRepository
 ├─ account/                      # Google 로그인·세션·탈퇴
@@ -582,14 +583,14 @@ backend/report-service/
 
 ### 4.2 운영 클러스터: EKS
 - 선정 근거 (자체 구축 K8s(kubeadm·k3s) 대비)
-  - 설계 구성 요소(ALB LB Controller, IRSA, EBS CSI, Cluster Autoscaler, ECR, Secrets Manager) AWS 기본 연동
+  - 설계 구성 요소(ALB LB Controller, EKS Pod Identity, EBS CSI, Cluster Autoscaler, ECR, Secrets Manager) AWS 기본 연동
   - control plane HA·etcd 백업·업그레이드를 AWS가 관리 → 12/7 일정 내 운영 부담 제거
   - 자체 구축도 control plane EC2 필요 → 비용 차이 작음 (EKS 수수료 $0.10/시간)
-- 목표 구성: eksctl, 관리형 노드그룹 2개(4.3), EKS add-on(VPC CNI·CoreDNS·kube-proxy·EBS CSI), LB Controller·Cluster Autoscaler의 Argo CD prod 관리.
-- 2026-11-03 AWS 데모: EKS 1.35, application 노드그룹 1개(t3.medium 3대, 2026-11-03 2대에서 증설. 근거: 노드 메모리 예약 90%대·Pod 슬롯 포화), Pod Identity, EBS CSI·LB Controller·ESO, RDS·S3·CloudFront·ALB를 구성했다. 앱 6개는 수동 Helm으로 배포했으며 prod Argo CD·Autoscaler는 미구성이다. 이후 같은 노드에 최소 Collector·Prometheus·Grafana와 관측 PVC를 배포하고 RabbitMQ 수집을 확인했다. Grafana→Discord 경보를 연결했으며 전체 운영 관측 완료를 뜻하지 않는다. [현재 설정과 설계 차이](../report/issue-185-aws.md), [EKS 인벤토리](../../infrastructure/eks/README.md)를 따른다. 생성 정의는 `infrastructure/eks/cluster.json`(eksctl)과 `infrastructure/aws/demo_stack.py`(AWS CLI)이며 기존 자원은 대조만 한다.
+- 목표 구성: eksctl, 관리형 노드그룹 2개(4.3), EKS add-on(VPC CNI·CoreDNS·kube-proxy·EBS CSI·Pod Identity Agent), LB Controller·Cluster Autoscaler의 Argo CD prod 관리.
+- AWS 데모: EKS 1.35, 노드그룹 2개(4.3, 전부 On-Demand), Pod Identity, EBS CSI·LB Controller·ESO, RDS·S3·CloudFront·ALB를 구성했다. 앱 6개는 수동 Helm으로 배포했으며 prod Argo CD·Autoscaler는 미구성이다. 이후 같은 노드에 최소 Collector·Prometheus·Grafana와 관측 PVC를 배포하고 RabbitMQ 수집을 확인했다. Grafana→Discord 경보를 연결했으며 전체 운영 관측 완료를 뜻하지 않는다. [현재 설정과 설계 차이](../report/issue-185-aws.md), [EKS 인벤토리](../../infrastructure/eks/README.md)를 따른다. 생성 정의는 `infrastructure/eks/cluster.json`(eksctl)과 `infrastructure/aws/demo_stack.py`(AWS CLI)이며 기존 자원은 대조만 한다.
 - 비용 절감
   - 데모 외 기간: 워크로드 정상 종료 후 노드그룹 0대 + RDS 정지(2026-11-03 결정, `demo_stack.py pause`/`resume`). 클러스터 삭제 후 재생성은 채택하지 않음
-  - `platform-observability` 노드그룹 Spot 적용
+  - Spot은 무상태 앱 노드에만, 서비스별 replica 2개 이상·PDB를 갖춘 뒤 #211(Karpenter) 앱 NodePool에서 On-Demand와 혼합 적용. `platform-observability`는 On-Demand 고정(2026-11-04 결정: 상태 저장 서비스가 replica 1개이고 EBS가 AZ에 묶여 Spot 회수 시 다른 AZ로 옮길 수 없음)
   - NAT GW 단일 AZ 1개
 
 ### 4.3 운영 네트워크·배치
@@ -602,6 +603,9 @@ backend/report-service/
 - 외부 호출(LLM API·토스페이먼츠): Pod → NAT GW → Internet GW
 - Namespace: `app`(core·learning·ai·scoring·report), `platform`(RabbitMQ·Redis), `observability`, `argocd`
 - 노드그룹: `application`, `platform-observability` 분리 (참고 레포 2그룹 구성 계승)
+  - `application`: t3.medium 2대(최대 3), 앱·ESO·LB Controller·CoreDNS 등
+  - `platform-observability`: t3.medium 2대(2a·2b 1대씩, EBS PVC가 AZ별로 있음), label·taint `workload=platform:NoSchedule`. `platform-data`·`observability` chart의 `scheduling` 값으로 RabbitMQ·Redis·Prometheus·Grafana·Collector만 배치
+- Pod AWS 권한: EKS Pod Identity(서비스별 IAM 역할, trust는 클러스터·namespace·ServiceAccount 조건). IRSA(OIDC provider·SA annotation)는 쓰지 않음
 - NetworkPolicy: 기본 거부 + 아래 허용만 (호출 관계는 [API 명세서](api-spec.md) 4장). 공통 앱 chart·local Ingress·app/platform/observability NetworkPolicy 정의는 #171, 검증 범위는 [로컬 플랫폼](../report/local-platform.md#10-171-검증-결과와-교훈) 10장
 
 | 대상 | ingress 허용 | egress 허용 |
@@ -636,6 +640,7 @@ backend/report-service/
 - GitHub Actions: 경로 필터로 변경 서비스만 테스트·빌드 → GHCR/ECR 푸시(OIDC로 AWS 인증). 현재는 테스트·빌드까지, 푸시·태그 갱신은 예정
 - `infrastructure/gitops/environments/<env>/` 이미지 태그 갱신 커밋 → Argo CD 자동 동기화
 - #171로 local 앱·KEDA·NetworkPolicy·관측 Application 등록 정의. 이미지 게시·승인 흐름은 #186 범위다
+- #186 운영 배포: `cd-release.yml`(main에서 수동 실행)이 계획 검증 → main SHA 이미지 ECR 게시(GitHub OIDC) → GitHub Environment `prod` 승인(김동섭·김태윤) → 작업자 PC self-hosted runner에서 Helm 적용(`redeploy-app.ps1 -ImageDigest`) → 로그인·학습 제출·리포트 조회 확인 → 배포 이력 artifact 순으로 진행한다. prod는 Argo CD 없이 수동 Helm이다(#185). 자동 롤백은 없고 롤백도 같은 승인을 거친다. 운영 설정(AWS OIDC 역할·`prod` Environment·runner) 적용 후 실행 스위치를 켰다(2026-11-04). [설정·절차](../../infrastructure/cd/README.md), [결정 근거](../report/issue-186-cd-approval-rollback.md)
 - Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret (LLM·토스 키는 저장소에 미포함, NFR-SEC-04)
 
 ### 4.6 관측
@@ -698,7 +703,7 @@ SKN34-FINAL-3TEAM/
 │  │  │  │  │  ├─ _helpers.tpl
 │  │  │  │  │  ├─ deployment.yaml
 │  │  │  │  │  ├─ service.yaml
-│  │  │  │  │  ├─ serviceaccount.yaml          # IRSA (S3 접근 서비스)
+│  │  │  │  │  ├─ serviceaccount.yaml          # Pod Identity 연결 대상 SA (S3 접근 서비스)
 │  │  │  │  │  ├─ hpa.yaml
 │  │  │  │  │  ├─ scaledobject.yaml
 │  │  │  │  │  ├─ triggerauthentication.yaml   # KEDA RabbitMQ 인증
@@ -814,7 +819,7 @@ SKN34-FINAL-3TEAM/
 
 ## 7. 확인 필요 가정
 - 학습·일괄 생성(RunPod GPU, sLLM 설명)은 클러스터 밖에서 수행, 결과(가중치·주간 설명 문장)만 S3로 반입
-- AWS 계정 EKS 생성 권한·예산 한도: 권한 없으면 EC2 1대 + k3s로 대체 (HA·Cluster Autoscaler·IRSA 제외)
+- AWS 계정 EKS 생성 권한·예산 한도: 권한 없으면 EC2 1대 + k3s로 대체 (HA·Cluster Autoscaler·Pod Identity 제외)
 
 ### 7.1 구현 결정 요약
 

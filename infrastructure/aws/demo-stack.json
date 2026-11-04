@@ -147,6 +147,7 @@
         "sagomungchi-demo-external-secrets-ai-read": "iam/external-secrets-role.inline.external-secrets-ai-read.json",
         "sagomungchi-demo-external-secrets-app-read": "iam/external-secrets-role.inline.external-secrets-app-read.json",
         "sagomungchi-demo-external-secrets-google-read": "iam/external-secrets-role.inline.external-secrets-google-read.json",
+        "sagomungchi-demo-external-secrets-payment-read": "iam/external-secrets-role.inline.external-secrets-payment-read.json",
         "sagomungchi-demo-external-secrets-rabbitmq-read": "iam/external-secrets-role.inline.external-secrets-rabbitmq-read.json"
       }
     },
@@ -170,19 +171,21 @@
       "inline": {
         "sagomungchi-demo-scoring-s3-read": "iam/scoring-s3-role.inline.scoring-s3-read.json"
       }
+    },
+    {
+      "name": "sagomungchi-demo-github-cd-publish",
+      "trust": "iam/github-cd-publish-role.trust.json",
+      "inline": {
+        "ecr-push": "iam/github-cd-publish-role.inline.ecr-push.json"
+      }
     }
   ],
   "eks": {
     "cluster": "sagomungchi-demo-eks",
-    "nodegroup": "application",
+    "nodegroups": ["application", "platform-observability"],
     "config": "../eks/cluster.json"
   },
   "pause": {
-    "nodegroupScaling": {
-      "minSize": 0,
-      "desiredSize": 0,
-      "maxSize": 3
-    },
     "drainOrder": [
       ["app", "deployment", "report-worker"],
       ["app", "deployment", "scoring-service"],
