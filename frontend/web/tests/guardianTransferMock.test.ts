@@ -59,7 +59,8 @@ beforeEach(async () => {
 
 test('기본 꺼짐·필수 동의·역할·수신자 이메일 및 3명 한도 계약', async () => {
   mockGuardianTransferConfig.enabled = false
-  assert.equal((await call('/guardian-transfers')).status, 404)
+  assert.equal((await call('/guardian-transfers')).status, 200)
+  assert.equal((await call('/guardian-transfers/recipient', 'POST', { email: receiver })).status, 404)
   mockGuardianTransferConfig.enabled = true
   assert.equal((await call('/guardian-transfers/recipient', 'POST', { email: sender })).status, 400)
   for (const email of ['missing@example.test', 'admin@example.test']) {
@@ -69,7 +70,8 @@ test('기본 꺼짐·필수 동의·역할·수신자 이메일 및 3명 한도 
   const full = await call('/guardian-transfers/recipient', 'POST', { email: 'full@example.test' })
   assert.equal(full.data.code, 'CHILD_LIMIT_REACHED')
   mockConsentHistory.set(sender, [])
-  assert.equal((await call('/guardian-transfers')).data.code, 'CONSENT_REQUIRED')
+  assert.equal((await call('/guardian-transfers')).status, 200)
+  assert.equal((await call('/guardian-transfers/recipient', 'POST', { email: receiver })).data.code, 'CONSENT_REQUIRED')
   mockConsentHistory.delete(sender)
   await login('admin@example.test')
   assert.equal((await call('/guardian-transfers')).status, 403)
@@ -113,11 +115,10 @@ test('대기 중 탈퇴·해제·삭제 차단, 본인 취소·거절과 종료 
   await login(sender)
   assert.equal((await call(`/guardian-transfers/${id}/cancel`, 'POST', {})).data.code, 'TRANSFER_ALREADY_RESOLVED')
   const next = await send()
-  // #307 미해결 조건도 현재 core처럼 유지한다.
+  // #307: 플래그 off에서도 차단을 우회하지 않고 명시적으로 취소한다.
   mockGuardianTransferConfig.enabled = false
-  assert.equal((await call(`/guardian-transfers/${next.data.id}/cancel`, 'POST', {})).status, 404)
+  assert.equal((await call('/guardian-transfers')).status, 200)
   assert.equal((await call('/me/withdrawal', 'POST', {})).data.code, 'TRANSFER_PENDING')
-  mockGuardianTransferConfig.enabled = true
   assert.equal((await call('/guardian-transfers/cancel-outgoing', 'POST', {})).data.cancelled, 1)
   assert.equal((await call('/guardian-transfers/cancel-outgoing', 'POST', {})).data.cancelled, 0)
   assert.equal((await call(`/guardian-transfers/${next.data.id}/cancel`, 'POST', {})).data.status, 'CANCELLED')
@@ -187,4 +188,29 @@ test('기존 결제 fixture의 구독 및 결제 확인 중 상태를 요청·�
   await login(sender)
   await call(`/payments/${order.orderId}`) // 기존 목업의 PG 확인 완료 → ACTIVE 구독
   assert.equal((await call('/guardian-transfers', 'POST', sent.body)).data.code, 'WITHDRAWAL_BLOCKED')
+})
+
+for (const enabled of [false, true]) test(`동의 철회 뒤 이관 취소·재인증·탈퇴 회복 (기능 ${enabled})`, async () => {
+  const sent = await send()
+  mockGuardianTransferConfig.enabled = enabled
+  mockConsentHistory.set(sender, [])
+  assert.equal((await call('/guardian-transfers')).data.items[0].id, sent.data.id)
+  assert.equal((await call('/guardian-transfers', 'POST', sent.body)).data.code, 'CONSENT_REQUIRED')
+  assert.equal((await call('/me/withdrawal', 'POST', {})).data.code, 'TRANSFER_PENDING')
+  assert.equal((await call('/guardian-transfers/cancel-outgoing', 'POST', {})).data.cancelled, 1)
+  assert.equal(mockAccountChildren.get(sender)!.length, 1) // 취소는 자녀를 삭제하지 않는다.
+  assert.equal((await call('/me/withdrawal', 'POST', {})).data.code, 'REAUTH_REQUIRED')
+  const grant = await proof('WITHDRAWAL')
+  assert.equal((await call('/me/withdrawal', 'POST', {}, grant)).status, 202)
+})
+
+test('동의 없는 수신자는 기능 off에서 거절할 수 있지만 수락할 수 없다', async () => {
+  const sent = await send()
+  await login(receiver)
+  mockConsentHistory.set(receiver, [])
+  mockGuardianTransferConfig.enabled = false
+  assert.equal((await call('/guardian-transfers')).data.items[0].direction, 'INCOMING')
+  assert.equal((await call(`/guardian-transfers/${sent.data.id}/accept`, 'POST', { consents })).data.code, 'CONSENT_REQUIRED')
+  assert.equal((await call(`/guardian-transfers/${sent.data.id}/reject`, 'POST', {})).data.status, 'REJECTED')
+  assert.equal(mockAccountChildren.get(sender)![0].id, child.id)
 })

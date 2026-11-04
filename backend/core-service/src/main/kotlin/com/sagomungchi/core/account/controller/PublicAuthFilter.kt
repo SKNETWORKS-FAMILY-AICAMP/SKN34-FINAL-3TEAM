@@ -55,7 +55,11 @@ class PublicAuthFilter(private val auth: AuthService, private val properties: Au
                 (request.method=="GET" && Regex("/payments/[A-Za-z0-9_-]{6,64}").matches(path)) ||
                 (request.method=="POST" && Regex("/payments/[0-9a-fA-F-]{36}/refund-requests").matches(path)) ||
                 (request.method=="DELETE" && Regex("/subscriptions/[0-9a-fA-F-]{36}/auto-renewal").matches(path))
-            val consentRecovery = financialRecovery || (request.method == "GET" && path == "/me") ||
+            // Exact cleanup operations only. New recipients, requests and acceptance still require consent.
+            val transferRecovery = (request.method == "GET" && path == "/guardian-transfers") ||
+                (request.method == "POST" && (path == "/guardian-transfers/cancel-outgoing" ||
+                    Regex("/guardian-transfers/[0-9a-fA-F-]{36}/(cancel|reject)").matches(path)))
+            val consentRecovery = financialRecovery || transferRecovery || (request.method == "GET" && path == "/me") ||
                 (path == "/me/consents" && request.method in setOf("GET", "POST")) ||
                 (request.method == "POST" && path.matches(Regex("/me/consents/[^/]+/withdrawal"))) ||
                 (request.method == "POST" && path in setOf("/me/reauth", "/me/withdrawal")) ||

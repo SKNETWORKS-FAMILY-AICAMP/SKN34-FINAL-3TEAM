@@ -76,7 +76,7 @@ test('비활성 이관 404·이미 처리된 요청 409는 refresh나 성공 대
     const status = calls === 1 ? 404 : 409
     return Response.json({ status, code: status === 404 ? 'NOT_FOUND' : 'TRANSFER_ALREADY_RESOLVED', title: '이관 요청 거부' }, { status })
   })
-  await assert.rejects(guardianTransfers.list(), e => e instanceof ApiError && e.problem.status === 404)
+  await assert.rejects(guardianTransfers.recipient('recipient@example.test'), e => e instanceof ApiError && e.problem.status === 404)
   await assert.rejects(guardianTransfers.accept('transfer-1', [], 'proof'), e =>
     e instanceof ApiError && e.problem.status === 409 && e.problem.code === 'TRANSFER_ALREADY_RESOLVED')
   assert.equal(calls, 2)

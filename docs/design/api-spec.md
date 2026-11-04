@@ -261,12 +261,12 @@
 | POST | `/me/withdrawal` | 인증 | 탈퇴 요청 (`X-Reauth-Token`). 진행 중 구독·미처리 환불은 409 `WITHDRAWAL_BLOCKED`, 보낸 이관이 대기 중이면 409 `TRANSFER_PENDING`. 요청 즉시 처리·이후 로그인 불가 (P09) | ACC-12 | 우선2 |
 | GET | `/me/withdrawal` | 인증 | 탈퇴 처리 상태 | ACC-12 | 우선2 |
 | POST | `/guardian-transfers/recipient` | 학부모 | 가입 이메일로 받는 학부모 조회 `{email}`. 404 `TRANSFER_RECIPIENT_NOT_FOUND`, 3명 한도 409 `CHILD_LIMIT_REACHED` (5.17) | ACC-15 | 우선2 |
-| GET | `/guardian-transfers` | 학부모 | 본인이 보낸·받은 요청 `{items}`. 자녀 없는 학부모도 조회 가능 (5.17) | ACC-15 | 우선2 |
+| GET | `/guardian-transfers` | 학부모 | 본인이 보낸·받은 요청 `{items}`. 자녀 없음·동의 누락·기능 비활성 상태에서도 조회 가능 (5.17) | ACC-15 | 우선2 |
 | POST | `/guardian-transfers` | 학부모 | `{childId,recipientId,includeConversations}` + CHILD_TRANSFER 재인증으로 요청, 409 이관·결제·인원 충돌 (5.17) | ACC-15 | 우선2 |
 | POST | `/guardian-transfers/{id}/accept` | 수신 학부모 | `{consents}` + TRANSFER_ACCEPT 재인증으로 수락. 현재 GUARDIAN 동의·결제·인원·진행 상태 재검사 (5.17) | ACC-15 | 우선2 |
-| POST | `/guardian-transfers/{id}/reject` | 수신 학부모 | 대기 요청 거절. 다른 종료 상태이면 409 `TRANSFER_ALREADY_RESOLVED` (5.17) | ACC-15 | 우선2 |
-| POST | `/guardian-transfers/{id}/cancel` | 발신 학부모 | 대기 요청 취소. 다른 종료 상태이면 409 `TRANSFER_ALREADY_RESOLVED` (5.17) | ACC-15 | 우선2 |
-| POST | `/guardian-transfers/cancel-outgoing` | 발신 학부모 | 본인의 보낸 대기 요청만 일괄 취소 `{cancelled}`. 탈퇴·삭제는 실행하지 않음 (5.17) | ACC-15 | 우선2 |
+| POST | `/guardian-transfers/{id}/reject` | 수신 학부모 | 대기 요청 거절. 동의 누락·기능 비활성 상태에서도 가능. 다른 종료 상태이면 409 `TRANSFER_ALREADY_RESOLVED` (5.17) | ACC-15 | 우선2 |
+| POST | `/guardian-transfers/{id}/cancel` | 발신 학부모 | 대기 요청 취소. 동의 누락·기능 비활성 상태에서도 가능. 다른 종료 상태이면 409 `TRANSFER_ALREADY_RESOLVED` (5.17) | ACC-15 | 우선2 |
+| POST | `/guardian-transfers/cancel-outgoing` | 발신 학부모 | 본인의 보낸 대기 요청만 일괄 취소 `{cancelled}`. 동의 누락·기능 비활성 상태에서도 가능. 탈퇴·삭제는 실행하지 않음 (5.17) | ACC-15 | 우선2 |
 
 - 삭제 후 처리 (FN-ACC-13)
   - 삭제가 끝난 기록은 학습·대화·리포트·대시보드 응답에서 제외
@@ -1005,7 +1005,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - PROFILE은 연결 해제·학생 이용 차단 후 두 서비스 완료 시 프로필 필드를 지우고 DELETED 표식을 남긴다(FK/거래 보존용 ID 유지). RECORDS는 프로필을 유지하되 CONFIRMED부터 이용을 차단한다. 완료 후에도 자동 학습 재개는 하지 않는다. learning의 삭제 표식 이후 새 기록 허용 계약은 후속 통합 사항이다. 두 scope 모두 core 분석 대화·근거와 learning/report 기록을 삭제한다. 삭제 확정 때 `student_device_child`를 제거하고 PIN 해시·잠금을 지운다(ERD 3.1).
 - GET /children/{id}/deletion-requests/{requestId}: 본인 소유 삭제 상태 조회. 삭제 후에도 본인이 요청한 상태는 조회 가능하다. 다른 보호자는 403이다.
 - 내부 완료 API는 기존 내부 토큰 + SYSTEM 컨텍스트/대상 학생 scope를 요구하며 `{service:learning|report}`만 허용한다. `(request_id,service)` UNIQUE 기록으로 중복/동시 보고를 멱등 처리한다. CONFIRMED인 요청만 완료할 수 있으며 두 서비스가 모두 있어야 COMPLETED다. 한 서비스 완료는 실제 전체 삭제 완료가 아니다.
-- 필수 동의 철회 뒤에도 재인증·삭제 영향·연결 해제·삭제/탈퇴 요청 및 상태 조회는 가능하다. 재동의를 파기의 선행 조건으로 요구하지 않는다. 이 경로는 계정 활성·보호자 소유권·재확인을 계속 검사한다. 정보 수정에는 기존 동의를 요구한다.
+- 필수 동의 철회 뒤에도 재인증·삭제 영향·연결 해제·삭제/탈퇴 요청 및 상태 조회, 본인의 이관 목록 조회·거절·취소는 가능하다. 재동의를 파기의 선행 조건으로 요구하지 않는다. 이 경로는 계정 활성·보호자 소유권·재확인을 계속 검사한다. 정보 수정에는 기존 동의를 요구한다.
 - 탈퇴 precheck는 core payment 소유 서비스로 현재 subscription/refund_request를 실제 조회한다. ACTIVE(기간 내/자동갱신), RENEWAL_FAILED, 취소됐어도 기간 내 구독 및 REQUESTED/APPROVED/FAILED 환불은 409 WITHDRAWAL_BLOCKED다. DB 오류는 성공으로 대체하지 않는다. #48은 결제/환불 쓰기 시 같은 parent 계정 행 잠금 규약에 참여해야 한다.
 - POST /me/withdrawal은 WITHDRAWAL 재인증, 계정 행 잠금 후 재확인한다. 즉시 WITHDRAWAL_REQUESTED·전체 세션/refresh 폐기·자녀 PROFILE 삭제 요청/Outbox를 같은 트랜잭션에 저장한다. 자녀가 모두 삭제되면 WITHDRAWN 및 withdrawal COMPLETED다. 자녀가 없으면 즉시 완료한다. 요청 즉시 로그인/취소 불가다.
 - 응답 `{withdrawalRequestId,status,statusToken}`의 statusToken은 별도 256비트 조회 전용 영수증이다(DB에는 해시). 세션 폐기 후 `GET /me/withdrawal`에 `X-Withdrawal-Status-Token`으로 해당 요청의 `{withdrawalRequestId,status}`만 조회한다. 로그인/사용자 정보 접근 권한을 주지 않는다. 헤더/응답은 no-store다. 인증 상태에서도 자신의 최신 요청을 조회할 수 있다.
@@ -1180,11 +1180,11 @@ report-worker는 생성 시작 시 한 번 조회하여 command에 고정한다.
 
 이 절은 #275의 잘못된 다중 보호자 전제를 정정한 #289의 정식 이관 흐름이다(#309·PR #325). 기능 플래그는 노출을 제어한다. 서버
 `app.guardian-transfer.enabled=true`와 웹 `VITE_GUARDIAN_TRANSFER_ENABLED=true`에서만
-진입점을 제공한다. 두 설정의 기본값은 false이며, V26 마이그레이션은 기존 V24 보호자 비밀번호와 V25 동의 문서를 보존한다. 기능 플래그는 DB 롤백 수단이 아니다.
+신규 대상 조회·요청·수락 진입점을 제공한다. 본인의 기존 요청 조회·거절·취소는 설정과 필수 동의 상태에 관계없이 제공한다(#307). 두 설정의 기본값은 false이며, V26 마이그레이션은 기존 V24 보호자 비밀번호와 V25 동의 문서를 보존한다. 기능 플래그는 DB 롤백 수단이 아니다.
 
 - `POST /guardian-transfers/recipient` `{email}`: 가입 Google 이메일의 활성 학부모를 정확히 조회.
   본인/비학부모/미가입/중복 이메일 후보는 거부하며 자녀 3명 제한을 확인한다.
-- `GET /guardian-transfers`: 본인이 보낸/받은 요청만 반환. 자녀가 없어도 필수 이용 동의 후 접근 가능.
+- `GET /guardian-transfers`: 본인이 보낸/받은 요청만 반환. 자녀가 없거나 필수 동의가 누락·철회되어도, 서버 플래그가 꺼져 있어도 조회 가능. 학습 기록·리포트 조회 권한은 부여하지 않는다.
 - `POST /guardian-transfers` `{childId,recipientId,includeConversations}`와
   `X-Reauth-Token`(CHILD_TRANSFER, 해당 자녀): 자녀별 PENDING 요청 생성.
 - `POST /guardian-transfers/{id}/accept` `{consents}`와 `X-Reauth-Token`(TRANSFER_ACCEPT):
@@ -1202,5 +1202,5 @@ report-worker는 생성 시작 시 한 번 조회하여 command에 고정한다.
 - 기존 학생 세션·기기 연결은 종료하며 새 학부모가 기기를 등록한다. 새 보호자의 기존 리포트 설정을 사용한다.
 - 수락·취소·동시 자녀 등록은 계정 ID 정렬 잠금 → 학생 → 요청 순서로 직렬화하고 DB에서 활성 보호자 1명을 강제한다.
 - 새 이관 경로는 기존 개인정보·보호자 동의·재인증을 우회하지 않는다. 기존 삭제/탈퇴 경로는 그대로 유지한다.
-- 현재 구현은 조회·거절·취소도 서버 플래그 활성 및 계정 필수 동의를 요구한다. 플래그 해제·동의 철회 뒤 취소 경로 보장은 #307에서 다루며 여기서 정책을 바꾸지 않는다.
+- 조회·수신자 거절·발신자 단건/일괄 취소는 동의 회복 경로다(#307). 활성 학부모 계정·유효 세션·요청 소유권은 계속 검사한다. 플래그 off여도 PENDING 삭제/탈퇴 차단은 유지하며, 명시적 취소/거절로 대기를 해소한 후 기존 재인증·최종 확인을 거쳐 삭제/탈퇴한다. 자동 취소·자동 탈퇴·대기 검사 우회는 하지 않는다.
 - 같은 대상·수신자·대화 선택의 대기 요청 재전송과 같은 종료 상태 재전송은 멱등 처리한다. 다른 종료 상태로 바꾸면 `409 TRANSFER_ALREADY_RESOLVED`다.
