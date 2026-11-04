@@ -9,6 +9,9 @@ on:
       - "scripts/**"
       - "docs/design/**"
       - "compose.yaml"
+      - "compose.*.yaml"
+      - ".env.example"
+      - "infrastructure/gitops/environments/local/*.yaml"
       - "infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json"
       - ".github/workflows/ci-contracts.yml"
   push:
@@ -20,6 +23,9 @@ on:
       - "scripts/**"
       - "docs/design/**"
       - "compose.yaml"
+      - "compose.*.yaml"
+      - ".env.example"
+      - "infrastructure/gitops/environments/local/*.yaml"
       - "infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json"
       - ".github/workflows/ci-contracts.yml"
   workflow_dispatch:
