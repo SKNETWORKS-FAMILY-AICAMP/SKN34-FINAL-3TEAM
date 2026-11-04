@@ -66,5 +66,18 @@
   "observedAt": "2026-11-03",
   "natSubnet": "subnet-0697edabcbce66f47",
   "cloudFrontId": "EW2QD9OAPEVRK",
-  "url": "https://d3jf0rnm6vhd9v.cloudfront.net"
+  "url": "https://d3jf0rnm6vhd9v.cloudfront.net",
+  "s3Endpoint": {
+    "id": "vpce-0dab53d8da86d39c8",
+    "type": "Gateway",
+    "state": "available",
+    "prefixList": "pl-78a54011",
+    "routeTables": [
+      "rtb-01f53b33b57b1e55b",
+      "rtb-0599728dcf319a662"
+    ],
+    "policy": "default full access",
+    "observedAt": "2026-11-04"
+  },
+  "flowLogs": []
 }

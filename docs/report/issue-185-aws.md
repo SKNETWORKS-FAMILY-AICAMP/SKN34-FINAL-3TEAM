@@ -218,3 +218,68 @@ main 기준 core·웹 재배포와 노드그룹 분리 후 실제 화면과 서�
 - 시연 URL: 학부모 Google 로그인과 이용권 표시, 기존 주간 리포트 조회(report-api 목록 10건·상세 1건 200), 학생 화면에서 답변 3건 제출(12:14~12:15) → AI 판정 3건 200·`DONE`(PARTIAL 2, HELD 1), 후속 질문 2건 생성, 시도 1건 완료. core·learning·ai·scoring·report 로그 오류 0, 앱 재시작 0.
 - 시연 데이터 분리(core_app 읽기 전용): 부모 1명·학생 3명 모두 `is_demo=true`(11/04 추가된 학생 포함), 관리자 1명은 운영자 계정. 결제·주문·구독 0건으로 테스트 거래가 섞일 데이터가 없다. core에 `AUTH_NEW_ACCOUNT_DEMO=true`와 결제 키 연결을 확인했다. 실제 신규 Google 가입·공용 테스트 키 결제 승인은 실행하지 않았다.
 - 비밀 스캔: Gitleaks 8.30.1 이력·현재 파일 1,529개 0건.
+
+## S3 Gateway 엔드포인트와 NAT 병목 점검 (#212, 2026-11-04)
+
+10/29 멘토링의 "S3 엔드포인트 연결, core·NAT 구간 병목" 지적을 실제 계정에서 읽기 전용으로 점검했다. **AWS 자원은 생성·수정·삭제하지 않았다.** S3 Gateway 엔드포인트가 이미 있어서 새로 만들 필요가 없었다.
+
+### S3 경로 현황
+
+| 항목 | 조회 결과 |
+|---|---|
+| 엔드포인트 | `vpce-0dab53d8da86d39c8`(`sagomungchi-demo-vpce-s3`), `com.amazonaws.ap-northeast-2.s3`, Gateway, available, 2026-11-02 05:43 UTC 생성(NAT GW 생성 08:01 UTC보다 먼저) |
+| 라우팅 | private1(2a) `rtb-01f53b33b57b1e55b`·private2(2b) `rtb-0599728dcf319a662` 모두 `pl-78a54011`(S3 prefix list) → vpce 경로 active. 0.0.0.0/0 → NAT보다 구체적인 prefix가 우선한다. public 라우팅 테이블에는 없음(노드·RDS가 없음) |
+| 엔드포인트 정책 | 기본 전체 허용(`Principal *`, `Action *`, `Resource *`) |
+| `aws:sourceVpce` 영향 | 저장소 IAM 정책 원문(`infrastructure/aws/iam/`)에 해당 조건 없음. reports·models·missions 버킷은 bucket policy 없음, web 버킷 policy는 CloudFront 배포 SourceArn 조건만 있어 VPC 경로와 무관 |
+| 앱 클라이언트 | report(`app/clients/storage.py`)·scoring(`app/clients/model_artifacts.py`)는 `region_name=S3_REGION`(ap-northeast-2)로 regional endpoint `s3.ap-northeast-2.amazonaws.com`을 쓴다. prod values에 `S3_ENDPOINT_URL` 없음 |
+| `demo_stack.py plan` | OK=58, 차이 없음(private route의 S3 endpoint 연결 대조 포함) |
+
+**엔드포인트 정책은 기본 전체 허용을 유지한다.** 노드의 ECR 이미지 layer 다운로드도 AWS 소유 S3 버킷을 이 엔드포인트로 받으므로, 우리 버킷 4개로 좁히면 이미지 pull이 깨진다. 버킷 접근 제한은 이미 Pod Identity 역할 정책(scoring 읽기, report `reports/*` 읽기·쓰기)이 맡는다. 정책을 좁히려면 ECR layer 버킷 등 필요한 대상을 먼저 조사한 별도 작업으로 한다.
+
+### S3 트래픽이 NAT를 거치지 않는다는 근거
+
+1. **실제 대용량 다운로드와 NAT 지표 대조:** scoring Pod(`scoring-service-85d8c5f57f-p9kvw`, 2a 노드, emptyDir `/tmp` 새로 생성)가 17:53:53~17:54:12 KST에 models 버킷에서 `model.safetensors` 2개(442,539,656 + 442,524,276 bytes, 약 844MiB)를 받아 로딩하고 17:54:22에 Ready가 됐다. 같은 17:53·17:54 KST 1분 구간 NAT `BytesInFromDestination` 합은 0.04MiB, `BytesOutToDestination`은 0.02MiB였다. 844MiB가 NAT를 지났다면 이 구간에 그대로 나타났어야 한다.
+2. **DNS가 prefix list 대역으로 해석:** report-api·report-worker·scoring Pod 안에서 버킷 호스트(`<bucket>.s3.ap-northeast-2.amazonaws.com`)를 해석한 IP 15개가 모두 `pl-78a54011` CIDR(3.5.184.0/21, 52.219.144.0/22, 52.219.202.0/23, 52.219.204.0/22)에 속했다.
+3. **앱 권한으로 접근 확인:** 세 Pod에서 앱과 같은 설정(regional endpoint, Pod Identity)으로 `ListObjectsV2`(MaxKeys=1)를 호출해 HTTP 200을 받았다. 객체 본문은 읽거나 쓰지 않았다. report의 PUT 경로는 이번에 다시 실행하지 않았고, 기존 리포트 생성·다운로드 확인(위 절)을 근거로 둔다.
+
+VPC Flow Logs는 VPC에 없다(`describe-flow-logs` 빈 목록). 비용이 들고 설정 변경이라 만들지 않았다. 따라서 패킷 단위 경로 기록은 없고 위 지표·DNS·라우팅이 근거다.
+
+### NAT를 거치는 구간
+
+Pod 사이 호출(core ↔ learning·ai·report·RabbitMQ·Redis)과 RDS는 VPC 내부라 NAT를 거치지 않는다. core가 내부 호출의 중심이지만 NAT와 관계된 것은 외부 호출뿐이다.
+
+| 출발 | 대상 | 비고 |
+|---|---|---|
+| ai | LLM API | 판정·되묻기·리포트 서술. 요청·응답이 텍스트라 바이트가 작다 |
+| core | 토스페이먼츠, Google OAuth token | 사용자 동작 단위의 짧은 HTTPS |
+| ESO, Pod Identity 사용 Pod | Secrets Manager, STS·EKS Auth | Interface endpoint 없음 |
+| kubelet | ECR API(`*.dkr.ecr`), ghcr.io·Docker Hub·quay 등 공개 레지스트리 | ECR layer 본문은 S3 엔드포인트, 공개 레지스트리 이미지는 NAT |
+| Grafana | Discord webhook | 경보 발생 시만 |
+
+### NAT 지표 (2026-11-02 17:00 ~ 2026-11-04 20:00 KST, 1시간 단위 51개)
+
+| 지표 | 값 | 판단 |
+|---|---|---|
+| ActiveConnectionCount 최대 | 126 | 목적지별 동시 55,000 한도와 거리가 멀다 |
+| ErrorPortAllocation 합 | 0 | 포트 고갈 없음 |
+| PacketsDropCount 합 | 6 (모두 11-02 17시, 구성 직후 1시간) | 이후 0 |
+| BytesInFromDestination 합 | 약 4.0GiB, 시간 최대 1.2GiB | 평균 3Mbps 미만, NAT 대역폭(기본 5Gbps)에 비해 매우 작음 |
+| BytesOutToDestination 합 | 약 0.8GiB, 거의 전부 11-03 09시 1시간 | 원인 미확정(Flow Logs 없음) |
+| IdleTimeoutCount 합 | 5,240 | 350초 이상 쉰 연결을 NAT가 정리한 횟수. 오류 지표는 아님 |
+
+수신 바이트가 큰 시간은 노드·이미지 작업과 맞는다. 11-03 20시 910MiB는 관측 스택 배포(20:15~20:19), 11-04 11시 962MiB는 노드그룹 분리로 새 노드 2대가 생성된 시각(11:29)이다. 공개 레지스트리 이미지 pull로 보이지만 Flow Logs가 없어 대상까지 확정하지는 않았다.
+
+**판단: 현재 NAT 병목은 없다.** 연결 수·포트·드롭·대역폭 모두 여유가 크다. 51시간 처리량 약 4.8GiB는 처리 요금 $0.059/GB 기준 약 $0.3이다. 남은 위험은 성능이 아니라 가용성이다. NAT가 2a 한 곳에만 있어서 2a 장애 시 2b 노드의 Pod도 LLM·결제·OAuth·Secret 갱신·이미지 pull을 못 한다. 2b Pod의 외부 호출은 AZ 간 전송($0.01/GB 양방향)이 붙지만 현재 양으로는 무시할 수준이다. 한계: 부하 시험은 하지 않았고, 연결 유지 기간이 350초를 넘는 HTTP 클라이언트의 stale 연결 오류 여부는 앱 로그로 따로 보지 않았다.
+
+### 완화안 비교 (서울 단가: AWS Price List API 2026-11-04 조회, 월 730시간, 세금·크레딧 제외)
+
+| 안 | 월 추가 비용 | 효과 | 한계 |
+|---|---|---|---|
+| A. 현재 유지(zonal NAT 1개, 2a) | $0 (현재 NAT $43.07 + EIP $3.65) | - | 2a 장애 시 전체 외부 호출 중단 |
+| B. AZ별 zonal NAT(2b 추가, private2 기본 경로 변경) | 약 +$46.7 (NAT $0.059/h + 공인 IPv4 $0.005/h) | AZ 장애 격리, AZ 간 전송 제거 | 데이터 처리 단가는 같음 |
+| C. Regional NAT GW(2개 AZ) | 약 +$43~47 (AZ마다 $0.059/h 과금, [VPC 요금](https://aws.amazon.com/vpc/pricing/)) | 하나의 NAT로 AZ 확장 | 기존 NAT 교체·라우팅 변경 필요, 신규 기능이라 eksctl·`demo_stack.py` 지원 확인 필요 |
+| D. Interface 엔드포인트(Secrets Manager·STS·ECR api·dkr) | 약 +$76 (엔드포인트당 $0.013/h × 2 AZ) | AWS API 호출만 NAT에서 분리 | LLM·토스·OAuth는 그대로 NAT. 현재 양 대비 비쌈 |
+
+**추천: 데모 기간(12/7까지)은 A 유지.** 병목 근거가 없고, 2a 장애 때는 RabbitMQ·Prometheus·Grafana의 EBS가 2a에 있어 서비스가 이미 함께 멈추므로 B·C의 가용성 이득이 현재 구성에서는 작다. 상태 저장 서비스의 AZ 의존을 줄이거나 실제 운영 전환을 결정할 때 B(가장 단순)를 다시 검토한다. **NAT 다중 AZ 적용 여부는 담당자 결정 사항으로 남기며 이번에 적용하지 않았다.**
+
+조회 근거: EC2 `describe-vpc-endpoints`·`describe-route-tables`·`describe-nat-gateways`·`describe-prefix-lists`·`get-managed-prefix-list-entries`·`describe-flow-logs`, CloudWatch `get-metric-statistics`(AWS/NATGateway), S3 `list-objects-v2`(models 키·크기, reports는 최신 3개 시각·크기만), kubectl Pod 상태·scoring 로그·Pod 내 DNS 해석과 `ListObjectsV2`, Pricing `get-products`. Secret 값과 객체 본문은 조회하지 않았다.

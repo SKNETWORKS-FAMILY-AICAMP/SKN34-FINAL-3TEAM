@@ -591,7 +591,7 @@ backend/report-service/
 - 비용 절감
   - 데모 외 기간: 워크로드 정상 종료 후 노드그룹 0대 + RDS 정지(2026-11-03 결정, `demo_stack.py pause`/`resume`). 클러스터 삭제 후 재생성은 채택하지 않음
   - Spot은 무상태 앱 노드에만, 서비스별 replica 2개 이상·PDB를 갖춘 뒤 #211(Karpenter) 앱 NodePool에서 On-Demand와 혼합 적용. `platform-observability`는 On-Demand 고정(2026-11-04 결정: 상태 저장 서비스가 replica 1개이고 EBS가 AZ에 묶여 Spot 회수 시 다른 AZ로 옮길 수 없음)
-  - NAT GW 단일 AZ 1개
+  - NAT GW 단일 AZ 1개(2a). 2026-11-04 #212 점검에서 연결·포트·드롭·대역폭 병목이 없어 데모 기간은 유지한다. AZ별 NAT(월 약 +$47)는 가용성 개선안으로 결정 대기([점검 근거](../report/issue-185-aws.md#s3-gateway-엔드포인트와-nat-병목-점검-212-2026-11-04))
 
 ### 4.3 운영 네트워크·배치
 - VPC: Public Subnet(ALB, NAT GW) / Private Subnet(EKS 노드, RDS)
@@ -600,7 +600,8 @@ backend/report-service/
   - `/api/*` 동작: 캐시 비활성, `Authorization`·`Idempotency-Key`·`If-Match`·`X-Reauth-Token`·`Origin`·`X-Requested-With`(쿠키 API 검사, API 5.1) 헤더와 쿠키 전달, 압축 비활성(SSE 버퍼링 방지)
   - 타임아웃: CloudFront origin 응답 60초, ALB idle 120초 (SSE heartbeat 15초, 1.3)
   - 클라이언트 IP(기기 등록 IP별 한도, API 3.11): CloudFront가 X-Forwarded-For 끝에 viewer IP를 붙이고, ALB는 `routing.http.xff_header_processing.mode=preserve`(Ingress annotation `alb.ingress.kubernetes.io/load-balancer-attributes`)로 CloudFront 엣지 IP를 덧붙이지 않음. ALB 보안그룹 inbound는 `com.amazonaws.global.cloudfront.origin-facing` prefix list만 허용해 XFF 위조 경로 차단. core는 `server.forward-headers-strategy: native`로 사설 대역 직전 연결만 신뢰(Tomcat 기본 internal-proxies). 운영 적용은 #185
-- 외부 호출(LLM API·토스페이먼츠): Pod → NAT GW → Internet GW
+- 외부 호출(LLM API·토스페이먼츠): Pod → NAT GW → Internet GW. Secrets Manager·STS·ECR API·공개 레지스트리 이미지도 NAT 경유(Interface endpoint 없음)
+- S3: private 라우팅 테이블 2개에 S3 Gateway 엔드포인트(prefix list 경로)를 연결해 Pod의 S3 읽기·쓰기와 ECR layer 다운로드는 NAT를 거치지 않는다. 엔드포인트 정책은 기본 전체 허용, 버킷 접근은 Pod Identity 역할 정책으로 제한(#212)
 - Namespace: `app`(core·learning·ai·scoring·report), `platform`(RabbitMQ·Redis), `observability`, `argocd`
 - 노드그룹: `application`, `platform-observability` 분리 (참고 레포 2그룹 구성 계승)
   - `application`: t3.medium 2대(최대 3), 앱·ESO·LB Controller·CoreDNS 등
