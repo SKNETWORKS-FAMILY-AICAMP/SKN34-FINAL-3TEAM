@@ -153,3 +153,11 @@ CLI 종료 코드 0은 JSON 계획의 형식 유효성만 뜻한다. 호환 여�
 - 검증: `python -O -m unittest discover -s scripts/tests` **149개 통과**(CD 37개: 실행 게이트·main 이력 확인·롤백 커밋 처리, 경로 확인 단계·쿠키 회전 저장·자격 증명 비노출·실패 중단, 이력 판정·승인 API, workflow 구조), 변경 Python ruff 통과, workflow YAML 파싱과 PowerShell 단계·`redeploy-app.ps1` 문법 검사 통과. actionlint와 실제 Actions 실행·AWS 적용은 하지 않았다.
 - 이슈 완료 조건(승인 → 배포 → 경로 확인 1회, 롤백 리허설 기록)은 설정 A~E 후 실제 실행으로 채운다.
 
+## 운영 설정 적용과 후보 CI 정리 (2026-11-04)
+
+- 설정 A(AWS): GitHub OIDC 제공자와 ECR 쓰기 전용 역할 `sagomungchi-demo-github-cd-publish`(인라인 `ecr-push`)를 만들었다. 역할은 `demo-stack.json`에 넣어 `demo_stack.py plan` OK=58로 대조한다. OIDC 제공자는 `demo_stack.py` 관리 대상이 아니다.
+- 설정 B(GitHub): Environment `prod`(필수 승인자 `20220348-kim`·`kty2001`, 배포 브랜치 `main`만, 관리자 우회 끔), 변수 `CD_BASE_URL`(prod)·`CD_AWS_ROLE_ARN`·`CD_AWS_REGION`·`CD_ECR_REGISTRY`, 외부 기여자 PR workflow 전원 승인(`all_external_contributors`)을 적용했다.
+- 설정 C(runner)·D(fixture)·E(실행 스위치)는 남아 있다.
+- `cd-candidate.yml` 정리: 처음 구성(`98b3f98`)은 이 브랜치 push와 PR에서 모두 실행되고 서비스 CI(`_spring.yml`·`_python.yml`·`_web.yml`, 6개 대상)를 다시 호출해, CD 도구만 바꾼 PR에도 같은 서비스 검사가 두 번씩 돌았다. 서비스 코드는 서비스별 CI가, 배포 이미지는 `cd-release` publish가 main SHA로 빌드하므로 PR·수동 실행의 CD 도구 검사(`policy` job)만 남겼다. `executionEnabled=false` 고정 검사는 E단계 PR을 막으므로 릴리스 브랜치·승인자 기준 확인으로 바꿨다. 위 2026-11-02·11-03 기록의 재사용 workflow 설명은 당시 구성이다.
+
+- 검증: `python -O -m unittest discover -s scripts/tests` **150개 통과**(후보 workflow 구조 테스트 1개 추가), ruff 통과, workflow YAML 파싱 통과.

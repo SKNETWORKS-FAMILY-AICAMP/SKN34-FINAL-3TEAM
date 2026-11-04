@@ -467,5 +467,16 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("helm rollback", self.text)
 
 
+class CandidateWorkflowTests(unittest.TestCase):
+    def test_runs_only_cd_tool_checks_once_per_change(self):
+        wf = yaml.safe_load(
+            (ROOT / ".github/workflows/cd-candidate.yml").read_text(encoding="utf-8")
+        )
+        # PR과 브랜치 push가 같은 검사를 두 번 돌리지 않고, 서비스 CI는 서비스별 workflow가 맡는다
+        self.assertEqual(set(wf[True]), {"workflow_dispatch", "pull_request"})
+        self.assertEqual(list(wf["jobs"]), ["policy"])
+        self.assertNotIn("executionEnabled", json.dumps(wf, ensure_ascii=False))
+
+
 if __name__ == "__main__":
     unittest.main()
