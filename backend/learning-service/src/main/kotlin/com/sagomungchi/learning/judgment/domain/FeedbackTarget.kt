@@ -37,11 +37,13 @@ data class StoredElement(
     val answerId: UUID,
     val elementId: UUID,
     val label: String,
+    val code: String,
+    val goodThought: Boolean,
     val satisfied: Boolean,
     val quote: String?,
     val sourceType: ElementSource?,
 ) {
-    fun view() = ElementView(elementId, label, satisfied, quote, sourceType)
+    fun view() = ElementView(elementId, label, code, goodThought, satisfied, quote, sourceType)
 }
 
 data class StoredFollowup(

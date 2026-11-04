@@ -134,7 +134,7 @@ class AttemptControllerTest(@Autowired private val mockMvc: MockMvc) {
         val followupId = UUID.randomUUID()
         val done = FeedbackResult(
             status = ProcessStatus.DONE,
-            judgment = JudgmentView(UUID.randomUUID(), JudgmentResult.PARTIAL, true, listOf(ElementView(elementId, "주장", true, "답", ElementSource.AI_OBSERVATION)), null),
+            judgment = JudgmentView(UUID.randomUUID(), JudgmentResult.PARTIAL, true, listOf(ElementView(elementId, "주장", "EVALUATE_CLAIM", false, true, "답", ElementSource.AI_OBSERVATION)), null),
             followup = FollowupView(followupId, FollowupType.TELL_MORE, "왜 그렇게 생각했나요?", FollowupSource.LLM),
             nextActions = listOf(NextAction.ANSWER_FOLLOWUP, NextAction.FINISH),
             versions = Versions("M@1", "M@1", "gpt", "judge@2"),
@@ -245,7 +245,7 @@ class AttemptControllerTest(@Autowired private val mockMvc: MockMvc) {
         }
 
         val elementId = UUID.randomUUID()
-        val revealed = FinishResult(now, "예시 답", RevealKind.EXAMPLE, listOf(ElementView(elementId, "주장", true, "답", ElementSource.AI_OBSERVATION)))
+        val revealed = FinishResult(now, "예시 답", RevealKind.EXAMPLE, listOf(ElementView(elementId, "주장", "EVALUATE_CLAIM", false, true, "답", ElementSource.AI_OBSERVATION)))
         given(service.get(attempt.id)).willReturn(detail(revealed = revealed, reflection = Reflection(Difficulty.NORMAL, null)))
         mockMvc.get("/internal/attempts/${attempt.id}") { asStudent() }.andExpect {
             jsonPath("$.reveal") { value("예시 답") }

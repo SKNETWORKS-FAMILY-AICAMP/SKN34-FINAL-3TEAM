@@ -63,6 +63,8 @@
             <arg column="answer_id" javaType="java.util.UUID"/>
             <arg column="element_id" javaType="java.util.UUID"/>
             <arg column="label" javaType="java.lang.String"/>
+            <arg column="code" javaType="java.lang.String"/>
+            <arg column="good_thought" javaType="_boolean"/>
             <arg column="satisfied" javaType="_boolean"/>
             <arg column="quote" javaType="java.lang.String"/>
             <arg column="source_type" javaType="com.sagomungchi.learning.judgment.domain.ElementSource"/>
@@ -186,7 +188,7 @@
     </select>
 
     <select id="findStoredElements" resultMap="storedElement">
-        SELECT a.id AS answer_id, e.rubric_element_id AS element_id, r.label, e.satisfied, e.quote, e.source_type
+        SELECT a.id AS answer_id, e.rubric_element_id AS element_id, r.label, r.code, r.good_thought, e.satisfied, e.quote, e.source_type
         FROM answer a
         JOIN judgment j ON j.answer_id = a.id AND j.process_status = 'DONE'
         JOIN judgment_element e ON e.judgment_id = j.id

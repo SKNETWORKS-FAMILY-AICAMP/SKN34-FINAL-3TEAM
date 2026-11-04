@@ -27,10 +27,15 @@ data class JudgmentView(
     val heldReason: String?,
 )
 
-/** 요소 판정. elementId는 rubric_element.id, quote는 학생 답 원문 구절 또는 고른 답 */
+/**
+ * 요소 판정. elementId는 rubric_element.id, quote는 학생 답 원문 구절 또는 고른 답.
+ * code·goodThought는 report 요소 지표용 (FN 1.5 표준 요소, FN-RPT-05, #262). 화면 표시용 아님
+ */
 data class ElementView(
     val elementId: UUID,
     val label: String,
+    val code: String,
+    val goodThought: Boolean,
     val satisfied: Boolean,
     val quote: String?,
     val sourceType: ElementSource?,

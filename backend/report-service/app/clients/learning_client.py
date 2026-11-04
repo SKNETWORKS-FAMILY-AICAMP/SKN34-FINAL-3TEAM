@@ -16,6 +16,8 @@ from app.generation.records import (
     AttemptRecord,
     ChangePair,
     EvidenceRecord,
+    JudgedElement,
+    JudgmentRecord,
     LearningRecords,
     Period,
     RecordContractError,
@@ -48,8 +50,41 @@ class PageInput(ScopeInput):
     items: list[dict]
 
 
+class ElementInput(InputModel):
+    element_id: UUID
+    code: str = Field(min_length=1)
+    good_thought: StrictBool
+    satisfied: StrictBool
+
+
+class JudgmentInput(InputModel):
+    result: Literal["CORRECT", "PARTIAL", "RETHINK", "HELD"]
+    trial: StrictBool
+    elements: list[ElementInput]
+
+    def record(self) -> JudgmentRecord:
+        ids = [e.element_id for e in self.elements]
+        if len(ids) != len(set(ids)):
+            raise RecordContractError("Duplicate element in one judgment")
+        return JudgmentRecord(
+            self.result,
+            self.trial,
+            tuple(
+                JudgedElement(e.element_id, e.code, e.good_thought, e.satisfied)
+                for e in self.elements
+            ),
+        )
+
+
 class FeedbackInput(InputModel):
     status: Literal["PENDING", "RUNNING", "DONE", "FAILED"]
+    judgment: JudgmentInput | None = None
+
+    def judgment_record(self) -> JudgmentRecord | None:
+        # The record API sends a judgment only for DONE feedback (API 4.1.1).
+        if self.status != "DONE" or self.judgment is None:
+            return None
+        return self.judgment.record()
 
 
 class NarrativeContent(InputModel):
@@ -140,6 +175,8 @@ class AttemptInput(InputModel):
                     a.text,
                     a.feedback.status,
                     a.written_text(),
+                    a.input_type,
+                    a.feedback.judgment_record(),
                 )
                 for a in self.answers
             ),
