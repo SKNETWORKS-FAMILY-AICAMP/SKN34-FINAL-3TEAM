@@ -293,7 +293,7 @@ class DemoStackTest(unittest.TestCase):
         kinds = [kind for kind, _ in created]
         self.assertEqual(kinds.count('subnet'), 4)
         self.assertEqual(kinds.count('s3'), 4)
-        self.assertEqual(kinds.count('iam-role'), 8)
+        self.assertEqual(kinds.count('iam-role'), 9)
         self.assertEqual(kinds.count('ecr'), 7)
         self.assertIn(('rds', 'sagomungchi-demo-db'), created)
 
@@ -370,7 +370,8 @@ class DemoStackTest(unittest.TestCase):
         used = [a['roleARN'] for a in config['iam']['podIdentityAssociations']]
         used += [p['roleARN'] for addon in config['addons'] for p in addon.get('podIdentityAssociations', [])]
         used += [config['iam']['serviceRoleARN'], config['managedNodeGroups'][0]['iam']['instanceRoleARN']]
-        self.assertEqual({arn.rsplit('/', 1)[1] for arn in used}, declared)
+        # GitHub Actions 게시 역할(#186)은 EKS가 아니라 cd-release workflow가 쓴다
+        self.assertEqual({arn.rsplit('/', 1)[1] for arn in used}, declared - {'sagomungchi-demo-github-cd-publish'})
         self.assertTrue(all(c.startswith('__') for c in config['vpc']['publicAccessCIDRs']))
 
     def test_bootstrap_job_reads_credentials_from_secrets_only(self):

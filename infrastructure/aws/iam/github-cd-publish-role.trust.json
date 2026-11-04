@@ -1,0 +1,19 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::347161580747:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub": "repo:SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM:ref:refs/heads/main",
+          "token.actions.githubusercontent.com:job_workflow_ref": "SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/.github/workflows/cd-release.yml@refs/heads/main"
+        }
+      }
+    }
+  ]
+}

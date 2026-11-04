@@ -1,0 +1,50 @@
+# #186 CD 도구 검사: 계획 검증·배포 실행기 테스트만 수행하며 publish/배포는 하지 않는다.
+# 서비스 코드는 서비스별 CI가, 배포 이미지는 cd-release의 publish가 main SHA로 빌드·검사한다.
+name: cd-candidate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/cd-candidate.yml'
+      - '.github/workflows/cd-release.yml'
+      - 'scripts/cd_release.py'
+      - 'scripts/cd_record.py'
+      - 'scripts/verify_cd_deployment.py'
+      - 'scripts/tests/test_cd_*.py'
+      - 'infrastructure/cd/**'
+      - 'infrastructure/gitops/environments/prod/redeploy-app.ps1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cd-candidate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install "PyYAML==6.0.3"
+      - run: python -m unittest discover -s scripts/tests -p 'test_cd_*.py' -v
+      - name: 운영 정책 기준 확인
+        run: |
+          python -c "import json; p=json.load(open('infrastructure/cd/policy.json')); assert p['releaseBranch'] == 'main' and len(p['approvers']) >= 2, 'prod는 main 릴리스와 승인자 2명 이상이 필요합니다'"
+      - name: 합성 계획의 실행 차단 기록
+        run: |
+          python scripts/cd_release.py --plan infrastructure/cd/plan.example.json --policy infrastructure/cd/policy.json --output /tmp/cd-plan-record.json
+          python -c "import json; r=json.load(open('/tmp/cd-plan-record.json')); assert r['executable'] is False and r['blocks']"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: synthetic-cd-plan-record
+          path: /tmp/cd-plan-record.json
+          retention-days: 7
+      - name: 준비 상태 기록
+        run: |
+          echo '## #186 배포 후보 검사' >> "$GITHUB_STEP_SUMMARY"
+          echo '계획 검증·실행기 테스트만 수행했습니다. 이미지 게시·배포·롤백은 cd-release에서 승인 후 실행합니다.' >> "$GITHUB_STEP_SUMMARY"

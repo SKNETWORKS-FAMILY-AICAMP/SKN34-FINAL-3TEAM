@@ -5,12 +5,19 @@ param(
     [Parameter(Mandatory)][string]$Kubeconfig,
     [string]$Helm = 'helm',
     [string]$Profile = 'sagomungchi-provided',
+    # #186 승인된 배포: 저장소 values는 두고 이 digest로 바꾼 임시 사본을 사용한다
+    [ValidatePattern('^sha256:[a-f0-9]{64}$')][string]$ImageDigest,
     [switch]$Apply
 )
 $ErrorActionPreference = 'Stop'
 $valuesPath = Join-Path $PSScriptRoot "$Service.json"
 $chart = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../charts/app-service'))
 $values = Get-Content -LiteralPath $valuesPath -Raw | ConvertFrom-Json
+if ($ImageDigest) {
+    $values.image.digest = $ImageDigest
+    $valuesPath = Join-Path ([IO.Path]::GetTempPath()) "cd-$Service-$([guid]::NewGuid()).json"
+    $values | ConvertTo-Json -Depth 50 | Set-Content -LiteralPath $valuesPath -Encoding utf8
+}
 if ($values.image.repository -notlike '347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/*' -or $values.image.digest -notmatch '^sha256:[a-f0-9]{64}$') {
     throw 'Expected the demo ECR account and a pinned image digest'
 }
