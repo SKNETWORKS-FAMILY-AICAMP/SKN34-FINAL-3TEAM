@@ -1,4 +1,4 @@
-"""#69 M2·M1 교차 확인 분기 (api-spec 4.2.2). scoring은 대역으로 대체."""
+"""#69 M2·M1 교차 확인 분기, #305 실패 시 생략 (api-spec 4.2.2). scoring은 대역으로 대체."""
 
 import asyncio
 import time
@@ -8,7 +8,6 @@ import pytest
 
 from app.clients.scoring_client import M1Check, M2Scores, ScoringUnavailable
 from app.config import Settings
-from app.errors import ApiError
 from app.judgment import service as judgment_service
 from app.judgment.extractor import Extraction
 from app.judgment.models import JudgmentRequest
@@ -132,6 +131,8 @@ def judge(
     llm: FakeLlm | None = None,
     **settings: Any,
 ):
+    """M2 교차 확인은 켠 상태가 기본. 꺼진 경우는 m2_cross_check_enabled=False로 명시."""
+    settings = {"m2_cross_check_enabled": True} | settings
     service = JudgmentService(
         llm or found_both(), Settings(internal_token="t", **settings), scoring=scoring
     )
@@ -160,6 +161,7 @@ def test_m2_agreement_records_scores_and_model_version() -> None:
     assert response.result == "CORRECT"
     assert response.held_reason is None
     assert response.versions.model == "m2-klue-narrative@3.0"
+    assert response.model_scores.skipped is None
     m2 = response.model_scores.m2
     assert (m2.mean, m2.disagreement) == (4.0, False)
     assert m2.raw_scores["content_3"] == 4.25
@@ -174,10 +176,28 @@ def test_m2_disagreement_holds_when_enabled() -> None:
     assert response.versions.model == "m2-klue-narrative@3.0"
 
 
-def test_m2_disagreement_is_only_recorded_by_default() -> None:
-    response = judge(FakeScoring(m2=narrative(2)))
+def test_m2_is_not_called_when_cross_check_disabled() -> None:
+    # 기본값(꺼짐)이면 scoring을 부르지 않아 scoring 장애와 무관 (#305)
+    llm = found_both()
+    scoring = FakeScoring(m2=ScoringUnavailable(retryable=True))
+    service = JudgmentService(llm, Settings(internal_token="t"), scoring=scoring)
+    response = asyncio.run(service.judge(make_request()))
+    assert scoring.calls == []
     assert response.result == "CORRECT"
-    assert response.model_scores.m2.disagreement is True
+    assert response.model_scores is None
+    assert response.versions.model == "fake-model"
+
+
+def test_m2_cross_check_disabled_lets_llm_use_whole_deadline() -> None:
+    llm = found_both()
+    judge(
+        FakeScoring(m2=narrative(4)),
+        llm=llm,
+        m2_cross_check_enabled=False,
+        judge_deadline=10.0,
+        scoring_reserve=3.0,
+    )
+    assert 9.5 < llm.requests[0].timeout <= 10.0
 
 
 def test_rethink_with_high_essay_score_disagrees() -> None:
@@ -213,12 +233,30 @@ def test_llm_hold_skips_scoring() -> None:
     assert scoring.calls == []
 
 
-@pytest.mark.parametrize("retryable", [True, False])
-def test_scoring_failure_is_503_not_hold(retryable: bool) -> None:
-    with pytest.raises(ApiError) as caught:
-        judge(FakeScoring(m2=ScoringUnavailable(retryable=retryable)))
-    assert (caught.value.status, caught.value.code) == (503, "SCORING_UNAVAILABLE")
-    assert caught.value.extra == {"retryable": retryable}
+@pytest.mark.parametrize(
+    ("retryable", "skipped"),
+    [(True, "SCORING_UNAVAILABLE"), (False, "SCORING_REJECTED")],
+)
+@pytest.mark.parametrize("llm", [found_both, found_none])
+def test_scoring_failure_skips_cross_check(retryable: bool, skipped: str, llm) -> None:
+    # 장애·5xx·시간 초과(retryable) / 400·계약 밖 응답 모두 503 없이 LLM 판정만 씀 (#305)
+    response = judge(FakeScoring(m2=ScoringUnavailable(retryable=retryable)), llm=llm())
+    assert response.result == ("CORRECT" if llm is found_both else "RETHINK")
+    assert response.held_reason is None
+    assert response.elements
+    assert response.versions.model == "fake-model"
+    assert response.model_scores.model_dump(by_alias=True) == {
+        "m2": None,
+        "m1": None,
+        "skipped": skipped,
+    }
+
+
+def test_m1_failure_skips_cross_check() -> None:
+    scoring = FakeScoring(m1=ScoringUnavailable(retryable=True))
+    response = judge(scoring, solution_request(), m1_check_enabled=True)
+    assert response.result == "CORRECT"
+    assert response.model_scores.skipped == "SCORING_UNAVAILABLE"
 
 
 def test_scoring_timeout_uses_remaining_deadline() -> None:
@@ -227,12 +265,11 @@ def test_scoring_timeout_uses_remaining_deadline() -> None:
     assert scoring.calls[0][2] <= 5.0
 
 
-def test_exhausted_deadline_fails_without_calling_scoring() -> None:
+def test_exhausted_deadline_skips_without_calling_scoring() -> None:
     scoring = FakeScoring(m2=narrative(4))
-    with pytest.raises(ApiError) as caught:
-        judge(scoring, judge_deadline=0.5, scoring_reserve=0)
-    assert caught.value.code == "SCORING_UNAVAILABLE"
-    assert caught.value.extra == {"retryable": True}
+    response = judge(scoring, judge_deadline=0.5, scoring_reserve=0)
+    assert response.result == "CORRECT"
+    assert response.model_scores.skipped == "SCORING_UNAVAILABLE"
     assert scoring.calls == []
 
 

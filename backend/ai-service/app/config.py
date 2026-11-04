@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     scoring_timeout: float = 10.0  # scoring 호출 1회 한도, 남은 마감 시간과 작은 값을 씀
     # M2·M1 입력이 있으면 LLM 추출 마감을 이만큼 앞당겨 scoring 몫으로 남김 (#87 예열 후 최대 1.7초)
     scoring_reserve: float = 3.0
-    m2_cross_check_enabled: bool = False  # false면 M2 점수·불일치를 modelScores에 기록만
+    m2_cross_check_enabled: bool = False  # false면 M2(scoring)를 부르지 않음 (#305)
     # 불일치 경계(임시, M2 담당 확인 전): scores 평균. 서술 9항목 1~5(hol 1~4), 논술 3영역 0~3
     m2_narrative_low: float = 2.0
     m2_narrative_high: float = 4.0

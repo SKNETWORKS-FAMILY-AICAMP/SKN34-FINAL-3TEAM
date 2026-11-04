@@ -210,8 +210,8 @@ uv run --frozen python ../../scripts/verify_scoring_m2.py --archive <m2_models.t
 | 항목 | 결정 |
 |---|---|
 | 불일치 기준 | M2 `scores` 평균과 LLM 결과 비교. `CORRECT`인데 평균이 낮은 경계 이하, `RETHINK`인데 높은 경계 이상이면 불일치. `PARTIAL`은 불일치 아님. 경계는 설정값(서술 2.0/4.0, 논술 1.0/2.0), M2 담당 확인 전 임시값 |
-| 보류 적용 | `M2_CROSS_CHECK_ENABLED` 기본 false. 꺼져 있으면 점수·불일치 여부를 `modelScores`에 기록만 하고 결과는 바꾸지 않음. 켜면 `HELD(MODEL_DISAGREEMENT)`·`HELD(LOW_CONFIDENCE)` |
-| scoring 장애 | `503 SCORING_UNAVAILABLE`. 5xx·시간 초과·연결 실패는 `retryable:true`, 4xx·계약 밖 응답은 false. 비활성으로 바꾸지 않음. learning은 기존처럼 `AI_UNAVAILABLE` 실패 코드로 기록 |
+| 보류 적용 | `M2_CROSS_CHECK_ENABLED` 기본 false. 켜면 `HELD(MODEL_DISAGREEMENT)`·`HELD(LOW_CONFIDENCE)`. 꺼져 있으면 점수를 기록만 하던 동작은 #305에서 "부르지 않음"으로 바뀜(4.3.1) |
+| scoring 장애 | #305에서 변경(4.3.1): 503 대신 LLM 판정만 200, `modelScores.skipped`에 `SCORING_UNAVAILABLE`(5xx·시간 초과·연결 실패) 또는 `SCORING_REJECTED`(4xx·계약 밖 응답). 비활성(`{active:false}`)과 구분 |
 | 입력 출처 | `question`은 mission_version.question, `keywords`·`essayType`은 learning V9 `rubric_version` 새 칸(채점 입력이라 기준표와 함께 바뀌고 검토·게시됨) |
 | 점수 저장 | ai 응답 `modelScores`를 learning이 `judgment.model_scores`에 그대로 저장, 학생 화면 비노출 |
 | M1 | 비활성 유지. ai 호출 분기와 대역 테스트만, `M1_CHECK_ENABLED` 기본 false, learning은 M1 입력 미전송 |
@@ -232,7 +232,39 @@ uv run --frozen python ../../scripts/verify_scoring_m2.py --archive <m2_models.t
 | learning 35초 대비 여유 | 네트워크·직렬화 | 2초 |
 
 - 3초 몫은 M2 예열 후 HTTP 포함 최대 1.68초([scoring](scoring.md) 3장)의 약 1.8배. 첫 요청 8.4초가 다시 나오면 LLM 최악 경로와 겹칠 때 503(`retryable:true`). 남은 시간이 1초 미만이면 호출하지 않고 503. 교차 확인 입력이 없는 판정은 LLM이 33초 전체 사용
+- 위 시간 배분의 "남은 시간 1초 미만이면 503"과 "첫 요청 8.4초면 503"은 #305 이후 `skipped: SCORING_UNAVAILABLE`로 LLM 판정만 쓰는 것으로 바뀜(4.3.1)
 - 실제 모델 전체 측정(로컬 Docker, 서술 3.0·논술 3.1, learning 피드백 요청 기준): 예열 후 대역 LLM 최대 0.34초, 실제 OpenAI LLM 중앙값 3.8~7.3초·최대 9.0초, LLM 최악 경로(첫 요청 시간 초과 → 재시도) 약 29.8초로 모두 200·`model_scores` 저장. 배포 환경·동시 요청 부하에서는 재측정 필요
+
+
+### 4.3.1 scoring 실패 격리 (#305, 2026-11-04)
+
+문제: ai가 scoring 장애·시간 초과·5xx와 400(M2 입력 토큰 한도 초과)을 모두 `503 SCORING_UNAVAILABLE`로 바꿨다. learning `AiClient`는 판정·되묻기가 함께 쓰는 서킷 `ai`(20건·50%·30초)에서 ai 5xx를 실패로 센다. 그래서 keywords가 긴 미션 하나나 scoring 장애가 scoring과 무관한 LLM 단독 판정·되묻기까지 모든 학생에게 30초 동안 막았다. 또 `M2_CROSS_CHECK_ENABLED=false`(기본)여도 scoring을 불렀다([감사](audit.md) 6.3 A20·B36).
+
+담당자 결정(11/04):
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 플래그 꺼짐 | `M2_CROSS_CHECK_ENABLED=false`면 M2를 부르지 않음. M1은 기존 `M1_CHECK_ENABLED`(기본 false)로만 결정 | 꺼진 기능이 장애 경로가 되지 않게 함. 꺼진 동안 LLM은 판정 마감 33초 전체 사용 |
+| scoring 장애·5xx·시간 초과 | 503 대신 LLM 판정만으로 200, `modelScores.skipped = "SCORING_UNAVAILABLE"`. 남은 시간 1초 미만으로 부르지 못한 경우도 같음 | learning `ai` 서킷에 집계되지 않음(아키텍처 1.3 구간 독립, 1.1 scoring 분리) |
+| scoring 400 등 4xx·계약 밖 응답 | 같은 방식, `skipped = "SCORING_REJECTED"` | 다시 불러도 같은 결과라 판정을 막을 이유가 없음. 장애와 입력 문제를 구분해 운영에서 찾을 수 있게 둘로 나눔 |
+| 표시 위치 | `modelScores` 안에 `skipped` 추가(정상이면 null) | 판정 응답·learning DB에 생략 상태 값이 없었음. learning은 `modelScores`를 해석하지 않고 `judgment.model_scores`(jsonb)에 그대로 저장하므로 migration·learning 코드 변경 없음. 학생 화면 비노출 유지 |
+| learning keywords 제한 | 바꾸지 않음(`AdminMissionController` 100개·각 200자 유지) | 이번 범위 밖. 아래 한계로 남김 |
+
+구현: ai `judgment/service.py`(플래그 꺼짐이면 M2 본문을 만들지 않음, `ScoringUnavailable`을 `retryable`에 따라 `skipped` 값으로 바꾸고 경고 로그), `judgment/models.py`(`CrossCheckSkipped`), 계약 [api-spec 4.2.2](../design/api-spec.md#422-판정-모델-교차-확인-69-2026-11-03)·`contracts/openapi/ai-service.yaml` `ModelScores.skipped`. `ScoringClient`의 응답 분류(5xx·전송 오류 retryable, 그 밖 비-200·계약 밖 응답 not retryable)는 그대로 쓴다. learning 코드 변경 없음.
+
+한계·후속:
+
+- 교차 확인을 켠 상태에서 scoring이 실패하면, 불일치였다면 `HELD(MODEL_DISAGREEMENT)`로 걸렸을 답도 LLM 결과로 확정된다. 생략된 판정을 나중에 다시 확인하지 않는다.
+- scoring 장애가 판정 실패로 드러나지 않는다. ai 경고 로그와 `judgment.model_scores->>'skipped'` 조회로만 보이며 지표·알림은 없다(scoring 자체의 503은 scoring 쪽에서 그대로 보임).
+- keywords가 M2 토큰 한도를 넘는 미션은 판정마다 `SCORING_REJECTED`로 교차 확인이 생략된다. 관리자 화면에는 알리지 않는다. learning 입력 제한을 scoring 한도에 맞출지는 별도 결정이다.
+- 플래그를 끈 동안 M2 점수·불일치 관찰 기록이 쌓이지 않는다. 불일치 경계(임시값) 보정이나 플래그 활성화 판단에 쓸 자료는 켠 기간이나 별도 평가([판정 품질 평가 도구](#판정-품질-평가-도구-199))로 모아야 한다.
+- 로컬 이관 체험 Compose가 scoring을 함께 띄우도록 바꾼 [로컬 플랫폼](local-platform.md) 결정은 그대로 둔다(플래그 꺼짐이면 판정이 scoring을 부르지 않으므로 필수 의존은 아님).
+
+#### 검증 (#305)
+
+- ai pytest: 플래그 꺼짐이면 scoring 미호출·LLM 마감 전체 사용, M2·M1 실패(retryable true/false)와 남은 시간 부족이 `skipped`와 함께 LLM 판정(CORRECT·RETHINK) 유지, HTTP 경로에서 scoring 503·500·시간 초과·400이 200 + `skipped`, 기존 일치·불일치(HELD)·비활성·입력 없음 경로 유지
+- learning: `AiClientTest` 생략 응답 20건 뒤에도 서킷 CLOSED·실패 0건·되묻기 호출 가능, `FeedbackFacadeTest` 생략 판정이 DONE·LLM 모델 버전·`model_scores.skipped`로 저장
+- 루트 계약 테스트: `ModelScores.skipped` enum과 ai `CrossCheckSkipped` 대조
 
 ## 5. 리포트 서술·저녁 질문 (#64)
 

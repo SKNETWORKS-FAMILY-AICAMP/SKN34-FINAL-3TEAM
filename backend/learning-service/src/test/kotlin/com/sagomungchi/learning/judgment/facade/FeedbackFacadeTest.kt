@@ -244,6 +244,30 @@ class FeedbackFacadeTest : PostgresRepositoryTest() {
     }
 
     @Test
+    fun `scoring 실패로 교차 확인을 생략한 판정도 완료로 저장하고 생략 사유를 model_scores에 남김 (#305)`() {
+        val setup = setup("NARRATIVE", grade = 5, elements = listOf("주장"))
+        val scores = """{"m2":null,"m1":null,"skipped":"SCORING_REJECTED"}"""
+        ai.stubFor(
+            post(urlEqualTo("/internal/judgments")).willReturn(
+                okJson(
+                    """{"result":"CORRECT","elements":[{"elementId":"${setup.elements[0]}","quote":"좋아요","verified":true,"satisfied":true}],
+                        "heldReason":null,"trial":true,"versions":{"mission":null,"rubric":null,"model":"gpt-test","prompt":"judge@2"},
+                        "modelScores":$scores}""",
+                ),
+            ),
+        )
+        followupReturns("TELL_MORE", "왜 그렇게 생각했나요?")
+        val answer = narrative(setup.attempt, "쉬는 시간이 길면 좋아요")
+
+        val result = facade.feedback(answer.id)
+
+        assertEquals(ProcessStatus.DONE to JudgmentResult.CORRECT, result.status to result.judgment?.result)
+        val row = judgment(answer.id)
+        assertEquals(listOf("DONE", "gpt-test", null), listOf(row["process_status"], row["model_version"], row["failure_code"]))
+        assertEquals(objectMapper.readTree(scores), objectMapper.readTree(row["model_scores"].toString()))
+    }
+
+    @Test
     fun `기준표에 핵심어가 없으면 빈 목록을 보내고 modelScores가 없으면 model_scores는 NULL`() {
         val setup = setup("NARRATIVE", elements = listOf("주장"))
         judgeReturns("CORRECT", listOf(setup.elements[0] to "좋아요"))

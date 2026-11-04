@@ -4,8 +4,11 @@
 → MODEL_DISAGREEMENT(M2) · LOW_CONFIDENCE(M1).
 앞의 둘은 LLM 호출 전에 확인해 비용을 쓰지 않음. LLM 보류면 scoring을 부르지 않음.
 M2·M1 입력이 있으면 LLM은 판정 마감에서 scoring 몫(scoring_reserve)을 뺀 시각까지만 씀 (P12).
+scoring 실패는 503으로 바꾸지 않고 LLM 판정만 씀(modelScores.skipped). scoring 장애가
+learning의 판정·되묻기 공용 ai 서킷을 열지 않게 하기 위함 (#305, 아키텍처 1.3).
 """
 
+import logging
 import time
 from typing import Any
 
@@ -14,6 +17,7 @@ from app.config import Settings
 from app.errors import ApiError
 from app.judgment import cross_check, extractor, verifier
 from app.judgment.models import (
+    CrossCheckSkipped,
     HeldReason,
     JudgmentElement,
     JudgmentRequest,
@@ -28,7 +32,9 @@ from app.judgment.models import (
 from app.llm.base import LlmClient, LlmUnavailable
 from app.prompt_versions.registry import ActiveVersions
 
-MIN_SCORING_SECONDS = 1.0  # 남은 판정 시간이 이보다 짧으면 scoring을 부르지 않고 실패
+logger = logging.getLogger(__name__)
+
+MIN_SCORING_SECONDS = 1.0  # 남은 판정 시간이 이보다 짧으면 scoring을 부르지 않고 생략
 
 ScoringBodies = tuple[dict[str, Any] | None, dict[str, Any] | None]  # (M2 본문, M1 본문)
 
@@ -100,10 +106,10 @@ class JudgmentService:
         )
 
     def _scoring_bodies(self, request: JudgmentRequest) -> ScoringBodies | None:
-        """scoring에 보낼 M2·M1 본문. scoring 미연결이거나 부를 입력이 없으면 None."""
+        """scoring에 보낼 M2·M1 본문. scoring 미연결·교차 확인 꺼짐·부를 입력 없음이면 None."""
         if self._scoring is None:
             return None
-        m2_body = cross_check.m2_body(request)
+        m2_body = cross_check.m2_body(request) if self._settings.m2_cross_check_enabled else None
         m1_body = cross_check.m1_body(request) if self._settings.m1_check_enabled else None
         if m2_body is None and m1_body is None:
             return None
@@ -112,7 +118,7 @@ class JudgmentService:
     async def _model_scores(
         self, bodies: ScoringBodies, result: JudgmentResult, deadline: float
     ) -> ModelScores | None:
-        """M2(서술·논술)·M1(풀이 단계) 활성 결과. 비활성이면 None."""
+        """M2(서술·논술)·M1(풀이 단계) 활성 결과. 비활성이면 None, 실패면 skipped만 채움."""
         assert self._scoring is not None
         m2_body, m1_body = bodies
         timeout = min(self._settings.scoring_timeout, deadline - time.monotonic())
@@ -138,9 +144,12 @@ class JudgmentService:
                 )
             m1 = await self._scoring.m1_check(m1_body or {}, timeout)
         except ScoringUnavailable as exc:
-            raise ApiError(
-                503, "SCORING_UNAVAILABLE", "채점 모델 처리 실패", retryable=exc.retryable
-            ) from exc
+            # 장애·5xx·시간 초과는 UNAVAILABLE, 4xx(입력 한도 초과 등)·계약 밖 응답은 REJECTED
+            skipped: CrossCheckSkipped = (
+                "SCORING_UNAVAILABLE" if exc.retryable else "SCORING_REJECTED"
+            )
+            logger.warning("scoring 실패, 교차 확인 생략: skipped=%s", skipped, exc_info=exc)
+            return ModelScores(skipped=skipped)
         if m1 is None:
             return None
         return ModelScores(m1=M1Observation(confidence=m1.confidence, model=m1.model))
