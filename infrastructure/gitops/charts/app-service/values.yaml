@@ -17,6 +17,11 @@ javaAgent:
   image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-java@sha256:2c4f7a70de1f18b6d87e3ec7aea3a66250f70ca96101d8a4128df0fe586880e5
   collectorEndpoint: http://otel-collector.observability.svc.cluster.local:4318
 
+# OTLP trace export to the Collector (#187). Java services use the agent; others read OTEL_* in their SDK setup.
+# Needs networkPolicy.egressToCollector and a trace backend (observability tempo.enabled).
+tracing:
+  enabled: false
+
 serviceAccount:
   create: true
   annotations: {}

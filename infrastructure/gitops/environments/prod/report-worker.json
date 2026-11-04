@@ -204,7 +204,8 @@
       }
     ],
     "enabled": true,
-    "ingressFromApps": []
+    "ingressFromApps": [],
+    "egressToCollector": true
   },
   "pdb": {
     "enabled": false
@@ -229,5 +230,8 @@
     "automountToken": false,
     "create": false
   },
-  "terminationGracePeriodSeconds": 180
+  "terminationGracePeriodSeconds": 180,
+  "tracing": {
+    "enabled": true
+  }
 }

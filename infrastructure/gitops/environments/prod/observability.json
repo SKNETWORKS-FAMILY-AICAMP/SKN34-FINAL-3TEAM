@@ -209,5 +209,14 @@
         "effect": "NoSchedule"
       }
     ]
+  },
+  "tempo": {
+    "enabled": true,
+    "retention": "72h",
+    "persistence": {
+      "enabled": true,
+      "storageClassName": "gp3",
+      "size": "2Gi"
+    }
   }
 }

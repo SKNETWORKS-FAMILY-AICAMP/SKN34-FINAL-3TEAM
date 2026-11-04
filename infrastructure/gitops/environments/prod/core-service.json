@@ -418,5 +418,8 @@
     "port": 8080,
     "targetPort": 8080
   },
-  "terminationGracePeriodSeconds": 180
+  "terminationGracePeriodSeconds": 180,
+  "tracing": {
+    "enabled": true
+  }
 }
