@@ -171,6 +171,13 @@
       "inline": {
         "sagomungchi-demo-scoring-s3-read": "iam/scoring-s3-role.inline.scoring-s3-read.json"
       }
+    },
+    {
+      "name": "sagomungchi-demo-github-cd-publish",
+      "trust": "iam/github-cd-publish-role.trust.json",
+      "inline": {
+        "ecr-push": "iam/github-cd-publish-role.inline.ecr-push.json"
+      }
     }
   ],
   "eks": {

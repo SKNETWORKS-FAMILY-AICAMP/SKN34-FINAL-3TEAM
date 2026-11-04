@@ -39,7 +39,7 @@ aws iam put-role-policy --profile $profile --role-name sagomungchi-demo-github-c
   --policy-name ecr-push --policy-document file://infrastructure/aws/iam/github-cd-publish-role.inline.ecr-push.json
 ```
 
-만든 뒤 `infrastructure/aws/demo-stack.json`의 IAM 목록에 이 역할을 추가해 `demo_stack.py plan` 대조 대상에 넣는다.
+2026-11-04 적용 완료: OIDC 제공자와 역할(인라인 `ecr-push`)을 만들었고, 역할은 `infrastructure/aws/demo-stack.json`에 넣어 `demo_stack.py plan` 대조 대상이다(OK=58). OIDC 제공자는 `demo_stack.py`가 관리하지 않으므로 빈 계정에서 다시 만들 때는 위 명령으로 제공자를 먼저 만든다.
 
 ### B. GitHub 저장소 설정 (관리자)
 
@@ -50,7 +50,7 @@ aws iam put-role-policy --profile $profile --role-name sagomungchi-demo-github-c
 | Repository 변수 | `CD_AWS_ROLE_ARN` = `arn:aws:iam::347161580747:role/sagomungchi-demo-github-cd-publish`, `CD_AWS_REGION` = `ap-northeast-2`, `CD_ECR_REGISTRY` = `347161580747.dkr.ecr.ap-northeast-2.amazonaws.com` |
 | Settings → Actions → General | Fork pull request workflows: 외부 기여자 승인 필요 |
 
-설정 후 `policy.json`의 `environmentProtectionVerified`를 true로 바꾸는 PR을 올린다.
+2026-11-04 적용 완료(위 표 그대로, 외부 기여자 승인은 `all_external_contributors`). `policy.json`의 `environmentProtectionVerified`는 E단계 PR에서 true로 바꾼다.
 
 ### C. 작업자 PC self-hosted runner
 
