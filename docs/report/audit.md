@@ -207,7 +207,7 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 5회차와 같�
 | D27 | 문서 간 | FN-ACC-11 "다른 연결 계정 권한 영향 확인"이 P02(학생당 보호자 1명)·V26 부분 UK와 모순 | #309 해결: FN-ACC-11 예외 처리를 "해제·삭제 후 그 자녀를 볼 다른 학부모 없음 안내, 넘기려면 이관, 이관 대기 중 해제·삭제 불가"로 정정. FN-ACC-12에 탈퇴 전 이관·대기 중 탈퇴 차단 추가 |
 | D28 | 문서 간 | `docs/README.md` 색인에 `issue-228-m2-model-compat.md` 없음, issue-168 항목에 #251 절 미언급 | 이슈 #316 (README 색인 부분은 문서 정리로 해소) |
 | D29 | 문서 간 | 이 문서의 낡은 상태 표기(#93·#97·A6·B17·5회차 발행 이슈) | 원장에 최종 상태로 반영 |
-| A21 | 아키텍처(낮음) | core `_common/web/IdempotencyService.kt:62-66` `IdempotencyCleanup`의 `@Scheduled`가 scheduler 패키지 밖(2.1). #278 예외는 `_common/messaging`만. 만료 행 DELETE라 레플리카 중복 실행은 안전 | 이슈 #314 |
+| A21 | 아키텍처(낮음) | core `_common/web/IdempotencyService.kt:62-66` `IdempotencyCleanup`의 `@Scheduled`가 scheduler 패키지 밖(2.1). #278 예외는 `_common/messaging`만. 만료 행 DELETE라 레플리카 중복 실행은 안전 | #314 해결: `_common/scheduler/IdempotencyCleanupScheduler`로 이동, 삭제는 `IdempotencyService.deleteExpired` 유지(설정 키·주기 동일, `_common` 예외 목록 추가 안 함) |
 
 발행 이슈와 담당자(관련 기존 이슈 담당자):
 
