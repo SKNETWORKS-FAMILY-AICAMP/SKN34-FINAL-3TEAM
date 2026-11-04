@@ -8,6 +8,7 @@ import type { Scope } from '../../domain/parent.ts'
 import { metricText } from '../../domain/parent.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { Modal } from '../shared/ClassroomParts.tsx'
+import { EntitlementSummary } from './EntitlementSummary.tsx'
 
 const shortDate = (iso?: string) => (iso ? iso.slice(5, 10).replace('-', '.') : '-')
 const stateText = {
@@ -261,11 +262,7 @@ function ReportCard({ child }: { child: Child }) {
           </span>
         </div>
       )}
-      <p>
-        {child.plan === 'FREE'
-          ? '무료 이용권에서는 리포트 수치만 제공합니다. 요약 문장과 근거 인용은 프리미엄에서 볼 수 있습니다.'
-          : child.plan === 'PREMIUM' ? '수치와 요약, 근거가 된 답변 인용을 함께 볼 수 있습니다.' : '이용권 정보를 확인하지 못했습니다.'}
-      </p>
+      <EntitlementSummary childId={child.id} report />
       <div className="pd-actions">
         <button type="button" className="cj-primary" onClick={() => go('/parent/report')}>
           리포트 열기

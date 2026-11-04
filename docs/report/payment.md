@@ -47,6 +47,7 @@
 - `ProductEntitlementService.forParent(parent,student)`: 현재 연결/동의 검사 후 product/features/limits, 구독 상태, autoRenew, periodEnd, graceUntil, refundPending, conversationEnabled, narrativeEnabled 제공. 유효 구독은 당시 snapshot 사용, 유예 동안 권한 유지. 미확정 갱신의 기간 만료를 임의 무료 전환으로 숨기지 않음
 - `PaymentAnalysisEntitlementProvider`: #41 포트의 productId/dailyConversations/validUntil/conversationEnabled 공급. validUntil은 실제 KST 09시 경계. recordAttempt는 입장 트랜잭션에서 같은 parent 잠금으로 기록(재시도·실패 포함). 일별 사용 집계 저장은 `payment_premium_usage`([core-gateway](core-gateway.md#분석-대화-사용량-db-이관-구현-225))
 - ReportEntitlementService: 과거 리포트에도 현재 권한 적용(10/28 사용자 확정). 무료 상세의 narrative/eveningQuestion은 null, 수치 유지. 기존 유료 파일은 현재 권한이 없으면 403 `REPORT_PREMIUM_REQUIRED`, 수치 전용 파일은 무료에서도 허용. URL 반환 직전 parent 잠금에서 권한과 사용 기록을 함께 확정
+- 학부모 이용권 표시: `GET /api/v1/children/{childId}/entitlement`가 `forParent` 결과를 `Cache-Control: no-store`로 반환. 기본 무료 상품 미설정은 503 `PAYMENT_FREE_PRODUCT_UNAVAILABLE`, 구독이 없다는 이유로 임의 상품을 고르지 않음. 학부모 사이드바·대시보드 리포트 안내는 이 API의 상품명·한도·`narrativeEnabled`를 쓰고 `/children`의 목업 `plan`은 근거로 쓰지 않음. 자녀별 캐시 키, 오류는 이전 안내 대신 재시도 가능한 오류로 표시
 
 ## 6. PG 검증·운영 입력
 

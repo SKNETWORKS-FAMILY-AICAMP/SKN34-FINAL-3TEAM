@@ -1189,6 +1189,35 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
       security: []
+  /children/{childId}/entitlement:
+    get:
+      operationId: getChildEntitlement
+      tags:
+      - Payment
+      summary: 연결 자녀의 실제 상품·구독 이용권 조회 (Cache-Control no-store)
+      parameters:
+      - {name: childId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: 성공. 구독이 없으면 기본 무료 상품
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChildEntitlement'}
+        '401':
+          description: 인증 필요
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '403':
+          description: 학부모가 아니거나 연결되지 않은 자녀
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '503':
+          description: PAYMENT_FREE_PRODUCT_UNAVAILABLE 등 상품·구독 확인 불가. 임의 무료 값으로 대체하지 않는다
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
   /orders:
     post:
       operationId: createPaymentOrder
@@ -7932,6 +7961,20 @@ components:
         received:
           type: boolean
       additionalProperties: false
+    ChildEntitlement:
+      type: object
+      required: [childId, product, subscriptionId, status, autoRenew, periodEnd, graceUntil, refundPending, conversationEnabled, narrativeEnabled]
+      properties:
+        childId: {type: string, format: uuid}
+        product: {$ref: '#/components/schemas/PaymentProduct'}
+        subscriptionId: {type: [string, 'null'], format: uuid}
+        status: {type: string, description: 구독 상태. 구독이 없으면 FREE}
+        autoRenew: {type: boolean}
+        periodEnd: {type: [string, 'null'], format: date}
+        graceUntil: {type: [string, 'null'], format: date}
+        refundPending: {type: boolean}
+        conversationEnabled: {type: boolean}
+        narrativeEnabled: {type: boolean}
     PaymentProducts:
       type: object
       required:
