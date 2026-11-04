@@ -41,6 +41,12 @@ export function setMockScenario(value: DemoScenario) {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('sagomungchi:mock-invalidate'))
 }
 const issueToken = () => (token = `msw-access-${++serial}`)
+/** 잠기지 않은 세션의 refresh 회전. 실제 쿠키/보안 속성 검증은 백엔드 통합 대상이며 목은 로그인 상태만 모사한다. */
+function refreshUnlocked() {
+  if (scenario === 'refresh-fail' || !store.snapshot().session || mockRole === 'STUDENT')
+    throw new ApiError({ status: 401, code: 'UNAUTHENTICATED', title: '다시 로그인해 주세요.' })
+  return { accessToken: issueToken(), role: mockRole }
+}
 /** 기기 PIN 로그인 성공 시 학생 세션을 연다. 학부모 로그인 없이 기기 소유 학부모의 자녀 목록을 쓴다. */
 export function startDeviceStudentSession(selected: Child, ownerChildren: Child[]) {
   store.restoreSnapshot({
@@ -156,18 +162,16 @@ export const studentHandlers = [
   ),
   http.post('/api/v1/auth/refresh', () =>
     respond(async () => {
-      // 실제 쿠키/보안 속성 검증은 백엔드 통합 대상. 목은 로그인 상태만 모사한다.
       // 동석 진입으로 잠긴 학부모 세션은 refresh로 풀리지 않는다 (core PARENT_SESSION_LOCKED).
       if (parentSessionLocked())
         throw new ApiError({ status: 401, code: 'PARENT_SESSION_LOCKED', title: '보호자 비밀번호로 돌아와 주세요.' })
-      if (scenario === 'refresh-fail' || !store.snapshot().session || mockRole === 'STUDENT')
-        throw new ApiError({ status: 401, code: 'UNAUTHENTICATED', title: '다시 로그인해 주세요.' })
-      return { accessToken: issueToken(), role: mockRole }
+      return refreshUnlocked()
     }),
   ),
   http.post('/api/v1/auth/parent-unlock', ({ request }) =>
     respond(async () => {
-      if (!parentSessionLocked()) throw new ApiError({ status: 401, code: 'UNAUTHENTICATED', title: '다시 로그인해 주세요.' })
+      // core와 같이 잠기지 않은 세션은 비밀번호를 확인하지 않고 refresh와 같이 처리한다 (#310).
+      if (!parentSessionLocked()) return refreshUnlocked()
       const data = (await request.json()) as { password?: unknown }
       const result = attemptGuardianPassword(typeof data.password === 'string' ? data.password : '')
       if (result.code)

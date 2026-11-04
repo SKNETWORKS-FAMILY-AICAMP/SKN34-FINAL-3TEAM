@@ -228,7 +228,7 @@
 | POST | `/auth/student-sessions` | 학부모 | 학생 진입(동석): `{childId}` 연결 자녀 확인 후 별도 학생 세션(`STUDENT` 토큰) 발급, 학부모 세션은 잠금(refresh 쿠키 유지). 시연 링크·URL 식별값 진입 없음 (P01, 5.1) | ACC-05 | 제안 |
 | POST | `/auth/parent-unlock` | 쿠키 | 학생 화면 → 학부모 화면 복귀: `{password}` 보호자 비밀번호 확인 후 잠긴 학부모 세션 해제, 그 세션에서 들어간 학생 세션 폐기, refresh 응답과 같은 형식 + 회전 쿠키 (5.1) | ACC-05 | 제안 |
 | GET | `/me/guardian-password` | 학부모 | 보호자 비밀번호 상태 `{set, locked, updatedAt}`. 값·해시는 반환하지 않음 | ACC-05 | 제안 |
-| PUT | `/me/guardian-password` | 학부모 | 보호자 비밀번호 설정·변경 `{password}` (`X-Reauth-Token`, 숫자 4~6자리·반복/연속 불가, PIN과 같은 규칙). 실패 횟수·잠금 해제 | ACC-05, ACC-10 | 제안 |
+| PUT | `/me/guardian-password` | 학부모 | 보호자 비밀번호 설정·변경 `{password}` (`X-Reauth-Token`, 숫자 4~6자리·반복/연속 불가, PIN과 같은 규칙). 실패 횟수·잠금 해제. 학부모가 아니면 입력과 관계없이 403(규칙 검사 422보다 먼저, #310) | ACC-05, ACC-10 | 제안 |
 | POST | `/auth/student/devices` | 공개 | 페어링 코드로 기기 등록 `{pairingCode, label}` → 기기 자격증명 쿠키 발급, 등록 자녀 프로필 반환 (P01, 3.11) | ACC-14 | 제안 |
 | GET | `/auth/student/profiles` | 기기 쿠키 | 이 기기에 등록된 자녀 프로필 `{childId, nickname, pinSet, pinLocked}` (P01, `/children` 확장과 같은 필드명) | ACC-05 | 제안 |
 | POST | `/auth/student/login` | 기기 쿠키 | 학생 진입(단독): `{childId, pin}` → 학생 세션(`STUDENT` 토큰) 발급. refresh 미발급 (P01, 3.11) | ACC-05 | 제안 |

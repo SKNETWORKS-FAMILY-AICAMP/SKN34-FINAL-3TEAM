@@ -101,7 +101,7 @@ sequenceDiagram
 ```
 
 - 자녀는 전원 만 14세 미만으로 간주, GUARDIAN 동의를 항상 필수로 받음 (P01)
-- 다른 보호자의 기존 자녀 연결 없음 (P02). 연결 해제(`unlink`)는 `X-Reauth-Token` 확인 후 처리, `audit_log` 기록 (FN-ACC-10)
+- 다른 보호자의 기존 자녀를 임의로 추가 연결하지 않음 (P02). 보호자 교체는 2.5 탈퇴 전 이관(#289) 수락으로만 하며, 기존 연결을 종료하고 새 연결로 바꿔 자녀당 현재 보호자는 1명이다. 연결 해제(`unlink`)는 `X-Reauth-Token` 확인 후 처리, 이관 대기 중이면 `409 TRANSFER_PENDING`, `audit_log` 기록 (FN-ACC-10)
 
 ### 2.3 자녀 범위 권한 확인 (모든 자녀 대상 API 공통)
 
@@ -151,6 +151,34 @@ sequenceDiagram
   end
   Note over W: 학생 refresh 미발급. 기존 부모 access는 version 불일치, 부모 refresh는 PARENT_SESSION_LOCKED로 거부
   Note over W: 이후 학생 API는 학생 토큰으로 호출. URL 식별값(?student=) 진입 없음
+```
+
+보호자 비밀번호 설정 (학부모 화면 복귀 준비, V24)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web(학부모)
+  participant C as core
+  participant G as Google
+  participant DB as core_db
+
+  W->>C: POST /me/reauth {purpose: GUARDIAN_PASSWORD}
+  C-->>W: 200 {challengeId, authorizationUrl}
+  W->>G: Google 재인증 (팝업)
+  G-->>C: GET /auth/google/reauth/callback → challenge VERIFIED
+  W->>C: POST /me/reauth {challengeId}
+  C-->>W: 200 {reauthToken, expiresAt} (5분·1회용 grant)
+  W->>C: PUT /me/guardian-password {password} + X-Reauth-Token
+  C->>DB: 계정 행 잠금·학부모 세션 확인
+  alt 학부모 아님
+    C-->>W: 403 FORBIDDEN (입력과 관계없이)
+  else 숫자 4~6자리·반복/연속 위반
+    C-->>W: 422 VALIDATION_FAILED (grant 소비 안 함)
+  else
+    C->>DB: grant 소비, guardian_password 해시 저장·실패 횟수·잠금 초기화, audit_log
+    C-->>W: 200 {set: true, locked: false, updatedAt}
+  end
 ```
 
 학부모 화면 복귀 (보호자 비밀번호, 2026-11-03)
@@ -245,6 +273,50 @@ sequenceDiagram
 - PIN 잠금 해제는 학부모 `PUT /children/{childId}/pin`(재확인 필요)으로만 가능
 - 학부모가 기기를 해제하면(`DELETE /student-devices/{deviceId}`) 이후 PIN 로그인은 `401 STUDENT_DEVICE_INVALID`
 - 단독 로그인은 계정 행 잠금 → 기기 유효/등록 자녀 → 현재 연결·활성·동의 → PIN 설정·잠금·일치 순으로 재검사한다. 실패 횟수 커밋 후 401/423 응답한다. 성공은 별도 STUDENT auth_session을 생성하며 부모 세션을 변경하지 않는다. PIN 변경은 계정 잠금 → 현재 자녀 권한 → 학생 잠금 → DB 재인증 consume → PIN 갱신·감사 기록을 한 트랜잭션으로 실행한다.
+
+### 2.5 탈퇴 전 자녀 이관 (#289)
+
+보내는 학부모가 탈퇴하기 전에 자녀를 다른 학부모에게 넘기는 흐름이다. 받는 학부모가 보호자 동의·본인 확인 후 수락해야 연결이 바뀌며, 그 전에는 받는 학부모가 기록에 접근할 수 없다. 상태 전이는 [상태 다이어그램 2.4](state-diagram.md#24-guardian_transferstatus-289-탈퇴-전-자녀-이관)를 따른다.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant S as Web(보내는 학부모)
+  participant R as Web(받는 학부모)
+  participant C as core
+  participant DB as core_db
+
+  S->>C: POST /guardian-transfers/recipient {email}
+  C-->>S: 200 받는 학부모 확인 (없음·본인·한도 초과 안내)
+  S->>C: POST /me/reauth {purpose: CHILD_TRANSFER, childId} → Google 재인증 → {challengeId}로 reauthToken 수령
+  S->>C: POST /guardian-transfers {childId, recipientId, includeConversations} + X-Reauth-Token
+  C->>DB: 두 계정 잠금 → 학생 잠금, ACTIVE·필수 동의·현재 연결·받는 쪽 3명 미만·탈퇴 가능 상태 확인
+  alt 같은 자녀에 다른 대기 요청
+    C-->>S: 409 TRANSFER_PENDING
+  else
+    C->>DB: grant 소비, guardian_transfer(PENDING), audit_log
+    C-->>S: 200 요청 (PENDING)
+  end
+  R->>C: GET /guardian-transfers (받은·보낸 요청)
+  R->>C: POST /me/reauth {purpose: TRANSFER_ACCEPT} → Google 재인증 → {challengeId}로 reauthToken 수령
+  R->>C: POST /guardian-transfers/{id}/accept {consents} + X-Reauth-Token
+  rect rgba(128,128,128,0.12)
+    C->>DB: 두 계정 → 학생 → 요청 행 잠금, PENDING·조건 재확인·진행 중 분석 없음 확인
+    C->>DB: grant 소비, 보내는 학부모 guardianship UNLINKED·transferred_at, 받는 학부모 guardianship(TRANSFER, LINKED)
+    C->>DB: 받는 학부모 GUARDIAN 동의 저장 (최신 문서 아니면 전체 롤백)
+    opt includeConversations
+      C->>DB: 보내는 학부모의 그 자녀 분석 대화 소유자 변경
+    end
+    C->>DB: 학생 세션 폐기·등록 기기에서 자녀 제거, guardian_transfer ACCEPTED, audit_log
+  end
+  C-->>R: 200 (ACCEPTED). 받는 학부모 자녀 목록에 표시, 학습·리포트 기록 유지
+  Note over S: 이관 완료 확인 후 탈퇴 절차 재진입. 이관된 자녀·선택 이관 상담은 탈퇴 삭제 대상에서 제외
+```
+
+- 거절은 받는 학부모 `POST /guardian-transfers/{id}/reject`, 취소는 보내는 학부모 `POST /guardian-transfers/{id}/cancel`로 `REJECTED`·`CANCELLED`가 된다. 이미 처리된 요청은 `409 TRANSFER_ALREADY_RESOLVED`
+- 대기 요청이 있으면 보내는 학부모의 탈퇴 요청과 그 자녀의 연결 해제·삭제는 `409 TRANSFER_PENDING`이다. 탈퇴 화면은 "이관 유지" 또는 "이관 취소 후 탈퇴 절차 진행"(`POST /guardian-transfers/cancel-outgoing`)을 고르게 하며, 취소만으로 탈퇴·삭제를 실행하지 않는다
+- 구독·결제·환불의 명의는 바꾸지 않는다. 보내는 학부모의 진행 중 구독·결제·환불이 있으면 요청·수락 모두 막는다. 학부모 전역 리포트 설정은 이전하지 않고, 학생 공개 설정·학습·리포트 기록은 유지한다. 새 학부모는 학생 기기를 다시 등록한다
+- 서버 `APP_GUARDIAN_TRANSFER_ENABLED`·웹 `VITE_GUARDIAN_TRANSFER_ENABLED`로 노출을 제어한다(기본 꺼짐). 상세 범위와 검증은 [이관 구현 기록](../report/guardian-transfer-local.md)
 
 ---
 
