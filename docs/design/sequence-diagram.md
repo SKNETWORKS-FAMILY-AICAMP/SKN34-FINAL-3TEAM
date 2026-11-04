@@ -1075,7 +1075,7 @@ sequenceDiagram
 
 ---
 
-## 11. 미션 초안 생성 (#336, 구현 전)
+## 11. 미션 초안 생성 (#336 설계, learning #353·ai #354 구현, core 프록시 #355 구현 전)
 
 ```mermaid
 sequenceDiagram
@@ -1093,13 +1093,13 @@ sequenceDiagram
   AW->>C: POST /admin/mission-drafts {standardCodes, achievementLevels, thinkingType, grade, inputType}
   C->>C: CONTENT 권한, 요청 감사
   C->>L: POST /internal/admin/mission-drafts
-  L->>LDB: 성취기준 실재 확인 → mission_draft GENERATING (attempts 0)
+  L->>LDB: 성취기준 실재·학년군 확인 → mission_draft GENERATING (attempts 0)
   L-->>AW: 202 MissionDraft (core 경유, 결과 감사)
 
   loop MissionDraftScheduler 주기 (기준안 10초)
     L->>LDB: GENERATING·리스 없음/만료 초안 하나 조건부 UPDATE로 점유 (lease 90초)
     L->>A: POST /internal/mission-drafts {성취기준·성취수준 문장, 유형 표준 요소, 학년, 입력 방식, previousFailures}
-    A->>LLM: 구조화 출력 1회 (LlmClient 재시도 규칙, P12)
+    A->>LLM: 구조화 출력 1회 (60초, 재시도 없음, P12 예외 #353)
     A->>A: 필수 항목·질문 길이·정답·금지어 노출 검사
     A-->>L: {draft, checks, versions}
     L->>L: 요소 code 규칙·요소 standardCode·입력 방식 모양 검사
