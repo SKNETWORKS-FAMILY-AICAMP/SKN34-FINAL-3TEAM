@@ -665,6 +665,8 @@ components:
             - QUOTE_MISMATCH
             - TOO_SHORT
             - UNVERIFIED_SCOPE
+            - MODEL_DISAGREEMENT
+            - LOW_CONFIDENCE
           - type: 'null'
         elements:
           items:
