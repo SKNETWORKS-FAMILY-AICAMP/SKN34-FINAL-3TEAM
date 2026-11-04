@@ -42,7 +42,7 @@
 - 러너 [`evaluation/runners/judgment_eval.py`](../../evaluation/runners/judgment_eval.py), 자료 형식 [`evaluation/datasets/judgment/`](../../evaluation/datasets/judgment/README.md). `/internal/judgments`를 그대로 호출하고 테스트는 `tests/test_judgment_eval_runner.py`(대역 LLM)
 - 지표: 결과 QWK(RETHINK<PARTIAL<CORRECT, 사람 결과는 평가자 요소 표시에 서비스 `_result` 규칙 적용), 요소 일치율·kappa, 보류 비율·사유, 인용 불일치 보류 비율. 사람-AI 일치도는 평가자 2명 각각과 비교한 평균이며 HELD는 빼고 따로 셈(FN-JDG-04)
 - 묶음: 전체·범위 키별·미션별(기준 미달 미션은 판정하지 않고 기록, 기능명세 3.5)·미션/요소별 일치율(검증 통과 요소만 충족 표시, NFR-AIQ-01 → `judgeVerified` 결정 근거)
-- 출력: 버전별 요약 JSON(학생 원문 없음), `--baseline`으로 이전 결과와 차이, 모델 레지스트리 `evaluation` 9개 필드(api-spec 5.2)와 범위 키 `judgment/grade-N/<inputType>`
+- 출력: 버전별 요약 JSON(학생 원문 없음, 학년·유형 묶음 키 `judgment/grade-N/<inputType>`), `--baseline`으로 이전 결과와 차이, 모델 레지스트리 `evaluation` 9개 필드(api-spec 5.2). `evaluatedScopes`는 판정 프롬프트 등록·활성화 범위 `ai/judgment`(api-spec 4.2, #313)
 - 정한 값: 계산 정확성은 "해당 없음"(판정은 계산 없음), 학습·평가 분리는 "학습 없는 프롬프트, 평가 답안은 프롬프트에 미포함"으로 기록
 - 남은 일: 실제 평가 자료(P11, 5미션×20답안×평가자 2명) 준비 담당·일정, 평가 미션 범위·QWK 허용 기준(NFR-AIQ-06, 11/22) 확인 후 `judge@2` 실제 기준선 1회 실행·이 절에 결과 추가
 
