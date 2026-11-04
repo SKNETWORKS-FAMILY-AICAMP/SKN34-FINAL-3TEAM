@@ -5,6 +5,11 @@ existingSecret: ""
 # null: use the cluster default StorageClass; "": request no StorageClass.
 storageClassName: null
 
+# Node placement for every workload in this chart (e.g. a dedicated node group).
+scheduling:
+  nodeSelector: {}
+  tolerations: []
+
 postgres:
   enabled: false
   image: "postgres:17.11-alpine"

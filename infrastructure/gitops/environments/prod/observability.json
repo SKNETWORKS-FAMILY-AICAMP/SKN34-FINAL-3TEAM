@@ -67,5 +67,18 @@
       ],
       "discordSecretName": "discord-alert-webhook"
     }
+  },
+  "scheduling": {
+    "nodeSelector": {
+      "workload": "platform"
+    },
+    "tolerations": [
+      {
+        "key": "workload",
+        "operator": "Equal",
+        "value": "platform",
+        "effect": "NoSchedule"
+      }
+    ]
   }
 }

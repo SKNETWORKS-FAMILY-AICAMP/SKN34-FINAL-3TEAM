@@ -57,5 +57,18 @@
       }
     }
   },
-  "storageClassName": "gp3"
+  "storageClassName": "gp3",
+  "scheduling": {
+    "nodeSelector": {
+      "workload": "platform"
+    },
+    "tolerations": [
+      {
+        "key": "workload",
+        "operator": "Equal",
+        "value": "platform",
+        "effect": "NoSchedule"
+      }
+    ]
+  }
 }
