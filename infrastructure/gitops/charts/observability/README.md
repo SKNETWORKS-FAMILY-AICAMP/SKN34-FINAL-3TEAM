@@ -2,7 +2,7 @@
 
 ## EKS 최소 관측 구성 (#185)
 
-`environments/prod/observability.json`은 현재 노드 2대에서 Collector·Prometheus·Grafana를 실행하기 위한 설정이다. SNS·Lambda·Langfuse·새 노드그룹은 추가하지 않는다. 기본 local values의 emptyDir 동작은 유지하며 prod만 Prometheus gp3 4Gi·Grafana gp3 1Gi PVC를 사용한다. PVC에 Helm keep을 적용해 uninstall 시 보존한다. 직접 PVC를 삭제하면 StorageClass Delete 정책으로 EBS가 삭제될 수 있다. 보존 PVC를 재사용할 때는 Helm 소유권을 확인한다.
+`environments/prod/observability.json`은 `platform-observability` 노드그룹(`scheduling`의 nodeSelector·toleration)에서 Collector·Prometheus·Grafana를 실행하기 위한 설정이다. SNS·Lambda·Langfuse는 추가하지 않는다. `scheduling` 기본값은 비어 있어 local 배치는 바뀌지 않는다. 기본 local values의 emptyDir 동작은 유지하며 prod만 Prometheus gp3 4Gi·Grafana gp3 1Gi PVC를 사용한다. PVC에 Helm keep을 적용해 uninstall 시 보존한다. 직접 PVC를 삭제하면 StorageClass Delete 정책으로 EBS가 삭제될 수 있다. 보존 PVC를 재사용할 때는 Helm 소유권을 확인한다.
 
 prod 예약량은 CPU 250m·메모리 544Mi, limit 합계 CPU 1250m·메모리 1152Mi다. Prometheus는 3일·2GB 보존 제한을 함께 사용한다. 보존 한도는 WAL·head의 전체 디스크 사용 상한이 아니며 여유 공간을 따로 확인한다. Grafana와 Prometheus는 PVC의 RWO 사용을 위해 Recreate로 갱신한다. 이 구성은 단일 replica여서 재시작·AZ 장애 시 관측 중단이 가능하다.
 
