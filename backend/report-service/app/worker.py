@@ -6,6 +6,7 @@ import logging
 import signal
 from contextlib import AsyncExitStack
 
+from app import tracing
 from app.clients.ai_client import AiClient
 from app.clients.base import internal_client
 from app.clients.core_client import CoreClient
@@ -159,4 +160,8 @@ async def run(generator=None, *, display_names: DisplayNameProvider | None = Non
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    asyncio.run(run())
+    tracing.configure()
+    try:
+        asyncio.run(run())
+    finally:
+        tracing.shutdown()

@@ -8,6 +8,7 @@ from pamqp.commands import Basic
 
 from app.messaging.connection import AmqpConnection
 from app.outbox.repository import PendingEvent
+from app.tracing import TRACEPARENT
 
 
 class EventPublisher:
@@ -25,12 +26,15 @@ class EventPublisher:
             )
         # Topology belongs to definitions.json, never declare it here.
         exchange = await self._channel.get_exchange("events.topic", ensure=True)
+        # The Java agent on consuming services reads the AMQP header, not the envelope field.
+        traceparent = event.payload.get(TRACEPARENT)
         confirmation = await exchange.publish(
             aio_pika.Message(
                 body=json.dumps(event.payload, ensure_ascii=False).encode("utf-8"),
                 content_type="application/json",
                 message_id=str(event.id),
                 delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+                headers={TRACEPARENT: traceparent} if isinstance(traceparent, str) else None,
             ),
             routing_key=event.routing_key,
             mandatory=True,
