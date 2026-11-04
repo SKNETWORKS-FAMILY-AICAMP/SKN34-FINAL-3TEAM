@@ -56,6 +56,13 @@ class AdminOperationsContracts(unittest.TestCase):
                     for purpose in ('CHILD_TRANSFER','TRANSFER_ACCEPT'):
                         self.assertIn(purpose,purposes)
                         purposes.remove(purpose)
+                # #308 documents existing 409 codes only; request/response schemas stay fingerprinted.
+                transfer_guards={'/children/{childId}/link':'delete',
+                    '/children/{childId}/deletion-requests':'post','/me/withdrawal':'post'}
+                if section=='paths' and name in transfer_guards:
+                    conflict=reviewed[transfer_guards[name]]['responses']['409']
+                    self.assertIn('TRANSFER_PENDING',conflict['description'])
+                    conflict['description']='정책/상태 충돌'
                 # #310 corrects the shared refresh cookie sentence to the V24 behavior (student switch keeps the locked
                 # parent cookie) and lists PARENT_SESSION_LOCKED on /auth/refresh 401. Restore only those approved fields.
                 if section=='paths':
