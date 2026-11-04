@@ -325,4 +325,3 @@ flowchart LR
 
 - 학부모 구독 결제·구독 관리(UC-17·UC-18, #184): `/parent/billing`(이용권·결제)에서 상품 선택 → 토스 결제위젯 결제 → `/payment/success`·`/payment/fail` 결과 확인, 같은 화면의 구독 관리에서 자동결제 수단 등록(`/payment/billing/success`·`/payment/billing/fail`)·자동 갱신 해지·철회·환불 요청. 테스트 키 환경만 사용(P14). 단계별 화면 흐름도는 미반영
 - 이용 동의 화면(`/parent/onboarding`)과 관리자 메뉴 큐·DLQ(`/admin/queues`)는 화면설계서 v2.1에 별도 화면 ID 없음
-- 학생 알림(UC-22)은 학생 고객센터 메뉴에 없음. 학생 알림 노출 여부는 요구사항 확인 필요

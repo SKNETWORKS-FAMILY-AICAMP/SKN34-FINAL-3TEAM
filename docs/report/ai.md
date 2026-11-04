@@ -1,6 +1,4 @@
-# AI (판정·되묻기·분석 대화·모델 레지스트리·M2·리포트 서술)
-
-통합 원본: ai-judgment-followup, analysis-agent, issue-43-model-registry, m2-api-alignment
+# AI (판정·되묻기·분석 대화·모델 레지스트리·M2·교차 확인·리포트 서술)
 
 계약은 [API 명세 4.2·4.3·5.2·4.6](../design/api-spec.md)과 [ai OpenAPI](../../contracts/openapi/ai-service.yaml).
 
@@ -104,15 +102,9 @@ API 변경(`docs/design/api-spec.md` 1장 Evidence·3.3·4.2, `contracts/openapi
 
 구현: `llm/base.py` `LlmClient.stream`(`LlmTextStream`, 제공자 `_stream`은 텍스트 조각 → `StreamEnd(모델·토큰)`), `llm/providers.py` Anthropic `beta.messages.stream`·OpenAI `stream=True`(`include_usage`). core 단절 시 Starlette(ASGI 2.3)가 응답 생성기를 취소 → 그래프·LLM 스트림 중단(`test_cancelled_stream_stops_graph_and_llm`).
 
-#### 분기별 실제 SSE 응답 (2026-10-29)
+#### SSE 응답 예시 (정상 분기, 10/29 실제 LLM)
 
-- 실행: 로컬 `uvicorn app.main:app`(이 브랜치), 실제 LLM `LLM_PROVIDER=openai`·`gpt-6-luna`. learning은 대역(테스트 기록 `records_fixture`와 같은 데이터를 `/internal/records`로 응답, 학생 `s-1` 기록 있음·`s-empty` 기록 없음·`s-nochange` 되묻기 뒤 다시 쓴 시도 없음). 실제 learning·core 연결이 아님
-- 조회 기간 2026-10-20~26. 줄임: delta는 앞 2개와 개수만, `result.metrics`는 label만 표시(실제 응답은 Metric 전체)
-- RabbitMQ 없이 실행해 사용량 이벤트는 발행되지 않음(재시도 로그만, 응답 영향 없음)
-- 참고: 같은 기록 없음 학생에 "이번 주에 몇 번 했어?"를 물으면 실행일(10-29) 기준 이번 주가 골라 둔 기간과 달라 `clarification(DIFFERENT_PERIOD)`로 끝남. 기간을 정하지 않는 질문으로 기록 없음 안내를 수집함
-- 안내 응답(기록 없음·비교 기록 부족·지원하지 않는 질문)의 `verification: null`은 현재 core 검증에서 거부됨 → #67에서 정리
-
-##### 정상 (전후 변화, LLM 답변 대조 통과)
+delta는 앞 2개와 개수만, `result`는 줄여서 표시. 범위 확인·기록 없음·비교 기록 부족·지원하지 않는 질문·돌아보기 분기는 같은 순서에서 `clarification` 또는 규칙 `result`로 끝남.
 
 학생 `s-1`, 질문 "질문을 받고 뭐가 달라졌어?"
 
@@ -138,125 +130,12 @@ event: done
 data: {}
 ```
 
-##### 범위 확인
+### #67·#162 최종 응답 검증
 
-학생 `s-1`, 질문 "지난달에는 몇 번 했어?"
-
-```
-event: status
-data: {"state": "RUNNING", "message": "질문을 확인하는 중"}
-event: clarification
-data: {"reason": "DIFFERENT_PERIOD", "message": "질문한 기간이 골라 둔 조회 기간과 달라요. 어느 기간을 볼지 골라 주세요.", "current": {"childId": "s-1", "from": "2026-10-20", "to": "2026-10-26"}}
-```
-
-##### 기록 없음
-
-학생 `s-empty`, 질문 "몇 번 했어?"
-
-```
-event: status
-data: {"state": "RUNNING", "message": "질문을 확인하는 중"}
-event: status
-data: {"state": "RUNNING", "message": "기록을 조회하는 중"}
-event: status
-data: {"state": "RUNNING", "message": "수치를 계산하는 중"}
-event: result
-data: {"answer": "조회 기간은 2026-10-20부터 2026-10-26까지예요. 이 기간에 답변을 제출한 시도가 없어 분석할 기록이 없어요. 기간을 넓히거나 다른 내용을 물어봐 주세요.", "source": "TEMPLATE", "fallback": null, "scope": {"childId": "s-empty", "from": "2026-10-20", "to": "2026-10-26"}, "metrics": ["학습한 활동", "완료한 활동", "도움 없이 시작한 활동", "되묻기 후 생각을 더한 활동"], "evidence": [], "verification": null, "recordCount": 0, "versions": {"model": "gpt-6-luna", "prompt": "analysis@2"}}
-event: done
-data: {}
-```
-
-##### 비교 기록 부족
-
-학생 `s-nochange`, 질문 "질문을 받고 뭐가 달라졌어?"
-
-```
-event: status
-data: {"state": "RUNNING", "message": "질문을 확인하는 중"}
-event: status
-data: {"state": "RUNNING", "message": "기록을 조회하는 중"}
-event: status
-data: {"state": "RUNNING", "message": "수치를 계산하는 중"}
-event: result
-data: {"answer": "조회 기간은 2026-10-20부터 2026-10-26까지예요. 답변을 제출한 시도 3개 중 되묻기 뒤에 답변을 다시 쓴 시도가 없어 전후를 비교할 수 없어요. 기간을 넓히거나 다른 내용을 물어봐 주세요.", "source": "TEMPLATE", "fallback": null, "scope": {"childId": "s-nochange", "from": "2026-10-20", "to": "2026-10-26"}, "metrics": ["학습한 활동", "되묻기 후 생각을 더한 활동", "글자 수가 늘어난 시도", "문장 수가 늘어난 시도", "까닭을 잇는 말이 늘어난 시도"], "evidence": [], "verification": null, "recordCount": 3, "versions": {"model": "gpt-6-luna", "prompt": "analysis@2"}}
-event: done
-data: {}
-```
-
-##### 지원하지 않는 질문
-
-학생 `s-1`, 질문 "수학 문제 풀이가 맞았는지 점검해 줘"
-
-```
-event: status
-data: {"state": "RUNNING", "message": "질문을 확인하는 중"}
-event: status
-data: {"state": "RUNNING", "message": "기록을 조회하는 중"}
-event: status
-data: {"state": "RUNNING", "message": "수치를 계산하는 중"}
-event: result
-data: {"answer": "수학 풀이 점검은 아직 제공하지 않아요. 조회 기간은 2026-10-20부터 2026-10-26까지예요. 답변을 제출한 시도는 3개예요. 숫자, 생각 유형별 활동, 아이가 쓴 생각, 되묻기 전후 변화, 돌아보기에 대해 물어봐 주세요.", "source": "TEMPLATE", "fallback": null, "scope": {"childId": "s-1", "from": "2026-10-20", "to": "2026-10-26"}, "metrics": ["학습한 활동"], "evidence": [], "verification": null, "recordCount": 3, "versions": {"model": "gpt-6-luna", "prompt": "analysis@2"}}
-event: done
-data: {}
-```
-
-##### 돌아보기
-
-학생 `s-1`, 질문 "돌아보기에 뭐라고 썼어?"
-
-```
-event: status
-data: {"state": "RUNNING", "message": "질문을 확인하는 중"}
-event: status
-data: {"state": "RUNNING", "message": "기록을 조회하는 중"}
-event: status
-data: {"state": "RUNNING", "message": "수치를 계산하는 중"}
-event: status
-data: {"state": "RUNNING", "message": "답변을 쓰는 중"}
-event: delta
-data: {"text": "돌"}
-event: delta
-data: {"text": "아"}
-# … delta 15개 더 (총 17개)
-event: status
-data: {"state": "RUNNING", "message": "숫자와 인용을 기록과 맞춰 보는 중"}
-event: result
-data: {"answer": "돌아보기에는 “근거 찾기가 어려웠어”라고 썼어요.", "source": "LLM", "fallback": null, "scope": {"childId": "s-1", "from": "2026-10-20", "to": "2026-10-26"}, "metrics": ["학습한 활동", "완료한 활동", "돌아보기를 쓴 활동", "난이도 어려웠어 돌아보기"], "evidence": [{"kind": "REFLECTION", "attemptId": "t-1", "missionTitle": "쉬는 시간 토론", "answerId": null, "answerVersion": null, "submittedAt": "2026-10-22T19:30:00+09:00", "quote": "근거 찾기가 어려웠어", "available": true}], "verification": {"numbersMatched": true, "quotesMatched": true, "contentAllowed": true}, "recordCount": 3, "versions": {"model": "gpt-6-luna", "prompt": "analysis@2"}}
-event: done
-data: {}
-```
-
-
-### #67·#41 최종 응답 검증 후속
-
-기준 develop dd8bbc8(PR #158/#145, #159/#66 포함), feature/ai-analysis-verification. 사용자가 기존 AI 검증/모델/템플릿/응답 노드, core 수신·저장·조회, 관련 계약/테스트 및 필요한 프론트 표시 변경을 승인했다. verification.py/templates.py를 재사용하며 이슈의 예정 파일명으로 중복 구현하지 않는다. 최종 응답 검사와 LLM 초안 실패값을 분리하고 notice로 정상 안내를 구분한다. 기존 REPORT 후속 브랜치는 별도 보존한다. 사용자가 돌아보기 참조 및 fallback/notice 저장의 DB 확장도 승인했다. 기존 ANSWER 참조를 유지하고 REFLECTION만 answer_id/version NULL을 허용하며 종류 CHECK를 추가한다. 별도 REPORT 브랜치의 V17과 충돌하지 않도록 V18을 사용한다. 구현·테스트를 마친 뒤 일괄 검증한다.
-
-배포 순서: 별도 REPORT 브랜치의 V17을 먼저 통합·적용한 뒤 이 브랜치의 V18을 적용한다. V18을 먼저 적용한 환경에 나중에 낮은 번호 V17을 투입하는 방식은 사용하지 않는다. 최종 통합에서 두 migration의 공존을 검증한다. 기존 migration checksum은 유지한다. 최종 응답 검증 실패는 result 없이 error로 전달하며 기존 core의 수동 재시도/사용량 제한 정책을 유지한다.
-
-V18의 kind는 임시 DEFAULT로 기존 행을 ANSWER로 채운 뒤 DEFAULT를 제거한다. 저장소의 DB 기본값 없음 규칙을 유지하며 새 쓰기는 core가 kind를 명시한다. verifier는 허용된 숫자 값·인용 원문·금지 표현을 검사한다. 자연어 문장 전체의 의미 정합성을 증명하거나 실제 모델 품질 향상을 측정한 것은 아니다.
-
-#### #67·#162 최종 검증 (2026-10-30)
-
-#67은 AI 최종 verification·fallback.draftVerification·notice 생산을, #162는 core 수신·저장·근거 조회·DB·프론트·HTTP 연결을 담당한다. #47 관리자 기능은 별도 브랜치에서 진행한다.
-
-사용자의 명시적 승인 후 InternalRestClientFactory에 선택적인 HTTP 버전 인자를 추가하고 AiClient 분석 스트림만 HTTP/1.1로 지정했다. 다른 서비스는 인자를 생략하므로 기존 JDK 기본 동작·토큰·타임아웃·재시도 정책을 유지한다. 실제 HTTP 테스트에서 AI 요청의 Upgrade·HTTP2-Settings 헤더 부재를 확인했다.
-
-인계받은 최종 검증 산출물 기준:
-
-- AI: pytest 226개, Ruff check/format 통과.
-- core: HTTP/1.1 적용 후 전체 52클래스 333개 test, 실패·오류·생략 0, bootJar 통과.
-- 프론트: test 114개, lint/build 통과.
-- DB: 전체 migration cycle에서 core 42테이블/393컬럼, learning 19/160, report 8/56 대조. 63개 위반 입력, 75 CHECK 집합, 23 인덱스, 재적용 이력, report downgrade/upgrade 통과. V16 기존 답변 근거에 V18을 적용해 answerId/version 보존·kind=ANSWER·fallback/notice null·영구 기본값 없음을 확인했다. 별도 DB에서 REPORT V17→분석 V18 공존 검사도 통과했다.
-- 실제 core→AI 그래프→learning 연결 9개 시나리오: 정상, 숫자/인용 불일치, 키 미설정, 기록 없음, 지원 외, 돌아보기, 범위 확인, 조회 장애 후 재시도 통과. 추가로 스트림 연결 해제 시 FAILED 및 부분 답변 미저장, 다른 자녀 403, 인증 없음 401을 확인했다.
-- 브라우저: 규칙 응답 두 종류·지원 외 안내·돌아보기 근거·기록 없음 5개 시나리오, 실제 API 응답 28건, pageerror 0. 프론트 MSW 대역은 사용하지 않았다.
-
-LLM은 테스트 dependency override 또는 실제 키 미설정 분기다. 실제 외부 유료 LLM 호출·모델 품질·배포·원격 CI 검증이 아니다. 자동 테스트와 연동 통과를 자연어 전체 의미의 정합성이나 모델 품질 향상으로 해석하지 않는다. 검증 로그·XML·실제 SSE 응답·브라우저 결과는 로컬 issue67-verification에 보존했다.
-
-인계 후 마지막 스키마 보완을 포함해 `python -O -m unittest discover -s scripts/tests -v` 79개가 통과했다. core/AI OpenAPI 표준 검사와 `scripts/validate_analysis_contracts.py`의 실제 SSE 최종 응답 8종 검사도 통과했다. 최종 `git diff --check`를 확인했다. 실행 코드 변경 없이 보고서만 최신 결과로 정리했으므로 이미 통과한 AI·core·프론트·DB·브라우저 검증은 반복하지 않았다. 최종 파일의 SHA-256 목록은 로컬 검증 산출물에 갱신했다.
-
-최신 origin/develop 640e0a2와 대조했다. 추가된 #146은 learning 신고 지원 조회·피드백 판정 ID 범위이며 이번 실행 코드 변경과 겹치지 않는다. 이 작업은 검증한 develop dd8bbc8 기반을 유지한다. REPORT V17을 먼저 통합·적용한 뒤 분석 V18을 적용하는 순서는 유지한다. PR의 base는 develop이며 PR은 사용자가 생성한다.
-
-#47·#67·#162의 최신 develop 통합·관리자 실행·추가 브라우저 검증 결과는 [관리자 운영 통합 최종 검증](issue-47-admin-operations.md#통합-최종-검증)을 따른다. 이 절 이전의 dd8bbc8 결과는 기능 브랜치 검증 이력이다.
+- 최종 응답 검사와 LLM 초안 실패값을 분리하고 notice로 정상 안내를 구분(`verification.py`/`templates.py` 재사용). 최종 응답 검증 실패는 result 없이 error로 전달하며 core의 수동 재시도·사용량 정책 유지
+- 돌아보기 참조·fallback/notice 저장을 위해 core V18: 기존 ANSWER 참조 유지, REFLECTION만 answer_id/version NULL 허용, 종류 CHECK. kind는 임시 DEFAULT로 기존 행을 ANSWER로 채운 뒤 DEFAULT 제거(새 쓰기는 core가 kind 명시)
+- verifier는 허용된 숫자 값·인용 원문·금지 표현을 검사. 자연어 문장 전체의 의미 정합성을 증명하지는 않음
+- core `AiClient` 분석 스트림만 HTTP/1.1 고정(InternalRestClientFactory에 선택적 HTTP 버전 인자)
 
 ## 3. 모델 레지스트리·AI 사용량 (#43)
 
@@ -266,16 +145,16 @@ LLM은 테스트 dependency override 또는 실제 키 미설정 분기다. 실�
 - 사용량 조회: KST 양 끝 포함 최대 366일(사용자 결정), 범위 밖은 DB 조회 전 400. 미산정 비용이 섞이면 `costUsd` null + `unpricedCalls`
 - scope 배열의 null 요소는 Kotlin 제네릭만으로 차단되지 않아 명시적으로 422
 - 기존 NULL 평가 행은 목록에 null로 남기고 활성화·복귀는 422, 불완전한 기존 ACTIVE는 내부 snapshot에서 503 `MODEL_VERSION_STATE_INVALID`
-- scoring은 #86에서 Pod별 큐 바인딩 → snapshot 조회 → 더 높은 revision 적용·재연결을 구현했다. ai 소비 흐름은 #68에서 구현했다(7장). [scoring #86 검증](issue-86-scoring-model-events.md)을 참고한다.
+- scoring은 #86에서 Pod별 큐 바인딩 → snapshot 조회 → 더 높은 revision 적용·재연결을 구현했다. ai 소비 흐름은 #68에서 구현했다(7장). [scoring #86 검증](scoring.md#2-활성-버전-이벤트롤백-86)을 참고한다.
 
 ## 4. M2 모델과 API 정렬 (#4)
 
-2026-11-02 #228: 서술 3.0(9출력)·논술 3.1(14출력 중 앞 3영역)을 적용한다. 담당자 답변에 따라 논술도 `scores`(0~3 정수)와 `rawScores`(소수 원점수)를 함께 반환한다. [API 4.3](../design/api-spec.md#43-scoring-service-호출-ai), [#228 구현·검증](issue-228-m2-model-compat.md)이 현재 계약이며 [#87](issue-87-scoring-m2.md)의 2.0 결과는 과거 검증 이력이다.
+2026-11-02 #228: 서술 3.0(9출력)·논술 3.1(14출력 중 앞 3영역)을 적용한다. 담당자 답변에 따라 논술도 `scores`(0~3 정수)와 `rawScores`(소수 원점수)를 함께 반환한다. [API 4.3](../design/api-spec.md#43-scoring-service-호출-ai), [#228 구현·검증](ai.md#41-서술-30논술-31-서비스-호환-228)이 현재 계약이며 [#87](scoring.md#3-m2-채점-api-87)의 2.0 결과는 과거 검증 이력이다.
 
 - 서술 활성 학년은 초5·6, 논술은 초4·5·6. 서술 학습 데이터는 초5~중3이지만 서비스 범위를 중학생까지 확장하지 않는다.
 - 새 모델 입력에서 지시문 제외. 서술 `[학년] 초N [핵심어] ...`(쉼표+공백), 논술 `[학년] 초N [글 종류] ...`와 학생 글을 사용한다.
 - 서술은 기존 9항목 scores(hol 1~4, 그 외 1~5)·rawScores, 논술은 org·cont·exp의 scores(0~3)·rawScores. 원점수는 반올림·범위 자르기를 하지 않는다. 임시 score_cuts는 모델 담당자 제공값만 사용하며 경계 변경 시 재검증한다.
-- 2026-11-03 사용자가 전달한 담당자 후속 답변에서도 논술 3.1과 기존 score_cuts.json 유지가 확정됐다. 경계는 임시이며 담당자의 변경 통지 시 교체·재검증한다. PR #261의 두 JSON 파일 자동 저장은 담당자가 실제 학습에서도 확인했다고 보고했다([#228 후속 확인 기록](issue-228-m2-model-compat.md#담당자-후속-확인-2026-11-03-사용자-전달)). 화면 표시와 #69 판정 소비는 별도다.
+- 2026-11-03 사용자가 전달한 담당자 후속 답변에서도 논술 3.1과 기존 score_cuts.json 유지가 확정됐다. 경계는 임시이며 담당자의 변경 통지 시 교체·재검증한다. PR #261의 두 JSON 파일 자동 저장은 담당자가 실제 학습에서도 확인했다고 보고했다(4.1). 화면 표시와 #69 판정 소비는 별도다.
 - 모델 버전 규칙: `uq_model_version_active`가 `(kind, name)` 단위라 서술·논술 모델을 `name`으로 분리
 
   | 항목 | 규칙 |
@@ -285,7 +164,75 @@ LLM은 테스트 dependency override 또는 실제 키 미설정 분기다. 실�
   | artifact_uri | `s3://<버킷>/models/{name}/{version}/` |
   | 활성화 | 두 모델을 따로 활성화·롤백 |
 
-- 미정: 논술 답변 `essay{claim, reasons[], rebuttal}`을 scoring 입력 `text`로 합치는 규칙(scoring 연동 전 결정)
+- 논술 답변 `essay{claim, reasons[], rebuttal}`을 scoring 입력 `text`로 합치는 규칙은 api-spec 4.2.2의 `answerText` 기준
+
+### 4.1 서술 3.0·논술 3.1 서비스 호환 (#228)
+
+기존 scoring은 두 입력 유형을 모두 9출력으로 해석해 논술 3.1의 14출력을 로딩하지 못했음. 담당자 답변: 서술 3.0·논술 3.1, 논술 14개 중 앞 3개만 사용, 소수와 변환 정수를 함께 전달. 11/03 후속 답변으로 논술 3.1과 기존 score_cuts.json 유지 확정, `train_545.py`의 score_cuts.json·train_info.json 자동 저장도 담당자 실제 학습에서 확인([PR #261](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/pull/261)).
+
+| 항목 | 서술 3.0 | 논술 3.1 |
+|---|---|---|
+| 이름 | m2-klue-narrative | m2-klue-essay |
+| 모델 출력 | 9 | 14 (앞 3개만 사용) |
+| 첫 문장 | `[학년] 초N [핵심어] ` + 쉼표·공백으로 연결한 핵심어 | `[학년] 초N [글 종류] {essayType}` |
+| 두 번째 문장 | 학생 text | 학생 text |
+| 활성 학년 | 5·6 | 4·5·6 |
+| 응답 키 | hol·task_1·content_1~3·organization_1~2·expression_1~2 | org·cont·exp (구성·내용·표현) |
+| scores | 경계 bisect_right + 1; hol 1~4, 나머지 1~5 | 경계 bisect_right; 0~3, +1 없음 |
+| rawScores | 유한 소수 원점수 그대로 | 유한 소수 원점수 그대로; 임의 반올림·범위 자르기 없음 |
+
+- ESSAY 요청은 essayType(설명글·글짓기·주장·찬성반대·대안제시) 필수, 누락·잘못된 값은 400. prompt는 기존 필드로 유지하되 새 모델 입력에서 제외
+- 이전 2.0 메타데이터는 기존 지시문 입력·9항목 반환 경로로 처리, 이전 논술 모델은 4학년을 승인했더라도 비활성
+- 산출물 6개 파일(config.json, model.safetensors, tokenizer.json, tokenizer_config.json, train_info.json, score_cuts.json). 원본 tar의 논술 score_cuts 누락은 담당자가 별도로 준 값으로 보완: `{"org":[0.5,2.15,2.55],"cont":[0.5,2.15,2.5],"exp":[0.5,2.1,2.55]}`. 학습 주제 검증 글로 정한 **임시 기준**이며 변경 파일을 받으면 해시를 남기고 로딩·점수 변환 재검증
+- 공통 메타데이터 검사(모델 이름·데이터셋·입력 플래그·출력 순서·출력 수·최대 길이·경계 키/개수/유한성/정렬)를 로딩·추론에서 동일하게 사용. 잘못된 체크포인트는 활성 snapshot에 넣지 않음
+- 지원하지 않는 학년·미승인 scope·서술 핵심어 없음은 비활성, 추론 장애는 503. 비활성에서 추론·사용량 이벤트를 만들지 않음
+- 실제 MinIO·core·scoring 검증: 두 모델 12개 파일 업로드·등록·활성화·로딩, 서술 5·6·논술 4·5·6 `active:true`, 응답 rawScores에 파일 경계를 적용한 값이 scores와 일치
+
+```powershell
+docker build -t local/scoring228:<tag> backend/scoring-service
+uv run --frozen python ../../scripts/verify_scoring_m2.py --archive <m2_models.tar> --core-root <최신 core 저장소> --output <외부 결과 폴더> --image local/scoring228:<tag> --new-models --essay-cuts <담당자 score_cuts.json>
+```
+
+### 4.2 서술 content_3 선택 보정 (기본 꺼짐)
+
+서술 적절성 점수에 핵심어 포함 비율을 결합하는 후보 규칙. 기준 자료는 M2 담당 제공 `content3_rule_1103.json`·`content3_rule_1103.py`(11/03 v1.0.0). 계수 `(w0, w_model, w_ratio) = (0.9724, 0.197, 2.8891)`은 코드에 고정하며 계수·규칙을 바꾸면 규칙 버전도 올리고 재검증.
+
+- `M2_CONTENT3_RULE_ENABLED=true`이면서 활성 모델이 정확히 `m2-klue-narrative@3.0`이고 NARRATIVE 초5·6 승인 scope일 때만 적용. 다른 서술 버전·모든 논술은 기존 계산
+- 계산: `mixed = clip(0.9724 + 0.197 * 모델 content_3 원점수 + 2.8891 * 핵심어 포함 비율, 1, 5)`, `rawScores.content_3 = round(mixed, 4)`, `scores.content_3 = floor(mixed + 0.5)`. 정수는 소수 4자리 반올림 전에 계산(예: 2.49996 → raw 2.5, score 2). 보정된 content_3에 score_cuts를 적용하지 않음
+- 핵심어는 배열 원소 하나당 묶음 하나. 참고 구현은 배열을 연결한 뒤 괄호 밖 쉼표로 묶음을 구분하므로 `['환경, 보호']`도 두 묶음. 각 묶음은 본래 핵심어·괄호 안 대체어 중 하나라도 text에 있으면 1(공백 무시 부분 문자열, 괄호 안 쉼표·슬래시는 대체어 구분자)
+- Settings·`.env.example`·Compose 기본값 false. 허용 기준 확정·품질 승인 후에만 켜고 scoring 재시작. 원복은 false로 바꾸고 재시작(저장된 결과 소급 변경 없음). `app.bootstrap` INFO 로그에 `enabled`·`rule_version=1.0.0`
+- 한계: 담당자 보고 QWK 0.897→0.945는 재평가하지 않음. 계수는 처음 보는 주제 예측으로 맞춘 값이며 핵심어를 다른 말로 풀어 쓴 답의 점수가 낮아질 수 있음
+
+### 4.3 판정 모델 교차 확인 (#69)
+
+계약은 [api-spec 4.2.2](../design/api-spec.md#422-판정-모델-교차-확인-69-2026-11-03). 11/03 담당자 확정:
+
+| 항목 | 결정 |
+|---|---|
+| 불일치 기준 | M2 `scores` 평균과 LLM 결과 비교. `CORRECT`인데 평균이 낮은 경계 이하, `RETHINK`인데 높은 경계 이상이면 불일치. `PARTIAL`은 불일치 아님. 경계는 설정값(서술 2.0/4.0, 논술 1.0/2.0), M2 담당 확인 전 임시값 |
+| 보류 적용 | `M2_CROSS_CHECK_ENABLED` 기본 false. 꺼져 있으면 점수·불일치 여부를 `modelScores`에 기록만 하고 결과는 바꾸지 않음. 켜면 `HELD(MODEL_DISAGREEMENT)`·`HELD(LOW_CONFIDENCE)` |
+| scoring 장애 | `503 SCORING_UNAVAILABLE`. 5xx·시간 초과·연결 실패는 `retryable:true`, 4xx·계약 밖 응답은 false. 비활성으로 바꾸지 않음. learning은 기존처럼 `AI_UNAVAILABLE` 실패 코드로 기록 |
+| 입력 출처 | `question`은 mission_version.question, `keywords`·`essayType`은 learning V9 `rubric_version` 새 칸(채점 입력이라 기준표와 함께 바뀌고 검토·게시됨) |
+| 점수 저장 | ai 응답 `modelScores`를 learning이 `judgment.model_scores`에 그대로 저장, 학생 화면 비노출 |
+| M1 | 비활성 유지. ai 호출 분기와 대역 테스트만, `M1_CHECK_ENABLED` 기본 false, learning은 M1 입력 미전송 |
+
+- ai: `ScoringClient`(`{active:false}`만 비활성, 점수 키가 입력 방식과 다르면 계약 밖), `judgment/cross_check.py`(요청 구성·평균·불일치), `judgment/service.py`(LLM 판정이 보류가 아닐 때만 scoring 호출, 활성 응답이면 `versions.model`을 `"{name}@{version}"`으로)
+- learning: 관리자 기준표 `PUT /internal/admin/missions/{id}/rubric`에 `keywords`(100개·각 200자)·`essayType`(5종). 관리자 웹 입력 칸은 아직 없어 입력 전까지 서술·논술 M2는 호출되지 않음. 데모 시드에는 핵심어·글 종류 없음
+
+시간 배분(P12, learning→ai 35초 안, M2·M1 입력이 있는 판정):
+
+| 구간 | 설정 | 최악 시간 |
+|---|---|---:|
+| LLM 1회 | `LLM_TIMEOUT=15` | 15초 |
+| 재시도 전 대기 | `LLM_RETRY_BACKOFF=1` | 1초 |
+| LLM 재시도 | LLM 마감(33 - 3 = 30초)까지 남은 시간 | 14초 |
+| LLM 소계 | `JUDGE_DEADLINE - SCORING_RESERVE` | 30초 |
+| scoring 몫 | `SCORING_RESERVE=3`, 한도 `min(SCORING_TIMEOUT=10, 남은 시간)` | 3초 이상 |
+| 판정 마감 | `JUDGE_DEADLINE=33` | 33초 |
+| learning 35초 대비 여유 | 네트워크·직렬화 | 2초 |
+
+- 3초 몫은 M2 예열 후 HTTP 포함 최대 1.68초([scoring](scoring.md) 3장)의 약 1.8배. 첫 요청 8.4초가 다시 나오면 LLM 최악 경로와 겹칠 때 503(`retryable:true`). 남은 시간이 1초 미만이면 호출하지 않고 503. 교차 확인 입력이 없는 판정은 LLM이 33초 전체 사용
+- 실제 모델 전체 측정(로컬 Docker, 서술 3.0·논술 3.1, learning 피드백 요청 기준): 예열 후 대역 LLM 최대 0.34초, 실제 OpenAI LLM 중앙값 3.8~7.3초·최대 9.0초, LLM 최악 경로(첫 요청 시간 초과 → 재시도) 약 29.8초로 모두 200·`model_scores` 저장. 배포 환경·동시 요청 부하에서는 재측정 필요
 
 ## 5. 리포트 서술·저녁 질문 (#64)
 
@@ -309,7 +256,7 @@ LLM은 테스트 dependency override 또는 실제 키 미설정 분기다. 실�
 
 ## 6. scoring 기동 모델 로딩 (#85)
 
-`feature/scoring-model-registry`는 core 활성 snapshot 조회, 승인 scope·revision 검사, 실제 S3/MinIO 가중치 CPU 로딩 및 `/internal/versions`를 구현한다. 활성 모델이 없으면 준비 완료, 최초 조회·로딩 실패 시 준비 안 됨으로 재시도하며 프로세스는 유지한다. 같은 모델 교체 실패 시 기존 모델은 보존한다. 기동 이후 활성화 이벤트는 #86, M2 채점 API는 #87, M1 계약은 #88 범위다. 상세 증거는 [#85 검증](issue-85-scoring-model-registry.md)을 따른다.
+[scoring](scoring.md) 1장.
 
 ## 7. AI 활성 프롬프트 버전 수신 (#68)
 
@@ -329,21 +276,13 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 
 배포 연결 요구: ai HTTP 내부 포트 `8000`과 `/health/live`·`/health/ready` 경로는 그대로다. `CORE_URL`·`INTERNAL_TOKEN`으로 core 내부 조회가 가능해야 하고 RabbitMQ `events.topic` 접근과 Pod별 임시 큐 선언 권한이 필요하다. #171 chart·NetworkPolicy는 ai→core HTTP와 ai→RabbitMQ를 열고, `versions=DOWN`인 Pod는 Ready로 취급하지 않아야 한다. AI 계측은 #171 이후 `langfuse`·OTLP 의존성과 `LANGFUSE_*` 설정으로 추가됐다(기본 비활성, local 관측 chart는 Langfuse 제외).
 
-### 작업 브랜치 검증 기록 (2026-10-30)
-
-- 기준 `cc2ccc6`, 브랜치 `feature/ai-active-version-events`. Ruff check·format check와 `git diff --check`는 통과했다. uv는 샌드박스 캐시 권한과 패키지 다운로드 DNS 제한으로 실행하지 못해, #67 작업환경에 설치된 동일 AI 의존성의 Python 3.12·Ruff 0.17.2를 읽기 전용으로 사용했다.
-- 초기 전체 AI pytest 240개는 두 차례 모두 239개 통과, 기존 `tests/llm/test_base.py::test_stream_stalls_past_timeout`만 `0.2000000000116 > 0.2` 부동소수점 경계 비교로 실패했다. 사용자의 후속 진행 요청에 따라 해당 테스트 상한에 1나노초 허용 오차만 적용했다. production LLM 시간 제한은 변경하지 않았다. 추가 경로 테스트를 포함한 최종 AI 전체 pytest **241개 통과**(184.52초), Ruff check·format check도 통과했다.
-- 저장소 계약 unittest 93개 중 AI OpenAPI·core 모델 이벤트 관련 검사는 통과했다. 전체 실행에서는 샌드박스 임시 폴더 권한 때문에 별도 검증 스크립트 테스트 7개의 설정·정리에서 오류 14건이 났고, 그 7개를 임시 경로를 바꿔 재실행해 통과했다.
-- 전용 Docker 네트워크·RabbitMQ 4.3.7 컨테이너와 Windows AI 프로세스 2개를 사용한 실제 AMQP 연결 검증 통과. 관리 API에서 독립 exclusive·auto-delete 큐 2개, 각 소비자 1개, `events.topic`의 `model.version.*` 바인딩 2개를 확인했다. 전용 core HTTP 대역을 503→`{items:[]}`로 바꿔 두 AI의 `versions=DOWN`→Ready 회복을 확인하고, 미보유 `judge@future` revision 1 이벤트에 두 AI가 NotReady·`/internal/versions` 503으로 반응한 뒤 보유 `judge@2` revision 2에서 Ready로 회복하는 것을 확인했다. 전용 브로커의 두 AMQP 연결을 관리 API로 종료하자 두 AI가 각각 새 큐를 만들고 snapshot 조정 뒤 Ready가 됐다. 검증 자원은 자체 컨테이너·네트워크만 정리했다.
-- 재연결의 첫 시도에서 전용 Docker 컨테이너 재시작 후 Windows 임시 포트가 다시 열리지 않아 검증 방법을 AMQP 연결 종료로 바꿨다. 이는 전용 브로커와 AI의 실제 재연결 검증이며, core는 대역이다. 실제 core DB·관리자 활성화 API, 유료 외부 LLM, 원격 CI·배포는 검증하지 않았다. 모델 품질이나 운영 배포 준비 완료를 의미하지 않는다.
-
 ### 계층 분리 (#254)
 
 `app/versions.py`와 소비자에 섞여 있던 처리를 scoring(`model_versions`·`model_registry`·`model_startup`·`versions`)과 같은 구조로 `app/prompt_versions/`에 나눴다. `models.py`는 활성 버전 계약·`PromptChoice`, `registry.py`는 이미지 본문과 `ActiveVersions`(revision 규칙), `service.py`의 `PromptSync`는 snapshot 조회·재시도와 snapshot 전 이벤트의 이름별 최신 revision 보존·재적용, `router.py`는 `GET /internal/versions`다. `messaging/consumer.py`는 구독·재연결, 봉투 검증, `PromptSync.offer`, ACK만 맡는다. 응답 모양·경로·이벤트 계약·readiness·OpenAPI는 바꾸지 않았고 `versions.py`는 남기지 않았다.
 
-## 8. 리포트 표시 설정 변경안 (#209, 로컬 구현 후보)
+## 8. 리포트 표시 설정 변경안 (#209)
 
-`POST /internal/analysis/report-template`은 현재 설정과 학부모 요청만 받아 구조화한 변경안 또는 확인 질문을 반환한다. 학습 원문·학생 ID를 이 요청에 넣지 않는다. 학생 공개 설정·섹션 숨김·메모·계산식 변경은 허용하지 않는다. 저장과 확인 토큰 검증은 core가 소유한다. 실제 UI/서비스 간 연동 및 #206 공개 차단 검증은 [report 보고서 #209 절](report.md)을 따른다. 합성 LLM 테스트 통과는 실제 모델의 모든 자연어 해석 정확도를 보장하지 않는다.
+`POST /internal/analysis/report-template`은 현재 설정과 학부모 요청만 받아 구조화한 변경안 또는 확인 질문을 반환한다. 학습 원문·학생 ID를 이 요청에 넣지 않는다. 학생 공개 설정·섹션 숨김·메모·계산식 변경은 허용하지 않는다. 저장과 확인 토큰 검증은 core가 소유한다. 실제 UI/서비스 간 연동 및 #206 공개 차단 검증은 [report](report.md) 17장을 따른다. 합성 LLM 테스트 통과는 실제 모델의 모든 자연어 해석 정확도를 보장하지 않는다.
 
 ### 프롬프트 레지스트리 등록과 core 서킷 (#280)
 

@@ -1,14 +1,4 @@
-# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82·#169·#137·#205·#241)
-
-## 같은 미션 재시도 비교 (#207, 2026-11-01)
-
-- 사용자 확정: 같은 학생·미션의 **직전 마무리 시도**와 비교합니다. 현재 시작 시점 이전에 마무리한 시도를 `finished_at DESC, started_at DESC, id DESC`로 한 건 선택합니다. 다른 학생/미션·현재 시도·현재 시작 뒤에 마무리한 시도는 제외합니다. 돌아보기 완료만을 기준으로 잘못 좁히지 않습니다.
-- 기존 진행 중 시도 재사용·돌아보기 완료 규칙은 유지합니다. 완료한 결과에서 ‘이 미션 다시 풀기’는 기존 시작 API로 새 시도를 생성합니다. 예전 답변·판정·피드백·초안은 수정하거나 삭제하지 않습니다.
-- `GET /internal/attempts/{attemptId}/comparison`과 core `GET /api/v1/attempts/{attemptId}/comparison`을 추가했습니다. 학생 본인만, 마무리 이후에 조회합니다. core는 상세 캐시와 마찬가지로 no-store입니다.
-- 응답 `NO_PREVIOUS | COMPARABLE | CRITERIA_CHANGED`, 이전/현재의 전체 제출 답변·마무리 시각·마지막 판정·기준표와 각 시도에 고정된 문항을 담습니다. 문항/기준표 버전이 같을 때만 항목별 추가 확인·유지·이번 미확인·양쪽 미확인을 표시합니다. 기준 변경이면 원문만 나란히 읽고 충족 개수를 직접 비교하지 않습니다. 이를 능력 점수나 향상률로 바꾸지 않습니다.
-- 도메인 비교 4건과 웹 API/직렬화·실제 MSW 화면 검증을 추가했습니다. PostgreSQL 통합 테스트는 원문/판정 보존·첫 시도·타 학생·시점 제외를 포함해 3건 통과했습니다. 도메인 4건과 합쳐 learning 비교 검증 7건이 통과했습니다.
-
-통합 원본: learning-mission, learning-attempt, learning-answer, learning-feedback, learning-reflection, learning-records, learning-judgment-rules
+# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82·#169·#137·#205·#241·#207·#201)
 
 계약은 [API 명세](../design/api-spec.md) 2.2·3.1~3.8·4.1과 [learning OpenAPI](../../contracts/openapi/learning-service.yaml), 판정 상태는 [상태 다이어그램](../design/state-diagram.md) 3장.
 
@@ -152,11 +142,7 @@ core #46 관리자가 신고를 검토해 판정을 고치면 core가 `POST /int
 | impact | `aggregation: NOT_APPLIED`(learning 수치 집계는 판정 결과를 쓰지 않아 바꿀 것 없음, 오류 아님), `conversation`·`report: UNKNOWN`(learning이 확인할 수 없음) | core와 합의 ④ |
 | 오류 코드 | `JUDGMENT_STATE_CONFLICT`는 기존 코드 재사용, `CORRECTION_REPORT_CONFLICT`는 새 코드. 둘 다 api-spec 4.1에만(1.3 공개 표에 넣지 않음) | #78 리뷰대로 learning 내부 코드는 4.1 비고. core가 409·422를 공개 코드로 바꿈 |
 
-- 설계 문서: api-spec 4.1 정정 줄, class-diagram 4.2 끝 메모(`results()`·잠금 순서), state-diagram 3.3(정정은 `DONE`만), ERD 비고(jsonb 모양), OpenAPI(경로·`AdminUserId`·`AdminRole`·`CorrectionScope`·`CorrectionRequest`·`CorrectionResult`·`JudgmentResult`, 버전은 #26·#27처럼 그대로)
-- 기존 파일 수정: `JudgmentService`(`correct`), `JudgmentMapper.xml` `findStored`(최신 정정 결과·보류 이유), `scripts/tests/test_record_exists_openapi.py` 컨트롤러 경로 수 22 → 23(#126 결제 사용 증빙 경로가 먼저 22로 올림)
-- 검증: 테스트 202개(새 15: 서비스 8·동시 2·컨트롤러 5), scripts/tests 58개, #126 머지 뒤 develop 병합 상태로 206개·scripts 74개. 보호 장치 12개를 빼면 각각 실패(`DONE` 전 409는 DB 제약 `ck_judgment_result_when_done`·null 검사와 세 겹). compose 실제: 고르기 정답 `CORRECT` → `RETHINK` 정정, 같은 키 처음 응답 그대로, 422·409·409·403·404, 피드백·시도 상세·기록 모두 `RETHINK`, DB 원판정 `CORRECT` 그대로(ai 호출 없음, 만든 시도 2건만 삭제)
 - 한계: 같은 신고를 다른 판정에 동시에 보내면 판정 잠금이 달라 둘 다 저장될 수 있음(`error_report_id` UK 없음, core는 신고마다 한 정정만 보냄), 같은 키를 다른 판정에 동시에 보내면 키 UK로 한쪽 500. `judgment_correction.judgment_id` 인덱스 없음(정정은 드묾)
-- 확인 필요: core가 정정 전에 부르는 `/support/targets/{type}/{id}`·관리자 원문 `/support/attempts/{id}`는 별도 이슈(#80만으로 실제 흐름 미완성). learning 학생 삭제를 만들 때 `judgment_correction`을 판정보다 먼저 지움(FK)
 
 ## 9. 학생 삭제 소비·완료 보고 (#128)
 
@@ -174,11 +160,8 @@ core가 자녀 삭제·탈퇴를 확정하면 `student.deleted`를 보내고, le
 
 - 설계와 다른 점: `StudentDeletionService.delete`에 `deletionRequestId` 인자 추가(설계는 `(eventId, studentId, scope)`). 완료 보고 경로에 필요한데 learning DB에 없어 이벤트에서 받아야 함. 소비자가 직접 보고하면 설계 화살표(서비스 → `CoreClient`)가 바뀌어 인자 추가가 가장 작은 변경(사용자 확인). `onStudentDeleted`는 수동 ACK용 `message`·`channel`을 함께 받음(core 소비자와 같음)
 - 새로 둔 것: `_common/messaging/RetryingConsumer`(core와 같은 이름·동작 + 계약 위반 바로 DLQ), `InvalidEventException`, `record/domain/DeletionScope`. 삭제와 보고를 트랜잭션 안·밖으로 나누려고 Spring `TransactionTemplate` 사용(learning 첫 사용, 새 계층 아님)
-- 기존 파일 수정: `EventEnvelope`(발행용 기본값 제거: `id`가 빠진 메시지에 무작위 id가 채워져 멱등 키가 매번 달라지는 문제, learning은 발행하지 않음), `MessagingConfig`(confirm 대기 시간), `AppProperties`(`messaging.maxRetries`), `application.yml`(수동 ACK·`missing-queues-fatal: false`·publisher confirm·readiness에 `rabbit`·`app.messaging.max-retries: 3`, read-timeout 주석을 core 호출까지로), `AttemptService`·`AttemptRepository`·`AttemptMapper`(`deleteByStudent`), 테스트 6개 클래스에 `spring.rabbitmq.listener.simple.auto-startup=false`(core 테스트와 같음, 리스너가 실제 RabbitMQ에 붙지 않게)
-- 설계 문서: class-diagram 4.3(구현 상태·소비자 검증·삭제 흐름·`deleteByStudent` 순서·`delete` 시그니처), ERD 1장 FK 줄·4.3 비고·7장 확인 필요 줄 삭제, api-spec 5.6 마지막 줄(B3 해소), 아키텍처 1.6 수동 ACK 줄
-- 검증: learning 테스트 217개(새 11: 삭제 4·소비자 3·재시도 4)·scripts/tests 74개, 보호 장치 16개를 빼면 각각 실패(삭제 순서 4·멱등·보고 3·표식 1·소비자 5·재시도 3). 통합 확인은 #148의 격리 compose(`scripts/report_integration/compose.yaml`, 합성 값, 프로젝트 `learning128`)에 learning `CORE_URL`만 덮어써서: core DB에 보호자·학생 2명과 `CONFIRMED` PROFILE 삭제 요청·outbox 행 저장 → core 중계가 `student.deleted` 발행 → learning·report 둘 다 보고하고 core 요청 `COMPLETED`(2초)·학생 `DELETED`, learning은 대상 학생 시도·초안·답변·판정 0행·다른 학생 그대로·표식 PROFILE. 같은 이벤트 재전달은 처리 뒤 만든 시도를 지우지 않고 보고만(재시도·DLQ 0), source가 다른 봉투는 재시도 없이 learning DLQ 1건. readiness에 rabbit 포함 UP. 확인 뒤 격리 환경 삭제
 
-- 위치 정리(#256, 11/02): 원래 설계(architecture 2.6, 10/24)는 별도 `deletion/` 패키지였으나 #128에서 `record/consumer`·`record/service`에 구현했다(이슈 #128 작업 위치 "`record/` 또는 삭제 기능 패키지", 현재 이슈 본문 기준이며 11/02 수정 기록 있음). 위치를 고른 이유는 당시 기록하지 않았다. 종합 검증(audit 4.5 A15)이 설계를 `record/`로 맞췄고, #256에서 빈 `deletion/` 폴더(`.gitkeep` 2개)를 지우고 architecture 2.6 트리·class-diagram 4.3을 `record/` 기준으로 정리했다. 코드 변경은 없다
+- 위치 정리(#256, 11/02): 원래 설계(architecture 2.6, 10/24)는 별도 `deletion/` 패키지였으나 #128에서 `record/consumer`·`record/service`에 구현했다(이슈 #128 작업 위치 "`record/` 또는 삭제 기능 패키지", 현재 이슈 본문 기준이며 11/02 수정 기록 있음). 위치를 고른 이유는 당시 기록하지 않았다. 종합 검증(audit A15)이 설계를 `record/`로 맞췄고, #256에서 빈 `deletion/` 폴더(`.gitkeep` 2개)를 지우고 architecture 2.6 트리·class-diagram 4.3을 `record/` 기준으로 정리했다. 코드 변경은 없다
 - 알려진 한계(#256): `record/`가 기록 조회와 함께 삭제 소비(쓰기)·이벤트 처리 기록(`processed_event`와 정리 작업)·결제 사용 증빙을 맡아 "조회 API" 패키지 설명과 다르다. report-service는 같은 기능을 `deletion/`에 둬 서비스 간 위치도 다르다. `processed_event`는 모든 이벤트 소비자가 쓸 수 있는 중복 처리 방지 테이블이라 다른 소비자가 생기면 `_common/messaging` 쪽이 맞을 수 있다. 조회 SQL(`RecordMapper.xml`·`RecordExistsMapper.xml`)은 `deleted_student`로 삭제된 학생을 거르므로 위치를 옮겨도 이 읽기는 남는다. 경계 정리는 별도 리팩터로 다룬다
 
 ## 10. 관리자 미션 API (#145, 구 #81 흡수)
@@ -200,18 +183,12 @@ core #126(#47)이 관리자 미션 요청 10개(경로 8개)를 learning `/inter
 
 - 설계와 다른 점: 컨트롤러 반환을 모두 `AdminMission`(설계는 `Mission`·`RubricVersion`·없음)으로. core가 JSON 객체 응답을 요구하고 화면이 바뀐 미션 전체를 다시 그려서. 상세 `detail`·`listForAdmin`·`getForAdmin` 추가(2.8 표의 상세 경로). `requestReview`·`review`에 버전 인자 추가(버전 대조). 관리자 SQL은 `AdminMissionMapper`로 나눔(학생 조회 `MissionMapper`와 섞지 않고, Repository는 설계대로 `MissionRepository` 하나)
 - DB: learning `V7__mission_published_versions.sql`(기존 V1~V6 불변). `mission.published_version_id`·`published_rubric_version_id`(NULL 허용, DEFERRABLE FK) 추가 + 기존 `PUBLISHED` 행은 현재 버전으로 채움. 데모 시드도 같은 규칙으로 채움. ERD 1장·4.1·8장 반영
-- 기존 파일 수정: `MissionService`(관리자 메서드, 생성자에 `RubricRepository`), `MissionRepository`(관리자 메서드, 생성자에 `AdminMissionMapper`), `MissionMapper.xml`(학생 조회·`findCurrentVersions`가 `published_*`), `db/seed/demo_missions.sql`, 테스트(`TestRows.mission`이 게시 미션에 `published_*`, `MissionRepositoryTest`·`AttemptServiceTest`·`MissionServiceTest` 공개 버전 반영), `scripts/tests/test_record_exists_openapi.py`(`@PatchMapping` 포함, 경로 수 33)
 - 같이 고친 것(이슈 해야 할 일에 추가):
   - #80 판정 정정 잠금: `lockTarget`이 최신 정정 하위 조회를 붙인 채 잠가, 다른 신고 정정이 동시에 오면 기다린 뒤에도 앞 정정을 못 보고 `previousResult`가 원판정으로 저장됨(동시 8건 모두 `PARTIAL`로 재현). 위 동시 수정과 같은 방법으로 판정 행만 잠그고(`lockJudgment`) 다시 읽음(`findTarget`). 8절 `previousResult` 규칙이 동시 요청에서도 지켜짐
   - 연동 검증 스크립트 4개(`verify_dashboard_learning`·`verify_report_learning`·`report_integration/scenario`·`verify_feedback_learning`): DB에 직접 넣는 게시 미션에 `published_*`도 채움(V7 뒤 학생 시작 실패 방지, CI 밖 수동 검증)
   - class-diagram 4.1 구현 상태 줄: #128 뒤에도 남아 있던 "`deleteByStudent` 미구현", "별도 `RubricRepository` 없음"
-- 설계 문서: state-diagram 3.1(공개 중 수정 전이·전이 표·학생은 `published_*`), ERD(공개 버전 칸·DEFERRABLE·4.1 비고·공개 검사·8장 V1~V7, 같은 줄의 표·컬럼 수는 develop의 #157 report 표까지 실제 검사 값 69/606으로), class-diagram 4.1(컨트롤러·서비스 메서드·`requirePublishable` 조건·관리자 API·버전 메모), api-spec 4.1 관리자 미션 줄·3.10 합의·2.8 공급자 계약 문구, OpenAPI(경로 10개·`AdminMission` 등 스키마·422 `missingFields` 목록)
-- 검증: learning 테스트 238개(새 21: 미션 전이 6·관리자 서비스 7·동시 수정 1·컨트롤러 6·동시 정정 1), scripts/tests 79개(새 `test_admin_missions_contract.py` 3: core 프록시 경로 10개 = OpenAPI, 목록 쿼리, `missingFields` 코드가 core 필터 통과). 보호 장치 17개를 빼면 각각 실패(공개 버전 조회 2·게시 복사·잠금·전이 4·요소 1개 이상·풀이 단계·정답 키·승인·평평한 요소 행·관리자만·422 `missingFields`·배점·`counts`), 동시 정정 테스트는 고치기 전 코드에서 실패 확인. DB: 임시 PostgreSQL에서 `check_db_migrations.py` 통과(learning 19표/160컬럼 ERD 일치·재실행 이력 불변), V6 데모 데이터 위에 V7 적용 시 게시 10건 채움·초안 10건 비움. 실제 연동: core·learning JAR + 임시 DB로 core `/api/v1/admin/missions` 경유 `CONTENT` 없는 관리자 403 → 작성 201 → 400 통과 → `DRAFT` 게시 409 → 기준표·미리보기 → 승인 전 게시 422 `["review"]` → 승인·게시 → 학생 1판 시작 → 공개 중 수정(2판, 학생은 1판) → 낡은 버전 409 → 재검토·재게시(학생 2판, 진행 중 시도 1판) → 목록 필터·`counts` → 중단(학생 상세 409, 진행 중 시도 이어하기 200)
 - 확인 필요·한계:
   - core가 learning 404를 아직 503 `ADMIN_MISSIONS_UNAVAILABLE`로 바꿈(없는 미션 실제 확인). core가 고치기로 함
-  - 프론트 `missingMissionFields`를 같은 조건으로 맞추는 것은 프론트 반영 중(이슈 해야 할 일 4)
-  - 당시 `verify_feedback_learning.py`는 학생 시작·답변 제출까지만 통과하고, `CORE_URL` 누락으로 피드백 전 결제 사용 확인에서 503 `PAYMENT_USAGE_UNAVAILABLE`로 끝남. core Redis 전제도 누락돼 있었음. #164 수정·검증은 15절
-  - V7 추가는 DB 담당에게 공유
 
 ## 11. 신고 지원 조회 (#146)
 
@@ -226,17 +203,13 @@ core #46 신고·문의는 접수·문의 연결·관리자 정정 전에 learni
 | `judgmentId` | 피드백 결과 `judgment`에 `judgmentId`(피드백 SSE·시도 상세·원문 모두, 만드는 곳은 `stored()` 한 곳). 판정 전(`judgment: null`)이면 판정 신고 없음 | core 합의 (a): 프론트 신고 버튼이 판정 ID로 신고(이슈 해야 할 일에 추가) |
 
 - 설계와 다른 점: 없음. 설계에 없던 `SupportController`·서비스 메서드 2개·`judgmentId`만 class-diagram 4.2·api-spec에 먼저 추가
-- 기존 파일 수정: `JudgmentView`(`judgmentId`), `StoredJudgment`·`JudgmentMapper.xml` `findStored`(`judgment_id`), `JudgmentMapper`·`JudgmentRepository`(`findSupportTarget`), 테스트 `AttemptControllerTest`·`FeedbackControllerTest`(`judgmentId` 인자·확인), `scripts/tests/test_record_exists_openapi.py`(경로 수 33 → 35)
 - 같이 고친 것:
   - `scripts/tests/test_support_openapi.py`(core #46 담당 테스트) 22행: "learning 계약에 `/support/targets`가 없어야 함"(미구현 경계)을 "조회 두 경로가 있어야 함"으로. 구현해서 깨지는 줄이라 같은 PR에서(사용자 확인, 같은 테스트의 다른 검사·core 소비 계약은 그대로, 담당에게 공유)
   - `JudgmentMapper.xml` 주석이 #145에서 바뀐 `CorrectionMapper.lockTarget`을 가리키던 것을 `findTarget`으로
   - api-spec 5.7 "learning 공급자 필요 계약 (아직 구현되지 않음)" 제목·"정정 구현이 없다" 문장을 사실대로(#80·#146 구현), 나머지 문장은 그대로
-- 설계 문서: api-spec 3.2(`judgmentId` 예시·설명)·4.1(피드백 줄 `judgmentId`, 두 경로 줄)·5.7(위 두 곳), class-diagram 4.2(`SupportController`·`supportTarget`·`supportOriginal`·화살표·메모), OpenAPI(경로 2·`SupportTarget`·`SupportOriginal`·`Judgment.judgmentId`, 버전은 #80처럼 그대로)
-- 검증: learning 테스트 246개(새 8: 서비스 4·컨트롤러 4), scripts/tests 83개(새 `test_support_lookup_contract.py` 4: core가 부르는 경로 = OpenAPI, 대상 유형, core가 읽는 칸, `judgmentId`). 보호 장치 13개를 빼면 각각 실패(범위 403·없음 404·최신 정정·되묻기 판정 ID·원문 범위·피드백 판정 ID·컨트롤러 역할·관리자 1명·`X-User-Id` 2·원문 관리자만·학생 1명·없는 칸 생략). 실제 연동: core·learning JAR + 임시 DB(합성 계정, ai 없이 고르기 규칙 판정, 되묻기 1건만 합성 행)로 core 경유 피드백 SSE·시도 상세에 `judgmentId` → 학생 JUDGMENT 신고(core가 learning 학생·시도 저장) → 보호자 FOLLOWUP 신고·ATTEMPT 문의 연결 → 다른 가족 신고 거부 → 관리자 신고·문의 상세 원문(답변 네 칸, 메모 없음, 열람 감사 1건) → 검토 → 정정(`previousResult: CORRECT` → `RETHINK`, 학생 시도 상세 `RETHINK`, 원판정 `CORRECT` 그대로)
 - 확인 필요·한계:
   - 범위 밖 신고: learning 403을 core가 503 `SUPPORT_DEPENDENCY_UNAVAILABLE`로 바꿈(core는 공급자 비-2xx를 모두 503, 5.7). 신고는 막힘
   - 학생 신고 버튼이 `judgmentId`를 쓰는 화면 반영은 프론트(#82에서 반영, 12절)
-  - 당시 `verify_feedback_learning.py`의 `CORE_URL` 누락은 #146에서 수정하지 않았음(10절). 이후 #164 수정·검증은 15절
 
 ## 12. 학생 피드백 화면 계약 반영 (#82, web)
 
@@ -252,16 +225,12 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 | 목업 되묻기 | 고르기뿐 아니라 순서·분류 정답도 되묻기 없이 `["FINISH"]`, 목업 판정에 `judgmentId` | learning 되묻기 조건 "고르기 활동 `CORRECT` 아님"(4절) |
 
 - 설계와 다른 점: 없음(설계 문서 변경 없음)
-- 기존 파일 수정: `domain/classroom.ts`(`FeedbackElement`·`Feedback` 타입, `DemoScenario`에 `ai-fail-final`), `data/classroom/apiGateway.ts`(`feedbackDto`), `data/classroom/demoGateway.ts`(`noMore`, 판정 `judgmentId`, `ai-fail-final` 시나리오), `mocks/handlers/student.ts`(SSE `error`만 오류가 정한 `retryable`을 그대로: 공통 `problem()`은 5xx면 늘 true로 덮어써 실서버처럼 false를 낼 수 없었음. 공통 함수는 그대로 둬 보호자·관리자 목업 동작은 같음), `presentation/ClassroomApp.tsx`("상태 시연"에 "피드백 처리 실패(다시 요청 불가)"), `presentation/student/StudentWorkPage.tsx`(재시도 안내·신고 버튼), 테스트 `tests/apiGateway.test.ts`·`studentFlow.test.ts`·`student-browser.mjs`
-- 검증: `npm ci`(lock 그대로, `node_modules`는 git 제외) 뒤 단위 116개(새 5: null 필드·`sourceType` null·`versions`, 처리 중 null, `judgmentId` 누락·`sourceType` 계약 밖 거부, `retryable:false` 전달, 고르기 활동 정답 되묻기 없음), lint·`tsc -b` 빌드 통과. 브라우저(MSW 목업, 프로젝트 밖 임시 Playwright + 설치된 Chrome): 학생 24개(새 1: `retryable:false` 안내·재요청·신고 버튼 없음, 기존 정답 시나리오에 신고 링크가 판정 ID), 학생 세계 5·보호자 대시보드 4·학생 기기 11개 통과. 보호 장치 8개를 되돌리면 각각 실패(`judgmentId` 필수·`sourceType` null 허용·계약 밖 거부·목업 되묻기·재요청 숨김·목업 SSE `retryable`·신고 판정 ID·판정 없으면 신고 숨김). 새 시나리오를 처음 돌렸을 때 목업이 `retryable`을 덮어쓰는 문제를 찾아 위처럼 고침
 - 확인 필요·한계:
-  - `parent-admin-browser.mjs`는 두 번째 검사(신규 가입, 이메일 입력칸)에서 시간 초과. develop 원본에서도 같아 #82와 무관한 기존 문제(프론트 담당 확인 필요)
   - 새로고침하면 실패한 피드백의 `retryable`을 알 수 없음(시도 상세의 `FAILED` 결과에는 없음). 그때는 다시 요청 버튼을 보여 주고, learning이 `FAILED`를 다시 실행
-  - 웹 CI(`_web.yml`)는 lint·build만 돌리고 `npm test`·브라우저 테스트는 돌리지 않음
 
 ## 13. domain 프레임워크 의존 정리 (#169)
 
-[점검 기록](audit.md) 3.7 A3: learning domain 6개 파일이 `HttpStatus`(5개)·Jackson `@JsonInclude`(`Support.kt`)를 참조해 아키텍처 2.1 "Domain은 프레임워크 의존 금지"와 다름. 확인 필요 항목(domain의 HttpStatus 허용 여부)은 허용하지 않는 쪽으로 정함(core #168과 같은 결정 대상). 설계 문서의 원칙은 그대로이고, API 응답(code·status·본문)은 바뀌지 않음
+[점검 기록](audit.md) A3: learning domain 6개 파일이 `HttpStatus`(5개)·Jackson `@JsonInclude`(`Support.kt`)를 참조해 아키텍처 2.1 "Domain은 프레임워크 의존 금지"와 다름. 확인 필요 항목(domain의 HttpStatus 허용 여부)은 허용하지 않는 쪽으로 정함(core #168과 같은 결정 대상). 설계 문서의 원칙은 그대로이고, API 응답(code·status·본문)은 바뀌지 않음
 
 | 항목 | 정한 내용 | 근거 |
 |---|---|---|
@@ -270,23 +239,19 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 | 신고 대상 응답 | `@JsonInclude(NON_NULL)`을 domain `SupportTarget`에서 새 응답 DTO `SupportTargetResponse`(`judgment/controller/SupportResponses.kt`)로 옮김. `SupportController.target`이 변환해 반환 | 이슈 해야 할 일 3, 기존 `AttemptResponses`·`MissionResponses` 방식 |
 
 - 설계와 다른 점: 없음. class-diagram 4.2 `SupportController.target` 반환 타입만 `SupportTargetResponse`로 고침. 공통 `BusinessException` 그림(class-diagram 1장, core와 공유)은 필드가 그대로라 손대지 않음. OpenAPI 스키마 이름 `SupportTarget`은 응답 모양이 같아 그대로
-- 새 파일: `judgment/controller/SupportResponses.kt`. 기존 파일 수정: `_common/exception/BusinessException.kt`(보조 생성자·`ErrorKind`), domain 위 5개 파일(import·상태 인자), `judgment/domain/Support.kt`(`@JsonInclude` 제거), `judgment/controller/SupportController.kt`(응답 DTO)
-- 검증: domain(`*/domain/`)의 `org.springframework`·`com.fasterxml` import 0건. learning 테스트 246개 통과(테스트 코드 변경 없음, HTTP 상태·code 확인 그대로), scripts/tests 83개. 보호 장치 4개를 틀리게 하면 각각 실패(`INVALID`→400·`CONFLICT`→409·`UNPROCESSABLE`→422 변환, 응답 DTO의 없는 칸 생략)
 - 한계: 예외 객체는 실행 중에 HTTP 상태를 들고 있음(domain 코드는 모름). 오류 종류는 지금 domain에서 쓰는 세 가지뿐이고, 새 종류가 필요하면 `ErrorKind`와 변환을 함께 늘림
-- #249(11/02): 위 한계를 해소함. domain은 HTTP 상태가 없는 `DomainException(kind, code, …)`을 던지고, 상태 변환은 `_common/exception`의 `statusOf` 한 곳, 처리기·service 테스트는 `httpStatusOf`·`errorCodeOf`로 두 예외를 같게 다룸. 위 "별도 domain 예외를 두지 않은 이유"의 걱정(처리기·테스트 분리, HTTP 상태 확인 상실)을 이렇게 피함 ([#249 절](issue-168-core-layer-deps.md#249-domain-예외-분리-corelearning-1102))
+- #249(11/02): 위 한계를 해소함. domain은 HTTP 상태가 없는 `DomainException(kind, code, …)`을 던지고, 상태 변환은 `_common/exception`의 `statusOf` 한 곳, 처리기·service 테스트는 `httpStatusOf`·`errorCodeOf`로 두 예외를 같게 다룸. 위 "별도 domain 예외를 두지 않은 이유"의 걱정(처리기·테스트 분리, HTTP 상태 확인 상실)을 이렇게 피함 ([#249 절](core-gateway.md#domain-예외-168249))
 
 ## 14. 공통 예외·초안 저장 경합 테스트 (#137)
 
-[점검 기록](audit.md) 1.6의 learning 테스트 공백을 채움. 테스트만 추가했고 코드·설계·API 계약은 바꾸지 않음
+[점검 기록](audit.md) 1회차 테스트 공백의 learning 테스트 공백을 채움. 테스트만 추가했고 코드·설계·API 계약은 바꾸지 않음
 
 | 항목 | 정한 내용 | 근거 |
 |---|---|---|
 | 405·415 | 실제 학생 경로(`AttemptController`)로 없는 메서드(`DELETE /internal/attempts/{id}`)·JSON 아닌 본문(`PUT …/draft` `text/plain`)을 보내 `application/problem+json`, `status`, `code`(`METHOD_NOT_ALLOWED`·`UNSUPPORTED_MEDIA_TYPE`), `type`, `instance`, `traceparent`의 `traceId`를 확인. 405는 `Allow` 헤더도 | api-spec 1.3 Problem Details, `GlobalExceptionHandler.createResponseEntity`가 Spring 기본 예외에도 `code`·`traceId`를 붙임 |
 | 초안 저장 경합 | 마무리한 시도에서 돌아보기 트랜잭션이 시도 행을 잠그고 완료로 바꾼 채 커밋 직전에 멈춘 사이 초안을 저장: 초안 저장은 잠금을 기다렸다가(0.5초 뒤에도 끝나지 않음) 커밋 뒤 `409 ATTEMPT_CLOSED`, 초안 행(버전·내용·저장 시각)은 그대로 | audit B14(#127에서 `saveDraft`가 `lockOwned`로 시도 행 잠금). 여러 요청을 한꺼번에 보내면 겹칠지가 운이라, 겹치는 순서를 직접 만들어 잠금이 없으면 항상 실패하게 함 |
 
-- 새 파일: `_common/exception/GlobalExceptionHandlerTest`(2). 기존 파일 수정: `AttemptConcurrencyTest`(1 추가, 설명 줄)
-- 검증: learning 테스트 249개(새 3), scripts/tests 83개. 보호 장치 4개를 빼면 각각 실패(405 code·415 code·기본 예외 `code`·`traceId` 붙이기·초안 저장 시도 행 잠금 → `requireOwned`)
-- 범위 밖: audit 1.6 learning 줄의 `EventEnvelope`·`MessagingConfig`는 #128 소비자 테스트에서 다룸
+- 범위 밖: audit 1회차 테스트 공백 learning 줄의 `EventEnvelope`·`MessagingConfig`는 #128 소비자 테스트에서 다룸
 
 ## 15. 피드백 실제 연동 검증 환경 복구 (#164)
 
@@ -320,54 +285,13 @@ Docker CLI가 없는 Linux 실행 환경은 아래 전용 sidecar 모드를 사�
 | 인자 | 기존 JAR·ref·출력 인자에 `--db-host issue39-feedback-db-<고유값> --redis-host issue39-feedback-redis-<고유값>` 추가. 기존 외부 DB 단독 호출도 Redis 인자를 보완해야 함 |
 | 정리 | 스크립트는 두 sidecar·network를 삭제하지 않음. 호출자가 성공·실패·중단 뒤 자신이 만든 정확한 컨테이너 ID만 제거하고 마지막에 전용 network를 제거. DB는 새 인스턴스만 사용(learning DB 생성·마이그레이션이 있어 재사용 불가) |
 
-### 검증 기록
+### 검증
 
-2026-10-30, 분기 소스는 develop 병합 커밋 `18c9c1167b4a51fa6e6afbd6acb753041e9e13da`(core·learning 공통). production 소스는 해당 커밋 그대로다.
-
-| 검증 | 실제 결과 |
-|---|---|
-| `python -m py_compile scripts/verify_feedback_learning.py scripts/tests/test_verify_feedback_learning.py` | 통과 |
-| `python -m unittest discover -s scripts/tests -p test_verify_feedback_learning.py -v` | 7개 통과. 실제 core URL·Redis 환경 상속 차단, Redis 시작/준비 실패 정리, 한 컨테이너 정리 실패 시 나머지 정리와 원래 오류 보존, 외부 sidecar 인자·소유권, PONG 확인. 익명 볼륨 정리 수정 후 7개 재검증 통과. Docker/JVM은 이 검사에서 대역 |
-| `python -m unittest discover -s scripts/tests -p test_feedback_openapi.py -v` | 기존 피드백 계약 2개 통과. 이후 계약 변경이 없어 재실행하지 않고 결과 유지 |
-| `git diff --check` | 통과 |
-| core·learning JDK 21 `bootJar` | Gradle 8.14.6·Temurin 21.0.12.1, 전용 Gradle home·공유 의존성 캐시 읽기 전용, worker 1개·Gradle heap 768MiB·ActiveProcessorCount 2·Kotlin in-process. core 2분 34초·learning 1분 48초에 빌드 통과 |
-| `verify_feedback_learning.py` 전체 | 같은 JAR로 기존 6사례 모두 PASS. 실제 core·learning HTTP/SSE·PostgreSQL·Redis, AI만 합성 HTTP 대역 |
-| 정상 종료 후 실제 자원 정리 | 기록된 컨테이너 2개·익명 볼륨 2개가 더 이상 존재하지 않고, core·learning·AI 포트 3개가 닫힌 것을 별도 조회로 확인 |
-| 의도적 JAR 기동 실패 후 실제 자원 정리 | 별도 전용 DB·Redis를 준비하고 잘못된 JAR로 learning JVM을 실제 기동. 예상한 JVM 종료 오류가 전파됐고 JVM PID 종료·컨테이너 2개·익명 볼륨 2개 제거 확인. 실패를 정상 피드백으로 바꾸지 않음 |
-
-빌드된 JAR SHA-256: core `1ebd67337e2a1596ee5bd77924d7752bb81d18da844be5ce56b16279dd117292`, learning `32aa56825a2416ca578bf52e1b885dfc8bb5bc9fd8f1aa062ecc96f3954ab8fa`. 두 JAR 모두 위 develop 병합 소스로 빌드했다. 이 결과를 #164 변경의 병합·배포로 해석하지 않는다.
-
-Windows Python 검사의 첫 시도는 샌드박스 임시 경로 권한 오류로 실행되지 않아, `TEMP`·`TMP`를 이 worktree의 `build/issue164/tmp`로 지정한 뒤 위 9개를 실행했다. 로컬 Temurin JDK `21.0.12.1`의 Gradle은 초기 루프백 소켓 연결 오류로 실패했다. 기존 `eclipse-temurin:21-jdk` 이미지의 CPU 1.5·메모리 1536MiB·worker 1개 격리 빌드로 전환했으나, C 드라이브 여유 약 30MiB와 Docker VM 디스크 I/O 오류·read-only·API 500으로 막혔다. 이 실행이 복사한 호스트 의존성 캐시만 삭제했고 공유 캐시·다른 worktree·컨테이너·볼륨은 정리하지 않았다. 이후 로컬 JDK 빌드는 위와 같이 양쪽 모두 통과했다.
-
-Docker는 초기 디스크 I/O·API 500 및 임시 Unix socket의 Windows 오류 1920으로 막혔으나, 사용자 환경 복구 후 #47 → #163 → #164 순서로 무거운 검증을 재개했다. 이 작업에서는 공유 자원·이미지·볼륨·설정을 초기화하지 않았다. 재개 시 Docker 29.7.2 정상 응답·C 드라이브 약 20GiB 여유와 기존 JAR 해시 일치를 확인했다. 이전 `issue164-feedback-build-core` 컨테이너도 남아 있지 않았다.
-
-처음 전체 6사례와 JVM·컨테이너 정리는 통과했으나, 후속 Docker 이벤트/볼륨 조회에서 정상·실패 실행의 익명 볼륨 4개가 남은 것을 발견했다. 컨테이너 ID·생성 시각으로 소유권을 확인하고 연결 컨테이너가 없는 이 4개만 제거했다. 스크립트의 `rm -f -v`와 익명 볼륨 메타데이터를 보완한 뒤 Python 회귀 7개·전체 6사례·정상 및 의도적 실패 후 실제 볼륨 정리를 다시 검증해 위 결과를 확정했다. JAR·production 소스는 변경하지 않아 재빌드하지 않았다. 두 최종 실행에서 만든 컨테이너 4개·익명 볼륨 4개와 JVM은 모두 종료·제거됐으며 Docker 사용을 종료했다.
-
-실제 전체 실행 명령(저장소 루트, Windows JDK 경로는 `--java`로 지정):
-
-```powershell
-python scripts/verify_feedback_learning.py `
-  --core-jar backend/core-service/build/libs/core-service-0.0.1-SNAPSHOT.jar `
-  --learning-jar backend/learning-service/build/libs/learning-service-0.0.1-SNAPSHOT.jar `
-  --learning-source . --core-ref 18c9c1167b4a51fa6e6afbd6acb753041e9e13da `
-  --learning-ref 18c9c1167b4a51fa6e6afbd6acb753041e9e13da --learning-merged `
-  --java "$env:JAVA_HOME/bin/java.exe" --output build/issue164/run-final/result.json
-```
-
-로컬 산출물은 `build/issue164/run-final/result.json`·`cleanup-audit.json`, `build/issue164/failure-cleanup/result.json`, 전체 로그·JAR 해시를 모은 `build/issue164/status.json`에 보존한다(`build/`는 Git 제외). 정상 실행의 실제 URL은 core `127.0.0.1:56403`, learning `:56404`, AI 대역 `:56405`, Redis `:56396`이었다. 실패 정리 검사는 검증용 호출자 `python build/issue164/check_failure_cleanup.py`가 실제 Docker·JVM을 실행해 확인했다. Linux caller-owned sidecar 모드는 인자·소유권 회귀 검사까지만 했고 전체 실행은 기본 모드로 검증했다. 원격 CI·PR·배포 검증으로 집계하지 않는다.
-
-전체 스크립트에는 등록·학생 세션, FAILED → 재시도 DONE → 저장 결과 재사용, RUNNING 중 중복 방지, SSE 연결 종료 후 저장, HELD의 DONE 저장, 영구 AI 실패 보존의 기존 6개 사례가 있다. 이 사례를 생략하거나 기대값을 완화하지 않았다. 전체 실행은 실제 core/learning HTTP/SSE·PostgreSQL·Redis와 합성 AI HTTP 대역을 구분한다. 외부 LLM·토스·OAuth·RabbitMQ 이벤트·브라우저·배포는 검증 범위가 아니다. production 변경이 없어 서비스 전체 테스트·프론트 검증은 이 작업에서 반복하지 않는다.
-
-### 최신 develop 병합과 문서 충돌 정리 (#189)
-
-- `feature/feedback-learning-verification`의 `6f2f392bca9ce8eb5e439a5ea84b2b2ebe07b131`에 develop `d651aa1787f62a3e8f12e177bcbe08c4f4192d4a`를 일반 merge했다. develop의 기존 13절(#169)·14절(#137)을 보존하고 #164 기록을 15절로 옮겼으며, 10·11절과 audit B21의 참조를 갱신했다.
-- 충돌 해결에서 서비스 코드·설정·공개 계약·DB 스키마를 추가 수정하지 않는다. 최신 develop의 파일을 그대로 보존하고 #164 검증 스크립트·회귀 검사도 기존 기능 커밋의 바이트를 유지한다.
-- 병합 후 저장소 Python 계약·회귀 검사 `python -O -m unittest discover -s scripts/tests -v` 90개가 통과했다(27.320초). 기존 13·14절이 develop과 동일하고 #164 기록은 15절에 한 번만 존재하며, 10·11절과 audit B21의 이전 참조가 없고 상대 경로·앵커 대상이 유효한 것을 확인했다. 충돌 표시·미해결 index 항목이 없고 `git diff --check`도 통과했다.
-- 병합에서 수동으로 변경한 것은 learning·audit 보고서 두 파일이다. 서비스 코드·설정·계약·프론트·인프라·워크플로는 최신 develop과 같고, #164 스크립트·회귀 검사는 `6f2f392`와 같다. 문서 충돌 해결에 실행 변경이 없어 신규 JAR 빌드·Docker 전체 실행은 반복하지 않았다. 위 JAR 해시와 실연동 6사례·실패 후 정리는 최초 검증 소스 `18c9c11`의 이력이며, 이번 병합 소스의 신규 실연동 결과로 주장하지 않는다. 원본 JAR는 `build/issue164/merge-develop/pre-merge-jars/`에 보존했다.
+기존 6사례(FAILED → 재시도 DONE → 저장 결과 재사용, RUNNING 중 중복 방지, SSE 연결 종료 후 저장, HELD의 DONE 저장, 영구 AI 실패 보존 등)가 실제 core·learning HTTP/SSE·PostgreSQL·Redis(AI만 합성 대역)로 통과. 정상·실패 종료 모두 이 실행이 만든 컨테이너·익명 볼륨이 남지 않음을 확인.
 
 ## 16. 학생 답변 표현 필터링 (#205)
 
-10/29 멘토링("초~중학생 대상이라 욕설·비속어 입력 대응 필수, 공신력 있는 가이드 기반 필터링·제출 차단")과 11/1 결정("유사 서비스 방식 탐색 후 답변 필터링, 필터 대상이면 제출 차단", [멘토링 기록](mentoring-20261029.md))에 따라 학생 답변(최초·보완)에 표현 검사를 넣음. 막는 답변은 저장·판정 요청 없이 `422 ANSWER_INAPPROPRIATE`. 계약은 [API 명세](../design/api-spec.md) 1.3과 4.1 답변 제출 줄, learning OpenAPI `submitAnswer` 422·`SubmitRequest`
+10/29 멘토링("초~중학생 대상이라 욕설·비속어 입력 대응 필수, 공신력 있는 가이드 기반 필터링·제출 차단")과 11/1 결정("유사 서비스 방식 탐색 후 답변 필터링, 필터 대상이면 제출 차단", [멘토링 기록](planning-decisions.md#1-1029-오프라인-멘토링-결정후속))에 따라 학생 답변(최초·보완)에 표현 검사를 넣음. 막는 답변은 저장·판정 요청 없이 `422 ANSWER_INAPPROPRIATE`. 계약은 [API 명세](../design/api-spec.md) 1.3과 4.1 답변 제출 줄, learning OpenAPI `submitAnswer` 422·`SubmitRequest`
 
 ### 조사
 
@@ -466,7 +390,6 @@ python scripts/verify_feedback_learning.py `
 - 학부모 Google 로그인 → 자녀(5학년) → 서술 미션에서 욕·연락처·`c발`·`ㅆㅣㅂㅏㄹ` 제출: 화면에 "고쳐야 할 말이 있어요"와 범주별 문구, 입력 유지, 다시 시도 버튼 없음(422). 정상 답은 저장·피드백 진행
 - 처음에 `등신`이 저장되어 위 "데이터로 더한 우리말샘 7개" 기준을 세움. 새 목록 배포(01:25:45 UTC) 뒤 `answer` 테이블에 막힌 답 없음, 로그는 `attemptId`·`category=PROFANITY`만
 - 화면에서 막혀도 "초안 저장 완료"가 보임: 초안 자동 저장(FN-LRN-15)은 검사하지 않아 `attempt_draft`에 남음(아래 사용자 결정)
-- 로컬 실행 중 발견(이 이슈 범위 밖): core에 동의 문서 시드가 없어 로그인 뒤 `CONSENT_DOCUMENTS_UNAVAILABLE` → 로컬 core DB에만 확인용 3개(TERMS·PRIVACY·GUARDIAN, `local-205`)를 넣음. 데모 미션 시드는 초3·초5만 공개라 6학년 자녀는 미션이 비어 보임
 
 ### 사용자 결정 (11/01~11/02)
 
@@ -478,9 +401,6 @@ python scripts/verify_feedback_learning.py `
 - 우회: 자모 합치기·전각·한글 옆 영문 글자 소리는 넣고 영문 자판 위치는 넣지 않음(위 측정)
 
 - 설계와 다른 점: 없음. 설계에 새로 더함: class-diagram 4.1(`ExpressionPolicy`, `AnswerContent.writtenTexts`, `AnswerService --> ExpressionPolicy`, 답변 표현 검사 설명), sequence-diagram 3.1(검사 줄·설명), functional-spec FN-LRN-05(예외·상태), api-spec 1.3·4.1, learning OpenAPI. 목록 읽기를 `answer/repository`의 설정으로 두고 domain은 Kotlin 정규식만 쓰는 것은 architecture 2.1(domain 의존 금지·데이터 적재는 infrastructure)과 `FinishPolicy` <<value>> 선례를 따름
-- 새 파일: `answer/domain/ExpressionCategory.kt`·`ExpressionPolicy.kt`, `answer/repository/ExpressionPolicyConfig.kt`, `resources/answer-filter/`(5개), `answer/domain/ExpressionPolicyTest`(8)
-- 기존 파일 수정: `AnswerContent`(`writtenTexts`), `AnswerService`(검사·로그, 생성자에 `ExpressionPolicy`), 테스트 `AnswerContentTest`(1)·`AnswerServiceTest`(2, 출력 확인 `OutputCaptureExtension`)·`AnswerControllerTest`(1). web `domain/classroom.ts`(`DemoScenario`)·`data/classroom/demoGateway.ts`(시나리오)·`presentation/ClassroomApp.tsx`(상태 시연 선택지)·`tests/classroom.test.ts`(1)
-- 검증: learning 테스트 262개, web 149개·`tsc -b`·oxlint(새 경고 없음), scripts/tests 94개. `AnswerService`의 검사 호출을 빼면 새 서비스 테스트 2개가 실패. 서비스 테스트는 막힌 제출 뒤 `answer` 행 0·판정 없음·초안 그대로·로그에 원문 없음을, 컨트롤러 테스트는 응답에 원문 없음을 확인
 - 한계: 욕 없는 모욕·비꼼·돌려 말한 성적 표현·특정 친구 놀림은 단어로 못 막음(후속 검수 LLM). 맥락 허용은 미션 본문에 같은 말이 있는지만 봄. 낱자 `ㅗ`는 korcen 손가락 욕 패턴이라 낱자를 섞어 쓴 글(`ㄱㅗㅏ자`)이 걸림(원래 동작). korcen 원본 오탐 예외 중 숫자가 든 것(`8등신`)은 korcen 정규화 때문에 원본에서도 동작하지 않음(팀 예외는 정규화해서 비교). 측정 데이터의 분포가 초중등 답변과 다름
 - 확인 필요: ① `ANSWER_INAPPROPRIATE`(범주별 `detail`) 팀 공지(api-spec 공유 계약, PR 전 사용자) ② 초안 자동 저장·돌아보기 글에는 걸리는 말이 남을 수 있음(학생 본인만 열람) ③ 학생 자기 감정 표현("죽고 싶다")의 보호자 알림 여부(아동 안전, 별도 기능) ④ korcen의 MIT·Apache는 코드 라이선스라 단어 데이터의 출처까지 보증하지 않음 ⑤ core 동의 문서 시드 부재(로컬 실행 시 발견, core 담당) ⑥ KISO KSS 신청 여부
 - 후속: 검수 LLM(제출 전 별도 검사, ai-service 검수 API·장애 시 처리·오탐·우회·비용 설계), 판정 LLM 응답에 "부적절 표현 의심" 표시(저장 후 보호자·관리자 확인), KISO KSS
@@ -527,13 +447,10 @@ P12 "판정 리스 90초·고착 탐지 1분"의 탐지 작업. 지금까지는 
 - 이슈 작업 위치는 `judgment/service/`(새 스케줄 클래스)였으나 아키텍처 2.1대로 `judgment/scheduler/`에 둠(사용자 결정). 이슈가 따르라고 한 `ProcessedEventCleanup` "방식"(설정 가능한 주기·조건부 UPDATE·잠금 없음)은 그대로 따름
 - 이슈 배경의 "남은 `RUNNING`은 마무리 조건(P04)·다음 행동 계산에서 처리 중으로 보임": 마무리 조건은 `DONE` 1회 이상이라 `RUNNING`·`FAILED` 모두 충족하지 않고, `nextActions`도 둘 다 `[]`라 이 부분은 탐지 전후가 같음. 달라지는 것은 위 "영향"
 - 일괄 UPDATE라 엔티티 `Judgment.fail`을 거치지 않음. 이슈 작업 위치의 "조건부 일괄 전이"를 따르고, 전이 결과(`FAILED`·실패 코드·`retry_count + 1`)와 만료 조건은 엔티티·`acquire` SQL과 같게 맞춤(`acquire`도 엔티티 판단과 같은 조건을 SQL에 둠)
-- 기존 파일 수정: `Judgment`(상수), `JudgmentService`(`failStuck`, 로거), `JudgmentRepository`·`JudgmentMapper`·`JudgmentMapper.xml`(`failExpired`), `AppProperties`(`judgment`), `application.yml`, 테스트 `JudgmentServiceTest`(3개 추가)
 
 ### 검증
 
-- learning `./gradlew test` 279개 통과(새 9개). `JudgmentServiceTest`: 만료·리스 없음만 전이하고 미만료·`PENDING`은 그대로, 두 번 실행해도 한 번만, 탐지 뒤 재요청이 `FAILED → RUNNING` 후 정상 저장. `StuckJudgmentSchedulerTest`: 켜면 탐지, 끄면 그대로, 로그에 건수·답변 ID만 있고 학생 원문 없음. `StuckJudgmentConcurrencyTest`(실제 커밋, 별도 컨테이너): 재획득과 탐지가 서로 행을 잡은 두 순서, 두 인스턴스 동시 탐지
-- SQL에서 리스 조건을 빼면 새 테스트 2개(미만료 유지, 재획득 먼저)가 실패하는 것을 확인 후 되돌림
-- scripts/tests 96개 통과, `git diff --check` 통과
+`JudgmentServiceTest`: 만료·리스 없음만 전이, 미만료·`PENDING` 유지, 두 번 실행해도 한 번만, 탐지 뒤 재요청이 `FAILED → RUNNING` 후 정상 저장. SQL에서 리스 조건을 빼면 실패함을 확인.
 
 ### 알려진 한계
 
@@ -541,3 +458,22 @@ P12 "판정 리스 90초·고착 탐지 1분"의 탐지 작업. 지금까지는 
 - 만료 판단은 각 Pod의 시각 기준(재획득과 같음). Pod 사이 시각 차이만큼 탐지가 앞당겨지거나 늦어짐
 - learning의 기존 `record/service/ProcessedEventCleanup`은 스케줄 클래스가 service 패키지에서 repository를 바로 부름(아키텍처 2.1과 다름). 이번 범위 밖이라 그대로 둠. #278에서 `record/scheduler/ProcessedEventCleanupScheduler` → `record/service/ProcessedEventCleanupService`로 분리
 - 탐지 건수는 로그로만 남음(지표 수집 없음). DB에서는 `failure_code='LEASE_EXPIRED'`로 셀 수 있음
+
+## 18. 같은 미션 재시도 비교 (#207)
+
+- 사용자 확정: 같은 학생·미션의 **직전 마무리 시도**와 비교합니다. 현재 시작 시점 이전에 마무리한 시도를 `finished_at DESC, started_at DESC, id DESC`로 한 건 선택합니다. 다른 학생/미션·현재 시도·현재 시작 뒤에 마무리한 시도는 제외합니다. 돌아보기 완료만을 기준으로 잘못 좁히지 않습니다.
+- 기존 진행 중 시도 재사용·돌아보기 완료 규칙은 유지합니다. 완료한 결과에서 ‘이 미션 다시 풀기’는 기존 시작 API로 새 시도를 생성합니다. 예전 답변·판정·피드백·초안은 수정하거나 삭제하지 않습니다.
+- `GET /internal/attempts/{attemptId}/comparison`과 core `GET /api/v1/attempts/{attemptId}/comparison`을 추가했습니다. 학생 본인만, 마무리 이후에 조회합니다. core는 상세 캐시와 마찬가지로 no-store입니다.
+- 응답 `NO_PREVIOUS | COMPARABLE | CRITERIA_CHANGED`, 이전/현재의 전체 제출 답변·마무리 시각·마지막 판정·기준표와 각 시도에 고정된 문항을 담습니다. 문항/기준표 버전이 같을 때만 항목별 추가 확인·유지·이번 미확인·양쪽 미확인을 표시합니다. 기준 변경이면 원문만 나란히 읽고 충족 개수를 직접 비교하지 않습니다. 이를 능력 점수나 향상률로 바꾸지 않습니다.
+
+## 19. 실행 모델: 가상 스레드 비활성 (#201)
+
+#201 실제 스케줄 검증에서 learning이 cold start 후 기록 요청·health에 응답하지 않아 리포트 생성이 실패했다. learning 설정만 수정.
+
+- JDK 21, `ActiveProcessorCount=2`, 가상 스레드 활성 상태의 기존 JAR에서 기록 API 16개 동시 첫 요청이 모두 12초 시간 초과했고, 이후 readiness도 응답하지 않았다.
+- CPU·DB 잠금 부족은 관측되지 않았다. 스레드 덤프의 carrier 2개는 Jackson `SerializerCache.addAndResolveNonTypedSerializer` 및 Kotlin reflection 저장소 잠금에서 진행하지 못했다. 후자는 `VirtualThread.parkOnCarrierThread`를 포함한다. DB에는 미완료 읽기 트랜잭션이 남았다.
+- 이는 애플리케이션 SQL 교착으로 확인된 것이 아니라, JDK 21의 monitor pinning과 라이브러리 초기화 잠금이 carrier를 소진하는 형태다. [Oracle 설명](https://inside.java/2024/02/21/quality-heads-up/)도 synchronized 진입·대기 시 carrier가 반환되지 않아 starvation/deadlock이 생길 수 있음을 명시한다.
+
+learning의 `spring.threads.virtual.enabled`를 false로 바꿔 기존 Tomcat의 제한된 플랫폼 스레드 풀을 사용한다. 캐리어 수 증가·순차 예열·가짜 정상 응답을 사용하지 않는다. core virtual threads, JDK 21 버전, 라이브러리 의존성, API/DTO/DB 및 서비스 경계는 변경하지 않는다. 이는 처리량 개선 주장이 아니라 콜드 초기화 시 서비스 전체 진행 정지를 피하는 변경이다.
+
+검증: 수정 전 JAR(2 CPU)은 첫 기록 API 16개 동시 요청이 모두 12초 시간 초과·readiness 무응답, 수정 JAR은 새 JVM 3회 모두 16/16 성공·readiness 200. `RecordColdStartHttpTest`가 내장 Tomcat에 4종 기록 API 16개 동시 요청과 platform 스레드 처리를 고정. 이후 예열 없는 원본 월요일 cron(테스트 시계)으로 주간 리포트 COMPLETED·LLM 서술 검증 통과까지 확인.
