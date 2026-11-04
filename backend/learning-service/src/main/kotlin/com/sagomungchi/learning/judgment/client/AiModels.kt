@@ -1,16 +1,22 @@
 package com.sagomungchi.learning.judgment.client
 
+import com.fasterxml.jackson.databind.JsonNode
+
 /*
  * ai-service 계약 (api-spec 4.2, backend/ai-service/app/judgment/models.py·followup/models.py). JSON 필드는 camelCase.
  * elementId는 rubric_element.id(UUID 문자열). 학생 이름·ID는 보내지 않고 학년만 (api-spec 4 내부 API)
  */
 
+/** question·keywords·essayType은 M2 교차 확인 입력 (#69, api-spec 4.2.2). M1 입력(answerKey·solution)은 M1 활성화 후속 */
 data class AiJudgeRequest(
     val answerText: String,
     val inputType: String,
     val grade: Int,
     val rubric: AiRubric,
     val versions: AiVersions,
+    val question: String? = null,
+    val keywords: List<String> = emptyList(),
+    val essayType: String? = null,
 )
 
 data class AiRubric(val elements: List<AiRubricElement>)
@@ -38,6 +44,8 @@ data class AiJudgment(
     val heldReason: String?,
     val trial: Boolean,
     val versions: AiVersions,
+    /** 활성 M2·M1 결과 `{m2, m1}` 또는 null. 해석하지 않고 judgment.model_scores에 그대로 저장 (#69) */
+    val modelScores: JsonNode? = null,
 )
 
 data class AiJudgedElement(

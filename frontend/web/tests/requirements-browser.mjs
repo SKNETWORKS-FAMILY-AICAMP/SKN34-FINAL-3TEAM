@@ -14,8 +14,9 @@ await context.route('**/login?reauthMock=1',r=>r.fulfill({contentType:'text/html
 const p=await context.newPage(),errors=[],passed=[],layouts=[]
 p.setDefaultTimeout(15000);p.on('pageerror',e=>errors.push(e.message))
 const check=name=>{passed.push(name);console.log('PASS '+name)}
-async function route(to){if(new URL(p.url()).pathname===to)return;await p.locator('a[href="'+to+'"]').first().click();await p.waitForURL(url=>url.pathname===to)}
-async function enter(role){await route('/review');await p.getByRole('button',{name:role+' 시연 시작',exact:true}).click()}
+// 관리자 메뉴 링크에는 집계 기간 쿼리가 붙고 관리자 화면에는 /review 링크가 없다. 링크가 없으면 새로고침 없이 앱 안에서 이동해 목업 상태를 유지한다.
+async function route(to){if(new URL(p.url()).pathname===to)return;const link=p.locator('a[href="'+to+'"], a[href^="'+to+'?"]').first();if(await link.count())await link.click();else await p.evaluate(path=>{history.pushState(null,'',path);dispatchEvent(new PopStateEvent('popstate'))},to);await p.waitForURL(url=>url.pathname===to)}
+async function enter(role){await route('/review');await p.getByRole('button',{name:role+' 시연 시작',exact:true}).click();await p.waitForURL(url=>url.pathname!=='/review')}
 try{
   await p.goto(base+'/review')
   await p.getByRole('heading',{name:'사고뭉치 요구사항 구현 점검',exact:true}).waitFor()
@@ -41,7 +42,9 @@ try{
   check('알림 읽음·미읽음 필터·유형별 수신 설정 저장')
   await route('/parent/account')
   await p.getByRole('heading',{name:'계정·자녀 관리',exact:true}).waitFor()
-  await p.getByLabel('새 자녀 별명',{exact:true}).fill('서윤')
+  // 목업 자녀 별명이 이미 '서윤'이고 화면은 바뀐 필드만 보내므로(#134) 다른 별명으로 저장 성공 경로를 확인한다(#318).
+  const renamed='서윤이'
+  await p.getByLabel('새 자녀 별명',{exact:true}).fill(renamed)
   await p.getByRole('button',{name:'자녀 정보 저장',exact:true}).click()
   await p.getByText('자녀 정보를 저장했습니다.').waitFor()
   const manage=p.locator('section').filter({has:p.getByRole('heading',{name:'자녀 연결·기록 관리',exact:true})}).last()
@@ -49,7 +52,7 @@ try{
   await manage.getByRole('button',{name:'Google 본인 확인',exact:true}).click()
   await manage.getByRole('button',{name:'완료 확인',exact:true}).click()
   await manage.getByText('재확인을 마쳤습니다.',{exact:false}).waitFor()
-  await manage.getByLabel('확인할 자녀 별명').fill('서윤')
+  await manage.getByLabel('확인할 자녀 별명').fill(renamed)
   await manage.getByLabel('대상 자녀와 위의 처리 범위를 확인했습니다.').check()
   await manage.getByRole('button',{name:'선택한 작업 요청'}).click()
   await manage.getByText('삭제 요청을 접수했습니다.',{exact:false}).waitFor()
@@ -70,11 +73,11 @@ try{
   await p.getByText('서버에서 버전 변경을 확인했습니다.',{exact:false}).waitFor()
   check('구조화된 평가 기록 렌더링·등록·명시적 승인·범위 활성화')
   await route('/admin/support')
-  await p.getByRole('heading',{name:'문의·공지 관리',exact:true}).waitFor()
-  await p.getByRole('button',{name:'이 문의 답변',exact:true}).first().click()
+  await p.getByRole('heading',{name:'문의 답변과 공지 관리',exact:true}).waitFor()
+  await p.getByRole('button',{name:'저장 상태 확인 문의 선택',exact:true}).first().click()
   await p.getByLabel('문의 답변',{exact:true}).fill('답변 입력 아래의 저장 완료 표시를 확인해 주세요.')
-  await p.getByRole('button',{name:'답변 등록',exact:true}).click()
-  await p.getByText('답변을 등록했습니다.').waitFor()
+  await p.getByRole('button',{name:'답변 저장',exact:true}).click()
+  await p.getByText('문의 답변을 저장했습니다.').waitFor()
   check('서비스 운영 권한으로 문의 답변 등록')
   await enter('학부모');await route('/parent/support')
   await p.getByText('답변 입력 아래의 저장 완료 표시를 확인해 주세요.').waitFor()

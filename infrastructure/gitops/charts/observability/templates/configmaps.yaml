@@ -63,19 +63,6 @@ data:
       - job_name: rabbitmq
         static_configs:
           - targets: [rabbitmq.platform.svc.cluster.local:15692]
-      {{- if .Values.prometheus.rabbitmqDlqMetrics.enabled }}
-      # Only the queue_coarse_metrics family, then only total messages of <queue>.dlq.
-      - job_name: rabbitmq-dlq
-        metrics_path: /metrics/detailed
-        params:
-          family: [queue_coarse_metrics]
-        static_configs:
-          - targets: [rabbitmq.platform.svc.cluster.local:15692]
-        metric_relabel_configs:
-          - source_labels: [__name__, queue]
-            regex: 'rabbitmq_detailed_queue_messages;.+\.dlq'
-            action: keep
-      {{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -86,9 +73,7 @@ data:
     apiVersion: 1
     datasources:
       - name: Prometheus
-        {{- if .Values.grafana.alerting.enabled }}
-        uid: {{ required "grafana.datasourceUid is required for alerting (use the existing datasource UID)" .Values.grafana.datasourceUid | quote }}
-        {{- end }}
+        uid: prometheus
         type: prometheus
         access: proxy
         url: http://prometheus.observability.svc.cluster.local:9090

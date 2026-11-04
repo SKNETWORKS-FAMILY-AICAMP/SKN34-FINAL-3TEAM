@@ -77,7 +77,8 @@ class AiClientTest {
                         """{"answerText":"물이 얼면 부피가 커져요","inputType":"NARRATIVE","grade":3,
                             "rubric":{"elements":[{"elementId":"e-1","label":"원인","description":null,"points":1,
                             "judgeVerified":false,"goodThought":false,"commonErrors":null}]},
-                            "versions":{"mission":"M@1","rubric":"M@1","model":null,"prompt":null}}""",
+                            "versions":{"mission":"M@1","rubric":"M@1","model":null,"prompt":null},
+                            "question":null,"keywords":[],"essayType":null}""",
                     ),
                 ),
         )

@@ -1,33 +1,69 @@
 {{- if .Values.grafana.alerting.enabled }}
-{{- $uid := required "grafana.datasourceUid is required for alerting" .Values.grafana.datasourceUid }}
-{{- $provisioning := required "grafana.alerting.provisioning must be generated before enabling alerting" .Values.grafana.alerting.provisioning }}
-{{- if ne (int $provisioning.apiVersion) 1 }}
-{{- fail "alerting provisioning apiVersion must be 1" }}
-{{- end }}
-{{- range (required "alerting rule groups are required" $provisioning.groups) }}
-{{- range (required "alerting rules are required" .rules) }}
-{{- range .data }}
-{{- if and (ne .datasourceUid "__expr__") (ne .datasourceUid $uid) }}
-{{- fail "alert rule datasource UID must match grafana.datasourceUid" }}
-{{- end }}
-{{- if and (contains "job=\"rabbitmq-dlq\"" (toString .model.expr)) (not $.Values.prometheus.rabbitmqDlqMetrics.enabled) }}
-{{- fail "DLQ alert rule requires prometheus.rabbitmqDlqMetrics.enabled" }}
-{{- end }}
-{{- end }}
-{{- end }}
-{{- end }}
-{{- range (required "alerting contact points are required" $provisioning.contactPoints) }}
-{{- range .receivers }}
-{{- if or (ne .type "discord") (ne .settings.url "$OPS_DISCORD_WEBHOOK_URL") }}
-{{- fail "alerting contact point must use the Discord environment reference" }}
-{{- end }}
-{{- end }}
-{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: ops187-alerting
+  name: grafana-alerting
 data:
-  alerting.json: |
-    {{- toPrettyJson $provisioning | nindent 4 }}
+  alerting.yaml: |
+    apiVersion: 1
+    contactPoints:
+      - orgId: 1
+        name: discord-aws-alerts
+        receivers:
+          - uid: discord-aws-alerts
+            type: discord
+            disableResolveMessage: false
+            settings:
+              url: $DISCORD_WEBHOOK_URL
+              use_discord_username: true
+    policies:
+      - orgId: 1
+        receiver: discord-aws-alerts
+        group_by: [grafana_folder, alertname]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 4h
+    groups:
+      - orgId: 1
+        name: demo-platform
+        folder: AWS Demo
+        interval: 1m
+        rules:
+        {{- range .Values.grafana.alerting.rules }}
+          - uid: {{ .uid }}
+            title: {{ .title | quote }}
+            condition: C
+            for: {{ .for | quote }}
+            noDataState: NoData
+            execErrState: Error
+            annotations:
+              summary: {{ .summary | quote }}
+            labels:
+              environment: demo
+              severity: warning
+            data:
+              - refId: A
+                relativeTimeRange: {from: 300, to: 0}
+                datasourceUid: prometheus
+                model:
+                  refId: A
+                  expr: {{ .expr | quote }}
+                  instant: true
+                  range: false
+                  intervalMs: 15000
+                  maxDataPoints: 43200
+              - refId: C
+                relativeTimeRange: {from: 0, to: 0}
+                datasourceUid: __expr__
+                model:
+                  refId: C
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator: {type: {{ .operator }}, params: [{{ .threshold }}]}
+                      operator: {type: and}
+                      reducer: {type: last}
+                      type: query
+                      query: {params: [C]}
+        {{- end }}
 {{- end }}

@@ -3,7 +3,7 @@ import { http } from 'msw/http'
 import { guard, respond as respondBase } from './student.ts'
 import { parentGuard, parentChild, fail } from './parent.ts'
 import { fixtureStore } from '../fixtures/student.ts'
-import { mockIdentity, workspaceScenario } from '../fixtures/accounts.ts'
+import { mockIdentity, mockAccountChildren, workspaceScenario } from '../fixtures/accounts.ts'
 import { setMockChildPlan } from '../fixtures/childPlan.ts'
 import type { PaymentProduct, PaymentRecord, PaymentRefund, PaymentSubscription, PaymentOrder } from '../../domain/payment.ts'
 
@@ -46,6 +46,21 @@ function account(request: Request): Account {
   }
   return a
 }
+// 이관 목업도 기존 결제 fixture를 읽는다. 결제 명의·구독 상태를 이전하거나 바꾸지 않는다.
+export function requireMockTransferPaymentReady(sender: string, childId: string) {
+  if (workspaceScenario === 'query-fail') fail('PAYMENT_STORAGE_UNAVAILABLE', '거래 정보를 불러오지 못했습니다.', 503)
+  const data = accounts.get(sender)
+  const children = sender === mockIdentity.email ? fixtureStore.snapshot().children ?? [] : mockAccountChildren.get(sender) ?? []
+  const subscriptions = data?.subscriptions ?? []
+  const payments = data?.payments ?? []
+  const unresolved = (p: PaymentRecord) => p.refundRequests.some(r => ['REQUESTED', 'APPROVED', 'FAILED'].includes(r.status))
+  if ((!data && children.some(c => c.plan === 'PREMIUM')) ||
+    subscriptions.some(s => s.status === 'RENEWAL_FAILED' || (s.status === 'ACTIVE' && (s.autoRenew || s.periodEnd > day(0))) || (s.status === 'CANCELED' && s.periodEnd > day(0))) || payments.some(unresolved))
+    fail('WITHDRAWAL_BLOCKED', '발신자의 구독·환불을 먼저 정리해 주세요.', 409)
+  if (subscriptions.some(s => s.childId === childId && ['ACTIVE', 'RENEWAL_FAILED'].includes(s.status)) ||
+    payments.some(p => p.childId === childId && (p.status === 'CONFIRMING' || unresolved(p))))
+    fail('TRANSFER_PAYMENT_BLOCKED', '자녀의 결제·구독 처리가 끝난 뒤 이관해 주세요.', 409)
+}
 async function keyed<T>(request: Request, action: (body: Record<string, unknown>) => Promise<T>): Promise<T> {
   const a = account(request), key = request.headers.get('Idempotency-Key') ?? ''
   if (!/^[0-9a-f-]{36}$/i.test(key)) return fail('IDEMPOTENCY_KEY_REQUIRED', '같은 요청 식별자가 필요합니다.')
@@ -60,6 +75,19 @@ function approve(a: Account, p: PaymentRecord) {
   setMockChildPlan({ childId: p.childId, plan: 'PREMIUM' }); return p
 }
 export const paymentHandlers = [
+  http.get('/api/v1/children/:childId/entitlement', ({ request, params }) => respond(async () => {
+    const childId = String(params.childId)
+    await parentChild(request, childId)
+    const a = account(request)
+    const sub = a.subscriptions.find(s => s.childId === childId &&
+      ((s.status === 'ACTIVE' && s.periodEnd > day(0)) || (s.status === 'RENEWAL_FAILED' && (s.graceUntil ?? '') > day(0))))
+    const product = sub?.product ?? free
+    const refundPending = a.payments.some(p => p.childId === childId && p.status === 'REFUND_REVIEW')
+    return { childId, product, subscriptionId: sub?.subscriptionId ?? null, status: sub?.status ?? 'FREE',
+      autoRenew: sub?.autoRenew ?? false, periodEnd: sub?.periodEnd ?? null, graceUntil: sub?.graceUntil ?? null,
+      refundPending, conversationEnabled: !refundPending && Number(product.limits.dailyConversations) > 0,
+      narrativeEnabled: !refundPending && product.limits.reportNarrative === true }
+  })),
   http.get('/api/v1/products', () => respond(async () => ({ items: [free, premium] }))),
   http.get('/api/v1/subscriptions', ({ request }) => respond(async () => ({ items: account(request).subscriptions.map(s => workspaceScenario === 'payment-renewal-failed' && s.status === 'ACTIVE' ? { ...s, status: 'RENEWAL_FAILED', renewalRetryCount: 1, graceUntil: new Date(Date.now() + 2 * 86400000).toISOString(), nextBillingDate: s.autoRenew ? day(1) : null } : s) }))),
   http.get('/api/v1/payments', ({ request }) => respond(async () => {

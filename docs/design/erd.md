@@ -1,7 +1,5 @@
 # ERD
 
-> #289: `V26__guardian_transfer.sql`은 `guardian_transfer`에 요청 당사자·자녀·상담 포함 여부·상태·시각을 기록하고, 대기 요청을 자녀당 하나로 제한한다. `guardianship.transferred_at`은 이관으로 종료된 연결을 일반 연결 해제와 구분한다. `student_id WHERE status='LINKED'`의 고유 인덱스로 자녀당 현재 보호자 한 명을 보장하며 기존 중복 데이터는 자동 정리하지 않고 migration을 실패시킨다. 기존 V1~V25, 학생 ID, learning/report DB 스키마는 변경하지 않는다. V24의 GUARDIAN_PASSWORD 재인증을 보존하고 이관 목적만 추가한다. 상세 범위와 검증은 [이관 구현 기록](../report/guardian-transfer-local.md)을 따른다.
-
 - 근거: [기능명세서](functional-spec.md), [API 명세서](api-spec.md), [유스케이스](usecase.md), [아키텍처 설계](architecture.md), [프로젝트 기획서](<../outputs/프로젝트_기획서_사고뭉치.pdf>) 4.5
 - 범위: DB를 소유한 서비스 3개(core_db · learning_db · report_db). ai·scoring은 상태 없음 (아키텍처 1.1)
 - AI Hub 원본·가공본은 `ml/` 학습용으로 서비스 DB에 넣지 않음 (NFR-DAT-03)
@@ -203,11 +201,15 @@ erDiagram
 - #37: 동의 권한은 문서·주체·student_id별 agreed_at·id 내림차순 최신 행 기준이다. 같은 보호자의 동의 저장·철회·자녀 등록은 user_account 행 잠금으로 직렬화한다. 기존 스키마를 사용하며 V1~V8을 수정하지 않는다.
 - `consent_document` UK `(kind, version)`. V25가 1.0 문서 3종을 게시(#235), 개정은 행 수정 없이 새 version 행 추가. 동의는 철회해도 행 유지 → `status`·`withdrawn_at` 갱신 (FN-ACC-02)
 - `guardianship` 부분 UK `(parent_user_id, student_id) WHERE status = 'LINKED'`. 권한 확인은 이 테이블의 `LINKED` 행 기준 (아키텍처 1.1)
-- #289 V26: 추가 부분 UK `(student_id) WHERE status='LINKED'`로 현재 보호자 한 명을 보장한다. `guardian_transfer`는 `(student_id) WHERE status='PENDING'` 고유 인덱스, `(sender_id,created_at)`·`(recipient_id,created_at)` 조회 인덱스를 가진다. 발신자·수신자는 서로 달라야 하며 모두 실제 계정 FK다.
+- #289 V26: 추가 부분 UK `(student_id) WHERE status='LINKED'`로 현재 보호자 한 명을 보장한다. `guardian_transfer`는 `(student_id) WHERE status='PENDING'` 고유 인덱스, `(sender_id,created_at)`·`(recipient_id,created_at)` 조회 인덱스를 가진다. 발신자·수신자는 서로 달라야 하며 모두 실제 계정 FK다. `guardianship.transferred_at`은 이관으로 종료된 연결을 일반 해제와 구분한다. 기존 중복 LINKED 데이터는 자동 정리하지 않고 migration을 실패시킨다.
 - 연결 해제는 행 삭제 대신 `UNLINKED` 전환 → 해제 이후 조회 차단, 이력 보존 (FN-DSH-06)
 - `deletion_request`가 `CONFIRMED`가 되면 같은 트랜잭션에서 `outbox_event(student.deleted)` 저장
 - 로그인 수단·자녀 연결 변경 결과·시점은 `audit_log`에 기록 (FN-ACC-10)
 - `user_account.is_demo`·`student.is_demo` 행은 운영 현황·사용량·결제 집계에서 제외 (NFR-OPS-01)
+- `user_account.oauth_provider`·`oauth_subject`는 함께 NULL(기존 계정) 또는 GOOGLE·Google sub이며 복합 UNIQUE. `password_hash`는 nullable로 보존하고 이메일로 OAuth 계정을 자동 연결하지 않음 (#36)
+- 신규 student의 `pin_failed_count`는 앱이 0을 전달(SQL DEFAULT 없음). 학생 삭제 확정 때 `student_device_child` 제거·PIN 해시·잠금 삭제, 탈퇴 시 모든 기기 폐기 (#58)
+- `student.parent_sharing_enabled`는 비공개 기본값을 보장하기 위한 SQL DEFAULT false의 명시적 예외. 학생 본인만 바꾸며 원문 제공 경로는 같은 학생 행의 현재 설정을 다시 확인 (#206)
+- `student.look_theme`·`look_companion`·`look_updated_at`은 함께 NULL(저장한 적 없음, API 기본값 `lake`·`mungchi`)이거나 함께 값(`student_look_saved_together`). 값 목록은 코드 상수와 CHECK로 고정, SQL DEFAULT 없음. 학생 삭제 확정 때 PIN 삭제와 같은 트랜잭션에서 NULL로 되돌림 (#234)
 
 ### 3.1.1 로그인 세션 (#36)
 
@@ -419,7 +421,7 @@ erDiagram
 
 ### 3.2.1 분석 대화 저장 규칙 (#41)
 
-기존 conversation/message/evidence 스키마를 사용하며 마이그레이션을 추가하지 않는다. retry_count를 실행 세대 fencing 값으로 사용하고 실패/취소는 UPDATE만 수행한다. clarification은 COMPLETED(답변 NULL), delta는 미저장이다. 한도는 `payment_premium_usage`의 `CONVERSATION`·`RESERVED/USED` 행 KST 일자 집계다(#225, 마이그레이션 없음, 기존 `ix_payment_usage_refund` 인덱스 사용). [계약](../report/issue-41-analysis-conversations.md).
+기존 conversation/message/evidence 스키마를 사용하며 마이그레이션을 추가하지 않는다. retry_count를 실행 세대 fencing 값으로 사용하고 실패/취소는 UPDATE만 수행한다. clarification은 COMPLETED(답변 NULL), delta는 미저장이다. 한도는 `payment_premium_usage`의 `CONVERSATION`·`RESERVED/USED` 행 KST 일자 집계다(#225, 마이그레이션 없음, 기존 `ix_payment_usage_refund` 인덱스 사용). [계약](../report/core-gateway.md#5-분석-대화-계약-41167).
 
 ### 3.2.2 REPORT 재처리 관계 (#47)
 
@@ -536,8 +538,7 @@ erDiagram
 
 ### 3.4 결제·구독 (FN-PAY) — 토스페이먼츠 테스트
 
-#48: 무료 상품 버전은 PAYMENT_FREE_PRODUCT_ID로 지정한다(2026-10-28 사용자 확정). 상품·주문·구독 조건은 snapshot으로 보존한다. V15의 payment_charge_attempt는 논리 주문당 확정 실패 재청구 이력을 분리하며 `(order_id,attempt_no)`·pg_order_no·멱등키 UK를 갖는다. 기존 정기 주문 기간 UK는 유지한다. subscription.billing_anchor_day는 최초 일자를 보존한다. payment_premium_usage는 환불과 경합하는 사용 예약·완료 증빙을 소유한다. 상세 경계는 [보고서](../report/issue-48-payments.md)를 따른다.
-
+#48: 무료 상품 버전은 PAYMENT_FREE_PRODUCT_ID로 지정한다(2026-10-28 사용자 확정). 상품·주문·구독 조건은 snapshot으로 보존한다. V15의 payment_charge_attempt는 논리 주문당 확정 실패 재청구 이력을 분리하며 `(order_id,attempt_no)`·pg_order_no·멱등키 UK를 갖는다. 기존 정기 주문 기간 UK는 유지한다. subscription.billing_anchor_day는 최초 일자를 보존한다. payment_premium_usage는 환불과 경합하는 사용 예약·완료 증빙을 소유한다. 상세 경계는 [보고서](../report/payment.md)를 따른다.
 
 ```mermaid
 erDiagram
@@ -669,7 +670,8 @@ erDiagram
 - 자동 갱신 해지는 `auto_renew = false` + `auto_renew_canceled_at` 기록, 남은 기간 이후 `status = CANCELED` + `canceled_at`. `period_end` 전 해지 철회 시 `auto_renew = true`, `auto_renew_canceled_at = NULL` (FN-PAY-09, P14)
 - 환불 완료(`payment.status = REFUNDED`) 시 구독 즉시 `CANCELED` + `canceled_at` (P14)
 - 갱신 실패 시 `RENEWAL_FAILED` + `grace_until = 실패일 + 3일`, 매일 1회 재청구마다 `renewal_retry_count + 1`, 3회 실패 시 `CANCELED` (FN-PAY-08, P13)
-- 재청구 주문: 같은 기간 부분 UK 때문에 기존 `RENEWAL` 주문으로 재청구하는 것으로 가정. 토스 자동결제의 `orderId` 재사용 가능 여부 확인 후 확정 (기술 확인 사항)
+- 재청구: 월별 `payment_order`는 재사용하고 확정 실패 후의 일별 재청구마다 `payment_charge_attempt`에 새 PG 주문과 멱등키를 보존. 불명확한 거래는 재청구하지 않고 조회 복구 (#48)
+- `product.code`는 상품 행별 UK이며 요금제 추가·가격/한도별 새 행을 위한 확장 가능 코드. 새 상품 행은 새 고유 코드, 무료 상품 교체는 `PAYMENT_FREE_PRODUCT_ID`를 명시적으로 변경 (P13, #48)
 - 웹훅은 `transmission_id`로 1회만 반영, 본문 대신 PG 조회 결과로 상태 갱신 (FN-PAY-04)
 - 환불 중복·초과 방지: 승인된 `refund_request.amount` 합계 ≤ `payment.amount` 검사 (FN-ADM-16)
 - 카드번호 등 결제수단 원본 미저장, 빌링키는 암호화 (NFR-SEC-06)
@@ -759,7 +761,7 @@ erDiagram
 - `llm_usage`에 학생 ID·답변 원문 컬럼 없음 (NFR-PRF-02). 수집 데이터 보고서의 예정 필드 `llm_usage_log(call_type, model, input_tokens, output_tokens, ts)` 대응
 - `cost_usd`는 core 설정의 모델별 토큰 단가(기획서 3.9)로 소비 시 계산, 단가 변경 후에도 과거 값 유지 (FN-ADM-19)
 - `outbox_event`: 상태 변경과 같은 트랜잭션에 저장, 릴레이가 publisher confirm 후 `published_at` 기록 (아키텍처 1.6)
-- #208 `event_log`: 감사 큐 `core.event.audit`로 받은 모든 업무 메시지(ai·scoring 발행 포함)의 메타데이터. payload·원문은 저장하지 않음. 같은 id 재발행·재전달은 첫 행 유지. `outbox_event`·`processed_event`·`llm_usage`와 `event_id`로 조인해 발행·전달·소비를 추적 ([보고서](../report/issue-208-event-log.md))
+- #208 `event_log`: 감사 큐 `core.event.audit`로 받은 모든 업무 메시지(ai·scoring 발행 포함)의 메타데이터. payload·원문은 저장하지 않음. 같은 id 재발행·재전달은 첫 행 유지. `outbox_event`·`processed_event`·`llm_usage`와 `event_id`로 조인해 발행·전달·소비를 추적 ([보고서](../report/core-gateway.md#9-rabbitmq-발행소비-기록-208))
 - #208 보존: 발행 완료 `outbox_event`, `processed_event`, `event_log`는 90일 뒤 1시간 주기로 삭제(`app.messaging.event-retention-days`). 미발행 outbox 행은 삭제하지 않음. `llm_usage`·`job_execution`은 정리 대상이 아님
 - `idempotency_record.user_id`는 core `user_account.id` FK. 요청 접수 후 응답 확정 전에는 response_status·response_body를 NULL로 둔다. expires_at은 created_at + 24시간이다 (P12).
 - `idempotency_record`: 공개 API의 `Idempotency-Key` 대상(답변 제출·주문·승인·환불·재처리·신고) 공통. 같은 키·다른 본문은 `request_hash` 불일치로 422 (API 1.4)
@@ -824,13 +826,15 @@ erDiagram
     jsonb answer_key "NULL 허용 · 정답·동치 표현"
     text example_answer "NULL 허용"
     jsonb forbidden_terms "NULL 허용 · 되묻기 유출 검사 금지어"
+    jsonb keywords "NULL 허용 · 서술 M2 핵심어 묶음 (#69)"
+    varchar essay_type "NULL 허용 · 논술 M2 글 종류 (#69)"
     uuid created_by
     timestamptz created_at
   }
   rubric_element {
     uuid id PK
     uuid rubric_version_id FK
-    varchar code "e1 · FINAL_ANSWER는 수학 최종 답 요소"
+    varchar code "표준 코드(ANALYZE_RELATION 등) · 고유 e+숫자 · 정답 ANSWER_KEY·FINAL_ANSWER (FN 1.5 #262)"
     varchar label
     text description "NULL 허용"
     int points
@@ -859,10 +863,13 @@ erDiagram
 
 - `mission_version`·`rubric_version` UK `(mission_id, version)`. 수정은 새 버전 추가 후 `mission.current_*` 갱신, 이전 버전 불변 (FN-ADM-10, 12)
 - 공개 버전(#145, P07): 학생 목록·상세·시도 시작은 `published_*`, 관리자 편집은 `current_*`. 게시 때 `published_*` ← `current_*`라 공개 중 수정본은 재검토·재게시 전까지 학생에게 보이지 않음. learning V7이 칸을 추가하고 기존 `PUBLISHED` 미션은 `current_*`로 채움
-- 공개(`PUBLISHED`) 전 필수 항목 검사(FN-ADM-11, #145): 현재 미션·기준표 버전 존재, 제목·질문·교과·성취기준, 학년 3~6(논술 5~6), **기준표 요소 1개 이상(입력 방식 무관, 구 #81)**·요소 이름·양의 배점, 풀이 단계는 `FINAL_ANSWER` 외 요소 1개 이상·`FINAL_ANSWER`는 풀이 단계만, 고르기·순서·분류는 선택지(분류는 그룹), 서술·논술이 아니면 `answer_key`(입력 방식 모양), 서술·논술은 `example_answer`, 현재 버전 최신 검토 `APPROVED`. 누락은 `422 MISSION_PUBLISH_INCOMPLETE` + `missingFields`(class-diagram 4.1)
+- 공개(`PUBLISHED`) 전 필수 항목 검사(FN-ADM-11, #145): 현재 미션·기준표 버전 존재, 제목·질문·교과·성취기준, 학년 3~6(논술 5~6), **기준표 요소 1개 이상(입력 방식 무관, 구 #81)**·요소 이름·양의 배점, 풀이 단계는 `FINAL_ANSWER` 외 요소 1개 이상·`FINAL_ANSWER`는 풀이 단계만, 요소 code가 미션 유형·입력 방식에 맞음(같은 유형 표준 코드·`e`+숫자, 고르기·순서·분류는 `ANSWER_KEY` 하나, 따져 보기 논술은 주장·근거·반론 코드, FN 1.5 #262), 고르기·순서·분류는 선택지(분류는 그룹), 서술·논술이 아니면 `answer_key`(입력 방식 모양), 서술·논술은 `example_answer`, 현재 버전 최신 검토 `APPROVED`. 누락은 `422 MISSION_PUBLISH_INCOMPLETE` + `missingFields`(class-diagram 4.1)
 - `mission.sort_order`: 학년군 안의 목록 순서, 이전·다음 이동과 진행 위치 계산 (FN-LRN-02)
 - `rubric_element.judge_verified = false` 요소는 AI 판정 시 충족 표시 금지 → `HELD (UNVERIFIED_SCOPE)`. 평가 통과 후 관리자가 갱신 (FN-JDG-04, 05, NFR-AIQ-01). 사람 검증(P11) 도입 전에는 ai `JUDGE_REQUIRE_VERIFIED=false`(기본)로 끄고 `trial = true`로 시범 표시
 - `forbidden_terms`: 정답 키와 함께 ai `followups` 유출 검사 입력 (FN-JDG-06)
+- `keywords`·`essay_type`(#69, learning V9): ai 판정의 M2 교차 확인 입력(api-spec 4.2.2). `keywords`는 서술 핵심어 묶음 배열(괄호 안 대체어 포함 문자열), `essay_type`은 `설명글|글짓기|주장|찬성반대|대안제시`(CHECK, 논술 미션에서만 사용). 기준표 버전과 함께 불변. 비어 있으면 서술·논술 M2를 부르지 않음
+- `judgment.model_scores`(#69): ai 응답 `modelScores`(`{m2, m1}`) 그대로. 학생 화면에 보이지 않는 AI 관찰. M2를 부르지 않았거나 비활성이면 NULL
+- #262 표준 요소: 새 컬럼 없이 `rubric_element.code` 값 규칙(FN 1.5). DB CHECK는 두지 않음: 이전 기준표 버전은 불변이라 자유 code가 남고, 미션 유형은 `mission_version`에 있어 행 단위 CHECK로 맞춤을 확인할 수 없음. 저장 때 code 모양(400)·게시 때 유형·입력 방식 맞춤(422 `rubric.elements.code`)을 앱이 검사. 시드는 같은 행의 code만 바꿔 지난 판정이 `judgment_element.rubric_element_id`로 이어짐
 - #79: V6는 `mission_version`에 `categories`(분류 그룹, `answer_key.assignments`의 `categoryId`가 가리킴)·`answer_unit`(수학 최종 답 단위)을 추가한다. 기존 마이그레이션은 수정하지 않는다. 수학 `answer_key.finalAnswer`는 수만 담고 단위는 비교하지 않는다(FN-JDG-02). 풀이 단계 기준표의 `code = 'FINAL_ANSWER'` 요소는 ai에 보내지 않고 정답 키로 충족을 정한다
 - AI Hub 문항·답안·피드백 원문은 어떤 컬럼에도 저장하지 않음 (FN-ADM-09)
 
@@ -1139,7 +1146,7 @@ erDiagram
 
 - #208 보존: worker가 1시간 주기로 90일 지난 발행 완료 `outbox_event`·`processed_event` 삭제(`EVENT_RETENTION_DAYS`). 미발행·격리(`published_at IS NULL`) 행과 `report_deletion_guard`는 유지
 - `weekly_report.job_id` UK → 같은 `report.generate` 재전달 시 1회만 생성. 상태 전이 `RUNNING → COMPLETED|FAILED`와 `outbox_event(report.*)`를 같은 트랜잭션에 저장
-- #152 관리자 재처리는 새 jobId로 다음 revision을 만든다. 원래 실패 행·기존 파일은 보존한다. 원작업↔재처리 연결은 core #47 소유이며 report DB에 교차 서비스 FK·원작업 컬럼을 추가하지 않는다. 현재 core의 연결 저장 구조를 이 문서에서 임의 확정하지 않는다.
+- #152 관리자 재처리는 새 jobId로 다음 revision을 만든다. 원래 실패 행·기존 파일은 보존한다. 원작업↔재처리 연결은 core #47 소유이며 report DB에 교차 서비스 FK·원작업 컬럼을 추가하지 않는다. 연결 저장은 3.2.2.
 - 재생성은 기존 행을 덮지 않고 `revision` 증가 행 추가, UK `(student_id, period_from, revision)` (기존 판 보존·최신판 기본 조회, P06). 학부모 요청 재생성은 리포트당 1회 → core `report_job(REGENERATE)` 건수로 확인
 - 기록 없는 주·표본 부족 주는 `status = COMPLETED` + `state`로 구분, 생성 실패(`FAILED`)와 분리 (FN-RPT-11). state는 COMPLETED일 때만 NOT NULL (상태 다이어그램 4.2).
 - `report_item` UK `(report_id, item_type, seq)`. 상세 응답(API 3.4)은 `item_type`별로 묶어 조립
@@ -1199,53 +1206,12 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 7. 확인 필요 가정
 - PG 거래 대조(FN-ADM-15): 조회 시 PG API와 계산, 결과 테이블 없음
-- 정기 청구는 월별 payment_order를 재사용하며, 확정 실패 후의 일별 재청구마다 payment_charge_attempt에 새 PG 주문과 멱등키를 보존한다. 불명확한 거래는 재청구하지 않고 조회 복구한다(#48).
-- 정책 확정에 따른 DDL은 core V6~V7·learning V4~V5로 추가한다(9장). 기존 데이터의 출생연도·상품 한도·폐기 코드/음성 기록은 임의 변환하지 않고 적용 전 정비가 필요하다.
-- `product.code`는 상품 행별 UK이며 P13의 요금제 추가·가격/한도별 새 행을 위해 확장 가능한 코드다. 새 상품 행은 새 고유 코드를 사용한다. 무료 상품 교체는 PAYMENT_FREE_PRODUCT_ID를 명시적으로 변경한다(#48 사용자 확정).
-
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V26(V10·V11 결번), learning Flyway V1~V8, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`. 현재 75개 테이블·664개 컬럼(core 48/441, learning 19/160, report 8/63). 결정 경위는 [DB 스키마 보고서](../report/db-schema.md)
-- 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11은 #58이 처음 V10을 썼다가 V12가 적용된 DB에서 Flyway가 거부해 V13으로 옮긴 결번이며, V12 첫 줄 주석의 "V10은 #58"은 당시 기록
+- 버전: core Flyway V1~V9·V12~V26(V10·V11 결번), learning Flyway V1~V8, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`. 현재 75개 테이블·664개 컬럼(core 48/441, learning 19/160, report 8/63). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT
 - FK는 같은 DB 내부만 연결. 다중 참조의 소속 일치·공개 조건·환불 합계 검사는 서비스 검증. 순환 참조는 같은 마이그레이션에서 테이블을 모두 만든 뒤 FK 추가(자동 삭제 설정 아님)
 - 정책 변경으로 기존 데이터 정비가 필요하면 준비 버전(nullable 추가·제약 제거)과 최종 버전(정비 검사 후 NOT NULL·CHECK)으로 나누고, 기존 값을 임의 변환하지 않음(core V6~V7, learning V4~V5). 실제 학생 답안·수집본은 마이그레이션에 넣지 않음
-
-## 9. 확정 정책 반영 (core V6~V7, learning V4~V5)
-
-- core: `student.birth_year`·`product.limits` NOT NULL, `product.code` 확장 가능 UK, 학년 3~6 CHECK, `student.user_account_id` 제거. 기존 상품 코드·금액·참조 ID는 자동 변경하지 않음
-- learning: `followup_bank_question`·`followup.bank_question_id` 추가(BANK일 때만 필수 CHECK, 삭제 FK는 NO ACTION), `answer.speech_transcribed` 제거, source는 LLM·LLM_RETRY·BANK. 은행 질문의 type 일치·활성 여부는 서비스가 검사
-
-## 10. 학생 기기·PIN (core V13, #58)
-
-- 저장 구조는 3.1·6장. 기존 student는 PIN 미설정(NULL)·실패 횟수 0으로 옮기고 임의 PIN·기기는 만들지 않음. 신규 student의 `pin_failed_count`는 앱이 0을 전달(SQL DEFAULT 없음)
-- 삭제 확정 때 `student_device_child` 제거·PIN 해시·잠금 삭제, 탈퇴 시 모든 기기 폐기. 연결·동의 해제는 세션 검사로 즉시 차단
-- 재인증은 V9 `reauth_challenge`·`reauth_grant`. 페어링 코드와 시도 제한만 Redis
-
-## 11. OAuth·로그인 세션 (core V8, #36)
-
-- `user_account.oauth_provider`·`oauth_subject`는 함께 NULL(기존 계정) 또는 GOOGLE·Google sub이며 복합 UNIQUE. `password_hash`는 nullable로 보존하고 이메일로 OAuth 계정을 자동 연결하지 않음
-- `refresh_token.session_id`(FK `auth_session.id`)·`used_at` 추가. 기존 토큰은 `revoked_at`을 채워 재로그인시키고, 새 토큰은 `session_id` 필수·만료는 세션 최초 만료 이내. 사용 이력은 재사용 탐지를 위해 세션 만료까지 보존
-- 학생 전환은 세션 version을 올리고 만료를 학생 access TTL로 줄이며 부모 refresh를 소비(학생 refresh 미발급). 관리자 권한·동의·자녀 연결은 최신 테이블로 확인. OAuth subject를 추정하는 백필은 하지 않음
-
-## 12. 신고·지원 요청 범위 (core V16, #46)
-
-#46 V16: develop의 V14와 결제 V15를 포함한 기존 마이그레이션 SQL은 보존한다. 소유 역할·학생 세션 범위를 추가하여 공유 보호자 ID의 학생/형제/보호자 노출을 분리한다. legacy NULL 역할은 본인 목록에 추정하지 않는다. error_report UK(reporter_user_id,submission_key), correction 부분 UK(error_report_id WHERE request_key IS NOT NULL)·UK(request_key)로 결과 저장 실패 후 재시도를 보존한다. notice DELETE는 ended_at 종료, 변경 전후는 audit_log에 기록한다.
-
-- V14는 SPEECH 사용량 CHECK 제거, V15는 결제 실행·권한, V16은 신고·문의 주체와 정정 의도 저장이다. V16은 통합 전 지원 V14의 SQL 원문을 유지한 경로 변경이며 V15와 의존 관계가 없다. 이전 지원 V14를 적용한 임시 DB에는 자동 repair·이력 변경 없이 새 격리 DB를 사용한다.
-
-## 13. 학생 전역 공개 설정 (core V21, #206)
-
-`student.parent_sharing_enabled`는 기존/신규 모두 비공개(false)로 시작합니다. 이 열은 비공개 기본값을 보장하기 위한 SQL DEFAULT false의 명시적 예외이며, 다른 열의 기본값 금지 검증은 유지합니다. 학생 본인만 바꾸며 원문을 제공하는 경로는 같은 학생 행의 현재 설정을 다시 확인합니다.
-
-## 14. 학부모 리포트 표시 설정 (core V22, #209)
-
-학부모별 확정 설정과 마지막 미확정 제안을 `parent_report_template`에 저장한다. 기존 parent 계정 행 잠금으로 직렬화하고, 제안 ID·대화 소유권·만료를 확인한 뒤에만 revision을 증가시킨다. 학생 원문 공개 여부·메모·학습 원문은 저장하지 않는다. 확정 설정은 다음 리포트 `versions.template` JSONB에 복사하여 기존 판을 보존한다.
-
-V22는 #208 V20과 #206 V21 뒤에 적용한다. 학생 공개 설정을 보존하며 학부모 표시 설정은 별도 테이블에 저장한다.
-
-## 15. 학생 꾸미기 설정 (core V23, #234)
-
-`student.look_theme`·`look_companion`·`look_updated_at`은 학생 본인이 고른 생각 지도 테마·동행 캐릭터와 저장 시각이다. 세 열은 함께 NULL(저장한 적 없음, API는 기본값 `lake`·`mungchi`와 `updatedAt:null`)이거나 함께 값이 있다(`student_look_saved_together`). 값 목록은 코드 상수(core `StudentLook`, 웹 `domain/studentLook.ts`)와 CHECK로 고정한다. 학습 기록·판정·리포트·학부모 화면에 쓰지 않는다. 학생 삭제 확정(`ChildManagementService.confirm`) 때 PIN 삭제와 같은 트랜잭션에서 NULL로 되돌린다. 기본값 금지 규칙은 그대로이며 이 열들은 SQL DEFAULT 없이 NULL로 시작한다.

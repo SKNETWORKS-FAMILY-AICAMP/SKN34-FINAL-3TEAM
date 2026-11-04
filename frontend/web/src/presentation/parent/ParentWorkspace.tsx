@@ -19,6 +19,7 @@ import { ParentDashboard } from './ParentDashboard.tsx'
 import { AccountLifecycle } from '../service/AccountLifecycle.tsx'
 import { Withdrawal } from '../service/Withdrawal.tsx'
 import { ParentPayments } from './ParentPayments.tsx'
+import { EntitlementSummary } from './EntitlementSummary.tsx'
 export function ParentWorkspace() {
   const [params, setParams] = useSearchParams(),
     location = useLocation(),
@@ -64,14 +65,8 @@ export function ParentWorkspace() {
         child && (
           <div className="ws-plan">
             <span>이용권</span>
-            <strong>
-              {child.nickname} · {child.plan === 'FREE' ? '무료' : child.plan === 'PREMIUM' ? '프리미엄' : '이용권 확인 필요'}
-            </strong>
-            <small>
-              {child.plan === 'FREE'
-                ? '하루 미션 3개, 리포트 수치 제공'
-                : child.plan === 'PREMIUM' ? '하루 피드백 50회·분석 대화 30회, 전체 리포트' : '이용권 정보를 확인하지 못했습니다.'}
-            </small>
+            <strong>{child.nickname}</strong>
+            <EntitlementSummary childId={child.id} />
           </div>
         )
       }

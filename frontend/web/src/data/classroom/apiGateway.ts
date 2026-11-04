@@ -18,6 +18,7 @@ import type {
 import type { ClassroomGateway } from './gateway.ts'
 import { DraftConflictError } from './errors.ts'
 import { recordReflection } from '../recordDto.ts'
+import { saveReflection } from './learningApi.ts'
 
 type JsonObject = Record<string, unknown>
 const contractError = (detail: string): never => {
@@ -337,10 +338,7 @@ export function createApiGateway(): ClassroomGateway {
       return attemptDto(await apiFetch<unknown>(`/attempts/${id}`, { cache: 'no-store' }))
     },
     async reflect(id, reflection) {
-      await apiFetch(
-        `/attempts/${id}/reflection`,
-        body({ difficulty: reflection.difficulty, text: reflection.text }),
-      )
+      await saveReflection(id, reflection)
       return attemptDto(await apiFetch<unknown>(`/attempts/${id}`, { cache: 'no-store' }))
     },
     async report(child, period, revision) {
@@ -422,7 +420,7 @@ export function createApiGateway(): ClassroomGateway {
       }
       let result: AnalysisResult | undefined
       await streamSse(`/conversations/${id}/messages`, {
-        body: { question, scope: period },
+        body: { question, scope: { childId: child.id, ...period } },
         onEvent(event) {
           // delta는 검증 전 임시 출력. 확정 응답으로 사용하지 않는다.
           if (event.event === 'result') {

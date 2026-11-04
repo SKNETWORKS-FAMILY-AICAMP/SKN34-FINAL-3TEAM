@@ -32,6 +32,7 @@ stateDiagram-v2
   WITHDRAWN --> [*]
   note right of WITHDRAWAL_REQUESTED
     진행 중 구독·미처리 환불 있으면 요청 불가 (P09)
+    보낸 이관 대기 요청(PENDING) 있으면 요청 불가 (#289, 2.4)
     요청 후 로그인·취소 불가, 거래 기록만 5년 보관
   end note
 ```
@@ -39,7 +40,7 @@ stateDiagram-v2
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
 | → `ACTIVE` | 최초 `GET /auth/google/callback` (#36) | `AuthService.login` | `(oauth_provider, oauth_subject)` UK로 PARENT 생성, 같은 `login_id`(이메일) 기존 계정은 자동 연결 없이 `ACCOUNT_EXISTS` |
-| `ACTIVE → WITHDRAWAL_REQUESTED` | `POST /me/withdrawal` + `X-Reauth-Token` | `AccountWithdrawalService.request` | 진행 중 구독·미처리 환불 없음(있으면 `409 WITHDRAWAL_BLOCKED`) + `WHERE status = 'ACTIVE'`, 같은 트랜잭션에 `withdrawal_request(REQUESTED)`·계정의 `auth_session` 전체 폐기(refresh 포함)·자녀 전원 삭제 요청 (P09) |
+| `ACTIVE → WITHDRAWAL_REQUESTED` | `POST /me/withdrawal` + `X-Reauth-Token` | `AccountWithdrawalService.request` | 보낸 이관 대기 요청 없음(있으면 `409 TRANSFER_PENDING`, #289. 탈퇴 화면에서 이관 유지 또는 `POST /guardian-transfers/cancel-outgoing` 후 재진입) + 진행 중 구독·미처리 환불 없음(있으면 `409 WITHDRAWAL_BLOCKED`) + `WHERE status = 'ACTIVE'`, 같은 트랜잭션에 `withdrawal_request(REQUESTED)`·계정의 `auth_session` 전체 폐기(refresh 포함)·자녀 전원 삭제 요청 (P09). 이관 수락으로 종료된 연결(`transferred_at`)의 자녀와 선택 이관 상담은 삭제 대상에서 제외 |
 | `WITHDRAWAL_REQUESTED → WITHDRAWN` | 자녀 삭제 요청 전부 `COMPLETED` (P09) | `AccountManagementService.completeWithdrawal` | 진행 중 구독 없음·미처리 환불 없음, `withdrawal_request REQUESTED → COMPLETED` 동시 전이 |
 
 ### 2.2 `student.status` · `deletion_request.status`
@@ -69,7 +70,7 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
-| `deletion_request → REQUESTED` | `POST /children/{id}/deletion-requests` + `X-Reauth-Token` (P09) | `ChildManagementService.delete` | 연결 자녀(`LINKED`)만. 재확인 토큰이 없거나 무효면 `403 REAUTH_REQUIRED`로 행을 만들지 않음 |
+| `deletion_request → REQUESTED` | `POST /children/{id}/deletion-requests` + `X-Reauth-Token` (P09) | `ChildManagementService.delete` | 연결 자녀(`LINKED`)만. 이관 대기 중인 자녀는 `409 TRANSFER_PENDING`(#289). 재확인 토큰이 없거나 무효면 `403 REAUTH_REQUIRED`로 행을 만들지 않음 |
 | `REQUESTED → CONFIRMED` | 같은 요청 안에서 바로 확정 (별도 확인 API 없음, 연결 해제·탈퇴와 같은 1단계) | `ChildManagementService.confirm` | 현재 구현은 CONFIRMED 행을 바로 생성한다. 같은 트랜잭션에 `outbox_event(student.deleted)`를 저장하며 두 scope 모두 `student ACTIVE → DELETION_REQUESTED`로 차단한다 |
 | `CONFIRMED → COMPLETED` | learning·report 모두 `POST /internal/deletion-requests/{id}/completions` 보고 (P09) | `ChildManagementService.complete` | PROFILE만 프로필을 제거한다. RECORDS는 프로필과 DELETION_REQUESTED를 유지하며 자동 학습 재개는 구현되지 않았다. 탈퇴 대기 중이면 후속 PROFILE 삭제를 요청한다 |
 
@@ -81,7 +82,9 @@ stateDiagram-v2
 stateDiagram-v2
   state guardianship {
     [*] --> LINKED: 자녀 등록(REGISTER)
+    [*] --> LINKED: 이관 수락(TRANSFER, #289)
     LINKED --> UNLINKED: 연결 해제 (재확인 토큰)
+    LINKED --> UNLINKED: 이관 수락으로 종료 (transferred_at)
     UNLINKED --> [*]
   }
   state consent {
@@ -94,10 +97,61 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
-| → `LINKED` | `POST /children` | `GuardianshipService.register` | 부분 UK `(parent_user_id, student_id) WHERE LINKED`, 보호자 행 잠금 후 학부모당 `LINKED` 3명 이하 (P02). 다른 보호자 연결 없음 |
-| `LINKED → UNLINKED` | `DELETE /children/{id}/link` | `Guardianship.unlink()` | `WHERE status = 'LINKED'`. 재연결은 새 행 (이력 보존) |
+| → `LINKED` (`REGISTER`) | `POST /children` | `GuardianshipService.register` | 부분 UK `(parent_user_id, student_id) WHERE LINKED`와 V26 부분 UK `(student_id) WHERE LINKED`(자녀당 현재 보호자 1명), 보호자 행 잠금 후 학부모당 `LINKED` 3명 이하 (P02). 임의로 다른 보호자를 추가 연결하지 않으며, 보호자 교체는 아래 이관 수락으로만 |
+| → `LINKED` (`TRANSFER`) | `POST /guardian-transfers/{id}/accept` (#289) | `GuardianTransferService.accept` | 받는 학부모의 필수 동의·보호자 동의·`TRANSFER_ACCEPT` 재인증, 받는 학부모 `LINKED` 3명 이하. 같은 트랜잭션에서 보내는 학부모 행을 먼저 종료한 뒤 새 행 삽입(V26 부분 UK 유지) |
+| `LINKED → UNLINKED` | `DELETE /children/{id}/link` | `Guardianship.unlink()` | `WHERE status = 'LINKED'`. 이관 대기 중인 자녀는 `409 TRANSFER_PENDING`. 재연결은 새 행 (이력 보존) |
+| `LINKED → UNLINKED` (이관 종료) | 이관 수락 (#289) | `GuardianTransferRepository.move` | `transferred_at` 기록(CHECK: `transferred_at`은 `UNLINKED`에만). 이 행은 이전 학부모의 기록 접근·삭제 권한과 탈퇴 삭제 대상에서 제외하며, 기존 학생 세션·등록 기기를 해제 |
 | → `AGREED`·`WITHDRAWN` | 가입·자녀 등록·동의 변경 (`POST /me/consents`, `POST /children`) | `ConsentService.save` | 현재 문서 전체 항목과 필수 문서(`required`) 동의가 있어야 저장. 항목마다 최신 행과 선택이 다를 때만 새 행 저장(동의 AGREED, 선택 항목 미동의 WITHDRAWN). 재동의도 새 AGREED 행. 권한은 같은 문서·주체·자녀의 최신 행으로 판정 |
 | `AGREED → WITHDRAWN` | `POST /me/consents/{id}/withdrawal` | `ConsentService.withdraw` | 보호자 행 잠금 후 본인 행 확인, 이미 WITHDRAWN이면 그대로 반환. 행 유지 + `withdrawn_at`. 필수 동의 철회 시 대상 자녀(자녀 동의) 또는 계정 이용 차단, 삭제·탈퇴는 별도 요청. 선택 동의는 해당 기능만 중단 (P09) |
+
+### 2.4 `guardian_transfer.status` (#289 탈퇴 전 자녀 이관)
+
+```mermaid
+stateDiagram-v2
+  [*] --> PENDING: 보내는 학부모 요청 (CHILD_TRANSFER 재인증)
+  PENDING --> ACCEPTED: 받는 학부모 수락 (보호자 동의 + TRANSFER_ACCEPT 재인증)
+  PENDING --> REJECTED: 받는 학부모 거절
+  PENDING --> CANCELLED: 보내는 학부모 취소 · 탈퇴 화면의 일괄 취소
+  ACCEPTED --> [*]
+  REJECTED --> [*]
+  CANCELLED --> [*]
+  note right of PENDING
+    자녀당 PENDING 1건 (부분 UK)
+    대기 중 보내는 학부모 탈퇴, 자녀 연결 해제·삭제 → 409 TRANSFER_PENDING
+    만료·자동 취소 없음
+  end note
+```
+
+| 전이 | 트리거 | 담당 | 조건 |
+|---|---|---|---|
+| → `PENDING` | `POST /guardian-transfers` + `X-Reauth-Token` | `GuardianTransferService.request` | 보내는·받는 계정 잠금 후 둘 다 `ACTIVE`, 본인에게 이관 불가, 보내는 학부모의 필수 동의·현재 연결 자녀, 받는 학부모 `LINKED` 3명 미만, 보내는 학부모 탈퇴 가능(진행 중 구독·결제·환불 없음)·자녀 이관 가능 상태. 같은 자녀의 대기 요청이 같은 당사자·상담 포함 여부면 기존 요청 반환, 다르면 `409 TRANSFER_PENDING`. `CHILD_TRANSFER` 재인증은 마지막에 1회 소비 |
+| `PENDING → ACCEPTED` | `POST /guardian-transfers/{id}/accept` + `X-Reauth-Token` | `GuardianTransferService.accept` | 받는 학부모 본인만. 계정→학생→요청 행 잠금 순서로 직렬화, 이미 `ACCEPTED`면 그대로 반환. 위 조건을 다시 검사하고 진행 중 분석 대화가 있으면 보류(`ConversationTransferService.requireIdle`). 같은 트랜잭션에서 2.3 연결 교체·보호자 동의 저장(실패 시 전체 롤백)·선택 시 상담 소유 이전·학생 세션과 등록 기기 해제 |
+| `PENDING → REJECTED` | `POST /guardian-transfers/{id}/reject` | `GuardianTransferService.resolve` | 받는 학부모 본인만. 이미 처리된 요청은 `409 TRANSFER_ALREADY_RESOLVED` |
+| `PENDING → CANCELLED` | `POST /guardian-transfers/{id}/cancel`, `POST /guardian-transfers/cancel-outgoing` | `GuardianTransferService.resolve`·`cancelOutgoing` | 보내는 학부모 본인만. 상대 계정이 이미 탈퇴해도 취소 가능. 일괄 취소는 탈퇴 화면의 "이관 취소 후 탈퇴 절차 진행"이며 취소만으로 탈퇴·삭제를 실행하지 않음 |
+
+- 기능 플래그(`APP_GUARDIAN_TRANSFER_ENABLED`, 웹 `VITE_GUARDIAN_TRANSFER_ENABLED`, 기본 false)는 신규 대상 조회·요청·수락을 제어한다. 서버 기능 off에서 해당 API는 404이며, 본인의 기존 요청 조회·거절·취소는 기능 off·동의 누락에도 가능하다(#307). 완료된 이관 기록의 삭제 보호와 PENDING의 탈퇴·해제·삭제 차단은 유지하며, 대기를 명시적으로 취소·거절해야 차단이 해제된다. 취소는 자동 탈퇴·삭제를 실행하지 않는다. 근거: [이관 구현 기록](../report/auth-account.md#6-탈퇴-전-자녀-이관-289)
+
+### 2.5 `auth_session` 잠금 (V24 동석 학생 진입·학부모 복귀)
+
+```mermaid
+stateDiagram-v2
+  [*] --> OPEN: Google 로그인 (PARENT·ADMIN)
+  OPEN --> LOCKED: 동석 학생 진입 (locked_at, version+1)
+  LOCKED --> OPEN: 보호자 비밀번호 확인 (version+1)
+  OPEN --> REVOKED: 로그아웃 · 탈퇴 · refresh 재사용
+  LOCKED --> REVOKED: 새 Google 로그인 · 탈퇴
+  REVOKED --> [*]
+```
+
+- 다이어그램 상태명은 설명용이며 DB 값이 아니다. `OPEN` = `revoked_at IS NULL AND locked_at IS NULL`, `LOCKED` = `locked_at IS NOT NULL`, `REVOKED` = `revoked_at IS NOT NULL`
+
+| 전이 | 트리거 | 담당 | 조건 |
+|---|---|---|---|
+| `OPEN → LOCKED` | `POST /auth/student-sessions` | `AuthService.enterStudent` | 부모 세션 행 잠금·version 일치·PARENT. 학생 auth_session을 `parent_session_id`=부모 세션으로 새로 만들고 학생 access만 발급. 부모 refresh 쿠키는 지우지 않음. 기존 부모 access는 `401 SESSION_CHANGED`, 잠긴 세션의 `/auth/refresh`는 refresh 토큰을 소비하지 않고 `401 PARENT_SESSION_LOCKED` |
+| `LOCKED → OPEN` | `POST /auth/parent-unlock {password}` | `AuthService.unlockParent`·`GuardianPasswordService.attempt` | refresh 쿠키의 잠긴 세션과 보호자 비밀번호 확인. 성공 시 `locked_at` 해제·version+1·그 세션에서 들어간 학생 세션 폐기·refresh 회전. 실패 횟수는 오류 응답 전에 커밋, 5회째부터 `423 GUARDIAN_PASSWORD_LOCKED`, 미설정은 `409 GUARDIAN_PASSWORD_NOT_SET`. 잠기지 않은 세션은 refresh와 같이 처리 |
+| `LOCKED → REVOKED` | 새 Google 로그인 | `AuthService.login` | 보호자 비밀번호 미설정·잠김일 때의 복귀 경로. 같은 브라우저의 이전 refresh 쿠키로 찾은 이전(잠긴) 세션과 그 세션에서 들어간 학생 세션을 폐기 |
+
+- 단독 PIN 학생 로그인은 별도 학생 세션을 만들며 부모 세션을 잠그지 않는다. 보호자 비밀번호(`guardian_password`)는 계정당 1행이며 설정·변경은 `PUT /me/guardian-password`(학부모 확인 → 규칙 검사 → `GUARDIAN_PASSWORD` 재인증 소비, 성공 시 실패 횟수·잠금 초기화). 근거: [API 명세서](api-spec.md) 5.1, [ERD](erd.md) V24
 
 ---
 
@@ -401,7 +455,7 @@ stateDiagram-v2
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
 | → `APPROVED·CONFIRMING·FAILED` | `POST /payments/confirm` | `PaymentService.confirm` | `order_id` UK (같은 주문 1회), 금액 대조 통과 후에만 PG 호출 |
-| → `APPROVED·CONFIRMING·FAILED` | 정기 청구 | `BillingScheduler.chargeDue` → `SubscriptionService.renew` | `RENEWAL` 주문 1건당 1회, 실패 시 매일 1회 최대 3회 재청구 (P13), 주문 재사용은 9장 가정 |
+| → `APPROVED·CONFIRMING·FAILED` | 정기 청구 | `BillingScheduler.chargeDue` → `SubscriptionService.renew` | `RENEWAL` 주문 1건당 1회, 실패 시 매일 1회 최대 3회 재청구 (P13), 재청구마다 `payment_charge_attempt` 새 PG 주문 (#48) |
 | `CONFIRMING → APPROVED·FAILED` | 웹훅·`GET /payments/{orderId}`·스케줄러 재조회 | `PaymentService.refreshStatus`·`handleWebhook` | `WHERE status='CONFIRMING'`, 본문 대신 PG 조회 결과 사용 |
 | `APPROVED → REFUND_REVIEW` | `POST /payments/{id}/refund-requests` | `RefundService.request` → `Payment.startRefundReview()` | `WHERE status='APPROVED'`, 결제 7일 이내 + 프리미엄 기능 미사용 아니면 `409 REFUND_NOT_ALLOWED` (P14) |
 | `REFUND_REVIEW → REFUNDED·APPROVED` | 환불 승인 결과·반려 | `Payment.refund()` / 복귀 | `refund_request` 결과와 같은 트랜잭션 |
@@ -438,7 +492,7 @@ stateDiagram-v2
 | → `ACTIVE` | 결제 승인 | `SubscriptionService.activate` | 부분 UK `(student_id) WHERE status IN ('ACTIVE','RENEWAL_FAILED')` → 중복 `409 SUBSCRIPTION_DUPLICATE` |
 | `ACTIVE → ACTIVE` | `BillingScheduler.chargeDue` 성공 | `Subscription.extend(...)` | `payment_order` 부분 UK `(subscription_id, billing_period_start) WHERE RENEWAL` |
 | `ACTIVE → RENEWAL_FAILED` | 청구 실패 | `Subscription.renewalFailed(graceUntil)` | `renewal_retry_count + 1`, 알림 `SUBSCRIPTION_CHANGED` |
-| `RENEWAL_FAILED → ACTIVE·CANCELED` | 재청구 성공 / `grace_until` 경과 | `extend` / `cancel()` | 3회 재청구 모두 실패하거나 `grace_until`(실패일 + 3일) 경과 시 `CANCELED` (P13). 같은 기간 재청구는 ERD 부분 UK와 충돌 → 9장 가정 |
+| `RENEWAL_FAILED → ACTIVE·CANCELED` | 재청구 성공 / `grace_until` 경과 | `extend` / `cancel()` | 3회 재청구 모두 실패하거나 `grace_until`(실패일 + 3일) 경과 시 `CANCELED` (P13). 같은 기간 재청구는 월별 주문을 유지하고 `payment_charge_attempt`로 시도마다 새 PG 주문 (#48) |
 | `ACTIVE → CANCELED` | `auto_renew = false` + `period_end` 경과 | `BillingScheduler.expireCanceled` → `cancel()` | `auto_renew_canceled_at` 기록 후에만, `canceled_at` = `period_end` 경과 시점 (P14) |
 | `ACTIVE → CANCELED` | 환불 완료(`payment REFUNDED`) | `RefundService` → `cancel()` | 같은 트랜잭션, `canceled_at` = 환불 완료 시점 (P14) |
 
@@ -464,7 +518,7 @@ stateDiagram-v2
 
 ### 6.4 결제 상태 적용 보완 (#48)
 
-CONFIRMING은 PG 조회로만 확정하며, APPROVED/RECOVERY_REQUIRED는 추가 청구 없이 구독 반영을 재시도한다. REQUESTED 환불은 프리미엄 사용 동결 상태이며 증빙 미확인은 503이다. APPROVED 환불의 PG 결과 불명확은 FAILED로 바꾸지 않고 조회 복구한다. REFUNDED/CANCELED는 지연 DONE 통지로 되돌리지 않는다. PG 호출 중 parent 잠금은 유지하지 않으며 준비된 거래/환불이 탈퇴를 차단한다. 상세 계약은 [#48 보고서](../report/issue-48-payments.md)를 따른다.
+CONFIRMING은 PG 조회로만 확정하며, APPROVED/RECOVERY_REQUIRED는 추가 청구 없이 구독 반영을 재시도한다. REQUESTED 환불은 프리미엄 사용 동결 상태이며 증빙 미확인은 503이다. APPROVED 환불의 PG 결과 불명확은 FAILED로 바꾸지 않고 조회 복구한다. REFUNDED/CANCELED는 지연 DONE 통지로 되돌리지 않는다. PG 호출 중 parent 잠금은 유지하지 않으며 준비된 거래/환불이 탈퇴를 차단한다. 상세 계약은 [#48 보고서](../report/payment.md)를 따른다.
 
 ---
 
@@ -506,7 +560,7 @@ stateDiagram-v2
 - 상태 컬럼 없이 `published_at IS NULL` = 미발행 (인덱스 `(created_at) WHERE published_at IS NULL`)
 - confirm 후 `published_at` 기록 전 중단되면 같은 이벤트가 다시 발행됨 → 소비자는 `processed_event`로 멱등 처리 (at-least-once)
 
-report #131은 위 미발행 상태를 `next_attempt_at`·`quarantined_at`으로 세분한다. 별도 status 컬럼은 추가하지 않는다. 최초 실패 후 1·5·15분으로 재시도하고 총 4회 실패 시 격리한다. 해당 학생의 후속 이벤트는 선두를 추월하지 않으며 다른 학생의 발행은 계속된다. 운영 CLI의 수동 재처리는 같은 id·payload·순서 위치를 유지하면서 실패 횟수·대기·격리를 초기화하고 수동 처리 횟수와 시각을 남긴다. [상세 정책](../report/issue-131-outbox-recovery.md)
+report #131은 위 미발행 상태를 `next_attempt_at`·`quarantined_at`으로 세분한다. 별도 status 컬럼은 추가하지 않는다. 최초 실패 후 1·5·15분으로 재시도하고 총 4회 실패 시 격리한다. 해당 학생의 후속 이벤트는 선두를 추월하지 않으며 다른 학생의 발행은 계속된다. 운영 CLI의 수동 재처리는 같은 id·payload·순서 위치를 유지하면서 실패 횟수·대기·격리를 초기화하고 수동 처리 횟수와 시각을 남긴다. [상세 정책](../report/report.md#11-outbox-실패-격리와-학생별-발행-순서-131)
 
 ---
 
@@ -533,6 +587,3 @@ stateDiagram-v2
 
 ## 9. 확인 필요 가정
 - 문의 `RECEIVED → IN_REVIEW`: API 2.8에 상태 변경 엔드포인트 없음 → 필요 시 API 명세에 추가
-- 돌아보기를 마무리 전에 저장하면 `409 REVEAL_CONDITION_UNMET`으로 거부 (기존 오류 코드 재사용)
-- 정기 청구 재청구: ERD 부분 UK `(subscription_id, billing_period_start) WHERE kind = 'RENEWAL'`로 같은 기간 새 주문 불가. 가정은 "기존 주문의 결제가 `FAILED`면 같은 주문으로 재청구", PG 주문번호 재사용 가능 여부 확인 후 ERD 반영 필요
-- `QUEUED` 고착 작업은 #132 내부 복구 API와 영구 재실행 차단 기록으로 정리한다(4.1.1). 시간만으로 SUPERSEDED 처리하는 가정은 사용하지 않는다.

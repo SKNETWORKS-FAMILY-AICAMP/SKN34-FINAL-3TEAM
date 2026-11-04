@@ -72,6 +72,8 @@ jobs:
             env="$(basename "$env_dir")"
             mkdir -p "$out/$env"
             for values in "$env_dir"*.yaml; do
+              # prod는 JSON values·manifest만 있어 이 YAML 렌더링 대상이 아니다(#185).
+              [ -e "$values" ] || continue
               release="$(basename "$values" .yaml)"
               if [ -d "charts/$release" ]; then chart="$release"; else chart=app-service; fi
               case "$chart" in

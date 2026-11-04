@@ -1,0 +1,78 @@
+{
+  "migration": {
+    "enabled": true,
+    "revision": "main-cc860eb2ee85",
+    "image": {
+      "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/core-migrate",
+      "digest": "sha256:8fc89e6aa497b45782162afa8bb552aca2cfc27ba57f5f41f73d1c8029158439",
+      "pullPolicy": "IfNotPresent"
+    },
+    "args": [
+      "migrate"
+    ],
+    "env": [
+      {
+        "name": "FLYWAY_URL",
+        "value": "jdbc:postgresql://sagomungchi-demo-db.czcw0ywu2euo.ap-northeast-2.rds.amazonaws.com:5432/core_db?sslmode=verify-full&sslrootcert=/rds-ca/global-bundle.pem&connectTimeout=10"
+      },
+      {
+        "name": "FLYWAY_USER",
+        "valueFrom": {
+          "secretKeyRef": {
+            "name": "core-migrate-credentials",
+            "key": "DB_USERNAME"
+          }
+        }
+      },
+      {
+        "name": "FLYWAY_PASSWORD",
+        "valueFrom": {
+          "secretKeyRef": {
+            "name": "core-migrate-credentials",
+            "key": "DB_PASSWORD"
+          }
+        }
+      },
+      {
+        "name": "FLYWAY_DEFAULT_SCHEMA",
+        "value": "public"
+      },
+      {
+        "name": "FLYWAY_CREATE_SCHEMAS",
+        "value": "false"
+      },
+      {
+        "name": "FLYWAY_BASELINE_ON_MIGRATE",
+        "value": "false"
+      },
+      {
+        "name": "FLYWAY_CLEAN_DISABLED",
+        "value": "true"
+      }
+    ],
+    "resources": {
+      "requests": {
+        "cpu": "100m",
+        "memory": "128Mi"
+      },
+      "limits": {
+        "memory": "512Mi"
+      }
+    },
+    "extraVolumes": [
+      {
+        "name": "rds-ca",
+        "configMap": {
+          "name": "rds-ca"
+        }
+      }
+    ],
+    "extraVolumeMounts": [
+      {
+        "name": "rds-ca",
+        "mountPath": "/rds-ca",
+        "readOnly": true
+      }
+    ]
+  }
+}

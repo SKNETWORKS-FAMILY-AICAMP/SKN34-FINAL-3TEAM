@@ -126,6 +126,7 @@
         SET process_status = #{judgment.status}, result = #{judgment.result}, held_reason = #{judgment.heldReason,jdbcType=VARCHAR},
             method = #{judgment.by.method}, trial = #{judgment.by.trial},
             model_version = #{judgment.by.model,jdbcType=VARCHAR}, prompt_version = #{judgment.by.prompt,jdbcType=VARCHAR},
+            model_scores = CAST(#{judgment.by.modelScores,jdbcType=VARCHAR} AS jsonb),
             failure_code = NULL, trace_id = #{traceId,jdbcType=VARCHAR}, completed_at = #{now}
         WHERE id = #{judgment.id} AND process_status = 'RUNNING' AND lease_until = #{leaseUntil}
     </update>

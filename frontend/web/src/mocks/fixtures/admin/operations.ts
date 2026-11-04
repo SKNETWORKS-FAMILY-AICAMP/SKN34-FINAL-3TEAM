@@ -75,6 +75,8 @@ export const missions: AdminMission[] = [
         exampleAnswer: '한쪽 잎은 더 넓고 다른 쪽 잎은 길쭉합니다.',
         forbiddenTerms: ['예시 답'],
         hints: ['잎의 크기와 모양을 각각 살펴보세요.'],
+        keywords: ['잎(잎사귀)', '넓다(넓적하다)'],
+        essayType: null,
       },
     ],
     reviews: [],

@@ -6,7 +6,7 @@ import { studentHandlers } from '../src/mocks/handlers/student.ts'
 import { mockAccounts, mockAccountChildren, mockConsentHistory, setWorkspaceScenario } from '../src/mocks/fixtures/accounts.ts'
 import { billingConfirmation, duplicateSubscription, refundLabels, nextBillingMonth } from '../src/domain/payment.ts'
 import { paymentApi } from '../src/data/payment/api.ts'
-import { setAccessToken } from '../src/data/apiClient.ts'
+import { ApiError, setAccessToken } from '../src/data/apiClient.ts'
 import type { ConsentHistory } from '../src/domain/parent.ts'
 const handlers = [...paymentHandlers, ...studentHandlers]
 let token = ''
@@ -108,4 +108,33 @@ test('월 이용 기간은 KST 기준 같은 날·말일로 계산하며 30일�
   assert.equal(nextBillingMonth('2026-10-30'), '2026-11-30')
   assert.equal(nextBillingMonth('2026-01-31'), '2026-02-28')
   assert.equal(nextBillingMonth('2028-01-31'), '2028-02-29')
+})
+
+test('이용권 조회는 선택 자녀를 지정하고 오류를 무료로 바꾸지 않는다', async t => {
+  setAccessToken('synthetic-token', 'PARENT')
+  const controller = new AbortController()
+  t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
+    assert.equal(String(url), '/api/v1/children/child%2Fid/entitlement')
+    assert.equal(init.cache, 'no-store')
+    assert.equal(init.signal, controller.signal)
+    return Response.json({ code: 'PAYMENT_FREE_PRODUCT_UNAVAILABLE', title: '무료 상품 설정을 확인해 주세요.' }, { status: 503 })
+  })
+  await assert.rejects(paymentApi.entitlement('child/id', controller.signal), error =>
+    error instanceof ApiError && error.problem.code === 'PAYMENT_FREE_PRODUCT_UNAVAILABLE')
+  setAccessToken(null)
+})
+
+test('모의 이용권 계약: 무료, 유료, 타 자녀, 조회 실패', async () => {
+  const { childId } = await login()
+  const free = await call(`/children/${childId}/entitlement`)
+  assert.equal(free.status, 200); assert.equal(free.data.status, 'FREE')
+  assert.equal(free.data.narrativeEnabled, false)
+  assert.equal((await call(`/children/${crypto.randomUUID()}/entitlement`)).status, 403)
+  const order = await buy(childId)
+  await call('/payments/confirm', { orderId: order.orderId, amount: order.amount, paymentKey: 'mock-payment-' + order.orderId })
+  const paid = await call(`/children/${childId}/entitlement`)
+  assert.equal(paid.data.narrativeEnabled, true); assert.equal(paid.data.product.limits.dailyConversations, 30)
+  setWorkspaceScenario('query-fail')
+  assert.equal((await call(`/children/${childId}/entitlement`)).status, 503)
+  setWorkspaceScenario('normal')
 })

@@ -176,6 +176,9 @@ class FeedbackFacade(
                     },
                 ),
                 versions = AiVersions(mission = rubric.missionLabel, rubric = rubric.rubricLabel),
+                question = rubric.question,
+                keywords = rubric.keywords,
+                essayType = rubric.essayType,
             ),
         )
         return fromAi(response, rubric)
@@ -196,7 +199,10 @@ class FeedbackFacade(
                 JudgmentElement(id, it.quote, it.verified, it.quote?.let { ElementSource.AI_OBSERVATION })
                     .let { element -> if (it.satisfied) element.satisfy() else element }
             },
-            by = JudgedBy(JudgmentMethod.LLM, response.trial, response.versions.model, response.versions.prompt),
+            by = JudgedBy(
+                JudgmentMethod.LLM, response.trial, response.versions.model, response.versions.prompt,
+                response.modelScores?.takeUnless { it.isNull }?.also { require(it.isObject) { "modelScores는 객체" } }?.toString(),
+            ),
         )
     }
 
