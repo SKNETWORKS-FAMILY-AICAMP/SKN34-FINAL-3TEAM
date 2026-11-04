@@ -12,6 +12,9 @@
             <arg column="forbidden_terms" javaType="java.util.List"
                  typeHandler="com.sagomungchi.learning.mission.repository.StringListTypeHandler"/>
             <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="keywords" javaType="java.util.List"
+                 typeHandler="com.sagomungchi.learning.mission.repository.StringListTypeHandler"/>
+            <arg column="essay_type" javaType="java.lang.String"/>
         </constructor>
     </resultMap>
     <!-- 평평한 행으로 읽음: 중첩 resultMap은 구분 ID가 없으면 같은 기준표 버전의 요소를 한 행으로 합침 -->
@@ -37,7 +40,8 @@
     </resultMap>
 
     <select id="findRubrics" resultMap="rubric" flushCache="true" useCache="false">
-        SELECT id, version, answer_key, example_answer, COALESCE(forbidden_terms, '[]'::jsonb) AS forbidden_terms, created_at
+        SELECT id, version, answer_key, example_answer, COALESCE(forbidden_terms, '[]'::jsonb) AS forbidden_terms, created_at,
+               COALESCE(keywords, '[]'::jsonb) AS keywords, essay_type
         FROM rubric_version WHERE mission_id = #{missionId} ORDER BY version
     </select>
 
@@ -63,11 +67,14 @@
     </select>
 
     <insert id="insertRubricVersion">
-        INSERT INTO rubric_version (id, mission_id, version, answer_key, example_answer, forbidden_terms, created_by, created_at)
+        INSERT INTO rubric_version (id, mission_id, version, answer_key, example_answer, forbidden_terms, keywords, essay_type,
+                                    created_by, created_at)
         VALUES (#{id}, #{missionId}, #{version},
                 #{command.answerKey,typeHandler=com.sagomungchi.learning.mission.repository.AnswerKeyTypeHandler,jdbcType=OTHER},
                 #{command.exampleAnswer,jdbcType=VARCHAR},
                 #{command.forbiddenTerms,typeHandler=com.sagomungchi.learning.mission.repository.StringListTypeHandler},
+                #{command.keywords,typeHandler=com.sagomungchi.learning.mission.repository.StringListTypeHandler},
+                #{command.essayType,jdbcType=VARCHAR},
                 #{command.authorId}, #{now})
     </insert>
 

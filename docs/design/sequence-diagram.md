@@ -244,6 +244,7 @@ sequenceDiagram
 
 - PIN 잠금 해제는 학부모 `PUT /children/{childId}/pin`(재확인 필요)으로만 가능
 - 학부모가 기기를 해제하면(`DELETE /student-devices/{deviceId}`) 이후 PIN 로그인은 `401 STUDENT_DEVICE_INVALID`
+- 단독 로그인은 계정 행 잠금 → 기기 유효/등록 자녀 → 현재 연결·활성·동의 → PIN 설정·잠금·일치 순으로 재검사한다. 실패 횟수 커밋 후 401/423 응답한다. 성공은 별도 STUDENT auth_session을 생성하며 부모 세션을 변경하지 않는다. PIN 변경은 계정 잠금 → 현재 자녀 권한 → 학생 잠금 → DB 재인증 consume → PIN 갱신·감사 기록을 한 트랜잭션으로 실행한다.
 
 ---
 
@@ -314,7 +315,7 @@ sequenceDiagram
 - learning도 시도·키(ERD UK)로 같은 키를 처리. core가 learning 응답을 받기 전에 끊겨 다시 보내도 답변은 1건
 - 표현 검사(#205)는 learning 안의 단어 목록 대조라 외부 호출이 없음. 막힌 요청은 저장하지 않고, core는 그 422(범주별 안내, 원문 없음)를 같은 키의 응답으로 저장. 웹은 답이 바뀌면 새 키를 만들어 고친 답은 새 요청이 됨. 초안 자동 저장은 검사하지 않음 (learning.md #205)
 - 메모는 초안 `content.memo`로 함께 저장, 학생 본인 조회에만 포함 (P05)
-- 무료 플랜은 하루 신규 미션 시도 3개까지 허용 (P13). 신규 생성 `201`만 집계하고 이어하기 `200`은 항상 허용, 한도 초과 신규 생성만 `429 USAGE_LIMIT_REACHED` (API 2.2, core Redis 카운터는 후속 구현)
+- 무료 플랜은 하루 신규 미션 시도 3개까지 허용 (P13). 신규 생성 `201`만 집계하고 이어하기 `200`은 항상 허용, 한도 초과 신규 생성만 `429 USAGE_LIMIT_REACHED` (API 2.2, 미구현: #210 결정에 따라 PostgreSQL로 구현 예정)
 
 ### 3.2 피드백 SSE (판정·되묻기)
 
@@ -346,10 +347,10 @@ sequenceDiagram
       LLM-->>A: quotes[]
       A->>A: QuoteVerifier 원문 대조 → JudgmentService 요소 충족·결과 결정 (JUDGE_REQUIRE_VERIFIED=true면 미검증 요소 HELD(UNVERIFIED_SCOPE))
       opt M2 활성 범위
-        Note over L,A: #69 후속: question·keywords 전달 추가 (scoring #87 계약)
+        Note over L,A: #69: learning이 question·keywords·essayType 전달, 판정 마감 33초 안에서 scoring 10초 (api-spec 4.2.2)
         A->>S: POST /internal/m2/scores {prompt, text, grade, inputType, keywords}
         S-->>A: scores·rawScores·model 또는 {active:false} (실제 장애는 503)
-        A->>A: LLM 관찰과 불일치 시 HELD(MODEL_DISAGREEMENT)
+        A->>A: LLM 관찰과 불일치 시 HELD(MODEL_DISAGREEMENT) (M2_CROSS_CHECK_ENABLED, 기본은 modelScores 기록만)
       end
       opt 풀이 단계(SOLUTION_STEPS) + M1 활성 범위
         A->>S: POST /internal/m1/checks {problem, answerKey, solution:{steps,finalAnswer}}
@@ -706,7 +707,7 @@ ADMIN/SERVICE_OPS → OperationsController → 공통 IdempotencyService → Rep
 
 ## 7. 결제·구독 (토스페이먼츠 테스트)
 
-#48 확정: 아래 개념 시퀀스의 정기 주문은 논리 주문이며 실제 PG 요청은 payment_charge_attempt로 분리한다. 확정 실패 이후에만 일별 새 PG 주문을 생성하고 불명확한 거래는 조회만 한다. 준비/결과/권한 트랜잭션과 parent 계정 잠금은 PG 호출 양쪽으로 분리한다. 무료 상품 선택·사용 예약/환불 동결·서명/PG 교차 검증은 [#48 보고서](../report/issue-48-payments.md)가 우선한다.
+#48 확정: 아래 개념 시퀀스의 정기 주문은 논리 주문이며 실제 PG 요청은 payment_charge_attempt로 분리한다. 확정 실패 이후에만 일별 새 PG 주문을 생성하고 불명확한 거래는 조회만 한다. 준비/결과/권한 트랜잭션과 parent 계정 잠금은 PG 호출 양쪽으로 분리한다. 무료 상품 선택·사용 예약/환불 동결·서명/PG 교차 검증은 [#48 보고서](../report/payment.md)가 우선한다.
 
 ### 7.1 주문·승인
 
@@ -942,7 +943,7 @@ sequenceDiagram
 
 - 롤백(`/rollback`): 이전 승인 버전 재활성화로 같은 흐름, 재분석 여부는 `audit_log.detail` 기록 (FN-ADM-18)
 - scoring #86은 큐 바인딩·소비 시작 → core snapshot → 조회·로딩 중 보존 이벤트의 revision 조정 → readiness true 순서다. 브로커 재연결도 같은 순서로 수행한다. 이벤트는 전체 snapshot이 아니므로 다른 모델을 제거하지 않고 해당 이름의 모델만 교체한다.
-- ai #68도 Pod별 큐 바인딩·소비 시작 → core snapshot → 조회 중 받은 이벤트의 kind·name별 revision 조정 → readiness 순서다. 재연결 시 snapshot으로 유실 구간을 복구한다. `PROMPT` 네 기능과 승인 scope만 반영하며, 미보유 버전 본문을 받으면 해당 기능 새 요청은 503, readiness는 false다. 요청이 시작할 때 잡은 본문·버전은 진행 중 교체하지 않는다.
+- ai #68도 Pod별 큐 바인딩·소비 시작 → core snapshot → 조회 중 받은 이벤트의 kind·name별 revision 조정 → readiness 순서다. 재연결 시 snapshot으로 유실 구간을 복구한다. `PROMPT` 다섯 기능과 승인 scope만 반영하며, 미보유 버전 본문을 받으면 해당 기능 새 요청은 503, readiness는 false다. 요청이 시작할 때 잡은 본문·버전은 진행 중 교체하지 않는다.
 - scoring 교체·롤백 시 artifact를 다시 내려받아 로딩한 뒤 임시 파일을 정리한다. 로딩 중에는 기존 모델을 사용하며 실패 시 기존 모델을 유지하고 재시도한다. 새 승인 scopes에서 제외된 범위에는 기존 모델도 사용하지 않는다. 최초 준비·재연결 복구가 끝나기 전에는 readiness false다.
 - 기준표(`kind = RUBRIC`) 행은 core 레지스트리의 승인·활성 기록만 담당. learning은 이 이벤트를 소비하지 않으며, `judge_verified`·현재 기준표 버전 반영은 관리자 미션 API(`/admin/missions/...`)로 별도 수행
 
@@ -1003,9 +1004,4 @@ sequenceDiagram
 ---
 
 ## 11. 확인 필요 가정
-- `student.deleted` 완료 확인: learning 이벤트 발행 없음 원칙에 따라 이벤트 대신 core 내부 API로 완료 보고(10.1). 보고 호출 실패 시 지연 재시도(1·5·15분)로 재전달 → 삭제는 멱등이라 다시 보고 (P09)
-- `report.started`·`report.completed` 순서 역전 허용 (상태 다이어그램 4.1)
-- 정기 청구 재시도(7.3): ERD 부분 UK `(subscription_id, billing_period_start) WHERE kind = 'RENEWAL'` 때문에 같은 기간 새 주문 불가. 논리 주문은 유지하고 확정 실패 후 새 charge attempt/PG 주문을 사용한다(#48). PG 결과가 불명확하면 새 청구를 만들지 않는다
 - 웹훅 처리 실패 시 5xx 응답으로 PG 재전송 유도(7.2): 토스페이먼츠 재전송 정책 확인 필요
-
-#58 단독 로그인은 계정 행 잠금 → 기기 유효/등록 자녀 → 현재 연결·활성·동의 → PIN 설정·잠금·일치 순으로 재검사한다. 실패 횟수 커밋 후 401/423 응답한다. 성공은 별도 STUDENT auth_session을 생성하며 부모 세션을 변경하지 않는다. PIN 변경은 계정 잠금 → 현재 자녀 권한 → 학생 잠금 → DB 재인증 consume → PIN 갱신·감사 기록을 한 트랜잭션으로 실행한다.

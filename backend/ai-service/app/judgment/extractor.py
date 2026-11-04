@@ -22,7 +22,7 @@ class Extraction(ApiModel):
 
 
 async def extract(
-    llm: LlmClient, request: JudgmentRequest, prompt: PromptChoice
+    llm: LlmClient, request: JudgmentRequest, prompt: PromptChoice, deadline: float | None = None
 ) -> LlmResult[Extraction]:
     return await llm.generate(
         system=prompt.body.SYSTEM,
@@ -30,4 +30,5 @@ async def extract(
         output=Extraction,
         call_type="JUDGMENT",
         prompt_version=prompt.version,
+        deadline=deadline,
     )

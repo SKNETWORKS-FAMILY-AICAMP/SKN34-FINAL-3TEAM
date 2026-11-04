@@ -141,6 +141,24 @@ class AdminMissionServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
+    fun `기준표 버전에 M2 핵심어·글 종류를 저장하고 판정용 기준표가 미션 질문과 함께 읽음 (#69)`() {
+        val id = service.create(command()).id
+        service.putRubric(id, rubric().copy(keywords = listOf("물", "햇빛(빛)"), essayType = "주장"))
+        service.putRubric(id, rubric())
+
+        val rubrics = service.getForAdmin(id).rubrics
+        assertEquals(listOf("물", "햇빛(빛)") to "주장", rubrics[0].keywords to rubrics[0].essayType)
+        assertEquals(emptyList<String>() to null, rubrics[1].keywords to rubrics[1].essayType)
+
+        val (versionId, rubricId) = jdbc.queryForList(
+            "SELECT v.id AS vid, rv.id AS rid FROM mission_version v JOIN rubric_version rv ON rv.mission_id = v.mission_id AND rv.version = 1 WHERE v.mission_id = ?",
+            id,
+        ).single().let { it["vid"] as UUID to it["rid"] as UUID }
+        val judged = service.rubric(versionId, rubricId)
+        assertEquals(Triple("왜 시들었을까?", listOf("물", "햇빛(빛)"), "주장"), Triple(judged.question, judged.keywords, judged.essayType))
+    }
+
+    @Test
     fun `목록은 현재 버전 기준 필터·페이지, counts는 필터·페이지와 무관한 전체 상태별 건수`() {
         val before = service.listForAdmin(AdminMissionFilter(null, null, null, 0, 1)).counts.associate { it.status to it.count }
         val draft = service.create(command(grade = 3 to 3, thinking = ThinkingType.CREATE)).id
