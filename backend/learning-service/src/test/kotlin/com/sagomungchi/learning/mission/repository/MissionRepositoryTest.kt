@@ -128,8 +128,8 @@ class MissionRepositoryTest : PostgresRepositoryTest() {
     ): UUID {
         val id = UUID.randomUUID()
         jdbc.update(
-            """INSERT INTO mission (id, code, status, demo_only, sort_order, created_by, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO mission (id, code, status, demo_only, sort_order, created_by, source, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?)""",
             id, "TEST-$id", status, demoOnly, sortOrder, author, now, now,
         )
         addVersion(id, version = 1, title = "미션 $sortOrder", current = true,

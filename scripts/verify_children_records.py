@@ -72,7 +72,7 @@ def verify():
         mission, version, rubric = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
         missions.append((mission, version, rubric))
         actor = uuid.uuid4()
-        learning.execute("INSERT INTO mission(id,code,status,demo_only,sort_order,created_by,created_at,updated_at) VALUES(%s,%s,'DRAFT',true,1,%s,now(),now())", (mission,str(mission),actor))
+        learning.execute("INSERT INTO mission(id,code,status,demo_only,sort_order,created_by,source,created_at,updated_at) VALUES(%s,%s,'DRAFT',true,1,%s,'MANUAL',now(),now())", (mission,str(mission),actor))
         learning.execute("INSERT INTO mission_version(id,mission_id,version,title,subject,grade_min,grade_max,thinking_type,input_type,question,created_by,created_at) VALUES(%s,%s,1,'Synthetic mission','language',3,6,'ANALYZE','NARRATIVE','Synthetic question',%s,now())", (version,mission,actor))
         learning.execute("INSERT INTO rubric_version(id,mission_id,version,created_by,created_at) VALUES(%s,%s,1,%s,now())", (rubric,mission,actor))
         attempt = uuid.uuid4()

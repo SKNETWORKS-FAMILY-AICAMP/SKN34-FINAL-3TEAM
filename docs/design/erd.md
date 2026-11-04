@@ -781,6 +781,7 @@ erDiagram
   rubric_version ||--o{ rubric_element : elements
   rubric_version ||--o{ hint_question : hints
   mission ||--o{ mission_review : reviews
+  mission ||--o| mission_draft : adopted
 
   mission {
     uuid id PK
@@ -791,6 +792,7 @@ erDiagram
     uuid published_version_id FK "NULL 허용 · 학생에게 제공하는 공개 버전"
     uuid published_rubric_version_id FK "NULL 허용 · 공개 기준표 버전"
     boolean demo_only "시연 전용"
+    varchar source "MANUAL|LLM_DRAFT · 처음 만든 방식 (#353)"
     int sort_order "목록 순서·이전·다음"
     uuid created_by "core 사용자"
     timestamptz created_at
@@ -817,6 +819,7 @@ erDiagram
     varchar answer_unit "NULL 허용 · 수학 최종 답 단위, 답 칸 뒤 고정 표시"
     jsonb input_template "NULL 허용 · 풀이 단계·논술 틀"
     jsonb achievement_standards "NULL 허용 · 성취기준 코드"
+    jsonb achievement_levels "NULL 허용 · 성취기준별 성취수준 단계 (#353)"
     uuid created_by
     timestamptz created_at
   }
@@ -842,6 +845,7 @@ erDiagram
     jsonb common_errors "NULL 허용"
     boolean good_thought "들어가면 좋은 생각"
     boolean judge_verified "AI 판정 검증 통과"
+    varchar standard_code "NULL 허용 · 요소를 구체화한 성취기준 (#353)"
     int sort_order
   }
   hint_question {
@@ -860,11 +864,44 @@ erDiagram
     text comment "NULL 허용"
     timestamptz created_at
   }
+  mission_draft {
+    uuid id PK
+    uuid requested_by "core 사용자"
+    jsonb standard_codes "고른 성취기준 코드"
+    jsonb achievement_levels "NULL 허용 · 성취기준별 단계"
+    varchar thinking_type "ANALYZE|EVALUATE|CREATE|SOLVE|REFLECT"
+    int grade_min
+    int grade_max
+    varchar input_type "CHOICE|ORDERING|CLASSIFICATION|NARRATIVE|SOLUTION_STEPS|ESSAY"
+    varchar status "GENERATING|READY|CHECK_FAILED|FAILED|ADOPTED|DISCARDED"
+    int attempts "생성 시도 횟수"
+    jsonb check_results "NULL 허용 · 시도별 실패 사유"
+    jsonb output "NULL 허용 · 마지막 초안"
+    varchar failure_code "NULL 허용 · 마지막 AI 호출 실패"
+    varchar model_version "NULL 허용"
+    varchar prompt_version "NULL 허용"
+    timestamptz lease_until "NULL 허용 · 생성 작업 점유"
+    uuid mission_id FK "NULL 허용 · UK · 채택한 미션"
+    timestamptz created_at
+    timestamptz updated_at
+  }
+  achievement_standard {
+    varchar code PK "대괄호 없는 성취기준 코드"
+    varchar subject "교과"
+    varchar grade_band "초1~2|초3~4|초5~6|중1~3"
+    varchar area "영역"
+    text statement "성취기준 문장 (고시 원문)"
+    int level_scale "3|5"
+    jsonb levels "NULL 허용 · 평가원 성취수준 문장"
+    varchar curriculum_version
+    varchar source "고시 번호"
+    varchar note "NULL 허용 · 원문 대조 기록"
+  }
 ```
 
 - `mission_version`·`rubric_version` UK `(mission_id, version)`. 수정은 새 버전 추가 후 `mission.current_*` 갱신, 이전 버전 불변 (FN-ADM-10, 12)
 - 공개 버전(#145, P07): 학생 목록·상세·시도 시작은 `published_*`, 관리자 편집은 `current_*`. 게시 때 `published_*` ← `current_*`라 공개 중 수정본은 재검토·재게시 전까지 학생에게 보이지 않음. learning V7이 칸을 추가하고 기존 `PUBLISHED` 미션은 `current_*`로 채움
-- 공개(`PUBLISHED`) 전 필수 항목 검사(FN-ADM-11, #145): 현재 미션·기준표 버전 존재, 제목·질문·교과·성취기준, 학년 3~6(논술 5~6), **기준표 요소 1개 이상(입력 방식 무관, 구 #81)**·요소 이름·양의 배점, 풀이 단계는 `FINAL_ANSWER` 외 요소 1개 이상·`FINAL_ANSWER`는 풀이 단계만, 요소 code가 미션 유형·입력 방식에 맞음(같은 유형 표준 코드·`e`+숫자, 고르기·순서·분류는 `ANSWER_KEY` 하나, 따져 보기 논술은 주장·근거·반론 코드, FN 1.5 #262), 고르기·순서·분류는 선택지(분류는 그룹), 서술·논술이 아니면 `answer_key`(입력 방식 모양), 서술·논술은 `example_answer`, 현재 버전 최신 검토 `APPROVED`. 누락은 `422 MISSION_PUBLISH_INCOMPLETE` + `missingFields`(class-diagram 4.1). #336 구현 때 성취기준 실재·요소 성취기준·성취수준 단계 검사가 추가된다(4.1.1)
+- 공개(`PUBLISHED`) 전 필수 항목 검사(FN-ADM-11, #145): 현재 미션·기준표 버전 존재, 제목·질문·교과·성취기준, 학년 3~6(논술 5~6), **기준표 요소 1개 이상(입력 방식 무관, 구 #81)**·요소 이름·양의 배점, 풀이 단계는 `FINAL_ANSWER` 외 요소 1개 이상·`FINAL_ANSWER`는 풀이 단계만, 요소 code가 미션 유형·입력 방식에 맞음(같은 유형 표준 코드·`e`+숫자, 고르기·순서·분류는 `ANSWER_KEY` 하나, 따져 보기 논술은 주장·근거·반론 코드, FN 1.5 #262), 고르기·순서·분류는 선택지(분류는 그룹), 서술·논술이 아니면 `answer_key`(입력 방식 모양), 서술·논술은 `example_answer`, 현재 버전 최신 검토 `APPROVED`. 누락은 `422 MISSION_PUBLISH_INCOMPLETE` + `missingFields`(class-diagram 4.1). 성취기준 실재·학년군, 요소 성취기준, 성취수준 단계 검사(#353, 4.1.1)
 - `mission.sort_order`: 학년군 안의 목록 순서, 이전·다음 이동과 진행 위치 계산 (FN-LRN-02)
 - `rubric_element.judge_verified = false` 요소는 AI 판정 시 충족 표시 금지 → `HELD (UNVERIFIED_SCOPE)`. 평가 통과 후 관리자가 갱신 (FN-JDG-04, 05, NFR-AIQ-01). 사람 검증(P11) 도입 전에는 ai `JUDGE_REQUIRE_VERIFIED=false`(기본)로 끄고 `trial = true`로 시범 표시
 - `forbidden_terms`: 정답 키와 함께 ai `followups` 유출 검사 입력 (FN-JDG-06)
@@ -874,62 +911,15 @@ erDiagram
 - #79: V6는 `mission_version`에 `categories`(분류 그룹, `answer_key.assignments`의 `categoryId`가 가리킴)·`answer_unit`(수학 최종 답 단위)을 추가한다. 기존 마이그레이션은 수정하지 않는다. 수학 `answer_key.finalAnswer`는 수만 담고 단위는 비교하지 않는다(FN-JDG-02). 풀이 단계 기준표의 `code = 'FINAL_ANSWER'` 요소는 ai에 보내지 않고 정답 키로 충족을 정한다
 - AI Hub 문항·답안·피드백 원문은 어떤 컬럼에도 저장하지 않음 (FN-ADM-09)
 
-### 4.1.1 성취기준·미션 초안 (#336, 구현 전)
+### 4.1.1 성취기준·미션 초안 (#336 설계, #353 구현)
 
-FN 1.5 "성취기준·성취수준 연결"과 FN-ADM-20·21의 저장 구조. **마이그레이션 전이라 위 Mermaid에 넣지 않는다**(`scripts/verify_db_schema.py`가 Mermaid와 실제 DB의 테이블·컬럼을 그대로 대조). learning 구현 이슈에서 새 Flyway 버전과 함께 4.1 Mermaid·6장·8장으로 옮긴다. 이름·타입·NULL 규칙은 1장 그대로다.
+FN 1.5 "성취기준·성취수준 연결"과 FN-ADM-20·21의 저장 구조. learning V10이 `achievement_standard`·`mission_draft`와 `mission.source`·`mission_version.achievement_levels`·`rubric_element.standard_code`를 추가한다(위 Mermaid).
 
-`achievement_standard` (새 테이블, 참조 데이터, FN-ADM-21)
-
-| 컬럼 | 타입 | 내용 |
-|---|---|---|
-| `code` | varchar PK | 대괄호 없는 성취기준 코드 (`6국01-02`, `9사(일사)01-01`) |
-| `subject` | varchar | 교과 |
-| `grade_band` | varchar | `초1~2`·`초3~4`·`초5~6`·`중1~3` (CHECK) |
-| `area` | varchar | 영역 |
-| `statement` | text | 성취기준 문장 (고시 원문) |
-| `level_scale` | int | 성취수준 단계 수 `3`(A~C)·`5`(A~E) (CHECK). 현행 765개는 모두 값이 있음 |
-| `levels` | jsonb, NULL 허용 | 평가원 성취수준 문장 `{A: "...", B: "...", ...}`. 이용 조건 확인 전에는 NULL (FN 1.5) |
-| `curriculum_version` | varchar | `2022 개정` |
-| `source` | varchar | 고시 번호·자료명 |
-| `note` | varchar, NULL 허용 | 원문 대조 기록 (원자료 "비고": 원자료 병합 칸, 고시 변환 때 빠진 기호 보완 등, FAD-08) |
-
-- 시드 SQL로 넣고 교육과정이 바뀌면 다시 넣는다. 관리자 API로 쓰지 않는다. 원자료(`standards_2022.csv`)의 "생각 유형 후보(자동)"와 2026.1 일부개정 25행은 넣지 않는다(FN 1.5)
-
-`mission_draft` (새 테이블, FN-ADM-20)
-
-| 컬럼 | 타입 | 내용 |
-|---|---|---|
-| `id` | uuid PK | |
-| `requested_by` | uuid | core 사용자 (요청한 관리자) |
-| `standard_codes` | jsonb | 고른 성취기준 코드 배열 |
-| `achievement_levels` | jsonb, NULL 허용 | 성취기준별 고른 단계 `{"6국01-02": "B"}` |
-| `thinking_type` | varchar | `mission_version.thinking_type`과 같은 값 (CHECK) |
-| `grade_min`, `grade_max` | int | 3~6 (논술 5~6) |
-| `input_type` | varchar | `mission_version.input_type`과 같은 값 (CHECK) |
-| `status` | varchar | `GENERATING`·`READY`·`CHECK_FAILED`·`FAILED`·`ADOPTED`·`DISCARDED` (CHECK, state-diagram 3.4) |
-| `attempts` | int | 생성 시도 횟수 (AI 호출 실패 포함) |
-| `check_results` | jsonb, NULL 허용 | 시도마다 `{attempt, failures: [{check, reason}]}` |
-| `output` | jsonb, NULL 허용 | 마지막 초안 (api-spec 4.2 `draft`) |
-| `failure_code` | varchar, NULL 허용 | 마지막 AI 호출 실패 코드 |
-| `model_version`, `prompt_version` | varchar, NULL 허용 | 마지막 생성에 쓴 버전 (FN-ADM-17) |
-| `lease_until` | timestamptz, NULL 허용 | 생성 작업 점유 기한 (`judgment.lease_until`과 같은 방식) |
-| `mission_id` | uuid FK·UK, NULL 허용 | 채택해 만든 미션 |
-| `created_at`, `updated_at` | timestamptz | |
-
-- 검사에 실패한 초안은 미션을 만들지 않으므로 `mission`과 따로 둔다. 채택 1회에 미션 1개(`mission_id` UK)
-- 목록 조회 인덱스 `(status, created_at)`는 6장으로 옮길 때 추가한다. 학생 ID·학생 답은 없다
-
-기존 테이블에 추가하는 컬럼
-
-| 컬럼 | 타입 | 내용 |
-|---|---|---|
-| `mission.source` | varchar | `MANUAL`·`LLM_DRAFT` (CHECK). 기존 행은 마이그레이션에서 `MANUAL` |
-| `mission_version.achievement_levels` | jsonb, NULL 허용 | 성취기준별 성취수준 단계. 키는 같은 버전 `achievement_standards` 안의 코드 |
-| `rubric_element.standard_code` | varchar, NULL 허용 | 요소를 구체화한 성취기준 코드 |
-
-- `source`는 미션이 처음 만들어진 방식이라 버전마다 바뀌지 않아 `mission`에 둔다. 초안과의 연결은 `mission_draft.mission_id` 한쪽에만 둔다
-- `achievement_standards`는 코드 배열 그대로 둔다(웹 관리자 화면·learning OpenAPI가 문자열 배열로 씀)
-- 성취기준 코드는 DB FK·CHECK로 묶지 않는다. `achievement_standards`는 jsonb 배열이라 FK를 걸 수 없고, 교육과정이 바뀌어 표를 다시 넣을 때 지난 버전 행이 막히면 안 된다. 게시 검사(4.1)가 앱에서 확인한다: 코드가 모두 표에 있음 → `achievementStandards`, 요소 `standard_code`가 미션 성취기준 안 → `rubric.elements.standardCode`, 단계 키가 미션 성취기준 안이고 단계가 그 성취기준 `level_scale` 안 → `achievementLevels`
+- `achievement_standard`: 참조 데이터. 시드 SQL(`backend/learning-service/db/seed/achievement_standards.sql`, 2022 개정 현행 765개)로 넣고 교육과정이 바뀌면 다시 넣는다. 관리자 API로 쓰지 않는다. 원자료(`standards_2022.csv`)의 "생각 유형 후보(자동)"와 2026.1 일부개정 25행은 넣지 않는다. `levels`(평가원 성취수준 문장)는 이용 조건 확인 전까지 NULL, `note`는 원자료 "비고"(원문 대조 기록, FAD-08)
+- `mission_draft`: 검사에 실패한 초안은 미션을 만들지 않으므로 `mission`과 따로 둔다. 채택 1회에 미션 1개(`mission_id` UK). `check_results`는 시도마다 `{attempt, failures:[{check, reason}]}`, `output`은 api-spec 4.2 `draft`. `lease_until`은 `judgment.lease_until`과 같은 방식의 생성 작업 점유. 학생 ID·학생 답은 없다
+- `mission.source`(`MANUAL`·`LLM_DRAFT`): 미션이 처음 만들어진 방식이라 버전마다 바뀌지 않아 `mission`에 둔다. 초안과의 연결은 `mission_draft.mission_id` 한쪽에만 둔다. 기존 행은 V10이 `MANUAL`로 채운다. SQL DEFAULT는 두지 않고(1장) 앱·데모 시드·검증 스크립트가 값을 넘긴다
+- `mission_version.achievement_levels`: 성취기준별 단계 `{"6국01-02": "B"}`. `achievement_standards`는 코드 배열 그대로 둔다(웹 관리자 화면·learning OpenAPI가 문자열 배열로 씀)
+- 성취기준 코드는 DB FK·CHECK로 묶지 않는다. `achievement_standards`는 jsonb 배열이라 FK를 걸 수 없고, 교육과정이 바뀌어 표를 다시 넣을 때 지난 버전 행이 막히면 안 된다. 게시 검사(4.1)가 앱에서 확인한다: 코드가 모두 표에 있고 미션 학년 범위가 그 성취기준 학년군 안 → `achievementStandards`, 요소 `standard_code`가 미션 성취기준 안 → `rubric.elements.standardCode`, 단계 키가 미션 성취기준 안이고 단계가 그 성취기준 `level_scale` 안 → `achievementLevels`
 
 ### 4.2 학습 시도·답변·판정 (FN-LRN, FN-JDG)
 
@@ -1255,6 +1245,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | learning | `attempt` | `(student_id, started_at)` | 기간별 기록 조회 (대시보드·에이전트·리포트) |
 | learning | `answer` | `(attempt_id, submitted_at)` | 시도 타임라인 |
 | learning | `judgment` | `(process_status, lease_until)` | 고착 `RUNNING` 탐지 |
+| learning | `mission_draft` | `(status, created_at)` | 초안 목록(상태 필터·최근 요청 순)·생성 작업 점유 (#353) |
 | learning | `processed_event` | `(processed_at)` | 보존 기간 정리 |
 | report | `weekly_report` | `(student_id, status, period_from)` | 자녀별 리포트 목록 |
 | report | `outbox_event` | `(created_at) WHERE published_at IS NULL`, `(subject, created_at, id) WHERE published_at IS NULL`, `(published_at) WHERE published_at IS NOT NULL` | 학생별 선두·발행 순서 및 재시도 대상, 보존 기간 정리 |
@@ -1267,7 +1258,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V26(V10·V11 결번), learning Flyway V1~V9, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`. 현재 75개 테이블·666개 컬럼(core 48/441, learning 19/162, report 8/63, `scripts/check_db_migrations.py` 결과). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V26(V10·V11 결번), learning Flyway V1~V10, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`. 현재 77개 테이블·698개 컬럼(core 48/441, learning 21/194, report 8/63, `scripts/check_db_migrations.py` 결과). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT

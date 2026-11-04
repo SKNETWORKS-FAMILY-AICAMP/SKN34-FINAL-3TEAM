@@ -231,9 +231,9 @@ $$, '23505');
 """
 
 LEARNING_CASES = """
-INSERT INTO mission (id, code, status, demo_only, sort_order, created_by, created_at, updated_at)
+INSERT INTO mission (id, code, status, demo_only, sort_order, created_by, source, created_at, updated_at)
 VALUES ('00000000-0000-4000-8000-000000000101', 'schema-test', 'DRAFT', true, 0,
-        '00000000-0000-4000-8000-000000000001', now(), now());
+        '00000000-0000-4000-8000-000000000001', 'MANUAL', now(), now());
 INSERT INTO mission_version
     (id, mission_id, version, title, subject, grade_min, grade_max, thinking_type,
      input_type, question, created_by, created_at)

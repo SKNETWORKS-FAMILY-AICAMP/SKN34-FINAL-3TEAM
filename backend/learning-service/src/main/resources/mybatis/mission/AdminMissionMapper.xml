@@ -13,6 +13,7 @@
             <arg column="current_rubric_version" javaType="java.lang.Integer"/>
             <arg column="published_version" javaType="java.lang.Integer"/>
             <arg column="published_rubric_version" javaType="java.lang.Integer"/>
+            <arg column="source" javaType="com.sagomungchi.learning.mission.domain.MissionSource"/>
         </constructor>
     </resultMap>
     <resultMap id="adminVersion" type="com.sagomungchi.learning.mission.domain.AdminMissionVersion">
@@ -34,6 +35,7 @@
             <arg column="answer_unit" javaType="java.lang.String"/>
             <arg column="input_template" javaType="java.util.List" typeHandler="com.sagomungchi.learning.mission.repository.StringListTypeHandler"/>
             <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="achievement_levels" javaType="java.util.Map" typeHandler="com.sagomungchi.learning.mission.repository.StringMapTypeHandler"/>
         </constructor>
     </resultMap>
     <resultMap id="adminReview" type="com.sagomungchi.learning.mission.domain.AdminReview">
@@ -63,7 +65,8 @@
 
     <select id="findMissionHeader" resultMap="missionHeader" flushCache="true" useCache="false">
         SELECT m.id, m.code, m.status, m.demo_only, m.current_version_id, cv.version AS current_version,
-               cr.version AS current_rubric_version, pv.version AS published_version, pr.version AS published_rubric_version
+               cr.version AS current_rubric_version, pv.version AS published_version, pr.version AS published_rubric_version,
+               m.source
         FROM mission m
         JOIN mission_version cv ON cv.id = m.current_version_id
         LEFT JOIN rubric_version cr ON cr.id = m.current_rubric_version_id
@@ -102,7 +105,7 @@
         SELECT version, title, subject, grade_min, grade_max, thinking_type, input_type, question, guide, scene_uri,
                static_scene_uri, COALESCE(achievement_standards, '[]'::jsonb) AS achievement_standards,
                COALESCE(choices, '[]'::jsonb) AS choices, COALESCE(categories, '[]'::jsonb) AS categories, answer_unit,
-               COALESCE(input_template, '[]'::jsonb) AS input_template, created_at
+               COALESCE(input_template, '[]'::jsonb) AS input_template, created_at, achievement_levels
         FROM mission_version WHERE mission_id = #{missionId} ORDER BY version
     </select>
 
@@ -124,14 +127,14 @@
     </select>
 
     <insert id="insertMission">
-        INSERT INTO mission (id, code, status, demo_only, sort_order, created_by, created_at, updated_at)
-        VALUES (#{id}, #{code}, 'DRAFT', #{demoOnly}, #{sortOrder}, #{authorId}, #{now}, #{now})
+        INSERT INTO mission (id, code, status, demo_only, sort_order, created_by, source, created_at, updated_at)
+        VALUES (#{id}, #{code}, 'DRAFT', #{demoOnly}, #{sortOrder}, #{authorId}, #{source}, #{now}, #{now})
     </insert>
 
     <insert id="insertVersion">
         INSERT INTO mission_version (id, mission_id, version, title, subject, grade_min, grade_max, thinking_type, input_type,
                                      question, guide, scene_uri, static_scene_uri, achievement_standards, choices, categories,
-                                     answer_unit, input_template, created_by, created_at)
+                                     answer_unit, input_template, achievement_levels, created_by, created_at)
         VALUES (#{id}, #{missionId}, #{version}, #{command.title}, #{command.subject}, #{command.gradeMin},
                 #{command.gradeMax}, #{command.thinkingType}, #{command.inputType}, #{command.question},
                 #{command.guide,jdbcType=VARCHAR}, #{command.sceneUri,jdbcType=VARCHAR}, #{command.staticSceneUri,jdbcType=VARCHAR},
@@ -139,7 +142,9 @@
                 #{command.choices,typeHandler=com.sagomungchi.learning.mission.repository.ChoiceListTypeHandler},
                 #{command.categories,typeHandler=com.sagomungchi.learning.mission.repository.CategoryListTypeHandler},
                 #{command.answerUnit,jdbcType=VARCHAR},
-                #{command.inputTemplate,typeHandler=com.sagomungchi.learning.mission.repository.StringListTypeHandler}, #{command.authorId}, #{now})
+                #{command.inputTemplate,typeHandler=com.sagomungchi.learning.mission.repository.StringListTypeHandler},
+                #{command.achievementLevels,typeHandler=com.sagomungchi.learning.mission.repository.StringMapTypeHandler,jdbcType=OTHER},
+                #{command.authorId}, #{now})
     </insert>
 
     <update id="updateCurrentVersion">

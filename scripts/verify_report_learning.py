@@ -248,7 +248,7 @@ def verify(output):
         def make(kind, content):
             mission, version, rubric = uuid4(), uuid4(), uuid4()
             db.execute(
-                "INSERT INTO mission(id,code,status,demo_only,sort_order,created_by,created_at,updated_at) VALUES(%s,%s,'PUBLISHED',false,1,%s,now(),now())",
+                "INSERT INTO mission(id,code,status,demo_only,sort_order,created_by,source,created_at,updated_at) VALUES(%s,%s,'PUBLISHED',false,1,%s,'MANUAL',now(),now())",
                 (mission, str(mission), actor),
             )
             db.execute(

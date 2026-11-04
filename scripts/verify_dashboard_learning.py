@@ -187,7 +187,7 @@ def verify(args):
 
         def mission():
             m, version, rubric, hint = uid(), uid(), uid(), uid()
-            sql('learning', "INSERT INTO mission(id,code,status,demo_only,sort_order,created_by,created_at,updated_at) VALUES(%s,%s,'PUBLISHED',false,1,%s,now(),now())", (m,'VERIFY40-'+m,user))
+            sql('learning', "INSERT INTO mission(id,code,status,demo_only,sort_order,created_by,source,created_at,updated_at) VALUES(%s,%s,'PUBLISHED',false,1,%s,'MANUAL',now(),now())", (m,'VERIFY40-'+m,user))
             sql('learning', "INSERT INTO mission_version(id,mission_id,version,title,subject,grade_min,grade_max,thinking_type,input_type,question,created_by,created_at) VALUES(%s,%s,1,'합성 미션','과학',3,6,'ANALYZE','NARRATIVE','이유를 말해 볼까?',%s,now())", (version,m,user))
             sql('learning', "INSERT INTO rubric_version(id,mission_id,version,example_answer,created_by,created_at) VALUES(%s,%s,1,'합성 예시',%s,now())", (rubric,m,user))
             sql('learning', "INSERT INTO rubric_element(id,rubric_version_id,code,label,description,points,good_thought,judge_verified,sort_order) VALUES(%s,%s,'reason','까닭','합성 검증 기준',1,false,true,1)", (uid(),rubric))

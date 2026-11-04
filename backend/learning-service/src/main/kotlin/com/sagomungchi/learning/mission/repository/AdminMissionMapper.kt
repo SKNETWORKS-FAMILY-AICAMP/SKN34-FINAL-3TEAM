@@ -4,6 +4,7 @@ import com.sagomungchi.learning.mission.domain.AdminMissionFilter
 import com.sagomungchi.learning.mission.domain.AdminMissionVersion
 import com.sagomungchi.learning.mission.domain.AdminReview
 import com.sagomungchi.learning.mission.domain.MissionCommand
+import com.sagomungchi.learning.mission.domain.MissionSource
 import com.sagomungchi.learning.mission.domain.MissionStatus
 import com.sagomungchi.learning.mission.domain.ReviewResult
 import com.sagomungchi.learning.mission.domain.StatusCount
@@ -30,6 +31,7 @@ interface AdminMissionMapper {
         @Param("demoOnly") demoOnly: Boolean,
         @Param("sortOrder") sortOrder: Int,
         @Param("authorId") authorId: UUID,
+        @Param("source") source: MissionSource,
         @Param("now") now: Instant,
     ): Int
     fun insertVersion(
@@ -69,4 +71,5 @@ data class MissionHeader(
     val currentRubricVersion: Int?,
     val publishedVersion: Int?,
     val publishedRubricVersion: Int?,
+    val source: MissionSource,
 )

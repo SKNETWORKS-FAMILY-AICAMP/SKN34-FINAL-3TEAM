@@ -172,7 +172,7 @@ class AdminMissionServiceTest : PostgresRepositoryTest() {
         assertEquals(page.counts, service.listForAdmin(AdminMissionFilter(MissionStatus.PUBLISHED, 6, ThinkingType.SOLVE, 3, 1)).counts)
     }
 
-    private fun ready(elements: List<AdminRubricElement> = listOf(element("e1", "고르는 생각"))): UUID =
+    private fun ready(elements: List<AdminRubricElement> = listOf(element("ANSWER_KEY", "고르는 생각"))): UUID =
         service.create(command()).id.also { service.putRubric(it, rubric(elements = elements)) }
 
     private fun approve(id: UUID, missionVersion: Int, rubricVersion: Int) {
@@ -188,11 +188,11 @@ class AdminMissionServiceTest : PostgresRepositoryTest() {
     private fun command(title: String = "미션", grade: Pair<Int, Int> = 5 to 5, thinking: ThinkingType = ThinkingType.ANALYZE) = MissionCommand(
         authorId = admin, title = title, subject = "과학", gradeMin = grade.first, gradeMax = grade.second, thinkingType = thinking,
         inputType = InputType.CHOICE, question = "왜 시들었을까?", guide = null, sceneUri = null, staticSceneUri = null,
-        achievementStandards = listOf("[6과07-02]"), choices = listOf(Choice("c1", "물"), Choice("c2", "햇빛")), categories = emptyList(),
+        achievementStandards = listOf("6과07-02"), choices = listOf(Choice("c1", "물"), Choice("c2", "햇빛")), categories = emptyList(),
         answerUnit = null, inputTemplate = emptyList(), demoOnly = false,
     )
 
-    private fun rubric(elements: List<AdminRubricElement> = listOf(element("e1", "고르는 생각")), hints: List<String> = emptyList()) =
+    private fun rubric(elements: List<AdminRubricElement> = listOf(element("ANSWER_KEY", "고르는 생각")), hints: List<String> = emptyList()) =
         RubricCommand(admin, elements, AnswerKey(choiceIds = listOf("c1")), "물을 받지 못해서", emptyList(), hints)
 
     private fun element(code: String, label: String = "요소") = AdminRubricElement(code, label, null, 1, emptyList(), false, false)

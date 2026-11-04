@@ -19,6 +19,8 @@ data class AdminMission(
     val versions: List<AdminMissionVersion>,
     val rubrics: List<AdminRubric>,
     val reviews: List<AdminReview>,
+    /** 처음 만든 방식 (#353): 사람 작성 MANUAL, 초안 채택 LLM_DRAFT */
+    val source: MissionSource = MissionSource.MANUAL,
 )
 
 /** 미션 버전 (mission_version). 선택지·분류 그룹·입력 틀·성취기준이 없으면 빈 배열 */
@@ -40,6 +42,8 @@ data class AdminMissionVersion(
     val answerUnit: String?,
     val inputTemplate: List<String>,
     val createdAt: Instant,
+    /** 성취기준별 성취수준 단계 {"6국01-02": "B"} (#353). 고르지 않았으면 null */
+    val achievementLevels: Map<String, String>? = null,
 )
 
 /** 기준표 버전 (rubric_version + rubric_element + hint_question). 정답 키·예시 답 포함이라 관리자 전용 */
@@ -64,6 +68,8 @@ data class AdminRubricElement(
     val commonErrors: List<String>,
     val goodThought: Boolean,
     val judgeVerified: Boolean,
+    /** 요소를 구체화한 성취기준 코드 (#353). 정답 요소·#336 전 요소는 null */
+    val standardCode: String? = null,
 )
 
 data class AdminReview(
@@ -114,6 +120,8 @@ data class MissionCommand(
     val answerUnit: String?,
     val inputTemplate: List<String>,
     val demoOnly: Boolean,
+    /** 성취기준별 성취수준 단계 (#353). 저장 때 모양만, 단계 수·키는 게시 때 확인 */
+    val achievementLevels: Map<String, String>? = null,
 )
 
 /** 기준표 저장 본문 = 새 기준표 버전. authorId는 core가 넘긴 관리자 ID */

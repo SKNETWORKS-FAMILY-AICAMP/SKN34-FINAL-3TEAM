@@ -129,6 +129,8 @@ class AdminMissionControllerTest(@Autowired private val mockMvc: MockMvc) {
             "/internal/admin/missions" to body.replace("\"CHOICE\"", "\"DRAWING\""),
             "/internal/admin/missions" to body.replace("""[{"id":"c1","label":"물"}]""", """[{"id":"c1","label":"물"},{"id":"c1","label":"불"}]"""),
             "/internal/admin/missions/$missionId/review-request" to """{"missionVersion":1}""",
+            // #353 성취수준 단계 모양: A~E 한 글자
+            "/internal/admin/missions" to body.replace("\"demoOnly\":false", "\"demoOnly\":false,\"achievementLevels\":{\"6과07-02\":\"F\"}"),
         ).forEach { (path, content) ->
             mockMvc.post(path) { asAdmin(content = content) }.andExpect {
                 status { isBadRequest() }
@@ -143,6 +145,11 @@ class AdminMissionControllerTest(@Autowired private val mockMvc: MockMvc) {
             """{"keywords":["쉬는 시간"," "]}""",
             """{"keywords":["${"가".repeat(201)}"]}""",
             """{"essayType":"감상문"}""",
+            // #262 code 모양: 표준 코드·e+숫자·예약 코드만
+            """{"elements":[{"code":"CHOICE_ANSWER","label":"요소","points":1}]}""",
+            """{"elements":[{"code":"E1","label":"요소","points":1}]}""",
+            // #353 요소 성취기준은 비우거나 코드
+            """{"elements":[{"code":"e1","label":"요소","points":1,"standardCode":" "}]}""",
         ).forEach { content ->
             mockMvc.put("/internal/admin/missions/$missionId/rubric") { asAdmin(content = content) }.andExpect {
                 status { isBadRequest() }
