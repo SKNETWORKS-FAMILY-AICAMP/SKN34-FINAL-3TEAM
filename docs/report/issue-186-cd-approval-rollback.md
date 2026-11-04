@@ -164,3 +164,4 @@ CLI 종료 코드 0은 JSON 계획의 형식 유효성만 뜻한다. 호환 여�
 - 브랜치 보호: develop·main 모두 보호 규칙·Ruleset이 없다(2026-11-04 API 확인). 배포 적용은 `prod` 승인으로 막히지만, main 직접 push로 workflow를 바꾸면 승인 전 publish job이 ECR 게시 역할을 쓸 수 있다. main 보호(PR 필수, force push·삭제 금지)는 팀 결정으로 남긴다.
 - 설정 C(runner): 작업자 PC runner `DESKTOP-AUHJ0U2`(라벨 `cd-prod`, 서비스 미설치)를 등록했다. 데모 EKS 전용 kubeconfig와 runner `.env`(경로만)를 두었다.
 - 실행 스위치: A~C 적용을 확인하고 `policy.json`의 `environmentProtectionVerified`·`infrastructureReady`·`executionEnabled`를 true로 바꿨다. `cd-release`는 main에서만 수동 실행되고 적용은 `prod` 승인 후라 develop 병합만으로는 실행되지 않는다. 근거 없는 계획(합성 예시 포함)은 계속 차단된다. D(fixture)는 배포 직전에 채운다.
+- 수정(2026-11-04, main `a47631a` 반영 후 발견): deploy job `env`에서 `${{ runner.temp }}`를 써서 GitHub가 `cd-release.yml`을 파일 오류로 처리했고, 모든 브랜치 push마다 실패 run이 생겼다(배포는 실행되지 않음). 작업 폴더를 첫 step에서 `GITHUB_ENV`로 정하도록 고치고, actionlint 1.7.12(`cd-prod` 라벨 설정)로 전체 workflow를 검사해 오류 0건을 확인했다. job env 컨텍스트 회귀 테스트를 추가해 151개 통과.
