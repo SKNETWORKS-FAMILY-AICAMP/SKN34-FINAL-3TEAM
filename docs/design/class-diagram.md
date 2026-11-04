@@ -1166,6 +1166,7 @@ classDiagram
 - `ModelVersion`은 불변 data class다. 상태 전이는 `ModelVersionService`의 `activate`·`rollback`과 private `switch`에서 `copy` 후 Repository에 저장하며 Domain의 `activate()`·`deactivate()` 메서드는 없다.
 - `AuditLogService`는 아직 구현되지 않은 공용 감사 서비스 설계다. #43은 `ModelVersionService → ModelVersionRepository.audit → ModelVersionMapper.audit → audit_log` 경로로 감사 기록을 저장한다. 상태·감사·Outbox를 같은 트랜잭션으로 유지하며, #47 등에서 공용 감사 기능을 실제 도입할 때 이 경로의 통합을 검토한다. 현재 사용처만을 위해 공용 서비스를 추가하지 않는다 ([#43 보고서](../report/ai.md)).
 - `QueueStatsRepository`: RabbitMQ 관리 API(15672) 조회, 큐 길이·DLQ 적재량 (참고 레포 `QueueOperations*`)
+- #336 구현 전: `AdminMissionController`(= `learning/controller/AdminMissionsController`)가 성취기준 표·미션 초안 경로도 같은 방식으로 learning에 넘기고 초안 요청·채택·버리기를 감사 기록한다(api-spec 2.8). 사용량 호출 종류(`usage/domain/UsageSummary.CallType`)에 `MISSION_DRAFT` 추가
 
 ---
 
@@ -1366,6 +1367,68 @@ classDiagram
   - `review`: 현재 미션·기준표 버전의 최신 검토가 `APPROVED`가 아님
 - 관리자 API(#145): core가 `ADMIN` + `X-User-Id`(작성자·검토자 ID) + 빈 학생 범위로 넘김(CONTENT 검사는 core). 성공 응답은 모두 JSON 객체(core 프록시 요구): 목록 `{items, page, size, totalElements, counts}`, 나머지는 미션 전체 `AdminMission`(api-spec 4.1). `counts`는 페이지·`status`·`grade`·`thinkingType` 어느 필터와도 무관한 전체 상태별 건수
 - 버전: `update`·`putRubric`은 새 버전을 추가하고 `current_*`만 바꿈. 학생 목록·상세·`currentVersions`(시도 시작)는 공개 버전 `published_*`, `publish`가 `published_*` ← `current_*` (P07, ERD 4.1). 상태 전이는 state-diagram 3.1
+
+### 4.1.1 성취기준·미션 초안 (#336, 구현 전)
+
+FN-ADM-20·21, api-spec 4.1 `/internal/admin/achievement-standards`·`/internal/admin/mission-drafts…`, ERD 4.1.1. 이름은 구현 이슈의 기준이며 기존 `mission` 패키지 안에 둔다.
+
+```mermaid
+classDiagram
+  direction LR
+  class AdminMissionDraftController {
+    <<controller>>
+    +standards(subject, gradeBand, q, page, size) Page
+    +request(body) MissionDraft
+    +list(status, page, size) Page
+    +detail(draftId) MissionDraft
+    +adopt(draftId) AdminMission
+    +discard(draftId) MissionDraft
+  }
+  class MissionDraftService {
+    <<service>>
+    +request(command) MissionDraft
+    +adopt(draftId, author) AdminMission
+    +discard(draftId) MissionDraft
+    +generateNext(now)
+  }
+  class MissionDraft {
+    <<entity>>
+    +recordAttempt(result, maxAttempts)
+    +adopt(missionId)
+    +discard()
+  }
+  class MissionDraftScheduler { <<scheduler>> }
+  class MissionDraftAiClient { <<client>> }
+  class MissionDraftRepository {
+    <<repository>>
+    +claimNext(now, leaseUntil) MissionDraft
+    +saveAttempt(draft, claimedLease)
+  }
+  class AchievementStandardRepository {
+    <<repository>>
+    +search(filter, page, size)
+    +findByCodes(codes)
+  }
+  class MissionService { <<service>> }
+
+  AdminMissionDraftController --> MissionDraftService
+  AdminMissionDraftController --> AchievementStandardRepository
+  MissionDraftScheduler --> MissionDraftService : 주기 실행
+  MissionDraftService --> MissionDraftRepository
+  MissionDraftService --> AchievementStandardRepository
+  MissionDraftService --> MissionDraftAiClient : 생성 1회
+  MissionDraftService --> MissionService : createFromDraft
+  MissionDraftService ..> MissionDraft
+```
+
+- 요청 `request`: 형식·성취기준 코드 실재·학년·입력 방식 조합 확인(400) 뒤 `GENERATING`, `attempts = 0`으로 저장하고 202. 생성은 요청 안에서 하지 않는다(core→learning 일반 대기 30초 안에 LLM 생성·재시도를 끝낼 수 없음)
+- 생성 `generateNext`(`MissionDraftScheduler`, 주기 기준안 10초): `claimNext`가 `GENERATING`이고 `lease_until`이 비었거나 지난 초안 하나를 조건부 UPDATE로 점유한다(`lease_until = now + 90초`, 판정 리스와 같은 값·같은 방식이라 레플리카가 동시에 돌아도 한 곳만). 트랜잭션 밖에서 ai를 1번 부르고 learning 검사를 한 뒤 `saveAttempt`가 점유한 리스 값이 그대로일 때만 저장한다
+- learning 검사: 요소 code 규칙은 게시 검사(`Mission.requirePublishable`, #262 구현 이슈에서 들어가는 FN 1.5 규칙)와 같은 함수, 요소 `standardCode`가 요청 성취기준 안, 입력 방식 모양(`choices`·`categories`·`answerKey`)은 4.1 관리자 미션 본문과 같음. 실패 `check`: `STANDARD_CODE`·`ELEMENT_CODE`·`SHAPE`. AI 호출이 실패한 시도는 `AI_CALL`(`reason`은 `failure_code`)로 남김
+- `MissionDraft.recordAttempt`: `attempts + 1`, `check_results`에 이번 실패 추가. ai·learning 검사를 모두 통과하면 `READY` + `output`. 실패하고 상한 미만이면 `GENERATING` 그대로 리스만 비워 다음 주기에 이전 실패 사유(`previousFailures`)를 넣어 다시 생성. 상한(기준안 3회, P19 김동섭 확인)에 닿으면 마지막 실패가 AI 호출 실패면 `FAILED`(`failure_code`), 아니면 `CHECK_FAILED`
+- `MissionDraftAiClient`: `POST /internal/mission-drafts`. 대기 35초·재시도 없음은 `AiClient`와 같지만 **서킷은 따로** 둔다(`ai-mission-draft`, 같은 P12 값). 판정·되묻기 서킷을 같이 쓰면 초안 실패가 학생 판정을 막음(#305와 같은 문제)
+- 채택 `adopt`: 초안 행 `FOR UPDATE` → `READY`가 아니면 409 → `MissionService.createFromDraft`가 기존 `create`·`putRubric`과 같은 규칙으로 `DRAFT` 미션·첫 미션 버전·첫 기준표 버전을 같은 트랜잭션에 만듦(`mission.source = LLM_DRAFT`, 요소 배점 1, M2 입력 `keywords`·`essayType`은 비움, `sceneNote`는 미션에 저장하지 않음) → `ADOPTED` + `mission_id`. 이후 수정·검토·게시는 4.1 그대로라 자동 공개 없음(P19)
+- 사람이 쓰는 미션(`create`)은 `source = MANUAL`. `achievementLevels`·요소 `standardCode` 저장과 게시 검사 추가는 4.1 `MissionService`·`Mission.requirePublishable`에서 한다(ERD 4.1.1)
+- 새 값(주기 10초·상한 3회)은 기준안이며 `app.mission-draft.*` 설정으로 둔다. 리스 90초는 판정과 같은 값을 쓴다
 
 ### 4.2 판정·되묻기 (judgment)
 
@@ -1664,7 +1727,7 @@ classDiagram
 | `JudgmentService` | `judgment/service.py` | 사전 보류(`TOO_SHORT`·`UNVERIFIED_SCOPE`) → 추출 → 대조 → 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정 (업무 판단은 service, 아키텍처 2.1) → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`, `M2_CROSS_CHECK_ENABLED` 기본 꺼짐이면 기록만) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`, `M1_CHECK_ENABLED` 기본 꺼짐) → 응답. scoring 호출은 `clients/scoring_client.ScoringClient`, 불일치 계산은 `judgment/cross_check.py` (#69, api-spec 4.2.2) |
 | `LeakGuard` | `followup/leak_guard.py` | 모듈 함수 `find_leaks()`. 정답 키·예시 답·금지어 포함 검사. 실패 시 1회 재생성(`LLM_RETRY`), 재실패 시 `question` 없이 `leakCheck.passed = false` 반환 → learning이 질문 은행 선택 (`BANK`, P16) |
 | `LlmClient` | `llm/base.py`, 제공자는 `llm/providers.py` | 제공자 교체 지점(Claude·OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`), LLM 호출 재시도는 이 클래스에서만 (아키텍처 1.3), 호출마다 사용량 콜백(`BackgroundUsageRecorder` → `UsagePublisher`, 발행 실패는 로그만). `stream`은 분석 대화 답변의 일반 텍스트 조각(첫 조각 전 실패만 재시도) |
-| `ActiveVersions` | `prompt_versions/registry.py` (#254, 조정은 `prompt_versions/service.py` `PromptSync`) | #68에서 내장 버전과 core 활성 `PROMPT` 다섯 이름(#280 `reportTemplate` 포함)·승인 scope를 조정한다. 선택한 실제 본문·버전을 요청 동안 고정하고 `/internal/versions`에 같은 버전을 제공한다. 미보유 활성 버전은 명시적 503과 readiness DOWN |
+| `ActiveVersions` | `prompt_versions/registry.py` (#254, 조정은 `prompt_versions/service.py` `PromptSync`) | #68에서 내장 버전과 core 활성 `PROMPT` 다섯 이름(#280 `reportTemplate` 포함, #336 구현 때 `missionDraft` 추가, 5.4)·승인 scope를 조정한다. 선택한 실제 본문·버전을 요청 동안 고정하고 `/internal/versions`에 같은 버전을 제공한다. 미보유 활성 버전은 명시적 503과 readiness DOWN |
 
 ### 5.2 분석 에이전트·리포트 서술 (analysis_agent · report_narrative)
 
@@ -1797,6 +1860,41 @@ classDiagram
 
 - 기동 순서: exclusive 큐 선언·바인딩·소비 시작 → `CoreClient.active_versions()` → 조회 중 이벤트 revision 조정 → `ActiveVersions.replace`. 조회·조정은 `PromptSync`가 맡고 소비자는 검증한 이벤트를 `PromptSync.offer`로만 넘긴다(#254). 조회 실패·미보유 활성 본문은 readiness false, 프로세스 유지. 재연결도 새 큐 바인딩 후 snapshot으로 조정한다 (아키텍처 1.6).
 - `UsagePublisher`: 응답 반환 후 best-effort 발행, 학생 ID·원문 미포함 (NFR-PRF-02)
+
+### 5.4 미션 초안 (mission_draft, #336 구현 전)
+
+FN-ADM-20, api-spec 4.2 `POST /internal/mission-drafts`. 새 모듈 `app/mission_draft/`는 되묻기(5.1)와 같은 구성이다.
+
+```mermaid
+classDiagram
+  direction LR
+  class mission_draft_router {
+    <<router>>
+    +create(MissionDraftRequest) MissionDraftResponse
+  }
+  class MissionDraftService {
+    <<service>>
+    +generate(request) MissionDraftResponse
+  }
+  class DraftChecks {
+    <<domain>>
+    +check(draft, request) list~Failure~
+  }
+  class LeakGuard { <<domain>> }
+  class LlmClient { <<client>> }
+  class ActiveVersions { <<registry>> }
+
+  mission_draft_router --> MissionDraftService
+  MissionDraftService --> LlmClient : 구조화 출력 1회
+  MissionDraftService --> ActiveVersions : missionDraft 프롬프트
+  MissionDraftService --> DraftChecks
+  DraftChecks --> LeakGuard : find_leaks 재사용
+```
+
+- `MissionDraftService.generate`: 요청 1번에 LLM 생성 1회(재시도 규칙은 기존 `LlmClient` 그대로, P12)와 검사만 하고 반복하지 않는다. 반복은 learning `MissionDraftService`(4.1.1)가 이전 실패 사유를 넣어 다시 부른다. 마감은 되묻기와 같은 33초(learning→ai 35초 안)
+- `DraftChecks`: `REQUIRED`(필수 항목·입력 방식별 선택지·정답 키·예시 답), `QUESTION_LENGTH`(학년별 길이, P19 확정 값을 설정으로 받음), `LEAK`(질문·안내에 대한 `followup/leak_guard.find_leaks`, 학생 답 없이 정답 키·금지어·예시 답만). 성취기준 실재·요소 code 규칙은 표와 규칙을 가진 learning이 검사
+- 프롬프트: `prompts.py` 내장 `mission-draft@1`, #68 레지스트리 이름 `missionDraft`·scope `ai/mission-draft`(`ActiveVersions`·`/internal/versions`에 추가). 입력은 성취기준 문장·(있으면) 성취수준 문장·생각 유형·그 유형 표준 요소 공통 설명·학년·입력 방식뿐이고 학생 정보는 없음
+- 사용량: `LlmClient` 콜백 → `UsagePublisher`, `callType = MISSION_DRAFT`(이벤트 스키마·core enum·core CHECK와 같이 추가, ERD 3.5)
 
 ---
 

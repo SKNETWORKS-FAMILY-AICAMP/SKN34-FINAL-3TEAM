@@ -607,3 +607,132 @@ web
 - 이전 기준표 버전·#262 전에 만든 미션의 자유 code는 표준 코드가 아니라 미션을 넘는 지표에서 빠짐(고유 요소처럼 그 미션 충족률에만)
 - 표준 요소는 사람 검증(P11) 전이라 AI 판정은 시범 표시
 - 후속: 기초 사고력(`mission_version.basic_skills`, 비교·분류) 연결, 성취수준 문장 연결, 기획서 6.2 미션 제작 흐름(LLM 초안 → 자동 검사 → APM 검수)의 FN-ADM-09 반영, 답 속 다른 유형 생각 기록
+
+## 21. 성취기준·성취수준 표와 미션 초안 흐름 문서·계약 (#336)
+
+기획서 6.2(미션 제작 방법)·5.3(2)(성취수준 문장에 맞춘 요소)와 요구사항 FAD-03·FAD-08·FAC-18·FFJ-10·FBN-09가 설계 문서에 처음부터 없던 것을 반영했다. #262처럼 문서만 바꾸고 구현은 PM이 이 절의 "구현 인계"로 learning·ai·core·web 이슈를 발행한다. 결과는 functional-spec 1.5 "성취기준·성취수준 연결"·FN-ADM-09·11·19·20·21, erd 4.1.1, api-spec 1.5·2.8·4.1·4.2·4.6, class-diagram 4.1.1·5.4, state-diagram 3.4, sequence-diagram 11. 모두 "(#336, 구현 전)"으로 표시했다.
+
+### 사용자 결정 (11/04)
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 이슈 범위 | 문서·계약만, 구현은 PM 발행. 12/7까지 설계 전체 구현(이슈 결정 1) | #262 결정 13과 같음 |
+| 성취기준 표 범위 (확인 필요 1) | 2022 개정 현행 765개 전체(초1~중3) | FAD-08이 수집본 전체 관리를 요구, functional-spec 1.5 학년 확장. 데이터가 작음 |
+| 이용 조건 (확인 필요 2) | 고시 원문(성취기준 문장)은 넣고, 평가원 성취수준 문장은 이용 조건 확인 전까지 넣지 않음 **[팀 확인 필요]** | 저장소가 공개(public)라 시드에 넣으면 공개됨. 수집데이터 보고서 "성취기준 문서: 이용 조건 확인 후 사용", 출처 국가교육과정정보센터 공개 문서. 평가원 자료의 이용 조건은 찾지 못함 |
+| 2026.1 일부개정 25개 (확인 필요 3) | 넣지 않고 FAD-08("790개")과 다름을 기록 | 12개 코드(`2즐01-01` 등)가 현행과 코드는 같고 문장이 달라 코드를 키로 쓸 수 없음. 2028년 적용, 초1~2만이라 지원 학년(P03) 밖 |
+| 생성 방식 (확인 필요 4) | 비동기: 요청은 `GENERATING`으로 저장하고 202, learning 주기 작업이 생성 1회씩 반복 | core→learning 일반 대기 30초(core `LearningHttpProperties`), ai LLM 1회 15초 + 재시도 1회(ai `config.py` `llm_timeout`·`llm_retry_backoff`, P12)라 동기 요청 안에서 재시도까지 끝낼 수 없음. 주기 작업은 learning `StuckJudgmentScheduler`, 점유는 `judgment.lease_until` 선례 |
+| 성취수준 단계 (확인 필요 5) | 미션 작성·초안 요청 때 성취기준마다 관리자가 고르고, `achievementStandards`(문자열 배열)는 그대로 둔 채 단계 필드(`achievementLevels`)를 따로 둠 | FAD-03 "모든 자체 미션은 … 성취수준 … 에 연결". `achievementStandards`를 객체로 바꾸면 web(`domain/admin/operations.ts` 85·260행, `presentation/admin/MissionManager.tsx` 278행)·learning OpenAPI 두 곳·learning 테스트 4개가 깨짐. 학년별 목표 단계는 기획에 없는 새 정책이라 정하지 않음 |
+| 시드 20문항 (확인 필요 6) | `source = MANUAL`, 성취수준 단계·요소 `standardCode`는 비우고 APM 검수 때 채움 | 추측으로 채우지 않음 |
+| "행동" | 칸을 두지 않고 검토 항목(학년·내용·행동이 미션과 맞는지)으로 | 기획서 6.2 ④ "검수·확정(APM): 학년·내용·행동(성취기준 동사)이 미션과 맞는지 확인". 수집데이터 보고서 `missions` 필드에도 없음. 현행 765개 중 605개(79%)가 "~하고·~하며·~하여"로 동작을 여러 개 이어 값 하나로 정하기 어려움 |
+| 계약 파일 시점 | ERD Mermaid·OpenAPI는 구현 이슈에서 코드와 함께 | ERD Mermaid는 `scripts/verify_db_schema.py`가 실제 DB와 테이블·컬럼을 그대로 대조하고(`erd.md`가 바뀌면 `ci-db-schema` 실행), learning·ai OpenAPI 경로는 컨트롤러·라우터와 같아야 함(`test_record_exists_openapi.py` 36개, `test_ai_openapi.py` 6개). #262는 기존 경로의 필드만 바꿔 OpenAPI를 같이 고쳤지만 #336은 새 경로·테이블이 중심 |
+
+### 성취기준 표 대조 (`standards_2022.csv`, #213 담당 개인 폴더)
+
+| 항목 | 값 |
+|---|---|
+| 전체 | 790행 = 2022 개정 현행 765 + 2026.1 일부개정 25(즐거운 생활 16·건강한 생활 9, 모두 초1~2) |
+| 현행 학년군 | 초1~2 100·초3~4 162·초5~6 169·중1~3 334. 성취수준 단계는 초 3단계(A~C), 중 5단계(A~E), 현행은 모두 있음 |
+| 코드 중복 | 12개(`2즐01-01`~`2즐03-04`). 현행과 2026.1이 같은 코드에 다른 문장 |
+| 코드 모양 | 원자료는 대괄호 포함(`[6국01-02]`), 시드 `achievement_standards`는 대괄호 없음(`6국01-02`) → 표도 대괄호 없이. `9사(일사)01-01` 같은 괄호 코드 74개 |
+| 시드 20문항 | 성취기준 코드 21개(초4 문제 해결 1문항이 2개) 모두 표에 있음 |
+| 생각 유형 후보(자동) | 현행 765개 중 335개 빈칸, 88개는 후보 2개 이상. 동사 낱말 규칙 값(`extract_standards.py` "사람이 검토해야 함")이라 넣지 않음 |
+| 비고 | 현행 79행. 66행은 "A·B 같은 기술(원자료 병합 칸)" 등, 13행은 고시 변환 때 빠진 기호 보완·성취수준 자료 문구 차이 같은 원문 대조 기록 → `note`로 넣음(FAD-08 "원문 대조" 구분) |
+
+### 설계에서 정한 것
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 검사 분담 | ai: 필수 항목·학년별 질문 길이·정답·금지어·예시 답 노출. learning: 성취기준 실재·요소 code 규칙·요소 `standardCode`·입력 방식 모양 | 각자 가진 코드를 재사용: 노출 검사는 ai `followup/leak_guard.find_leaks`, 표와 code 규칙(게시 검사)은 learning. 이슈 초안은 ai가 모두 검사 |
+| 반복 위치 | ai는 호출 1번에 생성 1회, 반복은 learning | ai 안에서 3회 반복하면 최대 약 90초로 learning→ai 35초를 넘음. ai 마감은 되묻기와 같은 33초(`followup_deadline`) |
+| 서킷 | learning 초안용 ai 호출은 별도 서킷 `ai-mission-draft`(P12 값) | learning `AiClient`는 판정·되묻기가 서킷 `ai` 하나를 공유. 초안 실패가 학생 판정을 막지 않게(#305와 같은 문제). core `ai-report-template` 분리 선례 |
+| 실패 상태 | 상한에서 마지막 실패가 검사면 `CHECK_FAILED`, AI 호출이면 `FAILED`(`failure_code`는 판정과 같은 `AI_*`) | FAC-18 "반복 실패는 반려/실패로", 판정 실패 코드 재사용 |
+| 생성 방식 기록 | `mission.source`(`MANUAL`·`LLM_DRAFT`), 초안 연결은 `mission_draft.mission_id` 한쪽 | 미션이 처음 만들어진 방식이라 버전마다 바뀌지 않음. 이슈 초안은 `mission_version.source`·`draft_id` |
+| 성취기준 FK | 두지 않고 게시 검사 | `achievement_standards`가 jsonb 배열, 교육과정이 바뀌어 표를 다시 넣을 때 지난 버전이 막히지 않게 |
+| 초안 목록 API | `GET /admin/mission-drafts?status` 추가 | FFJ-10 "생성 출처·오류 이유·시도 횟수·… 상태를 확인". 이슈 초안에 없음 |
+| 다시 만들기 | 새 초안 요청(실패한 초안을 되살리지 않음) | 상태 전이가 단순하고 시도 기록이 초안마다 남음 |
+| 장면 | 초안의 `sceneNote`는 그림 제작 메모로 초안에만 두고 미션에 저장하지 않음 | 지금 미션은 장면을 질문 문장(시드)과 `scene_uri`(그림)로만 가짐 |
+| 표준 요소 입력 | learning이 FN 1.5 표에서 그 유형 코드·공통 설명을 ai에 보냄 | 코드 목록을 learning 한 곳에만 둠 |
+
+### 기준안 (새 값, 확정 필요)
+
+| 값 | 기준안 | 정할 사람 | 근거 |
+|---|---|---|---|
+| 생성 시도 상한 | 3회(첫 생성 포함) | 김동섭(P19 "재생성 상한") | 이슈 예시 |
+| 학년별 질문 길이 | 없음(구현 전 확정 필요) | 김동섭(P19, FAD-06) | 참고: 시드 질문 길이 초3 67~156자, 초4 87~193자, 초5 88~173자, 초6 92~185자 |
+| 미션 상태 이름 | 기존 `DRAFT`·`REVIEW_REQUIRED`·`PUBLISHED`·`UNPUBLISHED` 유지 | 김동섭(P19 "상태 enum") | 기획서 6.2 ④ "초안 → 검토 완료 → 공개", 수집데이터 보고서 `draft`·`reviewed`. 이미 구현된 상태(#145)와 이름만 다름 |
+| 생성 주기 | 10초 | learning 구현 담당 | 관리자가 기다리는 시간 |
+| 생성 리스 | 90초 | - | 판정 리스(P12)와 같은 값 재사용 |
+| 채택 때 요소 배점 | 1 | APM | 시드 요소 56개 중 53개가 1. 채택 뒤 관리자가 고침 |
+
+### 구현 인계 (PM 발행용)
+
+순서: learning 표·시드와 ai 초안 생성을 먼저(12/7 미션 35개 일정), core 프록시, web 화면이 뒤. 초안의 요소 code 검사는 #262 게시 검사 규칙을 쓰므로 #262 learning 구현이 먼저이거나 같이 간다.
+
+learning
+
+| 할 일 | 위치 | 테스트 |
+|---|---|---|
+| 새 Flyway 버전: `achievement_standard`·`mission_draft`, `mission.source`(기존 행 `MANUAL`)·`mission_version.achievement_levels`·`rubric_element.standard_code`. ERD 4.1.1을 4.1 Mermaid·6장·8장으로 옮김 | `resources/db/migration`, `docs/design/erd.md` | `scripts/check_db_migrations.py` |
+| 성취기준 시드(현행 765개, 대괄호 없는 코드, `levels`는 NULL) | `db/seed/` | 시드 20문항 코드가 모두 표에 있음 |
+| 관리자 미션: `achievementLevels`·요소 `standardCode` 저장(모양 400), `AdminMission.source`, 게시 누락 `achievementStandards`(표에 없는 코드)·`achievementLevels`·`rubric.elements.standardCode` | `mission/controller/AdminMissionController`, `mission/domain/Mission`, `mission/repository` | `AdminMissionServiceTest`·`MissionTest` |
+| 성취기준 조회·초안 요청·목록·상세·채택·버리기 | `AdminMissionDraftController`·`MissionDraftService`·`MissionDraft`·`MissionDraftRepository`·`AchievementStandardRepository`(class-diagram 4.1.1) | 상태 전이, 채택 동시 요청, 409 |
+| 주기 생성: 리스 점유·ai 1회·learning 검사·리스 대조 저장 | `MissionDraftScheduler`, `MissionDraftAiClient`(별도 서킷) | 레플리카 동시 실행에서 한 번만, 늦은 작업이 덮어쓰지 않음, 상한·실패 상태 |
+| OpenAPI 경로 6개 추가 | `contracts/openapi/learning-service.yaml` | `test_record_exists_openapi.py` 36 → 42 |
+
+ai
+
+| 할 일 | 위치 | 테스트 |
+|---|---|---|
+| `POST /internal/mission-drafts`: 생성 1회·검사(`REQUIRED`·`QUESTION_LENGTH`·`LEAK`) | 새 `app/mission_draft/`(class-diagram 5.4) | 검사별 실패, 학생 정보 없는 입력, 형식 밖 응답 502 |
+| 프롬프트 `mission-draft@1`, 레지스트리 `missionDraft`·scope `ai/mission-draft`, `/internal/versions`에 `missionDraft` | `prompt_versions/` | `test_active_versions.py`·`test_versions.py` |
+| 사용량 `callType = MISSION_DRAFT` | `messaging/publisher.py` `CallType` | |
+| OpenAPI 경로 추가 | `contracts/openapi/ai-service.yaml` | `test_ai_openapi.py` 6 → 7 |
+
+core
+
+| 할 일 | 위치 |
+|---|---|
+| 공개 경로 `/admin/achievement-standards`·`/admin/mission-drafts…` 프록시(CONTENT), 초안 요청·채택·버리기 감사 | `learning/controller/AdminMissionsController`, `learning/service/AdminLearningService`, `contracts/openapi/core-service.yaml` |
+| `llm_usage.call_type`에 `MISSION_DRAFT`: 마이그레이션 CHECK, `usage/domain/UsageSummary.CallType`, `contracts/events/llm.usage.recorded.v1.schema.json`, core OpenAPI enum, ERD 3.5 Mermaid | core migration·usage, scoring `messaging/publisher.py` `CallType`(같은 목록) |
+
+web
+
+| 할 일 | 위치 |
+|---|---|
+| 성취기준 고르기(표 조회), 성취기준별 성취수준 단계, 요소별 연결 성취기준 | `presentation/admin/MissionManager.tsx`, `domain/admin/operations.ts`(지금은 성취기준을 줄바꿈 텍스트로 입력) |
+| 초안 요청·목록·상세(상태·시도 횟수·검사 실패 사유)·채택·버리기 | 관리자 화면 |
+| 게시 전 검사에 `achievementLevels`·`rubric.elements.standardCode` 한글 이름, 검토 화면에 학년·내용·행동 확인 안내 | `domain/admin/operations.ts` |
+
+### 영향 확인
+
+| 받는 곳 | 결과 | 근거 |
+|---|---|---|
+| 학생 미션 응답 | 영향 없음. 성취기준을 내보내지 않음 | learning 학생 응답(`MissionView`·`MissionResponses`)에 `achievementStandards` 없음 |
+| core 관리자 미션 프록시 | 응답 필드 추가(`source`·`achievementLevels`·`standardCode`)는 그대로 전달, 새 게시 누락 코드도 모양 검사 통과 | `AdminLearningService` 성공 응답 그대로, `missingFields` 정규식 `[a-zA-Z][a-zA-Z0-9.\[\]]{0,99}` |
+| core 관리자 미션 계약 테스트 | 새 경로는 `/admin/missions` 밖이라 10개 그대로 | `test_admin_missions_contract.py` |
+| `/internal/versions` 소비자 | core에 읽는 코드 없음, ai·api-spec만 바뀜 | core 전체에서 `/internal/versions` 호출 없음 |
+| LLM 사용량 | 호출 종류가 다섯 곳(이벤트 스키마·core enum·core CHECK·ERD·core OpenAPI)과 ai·scoring 발행 목록에 고정돼 같이 바꿔야 함 | 위 core 인계 |
+| report·분석 대화 | 영향 없음 | 성취기준·초안을 읽지 않음. 리포트의 연결 성취기준 표시는 범위 밖 |
+
+### 설계·이슈와 다른 점
+
+- 이슈 작업 위치 "OpenAPI 3개" → 구현 이슈에서(위 결정). 이슈 "erd 4.1에 추가" → Mermaid 밖 4.1.1 "구현 전" 절
+- 이슈 설계 초안 `mission_version.source`·`draft_id` → `mission.source` + `mission_draft.mission_id`(위 표)
+- 이슈 요구사항 목록에 FAD-08이 없어 더하고 FN-ADM-21(성취기준 표)을 신설. 이슈의 FN-ADM-20은 그대로 미션 초안
+- 이슈 "ai 자동 검사" → ai·learning 분담, 이슈에 없던 초안 목록 API 추가
+- `code` PK 그대로지만 2026.1 25개를 넣지 않아 가능(FAD-08과 다름, planning-decisions 2.5)
+- 기존 파일 수정: `functional-spec.md`(1.5 판정·표준 요소 문구와 새 소절, FN-ADM-09·11·19·20·21), `erd.md`(4.1 게시 검사 문구, 3.5 `llm_usage` 메모, 4.1.1), `api-spec.md`(1.5 상태 코드값, 2.8 표·프록시, 4.1 관리자 미션 행과 새 행, 4.2 새 행·`/internal/versions`·#68, 4.6 `callType`, 5.2 프롬프트 이름), `class-diagram.md`(3.5 메모, 4.1.1, 5.1 `ActiveVersions`, 5.4), `state-diagram.md`(3.4), `sequence-diagram.md`(9 메모, 11 신설, 확인 필요 가정 11 → 12), `ai.md`(9절), `planning-decisions.md`(2.5), `docs/README.md`
+
+### 검증
+
+- 기획서·수집데이터 보고서 PDF(PyMuPDF로 본문 추출)와 요구사항 정의서 v0.5 원문을 대조함. 이슈 본문의 기획서 6.2 요약은 원문과 같음
+- 성취기준 표 숫자는 원자료 CSV를 직접 셈(위 대조표)
+- 검증 명령 결과는 PR 본문에 적음
+
+### 알려진 한계
+
+- 성취수준 문장을 넣기 전에는 요소·초안을 성취기준 문장으로만 구체화해 기획서 5.3(2) "성취수준 문장에 맞춰"와 다름. 이용 조건이 확인되면 `levels`만 채우면 됨
+- 학년별 질문 길이 값이 없으면 `QUESTION_LENGTH` 검사를 할 수 없어 구현 전에 정해야 함
+- 미션 전체를 만드는 출력이 LLM 1회 15초(P12) 안에 끝나는지 재지 않음. 넘으면 AI 호출 실패로 세어지므로 실제 측정(NFR-PRF-01) 뒤 조정
+- 이 이슈가 머지된 뒤 구현까지 문서와 코드가 다름(모두 "구현 전" 표시)
+- 범위 밖(이슈 그대로): 시범 풀이 기록(FAR-09), 요소 기반 다음 미션 추천(FBF-38), 리포트의 연결 성취기준 표시, 기초 사고력 연결
