@@ -19,6 +19,17 @@ env:
   - {name: LEARNING_URL, value: "http://learning-service.app.svc.cluster.local:8081"}
   - {name: SCORING_URL, value: "http://scoring-service.app.svc.cluster.local:8001"}
   - {name: CORE_URL, value: "http://core-service.app.svc.cluster.local:8080"}
+  # #69: Settings·Compose 기본값. M2 false는 호출 중단이 아니라 보류 미적용.
+  - {name: JUDGE_DEADLINE, value: "33.0"}
+  - {name: SCORING_TIMEOUT, value: "10.0"}
+  - {name: SCORING_RESERVE, value: "3.0"}
+  - {name: M2_CROSS_CHECK_ENABLED, value: "false"}
+  - {name: M2_NARRATIVE_LOW, value: "2.0"}
+  - {name: M2_NARRATIVE_HIGH, value: "4.0"}
+  - {name: M2_ESSAY_LOW, value: "1.0"}
+  - {name: M2_ESSAY_HIGH, value: "2.0"}
+  - {name: M1_CHECK_ENABLED, value: "false"}
+  - {name: M1_MIN_CONFIDENCE, value: "0.8"}
   - {name: OPENAI_API_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: OPENAI_API_KEY, optional: true}}}
   # #236: compose.yaml ai-service defaults; switch providers with LLM_PROVIDER and the matching key
   - {name: LLM_PROVIDER, value: openai}
