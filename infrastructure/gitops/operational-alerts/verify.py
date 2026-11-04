@@ -20,7 +20,34 @@ def serve():
     detailed = "# TYPE rabbitmq_detailed_queue_messages gauge\n" + "".join(
         f'rabbitmq_detailed_queue_messages{{vhost="/",queue="{q}"}} {n}\n'
         for q, n in (("report.report.generate", 5), ("report.report.generate.retry.1", 1), (DLQ, 0)))
-    state = {"ready": 0, "empty": False, "received": [], "dlq": 0, "detailed": detailed, "detailed_query": None}
+    state = {"ready": 0, "empty": False, "received": [], "dlq": 0, "detailed": detailed, "detailed_query": None,
+             "cost": 1.0, "unpriced": 0, "errors": False, "slow": False,
+             "ok": 0, "fast": 0, "failed": 0, "learning": 0}
+
+    def app_metrics():
+        # Cumulative counters shaped like the OTel Java agent export; 5 requests per scrape.
+        state["ok"] += 5
+        state["fast"] += 0 if state["slow"] else 5
+        state["failed"] += 5 if state["errors"] else 0
+        state["learning"] += 5
+        core = 'exported_job="core-service",http_route="/api/v1/auth/refresh",http_response_status_code='
+        lines = ["# TYPE http_server_request_duration_seconds histogram"]
+        for status, count, fast in (("200", state["ok"], state["fast"]), ("500", state["failed"], state["failed"])):
+            if count:
+                labels = core + '"' + status + '"'
+                lines += [f'http_server_request_duration_seconds_bucket{{{labels},le="{le}"}} {fast}' for le in ("0.1", "1.0", "10.0")]
+                lines += [f'http_server_request_duration_seconds_bucket{{{labels},le="+Inf"}} {count}',
+                          f'http_server_request_duration_seconds_sum{{{labels}}} {count}',
+                          f'http_server_request_duration_seconds_count{{{labels}}} {count}']
+        learning = 'exported_job="learning-service",http_route="/internal/records",http_response_status_code="200"'
+        lines += [f'http_server_request_duration_seconds_bucket{{{learning},le="+Inf"}} {state["learning"]}',
+                  f'http_server_request_duration_seconds_sum{{{learning}}} 0',
+                  f'http_server_request_duration_seconds_count{{{learning}}} {state["learning"]}',
+                  "# TYPE llm_usage_month_to_date_priced_cost gauge",
+                  f'llm_usage_month_to_date_priced_cost{{exported_job="core-service"}} {state["cost"]}',
+                  "# TYPE llm_usage_month_to_date_unpriced_calls gauge",
+                  f'llm_usage_month_to_date_unpriced_calls{{exported_job="core-service"}} {state["unpriced"]}']
+        return "\n".join(lines) + "\n"
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -40,7 +67,7 @@ def serve():
                     "# TYPE rabbitmq_process_resident_memory_bytes gauge\n"
                     "rabbitmq_process_resident_memory_bytes 100\n"
                     "# TYPE rabbitmq_resident_memory_limit_bytes gauge\n"
-                    "rabbitmq_resident_memory_limit_bytes 1000\n")
+                    "rabbitmq_resident_memory_limit_bytes 1000\n" + app_metrics())
             else:
                 body = json.dumps(state)
             self.send_response(200)
@@ -241,6 +268,20 @@ def integration(chart_bundle, faults_only=False, scrape_only=False):
                 eventually(lambda: rule("dlq")["state"] == "inactive", "DLQ recovery")
                 eventually(lambda: any(x["resolved"] and x["dlq"] for x in local_request(fixture_url)["received"]),
                            "local DLQ resolved notification")
+                local_request(fixture_url + "/control", {"cost": 250.0})
+                eventually(lambda: rule("budget")["state"] == "firing", "month-to-date cost over 80% of budget fires")
+                local_request(fixture_url + "/control", {"cost": 1.0})
+                eventually(lambda: rule("budget")["state"] == "inactive", "budget alert recovers")
+                local_request(fixture_url + "/control", {"unpriced": 3})
+                eventually(lambda: rule("unpriced")["state"] == "firing", "unpriced LLM calls fire separately")
+                local_request(fixture_url + "/control", {"unpriced": 0})
+                eventually(lambda: rule("unpriced")["state"] == "inactive", "unpriced alert recovers")
+                # The 5-minute rate window keeps these firing for minutes; recovery is not awaited here.
+                local_request(fixture_url + "/control", {"errors": True})
+                eventually(lambda: rule("auth_errors")["state"] == "firing", "authentication 5xx ratio fires", 150)
+                local_request(fixture_url + "/control", {"errors": False, "slow": True})
+                eventually(lambda: rule("auth_latency")["state"] == "firing", "authentication p95 latency fires", 150)
+                local_request(fixture_url + "/control", {"slow": False})
             if not scrape_only:
                 local_request(fixture_url + "/control", {"empty": True})
                 # Prometheus instant queries may use a last sample for up to the lookback window.
@@ -284,6 +325,7 @@ def integration(chart_bundle, faults_only=False, scrape_only=False):
             eventually(lambda: not local_request("http://" + prefix + "-prom:9090/api/v1/targets")["data"]["activeTargets"], "Prometheus accepted removal of all jobs")
             # The #185 rule uses min(up), so a removed job is NoData (reported separately), not firing.
             eventually(lambda: rule("target")["health"] == "nodata", "removed scrape jobs report NoData")
+            eventually(lambda: rule("missing")["state"] == "firing", "missing application HTTP metrics fire")
         finally:
             for name in reversed(names):
                 subprocess.run(["docker", "rm", "-f", "-v", name], capture_output=True)

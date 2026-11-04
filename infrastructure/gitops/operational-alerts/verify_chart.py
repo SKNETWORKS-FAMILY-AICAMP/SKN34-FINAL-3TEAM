@@ -9,11 +9,6 @@ import tempfile
 
 import yaml  # Verification only; not a production dependency.
 
-DLQ_RULE = {"uid": "rabbitmq-dlq-depth", "title": "RabbitMQ dead letter queue depth",
-            "expr": 'max by (vhost, queue) (rabbitmq_detailed_queue_messages{job="rabbitmq-dlq"})',
-            "operator": "gt", "threshold": 0, "for": "10s",
-            "summary": "Dead-lettered messages wait for manual inspection or reprocessing; check the queue label."}
-
 
 def run(*args, expect_success=True):
     result = subprocess.run(args, capture_output=True, text=True, encoding="utf-8")
@@ -44,15 +39,22 @@ def main():
             target = baseline / Path(path).relative_to(chart_path)
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(run("git", "-C", str(repo), "show", base + ":" + path), encoding="utf-8")
-        for extra in ([], ["-f", str(environments / "local/observability.yaml")], ["-f", str(prod)]):
+        # prod values gained #187 rules, so compare the chart change with the baseline's own prod values.
+        base_prod = root / "base-prod.json"
+        base_prod.write_text(run("git", "-C", str(repo), "show", base + ":" + prod.relative_to(repo).as_posix()), encoding="utf-8")
+        for extra in ([], ["-f", str(environments / "local/observability.yaml")], ["-f", str(base_prod)]):
             before = load(run(args.helm, "template", "observability", str(baseline), "--namespace", "observability", *extra))
             after = load(run(args.helm, "template", "observability", str(chart), "--namespace", "observability", *extra))
             # Source filenames can reorder resources, so compare by Kubernetes identity.
             assert identify(before) == identify(after), "Existing default/local/prod resources changed"
             run(args.helm, "lint", "--strict", str(chart), *extra)
-        print("PASS Helm default/local/prod resources identical to baseline " + base, flush=True)
+        print("PASS Helm default/local/baseline-prod resources identical to baseline " + base, flush=True)
+        run(args.helm, "lint", "--strict", str(chart), "-f", str(prod))
+        prod_rendered = identify(load(run(args.helm, "template", "observability", str(chart), "--namespace", "observability", "-f", str(prod))))
+        assert "rabbitmq-dlq" in prod_rendered["ConfigMap", "prometheus-config"]["data"]["prometheus.yml"]
+        print("PASS current prod values lint and enable the DLQ scrape", flush=True)
 
-        # Accelerated copy of the prod rules plus the DLQ rule; not operating thresholds.
+        # Accelerated copy of the prod rules; not operating thresholds.
         alerting = json.loads(prod.read_text(encoding="utf-8"))["grafana"]["alerting"]
         rules = [dict(rule, **{"for": "10s"}) for rule in alerting["rules"]]
         backlog = next(rule for rule in rules if "rabbitmq_queue_messages_ready" in rule["expr"])
@@ -60,14 +62,17 @@ def main():
         values = {"prometheus": {"rabbitmqDlqMetrics": {"enabled": True}},
                   "grafana": {"alerting": {"enabled": True, "discordSecretName": "issue187-test",
                                            "interval": "10s", "groupWait": "1s", "groupInterval": "10s",
-                                           "repeatInterval": "300s", "rules": rules + [DLQ_RULE]}}}
+                                           "repeatInterval": "300s", "rules": rules}}}
         values_file = root / "values.json"
         values_file.write_text(json.dumps(values), encoding="utf-8")
         run(args.helm, "lint", "--strict", str(chart), "-f", str(values_file))
         rendered = load(run(args.helm, "template", "observability", str(chart), "--namespace", "observability", "-f", str(values_file)))
         by_name = identify(rendered)
         provisioning = yaml.safe_load(by_name["ConfigMap", "grafana-alerting"]["data"]["alerting.yaml"])
-        assert [r["uid"] for r in provisioning["groups"][0]["rules"]] == [r["uid"] for r in rules] + [DLQ_RULE["uid"]]
+        assert [r["uid"] for r in provisioning["groups"][0]["rules"]] == [r["uid"] for r in rules]
+        no_data = {r["uid"]: r["noDataState"] for r in provisioning["groups"][0]["rules"]}
+        assert {u for u, state in no_data.items() if state == "OK"} == {r["uid"] for r in rules if r.get("noDataState") == "OK"}
+        assert all(state in ("OK", "NoData") for state in no_data.values())
         assert provisioning["groups"][0]["interval"] == "10s"
         datasource = by_name["ConfigMap", "grafana-datasources"]["data"]["prometheus.yaml"]
         pod = by_name["Deployment", "grafana"]["spec"]["template"]["spec"]
@@ -103,8 +108,11 @@ def main():
         bundle = root / "bundle.json"
         bundle.write_text(json.dumps({
             "alerting": provisioning, "datasource_text": datasource, "dlq_job": dlq_job,
-            "titles": {"target": next(r["title"] for r in rules if "up{" in r["expr"]),
-                       "backlog": backlog["title"], "dlq": DLQ_RULE["title"]}}), encoding="utf-8")
+            "titles": {"target": next(r["title"] for r in rules if "up{" in r["expr"]), "backlog": backlog["title"],
+                       **{key: next(r["title"] for r in rules if r["uid"] == uid) for key, uid in (
+                           ("dlq", "rabbitmq-dlq-depth"), ("budget", "llm-budget-80"), ("unpriced", "llm-unpriced-calls"),
+                           ("missing", "app-metrics-missing"), ("auth_errors", "http-auth-errors"),
+                           ("auth_latency", "http-auth-latency"))}}}), encoding="utf-8")
         subprocess.run([sys.executable, str(Path(__file__).with_name("verify.py")), "--chart-bundle", str(bundle)], check=True)
 
 

@@ -4,7 +4,23 @@
 근거·요구사항별 공백·결정 목록: [보고서](../../../docs/report/issue-187-operational-alerts.md).
 
 경보 provisioning은 #185의 observability chart(`grafana.alerting.*`, `templates/alerting.yaml`)를 그대로 쓴다.
-#187은 그 위에 RabbitMQ DLQ 큐별 지표 수집과 DLQ 규칙, 평가·알림 간격 values, 검증기를 더한다.
+#187은 그 위에 RabbitMQ DLQ 큐별 지표 수집, 규칙별 `noDataState`, 평가·알림 간격 values, core 월 LLM 비용 지표, 검증기를 더한다.
+
+## prod 규칙 (#187 추가분, 초기 기준)
+
+| uid | 조건 | 지속 | NoData |
+|---|---|---|---|
+| `rabbitmq-dlq-depth` | 큐별 `rabbitmq_detailed_queue_messages` > 0 | 5m | NoData |
+| `llm-budget-80` | `max(llm_usage_month_to_date_priced_cost)` > 240 (월 300 USD의 80%) | 1m | NoData |
+| `llm-unpriced-calls` | `max(llm_usage_month_to_date_unpriced_calls)` > 0 | 1m | NoData |
+| `app-metrics-missing` | core 또는 learning HTTP 지표 부재 | 10m | NoData |
+| `http-<영역>-errors` | 5xx 비율 > 5%, 5분 10건 이상 | 5m | OK |
+| `http-<영역>-latency` | p95 > 인증 1s·학습 저장 2s·리포트 3s·결제 5s, 5분 10건 이상 | 5m | OK |
+
+영역은 core 공개 API의 `http_route`로 나눈다: 인증 `/api/v1/auth/.+`, 학습 저장 `/api/v1/(attempts/.+|missions/.+/attempts)`,
+AI 처리 `/api/v1/(conversations.*|answers/.+/feedback)`, 리포트 `/api/v1/reports/.+`, 결제 `/api/v1/(payments.*|subscriptions.*|orders|webhooks/tosspayments)`.
+AI 처리는 SSE 스트림이 섞여 지연 규칙을 두지 않는다. 비용 지표는 단가가 있는 호출만 합산하므로 미산정 호출이 있으면 합계는 하한값이고 별도 경고가 난다.
+core가 여러 replica면 같은 값을 각각 보고하므로 `max`로 본다. 값은 core의 metric export 주기(기본 60초)마다 DB에서 다시 읽는다.
 Python 표준 라이브러리 검증기만 두며 운영에 Python 서비스를 추가하지 않는다.
 
 ## DLQ 경보 켜기
@@ -42,7 +58,8 @@ git diff --check
 `verify_chart.py`는 Helm과 검증용 PyYAML이 필요하다(운영 의존성 아님).
 
 - default·local·prod values 렌더 결과가 `--baseline`(기본 #185 병합 develop `de8e225`)과 리소스 단위로 같은지, `helm lint --strict`가 통과하는지 본다.
-- prod 규칙 3개를 지속 10초로 줄이고 적체 임계값을 10으로 낮춘 사본에 DLQ 규칙을 더해 렌더한다.
+- prod 규칙 16개를 지속 10초로 줄이고 적체 임계값을 10으로 낮춘 사본을 렌더한다.
+  prod values가 #187 규칙을 포함하므로 기준 비교는 `--baseline` 시점의 prod values로 한다.
   provisioning ConfigMap·mount·webhook Secret 참조, DLQ 수집 job·relabel·Pod annotation을 검사한다.
 - DLQ relabel이 저장소 `definitions.json`의 `<큐>.dlq`만 남기는지, 수집 없이 DLQ 규칙을 넣으면 실패하는지 본다.
 - 이어 렌더된 provisioning·datasource를 `verify.py --chart-bundle`에 넘겨 Docker에서 실제로 평가한다.
@@ -56,6 +73,8 @@ git diff --check
 - 이 실제 출력을 로컬 대역이 제공해 Prometheus relabel 결과가 DLQ 총 메시지 지표뿐인지 확인한다.
 - Grafana rule engine에서 적체 정상→pending→발생→유지(반복 억제)→회복, 로컬 Discord protocol 대역의 발생·회복 수신을 확인한다.
 - 한 DLQ만 값을 올려 그 큐만 발생·회복·수신하는지 확인한다.
+- 대역 지표로 월 비용 80% 발생·회복, 미산정 호출 발생·회복, 인증 5xx 비율·p95 지연 발생, HTTP 지표 부재 발생을 확인한다.
+  5xx·지연 규칙은 5분 rate 창 때문에 회복을 기다리지 않는다.
 - NoData, 잘못된 query, 없는 datasource UID, 재provision 중복 방지, 수집 실패 발생을 확인한다.
   #185의 target 규칙은 `min(up)`이라 scrape job 자체가 사라지면 발생이 아니라 NoData가 된다.
 - job 제거 시험은 Prometheus lookback을 시험 전용 10초로 줄인다. 기본 5분 lookback에서는 잔존 기간이 더해질 수 있다.
