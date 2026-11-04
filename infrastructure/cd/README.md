@@ -27,6 +27,8 @@
 
 publish job이 ECR에 이미지를 올릴 때만 쓴다. EKS 권한은 없다. trust는 main의 `cd-release.yml` job만 허용한다.
 
+AWS IAM은 GitHub 토큰의 `aud`·`sub`만 조건으로 비교하므로 workflow 제한은 `sub`에 넣는다. 저장소 OIDC subject를 `repo`·`context`·`job_workflow_ref`로 바꾸고(B 표), 이 저장소는 변경 불가 subject라 `sub`가 `repo:SKNETWORKS-FAMILY-AICAMP@169222902/SKN34-FINAL-3TEAM@1415225916:ref:refs/heads/main:job_workflow_ref:…/cd-release.yml@refs/heads/main` 형식이다. trust는 이 값을 `StringLike`로 맞춘다.
+
 ```powershell
 $profile = 'sagomungchi-provided'
 aws iam list-open-id-connect-providers --profile $profile
@@ -49,6 +51,7 @@ aws iam put-role-policy --profile $profile --role-name sagomungchi-demo-github-c
 | Environment `prod` 변수 | `CD_BASE_URL` = 데모 CloudFront https origin(경로 없음) |
 | Repository 변수 | `CD_AWS_ROLE_ARN` = `arn:aws:iam::347161580747:role/sagomungchi-demo-github-cd-publish`, `CD_AWS_REGION` = `ap-northeast-2`, `CD_ECR_REGISTRY` = `347161580747.dkr.ecr.ap-northeast-2.amazonaws.com` |
 | Settings → Actions → General | Fork pull request workflows: 외부 기여자 승인 필요 |
+| OIDC subject (API) | `gh api -X PUT repos/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/actions/oidc/customization/sub -F use_default=false -f "include_claim_keys[]=repo" -f "include_claim_keys[]=context" -f "include_claim_keys[]=job_workflow_ref"` |
 
 2026-11-04 적용 완료(위 표 그대로, 외부 기여자 승인은 `all_external_contributors`). `policy.json`의 `environmentProtectionVerified`를 true로 바꿨다.
 
