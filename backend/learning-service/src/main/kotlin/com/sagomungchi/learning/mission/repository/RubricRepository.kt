@@ -36,6 +36,8 @@ data class RubricRow(
     val exampleAnswer: String?,
     val forbiddenTerms: List<String>,
     val createdAt: Instant,
+    val keywords: List<String>,
+    val essayType: String?,
 )
 
 /** 요소 한 행 (id로 행 구분) */
@@ -70,7 +72,7 @@ class RubricRepository(private val mapper: RubricMapper) {
         val hints = mapper.findHints(missionId).groupBy({ it.rubricVersionId }, { it.content })
         return mapper.findRubrics(missionId).map {
             AdminRubric(it.version, elements[it.id].orEmpty(), it.answerKey, it.exampleAnswer, it.forbiddenTerms,
-                hints[it.id].orEmpty(), it.createdAt)
+                hints[it.id].orEmpty(), it.createdAt, it.keywords, it.essayType)
         }
     }
 

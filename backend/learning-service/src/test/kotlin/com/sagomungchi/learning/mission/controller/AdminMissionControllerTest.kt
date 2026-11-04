@@ -140,6 +140,9 @@ class AdminMissionControllerTest(@Autowired private val mockMvc: MockMvc) {
             """{"elements":[{"code":"e1","label":" ","points":1}]}""",
             """{"elements":[{"code":"e1","label":"가","points":1},{"code":"e1","label":"나","points":1}]}""",
             """{"answerKey":"c1"}""",
+            """{"keywords":["쉬는 시간"," "]}""",
+            """{"keywords":["${"가".repeat(201)}"]}""",
+            """{"essayType":"감상문"}""",
         ).forEach { content ->
             mockMvc.put("/internal/admin/missions/$missionId/rubric") { asAdmin(content = content) }.andExpect {
                 status { isBadRequest() }

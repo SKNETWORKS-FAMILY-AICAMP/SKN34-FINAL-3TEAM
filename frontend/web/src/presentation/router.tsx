@@ -10,7 +10,6 @@ import { WithdrawalReceipt } from './service/Withdrawal.tsx'
 import { LoginHelp } from './service/LoginHelp.tsx'
 import { lazy, Suspense } from 'react'
 import type { ComponentType } from 'react'
-import { guardianTransferEnabled } from './service/GuardianTransferUi.tsx'
 
 // 역할별 작업 공간과 결제·계정 화면은 들어갈 때 받는다(#247). 학생 기기 첫 화면은 학부모·관리자 코드를 받지 않는다.
 const page = <P extends object>(load: () => Promise<ComponentType<P>>) => lazy(async () => ({ default: await load() }))
@@ -67,7 +66,7 @@ export const router = createBrowserRouter([
           ...(role !== 'ADMIN' ? [{ path: 'support/results', element: <SupportResults /> }] : []),
           ...(role === 'PARENT' ? [
             { path: 'account', element: <AccountPage /> },
-            ...(guardianTransferEnabled ? [{ path: 'transfers', element: <GuardianTransfers /> }] : []),
+            { path: 'transfers', element: <GuardianTransfers /> },
             { path: 'onboarding', element: <AuthOnboarding /> },
             { path: 'children/new', element: <AuthOnboarding /> },
           ] : []),

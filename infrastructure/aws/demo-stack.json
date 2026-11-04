@@ -1,0 +1,196 @@
+{
+  "account": "347161580747",
+  "region": "ap-northeast-2",
+  "prefix": "sagomungchi-demo",
+  "tags": {
+    "Project": "sagomungchi",
+    "Environment": "demo"
+  },
+  "vpc": {
+    "name": "sagomungchi-demo-vpc",
+    "cidr": "10.20.0.0/16",
+    "internetGateway": "sagomungchi-demo-igw",
+    "natGateway": {
+      "name": "sagomungchi-demo-nat-2a",
+      "subnet": "sagomungchi-demo-subnet-public1-ap-northeast-2a"
+    },
+    "s3Endpoint": "sagomungchi-demo-vpce-s3",
+    "subnets": [
+      {
+        "name": "sagomungchi-demo-subnet-public1-ap-northeast-2a",
+        "az": "ap-northeast-2a",
+        "cidr": "10.20.0.0/20",
+        "tier": "public",
+        "routeTable": "sagomungchi-demo-rtb-public"
+      },
+      {
+        "name": "sagomungchi-demo-subnet-public2-ap-northeast-2b",
+        "az": "ap-northeast-2b",
+        "cidr": "10.20.16.0/20",
+        "tier": "public",
+        "routeTable": "sagomungchi-demo-rtb-public"
+      },
+      {
+        "name": "sagomungchi-demo-subnet-private1-ap-northeast-2a",
+        "az": "ap-northeast-2a",
+        "cidr": "10.20.128.0/20",
+        "tier": "private",
+        "routeTable": "sagomungchi-demo-rtb-private1-ap-northeast-2a"
+      },
+      {
+        "name": "sagomungchi-demo-subnet-private2-ap-northeast-2b",
+        "az": "ap-northeast-2b",
+        "cidr": "10.20.144.0/20",
+        "tier": "private",
+        "routeTable": "sagomungchi-demo-rtb-private2-ap-northeast-2b"
+      }
+    ]
+  },
+  "buckets": [
+    "sagomungchi-demo-347161580747-web",
+    "sagomungchi-demo-347161580747-missions",
+    "sagomungchi-demo-347161580747-reports",
+    "sagomungchi-demo-347161580747-models"
+  ],
+  "ecrRepositories": [
+    "sagomungchi/core-service",
+    "sagomungchi/core-migrate",
+    "sagomungchi/learning-service",
+    "sagomungchi/learning-migrate",
+    "sagomungchi/ai-service",
+    "sagomungchi/scoring-service",
+    "sagomungchi/report-service"
+  ],
+  "secrets": [
+    "sagomungchi/demo/app/ai",
+    "sagomungchi/demo/app/auth",
+    "sagomungchi/demo/app/google",
+    "sagomungchi/demo/app/internal",
+    "sagomungchi/demo/app/payment",
+    "sagomungchi/demo/db/core-app",
+    "sagomungchi/demo/db/core-migrate",
+    "sagomungchi/demo/db/learning-app",
+    "sagomungchi/demo/db/learning-migrate",
+    "sagomungchi/demo/db/report-app",
+    "sagomungchi/demo/db/report-migrate",
+    "sagomungchi/demo/platform/rabbitmq"
+  ],
+  "rds": {
+    "id": "sagomungchi-demo-db",
+    "engine": "postgres",
+    "version": "17.11",
+    "class": "db.t4g.small",
+    "multiAZ": false,
+    "storageGiB": 20,
+    "maxStorageGiB": 1000,
+    "storageType": "gp3",
+    "backupDays": 7,
+    "backupWindow": "14:54-15:24",
+    "maintenanceWindow": "fri:13:31-fri:14:01",
+    "parameterGroup": "default.postgres17",
+    "performanceInsights": true,
+    "subnetGroup": {
+      "name": "sagomungchi-demo-db-subnet-group",
+      "description": "Private subnets for sagomungchi RDS",
+      "subnets": [
+        "sagomungchi-demo-subnet-private1-ap-northeast-2a",
+        "sagomungchi-demo-subnet-private2-ap-northeast-2b"
+      ]
+    },
+    "securityGroup": {
+      "name": "sagomungchi-demo-rds-sg",
+      "description": "PostgreSQL access from EKS nodes"
+    },
+    "databases": [
+      "core_db",
+      "learning_db",
+      "report_db"
+    ]
+  },
+  "iamRoles": [
+    {
+      "name": "sagomungchi-demo-eks-cluster-role",
+      "trust": "iam/eks-cluster-role.trust.json",
+      "managed": [
+        "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+      ]
+    },
+    {
+      "name": "sagomungchi-demo-eks-node-role",
+      "trust": "iam/eks-node-role.trust.json",
+      "managed": [
+        "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
+        "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly"
+      ]
+    },
+    {
+      "name": "sagomungchi-demo-eks-vpc-cni-role",
+      "trust": "iam/eks-vpc-cni-role.trust.json",
+      "managed": [
+        "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+      ]
+    },
+    {
+      "name": "sagomungchi-demo-eks-ebs-csi-role",
+      "trust": "iam/eks-ebs-csi-role.trust.json",
+      "managed": [
+        "arn:aws:iam::aws:policy/AmazonEBSCSIDriverPolicyV2"
+      ]
+    },
+    {
+      "name": "sagomungchi-demo-external-secrets-role",
+      "trust": "iam/external-secrets-role.trust.json",
+      "customerManaged": {
+        "sagomungchi-demo-external-secrets-db-read": "iam/external-secrets-role.policy.sagomungchi-demo-external-secrets-db-read.json"
+      },
+      "inline": {
+        "sagomungchi-demo-external-secrets-ai-read": "iam/external-secrets-role.inline.external-secrets-ai-read.json",
+        "sagomungchi-demo-external-secrets-app-read": "iam/external-secrets-role.inline.external-secrets-app-read.json",
+        "sagomungchi-demo-external-secrets-google-read": "iam/external-secrets-role.inline.external-secrets-google-read.json",
+        "sagomungchi-demo-external-secrets-payment-read": "iam/external-secrets-role.inline.external-secrets-payment-read.json",
+        "sagomungchi-demo-external-secrets-rabbitmq-read": "iam/external-secrets-role.inline.external-secrets-rabbitmq-read.json"
+      }
+    },
+    {
+      "name": "sagomungchi-demo-lb-controller-role",
+      "trust": "iam/lb-controller-role.trust.json",
+      "inline": {
+        "AWSLoadBalancerController-v2-14-1": "iam/lb-controller-role.inline.AWSLoadBalancerController-v2-14-1.json"
+      }
+    },
+    {
+      "name": "sagomungchi-demo-report-s3-role",
+      "trust": "iam/report-s3-role.trust.json",
+      "inline": {
+        "sagomungchi-demo-report-s3-access": "iam/report-s3-role.inline.report-s3-access.json"
+      }
+    },
+    {
+      "name": "sagomungchi-demo-scoring-s3-role",
+      "trust": "iam/scoring-s3-role.trust.json",
+      "inline": {
+        "sagomungchi-demo-scoring-s3-read": "iam/scoring-s3-role.inline.scoring-s3-read.json"
+      }
+    }
+  ],
+  "eks": {
+    "cluster": "sagomungchi-demo-eks",
+    "nodegroups": ["application", "platform-observability"],
+    "config": "../eks/cluster.json"
+  },
+  "pause": {
+    "drainOrder": [
+      ["app", "deployment", "report-worker"],
+      ["app", "deployment", "scoring-service"],
+      ["app", "deployment", "ai-service"],
+      ["app", "deployment", "report-api"],
+      ["app", "deployment", "learning-service"],
+      ["app", "deployment", "core-service"],
+      ["observability", "deployment", "otel-collector"],
+      ["observability", "deployment", "prometheus"],
+      ["observability", "deployment", "grafana"],
+      ["platform", "statefulset", "rabbitmq"],
+      ["platform", "statefulset", "redis"]
+    ]
+  }
+}

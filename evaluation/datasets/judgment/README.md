@@ -12,7 +12,8 @@ LLM 판정(서술·논술)이 사람과 얼마나 같은지 재는 고정 평가
 | 파일 | 내용 |
 |---|---|
 | `cases.example.jsonl` | 형식 예시 4건(자체 작성, 테스트용). 실제 평가에 쓰지 않음 |
-| `cases.jsonl` | 실제 평가 자료 (준비 중, 담당·일정 확인 필요) |
+| `cases.jsonl` | 실제 평가 자료 v1 (11/4): 초5 데모 미션 5개(DEMO-11~15, 사고 유형별 1개) × 답안 20개 = 100개. 답안은 평가용 자체 작성 예시(Claude 초안, 실제 학생 글 아님). 평가자 1 황수빈·평가자 2 동섭이 AI 판정 보기 전 서로 상의 없이 표시(둘 다 팀원). 해결 미션의 `FINAL_ANSWER`는 규칙 판정이라 제외 |
+| `build_cases.py` | 평가자 표시지 xlsx 2개 → `cases.jsonl`. 기준표 요소는 데모 미션 시드(`demo_missions.sql`)에서 읽음 |
 
 ## 한 줄 형식 (JSON Lines, 답안 1개 = 1줄)
 
@@ -35,3 +36,14 @@ LLM 판정(서술·논술)이 사람과 얼마나 같은지 재는 고정 평가
 - `inputType`·`grade`·`rubric`은 `/internal/judgments` 요청과 같은 형식(api-spec 4.2, `app/judgment/models.py`)
 - `raters.r1`·`raters.r2`: 기준표의 **모든** 요소에 true/false. 빠지거나 남는 요소가 있으면 러너가 거부
 - 사람 판정 결과(CORRECT·PARTIAL·RETHINK)는 표시한 요소에 서비스와 같은 규칙(`judgment/service.py` `_result`)을 적용해 계산
+
+## v1 사람끼리 일치 (기준선 비교용)
+
+| 범위 | 결과 QWK | 요소 일치율 | 요소 kappa |
+|---|---|---|---|
+| 전체 100개 | 0.809 | 0.880 | 0.759 |
+| DEMO-11 분석 | 0.755 | 0.800 | 0.600 |
+| DEMO-12 평가(ESSAY) | 0.944 | 0.950 | 0.895 |
+| DEMO-13 창의 | 0.826 | 0.883 | 0.755 |
+| DEMO-14 해결(SOLUTION_STEPS) | 0.701 | 0.817 | 0.629 |
+| DEMO-15 성찰 | 0.856 | 0.950 | 0.895 |

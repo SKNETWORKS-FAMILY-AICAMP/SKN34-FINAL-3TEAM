@@ -1,0 +1,421 @@
+{
+  "env": [
+    {
+      "name": "DB_URL",
+      "value": "jdbc:postgresql://sagomungchi-demo-db.czcw0ywu2euo.ap-northeast-2.rds.amazonaws.com:5432/core_db?sslmode=verify-full&sslrootcert=/rds-ca/global-bundle.pem&connectTimeout=10"
+    },
+    {
+      "name": "DB_USERNAME",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "DB_USERNAME",
+          "name": "core-db-credentials"
+        }
+      }
+    },
+    {
+      "name": "DB_PASSWORD",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "DB_PASSWORD",
+          "name": "core-db-credentials"
+        }
+      }
+    },
+    {
+      "name": "RABBITMQ_HOST",
+      "value": "rabbitmq.platform.svc.cluster.local"
+    },
+    {
+      "name": "RABBITMQ_USERNAME",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "RABBITMQ_USERNAME",
+          "name": "rabbitmq-credentials"
+        }
+      }
+    },
+    {
+      "name": "RABBITMQ_PASSWORD",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "RABBITMQ_PASSWORD",
+          "name": "rabbitmq-credentials"
+        }
+      }
+    },
+    {
+      "name": "INTERNAL_TOKEN",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "INTERNAL_TOKEN",
+          "name": "internal-service-credentials"
+        }
+      }
+    },
+    {
+      "name": "JAVA_TOOL_OPTIONS",
+      "value": "-XX:MaxRAMPercentage=60.0"
+    },
+    {
+      "name": "AI_URL",
+      "value": "http://ai-service.app.svc.cluster.local:8000"
+    },
+    {
+      "name": "AUTH_JWT_SECRET",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "AUTH_JWT_SECRET",
+          "name": "core-auth-credentials"
+        }
+      }
+    },
+    {
+      "name": "REDIS_HOST",
+      "value": "redis.platform.svc.cluster.local"
+    },
+    {
+      "name": "LEARNING_URL",
+      "value": "http://learning-service.app.svc.cluster.local:8081"
+    },
+    {
+      "name": "REPORT_URL",
+      "value": "http://report-api.app.svc.cluster.local:8002"
+    },
+    {
+      "name": "ADMIN_RABBIT_MANAGEMENT_URL",
+      "value": "http://rabbitmq.platform.svc.cluster.local:15672"
+    },
+    {
+      "name": "ADMIN_RABBIT_MANAGEMENT_USERNAME",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "RABBITMQ_USERNAME",
+          "name": "rabbitmq-credentials"
+        }
+      }
+    },
+    {
+      "name": "ADMIN_RABBIT_MANAGEMENT_PASSWORD",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "RABBITMQ_PASSWORD",
+          "name": "rabbitmq-credentials"
+        }
+      }
+    },
+    {
+      "name": "SERVER_SHUTDOWN",
+      "value": "graceful"
+    },
+    {
+      "name": "SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE",
+      "value": "30s"
+    },
+    {
+      "name": "AUTH_WEB_ORIGIN",
+      "value": "https://d3jf0rnm6vhd9v.cloudfront.net"
+    },
+    {
+      "name": "AUTH_COOKIE_SECURE",
+      "value": "true"
+    },
+    {
+      "name": "GOOGLE_CLIENT_ID",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "GOOGLE_CLIENT_ID",
+          "name": "google-oauth-credentials"
+        }
+      }
+    },
+    {
+      "name": "GOOGLE_CLIENT_SECRET",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "GOOGLE_CLIENT_SECRET",
+          "name": "google-oauth-credentials"
+        }
+      }
+    },
+    {
+      "name": "PAYMENT_FREE_PRODUCT_ID",
+      "value": "7acdc313-5eda-4161-821a-b4a51e8fe775"
+    },
+    {
+      "name": "PAYMENT_BILLING_ENCRYPTION_KEY",
+      "valueFrom": {
+        "secretKeyRef": {
+          "name": "payment-credentials",
+          "key": "PAYMENT_BILLING_ENCRYPTION_KEY",
+          "optional": true
+        }
+      }
+    },
+    {
+      "name": "TOSS_TEST_SECRET_KEY",
+      "valueFrom": {
+        "secretKeyRef": {
+          "name": "payment-credentials",
+          "key": "TOSS_TEST_SECRET_KEY",
+          "optional": true
+        }
+      }
+    },
+    {
+      "name": "TOSSPAYMENTS_SECRET_KEY",
+      "valueFrom": {
+        "secretKeyRef": {
+          "name": "payment-credentials",
+          "key": "TOSSPAYMENTS_SECRET_KEY",
+          "optional": true
+        }
+      }
+    },
+    {
+      "name": "TOSS_TEST_MID",
+      "valueFrom": {
+        "secretKeyRef": {
+          "name": "payment-credentials",
+          "key": "TOSS_TEST_MID",
+          "optional": true
+        }
+      }
+    },
+    {
+      "name": "TOSS_TEST_WEBHOOK_SECURITY_KEY",
+      "valueFrom": {
+        "secretKeyRef": {
+          "name": "payment-credentials",
+          "key": "TOSS_TEST_WEBHOOK_SECURITY_KEY",
+          "optional": true
+        }
+      }
+    },
+    {
+      "name": "TOSS_TEST_BILLING_SECRET_KEY",
+      "valueFrom": {
+        "secretKeyRef": {
+          "name": "payment-credentials",
+          "key": "TOSS_TEST_BILLING_SECRET_KEY",
+          "optional": true
+        }
+      }
+    },
+    {
+      "name": "TOSS_TEST_BILLING_MID",
+      "valueFrom": {
+        "secretKeyRef": {
+          "name": "payment-credentials",
+          "key": "TOSS_TEST_BILLING_MID",
+          "optional": true
+        }
+      }
+    },
+    {
+      "name": "TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY",
+      "valueFrom": {
+        "secretKeyRef": {
+          "name": "payment-credentials",
+          "key": "TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY",
+          "optional": true
+        }
+      }
+    },
+    {
+      "name": "AUTH_NEW_ACCOUNT_DEMO",
+      "value": "true"
+    }
+  ],
+  "extraVolumeMounts": [
+    {
+      "mountPath": "/rds-ca",
+      "name": "rds-ca",
+      "readOnly": true
+    }
+  ],
+  "extraVolumes": [
+    {
+      "configMap": {
+        "name": "rds-ca"
+      },
+      "name": "rds-ca"
+    }
+  ],
+  "hpa": {
+    "enabled": false
+  },
+  "image": {
+    "digest": "sha256:1e8e1d4b4d6270af094b0811d0c29e71cdbdb498c6132284637bdc5cad4a9997",
+    "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/core-service"
+  },
+  "ingress": {
+    "enabled": false
+  },
+  "javaAgent": {
+    "enabled": false
+  },
+  "keda": {
+    "enabled": false
+  },
+  "lifecycle": {
+    "preStop": {
+      "exec": {
+        "command": [
+          "/bin/sh",
+          "-c",
+          "sleep 15"
+        ]
+      }
+    }
+  },
+  "migration": {
+    "enabled": false
+  },
+  "nameOverride": "core-service",
+  "networkPolicy": {
+    "egress": [
+      {
+        "ports": [
+          {
+            "port": 5432,
+            "protocol": "TCP"
+          }
+        ],
+        "to": [
+          {
+            "ipBlock": {
+              "cidr": "10.20.128.0/20"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "10.20.144.0/20"
+            }
+          }
+        ]
+      },
+      {
+        "ports": [
+          {
+            "port": 443,
+            "protocol": "TCP"
+          }
+        ],
+        "to": [
+          {
+            "ipBlock": {
+              "cidr": "0.0.0.0/0",
+              "except": [
+                "10.0.0.0/8",
+                "172.16.0.0/12",
+                "192.168.0.0/16",
+                "100.64.0.0/10",
+                "169.254.0.0/16",
+                "127.0.0.0/8",
+                "0.0.0.0/8",
+                "224.0.0.0/4",
+                "240.0.0.0/4"
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "egressToApps": [
+      {
+        "name": "learning-service",
+        "port": 8081
+      },
+      {
+        "name": "ai-service",
+        "port": 8000
+      },
+      {
+        "name": "report-api",
+        "port": 8002
+      }
+    ],
+    "egressToPlatform": [
+      {
+        "name": "rabbitmq",
+        "port": 5672
+      },
+      {
+        "name": "redis",
+        "port": 6379
+      },
+      {
+        "name": "rabbitmq",
+        "port": 15672
+      }
+    ],
+    "enabled": true,
+    "ingress": [
+      {
+        "from": [
+          {
+            "podSelector": {
+              "matchLabels": {
+                "deployment-check": "core-learning-health"
+              }
+            }
+          }
+        ],
+        "ports": [
+          {
+            "port": 8080,
+            "protocol": "TCP"
+          }
+        ]
+      }
+    ],
+    "ingressFromApps": [
+      "learning-service",
+      "ai-service",
+      "report-api",
+      "report-worker",
+      "scoring-service"
+    ],
+    "namespaceDefaultDeny": false
+  },
+  "pdb": {
+    "enabled": false
+  },
+  "probes": {
+    "liveness": {
+      "enabled": true,
+      "path": "/actuator/health/liveness",
+      "periodSeconds": 10,
+      "timeoutSeconds": 5
+    },
+    "readiness": {
+      "enabled": true,
+      "path": "/actuator/health/readiness",
+      "periodSeconds": 10,
+      "timeoutSeconds": 5
+    },
+    "startup": {
+      "enabled": true,
+      "failureThreshold": 60,
+      "path": "/actuator/health/liveness",
+      "periodSeconds": 10
+    }
+  },
+  "replicaCount": 1,
+  "resources": {
+    "limits": {
+      "cpu": "1",
+      "memory": "1Gi"
+    },
+    "requests": {
+      "cpu": "250m",
+      "memory": "512Mi"
+    }
+  },
+  "service": {
+    "port": 8080,
+    "targetPort": 8080
+  },
+  "terminationGracePeriodSeconds": 180
+}

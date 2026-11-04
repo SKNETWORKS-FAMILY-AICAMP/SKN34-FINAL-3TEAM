@@ -32,11 +32,14 @@ flowchart LR
   L --> G("Google 인증") --> NA{"nextAction"}
   NA -->|"CONSENT_REQUIRED"| ON["이용 동의<br/>/parent/onboarding"]
   NA -->|"CHILD_REGISTRATION_REQUIRED"| CN["SC-03-002 자녀 등록<br/>/parent/children/new"]
+  NA -->|"CHILD_REGISTRATION_REQUIRED (받은 이관 확인, #289)"| TRI["자녀 이관<br/>/parent/transfers"]
+  TRI -->|"수락 완료"| PJ
   NA -->|"READY"| PJ["SC-03-001 대시보드·공책<br/>/parent/journal"]
   ON --> CN --> PJ
 
   PJ -->|"이 자녀로 학습 시작 (동석)"| SH["SC-02-004 생각 지도<br/>/student/home"]
   SL -->|"PIN 확인"| SH
+  SH -->|"로그아웃 → 학부모 화면으로 돌아가기 (보호자 비밀번호, V24)"| L
 
   AL --> AG("Google 인증 + 승인 권한") --> AH["SC-04-001 운영 현황<br/>/admin/home"]
 ```
@@ -71,8 +74,16 @@ flowchart TD
   DEV -->|"기기 추가"| QR["SC-03-011 등록 코드·QR<br/>10분·1회용"]
   DEV -->|"PIN 설정·잠금 해제·기기 해제"| DEV
 
+  DEV -->|"보호자 비밀번호 설정·변경 (Google 재확인)"| DEV
+
   PJ --> ACC["SC-03-016 계정·자녀 관리<br/>/parent/account"]
   ACC -->|"연결 해제·삭제·탈퇴 (Google 재확인)"| WD["탈퇴 접수 결과<br/>/withdrawal-status"]
+  ACC -->|"탈퇴 전 자녀 이관 (#289)"| TR["자녀 이관<br/>/parent/transfers"]
+  TR -->|"받는 학부모 이메일 확인 → Google 재확인 → 요청"| TRP["이관 대기 (보낸·받은 요청, 5초 갱신)"]
+  TRP -->|"받는 학부모: 보호자 동의·Google 재확인 후 수락 / 거절"| TRD["이관 완료·거절"]
+  TRP -->|"보내는 학부모: 취소"| TR
+  TRD -->|"탈퇴 절차 재진입"| ACC
+  ACC -->|"대기 중 탈퇴 시작: 이관 유지 / 이관 취소 후 탈퇴 절차 진행"| TRP
 
   PJ --> SC["고객센터"]
   SC --> HELP["SC-03-012 이용 도움말<br/>/parent/help"]
@@ -84,6 +95,8 @@ flowchart TD
 
 - 분석 대화·리포트 답변 화면에서 바로 오류 신고 가능 (`targetType` ANALYSIS·REPORT)
 - 학생이 공개 설정을 끈 동안 원문·근거·원문 인용은 보이지 않고 수치만 표시 (#206)
+- 자녀 이관(#289)은 탈퇴 전 보호자를 바꾸는 정식 절차다. 받는 학부모가 수락하기 전에는 연결·기록 접근이 바뀌지 않으며, 수락 후 학생 기기는 새 학부모가 다시 등록한다. 서버·웹 기능 플래그로 신규 대상 조회·요청·수락을 켠다(기본 꺼짐). `/parent/transfers`의 본인 목록·취소·거절은 기능 off·동의 누락에도 유지한다(#307). 동의 화면에서도 이관·계정 관리로 이동할 수 있으며 취소 후 탈퇴는 별도 재인증·최종 확인을 거친다
+- 동석 진입으로 학생 화면을 쓰는 동안 학부모 세션은 잠긴다. 학생 로그아웃 후 로그인 화면의 "학부모 화면으로 돌아가기"(`ParentUnlock`)에서 보호자 비밀번호로 복귀한다. 보호자 비밀번호는 자녀 기기·PIN 화면에서 Google 재확인 후 설정한다
 - 무료 자녀는 분석 대화 진입 시 프리미엄 안내만 표시, 리포트는 수치만 표시 (P13)
 
 ### 3.2 학생
@@ -221,6 +234,11 @@ flowchart TD
   PIN -->|"기기 해제·만료"| R4["SC-02-001 기기 등록 화면으로<br/>보호자 새 코드 필요"]
   PIN -->|"연결 해제·삭제·필수 동의 철회"| R5["학습 불가 안내"]
   PIN -->|"학생 세션 만료"| K
+
+  U["학부모 화면으로 돌아가기<br/>(보호자 비밀번호)"] --> UN{"서버 응답"}
+  UN -->|"불일치"| U1["남은 횟수 표시 → 재입력"] --> U
+  UN -->|"5회 실패·잠금 / 미설정"| U2["Google 로그인으로 학부모 화면 진입<br/>이전 잠긴 세션·학생 세션 종료"]
+  UN -->|"일치"| U3["SC-03-001 대시보드·공책"]
 ```
 
 ### 5.2 미션 수행
@@ -325,4 +343,3 @@ flowchart LR
 
 - 학부모 구독 결제·구독 관리(UC-17·UC-18, #184): `/parent/billing`(이용권·결제)에서 상품 선택 → 토스 결제위젯 결제 → `/payment/success`·`/payment/fail` 결과 확인, 같은 화면의 구독 관리에서 자동결제 수단 등록(`/payment/billing/success`·`/payment/billing/fail`)·자동 갱신 해지·철회·환불 요청. 테스트 키 환경만 사용(P14). 단계별 화면 흐름도는 미반영
 - 이용 동의 화면(`/parent/onboarding`)과 관리자 메뉴 큐·DLQ(`/admin/queues`)는 화면설계서 v2.1에 별도 화면 ID 없음
-- 학생 알림(UC-22)은 학생 고객센터 메뉴에 없음. 학생 알림 노출 여부는 요구사항 확인 필요

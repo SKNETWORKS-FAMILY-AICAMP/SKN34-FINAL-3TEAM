@@ -108,7 +108,8 @@ export const parentApi = {
       await streamSse(
         `/conversations/${item(id)}/messages${retryId ? `/${item(retryId)}/retry` : ''}`,
         {
-          body: { question, scope },
+          // 재시도는 저장된 원래 메시지를 사용하며 요청 본문이 없다.
+          body: retryId ? undefined : { question, scope },
           signal,
           onEvent(event) {
             if (

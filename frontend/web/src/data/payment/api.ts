@@ -1,5 +1,5 @@
 import { apiFetch, toApiError } from '../apiClient.ts'
-import type { PaymentProduct, PaymentOrder, PaymentState, PaymentRecord, PaymentRefund, PaymentSubscription } from '../../domain/payment.ts'
+import type { ChildEntitlement, PaymentProduct, PaymentOrder, PaymentState, PaymentRecord, PaymentRefund, PaymentSubscription } from '../../domain/payment.ts'
 
 export const paymentTestMode = Boolean(import.meta.env?.DEV && import.meta.env?.VITE_PAYMENT_TEST === 'true')
 export const mockPaymentMode = Boolean(import.meta.env?.DEV && import.meta.env?.VITE_API_MOCK === 'true' && !paymentTestMode)
@@ -15,6 +15,7 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 const post = (body: unknown, key: string): RequestInit => ({ method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body) })
 export const paymentApi = {
+  entitlement: (childId: string, signal?: AbortSignal) => call<ChildEntitlement>(`/children/${encodeURIComponent(childId)}/entitlement`, { signal, cache: 'no-store' }),
   history: (page = 0, signal?: AbortSignal) => call<{ items: PaymentRecord[] }>(`/payments?page=${page}&size=20`, { signal }),
   subscriptions: (signal?: AbortSignal) => call<{ items: PaymentSubscription[] }>('/subscriptions', { signal }),
   billingSetup: (id: string) => call<{ subscriptionId: string; customerKey: string }>(`/subscriptions/${encodeURIComponent(id)}/billing-key`),

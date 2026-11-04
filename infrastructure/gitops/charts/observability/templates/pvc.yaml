@@ -1,0 +1,18 @@
+{{- range $name := list "prometheus" "grafana" }}
+{{- $persistence := (index $.Values $name).persistence }}
+{{- if $persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}-data
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ $persistence.storageClassName | quote }}
+  resources:
+    requests:
+      storage: {{ $persistence.size | quote }}
+{{- end }}
+{{- end }}

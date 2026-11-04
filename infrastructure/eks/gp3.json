@@ -1,0 +1,16 @@
+{
+  "reclaimPolicy": "Delete",
+  "parameters": {
+    "csi.storage.k8s.io/fstype": "ext4",
+    "encrypted": "true",
+    "type": "gp3"
+  },
+  "metadata": {
+    "name": "gp3"
+  },
+  "apiVersion": "storage.k8s.io/v1",
+  "kind": "StorageClass",
+  "provisioner": "ebs.csi.aws.com",
+  "volumeBindingMode": "WaitForFirstConsumer",
+  "allowVolumeExpansion": true
+}

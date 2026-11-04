@@ -195,6 +195,10 @@ class AuthFlowIntegrationTest : IntegrationTestSupport() {
         jdbc.update("DELETE FROM admin_permission WHERE user_id=?", id)
         assertTrue(auth.authenticate(admin.accessToken).permissions.isEmpty())
     }
+    @Test fun `new Google parent is not demo unless the environment says so`() {
+        val id = login().identity.account.id
+        assertEquals(false, jdbc.queryForObject("SELECT is_demo FROM user_account WHERE id=?", Boolean::class.java, id))
+    }
     @Test fun `same email never links different Google subject and legacy password account is preserved`() {
         val first = login()
         assertEquals("ACCOUNT_EXISTS", assertFailsWith<BusinessException> {

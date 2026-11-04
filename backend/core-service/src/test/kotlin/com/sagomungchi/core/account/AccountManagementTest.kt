@@ -399,6 +399,15 @@ class AccountManagementTest : PostgresRepositoryTest() {
   assertEquals(0,count("SELECT failed_count FROM guardian_password WHERE user_id=?",p.identity.account.id))
   assertEquals(1,count("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action='GUARDIAN_PASSWORD_CHANGED'",p.identity.account.id))
  }
+ @Test fun `non-parent sessions get 403 for guardian password setup regardless of the input`() {
+  val p=parent();val c=child(p.identity.account.id)
+  val student=auth.enterStudent(c,p.identity)
+  // Role check comes before the rule check (#310): an invalid value must not leak a 422 to a student session.
+  listOf("1234","abc","2580").forEach { value ->
+   setGuardianPassword(student,value,null).andExpect { status { isForbidden() };jsonPath("$.code") { value("FORBIDDEN") } }
+  }
+  assertEquals(0,count("SELECT count(*) FROM guardian_password WHERE user_id=?",p.identity.account.id))
+ }
  @Test fun `five wrong guardian passwords lock the return and a missing password asks for Google login`() {
   val p=parent();val c=child(p.identity.account.id)
   setGuardianPassword(p,"2580",grant(p.identity,ReauthPurpose.GUARDIAN_PASSWORD)).andExpect { status { isOk() } }

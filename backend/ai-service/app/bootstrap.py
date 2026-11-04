@@ -10,6 +10,7 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 from app.analysis_agent.router import router as analysis_router
 from app.clients.base import internal_client
 from app.clients.core_client import CoreClient
+from app.clients.scoring_client import ScoringClient
 from app.config import get_settings
 from app.errors import register_error_handlers
 from app.followup.router import router as followup_router
@@ -60,7 +61,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async def rabbitmq_ready() -> bool:
         return amqp.is_connected
 
-    async with internal_client(settings.core_url) as http:
+    async with (
+        internal_client(settings.core_url) as http,
+        internal_client(settings.scoring_url) as scoring_http,
+    ):
+        # 판정 M2·M1 교차 확인 (#69). timeout은 요청마다 남은 판정 시간으로 정함
+        app.state.scoring = ScoringClient(scoring_http)
         versions = ActiveVersions()
         consumer = ModelVersionConsumer(amqp, PromptSync(CoreClient(http), versions))
         app.state.active_versions = versions

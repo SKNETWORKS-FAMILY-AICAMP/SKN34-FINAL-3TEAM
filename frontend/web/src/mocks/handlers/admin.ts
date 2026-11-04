@@ -7,7 +7,7 @@ import type {
   Rubric,
   ModelVersion,
 } from '../../domain/admin/operations.ts'
-import { missingMissionFields } from '../../domain/admin/operations.ts'
+import { essayTypes, missingMissionFields } from '../../domain/admin/operations.ts'
 import type { LearningMission } from '../../domain/learning.ts'
 import type { Period } from '../../domain/classroom.ts'
 import { validPeriod } from '../../domain/parent.ts'
@@ -304,8 +304,14 @@ export const adminHandlers = [
         d = (await request.json()) as Omit<Rubric, 'version'>
       if (d.elements?.some((e) => !e.label.trim() || !Number.isInteger(e.points) || e.points <= 0))
         fail('VALIDATION_FAILED', '요소 이름과 양의 정수 배점을 확인해 주세요.')
+      // learning AdminRubricRequest와 같이 keywords ≤100개·각 1~200자, essayType은 다섯 값 또는 null. 빠지면 빈 값으로 저장한다 (#306).
+      const keywords = d.keywords ?? [], essayType = d.essayType ?? null
+      if (!Array.isArray(keywords) || keywords.length > 100 || keywords.some((k) => typeof k !== 'string' || !k.length || k.length > 200))
+        fail('VALIDATION_FAILED', '핵심어 묶음을 확인해 주세요.')
+      if (essayType !== null && !(essayTypes as readonly string[]).includes(essayType))
+        fail('VALIDATION_FAILED', '글 종류를 확인해 주세요.')
       m.currentRubricVersion = (m.currentRubricVersion ?? 0) + 1
-      m.rubrics.push({ ...d, version: m.currentRubricVersion })
+      m.rubrics.push({ ...d, keywords, essayType, version: m.currentRubricVersion })
       if (m.status === 'REVIEW_REQUIRED') m.status = 'DRAFT'
       audit(
         'RUBRIC_UPDATE',
