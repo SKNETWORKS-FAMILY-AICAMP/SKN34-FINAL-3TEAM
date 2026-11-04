@@ -129,7 +129,7 @@ stateDiagram-v2
 | `PENDING → REJECTED` | `POST /guardian-transfers/{id}/reject` | `GuardianTransferService.resolve` | 받는 학부모 본인만. 이미 처리된 요청은 `409 TRANSFER_ALREADY_RESOLVED` |
 | `PENDING → CANCELLED` | `POST /guardian-transfers/{id}/cancel`, `POST /guardian-transfers/cancel-outgoing` | `GuardianTransferService.resolve`·`cancelOutgoing` | 보내는 학부모 본인만. 상대 계정이 이미 탈퇴해도 취소 가능. 일괄 취소는 탈퇴 화면의 "이관 취소 후 탈퇴 절차 진행"이며 취소만으로 탈퇴·삭제를 실행하지 않음 |
 
-- 기능 플래그(`APP_GUARDIAN_TRANSFER_ENABLED`, 웹 `VITE_GUARDIAN_TRANSFER_ENABLED`)가 꺼져 있으면 이관 API는 404다. 완료된 이관 기록의 삭제 보호와 탈퇴·삭제 차단 검사는 플래그와 무관하게 유지한다. 근거: [이관 구현 기록](../report/guardian-transfer-local.md)
+- 기능 플래그(`APP_GUARDIAN_TRANSFER_ENABLED`, 웹 `VITE_GUARDIAN_TRANSFER_ENABLED`)가 꺼져 있으면 이관 API는 404다. 완료된 이관 기록의 삭제 보호와 탈퇴·삭제 차단 검사는 플래그와 무관하게 유지한다. 근거: [이관 구현 기록](../report/auth-account.md#6-탈퇴-전-자녀-이관-289)
 
 ### 2.5 `auth_session` 잠금 (V24 동석 학생 진입·학부모 복귀)
 

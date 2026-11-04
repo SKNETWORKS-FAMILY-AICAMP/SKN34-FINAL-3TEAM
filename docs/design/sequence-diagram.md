@@ -316,7 +316,7 @@ sequenceDiagram
 - 거절은 받는 학부모 `POST /guardian-transfers/{id}/reject`, 취소는 보내는 학부모 `POST /guardian-transfers/{id}/cancel`로 `REJECTED`·`CANCELLED`가 된다. 이미 처리된 요청은 `409 TRANSFER_ALREADY_RESOLVED`
 - 대기 요청이 있으면 보내는 학부모의 탈퇴 요청과 그 자녀의 연결 해제·삭제는 `409 TRANSFER_PENDING`이다. 탈퇴 화면은 "이관 유지" 또는 "이관 취소 후 탈퇴 절차 진행"(`POST /guardian-transfers/cancel-outgoing`)을 고르게 하며, 취소만으로 탈퇴·삭제를 실행하지 않는다
 - 구독·결제·환불의 명의는 바꾸지 않는다. 보내는 학부모의 진행 중 구독·결제·환불이 있으면 요청·수락 모두 막는다. 학부모 전역 리포트 설정은 이전하지 않고, 학생 공개 설정·학습·리포트 기록은 유지한다. 새 학부모는 학생 기기를 다시 등록한다
-- 서버 `APP_GUARDIAN_TRANSFER_ENABLED`·웹 `VITE_GUARDIAN_TRANSFER_ENABLED`로 노출을 제어한다(기본 꺼짐). 상세 범위와 검증은 [이관 구현 기록](../report/guardian-transfer-local.md)
+- 서버 `APP_GUARDIAN_TRANSFER_ENABLED`·웹 `VITE_GUARDIAN_TRANSFER_ENABLED`로 노출을 제어한다(기본 꺼짐). 상세 범위와 검증은 [이관 구현 기록](../report/auth-account.md#6-탈퇴-전-자녀-이관-289)
 
 ---
 
