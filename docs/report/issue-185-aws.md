@@ -209,3 +209,4 @@ PM 승인으로 다음을 반영했다.
 - `cluster.json`·`demo-stack.json`·`demo_stack.py`를 2그룹 기준으로 바꿨다(plan의 label·taint 대조, apply의 기존 클러스터 노드그룹 생성, pause/resume의 그룹별 저장·복구). 단위 테스트 8개 통과.
 - 설계 문서의 IRSA 표기를 EKS Pod Identity로 바꾸고, EBS CSI·VPC CNI 역할 trust에 클러스터·namespace·SA 조건을 추가한 원문을 저장소에 반영했다.
 - AWS 적용은 [EKS 문서의 노드그룹 분리 적용](../../infrastructure/eks/README.md#노드그룹-분리-적용-2026-11-04-결정) 순서로 별도 진행한다.
+- 적용(2026-11-04): 위 절차대로 노드그룹을 분리했다. 축소 중 scoring 메모리 예약(2Gi)이 노드별 여유를 넘는 문제를 실측으로 확인해 예약을 1Gi로 조정했다. 최종 4대(application 2, platform-observability 2), `plan` 57/57. 상세는 EKS 문서의 적용 결과.

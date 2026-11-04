@@ -54,8 +54,15 @@ application 1그룹(3대)에서 위 2그룹으로 옮기는 순서다. 상태 �
 2. **platform 그룹 생성**: `python infrastructure/aws/demo_stack.py --profile sagomungchi-provided apply --confirm-account 347161580747`는 없는 `platform-observability`만 만든다(private subnet 2a·2b, label·taint, 2/2/2). `aws eks wait nodegroup-active` 후 노드 2대가 Ready이고 **2a·2b에 1대씩**인지, taint가 붙었는지 확인한다. 한 AZ에 몰리면 다음 단계로 가지 않는다.
 3. **이동 준비**: RabbitMQ 미처리 메시지가 0인지 확인한다(`pause` dry-run의 pending queues). 리포트 생성 등 진행 중 작업이 없을 때 한다.
 4. **이동**: `platform-data`(platform)·`observability`(observability)를 prod values로 `helm upgrade`한다. RabbitMQ·Redis는 StatefulSet 순차 재시작, Prometheus·Grafana는 `Recreate`라 PVC 다중 연결 충돌이 없다. 새 Pod가 platform 노드에 뜨고 PVC가 Bound, RabbitMQ 큐·Redis 데이터·Grafana 로그인이 유지되는지 확인한다. 문제가 있으면 이전 revision으로 `helm rollback`한다(이전 노드는 아직 남아 있음).
-5. **application 축소**: `aws eks update-nodegroup-config --nodegroup-name application --scaling-config minSize=2,maxSize=3,desiredSize=2`. 관리형 노드그룹 축소는 PDB를 지키는 순차 종료로 간주하지 않으므로, 줄어들 노드의 앱 Pod가 다른 노드로 다시 떴는지 확인한다(앱은 replica 1이라 잠깐 끊길 수 있음).
+5. **application 축소**: 줄이기 전에 **노드별로** 남는 노드의 여유 메모리가 옮겨 갈 Pod 중 가장 큰 예약(현재 scoring 1Gi)보다 큰지 확인한다. 총량 합계로 판단하지 않는다. 지울 노드를 `kubectl drain`으로 비운 뒤 `aws autoscaling terminate-instance-in-auto-scaling-group --should-decrement-desired-capacity`로 그 인스턴스만 종료하고, 노드그룹을 min 2 / desired 2 / max 3으로 맞춘다(크기만 줄이면 임의 노드가 종료된다).
 6. **확인**: `demo_stack.py plan`(nodegroup 2개 OK), 앱 6개 Ready, CloudFront 로그인→학습 제출→리포트, Grafana 경보 상태.
+
+### 적용 결과 (2026-11-04 11:22~12:05 KST)
+
+- EBS CSI·VPC CNI trust 갱신 후 controller 재시작과 새 노드의 aws-node가 정상(권한 오류 0).
+- `platform-observability` 2대 생성(2a·2b 1대씩, taint 확인). RabbitMQ·Redis·Prometheus·Grafana·Collector를 이동했고 PVC 재연결, RabbitMQ 큐 32개·연결 5개 유지, 앱 재시작 0. RabbitMQ 초기화 Job은 같은 정의로 한 번 재실행됐다(chart 파일 해시 차이로 이름 변경).
+- application 첫 축소 때 scoring(예약 2Gi)이 남은 노드(여유 1.8~1.9Gi)에 들어가지 못해 약 5분 Pending이었다. 3대로 되돌려 복구했다. 실측(합성 논술 3회 추론) working set 629MiB, 프로세스 414MiB, 캐시 포함 최고 1,195MiB라 예약을 1Gi(상한 2Gi 유지)로 낮추고 재배포했다. 이후 빈 노드를 지정해 종료하고 2/2/3으로 맞췄다.
+- 최종: application 2대 + platform-observability 2대, 앱 6개 Ready, CloudFront 200, `demo_stack.py plan` 57/57.
 
 ## 데모 종료·축소·재개 실행안 (#185)
 
