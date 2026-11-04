@@ -145,7 +145,7 @@ CLI 종료 코드 0은 JSON 계획의 형식 유효성만 뜻한다. 호환 여�
 | 실행 게이트 | `cd_release.py`가 오류·차단 사유가 없을 때만 `executable=true`. validate에서 이미지 빌드 전 다른 차단이 있으면 게시 전에 중단, deploy에서 `--require-executable`로 재확인 | 실행 스위치·근거·승인자 미비 상태에서 ECR 게시나 적용을 하지 않는다 |
 | 적용 | release별 server dry-run 전체 → 순서대로 `redeploy-app.ps1 -ImageDigest -Apply` | 저장소 values를 바꾸지 않고 digest만 교체. 실패하면 다음 release는 적용하지 않고 자동 롤백도 하지 않는다 |
 | 경로 확인 | 학생 PIN 로그인 → 시도 시작 → 답변 제출 → 부모 refresh → 리포트 목록 | 판정(LLM)·결제는 호출하지 않는다. 부모 refresh 쿠키는 회전하므로 새 값을 fixture 파일에 즉시 저장한다 |
-| 이력 | 수행자·승인자·run URL·SHA·이미지·release 전후 revision·경로 확인 결과를 `history.json` artifact(90일)와 실행 요약에 기록 | Git 직접 push는 브랜치 보호와 충돌하므로 하지 않는다 |
+| 이력 | 수행자·승인자·run URL·SHA·이미지·release 전후 revision·경로 확인 결과를 `history.json` artifact(90일)와 실행 요약에 기록 | workflow에 저장소 쓰기 권한(`contents: write`)을 주지 않으려고 Git에 직접 push하지 않는다. develop·main에는 현재 브랜치 보호 규칙이 없다(2026-11-04 확인) |
 | 롤백 | 이전 승인 digest를 같은 workflow·승인으로 적용. 계획의 SHA는 이전 릴리스(현재 SHA 일치 검사는 배포에만) | DB downgrade·백업 복원은 하지 않는다 |
 
 - 11/01 브랜치 `feature/cd-release-186`의 workflow는 Argo CD·develop push 전제라 가져오지 않았고, 배포 후 확인 단계 구성만 참고했다.
@@ -161,3 +161,4 @@ CLI 종료 코드 0은 JSON 계획의 형식 유효성만 뜻한다. 호환 여�
 - `cd-candidate.yml` 정리: 처음 구성(`98b3f98`)은 이 브랜치 push와 PR에서 모두 실행되고 서비스 CI(`_spring.yml`·`_python.yml`·`_web.yml`, 6개 대상)를 다시 호출해, CD 도구만 바꾼 PR에도 같은 서비스 검사가 두 번씩 돌았다. 서비스 코드는 서비스별 CI가, 배포 이미지는 `cd-release` publish가 main SHA로 빌드하므로 PR·수동 실행의 CD 도구 검사(`policy` job)만 남겼다. `executionEnabled=false` 고정 검사는 E단계 PR을 막으므로 릴리스 브랜치·승인자 기준 확인으로 바꿨다. 위 2026-11-02·11-03 기록의 재사용 workflow 설명은 당시 구성이다.
 
 - 검증: `python -O -m unittest discover -s scripts/tests` **150개 통과**(후보 workflow 구조 테스트 1개 추가), ruff 통과, workflow YAML 파싱 통과.
+- 브랜치 보호: develop·main 모두 보호 규칙·Ruleset이 없다(2026-11-04 API 확인). 배포 적용은 `prod` 승인으로 막히지만, main 직접 push로 workflow를 바꾸면 승인 전 publish job이 ECR 게시 역할을 쓸 수 있다. main 보호(PR 필수, force push·삭제 금지)는 팀 결정으로 남긴다.
