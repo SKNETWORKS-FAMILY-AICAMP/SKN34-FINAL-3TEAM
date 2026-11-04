@@ -50,7 +50,7 @@ aws iam put-role-policy --profile $profile --role-name sagomungchi-demo-github-c
 | Repository 변수 | `CD_AWS_ROLE_ARN` = `arn:aws:iam::347161580747:role/sagomungchi-demo-github-cd-publish`, `CD_AWS_REGION` = `ap-northeast-2`, `CD_ECR_REGISTRY` = `347161580747.dkr.ecr.ap-northeast-2.amazonaws.com` |
 | Settings → Actions → General | Fork pull request workflows: 외부 기여자 승인 필요 |
 
-2026-11-04 적용 완료(위 표 그대로, 외부 기여자 승인은 `all_external_contributors`). `policy.json`의 `environmentProtectionVerified`는 E단계 PR에서 true로 바꾼다.
+2026-11-04 적용 완료(위 표 그대로, 외부 기여자 승인은 `all_external_contributors`). `policy.json`의 `environmentProtectionVerified`를 true로 바꿨다.
 
 ### C. 작업자 PC self-hosted runner
 
@@ -78,7 +78,7 @@ EKS API 공개 접근이 작업자 공인 IP로 제한돼 있어 적용은 이 P
 
 ### E. 실행 스위치
 
-A~D가 끝나면 `policy.json`의 `infrastructureReady`·`executionEnabled`를 true로 바꾸는 PR을 develop → main 릴리스로 반영한다.
+2026-11-04 A~C 적용 후 `policy.json`의 `environmentProtectionVerified`·`infrastructureReady`·`executionEnabled`를 true로 바꿨다. main에 반영돼야 실행된다. D(fixture)는 플래그와 무관하며 배포 직전에 채운다. 비우면 적용 후 경로 확인 단계가 실패로 기록된다. 배포를 멈춰야 할 때는 `executionEnabled`를 false로 되돌리는 PR을 main에 반영한다.
 
 ## 배포
 
@@ -117,6 +117,6 @@ gh workflow run cd-release.yml --ref main -f plan="$(Get-Content release.json -R
 
 ## 한계
 
-- 실제 승인·게시·적용·롤백은 아직 실행하지 않았다(설정 A~E 전).
+- 실제 승인·게시·적용·롤백은 아직 실행하지 않았다(main 반영·D 전).
 - 적용 단계는 작업자 PC가 켜져 있어야 한다. 노드 여유가 작으므로 dry-run의 Pod 변경을 보고 승인한다(#185 노드그룹 분리 기록).
 - 웹(S3/CloudFront) 배포와 migration은 이 workflow 범위 밖이다.

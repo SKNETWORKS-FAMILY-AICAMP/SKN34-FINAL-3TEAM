@@ -129,17 +129,27 @@ class ReleasePolicyTests(unittest.TestCase):
             cd.validate(self.plan, {**self.policy, "releaseBranch": None})["valid"]
         )
 
-    def test_repository_policy_names_approvers_but_stays_blocked(self):
+    def test_repository_policy_is_enabled_but_evidence_still_gates(self):
+        # A~C 설정 적용 후 스위치를 켰다(2026-11-04). 근거 없는 계획은 여전히 실행되지 않는다
         policy = json.loads(
             (ROOT / "infrastructure/cd/policy.json").read_text(encoding="utf-8")
         )
         self.assertEqual(policy["approvers"], ["20220348-kim", "kty2001"])
         self.assertEqual(policy["releaseBranch"], "main")
-        self.assertIs(policy["executionEnabled"], False)
+        for flag in (
+            "executionEnabled",
+            "environmentProtectionVerified",
+            "infrastructureReady",
+        ):
+            self.assertIs(policy[flag], True)
         result = cd.validate(self.plan, policy)
-        self.assertFalse(result["executable"])
-        self.assertNotIn("운영 연결 미완료: approvers", result["blocks"])
-        self.assertIn("실행 스위치 비활성", result["blocks"])
+        self.assertFalse(
+            [b for b in result["blocks"] if "운영 연결" in b or "실행 스위치" in b]
+        )
+        example = json.loads(
+            (ROOT / "infrastructure/cd/plan.example.json").read_text(encoding="utf-8")
+        )
+        self.assertFalse(cd.validate(example, policy)["executable"])
 
     def test_plan_approval_flag_is_ignored(self):
         # 승인은 GitHub Environment가 맡는다. 계획의 approved 표시는 결과를 바꾸지 않는다

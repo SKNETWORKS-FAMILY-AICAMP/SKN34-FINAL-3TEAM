@@ -639,7 +639,7 @@ backend/report-service/
 - GitHub Actions: 경로 필터로 변경 서비스만 테스트·빌드 → GHCR/ECR 푸시(OIDC로 AWS 인증). 현재는 테스트·빌드까지, 푸시·태그 갱신은 예정
 - `infrastructure/gitops/environments/<env>/` 이미지 태그 갱신 커밋 → Argo CD 자동 동기화
 - #171로 local 앱·KEDA·NetworkPolicy·관측 Application 등록 정의. 이미지 게시·승인 흐름은 #186 범위다
-- #186 운영 배포: `cd-release.yml`(main에서 수동 실행)이 계획 검증 → main SHA 이미지 ECR 게시(GitHub OIDC) → GitHub Environment `prod` 승인(김동섭·김태윤) → 작업자 PC self-hosted runner에서 Helm 적용(`redeploy-app.ps1 -ImageDigest`) → 로그인·학습 제출·리포트 조회 확인 → 배포 이력 artifact 순으로 진행한다. prod는 Argo CD 없이 수동 Helm이다(#185). 자동 롤백은 없고 롤백도 같은 승인을 거친다. 실행 스위치는 설정 완료 전까지 꺼져 있다. [설정·절차](../../infrastructure/cd/README.md), [결정 근거](../report/issue-186-cd-approval-rollback.md)
+- #186 운영 배포: `cd-release.yml`(main에서 수동 실행)이 계획 검증 → main SHA 이미지 ECR 게시(GitHub OIDC) → GitHub Environment `prod` 승인(김동섭·김태윤) → 작업자 PC self-hosted runner에서 Helm 적용(`redeploy-app.ps1 -ImageDigest`) → 로그인·학습 제출·리포트 조회 확인 → 배포 이력 artifact 순으로 진행한다. prod는 Argo CD 없이 수동 Helm이다(#185). 자동 롤백은 없고 롤백도 같은 승인을 거친다. 운영 설정(AWS OIDC 역할·`prod` Environment·runner) 적용 후 실행 스위치를 켰다(2026-11-04). [설정·절차](../../infrastructure/cd/README.md), [결정 근거](../report/issue-186-cd-approval-rollback.md)
 - Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret (LLM·토스 키는 저장소에 미포함, NFR-SEC-04)
 
 ### 4.6 관측
