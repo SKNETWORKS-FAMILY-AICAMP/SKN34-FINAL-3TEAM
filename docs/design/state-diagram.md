@@ -266,7 +266,7 @@ stateDiagram-v2
 - 풀이 단계(`SOLUTION_STEPS`)는 풀이를 ai 요소 판정, 최종 답을 `MathEquivalenceJudge`로 보고 위처럼 합침. ai가 보류하면 보류(최종 답 결과는 쓰지 않음). 최종 답 결과는 기준표의 `FINAL_ANSWER` 요소(ai에 보내지 않음)에 정답 키 근거(`ANSWER_KEY`, 근거 글자는 학생이 쓴 최종 답)로 기록해, 답이 틀려 `PARTIAL`이면 마무리 체크리스트에도 "최종 답"이 빠진 것으로 보임 (FN-JDG-02, [이슈 #79 보고서](../report/learning.md))
 - `FAILED`의 `failure_code`: `AI_TIMEOUT`·`AI_UNAVAILABLE`(연결 실패·ai 5xx)·`AI_BAD_RESPONSE`(ai 4xx·계약 밖 응답)·`AI_CIRCUIT_OPEN`·`INTERNAL_ERROR`·`LEASE_EXPIRED`(고착 탐지, #241)
 
-### 3.4 `mission_draft.status` (#336, 구현 전)
+### 3.4 `mission_draft.status` (#336 설계, #353 구현)
 
 ```mermaid
 stateDiagram-v2
@@ -283,7 +283,7 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
-| → `GENERATING` | `POST /admin/mission-drafts` (CONTENT) | `MissionDraftService.request` | 형식·성취기준 코드 실재·학년·입력 방식 확인(400) |
+| → `GENERATING` | `POST /admin/mission-drafts` (CONTENT) | `MissionDraftService.request` | 형식·성취기준 코드 실재·학년군·학년·입력 방식·성취수준 단계 확인(400) |
 | 생성 1회 | `MissionDraftScheduler` 주기(기준안 10초) | `MissionDraftService.generateNext` → `MissionDraft.recordAttempt` | 리스 점유(90초, 판정과 같은 방식) 뒤 ai 1회 + learning 검사. 점유한 리스가 그대로일 때만 저장해 늦은 작업이 덮어쓰지 않음. 작업이 중간에 죽으면 리스가 지나 다른 레플리카가 다시 맡고 그 시도는 세지 않음 |
 | `GENERATING → READY·CHECK_FAILED·FAILED` | 같음 | `MissionDraft.recordAttempt` | 상한 기준안 3회(P19 김동섭 확인). `FAILED`의 `failure_code`는 판정과 같은 `AI_TIMEOUT`·`AI_UNAVAILABLE`·`AI_BAD_RESPONSE`·`AI_CIRCUIT_OPEN` |
 | `READY → ADOPTED` | `POST /admin/mission-drafts/{id}/adopt` | `MissionDraftService.adopt` | 초안 행 잠금, `mission`(`DRAFT`, `source = LLM_DRAFT`)·첫 버전 생성과 같은 트랜잭션. 그 뒤는 3.1 |

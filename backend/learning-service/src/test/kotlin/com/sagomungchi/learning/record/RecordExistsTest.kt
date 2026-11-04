@@ -24,7 +24,7 @@ class RecordExistsTest : PostgresRepositoryTest() {
     @BeforeEach fun fixture() {
         mission=UUID.randomUUID(); version=UUID.randomUUID(); rubric=UUID.randomUUID()
         val actor=UUID.randomUUID()
-        jdbc.update("INSERT INTO mission(id,code,status,demo_only,sort_order,created_by,created_at,updated_at) VALUES(?,?,'DRAFT',true,1,?,now(),now())", mission, mission.toString(), actor)
+        jdbc.update("INSERT INTO mission(id,code,status,demo_only,sort_order,created_by,source,created_at,updated_at) VALUES(?,?,'DRAFT',true,1,?,'MANUAL',now(),now())", mission, mission.toString(), actor)
         jdbc.update("INSERT INTO mission_version(id,mission_id,version,title,subject,grade_min,grade_max,thinking_type,input_type,question,created_by,created_at) VALUES(?,?,1,'합성 미션','국어',3,6,'ANALYZE','NARRATIVE','합성 질문',?,now())",version,mission,actor)
         jdbc.update("INSERT INTO rubric_version(id,mission_id,version,created_by,created_at) VALUES(?,?,1,?,now())",rubric,mission,actor)
     }

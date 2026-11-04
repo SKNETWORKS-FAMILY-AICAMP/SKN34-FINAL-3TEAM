@@ -68,7 +68,7 @@ def main():
     core.execute("""INSERT INTO conversation_message(id,conversation_id,seq,question,answer,scope_student_id,scope_from,scope_to,scope_changed,status,source,verification,retry_count,created_at,completed_at) VALUES(%s,%s,1,'Synthetic question','Synthetic answer',%s,CURRENT_DATE-6,CURRENT_DATE,false,'COMPLETED','LLM',%s::jsonb,0,now(),now())""", (message,conversation,student,json.dumps({"numbersMatched":True,"quotesMatched":True})))
     core.execute("INSERT INTO message_evidence(id,message_id,attempt_id,answer_id,answer_version) VALUES(%s,%s,%s,%s,1)", (evidence,message,attempt,answer))
     actor = uuid.uuid4()
-    learning.execute("INSERT INTO mission(id,code,status,demo_only,sort_order,created_by,created_at,updated_at) VALUES(%s,%s,'DRAFT',true,1,%s,now(),now())", (mission,str(mission),actor))
+    learning.execute("INSERT INTO mission(id,code,status,demo_only,sort_order,created_by,source,created_at,updated_at) VALUES(%s,%s,'DRAFT',true,1,%s,'MANUAL',now(),now())", (mission,str(mission),actor))
     learning.execute("INSERT INTO mission_version(id,mission_id,version,title,subject,grade_min,grade_max,thinking_type,input_type,question,created_by,created_at) VALUES(%s,%s,1,'Synthetic mission','language',3,6,'ANALYZE','NARRATIVE','Synthetic question',%s,now())", (version,mission,actor))
     learning.execute("INSERT INTO rubric_version(id,mission_id,version,created_by,created_at) VALUES(%s,%s,1,%s,now())", (rubric,mission,actor))
     learning.execute("INSERT INTO attempt(id,student_id,mission_id,mission_version_id,rubric_version_id,grade,status,started_at,updated_at) VALUES(%s,%s,%s,%s,%s,3,'IN_PROGRESS',now(),now())", (attempt,student,mission,version,rubric))

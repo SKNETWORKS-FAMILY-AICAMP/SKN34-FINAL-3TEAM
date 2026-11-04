@@ -5,6 +5,7 @@ import com.sagomungchi.learning._common.exception.Problems
 import com.sagomungchi.learning._common.exception.statusOf
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning._common.web.MissionResponse
+import com.sagomungchi.learning.mission.domain.AchievementStandard
 import com.sagomungchi.learning.mission.domain.AdminMission
 import com.sagomungchi.learning.mission.domain.AdminMissionFilter
 import com.sagomungchi.learning.mission.domain.AdminMissionPage
@@ -18,6 +19,7 @@ import com.sagomungchi.learning.mission.domain.MissionPublishIncompleteException
 import com.sagomungchi.learning.mission.domain.MissionStatus
 import com.sagomungchi.learning.mission.domain.ReviewResult
 import com.sagomungchi.learning.mission.domain.RubricCommand
+import com.sagomungchi.learning.mission.domain.StandardElements
 import com.sagomungchi.learning.mission.domain.ThinkingType
 import com.sagomungchi.learning.mission.service.MissionService
 import jakarta.servlet.http.HttpServletRequest
@@ -54,6 +56,8 @@ data class MissionRequest(
     val answerUnit: String? = null,
     val inputTemplate: List<String>? = null,
     val demoOnly: Boolean? = null,
+    /** 성취기준별 성취수준 단계 {코드: A~E} (#353). 저장 때는 모양만, 키·단계 수는 게시 때 */
+    val achievementLevels: Map<String, String>? = null,
 )
 
 /** 기준표 요소 본문 */
@@ -65,6 +69,8 @@ data class RubricElementRequest(
     val commonErrors: List<String>? = null,
     val goodThought: Boolean = false,
     val judgeVerified: Boolean = false,
+    /** 요소를 구체화한 성취기준 코드 (#353). 미션 성취기준 안인지는 게시 때 */
+    val standardCode: String? = null,
 )
 
 /** 기준표 저장 본문. answerKey는 입력 방식 모양 객체(`{choiceIds}`·`{assignments}`·`{finalAnswer}`) */
@@ -216,20 +222,31 @@ class AdminMissionController(
             answerUnit = answerUnit,
             inputTemplate = inputTemplate.orEmpty(),
             demoOnly = demoOnly ?: missing("demoOnly"),
+            achievementLevels = achievementLevels?.also(::requireLevelShape),
         )
+    }
+
+    /** 성취수준 단계 모양: 코드는 비지 않고 단계는 A~E 한 글자 (#353) */
+    private fun requireLevelShape(levels: Map<String, String>) {
+        if (levels.any { (code, level) -> code.isBlank() || !AchievementStandard.LEVEL_SHAPE.matches(level) }) {
+            invalid("achievementLevels는 {성취기준 코드: A~E}")
+        }
     }
 
     /** 요소는 code가 비지 않고 겹치지 않으며 이름이 있고 배점은 양수 (판정 배점 기준) */
     private fun RubricRequest.toCommand(author: UUID): RubricCommand {
         val elements = elements.orEmpty().map {
             AdminRubricElement(
-                code = it.code?.takeIf(String::isNotBlank) ?: missing("elements.code"),
+                code = it.code?.takeIf(String::isNotBlank)?.also { code ->
+                    if (!StandardElements.isValidShape(code)) invalid("elements.code는 표준 코드·e+숫자·ANSWER_KEY·FINAL_ANSWER 중 하나 (#262)")
+                } ?: missing("elements.code"),
                 label = it.label?.takeIf(String::isNotBlank) ?: missing("elements.label"),
                 description = it.description,
                 points = it.points?.takeIf { p -> p >= 1 } ?: invalid("elements.points는 1 이상"),
                 commonErrors = it.commonErrors.orEmpty(),
                 goodThought = it.goodThought,
                 judgeVerified = it.judgeVerified,
+                standardCode = it.standardCode?.also { code -> if (code.isBlank()) invalid("elements.standardCode는 비울 수 없음(없으면 null)") },
             )
         }
         if (elements.map { it.code }.toSet().size != elements.size) invalid("요소 code가 겹침")

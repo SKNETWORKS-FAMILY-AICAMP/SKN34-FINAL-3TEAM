@@ -12,6 +12,7 @@ import com.sagomungchi.learning.mission.domain.MissionCommand
 import com.sagomungchi.learning.mission.domain.MissionListItem
 import com.sagomungchi.learning.mission.domain.MissionPreview
 import com.sagomungchi.learning.mission.domain.MissionProgress
+import com.sagomungchi.learning.mission.domain.MissionSource
 import com.sagomungchi.learning.mission.domain.MissionSnapshot
 import com.sagomungchi.learning.mission.domain.MissionStatus
 import com.sagomungchi.learning.mission.domain.MissionView
@@ -20,6 +21,7 @@ import com.sagomungchi.learning.mission.domain.ReviewResult
 import com.sagomungchi.learning.mission.domain.Rubric
 import com.sagomungchi.learning.mission.domain.RubricCommand
 import com.sagomungchi.learning.mission.domain.StatusCount
+import com.sagomungchi.learning.mission.repository.AchievementStandardRepository
 import com.sagomungchi.learning.mission.repository.MissionHeader
 import com.sagomungchi.learning.mission.repository.MissionRepository
 import com.sagomungchi.learning.mission.repository.RubricRepository
@@ -34,6 +36,7 @@ import java.util.UUID
 class MissionService(
     private val missionRepository: MissionRepository,
     private val rubricRepository: RubricRepository,
+    private val standardRepository: AchievementStandardRepository,
 ) {
     /** 학생 학년·입력 방식 범위(시연 전용은 시연 학생만)의 공개 미션과 수행 상태 (FN-LRN-02, FN-DSH-02) */
     fun listForStudent(studentId: UUID, grade: Int, demo: Boolean): List<MissionListItem> {
@@ -103,9 +106,21 @@ class MissionService(
         return MissionPreview(getVersion(header.currentVersionId), header.currentVersion, header.currentRubricVersion)
     }
 
-    /** → DRAFT, 미션 버전 1·기준표 없음 */
+    /** → DRAFT, 미션 버전 1·기준표 없음. 사람이 만든 미션(source MANUAL) */
     @Transactional
     fun create(command: MissionCommand): Mission = entity(header(missionRepository.create(command, now())))
+
+    /**
+     * 초안 채택 (class-diagram 4.1.1 createFromDraft, #353): create·putRubric과 같은 규칙으로 DRAFT 미션·첫 버전·첫 기준표를
+     * 호출한 쪽 트랜잭션 안에서 만듦(source LLM_DRAFT). 이후 수정·검토·게시는 관리자 미션 경로 그대로(자동 공개 없음, P19)
+     */
+    @Transactional
+    fun createFromDraft(command: MissionCommand, rubric: RubricCommand): UUID {
+        val now = now()
+        val missionId = missionRepository.create(command, now, MissionSource.LLM_DRAFT)
+        rubricRepository.append(missionId, rubric, now)
+        return missionId
+    }
 
     /** 새 미션 버전(이전 버전 불변). 검토 중이면 DRAFT, 공개 중이면 공개 버전 그대로 */
     @Transactional
@@ -158,7 +173,8 @@ class MissionService(
         val rubric = header.currentRubricVersion?.let { current -> rubricRepository.findAll(missionId).single { it.version == current } }
         val review = missionRepository.findReviews(missionId)
             .lastOrNull { it.missionVersion == header.currentVersion && it.rubricVersion == header.currentRubricVersion }
-        mission.publish(PublishSnapshot(version, rubric, review?.result))
+        val standards = standardRepository.findByCodes(version.achievementStandards)
+        mission.publish(PublishSnapshot(version, rubric, review?.result, standards))
         missionRepository.publish(missionId, now())
     }
 
@@ -190,6 +206,7 @@ class MissionService(
             versions = missionRepository.findVersions(missionId),
             rubrics = rubricRepository.findAll(missionId),
             reviews = missionRepository.findReviews(missionId),
+            source = h.source,
         )
     }
 

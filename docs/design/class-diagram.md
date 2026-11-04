@@ -1368,7 +1368,7 @@ classDiagram
 - 관리자 API(#145): core가 `ADMIN` + `X-User-Id`(작성자·검토자 ID) + 빈 학생 범위로 넘김(CONTENT 검사는 core). 성공 응답은 모두 JSON 객체(core 프록시 요구): 목록 `{items, page, size, totalElements, counts}`, 나머지는 미션 전체 `AdminMission`(api-spec 4.1). `counts`는 페이지·`status`·`grade`·`thinkingType` 어느 필터와도 무관한 전체 상태별 건수
 - 버전: `update`·`putRubric`은 새 버전을 추가하고 `current_*`만 바꿈. 학생 목록·상세·`currentVersions`(시도 시작)는 공개 버전 `published_*`, `publish`가 `published_*` ← `current_*` (P07, ERD 4.1). 상태 전이는 state-diagram 3.1
 
-### 4.1.1 성취기준·미션 초안 (#336, 구현 전)
+### 4.1.1 성취기준·미션 초안 (#336 설계, #353 구현)
 
 FN-ADM-20·21, api-spec 4.1 `/internal/admin/achievement-standards`·`/internal/admin/mission-drafts…`, ERD 4.1.1. 이름은 구현 이슈의 기준이며 기존 `mission` 패키지 안에 둔다.
 
@@ -1421,14 +1421,15 @@ classDiagram
   MissionDraftService ..> MissionDraft
 ```
 
-- 요청 `request`: 형식·성취기준 코드 실재·학년·입력 방식 조합 확인(400) 뒤 `GENERATING`, `attempts = 0`으로 저장하고 202. 생성은 요청 안에서 하지 않는다(core→learning 일반 대기 30초 안에 LLM 생성·재시도를 끝낼 수 없음)
+- 요청 `request`: 형식·성취기준 코드 실재·미션 학년이 성취기준 학년군 안·학년·입력 방식 조합·성취수준 단계 확인(400) 뒤 `GENERATING`, `attempts = 0`으로 저장하고 202. 생성은 요청 안에서 하지 않는다(core→learning 일반 대기 30초 안에 LLM 생성·재시도를 끝낼 수 없음)
 - 생성 `generateNext`(`MissionDraftScheduler`, 주기 기준안 10초): `claimNext`가 `GENERATING`이고 `lease_until`이 비었거나 지난 초안 하나를 조건부 UPDATE로 점유한다(`lease_until = now + 90초`, 판정 리스와 같은 값·같은 방식이라 레플리카가 동시에 돌아도 한 곳만). 트랜잭션 밖에서 ai를 1번 부르고 learning 검사를 한 뒤 `saveAttempt`가 점유한 리스 값이 그대로일 때만 저장한다
-- learning 검사: 요소 code 규칙은 게시 검사(`Mission.requirePublishable`, #262 구현 이슈에서 들어가는 FN 1.5 규칙)와 같은 함수, 요소 `standardCode`가 요청 성취기준 안, 입력 방식 모양(`choices`·`categories`·`answerKey`)은 4.1 관리자 미션 본문과 같음. 실패 `check`: `STANDARD_CODE`·`ELEMENT_CODE`·`SHAPE`. AI 호출이 실패한 시도는 `AI_CALL`(`reason`은 `failure_code`)로 남김
+- learning 검사(`DraftRules.learningFailures`): 채택할 미션·기준표(`DraftRules.missionCommand`·`rubricCommand`)를 게시 검사(`PublishSnapshot.missingFields`, 검토는 통과로 봄)에 그대로 넣어 같은 규칙으로 본다. 누락 `rubric.elements`·`rubric.elements.code` → `ELEMENT_CODE`, `rubric.elements.standardCode` → `STANDARD_CODE`, 나머지(선택지·분류 칸·정답 키·예시 답 등) → `SHAPE`(`reason`은 누락 코드). AI 호출이 실패한 시도는 `AI_CALL`(`reason`은 `failure_code`)로 남김
 - `MissionDraft.recordAttempt`: `attempts + 1`, `check_results`에 이번 실패 추가. ai·learning 검사를 모두 통과하면 `READY` + `output`. 실패하고 상한 미만이면 `GENERATING` 그대로 리스만 비워 다음 주기에 이전 실패 사유(`previousFailures`)를 넣어 다시 생성. 상한(기준안 3회, P19 김동섭 확인)에 닿으면 마지막 실패가 AI 호출 실패면 `FAILED`(`failure_code`), 아니면 `CHECK_FAILED`
-- `MissionDraftAiClient`: `POST /internal/mission-drafts`. 대기 35초·재시도 없음은 `AiClient`와 같지만 **서킷은 따로** 둔다(`ai-mission-draft`, 같은 P12 값). 판정·되묻기 서킷을 같이 쓰면 초안 실패가 학생 판정을 막음(#305와 같은 문제)
+- `MissionDraftAiClient`: `POST /internal/mission-drafts`. 재시도 없음·오류 분류(`judgment/client` `postToAi`)·서킷 값(`aiCircuitBreaker`)은 `AiClient`와 같지만 **서킷은 따로** 둔다(`ai-mission-draft`, 같은 P12 값). 대기는 70초(`app.mission-draft.ai-read-timeout`, P12 예외 #353, `InternalRestClientFactory.create(service, readTimeout)`)로 다른 내부 호출의 35초와 따로다. 판정·되묻기 서킷을 같이 쓰면 초안 실패가 학생 판정을 막음(#305와 같은 문제)
 - 채택 `adopt`: 초안 행 `FOR UPDATE` → `READY`가 아니면 409 → `MissionService.createFromDraft`가 기존 `create`·`putRubric`과 같은 규칙으로 `DRAFT` 미션·첫 미션 버전·첫 기준표 버전을 같은 트랜잭션에 만듦(`mission.source = LLM_DRAFT`, 요소 배점 1, M2 입력 `keywords`·`essayType`은 비움, `sceneNote`는 미션에 저장하지 않음) → `ADOPTED` + `mission_id`. 이후 수정·검토·게시는 4.1 그대로라 자동 공개 없음(P19)
 - 사람이 쓰는 미션(`create`)은 `source = MANUAL`. `achievementLevels`·요소 `standardCode` 저장과 게시 검사 추가는 4.1 `MissionService`·`Mission.requirePublishable`에서 한다(ERD 4.1.1)
-- 새 값(주기 10초·상한 3회)은 기준안이며 `app.mission-draft.*` 설정으로 둔다. 리스 90초는 판정과 같은 값을 쓴다
+- 새 값(주기 10초·상한 3회)은 기준안이며 `app.mission-draft.*`(`enabled`·`interval`·`max-attempts`) 설정으로 둔다. 리스 90초는 판정과 같은 값(`Judgment.LEASE`)을 쓴다
+- 표준 요소 표(FN 1.5 14개 코드·유형·이름·공통 설명)와 code 규칙은 `mission/domain/Standards.kt` `StandardElements` 한 곳에 둔다. 기준표 저장(모양 400)·게시 검사(`rubric.elements.code`)·초안 ai 입력(`DraftRules.elementCodes`)이 같은 표를 쓴다
 
 ### 4.2 판정·되묻기 (judgment)
 
@@ -1891,7 +1892,7 @@ classDiagram
   DraftChecks --> LeakGuard : find_text_leaks 재사용
 ```
 
-- `MissionDraftService.generate`: 요청 1번에 LLM 생성 1회(재시도 규칙은 기존 `LlmClient` 그대로, P12)와 검사만 하고 반복하지 않는다. 반복은 learning `MissionDraftService`(4.1.1)가 이전 실패 사유를 넣어 다시 부른다. 마감은 되묻기와 같은 33초(learning→ai 35초 안)
+- `MissionDraftService.generate`: 요청 1번에 LLM 생성 1회와 검사만 하고 반복하지 않는다. 반복은 learning `MissionDraftService`(4.1.1)가 이전 실패 사유를 넣어 다시 부른다. LLM은 이 호출만 60초 1회(`LlmClient.generate`의 `timeout`·`max_retries`, 설정 `mission_draft_llm_timeout`·`mission_draft_llm_retries`), 마감 63초(learning→ai 70초 안, P12 예외 #353)
 - `DraftChecks`(`checks.py` 모듈 함수 `check`): `REQUIRED`(제목·질문·요소·생각 열기 질문, 입력 방식별 선택지·분류 칸·정답 키·예시 답), `QUESTION_LENGTH`(`gradeMin` 학년 상한, 설정 `mission_draft_question_max_chars` 기본 전 학년 200자, P19 확정 전 기준안), `LEAK`(질문·안내·생각 열기 질문 각각에 `followup/leak_guard.find_text_leaks`, 학생 답 없이 정답 키·금지어·예시 답만. 예시 답은 안내·생각 열기 질문만, 질문에 있는 글을 빼고 비교. 숫자뿐인 최종 답은 숫자 경계로 비교). 성취기준 실재·요소 code 규칙은 표와 규칙을 가진 learning이 검사
 - 프롬프트: `prompts.py` 내장 `mission-draft@1`, #68 레지스트리 이름 `missionDraft`·scope `ai/mission-draft`(`ActiveVersions`·`/internal/versions`에 추가). 입력은 성취기준 문장·(있으면) 성취수준 문장·생각 유형·그 유형 표준 요소 공통 설명·학년·입력 방식뿐이고 학생 정보는 없음
 - 사용량: `LlmClient` 콜백 → `UsagePublisher`, `callType = MISSION_DRAFT`(이벤트 스키마·core enum·core CHECK와 같이 추가, ERD 3.5)

@@ -30,6 +30,7 @@
                  typeHandler="com.sagomungchi.learning.mission.repository.StringListTypeHandler"/>
             <arg column="good_thought" javaType="_boolean"/>
             <arg column="judge_verified" javaType="_boolean"/>
+            <arg column="standard_code" javaType="java.lang.String"/>
         </constructor>
     </resultMap>
     <resultMap id="hint" type="com.sagomungchi.learning.mission.repository.HintRow">
@@ -47,7 +48,7 @@
 
     <select id="findElements" resultMap="element" flushCache="true" useCache="false">
         SELECT e.id, e.rubric_version_id, e.code, e.label, e.description, e.points,
-               COALESCE(e.common_errors, '[]'::jsonb) AS common_errors, e.good_thought, e.judge_verified
+               COALESCE(e.common_errors, '[]'::jsonb) AS common_errors, e.good_thought, e.judge_verified, e.standard_code
         FROM rubric_element e
         JOIN rubric_version rv ON rv.id = e.rubric_version_id
         WHERE rv.mission_id = #{missionId}
@@ -81,12 +82,12 @@
     <!-- sort_order는 보낸 순서 -->
     <insert id="insertElements">
         INSERT INTO rubric_element (id, rubric_version_id, code, label, description, points, common_errors, good_thought,
-                                    judge_verified, sort_order)
+                                    judge_verified, standard_code, sort_order)
         VALUES
         <foreach collection="elements" item="r" separator=",">
             (#{r.id}, #{rubricVersionId}, #{r.value.code}, #{r.value.label}, #{r.value.description,jdbcType=VARCHAR}, #{r.value.points},
              #{r.value.commonErrors,typeHandler=com.sagomungchi.learning.mission.repository.StringListTypeHandler},
-             #{r.value.goodThought}, #{r.value.judgeVerified}, #{r.order})
+             #{r.value.goodThought}, #{r.value.judgeVerified}, #{r.value.standardCode,jdbcType=VARCHAR}, #{r.order})
         </foreach>
     </insert>
 

@@ -95,11 +95,15 @@ class Mission(
         throw DomainException(ErrorKind.CONFLICT, "CONFLICT", "미션 상태 충돌", "$detail: $status")
 }
 
-/** 게시 검사 대상: 현재 미션·기준표 버전과 그 버전의 최신 검토 결과 */
+/**
+ * 게시 검사 대상: 현재 미션·기준표 버전과 그 버전의 최신 검토 결과.
+ * standards는 미션 성취기준 코드로 찾은 성취기준 표 행(#353, 표에 없는 코드는 빠짐)
+ */
 data class PublishSnapshot(
     val version: AdminMissionVersion,
     val rubric: AdminRubric?,
     val latestReview: ReviewResult?,
+    val standards: Map<String, AchievementStandard> = emptyMap(),
 ) {
     /** 누락 코드 (class-diagram 4.1 requirePublishable, ERD 4.1). 순서는 화면 입력 순 */
     fun missingFields(): List<String> = buildList {
@@ -110,7 +114,8 @@ data class PublishSnapshot(
         if (v.gradeMin < MIN_GRADE || v.gradeMax > MAX_GRADE || v.gradeMin > v.gradeMax ||
             (v.inputType == InputType.ESSAY && v.gradeMin < MissionView.ESSAY_MIN_GRADE)
         ) add("grade")
-        if (v.achievementStandards.none { it.isNotBlank() }) add("achievementStandards")
+        if (!standardsFit()) add("achievementStandards")
+        if (!levelsFit()) add("achievementLevels")
         if (v.inputType in CHOICE_TYPES && v.choices.isEmpty()) add("choices")
         if (v.inputType == InputType.CLASSIFICATION && v.categories.isEmpty()) add("categories")
         val r = rubric
@@ -124,10 +129,31 @@ data class PublishSnapshot(
                 (v.inputType != InputType.SOLUTION_STEPS && finals > 0)
             ) add("rubric.elements")
             if (r.elements.any { it.label.isBlank() || it.points < 1 }) add("rubric.elements.points")
+            // 요소 0개는 위 rubric.elements로 이미 알림
+            if (r.elements.isNotEmpty() && !StandardElements.fits(r.elements.map { it.code }, v.thinkingType, v.inputType)) add("rubric.elements.code")
+            if (!elementStandardsFit(r)) add("rubric.elements.standardCode")
             if (v.inputType in KEY_TYPES && !answerKeyFits(r.answerKey)) add("answerKey")
             if (v.inputType !in KEY_TYPES && r.exampleAnswer.isNullOrBlank()) add("exampleAnswer")
         }
         if (latestReview != ReviewResult.APPROVED) add("review")
+    }
+
+    /** 성취기준 1개 이상, 모두 표에 있고 미션 학년 범위가 그 성취기준 학년군 안 (#336·#353, ERD 4.1.1) */
+    fun standardsFit(): Boolean {
+        val codes = version.achievementStandards
+        if (codes.isEmpty() || codes.any { it.isBlank() }) return false
+        return codes.all { code -> standards[code]?.covers(version.gradeMin, version.gradeMax) == true }
+    }
+
+    /** 단계 키가 미션 성취기준 안이고 단계가 그 성취기준 단계 수 안 (고르지 않으면 통과) */
+    private fun levelsFit(): Boolean = version.achievementLevels.orEmpty().all { (code, level) ->
+        code in version.achievementStandards && standards[code]?.allowsLevel(level) == true
+    }
+
+    /** 요소 성취기준은 미션 성취기준 안, 정답 요소는 비움 (FN 1.5) */
+    private fun elementStandardsFit(rubric: AdminRubric): Boolean = rubric.elements.all { element ->
+        val code = element.standardCode ?: return@all true
+        !StandardElements.isAnswerCode(element.code) && code in version.achievementStandards
     }
 
     /** 정답 키가 입력 방식 모양이고 선택지·그룹과 맞는지 (판정 RuleJudge가 읽는 모양, ERD 4.1) */

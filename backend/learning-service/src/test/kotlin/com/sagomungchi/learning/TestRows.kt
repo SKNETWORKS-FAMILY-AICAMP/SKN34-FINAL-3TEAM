@@ -26,8 +26,8 @@ class TestRows(private val jdbc: JdbcTemplate) {
     ): SeededMission {
         val id = UUID.randomUUID()
         jdbc.update(
-            """INSERT INTO mission (id, code, status, demo_only, sort_order, created_by, created_at, updated_at)
-               VALUES (?, ?, ?, ?, 1, ?, ?, ?)""",
+            """INSERT INTO mission (id, code, status, demo_only, sort_order, created_by, source, created_at, updated_at)
+               VALUES (?, ?, ?, ?, 1, ?, 'MANUAL', ?, ?)""",
             id, "TEST-$id", status, demoOnly, author, now, now,
         )
         val versionId = addVersion(id, version = 1, title = title, grade = grade, inputType, choices, inputTemplate, categories, answerUnit)

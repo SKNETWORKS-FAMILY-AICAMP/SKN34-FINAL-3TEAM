@@ -279,8 +279,8 @@ def verify(args):
 
         def new_answer():
             mission, version, rubric, element = [str(uuid.uuid4()) for _ in range(4)]
-            db(learning_db, f"""INSERT INTO mission(id,code,status,demo_only,sort_order,created_by,created_at,updated_at)
-                VALUES('{mission}','VERIFY-{mission}','PUBLISHED',false,1,'{user}',now(),now());
+            db(learning_db, f"""INSERT INTO mission(id,code,status,demo_only,sort_order,created_by,source,created_at,updated_at)
+                VALUES('{mission}','VERIFY-{mission}','PUBLISHED',false,1,'{user}','MANUAL',now(),now());
                 INSERT INTO mission_version(id,mission_id,version,title,subject,grade_min,grade_max,thinking_type,input_type,question,created_by,created_at)
                 VALUES('{version}','{mission}',1,'합성 미션','과학',3,6,'ANALYZE','NARRATIVE','이유를 말해 볼까?','{user}',now());
                 INSERT INTO rubric_version(id,mission_id,version,created_by,created_at)

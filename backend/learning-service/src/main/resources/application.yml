@@ -33,6 +33,12 @@ spring:
   mvc:
     problemdetails:
       enabled: true
+  task:
+    scheduling:
+      pool:
+        # @Scheduled 작업마다 스레드 하나(고착 판정 탐지·처리 이벤트 정리·미션 초안 생성, #353).
+        # 기본값 1이면 초안 생성(ai 대기 최대 70초) 동안 고착 판정 탐지(P12 1분)가 밀림
+        size: 3
 
 mybatis:
   mapper-locations: classpath:mybatis/**/*.xml
@@ -67,3 +73,8 @@ app:
   judgment:
     stuck-detection-enabled: true # 고착 RUNNING 판정 탐지 (#241)
     stuck-detection-interval: PT1M # [P12] 판정 리스 90초·고착 탐지 1분
+  mission-draft:
+    enabled: true # LLM 미션 초안 주기 생성 (#353). GENERATING 초안이 없으면 ai를 부르지 않음
+    interval: PT10S # 기준안 (learning.md 21절)
+    max-attempts: 3 # 기준안, 첫 생성 포함 (P19 확인)
+    ai-read-timeout: 70s # 초안 ai 호출만 (P12 예외): ai LLM 60초 1회·마감 63초, 생성 리스 90초 안

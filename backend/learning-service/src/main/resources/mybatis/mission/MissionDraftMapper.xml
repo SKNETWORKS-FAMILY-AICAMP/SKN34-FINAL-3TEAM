@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 미션 초안 (#353, ERD 4.1 mission_draft, state-diagram 3.4). 생성 작업 점유는 judgment.lease_until과 같은 방식 -->
+<mapper namespace="com.sagomungchi.learning.mission.repository.MissionDraftMapper">
+    <resultMap id="draft" type="com.sagomungchi.learning.mission.repository.MissionDraftRow">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="requested_by" javaType="java.util.UUID"/>
+            <arg column="standard_codes" javaType="java.util.List" typeHandler="com.sagomungchi.learning.mission.repository.StringListTypeHandler"/>
+            <arg column="achievement_levels" javaType="java.util.Map" typeHandler="com.sagomungchi.learning.mission.repository.StringMapTypeHandler"/>
+            <arg column="thinking_type" javaType="com.sagomungchi.learning.mission.domain.ThinkingType"/>
+            <arg column="grade_min" javaType="_int"/>
+            <arg column="grade_max" javaType="_int"/>
+            <arg column="input_type" javaType="com.sagomungchi.learning.mission.domain.InputType"/>
+            <arg column="status" javaType="com.sagomungchi.learning.mission.domain.DraftStatus"/>
+            <arg column="attempts" javaType="_int"/>
+            <arg column="check_results" javaType="java.util.List" typeHandler="com.sagomungchi.learning.mission.repository.DraftFailuresTypeHandler"/>
+            <arg column="output" javaType="com.sagomungchi.learning.mission.domain.GeneratedDraft"
+                 typeHandler="com.sagomungchi.learning.mission.repository.GeneratedDraftTypeHandler"/>
+            <arg column="failure_code" javaType="java.lang.String"/>
+            <arg column="model_version" javaType="java.lang.String"/>
+            <arg column="prompt_version" javaType="java.lang.String"/>
+            <arg column="lease_until" javaType="java.time.Instant"/>
+            <arg column="mission_id" javaType="java.util.UUID"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="columns">
+        id, requested_by, standard_codes, achievement_levels, thinking_type, grade_min, grade_max, input_type, status, attempts,
+        check_results, output, failure_code, model_version, prompt_version, lease_until, mission_id, created_at, updated_at
+    </sql>
+
+    <insert id="insert">
+        INSERT INTO mission_draft (id, requested_by, standard_codes, achievement_levels, thinking_type, grade_min, grade_max,
+                                   input_type, status, attempts, created_at, updated_at)
+        VALUES (#{d.id}, #{d.requestedBy},
+                #{d.input.standardCodes,typeHandler=com.sagomungchi.learning.mission.repository.StringListTypeHandler},
+                #{d.input.achievementLevels,typeHandler=com.sagomungchi.learning.mission.repository.StringMapTypeHandler,jdbcType=OTHER},
+                #{d.input.thinkingType}, #{d.input.gradeMin}, #{d.input.gradeMax}, #{d.input.inputType}, #{d.status}, #{d.attempts},
+                #{d.createdAt}, #{d.updatedAt})
+    </insert>
+
+    <select id="findById" resultMap="draft" flushCache="true" useCache="false">
+        SELECT <include refid="columns"/> FROM mission_draft WHERE id = #{id}
+        <if test="lock">FOR UPDATE</if>
+    </select>
+
+    <select id="findPage" resultMap="draft" flushCache="true" useCache="false">
+        SELECT <include refid="columns"/> FROM mission_draft
+        <where><if test="status != null">status = #{status}</if></where>
+        ORDER BY created_at DESC, id
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="count" resultType="long" flushCache="true" useCache="false">
+        SELECT count(*) FROM mission_draft
+        <where><if test="status != null">status = #{status}</if></where>
+    </select>
+
+    <!-- 점유: 조건을 다시 확인하는 UPDATE 하나라 레플리카가 동시에 실행해도 한 곳만 잡음 -->
+    <select id="claimNext" resultMap="draft" flushCache="true" useCache="false">
+        UPDATE mission_draft SET lease_until = #{leaseUntil}, updated_at = #{now}
+        WHERE id = (
+            SELECT id FROM mission_draft
+            WHERE status = 'GENERATING' AND (lease_until IS NULL OR lease_until &lt; #{now})
+            ORDER BY created_at, id
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+        )
+        AND status = 'GENERATING' AND (lease_until IS NULL OR lease_until &lt; #{now})
+        RETURNING <include refid="columns"/>
+    </select>
+
+    <!-- 점유한 리스 값이 그대로일 때만: 리스가 지나 다른 작업이 다시 잡았으면 0행 -->
+    <update id="saveAttempt">
+        UPDATE mission_draft
+        SET status = #{d.status}, attempts = #{d.attempts},
+            check_results = #{d.checkResults,typeHandler=com.sagomungchi.learning.mission.repository.DraftFailuresTypeHandler,jdbcType=OTHER},
+            output = #{d.output,typeHandler=com.sagomungchi.learning.mission.repository.GeneratedDraftTypeHandler,jdbcType=OTHER},
+            failure_code = #{d.failureCode,jdbcType=VARCHAR},
+            model_version = #{d.versions.model,jdbcType=VARCHAR}, prompt_version = #{d.versions.prompt,jdbcType=VARCHAR},
+            lease_until = NULL, updated_at = #{d.updatedAt}
+        WHERE id = #{d.id} AND status = 'GENERATING' AND lease_until = #{claimedLease}
+    </update>
+
+    <!-- 채택·버리기: 서비스가 FOR UPDATE로 잠근 행 -->
+    <update id="updateState">
+        UPDATE mission_draft SET status = #{d.status}, mission_id = #{d.missionId,jdbcType=OTHER}, updated_at = #{d.updatedAt}
+        WHERE id = #{d.id}
+    </update>
+</mapper>

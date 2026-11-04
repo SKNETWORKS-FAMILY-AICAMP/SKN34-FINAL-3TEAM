@@ -6,6 +6,7 @@ import com.sagomungchi.learning.mission.domain.AdminReview
 import com.sagomungchi.learning.mission.domain.HintQuestion
 import com.sagomungchi.learning.mission.domain.MissionCommand
 import com.sagomungchi.learning.mission.domain.MissionProgress
+import com.sagomungchi.learning.mission.domain.MissionSource
 import com.sagomungchi.learning.mission.domain.MissionSnapshot
 import com.sagomungchi.learning.mission.domain.MissionStatus
 import com.sagomungchi.learning.mission.domain.MissionView
@@ -80,10 +81,11 @@ class MissionRepository(
     /** 검토 시각 순 */
     fun findReviews(missionId: UUID): List<AdminReview> = adminMapper.findReviews(missionId)
 
-    /** 새 미션(DRAFT, 기준표 없음) + 미션 버전 1. 목록 순서는 맨 뒤, code는 자동 */
-    fun create(command: MissionCommand, now: Instant): UUID {
+    /** 새 미션(DRAFT, 기준표 없음) + 미션 버전 1. 목록 순서는 맨 뒤, code는 자동. source는 처음 만든 방식(#353) */
+    fun create(command: MissionCommand, now: Instant, source: MissionSource = MissionSource.MANUAL): UUID {
         val id = UUID.randomUUID()
-        check(adminMapper.insertMission(id, "M-" + id.toString().take(8).uppercase(), command.demoOnly, adminMapper.nextSortOrder(), command.authorId, now) == 1)
+        val code = "M-" + id.toString().take(8).uppercase()
+        check(adminMapper.insertMission(id, code, command.demoOnly, adminMapper.nextSortOrder(), command.authorId, source, now) == 1)
         appendVersion(id, command, now)
         return id
     }

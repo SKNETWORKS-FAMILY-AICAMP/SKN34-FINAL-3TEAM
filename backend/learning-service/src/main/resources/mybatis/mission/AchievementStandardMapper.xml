@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 성취기준 표 (#353, ERD 4.1 achievement_standard). 시드로 넣는 참조 데이터라 읽기만 함 -->
+<mapper namespace="com.sagomungchi.learning.mission.repository.AchievementStandardMapper">
+    <resultMap id="standard" type="com.sagomungchi.learning.mission.domain.AchievementStandard">
+        <constructor>
+            <idArg column="code" javaType="java.lang.String"/>
+            <arg column="subject" javaType="java.lang.String"/>
+            <arg column="grade_band" javaType="java.lang.String"/>
+            <arg column="area" javaType="java.lang.String"/>
+            <arg column="statement" javaType="java.lang.String"/>
+            <arg column="level_scale" javaType="_int"/>
+            <arg column="levels" javaType="java.util.Map" typeHandler="com.sagomungchi.learning.mission.repository.StringMapTypeHandler"/>
+            <arg column="curriculum_version" javaType="java.lang.String"/>
+            <arg column="source" javaType="java.lang.String"/>
+            <arg column="note" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="columns">code, subject, grade_band, area, statement, level_scale, levels, curriculum_version, source, note</sql>
+
+    <!-- q: 코드·문장 부분 일치. LIKE 특수 문자는 그대로 글자로 찾음 -->
+    <sql id="filter">
+        FROM achievement_standard
+        <where>
+            <if test="filter.subject != null">subject = #{filter.subject}</if>
+            <if test="filter.gradeBand != null">AND grade_band = #{filter.gradeBand}</if>
+            <if test="filter.q != null">
+                AND (strpos(code, #{filter.q}) &gt; 0 OR strpos(statement, #{filter.q}) &gt; 0)
+            </if>
+        </where>
+    </sql>
+
+    <select id="search" resultMap="standard" flushCache="true" useCache="false">
+        SELECT <include refid="columns"/> <include refid="filter"/>
+        ORDER BY subject, grade_band, code
+        LIMIT #{filter.size} OFFSET #{offset}
+    </select>
+
+    <select id="count" resultType="long" flushCache="true" useCache="false">
+        SELECT count(*) <include refid="filter"/>
+    </select>
+
+    <select id="findByCodes" resultMap="standard" flushCache="true" useCache="false">
+        SELECT <include refid="columns"/> FROM achievement_standard
+        WHERE code IN <foreach collection="codes" item="c" open="(" separator="," close=")">#{c}</foreach>
+    </select>
+</mapper>

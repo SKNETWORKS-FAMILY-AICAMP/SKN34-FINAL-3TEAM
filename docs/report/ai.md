@@ -330,7 +330,7 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 | 항목 | 정한 내용 | 근거 |
 |---|---|---|
 | 호출 단위 | 요청 1번에 LLM 생성 1회 + 검사, 반복하지 않음 | 반복을 ai 안에서 하면 `LlmClient` 최악 31초(15 + 1 + 15, `config.py`)가 3번이라 learning→ai 35초(P12)를 넘음. 반복은 learning 주기 작업이 이전 실패 사유(`previousFailures`)를 넣어 다시 부름 |
-| 마감 | 되묻기와 같은 33초 | `followup_deadline` 선례, learning→ai 35초 안 |
+| 마감 | ~~되묻기와 같은 33초~~ → 63초, LLM 60초 1회 (#353, 9.2) | 설계 때는 `followup_deadline` 선례로 learning→ai 35초 안. 실제 성취기준 실측 뒤 미션 초안만 P12 예외로 늘림 |
 | ai 검사 | `REQUIRED`(필수 항목·입력 방식별 선택지·정답 키·예시 답), `QUESTION_LENGTH`(학년별 길이), `LEAK`(질문·안내·생각 열기 질문 속 정답 키·금지어, 안내·생각 열기 질문 속 예시 답) | 기획서 6.2 ③ "판정 엔진의 질문 검사 재사용" → `followup/leak_guard.find_leaks`를 학생 답 없이 씀(`reason`은 `ANSWER_KEY`·`FORBIDDEN_TERM`·`EXAMPLE_ANSWER` 그대로) |
 | learning 검사 | 성취기준 실재·요소 code 규칙·요소 `standardCode`·입력 방식 모양 | 성취기준 표와 게시 검사 규칙이 learning에 있음. ai가 표를 따로 들고 있지 않게 |
 | 입력 | 성취기준 문장, (있으면) 성취수준 문장, 생각 유형, 그 유형 표준 요소 코드·공통 설명(learning이 FN 1.5에서 채움), 학년, 입력 방식 | 학생 정보·학생 답 없음(이슈 지침). 성취수준 문장은 이용 조건 확인 전까지 없음 |
@@ -353,7 +353,7 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 | 들어가면 좋은 생각 | 생각 미션(서술·풀이 단계·논술)은 유형별로 정함(프롬프트 `요소 규칙`, `prompts.ELEMENT_RULE`). 분석하기 `ANALYZE_REASON`, 따져 보기 `EVALUATE_PERSPECTIVE`, 새로 만들기 `CREATE_CONNECT`, 문제 해결하기 `SOLVE_CHECK`, 돌아보기 `REFLECT_CONNECT`가 들어가면 좋은 생각이고 나머지 유형 요소는 필수. 따져 보기 논술은 세 요소 모두 필수. 정답형·정답 요소는 false | 설계에는 개수·종류 규칙이 없다(functional-spec 1.5 "미션 요소마다 정한다"). 0~1개를 LLM에 맡기면 실측 12건 모두 0개, "더 깊은 생각 1개"로 두면 논술 반론을 들어가면 좋은 생각으로 정하는 등 시드와 달랐다. 그래서 데모 시드 20문항의 유형별 지정을 기본값으로 삼았다(새로 만들기 4개·문제 해결하기 3개 모두 같고, 돌아보기 4개 중 3개·따져 보기 서술 2개·분석하기 서술 1개가 같음. 논술 12번은 세 요소 필수, 17번은 세 요소 필수에 넷째 고유 요소만 들어가면 좋은 생각이며 초안은 고유 요소를 만들지 않음). 들어가면 좋은 생각은 판정에서 필수가 아니므로(`judgment/service.py` `_result`) 시드처럼 질문이 묻는 요소일 수도 있다. 관리자가 검토에서 바꿀 수 있음 |
 | 노출 검사 공유 | `followup/leak_guard.find_leaks`가 새 `find_text_leaks`(기준표 객체 없이 글 하나 검사)에 위임, 되묻기 동작은 같음 | 이슈 지침 "새 공통 라이브러리 만들지 않음" |
 | 실패 응답 | 형식 밖 출력(`LLM_INVALID_OUTPUT`)은 `502 AI_BAD_RESPONSE`, 그 밖 LLM 실패는 `503 AI_UNAVAILABLE`, 둘 다 `retryable=true` | 기존 `AI_*` 코드. learning은 둘 다 AI 호출 실패로 셈 |
-| 출력 상한 | `mission_draft_max_tokens=4096` | 실측 출력 673~1,176토큰 |
+| 출력 상한 | `mission_draft_max_tokens` ~~4096~~ → 8192 (#353) | `gpt-6.1-terra` 출력 673~1,465토큰, `gpt-6-luna`는 최대 3,514토큰으로 4096에 가까움(9.2) |
 
 - 이슈와 다른 점: 예시 답 노출 검사 범위와 들어가면 좋은 생각 규칙(위 표)은 실측 뒤 정했다. 들어가면 좋은 생각 규칙은 시드 작성 기준을 따른 기본값이라, 기준표 내용 담당이 정하면 `ELEMENT_RULE`만 바꾸면 된다. 나머지 계약은 api-spec 4.2 그대로다.
 - 사용량 `MISSION_DRAFT`: core 이벤트 스키마·enum·CHECK에 아직 없어(#355) core 소비자가 거부하고 DLQ에 남는다. 초안 생성 자체는 막지 않는다. #355 반영 뒤 DLQ 메시지는 다시 넣을 수 있다.
@@ -375,3 +375,28 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 
 - 출력이 15초에 거의 붙어 있어 호출 일곱에 하나꼴로 시간 초과가 난다. 기본 설정을 그대로 두고 learning 반복(상한 3회)으로 받는다. 요청이 실패할 확률을 이번 비율(24건 중 1건)로 보면 3번 모두 실패할 확률은 매우 낮다. 대신 시간 초과로 버려지는 호출이 생긴다.
 - 실패가 잦거나 비용이 문제가 되면 이 호출만 LLM 대기를 30초 1회(재시도 없음, 33초 마감 안)로 바꾸는 방법이 있다. P12를 바꾸는 일이라 팀 확인이 필요하다.
+- **이 실측은 짧은 가짜 성취기준 문장으로 쟀다.** 실제 성취기준으로 다시 재서 시간 설정을 바꿨다(9.2).
+
+### 9.2 미션 초안 시간 설정 변경 (#353)
+
+#353 로컬 실연(learning 주기 작업 → 실제 ai)에서 논술 초안이 3번 모두 `AI_CALL`(`AI_UNAVAILABLE`) 실패로 `FAILED`가 됐다. 9.1 실측은 짧은 가짜 성취기준 문장이었고, 실제 2022 개정 성취기준 문장(`achievement_standard.statement`)을 넣으면 출력이 길어져 LLM 1회 15초를 넘었다(ai 직접 호출도 2번 모두 15초 초과 2번 = 31초 뒤 503).
+
+실측(2026-11-05, 로컬, LLM 시간 제한을 풀고 1회씩, 입력 방식 6가지 × 2와 성취기준 2개짜리 논술·풀이 각 1, 같은 14건):
+
+| | `gpt-6.1-terra` | `gpt-6-luna`(기본 모델) |
+|---|---|---|
+| 걸린 시간 | 10.5~18.8초, 가운데 14.0초 | 15.0~31.7초, 가운데 22.3초 |
+| 30초 넘음 | 0건 | 4건(논술 30.5·30.5·31.5초, 분류 31.7초) |
+| 입력·출력 토큰 | 입력 약 1,165, 출력 791~1,245 | 입력 약 1,165, 출력 1,024~3,514 |
+| 검사 실패 | 0건 | 2건(금지어 노출 1, 질문 길이 초과 1. learning이 다시 생성) |
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| LLM 대기 | 미션 초안만 60초 1회(재시도 없음). `LlmClient.generate`에 호출별 `timeout`·`max_retries`를 두고 설정 `mission_draft_llm_timeout=60`·`mission_draft_llm_retries=0`. 다른 호출 종류는 15초·1회 그대로 | 초안은 learning 주기 작업이라 기다리는 사람이 없음. Luna 최대 31.7초에 여유. 30초 1회는 Luna에서 4/14가 넘음 |
+| 마감 | 63초 | LLM 60초 + 검사 |
+| learning→ai | 초안 ai 클라이언트만 70초(`app.mission-draft.ai-read-timeout`). 생성 리스 90초 안 | 다른 내부 호출은 35초 그대로 |
+| 출력 상한 | 8192 | Luna 출력 최대 3,514토큰이 4096에 가까워 잘리면 형식 밖 출력(502)이 됨 |
+
+- 비용: 바꾸기 전에는 논술에서 ai 1번에 LLM 호출 2번이 모두 시간 초과, learning 3번 반복으로 호출 6번에 결과가 없었다. 바꾼 뒤에는 보통 호출 1번에 끝난다. 시간 초과 호출의 과금 여부는 우리 사용량 기록(토큰 없음)으로는 알 수 없다
+- P12 예외라 팀 확인이 필요하다(이슈 #353 확인 필요)
+- 확인: 바꾼 뒤 로컬에서 learning 주기 작업으로 `gpt-6-luna` 입력 방식 6가지 초안이 모두 첫 시도에 `READY`(learning.md 22절). ai 테스트 `test_call_can_override_timeout_and_retries_without_changing_defaults`·`test_mission_draft_waits_60_seconds_once_with_63_second_deadline`
