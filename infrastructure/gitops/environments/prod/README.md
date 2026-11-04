@@ -83,7 +83,7 @@ NetworkPolicy는 기존 chart 정책과 **합집합**으로 동작한다. 정책
 
 core 외 learning·ai·scoring·report는 b67d8a 이미지로 남아 있다.
 
-2026-11-04 #186 배포 준비: main `a47a596`의 learning V9(`rubric_version` nullable 컬럼 2개·CHECK 제약)를 `learning-migrate:main-a47a596247ad`(`sha256:80254f13…d7bba`) Job `learning-service-migrate-main-a47a596247ad`로 적용했다. V8 → V9 성공, 앱 재시작 0. 기존 learning 이미지는 새 컬럼을 읽지 않아 호환된다. 앱은 `cd-release`로 같은 main SHA에 맞춘다. 서비스 간 호출 계약은 이번 core 변경과 호환됨을 확인했으며, 같은 main 기준으로 맞추는 일은 후속이다.
+2026-11-04 #186 배포 준비: main `a47a596`의 learning V9(`rubric_version` nullable 컬럼 2개·CHECK 제약)를 `learning-migrate:main-a47a596247ad`(`sha256:80254f13…d7bba`) Job `learning-service-migrate-main-a47a596247ad`로 적용했다. V8 → V9 성공, 앱 재시작 0. 기존 learning 이미지는 새 컬럼을 읽지 않아 호환된다. 앱은 `cd-release`로 같은 main SHA에 맞춘다. 2026-11-04 `cd-release` run 41796499774로 6개 release를 `main-a47a596247ad`로 배포했고 이 디렉토리의 앱 digest를 실제값으로 맞췄다. 롤백 리허설(run 41800966528·41802823411) 후 scoring도 같은 버전이다. 서비스 간 호출 계약은 이번 core 변경과 호환됨을 확인했으며, 같은 main 기준으로 맞추는 일은 후속이다.
 
 ## 보존과 환경 경계
 

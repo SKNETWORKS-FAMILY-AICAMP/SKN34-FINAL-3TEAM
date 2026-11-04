@@ -77,6 +77,7 @@ EKS API 공개 접근이 작업자 공인 IP로 제한돼 있어 적용은 이 P
 `verify_cd_deployment.py` 머리말의 형식이다. 시연 전용(`is_demo=true`) 계정·학생·공개 미션만 쓴다. 판정·결제는 호출하지 않는다.
 
 - `studentDeviceCookie`: 그 학생으로 등록한 브라우저의 `student_device` 쿠키(90일)
+- `missionId`: 학생 화면 `GET /api/v1/missions` 응답에서 `inputType`이 fixture `answer.inputType`(기본 `NARRATIVE`)과 같고 아직 시작하지 않은 미션. 다르면 답변 제출이 400(`VALIDATION_FAILED`)이다. 경로 확인마다 시도·답변이 하나씩 생기므로 실행 전에 다른 미션으로 바꾼다.
 - `parentRefreshCookie`: 같은 학부모로 Google 로그인한 브라우저의 `sagomungchi_refresh` 쿠키. **최초 로그인부터 최대 7일**이고 쓸 때마다 회전한다. 스크립트가 새 값을 파일에 바로 저장한다. 배포 전에 7일이 지났으면 다시 로그인해 넣는다. 같은 값을 브라우저와 동시에 쓰면 세션이 폐기되므로 fixture용 로그인은 따로 한다.
 
 ### E. 실행 스위치
