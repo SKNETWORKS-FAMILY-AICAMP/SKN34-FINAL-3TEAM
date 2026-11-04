@@ -5,6 +5,8 @@ import com.sagomungchi.learning._common.persistence.JacksonJsonbTypeHandler
 import com.sagomungchi.learning.mission.domain.AnswerKey
 import com.sagomungchi.learning.mission.domain.Category
 import com.sagomungchi.learning.mission.domain.Choice
+import com.sagomungchi.learning.mission.domain.DraftAttemptFailures
+import com.sagomungchi.learning.mission.domain.GeneratedDraft
 import org.apache.ibatis.type.TypeReference
 import org.mybatis.spring.boot.autoconfigure.ConfigurationCustomizer
 import org.springframework.context.annotation.Bean
@@ -48,8 +50,10 @@ class MissionPersistenceConfig {
             register(object : TypeReference<List<Category>>() {}, CategoryListTypeHandler(objectMapper))
             register(object : TypeReference<List<String>>() {}, StringListTypeHandler(objectMapper))
             register(AnswerKey::class.java, AnswerKeyTypeHandler(objectMapper))
-            // #353: 성취수준 단계. 구체 타입으로만 등록(일반 Map에는 적용되지 않음)
+            // #353: 성취수준 단계·초안 검사 결과·초안. 구체 타입으로만 등록(일반 Map·List에는 적용되지 않음)
             register(object : TypeReference<Map<String, String>>() {}, StringMapTypeHandler(objectMapper))
+            register(object : TypeReference<List<DraftAttemptFailures>>() {}, DraftFailuresTypeHandler(objectMapper))
+            register(GeneratedDraft::class.java, GeneratedDraftTypeHandler(objectMapper))
         }
     }
 }

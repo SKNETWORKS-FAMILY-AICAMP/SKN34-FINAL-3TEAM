@@ -1146,6 +1146,157 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /admin/achievement-standards:
+    get:
+      operationId: listAchievementStandards
+      summary: 성취기준 표 조회 (#353, FN-ADM-21)
+      description: >-
+        2022 개정 현행 765개(시드). q는 코드·문장 부분 일치. levels는 평가원 성취수준 문장으로 이용 조건 확인 전 null.
+        교과·학년군·코드 순.
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - {name: subject, in: query, schema: {type: string}}
+        - {name: gradeBand, in: query, schema: {type: string, enum: ['초1~2', '초3~4', '초5~6', '중1~3']}}
+        - {name: q, in: query, schema: {type: string}}
+        - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AchievementStandardPage'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+  /admin/mission-drafts:
+    post:
+      operationId: requestMissionDraft
+      summary: LLM 미션 초안 요청 → 202 GENERATING (#353, FN-ADM-20)
+      description: >-
+        형식·성취기준 코드 실재·미션 학년이 성취기준 학년군 안·학년(3~6, 논술 5~6)·성취수준 단계를 확인한 뒤 GENERATING(attempts 0)으로 저장.
+        생성·자동 검사는 learning 주기 작업이 ai 1회씩 반복(state-diagram 3.4).
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MissionDraftRequest'
+      responses:
+        '202':
+          description: 접수
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissionDraft'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+    get:
+      operationId: listMissionDrafts
+      summary: 초안 목록, 최근 요청 순 (#353)
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/MissionDraftStatus'}}
+        - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissionDraftPage'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+  /admin/mission-drafts/{draftId}:
+    get:
+      operationId: getMissionDraft
+      summary: 초안 상세 (상태·시도 횟수·검사 실패 사유·초안·버전)
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/DraftId'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissionDraft'
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /admin/mission-drafts/{draftId}/adopt:
+    post:
+      operationId: adoptMissionDraft
+      summary: 검사 통과(READY) 초안 채택 → DRAFT 미션 (source LLM_DRAFT)
+      description: >-
+        초안 행을 잠그고 미션·첫 버전·첫 기준표를 관리자 미션 작성·기준표 경로와 같은 규칙으로 한 트랜잭션에 만듦(요소 배점 1,
+        judgeVerified false, keywords·essayType 비움, sceneNote는 저장하지 않음). 이후 수정·검토·게시는 관리자 미션 경로 그대로. 본문은 {}.
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/DraftId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+      responses:
+        '201':
+          description: 만든 미션
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMission'
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: CONFLICT(READY가 아님)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /admin/mission-drafts/{draftId}/discard:
+    post:
+      operationId: discardMissionDraft
+      summary: 초안 버리기 (READY·CHECK_FAILED·FAILED만)
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/DraftId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissionDraft'
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: CONFLICT(GENERATING·ADOPTED·DISCARDED)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 components:
   securitySchemes:
     InternalToken:
@@ -1182,6 +1333,11 @@ components:
       in: query
       description: 시연 학생 여부 (student.is_demo)
       schema: {type: boolean, default: false}
+    DraftId:
+      name: draftId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
     MissionId:
       name: missionId
       in: path
@@ -1319,11 +1475,152 @@ components:
             properties:
               choiceId: {type: string}
               categoryId: {type: string}
+    AchievementStandard:
+      type: object
+      additionalProperties: false
+      description: 성취기준 표 한 행 (ERD 4.1 achievement_standard, #353)
+      required: [code, subject, gradeBand, area, statement, levelScale, levels, curriculumVersion, source, note]
+      properties:
+        code: {type: string, description: 대괄호 없는 성취기준 코드}
+        subject: {type: string}
+        gradeBand: {type: string, enum: ['초1~2', '초3~4', '초5~6', '중1~3']}
+        area: {type: string}
+        statement: {type: string}
+        levelScale: {type: integer, enum: [3, 5]}
+        levels: {type: ['object', 'null'], additionalProperties: {type: string}, description: 평가원 성취수준 문장, 이용 조건 확인 전 null}
+        curriculumVersion: {type: string}
+        source: {type: string}
+        note: {type: [string, 'null'], description: 원문 대조 기록}
+    AchievementStandardPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalElements]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/AchievementStandard'}}
+        page: {type: integer}
+        size: {type: integer}
+        totalElements: {type: integer}
+    AchievementLevels:
+      type: object
+      description: 성취기준별 성취수준 단계 {성취기준 코드 → A~E}. 저장 때는 모양만, 키·단계 수는 게시(초안 요청) 때
+      additionalProperties: {type: string, pattern: '^[A-E]$'}
+    MissionDraftStatus:
+      type: string
+      enum: [GENERATING, READY, CHECK_FAILED, FAILED, ADOPTED, DISCARDED]
+    MissionDraftRequest:
+      type: object
+      required: [standardCodes, thinkingType, gradeMin, gradeMax, inputType]
+      properties:
+        standardCodes: {type: array, minItems: 1, items: {type: string}}
+        achievementLevels:
+          oneOf:
+            - $ref: '#/components/schemas/AchievementLevels'
+            - type: 'null'
+        thinkingType: {$ref: '#/components/schemas/ThinkingType'}
+        gradeMin: {type: integer, minimum: 3, maximum: 6}
+        gradeMax: {type: integer, minimum: 3, maximum: 6}
+        inputType: {$ref: '#/components/schemas/InputType'}
+    MissionDraftFailure:
+      type: object
+      additionalProperties: false
+      required: [check, reason]
+      properties:
+        check: {type: string, description: 'ai REQUIRED·QUESTION_LENGTH·LEAK, learning STANDARD_CODE·ELEMENT_CODE·SHAPE, AI 호출 실패 AI_CALL'}
+        reason: {type: string, description: 'AI_CALL이면 실패 코드(AI_TIMEOUT 등), learning 검사면 게시 누락 코드'}
+    GeneratedDraft:
+      type: object
+      additionalProperties: false
+      description: ai 초안 (ai api-spec 4.2 draft). sceneNote는 그림 제작 메모로 미션에 저장하지 않음
+      required: [title, question, guide, sceneNote, choices, categories, answerKey, exampleAnswer, forbiddenTerms, hints, elements]
+      properties:
+        title: {type: string}
+        question: {type: string}
+        guide: {type: [string, 'null']}
+        sceneNote: {type: [string, 'null']}
+        choices: {type: [array, 'null'], items: {$ref: '#/components/schemas/Choice'}}
+        categories: {type: [array, 'null'], items: {$ref: '#/components/schemas/Choice'}}
+        answerKey:
+          oneOf:
+            - $ref: '#/components/schemas/AnswerKey'
+            - type: 'null'
+        exampleAnswer: {type: [string, 'null']}
+        forbiddenTerms: {type: array, items: {type: string}}
+        hints: {type: array, items: {type: string}}
+        elements:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, label, description, goodThought, standardCode]
+            properties:
+              code: {type: string}
+              label: {type: string}
+              description: {type: string}
+              goodThought: {type: boolean}
+              standardCode: {type: [string, 'null']}
+    MissionDraft:
+      type: object
+      additionalProperties: false
+      description: LLM 미션 초안 (api-spec 4.1, state-diagram 3.4, #353)
+      required: [draftId, status, attempts, maxAttempts, input, checkResults, draft, failureCode, versions, missionId, requestedBy, createdAt, updatedAt]
+      properties:
+        draftId: {type: string, format: uuid}
+        status: {$ref: '#/components/schemas/MissionDraftStatus'}
+        attempts: {type: integer, description: 생성 시도 횟수 (AI 호출 실패 포함)}
+        maxAttempts: {type: integer}
+        input:
+          type: object
+          additionalProperties: false
+          required: [standardCodes, achievementLevels, thinkingType, gradeMin, gradeMax, inputType]
+          properties:
+            standardCodes: {type: array, items: {type: string}}
+            achievementLevels:
+              oneOf:
+                - $ref: '#/components/schemas/AchievementLevels'
+                - type: 'null'
+            thinkingType: {$ref: '#/components/schemas/ThinkingType'}
+            gradeMin: {type: integer}
+            gradeMax: {type: integer}
+            inputType: {$ref: '#/components/schemas/InputType'}
+        checkResults:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [attempt, failures]
+            properties:
+              attempt: {type: integer}
+              failures: {type: array, items: {$ref: '#/components/schemas/MissionDraftFailure'}}
+        draft:
+          oneOf:
+            - $ref: '#/components/schemas/GeneratedDraft'
+            - type: 'null'
+        failureCode: {type: [string, 'null'], description: '마지막 AI 호출 실패 (AI_TIMEOUT·AI_UNAVAILABLE·AI_BAD_RESPONSE·AI_CIRCUIT_OPEN)'}
+        versions:
+          type: object
+          additionalProperties: false
+          required: [prompt, model]
+          properties:
+            prompt: {type: [string, 'null']}
+            model: {type: [string, 'null']}
+        missionId: {type: [string, 'null'], format: uuid}
+        requestedBy: {type: string, format: uuid}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    MissionDraftPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalElements]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/MissionDraft'}}
+        page: {type: integer}
+        size: {type: integer}
+        totalElements: {type: integer}
     AdminMission:
       type: object
       additionalProperties: false
       description: 관리자 미션 (api-spec 3.10·4.1). current*는 편집 중 최신, published*는 학생에게 제공하는 공개 버전
-      required: [missionId, code, status, demoOnly, currentVersion, currentRubricVersion, publishedVersion, publishedRubricVersion, versions, rubrics, reviews]
+      required: [missionId, code, status, demoOnly, currentVersion, currentRubricVersion, publishedVersion, publishedRubricVersion, versions, rubrics, reviews, source]
       properties:
         missionId: {type: string, format: uuid}
         code: {type: string}
@@ -1352,10 +1649,11 @@ components:
               comment: {type: [string, 'null']}
               reviewerId: {type: string, format: uuid}
               createdAt: {type: string, format: date-time}
+        source: {type: string, enum: [MANUAL, LLM_DRAFT], description: '처음 만든 방식 (#353): 사람 작성 MANUAL, 초안 채택 LLM_DRAFT'}
     AdminMissionVersion:
       type: object
       additionalProperties: false
-      required: [version, title, subject, gradeMin, gradeMax, thinkingType, inputType, question, guide, sceneUri, staticSceneUri, achievementStandards, choices, categories, answerUnit, inputTemplate, createdAt]
+      required: [version, title, subject, gradeMin, gradeMax, thinkingType, inputType, question, guide, sceneUri, staticSceneUri, achievementStandards, choices, categories, answerUnit, inputTemplate, createdAt, achievementLevels]
       properties:
         version: {type: integer}
         title: {type: string}
@@ -1374,10 +1672,14 @@ components:
         answerUnit: {type: [string, 'null']}
         inputTemplate: {type: array, items: {type: string}}
         createdAt: {type: string, format: date-time}
+        achievementLevels:
+          oneOf:
+            - $ref: '#/components/schemas/AchievementLevels'
+            - type: 'null'
     AdminRubricElement:
       type: object
       additionalProperties: false
-      required: [code, label, description, points, commonErrors, goodThought, judgeVerified]
+      required: [code, label, description, points, commonErrors, goodThought, judgeVerified, standardCode]
       properties:
         code: {type: string, description: "FN 1.5 표준 요소: 표준 코드(ANALYZE_RELATION 등)·고유 e+숫자·정답 ANSWER_KEY(고르기·순서·분류)·FINAL_ANSWER(풀이 단계 최종 답, #79) (#262)"}
         label: {type: string}
@@ -1386,6 +1688,7 @@ components:
         commonErrors: {type: array, items: {type: string}}
         goodThought: {type: boolean}
         judgeVerified: {type: boolean}
+        standardCode: {type: [string, 'null'], description: '요소를 구체화한 성취기준 (#353). 정답 요소·#336 전 요소는 null'}
     AdminRubric:
       type: object
       additionalProperties: false
@@ -1441,6 +1744,10 @@ components:
         answerUnit: {type: [string, 'null']}
         inputTemplate: {type: array, items: {type: string}}
         demoOnly: {type: boolean}
+        achievementLevels:
+          oneOf:
+            - $ref: '#/components/schemas/AchievementLevels'
+            - type: 'null'
     AdminRubricRequest:
       type: object
       properties:
@@ -1457,6 +1764,7 @@ components:
               commonErrors: {type: array, items: {type: string}}
               goodThought: {type: boolean, default: false}
               judgeVerified: {type: boolean, default: false}
+              standardCode: {type: [string, 'null'], description: '요소를 구체화한 성취기준 (#353). 미션 성취기준 안인지는 게시 때'}
         answerKey: {$ref: '#/components/schemas/AnswerKey'}
         exampleAnswer: {type: [string, 'null']}
         forbiddenTerms: {type: array, items: {type: string}}

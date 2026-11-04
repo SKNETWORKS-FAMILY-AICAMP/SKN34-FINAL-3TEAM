@@ -37,18 +37,7 @@ class AiClient(
     private val objectMapper: ObjectMapper,
 ) {
     private val client: RestClient = clientFactory.create("ai")
-    internal val circuitBreaker: CircuitBreaker = CircuitBreaker.of(
-        "ai",
-        CircuitBreakerConfig.custom()
-            .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
-            .slidingWindowSize(WINDOW)
-            .minimumNumberOfCalls(WINDOW)
-            .failureRateThreshold(FAILURE_RATE)
-            .waitDurationInOpenState(OPEN_DURATION)
-            .permittedNumberOfCallsInHalfOpenState(1)
-            .recordException { it is AiCallException && it.countsAsFailure }
-            .build(),
-    )
+    internal val circuitBreaker: CircuitBreaker = aiCircuitBreaker("ai")
 
     fun judge(request: AiJudgeRequest): AiJudgment = post("/internal/judgments", request, AiJudgment::class.java)
 
@@ -61,31 +50,9 @@ class AiClient(
         throw AiCallException("AI_CIRCUIT_OPEN", retryable = true, countsAsFailure = false, open)
     }
 
-    private fun <T : Any> call(path: String, request: Any, type: Class<T>): T = try {
-        client.post().uri(path).contentType(MediaType.APPLICATION_JSON).body(request).retrieve().body(type)
-            ?: throw AiCallException("AI_BAD_RESPONSE", retryable = false, countsAsFailure = false)
-    } catch (error: RestClientResponseException) {
-        if (error.statusCode.is5xxServerError) {
-            throw AiCallException("AI_UNAVAILABLE", retryableOf(error), countsAsFailure = true, error)
-        }
-        throw AiCallException("AI_BAD_RESPONSE", retryable = false, countsAsFailure = false, error)
-    } catch (error: ResourceAccessException) {
-        throw AiCallException(transportFailureCode(error), retryable = true, countsAsFailure = true, error)
-    } catch (error: RestClientException) {
-        // 응답 본문을 계약 형식으로 읽지 못함
-        throw AiCallException("AI_BAD_RESPONSE", retryable = false, countsAsFailure = false, error)
-    }
-
-    /** ai 503 본문의 retryable (LLM 인증 실패 등은 false, api-spec 4.2). 없으면 다시 시도 가능으로 봄 */
-    private fun retryableOf(error: RestClientResponseException): Boolean =
-        error.statusCode.value() != HttpStatus.SERVICE_UNAVAILABLE.value() ||
-            runCatching { objectMapper.readTree(error.responseBodyAsString).path("retryable").asBoolean(true) }.getOrDefault(true)
+    private fun <T : Any> call(path: String, request: Any, type: Class<T>): T = postToAi(client, objectMapper, path, request, type)
 
     companion object {
-        private const val WINDOW = 20
-        private const val FAILURE_RATE = 50f
-        private val OPEN_DURATION: Duration = Duration.ofSeconds(30)
-
         /**
          * 전송 오류 분류: 응답 시간 초과만 AI_TIMEOUT, 나머지는 연결 실패 AI_UNAVAILABLE.
          * 연결 시간 초과(HttpConnectTimeoutException)는 HttpTimeoutException의 하위 타입이지만 연결 실패
@@ -96,3 +63,41 @@ class AiClient(
         }
     }
 }
+
+/**
+ * ai POST 한 번과 오류 분류 (아키텍처 1.3). 판정·되묻기(AiClient)와 미션 초안(MissionDraftAiClient)이 같은 분류를 씀:
+ * 5xx는 AI_UNAVAILABLE(서킷 실패), 전송 오류는 AI_TIMEOUT·AI_UNAVAILABLE(서킷 실패), 4xx·계약 밖 본문은 AI_BAD_RESPONSE
+ */
+internal fun <T : Any> postToAi(client: RestClient, objectMapper: ObjectMapper, path: String, request: Any, type: Class<T>): T = try {
+    client.post().uri(path).contentType(MediaType.APPLICATION_JSON).body(request).retrieve().body(type)
+        ?: throw AiCallException("AI_BAD_RESPONSE", retryable = false, countsAsFailure = false)
+} catch (error: RestClientResponseException) {
+    if (error.statusCode.is5xxServerError) {
+        throw AiCallException("AI_UNAVAILABLE", aiRetryableOf(objectMapper, error), countsAsFailure = true, error)
+    }
+    throw AiCallException("AI_BAD_RESPONSE", retryable = false, countsAsFailure = false, error)
+} catch (error: ResourceAccessException) {
+    throw AiCallException(AiClient.transportFailureCode(error), retryable = true, countsAsFailure = true, error)
+} catch (error: RestClientException) {
+    // 응답 본문을 계약 형식으로 읽지 못함
+    throw AiCallException("AI_BAD_RESPONSE", retryable = false, countsAsFailure = false, error)
+}
+
+/** ai 503 본문의 retryable (LLM 인증 실패 등은 false, api-spec 4.2). 없으면 다시 시도 가능으로 봄 */
+private fun aiRetryableOf(objectMapper: ObjectMapper, error: RestClientResponseException): Boolean =
+    error.statusCode.value() != HttpStatus.SERVICE_UNAVAILABLE.value() ||
+        runCatching { objectMapper.readTree(error.responseBodyAsString).path("retryable").asBoolean(true) }.getOrDefault(true)
+
+/** ai 서킷 설정 (P12): 최근 20건 중 실패 50% 이상이면 30초 차단, half-open 1건. 4xx·계약 밖 응답은 실패로 세지 않음 */
+internal fun aiCircuitBreaker(name: String): CircuitBreaker = CircuitBreaker.of(
+    name,
+    CircuitBreakerConfig.custom()
+        .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
+        .slidingWindowSize(20)
+        .minimumNumberOfCalls(20)
+        .failureRateThreshold(50f)
+        .waitDurationInOpenState(Duration.ofSeconds(30))
+        .permittedNumberOfCallsInHalfOpenState(1)
+        .recordException { it is AiCallException && it.countsAsFailure }
+        .build(),
+)

@@ -5,6 +5,7 @@ import org.springframework.http.client.JdkClientHttpRequestFactory
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
 import java.net.http.HttpClient
+import java.time.Duration
 
 /**
  * 서비스 간 내부 호출용 RestClient 생성.
@@ -16,14 +17,15 @@ class InternalRestClientFactory(
     private val properties: AppProperties,
     private val builder: RestClient.Builder,
 ) {
-    fun create(service: String): RestClient {
+    /** readTimeout은 기본 app.internal.read-timeout(35초, P12). 미션 초안 ai 호출만 따로 넘김(#353) */
+    fun create(service: String, readTimeout: Duration = properties.internal.readTimeout): RestClient {
         val baseUrl = requireNotNull(properties.services[service]) { "app.services.$service 설정 없음" }
         val httpClient = HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(properties.internal.connectTimeout)
             .build()
         val requestFactory = JdkClientHttpRequestFactory(httpClient).apply {
-            setReadTimeout(properties.internal.readTimeout)
+            setReadTimeout(readTimeout)
         }
         return builder.clone()
             .baseUrl(baseUrl)
