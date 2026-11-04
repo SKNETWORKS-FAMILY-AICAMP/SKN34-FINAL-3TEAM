@@ -290,3 +290,46 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 - 영향: `/internal/versions` 응답에 `reportTemplate` 키가 추가된다(OpenAPI `required` 갱신). 미보유 활성 버전이면 설정 제안·`/internal/versions`가 `503 AI_PROMPT_VERSION_UNAVAILABLE`이고 readiness `versions`는 DOWN이다. core 관리자 모델 레지스트리는 이름·scope를 자유 입력으로 받으므로 core·웹 변경 없이 `PROMPT`/`reportTemplate`/`ai/report-template`으로 활성화·롤백할 수 있다. core는 `/internal/versions`를 호출하지 않는다.
 - core `AiClient.reportTemplate`에는 분석 스트림 `ai-analysis`와 분리한 `ai-report-template` 서킷(최근/최소 10건·실패율 50%·30초·half-open 1건)을 두었다. 공유하면 설정 제안 실패가 분석 대화를 막고, 설정 제안은 호출량이 적어 20건 창으로는 거의 열리지 않기 때문이다. 4xx는 성공, 전송 오류·시간 초과·5xx·빈 본문은 실패로 센다. 기준은 아키텍처 1.3.
 - 검증: ai `tests/test_active_versions.py`(활성 본문 선택·미보유 503), `tests/test_versions.py`, core `AiClientTest`(서킷 열림·HTTP 미호출·half-open 회복·4xx 미집계, `ai-analysis` 서킷 유지).
+
+## 9. RunPod sLLM 전환: 생각 끄기·프롬프트 개선·리포트 Gemma 연결 (2026-11-03~04)
+
+### sLLM 설정과 프롬프트
+
+- `OPENAI_DISABLE_THINKING`(기본 `false`): vLLM에 올린 생각 모델(Qwen3 계열 등)에 요청마다 `chat_template_kwargs.enable_thinking=false`를 보낸다. 켜지 않으면 생각 과정이 답에 섞이거나 토큰 한도를 다 써 JSON 검증·마감(P12)에 걸렸다(RunPod vLLM + `Qwen/Qwen3.5-35B-A3B-GPTQ-Int4`로 확인, 끄면 리포트 서술 4~8초·분석 대화 2~3초). OpenAI에는 보내지 않는다
+- `analysis@3`: 원문을 `{"미션","글"}` 필드로 나누고 번호(S1)를 뺐다. 따옴표는 아이 글에만 쓰고(제안 질문 옳음·틀림 예시), 기간은 "이번 기간"이나 조회 날짜로만, 한국어로만, 아이 행동에 높임말 금지. sLLM이 번호·미션 제목을 인용에 붙이거나 제안 질문을 따옴표로 감싸 대조에 실패하던 비율을 줄였다(Qwen 3건 중 1건 → 10건 중 7건 통과)
+- `report@2`: 어려움을 "어려웠어"로 남긴 돌아보기 글을 따옴표 없이 한 문장으로 전한다. 돌아보기는 인용 후보가 아니어서 큰따옴표로 옮기면 report 대조에서 템플릿으로 바뀐다
+- 두 버전 모두 core에 명시적으로 활성화된 이전 버전(`analysis@2`·`report@1`)이 있으면 새 이미지가 503을 낸다. 배포 후 새 버전을 활성화하거나 활성 항목이 없음을 확인한다
+
+### 리포트 서술 Gemma 서버리스 연결
+
+주간 리포트 서술(`REPORT_NARRATIVE`)만 RunPod Gemma로 보낸다. 판정·되묻기·분석 대화는 기존 `LLM_PROVIDER`를 유지한다.
+
+#### 실행 설정
+
+- `REPORT_LLM_PROVIDER=runpod_gemma` (`default`는 기존 공통 제공자)
+- `REPORT_GEMMA_MODEL=gemma-4-26b-a4b-it-qat-awq-int4`
+- `SAGOMUNGCHI_SLLM_SERVERLESS_gemma`: 해당 RunPod v2 엔드포인트
+- `SAGOMUNGCHI_SLLM_SERVERLESS_KEY_gemma`: 해당 엔드포인트 전용 키
+- 로컬 `.env`와 예제: `REPORT_GEMMA_TIMEOUT=240`, `REPORT_NARRATIVE_READ_TIMEOUT=250`
+
+모델·키·주소와 제한 변수는 `.env.example`·Compose에 연결했다. 키는 브라우저·소스·로그에 포함하지 않는다. 리포트 관련 제한만 늘리고 다른 LLM 요청 15초·내부 읽기 30초는 유지한다. 코드 기본값은 Gemma 120초 / report 내부 읽기 30초이며 실제 실행 설정으로 확장한다.
+
+#### 호출 흐름
+
+`report-worker → /internal/report-narratives → 리포트 전용 LLM → Gemma /run → /status/{id}`.
+
+공식 `openai_route`·`openai_input` 형식에 실제 모델명과 JSON schema 출력 형식을 명시한다. 기존 서술·저녁 질문·인용 검증과 모델·사용량 기록은 유지한다. 키가 없으면 실패하며 다른 유료 모델로 자동 대체하지 않는다. 불확실한 요청을 재접수하지 않고 시간 초과·요청 취소 시 접수한 작업만 취소한다. 기존 소비자의 재시도 정책, 학생의 학부모 공개 설정과 서술 사용 조건은 그대로 적용한다.
+
+#### 실제 검증 결과
+
+- 가상 짧은 요청 COMPLETED: queue delay 61041ms / execution 354ms. 실제 응답 모델명과 JSON 응답 확인.
+- 가상 전체 리포트 분량(스키마 강제 없음) COMPLETED: queue delay 155502ms / execution 3069ms, 입력1007·출력239토큰. Markdown 코드 블록으로 원래 JSON 파서는 거절했다. 앱에서는 구조화 출력을 유지한다.
+- 초기24초 및 이후120초 제한에서는 실제 워커 호출이 503으로 실패했다. 실측 대기에 따라 리포트 제한을 240/250초로 조정했다.
+- 최종 실제 `report-worker → AI → Gemma` 호출 SUCCESS: **224.32초**, 모델 `gemma-4-26b-a4b-it-qat-awq-int4`, source `LLM`, 서술195자·인용1건. report측 `NarrativeResponse` 파싱을 통과했다. 자체 제작 가상 기록과 UUID를 사용했으며 실제 학생 기록은 보내지 않았다. 이 검증은 AI 서술 응답 계약까지이며 실제 사용자 리포트 생성·PDF 검증을 포함하지 않는다.
+- 최종 응답 증거는 실행 폴더 `verification/synthetic-gemma-report-proof.json`에 보관했다(가상 입력의 출력만).
+- AI 측 단위·회귀32개 + report 측 서술·제한27개 = **59개 통과**. 변경 파일 Ruff, git diff --check 통과.
+- AI·리포트 API healthy, 리포트 워커 running, 재시작0. 최신 파이프라인, report DB `20261102_05`, 로컬 MinIO 버킷 접근 확인. DB는 적용 전 백업했고 비어 있던 로컬 MinIO 비밀번호만 생성했다.
+
+#### 남은 운영 문제
+
+로그상 워커 준비에 약100~137초가 걸리지만, 준비 완료 후에도 작업 배정 지연이 불규칙하다. 짧은 요청·전체 분량 요청은 실제 추론보다 큐 대기가 훨씬 길었다. 최종 앱 호출도224초 걸려 즉시 응답 품질은 확보하지 못했다. 키의 모델 호출 권한은 유효하지만 관리 API는403이어서 스케일링·배포 설정을 확인하지 못했다. GPU 종류·원격 워커 수·리전·과금 설정은 변경하지 않았다.

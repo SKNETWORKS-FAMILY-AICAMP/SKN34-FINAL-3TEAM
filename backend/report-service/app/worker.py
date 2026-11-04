@@ -129,7 +129,7 @@ async def run(generator=None, *, display_names: DisplayNameProvider | None = Non
                 generator = build_pipeline(
                     display_names if display_names is not None else core,
                     LearningClient(learning_http),
-                    AiClient(ai_http),
+                    AiClient(ai_http, timeout=settings.report_narrative_read_timeout),
                     storage(),
                 )
             service = GenerationService(factory, locks, generator, codec)

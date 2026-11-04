@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     event_retention_days: int = Field(default=90, ge=1)
     http_connect_timeout: float = 2.0
     http_read_timeout: float = 30.0  # 내부 호출 기본값 (P12 목록 밖)
+    # 비동기 주간 리포트 전용. Gemma 큐 대기를 허용할 때 ai 측 제한보다 크게 설정.
+    report_narrative_read_timeout: float = Field(default=30, gt=0, le=330)
     database_url: str
     learning_url: str = "http://localhost:8081"
     ai_url: str = "http://localhost:8000"

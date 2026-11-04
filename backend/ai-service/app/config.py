@@ -3,6 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -63,6 +64,12 @@ class Settings(BaseSettings):
     followup_deadline: float = 33.0
     # 리포트 서술 전체 마감(초). report→ai 읽기 30초보다 짧게, 재시도는 남은 시간 안에서만
     narrative_deadline: float = 28.0
+    # 주간 리포트만 Gemma 서버리스로 전환. 다른 AI 기능의 제공자는 그대로 둔다.
+    report_llm_provider: Literal["default", "runpod_gemma"] = "default"
+    report_gemma_model: str = "gemma-4-26b-a4b-it-qat-awq-int4"
+    report_gemma_timeout: float = Field(default=120, gt=0, le=300)
+    sagomungchi_sllm_serverless_gemma: str | None = None
+    sagomungchi_sllm_serverless_key_gemma: str | None = Field(default=None, repr=False)
 
     # 분석 대화 전체 마감(초). core 기준 전체 120초(P12)보다 짧게, LLM 호출은 이 안에서만
     analysis_deadline: float = 110.0

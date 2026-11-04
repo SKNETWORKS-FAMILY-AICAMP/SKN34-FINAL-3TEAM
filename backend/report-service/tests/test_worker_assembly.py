@@ -79,6 +79,7 @@ def test_default_run_wires_configured_clients_queues_relay_and_releases_resource
         assert provider._client is clients["http://core.test"]
         assert learning._client is clients["http://learning.test"]
         assert ai._client is clients["http://ai.test"]
+        assert ai._timeout.read == 250  # 리포트 서술 호출만 설정값으로 늘림
         assert storage is captured["storage"]
         if pipeline_failure:
             raise RuntimeError("synthetic pipeline startup failure")
@@ -95,6 +96,7 @@ def test_default_run_wires_configured_clients_queues_relay_and_releases_resource
             core_url="http://core.test",
             learning_url="http://learning.test",
             ai_url="http://ai.test",
+            report_narrative_read_timeout=250,
             consumer_max_retries=3,
             consumer_prefetch=1,
         ),

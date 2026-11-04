@@ -38,10 +38,13 @@ class NarrativeResponse(ResponseModel):
 
 
 class AiClient:
-    def __init__(self, client: httpx.AsyncClient) -> None:
+    def __init__(self, client: httpx.AsyncClient, *, timeout: float = 30) -> None:
         self._client = client
+        self._timeout = httpx.Timeout(timeout, connect=2)
 
     async def narrative(self, payload: dict) -> NarrativeResponse:
-        response = await self._client.post("/internal/report-narratives", json=payload)
+        response = await self._client.post(
+            "/internal/report-narratives", json=payload, timeout=self._timeout
+        )
         response.raise_for_status()
         return NarrativeResponse.model_validate(response.json())

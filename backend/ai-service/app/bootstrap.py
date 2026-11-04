@@ -17,6 +17,7 @@ from app.followup.router import router as followup_router
 from app.health.router import router as health_router
 from app.judgment.router import router as judgment_router
 from app.llm.providers import create_llm
+from app.llm.report import create_report_llm
 from app.messaging.connection import AmqpConnection
 from app.messaging.consumer import ModelVersionConsumer
 from app.messaging.publisher import EventPublisher, UsagePublisher
@@ -57,6 +58,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     usage_recorder = BackgroundUsageRecorder(app.state.usage_publisher)
     app.state.llm = create_llm(settings, recorder=usage_recorder)
     app.state.llm.langfuse = langfuse
+    app.state.report_llm = create_report_llm(settings, app.state.llm, usage_recorder)
+    app.state.report_llm.langfuse = langfuse
 
     async def rabbitmq_ready() -> bool:
         return amqp.is_connected

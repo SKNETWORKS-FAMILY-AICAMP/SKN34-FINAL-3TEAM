@@ -34,6 +34,11 @@ class NarrativeService:
 
     async def generate(self, request: NarrativeRequest) -> NarrativeResponse:
         prompt = self._versions.prompt("reportNarrative")
+        budget = (
+            self._settings.report_gemma_timeout + 3
+            if self._settings.report_llm_provider == "runpod_gemma"
+            else self._settings.narrative_deadline
+        )
         try:
             generated = await self._llm.generate(
                 system=prompt.body.SYSTEM
@@ -49,7 +54,7 @@ class NarrativeService:
                 call_type="REPORT_NARRATIVE",
                 prompt_version=prompt.version,
                 max_tokens=2048,
-                deadline=time.monotonic() + self._settings.narrative_deadline,
+                deadline=time.monotonic() + budget,
             )
         except LlmUnavailable as exc:
             raise ApiError(503, "AI_UNAVAILABLE", "AI 처리 실패", retryable=exc.retryable) from exc
