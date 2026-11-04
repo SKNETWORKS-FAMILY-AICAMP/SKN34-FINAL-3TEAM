@@ -246,7 +246,7 @@
     "enabled": false
   },
   "image": {
-    "digest": "sha256:1e8e1d4b4d6270af094b0811d0c29e71cdbdb498c6132284637bdc5cad4a9997",
+    "digest": "sha256:960ce7b4202ac73415ecbbc0d9e167e31b491431f6f7f3437a4ceea0957387dc",
     "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/core-service"
   },
   "ingress": {

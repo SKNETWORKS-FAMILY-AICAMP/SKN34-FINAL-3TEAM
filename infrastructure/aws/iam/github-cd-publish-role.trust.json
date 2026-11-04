@@ -9,9 +9,10 @@
       "Action": "sts:AssumeRoleWithWebIdentity",
       "Condition": {
         "StringEquals": {
-          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": "repo:SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM:ref:refs/heads/main",
-          "token.actions.githubusercontent.com:job_workflow_ref": "SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/.github/workflows/cd-release.yml@refs/heads/main"
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": "repo:SKNETWORKS-FAMILY-AICAMP@169222902/SKN34-FINAL-3TEAM@1415225916:ref:refs/heads/main:job_workflow_ref:SKNETWORKS-FAMILY-AICAMP*/SKN34-FINAL-3TEAM*/.github/workflows/cd-release.yml@refs/heads/main"
         }
       }
     }

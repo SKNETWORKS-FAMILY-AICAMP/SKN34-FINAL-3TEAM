@@ -27,6 +27,8 @@
 
 publish job이 ECR에 이미지를 올릴 때만 쓴다. EKS 권한은 없다. trust는 main의 `cd-release.yml` job만 허용한다.
 
+AWS IAM은 GitHub 토큰의 `aud`·`sub`만 조건으로 비교하므로 workflow 제한은 `sub`에 넣는다. 저장소 OIDC subject를 `repo`·`context`·`job_workflow_ref`로 바꾸고(B 표), 이 저장소는 변경 불가 subject라 `sub`가 `repo:SKNETWORKS-FAMILY-AICAMP@169222902/SKN34-FINAL-3TEAM@1415225916:ref:refs/heads/main:job_workflow_ref:…/cd-release.yml@refs/heads/main` 형식이다. trust는 이 값을 `StringLike`로 맞춘다.
+
 ```powershell
 $profile = 'sagomungchi-provided'
 aws iam list-open-id-connect-providers --profile $profile
@@ -49,6 +51,7 @@ aws iam put-role-policy --profile $profile --role-name sagomungchi-demo-github-c
 | Environment `prod` 변수 | `CD_BASE_URL` = 데모 CloudFront https origin(경로 없음) |
 | Repository 변수 | `CD_AWS_ROLE_ARN` = `arn:aws:iam::347161580747:role/sagomungchi-demo-github-cd-publish`, `CD_AWS_REGION` = `ap-northeast-2`, `CD_ECR_REGISTRY` = `347161580747.dkr.ecr.ap-northeast-2.amazonaws.com` |
 | Settings → Actions → General | Fork pull request workflows: 외부 기여자 승인 필요 |
+| OIDC subject (API) | `gh api -X PUT repos/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/actions/oidc/customization/sub -F use_default=false -f "include_claim_keys[]=repo" -f "include_claim_keys[]=context" -f "include_claim_keys[]=job_workflow_ref"` |
 
 2026-11-04 적용 완료(위 표 그대로, 외부 기여자 승인은 `all_external_contributors`). `policy.json`의 `environmentProtectionVerified`를 true로 바꿨다.
 
@@ -74,6 +77,7 @@ EKS API 공개 접근이 작업자 공인 IP로 제한돼 있어 적용은 이 P
 `verify_cd_deployment.py` 머리말의 형식이다. 시연 전용(`is_demo=true`) 계정·학생·공개 미션만 쓴다. 판정·결제는 호출하지 않는다.
 
 - `studentDeviceCookie`: 그 학생으로 등록한 브라우저의 `student_device` 쿠키(90일)
+- `missionId`: 학생 화면 `GET /api/v1/missions` 응답에서 `inputType`이 fixture `answer.inputType`(기본 `NARRATIVE`)과 같고 아직 시작하지 않은 미션. 다르면 답변 제출이 400(`VALIDATION_FAILED`)이다. 경로 확인마다 시도·답변이 하나씩 생기므로 실행 전에 다른 미션으로 바꾼다.
 - `parentRefreshCookie`: 같은 학부모로 Google 로그인한 브라우저의 `sagomungchi_refresh` 쿠키. **최초 로그인부터 최대 7일**이고 쓸 때마다 회전한다. 스크립트가 새 값을 파일에 바로 저장한다. 배포 전에 7일이 지났으면 다시 로그인해 넣는다. 같은 값을 브라우저와 동시에 쓰면 세션이 폐기되므로 fixture용 로그인은 따로 한다.
 
 ### E. 실행 스위치

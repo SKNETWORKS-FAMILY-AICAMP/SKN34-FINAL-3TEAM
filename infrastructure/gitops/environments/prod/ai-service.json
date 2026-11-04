@@ -56,7 +56,7 @@
     "enabled": false
   },
   "image": {
-    "digest": "sha256:8bcad7c068c063cda92bef79a239b18f9b2fe46634a93bf4b284948d2be0b1f0",
+    "digest": "sha256:e2f170014aaefad7e11a50b8456f0d5e269b52bc4e3c02175190223c62ebdb1c",
     "pullPolicy": "IfNotPresent",
     "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/ai-service"
   },
