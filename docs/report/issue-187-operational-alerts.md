@@ -338,3 +338,48 @@ kind에서 5xx·지연 초과를 실제로 일으키지는 않았다(대역으�
 
 - 실패 요청 단일 trace(완료 조건 2): 저장소 선택(Tempo 권장) 후 Collector traces·agent traces·Python OTel trace와 시나리오 검증
 - ai·report(Python) 자체 HTTP 지표, 임계값 실측 조정
+
+## 실패 요청 단일 trace (Tempo, 2026-11-04)
+
+사용자 결정으로 trace 저장소는 Tempo다. PR 없이 이 브랜치에서 진행했고 AWS 적용은 하지 않았다.
+
+### 구현
+
+| 위치 | 내용 |
+|---|---|
+| observability chart | 선택 구성 `tempo.enabled`: Tempo 2.10.10 단일 바이너리, Collector `otlp/tempo` traces pipeline, Grafana datasource `Tempo`(uid `tempo`), NetworkPolicy(Collector→4317, Grafana→3200), 선택 PVC. Collector·Grafana는 Tempo를 켜고 끌 때 annotation으로 재생성(설정을 시작 시에만 읽음, kind에서 Grafana datasource 누락으로 발견) |
+| app-service chart | `tracing.enabled`: Java agent는 `OTEL_TRACES_EXPORTER=otlp`, agent 없는 서비스는 같은 `OTEL_*` 값을 받아 자체 SDK에서 사용 |
+| core | `TraceContexts`(OTel API): `OutboxWriter`가 저장 시점 활성 span(없으면 요청 헤더 값)을 봉투 `traceparent`에 넣고, `OutboxRelay`가 그 context 아래에서 발행해 agent가 AMQP 헤더를 만든다 |
+| report-service | `app/tracing.py`(OTel SDK, `OTEL_TRACES_EXPORTER=otlp`일 때만 export). 소비 span의 부모를 봉투 `traceparent`로 두고 하위 HTTP·결과 이벤트에 소비 span을 넘긴다. 결과 이벤트에 AMQP `traceparent` 헤더. 실패는 `messaging.outcome`·`error.type`만 기록. 의존성 `opentelemetry-sdk`·`opentelemetry-exporter-otlp-proto-http` 1.45.2(ai-service와 같은 버전) |
+| prod values(미적용) | observability `tempo`(72h, gp3 2Gi), core·learning·report-worker `tracing.enabled`, report-worker Collector egress |
+
+### 검증
+
+| 범위 | 결과 |
+|---|---|
+| core 테스트(JDK 21 Gradle 컨테이너, platform-data definitions·contracts 포함) | 전체 502개 실패 0. `TraceContextsTest` 3개, 비용 지표 2개, relay를 포함한 `MessagingIntegrationTest` 실행 확인. 앞 절의 179건 실패는 컨테이너에 core 밖 파일을 넣지 않아 생긴 것이었고 이번 실행에서 해소 |
+| report-service 테스트(로컬 uv) | 새 `test_tracing.py` 7개 포함 consumer 테스트 통과, ruff 통과. 전체 344개 중 PDF 렌더 10건은 이 PC에 Playwright Chromium이 없어 실패(develop 원본도 같은 원인으로 실패) |
+| Helm | 모든 환경 파일 25개 렌더를 develop과 비교해 의도한 prod 4개(observability·core·learning·report-worker) 외 동일. `verify_chart.py` 38개 확인 exit 0(Tempo·trace 렌더 검사 추가) |
+| kind 단일 trace | 아래 |
+
+kind 시나리오(2026-11-04 14:25~14:46 KST): Tempo와 core·learning(agent trace)·report-worker(새 이미지·OTLP env, 임시 NetworkPolicy)를 켠 뒤,
+존재하지 않는 학생·작업 ID로 `report.generate`를 `cmd.direct`에 1건 발행했다. 봉투와 AMQP 헤더에 같은 `traceparent`를 넣어 core outbox relay가 발행하는 형태를 흉내 냈다.
+trace `e08ac021…` 하나에 span 67개가 모였다.
+
+1. core 감사 소비자와 report-worker 소비 span(비동기)
+2. worker → core `GET /internal/students/{studentId}/profile`(동기, core SERVER span이 worker span의 자식)
+3. worker가 발행한 `report.started`·`report.failed`를 core가 소비(비동기, AMQP 헤더로 연결)
+4. core가 "Unknown report job"으로 처리 실패 → 재시도 큐 발행 → 1·5·15분 뒤 재소비 3회 → 마지막에 `core.report.events.dlq`로 이동(2건)
+
+첫 발행만 core relay 대신 직접 했다. relay가 저장된 trace 아래에서 발행하는 부분은 단위·통합 테스트로 확인했고 kind에서는 실행하지 않았다.
+로그인한 사용자의 HTTP 요청에서 시작하는 경로(리포트 재생성 등)는 kind에 리포트·관리자 계정이 없어 실행하지 못했다.
+span 상태는 core 재시도 처리기·worker 업무 실패가 예외를 밖으로 내지 않아 ERROR가 아니라 재시도 발행·DLQ 이동으로 드러난다.
+
+정리: DLQ 2건(제 학생·작업 ID 확인 후 제거), report DB의 해당 학생 `weekly_report` 1행·발행 완료 `outbox_event` 2행 삭제,
+core·learning `OTEL_TRACES_EXPORTER=none`·report-worker 원래 이미지와 env 복구, 임시 NetworkPolicy·kind 시험 이미지 삭제, observability local values(revision 11).
+core `event_log`에는 이 시험 이벤트의 감사 메타데이터 3행이 남아 있다(감사 기록이라 지우지 않음). 학생·작업 ID는 실제 데이터와 무관한 임의 UUID다.
+
+### 완료 조건 상태
+
+- 실패 요청 추적(동기·비동기 한 trace): kind에서 비동기 명령 → worker → 동기 HTTP → 결과 이벤트 → 실패·재시도·DLQ가 한 trace로 저장·조회됨. 사용자 HTTP 요청 시작점과 prod 실행은 남음
+- 경보 디스코드 수신: prod 적용 후 확인 필요(main 병합·배포 승인)

@@ -39,9 +39,22 @@ core 공개 API 경로로 인증·학습 저장·AI 처리·리포트·결제를
 지표 수집 자체가 사라지면 `app-metrics-missing`이 알린다. 4xx는 사용자 입력 오류로 보고 제외한다. Python 서비스(ai·report)의 자체 HTTP 지표는 아직 없다.
 prod는 core·learning의 Java agent와 Collector egress를 켜야 이 규칙들이 값을 갖는다. app-service chart는 env의 `JAVA_TOOL_OPTIONS`를 agent 옵션 뒤에 합친다.
 
+## 실패 요청 trace
+
+저장소는 Tempo(observability chart 선택 구성)다. 아키텍처의 "HTTP 헤더와 이벤트 봉투 양쪽 전파"를 다음처럼 잇는다.
+
+- core: `OutboxWriter`가 저장 시점 활성 span(없으면 요청 헤더 값)을 봉투 `traceparent`에 넣는다. `OutboxRelay`는 스케줄러 스레드에서
+  그 값을 부모 context로 열고 발행해, Java agent가 PRODUCER span과 AMQP `traceparent` 헤더를 만든다.
+- core·learning 소비자와 HTTP 서버/클라이언트는 Java agent가 AMQP·HTTP 헤더로 잇는다.
+- report-worker: 봉투 `traceparent`를 부모로 CONSUMER span을 열고, 하위 HTTP 호출(UserContext 헤더)과 결과 이벤트 봉투에 이 span을 넘긴다.
+  결과 이벤트 발행 시 AMQP `traceparent` 헤더도 붙인다. 실패는 `messaging.outcome`(retry/dlq)·`error.type`만 남기고 예외 메시지는 저장하지 않는다.
+- 업무 ID·학생 ID·메시지 내용은 span attribute에 넣지 않는다(메시지 ID와 큐 이름만). 다만 Java agent의 HTTP span에는 경로 템플릿만 남는다.
+- OTel exporter가 꺼져 있으면 core는 요청 헤더 값만 전달하고 report-worker는 받은 값을 그대로 넘긴다(기존 동작).
+
 ## 남은 경계
 
 - #185 규칙의 target 감시는 `min(up{job=~...})`라 scrape job 자체가 사라지면 발생이 아니라 NoData로 보고된다.
 - 조직 notification policy를 chart가 소유한다. 서비스별 담당이 정해지면 policy 하위 route로 나눈다.
-- 동기·비동기 trace 저장·조회는 아직 없다(저장소 선택 대기, local traces=false).
+- ai·scoring·report-api는 자체 span이 없다. ai 호출 구간은 호출한 쪽 span으로만 보인다.
+- local values는 Tempo·trace를 켜지 않는다. 검증 시 opt-in으로 켠다.
 - 임계값은 초기 기준이다. 실측 부하 기반 조정과 서비스별 담당 라우팅은 후속이다.
