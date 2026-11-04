@@ -571,7 +571,7 @@ backend/report-service/
 | 실행 | Docker Compose | kind 단일 노드 | EKS (eksctl) |
 | 상태 저장소 | 컨테이너 | `platform-data` Helm chart (StatefulSet) | RDS PostgreSQL, S3 / RabbitMQ·Redis는 StatefulSet + EBS gp3 |
 | 이미지 | 로컬 빌드 | GHCR | ECR |
-| 배포 | `docker compose up` | Argo CD (local env) | Argo CD (prod env) |
+| 배포 | `docker compose up` | Argo CD (local env) | 현재 데모: 수동 Helm / 목표: Argo CD (prod env) |
 | Ingress | - | ingress-nginx | AWS LB Controller (ALB) |
 | CNI (NetworkPolicy) | - | Calico (기본 CNI 정책 지원 버전별 상이) | VPC CNI `enableNetworkPolicy: "true"` |
 | 외부 연동 | stub (LLM·토스·Google OAuth, E2E 오버레이) | stub 또는 테스트 키 | LLM API, 토스페이먼츠 테스트 키 |
@@ -585,9 +585,10 @@ backend/report-service/
   - 설계 구성 요소(ALB LB Controller, IRSA, EBS CSI, Cluster Autoscaler, ECR, Secrets Manager) AWS 기본 연동
   - control plane HA·etcd 백업·업그레이드를 AWS가 관리 → 12/7 일정 내 운영 부담 제거
   - 자체 구축도 control plane EC2 필요 → 비용 차이 작음 (EKS 수수료 $0.10/시간)
-- 구성: eksctl(`infrastructure/eks/`), 관리형 노드그룹 2개(4.3), EKS add-on(VPC CNI·CoreDNS·kube-proxy·EBS CSI), IRSA, LB Controller·Cluster Autoscaler는 Argo CD prod 앱(예정, 5장 `argocd/prod/`)
+- 목표 구성: eksctl, 관리형 노드그룹 2개(4.3), EKS add-on(VPC CNI·CoreDNS·kube-proxy·EBS CSI), LB Controller·Cluster Autoscaler의 Argo CD prod 관리.
+- 2026-11-03 AWS 데모: EKS 1.35, application 노드그룹 1개(t3.medium 3대, 2026-11-03 2대에서 증설. 근거: 노드 메모리 예약 90%대·Pod 슬롯 포화), Pod Identity, EBS CSI·LB Controller·ESO, RDS·S3·CloudFront·ALB를 구성했다. 앱 6개는 수동 Helm으로 배포했으며 prod Argo CD·Autoscaler는 미구성이다. 이후 같은 노드에 최소 Collector·Prometheus·Grafana와 관측 PVC를 배포하고 RabbitMQ 수집을 확인했다. Grafana→Discord 경보를 연결했으며 전체 운영 관측 완료를 뜻하지 않는다. [현재 설정과 설계 차이](../report/issue-185-aws.md), [EKS 인벤토리](../../infrastructure/eks/README.md)를 따른다. 생성 정의는 `infrastructure/eks/cluster.json`(eksctl)과 `infrastructure/aws/demo_stack.py`(AWS CLI)이며 기존 자원은 대조만 한다.
 - 비용 절감
-  - 데모 외 기간: 노드그룹 최소값 축소 또는 클러스터 삭제 후 eksctl 재생성
+  - 데모 외 기간: 워크로드 정상 종료 후 노드그룹 0대 + RDS 정지(2026-11-03 결정, `demo_stack.py pause`/`resume`). 클러스터 삭제 후 재생성은 채택하지 않음
   - `platform-observability` 노드그룹 Spot 적용
   - NAT GW 단일 AZ 1개
 
@@ -732,7 +733,7 @@ SKN34-FINAL-3TEAM/
 │  │  │  │  ├─ report-worker.yaml
 │  │  │  │  ├─ platform-data.yaml
 │  │  │  │  └─ observability.yaml     # local metrics 기반, Langfuse 제외
-│  │  │  └─ prod/                # (예정) local과 동일 구성, stub 제외
+│  │  │  └─ prod/                # AWS 데모 Helm values·ExternalSecret 참조·NetworkPolicy
 │  │  ├─ migrations/             # core·learning Flyway PreSync 이미지 Dockerfile
 │  │  ├─ policies/
 │  │  │  └─ local/platform.yaml  # platform namespace NetworkPolicy
@@ -749,8 +750,8 @@ SKN34-FINAL-3TEAM/
 │  ├─ kind/
 │  │  ├─ local.yaml              # kind 클러스터 설정
 │  │  └─ *-issue-171*·hpa-check-values.yaml  # #171 전용 kind 검증 자료
-│  ├─ eks/                       # (예정) eksctl 클러스터·노드그룹·IRSA·StorageClass
-│  ├─ aws/                       # (예정) eksctl 범위 밖 자원: RDS·S3·CloudFront·ECR·Secrets Manager·GitHub OIDC IAM (도구 미정)
+│  ├─ eks/                       # eksctl ClusterConfig(cluster.json)·관측 인벤토리·gp3
+│  ├─ aws/                       # AWS CLI IaC(demo_stack.py·demo-stack.json·iam/), RDS bootstrap, CloudFront·ALB redacted 설정
 │  └─ stubs/                     # compose.e2e.yaml 전용 대역, e2e.env(합성 값)
 │     └─ <target>-stub/          # google·llm·toss-stub: Google OAuth·LLM·토스페이먼츠 대역 (로컬·CI E2E)
 │        └─ Dockerfile

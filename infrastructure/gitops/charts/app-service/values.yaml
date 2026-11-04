@@ -109,3 +109,6 @@ migration:
   args: []
   env: []
   resources: {}
+  # The app's extraVolumes are not shared with the Job (e.g. the RDS CA ConfigMap).
+  extraVolumes: []
+  extraVolumeMounts: []

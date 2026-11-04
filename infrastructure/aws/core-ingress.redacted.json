@@ -1,0 +1,44 @@
+{
+  "apiVersion": "networking.k8s.io/v1",
+  "metadata": {
+    "name": "__INGRESS_NAME__",
+    "annotations": {
+      "alb.ingress.kubernetes.io/target-type": "ip",
+      "alb.ingress.kubernetes.io/subnets": "__PUBLIC_SUBNET_2A__,__PUBLIC_SUBNET_2B__",
+      "alb.ingress.kubernetes.io/load-balancer-name": "__ALB_NAME__",
+      "alb.ingress.kubernetes.io/conditions.core-service": "[{\"field\":\"http-header\",\"httpHeaderConfig\":{\"values\":[\"__SET_ORIGIN_HEADER_OUTSIDE_GIT__\"],\"httpHeaderName\":\"X-Sagomungchi-Origin\"}}]",
+      "alb.ingress.kubernetes.io/success-codes": "200",
+      "alb.ingress.kubernetes.io/scheme": "internet-facing",
+      "alb.ingress.kubernetes.io/security-group-prefix-lists": "__CLOUDFRONT_ORIGIN_PREFIX_LIST_ID__",
+      "alb.ingress.kubernetes.io/tags": "Environment=demo,Project=sagomungchi",
+      "alb.ingress.kubernetes.io/listen-ports": "[{\"HTTP\":80}]",
+      "alb.ingress.kubernetes.io/healthcheck-path": "/actuator/health/readiness",
+      "alb.ingress.kubernetes.io/load-balancer-attributes": "idle_timeout.timeout_seconds=120,routing.http.xff_header_processing.mode=preserve"
+    },
+    "namespace": "app"
+  },
+  "kind": "Ingress",
+  "spec": {
+    "ingressClassName": "alb",
+    "rules": [
+      {
+        "http": {
+          "paths": [
+            {
+              "backend": {
+                "service": {
+                  "name": "core-service",
+                  "port": {
+                    "number": 8080
+                  }
+                }
+              },
+              "path": "/api",
+              "pathType": "Prefix"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

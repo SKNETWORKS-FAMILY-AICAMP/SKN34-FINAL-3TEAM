@@ -1,0 +1,22 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "pods.eks.amazonaws.com"
+      },
+      "Action": [
+        "sts:AssumeRole",
+        "sts:TagSession"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/kubernetes-service-account": "scoring-service",
+          "aws:RequestTag/eks-cluster-arn": "arn:aws:eks:ap-northeast-2:347161580747:cluster/sagomungchi-demo-eks",
+          "aws:RequestTag/kubernetes-namespace": "app"
+        }
+      }
+    }
+  ]
+}

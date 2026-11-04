@@ -1,0 +1,107 @@
+title = "Reviewed #185 secret scan exceptions"
+[extend]
+useDefault = true
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Empty example variable; multiline detector captured the next variable name"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''\.env\.example$''']
+regexes = ['''^TOSS_TEST_BILLING_SECRET_KEY=$''']
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Explicit synthetic test fixture"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''backend[/\\]core-service[/\\]src[/\\]test[/\\]kotlin[/\\]com[/\\]sagomungchi[/\\]core[/\\]_common[/\\]persistence[/\\]StartupWithoutMigrationTest\.kt$''']
+regexes = ['''^dGVzdC1hdXRoLXNlY3JldC0zMi1ieXRlcy1sb25nLWtleSE=$''']
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Explicit synthetic test fixture"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''backend[/\\]core-service[/\\]src[/\\]test[/\\]kotlin[/\\]com[/\\]sagomungchi[/\\]core[/\\]_common[/\\]persistence[/\\]PostgresRepositoryTest\.kt$''']
+regexes = ['''^dGVzdC1hdXRoLXNlY3JldC0zMi1ieXRlcy1sb25nLWtleSE=$''']
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Explicit synthetic test fixture"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''backend[/\\]core-service[/\\]src[/\\]test[/\\]kotlin[/\\]com[/\\]sagomungchi[/\\]core[/\\]learning[/\\]FeedbackIntegrationTest\.kt$''']
+regexes = ['''^dGVzdC1hdXRoLXNlY3JldC0zMi1ieXRlcy1sb25nLWtleSE=$''']
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Explicit synthetic test fixture"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''scripts[/\\]report_integration[/\\]compose\.yaml$''']
+regexes = ['''^cmVwb3J0NTYtc3ludGhldGljLWp3dC1zZWNyZXQtYXQtbGVhc3QtMzItY2hhcmFjdGVycw==$''']
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Contract canonical JSON SHA256, checked by test_admin_operations_contract.py"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''scripts[/\\]tests[/\\]fixtures[/\\]admin_operations_base_contracts\.json$''']
+regexes = ['''^2edab0fdd4652849548285da1fda6d81271dc210c2a303ccd06837ab121274d1$''']
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Contract canonical JSON SHA256, checked by test_admin_operations_contract.py"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''scripts[/\\]tests[/\\]fixtures[/\\]admin_operations_base_contracts\.json$''']
+regexes = ['''^06b4a870f1b5538f05860807c7ced68e6a705c44466f8d3ad40d2f09a51c8d2a$''']
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Contract canonical JSON SHA256, checked by test_admin_operations_contract.py"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''scripts[/\\]tests[/\\]fixtures[/\\]admin_operations_base_contracts\.json$''']
+regexes = ['''^4940f3cb15796a7a583ed09b49727c3b68b113ab9709a809aea786d2d2ec4412$''']
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Contract canonical JSON SHA256, checked by test_admin_operations_contract.py"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''scripts[/\\]tests[/\\]fixtures[/\\]admin_operations_base_contracts\.json$''']
+regexes = ['''^0c07eff84bec10a1f528c911b720c9ccb98a0dc384fe17142f084add5b5508db$''']
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Contract canonical JSON SHA256, checked by test_admin_operations_contract.py"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''scripts[/\\]tests[/\\]fixtures[/\\]admin_operations_base_contracts\.json$''']
+regexes = ['''^e308ea44e9d6ac4a96a57b19a3bb9080b879c9dba3e0b748a74f643f60f0efe1$''']
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Explicit synthetic test fixture"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''infrastructure[/\\]stubs[/\\]e2e\.env$''']
+regexes = ['''^ZTJlLXN5bnRoZXRpYy1qd3Qtc2VjcmV0LW5vdC1mb3ItcHJvZHVjdGlvbg==$''']
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Explicit synthetic test fixture"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''infrastructure[/\\]stubs[/\\]e2e\.env$''']
+regexes = ['''^ZTJlLXN5bnRoZXRpYy1iaWxsaW5nLWFlcy1rZXktMzI=$''']
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Decoded synthetic E2E fixture, never a production key"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''infrastructure[/\\]stubs[/\\]e2e\.env$''']
+regexes = ['''^e2e-synthetic-billing-aes-key-32$''']
