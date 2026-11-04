@@ -24,8 +24,24 @@ DLQ 적재는 별도 opt-in scrape job `rabbitmq-dlq`로 본다. 같은 RabbitMQ
 메시지 수는 ready+unacked 합계이며 메시지 나이·재처리 지연은 의미하지 않는다. scrape 실패나 지표 부재는 0이 아니라 NoData로 남는다.
 업무 ID·메시지 내용은 label에 넣지 않는다. 운영 임계값·지속시간은 결정 전이며 prod values에는 아직 넣지 않았다.
 
+## 월 LLM 비용
+
+core `LlmCostMetrics`가 OTel API gauge 두 개(`llm.usage.month_to_date.priced_cost`, `...unpriced_calls`)를 낸다.
+OTel Java agent가 켜진 경우에만 export되고 없으면 no-op이다. export 주기마다 `llm_usage`에서 KST 달력 월 1일 00:00부터 현재까지를 한 번 조회한다.
+단가가 있는 호출만 합산하고 미산정 호출 수는 따로 낸다(0으로 치환하지 않음). 조회 실패 주기에는 값을 내지 않아 경보는 NoData가 된다.
+예산 300 USD와 80%(240 USD) 판정은 Grafana 규칙 임계값이다. 새 exporter·주기 실행 계층·DB 계정은 추가하지 않았다.
+이벤트 발행 유실(best-effort)은 반영되지 않으므로 실제 비용보다 작을 수 있다.
+
+## 업무별 오류율·지연
+
+core·learning Java agent의 `http_server_request_duration_seconds`(`http_route`·`http_response_status_code`)를 쓴다.
+core 공개 API 경로로 인증·학습 저장·AI 처리·리포트·결제를 나누고 5xx 비율과 p95 지연을 본다. 요청이 없으면 `noDataState: OK`로 정상 처리하고,
+지표 수집 자체가 사라지면 `app-metrics-missing`이 알린다. 4xx는 사용자 입력 오류로 보고 제외한다. Python 서비스(ai·report)의 자체 HTTP 지표는 아직 없다.
+prod는 core·learning의 Java agent와 Collector egress를 켜야 이 규칙들이 값을 갖는다. app-service chart는 env의 `JAVA_TOOL_OPTIONS`를 agent 옵션 뒤에 합친다.
+
 ## 남은 경계
 
 - #185 규칙의 target 감시는 `min(up{job=~...})`라 scrape job 자체가 사라지면 발생이 아니라 NoData로 보고된다.
 - 조직 notification policy를 chart가 소유한다. 서비스별 담당이 정해지면 policy 하위 route로 나눈다.
-- 업무별 오류율·지연, 월 비용, 동기·비동기 trace 저장 검증은 이 구성의 완료 범위가 아니다.
+- 동기·비동기 trace 저장·조회는 아직 없다(저장소 선택 대기, local traces=false).
+- 임계값은 초기 기준이다. 실측 부하 기반 조정과 서비스별 담당 라우팅은 후속이다.

@@ -298,3 +298,43 @@ prod에서 DLQ 경보를 쓰려면 운영 임계값을 정한 뒤 prod values에
 
 kind에서 직접 확인한 것은 실제 수집·평가·발생·회복과 contact point 전송 시도까지다. 수신 메시지 형식·회복 알림·NoData/오류 알림은 격리 Docker 대역으로만 확인했다.
 실제 팀 Discord 수신은 #185가 prod에서 임시 규칙으로 확인한 결과이며, #187의 DLQ 규칙으로 prod Discord에 보낸 적은 없다.
+
+## 월 LLM 비용·업무별 오류율·지연 경보 (2026-11-04)
+
+사용자 결정: 월 LLM 예산 300 USD(80% = 240 USD), 담당은 동섭 1명·`aws-alerts` 한 채널. 월 경계는 KST 달력 월 1일 00:00(api-spec 4.6의 KST 기준과 같음).
+PR은 아직 만들지 않고 이 브랜치에서 진행했다. AWS 적용은 하지 않았다.
+
+### 구현
+
+- core: `LlmUsageRepository.monthToDate`·`LlmUsageService.monthToDate`·`LlmCostMetrics`. 기존 `summarize`는 미산정 호출이 섞인 call type의 비용 전체를 null로 내므로
+  예산용으로는 단가 있는 비용 합계와 미산정 호출 수를 따로 구한다. `io.opentelemetry:opentelemetry-api`(Boot BOM)와 테스트용 `opentelemetry-sdk-testing`을 추가했다.
+- observability chart: 규칙별 `noDataState`(기본 NoData). prod values에 규칙 13개와 DLQ 수집 활성화를 추가해 총 16개.
+- app-service chart: env의 `JAVA_TOOL_OPTIONS`를 agent 옵션 뒤에 합친다. 이전에는 prod의 `-XX:MaxRAMPercentage=60.0`이 agent 플래그를 덮어써
+  agent를 켜도 실제로는 빠지는 상태였다(#185 README의 후속 항목).
+- prod `core-service.json`·`learning-service.json`: `javaAgent.enabled`·`networkPolicy.egressToCollector`를 켰다.
+- 모든 환경 파일 25개의 렌더를 develop과 비교해 prod observability(규칙 추가)·core·learning(agent 활성화) 외에는 리소스가 같음을 확인했다.
+
+### 검증
+
+| 범위 | 방식 | 결과 |
+|---|---|---|
+| core 단위·저장소 테스트 | JDK 21 Gradle 컨테이너, Testcontainers PostgreSQL | 새 테스트 2개 통과(KST 월 경계·미산정 분리, OTel SDK 메모리 reader로 gauge 값). 전체 506개 중 179개 실패는 develop 원본도 같은 환경에서 504개 중 179개 실패(`IntegrationTestSupport`가 core 밖 파일을 읽는 `NoSuchFileException`)로 실행 환경 문제이며 새 실패 없음 |
+| kind 실제 core | `:issue187` 이미지를 kind에 로드해 core Deployment 이미지를 잠시 교체 | agent 2.33.1 → Collector → Prometheus에 `llm_usage_month_to_date_priced_cost`=0, `..._unpriced_calls`=5 수집. kind의 LLM stub 모델에 단가가 없어 미산정 경고가 실제로 발생 |
+| kind 규칙 16개 | prod 규칙 가속 사본(지속 10초) | 모두 health ok. 미산정 호출 Alerting, 비용 Normal. ingress로 인증·리포트 요청을 보내자 해당 영역 5xx 비율·p95 규칙이 NoData→실제 값으로 Normal |
+| kind 복구 | | observability local values(revision 8), core 이미지 `:local` 복구, 시험 Secret·kind의 `:issue187` 이미지 삭제 |
+| 격리 Docker | `verify_chart.py` | 37개 확인 exit 0. 기존 항목에 더해 비용 80% 발생·회복, 미산정 발생·회복, 인증 5xx 비율·p95 지연 발생, HTTP 지표 부재 발생 |
+| 계약 테스트 | `scripts/tests` | 112개 통과 |
+
+kind에서 5xx·지연 초과를 실제로 일으키지는 않았다(대역으로만 발생 확인). `app-metrics-missing`은 처음에 `absent() or absent()`로 작성해 정상일 때 NoData가 되는 문제를 kind에서 발견했고,
+`max(... or vector(0))`로 고쳐 정상일 때 0이 되게 했다.
+
+### prod 적용 시 확인할 것 (main 병합 후, 승인 필요)
+
+- Java agent initContainer 이미지(ghcr.io)를 prod 노드가 pull할 수 있는지, core·learning 재시작과 메모리(1Gi limit, heap 60%) 여유
+- 적용 순서: core 이미지(비용 지표 포함) 배포 → core·learning agent 활성화 → observability values 적용(Prometheus 재생성, PVC 보존)
+- 적용 직후 `app-metrics-missing`·비용 규칙 NoData가 정상화되는지, DLQ 시험 메시지로 `aws-alerts` 수신(완료 조건 1)
+
+### 남은 것
+
+- 실패 요청 단일 trace(완료 조건 2): 저장소 선택(Tempo 권장) 후 Collector traces·agent traces·Python OTel trace와 시나리오 검증
+- ai·report(Python) 자체 HTTP 지표, 임계값 실측 조정
