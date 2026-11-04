@@ -24,6 +24,7 @@ class ReleasePolicyTests(unittest.TestCase):
             "operation": "rollback",
             "sourceCommit": "a" * 40,
             "sourceBranch": "develop",
+            "services": ["report-service"],
             "currentRelease": "release-2",
             "targetRelease": "release-1",
             "reason": "합성 롤백 검증",
@@ -113,6 +114,7 @@ class ReleasePolicyTests(unittest.TestCase):
 
     def test_prod_requires_release_branch(self):
         self.plan["environment"] = "prod"
+        self.plan["services"] = ["core-service"]
         self.plan["images"] = {
             "core-service": "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/core@sha256:"
             + "c" * 64
@@ -139,15 +141,22 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertNotIn("운영 연결 미완료: approvers", result["blocks"])
         self.assertIn("실행 스위치 비활성", result["blocks"])
 
-    def test_forged_approval_cannot_enable_execution(self):
-        self.plan["approved"] = True
-        self.policy = {
+    def test_plan_approval_flag_is_ignored(self):
+        # 승인은 GitHub Environment가 맡는다. 계획의 approved 표시는 결과를 바꾸지 않는다
+        blocked = cd.validate({**self.plan, "approved": True}, self.policy)
+        self.assertFalse(blocked["executable"])
+        ready = {
             "executionEnabled": True,
+            "releaseBranch": "main",
             "approvers": ["someone"],
             "environmentProtectionVerified": True,
             "infrastructureReady": True,
         }
-        self.assertFalse(cd.validate(self.plan, self.policy)["executable"])
+        self.assertEqual(
+            cd.validate({**self.plan, "approved": False}, ready),
+            cd.validate({**self.plan, "approved": True}, ready),
+        )
+        self.assertTrue(cd.validate(self.plan, ready)["executable"])
 
     def test_null_evidence_fails_closed(self):
         self.plan["compatibility"] = None
@@ -216,7 +225,7 @@ class ReleasePolicyTests(unittest.TestCase):
             )
             self.assertEqual(run.returncode, 0, run.stderr)
             record = json.loads((root / "record.json").read_text(encoding="utf-8"))
-            self.assertEqual(record["mode"], "local-plan-only")
+            self.assertEqual(record["mode"], "plan-validation")
             self.assertFalse(record["executable"])
             self.assertEqual(len(record["planSha256"]), 64)
             self.assertTrue(record["recordedAt"].endswith("+00:00"))

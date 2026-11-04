@@ -1,4 +1,4 @@
-# #186 준비 단계: 테스트·이미지 빌드만 수행하며 publish/배포는 하지 않는다.
+# #186 후보 검사: 계획 검증·배포 실행기 테스트와 서비스 CI만 수행하며 publish/배포는 하지 않는다.
 name: cd-candidate
 
 on:
@@ -7,15 +7,23 @@ on:
     branches: [feature/cd-release-preparation]
     paths:
       - ".github/workflows/cd-candidate.yml"
+      - ".github/workflows/cd-release.yml"
       - "scripts/cd_release.py"
-      - "scripts/tests/test_cd_release.py"
+      - "scripts/cd_record.py"
+      - "scripts/verify_cd_deployment.py"
+      - "scripts/tests/test_cd_*.py"
       - "infrastructure/cd/**"
+      - "infrastructure/gitops/environments/prod/redeploy-app.ps1"
   pull_request:
     paths:
       - '.github/workflows/cd-candidate.yml'
+      - '.github/workflows/cd-release.yml'
       - 'scripts/cd_release.py'
-      - 'scripts/tests/test_cd_release.py'
+      - 'scripts/cd_record.py'
+      - 'scripts/verify_cd_deployment.py'
+      - 'scripts/tests/test_cd_*.py'
       - 'infrastructure/cd/**'
+      - 'infrastructure/gitops/environments/prod/redeploy-app.ps1'
 
 permissions:
   contents: read
@@ -32,7 +40,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - run: python -m unittest discover -s scripts/tests -p test_cd_release.py -v
+      - run: pip install "PyYAML==6.0.3"
+      - run: python -m unittest discover -s scripts/tests -p 'test_cd_*.py' -v
       - name: 실행 차단 상태 확인
         run: |
           python -c "import json; p=json.load(open('infrastructure/cd/policy.json')); assert p['executionEnabled'] is False, '배포 실행기는 아직 연결하지 않았습니다'"

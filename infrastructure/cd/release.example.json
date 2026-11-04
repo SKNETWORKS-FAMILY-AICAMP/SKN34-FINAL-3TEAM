@@ -1,0 +1,19 @@
+{
+  "environment": "prod",
+  "operation": "deploy",
+  "sourceCommit": "<develop → main 릴리스 병합 후 main SHA 40자리>",
+  "sourceBranch": "main",
+  "services": ["learning-service", "ai-service", "scoring-service", "report-service"],
+  "currentRelease": "<현재 배포 버전 이름, 예: b67d8a4>",
+  "targetRelease": "<이번 버전 이름, 예: main-xxxxxxxxxxxx>",
+  "reason": "<배포 사유>",
+  "databaseAction": "none",
+  "compatibility": {
+    "schema": {"status": "unknown", "evidence": "<migration 선행 적용 여부·Job 이름, 이전 앱과의 호환 근거>"},
+    "data": {"status": "unknown", "evidence": "<데이터 형식 변경 여부와 근거>"},
+    "api": {"status": "unknown", "evidence": "<서비스 간 API 계약 테스트 결과(ci-contracts 등)>"},
+    "events": {"status": "unknown", "evidence": "<이벤트 계약 변경 여부>"},
+    "ongoingLearning": {"status": "unknown", "evidence": "<진행 중 시도·판정에 미치는 영향>"},
+    "payments": {"status": "unknown", "evidence": "<결제·구독 상태에 미치는 영향>"}
+  }
+}
