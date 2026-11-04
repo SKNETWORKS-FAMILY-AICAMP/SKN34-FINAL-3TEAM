@@ -290,3 +290,20 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 - 영향: `/internal/versions` 응답에 `reportTemplate` 키가 추가된다(OpenAPI `required` 갱신). 미보유 활성 버전이면 설정 제안·`/internal/versions`가 `503 AI_PROMPT_VERSION_UNAVAILABLE`이고 readiness `versions`는 DOWN이다. core 관리자 모델 레지스트리는 이름·scope를 자유 입력으로 받으므로 core·웹 변경 없이 `PROMPT`/`reportTemplate`/`ai/report-template`으로 활성화·롤백할 수 있다. core는 `/internal/versions`를 호출하지 않는다.
 - core `AiClient.reportTemplate`에는 분석 스트림 `ai-analysis`와 분리한 `ai-report-template` 서킷(최근/최소 10건·실패율 50%·30초·half-open 1건)을 두었다. 공유하면 설정 제안 실패가 분석 대화를 막고, 설정 제안은 호출량이 적어 20건 창으로는 거의 열리지 않기 때문이다. 4xx는 성공, 전송 오류·시간 초과·5xx·빈 본문은 실패로 센다. 기준은 아키텍처 1.3.
 - 검증: ai `tests/test_active_versions.py`(활성 본문 선택·미보유 503), `tests/test_versions.py`, core `AiClientTest`(서킷 열림·HTTP 미호출·half-open 회복·4xx 미집계, `ai-analysis` 서킷 유지).
+
+## 9. 미션 초안 생성·자동 검사 설계 (#336, 구현 전)
+
+기획서 6.2 ②·③(성취기준·성취수준 문장으로 LLM 초안 → 자동 검사 → 실패 사유를 붙여 재생성)과 FAC-18의 ai 쪽 설계. 결정·근거·구현 인계 전체는 [learning 보고서](learning.md) 21절, 계약은 api-spec 4.2 `POST /internal/mission-drafts`, 구조는 class-diagram 5.4. 구현 담당은 기획서 7장 기준 최성욱(초안 생성)이다.
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 호출 단위 | 요청 1번에 LLM 생성 1회 + 검사, 반복하지 않음 | 반복을 ai 안에서 하면 `LlmClient` 최악 31초(15 + 1 + 15, `config.py`)가 3번이라 learning→ai 35초(P12)를 넘음. 반복은 learning 주기 작업이 이전 실패 사유(`previousFailures`)를 넣어 다시 부름 |
+| 마감 | 되묻기와 같은 33초 | `followup_deadline` 선례, learning→ai 35초 안 |
+| ai 검사 | `REQUIRED`(필수 항목·입력 방식별 선택지·정답 키·예시 답), `QUESTION_LENGTH`(학년별 길이), `LEAK`(질문·안내 속 정답 키·금지어·예시 답) | 기획서 6.2 ③ "판정 엔진의 질문 검사 재사용" → `followup/leak_guard.find_leaks`를 학생 답 없이 씀(`reason`은 `ANSWER_KEY`·`FORBIDDEN_TERM`·`EXAMPLE_ANSWER` 그대로) |
+| learning 검사 | 성취기준 실재·요소 code 규칙·요소 `standardCode`·입력 방식 모양 | 성취기준 표와 게시 검사 규칙이 learning에 있음. ai가 표를 따로 들고 있지 않게 |
+| 입력 | 성취기준 문장, (있으면) 성취수준 문장, 생각 유형, 그 유형 표준 요소 코드·공통 설명(learning이 FN 1.5에서 채움), 학년, 입력 방식 | 학생 정보·학생 답 없음(이슈 지침). 성취수준 문장은 이용 조건 확인 전까지 없음 |
+| 출력 | 정해진 형식(`draft`)으로 질문·안내·장면 메모·선택지·정답 키·예시 답·금지어·생각 열기 질문·요소 | 기획서 6.2 ② 항목. 형식에 맞는 초안을 못 만들면 502(learning은 AI 호출 실패로 셈), 임의 내용으로 성공 처리하지 않음(FAC-18) |
+| 프롬프트 | 내장 `mission-draft@1`, #68 레지스트리 이름 `missionDraft`·scope `ai/mission-draft`, `/internal/versions`에 추가 | 7절 규칙 그대로. `/internal/versions`를 읽는 core 코드는 없어 core 변경 없음 |
+| 사용량 | `callType = MISSION_DRAFT` | 호출 종류가 이벤트 스키마·core enum·core CHECK에 고정돼 core와 같이 추가(learning 보고서 21절 core 인계) |
+
+- 학년별 질문 길이 값은 P19(김동섭)가 정하며 구현 전에 필요하다. 미션 전체를 만드는 출력이 LLM 1회 15초 안에 끝나는지는 재지 않았다(넘으면 실패로 세어져 learning이 다시 시도)

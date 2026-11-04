@@ -51,7 +51,7 @@ MinIO를 포함한 프로젝트를 중단할 때도 `docker compose -f compose.y
 | `STUDENT_DEVICE_TTL`·`STUDENT_DEVICE_ATTEMPT_LIMIT` | 기기 고정 만료 90d, 페어링 발급·등록 10분당 20회 |
 
 - Google web client의 redirect URI로 `AUTH_WEB_ORIGIN` + `/api/v1/auth/google/callback`과 `/api/v1/auth/google/reauth/callback`을 등록한다
-- 운영자가 검토된 TERMS·PRIVACY·GUARDIAN 동의 문서를 DB에 게시해야 온보딩(문서 확인 → 동의 저장 → 자녀 등록)이 진행된다(미게시는 503)
+- core V25 마이그레이션이 TERMS·PRIVACY·GUARDIAN 1.0 동의 문서를 게시하므로 별도 등록 없이 온보딩(문서 확인 → 동의 저장 → 자녀 등록)이 진행된다. 문구 개정은 게시한 행을 고치지 않고 같은 종류에 새 `version` 행을 추가한다([동의 문서 출처와 시드](docs/report/auth-account.md#8-동의-문서-3종-출처와-시드-235)). 게시 문서가 없는 DB에서는 `GET /consent-documents`가 503 `CONSENT_DOCUMENTS_UNAVAILABLE`
 - GitOps local은 core-service values의 `secretKeyRef`로 위 비밀 값을 주입한다. Secret 준비는 `infrastructure/kind/create-app-secrets.ps1`을 따른다.
 - 인증·동의·재인증·학생 기기 결정은 [인증·계정 보고서](docs/report/auth-account.md)
 
@@ -69,7 +69,8 @@ Compose는 루트 `.env`, GitOps local은 `infrastructure/gitops/environments/lo
 | ai | `JUDGE_DEADLINE` | `33.0`초. 판정 전체 시간 한도 |
 | ai | `SCORING_TIMEOUT` | `10.0`초. 실제 호출은 남은 판정 시간과 이 값 중 작은 값 사용 |
 | ai | `SCORING_RESERVE` | `3.0`초. 교차 확인 입력이 있을 때 확보하는 scoring 시간 |
-| core | `APP_GUARDIAN_TRANSFER_ENABLED` | `false`. 신규 이관 활성화. 웹 `VITE_GUARDIAN_TRANSFER_ENABLED`도 맞춰야 함 |
+| core | `APP_GUARDIAN_TRANSFER_ENABLED` | `false`. 신규 이관 활성화(core DB V26 적용 후). 웹 `VITE_GUARDIAN_TRANSFER_ENABLED`도 맞춰야 함 |
+| web | `VITE_GUARDIAN_TRANSFER_ENABLED` | `false`. 학부모 화면의 이관 메뉴 표시. `frontend/web/vite.config.ts`가 루트 `.env`에서 읽으며 `true`일 때만 켜짐. core 플래그와 함께 변경 |
 | scoring | `M2_CONTENT3_RULE_ENABLED` | `false`. 승인 범위 내 서술형 3.0·초5~6의 content_3만 보정 |
 
 - Compose 적용: `.env` 수정 후 `docker compose up -d ai-service core-service scoring-service`. MinIO 등 추가 파일을 사용했다면 최초 실행과 같은 `-f` 조합을 유지한다. `restart`만으로는 변경된 환경 변수가 반영되지 않는다.
