@@ -5,7 +5,8 @@ existingSecret: ""
 # null: use the cluster default StorageClass; "": request no StorageClass.
 storageClassName: null
 
-# Node placement for every workload in this chart (e.g. a dedicated node group).
+# Node placement for the long-running workloads (e.g. a dedicated node group).
+# The one-shot init Jobs stay unpinned: a Job pod template cannot change in place.
 scheduling:
   nodeSelector: {}
   tolerations: []
