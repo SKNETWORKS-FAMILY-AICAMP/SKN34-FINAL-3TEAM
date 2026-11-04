@@ -16,7 +16,8 @@ class OutboxWriter(
 ) {
     @Transactional(propagation = Propagation.MANDATORY)
     fun append(type: String, routingKey: String, subject: String, data: Any) {
-        val envelope = EventEnvelope(type = type, source = source, subject = subject, dataschema = "$type.v1", data = data)
+        val envelope = EventEnvelope(type = type, source = source, subject = subject, dataschema = "$type.v1",
+            traceparent = TraceContexts.current(), data = data)
         repository.insert(
             OutboxEvent(
                 id = UUID.fromString(envelope.id),
