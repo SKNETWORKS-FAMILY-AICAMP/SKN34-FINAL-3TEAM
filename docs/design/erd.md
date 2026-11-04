@@ -834,7 +834,7 @@ erDiagram
   rubric_element {
     uuid id PK
     uuid rubric_version_id FK
-    varchar code "표준 코드(ANALYZE_RELATION 등) · 고유 e+숫자 · 정답 ANSWER_KEY|FINAL_ANSWER (FN 1.5 #262)"
+    varchar code "표준 코드(ANALYZE_RELATION 등) · 고유 e+숫자 · 정답 ANSWER_KEY·FINAL_ANSWER (FN 1.5 #262)"
     varchar label
     text description "NULL 허용"
     int points

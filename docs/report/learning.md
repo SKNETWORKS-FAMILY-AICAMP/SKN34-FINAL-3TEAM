@@ -598,6 +598,7 @@ web
 
 - scripts/tests 100개 통과, `git diff --check` 통과
 - 지문 테스트의 `DashboardElement` 허용 줄을 빼면 `schemas/DashboardElement`로 실패하는 것을 확인 후 되돌림
+- DB 스키마 검사(`scripts/check_db_migrations.py`, 임시 PostgreSQL 17.11): 3개 DB 테이블·열·CHECK 값·인덱스가 ERD와 일치. 처음에는 `rubric_element.code` 주석의 `ANSWER_KEY|FINAL_ANSWER`를 검사기가 CHECK 허용 값으로 읽어(`verify_db_schema.py` `allowed_values`, `A|B` 모양) PR CI `ci-db-schema`가 실패해 `·`로 고침
 - 코드 변경이 없어 gradle 테스트는 돌리지 않음
 
 ### 알려진 한계
