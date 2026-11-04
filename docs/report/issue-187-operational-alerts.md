@@ -27,7 +27,7 @@ local trace=false, Prometheus retention=1d, Grafana/Prometheus emptyDir다.
 |---|---|---|---|---|
 | NFR-OPS-04 수집 장애 | Prometheus `up`, job/instance; target별 0/1 | `1-up` 또는 job 부재 `absent` >0; 지속 필수 입력 | NoData/Error 별도 상태 | rabbitmq→service=rabbitmq, Collector→observability; 독립 규칙 준비 |
 | 작업 적체 | `rabbitmq_queue_messages_ready{job="rabbitmq"}`, 기본 endpoint의 전체 집계 gauge; 메시지 건수 | sum > 필수 입력 임계값; 지속 필수 입력 | 지표 부재는 NoData, query 실패 Error | rabbitmq 인프라 신호; 독립 규칙 준비 |
-| DLQ 적재 | 기본 집계에는 queue 라벨 없음 → 2026-11-03 opt-in `rabbitmq-dlq` job이 `/metrics/detailed` queue_coarse_metrics에서 `<큐>.dlq`의 `rabbitmq_detailed_queue_messages{vhost,queue}`만 수집; 메시지 건수 | 큐별 max > 필수 입력 `dlq_messages`(0 허용); 지속 필수 입력 | 지표 부재는 NoData, 0으로 치환하지 않음 | rabbitmq 인프라 신호, 큐별 경보 인스턴스; 규칙 준비(운영 임계값 미정) |
+| DLQ 적재 | 기본 집계에는 queue 라벨 없음 → 2026-11-03 opt-in `rabbitmq-dlq` job이 `/metrics/detailed` queue_coarse_metrics에서 `<큐>.dlq`의 `rabbitmq_detailed_queue_messages{vhost,queue}`만 수집; 메시지 건수 | 큐별 max > 규칙 임계값(2026-11-04부터 #185 `rules` 항목); 지속은 규칙 `for` | 지표 부재는 NoData, 0으로 치환하지 않음 | rabbitmq 인프라 신호, 큐별 경보 인스턴스; 규칙 준비(운영 임계값 미정) |
 | 인증/학습 저장/AI/리포트/결제 오류율·지연 | core·learning JVM 및 HTTP 집계 수집 기록만 존재; endpoint/status/단위/histogram 실측 미확정, 나머지 공급 공백 | 업무별 분모·오류 정의·bucket·최소 표본·지속 미정 | 결측을 정상 처리하지 않음 | 각 생산 서비스 계측 확인 후 추가; JVM으로 대체하지 않음 |
 | FN-ADM-19/P13 월 비용 80% | core usage HTTP API, 비용 USD/null·unpricedCalls; 현재 Prometheus 공급 없음 | 80%만 확정; 예산/월 경계 미정 | null을 0으로 합산하지 않음 | 비활성·별도 설계/승인 대기 |
 | NFR-OPS-05 실패 요청 추적 | HTTP·event traceparent 전달 코드; 실제 저장 backend 미검증 | 실패 요청→업무 ID→동기/비동기 span 조회 필요 | 저장 실패를 trace 완료로 취급하지 않음 | #171/#185 환경 후속 |
@@ -253,3 +253,48 @@ local Prometheus는 `emptyDir`이라 이 재생성 때 수집 이력이 초기�
 - Discord protocol 수신과 회복 알림 수신, NoData·조회 오류 알림, 잘못된 datasource UID, 재provision 중복 방지, scrape job 제거: 격리 Docker 시험.
 - 실제 팀 Discord 수신, Grafana의 HTTPS egress 허용(현재 NetworkPolicy에 없음), AWS·Langfuse trace 저장은 미검증이다.
   kind의 전송 시도는 시험 주소 조회 단계에서 끝났으므로 NetworkPolicy가 외부 443을 막는지도 이번에 따로 확인하지 않았다.
+
+## #185 병합 반영과 경보 구조 통합 (2026-11-04)
+
+#185(PR #333)가 develop `de8e225c30d1e156347379b59cb9c34b73dafe37`에 병합된 뒤 `git merge --no-edit origin/develop`을 실행했다.
+observability chart 5개 파일(README·values·`alerting.yaml` add/add·configmaps·deployments)이 충돌했다.
+#185는 같은 chart에 다른 방식의 Discord 경보를 이미 넣었고 prod에서 동작 중이었다.
+
+| 항목 | #185 | 기존 #187 |
+|---|---|---|
+| 스위치·마운트 | `grafana.alerting.enabled`, `/etc/grafana/provisioning/alerting`, ConfigMap `grafana-alerting` | 같은 키·경로, ConfigMap `ops187-alerting` |
+| 규칙 | values `rules`를 템플릿이 그림 | 생성기 출력 전체를 values로 받음 |
+| webhook | `DISCORD_WEBHOOK_URL`, Secret `discord-alert-webhook` | `OPS_DISCORD_WEBHOOK_URL`, 빈 값 시작 차단 |
+| 라우팅 | 조직 notification policy 소유 | 규칙별 직접 라우팅 |
+| datasource UID | `prometheus` 고정 | 필수 입력 |
+
+develop에 병합돼 prod에서 쓰이는 #185 구조를 기준으로 하기로 사용자가 결정했다. 처리 순서는 다음과 같다.
+
+1. merge commit `a4fafa7`은 충돌한 chart 파일을 develop 버전으로 받았다(chart가 develop과 동일). rebase·force push는 없었다.
+2. 다음 커밋에서 #187 생성기 `render.py`와 `ops187` 체계를 제거하고 #185 chart 위에 다음을 더했다.
+   - 기본 비활성 DLQ 수집 job, 그 수집이 꺼진 상태의 DLQ 규칙 렌더 실패, Prometheus 재생성 annotation(앞 절의 kind 발견 유지)
+   - `grafana.alerting.interval`·`groupWait`·`groupInterval`·`repeatInterval` values. 기본값은 #185 운영값과 같다.
+3. 검증기를 #185 템플릿 기준으로 바꿨다. prod 규칙 3개를 가속한 사본과 DLQ 규칙을 렌더해 Docker에서 평가한다.
+
+prod values(`environments/prod/observability.json`)에는 DLQ 수집·규칙을 넣지 않았다. AWS 적용(helm upgrade 등)도 하지 않았다.
+prod에서 DLQ 경보를 쓰려면 운영 임계값을 정한 뒤 prod values에 수집과 규칙을 추가하고 별도 승인으로 적용한다.
+적용하면 Prometheus Pod가 재생성되며 prod는 PVC라 수집 이력은 보존된다.
+
+#185 구조에서 달라지는 의미는 다음과 같다.
+
+- target 규칙은 `min(up{job=~"otel-collector|rabbitmq"})`다. job 자체가 사라지면 발생이 아니라 NoData로 보고된다(NoData 알림은 전송됨).
+- 빈 webhook 값의 시작 차단은 없다. Secret·키 누락은 `secretKeyRef` 기본 동작으로 Pod 구성이 실패한다.
+- 조직 notification policy를 chart가 덮어쓴다. 담당별 라우팅은 담당 확정 후 하위 route로 나눈다.
+- 2026-11-03 kind 실측과 앞 절들의 격리 검증은 기존 #187 생성기 기준이다. 아래 재검증이 현재 구조의 결과다.
+
+### 통합 구조 재검증 (2026-11-04)
+
+| 범위 | 결과 |
+|---|---|
+| Helm 4.3.1 | default·local·prod 렌더가 `de8e225`과 바이트 단위로 동일, 세 values 모두 `helm lint --strict` 통과 |
+| `verify_chart.py`(기본 기준 `de8e225`) | 29개 확인 exit 0. prod 규칙 3개 가속 사본+DLQ 규칙 렌더, DLQ relabel·annotation·Secret 참조, 수집 없는 DLQ 규칙 렌더 실패, 실제 RabbitMQ 4.3.7 출력→Prometheus→Grafana 13.3.0 평가(적체·DLQ 발생·회복·로컬 수신, NoData·조회 오류·UID 오류·재적용·수집 실패, job 제거 NoData) |
+| 계약 테스트 | `-O -m unittest discover -s scripts/tests` 112개 통과 |
+| kind `sagomungchi-local` | 같은 가속 사본(적체 임계값 1)으로 revision 5 적용 → 규칙 4개 Normal, DLQ 큐 6개 인스턴스 → `report.report.generate.dlq`에 표식 2건 → 약 30초 안에 그 큐만 Alerting·적체 Alerting → `discord-aws-alerts` 전송 시도(시험 주소 DNS 실패, 실제 발송 없음) → 표식 2건 확인 후 제거, DLQ 합계 0 → 약 30초 안에 모두 Normal → local values로 revision 6 복구, 시험 Secret 삭제 |
+
+kind에서 직접 확인한 것은 실제 수집·평가·발생·회복과 contact point 전송 시도까지다. 수신 메시지 형식·회복 알림·NoData/오류 알림은 격리 Docker 대역으로만 확인했다.
+실제 팀 Discord 수신은 #185가 prod에서 임시 규칙으로 확인한 결과이며, #187의 DLQ 규칙으로 prod Discord에 보낸 적은 없다.
