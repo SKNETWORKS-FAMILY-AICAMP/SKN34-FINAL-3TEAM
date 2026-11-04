@@ -53,6 +53,27 @@ def main():
         prod_rendered = identify(load(run(args.helm, "template", "observability", str(chart), "--namespace", "observability", "-f", str(prod))))
         assert "rabbitmq-dlq" in prod_rendered["ConfigMap", "prometheus-config"]["data"]["prometheus.yml"]
         print("PASS current prod values lint and enable the DLQ scrape", flush=True)
+        # Tempo: Collector pipeline, datasource, policies, and Pod rolls for config that is read only at start.
+        collector = yaml.safe_load(prod_rendered["ConfigMap", "otel-collector-config"]["data"]["config.yaml"])
+        assert collector["service"]["pipelines"]["traces"]["exporters"] == ["otlp/tempo"]
+        sources = yaml.safe_load(prod_rendered["ConfigMap", "grafana-datasources"]["data"]["prometheus.yaml"])["datasources"]
+        assert [(d["name"], d["uid"]) for d in sources] == [("Prometheus", "prometheus"), ("Tempo", "tempo")]
+        assert ("NetworkPolicy", "tempo") in prod_rendered and ("PersistentVolumeClaim", "tempo-data") in prod_rendered
+        egress = lambda name: [p["podSelector"]["matchLabels"].get("app.kubernetes.io/name") for rule in
+                               prod_rendered["NetworkPolicy", name]["spec"]["egress"] for p in rule["to"] if "podSelector" in p]
+        assert "tempo" in egress("otel-collector") and "tempo" in egress("grafana")
+        for name, key in (("otel-collector", "ops187/tempo-traces"), ("grafana", "ops187/tempo-datasource")):
+            assert prod_rendered["Deployment", name]["spec"]["template"]["metadata"]["annotations"][key] == "enabled"
+        app_chart = repo / "infrastructure/gitops/charts/app-service"
+        for service, java in (("core-service", True), ("learning-service", True), ("report-worker", False)):
+            pod = identify(load(run(args.helm, "template", service, str(app_chart), "-f",
+                                    str(environments / "prod" / (service + ".json")))))["Deployment", service]
+            env = {e["name"]: e.get("value") for e in pod["spec"]["template"]["spec"]["containers"][0]["env"]}
+            assert env["OTEL_TRACES_EXPORTER"] == "otlp" and env["OTEL_SERVICE_NAME"] == service
+            assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://otel-collector.observability.svc.cluster.local:4318"
+            # A JAVA_TOOL_OPTIONS from values must not replace the agent flag.
+            assert ("-javaagent:/otel/javaagent.jar" in env.get("JAVA_TOOL_OPTIONS", "")) is java
+        print("PASS prod values enable Tempo and OTLP trace export for core, learning and report-worker", flush=True)
 
         # Accelerated copy of the prod rules; not operating thresholds.
         alerting = json.loads(prod.read_text(encoding="utf-8"))["grafana"]["alerting"]
