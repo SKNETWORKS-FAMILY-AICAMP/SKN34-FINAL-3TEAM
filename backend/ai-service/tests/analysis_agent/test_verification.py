@@ -1,6 +1,8 @@
 from app.analysis_agent.calculators import compute
+from app.analysis_agent.models import Scope
+from app.analysis_agent.templates import fallback_answer
 from app.analysis_agent.verification import verify
-from tests.analysis_agent.records_fixture import SCOPE, records
+from tests.analysis_agent.records_fixture import SCOPE, STUDENT, records
 
 CHANGES = compute("CHANGES", records(), SCOPE)  # sources: a-1, a-2
 
@@ -46,6 +48,17 @@ def test_numbers_inside_quotes_and_period_dates_are_allowed() -> None:
     assert checked.verification.numbers_matched
 
 
+def test_zero_padded_period_dates_are_allowed() -> None:
+    # #337: 2026-11-01의 01이 허용 목록의 1과 달라 규칙 응답까지 대조에 실패했음
+    scope = Scope.model_validate({"studentId": STUDENT, "from": "2026-10-26", "to": "2026-11-01"})
+    computation = compute("THINKING_TYPES", records(), scope)
+    text = fallback_answer("VERIFICATION_FAILED", computation, scope)
+    assert "2026-11-01" in text
+    assert verify(text, computation).passed
+    assert verify("11월 01일까지 기록이에요.", computation).verification.numbers_matched
+    assert not verify("11월 07일까지 기록이에요.", computation).verification.numbers_matched
+
+
 def test_quote_not_in_source_fails() -> None:
     checked = verify("아이는 “나는 반대해”라고 썼어요.", CHANGES)
     assert not checked.verification.quotes_matched
@@ -59,8 +72,6 @@ def test_level_words_fail() -> None:
 
 
 def test_generated_fallback_with_small_denominator_has_no_unverified_threshold():
-    from app.analysis_agent.templates import fallback_answer
-
     text = fallback_answer("VERIFICATION_FAILED", CHANGES, SCOPE)
     assert "5개" not in text
     assert verify(text, CHANGES).passed
