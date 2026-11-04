@@ -19,6 +19,17 @@ data:
     exporters:
       prometheus:
         endpoint: 0.0.0.0:8889
+    {{- if .Values.tempo.enabled }}
+      otlp/tempo:
+        endpoint: tempo.observability.svc.cluster.local:4317
+        tls:
+          insecure: true
+        retry_on_failure:
+          enabled: true
+        sending_queue:
+          enabled: true
+          queue_size: 500
+    {{- end }}
     {{ if .Values.collector.traces.enabled }}
       otlp_http/langfuse:
         endpoint: ${env:LANGFUSE_OTLP_ENDPOINT}
@@ -41,11 +52,14 @@ data:
           receivers: [otlp]
           processors: [memory_limiter, batch]
           exporters: [prometheus]
-    {{ if .Values.collector.traces.enabled }}
+    {{- $traceExporters := list }}
+    {{- if .Values.tempo.enabled }}{{ $traceExporters = append $traceExporters "otlp/tempo" }}{{ end }}
+    {{- if .Values.collector.traces.enabled }}{{ $traceExporters = append $traceExporters "otlp_http/langfuse" }}{{ end }}
+    {{ if $traceExporters }}
         traces:
           receivers: [otlp]
           processors: [memory_limiter, batch]
-          exporters: [otlp_http/langfuse]
+          exporters: [{{ join ", " $traceExporters }}]
     {{ end }}
 ---
 apiVersion: v1
@@ -91,3 +105,10 @@ data:
         access: proxy
         url: http://prometheus.observability.svc.cluster.local:9090
         isDefault: true
+      {{- if .Values.tempo.enabled }}
+      - name: Tempo
+        uid: tempo
+        type: tempo
+        access: proxy
+        url: http://tempo.observability.svc.cluster.local:3200
+      {{- end }}
