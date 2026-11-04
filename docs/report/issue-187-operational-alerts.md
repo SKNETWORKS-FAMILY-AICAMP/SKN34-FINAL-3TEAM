@@ -405,6 +405,6 @@ Grafana NetworkPolicy는 경보 활성화 시 공인 IPv4 443만 추가로 열�
 
 ### 완료 조건 최종 상태(kind 기준)
 
-- 경보 발생 테스트(디스코드 수신): kind에서 실제 RabbitMQ DLQ 적재 → Grafana 규칙 발생 → `aws-alerts` 전송·회복 전송 성공
+- 경보 발생 테스트(디스코드 수신): kind에서 실제 RabbitMQ DLQ 적재 → Grafana 규칙 발생 → `aws-alerts` 전송·회복 전송 성공. 사용자가 채널에서 Firing·Resolved 메시지 2건 수신을 확인했다
 - 실패 요청 추적 테스트(동기·비동기 한 trace): kind에서 명령 소비 → 동기 HTTP → 결과 이벤트 → 실패·재시도·DLQ가 한 trace(앞 절). 로그인 사용자 요청 시작점은 kind 데이터 부재로 미실행
 - prod 적용(규칙 16개, Java agent, Tempo, trace)은 values에만 반영됐고 main 릴리스 배포 때 승인 후 적용한다
