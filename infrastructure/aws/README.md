@@ -8,7 +8,7 @@ EKS는 [eksctl 설정](../eks/cluster.json), 나머지는 `demo-stack.json`(원�
 
 | 명령 | 동작 | AWS 변경 |
 |---|---|---|
-| `plan` | VPC·subnet·route·NAT·S3 endpoint, S3 4개, ECR 7개, Secret 이름 11개, RDS·SG·subnet group, IAM 역할 8개(trust·정책 원문), EKS·노드그룹·add-on·Pod Identity를 실제와 비교. 차이가 있으면 exit 1 | 없음 |
+| `plan` | VPC·subnet·route·NAT·S3 endpoint, S3 4개, ECR 7개, Secret 이름 11개, RDS·SG·subnet group, IAM 역할 10개(trust·정책 원문, #211 Karpenter 컨트롤러 포함), EKS·노드그룹·add-on·Pod Identity를 실제와 비교. 차이가 있으면 exit 1 | 없음 |
 | `apply --confirm-account 347161580747` | `plan`에서 MISSING인 자원만 생성. 기존 자원은 변경·삭제하지 않는다. Secret 값과 EKS는 만들지 않는다 | 생성만 |
 | `render-eksctl --operator-cidr <IP>/32 --out <저장소 밖>` | 현재 subnet ID를 채운 eksctl 설정 출력 → `eksctl create cluster -f <파일>` (2026-11-04 eksctl 0.231.0 `--dry-run` 통과) | 없음 |
 | `apply --after-eksctl ...` | 새 클러스터의 cluster SG에서 RDS 5432 허용 | 생성만 |

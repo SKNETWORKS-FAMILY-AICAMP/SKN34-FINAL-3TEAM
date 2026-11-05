@@ -1,0 +1,124 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "karpenter.k8s.aws/v1",
+      "kind": "EC2NodeClass",
+      "metadata": {
+        "name": "application"
+      },
+      "spec": {
+        "role": "sagomungchi-demo-eks-node-role",
+        "amiSelectorTerms": [
+          {
+            "alias": "al2023@v20261031"
+          }
+        ],
+        "subnetSelectorTerms": [
+          {
+            "id": "subnet-0674d0daefc86442f"
+          },
+          {
+            "id": "subnet-0573cf0b2fd58a126"
+          }
+        ],
+        "securityGroupSelectorTerms": [
+          {
+            "id": "sg-086c7c83b3638da59"
+          }
+        ],
+        "blockDeviceMappings": [
+          {
+            "deviceName": "/dev/xvda",
+            "ebs": {
+              "volumeSize": "20Gi",
+              "volumeType": "gp3",
+              "encrypted": true,
+              "deleteOnTermination": true
+            }
+          }
+        ],
+        "metadataOptions": {
+          "httpEndpoint": "enabled",
+          "httpProtocolIPv6": "disabled",
+          "httpPutResponseHopLimit": 1,
+          "httpTokens": "required"
+        },
+        "tags": {
+          "Project": "sagomungchi",
+          "Environment": "demo"
+        }
+      }
+    },
+    {
+      "apiVersion": "karpenter.sh/v1",
+      "kind": "NodePool",
+      "metadata": {
+        "name": "application-burst"
+      },
+      "spec": {
+        "template": {
+          "metadata": {
+            "labels": {
+              "workload": "application-burst"
+            }
+          },
+          "spec": {
+            "nodeClassRef": {
+              "group": "karpenter.k8s.aws",
+              "kind": "EC2NodeClass",
+              "name": "application"
+            },
+            "requirements": [
+              {
+                "key": "node.kubernetes.io/instance-type",
+                "operator": "In",
+                "values": [
+                  "t3.medium",
+                  "t3.large"
+                ]
+              },
+              {
+                "key": "karpenter.sh/capacity-type",
+                "operator": "In",
+                "values": [
+                  "on-demand"
+                ]
+              },
+              {
+                "key": "topology.kubernetes.io/zone",
+                "operator": "In",
+                "values": [
+                  "ap-northeast-2a",
+                  "ap-northeast-2b"
+                ]
+              },
+              {
+                "key": "kubernetes.io/arch",
+                "operator": "In",
+                "values": [
+                  "amd64"
+                ]
+              }
+            ],
+            "expireAfter": "720h"
+          }
+        },
+        "limits": {
+          "cpu": "4",
+          "memory": "16Gi"
+        },
+        "disruption": {
+          "consolidationPolicy": "WhenEmptyOrUnderutilized",
+          "consolidateAfter": "5m",
+          "budgets": [
+            {
+              "nodes": "1"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

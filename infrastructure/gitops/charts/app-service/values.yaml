@@ -54,6 +54,9 @@ lifecycle: {}
 resources: {}
 extraVolumes: []
 extraVolumeMounts: []
+# Pod scheduling (#372): e.g. prefer the fixed application nodegroup so HPA scale-down
+# empties Karpenter nodes first. Changing it rolls the Deployment.
+affinity: {}
 
 hpa:
   enabled: false

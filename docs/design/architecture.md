@@ -590,14 +590,14 @@ backend/report-service/
 
 ### 4.2 운영 클러스터: EKS
 - 선정 근거 (자체 구축 K8s(kubeadm·k3s) 대비)
-  - 설계 구성 요소(ALB LB Controller, EKS Pod Identity, EBS CSI, Cluster Autoscaler, ECR, Secrets Manager) AWS 기본 연동
+  - 설계 구성 요소(ALB LB Controller, EKS Pod Identity, EBS CSI, Karpenter, ECR, Secrets Manager) AWS 기본 연동
   - control plane HA·etcd 백업·업그레이드를 AWS가 관리 → 12/7 일정 내 운영 부담 제거
   - 자체 구축도 control plane EC2 필요 → 비용 차이 작음 (EKS 수수료 $0.10/시간)
-- 목표 구성: eksctl, 관리형 노드그룹 2개(4.3), EKS add-on(VPC CNI·CoreDNS·kube-proxy·EBS CSI·Pod Identity Agent), LB Controller·Cluster Autoscaler의 Argo CD prod 관리.
-- AWS 데모: EKS 1.35, 노드그룹 2개(4.3, 전부 On-Demand), Pod Identity, EBS CSI·LB Controller·ESO, RDS·S3·CloudFront·ALB를 구성했다. 앱 6개는 수동 Helm으로 배포했으며 prod Argo CD·Autoscaler는 미구성이다. 이후 같은 노드에 최소 Collector·Prometheus·Grafana와 관측 PVC를 배포하고 RabbitMQ 수집을 확인했다. Grafana→Discord 경보를 연결했으며 전체 운영 관측 완료를 뜻하지 않는다. [현재 설정과 설계 차이](../report/issue-185-aws.md), [EKS 인벤토리](../../infrastructure/eks/README.md)를 따른다. 생성 정의는 `infrastructure/eks/cluster.json`(eksctl)과 `infrastructure/aws/demo_stack.py`(AWS CLI)이며 기존 자원은 대조만 한다.
+- 목표 구성: eksctl, 관리형 노드그룹 2개(4.3), EKS add-on(VPC CNI·CoreDNS·kube-proxy·EBS CSI·Pod Identity Agent), LB Controller·Karpenter의 Argo CD prod 관리.
+- AWS 데모: EKS 1.35, 노드그룹 2개(4.3, 전부 On-Demand), Pod Identity, EBS CSI·LB Controller·ESO, RDS·S3·CloudFront·ALB를 구성했다. 앱 6개는 수동 Helm으로 배포했으며 prod Argo CD는 미구성이다. 2026-11-05 metrics-server add-on, core·learning·ai HPA(1~3, CPU 70%), Karpenter 1.15.1(NodePool `application-burst`)을 구성했다(#211·#372, 4.4). 이후 같은 노드에 최소 Collector·Prometheus·Grafana와 관측 PVC를 배포하고 RabbitMQ 수집을 확인했다. Grafana→Discord 경보를 연결했으며 전체 운영 관측 완료를 뜻하지 않는다. [현재 설정과 설계 차이](../report/issue-185-aws.md), [EKS 인벤토리](../../infrastructure/eks/README.md)를 따른다. 생성 정의는 `infrastructure/eks/cluster.json`(eksctl)과 `infrastructure/aws/demo_stack.py`(AWS CLI)이며 기존 자원은 대조만 한다.
 - 비용 절감
   - 데모 외 기간: 워크로드 정상 종료 후 노드그룹 0대 + RDS 정지(2026-11-03 결정, `demo_stack.py pause`/`resume`). 클러스터 삭제 후 재생성은 채택하지 않음
-  - Spot은 무상태 앱 노드에만, 서비스별 replica 2개 이상·PDB를 갖춘 뒤 #211(Karpenter) 앱 NodePool에서 On-Demand와 혼합 적용. `platform-observability`는 On-Demand 고정(2026-11-04 결정: 상태 저장 서비스가 replica 1개이고 EBS가 AZ에 묶여 Spot 회수 시 다른 AZ로 옮길 수 없음)
+  - Spot은 무상태 앱 노드에만, 서비스별 replica 2개 이상·PDB를 갖춘 뒤 Karpenter 앱 NodePool에서 On-Demand와 혼합 적용(2026-11-05 #211은 On-Demand만, 앱이 replica 1·PDB 없음). `platform-observability`는 On-Demand 고정(2026-11-04 결정: 상태 저장 서비스가 replica 1개이고 EBS가 AZ에 묶여 Spot 회수 시 다른 AZ로 옮길 수 없음)
   - NAT GW 단일 AZ 1개(2a). 2026-11-04 #212 점검에서 연결·포트·드롭·대역폭 병목이 없어 데모 기간은 유지한다. AZ별 NAT(월 약 +$47)는 가용성 개선안으로 결정 대기([점검 근거](../report/issue-185-aws.md#s3-gateway-엔드포인트와-nat-병목-점검-212-2026-11-04))
 
 ### 4.3 운영 네트워크·배치
@@ -611,7 +611,8 @@ backend/report-service/
 - S3: private 라우팅 테이블 2개에 S3 Gateway 엔드포인트(prefix list 경로)를 연결해 Pod의 S3 읽기·쓰기와 ECR layer 다운로드는 NAT를 거치지 않는다. 엔드포인트 정책은 기본 전체 허용, 버킷 접근은 Pod Identity 역할 정책으로 제한(#212)
 - Namespace: `app`(core·learning·ai·scoring·report), `platform`(RabbitMQ·Redis), `observability`, `argocd`
 - 노드그룹: `application`, `platform-observability` 분리 (참고 레포 2그룹 구성 계승)
-  - `application`: t3.medium 2대(최대 3), 앱·ESO·LB Controller·CoreDNS 등
+  - `application`: t3.medium 2대(최대 3), 앱·ESO·LB Controller·CoreDNS·Karpenter 컨트롤러·metrics-server 등. 관리형 노드그룹은 자동 확장하지 않는다
+  - Karpenter NodePool `application-burst`: 평소 0대. 기존 노드에 자리가 없는 Pending Pod가 생길 때만 t3.medium·t3.large On-Demand(2a·2b)를 만들고 비면 정리한다(4.4). taint가 없어 platform Pod는 배치되지 않는다
   - `platform-observability`: t3.medium 2대(2a·2b 1대씩, EBS PVC가 AZ별로 있음), label·taint `workload=platform:NoSchedule`. `platform-data`·`observability` chart의 `scheduling` 값으로 RabbitMQ·Redis·Prometheus·Grafana·Collector만 배치
 - Pod AWS 권한: EKS Pod Identity(서비스별 IAM 역할, trust는 클러스터·namespace·ServiceAccount 조건). IRSA(OIDC provider·SA annotation)는 쓰지 않음
 - NetworkPolicy: 기본 거부 + 아래 허용만 (호출 관계는 [API 명세서](api-spec.md) 4장). 공통 앱 chart·local Ingress·app/platform/observability NetworkPolicy 정의는 #171, 검증 범위는 [로컬 플랫폼](../report/local-platform.md#10-171-검증-결과와-교훈) 10장
@@ -639,13 +640,18 @@ backend/report-service/
   - migration-job: RDS egress / local: LLM API·토스 stub는 compose E2E 전용이며 kind에는 없음(4.1)
 
 ### 4.4 확장
-- #171로 HPA·KEDA·PDB 템플릿과 local report-worker KEDA 0–1 설정. local 상시 값의 HPA·PDB는 자원 한도로 비활성화한다. Cluster Autoscaler의 EKS 구성은 #185 범위다. 아래는 제품 설계 기준
+- #171로 HPA·KEDA·PDB 템플릿과 local report-worker KEDA 0–1 설정. local 상시 값의 HPA·PDB는 자원 한도로 비활성화한다. 아래는 제품 설계 기준이고, 2026-11-05 AWS 데모 적용 값은 이 절 끝의 "AWS 데모 적용"을 따른다
 - HPA(CPU): core, learning, ai, scoring, report-api — 최소 2(scoring은 메모리 고려해 최소 1, report-api 최소 1), PDB `minAvailable: 1`
 - **KEDA(RabbitMQ 큐 길이)**: report-worker — 0~N 확장, EDA와 K8s 연계 지점
   - report 조회 API는 core가 동기 호출하므로 0으로 줄지 않는 `report-api`로 분리 (같은 이미지, 진입점만 다름). core `ReportClient` 대상 Service = report-api
   - `maxReplicaCount` × consumer prefetch = learning·ai·LLM API 동시 호출 상한 → LLM rate limit 이내로 설정 (값은 실측 후 결정)
 - ai HPA: LLM 대기 위주라 CPU가 낮게 유지됨 → 실측 후 동시 요청 수 기준 지표 검토
-- Cluster Autoscaler: Pending Pod 발생 시 application 노드 증설
+- 노드 확장(Karpenter, #211): Pending Pod 발생 시 Karpenter가 EC2 노드를 직접 추가하고, 비거나 덜 쓰이는 노드를 정리(consolidation). Karpenter는 트래픽을 보지 않으므로 앞단 HPA/KEDA가 Pod를 늘려야 노드가 는다(#372)
+- AWS 데모 적용(2026-11-05, #211·#372)
+  - metrics-server(EKS add-on, replica 1). HPA는 core·learning·ai만 `minReplicas 1`·`maxReplicas 3`·CPU 70%. scoring(모델 로딩·메모리 1Gi)·report-api는 replica 1 고정, report-worker KEDA는 KEDA 미설치로 후속. 앱 PDB 없음
+  - 축소 시 끊김 방지(D안): replica 1에서는 노드 정리가 Pod를 먼저 지운 뒤 새로 만들어 공백이 생긴다. core·learning·ai에 `eks.amazonaws.com/nodegroup=application` preferred nodeAffinity를 두어 기본 Pod를 관리형 노드에 놓고, HPA 축소 때 ReplicaSet이 최근 Pod부터 지우는 기본 순서로 Karpenter 노드가 먼저 비게 한다. 부하 중 재배포·관리형 노드 장애로 순서가 바뀌면 축소 때 한 번 끊길 수 있다(A안: 최소 2 + PDB는 상시 노드 1대 비용으로 보류)
+  - NodePool `application-burst`: t3.medium·t3.large On-Demand, 2a·2b, 상한 CPU 4·메모리 16Gi(최대 약 2대), `WhenEmptyOrUnderutilized`·`consolidateAfter 5m`·한 번에 1노드, `expireAfter 720h`. EC2NodeClass `application`은 기존 노드 역할·AMI(`al2023@v20261031`)·private subnet·cluster SG를 ID로 지정
+  - 부하 시 노드 확장·축소 실측은 이번에 하지 않았다([근거와 한계](../report/issue-185-aws.md#eks-노드-자동-확장-karpenter와-앱-hpa-211372-2026-11-05))
 - 종료 처리: core는 preStop 지연 + terminationGracePeriod로 SSE 정리 시간 확보 (롤링 배포·축소 시 단절은 클라이언트 재연결로 처리)
   - 피드백 executor 종료 대기는 최대 85초, heartbeat timer 종료 대기는 최대 5초다. 배포 시 `terminationGracePeriodSeconds`는 preStop 지연 + Spring/Tomcat 종료 단계의 예산 + 이 최대 90초 + 안전 여유보다 길게 설정하고 실제 롤링 종료로 검증한다. local chart 시작값은 preStop 15초·grace 180초([로컬 플랫폼](../report/local-platform.md) 8장). SIGKILL·프로세스 강제 종료 후에도 진행 중 호출이 보존된다는 의미는 아니다.
 - probe: readiness는 자기 연결과 백그라운드 초기화 상태만 확인, 요청마다 하위 서비스 호출 금지. ai는 RabbitMQ 구독·core 활성 버전 snapshot 조정·사용 가능한 프롬프트 본문을 완료해야 Ready이며 core 조회 실패·재연결 조정·미보유 활성 본문은 NotReady다(#68).
@@ -778,7 +784,7 @@ SKN34-FINAL-3TEAM/
 │  │     │     ├─ metrics-server.yaml
 │  │     │     ├─ observability.yaml
 │  │     │     └─ platform-network.yaml
-│  │     └─ prod/                # (예정) EKS Argo CD 진입점, External Secrets·AWS LB Controller·Cluster Autoscaler
+│  │     └─ prod/                # (예정) EKS Argo CD 진입점, External Secrets·AWS LB Controller·Karpenter
 │  ├─ kind/
 │  │  ├─ README.md               # 클러스터 기준·설치 절차
 │  │  ├─ local.yaml              # kind 클러스터 설정
@@ -855,7 +861,7 @@ SKN34-FINAL-3TEAM/
 | 메시징 | RabbitMQ (quorum queue, topic/direct exchange, DLX) | 작업 큐 + fan-out 동시 지원, Kafka 대비 운영 부담 작음 |
 | 결제 | 토스페이먼츠 테스트 환경 (결제위젯·자동결제·웹훅) | 실결제 미연동 |
 | 컨테이너·오케스트레이션 | Docker, Compose, kind, Kubernetes, Helm | 로컬 → 운영 동일 chart |
-| 확장 | HPA, KEDA, Cluster Autoscaler, PDB | CPU 기반 API 확장 + 큐 기반 워커 확장 |
+| 확장 | HPA, KEDA, Karpenter, PDB | CPU 기반 API 확장 + 큐 기반 워커 확장 + Pending Pod 기반 노드 확장 |
 | AWS | EKS(eksctl), EC2, VPC, ALB(LB Controller), CloudFront, S3, RDS, ECR, EBS gp3, Secrets Manager | 관리형 control plane(자체 구축 대비 운영 부담 제거)·AWS 연동 기본 지원, 참고 레포 EKS 구성 계승 + 관리형 DB |
 | GitOps·CI | GitHub Actions(OIDC), GHCR, Argo CD, External Secrets | 변경 서비스만 빌드, Git 기준 배포 |
 | 테스트 | JUnit5, Testcontainers, pytest, Playwright(MSW 화면 회귀·실서버 E2E) | 기획서 4.4 |

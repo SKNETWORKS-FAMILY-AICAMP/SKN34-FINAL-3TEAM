@@ -40,6 +40,11 @@
         "namespace": "app",
         "serviceAccountName": "scoring-service",
         "roleARN": "arn:aws:iam::347161580747:role/sagomungchi-demo-scoring-s3-role"
+      },
+      {
+        "namespace": "kube-system",
+        "serviceAccountName": "karpenter",
+        "roleARN": "arn:aws:iam::347161580747:role/sagomungchi-demo-karpenter-controller-role"
       }
     ]
   },
@@ -116,6 +121,11 @@
     {
       "name": "eks-node-monitoring-agent",
       "version": "v1.7.6-eksbuild.1"
+    },
+    {
+      "name": "metrics-server",
+      "version": "v0.9.0-eksbuild.14",
+      "configurationValues": "{\"replicas\":1,\"nodeSelector\":{\"eks.amazonaws.com/nodegroup\":\"application\"}}"
     }
   ],
   "cloudWatch": {

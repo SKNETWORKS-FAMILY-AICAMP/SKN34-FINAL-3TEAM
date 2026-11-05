@@ -1,4 +1,24 @@
 {
+  "affinity": {
+    "nodeAffinity": {
+      "preferredDuringSchedulingIgnoredDuringExecution": [
+        {
+          "weight": 100,
+          "preference": {
+            "matchExpressions": [
+              {
+                "key": "eks.amazonaws.com/nodegroup",
+                "operator": "In",
+                "values": [
+                  "application"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
   "env": [
     {
       "name": "INTERNAL_TOKEN",
@@ -53,7 +73,10 @@
     }
   ],
   "hpa": {
-    "enabled": false
+    "enabled": true,
+    "minReplicas": 1,
+    "maxReplicas": 3,
+    "cpuUtilization": 70
   },
   "image": {
     "digest": "sha256:e2f170014aaefad7e11a50b8456f0d5e269b52bc4e3c02175190223c62ebdb1c",
