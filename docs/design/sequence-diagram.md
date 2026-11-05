@@ -1075,7 +1075,7 @@ sequenceDiagram
 
 ---
 
-## 11. 미션 초안 생성 (#336 설계, learning #353·ai #354 구현, core 프록시 #355 구현 전)
+## 11. 미션 초안 생성 (#336 설계, learning #353·ai #354·core 프록시 #355 구현)
 
 ```mermaid
 sequenceDiagram

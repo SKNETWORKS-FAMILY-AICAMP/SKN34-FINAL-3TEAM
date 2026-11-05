@@ -781,7 +781,7 @@ web
 - **성취기준 시드를 먼저 넣어야 게시 가능**: 게시 검사가 성취기준 표를 읽으므로, V10 적용 뒤 `achievement_standards.sql`을 넣기 전에는 모든 미션의 게시가 `achievementStandards`로 막힘. 운영·로컬 모두 마이그레이션 직후 시드를 넣음
 - **관리자 화면 기준표 저장**: #262 저장 검사로 자유 code(`e1` 모양이 아닌 값)는 400. web(#356) 전까지 관리자 화면에서 표준 코드·`e`+숫자만 써야 함
 - **대괄호 성취기준 코드**: 관리자 화면에서 `[6국01-02]`처럼 넣은 미션은 표에 없어 게시가 막힘(표는 대괄호 없음)
-- 사용량 `MISSION_DRAFT`는 core(#355) 전까지 DLQ에 남음(#354)
+- 사용량 `MISSION_DRAFT`는 core(#355) 전까지 DLQ에 남음(#354). #355에서 반영(23절)
 
 ### 검증
 
@@ -789,3 +789,49 @@ web
 - `ci-db-schema` 재현: `check_db_migrations.py`(일회용 PostgreSQL, learning 21개 테이블·194개 칼럼이 ERD와 일치, 반복 마이그레이션 변화 없음), `scripts/tests` 156개
 - 로컬 실연(2026-11-05, 이 브랜치로 learning·ai 재빌드, 로컬 learning_db에 V10·성취기준 시드, ai `OPENAI_MODEL=gpt-6-luna`): learning 내부 API로 입력 방식 6가지 초안(논술은 성취기준 2개·성취수준 B)을 한꺼번에 요청 → 주기 작업이 차례로 생성해 6건 모두 첫 시도에 `READY`(193초 동안, ai 응답 200 6번·5xx 0번) → 채택(`LLM_DRAFT`) → 검토 → 게시 200(누락 없음). 학년군이 안 맞는 요청은 400, 같은 초안 재채택은 409. 시간 설정을 바꾸기 전에는 같은 실연에서 논술이 3번 모두 `AI_CALL` 실패로 `FAILED`였음
 - ai `ruff`·`pytest` 399개 통과(호출별 대기 덮어쓰기·초안 60초 1회 테스트 포함)
+
+## 23. core 성취기준·미션 초안 프록시와 사용량 MISSION_DRAFT (#355)
+
+21절 구현 인계의 core 몫. 관리자 화면은 #356이다.
+
+| 위치 | 내용 |
+|---|---|
+| `learning/controller/AdminMissionDraftsController` | 공개 경로 `GET /admin/achievement-standards`, `POST·GET /admin/mission-drafts`, `GET /admin/mission-drafts/{draftId}`, `POST …/{draftId}/adopt`·`…/discard` → learning `/internal/admin/…` 같은 경로 |
+| `learning/service/AdminLearningService` | `achievementStandards`·`missionDrafts` 추가. 관리자 미션의 요청 감사 → 한 번 호출 → 응답 대상 확인 → 결과 감사 흐름을 `audited`로 빼서 미션·초안이 함께 씀(미션 동작 그대로) |
+| `account/controller/PublicAuthFilter` | `/admin/mission-drafts`·`/admin/achievement-standards`도 CONTENT |
+| `admin/service/MissionAuditService`·`MissionAuditRepository`·`MissionAuditMapper.xml` | `target_type`을 고정 `MISSION`에서 인자로(`MISSION`·`MISSION_DRAFT`), 채택 결과 detail에 `draftId` |
+| `V28__mission_draft_call_type.sql` | `ck_llm_usage_call_type`에 `MISSION_DRAFT`(V14와 같은 DROP·ADD). V27은 #243(PR #359) |
+| 호출 종류 목록 | core `CallType` enum, `llm.usage.recorded.v1` 스키마, core OpenAPI `CallType`, ERD 3.5 Mermaid, scoring `publisher.py` `CallType`. ai 발행 목록에는 #354에서 이미 있음. 순서는 ai와 같게 `REPORT_NARRATIVE` 다음 |
+| 계약 | core OpenAPI 경로 5개(조작 6개)·`AdminMissionDraftDocument`, gitops 로컬 core 마이그레이션 리비전 v27 → v28 |
+
+### 결정
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 컨트롤러 | 새 `AdminMissionDraftsController`(같은 `learning/controller` 패키지)·서비스는 기존 `AdminLearningService` | `AdminMissionsController`는 `/api/v1/admin/missions` 아래만 받고, `test_admin_missions_contract`가 그 파일의 `service.missions(…)` 호출로 learning 경로 10개를 셈. 같은 파일에 넣으면 그 대조가 흐려짐 |
+| 감사 대상 | 요청·버리기: `target_type = MISSION_DRAFT`, 결과는 응답 `draftId`(요청의 요청 감사는 아직 ID가 없어 NULL). 채택: 요청 감사는 초안, 결과 감사는 응답 `missionId`·버전(`target_type = MISSION`, detail `draftId`) | api-spec 2.8 "채택은 응답 `missionId`, FN-ADM-13". 채택이 미션을 만들므로 `MISSION_CREATE`처럼 미션 ID로 찾으면 처음부터 이력이 보임. 감사 조회 `targetType`은 정규식만 검사해 새 값이 바로 됨 |
+| 감사 action | `MISSION_DRAFT_REQUEST`·`MISSION_DRAFT_ADOPT`·`MISSION_DRAFT_DISCARD` + 기존 접미사 `_REQUESTED`·`_SUCCEEDED`·`_REJECTED`·`_UNKNOWN` | 미션 감사와 같은 규칙. 요청 본문·learning 오류 문장은 남기지 않음 |
+| 응답 대상 확인 | 초안 응답은 `draftId`(UUID, 버리기는 경로와 같아야 함)·`status`(문자열), 채택 응답은 미션 응답과 같은 `missionId`·`currentVersion`·`currentRubricVersion`. 어긋나면 503 `LEARNING_INVALID_RESPONSE` + `_UNKNOWN`, 다시 부르지 않음 | 관리자 미션과 같은 기준. 결과를 모르는데 다시 부르면 초안이 두 번 생길 수 있음 |
+| 오류 전달 | learning `VALIDATION_FAILED`(400)·`NOT_FOUND`(404)·`CONFLICT`(409)·`FORBIDDEN`은 기존 허용 목록 그대로 전달, 공급자 문장은 버림. 404 고정 문구 "미션 초안을 찾을 수 없습니다.", 미지원 405/501은 미션과 같은 `ADMIN_MISSIONS_UNAVAILABLE` | 새 코드를 만들면 web(#356) 처리가 늘어남. 같은 learning 관리자 API라 같은 코드로 충분 |
+| 쿼리 검사 | core는 `page`·`size`(기존 `operationPage`)·초안 `status`(learning `DraftStatus` 6개)·문자 쿼리 100자만 보고, `gradeBand`·`subject`·`q` 값은 learning이 검사 | 학년군 이름 목록을 learning 한 곳에만 둠. 문자 길이는 learning에 넘길 쿼리를 제한하려고 |
+| `MISSION_DRAFT` 위치 | 목록 가운데(`REPORT_NARRATIVE` 다음) | ai `CallType`(#354)과 같은 순서로 두어 일곱 곳을 같은 목록으로 대조 |
+| 계약 지문 | `admin_operations_base_contracts.json`은 그대로 두고, 테스트에서 `CallType`의 `MISSION_DRAFT`만 빼고 지문 비교 | 기존 #262·#242 정규화와 같은 방식. 지문 파일을 다시 만들면 다른 변경도 묻힘 |
+
+### 이슈와 다른 점
+
+- 이슈 작업 위치 "`AdminMissionsController`"에 넣지 않고 같은 패키지 새 컨트롤러로(위 결정)
+- 이슈에 없던 것: gitops 로컬 core 마이그레이션 리비전 v28(`test_core_migration_versions.py`), 새 계약 테스트 `test_admin_mission_drafts_contract.py`(core ↔ learning·core OpenAPI 경로 6개, 쿼리 이름, 초안 상태, CONTENT, 호출 종류 일곱 곳 대조), `LlmUsageQueryTest` 호출 종류 수 6 → 7
+- web의 사용량 호출 종류 이름표·목업(`frontend/web/src/presentation/admin/adminFormatting.ts`·`src/mocks/handlers/admin.ts`)에는 `MISSION_DRAFT`가 없음. web 범위(#356)라 바꾸지 않음
+
+### 알아 둘 점
+
+- **마이그레이션 순서**: PR #359(V27)가 develop에 병합된 뒤 그 위에서 작업해 V27 → V28 순서. V28이 V27보다 먼저 적용된 DB는 없음(`outOfOrder` 꺼짐)
+- **DLQ 재처리**: #354 배포 뒤 이 변경 전까지 나온 `MISSION_DRAFT` 사용량 메시지는 core 소비자가 거부해 DLQ에 있음. 배포 뒤 다시 넣으면 기록됨(`event_id` UK로 중복 없음)
+
+### 검증
+
+- core `./gradlew clean test bootJar` 통과(develop #359 병합 뒤 기준 510개, 실패 0, JDK 21 임시 컨테이너 + Testcontainers). 새 테스트(`AdminOperationsIntegrationTest`): 초안 경로 6개가 learning 같은 경로로 ADMIN·관리자 ID·빈 학생 범위로 감, CONTENT 아닌 관리자는 403이고 learning을 부르지 않음, 잘못된 `status`·`size`·`page`·100자 넘는 `q`·배열 본문은 learning 전에 400, 요청·채택·버리기 감사 행(대상 종류·ID·`draftId`·결과), 응답에 초안·미션 ID가 없거나 다르면 503 `LEARNING_INVALID_RESPONSE` + `_UNKNOWN`이고 한 번만 부름, 404 고정 문구·400·409 코드 전달과 공급자 문장 제거, 405는 `ADMIN_MISSIONS_UNAVAILABLE`. 기존 `LlmUsageQueryTest`가 `CallType` 7개 모두를 실제 DB(V28 CHECK)에 넣고 조회
+- 루트 계약 테스트 `python -O -m unittest discover -s scripts/tests` 통과(163개, 새 `test_admin_mission_drafts_contract.py` 7개 포함)
+- `ci-db-schema` 재현: `check_db_migrations.py`(일회용 PostgreSQL) 통과. develop(#359 V27 병합 뒤) 기준 core V26 → V27 → V28 적용, 48개 테이블·448개 칼럼이 ERD와 일치, 반복 마이그레이션 변화 없음. 적용 뒤 `ck_llm_usage_call_type`에 `MISSION_DRAFT` 확인
+- scoring `ruff check`·`pytest` 통과(199개, 임시 컨테이너)
+- 로컬 실연(2026-11-05, 이 브랜치로 core·learning 이미지 빌드, compose 별도 프로젝트에 호스트 포트는 core만 열고 공유 kind·컨테이너는 그대로, 끝난 뒤 볼륨까지 삭제): learning_db에 성취기준 시드 765행, ai 자리에는 learning 테스트 `sampleDraft`와 같은 초안을 돌려주는 대역(LLM 호출 없음). core 공개 경로로 성취기준 조회(`gradeBand=초5~6`·`q=6국01-02`) 200 → 초안 요청 202(`GENERATING`, `X-Admin-Operation-Id`) → learning 주기 작업이 대역 ai를 불러 `READY`(1회) → 목록 `status=READY` 1건 → 채택 201(`DRAFT`·`LLM_DRAFT`, 미션 경로로 조회 200) → 재채택·채택된 초안 버리기 409 `CONFLICT`, 없는 초안 404, 학년군 밖 요청 400 `VALIDATION_FAILED` → 새 초안 버리기 200(`DISCARDED`). 감사 14행이 위 결정대로 남음(채택 결과는 `MISSION`·미션 ID·`draftId`). 실제 LLM과 사용량 이벤트 흐름은 이 실연에 없음(사용량 소비는 위 테스트와 CHECK로 확인)

@@ -248,7 +248,8 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
             if(invocation.getArgument<String>(2)==failAction) throw org.springframework.dao.DataAccessResourceFailureException("secret")
             invocation.callRealMethod()
         }.`when`(missionAudits).insert(org.mockito.ArgumentMatchers.any(UUID::class.java) ?: UUID(0,0),org.mockito.ArgumentMatchers.eq(admin) ?: admin,
-            org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.nullable(UUID::class.java),org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString())
+            org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.nullable(UUID::class.java),
+            org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString())
         fun request()=mvc.post("/api/v1/admin/missions") { header("Authorization","Bearer $access");contentType=MediaType.APPLICATION_JSON;content="{}" }
             .andExpect { status { isServiceUnavailable() };jsonPath("$.code") { value("MISSION_AUDIT_UNAVAILABLE") } }
         request();assertTrue(requests.isEmpty())
@@ -332,6 +333,82 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         assertNotNull(response.getHeader("X-Admin-Operation-Id"))
         assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action='MISSION_PUBLISH_REJECTED'",Int::class.java,admin))
         assertEquals(4,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action='MISSION_PUBLISH_REQUESTED'",Int::class.java,admin))
+    }
+    private fun draftCall(method: String,path: String,access: String,body: String?=null)=mvc.perform(
+        org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request(org.springframework.http.HttpMethod.valueOf(method),"/api/v1/admin$path")
+            .header("Authorization","Bearer $access").contentType(MediaType.APPLICATION_JSON).content(body ?: "")).andReturn().response
+    @Test fun `mission draft proxy forwards every route with CONTENT and verified admin headers only`() {
+        val (admin,access)=token("CONTENT");val draft=UUID.randomUUID();val mission=UUID.randomUUID()
+        val routes=listOf(
+            Triple("GET","/achievement-standards?gradeBand=초3~4&q=6국&subject=국어","/internal/admin/achievement-standards"),
+            Triple("POST","/mission-drafts","/internal/admin/mission-drafts"),
+            Triple("GET","/mission-drafts?status=READY","/internal/admin/mission-drafts"),
+            Triple("GET","/mission-drafts/$draft","/internal/admin/mission-drafts/$draft"),
+            Triple("POST","/mission-drafts/$draft/adopt","/internal/admin/mission-drafts/$draft/adopt"),
+            Triple("POST","/mission-drafts/$draft/discard","/internal/admin/mission-drafts/$draft/discard"))
+        for((method,path,internal) in routes) {
+            missionStatus=if(path.endsWith("/adopt")) 201 else if(method=="POST" && path=="/mission-drafts") 202 else 200
+            missionBody=if(path.endsWith("/adopt")) """{"missionId":"$mission","currentVersion":1,"currentRubricVersion":1}""" else """{"draftId":"$draft","status":"GENERATING","items":[]}"""
+            val payload="""{"standardCodes":["4국01-01"],"thinkingType":"ANALYZE"}"""
+            val response=draftCall(method,path,access,if(method=="GET") null else payload)
+            assertEquals(missionStatus,response.status,path)
+            val received=requests.last();assertEquals(method,received.method);assertEquals(internal,received.path)
+            assertEquals(admin.toString(),received.user);assertEquals("ADMIN",received.role);assertNull(received.scope)
+            if(method=="POST") { assertEquals(payload,received.body);assertNotNull(response.getHeader("X-Admin-Operation-Id")) }
+        }
+        val (_,ops)=token("SERVICE_OPS");requests.clear()
+        for((method,path,_) in routes) assertEquals(403,draftCall(method,path,ops,if(method=="GET") null else "{}").status,path)
+        assertTrue(requests.isEmpty())
+        for(path in listOf("/mission-drafts?status=PRIVATE","/mission-drafts?size=101","/achievement-standards?page=-1","/achievement-standards?q=${"가".repeat(101)}"))
+            assertEquals(400,draftCall("GET",path,access).status,path)
+        assertEquals(400,draftCall("POST","/mission-drafts",access,"[]").status)
+        assertTrue(requests.isEmpty())
+    }
+    @Test fun `mission draft request adopt discard audit the draft and adopted mission`() {
+        val (admin,access)=token("CONTENT");val draft=UUID.randomUUID();val mission=UUID.randomUUID()
+        missionStatus=202;missionBody="""{"draftId":"$draft","status":"GENERATING","input":{"note":"private secret"}}"""
+        val requested=draftCall("POST","/mission-drafts",access,"""{"standardCodes":["secret"]}""")
+        assertEquals(202,requested.status);assertTrue(requested.contentAsString.contains("GENERATING"))
+        missionStatus=201;missionBody="""{"missionId":"$mission","currentVersion":1,"currentRubricVersion":1,"source":"LLM_DRAFT"}"""
+        assertEquals(201,draftCall("POST","/mission-drafts/$draft/adopt",access,"{}").status)
+        missionStatus=409;missionBody="""{"status":409,"code":"CONFLICT","detail":"private secret"}"""
+        val conflict=draftCall("POST","/mission-drafts/$draft/discard",access,"{}")
+        assertEquals(409,conflict.status);assertEquals("CONFLICT",json.readTree(conflict.contentAsString)["code"].asText());assertFalse(conflict.contentAsString.contains("secret"))
+        val rows=jdbc.queryForList("SELECT action,target_type,target_id,result,detail::text AS detail FROM audit_log WHERE actor_user_id=? ORDER BY created_at,action",admin)
+        fun row(action: String)=rows.single { it["action"]==action }
+        assertEquals(listOf(null,"MISSION_DRAFT"),listOf(row("MISSION_DRAFT_REQUEST_REQUESTED")["target_id"],row("MISSION_DRAFT_REQUEST_REQUESTED")["target_type"]))
+        assertEquals(listOf(draft,"MISSION_DRAFT","SUCCESS"),listOf(row("MISSION_DRAFT_REQUEST_SUCCEEDED")["target_id"],row("MISSION_DRAFT_REQUEST_SUCCEEDED")["target_type"],row("MISSION_DRAFT_REQUEST_SUCCEEDED")["result"]))
+        assertEquals(listOf(draft,"MISSION_DRAFT"),listOf(row("MISSION_DRAFT_ADOPT_REQUESTED")["target_id"],row("MISSION_DRAFT_ADOPT_REQUESTED")["target_type"]))
+        val adopted=row("MISSION_DRAFT_ADOPT_SUCCEEDED")
+        assertEquals(listOf(mission,"MISSION","SUCCESS"),listOf(adopted["target_id"],adopted["target_type"],adopted["result"]))
+        val detail=json.readTree(adopted["detail"].toString())
+        assertEquals(draft.toString(),detail["draftId"].asText());assertEquals(1,detail["currentVersion"].asInt());assertEquals(201,detail["httpStatus"].asInt())
+        assertEquals(listOf(draft,"MISSION_DRAFT","FAILURE"),listOf(row("MISSION_DRAFT_DISCARD_REJECTED")["target_id"],row("MISSION_DRAFT_DISCARD_REJECTED")["target_type"],row("MISSION_DRAFT_DISCARD_REJECTED")["result"]))
+        assertEquals(6,rows.size);assertFalse(rows.toString().contains("secret"))
+    }
+    @Test fun `mission draft results that do not name the draft or mission stay unknown and are not retried`() {
+        val (admin,access)=token("CONTENT");val draft=UUID.randomUUID()
+        for((path,body) in listOf("/mission-drafts/$draft/discard" to """{"draftId":"${UUID.randomUUID()}","status":"DISCARDED"}""",
+            "/mission-drafts" to """{"status":"GENERATING"}""", "/mission-drafts/$draft/adopt" to """{"draftId":"$draft"}""")) {
+            requests.clear();missionStatus=200;missionBody=body
+            val response=draftCall("POST",path,access,"{}")
+            assertEquals(503,response.status,path);assertEquals("LEARNING_INVALID_RESPONSE",json.readTree(response.contentAsString)["code"].asText())
+            assertEquals(1,requests.size)
+        }
+        assertEquals(3,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action LIKE 'MISSION_DRAFT_%_UNKNOWN'",Int::class.java,admin))
+    }
+    @Test fun `mission draft errors keep learning codes and hide supplier text`() {
+        val (_,access)=token("CONTENT");val draft=UUID.randomUUID()
+        missionStatus=404;missionBody="""{"status":404,"code":"NOT_FOUND","title":"private","detail":"student secret"}"""
+        val missing=draftCall("GET","/mission-drafts/$draft",access)
+        assertEquals(404,missing.status);assertEquals("미션 초안을 찾을 수 없습니다.",json.readTree(missing.contentAsString)["title"].asText())
+        assertFalse(missing.contentAsString.contains("secret"))
+        missionStatus=400;missionBody="""{"status":400,"code":"VALIDATION_FAILED","detail":"student secret"}"""
+        val invalid=draftCall("POST","/mission-drafts",access,"{}")
+        assertEquals(400,invalid.status);assertEquals("VALIDATION_FAILED",json.readTree(invalid.contentAsString)["code"].asText());assertFalse(invalid.contentAsString.contains("secret"))
+        missionStatus=405;missionBody="not-json"
+        val unsupported=draftCall("GET","/achievement-standards",access)
+        assertEquals(503,unsupported.status);assertEquals("ADMIN_MISSIONS_UNAVAILABLE",json.readTree(unsupported.contentAsString)["code"].asText())
     }
     companion object {
         data class Seen(val method: String,val path: String,val body: String,val role: String?,val scope: String?,val token: String?,val user: String?)

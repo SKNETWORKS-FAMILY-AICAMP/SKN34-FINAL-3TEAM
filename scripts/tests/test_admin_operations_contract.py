@@ -92,6 +92,9 @@ class AdminOperationsContracts(unittest.TestCase):
                     for field in ('code','goodThought'):
                         reviewed['required'].remove(field)
                         reviewed['properties'].pop(field)
+                # #355 adds only the ai mission draft usage type; the other call types stay fingerprinted.
+                if section=='schemas' and name=='CallType':
+                    reviewed['enum'].remove('MISSION_DRAFT')
                 canonical=json.dumps(reviewed,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
                 self.assertEqual(expected,hashlib.sha256(canonical).hexdigest(),f'{section}/{name}')
     def test_admin_paths_and_retry_key(self):

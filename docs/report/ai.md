@@ -356,7 +356,7 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 | 출력 상한 | `mission_draft_max_tokens` ~~4096~~ → 8192 (#353) | `gpt-6.1-terra` 출력 673~1,465토큰, `gpt-6-luna`는 최대 3,514토큰으로 4096에 가까움(9.2) |
 
 - 이슈와 다른 점: 예시 답 노출 검사 범위와 들어가면 좋은 생각 규칙(위 표)은 실측 뒤 정했다. 들어가면 좋은 생각 규칙은 시드 작성 기준을 따른 기본값이라, 기준표 내용 담당이 정하면 `ELEMENT_RULE`만 바꾸면 된다. 나머지 계약은 api-spec 4.2 그대로다.
-- 사용량 `MISSION_DRAFT`: core 이벤트 스키마·enum·CHECK에 아직 없어(#355) core 소비자가 거부하고 DLQ에 남는다. 초안 생성 자체는 막지 않는다. #355 반영 뒤 DLQ 메시지는 다시 넣을 수 있다.
+- 사용량 `MISSION_DRAFT`: core 이벤트 스키마·enum·CHECK에 아직 없어(#355) core 소비자가 거부하고 DLQ에 남는다. 초안 생성 자체는 막지 않는다. #355 반영 뒤 DLQ 메시지는 다시 넣을 수 있다. → #355에서 core가 받도록 반영([learning 23절](learning.md#23-core-성취기준미션-초안-프록시와-사용량-mission_draft-355)).
 - 검증: `tests/mission_draft/`(검사별 실패·통과, 학생 정보 없는 입력, 이전 실패 사유 반영, 형식 밖 502·그 밖 503, 응답 필드 이름), `tests/test_versions.py`, `scripts/tests/test_ai_openapi.py`(경로 7개).
 
 #### 생성 시간 실측 (2026-11-04, 로컬, OpenAI `gpt-6.1-terra`)

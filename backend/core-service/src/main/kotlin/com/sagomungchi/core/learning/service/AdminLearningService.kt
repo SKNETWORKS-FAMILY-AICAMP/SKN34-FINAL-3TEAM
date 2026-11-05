@@ -1,6 +1,8 @@
 package com.sagomungchi.core.learning.service
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.JsonNode
 import com.sagomungchi.core.admin.domain.OperationPeriod
+import com.sagomungchi.core.admin.service.MissionAuditService
 import com.sagomungchi.core.learning.client.LearningClient
 import com.sagomungchi.core._common.security.UserContextHolder
 import com.sagomungchi.core._common.exception.BusinessException
@@ -11,7 +13,7 @@ import java.util.UUID
 
 @Service
 class AdminLearningService(private val client: LearningClient,private val json: ObjectMapper,
-    private val audit: com.sagomungchi.core.admin.service.MissionAuditService) {
+    private val audit: MissionAuditService) {
     fun stats(period: OperationPeriod): Map<String,Any> {
         val response = exchange("GET","/stats","from=${period.from}&to=${period.to}")
         if(response.status!=200) unavailable("LEARNING_STATS_UNAVAILABLE")
@@ -42,12 +44,8 @@ class AdminLearningService(private val client: LearningClient,private val json: 
     }
     fun missions(method: String,id: UUID?=null,action: String?=null,query: String?=null,body: ByteArray?=null): HttpExchangeResult {
         val path = "/admin/missions" + (id?.let { "/$it" } ?: "") + (action?.let { "/$it" } ?: "")
-        if(body!=null && (try { json.readTree(body)?.isObject } catch (_: Exception) { false })!=true)
-            throw BusinessException(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED","JSON object 본문이 필요합니다.")
-        val context=UserContextHolder.currentOrNull()
-        val actor=if(context?.role=="ADMIN") runCatching { UUID.fromString(context.userId) }.getOrNull() else null
-        if(actor==null) throw BusinessException(HttpStatus.FORBIDDEN,"FORBIDDEN","검증된 관리자 세션이 필요합니다.")
-        if(method=="GET") return sanitize(exchange(method,path,query,body))
+        val actor=verifiedActor(body)
+        if(method=="GET") return sanitize(exchange(method,path,query,body),MISSION_NOT_FOUND)
         val auditAction=when {
             method=="POST" && id==null && action==null -> "MISSION_CREATE"
             method=="PATCH" && id!=null && action==null -> "MISSION_UPDATE"
@@ -55,40 +53,81 @@ class AdminLearningService(private val client: LearningClient,private val json: 
             method=="POST" && id!=null && action in setOf("review-request","review","publish","unpublish") -> "MISSION_${action!!.replace('-','_').uppercase()}"
             else -> throw BusinessException(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED","지원하지 않는 미션 작업입니다.")
         }
+        return audited(method,path,query,body,actor,auditAction,MissionAuditService.MISSION,id,MISSION_NOT_FOUND) { node -> missionResult(node,id) }
+    }
+    /** 성취기준 표 조회 (#355, api-spec 2.8). 읽기라 감사하지 않음 */
+    fun achievementStandards(query: String): HttpExchangeResult {
+        verifiedActor(null)
+        return sanitize(exchange("GET","/admin/achievement-standards",query),STANDARD_NOT_FOUND)
+    }
+    /**
+     * 미션 초안 (#355, api-spec 2.8·4.1). 요청·채택·버리기는 요청 감사 뒤 learning을 한 번만 부름.
+     * 결과 감사 대상: 요청·버리기는 응답 초안 ID, 채택은 응답 미션 ID·버전(미션을 만들므로 MISSION_CREATE와 같은 대상, detail에 draftId).
+     */
+    fun missionDrafts(method: String,id: UUID?=null,action: String?=null,query: String?=null,body: ByteArray?=null): HttpExchangeResult {
+        val path = "/admin/mission-drafts" + (id?.let { "/$it" } ?: "") + (action?.let { "/$it" } ?: "")
+        val actor=verifiedActor(body)
+        if(method=="GET") return sanitize(exchange(method,path,query,body),DRAFT_NOT_FOUND)
+        val draft=MissionAuditService.MISSION_DRAFT
+        return when {
+            method=="POST" && id==null && action==null ->
+                audited(method,path,query,body,actor,"MISSION_DRAFT_REQUEST",draft,null,DRAFT_NOT_FOUND) { node -> draftResult(node,null) }
+            method=="POST" && id!=null && action=="discard" ->
+                audited(method,path,query,body,actor,"MISSION_DRAFT_DISCARD",draft,id,DRAFT_NOT_FOUND) { node -> draftResult(node,id) }
+            method=="POST" && id!=null && action=="adopt" ->
+                audited(method,path,query,body,actor,"MISSION_DRAFT_ADOPT",draft,id,DRAFT_NOT_FOUND) { node -> missionResult(node,null).copy(draft=id) }
+            else -> throw BusinessException(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED","지원하지 않는 초안 작업입니다.")
+        }
+    }
+    private data class AuditTarget(val type: String,val id: UUID,val version: Int?=null,val rubric: Int?=null,val draft: UUID?=null)
+    private fun missionResult(node: JsonNode,id: UUID?): AuditTarget {
+        val mission=runCatching { UUID.fromString(node.path("missionId").asText()) }.getOrNull()
+        val v=node.path("currentVersion");val rv=node.path("currentRubricVersion")
+        if(mission==null || (id!=null && id!=mission) || !v.isIntegralNumber || !v.canConvertToInt() || v.asInt()<1 ||
+            rv.isMissingNode || (!rv.isNull && (!rv.isIntegralNumber || !rv.canConvertToInt() || rv.asInt()<1))) unavailable("LEARNING_INVALID_RESPONSE")
+        return AuditTarget(MissionAuditService.MISSION,mission,v.asInt(),if(rv.isNull) null else rv.asInt())
+    }
+    private fun draftResult(node: JsonNode,id: UUID?): AuditTarget {
+        val draft=runCatching { UUID.fromString(node.path("draftId").asText()) }.getOrNull()
+        if(draft==null || (id!=null && id!=draft) || !node.path("status").isTextual) unavailable("LEARNING_INVALID_RESPONSE")
+        return AuditTarget(MissionAuditService.MISSION_DRAFT,draft)
+    }
+    private fun verifiedActor(body: ByteArray?): UUID {
+        if(body!=null && (try { json.readTree(body)?.isObject } catch (_: Exception) { false })!=true)
+            throw BusinessException(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED","JSON object 본문이 필요합니다.")
+        val context=UserContextHolder.currentOrNull()
+        val actor=if(context?.role=="ADMIN") runCatching { UUID.fromString(context.userId) }.getOrNull() else null
+        return actor ?: throw BusinessException(HttpStatus.FORBIDDEN,"FORBIDDEN","검증된 관리자 세션이 필요합니다.")
+    }
+    /** 요청 감사 → learning 한 번 → 성공 응답에서 대상 확인 → 결과 감사. 결과를 모르면 UNKNOWN으로 남기고 다시 부르지 않음 */
+    private fun audited(method: String,path: String,query: String?,body: ByteArray?,actor: UUID,auditAction: String,
+                        targetType: String,id: UUID?,notFound: String,result: (JsonNode) -> AuditTarget): HttpExchangeResult {
         val operation=UUID.randomUUID()
-        try { audit.requested(operation,actor,auditAction,id) } catch (_: RuntimeException) { auditUnavailable(operation) }
+        try { audit.requested(operation,actor,auditAction,id,targetType) } catch (_: RuntimeException) { auditUnavailable(operation) }
         val response=try { exchange(method,path,query,body) } catch (error: RuntimeException) {
-            try { audit.finished(operation,actor,auditAction,id,"UNKNOWN",null) } catch (_: RuntimeException) { auditUnavailable(operation) }
+            try { audit.finished(operation,actor,auditAction,id,"UNKNOWN",null,targetType=targetType) } catch (_: RuntimeException) { auditUnavailable(operation) }
             val business=error as? BusinessException
             throw BusinessException(business?.status ?: HttpStatus.SERVICE_UNAVAILABLE,business?.code ?: "LEARNING_UNAVAILABLE",
                 "미션 요청 결과를 확인하지 못했습니다.","확인 번호: $operation. 다시 요청하기 전에 미션 상태를 확인하세요.")
         }
-        var mission=id
-        var version: Int?=null
-        var rubric: Int?=null
+        var target: AuditTarget?=null
         val safe=try {
-            val sanitized=sanitize(response)
-            if(response.status in 200..299) {
-                val node=json.readTree(response.body)
-                mission=runCatching { UUID.fromString(node.path("missionId").asText()) }.getOrNull()
-                val v=node.path("currentVersion");val rv=node.path("currentRubricVersion")
-                if(mission==null || (id!=null && id!=mission) || !v.isIntegralNumber || !v.canConvertToInt() || v.asInt()<1 ||
-                    rv.isMissingNode || (!rv.isNull && (!rv.isIntegralNumber || !rv.canConvertToInt() || rv.asInt()<1))) unavailable("LEARNING_INVALID_RESPONSE")
-                version=v.asInt();rubric=if(rv.isNull) null else rv.asInt()
-            }
+            val sanitized=sanitize(response,notFound)
+            if(response.status in 200..299) target=result(json.readTree(response.body))
             sanitized
         } catch (error: RuntimeException) {
-            try { audit.finished(operation,actor,auditAction,id,"UNKNOWN",response.status) } catch (_: RuntimeException) { auditUnavailable(operation) }
+            try { audit.finished(operation,actor,auditAction,id,"UNKNOWN",response.status,targetType=targetType) } catch (_: RuntimeException) { auditUnavailable(operation) }
             throw BusinessException(HttpStatus.SERVICE_UNAVAILABLE,(error as? BusinessException)?.code ?: "LEARNING_INVALID_RESPONSE",
                 "미션 요청 결과를 확인하지 못했습니다.","확인 번호: $operation. 다시 요청하기 전에 미션 상태를 확인하세요.")
         }
         val outcome=when(response.status) { in 200..299 -> "SUCCEEDED"; in 400..499 -> "REJECTED"; else -> "UNKNOWN" }
-        try { audit.finished(operation,actor,auditAction,mission,outcome,response.status,version,rubric) } catch (_: RuntimeException) { auditUnavailable(operation) }
+        try { audit.finished(operation,actor,auditAction,target?.id ?: id,outcome,response.status,target?.version,target?.rubric,
+            target?.type ?: targetType,target?.draft) } catch (_: RuntimeException) { auditUnavailable(operation) }
         return safe.copy(headers=safe.headers + ("X-Admin-Operation-Id" to listOf(operation.toString())))
     }
     private fun auditUnavailable(operation: UUID): Nothing = throw BusinessException(HttpStatus.SERVICE_UNAVAILABLE,"MISSION_AUDIT_UNAVAILABLE",
         "미션 감사 기록을 확인하지 못했습니다.","확인 번호: $operation. 다시 요청하기 전에 미션 상태를 확인하세요.")
-    private fun sanitize(response: HttpExchangeResult): HttpExchangeResult {
+    private fun sanitize(response: HttpExchangeResult,notFound: String): HttpExchangeResult {
         if(response.status in setOf(405,501)) unavailable("ADMIN_MISSIONS_UNAVAILABLE")
         val node = try { json.readTree(response.body) } catch (_: Exception) { null }
         if(response.status==404) {
@@ -98,7 +137,7 @@ class AdminLearningService(private val client: LearningClient,private val json: 
                 !node.path("status").isIntegralNumber || !node.path("status").canConvertToInt() || node.path("status").asInt()!=404 ||
                 !node.path("code").isTextual || node.path("code").asText()!="NOT_FOUND") unavailable("ADMIN_MISSIONS_UNAVAILABLE")
             val safe=json.createObjectNode().put("type","about:blank").put("status",404).put("code","NOT_FOUND")
-                .put("title","미션을 찾을 수 없습니다.")
+                .put("title",notFound)
             return HttpExchangeResult(404,mapOf("Content-Type" to listOf("application/problem+json")),json.writeValueAsBytes(safe))
         }
         if(node?.isObject!=true) unavailable("LEARNING_INVALID_RESPONSE")
@@ -120,4 +159,9 @@ class AdminLearningService(private val client: LearningClient,private val json: 
         return try { client.exchange(method,path,query,body) } finally { UserContextHolder.set(context) }
     }
     private fun unavailable(code: String): Nothing = throw BusinessException(HttpStatus.SERVICE_UNAVAILABLE,code,"학습 서비스 응답을 확인하지 못했습니다.")
+    private companion object {
+        const val MISSION_NOT_FOUND="미션을 찾을 수 없습니다."
+        const val DRAFT_NOT_FOUND="미션 초안을 찾을 수 없습니다."
+        const val STANDARD_NOT_FOUND="성취기준을 찾을 수 없습니다."
+    }
 }
