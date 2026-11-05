@@ -4,6 +4,11 @@
 않는다. 판정(LLM)·결제·환불은 호출하지 않는다. 부모 refresh 쿠키는 사용할 때마다 회전하므로
 새 값을 같은 fixture 파일에 바로 다시 쓴다(재사용하면 core가 세션을 폐기한다).
 
+답변을 낼 미션은 학생 미션 목록에서 고른다. 판정을 부르지 않으므로 확인마다 진행 중 시도가 하나
+남고, 그 시도에 첫 답변을 다시 내면 learning이 422를 준다. 그래서 fixture missionId가 시작 전이면
+그 미션을, 아니면 answer.inputType이 같은 다른 시작 전 미션을 쓴다. 시작 전 미션이 없으면 fixture
+미션의 진행 중 시도를 돌려받아 저장된 답변을 조회만 한다(read-answer, 답변 쓰기는 확인하지 않음).
+
 fixture 파일(작업자 PC에만 두고 Git·Actions Secret에 넣지 않음):
 {
   "dedicatedDemoFixture": true, "allowAnswerSubmission": true,
@@ -28,6 +33,9 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 REFRESH_COOKIE = "sagomungchi_refresh"
 MAX_BODY = 4 * 1024 * 1024
+MISSION_PAGE_SIZE = 100
+MAX_MISSION_PAGES = 10
+STEP_COUNT = 6
 
 
 class CheckFailed(Exception):
@@ -127,6 +135,20 @@ def template(path):
     return re.sub(r"[0-9a-fA-F-]{36}", "{id}", path)
 
 
+def fresh_mission(missions, preferred, input_type):
+    """답변을 낼 시작 전 미션 ID. fixture 미션을 먼저, 없으면 같은 입력 방식의 첫 미션."""
+    candidates = [
+        str(item.get("id"))
+        for item in missions
+        if isinstance(item, dict)
+        and item.get("status") == "NOT_STARTED"
+        and item.get("inputType") == input_type
+    ]
+    if str(preferred) in candidates:
+        return str(preferred)
+    return candidates[0] if candidates else None
+
+
 def rotated_refresh(set_cookies):
     for header in set_cookies:
         name, _, rest = header.partition("=")
@@ -170,20 +192,66 @@ def verify(base, fixture_path, opener=None):
 
         student = step("student-login", student_login)
 
+        def pick_mission():
+            missions = []
+            page = 0
+            while True:
+                _, body, _ = call(
+                    base,
+                    "GET",
+                    f"/api/v1/missions?page={page}&size={MISSION_PAGE_SIZE}",
+                    token=student,
+                    opener=opener,
+                )
+                items = body.get("items")
+                if not isinstance(items, list):
+                    raise CheckFailed("미션 목록 응답 형식이 아님")
+                missions.extend(items)
+                page += 1
+                if (
+                    not items
+                    or len(missions) >= int(body.get("totalElements") or 0)
+                    or page >= MAX_MISSION_PAGES
+                ):
+                    break
+            fresh = fresh_mission(
+                missions, data["missionId"], data["answer"]["inputType"]
+            )
+            # 시작 전 미션이 없으면 fixture 미션의 진행 중 시도를 읽기만 한다
+            return fresh or str(data["missionId"])
+
+        mission = step("pick-mission", pick_mission)
+
         def start_attempt():
             status, body, _ = call(
                 base,
                 "POST",
-                f"/api/v1/missions/{data['missionId']}/attempts",
+                f"/api/v1/missions/{mission}/attempts",
                 token=student,
                 body={},
                 opener=opener,
             )
             if status not in (200, 201) or not body.get("attemptId"):
                 raise CheckFailed("시도 시작 응답에 attemptId가 없음")
-            return body["attemptId"]
+            # 201은 새 시도. 200은 진행 중 시도 재사용이며 답변이 있으면 다시 내지 않는다
+            answered = status == 200 and bool(body.get("answers"))
+            return body["attemptId"], answered
 
-        attempt = step("start-attempt", start_attempt)
+        attempt, answered = step("start-attempt", start_attempt)
+
+        def read_answer():
+            _, body, _ = call(
+                base,
+                "GET",
+                f"/api/v1/attempts/{attempt}",
+                token=student,
+                opener=opener,
+            )
+            answers = body.get("answers")
+            if not isinstance(answers, list) or not any(
+                isinstance(a, dict) and a.get("answerId") for a in answers
+            ):
+                raise CheckFailed("진행 중 시도에서 저장된 답변을 읽지 못함")
 
         def submit_answer():
             status, body, _ = call(
@@ -198,7 +266,10 @@ def verify(base, fixture_path, opener=None):
             if status != 201 or not body.get("answerId"):
                 raise CheckFailed("답변 제출이 저장되지 않음")
 
-        step("submit-answer", submit_answer)
+        if answered:
+            step("read-answer", read_answer)
+        else:
+            step("submit-answer", submit_answer)
 
         def parent_refresh():
             _, body, cookies = call(
@@ -235,7 +306,7 @@ def verify(base, fixture_path, opener=None):
         pass
     return {
         "checkedAt": datetime.now(UTC).isoformat(),
-        "ok": len(steps) == 5 and all(item["ok"] for item in steps),
+        "ok": len(steps) == STEP_COUNT and all(item["ok"] for item in steps),
         "steps": steps,
     }
 
