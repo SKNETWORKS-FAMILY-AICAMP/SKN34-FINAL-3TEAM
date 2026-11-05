@@ -304,7 +304,7 @@ service에서 Jackson `convertValue`를 쓰는 것은 기존 `treeToValue`·`val
 - **오류 코드**: `BROKER_UNAVAILABLE`(연결 실패) · `PUBLISH_TIMEOUT`(confirm timeout) · `PUBLISH_FAILED`(nack·그 외)만 저장, DB CHECK. 원문 예외·payload·subject는 DB·로그에 남기지 않음. 재시도 예정은 WARN, 격리는 ERROR `Outbox quarantined: id type code`
 - **주기 중단**: `BROKER_UNAVAILABLE`·`PUBLISH_TIMEOUT`이면 그 1건만 기록하고 주기 종료. 남은 이벤트도 같은 결과일 가능성이 높고, 건당 5초 대기가 쌓이면 ShedLock `lockAtMostFor` 1분을 넘김. 장애 중에는 주기마다 첫 선두만 실패 횟수를 소모
 - **confirm 후 기록 실패**: 발행 실패로 분류하지 않음. 다음 주기에 같은 id 재발행, 소비자 멱등 처리로 흡수(아키텍처 1.6)
-- **마이그레이션**: core `V27__outbox_failure_quarantine.sql`. report와 같은 7개 컬럼, 카운터는 기존 행만 0(영구 DEFAULT 없음, insert에서 0 명시). 인덱스 `(created_at) WHERE published_at IS NULL` → `(subject, created_at, id) WHERE published_at IS NULL`
+- **마이그레이션**: core `V27__outbox_failure_quarantine.sql`. report와 같은 7개 컬럼, 카운터는 기존 행만 0(영구 DEFAULT 없음, insert에서 0 명시). 인덱스 `(created_at) WHERE published_at IS NULL` → `(subject, created_at, id) WHERE published_at IS NULL`. gitops 로컬 core 마이그레이션 리비전 v26 → v27(`test_core_migration_versions.py`)
 - **재처리**: 관리자 API·#47 화면 노출 없음, 신뢰된 운영 환경에서 core DB 권한으로 아래 SQL 실행. 격리된 미발행 행만 조건부 갱신(0행이면 이미 발행·삭제·재처리됨). id·payload·순서 위치 유지, 실패 카운터·백오프 초기화, `manual_retry_count`·`last_requeued_at` 기록. 관리자 작업 재처리(#47·#152, 새 jobId)와 달리 이미 만든 이벤트 전달만 다시 시도
 - **ai·scoring**: #208 결정 3 유지. DB를 두지 않고 발행 실패는 서비스 로그(`이벤트 발행 실패`)로 확인. 브로커 장애 시 core로 실패를 전달할 경로도 같은 브로커라 DB 기록 불가
 - 검증: `MessagingIntegrationTest` 일시 실패 후 재시도 발행, 4번째 실패 격리·다른 subject 발행·재처리 SQL 후 순서대로 발행, 연결 실패 시 주기 중단
