@@ -1,0 +1,42 @@
+# 데모 core_db에 일회성 SQL을 실행하는 Pod. core 앱 계정 Secret과 RDS CA를 그대로 쓰고 비밀 값을 출력하지 않는다.
+# 사용: kubectl -n app create configmap demo-db-oneoff-sql --from-file=run.sql=<SQL 파일>
+#       kubectl -n app apply -f infrastructure/aws/demo-db-oneoff.k8s.yaml → logs → 둘 다 delete
+apiVersion: v1
+kind: Pod
+metadata:
+  name: demo-db-oneoff
+  namespace: app
+  labels: { app.kubernetes.io/name: demo-db-oneoff }
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 70
+    runAsGroup: 70
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: psql
+      image: postgres:17.11-alpine
+      command: ["psql", "-v", "ON_ERROR_STOP=1", "-X", "-f", "/sql/run.sql"]
+      env:
+        - { name: PGHOST, value: sagomungchi-demo-db.czcw0ywu2euo.ap-northeast-2.rds.amazonaws.com }
+        - { name: PGDATABASE, value: core_db }
+        - { name: PGSSLMODE, value: verify-full }
+        - { name: PGSSLROOTCERT, value: /rds-ca/global-bundle.pem }
+        - { name: PGCONNECT_TIMEOUT, value: "10" }
+        - { name: PGUSER, valueFrom: { secretKeyRef: { name: core-db-credentials, key: DB_USERNAME } } }
+        - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: core-db-credentials, key: DB_PASSWORD } } }
+      resources:
+        requests: { cpu: 20m, memory: 32Mi }
+        limits: { cpu: 200m, memory: 128Mi }
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+      volumeMounts:
+        - { name: sql, mountPath: /sql, readOnly: true }
+        - { name: rds-ca, mountPath: /rds-ca, readOnly: true }
+  volumes:
+    - { name: sql, configMap: { name: demo-db-oneoff-sql } }
+    - { name: rds-ca, configMap: { name: rds-ca } }
