@@ -219,10 +219,15 @@ class FakeResponse:
 class FakeOpener:
     """경로별 응답. 실패할 경로는 HTTP 상태 코드로 지정한다."""
 
-    def __init__(self, fail=None, rotate=True):
+    def __init__(
+        self, fail=None, rotate=True, missions=None, start_status=201, answers=None
+    ):
         self.calls = []
         self.fail = fail or {}
         self.rotate = rotate
+        self.missions = MISSIONS if missions is None else missions
+        self.start_status = start_status
+        self.answers = answers or []
 
     def open(self, request, timeout=None):
         path = request.full_url.split("example.test", 1)[1]
@@ -234,10 +239,17 @@ class FakeOpener:
             return FakeResponse(
                 200, {"accessToken": "student-token", "role": "STUDENT"}
             )
+        if path.startswith("/api/v1/missions?"):
+            return FakeResponse(
+                200, {"items": self.missions, "totalElements": len(self.missions)}
+            )
         if path.endswith("/attempts"):
             return FakeResponse(
-                201, {"attemptId": "11111111-1111-1111-1111-111111111111"}
+                self.start_status,
+                {"attemptId": ATTEMPT, "answers": self.answers},
             )
+        if path.endswith(f"/attempts/{ATTEMPT}"):
+            return FakeResponse(200, {"attemptId": ATTEMPT, "answers": self.answers})
         if path.endswith("/answers"):
             return FakeResponse(201, {"answerId": "a-1"})
         if path.endswith("/auth/refresh"):
@@ -265,6 +277,18 @@ FIXTURE = {
     "parentRefreshCookie": "old-refresh",
 }
 
+ATTEMPT = "11111111-1111-1111-1111-111111111111"
+STORED_ANSWER = [{"answerId": "a-0", "inputType": "NARRATIVE"}]
+FIXTURE_MISSION = FIXTURE["missionId"]
+OTHER_MISSION = "44444444-4444-4444-4444-444444444444"
+COMPLETED_ONLY = [
+    {"id": OTHER_MISSION, "inputType": "NARRATIVE", "status": "COMPLETED"},
+]
+MISSIONS = [
+    {"id": FIXTURE_MISSION, "inputType": "NARRATIVE", "status": "NOT_STARTED"},
+    {"id": OTHER_MISSION, "inputType": "NARRATIVE", "status": "NOT_STARTED"},
+]
+
 
 class SmokeTests(unittest.TestCase):
     def run_smoke(self, opener, fixture=None):
@@ -283,6 +307,7 @@ class SmokeTests(unittest.TestCase):
             [s["step"] for s in result["steps"]],
             [
                 "student-login",
+                "pick-mission",
                 "start-attempt",
                 "submit-answer",
                 "parent-refresh",
@@ -319,6 +344,70 @@ class SmokeTests(unittest.TestCase):
         )
         self.assertFalse(any(c[1].endswith("/auth/refresh") for c in opener.calls))
         self.assertEqual(saved["parentRefreshCookie"], "old-refresh")
+
+    def started_mission(self, opener):
+        return next(
+            c[1].split("/")[4] for c in opener.calls if c[1].endswith("/attempts")
+        )
+
+    def test_uses_fixture_mission_when_not_started(self):
+        opener = FakeOpener()
+        result, _ = self.run_smoke(opener)
+        self.assertTrue(result["ok"])
+        self.assertEqual(self.started_mission(opener), FIXTURE_MISSION)
+
+    def test_skips_fixture_mission_left_in_progress(self):
+        opener = FakeOpener(
+            missions=[
+                {
+                    "id": FIXTURE_MISSION,
+                    "inputType": "NARRATIVE",
+                    "status": "IN_PROGRESS",
+                },
+                {
+                    "id": "55555555-5555-5555-5555-555555555555",
+                    "inputType": "CHOICE",
+                    "status": "NOT_STARTED",
+                },
+                {
+                    "id": OTHER_MISSION,
+                    "inputType": "NARRATIVE",
+                    "status": "NOT_STARTED",
+                },
+            ]
+        )
+        result, _ = self.run_smoke(opener)
+        self.assertTrue(result["ok"])
+        self.assertEqual(self.started_mission(opener), OTHER_MISSION)
+
+    def test_without_fresh_mission_reads_answer_of_resumed_attempt(self):
+        opener = FakeOpener(
+            missions=COMPLETED_ONLY, start_status=200, answers=STORED_ANSWER
+        )
+        result, _ = self.run_smoke(opener)
+        self.assertTrue(result["ok"])
+        self.assertEqual(self.started_mission(opener), FIXTURE_MISSION)
+        self.assertIn("read-answer", [s["step"] for s in result["steps"]])
+        self.assertFalse(any(c[1].endswith("/answers") for c in opener.calls))
+        self.assertTrue(
+            any(c[1].endswith(f"/attempts/{ATTEMPT}") for c in opener.calls)
+        )
+
+    def test_resumed_attempt_without_answer_still_submits(self):
+        opener = FakeOpener(missions=COMPLETED_ONLY, start_status=200)
+        result, _ = self.run_smoke(opener)
+        self.assertTrue(result["ok"])
+        self.assertIn("submit-answer", [s["step"] for s in result["steps"]])
+
+    def test_read_answer_fails_when_attempt_has_no_answer_id(self):
+        opener = FakeOpener(
+            missions=COMPLETED_ONLY,
+            start_status=200,
+            answers=[{"inputType": "NARRATIVE"}],
+        )
+        result, _ = self.run_smoke(opener)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["steps"][-1]["step"], "read-answer")
 
     def test_missing_rotation_fails(self):
         result, _ = self.run_smoke(FakeOpener(rotate=False))
