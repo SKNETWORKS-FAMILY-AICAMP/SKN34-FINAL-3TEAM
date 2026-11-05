@@ -147,6 +147,161 @@ data: {}
 - 기존 NULL 평가 행은 목록에 null로 남기고 활성화·복귀는 422, 불완전한 기존 ACTIVE는 내부 snapshot에서 503 `MODEL_VERSION_STATE_INVALID`
 - scoring은 #86에서 Pod별 큐 바인딩 → snapshot 조회 → 더 높은 revision 적용·재연결을 구현했다. ai 소비 흐름은 #68에서 구현했다(7장). [scoring #86 검증](scoring.md#2-활성-버전-이벤트롤백-86)을 참고한다.
 
+### 3.1 등록·활성화 절차 개선 설계안 (#301, 설계 검토)
+
+> 상태: 공동 담당자(kty2001) 검토를 반영한 설계안이다. 코드·API·DB는 바꾸지 않았다. 2026-11-05 kty2001 답변과 팀 확인으로 정한 항목은 `[결정]`으로 표시한다.
+> 배경: #185 AWS 배포 때 서술 3.0·논술 3.1을 관리자 화면으로 등록하면서 등록 자료를 화면에 반복 전사해야 했다. 두 버전은 이후 11/03 AWS 데모 검증용으로 같은 화면에서 활성화되었다(3.1.2 대조 결과).
+
+이 절의 모든 안은 #301의 원칙을 따른다. 파일 업로드·등록·사전 검사만으로 활성화하지 않는다. 파일 무결성·로딩 성공을 품질 승인으로 표시하지 않는다. 사람 승인과 감사 이력을 유지하고 임시 경계·평가 범위 제한·미검증 사항을 화면에 드러낸다. api-spec 5.2의 "새 승인 상태 enum 없음"도 유지한다.
+
+#### 3.1.1 현재 흐름 (코드 기준)
+
+1. 등록: 관리자 `models` 화면(`ModelRegistry.tsx`) → `POST /api/v1/admin/model-versions` → `ModelVersionService.register`가 필수 근거·범위 형식만 검사하고 `REGISTERED`로 저장, 감사 `MODEL_REGISTER`
+2. 승인·활성화: 버전 카드의 "활성화" → `POST /{id}/activate` `{approved:true,scopes,reason,reanalysisPlanned}` → `scopes ⊆ evaluatedScopes`이면 기존 ACTIVE를 INACTIVE로 바꾸고 대상 ACTIVE·`approval`·`activeScopes`·revision 저장, 감사 `MODEL_ACTIVATE`, Outbox `model.version.activated`가 한 트랜잭션
+3. 로딩: scoring 각 Pod가 이벤트·snapshot(`GET /internal/model-versions/active`)을 받아 `ModelRegistry.load` → S3 다운로드 → `validate_metadata`(train_info.json·score_cuts.json)·`num_labels` 확인 → 메모리 교체. 실패하면 기존 모델을 유지하고 오류 유형만 로그에 남긴다
+4. 추론: `M2Service`가 요청마다 scope `judgment/grade-{N}/{narrative|essay}`가 활성 scope에 있는지 확인한다
+
+core는 3·4의 결과를 모른다. 로딩된 버전은 scoring `GET /internal/versions`(name·version·revision)로만 보이며 core·화면은 이를 호출하지 않는다. 그래서 화면의 `ACTIVE`는 "core에서 활성화됨"까지만 뜻한다.
+
+**화면 수동 입력 항목**
+
+| 화면 항목 | 저장 위치 | 등록 | 활성화 | 복귀 | 코드에서 확인한 문제 |
+|---|---|---|---|---|---|
+| 종류 | `model_version.kind` | 사용 | - | - | 기본값이 `PROMPT`라 M2 등록 때 `MODEL`로 바꾸지 않으면 다른 종류로 등록된다 |
+| 이름 | `name` | 사용 | - | - | 자유 입력. scoring은 `m2-klue-narrative`·`m2-klue-essay`만 쓰므로 오타 이름도 등록·활성화는 되지만 쓰이지 않는다 |
+| 버전 | `version` | 사용 | - | - | `X.Y` 규칙(4장)을 검사하지 않는다 |
+| 기준표 원본 UUID | `ref_id` | RUBRIC만 | - | - | - |
+| 아티팩트 주소 (선택) | `artifact_uri` | 사용 | - | - | `MODEL`에도 선택이다. 빈 값으로 활성화하면 scoring 계약 검사(`model_versions.py`, `artifactUri` 필수)에서 거부된다. 이름·버전과 경로 일치도 검사하지 않는다 |
+| 평가 근거 8개 (평가셋 ID·버전, 비교 기준 버전, 비교 보고서, 학습·평가 분리, 인용·계산 정확성, 사람 검토 기록) | `eval_result.evidence.*` | 사용 | 완전성 재확인 | 완전성 재확인 | 8칸을 모두 손으로 옮긴다 |
+| 적용 범위 (상단) | 아래 설명 | `evidence.evaluatedScopes` | `approval.scopes`·`activeScopes` | `activeScopes` | 한 입력이 세 의미로 쓰인다 |
+| 변경 사유 (상단) | 활성화: `approval.reason`·감사 `detail.reason` / 복귀: 감사만 | - | 필수 | 필수 | 등록에는 쓰이지 않는데 등록 폼 밖 상단에 있다 |
+| 승인 체크 (상단) | 요청 `approved`. 저장은 `approval` 생성으로 간접 기록 | - | 필수 | - | 모든 카드가 같은 체크 하나를 공유한다 |
+| 재분석 계획 (상단) | 감사 `detail.reanalysisPlanned`만 | - | 사용 | 사용 | 작업을 실행하지 않는다 |
+
+자동으로 채워지는 값: `id`·`status`·`createdAt`, 승인자 `approvedBy`(로그인 계정), `approvedAt`·`activatedAt`·`revision`.
+
+**"적용 범위"의 실제 의미**: 상단 textarea 하나(`scopeText`)를 모든 요청이 공유한다.
+
+- 등록 폼은 이 값을 `evaluatedScopes`, 즉 "평가 근거가 확보된 범위"로 보낸다. 등록 폼 안에는 범위 입력이 없고, 비어 있으면 "버전 등록" 버튼이 이유 표시 없이 비활성화된다
+- 활성화 버튼은 같은 값을 승인·서비스 적용 범위로 보낸다. 서버는 문자열 집합 포함(`evaluatedScopes.containsAll`)만 확인한다
+- 복귀 버튼은 같은 값을 복귀 범위로 보낸다. 서버는 원 승인 범위의 부분 집합인지 확인한다
+- 결과: 등록 직후 같은 값으로 활성화하면 평가 범위와 활성 범위가 늘 같아져 "평가는 했지만 적용하지 않은 범위"를 표현하기 어렵다. 다른 카드의 버튼도 같은 값을 쓰므로 서술 범위를 입력한 상태에서 논술 카드의 버튼을 누르면 422가 난다
+- 활성화·복귀 버튼이 꺼지는 조건 6가지(근거 없음, 범위 형식, 사유 없음, 처리 중, 상태, 승인 체크)를 화면이 알려 주지 않는다
+
+#### 3.1.2 등록용 JSON 계약과 자동 입력 범위
+
+**실제 제공 자료(기준)**: M2 담당 수빈 님이 11/03에 준 두 파일이다. 둘 다 저장소에는 없다(manifest의 "JSON도 저장소에 넣을지는 팀 결정"에 따름).
+
+- `registration_1103.json`(v1.0.0): 등록 API 본문을 그대로 담은 파일이다. 최상위는 설명 키(`title`·`version`·`date`·`author`·`주의`·`<버킷>`)와 `requests[]`이고, 각 항목은 `{kind,name,version,artifactUri,evaluation}`(api-spec 5.2)과 같다. 서술 3.0·논술 3.1 두 항목, `evaluation` 9칸이 모두 채워져 있다
+- `manifest.json`(v1.1.0): 모델별 `name`·`version`·`inputType`·`scope`·`num_labels`·`outputs`·`주의`와 6개 파일의 `file`·`bytes`·`sha256`을 담은 scoring 로딩용 파일 목록이다
+- 최상위 `주의`: "품질 승인 근거가 아니라 현재 평가 기록. 허용 기준은 11/22 확정(NFR-AIQ-06) 전이라 활성화 범위는 팀 결정". manifest 논술 `주의`: train_info.json의 score_cuts는 null이라 별도 score_cuts.json을 써야 하고 경계는 임시값이다
+- `artifactUri`는 `s3://<버킷>/models/{name}/{version}/` 형태로, 버킷 이름을 운영자가 바꿔 넣게 되어 있다
+
+2026-11-05 로컬 대조(읽기만, S3·core 호출 없음):
+
+- 받은 12개 파일의 크기·sha256이 manifest와 모두 일치
+- `registration`과 `manifest`의 이름·버전·`evaluatedScopes`↔`scope`가 두 모델 모두 일치. `evaluation` 9칸에 빈 값 없음
+- train_info.json·config.json 주요 값이 4.1 계약과 같음: 서술 `dataset=descriptive`·`with_keyword=True`·9출력, 논술 `dataset=essay545`·14출력·`use_outputs=[org,cont,exp]`·train_info.json의 score_cuts는 null, 둘 다 `regression`·512토큰. scoring `validate_metadata` 자체는 이 PC에 실행 환경이 없어 돌리지 못했다(같은 파일의 로딩은 #228·PR #288에서 확인됨)
+
+**계약(실제 형식 기준으로 수정)**: 처음 초안(`schema`·`items`·`artifact.files`를 한 파일에 둔 형식)은 버리고 두 파일을 그대로 받는다.
+
+| 파일 | 필수 | 웹이 쓰는 부분 | 쓰지 않는 부분 |
+|---|---|---|---|
+| registration | 필수 | `requests[]` 각 항목을 그대로 POST 본문으로 사용 | 최상위 설명 키는 미리보기 상단에 원문 표시만 |
+| manifest | 선택(사전 검사 때 필수) | 모델별 `files[]`의 `file`·`bytes`·`sha256`, `scope`, `주의` | `input`·`score_rule`·`where` 등 설명 값은 표시만 |
+
+| 구분 | 항목 | 처리 |
+|---|---|---|
+| JSON에서 자동 입력 | kind·name·version·artifactUri·evaluation 9칸 | 미리보기에 그대로 표시. 수정하면 수정 표시를 남긴다 |
+| 운영자가 확인·수정 | `artifactUri`의 `<버킷>` | 환경(local·AWS)마다 버킷이 다르다. 웹에서 버킷을 한 번 입력하면 모든 항목에 치환하고, 치환 전에는 등록을 막는다 |
+| 운영자가 확인 | `limitations` | 최상위 `주의`와 manifest 모델별 `주의`를 후보로 채워 보이고 운영자가 확인·수정한다 |
+| JSON에 넣지 않음 | 승인 여부, 활성화 범위, 변경 사유, 재분석 계획, 승인자 | 사람이 활성화 단계에서 직접 정한다. `requests[]` 항목에 있으면 거부한다 |
+
+- `[결정]` 파싱 위치: 브라우저에서 JSON을 읽어 기존 `POST /admin/model-versions`를 항목별로 호출한다(API 변경 없음). 실제 파일이 이미 POST 본문 형식이라 변환이 거의 없다. 검토한 대안: core JSON 업로드 API
+- `[결정]` `limitations`(임시 경계·미검증 사항): `evidence`에 선택 필드 `limitations: string[]`를 추가한다. jsonb라 마이그레이션은 없고 Kotlin `EvaluationEvidence`(기본값 빈 목록)·api-spec 5.2·OpenAPI·웹 타입을 바꾼다. 기존 행은 빈 목록으로 읽힌다. 검토한 대안: `comparisonReport` 문장에 함께 기록
+- `[결정]` 여러 모델: 모델별 미리보기 카드와 개별 "등록" 버튼, 부분 실패는 항목별로 표시한다. 검토한 대안: 일괄 등록 API
+- `requests[]` 항목은 엄격하게 본다. API에 없는 필드는 거부한다. 최상위 설명 키는 사람이 읽는 메모라 거부하지 않고 원문을 보인다
+- `[결정]` `주의`를 `limitations`로 옮기는 방식: 웹이 최상위 `주의`와 manifest 모델별 `주의`를 `limitations` 후보로 채우고, 운영자가 확인·수정한 뒤 등록한다. 지금 받은 파일을 그대로 쓴다. 나중에 `requests[]` 항목에 `evaluation.limitations`가 있으면 그 값을 쓰고 `주의`로는 채우지 않는다. 검토한 대안: M2 담당자가 처음부터 `evaluation.limitations`를 직접 넣는 방식(제공 형식이 바뀌어 이번에는 쓰지 않음)
+- `[결정]` 이미 운영에 등록된 3.0·3.1 레코드를 이 파일과 대조한다. 운영 core 목록(`GET /api/v1/admin/model-versions?kind=MODEL`)을 읽기만 해서 칸별로 비교한다. 다르면 레코드를 고치지 않고(평가 근거 보존 원칙) 새 버전명(예: 3.0.1)으로 다시 등록한다
+- 대조 결과(2026-11-05, AWS 데모 core 목록 읽기): 두 레코드 모두 `kind`·`name`·`version`, `artifactUri`의 버킷 뒤 경로, `evidence` 9칸이 파일과 글자까지 같다. 다시 등록할 필요는 없다. 두 레코드는 11/03에 이미 `ACTIVE`이고 `revision` 1이다. 승인 범위는 서술 3.0이 초5·6 서술형(평가 범위 전체), 논술 3.1이 초5·6 논술형이다. 논술 3.1의 초4는 평가했지만 적용하지 않았다. 두 레코드 모두 `limitations`는 없고, 논술 승인 사유에 "평가 한계와 임시 점수 경계 유지"를 적었다
+- manifest의 `bytes`·`sha256`은 현재 저장할 곳이 없다. 사전 검사(3.1.4)에서 쓰고 감사 detail에 남기는 안을 3.1.5에 적었다
+
+#### 3.1.3 평가 범위와 활성화 범위 분리
+
+API는 이미 `evaluatedScopes`(등록)와 `scopes`(활성화·복귀)를 나눠 받으므로 **1단계는 화면만 바꾼다.**
+
+- 상단 공용 영역을 없앤다. 평가 범위는 등록 폼·JSON 미리보기 안에 두고, JSON에서 왔으면 읽기 전용으로 보인다(수정하면 경고)
+- 활성화·복귀 입력은 각 버전 카드 안으로 옮기고 카드마다 상태를 따로 둔다(범위·사유·승인 체크)
+- 활성화 범위는 해당 버전의 `evaluatedScopes`를 체크박스로 보여 주고 직접 입력하지 않는다. 복귀는 원 `approval.scopes`만 보여 준다
+- 범위를 고를 때 같은 카드에 평가셋 ID·버전, 비교 보고서, 사람 검토 기록, `limitations`를 함께 보인다. 평가 범위 중 고르지 않은 범위는 "평가했지만 적용하지 않음"으로 표시한다
+- 기본값은 아무것도 선택하지 않는다. 평가 범위 전체를 미리 선택하는 대안은 사람이 범위를 고르는 의미가 약해져 추천하지 않는다
+- `[결정]` 범위 후보 목록: 웹 domain에 알려진 소비자 scope 상수(M2 `judgment/grade-{4,5,6}/{narrative,essay}`, ai 7장 다섯 개)를 두고 목록 밖 값은 **경고만** 한다(새 소비자 등록을 막지 않음). 검토한 대안: core scope 목록 API, 자유 입력만 유지
+
+#### 3.1.4 등록 전 검증과 오류 표시
+
+| 검증 | 위치 | 결과 | 현재 |
+|---|---|---|---|
+| JSON 형식·`schema`·알 수 없는 필드 | 브라우저 | 차단 | 없음 |
+| 필수 문자열 9개 공백 | 브라우저 + core | 차단 | core 422 (어느 필드인지 안 알려 줌) |
+| 범위 키 형식·중복·빈 배열 | 브라우저 + core | 차단 | 있음 |
+| 범위 키가 알려진 목록 밖 | 브라우저 | 경고 | 없음 |
+| `(kind,name,version)` 중복 | 브라우저(목록 대조) + core | 차단 | core 409 |
+| `MODEL`인데 `artifactUri` 없음 | core | 차단 | 없음 (scoring에서 거부) |
+| `artifactUri`에 `<버킷>` 같은 자리표시자가 남음 | 브라우저 | 차단 | 없음 |
+| manifest의 name·version·`scope`가 registration과 다름 | 브라우저 | 차단 | 없음 |
+| `m2-`·`m1-` 이름이 scoring이 아는 이름이 아님, 버전이 `X.Y`가 아님 | 브라우저 | 경고 | 없음 |
+| `artifactUri`가 `.../models/{name}/{version}/`와 다름 | 브라우저 | `[결정]` 경고 | 없음 |
+| S3 6개 파일 존재·sha256 일치 | 사전 검사 | 차단 | 없음 (활성화 후 로딩 때 처음 알게 됨) |
+| train_info.json·score_cuts.json·출력 수가 이름과 맞는지 | 사전 검사 | 차단 | 활성화 후 로딩 때만 |
+
+- `[결정]` 사전 검사 위치: core 관리자 API가 scoring 내부 API(가칭 `POST /internal/models/preflight`)를 **동기 HTTP**로 중계한다. scoring이 이미 가진 S3 읽기 권한과 `validate_metadata`를 재사용한다. 검토한 대안: core에 S3 SDK 추가, 운영자 CLI
+  - 지금은 core→scoring 호출 경로가 없다. core에 scoring 클라이언트가 없고, NetworkPolicy도 scoring은 ai에게서만 받고 core egress에 scoring이 없다(`environments/local/scoring-service.yaml`·`core-service.yaml`, prod도 같은 구성 확인 필요). 4단계에 core 클라이언트·시간 제한·양쪽 NetworkPolicy 변경이 들어간다
+  - 동기 응답 안에 끝나도록 가중치는 받지 않는다. 6개 파일은 존재·크기·해시만, 내용은 작은 JSON 3개(config.json·train_info.json·score_cuts.json)만 읽는다
+- 사전 검사 통과는 "파일·형식 확인"으로만 표시한다. 품질 승인이나 활성화 가능 상태로 표시하지 않고, 통과해도 자동으로 다음 단계로 넘기지 않는다. 전체 가중치 로딩은 활성화 뒤 로딩 확인에서 본다
+- `[결정]` 오류 표시: 공통 오류 형식(RFC 9457, api-spec 1.3)은 바꾸지 않는다. 바꾸면 모든 서비스에 영향이 간다. 필드 검사는 화면에서 먼저 하고(`items[1].evaluation.humanReview` 같은 경로와 원인을 입력 옆·미리보기 카드에 표시), 서버 409·422는 웹이 오류 코드로 해당 위치에 연결한다
+  - 409 `MODEL_VERSION_CONFLICT`(중복)는 이름·버전 칸에 연결한다. 422 `MODEL_APPROVAL_REJECTED`는 등록·활성화의 여러 원인이 한 코드라 필드를 특정할 수 없으므로 폼 상단에 서버 메시지를 보인다. 화면 사전 검사가 같은 규칙을 모두 다뤄 422가 드물게 하는 것을 전제로 한다. 나중에 더 나눠야 하면 공통 형식은 두고 오류 코드만 세분한다
+- 비활성 버튼에는 부족한 조건을 문장으로 붙인다. 예: "변경 사유가 없습니다", "선택 범위 `judgment/grade-4/narrative`가 평가 범위 밖입니다", "최초 등록 버전이 아니므로 되돌리기를 사용하세요"
+
+#### 3.1.5 상태 안내와 승인·감사 이력
+
+화면은 버전마다 다섯 단계와 현재 위치, 다음 작업, 진행할 수 없는 이유를 보인다. 상태 enum은 늘리지 않고 아래 값에서 계산한다.
+
+| 단계 | 판단 근거 | 비고 |
+|---|---|---|
+| 등록 | `status = REGISTERED` | - |
+| 사전 검사 | 사전 검사 기록 (2단계 후) | 통과해도 승인 아님 |
+| 승인·활성화 | `approval` 존재, `status = ACTIVE` | 사람 승인 체크 + 사유 필수 유지 |
+| 로딩 확인 | scoring에 같은 name·revision이 로딩됨 | 1차는 안내만 (아래 결정) |
+| 추론 확인 | 운영자가 점검 요청으로 확인 | 자동 판정하지 않고 확인 방법만 안내 |
+
+- `[결정]` 로딩 확인 출처: 1차에는 화면에 "core 활성화 완료, 로딩은 scoring에서 확인"이라는 안내와 확인 방법만 표시한다. scoring은 레플리카마다 따로 로딩하므로 Service를 한 번 호출하면 Pod 하나만 보기 때문이다. Pod별 로딩 보고(이벤트를 core가 모아 표시)는 후속 이슈로 둔다. 검토한 대안: core가 `/internal/versions`를 한 번 조회해 "일부 Pod 기준"으로 표시
+- 승인 확인: 활성화 전 확인 창에 승인 범위, 평가셋 ID·버전, 사람 검토 기록, `limitations`를 요약해 보이고 사유를 받는다. 승인자는 계속 로그인 계정에서 정한다
+- 감사 유지: `MODEL_REGISTER`·`MODEL_ACTIVATE`·`MODEL_ROLLBACK`과 `evalResult`(원 근거·최초 승인 덮어쓰기 금지)는 그대로 둔다. 추가 안:
+  - 등록 감사 detail에 `source`(`MANUAL`·`JSON_IMPORT`), 가져온 JSON의 sha256, 운영자가 바꾼 필드 이름 목록, 산출물 파일 해시
+  - 사전 검사 결과는 `evidence`가 아닌 별도 감사 action(가칭 `MODEL_PREFLIGHT`, `result` SUCCESS·FAILURE)으로 남긴다
+  - 감사 화면은 지금 action·대상만 보인다. `MODEL_VERSION` detail(범위·사유·재분석 계획·이전 버전)을 펼쳐 볼 수 있게 한다
+- `[결정]` 거부된 시도(409·422) 감사: 이번 범위에서 제외한다. 지금은 같은 트랜잭션이 롤백되어 남지 않으며, 기록하려면 별도 트랜잭션 설계가 필요하다
+
+#### 3.1.6 구현 단계와 후속 이슈 단위
+
+크기: S ≈ 반나절~1일, M ≈ 2~3일, L ≈ 4일 이상(검토·검증 포함 대략치).
+
+| 단계 | 내용 | 영향 | 크기 | 선행 |
+|---|---|---|---|---|
+| 1 | 화면 범위 분리(카드별 활성화·복귀 입력, 평가 범위 체크박스), 비활성 이유 표시, `MODEL` 기본 종류 안내 | web만, API 변경 없음 | S~M | 없음 |
+| 2 | registration·manifest 가져오기, 버킷 치환, 모델별 미리보기·개별 등록, 계약 문서(api-spec 5.2) | web + 문서 | M | 없음 (실제 JSON 확인 완료) |
+| 3 | core 등록 검증 강화(`MODEL` artifactUri 필수), 감사 detail `source`·해시, `limitations` 필드, 웹의 오류 코드→입력 위치 연결 | core·api-spec·OpenAPI·web | M | 2의 계약 |
+| 4 | scoring 사전 검사 API와 core 동기 중계·화면 연결 | scoring·core·web, core scoring 클라이언트, core→scoring NetworkPolicy(local·prod), S3 읽기 권한(#212 AWS 설정과 조율) | M~L | 3 |
+| 5 | Pod별 로딩 확인 보고와 화면 표시 (후속 이슈로 결정) | scoring·core 이벤트·web | L | 1단계 안내 |
+| 6 | 감사 화면 detail 표시 (거부된 시도 기록은 제외) | core·web | S | 없음 |
+
+- 1·6은 서로 독립이라 먼저 진행할 수 있다. 2→3→4는 순서대로다. 5는 별도 후속 이슈로 연다
+- 이미 등록된 서술 3.0·논술 3.1은 새 절차와 무관하게 지금 레코드를 그대로 쓴다
+- `[결정]` 후속 이슈는 4개로 나눴다(2026-11-05 발행, 담당자는 각 이슈에서 정한다): 1·6단계 #366, 2·3단계 #367, 4단계 #368, 5단계 #370
+- 3.0·3.1은 11/03 AWS 데모에서 지금 화면으로 이미 활성화했으므로(3.1.2 대조 결과) 활성화 시점은 정하지 않는다
+
+**결정 현황 (2026-11-05)**: kty2001 답변으로 JSON 파싱 위치·`limitations`·여러 모델 등록(3.1.2), 범위 후보 목록(3.1.3), 경로 불일치·사전 검사 위치·오류 표시(3.1.4), 로딩 확인 출처·거부된 시도 감사(3.1.5)를 정했다. 실제 등록용 JSON은 11/05 받아 계약을 그 형식으로 고쳤고, `주의`→`limitations` 옮기는 방식과 기존 3.0·3.1 레코드 대조도 정했다(3.1.2). 대조 결과 두 레코드는 파일과 같고 11/03에 이미 활성화되어 있다. 구현은 후속 이슈 #366·#367·#368·#370으로 나눴다(3.1.6). 남은 `[결정 필요]` 항목은 없다.
+
 ## 4. M2 모델과 API 정렬 (#4)
 
 2026-11-02 #228: 서술 3.0(9출력)·논술 3.1(14출력 중 앞 3영역)을 적용한다. 담당자 답변에 따라 논술도 `scores`(0~3 정수)와 `rawScores`(소수 원점수)를 함께 반환한다. [API 4.3](../design/api-spec.md#43-scoring-service-호출-ai), [#228 구현·검증](ai.md#41-서술-30논술-31-서비스-호환-228)이 현재 계약이며 [#87](scoring.md#3-m2-채점-api-87)의 2.0 결과는 과거 검증 이력이다.
