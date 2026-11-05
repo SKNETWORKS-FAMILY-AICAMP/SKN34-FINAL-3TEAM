@@ -108,7 +108,8 @@ class PublicAuthFilter(private val auth: AuthService, private val properties: Au
     }
 
     private fun permission(path: String, method: String) = when {
-        path.startsWith("/admin/missions") -> "CONTENT"
+        path.startsWith("/admin/missions") || path.startsWith("/admin/mission-drafts") ||
+            path.startsWith("/admin/achievement-standards") -> "CONTENT"
         path.startsWith("/admin/refund-requests") -> if(method=="GET") "PAYMENT_VIEW" else "PAYMENT_REFUND"
         path.startsWith("/admin/payments") -> "PAYMENT_VIEW"
         else -> "SERVICE_OPS"

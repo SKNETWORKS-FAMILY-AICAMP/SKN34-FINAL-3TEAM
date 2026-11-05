@@ -10,15 +10,23 @@ import java.util.UUID
 @Service
 class MissionAuditService(private val repository: MissionAuditRepository, private val json: ObjectMapper) {
     @Transactional(propagation=Propagation.REQUIRES_NEW)
-    fun requested(operation: UUID, actor: UUID, action: String, mission: UUID?) {
-        repository.insert(operation,actor,"${action}_REQUESTED",mission,"SUCCESS",json.writeValueAsString(mapOf("operationId" to operation)))
+    fun requested(operation: UUID, actor: UUID, action: String, target: UUID?, targetType: String=MISSION) {
+        repository.insert(operation,actor,"${action}_REQUESTED",targetType,target,"SUCCESS",json.writeValueAsString(mapOf("operationId" to operation)))
     }
 
+    /** 채택(#355)은 대상이 만든 미션이고 detail에 원래 초안 ID(draftId)를 남김 */
     @Transactional(propagation=Propagation.REQUIRES_NEW)
-    fun finished(operation: UUID, actor: UUID, action: String, mission: UUID?, outcome: String,
-                 status: Int?, version: Int?=null, rubric: Int?=null) {
-        repository.insert(UUID.randomUUID(),actor,"${action}_$outcome",mission,if(outcome=="SUCCEEDED") "SUCCESS" else "FAILURE",
-            json.writeValueAsString(mapOf("operationId" to operation,"outcome" to outcome,"httpStatus" to status,
-                "currentVersion" to version,"currentRubricVersion" to rubric)))
+    fun finished(operation: UUID, actor: UUID, action: String, target: UUID?, outcome: String,
+                 status: Int?, version: Int?=null, rubric: Int?=null, targetType: String=MISSION, draft: UUID?=null) {
+        val detail=linkedMapOf<String,Any?>("operationId" to operation,"outcome" to outcome,"httpStatus" to status,
+            "currentVersion" to version,"currentRubricVersion" to rubric)
+        if(draft!=null) detail["draftId"]=draft
+        repository.insert(UUID.randomUUID(),actor,"${action}_$outcome",targetType,target,if(outcome=="SUCCEEDED") "SUCCESS" else "FAILURE",
+            json.writeValueAsString(detail))
+    }
+
+    companion object {
+        const val MISSION="MISSION"
+        const val MISSION_DRAFT="MISSION_DRAFT"
     }
 }
