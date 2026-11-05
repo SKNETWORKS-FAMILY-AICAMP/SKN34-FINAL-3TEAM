@@ -16,6 +16,15 @@ postgres:
   image: "postgres:17.11-alpine"
   usernameKey: "POSTGRES_USER"
   passwordKey: "POSTGRES_PASSWORD"
+  # rds-bootstrap.sql env prefix -> role name (#230). Each password comes from existingSecret
+  # key <prefix>_PASSWORD. Roles are created only when the data directory is first initialized.
+  serviceRoles:
+    CORE_MIGRATE: core_migrate
+    CORE_APP: core_app
+    LEARNING_MIGRATE: learning_migrate
+    LEARNING_APP: learning_app
+    REPORT_MIGRATE: report_migrate
+    REPORT_APP: report_app
   servicePort: 5432
   persistence:
     size: "2Gi"

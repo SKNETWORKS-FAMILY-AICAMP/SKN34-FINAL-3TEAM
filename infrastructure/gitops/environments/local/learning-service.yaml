@@ -17,8 +17,8 @@ resources:
   limits: {cpu: "1", memory: 768Mi}
 env:
   - {name: DB_URL, value: "jdbc:postgresql://postgres.platform.svc.cluster.local:5432/learning_db"}
-  - {name: DB_USERNAME, valueFrom: {secretKeyRef: {name: app-service-credentials, key: DB_USERNAME}}}
-  - {name: DB_PASSWORD, valueFrom: {secretKeyRef: {name: app-service-credentials, key: DB_PASSWORD}}}
+  - {name: DB_USERNAME, valueFrom: {secretKeyRef: {name: app-service-credentials, key: LEARNING_DB_USERNAME}}}
+  - {name: DB_PASSWORD, valueFrom: {secretKeyRef: {name: app-service-credentials, key: LEARNING_DB_PASSWORD}}}
   - {name: RABBITMQ_HOST, value: rabbitmq.platform.svc.cluster.local}
   - {name: RABBITMQ_USERNAME, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_USERNAME}}}
   - {name: RABBITMQ_PASSWORD, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_PASSWORD}}}
@@ -54,8 +54,8 @@ migration:
     tag: local
   env:
     - {name: FLYWAY_URL, value: "jdbc:postgresql://postgres.platform.svc.cluster.local:5432/learning_db"}
-    - {name: FLYWAY_USER, valueFrom: {secretKeyRef: {name: app-service-credentials, key: DB_USERNAME}}}
-    - {name: FLYWAY_PASSWORD, valueFrom: {secretKeyRef: {name: app-service-credentials, key: DB_PASSWORD}}}
+    - {name: FLYWAY_USER, valueFrom: {secretKeyRef: {name: app-service-credentials, key: LEARNING_MIGRATE_USERNAME}}}
+    - {name: FLYWAY_PASSWORD, valueFrom: {secretKeyRef: {name: app-service-credentials, key: LEARNING_MIGRATE_PASSWORD}}}
   resources:
     requests: {cpu: 50m, memory: 64Mi}
     limits: {cpu: 250m, memory: 256Mi}

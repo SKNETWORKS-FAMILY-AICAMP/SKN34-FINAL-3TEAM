@@ -7,6 +7,10 @@ metadata:
 data:
   init.sql: |
 {{ required "files/postgres/init.sql is required" (.Files.Get "files/postgres/init.sql") | indent 4 }}
+  rds-bootstrap.sql: |
+{{ required "files/postgres/rds-bootstrap.sql is required" (.Files.Get "files/postgres/rds-bootstrap.sql") | indent 4 }}
+  rds-bootstrap-db.sql: |
+{{ required "files/postgres/rds-bootstrap-db.sql is required" (.Files.Get "files/postgres/rds-bootstrap-db.sql") | indent 4 }}
 {{- end }}
 {{- if .Values.rabbitmq.enabled }}
 ---

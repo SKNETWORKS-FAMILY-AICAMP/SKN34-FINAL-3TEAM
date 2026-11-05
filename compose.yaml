@@ -2,8 +2,6 @@
 name: sagomungchi
 
 x-spring-env: &spring-env
-  DB_USERNAME: ${POSTGRES_USER:?.env 설정 필요}
-  DB_PASSWORD: ${POSTGRES_PASSWORD:?.env 설정 필요}
   RABBITMQ_HOST: rabbitmq
   RABBITMQ_USERNAME: ${RABBITMQ_USER:?.env 설정 필요}
   RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?.env 설정 필요}
@@ -25,9 +23,25 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?.env 설정 필요}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?.env 설정 필요}
+      # #230: 서비스별 migrate(DDL)·app(DML) 계정. 최초 볼륨 초기화 때만 rds-bootstrap.sql이 생성
+      CORE_MIGRATE_USER: core_migrate
+      CORE_MIGRATE_PASSWORD: ${CORE_MIGRATE_PASSWORD:?.env 설정 필요}
+      CORE_APP_USER: core_app
+      CORE_APP_PASSWORD: ${CORE_APP_PASSWORD:?.env 설정 필요}
+      LEARNING_MIGRATE_USER: learning_migrate
+      LEARNING_MIGRATE_PASSWORD: ${LEARNING_MIGRATE_PASSWORD:?.env 설정 필요}
+      LEARNING_APP_USER: learning_app
+      LEARNING_APP_PASSWORD: ${LEARNING_APP_PASSWORD:?.env 설정 필요}
+      REPORT_MIGRATE_USER: report_migrate
+      REPORT_MIGRATE_PASSWORD: ${REPORT_MIGRATE_PASSWORD:?.env 설정 필요}
+      REPORT_APP_USER: report_app
+      REPORT_APP_PASSWORD: ${REPORT_APP_PASSWORD:?.env 설정 필요}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./infrastructure/gitops/charts/platform-data/files/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      # 하위 디렉터리라 entrypoint가 단독 실행하지 않고 init.sql이 포함
+      - ./infrastructure/gitops/charts/platform-data/files/postgres/rds-bootstrap.sql:/docker-entrypoint-initdb.d/bootstrap/rds-bootstrap.sql:ro
+      - ./infrastructure/gitops/charts/platform-data/files/postgres/rds-bootstrap-db.sql:/docker-entrypoint-initdb.d/bootstrap/rds-bootstrap-db.sql:ro
     ports:
       - "5432:5432"
     healthcheck:
@@ -86,7 +100,7 @@ services:
       - ./backend/core-service/src/main/resources/db/migration:/flyway/sql:ro
     command: >-
       -url=jdbc:postgresql://postgres:5432/core_db
-      -user=${POSTGRES_USER} -password=${POSTGRES_PASSWORD}
+      -user=core_migrate -password=${CORE_MIGRATE_PASSWORD}
       -locations=filesystem:/flyway/sql migrate
 
   learning-migrate:
@@ -98,7 +112,7 @@ services:
       - ./backend/learning-service/src/main/resources/db/migration:/flyway/sql:ro
     command: >-
       -url=jdbc:postgresql://postgres:5432/learning_db
-      -user=${POSTGRES_USER} -password=${POSTGRES_PASSWORD}
+      -user=learning_migrate -password=${LEARNING_MIGRATE_PASSWORD}
       -locations=filesystem:/flyway/sql migrate
 
   report-migrate:
@@ -107,7 +121,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: &report-db-url postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/report_db
+      DATABASE_URL: postgresql+psycopg://report_migrate:${REPORT_MIGRATE_PASSWORD}@postgres:5432/report_db
     command: ["alembic", "upgrade", "head"]
 
   # ---------- 애플리케이션 ----------
@@ -123,6 +137,8 @@ services:
     environment:
       <<: *spring-env
       DB_URL: jdbc:postgresql://postgres:5432/core_db
+      DB_USERNAME: core_app
+      DB_PASSWORD: ${CORE_APP_PASSWORD}
       LEARNING_URL: http://learning-service:8081
       AI_URL: http://ai-service:8000
       REPORT_URL: http://report-api:8002
@@ -172,6 +188,8 @@ services:
     environment:
       <<: *spring-env
       DB_URL: jdbc:postgresql://postgres:5432/learning_db
+      DB_USERNAME: learning_app
+      DB_PASSWORD: ${LEARNING_APP_PASSWORD}
       CORE_URL: http://core-service:8080
       AI_URL: http://ai-service:8000
     ports:
@@ -245,7 +263,7 @@ services:
         condition: service_completed_successfully
     environment: &report-env
       <<: *python-env
-      DATABASE_URL: *report-db-url
+      DATABASE_URL: postgresql+psycopg://report_app:${REPORT_APP_PASSWORD}@postgres:5432/report_db
       LEARNING_URL: http://learning-service:8081
       AI_URL: http://ai-service:8000
       CORE_URL: http://core-service:8080
