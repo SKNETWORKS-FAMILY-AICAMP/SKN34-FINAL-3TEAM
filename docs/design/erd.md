@@ -729,6 +729,13 @@ erDiagram
     jsonb payload
     timestamptz created_at
     timestamptz published_at "NULL 허용"
+    int failure_count "0 이상"
+    timestamptz next_attempt_at "NULL 허용"
+    varchar last_error_code "NULL 허용, CHECK[BROKER_UNAVAILABLE|PUBLISH_TIMEOUT|PUBLISH_FAILED], 원문 없는 안전 오류 코드 (#243)"
+    timestamptz last_failed_at "NULL 허용"
+    timestamptz quarantined_at "NULL 허용"
+    int manual_retry_count "0 이상"
+    timestamptz last_requeued_at "NULL 허용"
   }
   processed_event {
     uuid event_id PK
@@ -762,6 +769,7 @@ erDiagram
 - `cost_usd`는 core 설정의 모델별 토큰 단가(기획서 3.9)로 소비 시 계산, 단가 변경 후에도 과거 값 유지 (FN-ADM-19)
 - #336 구현 전: ai 미션 초안 호출(FN-ADM-20)의 `call_type` `MISSION_DRAFT`가 추가된다. core 마이그레이션 CHECK·`llm.usage.recorded` 스키마와 함께 바꿀 때 위 Mermaid 주석에 넣는다(Mermaid 주석 값은 CHECK와 자동 대조, 1장)
 - `outbox_event`: 상태 변경과 같은 트랜잭션에 저장, 릴레이가 publisher confirm 후 `published_at` 기록 (아키텍처 1.6)
+- #243 `outbox_event` 실패·격리: 릴레이는 subject별 선두만 발행. 발행 실패는 `failure_count`·`last_error_code`·`last_failed_at`을 기록하고 1·5·15분 뒤 재시도, 4번째 실패에 `quarantined_at` 기록(report #131과 같은 컬럼·기준). 격리 선두와 같은 subject 뒤 행은 운영 재처리까지 대기, 다른 subject는 계속 발행 ([보고서](../report/core-gateway.md#11-core-outbox-실패-격리-243))
 - #208 `event_log`: 감사 큐 `core.event.audit`로 받은 모든 업무 메시지(ai·scoring 발행 포함)의 메타데이터. payload·원문은 저장하지 않음. 같은 id 재발행·재전달은 첫 행 유지. `outbox_event`·`processed_event`·`llm_usage`와 `event_id`로 조인해 발행·전달·소비를 추적 ([보고서](../report/core-gateway.md#9-rabbitmq-발행소비-기록-208))
 - #208 보존: 발행 완료 `outbox_event`, `processed_event`, `event_log`는 90일 뒤 1시간 주기로 삭제(`app.messaging.event-retention-days`). 미발행 outbox 행은 삭제하지 않음. `llm_usage`·`job_execution`은 정리 대상이 아님
 - `idempotency_record.user_id`는 core `user_account.id` FK. 요청 접수 후 응답 확정 전에는 response_status·response_body를 NULL로 둔다. expires_at은 created_at + 24시간이다 (P12).
@@ -1238,7 +1246,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | core | `auth_session` | `(parent_session_id) WHERE parent_session_id IS NOT NULL` | 잠금 해제·재로그인 시 동석 학생 세션 폐기 (V24) |
 | core | `refresh_token` | `(session_id)` | 세션별 토큰 폐기·재사용 탐지 |
 | core | `llm_usage` | `(occurred_at, call_type)` | 사용량·비용 집계 |
-| core | `outbox_event` | `(created_at) WHERE published_at IS NULL`, `(published_at) WHERE published_at IS NOT NULL` | 릴레이 대상, 보존 기간 정리 |
+| core | `outbox_event` | `(subject, created_at, id) WHERE published_at IS NULL`, `(published_at) WHERE published_at IS NOT NULL` | subject별 선두·발행 순서 및 재시도 대상(#243), 보존 기간 정리 |
 | core | `processed_event` | `(processed_at)` | 보존 기간 정리 |
 | core | `event_log` | `(received_at)`, `(event_type, event_time)` | 보존 기간 정리, 유형·기간별 추적 |
 | learning | `mission` | `(status, sort_order)`, `mission_version (thinking_type, grade_min, grade_max)` | 학년·유형별 공개 미션 목록 |

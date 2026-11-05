@@ -105,7 +105,7 @@ networkPolicy:
       ports: [{protocol: TCP, port: 5432}]
 migration:
   enabled: true
-  revision: v26
+  revision: v27
   image:
     repository: sagomungchi/core-migrate
     tag: local
