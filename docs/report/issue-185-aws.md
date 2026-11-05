@@ -283,3 +283,60 @@ Pod 사이 호출(core ↔ learning·ai·report·RabbitMQ·Redis)과 RDS는 VPC 
 **추천: 데모 기간(12/7까지)은 A 유지.** 병목 근거가 없고, 2a 장애 때는 RabbitMQ·Prometheus·Grafana의 EBS가 2a에 있어 서비스가 이미 함께 멈추므로 B·C의 가용성 이득이 현재 구성에서는 작다. 상태 저장 서비스의 AZ 의존을 줄이거나 실제 운영 전환을 결정할 때 B(가장 단순)를 다시 검토한다. **NAT 다중 AZ 적용 여부는 담당자 결정 사항으로 남기며 이번에 적용하지 않았다.**
 
 조회 근거: EC2 `describe-vpc-endpoints`·`describe-route-tables`·`describe-nat-gateways`·`describe-prefix-lists`·`get-managed-prefix-list-entries`·`describe-flow-logs`, CloudWatch `get-metric-statistics`(AWS/NATGateway), S3 `list-objects-v2`(models 키·크기, reports는 최신 3개 시각·크기만), kubectl Pod 상태·scoring 로그·Pod 내 DNS 해석과 `ListObjectsV2`, Pricing `get-products`. Secret 값과 객체 본문은 조회하지 않았다.
+
+## EKS 노드 자동 확장 Karpenter와 앱 HPA (#211·#372, 2026-11-05)
+
+10/29 멘토링의 "EKS 도입 시 Karpenter 노드 오토스케일링까지 구성" 권고(#211)와, prod에 HPA·KEDA가 꺼져 있어 트래픽이 늘어도 Pod가 1개로 유지되고 Karpenter 노드가 생기지 않는다는 지적(#372)을 함께 처리했다. Karpenter는 트래픽을 보지 않고, 기존 노드에 자리가 없는 Pending Pod가 생길 때만 노드를 추가한다. 그래서 흐름은 트래픽 증가 → HPA가 Pod 증가 → 기존 노드 자리 부족 → Pending → Karpenter가 노드 추가 → 부하 종료 후 HPA 축소 → 빈 노드 정리다.
+
+### 적용 전 상태 (11/05 09:40 KST 읽기 전용 조회)
+
+| 항목 | 값 |
+|---|---|
+| 클러스터 | EKS 1.35(eks.27), access mode API. OIDC provider는 GitHub Actions용만 있고 Pod 권한은 Pod Identity만 사용 |
+| `application` | 관리형 t3.medium On-Demand 2/2/3, 2a·2b 1대씩. 요청 2a 1300m/2426Mi(할당 가능 1930m/3292Mi, Pod 14/17), 2b 750m/1390Mi(Pod 10/17) |
+| `platform-observability` | t3.medium 2/2/2, taint `workload=platform`. RabbitMQ·Prometheus·Grafana PV 2a, Redis PV 2b |
+| 앱 | 6개 모두 replica 1, HPA·KEDA·PDB 꺼짐. metrics-server·KEDA 미설치 |
+| 노드 이미지 | 앱·DaemonSet 이미지는 모두 ECR(S3 Gateway 엔드포인트 경유). 공개 레지스트리는 ESO(ghcr), LB Controller·Karpenter(public.ecr), platform·관측(Docker Hub)뿐 |
+
+### 결정
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 설치 | Karpenter 1.15.1 Helm(OCI), 기존 prod 방식과 같이 수동 Helm. values `environments/prod/karpenter.json` | 1.35는 1.9 이상 지원. prod는 Argo CD 미구성 |
+| 노드 | t3.medium·t3.large On-Demand, 2a·2b. Spot·SQS 중단 알림 큐 미사용 | 앱이 replica 1·PDB 없음이라 Spot 회수가 곧 중단. t3a는 2b 미제공 |
+| 상한 | NodePool `limits` CPU 4·메모리 16Gi(최대 약 2대). 최악 상시 2대 약 $156/월(t3.large $0.104/h, 서울 On-Demand) | 평소 0대 |
+| 정리 | `WhenEmptyOrUnderutilized`, `consolidateAfter 5m`, 한 번에 1노드, `expireAfter 720h` | 부하 종료 후 비용이 남지 않게 함 |
+| 기존 노드그룹 | 둘 다 유지. 컨트롤러는 `application` 노드에 replica 1(요청 200m/384Mi) | 컨트롤러가 자기가 만든 노드에 있으면 안 됨. 데모 안정성 |
+| AZ·EBS | NodePool에 `workload=platform` taint를 넣지 않아 상태 저장 Pod는 Karpenter 노드에 가지 않음 | 2a·2b PV 제약 유지 |
+| NAT | pull-through cache 미도입 | 앱·노드 기본 이미지가 ECR이라 새 앱 노드의 NAT 유입은 작다고 판단(실측 안 함) |
+| HPA | core·learning·ai, 최소 1·최대 3·CPU 70%. scoring·report-api는 고정, report-worker KEDA는 후속 | 평소 비용 불변. scoring은 모델 로딩·메모리 1Gi |
+| 축소 끊김 | D안: 최소 1 유지 + `application` 노드그룹 preferred nodeAffinity + ReplicaSet 기본 삭제 순서(최근 Pod부터) | 아래 설명 |
+
+replica 1에서 노드를 정리하면 Kubernetes eviction은 Pod를 먼저 지우고 나서 새로 만들기 때문에, 새 Pod가 Ready가 될 때까지 요청을 받을 Pod가 없다. 롤링 배포(새 Pod 먼저)와 다르다. D안은 기본 Pod를 관리형 노드에 두고 늘어난 Pod만 Karpenter 노드에 올라가게 해서, HPA가 줄일 때 최근 Pod(Karpenter 노드)부터 지워지고 빈 노드는 eviction 없이 정리되게 한다. 부하 중 재배포·재시작으로 Pod 나이 순서가 바뀌거나 관리형 노드 장애로 기본 Pod가 Karpenter 노드에 가면 축소 때 한 번 끊길 수 있다. A안(최소 2 + PDB)은 모든 경우 끊김이 없지만 상시 요청 증가로 Karpenter 노드 1대(약 $38/월)가 계속 뜰 수 있어 보류했다.
+
+### 적용 (2026-11-05 KST, 단계마다 승인 후 실행)
+
+| 시각 | 단계 | 결과 |
+|---|---|---|
+| 16:46:03~16:46:46 | metrics-server EKS add-on v0.9.0-eksbuild.14 (`replicas 1`, `nodeSelector eks.amazonaws.com/nodegroup=application`) | ACTIVE, `kubectl top` 정상, 앱 재시작 0 |
+| 17:24:31~17:25:09 | `demo_stack.py apply --confirm-account`로 IAM 역할 `sagomungchi-demo-karpenter-controller-role` | 이 역할만 생성. `plan`에서 trust·inline 원문 일치 |
+| 17:27:30 | Pod Identity `kube-system/karpenter` | `plan` OK=61 |
+| 17:37:20~17:37:41 | `helm install karpenter` 1.15.1, kube-system | revision 1, 컨트롤러 1개 Running(실사용 6m/80Mi), CRD 4개(NodePool·NodeClaim·EC2NodeClass·NodeOverlay), 권한 오류 0 |
+| 17:39:30 | EC2NodeClass `application`·NodePool `application-burst` | 둘 다 Ready. instance profile 자동 생성, AMI `ami-0a3227d9c98935bcb`(기존 노드와 같음). 적용 직후 1초 동안 `no subnets found` 10건 후 `SubnetsReady=True`, 이후 오류 없음. NodeClaim 0 |
+| 17:53:31~17:54:41 | learning-service revision 4 (`redeploy-app.ps1 -Apply`) | HPA `cpu 1%/70%`, replica 1 |
+| 17:55:02~17:55:30 | ai-service revision 4 | HPA `cpu 2%/70%`, replica 1 |
+| 17:55:46~17:56:53 | core-service revision 8 | HPA 생성, replica 1. CloudFront 200 |
+
+세 앱 적용은 이미지 digest를 바꾸지 않았다. 적용 직전 live Helm values가 저장소 값과 같았고, 렌더링 차이는 Deployment `replicas` 줄 제거·affinity·HPA뿐이었다. affinity 때문에 각 앱이 롤링 재시작을 1회 했다. 적용 동안 Karpenter 노드는 생기지 않았고(NodeClaim 0, 노드 4대) 앱 재시작은 0이다. core의 OTel span 전송 실패 경고는 적용 전 Pod에도 있던 기존 현상이다.
+
+같은 날 11:21~17:06 #361 부하 시험이 ai `OPENAI_BASE_URL`(LLM 스텁)과 core `JAVA_TOOL_OPTIONS`를 Helm 밖에서 바꿨다가 원복했다. HPA 적용은 원복을 확인한 뒤 진행했다.
+
+### 한계와 남은 일
+
+- **부하 시 노드 확장·축소 실측은 하지 않았다.** HPA가 CPU를 읽어 Pod를 늘리는지, Karpenter 노드가 실제로 생성·등록되고 그 노드의 Pod가 RDS·RabbitMQ와 통신하는지, 부하 종료 후 노드가 정리되는지(HPA 축소 대기 5분 + `consolidateAfter` 5분), D안의 삭제 순서, ai의 CPU 기반 확장 여부는 확인되지 않았다. #211 완료 조건(확장·축소 검증 기록)은 남아 있다.
+- **운영 values가 main보다 앞서 있다.** HPA·affinity는 이 브랜치 values로 적용했다. main 기준 재배포(`cd-release` 등)나 다른 브랜치 values로 core·learning·ai를 다시 배포하면 HPA가 지워지고 replica 1로 돌아간다. 이 변경이 main에 들어가기 전 재배포에는 같은 값을 포함한다.
+- **데모 중단(`demo_stack.py pause`) 시:** 노드그룹을 0으로 줄이는 동안 CoreDNS 등 kube-system Pod가 Pending이 되면 Karpenter가 노드를 만들 수 있다. pause 전에 NodePool을 지우거나 `limits.cpu`를 0으로 바꾸고, resume 후 되돌린다. 스크립트에는 아직 반영하지 않았다.
+- t3.medium은 노드당 Pod 17개 제한이 있어 CPU·메모리보다 Pod 수 때문에 먼저 Pending이 날 수 있다.
+- 후속: scoring HPA, report-worker KEDA(KEDA 설치), Spot 혼합(replica 2·PDB 이후), 컨트롤러 replica 2.
+
+조회·적용 근거: EKS `describe-cluster`·`describe-nodegroup`·`list-pod-identity-associations`·`describe-addon-versions`·`describe-addon-configuration`, EC2 `describe-subnets`·`describe-security-groups`·`describe-instances`·`describe-images`·`describe-instance-type-offerings`·`describe-spot-price-history`, SSM `get-parameter`(EKS AL2023 AMI), Pricing `get-products`, kubectl node·Pod·HPA·NodePool·EC2NodeClass 상태와 Karpenter 로그, Helm `get values`·`get manifest`·`template`·`--dry-run=server`. Secret 값은 조회하지 않았다.

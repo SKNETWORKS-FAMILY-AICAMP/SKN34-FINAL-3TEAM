@@ -1,4 +1,24 @@
 {
+  "affinity": {
+    "nodeAffinity": {
+      "preferredDuringSchedulingIgnoredDuringExecution": [
+        {
+          "weight": 100,
+          "preference": {
+            "matchExpressions": [
+              {
+                "key": "eks.amazonaws.com/nodegroup",
+                "operator": "In",
+                "values": [
+                  "application"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
   "env": [
     {
       "name": "DB_URL",
@@ -243,7 +263,10 @@
     }
   ],
   "hpa": {
-    "enabled": false
+    "enabled": true,
+    "minReplicas": 1,
+    "maxReplicas": 3,
+    "cpuUtilization": 70
   },
   "image": {
     "digest": "sha256:960ce7b4202ac73415ecbbc0d9e167e31b491431f6f7f3437a4ceea0957387dc",

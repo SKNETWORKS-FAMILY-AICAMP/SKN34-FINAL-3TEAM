@@ -178,6 +178,13 @@
       "inline": {
         "ecr-push": "iam/github-cd-publish-role.inline.ecr-push.json"
       }
+    },
+    {
+      "name": "sagomungchi-demo-karpenter-controller-role",
+      "trust": "iam/karpenter-controller-role.trust.json",
+      "inline": {
+        "sagomungchi-demo-karpenter-controller": "iam/karpenter-controller-role.inline.karpenter-controller.json"
+      }
     }
   ],
   "eks": {

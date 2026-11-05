@@ -15,6 +15,7 @@
     },
     "replicaCount": {"type": "integer", "minimum": 0},
     "terminationGracePeriodSeconds": {"type": "integer", "minimum": 0},
+    "affinity": {"type": "object"},
     "service": {
       "type": "object",
       "properties": {

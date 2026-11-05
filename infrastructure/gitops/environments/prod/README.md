@@ -15,6 +15,8 @@
 | `external-secret-resources.json` | app·platform | SecretStore 2개, ExternalSecret 12개. 비밀 값 없이 원격 이름·키만 보존 |
 | `platform-network.json` | platform | 기본 ingress 거부, RabbitMQ·Redis 클라이언트 허용 |
 | `core-alb-network.json` | app | ALB public subnet에서 core:8080 허용 |
+| `karpenter.json` | kube-system / karpenter | oci://public.ecr.aws/karpenter/karpenter 1.15.1 (#211) |
+| `karpenter-nodepool.json` | cluster | EC2NodeClass `application`, NodePool `application-burst`. Karpenter 설치 후 `kubectl apply` (#211) |
 
 이 values는 현재 라이브 리소스에서 수집했다. Helm chart 기본값 전체를 복사한 파일은 아니다. 배포된 앱 chart의 기반은 `b67d8a462b6b3dc239ecfc14b2aa185766c0c293`이며, 저장소 chart 변경 시 렌더링 차이를 먼저 검토한다. 앱 이미지는 각 파일의 digest로 고정한다. core digest에는 아직 커밋되지 않은 이용권 수정이 들어 있으므로 기반 SHA만으로 같은 이미지를 재빌드할 수 있다고 주장하지 않는다. scoring은 PR #288 병합 SHA `f6250bdd131c4875feba99212212bfdb580c353e`를 사용한다.
 
@@ -91,7 +93,7 @@ core 외 learning·ai·scoring·report는 b67d8a 이미지로 남아 있다.
 - 공개가 아닌 origin 검증 헤더는 [별도 redacted 파일](../../../aws/README.md)에 표시만 하고 값은 보존하지 않는다.
 - 이 설정은 계정 `347161580747`, 서울 리전 및 현재 데모 DB/S3를 가리킨다. 다른 환경에 그대로 적용하지 않는다.
 - PVC 삭제·Helm uninstall·RDS 삭제·노드 축소는 이 정리 작업에서 실행하지 않았다. 현재 RabbitMQ/Redis 단일 replica는 노드 축소 시 서비스 중단 가능성이 있다.
-- Argo CD prod, Autoscaler, HPA/KEDA, 앱 PDB는 미구성이다. 최소 관측 스택은 수동 Helm으로 배포했으며 Discord 경보는 전용 Secret 연결 후 활성화했다. 실제 검증 범위는 #185 보고서를 따른다. 전체 운영 관측 완료를 뜻하지 않는다.
+- Argo CD prod, KEDA, 앱 PDB는 미구성이다. core·learning·ai는 HPA(1~3, CPU 70%)와 `application` 노드그룹 preferred affinity를 쓰고, 노드는 Karpenter가 늘린다(2026-11-05 #211·#372). **이 values가 main에 들어가기 전에 main 기준으로 세 앱을 재배포하면 HPA가 지워진다.** 최소 관측 스택은 수동 Helm으로 배포했으며 Discord 경보는 전용 Secret 연결 후 활성화했다. 실제 검증 범위는 #185 보고서를 따른다. 전체 운영 관측 완료를 뜻하지 않는다.
 
 ## 초기 배포 재현 절차 (#185)
 
