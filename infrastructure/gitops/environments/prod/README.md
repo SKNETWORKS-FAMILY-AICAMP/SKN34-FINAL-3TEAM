@@ -146,7 +146,7 @@ helm upgrade --install platform-data infrastructure/gitops/charts/platform-data 
 
 빈 RDS에는 core_db·learning_db·report_db를 만들고 서비스별 migration(DDL)·app(DML) 계정을 준비한다. DB별 PUBLIC CONNECT를 회수하고 해당 두 계정만 접속시키며, schema 사용 권한과 앱의 테이블·sequence 권한을 부여한다. 앞으로 migration 계정이 만드는 객체에도 앱 권한이 적용되도록 해당 객체 생성자 기준 default privileges를 설정한다. RDS 관리자는 초기 설정에만 사용하며 앱 Secret에 넣지 않는다. 비밀번호는 승인된 비밀 입력 경로로 전달한다.
 
-`charts/platform-data/files/postgres/init.sql`은 로컬 DB 3개 생성만 담당하므로 운영 권한 초기화 스크립트로 사용하지 않는다. RDS 초기화는 [`demo_stack.py rds-bootstrap`](../../../aws/README.md#iac-eksctl--aws-cli-스크립트-185)과 `rds-bootstrap*.sql`이 담당한다. ESO Secret 6개와 `app/rds-ca`가 준비된 뒤 실행하고, migration 성공 후 한 번 더 실행해 기존 테이블 권한을 맞춘다. SQL은 이미 있는 계정의 비밀번호를 바꾸지 않으므로 기존 RDS에도 안전하게 재실행되도록 작성했지만, 현재 RDS에서는 아직 실행하지 않았다. 로컬 PostgreSQL 17.11의 비-superuser(CREATEROLE·CREATEDB) 관리자로 두 번 실행해 멱등성, app 계정의 DML 허용·DDL 거부·다른 DB 접속 거부, 이력 테이블 권한 회수를 확인했다.
+`charts/platform-data/files/postgres/rds-bootstrap*.sql`은 로컬 PostgreSQL init(`init.sql`)과 RDS 초기화가 함께 쓰는 파일이다(#230). RDS에서는 [`demo_stack.py rds-bootstrap`](../../../aws/README.md#iac-eksctl--aws-cli-스크립트-185)이 이 파일을 Job으로 실행한다. ESO Secret 6개와 `app/rds-ca`가 준비된 뒤 실행하고, migration 성공 후 한 번 더 실행해 기존 테이블 권한을 맞춘다. SQL은 이미 있는 계정의 비밀번호를 바꾸지 않으므로 기존 RDS에도 안전하게 재실행되도록 작성했지만, 현재 RDS에서는 아직 실행하지 않았다. 로컬 PostgreSQL 17.11의 비-superuser(CREATEROLE·CREATEDB) 관리자로 두 번 실행해 멱등성, app 계정의 DML 허용·DDL 거부·다른 DB 접속 거부, 이력 테이블 권한 회수를 확인했다.
 
 2026-11-03 읽기 전용 조회에서 다음 Job은 succeeded=1이었다. 이는 과거 실행 이력이며 새 DB에서 재실행한 결과는 아니다.
 

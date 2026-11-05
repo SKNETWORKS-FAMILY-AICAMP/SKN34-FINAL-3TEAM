@@ -5,10 +5,16 @@ param([string]$EnvFile = (Join-Path $PSScriptRoot '../../.env'))
 $ErrorActionPreference = 'Stop'
 $contextName = 'kind-sagomungchi-local'
 $nodeName = 'sagomungchi-local-control-plane'
+# #230: fixed service role names; must match postgres.serviceRoles in charts/platform-data/values.yaml.
+$dbRoles = [ordered]@{
+    CORE_MIGRATE = 'core_migrate'; CORE_APP = 'core_app'
+    LEARNING_MIGRATE = 'learning_migrate'; LEARNING_APP = 'learning_app'
+    REPORT_MIGRATE = 'report_migrate'; REPORT_APP = 'report_app'
+}
 $requiredKeys = @(
-    'POSTGRES_USER', 'POSTGRES_PASSWORD', 'RABBITMQ_USER', 'RABBITMQ_PASSWORD',
+    'RABBITMQ_USER', 'RABBITMQ_PASSWORD',
     'MINIO_ROOT_USER', 'MINIO_ROOT_PASSWORD', 'INTERNAL_TOKEN', 'AUTH_JWT_SECRET'
-)
+) + @($dbRoles.Keys | ForEach-Object { "${_}_PASSWORD" })
 # External credentials copied as-is when set (#236). Keep in sync with environments/local/*.yaml.
 $passthroughKeys = @(
     'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET',
@@ -99,21 +105,29 @@ if ($nodes.Count -ne 1 -or $nodes[0].metadata.name -cne $nodeName) {
     throw 'Context does not point to the sagomungchi-local kind cluster.'
 }
 
-$dbUser = [Uri]::EscapeDataString($credentials.POSTGRES_USER)
-$dbPassword = [Uri]::EscapeDataString($credentials.POSTGRES_PASSWORD)
 $mqUser = [Uri]::EscapeDataString($credentials.RABBITMQ_USER)
 $mqPassword = [Uri]::EscapeDataString($credentials.RABBITMQ_PASSWORD)
-$reportDbUrl = "postgresql+psycopg://${dbUser}:${dbPassword}@postgres.platform.svc.cluster.local:5432/report_db"
+function Get-ReportDbUrl([string]$Role) {
+    $user = [Uri]::EscapeDataString($dbRoles[$Role])
+    $password = [Uri]::EscapeDataString($credentials["${Role}_PASSWORD"])
+    return "postgresql+psycopg://${user}:${password}@postgres.platform.svc.cluster.local:5432/report_db"
+}
 $app = @{
-    DB_USERNAME = $credentials.POSTGRES_USER
-    DB_PASSWORD = $credentials.POSTGRES_PASSWORD
+    CORE_DB_USERNAME = $dbRoles.CORE_APP
+    CORE_DB_PASSWORD = $credentials.CORE_APP_PASSWORD
+    CORE_MIGRATE_USERNAME = $dbRoles.CORE_MIGRATE
+    CORE_MIGRATE_PASSWORD = $credentials.CORE_MIGRATE_PASSWORD
+    LEARNING_DB_USERNAME = $dbRoles.LEARNING_APP
+    LEARNING_DB_PASSWORD = $credentials.LEARNING_APP_PASSWORD
+    LEARNING_MIGRATE_USERNAME = $dbRoles.LEARNING_MIGRATE
+    LEARNING_MIGRATE_PASSWORD = $credentials.LEARNING_MIGRATE_PASSWORD
     RABBITMQ_USERNAME = $credentials.RABBITMQ_USER
     RABBITMQ_PASSWORD = $credentials.RABBITMQ_PASSWORD
     RABBITMQ_URL = "amqp://${mqUser}:${mqPassword}@rabbitmq.platform.svc.cluster.local:5672/"
     INTERNAL_TOKEN = $credentials.INTERNAL_TOKEN
     AUTH_JWT_SECRET = $credentials.AUTH_JWT_SECRET
-    REPORT_DATABASE_URL = $reportDbUrl
-    REPORT_ALEMBIC_DATABASE_URL = $reportDbUrl.Replace('%', '%%')
+    REPORT_DATABASE_URL = Get-ReportDbUrl 'REPORT_APP'
+    REPORT_ALEMBIC_DATABASE_URL = (Get-ReportDbUrl 'REPORT_MIGRATE').Replace('%', '%%')
     MINIO_ROOT_USER = $credentials.MINIO_ROOT_USER
     MINIO_ROOT_PASSWORD = $credentials.MINIO_ROOT_PASSWORD
 }

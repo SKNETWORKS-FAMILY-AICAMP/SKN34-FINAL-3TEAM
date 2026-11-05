@@ -25,6 +25,7 @@
 - 언어 분담 근거: 트랜잭션·권한·버전 관리·Outbox·스케줄·결제 = Spring 생태계(Spring AMQP, Flyway, ShedLock) 성숙 / LLM·모델 추론·렌더링 = Python 생태계
 - scoring 분리 근거: PyTorch 이미지·메모리 요구가 ai-service와 달라 배포·확장 단위 분리, 모델 미활성 시 ai-service 영향 없음
 - 다른 서비스 DB 직접 접근 금지, API 또는 이벤트로만 연동 (참고 레포 원칙 동일)
+- DB 권한으로 강제(#230): 인스턴스 1개(로컬 PostgreSQL·운영 RDS)에 DB별 migrate(DDL)·app(DML) 계정을 두고 각 DB의 PUBLIC CONNECT 회수 → 다른 서비스 DB 접속 불가. 로컬·운영 모두 `charts/platform-data/files/postgres/rds-bootstrap.sql`로 생성, 관리자 계정은 초기화 전용 ([결정](../report/issue-230-db-service-accounts.md))
 - 권한 기준: 학부모-자녀 연결은 core만 소유. core가 요청마다 권한 확인 후 내부 호출에 사용자 컨텍스트·허용 학생 범위 전달 (2.3)
 
 ### 1.2 전체 구성도
@@ -655,7 +656,7 @@ backend/report-service/
 - `infrastructure/gitops/environments/<env>/` 이미지 태그 갱신 커밋 → Argo CD 자동 동기화
 - #171로 local 앱·KEDA·NetworkPolicy·관측 Application 등록 정의. 이미지 게시·승인 흐름은 #186 범위다
 - #186 운영 배포: `cd-release.yml`(main에서 수동 실행)이 계획 검증 → main SHA 이미지 ECR 게시(GitHub OIDC) → GitHub Environment `prod` 승인(김동섭·김태윤) → 작업자 PC self-hosted runner에서 Helm 적용(`redeploy-app.ps1 -ImageDigest`) → 로그인·학습 제출·리포트 조회 확인 → 배포 이력 artifact 순으로 진행한다. prod는 Argo CD 없이 수동 Helm이다(#185). 자동 롤백은 없고 롤백도 같은 승인을 거친다. 운영 설정(AWS OIDC 역할·`prod` Environment·runner) 적용 후 실행 스위치를 켰다(2026-11-04). [설정·절차](../../infrastructure/cd/README.md), [결정 근거](../report/issue-186-cd-approval-rollback.md)
-- Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret (LLM·토스 키는 저장소에 미포함, NFR-SEC-04)
+- Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret (LLM·토스 키는 저장소에 미포함, NFR-SEC-04). DB는 서비스별 app·migrate 계정 Secret만 앱·migration-job에 주입하고 관리자 계정은 넣지 않음(#230)
 
 ### 4.6 관측
 - #171 local 관측 chart: Collector·Prometheus·Grafana, 공통 앱 chart Java agent로 core·learning JVM/HTTP metrics. AI는 기본 비활성 Langfuse v4 LLM 계측. scoring·report exporter와 Langfuse backend·trace 저장은 아직 없음. `traceparent` 헤더와 AI 사용량 이벤트 봉투는 연결
@@ -747,7 +748,8 @@ SKN34-FINAL-3TEAM/
 │  │  │  │  │  │  └─ definitions.json      # exchange·queue·DLX 단일 기준
 │  │  │  │  │  ├─ minio/                  # 로컬 버킷 생성
 │  │  │  │  │  └─ postgres/
-│  │  │  │  │     └─ init.sql              # 로컬 전용 서비스별 DB 생성
+│  │  │  │  │     ├─ init.sql              # 로컬 init 진입점 (rds-bootstrap.sql 포함)
+│  │  │  │  │     └─ rds-bootstrap*.sql    # DB·서비스별 migrate/app 계정 생성, 로컬 init·운영 RDS 공용 (#230)
 │  │  │  │  └─ values.yaml
 │  │  │  └─ observability/       # local OTel metrics·Prometheus·Grafana (#171), Langfuse는 운영 준비 대기
 │  │  │     ├─ templates/
@@ -786,7 +788,7 @@ SKN34-FINAL-3TEAM/
 │  │  ├─ create-app-secrets.ps1  # .env → app·observability namespace Secret
 │  │  └─ hpa-check-values.yaml   # #171 HPA 검증 전용 values
 │  ├─ eks/                       # eksctl ClusterConfig(cluster.json)·관측 인벤토리·gp3
-│  ├─ aws/                       # AWS CLI IaC(demo_stack.py·demo-stack.json·iam/), RDS bootstrap, CloudFront·ALB redacted 설정
+│  ├─ aws/                       # AWS CLI IaC(demo_stack.py·demo-stack.json·iam/), RDS bootstrap 실행(SQL은 platform-data chart 공용), CloudFront·ALB redacted 설정
 │  └─ stubs/                     # compose.e2e.yaml 전용 대역, e2e.env(합성 값)
 │     └─ <target>-stub/          # google·llm·toss-stub: Google OAuth·LLM·토스페이먼츠 대역 (로컬·CI E2E)
 │        └─ Dockerfile
@@ -826,7 +828,7 @@ SKN34-FINAL-3TEAM/
   - `ci-scoring-service`: `backend/scoring-service/**`·`contracts/openapi/scoring-service.yaml`·이벤트 스키마 3개(`envelope`·`model.version.activated`·`llm.usage.recorded`)
   - `ci-learning-service`·`ci-web`·`ci-ml-m1`·`ci-ml-m2`: 자기 경로만
   - `ci-contracts`·`ci-db-schema`·`ci-gitops`·`e2e`·`cd-candidate`는 각 workflow의 `paths` 기준
-- DB 마이그레이션: 서비스별 Flyway(core·learning)·Alembic(report), 앱 기동이 아닌 `migration-job`(Argo CD PreSync hook)으로 1회 실행. 로컬 compose는 일회성 컨테이너로 동일 실행
+- DB 마이그레이션: 서비스별 Flyway(core·learning)·Alembic(report), 앱 기동이 아닌 `migration-job`(Argo CD PreSync hook)으로 1회 실행. 로컬 compose는 일회성 컨테이너로 동일 실행. 마이그레이션은 DB별 migrate 계정, 앱은 app 계정 사용(#230)
 - 서비스 추가: `app-service` chart 재사용 + `environments/<env>/<service>.yaml` (ApplicationSet이 자동 생성, 서비스별 chart 미작성)
 - 한 서비스의 다중 Deployment(report-api·report-worker): 같은 이미지, values의 실행 명령·확장 방식만 다름
 - API 변경: `api-spec.md` 먼저 수정 → `contracts/openapi` → 구현

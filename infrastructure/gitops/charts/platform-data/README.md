@@ -28,13 +28,14 @@ values 키는 `existingSecret`, `memoryHighWatermark`처럼 lowerCamelCase를 �
 
 | 대상 | 사용자명 키 | 비밀번호 키 |
 |---|---|---|
-| PostgreSQL | `POSTGRES_USER` | `POSTGRES_PASSWORD` |
+| PostgreSQL 관리자 | `POSTGRES_USER` | `POSTGRES_PASSWORD` |
+| PostgreSQL 서비스 계정(#230) | `postgres.serviceRoles` 고정 이름 | `CORE_MIGRATE_PASSWORD`·`CORE_APP_PASSWORD`·`LEARNING_*`·`REPORT_*` 6개 |
 | RabbitMQ | `RABBITMQ_USER` | `RABBITMQ_PASSWORD` |
 | MinIO | `MINIO_ROOT_USER` | `MINIO_ROOT_PASSWORD` |
 
 각 서비스의 `usernameKey`·`passwordKey`는 Secret의 키 이름이며 실제 계정 값이 아니다. 원본 키 이름과 컨테이너가 요구하는 환경 변수 이름은 구분한다. 예를 들어 `RABBITMQ_USER` 키는 RabbitMQ 서버의 `RABBITMQ_DEFAULT_USER` 환경 변수에 연결한다. `.env`와 실제 Secret 내용은 저장소에 포함하지 않는다. 내부 API 토큰·LLM 키는 이 저장소 계정 Secret에 넣지 않는다.
 
-PowerShell 7에서 저장소 루트의 `.env`에 여섯 값을 준비한 뒤 다음 명령을 실행한다. 값은 비어 있지 않은 리터럴 또는 작은따옴표로 감싼 리터럴을 사용한다. 변수 치환·큰따옴표 이스케이프는 Secret 준비 스크립트에서 처리하지 않는다. Compose와 같은 계정을 사용하려면 해당 여섯 값을 다른 셸 환경 변수로 덮어쓰지 않는다.
+PowerShell 7에서 저장소 루트의 `.env`에 위 값을 준비한 뒤 다음 명령을 실행한다. 값은 비어 있지 않은 리터럴 또는 작은따옴표로 감싼 리터럴을 사용한다. 변수 치환·큰따옴표 이스케이프는 Secret 준비 스크립트에서 처리하지 않는다. Compose와 같은 계정을 사용하려면 해당 값을 다른 셸 환경 변수로 덮어쓰지 않는다.
 
 ```powershell
 pwsh -File infrastructure/kind/create-platform-secret.ps1
@@ -56,7 +57,7 @@ pwsh -File infrastructure/kind/create-platform-secret.ps1
 
 저장소마다 `<서비스명>-headless`가 StatefulSet의 `serviceName`과 연결된다. 앱은 접속용 일반 Service를 사용한다. StatefulSet은 replica 1개이며 삭제·축소 시 PVC를 보존하도록 설정한다. kind 클러스터 자체의 삭제에 따른 노드 내부 데이터 보존은 별도다.
 
-- PostgreSQL: `settings`에서 메모리·연결 수를 지정한다. DB 생성 파일은 기존 `files/postgres/init.sql`을 사용하며, 테이블 변경은 서비스별 migration이 담당한다.
+- PostgreSQL: `settings`에서 메모리·연결 수를 지정한다. 최초 초기화 때 `files/postgres/init.sql`이 운영 RDS와 같은 `rds-bootstrap.sql`을 실행해 DB 3개와 DB별 migrate(DDL)·app(DML) 계정을 만들고 다른 DB 접속을 막는다(#230). 두 bootstrap 파일은 entrypoint가 단독 실행하지 않도록 `/docker-entrypoint-initdb.d/bootstrap/`에 둔다. 서비스 계정 비밀번호를 바꾸거나 기존 데이터가 있는 PVC에 적용하려면 [#230 보고서](../../../../docs/report/issue-230-db-service-accounts.md#기존-로컬-환경-적용)를 따른다. 테이블 변경은 서비스별 migration이 담당한다.
 - RabbitMQ: `memoryHighWatermark`는 절대 바이트 수 문자열이다. 로컬은 `1073741824`(1GiB)로 지정하며 컨테이너 메모리 limit과 구분한다. 큐·exchange·binding은 기존 `files/rabbitmq/definitions.json`만 기준으로 하고 계정은 파일에 추가하지 않는다.
 - Redis: `maxMemory`는 데이터 메모리 기준, `maxMemoryPolicy`는 한도 도달 시 처리 방식이다. 로컬은 `128mb`·`noeviction`을 사용하고 AOF를 활성화한다. `noeviction`에서는 메모리 한도를 넘는 쓰기를 오류로 처리한다.
 - MinIO: 단일 저장 공간에 `missions`·`reports`·`models` 세 버킷을 만든다. `buckets`의 키는 용도이고 값은 실제 버킷 이름이다. 로컬 버킷명은 환경 values에 지정한다.
