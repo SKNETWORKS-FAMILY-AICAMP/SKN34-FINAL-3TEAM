@@ -1,7 +1,15 @@
-// OpenAI 호환 LLM 대역 (로컬·CI E2E 전용, #246). ai-service의 chat.completions 호출만 받는다.
+// OpenAI 호환 LLM 대역 (로컬·CI E2E·부하 시험 전용, #246·#361). ai-service의 chat.completions 호출만 받는다.
 // 응답은 response_format.json_schema.name(ai-service Pydantic 모델 이름)으로 고른다.
+// LLM_STUB_DELAY_MS(기본 0)·LLM_STUB_JITTER_MS(기본 0): 응답 전 대기(기본값 + 0~지터 균등). 부하 시험에서 실제 LLM 지연을 흉내 낸다.
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
+
+const delayMs = Math.max(0, Number(process.env.LLM_STUB_DELAY_MS ?? 0) || 0)
+const jitterMs = Math.max(0, Number(process.env.LLM_STUB_JITTER_MS ?? 0) || 0)
+const wait = () => {
+  const ms = delayMs + Math.random() * jitterMs
+  return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve()
+}
 
 const json = (res, body, status = 200) => {
   res.writeHead(status, { 'Content-Type': 'application/json' })
@@ -56,6 +64,7 @@ createServer(async (req, res) => {
     for await (const part of req) raw += part
     let body
     try { body = JSON.parse(raw) } catch { return json(res, { error: { message: 'invalid json' } }, 400) }
+    await wait()
     if (body.stream) return stream(res, body.model)
     const result = completion(body)
     return result ? json(res, result) : json(res, { error: { message: 'unsupported response_format' } }, 400)
