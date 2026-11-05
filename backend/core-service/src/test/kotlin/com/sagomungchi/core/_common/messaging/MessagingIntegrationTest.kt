@@ -11,6 +11,8 @@ import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mockito.doAnswer
+import org.springframework.amqp.AmqpConnectException
+import org.springframework.amqp.AmqpIOException
 import org.springframework.amqp.core.Message
 import org.springframework.amqp.core.MessageProperties
 import org.springframework.amqp.rabbit.core.RabbitTemplate
@@ -20,7 +22,9 @@ import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean
 import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate
+import java.io.IOException
 import java.math.BigDecimal
+import java.net.ConnectException
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
@@ -30,9 +34,12 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import javax.sql.DataSource
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.fail
@@ -140,7 +147,8 @@ class MessagingIntegrationTest(
             val first = pool.submit {
                 runRelayLocked {
                     transactionTemplate.executeWithoutResult {
-                        repeat(RELAY_EVENT_COUNT) { outboxWriter.append(RELAY_ROUTING_KEY, RELAY_ROUTING_KEY, subject, mapOf("seq" to it)) }
+                        // subject별 선두만 발행하므로(#243) 한 주기에 모두 발행되도록 subject를 나눔
+                        repeat(RELAY_EVENT_COUNT) { outboxWriter.append(RELAY_ROUTING_KEY, RELAY_ROUTING_KEY, "$subject-$it", mapOf("seq" to it)) }
                     }
                     relay.relay()
                 }
@@ -155,10 +163,10 @@ class MessagingIntegrationTest(
             pool.shutdownNow()
         }
 
-        val ids = jdbcTemplate.queryForList("SELECT id FROM outbox_event WHERE subject = ?", UUID::class.java, subject)
+        val ids = jdbcTemplate.queryForList("SELECT id FROM outbox_event WHERE subject LIKE ?", UUID::class.java, "$subject-%")
         assertEquals(RELAY_EVENT_COUNT, ids.size)
         assertEquals(ids.associate { it.toString() to 1 }, sent.toMap())
-        assertEquals(0, jdbcTemplate.queryForObject("SELECT count(*) FROM outbox_event WHERE subject = ? AND published_at IS NULL", Int::class.java, subject))
+        assertEquals(0, jdbcTemplate.queryForObject("SELECT count(*) FROM outbox_event WHERE subject LIKE ? AND published_at IS NULL", Int::class.java, "$subject-%"))
         assertTrue(inTransaction.none { it }, "발행 중 DB 트랜잭션 활성")
         assertTrue(rowLocked.none { it }, "발행 중 outbox 행 잠금 보유")
     }
@@ -222,6 +230,145 @@ class MessagingIntegrationTest(
     private fun eventLog(eventId: UUID): Map<String, Any?>? =
         jdbcTemplate.queryForList("SELECT event_type, source, subject FROM event_log WHERE event_id = ?", eventId).firstOrNull()
 
+    @Test
+    fun `일시 발행 실패는 횟수·코드·다음 시각을 기록하고 재시도 시각 후 발행`() {
+        // 다른 테스트가 남긴 미발행 행과 섞이지 않도록 이 이벤트 id만 1회 실패
+        val target = AtomicReference<String>()
+        val remainingFailures = AtomicInteger(1)
+        doAnswer { invocation ->
+            val messageId = invocation.getArgument<Message>(2).messageProperties.messageId
+            if (messageId == target.get() && remainingFailures.getAndDecrement() > 0) throw AmqpIOException(IOException("nack"))
+            invocation.callRealMethod()
+        }.`when`(rabbitTemplate).send(anyString(), eq(FAILURE_ROUTING_KEY), any(Message::class.java))
+
+        runRelayLocked {
+            val id = appendFailureEvent("outbox-retry-${UUID.randomUUID()}")
+            target.set(id.toString())
+            relay.relay()
+            val failed = outboxRow(id)
+            assertEquals(1, failed["failure_count"])
+            assertEquals("PUBLISH_FAILED", failed["last_error_code"])
+            assertEquals(60, failed["delay_seconds"])
+            assertNull(failed["quarantined_at"])
+            assertNull(failed["published_at"])
+
+            relay.relay() // 재시도 시각 전에는 발행하지 않음
+            assertNull(outboxRow(id)["published_at"])
+
+            makeDue(id)
+            relay.relay()
+            assertNotNull(outboxRow(id)["published_at"])
+        }
+    }
+
+    @Test
+    fun `영구 발행 실패는 4번째에 격리, 같은 subject 뒤 이벤트만 대기하고 다른 subject는 발행, 재처리 후 순서대로 발행`() {
+        val sent = ConcurrentLinkedQueue<String>()
+        val broken = AtomicReference<String>()
+        doAnswer { invocation ->
+            val messageId = invocation.getArgument<Message>(2).messageProperties.messageId
+            sent += messageId
+            if (messageId == broken.get()) throw AmqpIOException(IOException("nack"))
+            invocation.callRealMethod()
+        }.`when`(rabbitTemplate).send(anyString(), eq(FAILURE_ROUTING_KEY), any(Message::class.java))
+
+        runRelayLocked {
+            val subject = "outbox-quarantine-${UUID.randomUUID()}"
+            val head = appendFailureEvent(subject)
+            val next = appendFailureEvent(subject)
+            val other = appendFailureEvent("outbox-quarantine-other-${UUID.randomUUID()}")
+            broken.set(head.toString())
+
+            relay.relay()
+            val delays = mutableListOf(outboxRow(head)["delay_seconds"])
+            repeat(3) {
+                makeDue(head)
+                relay.relay()
+                delays += outboxRow(head)["delay_seconds"]
+            }
+            assertEquals(listOf<Any?>(60, 300, 900, null), delays)
+            val quarantined = outboxRow(head)
+            assertEquals(4, quarantined["failure_count"])
+            assertNotNull(quarantined["quarantined_at"])
+            assertNull(outboxRow(next)["published_at"])
+            assertNotNull(outboxRow(other)["published_at"])
+
+            relay.relay() // 격리 선두는 다시 시도하지 않음
+            assertEquals(4, sent.count { it == head.toString() })
+            assertFalse(next.toString() in sent)
+
+            broken.set(null)
+            assertEquals(1, requeue(head))
+            relay.relay()
+            relay.relay()
+            val requeued = outboxRow(head)
+            assertNotNull(requeued["published_at"])
+            assertNotNull(outboxRow(next)["published_at"])
+            assertEquals(0, requeued["failure_count"])
+            assertEquals(1, requeued["manual_retry_count"])
+            assertNotNull(requeued["last_requeued_at"])
+            assertEquals(listOf(head.toString(), next.toString()), sent.filter { it == head.toString() || it == next.toString() }.distinct())
+        }
+    }
+
+    @Test
+    fun `브로커 연결 실패는 그 이벤트만 기록하고 주기 중단`() {
+        val sent = ConcurrentLinkedQueue<String>()
+        val unreachable = AtomicReference<String>()
+        doAnswer { invocation ->
+            val messageId = invocation.getArgument<Message>(2).messageProperties.messageId
+            sent += messageId
+            if (messageId == unreachable.get()) throw AmqpConnectException(ConnectException("down"))
+            invocation.callRealMethod()
+        }.`when`(rabbitTemplate).send(anyString(), eq(FAILURE_ROUTING_KEY), any(Message::class.java))
+
+        runRelayLocked {
+            val first = appendFailureEvent("outbox-down-${UUID.randomUUID()}")
+            val second = appendFailureEvent("outbox-down-${UUID.randomUUID()}")
+            unreachable.set(first.toString())
+            relay.relay()
+
+            val failed = outboxRow(first)
+            assertEquals(1, failed["failure_count"])
+            assertEquals("BROKER_UNAVAILABLE", failed["last_error_code"])
+            val untouched = outboxRow(second)
+            assertEquals(0, untouched["failure_count"])
+            assertNull(untouched["published_at"])
+            assertFalse(second.toString() in sent)
+        }
+    }
+
+    private fun appendFailureEvent(subject: String): UUID = transactionTemplate.execute {
+        outboxWriter.append(FAILURE_ROUTING_KEY, FAILURE_ROUTING_KEY, subject, mapOf("seq" to 0))
+        jdbcTemplate.queryForObject(
+            "SELECT id FROM outbox_event WHERE subject = ? ORDER BY created_at DESC, id DESC LIMIT 1", UUID::class.java, subject,
+        )
+    }!!
+
+    private fun outboxRow(id: UUID): Map<String, Any?> = jdbcTemplate.queryForMap(
+        """
+        SELECT failure_count, last_error_code, quarantined_at, published_at, manual_retry_count, last_requeued_at,
+               extract(epoch FROM next_attempt_at - last_failed_at)::int AS delay_seconds
+        FROM outbox_event WHERE id = ?
+        """.trimIndent(),
+        id,
+    )
+
+    /** 재시도 대기 경과 대신 다음 시도 시각을 과거로 당김 */
+    private fun makeDue(id: UUID) {
+        jdbcTemplate.update("UPDATE outbox_event SET next_attempt_at = now() - interval '1 second' WHERE id = ?", id)
+    }
+
+    /** docs/report/core-gateway.md 11절 운영 재처리 SQL과 동일 */
+    private fun requeue(id: UUID): Int = jdbcTemplate.update(
+        """
+        UPDATE outbox_event SET failure_count = 0, next_attempt_at = NULL, quarantined_at = NULL,
+               manual_retry_count = manual_retry_count + 1, last_requeued_at = now()
+        WHERE id = ? AND quarantined_at IS NOT NULL AND published_at IS NULL
+        """.trimIndent(),
+        id,
+    )
+
     private fun countUsage(eventId: UUID): Int =
         jdbcTemplate.queryForObject("SELECT count(*) FROM llm_usage WHERE event_id = ?", Int::class.java, eventId)!!
 
@@ -262,6 +409,7 @@ class MessagingIntegrationTest(
         private const val RELAY_LOCK_NAME = "core-outbox-relay"
         private const val RELAY_ROUTING_KEY = "test.outbox-relay"
         private const val RELAY_EVENT_COUNT = 3
+        private const val FAILURE_ROUTING_KEY = "test.outbox-failure"
         private val ENVELOPE_SCHEMA = Path.of("../../contracts/events/envelope.schema.json")
         private val OFFSET_DATE_TIME = Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})""")
     }

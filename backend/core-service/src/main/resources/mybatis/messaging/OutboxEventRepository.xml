@@ -3,15 +3,24 @@
 <mapper namespace="com.sagomungchi.core._common.messaging.OutboxEventRepository">
 
     <insert id="insert">
-        INSERT INTO outbox_event (id, event_type, routing_key, subject, payload, created_at)
-        VALUES (#{id}, #{eventType}, #{routingKey}, #{subject}, #{payload}::jsonb, #{createdAt})
+        INSERT INTO outbox_event (id, event_type, routing_key, subject, payload, created_at, failure_count, manual_retry_count)
+        VALUES (#{id}, #{eventType}, #{routingKey}, #{subject}, #{payload}::jsonb, #{createdAt}, 0, 0)
     </insert>
 
-    <!-- 생성자 순서와 컬럼 순서 일치 -->
+    <!--
+        subject별 미발행 선두만 조회(#243). 선두가 백오프·격리 중이면 그 subject의 뒤 행도 대기, 다른 subject는 계속.
+        생성자 순서와 컬럼 순서 일치
+    -->
     <select id="findUnpublished" resultType="com.sagomungchi.core._common.messaging.OutboxEvent">
-        SELECT id, event_type, routing_key, subject, payload::text AS payload, created_at
-        FROM outbox_event
-        WHERE published_at IS NULL
+        SELECT id, event_type, routing_key, subject, payload, created_at
+        FROM (
+            SELECT DISTINCT ON (subject) id, event_type, routing_key, subject, payload::text AS payload, created_at,
+                   next_attempt_at, quarantined_at
+            FROM outbox_event
+            WHERE published_at IS NULL
+            ORDER BY subject, created_at, id
+        ) head
+        WHERE quarantined_at IS NULL AND (next_attempt_at IS NULL OR next_attempt_at &lt;= now())
         ORDER BY created_at, id
         LIMIT #{limit}
     </select>
@@ -19,6 +28,22 @@
     <update id="markPublished">
         UPDATE outbox_event SET published_at = #{publishedAt} WHERE id = #{id}
     </update>
+
+    <!-- 1·2·3번째 실패는 1·5·15분 뒤 재시도, 4번째 실패는 격리. 이미 발행·삭제된 행이면 결과 없음 -->
+    <select id="recordFailure" resultType="boolean" flushCache="true" useCache="false">
+        UPDATE outbox_event
+        SET failure_count = failure_count + 1,
+            last_error_code = #{errorCode},
+            last_failed_at = now(),
+            next_attempt_at = CASE failure_count
+                WHEN 0 THEN now() + interval '1 minute'
+                WHEN 1 THEN now() + interval '5 minutes'
+                WHEN 2 THEN now() + interval '15 minutes'
+            END,
+            quarantined_at = CASE WHEN failure_count >= 3 THEN now() END
+        WHERE id = #{id} AND published_at IS NULL
+        RETURNING quarantined_at IS NOT NULL
+    </select>
 
     <delete id="deletePublishedBefore">
         DELETE FROM outbox_event WHERE published_at IS NOT NULL AND published_at &lt; #{before}

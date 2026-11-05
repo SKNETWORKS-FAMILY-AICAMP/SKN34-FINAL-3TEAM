@@ -118,6 +118,7 @@
 
 ### 1.6 메시징 신뢰성 규칙
 - **Outbox**: DB 상태 변경 + 발행이 함께 필요한 서비스(core, report)만 적용 (learning은 발행 없음, 멱등 소비만). 같은 트랜잭션에 outbox 행 저장 → 릴레이 스케줄러가 publisher confirm 받은 후 발행 시각 기록 (참고 레포 `*OutboxScheduler` 패턴). core 릴레이는 ShedLock 단일 실행, 발행·confirm 대기는 DB 트랜잭션 밖, 발행 시각만 짧은 트랜잭션으로 기록
+- **core 발행 복구(#243)**: report #131과 같은 기준으로 subject별 선두만 1건씩 발행·confirm한다. 실패는 안전 오류 코드·횟수를 기록하고 1·5·15분 재시도 후 격리하며 다른 subject는 계속 처리한다. 브로커 연결 실패·confirm timeout은 그 주기를 중단한다. 격리 선두와 그 뒤 이벤트는 운영 SQL로 재처리할 때까지 대기한다. [정책·운영 SQL](../report/core-gateway.md#11-core-outbox-실패-격리-243)
 - **report 발행 복구(#131)**: 학생별 선두만 발행한다. 실패한 학생은 1·5·15분 재시도 후 격리하고 다른 학생은 계속 처리한다. 격리된 선두와 그 뒤 이벤트는 운영 CLI로 원래 이벤트 id를 재처리할 때까지 대기한다. 소비 재시도 큐/DLQ와 별개로 Outbox DB에 실패·격리 상태를 저장한다. [정책·운영 명령](../report/report.md#11-outbox-실패-격리와-학생별-발행-순서-131)
 - **상태 없는 서비스(ai, scoring)**: 이벤트 발행은 처리 결과 반환 후 best-effort (사용량 집계용), 유실 시 Langfuse trace로 보정(Langfuse는 예정, 저장소 미구성)
 - **멱등 소비**: 소비자별 `processed_event(event_id UK)` 테이블 또는 DB 상태 전이 조건(`QUEUED→RUNNING`)

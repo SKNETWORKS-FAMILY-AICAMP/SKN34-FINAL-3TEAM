@@ -19,10 +19,16 @@ data class OutboxEvent(
 interface OutboxEventRepository {
     fun insert(event: OutboxEvent)
 
-    /** 잠금 없는 조회, 레플리카 간 단일 실행은 OutboxRelay의 ShedLock이 보장 */
+    /**
+     * subject별 미발행 선두 중 재시도 시각이 된 비격리 행 (#243).
+     * 잠금 없는 조회, 레플리카 간 단일 실행은 OutboxRelay의 ShedLock이 보장
+     */
     fun findUnpublished(@Param("limit") limit: Int): List<OutboxEvent>
 
     fun markPublished(@Param("id") id: UUID, @Param("publishedAt") publishedAt: OffsetDateTime)
+
+    /** 실패 횟수·코드 기록 후 격리 여부 반환, 이미 발행·삭제된 행이면 null (#243) */
+    fun recordFailure(@Param("id") id: UUID, @Param("errorCode") errorCode: String): Boolean?
 
     /** 보존 기간 정리: 발행 완료 행만 삭제 */
     fun deletePublishedBefore(@Param("before") before: OffsetDateTime): Int
