@@ -148,7 +148,7 @@ classDiagram
 | `InternalAuthFilter`, `UserContext`, `UserContextHolder` | `_common/security` | 구현됨 | `/internal/**` 토큰 검사, `X-User-*`·`X-Student-Scope` 컨텍스트 |
 | `BusinessException`, `DomainException`, `ErrorKind`, `GlobalExceptionHandler`, `Problems` | `_common/exception` | 구현됨 | RFC 9457 오류 응답. domain은 Spring 타입이 없는 `DomainException(kind, code, …)`만 던지고, `ErrorKind` → HTTP 상태는 `_common/exception`의 `statusOf` 하나가 정함(core 400·404·409, learning 400·409·422, #249). 예외에서 상태·code를 읽는 곳은 `httpStatusOf`·`errorCodeOf`(두 예외 모두 처리). `BusinessException`은 application·presentation 전용 |
 | `EventEnvelope`, `MessagingConfig` | `_common/messaging` | 구현됨 | CloudEvents 봉투, JSON 변환기 |
-| `OutboxWriter`, `OutboxRelay`, `OutboxEventRepository` | `_common/messaging` | 구현됨 (core만) | 같은 트랜잭션 `outbox_event` 저장 → 릴레이(ShedLock 단일 실행)가 DB 트랜잭션 밖에서 미발행 행 발행·publisher confirm 대기 후 짧은 트랜잭션으로 `published_at` 기록(#166) |
+| `OutboxWriter`, `OutboxRelay`, `OutboxEventRepository` | `_common/messaging` | 구현됨 (core만) | 같은 트랜잭션 `outbox_event` 저장 → 릴레이(ShedLock 단일 실행)가 DB 트랜잭션 밖에서 subject별 미발행 선두를 1건씩 발행·publisher confirm 대기 후 짧은 트랜잭션으로 `published_at` 기록(#166). 실패는 짧은 트랜잭션으로 `recordFailure`, 4번째 실패 격리(#243) |
 | `ProcessedEventRepository` | `_common/messaging` | 구현됨 (core) | `processed_event` INSERT 성공 여부로 멱등 소비 |
 | `EventAuditConsumer`, `EventLogRepository`, `EventRetentionCleanup` | `_common/messaging` | 구현됨 (core, #208) | 감사 큐의 모든 업무 메시지 봉투 메타데이터를 `event_log`에 저장, 주기 정리(발행 완료 Outbox·처리 이벤트·이벤트 기록 보존 기간). listener·`@Scheduled`가 같은 패키지 repository를 직접 호출하는 것은 공통 메시징 인프라 예외(아키텍처 2.1, #278)이며 `_common`에 service를 두지 않음. learning은 `record/scheduler/ProcessedEventCleanupScheduler` → `record/service/ProcessedEventCleanupService`, report는 `worker.py` → `deletion/service.py` `prune_event_records` |
 | `RetryingConsumer` | `_common/messaging` | 구현됨 (core) | 수동 ACK. 처리 실패 시 `x-retry-count` +1 후 `<큐>.retry.<회차>` 재발행, 최대 횟수 초과 시 reject → DLQ (아키텍처 1.6) |
@@ -1166,6 +1166,7 @@ classDiagram
 - `ModelVersion`은 불변 data class다. 상태 전이는 `ModelVersionService`의 `activate`·`rollback`과 private `switch`에서 `copy` 후 Repository에 저장하며 Domain의 `activate()`·`deactivate()` 메서드는 없다.
 - `AuditLogService`는 아직 구현되지 않은 공용 감사 서비스 설계다. #43은 `ModelVersionService → ModelVersionRepository.audit → ModelVersionMapper.audit → audit_log` 경로로 감사 기록을 저장한다. 상태·감사·Outbox를 같은 트랜잭션으로 유지하며, #47 등에서 공용 감사 기능을 실제 도입할 때 이 경로의 통합을 검토한다. 현재 사용처만을 위해 공용 서비스를 추가하지 않는다 ([#43 보고서](../report/ai.md)).
 - `QueueStatsRepository`: RabbitMQ 관리 API(15672) 조회, 큐 길이·DLQ 적재량 (참고 레포 `QueueOperations*`)
+- #336 구현 전: `AdminMissionController`(= `learning/controller/AdminMissionsController`)가 성취기준 표·미션 초안 경로도 같은 방식으로 learning에 넘기고 초안 요청·채택·버리기를 감사 기록한다(api-spec 2.8). 사용량 호출 종류(`usage/domain/UsageSummary.CallType`)에 `MISSION_DRAFT` 추가
 
 ---
 
@@ -1366,6 +1367,69 @@ classDiagram
   - `review`: 현재 미션·기준표 버전의 최신 검토가 `APPROVED`가 아님
 - 관리자 API(#145): core가 `ADMIN` + `X-User-Id`(작성자·검토자 ID) + 빈 학생 범위로 넘김(CONTENT 검사는 core). 성공 응답은 모두 JSON 객체(core 프록시 요구): 목록 `{items, page, size, totalElements, counts}`, 나머지는 미션 전체 `AdminMission`(api-spec 4.1). `counts`는 페이지·`status`·`grade`·`thinkingType` 어느 필터와도 무관한 전체 상태별 건수
 - 버전: `update`·`putRubric`은 새 버전을 추가하고 `current_*`만 바꿈. 학생 목록·상세·`currentVersions`(시도 시작)는 공개 버전 `published_*`, `publish`가 `published_*` ← `current_*` (P07, ERD 4.1). 상태 전이는 state-diagram 3.1
+
+### 4.1.1 성취기준·미션 초안 (#336 설계, #353 구현)
+
+FN-ADM-20·21, api-spec 4.1 `/internal/admin/achievement-standards`·`/internal/admin/mission-drafts…`, ERD 4.1.1. 이름은 구현 이슈의 기준이며 기존 `mission` 패키지 안에 둔다.
+
+```mermaid
+classDiagram
+  direction LR
+  class AdminMissionDraftController {
+    <<controller>>
+    +standards(subject, gradeBand, q, page, size) Page
+    +request(body) MissionDraft
+    +list(status, page, size) Page
+    +detail(draftId) MissionDraft
+    +adopt(draftId) AdminMission
+    +discard(draftId) MissionDraft
+  }
+  class MissionDraftService {
+    <<service>>
+    +request(command) MissionDraft
+    +adopt(draftId, author) AdminMission
+    +discard(draftId) MissionDraft
+    +generateNext(now)
+  }
+  class MissionDraft {
+    <<entity>>
+    +recordAttempt(result, maxAttempts)
+    +adopt(missionId)
+    +discard()
+  }
+  class MissionDraftScheduler { <<scheduler>> }
+  class MissionDraftAiClient { <<client>> }
+  class MissionDraftRepository {
+    <<repository>>
+    +claimNext(now, leaseUntil) MissionDraft
+    +saveAttempt(draft, claimedLease)
+  }
+  class AchievementStandardRepository {
+    <<repository>>
+    +search(filter, page, size)
+    +findByCodes(codes)
+  }
+  class MissionService { <<service>> }
+
+  AdminMissionDraftController --> MissionDraftService
+  AdminMissionDraftController --> AchievementStandardRepository
+  MissionDraftScheduler --> MissionDraftService : 주기 실행
+  MissionDraftService --> MissionDraftRepository
+  MissionDraftService --> AchievementStandardRepository
+  MissionDraftService --> MissionDraftAiClient : 생성 1회
+  MissionDraftService --> MissionService : createFromDraft
+  MissionDraftService ..> MissionDraft
+```
+
+- 요청 `request`: 형식·성취기준 코드 실재·미션 학년이 성취기준 학년군 안·학년·입력 방식 조합·성취수준 단계 확인(400) 뒤 `GENERATING`, `attempts = 0`으로 저장하고 202. 생성은 요청 안에서 하지 않는다(core→learning 일반 대기 30초 안에 LLM 생성·재시도를 끝낼 수 없음)
+- 생성 `generateNext`(`MissionDraftScheduler`, 주기 기준안 10초): `claimNext`가 `GENERATING`이고 `lease_until`이 비었거나 지난 초안 하나를 조건부 UPDATE로 점유한다(`lease_until = now + 90초`, 판정 리스와 같은 값·같은 방식이라 레플리카가 동시에 돌아도 한 곳만). 트랜잭션 밖에서 ai를 1번 부르고 learning 검사를 한 뒤 `saveAttempt`가 점유한 리스 값이 그대로일 때만 저장한다
+- learning 검사(`DraftRules.learningFailures`): 채택할 미션·기준표(`DraftRules.missionCommand`·`rubricCommand`)를 게시 검사(`PublishSnapshot.missingFields`, 검토는 통과로 봄)에 그대로 넣어 같은 규칙으로 본다. 누락 `rubric.elements`·`rubric.elements.code` → `ELEMENT_CODE`, `rubric.elements.standardCode` → `STANDARD_CODE`, 나머지(선택지·분류 칸·정답 키·예시 답 등) → `SHAPE`(`reason`은 누락 코드). AI 호출이 실패한 시도는 `AI_CALL`(`reason`은 `failure_code`)로 남김
+- `MissionDraft.recordAttempt`: `attempts + 1`, `check_results`에 이번 실패 추가. ai·learning 검사를 모두 통과하면 `READY` + `output`. 실패하고 상한 미만이면 `GENERATING` 그대로 리스만 비워 다음 주기에 이전 실패 사유(`previousFailures`)를 넣어 다시 생성. 상한(기준안 3회, P19 김동섭 확인)에 닿으면 마지막 실패가 AI 호출 실패면 `FAILED`(`failure_code`), 아니면 `CHECK_FAILED`
+- `MissionDraftAiClient`: `POST /internal/mission-drafts`. 재시도 없음·오류 분류(`judgment/client` `postToAi`)·서킷 값(`aiCircuitBreaker`)은 `AiClient`와 같지만 **서킷은 따로** 둔다(`ai-mission-draft`, 같은 P12 값). 대기는 70초(`app.mission-draft.ai-read-timeout`, P12 예외 #353, `InternalRestClientFactory.create(service, readTimeout)`)로 다른 내부 호출의 35초와 따로다. 판정·되묻기 서킷을 같이 쓰면 초안 실패가 학생 판정을 막음(#305와 같은 문제)
+- 채택 `adopt`: 초안 행 `FOR UPDATE` → `READY`가 아니면 409 → `MissionService.createFromDraft`가 기존 `create`·`putRubric`과 같은 규칙으로 `DRAFT` 미션·첫 미션 버전·첫 기준표 버전을 같은 트랜잭션에 만듦(`mission.source = LLM_DRAFT`, 요소 배점 1, M2 입력 `keywords`·`essayType`은 비움, `sceneNote`는 미션에 저장하지 않음) → `ADOPTED` + `mission_id`. 이후 수정·검토·게시는 4.1 그대로라 자동 공개 없음(P19)
+- 사람이 쓰는 미션(`create`)은 `source = MANUAL`. `achievementLevels`·요소 `standardCode` 저장과 게시 검사 추가는 4.1 `MissionService`·`Mission.requirePublishable`에서 한다(ERD 4.1.1)
+- 새 값(주기 10초·상한 3회)은 기준안이며 `app.mission-draft.*`(`enabled`·`interval`·`max-attempts`) 설정으로 둔다. 리스 90초는 판정과 같은 값(`Judgment.LEASE`)을 쓴다
+- 표준 요소 표(FN 1.5 14개 코드·유형·이름·공통 설명)와 code 규칙은 `mission/domain/Standards.kt` `StandardElements` 한 곳에 둔다. 기준표 저장(모양 400)·게시 검사(`rubric.elements.code`)·초안 ai 입력(`DraftRules.elementCodes`)이 같은 표를 쓴다
 
 ### 4.2 판정·되묻기 (judgment)
 
@@ -1625,8 +1689,8 @@ classDiagram
   }
   class ScoringClient {
     <<client>>
-    +m2_scores(prompt, text, grade, input_type, keywords) M2Result
-    +m1_check(problem, answer_key, solution) M1Result
+    +m2_scores(body, timeout) M2Scores
+    +m1_check(body, timeout) M1Check
   }
   class ActiveVersions {
     <<registry>>
@@ -1661,10 +1725,10 @@ classDiagram
 |---|---|---|
 | `EvidenceExtractor` | `judgment/extractor.py` | 모듈 함수 `extract()`. LLM에 기준표 요소별 근거 구절 추출 요청 (학생 이름 미포함) |
 | `QuoteVerifier` | `judgment/verifier.py` | 모듈 함수 `normalize`·`is_verbatim`·`visible_length`. 구절의 답변 원문 존재 확인(코드). LLM과 분리 (FN-JDG-03) |
-| `JudgmentService` | `judgment/service.py` | 사전 보류(`TOO_SHORT`·`UNVERIFIED_SCOPE`) → 추출 → 대조 → 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정 (업무 판단은 service, 아키텍처 2.1) → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`, `M2_CROSS_CHECK_ENABLED` 기본 꺼짐이면 기록만) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`, `M1_CHECK_ENABLED` 기본 꺼짐) → 응답. scoring 호출은 `clients/scoring_client.ScoringClient`, 불일치 계산은 `judgment/cross_check.py` (#69, api-spec 4.2.2) |
-| `LeakGuard` | `followup/leak_guard.py` | 모듈 함수 `find_leaks()`. 정답 키·예시 답·금지어 포함 검사. 실패 시 1회 재생성(`LLM_RETRY`), 재실패 시 `question` 없이 `leakCheck.passed = false` 반환 → learning이 질문 은행 선택 (`BANK`, P16) |
+| `JudgmentService` | `judgment/service.py` | 사전 보류(`TOO_SHORT`·`UNVERIFIED_SCOPE`) → 추출 → 대조 → 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정 (업무 판단은 service, 아키텍처 2.1) → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`, `M2_CROSS_CHECK_ENABLED` 기본 꺼짐이면 기록만) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`, `M1_CHECK_ENABLED` 기본 꺼짐) → 응답. scoring 호출은 `clients/scoring_client.ScoringClient`(`m2_scores(body, timeout)`·`m1_check(body, timeout)`, 요청 본문은 `cross_check.m2_body`·`m1_body`가 만들고 `timeout`은 `SCORING_TIMEOUT`과 남은 판정 시간 중 작은 값, 비활성 응답이면 `None`), 불일치 계산은 `judgment/cross_check.py` (#69, api-spec 4.2.2) |
+| `LeakGuard` | `followup/leak_guard.py` | 모듈 함수 `find_leaks()`(글 하나 검사는 `find_text_leaks()`, 미션 초안 검사와 공유). 정답 키·예시 답·금지어 포함 검사. 실패 시 1회 재생성(`LLM_RETRY`), 재실패 시 `question` 없이 `leakCheck.passed = false` 반환 → learning이 질문 은행 선택 (`BANK`, P16) |
 | `LlmClient` | `llm/base.py`, 제공자는 `llm/providers.py` | 제공자 교체 지점(Claude·OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`), LLM 호출 재시도는 이 클래스에서만 (아키텍처 1.3), 호출마다 사용량 콜백(`BackgroundUsageRecorder` → `UsagePublisher`, 발행 실패는 로그만). `stream`은 분석 대화 답변의 일반 텍스트 조각(첫 조각 전 실패만 재시도) |
-| `ActiveVersions` | `prompt_versions/registry.py` (#254, 조정은 `prompt_versions/service.py` `PromptSync`) | #68에서 내장 버전과 core 활성 `PROMPT` 다섯 이름(#280 `reportTemplate` 포함)·승인 scope를 조정한다. 선택한 실제 본문·버전을 요청 동안 고정하고 `/internal/versions`에 같은 버전을 제공한다. 미보유 활성 버전은 명시적 503과 readiness DOWN |
+| `ActiveVersions` | `prompt_versions/registry.py` (#254, 조정은 `prompt_versions/service.py` `PromptSync`) | #68에서 내장 버전과 core 활성 `PROMPT` 여섯 이름(#280 `reportTemplate`, #354 `missionDraft` 포함, 5.4)·승인 scope를 조정한다. 선택한 실제 본문·버전을 요청 동안 고정하고 `/internal/versions`에 같은 버전을 제공한다. 미보유 활성 버전은 명시적 503과 readiness DOWN |
 
 ### 5.2 분석 에이전트·리포트 서술 (analysis_agent · report_narrative)
 
@@ -1763,7 +1827,7 @@ classDiagram
 - `calculators`: 건수·비율은 LLM이 아닌 코드 계산 (FN-AGT-05), `Metric` 형식은 learning과 동일(분모 0 `NO_RECORD`, 5 미만 `value: null`). 집계 대상·전후 변화 수(글자·문장·까닭을 잇는 말)는 learning `summary`·`changes.counts` 값을 그대로 사용해 대시보드·리포트와 숫자를 맞춤 ([ai 보고서 2장](../report/ai.md#2-분석-대화-에이전트-langgraph))
 - `AnswerVerifier`(`analysis_agent/verification.py`의 `verify`): 답변 속 숫자 ↔ `metrics`, 인용 ↔ `evidence` 원문 대조. 실패 시 규칙 응답으로 전환 (FN-AGT-06)
 - 규칙 응답(`analysis_agent/templates.py`): 대조 실패·LLM 키 부재·호출 실패 시 계산된 `metrics`·`evidence`만 템플릿 문장으로 구성, `source = TEMPLATE`·`fallback` 표시 (FN-AGT-10, P16)
-- 구현 이름(#65·#66): `AnalysisService` 없이 `router.py`가 그래프를 실행, `AgentState` = `state.py`의 `AnalysisState`. `nodes`는 `nodes/understand.py`(`classify`, 범위 확인 포함)·`nodes/retrieve.py`(`retrieve` = plan·run_tools, `compute`)·`nodes/respond.py`(`answer`·`check` = verify, `fallback`·`insufficient`·`unsupported`)로 나뉨. 실제 분기는 [ai 보고서 2장](../report/ai.md#2-분석-대화-에이전트-langgraph)
+- 구현 이름(#65·#66, #253): `router.py`는 SSE 형식 변환만 하고 `service.py`의 `AnalysisService`가 범위·기한 확인, 프롬프트 선택, 그래프 실행, 최종 상태의 이벤트 변환, 설정 제안(`propose_template`)을 맡는다. `AgentState` = `state.py`의 `AnalysisState`. `nodes`는 `nodes/understand.py`(`classify`, 범위 확인 포함)·`nodes/retrieve.py`(`retrieve` = plan·run_tools, `compute`)·`nodes/respond.py`(`answer`·`check` = verify, `fallback`·`insufficient`·`unsupported`)로 나뉨. 실제 분기는 [ai 보고서 2장](../report/ai.md#2-분석-대화-에이전트-langgraph)
 - `NarrativeService`: 서술·저녁 질문만 생성, 숫자 계산·대조는 report-service 담당
 
 ### 5.3 메시징·클라이언트
@@ -1797,6 +1861,41 @@ classDiagram
 
 - 기동 순서: exclusive 큐 선언·바인딩·소비 시작 → `CoreClient.active_versions()` → 조회 중 이벤트 revision 조정 → `ActiveVersions.replace`. 조회·조정은 `PromptSync`가 맡고 소비자는 검증한 이벤트를 `PromptSync.offer`로만 넘긴다(#254). 조회 실패·미보유 활성 본문은 readiness false, 프로세스 유지. 재연결도 새 큐 바인딩 후 snapshot으로 조정한다 (아키텍처 1.6).
 - `UsagePublisher`: 응답 반환 후 best-effort 발행, 학생 ID·원문 미포함 (NFR-PRF-02)
+
+### 5.4 미션 초안 (mission_draft, #354)
+
+FN-ADM-20, api-spec 4.2 `POST /internal/mission-drafts`. 새 모듈 `app/mission_draft/`는 되묻기(5.1)와 같은 구성이다.
+
+```mermaid
+classDiagram
+  direction LR
+  class mission_draft_router {
+    <<router>>
+    +create(MissionDraftRequest) MissionDraftResponse
+  }
+  class MissionDraftService {
+    <<service>>
+    +generate(request) MissionDraftResponse
+  }
+  class DraftChecks {
+    <<domain>>
+    +check(draft, request, limits, overlap) list~Failure~
+  }
+  class LeakGuard { <<domain>> }
+  class LlmClient { <<client>> }
+  class ActiveVersions { <<registry>> }
+
+  mission_draft_router --> MissionDraftService
+  MissionDraftService --> LlmClient : 구조화 출력 1회
+  MissionDraftService --> ActiveVersions : missionDraft 프롬프트
+  MissionDraftService --> DraftChecks
+  DraftChecks --> LeakGuard : find_text_leaks 재사용
+```
+
+- `MissionDraftService.generate`: 요청 1번에 LLM 생성 1회와 검사만 하고 반복하지 않는다. 반복은 learning `MissionDraftService`(4.1.1)가 이전 실패 사유를 넣어 다시 부른다. LLM은 이 호출만 60초 1회(`LlmClient.generate`의 `timeout`·`max_retries`, 설정 `mission_draft_llm_timeout`·`mission_draft_llm_retries`), 마감 63초(learning→ai 70초 안, P12 예외 #353)
+- `DraftChecks`(`checks.py` 모듈 함수 `check`): `REQUIRED`(제목·질문·요소·생각 열기 질문, 입력 방식별 선택지·분류 칸·정답 키·예시 답), `QUESTION_LENGTH`(`gradeMin` 학년 상한, 설정 `mission_draft_question_max_chars` 기본 전 학년 200자, P19 확정 전 기준안), `LEAK`(질문·안내·생각 열기 질문 각각에 `followup/leak_guard.find_text_leaks`, 학생 답 없이 정답 키·금지어·예시 답만. 예시 답은 안내·생각 열기 질문만, 질문에 있는 글을 빼고 비교. 숫자뿐인 최종 답은 숫자 경계로 비교). 성취기준 실재·요소 code 규칙은 표와 규칙을 가진 learning이 검사
+- 프롬프트: `prompts.py` 내장 `mission-draft@1`, #68 레지스트리 이름 `missionDraft`·scope `ai/mission-draft`(`ActiveVersions`·`/internal/versions`에 추가). 입력은 성취기준 문장·(있으면) 성취수준 문장·생각 유형·그 유형 표준 요소 공통 설명·학년·입력 방식뿐이고 학생 정보는 없음
+- 사용량: `LlmClient` 콜백 → `UsagePublisher`, `callType = MISSION_DRAFT`(이벤트 스키마·core enum·core CHECK와 같이 추가, ERD 3.5)
 
 ---
 

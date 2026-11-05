@@ -102,6 +102,7 @@
 ```
 
 - 별도 Compose 프로젝트·볼륨·네트워크, loopback 포트만(API 18095, 웹 `http://127.0.0.1:5195`, PostgreSQL 15495, Google stub 18096, learning 18097, AI 18098, report 18099, MinIO 19095/19096). 기존 개발 웹(`localhost`)과 origin을 달리해 refresh 쿠키가 섞이지 않음
+- #312: scoring을 프로필로 제외하던 설정을 제거하고 AI가 scoring 준비 후 시작하도록 연결했다. 시작 스크립트의 기존 `up` 명령이 의존 서비스까지 실행하며 scoring의 호스트 포트는 공개하지 않는다. keywords·essayType을 지우지 않고 전달한다. 승인·등록 모델이 없으면 기존 `active:false` 응답으로 LLM 판정을 유지한다. scoring을 임의로 끄면 기존 503 오류이며, 장애 우회 정책은 #305 범위다. scoring 실행 추가는 모델 등록·승인이나 교차 확인·content_3 활성화를 뜻하지 않는다.
 - 합성 계정: `sender@example.test`(자녀 2명), `receiver@example.test`(없음), `full@example.test`(3명, 한도 팝업 확인), `spare@example.test`. 수동 체험 데이터 준비는 `zz-demo-seed.spec.ts`
 - 테스트: `GuardianTransferIntegrationTest`, `frontend/web/tests/transfer-local/`(`npx playwright test -c playwright.transfer-local.config.ts`, 실행 중인 격리 서비스 대상만). SQL 도우미 기본 대상은 `guardian-transfer-289-postgres-1`이며 허용된 테스트 컨테이너 외에는 거부
 - 완료된 이관을 되돌리는 사용자 기능은 없음. 롤백은 격리 실험 전체를 중지하고 원래 환경으로 복귀

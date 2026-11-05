@@ -51,8 +51,9 @@ data class ElementRow(
     val commonErrors: List<String>,
     val goodThought: Boolean,
     val judgeVerified: Boolean,
+    val standardCode: String?,
 ) {
-    fun element() = AdminRubricElement(code, label, description, points, commonErrors, goodThought, judgeVerified)
+    fun element() = AdminRubricElement(code, label, description, points, commonErrors, goodThought, judgeVerified, standardCode)
 }
 
 data class HintRow(val rubricVersionId: UUID, val content: String)

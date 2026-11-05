@@ -1,0 +1,85 @@
+# 부하 시험(#361) 동안만 띄우는 LLM 스텁. AWS 데모 app 네임스페이스 전용.
+# 적용: kubectl --kubeconfig <AWS kubeconfig> apply -f evaluation/load/llm-stub.k8s.yaml
+# 원복: 같은 파일로 delete. ai-service 전환(OPENAI_BASE_URL)은 README 절차로 따로 한다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-stub
+  namespace: app
+  labels: { app.kubernetes.io/name: llm-stub, app.kubernetes.io/part-of: load-test }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: llm-stub }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: llm-stub, app.kubernetes.io/part-of: load-test }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: llm-stub
+          image: 347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/llm-stub@sha256:603dc65844fe5be0527faa8f212855e1a45d15da94d906e2572b5f6c4ff44b68
+          ports: [{ name: http, containerPort: 8080 }]
+          env:
+            # 흐름 확인(VUS=1)에서 실제 LLM 판정 SSE p95가 약 6초였다. 판정 한 번에 LLM 호출 1~2회 기준으로 맞춘다.
+            - { name: LLM_STUB_DELAY_MS, value: "2500" }
+            - { name: LLM_STUB_JITTER_MS, value: "1500" }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 250m, memory: 128Mi }
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-stub
+  namespace: app
+  labels: { app.kubernetes.io/name: llm-stub, app.kubernetes.io/part-of: load-test }
+spec:
+  selector: { app.kubernetes.io/name: llm-stub }
+  ports: [{ name: http, port: 8080, targetPort: http }]
+---
+# 스텁은 ai-service에서만 받는다. 나가는 연결은 필요 없다.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: llm-stub
+  namespace: app
+  labels: { app.kubernetes.io/name: llm-stub, app.kubernetes.io/part-of: load-test }
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: llm-stub }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{ podSelector: { matchLabels: { app.kubernetes.io/name: ai-service } } }]
+      ports: [{ port: 8080, protocol: TCP }]
+  egress: []
+---
+# ai-service 기존 정책(Helm 소유)은 그대로 두고, 스텁으로 나가는 연결만 더한다. NetworkPolicy는 합집합으로 적용된다.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ai-service-to-llm-stub
+  namespace: app
+  labels: { app.kubernetes.io/name: llm-stub, app.kubernetes.io/part-of: load-test }
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: ai-service }
+  policyTypes: [Egress]
+  egress:
+    - to: [{ podSelector: { matchLabels: { app.kubernetes.io/name: llm-stub } } }]
+      ports: [{ port: 8080, protocol: TCP }]

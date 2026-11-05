@@ -15,18 +15,18 @@ class ChecklistTest {
     fun `기준표 순서대로 요소마다 한 줄, 충족과 원문 구절이 모두 있어야 체크하고 가장 최근 구절 (api-spec 3·8)`() {
         val (claim, reason, other) = listOf(element("주장"), element("근거"), element("다른 관점"))
         val judged = listOf(
-            ElementView(reason.id, "근거", true, "처음 구절", ElementSource.AI_OBSERVATION),
-            ElementView(other.id, "다른 관점", true, null, ElementSource.AI_OBSERVATION),
-            ElementView(claim.id, "주장", false, null, null),
-            ElementView(reason.id, "근거", true, "나중 구절", ElementSource.AI_OBSERVATION),
-            ElementView(reason.id, "근거", false, null, null),
+            ElementView(reason.id, "근거", "근거", false, true, "처음 구절", ElementSource.AI_OBSERVATION),
+            ElementView(other.id, "다른 관점", "다른 관점", false, true, null, ElementSource.AI_OBSERVATION),
+            ElementView(claim.id, "주장", "주장", false, false, null, null),
+            ElementView(reason.id, "근거", "근거", false, true, "나중 구절", ElementSource.AI_OBSERVATION),
+            ElementView(reason.id, "근거", "근거", false, false, null, null),
         )
 
         assertEquals(
             listOf(
-                ElementView(claim.id, "주장", false, null, null),
-                ElementView(reason.id, "근거", true, "나중 구절", ElementSource.AI_OBSERVATION),
-                ElementView(other.id, "다른 관점", false, null, null),
+                ElementView(claim.id, "주장", "주장", false, false, null, null),
+                ElementView(reason.id, "근거", "근거", false, true, "나중 구절", ElementSource.AI_OBSERVATION),
+                ElementView(other.id, "다른 관점", "다른 관점", false, false, null, null),
             ),
             Checklist.of(listOf(claim, reason, other), judged),
         )

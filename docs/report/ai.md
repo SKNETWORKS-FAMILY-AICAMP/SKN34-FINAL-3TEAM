@@ -147,6 +147,161 @@ data: {}
 - 기존 NULL 평가 행은 목록에 null로 남기고 활성화·복귀는 422, 불완전한 기존 ACTIVE는 내부 snapshot에서 503 `MODEL_VERSION_STATE_INVALID`
 - scoring은 #86에서 Pod별 큐 바인딩 → snapshot 조회 → 더 높은 revision 적용·재연결을 구현했다. ai 소비 흐름은 #68에서 구현했다(7장). [scoring #86 검증](scoring.md#2-활성-버전-이벤트롤백-86)을 참고한다.
 
+### 3.1 등록·활성화 절차 개선 설계안 (#301, 설계 검토)
+
+> 상태: 공동 담당자(kty2001) 검토를 반영한 설계안이다. 코드·API·DB는 바꾸지 않았다. 2026-11-05 kty2001 답변과 팀 확인으로 정한 항목은 `[결정]`으로 표시한다.
+> 배경: #185 AWS 배포 때 서술 3.0·논술 3.1을 관리자 화면으로 등록하면서 등록 자료를 화면에 반복 전사해야 했다. 두 버전은 이후 11/03 AWS 데모 검증용으로 같은 화면에서 활성화되었다(3.1.2 대조 결과).
+
+이 절의 모든 안은 #301의 원칙을 따른다. 파일 업로드·등록·사전 검사만으로 활성화하지 않는다. 파일 무결성·로딩 성공을 품질 승인으로 표시하지 않는다. 사람 승인과 감사 이력을 유지하고 임시 경계·평가 범위 제한·미검증 사항을 화면에 드러낸다. api-spec 5.2의 "새 승인 상태 enum 없음"도 유지한다.
+
+#### 3.1.1 현재 흐름 (코드 기준)
+
+1. 등록: 관리자 `models` 화면(`ModelRegistry.tsx`) → `POST /api/v1/admin/model-versions` → `ModelVersionService.register`가 필수 근거·범위 형식만 검사하고 `REGISTERED`로 저장, 감사 `MODEL_REGISTER`
+2. 승인·활성화: 버전 카드의 "활성화" → `POST /{id}/activate` `{approved:true,scopes,reason,reanalysisPlanned}` → `scopes ⊆ evaluatedScopes`이면 기존 ACTIVE를 INACTIVE로 바꾸고 대상 ACTIVE·`approval`·`activeScopes`·revision 저장, 감사 `MODEL_ACTIVATE`, Outbox `model.version.activated`가 한 트랜잭션
+3. 로딩: scoring 각 Pod가 이벤트·snapshot(`GET /internal/model-versions/active`)을 받아 `ModelRegistry.load` → S3 다운로드 → `validate_metadata`(train_info.json·score_cuts.json)·`num_labels` 확인 → 메모리 교체. 실패하면 기존 모델을 유지하고 오류 유형만 로그에 남긴다
+4. 추론: `M2Service`가 요청마다 scope `judgment/grade-{N}/{narrative|essay}`가 활성 scope에 있는지 확인한다
+
+core는 3·4의 결과를 모른다. 로딩된 버전은 scoring `GET /internal/versions`(name·version·revision)로만 보이며 core·화면은 이를 호출하지 않는다. 그래서 화면의 `ACTIVE`는 "core에서 활성화됨"까지만 뜻한다.
+
+**화면 수동 입력 항목**
+
+| 화면 항목 | 저장 위치 | 등록 | 활성화 | 복귀 | 코드에서 확인한 문제 |
+|---|---|---|---|---|---|
+| 종류 | `model_version.kind` | 사용 | - | - | 기본값이 `PROMPT`라 M2 등록 때 `MODEL`로 바꾸지 않으면 다른 종류로 등록된다 |
+| 이름 | `name` | 사용 | - | - | 자유 입력. scoring은 `m2-klue-narrative`·`m2-klue-essay`만 쓰므로 오타 이름도 등록·활성화는 되지만 쓰이지 않는다 |
+| 버전 | `version` | 사용 | - | - | `X.Y` 규칙(4장)을 검사하지 않는다 |
+| 기준표 원본 UUID | `ref_id` | RUBRIC만 | - | - | - |
+| 아티팩트 주소 (선택) | `artifact_uri` | 사용 | - | - | `MODEL`에도 선택이다. 빈 값으로 활성화하면 scoring 계약 검사(`model_versions.py`, `artifactUri` 필수)에서 거부된다. 이름·버전과 경로 일치도 검사하지 않는다 |
+| 평가 근거 8개 (평가셋 ID·버전, 비교 기준 버전, 비교 보고서, 학습·평가 분리, 인용·계산 정확성, 사람 검토 기록) | `eval_result.evidence.*` | 사용 | 완전성 재확인 | 완전성 재확인 | 8칸을 모두 손으로 옮긴다 |
+| 적용 범위 (상단) | 아래 설명 | `evidence.evaluatedScopes` | `approval.scopes`·`activeScopes` | `activeScopes` | 한 입력이 세 의미로 쓰인다 |
+| 변경 사유 (상단) | 활성화: `approval.reason`·감사 `detail.reason` / 복귀: 감사만 | - | 필수 | 필수 | 등록에는 쓰이지 않는데 등록 폼 밖 상단에 있다 |
+| 승인 체크 (상단) | 요청 `approved`. 저장은 `approval` 생성으로 간접 기록 | - | 필수 | - | 모든 카드가 같은 체크 하나를 공유한다 |
+| 재분석 계획 (상단) | 감사 `detail.reanalysisPlanned`만 | - | 사용 | 사용 | 작업을 실행하지 않는다 |
+
+자동으로 채워지는 값: `id`·`status`·`createdAt`, 승인자 `approvedBy`(로그인 계정), `approvedAt`·`activatedAt`·`revision`.
+
+**"적용 범위"의 실제 의미**: 상단 textarea 하나(`scopeText`)를 모든 요청이 공유한다.
+
+- 등록 폼은 이 값을 `evaluatedScopes`, 즉 "평가 근거가 확보된 범위"로 보낸다. 등록 폼 안에는 범위 입력이 없고, 비어 있으면 "버전 등록" 버튼이 이유 표시 없이 비활성화된다
+- 활성화 버튼은 같은 값을 승인·서비스 적용 범위로 보낸다. 서버는 문자열 집합 포함(`evaluatedScopes.containsAll`)만 확인한다
+- 복귀 버튼은 같은 값을 복귀 범위로 보낸다. 서버는 원 승인 범위의 부분 집합인지 확인한다
+- 결과: 등록 직후 같은 값으로 활성화하면 평가 범위와 활성 범위가 늘 같아져 "평가는 했지만 적용하지 않은 범위"를 표현하기 어렵다. 다른 카드의 버튼도 같은 값을 쓰므로 서술 범위를 입력한 상태에서 논술 카드의 버튼을 누르면 422가 난다
+- 활성화·복귀 버튼이 꺼지는 조건 6가지(근거 없음, 범위 형식, 사유 없음, 처리 중, 상태, 승인 체크)를 화면이 알려 주지 않는다
+
+#### 3.1.2 등록용 JSON 계약과 자동 입력 범위
+
+**실제 제공 자료(기준)**: M2 담당 수빈 님이 11/03에 준 두 파일이다. 둘 다 저장소에는 없다(manifest의 "JSON도 저장소에 넣을지는 팀 결정"에 따름).
+
+- `registration_1103.json`(v1.0.0): 등록 API 본문을 그대로 담은 파일이다. 최상위는 설명 키(`title`·`version`·`date`·`author`·`주의`·`<버킷>`)와 `requests[]`이고, 각 항목은 `{kind,name,version,artifactUri,evaluation}`(api-spec 5.2)과 같다. 서술 3.0·논술 3.1 두 항목, `evaluation` 9칸이 모두 채워져 있다
+- `manifest.json`(v1.1.0): 모델별 `name`·`version`·`inputType`·`scope`·`num_labels`·`outputs`·`주의`와 6개 파일의 `file`·`bytes`·`sha256`을 담은 scoring 로딩용 파일 목록이다
+- 최상위 `주의`: "품질 승인 근거가 아니라 현재 평가 기록. 허용 기준은 11/22 확정(NFR-AIQ-06) 전이라 활성화 범위는 팀 결정". manifest 논술 `주의`: train_info.json의 score_cuts는 null이라 별도 score_cuts.json을 써야 하고 경계는 임시값이다
+- `artifactUri`는 `s3://<버킷>/models/{name}/{version}/` 형태로, 버킷 이름을 운영자가 바꿔 넣게 되어 있다
+
+2026-11-05 로컬 대조(읽기만, S3·core 호출 없음):
+
+- 받은 12개 파일의 크기·sha256이 manifest와 모두 일치
+- `registration`과 `manifest`의 이름·버전·`evaluatedScopes`↔`scope`가 두 모델 모두 일치. `evaluation` 9칸에 빈 값 없음
+- train_info.json·config.json 주요 값이 4.1 계약과 같음: 서술 `dataset=descriptive`·`with_keyword=True`·9출력, 논술 `dataset=essay545`·14출력·`use_outputs=[org,cont,exp]`·train_info.json의 score_cuts는 null, 둘 다 `regression`·512토큰. scoring `validate_metadata` 자체는 이 PC에 실행 환경이 없어 돌리지 못했다(같은 파일의 로딩은 #228·PR #288에서 확인됨)
+
+**계약(실제 형식 기준으로 수정)**: 처음 초안(`schema`·`items`·`artifact.files`를 한 파일에 둔 형식)은 버리고 두 파일을 그대로 받는다.
+
+| 파일 | 필수 | 웹이 쓰는 부분 | 쓰지 않는 부분 |
+|---|---|---|---|
+| registration | 필수 | `requests[]` 각 항목을 그대로 POST 본문으로 사용 | 최상위 설명 키는 미리보기 상단에 원문 표시만 |
+| manifest | 선택(사전 검사 때 필수) | 모델별 `files[]`의 `file`·`bytes`·`sha256`, `scope`, `주의` | `input`·`score_rule`·`where` 등 설명 값은 표시만 |
+
+| 구분 | 항목 | 처리 |
+|---|---|---|
+| JSON에서 자동 입력 | kind·name·version·artifactUri·evaluation 9칸 | 미리보기에 그대로 표시. 수정하면 수정 표시를 남긴다 |
+| 운영자가 확인·수정 | `artifactUri`의 `<버킷>` | 환경(local·AWS)마다 버킷이 다르다. 웹에서 버킷을 한 번 입력하면 모든 항목에 치환하고, 치환 전에는 등록을 막는다 |
+| 운영자가 확인 | `limitations` | 최상위 `주의`와 manifest 모델별 `주의`를 후보로 채워 보이고 운영자가 확인·수정한다 |
+| JSON에 넣지 않음 | 승인 여부, 활성화 범위, 변경 사유, 재분석 계획, 승인자 | 사람이 활성화 단계에서 직접 정한다. `requests[]` 항목에 있으면 거부한다 |
+
+- `[결정]` 파싱 위치: 브라우저에서 JSON을 읽어 기존 `POST /admin/model-versions`를 항목별로 호출한다(API 변경 없음). 실제 파일이 이미 POST 본문 형식이라 변환이 거의 없다. 검토한 대안: core JSON 업로드 API
+- `[결정]` `limitations`(임시 경계·미검증 사항): `evidence`에 선택 필드 `limitations: string[]`를 추가한다. jsonb라 마이그레이션은 없고 Kotlin `EvaluationEvidence`(기본값 빈 목록)·api-spec 5.2·OpenAPI·웹 타입을 바꾼다. 기존 행은 빈 목록으로 읽힌다. 검토한 대안: `comparisonReport` 문장에 함께 기록
+- `[결정]` 여러 모델: 모델별 미리보기 카드와 개별 "등록" 버튼, 부분 실패는 항목별로 표시한다. 검토한 대안: 일괄 등록 API
+- `requests[]` 항목은 엄격하게 본다. API에 없는 필드는 거부한다. 최상위 설명 키는 사람이 읽는 메모라 거부하지 않고 원문을 보인다
+- `[결정]` `주의`를 `limitations`로 옮기는 방식: 웹이 최상위 `주의`와 manifest 모델별 `주의`를 `limitations` 후보로 채우고, 운영자가 확인·수정한 뒤 등록한다. 지금 받은 파일을 그대로 쓴다. 나중에 `requests[]` 항목에 `evaluation.limitations`가 있으면 그 값을 쓰고 `주의`로는 채우지 않는다. 검토한 대안: M2 담당자가 처음부터 `evaluation.limitations`를 직접 넣는 방식(제공 형식이 바뀌어 이번에는 쓰지 않음)
+- `[결정]` 이미 운영에 등록된 3.0·3.1 레코드를 이 파일과 대조한다. 운영 core 목록(`GET /api/v1/admin/model-versions?kind=MODEL`)을 읽기만 해서 칸별로 비교한다. 다르면 레코드를 고치지 않고(평가 근거 보존 원칙) 새 버전명(예: 3.0.1)으로 다시 등록한다
+- 대조 결과(2026-11-05, AWS 데모 core 목록 읽기): 두 레코드 모두 `kind`·`name`·`version`, `artifactUri`의 버킷 뒤 경로, `evidence` 9칸이 파일과 글자까지 같다. 다시 등록할 필요는 없다. 두 레코드는 11/03에 이미 `ACTIVE`이고 `revision` 1이다. 승인 범위는 서술 3.0이 초5·6 서술형(평가 범위 전체), 논술 3.1이 초5·6 논술형이다. 논술 3.1의 초4는 평가했지만 적용하지 않았다. 두 레코드 모두 `limitations`는 없고, 논술 승인 사유에 "평가 한계와 임시 점수 경계 유지"를 적었다
+- manifest의 `bytes`·`sha256`은 현재 저장할 곳이 없다. 사전 검사(3.1.4)에서 쓰고 감사 detail에 남기는 안을 3.1.5에 적었다
+
+#### 3.1.3 평가 범위와 활성화 범위 분리
+
+API는 이미 `evaluatedScopes`(등록)와 `scopes`(활성화·복귀)를 나눠 받으므로 **1단계는 화면만 바꾼다.**
+
+- 상단 공용 영역을 없앤다. 평가 범위는 등록 폼·JSON 미리보기 안에 두고, JSON에서 왔으면 읽기 전용으로 보인다(수정하면 경고)
+- 활성화·복귀 입력은 각 버전 카드 안으로 옮기고 카드마다 상태를 따로 둔다(범위·사유·승인 체크)
+- 활성화 범위는 해당 버전의 `evaluatedScopes`를 체크박스로 보여 주고 직접 입력하지 않는다. 복귀는 원 `approval.scopes`만 보여 준다
+- 범위를 고를 때 같은 카드에 평가셋 ID·버전, 비교 보고서, 사람 검토 기록, `limitations`를 함께 보인다. 평가 범위 중 고르지 않은 범위는 "평가했지만 적용하지 않음"으로 표시한다
+- 기본값은 아무것도 선택하지 않는다. 평가 범위 전체를 미리 선택하는 대안은 사람이 범위를 고르는 의미가 약해져 추천하지 않는다
+- `[결정]` 범위 후보 목록: 웹 domain에 알려진 소비자 scope 상수(M2 `judgment/grade-{4,5,6}/{narrative,essay}`, ai 7장 다섯 개)를 두고 목록 밖 값은 **경고만** 한다(새 소비자 등록을 막지 않음). 검토한 대안: core scope 목록 API, 자유 입력만 유지
+
+#### 3.1.4 등록 전 검증과 오류 표시
+
+| 검증 | 위치 | 결과 | 현재 |
+|---|---|---|---|
+| JSON 형식·`schema`·알 수 없는 필드 | 브라우저 | 차단 | 없음 |
+| 필수 문자열 9개 공백 | 브라우저 + core | 차단 | core 422 (어느 필드인지 안 알려 줌) |
+| 범위 키 형식·중복·빈 배열 | 브라우저 + core | 차단 | 있음 |
+| 범위 키가 알려진 목록 밖 | 브라우저 | 경고 | 없음 |
+| `(kind,name,version)` 중복 | 브라우저(목록 대조) + core | 차단 | core 409 |
+| `MODEL`인데 `artifactUri` 없음 | core | 차단 | 없음 (scoring에서 거부) |
+| `artifactUri`에 `<버킷>` 같은 자리표시자가 남음 | 브라우저 | 차단 | 없음 |
+| manifest의 name·version·`scope`가 registration과 다름 | 브라우저 | 차단 | 없음 |
+| `m2-`·`m1-` 이름이 scoring이 아는 이름이 아님, 버전이 `X.Y`가 아님 | 브라우저 | 경고 | 없음 |
+| `artifactUri`가 `.../models/{name}/{version}/`와 다름 | 브라우저 | `[결정]` 경고 | 없음 |
+| S3 6개 파일 존재·sha256 일치 | 사전 검사 | 차단 | 없음 (활성화 후 로딩 때 처음 알게 됨) |
+| train_info.json·score_cuts.json·출력 수가 이름과 맞는지 | 사전 검사 | 차단 | 활성화 후 로딩 때만 |
+
+- `[결정]` 사전 검사 위치: core 관리자 API가 scoring 내부 API(가칭 `POST /internal/models/preflight`)를 **동기 HTTP**로 중계한다. scoring이 이미 가진 S3 읽기 권한과 `validate_metadata`를 재사용한다. 검토한 대안: core에 S3 SDK 추가, 운영자 CLI
+  - 지금은 core→scoring 호출 경로가 없다. core에 scoring 클라이언트가 없고, NetworkPolicy도 scoring은 ai에게서만 받고 core egress에 scoring이 없다(`environments/local/scoring-service.yaml`·`core-service.yaml`, prod도 같은 구성 확인 필요). 4단계에 core 클라이언트·시간 제한·양쪽 NetworkPolicy 변경이 들어간다
+  - 동기 응답 안에 끝나도록 가중치는 받지 않는다. 6개 파일은 존재·크기·해시만, 내용은 작은 JSON 3개(config.json·train_info.json·score_cuts.json)만 읽는다
+- 사전 검사 통과는 "파일·형식 확인"으로만 표시한다. 품질 승인이나 활성화 가능 상태로 표시하지 않고, 통과해도 자동으로 다음 단계로 넘기지 않는다. 전체 가중치 로딩은 활성화 뒤 로딩 확인에서 본다
+- `[결정]` 오류 표시: 공통 오류 형식(RFC 9457, api-spec 1.3)은 바꾸지 않는다. 바꾸면 모든 서비스에 영향이 간다. 필드 검사는 화면에서 먼저 하고(`items[1].evaluation.humanReview` 같은 경로와 원인을 입력 옆·미리보기 카드에 표시), 서버 409·422는 웹이 오류 코드로 해당 위치에 연결한다
+  - 409 `MODEL_VERSION_CONFLICT`(중복)는 이름·버전 칸에 연결한다. 422 `MODEL_APPROVAL_REJECTED`는 등록·활성화의 여러 원인이 한 코드라 필드를 특정할 수 없으므로 폼 상단에 서버 메시지를 보인다. 화면 사전 검사가 같은 규칙을 모두 다뤄 422가 드물게 하는 것을 전제로 한다. 나중에 더 나눠야 하면 공통 형식은 두고 오류 코드만 세분한다
+- 비활성 버튼에는 부족한 조건을 문장으로 붙인다. 예: "변경 사유가 없습니다", "선택 범위 `judgment/grade-4/narrative`가 평가 범위 밖입니다", "최초 등록 버전이 아니므로 되돌리기를 사용하세요"
+
+#### 3.1.5 상태 안내와 승인·감사 이력
+
+화면은 버전마다 다섯 단계와 현재 위치, 다음 작업, 진행할 수 없는 이유를 보인다. 상태 enum은 늘리지 않고 아래 값에서 계산한다.
+
+| 단계 | 판단 근거 | 비고 |
+|---|---|---|
+| 등록 | `status = REGISTERED` | - |
+| 사전 검사 | 사전 검사 기록 (2단계 후) | 통과해도 승인 아님 |
+| 승인·활성화 | `approval` 존재, `status = ACTIVE` | 사람 승인 체크 + 사유 필수 유지 |
+| 로딩 확인 | scoring에 같은 name·revision이 로딩됨 | 1차는 안내만 (아래 결정) |
+| 추론 확인 | 운영자가 점검 요청으로 확인 | 자동 판정하지 않고 확인 방법만 안내 |
+
+- `[결정]` 로딩 확인 출처: 1차에는 화면에 "core 활성화 완료, 로딩은 scoring에서 확인"이라는 안내와 확인 방법만 표시한다. scoring은 레플리카마다 따로 로딩하므로 Service를 한 번 호출하면 Pod 하나만 보기 때문이다. Pod별 로딩 보고(이벤트를 core가 모아 표시)는 후속 이슈로 둔다. 검토한 대안: core가 `/internal/versions`를 한 번 조회해 "일부 Pod 기준"으로 표시
+- 승인 확인: 활성화 전 확인 창에 승인 범위, 평가셋 ID·버전, 사람 검토 기록, `limitations`를 요약해 보이고 사유를 받는다. 승인자는 계속 로그인 계정에서 정한다
+- 감사 유지: `MODEL_REGISTER`·`MODEL_ACTIVATE`·`MODEL_ROLLBACK`과 `evalResult`(원 근거·최초 승인 덮어쓰기 금지)는 그대로 둔다. 추가 안:
+  - 등록 감사 detail에 `source`(`MANUAL`·`JSON_IMPORT`), 가져온 JSON의 sha256, 운영자가 바꾼 필드 이름 목록, 산출물 파일 해시
+  - 사전 검사 결과는 `evidence`가 아닌 별도 감사 action(가칭 `MODEL_PREFLIGHT`, `result` SUCCESS·FAILURE)으로 남긴다
+  - 감사 화면은 지금 action·대상만 보인다. `MODEL_VERSION` detail(범위·사유·재분석 계획·이전 버전)을 펼쳐 볼 수 있게 한다
+- `[결정]` 거부된 시도(409·422) 감사: 이번 범위에서 제외한다. 지금은 같은 트랜잭션이 롤백되어 남지 않으며, 기록하려면 별도 트랜잭션 설계가 필요하다
+
+#### 3.1.6 구현 단계와 후속 이슈 단위
+
+크기: S ≈ 반나절~1일, M ≈ 2~3일, L ≈ 4일 이상(검토·검증 포함 대략치).
+
+| 단계 | 내용 | 영향 | 크기 | 선행 |
+|---|---|---|---|---|
+| 1 | 화면 범위 분리(카드별 활성화·복귀 입력, 평가 범위 체크박스), 비활성 이유 표시, `MODEL` 기본 종류 안내 | web만, API 변경 없음 | S~M | 없음 |
+| 2 | registration·manifest 가져오기, 버킷 치환, 모델별 미리보기·개별 등록, 계약 문서(api-spec 5.2) | web + 문서 | M | 없음 (실제 JSON 확인 완료) |
+| 3 | core 등록 검증 강화(`MODEL` artifactUri 필수), 감사 detail `source`·해시, `limitations` 필드, 웹의 오류 코드→입력 위치 연결 | core·api-spec·OpenAPI·web | M | 2의 계약 |
+| 4 | scoring 사전 검사 API와 core 동기 중계·화면 연결 | scoring·core·web, core scoring 클라이언트, core→scoring NetworkPolicy(local·prod), S3 읽기 권한(#212 AWS 설정과 조율) | M~L | 3 |
+| 5 | Pod별 로딩 확인 보고와 화면 표시 (후속 이슈로 결정) | scoring·core 이벤트·web | L | 1단계 안내 |
+| 6 | 감사 화면 detail 표시 (거부된 시도 기록은 제외) | core·web | S | 없음 |
+
+- 1·6은 서로 독립이라 먼저 진행할 수 있다. 2→3→4는 순서대로다. 5는 별도 후속 이슈로 연다
+- 이미 등록된 서술 3.0·논술 3.1은 새 절차와 무관하게 지금 레코드를 그대로 쓴다
+- `[결정]` 후속 이슈는 4개로 나눴다(2026-11-05 발행, 담당자는 각 이슈에서 정한다): 1·6단계 #366, 2·3단계 #367, 4단계 #368, 5단계 #370
+- 3.0·3.1은 11/03 AWS 데모에서 지금 화면으로 이미 활성화했으므로(3.1.2 대조 결과) 활성화 시점은 정하지 않는다
+
+**결정 현황 (2026-11-05)**: kty2001 답변으로 JSON 파싱 위치·`limitations`·여러 모델 등록(3.1.2), 범위 후보 목록(3.1.3), 경로 불일치·사전 검사 위치·오류 표시(3.1.4), 로딩 확인 출처·거부된 시도 감사(3.1.5)를 정했다. 실제 등록용 JSON은 11/05 받아 계약을 그 형식으로 고쳤고, `주의`→`limitations` 옮기는 방식과 기존 3.0·3.1 레코드 대조도 정했다(3.1.2). 대조 결과 두 레코드는 파일과 같고 11/03에 이미 활성화되어 있다. 구현은 후속 이슈 #366·#367·#368·#370으로 나눴다(3.1.6). 남은 `[결정 필요]` 항목은 없다.
+
 ## 4. M2 모델과 API 정렬 (#4)
 
 2026-11-02 #228: 서술 3.0(9출력)·논술 3.1(14출력 중 앞 3영역)을 적용한다. 담당자 답변에 따라 논술도 `scores`(0~3 정수)와 `rawScores`(소수 원점수)를 함께 반환한다. [API 4.3](../design/api-spec.md#43-scoring-service-호출-ai), [#228 구현·검증](ai.md#41-서술-30논술-31-서비스-호환-228)이 현재 계약이며 [#87](scoring.md#3-m2-채점-api-87)의 2.0 결과는 과거 검증 이력이다.
@@ -210,8 +365,8 @@ uv run --frozen python ../../scripts/verify_scoring_m2.py --archive <m2_models.t
 | 항목 | 결정 |
 |---|---|
 | 불일치 기준 | M2 `scores` 평균과 LLM 결과 비교. `CORRECT`인데 평균이 낮은 경계 이하, `RETHINK`인데 높은 경계 이상이면 불일치. `PARTIAL`은 불일치 아님. 경계는 설정값(서술 2.0/4.0, 논술 1.0/2.0), M2 담당 확인 전 임시값 |
-| 보류 적용 | `M2_CROSS_CHECK_ENABLED` 기본 false. 꺼져 있으면 점수·불일치 여부를 `modelScores`에 기록만 하고 결과는 바꾸지 않음. 켜면 `HELD(MODEL_DISAGREEMENT)`·`HELD(LOW_CONFIDENCE)` |
-| scoring 장애 | `503 SCORING_UNAVAILABLE`. 5xx·시간 초과·연결 실패는 `retryable:true`, 4xx·계약 밖 응답은 false. 비활성으로 바꾸지 않음. learning은 기존처럼 `AI_UNAVAILABLE` 실패 코드로 기록 |
+| 보류 적용 | `M2_CROSS_CHECK_ENABLED` 기본 false. 켜면 `HELD(MODEL_DISAGREEMENT)`·`HELD(LOW_CONFIDENCE)`. 꺼져 있으면 점수를 기록만 하던 동작은 #305에서 "부르지 않음"으로 바뀜(4.3.1) |
+| scoring 장애 | #305에서 변경(4.3.1): 503 대신 LLM 판정만 200, `modelScores.skipped`에 `SCORING_UNAVAILABLE`(5xx·시간 초과·연결 실패) 또는 `SCORING_REJECTED`(4xx·계약 밖 응답). 비활성(`{active:false}`)과 구분 |
 | 입력 출처 | `question`은 mission_version.question, `keywords`·`essayType`은 learning V9 `rubric_version` 새 칸(채점 입력이라 기준표와 함께 바뀌고 검토·게시됨) |
 | 점수 저장 | ai 응답 `modelScores`를 learning이 `judgment.model_scores`에 그대로 저장, 학생 화면 비노출 |
 | M1 | 비활성 유지. ai 호출 분기와 대역 테스트만, `M1_CHECK_ENABLED` 기본 false, learning은 M1 입력 미전송 |
@@ -232,7 +387,39 @@ uv run --frozen python ../../scripts/verify_scoring_m2.py --archive <m2_models.t
 | learning 35초 대비 여유 | 네트워크·직렬화 | 2초 |
 
 - 3초 몫은 M2 예열 후 HTTP 포함 최대 1.68초([scoring](scoring.md) 3장)의 약 1.8배. 첫 요청 8.4초가 다시 나오면 LLM 최악 경로와 겹칠 때 503(`retryable:true`). 남은 시간이 1초 미만이면 호출하지 않고 503. 교차 확인 입력이 없는 판정은 LLM이 33초 전체 사용
+- 위 시간 배분의 "남은 시간 1초 미만이면 503"과 "첫 요청 8.4초면 503"은 #305 이후 `skipped: SCORING_UNAVAILABLE`로 LLM 판정만 쓰는 것으로 바뀜(4.3.1)
 - 실제 모델 전체 측정(로컬 Docker, 서술 3.0·논술 3.1, learning 피드백 요청 기준): 예열 후 대역 LLM 최대 0.34초, 실제 OpenAI LLM 중앙값 3.8~7.3초·최대 9.0초, LLM 최악 경로(첫 요청 시간 초과 → 재시도) 약 29.8초로 모두 200·`model_scores` 저장. 배포 환경·동시 요청 부하에서는 재측정 필요
+
+
+### 4.3.1 scoring 실패 격리 (#305, 2026-11-04)
+
+문제: ai가 scoring 장애·시간 초과·5xx와 400(M2 입력 토큰 한도 초과)을 모두 `503 SCORING_UNAVAILABLE`로 바꿨다. learning `AiClient`는 판정·되묻기가 함께 쓰는 서킷 `ai`(20건·50%·30초)에서 ai 5xx를 실패로 센다. 그래서 keywords가 긴 미션 하나나 scoring 장애가 scoring과 무관한 LLM 단독 판정·되묻기까지 모든 학생에게 30초 동안 막았다. 또 `M2_CROSS_CHECK_ENABLED=false`(기본)여도 scoring을 불렀다([감사](audit.md) 6.3 A20·B36).
+
+담당자 결정(11/04):
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 플래그 꺼짐 | `M2_CROSS_CHECK_ENABLED=false`면 M2를 부르지 않음. M1은 기존 `M1_CHECK_ENABLED`(기본 false)로만 결정 | 꺼진 기능이 장애 경로가 되지 않게 함. 꺼진 동안 LLM은 판정 마감 33초 전체 사용 |
+| scoring 장애·5xx·시간 초과 | 503 대신 LLM 판정만으로 200, `modelScores.skipped = "SCORING_UNAVAILABLE"`. 남은 시간 1초 미만으로 부르지 못한 경우도 같음 | learning `ai` 서킷에 집계되지 않음(아키텍처 1.3 구간 독립, 1.1 scoring 분리) |
+| scoring 400 등 4xx·계약 밖 응답 | 같은 방식, `skipped = "SCORING_REJECTED"` | 다시 불러도 같은 결과라 판정을 막을 이유가 없음. 장애와 입력 문제를 구분해 운영에서 찾을 수 있게 둘로 나눔 |
+| 표시 위치 | `modelScores` 안에 `skipped` 추가(정상이면 null) | 판정 응답·learning DB에 생략 상태 값이 없었음. learning은 `modelScores`를 해석하지 않고 `judgment.model_scores`(jsonb)에 그대로 저장하므로 migration·learning 코드 변경 없음. 학생 화면 비노출 유지 |
+| learning keywords 제한 | 바꾸지 않음(`AdminMissionController` 100개·각 200자 유지) | 이번 범위 밖. 아래 한계로 남김 |
+
+구현: ai `judgment/service.py`(플래그 꺼짐이면 M2 본문을 만들지 않음, `ScoringUnavailable`을 `retryable`에 따라 `skipped` 값으로 바꾸고 경고 로그), `judgment/models.py`(`CrossCheckSkipped`), 계약 [api-spec 4.2.2](../design/api-spec.md#422-판정-모델-교차-확인-69-2026-11-03)·`contracts/openapi/ai-service.yaml` `ModelScores.skipped`. `ScoringClient`의 응답 분류(5xx·전송 오류 retryable, 그 밖 비-200·계약 밖 응답 not retryable)는 그대로 쓴다. learning 코드 변경 없음.
+
+한계·후속:
+
+- 교차 확인을 켠 상태에서 scoring이 실패하면, 불일치였다면 `HELD(MODEL_DISAGREEMENT)`로 걸렸을 답도 LLM 결과로 확정된다. 생략된 판정을 나중에 다시 확인하지 않는다.
+- scoring 장애가 판정 실패로 드러나지 않는다. ai 경고 로그와 `judgment.model_scores->>'skipped'` 조회로만 보이며 지표·알림은 없다(scoring 자체의 503은 scoring 쪽에서 그대로 보임).
+- keywords가 M2 토큰 한도를 넘는 미션은 판정마다 `SCORING_REJECTED`로 교차 확인이 생략된다. 관리자 화면에는 알리지 않는다. learning 입력 제한을 scoring 한도에 맞출지는 별도 결정이다.
+- 플래그를 끈 동안 M2 점수·불일치 관찰 기록이 쌓이지 않는다. 불일치 경계(임시값) 보정이나 플래그 활성화 판단에 쓸 자료는 켠 기간이나 별도 평가([판정 품질 평가 도구](#판정-품질-평가-도구-199))로 모아야 한다.
+- 로컬 이관 체험 Compose가 scoring을 함께 띄우도록 바꾼 [로컬 플랫폼](local-platform.md) 결정은 그대로 둔다(플래그 꺼짐이면 판정이 scoring을 부르지 않으므로 필수 의존은 아님).
+
+#### 검증 (#305)
+
+- ai pytest: 플래그 꺼짐이면 scoring 미호출·LLM 마감 전체 사용, M2·M1 실패(retryable true/false)와 남은 시간 부족이 `skipped`와 함께 LLM 판정(CORRECT·RETHINK) 유지, HTTP 경로에서 scoring 503·500·시간 초과·400이 200 + `skipped`, 기존 일치·불일치(HELD)·비활성·입력 없음 경로 유지
+- learning: `AiClientTest` 생략 응답 20건 뒤에도 서킷 CLOSED·실패 0건·되묻기 호출 가능, `FeedbackFacadeTest` 생략 판정이 DONE·LLM 모델 버전·`model_scores.skipped`로 저장
+- 루트 계약 테스트: `ModelScores.skipped` enum과 ai `CrossCheckSkipped` 대조
 
 ## 5. 리포트 서술·저녁 질문 (#64)
 
@@ -290,3 +477,81 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 - 영향: `/internal/versions` 응답에 `reportTemplate` 키가 추가된다(OpenAPI `required` 갱신). 미보유 활성 버전이면 설정 제안·`/internal/versions`가 `503 AI_PROMPT_VERSION_UNAVAILABLE`이고 readiness `versions`는 DOWN이다. core 관리자 모델 레지스트리는 이름·scope를 자유 입력으로 받으므로 core·웹 변경 없이 `PROMPT`/`reportTemplate`/`ai/report-template`으로 활성화·롤백할 수 있다. core는 `/internal/versions`를 호출하지 않는다.
 - core `AiClient.reportTemplate`에는 분석 스트림 `ai-analysis`와 분리한 `ai-report-template` 서킷(최근/최소 10건·실패율 50%·30초·half-open 1건)을 두었다. 공유하면 설정 제안 실패가 분석 대화를 막고, 설정 제안은 호출량이 적어 20건 창으로는 거의 열리지 않기 때문이다. 4xx는 성공, 전송 오류·시간 초과·5xx·빈 본문은 실패로 센다. 기준은 아키텍처 1.3.
 - 검증: ai `tests/test_active_versions.py`(활성 본문 선택·미보유 503), `tests/test_versions.py`, core `AiClientTest`(서킷 열림·HTTP 미호출·half-open 회복·4xx 미집계, `ai-analysis` 서킷 유지).
+
+## 9. 미션 초안 생성·자동 검사 (#336 설계, #354 구현)
+
+기획서 6.2 ②·③(성취기준·성취수준 문장으로 LLM 초안 → 자동 검사 → 실패 사유를 붙여 재생성)과 FAC-18의 ai 쪽 설계. 결정·근거·구현 인계 전체는 [learning 보고서](learning.md) 21절, 계약은 api-spec 4.2 `POST /internal/mission-drafts`, 구조는 class-diagram 5.4. 구현 담당은 기획서 7장 기준 최성욱(초안 생성)이다.
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 호출 단위 | 요청 1번에 LLM 생성 1회 + 검사, 반복하지 않음 | 반복을 ai 안에서 하면 `LlmClient` 최악 31초(15 + 1 + 15, `config.py`)가 3번이라 learning→ai 35초(P12)를 넘음. 반복은 learning 주기 작업이 이전 실패 사유(`previousFailures`)를 넣어 다시 부름 |
+| 마감 | ~~되묻기와 같은 33초~~ → 63초, LLM 60초 1회 (#353, 9.2) | 설계 때는 `followup_deadline` 선례로 learning→ai 35초 안. 실제 성취기준 실측 뒤 미션 초안만 P12 예외로 늘림 |
+| ai 검사 | `REQUIRED`(필수 항목·입력 방식별 선택지·정답 키·예시 답), `QUESTION_LENGTH`(학년별 길이), `LEAK`(질문·안내·생각 열기 질문 속 정답 키·금지어, 안내·생각 열기 질문 속 예시 답) | 기획서 6.2 ③ "판정 엔진의 질문 검사 재사용" → `followup/leak_guard.find_leaks`를 학생 답 없이 씀(`reason`은 `ANSWER_KEY`·`FORBIDDEN_TERM`·`EXAMPLE_ANSWER` 그대로) |
+| learning 검사 | 성취기준 실재·요소 code 규칙·요소 `standardCode`·입력 방식 모양 | 성취기준 표와 게시 검사 규칙이 learning에 있음. ai가 표를 따로 들고 있지 않게 |
+| 입력 | 성취기준 문장, (있으면) 성취수준 문장, 생각 유형, 그 유형 표준 요소 코드·공통 설명(learning이 FN 1.5에서 채움), 학년, 입력 방식 | 학생 정보·학생 답 없음(이슈 지침). 성취수준 문장은 이용 조건 확인 전까지 없음 |
+| 출력 | 정해진 형식(`draft`)으로 질문·안내·장면 메모·선택지·정답 키·예시 답·금지어·생각 열기 질문·요소 | 기획서 6.2 ② 항목. 형식에 맞는 초안을 못 만들면 502(learning은 AI 호출 실패로 셈), 임의 내용으로 성공 처리하지 않음(FAC-18) |
+| 프롬프트 | 내장 `mission-draft@1`, #68 레지스트리 이름 `missionDraft`·scope `ai/mission-draft`, `/internal/versions`에 추가 | 7절 규칙 그대로. `/internal/versions`를 읽는 core 코드는 없어 core 변경 없음 |
+| 사용량 | `callType = MISSION_DRAFT` | 호출 종류가 이벤트 스키마·core enum·core CHECK에 고정돼 core와 같이 추가(learning 보고서 21절 core 인계) |
+
+- 학년별 질문 길이 값은 P19(김동섭)가 정한다. 확정 전에는 아래 9.1의 기준안(전 학년 200자)을 쓴다. 생성 시간 실측도 9.1
+
+### 9.1 ai 구현 (#354)
+
+`app/mission_draft/`(모델·프롬프트·검사·서비스·라우터), `POST /internal/mission-drafts`, OpenAPI `MissionDraft*` 스키마. 9절 설계를 그대로 따랐고 아래만 정하거나 바꿨다.
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 질문 길이 상한 | `mission_draft_question_max_chars` 기본 `{3:200, 4:200, 5:200, 6:200}`, `gradeMin` 학년 값으로 검사(`TOO_LONG`). 설정에 없는 학년은 가장 작은 값 | P19 확정 전 기준안. 데모 시드 질문이 초3 67~156자 … 초6 92~185자라 200자면 지금 미션을 막지 않음. 학년 범위 미션은 어린 학년에 맞춤 |
+| 생각 열기 질문 | 필수(`REQUIRED HINTS`), 노출 검사 대상 | 학생에게 보이는 글이라 질문·안내와 같이 봄 |
+| 정답 키 노출 | 고르기는 정답 선택지 이름, 풀이는 최종 답을 글로 비교. 숫자뿐인 최종 답은 숫자 경계로 비교(정답 30이 "300원"에 걸리지 않게). 순서·분류는 비교하지 않음 | 순서·분류 정답은 한 낱말로 나타낼 수 없음 |
+| 예시 답 노출 | 질문은 예시 답과 비교하지 않고, 안내·생각 열기 질문은 질문에 이미 있는 글을 빼고 비교 | 실측에서 풀이 예시 답이 질문 조건("가로 8cm, 세로 3cm인 직사각형")을 옮겨 써 12글자 겹침으로 떨어진 오탐. 되묻기가 학생 답에 있는 글을 빼는 것과 같은 방식. 정답 키·금지어는 질문도 계속 검사 |
+| 들어가면 좋은 생각 | 생각 미션(서술·풀이 단계·논술)은 유형별로 정함(프롬프트 `요소 규칙`, `prompts.ELEMENT_RULE`). 분석하기 `ANALYZE_REASON`, 따져 보기 `EVALUATE_PERSPECTIVE`, 새로 만들기 `CREATE_CONNECT`, 문제 해결하기 `SOLVE_CHECK`, 돌아보기 `REFLECT_CONNECT`가 들어가면 좋은 생각이고 나머지 유형 요소는 필수. 따져 보기 논술은 세 요소 모두 필수. 정답형·정답 요소는 false | 설계에는 개수·종류 규칙이 없다(functional-spec 1.5 "미션 요소마다 정한다"). 0~1개를 LLM에 맡기면 실측 12건 모두 0개, "더 깊은 생각 1개"로 두면 논술 반론을 들어가면 좋은 생각으로 정하는 등 시드와 달랐다. 그래서 데모 시드 20문항의 유형별 지정을 기본값으로 삼았다(새로 만들기 4개·문제 해결하기 3개 모두 같고, 돌아보기 4개 중 3개·따져 보기 서술 2개·분석하기 서술 1개가 같음. 논술 12번은 세 요소 필수, 17번은 세 요소 필수에 넷째 고유 요소만 들어가면 좋은 생각이며 초안은 고유 요소를 만들지 않음). 들어가면 좋은 생각은 판정에서 필수가 아니므로(`judgment/service.py` `_result`) 시드처럼 질문이 묻는 요소일 수도 있다. 관리자가 검토에서 바꿀 수 있음 |
+| 노출 검사 공유 | `followup/leak_guard.find_leaks`가 새 `find_text_leaks`(기준표 객체 없이 글 하나 검사)에 위임, 되묻기 동작은 같음 | 이슈 지침 "새 공통 라이브러리 만들지 않음" |
+| 실패 응답 | 형식 밖 출력(`LLM_INVALID_OUTPUT`)은 `502 AI_BAD_RESPONSE`, 그 밖 LLM 실패는 `503 AI_UNAVAILABLE`, 둘 다 `retryable=true` | 기존 `AI_*` 코드. learning은 둘 다 AI 호출 실패로 셈 |
+| 출력 상한 | `mission_draft_max_tokens` ~~4096~~ → 8192 (#353) | `gpt-6.1-terra` 출력 673~1,465토큰, `gpt-6-luna`는 최대 3,514토큰으로 4096에 가까움(9.2) |
+
+- 이슈와 다른 점: 예시 답 노출 검사 범위와 들어가면 좋은 생각 규칙(위 표)은 실측 뒤 정했다. 들어가면 좋은 생각 규칙은 시드 작성 기준을 따른 기본값이라, 기준표 내용 담당이 정하면 `ELEMENT_RULE`만 바꾸면 된다. 나머지 계약은 api-spec 4.2 그대로다.
+- 사용량 `MISSION_DRAFT`: core 이벤트 스키마·enum·CHECK에 아직 없어(#355) core 소비자가 거부하고 DLQ에 남는다. 초안 생성 자체는 막지 않는다. #355 반영 뒤 DLQ 메시지는 다시 넣을 수 있다. → #355에서 core가 받도록 반영([learning 23절](learning.md#23-core-성취기준미션-초안-프록시와-사용량-mission_draft-355)).
+- 검증: `tests/mission_draft/`(검사별 실패·통과, 학생 정보 없는 입력, 이전 실패 사유 반영, 형식 밖 502·그 밖 503, 응답 필드 이름), `tests/test_versions.py`, `scripts/tests/test_ai_openapi.py`(경로 7개).
+
+#### 생성 시간 실측 (2026-11-04, 로컬, OpenAI `gpt-6.1-terra`)
+
+입력 방식 6가지(고르기·순서·분류·서술·풀이 단계·논술)를 3번씩, 이어서 생각 유형 5가지가 모두 들어간 생각 미션 6건, 합쳐 요청 24건·LLM 호출 27번. 입력은 성취기준 문장·유형 요소·학년·입력 방식뿐이다(학생 정보 없음). 설정은 기본값(LLM 1회 15초, 재시도 1번, 마감 33초).
+
+| 항목 | 값 |
+|---|---|
+| 성공한 호출 시간 | 9.2~14.8초, 가운데 12.3초 (23번) |
+| 15초 시간 초과 | 27번 중 4번(고르기 2·분류 1·풀이 1). 분류·풀이 2건은 재시도로 성공 |
+| 요청 실패 | 24건 중 1건(고르기, 15초 초과 2번, 31.8초 뒤 `503`) |
+| 토큰 | 입력 1,132~1,276, 출력 673~1,176 |
+| 검사 | 수정 전 1건 `LEAK EXAMPLE_ANSWER` 오탐(위 표), 수정 뒤 12건 모두 통과 |
+| 들어가면 좋은 생각 | 유형별 규칙 뒤 생각 미션 6건 모두 위 표대로(논술은 0개) |
+| 질문 길이 | 31~109자 |
+
+- 출력이 15초에 거의 붙어 있어 호출 일곱에 하나꼴로 시간 초과가 난다. 기본 설정을 그대로 두고 learning 반복(상한 3회)으로 받는다. 요청이 실패할 확률을 이번 비율(24건 중 1건)로 보면 3번 모두 실패할 확률은 매우 낮다. 대신 시간 초과로 버려지는 호출이 생긴다.
+- 실패가 잦거나 비용이 문제가 되면 이 호출만 LLM 대기를 30초 1회(재시도 없음, 33초 마감 안)로 바꾸는 방법이 있다. P12를 바꾸는 일이라 팀 확인이 필요하다.
+- **이 실측은 짧은 가짜 성취기준 문장으로 쟀다.** 실제 성취기준으로 다시 재서 시간 설정을 바꿨다(9.2).
+
+### 9.2 미션 초안 시간 설정 변경 (#353)
+
+#353 로컬 실연(learning 주기 작업 → 실제 ai)에서 논술 초안이 3번 모두 `AI_CALL`(`AI_UNAVAILABLE`) 실패로 `FAILED`가 됐다. 9.1 실측은 짧은 가짜 성취기준 문장이었고, 실제 2022 개정 성취기준 문장(`achievement_standard.statement`)을 넣으면 출력이 길어져 LLM 1회 15초를 넘었다(ai 직접 호출도 2번 모두 15초 초과 2번 = 31초 뒤 503).
+
+실측(2026-11-05, 로컬, LLM 시간 제한을 풀고 1회씩, 입력 방식 6가지 × 2와 성취기준 2개짜리 논술·풀이 각 1, 같은 14건):
+
+| | `gpt-6.1-terra` | `gpt-6-luna`(기본 모델) |
+|---|---|---|
+| 걸린 시간 | 10.5~18.8초, 가운데 14.0초 | 15.0~31.7초, 가운데 22.3초 |
+| 30초 넘음 | 0건 | 4건(논술 30.5·30.5·31.5초, 분류 31.7초) |
+| 입력·출력 토큰 | 입력 약 1,165, 출력 791~1,245 | 입력 약 1,165, 출력 1,024~3,514 |
+| 검사 실패 | 0건 | 2건(금지어 노출 1, 질문 길이 초과 1. learning이 다시 생성) |
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| LLM 대기 | 미션 초안만 60초 1회(재시도 없음). `LlmClient.generate`에 호출별 `timeout`·`max_retries`를 두고 설정 `mission_draft_llm_timeout=60`·`mission_draft_llm_retries=0`. 다른 호출 종류는 15초·1회 그대로 | 초안은 learning 주기 작업이라 기다리는 사람이 없음. Luna 최대 31.7초에 여유. 30초 1회는 Luna에서 4/14가 넘음 |
+| 마감 | 63초 | LLM 60초 + 검사 |
+| learning→ai | 초안 ai 클라이언트만 70초(`app.mission-draft.ai-read-timeout`). 생성 리스 90초 안 | 다른 내부 호출은 35초 그대로 |
+| 출력 상한 | 8192 | Luna 출력 최대 3,514토큰이 4096에 가까워 잘리면 형식 밖 출력(502)이 됨 |
+
+- 비용: 바꾸기 전에는 논술에서 ai 1번에 LLM 호출 2번이 모두 시간 초과, learning 3번 반복으로 호출 6번에 결과가 없었다. 바꾼 뒤에는 보통 호출 1번에 끝난다. 시간 초과 호출의 과금 여부는 우리 사용량 기록(토큰 없음)으로는 알 수 없다
+- P12 예외라 팀 확인이 필요하다(이슈 #353 확인 필요)
+- 확인: 바꾼 뒤 로컬에서 learning 주기 작업으로 `gpt-6-luna` 입력 방식 6가지 초안이 모두 첫 시도에 `READY`(learning.md 22절). ai 테스트 `test_call_can_override_timeout_and_retries_without_changing_defaults`·`test_mission_draft_waits_60_seconds_once_with_63_second_deadline`

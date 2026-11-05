@@ -9,6 +9,7 @@ from app.analysis_agent import template_prompts
 from app.errors import ApiError
 from app.followup import prompts as followup_prompts
 from app.judgment import prompts as judgment_prompts
+from app.mission_draft import prompts as mission_draft_prompts
 from app.prompt_versions.models import PROMPT_SCOPES, ActiveVersionItem, PromptChoice
 from app.report_narrative import prompts as report_narrative_prompts
 
@@ -20,6 +21,7 @@ BUILTIN_PROMPTS: dict[str, ModuleType] = {
     "analysis": analysis_prompts,
     "reportNarrative": report_narrative_prompts,
     "reportTemplate": template_prompts,
+    "missionDraft": mission_draft_prompts,
 }
 
 

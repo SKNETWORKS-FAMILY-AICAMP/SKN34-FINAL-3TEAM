@@ -39,7 +39,8 @@ object Checklist {
     fun of(elements: List<RubricElement>, judged: List<ElementView>): List<ElementView> {
         val confirmed = judged.filter { it.satisfied && it.quote != null }.associateBy { it.elementId }
         return elements.map { element ->
-            confirmed[element.id]?.copy(label = element.label) ?: ElementView(element.id, element.label, false, null, null)
+            confirmed[element.id]?.copy(label = element.label, code = element.code, goodThought = element.goodThought)
+                ?: ElementView(element.id, element.label, element.code, element.goodThought, false, null, null)
         }
     }
 }

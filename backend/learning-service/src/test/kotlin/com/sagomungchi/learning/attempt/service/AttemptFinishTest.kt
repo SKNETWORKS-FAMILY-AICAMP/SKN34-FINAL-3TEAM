@@ -112,9 +112,9 @@ class AttemptFinishTest : PostgresRepositoryTest() {
             service.finish(setup.attempt.id).checklist
         }
 
-        assertEquals(ElementView(claim.elementId, "주장", true, "늘리면 좋아요", ElementSource.AI_OBSERVATION), claim)
+        assertEquals(ElementView(claim.elementId, "주장", "e1", false, true, "늘리면 좋아요", ElementSource.AI_OBSERVATION), claim)
         assertEquals("집중이 잘 돼요" to true, reason.quote to reason.satisfied)
-        assertEquals(ElementView(other.elementId, "다른 관점", false, null, null), other)
+        assertEquals(ElementView(other.elementId, "다른 관점", "e3", false, false, null, null), other)
     }
 
     @Test

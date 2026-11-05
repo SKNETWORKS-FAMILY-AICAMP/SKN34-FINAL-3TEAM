@@ -1,4 +1,4 @@
-# core 학습 프록시·SSE·대시보드·알림·분석 대화·이벤트 기록 (#38·#39·#40·#41·#44·#119·#168·#195·#208·#210·#225·#286)
+# core 학습 프록시·SSE·대시보드·알림·분석 대화·이벤트 기록 (#38·#39·#40·#41·#44·#119·#168·#195·#208·#210·#225·#243·#286)
 
 계약은 [API 명세](../design/api-spec.md) 1.4·2.2·2.3·2.7·3.2, 구조는 [아키텍처](../design/architecture.md) 1.3·1.6.
 
@@ -228,7 +228,7 @@
 6. **학생 식별자**: event_log.subject에 학생 UUID가 들어갈 수 있으나 payload·원문은 없음. 학생 삭제 시 즉시 지우지 않고 90일 보존 후 삭제
 
 - 마이그레이션: core `V20__event_log_and_retention.sql`, learning `V8__processed_event_retention_index.sql`, report Alembic `20261102_05`(정리용 인덱스). RabbitMQ `definitions.json`에 큐 5개·바인딩 8개 추가(기존 환경은 definitions 재적용 필요), 관리자 큐 현황은 30개 큐
-- 남은 누락: core outbox 릴레이는 발행 실패 횟수·오류 코드를 저장하지 않음(report #131 같은 격리 없음), ai·scoring 발행 실패 건은 PostgreSQL에 남지 않음
+- 남은 누락: ai·scoring 발행 실패 건은 PostgreSQL에 남지 않음(서비스 로그로 확인, 11절). core outbox 실패 횟수·오류 코드·격리는 #243에서 보완(11절)
 
 ```sql
 -- 특정 이벤트의 발행(core)·브로커 전달·core 소비
@@ -293,3 +293,32 @@ service에서 Jackson `convertValue`를 쓰는 것은 기존 `treeToValue`·`val
 - 감사 A21: `_common/web/IdempotencyService.kt`의 `IdempotencyCleanup`(`@Scheduled`)이 scheduler 패키지 밖에 있었음. #278 예외는 `_common/messaging`(`EventAuditConsumer`·`EventRetentionCleanup`·`OutboxRelay`)만 해당
 - 결정: `_common` 예외 목록을 늘리지 않고 Presentation `scheduler`로 이동. 기능 소유자가 없는 공통 테이블(`idempotency_record`)이라 `_common/scheduler/IdempotencyCleanupScheduler`에 두고, 삭제는 기존 `IdempotencyService.deleteExpired` → `IdempotencyRepository.deleteExpired` 그대로
 - 동작 변경 없음: 설정 키 `app.web.idempotency-cleanup-interval`(기본 1시간)·첫 실행 지연 1시간 유지. 만료 행 조건부 DELETE라 ShedLock 없이 레플리카 중복 실행 안전. `IdempotencyCleanupSchedulerTest`가 만료 행만 지우고 유효·진행 중 키는 남기는지 확인
+
+## 11. core Outbox 실패 격리 (#243)
+
+#208 9절 "남은 누락"(core outbox 실패 횟수·오류 코드 미저장, 영구 실패 1건이 뒤 발행 전체 차단) 해소. report #131([report.md 11절](report.md#11-outbox-실패-격리와-학생별-발행-순서-131))의 컬럼·격리 기준 재사용, #166 구조(발행·confirm은 DB 트랜잭션 밖, 기록만 짧은 트랜잭션) 유지. API·이벤트 계약 변경 없음.
+
+- **순서**: `outbox_event.subject`(학생 UUID, `model.version.activated`는 모델 버전 id)별 미발행 선두만 조회. 선두가 백오프·격리 중이면 같은 subject 뒤 행은 선택하지 않고 다른 subject는 계속 발행. 같은 subject 연속 이벤트는 릴레이 주기(1초)당 1건
+- **발행 단위**: 이벤트마다 `send` + `waitForConfirmsOrDie`(5초) 후 짧은 트랜잭션으로 `published_at` 기록. 기존 100건 일괄 confirm은 1건 실패 시 배치 전체가 매 주기 재시도되어 실패 이벤트를 구분할 수 없었음
+- **재시도·격리**: 1·2·3번째 실패는 1·5·15분 뒤 재시도, 4번째 실패에 `quarantined_at` 기록(#131 동일). 증가·다음 시각·격리 판단은 조건부 UPDATE 1문장, 이미 발행·삭제된 행은 되살리지 않음
+- **오류 코드**: `BROKER_UNAVAILABLE`(연결 실패) · `PUBLISH_TIMEOUT`(confirm timeout) · `PUBLISH_FAILED`(nack·그 외)만 저장, DB CHECK. 원문 예외·payload·subject는 DB·로그에 남기지 않음. 재시도 예정은 WARN, 격리는 ERROR `Outbox quarantined: id type code`
+- **주기 중단**: `BROKER_UNAVAILABLE`·`PUBLISH_TIMEOUT`이면 그 1건만 기록하고 주기 종료. 남은 이벤트도 같은 결과일 가능성이 높고, 건당 5초 대기가 쌓이면 ShedLock `lockAtMostFor` 1분을 넘김. 장애 중에는 주기마다 첫 선두만 실패 횟수를 소모
+- **confirm 후 기록 실패**: 발행 실패로 분류하지 않음. 다음 주기에 같은 id 재발행, 소비자 멱등 처리로 흡수(아키텍처 1.6)
+- **마이그레이션**: core `V27__outbox_failure_quarantine.sql`. report와 같은 7개 컬럼, 카운터는 기존 행만 0(영구 DEFAULT 없음, insert에서 0 명시). 인덱스 `(created_at) WHERE published_at IS NULL` → `(subject, created_at, id) WHERE published_at IS NULL`. gitops 로컬 core 마이그레이션 리비전 v26 → v27(`test_core_migration_versions.py`)
+- **재처리**: 관리자 API·#47 화면 노출 없음, 신뢰된 운영 환경에서 core DB 권한으로 아래 SQL 실행. 격리된 미발행 행만 조건부 갱신(0행이면 이미 발행·삭제·재처리됨). id·payload·순서 위치 유지, 실패 카운터·백오프 초기화, `manual_retry_count`·`last_requeued_at` 기록. 관리자 작업 재처리(#47·#152, 새 jobId)와 달리 이미 만든 이벤트 전달만 다시 시도
+- **ai·scoring**: #208 결정 3 유지. DB를 두지 않고 발행 실패는 서비스 로그(`이벤트 발행 실패`)로 확인. 브로커 장애 시 core로 실패를 전달할 경로도 같은 브로커라 DB 기록 불가
+- 검증: `MessagingIntegrationTest` 일시 실패 후 재시도 발행, 4번째 실패 격리·다른 subject 발행·재처리 SQL 후 순서대로 발행, 연결 실패 시 주기 중단
+
+```sql
+-- 격리 목록 (payload·subject 제외)
+SELECT id, event_type, failure_count, last_error_code, quarantined_at, manual_retry_count, last_requeued_at
+FROM outbox_event
+WHERE quarantined_at IS NOT NULL AND published_at IS NULL
+ORDER BY created_at, id;
+
+-- 재처리: 원인 수정 후 실행, 다음 릴레이 주기에 원래 id로 발행
+UPDATE outbox_event
+SET failure_count = 0, next_attempt_at = NULL, quarantined_at = NULL,
+    manual_retry_count = manual_retry_count + 1, last_requeued_at = now()
+WHERE id = :event_id AND quarantined_at IS NOT NULL AND published_at IS NULL;
+```

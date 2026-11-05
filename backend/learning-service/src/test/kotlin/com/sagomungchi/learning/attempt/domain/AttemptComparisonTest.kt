@@ -15,8 +15,8 @@ class AttemptComparisonTest {
         UUID.randomUUID(), Instant.parse("2026-11-01T00:00:00Z"),
         listOf(ComparisonAnswer(UUID.randomUUID(), 1, "합성 원문", mapOf("text" to "합성 원문"))),
         JudgmentResult.PARTIAL,
-        listOf(ElementView(first, "까닭", firstSatisfied, if (firstSatisfied) "합성" else null, null),
-            ElementView(second, "다른 생각", secondSatisfied, if (secondSatisfied) "원문" else null, null)),
+        listOf(ElementView(first, "까닭", "e1", false, firstSatisfied, if (firstSatisfied) "합성" else null, null),
+            ElementView(second, "다른 생각", "e2", false, secondSatisfied, if (secondSatisfied) "원문" else null, null)),
         ComparisonMission("합성 미션", "질문", "NARRATIVE", emptyList(), emptyList(), null),
     )
 

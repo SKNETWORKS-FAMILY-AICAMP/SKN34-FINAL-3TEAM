@@ -15,6 +15,8 @@
 | `external-secret-resources.json` | app·platform | SecretStore 2개, ExternalSecret 12개. 비밀 값 없이 원격 이름·키만 보존 |
 | `platform-network.json` | platform | 기본 ingress 거부, RabbitMQ·Redis 클라이언트 허용 |
 | `core-alb-network.json` | app | ALB public subnet에서 core:8080 허용 |
+| `karpenter.json` | kube-system / karpenter | oci://public.ecr.aws/karpenter/karpenter 1.15.1 (#211) |
+| `karpenter-nodepool.json` | cluster | EC2NodeClass `application`, NodePool `application-burst`. Karpenter 설치 후 `kubectl apply` (#211) |
 
 이 values는 현재 라이브 리소스에서 수집했다. Helm chart 기본값 전체를 복사한 파일은 아니다. 배포된 앱 chart의 기반은 `b67d8a462b6b3dc239ecfc14b2aa185766c0c293`이며, 저장소 chart 변경 시 렌더링 차이를 먼저 검토한다. 앱 이미지는 각 파일의 digest로 고정한다. core digest에는 아직 커밋되지 않은 이용권 수정이 들어 있으므로 기반 SHA만으로 같은 이미지를 재빌드할 수 있다고 주장하지 않는다. scoring은 PR #288 병합 SHA `f6250bdd131c4875feba99212212bfdb580c353e`를 사용한다.
 
@@ -81,7 +83,9 @@ NetworkPolicy는 기존 chart 정책과 **합집합**으로 동작한다. 정책
 
 되돌리기: core는 `helm rollback core-service 4 -n app`, 웹은 S3 `index.html` 이전 버전 복원. V26은 되돌리는 migration이 없다. V26은 컬럼·테이블·제약 추가뿐이라 이전 core로 rollback해도 동작할 것으로 보이나 검증하지 않았다.
 
-core 외 learning·ai·scoring·report는 b67d8a 이미지로 남아 있다. 서비스 간 호출 계약은 이번 core 변경과 호환됨을 확인했으며, 같은 main 기준으로 맞추는 일은 후속이다.
+core 외 learning·ai·scoring·report는 b67d8a 이미지로 남아 있다.
+
+2026-11-04 #186 배포 준비: main `a47a596`의 learning V9(`rubric_version` nullable 컬럼 2개·CHECK 제약)를 `learning-migrate:main-a47a596247ad`(`sha256:80254f13…d7bba`) Job `learning-service-migrate-main-a47a596247ad`로 적용했다. V8 → V9 성공, 앱 재시작 0. 기존 learning 이미지는 새 컬럼을 읽지 않아 호환된다. 앱은 `cd-release`로 같은 main SHA에 맞춘다. 2026-11-04 `cd-release` run 41796499774로 6개 release를 `main-a47a596247ad`로 배포했고 이 디렉토리의 앱 digest를 실제값으로 맞췄다. 롤백 리허설(run 41800966528·41802823411) 후 scoring도 같은 버전이다. 서비스 간 호출 계약은 이번 core 변경과 호환됨을 확인했으며, 같은 main 기준으로 맞추는 일은 후속이다.
 
 ## 보존과 환경 경계
 
@@ -89,7 +93,7 @@ core 외 learning·ai·scoring·report는 b67d8a 이미지로 남아 있다. 서
 - 공개가 아닌 origin 검증 헤더는 [별도 redacted 파일](../../../aws/README.md)에 표시만 하고 값은 보존하지 않는다.
 - 이 설정은 계정 `347161580747`, 서울 리전 및 현재 데모 DB/S3를 가리킨다. 다른 환경에 그대로 적용하지 않는다.
 - PVC 삭제·Helm uninstall·RDS 삭제·노드 축소는 이 정리 작업에서 실행하지 않았다. 현재 RabbitMQ/Redis 단일 replica는 노드 축소 시 서비스 중단 가능성이 있다.
-- Argo CD prod, Autoscaler, HPA/KEDA, 앱 PDB는 미구성이다. 최소 관측 스택은 수동 Helm으로 배포했으며 Discord 경보는 전용 Secret 연결 후 활성화했다. 실제 검증 범위는 #185 보고서를 따른다. 전체 운영 관측 완료를 뜻하지 않는다.
+- Argo CD prod, KEDA, 앱 PDB는 미구성이다. core·learning·ai는 HPA(1~3, CPU 70%)와 `application` 노드그룹 preferred affinity를 쓰고, 노드는 Karpenter가 늘린다(2026-11-05 #211·#372). **이 values가 main에 들어가기 전에 main 기준으로 세 앱을 재배포하면 HPA가 지워진다.** 최소 관측 스택은 수동 Helm으로 배포했으며 Discord 경보는 전용 Secret 연결 후 활성화했다. 실제 검증 범위는 #185 보고서를 따른다. 전체 운영 관측 완료를 뜻하지 않는다.
 
 ## 초기 배포 재현 절차 (#185)
 
@@ -144,7 +148,7 @@ helm upgrade --install platform-data infrastructure/gitops/charts/platform-data 
 
 빈 RDS에는 core_db·learning_db·report_db를 만들고 서비스별 migration(DDL)·app(DML) 계정을 준비한다. DB별 PUBLIC CONNECT를 회수하고 해당 두 계정만 접속시키며, schema 사용 권한과 앱의 테이블·sequence 권한을 부여한다. 앞으로 migration 계정이 만드는 객체에도 앱 권한이 적용되도록 해당 객체 생성자 기준 default privileges를 설정한다. RDS 관리자는 초기 설정에만 사용하며 앱 Secret에 넣지 않는다. 비밀번호는 승인된 비밀 입력 경로로 전달한다.
 
-`charts/platform-data/files/postgres/init.sql`은 로컬 DB 3개 생성만 담당하므로 운영 권한 초기화 스크립트로 사용하지 않는다. RDS 초기화는 [`demo_stack.py rds-bootstrap`](../../../aws/README.md#iac-eksctl--aws-cli-스크립트-185)과 `rds-bootstrap*.sql`이 담당한다. ESO Secret 6개와 `app/rds-ca`가 준비된 뒤 실행하고, migration 성공 후 한 번 더 실행해 기존 테이블 권한을 맞춘다. SQL은 이미 있는 계정의 비밀번호를 바꾸지 않으므로 기존 RDS에도 안전하게 재실행되도록 작성했지만, 현재 RDS에서는 아직 실행하지 않았다. 로컬 PostgreSQL 17.11의 비-superuser(CREATEROLE·CREATEDB) 관리자로 두 번 실행해 멱등성, app 계정의 DML 허용·DDL 거부·다른 DB 접속 거부, 이력 테이블 권한 회수를 확인했다.
+`charts/platform-data/files/postgres/rds-bootstrap*.sql`은 로컬 PostgreSQL init(`init.sql`)과 RDS 초기화가 함께 쓰는 파일이다(#230). RDS에서는 [`demo_stack.py rds-bootstrap`](../../../aws/README.md#iac-eksctl--aws-cli-스크립트-185)이 이 파일을 Job으로 실행한다. ESO Secret 6개와 `app/rds-ca`가 준비된 뒤 실행하고, migration 성공 후 한 번 더 실행해 기존 테이블 권한을 맞춘다. SQL은 이미 있는 계정의 비밀번호를 바꾸지 않으므로 기존 RDS에도 안전하게 재실행되도록 작성했지만, 현재 RDS에서는 아직 실행하지 않았다. 로컬 PostgreSQL 17.11의 비-superuser(CREATEROLE·CREATEDB) 관리자로 두 번 실행해 멱등성, app 계정의 DML 허용·DDL 거부·다른 DB 접속 거부, 이력 테이블 권한 회수를 확인했다.
 
 2026-11-03 읽기 전용 조회에서 다음 Job은 succeeded=1이었다. 이는 과거 실행 이력이며 새 DB에서 재실행한 결과는 아니다.
 

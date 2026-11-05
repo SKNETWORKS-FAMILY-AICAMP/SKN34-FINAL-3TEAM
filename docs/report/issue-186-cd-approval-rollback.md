@@ -165,3 +165,21 @@ CLI 종료 코드 0은 JSON 계획의 형식 유효성만 뜻한다. 호환 여�
 - 설정 C(runner): 작업자 PC runner `DESKTOP-AUHJ0U2`(라벨 `cd-prod`, 서비스 미설치)를 등록했다. 데모 EKS 전용 kubeconfig와 runner `.env`(경로만)를 두었다.
 - 실행 스위치: A~C 적용을 확인하고 `policy.json`의 `environmentProtectionVerified`·`infrastructureReady`·`executionEnabled`를 true로 바꿨다. `cd-release`는 main에서만 수동 실행되고 적용은 `prod` 승인 후라 develop 병합만으로는 실행되지 않는다. 근거 없는 계획(합성 예시 포함)은 계속 차단된다. D(fixture)는 배포 직전에 채운다.
 - 수정(2026-11-04, main `a47631a` 반영 후 발견): deploy job `env`에서 `${{ runner.temp }}`를 써서 GitHub가 `cd-release.yml`을 파일 오류로 처리했고, 모든 브랜치 push마다 실패 run이 생겼다(배포는 실행되지 않음). 작업 폴더를 첫 step에서 `GITHUB_ENV`로 정하도록 고치고, actionlint 1.7.12(`cd-prod` 라벨 설정)로 전체 workflow를 검사해 오류 0건을 확인했다. job env 컨텍스트 회귀 테스트를 추가해 151개 통과.
+- 첫 실행(run 41796499774) publish 실패와 수정: `sts:AssumeRoleWithWebIdentity` 거부. 원인 두 가지로, AWS IAM은 GitHub 토큰의 `job_workflow_ref`를 조건 키로 비교하지 못하고, 이 저장소는 변경 불가 subject라 `sub`가 조직·저장소 ID를 포함한다(`…@169222902/…@1415225916`). 저장소 OIDC subject에 `job_workflow_ref`를 포함하도록 바꾸고 trust를 `sub` 하나(`StringLike`)로 main의 `cd-release.yml`만 허용하게 고쳤다. 제한 범위는 처음 설계와 같다.
+
+## 운영 실행 기록 (2026-11-04)
+
+기준 main `a47a596`(PR #343). 승인자 `20220348-kim`, 작업자 PC runner `DESKTOP-AUHJ0U2`. 이력은 각 run의 artifact `cd-history-<run id>`(90일)에 있다.
+
+| 순서 | run | 작업 | 결과 | 내용 |
+|---|---|---|---|---|
+| 1 | [41796499774](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/actions/runs/41796499774) | deploy 5개 서비스 | 1차 실패 → 재실행 성공 | publish의 OIDC 역할 거부(trust 수정 후 재실행). 1차 deploy는 6개 release 적용 성공, 경로 확인 답변 제출 400(fixture 미션이 `CHOICE`). fixture를 `NARRATIVE` 미션으로 바꿔 deploy 재실행: learning r2→r3, ai r2→r3, scoring r3→r4, report-api·worker r2→r3, core r6→r7, 경로 확인 5단계 ok |
+| 2 | [41800966528](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/actions/runs/41800966528) | rollback scoring → `sha-f6250bd` | 성공 | scoring r4→r5, digest `6fc49256…`, 경로 확인 5단계 ok |
+| 3 | [41802823411](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/actions/runs/41802823411) | deploy scoring → `main-a47a596247ad` | 성공 | scoring r5→r6, digest `b2c36e72…`, 경로 확인 5단계 ok |
+
+- 선행: learning V9 migration Job `learning-service-migrate-main-a47a596247ad`(V8→V9).
+- 경로 확인 5단계: 학생 PIN 로그인 → 시도 시작 → 답변 제출 → 부모 refresh → 리포트 목록. 판정·결제 미호출.
+- 배포 후 prod values의 앱 digest 6개를 실제 배포값으로 맞췄다(렌더링 결과와 Deployment 이미지 일치 확인).
+- 완료 조건: 승인 → 배포 → 경로 확인 1회(1), 롤백 리허설과 복귀(2·3) 기록.
+- 별도 발견(#187): learning·core의 OTLP trace export가 `otel-collector:4318`에서 404. 서비스 동작 영향은 없고 경고 로그만 쌓인다.
+- fixture 점검 보완: 경로 확인 전 미션의 `inputType`이 답변 형식과 같은지 확인한다(README D).

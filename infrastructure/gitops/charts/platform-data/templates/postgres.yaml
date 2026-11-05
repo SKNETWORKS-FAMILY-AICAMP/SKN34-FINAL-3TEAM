@@ -66,6 +66,16 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.existingSecret }}
                   key: {{ .Values.postgres.passwordKey }}
+            # Service roles read by rds-bootstrap.sql on first initialization (#230).
+            {{- range $prefix, $role := .Values.postgres.serviceRoles }}
+            - name: {{ printf "%s_USER" $prefix }}
+              value: {{ $role | quote }}
+            - name: {{ printf "%s_PASSWORD" $prefix }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.existingSecret }}
+                  key: {{ printf "%s_PASSWORD" $prefix }}
+            {{- end }}
             - name: POSTGRES_DB
               value: postgres
             - name: PGDATA
@@ -113,6 +123,11 @@ spec:
         - name: initialization
           configMap:
             name: postgres-init
+            # Subdirectory keeps the entrypoint from running the included files on their own.
+            items:
+              - {key: init.sql, path: init.sql}
+              - {key: rds-bootstrap.sql, path: bootstrap/rds-bootstrap.sql}
+              - {key: rds-bootstrap-db.sql, path: bootstrap/rds-bootstrap-db.sql}
         - name: runtime
           emptyDir: {}
         - name: temporary

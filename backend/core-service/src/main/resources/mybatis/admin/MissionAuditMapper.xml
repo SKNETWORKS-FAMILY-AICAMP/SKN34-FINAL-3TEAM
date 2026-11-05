@@ -3,6 +3,6 @@
 <mapper namespace="com.sagomungchi.core.admin.repository.MissionAuditMapper">
     <insert id="insert">
         INSERT INTO audit_log(id,actor_user_id,action,target_type,target_id,result,detail,created_at)
-        VALUES(#{id},#{actor},#{action},'MISSION',#{target},#{result},CAST(#{detail} AS jsonb),CURRENT_TIMESTAMP)
+        VALUES(#{id},#{actor},#{action},#{targetType},#{target},#{result},CAST(#{detail} AS jsonb),CURRENT_TIMESTAMP)
     </insert>
 </mapper>

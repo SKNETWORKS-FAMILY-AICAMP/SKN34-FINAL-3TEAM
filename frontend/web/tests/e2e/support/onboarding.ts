@@ -23,7 +23,7 @@ export async function onboardParent(page: Page, nickname: string) {
   await page.getByRole('button', { name: '동의 저장하고 계속하기' }).click()
   await page.getByLabel('자녀 별명').fill(nickname)
   await page.getByLabel('자녀 학년').selectOption('3')
-  await page.getByLabel('출생연도').fill('2017')
+  await page.getByLabel('출생연도').selectOption('2017')
   await agree('GUARDIAN')
   await page.getByRole('button', { name: '자녀 등록하기' }).click()
   await page.waitForURL('**/parent/journal**')

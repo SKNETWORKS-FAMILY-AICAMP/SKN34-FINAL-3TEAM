@@ -13,6 +13,8 @@ import time
 
 HERE = Path(__file__).resolve().parent
 SPEC = HERE / 'demo-stack.json'
+# Shared with the local PostgreSQL init (#230); Helm .Files reads only inside the chart.
+BOOTSTRAP_SQL = HERE.parent / 'gitops/charts/platform-data/files/postgres'
 
 
 class Aws:
@@ -677,7 +679,7 @@ def resume(aws, kubectl, spec, state_path, execute, wait=time.sleep):
 # ---------------------------------------------------------------- RDS bootstrap
 
 def bootstrap_manifest(spec, master_secret_name, image):
-    files = {name: (HERE / name).read_text(encoding='utf-8') for name in ('rds-bootstrap.sql', 'rds-bootstrap-db.sql')}
+    files = {name: (BOOTSTRAP_SQL / name).read_text(encoding='utf-8') for name in ('rds-bootstrap.sql', 'rds-bootstrap-db.sql')}
     env = [{'name': 'PGHOST', 'value': '__RDS_ENDPOINT__'}, {'name': 'PGPORT', 'value': '5432'},
            {'name': 'PGDATABASE', 'value': 'postgres'}, {'name': 'PGSSLMODE', 'value': 'verify-full'},
            {'name': 'PGSSLROOTCERT', 'value': '/rds-ca/global-bundle.pem'},

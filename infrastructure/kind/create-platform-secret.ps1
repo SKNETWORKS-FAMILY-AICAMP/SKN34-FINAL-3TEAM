@@ -7,6 +7,8 @@ $contextName = 'kind-sagomungchi-local'
 $namespaceName = 'platform'
 $secretName = 'platform-data-credentials'
 $requiredKeys = @('POSTGRES_USER', 'POSTGRES_PASSWORD', 'RABBITMQ_USER', 'RABBITMQ_PASSWORD', 'MINIO_ROOT_USER', 'MINIO_ROOT_PASSWORD')
+# #230: service role passwords read by rds-bootstrap.sql at first PostgreSQL initialization.
+$requiredKeys += @('CORE', 'LEARNING', 'REPORT' | ForEach-Object { "${_}_MIGRATE_PASSWORD", "${_}_APP_PASSWORD" })
 
 # Use UTF-8 stdin: no credential is put on kubectl's command line or in a temp file.
 function Invoke-LocalKubectl {

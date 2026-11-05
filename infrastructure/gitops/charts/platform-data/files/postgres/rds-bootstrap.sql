@@ -1,6 +1,7 @@
 -- #185 RDS bootstrap: service databases and migrate(DDL)/app(DML) roles. Idempotent.
--- Run as the RDS master user through `demo_stack.py rds-bootstrap`; role names and passwords come
--- from environment variables (the ESO Secrets), never from this file. Existing role passwords are
+-- Run as the RDS master user through `demo_stack.py rds-bootstrap`, and locally by init.sql (#230) as
+-- the container superuser; role names and passwords come from environment variables (ESO Secrets or
+-- the local .env), never from this file. Existing role passwords are
 -- not changed, so an existing database keeps working.
 \set ON_ERROR_STOP on
 \set QUIET on

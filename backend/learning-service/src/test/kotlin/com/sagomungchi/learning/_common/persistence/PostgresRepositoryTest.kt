@@ -12,6 +12,8 @@ import org.testcontainers.containers.PostgreSQLContainer
     "app.internal.token=repository-test-token",
     "spring.rabbitmq.username=test", "spring.rabbitmq.password=test",
     "spring.rabbitmq.listener.simple.auto-startup=false",
+    // 초안 주기 생성은 ai를 부르므로 테스트에서는 끄고 서비스를 직접 부름 (#353)
+    "app.mission-draft.enabled=false",
 ])
 @Transactional
 abstract class PostgresRepositoryTest {
@@ -19,11 +21,17 @@ abstract class PostgresRepositoryTest {
     @org.springframework.test.context.bean.override.mockito.MockitoBean
     lateinit var paymentUsage: com.sagomungchi.learning.judgment.client.PaymentUsageClient
     companion object {
+        const val STANDARDS_SEED = "db/seed/achievement_standards.sql"
+
         private val postgres by lazy {
             PostgreSQLContainer<Nothing>("postgres:17.11-alpine").apply {
                 start()
                 Flyway.configure().dataSource(jdbcUrl, username, password)
                     .locations("classpath:db/migration").load().migrate()
+                // 성취기준 표 시드(#353): 게시 검사가 표를 읽음. 시드 파일이 스키마에 그대로 들어가는지도 함께 확인
+                java.sql.DriverManager.getConnection(jdbcUrl, username, password).use { connection ->
+                    connection.createStatement().use { it.execute(java.io.File(STANDARDS_SEED).readText()) }
+                }
             }
         }
 

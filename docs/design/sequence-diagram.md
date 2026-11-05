@@ -418,11 +418,11 @@ sequenceDiagram
       A->>LLM: 기준표 요소별 근거 구절 추출 (학생 이름 미포함)
       LLM-->>A: quotes[]
       A->>A: QuoteVerifier 원문 대조 → JudgmentService 요소 충족·결과 결정 (JUDGE_REQUIRE_VERIFIED=true면 미검증 요소 HELD(UNVERIFIED_SCOPE))
-      opt M2 활성 범위
+      opt M2 교차 확인 켜짐(M2_CROSS_CHECK_ENABLED) + M2 활성 범위
         Note over L,A: #69: learning이 question·keywords·essayType 전달, 판정 마감 33초 안에서 scoring 10초 (api-spec 4.2.2)
         A->>S: POST /internal/m2/scores {prompt, text, grade, inputType, keywords}
-        S-->>A: scores·rawScores·model 또는 {active:false} (실제 장애는 503)
-        A->>A: LLM 관찰과 불일치 시 HELD(MODEL_DISAGREEMENT) (M2_CROSS_CHECK_ENABLED, 기본은 modelScores 기록만)
+        S-->>A: scores·rawScores·model 또는 {active:false} (실제 장애는 503·4xx)
+        A->>A: LLM 관찰과 불일치 시 HELD(MODEL_DISAGREEMENT). scoring 실패면 LLM 판정만, modelScores.skipped (#305)
       end
       opt 풀이 단계(SOLUTION_STEPS) + M1 활성 범위
         A->>S: POST /internal/m1/checks {problem, answerKey, solution:{steps,finalAnswer}}
@@ -1015,7 +1015,7 @@ sequenceDiagram
 
 - 롤백(`/rollback`): 이전 승인 버전 재활성화로 같은 흐름, 재분석 여부는 `audit_log.detail` 기록 (FN-ADM-18)
 - scoring #86은 큐 바인딩·소비 시작 → core snapshot → 조회·로딩 중 보존 이벤트의 revision 조정 → readiness true 순서다. 브로커 재연결도 같은 순서로 수행한다. 이벤트는 전체 snapshot이 아니므로 다른 모델을 제거하지 않고 해당 이름의 모델만 교체한다.
-- ai #68도 Pod별 큐 바인딩·소비 시작 → core snapshot → 조회 중 받은 이벤트의 kind·name별 revision 조정 → readiness 순서다. 재연결 시 snapshot으로 유실 구간을 복구한다. `PROMPT` 다섯 기능과 승인 scope만 반영하며, 미보유 버전 본문을 받으면 해당 기능 새 요청은 503, readiness는 false다. 요청이 시작할 때 잡은 본문·버전은 진행 중 교체하지 않는다.
+- ai #68도 Pod별 큐 바인딩·소비 시작 → core snapshot → 조회 중 받은 이벤트의 kind·name별 revision 조정 → readiness 순서다. 재연결 시 snapshot으로 유실 구간을 복구한다. `PROMPT` 다섯 기능(#336 구현 때 미션 초안을 더해 여섯)과 승인 scope만 반영하며, 미보유 버전 본문을 받으면 해당 기능 새 요청은 503, readiness는 false다. 요청이 시작할 때 잡은 본문·버전은 진행 중 교체하지 않는다.
 - scoring 교체·롤백 시 artifact를 다시 내려받아 로딩한 뒤 임시 파일을 정리한다. 로딩 중에는 기존 모델을 사용하며 실패 시 기존 모델을 유지하고 재시도한다. 새 승인 scopes에서 제외된 범위에는 기존 모델도 사용하지 않는다. 최초 준비·재연결 복구가 끝나기 전에는 readiness false다.
 - 기준표(`kind = RUBRIC`) 행은 core 레지스트리의 승인·활성 기록만 담당. learning은 이 이벤트를 소비하지 않으며, `judge_verified`·현재 기준표 버전 반영은 관리자 미션 API(`/admin/missions/...`)로 별도 수행
 
@@ -1075,5 +1075,58 @@ sequenceDiagram
 
 ---
 
-## 11. 확인 필요 가정
+## 11. 미션 초안 생성 (#336 설계, learning #353·ai #354·core 프록시 #355 구현)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant AW as Web (관리자)
+  participant C as core
+  participant L as learning
+  participant LDB as learning_db
+  participant A as ai
+  participant LLM as LLM
+
+  AW->>C: GET /admin/achievement-standards?subject&gradeBand&q
+  C->>L: GET /internal/admin/achievement-standards
+  L-->>AW: 성취기준 목록 (core 경유)
+  AW->>C: POST /admin/mission-drafts {standardCodes, achievementLevels, thinkingType, grade, inputType}
+  C->>C: CONTENT 권한, 요청 감사
+  C->>L: POST /internal/admin/mission-drafts
+  L->>LDB: 성취기준 실재·학년군 확인 → mission_draft GENERATING (attempts 0)
+  L-->>AW: 202 MissionDraft (core 경유, 결과 감사)
+
+  loop MissionDraftScheduler 주기 (기준안 10초)
+    L->>LDB: GENERATING·리스 없음/만료 초안 하나 조건부 UPDATE로 점유 (lease 90초)
+    L->>A: POST /internal/mission-drafts {성취기준·성취수준 문장, 유형 표준 요소, 학년, 입력 방식, previousFailures}
+    A->>LLM: 구조화 출력 1회 (60초, 재시도 없음, P12 예외 #353)
+    A->>A: 필수 항목·질문 길이·정답·금지어 노출 검사
+    A-->>L: {draft, checks, versions}
+    L->>L: 요소 code 규칙·요소 standardCode·입력 방식 모양 검사
+    alt 모두 통과
+      L->>LDB: READY + output (점유한 리스일 때만)
+    else 실패, 상한 미만
+      L->>LDB: attempts+1, 실패 사유 추가, 리스 비움 → 다음 주기 다시 생성
+    else 실패, 상한 도달
+      L->>LDB: CHECK_FAILED 또는 FAILED
+    end
+  end
+
+  AW->>C: GET /admin/mission-drafts/{id} (상태·검사 결과 확인)
+  AW->>C: POST /admin/mission-drafts/{id}/adopt
+  C->>L: POST /internal/admin/mission-drafts/{id}/adopt
+  rect rgba(128,128,128,0.12)
+    L->>LDB: 초안 잠금 → mission DRAFT(source LLM_DRAFT)·첫 버전·기준표 → 초안 ADOPTED
+  end
+  L-->>C: 201 AdminMission
+  C->>C: 결과 감사 (missionId)
+  Note over AW,L: 이후 수정·검토 요청·검토·게시는 4.1 관리자 미션 경로 그대로 (자동 공개 없음, P19)
+```
+
+- ai는 호출마다 생성 1회만 하고 반복은 learning이 맡는다. 반복을 ai 안에서 하면 learning→ai 35초를 넘는다(class-diagram 4.1.1·5.4)
+- 상한·주기는 기준안(state-diagram 3.4). learning의 초안용 ai 호출은 판정·되묻기와 서킷을 따로 쓴다
+
+---
+
+## 12. 확인 필요 가정
 - 웹훅 처리 실패 시 5xx 응답으로 PG 재전송 유도(7.2): 토스페이먼츠 재전송 정책 확인 필요

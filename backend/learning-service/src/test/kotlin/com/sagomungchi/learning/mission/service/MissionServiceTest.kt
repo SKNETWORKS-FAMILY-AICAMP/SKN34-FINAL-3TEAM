@@ -9,6 +9,7 @@ import com.sagomungchi.learning.mission.domain.MissionView
 import com.sagomungchi.learning.mission.domain.ProgressStatus
 import com.sagomungchi.learning.mission.domain.RubricElement
 import com.sagomungchi.learning.mission.missionView
+import com.sagomungchi.learning.mission.repository.AchievementStandardRepository
 import com.sagomungchi.learning.mission.repository.AdminMissionMapper
 import com.sagomungchi.learning.mission.repository.MissionAttempt
 import com.sagomungchi.learning.mission.repository.MissionMapper
@@ -44,7 +45,10 @@ class MissionServiceTest {
 
     /** 관리자 SQL(AdminMissionMapper)·기준표 저장소는 학생 조회에서 쓰지 않아 빈 대역 */
     private fun service(mapper: FakeMapper) =
-        MissionService(MissionRepository(mapper, mock(AdminMissionMapper::class.java)), mock(RubricRepository::class.java))
+        MissionService(
+            MissionRepository(mapper, mock(AdminMissionMapper::class.java)), mock(RubricRepository::class.java),
+            mock(AchievementStandardRepository::class.java),
+        )
 
     @Test
     fun `목록은 학생 학년 미션만 순서대로, 위치와 전체 수를 붙임`() {

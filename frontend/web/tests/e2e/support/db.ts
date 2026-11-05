@@ -23,12 +23,12 @@ WITH target AS (
   SELECT job, student, mon, mon + 6, 'SCHEDULE', NULL, 'QUEUED', NULL, NULL, 0, NULL, now() FROM target
   RETURNING id
 )
-INSERT INTO outbox_event (id, event_type, routing_key, subject, payload, created_at)
+INSERT INTO outbox_event (id, event_type, routing_key, subject, payload, created_at, failure_count, manual_retry_count)
 SELECT event, 'report.generate', 'report.generate', student::text, jsonb_build_object(
   'id', event::text, 'specversion', '1.0', 'type', 'report.generate', 'source', 'core-service', 'time', now(),
   'subject', student::text, 'dataschema', 'report.generate.v1',
   'data', jsonb_build_object('jobId', job::text, 'studentId', student::text, 'periodFrom', mon::text,
-    'periodTo', (mon + 6)::text, 'trigger', 'SCHEDULE', 'narrativeEnabled', false)), now()
+    'periodTo', (mon + 6)::text, 'trigger', 'SCHEDULE', 'narrativeEnabled', false)), now(), 0, 0
 FROM target WHERE EXISTS (SELECT 1 FROM job)
 RETURNING (payload->'data'->>'periodFrom') || ' ' || (payload->'data'->>'periodTo');`)
 }

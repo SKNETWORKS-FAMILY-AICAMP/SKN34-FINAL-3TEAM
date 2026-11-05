@@ -5,6 +5,8 @@ import com.sagomungchi.learning._common.persistence.JacksonJsonbTypeHandler
 import com.sagomungchi.learning.mission.domain.AnswerKey
 import com.sagomungchi.learning.mission.domain.Category
 import com.sagomungchi.learning.mission.domain.Choice
+import com.sagomungchi.learning.mission.domain.DraftAttemptFailures
+import com.sagomungchi.learning.mission.domain.GeneratedDraft
 import org.apache.ibatis.type.TypeReference
 import org.mybatis.spring.boot.autoconfigure.ConfigurationCustomizer
 import org.springframework.context.annotation.Bean
@@ -25,6 +27,11 @@ class StringListTypeHandler(objectMapper: ObjectMapper) : JacksonJsonbTypeHandle
     objectMapper, objectMapper.typeFactory.constructCollectionType(List::class.java, String::class.java),
 )
 
+/** mission_version.achievement_levels: 성취기준별 성취수준 단계 {code: level} (#353). Map<String, String> 구체 타입으로만 등록 */
+class StringMapTypeHandler(objectMapper: ObjectMapper) : JacksonJsonbTypeHandler<Map<String, String>>(
+    objectMapper, objectMapper.typeFactory.constructMapType(Map::class.java, String::class.java, String::class.java),
+)
+
 /** rubric_version.answer_key: 정답 키 */
 class AnswerKeyTypeHandler(objectMapper: ObjectMapper) : JacksonJsonbTypeHandler<AnswerKey>(
     objectMapper, objectMapper.typeFactory.constructType(AnswerKey::class.java),
@@ -43,6 +50,10 @@ class MissionPersistenceConfig {
             register(object : TypeReference<List<Category>>() {}, CategoryListTypeHandler(objectMapper))
             register(object : TypeReference<List<String>>() {}, StringListTypeHandler(objectMapper))
             register(AnswerKey::class.java, AnswerKeyTypeHandler(objectMapper))
+            // #353: 성취수준 단계·초안 검사 결과·초안. 구체 타입으로만 등록(일반 Map·List에는 적용되지 않음)
+            register(object : TypeReference<Map<String, String>>() {}, StringMapTypeHandler(objectMapper))
+            register(object : TypeReference<List<DraftAttemptFailures>>() {}, DraftFailuresTypeHandler(objectMapper))
+            register(GeneratedDraft::class.java, GeneratedDraftTypeHandler(objectMapper))
         }
     }
 }

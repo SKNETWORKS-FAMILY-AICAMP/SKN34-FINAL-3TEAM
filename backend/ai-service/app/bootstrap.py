@@ -21,6 +21,7 @@ from app.messaging.connection import AmqpConnection
 from app.messaging.consumer import ModelVersionConsumer
 from app.messaging.publisher import EventPublisher, UsagePublisher
 from app.messaging.usage_recorder import BackgroundUsageRecorder
+from app.mission_draft.router import router as mission_draft_router
 from app.prompt_versions.registry import ActiveVersions
 from app.prompt_versions.router import router as versions_router
 from app.prompt_versions.service import PromptSync
@@ -90,6 +91,7 @@ def create_app() -> FastAPI:
     # 기능 라우터는 여기에 등록
     app.include_router(judgment_router)
     app.include_router(followup_router)
+    app.include_router(mission_draft_router)
     app.include_router(analysis_router)
     app.include_router(report_narrative_router)
     app.include_router(versions_router)

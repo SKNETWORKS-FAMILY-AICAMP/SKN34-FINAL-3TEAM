@@ -11,12 +11,13 @@
 - public/private API endpoint 모두 활성. public CIDR은 관측 시점 작업자 IP 제한으로, 이후 접속 IP가 바뀌면 별도 접근 검토가 필요하다.
 - IRSA 대신 EKS Pod Identity를 사용한다(2026-11-04 설계 반영). 클러스터별 OIDC provider와 역할마다 OIDC 주소를 넣는 trust가 필요 없고, 연결을 EKS API 한곳에서 관리해 재생성·감사가 쉽다. JSON의 namespace·ServiceAccount·roleArn 연결을 그대로 확인한다. IAM 역할·정책은 [AWS IaC](../aws/README.md#iac-eksctl--aws-cli-스크립트-185)가 정의한다.
 - LB Controller는 1.14.1 chart / v2.14.1, ESO는 2.14.0 chart / v2.14.0. values는 [prod](../gitops/environments/prod/README.md)에 있다.
+- Karpenter는 1.15.1 chart(OCI `public.ecr.aws/karpenter/karpenter`), kube-system, Pod Identity 역할 `sagomungchi-demo-karpenter-controller-role`. metrics-server는 EKS add-on(`cluster.json`).
 
 ## 재생성 범위
 
 VPC·subnet·route·NAT·SG·IAM·RDS·S3·ECR은 [AWS IaC](../aws/README.md#iac-eksctl--aws-cli-스크립트-185), 클러스터는 `cluster.json`이 정의한다. 2026-11-03 `plan`에서 55개 항목이 현재 자원과 일치했다. 같은 계정에서 `apply`는 이미 있는 자원을 건너뛰며, 현재 객체를 다른 IaC가 소유하도록 import하지 않는다. 새 계정 재생성은 실행하지 않았으므로 성공을 주장하지 않는다. eksctl은 작업자 IAM 사용자의 access entry를 자동으로 만들며, 콘솔에서 만든 현재 클러스터의 `student` access entry와 같은 권한인지는 생성 후 확인한다.
 
-Cluster Autoscaler(#211 Karpenter)는 아직 없다. 노드를 0으로 줄여도 EKS control plane·NAT·RDS·EBS 비용은 남는다. RDS 복원 테스트와 데이터 백업을 확인하기 전 클러스터/PVC를 삭제하지 않는다.
+노드 자동 확장은 Karpenter 1.15.1(NodePool `application-burst`, 평소 0대)과 core·learning·ai HPA로 한다(2026-11-05, [#211·#372](../../docs/report/issue-185-aws.md#eks-노드-자동-확장-karpenter와-앱-hpa-211372-2026-11-05)). 관리형 노드그룹 2개는 크기를 자동으로 바꾸지 않는다. `pause` 전에는 NodePool을 지우거나 `limits.cpu`를 0으로 바꿔 노드그룹 축소 중 Pending이 된 kube-system Pod 때문에 Karpenter 노드가 생기지 않게 한다. 노드를 0으로 줄여도 EKS control plane·NAT·RDS·EBS 비용은 남는다. RDS 복원 테스트와 데이터 백업을 확인하기 전 클러스터/PVC를 삭제하지 않는다.
 
 ### IAM 추가 확인 (2026-11-03)
 

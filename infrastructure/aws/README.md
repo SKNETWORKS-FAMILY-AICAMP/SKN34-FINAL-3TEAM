@@ -8,7 +8,7 @@ EKS는 [eksctl 설정](../eks/cluster.json), 나머지는 `demo-stack.json`(원�
 
 | 명령 | 동작 | AWS 변경 |
 |---|---|---|
-| `plan` | VPC·subnet·route·NAT·S3 endpoint, S3 4개, ECR 7개, Secret 이름 11개, RDS·SG·subnet group, IAM 역할 8개(trust·정책 원문), EKS·노드그룹·add-on·Pod Identity를 실제와 비교. 차이가 있으면 exit 1 | 없음 |
+| `plan` | VPC·subnet·route·NAT·S3 endpoint, S3 4개, ECR 7개, Secret 이름 11개, RDS·SG·subnet group, IAM 역할 10개(trust·정책 원문, #211 Karpenter 컨트롤러 포함), EKS·노드그룹·add-on·Pod Identity를 실제와 비교. 차이가 있으면 exit 1 | 없음 |
 | `apply --confirm-account 347161580747` | `plan`에서 MISSING인 자원만 생성. 기존 자원은 변경·삭제하지 않는다. Secret 값과 EKS는 만들지 않는다 | 생성만 |
 | `render-eksctl --operator-cidr <IP>/32 --out <저장소 밖>` | 현재 subnet ID를 채운 eksctl 설정 출력 → `eksctl create cluster -f <파일>` (2026-11-04 eksctl 0.231.0 `--dry-run` 통과) | 없음 |
 | `apply --after-eksctl ...` | 새 클러스터의 cluster SG에서 RDS 5432 허용 | 생성만 |
@@ -21,7 +21,7 @@ python infrastructure/aws/demo_stack.py --profile sagomungchi-provided plan
 
 새 환경 순서: `apply` → 비밀 값 입력(Secrets Manager, 담당자) → `render-eksctl` → `eksctl create cluster` → `apply --after-eksctl` → [prod 초기 배포 절차](../gitops/environments/prod/README.md#초기-배포-재현-절차-185)(ESO·LB Controller·`rds-bootstrap`·migration·앱). CloudFront 배포·OAC·Function, ALB Ingress의 origin 헤더, 웹 업로드, Google OAuth 등록은 이 스크립트 범위 밖이며 아래 redacted 설정과 절차로 수동 구성한다. 계정 ID와 이름이 고정이므로 다른 계정에는 `demo-stack.json`·`iam/`·`cluster.json`을 먼저 바꾼다.
 
-`rds-bootstrap.sql`은 DB 3개, DB별 migration(DDL)·app(DML) 계정, PUBLIC CONNECT 회수, migration 계정 소유 객체의 default privileges를 멱등으로 만든다. 계정 이름·비밀번호는 ESO Secret에서 환경변수로만 받고, 이미 있는 계정의 비밀번호는 바꾸지 않는다. migration 후 한 번 더 실행하면 기존 테이블 권한을 맞추고 `flyway_schema_history`·`alembic_version`의 app 권한을 회수한다.
+[`rds-bootstrap.sql`](../gitops/charts/platform-data/files/postgres/rds-bootstrap.sql)은 로컬 PostgreSQL init과 같은 파일(#230)이며 DB 3개, DB별 migration(DDL)·app(DML) 계정, PUBLIC CONNECT 회수, migration 계정 소유 객체의 default privileges를 멱등으로 만든다. 계정 이름·비밀번호는 ESO Secret에서 환경변수로만 받고, 이미 있는 계정의 비밀번호는 바꾸지 않는다. migration 후 한 번 더 실행하면 기존 테이블 권한을 맞추고 `flyway_schema_history`·`alembic_version`의 app 권한을 회수한다.
 
 ## 외부 요청 흐름
 
@@ -61,11 +61,20 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 | 범위 | 추가 관측 | 재현·관리 시 남은 일 |
 |---|---|---|
 | VPC | `vpc-0f4d9134097830b4b`, 10.20.0.0/16. public 10.20.0.0/20(2a)·10.20.16.0/20(2b)는 IGW, private 10.20.128.0/20(2a)·10.20.144.0/20(2b)는 동일 NAT로 기본 경로 연결 | 생성 주체·SG·NACL·endpoint policy 전체 보존 및 관리 책임 확정 |
-| S3 경로 | private route table 두 개에 S3 Gateway endpoint `vpce-0dab53d8da86d39c8` 연결, available | S3 통신을 모두 NAT 경유로 설명하지 않는다. endpoint policy와 IAM을 함께 검토 |
+| S3 경로 | private route table 두 개에 S3 Gateway endpoint `vpce-0dab53d8da86d39c8` 연결, available | S3 통신을 모두 NAT 경유로 설명하지 않는다. 2026-11-04 #212에서 endpoint policy(기본 전체 허용 유지)·IAM·NAT 우회를 점검했다(아래 절) |
 | RDS 네트워크 | 위 private subnet 두 개를 사용하는 `sagomungchi-demo-db-subnet-group`. SG `sg-022d3c9a8cf111b47`의 5432 ingress는 EKS SG `sg-086c7c83b3638da59`만 참조 | 복원 DB의 subnet group·SG를 원본과 대조. public 접근을 새로 허용하지 않음 |
 | RDS 저장·설정 | gp3 20GiB, 최대 자동확장 1000GiB, `default.postgres17` in-sync, TagList 빈 목록 | 최대 용량·비용 한도 검토. KMS key 접근과 DB별 계정·migration·데이터 초기화 절차 확인 |
 | S3 | 네 버킷 모두 기본 암호화 AES256, lifecycle 없음(`NoSuchLifecycleConfiguration`) | 현재/이전 버전 보존 기간과 삭제 정책 확정 후 lifecycle 검토. 버전 관리만으로 별도 백업·복구 성공을 주장하지 않음 |
 | S3 policy | web은 CloudFront 서비스의 GetObject를 배포 `EW2QD9OAPEVRK` SourceArn으로 제한, IsPublic=false. 나머지 세 버킷은 bucket policy 없음(`NoSuchBucketPolicy`) | bucket policy 부재를 공개 접근이나 IAM 접근 불가로 해석하지 않는다. 기존 Public Access Block·IAM과 함께 평가 |
+
+## S3 endpoint·NAT 점검 (#212, 2026-11-04)
+
+읽기 전용 점검이며 AWS 자원은 바꾸지 않았다. 상세 근거·비용 비교는 [#185 보고서의 #212 절](../../docs/report/issue-185-aws.md#s3-gateway-엔드포인트와-nat-병목-점검-212-2026-11-04).
+
+- S3 Gateway endpoint와 private route 두 개의 `pl-78a54011` 경로가 active다. 정책은 기본 전체 허용을 유지한다. ECR layer 다운로드도 AWS 소유 버킷을 이 endpoint로 받으므로 우리 버킷만 허용하도록 좁히지 않는다.
+- scoring 모델 약 844MiB 다운로드 구간에 NAT 바이트는 0.04MiB였다. Pod 안 S3 DNS 해석 IP는 모두 prefix list 대역이고, report·scoring Pod의 `ListObjectsV2`는 200이다. `demo-observed.json`에 endpoint·route table을 기록했다.
+- NAT 지표(약 2일): 동시 연결 최대 126, 포트 할당 오류 0, 드롭 6(구성 직후). 병목은 없고 단일 AZ(2a) 가용성 위험만 남는다. AZ별 NAT는 결정 대기다.
+- VPC Flow Logs는 없다. 만들려면 비용·보존 기간을 정한 뒤 별도 승인으로 진행한다.
 
 ## 관측·복구 우선순위
 

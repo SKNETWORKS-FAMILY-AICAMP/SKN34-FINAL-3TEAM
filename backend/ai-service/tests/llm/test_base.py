@@ -73,6 +73,34 @@ def test_retryable_error_is_retried_and_each_attempt_recorded() -> None:
     ]
 
 
+def test_call_can_override_timeout_and_retries_without_changing_defaults() -> None:
+    # 미션 초안(#353): 이 호출만 60초 1회, 다른 호출은 기본값(P12 15초·재시도)
+    llm = ScriptedLlm([LlmError("LLM_TIMEOUT", retryable=True), Answer(value="ok")])
+    timeouts: list[float] = []
+    original = llm._request
+
+    async def capture(request):
+        timeouts.append(request.timeout)
+        return await original(request)
+
+    llm._request = capture  # type: ignore[method-assign]
+    with pytest.raises(LlmUnavailable) as exc:
+        asyncio.run(
+            llm.generate(
+                system="s",
+                user="u",
+                output=Answer,
+                call_type="MISSION_DRAFT",
+                prompt_version="mission-draft@1",
+                timeout=60,
+                max_retries=0,
+            )
+        )
+    assert (exc.value.code, llm.calls, timeouts) == ("LLM_TIMEOUT", 1, [60])
+    assert generate(llm).data.value == "ok"  # 기본값 호출은 그대로 15초
+    assert timeouts[1:] == [15]
+
+
 def test_non_retryable_error_fails_immediately() -> None:
     llm = ScriptedLlm([LlmError("LLM_REFUSED", retryable=False), Answer(value="ok")])
     with pytest.raises(LlmUnavailable) as exc:

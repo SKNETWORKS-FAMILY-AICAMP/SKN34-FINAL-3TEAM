@@ -40,6 +40,23 @@ class Period:
 
 
 @dataclass(frozen=True)
+class JudgedElement:
+    """Element result from the learning record API (#262). code is the FN 1.5 element code."""
+
+    element_id: UUID
+    code: str
+    good_thought: bool
+    satisfied: bool
+
+
+@dataclass(frozen=True)
+class JudgmentRecord:
+    result: str
+    trial: bool
+    elements: tuple[JudgedElement, ...]
+
+
+@dataclass(frozen=True)
 class AnswerRecord:
     id: UUID
     version: int
@@ -47,6 +64,9 @@ class AnswerRecord:
     text: str | None
     process_status: str
     written_text: str
+    input_type: str = "NARRATIVE"
+    # Present only for DONE judgments (API 4.1.1); None while pending/running/failed.
+    judgment: JudgmentRecord | None = None
 
 
 @dataclass(frozen=True)

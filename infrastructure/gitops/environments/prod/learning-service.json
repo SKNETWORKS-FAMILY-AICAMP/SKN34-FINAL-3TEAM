@@ -1,4 +1,24 @@
 {
+  "affinity": {
+    "nodeAffinity": {
+      "preferredDuringSchedulingIgnoredDuringExecution": [
+        {
+          "weight": 100,
+          "preference": {
+            "matchExpressions": [
+              {
+                "key": "eks.amazonaws.com/nodegroup",
+                "operator": "In",
+                "values": [
+                  "application"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
   "env": [
     {
       "name": "DB_URL",
@@ -82,10 +102,13 @@
     }
   ],
   "hpa": {
-    "enabled": false
+    "enabled": true,
+    "minReplicas": 1,
+    "maxReplicas": 3,
+    "cpuUtilization": 70
   },
   "image": {
-    "digest": "sha256:31417b9e05de361d1955f0c1fac2f0b9578e6707006ce4d340d0363095c41392",
+    "digest": "sha256:2aa5699c5e0e95432258286dc7f617a88783f7b41e408e6fa4d93a63213e2d97",
     "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/learning-service"
   },
   "ingress": {

@@ -24,13 +24,13 @@ class AiOpenApiTests(unittest.TestCase):
                 if full.startswith("/internal/"):
                     actual.add((method, full.removeprefix("/internal")))
         documented = {(method, path) for path, methods in self.spec["paths"].items() for method in methods}
-        self.assertEqual(len(actual), 6)
+        self.assertEqual(len(actual), 7)
         self.assertEqual(actual, documented)
 
     def test_internal_token_and_problem_responses(self):
         self.assertEqual(self.spec["security"], [{"InternalToken": []}])
         self.assertEqual(self.spec["components"]["securitySchemes"]["InternalToken"]["name"], "X-Internal-Token")
-        for path in ("/judgments", "/followups", "/report-narratives"):
+        for path in ("/judgments", "/followups", "/report-narratives", "/mission-drafts"):
             responses = self.spec["paths"][path]["post"]["responses"]
             self.assertTrue({"200", "400", "401", "503"} <= set(responses))
             self.assertNotIn("422", responses)
@@ -39,9 +39,20 @@ class AiOpenApiTests(unittest.TestCase):
         source = (ROOT / "backend/ai-service/app/judgment/models.py").read_text(encoding="utf-8")
         reasons = re.search(r"HeldReason = Literal\[([^\]]*)\]", source)[1]
         expected = set(re.findall(r'"([A-Z_]+)"', reasons))
-        schema = self.spec["components"]["schemas"]["JudgmentResponse"]["properties"]["heldReason"]
+        # 판정 응답과 되묻기 요청의 직전 판정 요약은 같은 HeldReason을 쓴다
+        for name in ("JudgmentResponse", "JudgmentSummary"):
+            schema = self.spec["components"]["schemas"][name]["properties"]["heldReason"]
+            documented = {value for option in schema["anyOf"] for value in option.get("enum", [])}
+            self.assertEqual(documented, expected, name)
+
+    def test_cross_check_skipped_matches_ai_model(self):
+        source = (ROOT / "backend/ai-service/app/judgment/models.py").read_text(encoding="utf-8")
+        values = re.search(r"CrossCheckSkipped = Literal\[([^\]]*)\]", source)[1]
+        expected = set(re.findall(r'"([A-Z_]+)"', values))
+        schema = self.spec["components"]["schemas"]["ModelScores"]["properties"]["skipped"]
         documented = {value for option in schema["anyOf"] for value in option.get("enum", [])}
         self.assertEqual(documented, expected)
+        self.assertEqual(expected, {"SCORING_UNAVAILABLE", "SCORING_REJECTED"})
 
 
 if __name__ == "__main__":

@@ -142,19 +142,23 @@ class LlmClient(ABC):
         prompt_version: str,
         max_tokens: int = 4096,
         deadline: float | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
     ) -> LlmResult[T]:
         """deadline(time.monotonic 기준 시각)이 있으면 그 안에서만 요청·재시도.
 
         남은 시간이 없으면 요청하지 않고 LLM_DEADLINE_EXCEEDED로 실패 (사용량 기록 없음).
+        timeout·max_retries를 주면 이 호출만 기본값(P12 15초·1회) 대신 씀 (미션 초안 #353)
         """
-        for attempt in range(self._max_retries + 1):
-            timeout = self._timeout
+        retries = self._max_retries if max_retries is None else max_retries
+        for attempt in range(retries + 1):
+            timeout_this = self._timeout if timeout is None else timeout
             if deadline is not None:
-                timeout = min(timeout, deadline - time.monotonic())
-                if timeout <= 0:
+                timeout_this = min(timeout_this, deadline - time.monotonic())
+                if timeout_this <= 0:
                     raise LlmUnavailable("LLM_DEADLINE_EXCEEDED", retryable=True)
             request = LlmRequest(
-                system, user, output, call_type, prompt_version, max_tokens, timeout
+                system, user, output, call_type, prompt_version, max_tokens, timeout_this
             )
             started = time.monotonic()
             observation = self._start_observation(request)
@@ -173,7 +177,7 @@ class LlmClient(ABC):
                             exc,
                             observation=observation,
                         )
-                    if not exc.retryable or attempt == self._max_retries:
+                    if not exc.retryable or attempt == retries:
                         raise LlmUnavailable(exc.code, exc.retryable) from exc
                     retry = True
                 else:

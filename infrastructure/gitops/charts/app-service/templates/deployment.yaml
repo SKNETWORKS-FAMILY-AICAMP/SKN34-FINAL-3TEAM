@@ -22,6 +22,10 @@ spec:
       serviceAccountName: {{ include "app-service.name" . }}
       automountServiceAccountToken: {{ .Values.serviceAccount.automountToken }}
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
