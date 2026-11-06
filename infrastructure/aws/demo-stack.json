@@ -192,6 +192,13 @@
     "nodegroups": ["application", "platform-observability"],
     "config": "../eks/cluster.json"
   },
+  "karpenter": {
+    "namespace": "kube-system",
+    "deployment": "karpenter",
+    "podLabel": "app.kubernetes.io/name=karpenter",
+    "nodePool": "application-burst",
+    "defaults": {"replicas": 1, "limits": {"cpu": "4", "memory": "16Gi"}}
+  },
   "pause": {
     "drainOrder": [
       ["app", "deployment", "report-worker"],

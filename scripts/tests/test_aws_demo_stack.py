@@ -384,5 +384,131 @@ class DemoStackTest(unittest.TestCase):
         self.assertIn('\\ir rds-bootstrap-db.sql', config_map['data']['rds-bootstrap.sql'])
 
 
+class PauseAws:
+    """pause·resume가 부르는 EKS·RDS·EC2 호출만 기록한다."""
+
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, service, operation, *args, region=None, check=True):
+        self.calls.append(('aws', service, operation, *args))
+        if operation == 'describe-nodegroup':
+            return {'nodegroup': {'scalingConfig': {'minSize': 2, 'maxSize': 3, 'desiredSize': 2}}}
+        if operation == 'describe-db-instances':
+            return {'DBInstances': [{'DBInstanceStatus': 'available'}]}
+        if operation == 'create-snapshot':
+            return {'SnapshotId': 'snap-1'}
+        return {}
+
+
+class PauseKubectl:
+    """kubectl get 응답을 흉내 내고 모든 호출을 같은 목록(aws와 공유)에 순서대로 남긴다."""
+
+    def __init__(self, calls, claims=(), replicas=1, limits=None):
+        self.calls, self.claims, self.replicas = calls, list(claims), replicas
+        self.limits = limits or {'cpu': '4', 'memory': '16Gi'}
+
+    def __call__(self, *args, stdin=None, check=True):
+        self.calls.append(('kubectl', *args))
+        if args[:2] == ('get', 'pv'):
+            return json.dumps({'items': []})
+        if args[:2] == ('get', 'nodeclaims'):
+            return json.dumps({'items': [{'metadata': {'name': n}} for n in self.claims]})
+        if args[:2] == ('get', 'nodepool'):
+            return json.dumps({'spec': {'limits': self.limits}})
+        if args[:2] == ('get', 'deployment') and args[2] == 'karpenter':
+            return json.dumps({'spec': {'replicas': self.replicas}})
+        if args[0] == 'get':
+            return json.dumps({'spec': {'replicas': 1}})
+        if args[0] == 'exec':
+            return '[]'
+        return ''
+
+
+def index_of(calls, predicate):
+    return next(i for i, call in enumerate(calls) if predicate(call))
+
+
+class PauseKarpenterTest(unittest.TestCase):
+    """#211 이후 pause·resume는 Karpenter를 멈추고 되돌린다. 실제 AWS·클러스터는 쓰지 않는다."""
+
+    def setUp(self):
+        self.spec = demo_stack.load_spec()
+        self.directory = Path(self.enterContext(__import__('tempfile').TemporaryDirectory()))
+        self.state = self.directory / 'state.json'
+
+    def run_pause(self, **kubectl_args):
+        aws = PauseAws()
+        kubectl = PauseKubectl(aws.calls, **kubectl_args)
+        demo_stack.pause(aws, kubectl, self.spec, self.state, execute=True)
+        return aws.calls
+
+    def test_pause_stops_karpenter_after_workloads_and_before_nodegroups(self):
+        calls = self.run_pause()
+        last_workload = index_of(calls, lambda c: c[:3] == ('kubectl', 'scale', 'statefulset/redis'))
+        limit_zero = index_of(calls, lambda c: c[:3] == ('kubectl', 'patch', 'nodepool'))
+        controller_zero = index_of(calls, lambda c: c[:3] == ('kubectl', 'scale', 'deployment/karpenter'))
+        nodegroup_zero = index_of(calls, lambda c: c[:3] == ('aws', 'eks', 'update-nodegroup-config'))
+        self.assertLess(last_workload, limit_zero)
+        self.assertLess(limit_zero, controller_zero)
+        self.assertLess(controller_zero, nodegroup_zero)
+        self.assertEqual(json.loads(calls[limit_zero][-1]), {'spec': {'limits': {'cpu': '0', 'memory': '0'}}})
+        self.assertIn('--replicas=0', calls[controller_zero])
+        self.assertFalse(any(c[:3] == ('kubectl', 'delete', 'nodeclaims') for c in calls))
+        saved = json.loads(self.state.read_text(encoding='utf-8'))['karpenter']
+        self.assertEqual(saved, {'replicas': 1, 'limits': {'cpu': '4', 'memory': '16Gi'}, 'nodeClaims': []})
+
+    def test_pause_removes_existing_karpenter_nodes_before_stopping_controller(self):
+        calls = self.run_pause(claims=['application-burst-abc'])
+        delete = index_of(calls, lambda c: c[:3] == ('kubectl', 'delete', 'nodeclaims'))
+        controller_zero = index_of(calls, lambda c: c[:3] == ('kubectl', 'scale', 'deployment/karpenter'))
+        self.assertLess(delete, controller_zero)
+
+    def test_pause_dry_run_changes_nothing(self):
+        aws = PauseAws()
+        demo_stack.pause(aws, PauseKubectl(aws.calls), self.spec, self.state, execute=False)
+        self.assertFalse(any(c[1] in ('scale', 'patch', 'delete') for c in aws.calls if c[0] == 'kubectl'))
+        self.assertFalse(self.state.exists())
+
+    def resume_calls(self, state):
+        self.state.write_text(json.dumps(state), encoding='utf-8')
+        aws = PauseAws()
+        demo_stack.resume(aws, PauseKubectl(aws.calls), self.spec, self.state, execute=True)
+        return aws.calls
+
+    def base_state(self):
+        return {'nodegroups': {'application': {'minSize': 2, 'maxSize': 3, 'desiredSize': 2}},
+                'workloads': [{'namespace': 'platform', 'kind': 'statefulset', 'name': 'redis', 'replicas': 1},
+                              {'namespace': 'app', 'kind': 'deployment', 'name': 'core-service', 'replicas': 1}]}
+
+    def test_resume_restores_saved_karpenter_after_nodes_and_before_workloads(self):
+        state = {**self.base_state(), 'karpenter': {'replicas': 2, 'limits': {'cpu': '8', 'memory': '32Gi'}}}
+        calls = self.resume_calls(state)
+        nodes_ready = index_of(calls, lambda c: c[:2] == ('kubectl', 'wait') and 'node' in c)
+        controller = index_of(calls, lambda c: c[:3] == ('kubectl', 'scale', 'deployment/karpenter'))
+        limits = index_of(calls, lambda c: c[:3] == ('kubectl', 'patch', 'nodepool'))
+        first_workload = index_of(calls, lambda c: c[:3] == ('kubectl', 'scale', 'statefulset/redis'))
+        self.assertLess(nodes_ready, controller)
+        self.assertLess(controller, limits)
+        self.assertLess(limits, first_workload)
+        self.assertIn('--replicas=2', calls[controller])
+        self.assertEqual(json.loads(calls[limits][-1]), {'spec': {'limits': {'cpu': '8', 'memory': '32Gi'}}})
+
+    def test_resume_of_older_state_uses_spec_defaults(self):
+        calls = self.resume_calls(self.base_state())
+        controller = index_of(calls, lambda c: c[:3] == ('kubectl', 'scale', 'deployment/karpenter'))
+        limits = index_of(calls, lambda c: c[:3] == ('kubectl', 'patch', 'nodepool'))
+        self.assertIn('--replicas=1', calls[controller])
+        self.assertEqual(json.loads(calls[limits][-1]), {'spec': {'limits': {'cpu': '4', 'memory': '16Gi'}}})
+
+    def test_spec_defaults_match_prod_nodepool(self):
+        manifest = json.loads((ROOT / 'infrastructure/gitops/environments/prod/karpenter-nodepool.json')
+                              .read_text(encoding='utf-8'))
+        pool = next(i for i in manifest['items'] if i['kind'] == 'NodePool')
+        karpenter = self.spec['karpenter']
+        self.assertEqual(pool['metadata']['name'], karpenter['nodePool'])
+        self.assertEqual(pool['spec']['limits'], karpenter['defaults']['limits'])
+
+
 if __name__ == '__main__':
     unittest.main()
