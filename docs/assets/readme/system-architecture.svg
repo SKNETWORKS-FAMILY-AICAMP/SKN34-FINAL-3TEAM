@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1080" viewBox="0 0 1440 1080" role="img" aria-labelledby="title description">
+  <title id="title">사고뭉치 시스템 아키텍처</title>
+  <desc id="description">CloudFront는 웹 파일을 S3에서 제공하고 API 요청을 ALB와 EKS의 core-service로 전달한다. EKS에는 다섯 업무 서비스와 RabbitMQ, Redis를 배치한다. 업무 데이터는 RDS의 서비스별 논리 DB, 파일은 S3, 메시지와 Redis 영속 볼륨은 EBS에 저장한다. 외부 LLM, Google OAuth, 토스 테스트 API와 연동하며 GitHub Actions 승인 후 Helm으로 배포한다.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#526981"/></marker>
+    <style>
+      text{font-family:Arial,'Noto Sans KR','Malgun Gothic',sans-serif;fill:#172f48}
+      .title{font-size:32px;font-weight:700}.section{font-size:23px;font-weight:700}
+      .name{font-size:22px;font-weight:700}.body{font-size:19px}.small{font-size:18px;fill:#4b6178}
+      .card{fill:#fff;stroke:#c7d5e3;stroke-width:1.6}.blue{fill:#ecf4ff;stroke:#90b6e5;stroke-width:1.6}
+      .orange{fill:#fff6e9;stroke:#e3bd81;stroke-width:1.6}.green{fill:#eef8f3;stroke:#a0cbb7;stroke-width:1.6}
+      .edge{fill:none;stroke:#526981;stroke-width:2;stroke-linejoin:round;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1440" height="1080" fill="#f8fafc"/>
+  <text x="48" y="58" class="title">사고뭉치 시스템 아키텍처</text>
+  <text x="48" y="89" class="small">AWS 데모 구성 · 서비스별 데이터 소유 · 승인 후 배포</text>
+
+  <rect x="48" y="120" width="210" height="90" rx="12" class="card"/>
+  <text x="153" y="157" text-anchor="middle" class="name">React Web</text>
+  <text x="153" y="186" text-anchor="middle" class="small">학생 · 학부모 · 관리자</text>
+  <rect x="320" y="120" width="260" height="90" rx="12" class="orange"/>
+  <text x="450" y="157" text-anchor="middle" class="name">CloudFront</text>
+  <text x="450" y="186" text-anchor="middle" class="small">웹과 API의 공통 진입점</text>
+  <rect x="642" y="120" width="306" height="90" rx="12" class="orange"/>
+  <text x="795" y="157" text-anchor="middle" class="name">S3 · 웹 정적 파일</text>
+  <text x="795" y="186" text-anchor="middle" class="small">React 빌드 결과 제공</text>
+  <path d="M258 165H318" class="edge"/>
+  <path d="M580 165H640" class="edge"/>
+
+  <rect x="48" y="250" width="920" height="650" rx="16" fill="#f0f5fb" stroke="#b1c4d9" stroke-width="1.8"/>
+  <text x="72" y="284" class="section">VPC</text>
+  <rect x="320" y="300" width="260" height="78" rx="10" class="orange"/>
+  <text x="450" y="331" text-anchor="middle" class="name">ALB</text>
+  <text x="450" y="358" text-anchor="middle" class="small">공개 서브넷 · API 진입</text>
+  <path d="M450 210V298" class="edge"/>
+  <rect x="469" y="230" width="85" height="29" rx="5" fill="#f8fafc"/>
+  <text x="478" y="251" class="small">/api/*</text>
+  <rect x="648" y="300" width="296" height="78" rx="10" class="card"/>
+  <text x="796" y="331" text-anchor="middle" class="name">NAT Gateway</text>
+  <text x="796" y="358" text-anchor="middle" class="small">비공개 서브넷의 외부 API 호출</text>
+
+  <rect x="72" y="420" width="872" height="300" rx="12" class="blue"/>
+  <text x="96" y="453" class="section">EKS · 비공개 서브넷</text>
+  <text x="96" y="479" class="small">HPA: core · learning · ai    |    노드 확장: Karpenter</text>
+  <rect x="96" y="500" width="248" height="70" rx="9" class="card"/>
+  <text x="220" y="528" text-anchor="middle" class="name">core-service</text>
+  <text x="220" y="554" text-anchor="middle" class="small">인증 · 권한 · 공개 업무 API</text>
+  <rect x="372" y="500" width="248" height="70" rx="9" class="card"/>
+  <text x="496" y="528" text-anchor="middle" class="name">learning-service</text>
+  <text x="496" y="554" text-anchor="middle" class="small">미션 · 답변 · 학습 기록</text>
+  <rect x="648" y="500" width="272" height="70" rx="9" class="card"/>
+  <text x="784" y="528" text-anchor="middle" class="name">ai-service</text>
+  <text x="784" y="554" text-anchor="middle" class="small">판정 · 분석 · 리포트 서술</text>
+  <rect x="96" y="604" width="248" height="70" rx="9" class="card"/>
+  <text x="220" y="632" text-anchor="middle" class="name">report-api / worker</text>
+  <text x="220" y="658" text-anchor="middle" class="small">리포트 생성 · 조회 · 삭제</text>
+  <rect x="372" y="604" width="248" height="70" rx="9" class="card"/>
+  <text x="496" y="632" text-anchor="middle" class="name">scoring-service</text>
+  <text x="496" y="658" text-anchor="middle" class="small">모델 로딩 · 점수 추론</text>
+  <rect x="648" y="604" width="272" height="70" rx="9" class="green"/>
+  <text x="784" y="632" text-anchor="middle" class="name">RabbitMQ · Redis</text>
+  <text x="784" y="658" text-anchor="middle" class="small">업무 이벤트 · 임시 값 · 중계</text>
+  <text x="96" y="703" class="small">서비스 간 연결: 내부 API · 이벤트    /    상세 호출 관계는 README 4.2</text>
+  <path d="M450 378V398H220V418" class="edge"/>
+  <path d="M796 420V380" class="edge"/>
+
+  <rect x="72" y="774" width="520" height="104" rx="10" class="green"/>
+  <text x="96" y="808" class="name">RDS · PostgreSQL</text>
+  <text x="96" y="839" class="body">core_db · learning_db · report_db</text>
+  <text x="96" y="865" class="small">서비스별 논리 DB · 접근 계정 분리</text>
+  <rect x="620" y="774" width="324" height="104" rx="10" class="green"/>
+  <text x="644" y="808" class="name">EBS · gp3</text>
+  <text x="644" y="839" class="body">RabbitMQ · Redis 영속 볼륨</text>
+  <text x="644" y="865" class="small">StatefulSet · PVC</text>
+  <path d="M332 720V772" class="edge"/>
+  <path d="M782 720V772" class="edge"/>
+
+  <rect x="1012" y="120" width="380" height="258" rx="12" class="card"/>
+  <text x="1036" y="157" class="section">외부 서비스</text>
+  <path d="M1036 176H1368" stroke="#d8e2ed"/>
+  <text x="1036" y="208" class="name">LLM API</text>
+  <text x="1036" y="234" class="small">OpenAI 호환 · Anthropic</text>
+  <text x="1036" y="274" class="name">Google OAuth</text>
+  <text x="1036" y="300" class="small">로그인 · 보호자 재인증</text>
+  <text x="1036" y="340" class="name">토스페이먼츠 · 테스트 환경</text>
+  <path d="M944 339H1010" class="edge"/>
+
+  <rect x="1012" y="420" width="380" height="130" rx="12" class="orange"/>
+  <text x="1036" y="458" class="section">S3 · 업무 파일</text>
+  <text x="1036" y="491" class="body">리포트 · 미션 장면 · 모델 가중치</text>
+  <text x="1036" y="522" class="small">DB에는 객체 키와 메타데이터 저장</text>
+  <path d="M944 590H984V487H1010" class="edge"/>
+
+  <rect x="1012" y="588" width="380" height="132" rx="12" class="card"/>
+  <text x="1036" y="625" class="section">이미지와 설정 공급</text>
+  <text x="1036" y="660" class="body">ECR · 컨테이너 이미지</text>
+  <text x="1036" y="692" class="body">Secrets Manager → External Secrets</text>
+
+  <rect x="1012" y="762" width="380" height="138" rx="12" class="card"/>
+  <text x="1036" y="800" class="section">관측 · 운영 경보</text>
+  <text x="1036" y="834" class="body">OTel Collector · Prometheus</text>
+  <text x="1036" y="868" class="body">Grafana → Discord</text>
+
+  <rect x="48" y="932" width="1344" height="112" rx="12" fill="#172f48"/>
+  <text x="72" y="967" font-size="19" font-weight="700" style="fill:#b8d2ed">승인 배포</text>
+  <text x="72" y="1007" font-size="24" font-weight="700" style="fill:#fff">GitHub Actions → ECR 이미지 → prod 승인 → Helm 적용 → EKS → 배포 후 확인</text>
+</svg>

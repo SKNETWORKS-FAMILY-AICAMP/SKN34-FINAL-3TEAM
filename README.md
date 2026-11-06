@@ -8,28 +8,18 @@
 
 학생의 답변과 되묻기 전후 변화를 기록하고, 학부모에게 근거가 있는 분석 상담과 주간 리포트를 제공합니다.
 
-![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
-![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white)
-![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)
-![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5-6DB33F?logo=springboot&logoColor=white)
-![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7F52FF?logo=kotlin&logoColor=white)
-![Java](https://img.shields.io/badge/Java-21-ED8B00)
-![FastAPI](https://img.shields.io/badge/FastAPI-Python_3.12-009688?logo=fastapi&logoColor=white)
-
-![LangGraph](https://img.shields.io/badge/LangGraph-Analysis_Agent-1C3C3C?logo=langgraph&logoColor=white)
-![PyTorch](https://img.shields.io/badge/PyTorch-M2_Scoring-EE4C2C?logo=pytorch&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
-![Redis](https://img.shields.io/badge/Redis-8-DC382D?logo=redis&logoColor=white)
-![RabbitMQ](https://img.shields.io/badge/RabbitMQ-4-FF6600?logo=rabbitmq&logoColor=white)
-![Kubernetes](https://img.shields.io/badge/Kubernetes-AWS_EKS-326CE5?logo=kubernetes&logoColor=white)
-![Helm](https://img.shields.io/badge/Helm-Deployment-0F1689?logo=helm&logoColor=white)
-![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-CI%2FCD-2088FF?logo=githubactions&logoColor=white)
+| 분야 | 기술 |
+|:---:|---|
+| **Frontend** | ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black) ![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white) ![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white) ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white) |
+| **Backend** | ![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5-6DB33F?logo=springboot&logoColor=white) ![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7F52FF?logo=kotlin&logoColor=white) ![Java](https://img.shields.io/badge/Java-21-ED8B00) ![FastAPI](https://img.shields.io/badge/FastAPI-Python_3.12-009688?logo=fastapi&logoColor=white) |
+| **AI / ML** | ![LangGraph](https://img.shields.io/badge/LangGraph-Analysis_Agent-1C3C3C?logo=langgraph&logoColor=white) ![PyTorch](https://img.shields.io/badge/PyTorch-M2_Scoring-EE4C2C?logo=pytorch&logoColor=white) |
+| **DB / 메시징** | ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white) ![Redis](https://img.shields.io/badge/Redis-8-DC382D?logo=redis&logoColor=white) ![RabbitMQ](https://img.shields.io/badge/RabbitMQ-4-FF6600?logo=rabbitmq&logoColor=white) |
+| **인프라 / CI·CD** | ![Kubernetes](https://img.shields.io/badge/Kubernetes-AWS_EKS-326CE5?logo=kubernetes&logoColor=white) ![Helm](https://img.shields.io/badge/Helm-Deployment-0F1689?logo=helm&logoColor=white) ![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-CI%2FCD-2088FF?logo=githubactions&logoColor=white) |
 
 **SK Networks Family AI Camp 34기 · 최종 프로젝트 · 3팀**<br/>
 김태윤 · 김동섭 · 김재현 · 최인영 · 최성욱 · 황수빈
 
-[서비스 화면](#experience) · [시스템 구조](#architecture) · [AI 평가 결과](#models) · [빠른 실행](#getting-started) · [설계 문서](#team-docs)
+[서비스 화면](#experience) · [시스템 구조](#architecture) · [AI 평가 결과](#models) · [빠른 실행](#getting-started) · [설계 문서](#design-docs)
 
 </div>
 
@@ -151,7 +141,41 @@ flowchart LR
 <a id="architecture"></a>
 ## 4. 시스템 아키텍처와 데이터 구조
 
-### 4.1 다섯 서비스의 책임
+**디렉터리 구조**
+
+화면, 서비스, 계약, 배포 설정을 분리하고 설계·검증 자료를 함께 관리합니다.
+
+```text
+SKN34-FINAL-3TEAM/
+├── frontend/web/              # 학생·학부모·관리자 React 웹
+├── backend/
+│   ├── core-service/          # 계정·권한·상담·결제·운영 API
+│   ├── learning-service/      # 미션·답변·판정·학습 기록
+│   ├── ai-service/            # LLM 판정·분석 에이전트·리포트 서술
+│   ├── scoring-service/       # 모델 로딩·점수 추론
+│   └── report-service/        # 리포트 API·비동기 worker·파일 생성
+├── contracts/                # OpenAPI·이벤트 계약·요청 및 응답 예시
+├── infrastructure/           # AWS·EKS·kind·Helm·배포·외부 API 스텁
+├── ml/                       # M1·M2 학습·전처리·평가 코드
+├── evaluation/               # 판정 품질 평가·부하 시험
+├── scripts/                  # 계약·DB 검증·운영 보조 도구
+├── docs/
+│   ├── design/               # 기능·API·아키텍처·데이터·흐름 설계
+│   ├── report/               # 구현·검증 결과와 결정 이력
+│   └── outputs/              # 제출 산출물
+├── .github/workflows/        # CI·릴리스·승인 배포
+└── compose.yaml              # 로컬 인프라·마이그레이션·백엔드 실행
+```
+
+### 4.1 시스템 아키텍처
+
+AWS 데모의 배포 구성과 주요 진입 경로입니다. CloudFront가 웹 정적 파일과 API 요청을 나누고, 업무 API는 ALB를 거쳐 EKS의 core-service로 전달합니다.
+
+[![사고뭉치 시스템 아키텍처](docs/assets/readme/system-architecture.png)](docs/assets/readme/system-architecture.png)
+
+이미지를 클릭하면 원본 크기로 볼 수 있습니다. 서비스별 호출은 아래 4.2에서, 환경별 적용·검증 상태는 [8.4 배포 환경](#deployment)에서 설명합니다. 상세 네트워크·권한·배포 원칙은 [아키텍처 명세](docs/design/architecture.md)를 따릅니다.
+
+### 4.2 다섯 서비스의 책임
 
 웹의 업무 API 진입점은 core-service입니다. 내부 서비스는 API와 이벤트로 연결하고, 다른 서비스의 DB를 직접 조회하지 않습니다.
 
@@ -182,11 +206,27 @@ flowchart TB
 
 그림은 주요 업무 경로와 데이터 소유 관계를 요약합니다. ai·report의 learning 기록 조회, core의 report 조회, Redis 중계와 완료·삭제·모델 버전 이벤트 등 전체 연결은 [아키텍처](docs/design/architecture.md), 호출별 계약은 [API 명세](docs/design/api-spec.md)를 따릅니다.
 
-### 4.2 전체 ERD
+### 4.3 전체 ERD
 
 [![사고뭉치 전체 ERD](docs/assets/readme/erd-overview.png)](docs/assets/readme/erd-overview.png)
 
 제출 산출물의 전체 ERD입니다. 이미지를 클릭하면 원본 크기로 볼 수 있습니다. 이후 변경된 스키마·제약 조건은 [ERD 명세](docs/design/erd.md)와 [DB 변경 이력](docs/report/db-dev-guide.md)에서 확인할 수 있습니다.
+
+<a id="design-docs"></a>
+### 4.4 설계 문서 안내
+
+`docs/design/`에는 위에서 소개한 아키텍처·ERD와 함께 다음 문서를 관리합니다. 기능의 범위부터 화면 흐름, API 계약, 내부 처리와 운영 경보까지 연결해서 확인할 수 있습니다.
+
+| 문서 | 확인할 내용 |
+|---|---|
+| [기능 명세](docs/design/functional-spec.md) | 사용자별 기능, 확정 정책, 입력·예외 조건, 비기능 요구사항 |
+| [유스케이스](docs/design/usecase.md) | 학생·학부모·관리자의 목표, 선행 조건, 기본·예외 시나리오 |
+| [사용자 흐름](docs/design/user-flow.md) | 역할별 화면 이동, 학습·상담·결제·이관의 진입과 복귀 경로 |
+| [API 명세](docs/design/api-spec.md) | 공개·내부 API, 인증과 권한, 요청·응답, 오류 코드와 SSE 계약 |
+| [클래스 다이어그램](docs/design/class-diagram.md) | 서비스별 주요 클래스, 계층별 책임과 의존 관계 |
+| [시퀀스 다이어그램](docs/design/sequence-diagram.md) | 기능별 API·이벤트 호출 순서와 실패 처리 흐름 |
+| [상태 다이어그램](docs/design/state-diagram.md) | 계정·학습·이관·결제·리포트의 상태와 전이 조건 |
+| [운영 경보 설계](docs/design/operational-alerts.md) | 지표 수집, 오류·지연·DLQ·LLM 비용 경보, 추적과 적용 경계 |
 
 <a id="pipelines"></a>
 ## 5. 핵심 기능의 구현 과정
