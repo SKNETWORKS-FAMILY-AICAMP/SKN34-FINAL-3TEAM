@@ -596,6 +596,41 @@ def persistent_volumes(kubectl):
     return volumes
 
 
+def karpenter_state(kubectl, spec):
+    """Karpenter 컨트롤러 replica와 NodePool 상한. spec에 karpenter가 없으면 None (#211 이전 구성)"""
+    k = spec.get('karpenter')
+    if not k:
+        return None
+    deploy = json.loads(kubectl('get', 'deployment', k['deployment'], '-n', k['namespace'], '-o', 'json'))
+    pool = json.loads(kubectl('get', 'nodepool', k['nodePool'], '-o', 'json'))
+    claims = json.loads(kubectl('get', 'nodeclaims', '-o', 'json'))['items']
+    return {'replicas': deploy['spec'].get('replicas', 1), 'limits': pool['spec'].get('limits', {}),
+            'nodeClaims': [c['metadata']['name'] for c in claims]}
+
+
+def stop_karpenter(kubectl, spec, karpenter):
+    """새 노드를 막고(상한 0) 남은 Karpenter 노드를 정리한 뒤 컨트롤러를 멈춘다.
+    노드그룹을 0으로 줄일 때 갈 곳 없는 시스템 Pod 때문에 Karpenter가 노드를 새로 띄우지 않게 한다."""
+    k = spec['karpenter']
+    kubectl('patch', 'nodepool', k['nodePool'], '--type', 'merge',
+            '-p', json.dumps({'spec': {'limits': {'cpu': '0', 'memory': '0'}}}))
+    if karpenter['nodeClaims']:
+        kubectl('delete', 'nodeclaims', '--all', '--wait=true', '--timeout=600s')
+    kubectl('scale', f'deployment/{k["deployment"]}', '-n', k['namespace'], '--replicas=0')
+    kubectl('wait', '--for=delete', 'pod', '-n', k['namespace'], '-l', k['podLabel'], '--timeout=300s', check=False)
+
+
+def start_karpenter(kubectl, spec, karpenter):
+    """pause 전 값으로 복구. 이전 state 파일에 값이 없으면 spec 기본값을 쓴다."""
+    k = spec['karpenter']
+    saved = karpenter or {}
+    replicas = saved.get('replicas') or k['defaults']['replicas']
+    limits = saved.get('limits') or k['defaults']['limits']
+    kubectl('scale', f'deployment/{k["deployment"]}', '-n', k['namespace'], f'--replicas={replicas}')
+    kubectl('rollout', 'status', f'deployment/{k["deployment"]}', '-n', k['namespace'], '--timeout=300s')
+    kubectl('patch', 'nodepool', k['nodePool'], '--type', 'merge', '-p', json.dumps({'spec': {'limits': limits}}))
+
+
 def pause(aws, kubectl, spec, state_path, execute, allow_pending=False, wait=time.sleep):
     eks, rds = spec['eks'], spec['rds']['id']
     nodegroups = {name: aws('eks', 'describe-nodegroup', '--cluster-name', eks['cluster'],
@@ -603,10 +638,16 @@ def pause(aws, kubectl, spec, state_path, execute, allow_pending=False, wait=tim
     state = {'nodegroups': nodegroups, 'workloads': workload_state(kubectl, spec),
              'rdsStatus': aws('rds', 'describe-db-instances', '--db-instance-identifier', rds)['DBInstances'][0]['DBInstanceStatus'],
              'volumes': persistent_volumes(kubectl), 'snapshots': {}}
+    karpenter = karpenter_state(kubectl, spec)
+    if karpenter is not None:
+        state['karpenter'] = karpenter
     pending = pending_messages(kubectl)
-    steps = ['scale workloads to 0 in drain order: ' + ', '.join(w['name'] for w in state['workloads']),
-             f'RDS snapshot of {rds}', 'EBS snapshot of ' + ', '.join(v['claim'] for v in state['volumes']),
-             'nodegroups -> 0 nodes: ' + ', '.join(f'{n} {c}' for n, c in nodegroups.items()), f'stop RDS {rds}']
+    steps = ['scale workloads to 0 in drain order: ' + ', '.join(w['name'] for w in state['workloads'])]
+    if karpenter is not None:
+        steps.append(f'stop Karpenter: NodePool {spec["karpenter"]["nodePool"]} limits {karpenter["limits"]} -> 0, '
+                     f'delete NodeClaims {karpenter["nodeClaims"] or "none"}, controller {karpenter["replicas"]} -> 0')
+    steps += [f'RDS snapshot of {rds}', 'EBS snapshot of ' + ', '.join(v['claim'] for v in state['volumes']),
+              'nodegroups -> 0 nodes: ' + ', '.join(f'{n} {c}' for n, c in nodegroups.items()), f'stop RDS {rds}']
     print('current:', json.dumps({k: state[k] for k in ('nodegroups', 'rdsStatus')}), 'pending queues:', pending or 'none')
     for number, step in enumerate(steps, 1):
         print(f'{number}. {step}')
@@ -624,6 +665,8 @@ def pause(aws, kubectl, spec, state_path, execute, allow_pending=False, wait=tim
         kubectl('rollout', 'status', target, '-n', workload['namespace'], '--timeout=600s', check=False)
         kubectl('wait', '--for=delete', 'pod', '-n', workload['namespace'], '-l',
                 f'app.kubernetes.io/name={workload["name"]}', '--timeout=300s', check=False)
+    if karpenter is not None:
+        stop_karpenter(kubectl, spec, karpenter)
     stamp = time.strftime('%Y%m%d-%H%M%S')
     snapshot = f'{rds}-pause-{stamp}'
     aws('rds', 'create-db-snapshot', '--db-instance-identifier', rds, '--db-snapshot-identifier', snapshot)
@@ -654,8 +697,16 @@ def resume(aws, kubectl, spec, state_path, execute, wait=time.sleep):
     ordered = sorted(state['workloads'], key=lambda w: w['kind'] != 'statefulset')
     stateful = [w for w in ordered if w['kind'] == 'statefulset']
     apps = list(reversed([w for w in ordered if w['kind'] != 'statefulset']))
-    print(f'1. start RDS {rds}\n2. nodegroups -> {nodegroups}\n3. statefulsets: {[w["name"] for w in stateful]}\n'
-          f'4. deployments: {[w["name"] for w in apps]}')
+    karpenter = spec.get('karpenter')
+    saved = state.get('karpenter') or {}
+    steps = [f'start RDS {rds}', f'nodegroups -> {nodegroups}']
+    if karpenter:
+        steps.append(f'start Karpenter: controller {saved.get("replicas") or karpenter["defaults"]["replicas"]}, '
+                     f'NodePool {karpenter["nodePool"]} limits {saved.get("limits") or karpenter["defaults"]["limits"]}'
+                     + ('' if saved else ' (spec defaults, state has no karpenter)'))
+    steps += [f'statefulsets: {[w["name"] for w in stateful]}', f'deployments: {[w["name"] for w in apps]}']
+    for number, step in enumerate(steps, 1):
+        print(f'{number}. {step}')
     if not execute:
         print('dry run: nothing changed (add --execute to run)')
         return
@@ -669,6 +720,8 @@ def resume(aws, kubectl, spec, state_path, execute, wait=time.sleep):
     for name in nodegroups:
         aws('eks', 'wait', 'nodegroup-active', '--cluster-name', eks['cluster'], '--nodegroup-name', name)
     kubectl('wait', '--for=condition=Ready', 'node', '--all', '--timeout=600s')
+    if karpenter:
+        start_karpenter(kubectl, spec, state.get('karpenter'))
     for workload in stateful + apps:
         target = f'{workload["kind"]}/{workload["name"]}'
         kubectl('scale', target, '-n', workload['namespace'], f'--replicas={workload["replicas"]}')
