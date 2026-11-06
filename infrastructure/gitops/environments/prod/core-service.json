@@ -269,7 +269,7 @@
     "cpuUtilization": 70
   },
   "image": {
-    "digest": "sha256:960ce7b4202ac73415ecbbc0d9e167e31b491431f6f7f3437a4ceea0957387dc",
+    "digest": "sha256:0c9208e900e84267d4833e1878faee57036044f6c5632efa54b29eaa276e1c7d",
     "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/core-service"
   },
   "ingress": {

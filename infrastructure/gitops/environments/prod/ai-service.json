@@ -79,7 +79,7 @@
     "cpuUtilization": 70
   },
   "image": {
-    "digest": "sha256:e2f170014aaefad7e11a50b8456f0d5e269b52bc4e3c02175190223c62ebdb1c",
+    "digest": "sha256:de70c3cddf55d72db17aa6184c48f0d7379ecc33df7fab7fab70ee73ba6070cb",
     "pullPolicy": "IfNotPresent",
     "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/ai-service"
   },

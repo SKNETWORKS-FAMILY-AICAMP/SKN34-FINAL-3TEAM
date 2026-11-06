@@ -56,7 +56,7 @@
     }
   ],
   "image": {
-    "digest": "sha256:b2c36e72b9fdcd33c9d76fc32b16d96f8171af77e63d5f046b1e4fa4595af284",
+    "digest": "sha256:bec277857d70af4354f91591c398302672924f466d92a16c63976367f2d123d7",
     "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/scoring-service"
   },
   "nameOverride": "scoring-service",
