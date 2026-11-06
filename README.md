@@ -392,7 +392,24 @@ npm run dev
 | RabbitMQ 관리 | http://localhost:15672 | 로컬 큐·이벤트 확인 |
 | MinIO, 선택 실행 | http://localhost:9000 / http://localhost:9001 | 객체 API / 관리 화면 |
 
-기본 Compose에는 MinIO가 포함되지 않습니다. 리포트 파일이나 모델 저장소가 필요하면 [MinIO 초기화](docs/guides/local-development.md#minio-선택-실행)를 먼저 수행합니다. 서비스 기동만으로 미션 시드·모델 가중치·평가 승인이 준비되는 것은 아닙니다.
+기본 Compose에는 MinIO가 포함되지 않습니다. 로컬 객체 저장소가 필요하면 아래 선택 설정을 적용합니다. 서비스 기동만으로 미션 시드·모델 가중치·평가 승인이 준비되는 것은 아닙니다.
+
+<details>
+<summary>MinIO 선택 실행·포트 변경</summary>
+
+루트 `.env`에 `MINIO_ROOT_USER`(3자 이상)와 `MINIO_ROOT_PASSWORD`(8자 이상)를 설정한 뒤 실행합니다.
+
+```sh
+docker compose -f compose.yaml -f compose.minio.yaml up -d minio
+docker compose -f compose.yaml -f compose.minio.yaml run --rm minio-init
+docker compose -f compose.yaml -f compose.minio.yaml up -d --build
+```
+
+버킷을 초기화하고 report·scoring에 MinIO 접속 설정을 반영합니다. 이후 설정 적용·종료에도 같은 `-f` 조합을 사용합니다. 데이터를 보존하려면 종료 명령에 `--volumes`를 붙이지 않습니다.
+
+앱 포트 충돌 시 `.env`의 `CORE_HOST_PORT`·`LEARNING_HOST_PORT`·`AI_HOST_PORT`·`SCORING_HOST_PORT`·`REPORT_HOST_PORT`를 변경합니다. core 포트를 바꿨다면 웹 실행 터미널에도 `CORE_HOST_PORT`를 설정해야 합니다. 예를 들어 PowerShell에서는 `$env:CORE_HOST_PORT = '18080'`을 실행한 뒤 `npm run dev`를 사용합니다.
+
+</details>
 
 **화면만 살펴보기:** 실제 백엔드·외부 키 없이 현재 MSW 화면을 확인할 수 있습니다. 아래는 PowerShell 예시입니다.
 
@@ -420,7 +437,7 @@ npm run dev
 | `APP_GUARDIAN_TRANSFER_ENABLED=false` | 신규 이관 대상 조회·요청·수락 비활성. 기존 요청 정리·보호 규칙 유지 |
 | `VITE_GUARDIAN_TRANSFER_ENABLED=false` | 웹의 신규 이관·수락 동작 노출 제어. 기존 요청 관리 경로 유지 |
 
-설정 변경 뒤 Compose 컨테이너를 재생성하고, 웹 플래그는 웹 실행·빌드에 반영해야 합니다. 전체 변수·OAuth 콜백·포트 변경·복귀 절차는 [로컬 개발 안내](docs/guides/local-development.md)와 [.env.example](.env.example)에 있습니다.
+환경 변수 목록과 Google OAuth 콜백 설정은 [.env.example](.env.example)을 참고합니다. 기능 플래그의 현재 동작은 위 표를 기준으로 합니다. 설정 변경 뒤 `docker compose up -d ai-service core-service scoring-service`로 해당 컨테이너를 재생성하고, 웹 플래그는 웹 실행·빌드에 반영합니다. MinIO를 사용했다면 같은 `-f` 조합을 유지합니다. `restart`만으로는 환경 변수가 갱신되지 않습니다. 복귀할 때는 플래그를 기본값으로 돌리고 같은 절차를 적용합니다.
 
 ### 8.3 개발 중 검증
 
@@ -530,7 +547,7 @@ E2E에서 학생 PIN·재인증 팝업, 실제 결제 위젯·정기결제·환�
 | 시스템·데이터 구조 | [아키텍처](docs/design/architecture.md) · [ERD](docs/design/erd.md) · [클래스](docs/design/class-diagram.md) |
 | API·이벤트·상태 | [API 명세](docs/design/api-spec.md) · [OpenAPI](contracts/openapi) · [이벤트](contracts/events) · [시퀀스](docs/design/sequence-diagram.md) · [상태](docs/design/state-diagram.md) |
 | AI·모델 | [AI 구현·검증](docs/report/ai.md) · [scoring](docs/report/scoring.md) · [M2 학습](ml/m2/README.md) · [평가 도구·자료](evaluation) |
-| 실행·운영·검증 | [로컬 실행](docs/guides/local-development.md) · [DB 개발](docs/report/db-dev-guide.md) · [테스트·CI](docs/report/testing-ci.md) · [AWS](docs/report/issue-185-aws.md) |
+| 실행·운영·검증 | [로컬 실행](#getting-started) · [DB 개발](docs/report/db-dev-guide.md) · [테스트·CI](docs/report/testing-ci.md) · [AWS](docs/report/issue-185-aws.md) |
 | 기획·제출 이력 | [기획 결정과 변경 근거](docs/report/planning-decisions.md) · [저장소에 보관된 제출 산출물](docs/outputs) |
 
 제출 산출물에는 이전 제출 시점의 문서도 포함됩니다. 현재 구현 계약은 기능·API·ERD와 주제별 구현 보고서를 함께 확인합니다. 개발은 `feature/* → develop → main` 흐름으로 진행합니다.
