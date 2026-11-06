@@ -183,3 +183,17 @@ CLI 종료 코드 0은 JSON 계획의 형식 유효성만 뜻한다. 호환 여�
 - 완료 조건: 승인 → 배포 → 경로 확인 1회(1), 롤백 리허설과 복귀(2·3) 기록.
 - 별도 발견(#187): learning·core의 OTLP trace export가 `otel-collector:4318`에서 404. 서비스 동작 영향은 없고 경고 로그만 쌓인다.
 - fixture 점검 보완: 경로 확인 전 미션의 `inputType`이 답변 형식과 같은지 확인한다(README D).
+
+## 운영 실행 기록 (2026-11-05)
+
+승인자 `20220348-kim`, 작업자 PC runner `DESKTOP-AUHJ0U2`. 선행으로 core V26→V28·learning V9→V10 migration Job과 성취기준 시드 765행 Job을 적용했다(Job 이름은 [prod README](../../infrastructure/gitops/environments/prod/README.md)).
+
+| 순서 | run | 기준 | 결과 | 내용 |
+|---|---|---|---|---|
+| 1 | [42011445646](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/actions/runs/42011445646) | main `c6809dd`(PR #375) | failure | 6개 release 적용 성공(core r9, learning r5, ai r5, scoring r7, report-api·worker r4), 앱 6개 1/1. 경로 확인 `submit-answer` 422: 이전 확인이 남긴 진행 중 시도를 돌려받아 첫 답변을 다시 냄(#376) |
+| 2 | [42055199615](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/actions/runs/42055199615) | main `322e797`(PR #378, 경로 확인 수정 #377) | 1차 실패 → 재실행 success | 1차 deploy는 server dry-run에서 작업자 PC AWS 프로필 세션 만료로 중단(적용 없음). `aws login --profile sagomungchi-provided` 후 deploy 재실행: core r10, learning r6, ai r6, scoring r8, report-api·worker r5. 경로 확인 6단계 ok(`read-answer` 경로) |
+
+- 서비스 코드는 1·2가 같다. 2는 경로 확인 스크립트만 바뀐 main으로 다시 롤아웃해 성공 기록을 남겼다.
+- 배포 후 prod values의 앱 digest 6개와 migration 값(core·learning)을 실제 적용값으로 맞췄다. 클러스터 Deployment 이미지와 일치 확인.
+- 경로 확인은 시연 학생에게 시작 전 미션이 없어 진행 중 시도의 저장된 답변을 조회했다. 답변 쓰기는 이번에 새로 확인하지 않았다(#376 한계).
+- 운영 주의: runner가 쓰는 프로필은 `sagomungchi-provided`다. 기본 프로필로 `aws login`하면 배포 dry-run이 계속 실패한다.

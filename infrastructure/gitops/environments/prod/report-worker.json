@@ -80,7 +80,7 @@
     "enabled": false
   },
   "image": {
-    "digest": "sha256:0e53f8d895370deabcf5eb158a619f0e286d2ced6a6e28df5c1aa9b00c011879",
+    "digest": "sha256:6f151ca992e4bc3bcfeeb6ea9d2e014ef63845d34783e328a74266540fa8d586",
     "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/report-service"
   },
   "keda": {

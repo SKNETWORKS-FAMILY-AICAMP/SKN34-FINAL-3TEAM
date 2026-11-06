@@ -87,6 +87,10 @@ core 외 learning·ai·scoring·report는 b67d8a 이미지로 남아 있다.
 
 2026-11-04 #186 배포 준비: main `a47a596`의 learning V9(`rubric_version` nullable 컬럼 2개·CHECK 제약)를 `learning-migrate:main-a47a596247ad`(`sha256:80254f13…d7bba`) Job `learning-service-migrate-main-a47a596247ad`로 적용했다. V8 → V9 성공, 앱 재시작 0. 기존 learning 이미지는 새 컬럼을 읽지 않아 호환된다. 앱은 `cd-release`로 같은 main SHA에 맞춘다. 2026-11-04 `cd-release` run 41796499774로 6개 release를 `main-a47a596247ad`로 배포했고 이 디렉토리의 앱 digest를 실제값으로 맞췄다. 롤백 리허설(run 41800966528·41802823411) 후 scoring도 같은 버전이다. 서비스 간 호출 계약은 이번 core 변경과 호환됨을 확인했으며, 같은 main 기준으로 맞추는 일은 후속이다.
 
+2026-11-05 main 배포: main `c6809dd`(PR #375)의 core V27·V28을 `core-migrate:main-c6809ddb65ee`(`sha256:5a639cd2…87fe`) Job `core-service-migrate-main-c6809ddb65ee`(V26 → V28)로, learning V10을 `learning-migrate:main-c6809ddb65ee`(`sha256:ad66d684…aaea`) Job `learning-service-migrate-main-c6809ddb65ee`(V9 → V10)로 먼저 적용했다. 성취기준 표 시드 765행은 Job `learning-seed-achievement-standards-c6809ddb65ee`로 넣었다. 적용 후 기존 앱 재시작 0. `migrations/`의 core·learning 값은 이 Job 기준이다. 앱은 `cd-release` run 42011445646(6개 release 적용, 배포 후 경로 확인만 422 실패, #376)과 run 42055199615(main `322e797`, PR #378, 같은 코드 재롤아웃, 경로 확인 6단계 통과)로 배포했다. 이 디렉토리의 앱 digest 6개는 run 42055199615 실제값이며 Deployment 이미지와 일치함을 확인했다.
+
+2026-11-06 데모 일시 정지: `demo_stack.py pause`로 앱·관측·RabbitMQ·Redis를 0으로 줄이고 RDS·EBS 스냅샷 후 노드그룹 2개 0대, RDS stopped. Karpenter는 컨트롤러 0개·NodePool `limits` 0으로 멈춰 있다(저장소 `karpenter-nodepool.json`의 상한은 재개 후 값). 재개 절차는 [EKS README](../../../eks/README.md#재개-순서와-완료-기준)를 따른다.
+
 ## 보존과 환경 경계
 
 - Secret 실제 값, Google/LLM 키, DB 비밀번호, JWT·내부 토큰은 Git에 넣지 않는다. ESO가 Secrets Manager에서 읽는다.
