@@ -1,4 +1,4 @@
-# scoring 모델 서비스·M1 학습 코드 (#85~#88·#140·#263)
+# scoring 모델 서비스·M1 학습 코드 (#85~#88·#140·#228·#263)
 
 계약은 [API 명세 4.3](../design/api-spec.md#43-scoring-service-호출-ai)과 [scoring OpenAPI](../../contracts/openapi/scoring-service.yaml). 서술 3.0·논술 3.1 모델 호환과 content_3 보정은 [ai](ai.md) 4장.
 
@@ -9,6 +9,8 @@
 | #87 | M2 서술형·논술형 채점, 컷 변환·소수 원점수·모델 식별정보, 사용량 발행 |
 | #88 | M1 입력 계약, 인증·입력 검증, 미학습 상태 `active:false` |
 | #140 | 브로커 연결 복구·readiness·종료, 이벤트 봉투 스키마, 내부 헤더·학생 scope·trace 전파, 설정 로딩 테스트 보강 |
+| #228 | 서술 3.0(9출력)·논술 3.1(14출력 중 앞 3개) 호환, 논술 4~6학년([ai 4.1](ai.md#41-서술-30논술-31-서비스-호환-228)) |
+| #263 | M1 학습·평가 코드를 `ml/m1`로 이관 |
 
 ## 1. 모델 레지스트리·S3 로딩 (#85)
 
@@ -58,14 +60,14 @@ core에서 모델 버전을 활성화하거나 롤백하면 모든 scoring 레�
 
 - 담당자 답변(10/29): 관리자 입력 → `rubric_version.keywords` → learning `question/keywords` → AI → scoring `prompt/text/grade/inputType/keywords`. 핵심어는 서술형만, 없으면 비활성. 실제 장애는 503·판정 처리 실패. `score_cuts.json`으로 컷 변환하고 소수 원점수도 보존, 서술형 content_3도 모델 점수 사용. 컷이 없거나 손상된 모델을 반올림으로 대체하지 않음
 - `M2Service`는 기존 `ModelRegistry`·`LoadedModel` 재사용. 승인 scope는 `judgment/grade-5/narrative` 같은 정확 일치 값(문항 단위 승인은 요청에 문항 ID가 없어 범위 밖)
-- 초5·6만 지원. 모델/승인 범위 밖·핵심어 없는 서술형은 `active:false`
-- 학습 메타데이터의 `max_length=512`, 회귀 head, dataset, 핵심어 설정 검사. 첫 문장에 학년·지시문·서술형 핵심어, 글은 두 번째 문장으로 토큰화(`only_second`)
-- `bisect_right(cuts, raw)+1`은 학습 `numpy.digitize(raw, cuts)+1`과 같은 경계 처리. hol 1~4, 8항목 1~5. rawScores는 유한 원점수 그대로. 두 유형의 content_1~3 의미가 다르므로 inputType을 함께 반환하고 합산하지 않음
+- 현재 활성 학년은 서술 초5·6, 논술 초4~6(#228). 모델/승인 범위 밖·핵심어 없는 서술형은 `active:false`
+- 학습 메타데이터의 `max_length=512`, 회귀 head, dataset, 핵심어 설정 검사. 첫 문장에 학년·서술형 핵심어(논술은 글 종류), 글은 두 번째 문장으로 토큰화(`only_second`). 2.0 모델의 지시문 입력은 #228에서 제외
+- `bisect_right(cuts, raw)+1`은 학습 `numpy.digitize(raw, cuts)+1`과 같은 경계 처리. 서술 hol 1~4·8항목 1~5, 논술 3.1은 org·cont·exp 0~3(+1 없음, ai 4.1). rawScores는 유한 원점수 그대로. 두 유형의 content_1~3 의미가 다르므로 inputType을 함께 반환하고 합산하지 않음
 - CPU 작업은 `run_in_threadpool`, 서비스 단위 1개 동시 추론, 대기 최대 1초 이후 503. 추론 중 모델 교체 시 현재 요청은 캡처한 모델, 다음 요청은 새 버전
 - 사용량 발행은 제한된 백그라운드 태스크(최대 128, 1초 제한), 실패해도 채점 응답은 성공. 원문·학생 정보 없이 service=scoring, callType=M2, 토큰 null, 지연·성공 여부. 브로커 중단 중에도 이미 로딩된 모델의 채점은 200
 - 비활성은 `{"active":false}`만. 서비스는 점수를 DB에 저장하지 않음(`judgment.model_scores` 저장은 learning, ai 4장)
 
-응답 예시(형식 설명용 합성 값):
+응답 예시(형식 설명용 합성 값, 2.0 서술 모델 기준. 3.0·3.1 응답 키는 ai 4.1):
 
 ```json
 {
@@ -77,7 +79,7 @@ core에서 모델 버전을 활성화하거나 롤백하면 모든 scoring 레�
 }
 ```
 
-지연 측정(2.0, CPU x86_64·PyTorch 2.14.1+cpu·OMP/MKL 4스레드, 워밍업 3회 제외 30회, HTTP 포함, ms):
+지연 측정(이전 2.0 모델 기록, CPU x86_64·PyTorch 2.14.1+cpu·OMP/MKL 4스레드, 워밍업 3회 제외 30회, HTTP 포함, ms):
 
 | 유형 | 글자 수 | 중앙값 | p95 | 최대 |
 |---|---:|---:|---:|---:|

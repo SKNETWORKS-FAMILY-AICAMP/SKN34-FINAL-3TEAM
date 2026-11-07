@@ -1,4 +1,4 @@
-# 주간 리포트 (#42·#50~#56·#129·#131·#132·#152·#167·#206·#209·#252)
+# 주간 리포트 (#42·#50~#56·#129·#131·#132·#152·#167·#206·#209·#252·#344)
 
 계약은 [API 명세](../design/api-spec.md) 3.4·4.1.1·4.2.1·4.4·5.5, 메시지는 [report-messages](../../contracts/events/report-messages.md).
 
@@ -85,13 +85,7 @@
 
 ## 9. 연결 상태
 
-| 항목 | 담당 | 내용 |
-|---|---|---|
-| 상품 권한 | core·상품 | 연결됨: #48 `ProductEntitlementService` 판정, #129 조회 헤더·최종 권한 확인(13장) |
-| 표시 이름 | core | 연결됨(#56): core `/internal/students/{studentId}/profile` 닉네임 조회, AI 전송 전 이름 가림 |
-| 생성기 조립 | report | 연결됨(#56): worker 기본 생성기 계산 → 서술 → 렌더링, 실제 ai 서술 API는 #64 |
-| 삭제 전체 | learning·core | 연결됨: learning `student.deleted` 소비·완료 보고(#128), core 미종료 작업 정리·늦은 이벤트 차단(#132, 14장) |
-| 운영 | 인프라 | 운영 S3·IAM/IRSA·공개 endpoint, Chromium `/tmp` writable volume, guard 표식 보존·SIGTERM 유예·DLQ 복구 |
+상품 권한(#48·#129, 13장), 표시 이름(#56), 생성기 조립(#56·#64), 학생 삭제(#128·#132, 14장)가 모두 연결됨. 운영 S3·Pod Identity·공개 endpoint는 AWS 데모에서 부모 다운로드까지 확인([aws-deploy](aws-deploy.md)). Chromium `/tmp` 쓰기 볼륨·guard 표식 보존·SIGTERM 유예·DLQ 복구는 배포 values 기준([prod README](../../infrastructure/gitops/environments/prod/README.md)).
 
 ## 10. 기본 worker 연결 (#56·#130)
 
@@ -283,7 +277,7 @@ core는 기존 대화 소유권·연결·동의·이용권과 학부모 행 잠�
 
 ### 범위 밖
 
-판정 정정의 요소 지표 반영(정정은 `judgment_correction`에 결과만 남기고 요소 충족은 바꾸지 않음, #244 FN-SUP-03), 같은 유형·학년군 미션끼리 기간 비교(FN-RPT-05), 요소 기반 추천(FBF-38)·생각 조각(FN-DSH-13), #262 관리자 code 검사와 web 요소 고르기, 실제 LLM으로 학생부터 리포트까지의 E2E(지금 E2E의 llm-stub는 항상 모든 요소를 찾음).
+판정 정정의 요소 지표 반영(정정은 `judgment_correction`에 결과만 남기고 요소 충족은 바꾸지 않음, #244 FN-SUP-03), 같은 유형·학년군 미션끼리 기간 비교(FN-RPT-05), 요소 기반 추천(FBF-38)·생각 조각(FN-DSH-13), web 요소 고르기(#356, 관리자 code 검사는 #353에서 구현), 실제 LLM으로 학생부터 리포트까지의 E2E(지금 E2E의 llm-stub는 항상 모든 요소를 찾음).
 
 ### 검증
 

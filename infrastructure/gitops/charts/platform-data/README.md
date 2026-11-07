@@ -57,7 +57,7 @@ pwsh -File infrastructure/kind/create-platform-secret.ps1
 
 저장소마다 `<서비스명>-headless`가 StatefulSet의 `serviceName`과 연결된다. 앱은 접속용 일반 Service를 사용한다. StatefulSet은 replica 1개이며 삭제·축소 시 PVC를 보존하도록 설정한다. kind 클러스터 자체의 삭제에 따른 노드 내부 데이터 보존은 별도다.
 
-- PostgreSQL: `settings`에서 메모리·연결 수를 지정한다. 최초 초기화 때 `files/postgres/init.sql`이 운영 RDS와 같은 `rds-bootstrap.sql`을 실행해 DB 3개와 DB별 migrate(DDL)·app(DML) 계정을 만들고 다른 DB 접속을 막는다(#230). 두 bootstrap 파일은 entrypoint가 단독 실행하지 않도록 `/docker-entrypoint-initdb.d/bootstrap/`에 둔다. 서비스 계정 비밀번호를 바꾸거나 기존 데이터가 있는 PVC에 적용하려면 [#230 보고서](../../../../docs/report/issue-230-db-service-accounts.md#기존-로컬-환경-적용)를 따른다. 테이블 변경은 서비스별 migration이 담당한다.
+- PostgreSQL: `settings`에서 메모리·연결 수를 지정한다. 최초 초기화 때 `files/postgres/init.sql`이 운영 RDS와 같은 `rds-bootstrap.sql`을 실행해 DB 3개와 DB별 migrate(DDL)·app(DML) 계정을 만들고 다른 DB 접속을 막는다(#230). 두 bootstrap 파일은 entrypoint가 단독 실행하지 않도록 `/docker-entrypoint-initdb.d/bootstrap/`에 둔다. 서비스 계정 비밀번호를 바꾸거나 기존 데이터가 있는 PVC에 적용하려면 [#230 보고서](../../../../docs/report/db-dev-guide.md#84-기존-로컬-환경-적용)를 따른다. 테이블 변경은 서비스별 migration이 담당한다.
 - RabbitMQ: `memoryHighWatermark`는 절대 바이트 수 문자열이다. 로컬은 `1073741824`(1GiB)로 지정하며 컨테이너 메모리 limit과 구분한다. 큐·exchange·binding은 기존 `files/rabbitmq/definitions.json`만 기준으로 하고 계정은 파일에 추가하지 않는다.
 - Redis: `maxMemory`는 데이터 메모리 기준, `maxMemoryPolicy`는 한도 도달 시 처리 방식이다. 로컬은 `128mb`·`noeviction`을 사용하고 AOF를 활성화한다. `noeviction`에서는 메모리 한도를 넘는 쓰기를 오류로 처리한다.
 - MinIO: 단일 저장 공간에 `missions`·`reports`·`models` 세 버킷을 만든다. `buckets`의 키는 용도이고 값은 실제 버킷 이름이다. 로컬 버킷명은 환경 values에 지정한다.
@@ -94,7 +94,7 @@ kubectl --context kind-sagomungchi-local -n platform get pods,jobs,pvc,services
 
 Pod Ready 외에 Job Complete, PostgreSQL DB 세 개, RabbitMQ의 기존 definitions와 실제 topology 일치, MinIO 버킷 세 개를 확인한다. 관리 화면은 `kubectl --context kind-sagomungchi-local -n platform port-forward svc/rabbitmq 15672:15672` 또는 `svc/minio 9001:9001`로 연결한다.
 
-Compose의 기본 앱은 같은 `.env`를 사용해 `docker compose up --build`로 실행하며 MinIO 계정은 필요하지 않다. PostgreSQL·RabbitMQ·Redis만 확인할 때는 `docker compose up -d postgres rabbitmq redis` 후 `docker compose run --rm rabbitmq-init`을 실행한다. MinIO는 [선택 실행 절차](../../../../README.md#minio-선택-실행)에 따라 별도 파일을 추가한다.
+Compose의 기본 앱은 같은 `.env`를 사용해 `docker compose up --build`로 실행하며 MinIO 계정은 필요하지 않다. PostgreSQL·RabbitMQ·Redis만 확인할 때는 `docker compose up -d postgres rabbitmq redis` 후 `docker compose run --rm rabbitmq-init`을 실행한다. MinIO는 [선택 실행 절차](../../../../README.md#81-빠른-실행)에 따라 별도 파일을 추가한다.
 
 ```powershell
 docker compose -f compose.yaml -f compose.minio.yaml up -d minio

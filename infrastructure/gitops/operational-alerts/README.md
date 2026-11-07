@@ -1,7 +1,7 @@
 # 운영 경보 검증 (#187)
 
 설계: [operational-alerts](../../../docs/design/operational-alerts.md).
-근거·요구사항별 공백·결정 목록: [보고서](../../../docs/report/issue-187-operational-alerts.md).
+근거·요구사항별 공백·결정 목록: [보고서](../../../docs/report/ops-observability.md).
 
 경보 provisioning은 #185의 observability chart(`grafana.alerting.*`, `templates/alerting.yaml`)를 그대로 쓴다.
 #187은 그 위에 RabbitMQ DLQ 큐별 지표 수집, 규칙별 `noDataState`, 평가·알림 간격 values, core 월 LLM 비용 지표, 검증기를 더한다.

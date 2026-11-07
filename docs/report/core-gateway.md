@@ -21,7 +21,7 @@
 - 서킷 분리: 일반 JSON은 `learning-json`, 피드백은 `learning-feedback`. 전송 실패·시간 초과·계약된 Problem Details가 아닌 5xx만 실패로 셈. `application/problem+json`에 비어 있지 않은 `code`가 있으면 업무 실패(`error` 이벤트)로 전달하고 서킷 실패로 다시 세지 않음(learning의 AI 서킷과 이중 차단 방지)
 - 전송·종료 상호 배제는 `ReentrantLock`(synchronized 안의 블로킹 전송이 virtual thread carrier를 고정하지 않도록, JFR `jdk.VirtualThreadPinned`로 확인)
 - 스트림 시작 전 인증 DB 실패는 `PublicAuthFilter`의 503 `AUTH_UNAVAILABLE`
-- 종료 예산: preStop + Spring/Tomcat 종료 + executor 85초·timer 5초 + 여유보다 긴 `terminationGracePeriodSeconds` 필요. 앱 Deployment가 저장소에 없어 실제 롤링 종료 검증은 미실시
+- 종료 예산: preStop + Spring/Tomcat 종료 + executor 85초·timer 5초 + 여유보다 긴 `terminationGracePeriodSeconds` 필요. 앱 chart의 local core는 `terminationGracePeriodSeconds: 180`(`environments/local/core-service.yaml`). 실제 롤링 종료 검증은 미실시
 
 ## 3. 학생·학부모 대시보드 (#40)
 
@@ -79,7 +79,7 @@
 | 분석 대화 일일 사용량 | `conversation/service/AnalysisUsageService.kt:26-32,43-47,57-63` | Lua 확인+증가 원자 처리, 키 `analysis:daily:v1:{childId}:{KST 일자}`, `EXPIREAT` 다음 KST 자정+1일 | 503 `ANALYSIS_USAGE_UNAVAILABLE`(`:30`). 대화 생성·조회는 권한 확인만 해 영향 없음(`conversation/service/ConversationService.kt:43`) |
 | 관리자 대화 재처리 중복 차감 방지 | `AnalysisUsageService.kt:33-39,48-56`, `ConversationService.kt:153` | 요청 ID 표식 `analysis:retry:v1:{requestId}` 확인·증가·표식 저장을 한 스크립트로 처리 | 같은 503, 재처리 실행 실패 |
 | 알림 다중 레플리카 SSE 중계 | `notification/messaging/NotificationRedisPublisher.kt:17-26`, `notification/config/NotificationRedisConfiguration.kt:13-18`, `notification/consumer/NotificationRedisSubscriber.kt:14-17`, `notification/service/NotificationStreams.kt:29-33` | 채널 `core:notifications:v1` fan-out(at-most-once, 구독자 0명도 발행 성공), 커밋 후 발행 | 발행 예외 → `FAILED`·`REDIS_PUBLISH_FAILED`(`notification/service/NotificationDeliveryService.kt:12`). 알림 행·리포트 상태는 유지되고 목록 재조회로 복구. 관리자 재처리(`admin/service/OperationRetryService.kt:59`)도 같은 publisher 사용 |
-| 무료 플랜 미션 일일 한도(미구현) | 설계만 존재([API 명세](../design/api-spec.md) 2.2 P13·4.1 `/internal/missions/{id}/attempts`) | 설계상 core Redis 카운터, 신규 `201`만 집계 | 코드 없음 |
+| 무료 플랜 미션 일일 한도(미구현) | 설계만 존재([API 명세](../design/api-spec.md) 2.2 P13·4.1 `/internal/missions/{id}/attempts`) | #210 전 설계는 core Redis 카운터, 현재 설계는 PostgreSQL `mission_daily_usage`(무료 하루 1개, #387). 신규 `201`만 집계 | 코드 없음 |
 
 전수 확인 결과(`StringRedisTemplate`·`RedisTemplate`·`RedisConnectionFactory`·`@Cacheable`·`spring.data.redis` 검색):
 
@@ -87,7 +87,7 @@
 - 연결은 `application.yml:21-27`(연결·명령 timeout 2초). readiness 그룹은 `readinessState,db,rabbit`(`application.yml:57-58`)으로 Redis를 포함하지 않아 Redis 장애 시 Pod는 Ready를 유지하고 기능별로만 503이 난다
 - 배포·실행 설정: `compose.yaml:69-77,135-137`, platform-data chart `templates/redis.yaml`(replicas 1 `:11`, AOF·`maxmemory`·`noeviction` `:44-49`), `values.yaml:43-53`, local `environments/local/platform-data.yaml:42-52`, `environments/local/core-service.yaml:30,66`, NetworkPolicy `policies/local/platform.yaml:61`
 - 테스트·검증: `IntegrationTestSupport.kt:38,61-62` Redis 컨테이너, `scripts/verify_*.py`, `scripts/report_integration/compose.yaml:29-60`
-- 문서 표현 차이: [아키텍처](../design/architecture.md) 6장 사용 기술 표의 "SSE 중계·캐시", platform-data chart README의 "캐시·실시간 알림 중계"는 실제 사용(캐시 없음)과 다르다. 결정 후 함께 정리한다
+- 문서 표현 차이: [아키텍처](../design/architecture.md) 6장 사용 기술 표의 "SSE 중계·캐시", platform-data chart README의 "캐시·실시간 알림 중계"는 실제 사용(캐시 없음)과 달랐다. #210 결정 후 정리함(#245)
 - #133(기기 등록 rate limit의 IP 기준)은 키를 무엇으로 정할지의 문제라 저장소 선택과 무관하며, 어느 쪽을 택해도 같은 키 정의를 적용한다
 
 ### 사용처별 PostgreSQL 대체안
@@ -133,7 +133,7 @@
 | 구분 | 대상 |
 |---|---|
 | PostgreSQL로 이전 | 분석 대화 일일 사용량, 관리자 대화 재처리 중복 차감 방지 표식 |
-| PostgreSQL로 신규 구현(후속 미정) | 무료 플랜 미션 일일 한도(P13, 2026-11-06 결정으로 하루 1개). 구현 이슈 미정. 설계는 core `mission_daily_usage`(ERD 3.6) |
+| PostgreSQL로 신규 구현(후속 미정) | 무료 플랜 미션 일일 한도(P13, 2026-11-06 결정으로 하루 1개). 구현 이슈 #387. 설계는 core `mission_daily_usage`(ERD 3.6) |
 | Redis 유지 | 학생 기기 페어링 코드, 기기 등록·페어링 발급 rate limit, 알림 Pub/Sub `core:notifications:v1` |
 
 - 근거 1: 분석 사용량은 이미 보호자·학생 행 잠금 트랜잭션 안에서 차감되므로 PostgreSQL 조건부 UPSERT로 동시성 요구를 같은 수준으로 충족하면서 롤백 불일치와 분산 원자성 제약을 함께 없앤다. 아직 구현되지 않은 미션 한도도 같은 패턴으로 만들면 Redis 의존 기능을 새로 늘리지 않는다
@@ -144,7 +144,7 @@
 결정 반영과 후속 작업:
 
 - [아키텍처](../design/architecture.md) 6장 사용 기술의 Redis 용도와 7.1 구현 결정 요약에 반영했다. 1.1 서비스 표(core_db, Redis)·1.6 SSE 다중 레플리카·4장 상태 저장소 배치는 Redis를 유지하므로 바꾸지 않았다
-- 후속 구현 이슈(별도): 분석 사용량·재처리 표식 PostgreSQL 이전은 #225로 구현했다([아래](#분석-대화-사용량-db-이관-구현-225)). 미션 일일 한도 구현은 미정이다. 구현 전에 API 명세(P13 일일 한도 "core Redis 카운터 책임", #47 CONVERSATION 관리자 재처리의 Redis 표식·분산 원자성 문구)와 ERD의 Redis 보관 항목(요금제 사용 한도 일 단위 카운터)을 먼저 갱신하고 마이그레이션을 추가한다
+- 후속 구현 이슈(별도): 분석 사용량·재처리 표식 PostgreSQL 이전은 #225로 구현했다([아래](#분석-대화-사용량-db-이관-구현-225)). 미션 일일 한도는 #387로 구현한다. API 명세(2.2·1.3)와 ERD 3.6은 이미 PostgreSQL `mission_daily_usage` 기준으로 갱신됨
 - platform-data chart README의 "캐시·실시간 알림 중계" 표현은 실제 용도(페어링·rate limit·알림 중계)로 별도 정리한다 → #245에서 정리
 
 ### 분석 대화 사용량 DB 이관 구현 (#225)
@@ -172,7 +172,7 @@
 
 - `ANALYSIS_USAGE_UNAVAILABLE`: 더는 발생하지 않는다. API 명세 1.3에 없던 코드([audit](audit.md))라 문서화된 계약 변경은 아니다. 과거 작업 실행 기록 표시를 위해 `admin/domain/Operations.kt`의 안전 코드 목록에는 남겼다
 - 관리자 재실행 130초 만료: Redis 표식 TTL 전제가 아니라 실행 만료(대화 RUNNING 고착 판정 `ConversationService.kt:82`와 같은 값)로 유지한다. API 명세에서 "표식 TTL보다 짧은" 전제 문구만 지웠다
-- 무료 미션 3회·프리미엄 피드백 50회 한도(P13, 미구현): 이번 범위가 아니다. 세부 저장 방식은 해당 구현 이슈에서 정한다
+- 무료 미션 하루 1개(#387)·프리미엄 피드백 50회 한도(P13, 미구현): 이번 범위가 아니다. 무료 미션은 `mission_daily_usage`로 정했고 피드백 한도 저장 방식은 구현 이슈에서 정한다
 
 검증:
 

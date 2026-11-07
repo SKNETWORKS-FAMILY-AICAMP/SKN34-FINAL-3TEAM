@@ -1,6 +1,6 @@
 # 웹 프론트 (#7·#8·#9·#59 이후)
 
-실행 방법과 브라우저 테스트 경로는 [frontend/web/README](../../frontend/web/README.md), 화면 계약은 [API 명세](../design/api-spec.md) 2·3·5장.
+실행 방법과 브라우저 테스트 경로는 [frontend/web/README](../../frontend/web/README.md), 화면 계약은 [API 명세](../design/api-spec.md) 2·3·5장. 브라우저 화면 테스트는 MSW 합성 데이터 기준이고 실서버 흐름은 [testing-ci](testing-ci.md) 2장 E2E 범위만 검증. 2026-11-06 결정 화면(이번 주 테마·되돌아보기·커뮤니티·포인트·일일 리포트 상세·관리자 주간 테마·꾸미기 아이템)은 구현 예정(#393~#395, [서비스 기획 방향](service-direction.md))
 
 ## 1. 공통 기반 (#7)
 
@@ -72,6 +72,7 @@
 - `/admin/support`: 문의 선택 후 답변 POST, 완료 답변 재편집 차단. 공지/점검 작성·수정·종료와 공개 대상·기간. 공지 목록은 SERVICE_OPS 전용 전체 목록(#242, 상태·대상 필터, 페이지)으로 예약·공개 중·종료 구분
 - `/admin/payments`: 환불 요청/거래 내역/PG 대조 탭, 체크리스트·최종 확인, 반려 사유, 조회/환불 승인 권한 분리. 승인 POST는 body 없이 Idempotency-Key, 반려는 `{reason}`. APPROVED/202는 PG 확인 중, COMPLETED만 환불 완료. 적격 여부는 서버가 재검증하며 UI에서 가짜 `withinSevenDays`·`premiumUnused` 값을 만들지 않음
 - DEV는 별도 adminServiceHandlers가 가상 응답 처리, 운영 빌드 미포함
+- 장면 파일은 URI 입력만(업로드 방식 미정, api-spec 관리자 미션 "업로드 없음")
 
 시연: `frontend/web`에서 `npm run dev:qr -- --port 5242` → `/admin/login` → `admin@example.test` / `demo-only`(`payment@example.test`는 결제 조회만, `ops@example.test`는 운영만). 개발 전용 `/review`는 요구사항 기능 ID 검색·역할별 시연 점검표.
 
@@ -99,7 +100,4 @@ node tests/qr-device-browser.mjs
 
 ## 6. 남은 확인
 
-- 장면 파일 업로드 방식 미정(URI 입력만)
-- 브라우저 화면 테스트는 MSW 합성 데이터 기준. 실서버 흐름은 [testing-ci](testing-ci.md) 2장 E2E 범위만 검증
-- lint의 기존 `AdminOperations.tsx` immutability 경고 1건
-- 2026-11-06 결정 화면(이번 주 테마·되돌아보기·커뮤니티·자녀 커뮤니티·포인트·일일 리포트 상세·관리자 주간 테마·꾸미기 아이템)은 구현 예정. 화면 ID 없이 이름·URL로 [사용자 흐름](../design/user-flow.md)에 표시([서비스 기획 방향](service-direction.md))
+- lint의 기존 `AdminOperations.tsx` immutability 경고 1건(재확인 필요)

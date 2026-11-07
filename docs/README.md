@@ -56,13 +56,15 @@
 | [scoring](report/scoring.md) | 모델 레지스트리·S3 로딩(#85), 활성 버전 이벤트(#86), M2 채점 API(#87), M1 비활성 계약(#88), M1 학습 코드 `ml/m1`(#263) |
 | [report](report/report.md) | 주간 리포트(#42·#50~#55), 기본 worker(#56), Outbox 격리·운영 CLI(#131), 관리자 재처리(#152), 이용권(#129), 종료 유실 복구(#132), 공개 설정(#206), 표시 설정(#209), 기능 간 DB 접근 제거(#252), 판정 요소 지표(#344) |
 | [frontend](report/frontend.md) | 웹 공통 기반·학생·학부모·관리자 화면(#7~#9·#59 이후), 번들 분할·실시간 알림, QR 시연 |
-| [testing-ci](report/testing-ci.md) | 계약 검사 CI(#143·#237), 실서버 E2E와 외부 스텁(#246), core 계정 HTTP 테스트(#136) |
-| [local-platform](report/local-platform.md) | kind·Calico·ingress·MinIO 설정과 자원 예산(#17), 앱 배포·네트워크·관측(#171), GitOps CI(#238), kind 통합(#273), 환경값·egress(#236) |
-| [issue-186-cd-approval-rollback](report/issue-186-cd-approval-rollback.md) | CD 배포 승인·이력·롤백: 계획 검증·후보 CI, 승인자 확정, main 릴리스 기준, 승인 후 적용·경로 확인·이력 실행기(#186) |
-| [issue-361-load-test](report/issue-361-load-test.md) | AWS 데모 core·NAT 1차 부하 시험(k6, LLM 스텁): 10~300명 단계 결과, DB 계층 우선 병목, 판정 동시성 한계, 개선 제안, 데모 변경·원복(#361) |
-| [db-dev-guide](report/db-dev-guide.md) | DB 기술 결정(#5)·확정 정책 반영(#19), 마이그레이션 CI(#13), Repository·SQLAlchemy 사용법(#14) |
+| [testing-ci](report/testing-ci.md) | 계약 검사 CI(#143·#237), 실서버 E2E와 외부 스텁(#246), core 계정 HTTP 테스트(#136), GitOps chart CI(#238) |
+| [local-platform](report/local-platform.md) | kind·Calico·ingress·MinIO 설정과 자원 예산(#17), 앱 배포·네트워크·관측(#171), kind 통합(#273), 환경값·egress(#236), 교차 확인·이관 설정 전달(#312) |
+| [aws-deploy](report/aws-deploy.md) | AWS 데모 구성 결정·설계와 남은 차이·실제 검증(#185), S3 Gateway·NAT 병목 점검(#212), Karpenter·앱 HPA(#211·#372) |
+| [ops-observability](report/ops-observability.md) | 운영 경보(Grafana→디스코드)·DLQ·월 LLM 비용·업무별 오류율·지연 규칙, Tempo 단일 trace(#185·#187) |
+| [cd-release](report/cd-release.md) | CD 배포 승인·이력·롤백: 계획 검증, main 릴리스 기준, 승인 후 적용·경로 확인·이력 실행기, 운영 실행 기록(#186) |
+| [load-test](report/load-test.md) | AWS 데모 부하 시험: 1차(#361, k6·LLM 스텁) 10~300명 단계 결과, DB 계층 우선 병목, 판정 동시성 한계, 개선 제안, 데모 변경·원복. 2차는 #384 |
+| [db-dev-guide](report/db-dev-guide.md) | DB 기술 결정(#5)·확정 정책 반영(#19), 마이그레이션 CI(#13), Repository·SQLAlchemy 사용법(#14), 서비스별 DB 계정(#230) |
 | [planning-decisions](report/planning-decisions.md) | 10/29 멘토링 결정·후속, 국어(M2) 우선·생각 유형 매핑·M2 중간 결과(#213) |
-| [service-direction](report/service-direction.md) | 2026-11-06 서비스 기획 방향 공유안 2·3장 결정: 커뮤니티·포인트·꾸미기·주간 테마·일일 리포트·리포트 대화 제안 정책(P20~P25)·개정안·남은 확인 사항 |
+| [service-direction](report/service-direction.md) | 2026-11-06 서비스 기획 방향 공유안 2·3장 결정: 커뮤니티·포인트·꾸미기·주간 테마·일일 리포트·리포트 대화 확정 정책(P20~P25, 구현 예정 #396)·개정·설계 판단·남은 확인 사항 |
 | [audit](report/audit.md) | develop 종합 검증 결함 원장, 최신 회차(b97cc67) 결과, 아키텍처 원칙 점검 기준 |
 
 ## 개발 규칙
@@ -70,7 +72,7 @@
 ### 작업 규칙
 - 모든 코드는 [설계 구조](design/architecture.md)의 서비스 경계·통신 방식·레이어 규칙·디렉토리 구조를 준수
 - 설계와 다른 구조가 필요하면 설계 문서를 먼저 갱신한 뒤 구현
-- 설계 변경 시 변경 내용과 근거를 `docs/report/`의 해당 주제 보고서에 절로 추가 (새 주제일 때만 새 파일)
+- 설계 변경 시 변경 내용과 근거를 `docs/report/`의 해당 주제 보고서에 절로 추가 (새 주제일 때만 새 파일, 파일 이름은 이슈 번호가 아닌 주제명)
 
 ### 커밋 규칙
 

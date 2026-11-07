@@ -1,11 +1,11 @@
-# 로컬 플랫폼·앱 배포 (#17·#171·#238·#273·#236)
+# 로컬 플랫폼·앱 배포 (#17·#171·#273·#236·#312)
 
 [아키텍처 4.1](../design/architecture.md#41-환경-구분)의 로컬 Kubernetes 환경을 구체화한 설정과 근거. 실행 절차는 [kind](../../infrastructure/kind/README.md)·[platform-data](../../infrastructure/gitops/charts/platform-data/README.md), 설정값은 [local values](../../infrastructure/gitops/environments/local/platform-data.yaml).
 
 ## 1. 환경 경계
 
 - 로컬은 kind 단일 노드에 PostgreSQL·RabbitMQ·Redis·MinIO, 운영은 RDS·S3와 RabbitMQ·Redis StatefulSet 설계 유지
-- 저장소 구성은 `platform-data` chart 하나로 관리하고 PostgreSQL·MinIO는 로컬 values에서 활성화. 앱 배포·Argo CD·관측·AWS 자원은 범위 밖
+- 저장소 구성은 `platform-data` chart 하나로 관리하고 PostgreSQL·MinIO는 로컬 values에서 활성화(1~6절). 앱 배포·관측은 7절 이후(#171), AWS 자원은 [aws-deploy](aws-deploy.md)
 - 로컬 API·HTTP·HTTPS는 loopback에만 노출. 다른 기기 접근은 별도 진입 설계 필요
 - 팀 개발 PC가 기준 PC(Windows 11, i5-1135G7 4코어·8스레드, 16GB, Docker Desktop WSL 2)와 같다는 전제
 
@@ -34,7 +34,7 @@
 
 ## 4. 초기화와 자격 증명
 
-- Compose MinIO는 [compose.minio.yaml](../../compose.minio.yaml)로 분리. Compose는 병합 전에 각 파일의 변수를 해석하므로 profile만으로는 `${VAR:?}` 검사를 피할 수 없음. 기본 실행에는 MinIO 이미지·포트·메모리를 추가하지 않음. 실행 절차는 [루트 README](../../README.md#minio-선택-실행)
+- Compose MinIO는 [compose.minio.yaml](../../compose.minio.yaml)로 분리. Compose는 병합 전에 각 파일의 변수를 해석하므로 profile만으로는 `${VAR:?}` 검사를 피할 수 없음. 기본 실행에는 MinIO 이미지·포트·메모리를 추가하지 않음. 실행 절차는 [루트 README](../../README.md#81-빠른-실행)
 - Secret 준비 스크립트는 PowerShell 7 이상(프로세스 인자 목록·UTF-8 stdin·JSON Hashtable·프로세스 트리 종료 API 사용). MinIO 사용자명 3자·비밀번호 8자 이상
 - RabbitMQ는 계정 기동 후 Job이 관리 API로 `definitions.json` 반영(계정을 JSON에 넣지 않으려고 순서 분리). `default_queue_type`을 전역 quorum으로 강제하지 않음(Pod별 exclusive 브로드캐스트 큐와 충돌 방지)
 - `init.sql`·`definitions.json`은 원래 위치에 두고 Helm `.Files`와 Compose 마운트가 같은 파일을 읽음
@@ -115,7 +115,7 @@ EKS 사용 확정(#171 PM 결정). AWS 자원·운영 값은 #185, 이미지 게
 - Grafana: 저메모리 첫 기동이 60초를 넘어 startup probe 300초, RollingUpdate가 Pod 두 개를 겹쳐 유지해 `Recreate`, CPU 한도 `250m`에서 throttling으로 startup 실패해 local 요청 `100m`·한도 `1`
 - AI·scoring·report에는 exporter가 없어 전체 앱 지표·trace는 수집되지 않음(core·learning Java agent 지표만 실제 확인)
 - Collector에 EKS용 선택적 OTLP traces → Langfuse `/api/public/otel` 전달 설정. endpoint·Basic 인증 헤더는 환경 values·기존 Secret에서만 주입, v4 실시간 수집 헤더 전송, local 비활성([Langfuse OTel 계약](https://langfuse.com/integrations/native/opentelemetry/migration-to-v4))
-- Langfuse는 #185가 준비한 EKS 관측 노드에 자체 호스팅. [공식 최소 자원](https://langfuse.com/self-hosting/configuration/scaling)(웹 4GiB·worker 4GiB·PostgreSQL 4GiB·ClickHouse 8GiB·캐시 1.5GiB)이 로컬 한도 초과
+- Langfuse는 EKS 자체 호스팅 예정(#379, 미배포). trace 저장은 Tempo로 정함([ops-observability](ops-observability.md)). [공식 최소 자원](https://langfuse.com/self-hosting/configuration/scaling)(웹 4GiB·worker 4GiB·PostgreSQL 4GiB·ClickHouse 8GiB·캐시 1.5GiB)이 로컬 한도 초과
 - AI Langfuse v4 계측: `LANGFUSE_ENABLED` 기본 false. true이면 public/secret key와 Collector `/v1/traces` endpoint가 모두 필요(빠지면 기동 오류). LLM 시도마다 generation 생성, call type·프롬프트 버전·모델·토큰·오류 코드만 기록. 원문·학생 ID 미전달, SDK span만 내보내도록 필터링. 기존 CloudEvents 사용량 데이터에는 `traceparent`만 연결
 
 ## 10. #171 검증 결과와 교훈
@@ -141,59 +141,7 @@ EKS 사용 확정(#171 PM 결정). AWS 자원·운영 값은 #185, 이미지 게
 
 ## 11. GitOps chart CI (#238)
 
-`.github/workflows/ci-gitops.yml`. `infrastructure/gitops/**`, migration 이미지가 복사하는 core·learning `db/migration/**`, 워크플로 파일 변경 PR과 `develop`·`main` push에서 실행.
-
-| job | 검사 | 실패 조건 |
-|---|---|---|
-| charts | Helm v4.3.1·kubeconform v0.8.0을 공식 배포본에서 받아 SHA256 대조 | 체크섬 불일치 |
-| charts | `environments/<env>/*.yaml`마다 `helm lint --strict`와 `helm template` | 렌더 실패, `values.schema.json` 위반, lint 경고 |
-| charts | 렌더 결과와 `argocd/`·`policies/` 원본 manifest의 kubeconform `-strict` | 스키마 위반, 정의되지 않은 필드 |
-| migrations | `migrations/*.Dockerfile`을 저장소 루트 context로 `docker build`(push 없음) | 빌드 실패 |
-
-- 렌더 조합은 Argo CD 정의를 따름. 환경 파일 이름과 같은 chart가 있으면(`observability`·`platform-data`) 그 chart, 나머지는 파일 이름을 릴리스 이름으로 `app-service` chart에. namespace는 app-service `app`, observability `observability`, platform-data `platform`. 새 chart 추가 시 워크플로의 namespace 대응도 추가(빠지면 CI 오류). 의존 chart가 있으면 `helm dependency build` 선행(현재 없음)
-- `app-service` 기본 values는 `image.repository`가 빈 문자열이라 단독 lint 시 스키마 `minLength` 실패. 환경별 이미지를 강제하는 설계이므로 실제 배포 조합으로만 lint
-
-### CRD 처리
-
-kubeconform은 기본 Kubernetes 스키마 → 공개 CRD 카탈로그 순으로 찾고, 둘 다 없는 종류만 `-ignore-missing-schemas`로 건너뜀(건너뛴 `Kind/이름 (파일)` 목록·경고 annotation 출력). CRD 스키마를 저장소에 복사하는 방식은 업그레이드마다 갱신이 필요해 제외.
-
-| 항목 | 고정 값 | 근거 |
-|---|---|---|
-| Kubernetes 스키마 | [yannh/kubernetes-json-schema](https://github.com/yannh/kubernetes-json-schema) `e0c72a1`의 `v1.35.8-standalone-strict` | kind 노드 이미지 v1.35.8과 같은 버전 |
-| CRD 스키마 | [datreeio/CRDs-catalog](https://github.com/datreeio/CRDs-catalog) `27233a5` | KEDA 2.21.0 CRD 갱신(2026-11-01) 포함, Argo CD `Application`·`ApplicationSet` 포함 |
-
-KEDA chart 버전을 올리면 카탈로그 커밋도 같은 버전 이후로 갱신. 카탈로그의 Argo CD 스키마와 v3.5.5 일치 여부는 미확인.
-
-### 로컬 실행
-
-Linux 셸(WSL 또는 컨테이너)에서 같은 버전의 두 도구 설치 후 저장소 루트에서 실행(워크플로 run 블록과 같은 명령).
-
-```bash
-cd infrastructure/gitops
-out=/tmp/gitops-rendered; mkdir -p "$out/local"
-for values in environments/local/*.yaml; do
-  release="$(basename "$values" .yaml)"
-  if [ -d "charts/$release" ]; then chart="$release"; else chart=app-service; fi
-  case "$chart" in app-service) ns=app ;; observability) ns=observability ;; platform-data) ns=platform ;; esac
-  helm lint --strict "charts/$chart" --namespace "$ns" -f "$values"
-  helm template "$release" "charts/$chart" --namespace "$ns" --kube-version 1.35.8 -f "$values" > "$out/local/$release.yaml"
-done
-kubeconform -strict -summary -kubernetes-version 1.35.8 \
-  -schema-location 'https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/{{.NormalizedKubernetesVersion}}-standalone{{.StrictSuffix}}/{{.ResourceKind}}{{.KindSuffix}}.json' \
-  -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/27233a506de0085e71c7f9702597806a7f95eb24/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
-  -ignore-missing-schemas "$out" argocd policies
-```
-
-migration 이미지는 `docker build -f infrastructure/gitops/migrations/core.Dockerfile .`처럼 확인.
-
-### 검사하지 않는 항목
-
-- Argo CD가 받는 외부 chart(KEDA 2.21.0, metrics-server 3.14.0) 렌더링
-- 실제 클러스터 적용, Argo sync, admission webhook·NetworkPolicy 동작(스키마 검사는 필드 형식만)
-- migration 이미지 실행·게시(#186)
-- values 오타는 렌더되는 경로에서만 드러남. 스키마가 있는 `app-service`만 values 단계에서 차단
-
-검증(2026-11-02): local 환경 파일 8개 lint·template 통과, 15개 파일 76개 리소스 Valid 76·Skipped 0. 타입 오류(`replicaCount: "one"`)는 helm lint, 스키마 없는 chart 필드 오타는 kubeconform이 실패 처리, 카탈로그에 없는 CRD는 건너뜀 목록으로 출력됨을 확인.
+[testing-ci 4절](testing-ci.md#4-gitops-chart-ci-238)로 옮김.
 
 ## 12. kind 클러스터 통합 (#273)
 
@@ -235,14 +183,14 @@ kind/GitOps local values가 `compose.yaml`보다 적어 Google 로그인·토스
 - 문서 테스트 키는 주문번호 조회(`GET /v1/payments/orders/{orderId}`)에 `NOT_FOUND_MERCHANT` 반환 → 상태 다시 확인·복구·관리자 대조 경로는 이 키로 검증 불가
 - 관측 chart가 없는 환경에서는 core·learning Java agent가 Collector 주소 경고를 남기지만 앱 동작에는 영향 없음
 
-## 13. 교차 확인·이관·content_3 설정 전달 (#312)
+## 14. 교차 확인·이관·content_3 설정 전달 (#312)
 
 기준 develop `e583f86`에서 감사 B41을 수정했다. 구현 전에 #69·PR #303, [AI 보고서 4.3](ai.md#43-판정-모델-교차-확인-69)의 11/03 담당자 확정 내용, 앱 Settings 및 [이관 로컬 체험](auth-account.md#격리-로컬-체험)을 대조했다. 이슈에 적힌 개별 보고서는 현재 두 주제 보고서로 통합되어 있다.
 
 ### 노출 범위와 기존 결정 적용
 
 - 플래그뿐 아니라 기존 #69 설정 10개(판정 마감·scoring timeout·reserve, M2 플래그·서술/논술 낮은·높은 경계, M1 플래그·신뢰도)를 Compose·`.env.example`·GitOps local AI values에 전달한다. 기존 Settings가 이미 환경 변수로 받는 값이며, 시간 배분·불일치 기준이 담당자 확정 보고서에 있어 새 판정 정책은 정하지 않았다. 값과 기본 false는 그대로다. 이 범위 선택은 기존 구현을 배포 설정에 노출하는 결정이며 추가 담당자 승인을 받았다는 뜻은 아니다.
-- GitOps local core에 `APP_GUARDIAN_TRANSFER_ENABLED=false`, scoring에 `M2_CONTENT3_RULE_ENABLED=false`를 추가한다. Compose·`.env.example`에 있던 값과 일치한다. 실제 활성화·원복은 [README](../../README.md#판정-교차-확인이관content_3-설정)의 서비스별 설정 방법을 따른다.
+- GitOps local core에 `APP_GUARDIAN_TRANSFER_ENABLED=false`, scoring에 `M2_CONTENT3_RULE_ENABLED=false`를 추가한다. Compose·`.env.example`에 있던 값과 일치한다. 실제 활성화·원복은 [README](../../README.md#64-구현과-활성화-상태)의 서비스별 설정 방법을 따른다.
 - 기존 #69 계약에서 M2 플래그 off도 scoring을 호출한다. 따라서 transfer-local은 scoring 제외 프로필을 제거하고 AI의 `service_healthy` 의존성을 추가한다. 모델 미등록/승인 범위 밖이면 실제 scoring의 `active:false` 응답을 따른다. keywords·essayType을 제거하거나 실패를 비활성으로 위장하지 않는다. scoring 호스트 포트는 계속 닫아 둔다.
 - scoring을 끈 채 판정을 계속하게 만드는 정책(I1, 현재 #305 A20·B36)은 미확정이므로 변경하지 않았다. 임의 중지·장애는 기존 `503 SCORING_UNAVAILABLE`이다. 이번 변경은 함께 실행하여 해당 단절을 없애는 구성 보완이며 #305 해결로 집계하지 않는다.
 - API·DB·모델 가중치·score_cuts·승인 조건·운영 배포는 변경하지 않았다. 이관 체험은 기존 별도 프로젝트·볼륨·네트워크를 유지한다.

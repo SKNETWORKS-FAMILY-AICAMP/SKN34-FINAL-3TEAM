@@ -13,7 +13,7 @@
 | 결과 결정 위치 | `judgment/service.py` | 업무 판단은 service, `verifier.py`는 원문 대조만 |
 | `versions.model` | M2 미활성 판정·되묻기는 LLM 모델 ID, M2 활성 판정은 M2 버전, 규칙 판정은 null | 제공자를 바꿔도 결과를 만든 모델을 남김 |
 | 되묻기 요청 `grade` 필수 | 누락 시 400 | 선택값이면 빠뜨려도 드러나지 않고 학년에 맞지 않는 말투가 됨 |
-| 사용량 이벤트 `traceparent` | null | 공통 `UsagePublisher`가 받지 않음(미정) |
+| 사용량 이벤트 `traceparent` | 요청 context 값 | `publisher.py`가 `context.traceparent`를 전달 |
 
 ### 기준이 없어 정한 값 (`app/config.py`, 환경 변수로 변경 가능)
 
@@ -32,10 +32,10 @@
 
 ### OpenAI 전환
 
-- 기본 제공자 `LLM_PROVIDER=openai`, `OPENAI_MODEL=gpt-6.1-terra`(`config.py`·`compose.yaml`·`.env.example`). Claude는 `LLM_PROVIDER=anthropic`으로 계속 사용 가능. 제공자별 클래스로 Claude 전용 기능(추론 강도·대체 모델·스키마 강제) 유지
+- 기본 제공자 `LLM_PROVIDER=openai`, `OPENAI_MODEL=gpt-6-luna`(`config.py`·`compose.yaml`·`.env.example`). Claude는 `LLM_PROVIDER=anthropic`으로 계속 사용 가능. 제공자별 클래스로 Claude 전용 기능(추론 강도·대체 모델·스키마 강제) 유지
 - 실제 호출 확인: 판정 근거 추출·되묻기 모두 JSON 스키마 통과, LLM 1회 15초(P12) 안
 - 수정한 버그: compose가 빈 `OPENAI_BASE_URL`을 넘기면 SDK가 빈 주소를 사용 → 주소가 비면 `https://api.openai.com/v1`을 직접 전달
-- 남은 확인: `gpt-6.1-terra`와 Claude의 판정 결과 유형·되묻기 4유형 비교(현재 1건씩만 확인)
+- 남은 확인: `gpt-6-luna`와 Claude의 판정 결과 유형·되묻기 4유형 비교(현재 1건씩만 확인)
 
 ### 판정 품질 평가 도구 (#199)
 
@@ -44,7 +44,7 @@
 - 묶음: 전체·범위 키별·미션별(기준 미달 미션은 판정하지 않고 기록, 기능명세 3.5)·미션/요소별 일치율(검증 통과 요소만 충족 표시, NFR-AIQ-01 → `judgeVerified` 결정 근거)
 - 출력: 버전별 요약 JSON(학생 원문 없음, 학년·유형 묶음 키 `judgment/grade-N/<inputType>`), `--baseline`으로 이전 결과와 차이, 모델 레지스트리 `evaluation` 9개 필드(api-spec 5.2). `evaluatedScopes`는 판정 프롬프트 등록·활성화 범위 `ai/judgment`(api-spec 4.2, #313)
 - 정한 값: 계산 정확성은 "해당 없음"(판정은 계산 없음), 학습·평가 분리는 "학습 없는 프롬프트, 평가 답안은 프롬프트에 미포함"으로 기록
-- 남은 일: 실제 평가 자료(P11, 5미션×20답안×평가자 2명) 준비 담당·일정, 평가 미션 범위·QWK 허용 기준(NFR-AIQ-06, 11/22) 확인 후 `judge@2` 실제 기준선 1회 실행·이 절에 결과 추가
+- 남은 일(#199는 종료됐으나 기준선은 미실행): 실제 평가 자료(P11, 5미션×20답안×평가자 2명) 준비 담당·일정, 평가 미션 범위·QWK 허용 기준(NFR-AIQ-06, 11/22) 확인 후 `judge@2` 실제 기준선 1회 실행·이 절에 결과 추가
 
 ## 2. 분석 대화 에이전트 (LangGraph)
 
@@ -78,8 +78,8 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
 - 대조 실패(숫자가 계산값·기록 수·기간 날짜에 없음, 한글 수 표현, 따옴표 인용 불일치, 레벨·등급·점수·사고력 표현) → `source: TEMPLATE`, `fallback.reason: VERIFICATION_FAILED`
 - LLM 장애 → 규칙 응답(`AI_UNAVAILABLE`), 기록 부족 → 기간·기록 수만 안내(`fallback` null), 조회 실패 → `error`(빈 기록으로 대체하지 않음)
 - 체크포인터 없음(이전 대화는 core가 `history`로 전달), 전체 마감 `ANALYSIS_DEADLINE` 110초(core 전체 120초 안). 첫 이벤트는 classify 시작 `status`라 core 첫 응답 20초 조건과 무관
-- core와 확인할 계약: `result`의 `messageId`·`scope.changed`는 core가 붙임. `clarification` `{reason: OTHER_CHILD|DIFFERENT_PERIOD|UNCLEAR, message, current}`, `error` `{code, message, retryable}`(code: `RECORDS_UNAVAILABLE`·`RECORDS_NOT_READY`·`RECORDS_INVALID`·`FORBIDDEN`·`INTERNAL_ERROR`). 전후 변화 근거는 `answerVersion`·`submittedAt`이 null(core가 learning evidence 값으로 채움)
-- 남은 작업: 유형별 대조 통과율 확인, 실제 learning 연동, core 대화 저장 연결
+- core 계약(#41에서 반영): `result`의 `messageId`·`scope.changed`는 core가 붙임. `clarification` `{reason: OTHER_CHILD|DIFFERENT_PERIOD|UNCLEAR, message, current}`, `error` `{code, message, retryable}`(code: `RECORDS_UNAVAILABLE`·`RECORDS_NOT_READY`·`RECORDS_INVALID`·`FORBIDDEN`·`INTERNAL_ERROR`). 전후 변화 근거는 `answerVersion`·`submittedAt`이 null(core가 learning evidence 값으로 채움)
+- 남은 작업: 유형별 대조 통과율 확인(실제 learning 연동·core 대화 저장은 #41·#65에서 완료)
 
 ### #66 스트리밍·근거 계약 (2026-10-29)
 
@@ -97,7 +97,7 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
 API 변경(`docs/design/api-spec.md` 1장 Evidence·3.3·4.2, `contracts/openapi/ai-service.yaml`):
 - `evidence[].kind: ANSWER | REFLECTION` 추가(필수)
 - `delta` 전송으로 변경(이벤트 순서 `status* → delta* → result → done`)
-- 소비 측(core #41) 변경 필요: `kind = REFLECTION` 근거는 `answerId` null 허용, 재조회는 `/internal/records/students/{studentId}/attempts/{attemptId}`의 `reflection`. `message_evidence.answer_id` 저장 방식은 #41에서 결정
+- 소비 측(core #41) 반영: `kind = REFLECTION` 근거는 `answerId` null 허용, 재조회는 `/internal/records/students/{studentId}/attempts/{attemptId}`의 `reflection`. `message_evidence.answer_id`는 nullable로 저장(#41)
 - learning 변경 없음. ai의 돌아보기 질문 조회가 `thinking-activities` → `attempts` 전체 페이지로 바뀜(같은 P08 집계 대상)
 - 안내 응답(기록 없음·비교 기록 부족·지원하지 않는 질문)의 `source`·`fallback`·`verification` 의미는 #67에서 정리(이번 변경 없음)
 
@@ -236,7 +236,7 @@ API는 이미 `evaluatedScopes`(등록)와 `scopes`(활성화·복귀)를 나눠
 - 활성화 범위는 해당 버전의 `evaluatedScopes`를 체크박스로 보여 주고 직접 입력하지 않는다. 복귀는 원 `approval.scopes`만 보여 준다
 - 범위를 고를 때 같은 카드에 평가셋 ID·버전, 비교 보고서, 사람 검토 기록, `limitations`를 함께 보인다. 평가 범위 중 고르지 않은 범위는 "평가했지만 적용하지 않음"으로 표시한다
 - 기본값은 아무것도 선택하지 않는다. 평가 범위 전체를 미리 선택하는 대안은 사람이 범위를 고르는 의미가 약해져 추천하지 않는다
-- `[결정]` 범위 후보 목록: 웹 domain에 알려진 소비자 scope 상수(M2 `judgment/grade-{4,5,6}/{narrative,essay}`, ai 7장 다섯 개)를 두고 목록 밖 값은 **경고만** 한다(새 소비자 등록을 막지 않음). 검토한 대안: core scope 목록 API, 자유 입력만 유지
+- `[결정]` 범위 후보 목록: 웹 domain에 알려진 소비자 scope 상수(M2 `judgment/grade-{4,5,6}/{narrative,essay}`, ai 7장 여섯 개)를 두고 목록 밖 값은 **경고만** 한다(새 소비자 등록을 막지 않음). 검토한 대안: core scope 목록 API, 자유 입력만 유지
 
 #### 3.1.4 등록 전 검증과 오류 표시
 
@@ -366,8 +366,8 @@ uv run --frozen python ../../scripts/verify_scoring_m2.py --archive <m2_models.t
 | 항목 | 결정 |
 |---|---|
 | 불일치 기준 | M2 `scores` 평균과 LLM 결과 비교. `CORRECT`인데 평균이 낮은 경계 이하, `RETHINK`인데 높은 경계 이상이면 불일치. `PARTIAL`은 불일치 아님. 경계는 설정값(서술 2.0/4.0, 논술 1.0/2.0), M2 담당 확인 전 임시값 |
-| 보류 적용 | `M2_CROSS_CHECK_ENABLED` 기본 false. 켜면 `HELD(MODEL_DISAGREEMENT)`·`HELD(LOW_CONFIDENCE)`. 꺼져 있으면 점수를 기록만 하던 동작은 #305에서 "부르지 않음"으로 바뀜(4.3.1) |
-| scoring 장애 | #305에서 변경(4.3.1): 503 대신 LLM 판정만 200, `modelScores.skipped`에 `SCORING_UNAVAILABLE`(5xx·시간 초과·연결 실패) 또는 `SCORING_REJECTED`(4xx·계약 밖 응답). 비활성(`{active:false}`)과 구분 |
+| 보류 적용 | `M2_CROSS_CHECK_ENABLED` 기본 false. 켜면 `HELD(MODEL_DISAGREEMENT)`·`HELD(LOW_CONFIDENCE)`. 꺼져 있으면 scoring을 부르지 않음(#305, 4.3.1) |
+| scoring 장애 | LLM 판정만 200(#305, 4.3.1, 이전에는 503), `modelScores.skipped`에 `SCORING_UNAVAILABLE`(5xx·시간 초과·연결 실패) 또는 `SCORING_REJECTED`(4xx·계약 밖 응답). 비활성(`{active:false}`)과 구분 |
 | 입력 출처 | `question`은 mission_version.question, `keywords`·`essayType`은 learning V9 `rubric_version` 새 칸(채점 입력이라 기준표와 함께 바뀌고 검토·게시됨) |
 | 점수 저장 | ai 응답 `modelScores`를 learning이 `judgment.model_scores`에 그대로 저장, 학생 화면 비노출 |
 | M1 | 비활성 유지. ai 호출 분기와 대역 테스트만, `M1_CHECK_ENABLED` 기본 false, learning은 M1 입력 미전송 |
@@ -387,8 +387,7 @@ uv run --frozen python ../../scripts/verify_scoring_m2.py --archive <m2_models.t
 | 판정 마감 | `JUDGE_DEADLINE=33` | 33초 |
 | learning 35초 대비 여유 | 네트워크·직렬화 | 2초 |
 
-- 3초 몫은 M2 예열 후 HTTP 포함 최대 1.68초([scoring](scoring.md) 3장)의 약 1.8배. 첫 요청 8.4초가 다시 나오면 LLM 최악 경로와 겹칠 때 503(`retryable:true`). 남은 시간이 1초 미만이면 호출하지 않고 503. 교차 확인 입력이 없는 판정은 LLM이 33초 전체 사용
-- 위 시간 배분의 "남은 시간 1초 미만이면 503"과 "첫 요청 8.4초면 503"은 #305 이후 `skipped: SCORING_UNAVAILABLE`로 LLM 판정만 쓰는 것으로 바뀜(4.3.1)
+- 3초 몫은 M2 예열 후 HTTP 포함 최대 1.68초([scoring](scoring.md) 3장)의 약 1.8배. 첫 요청 8.4초가 다시 나오거나 남은 시간이 1초 미만이면 scoring을 건너뛰고 `skipped: SCORING_UNAVAILABLE`로 LLM 판정만 씀(#305, 4.3.1. 이전에는 503). 교차 확인 입력이 없는 판정은 LLM이 33초 전체 사용
 - 실제 모델 전체 측정(로컬 Docker, 서술 3.0·논술 3.1, learning 피드백 요청 기준): 예열 후 대역 LLM 최대 0.34초, 실제 OpenAI LLM 중앙값 3.8~7.3초·최대 9.0초, LLM 최악 경로(첫 요청 시간 초과 → 재시도) 약 29.8초로 모두 200·`model_scores` 저장. 배포 환경·동시 요청 부하에서는 재측정 필요
 
 
@@ -441,7 +440,7 @@ uv run --frozen python ../../scripts/verify_scoring_m2.py --archive <m2_models.t
 | 돌아보기 난이도 | `EASY·NORMAL·HARD` 코드를 프롬프트에서 "쉬웠어·보통·어려웠어"로, 표시값이 오면 그대로 | report 저장 payload는 코드 유지 |
 | 빈 서술·빈 저녁 질문 | 503 `AI_UNAVAILABLE`(`retryable: true`) | report는 AI 실패를 `FAILED`로 처리 |
 
-- `model.version.activated` 수신 시 서술 프롬프트 버전 교체는 #68에서 구현(7장). 후속: 실제 LLM 연동 E2E
+- `model.version.activated` 수신 시 서술 프롬프트 버전 교체는 #68에서 구현(7장). 실제 LLM 연동은 [learning 19절](learning.md#19-실행-모델-가상-스레드-비활성-201)·[report 19절](report.md#19-판정-요소-지표-연결-344)에서 확인
 
 ## 6. scoring 기동 모델 로딩 (#85)
 
@@ -458,6 +457,7 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 | `analysis` | `ai/analysis` | `analysis_agent/prompts.py`, `analysis@2` |
 | `reportNarrative` | `ai/report-narrative` | `report_narrative/prompts.py`, `report@1` |
 | `reportTemplate` | `ai/report-template` | `analysis_agent/template_prompts.py`, `analysis-template@1` (#280) |
+| `missionDraft` | `ai/mission-draft` | `mission_draft/prompts.py`, `mission-draft@1` (#354) |
 
 각 버전은 실제 system 문구와 user 본문 구성 함수를 이미지 코드에 함께 넣은 뒤에만 활성화할 수 있다. 현재 이미지는 위 기본 버전의 본문만 보유한다. core snapshot에 해당 활성 항목이 없으면 기본 버전을 사용한다. 보유하지 않은 활성 버전은 다른 본문에 새 버전명만 붙이지 않고 해당 기능 요청과 `/internal/versions`를 `503 AI_PROMPT_VERSION_UNAVAILABLE`로 거부한다. 구독·core snapshot·이벤트 조정 또는 본문 준비가 되지 않으면 `/health/ready`의 `versions`는 DOWN이다. 요청 시작 때 본문·버전 참조를 잡아 분석의 분류/답변 두 LLM 호출과 되묻기 재생성까지 같은 버전을 사용한다.
 
@@ -487,7 +487,7 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 | 항목 | 정한 내용 | 근거 |
 |---|---|---|
 | 호출 단위 | 요청 1번에 LLM 생성 1회 + 검사, 반복하지 않음 | 반복을 ai 안에서 하면 `LlmClient` 최악 31초(15 + 1 + 15, `config.py`)가 3번이라 learning→ai 35초(P12)를 넘음. 반복은 learning 주기 작업이 이전 실패 사유(`previousFailures`)를 넣어 다시 부름 |
-| 마감 | ~~되묻기와 같은 33초~~ → 63초, LLM 60초 1회 (#353, 9.2) | 설계 때는 `followup_deadline` 선례로 learning→ai 35초 안. 실제 성취기준 실측 뒤 미션 초안만 P12 예외로 늘림 |
+| 마감 | 63초, LLM 60초 1회(#353에서 되묻기와 같은 33초 → 63초, 9.2) | 설계 때는 `followup_deadline` 선례로 learning→ai 35초 안. 실제 성취기준 실측 뒤 미션 초안만 P12 예외로 늘림 |
 | ai 검사 | `REQUIRED`(필수 항목·입력 방식별 선택지·정답 키·예시 답), `QUESTION_LENGTH`(학년별 길이), `LEAK`(질문·안내·생각 열기 질문 속 정답 키·금지어, 안내·생각 열기 질문 속 예시 답) | 기획서 6.2 ③ "판정 엔진의 질문 검사 재사용" → `followup/leak_guard.find_leaks`를 학생 답 없이 씀(`reason`은 `ANSWER_KEY`·`FORBIDDEN_TERM`·`EXAMPLE_ANSWER` 그대로) |
 | learning 검사 | 성취기준 실재·요소 code 규칙·요소 `standardCode`·입력 방식 모양 | 성취기준 표와 게시 검사 규칙이 learning에 있음. ai가 표를 따로 들고 있지 않게 |
 | 입력 | 성취기준 문장, (있으면) 성취수준 문장, 생각 유형, 그 유형 표준 요소 코드·공통 설명(learning이 FN 1.5에서 채움), 학년, 입력 방식 | 학생 정보·학생 답 없음(이슈 지침). 성취수준 문장은 이용 조건 확인 전까지 없음 |
@@ -510,7 +510,7 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 | 들어가면 좋은 생각 | 생각 미션(서술·풀이 단계·논술)은 유형별로 정함(프롬프트 `요소 규칙`, `prompts.ELEMENT_RULE`). 분석하기 `ANALYZE_REASON`, 따져 보기 `EVALUATE_PERSPECTIVE`, 새로 만들기 `CREATE_CONNECT`, 문제 해결하기 `SOLVE_CHECK`, 돌아보기 `REFLECT_CONNECT`가 들어가면 좋은 생각이고 나머지 유형 요소는 필수. 따져 보기 논술은 세 요소 모두 필수. 정답형·정답 요소는 false | 설계에는 개수·종류 규칙이 없다(functional-spec 1.5 "미션 요소마다 정한다"). 0~1개를 LLM에 맡기면 실측 12건 모두 0개, "더 깊은 생각 1개"로 두면 논술 반론을 들어가면 좋은 생각으로 정하는 등 시드와 달랐다. 그래서 데모 시드 20문항의 유형별 지정을 기본값으로 삼았다(새로 만들기 4개·문제 해결하기 3개 모두 같고, 돌아보기 4개 중 3개·따져 보기 서술 2개·분석하기 서술 1개가 같음. 논술 12번은 세 요소 필수, 17번은 세 요소 필수에 넷째 고유 요소만 들어가면 좋은 생각이며 초안은 고유 요소를 만들지 않음). 들어가면 좋은 생각은 판정에서 필수가 아니므로(`judgment/service.py` `_result`) 시드처럼 질문이 묻는 요소일 수도 있다. 관리자가 검토에서 바꿀 수 있음 |
 | 노출 검사 공유 | `followup/leak_guard.find_leaks`가 새 `find_text_leaks`(기준표 객체 없이 글 하나 검사)에 위임, 되묻기 동작은 같음 | 이슈 지침 "새 공통 라이브러리 만들지 않음" |
 | 실패 응답 | 형식 밖 출력(`LLM_INVALID_OUTPUT`)은 `502 AI_BAD_RESPONSE`, 그 밖 LLM 실패는 `503 AI_UNAVAILABLE`, 둘 다 `retryable=true` | 기존 `AI_*` 코드. learning은 둘 다 AI 호출 실패로 셈 |
-| 출력 상한 | `mission_draft_max_tokens` ~~4096~~ → 8192 (#353) | `gpt-6.1-terra` 출력 673~1,465토큰, `gpt-6-luna`는 최대 3,514토큰으로 4096에 가까움(9.2) |
+| 출력 상한 | `mission_draft_max_tokens` 8192(#353에서 4096 → 8192) | `gpt-6.1-terra` 출력 673~1,465토큰, `gpt-6-luna`는 최대 3,514토큰으로 4096에 가까움(9.2) |
 
 - 이슈와 다른 점: 예시 답 노출 검사 범위와 들어가면 좋은 생각 규칙(위 표)은 실측 뒤 정했다. 들어가면 좋은 생각 규칙은 시드 작성 기준을 따른 기본값이라, 기준표 내용 담당이 정하면 `ELEMENT_RULE`만 바꾸면 된다. 나머지 계약은 api-spec 4.2 그대로다.
 - 사용량 `MISSION_DRAFT`: core 이벤트 스키마·enum·CHECK에 아직 없어(#355) core 소비자가 거부하고 DLQ에 남는다. 초안 생성 자체는 막지 않는다. #355 반영 뒤 DLQ 메시지는 다시 넣을 수 있다. → #355에서 core가 받도록 반영([learning 23절](learning.md#23-core-성취기준미션-초안-프록시와-사용량-mission_draft-355)).

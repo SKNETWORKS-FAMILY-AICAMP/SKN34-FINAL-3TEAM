@@ -171,9 +171,9 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 5회차와 같�
 | 5회차 OpenAPI | 유지 | `STUDENT_RECORDS_PRIVATE`가 core OpenAPI에 0건(C59) |
 | 5회차 요구사항 차이 | 유지 | FN-AGT-12 수학 점검 예시 질문 차이, api-spec 2.4에 현재 동작 기재 |
 | 5회차 테스트 공백 | 유지 | core HTTP 테스트 없음: `/attempts/{id}/comparison` 프록시, sharing-preferences(T1) |
-| 5회차 CI | 유지 | main(`91664fd`)에 `e2e.yml` 없음. `tests/*-browser.mjs`·JDK 21 `verify_*`는 수동 |
+| 5회차 CI | 유지 | main(`91664fd`)에 `e2e.yml` 없음. `tests/*-browser.mjs`·JDK 21 `verify_*`는 수동. 이후 `e2e.yml` main 반영(2026-11-07 확인) |
 | 5회차 수동 브라우저 스크립트 | 원인 확인 | 계정 단계 실패 재현. 목업 자녀 별명이 이미 `서윤`이고 #134 이후 화면은 바뀐 필드만 보내므로 "바뀐 내용이 없습니다." 표시. 스크립트 입력값 문제(B43) |
-| 4회차 인프라·설계 차이 | 유지 | #211(Karpenter)·#212(S3 Gateway) 열림 |
+| 4회차 인프라·설계 차이 | 유지 | #211(Karpenter)·#212(S3 Gateway) 열림. 이후 둘 다 종료([aws-deploy](aws-deploy.md)) |
 
 ### 3.3 발견 항목과 처리
 
@@ -184,7 +184,7 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 5회차와 같�
 | B38 | 결함(낮음) | `/guardian-transfers*`가 `PublicAuthFilter` 동의 요구 대상이라, 서비스가 동의 없이 허용한 취소(`{id}/cancel`·`cancel-outgoing`)가 403 `CONSENT_REQUIRED`. 필수 동의가 빠진 학부모는 탈퇴 409 `TRANSFER_PENDING`과 취소 403 사이에서 막힘. core `account/controller/PublicAuthFilter.kt:49,58-67`, `guardianship/service/GuardianTransferService.kt:101-116`, `AccountWithdrawalService.kt:28` | #307 해결: 본인 목록·거절·취소의 정확한 메서드·경로만 동의 회복 경로로 허용. 인증·학부모 역할·소유권과 신규 이관의 동의 검사 유지. 동의 철회 뒤 취소→명시적 탈퇴·연결 해제·삭제 HTTP 검사 통과. 웹 온보딩·계정·이관 화면과 MSW도 회복 경로 반영 |
 | B39 | 결함(낮음) | `GuardianTransferController`는 `app.guardian-transfer.enabled`일 때만 등록되지만 `GuardianTransferAccessService` 대기 검사는 항상 동작. 플래그를 끄면 남은 PENDING 행이 탈퇴·연결 해제·삭제를 409로 막고 취소 API는 404. `ChildManagementService.kt:47,55` | #307 해결: 컨트롤러·웹 관리 경로는 항상 등록하고 신규 대상 조회·요청·수락만 플래그로 제한(기본 false 유지). PENDING 차단은 유지하며 본인이 취소·거절해 정리, 자동 탈퇴·삭제 없음. core 전체 497개·기능 on/off HTTP 검사 및 웹 Chrome on 5개/off 3개 통과. 상세는 auth-account 6절 |
 | B40 | 결함(낮음) | `PUT /me/guardian-password`가 비밀번호 규칙 검사(422)를 역할 확인(403)보다 먼저 수행(#277과 같은 유형). core `GuardianPasswordService.kt:28-30` | #310 해결: `set`이 `accounts.lock`(학부모·활성 세션 확인)을 규칙 검사보다 먼저 수행하고, 규칙 검사는 여전히 재인증 grant 소비 전. MSW는 이미 `parentGuard`가 먼저. api-spec 3절 표·core OpenAPI 설명에 순서 기재. 테스트: `AccountManagementTest`(학생 세션 + 잘못된·올바른 값 → 403 `FORBIDDEN`, 저장 없음) |
-| B41 | 설정(낮음) | ai #69 설정(`M2_CROSS_CHECK_ENABLED`·`M1_CHECK_ENABLED`·M2 임계값·`M1_MIN_CONFIDENCE`·`JUDGE_DEADLINE`·`SCORING_TIMEOUT`·`SCORING_RESERVE`)이 compose·`.env.example`·GitOps 어디에도 없어 `.env`로 켤 수 없음. GitOps local core `APP_GUARDIAN_TRANSFER_ENABLED`·scoring `M2_CONTENT3_RULE_ENABLED` 없음(compose·`.env.example`에는 있음, 기본 false). `compose.transfer-local.yaml`은 scoring을 끄지만 ai `SCORING_URL`은 유지. ai `config.py:47-58` | #312 해결: 기존 #69 설정 10개를 Compose·예제·GitOps local에 기본값 그대로 전달. core 이관·scoring content_3 기본 false 추가. transfer-local은 scoring을 함께 실행하고 AI가 준비 상태를 기다리도록 변경(포트 비공개·입력 유지). 장애 우회는 #305 범위로 유지. 계약 155개·AI 344개, local values 8개 Helm lint·template 통과. [local-platform 13절](local-platform.md#13-교차-확인이관content_3-설정-전달-312) |
+| B41 | 설정(낮음) | ai #69 설정(`M2_CROSS_CHECK_ENABLED`·`M1_CHECK_ENABLED`·M2 임계값·`M1_MIN_CONFIDENCE`·`JUDGE_DEADLINE`·`SCORING_TIMEOUT`·`SCORING_RESERVE`)이 compose·`.env.example`·GitOps 어디에도 없어 `.env`로 켤 수 없음. GitOps local core `APP_GUARDIAN_TRANSFER_ENABLED`·scoring `M2_CONTENT3_RULE_ENABLED` 없음(compose·`.env.example`에는 있음, 기본 false). `compose.transfer-local.yaml`은 scoring을 끄지만 ai `SCORING_URL`은 유지. ai `config.py:47-58` | #312 해결: 기존 #69 설정 10개를 Compose·예제·GitOps local에 기본값 그대로 전달. core 이관·scoring content_3 기본 false 추가. transfer-local은 scoring을 함께 실행하고 AI가 준비 상태를 기다리도록 변경(포트 비공개·입력 유지). 장애 우회는 #305 범위로 유지. 계약 155개·AI 344개, local values 8개 Helm lint·template 통과. [local-platform 13절](local-platform.md#14-교차-확인이관content_3-설정-전달-312) |
 | B42 | 결함(낮음) | #199 평가 러너 `evaluatedScopes`가 M2 모델 scope(`judgment/grade-N/{type}`, api-spec 4.3.1)인데 평가 대상은 LLM 판정 프롬프트(scope `ai/judgment`, api-spec 4.2). 산출 `evaluation`으로 PROMPT 등록 후 `ai/judgment` 활성화 시 core `evidence.covers` 실패 400. `evaluation/runners/judgment_eval.py:60-62,267`, core `ModelVersionService.kt:46` | 해결(#313: `evaluatedScopes` = `["ai/judgment"]`, 학년·유형별 지표는 요약 보고서 `scopes`에만) |
 | B43 | 테스트(낮음) | `tests/requirements-browser.mjs`가 목업 자녀 별명과 같은 `서윤`을 입력해 저장 성공 문구를 기다림. 화면은 "바뀐 내용이 없습니다." 표시 후 15초 시간 초과(`requirements-browser.mjs:44-46`, `AccountForms.tsx:285-293`) | #318 해결: 새 별명 `서윤이`로 저장 성공 경로를 확인하고 삭제 확인 별명도 같은 값 사용. 끝까지 실행하며 드러난 후속 실패도 정리: 관리자 메뉴 링크의 기간 쿼리(`/admin/support?from=…`)를 링크 선택에 허용, 관리자 화면에 `/review` 링크가 없어 링크가 없으면 새로고침 없이 앱 안에서 이동(목업 상태 유지), 시연 로그인 후 화면 이동을 기다려 다음 이동이 덮어써지지 않게 함, 문의 답변 단계를 현재 화면 문구(`문의 답변과 공지 관리`·`문의 선택`·`답변 저장`)에 맞춤. `VITE_API_MOCK=true` 개발 서버에서 9단계 모두 통과 |
 | C45 | 코드↔문서 | #289 오류 코드 6종(`TRANSFER_PENDING`·`TRANSFER_ALREADY_RESOLVED`·`TRANSFER_CHILD_UNAVAILABLE`·`TRANSFER_RECIPIENT_NOT_FOUND`·`TRANSFER_ACTIVITY_IN_PROGRESS`·`TRANSFER_PAYMENT_BLOCKED`)이 api-spec 1.3·OpenAPI 응답 설명에 없음. 탈퇴·연결 해제·삭제 요청 행에 `TRANSFER_PENDING` 409 미기재 | #308 반영: api-spec 오류 6종·기존 3개 작업의 대기 차단 및 OpenAPI 경로별 404/409 설명. 계약 검사 통과 |
@@ -205,7 +205,7 @@ Windows 11 로컬 실행. CI와 같은 명령, core·learning은 5회차와 같�
 | T1 | 테스트 공백 | core HTTP 테스트 없음: `/attempts/{id}/comparison` 프록시, `/students/me/sharing-preferences`(서비스·DB 테스트만, 5회차 이월) | #317 해결: `LearningProxyIntegrationTest`(비교 프록시가 검증된 학생 문맥으로 `/internal/attempts/{id}/comparison` 전달·no-store·learning 409 `REVEAL_CONDITION_UNMET` 보존, 학부모는 공개·비공개 모두 403 `FORBIDDEN`이며 learning 미호출), `StudentSharingHttpTest`(학생 조회·변경·누락/null 400, 학부모의 학생 경로 403·연결 자녀만 조회, 학생의 학부모 경로 403, 위조 토큰 401). 남은 차이: api-spec 3절 표(276행)는 비교를 "학생·학부모(공개 설정을 따름)"로 적지만 core 코드·OpenAPI는 학생 전용. 학부모 비교 제공 여부 결정 필요 |
 | D26 | 문서 간 | api-spec 929행 번호 없는 `### #289` 절(#245 번호 체계 정리 회귀) | #308 반영: 번호 없는 #289 절을 5.17로 이동, 기존 5.1~5.16 번호 유지 |
 | D27 | 문서 간 | FN-ACC-11 "다른 연결 계정 권한 영향 확인"이 P02(학생당 보호자 1명)·V26 부분 UK와 모순 | #309 해결: FN-ACC-11 예외 처리를 "해제·삭제 후 그 자녀를 볼 다른 학부모 없음 안내, 넘기려면 이관, 이관 대기 중 해제·삭제 불가"로 정정. FN-ACC-12에 탈퇴 전 이관·대기 중 탈퇴 차단 추가 |
-| D28 | 문서 간 | `docs/README.md` 색인에 `issue-228-m2-model-compat.md` 없음, issue-168 항목에 #251 절 미언급 | #316 확인: 문서 정리로 issue-228·issue-168 보고서가 주제 보고서에 통합되어 별도 파일이 없음. 색인 ai 항목에 "M2 3.0·3.1 호환(#228)"(ai.md 4.1), core-gateway 항목에 "레이어·예외 경계(#168·#249~#251)"(core-gateway.md 10장 #251 절)가 있어 추가 수정 없음. 같은 PR에서 추적 Markdown 50개의 상대 링크 330개를 검사해 깨진 앵커 2개(`issue-185-aws.md` → prod README 재배포 절 제목 변경)를 정정, 깨짐 0 |
+| D28 | 문서 간 | `docs/README.md` 색인에 `issue-228-m2-model-compat.md` 없음, issue-168 항목에 #251 절 미언급 | #316 확인: 문서 정리로 issue-228·issue-168 보고서가 주제 보고서에 통합되어 별도 파일이 없음. 색인 ai 항목에 "M2 3.0·3.1 호환(#228)"(ai.md 4.1), core-gateway 항목에 "레이어·예외 경계(#168·#249~#251)"(core-gateway.md 10장 #251 절)가 있어 추가 수정 없음. 같은 PR에서 추적 Markdown 50개의 상대 링크 330개를 검사해 깨진 앵커 2개(`aws-deploy.md` → prod README 재배포 절 제목 변경)를 정정, 깨짐 0 |
 | D29 | 문서 간 | 이 문서의 낡은 상태 표기(#93·#97·A6·B17·5회차 발행 이슈) | 원장에 최종 상태로 반영 |
 | A21 | 아키텍처(낮음) | core `_common/web/IdempotencyService.kt:62-66` `IdempotencyCleanup`의 `@Scheduled`가 scheduler 패키지 밖(2.1). #278 예외는 `_common/messaging`만. 만료 행 DELETE라 레플리카 중복 실행은 안전 | #314 해결: `_common/scheduler/IdempotencyCleanupScheduler`로 이동, 삭제는 `IdempotencyService.deleteExpired` 유지(설정 키·주기 동일, `_common` 예외 목록 추가 안 함) |
 
@@ -254,8 +254,8 @@ core·learning은 import를 레이어로 분류해 전수 검사, Python·웹은
 
 | 대상 | 내용 |
 |---|---|
-| CI | `e2e.yml` 야간 실행은 main 병합 전까지 동작하지 않음. `tests/*-browser.mjs`·JDK 21 `verify_*`는 수동 |
+| CI | `e2e.yml`은 main에 반영돼 야간 schedule 대상(2026-11-07 확인, 실행 결과는 미확인). `tests/*-browser.mjs`·JDK 21 `verify_*`는 수동 |
 | 요구사항 차이 | FN-AGT-12(5회차와 같음) |
-| 인프라·설계 차이 | #211·#212 열림, architecture 4.2~4.4는 Cluster Autoscaler·NAT 기술 |
+| 인프라·설계 차이 | #211·#212 종료, architecture 4.4는 Karpenter·HPA로 갱신. 부하 시 확장·축소 실측은 #384 |
 | 기존 아키텍처 항목 | A13(scoring 소비자의 `ModelStartup` 생성·revision 조정) |
 

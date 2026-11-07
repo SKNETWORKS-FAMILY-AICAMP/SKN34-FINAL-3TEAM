@@ -109,9 +109,9 @@
 - 테스트: `GuardianTransferIntegrationTest`, `frontend/web/tests/transfer-local/`(`npx playwright test -c playwright.transfer-local.config.ts`, 실행 중인 격리 서비스 대상만). SQL 도우미 기본 대상은 `guardian-transfer-289-postgres-1`이며 허용된 테스트 컨테이너 외에는 거부
 - 완료된 이관을 되돌리는 사용자 기능은 없음. 롤백은 격리 실험 전체를 중지하고 원래 환경으로 복귀
 
-### 팀 반영 전 남은 결정
+### 남은 일
 
-이관 대기 요청의 만료, 수신 알림 채널, 운영자 복구 절차는 미구현(이관 페이지에서 5초 간격 갱신·수동 새로 확인). 적용 전 기존 LINKED 중복 여부 확인 필요. 완료된 이관 기록의 삭제 보호와 대기 요청의 탈퇴·해제·삭제 차단은 플래그를 꺼도 유지한다. 남은 대기 요청은 #307의 본인 조회·취소·거절 경로로 정리할 수 있다. 이관 오류 코드·경로·재인증 문서는 #308에서 반영했다([audit](audit.md)).
+이관 대기 요청의 만료, 수신 알림 채널, 운영자 복구 절차는 미구현(이관 페이지에서 5초 간격 갱신·수동 새로 확인). V26은 운영 RDS에 사전 점검 위반 0건으로 적용됨(2026-11-04, [aws-deploy](aws-deploy.md)), prod values에는 이관 기능 설정이 없어 기능은 꺼져 있음. 완료된 이관 기록의 삭제 보호와 대기 요청의 탈퇴·해제·삭제 차단은 플래그를 꺼도 유지한다. 남은 대기 요청은 #307의 본인 조회·취소·거절 경로로 정리할 수 있다. 이관 오류 코드·경로·재인증 문서는 #308에서 반영했다([audit](audit.md)).
 
 ### API 계약·MSW 정렬 (#308, 2026-11-04)
 
@@ -122,13 +122,7 @@
 - 목업 체험: `VITE_API_MOCK=true`, `VITE_GUARDIAN_TRANSFER_ENABLED=true`, `VITE_SHARED_DEVICE_MOCK=false`. 같은 탭에서 계정·자녀 관리 → 자녀 이관으로 진입한다. `receiver@example.test`·`spare@example.test`는 자녀 없음, `full@example.test`는 3명이며 시연 비밀번호는 기존 `demo-only`다. 신규 시연 계정을 등록하고 무료 자녀를 만들어 발신자로 사용하거나, 테스트의 합성 데이터 준비 절차를 따른다. 기존 `parent@example.test`의 PREMIUM 구독 시나리오는 금융 정리 검사를 받는다.
 - MSW는 탭 메모리 기반이며 같은 탭에서 계정을 바꾸어 확인한다. 여러 브라우저 간 공유·DB 잠금·실제 Google·PG·서비스별 삭제 완료는 이 테스트의 검증 범위가 아니다. #308 당시 조회·거절·취소도 동의·기능 설정을 요구했으며, 아래 #307에서 core와 함께 회복 경로로 변경했다.
 
-| 검증 | 결과 |
-|---|---|
-| `python -O -m unittest discover -s scripts/tests -v` | 110개 통과. 새 이관 계약 회귀 검사 3개 포함 |
-| 웹 `npm test` | 219개 통과. MSW 이관 통합 시나리오 7개 포함 |
-| 웹 `npm run test:types`, `npm run lint`, `npm run build` | 통과 |
-| `npx playwright test -c playwright.transfer-mock.config.ts` | Chrome 화면 2개 통과: 한도 팝업·요청·자녀 없는 학부모 수락·이전 연결 제거 / 취소·거절 |
-| 기존 OpenAPI 계약 보존 | 기존 3개 작업의 409 설명만 정규화하여 나머지 필드 해시 검사를 유지 |
+검증: 계약 테스트 110개(이관 회귀 3개), 웹 `npm test` 219개(MSW 이관 7개)·타입·lint·build, Playwright 이관 목업 화면 2개 통과. 기존 OpenAPI 3개 작업은 409 설명만 정규화.
 
 실서버 E2E·core 통합 테스트는 이번 문서·MSW 변경에서 다시 실행하지 않았다. 위 결과는 계약·목업 검증이며 운영 이관 활성화 승인과 구분한다.
 
@@ -139,15 +133,7 @@
 - 웹 `/parent/transfers` 경로와 계정·온보딩의 관리 진입점을 항상 유지한다. 동의 누락 시 자녀 정보 조회를 보내지 않고, 동의 누락 또는 웹 기능 off에서는 새 요청·수락 화면을 숨긴다. 탈퇴 시 대기 요청을 확인하고 유지 또는 취소 후 재진입을 선택한다. MSW도 같은 조건과 재인증·탈퇴 회복 흐름을 반영했다.
 - api-spec 2.1·5.6·5.17, OpenAPI, 기능 명세와 관련 설계 문서의 플래그 설명을 맞췄다. DB·마이그레이션·기능 기본값은 변경하지 않았다. [audit](audit.md)의 B38·B39 처리 내용을 갱신했다.
 
-| 검증 | 결과 |
-|---|---|
-| core `./gradlew test` (Java 21) | 497개 통과, 실패·오류·건너뜀 0. 실제 인증 필터·컨트롤러·PostgreSQL을 거치는 신규 HTTP 검사 12개 포함 |
-| 신규 HTTP 검사 | 설정 on/off에서 동의 철회 후 조회·취소·거절, 취소 전 탈퇴·해제·삭제 차단과 취소 후 명시적 처리, 타인·학생·비인증 차단, 신규 이관·수락 및 기록 조회 동의 검사 유지 |
-| 웹 `npm test` | 222개 통과. 이관 MSW 시나리오 10개 포함 |
-| 웹 `npm run test:types`, `npm run lint`, `npm run build` | 통과 |
-| `npx playwright test -c playwright.transfer-mock.config.ts` | 기능 on에서 Chrome 5개 통과(기존 요청·수락·한도·취소·거절 2개 + 회복 3개) |
-| 같은 설정에서 `VITE_GUARDIAN_TRANSFER_ENABLED=false`, `guardian-transfer-recovery.spec.ts` 실행 | Chrome 회복 3개 통과. 이관 유지 시 변경 없음, 취소 후에도 최종 재인증·확인 전 탈퇴 미실행, 관리 페이지의 조회·취소 확인 |
-| `python -O -m unittest discover -s scripts/tests -v` | 110개 통과 |
+검증: core `./gradlew test` 497개(신규 HTTP 검사 12개: 설정 on/off의 동의 철회 후 조회·취소·거절, 취소 전후 탈퇴·해제·삭제), 웹 `npm test` 222개(이관 MSW 10개)·타입·lint·build, Playwright 기능 on 5개·off 회복 3개, 계약 테스트 110개 통과.
 
 브라우저 검증은 MSW와 Google 재인증 대역을 사용한다. 서버는 별도로 실제 Spring HTTP·PostgreSQL 통합 검사와 전체 회귀 테스트로 검증했으며, 외부 Google·결제 연동 및 서비스 전체 삭제 완료를 연결한 실서버 E2E 결과는 아니다. 운영에서 신규 이관을 활성화하는 승인은 이번 수정과 별개다.
 

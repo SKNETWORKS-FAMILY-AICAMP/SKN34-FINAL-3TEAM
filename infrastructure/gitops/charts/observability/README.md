@@ -12,7 +12,7 @@ prod 예약량은 CPU 250m·메모리 544Mi, limit 합계 CPU 1250m·메모리 1
 
 Grafana contact point·notification policy·경보 3개를 파일로 provision한다. target down(3분), RabbitMQ ready messages >100(10분), memory watermark >80%(5분)은 초기 기준이다. no-data/error는 별도 상태로 보고하며 정상으로 숨기지 않는다. 실측 부하 기반 임계값 확정이나 서비스 SLA 검증은 아니다. 등록한 경보와 datasource는 파일에서 수정한다.
 
-2026-11-03 revision 1은 웹훅 권한 대기로 경보가 비활성이었으나, 웹훅 제공 후 revision 2에서 alerting을 활성화했다. Discord URL은 admin Secret과 분리된 discord-alert-webhook의 DISCORD_WEBHOOK_URL 키로 저장한다. 실제 웹훅의 서버·채널 ID를 확인하고 URL을 출력하지 않았다. 경보 3개는 Grafana에서 health=ok·inactive로 평가됐다. 통지·복구 검증 결과는 [#185 보고서](../../../../docs/report/issue-185-aws.md)를 따른다.
+2026-11-03 revision 1은 웹훅 권한 대기로 경보가 비활성이었으나, 웹훅 제공 후 revision 2에서 alerting을 활성화했다. Discord URL은 admin Secret과 분리된 discord-alert-webhook의 DISCORD_WEBHOOK_URL 키로 저장한다. 실제 웹훅의 서버·채널 ID를 확인하고 URL을 출력하지 않았다. 경보 3개는 Grafana에서 health=ok·inactive로 평가됐다. 통지·복구 검증 결과는 [#185 보고서](../../../../docs/report/aws-deploy.md)를 따른다.
 
 현재 AWS 앱의 Java agent는 비활성이며 이 최소 배포에서는 앱을 재시작하지 않는다. Collector scrape 성공만으로 실제 JVM·HTTP 지표 수집을 주장하지 않는다. core·learning agent의 기존 JAVA_TOOL_OPTIONS 병합과 rolling update 여유 자원은 후속으로 다룬다. ALB/RDS CloudWatch datasource·조회 IAM, 전체 앱 계측, 노드 exporter·metrics-server·Langfuse는 이번 chart에 추가하지 않는다.
 

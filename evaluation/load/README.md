@@ -9,7 +9,7 @@ AWS 데모 환경(CloudFront → ALB → core)에 k6로 부하를 주어 core·N
 | `collect_metrics.py` | Prometheus(core·learning JVM, DB 풀, HTTP, RabbitMQ)·CloudWatch(RDS, ALB, NAT)·Pod 재시작 수집 |
 | `llm-stub.k8s.yaml` | 데모 `app` 네임스페이스용 LLM 스텁 Deployment·Service·NetworkPolicy |
 
-1차 결과와 해석은 [`docs/report/issue-361-load-test.md`](../../docs/report/issue-361-load-test.md)에 있다.
+1차 결과와 해석은 [`docs/report/load-test.md`](../../docs/report/load-test.md)에 있다.
 
 ## 시나리오
 

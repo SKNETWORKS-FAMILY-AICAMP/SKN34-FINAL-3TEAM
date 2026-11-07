@@ -526,7 +526,7 @@ feature 브랜치 → develop 통합·CI → main 배포 기준
 
 AWS 데모 배포는 **승인된 Helm 적용**입니다. 실패 시 자동 롤백했다고 간주하지 않으며, 배포 이력과 준비된 복귀 절차를 따릅니다.
 
-[로컬 kind](infrastructure/kind/README.md) · [AWS 구축·운영](docs/report/issue-185-aws.md) · [배포 승인·복귀](docs/report/issue-186-cd-approval-rollback.md) · [릴리스 워크플로](.github/workflows/cd-release.yml)
+[로컬 kind](infrastructure/kind/README.md) · [AWS 구축·운영](docs/report/aws-deploy.md) · [배포 승인·복귀](docs/report/cd-release.md) · [릴리스 워크플로](.github/workflows/cd-release.yml)
 
 <a id="results"></a>
 ## 9. 개발 성과와 개선 과제
@@ -563,7 +563,7 @@ E2E에서 학생 PIN·재인증 팝업, 실제 결제 위젯·정기결제·환�
 | core 처리량 | 6.4 req/s | 59.3 req/s | 197.4 req/s |
 | RDS CPU 최대 | 7% | 24% | 68% |
 
-중간 25 VU 단계에서는 API 오류 1/2,864건이 있었습니다. API 지표는 스트리밍 지연과 다르며, 예상된 학습 경합 응답은 오류율에서 제외했습니다. 계정 1개의 학습 슬롯이 15개로 제한되어 **실제 사용자 300명의 동시 AI 처리 성능을 증명한 시험은 아닙니다.** 전체 단계·시나리오·병목 해석은 [부하 시험 보고서](docs/report/issue-361-load-test.md)에 있습니다.
+중간 25 VU 단계에서는 API 오류 1/2,864건이 있었습니다. API 지표는 스트리밍 지연과 다르며, 예상된 학습 경합 응답은 오류율에서 제외했습니다. 계정 1개의 학습 슬롯이 15개로 제한되어 **실제 사용자 300명의 동시 AI 처리 성능을 증명한 시험은 아닙니다.** 전체 단계·시나리오·병목 해석은 [부하 시험 보고서](docs/report/load-test.md)에 있습니다.
 
 ### 9.4 남은 과제
 
@@ -602,7 +602,7 @@ E2E에서 학생 PIN·재인증 팝업, 실제 결제 위젯·정기결제·환�
 | 시스템·데이터 구조 | [아키텍처](docs/design/architecture.md) · [ERD](docs/design/erd.md) · [클래스](docs/design/class-diagram.md) |
 | API·이벤트·상태 | [API 명세](docs/design/api-spec.md) · [OpenAPI](contracts/openapi) · [이벤트](contracts/events) · [시퀀스](docs/design/sequence-diagram.md) · [상태](docs/design/state-diagram.md) |
 | AI·모델 | [AI 구현·검증](docs/report/ai.md) · [scoring](docs/report/scoring.md) · [M2 학습](ml/m2/README.md) · [평가 도구·자료](evaluation) |
-| 실행·운영·검증 | [로컬 실행](#getting-started) · [DB 개발](docs/report/db-dev-guide.md) · [테스트·CI](docs/report/testing-ci.md) · [AWS](docs/report/issue-185-aws.md) |
+| 실행·운영·검증 | [로컬 실행](#getting-started) · [DB 개발](docs/report/db-dev-guide.md) · [테스트·CI](docs/report/testing-ci.md) · [AWS](docs/report/aws-deploy.md) |
 | 기획·제출 이력 | [기획 결정과 변경 근거](docs/report/planning-decisions.md) · [서비스 기획 방향(2026-11-06)](docs/report/service-direction.md) · [저장소에 보관된 제출 산출물](docs/outputs) |
 
 제출 산출물에는 이전 제출 시점의 문서도 포함됩니다. 현재 구현 계약은 기능·API·ERD와 주제별 구현 보고서를 함께 확인합니다. 개발은 `feature/* → develop → main` 흐름으로 진행합니다.
