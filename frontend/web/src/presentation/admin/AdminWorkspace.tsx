@@ -14,12 +14,13 @@ import { ErrorManager } from './ModelManager.tsx'
 import { ModelRegistry } from './ModelRegistry.tsx'
 import { SupportManager } from './SupportManager.tsx'
 import { PaymentManager } from './PaymentManager.tsx'
+import { LookItemManager, WeeklyThemeManager } from './RetentionManager.tsx'
 import '../classroom.css'
 import '../common/workspace.css'
 import './admin.css'
 
 const permissionLabel: Record<Permission, string> = { CONTENT: '콘텐츠', SERVICE_OPS: '서비스 운영', PAYMENT_VIEW: '결제 조회', PAYMENT_REFUND: '환불 승인' }
-const titles: Record<string, string> = { home: '운영 요약', jobs: '작업 목록', queues: '큐·DLQ 현황', errors: '신고 검토', support: '문의 답변과 공지 관리', models: '버전 관리', usage: 'AI 호출량·비용', audit: '운영 조치·열람 이력', missions: '미션 목록', payments: '거래와 환불 요청' }
+const titles: Record<string, string> = { home: '운영 요약', jobs: '작업 목록', queues: '큐·DLQ 현황', errors: '신고 검토', support: '문의 답변과 공지 관리', models: '버전 관리', usage: 'AI 호출량·비용', audit: '운영 조치·열람 이력', missions: '미션 목록', themes: '주간 테마', looks: '꾸미기 아이템', payments: '거래와 환불 요청' }
 export function AdminWorkspace() {
   const { session, setSession, setExpired } = useSession(), location = useLocation(), navigate = useNavigate()
   const [params, setParams] = useSearchParams(), cache = useQueryClient(), auth = useAuthentication()
@@ -33,6 +34,8 @@ export function AdminWorkspace() {
     { group: '공통', path: 'audit', label: '감사 이력', visible: true },
     ...[['jobs', '작업 재처리'], ['queues', '큐·DLQ'], ['errors', '오류 신고'], ['support', '문의·공지'], ['models', '모델·프롬프트'], ['usage', 'AI 사용량']].map(([path, label]) => ({ group: '서비스 운영', path, label, visible: can('SERVICE_OPS') })),
     { group: '콘텐츠', path: 'missions', label: '미션 관리', visible: can('CONTENT') },
+    { group: '콘텐츠', path: 'themes', label: '주간 테마', visible: can('CONTENT') },
+    { group: '콘텐츠', path: 'looks', label: '꾸미기 아이템', visible: can('CONTENT') },
     { group: '결제', path: 'payments', label: '결제·환불', visible: can('PAYMENT_VIEW') || can('PAYMENT_REFUND') },
   ].filter((n) => n.visible)
   const allowed = nav.some((n) => n.path === page) || page === 'queues' && can('SERVICE_OPS')
@@ -65,6 +68,8 @@ export function AdminWorkspace() {
       {!allowed ? <section className="ad-panel"><h2>접근 권한 확인</h2><p role="alert">FORBIDDEN · 필요한 관리자 권한이 없습니다.</p><Link to="/admin/home">운영 현황으로 돌아가기</Link></section>
         : !validPeriod(period) ? <p role="alert">집계 기간을 확인해 주세요.</p>
         : page === 'missions' ? <MissionManager />
+        : page === 'themes' ? <WeeklyThemeManager />
+        : page === 'looks' ? <LookItemManager />
         : page === 'models' ? <ModelRegistry />
         : page === 'errors' ? <ErrorManager />
         : page === 'support' ? <SupportManager />

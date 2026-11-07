@@ -5,6 +5,14 @@ import { useAdminQuery, useAdminMutation } from '../../data/admin/queries.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 export { ModelRegistry as ModelManager } from './ModelRegistry.tsx'
+/** 신고 대상 이름. COMMUNITY_POST는 2026-11-06 결정(P20): 접수 즉시 숨김, 처리 결과로 다시 공개 또는 계속 숨김. */
+const targetLabels: Record<string, string> = {
+  FOLLOWUP: '되묻기 질문',
+  JUDGMENT: '판정',
+  ANALYSIS: '분석 대화 답변',
+  REPORT: '리포트',
+  COMMUNITY_POST: '커뮤니티 공유물 · 접수 즉시 숨김',
+}
 export function ErrorManager() {
   const q = useAdminQuery(['errors'], (signal) => adminApi.errors(signal)),
     [id, setId] = useState<string | null>(null)
@@ -18,8 +26,11 @@ export function ErrorManager() {
         q.data.items.map((r) => (
           <article className="ws-card" key={r.reportId}>
             <h3>
-              {r.targetType} · {r.status}
+              {targetLabels[r.targetType] ?? r.targetType} · {r.status}
             </h3>
+            {r.targetType === 'COMMUNITY_POST' && (
+              <p>처리 결과에 따라 다시 공개하거나 계속 숨깁니다. 공유물 원문 열람은 감사 이력에 남습니다.</p>
+            )}
             <p>{r.comment}</p>
             <button className="cj-secondary" onClick={() => setId(r.reportId)}>
               신고 상세·연결 기록 열람
