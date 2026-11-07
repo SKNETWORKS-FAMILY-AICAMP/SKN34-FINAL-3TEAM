@@ -35,7 +35,7 @@
 
 | 서비스 | 추가 책임 | 기능 패키지 |
 |---|---|---|
-| core-service | 커뮤니티 공개 설정·보호자 선택 동의·공유물 신고 연결, 작성자 별명·꾸미기 표시 변환, 포인트 규칙·원장·잔액, 테마·캐릭터·아이템 해금·착용, 꾸미기 아이템 관리, 무료 하루 미션 1개 집계, 일일 리포트 일정(매일 07:00)·작업, 리포트 고정 대화 생성 | `community`(설정·learning 프록시·신고 연결), `reward`(포인트·해금·아이템). 일일 일정은 기존 `report`, 리포트 고정 대화는 기존 `conversation`, 동의 문서 종류는 기존 `consent` |
+| core-service | 커뮤니티 공개 설정·보호자 선택 동의·공유물 신고 연결, 작성자 별명·꾸미기 표시 변환, 포인트 규칙·원장·잔액, 테마·캐릭터·아이템 해금·착용, 꾸미기 아이템 관리, 무료 하루 미션 1개 집계, 일일 리포트 일정(매일 07:00)·작업, 리포트 고정 대화 생성 | `community`(설정·learning 프록시·신고 연결), `reward`(포인트·해금·아이템). 무료 미션 한도는 기존 `usage`(`MissionUsageService`), 일일 일정은 기존 `report`, 리포트 고정 대화는 기존 `conversation`, 동의 문서 종류는 기존 `consent` |
 | learning-service | 주간 테마·요일별 미션 배치·게시 검사, 시도 `context`(당일·되돌아보기·추가 문제) 검사, 되돌아보기 열람 기록·완주 판정 소재, 커뮤니티 공유물·반응·열람 검사(같은 미션 마무리 여부)·숨김 상태 | `theme`, `community` |
 | report-service | 일일 리포트(템플릿, LLM 미호출) 기간 확정·계산·대조·렌더링, 주간 리포트 테마 요약 | 기존 리포트 생성 흐름에 기간 종류 분기 |
 | ai-service | 리포트 고정 대화의 범위(그날)와 core가 넣어 주는 리포트 요약 입력 처리(report 직접 호출 없음). 일일 리포트 서술은 없음 | 기존 분석 에이전트 |
@@ -142,9 +142,9 @@
 - **Outbox**: DB 상태 변경 + 발행이 함께 필요한 서비스(core, report)만 적용 (learning은 발행 없음, 멱등 소비만). 같은 트랜잭션에 outbox 행 저장 → 릴레이 스케줄러가 publisher confirm 받은 후 발행 시각 기록 (참고 레포 `*OutboxScheduler` 패턴). core 릴레이는 ShedLock 단일 실행, 발행·confirm 대기는 DB 트랜잭션 밖, 발행 시각만 짧은 트랜잭션으로 기록
 - **core 발행 복구(#243)**: report #131과 같은 기준으로 subject별 선두만 1건씩 발행·confirm한다. 실패는 안전 오류 코드·횟수를 기록하고 1·5·15분 재시도 후 격리하며 다른 subject는 계속 처리한다. 브로커 연결 실패·confirm timeout은 그 주기를 중단한다. 격리 선두와 그 뒤 이벤트는 운영 SQL로 재처리할 때까지 대기한다. [정책·운영 SQL](../report/core-gateway.md#11-core-outbox-실패-격리-243)
 - **report 발행 복구(#131)**: 학생별 선두만 발행한다. 실패한 학생은 1·5·15분 재시도 후 격리하고 다른 학생은 계속 처리한다. 격리된 선두와 그 뒤 이벤트는 운영 CLI로 원래 이벤트 id를 재처리할 때까지 대기한다. 소비 재시도 큐/DLQ와 별개로 Outbox DB에 실패·격리 상태를 저장한다. [정책·운영 명령](../report/report.md#11-outbox-실패-격리와-학생별-발행-순서-131)
-- 구현 예정: 포인트 적립은 core가 learning 응답을 동기 프록시하는 경로(돌아보기 저장 성공 = 학습 완료, 공유·반응 성공, 되돌아보기 열람)에서 같은 core 트랜잭션으로 원장에 기록한다. learning은 계속 발행 없음(1.6 Outbox 원칙 유지). 프록시 응답 후 core 저장이 실패하면 사건 키(`student_id, event_type, source_id`)로 다음 같은 사건·조회 때 다시 적립할 수 있게 둔다(사건 키 멱등, 같은 사건 재요청·주간 테마 조회 때 보충)
-- 구현 예정: 공유물 생성도 돌아보기 저장 성공 직후 core → learning 내부 호출(시도당 1개 멱등). 공개 설정 변경·동의 철회·이관 수락은 core → learning `community-visibility` 호출
-- 구현 예정: 학생 삭제는 기존 `student.deleted` 소비 범위에 공유물·반응·테마 열람 기록 추가(learning), core는 포인트·해금·착용 정보를 함께 삭제
+- 구현 예정: 포인트 적립은 core가 learning 응답을 동기 프록시하는 경로(돌아보기 저장 성공 = 학습 완료, 공유·반응 성공, 되돌아보기 열람)에서 같은 core 트랜잭션으로 원장에 기록한다. learning은 계속 발행 없음(1.6 Outbox 원칙 유지). 프록시 응답 후 core 저장이 실패하면 사건 키(`student_id, event_type, source_key`)로 다음 같은 사건·조회 때 다시 적립할 수 있게 둔다(사건 키 멱등, 같은 사건 재요청·주간 테마 조회 때 보충)
+- 구현 예정: 공유물 생성도 돌아보기 저장 성공 직후 core → learning 내부 호출(학생·미션당 1개 멱등, 다시 풀기는 공유 안 함). 공개 설정 변경·동의 철회·이관 수락은 core → learning `community-visibility` 호출
+- 구현 예정: 학생 삭제는 기존 `student.deleted` 소비 범위에 공유물·반응·테마 열람 기록 추가(learning), core는 포인트·해금·착용 정보와 `mission_daily_usage`를 함께 삭제
 - **상태 없는 서비스(ai, scoring)**: 이벤트 발행은 처리 결과 반환 후 best-effort (사용량 집계용), 유실 시 Langfuse trace로 보정(Langfuse는 예정, 저장소 미구성)
 - **멱등 소비**: 소비자별 `processed_event(event_id UK)` 테이블 또는 DB 상태 전이 조건(`QUEUED→RUNNING`)
 - **이벤트 기록·보존(#208)**: core가 감사 큐로 모든 업무 메시지의 id·type·source·subject·봉투 시각·수신 시각을 `event_log`에 저장한다(payload 제외). 발행은 각 서비스 `outbox_event`, 소비는 `processed_event`·`llm_usage`·작업 상태와 `event_id`로 조인한다. ai·scoring은 DB 없이 유지하며, 브로커에 도달하지 못한 발행 실패는 `event_log`에 없고 서비스 로그로만 확인한다. `model.version.activated`의 Pod별 적용은 기록하지 않는다(readiness·snapshot 재조회로 보장). 발행 완료 outbox·processed_event·event_log는 90일 후 삭제하고 미발행·격리 행은 남긴다. [결정 근거](../report/core-gateway.md#9-rabbitmq-발행소비-기록-208)
@@ -332,7 +332,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  │  ├─ TossClient.kt
 │  │  └─ PremiumUsageClient.kt   # learning 프리미엄 사용 증빙 조회
 │  └─ scheduler/                 # 정기 청구
-├─ usage/                        # LLM 사용량 집계
+├─ usage/                        # LLM 사용량 집계, 무료 미션 하루 한도(구현 예정, `mission_daily_usage`)
 │  ├─ consumer/
 │  ├─ service/
 │  ├─ domain/                    # LlmUsageRecorded·UsageSummary
