@@ -40,6 +40,11 @@ export function StudentMissions({
               ? `‘${thinkingLabels[type]}’ ${t.place}의 미션이에요.`
               : '하고 싶은 미션을 하나 골라요.'}
           </p>
+          {child.plan === 'FREE' && (
+            <p className="st-meta" role="note">
+              생각 유형별로 고르는 추가 문제는 프리미엄에서 풀 수 있어요. 무료로는 생각 지도의 이번 주 오늘 문제를 하루 한 개 풀어요.
+            </p>
+          )}
         </div>
         <label className="st-select">
           과목

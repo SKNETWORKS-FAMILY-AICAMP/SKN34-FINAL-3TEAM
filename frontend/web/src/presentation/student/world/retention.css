@@ -1,0 +1,227 @@
+/* 2026-11-06 결정 학생 참여 화면: 주간 테마·되돌아보기·친구 생각·포인트·해금 (#393, #389 web) */
+#class-journal .st-week {
+  padding: 18px 20px;
+  border-radius: 20px;
+  margin-bottom: 18px;
+}
+#class-journal .st-week h2 {
+  font-family: 'Do Hyeon', sans-serif;
+  font-weight: 400;
+  font-size: 28px;
+  margin: 4px 0 8px;
+}
+#class-journal .st-week .st-kicker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#class-journal .st-week-intro {
+  margin: 0 0 12px;
+  line-height: 1.6;
+}
+#class-journal .st-week-days {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+#class-journal .st-week-days li {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: #fffdf7;
+}
+#class-journal .st-week-days li[data-state='LOCKED'] {
+  opacity: 0.6;
+}
+#class-journal .st-week-days li[data-state='OPEN'] {
+  outline: 3px solid var(--st-accent);
+}
+#class-journal .st-week-day {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 4px solid;
+  border-radius: 50%;
+  font-family: 'Do Hyeon', sans-serif;
+  font-size: 20px;
+}
+#class-journal .st-week-days li[data-done] .st-week-day {
+  background: #e9f3dc;
+}
+#class-journal .st-week-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+#class-journal .st-week-title small,
+#class-journal .st-review small {
+  color: #4a4a45;
+}
+#class-journal .st-week-done {
+  font-weight: 700;
+  margin: 12px 0 0;
+}
+#class-journal .st-review {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 2px dashed rgb(31 36 33 / 0.2);
+}
+#class-journal .st-review h3,
+#class-journal .st-community h2,
+#class-journal .st-points-page h2 {
+  font-family: 'Do Hyeon', sans-serif;
+  font-weight: 400;
+  font-size: 22px;
+  margin: 12px 0 6px;
+}
+#class-journal .st-review ul,
+#class-journal .st-posts,
+#class-journal .st-ledger,
+#class-journal .st-rules {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+#class-journal .st-review li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+#class-journal .st-review li[data-missed] span {
+  color: #6b6b64;
+}
+#class-journal .st-community h1,
+#class-journal .st-points-page h1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+#class-journal .st-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 12px 0;
+  max-width: 420px;
+}
+#class-journal .st-post {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #fffdf7;
+}
+#class-journal .st-post-author {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+#class-journal .st-post-answer {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+#class-journal .st-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+#class-journal .st-reaction {
+  padding: 6px 12px;
+  border: 2px solid rgb(31 36 33 / 0.2);
+  border-radius: 999px;
+  background: #fff;
+}
+#class-journal .st-reaction[aria-pressed='true'] {
+  border-color: var(--st-accent);
+  background: #fff3df;
+}
+#class-journal .st-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+#class-journal .st-report {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+#class-journal .st-report textarea {
+  width: 100%;
+  min-height: 60px;
+}
+#class-journal .st-mine {
+  margin-top: 20px;
+}
+#class-journal .st-balance {
+  font-size: 22px;
+}
+#class-journal .st-balance strong {
+  font-family: 'Do Hyeon', sans-serif;
+  font-size: 40px;
+  font-weight: 400;
+}
+#class-journal .st-ledger li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: #fffdf7;
+}
+#class-journal .st-ledger strong[data-minus] {
+  color: #9a3412;
+}
+/* 꾸미기 해금 */
+#class-journal .st-pick-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+#class-journal .st-pick[aria-disabled='true'] {
+  opacity: 0.7;
+  cursor: default;
+}
+#class-journal .st-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+#class-journal .st-unlock {
+  font-size: 14px;
+  padding: 6px 10px;
+}
+#class-journal .st-points {
+  font-weight: 700;
+  margin: 0;
+}
+#class-journal .st-slot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  border: 2px solid rgb(31 36 33 / 0.12);
+  border-radius: 14px;
+  padding: 8px 12px;
+  margin: 8px 0 0;
+}
+#class-journal .st-slot-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

@@ -38,6 +38,9 @@ import {
 import { inputLabels, shortRange, thinkingLabels } from '../domain/classroom.ts'
 import type { Child, DemoScenario, Period, PublicAttempt } from '../domain/classroom.ts'
 import { ActivityPaper, Brand, ErrorNotice, Modal } from './shared/ClassroomParts.tsx'
+import { StudentCommunity } from './student/world/StudentCommunity.tsx'
+import { StudentPoints } from './student/world/StudentPoints.tsx'
+import type { AttemptContext } from '../domain/retention.ts'
 import { StudentSharingPage } from './student/StudentSharingPage.tsx'
 import { StudentWorkPage } from './student/StudentWorkPage.tsx'
 import { ParentAnalysis, ParentReport } from './parent/ParentFeatures.tsx'
@@ -46,7 +49,7 @@ import { QueryStateNotice } from './common/QueryStateNotice.tsx'
 import { ParentUnlock } from './auth/ParentUnlock.tsx'
 
 const { recentPeriod, previousWeek } = displayPeriods
-type Page = 'home' | 'journal' | 'missions' | 'report' | 'analysis' | 'activities' | 'settings'
+type Page = 'home' | 'journal' | 'missions' | 'report' | 'analysis' | 'activities' | 'community' | 'points' | 'settings'
 export function ClassroomApp() {
   const auth = useAuthentication(),
     { session, setSession, selected, setSelected, expired, setExpired, scenario, setScenario } =
@@ -58,7 +61,7 @@ export function ClassroomApp() {
   const work = location.pathname.startsWith('/student/attempts/')
     ? location.pathname.split('/')[3]
     : null
-  const studentPage: StudentPage = (['home', 'missions', 'activities', 'settings'] as const).find((p) => p === page) ?? 'journal'
+  const studentPage: StudentPage = (['home', 'missions', 'activities', 'community', 'points', 'settings'] as const).find((p) => p === page) ?? 'journal'
   const typeFilter = new URLSearchParams(location.search).get('type')
   const setPage = (page: Page) => navigate(`/${session?.role.toLowerCase() ?? 'parent'}/${page}`)
   const setWork = (id: string | null) =>
@@ -66,6 +69,7 @@ export function ClassroomApp() {
   const [detail, setDetail] = useState<PublicAttempt | null>(null)
   const [period, setPeriod] = useState<Period>(recentPeriod),
     [analysisPeriod, setAnalysisPeriod] = useState<Period>(recentPeriod)
+  const [startContext, setStartContext] = useState<AttemptContext | undefined>()
   const [instructions, setInstructions] = useState<import('../domain/classroom.ts').Mission | null>(
     null,
   )
@@ -118,10 +122,16 @@ export function ClassroomApp() {
       /* mutation 오류를 화면에 표시 */
     }
   }
+  /** 미션 안내 창을 연다. context(2.11)는 시작 버튼을 누를 때 함께 보낸다. */
+  function openMission(mission: import('../domain/classroom.ts').Mission, context?: AttemptContext) {
+    learning.start.reset()
+    setStartContext(context)
+    setInstructions(mission)
+  }
   async function start(mission: import('../domain/classroom.ts').Mission) {
     if (!child) return
     try {
-      const a = await learning.start.mutateAsync({ mission, child })
+      const a = await learning.start.mutateAsync({ mission, child, context: startContext })
       setWork(a.attemptId)
       setInstructions(null)
     } catch {
@@ -362,13 +372,18 @@ export function ClassroomApp() {
                 }}
               />
             ) : studentPage === 'settings' ? (<StudentSharingPage key={child.id} child={child} />
+            ) : studentPage === 'community' ? (
+              <StudentCommunity key={child.id} child={child} onSettings={() => setPage('settings')} />
+            ) : studentPage === 'points' ? (
+              <StudentPoints key={child.id} child={child} />
             ) : studentPage === 'activities' ? (
               <ThinkingActivitiesPage key={child.id} child={child} />
             ) : studentPage === 'home' ? (
               <ThinkingMap
                 child={child}
                 onResume={setWork}
-                onOpen={setInstructions}
+                onOpen={(m) => openMission(m)}
+                onStartTheme={(m, context) => openMission(m, context)}
                 onType={(t) => navigate(`/student/missions?type=${t}`)}
                 onJournal={() => setPage('journal')}
               />
@@ -377,7 +392,7 @@ export function ClassroomApp() {
                 child={child}
                 type={isThinkingType(typeFilter) ? typeFilter : null}
                 onType={(t) => navigate(t ? `/student/missions?type=${t}` : '/student/missions')}
-                onOpen={setInstructions}
+                onOpen={(m) => openMission(m, 'EXTRA')}
               />
             ) : detail ? (
               <main className="st-paper st-sheet">
