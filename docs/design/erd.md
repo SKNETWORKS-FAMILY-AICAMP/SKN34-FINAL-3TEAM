@@ -210,6 +210,7 @@ erDiagram
 - 신규 student의 `pin_failed_count`는 앱이 0을 전달(SQL DEFAULT 없음). 학생 삭제 확정 때 `student_device_child` 제거·PIN 해시·잠금 삭제, 탈퇴 시 모든 기기 폐기 (#58)
 - `student.parent_sharing_enabled`는 비공개 기본값을 보장하기 위한 SQL DEFAULT false의 명시적 예외. 학생 본인만 바꾸며 원문 제공 경로는 같은 학생 행의 현재 설정을 다시 확인 (#206)
 - `student.look_theme`·`look_companion`·`look_updated_at`은 함께 NULL(저장한 적 없음, API 기본값 `lake`·`mungchi`)이거나 함께 값(`student_look_saved_together`). 값 목록은 코드 상수와 CHECK로 고정, SQL DEFAULT 없음. 학생 삭제 확정 때 PIN 삭제와 같은 트랜잭션에서 NULL로 되돌림 (#234)
+- 구현 예정(P22): `lake`·`mungchi` 외 테마·캐릭터는 포인트 해금 후에만 저장 가능(`student_look_unlock`, 3.6). 잠금 적용 전 저장된 값은 해금 행으로 옮김
 
 ### 3.1.1 로그인 세션 (#36)
 
@@ -413,10 +414,11 @@ erDiagram
 - 관리자 작업 목록(`/admin/jobs`)은 `conversation_message`·`report_job`·`notification`의 상태 컬럼을 조회 (FN-ADM-03)
 - `report_job` 상태 전이: `report.started` 수신 시 `QUEUED→RUNNING`, `report.completed|failed` 수신 시 종료 상태 + `report_id` 저장 (아키텍처 1.6 조건부 전이)
 - `report_job` 부분 UK `(student_id, period_from) WHERE trigger = 'SCHEDULE'` → 정기 생성 중복 방지. 재생성·재처리는 새 행 (FN-RPT-01, 12)
+  - 구현 예정(P24): `period_type` 추가와 함께 UK를 `(student_id, period_type, period_from)`로 교체(3.6)
 - `job_execution`: 작업 실행 1회당 1행, UK `(job_type, job_id, attempt_no)`. 관리자 실패 원인·처리 이력 조회 근거 (FN-ADM-07)
 - `report_view`: 학부모 리포트 상세 조회 시 기록, 주간 리포트 열람률 지표 근거 (기획서 3.9)
 - `clarification`이 있는 메시지는 범위 확인 후 종료된 질문, 사용자 선택은 다음 메시지의 `scope_*`에 저장 (FN-AGT-03)
-- `shedlock`은 name varchar(64) PK, lock_until·locked_at timestamptz, locked_by varchar(255), 모두 NOT NULL (주간 리포트·정기 청구 스케줄).
+- `shedlock`은 name varchar(64) PK, lock_until·locked_at timestamptz, locked_by varchar(255), 모두 NOT NULL (주간 리포트·정기 청구 스케줄, 구현 예정 일일 리포트 스케줄 포함).
 - `conversation_message.scope_student_id`는 같은 core DB의 `student.id` FK. 미확정 범위·처리 중 출력은 NULL로 두며 임시 결과를 채우지 않는다.
 
 ### 3.2.1 분석 대화 저장 규칙 (#41)
@@ -776,6 +778,31 @@ erDiagram
 - `idempotency_record`: 공개 API의 `Idempotency-Key` 대상(답변 제출·주문·승인·환불·재처리·신고) 공통. 같은 키·다른 본문은 `request_hash` 불일치로 422 (API 1.4)
 - #38의 response_body는 원문 보존용 JSON 봉투 `{body: base64, headers: {이름: [값]}}`다. response_status가 NULL이면 미확정이며 봉투도 NULL이다. expires_at은 DB 시계 기준 24시간이며 만료 행은 같은 키 접수 시와 주기 청소에서 제거한다. 세션 advisory lock은 테이블을 추가하지 않으며 사용자·키 해시로 잠근다. endpoint에는 메서드와 실제 공개 경로를 저장한다.
 
+### 3.6 구현 예정 변경 (core_db)
+
+2026-11-06 서비스 기획 방향 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 저장 구조. 마이그레이션 전이라 위 Mermaid·6장 인덱스 표(실제 DB 계약, `scripts/verify_db_schema.py`가 대조)에는 넣지 않고 표로만 둔다. 구현 시 새 마이그레이션 버전과 함께 Mermaid·6장으로 옮긴다. 컬럼 기본값은 두지 않는다(검증 스크립트 규칙): 기존 행이 있는 테이블의 NOT NULL 컬럼은 준비 버전(nullable 추가)→기존 행 채움→최종 버전(NOT NULL·CHECK)으로 나눈다(8장). API는 [API 명세](api-spec.md)의 구현 예정 행.
+
+| 테이블 | 구분 | 컬럼·제약 | 근거 |
+|---|---|---|---|
+| `student` | 컬럼 추가 | `community_enabled boolean NOT NULL`(기존 행 false로 채움, 학생 본인만 변경. 신규 행 기본 끔은 `parent_sharing_enabled`처럼 검증 스크립트 기본값 예외 등록 필요), `community_updated_at timestamptz NULL` | P20 |
+| `consent_document` | 값 추가 | `kind`에 `COMMUNITY`(선택 동의, `required = false`, 자녀 단위 `consent.student_id`) | P20 |
+| `conversation` | 컬럼 추가 | `report_id uuid NULL`(report 논리 참조), `report_revision int NULL`. 함께 NULL(일반 대화) 또는 함께 값(일일 리포트 고정 대화, `period_from = period_to` = 대상일). 고정 대화는 범위 변경 불가 | P25 |
+| `reward_rule` | 신규 | `event_type varchar PK`(`MISSION_COMPLETED`·`REVIEW_VIEWED`·`COMMUNITY_POSTED`·`REACTION_GIVEN`·`THEME_COMPLETED`), `amount int NOT NULL CHECK > 0`, `daily_cap int NULL`, `active boolean NOT NULL`, `updated_at`. 시드는 P21 초기값(10·10·5·1(하루 상한 5)·30) | P21 |
+| `reward_point_ledger` | 신규 | `id uuid PK`, `student_id FK`, `event_type`(`reward_rule` 값 + `UNLOCK`), `source_key varchar NOT NULL`, `amount int NOT NULL`(적립 양수, 사용 음수), `created_at`. UK `(student_id, event_type, source_key)` → 사건당 1회. `source_key` 규칙: 학습 완료 `missionId`, 되돌아보기·완주 `weekStart`(ISO date), 공유 `postId`, 반응 `postId:reaction`, 해금 `itemKey` | P21 |
+| `reward_point_balance` | 신규 | `student_id PK,FK`, `balance int NOT NULL CHECK >= 0`, `updated_at`. 원장 행과 같은 트랜잭션에서 갱신(해금 동시 요청은 이 행 잠금으로 직렬화) | P21 |
+| `look_item` | 신규 | `id uuid PK`, `code varchar UK`, `slot`(`HAT`·`OUTFIT`·`ACCESSORY`·`BACKGROUND`), `name`, `price_points int CHECK > 0`, `asset_key`, `status`(`ON_SALE`·`STOPPED`), `created_by FK user_account`, `created_at`, `updated_at`. 삭제 없음 | P22 |
+| `student_look_unlock` | 신규 | `student_id FK`, `item_key varchar`(`THEME:<code>`·`COMPANION:<code>`·`look_item.code`), `ledger_id FK NULL`(잠금 전 선택 이관분은 NULL), `unlocked_at`. PK `(student_id, item_key)`. 테마·캐릭터 해금값(테마 100·캐릭터 150)은 코드 상수 | P22 |
+| `student_look_equipment` | 신규 | `student_id FK`, `slot`, `look_item_id FK`, `updated_at`. PK `(student_id, slot)`. 해금된 아이템만(서비스 검증) | P22 |
+| `mission_daily_usage` | 신규 | `attempt_id uuid PK`(learning 논리 참조), `student_id FK`, `usage_date date NOT NULL`(KST), `created_at`. 무료 하루 미션 한도 집계(#210 PostgreSQL 결정): `THEME_DAY` 신규 시도 `201`만 기록, `(student_id, usage_date)` 건수로 판정 | P13 |
+| `report_job` | 컬럼 추가 | `period_type varchar NOT NULL`(`DAILY`·`WEEKLY`, 기존 행 `WEEKLY`로 채움). 일일은 `period_from = period_to`. 정기 생성 부분 UK를 `(student_id, period_type, period_from) WHERE trigger = 'SCHEDULE'`로 교체(월요일 일일·주간 작업의 `period_from`이 같음) | P24 |
+| `notification`·`notification_setting` | 값 추가 | `type`에 `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED` | P24 |
+| `error_report`·`correction` | 값 추가 | `target_type`에 `COMMUNITY_POST` | P20, P10 |
+| `payment_premium_usage` | 값 추가 | `kind`에 `EXTRA_MISSION`(프리미엄 추가 문제 시도, 환불 판정 근거, `source_id` = 시도 ID) | P14 |
+| `product` | 데이터 | FREE `limits.dailyMissions` 3 → 1 | P13 |
+
+- 학생 삭제 확정: `reward_point_ledger`·`reward_point_balance`·`student_look_unlock`·`student_look_equipment`·`mission_daily_usage`를 같은 트랜잭션에서 삭제, `community_enabled`는 false(P09)
+- 인덱스 후보: `reward_point_ledger (student_id, created_at)`(내역·반응 하루 상한), `mission_daily_usage (student_id, usage_date)`, `report_job (student_id, period_type, period_from)`
+
 ---
 
 ## 4. learning_db
@@ -1107,6 +1134,22 @@ erDiagram
 - #208 `processed_event`는 90일 뒤 삭제(V8 `processed_at` 인덱스). 재처리 방지 표식 `deleted_student`는 유지되므로 90일 이후 재전달도 삭제를 반복할 뿐 기록을 되살리지 않음
 - 멱등은 `answer`·`judgment_correction`의 `idempotency_key` UK로 처리, 별도 `idempotency_record` 없음
 
+### 4.4 구현 예정 변경 (learning_db)
+
+2026-11-06 서비스 기획 방향 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 저장 구조. 마이그레이션 전이라 위 Mermaid·6장 인덱스 표(실제 DB 계약, `scripts/verify_db_schema.py`가 대조)에는 넣지 않고 표로만 둔다. 구현 시 새 마이그레이션 버전과 함께 Mermaid·6장으로 옮긴다. 컬럼 기본값은 두지 않는다(검증 스크립트 규칙): 기존 행이 있는 테이블의 NOT NULL 컬럼은 준비 버전(nullable 추가)→기존 행 채움→최종 버전(NOT NULL·CHECK)으로 나눈다(8장). API는 [API 명세](api-spec.md)의 구현 예정 행.
+
+| 테이블 | 구분 | 컬럼·제약 | 근거 |
+|---|---|---|---|
+| `weekly_theme` | 신규 | `id uuid PK`, `grade_band`(`G3_4`·`G5_6`), `week_start date`(KST 월요일), `title`, `intro text`, `status`(`DRAFT`·`REVIEW_REQUIRED`·`PUBLISHED`·`UNPUBLISHED`, `mission.status`와 같은 집합), `created_by uuid`(core 논리 참조), `published_at NULL`, `created_at`, `updated_at`. 부분 UK `(grade_band, week_start) WHERE status = 'PUBLISHED'` | P23 |
+| `weekly_theme_day` | 신규 | `theme_id FK`, `day_of_week smallint CHECK 1~5`(월~금), `mission_id FK`. PK `(theme_id, day_of_week)`, UK `(theme_id, mission_id)`. 다섯 생각 유형 1개씩은 게시 검사 | P23 |
+| `attempt` | 컬럼 추가 | `context varchar NOT NULL`(`THEME_DAY`·`THEME_REVIEW`·`EXTRA`, 기존 행 `EXTRA`로 채움), `theme_id FK NULL`, `theme_week_start date NULL`(재사용 테마도 그 주로 기록). 테마 컨텍스트면 둘 다 NOT NULL(CHECK) | P23 |
+| `theme_review_view` | 신규 | `student_id uuid`, `week_start date`, `theme_id FK`, `viewed_at`. PK `(student_id, week_start)` | P23, P21 |
+| `community_post` | 신규 | `id uuid PK`, `student_id uuid`, `mission_id FK`, `attempt_id FK`(처음 마무리한 시도), `answer_id FK`(그 시도의 마지막 답변), `status`(`VISIBLE`·`HIDDEN_SETTING`·`HIDDEN_REPORT`·`REMOVED`), `created_at`, `status_changed_at`, `error_report_id uuid NULL`(core 논리 참조). UK `(student_id, mission_id)` → 학생·미션당 1개, 다시 풀기는 공유하지 않음 | P20 |
+| `community_reaction` | 신규 | `post_id FK`, `student_id uuid`, `reaction`(`NEW_IDEA`·`CLEAR_REASON`·`DIFFERENT_VIEW`·`WANT_MORE`), `created_at`. PK `(post_id, student_id, reaction)` | P20 |
+
+- 학생 삭제(`student.deleted`): 그 학생의 `community_post`(달린 반응 포함)·`community_reaction`·`theme_review_view`를 다른 학습 기록과 함께 물리 삭제(P09)
+- 인덱스 후보: `community_post (mission_id, status)`, `community_reaction (student_id, created_at)`, `attempt (student_id, theme_week_start)`, `weekly_theme (grade_band, status, week_start)`
+
 ---
 
 ## 5. report_db
@@ -1204,6 +1247,7 @@ erDiagram
 - `weekly_report.job_id` UK → 같은 `report.generate` 재전달 시 1회만 생성. 상태 전이 `RUNNING → COMPLETED|FAILED`와 `outbox_event(report.*)`를 같은 트랜잭션에 저장
 - #152 관리자 재처리는 새 jobId로 다음 revision을 만든다. 원래 실패 행·기존 파일은 보존한다. 원작업↔재처리 연결은 core #47 소유이며 report DB에 교차 서비스 FK·원작업 컬럼을 추가하지 않는다. 연결 저장은 3.2.2.
 - 재생성은 기존 행을 덮지 않고 `revision` 증가 행 추가, UK `(student_id, period_from, revision)` (기존 판 보존·최신판 기본 조회, P06). 학부모 요청 재생성은 리포트당 1회 → core `report_job(REGENERATE)` 건수로 확인
+  - 구현 예정(P24): 일일 리포트와 함께 UK를 `(student_id, period_type, period_from, revision)`로 교체(5.2)
 - 기록 없는 주·표본 부족 주는 `status = COMPLETED` + `state`로 구분, 생성 실패(`FAILED`)와 분리 (FN-RPT-11). state는 COMPLETED일 때만 NOT NULL (상태 다이어그램 4.2).
 - `report_item` UK `(report_id, item_type, seq)`. 상세 응답(API 3.4)은 `item_type`별로 묶어 조립
 - `report_file` UK `(report_id, format)`. 다운로드는 `s3_key`로 presigned URL 발급 (FN-RPT-13)
@@ -1222,6 +1266,19 @@ erDiagram
 리포트 행 생성 전 실패의 재실행 차단 기록이다. 원문·이름·파일 경로는 저장하지 않는다. DLQ 수동 재전달의 상한이 없으므로 자동 TTL 없이 유지한다. 학생 PROFILE/RECORDS 삭제 완료 트랜잭션에서 이 기록도 제거하며 영구 `report_deletion_guard(COMPLETED)`가 이후 모든 생성을 차단한다. 삭제 표식이 완료된 학생에 복구 요청이 와도 job guard를 새로 만들지 않는다. 삭제 표식 제거/학습 재개는 이번 범위 밖이다. migration downgrade는 재실행 장벽을 없애므로 운영 중 임의 실행하지 않는다.
 
 core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. job_execution은 기존 attempt_no=1 upsert로 종료를 기록하며 동일 복구/늦은 이벤트가 이력을 늘리거나 종료를 되돌리지 않는다.
+
+### 5.2 구현 예정 변경 (report_db)
+
+2026-11-06 서비스 기획 방향 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 저장 구조. 마이그레이션 전이라 위 Mermaid·6장 인덱스 표(실제 DB 계약, `scripts/verify_db_schema.py`가 대조)에는 넣지 않고 표로만 둔다. 구현 시 새 마이그레이션 버전과 함께 Mermaid·6장으로 옮긴다. 컬럼 기본값은 두지 않는다(검증 스크립트 규칙): 기존 행이 있는 테이블의 NOT NULL 컬럼은 준비 버전(nullable 추가)→기존 행 채움→최종 버전(NOT NULL·CHECK)으로 나눈다(8장). API는 [API 명세](api-spec.md)의 구현 예정 행.
+
+| 테이블 | 구분 | 컬럼·제약 | 근거 |
+|---|---|---|---|
+| `weekly_report` | 컬럼 추가 | `period_type varchar NOT NULL`(`DAILY`·`WEEKLY`, 기존 행 `WEEKLY`로 채움), `theme_summary jsonb NULL`(주간만). 테이블 이름은 유지. 일일은 `narrative`·`evening_question` 항상 NULL. 재생성 UK를 `(student_id, period_type, period_from, revision)`으로 교체(월요일 일일·주간의 `period_from`이 같음), revision 잠금 단위도 `(자녀, period_type, period_from)` | P24, FN-RPT-17 |
+| `report_item` | 값 추가 | 일일 문제별 항목(판정 결과·되묻기·보완 답변·생각 요소·돌아보기·인용) 종류 추가, 기존 근거 연결(`report_item_evidence`) 재사용 | P24 |
+| `report_file` | 변경 없음 | 파일 키 규칙 그대로(`reports/{studentId}/{reportId}/r{revision}/...`) | P24 |
+
+- 인덱스: 목록 인덱스 `(student_id, status, period_from)`을 `(student_id, period_type, status, period_from)`으로 교체
+- `report.generate` 메시지 `periodType` 추가와 `periodFrom/To` 의미(주 또는 하루)는 구현 시 [이벤트 계약](../../contracts/events/report-messages.md)에 반영
 
 ---
 

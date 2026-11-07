@@ -12,6 +12,8 @@
 - 알림: support → `NotificationService.support` → 기존 insert(수신 설정·유일성) → 커밋 후 Redis. 비활성 계정·철회 동의·해제 자녀는 생성하지 않음. sourceEventId는 신고/문의 ID, 원문 없는 완료 안내만
 - 공지: 등록/수정/종료 전후를 audit_log에 보존하며 DELETE는 `ended_at`만 기록. help/notices는 인증 필요(PublicAuthFilter 공개 예외에서 제거)
 - ANALYSIS/REPORT 대상 정정은 공급자 계약이 없어 422 `CORRECTION_TARGET_UNSUPPORTED`
+- 구현 예정(P20·P10, [서비스 기획 방향](service-direction.md)): 대상 `COMMUNITY_POST` 추가(유형 5종 그대로). 접수 즉시 learning 공유물을 숨기고(`HIDDEN_REPORT`), 처리 결과로 다시 공개 또는 계속 숨김. 원문 열람은 신고 연결 공유물만·감사 기록
+- 구현 예정(FN-ADM-22·23): 관리자 주간 테마(learning 프록시, 미션과 같은 작성→검토→게시)·꾸미기 아이템(core 소유) 관리, CONTENT 권한·`audit_log`
 
 ### 정정 impact 의미
 

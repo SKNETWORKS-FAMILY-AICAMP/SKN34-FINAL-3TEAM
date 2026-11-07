@@ -104,6 +104,8 @@ stateDiagram-v2
 | → `AGREED`·`WITHDRAWN` | 가입·자녀 등록·동의 변경 (`POST /me/consents`, `POST /children`) | `ConsentService.save` | 현재 문서 전체 항목과 필수 문서(`required`) 동의가 있어야 저장. 항목마다 최신 행과 선택이 다를 때만 새 행 저장(동의 AGREED, 선택 항목 미동의 WITHDRAWN). 재동의도 새 AGREED 행. 권한은 같은 문서·주체·자녀의 최신 행으로 판정 |
 | `AGREED → WITHDRAWN` | `POST /me/consents/{id}/withdrawal` | `ConsentService.withdraw` | 보호자 행 잠금 후 본인 행 확인, 이미 WITHDRAWN이면 그대로 반환. 행 유지 + `withdrawn_at`. 필수 동의 철회 시 대상 자녀(자녀 동의) 또는 계정 이용 차단, 삭제·탈퇴는 별도 요청. 선택 동의는 해당 기능만 중단 (P09) |
 
+- 구현 예정(P20): 선택 동의 문서 `COMMUNITY`(자녀 단위). 철회 시 커뮤니티 공개 설정을 끄고 공유물을 `HIDDEN_SETTING`으로 바꿈(3.6)
+
 ### 2.4 `guardian_transfer.status` (#289 탈퇴 전 자녀 이관)
 
 ```mermaid
@@ -221,6 +223,20 @@ stateDiagram-v2
 - 되묻기는 시도당 최대 2회, 2회째 보완 답변 판정 후 되묻기 생성 없이 마무리 안내. 고르기 `CORRECT`도 되묻기 없이 마무리 안내 (P04)
 - 초안 `attempt_draft.version`: 저장마다 +1, `WHERE version = :ifMatch` (상태값 없음)
 
+#### 3.2.1 테마 요일 문제 열림 (파생, DB 미저장, 구현 예정, P23)
+
+```mermaid
+stateDiagram-v2
+  [*] --> LOCKED: 그 요일 전
+  LOCKED --> OPEN: 그 요일 KST 00:00
+  OPEN --> CLOSED: 다음 날 KST 00:00
+  CLOSED --> [*]
+```
+
+- `OPEN`일 때만 `THEME_DAY` 신규 시도. 토·일 되돌아보기는 `CLOSED` 문제 중 그 주에 마무리한 것만 `THEME_REVIEW`로 다시 풀기, 놓친 문제는 표시만
+- 시작 요청 `context`(`THEME_DAY`·`THEME_REVIEW`·`EXTRA`)는 신규 시도에만 검사. 진행 중 시도 반환(부분 UK 충돌)은 요일과 무관하게 이어하기 허용, 완주 판정은 당일 KST 학습 완료만 인정
+- 재사용 테마의 이미 푼 문제도 그 주 `OPEN` 요일에는 `THEME_DAY` 신규 시도 가능
+
 ### 3.3 `judgment.process_status` (판정 처리)
 
 ```mermaid
@@ -291,6 +307,50 @@ stateDiagram-v2
 
 - 다시 만들려면 새 초안을 요청한다(검사에 실패한 초안을 되살리지 않음). 검사 통과(`READY`)는 공개 승인이 아니며 채택 뒤 3.1 검토·게시를 거친다(P19, FAC-18)
 
+### 3.5 `weekly_theme.status` (구현 예정, P23)
+
+```mermaid
+stateDiagram-v2
+  [*] --> DRAFT: 테마 작성
+  DRAFT --> REVIEW_REQUIRED: 검토 요청
+  REVIEW_REQUIRED --> DRAFT: 수정 요청
+  REVIEW_REQUIRED --> PUBLISHED: 승인 + 게시 검사 통과
+  PUBLISHED --> PUBLISHED: 수정·재검토·재게시
+  PUBLISHED --> UNPUBLISHED: 제공 중단
+  UNPUBLISHED --> REVIEW_REQUIRED: 수정 후 재검토
+```
+
+| 전이 | 트리거 | 조건 |
+|---|---|---|
+| `REVIEW_REQUIRED → PUBLISHED` | `POST /admin/weekly-themes/{id}/publish` (CONTENT) | 월~금 5개 요일 모두 게시 미션, 다섯 생각 유형 1개씩, 미션 학년이 학년군 안, 같은 학년군·주 `PUBLISHED` 없음. 아니면 `422 WEEKLY_THEME_PUBLISH_INCOMPLETE` |
+| `PUBLISHED → UNPUBLISHED` | `/unpublish` | 그 주 학생에게는 최근 게시 테마 재사용(P23). 이미 시작한 시도는 유지 |
+
+- 미션 상태(3.1)와 같은 전이 규칙. 코드값은 [ERD 4.4](erd.md#44-구현-예정-변경-learning_db). 위에 없는 전이는 `409 CONFLICT`
+
+### 3.6 `community_post.status` (구현 예정, P20)
+
+```mermaid
+stateDiagram-v2
+  [*] --> VISIBLE: 미션 첫 학습 완료 + 커뮤니티 공개 켜짐
+  VISIBLE --> HIDDEN_SETTING: 공개 끔·동의 철회·이관 수락
+  HIDDEN_SETTING --> VISIBLE: 공개 켬 + 동의 유효
+  VISIBLE --> HIDDEN_REPORT: 신고 접수
+  HIDDEN_REPORT --> VISIBLE: 검토 결과 다시 공개
+  HIDDEN_REPORT --> REMOVED: 검토 결과 계속 숨김
+  REMOVED --> [*]
+```
+
+| 전이 | 트리거 | 담당 |
+|---|---|---|
+| `VISIBLE ↔ HIDDEN_SETTING` | core `community-visibility` 호출(설정·동의·이관) | learning `CommunityPost.hideBySetting()`·`restore()` |
+| `VISIBLE → HIDDEN_REPORT` | `error_report(targetType = COMMUNITY_POST)` 접수 | core `ErrorReportService` → learning `moderation` |
+| `HIDDEN_REPORT → VISIBLE·REMOVED` | 신고 처리 완료(SERVICE_OPS) | 같은 경로 |
+
+- `HIDDEN_REPORT`·`REMOVED`는 공개 설정을 다시 켜도 `VISIBLE`이 되지 않음
+- 학생·미션당 1행(UK `(student_id, mission_id)`). 다시 풀기 시도는 공유하지 않아 새 행·전이 없음
+- 공개 설정을 다시 켜면 `HIDDEN_SETTING`만 `VISIBLE`로 복원(이관 수락 후 새 보호자 동의 때도 같음)
+- 학생 삭제 시 상태와 관계없이 물리 삭제(P09)
+
 ---
 
 ## 4. 작업 (대화·리포트·알림)
@@ -320,6 +380,7 @@ stateDiagram-v2
 | `QUEUED·RUNNING → FAILED` | `report.failed` | `ReportJob.fail(reason)` | 위와 같음, `failure_reason` |
 
 - 종료 후 늦게 온 `report.started`는 영향 0행 → 무시 (역순 도착 허용)
+- 구현 예정(P24): `report_job.period_type`(`DAILY`·`WEEKLY`) 추가, 정기 생성 부분 UK를 `(student_id, period_type, period_from) WHERE trigger='SCHEDULE'`로 변경(월요일 일일·주간 작업의 `period_from`이 같음). 일일 작업도 같은 전이
 - `QUEUED` 고착(메시지 DLQ 이동)은 #132 복구 점검으로 실제 report 상태와 대조한 뒤 종료한다. 관리자는 `/admin/queues`·`/admin/jobs`에서 확인하며 자동 재생성은 하지 않는다.
 
 #### 4.1.1 종료 유실·삭제 (#132)
@@ -357,6 +418,7 @@ stateDiagram-v2
 | `RUNNING → FAILED` | 예외 | `ReportRepository.finish`(실패 사유) | 위와 같음 + `outbox(report.failed)` |
 
 - 기록 없는 주·표본 부족 주는 `COMPLETED` + `state`, 처리 실패(`FAILED`)와 구분 (FN-RPT-11)
+- 구현 예정(P24): 일일 리포트도 같은 행·전이를 쓰고 `period_type = DAILY`로 구분. 기록 없는 날은 `COMPLETED` + `NO_RECORD`. 재생성 판 UK는 `(student_id, period_type, period_from, revision)`
 - 재생성은 새 행(`revision + 1`), 기존 결과 보존·최신판 기본 조회 (P06)
 - #152 관리자 실패 재처리도 **새 jobId·새 행**으로 위 전이를 시작한다. 원래 FAILED 행은 유지하며 같은 jobId의 COMPLETED·FAILED 메시지는 ACK 후 종료한다. 원작업 연결은 core #47이 관리하고, report는 요청한 새 jobId별 이벤트만 발행한다.
 
@@ -450,6 +512,7 @@ stateDiagram-v2
 
 - `R_*`·`Q_*` 접두어 = 각 테이블 `status` 값
 - 접수만으로 판정 변경 금지, `RECEIVED → RESOLVED` 직행 금지 (검토 기록 필수, FN-SUP-02)
+- 구현 예정(P20·P10): 대상 `COMMUNITY_POST` 신고 접수 시 공유물 `HIDDEN_REPORT`, `RESOLVED` 처리 결과로 `VISIBLE` 또는 `REMOVED`(3.6)
 
 ### 5.1 core 정정 실행 기록 (#46)
 
@@ -586,6 +649,17 @@ stateDiagram-v2
 - confirm 후 `published_at` 기록 전 중단되면 같은 이벤트가 다시 발행됨 → 소비자는 `processed_event`로 멱등 처리 (at-least-once)
 
 report #131은 위 미발행 상태를 `next_attempt_at`·`quarantined_at`으로 세분한다. 별도 status 컬럼은 추가하지 않는다. 최초 실패 후 1·5·15분으로 재시도하고 총 4회 실패 시 격리한다. 해당 학생의 후속 이벤트는 선두를 추월하지 않으며 다른 학생의 발행은 계속된다. 운영 CLI의 수동 재처리는 같은 id·payload·순서 위치를 유지하면서 실패 횟수·대기·격리를 초기화하고 수동 처리 횟수와 시각을 남긴다. [상세 정책](../report/report.md#11-outbox-실패-격리와-학생별-발행-순서-131)
+
+### 7.3 `look_item.status` (구현 예정, P22)
+
+```mermaid
+stateDiagram-v2
+  [*] --> ON_SALE: 등록 (CONTENT)
+  ON_SALE --> STOPPED: 판매 중단
+  STOPPED --> ON_SALE: 판매 재개
+```
+
+- `STOPPED`는 새 해금만 막고 이미 해금한 학생의 착용은 유지. 삭제 상태 없음(P22)
 
 ---
 

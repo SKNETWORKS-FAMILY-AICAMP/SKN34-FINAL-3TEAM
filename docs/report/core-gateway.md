@@ -12,7 +12,7 @@
   - 확정 응답은 원문·필수 헤더·상태를 보관. 미확정·5xx·전송 실패는 같은 키로 learning 재호출. core 저장 실패는 503(learning 성공을 성공으로 가장하지 않음)
   - learning이 키의 UK·본문 대조·최초 응답 재구성·답변/판정 원자적 저장을 제공해야 두 DB 사이 중복 생성이 없음(core TTL 24시간 이후에도 learning UK 유지)
 - 시도 상세(#195): core 공개 `GET /attempts/{attemptId}`는 `Cache-Control: no-store`, 웹도 상세·제출·마무리·돌아보기 후 재조회에 `cache: 'no-store'`. 초안 버전은 피드백·마무리·돌아보기 상태의 버전이 아니라서 상세 표현의 HTTP 캐시 검증자(ETag)로 쓰면 304로 상태 변경을 놓침. 초안 ETag/If-Match·409 계약은 그대로
-- 일일 한도(P13): 미구현. #210 결정에 따라 PostgreSQL로 구현 예정(6장). learning의 신규 `201`·이어하기 `200`을 그대로 전달하고, 한도 연계 시 `201`만 집계·한도 도달 시 신규 생성만 차단
+- 일일 한도(P13): 미구현. 무료 하루 1개(당일 테마 문제 `THEME_DAY`, 2026-11-06 결정). #210 결정에 따라 PostgreSQL `mission_daily_usage`로 구현 예정(6장, [ERD 3.6](../design/erd.md#36-구현-예정-변경-core_db)). learning의 신규 `201`·이어하기 `200`을 그대로 전달하고, 한도 연계 시 `201`만 집계·한도 도달 시 신규 생성만 차단
 
 ## 2. 피드백 SSE (#39)
 
@@ -49,6 +49,7 @@
 
 - core가 conversation/message/evidence UUID 생성, AI messageId는 신뢰하지 않음
 - 기본 기간은 Asia/Seoul 오늘 포함 7일. scope를 본문에 명시하면 해당 범위에 대한 사용자 확인으로 취급. 자녀 변경은 새 대화, 기간 변경은 `scope.changed=true`. 이력은 정확히 같은 자녀·기간의 완료 메시지 최근 10쌍(20 turn `{role,text}`)만 전달, 질문 1,000자
+- 구현 예정(P25): 일일 리포트에서 만든 대화는 리포트 ID·판을 저장해 그날로 고정하고, 메시지마다 core가 report에서 그 판을 읽어 ai 요청에 넣는다(범위 변경 없음, 다른 날은 새 대화)
 - SSE `status → delta* → result | clarification | error → done`. delta는 저장하지 않음. result는 scope 일치·verification 플래그 true·source 및 근거 식별자 형식을 검사(숫자/인용 대조·TEMPLATE 생성은 AI 책임). `verification.contentAllowed`가 명시되어 false/잘못된 형식이면 확정하지 않음(값이 없는 기존 두 플래그 계약은 보존). done 이후 DB 확정 후 공개. EOF·잘못된 순서·중복 terminal은 실패
 - clarification은 AI `{reason,message,current}`를 공개 `{question,options:[],reason,current}`로 변환. 사용자에게 없는 자녀·기간 선택지를 만들어 주지 않음
 - AI의 answerVersion이 null이면 현재 learning 응답의 실제 버전 사용(ID/기간 검사 유지). 시작일 이전 최초 답변은 evidence의 학생/시도/답변/버전·종료일 검증 뒤 해당 시도가 기간별 attempts 목록에 실제 포함되는지 확인
@@ -132,7 +133,7 @@
 | 구분 | 대상 |
 |---|---|
 | PostgreSQL로 이전 | 분석 대화 일일 사용량, 관리자 대화 재처리 중복 차감 방지 표식 |
-| PostgreSQL로 신규 구현(후속 미정) | 무료 플랜 미션 일일 한도(P13). 구현 이슈 미정. 설계 문서는 "미구현, PostgreSQL 구현 예정(#210)"으로 표기 |
+| PostgreSQL로 신규 구현(후속 미정) | 무료 플랜 미션 일일 한도(P13, 2026-11-06 결정으로 하루 1개). 구현 이슈 미정. 설계는 core `mission_daily_usage`(ERD 3.6) |
 | Redis 유지 | 학생 기기 페어링 코드, 기기 등록·페어링 발급 rate limit, 알림 Pub/Sub `core:notifications:v1` |
 
 - 근거 1: 분석 사용량은 이미 보호자·학생 행 잠금 트랜잭션 안에서 차감되므로 PostgreSQL 조건부 UPSERT로 동시성 요구를 같은 수준으로 충족하면서 롤백 불일치와 분산 원자성 제약을 함께 없앤다. 아직 구현되지 않은 미션 한도도 같은 패턴으로 만들면 Redis 의존 기능을 새로 늘리지 않는다

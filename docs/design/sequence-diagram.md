@@ -318,6 +318,35 @@ sequenceDiagram
 - 구독·결제·환불의 명의는 바꾸지 않는다. 보내는 학부모의 진행 중 구독·결제·환불이 있으면 요청·수락 모두 막는다. 학부모 전역 리포트 설정은 이전하지 않고, 학생 공개 설정·학습·리포트 기록은 유지한다. 새 학부모는 학생 기기를 다시 등록한다
 - 서버 `APP_GUARDIAN_TRANSFER_ENABLED`·웹 `VITE_GUARDIAN_TRANSFER_ENABLED`로 신규 대상 조회·요청·수락을 제어한다(기본 꺼짐). 본인 요청 조회·거절·취소는 기능 off·동의 누락에도 유지하고, 취소 후 탈퇴는 별도 재인증·최종 확인을 거친다(#307). 상세 범위와 검증은 [이관 구현 기록](../report/auth-account.md#6-탈퇴-전-자녀-이관-289)
 
+### 2.6 꾸미기 해금·착용 (P22, 구현 예정)
+
+구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web(학생)
+  participant C as core
+  participant CDB as core_db
+
+  W->>C: POST /students/me/look-items/{itemKey}/unlock (Idempotency-Key)
+  rect rgba(128,128,128,0.12)
+    C->>CDB: reward_point_balance 행 잠금
+    alt 이미 해금
+      C-->>W: 200 (차감 없음)
+    else 판매 중단·잔액 부족
+      C-->>W: 409 LOOK_ITEM_NOT_ON_SALE / INSUFFICIENT_POINTS
+    else 해금
+      C->>CDB: reward_point_ledger (UNLOCK, 음수) + 잔액 차감
+      C->>CDB: student_look_unlock 저장
+      C-->>W: 200 {balance}
+    end
+  end
+  W->>C: PUT /students/me/preferences {theme, companion, equipped}
+  C->>CDB: 해금 여부 확인 후 student 꾸미기·student_look_equipment 저장
+  C-->>W: 200 (잠긴 항목은 409 LOOK_LOCKED)
+```
+
 ---
 
 ## 3. 미션 학습
@@ -387,7 +416,7 @@ sequenceDiagram
 - learning도 시도·키(ERD UK)로 같은 키를 처리. core가 learning 응답을 받기 전에 끊겨 다시 보내도 답변은 1건
 - 표현 검사(#205)는 learning 안의 단어 목록 대조라 외부 호출이 없음. 막힌 요청은 저장하지 않고, core는 그 422(범주별 안내, 원문 없음)를 같은 키의 응답으로 저장. 웹은 답이 바뀌면 새 키를 만들어 고친 답은 새 요청이 됨. 초안 자동 저장은 검사하지 않음 (learning.md #205)
 - 메모는 초안 `content.memo`로 함께 저장, 학생 본인 조회에만 포함 (P05)
-- 무료 플랜은 하루 신규 미션 시도 3개까지 허용 (P13). 신규 생성 `201`만 집계하고 이어하기 `200`은 항상 허용, 한도 초과 신규 생성만 `429 USAGE_LIMIT_REACHED` (API 2.2, 미구현: #210 결정에 따라 PostgreSQL로 구현 예정)
+- 무료 플랜은 하루 신규 미션 시도 1개(당일 테마 문제, 3.4)까지 허용 (P13). 신규 생성 `201`만 집계하고 이어하기 `200`은 항상 허용, 한도 초과 신규 생성만 `429 USAGE_LIMIT_REACHED` (API 2.2, 미구현: #210 결정에 따라 PostgreSQL로 구현 예정)
 
 ### 3.2 피드백 SSE (판정·되묻기)
 
@@ -514,6 +543,143 @@ sequenceDiagram
   end
 ```
 
+### 3.4 주간 테마 문제 시작 (P23·P13, 구현 예정)
+
+구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web(학생)
+  participant C as core
+  participant CDB as core_db
+  participant L as learning
+
+  W->>C: GET /students/me/weekly-theme
+  C->>L: GET /internal/students/{id}/weekly-theme?gradeBand&date (KST)
+  L->>L: 그 주 게시 테마, 없으면 최근 게시 테마 재사용
+  L-->>C: 테마·요일 상태·되돌아보기 목록
+  C-->>W: 200
+  W->>C: POST /missions/{missionId}/attempts {context: THEME_DAY}
+  opt 무료 자녀
+    C->>CDB: mission_daily_usage 오늘(KST) 건수 확인
+    alt 1개 이상
+      C-->>W: 429 USAGE_LIMIT_REACHED
+    end
+  end
+  C->>L: POST /internal/missions/{id}/attempts?grade {context, themeId}
+  alt 신규 시도인데 오늘 요일 문제가 아님
+    L-->>C: 409 THEME_DAY_CLOSED
+    C-->>W: 409
+  else 신규 201 / 진행 중 200
+    L-->>C: 시도
+    opt 201 이고 무료
+      C->>CDB: mission_daily_usage 기록
+    end
+    C-->>W: 시도 (이후 3.1~3.3 흐름)
+  end
+```
+
+- `EXTRA`는 무료면 core가 403 `PREMIUM_REQUIRED`, 프리미엄이면 `payment_premium_usage(EXTRA_MISSION)` 기록. `THEME_REVIEW`는 한도 집계 없이 learning이 토·일·마무리한 문제인지 검사
+- 진행 중 시도 반환(`200`)은 요일 검사 없이 이어하기(자정 후 포함). 재사용 테마의 이미 푼 문제도 그 주 당일이면 `THEME_DAY` 신규 시도
+- 주간 테마 조회 때 core는 응답의 당일 완료 시도와 원장을 대조해 누락된 `MISSION_COMPLETED` 적립을 보충
+
+### 3.5 학습 완료 → 포인트 적립·자동 공유 (P20·P21, 구현 예정)
+
+구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web(학생)
+  participant C as core
+  participant CDB as core_db
+  participant L as learning
+
+  W->>C: POST /attempts/{id}/reflection
+  C->>L: 돌아보기 저장 (3.3과 같음)
+  L-->>C: 200 학습 완료 {missionId, context}
+  rect rgba(128,128,128,0.12)
+    C->>CDB: reward_point_ledger (MISSION_COMPLETED, source_key = missionId) — UK면 건너뜀
+    C->>CDB: reward_point_balance += 10
+  end
+  opt community_enabled 이고 COMMUNITY 동의 유효
+    C->>L: POST /internal/community/posts {studentId, attemptId}
+    L->>L: 학습 완료·표현 필터 통과 확인, 마지막 답변으로 공유물 저장 (학생·미션당 1개, 다시 풀기는 저장 안 함)
+    L-->>C: 201 {postId} 또는 200 (이미 있음)
+    rect rgba(128,128,128,0.12)
+      C->>CDB: reward_point_ledger (COMMUNITY_POSTED, source_key = postId) + 잔액
+    end
+  end
+  C-->>W: 200 학습 완료 + 적립 포인트
+```
+
+- 공유·적립 저장 실패는 학습 완료 응답을 바꾸지 않는다. 원장은 사건 키 UK로 멱등이라 같은 사건 재요청·주간 테마 조회(3.4) 때 보충
+
+### 3.6 되돌아보기 열람·완주 보너스 (P21·P23, 구현 예정)
+
+구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web(학생)
+  participant C as core
+  participant CDB as core_db
+  participant L as learning
+
+  W->>C: POST /students/me/weekly-theme/review-views
+  C->>L: POST /internal/students/{id}/weekly-theme/review-views
+  L->>L: 토·일 확인, theme_review_view 저장 (주 1회 멱등)
+  L-->>C: {firstViewThisWeek, completed}
+  rect rgba(128,128,128,0.12)
+    opt firstViewThisWeek
+      C->>CDB: reward_point_ledger (REVIEW_VIEWED, source_key = weekStart) + 잔액
+    end
+    opt completed (월~금 5문제 각 당일 학습 완료)
+      C->>CDB: reward_point_ledger (THEME_COMPLETED, source_key = weekStart) + 잔액
+    end
+  end
+  C-->>W: 200 {earned}
+```
+
+### 3.7 커뮤니티 열람·반응·신고 (P20, 구현 예정)
+
+구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web(학생)
+  participant C as core
+  participant CDB as core_db
+  participant L as learning
+  participant A as 관리자 Web
+
+  W->>C: GET /missions/{missionId}/community-posts?seed
+  C->>L: GET /internal/community/missions/{missionId}/posts?viewerStudentId&seed
+  alt viewer가 이 미션을 마무리하지 않음
+    L-->>C: 403 COMMUNITY_LOCKED
+    C-->>W: 403
+  else 마무리함
+    L-->>C: VISIBLE 공유물 무작위 목록 (studentId 포함, 반응 수 없음)
+    C->>CDB: 작성자 별명·꾸미기 조회
+    C-->>W: 200 (studentId 제거, author = 별명·look)
+  end
+  W->>C: PUT /community-posts/{postId}/reactions/NEW_IDEA
+  C->>L: PUT /internal/community/posts/{postId}/reactions/NEW_IDEA?studentId
+  L-->>C: {created: true}
+  opt 생성됨이고 오늘 반응 적립 상한 미만
+    C->>CDB: reward_point_ledger (REACTION_GIVEN, source_key = postId:reaction) + 잔액
+  end
+  C-->>W: 204
+  W->>C: POST /error-reports {targetType: COMMUNITY_POST, targetId}
+  C->>CDB: error_report 저장 (RECEIVED)
+  C->>L: PUT /internal/community/posts/{postId}/moderation {HIDDEN_REPORT}
+  A->>C: 신고 처리 결과 (다시 공개 또는 계속 숨김)
+  C->>L: moderation {VISIBLE 또는 REMOVED}
+```
+
 ---
 
 ## 4. 대시보드 조회
@@ -595,12 +761,42 @@ sequenceDiagram
 
 - 재시도(`/messages/{id}/retry`): 같은 행 `FAILED → RUNNING` 조건부 전이 후 같은 흐름 (ERD 3.2)
 - 대조 실패·LLM 키 부재·호출 실패 시 규칙 응답 모드(`source = TEMPLATE`), 기록 조회 자체 실패는 `error` (FN-AGT-06·10, P16)
-- 무료 플랜은 대화 생성 시 `429 USAGE_LIMIT_REACHED`, 프리미엄은 하루 30회 (P13)
+- 무료 플랜은 대화 생성 시 `429 USAGE_LIMIT_REACHED`, 프리미엄은 하루 30회 (P13). 일일 리포트 고정 대화도 같은 30회 (5.1)
 - 근거 확인(`/evidence`): core가 `message_evidence` ID로 learning `/internal/records/evidence` 조회, 삭제된 기록은 `available: false`
+
+### 5.1 일일 리포트 대화 (P25, 구현 예정)
+
+구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web(학부모)
+  participant C as core
+  participant CDB as core_db
+  participant R as report-api
+  participant A as ai
+
+  W->>C: POST /conversations {childId, reportId}
+  C->>CDB: 자녀 연결·이용권 확인 (무료면 USAGE_LIMIT_REACHED)
+  C->>R: GET /internal/reports/{reportId}
+  alt 일일 아님·다른 자녀
+    C-->>W: 422 CONVERSATION_REPORT_INVALID
+  else 일일 리포트
+    C->>CDB: conversation 저장 (from = to = 대상일, report_id·report_revision)
+    C-->>W: 201
+  end
+  W->>C: POST /conversations/{id}/messages (SSE)
+  C->>R: GET /internal/reports/{reportId}?revision (고정 판)
+  C->>A: 5장 흐름 + 고정 범위(그날)·리포트 요약
+  A-->>C: 대조 완료 답변 또는 규칙 응답 (P16)
+  C-->>W: SSE 결과 (분석 대화 하루 30회 공유 차감)
+```
+- 고정 대화는 범위 변경 없이 다른 날 질문을 새 대화로 안내. ai는 report를 직접 호출하지 않음
 
 ---
 
-## 6. 주간 리포트
+## 6. 리포트
 
 ### 6.1 자동 생성
 
@@ -774,6 +970,48 @@ sequenceDiagram
 ### 6.4 #47 REPORT 관리자 재처리 접수
 
 ADMIN/SERVICE_OPS → OperationsController → 공통 IdempotencyService → ReportAdminRetryService → 학생 상태 잠금 service·report 학생/주/원작업 잠금 → 새 report_job + report_job_retry + report.generate Outbox + JOB_RETRY_REQUESTED 감사 커밋 → 202/Location. 이후 기존 Outbox relay → report(#152) → 새 jobId의 report.* → 기존 ReportLifecycleService → processed_event + report_job + job_execution + 결과 감사가 같은 트랜잭션으로 커밋된다. DB 트랜잭션 안에서 report HTTP·브로커 네트워크 호출을 하지 않는다.
+
+### 6.5 일일 리포트 생성·알림 (P24, 구현 예정)
+
+구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant SCH as core 스케줄러
+  participant C as core
+  participant CDB as core_db
+  participant MQ as RabbitMQ
+  participant RW as report-worker
+  participant RDB as report_db
+  participant L as learning
+  participant S3 as S3
+
+  SCH->>SCH: 매일 07:00 KST, @SchedulerLock 획득
+  loop 보호자 LINKED인 ACTIVE 학생마다 (기록 없어도 포함, 대상일 = 전날 KST)
+    rect rgba(128,128,128,0.12)
+      SCH->>CDB: report_job (SCHEDULE, period_type = DAILY, period_from = period_to)
+      SCH->>CDB: outbox_event (report.generate, periodType = DAILY)
+    end
+  end
+  C-)MQ: report.generate (6.1과 같은 발행)
+  MQ-)RW: 소비 → weekly_report (period_type = DAILY, RUNNING) + report.started
+  RW->>L: 대상일 기록 조회 (학생 범위)
+  alt 기록 없음
+    RW->>RW: state = NO_RECORD
+  else 기록 있음
+    RW->>RW: 문제별 판정·되묻기·보완 답변·생각 요소·돌아보기·인용 템플릿 구성 (ai 호출 없음)
+    RW->>RW: 숫자·인용 원본 대조, #206 비공개면 원문 제외
+  end
+  RW->>S3: PDF·Markdown·HTML 저장
+  rect rgba(128,128,128,0.12)
+    RW->>RDB: COMPLETED + outbox_event (report.completed)
+  end
+  RW-)MQ: report.completed
+  MQ-)C: report_job COMPLETED, 알림 DAILY_REPORT_COMPLETED (수신 설정 확인)
+```
+
+- 실패·재시도·DLQ·관리자 재처리는 6.1·6.4와 같고 실패 알림 유형만 `DAILY_REPORT_FAILED`
 
 ---
 
@@ -966,6 +1204,7 @@ sequenceDiagram
   C->>C: NotificationService.notify (ERROR_REPORT_RESOLVED)
 ```
 
+- 구현 예정(P20): `targetType: COMMUNITY_POST` 신고는 접수 즉시 공유물 숨김(3.7)
 - 접수만으로 판정을 바꾸지 않음 (FN-SUP-02). 정정 없이 종료하는 경우 `IN_REVIEW → RESOLVED`만 수행
 
 ---
