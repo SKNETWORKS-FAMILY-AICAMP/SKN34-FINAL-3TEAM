@@ -98,6 +98,20 @@ $env:DEMO_URL='http://127.0.0.1:5196'
 node tests/qr-device-browser.mjs
 ```
 
-## 6. 남은 확인
+## 6. 2026-11-06 결정 참여 기능 웹 (#389 웹 몫·#393·#394·#395, 에픽 #396)
 
+[서비스 기획 방향](service-direction.md)의 확정 설계를 API 명세 2.4·2.5·2.8~2.11·3.12의 "구현 예정" 계약대로 웹에 먼저 붙였다. 서버(core #387~#392, learning #385·#386)는 아직 없어 MSW 목업으로만 확인했고, 명세의 "구현 예정" 표기는 서버 구현 때 지운다.
+
+- 공통 데이터 계층: `domain/retention.ts`(읽기 함수가 모르는 사건·칸·요일·반응을 버림), `data/retention/`(학생·학부모 참여 API), `data/admin/retentionApi.ts`. 참여 조회는 `retry: false`로 학습 화면을 막지 않는다. 해금·신고는 Idempotency-Key, 같은 버튼 재시도는 같은 키
+- 꾸미기(#389 웹, P22): 해금 목록을 받지 못하면 잠금 표시 없이 현행처럼 고르고, 잠긴 값은 서버 409 `LOOK_LOCKED`가 막는다. `equipped`는 서버가 줄 때만 읽고 보낸다(#234 현행 응답 호환). 호수·뭉치는 목록이 없어도 열림
+- 학생(#393): 생각 지도 위 이번 주 테마(월요일 도입 이야기·요일 상태·당일 문제), 토·일 되돌아보기(마무리 문제 다시 풀기, 놓친 문제는 표시만, 열면 주 1회 기록), 시작 맥락 `context`(`THEME_DAY`·`THEME_REVIEW`·`EXTRA`)는 고른 경로에서 붙이고 맥락 없는 기존 시작은 그대로 보낸다. 미션 고르기는 `EXTRA`(무료는 프리미엄 안내). 친구 생각(같은 미션 마무리 후 무작위 순서, 반응 4종, 신고), 공개 설정에 커뮤니티 공개(보호자 동의 전 비활성), 내 포인트(잔액·내역·적립 규칙). 순위·인기순·다른 학생 반응 수는 표시하지 않음
+- 학부모(#394): 리포트 목록 일일·주간 구분(`periodType`, 없으면 주간), 일일 상세는 문제별 기록만(서술·저녁 질문 없음), 주간 상세에 테마 요약. "이 리포트로 물어보기"는 일일이면 `{childId, reportId}` 고정 대화(다른 날 질문은 새 대화 안내), 주간이면 리포트 기간 대화. 대시보드에 자녀 공유물·받은 반응·포인트, 정보 관리에 `COMMUNITY` 선택 동의·철회, 알림 유형 일일 2종
+- 가입·계정 동의는 `isAccountDocument`(이용 안내·개인정보)로만 고른다. 서버가 동의 문서에 `COMMUNITY`를 더해도 가입 필수 항목으로 섞이지 않게
+- 관리자(#395): 콘텐츠 메뉴에 주간 테마(작성·검토 요청·게시·중단, 422 `WEEKLY_THEME_PUBLISH_INCOMPLETE`의 `errors` 표시)와 꾸미기 아이템(등록·수정·판매 중단, 삭제 없음). 오류 신고 목록에 `COMMUNITY_POST` 대상 이름
+- 목업: `mocks/fixtures/retention.ts`·`handlers/retention.ts`. 요일은 sessionStorage `sagomungchi:msw-weekday`(0=월~6=일)로 바꿔 볼 수 있다. 원문 비공개(#206)면 일일 리포트 문제별 원문도 숨긴다. 보호자 동의 확인은 법정대리인 문서만 본다(선택 동의 철회가 이용 제한으로 읽히지 않게)
+- 확인: `npm run lint`·`npm test`(목업 계약 `tests/retentionMock.test.ts`, 읽기·어댑터 `tests/retention.test.ts`)·`npm run build`, 개발 서버 목업 모드에서 학생·학부모·관리자 흐름
+
+## 7. 남은 확인
+
+- 참여 기능 실서버 연결: core·learning 구현 후 응답 필드(일일 `problems[]` 세부, 테마 요약, 게시 검사 `errors` 형식)를 다시 대조
 - lint의 기존 `AdminOperations.tsx` immutability 경고 1건(재확인 필요)
