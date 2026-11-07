@@ -52,7 +52,7 @@ test('보호자 비밀번호 복귀·실제 학습·리포트 생성 후 이관�
   await page.getByRole('button', { name: '학부모 화면으로', exact: true }).click()
   await page.waitForURL('**/parent/journal**')
   await expect(page.getByRole('heading', { name: `${nickname}의 학습 기록` })).toBeVisible()
-  await page.getByRole('link', { name: '주간 리포트' }).click()
+  await page.getByRole('link', { name: '리포트', exact: true }).click()
   const report = page.locator('article', { has: page.getByRole('heading', { name: `${start} ~ ${end}` }) })
   await expect(async () => { await page.reload(); await expect(report.getByText('생성 완료')).toBeVisible({ timeout: 5_000 }) }).toPass({ timeout: 120_000, intervals: [3000] })
   await page.goto('/parent/transfers')

@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { ReportProblem } from '../service/ReportProblem.tsx'
 import type { Child, Period } from '../../domain/classroom.ts'
-import type { Scope } from '../../domain/parent.ts'
+import type { DailyProblem, ReportPeriodType, Scope, ThemeSummary } from '../../domain/parent.ts'
+import { reportPeriodType } from '../../domain/parent.ts'
+import { ReportChat } from './ReportChat.tsx'
 import { parentApi } from '../../data/parent/api.ts'
 import { useParentQuery, useParentMutation } from '../../data/parent/queries.ts'
 import { thinkingLabels } from '../../domain/classroom.ts'
@@ -19,19 +21,28 @@ export function ParentReports({
   onAnalysis: (p: Period) => void
 }) {
   const [status, setStatus] = useState(''),
+    [kind, setKind] = useState<ReportPeriodType | ''>(''),
     [id, setId] = useState<string | null>(null),
     [revision, setRevision] = useState<number | undefined>(),
-    list = useParentQuery(['reports', child.id, status], (signal) =>
-      parentApi.reports(child.id, status, signal),
+    list = useParentQuery(['reports', child.id, status, kind], (signal) =>
+      parentApi.reports(child.id, status, signal, kind || undefined),
     )
   return (
     <>
-      <h1>주간 리포트</h1>
+      <h1>리포트</h1>
       <p>
-        화면 공통 선택 기간 {scope.from} ~ {scope.to} · 주간 리포트는 KST 월~일 기준이므로 실제
-        리포트 기간을 따로 표시합니다.
+        화면 공통 선택 기간 {scope.from} ~ {scope.to} · 리포트는 KST 기준이므로 실제 리포트 기간을
+        따로 표시합니다.
       </p>
-      <p>직전 주 리포트는 월요일 오전 7시에 생성됩니다.</p>
+      <p>일일 리포트는 매일 오전 7시에 전날 기록으로, 주간 리포트는 월요일 오전 7시에 직전 주 기록으로 만들어집니다.</p>
+      <label>
+        리포트 종류{' '}
+        <select aria-label="리포트 종류" value={kind} onChange={(e) => setKind(e.target.value as ReportPeriodType | '')}>
+          <option value="">전체</option>
+          <option value="DAILY">일일</option>
+          <option value="WEEKLY">주간</option>
+        </select>
+      </label>{' '}
       <label>
         생성 상태{' '}
         <select aria-label="리포트 상태" value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -54,9 +65,8 @@ export function ParentReports({
           {!list.data.items.length && <p>아직 생성된 리포트가 없습니다.</p>}
           {list.data.items.map((r) => (
             <article className="ws-card" key={r.reportId}>
-              <h2>
-                {r.period.from} ~ {r.period.to}
-              </h2>
+              <p className="ws-tag">{reportPeriodType(r) === 'DAILY' ? '일일 리포트' : '주간 리포트'}</p>
+              <h2>{reportPeriodType(r) === 'DAILY' ? r.period.from : `${r.period.from} ~ ${r.period.to}`}</h2>
               <p>
                 {r.status === 'COMPLETED'
                   ? '생성 완료'
@@ -115,7 +125,8 @@ function ReportDetail({
     [proof, setProof] = useState<string | null>(null),
     [notice, setNotice] = useState('')
   const r = q.error ? undefined : q.data,
-    ready = r?.status === 'COMPLETED'
+    ready = r?.status === 'COMPLETED',
+    daily = !!r && reportPeriodType(r) === 'DAILY'
   async function file(format: 'pdf' | 'md') {
     try {
       const data = await download.mutateAsync(format)
@@ -131,7 +142,7 @@ function ReportDetail({
   }
   return (
     <section className="ws-card">
-      <h2>리포트 상세</h2>
+      <h2>{daily ? '일일 리포트 상세' : '리포트 상세'}</h2>
       <ReportProblem targetType="REPORT" targetId={id}/>
       <QueryFeedback query={q} />
       {r && (
@@ -166,7 +177,9 @@ function ReportDetail({
             <>
               <p>{r.inclusionRule}</p>
               <QueryStateNotice state={r.state} />
-              {r.narrative ? (
+              {daily ? (
+                <DailyProblems problems={r.problems ?? []} onProof={setProof} />
+              ) : r.narrative ? (
                 <>
                   <p>{r.narrative.text}</p>
                   <p>요약 출처 · {r.narrative.source}</p>
@@ -186,7 +199,8 @@ function ReportDetail({
                   </button>
                 ))}
               </div>
-              {child.plan !== 'FREE' && (
+              {!daily && r.themeSummary && <ThemeSummaryView summary={r.themeSummary} />}
+              {!daily && child.plan !== 'FREE' && (
                 <>
                   <h3>생각 유형별 활동</h3>
                   {r.thinkingTypes.map((t) => (
@@ -248,9 +262,11 @@ function ReportDetail({
               )}
               <p>{r.parentSharingEnabled === false ? '원문 비공개 중에는 기존 파일을 제공하지 않습니다. 위 학습 수치는 계속 확인할 수 있습니다.' : '다운로드는 서버가 제공하는 최신판 파일입니다.'}</p>
               <div className="ws-actions">
-                <button className="cj-secondary" onClick={() => onAnalysis(r.period)}>
-                  이 기간의 기록에 질문
-                </button>
+                {!daily && (
+                  <button className="cj-secondary" onClick={() => onAnalysis(r.period)}>
+                    이 기간의 기록에 질문
+                  </button>
+                )}
                 <button
                   className="cj-secondary"
                   disabled={download.isPending || r.parentSharingEnabled === false}
@@ -290,6 +306,15 @@ function ReportDetail({
           <p>학부모 재생성은 리포트당 한 번입니다. 이전 판은 유지됩니다.</p>
         </>
       )}
+      {r && ready && (
+        <ReportChat
+          key={`${r.reportId}-${r.revision}`}
+          child={child}
+          scope={{ childId: child.id, from: r.period.from, to: r.period.to }}
+          reportId={daily ? r.reportId : undefined}
+          onAnalysis={onAnalysis}
+        />
+      )}
       <p role="status">{notice}</p>
       <ErrorNotice error={regenerate.error} />
       <ErrorNotice error={download.error} />
@@ -302,5 +327,90 @@ function ReportDetail({
         </Modal>
       )}
     </section>
+  )
+}
+
+const judgmentLabels: Record<NonNullable<DailyProblem['judgment']>, string> = {
+  CORRECT: '맞게 썼어요',
+  PARTIAL: '일부 확인',
+  RETHINK: '다시 생각해 보기',
+  HELD: '판정 보류',
+}
+const contextLabels: Record<NonNullable<DailyProblem['context']>, string> = {
+  THEME_DAY: '주간 테마 오늘 문제',
+  THEME_REVIEW: '되돌아보기 다시 풀기',
+  EXTRA: '추가 문제',
+}
+
+/** 일일 리포트(P24): 그날 문제별 기록만 보여 준다. 서술·저녁 질문은 없다. */
+function DailyProblems({ problems, onProof }: { problems: DailyProblem[]; onProof: (itemId: string) => void }) {
+  if (!problems.length) return <p>이날은 기록이 없습니다.</p>
+  return (
+    <>
+      <h3>그날 푼 문제</h3>
+      {problems.map((p, i) => (
+        <article className="ws-card" key={`${p.missionId}-${p.attemptId ?? i}`}>
+          <h4>{p.title}</h4>
+          <p>
+            {p.context ? `${contextLabels[p.context]} · ` : ''}
+            {p.judgment ? `판정 ${judgmentLabels[p.judgment]}` : '판정 없음'}
+          </p>
+          {p.followups.map((f, j) => (
+            <div key={j}>
+              <p>되묻기 {j + 1} · {f.question}</p>
+              <blockquote>{f.answer ?? '보완 답변 없음'}</blockquote>
+            </div>
+          ))}
+          {p.finalAnswer && (
+            <>
+              <h5>마지막 답</h5>
+              <blockquote>{p.finalAnswer}</blockquote>
+            </>
+          )}
+          {p.elements.length > 0 && (
+            <p>
+              확인된 생각 요소 · {p.elements.filter((e) => e.satisfied).map((e) => e.label).join(', ') || '없음'}
+            </p>
+          )}
+          <p>
+            돌아보기 ·{' '}
+            {p.reflection?.written ? `${p.reflection.difficulty ?? ''} ${p.reflection.text ?? ''}`.trim() : '쓰지 않음'}
+          </p>
+          {p.attemptId && (
+            <button className="cj-secondary" onClick={() => onProof(p.attemptId!)}>
+              원문 근거
+            </button>
+          )}
+        </article>
+      ))}
+      <small>판정 결과는 그날 기록이며 능력 점수가 아닙니다.</small>
+    </>
+  )
+}
+
+/** 주간 리포트의 테마 요약(FN-RPT-17). */
+function ThemeSummaryView({ summary }: { summary: ThemeSummary }) {
+  return (
+    <>
+      <h3>이번 주 테마</h3>
+      {summary.state === 'NO_RECORD' || !summary.title ? (
+        <p>이번 주에는 주간 테마에 참여한 기록이 없습니다.</p>
+      ) : (
+        <>
+          <p>
+            {summary.title} · {summary.completed ? '완주' : '진행'}
+          </p>
+          <ul>
+            {summary.days.map((d) => (
+              <li key={d.day}>
+                {({ MON: '월', TUE: '화', WED: '수', THU: '목', FRI: '금' } as Record<string, string>)[d.day] ?? d.day} ·{' '}
+                {d.title ?? '문제'} · {d.completed ? '마침' : '마치지 않음'}
+              </li>
+            ))}
+          </ul>
+          {summary.reviewRetries.length > 0 && <p>주말 다시 풀기 {summary.reviewRetries.length}개</p>}
+        </>
+      )}
+    </>
   )
 }

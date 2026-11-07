@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import type { Child } from '../../domain/classroom.ts'
 import type { Consent, ConsentDocument } from '../../domain/parent.ts'
+import { isAccountDocument } from '../../domain/parent.ts'
 import { parentApi } from '../../data/parent/api.ts'
 import { demoSignup } from '../../data/parent/demoSignup.ts'
 import { useParentQuery, useParentMutation } from '../../data/parent/queries.ts'
@@ -128,7 +129,7 @@ function DemoSignupPage() {
             <QueryFeedback query={documents} />
             {documents.data && !documents.error && (
               <ConsentFields
-                documents={documents.data.items.filter((d) => d.kind !== 'GUARDIAN')}
+                documents={documents.data.items.filter(isAccountDocument)}
                 value={consents}
                 onChange={setConsents}
               />

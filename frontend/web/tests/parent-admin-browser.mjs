@@ -161,7 +161,7 @@ try {
     await p.getByRole('dialog').getByText(answer, { exact: true }).waitFor()
     assert.equal((await p.getByRole('dialog').innerText()).includes(privateMemo), false)
     await p.getByRole('button', { name: '창 닫기' }).click()
-    await nav(p, '주간 리포트')
+    await nav(p, '리포트')
     assert.equal(new URL(p.url()).search, scope)
     await p.locator('article.ws-card').filter({ has: p.getByRole('heading', { name: '2026-10-26 ~ 2026-11-01', exact: true }) })
       .getByRole('button', { name: '리포트 상세 보기' }).click()
@@ -220,7 +220,7 @@ try {
     await p.getByLabel('자녀 선택', { exact: true }).selectOption('demo-doyun')
     await p.getByText('무료 플랜에는 분석 대화가 포함되지 않습니다.', { exact: false }).waitFor()
     assert.equal(await p.getByRole('button', { name: '답변 근거 보기' }).count(), 0)
-    await nav(p, '주간 리포트')
+    await nav(p, '리포트')
     assert.ok(p.url().includes('childId=demo-doyun'))
     await p.getByRole('button', { name: '리포트 상세 보기' }).first().click()
     await p
@@ -344,7 +344,7 @@ try {
   })
   await check('리포트 상세 3.4·항목 근거·재생성 새 판/이전 판·md/pdf 다운로드', async (p) => {
     await login(p)
-    await nav(p, '주간 리포트')
+    await nav(p, '리포트')
     await p.getByRole('button', { name: '리포트 상세 보기' }).first().click()
     await p.getByRole('heading', { name: '리포트 상세', exact: true }).waitFor()
     await p.getByRole('button', { name: /근거$/ }).first().click()
@@ -373,7 +373,7 @@ try {
   for (const scenario of ['report-running', 'report-failed'])
     await check('리포트 상태 ' + scenario, async (p) => {
       await login(p)
-      await nav(p, '주간 리포트')
+      await nav(p, '리포트')
       await mode(p, scenario)
       await p.getByRole('button', { name: '리포트 상세 보기' }).first().click()
       await p

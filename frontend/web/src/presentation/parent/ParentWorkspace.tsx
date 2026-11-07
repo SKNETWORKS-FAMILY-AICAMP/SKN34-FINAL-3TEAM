@@ -13,6 +13,7 @@ import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { ChildRegistration, ProfileSettings } from './AccountForms.tsx'
 import { ParentConversation } from './ParentConversation.tsx'
 import { ConsentSettings } from './ConsentSettings.tsx'
+import { ChildParticipation } from './ChildParticipation.tsx'
 import { ParentReports } from './ParentReports.tsx'
 import { StudentDevices } from './StudentDevices.tsx'
 import { ParentDashboard } from './ParentDashboard.tsx'
@@ -51,7 +52,7 @@ export function ParentWorkspace() {
     nav = [
       { path: '/parent/journal', label: '대시보드·공책' },
       { path: '/parent/analysis', label: '기록에 물어보기' },
-      { path: '/parent/report', label: '주간 리포트' },
+      { path: '/parent/report', label: '리포트' },
       { path: '/parent/settings', label: '정보 관리' },
       { path: '/parent/devices', label: '자녀 기기·PIN' },
       { path: '/parent/billing', label: '이용권·결제' },
@@ -172,7 +173,10 @@ export function ParentWorkspace() {
           ) : page === 'settings' ? (
             <><ProfileSettings child={child} /><AccountLifecycle key={child.id} child={child} /><Withdrawal /></>
           ) : (
-            <ParentDashboard child={child} scope={scope} />
+            <>
+              <ParentDashboard child={child} scope={scope} />
+              <ChildParticipation child={child} />
+            </>
           )}
         </div>
       ) : null}

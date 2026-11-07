@@ -8,6 +8,7 @@ import { ChildRegistration, ConsentFields } from '../parent/AccountForms.tsx'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import type { Consent } from '../../domain/parent.ts'
+import { isAccountDocument } from '../../domain/parent.ts'
 
 export function AuthOnboarding() {
   const { session, setSession } = useSession()
@@ -33,13 +34,13 @@ export function AuthOnboarding() {
       <QueryFeedback query={documents} />
       <form className="ws-form" onSubmit={(e) => {
         e.preventDefault()
-        const choices = documents.data?.items.filter((d) => d.kind !== 'GUARDIAN').map((d) => ({
+        const choices = documents.data?.items.filter(isAccountDocument).map((d) => ({
           documentId: d.documentId, version: d.version,
           agreed: consents.some((c) => c.documentId === d.documentId && c.version === d.version && c.agreed),
         })) ?? []
         void save.mutateAsync({ consents: choices }).then(proceed).catch(() => {})
       }}>
-        {documents.data && !documents.error && <ConsentFields documents={documents.data.items.filter((d) => d.kind !== 'GUARDIAN')} value={consents} onChange={setConsents} />}
+        {documents.data && !documents.error && <ConsentFields documents={documents.data.items.filter(isAccountDocument)} value={consents} onChange={setConsents} />}
         <button className="cj-primary" disabled={!documents.data?.items.length || !!documents.error || save.isPending}>동의 저장하고 계속하기</button>
         <ErrorNotice error={save.error} />
       </form>

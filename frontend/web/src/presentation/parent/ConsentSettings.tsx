@@ -49,5 +49,40 @@ export function ConsentSettings({ child }: { child?: Child }) {
     <ErrorNotice error={withdraw.error ?? save.error ?? refreshError} />
     {refreshError != null && <button onClick={() => { void refreshState() }}>저장 후 상태 다시 확인</button>}
     {notice && <p role="status">{notice}</p>}
+    {child && !child.guardianConsentRequired && <CommunityConsent child={child} />}
+  </section>
+}
+
+/**
+ * 풀이 공유 커뮤니티 선택 동의 (P20, API 명세 2.9). 자녀 단위이고 기본은 미동의.
+ * 동의해도 공개는 자녀가 직접 켜야 하고, 철회하면 자녀의 공유물이 바로 비공개가 된다.
+ */
+function CommunityConsent({ child }: { child: Child }) {
+  const history = useParentQuery(['consent-history'], (signal) => parentApi.consentHistory(signal))
+  const documents = useParentQuery(['consents'], (signal) => parentApi.documents(signal))
+  const save = useParentMutation(parentApi.saveConsents), withdraw = useParentMutation(parentApi.withdrawConsent)
+  const doc = documents.data?.items.find((d) => d.kind === 'COMMUNITY')
+  const current = history.data?.items.find((e) => e.document.kind === 'COMMUNITY' && e.studentId === child.id)
+  const agreed = !!current && current.agreed && current.status === 'AGREED'
+  if (documents.data && !doc) return null // 서버에 아직 문서가 없으면(구현 전) 숨긴다.
+  return <section aria-labelledby="community-consent-h">
+    <h3 id="community-consent-h">{child.nickname} 풀이 공유 커뮤니티 (선택)</h3>
+    <QueryFeedback query={documents} />
+    {doc && <>
+      <p>{doc.content}</p>
+      <p role="status">현재 {agreed ? '동의함' : '동의하지 않음'} · 문서 v{doc.version}</p>
+      {agreed ? (
+        <button className="cj-secondary" disabled={withdraw.isPending} onClick={() => { void withdraw.mutateAsync(current!.consentId).catch(() => {}) }}>
+          커뮤니티 동의 철회
+        </button>
+      ) : (
+        <button className="cj-secondary" disabled={save.isPending} onClick={() => {
+          void save.mutateAsync({ childId: child.id, consents: [{ documentId: doc.documentId, version: doc.version, agreed: true }] }).catch(() => {})
+        }}>
+          커뮤니티 이용에 동의
+        </button>
+      )}
+    </>}
+    <ErrorNotice error={save.error ?? withdraw.error} />
   </section>
 }
