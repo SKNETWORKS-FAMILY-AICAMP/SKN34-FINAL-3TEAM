@@ -103,7 +103,7 @@ export const serviceHandlers = [
   http.get('/api/v1/notification-settings', ({ request }) => respond(async () => { adult(request); return preferences() })),
   http.put('/api/v1/notification-settings', ({ request }) => respond(async () => {
     adult(request); const data = await request.json() as NotificationSettings
-    if (!Array.isArray(data.items) || !data.items.length || data.items.length>6 || new Set(data.items.map(s=>s.type)).size!==data.items.length || data.items.some(s => !(s.type in notificationLabels) || typeof s.enabled !== 'boolean')) fail('VALIDATION_FAILED','알림 유형을 확인해 주세요.',422)
+    if (!Array.isArray(data.items) || !data.items.length || data.items.length>8 || new Set(data.items.map(s=>s.type)).size!==data.items.length || data.items.some(s => !(s.type in notificationLabels) || typeof s.enabled !== 'boolean')) fail('VALIDATION_FAILED','알림 유형을 확인해 주세요.',422)
     const next = { items:preferences().items.map(s => data.items.find(v => v.type === s.type) ?? s) }
     settings.set(owner(), next); return next
   })),

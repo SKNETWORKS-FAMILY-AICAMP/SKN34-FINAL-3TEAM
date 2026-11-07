@@ -1,4 +1,5 @@
-export type SupportTarget = 'FOLLOWUP' | 'JUDGMENT' | 'ANALYSIS' | 'REPORT'
+/** COMMUNITY_POST는 2026-11-06 결정(P20)의 학생 커뮤니티 신고 대상(구현 예정). */
+export type SupportTarget = 'FOLLOWUP' | 'JUDGMENT' | 'ANALYSIS' | 'REPORT' | 'COMMUNITY_POST'
 export type InquiryCategory = 'ACCOUNT' | 'USAGE' | 'PAYMENT'
 /** 본인 신고·문의 처리 결과 (core OpenAPI `SupportReport`·`SupportInquiry`에서 화면이 쓰는 필드). */
 export type SupportReport = { reportId: string; status: string; targetType?: SupportTarget; targetId?: string; category?: string; comment: string | null; reviewReason: string | null; createdAt?: string }
@@ -9,6 +10,8 @@ export type HelpItem = { title: string; body: string }
 export const notificationLabels = {
   REPORT_COMPLETED: '리포트 생성 완료', REPORT_FAILED: '리포트 생성 실패', ERROR_REPORT_RESOLVED: '오류 신고 처리',
   INQUIRY_ANSWERED: '문의 답변', PAYMENT_CHANGED: '결제 변경', SUBSCRIPTION_CHANGED: '구독 변경',
+  // 일일 리포트(P24, 구현 예정): 주간과 따로 받을지 정한다.
+  DAILY_REPORT_COMPLETED: '일일 리포트 생성 완료', DAILY_REPORT_FAILED: '일일 리포트 생성 실패',
 } as const
 export type NotificationType = keyof typeof notificationLabels
 export type NotificationItem = { id: string; childId: string | null; type: NotificationType; title: string; link: string; readAt: string | null; createdAt: string }

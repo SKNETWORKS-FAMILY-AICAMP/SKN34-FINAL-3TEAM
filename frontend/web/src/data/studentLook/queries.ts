@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { studentLookApi } from './api.ts'
+import type { LookChoice } from './api.ts'
 import type { StudentLook } from '../../domain/studentLook.ts'
 
 const key = (childId: string | undefined) => ['student-look', childId] as const
@@ -19,12 +20,13 @@ export function useStudentLook(childId: string | undefined) {
 export function useSaveLook(childId: string | undefined) {
   const cache = useQueryClient()
   return useMutation({
-    mutationFn: (look: Pick<StudentLook, 'theme' | 'companion'>) => studentLookApi.save(look),
+    mutationFn: (look: LookChoice) => studentLookApi.save(look),
     onMutate: async (look) => {
       await cache.cancelQueries({ queryKey: key(childId) })
       const before = cache.getQueryData<StudentLook>(key(childId))
       cache.setQueryData<StudentLook>(key(childId), {
         updatedAt: before?.updatedAt ?? null,
+        ...(before?.equipped ? { equipped: before.equipped } : {}),
         ...look,
       })
       return { before }
@@ -33,6 +35,10 @@ export function useSaveLook(childId: string | undefined) {
       if (context?.before) cache.setQueryData(key(childId), context.before)
       else cache.removeQueries({ queryKey: key(childId) })
     },
-    onSuccess: (saved) => cache.setQueryData(key(childId), saved),
+    onSuccess: (saved) => {
+      cache.setQueryData(key(childId), saved)
+      // 잠금 검사 결과가 바뀌었을 수 있어 해금 목록을 다시 받는다.
+      void cache.invalidateQueries({ queryKey: ['look-items', childId] })
+    },
   })
 }

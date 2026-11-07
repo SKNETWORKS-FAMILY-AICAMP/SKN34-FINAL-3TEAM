@@ -44,6 +44,6 @@ export function mockConsentRequired(email = mockIdentity.email) {
   })
 }
 export function mockGuardianConsentRequired(childId: string, email = mockIdentity.email) {
-  const entry = mockConsentHistory.get(email)?.find((r) => r.studentId === childId)
+  const entry = mockConsentHistory.get(email)?.find((r) => r.studentId === childId && r.document.kind === 'GUARDIAN') // 선택 동의(COMMUNITY)는 이용 제한과 무관
   return !!entry && (!entry.agreed || entry.status !== 'AGREED')
 }

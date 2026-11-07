@@ -63,6 +63,7 @@ export function makeWeekly(c: Child, p: Period, revision = 1): WeeklyReport {
   const report: WeeklyReport = {
     reportId: `${c.id}-${p.from}`,
     childId: c.id,
+    periodType: 'WEEKLY',
     period: p,
     revision,
     revisions: [{ revision, generatedAt: '2026-10-26T07:00:00+09:00' }],
@@ -120,14 +121,80 @@ export function makeWeekly(c: Child, p: Period, revision = 1): WeeklyReport {
     verification: { numbersMatched: true, quotesMatched: true },
     versions: { prompt: 'mock-report@1', model: null },
     generatedAt: '2026-10-26T07:00:00+09:00',
+    themeSummary: themeSummary(rows),
   }
   return c.plan === 'FREE'
     ? { ...report, thinkingTypes: [], changes: [], reflections: [], quotes: [] }
     : report
 }
+/** 주간 테마 요약(FN-RPT-17): 목업은 그 주 기록의 유형별 첫 시도를 요일 문제로 본다. 테마 미참여 주는 NO_RECORD. */
+function themeSummary(rows: PublicAttempt[]): WeeklyReport['themeSummary'] {
+  const days = ['MON', 'TUE', 'WED', 'THU', 'FRI'] as const
+  const picked = Object.keys(thinkingLabels).map((type) => rows.find((a) => a.mission.thinkingType === type)).filter((a): a is PublicAttempt => !!a)
+  if (!picked.length) return { state: 'NO_RECORD', themeId: null, title: null, days: [], completed: false, reviewRetries: [] }
+  return {
+    state: 'OK',
+    themeId: 'mock-theme',
+    title: '이야기 마을의 수수께끼',
+    days: picked.slice(0, 5).map((a, i) => ({ day: days[i], missionId: a.mission.id, title: a.mission.title, completed: a.status === 'COMPLETED' })),
+    completed: picked.length === 5 && picked.every((a) => a.status === 'COMPLETED'),
+    reviewRetries: [],
+  }
+}
+/** 일일 리포트(P24): 그날 문제 중심, 서술·저녁 질문 없이 기록만. 무료도 전체 제공. */
+export function makeDaily(c: Child, date: string, revision = 1): WeeklyReport {
+  const p = { from: date, to: date }
+  const rows = scopedRows(c, p),
+    metrics = counts(rows, p)
+  return {
+    reportId: `${c.id}-daily-${date}`,
+    childId: c.id,
+    periodType: 'DAILY',
+    period: p,
+    revision,
+    revisions: [{ revision, generatedAt: `${date}T22:00:00Z` }],
+    status: 'COMPLETED',
+    state: rows.length ? 'OK' : 'NO_RECORD',
+    inclusionRule: `${inclusionRule} · 그날(KST) 문제 기준`,
+    metrics: metrics.map((m, i) => ({ ...m, ratio: null, itemId: `metric-${i}` })),
+    thinkingTypes: [],
+    changes: [],
+    reflections: [],
+    quotes: [],
+    problems: rows.map((a) => {
+      const last = a.answers.at(-1)
+      const judged = [...a.answers].reverse().find((v) => v.feedback.judgment)?.feedback.judgment
+      return {
+        missionId: a.mission.id,
+        attemptId: a.attemptId,
+        title: a.mission.title,
+        context: 'THEME_DAY' as const,
+        judgment: judged?.result ?? null,
+        followups: a.answers.slice(1).map((v, i) => ({
+          question: a.answers[i].feedback.followup?.question ?? '추가 생각을 적어 보세요.',
+          answer: v.text,
+        })),
+        finalAnswer: last?.text ?? null,
+        elements: (judged?.elements ?? []).map((e) => ({ label: e.label, satisfied: e.satisfied })),
+        reflection: a.reflection ? { difficulty: a.reflection.difficulty, text: a.reflection.text || null, written: true } : { difficulty: null, text: null, written: false },
+        quotes: last ? [{ answerId: last.answerId, text: last.text, verified: true }] : [],
+      }
+    }),
+    narrative: null,
+    verification: { numbersMatched: true, quotesMatched: true },
+    versions: { prompt: null, model: null },
+    generatedAt: `${date}T22:00:00Z`,
+  }
+}
+const kstDate = (offsetDays: number) => new Date(Date.now() + 9 * 3600_000 - offsetDays * 86400_000).toISOString().slice(0, 10)
 export function ensureReports(c: Child) {
   for (const p of [previousWeek, thisWeek, { from: '2026-10-12', to: '2026-10-18' }]) {
     const r = makeWeekly(c, p)
+    if (!reports.has(r.reportId)) reports.set(r.reportId, [r])
+  }
+  // 일일 리포트: 매일 07:00 KST에 전날 대상으로 만든다(목업은 최근 사흘).
+  for (const offset of [1, 2, 3]) {
+    const r = makeDaily(c, kstDate(offset))
     if (!reports.has(r.reportId)) reports.set(r.reportId, [r])
   }
   return [...reports.values()].filter((v) => v[0].childId === c.id).map((v) => v.at(-1)!)
