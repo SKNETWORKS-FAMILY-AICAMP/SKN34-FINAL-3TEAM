@@ -149,16 +149,27 @@ export function useLearningActions() {
     void cache.invalidateQueries({ queryKey: ['records'] })
     void cache.invalidateQueries({ queryKey: ['missions'] })
     void cache.invalidateQueries({ queryKey: ['student-home'] })
+    // 학습 완료는 포인트·주간 테마 상태를 바꿀 수 있다(core 적립, P21).
+    if (a.status === 'COMPLETED') {
+      void cache.invalidateQueries({ queryKey: ['weekly-theme'] })
+      void cache.invalidateQueries({ queryKey: ['points'] })
+      void cache.invalidateQueries({ queryKey: ['community'] })
+    }
   }
   const start = useMutation({
     mutationFn: ({
       mission,
       child,
+      context,
     }: {
       mission: import('../../domain/classroom.ts').Mission
       child: Child
-    }) => gateway.start(mission, child),
-    onSuccess: update,
+      context?: import('../../domain/retention.ts').AttemptContext
+    }) => gateway.start(mission, child, context),
+    onSuccess: (a: Attempt) => {
+      update(a)
+      void cache.invalidateQueries({ queryKey: ['weekly-theme'] })
+    },
   })
   const save = useMutation({
     mutationFn: ({ id, draft }: { id: string; draft: Draft }) => gateway.saveDraft(id, draft),

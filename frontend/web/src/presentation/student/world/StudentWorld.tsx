@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
-import { BookOpen, Lightbulb, LogOut, Map as MapIcon, Shapes, Settings } from 'lucide-react'
+import { BookOpen, Coins, Lightbulb, LogOut, Map as MapIcon, Shapes, Settings, Users } from 'lucide-react'
 import { useStudentLook } from '../../../data/studentLook/queries.ts'
 import { DEFAULT_LOOK, THEMES } from '../../../domain/studentLook.ts'
 import type { Theme } from '../../../domain/studentLook.ts'
@@ -9,7 +9,7 @@ import { ThemeBackdrop } from './ThemeArt.tsx'
 import { LookContext, themeVars } from './lookContext.ts'
 import './student-world.css'
 
-export type StudentPage = 'home' | 'missions' | 'journal' | 'activities' | 'settings'
+export type StudentPage = 'home' | 'missions' | 'journal' | 'activities' | 'community' | 'points' | 'settings'
 
 /** 테마 바탕만 그리는 틀 (로그인 전 PIN 화면처럼 학생 설정을 아직 모를 때 기본 테마). */
 export function ThemeFrame({ t = THEMES.lake, children }: { t?: Theme; children: ReactNode }) {
@@ -48,6 +48,8 @@ export function StudentWorld({
     { id: 'missions', label: '미션 고르기', icon: Shapes },
     { id: 'journal', label: '내 공책', icon: BookOpen },
     { id: 'activities', label: '생각 활동', icon: Lightbulb },
+    { id: 'community', label: '친구 생각', icon: Users },
+    { id: 'points', label: '내 포인트', icon: Coins },
     { id: 'settings', label: '공개 설정', icon: Settings },
   ]
   return (

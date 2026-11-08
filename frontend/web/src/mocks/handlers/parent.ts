@@ -24,6 +24,7 @@ import {
   thinking,
   ensureReports,
   makeWeekly,
+  makeDaily,
   inclusionRule,
 } from '../fixtures/parent.ts'
 import { guard, respond, problem } from './student.ts'
@@ -516,15 +517,21 @@ export const parentHandlers = [
   ),
   http.post('/api/v1/conversations', ({ request }) =>
     respond(async () => {
-      const scope = (await request.json()) as Scope,
-        c = await parentChild(request, scope.childId)
+      const body = (await request.json()) as Scope & { reportId?: string },
+        c = await parentChild(request, body.childId)
       requireShared(c.id)
       if (c.plan !== 'PREMIUM')
         fail('USAGE_LIMIT_REACHED', '무료 플랜은 분석 대화를 제공하지 않습니다.', 429)
+      // 일일 리포트 고정 대화(FN-RPT-16, P25): 그 리포트의 자녀·대상일·최신 판으로 고정
+      const fixed = body.reportId ? reports.get(body.reportId)?.at(-1) : undefined
+      if (body.reportId && (!fixed || fixed.periodType !== 'DAILY' || fixed.childId !== c.id))
+        fail('CONVERSATION_REPORT_INVALID', '이 자녀의 일일 리포트로만 대화를 만들 수 있습니다.', 422)
+      const scope = fixed ? { childId: c.id, from: fixed.period.from, to: fixed.period.to } : body
       if (!validPeriod(scope)) fail('VALIDATION_FAILED', '기간을 확인해 주세요.')
       const v: Conversation = {
         conversationId: crypto.randomUUID(),
         childId: c.id,
+        ...(fixed ? { reportId: fixed.reportId, reportRevision: fixed.revision } : {}),
         period: { from: scope.from, to: scope.to },
         title: '새 분석 대화',
         createdAt: new Date().toISOString(),
@@ -590,6 +597,7 @@ export const parentHandlers = [
       const c = await parentChild(request, String(params.childId))
       queryFault()
       const status = new URL(request.url).searchParams.get('status')
+      const periodType = new URL(request.url).searchParams.get('periodType')
       // 리포트 목록은 페이지 없이 {items}만 반환한다(api-spec 1.1·5.5, ReportList).
       return {
         items: ensureReports(c)
@@ -602,7 +610,8 @@ export const parentHandlers = [
                   ? 'FAILED'
                   : r.status,
           }))
-          .filter((r) => !status || r.status === status),
+          .filter((r) => !status || r.status === status)
+          .filter((r) => !periodType || (r.periodType ?? 'WEEKLY') === periodType),
       }
     }),
   ),
@@ -618,7 +627,11 @@ export const parentHandlers = [
       pendingReports.delete(id)
       const c = await parentChild(request, r!.childId)
       const recomputed =
-        mode === 'empty' || mode === 'small' ? makeWeekly(c, r!.period, r!.revision) : r!
+        mode === 'empty' || mode === 'small'
+          ? r!.periodType === 'DAILY'
+            ? makeDaily(c, r!.period.from, r!.revision)
+            : makeWeekly(c, r!.period, r!.revision)
+          : r!
       const result = {
         ...recomputed,
         revisions: versions.map((v) => ({ revision: v.revision, generatedAt: v.generatedAt })),
@@ -636,7 +649,7 @@ export const parentHandlers = [
         fail('REPORT_REGENERATION_LIMIT', '학부모 재생성은 리포트당 한 번만 가능합니다.', 409)
       const prev = versions.at(-1)!,
         c = await parentChild(request, prev.childId),
-        next = makeWeekly(c, prev.period, prev.revision + 1)
+        next = prev.periodType === 'DAILY' ? makeDaily(c, prev.period.from, prev.revision + 1) : makeWeekly(c, prev.period, prev.revision + 1)
       versions.push(next)
       regenerateCounts.set(id, 1)
       pendingReports.set(id, Date.now() + 1400)

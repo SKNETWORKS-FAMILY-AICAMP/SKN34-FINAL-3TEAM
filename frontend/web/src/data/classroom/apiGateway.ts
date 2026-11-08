@@ -266,8 +266,8 @@ export function createApiGateway(): ClassroomGateway {
       if (a.studentId !== child.id) return contractError('요청한 자녀와 원문의 자녀가 다릅니다.')
       return a
     },
-    async start(mission, _child) {
-      return attemptDto(await apiFetch<unknown>(`/missions/${mission.id}/attempts`, body({})))
+    async start(mission, _child, context) {
+      return attemptDto(await apiFetch<unknown>(`/missions/${mission.id}/attempts`, body(context ? { context } : {})))
     },
     async attempt(id) {
       const response = await apiResponse<unknown>(`/attempts/${id}`, { cache: 'no-store' })

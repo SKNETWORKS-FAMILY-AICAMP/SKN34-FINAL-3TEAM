@@ -11,6 +11,8 @@ import { SceneArt } from '../MissionScene.tsx'
 import { Companion } from './Companion.tsx'
 import { IslandArt, Ride } from './ThemeArt.tsx'
 import { useLook } from './lookContext.ts'
+import { WeeklyThemeCard } from './WeeklyTheme.tsx'
+import type { AttemptContext } from '../../../domain/retention.ts'
 
 /** 받침에 맞춰 을/를을 붙인다 (섬을, 공터를). */
 const withObject = (word: string) => {
@@ -28,12 +30,15 @@ export function ThinkingMap({
   child,
   onResume,
   onOpen,
+  onStartTheme,
   onType,
   onJournal,
 }: {
   child: Child
   onResume: (attemptId: string) => void
   onOpen: (mission: Mission) => void
+  /** 이번 주 테마 문제 시작(당일 문제·주말 다시 풀기). 없으면 테마 카드를 그리지 않는다. */
+  onStartTheme?: (mission: Mission, context: AttemptContext) => void
   onType: (type: ThinkingType) => void
   onJournal: () => void
 }) {
@@ -63,6 +68,9 @@ export function ThinkingMap({
             </button>
           )}
         </div>
+      )}
+      {ready && onStartTheme && (
+        <WeeklyThemeCard child={child} missions={home.missions} onStart={onStartTheme} onResume={onResume} />
       )}
       {ready && (
         <div className="st-home-grid">

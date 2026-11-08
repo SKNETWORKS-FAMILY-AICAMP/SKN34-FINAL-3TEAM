@@ -28,7 +28,7 @@ import { guard, respond } from './student.ts'
 import { fail, page } from './parent.ts'
 const unpublishedChanges = (m: AdminMission) => m.currentVersion !== m.publishedVersion || m.currentRubricVersion !== m.publishedRubricVersion
 const reviewable = (m: AdminMission) => m.status === 'REVIEW_REQUIRED' || m.status === 'PUBLISHED' && unpublishedChanges(m)
-function allow(request: Request, permission?: Permission) {
+export function allow(request: Request, permission?: Permission) {
   guard(request)
   const s = store.snapshot().session
   if (

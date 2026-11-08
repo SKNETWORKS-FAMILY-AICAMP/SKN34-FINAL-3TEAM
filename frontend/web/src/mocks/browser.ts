@@ -6,6 +6,7 @@ import { serviceHandlers } from './handlers/service.ts'
 import { studentHandlers, setMockScenario } from './handlers/student.ts'
 import type { DemoScenario } from '../domain/classroom.ts'
 import { parentHandlers } from './handlers/parent.ts'
+import { retentionHandlers } from './handlers/retention.ts'
 import { adminHandlers } from './handlers/admin.ts'
 import { setWorkspaceScenario } from './fixtures/accounts.ts'
 import { setMockChildPlan } from './fixtures/childPlan.ts'
@@ -19,6 +20,8 @@ export const mockHandlers = [
   ...guardianTransferHandlers,
   ...paymentHandlers,
   ...adminServiceHandlers,
+  // 커뮤니티 신고·선택 동의는 기존 신고·동의 목업보다 먼저 받아야 한다.
+  ...retentionHandlers,
   ...serviceHandlers,
   ...studentDeviceHandlers,
   ...parentHandlers,
