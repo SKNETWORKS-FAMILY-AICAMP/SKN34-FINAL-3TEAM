@@ -380,7 +380,7 @@ stateDiagram-v2
 | `QUEUED·RUNNING → FAILED` | `report.failed` | `ReportJob.fail(reason)` | 위와 같음, `failure_reason` |
 
 - 종료 후 늦게 온 `report.started`는 영향 0행 → 무시 (역순 도착 허용)
-- 구현 예정(P24): `report_job.period_type`(`DAILY`·`WEEKLY`) 추가, 정기 생성 부분 UK를 `(student_id, period_type, period_from) WHERE trigger='SCHEDULE'`로 변경(월요일 일일·주간 작업의 `period_from`이 같음). 일일 작업도 같은 전이
+- P24(#390, V29·V30): `report_job.period_type`(`DAILY`·`WEEKLY`), 정기 생성 부분 UK `(student_id, period_type, period_from) WHERE trigger='SCHEDULE'`(월요일 일일·주간 작업의 `period_from`이 같음). 일일 작업도 같은 전이
 - `QUEUED` 고착(메시지 DLQ 이동)은 #132 복구 점검으로 실제 report 상태와 대조한 뒤 종료한다. 관리자는 `/admin/queues`·`/admin/jobs`에서 확인하며 자동 재생성은 하지 않는다.
 
 #### 4.1.1 종료 유실·삭제 (#132)

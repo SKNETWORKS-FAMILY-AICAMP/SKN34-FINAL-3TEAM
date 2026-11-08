@@ -4,6 +4,7 @@ import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core.consent.service.ConsentAccessService
 import com.sagomungchi.core.guardianship.service.StudentAccessService
 import com.sagomungchi.core.report.domain.ReportPeriod
+import com.sagomungchi.core.report.domain.ReportPeriodType
 import com.sagomungchi.core.report.repository.ReportJobRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -16,10 +17,11 @@ class ReportScheduleService(private val repository: ReportJobRepository, private
 
     /**
      * A child's failure never stops the other children. Failures are never counted as generated reports and
-     * are propagated after the run. Completed child transactions remain durable.
+     * are propagated after the run. Completed child transactions remain durable. Children without records still get
+     * a job: report stores a "no record" report (P06, P24).
      */
-    fun generate(at: Instant): Int {
-        val period = ReportPeriod.previousWeek(at)
+    fun generate(at: Instant, type: ReportPeriodType = ReportPeriodType.WEEKLY): Int {
+        val period = ReportPeriod.previous(type, at)
         var created = 0
         var failed = 0
         repository.candidateParents().filter { consents.hasRequiredConsents(it) }.forEach { parent ->
@@ -28,11 +30,11 @@ class ReportScheduleService(private val repository: ReportJobRepository, private
                     if (jobs.scheduled(parent, child.id, period) != null) created++
                 } catch (ex: Exception) {
                     failed++
-                    log.warn("Weekly report scheduling failed for a child ({})", (ex as? BusinessException)?.code ?: ex.javaClass.simpleName)
+                    log.warn("{} report scheduling failed for a child ({})", type, (ex as? BusinessException)?.code ?: ex.javaClass.simpleName)
                 }
             }
         }
-        check(failed == 0) { "Weekly report scheduling failed for $failed children; $created jobs created" }
+        check(failed == 0) { "$type report scheduling failed for $failed children; $created jobs created" }
         return created
     }
 }

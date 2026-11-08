@@ -95,6 +95,27 @@ class AdminOperationsContracts(unittest.TestCase):
                 # #355 adds only the ai mission draft usage type; the other call types stay fingerprinted.
                 if section=='schemas' and name=='CallType':
                     reviewed['enum'].remove('MISSION_DRAFT')
+                # #390 (P24 daily report) adds only the periodType filter/field, daily detail fields and two
+                # daily notification types. Remove exactly those additions; every other field stays fingerprinted.
+                if section=='paths' and name=='/children/{childId}/reports':
+                    get=reviewed['get']
+                    self.assertEqual(get['summary'],'연결 자녀의 일일·주간 리포트 목록')
+                    get['summary']='연결 자녀의 주간 리포트 목록'
+                    get['parameters']=[p for p in get['parameters'] if p.get('name')!='periodType']
+                if section=='paths' and name=='/reports/{reportId}/regenerate':
+                    self.assertIn('P24',reviewed['post'].pop('description'))
+                if section=='schemas' and name in ('ReportSummary','ReportJobAccepted'):
+                    reviewed['required'].remove('periodType'); reviewed['properties'].pop('periodType')
+                if section=='schemas' and name=='ReportDetail':
+                    for field in ('problems','themeSummary'):
+                        reviewed['allOf'][1]['properties'].pop(field)
+                if section=='schemas' and name=='NotificationType':
+                    reviewed.pop('description')
+                    for value in ('DAILY_REPORT_COMPLETED','DAILY_REPORT_FAILED'):
+                        reviewed['enum'].remove(value)
+                if section=='schemas' and name=='NotificationSettings':
+                    self.assertEqual(reviewed['properties']['items']['maxItems'],8)
+                    reviewed['properties']['items']['maxItems']=6
                 canonical=json.dumps(reviewed,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
                 self.assertEqual(expected,hashlib.sha256(canonical).hexdigest(),f'{section}/{name}')
     def test_admin_paths_and_retry_key(self):

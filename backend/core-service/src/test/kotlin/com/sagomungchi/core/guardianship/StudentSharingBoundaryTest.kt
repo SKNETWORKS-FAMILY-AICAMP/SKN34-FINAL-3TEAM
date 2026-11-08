@@ -57,7 +57,7 @@ class StudentSharingBoundaryTest {
         val entitlement = mock(ReportEntitlementService::class.java)
         val report = UUID.randomUUID()
         val from = LocalDate.parse("2026-10-19"); val to = from.plusDays(6)
-        val job = ReportJob(UUID.randomUUID(), student, from, to, ReportTrigger.SCHEDULE, null,
+        val job = ReportJob(UUID.randomUUID(), student, com.sagomungchi.core.report.domain.ReportPeriodType.WEEKLY, from, to, ReportTrigger.SCHEDULE, null,
             ReportJobStatus.COMPLETED, report, null, OffsetDateTime.now(), null, OffsetDateTime.now())
         `when`(repository.byReport(report)).thenReturn(job)
         `when`(access.parent(student)).thenReturn(parent)

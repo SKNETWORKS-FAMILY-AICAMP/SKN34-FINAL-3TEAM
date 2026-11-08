@@ -1,11 +1,11 @@
-# 주간 리포트 (#42·#50~#56·#129·#131·#132·#152·#167·#206·#209·#252·#344)
+# 주간·일일 리포트 (#42·#50~#56·#129·#131·#132·#152·#167·#206·#209·#252·#344·#390)
 
 계약은 [API 명세](../design/api-spec.md) 3.4·4.1.1·4.2.1·4.4·5.5, 메시지는 [report-messages](../../contracts/events/report-messages.md).
 
 ## 1. core 주간 리포트 (#42)
 
 - 매주 월요일 07:00 Asia/Seoul, 직전 월~일 `LocalDate`, 집계 경계 `[월 00:00 KST, 다음 월 00:00 KST)`. 기록 없는 자녀도 대상
-- 구현 예정(P24, [서비스 기획 방향](service-direction.md)): 매일 07:00 전날 대상 일일 리포트(템플릿, ai 미호출, 무료 포함)를 같은 작업·메시지 경로로 생성. `report_job`·`weekly_report`에 `period_type` 추가, 정기 UK·재생성 UK·revision 잠금 단위에 `period_type` 포함([ERD 3.6·5.2](../design/erd.md#52-구현-예정-변경-report_db)). 주간 리포트에는 테마 요약 섹션 추가
+- P24 일일 리포트([서비스 기획 방향](service-direction.md)): core 몫(매일 07:00 전날 작업·`report_job.period_type`·정기 UK·알림·조회)은 20장(#390). report 몫(`weekly_report.period_type`, 재생성 UK·revision 잠금, 일일 템플릿·테마 요약)은 구현 예정([ERD 5.2](../design/erd.md#52-구현-예정-변경-report_db), #391)
 - ShedLock(Spring/JDBC, 기존 `shedlock` 테이블, `usingDbTime`) + SCHEDULE 부분 UK로 재실행 중복 방지, 자녀·기간별 advisory transaction lock으로 정기·재생성 직렬화. 자녀별 실패는 격리하고 실행 끝에 전파
 - 작업 저장과 `OutboxWriter.append`는 같은 트랜잭션, HTTP는 밖. core `OutboxRelay`는 #166 이후 DB 트랜잭션 밖에서 발행·confirm을 기다리고 발행 시각만 짧은 트랜잭션으로 기록
 - 재생성: 부모는 자녀·주 계열 REGENERATE 1회(재생성 결과로 다시 요청해도 우회 불가), SERVICE_OPS 관리자는 ADMIN_RETRY 무제한. revision은 report가 배정
@@ -285,3 +285,45 @@ core는 기존 대화 소유권·연결·동의·이용권과 학부모 행 잠�
 - 로컬 실연(이 브랜치로 learning·report 재빌드, 실제 ai-service·OpenAI 판정): 초5 데모 미션 5개를 core 경로로 풀어(되묻기 답 3건) 리포트를 생성. 지표가 손 계산 기대값과 같음(처음 답 8/11, 보완 3/3, 논증 1/1, 들어가면 좋은 생각 4/4), LLM 서술이 새 지표를 인용하고 숫자·인용·금지어 대조 통과, 기록에 물어보기 응답 대조 통과. 답 글은 직접 지은 합성 문장
 - 주별 합계 불변식(개인 검증, 저장소 밖 스크립트): 무작위 합성 기록 300명분(여러 주에 걸친 시도, 처리 중·실패·보류 섞임)을 4주로 나눠 계산해, 주별 분자·분모 합이 전체 기록에서 직접 센 값과 같음(처음 답·보완·들어가면 좋은 생각·표준 요소 14종). 기간 구분을 뺀 이전 동작으로는 같은 검사가 실패함(처음 답 중복)
 - report: `ruff check`·`ruff format --check`, 전체 `pytest`. 새 테스트 `test_element_metrics.py`(제외 규칙·5개 미만·보완·논증·들어가면 좋은 생각·표준 요소·숫자 대조 허용·기간 경계)와 `test_learning_client.py` 판정 파싱 4건. 기록은 모두 합성
+
+## 20. core 일일 리포트 일정·작업·알림·조회 (#390)
+
+2026-11-06 결정 P24(FN-RPT-14·15, FN-SUP-08)의 core 몫. 일일 리포트를 새 테이블·메시지가 아니라 기간 종류(`period_type`)로 일반화해 주간의 작업·Outbox·복구·관리자 재처리·알림·다운로드 경로를 그대로 쓴다([서비스 기획 방향 5장](service-direction.md#5-설계-판단)). report-worker의 일일 생성·`weekly_report.period_type`은 #391 몫이라 다루지 않았다.
+
+### 구현
+
+| 영역 | 내용 |
+|---|---|
+| DB | V29 `report_job.period_type` NULL 허용 추가 → V30 기존 행 `WEEKLY` 채움, NOT NULL·`ck_report_job_period_type`·`ck_report_job_daily_period`(일일은 `period_from = period_to`), V2 `uq_report_job_scheduled_week (student_id, period_from)`를 `uq_report_job_scheduled_period (student_id, period_type, period_from) WHERE trigger='SCHEDULE'`로, 목록 인덱스를 `(student_id, period_type, period_from)`으로 교체. 알림 CHECK에 `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`. 기본값 없음(검증 스크립트 규칙) |
+| 도메인 | `ReportPeriodType(DAILY·WEEKLY)`, `ReportPeriod(from, to, type)`(주간 월~일, 일일 하루 검사), `ReportPeriod.previousDay`(KST 전날, 토·일 포함), `ReportJob.periodType`·`period` |
+| 일정 | `DailyReportScheduler` 매일 07:00 KST, ShedLock `core-daily-reports`(주간 `core-weekly-reports`와 따로라 월요일에 둘 다 돈다). 대상·동의·자녀별 실패 격리는 주간과 같은 `ReportScheduleService.generate(at, type)`. 기록 없는 날도 작업을 만든다 |
+| 잠금·횟수 | advisory lock 키·정기 작업 조회·진행 중 검사·학부모 재생성 1회 모두 `(학생, period_type, period_from)` 단위. 월요일 일일·주간 작업이 서로 막지 않는다 |
+| 메시지 | `report.generate`에 선택 필드 `periodType`. 일일만 `"DAILY"`를 넣고 주간은 필드를 생략(=WEEKLY). 일일 `narrativeEnabled`는 항상 false이고 상품 권한을 조회하지 않는다 |
+| 알림 | `ReportJobFinished.periodType`으로 일일 완료·실패를 `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`("일일 리포트가 완성되었습니다." 등)로 만든다. 수신 설정은 유형별 독립이라 PUT 1~8개 |
+| 조회 | `GET /children/{childId}/reports?periodType`(생략 시 전체). core는 필터를 report에 전달하고 항목의 `periodType`(생략 = WEEKLY)이 필터와 다르거나 기간 모양이 종류와 맞지 않으면 502 `REPORT_CONTRACT_INVALID`. 목록·상세 응답에 항상 `periodType`을 채운다. 상세·다운로드는 작업의 종류와 report 응답의 종류를 대조한다 |
+| 재생성·재처리 | 학부모 재생성·SERVICE_OPS 관리자 재생성·관리자 실패 작업 재처리 모두 원작업의 `period`(종류 포함)를 그대로 쓴다. 응답 `ReportJobAccepted`에 `periodType` |
+| 원문 가림 | 보호자 공개(#206)가 꺼지면 일일 `problems[]`도 판정·요소 라벨만 남기고 되묻기·최종 답·돌아보기·인용을 비운다 |
+
+### 결정
+
+1. **주간 명령은 `periodType`을 생략**: 현재 report-worker 수신 DTO가 `extra="forbid"`라 주간 명령에 새 필드를 넣으면 #391 배포 전 주간 생성까지 DLQ로 간다. 계약상 생략 = WEEKLY라 주간은 이전 모양을 유지하고 일일에만 넣는다. report(#391)가 배포되기 전에 이 PR이 배포되면 일일 명령만 실패하고(주간은 영향 없음), 남은 일일 작업은 기존 종료 유실 복구(#132)의 대조 대상이 된다
+2. **일일은 상품 권한을 조회하지 않음**: 서술이 없으므로 `ReportPeriodType.narrative = false`로 두고 생성·상세·다운로드에서 상품 조회를 건너뛴다. 결제 장애가 일일 생성·열람을 막지 않고, 일일 열람은 프리미엄 사용(환불 판정 `reportViewed`)으로 기록하지 않는다
+3. **무료 사용자의 일일 상세(확인 필요)**: 이슈·P24대로 무료도 전체(문제별 되묻기·보완 답변·인용 포함)를 준다. P13 "무료는 수치만"과 겹치는 열린 결정이라 판단을 `ReportEntitlementService.dailyDetailEnabled` 한 곳에 모았다. 지금은 항상 true이며, false로 바꾸면 `ReportQueryService`가 일일 `problems[]`를 원문 가림과 같은 범위로 줄인다
+4. **복구·lifecycle 계약은 그대로**: `report.started|completed|failed`와 `/internal/report-jobs/{jobId}/reconcile`은 jobId로 작업을 찾으므로 기간 종류를 넣지 않았다(report의 reconcile 요청 DTO도 `extra="forbid"`). core는 응답 기간을 작업의 종류로 검사한다
+5. **목록 필터는 report에 맡김**: core가 항목을 걸러내면 report의 페이지 봉투가 어긋나므로 필터를 그대로 보내고 결과만 대조한다. #391 전 report는 `periodType` 쿼리를 무시해 `?periodType=DAILY`가 주간 항목을 돌려주므로 502가 된다(필터 없는 목록은 정상)
+
+### report(#391)와 맞출 계약
+
+- `report.generate`의 `periodType` 생략·`WEEKLY`를 같게 처리, `DAILY`면 `periodFrom = periodTo`
+- 목록·상세 항목에 `periodType`(생략하면 core가 WEEKLY로 본다), `?periodType` 필터
+- 일일 상세는 `ReportDetail`의 필수 필드(`metrics`·`quotes`·`narrative: null`·`eveningQuestion: null` 등)를 그대로 두고 `problems[]`를 더한다. `problems[]` 항목 모양은 web(#394) `DailyProblem`과 OpenAPI `DailyReportProblem`을 따른다
+- 재생성 판 잠금·UK를 `(student_id, period_type, period_from)` 단위로
+
+### 검증
+
+검증 결과는 PR 본문에 적는다. 로컬은 JDK 21 임시 컨테이너(Testcontainers)와 일회용 PostgreSQL 컨테이너로 CI와 같은 명령을 실행했다.
+
+- core: `./gradlew clean test bootJar`. 새 `DailyReportScheduleTest`(월요일 일일·주간 동시 생성, 재실행 0건, 일일은 상품 조회 없음, 토·일 대상일, 종류별 재생성 1회·진행 중 검사, 일일 알림 유형·독립 수신 거부, DB CHECK·UK), `ReportHttpTest` 일일 목록 필터·상세·원문 가림·다운로드·재생성, `ReportMessagingTest` 실제 RabbitMQ로 일일·주간 명령, `ReportScheduleLockTest` 일일 잠금 독립, `ReportPeriodTest` KST 전날·일일 cron
+- 계약: 루트 `python -O -m unittest discover -s scripts/tests`(report.generate `periodType` 스키마 검사 추가, 계약 지문 테스트에 #390 승인 변경 정규화), `validate_report_contracts.py`(실제 일일 명령·일일 상세 산출물 추가), `validate_notification_contracts.py`
+- DB: `scripts/check_db_migrations.py`(적용·재실행·report 왕복, ERD 대조). 일일 CHECK·NOT NULL·정기 UK 음수 사례를 `verify_db_schema.py`에 추가
+- 범위 밖: report와 붙인 월요일 일일·주간 실제 생성·완료 알림(#391 머지 후), web 화면 확인(#394 머지됨, mock 기준 동기화만 확인)

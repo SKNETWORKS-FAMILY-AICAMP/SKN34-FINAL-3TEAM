@@ -53,8 +53,8 @@ class ReportRepositoryTest : PostgresRepositoryTest() {
         jdbc.update("UPDATE student SET status='DELETION_REQUESTED' WHERE id=?", inactive)
         `when`(entitlement.narrativeEnabled(active)).thenReturn(false)
         schedule.generate(java.time.Instant.parse("2026-10-25T22:00:00Z"))
-        assertNotNull(repository.scheduled(active, WEEK.from))
-        listOf(withdrawn, unlinked, inactive).forEach { assertNull(repository.scheduled(it, WEEK.from)) }
+        assertNotNull(repository.scheduled(active, WEEK))
+        listOf(withdrawn, unlinked, inactive).forEach { assertNull(repository.scheduled(it, WEEK)) }
     }
 
     @Test fun `schedule keeps creating other children after one child fails and reports the failure after the run`() {
@@ -63,8 +63,8 @@ class ReportRepositoryTest : PostgresRepositoryTest() {
             "REPORT_ENTITLEMENT_UNAVAILABLE", "상품 계약 미연결"))
         `when`(entitlement.narrativeEnabled(healthy)).thenReturn(false)
         assertFailsWith<IllegalStateException> { schedule.generate(java.time.Instant.parse("2026-10-25T22:00:00Z")) }
-        assertNotNull(repository.scheduled(healthy, WEEK.from))
-        assertNull(repository.scheduled(failing, WEEK.from))
+        assertNotNull(repository.scheduled(healthy, WEEK))
+        assertNull(repository.scheduled(failing, WEEK))
     }
 
     @Test fun `parent regeneration preserves old report and limit applies through newly generated revision`() {

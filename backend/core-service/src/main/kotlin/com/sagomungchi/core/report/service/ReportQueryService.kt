@@ -7,6 +7,7 @@ import com.sagomungchi.core.report.client.ReportClient
 import com.sagomungchi.core.report.domain.ReportJob
 import com.sagomungchi.core.report.domain.ReportJobStatus
 import com.sagomungchi.core.report.domain.ReportPeriod
+import com.sagomungchi.core.report.domain.ReportPeriodType
 import com.sagomungchi.core.report.repository.ReportJobRepository
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -19,17 +20,21 @@ import java.util.UUID
 class ReportQueryService(private val repository: ReportJobRepository, private val access: ReportAccessService,
     private val client: ReportClient, private val views: ReportViewService,private val entitlements: ReportEntitlementService,
     private val learningContext: com.sagomungchi.core.guardianship.service.StudentLearningContextService) {
-    fun list(childId: UUID, status: ReportJobStatus?): JsonNode {
+    /** [periodType] null lists daily and weekly together (P24 FN-RPT-15). */
+    fun list(childId: UUID, status: ReportJobStatus?, periodType: ReportPeriodType? = null): JsonNode {
         // report-api lists generated reports only (RUNNING·COMPLETED·FAILED); a QUEUED job has no report yet.
         if (status == ReportJobStatus.QUEUED) invalidRequest()
         access.parent(childId)
         val query = mutableMapOf("studentId" to childId.toString())
         status?.let { query["status"] = it.name }
+        periodType?.let { query["periodType"] = it.name }
         return client.get(childId, "/internal/reports", query).also { body -> contract {
             require(body["items"]?.isArray == true)
             body["items"].forEach { item ->
                 require(UUID.fromString(item["childId"]?.textValue()) == childId)
-                validateIdentity(item)
+                val type = validateIdentity(item)
+                require(periodType == null || type == periodType)
+                (item as ObjectNode).put("periodType", type.name)
             }
         } }
     }
@@ -40,10 +45,10 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
         val parent = access.parent(job.studentId)
         val query = revision?.let { mapOf("revision" to it.toString()) } ?: emptyMap()
         val shared = learningContext.sharingEnabled(job.studentId)
-        val requestedNarrative = shared && entitlements.narrativeEnabled(job.studentId)
+        val requestedNarrative = shared && job.periodType.narrative && entitlements.narrativeEnabled(job.studentId)
         val body = client.get(job.studentId, "/internal/reports/$reportId", query, requestedNarrative)
         contract {
-            validateIdentity(body)
+            require(validateIdentity(body) == job.periodType)
             require(UUID.fromString(body["childId"]?.textValue()) == job.studentId)
             require(body["period"]["from"].textValue() == job.periodFrom.toString() && body["period"]["to"].textValue() == job.periodTo.toString())
             if (revision != null) require(body["revision"].intValue() == revision)
@@ -55,7 +60,11 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
             path("thinkingTypes").forEach { (it as? ObjectNode)?.remove("summary") }
         }
         if (!allowed.parentSharingEnabled) withoutOriginals(body as ObjectNode)
+        // P24 free/premium alike; the open P13 decision is the single switch in ReportEntitlementService.
+        else if (job.periodType == ReportPeriodType.DAILY && !entitlements.dailyDetailEnabled(job.studentId))
+            withoutProblemOriginals(body as ObjectNode)
         (body as ObjectNode).put("parentSharingEnabled", allowed.parentSharingEnabled)
+        body.put("periodType", job.periodType.name)
         return body
     }
 
@@ -73,10 +82,10 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
         val job = owned(reportId)
         val parent = access.parent(job.studentId)
         learningContext.requireShared(job.studentId)
-        val requestedNarrative = entitlements.narrativeEnabled(job.studentId)
+        val requestedNarrative = job.periodType.narrative && entitlements.narrativeEnabled(job.studentId)
         val metadata = client.get(job.studentId, "/internal/reports/$reportId", narrativeEnabled = requestedNarrative)
         contract {
-            validateIdentity(metadata)
+            require(validateIdentity(metadata) == job.periodType)
             require(UUID.fromString(metadata["childId"]?.textValue())==job.studentId)
             require(metadata["period"]["from"].textValue()==job.periodFrom.toString() && metadata["period"]["to"].textValue()==job.periodTo.toString())
             require(metadata.has("narrative") && metadata.has("eveningQuestion"))
@@ -105,16 +114,31 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
         body.path("reflections").forEach { node ->
             (node as? ObjectNode)?.apply { retain("attemptId", "written", "difficulty", "itemId"); putNull("text") }
         }
+        withoutProblemOriginals(body)
+    }
+
+    /** Daily `problems[]` (P24): keep identity, judgment and element labels; drop answers, followups and quotes (#206). */
+    private fun withoutProblemOriginals(body: ObjectNode) {
+        body.path("problems").forEach { node ->
+            (node as? ObjectNode)?.apply {
+                retain("missionId", "attemptId", "title", "context", "judgment", "elements", "itemId")
+                putArray("followups"); putNull("finalAnswer"); putArray("quotes")
+                putNull("reflection")
+            }
+        }
     }
 
     private fun owned(reportId: UUID): ReportJob = (repository.byReport(reportId)
         ?: throw BusinessException(HttpStatus.NOT_FOUND, "REPORT_NOT_FOUND", "리포트를 찾을 수 없습니다.")).also { access.parent(it.studentId) }
 
-    private fun validateIdentity(body: JsonNode) {
+    /** Returns the period type; a report-api without P24 omits it, which means WEEKLY. */
+    private fun validateIdentity(body: JsonNode): ReportPeriodType {
         UUID.fromString(body["reportId"]?.textValue())
         ReportJobStatus.valueOf(body["status"]?.textValue() ?: "")
         require(body["revision"]?.isIntegralNumber == true && body["revision"].asLong() in 1..Int.MAX_VALUE.toLong())
-        ReportPeriod(LocalDate.parse(body["period"]?.get("from")?.textValue()), LocalDate.parse(body["period"]?.get("to")?.textValue()))
+        val type = body["periodType"]?.takeUnless { it.isNull }?.let { ReportPeriodType.valueOf(it.textValue()) } ?: ReportPeriodType.WEEKLY
+        ReportPeriod(LocalDate.parse(body["period"]?.get("from")?.textValue()), LocalDate.parse(body["period"]?.get("to")?.textValue()), type)
+        return type
     }
     private fun contract(validate: () -> Unit) {
         try { validate() } catch (_: Exception) {

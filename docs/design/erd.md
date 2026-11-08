@@ -352,6 +352,7 @@ erDiagram
   report_job {
     uuid id PK "= report.generate job_id"
     uuid student_id FK
+    varchar period_type "DAILY|WEEKLY (P24, 일일은 period_from = period_to)"
     date period_from
     date period_to
     varchar trigger "SCHEDULE|REGENERATE|ADMIN_RETRY"
@@ -413,12 +414,12 @@ erDiagram
 - `message_evidence`는 ID만 저장하고 원문은 learning에서 조회한다. 대화 본문에 포함된 인용·집계와 파일의 삭제 범위는 별도 P09 확인 대상이며, 근거 ID만으로 파생 내용의 삭제까지 보장하지 않는다 (FN-ACC-13)
 - 관리자 작업 목록(`/admin/jobs`)은 `conversation_message`·`report_job`·`notification`의 상태 컬럼을 조회 (FN-ADM-03)
 - `report_job` 상태 전이: `report.started` 수신 시 `QUEUED→RUNNING`, `report.completed|failed` 수신 시 종료 상태 + `report_id` 저장 (아키텍처 1.6 조건부 전이)
-- `report_job` 부분 UK `(student_id, period_from) WHERE trigger = 'SCHEDULE'` → 정기 생성 중복 방지. 재생성·재처리는 새 행 (FN-RPT-01, 12)
-  - 구현 예정(P24): `period_type` 추가와 함께 UK를 `(student_id, period_type, period_from)`로 교체(3.6)
+- `report_job` 부분 UK `uq_report_job_scheduled_period (student_id, period_type, period_from) WHERE trigger = 'SCHEDULE'` → 정기 생성 중복 방지. 월요일 일일·주간 작업은 `period_from`이 같아 `period_type`을 키에 넣는다. 재생성·재처리는 새 행이며 원작업의 `period_type`·기간을 그대로 쓴다 (FN-RPT-01, 12, 14, P24)
+  - V29(#390)가 `period_type`을 NULL 허용으로 추가하고 V30이 기존 행을 `WEEKLY`로 채운 뒤 NOT NULL·`ck_report_job_period_type`·`ck_report_job_daily_period`(일일은 `period_from = period_to`)를 걸고 V2의 `uq_report_job_scheduled_week (student_id, period_from)`를 교체했다. 목록 인덱스도 `(student_id, period_type, period_from)`으로 바꿨다
 - `job_execution`: 작업 실행 1회당 1행, UK `(job_type, job_id, attempt_no)`. 관리자 실패 원인·처리 이력 조회 근거 (FN-ADM-07)
 - `report_view`: 학부모 리포트 상세 조회 시 기록, 주간 리포트 열람률 지표 근거 (기획서 3.9)
 - `clarification`이 있는 메시지는 범위 확인 후 종료된 질문, 사용자 선택은 다음 메시지의 `scope_*`에 저장 (FN-AGT-03)
-- `shedlock`은 name varchar(64) PK, lock_until·locked_at timestamptz, locked_by varchar(255), 모두 NOT NULL (주간 리포트·정기 청구 스케줄, 구현 예정 일일 리포트 스케줄 포함).
+- `shedlock`은 name varchar(64) PK, lock_until·locked_at timestamptz, locked_by varchar(255), 모두 NOT NULL (주간·일일 리포트·정기 청구 스케줄. 리포트 잠금 이름은 `core-weekly-reports`·`core-daily-reports`로 따로 둔다).
 - `conversation_message.scope_student_id`는 같은 core DB의 `student.id` FK. 미확정 범위·처리 중 출력은 NULL로 두며 임시 결과를 채우지 않는다.
 
 ### 3.2.1 분석 대화 저장 규칙 (#41)
@@ -451,7 +452,7 @@ erDiagram
     uuid id PK
     uuid user_id FK
     uuid child_id FK "NULL 허용"
-    varchar type "REPORT_COMPLETED|REPORT_FAILED|ERROR_REPORT_RESOLVED|INQUIRY_ANSWERED|PAYMENT_CHANGED|SUBSCRIPTION_CHANGED"
+    varchar type "REPORT_COMPLETED|REPORT_FAILED|ERROR_REPORT_RESOLVED|INQUIRY_ANSWERED|PAYMENT_CHANGED|SUBSCRIPTION_CHANGED|DAILY_REPORT_COMPLETED|DAILY_REPORT_FAILED"
     uuid source_event_id "사건 ID"
     varchar title "원문·결제 민감 정보 미포함"
     varchar link "상세 화면 경로"
@@ -533,7 +534,7 @@ erDiagram
   }
 ```
 
-- #44: V12는 notification·notification_setting의 type CHECK에 REPORT_FAILED를 추가한다. V9는 #45, V13은 #58의 student_device_auth. 기존 마이그레이션은 수정하지 않는다. 알림 status는 Redis 발행 상태이며 읽음은 read_at으로 별도 관리한다.
+- #44: V12는 notification·notification_setting의 type CHECK에 REPORT_FAILED를 추가한다. #390: V30이 일일 리포트 완료·실패(`DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`)를 추가해 주간과 독립 수신 설정을 둔다(P24). V9는 #45, V13은 #58의 student_device_auth. 기존 마이그레이션은 수정하지 않는다. 알림 status는 Redis 발행 상태이며 읽음은 read_at으로 별도 관리한다.
 - `notification` UK `(user_id, type, source_event_id)` → 같은 사건 재처리 시 중복 생성 방지 (FN-SUP-08)
 - 판정 정정 원본은 learning `judgment_correction`, core `correction`은 신고 단위 정정 사유·영향 범위 기록 (FN-SUP-03)
 - 도움말(`/help`)은 정적 콘텐츠로 테이블 없음
@@ -794,14 +795,13 @@ erDiagram
 | `student_look_unlock` | 신규 | `student_id FK`, `item_key varchar`(`THEME:<code>`·`COMPANION:<code>`·`look_item.code`), `ledger_id FK NULL`(잠금 전 선택 이관분은 NULL), `unlocked_at`. PK `(student_id, item_key)`. 테마·캐릭터 해금값(테마 100·캐릭터 150)은 코드 상수 | P22 |
 | `student_look_equipment` | 신규 | `student_id FK`, `slot`, `look_item_id FK`, `updated_at`. PK `(student_id, slot)`. 해금된 아이템만(서비스 검증) | P22 |
 | `mission_daily_usage` | 신규 | `attempt_id uuid PK`(learning 논리 참조), `student_id FK`, `usage_date date NOT NULL`(KST), `created_at`. 무료 하루 미션 한도 집계(#210 PostgreSQL 결정): `THEME_DAY` 신규 시도 `201`만 기록, `(student_id, usage_date)` 건수로 판정 | P13 |
-| `report_job` | 컬럼 추가 | `period_type varchar NOT NULL`(`DAILY`·`WEEKLY`, 기존 행 `WEEKLY`로 채움). 일일은 `period_from = period_to`. 정기 생성 부분 UK를 `(student_id, period_type, period_from) WHERE trigger = 'SCHEDULE'`로 교체(월요일 일일·주간 작업의 `period_from`이 같음) | P24 |
-| `notification`·`notification_setting` | 값 추가 | `type`에 `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED` | P24 |
 | `error_report`·`correction` | 값 추가 | `target_type`에 `COMMUNITY_POST` | P20, P10 |
 | `payment_premium_usage` | 값 추가 | `kind`에 `EXTRA_MISSION`(프리미엄 추가 문제 시도, 환불 판정 근거, `source_id` = 시도 ID) | P14 |
 | `product` | 데이터 | FREE `limits.dailyMissions` 3 → 1 | P13 |
 
 - 학생 삭제 확정: `reward_point_ledger`·`reward_point_balance`·`student_look_unlock`·`student_look_equipment`·`mission_daily_usage`를 같은 트랜잭션에서 삭제, `community_enabled`는 false(P09)
-- 인덱스 후보: `reward_point_ledger (student_id, created_at)`(내역·반응 하루 상한), `mission_daily_usage (student_id, usage_date)`, `report_job (student_id, period_type, period_from)`
+- 인덱스 후보: `reward_point_ledger (student_id, created_at)`(내역·반응 하루 상한), `mission_daily_usage (student_id, usage_date)`
+- `report_job.period_type`·일일 알림 유형(P24)은 #390 V29·V30으로 구현해 3.2·3.3 Mermaid와 6장으로 옮겼다
 
 ---
 
@@ -1292,7 +1292,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | core | `guardianship` | `(student_id) WHERE status='LINKED'` | 자녀당 현재 보호자 한 명 보장 (#289, UNIQUE) |
 | core | `guardian_transfer` | `(student_id) WHERE status='PENDING'`, `(sender_id, created_at)`, `(recipient_id, created_at)` | 자녀당 대기 요청 하나(UNIQUE), 보내고 받은 요청 조회 (#289) |
 | core | `conversation` | `(parent_user_id, student_id, created_at)` | 대화 목록 |
-| core | `report_job` | `(student_id, period_from)`, `(status, created_at)` | 리포트 목록, 관리자 작업 현황 |
+| core | `report_job` | `(student_id, period_type, period_from)`, `(status, created_at)` | 기간 종류별 리포트 작업 조회(P24), 관리자 작업 현황 |
 | core | `job_execution` | `(job_type, job_id)` | 작업별 처리 이력 |
 | core | `conversation_job_retry` | `(status, accepted_at)` | 관리자 대화 대기·중단 작업 조회 |
 | core | `report_view` | `(report_id)`, `(user_id, viewed_at)` | 열람률 집계 |
@@ -1323,7 +1323,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V26(V10·V11 결번), learning Flyway V1~V10, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`. 현재 77개 테이블·698개 컬럼(core 48/441, learning 21/194, report 8/63, `scripts/check_db_migrations.py` 결과). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V30(V10·V11 결번), learning Flyway V1~V10, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`. 현재 77개 테이블·706개 컬럼(core 48/449, learning 21/194, report 8/63, `scripts/check_db_migrations.py` 결과). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT
