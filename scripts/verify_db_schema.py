@@ -26,7 +26,7 @@ def require(condition, message):
         raise ValidationError(message)
 
 
-# Reference rows that migrations publish on purpose (#235 V25 consent documents 1.0).
+# Reference rows that migrations publish on purpose (#235 V25 consent documents 1.0, #388 COMMUNITY 1.0).
 # Only these exact ids may exist before the fixtures run; anything else means a non-isolated DB.
 MIGRATION_SEED_ROWS = {
     "core_db": {
@@ -34,8 +34,16 @@ MIGRATION_SEED_ROWS = {
             "00000000-0000-4000-8000-000002350001",
             "00000000-0000-4000-8000-000002350002",
             "00000000-0000-4000-8000-000002350003",
+            "00000000-0000-4000-8000-000003880001",
         ),
     },
+}
+
+
+# Student-owned visibility switches start off for every new student (ERD 3.1).
+PRIVATE_BY_DEFAULT_COLUMNS = {
+    ("student", "parent_sharing_enabled"),
+    ("student", "community_enabled"),
 }
 
 
@@ -107,6 +115,7 @@ UPDATE student SET grade = 6;
 UPDATE student SET grade = 3;
 SELECT pg_temp.expect_sqlstate($$UPDATE student SET pin_failed_count=-1$$, '23514');
 SELECT pg_temp.expect_sqlstate($$UPDATE student SET pin_failed_count=NULL$$, '23502');
+SELECT pg_temp.expect_sqlstate($$UPDATE student SET community_enabled=NULL$$, '23502');
 INSERT INTO student_device(id,parent_user_id,token_hash,label,created_at,expires_at)
 VALUES ('00000000-0000-4000-8000-000000000030','00000000-0000-4000-8000-000000000001','device-hash','synthetic',now(),now()+interval '90 days');
 SELECT pg_temp.expect_sqlstate($$UPDATE student_device SET expires_at=created_at$$, '23514');
@@ -725,10 +734,10 @@ def verify_schema(query):
                 (col["nullable"] == "YES") == expected_col["nullable"],
                 f"{database}.{key}: NULL allowance differs",
             )
-            # #206 is the explicit fail-closed migration exception; other defaults stay forbidden.
+            # #206·#388 are the explicit fail-closed (private by default) exceptions; other defaults stay forbidden.
             expected_default = (
                 "false"
-                if database == "core_db" and key == ("student", "parent_sharing_enabled")
+                if database == "core_db" and key in PRIVATE_BY_DEFAULT_COLUMNS
                 else None
             )
             require(col["default"] == expected_default, f"{database}.{key}: unexpected default")

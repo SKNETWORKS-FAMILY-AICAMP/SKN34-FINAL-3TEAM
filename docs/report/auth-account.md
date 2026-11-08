@@ -198,4 +198,29 @@
 - 학생 `GET·PUT /students/me/sharing-preferences`, 학부모 읽기 전용 `GET /children/{childId}/sharing-preferences`를 제공합니다. 세션의 단일 학생·활성 보호 관계·역할·범위를 확인하며 nullable 본문은 400, 학부모/관리자의 학생 설정 변경은 403입니다. no-store 응답입니다.
 - 학생 설정 변경은 학생 행을 잠급니다. 분석은 기존 parent → student → conversation 순서로 생성·기존 대화·근거·스트림 전송/완료를 재검사합니다. 기록 API는 외부 HTTP 전후에 공개 설정을 확인하며, 리포트는 외부 HTTP를 마친 뒤 별도 parent → student 트랜잭션에서 최종 공개/상품 권한을 확인합니다. 외부 요청 중 DB 트랜잭션을 열어 두지 않습니다.
 - 비공개 시 학부모 답변 목록·상세·근거와 기존 분석 대화는 `STUDENT_RECORDS_PRIVATE`로 차단합니다. 요약·생각 유형 집계는 유지합니다. 부모 화면에는 상태만 안내하며 변경 스위치를 제공하지 않습니다.
-- 구현 예정(P20): 커뮤니티 공개 설정(`student.community_enabled`)은 이 설정과 별도인 학생 전역 설정입니다. 기본 끔, 학생 본인만 변경, 보호자 `COMMUNITY` 동의가 있어야 켤 수 있습니다.
+- 커뮤니티 공개 설정(`student.community_enabled`)은 이 설정과 별도인 학생 전역 설정입니다(10장, #388).
+
+## 10. 커뮤니티 공개 설정과 COMMUNITY 선택 동의 (#388, P20)
+
+### 배경
+
+2026-11-06 결정 P20([서비스 기획 방향](service-direction.md) 2.2)의 core 몫입니다. 공유물·반응 저장과 열람 검사는 learning #386이 맡고, core는 공개 설정·보호자 선택 동의·작성자 표시·신고 연결을 맡습니다. learning #386과 동시에 진행해 core는 [API 명세](../design/api-spec.md) 4.1 내부 계약대로 클라이언트를 만들고 가짜 learning으로 검증했습니다.
+
+### 결정
+
+- 저장: V29에서 `community_enabled`(nullable)·`community_updated_at`, `consent_document.kind` `COMMUNITY`, 선택 문서 시드 1.0(`required = false`, 2026-11-08 시행)을 추가하고 V30에서 기존 학생을 false로 채운 뒤 NOT NULL로 고정했습니다. 신규 학생도 끈 채 시작하도록 `parent_sharing_enabled`와 같은 DEFAULT false 예외를 두고 `scripts/verify_db_schema.py`에 예외로 등록했습니다(ERD 3.1).
+- 공개 판정: 공유물 공개는 `community_enabled`와 **현재 연결 보호자**의 현재 문서 `COMMUNITY` 동의가 모두 있어야 참입니다. 동의를 학생 행에 복사하지 않고 SQL로 매번 확인하므로, 이관(#289) 뒤에는 설정을 유지한 채 새 보호자가 동의하기 전까지 자동으로 비공개가 됩니다.
+- 설정 API: 학생 `GET·PUT /students/me/community-settings`(`{enabled, consentGranted, updatedAt}`). 켜기는 동의가 없으면 409 `COMMUNITY_CONSENT_REQUIRED`. 학생 행을 잠그고 바뀔 때만 `community_updated_at`을 갱신합니다. 같은 값을 다시 보내도 learning 공개 상태를 다시 맞춰 이전 반영 실패를 보충합니다.
+- 동의 API: 기존 `POST /me/consents`의 자녀 요청은 `GUARDIAN`·`COMMUNITY` 중 보낼 문서만 담을 수 있게 바꿨습니다(웹 #394는 COMMUNITY 하나만 보냄). 법정대리인 동의가 아직 없는 등록·이관 수락에서는 예전처럼 GUARDIAN까지 함께 보내야 하며, COMMUNITY만 보낼 때는 그 자녀의 현재 법정대리인 동의가 필요합니다(없으면 400). 계정 동의는 TERMS·PRIVACY 전체만 받습니다. 공개 문서 목록 검사는 필수 세 문서가 있어야 하고, COMMUNITY는 선택 문서여야 합니다.
+- 동의 거부(`WITHDRAWN` 행)·철회는 같은 트랜잭션에서 자녀 설정을 끄고, 동의는 켜 둔 설정의 공유물을 복원합니다. 이관 전 보호자가 옛 동의를 철회해도 지금 보호자의 자녀 설정은 바꾸지 않습니다.
+- learning 반영: 설정·동의·이관(`GuardianTransferService.accept`)은 `CommunityVisibilityService.sync`로 트랜잭션 안에서 공개 여부를 정하고 **커밋 뒤** learning `PUT /internal/students/{id}/community-visibility {visible, reason}`을 부릅니다. 실패는 기록만 하고 사용자 요청은 성공으로 둡니다. 대신 core 목록·반응 응답이 현재 설정·동의로 다시 걸러 비공개를 지킵니다(support-admin 3장과 같은 원칙).
+- 공유 요청: 돌아보기 저장(`POST /attempts/{id}/reflection`) 2xx 뒤 공개 판정이 참이면 learning `POST /internal/community/posts {studentId, attemptId}`를 SYSTEM으로 부릅니다. 실패해도 학습 응답은 그대로입니다. 반환한 `postId`·새 공유 여부는 포인트 적립(#389)이 이어 쓸 수 있게 `CommunityService.shareCompleted`의 결과로 둡니다.
+- 작성자 표시: 미션 공유물 목록은 learning이 준 학생 ID를 별명·꾸미기(`look: {theme, companion}`, 저장 전 `lake`·`mungchi`)로 바꾸고 학생 ID·반응 수를 지웁니다. 본인 글, 지금 공개할 수 없는 작성자, 신고 숨김 공유물은 core가 뺍니다. 내 공유물·자녀 공유물은 learning 상태에 core가 아는 비공개(`HIDDEN_SETTING`·`HIDDEN_REPORT`)를 덮어 보여 줍니다. 학부모 경로는 현재 연결·동의(`requireCurrent`)를 확인합니다.
+- 학생 삭제 확정: PIN·꾸미기 초기화와 같은 트랜잭션에서 `community_enabled` false·`community_updated_at` NULL로 되돌립니다. 공유물·남긴 반응 파기는 learning이 기존 `student.deleted`로 처리합니다(#386).
+
+### 한계·후속
+
+- learning #386이 아직 없어 내부 API 응답 모양(api-spec 4.1에 core가 기대하는 모양을 적음)과 신고 대상 확인용 `GET /internal/community/posts/{postId}`는 #386 구현과 맞춰 봐야 합니다.
+- learning 반영 실패 시 learning 저장 상태는 다음 설정 저장·같은 신고 재전송·같은 검토 재처리 때까지 늦을 수 있습니다. core 응답은 막지만, learning 내부에서 직접 읽는 다른 경로가 생기면 같은 재확인이 필요합니다. 자동 재시도 작업은 두지 않았습니다.
+- COMMUNITY 문서를 개정하면 옛 판 동의는 바로 무효가 되지만 learning 공유물은 다음 반영 때까지 `VISIBLE`로 남습니다(core 응답에서는 빠짐).
+- 동의 문서 원문: 이번에 COMMUNITY 1.0을 새로 시드했고 기존 원문은 고치지 않았습니다. 개인정보 처리방침 1.0은 처리 목적에 커뮤니티 공개가 없고 "제3자에게 제공하지 않습니다"라고 적혀 있어, 다른 학생에게 별명·답변을 보여 주는 처리를 목적·선택 동의 항목에 더하는 개정이 필요합니다. 법정대리인 동의서 1.0도 수집·이용 목적에 커뮤니티가 없어 선택 동의 문서로 보완했으나 함께 안내할지 검토가 필요합니다.

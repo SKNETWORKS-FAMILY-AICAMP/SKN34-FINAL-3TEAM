@@ -337,7 +337,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ service/
 │  ├─ domain/                    # LlmUsageRecorded·UsageSummary
 │  └─ repository/
-├─ community/                    # (구현 예정, P20) 커뮤니티 공개 설정·learning 프록시·작성자 표시 변환·신고 연결
+├─ community/                    # (P20, #388) 커뮤니티 공개 설정·learning 프록시·작성자 표시 변환·신고 연결
 │  ├─ controller/
 │  ├─ service/
 │  ├─ domain/

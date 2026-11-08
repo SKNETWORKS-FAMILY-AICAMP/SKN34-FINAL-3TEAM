@@ -12,7 +12,7 @@
 - 알림: support → `NotificationService.support` → 기존 insert(수신 설정·유일성) → 커밋 후 Redis. 비활성 계정·철회 동의·해제 자녀는 생성하지 않음. sourceEventId는 신고/문의 ID, 원문 없는 완료 안내만
 - 공지: 등록/수정/종료 전후를 audit_log에 보존하며 DELETE는 `ended_at`만 기록. help/notices는 인증 필요(PublicAuthFilter 공개 예외에서 제거)
 - ANALYSIS/REPORT 대상 정정은 공급자 계약이 없어 422 `CORRECTION_TARGET_UNSUPPORTED`
-- 구현 예정(P20·P10, [서비스 기획 방향](service-direction.md)): 대상 `COMMUNITY_POST` 추가(유형 5종 그대로). 접수 즉시 learning 공유물을 숨기고(`HIDDEN_REPORT`), 처리 결과로 다시 공개 또는 계속 숨김. 원문 열람은 신고 연결 공유물만·감사 기록
+- 대상 `COMMUNITY_POST`(P20·P10, #388): 접수 즉시 숨김, 처리 결과로 다시 공개 또는 계속 숨김, 원문 열람 감사. 결정은 3장
 - 구현 예정(FN-ADM-22·23): 관리자 주간 테마(learning 프록시, 미션과 같은 작성→검토→게시)·꾸미기 아이템(core 소유) 관리, CONTENT 권한·`audit_log`
 
 ### 정정 impact 의미
@@ -73,3 +73,14 @@
 ### 검증 범위
 
 core 통합 테스트(실제 JWT/MVC/PostgreSQL·Redis·RabbitMQ)로 권한·기간·목록·민감 문자열 제거, 같은 키 응답 재현·다른 키 동시 실행 방지, 실행/감사 원자 저장, 트랜잭션 밖 발행, REPORT·CONVERSATION 재처리 경합·복구를 확인. 관리자 운영 응답 5종은 [testing-ci](testing-ci.md) 1장 계약 CI에서 공개 스키마와 대조. 실제 report-worker를 포함한 관리자 POST → 생성 파이프라인 E2E와 실제 외부 LLM 호출은 미검증.
+
+## 3. 커뮤니티 공유물 신고 연결 (#388, P20·P10)
+
+- 접수: 기존 `POST /error-reports`에 `targetType: COMMUNITY_POST`, `targetId: postId`(유형 5종 그대로). 학생 세션만 받고 학부모는 400. learning `GET /internal/community/posts/{postId}`로 대상을 확인해 본인 글 409 `COMMUNITY_OWN_POST`, 없거나 볼 수 없는 글(설정·검토 숨김, 작성자 비공개) 404 `COMMUNITY_POST_NOT_FOUND`
+- 신고 행: `student_id`·`requester_student_id`는 신고한 학생, `attempt_id`는 NULL. 작성자 학생 ID를 core 신고 행에 남기지 않아 기존 본인 목록·상세 권한 검사(`student_id ∈ scope`)를 그대로 쓰고, 작성자 삭제로 신고 이력이 깨지지 않음
+- 숨김: 신고 행 저장 뒤 트랜잭션 밖에서 learning `moderation {status: HIDDEN_REPORT, errorReportId}`. 실패해도 접수는 201로 두고 기록만 남김. 같은 멱등 키 재전송·검토 처리 때 다시 보냄. 그 사이에도 core 목록·반응은 신고 행(접수·처리 중, 또는 처리 결과가 `VISIBLE`이 아님)으로 그 공유물을 바로 숨김
+- 처리: 기존 `PATCH /admin/error-reports/{id}`(SERVICE_OPS). `RESOLVED`로 바꿀 때 `reviewResult`는 `VISIBLE`(다시 공개)·`REMOVED`(계속 숨김)만, 생략하면 `REMOVED`(현재 관리자 화면 #395는 결과를 보내지 않아 계속 숨김이 기본). 같은 공유물에 신고가 여럿이면 계속 숨김이 하나라도 있으면 `REMOVED`, 처리 중이 있으면 `HIDDEN_REPORT`, 모두 다시 공개일 때만 `VISIBLE`을 보냄. 정정(`corrections`)은 판정만이라 422 그대로
+- 원문 열람: 관리자 상세에 `linkedPost {postId, available, missionId, status, answer, authorStudentId}`. 열람마다 `SUPPORT_ORIGINAL_VIEW`(`ERROR_REPORT`, detail `postId`·`available`) 감사. 파기된 공유물은 `available: false`만
+- 학생 결과 알림은 기존처럼 보호자 계정에 보내지 않음(학생 본인 목록에서 확인)
+- 검증: core `CommunityIntegrationTest`(실제 JWT·MVC·PostgreSQL, learning만 내부 계약 가짜 서버)로 접수 즉시 숨김·같은 키 재전송·learning 반영 지연 중 core 숨김·다시 공개·계속 숨김·복수 신고·원문 열람 감사를 확인. 실제 learning #386과의 연동은 미검증
+- 후속: 관리자 화면(#395)에 다시 공개·계속 숨김 선택과 `linkedPost` 표시 추가 필요. learning #386 `moderation`·`GET posts/{id}` 구현과 응답 모양 대조 필요
