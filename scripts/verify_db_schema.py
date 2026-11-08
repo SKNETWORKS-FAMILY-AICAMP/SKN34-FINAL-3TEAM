@@ -26,8 +26,9 @@ def require(condition, message):
         raise ValidationError(message)
 
 
-# Reference rows that migrations publish on purpose (#235 V25 consent documents 1.0).
-# Only these exact ids may exist before the fixtures run; anything else means a non-isolated DB.
+# Reference rows that migrations publish on purpose (#235 V25 consent documents 1.0,
+# #389 V29 reward rules). Only these exact keys may exist before the fixtures run;
+# anything else means a non-isolated DB.
 MIGRATION_SEED_ROWS = {
     "core_db": {
         "consent_document": (
@@ -35,8 +36,17 @@ MIGRATION_SEED_ROWS = {
             "00000000-0000-4000-8000-000002350002",
             "00000000-0000-4000-8000-000002350003",
         ),
+        "reward_rule": (
+            "MISSION_COMPLETED",
+            "REVIEW_VIEWED",
+            "COMMUNITY_POSTED",
+            "REACTION_GIVEN",
+            "THEME_COMPLETED",
+        ),
     },
 }
+# Seed tables whose primary key is not "id".
+SEED_KEY_COLUMNS = {"reward_rule": "event_type"}
 
 
 def populated_sql(tables, seeds):
@@ -44,7 +54,8 @@ def populated_sql(tables, seeds):
     parts = []
     for name in tables:
         ids = seeds.get(name)
-        where = f" WHERE id NOT IN ({', '.join(repr(i) for i in ids)})" if ids else ""
+        key = SEED_KEY_COLUMNS.get(name, "id")
+        where = f" WHERE {key} NOT IN ({', '.join(repr(i) for i in ids)})" if ids else ""
         parts.append(f"SELECT '{name}' WHERE EXISTS (SELECT 1 FROM {name}{where})")
     return " UNION ALL ".join(parts) + ";"
 
@@ -228,6 +239,40 @@ SELECT pg_temp.expect_sqlstate($$
     INSERT INTO idempotency_record SELECT * FROM idempotency_record
     WHERE idempotency_key = '00000000-0000-4000-8000-000000000012'
 $$, '23505');
+
+-- #389 V29 points and look unlocks: seeded rules, signed ledger, one row per event, non-negative balance.
+SELECT pg_temp.expect_sqlstate($$UPDATE reward_rule SET amount = 0 WHERE event_type = 'MISSION_COMPLETED'$$, '23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE reward_rule SET daily_cap = 0 WHERE event_type = 'REACTION_GIVEN'$$, '23514');
+SELECT pg_temp.expect_sqlstate($$INSERT INTO reward_rule(event_type,amount,daily_cap,active,updated_at)
+VALUES ('UNLOCK',1,NULL,true,now())$$, '23514');
+INSERT INTO reward_point_balance(student_id,balance,updated_at)
+VALUES ('00000000-0000-4000-8000-000000000002',0,now());
+SELECT pg_temp.expect_sqlstate($$UPDATE reward_point_balance SET balance = -1$$, '23514');
+INSERT INTO reward_point_ledger(id,student_id,event_type,source_key,amount,created_at)
+VALUES ('00000000-0000-4000-8000-000000003891','00000000-0000-4000-8000-000000000002','MISSION_COMPLETED','mission-1',10,now());
+SELECT pg_temp.expect_sqlstate($$INSERT INTO reward_point_ledger(id,student_id,event_type,source_key,amount,created_at)
+VALUES ('00000000-0000-4000-8000-000000003892','00000000-0000-4000-8000-000000000002','MISSION_COMPLETED','mission-1',10,now())$$, '23505');
+SELECT pg_temp.expect_sqlstate($$INSERT INTO reward_point_ledger(id,student_id,event_type,source_key,amount,created_at)
+VALUES ('00000000-0000-4000-8000-000000003893','00000000-0000-4000-8000-000000000002','UNLOCK','THEME:sea',100,now())$$, '23514');
+SELECT pg_temp.expect_sqlstate($$INSERT INTO reward_point_ledger(id,student_id,event_type,source_key,amount,created_at)
+VALUES ('00000000-0000-4000-8000-000000003894','00000000-0000-4000-8000-000000000002','REVIEW_VIEWED','2026-11-02',-10,now())$$, '23514');
+INSERT INTO reward_point_ledger(id,student_id,event_type,source_key,amount,created_at)
+VALUES ('00000000-0000-4000-8000-000000003895','00000000-0000-4000-8000-000000000002','UNLOCK','THEME:sea',-100,now());
+INSERT INTO look_item(id,code,slot,name,price_points,asset_key,status,created_by,created_at,updated_at)
+VALUES ('00000000-0000-4000-8000-000000003896','SCHEMA_HAT','HAT','schema-test',10,'',
+        'ON_SALE','00000000-0000-4000-8000-000000000001',now(),now());
+SELECT pg_temp.expect_sqlstate($$UPDATE look_item SET code = 'THEME:sea'$$, '23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE look_item SET slot = 'THEME'$$, '23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE look_item SET price_points = 0$$, '23514');
+INSERT INTO student_look_unlock(student_id,item_key,ledger_id,unlocked_at)
+VALUES ('00000000-0000-4000-8000-000000000002','THEME:sea','00000000-0000-4000-8000-000000003895',now());
+SELECT pg_temp.expect_sqlstate($$INSERT INTO student_look_unlock(student_id,item_key,ledger_id,unlocked_at)
+VALUES ('00000000-0000-4000-8000-000000000002','SCHEMA_HAT','00000000-0000-4000-8000-000000003895',now())$$, '23505');
+SELECT pg_temp.expect_sqlstate($$INSERT INTO student_look_unlock(student_id,item_key,ledger_id,unlocked_at)
+VALUES ('00000000-0000-4000-8000-000000000002','SCHEMA_HAT','00000000-0000-4000-8000-999999999999',now())$$, '23503');
+INSERT INTO student_look_equipment(student_id,slot,look_item_id,updated_at)
+VALUES ('00000000-0000-4000-8000-000000000002','HAT','00000000-0000-4000-8000-000000003896',now());
+SELECT pg_temp.expect_sqlstate($$UPDATE student_look_equipment SET slot = 'THEME'$$, '23514');
 """
 
 LEARNING_CASES = """
@@ -797,7 +842,8 @@ def verify_schema(query):
         for name, ids in seeds.items():
             seeded = query(
                 database,
-                f"SELECT count(*) FROM {name} WHERE id IN ({', '.join(repr(i) for i in ids)});",
+                f"SELECT count(*) FROM {name} WHERE {SEED_KEY_COLUMNS.get(name, 'id')} "
+                f"IN ({', '.join(repr(i) for i in ids)});",
             )
             require(seeded.strip() == str(len(ids)), f"{database}.{name}: migration seed rows missing")
         if populated:

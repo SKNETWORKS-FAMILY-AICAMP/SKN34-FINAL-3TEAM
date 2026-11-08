@@ -56,7 +56,7 @@ jobs:
           java-version: "21"
       - uses: gradle/actions/setup-gradle@v6
       # 합성 JSON을 복사하지 않고 실제 PostgreSQL·RabbitMQ 테스트에서 응답을 생성한다.
-      - name: core 일곱 기능 계약 산출물 생성
+      - name: core 기능별 계약 산출물 생성
         working-directory: backend/core-service
         run: |
           chmod +x gradlew
@@ -68,7 +68,8 @@ jobs:
             --tests 'com.sagomungchi.core.payment.PaymentIntegrationTest' \
             --tests 'com.sagomungchi.core.report.AdminReportRetryIntegrationTest' \
             --tests 'com.sagomungchi.core.conversation.ConversationIntegrationTest' \
-            --tests 'com.sagomungchi.core.admin.AdminOperationsIntegrationTest'
+            --tests 'com.sagomungchi.core.admin.AdminOperationsIntegrationTest' \
+            --tests 'com.sagomungchi.core.reward.RewardIntegrationTest'
       - name: 실제 리포트 이벤트·응답 계약 검사
         run: .venv-contracts/bin/python scripts/validate_report_contracts.py
       - name: 실제 알림 응답 계약 검사
@@ -83,3 +84,5 @@ jobs:
         run: .venv-contracts/bin/python scripts/validate_analysis_contracts.py backend/core-service/build/generated-contracts/analysis.json
       - name: 실제 관리자 운영 응답 계약 검사
         run: .venv-contracts/bin/python scripts/validate_admin_operations_contracts.py backend/core-service/build/generated-contracts/admin-operations.json
+      - name: 실제 포인트·꾸미기 응답 계약 검사
+        run: .venv-contracts/bin/python scripts/validate_reward_contracts.py

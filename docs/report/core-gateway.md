@@ -1,4 +1,4 @@
-# core 학습 프록시·SSE·대시보드·알림·분석 대화·이벤트 기록 (#38·#39·#40·#41·#44·#119·#168·#195·#208·#210·#225·#243·#286)
+# core 학습 프록시·SSE·대시보드·알림·분석 대화·이벤트 기록·포인트 (#38·#39·#40·#41·#44·#119·#168·#195·#208·#210·#225·#243·#286·#389)
 
 계약은 [API 명세](../design/api-spec.md) 1.4·2.2·2.3·2.7·3.2, 구조는 [아키텍처](../design/architecture.md) 1.3·1.6.
 
@@ -323,3 +323,40 @@ SET failure_count = 0, next_attempt_at = NULL, quarantined_at = NULL,
     manual_retry_count = manual_retry_count + 1, last_requeued_at = now()
 WHERE id = :event_id AND quarantined_at IS NOT NULL AND published_at IS NULL;
 ```
+
+## 12. 참여 포인트·꾸미기 해금 (#389)
+
+2026-11-06 결정 P21·P22([서비스 기획 방향](service-direction.md) 2.3)의 core `reward` 도메인 앞부분. 계약은 [API 명세](../design/api-spec.md) 2.8·2.10·3.12, 저장은 [ERD 3.5.1](../design/erd.md#351-포인트꾸미기-p21p22-389)(V29). 결제와 패키지·테이블을 나눴다(포인트는 돈이 아니고 환급·환불 경로가 없음).
+
+### 범위
+
+| 구분 | 이번 PR | 후속 |
+|---|---|---|
+| 규칙·원장·잔액 | `reward_rule`(P21 초기값 시드)·`reward_point_ledger`·`reward_point_balance`, 적립 진입점 `RewardService.earn` | - |
+| 조회 | `GET /students/me/points`, `GET /children/{childId}/points` | - |
+| 꾸미기 | `GET /students/me/look-items`, `POST …/unlock`, `PUT /students/me/preferences` 잠금·`equipped` | - |
+| 관리자 | `/admin/look-items` 목록·등록·수정·판매 중단(CONTENT, 감사) | - |
+| 적립 사건 연결 | 없음(서비스 메서드와 테스트만) | 학습 완료(`LearningProxyService` 돌아보기 저장), 공유·반응(#388), 되돌아보기 열람·완주·주간 테마 조회 보충(#387) |
+
+적립 연결을 뒤로 미룬 이유: 사건이 생기는 경로(`LearningProxyService`, 커뮤니티·주간 테마 프록시)를 #387·#388이 동시에 고치고 있어, 같은 파일을 두 PR이 바꾸면 충돌과 중복 적립 위험이 생긴다. 먼저 사건 키 멱등인 `earn`을 만들어 두면 후속 PR은 사건 확인 뒤 한 줄로 부르면 된다.
+
+### 결정과 근거
+
+- **적립 진입점 하나(`earn`)**: 규칙 조회 → 학생 활성 확인 → 잔액 잠금 → 같은 사건 확인 → 하루 상한 → 원장 1행 + 잔액 갱신. 적립하지 않은 이유(`DUPLICATE`·`DAILY_CAP_REACHED`·`RULE_INACTIVE`·`STUDENT_UNAVAILABLE`)는 예외 없이 결과로 돌려 학습 응답을 막지 않는다(P21 "적립 저장 실패는 학습 응답 유지"). `REQUIRES_NEW`라 호출자 트랜잭션이 있어도 적립 실패가 그 트랜잭션을 망치지 않는다
+- **멱등은 사건 키 UK로**: `(student_id, event_type, source_key)`가 같으면 두 번째 적립이 없다. 그래서 저장 실패 뒤 같은 사건 재요청·주간 테마 조회 때 같은 `earn`을 다시 부르는 것으로 보충이 끝난다(별도 재시도 큐·Outbox 없음, 서비스 기획 방향 5장 "새 메시지를 두지 않음")
+- **하루 상한은 횟수, 한국 시간**: `daily_cap`은 하루 적립 횟수다. 반응 1점·5회라 지금은 포인트와 같지만, 운영이 점수를 바꿔도 "하루 반응 다섯 번"이라는 뜻이 유지된다. 하루 경계는 학생 생활 기준인 KST 자정
+- **잠금 순서 학생 행(공유) → 잔액 행(배타)**: 학생 삭제 확정은 학생 행을 `FOR UPDATE`로 잡고 포인트·해금을 지운다. 적립·해금이 학생 행을 `FOR SHARE`로 먼저 잡아, 삭제와 겹치면 삭제가 끝난 뒤 `ACTIVE`가 아님을 보고 멈춘다(삭제 뒤 원장이 다시 생기지 않음). 같은 학생의 적립·해금은 잔액 행으로 직렬화해 동시 해금도 1회만 차감되고 하루 상한도 넘지 않는다
+- **해금 이중 방어**: `Idempotency-Key`는 같은 요청 재전송(응답 재사용)을, 해금 PK `(student_id, item_key)`와 원장 UK `(student, UNLOCK, itemKey)`는 다른 키로 보낸 같은 해금을 막는다. 공통 멱등 저장(`IdempotencyService`)은 업무 커밋 뒤 응답 저장 사이에 틈이 있는데(지원 신고와 같은 문제), 이 틈에서 재요청해도 "이미 해금 200"으로 끝나 차감이 두 번 일어나지 않는다
+- **테마·캐릭터는 코드 상수, 아이템만 테이블**: 결정 "기존 테마·캐릭터 해금값은 코드 상수". 값 목록이 V23 CHECK·웹 상수와 이미 묶여 있어 테이블로 옮기면 세 곳이 어긋날 수 있다. 관리자 아이템 `code`는 `^[A-Z0-9_]{3,40}$`(DB CHECK)라 `THEME:`·`COMPANION:` 키와 겹치지 않는다
+- **판매 중단과 착용**: 영구 해금이라 판매 중단 뒤에도 해금한 학생 목록에는 `onSale:false`로 남고 계속 착용한다. 해금하지 않은 학생 목록에서는 빠진다(웹 목업과 같은 동작)
+- **잠금 전 선택 이관**: V29가 `student.look_theme`·`look_companion`(무료 제외)을 `ledger_id` NULL 해금 행으로 옮긴다. 포인트를 차감하지 않고, 원장에도 남기지 않는다(받은 적 없는 포인트를 쓴 기록이 생기지 않게)
+- **`equipped` 생략은 유지**: 웹은 테마·캐릭터만 바꿀 때 `equipped`를 보내지 않는다(`studentLook/api.ts`). 생략·null을 "비우기"로 읽으면 테마를 바꿀 때마다 아이템이 벗겨진다. 비우려면 슬롯을 null로 보낸다
+- **학부모 조회와 공개 설정**: 포인트는 학습 원문이 아니라 #206 학생 공개 설정과 무관하게 연결 학부모가 본다(결정 "잔액은 본인·학부모만")
+- **학생 삭제**: 기존 `ChildManagementService.confirm`이 부르는 `StudentLookService.clear`가 착용 → 해금 → 원장 → 잔액을 같은 트랜잭션에서 지운다. `confirm` 본문을 바꾸지 않아 #388(`community_enabled` 끄기)과 같은 줄을 다투지 않는다
+
+### 검증
+
+- `RewardIntegrationTest`(PostgreSQL·RabbitMQ 컨테이너): 시드 규칙값, 사건 키 1회·KST 하루 상한(23:30·다음날 00:10), 비활성 규칙·삭제 진행 학생 미적립, 학생·학부모만 조회, 목록 가격·판매 중단 노출, 해금 키 재사용·다른 키 재해금 무차감·부족·중단·없는 항목, 다른 키 4건 동시 해금 1회 차감, 잠금 409·`equipped` 슬롯·생략 유지·판매 중단 아이템 착용, 관리자 CONTENT·형식·코드 중복·감사 4종, 학생 삭제 정리, DB 부호·UK·잔액 CHECK
+- `LookUnlockMigrationTest`: V28 상태에 저장된 꾸미기를 넣고 V29 적용 → 유료 값만 `ledger_id` NULL 해금 행, 원장 0행
+- 계약: `scripts/validate_reward_contracts.py`가 실제 MockMvc 응답(포인트·목록·착용·관리자 아이템)을 OpenAPI로 검사(`ci-contracts`). `scripts/verify_db_schema.py`에 `reward_rule` 시드 예외(`event_type` 키)와 V29 음성 사례 13건 추가
+- 남은 일: 적립 사건 연결(위 표), 학습 완료 → 적립 → 해금 → 착용 종단 확인(이슈 완료 조건), 웹 실서버 연결 확인(#393~#395)
