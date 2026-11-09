@@ -587,7 +587,7 @@ sequenceDiagram
 
 ### 3.5 학습 완료 → 포인트 적립·자동 공유 (P20·P21, 구현 예정)
 
-구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 공유 요청(core #388)과 learning 공유 저장(#386)은 구현, 포인트 적립(#389)은 구현 예정. 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -606,8 +606,8 @@ sequenceDiagram
   end
   opt community_enabled 이고 COMMUNITY 동의 유효
     C->>L: POST /internal/community/posts {studentId, attemptId}
-    L->>L: 학습 완료·표현 필터 통과 확인, 마지막 답변으로 공유물 저장 (학생·미션당 1개, 다시 풀기는 저장 안 함)
-    L-->>C: 201 {postId} 또는 200 (이미 있음)
+    L->>L: 처음 학습 완료한 시도·지금 표현 필터 통과 확인, 마지막 답변으로 공유물 저장 (학생·미션당 1개, 다시 풀기는 저장 안 함)
+    L-->>C: 201 {postId, created} 또는 200 (이미 있음), 공유 대상 아님 409
     rect rgba(128,128,128,0.12)
       C->>CDB: reward_point_ledger (COMMUNITY_POSTED, source_key = postId) + 잔액
     end
@@ -644,9 +644,9 @@ sequenceDiagram
   C-->>W: 200 {earned}
 ```
 
-### 3.7 커뮤니티 열람·반응·신고 (P20, 구현 예정)
+### 3.7 커뮤니티 열람·반응·신고 (P20, core #388·learning #386 구현)
 
-구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 반응 포인트 적립(#389)만 구현 예정. 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -659,7 +659,7 @@ sequenceDiagram
 
   W->>C: GET /missions/{missionId}/community-posts?seed
   C->>L: GET /internal/community/missions/{missionId}/posts?viewerStudentId&seed
-  alt viewer가 이 미션을 마무리하지 않음
+  alt viewer가 이 미션을 학습 완료하지 않음
     L-->>C: 403 COMMUNITY_LOCKED
     C-->>W: 403
   else 마무리함
@@ -669,9 +669,9 @@ sequenceDiagram
   end
   W->>C: PUT /community-posts/{postId}/reactions/NEW_IDEA
   C->>L: PUT /internal/community/posts/{postId}/reactions/NEW_IDEA?studentId
-  L-->>C: {created: true}
+  L-->>C: {postId, reaction, reactionId, created: true}
   opt 생성됨이고 오늘 반응 적립 상한 미만
-    C->>CDB: reward_point_ledger (REACTION_GIVEN, source_key = postId:reaction) + 잔액
+    C->>CDB: reward_point_ledger (REACTION_GIVEN, source_key = postId:reaction, reactionId와 1:1) + 잔액
   end
   C-->>W: 204
   W->>C: POST /error-reports {targetType: COMMUNITY_POST, targetId}

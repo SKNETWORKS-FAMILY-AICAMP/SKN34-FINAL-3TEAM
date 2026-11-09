@@ -1746,9 +1746,9 @@ classDiagram
 - `evidence`: `deleted_student`에 있는 학생 근거는 `available: false` (FN-ACC-13)
 - `AttemptService.deleteByStudent`: CASCADE 없이 한 트랜잭션에서 `judgment_correction`·`judgment_element` → `self_assessment`·`reflection`·`hint_usage`·`attempt_draft` → `followup`(`answer.followup_id`는 `SET CONSTRAINTS … DEFERRED`로 커밋 때 검사) → `judgment` → `answer` → `attempt` 순서로 학생의 시도 이하 기록 삭제(#128, ERD 4.3). 호출한 쪽 트랜잭션 안에서 실행
 
-### 4.4 주간 테마·커뮤니티 (theme · community, 구현 예정)
+### 4.4 주간 테마·커뮤니티 (theme 구현 예정 · community #386 구현)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 클래스. 주간 테마(`theme`)는 #385로 구현한 이름·시그니처, 커뮤니티는 구현 예정이라 구현 시 조정할 수 있다. 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임-구현-예정).
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 클래스. 주간 테마(`theme`)는 #385, 커뮤니티(`community`)는 #386으로 구현한 이름·시그니처. 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임-구현-예정).
 
 ```mermaid
 classDiagram
@@ -1800,26 +1800,32 @@ classDiagram
     <<service>>
     +start(studentId, missionId, grade, demo, context) AttemptStart
   }
-  class CommunityInternalController {
+  class CommunityController {
     <<controller>>
-    +create(studentId, attemptId) PostResult
-    +missionPosts(missionId, viewerId, seed, page) Page
-    +react(postId, studentId, reaction) ReactionResult
-    +visibility(studentId, visible, reason)
-    +moderate(postId, status, errorReportId)
+    +share(studentId, attemptId) ShareResponse
+    +post(postId) PostDetailView
+    +missionPosts(missionId, viewerStudentId, seed, page, size) MissionPostPage
+    +studentPosts(studentId) StudentPostList
+    +react(postId, reaction, studentId) ReactionCreated
+    +cancelReaction(postId, reaction, studentId) ReactionDeleted
+    +visibility(studentId, visible, reason) VisibilityResult
+    +moderate(postId, status, errorReportId) ModerationResponse
   }
-  class CommunityPostService {
+  class CommunityService {
     <<service>>
-    +share(studentId, attemptId) CommunityPost
-    +list(missionId, viewerId, seed, page) Page
-    +setVisibility(studentId, visible)
+    +share(studentId, attemptId) SharedPost
+    +missionPosts(missionId, viewer, seed, page, size) List
+    +studentPosts(studentId) List
+    +react(postId, studentId, reaction) ReactionResult
+    +setVisibility(studentId, visible, reason) VisibilityResult
+    +moderate(postId, status, errorReportId) CommunityPostStatus
+    +deleteByStudent(studentId) int
   }
-  class CommunityPost {
-    <<entity>>
-    +hideBySetting()
-    +hideByReport()
-    +restore()
-    +remove()
+  class CommunityRules {
+    <<domain>>
+    +moderate(current, requested, authorVisible) CommunityPostStatus
+    +initialStatus(authorVisible) CommunityPostStatus
+    +reactionId(postId, studentId, reaction) UUID
   }
 
   WeeklyThemeController --> WeeklyThemeService
@@ -1828,14 +1834,14 @@ classDiagram
   WeeklyThemeAdminService ..> ThemePublishCheck
   WeeklyThemeAdminService --> MissionService : 게시본 미션
   AttemptService --> WeeklyThemeService : context 검사
-  CommunityInternalController --> CommunityPostService
-  CommunityPostService ..> CommunityPost
-  CommunityPostService --> AttemptService : 마무리 여부·마지막 답변
+  CommunityController --> CommunityService
+  CommunityService ..> CommunityRules
+  CommunityService --> AttemptService : 학습 완료 여부·첫 완료 시도·마지막 답변
 ```
 
 - 기존 `AttemptService.start`(4.1)에 `context` 인자를 추가하고 `THEME_DAY`·`THEME_REVIEW`는 `WeeklyThemeService.checkStart`로 요일·되돌아보기 검사. 진행 중 시도 반환은 검사하지 않음(자정 후 이어하기)
-- `CommunityPostService.share`는 학생·미션당 1개(UK `(student_id, mission_id)`), 이미 있으면 기존 공유물을 그대로 반환
-- 학생 삭제 소비(4.3 `record`)가 테마 열람 기록 삭제(`WeeklyThemeService.deleteByStudent`, #385 구현)와 `CommunityPostService`(구현 예정)를 함께 호출
+- `CommunityService.share`는 학생·미션당 1개(UK `(student_id, mission_id)`), 이미 있으면 기존 공유물을 그대로 반환. 처음 학습 완료한 시도가 아니면(다시 풀기) 공유하지 않고, 공유 때 `ExpressionPolicy`(#205)를 다시 확인
+- 학생 삭제 소비(4.3 `record`)의 `StudentDeletionService`가 같은 트랜잭션에서 시도 삭제 전에 `CommunityService.deleteByStudent`(#386), 시도 삭제 뒤 테마 열람 기록 삭제(`WeeklyThemeService.deleteByStudent`, #385)를 호출
 - 테마 게시 중 수정은 미션과 같은 버전 방식(`weekly_theme_version`, 현재본·게시본·검토 요청본). 학생 조회·시작 검사는 게시본, 관리자 편집은 현재본
 
 ---
