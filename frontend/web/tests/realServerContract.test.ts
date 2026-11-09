@@ -19,7 +19,7 @@ const summary = {
   status: 'COMPLETED',
   state: 'OK',
   revision: 1,
-  generatedAt: '2026-10-27T07:00:00+09:00',
+  generatedAt: '2026-10-26T00:00:00+09:00',
 }
 const detail = (extra: Record<string, unknown>) => ({
   ...summary,

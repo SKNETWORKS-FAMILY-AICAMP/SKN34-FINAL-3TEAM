@@ -66,7 +66,7 @@ export function makeWeekly(c: Child, p: Period, revision = 1): WeeklyReport {
     periodType: 'WEEKLY',
     period: p,
     revision,
-    revisions: [{ revision, generatedAt: '2026-10-26T07:00:00+09:00' }],
+    revisions: [{ revision, generatedAt: '2026-10-26T00:00:00+09:00' }],
     status: 'COMPLETED',
     state: metrics[0].state,
     inclusionRule,
@@ -120,7 +120,7 @@ export function makeWeekly(c: Child, p: Period, revision = 1): WeeklyReport {
       c.plan === 'PREMIUM' && rows.length ? '어떤 생각을 더 적고 싶었나요?' : undefined,
     verification: { numbersMatched: true, quotesMatched: true },
     versions: { prompt: 'mock-report@1', model: null },
-    generatedAt: '2026-10-26T07:00:00+09:00',
+    generatedAt: '2026-10-26T00:00:00+09:00',
     themeSummary: themeSummary(rows),
   }
   return c.plan === 'FREE'
@@ -152,7 +152,7 @@ export function makeDaily(c: Child, date: string, revision = 1): WeeklyReport {
     periodType: 'DAILY',
     period: p,
     revision,
-    revisions: [{ revision, generatedAt: `${date}T22:00:00Z` }],
+    revisions: [{ revision, generatedAt: `${date}T15:00:00Z` }],
     status: 'COMPLETED',
     state: rows.length ? 'OK' : 'NO_RECORD',
     inclusionRule: `${inclusionRule} · 그날(KST) 문제 기준`,
@@ -183,7 +183,7 @@ export function makeDaily(c: Child, date: string, revision = 1): WeeklyReport {
     narrative: null,
     verification: { numbersMatched: true, quotesMatched: true },
     versions: { prompt: null, model: null },
-    generatedAt: `${date}T22:00:00Z`,
+    generatedAt: `${date}T15:00:00Z`,
   }
 }
 const kstDate = (offsetDays: number) => new Date(Date.now() + 9 * 3600_000 - offsetDays * 86400_000).toISOString().slice(0, 10)
@@ -192,7 +192,7 @@ export function ensureReports(c: Child) {
     const r = makeWeekly(c, p)
     if (!reports.has(r.reportId)) reports.set(r.reportId, [r])
   }
-  // 일일 리포트: 매일 07:00 KST에 전날 대상으로 만든다(목업은 최근 사흘).
+  // 일일 리포트: 매일 자정(다음 날 00:00 KST)에 그날 대상으로 만든다(목업은 최근 사흘).
   for (const offset of [1, 2, 3]) {
     const r = makeDaily(c, kstDate(offset))
     if (!reports.has(r.reportId)) reports.set(r.reportId, [r])

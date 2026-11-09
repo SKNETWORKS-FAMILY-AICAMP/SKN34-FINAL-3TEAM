@@ -74,7 +74,7 @@ export function ParentReport({
           {child.nickname} · {period.from}~{period.to} (KST 월~일)
           <br />
           <small>
-            주간 종료 다음 월요일 오전 7시 생성. 공책·분석의 최근 7일과 조회 기간이 다를 수
+            주가 끝나는 일요일 자정에 생성. 공책·분석의 최근 7일과 조회 기간이 다를 수
             있습니다.
           </small>
         </p>
@@ -105,8 +105,8 @@ export function ParentReport({
             </h2>
             {['QUEUED', 'RUNNING'].includes(r.status) && (
               <p>
-                처리 중인 결과를 완료로 표시하지 않습니다. 이번 주 리포트는 다음 월요일 오전 7시
-                생성 대상입니다.
+                처리 중인 결과를 완료로 표시하지 않습니다. 이번 주 리포트는 일요일 자정에
+                생성됩니다.
               </p>
             )}
             {r.status === 'FAILED' && (

@@ -8,7 +8,7 @@ function psql(database: string, sql: string) {
 }
 
 /**
- * 주간 리포트 cron(월요일 07:00, 지난주 기간)을 기다릴 수 없어 이번 주 기간 생성 명령을 core outbox에 직접 넣는다.
+ * 주간 리포트 cron(월요일 00:00 = 일요일 자정, 지난주 기간)을 기다릴 수 없어 이번 주 기간 생성 명령을 core outbox에 직접 넣는다.
  * ReportGenerateWriter·OutboxWriter와 같은 형식이라 OutboxRelay → report-worker → 완료 이벤트까지 실제 경로를 탄다.
  */
 export function queueWeeklyReport(nickname: string) {

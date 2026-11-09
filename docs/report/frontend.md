@@ -111,7 +111,16 @@ node tests/qr-device-browser.mjs
 - 목업: `mocks/fixtures/retention.ts`·`handlers/retention.ts`. 요일은 sessionStorage `sagomungchi:msw-weekday`(0=월~6=일)로 바꿔 볼 수 있다. 원문 비공개(#206)면 일일 리포트 문제별 원문도 숨긴다. 보호자 동의 확인은 법정대리인 문서만 본다(선택 동의 철회가 이용 제한으로 읽히지 않게)
 - 확인: `npm run lint`·`npm test`(목업 계약 `tests/retentionMock.test.ts`, 읽기·어댑터 `tests/retention.test.ts`)·`npm run build`, 개발 서버 목업 모드에서 학생·학부모·관리자 흐름
 
-## 7. 남은 확인
+## 7. 2026-11-09 리포트 생성 시각 안내 자정 변경 (#401)
+
+[서비스 기획 방향](service-direction.md) 7장 결정(PR #399)에 맞춰 학부모 화면의 생성 시각 안내를 대상 기간이 끝나는 자정 기준으로 바꿨다. 학부모가 읽는 시각 그대로 일일은 "매일 자정", 주간은 "일요일 자정"으로 쓴다(서버 실행 시각은 다음 날·월요일 00:00 KST).
+
+- 문구: 리포트 목록(`ParentReports`) 일일·주간 생성 안내, 주간 리포트 화면(`ParentFeatures`) 기간 안내·생성 중 안내, 대시보드(`ParentDashboard`) 빈 목록 안내
+- 목업 `generatedAt`: 주간은 직전 주 종료 자정 `2026-10-26T00:00:00+09:00`, 일일은 대상일 다음 날 00:00 KST(`${date}T15:00:00Z`). 실서버 어댑터 테스트 예시 시각과 e2e 주간 cron 주석도 같은 기준으로 정리
+- API 경로·스키마 변경 없음
+- core 스케줄 변경(#400) 반영 전까지 실서버는 07:00에 생성하므로 안내와 실제 생성 시각이 잠시 다를 수 있다
+
+## 8. 남은 확인
 
 - 참여 기능 실서버 연결: core·learning 구현 후 응답 필드(일일 `problems[]` 세부, 테마 요약, 게시 검사 `errors` 형식)를 다시 대조
 - lint의 기존 `AdminOperations.tsx` immutability 경고 1건(재확인 필요)

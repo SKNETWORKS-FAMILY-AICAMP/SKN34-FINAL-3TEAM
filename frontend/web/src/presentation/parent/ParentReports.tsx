@@ -34,7 +34,7 @@ export function ParentReports({
         화면 공통 선택 기간 {scope.from} ~ {scope.to} · 리포트는 KST 기준이므로 실제 리포트 기간을
         따로 표시합니다.
       </p>
-      <p>일일 리포트는 매일 오전 7시에 전날 기록으로, 주간 리포트는 월요일 오전 7시에 직전 주 기록으로 만들어집니다.</p>
+      <p>일일 리포트는 매일 자정에 그날 기록으로, 주간 리포트는 일요일 자정에 한 주 기록으로 만들어집니다.</p>
       <label>
         리포트 종류{' '}
         <select aria-label="리포트 종류" value={kind} onChange={(e) => setKind(e.target.value as ReportPeriodType | '')}>
