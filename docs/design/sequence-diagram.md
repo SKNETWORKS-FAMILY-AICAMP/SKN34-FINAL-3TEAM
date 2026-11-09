@@ -1204,7 +1204,7 @@ sequenceDiagram
   C->>C: NotificationService.notify (ERROR_REPORT_RESOLVED)
 ```
 
-- 구현 예정(P20): `targetType: COMMUNITY_POST` 신고는 접수 즉시 공유물 숨김(3.7)
+- `targetType: COMMUNITY_POST` 신고는 접수 즉시 공유물 숨김(3.7, #388). learning 숨김 호출이 실패해도 core 목록·반응이 신고 행으로 먼저 숨긴다
 - 접수만으로 판정을 바꾸지 않음 (FN-SUP-02). 정정 없이 종료하는 경우 `IN_REVIEW → RESOLVED`만 수행
 
 ---

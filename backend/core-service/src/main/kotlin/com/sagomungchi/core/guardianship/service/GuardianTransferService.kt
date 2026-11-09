@@ -10,6 +10,8 @@ import com.sagomungchi.core.account.service.StudentDeviceCleanupService
 import com.sagomungchi.core.consent.domain.ConsentChoice
 import com.sagomungchi.core.consent.service.ConsentAccessService
 import com.sagomungchi.core.consent.service.ConsentService
+import com.sagomungchi.core.community.domain.VisibilityReason
+import com.sagomungchi.core.community.service.CommunityVisibilityService
 import com.sagomungchi.core.conversation.service.ConversationTransferService
 import com.sagomungchi.core.guardianship.domain.GuardianTransfer
 import com.sagomungchi.core.guardianship.repository.ChildManagementRepository
@@ -32,6 +34,7 @@ class GuardianTransferService(private val repository: GuardianTransferRepository
  private val consent: ConsentService,private val consentAccess: ConsentAccessService,
  private val payment: WithdrawalEligibilityService,private val products: ProductEntitlementService,
  private val conversations: ConversationTransferService,private val devices: StudentDeviceCleanupService,
+ private val community: CommunityVisibilityService,
  @Value("\${app.guardian-transfer.enabled:false}") private val enabled: Boolean) {
  data class Recipient(val id: UUID,val name: String?,val email: String,val childCount: Int)
  data class View(val id: UUID,val childId: UUID,val childName: String?,val senderName: String?,
@@ -93,6 +96,8 @@ class GuardianTransferService(private val repository: GuardianTransferRepository
   repository.move(row.studentId,row.senderId,row.recipientId)
   // The inserted link and guardian consent become visible together; a stale document rolls everything back.
   consent.save(row.recipientId,row.studentId,choices)
+  // P20: shared posts stay, but remain private until the new guardian grants COMMUNITY (setting itself is kept).
+  community.sync(row.studentId,VisibilityReason.TRANSFER)
   if(row.includeConversations) conversations.transfer(row.senderId,row.studentId,row.recipientId)
   management.revokeStudent(row.studentId);devices.removeChild(row.studentId)
   repository.resolve(id,"ACCEPTED");management.audit(identity.account.id,"GUARDIAN_TRANSFER_ACCEPTED",id)

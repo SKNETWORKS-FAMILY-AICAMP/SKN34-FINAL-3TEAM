@@ -116,6 +116,8 @@ erDiagram
     int birth_year "출생연도 (P01), DELETED 표식은 NULL 허용"
     boolean is_demo "시연 가상 학생"
     boolean parent_sharing_enabled "NOT NULL DEFAULT false, 학생 본인만 변경 (#206)"
+    boolean community_enabled "NOT NULL DEFAULT false, 커뮤니티 공개 설정 학생 본인만 변경 (P20, #388)"
+    timestamptz community_updated_at "NULL 허용, 공개 설정 변경 시각 (#388)"
     varchar look_theme "NULL 허용, CHECK[lake|forest|factory|space|sea], 학생 꾸미기 (#234)"
     varchar look_companion "NULL 허용, CHECK[mungchi|tori|mongdol|kongi|monggeul], 학생 꾸미기 (#234)"
     timestamptz look_updated_at "NULL 허용, 꾸미기 저장 시각 (#234)"
@@ -140,7 +142,7 @@ erDiagram
   }
   consent_document {
     uuid id PK
-    varchar kind "TERMS|PRIVACY|GUARDIAN"
+    varchar kind "TERMS|PRIVACY|GUARDIAN|COMMUNITY"
     varchar version
     varchar title
     text content
@@ -209,6 +211,7 @@ erDiagram
 - `user_account.oauth_provider`·`oauth_subject`는 함께 NULL(기존 계정) 또는 GOOGLE·Google sub이며 복합 UNIQUE. `password_hash`는 nullable로 보존하고 이메일로 OAuth 계정을 자동 연결하지 않음 (#36)
 - 신규 student의 `pin_failed_count`는 앱이 0을 전달(SQL DEFAULT 없음). 학생 삭제 확정 때 `student_device_child` 제거·PIN 해시·잠금 삭제, 탈퇴 시 모든 기기 폐기 (#58)
 - `student.parent_sharing_enabled`는 비공개 기본값을 보장하기 위한 SQL DEFAULT false의 명시적 예외. 학생 본인만 바꾸며 원문 제공 경로는 같은 학생 행의 현재 설정을 다시 확인 (#206)
+- `student.community_enabled`도 같은 이유의 DEFAULT false 예외(P20, #388). V31에서 nullable로 추가하고 V32에서 기존 행을 false로 채운 뒤 NOT NULL. 학생 본인만 켜고 끄며, 공유물 공개는 이 값과 현재 연결 보호자의 현재 문서 `COMMUNITY` 동의가 모두 있어야 한다. 동의 거부·철회 시 false, 학생 삭제 확정 시 false·`community_updated_at` NULL로 되돌림. `consent_document` `COMMUNITY`는 선택(`required = false`) 자녀 단위 동의(V31 시드 1.0), `error_report`·`correction` `target_type`에 `COMMUNITY_POST`
 - `student.look_theme`·`look_companion`·`look_updated_at`은 함께 NULL(저장한 적 없음, API 기본값 `lake`·`mungchi`)이거나 함께 값(`student_look_saved_together`). 값 목록은 코드 상수와 CHECK로 고정, SQL DEFAULT 없음. 학생 삭제 확정 때 PIN 삭제와 같은 트랜잭션에서 NULL로 되돌림 (#234)
 - 구현 예정(P22): `lake`·`mungchi` 외 테마·캐릭터는 포인트 해금 후에만 저장 가능(`student_look_unlock`, 3.6). 잠금 적용 전 저장된 값은 해금 행으로 옮김
 
@@ -477,7 +480,7 @@ erDiagram
     uuid attempt_id "NULL 허용 · 검증한 learning 시도"
     uuid submission_key "NULL 허용 · 접수 중복 방지"
     uuid student_id FK "NULL 허용"
-    varchar target_type "FOLLOWUP|JUDGMENT|ANALYSIS|REPORT"
+    varchar target_type "FOLLOWUP|JUDGMENT|ANALYSIS|REPORT|COMMUNITY_POST"
     uuid target_id "learning·core·report 논리 참조"
     varchar category "WRONG_JUDGMENT|ODD_QUESTION|MISMATCH|INAPPROPRIATE|OTHER (P10)"
     text comment "NULL 허용"
@@ -781,12 +784,10 @@ erDiagram
 
 ### 3.6 구현 예정 변경 (core_db)
 
-2026-11-06 서비스 기획 방향 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 저장 구조. 마이그레이션 전이라 위 Mermaid·6장 인덱스 표(실제 DB 계약, `scripts/verify_db_schema.py`가 대조)에는 넣지 않고 표로만 둔다. 구현 시 새 마이그레이션 버전과 함께 Mermaid·6장으로 옮긴다. 컬럼 기본값은 두지 않는다(검증 스크립트 규칙): 기존 행이 있는 테이블의 NOT NULL 컬럼은 준비 버전(nullable 추가)→기존 행 채움→최종 버전(NOT NULL·CHECK)으로 나눈다(8장). API는 [API 명세](api-spec.md)의 구현 예정 행.
+2026-11-06 서비스 기획 방향 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 저장 구조. 커뮤니티 공개 설정·`COMMUNITY` 동의·신고 대상(#388)은 V31·V32로 구현해 3.1·3.3 Mermaid로 옮겼다. 나머지는 마이그레이션 전이라 위 Mermaid·6장 인덱스 표(실제 DB 계약, `scripts/verify_db_schema.py`가 대조)에는 넣지 않고 표로만 둔다. 구현 시 새 마이그레이션 버전과 함께 Mermaid·6장으로 옮긴다. 컬럼 기본값은 두지 않는다(검증 스크립트 규칙): 기존 행이 있는 테이블의 NOT NULL 컬럼은 준비 버전(nullable 추가)→기존 행 채움→최종 버전(NOT NULL·CHECK)으로 나눈다(8장). API는 [API 명세](api-spec.md)의 구현 예정 행.
 
 | 테이블 | 구분 | 컬럼·제약 | 근거 |
 |---|---|---|---|
-| `student` | 컬럼 추가 | `community_enabled boolean NOT NULL`(기존 행 false로 채움, 학생 본인만 변경. 신규 행 기본 끔은 `parent_sharing_enabled`처럼 검증 스크립트 기본값 예외 등록 필요), `community_updated_at timestamptz NULL` | P20 |
-| `consent_document` | 값 추가 | `kind`에 `COMMUNITY`(선택 동의, `required = false`, 자녀 단위 `consent.student_id`) | P20 |
 | `conversation` | 컬럼 추가 | `report_id uuid NULL`(report 논리 참조), `report_revision int NULL`. 함께 NULL(일반 대화) 또는 함께 값(일일 리포트 고정 대화, `period_from = period_to` = 대상일). 고정 대화는 범위 변경 불가 | P25 |
 | `reward_rule` | 신규 | `event_type varchar PK`(`MISSION_COMPLETED`·`REVIEW_VIEWED`·`COMMUNITY_POSTED`·`REACTION_GIVEN`·`THEME_COMPLETED`), `amount int NOT NULL CHECK > 0`, `daily_cap int NULL`, `active boolean NOT NULL`, `updated_at`. 시드는 P21 초기값(10·10·5·1(하루 상한 5)·30) | P21 |
 | `reward_point_ledger` | 신규 | `id uuid PK`, `student_id FK`, `event_type`(`reward_rule` 값 + `UNLOCK`), `source_key varchar NOT NULL`, `amount int NOT NULL`(적립 양수, 사용 음수), `created_at`. UK `(student_id, event_type, source_key)` → 사건당 1회. `source_key` 규칙: 학습 완료 `missionId`, 되돌아보기·완주 `weekStart`(ISO date), 공유 `postId`, 반응 `postId:reaction`, 해금 `itemKey` | P21 |
@@ -795,11 +796,10 @@ erDiagram
 | `student_look_unlock` | 신규 | `student_id FK`, `item_key varchar`(`THEME:<code>`·`COMPANION:<code>`·`look_item.code`), `ledger_id FK NULL`(잠금 전 선택 이관분은 NULL), `unlocked_at`. PK `(student_id, item_key)`. 테마·캐릭터 해금값(테마 100·캐릭터 150)은 코드 상수 | P22 |
 | `student_look_equipment` | 신규 | `student_id FK`, `slot`, `look_item_id FK`, `updated_at`. PK `(student_id, slot)`. 해금된 아이템만(서비스 검증) | P22 |
 | `mission_daily_usage` | 신규 | `attempt_id uuid PK`(learning 논리 참조), `student_id FK`, `usage_date date NOT NULL`(KST), `created_at`. 무료 하루 미션 한도 집계(#210 PostgreSQL 결정): `THEME_DAY` 신규 시도 `201`만 기록, `(student_id, usage_date)` 건수로 판정 | P13 |
-| `error_report`·`correction` | 값 추가 | `target_type`에 `COMMUNITY_POST` | P20, P10 |
 | `payment_premium_usage` | 값 추가 | `kind`에 `EXTRA_MISSION`(프리미엄 추가 문제 시도, 환불 판정 근거, `source_id` = 시도 ID) | P14 |
 | `product` | 데이터 | FREE `limits.dailyMissions` 3 → 1 | P13 |
 
-- 학생 삭제 확정: `reward_point_ledger`·`reward_point_balance`·`student_look_unlock`·`student_look_equipment`·`mission_daily_usage`를 같은 트랜잭션에서 삭제, `community_enabled`는 false(P09)
+- 학생 삭제 확정: `reward_point_ledger`·`reward_point_balance`·`student_look_unlock`·`student_look_equipment`·`mission_daily_usage`를 같은 트랜잭션에서 삭제(`community_enabled` false는 #388 구현, 3.1)
 - 인덱스 후보: `reward_point_ledger (student_id, created_at)`(내역·반응 하루 상한), `mission_daily_usage (student_id, usage_date)`
 - `report_job.period_type`·일일 알림 유형(P24)은 #390 V29·V30으로 구현해 3.2·3.3 Mermaid와 6장으로 옮겼다
 
@@ -1323,7 +1323,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V30(V10·V11 결번), learning Flyway V1~V10, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`. 현재 77개 테이블·706개 컬럼(core 48/449, learning 21/194, report 8/63, `scripts/check_db_migrations.py` 결과). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V32(V10·V11 결번), learning Flyway V1~V10, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`. 현재 77개 테이블·708개 컬럼(core 48/451, learning 21/194, report 8/63, `scripts/check_db_migrations.py` 결과, #388 V32 기준). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT

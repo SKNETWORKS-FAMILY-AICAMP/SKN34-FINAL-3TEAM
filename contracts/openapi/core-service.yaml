@@ -17,6 +17,7 @@ tags:
 - name: Admin
 - name: ModelRegistry
 - name: Support
+- name: Community
 security:
 - BearerAuth: []
 paths:
@@ -212,6 +213,100 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/StudentSharingPreference'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/community-settings:
+    get:
+      tags: [Community]
+      operationId: getCommunitySettings
+      summary: 학생 본인 커뮤니티 공개 설정 (P20, FN-RET-01). 기본 끔
+      responses:
+        '200':
+          description: 현재 설정과 보호자 동의 여부 (Cache-Control no-store)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CommunitySettings'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+    put:
+      tags: [Community]
+      operationId: updateCommunitySettings
+      summary: 학생 본인만 변경. 켜기는 현재 보호자 COMMUNITY 동의 필요(없으면 409 COMMUNITY_CONSENT_REQUIRED). 끄면 공유물 HIDDEN_SETTING, 다시 켜면 HIDDEN_SETTING만 복원
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses:
+        '200':
+          description: 저장된 설정 (Cache-Control no-store)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CommunitySettings'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /missions/{missionId}/community-posts:
+    get:
+      tags: [Community]
+      operationId: listMissionCommunityPosts
+      summary: 같은 미션을 마무리한 학생만 무작위 목록 열람(같은 seed면 같은 순서). 미마무리 403 COMMUNITY_LOCKED
+      description: 작성자는 별명·꾸미기로 바꾸고 학생 ID·반응 수를 내보내지 않는다. 지금 공개할 수 없는 작성자(설정 끔·현재 보호자 동의 없음)와 신고 처리 중·계속 숨김 공유물은 core가 다시 거른다
+      parameters:
+      - {name: missionId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: seed, in: query, schema: {type: string, maxLength: 100}}
+      - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: 공유물 목록 (Cache-Control no-store)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CommunityPostPage'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/community-posts:
+    get:
+      tags: [Community]
+      operationId: listMyCommunityPosts
+      summary: 내 공유물·상태·받은 반응 종류별 수 (FN-RET-02·03)
+      responses:
+        '200':
+          description: 내 공유물 (Cache-Control no-store)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CommunityOwnPostList'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /children/{childId}/community-posts:
+    get:
+      tags: [Community]
+      operationId: listChildCommunityPosts
+      summary: 연결·동의가 유효한 자녀의 공유물·상태·받은 반응 수. 다른 학생 공유물 경로 없음
+      parameters:
+      - {name: childId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: 자녀 공유물 (Cache-Control no-store)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CommunityOwnPostList'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /community-posts/{postId}/reactions/{reaction}:
+    parameters:
+    - {name: postId, in: path, required: true, schema: {type: string, format: uuid}}
+    - {name: reaction, in: path, required: true, schema: {$ref: '#/components/schemas/CommunityReaction'}}
+    put:
+      tags: [Community]
+      operationId: addCommunityReaction
+      summary: 반응 남기기(멱등). 본인 글 409 COMMUNITY_OWN_POST, 열람 권한 없음 403 COMMUNITY_LOCKED, 숨김·없는 글 404 COMMUNITY_POST_NOT_FOUND, 4종 외 400
+      responses:
+        '204': {description: 반응 저장}
+        default: {$ref: '#/components/responses/LearningProblem'}
+    delete:
+      tags: [Community]
+      operationId: removeCommunityReaction
+      summary: 반응 취소(멱등, 적립 포인트 회수 없음)
+      responses:
+        '204': {description: 반응 취소}
         default: {$ref: '#/components/responses/LearningProblem'}
   /students/me/preferences:
     get:
@@ -7115,6 +7210,85 @@ components:
       properties:
         studentId: {type: string, format: uuid}
         parentSharingEnabled: {type: boolean, default: false}
+    CommunityReaction: {type: string, enum: [NEW_IDEA, CLEAR_REASON, DIFFERENT_VIEW, WANT_MORE]}
+    CommunityPostStatus: {type: string, enum: [VISIBLE, HIDDEN_SETTING, HIDDEN_REPORT, REMOVED]}
+    CommunitySettings:
+      type: object
+      additionalProperties: false
+      required: [enabled, consentGranted, updatedAt]
+      properties:
+        enabled: {type: boolean, description: 학생 본인 공개 설정. 기본 false}
+        consentGranted: {type: boolean, description: 현재 연결 보호자의 COMMUNITY 동의 유효 여부}
+        updatedAt: {type: ['string', 'null'], format: date-time}
+    CommunityAuthor:
+      type: object
+      additionalProperties: false
+      required: [nickname, look]
+      properties:
+        nickname: {type: string}
+        look:
+          type: object
+          additionalProperties: false
+          required: [theme, companion]
+          properties:
+            theme: {$ref: '#/components/schemas/StudentLookTheme'}
+            companion: {$ref: '#/components/schemas/StudentLookCompanion'}
+    CommunityPost:
+      type: object
+      additionalProperties: false
+      required: [postId, author, answer, myReactions, createdAt]
+      description: 학생 ID·반응 수 없음. answer는 learning 마지막 답변 content 그대로
+      properties:
+        postId: {type: string, format: uuid}
+        author: {$ref: '#/components/schemas/CommunityAuthor'}
+        answer: {}
+        myReactions: {type: array, items: {$ref: '#/components/schemas/CommunityReaction'}}
+        createdAt: {type: ['string', 'null'], format: date-time}
+    CommunityPostPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/CommunityPost'}}
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1, maximum: 100}
+    CommunityOwnPost:
+      type: object
+      additionalProperties: false
+      required: [postId, missionId, missionTitle, answer, status, reactions, createdAt]
+      properties:
+        postId: {type: string, format: uuid}
+        missionId: {type: ['string', 'null'], format: uuid}
+        missionTitle: {type: ['string', 'null']}
+        answer: {}
+        status: {$ref: '#/components/schemas/CommunityPostStatus'}
+        reactions:
+          type: object
+          additionalProperties: false
+          required: [NEW_IDEA, CLEAR_REASON, DIFFERENT_VIEW, WANT_MORE]
+          properties:
+            NEW_IDEA: {type: integer, minimum: 0}
+            CLEAR_REASON: {type: integer, minimum: 0}
+            DIFFERENT_VIEW: {type: integer, minimum: 0}
+            WANT_MORE: {type: integer, minimum: 0}
+        createdAt: {type: ['string', 'null'], format: date-time}
+    CommunityOwnPostList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/CommunityOwnPost'}}
+    CommunityLinkedPost:
+      type: object
+      description: 관리자 신고 상세의 공유물 원문(SERVICE_OPS, 열람마다 SUPPORT_ORIGINAL_VIEW 감사). 파기된 공유물은 available=false만
+      required: [postId, available]
+      properties:
+        postId: {type: string, format: uuid}
+        available: {type: boolean}
+        missionId: {type: ['string', 'null'], format: uuid}
+        status: {$ref: '#/components/schemas/CommunityPostStatus'}
+        answer: {}
+        authorStudentId: {type: string, format: uuid}
     StudentLookTheme: {type: string, enum: [lake, forest, factory, space, sea]}
     StudentLookCompanion: {type: string, enum: [mungchi, tori, mongdol, kongi, monggeul]}
     StudentLook:
@@ -9357,6 +9531,8 @@ components:
           - TERMS
           - PRIVACY
           - GUARDIAN
+          - COMMUNITY
+          description: COMMUNITY는 자녀 단위 선택 동의(required=false, P20). 게시됐을 때만 목록에 포함
         version:
           type: string
         title:
@@ -10563,6 +10739,8 @@ components:
           - JUDGMENT
           - ANALYSIS
           - REPORT
+          - COMMUNITY_POST
+          description: COMMUNITY_POST는 학생 세션만(학부모 400), targetId는 postId. 본인 글 409 COMMUNITY_OWN_POST, 볼 수 없는 글 404 COMMUNITY_POST_NOT_FOUND. 접수 즉시 숨김(P20)
         targetId:
           type: string
           format: uuid
@@ -10625,6 +10803,7 @@ components:
           maxLength: 10000
         reviewResult:
           type: string
+          description: COMMUNITY_POST 신고를 RESOLVED로 바꿀 때는 VISIBLE(다시 공개)·REMOVED(계속 숨김)만, 생략하면 REMOVED. 그 밖의 값은 400
     SupportCorrectionCommand:
       type: object
       required:
@@ -10776,6 +10955,8 @@ components:
             $ref: '#/components/schemas/SupportCorrection'
         linkedAttempt:
           $ref: '#/components/schemas/SupportAttempt'
+        linkedPost:
+          $ref: '#/components/schemas/CommunityLinkedPost'
     SupportInquiry:
       type: object
       required:

@@ -28,9 +28,12 @@ class ContractTests(unittest.TestCase):
         sql = populated_sql(["consent_document", "consent"], seeds)
         self.assertIn("SELECT 1 FROM consent)", sql)
         self.assertIn("FROM consent_document WHERE id NOT IN ('00000000-0000-4000-8000-000002350001'", sql)
-        migration = (ROOT / "backend/core-service/src/main/resources/db/migration/V25__seed_consent_documents.sql")
-        text = migration.read_text(encoding="utf-8")
-        self.assertEqual(len(seeds["consent_document"]), 3)
+        migrations = ROOT / "backend/core-service/src/main/resources/db/migration"
+        text = "".join(
+            (migrations / name).read_text(encoding="utf-8")
+            for name in ("V25__seed_consent_documents.sql", "V31__prepare_community_settings.sql")
+        )
+        self.assertEqual(len(seeds["consent_document"]), 4)
         for seed in seeds["consent_document"]:
             self.assertIn(f"('{seed}', ", text)
 
