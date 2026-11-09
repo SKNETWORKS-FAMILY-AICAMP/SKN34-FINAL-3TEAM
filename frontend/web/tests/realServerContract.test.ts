@@ -1,3 +1,4 @@
+import { serviceApi } from '../src/data/serviceApi.ts'
 // #134 웹 실서버 모드: core OpenAPI 응답 모양(ChildListItemPage·ReportList·ReportDetail)으로 어댑터를 검증한다.
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -131,7 +132,7 @@ test('리포트 목록은 {items} 그대로, 자녀 수정은 바꾼 필드만 �
 
 test('학생 PIN 로그인 응답에 plan이 없으면 미확인', async (t) => {
   t.mock.method(globalThis, 'fetch', async () =>
-    json({ role: 'STUDENT', accessToken: 'student-token', child: { childId: child.id, nickname: child.nickname, grade: 3 } }),
+    json({ role: 'STUDENT', accessToken: 'student-token', child: { childId: child.id, nickname: child.nickname, grade: 3, birthYear: 2017 } }),
   )
   const session = await studentDeviceApi.login(child.id, '1234')
   assert.equal(session.role === 'STUDENT' && session.child?.plan, undefined)
@@ -149,4 +150,16 @@ test('비공개 리포트는 수치를 표시하면서 학부모 원문을 추�
   const result = await createApiGateway().report(child, previousWeek)
   assert.deepEqual(result.records, [])
   assert.ok(requests.every(url => !url.includes('/attempts')))
+})
+
+
+test('탈퇴 사전 검사에서 승인 확인 중 결제를 누락하지 않는다 (#423)', async t => {
+  t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
+    assert.equal(url, '/api/v1/me/withdrawal/precheck')
+    assert.equal(init.method ?? 'GET', 'GET')
+    return json({ canWithdraw: false, activeSubscriptions: 0, unresolvedRefunds: 0, pendingPayments: 2, retainedTransactionsYears: 5 })
+  })
+  const eligibility = await serviceApi.precheck()
+  assert.equal(eligibility.pendingPayments, 2)
+  assert.equal(eligibility.canWithdraw, false)
 })

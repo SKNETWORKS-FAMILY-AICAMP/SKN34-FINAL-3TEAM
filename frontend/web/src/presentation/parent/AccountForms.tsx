@@ -242,14 +242,14 @@ export function ChildRegistration({ onCreated }: { onCreated: (c: Child) => void
     </section>
   )
 }
-export function ProfileSettings({ child }: { child: Child }) {
+export function ProfileSettings({ child }: { child?: Child }) {
   const [name, setName] = useState(''),
-    [nickname, setNickname] = useState(child.nickname),
-    [grade, setGrade] = useState(child.grade),
+    [nickname, setNickname] = useState(child?.nickname ?? ''),
+    [grade, setGrade] = useState(child?.grade ?? 3),
     [notice, setNotice] = useState(''),
     updateMe = useParentMutation(parentApi.updateMe),
     update = useParentMutation((d: { nickname?: string; grade?: number }) =>
-      parentApi.updateChild(child.id, d),
+      parentApi.updateChild(child!.id, d),
     ),
     me = useParentQuery(['me'], () => parentApi.me())
   return (
@@ -283,10 +283,10 @@ export function ProfileSettings({ child }: { child: Child }) {
           <ErrorNotice error={updateMe.error} />
         </form>
       </section>
-      <section className="ws-card">
+      {child && <section className="ws-card">
         <h2>자녀 정보</h2>
-        <p>학년 변경은 이후 제공 문제에만 적용됩니다. 과거 답변과 문항은 변경하지 않습니다.</p>
-        <p>현재 로그인 권한으로 별명과 학년을 수정합니다. 연결 해제·삭제는 아래에서 별도로 본인 확인합니다.</p>
+        <p>학년은 자동으로 바뀌지 않습니다. 새 학년이 되면 여기서 변경해 주세요. 변경한 학년은 이후 제공 문제에만 적용됩니다.</p>
+        <p>현재 로그인 권한으로 별명과 학년을 수정합니다. 연결 해제·삭제는 계정 관리 탭에서 별도로 본인 확인합니다.</p>
 
         <form
           className="ws-form"
@@ -332,7 +332,7 @@ export function ProfileSettings({ child }: { child: Child }) {
           </button>
           <ErrorNotice error={update.error} />
         </form>
-      </section>
+      </section>}
       <p role="status">{notice}</p>
     </div>
   )

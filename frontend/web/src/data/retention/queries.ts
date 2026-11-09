@@ -60,6 +60,8 @@ export const useCommunitySettings = (childId: string | undefined) =>
     queryKey: ['community-settings', childId],
     queryFn: ({ signal }) => retentionApi.communitySettings(signal),
     enabled: !!childId,
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
     ...quiet,
   })
 
@@ -83,11 +85,11 @@ export const useMissionPosts = (childId: string | undefined, missionId: string |
   })
 export const useMyPosts = (childId: string | undefined) =>
   useQuery({ queryKey: ['community', 'mine', childId], queryFn: ({ signal }) => retentionApi.myPosts(signal), enabled: !!childId, ...quiet })
-export const useChildPosts = (childId: string | undefined) =>
+export const useChildPosts = (childId: string | undefined, enabled = true) =>
   useQuery({
     queryKey: ['parent', 'community', childId],
     queryFn: ({ signal }) => retentionApi.childPosts(childId!, signal),
-    enabled: !!childId,
+    enabled: !!childId && enabled,
     ...quiet,
   })
 

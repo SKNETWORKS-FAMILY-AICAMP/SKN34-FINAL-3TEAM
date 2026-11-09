@@ -129,7 +129,7 @@ export const serviceHandlers = [
     if (!result||result.owner!==owner()||result.childId!==params.childId) fail('NOT_FOUND','삭제 요청이 없습니다.',404)
     return result
   })),
-  http.get('/api/v1/me/withdrawal/precheck', ({ request }) => respond(async () => { parentGuard(request,true); return { canWithdraw:true,activeSubscriptions:0,unresolvedRefunds:0,retainedTransactionsYears:5 } })),
+  http.get('/api/v1/me/withdrawal/precheck', ({ request }) => respond(async () => { parentGuard(request,true); return { canWithdraw:true,activeSubscriptions:0,unresolvedRefunds:0,pendingPayments:0,retainedTransactionsYears:5 } })),
   http.post('/api/v1/me/withdrawal',({request})=>respond(async()=>{
     parentGuard(request,true);requireNoPendingTransfer();consumeActionReauth(request,'WITHDRAWAL')
     const statusToken=crypto.randomUUID(),state={withdrawalRequestId:crypto.randomUUID(),status:'WITHDRAWAL_REQUESTED'}

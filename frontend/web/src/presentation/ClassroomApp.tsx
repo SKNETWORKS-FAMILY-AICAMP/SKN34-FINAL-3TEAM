@@ -152,7 +152,7 @@ export function ClassroomApp() {
       : [
           { page: 'journal', label: '아이의 공책', icon: NotebookPen },
           { page: 'report', label: '주간 리포트', icon: BookOpen },
-          { page: 'analysis', label: '기록에 물어보기', icon: MessagesSquare },
+          { page: 'analysis', label: 'AI 챗봇', icon: MessagesSquare },
         ]
   const switchChild = (id: string) => {
     setSelected(id)
@@ -165,11 +165,9 @@ export function ClassroomApp() {
   const evidence = (id: string) => setEvidenceId(id)
   return (
     <div id="class-journal">
-      <div className="ux-preview">
+      {isDemo && <div className="ux-preview">
         <span>
-          {isDemo
-            ? import.meta.env.VITE_PAYMENT_TEST === 'true' ? '결제 테스트 모드 · 학습 데이터는 가상 · 토스 테스트 결제 연동' : 'MSW 목업 모드 · 실제 API 요청을 가로채는 가상 응답 · 운영 서버 호출 없음'
-            : 'API 연결 모드 · core 공개 API만 호출 · 오류 시 예시 데이터 대체 없음'}
+          {import.meta.env.VITE_PAYMENT_TEST === 'true' ? '결제 테스트 모드 · 학습 데이터는 가상 · 토스 테스트 결제 연동' : 'MSW 목업 모드 · 실제 API 요청을 가로채는 가상 응답 · 운영 서버 호출 없음'}
         </span>
         {isDemo && (
           <label>
@@ -214,8 +212,8 @@ export function ClassroomApp() {
             </select>
           </label>
         )}
-        <small>develop 66f6052 기준 · PC 정식 / 태블릿 확장 시안</small>
-      </div>
+        <small>화면 동작 확인용 개발 시연</small>
+      </div>}
       <div className={session?.role === 'STUDENT' ? 'cj-app cj-app-student' : 'cj-app'}>
         {expired && session && (
           <Modal title="다시 로그인해 주세요." onClose={() => {}}>
@@ -822,11 +820,7 @@ export function ClassroomApp() {
           </Modal>
         )}
       </div>
-      <div className="cj-announcement" role="status">
-        {isDemo
-          ? '실제 아동 정보·음성·AI Hub 원본을 사용하지 않는 UX 검증용 예시입니다.'
-          : '인증 토큰은 메모리에만 보관합니다. 내부 서비스에는 브라우저가 직접 연결하지 않습니다.'}
-      </div>
+      {isDemo && <div className="cj-announcement" role="status">실제 아동 정보·음성·AI Hub 원본을 사용하지 않는 UX 검증용 예시입니다.</div>}
     </div>
   )
 }

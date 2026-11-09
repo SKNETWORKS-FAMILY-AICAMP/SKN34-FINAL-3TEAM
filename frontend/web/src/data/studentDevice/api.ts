@@ -81,17 +81,18 @@ export const studentDeviceApi = {
     if (raw.role !== 'STUDENT' || typeof raw.accessToken !== 'string')
       return contractError('학생 세션 role·accessToken이 필요합니다.')
     const c = raw.child ?? {}
-    const grade = Number(c.grade)
-    if (c.childId !== childId || typeof c.nickname !== 'string' || !(grade >= 3 && grade <= 6))
+    const grade = c.grade
+    const birthYear = c.birthYear
+    if (c.childId !== childId || typeof c.nickname !== 'string' || typeof grade !== 'number' || !Number.isInteger(grade) ||
+        !(grade >= 3 && grade <= 6) || typeof birthYear !== 'number' || !Number.isInteger(birthYear) || birthYear < 1900 || birthYear > new Date().getFullYear())
       return contractError('로그인한 자녀 정보가 요청과 다릅니다.')
     setAccessToken(raw.accessToken, 'STUDENT')
     const child: Child = {
       id: childId,
       nickname: c.nickname,
       grade,
-      // PIN 로그인 응답(API 명세 3.11)에는 출생연도가 없다. 학생 화면은 쓰지 않으므로 0으로 둔다.
-      birthYear: Number(c.birthYear ?? 0),
-      plan: c.plan === 'PREMIUM' || c.plan === 'FREE' ? c.plan : undefined,
+      // StudentDeviceToken의 필수 필드만 사용한다. 이용권은 이 응답에 포함되지 않는다 (#423).
+      birthYear,
     }
     return { role: 'STUDENT', entry: 'DEVICE', child }
   },

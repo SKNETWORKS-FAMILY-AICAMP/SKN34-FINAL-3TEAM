@@ -1032,3 +1032,64 @@
   font-family: var(--st-hand);
   font-size: 1.15rem;
 }
+
+/* 화면 전체 폭을 쓰고, 메뉴·요일 문제를 기기 폭에 맞춰 다시 배치한다. */
+#class-journal:has(.cj-app-student) { max-width: none; padding: 0; }
+#class-journal .cj-app-student { border: 0; border-radius: 0; min-height: 100dvh; font-size: 18px; }
+#class-journal .cj-app-student .st-world { min-height: 100dvh; border-radius: 0; }
+#class-journal .cj-app-student .st-top { max-width: 1760px; margin: 0 auto; padding: 28px clamp(20px, 3vw, 48px) 20px; align-items: center; gap: 24px; }
+#class-journal .cj-app-student .st-brand { flex: 1 1 360px; min-width: 0; position: relative; }
+#class-journal .cj-app-student .st-wordmark { font-size: clamp(34px, 3.5vw, 56px); line-height: 1.15; }
+#class-journal .cj-app-student .st-nav { display: grid; grid-template-columns: repeat(8, minmax(64px, 1fr)); gap: 12px; flex: 1 1 680px; }
+#class-journal .cj-app-student .st-nav button { min-width: 0; min-height: 86px; font-size: 15px; gap: 8px; }
+#class-journal .cj-app-student .st-tile { width: 58px; height: 58px; }
+#class-journal .cj-app-student .st-stage { max-width: 1760px; margin: 0 auto; padding: 16px clamp(20px, 3vw, 48px) 48px; }
+#class-journal .cj-app-student .st-sheet { max-width: 1440px; width: 100%; padding: 36px 40px; gap: 24px; }
+#class-journal .cj-app-student .st-sheet p { font-size: 18px; }
+#class-journal .cj-app-student .st-meta { font-size: 15px; line-height: 1.6; }
+#class-journal .cj-app-student .st-home-grid { grid-template-columns: minmax(340px, 0.9fr) minmax(0, 1.5fr); gap: 36px; }
+#class-journal .cj-app-student .st-today { max-width: none; }
+#class-journal .cj-app-student .st-support-menu { font-size: 15px; color: #fff; }
+#class-journal .cj-app-student .st-support-menu summary { cursor: pointer; min-height: 32px; }
+#class-journal .cj-app-student .st-support-menu[open] { border-radius: 8px; background: var(--st-paper); color: var(--st-ink); padding: 12px; }
+#class-journal .cj-app-student .st-support-menu a { display: inline-block; padding: 10px; color: var(--st-ink); }
+#class-journal .cj-app-student .st-sharing { max-width: 1200px; }
+#class-journal .cj-app-student .st-sharing fieldset { margin: 12px 0; padding: 20px; border-radius: 12px; }
+#class-journal .cj-app-student .st-sharing fieldset label { border: 2px solid transparent; border-radius: 10px; padding: 14px; min-height: 60px; font-size: 18px; cursor: pointer; gap: 14px; }
+#class-journal .cj-app-student .st-sharing label:has(input:checked) { border-color: var(--st-accent); background: #fffdf7; }
+#class-journal .cj-app-student .st-sharing label:has(input:disabled) { cursor: not-allowed; color: #5c5a54; }
+#class-journal .cj-app-student .st-sharing input { width: 24px; height: 24px; flex: 0 0 auto; accent-color: var(--st-accent); }
+#class-journal .cj-app-student .st-sharing-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+@media (max-width: 1100px) {
+  #class-journal .cj-app-student .st-home-grid { grid-template-columns: minmax(0, 1fr); }
+  #class-journal .cj-app-student .st-today-card { padding: 28px; }
+  #class-journal .cj-app-student .st-nav { flex-basis: 100%; }
+}
+@media (max-width: 640px) {
+  #class-journal .cj-app-student .st-top { padding: 20px 16px 12px; gap: 20px; }
+  #class-journal .cj-app-student .st-nav { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  #class-journal .cj-app-student .st-nav button { font-size: 14px; min-height: 72px; }
+  #class-journal .cj-app-student .st-tile { width: 48px; height: 48px; }
+  #class-journal .cj-app-student .st-stage { padding: 12px 16px 32px; }
+  #class-journal .cj-app-student .st-sheet { padding: 24px 18px; }
+  #class-journal .cj-app-student .st-sheet h1 { font-size: 28px; }
+  #class-journal .cj-app-student .st-islands { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 16px; }
+  #class-journal .cj-app-student .st-islands li:last-child { grid-column: 1 / -1; justify-self: center; width: min(100%, 220px); }
+  #class-journal .cj-app-student .st-today-card { transform: none; padding: 24px; }
+  #class-journal .cj-app-student .st-today-card h2 { font-size: 28px; line-height: 1.4; }
+  #class-journal .cj-app-student .st-sharing fieldset { padding: 12px; }
+  #class-journal .cj-app-student .st-sharing-actions > button { width: 100%; }
+}
+
+@media (max-width: 1100px) {
+  #class-journal .cj-app-student .st-home { display: flex; flex-direction: column; gap: 28px; }
+  #class-journal .cj-app-student .st-home-grid { display: contents; }
+  #class-journal .cj-app-student .st-today { order: 1; width: 100%; }
+  #class-journal .cj-app-student .st-week { order: 2; margin: 0; }
+  #class-journal .cj-app-student .st-map { order: 3; }
+}
+
+@media (min-width: 641px) and (max-width: 1100px) {
+  #class-journal .cj-app-student .st-islands { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+  #class-journal .cj-app-student .st-islands li:last-child { grid-column: 1 / -1; justify-self: center; width: 240px; }
+}

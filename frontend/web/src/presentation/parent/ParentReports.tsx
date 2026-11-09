@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ReportProblem } from '../service/ReportProblem.tsx'
 import type { Child, Period } from '../../domain/classroom.ts'
-import type { DailyProblem, ReportPeriodType, Scope, ThemeSummary } from '../../domain/parent.ts'
+import type { DailyProblem, ReportPeriodType, ThemeSummary } from '../../domain/parent.ts'
 import { reportPeriodType } from '../../domain/parent.ts'
 import { ReportChat } from './ReportChat.tsx'
 import { parentApi } from '../../data/parent/api.ts'
@@ -13,11 +13,9 @@ import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { EvidenceQuery } from './ParentConversation.tsx'
 export function ParentReports({
   child,
-  scope,
   onAnalysis,
 }: {
   child: Child
-  scope: Scope
   onAnalysis: (p: Period) => void
 }) {
   const [status, setStatus] = useState(''),
@@ -29,13 +27,12 @@ export function ParentReports({
     )
   return (
     <>
-      <h1>리포트</h1>
+      <header className="parent-page-head"><h1>리포트</h1>
       <p>
-        화면 공통 선택 기간 {scope.from} ~ {scope.to} · 리포트는 KST 기준이므로 실제 리포트 기간을
-        따로 표시합니다.
+        하루·한 주의 학습을 자동으로 정리한 결과입니다. 궁금한 점은 AI 챗봇에서 질문할 수 있습니다.
       </p>
-      <p>일일 리포트는 매일 자정에 그날 기록으로, 주간 리포트는 일요일 자정에 한 주 기록으로 만들어집니다.</p>
-      <label>
+      <p>일일 리포트는 매일 자정에 그날 기록으로, 주간 리포트는 일요일 자정에 한 주 기록으로 만들어집니다.</p></header>
+      <div className="parent-report-filters"><label>
         리포트 종류{' '}
         <select aria-label="리포트 종류" value={kind} onChange={(e) => setKind(e.target.value as ReportPeriodType | '')}>
           <option value="">전체</option>
@@ -59,6 +56,7 @@ export function ParentReports({
           ))}
         </select>
       </label>
+      </div>
       <QueryFeedback query={list} />
       {list.data && !list.error && (
         <div className="ws-metrics">
@@ -178,14 +176,14 @@ function ReportDetail({
               <p>{r.inclusionRule}</p>
               <QueryStateNotice state={r.state} />
               {daily ? (
-                <DailyProblems problems={r.problems ?? []} onProof={setProof} />
+                <DailyProblems problems={r.problems ?? []} canReadOriginals={r.parentSharingEnabled !== false} onProof={setProof} />
               ) : r.narrative ? (
                 <>
                   <p>{r.narrative.text}</p>
                   <p>요약 출처 · {r.narrative.source}</p>
                 </>
               ) : (
-                <p>수치 리포트입니다. 이 자녀의 플랜에는 서술 요약이 포함되지 않습니다.</p>
+                <p>{r.parentSharingEnabled === false ? '아이의 답변 원문이 비공개여서 서술과 인용을 표시하지 않습니다. 학습 수치는 아래에서 확인할 수 있습니다.' : '수치 리포트입니다. 이 자녀의 플랜에는 서술 요약이 포함되지 않습니다.'}</p>
               )}
               <MetricCards metrics={r.metrics} />
               <div className="ws-actions">
@@ -193,6 +191,7 @@ function ReportDetail({
                   <button
                     className="cj-secondary"
                     key={i}
+                    disabled={r.parentSharingEnabled === false}
                     onClick={() => setProof(m.itemId ?? `metric-${i}`)}
                   >
                     {m.label} 근거
@@ -200,7 +199,7 @@ function ReportDetail({
                 ))}
               </div>
               {!daily && r.themeSummary && <ThemeSummaryView summary={r.themeSummary} />}
-              {!daily && child.plan !== 'FREE' && (
+              {!daily && child.plan !== 'FREE' && r.parentSharingEnabled !== false && (
                 <>
                   <h3>생각 유형별 활동</h3>
                   {r.thinkingTypes.map((t) => (
@@ -263,8 +262,8 @@ function ReportDetail({
               <p>{r.parentSharingEnabled === false ? '원문 비공개 중에는 기존 파일을 제공하지 않습니다. 위 학습 수치는 계속 확인할 수 있습니다.' : '다운로드는 서버가 제공하는 최신판 파일입니다.'}</p>
               <div className="ws-actions">
                 {!daily && (
-                  <button className="cj-secondary" onClick={() => onAnalysis(r.period)}>
-                    이 기간의 기록에 질문
+                  <button className="cj-secondary" disabled={r.parentSharingEnabled === false} onClick={() => onAnalysis(r.period)}>
+                    AI 챗봇으로 이 기간 질문하기
                   </button>
                 )}
                 <button
@@ -306,7 +305,8 @@ function ReportDetail({
           <p>학부모 재생성은 리포트당 한 번입니다. 이전 판은 유지됩니다.</p>
         </>
       )}
-      {r && ready && (
+      {r && ready && r.parentSharingEnabled === false && <p role="note">원문 비공개 중에는 원문 근거·AI 질문·파일 다운로드를 이용할 수 없습니다. 위 학습 수치는 계속 확인할 수 있습니다.</p>}
+      {r && ready && r.parentSharingEnabled !== false && (
         <ReportChat
           key={`${r.reportId}-${r.revision}`}
           child={child}
@@ -343,7 +343,7 @@ const contextLabels: Record<NonNullable<DailyProblem['context']>, string> = {
 }
 
 /** 일일 리포트(P24): 그날 문제별 기록만 보여 준다. 서술·저녁 질문은 없다. */
-function DailyProblems({ problems, onProof }: { problems: DailyProblem[]; onProof: (itemId: string) => void }) {
+function DailyProblems({ problems, onProof, canReadOriginals }: { problems: DailyProblem[]; canReadOriginals: boolean; onProof: (itemId: string) => void }) {
   if (!problems.length) return <p>이날은 기록이 없습니다.</p>
   return (
     <>
@@ -358,7 +358,7 @@ function DailyProblems({ problems, onProof }: { problems: DailyProblem[]; onProo
           {p.followups.map((f, j) => (
             <div key={j}>
               <p>되묻기 {j + 1} · {f.question}</p>
-              <blockquote>{f.answer ?? '보완 답변 없음'}</blockquote>
+              <blockquote>{canReadOriginals ? f.answer ?? '보완 답변 없음' : '아이가 답변 원문을 비공개로 두었어요.'}</blockquote>
             </div>
           ))}
           {p.finalAnswer && (
@@ -376,7 +376,7 @@ function DailyProblems({ problems, onProof }: { problems: DailyProblem[]; onProo
             돌아보기 ·{' '}
             {p.reflection?.written ? `${p.reflection.difficulty ?? ''} ${p.reflection.text ?? ''}`.trim() : '쓰지 않음'}
           </p>
-          {p.attemptId && (
+          {p.attemptId && canReadOriginals && (
             <button className="cj-secondary" onClick={() => onProof(p.attemptId!)}>
               원문 근거
             </button>

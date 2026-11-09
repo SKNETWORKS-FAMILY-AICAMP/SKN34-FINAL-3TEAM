@@ -268,7 +268,7 @@ export function ParentAnalysis({
   return (
     <>
       <div className="cj-feedbar">
-        <h1>기록에 물어보기</h1>
+        <h1>AI 챗봇</h1>
       </div>
       <div className="cj-feed">
         <article className="cj-sheet">

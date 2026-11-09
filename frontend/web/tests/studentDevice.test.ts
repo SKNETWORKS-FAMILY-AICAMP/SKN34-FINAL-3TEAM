@@ -49,7 +49,7 @@ test('PIN 로그인 어댑터: STUDENT 토큰을 메모리에 두고 DEVICE 진�
       JSON.stringify({
         accessToken: 'student-token',
         role: 'STUDENT',
-        child: { childId: 'c1', nickname: '별빛', grade: 3 },
+        child: { childId: 'c1', nickname: '별빛', grade: 3, birthYear: 2017, plan: 'PREMIUM' },
       }),
       { headers: { 'Content-Type': 'application/json' } },
     )
@@ -58,6 +58,8 @@ test('PIN 로그인 어댑터: STUDENT 토큰을 메모리에 두고 DEVICE 진�
   assert.equal(session.role, 'STUDENT')
   assert.equal(session.entry, 'DEVICE')
   assert.equal(session.child?.id, 'c1')
+  assert.equal(session.child?.birthYear, 2017)
+  assert.equal(Object.hasOwn(session.child!, 'plan'), false)
   assert.equal(seen[0].path, '/api/v1/auth/student/login')
   assert.deepEqual(JSON.parse(String(seen[0].init.body)), { childId: 'c1', pin: '4831' })
   assert.equal(withAuth().get('Authorization'), 'Bearer student-token')
@@ -68,7 +70,7 @@ test('PIN 로그인 어댑터: 다른 자녀 응답은 계약 오류로 거부�
   setAccessToken(null)
   t.mock.method(globalThis, 'fetch', async () =>
     new Response(
-      JSON.stringify({ accessToken: 'x', role: 'STUDENT', child: { childId: 'other', nickname: '다른', grade: 4 } }),
+      JSON.stringify({ accessToken: 'x', role: 'STUDENT', child: { childId: 'other', nickname: '다른', grade: 4, birthYear: 2016 } }),
       { headers: { 'Content-Type': 'application/json' } },
     ),
   )
@@ -85,4 +87,18 @@ test('PIN 설정은 X-Reauth-Token과 PUT으로 보낸다', async (t) => {
   await studentDeviceApi.setPin('c1', '4831', 'reauth-1')
   assert.equal(seen[0].method, 'PUT')
   assert.equal(new Headers(seen[0].headers).get('X-Reauth-Token'), 'reauth-1')
+})
+
+
+test('PIN 로그인은 출생연도 누락·문자열 및 소수 학년을 계약 오류로 거부한다 (#423)', async t => {
+  let fields: Record<string, unknown> = {}
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({
+    role: 'STUDENT', accessToken: 'invalid-child-token', child: { childId: 'c1', nickname: '별빛', grade: 3, ...fields },
+  }), { headers: { 'Content-Type': 'application/json' } }))
+  for (const invalid of [{}, { birthYear: '2017' }, { birthYear: 2017, grade: 3.5 }]) {
+    fields = invalid
+    setAccessToken(null)
+    await assert.rejects(studentDeviceApi.login('c1', '4831'), (e) => e instanceof ApiError && e.problem.code === 'CONTRACT_NOT_READY')
+    assert.equal(withAuth().get('Authorization'), null)
+  }
 })

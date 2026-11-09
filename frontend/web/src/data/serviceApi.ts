@@ -17,7 +17,7 @@ export const serviceApi = {
   unlink: (childId: string, token: string) => apiFetch<void>(`/children/${id(childId)}/link`, { method: 'DELETE', headers: { 'X-Reauth-Token': token } }),
   deleteChild: (childId: string, scope: DeletionScope, token: string) => apiFetch<DeletionRequest>(`/children/${id(childId)}/deletion-requests`, { ...json({ scope }), headers: { 'Content-Type': 'application/json', 'X-Reauth-Token': token } }),
   deletion: (childId: string, requestId: string) => apiFetch<DeletionRequest>(`/children/${id(childId)}/deletion-requests/${id(requestId)}`),
-  precheck: () => apiFetch<{ canWithdraw: boolean; activeSubscriptions: number; unresolvedRefunds: number; retainedTransactionsYears: number }>('/me/withdrawal/precheck'),
+  precheck: () => apiFetch<{ canWithdraw: boolean; activeSubscriptions: number; unresolvedRefunds: number; pendingPayments: number; retainedTransactionsYears: number }>('/me/withdrawal/precheck'),
   withdraw: (token: string) => apiFetch<{ withdrawalRequestId: string; status: string; statusToken: string }>('/me/withdrawal', { ...json({}), headers: { 'Content-Type': 'application/json', 'X-Reauth-Token': token } }),
   withdrawal: (token: string) => apiFetch<{ withdrawalRequestId: string; status: string }>('/me/withdrawal', { headers: { 'X-Withdrawal-Status-Token': token } }),
 }
