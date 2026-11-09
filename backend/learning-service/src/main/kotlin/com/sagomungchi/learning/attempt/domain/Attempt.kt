@@ -4,6 +4,7 @@ import com.sagomungchi.learning._common.exception.DomainException
 import com.sagomungchi.learning._common.exception.ErrorKind
 import com.sagomungchi.learning.mission.domain.MissionSnapshot
 import java.time.Instant
+import java.time.LocalDate
 import java.util.UUID
 
 /**
@@ -22,6 +23,10 @@ data class Attempt(
     val finishedAt: Instant?,
     val completedAt: Instant?,
     val updatedAt: Instant,
+    /** 시작 경로 (P23, #385). 테마 컨텍스트면 그 주 테마와 주 시작일(KST 월요일)을 함께 저장 */
+    val context: AttemptContext = AttemptContext.EXTRA,
+    val themeId: UUID? = null,
+    val themeWeekStart: LocalDate? = null,
 ) {
     /** 아직 답변을 받는 시도 (완료·마무리 전). 되묻기 생성과 다음 행동 안내에 씀 (P04) */
     val acceptsAnswers: Boolean get() = status == AttemptStatus.IN_PROGRESS && finishedAt == null
@@ -75,6 +80,8 @@ data class Attempt(
             versions: MissionSnapshot,
             grade: Int,
             now: Instant,
+            context: AttemptContext = AttemptContext.EXTRA,
+            theme: ThemeAttempt? = null,
         ) = Attempt(
             id = UUID.randomUUID(),
             studentId = studentId,
@@ -87,9 +94,23 @@ data class Attempt(
             finishedAt = null,
             completedAt = null,
             updatedAt = now,
-        )
+            context = context,
+            themeId = theme?.themeId,
+            themeWeekStart = theme?.weekStart,
+        ).also {
+            require((context == AttemptContext.EXTRA) == (theme == null)) { "테마 컨텍스트에만 테마가 있음" }
+        }
     }
 }
 
 enum class AttemptStatus { IN_PROGRESS, COMPLETED }
+
+/**
+ * 시도 시작 경로 (P23, api-spec 2.11). THEME_DAY는 오늘 요일 테마 문제, THEME_REVIEW는 토·일 되돌아보기 다시 풀기,
+ * EXTRA는 생각 유형별 고르기(테마 밖). 요청에서 생략하면 EXTRA
+ */
+enum class AttemptContext { THEME_DAY, THEME_REVIEW, EXTRA }
+
+/** 테마 시도에 고정할 그 주 테마 (테마 시작 검사 결과) */
+data class ThemeAttempt(val themeId: UUID, val weekStart: LocalDate)
 

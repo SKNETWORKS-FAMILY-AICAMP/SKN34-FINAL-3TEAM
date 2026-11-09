@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.learning.theme.repository.WeeklyThemeMapper">
+    <resultMap id="header" type="com.sagomungchi.learning.theme.repository.ThemeHeader">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="grade_band" javaType="com.sagomungchi.learning.theme.domain.GradeBand"/>
+            <arg column="week_start" javaType="java.time.LocalDate"/>
+            <arg column="status" javaType="com.sagomungchi.learning.theme.domain.WeeklyThemeStatus"/>
+            <arg column="current_version_id" javaType="java.util.UUID"/>
+            <arg column="current_version" javaType="_int"/>
+            <arg column="published_version_id" javaType="java.util.UUID"/>
+            <arg column="published_version" javaType="java.lang.Integer"/>
+            <arg column="review_version_id" javaType="java.util.UUID"/>
+            <arg column="review_version" javaType="java.lang.Integer"/>
+            <arg column="created_by" javaType="java.util.UUID"/>
+            <arg column="published_at" javaType="java.time.Instant"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="version" type="com.sagomungchi.learning.theme.repository.ThemeVersionRow">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="version" javaType="_int"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="intro" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="day" type="com.sagomungchi.learning.theme.repository.ThemeDayRow">
+        <constructor>
+            <arg column="day_of_week" javaType="_int"/>
+            <arg column="mission_id" javaType="java.util.UUID"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="thinking_type" javaType="com.sagomungchi.learning.mission.domain.ThinkingType"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="themeAttempt" type="com.sagomungchi.learning.theme.repository.ThemeAttemptRow">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="mission_id" javaType="java.util.UUID"/>
+            <arg column="theme_id" javaType="java.util.UUID"/>
+            <arg column="context" javaType="com.sagomungchi.learning.attempt.domain.AttemptContext"/>
+            <arg column="status" javaType="com.sagomungchi.learning.attempt.domain.AttemptStatus"/>
+            <arg column="started_at" javaType="java.time.Instant"/>
+            <arg column="finished_at" javaType="java.time.Instant"/>
+            <arg column="completed_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="headerColumns">
+        SELECT t.id, t.grade_band, t.week_start, t.status,
+               t.current_version_id, cv.version AS current_version,
+               t.published_version_id, pv.version AS published_version,
+               t.review_version_id, rv.version AS review_version,
+               t.created_by, t.published_at, t.created_at, t.updated_at
+        FROM weekly_theme t
+        JOIN weekly_theme_version cv ON cv.id = t.current_version_id
+        LEFT JOIN weekly_theme_version pv ON pv.id = t.published_version_id
+        LEFT JOIN weekly_theme_version rv ON rv.id = t.review_version_id
+    </sql>
+
+    <!-- 관리자 쓰기는 테마 행을 잠가 같은 테마 요청을 차례로 처리 -->
+    <select id="findHeader" resultMap="header">
+        <include refid="headerColumns"/>
+        WHERE t.id = #{id}
+        <if test="lock">FOR UPDATE OF t</if>
+    </select>
+
+    <!-- 이번 주 테마: 그 주 게시본, 없으면 그 주 이전의 가장 최근 게시본(재사용). 학년군·주당 게시 1개(부분 UK) -->
+    <select id="findLatestPublished" resultMap="header">
+        <include refid="headerColumns"/>
+        WHERE t.grade_band = #{gradeBand} AND t.status = 'PUBLISHED' AND t.week_start &lt;= #{weekStart}
+        ORDER BY t.week_start DESC
+        LIMIT 1
+    </select>
+
+    <select id="existsOtherPublished" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM weekly_theme
+            WHERE id &lt;&gt; #{id} AND grade_band = #{gradeBand} AND week_start = #{weekStart} AND status = 'PUBLISHED'
+        )
+    </select>
+
+    <sql id="filter">
+        <where>
+            <if test="gradeBand != null">AND grade_band = #{gradeBand}</if>
+            <if test="weekStart != null">AND week_start = #{weekStart}</if>
+            <if test="status != null">AND status = #{status}</if>
+        </where>
+    </sql>
+
+    <!-- 관리자 목록: 최근 주부터, 같은 주는 학년군 순 -->
+    <select id="findIds" resultType="java.util.UUID">
+        SELECT id FROM weekly_theme
+        <include refid="filter"/>
+        ORDER BY week_start DESC, grade_band, created_at DESC, id
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="count" resultType="long">
+        SELECT count(*) FROM weekly_theme
+        <include refid="filter"/>
+    </select>
+
+    <select id="findVersion" resultMap="version">
+        SELECT id, version, title, intro FROM weekly_theme_version WHERE id = #{versionId}
+    </select>
+
+    <!-- 요일 미션 표시: 미션 게시본 제목·생각 유형, 게시본이 없으면(공개 중단 등) 현재본 -->
+    <select id="findDays" resultMap="day">
+        SELECT d.day_of_week, d.mission_id, v.title, v.thinking_type
+        FROM weekly_theme_day d
+        JOIN mission m ON m.id = d.mission_id
+        JOIN mission_version v ON v.id = COALESCE(m.published_version_id, m.current_version_id)
+        WHERE d.theme_version_id = #{versionId}
+        ORDER BY d.day_of_week
+    </select>
+
+    <select id="countMissions" resultType="int">
+        SELECT count(*) FROM mission WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <!-- 작성: 테마 행이 먼저 현재 버전을 가리키므로 순환 FK 검사를 커밋 때로 미룸 (DEFERRABLE INITIALLY IMMEDIATE) -->
+    <update id="deferCurrentVersionCheck">
+        SET CONSTRAINTS fk_weekly_theme_current_version_id DEFERRED
+    </update>
+
+    <insert id="insertTheme">
+        INSERT INTO weekly_theme (id, grade_band, week_start, status, current_version_id, created_by, created_at, updated_at)
+        VALUES (#{id}, #{gradeBand}, #{weekStart}, #{status}, #{versionId}, #{createdBy}, #{now}, #{now})
+    </insert>
+
+    <insert id="insertVersion">
+        INSERT INTO weekly_theme_version (id, theme_id, version, title, intro, created_by, created_at)
+        VALUES (#{id}, #{themeId}, #{version}, #{title}, #{intro}, #{createdBy}, #{now})
+    </insert>
+
+    <insert id="insertDay">
+        INSERT INTO weekly_theme_day (theme_version_id, day_of_week, mission_id)
+        VALUES (#{versionId}, #{dayOfWeek}, #{missionId})
+    </insert>
+
+    <update id="updateHeader">
+        UPDATE weekly_theme
+        SET grade_band = #{gradeBand}, week_start = #{weekStart}, status = #{status},
+            current_version_id = #{currentVersionId}, updated_at = #{now}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE weekly_theme SET status = #{status}, updated_at = #{now} WHERE id = #{id}
+    </update>
+
+    <update id="markReviewRequested">
+        UPDATE weekly_theme SET status = #{status}, review_version_id = current_version_id, updated_at = #{now} WHERE id = #{id}
+    </update>
+
+    <!-- 게시·재게시: 게시본 <- 현재본. 같은 학년군·주의 다른 게시본과는 부분 UK uq_weekly_theme_published_week로 충돌 -->
+    <update id="publish">
+        UPDATE weekly_theme
+        SET status = 'PUBLISHED', published_version_id = current_version_id, published_at = #{now}, updated_at = #{now}
+        WHERE id = #{id}
+    </update>
+
+    <select id="findStudentAttempts" resultMap="themeAttempt">
+        SELECT id, mission_id, theme_id, context, status, started_at, finished_at, completed_at
+        FROM attempt
+        WHERE student_id = #{studentId} AND theme_week_start = #{weekStart}
+        ORDER BY started_at, id
+    </select>
+
+    <!-- 되돌아보기 열람은 학생·주당 1행: 다시 열람하면 0행(첫 열람 아님) -->
+    <insert id="insertReviewView">
+        INSERT INTO theme_review_view (student_id, week_start, theme_id, viewed_at)
+        VALUES (#{studentId}, #{weekStart}, #{themeId}, #{now})
+        ON CONFLICT (student_id, week_start) DO NOTHING
+    </insert>
+
+    <delete id="deleteReviewViewsByStudent">
+        DELETE FROM theme_review_view WHERE student_id = #{studentId}
+    </delete>
+</mapper>

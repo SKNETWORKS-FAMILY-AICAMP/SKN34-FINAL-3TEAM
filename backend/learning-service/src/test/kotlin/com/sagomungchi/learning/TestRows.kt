@@ -23,6 +23,8 @@ class TestRows(private val jdbc: JdbcTemplate) {
         inputTemplate: String? = null,
         categories: String? = null,
         answerUnit: String? = null,
+        thinkingType: String = "ANALYZE",
+        gradeMax: Int = grade,
     ): SeededMission {
         val id = UUID.randomUUID()
         jdbc.update(
@@ -30,7 +32,7 @@ class TestRows(private val jdbc: JdbcTemplate) {
                VALUES (?, ?, ?, ?, 1, ?, 'MANUAL', ?, ?)""",
             id, "TEST-$id", status, demoOnly, author, now, now,
         )
-        val versionId = addVersion(id, version = 1, title = title, grade = grade, inputType, choices, inputTemplate, categories, answerUnit)
+        val versionId = addVersion(id, version = 1, title = title, grade = grade, inputType, choices, inputTemplate, categories, answerUnit, thinkingType, gradeMax)
         val rubricVersionId = UUID.randomUUID()
         jdbc.update(
             "INSERT INTO rubric_version (id, mission_id, version, created_by, created_at) VALUES (?, ?, 1, ?, ?)",
@@ -69,13 +71,15 @@ class TestRows(private val jdbc: JdbcTemplate) {
         inputTemplate: String? = null,
         categories: String? = null,
         answerUnit: String? = null,
+        thinkingType: String = "ANALYZE",
+        gradeMax: Int = grade,
     ): UUID {
         val id = UUID.randomUUID()
         jdbc.update(
             """INSERT INTO mission_version (id, mission_id, version, title, subject, grade_min, grade_max,
                    thinking_type, input_type, question, choices, input_template, categories, answer_unit, created_by, created_at)
-               VALUES (?, ?, ?, ?, '과학', ?, ?, 'ANALYZE', ?, '질문', ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?)""",
-            id, missionId, version, title, grade, grade, inputType, choices, inputTemplate, categories, answerUnit, author, now,
+               VALUES (?, ?, ?, ?, '과학', ?, ?, ?, ?, '질문', ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?)""",
+            id, missionId, version, title, grade, gradeMax, thinkingType, inputType, choices, inputTemplate, categories, answerUnit, author, now,
         )
         return id
     }
@@ -147,5 +151,33 @@ class TestRows(private val jdbc: JdbcTemplate) {
             id, attemptId, judgmentId, now.plusMinutes(minutesLater),
         )
         return id
+    }
+
+    /** 다섯 생각 유형 미션(월~금 순: 분석·평가·창의·문제 해결·성찰), 학년 범위는 학년군 전체 (#385) */
+    fun themeMissions(gradeMin: Int = 3, gradeMax: Int = 4): List<SeededMission> =
+        listOf("ANALYZE", "EVALUATE", "CREATE", "SOLVE", "REFLECT").mapIndexed { index, type ->
+            mission(grade = gradeMin, gradeMax = gradeMax, thinkingType = type, title = "테마 ${index + 1}")
+        }
+
+    /**
+     * 게시된 주간 테마(버전 1) SQL 직접 삽입. missions는 월요일부터 차례로.
+     * 테마 ↔ 버전 순환 FK를 한 문장(CTE)으로 넣어 트랜잭션 없는 테스트에서도 문장 끝 검사로 통과
+     */
+    fun publishedTheme(missions: List<UUID>, weekStart: java.time.LocalDate, gradeBand: String = "G3_4", title: String = "테마", intro: String = "소개"): UUID {
+        val themeId = UUID.randomUUID()
+        val versionId = UUID.randomUUID()
+        val days = missions.mapIndexed { index, mission -> "('$versionId'::uuid, ${index + 1}, '$mission'::uuid)" }.joinToString(", ")
+        jdbc.update(
+            """WITH theme AS (
+                   INSERT INTO weekly_theme (id, grade_band, week_start, status, current_version_id, published_version_id, review_version_id,
+                       created_by, published_at, created_at, updated_at) VALUES (?, ?, ?, 'PUBLISHED', ?, ?, ?, ?, ?, ?, ?)
+               ), version AS (
+                   INSERT INTO weekly_theme_version (id, theme_id, version, title, intro, created_by, created_at) VALUES (?, ?, 1, ?, ?, ?, ?)
+               )
+               INSERT INTO weekly_theme_day (theme_version_id, day_of_week, mission_id) VALUES $days""",
+            themeId, gradeBand, weekStart, versionId, versionId, versionId, author, now, now, now,
+            versionId, themeId, title, intro, author, now,
+        )
+        return themeId
     }
 }

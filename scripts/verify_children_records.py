@@ -77,7 +77,7 @@ def verify():
         learning.execute("INSERT INTO rubric_version(id,mission_id,version,created_by,created_at) VALUES(%s,%s,1,%s,now())", (rubric,mission,actor))
         attempt = uuid.uuid4()
         attempts.append(attempt)
-        learning.execute("INSERT INTO attempt(id,student_id,mission_id,mission_version_id,rubric_version_id,grade,status,started_at,updated_at) VALUES(%s,%s,%s,%s,%s,3,'IN_PROGRESS',now(),now())", (attempt,student,mission,version,rubric))
+        learning.execute("INSERT INTO attempt(id,student_id,mission_id,mission_version_id,rubric_version_id,grade,status,started_at,updated_at,context) VALUES(%s,%s,%s,%s,%s,3,'IN_PROGRESS',now(),now(),'EXTRA')", (attempt,student,mission,version,rubric))
         return attempt, rubric
 
     def submit(attempt, rubric, state):

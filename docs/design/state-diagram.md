@@ -223,7 +223,7 @@ stateDiagram-v2
 - 되묻기는 시도당 최대 2회, 2회째 보완 답변 판정 후 되묻기 생성 없이 마무리 안내. 고르기 `CORRECT`도 되묻기 없이 마무리 안내 (P04)
 - 초안 `attempt_draft.version`: 저장마다 +1, `WHERE version = :ifMatch` (상태값 없음)
 
-#### 3.2.1 테마 요일 문제 열림 (파생, DB 미저장, 구현 예정, P23)
+#### 3.2.1 테마 요일 문제 열림 (파생, DB 미저장, P23, #385)
 
 ```mermaid
 stateDiagram-v2
@@ -236,6 +236,7 @@ stateDiagram-v2
 - `OPEN`일 때만 `THEME_DAY` 신규 시도. 토·일 되돌아보기는 `CLOSED` 문제 중 그 주에 마무리한 것만 `THEME_REVIEW`로 다시 풀기, 놓친 문제는 표시만
 - 시작 요청 `context`(`THEME_DAY`·`THEME_REVIEW`·`EXTRA`)는 신규 시도에만 검사. 진행 중 시도 반환(부분 UK 충돌)은 요일과 무관하게 이어하기 허용, 완주 판정은 당일 KST 학습 완료만 인정
 - 재사용 테마의 이미 푼 문제도 그 주 `OPEN` 요일에는 `THEME_DAY` 신규 시도 가능
+- 구현(#385): `ThemeWeek.stateOf`가 KST 날짜로 계산하고 토·일에는 다섯 요일 모두 `CLOSED`. 시작 검사는 learning 시계(KST), 조회·열람은 core가 넘긴 날짜 기준
 
 ### 3.3 `judgment.process_status` (판정 처리)
 
@@ -307,14 +308,14 @@ stateDiagram-v2
 
 - 다시 만들려면 새 초안을 요청한다(검사에 실패한 초안을 되살리지 않음). 검사 통과(`READY`)는 공개 승인이 아니며 채택 뒤 3.1 검토·게시를 거친다(P19, FAC-18)
 
-### 3.5 `weekly_theme.status` (구현 예정, P23)
+### 3.5 `weekly_theme.status` (P23, #385)
 
 ```mermaid
 stateDiagram-v2
   [*] --> DRAFT: 테마 작성
   DRAFT --> REVIEW_REQUIRED: 검토 요청
-  REVIEW_REQUIRED --> DRAFT: 수정 요청
-  REVIEW_REQUIRED --> PUBLISHED: 승인 + 게시 검사 통과
+  REVIEW_REQUIRED --> DRAFT: 검토 중 수정
+  REVIEW_REQUIRED --> PUBLISHED: 게시(검토 요청한 현재본 = 승인) + 게시 검사 통과
   PUBLISHED --> PUBLISHED: 수정·재검토·재게시
   PUBLISHED --> UNPUBLISHED: 제공 중단
   UNPUBLISHED --> REVIEW_REQUIRED: 수정 후 재검토
@@ -322,10 +323,10 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 조건 |
 |---|---|---|
-| `REVIEW_REQUIRED → PUBLISHED` | `POST /admin/weekly-themes/{id}/publish` (CONTENT) | 월~금 5개 요일 모두 게시 미션, 다섯 생각 유형 1개씩, 미션 학년이 학년군 안, 같은 학년군·주 `PUBLISHED` 없음. 아니면 `422 WEEKLY_THEME_PUBLISH_INCOMPLETE` |
+| `REVIEW_REQUIRED → PUBLISHED` | `POST /admin/weekly-themes/{id}/publish` (CONTENT) | 검토 요청한 버전이 현재본(아니면 `409 CONFLICT`). 월~금 5개 요일 모두 게시 미션(시연 전용 제외), 다섯 생각 유형 1개씩, 미션 학년 범위가 학년군 전체를 덮음(초3~4 논술 불가), 같은 학년군·주 `PUBLISHED` 없음. 아니면 `422 WEEKLY_THEME_PUBLISH_INCOMPLETE` + `errors` |
 | `PUBLISHED → UNPUBLISHED` | `/unpublish` | 그 주 학생에게는 최근 게시 테마 재사용(P23). 이미 시작한 시도는 유지 |
 
-- 미션 상태(3.1)와 같은 전이 규칙. 코드값은 [ERD 4.4](erd.md#44-구현-예정-변경-learning_db). 위에 없는 전이는 `409 CONFLICT`
+- 미션 상태(3.1)와 같은 전이 규칙. 별도 검토(승인·수정 요청) 경로는 없다(core #387이 7경로만 프록시): 검토 요청한 버전(`review_version_id`)이 현재본일 때의 게시가 승인이고, 검토 중 수정은 `DRAFT`로 돌아간다. 게시 중 수정은 새 버전을 현재본으로 두고 `PUBLISHED`를 유지하며 학생에게는 재게시 전까지 게시본이 보인다. 코드값은 [ERD 4.2.1](erd.md#421-주간-테마-p23-385-v11v12). 위에 없는 전이는 `409 CONFLICT`
 
 ### 3.6 `community_post.status` (구현 예정, P20)
 
