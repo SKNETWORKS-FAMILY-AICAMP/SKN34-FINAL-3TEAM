@@ -4,7 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import type { Equipped, LookItem } from '../../src/domain/retention.ts'
 import { baseLookCatalog, NO_EQUIPPED } from '../../src/domain/retention.ts'
 
-// 합성 HTTP 응답. 계약 기준: feature/reward-points a9cfd34b RewardController/LookUnlockService.
+// 합성 HTTP 응답. 계약 기준: develop 7a0fb9c9 RewardController/LookUnlockService.
 async function rewardServer(page: Page, initialBalance = 300) {
   const state = {
     balance: initialBalance, theme: 'lake', companion: 'mungchi', equipped: { ...NO_EQUIPPED },
