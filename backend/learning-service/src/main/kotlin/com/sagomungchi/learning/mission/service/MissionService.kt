@@ -62,6 +62,9 @@ class MissionService(
         throw BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "미션 없음")
     }
 
+    /** 게시 중인 미션의 게시본, 게시 중이 아니면 null. 주간 테마 게시 검사용 (#385, 학년·시연 범위는 부른 쪽이 판단) */
+    fun publishedView(missionId: UUID): MissionView? = missionRepository.findPublishedById(missionId)
+
     /** 학습 시도가 시작 시점에 고정할 현재 미션·기준표 버전 (class-diagram 4.1) */
     fun currentVersions(missionId: UUID): MissionSnapshot =
         missionRepository.findCurrentVersions(missionId)

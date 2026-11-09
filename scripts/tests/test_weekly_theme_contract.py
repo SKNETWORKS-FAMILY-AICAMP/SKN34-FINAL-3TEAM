@@ -1,7 +1,7 @@
 """#387 core 주간 테마 프록시·시도 context 계약을 core 컨트롤러와 대조한다.
 
-learning 주간 테마 API(#385)는 아직 learning OpenAPI("구현된 경로만")에 없으므로, 여기서는 core 공개 OpenAPI ↔ core 컨트롤러와
-core가 learning에 넘기는 내부 경로(api-spec 4.1)만 맞춘다. learning이 경로를 올리면 test_admin_mission_drafts_contract처럼 3자 대조로 넓힌다.
+core 공개 OpenAPI ↔ core 컨트롤러, core가 learning에 넘기는 내부 경로 ↔ learning OpenAPI(#385)를 함께 맞춘다(3자 대조).
+learning OpenAPI ↔ learning 컨트롤러는 test_record_exists_openapi가 대조한다.
 """
 from pathlib import Path
 import re
@@ -16,6 +16,7 @@ STUDENT = CORE / 'learning/controller/WeeklyThemeController.kt'
 PROXY = CORE / 'learning/service/LearningProxyService.kt'
 ADMIN_SERVICE = CORE / 'learning/service/AdminLearningService.kt'
 FILTER = CORE / 'account/controller/PublicAuthFilter.kt'
+THEME = ROOT / 'backend/learning-service/src/main/kotlin/com/sagomungchi/learning/theme'
 
 
 class WeeklyThemeContractTest(unittest.TestCase):
@@ -24,6 +25,7 @@ class WeeklyThemeContractTest(unittest.TestCase):
         cls.spec = yaml.safe_load((ROOT / 'contracts/openapi/core-service.yaml').read_text(encoding='utf-8'))
         cls.admin = ADMIN.read_text(encoding='utf-8')
         cls.student = STUDENT.read_text(encoding='utf-8')
+        cls.learning = yaml.safe_load((ROOT / 'contracts/openapi/learning-service.yaml').read_text(encoding='utf-8'))
 
     def documented(self, prefix):
         return {(m, p) for p, methods in self.spec['paths'].items() if p.startswith(prefix)
@@ -73,6 +75,40 @@ class WeeklyThemeContractTest(unittest.TestCase):
         controller = (CORE / 'learning/controller/LearningController.kt').read_text(encoding='utf-8')
         self.assertIn('setOf("THEME_DAY", "THEME_REVIEW", "EXTRA")', controller)
         self.assertIn('return "EXTRA"', controller)
+
+    def test_core_admin_proxy_routes_match_learning_contract(self):
+        """core 메서드마다 service.weeklyThemes("METHOD", themeId?, "action"?)가 만드는 learning 경로 (#385)"""
+        routes = set()
+        for call in re.findall(r'service\.weeklyThemes\(([^)]*)\)', self.admin):
+            args = [a.strip() for a in call.split(',')]
+            path = '/admin/weekly-themes'
+            if len(args) > 1 and args[1] == 'themeId':
+                path += '/{themeId}'
+                if len(args) > 2 and args[2].startswith('"'):
+                    path += '/' + args[2].strip('"')
+            routes.add((args[0].strip('"').lower(), path))
+        documented = {(m, p) for p, methods in self.learning['paths'].items() if p.startswith('/admin/weekly-themes') for m in methods}
+        self.assertEqual(len(documented), 7)
+        self.assertEqual(routes, documented)
+        params = {p.get('name') for p in self.learning['paths']['/admin/weekly-themes']['get']['parameters'] if 'name' in p}
+        self.assertEqual(params, {'gradeBand', 'weekStart', 'status', 'page', 'size'})
+
+    def test_core_student_internal_paths_are_in_learning_contract(self):
+        for method, path in (('get', '/students/{studentId}/weekly-theme'), ('post', '/students/{studentId}/weekly-theme/review-views')):
+            names = {self.parameter(p).get('name') for p in self.learning['paths'][path][method]['parameters']}
+            self.assertTrue({'gradeBand', 'date'} <= names, path)
+
+    def test_learning_start_context_and_publish_codes(self):
+        learning = self.learning['components']['schemas']['AttemptStartRequest']['properties']['context']['enum']
+        self.assertEqual(learning, self.spec['components']['schemas']['AttemptStartRequest']['properties']['context']['enum'])
+        codes = self.learning['components']['schemas']['ThemePublishError']['properties']['code']['enum']
+        domain = (THEME / 'domain/WeeklyTheme.kt').read_text(encoding='utf-8') + (THEME / 'service/WeeklyThemeAdminService.kt').read_text(encoding='utf-8')
+        self.assertEqual(set(codes), set(re.findall(r'ThemePublishError\("([A-Z_]+)"', domain)))
+
+    def parameter(self, item):
+        if '$ref' not in item:
+            return item
+        return self.learning['components']['parameters'][item['$ref'].rsplit('/', 1)[1]]
 
 
 if __name__ == '__main__':

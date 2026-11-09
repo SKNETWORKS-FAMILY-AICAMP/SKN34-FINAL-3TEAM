@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: learning 내부 API
-  version: 1.1.0
+  version: 1.2.0
   description: >-
     core가 호출하는 learning 내부 API (api-spec 4.1). 구현된 경로만 담는다.
     학생 학습 API는 core가 검증한 STUDENT 컨텍스트(X-Student-Scope에 본인 1명)를 요구하고,
@@ -13,6 +13,8 @@ info:
     관리자 미션(#145)은 ADMIN 컨텍스트와 관리자 X-User-Id를 요구한다(CONTENT 권한은 core 프록시가 확인).
     신고 지원 조회(#146)는 대상 확인이 STUDENT·PARENT·ADMIN, 원문이 ADMIN과 학생 1명 X-Student-Scope, 둘 다 X-User-Id를 요구한다.
     커뮤니티(#386)는 공유·공개 전환·신고 검토·원문이 SYSTEM, 열람·반응이 학생 STUDENT, 본인·자녀 목록이 STUDENT·PARENT 컨텍스트를 요구한다.
+    주간 테마(#385)는 학생 조회·되돌아보기 열람이 STUDENT 본인, 주간 요약이 PARENT·STUDENT·SYSTEM과 대상 학생 X-Student-Scope,
+    관리자 테마가 ADMIN과 관리자 X-User-Id를 요구한다.
 servers:
   - url: /internal
 security:
@@ -122,6 +124,16 @@ paths:
         - $ref: '#/components/parameters/StudentScope'
         - $ref: '#/components/parameters/Grade'
         - $ref: '#/components/parameters/Demo'
+      description: >-
+        본문 {context}(#385, api-spec 2.11): 생략·{}·null은 EXTRA, 정해진 값 밖은 400. 진행 중 시도가 있으면 검사 없이 원래 context 그대로 200.
+        신규 시도만 테마 검사: THEME_DAY는 이번 주 테마의 오늘(KST) 요일 문제만, THEME_REVIEW는 토·일에 이번 주 마무리한 테마 문제만.
+        학년군은 grade로 정하고 그 주 테마·주 시작일을 시도에 저장한다.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttemptStartRequest'
       responses:
         '201':
           description: 새 시도
@@ -143,7 +155,7 @@ paths:
         '403': {$ref: '#/components/responses/Problem'}
         '404': {$ref: '#/components/responses/Problem'}
         '409':
-          description: MISSION_NOT_AVAILABLE
+          description: MISSION_NOT_AVAILABLE, THEME_DAY_CLOSED(오늘 요일 테마 문제가 아님), THEME_REVIEW_NOT_ALLOWED(토·일 외·이번 주 마무리하지 않은 테마 문제)
           content:
             application/problem+json:
               schema:
@@ -866,6 +878,85 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /students/{studentId}/weekly-theme:
+    get:
+      operationId: getWeeklyTheme
+      summary: 이번 주 학년군 테마·요일 상태·되돌아보기 목록 (#385)
+      description: >-
+        core #387이 학생 본인 세션으로 넘김(api-spec 2.11). gradeBand·date는 core가 학년·KST 오늘로 정한 값.
+        이번 주(date가 속한 KST 월요일) 게시 테마, 없으면 그 주 이전 최근 게시 테마를 다시 쓴다(reused). 학생에게는 게시본만 보인다.
+        요일 state는 날짜로 계산(오늘 OPEN, 지난 요일 CLOSED, 안 온 요일 LOCKED, 토·일은 모두 CLOSED, state-diagram 3.2.1).
+        학년군에 게시 테마가 하나도 없으면 404.
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/StudentRole'
+        - $ref: '#/components/parameters/StudentScope'
+        - $ref: '#/components/parameters/GradeBandQuery'
+        - $ref: '#/components/parameters/ThemeDate'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeeklyTheme'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /students/{studentId}/weekly-theme/review-views:
+    post:
+      operationId: recordWeeklyThemeReviewView
+      summary: 토·일 되돌아보기 열람 기록 (주 1회 멱등, #385)
+      description: >-
+        본문 없음. 학생·주당 1행(theme_review_view)이라 다시 보내도 200이고 firstViewThisWeek만 false.
+        completed는 월~금 다섯 문제를 각 요일(KST) 안에 학습 완료(돌아보기 저장)했는지(완주, #389 포인트 근거).
+        date가 토·일이 아니면 409 THEME_REVIEW_NOT_ALLOWED, 게시 테마가 없으면 404.
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/StudentRole'
+        - $ref: '#/components/parameters/StudentScope'
+        - $ref: '#/components/parameters/GradeBandQuery'
+        - $ref: '#/components/parameters/ThemeDate'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemeReviewViewResult'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: THEME_REVIEW_NOT_ALLOWED(토·일이 아님)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /students/{studentId}/weekly-theme/summary:
+    get:
+      operationId: getWeeklyThemeSummary
+      summary: 주간 리포트 테마 요약 (FN-RPT-17, report #391 소비)
+      description: >-
+        PARENT·STUDENT·SYSTEM 컨텍스트와 대상 학생 X-Student-Scope(기록 조회와 같음). 그 주 학생 테마 시도로 테마를 정하고
+        (주 중간에 바뀌었으면 마지막 요일 문제 시도의 테마), 테마 시도가 없으면 state NO_RECORD. weekStart가 월요일이 아니면 400.
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/RecordRole'
+        - $ref: '#/components/parameters/RecordScope'
+        - {name: weekStart, in: query, required: true, description: KST 월요일, schema: {type: string, format: date}}
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeeklyThemeSummary'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
   /admin/missions:
     get:
       operationId: listAdminMissions
@@ -1298,6 +1389,218 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /admin/weekly-themes:
+    get:
+      operationId: listAdminWeeklyThemes
+      summary: 관리자 주간 테마 목록 (#385)
+      description: >-
+        core #387 프록시(CONTENT)가 그대로 넘김. 필터는 테마 행 기준, 최근 주부터. weekStart는 월요일만(아니면 400).
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - {name: gradeBand, in: query, schema: {$ref: '#/components/schemas/GradeBand'}}
+        - {name: weekStart, in: query, schema: {type: string, format: date}}
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/MissionStatus'}}
+        - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyThemePage'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: createAdminWeeklyTheme
+      summary: 테마 작성 → DRAFT, 버전 1
+      description: >-
+        요일·미션은 겹치지 않아야 하고 없는 미션은 400. 다섯 요일을 다 채우는지는 게시 검사에서 본다(작성 중 저장 허용).
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWeeklyThemeRequest'
+      responses:
+        '201':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyTheme'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+  /admin/weekly-themes/{themeId}:
+    get:
+      operationId: getAdminWeeklyTheme
+      summary: 테마 상세 (편집 중인 현재본)
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/ThemeId'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyTheme'
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+    put:
+      operationId: updateAdminWeeklyTheme
+      summary: 테마 수정 (전체 교체, 새 버전을 현재본으로)
+      description: >-
+        게시 중 수정은 재검토·재게시 전까지 학생에게 게시본이 보인다(상태 PUBLISHED 유지). 검토 요청 중 수정은 DRAFT로 돌아간다.
+        게시 중 gradeBand·weekStart 변경은 409 CONFLICT.
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/ThemeId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWeeklyThemeRequest'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyTheme'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: CONFLICT(게시 중 학년군·주 변경)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /admin/weekly-themes/{themeId}/review-request:
+    post:
+      operationId: requestAdminWeeklyThemeReview
+      summary: 검토 요청 (현재본을 검토 요청 버전으로)
+      description: >-
+        DRAFT·UNPUBLISHED → REVIEW_REQUIRED, 게시 중 수정본은 PUBLISHED 유지. 그 밖(이미 검토 요청한 현재본 등)은 409 CONFLICT. 본문은 {}.
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/ThemeId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyTheme'
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: CONFLICT(상태상 불가 전이, state-diagram 3.5)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /admin/weekly-themes/{themeId}/publish:
+    post:
+      operationId: publishAdminWeeklyTheme
+      summary: 게시·재게시 (게시본 ← 현재본, 검토 요청한 현재본일 때 = 승인)
+      description: >-
+        별도 검토 경로 없이 검토 요청한 버전이 현재본일 때의 게시가 승인이다. 아니면 409 CONFLICT.
+        게시 검사(월~금 다섯 요일, 게시 미션만·시연 전용 제외, 학년군 전체를 덮는 학년 범위(G3_4 논술 불가), 다섯 생각 유형 1개씩,
+        같은 학년군·주 게시 1개)를 모두 모아 실패하면 422 WEEKLY_THEME_PUBLISH_INCOMPLETE + errors. 본문은 {}.
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/ThemeId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyTheme'
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: CONFLICT(검토 요청한 현재본이 아님·상태상 불가 전이)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: WEEKLY_THEME_PUBLISH_INCOMPLETE
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Problem'
+                  - type: object
+                    required: [errors]
+                    properties:
+                      errors:
+                        type: array
+                        description: 실패 전부. 웹 publishProblems()가 message를 표시
+                        items:
+                          $ref: '#/components/schemas/ThemePublishError'
+  /admin/weekly-themes/{themeId}/unpublish:
+    post:
+      operationId: unpublishAdminWeeklyTheme
+      summary: 게시 중단 (진행 중 시도는 그대로 이어함)
+      description: >-
+        PUBLISHED가 아니면 409 CONFLICT. 중단 뒤 그 주 학생에게는 이전 최근 게시 테마가 보인다. 본문은 {}.
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/ThemeId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyTheme'
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: CONFLICT(게시 중이 아님)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /community/posts:
     post:
       operationId: shareCommunityPost
@@ -1656,6 +1959,23 @@ components:
       in: path
       required: true
       schema: {type: string, format: uuid}
+    ThemeId:
+      name: themeId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    GradeBandQuery:
+      name: gradeBand
+      in: query
+      required: true
+      description: core가 학생 학년으로 정한 학년군 (#387)
+      schema: {$ref: '#/components/schemas/GradeBand'}
+    ThemeDate:
+      name: date
+      in: query
+      required: true
+      description: core가 정한 KST 오늘 날짜. 그 날짜가 속한 월요일이 이번 주
+      schema: {type: string, format: date}
     AdminUserId:
       name: X-User-Id
       in: header
@@ -2818,6 +3138,148 @@ components:
             conversation: {type: string, const: UNKNOWN}
             aggregation: {type: string, const: NOT_APPLIED}
             report: {type: string, const: UNKNOWN}
+    AttemptStartRequest:
+      type: object
+      description: 시도 시작 본문(api-spec 2.11, #385). 본문 없음·{}·context null은 EXTRA
+      properties:
+        context:
+          type: [string, 'null']
+          enum: [THEME_DAY, THEME_REVIEW, EXTRA, null]
+    GradeBand:
+      type: string
+      description: 초3~4 G3_4, 초5~6 G5_6
+      enum: [G3_4, G5_6]
+    ThemeDay:
+      type: string
+      enum: [MON, TUE, WED, THU, FRI]
+    WeeklyTheme:
+      type: object
+      required: [themeId, weekStart, title, intro, reused, days, review, completed]
+      properties:
+        themeId: {type: string, format: uuid}
+        weekStart: {type: string, format: date, description: 이번 주 KST 월요일(재사용 테마도 이번 주)}
+        title: {type: string}
+        intro: {type: [string, 'null'], description: 월요일에만 채움}
+        reused: {type: boolean, description: 그 주 게시 테마가 없어 이전 게시 테마를 다시 씀}
+        days:
+          type: array
+          items:
+            type: object
+            required: [day, missionId, title, thinkingType, state, attemptStatus]
+            properties:
+              day: {$ref: '#/components/schemas/ThemeDay'}
+              missionId: {type: string, format: uuid}
+              title: {type: string}
+              thinkingType: {$ref: '#/components/schemas/ThinkingType'}
+              state: {type: string, enum: [LOCKED, OPEN, CLOSED]}
+              attemptStatus:
+                type: string
+                description: 이번 주 그 요일 문제(THEME_DAY) 최근 시도 상태
+                enum: [NOT_STARTED, IN_PROGRESS, COMPLETED]
+        review:
+          type: object
+          required: [open, missions]
+          properties:
+            open: {type: boolean, description: 토·일에만 true}
+            missions:
+              type: array
+              items:
+                type: object
+                required: [missionId, title, completed, missed]
+                properties:
+                  missionId: {type: string, format: uuid}
+                  title: {type: string}
+                  completed: {type: boolean, description: 이번 주 그 문제 요일 시도를 마무리함(다시 풀기 가능)}
+                  missed: {type: boolean, description: 지난 요일인데 마무리하지 않음(풀 수 없음)}
+        completed: {type: boolean, description: 월~금 다섯 문제를 각 요일(KST) 안에 학습 완료(완주)}
+    ThemeReviewViewResult:
+      type: object
+      required: [firstViewThisWeek, completed]
+      properties:
+        firstViewThisWeek: {type: boolean}
+        completed: {type: boolean}
+    WeeklyThemeSummary:
+      type: object
+      required: [studentId, weekStart, state, themeId, title, days, completed, reviewRetries]
+      properties:
+        studentId: {type: string, format: uuid}
+        weekStart: {type: string, format: date}
+        state: {type: string, enum: [OK, NO_RECORD]}
+        themeId: {type: [string, 'null'], format: uuid}
+        title: {type: [string, 'null']}
+        days:
+          type: array
+          items:
+            type: object
+            required: [day, missionId, title, completed]
+            properties:
+              day: {$ref: '#/components/schemas/ThemeDay'}
+              missionId: {type: string, format: uuid}
+              title: {type: string}
+              completed: {type: boolean, description: 그 요일(KST) 안에 학습 완료}
+        completed: {type: boolean}
+        reviewRetries:
+          type: array
+          description: 토·일 되돌아보기 다시 풀기(THEME_REVIEW) 시도
+          items:
+            type: object
+            required: [missionId, title, attemptId]
+            properties:
+              missionId: {type: string, format: uuid}
+              title: {type: string}
+              attemptId: {type: string, format: uuid}
+    ThemeDayMission:
+      type: object
+      required: [day, missionId]
+      properties:
+        day: {$ref: '#/components/schemas/ThemeDay'}
+        missionId: {type: string, format: uuid}
+    AdminWeeklyThemeRequest:
+      type: object
+      required: [gradeBand, weekStart, title, intro, days]
+      properties:
+        gradeBand: {$ref: '#/components/schemas/GradeBand'}
+        weekStart: {type: string, format: date, description: KST 월요일(아니면 400)}
+        title: {type: string, minLength: 1, maxLength: 100}
+        intro: {type: string, maxLength: 2000}
+        days:
+          type: array
+          maxItems: 5
+          description: 요일·미션은 겹치지 않음
+          items: {$ref: '#/components/schemas/ThemeDayMission'}
+    AdminWeeklyTheme:
+      type: object
+      required: [themeId, gradeBand, weekStart, status, version, publishedVersion, reviewRequested, title, intro, days, publishedAt, createdAt, updatedAt]
+      properties:
+        themeId: {type: string, format: uuid}
+        gradeBand: {$ref: '#/components/schemas/GradeBand'}
+        weekStart: {type: string, format: date}
+        status: {$ref: '#/components/schemas/MissionStatus'}
+        version: {type: integer, minimum: 1, description: 편집 중인 현재본}
+        publishedVersion: {type: [integer, 'null'], description: 학생에게 제공 중인 게시본}
+        reviewRequested: {type: boolean, description: 현재본을 검토 요청함(게시 가능)}
+        title: {type: string}
+        intro: {type: string}
+        days: {type: array, items: {$ref: '#/components/schemas/ThemeDayMission'}}
+        publishedAt: {type: [string, 'null'], format: date-time}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    AdminWeeklyThemePage:
+      type: object
+      required: [items, page, size, totalElements]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/AdminWeeklyTheme'}}
+        page: {type: integer}
+        size: {type: integer}
+        totalElements: {type: integer}
+    ThemePublishError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [DAYS_INCOMPLETE, MISSION_NOT_PUBLISHED, MISSION_DEMO_ONLY, GRADE_BAND_MISMATCH, THINKING_TYPES, WEEK_ALREADY_PUBLISHED]
+        message: {type: string}
     Problem:
       type: object
       required: [type, title, status, code, traceId]

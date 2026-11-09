@@ -1,0 +1,38 @@
+{
+  "kind": "MODEL",
+  "name": "synthetic-model",
+  "version": "1.0",
+  "artifactUri": "s3://example-models/models/synthetic-model/1.0/",
+  "evaluation": {
+    "datasetId": "synthetic-eval",
+    "datasetVersion": "1",
+    "baselineVersion": "synthetic-baseline",
+    "comparisonReport": "synthetic/comparison",
+    "trainingEvaluationSeparation": "synthetic/split",
+    "quoteAccuracy": "synthetic/quotes",
+    "calculationAccuracy": "synthetic/calculations",
+    "humanReview": "synthetic/review",
+    "evaluatedScopes": [
+      "judgment/grade-5/narrative"
+    ],
+    "limitations": [
+      "연동 테스트용 합성 자료이며 품질 승인 근거가 아님"
+    ]
+  },
+  "registration": {
+    "source": "JSON_IMPORT",
+    "jsonSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "manifestSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "modifiedFields": [
+      "artifactUri",
+      "evaluation.limitations"
+    ],
+    "artifactFiles": [
+      {
+        "file": "config.json",
+        "bytes": 123,
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    ]
+  }
+}

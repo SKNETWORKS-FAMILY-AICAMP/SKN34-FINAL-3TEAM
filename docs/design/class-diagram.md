@@ -1446,7 +1446,7 @@ classDiagram
 ```
 
 - `AttemptService.start`: 부분 UK `(student_id, mission_id) WHERE IN_PROGRESS` 충돌 시 기존 시도 반환 (FN-LRN-16)
-- 구현 예정(P23): `start`에 `context`(`THEME_DAY`·`THEME_REVIEW`·`EXTRA`) 추가, 신규 시도만 요일·되돌아보기 검사(4.4)
+- P23(#385): `start`에 `context`(`THEME_DAY`·`THEME_REVIEW`·`EXTRA`, 생략 `EXTRA`) 추가, 신규 시도만 `WeeklyThemeService.checkStart`로 요일·되돌아보기 검사하고 그 주 테마를 시도에 저장(4.4)
 - `AttemptDraft.update(content, now)`가 다음 버전을 만들고 `AttemptDraftRepository.updateIfVersion(next, ifMatch)`가 `UPDATE ... WHERE version = :ifMatch` 실행, 영향 0행이면 `ATTEMPT_DRAFT_CONFLICT` + 최신 초안 (FN-LRN-17)
 - `AnswerService.submit`: 같은 트랜잭션에 `answer` 버전 추가 + `judgment(PENDING)` 생성. 같은 `idempotency_key`·같은 본문이면 기존 답변 반환, 다른 본문이면 `422 IDEMPOTENCY_KEY_REUSED` (FN-LRN-10, API 1.4). `lockForAnswer`가 시도 행을 잠가(`FOR UPDATE`) 같은 시도의 제출을 한 줄로 세움. 저장하면 `clearSubmittedDraft`로 초안의 `answer`를 비우고 `memo`는 유지, 초안 version +1 (FN-LRN-15·16)
 - 보완 답변 연결: 첫 답변은 `followupId` 없이, 버전 2부터는 이 시도의 가장 최근 되묻기 중 아직 답하지 않은 것만 (`JudgmentService.unansweredLatestFollowupId`). 아니면 `422 ANSWER_INCOMPLETE`. 판정 전 추가 제출·되묻기 2회 뒤 제출도 여기서 막힘 (P04)
@@ -1748,40 +1748,57 @@ classDiagram
 
 ### 4.4 주간 테마·커뮤니티 (theme 구현 예정 · community #386 구현)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 클래스. community는 #386 구현 이름, theme는 구현 예정. 이름·시그니처는 구현 시 조정할 수 있고 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임-구현-예정).
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 클래스. 주간 테마(`theme`)는 #385, 커뮤니티(`community`)는 #386으로 구현한 이름·시그니처. 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임-구현-예정).
 
 ```mermaid
 classDiagram
   direction TB
-  class ThemeInternalController {
+  class WeeklyThemeController {
     <<controller>>
-    +weeklyTheme(studentId, gradeBand, date) WeeklyThemeView
-    +recordReviewView(studentId) ReviewViewResult
-    +summary(studentId, weekStart) ThemeSummary
+    +current(studentId, gradeBand, date) WeeklyThemeView
+    +reviewViewed(studentId, gradeBand, date) ReviewViewResult
+    +summary(studentId, weekStart) WeeklyThemeSummary
   }
-  class ThemeAdminController {
+  class AdminWeeklyThemeController {
     <<controller>>
-    +list(gradeBand, weekStart, status) Page
-    +save(command) WeeklyTheme
-    +requestReview(themeId)
-    +publish(themeId)
-    +unpublish(themeId)
+    +list(gradeBand, weekStart, status, page, size) AdminWeeklyThemePage
+    +create(request) AdminWeeklyTheme
+    +update(themeId, request) AdminWeeklyTheme
+    +requestReview(themeId) AdminWeeklyTheme
+    +publish(themeId) AdminWeeklyTheme
+    +unpublish(themeId) AdminWeeklyTheme
   }
   class WeeklyThemeService {
     <<service>>
-    +current(gradeBand, date) WeeklyTheme
-    +dayStates(studentId, theme, date) List
-    +checkStart(studentId, missionId, context, date)
-    +completion(studentId, weekStart) boolean
+    +current(studentId, gradeBand, date) WeeklyThemeView
+    +checkStart(studentId, missionId, grade, context) ThemeAttempt
+    +recordReviewView(studentId, gradeBand, date) ReviewViewResult
+    +summary(studentId, weekStart) WeeklyThemeSummary
+    +deleteByStudent(studentId) int
+  }
+  class WeeklyThemeAdminService {
+    <<service>>
+    +create(author, content) AdminWeeklyTheme
+    +update(themeId, author, content) AdminWeeklyTheme
+    +requestReview(themeId) AdminWeeklyTheme
+    +publish(themeId) AdminWeeklyTheme
+    +unpublish(themeId) AdminWeeklyTheme
   }
   class WeeklyTheme {
     <<entity>>
-    +publish()
-    +validateDays()
+    +requireEditable(gradeBand, weekStart)
+    +edited()
+    +requestReview()
+    +publish(errors)
+    +unpublish()
+  }
+  class ThemePublishCheck {
+    <<domain>>
+    +errors(gradeBand, days, missions, otherPublished) List
   }
   class AttemptService {
     <<service>>
-    +start(studentId, missionId, context) Attempt
+    +start(studentId, missionId, grade, demo, context) AttemptStart
   }
   class CommunityController {
     <<controller>>
@@ -1811,9 +1828,11 @@ classDiagram
     +reactionId(postId, studentId, reaction) UUID
   }
 
-  ThemeInternalController --> WeeklyThemeService
-  ThemeAdminController --> WeeklyThemeService
-  WeeklyThemeService ..> WeeklyTheme
+  WeeklyThemeController --> WeeklyThemeService
+  AdminWeeklyThemeController --> WeeklyThemeAdminService
+  WeeklyThemeAdminService ..> WeeklyTheme
+  WeeklyThemeAdminService ..> ThemePublishCheck
+  WeeklyThemeAdminService --> MissionService : 게시본 미션
   AttemptService --> WeeklyThemeService : context 검사
   CommunityController --> CommunityService
   CommunityService ..> CommunityRules
@@ -1822,7 +1841,8 @@ classDiagram
 
 - 기존 `AttemptService.start`(4.1)에 `context` 인자를 추가하고 `THEME_DAY`·`THEME_REVIEW`는 `WeeklyThemeService.checkStart`로 요일·되돌아보기 검사. 진행 중 시도 반환은 검사하지 않음(자정 후 이어하기)
 - `CommunityService.share`는 학생·미션당 1개(UK `(student_id, mission_id)`), 이미 있으면 기존 공유물을 그대로 반환. 처음 학습 완료한 시도가 아니면(다시 풀기) 공유하지 않고, 공유 때 `ExpressionPolicy`(#205)를 다시 확인
-- 학생 삭제 소비(4.3 `record`)의 `StudentDeletionService`가 시도 삭제 전에 `CommunityService.deleteByStudent`를 같은 트랜잭션에서 호출(테마 열람 기록은 #385)
+- 학생 삭제 소비(4.3 `record`)의 `StudentDeletionService`가 같은 트랜잭션에서 시도 삭제 전에 `CommunityService.deleteByStudent`(#386), 시도 삭제 뒤 테마 열람 기록 삭제(`WeeklyThemeService.deleteByStudent`, #385)를 호출
+- 테마 게시 중 수정은 미션과 같은 버전 방식(`weekly_theme_version`, 현재본·게시본·검토 요청본). 학생 조회·시작 검사는 게시본, 관리자 편집은 현재본
 
 ---
 

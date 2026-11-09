@@ -438,8 +438,10 @@ export const adminHandlers = [
     respond(async () => {
       allow(request, 'SERVICE_OPS')
       queryFault()
-      const kind = new URL(request.url).searchParams.get('kind')
-      return page(modelVersions.filter((v) => !kind || v.kind === kind))
+      const q = new URL(request.url).searchParams, kind = q.get('kind')
+      const rows = modelVersions.filter(v => !kind || v.kind === kind)
+      const index = Number(q.get('page') ?? 0), size = Number(q.get('size') ?? 20)
+      return { items: rows.slice(index * size, (index + 1) * size), page: index, size, totalElements: rows.length }
     }),
   ),
   http.post('/api/v1/admin/model-versions', ({ request }) =>
@@ -448,14 +450,14 @@ export const adminHandlers = [
       const d = (await request.json()) as Omit<ModelVersion,'evalResult'> & { evaluation: import('../../domain/admin/operations.ts').EvaluationEvidence }
       const e = d.evaluation
       const fields = ['datasetId','datasetVersion','baselineVersion','comparisonReport','trainingEvaluationSeparation','quoteAccuracy','calculationAccuracy','humanReview'] as const
-      if (!d.name?.trim() || !d.version?.trim() || !['RUBRIC','MODEL','PROMPT','GENERATION'].includes(d.kind) ||
+      if ((d.kind === 'MODEL' && !d.artifactUri?.trim()) || !d.name?.trim() || !d.version?.trim() || !['RUBRIC','MODEL','PROMPT','GENERATION'].includes(d.kind) ||
           !e || fields.some(k => !e[k]?.trim()) || !e.evaluatedScopes?.length ||
           new Set(e.evaluatedScopes).size !== e.evaluatedScopes.length || e.evaluatedScopes.some(v=>typeof v!=='string'||v.length>200||!/^[a-z0-9][a-z0-9._:/-]*$/.test(v)) ||
           (d.kind==='RUBRIC' ? !d.refId : !!d.refId)) fail('MODEL_APPROVAL_REJECTED','평가 근거·범위·기준표 ID를 확인해 주세요.',422)
       if (modelVersions.some(v=>v.kind===d.kind&&v.name===d.name&&v.version===d.version)) fail('MODEL_VERSION_CONFLICT','이미 등록된 버전입니다.',409)
       const v: ModelVersion = { id:crypto.randomUUID(),kind:d.kind,name:d.name,version:d.version,refId:d.refId,artifactUri:d.artifactUri,status:'REGISTERED',createdAt:stamp(),evalResult:{ evidence:e,approval:null,activeScopes:[],revision:0 } }
       modelVersions.push(v)
-      audit('MODEL_REGISTER', 'MODEL', v.id, 'SUCCESS', '평가 첨부 개발 예시')
+      audit('MODEL_REGISTER', 'MODEL_VERSION', v.id, 'SUCCESS', { name: v.name, version: v.version })
       return v
     }, 201),
   ),
@@ -472,12 +474,13 @@ export const adminHandlers = [
           fail('MODEL_APPROVAL_REJECTED','평가·적용 범위와 변경 사유가 필요합니다.',422)
         const allowed = action==='activate' ? evaluation!.evidence.evaluatedScopes : evaluation!.approval?.scopes
         if (!allowed || d.scopes.some(scope=>!allowed.includes(scope)) || (action==='activate'&&d.approved!==true)) fail('MODEL_APPROVAL_REJECTED','승인된 평가 범위만 적용할 수 있습니다.',422)
+        const previous = modelVersions.find(m => m.kind === v.kind && m.name === v.name && m.status === 'ACTIVE')
         const revision=Math.max(...modelVersions.filter(m=>m.kind===v.kind&&m.name===v.name).map(m=>m.evalResult?.revision??0))+1
         for (const other of modelVersions) if (other.kind===v.kind&&other.name===v.name&&other.status==='ACTIVE') { other.status='INACTIVE'; if (other.evalResult) other.evalResult.activeScopes=[] }
         v.status='ACTIVE';v.activatedAt=stamp()
         if (action==='activate') { evaluation!.approval={ scopes:d.scopes,reason:d.reason,approvedBy:'mock-service-ops',approvedAt:stamp() }; v.approvedBy='mock-service-ops' }
         evaluation!.activeScopes=d.scopes;evaluation!.revision=revision
-        audit(action==='activate'?'MODEL_ACTIVATE':'MODEL_ROLLBACK','MODEL',v.id,'SUCCESS',d.reason+' · 재분석 계획 '+d.reanalysisPlanned)
+        audit(action==='activate'?'MODEL_ACTIVATE':'MODEL_ROLLBACK','MODEL_VERSION',v.id,'SUCCESS',{ name: v.name, version: v.version, scopes: d.scopes, reason: d.reason, reanalysisPlanned: d.reanalysisPlanned, previousVersionId: previous?.id ?? null })
         return v
       }),
     ),

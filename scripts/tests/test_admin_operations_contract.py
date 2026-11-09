@@ -22,6 +22,9 @@ class AdminOperationsContracts(unittest.TestCase):
             for name,expected in baseline[section].items():
                 self.assertIn(name,current)
                 reviewed=deepcopy(current[name])
+                # #367 extends registration only; retain all prior fields in the fingerprint.
+                if section=='schemas' and name=='RegisterModelVersion':
+                    reviewed['properties'].pop('registration',None)
                 # #163 explicitly approves only these support operation error responses.
                 # Normalize the approved additions while preserving every original field.
                 support_operations={'/error-reports':'post','/inquiries':'post',
@@ -145,6 +148,11 @@ class AdminOperationsContracts(unittest.TestCase):
                     self.assertIn('COMMUNITY_POST',reviewed['properties']['reviewResult'].pop('description'))
                 if section=='schemas' and name=='SupportReport':
                     self.assertEqual(reviewed['properties'].pop('linkedPost'),{'$ref':'#/components/schemas/CommunityLinkedPost'})
+                # #367 adds optional evidence limitations; retain the original evidence fingerprint.
+                if section=='schemas' and name=='EvaluationEvidence':
+                    self.assertEqual(reviewed['properties'].pop('limitations')['default'],[])
+                if section=='schemas' and name=='RegisterModelVersion':
+                    self.assertEqual(reviewed.pop('allOf')[0]['then']['required'],['artifactUri'])
                 canonical=json.dumps(reviewed,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
                 self.assertEqual(expected,hashlib.sha256(canonical).hexdigest(),f'{section}/{name}')
     def test_admin_paths_and_retry_key(self):
@@ -157,7 +165,7 @@ class AdminOperationsContracts(unittest.TestCase):
         schemas=self.doc['components']['schemas']
         self.assertNotIn('updatedAt',schemas['OperationJob']['properties'])
         self.assertNotIn('errorDetail',schemas['OperationExecution']['properties'])
-        self.assertNotIn('detail',schemas['OperationAudit']['properties'])
+        self.assertFalse(schemas['OperationAudit']['properties']['detail']['additionalProperties'])
         for name,schema in schemas.items():
             if name.startswith('Operation'): Draft202012Validator.check_schema(schema)
     def test_queue_allowlist(self):

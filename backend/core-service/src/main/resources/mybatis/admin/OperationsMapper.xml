@@ -10,10 +10,15 @@
   <idArg column="id" javaType="java.util.UUID"/><arg column="actor_user_id" javaType="java.util.UUID"/>
   <arg column="action" javaType="java.lang.String"/><arg column="target_type" javaType="java.lang.String"/>
   <arg column="target_id" javaType="java.util.UUID"/><arg column="result" javaType="java.lang.String"/><arg column="created_at" javaType="java.time.Instant"/>
+  <arg column="detail" javaType="com.sagomungchi.core._common.json.JsonObject" typeHandler="com.sagomungchi.core._common.persistence.JsonObjectTypeHandler"/>
  </constructor></resultMap>
  <select id="executions" resultMap="execution">SELECT id,attempt_no,status,error_code,triggered_by,started_at,finished_at FROM job_execution WHERE job_type=#{type} AND job_id=#{id} ORDER BY attempt_no</select>
  <sql id="filter">created_at &gt;= #{start} AND created_at &lt; #{end}<if test="type != null"> AND target_type=#{type}</if><if test="target != null"> AND target_id=#{target}</if></sql>
- <select id="audits" resultMap="audit">SELECT id,actor_user_id,action,target_type,target_id,result,created_at FROM audit_log WHERE <include refid="filter"/> ORDER BY created_at DESC,id DESC LIMIT #{limit} OFFSET #{offset}</select>
+ <select id="audits" resultMap="audit">SELECT id,actor_user_id,action,target_type,target_id,result,created_at,
+  CASE WHEN target_type='MODEL_VERSION' AND jsonb_typeof(detail)='object' THEN
+   (SELECT jsonb_object_agg(key,value) FROM jsonb_each(detail) WHERE key IN ('name','version','scopes','reason','reanalysisPlanned','previousVersionId'))
+  ELSE NULL END AS detail
+  FROM audit_log WHERE <include refid="filter"/> ORDER BY created_at DESC,id DESC LIMIT #{limit} OFFSET #{offset}</select>
  <select id="auditCount" resultType="long">SELECT count(*) FROM audit_log WHERE <include refid="filter"/></select>
  <insert id="audit">INSERT INTO audit_log(id,actor_user_id,action,target_type,target_id,result,created_at) VALUES(#{id},#{actor},'JOB_RETRY',#{type},#{target},#{result},CURRENT_TIMESTAMP)</insert>
  <insert id="reportRetryAudit">INSERT INTO audit_log(id,actor_user_id,action,target_type,target_id,result,detail,created_at)

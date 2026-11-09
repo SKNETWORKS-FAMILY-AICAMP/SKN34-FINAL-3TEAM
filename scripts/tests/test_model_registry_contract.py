@@ -55,6 +55,13 @@ class ModelRegistryContractTests(unittest.TestCase):
         self.assertEqual(schemas["ModelVersion"]["properties"]["status"]["enum"], ["REGISTERED", "ACTIVE", "INACTIVE"])
         self.assertEqual(len(schemas["EvaluationEvidence"]["required"]), 9)
 
+    def test_model_requires_artifact_and_limitations_are_optional(self):
+        schemas = self.api['components']['schemas']
+        self.assertEqual(schemas['RegisterModelVersion']['allOf'][0]['if']['properties']['kind']['const'], 'MODEL')
+        self.assertEqual(schemas['RegisterModelVersion']['allOf'][0]['then']['required'], ['artifactUri'])
+        self.assertEqual(schemas['EvaluationEvidence']['properties']['limitations']['default'], [])
+        self.assertNotIn('limitations', schemas['EvaluationEvidence']['required'])
+
     def test_usage_keeps_null_totals_and_existing_call_type_enum(self):
         schemas = self.api["components"]["schemas"]
         usage = json.loads((ROOT / "contracts/events/llm.usage.recorded.v1.schema.json").read_text(encoding="utf-8"))

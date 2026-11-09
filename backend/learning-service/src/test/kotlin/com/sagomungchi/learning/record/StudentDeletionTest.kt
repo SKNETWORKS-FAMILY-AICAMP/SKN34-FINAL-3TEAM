@@ -168,6 +168,10 @@ class StudentDeletionTest {
         communityService.react(friendPost, student, CommunityReaction.NEW_IDEA)
         communityService.react(post, friend, CommunityReaction.WANT_MORE)
         communityService.setVisibility(student, true, VisibilityReason.SETTING)
+        // 커밋되는 DB라 학년군·주당 게시 1개(부분 UK)와 겹치지 않게 호출마다 다른 주
+        val week = java.time.LocalDate.of(2026, 11, 9).plusWeeks(weeks.incrementAndGet().toLong())
+        val theme = rows.publishedTheme(listOf(mission.id), week)
+        jdbc.update("INSERT INTO theme_review_view (student_id, week_start, theme_id, viewed_at) VALUES (?, ?, ?, now())", student, week, theme)
         assertEquals(TABLES, counts(student).filterValues { it > 0 }.keys.toList(), "모든 표에 행이 있어야 삭제를 확인할 수 있음")
         return student
     }
@@ -202,6 +206,7 @@ class StudentDeletionTest {
 
     companion object {
         private val REQUEST: UUID = UUID.randomUUID()
+        private val weeks = java.util.concurrent.atomic.AtomicInteger()
         private const val COMPLETIONS = "/internal/deletion-requests/%s/completions"
         private const val ATTEMPTS = "SELECT id FROM attempt WHERE student_id = ?"
         private const val ANSWERS = "SELECT id FROM answer WHERE attempt_id IN (SELECT id FROM attempt WHERE student_id = ?)"
@@ -223,6 +228,8 @@ class StudentDeletionTest {
             // 그 학생이 남긴 반응과 그 학생 공유물에 달린 반응
             "community_reaction" to "?::uuid IN (x.student_id, (SELECT p.student_id FROM community_post p WHERE p.id = x.post_id))",
             "community_visibility" to "x.student_id = ?",
+            // 되돌아보기 열람 기록 (#385, ERD 4.4)
+            "theme_review_view" to "x.student_id = ?",
         )
         private val TABLES = OWNER.keys.toList()
 

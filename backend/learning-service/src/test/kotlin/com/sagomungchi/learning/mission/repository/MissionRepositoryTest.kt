@@ -169,8 +169,8 @@ class MissionRepositoryTest : PostgresRepositoryTest() {
         val id = UUID.randomUUID()
         jdbc.update(
             """INSERT INTO attempt (id, student_id, mission_id, mission_version_id, rubric_version_id,
-                   grade, status, started_at, updated_at)
-               SELECT ?, ?, m.id, m.current_version_id, m.current_rubric_version_id, 3, ?, ?, ?
+                   grade, status, started_at, updated_at, context)
+               SELECT ?, ?, m.id, m.current_version_id, m.current_rubric_version_id, 3, ?, ?, ?, 'EXTRA'
                FROM mission m WHERE m.id = ?""",
             id, student, status, startedAt, startedAt, missionId,
         )

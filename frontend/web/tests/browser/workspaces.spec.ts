@@ -121,6 +121,7 @@ test('운영 전용 관리자는 결제 메뉴가 없고 모델 운영 화면을
   // SPA 내에서 권한 없는 경로로 이동해 동일 세션의 접근 제어를 검증한다.
   await page.getByRole('link', { name: '모델·프롬프트', exact: true }).click()
   await expect(page.getByRole('heading', { name: '모델·프롬프트 버전', exact: true })).toBeVisible()
+  await page.getByText('직접 새 버전 등록', { exact: true }).click()
   await expect(page.getByLabel('모델 이름')).toBeVisible()
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)
   expect(overflow).toBe(false)

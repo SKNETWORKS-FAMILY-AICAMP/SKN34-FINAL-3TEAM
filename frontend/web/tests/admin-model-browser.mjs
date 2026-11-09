@@ -34,7 +34,8 @@ try {
 
   // 2. 평가 근거 8항목·평가 범위로 등록 (승인자 입력칸 없음)
   assert.equal(await p.getByLabel('승인자', { exact: true }).count(), 0)
-  await p.getByLabel('적용 범위', { exact: true }).fill(scope)
+  await p.getByText('직접 새 버전 등록', { exact: true }).click()
+  await p.getByLabel('평가 범위', { exact: true }).fill(scope)
   await p.getByLabel('모델 이름', { exact: true }).fill('judge')
   await p.getByLabel('모델 버전', { exact: true }).fill('mock-3')
   for (const label of evidence) await p.getByLabel(label, { exact: true }).fill(`합성 ${label}`)
@@ -43,17 +44,22 @@ try {
   console.log('PASS 평가 근거와 함께 등록 · 승인 전 상태')
 
   // 3. 명시적 승인 후 활성화 → 승인자는 인증 계정, 이전 사용 버전은 사용 안 함
-  await p.getByLabel('모델 변경 사유', { exact: true }).fill('비교 검토 후 승인')
+  await card('judge · mock-3').getByLabel('모델 변경 사유', { exact: true }).fill('비교 검토 후 승인')
+  await card('judge · mock-3').getByRole('checkbox', { name: new RegExp('^' + scope) }).check()
   const activate = card('judge · mock-3').getByRole('button', { name: '활성화', exact: true })
   assert.equal(await activate.isDisabled(), true) // 승인 체크 전에는 활성화할 수 없음
-  await p.getByLabel('평가 근거와 선택 범위를 확인하고 활성화를 승인합니다.').check()
+  await card('judge · mock-3').getByLabel('평가 근거와 선택 범위를 확인하고 활성화를 승인합니다.').check()
   await activate.click()
+  await p.getByRole('button', { name: '확인 후 활성화', exact: true }).click()
   await card('judge · mock-3').getByText('PROMPT · ACTIVE · 승인자 mock-service-ops', { exact: true }).waitFor()
   await card('judge · mock-1').getByText('PROMPT · INACTIVE · 승인자 mock-reviewer', { exact: true }).waitFor()
   console.log('PASS 승인·활성화')
 
   // 4. 예전에 승인된 버전으로 되돌리기
+  await card('judge · mock-1').getByRole('checkbox', { name: new RegExp('^' + scope) }).check()
+  await card('judge · mock-1').getByLabel('모델 변경 사유', { exact: true }).fill('검토 후 복귀')
   await card('judge · mock-1').getByRole('button', { name: '이 버전으로 되돌리기', exact: true }).click()
+  await p.getByRole('button', { name: '확인 후 이 버전으로 되돌리기', exact: true }).click()
   await card('judge · mock-1').getByText('PROMPT · ACTIVE · 승인자 mock-reviewer', { exact: true }).waitFor()
   console.log('PASS 승인 범위 안 되돌리기')
 

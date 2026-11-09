@@ -8,7 +8,7 @@ export type LookChoice = Pick<StudentLook, 'theme' | 'companion'> & Partial<Pick
 /** 학생 꾸미기 설정 (API 명세 3.12, core #234). `equipped`는 P22 확장이라 고른 때만 보낸다. */
 export const studentLookApi = {
   get: async (signal?: AbortSignal): Promise<StudentLook> =>
-    readLook(await apiFetch<unknown>('/students/me/preferences', { signal })),
+    readLook(await apiFetch<unknown>('/students/me/preferences', { signal, cache: 'no-store' })),
   save: async (look: LookChoice): Promise<StudentLook> =>
     readLook(await apiFetch<unknown>('/students/me/preferences', json(look, 'PUT'))),
 }
