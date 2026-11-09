@@ -17,7 +17,7 @@
 
 따라서 기존 AWS 객체가 multipart COMPOSITE이거나 SHA-256을 저장하지 않았다면 사전 검사가 실패할 수 있다. 객체를 임의로 다시 업로드하거나 운영 모델을 교체하지 않았다. 업로드 방식 보완이 필요하면 #212 담당자와 해당 객체 상태를 확인한 뒤 별도로 반영한다.
 
-저장소의 `scoring-s3-read` IAM 정책은 s3:ListBucket·s3:GetObject를 허용한다. 사용 API는 HeadObject·GetObject이며 새 쓰기 권한은 필요 없다. JSON GET은 If-Match로 고정하여 GetObjectVersion 권한을 요구하지 않는다. SSE-KMS 객체의 checksum 조회에는 추가 KMS 권한이 필요할 수 있다. #212 문서의 Pod Identity·S3 Gateway 경로를 검토했고, 이번 작업에서 AWS 실제 IAM·객체 상태 조회 및 배포·정책 수정은 하지 않았다. NetworkPolicy YAML/JSON 검증은 실제 클러스터 통신 검증과 구분한다.
+저장소의 `scoring-s3-read` IAM 정책은 s3:ListBucket·s3:GetObject를 허용한다. 사용 API는 HeadObject·GetObject이며 새 쓰기 권한은 필요 없다. JSON GET은 If-Match로 고정하여 GetObjectVersion 권한을 요구하지 않는다. SSE-KMS 객체의 checksum 조회에는 추가 KMS 권한이 필요할 수 있다. #212 문서의 Pod Identity·S3 Gateway 경로를 검토했고, 2026-11-09 AWS 콘솔 CloudShell에서 실제 IAM 연결·정책과 S3 객체 HEAD를 조회했다. 배포·정책 수정은 하지 않았다. NetworkPolicy YAML/JSON 검증은 실제 클러스터 통신 검증과 구분한다.
 
 ## 로컬 재현
 
@@ -39,7 +39,7 @@
 - scoring 전체 212개 통과 후 출력 수 모순 사례를 1개 추가하여 사전 검사 14개를 재검증했다. 총 213개 고유 테스트 검증. Ruff check·format 통과.
 - web 단위 244개, 모델 브라우저 12개(데스크톱·태블릿·휴대폰), lint·test:types·build 통과. 새 사전 검사 테스트는 합성 HTTP 응답이며 실제 core/S3 검증과 구분한다.
 - 저장소 계약 검증기 192개 통과. core/scoring 요청·응답 계약 일치, 양방향 local/prod NetworkPolicy, 기존 S3 읽기 정책 포함.
-- AWS CLI와 kubectl의 현재 클러스터 연결이 없어 실제 Pod Identity 권한·객체 체크섬·운영 통신을 확인하지 않았다. AWS 미배포 상태이며 실제 실행 결과로 쓰지 않는다. GitHub CI도 별도 확인 대상이다.
+- AWS 콘솔 CloudShell에서 아래 읽기 전용 확인을 수행했다. #368 운영 배포와 실제 Pod 통신 검증은 수행하지 않았다. GitHub CI도 별도 확인 대상이다.
 
 ## 이슈 원문 체크리스트 대응
 
@@ -52,7 +52,7 @@
 - [x] web: 미리보기 카드에 "사전 검사" 버튼과 결과 표시(manifest 필요)
 - [x] api-spec·OpenAPI 반영
 
-AWS 항목은 저장소 IAM 정책과 #212 문서 검토까지 완료했다. 실제 권한·객체 checksum 상태 확인 및 필요한 경우 담당자 조율을 남겼으므로 전체 체크하지 않는다. AWS 자격 증명이나 운영 버킷을 임의로 변경하지 않는다.
+AWS 실제 역할 연결·정책 및 객체 HEAD 확인까지 완료했다. 다만 실행 중인 scoring Pod가 없고 기존 객체에 S3 SHA-256이 없어 실제 Pod 검증과 업로드 방식 조율이 남았다. 따라서 AWS 항목은 미완료로 유지한다. 운영 리소스·객체·권한은 변경하지 않았다.
 
 ### 완료 조건
 - [x] scoring·core 테스트, web 테스트 통과
@@ -61,3 +61,24 @@ AWS 항목은 저장소 IAM 정책과 #212 문서 검토까지 완료했다. 실
 
 ### 유지할 원칙
 - [x] 사전 검사 통과는 "파일·형식 확인"으로만 표시. 품질 승인·활성화 가능 상태로 표시하지 않고 자동으로 다음 단계로 넘기지 않음
+
+## AWS 읽기 전용 확인 (2026-11-09)
+
+- 환경: 서울 리전 `sagomungchi-demo-eks`, 모델 버킷 `sagomungchi-demo-347161580747-models`. IAM 사용자 CloudShell에서 확인했으며 scoring 역할을 직접 실행한 결과와 구분한다.
+- deployment `app/scoring-service`는 serviceAccount `scoring-service`, replicas=0이다. app 네임스페이스에 Pod가 없어 실제 Pod Identity 자격 증명으로 HeadObject/GetObject를 실행하거나 core→scoring 통신을 확인할 수 없었다. replicas를 변경하지 않았다.
+- Pod Identity association `a-8esdvbyftwtdacyfq`는 `app/scoring-service`를 `sagomungchi-demo-scoring-s3-role`에 연결한다.
+- 실제 inline policy `sagomungchi-demo-scoring-s3-read`는 모델 버킷의 ListBucket과 객체 전체 경로의 GetObject를 허용한다. attached managed policy는 없다. 확인한 객체는 모두 AES256 암호화다. 정책상 필요한 S3 읽기 작업이 포함되지만 실제 Pod 접근 성공으로 단정하지 않는다.
+- 두 모델의 필수 파일 12개 모두 `HeadObject(ChecksumMode=ENABLED)` 성공. 전부 `ChecksumType=FULL_OBJECT`이지만 `ChecksumSHA256`은 없다. FULL_OBJECT 표기만으로 SHA-256 존재를 인정하지 않는다.
+
+| 파일 | 서술형 3.0 크기(bytes) | 논술형 3.1 크기(bytes) |
+| --- | ---: | ---: |
+| config.json | 1177 | 1383 |
+| tokenizer.json | 752095 | 752095 |
+| tokenizer_config.json | 452 | 452 |
+| train_info.json | 1694 | 1570 |
+| score_cuts.json | 531 | 86 |
+| model.safetensors | 442524276 | 442539656 |
+
+현재 구현에 이 객체를 입력하면 본문을 읽지 않는 tokenizer.json·tokenizer_config.json·model.safetensors는 CHECKSUM_UNAVAILABLE 대상이다. 작은 JSON은 본문 해시 검사가 가능하지만 이번 AWS 확인에서는 HEAD만 실행했으므로 해시·메타데이터 유효성 통과로 기록하지 않는다.
+
+남은 조치: #212 업로드 담당자와 전체 파일 SHA-256을 S3에 제공하는 업로드 방식을 맞추고, 서비스 재가동 시 실제 scoring Pod의 읽기·통신을 확인한다. 체크섬 검사 완화, 가중치 다운로드, 운영 객체 재업로드, 정책 변경, 서비스 재가동은 수행하지 않았다.

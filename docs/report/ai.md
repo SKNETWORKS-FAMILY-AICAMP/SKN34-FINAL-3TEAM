@@ -594,4 +594,4 @@ MODEL_REGISTER 감사 detail에 source·jsonSha256·manifestSha256·modifiedFiel
 
 ## #368 사전 검사 구현 (2026-11-09)
 
-scoring의 읽기 전용 파일·메타데이터 검사, core 관리자 동기 중계와 별도 MODEL_PREFLIGHT 감사, web 미리보기 검사 버튼을 연결했다. 가중치 본문은 다운로드하지 않으며 전체 S3 SHA-256이 없으면 실패한다. core→scoring local/prod NetworkPolicy와 서비스 URL을 반영했다. 실제 local core·scoring·MinIO·PostgreSQL에서 정상/해시 불일치/누락을 검증했다. AWS 배포·실제 Pod 권한 및 객체 체크섬 확인은 수행하지 않았으며 이슈의 해당 항목은 미완료로 유지한다. [계약·검증·원문 체크리스트](issue-368-model-preflight.md)를 참고한다.
+scoring의 읽기 전용 파일·메타데이터 검사, core 관리자 동기 중계와 별도 MODEL_PREFLIGHT 감사, web 미리보기 검사 버튼을 연결했다. 가중치 본문은 다운로드하지 않으며 전체 S3 SHA-256이 없으면 실패한다. core→scoring local/prod NetworkPolicy와 서비스 URL을 반영했다. 실제 local core·scoring·MinIO·PostgreSQL에서 정상/해시 불일치/누락을 검증했다. 후속 AWS 읽기 전용 확인에서 실제 Pod Identity 연결·S3 읽기 정책과 12개 객체 HEAD를 확인했다. 객체 모두 S3 SHA-256이 없으며 scoring replicas=0이라 실제 Pod 실행 검증은 남았다. 업로드 방식 조율이 필요해 해당 항목은 미완료로 유지한다. 운영 배포·재가동·객체 및 정책 변경은 하지 않았다. [계약·검증·원문 체크리스트](issue-368-model-preflight.md)를 참고한다.
