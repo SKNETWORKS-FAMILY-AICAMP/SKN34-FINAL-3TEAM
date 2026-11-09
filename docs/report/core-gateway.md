@@ -1,4 +1,4 @@
-# core 학습 프록시·SSE·대시보드·알림·분석 대화·이벤트 기록 (#38·#39·#40·#41·#44·#119·#168·#195·#208·#210·#225·#243·#286)
+# core 학습 프록시·SSE·대시보드·알림·분석 대화·이벤트 기록 (#38·#39·#40·#41·#44·#119·#168·#195·#208·#210·#225·#243·#286·#392)
 
 계약은 [API 명세](../design/api-spec.md) 1.4·2.2·2.3·2.7·3.2, 구조는 [아키텍처](../design/architecture.md) 1.3·1.6.
 
@@ -323,3 +323,38 @@ SET failure_count = 0, next_attempt_at = NULL, quarantined_at = NULL,
     manual_retry_count = manual_retry_count + 1, last_requeued_at = now()
 WHERE id = :event_id AND quarantined_at IS NOT NULL AND published_at IS NULL;
 ```
+
+## 12. 일일 리포트 고정 대화 (#392)
+
+2026-11-06 결정 P25(FN-RPT-16)의 core 몫. 학부모가 일일 리포트에서 만든 분석 대화를 자녀·그날·리포트 판으로 고정한다. 계약은 [API 명세](../design/api-spec.md) 2.4·4.2, 흐름은 [시퀀스 5.1](../design/sequence-diagram.md#51-일일-리포트-대화-p25).
+
+### 구현
+
+| 영역 | 내용 |
+|---|---|
+| DB | V33 `conversation.report_id uuid`·`report_revision int`(NULL 허용, 기본값 없음). `ck_conversation_report_pair`(함께 NULL 또는 함께 값)·`ck_conversation_report_revision`(1 이상)·`ck_conversation_report_day`(고정이면 `period_from = period_to`). 둘 다 NULL 허용이라 준비/최종 분리 없음 |
+| 생성 | `POST /conversations {childId, reportId}` → `ConversationService.createForReport`. ① 트랜잭션: 자녀 연결·공유·이용권(무료 429) ② `ReportJobRepository.byReport`로 일일·같은 자녀 확인(아니면 422, HTTP 없음) ③ 트랜잭션 밖 `ReportQueryService.pinned(reportId, null)`로 최신 판·`COMPLETED` 확인 ④ 트랜잭션: 연결·이용권 재확인 후 `from = to = 대상일`, `report_id`·`report_revision` 저장. `reportId`와 `from`·`to`를 같이 보내면 400 |
+| 응답 | 대화 생성·목록·상세에 `reportId`·`reportRevision`(일반 대화 null) |
+| 메시지 | `AnalysisStreamService`가 ai 호출 직전(트랜잭션 밖) `ConversationService.report`로 고정 판을 `?revision=N`으로 다시 읽어 ai 요청 `report`에 요약을 넣는다. 재생성으로 새 판이 생겨도 대화는 처음 판을 쓴다 |
+| 범위 | 고정 대화에 다른 기간 `scope`를 보내면 400(`scope_changed` 없음, 차감 전). 질문 속 다른 날은 ai `DIFFERENT_PERIOD` 범위 확인이 새 대화로 안내 |
+| 한도 | 기존 `usage.consume` 경로 그대로라 분석 대화 하루 30회를 공유(질문마다 1회) |
+| 오류 | 판 조회 실패는 메시지 `FAILED`·SSE `error`(`REPORT_UNAVAILABLE`·`REPORT_NOT_FOUND`·`REPORT_CONTRACT_INVALID`·`REPORT_SCOPE_REJECTED`). 관리자 작업 목록에 보이도록 `OperationErrors` 허용 목록에 추가 |
+
+### 결정
+
+1. **요약은 개수·판정만**: `{reportId, revision, date, metrics[{label, count}], problems[{title, context, judgment, elements[{label, satisfied}]}]}`. 되묻기·최종 답·돌아보기·인용 원문은 넣지 않는다. 인용 근거는 그날 learning 기록(`[원문]`)만 써서 기존 근거 ID 저장·숫자/인용 대조를 그대로 유지한다
+2. **판 조회는 `detail`이 아닌 `pinned`**: `detail`은 `report_view` 열람 기록을 남기고 서술 권한을 조회한다. 대화 메시지마다 열람으로 세지 않도록 같은 소유·계약 검사(`validateDetail`, `detail`과 공유)만 하는 `ReportQueryService.pinned`를 두었다(서술 요청 false)
+3. **일일 여부는 core `report_job` 기준**: report-api 응답 전에 core DB로 일일·자녀를 확인해 주간·다른 자녀·없는 리포트에 report 호출을 하지 않는다. 다른 보호자 리포트도 같은 422로 존재 여부를 구분하지 않는다
+4. **무료 판정이 먼저**: 웹 목업(#394)과 같은 순서로 429를 422보다 먼저 돌려준다
+5. **판 조회 실패도 차감 유지**: 기존 "받아들인 질문은 환불 없음" 원칙(5장)을 따른다
+
+### API 변경
+
+- core `POST /conversations` 요청 `reportId`(선택), 응답 `AnalysisConversation.reportId`·`reportRevision`(nullable), 400·422 `CONVERSATION_REPORT_INVALID`·429 명시
+- ai `POST /internal/analysis/stream` 요청 `report`(선택, `AnalysisReportSummary`). 있으면 `scope.from = scope.to = report.date`([ai 보고서 10장](ai.md#10-일일-리포트-고정-대화-리포트-요약-입력-392))
+
+### 검증
+
+- core: 새 `ReportConversationIntegrationTest`(일일 고정·최신 판 고정·메시지마다 `?revision` 조회·요약에 원문 없음·30회 공유 1회 차감, 주간·다른 자녀·없음·미완료 422, 무료 429는 report 호출 없음, 다른 기간 400, 판 조회 실패 `FAILED`)와 `./gradlew test bootJar`
+- DB: `verify_db_schema.py`에 쌍·판·하루 CHECK 음수 사례 3건
+- 범위 밖: report 일일 상세 실제 생성(#391) 뒤 실서버 연결, 웹 실서버 확인(#394는 목업 기준)

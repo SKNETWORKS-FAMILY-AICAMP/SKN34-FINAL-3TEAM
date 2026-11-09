@@ -251,6 +251,21 @@ SELECT pg_temp.expect_sqlstate($$
     INSERT INTO idempotency_record SELECT * FROM idempotency_record
     WHERE idempotency_key = '00000000-0000-4000-8000-000000000012'
 $$, '23505');
+-- #392: a pinned report conversation keeps report_id/report_revision together on one target day.
+INSERT INTO conversation
+    (id, parent_user_id, student_id, period_from, period_to, created_at, updated_at, report_id, report_revision)
+VALUES ('00000000-0000-4000-8000-000000000392', '00000000-0000-4000-8000-000000000001',
+        '00000000-0000-4000-8000-000000000002', '2026-11-08', '2026-11-08', now(), now(),
+        '00000000-0000-4000-8000-000000000393', 1);
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE conversation SET report_revision = NULL WHERE id = '00000000-0000-4000-8000-000000000392'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE conversation SET report_revision = 0 WHERE id = '00000000-0000-4000-8000-000000000392'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE conversation SET period_to = '2026-11-09' WHERE id = '00000000-0000-4000-8000-000000000392'
+$$, '23514');
 """
 
 LEARNING_CASES = """

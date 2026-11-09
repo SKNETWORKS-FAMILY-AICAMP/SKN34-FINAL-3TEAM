@@ -2330,7 +2330,7 @@ classDiagram
   }
   class ConversationService {
     <<service>>
-    +createForReport(parentId, childId, reportId) Conversation
+    +createForReport(childId, reportId) Conversation
   }
   class GenerationService {
     <<service>>
@@ -2352,7 +2352,7 @@ classDiagram
 
 - core(#390 구현): `WeeklyReportScheduler`·`DailyReportScheduler`가 각자 ShedLock으로 `ReportScheduleService.generate(at, periodType)`을 부르고, `ReportJobService.scheduled(parent, child, ReportPeriod)`가 보호자가 연결된 자녀별 작업 + Outbox를 저장한다(정기 부분 UK `(student_id, period_type, period_from)`). 기간 종류는 domain `ReportPeriodType`(`DAILY`·`WEEKLY`)과 `ReportPeriod(from, to, type)`이며 일일은 서술 없음(`narrative = false`)이라 상품 권한을 조회하지 않는다. 일일 상세 원문 제공 여부는 `ReportEntitlementService.dailyDetailEnabled` 한 곳에서 정한다
 - report-service `GenerationService`(7장)는 `periodType`으로 분기. `DailyReportBuilder`는 ai 서술 호출 없이 템플릿만 구성하고 기존 대조·렌더링을 재사용
-- `ConversationService.createForReport`는 리포트 소유·일일 여부 확인 후 기존 `create`와 같은 대화를 만들고 기간을 그날로 고정, `conversation.report_id`·`report_revision` 저장. 메시지마다 `ReportClient`로 그 판 상세를 읽어 ai 요청에 리포트 요약으로 전달
+- core(#392 구현): `ConversationService.createForReport`는 `ReportJobRepository.byReport`로 일일·같은 자녀를 확인하고 `ReportQueryService.pinned`(최신 판)로 완료 여부를 본 뒤 기존 `create`와 같은 대화를 만들고 기간을 그날로 고정, `conversation.report_id`·`report_revision` 저장. 메시지마다 `ConversationService.report`가 `ReportQueryService.pinned(reportId, revision)`(열람 기록 없음)으로 그 판을 읽어 ai 요청 `report`에 개수·판정 요약으로 전달. ai는 `AnalysisRequest.report`(`ReportSummary`)를 답변 프롬프트 `[고정 리포트]`와 숫자 대조 허용값에 넣는다
 - report `ReportRepository`의 revision 잠금·UK 단위는 `(student_id, period_type, period_from)`
 
 ---

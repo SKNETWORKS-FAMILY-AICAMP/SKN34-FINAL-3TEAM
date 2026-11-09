@@ -170,4 +170,4 @@
 
 - 화면설계서 반영과 화면 ID 부여
 - 요구사항 정의서 개정 여부(현재는 공유안 절 번호로 연결)
-- 구현 때 갱신할 계약: `contracts/events/report-messages.md`(`periodType`, `periodFrom/To` = 주 또는 하루), `contracts/openapi/*.yaml`, ai 분석 요청의 리포트 요약 입력, `scripts/verify_db_schema.py` 기본값 예외(`student.community_enabled`)
+- 구현 때 갱신할 계약: `contracts/events/report-messages.md`(`periodType`, `periodFrom/To` = 주 또는 하루), `contracts/openapi/*.yaml`, `scripts/verify_db_schema.py` 기본값 예외(`student.community_enabled`)

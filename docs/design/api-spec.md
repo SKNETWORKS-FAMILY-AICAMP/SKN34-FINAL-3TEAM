@@ -123,7 +123,7 @@
 | `COMMUNITY_CONSENT_REQUIRED` / `COMMUNITY_LOCKED` / `COMMUNITY_OWN_POST` / `COMMUNITY_POST_NOT_FOUND` | 409 / 403 / 409 / 404 | 보호자 `COMMUNITY` 동의 없이 공개 켜기 / 미션 미마무리 학생의 커뮤니티 열람·반응(learning 판정 전달) / 본인 공유물 반응·신고 / 숨김·파기·없는 공유물 반응·신고 (2.9, #388) |
 | `INSUFFICIENT_POINTS` / `LOOK_ITEM_NOT_ON_SALE` / `LOOK_LOCKED` | 409 | 구현 예정: 해금 포인트 부족 / 판매 중단 아이템 해금 / 해금하지 않은 테마·캐릭터·아이템 선택 (2.10, 3.12) |
 | `THEME_DAY_CLOSED` / `THEME_REVIEW_NOT_ALLOWED` / `PREMIUM_REQUIRED` | 409 / 409 / 403 | 구현 예정: 오늘 요일이 아닌 테마 문제 신규 시도 / 토·일 외 또는 마무리하지 않은 테마 문제 다시 풀기 / 무료 이용권의 추가 문제(`EXTRA`) 시도 (2.11) |
-| `CONVERSATION_REPORT_INVALID` / `WEEKLY_THEME_PUBLISH_INCOMPLETE` | 422 | 구현 예정: 일일 리포트가 아니거나 다른 자녀 리포트로 대화 생성 (2.4) / 테마 게시 검사 실패 (2.8) |
+| `CONVERSATION_REPORT_INVALID` / `WEEKLY_THEME_PUBLISH_INCOMPLETE` | 422 | 이 자녀의 완료된 일일 리포트가 아닌 리포트로 대화 생성 (2.4, #392) / 구현 예정: 테마 게시 검사 실패 (2.8) |
 | `SUPPORT_STATE_CONFLICT` / `CORRECTION_TARGET_UNSUPPORTED` | 409 / 422 | 신고·문의 처리 상태 전이 위반·완료 답변 변경 / 정정할 수 없는 신고 대상 (5.7) |
 | `CORRECTION_REPORT_CONFLICT` / `JUDGMENT_STATE_CONFLICT` | 409 | learning: 같은 신고로 이미 정정함 / 판정 처리 상태 충돌 (5.7) |
 | `MISSION_VERSION_CONFLICT` / `CONFLICT` | 409 | learning 미션 버전 충돌 / 현재 미션 상태에서 허용되지 않는 전이 (2.8 #47 미션 운영) |
@@ -344,7 +344,7 @@
 ### 2.4 분석 대화 (FN-AGT)
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
-| POST | `/conversations` | 학부모 | 대화 생성 `{childId, from, to}` (기본 기간 최근 7일·오늘 포함, P06). 무료 플랜은 `USAGE_LIMIT_REACHED` (P13). 구현 예정: `{childId, reportId}`이면 일일 리포트 고정 대화(아래) | AGT-01 | 핵심 |
+| POST | `/conversations` | 학부모 | 대화 생성 `{childId, from, to}` (기본 기간 최근 7일·오늘 포함, P06). 무료 플랜은 `USAGE_LIMIT_REACHED` (P13). `{childId, reportId}`이면 일일 리포트 고정 대화(아래, #392) | AGT-01 | 핵심 |
 | GET | `/conversations?childId` | 학부모 | 본인 대화 목록 | AGT-11 | 핵심 |
 | GET | `/conversations/{conversationId}` | 학부모 | 질문·답변·대상 자녀·기간·참조 기록 | AGT-11 | 핵심 |
 | POST | `/conversations/{conversationId}/messages` | 학부모 | **SSE**. 질문 → 범위 확인 → 기록 조회·계산 → 숫자·인용 대조 → 확정 답변. 범위 변경 시 `scope` 동봉 | AGT-02~06, AGT-08~10 | 핵심 |
@@ -357,7 +357,7 @@
 
 - 예시 질문(FN-AGT-12): core `conversation`이 learning `/internal/records/...`로 기록 유무 확인 후 가능 여부 표시
 - 대화 이력은 이용 중 보관, 탈퇴·자녀 삭제 시 파기. 삭제된 근거는 `available: false` (P09)
-- 일일 리포트 고정 대화(FN-RPT-16, P25, 구현 예정): `{childId, reportId}`이면 그 일일 리포트의 자녀·대상일·최신 판으로 고정(`from = to =` 대상일). 응답·대화 상세에 `reportId`·`reportRevision` 포함, core `conversation.report_id`·`report_revision`에 저장. 주간 리포트 ID·다른 자녀 리포트는 `422 CONVERSATION_REPORT_INVALID`. 메시지마다 core가 report `/internal/reports/{reportId}?revision`(4.4)으로 그 판을 읽어 ai 요청에 리포트 요약으로 넣는다(ai → report 직접 호출 없음). 고정 대화는 범위 변경(`scope_changed`) 없이 다른 날 질문을 새 대화로 안내. 무료는 기존대로 `USAGE_LIMIT_REACHED`, 프리미엄은 분석 대화 하루 30회 공유
+- 일일 리포트 고정 대화(FN-RPT-16, P25, #392): `{childId, reportId}`이면 그 일일 리포트의 자녀·대상일·최신 판으로 고정(`from = to =` 대상일). `reportId`와 `from`·`to`를 함께 보내면 400. 응답·목록·대화 상세에 `reportId`·`reportRevision`(일반 대화는 null) 포함, core `conversation.report_id`·`report_revision`에 저장. 확인 순서: 자녀 연결·이용권(무료 `429 USAGE_LIMIT_REACHED`) → core `report_job`으로 일일·같은 자녀 확인 → report 최신 판 조회(`COMPLETED`만). 주간 리포트·다른 자녀·없는 리포트·미완료 리포트는 `422 CONVERSATION_REPORT_INVALID`. 메시지마다 core가 report `/internal/reports/{reportId}?revision`(4.4)으로 그 판을 읽어 ai 요청 `report`에 요약(지표 개수, 문제별 제목·맥락·판정·확인 요소. 원문·인용 없음)으로 넣는다(ai → report 직접 호출 없음, 열람 기록 없음). 고정 대화에 다른 기간 `scope`를 보내면 400, 질문 속 다른 날은 ai 범위 확인(`DIFFERENT_PERIOD`)이 새 대화로 안내. 리포트 조회 실패는 메시지 `FAILED`(`REPORT_UNAVAILABLE` 등, 차감 유지). 프리미엄은 분석 대화 하루 30회 공유
 - 대조 실패·LLM 장애 시 LLM 답변을 보내지 않고 규칙 응답 모드 결과를 보냄 (3.3, FN-AGT-06·10, P16)
 
 ### 2.5 리포트 (FN-RPT)
@@ -904,7 +904,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 |---|---|---|---|
 | POST | `/internal/judgments` | learning | `{answerText, inputType, grade, rubric{elements[]}, versions, question?, keywords?, essayType?, answerKey?, solution?}` → `{result, elements[{elementId, quote, verified, satisfied}], heldReason, trial, versions, modelScores}` (scoring 교차 확인 4.2.2) |
 | POST | `/internal/followups` | learning | `{timeline[], judgment, rubric, mission, grade}` → `{type, question, source, leakCheck{passed}, versions}` (정답·금지어 검사 실패 시 1회 재생성 `LLM_RETRY`, 재실패 시 `question` 없이 `leakCheck.passed = false` → learning이 질문 은행 `BANK` 선택, P16) |
-| POST | `/internal/analysis/stream` | core | **SSE**. `{conversationId, question, scope{studentId, from, to}, history[]}` → 3.3과 같은 이벤트 |
+| POST | `/internal/analysis/stream` | core | **SSE**. `{conversationId, question, scope{studentId, from, to}, history[], report?}` → 3.3과 같은 이벤트. `report`는 일일 리포트 고정 대화(2.4, #392)의 요약 `{reportId, revision, date, metrics[{label, count}], problems[{title, context, judgment, elements[{label, satisfied}]}]}`, 있으면 `from = to = date` |
 | POST | `/internal/report-narratives` | report | `{metrics[], thinkingTypes[], changes[], reflections[], quotes[], tone?}`(tone 생략 시 DEFAULT, #209) → `{narrative, eveningQuestion, citedQuotes[], versions}` (4.2.1) |
 | GET | `/internal/versions` | core | 현재 호출에 사용하는 프롬프트 버전 `{prompts:{judgment,followup,analysis,reportNarrative,reportTemplate,missionDraft}}` (#280 `reportTemplate`, #354 `missionDraft` 추가. core에 이 응답을 읽는 코드는 없음) |
 | POST | `/internal/analysis/report-template` | core | `{question, current}` → `{settings}` 또는 `{clarification}` 중 하나 (#209, 2.4). 미보유 활성 본문은 503 `AI_PROMPT_VERSION_UNAVAILABLE`(#280). core 호출은 별도 서킷 `ai-report-template`(아키텍처 1.3) |

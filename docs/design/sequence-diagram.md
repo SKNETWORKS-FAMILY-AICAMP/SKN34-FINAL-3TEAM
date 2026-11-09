@@ -764,9 +764,9 @@ sequenceDiagram
 - 무료 플랜은 대화 생성 시 `429 USAGE_LIMIT_REACHED`, 프리미엄은 하루 30회 (P13). 일일 리포트 고정 대화도 같은 30회 (5.1)
 - 근거 확인(`/evidence`): core가 `message_evidence` ID로 learning `/internal/records/evidence` 조회, 삭제된 기록은 `available: false`
 
-### 5.1 일일 리포트 대화 (P25, 구현 예정)
+### 5.1 일일 리포트 대화 (P25)
 
-구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). core·ai 몫은 #392로 구현했다(report 일일 상세 생성은 #391). 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -779,10 +779,11 @@ sequenceDiagram
 
   W->>C: POST /conversations {childId, reportId}
   C->>CDB: 자녀 연결·이용권 확인 (무료면 USAGE_LIMIT_REACHED)
-  C->>R: GET /internal/reports/{reportId}
-  alt 일일 아님·다른 자녀
+  C->>CDB: report_job 조회 (일일·같은 자녀)
+  C->>R: GET /internal/reports/{reportId} (최신 판)
+  alt 일일 아님·다른 자녀·없음·미완료
     C-->>W: 422 CONVERSATION_REPORT_INVALID
-  else 일일 리포트
+  else 완료된 일일 리포트
     C->>CDB: conversation 저장 (from = to = 대상일, report_id·report_revision)
     C-->>W: 201
   end
@@ -792,7 +793,8 @@ sequenceDiagram
   A-->>C: 대조 완료 답변 또는 규칙 응답 (P16)
   C-->>W: SSE 결과 (분석 대화 하루 30회 공유 차감)
 ```
-- 고정 대화는 범위 변경 없이 다른 날 질문을 새 대화로 안내. ai는 report를 직접 호출하지 않음
+- 고정 대화는 범위 변경 없이 다른 날 질문을 새 대화로 안내(다른 기간 `scope`는 400, 질문 속 다른 날은 ai `DIFFERENT_PERIOD` 안내). ai는 report를 직접 호출하지 않음
+- report HTTP는 트랜잭션 밖에서 호출하고 대화 저장 트랜잭션에서 연결·이용권을 다시 확인한다. 메시지의 판 조회는 열람 기록(`report_view`)을 남기지 않는다
 
 ---
 

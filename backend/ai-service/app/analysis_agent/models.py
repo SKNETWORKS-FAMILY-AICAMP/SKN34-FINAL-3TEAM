@@ -52,11 +52,49 @@ class Turn(ApiModel):
     text: str
 
 
+class ReportMetric(ApiModel):
+    label: str
+    count: int = Field(ge=0)
+
+
+class ReportElement(ApiModel):
+    label: str
+    satisfied: bool
+
+
+class ReportProblem(ApiModel):
+    title: str
+    context: Literal["THEME_DAY", "THEME_REVIEW", "EXTRA"] | None = None
+    judgment: Literal["CORRECT", "PARTIAL", "RETHINK", "HELD"] | None = None
+    elements: list[ReportElement] = Field(default_factory=list)
+
+
+class ReportSummary(ApiModel):
+    """일일 리포트 고정 대화(P25, #392)에서 core가 메시지마다 읽어 넘긴 고정 판 요약.
+
+    개수·판정만 있고 원문·인용은 없다. ai는 report를 직접 호출하지 않으며
+    인용 근거는 그날 learning 기록 [원문]만 쓴다.
+    """
+
+    report_id: str
+    revision: int = Field(ge=1)
+    day: date = Field(alias="date")
+    metrics: list[ReportMetric] = Field(default_factory=list)
+    problems: list[ReportProblem] = Field(default_factory=list)
+
+
 class AnalysisRequest(ApiModel):
     conversation_id: str
     question: str = Field(min_length=1, max_length=1000)
     scope: Scope
     history: list[Turn] = Field(default_factory=list, max_length=20)
+    report: ReportSummary | None = None
+
+    @model_validator(mode="after")
+    def _pinned_day(self) -> "AnalysisRequest":
+        if self.report and not (self.scope.from_ == self.scope.to == self.report.day):
+            raise ValueError("고정 대화의 범위는 리포트 대상일 하루")
+        return self
 
 
 # ---------------------------------------------------------------------------
