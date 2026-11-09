@@ -34,8 +34,8 @@ class DailyReportScheduleTest : PostgresRepositoryTest() {
     @Autowired lateinit var events: ApplicationEvents
     @MockitoBean lateinit var entitlement: ReportEntitlementService
 
-    /** Monday 2026-10-26 07:00 KST: the weekly job targets 10-19..10-25 and the daily job targets Sunday 10-25. */
-    private val monday = Instant.parse("2026-10-25T22:00:00Z")
+    /** Monday 2026-10-26 00:00 KST: the weekly job targets 10-19..10-25 and the daily job targets Sunday 10-25. */
+    private val monday = Instant.parse("2026-10-25T15:00:00Z")
     private val sunday = ReportPeriod(LocalDate.parse("2026-10-25"), LocalDate.parse("2026-10-25"), ReportPeriodType.DAILY)
     /** The daily period whose period_from equals the weekly WEEK.from (Monday 10-19). */
     private val weekMonday = ReportPeriod(WEEK.from, WEEK.from, ReportPeriodType.DAILY)
@@ -74,8 +74,8 @@ class DailyReportScheduleTest : PostgresRepositoryTest() {
         val user = parent(jdbc); val first = child(jdbc, user); val second = child(jdbc, user)
         listOf(first, second).forEach { `when`(entitlement.narrativeEnabled(it)).thenThrow(
             BusinessException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "PAYMENT_PRODUCT_UNAVAILABLE", "상품 확인 불가")) }
-        // Sunday 2026-11-01 07:00 KST targets Saturday; weekends are ordinary target days.
-        schedule.generate(Instant.parse("2026-10-31T22:00:00Z"), ReportPeriodType.DAILY)
+        // Sunday 2026-11-01 00:00 KST targets Saturday; weekends are ordinary target days.
+        schedule.generate(Instant.parse("2026-10-31T15:00:00Z"), ReportPeriodType.DAILY)
         val saturday = ReportPeriod(LocalDate.parse("2026-10-31"), LocalDate.parse("2026-10-31"), ReportPeriodType.DAILY)
         listOf(first, second).forEach { assertEquals(ReportJobStatus.QUEUED, repository.scheduled(it, saturday)!!.status) }
         verify(entitlement, never()).narrativeEnabled(first)

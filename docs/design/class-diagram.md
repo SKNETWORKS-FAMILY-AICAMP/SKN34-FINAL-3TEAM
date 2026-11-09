@@ -831,8 +831,8 @@ classDiagram
   class GuardianshipService { <<service>> }
 ```
 
-- `ReportScheduler`: `@Scheduled` + `@SchedulerLock`(ShedLock), 매주 월 00:00 KST(일요일 자정. 현재 구현 07:00, 자정 변경은 2026-11-09 결정으로 구현 예정), 직전 월~일(KST) 대상, 기록 없는 학생 포함 (P06). 학생별 `report_job(SCHEDULE)` + outbox 저장, 부분 UK로 중복 방지
-- P24(#390): `DailyReportScheduler`가 매일 00:00 KST(대상일 자정. 현재 구현 07:00, 자정 변경은 2026-11-09 결정으로 구현 예정. 잠금 `core-daily-reports`) `ReportScheduleService.generate(at, DAILY)`로 전날 작업을 만든다. `period_type`은 7.1
+- `ReportScheduler`: `@Scheduled` + `@SchedulerLock`(ShedLock), 매주 월 00:00 KST(일요일 자정, 2026-11-09 결정), 직전 월~일(KST) 대상, 기록 없는 학생 포함 (P06). 학생별 `report_job(SCHEDULE)` + outbox 저장, 부분 UK로 중복 방지
+- P24(#390): `DailyReportScheduler`가 매일 00:00 KST(대상일 자정, 2026-11-09 결정. 잠금 `core-daily-reports`) `ReportScheduleService.generate(at, DAILY)`로 전날 작업을 만든다. `period_type`은 7.1
 - `ReportEventConsumer`: 큐 `core.report.events`, `processed_event`로 멱등, 상태 전이는 조건부 UPDATE (상태 다이어그램 4.1)
 - 알림: 리포트 종료 전이 트랜잭션에서 `QUEUED` 저장 → 커밋 후 `NotificationDispatchService`가 `NotificationRedisPublisher`로 `core:notifications:v1` 발행(발행기는 Redis 발행만) → `NotificationDeliveryService`로 `COMPLETED`·`FAILED` 기록. 관리자 재처리 `NotificationRetryService`도 `dispatch`를 호출(#250). 다른 레플리카의 `NotificationRedisSubscriber`(`notification/consumer`, 구독 연결·채널 이름은 `notification/config/NotificationRedisConfiguration`, #168)가 `NotificationStreams`로 SSE 전달 (아키텍처 1.6)
 - 리포트 조회 API에 `ReportQueryService`를 둬서 controller → client 직접 호출 금지 규칙 준수 (리포트 열람 기록 `report_view` 저장 포함)

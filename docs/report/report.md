@@ -1,11 +1,11 @@
-# 주간·일일 리포트 (#42·#50~#56·#129·#131·#132·#152·#167·#206·#209·#252·#344·#390)
+# 주간·일일 리포트 (#42·#50~#56·#129·#131·#132·#152·#167·#206·#209·#252·#344·#390·#400)
 
 계약은 [API 명세](../design/api-spec.md) 3.4·4.1.1·4.2.1·4.4·5.5, 메시지는 [report-messages](../../contracts/events/report-messages.md).
 
 ## 1. core 주간 리포트 (#42)
 
-- 매주 월요일 07:00 Asia/Seoul, 직전 월~일 `LocalDate`, 집계 경계 `[월 00:00 KST, 다음 월 00:00 KST)`. 기록 없는 자녀도 대상
-- P24 일일 리포트([서비스 기획 방향](service-direction.md)): core 몫(매일 07:00 전날 작업·`report_job.period_type`·정기 UK·알림·조회)은 20장(#390). report 몫(`weekly_report.period_type`, 재생성 UK·revision 잠금, 일일 템플릿·테마 요약)은 구현 예정([ERD 5.2](../design/erd.md#52-구현-예정-변경-report_db), #391)
+- 매주 월요일 00:00 Asia/Seoul(일요일 자정, 21장), 직전 월~일 `LocalDate`, 집계 경계 `[월 00:00 KST, 다음 월 00:00 KST)`. 기록 없는 자녀도 대상
+- P24 일일 리포트([서비스 기획 방향](service-direction.md)): core 몫(매일 00:00 전날 작업·`report_job.period_type`·정기 UK·알림·조회)은 20장(#390). report 몫(`weekly_report.period_type`, 재생성 UK·revision 잠금, 일일 템플릿·테마 요약)은 구현 예정([ERD 5.2](../design/erd.md#52-구현-예정-변경-report_db), #391)
 - ShedLock(Spring/JDBC, 기존 `shedlock` 테이블, `usingDbTime`) + SCHEDULE 부분 UK로 재실행 중복 방지, 자녀·기간별 advisory transaction lock으로 정기·재생성 직렬화. 자녀별 실패는 격리하고 실행 끝에 전파
 - 작업 저장과 `OutboxWriter.append`는 같은 트랜잭션, HTTP는 밖. core `OutboxRelay`는 #166 이후 DB 트랜잭션 밖에서 발행·confirm을 기다리고 발행 시각만 짧은 트랜잭션으로 기록
 - 재생성: 부모는 자녀·주 계열 REGENERATE 1회(재생성 결과로 다시 요청해도 우회 불가), SERVICE_OPS 관리자는 ADMIN_RETRY 무제한. revision은 report가 배정
@@ -296,7 +296,7 @@ core는 기존 대화 소유권·연결·동의·이용권과 학부모 행 잠�
 |---|---|
 | DB | V29 `report_job.period_type` NULL 허용 추가 → V30 기존 행 `WEEKLY` 채움, NOT NULL·`ck_report_job_period_type`·`ck_report_job_daily_period`(일일은 `period_from = period_to`), V2 `uq_report_job_scheduled_week (student_id, period_from)`를 `uq_report_job_scheduled_period (student_id, period_type, period_from) WHERE trigger='SCHEDULE'`로, 목록 인덱스를 `(student_id, period_type, period_from)`으로 교체. 알림 CHECK에 `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`. 기본값 없음(검증 스크립트 규칙) |
 | 도메인 | `ReportPeriodType(DAILY·WEEKLY)`, `ReportPeriod(from, to, type)`(주간 월~일, 일일 하루 검사), `ReportPeriod.previousDay`(KST 전날, 토·일 포함), `ReportJob.periodType`·`period` |
-| 일정 | `DailyReportScheduler` 매일 07:00 KST, ShedLock `core-daily-reports`(주간 `core-weekly-reports`와 따로라 월요일에 둘 다 돈다). 대상·동의·자녀별 실패 격리는 주간과 같은 `ReportScheduleService.generate(at, type)`. 기록 없는 날도 작업을 만든다 |
+| 일정 | `DailyReportScheduler` 매일 00:00 KST(대상일 자정, 21장), ShedLock `core-daily-reports`(주간 `core-weekly-reports`와 따로라 월요일에 둘 다 돈다). 대상·동의·자녀별 실패 격리는 주간과 같은 `ReportScheduleService.generate(at, type)`. 기록 없는 날도 작업을 만든다 |
 | 잠금·횟수 | advisory lock 키·정기 작업 조회·진행 중 검사·학부모 재생성 1회 모두 `(학생, period_type, period_from)` 단위. 월요일 일일·주간 작업이 서로 막지 않는다 |
 | 메시지 | `report.generate`에 선택 필드 `periodType`. 일일만 `"DAILY"`를 넣고 주간은 필드를 생략(=WEEKLY). 일일 `narrativeEnabled`는 항상 false이고 상품 권한을 조회하지 않는다 |
 | 알림 | `ReportJobFinished.periodType`으로 일일 완료·실패를 `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`("일일 리포트가 완성되었습니다." 등)로 만든다. 수신 설정은 유형별 독립이라 PUT 1~8개 |
@@ -327,3 +327,29 @@ core는 기존 대화 소유권·연결·동의·이용권과 학부모 행 잠�
 - 계약: 루트 `python -O -m unittest discover -s scripts/tests`(report.generate `periodType` 스키마 검사 추가, 계약 지문 테스트에 #390 승인 변경 정규화), `validate_report_contracts.py`(실제 일일 명령·일일 상세 산출물 추가), `validate_notification_contracts.py`
 - DB: `scripts/check_db_migrations.py`(적용·재실행·report 왕복, ERD 대조). 일일 CHECK·NOT NULL·정기 UK 음수 사례를 `verify_db_schema.py`에 추가
 - 범위 밖: report와 붙인 월요일 일일·주간 실제 생성·완료 알림(#391 머지 후), web 화면 확인(#394 머지됨, mock 기준 동기화만 확인)
+
+## 21. 리포트 생성 시각 자정 변경 (#400)
+
+2026-11-09 결정([서비스 기획 방향 7장](service-direction.md#7-2026-11-09-생성-시각-변경), 설계 PR #399): 다음 날·월요일 아침 생성은 학부모가 그날·그 주 기록을 바로 볼 수 없어 대상 기간이 끝나는 자정에 만든다. 주 경계 월~일·대상 기간 규칙·알림 즉시 발송은 그대로이고 실행 시각만 바꿨다.
+
+### 구현
+
+| 항목 | 이전 | 이후 |
+|---|---|---|
+| 주간 `WeeklyReportScheduler` | `0 0 7 * * MON` | `0 0 0 * * MON`(일요일 자정) |
+| 일일 `DailyReportScheduler` | `0 0 7 * * *` | `0 0 0 * * *`(대상일 자정) |
+| 서비스에 넘기는 실행 시각 | `clock.instant()` | `clock.instant() + EARLY_RUN_GRACE`(1분) |
+
+ShedLock 이름(`core-weekly-reports`·`core-daily-reports`)·`lockAtMostFor`(30분)·`lockAtLeastFor`(1분), `ReportPeriod.previousDay/previousWeek`, 월요일 주간·일일 동시 실행은 그대로다.
+
+### 결정
+
+1. **조기 실행 여유 1분**: 아침 실행은 시각이 몇 초 앞뒤로 흔들려도 같은 KST 날짜였지만 00:00은 기간 경계 바로 위다. 스케줄러가 몇 ms라도 일찍 깨면(23:59:59.9) `clock.instant()`의 KST 날짜가 전날이 되어 일일은 이틀 전, 주간은 2주 전을 고른다. 기간 함수는 "실행 시각의 KST 날짜 기준 전날·직전 주" 의미를 유지하고, 스케줄러만 1분을 더해 넘긴다. 늦은 실행은 같은 KST 날짜 안이면 대상이 같다
+2. **API·스키마 변경 없음**: 공개·내부 API, `report.generate` 메시지, DB는 바뀌지 않는다. `api-spec.md`·`class-diagram.md`의 "자정 변경은 구현 예정" 표기와 계약 문서 시각만 정리했다
+3. **화면 문구는 다루지 않음**: web 학부모 화면 안내는 #401. `docs/outputs/user-flow`·`docs/screen-design` 산출물의 생성 시각 표기도 이 PR 범위 밖이다
+
+### 검증
+
+- core: `./gradlew test bootJar` 통과(525개, 실패 0, 로컬 JDK 21 + Testcontainers). `ReportPeriodTest` 주간·일일 cron 00:00, 월요일 00:00 실행이 조기(-100ms)·정각·지연(+5초, +29분)이어도 일일 10-25·주간 10-19~10-25를 고르는 경계 테스트, `ReportScheduleLockTest` 스케줄러가 여유를 더한 시각으로 호출, `DailyReportScheduleTest` 00:00 실행 시각
+- 계약·스크립트: 루트 `python -O -m unittest discover -s scripts/tests` 175개 통과
+- `git grep -nE "0 0 7|07:00"`: core·계약·`docs/report`·`docs/design`에 현재 시각으로 남은 07:00 없음(21장 표의 이전 값·서비스 기획 방향 7장 변경 전 서술은 이력)
