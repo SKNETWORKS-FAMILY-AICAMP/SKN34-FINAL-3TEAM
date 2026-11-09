@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -14,6 +15,15 @@ async function server(page: Page, models: ModelVersion[] = []) {
   await page.route('**/api/v1/**', async route => {
     const req = route.request(), url = new URL(req.url()), path = url.pathname.replace('/api/v1', '')
     const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
+    if (process.env.MODEL_LOCAL_CORE_SESSION && path === '/admin/model-versions') {
+      const session = JSON.parse(await readFile(process.env.MODEL_LOCAL_CORE_SESSION, 'utf8'))
+      const response = await route.fetch({ url: `http://127.0.0.1:58087/api/v1${path}${url.search}`, headers: { ...req.headers(), authorization: `Bearer ${session.token}` } })
+      if (req.method() === 'POST') {
+        state.writes.push({ path, body: req.postDataJSON() })
+        if (response.status() === 201) state.models.push(await response.json())
+      }
+      return route.fulfill({ response })
+    }
     if (path === '/auth/refresh') return json({ accessToken: 'synthetic-admin', role: 'ADMIN' })
     if (path === '/me') return json({ role: 'ADMIN', permissions: ['SERVICE_OPS'], nextAction: 'READY', startPath: '/admin/home' })
     if (path === '/notifications' || path === '/admin/audit-logs') return json({ items: path.includes('audit') ? state.audits : [], page: 0, size: 100, totalElements: state.audits.length })
@@ -106,12 +116,22 @@ test('등록 JSON·manifest 가져오기와 버킷 치환·한계 표시·개별
     expect(write.path).toBe('/admin/model-versions')
     expect(write.body.artifactUri).toMatch(/^s3:\/\/local-validation-models\/models\//)
     expect(write.body).not.toHaveProperty('approved')
+    expect(write.body.registration).toMatchObject({ source: 'JSON_IMPORT', modifiedFields: expect.arrayContaining(['artifactUri', 'evaluation.limitations']), artifactFiles: expect.any(Array) })
+    const provenance = write.body.registration as { jsonSha256: string; manifestSha256: string }
+    expect(provenance.jsonSha256).toMatch(/^[a-f0-9]{64}$/)
+    expect(provenance.manifestSha256).toMatch(/^[a-f0-9]{64}$/)
+    if (process.env.MODEL_REGISTRATION_FILE) expect(provenance.jsonSha256).toBe(createHash('sha256').update(await readFile(process.env.MODEL_REGISTRATION_FILE)).digest('hex'))
+    if (process.env.MODEL_MANIFEST_FILE) expect(provenance.manifestSha256).toBe(createHash('sha256').update(await readFile(process.env.MODEL_MANIFEST_FILE)).digest('hex'))
   }
   expect(state.models.every(v => v.status === 'REGISTERED')).toBe(true)
   const card = page.getByRole('article', { name: 'm2-klue-essay 3.1', exact: true })
   await expect(card.getByText(/임시/)).toBeVisible()
   await mkdir('.taste-skill/models-after', { recursive: true })
   await first.scrollIntoViewIfNeeded(); await page.screenshot({ path: `.taste-skill/models-after/${info.project.name}-import.png` })
+  if (process.env.MODEL_LOCAL_CORE_SESSION) {
+    const session = JSON.parse(await readFile(process.env.MODEL_LOCAL_CORE_SESSION, 'utf8'))
+    await writeFile(process.env.MODEL_LOCAL_CORE_SESSION.replace('session.json', 'done.json'), JSON.stringify({ nonce: session.nonce }))
+  }
 })
 test('등록 422·409는 각 항목에 남고 다른 항목은 등록할 수 있다', async ({ page }) => {
   const state = await server(page)

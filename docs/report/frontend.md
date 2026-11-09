@@ -155,3 +155,10 @@ node tests/qr-device-browser.mjs
 - 검증: 웹 단위 243건, 기존 MSW 브라우저 24건, 모델 운영 브라우저 9건, 꾸미기 운영 브라우저 9건, TypeScript·lint·운영 빌드 통과. 모델·감사·주간 테마 계약 테스트 14건 통과. 브라우저 검증은 `npm run build` 후 `npm run test:models` / `npm run test:rewards`. 실제 파일 재현은 `MODEL_REGISTRATION_FILE`·`MODEL_MANIFEST_FILE` 환경 변수로 경로를 전달한다(없으면 합성 JSON 사용).
 - 로컬 core 검증 제약: 설치된 JDK/Gradle이 프로젝트 컴파일 전 `Unable to establish loopback connection`으로 실패했다. 로컬 Docker 엔진도 사용할 수 없어 core/DB 테스트 통과를 주장하지 않는다. CI의 core 테스트 확인이 필요하다.
 - #367 core 후속 범위: 등록 감사의 source·가져온 JSON SHA-256·변경 필드·산출물 해시 저장은 별도 계약/구현이 남는다. 웹은 가져온 원본의 SHA-256와 manifest 파일 해시를 확인용으로 표시하며, 아직 없는 감사 입력 필드를 임의로 POST하지 않는다. 따라서 이 변경으로 #367 전체 완료를 선언하지 않는다.
+
+
+### #367 등록 감사 계약 통합 (2026-11-09)
+
+PR #409 화면 구현을 core 등록 계약과 연결했다. 원본 registration·manifest 바이트의 SHA-256, 원본 항목 대비 수정 필드, 해당 모델의 산출물 파일 목록을 registration 메타데이터로 전달한다. 자동으로 채운 limitations도 원본과 다르면 변경 항목이다. 수동 등록에는 가져오기 메타데이터를 붙이지 않는다. limitations의 빈 줄·길이·개수와 manifest 상대 파일 경로를 서버 계약에 맞춰 검증한다.
+
+위의 “감사 입력 필드 미연결” 기록은 PR #409 단독 상태다. 후속 통합 결과와 실제 core/DB 검증 절차는 [#367 등록 API 문서](issue-367-registration-api.md)를 기준으로 한다.

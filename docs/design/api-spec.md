@@ -1046,8 +1046,8 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 자동 품질 합격선 없이 SERVICE_OPS의 명시적 사람 승인을 사용한다. 새 승인 상태 enum은 만들지 않는다. 등록 상태는 기존 REGISTERED·ACTIVE·INACTIVE다.
 
 - GET `/api/v1/admin/model-versions?kind&page=0&size=20`: `{items,page,size,totalElements}`. size 1~100, page 0 이상. kind 생략 시 전체 종류. 항목은 `{id,kind,name,version,refId,artifactUri,evalResult,status,approvedBy,activatedAt,createdAt}`다.
-- POST 같은 경로: `{kind,name,version,refId?,artifactUri?,evaluation}` → 201 항목. `(kind,name,version)` 중복은 409. RUBRIC은 learning 원본 UUID인 refId 필수, 다른 종류는 refId를 받지 않는다. 원본 내용·수정·존재 확인을 core에서 소유하지 않는다.
-- `evaluation`은 `{datasetId,datasetVersion,baselineVersion,comparisonReport,trainingEvaluationSeparation,quoteAccuracy,calculationAccuracy,humanReview,evaluatedScopes}`다. 문자열 필드는 모두 비어 있지 않은 평가 근거·검토 기록 또는 그 참조이며 `baselineVersion`은 비교한 기존 버전 식별값이다. 최초 등록도 비교 기준을 명시한다. `evaluatedScopes`는 평가한 범위 키의 중복 없는 비어 있지 않은 배열이다. 평가·활성화·복귀 범위 배열의 null 항목은 422로 거부한다.
+- POST 같은 경로: `{kind,name,version,refId?,artifactUri?,evaluation,registration?}` → 201 항목. `(kind,name,version)` 중복은 409. RUBRIC은 learning 원본 UUID인 refId 필수, 다른 종류는 refId를 받지 않는다. 원본 내용·수정·존재 확인을 core에서 소유하지 않는다.
+- `evaluation`은 `{datasetId,datasetVersion,baselineVersion,comparisonReport,trainingEvaluationSeparation,quoteAccuracy,calculationAccuracy,humanReview,evaluatedScopes,limitations?}`다. 문자열 필드는 모두 비어 있지 않은 평가 근거·검토 기록 또는 그 참조이며 `baselineVersion`은 비교한 기존 버전 식별값이다. 최초 등록도 비교 기준을 명시한다. `evaluatedScopes`는 평가한 범위 키의 중복 없는 비어 있지 않은 배열이다. 평가·활성화·복귀 범위 배열의 null 항목은 422로 거부한다.
 - #367: `evaluation.limitations?: string[]`는 임시 기준·평가 한계·미검증 사항이다. 생략한 기존 기록은 빈 목록으로 읽는다. `MODEL` 등록은 `artifactUri`가 필수이며 빈 값은 422 `MODEL_APPROVAL_REJECTED`다.
 - 웹 등록 파일은 최상위 설명 키와 `requests[]`를 가진 JSON이다. `requests[]`는 기존 등록 본문만 허용하며 승인·활성화·사유·재분석·승인자 필드는 거부한다. 브라우저에서 파싱해 모델별 미리보기와 개별 POST를 제공한다. 별도 파일 업로드 API는 없다. `<버킷>` 일괄 치환 전에는 등록을 차단한다.
 - manifest는 `models[]`의 `name/version/scope/files[{file,bytes,sha256}]`를 대조한다. 최상위 `주의`와 일치 모델의 `주의`를 limitations 후보로 쓰되 명시한 `evaluation.limitations`(빈 목록 포함)가 우선한다. JSON·manifest·해시 목록의 확인은 실제 산출물 해시 대조나 로딩·품질 승인을 의미하지 않는다.
@@ -1062,6 +1062,17 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - ai는 `PROMPT` 중 #68의 여섯 이름(#280 `reportTemplate`, #354 `missionDraft` 포함)과 해당 기능 scope만 반영한다. 이벤트는 전체 snapshot이 아니며 다른 기능의 활성 버전을 제거하지 않는다. 새 scope에서 빠진 기능에는 이전 활성 본문을 계속 쓰지 않고 내장 버전으로 돌아간다. 재연결 후 새 큐 바인딩·snapshot 조회·이벤트 조정을 완료하기 전에는 `versions=DOWN`이다. malformed 이벤트는 안전한 로그 후 ACK하여 재시도하지 않는다. probe 자체는 core 조회를 수행하지 않는다.
 
 - #43 기존 SQL NULL 평가 행은 목록에서 evalResult:null로 보존하고 활성화/복귀 시 422로 거부한다. 승인 근거·적용 범위가 불완전한 기존 ACTIVE 행이 있으면 내부 snapshot은 MODEL_VERSION_STATE_INVALID(503)로 명시적으로 실패하며 임의 기본 버전을 반환하지 않는다. 신규 등록은 계속 완전한 평가 기록을 요구한다.
+
+#### #367 등록 확장 (백엔드 구현)
+
+- `MODEL` 등록은 비어 있지 않은 `artifactUri`가 필수(422 `MODEL_APPROVAL_REJECTED`). 다른 종류의 기존 규칙은 유지한다.
+- `evaluation.limitations`는 선택 문자열 배열, 생략/기존 행은 `[]`. 최대 100개, 각 1~4,000자이며 공백뿐인 문자열·null 항목은 거부한다. 반환 위치는 `evalResult.evidence.limitations`다.
+- `registration`은 선택 출처 정보다. 생략하면 `{source:MANUAL}`. JSON 가져오기는 `{source:JSON_IMPORT,jsonSha256,manifestSha256?,modifiedFields:[],artifactFiles:[{file,bytes,sha256}]}`를 보낸다. 해시는 소문자 64자리 SHA-256. 가져온 원본 파일 바이트 기준이며 JSON 재직렬화나 폼 수정 후 해시가 아니다. 파일 목록은 선택한 모델 항목만 보낸다.
+- JSON_IMPORT는 jsonSha256 필수. artifactFiles가 있으면 manifestSha256 필수. MANUAL은 해시·수정 목록·파일 목록을 받지 않는다. modifiedFields는 OpenAPI에 나열한 등록 필드 경로만 허용하며 배열 전체 변경도 필드 경로 하나로 기록한다. 파일 상대 경로는 중복·상위 경로·절대 경로를 거부한다.
+- source·해시·수정 필드·파일 목록은 기존 MODEL_REGISTER 감사 detail에 기록한다. 출처/해시는 클라이언트 신고이며 서버에서 원본 파일·S3·품질을 검증한 결과가 아니다. actor·등록 ID·시각·상태는 서버가 정한다.
+- 브라우저가 기존 registration 파일의 requests[]를 파싱해 개별 POST한다. manifest는 선택이며 원래 두 파일 형식은 유지한다. 파일 업로드·일괄 등록 API는 없다. 주의사항 우선순위는 명시된 evaluation.limitations → 최상위 주의와 해당 모델 manifest 주의 후보이며 운영자가 확인한다.
+- 등록 요청의 승인 여부·활성화 범위·사유·재분석 계획·승인자 및 알 수 없는 필드는 400 VALIDATION_FAILED. 유효한 타입의 업무 검증 실패는 기존 422 MODEL_APPROVAL_REJECTED, 중복은 409 MODEL_VERSION_CONFLICT. 공통 Problem Details 형식은 유지한다.
+- 프론트 전달용 예시와 역할 분담: [#367 API 전달 문서](../report/issue-367-registration-api.md). 화면·웹 타입은 프론트 담당 범위다.
 
 ### 5.3 #37 동의·자녀 구현 계약
 

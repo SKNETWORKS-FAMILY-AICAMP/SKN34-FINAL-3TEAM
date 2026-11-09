@@ -9790,8 +9790,8 @@ components:
         limitations:
           type: array
           default: []
-          items: {type: string}
-          description: 임시 기준·평가 한계·미검증 사항. 기존 기록은 빈 목록으로 읽는다 (#367).
+          maxItems: 100
+          items: {type: string, minLength: 1, maxLength: 4000, pattern: '.*\S.*'}
     RegisterModelVersion:
       type: object
       additionalProperties: false
@@ -9807,7 +9807,7 @@ components:
         then:
           required: [artifactUri]
           properties:
-            artifactUri: {type: string, minLength: 1}
+            artifactUri: {type: string, minLength: 1, maxLength: 2048, pattern: '.*\S.*'}
       properties:
         kind:
           $ref: '#/components/schemas/ModelKind'
@@ -9831,6 +9831,111 @@ components:
           maxLength: 2048
         evaluation:
           $ref: '#/components/schemas/EvaluationEvidence'
+        registration:
+          $ref: '#/components/schemas/ModelRegistrationMetadata'
+    ModelRegistrationMetadata:
+      type: object
+      additionalProperties: false
+      description: 클라이언트가 신고한 출처. 서버의 파일 검증·품질 승인을 의미하지 않음. 생략 시 MANUAL.
+      properties:
+        source:
+          type: string
+          enum:
+          - MANUAL
+          - JSON_IMPORT
+          default: MANUAL
+        jsonSha256:
+          type:
+          - string
+          - 'null'
+          pattern: ^[a-f0-9]{64}$
+        manifestSha256:
+          type:
+          - string
+          - 'null'
+          pattern: ^[a-f0-9]{64}$
+        modifiedFields:
+          type: array
+          default: []
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+            - kind
+            - name
+            - version
+            - refId
+            - artifactUri
+            - evaluation.datasetId
+            - evaluation.datasetVersion
+            - evaluation.baselineVersion
+            - evaluation.comparisonReport
+            - evaluation.trainingEvaluationSeparation
+            - evaluation.quoteAccuracy
+            - evaluation.calculationAccuracy
+            - evaluation.humanReview
+            - evaluation.evaluatedScopes
+            - evaluation.limitations
+        artifactFiles:
+          type: array
+          default: []
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/ModelRegistrationArtifact'
+      allOf:
+      - if:
+          required:
+          - source
+          properties:
+            source:
+              const: JSON_IMPORT
+        then:
+          required:
+          - jsonSha256
+          properties:
+            jsonSha256: &registrationSha256
+              type: string
+              pattern: ^[a-f0-9]{64}$
+        else:
+          properties:
+            jsonSha256:
+              type: 'null'
+            manifestSha256:
+              type: 'null'
+            modifiedFields:
+              maxItems: 0
+            artifactFiles:
+              maxItems: 0
+      - if:
+          required:
+          - artifactFiles
+          properties:
+            artifactFiles:
+              minItems: 1
+        then:
+          required:
+          - manifestSha256
+          properties:
+            manifestSha256: *registrationSha256
+    ModelRegistrationArtifact:
+      type: object
+      additionalProperties: false
+      required:
+      - file
+      - bytes
+      - sha256
+      properties:
+        file:
+          type: string
+          minLength: 1
+          maxLength: 255
+          pattern: ^(?!/)(?!.*(?:^|/)\.{1,2}(?:/|$))(?!.*//)(?!.*[\\:])(?!\s*$).*[^/]$
+          description: 선택한 모델의 manifest 상대 파일 경로. 중복·절대 경로·상위 경로 금지.
+        bytes:
+          type: integer
+          minimum: 0
+        sha256: *registrationSha256
     ActivateModelVersion:
       type: object
       additionalProperties: false
