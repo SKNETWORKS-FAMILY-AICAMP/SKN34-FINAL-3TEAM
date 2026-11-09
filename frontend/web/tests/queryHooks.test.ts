@@ -95,7 +95,7 @@ test('학부모 처리 중 쿼리는 재조회하고 완료 응답 뒤 자동 �
   assert.equal(calls, 2)
 })
 
-test('세션 복원은 동시 요청을 합치고 명시적 fresh 요청에서만 다시 조회한다', async t => {
+test('세션 복원은 진행 중 요청만 합치고 완료된 상태를 영구 재사용하지 않는다', async t => {
   let calls = 0
   mockFetch(t, url => {
     assert.equal(url, '/api/v1/me'); calls++
@@ -106,7 +106,17 @@ test('세션 복원은 동시 요청을 합치고 명시적 fresh 요청에서�
   const result = await first
   assert.equal(result.role, 'PARENT')
   assert.equal(calls, 1)
-  await classroom.restoreSession(true)
+  await classroom.restoreSession()
+  assert.equal(calls, 2)
+})
+
+test('실패한 세션 복원은 다음 확인에서 다시 조회해 복구한다', async t => {
+  let calls = 0
+  mockFetch(t, () => ++calls === 1
+    ? Response.json({ code: 'AUTH_UNAVAILABLE' }, { status: 503 })
+    : Response.json({ role: 'PARENT', nextAction: 'READY', startPath: '/parent/journal' }))
+  await assert.rejects(classroom.restoreSession(true))
+  assert.equal((await classroom.restoreSession()).role, 'PARENT')
   assert.equal(calls, 2)
 })
 

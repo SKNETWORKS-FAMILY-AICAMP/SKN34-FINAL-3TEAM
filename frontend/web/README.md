@@ -137,7 +137,7 @@ node tests/api-mode-browser.mjs
 
 
 ### P01 정렬
-부모·관리자만 refresh로 복원한다. 학생 동석 진입은 access 전용이며 서버가 부모 refresh를 폐기한다. 등록 기기·PIN 로그인은 #104의 별도 학생 access 세션을 사용하며 보호자 세션을 유지한다. 학생 만료·새로고침 시 `/student/login`에서 PIN을 다시 입력한다. 학생 원문 작성 요청은 만료 후 부모 refresh로 자동 재시도하지 않는다. MSW도 학생 refresh를 거부한다.
+부모·관리자만 refresh로 복원한다. 학생 동석 진입은 access 전용이며 서버가 학부모 세션을 잠그고 refresh 쿠키는 보호자 복귀용으로 유지한다. 등록 기기·PIN 로그인은 #104의 별도 학생 access 세션을 사용하며 보호자 세션을 유지한다. 학생 만료·새로고침 시 `/student/login`에서 PIN을 다시 입력한다. 학생 원문 작성 요청은 만료 후 부모 refresh로 자동 재시도하지 않는다. MSW도 학생 refresh를 거부한다.
 
 
 ### 학생 공개 설정·재시도 결과 확인 (#206·#207)
@@ -156,3 +156,8 @@ node tests/api-mode-browser.mjs
 필요한 경우 `CHROME_PATH`와 `QA_OUTPUT_DIR`를 지정할 수 있습니다.
 이 스크립트는 운영 빌드를 임시 localhost 포트에서 제공하며 HTTP 응답만 대역으로 사용합니다.
 실제 core·#206 공개 설정·외부 LLM의 종단 검증 결과와 구분합니다.
+
+
+### 로그인 유지 회귀 검사
+
+`npm run build` 후 `npm run test:auth`로 운영 빌드의 쿠키 기반 복원·15분 접근 만료·연결 장애 복구·동시 탭 회전을 확인합니다. 실제 Google 인증이나 운영 계정을 사용하지 않습니다. 학부모 세션은 core 정책상 최초 로그인부터 7일이며, 15분 접근 토큰은 갱신할 수 있습니다. 학생 15분 접근 전용 정책과는 다릅니다.

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { apiFetch, setAccessToken, withAuth, refreshAccessToken, withAuthLock } from '../src/data/apiClient.ts'
+import { apiFetch, setAccessToken, withAuth, refreshAccessToken, withAuthLock, requireParentLogin, parentLoginRequired, notifyAuthChange } from '../src/data/apiClient.ts'
 import { createApiGateway } from '../src/data/classroom/apiGateway.ts'
 
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), {
@@ -83,4 +83,24 @@ test('SESSION_CHANGED does not blindly retry the previous privileged write', asy
   t.mock.method(globalThis, 'fetch', async () => { count++; return json({ code: 'SESSION_CHANGED', status: 401, title: '변경' }, 401) })
   await assert.rejects(apiFetch('/children', { method: 'POST', body: '{}' }))
   assert.equal(count, 1)
+})
+
+test('탭 저장소·탭 알림 제한이 정상 로그인 결과를 지우지 않는다', t => {
+  const descriptors = ['sessionStorage', 'window', 'BroadcastChannel'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const)
+  t.after(() => {
+    for (const [key, descriptor] of descriptors) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor)
+      else Reflect.deleteProperty(globalThis, key)
+    }
+    setAccessToken(null)
+  })
+  Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, get() { throw new Error('storage blocked') } })
+  assert.doesNotThrow(() => requireParentLogin())
+  assert.equal(parentLoginRequired(), true)
+  assert.doesNotThrow(() => setAccessToken('verified-parent', 'PARENT'))
+  assert.equal(parentLoginRequired(), false)
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: {} })
+  Object.defineProperty(globalThis, 'BroadcastChannel', { configurable: true, value: class { constructor() { throw new Error('channel blocked') } } })
+  assert.doesNotThrow(() => notifyAuthChange('PARENT'))
+  assert.equal(withAuth().get('Authorization'), 'Bearer verified-parent')
 })

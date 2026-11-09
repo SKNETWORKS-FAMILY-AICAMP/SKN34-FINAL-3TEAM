@@ -15,6 +15,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [restoreError, setRestoreError] = useState('')
   const [expired, setExpired] = useState(false)
   const [scenario, setScenario] = useState<DemoScenario>('normal')
+  const [retry, setRetry] = useState(0)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -85,7 +86,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('sagomungchi:session-changed', changed)
       window.removeEventListener('sagomungchi:consent-required', changed)
     }
-  }, [navigate])
+  }, [navigate, retry])
   return <AuthContext.Provider value={{ session, setSession, ready, loginPath, selected, setSelected, expired, setExpired, scenario, setScenario }}>
     {restoreError ? (
       <main style={{ maxWidth: 560, margin: '15vh auto', padding: '0 20px', fontFamily: 'system-ui, sans-serif', lineHeight: 1.6 }}>
@@ -102,7 +103,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         ) : (
           <p role="alert">{restoreError}</p>
         )}
-        <button onClick={() => window.location.reload()}>새로고침</button>
+        <button onClick={() => { setRestoreError(''); setReady(false); setRetry(value => value + 1) }}>로그인 상태 다시 확인</button>
       </main>
     ) : children}
   </AuthContext.Provider>
