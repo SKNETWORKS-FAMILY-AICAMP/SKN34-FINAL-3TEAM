@@ -31,7 +31,7 @@ export function PasswordRecheck({ purpose, childId, scope, label = '비밀번호
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit() } }} />
     </label>
     <button type="button" className="cj-secondary" disabled={!password || check.isPending} onClick={submit}>{check.isPending ? '확인 중' : label}</button>
-    <p role="status">{notice}</p>
+    {notice && <p role="status">{notice}</p>}
     <ErrorNotice error={check.error} />
   </div>
 }

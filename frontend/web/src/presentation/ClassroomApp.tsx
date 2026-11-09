@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router'
 import { useSession } from './auth/sessionContext.ts'
 import './student/pinpad.css'
 import { roleStart } from '../domain/navigation.ts'
@@ -44,7 +44,6 @@ import { StudentPoints } from './student/world/StudentPoints.tsx'
 import type { AttemptContext } from '../domain/retention.ts'
 import { StudentSharingPage } from './student/StudentSharingPage.tsx'
 import { StudentWorkPage } from './student/StudentWorkPage.tsx'
-import { ParentAnalysis, ParentReport } from './parent/ParentFeatures.tsx'
 import './classroom.css'
 import { QueryStateNotice } from './common/QueryStateNotice.tsx'
 import { ParentUnlock } from './auth/ParentUnlock.tsx'
@@ -69,8 +68,7 @@ export function ClassroomApp() {
   const setWork = (id: string | null) =>
     navigate(id ? `/student/attempts/${encodeURIComponent(id)}` : '/student/journal')
   const [detail, setDetail] = useState<PublicAttempt | null>(null)
-  const [period, setPeriod] = useState<Period>(recentPeriod),
-    [analysisPeriod, setAnalysisPeriod] = useState<Period>(recentPeriod)
+  const [period, setPeriod] = useState<Period>(recentPeriod)
   const [startContext, setStartContext] = useState<AttemptContext | undefined>()
   const [instructions, setInstructions] = useState<import('../domain/classroom.ts').Mission | null>(
     null,
@@ -161,10 +159,8 @@ export function ClassroomApp() {
     setDetail(null)
     setEvidenceId(null)
     setSubject('all')
-    setAnalysisPeriod(recentPeriod)
     setMessage('')
   }
-  const evidence = (id: string) => setEvidenceId(id)
   return (
     <div id="class-journal">
       {isDemo && <div className="ux-preview">
@@ -538,23 +534,8 @@ export function ClassroomApp() {
                 )}
                 {child && detail ? (
                   <RecordDetail record={detail} child={child} onClose={() => setDetail(null)} />
-                ) : child && page === 'report' && session.role === 'PARENT' ? (
-                  <ParentReport
-                    key={child.id}
-                    child={child}
-                    onEvidence={evidence}
-                    onAnalysis={(p) => {
-                      setAnalysisPeriod(p)
-                      setPage('analysis')
-                    }}
-                  />
-                ) : child && page === 'analysis' && session.role === 'PARENT' ? (
-                  <ParentAnalysis
-                    key={`${child.id}:${analysisPeriod.from}:${analysisPeriod.to}`}
-                    child={child}
-                    period={analysisPeriod}
-                    onEvidence={evidence}
-                  />
+                ) : child && session.role === 'PARENT' && (page === 'report' || page === 'analysis') ? (
+                  <Navigate to={'/parent/' + page + '?' + new URLSearchParams({ childId: child.id })} replace />
                 ) : (
                   <>
                     <div className="cj-feedbar">

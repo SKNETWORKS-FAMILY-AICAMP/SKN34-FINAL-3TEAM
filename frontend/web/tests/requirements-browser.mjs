@@ -40,13 +40,15 @@ try{
   await p.getByRole('button',{name:'설정 저장',exact:true}).click()
   await p.getByText('수신 설정을 저장했습니다.').waitFor()
   check('알림 읽음·미읽음 필터·유형별 수신 설정 저장')
-  await route('/parent/account')
-  await p.getByRole('heading',{name:'계정·자녀 관리',exact:true}).waitFor()
+  await route('/parent/settings?section=account')
+  await p.getByRole('heading',{name:'계정·자녀 설정',exact:true}).waitFor()
   // 목업 자녀 별명이 이미 '서윤'이고 화면은 바뀐 필드만 보내므로(#134) 다른 별명으로 저장 성공 경로를 확인한다(#318).
+  await p.getByRole('tab',{name:'프로필',exact:true}).click()
   const renamed='서윤이'
   await p.getByLabel('새 자녀 별명',{exact:true}).fill(renamed)
   await p.getByRole('button',{name:'자녀 정보 저장',exact:true}).click()
   await p.getByText('자녀 정보를 저장했습니다.').waitFor()
+  await p.getByRole('tab',{name:'계정 관리',exact:true}).click()
   const manage=p.locator('section').filter({has:p.getByRole('heading',{name:'자녀 연결·기록 관리',exact:true})}).last()
   await manage.getByLabel('요청할 작업').selectOption('RECORDS')
   await manage.getByRole('button',{name:'Google 본인 확인',exact:true}).click()

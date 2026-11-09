@@ -7,26 +7,23 @@ import type { Mission } from '../../domain/classroom.ts'
 
 export function ErrorNotice({ error, retry }: { error: unknown; retry?: () => void }) {
   if (!error) return null
-  const message = error instanceof Error ? error.message : '요청을 처리하지 못했습니다.'
+  const message = error instanceof Error && /[가-힣]/.test(error.message) ? error.message : '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.'
   const problem = error instanceof ApiError ? error.problem : null
   return (
     <div className="ux-error" role="alert" data-query-state="FAILED">
-      <strong>{problem?.title ?? message}</strong>
-      {problem?.detail && <p>{problem.detail}</p>}
+      <strong>{problem?.title && /[가-힣]/.test(problem.title) ? problem.title : message}</strong>
       {problem?.status === 404 && (
         <p>
-            요청한 기능 또는 기록을 찾지 못했습니다. 주소·대상 권한과 서버의 제공 범위를 확인해 주세요.
+            요청한 기능 또는 기록을 찾지 못했습니다. 화면으로 돌아가 다시 확인해 주세요.
         </p>
       )}
       {error instanceof TypeError && (
-        <p>core-service 연결 상태를 확인해 주세요. 예시 데이터로 자동 전환하지 않습니다.</p>
+        <p>연결이 원활하지 않습니다. 잠시 후 다시 시도해 주세요.</p>
       )}
-      {problem?.code && (
-        <small>
-          {problem.code}
-          {problem.traceId ? ` · 확인 번호 ${problem.traceId}` : ''}
-        </small>
-      )}
+      {(problem?.code || problem?.detail || error instanceof Error) && <details className="error-details"><summary>문제 자세히 보기</summary>
+        {problem?.detail && <p>{problem.detail}</p>}
+        <small>{problem?.code ?? (error instanceof Error ? error.message : '')}{problem?.traceId ? ` · 확인 번호 ${problem.traceId}` : ''}</small>
+      </details>}
       {problem?.missingFields?.length ? (
         <ul aria-label="게시 누락 항목">
           {problem.missingFields.map((field) => (

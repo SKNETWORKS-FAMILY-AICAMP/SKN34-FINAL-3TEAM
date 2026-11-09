@@ -30,5 +30,5 @@ export async function onboardParent(page: Page, nickname: string) {
   await agree('GUARDIAN')
   await page.getByRole('button', { name: '자녀 등록하기' }).click()
   await page.waitForURL('**/parent/journal**')
-  await expect(page.getByRole('heading', { name: `${nickname}의 학습 기록` })).toBeVisible()
+  await expect(page.getByRole('heading', { name: `${nickname}의 학습 현황` })).toBeVisible()
 }

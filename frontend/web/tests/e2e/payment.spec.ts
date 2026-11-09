@@ -18,5 +18,7 @@ test('유료 이용권 주문 → 결제 승인(toss-stub) → 이용권 적용'
     paymentKey: `e2e-pk-${order.orderId}`, orderId: order.orderId, amount: String(order.amount),
   }))
   await expect(page.getByRole('heading', { name: '결제가 완료되었습니다' })).toBeVisible()
-  await expect(page.getByText(order.orderId)).toBeVisible()
+  await expect(page.getByText('주문번호 ' + order.orderId)).not.toBeVisible()
+  await page.getByText('거래 자세히 보기', { exact: true }).click()
+  await expect(page.getByText('주문번호 ' + order.orderId)).toBeVisible()
 })

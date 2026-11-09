@@ -22,7 +22,7 @@ test('비공개 자녀의 수치·리포트·설정·결제는 이용 가능하�
   const originals: string[] = [], writes: string[] = []
   page.on('request', request => {
     const path = new URL(request.url()).pathname
-    if (/\/children\/[^/]+\/records$|\/conversations$/.test(path)) originals.push(path)
+    if (/\/children\/[^/]+\/(?:attempts|records)(?:\/|$)|\/conversations(?:\/|$)|\/reports\/[^/]+\/(?:evidence|downloads?)(?:\/|$)/.test(path)) originals.push(path)
     if (request.method() === 'POST') writes.push(path)
   })
   await parentLogin(page)

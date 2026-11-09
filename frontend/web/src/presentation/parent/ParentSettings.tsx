@@ -1,4 +1,4 @@
-import { useSearchParams } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import type { Child } from '../../domain/classroom.ts'
 import { ProfileSettings } from './AccountForms.tsx'
 import { ConsentSettings } from './ConsentSettings.tsx'
@@ -28,7 +28,7 @@ export function ParentSettings({ child }: { child?: Child }) {
     <div role="tabpanel" id={`settings-panel-${tab}`} aria-labelledby={`settings-${tab}`} className="parent-settings-panel">
       {tab === 'profile' ? <ProfileSettings child={child} />
         : tab === 'sharing' ? <ConsentSettings child={child} />
-        : <><p>연결 해제와 삭제·탈퇴는 다른 작업입니다. 대상과 영향을 확인한 뒤 본인 확인을 진행합니다.</p>{child && <AccountLifecycle key={child.id} child={child} />}<Withdrawal /></>}
+        : <><p>연결 해제와 삭제·탈퇴는 다른 작업입니다. 대상과 영향을 확인한 뒤 본인 확인을 진행합니다.</p><Link to="/parent/transfers">자녀 이관 · 받은 요청 확인</Link>{child && <AccountLifecycle key={child.id} child={child} />}<Withdrawal /></>}
     </div>
   </section>
 }

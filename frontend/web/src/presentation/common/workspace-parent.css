@@ -443,5 +443,9 @@
 
 #class-journal .ws-parent .pc-layout { margin-top: 0; }
 #class-journal .ws-parent .parent-page-head p { margin: 8px 0 0; }
+#class-journal .ws-parent .parent-settings-panel .svc-page { width: 100%; max-width: none; margin: 0; }
+#class-journal .ws-parent .ux-error { font-size: 15px; line-height: 1.6; }
+#class-journal .ws-parent .error-details { overflow-wrap: anywhere; }
+#class-journal .ws-parent .error-details > summary { cursor: pointer; min-height: 44px; padding: 10px 0; }
 #class-journal .ws-parent .parent-report-filters { display: flex; gap: 16px 24px; flex-wrap: wrap; }
 #class-journal .ws-parent .parent-report-filters label { display: flex; align-items: center; gap: 10px; font-size: 14px; }

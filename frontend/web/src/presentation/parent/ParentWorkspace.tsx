@@ -24,12 +24,13 @@ import { ParentSharingNotice } from './ParentSharingNotice.tsx'
 
 export function ParentWorkspace() {
   const [params, setParams] = useSearchParams(), location = useLocation(), navigate = useNavigate()
-  const { setSession, setSelected } = useSession(), auth = useAuthentication()
-  const children = useParentQuery(['children'], signal => parentApi.children(signal))
+  const { session, setSession, setSelected } = useSession(), auth = useAuthentication()
+  const consentReady = session?.nextAction !== 'CONSENT_REQUIRED'
+  const children = useParentQuery(['children'], signal => parentApi.children(signal), consentReady)
   const [registration, setRegistration] = useState(false)
   const childId = params.get('childId') ?? ''
   const scope: Scope = { childId, from: params.get('from') ?? displayPeriods.recentPeriod.from, to: params.get('to') ?? displayPeriods.recentPeriod.to }
-  const child = children.data?.items.find(c => c.id === childId)
+  const child = consentReady ? children.data?.items.find(c => c.id === childId) : undefined
   const page = location.pathname.split('/')[2] ?? 'journal'
   const hasPeriod = page === 'journal' || page === 'analysis'
   const sharing = useParentQuery(['sharing-preferences', childId], signal => sharingApi.get(childId, 'PARENT', signal), !!child && hasPeriod)
@@ -40,7 +41,7 @@ export function ParentWorkspace() {
     setParams(next); setSelected(c.id); localStorage.setItem('sagomungchi:last-child', c.id)
   }
   useEffect(() => {
-    if (!children.data || params.get('childId')) return
+    if (!consentReady || !children.data || params.get('childId')) return
     const last = localStorage.getItem('sagomungchi:last-child')
     const c = children.data.items.find(c => c.id === last) ?? children.data.items[0]
     if (c) {
@@ -48,7 +49,7 @@ export function ParentWorkspace() {
       next.set('childId', c.id); next.set('from', scope.from); next.set('to', scope.to)
       setParams(next, { replace: true })
     }
-  }, [children.data, params, setParams, scope.from, scope.to])
+  }, [consentReady, children.data, params, setParams, scope.from, scope.to])
   const nav = [
     { path: '/parent/journal', label: '학습 현황' }, { path: '/parent/report', label: '리포트' },
     { path: '/parent/analysis', label: 'AI 챗봇' }, { path: '/parent/settings', label: '계정·자녀 설정' },
@@ -56,15 +57,15 @@ export function ParentWorkspace() {
   ]
   return <Workspace title="학부모 공간" nav={nav} variant="parent"
     aside={child && <div className="ws-plan"><span>현재 이용권</span><strong>{child.nickname}</strong><EntitlementSummary childId={child.id} /></div>}
-    actions={<>
+    actions={consentReady ? <>
       <label>자녀 선택<select aria-label="자녀 선택" value={childId} onChange={e => { const c = children.data?.items.find(c => c.id === e.target.value); if (c) select(c) }}>
         {!child && <option value={childId}>{childId ? '연결 여부 확인 필요' : '자녀를 선택해 주세요'}</option>}
         {children.data?.items.map(c => <option value={c.id} key={c.id}>{c.nickname} · {gradeLabel(c.grade)}</option>)}
       </select></label>
       <button className="cj-secondary" onClick={() => setRegistration(true)}>자녀 등록</button>
       {child && <button className="cj-primary" disabled={auth.enter.isPending || child.guardianConsentRequired} onClick={() => void auth.enter.mutateAsync(child).then(s => { setSession(s); navigate('/student/home') }).catch(() => {})}>이 자녀로 학습 시작</button>}
-    </>}>
-    <QueryFeedback query={children} /><ErrorNotice error={auth.enter.error} />
+    </> : undefined}>
+    {consentReady && <QueryFeedback query={children} />}<ErrorNotice error={auth.enter.error} />
     {child?.guardianConsentRequired && <p role="alert">자녀 이용을 위해 법정대리인 동의가 필요합니다. 계정·자녀 설정의 공개·동의에서 확인해 주세요.</p>}
     {hasPeriod && child && <details className="parent-scope"><summary>조회 기간 · {scope.from} ~ {scope.to}</summary><PeriodFilter key={`${scope.from}:${scope.to}`} period={scope} onApply={({ from, to }) => {
       const next = new URLSearchParams(params); next.set('from', from); next.set('to', to); setParams(next)
@@ -76,7 +77,7 @@ export function ParentWorkspace() {
       : children.data && !children.error && !children.data.items.length ? <section className="ws-card"><h1>자녀를 등록하고 시작하세요</h1><p>등록한 자녀의 학습 현황과 리포트를 확인할 수 있습니다.</p><ChildRegistration onCreated={select} /></section>
       : childId && !child && children.data && !children.error ? <section className="ws-card"><h1>자녀 연결 확인</h1><p role="alert">연결되지 않은 자녀의 기록은 표시하지 않습니다.</p></section>
       : child && (!hasPeriod || validPeriod(scope)) && !children.error ? <div className="parent-content" key={`${child.id}:${hasPeriod ? scope.from + ':' + scope.to : page}`}>
-        {hasPeriod && <ParentSharingNotice studentId={child.id} />}
+        {page === 'journal' && <ParentSharingNotice studentId={child.id} />}
         {page === 'analysis' ? <ParentConversation child={child} scope={scope} canReadOriginals={canReadOriginals} onScope={s => { const c = children.data?.items.find(c => c.id === s.childId); if (c) select(c, s) }} />
           : page === 'report' ? <ParentReports child={child} onAnalysis={p => navigate(`/parent/analysis?${new URLSearchParams({ childId: child.id, ...p })}`)} />
           : <><ParentDashboard child={child} scope={scope} canReadOriginals={canReadOriginals} sharingPending={sharing.isPending} /><ChildParticipation child={child} canReadOriginals={canReadOriginals} /></>}
