@@ -117,6 +117,30 @@ class WeeklyThemeProxyIntegrationTest : PostgresRepositoryTest() {
         assertTrue(stub.requests.last().target.contains("gradeBand=G5_6"))
     }
 
+    @Test fun `theme story fields pass through and story views send only the kind with the core band and date`() {
+        // #439: learning(#438) 새 필드는 core가 바꾸지 않는다. 이미지 URL도 미션 장면처럼 learning 값 그대로
+        val theme = "{\"themeId\":\"${UUID.randomUUID()}\",\"intro\":\"시작\",\"outro\":null,\"introImageUrl\":\"https://cdn.example.test/t/intro.png\"," +
+            "\"outroImageUrl\":null,\"introSeen\":false,\"outroSeen\":false,\"days\":[]}"
+        stub.respond = { if (it.method == "GET") LearningHttpStub.Reply(body = theme) else LearningHttpStub.Reply(body = "{\"kind\":\"INTRO\",\"firstViewThisWeek\":true}") }
+        call("GET", "/api/v1/students/me/weekly-theme").andExpect(status().isOk()).andExpect(content().string(theme))
+        call("POST", "/api/v1/students/me/weekly-theme/story-views", "{\"kind\":\"INTRO\"}").andExpect(status().isOk())
+            .andExpect(header().string("Cache-Control", "no-store")).andExpect(jsonPath("$.firstViewThisWeek").value(true))
+        val view = stub.requests.last()
+        assertEquals("POST" to "/internal/students/$child/weekly-theme/story-views?gradeBand=G5_6&date=2026-11-09", view.method to view.target)
+        assertEquals("{\"kind\":\"INTRO\"}", view.body)
+        assertEquals(child.toString(), view.header("X-Student-Scope")); assertEquals("STUDENT", view.header("X-User-Role"))
+
+        // 요일 검사는 learning 몫이라 월요일 OUTRO 거부도 그대로 전달한다
+        stub.respond = { LearningHttpStub.Reply(409, "{\"status\":409,\"code\":\"THEME_STORY_NOT_ALLOWED\"}", mapOf("Content-Type" to "application/problem+json")) }
+        call("POST", "/api/v1/students/me/weekly-theme/story-views", "{\"kind\":\"OUTRO\"}").andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("THEME_STORY_NOT_ALLOWED"))
+
+        stub.requests.clear()
+        listOf("{}", "{\"kind\":\"REVIEW\"}", "{\"kind\":\"intro\"}", "{\"kind\":null}", "{\"kind\":\"INTRO\",\"date\":\"2026-11-14\"}", "[\"INTRO\"]")
+            .forEach { call("POST", "/api/v1/students/me/weekly-theme/story-views", it).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_FAILED")) }
+        assertTrue(stub.requests.isEmpty())
+    }
+
     @Test fun `free child starts one theme day mission then gets 429 while resume and review keep working`() {
         val today = UUID.randomUUID(); val other = UUID.randomUUID(); val attempt = UUID.randomUUID()
         stub.respond = { LearningHttpStub.Reply(201, "{\"attemptId\":\"$attempt\",\"status\":\"IN_PROGRESS\",\"mission\":{\"id\":\"$today\"}}") }

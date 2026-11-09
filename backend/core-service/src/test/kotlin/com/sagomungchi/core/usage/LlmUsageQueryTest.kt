@@ -68,7 +68,7 @@ class LlmUsageQueryTest : PostgresRepositoryTest() {
 
     @Test fun `every existing call type can be queried and empty ranges stay empty`() {
         CallType.entries.forEach { usage.record(event("2026-11-12T01:00:00Z", it.name)) }
-        assertEquals(7, usage.summarize(day, day, null).size)
+        assertEquals(CallType.entries.size, usage.summarize(day, day, null).size)
         assertTrue(usage.summarize(day.plusDays(1), day.plusDays(2), null).isEmpty())
         CallType.entries.forEach { assertEquals(it.name, usage.summarize(day, day, it).single().callType) }
     }

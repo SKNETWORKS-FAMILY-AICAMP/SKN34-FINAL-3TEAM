@@ -162,3 +162,45 @@ node tests/qr-device-browser.mjs
 PR #409 화면 구현을 core 등록 계약과 연결했다. 원본 registration·manifest 바이트의 SHA-256, 원본 항목 대비 수정 필드, 해당 모델의 산출물 파일 목록을 registration 메타데이터로 전달한다. 자동으로 채운 limitations도 원본과 다르면 변경 항목이다. 수동 등록에는 가져오기 메타데이터를 붙이지 않는다. limitations의 빈 줄·길이·개수와 manifest 상대 파일 경로를 서버 계약에 맞춰 검증한다.
 
 위의 “감사 입력 필드 미연결” 기록은 PR #409 단독 상태다. 후속 통합 결과와 실제 core/DB 검증 절차는 [#367 등록 API 문서](ai.md#11-모델-등록-api-367)를 기준으로 한다.
+
+## 11. #356 관리자 성취기준 고르기·성취수준 단계·미션 초안 화면 (2026-11-09)
+
+#336 설계(기획서 6.2: 성취기준·성취수준 선택 → LLM 초안 → 자동 검사 → 검수 → 공개)의 web 몫과 #262 web 인계(요소 종류·code 고르기, 저장 전 code 검사). learning #353·ai #354·core #355의 공개 계약(api-spec 2.8)만 사용함.
+
+| 화면 | 내용 |
+|---|---|
+| 미션 편집 `MissionManager` | 성취기준 줄바꿈 입력 → 표 조회·고르기(교과·학년군·검색어·쪽), 고른 성취기준마다 성취수준 단계(`levelScale` 3이면 A~C, 5이면 A~E, 고르지 않음 허용). 요소마다 종류(유형 공통·성취기준 고유·정답) → code → 연결 성취기준. 생성 방식(사람 작성·LLM 초안 채택) 표시. 검토 버튼 위에 학년·내용·행동(성취기준 동사) 확인 안내와 성취기준 문장·학년군·단계 목록 |
+| 미션 초안 `MissionDraftManager` (메뉴 콘텐츠 › 미션 초안, CONTENT) | 요청(성취기준·단계·생각 유형·학년·입력 방식, 202) → 목록(상태·시도 `attempts/maxAttempts`) → 상세(입력, 회차별 검사 실패 사유, 실패 코드, 생성 버전, 마지막 초안) → 채택(`/admin/missions?missionId=`로 이동)·버리기 |
+
+### 결정
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 저장·요청 전 검사 | web이 learning 400 규칙을 먼저 검사: 요소 code 모양·중복·연결 성취기준 공백(기준표 저장), 학년군·논술 학년·단계 범위·표에 없는 코드(초안 요청) | core가 learning 400의 detail을 지우고 제목만 전달(`AdminLearningService.sanitize`)해 서버 오류만으로는 무엇이 틀렸는지 알 수 없음 |
+| 게시 전 확인 | `missingMissionFields`를 learning `PublishSnapshot.missingFields`와 같은 코드·순서로 확장(`achievementLevels`·`rubric.elements.code`·`rubric.elements.standardCode`, 한글 이름 추가). 표·학년군·단계 수는 미션 성취기준 코드를 표에서 찾은 뒤에만 확인 | 표 조회 전·실패 때 틀린 누락을 띄우지 않음. 최종 판단은 서버 422 |
+| 저장된 코드의 표 행 | 코드마다 `GET /admin/achievement-standards?q=<코드>`로 찾아 같은 코드만 사용 | 코드 목록 조회 API가 없고 미션당 성취기준은 1~3개 |
+| 표준 요소 14개 | `domain/admin/missionStandards.ts`에 learning `Standards.kt`와 같은 표를 둠 | 표준 요소를 주는 API 없음. 바뀌면 두 곳을 함께 고쳐야 함 |
+| 새 요소 기본 code | 고르기·순서·분류는 `ANSWER_KEY`, 그 밖에는 아직 안 쓴 유형 공통 요소, 다 쓰면 다음 `e`+숫자 | 이전 `crypto.randomUUID()`는 #262 저장 검사에서 항상 400 |
+| 모양이 틀린 옛 code | 종류를 "확인 필요"로 보이고 저장 전 검사에서 막음(자동으로 바꾸지 않음) | 요소 의미는 관리자가 정함 |
+| 열린 미션 | 로컬 state → URL `missionId` | 초안 채택 뒤 바로 편집 화면을 열고, 새로고침해도 유지 |
+| 초안 상태 확인 | 생성 중 초안이 있으면 목록·상세를 5초마다 다시 조회(`useAdminQuery`에 선택 인자 `poll` 추가) | 생성 1회 15~70초, 주기 작업 10초(state-diagram 3.4) |
+| 성취수준 저장 | `missionWritePayload`에 `achievementLevels` 추가, 고른 성취기준의 단계만 보냄 | 빠져 있어 미션을 고칠 때마다 저장된 단계가 지워졌음 |
+
+### API 변경
+
+경로·스키마 변경 없음. 기존 계약(api-spec 2.8·4.1, `contracts/openapi/learning-service.yaml`)의 성취기준 표·초안 경로를 web에서 처음 호출함. 미션 저장 본문에 계약에 있던 `achievementLevels`를 보내기 시작함(지워짐 수정). 사용량 호출 종류 이름에 `MISSION_DRAFT` 추가(learning.md 23절 인계).
+
+### 목업
+
+- 성취기준 표 일부 12행(learning `db/seed/achievement_standards.sql`에서 옮김), 초안 3건(`READY`·`CHECK_FAILED`·`FAILED`)
+- 초안 요청은 202 `GENERATING`, 두 번째 조회부터 1회 시도로 `READY`(실제는 주기 작업). 채택은 learning `DraftRules`대로 교과·입력 틀·배점 1·`source: LLM_DRAFT`
+- 기준표 저장은 learning처럼 code 모양·중복·`standardCode` 공백을 400, 미션 저장은 단계 모양을 400, 게시는 목업 표로 검사. 새 400은 core가 다시 쓴 제목만 줌
+- 시연 미션 `content-1`의 성취기준을 표에 있는 `4과03-01`(단계 B)로, 요소에 연결 성취기준을 넣음
+
+### 검증
+
+- web `lint`·`test`(262건)·`test:types`·`build` 통과, 브라우저 `test:browser` 37건 통과(새 `tests/browser/admin-missions.spec.ts` 2건 × laptop·tablet, develop 2026-11-09 리베이스 뒤)
+- 새 단위 테스트: `tests/missionStandards.test.ts`(code 모양·적합, 학년군·단계, 초안 요청 검사, 게시 전 확인, 저장 본문), `tests/adminMockLifecycle.test.ts`(표 조회·초안 요청→READY→채택·버리기 409, 기준표 PUT 400, 대괄호 코드 게시 422)
+- 바뀐 테스트: `tests/learningAlignment.test.ts`의 자유 code `STEPS`를 `e2`로, 고르기는 `ANSWER_KEY`만(#262 규칙)
+- 수동 스크립트 `tests/parent-admin-browser.mjs`·`tests/learning-alignment-browser.mjs`의 성취기준·요소 code 입력을 새 화면에 맞춤. 두 스크립트는 이번 변경 전 단계(학생 `내 생각과 까닭`, 학부모 `이 자녀로 학습 시작`)에서 멈춰 고친 부분까지 실행하지 못함(CI 대상 아님)
+- 실제 core·learning·ai 연동 확인은 하지 않음(이 문서 9·10절과 같이 로컬 Docker·JDK 실행 제약). 완료 조건의 "실제 관리자 흐름 확인"은 #451로 넘김

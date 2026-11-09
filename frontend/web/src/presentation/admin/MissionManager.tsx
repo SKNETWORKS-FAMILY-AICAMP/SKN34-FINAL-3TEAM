@@ -1,14 +1,20 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router'
 import type { AdminMission, MissionVersion, Rubric } from '../../domain/admin/operations.ts'
-import { missingFieldLabel, missingMissionFields } from '../../domain/admin/operations.ts'
+import { missingFieldLabel, missingMissionFields, rubricSaveErrors } from '../../domain/admin/operations.ts'
+import type { ElementKind } from '../../domain/admin/missionStandards.ts'
+import {
+  answerCodeFor, answerKeyInputs, commonElementsOf, defaultCode, elementCodeLabel, elementKind, elementKindLabels,
+  isAnswerCode, kindsFor, nextUniqueCode, standardElements,
+} from '../../domain/admin/missionStandards.ts'
+import { StandardPicker } from './StandardPicker.tsx'
 import { AnswerKeyFields } from './AnswerKeyFields.tsx'
 import { ApiError } from '../../data/apiClient.ts'
 import { missionLabels } from '../../domain/admin/operations.ts'
 import { inputLabels, thinkingLabels, blankAnswer } from '../../domain/classroom.ts'
 import type { AnswerContent } from '../../domain/classroom.ts'
 import { adminApi } from '../../data/admin/api.ts'
-import { useAdminQuery, useAdminMutation } from '../../data/admin/queries.ts'
+import { useAdminQuery, useAdminMutation, useStandardsByCodes } from '../../data/admin/queries.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { MissionScene } from '../student/MissionScene.tsx'
@@ -22,8 +28,15 @@ export function MissionManager() {
       page: params.get('page') ?? '0',
     },
     q = useAdminQuery(['missions', filters], (signal) => adminApi.missions(filters, signal)),
-    [id, setId] = useState<string | null>(null),
+    // 열린 미션은 URL에 둠: 초안 채택 뒤 /admin/missions?missionId=… 로 바로 편집 화면을 엶 (#356)
+    id = params.get('missionId'),
     [creating, setCreating] = useState(false)
+  function setId(missionId: string | null) {
+    const next = new URLSearchParams(params)
+    if (missionId) next.set('missionId', missionId)
+    else next.delete('missionId')
+    setParams(next)
+  }
   function filter(key: string, value: string) {
     const next = new URLSearchParams(params)
     next.set(key, value)
@@ -138,6 +151,7 @@ const defaults: Omit<MissionVersion, 'version' | 'createdAt'> = {
   sceneUri: '',
   staticSceneUri: '',
   achievementStandards: [],
+  achievementLevels: null,
 }
 function MissionForm({
   mission,
@@ -156,7 +170,8 @@ function MissionForm({
     ),
     save = useAdminMutation(() =>
       adminApi.save(
-        { ...form, demoOnly, choices: parseOptions(choices), categories: parseOptions(categories) },
+        { ...form, demoOnly, choices: parseOptions(choices), categories: parseOptions(categories),
+          achievementLevels: levelsOf(form.achievementStandards, form.achievementLevels) },
         mission?.missionId,
       ),
     )
@@ -271,14 +286,14 @@ function MissionForm({
         <textarea aria-label="입력 틀" value={(form.inputTemplate ?? []).join('\n')}
           onChange={(e) => value('inputTemplate', e.target.value.split('\n'))} />
       </label>}
-      <label>
-        성취기준 (줄별 입력)
-        <textarea
-          aria-label="성취기준"
-          value={form.achievementStandards.join('\n')}
-          onChange={(e) => value('achievementStandards', e.target.value.split('\n'))}
-        />
-      </label>
+      <StandardPicker
+        codes={form.achievementStandards}
+        levels={form.achievementLevels ?? {}}
+        gradeMin={form.gradeMin}
+        gradeMax={form.gradeMax}
+        subject={form.subject}
+        onChange={(achievementStandards, achievementLevels) => setForm({ ...form, achievementStandards, achievementLevels })}
+      />
       <label>
         애니메이션 장면 URI
         <input
@@ -329,6 +344,11 @@ function MissionForm({
     </form>
   )
 }
+/** 고른 성취기준의 단계만 보냄(빠진 성취기준 단계는 버림), 없으면 null */
+function levelsOf(codes: string[], levels: Record<string, string> | null | undefined) {
+  const kept = Object.entries(levels ?? {}).filter(([code]) => codes.includes(code))
+  return kept.length ? Object.fromEntries(kept) : null
+}
 function parseOptions(text: string) {
   return text
     .split('\n')
@@ -346,7 +366,10 @@ function MissionDetail({ id, onClose }: { id: string; onClose: () => void }) {
       adminApi.action(id, v.action, v.data),
     )
   const m = q.error ? undefined : q.data
-  const missing = m ? missingMissionFields(m) : []
+  const current = m?.versions.find((v) => v.version === m.currentVersion)
+  const standards = useStandardsByCodes(current?.achievementStandards ?? [])
+  // 표 조회가 끝나야 표·학년군·단계 수까지 확인. 실패하면 서버 게시 검사(422)에 맡김
+  const missing = m ? missingMissionFields(m, standards.error || standards.isFetching ? undefined : standards.data ?? {}) : []
   function run(a: string, data: unknown = {}) {
     void action
       .mutateAsync({ action: a, data })
@@ -365,7 +388,7 @@ function MissionDetail({ id, onClose }: { id: string; onClose: () => void }) {
       {m && (
         <>
           <p>
-            {missionLabels[m.status]} · 편집본 v{m.currentVersion} · 기준표 v
+            {m.source === 'LLM_DRAFT' ? 'LLM 초안 채택' : '사람 작성'} · {missionLabels[m.status]} · 편집본 v{m.currentVersion} · 기준표 v
             {m.currentRubricVersion ?? '미등록'} · 학생 공개본 {m.publishedVersion ? `v${m.publishedVersion} / 기준표 v${m.publishedRubricVersion ?? '미등록'}` : '없음'}
           </p>
           {m.status === 'PUBLISHED' && <p role="note">
@@ -400,6 +423,24 @@ function MissionDetail({ id, onClose }: { id: string; onClose: () => void }) {
               <RubricForm key={`v${m.currentVersion}-r${m.currentRubricVersion}`} mission={m} onSaved={() => setNotice('새 기준표 버전을 저장했습니다.')} />
             </section>
           </div>
+          <section role="note" aria-label="검토 안내">
+            <h3>검토 때 확인할 것</h3>
+            <p>
+              학년(미션 학년과 성취기준 학년군)·내용·행동(성취기준 문장의 동사)이 미션 질문과 맞는지 확인하세요.
+              초안 자동 검사 통과만으로 공개하지 않습니다.
+            </p>
+            <ul>
+              {current?.achievementStandards.map((code) => {
+                const s = standards.data?.[code]
+                return (
+                  <li key={code}>
+                    {code} · {s ? `${s.gradeBand} · ${s.statement}` : '성취기준 표에서 확인하지 못함'} · 성취수준{' '}
+                    {current.achievementLevels?.[code] ?? '고르지 않음'}
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
           <div className="ws-actions">
             <button className="cj-secondary" onClick={() => setPreview(true)}>
               학생 화면 미리보기
@@ -426,7 +467,7 @@ function MissionDetail({ id, onClose }: { id: string; onClose: () => void }) {
                       missionVersion: m.currentVersion,
                       rubricVersion: m.currentRubricVersion,
                       result: 'APPROVED',
-                      comment: '학년 적합성·기준표·정답 공개 조건 확인',
+                      comment: '학년·내용·행동(성취기준 동사)·기준표·정답 공개 조건 확인',
                     })
                   }
                 >
@@ -502,13 +543,28 @@ function RubricForm({ mission, onSaved }: { mission: AdminMission; onSaved: () =
         essayType: null,
       },
     ),
-    save = useAdminMutation(() => adminApi.rubric(mission.missionId, { ...r, answerKey: ['NARRATIVE', 'ESSAY'].includes(mission.versions.find((v) => v.version === mission.currentVersion)!.inputType) ? null : r.answerKey }))
+    save = useAdminMutation(() => adminApi.rubric(mission.missionId, { ...r, answerKey: ['NARRATIVE', 'ESSAY'].includes(mission.versions.find((v) => v.version === mission.currentVersion)!.inputType) ? null : r.answerKey })),
+    [errors, setErrors] = useState<string[]>([])
   const version = mission.versions.find((v) => v.version === mission.currentVersion)!
+  const codes = r.elements.map((e) => e.code)
+  /** 요소 종류·code를 고르면 정답 요소는 연결 성취기준을 비우고, 이름·설명이 비어 있으면 표준 요소 문구로 채움 */
+  function pickCode(i: number, code: string) {
+    const e = r.elements[i], std = standardElements.find((s) => s.code === code)
+    const patch = {
+      code,
+      ...(isAnswerCode(code) ? { standardCode: null, label: e.label || elementCodeLabel(code) } : {}),
+      ...(std ? { label: e.label || std.label, description: e.description || std.description } : {}),
+    }
+    setR({ ...r, elements: r.elements.map((v, j) => (i === j ? { ...v, ...patch } : v)) })
+  }
   return (
     <form
       className="ws-form"
       onSubmit={(e) => {
         e.preventDefault()
+        const found = rubricSaveErrors(r.elements)
+        setErrors(found)
+        if (found.length) return
         void save
           .mutateAsync(undefined)
           .then(onSaved)
@@ -517,11 +573,15 @@ function RubricForm({ mission, onSaved }: { mission: AdminMission; onSaved: () =
     >
       {r.elements.map((element, i) => (
         <section className="ws-card ws-form" key={i}>
-          <label>
-            요소 {i + 1} 코드
-            <input aria-label={`요소 ${i + 1} 코드`} value={element.code}
-              onChange={(e) => setR({ ...r, elements: r.elements.map((v, j) => i === j ? { ...v, code: e.target.value } : v) })} />
-          </label>
+          <ElementCodeFields
+            index={i}
+            code={element.code}
+            standardCode={element.standardCode ?? null}
+            others={codes.filter((_, j) => j !== i)}
+            version={version}
+            onCode={(code) => pickCode(i, code)}
+            onStandard={(standardCode) => setR({ ...r, elements: r.elements.map((v, j) => (i === j ? { ...v, standardCode } : v)) })}
+          />
           <label>
             요소 {i + 1} 이름
             <input
@@ -619,24 +679,16 @@ function RubricForm({ mission, onSaved }: { mission: AdminMission; onSaved: () =
         onClick={() =>
           setR({
             ...r,
-            elements: [
-              ...r.elements,
-              {
-                code: crypto.randomUUID(),
-                label: '',
-                description: '',
-                points: 1,
-                commonErrors: [],
-                goodThought: true,
-                judgeVerified: false,
-              },
-            ],
+            elements: [...r.elements, newElement(version, codes)],
           })
         }
       >
         기준표 요소 추가
       </button>
-      <p>모든 입력 방식에 기준표 요소가 필요합니다. 풀이 단계는 FINAL_ANSWER 외 풀이 요소를 포함하며, FINAL_ANSWER 코드는 풀이 단계에서만 사용합니다.</p>
+      <p>
+        모든 입력 방식에 기준표 요소가 필요합니다. 고르기·순서·분류는 정답 요소(ANSWER_KEY) 하나만, 풀이 단계는 최종 답(FINAL_ANSWER) 외 풀이 요소를
+        포함합니다. 따져 보기 논술은 주장·근거·다른 관점 세 요소를 모두 둡니다.
+      </p>
       <AnswerKeyFields version={version} value={r.answerKey} onChange={(answerKey) => setR({ ...r, answerKey })} />
       <label>
         예시 답
@@ -668,11 +720,86 @@ function RubricForm({ mission, onSaved }: { mission: AdminMission; onSaved: () =
       <p>
         교차 확인 입력 · 핵심어 {r.keywords?.length ?? 0}개 · 글 종류 {r.essayType ?? '없음'} (저장해도 유지됩니다)
       </p>
+      {errors.length > 0 && (
+        <ul role="alert" aria-label="기준표 저장 전 확인">
+          {errors.map((e) => <li key={e}>{e}</li>)}
+        </ul>
+      )}
       <button className="cj-primary" disabled={save.isPending}>
         새 기준표 버전 저장
       </button>
       <ErrorNotice error={save.error} />
     </form>
+  )
+}
+/** 새 요소: 고르기·순서·분류는 정답 요소, 그 밖에는 아직 안 쓴 유형 공통 요소, 다 쓰면 성취기준 고유 요소 */
+function newElement(version: MissionVersion, codes: string[]): Rubric['elements'][number] {
+  const common = answerKeyInputs.includes(version.inputType) ? undefined : commonElementsOf(version.thinkingType).find((e) => !codes.includes(e.code))
+  const code = answerKeyInputs.includes(version.inputType) ? answerCodeFor(version.inputType)! : common?.code ?? nextUniqueCode(codes)
+  return {
+    code, label: common?.label ?? (isAnswerCode(code) ? elementCodeLabel(code) : ''), description: common?.description ?? '',
+    points: 1, commonErrors: [], goodThought: true, judgeVerified: false, standardCode: null,
+  }
+}
+/** 요소 종류 → code → 연결 성취기준 (FN 1.5 표준 요소, #262·#356) */
+function ElementCodeFields({ index, code, standardCode, others, version, onCode, onStandard }: {
+  index: number
+  code: string
+  standardCode: string | null
+  others: string[]
+  version: MissionVersion
+  onCode: (code: string) => void
+  onStandard: (code: string | null) => void
+}) {
+  const kind = elementKind(code), n = index + 1
+  const common = commonElementsOf(version.thinkingType)
+  const answer = answerCodeFor(version.inputType)
+  return (
+    <>
+      <label>
+        요소 {n} 종류
+        <select aria-label={`요소 ${n} 종류`} value={kind ?? ''}
+          onChange={(e) => onCode(defaultCode(e.target.value as ElementKind, version.thinkingType, version.inputType, others))}>
+          {!kind && <option value="">확인 필요 (옛 code: {code || '없음'})</option>}
+          {kind && !kindsFor(version.inputType).includes(kind) && <option value={kind}>{elementKindLabels[kind]} (이 입력 방식에 맞지 않음)</option>}
+          {kindsFor(version.inputType).map((k) => <option key={k} value={k}>{elementKindLabels[k]}</option>)}
+        </select>
+      </label>
+      {kind === 'COMMON' ? (
+        <label>
+          요소 {n} 코드
+          <select aria-label={`요소 ${n} 코드`} value={code} onChange={(e) => onCode(e.target.value)}>
+            {!common.some((e) => e.code === code) && <option value={code}>{code} (다른 생각 유형)</option>}
+            {common.map((e) => (
+              <option key={e.code} value={e.code} disabled={others.includes(e.code)}>{e.code} · {e.label}</option>
+            ))}
+          </select>
+          <small>{standardElements.find((e) => e.code === code)?.description}</small>
+        </label>
+      ) : kind === 'ANSWER' ? (
+        <label>
+          요소 {n} 코드
+          <select aria-label={`요소 ${n} 코드`} value={code} onChange={(e) => onCode(e.target.value)}>
+            {code !== answer && <option value={code}>{code} (이 입력 방식에 맞지 않음)</option>}
+            {answer && <option value={answer}>{answer} · {elementCodeLabel(answer)}</option>}
+          </select>
+        </label>
+      ) : (
+        <label>
+          요소 {n} 코드 {kind === 'UNIQUE' ? '(e+숫자, 예: e1)' : ''}
+          <input aria-label={`요소 ${n} 코드`} value={code} onChange={(e) => onCode(e.target.value.trim())} />
+        </label>
+      )}
+      <label>
+        요소 {n} 연결 성취기준
+        <select aria-label={`요소 ${n} 연결 성취기준`} value={standardCode ?? ''} disabled={kind === 'ANSWER'}
+          onChange={(e) => onStandard(e.target.value || null)}>
+          <option value="">{kind === 'ANSWER' ? '정답 요소는 비움' : '연결 안 함'}</option>
+          {standardCode && !version.achievementStandards.includes(standardCode) && <option value={standardCode}>{standardCode} (미션 성취기준 아님)</option>}
+          {version.achievementStandards.filter((c) => c.trim()).map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </label>
+    </>
   )
 }
 function MissionPreview({ id }: { id: string }) {

@@ -1,4 +1,6 @@
 import type { Mission, Period, ThinkingType, InputType, PublicAttempt } from '../classroom.ts'
+import type { AchievementStandard } from './missionStandards.ts'
+import { allowsLevel, covers, elementCodesFit, isAnswerCode, isLevelShape, isValidElementCode } from './missionStandards.ts'
 export type Permission = 'CONTENT' | 'PAYMENT_VIEW' | 'PAYMENT_REFUND' | 'SERVICE_OPS'
 export type JobStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED'
 export type JobType = 'CONVERSATION' | 'REPORT' | 'NOTIFICATION'
@@ -84,6 +86,8 @@ export interface MissionVersion {
   sceneUri: string | null
   staticSceneUri: string | null
   achievementStandards: string[]
+  /** 성취기준별 성취수준 단계 {코드: A~E} (#353). 고르지 않으면 null 또는 빠짐 */
+  achievementLevels?: Record<string, string> | null
   choices?: Mission['choices']
   categories?: Mission['categories']
   createdAt: string
@@ -104,6 +108,8 @@ export interface Rubric {
     commonErrors: string[]
     goodThought: boolean
     judgeVerified: boolean
+    /** 요소가 기대는 성취기준 코드 (FN 1.5). 미션 성취기준 중 하나, 정답 요소는 null */
+    standardCode?: string | null
   }[]
   answerKey?: AnswerKey | null
   exampleAnswer?: string | null
@@ -119,6 +125,9 @@ export const essayTypes = ['설명글', '글짓기', '주장', '찬성반대', '
 export type EssayType = (typeof essayTypes)[number]
 export interface AdminMission {
   missionId: string
+  code?: string
+  /** 처음 만들어진 방식 (#353): 사람 작성 또는 LLM 초안 채택 */
+  source?: 'MANUAL' | 'LLM_DRAFT'
   status: MissionStatus
   demoOnly: boolean
   currentVersion: number
@@ -225,9 +234,14 @@ export const missionLabels: Record<MissionStatus, string> = {
 /** core는 영문 missingFields 코드만 전달합니다. */
 export const missingFieldLabels: Record<string, string> = {
   title: '제목', question: '질문', subject: '교과', grade: '지원 학년 (논술 5~6학년)',
-  achievementStandards: '성취기준', choices: '선택 항목', categories: '분류 그룹',
+  achievementStandards: '성취기준 (표에 있는 코드, 미션 학년이 성취기준 학년군 안)',
+  achievementLevels: '성취수준 (고른 성취기준의 단계, 초 A~C·중 A~E)',
+  choices: '선택 항목', categories: '분류 그룹',
   rubric: '기준표 버전', 'rubric.elements': '기준표 요소 (풀이 단계는 최종 답 외 요소 포함)',
-  'rubric.elements.points': '요소 이름·양의 배점', answerKey: '정답 키',
+  'rubric.elements.points': '요소 이름·양의 배점',
+  'rubric.elements.code': '요소 code (생각 유형·입력 방식에 맞는 요소, 고르기·순서·분류는 정답 요소 하나)',
+  'rubric.elements.standardCode': '요소 연결 성취기준 (미션 성취기준 중 하나, 정답 요소는 비움)',
+  answerKey: '정답 키',
   exampleAnswer: '예시 답', review: '현재 버전 검토 승인',
 }
 export function missingFieldLabel(code: string) {
@@ -256,7 +270,11 @@ export function validAnswerKey(v: MissionVersion, key: Rubric['answerKey']): boo
   return v.inputType === 'SOLUTION_STEPS' && 'finalAnswer' in key &&
     typeof key.finalAnswer === 'string' && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(key.finalAnswer.trim())
 }
-export function missingMissionFields(m: AdminMission): string[] {
+/**
+ * 게시 전 확인 (learning PublishSnapshot.missingFields와 같은 코드·순서).
+ * standards는 미션 성취기준 코드로 찾은 표 행이며, 없으면(조회 전·실패) 표·학년군·단계 수 검사는 건너뜀
+ */
+export function missingMissionFields(m: AdminMission, standards?: Record<string, AchievementStandard>): string[] {
   const v = m.versions.find((v) => v.version === m.currentVersion),
     r = m.rubrics.find((r) => r.version === m.currentRubricVersion), missing: string[] = []
   if (!v?.title.trim()) missing.push('title')
@@ -264,17 +282,38 @@ export function missingMissionFields(m: AdminMission): string[] {
   if (!v?.subject.trim()) missing.push('subject')
   if (!v || !Number.isInteger(v.gradeMin) || !Number.isInteger(v.gradeMax) || v.gradeMin < 3 ||
       v.gradeMax > 6 || v.gradeMin > v.gradeMax || (v.inputType === 'ESSAY' && v.gradeMin < 5)) missing.push('grade')
-  if (!v?.achievementStandards.some((s) => s.trim())) missing.push('achievementStandards')
-  if (!r) missing.push('rubric')
+  const codes = v?.achievementStandards ?? []
+  if (!codes.length || codes.some((s) => !s.trim()) ||
+      (standards && codes.some((c) => !standards[c] || !covers(standards[c], v!.gradeMin, v!.gradeMax)))) missing.push('achievementStandards')
+  if (Object.entries(v?.achievementLevels ?? {}).some(([code, level]) => !codes.includes(code) ||
+      (standards ? !standards[code] || !allowsLevel(standards[code], level) : !isLevelShape(level)))) missing.push('achievementLevels')
   if (v && ['CHOICE', 'ORDERING', 'CLASSIFICATION'].includes(v.inputType) && !v.choices?.length) missing.push('choices')
   if (v?.inputType === 'CLASSIFICATION' && !v.categories?.length) missing.push('categories')
+  if (!r) missing.push('rubric')
   if (r && (!r.elements.length ||
       (v?.inputType === 'SOLUTION_STEPS' && !r.elements.some((e) => e.code !== 'FINAL_ANSWER')) ||
       (v?.inputType !== 'SOLUTION_STEPS' && r.elements.some((e) => e.code === 'FINAL_ANSWER')))) missing.push('rubric.elements')
+  if (r?.elements.some((e) => !e.label.trim() || !Number.isInteger(e.points) || e.points <= 0)) missing.push('rubric.elements.points')
+  if (v && r?.elements.length && !elementCodesFit(r.elements.map((e) => e.code), v.thinkingType, v.inputType)) missing.push('rubric.elements.code')
+  if (r?.elements.some((e) => e.standardCode != null && (isAnswerCode(e.code) || !codes.includes(e.standardCode)))) missing.push('rubric.elements.standardCode')
   if (v && r && !['NARRATIVE', 'ESSAY'].includes(v.inputType) && !validAnswerKey(v, r.answerKey)) missing.push('answerKey')
   if (v && r && ['NARRATIVE', 'ESSAY'].includes(v.inputType) && !r.exampleAnswer?.trim()) missing.push('exampleAnswer')
-  if (r?.elements.some((e) => !e.label.trim() || !Number.isInteger(e.points) || e.points <= 0)) missing.push('rubric.elements.points')
   if (m.reviews.filter((x) => x.missionVersion === m.currentVersion && x.rubricVersion === m.currentRubricVersion)
       .at(-1)?.result !== 'APPROVED') missing.push('review')
   return missing
+}
+/** 기준표 저장 전 확인 (learning AdminMissionController 400 규칙: core가 detail을 지워 보내므로 화면에서 먼저 알림) */
+export function rubricSaveErrors(elements: Rubric['elements']): string[] {
+  const errors: string[] = []
+  elements.forEach((e, i) => {
+    if (!e.code.trim()) errors.push(`요소 ${i + 1}: code를 고르세요.`)
+    else if (!isValidElementCode(e.code)) errors.push(`요소 ${i + 1}: code ${e.code}는 표준 요소·e+숫자(e1, e2…)·정답 코드가 아닙니다. 요소 종류를 다시 고르세요.`)
+    if (!e.label.trim()) errors.push(`요소 ${i + 1}: 이름을 입력하세요.`)
+    if (!Number.isInteger(e.points) || e.points < 1) errors.push(`요소 ${i + 1}: 배점은 1 이상 정수여야 합니다.`)
+    if (e.standardCode != null && !e.standardCode.trim()) errors.push(`요소 ${i + 1}: 연결 성취기준이 비어 있습니다.`)
+  })
+  const codes = elements.map((e) => e.code)
+  const dup = codes.filter((c, i) => c && codes.indexOf(c) !== i)
+  if (dup.length) errors.push(`같은 code를 두 요소에 쓸 수 없습니다: ${[...new Set(dup)].join(', ')}`)
+  return errors
 }
