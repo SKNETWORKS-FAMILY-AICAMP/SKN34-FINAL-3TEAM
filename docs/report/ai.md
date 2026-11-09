@@ -59,7 +59,7 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
                                                       └(통과)→ END [result: LLM]
 ```
 
-- 구현 예정(P25, [서비스 기획 방향](service-direction.md)): 일일 리포트 고정 대화는 core가 범위(그날)와 리포트 요약을 요청에 넣는다. ai는 report를 직접 호출하지 않고 기존 흐름을 그대로 쓴다
+- P25(#392, [서비스 기획 방향](service-direction.md)): 일일 리포트 고정 대화는 core가 범위(그날)와 리포트 요약을 요청에 넣는다. ai는 report를 직접 호출하지 않고 기존 흐름을 그대로 쓴다
 - 구성: `analysis_agent/graph.py`(조립), `service.py`(`AnalysisService`: 범위·기한·프롬프트 선택, 그래프 실행·최종 상태 → 이벤트, #253), `state.py`, `context.py`(`AgentContext`), `nodes/`(understand·retrieve·respond), `tools.py`(`RecordTools`, 호출마다 권한 재확인), `calculators.py`, `verification.py`, `templates.py`, `prompts.py`(`analysis@3`, #392), `router.py`(SSE), `clients/learning_client.py`(learning 기록 조회 HTTP, #65)
 - LLM 호출은 기존 `LlmClient` 사용(재시도·사용량 이벤트 `ANALYSIS`·대체 모델 유지). classify는 `generate`(구조화 출력), answer는 `stream`(일반 텍스트). LangGraph는 분기·상태·스트리밍만
 - 도구 선택은 질문 유형 → 도구 표(6유형). 학생·기간은 LLM이 아니라 core가 확인한 `scope`만 사용
@@ -428,7 +428,7 @@ uv run --frozen python ../../scripts/verify_scoring_m2.py --archive <m2_models.t
 - 인용: LLM이 `{후보 번호, 원문 구절}`을 고르고, 구절이 그 후보 원문의 부분 문자열이 아니거나 번호가 범위 밖이면 제외. ID·버전은 입력값. 서술 속 따옴표 문구와 `citedQuotes` 불일치는 report 대조에서 템플릿 전환
 - 프롬프트 규칙은 report `ReportVerifier` 통과 범위에 맞춤: 입력 수치·전후 변화 값만 아라비아 숫자로, 한글 수사·미션 제목·답 속 숫자(인용 밖) 금지, 점수·등급·레벨·순위 낱말과 사고력 향상 단정 금지, 기록 없는 유형은 "확인된 기록 없음", 미작성 돌아보기는 "쓰지 않음"
 - LLM 입력에는 수치·미션 제목·답변·돌아보기 원문만. 학생 이름·ID와 시도·답변 ID는 넣지 않음(인용은 후보 번호로 지칭, NFR-SEC-03). 로그에 원문 미기록
-- 구현 예정(P24): 일일 리포트는 템플릿만 써 이 API를 호출하지 않는다(주간 리포트만 서술·저녁 질문)
+- P24(#391): 일일 리포트는 템플릿만 써 이 API를 호출하지 않는다(주간 리포트만 서술·저녁 질문)
 
 ### 기준이 없어 정한 값
 
@@ -580,22 +580,366 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 
 - `uv run pytest`: 고정 리포트 요약이 답변 프롬프트에 들어가고 요약 숫자가 대조를 통과(`test_router`), 같은 답변이 일반 대화에서는 규칙 응답, 하루가 아닌 범위 400, 고정 대화의 다른 기간 안내 문구(`test_nodes`)
 
+## 11. 모델 등록 API (#367)
 
-## #367 백엔드 등록 계약 구현 (2026-11-09)
+### 11.1 백엔드 등록 계약 구현 (2026-11-09)
 
 기존 등록 API에 EvaluationEvidence.limitations(기본 [])와 registration 출처 메타데이터를 추가했다. MODEL의 artifactUri 누락은 등록 시 422로 거부한다. 기존 evaluation JSONB를 사용하므로 DB 마이그레이션은 없다. 기존 행은 limitations=[]로 읽히고 평가 근거를 덮어쓰지 않는다.
 
 MODEL_REGISTER 감사 detail에 source·jsonSha256·manifestSha256·modifiedFields·artifactFiles를 기록한다. 원본 파일을 서버에 업로드하지 않으므로 해시/크기는 클라이언트 신고로 취급하며 파일·품질 검증 성공으로 간주하지 않는다. 등록 요청의 승인 관련 값·알 수 없는 필드는 거부하며 기존 사람 승인·활성화·복귀와 이벤트 계약은 유지한다.
 
-[프론트 전달 문서](issue-367-registration-api.md)에 원본 바이트 해시 방식, 요청 예시, 응답 위치, 오류와 각 담당 범위를 정리했다. 후속 통합에서 PR #409의 프론트와 연결해 등록 출처 메타데이터도 함께 전달한다. 검증 결과는 해당 문서의 통합 검증 항목을 기준으로 본다.
+프론트 전달 내용(11.2~11.7)에 원본 바이트 해시 방식, 요청 예시, 응답 위치, 오류와 각 담당 범위를 정리했다. 후속 통합에서 PR #409의 프론트와 연결해 등록 출처 메타데이터도 함께 전달한다. 검증 결과는 [11.9 통합 검증 결과](#119-통합-검증-결과)를 기준으로 본다.
 
-검증: core ModelVersionHttpTest·ModelVersionRepositoryTest·ModelVersionMessagingTest 총 23개 및 bootJar 통과. 등록/목록의 limitations, 구버전 JSONB, MANUAL 기본값, JSON_IMPORT 감사·인증 사용자, 중복 시 원본 유지, 자동 활성화 없음, 필수 경로·해시·파일 크기·상대 경로·알 수 없는 필드 거부와 기존 활성화·복귀를 확인했다. 계약 검증기 전체 187개 통과. 이는 최초 백엔드 단독 검증 기록이다. 후속 프론트 통합 결과는 [등록 API 통합 검증](issue-367-registration-api.md)을 참고한다. GitHub CI와 운영 품질 승인은 로컬 검증과 구분한다.
+검증: core ModelVersionHttpTest·ModelVersionRepositoryTest·ModelVersionMessagingTest 총 23개 및 bootJar 통과. 등록/목록의 limitations, 구버전 JSONB, MANUAL 기본값, JSON_IMPORT 감사·인증 사용자, 중복 시 원본 유지, 자동 활성화 없음, 필수 경로·해시·파일 크기·상대 경로·알 수 없는 필드 거부와 기존 활성화·복귀를 확인했다. 계약 검증기 전체 187개 통과. 이는 최초 백엔드 단독 검증 기록이다. 후속 프론트 통합 결과는 [11.9 통합 검증 결과](#119-통합-검증-결과)을 참고한다. GitHub CI와 운영 품질 승인은 로컬 검증과 구분한다.
+
+### 11.2 작업 범위와 연결 기준
+
+통합 브랜치: `feature/367-model-registration-backend`. develop `8defa1f3`와 PR #409의 프론트 구현을 통합했다. 등록과 감사 출처 저장을 연결하며 운영 활성화는 별도 승인이다.
+
+- API: `POST /api/v1/admin/model-versions`, SERVICE_OPS 관리자 Bearer 인증
+- 기존 등록 경로를 그대로 사용한다. JSON 업로드·일괄 등록 엔드포인트는 없다.
+- 서버 계약 원본: [core OpenAPI](../../contracts/openapi/core-service.yaml)의 RegisterModelVersion, EvaluationEvidence, ModelRegistrationMetadata, ModelRegistrationArtifact
+- 화면 변경 순서: #366 카드별 입력 분리 이후 #367 가져오기 화면을 연결하는 것을 권장한다. 백엔드는 기다릴 필요 없다.
+
+### 11.3 파일을 읽고 요청을 만드는 순서
+
+1. registration_1103.json 원본 바이트를 읽어 SHA-256을 계산한다. `file.arrayBuffer()` → `crypto.subtle.digest('SHA-256', buffer)` → 소문자 16진수 64자리. BOM·공백·개행을 포함한 원본 파일 그대로이며 파싱/재직렬화한 JSON으로 계산하지 않는다.
+2. 파싱한 requests[]를 모델별 카드로 만든다. 최상위 설명(title/version/date/author/주의/<버킷>)은 POST 본문에 보내지 않는다. requests[]의 승인 관련 값이나 알 수 없는 필드는 가져오기 단계에서 거부한다.
+3. 선택한 manifest도 원본 바이트로 해시한다. name/version/scope를 대조하고 해당 모델 files[]만 고른다. manifest가 없으면 manifestSha256 생략, artifactFiles는 []다.
+4. 버킷을 치환하고 limitations를 확인한다. 항목에 evaluation.limitations가 있으면 빈 배열도 그 값을 유지한다. 없으면 registration 최상위 주의와 해당 모델 manifest 주의를 후보로 제시해 확인·수정한다.
+5. 원본 항목과 최종 등록 값이 다른 필드 경로를 modifiedFields에 중복 없이 기록한다. 버킷 치환도 artifactUri 변경이다. limitations 후보를 새로 넣었으면 evaluation.limitations를 포함한다. 배열은 원소 인덱스가 아닌 배열 필드 경로 하나로 기록한다.
+6. 운영자가 개별 등록을 누르면 requests[i]의 등록 필드에 아래 registration 메타데이터를 붙여 POST한다. 성공한 카드만 등록 완료로 표시한다. 실패한 카드 때문에 성공한 레코드를 다시 보내거나 덮어쓰지 않는다.
+
+### 11.4 요청 예시
+
+아래는 **합성 예시**다. a/b/c 반복 해시는 형식 설명용이며 실제 파일의 해시가 아니다. 실제 운영 모델을 다시 등록하지 않는다.
+
+```json
+{
+  "kind": "MODEL",
+  "name": "synthetic-model",
+  "version": "1.0",
+  "artifactUri": "s3://example-models/models/synthetic-model/1.0/",
+  "evaluation": {
+    "datasetId": "synthetic-eval",
+    "datasetVersion": "1",
+    "baselineVersion": "synthetic-baseline",
+    "comparisonReport": "synthetic/comparison",
+    "trainingEvaluationSeparation": "synthetic/split",
+    "quoteAccuracy": "synthetic/quotes",
+    "calculationAccuracy": "synthetic/calculations",
+    "humanReview": "synthetic/review",
+    "evaluatedScopes": [
+      "judgment/grade-5/narrative"
+    ],
+    "limitations": [
+      "연동 테스트용 합성 자료이며 품질 승인 근거가 아님"
+    ]
+  },
+  "registration": {
+    "source": "JSON_IMPORT",
+    "jsonSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "manifestSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "modifiedFields": [
+      "artifactUri",
+      "evaluation.limitations"
+    ],
+    "artifactFiles": [
+      {
+        "file": "config.json",
+        "bytes": 123,
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    ]
+  }
+}
+
+```
+
+수동 등록은 같은 필드에서 registration을 생략하면 된다. limitations도 생략 가능하며 []로 처리한다. 추가된 registration 정보는 평가 근거에 섞지 않고 등록 감사 detail에만 저장한다.
+
+### 11.5 입력 규칙
+
+| 필드 | 규칙 |
+|---|---|
+| artifactUri | MODEL이면 필수·공백 불가, 최대 2,048자. 경로 형식 경고·자리표시자 차단은 프론트 담당 |
+| evaluation.limitations | 선택, 생략 시 [], 최대 100개, 항목마다 1~4,000자·공백/null 불가 |
+| registration.source | MANUAL 또는 JSON_IMPORT. 생략 시 MANUAL |
+| jsonSha256 | JSON_IMPORT이면 필수, registration 원본 파일 해시 |
+| manifestSha256 | 선택 manifest 원본 파일 해시. artifactFiles가 있으면 필수 |
+| modifiedFields | 최대 100개·중복 불가. 아래 필드 경로만 허용 |
+| artifactFiles | 선택한 모델의 manifest files[], 최대 100개. 파일 경로 중복 불가 |
+| artifactFiles[].file | 1~255자 상대 경로. 절대 경로·역슬래시·콜론·빈 경로 조각·.·.. 금지 |
+| artifactFiles[].bytes | 파일 크기, 0 이상 정수 |
+| artifactFiles[].sha256 | manifest의 해당 파일 SHA-256, 소문자 64자리 |
+
+MANUAL에는 JSON/manifest 해시와 비어 있지 않은 modifiedFields·artifactFiles를 보내지 않는다.
+
+modifiedFields 허용값:
+
+```text
+kind, name, version, refId, artifactUri,
+evaluation.datasetId, evaluation.datasetVersion, evaluation.baselineVersion,
+evaluation.comparisonReport, evaluation.trainingEvaluationSeparation,
+evaluation.quoteAccuracy, evaluation.calculationAccuracy, evaluation.humanReview,
+evaluation.evaluatedScopes, evaluation.limitations
+```
+
+기존 평가 근거 8개 문자열과 evaluatedScopes는 계속 필수다. RUBRIC만 refId를 필수로 받으며 다른 종류는 refId를 보내지 않는다. 알려지지 않은 모델 이름·scope 후보·버전 형식·모델 저장 경로 형태의 경고는 기존 #367 프론트 요구사항대로 구현한다. core는 새 scope를 임의로 차단하지 않는다.
+
+### 11.6 성공 응답과 화면 연결
+
+201 응답은 기존 ModelVersion이다. 목록 조회도 같은 객체를 반환한다.
+
+```text
+id, kind, name, version, refId, artifactUri,
+evalResult: {
+  evidence: { 기존 평가 필드, limitations: [...] },
+  approval: null,
+  activeScopes: [],
+  revision: 0
+},
+status: REGISTERED,
+approvedBy: null,
+activatedAt: null,
+createdAt
+```
+
+- 요청은 evaluation.limitations, 응답은 evalResult.evidence.limitations로 위치가 다르다.
+- 구버전 DB 행에 limitations가 없어도 목록에서 []로 읽힌다. DB 마이그레이션·기존 평가 근거 덮어쓰기는 없다.
+- registration 메타데이터는 ModelVersion 응답에 추가하지 않는다. 기존 MODEL_REGISTER 감사 detail에 source/jsonSha256/manifestSha256/modifiedFields/artifactFiles로 저장한다. PR #409의 감사 목록 API는 허용된 모델 조치 상세만 반환한다. 등록 출처·파일 해시의 DB 저장과 화면 공개 범위는 구분하며, 원본 JSON 내용은 감사 응답에 노출하지 않는다.
+- 등록자·ID·시각·상태는 서버가 정한다. 등록으로 approval·ACTIVE·활성화 이벤트가 생성되지 않는다.
+- 해시·파일 크기는 프론트가 신고한 출처 기록이다. 백엔드는 파일 원문을 받지 않으므로 실제 파일 해시 일치·S3 존재·로딩·품질 승인을 확인했다고 표시하면 안 된다. 사전 검사는 후속 범위다.
+
+### 11.7 오류 표시
+
+| HTTP·code | 프론트 처리 |
+|---|---|
+| 400 VALIDATION_FAILED | 잘못된 JSON/타입·알 수 없는 필드·승인 관련 필드. 폼 상단 오류, 원본/요청 구조 확인 |
+| 401 / 403 | 기존 인증·SERVICE_OPS 권한 처리 |
+| 409 MODEL_VERSION_CONFLICT | kind/name/version 중복. 해당 카드 이름·버전 입력에 안내. 기존 평가를 덮어쓰지 않음 |
+| 422 MODEL_APPROVAL_REJECTED | MODEL 경로 누락, 불완전 평가/범위, 잘못된 limitations·감사 메타데이터. 폼 상단에 서버 메시지 |
+
+공통 RFC 9457 형식은 바꾸지 않는다. title/detail/code/traceId 처리는 기존 API 클라이언트를 재사용한다. 서버가 필드별 errors 배열을 준다고 가정하지 않는다. UI의 상세 필드 오류는 브라우저 사전 검증에서 표시한다.
+
+### 11.8 통합 완료 확인 (2026-11-09)
+
+- [x] #366 화면 변경을 반영한 #367 프론트 및 웹 타입 연결
+- [x] 실제 11/03 registration·manifest를 로컬에서 가져오기 → 버킷 치환 → 개별 등록
+- [x] 성공/중복/부분 실패 카드 상태와 수정 표시 확인
+- [x] limitations 미리보기·목록·승인 확인 창 표시
+- [x] 프론트 lint/test/test:types/build·브라우저 테스트
+
+운영의 기존 서술 3.0·논술 3.1은 재등록하거나 활성화하지 않는다. JSON 원본·실제 모델 파일은 이 변경에 포함하지 않는다.
 
 
-## #368 사전 검사 구현 (2026-11-09)
+### 11.9 통합 검증 결과
 
-scoring의 읽기 전용 파일·메타데이터 검사, core 관리자 동기 중계와 별도 MODEL_PREFLIGHT 감사, web 미리보기 검사 버튼을 연결했다. 가중치 본문은 다운로드하지 않으며 전체 S3 SHA-256이 없으면 실패한다. core→scoring local/prod NetworkPolicy와 서비스 URL을 반영했다. 실제 local core·scoring·MinIO·PostgreSQL에서 정상/해시 불일치/누락을 검증했다. 후속 AWS 읽기 전용 확인에서 실제 Pod Identity 연결·S3 읽기 정책과 12개 객체 HEAD를 확인했다. 객체 모두 S3 SHA-256이 없으며 scoring replicas=0이라 실제 Pod 실행 검증은 남았다. 업로드 방식 조율이 필요해 해당 항목은 미완료로 유지한다. 운영 배포·재가동·객체 및 정책 변경은 하지 않았다. [계약·검증·원문 체크리스트](issue-368-model-preflight.md)를 참고한다.
+- 기준: develop `8defa1f3`, PR #409 `4b261e81` 통합. PR #409를 먼저 병합하면 그 변경을 제외한 #367 후속 변경을 리뷰할 수 있다. 다른 PR의 운영 승인이나 병합은 수행하지 않았다.
+- core: ModelVersionHttpTest 12개, ModelVersionRepositoryTest 8개, ModelVersionMessagingTest 4개, AdminOperationsIntegrationTest 25개, 합계 49개 통과. bootJar 통과.
+- 실제 등록: 별도 opt-in ModelVersionBrowserIntegrationTest 1개와 Playwright desktop 가져오기 1개 통과. 제공받은 11/03 registration_1103.json·manifest.json 원본을 사용했고 브라우저에서 계산한 해시를 원본 바이트 해시와 대조했다.
+- 등록/목록 요청은 HTTP 대역 대신 실제 로컬 core와 Testcontainers PostgreSQL로 전달했다. 화면의 로그인 진입은 합성 응답이며 실제 등록 요청에는 테스트용 관리자 JWT를 사용했다. OAuth 로그인, S3 파일 존재, scoring 로딩 검증으로 확대 해석하지 않는다.
+- DB 확인: REGISTERED·미승인·미활성 모델 2건, 해당 관리자의 JSON_IMPORT 감사 2건(원본 JSON·manifest 해시와 산출물 파일 목록 포함), 활성화 이벤트 0건.
+- web: 단위 244개, 모델 브라우저 9개(실제 제공 파일·HTTP 대역·3개 화면 폭), 기존 브라우저 24개, PR #409 꾸미기 회귀 9개 통과. lint·test:types·build 통과.
+- 저장소 계약 검증기 189개 통과. 병합 과정에서 중복된 계약 fingerprint 정규화를 하나로 정리했다. Windows sandbox의 임시 폴더 정리 권한 오류는 동일 테스트를 권한이 있는 실행 환경에서 재실행해 해소했다.
+- GitHub CI는 로컬 검증과 별개다. 운영 기존 모델 재등록·활성화, 원본 JSON·가중치 커밋은 하지 않았다.
 
-## #370 Pod별 모델 로딩 보고 (2026-11-09)
+### 11.10 이슈 요구사항 대응
 
-3.1.5 후속: scoring의 model.loading.reported 전체 상태 이벤트와 30초 heartbeat를 core가 별도 model_loading_report(V37)에 수집한다. SERVICE_OPS 조회 API와 활성 모델 카드에서 최근 보고 Pod 대비 로딩 완료 수·실패·기존 모델 유지·보고 만료를 구분한다. 전체 Kubernetes replica 수나 품질·추론 승인으로 표현하지 않는다. [설계·배포·검증](issue-370-model-loading.md).
+#### web
+- [x] 브라우저 requests[] 파싱 → 기존 API 개별 POST
+- [x] 모델별 미리보기·개별 등록·부분 실패·수정 표시
+- [x] 버킷 일괄 치환과 자리표시자 등록 차단
+- [x] 최상위/manifest 주의 후보 및 명시적 limitations 우선
+- [x] 형식·알 수 없는 요청 필드·필수 평가 근거·scope·중복·manifest 일치 검증
+- [x] 알려진 scope/모델명·버전·권장 경로 경고
+- [x] 409 이름/버전 필드 안내, 422 폼 상단 안내
+- [x] 카드와 승인·활성화 확인 창의 limitations 표시
+
+#### core·문서
+- [x] limitations 선택 필드, 기본 빈 목록, 기존 JSONB 호환
+- [x] MODEL artifactUri 필수
+- [x] MANUAL/JSON_IMPORT·원본 JSON SHA-256·수정 필드·산출물 파일 해시 감사 저장
+- [x] api-spec 5.2·OpenAPI·웹 타입과 등록 계약 반영
+
+#### 완료 조건·유지 원칙
+- [x] core 테스트 및 web lint·test·test:types·build·브라우저 테스트
+- [x] 실제 11/03 두 파일로 로컬 가져오기 → 등록 확인
+- [x] 승인 정보 거부, 가져오기만으로 활성화하지 않음
+- [x] 기존 등록 평가 근거를 덮어쓰지 않음
+
+### 11.11 실제 core 브라우저 검증 재현
+
+1. Docker/JDK 21 환경에서 core 테스트를 `MODEL_BROWSER_LOCAL=true`, `MODEL_BROWSER_OUTPUT=<공유된 테스트 출력 디렉터리>`로 실행한다. Gradle 대상은 `test --tests '*ModelVersionBrowserIntegrationTest'`다. 테스트 포트 8080을 호스트 127.0.0.1:58087에 매핑한다. 일반 CI에서는 이 opt-in 테스트가 건너뛰어지며 기존 HTTP/DB 테스트는 계속 실행된다.
+2. 해당 출력 디렉터리의 session.json 생성 후 웹 빌드를 준비하고 `MODEL_LOCAL_CORE_SESSION=<session.json>`, `MODEL_REGISTRATION_FILE=<실제 등록 JSON>`, `MODEL_MANIFEST_FILE=<실제 manifest>`를 설정한다. `npm run test:models -- --project desktop --grep '등록 JSON'`으로 실행한다.
+3. Playwright가 실제 core 등록/목록 API를 호출하고 검증 완료 표시를 남긴다. core 테스트가 DB 저장과 비활성을 검사한 뒤 verified.json을 남기고 종료한다. 테스트 세션 파일은 외부 공유·커밋하지 않고 종료 후 삭제한다.
+
+## 12. 모델 사전 검사 (#368)
+
+### 12.1 사전 검사 구현 요약 (2026-11-09)
+
+scoring의 읽기 전용 파일·메타데이터 검사, core 관리자 동기 중계와 별도 MODEL_PREFLIGHT 감사, web 미리보기 검사 버튼을 연결했다. 가중치 본문은 다운로드하지 않으며 전체 S3 SHA-256이 없으면 실패한다. core→scoring local/prod NetworkPolicy와 서비스 URL을 반영했다. 실제 local core·scoring·MinIO·PostgreSQL에서 정상/해시 불일치/누락을 검증했다. 후속 AWS 읽기 전용 확인에서 실제 Pod Identity 연결·S3 읽기 정책과 12개 객체 HEAD를 확인했다. 객체 모두 S3 SHA-256이 없으며 scoring replicas=0이라 실제 Pod 실행 검증은 남았다. 업로드 방식 조율이 필요해 해당 항목은 미완료로 유지한다. 운영 배포·재가동·객체 및 정책 변경은 하지 않았다. 계약·검증·원문 체크리스트는 12.2 이하에 둔다.
+
+### 12.2 구현
+
+최신 develop `17508815`(#409·#410 병합)를 반영한 `feature/368-model-preflight`에서 작업했다. 기존 #367 등록 API·평가 근거·활성화 흐름을 유지하고 읽기 전용 사전 검사 경로를 추가했다.
+
+- scoring: `POST /internal/models/preflight`. 설정된 모델 버킷의 `models/` 경로만 허용한다. manifest의 여섯 파일을 중복 없이 받으며 존재·크기·SHA-256을 검사한다. `config.json`, `train_info.json`, `score_cuts.json`만 최대 1MiB씩 읽는다. 가중치와 tokenizer 본문은 받지 않는다.
+- 메타데이터: 기존 `validate_metadata`로 학습 입력·항목·경계를 검사하고 config의 `num_labels` 또는 `id2label` 수와 regression 설정을 검사한다. 실제 가중치 shape·CPU 로딩·추론 확인은 이 검사의 범위가 아니다.
+- core: SERVICE_OPS 관리자 `POST /api/v1/admin/models/preflight` → 기존 InternalRestClientFactory로 내부 토큰을 붙여 동기 중계한다. HTTP 20초, 재시도 없음. scoring은 15초 작업 예산·S3 연결/읽기 각각 1초·재시도 없음. 웹은 25초 후 요청을 중단한다.
+- 감사: `MODEL_PREFLIGHT`의 `result=SUCCESS|FAILURE`, target_type=MODEL_VERSION, target_id=null(등록 전 검사). detail에 이름·버전·경로·manifest와 안전한 결과 코드만 저장한다. upstream 장애도 실패 이력으로 남기며 제공자 원문 오류·자격 증명은 반환하지 않는다. 기존 평가 JSONB에 결과를 섞지 않는다.
+- web: JSON 미리보기 카드에서 manifest의 여섯 파일과 입력 검증을 통과해야 검사 버튼을 사용할 수 있다. 파일별 원인을 표시하고 입력이 바뀌면 이전 결과를 만료시킨다. 검사 성공으로 등록·승인·활성화하지 않는다.
+- local·prod NetworkPolicy: core egress 8001 → scoring, scoring ingress에 core를 추가했다. 기존 ai 호출과 포트는 유지한다. Compose 및 local/prod core에 SCORING_URL을 추가했다.
+
+### 12.3 체크섬과 AWS 확인 범위
+
+[Amazon S3 HeadObject 계약](https://docs.aws.amazon.com/AmazonS3/latest/API/API_HeadObject.html)에 따라 `ChecksumMode=ENABLED`로 조회한다. 작은 JSON은 실제 바이트 SHA-256으로 대조한다. 나머지는 S3 전체 파일 SHA-256만 사용하고 ETag, 임의 사용자 metadata의 sha256, multipart COMPOSITE는 대체 근거로 인정하지 않는다. 전체 SHA-256이 없으면 `CHECKSUM_UNAVAILABLE`로 실패한다. 성공처럼 표시하거나 가중치 다운로드로 우회하지 않는다.
+
+따라서 기존 AWS 객체가 multipart COMPOSITE이거나 SHA-256을 저장하지 않았다면 사전 검사가 실패할 수 있다. 객체를 임의로 다시 업로드하거나 운영 모델을 교체하지 않았다. 업로드 방식 보완이 필요하면 #212 담당자와 해당 객체 상태를 확인한 뒤 별도로 반영한다.
+
+저장소의 `scoring-s3-read` IAM 정책은 s3:ListBucket·s3:GetObject를 허용한다. 사용 API는 HeadObject·GetObject이며 새 쓰기 권한은 필요 없다. JSON GET은 If-Match로 고정하여 GetObjectVersion 권한을 요구하지 않는다. SSE-KMS 객체의 checksum 조회에는 추가 KMS 권한이 필요할 수 있다. #212 문서의 Pod Identity·S3 Gateway 경로를 검토했고, 2026-11-09 AWS 콘솔 CloudShell에서 실제 IAM 연결·정책과 S3 객체 HEAD를 조회했다. 배포·정책 수정은 하지 않았다. NetworkPolicy YAML/JSON 검증은 실제 클러스터 통신 검증과 구분한다.
+
+### 12.4 로컬 재현
+
+새 일회용 MinIO 컨테이너만 사용한다. 아래 로그인 값은 테스트 전용이며 운영 자격 증명을 사용하지 않는다.
+
+1. MinIO `quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z`를 `127.0.0.1:58100:9000`으로 실행한다. MINIO_ROOT_USER=preflight-local, MINIO_ROOT_PASSWORD=preflight-local-test-only, 명령 `server /data`.
+2. 저장소 루트에서 scoring Python 환경으로 `scripts/seed_model_preflight_local.py` 실행. localhost의 새 models 버킷에 합성 파일을 만든다. 이미 존재하는 버킷이면 덮어쓰지 않고 실패한다. 정상 prefix와 가중치가 없는 prefix를 만들고 output/issue368-request.json을 생성한다.
+3. scoring 환경에서 INTERNAL_TOKEN=preflight-local-token, S3_ENDPOINT_URL=http://127.0.0.1:58100, S3_BUCKET=models, AWS_ACCESS_KEY_ID=preflight-local, AWS_SECRET_ACCESS_KEY=preflight-local-test-only를 지정한다. `python -m uvicorn tests.preflight_local_server:app --host 0.0.0.0 --port 58101`로 실행한다. 이 테스트 서버는 운영 라우터·인증을 쓰되 사전 검사와 무관한 AMQP/모델 로딩 시작만 생략한다.
+4. JDK21·Docker 환경에서 core `test --tests '*ModelPreflightLocalIntegrationTest'` 실행. PREFLIGHT_LOCAL=true, PREFLIGHT_SCORING_URL=http://host.docker.internal:58101(Docker 밖이면 localhost), PREFLIGHT_REQUEST_FILE=<생성한 JSON의 테스트 환경 경로>. core 테스트 DB는 Testcontainers가 생성·삭제한다.
+5. 결과는 정상 PASS, 모델 가중치 해시 불일치 FAIL/HASH_MISMATCH, 파일 누락 FAIL/FILE_MISSING. 감사 SUCCESS 1·FAILURE 2건, 등록 모델 0건을 검사한다. 종료 후 테스트 서버와 일회용 MinIO를 중지한다.
+
+실제 모델 파일·등록 JSON·가중치와 운영 비밀 값은 커밋하지 않는다. 로컬 성공은 운영 품질 승인이나 활성화 승인이 아니다.
+
+
+### 12.5 검증 결과 (2026-11-09)
+
+- core: ModelPreflightHttpTest 4개 + 기존 ModelVersionHttpTest 12개, 합계 16개 및 bootJar 통과.
+- 실제 local 연동: ModelPreflightLocalIntegrationTest 1개 통과. 실제 HTTP scoring·MinIO를 사용한 세 경우와 PostgreSQL 감사 저장 확인.
+- scoring 전체 212개 통과 후 출력 수 모순 사례를 1개 추가하여 사전 검사 14개를 재검증했다. 총 213개 고유 테스트 검증. Ruff check·format 통과.
+- web 단위 244개, 모델 브라우저 12개(데스크톱·태블릿·휴대폰), lint·test:types·build 통과. 새 사전 검사 테스트는 합성 HTTP 응답이며 실제 core/S3 검증과 구분한다.
+- 저장소 계약 검증기 192개 통과. core/scoring 요청·응답 계약 일치, 양방향 local/prod NetworkPolicy, 기존 S3 읽기 정책 포함.
+- AWS 콘솔 CloudShell에서 아래 읽기 전용 확인을 수행했다. #368 운영 배포와 실제 Pod 통신 검증은 수행하지 않았다. GitHub CI도 별도 확인 대상이다.
+
+### 12.6 이슈 원문 체크리스트 대응
+
+#### 해야 할 일
+- [x] scoring `POST /internal/models/preflight`(가칭): name·version·artifactUri와 manifest `files[]`를 받아 6개 파일의 존재·크기·sha256 확인, 작은 JSON 3개(config.json·train_info.json·score_cuts.json)만 읽어 `validate_metadata`·출력 수 확인. 가중치는 받지 않음
+- [x] core 관리자 API로 동기 중계(시간 제한 포함), core scoring 클라이언트 추가
+- [x] 결과를 별도 감사 action(가칭 `MODEL_PREFLIGHT`, `result` SUCCESS·FAILURE)으로 기록. `evidence`에는 넣지 않음
+- [x] NetworkPolicy: scoring ingress에 core 허용, core egress에 scoring 추가(`environments/local/scoring-service.yaml`·`core-service.yaml`, prod 구성도 확인)
+- [ ] scoring S3 읽기 권한이 사전 검사 경로에 충분한지 #212 AWS 설정과 조율
+- [x] web: 미리보기 카드에 "사전 검사" 버튼과 결과 표시(manifest 필요)
+- [x] api-spec·OpenAPI 반영
+
+AWS 실제 역할 연결·정책 및 객체 HEAD 확인까지 완료했다. 다만 실행 중인 scoring Pod가 없고 기존 객체에 S3 SHA-256이 없어 실제 Pod 검증과 업로드 방식 조율이 남았다. 따라서 AWS 항목은 미완료로 유지한다. 운영 리소스·객체·권한은 변경하지 않았다.
+
+#### 완료 조건
+- [x] scoring·core 테스트, web 테스트 통과
+- [x] local 환경에서 정상 파일·해시 불일치·파일 누락 세 경우 결과 확인
+- [x] AWS 반영 여부와 결과는 실제 실행한 것만 기록
+
+#### 유지할 원칙
+- [x] 사전 검사 통과는 "파일·형식 확인"으로만 표시. 품질 승인·활성화 가능 상태로 표시하지 않고 자동으로 다음 단계로 넘기지 않음
+
+### 12.7 AWS 읽기 전용 확인 (2026-11-09)
+
+- 환경: 서울 리전 `sagomungchi-demo-eks`, 모델 버킷 `sagomungchi-demo-347161580747-models`. IAM 사용자 CloudShell에서 확인했으며 scoring 역할을 직접 실행한 결과와 구분한다.
+- deployment `app/scoring-service`는 serviceAccount `scoring-service`, replicas=0이다. app 네임스페이스에 Pod가 없어 실제 Pod Identity 자격 증명으로 HeadObject/GetObject를 실행하거나 core→scoring 통신을 확인할 수 없었다. replicas를 변경하지 않았다.
+- Pod Identity association `a-8esdvbyftwtdacyfq`는 `app/scoring-service`를 `sagomungchi-demo-scoring-s3-role`에 연결한다.
+- 실제 inline policy `sagomungchi-demo-scoring-s3-read`는 모델 버킷의 ListBucket과 객체 전체 경로의 GetObject를 허용한다. attached managed policy는 없다. 확인한 객체는 모두 AES256 암호화다. 정책상 필요한 S3 읽기 작업이 포함되지만 실제 Pod 접근 성공으로 단정하지 않는다.
+- 두 모델의 필수 파일 12개 모두 `HeadObject(ChecksumMode=ENABLED)` 성공. 전부 `ChecksumType=FULL_OBJECT`이지만 `ChecksumSHA256`은 없다. FULL_OBJECT 표기만으로 SHA-256 존재를 인정하지 않는다.
+
+| 파일 | 서술형 3.0 크기(bytes) | 논술형 3.1 크기(bytes) |
+| --- | ---: | ---: |
+| config.json | 1177 | 1383 |
+| tokenizer.json | 752095 | 752095 |
+| tokenizer_config.json | 452 | 452 |
+| train_info.json | 1694 | 1570 |
+| score_cuts.json | 531 | 86 |
+| model.safetensors | 442524276 | 442539656 |
+
+현재 구현에 이 객체를 입력하면 본문을 읽지 않는 tokenizer.json·tokenizer_config.json·model.safetensors는 CHECKSUM_UNAVAILABLE 대상이다. 작은 JSON은 본문 해시 검사가 가능하지만 이번 AWS 확인에서는 HEAD만 실행했으므로 해시·메타데이터 유효성 통과로 기록하지 않는다.
+
+남은 조치: #212 업로드 담당자와 전체 파일 SHA-256을 S3에 제공하는 업로드 방식을 맞추고, 서비스 재가동 시 실제 scoring Pod의 읽기·통신을 확인한다. 체크섬 검사 완화, 가중치 다운로드, 운영 객체 재업로드, 정책 변경, 서비스 재가동은 수행하지 않았다.
+
+## 13. Pod별 모델 로딩 보고 (#370)
+
+### 13.1 요약 (2026-11-09)
+
+3.1.5 후속: scoring의 model.loading.reported 전체 상태 이벤트와 30초 heartbeat를 core가 별도 model_loading_report(V37)에 수집한다. SERVICE_OPS 조회 API와 활성 모델 카드에서 최근 보고 Pod 대비 로딩 완료 수·실패·기존 모델 유지·보고 만료를 구분한다. 전체 Kubernetes replica 수나 품질·추론 승인으로 표현하지 않는다. 설계·배포·검증은 13.2 이하에 둔다.
+
+### 13.2 설계와 범위
+
+최신 develop fb6b08a2에서 시작했다. 필수 선행 #366은 병합됐으며 #368 사전 검사 배포나 AWS 재가동은 필요하지 않다. 운영 AWS를 변경하지 않는다.
+
+| 방식 | 검토 결과 |
+| --- | --- |
+| scoring → RabbitMQ 결과 이벤트 + heartbeat | 채택. 이미 사용하는 events.topic과 core 소비 구조를 재사용하고 각 프로세스를 식별한다. 발행 장애는 기존 로딩·추론을 막지 않으며 다음 전체 보고로 복구한다. |
+| core → scoring Service 단일 조회 | Pod 하나만 확인하므로 전체 상태로 표현할 수 없다. |
+| core → Kubernetes API로 Pod 열거·개별 조회 | 정확한 배포 수를 알 수 있지만 새로운 클러스터 권한과 서비스 탐색 결합이 필요해 이번 범위에서 제외한다. |
+
+### 13.3 계약
+
+- 이벤트 `model.loading.reported`, source `scoring-service`, schema v1. Pod명(기본 hostname), 프로세스별 UUID, 단조 증가 sequence, 전체 모델 상태를 보낸다.
+- 성공·실패·진행 중에 target name/version/revision과 현재 메모리에 남은 버전/revision을 구분한다. 실패에는 예외 유형만 포함하고 원문·URI·자격 증명은 포함하지 않는다.
+- 로딩 중 변경 신호와 30초 heartbeat로 발행한다. 발행은 2초 제한, 단일 태스크이며 실패하면 다음 전체 보고에서 회복한다. 새 로딩 실패 시 기존 모델 유지 동작은 변경하지 않는다.
+- core `model_loading_report`(V37)에 프로세스별 최신 전체 상태를 저장한다. 같은 instance의 중복·역순 sequence와 역행 시각은 무시한다. 같은 Pod명은 가장 최근 보고 프로세스만 조회한다.
+- `GET /api/v1/admin/model-loading`은 기존 SERVICE_OPS 권한을 요구한다. 상태는 승인·평가 JSONB에 저장하지 않는다.
+- 120초 이상 보고가 없으면 stale로 표시하고 성공/실패 집계에서 제외한다. 24시간 지난 기록은 조회에서 제외하고 매시간 정리한다. 축소·비정상 종료·보고 통신 장애는 모두 보고 만료로 표현하며 죽은 Pod라고 단정하지 않는다.
+- 화면 분모는 최근 보고된 Pod 수다. 전체 배포 replica 수는 모르므로 전체 배포 성공으로 표시하지 않는다. 아직 보고하지 않은 Pod가 존재할 수 있고 보고 0개는 미확인이다.
+- 현재 활성 모델의 name/version/revision이 모두 일치할 때만 완료 수에 포함한다. 과거 버전 보고는 대기 상태로 표시한다. 모델 이외 PROMPT/RUBRIC에는 적용하지 않는다.
+
+### 13.4 배포 순서
+
+V37 migration → RabbitMQ definitions(새 core 큐·재시도·DLQ 바인딩) → core → scoring → web 순서로 반영한다. 기존 라우팅·모델 승인·활성화 계약은 유지한다. 새 공유 큐는 코드에서 선언하지 않는다. 추가 AWS IAM 권한이나 Kubernetes 조회 권한은 없다.
+
+### 13.5 검증
+
+- core: 로딩 상태·인증 4개, 실제 로컬 연동 1개, 기존 모델 HTTP 12개, 관리자 운영 25개로 총 42개 통과. bootJar 통과.
+- scoring: 전체 201개 통과. Ruff check·format 통과. #368은 별도 브랜치이므로 해당 브랜치의 사전 검사 테스트 수와 다르다.
+- web: 단위 244개, 브라우저 12개(데스크톱·태블릿·휴대폰), 타입 검사·린트·빌드 통과.
+- 저장소 계약: 전체 194개 실행에서 큐 개수 1건이 실패해 새 큐 5개와 관리자 조회 allowlist를 반영했다. 해당 계약·새 이벤트·마이그레이션 8개 재검증 통과.
+- DB: 격리 PostgreSQL에서 3개 DB 마이그레이션 적용·재적용, report 왕복, ERD 89개 테이블 대조, 무결성 음성 사례 105개, 서비스 역할 6개 분리 검증 통과. 검증용 컨테이너 중지.
+- 실제 core HTTP 응답과 두 프로세스의 모델 보고 payload를 OpenAPI·이벤트 JSON Schema에 대조하여 통과.
+
+#### 로컬 2 replica 검증 범위
+
+`ModelLoadingLocalIntegrationTest`는 서로 다른 scoring Python 프로세스 2개를 동시에 실행한다. 합성 로더를 제외한 운영 ModelRegistry·ModelLoadingReporter·EventPublisher → 실제 RabbitMQ → 운영 core consumer → 실제 PostgreSQL → SERVICE_OPS HTTP 조회까지 검증한다. 한쪽은 revision 2 완료, 다른 쪽은 ValueError로 실패하고 revision 1 모델을 유지한다. 실제 M2 가중치 다운로드·추론 및 Kubernetes Pod 기동 검증은 아니다.
+
+이 HTTP 응답을 브라우저 테스트 입력으로 사용하여 2개 중 1개 로딩 완료, 실패 Pod·오류 유형·기존 모델 유지 표시, 3개 화면 크기의 가로 넘침 없음까지 확인했다. 브라우저와 실행 중인 core의 실시간 직접 연결 검증과 구분한다.
+
+재현: scoring Python 의존성이 설치된 환경에서 `MODEL_LOADING_LOCAL=true`, `SCORING_TEST_PYTHON`에 scoring Python 실행 파일을 지정한 뒤 core `test --tests '*ModelLoadingLocalIntegrationTest'` 실행. 이어서 web에서 `MODEL_LOADING_LOCAL=true npm run test:models` 실행한다. 일반 CI 브라우저 테스트는 합성 응답을 사용한다.
+
+### 13.6 이슈 원문 체크리스트
+
+#### 해야 할 일
+- [x] 보고 방식 설계: scoring이 로딩 결과 이벤트를 발행하고 core가 모으는 안(추천)과 대안 비교
+- [x] scoring: `ModelRegistry.load` 성공·실패 시 Pod 식별자와 함께 보고(실패 시 오류 유형만, 기존 모델 유지 표시)
+- [x] core: Pod별 최신 로딩 상태 저장·조회 API
+- [x] web: 버전 카드의 "로딩 확인" 단계에 Pod 수 대비 로딩 완료 수, 실패 Pod 표시
+- [x] Pod 축소·재시작 시 오래된 기록 처리 규칙
+
+#### 완료 조건
+- [ ] 레플리카 2개 이상인 local 환경에서 한 Pod 로딩 실패 시 화면에 구분되어 보임을 확인
+  - 두 scoring 프로세스와 실제 RabbitMQ·core·DB·HTTP 응답, 해당 응답을 사용한 브라우저 표시를 검증했다. 실제 Kubernetes Pod 2개와 브라우저 직접 연결은 미검증이므로 원문 조건은 미체크한다.
+- [x] 관련 테스트 통과
+
+#### 유지할 원칙
+- 로딩 성공을 품질 승인으로 표시하지 않음. 추론 확인은 자동 판정하지 않음
+
+AWS는 재가동·배포하지 않았다. 기존 운영 이미지와 prod migration digest는 변경하지 않았다. 배포 시 V37이 포함된 migration 이미지를 별도로 반영해야 한다.
+
+### 13.7 최신 develop 병합 충돌 해결 (2026-11-09)
+
+develop `ef18b2ac`(#391·#369 포함)을 병합했다. OpenAPI의 #368 사전 검사와 #370 로딩 상태 스키마, API 명세의 #391·#370 절, ai 보고서의 #368·#370 절을 모두 보존했다. #369가 V36을 사용하므로 아직 병합되지 않은 모델 로딩 상태 마이그레이션만 V37로 변경하고 로컬 migration revision을 v37로 맞췄다. 이미 병합된 V36 파일은 수정하지 않았다.
+
+병합 후 재검증: core 관련 42개(실제 두 scoring 프로세스 연동 포함)·bootJar, scoring 전체 215개·Ruff, 계약 회귀 203개, web 빌드·브라우저 15개, 세 DB 전체 마이그레이션·재적용·report 왕복·ERD 대조·역할 격리 통과. core V36 관리자 인증과 V37 모델 로딩 상태를 동시에 적용했다.
+
+### 13.8 PR #416 core CI 실패 보완
+
+최초 원격 core 전체 검사(585개, 실패 2개)에서 `RabbitDefinitionsTest`가 `model.loading.reported`의 감사 큐 바인딩 누락을 찾았고, `QueueManagementClientTest`는 기존 큐 30개·DLQ 6개 고정값 때문에 실패했다. 앞선 로컬 core 42개 검증에는 두 테스트가 포함되지 않았다.
+
+기존 감사 정책을 유지하도록 `events.topic / model.loading.reported → core.event.audit` 명시적 바인딩을 추가했다. EventAuditConsumer는 기존처럼 이벤트 봉투 메타데이터만 기록하며 모델 상태 본문은 event_log에 저장하지 않는다. 큐 조회 테스트는 버전 관리되는 definitions의 전체 큐·DLQ 수와 실제 브로커 조회 결과를 비교하도록 바꿨다. 기존 allowlist 일치·누락 큐 오류 검증은 유지한다.
+
+수정 후 core 전체 test·bootJar 통과: 585개 중 실패 0개, 조건부 제외 3개. 저장소 계약 회귀 203개 통과.

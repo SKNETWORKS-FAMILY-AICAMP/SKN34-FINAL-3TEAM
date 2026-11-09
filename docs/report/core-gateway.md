@@ -49,7 +49,7 @@
 
 - core가 conversation/message/evidence UUID 생성, AI messageId는 신뢰하지 않음
 - 기본 기간은 Asia/Seoul 오늘 포함 7일. scope를 본문에 명시하면 해당 범위에 대한 사용자 확인으로 취급. 자녀 변경은 새 대화, 기간 변경은 `scope.changed=true`. 이력은 정확히 같은 자녀·기간의 완료 메시지 최근 10쌍(20 turn `{role,text}`)만 전달, 질문 1,000자
-- 구현 예정(P25): 일일 리포트에서 만든 대화는 리포트 ID·판을 저장해 그날로 고정하고, 메시지마다 core가 report에서 그 판을 읽어 ai 요청에 넣는다(범위 변경 없음, 다른 날은 새 대화)
+- P25(#392): 일일 리포트에서 만든 대화는 리포트 ID·판을 저장해 그날로 고정하고, 메시지마다 core가 report에서 그 판을 읽어 ai 요청에 넣는다(범위 변경 없음, 다른 날은 새 대화)
 - SSE `status → delta* → result | clarification | error → done`. delta는 저장하지 않음. result는 scope 일치·verification 플래그 true·source 및 근거 식별자 형식을 검사(숫자/인용 대조·TEMPLATE 생성은 AI 책임). `verification.contentAllowed`가 명시되어 false/잘못된 형식이면 확정하지 않음(값이 없는 기존 두 플래그 계약은 보존). done 이후 DB 확정 후 공개. EOF·잘못된 순서·중복 terminal은 실패
 - clarification은 AI `{reason,message,current}`를 공개 `{question,options:[],reason,current}`로 변환. 사용자에게 없는 자녀·기간 선택지를 만들어 주지 않음
 - AI의 answerVersion이 null이면 현재 learning 응답의 실제 버전 사용(ID/기간 검사 유지). 시작일 이전 최초 답변은 evidence의 학생/시도/답변/버전·종료일 검증 뒤 해당 시도가 기간별 attempts 목록에 실제 포함되는지 확인

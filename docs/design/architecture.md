@@ -29,7 +29,7 @@
 - 권한 기준: 학부모-자녀 연결은 core만 소유. core가 요청마다 권한 확인 후 내부 호출에 사용자 컨텍스트·허용 학생 범위 전달 (2.3)
 
 
-#### 1.1.1 2026-11-06 결정 추가 책임 (구현 예정)
+#### 1.1.1 2026-11-06 결정 추가 책임
 
 커뮤니티·포인트·꾸미기·주간 테마·일일 리포트([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 서비스 수·경계와 1.3 통신 원칙은 그대로 둔다. API는 [API 명세](api-spec.md) 2.9~2.11, 저장은 [ERD](erd.md) 3.6·4.4·5.2.
 
@@ -106,7 +106,7 @@
 | `student.deleted` | 이벤트 | core | learning, report | 삭제 확정 학생의 학습 기록·리포트 물리 삭제, 처리 후 core 내부 API로 완료 보고. 페이로드에 `deletionRequestId`·`scope` 포함 (P09) |
 
 - 위 메시지는 모두 core 감사 큐 `core.event.audit`에도 바인딩되어 `event_log`에 기록된다(#208). 바인딩은 routing key별로 두며 `#` 와일드카드는 쓰지 않는다(report 발행자의 unroutable 감지 유지). 메시지를 추가하면 감사 바인딩도 함께 추가하고 `RabbitDefinitionsTest`가 누락을 검사한다.
-- 구현 예정(P24): `report.generate` 페이로드에 `periodType`(`DAILY`·`WEEKLY`, 생략 시 `WEEKLY`) 추가, 새 메시지·큐 없음. 일일은 ai를 호출하지 않음. 감사 바인딩(#208) 변경 없음
+- P24(#390·#391): `report.generate` 페이로드에 `periodType`(`DAILY`·`WEEKLY`, 생략 시 `WEEKLY`) 추가, 새 메시지·큐 없음. 일일은 ai를 호출하지 않음. 감사 바인딩(#208) 변경 없음
 
 ### 1.5 핵심 흐름
 1. **미션 학습**
@@ -131,10 +131,10 @@
    - report가 learning 기록 조회 → 코드 계산 → ai 서술·저녁 질문 → 숫자·인용 대조 → 렌더링·S3 저장
    - `report.completed` → core 알림
 
-구현 예정(2026-11-06 결정):
+2026-11-06 결정(6·8·9는 구현, 7의 포인트 적립 연결만 구현 예정):
 
-6. **주간 테마**: core가 학생 학년으로 학년군을 정해 learning에 이번 주 테마 조회 → learning이 KST 요일로 문제 상태 계산. 시도 시작 시 learning이 `context` 검사, core가 무료 한도(`THEME_DAY` 신규 `201`만) 집계
-7. **학습 완료 후**: 돌아보기 저장 성공 → core가 포인트 적립(미션당 최초 1회) → 커뮤니티 공개가 켜져 있고 그 미션 공유물이 없으면 learning에 공유 요청(학생·미션당 1개) → 공유 성공 시 포인트 적립
+6. **주간 테마**: core가 학생 학년으로 학년군을 정해 learning에 이번 주 테마 조회 → learning이 KST 요일로 문제 상태 계산. 시도 시작 시 learning이 `context` 검사, core가 무료 한도(`THEME_DAY`·`EXTRA` 신규 `201`, 합쳐 하루 1개) 집계(#387)
+7. **학습 완료 후**: 돌아보기 저장 성공 → core가 포인트 적립(미션당 최초 1회) → 커뮤니티 공개가 켜져 있고 그 미션 공유물이 없으면 learning에 공유 요청(학생·미션당 1개) → 공유 성공 시 포인트 적립. 공유 요청은 구현(#388), 두 포인트 적립 연결은 구현 예정(#389)
 8. **일일 리포트**: core 스케줄러(ShedLock)가 매일 자정(다음 날 00:00 KST) 보호자가 연결된 자녀별 `report_job(period_type = DAILY)` + Outbox → `report.generate` → report가 learning 기록 조회 → 코드 계산·템플릿 구성 → 인용 대조 → 렌더링·S3 저장(ai 호출 없음) → `report.completed` → core 일일 알림
 9. **리포트 대화**: 학부모가 일일 리포트에서 대화 생성 → core가 리포트 소유·자녀 연결 확인 후 대화에 리포트 ID·판을 저장하고 범위를 그날로 고정 → 메시지마다 core가 report에서 그 판을 읽어 ai 요청에 넣음 → 이후는 4번 분석 대화 흐름 그대로
 
@@ -143,8 +143,8 @@
 - **core 발행 복구(#243)**: report #131과 같은 기준으로 subject별 선두만 1건씩 발행·confirm한다. 실패는 안전 오류 코드·횟수를 기록하고 1·5·15분 재시도 후 격리하며 다른 subject는 계속 처리한다. 브로커 연결 실패·confirm timeout은 그 주기를 중단한다. 격리 선두와 그 뒤 이벤트는 운영 SQL로 재처리할 때까지 대기한다. [정책·운영 SQL](../report/core-gateway.md#11-core-outbox-실패-격리-243)
 - **report 발행 복구(#131)**: 학생별 선두만 발행한다. 실패한 학생은 1·5·15분 재시도 후 격리하고 다른 학생은 계속 처리한다. 격리된 선두와 그 뒤 이벤트는 운영 CLI로 원래 이벤트 id를 재처리할 때까지 대기한다. 소비 재시도 큐/DLQ와 별개로 Outbox DB에 실패·격리 상태를 저장한다. [정책·운영 명령](../report/report.md#11-outbox-실패-격리와-학생별-발행-순서-131)
 - 구현 예정: 포인트 적립은 core가 learning 응답을 동기 프록시하는 경로(돌아보기 저장 성공 = 학습 완료, 공유·반응 성공, 되돌아보기 열람)에서 같은 core 트랜잭션으로 원장에 기록한다. learning은 계속 발행 없음(1.6 Outbox 원칙 유지). 프록시 응답 후 core 저장이 실패하면 사건 키(`student_id, event_type, source_key`)로 다음 같은 사건·조회 때 다시 적립할 수 있게 둔다(사건 키 멱등, 같은 사건 재요청·주간 테마 조회 때 보충)
-- 구현 예정: 공유물 생성도 돌아보기 저장 성공 직후 core → learning 내부 호출(학생·미션당 1개 멱등, 다시 풀기는 공유 안 함). 공개 설정 변경·동의 철회·이관 수락은 core → learning `community-visibility` 호출
-- 학생 삭제는 기존 `student.deleted` 소비 범위에 테마 열람 기록(learning #385 구현)·공유물·반응(learning 구현 예정) 추가, core는 포인트·해금·착용 정보를 함께 삭제(`mission_daily_usage`는 #387에서 삭제 확정 트랜잭션에 포함)
+- 공유물 생성(#388)도 돌아보기 저장 성공 직후 core → learning 내부 호출(학생·미션당 1개 멱등, 다시 풀기는 공유 안 함). 공개 설정 변경·동의 철회·이관 수락은 core → learning `community-visibility` 호출
+- 학생 삭제는 기존 `student.deleted` 소비 범위에 테마 열람 기록(learning #385 구현)·공유물·반응(learning #386 구현) 추가, core는 포인트·해금·착용 정보를 함께 삭제(`mission_daily_usage`는 #387에서 삭제 확정 트랜잭션에 포함)
 - **상태 없는 서비스(ai, scoring)**: 이벤트 발행은 처리 결과 반환 후 best-effort (사용량 집계용), 유실 시 Langfuse trace로 보정(Langfuse는 예정, 저장소 미구성)
 - **멱등 소비**: 소비자별 `processed_event(event_id UK)` 테이블 또는 DB 상태 전이 조건(`QUEUED→RUNNING`)
 - **이벤트 기록·보존(#208)**: core가 감사 큐로 모든 업무 메시지의 id·type·source·subject·봉투 시각·수신 시각을 `event_log`에 저장한다(payload 제외). 발행은 각 서비스 `outbox_event`, 소비는 `processed_event`·`llm_usage`·작업 상태와 `event_id`로 조인한다. ai·scoring은 DB 없이 유지하며, 브로커에 도달하지 못한 발행 실패는 `event_log`에 없고 서비스 로그로만 확인한다. `model.version.activated`의 Pod별 적용은 기록하지 않는다(readiness·snapshot 재조회로 보장). 발행 완료 outbox·processed_event·event_log는 90일 후 삭제하고 미발행·격리 행은 남긴다. [결정 근거](../report/core-gateway.md#9-rabbitmq-발행소비-기록-208)
@@ -301,7 +301,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 ├─ report/
 │  ├─ controller/
 │  ├─ consumer/                  # report.started·completed·failed
-│  ├─ scheduler/                 # 주간·일일(구현 예정) 생성·종료 유실 복구 (ShedLock)
+│  ├─ scheduler/                 # 주간·일일 생성·종료 유실 복구 (ShedLock)
 │  ├─ service/
 │  ├─ domain/
 │  ├─ repository/
@@ -343,7 +343,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ domain/
 │  ├─ repository/
 │  └─ client/
-├─ reward/                       # (구현 예정, P21·P22) 포인트 규칙·원장·잔액, 해금·착용, 꾸미기 아이템
+├─ reward/                       # (P21·P22, #389) 포인트 규칙·원장·잔액, 해금·착용, 꾸미기 아이템
 │  ├─ controller/
 │  ├─ service/
 │  ├─ domain/
@@ -401,7 +401,7 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 │  ├─ service/
 │  ├─ domain/
 │  └─ repository/
-├─ community/                    # (구현 예정, P20) 공유물·반응·열람 검사·숨김 상태
+├─ community/                    # (P20, #386) 공유물·반응·열람 검사·숨김 상태
 │  ├─ controller/
 │  ├─ service/
 │  ├─ domain/
@@ -697,7 +697,7 @@ backend/report-service/
   - 축소 시 끊김 방지(D안): replica 1에서는 노드 정리가 Pod를 먼저 지운 뒤 새로 만들어 공백이 생긴다. core·learning·ai에 `eks.amazonaws.com/nodegroup=application` preferred nodeAffinity를 두어 기본 Pod를 관리형 노드에 놓고, HPA 축소 때 ReplicaSet이 최근 Pod부터 지우는 기본 순서로 Karpenter 노드가 먼저 비게 한다. 부하 중 재배포·관리형 노드 장애로 순서가 바뀌면 축소 때 한 번 끊길 수 있다(A안: 최소 2 + PDB는 상시 노드 1대 비용으로 보류)
   - NodePool `application-burst`: t3.medium·t3.large On-Demand, 2a·2b, 상한 CPU 4·메모리 16Gi(최대 약 2대), `WhenEmptyOrUnderutilized`·`consolidateAfter 5m`·한 번에 1노드, `expireAfter 720h`. EC2NodeClass `application`은 기존 노드 역할·AMI(`al2023@v20261031`)·private subnet·cluster SG를 ID로 지정
   - 부하 시 노드 확장·축소 실측은 이번에 하지 않았다([근거와 한계](../report/aws-deploy.md#eks-노드-자동-확장-karpenter와-앱-hpa-211372-2026-11-05))
-- 구현 예정(P24) 일일 리포트 부하
+- 일일 리포트 부하(P24, #390)
   - 월요일 00:00에 주간·일일 리포트 작업이 함께 생긴다(자녀당 2건). 일일은 LLM을 부르지 않아 비용 경보(P13 80%)에는 영향이 없고, report-worker(KEDA) 적체·DLQ 경보는 기존 기준으로 함께 본다([운영 경보](operational-alerts.md))
   - 자녀 수만큼 매일 작업이 생겨 report_db·S3 파일이 주간 대비 약 7배로 늘어난다. 보관 기간은 기존(P09 이용 중 보관)과 같음
 - 종료 처리: core는 preStop 지연 + terminationGracePeriod로 SSE 정리 시간 확보 (롤링 배포·축소 시 단절은 클라이언트 재연결로 처리)
