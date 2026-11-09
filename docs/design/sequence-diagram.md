@@ -815,7 +815,7 @@ sequenceDiagram
   participant A as ai
   participant S3 as S3
 
-  SCH->>SCH: 매주 월 07:00 KST, @SchedulerLock 획득 (ShedLock, 1개 레플리카만) (P06)
+  SCH->>SCH: 매주 월 00:00 KST(일요일 자정), @SchedulerLock 획득 (ShedLock, 1개 레플리카만) (P06)
   loop ACTIVE 학생마다 (기록 없어도 포함, 대상 주 = 직전 월~일 KST, P06)
     rect rgba(128,128,128,0.12)
       SCH->>CDB: report_job 저장 (SCHEDULE, QUEUED) — 부분 UK로 중복 방지
@@ -987,7 +987,7 @@ sequenceDiagram
   participant L as learning
   participant S3 as S3
 
-  SCH->>SCH: 매일 07:00 KST, @SchedulerLock 획득
+  SCH->>SCH: 매일 00:00 KST(대상일 자정), @SchedulerLock 획득
   loop 보호자 LINKED인 ACTIVE 학생마다 (기록 없어도 포함, 대상일 = 전날 KST)
     rect rgba(128,128,128,0.12)
       SCH->>CDB: report_job (SCHEDULE, period_type = DAILY, period_from = period_to)
