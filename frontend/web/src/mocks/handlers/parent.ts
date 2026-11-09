@@ -5,6 +5,7 @@ import { counts } from '../../domain/classroom.ts'
 import type { Child, Period } from '../../domain/classroom.ts'
 import type { Consent, ConsentDocument, ConsentHistory, Conversation, Scope } from '../../domain/parent.ts'
 import { validPeriod } from '../../domain/parent.ts'
+import { isStoredGrade } from '../../domain/grade.ts'
 import { fixtureStore as store } from '../fixtures/student.ts'
 import {
   mockAccounts,
@@ -381,7 +382,7 @@ export const parentHandlers = [
       if (
         Object.keys(d).some((k) => k !== 'nickname' && k !== 'grade') ||
         (d.nickname !== undefined && (!nickname || nickname.length > 40)) ||
-        (d.grade !== undefined && (!Number.isInteger(d.grade) || Number(d.grade) < 3 || Number(d.grade) > 6))
+        (d.grade !== undefined && !isStoredGrade(d.grade))
       )
         fail('VALIDATION_FAILED', '별명·지원 학년을 확인해 주세요.')
       const updated = {

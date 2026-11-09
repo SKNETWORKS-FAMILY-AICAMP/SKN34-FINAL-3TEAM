@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router'
 import { useSession } from './auth/sessionContext.ts'
 import './student/pinpad.css'
 import { roleStart } from '../domain/navigation.ts'
+import { gradeLabel } from '../domain/grade.ts'
 import { StudentWorld } from './student/world/StudentWorld.tsx'
 import type { StudentPage } from './student/world/StudentWorld.tsx'
 import { ThinkingMap } from './student/world/ThinkingMap.tsx'
@@ -599,7 +600,7 @@ export function ClassroomApp() {
                       {session.role === 'PARENT' && child && (
                         <div className="ux-parent-entry">
                           <span>
-                            <strong>{child.nickname}</strong> · 초등 {child.grade}학년 ·{' '}
+                            <strong>{child.nickname}</strong> · {gradeLabel(child.grade)} ·{' '}
                             {child.plan === 'FREE' ? '무료' : child.plan === 'PREMIUM' ? '프리미엄' : '이용권 확인 필요'}
                           </span>
                           <button
@@ -711,7 +712,7 @@ export function ClassroomApp() {
                   <h2>{child?.nickname ?? '자녀'}의 공책</h2>
                   <p>
                     {child
-                      ? `초등 ${child.grade}학년 · ${session.role === 'STUDENT' ? '학생' : '학부모'}`
+                      ? `${gradeLabel(child.grade)} · ${session.role === 'STUDENT' ? '학생' : '학부모'}`
                       : '자녀 선택'}
                   </p>
                 </div>

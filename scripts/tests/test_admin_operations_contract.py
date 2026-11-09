@@ -137,12 +137,23 @@ class AdminOperationsContracts(unittest.TestCase):
                     for field in ('problems','themeSummary'):
                         reviewed['allOf'][1]['properties'].pop(field)
                 if section=='schemas' and name=='NotificationType':
-                    reviewed.pop('description')
-                    for value in ('DAILY_REPORT_COMPLETED','DAILY_REPORT_FAILED'):
+                    # #432 adds only the GRADE_PROMOTED type (described in the same sentence).
+                    self.assertIn('GRADE_PROMOTED',reviewed.pop('description'))
+                    for value in ('DAILY_REPORT_COMPLETED','DAILY_REPORT_FAILED','GRADE_PROMOTED'):
                         reviewed['enum'].remove(value)
                 if section=='schemas' and name=='NotificationSettings':
-                    self.assertEqual(reviewed['properties']['items']['maxItems'],8)
+                    self.assertEqual(reviewed['properties']['items']['maxItems'],9)
                     reviewed['properties']['items']['maxItems']=6
+                # #432 stores grades up to middle school third grade (9); only the upper bound changed.
+                if section=='schemas' and name in ('StudentDeviceToken','ChildListItem','DashboardChild','Child'):
+                    grade=reviewed['properties']['child']['properties']['grade'] if name=='StudentDeviceToken' else reviewed['properties']['grade']
+                    if name=='Child':
+                        self.assertEqual(grade['enum'],[3,4,5,6,7,8,9]); grade['enum']=[3,4,5,6]
+                    else:
+                        self.assertEqual(grade['maximum'],9); grade['maximum']=6
+                if section=='paths' and name=='/children/{childId}':
+                    grade=reviewed['patch']['requestBody']['content']['application/json']['schema']['properties']['grade']
+                    self.assertEqual(grade['maximum'],9); grade['maximum']=6
                 # #388 (P20 community) adds only the optional COMMUNITY consent kind, the COMMUNITY_POST report target,
                 # the community reviewResult rule and the admin linkedPost. Remove exactly those additions.
                 if section=='schemas' and name=='ConsentDocument':

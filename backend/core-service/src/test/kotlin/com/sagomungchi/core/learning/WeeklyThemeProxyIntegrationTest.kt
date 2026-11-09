@@ -108,6 +108,10 @@ class WeeklyThemeProxyIntegrationTest : PostgresRepositoryTest() {
         jdbc.update("UPDATE student SET grade=4 WHERE id=?", child)
         call("GET", "/api/v1/students/me/weekly-theme").andExpect(status().isOk())
         assertTrue(stub.requests.last().target.contains("gradeBand=G3_4"))
+        // #432: 중학생은 중학교 과정 확장 전까지 초5~6 테마를 받는다.
+        jdbc.update("UPDATE student SET grade=9 WHERE id=?", child)
+        call("GET", "/api/v1/students/me/weekly-theme").andExpect(status().isOk())
+        assertTrue(stub.requests.last().target.contains("gradeBand=G5_6"))
     }
 
     @Test fun `free child starts one theme day mission then gets 429 while resume and review keep working`() {

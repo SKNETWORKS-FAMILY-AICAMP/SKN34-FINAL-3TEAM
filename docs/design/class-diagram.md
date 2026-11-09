@@ -564,6 +564,7 @@ classDiagram
 - `StudentPinService.attempt`: 학생 행 잠금으로 실패 횟수 증가, 5회 도달 시 `pin_locked_at` 기록. `set`은 DB 재인증 소비와 해시·실패 횟수 0·잠금 해제를 한 번에 처리
 - 페어링 코드는 Redis(10분·1회용), 기기 자격증명은 `student_device.token_hash`만 저장. 저장 구조는 ERD 3.1·6장(core V13)
 - `GuardianshipService.register`: 학년 3~6·출생연도 검증, 보호자 행 잠금 후 `LINKED` 자녀 3명이면 `CHILD_LIMIT_REACHED`, GUARDIAN 동의 필수 (P01·P02·P03). 다른 보호자 연결(`link`) 없음. 예외는 #289 이관 수락뿐이며 기존 연결을 종료(`transferred_at`)하고 새 연결(`method=TRANSFER`)로 교체하므로 자녀당 현재 보호자는 계속 1명(V26 부분 UK)
+- `GradePromotionService.promote`(#432, P26): `GradePromotionScheduler`가 3월 매일 00:05 KST(ShedLock `core-grade-promotion`)에 호출. 3월이 아니면 아무것도 하지 않고, 대상 학생을 한 SQL로 올리며 `student_grade_promotion`에 학년도 이력을 남긴 뒤 같은 트랜잭션에서 `NotificationService.gradePromoted`로 보호자에게 알린다. 학습 요청에는 `StudentLearningContext.learningGrade`(최대 6)를 쓴다
 - `GuardianTransferService` (#289): 요청·수락·거절·취소 모두 계정→학생→이관 요청 행 잠금 순서로 직렬화한다. 수락은 한 트랜잭션에서 받는 학부모 필수 동의·3명 한도·보내는 학부모 탈퇴 가능 상태·진행 중 분석 없음을 다시 확인하고, 연결 교체·보호자 동의 저장(실패 시 롤백)·선택 상담 소유 이전·학생 세션과 등록 기기 해제를 수행한다. 상태 전이는 [상태 다이어그램 2.4](state-diagram.md#24-guardian_transferstatus-289-탈퇴-전-자녀-이관), 흐름은 [시퀀스 다이어그램](sequence-diagram.md)의 이관 절. 컨트롤러는 항상 등록하며, 본인 목록·취소·거절은 기능 off·동의 누락에도 허용한다. 신규 대상 조회·요청·수락의 기능·동의 검사는 유지한다(#307)
 
 ### 3.2 학습 프록시·분석 대화 (learning · conversation)

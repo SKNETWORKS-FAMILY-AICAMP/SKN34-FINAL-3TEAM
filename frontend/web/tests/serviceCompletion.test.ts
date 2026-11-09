@@ -49,7 +49,7 @@ test('알림 설정 유형 검증·부분 변경 유지',async()=>{
   assert.equal((await call('/notification-settings','PUT',{items:[{type:'WRONG',enabled:true}]})).status,422)
   const result=await call('/notification-settings','PUT',{items:[{type:'REPORT_FAILED',enabled:false}]})
   assert.equal(result.data.items.find((s:{type:string})=>s.type==='REPORT_FAILED').enabled,false)
-  assert.equal(result.data.items.length,8) // 일일 리포트 2종 추가(P24)
+  assert.equal(result.data.items.length,9) // 일일 리포트 2종(P24), 학년 진급(#432) 추가
 })
 test('삭제 재확인 scope·자녀 결합 및 단회 사용, 미완료 상태 보존',async()=>{
   await login()

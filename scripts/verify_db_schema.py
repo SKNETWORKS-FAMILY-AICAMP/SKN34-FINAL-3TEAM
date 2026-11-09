@@ -121,9 +121,22 @@ SELECT pg_temp.expect_sqlstate(
     $$UPDATE user_account SET status = NULL$$, '23502');
 SELECT pg_temp.expect_sqlstate($$UPDATE student SET birth_year = NULL$$, '23514');
 SELECT pg_temp.expect_sqlstate($$UPDATE student SET grade = 2$$, '23514');
-SELECT pg_temp.expect_sqlstate($$UPDATE student SET grade = 7$$, '23514');
-UPDATE student SET grade = 6;
+SELECT pg_temp.expect_sqlstate($$UPDATE student SET grade = 10$$, '23514');
+-- #432 (P26): stored grades run to middle school third grade (9) for the March promotion.
+UPDATE student SET grade = 9;
 UPDATE student SET grade = 3;
+INSERT INTO student_grade_promotion (student_id, school_year, from_grade, to_grade, promoted_at)
+SELECT id, 2027, 3, 4, now() FROM student;
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO student_grade_promotion (student_id, school_year, from_grade, to_grade, promoted_at)
+    SELECT id, 2027, 4, 5, now() FROM student
+$$, '23505');
+SELECT pg_temp.expect_sqlstate($$UPDATE student_grade_promotion SET to_grade = 5$$, '23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE student_grade_promotion SET from_grade = 9, to_grade = 10$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE student_grade_promotion SET student_id = '00000000-0000-4000-8000-999999999999'
+$$, '23503');
+DELETE FROM student_grade_promotion;
 SELECT pg_temp.expect_sqlstate($$UPDATE student SET pin_failed_count=-1$$, '23514');
 SELECT pg_temp.expect_sqlstate($$UPDATE student SET pin_failed_count=NULL$$, '23502');
 SELECT pg_temp.expect_sqlstate($$UPDATE student SET community_enabled=NULL$$, '23502');

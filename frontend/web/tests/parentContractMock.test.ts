@@ -42,6 +42,9 @@ test('MSW 자녀 수정은 nickname·grade 중 보낸 필드만 바꾸고 계약
   assert.deepEqual([graded.nickname, graded.grade], [child.nickname, 4])
   const renamed = await (await patch({ nickname: ' 바꾼 별명 ' })).json()
   assert.deepEqual([renamed.nickname, renamed.grade], ['바꾼 별명', 4])
-  for (const invalid of [{ nickname: ' ' }, { grade: 7 }, { birthYear: 2016 }])
+  // #432: 자동 진급과 맞춰 수정은 중3(9)까지 받는다.
+  const middle = await (await patch({ grade: 7 })).json()
+  assert.equal(middle.grade, 7)
+  for (const invalid of [{ nickname: ' ' }, { grade: 10 }, { grade: 2 }, { birthYear: 2016 }])
     assert.equal((await patch(invalid)).status, 400, JSON.stringify(invalid))
 })

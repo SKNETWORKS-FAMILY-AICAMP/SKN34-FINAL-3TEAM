@@ -47,5 +47,6 @@ class LearningOpenApiTests(unittest.TestCase):
         self.assertEqual({p["name"] for p in parameters}, {"page", "size"})
         source = (ROOT / "backend/core-service/src/main/kotlin/com/sagomungchi/core/learning/service/LearningProxyService.kt").read_text(encoding="utf-8")
         self.assertIn("students.requireLinked", source)
-        self.assertIn('"grade=${student.grade}"', source)
+        # #432: 중학생(7~9)은 중학교 과정 확장 전까지 초6(6)으로 맞춰 보낸다.
+        self.assertIn('"grade=${student.learningGrade}"', source)
         self.assertIn('"demo=${student.demo}"', source)

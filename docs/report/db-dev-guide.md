@@ -21,7 +21,7 @@ V6 마이그레이션 주석이 참조하는 구 `db-policy-schema.md` 내용은
 
 | 대상 | 적용 | 이유 |
 |---|---|---|
-| core `student` | `birth_year` NOT NULL, `user_account_id` 제거, 학년 3~6 CHECK | P01 보호자 중심 등록, P03 초3~6 |
+| core `student` | `birth_year` NOT NULL, `user_account_id` 제거, 학년 3~6 CHECK(V41에서 3~9로 넓힘, 자동 진급 #432·P26) | P01 보호자 중심 등록, P03 초3~6 |
 | core `guardianship.method` | `REGISTER`만 | P02 기존 계정 연결 제외 |
 | core `notification_setting.channel` | `IN_APP`만 | P10 |
 | core `error_report.category` | NOT NULL, 5유형 CHECK | 신고 유형 확정 |

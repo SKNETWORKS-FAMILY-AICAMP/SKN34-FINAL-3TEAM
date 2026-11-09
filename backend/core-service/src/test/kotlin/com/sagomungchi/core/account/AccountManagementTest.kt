@@ -180,7 +180,14 @@ class AccountManagementTest : PostgresRepositoryTest() {
   val other=parent(); val foreign=child(other.identity.account.id)
   mvc.patch("/api/v1/children/$foreign") { header("Authorization","Bearer ${p.accessToken}");contentType=MediaType.APPLICATION_JSON;content="{\"grade\":4}" }.andExpect { status { isForbidden() } }
   mvc.patch("/api/v1/children/$c") { header("Authorization","Bearer ${p.accessToken}");contentType=MediaType.APPLICATION_JSON;content="{\"nickname\":\" 새 이름 \",\"grade\":6}" }.andExpect { status { isOk() };jsonPath("$.nickname") { value("새 이름") };jsonPath("$.grade") { value(6) } }
-  mvc.patch("/api/v1/children/$c") { header("Authorization","Bearer ${p.accessToken}");contentType=MediaType.APPLICATION_JSON;content="{\"grade\":7}" }.andExpect { status { isBadRequest() } }
+  // #432: 자동 진급과 맞춰 수정은 중3(9)까지 받는다. 학년이 바뀔 때만 학년 변경 시각을 남긴다.
+  val changed=jdbc.queryForObject("SELECT grade_changed_at FROM student WHERE id=?",java.time.OffsetDateTime::class.java,c)
+  assertNotNull(changed)
+  mvc.patch("/api/v1/children/$c") { header("Authorization","Bearer ${p.accessToken}");contentType=MediaType.APPLICATION_JSON;content="{\"nickname\":\"별명만\"}" }.andExpect { status { isOk() };jsonPath("$.grade") { value(6) } }
+  assertEquals(changed,jdbc.queryForObject("SELECT grade_changed_at FROM student WHERE id=?",java.time.OffsetDateTime::class.java,c))
+  mvc.patch("/api/v1/children/$c") { header("Authorization","Bearer ${p.accessToken}");contentType=MediaType.APPLICATION_JSON;content="{\"grade\":7}" }.andExpect { status { isOk() };jsonPath("$.grade") { value(7) } }
+  mvc.patch("/api/v1/children/$c") { header("Authorization","Bearer ${p.accessToken}");contentType=MediaType.APPLICATION_JSON;content="{\"grade\":10}" }.andExpect { status { isBadRequest() } }
+  mvc.patch("/api/v1/children/$c") { header("Authorization","Bearer ${p.accessToken}");contentType=MediaType.APPLICATION_JSON;content="{\"grade\":2}" }.andExpect { status { isBadRequest() } }
   mvc.patch("/api/v1/me") { header("Authorization","Bearer ${p.accessToken}");contentType=MediaType.APPLICATION_JSON;content="{\"name\":\" 새 보호자 \"}" }.andExpect { status { isOk() };jsonPath("$.name") { value("새 보호자") } }
   jdbc.update("UPDATE consent SET status='WITHDRAWN',withdrawn_at=now() WHERE subject_user_id=?",p.identity.account.id)
   mvc.patch("/api/v1/me") { header("Authorization","Bearer ${p.accessToken}");contentType=MediaType.APPLICATION_JSON;content="{\"name\":\"우회\"}" }.andExpect { status { isForbidden() } }
@@ -217,6 +224,7 @@ class AccountManagementTest : PostgresRepositoryTest() {
  }
  @Test fun `one service and duplicates cannot complete and both services erase only the target profile`() {
   val p=parent();val c=child(p.identity.account.id);val untouched=child(p.identity.account.id)
+  jdbc.update("INSERT INTO student_grade_promotion(student_id,school_year,from_grade,to_grade,promoted_at) VALUES(?,2026,3,4,now())",c)
   val request=children.delete(p.identity,c,DeletionScope.PROFILE,grant(p.identity,ReauthPurpose.CHILD_DELETE,c,"PROFILE"))
   repeat(2) { assertEquals("CONFIRMED",children.complete(request.deletionRequestId,"learning","SYSTEM",setOf(c.toString())).status) }
   assertEquals(1,count("SELECT count(*) FROM deletion_completion WHERE request_id=?",request.deletionRequestId))
@@ -225,6 +233,7 @@ class AccountManagementTest : PostgresRepositoryTest() {
   children.complete(request.deletionRequestId,"report","SYSTEM",setOf(c.toString()))
   assertEquals(2,count("SELECT count(*) FROM deletion_completion WHERE request_id=?",request.deletionRequestId))
   assertEquals(1,count("SELECT count(*) FROM student WHERE id=? AND status='DELETED' AND nickname IS NULL AND grade IS NULL AND birth_year IS NULL",c))
+  assertEquals(0,count("SELECT count(*) FROM student_grade_promotion WHERE student_id=?",c))
   assertEquals("ACTIVE",jdbc.queryForObject("SELECT status FROM student WHERE id=?",String::class.java,untouched))
  }
  @Test fun `concurrent service reports preserve two unique completions`() {
