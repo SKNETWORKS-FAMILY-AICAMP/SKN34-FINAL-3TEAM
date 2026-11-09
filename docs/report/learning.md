@@ -833,9 +833,9 @@ learning `Element`에 `code`·`goodThought`를 더했을 때 응답을 받는 �
 
 ### 검증
 
-- learning `./gradlew clean test bootJar`(JDK 21 임시 컨테이너 + Testcontainers): 356건 중 354건 통과, bootJar 생성. 실패 2건은 `RecordServiceTest`의 기존 시한 테스트(기간을 2026-11-02~08로 고정하고 완료 시각을 `now()`로 넣어 11-09부터 기간 밖)로 이 변경과 무관(파일 미수정, 후속)
+- learning `./gradlew clean test bootJar`(JDK 21 임시 컨테이너 + Testcontainers, develop #410 병합 뒤): 356건 모두 통과, bootJar 생성. 기존 `RecordServiceTest` 2건이 기간을 2026-11-02~08로 고정하고 완료 시각을 `now()`로 넣어 11-09부터 실패하던 것을 기간 안 고정 시각으로 고침
   - 새 테스트: `WeeklyThemeServiceTest` 7건(요일 상태·소개·재사용·404·시작 검사·되돌아보기 열람 멱등·완주 경계·주간 요약), `WeeklyThemeAdminServiceTest` 10건(버전·전이 409·검토 중 수정·게시 중 수정과 게시본·게시 검사 6종·같은 주 1개·중단 후 재사용·404/400), `AttemptThemeStartTest` 5건(THEME_DAY 저장·자정 뒤 이어하기·THEME_REVIEW·미션 검사 먼저·DB CHECK), `WeeklyThemeControllerTest`·`AdminWeeklyThemeControllerTest`, `AttemptControllerTest` 본문 `context` 사례, `StudentDeletionTest`에 `theme_review_view`
-- 루트 `python -O -m unittest discover -s scripts/tests`: 188건 OK(develop #409 병합 뒤)(`test_weekly_theme_contract.py` 3자 대조 3건 추가, OpenAPI 조작 52)
+- 루트 `python -O -m unittest discover -s scripts/tests`: 192건 OK(develop #410 병합 뒤)(`test_weekly_theme_contract.py` 3자 대조 3건 추가, OpenAPI 조작 52)
 - ci-db-schema 방식 `scripts/check_db_migrations.py`(일회용 PostgreSQL 17 + Flyway 컨테이너): PASS. learning V1~V12 적용, learning_db 25개 표·222개 컬럼(전체 88개·775개, #407 병합 뒤)이 ERD와 일치, learning 음성 사례 33건(테마 CHECK·FK·부분 UK·`context` CHECK 추가), 반복 마이그레이션 변화 없음
 - learning 단독 실연(2026-11-09 월요일, 일회용 네트워크·PostgreSQL에 V1~V12 + 데모 미션 시드, 이 브랜치 bootJar, core가 넘기는 내부 토큰·역할·학생 범위 헤더로 직접 호출, 끝난 뒤 컨테이너·네트워크 삭제): 게시 테마 없음 404 → 작성 201 → 검토 요청 없이 게시 409 `CONFLICT` → 검토 요청·게시 200 → 같은 주 둘째 테마 422 `errors[WEEK_ALREADY_PUBLISHED]` → 학생 월요일 조회(MON `OPEN`, 소개 있음) → 오늘 `THEME_DAY` 시작 201(시도에 `THEME_DAY`·테마·2026-11-09 저장) → 화요일 문제 409 `THEME_DAY_CLOSED` → 잘못된 `context` 400 → 같은 미션 다시 시작 200 → 평일 열람 409 `THEME_REVIEW_NOT_ALLOWED` → 토·일 날짜 열람 `firstViewThisWeek` true 뒤 false → 토요일 조회 `review.open` → 다음 주 `reused` → SYSTEM 주간 요약 `OK` → 게시 중 수정(v2) 뒤 학생은 게시본 제목
   - 데모 시드 초3 미션은 학년 하나(3~3)라 G3_4 학년군 전체를 덮지 않아 그대로는 게시 검사에 걸린다. 실연 DB에서만 3~4로 넓혔다(아래 후속)
@@ -843,6 +843,5 @@ learning `Element`에 `code`·`goodThought`를 더했을 때 응답을 받는 �
 
 ### 후속 작업
 
-- `RecordServiceTest` 시한 테스트 2건 수정(완료 시각을 기간 안 고정 시각으로)
 - 데모 테마 시드: 지금 데모 미션은 학년 하나씩이라 학년군 테마를 게시할 수 없음. 학년군 전체 범위 미션 또는 데모 테마 시드가 필요
 - 시도 상세·기록 응답의 `context` 노출(#389·#391), 웹 목업 차이 정정(#393·#395)
