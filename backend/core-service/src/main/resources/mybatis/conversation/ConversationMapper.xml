@@ -9,6 +9,8 @@
 <arg column="period_to" javaType="java.time.LocalDate"/>
 <arg column="created_at" javaType="java.time.OffsetDateTime"/>
 <arg column="updated_at" javaType="java.time.OffsetDateTime"/>
+<arg column="report_id" javaType="java.util.UUID"/>
+<arg column="report_revision" javaType="java.lang.Integer"/>
 </constructor></resultMap>
 <resultMap id="message" type="com.sagomungchi.core.conversation.domain.MessageRow"><constructor>
 <arg column="id" javaType="java.util.UUID"/>
@@ -46,7 +48,7 @@
 <select id="lock" resultMap="conversation" flushCache="true" useCache="false">SELECT * FROM conversation WHERE id=#{id} FOR UPDATE</select>
 <select id="lockStudent" resultType="java.util.UUID" flushCache="true" useCache="false">SELECT id FROM student WHERE id=#{id} AND status='ACTIVE' FOR UPDATE</select>
 <select id="list" resultMap="conversation" flushCache="true" useCache="false">SELECT * FROM conversation WHERE parent_user_id=#{parent} AND student_id=#{student} ORDER BY created_at DESC,id LIMIT 100</select>
-<insert id="insert">INSERT INTO conversation(id,parent_user_id,student_id,period_from,period_to,created_at,updated_at) VALUES(#{id},#{parentUserId},#{studentId},#{periodFrom},#{periodTo},#{createdAt},#{updatedAt})</insert>
+<insert id="insert">INSERT INTO conversation(id,parent_user_id,student_id,period_from,period_to,created_at,updated_at,report_id,report_revision) VALUES(#{id},#{parentUserId},#{studentId},#{periodFrom},#{periodTo},#{createdAt},#{updatedAt},#{reportId,jdbcType=OTHER},#{reportRevision,jdbcType=INTEGER})</insert>
 <update id="scope">UPDATE conversation SET period_from=#{scope.from},period_to=#{scope.to},updated_at=#{now} WHERE id=#{id}</update>
 <select id="messages" resultMap="message" flushCache="true" useCache="false">SELECT * FROM conversation_message WHERE conversation_id=#{id} ORDER BY seq</select>
 <select id="message" resultMap="message" flushCache="true" useCache="false">SELECT * FROM conversation_message WHERE id=#{id}</select>

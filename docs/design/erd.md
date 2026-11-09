@@ -317,6 +317,8 @@ erDiagram
     date period_to
     timestamptz created_at
     timestamptz updated_at
+    uuid report_id "NULL 허용 · 일일 리포트 고정 대화 (report 논리 참조, P25)"
+    int report_revision "NULL 허용 · report_id와 함께 · 1 이상"
   }
   conversation_message {
     uuid id PK
@@ -423,6 +425,7 @@ erDiagram
 - `report_view`: 학부모 리포트 상세 조회 시 기록, 주간 리포트 열람률 지표 근거 (기획서 3.9)
 - `clarification`이 있는 메시지는 범위 확인 후 종료된 질문, 사용자 선택은 다음 메시지의 `scope_*`에 저장 (FN-AGT-03)
 - `shedlock`은 name varchar(64) PK, lock_until·locked_at timestamptz, locked_by varchar(255), 모두 NOT NULL (주간·일일 리포트·정기 청구 스케줄. 리포트 잠금 이름은 `core-weekly-reports`·`core-daily-reports`로 따로 둔다).
+- `conversation.report_id`·`report_revision`(V33, #392): 함께 NULL(일반 대화) 또는 함께 값(일일 리포트 고정 대화, P25). `ck_conversation_report_pair`·`ck_conversation_report_revision`(1 이상)·`ck_conversation_report_day`(고정이면 `period_from = period_to` = 대상일). 고정 대화는 범위를 바꾸지 않는다
 - `conversation_message.scope_student_id`는 같은 core DB의 `student.id` FK. 미확정 범위·처리 중 출력은 NULL로 두며 임시 결과를 채우지 않는다.
 
 ### 3.2.1 분석 대화 저장 규칙 (#41)
@@ -784,11 +787,10 @@ erDiagram
 
 ### 3.6 구현 예정 변경 (core_db)
 
-2026-11-06 서비스 기획 방향 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 저장 구조. 커뮤니티 공개 설정·`COMMUNITY` 동의·신고 대상(#388)은 V31·V32로 구현해 3.1·3.3 Mermaid로 옮겼다. 나머지는 마이그레이션 전이라 위 Mermaid·6장 인덱스 표(실제 DB 계약, `scripts/verify_db_schema.py`가 대조)에는 넣지 않고 표로만 둔다. 구현 시 새 마이그레이션 버전과 함께 Mermaid·6장으로 옮긴다. 컬럼 기본값은 두지 않는다(검증 스크립트 규칙): 기존 행이 있는 테이블의 NOT NULL 컬럼은 준비 버전(nullable 추가)→기존 행 채움→최종 버전(NOT NULL·CHECK)으로 나눈다(8장). API는 [API 명세](api-spec.md)의 구현 예정 행.
+2026-11-06 서비스 기획 방향 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 저장 구조. 커뮤니티 공개 설정·`COMMUNITY` 동의·신고 대상(#388)은 V31·V32로 구현해 3.1·3.3 Mermaid로, 일일 리포트 고정 대화(#392)의 `conversation.report_id`·`report_revision`은 V33으로 구현해 3.2 Mermaid로 옮겼다. 나머지는 마이그레이션 전이라 위 Mermaid·6장 인덱스 표(실제 DB 계약, `scripts/verify_db_schema.py`가 대조)에는 넣지 않고 표로만 둔다. 구현 시 새 마이그레이션 버전과 함께 Mermaid·6장으로 옮긴다. 컬럼 기본값은 두지 않는다(검증 스크립트 규칙): 기존 행이 있는 테이블의 NOT NULL 컬럼은 준비 버전(nullable 추가)→기존 행 채움→최종 버전(NOT NULL·CHECK)으로 나눈다(8장). API는 [API 명세](api-spec.md)의 구현 예정 행.
 
 | 테이블 | 구분 | 컬럼·제약 | 근거 |
 |---|---|---|---|
-| `conversation` | 컬럼 추가 | `report_id uuid NULL`(report 논리 참조), `report_revision int NULL`. 함께 NULL(일반 대화) 또는 함께 값(일일 리포트 고정 대화, `period_from = period_to` = 대상일). 고정 대화는 범위 변경 불가 | P25 |
 | `reward_rule` | 신규 | `event_type varchar PK`(`MISSION_COMPLETED`·`REVIEW_VIEWED`·`COMMUNITY_POSTED`·`REACTION_GIVEN`·`THEME_COMPLETED`), `amount int NOT NULL CHECK > 0`, `daily_cap int NULL`, `active boolean NOT NULL`, `updated_at`. 시드는 P21 초기값(10·10·5·1(하루 상한 5)·30) | P21 |
 | `reward_point_ledger` | 신규 | `id uuid PK`, `student_id FK`, `event_type`(`reward_rule` 값 + `UNLOCK`), `source_key varchar NOT NULL`, `amount int NOT NULL`(적립 양수, 사용 음수), `created_at`. UK `(student_id, event_type, source_key)` → 사건당 1회. `source_key` 규칙: 학습 완료 `missionId`, 되돌아보기·완주 `weekStart`(ISO date), 공유 `postId`, 반응 `postId:reaction`, 해금 `itemKey` | P21 |
 | `reward_point_balance` | 신규 | `student_id PK,FK`, `balance int NOT NULL CHECK >= 0`, `updated_at`. 원장 행과 같은 트랜잭션에서 갱신(해금 동시 요청은 이 행 잠금으로 직렬화) | P21 |

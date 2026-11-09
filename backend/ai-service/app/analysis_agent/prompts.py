@@ -3,16 +3,29 @@
 LLM 호출은 두 번: 질문 분류·범위 확인(classify), 계산 결과를 문장으로 옮기기(answer, 스트리밍).
 학생 이름·ID는 넣지 않음 (NFR-SEC-03). 시도·답변 ID도 넣지 않고 원문은 S1, S2 번호로만 보여 줌.
 answer는 일반 텍스트: 아이 글은 큰따옴표로 옮기고, 출처는 대조 단계가 따옴표 구간으로 찾음.
+일일 리포트 고정 대화(#392)는 core가 넘긴 리포트 요약(개수·판정)을 [고정 리포트]로 덧붙임.
 """
 
 import json
 
 from app.analysis_agent.calculators import Computation
-from app.analysis_agent.models import AnalysisRequest, Intent, ScopeIssue
+from app.analysis_agent.models import AnalysisRequest, Intent, ReportSummary, ScopeIssue
 from app.judgment.models import ApiModel
 
-PROMPT_VERSION = "analysis@2"
+PROMPT_VERSION = "analysis@3"
 HISTORY_TURNS = 6  # 맥락 파악에 쓰는 최근 이전 대화 수
+# 웹 학부모 일일 리포트와 같은 표시 문구 (ParentReports.tsx)
+JUDGMENT_LABELS = {
+    "CORRECT": "맞게 썼어요",
+    "PARTIAL": "일부 확인",
+    "RETHINK": "다시 생각해 보기",
+    "HELD": "판정 보류",
+}
+CONTEXT_LABELS = {
+    "THEME_DAY": "주간 테마 오늘 문제",
+    "THEME_REVIEW": "되돌아보기 다시 풀기",
+    "EXTRA": "추가 문제",
+}
 
 
 class Classification(ApiModel):
@@ -44,7 +57,7 @@ scope_issue:
 ANSWER_SYSTEM = """\
 너는 학부모에게 자녀의 학습 기록을 설명하는 도우미다. 아래 규칙을 반드시 지킨다.
 
-1. 숫자는 [계산 결과]와 [기록 수]에 있는 값만, 아라비아 숫자로 쓴다.
+1. 숫자는 [계산 결과]·[기록 수]·[고정 리포트]에 있는 값만, 아라비아 숫자로 쓴다.
    새로 계산하거나 어림하지 않는다. 비율이 null인 항목은 비율을 말하지 않고 개수만 말한다.
 2. 아이의 글을 옮길 때는 [원문]에 있는 글자 그대로 큰따옴표로 감싼다.
    원문에 없는 문장, 미션 제목, 원문 번호(S1 등)는 따옴표로 쓰지 않는다.
@@ -54,6 +67,8 @@ ANSWER_SYSTEM = """\
 4. 학부모에게 존댓말로 3~5문장 안에서 답한다.
    마지막에 집에서 나눌 수 있는 대화 한 가지를 제안해도 된다.
 5. 답변 문장만 일반 텍스트로 쓴다. JSON·제목·목록 기호를 쓰지 않는다.
+6. [고정 리포트]가 있으면 그날 일일 리포트의 문제별 판정·확인 요소도 근거로 쓸 수 있다.
+   판정 문구는 그대로 옮기고, 판정을 아이의 능력 평가로 바꾸어 말하지 않는다.
 """
 
 
@@ -90,10 +105,28 @@ def build_answer_user(request: AnalysisRequest, intent: Intent, computation: Com
 {json.dumps(metrics, ensure_ascii=False, indent=1)}
 [원문]
 {sources or "(없음)"}
-[이전 대화]
+{_report(request.report)}[이전 대화]
 {_history(request)}
 [질문]
 {request.question}"""
+
+
+def _report(report: ReportSummary | None) -> str:
+    if report is None:
+        return ""
+    problems = [
+        {
+            "title": p.title,
+            "context": CONTEXT_LABELS.get(p.context or ""),
+            "judgment": JUDGMENT_LABELS.get(p.judgment or ""),
+            "elements": [{"label": e.label, "satisfied": e.satisfied} for e in p.elements],
+        }
+        for p in report.problems
+    ]
+    body = {"metrics": [m.model_dump() for m in report.metrics], "problems": problems}
+    return f"""[고정 리포트] {report.day.isoformat()} 일일 리포트, 문제 {len(problems)}개
+{json.dumps(body, ensure_ascii=False, indent=1)}
+"""
 
 
 def _history(request: AnalysisRequest) -> str:

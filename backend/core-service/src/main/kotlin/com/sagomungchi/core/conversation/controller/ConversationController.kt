@@ -15,7 +15,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import java.time.LocalDate
 import java.util.UUID
 
-data class CreateConversation(val childId: UUID, val from: LocalDate? = null, val to: LocalDate? = null)
+data class CreateConversation(val childId: UUID, val from: LocalDate? = null, val to: LocalDate? = null, val reportId: UUID? = null)
 data class MessageScope(val childId: UUID? = null, val from: LocalDate, val to: LocalDate)
 data class SendMessage(@field:NotBlank @field:Size(max = 1000) val question: String, val scope: MessageScope? = null)
 
@@ -23,7 +23,11 @@ data class SendMessage(@field:NotBlank @field:Size(max = 1000) val question: Str
 class ConversationController(private val conversations: ConversationService, private val streams: AnalysisStreamService) {
     @PostMapping("/api/v1/conversations")
     @ResponseStatus(HttpStatus.CREATED)
-    fun create(@RequestBody request: CreateConversation) = conversations.create(request.childId, request.from, request.to)
+    fun create(@RequestBody request: CreateConversation) = request.reportId?.let {
+        // P25 (#392): a daily-report conversation is pinned to the report's day, so it takes no period.
+        if (request.from != null || request.to != null) invalid("리포트 대화는 기간을 지정하지 않습니다.")
+        conversations.createForReport(request.childId, it)
+    } ?: conversations.create(request.childId, request.from, request.to)
 
     @GetMapping("/api/v1/conversations")
     fun list(@RequestParam childId: UUID) = conversations.list(childId)

@@ -26,7 +26,9 @@ class ConversationService(private val repository: ConversationRepository, privat
     private val children: ChildAuthorizationService, private val usage: AnalysisUsageService,
     private val records: LearningRecordService, private val tx: TransactionTemplate, private val json: ObjectMapper,
     private val events: org.springframework.context.ApplicationEventPublisher,
-    private val learningContext: com.sagomungchi.core.guardianship.service.StudentLearningContextService) {
+    private val learningContext: com.sagomungchi.core.guardianship.service.StudentLearningContextService,
+    private val reportJobs: com.sagomungchi.core.report.repository.ReportJobRepository,
+    private val reports: com.sagomungchi.core.report.service.ReportQueryService) {
 
     fun parent(): UUID {
         val context = UserContextHolder.currentOrNull()
@@ -39,7 +41,7 @@ class ConversationService(private val repository: ConversationRepository, privat
         children.requireCurrent(parent, child)
         learningContext.requireShared(child)
     }
-    fun create(child: UUID, from: java.time.LocalDate?, to: java.time.LocalDate?): Map<String, Any> {
+    fun create(child: UUID, from: java.time.LocalDate?, to: java.time.LocalDate?): Map<String, Any?> {
         val parent = parent(); val scope = AnalysisScope.of(child, from, to)
         return tx.execute {
             access(parent, child); usage.requireEntitlement(parent, child)
@@ -48,6 +50,40 @@ class ConversationService(private val repository: ConversationRepository, privat
             repository.insert(row); view(row, emptyList())
         }!!
     }
+    /**
+     * P25 (#392): pin a conversation to the child's daily report, its target day and latest revision. A free plan gets
+     * USAGE_LIMIT_REACHED before the report is checked; report HTTP runs between the two transactions.
+     */
+    fun createForReport(child: UUID, reportId: UUID): Map<String, Any?> {
+        val parent = parent()
+        tx.execute { access(parent, child); usage.requireEntitlement(parent, child) }
+        val job = reportJobs.byReport(reportId)
+        if (job == null || job.studentId != child || job.periodType != com.sagomungchi.core.report.domain.ReportPeriodType.DAILY) reportInvalid()
+        val report = reports.pinned(reportId, null)
+        if (report["status"].textValue() != "COMPLETED") reportInvalid()
+        val revision = report["revision"].intValue()
+        return tx.execute {
+            access(parent, child); usage.requireEntitlement(parent, child)
+            val now = OffsetDateTime.now()
+            val row = ConversationRow(UUID.randomUUID(), parent, child, job.periodFrom, job.periodTo, now, now, reportId, revision)
+            repository.insert(row); view(row, emptyList())
+        }!!
+    }
+    /** The pinned revision as a whitelist of counts and judgments for ai (#392). Quotes stay learning-sourced. Call outside transactions. */
+    fun report(ticket: AnalysisTicket): Map<String, Any?>? {
+        val reportId = ticket.conversation.reportId ?: return null
+        val body = reports.pinned(reportId, ticket.conversation.reportRevision)
+        return mapOf("reportId" to reportId, "revision" to body["revision"].intValue(), "date" to body["period"]["from"].textValue(),
+            "metrics" to body.path("metrics").filter { it.path("label").isTextual && it.path("count").isIntegralNumber }
+                .map { mapOf("label" to it["label"].textValue(), "count" to it["count"].intValue()) },
+            "problems" to body.path("problems").filter { it.path("title").isTextual }.map { problem -> mapOf(
+                "title" to problem["title"].textValue(), "context" to problem.path("context").textValue(),
+                "judgment" to problem.path("judgment").textValue(),
+                "elements" to problem.path("elements").filter { it.path("label").isTextual }
+                    .map { mapOf("label" to it["label"].textValue(), "satisfied" to it.path("satisfied").asBoolean()) }) })
+    }
+    private fun reportInvalid(): Nothing = throw BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "CONVERSATION_REPORT_INVALID",
+        "이 자녀의 일일 리포트로만 리포트 대화를 만들 수 있습니다.")
     fun list(child: UUID): Map<String, Any> {
         val parent = parent()
         return tx.execute {
@@ -56,7 +92,7 @@ class ConversationService(private val repository: ConversationRepository, privat
             mapOf("items" to items, "page" to 0, "size" to 100, "totalElements" to items.size)
         }!!
     }
-    fun detail(id: UUID): Map<String, Any> {
+    fun detail(id: UUID): Map<String, Any?> {
         val parent = parent()
         return locked(parent, id) { row -> view(row, repository.messages(id).map(::messageView)) }
     }
@@ -86,6 +122,8 @@ class ConversationService(private val repository: ConversationRepository, privat
             if (previous != null && previous.status != "FAILED") conflict()
             val actual = previous?.scope() ?: scope ?: conversation.scope()
             if (actual.childId != conversation.studentId) invalid("자녀 변경은 새 대화로 확인해 주세요.")
+            if (conversation.reportId != null && (actual.from != conversation.periodFrom || actual.to != conversation.periodTo))
+                invalid("리포트 대화는 기간을 바꿀 수 없습니다. 다른 날은 새 대화에서 물어봐 주세요.")
             val changed = actual.from != conversation.periodFrom || actual.to != conversation.periodTo
             val selected = actual.copy(changed = changed)
             val clean = previous?.question ?: question?.trim().orEmpty()
@@ -109,9 +147,12 @@ class ConversationService(private val repository: ConversationRepository, privat
                 context.copy(studentScope = setOf(selected.childId.toString())))
         }
     }
-    fun request(ticket: AnalysisTicket): Map<String, Any> = mapOf("conversationId" to ticket.conversation.id,
-        "messageId" to ticket.message.id, "question" to ticket.message.question,
-        "scope" to mapOf("studentId" to ticket.scope.childId, "from" to ticket.scope.from, "to" to ticket.scope.to), "history" to ticket.history)
+    fun request(ticket: AnalysisTicket, report: Map<String, Any?>? = null): Map<String, Any> = buildMap {
+        put("conversationId", ticket.conversation.id); put("messageId", ticket.message.id); put("question", ticket.message.question)
+        put("scope", mapOf("studentId" to ticket.scope.childId, "from" to ticket.scope.from, "to" to ticket.scope.to))
+        put("history", ticket.history)
+        report?.let { put("report", it) }
+    }
 
     fun guard(ticket: AnalysisTicket, action: () -> Unit = {}) {
         locked(ticket.parent, ticket.conversation.id) {
@@ -389,8 +430,9 @@ class ConversationService(private val repository: ConversationRepository, privat
                 .map { mapOf("question" to it, "available" to exists) })
         }!!
     }
-    private fun view(row: ConversationRow, messages: List<Map<String, Any?>>): Map<String, Any> = mapOf(
+    private fun view(row: ConversationRow, messages: List<Map<String, Any?>>): Map<String, Any?> = mapOf(
         "conversationId" to row.id, "childId" to row.studentId, "period" to mapOf("from" to row.periodFrom, "to" to row.periodTo),
+        "reportId" to row.reportId, "reportRevision" to row.reportRevision,
         "title" to "학습 기록 분석", "createdAt" to row.createdAt, "messages" to messages)
     private fun messageView(row: MessageRow): Map<String, Any?> = mapOf("messageId" to row.id, "question" to row.question,
         "status" to row.status, "scope" to row.scope(), "answer" to row.answer, "source" to row.source,

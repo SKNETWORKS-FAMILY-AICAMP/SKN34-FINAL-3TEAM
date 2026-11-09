@@ -60,7 +60,7 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
 ```
 
 - 구현 예정(P25, [서비스 기획 방향](service-direction.md)): 일일 리포트 고정 대화는 core가 범위(그날)와 리포트 요약을 요청에 넣는다. ai는 report를 직접 호출하지 않고 기존 흐름을 그대로 쓴다
-- 구성: `analysis_agent/graph.py`(조립), `service.py`(`AnalysisService`: 범위·기한·프롬프트 선택, 그래프 실행·최종 상태 → 이벤트, #253), `state.py`, `context.py`(`AgentContext`), `nodes/`(understand·retrieve·respond), `tools.py`(`RecordTools`, 호출마다 권한 재확인), `calculators.py`, `verification.py`, `templates.py`, `prompts.py`(`analysis@2`), `router.py`(SSE), `clients/learning_client.py`(learning 기록 조회 HTTP, #65)
+- 구성: `analysis_agent/graph.py`(조립), `service.py`(`AnalysisService`: 범위·기한·프롬프트 선택, 그래프 실행·최종 상태 → 이벤트, #253), `state.py`, `context.py`(`AgentContext`), `nodes/`(understand·retrieve·respond), `tools.py`(`RecordTools`, 호출마다 권한 재확인), `calculators.py`, `verification.py`, `templates.py`, `prompts.py`(`analysis@3`, #392), `router.py`(SSE), `clients/learning_client.py`(learning 기록 조회 HTTP, #65)
 - LLM 호출은 기존 `LlmClient` 사용(재시도·사용량 이벤트 `ANALYSIS`·대체 모델 유지). classify는 `generate`(구조화 출력), answer는 `stream`(일반 텍스트). LangGraph는 분기·상태·스트리밍만
 - 도구 선택은 질문 유형 → 도구 표(6유형). 학생·기간은 LLM이 아니라 core가 확인한 `scope`만 사용
 
@@ -454,7 +454,7 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 |---|---|---|
 | `judgment` | `ai/judgment` | `judgment/prompts.py`, `judge@2` |
 | `followup` | `ai/followup` | `followup/prompts.py`, `followup@4` |
-| `analysis` | `ai/analysis` | `analysis_agent/prompts.py`, `analysis@2` |
+| `analysis` | `ai/analysis` | `analysis_agent/prompts.py`, `analysis@3` (#392) |
 | `reportNarrative` | `ai/report-narrative` | `report_narrative/prompts.py`, `report@1` |
 | `reportTemplate` | `ai/report-template` | `analysis_agent/template_prompts.py`, `analysis-template@1` (#280) |
 | `missionDraft` | `ai/mission-draft` | `mission_draft/prompts.py`, `mission-draft@1` (#354) |
@@ -557,3 +557,25 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 - 비용: 바꾸기 전에는 논술에서 ai 1번에 LLM 호출 2번이 모두 시간 초과, learning 3번 반복으로 호출 6번에 결과가 없었다. 바꾼 뒤에는 보통 호출 1번에 끝난다. 시간 초과 호출의 과금 여부는 우리 사용량 기록(토큰 없음)으로는 알 수 없다
 - P12 예외라 팀 확인이 필요하다(이슈 #353 확인 필요)
 - 확인: 바꾼 뒤 로컬에서 learning 주기 작업으로 `gpt-6-luna` 입력 방식 6가지 초안이 모두 첫 시도에 `READY`(learning.md 22절). ai 테스트 `test_call_can_override_timeout_and_retries_without_changing_defaults`·`test_mission_draft_waits_60_seconds_once_with_63_second_deadline`
+
+## 10. 일일 리포트 고정 대화 리포트 요약 입력 (#392)
+
+2026-11-06 결정 P25(FN-RPT-16)의 ai 몫. core가 메시지마다 고정 판을 읽어 넘긴 리포트 요약을 분석 에이전트 입력에 더한다. ai는 report를 직접 호출하지 않는다(core 쪽은 [core 보고서 12장](core-gateway.md#12-일일-리포트-고정-대화-392)).
+
+### 구현
+
+| 영역 | 내용 |
+|---|---|
+| 요청 | `AnalysisRequest.report: ReportSummary \| None`(`reportId`, `revision ≥ 1`, `date`, `metrics[{label, count}]`, `problems[{title, context, judgment, elements[{label, satisfied}]}]`). 있으면 `scope.from = scope.to = date`가 아니면 400 |
+| 프롬프트 | `analysis@3`. 답변 user 본문에 `[고정 리포트] {날짜} 일일 리포트, 문제 N개` + 지표·문제 JSON(판정·맥락은 웹 학부모 화면과 같은 한글 문구). `ANSWER_SYSTEM` 규칙 1에 `[고정 리포트]` 숫자 허용, 규칙 6에 판정 문구를 능력 평가로 바꾸지 않기. 일반 대화는 블록이 없다 |
+| 대조 | `verification.report_numbers`: 리포트 지표 개수·문제 수·문제 제목 속 숫자를 `compute` 노드에서 `Computation.extra_numbers`에 더한다. 인용 대조는 그대로 learning `[원문]`만 |
+| 범위 확인 | 고정 대화에서 `DIFFERENT_PERIOD`면 "이 대화는 {날짜} 일일 리포트로 고정돼 있어요. 다른 날은 새 대화에서 물어봐 주세요."(`PINNED_PERIOD_MESSAGE`). `current`는 고정 범위 그대로 |
+
+### 결정
+
+1. **리포트 인용은 받지 않음**: 요약에 원문을 넣으면 근거(`Evidence`) 구조와 core 근거 ID 저장을 바꿔야 한다. 인용은 그날 learning 기록으로 충분해 개수·판정만 받는다(사용자 확인)
+2. **프롬프트 버전 올림**: 모듈 규칙대로 `analysis@2 → analysis@3`. 어떤 환경에서 `analysis@2`를 활성 버전으로 지정해 두었다면 이 이미지에서는 `503 AI_PROMPT_VERSION_UNAVAILABLE`이 되므로 배포 때 `analysis@3`으로 바꾸거나 활성 항목을 지운다
+
+### 검증
+
+- `uv run pytest`: 고정 리포트 요약이 답변 프롬프트에 들어가고 요약 숫자가 대조를 통과(`test_router`), 같은 답변이 일반 대화에서는 규칙 응답, 하루가 아닌 범위 400, 고정 대화의 다른 기간 안내 문구(`test_nodes`)
