@@ -19,11 +19,11 @@ datasource UID는 chart가 `prometheus`로 고정한다. prod는 이 구조로 �
 
 DLQ 적재는 별도 opt-in scrape job `rabbitmq-dlq`로 본다. 같은 RabbitMQ 15692 포트의 `/metrics/detailed`에서
 `queue_coarse_metrics` family만 요청하고, metric relabel로 `rabbitmq_detailed_queue_messages` 중 `<큐>.dlq`(architecture 1.6 명명)만 남긴다.
-기본 `rabbitmq` job과 전체 per-object 지표는 바꾸지 않는다. 시계열은 정의된 DLQ 수(현재 6개)만큼이다.
+기본 `rabbitmq` job과 전체 per-object 지표는 바꾸지 않는다. 시계열은 정의된 DLQ 수(현재 7개, #370 `core.model.loading.reported.dlq` 포함)만큼이다.
 규칙은 `max by (vhost, queue)`로 큐마다 경보 인스턴스를 만든다. 큐 이름은 시계열 라벨로 알림에 실린다.
 메시지 수는 ready+unacked 합계이며 메시지 나이·재처리 지연은 의미하지 않는다. scrape 실패나 지표 부재는 0이 아니라 NoData로 남는다.
 업무 ID·메시지 내용은 label에 넣지 않는다. 운영 임계값·지속시간은 결정 전이며 prod values에는 아직 넣지 않았다.
-일일 리포트(P24, #390·#391)는 같은 `report.generate` 큐를 써 DLQ 수(현재 6개)는 늘지 않는다. 월요일 00:00에는 주간·일일 작업이 함께 쌓이므로 임계값·지속시간을 정할 때 이 시각의 적체를 실측해 반영한다([아키텍처 4.4](architecture.md#44-확장)).
+일일 리포트(P24, #390·#391)는 같은 `report.generate` 큐를 써 DLQ 수(현재 7개)는 늘지 않는다. 월요일 00:00에는 주간·일일 작업이 함께 쌓이므로 임계값·지속시간을 정할 때 이 시각의 적체를 실측해 반영한다([아키텍처 4.4](architecture.md#44-확장)).
 
 ## 월 LLM 비용
 
