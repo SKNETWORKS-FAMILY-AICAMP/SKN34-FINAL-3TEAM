@@ -121,6 +121,7 @@
 | `ANALYSIS_FIRST_RESPONSE_TIMEOUT` / `ANALYSIS_TIMEOUT` / `ANALYSIS_FAILED` | 504 / 504 / 502 | 분석 대화 SSE `error` 이벤트 전용: ai 첫 이벤트 20초 안에 없음 / 전체 120초 초과 / 원인 코드가 없는 처리 실패(원래 오류 상태가 있으면 그 상태). `retryable: true`, 메시지는 FAILED로 저장 (3.3) |
 | `REPORT_PREMIUM_REQUIRED` / `REPORT_JOB_IDENTITY_MISMATCH` | 403 / 409 | 무료 이용권에서 프리미엄 리포트 항목 요청 / report 복구 응답의 작업 식별자 불일치 (5.9) |
 | `COMMUNITY_CONSENT_REQUIRED` / `COMMUNITY_LOCKED` / `COMMUNITY_OWN_POST` / `COMMUNITY_POST_NOT_FOUND` | 409 / 403 / 409 / 404 | 보호자 `COMMUNITY` 동의 없이 공개 켜기 / 미션 미마무리 학생의 커뮤니티 열람·반응(learning 판정 전달) / 본인 공유물 반응·신고 / 숨김·파기·없는 공유물 반응·신고 (2.9, #388) |
+| `COMMUNITY_NOT_SHAREABLE` | 409 | learning 내부 공유 요청 거절: 학습 완료 전·다시 푼 시도·답변 없음·지금 표현 필터(#205)에 걸림. core는 공유 안 함으로 보고 학생 응답에 내보내지 않음 (4.1, #386) |
 | `INSUFFICIENT_POINTS` / `LOOK_ITEM_NOT_ON_SALE` / `LOOK_LOCKED` | 409 | 해금 포인트 부족 / 판매 중단 아이템 해금 / 해금하지 않은 테마·캐릭터·아이템 선택 (2.10, 3.12, #389) |
 | `LOOK_ITEM_NOT_FOUND` / `LOOK_ITEM_CODE_DUPLICATE` | 404 / 409 | 없는 꾸미기 항목 해금 / 관리자 아이템 코드 중복 (2.8, 2.10, #389) |
 | `THEME_DAY_CLOSED` / `THEME_REVIEW_NOT_ALLOWED` / `PREMIUM_REQUIRED` | 409 / 409 / 403 | 오늘 요일이 아닌 테마 문제 신규 시도 / 토·일 외 또는 마무리하지 않은 테마 문제 다시 풀기(두 코드는 learning 구현 예정 #385, core는 그대로 전달) / 추가 문제(`EXTRA`)를 끈 상품(`features.extraMissions = false`)의 시도(core #387, 현재 무료도 허용) (2.11) |
@@ -512,7 +513,7 @@
 
 ### 2.9 커뮤니티 (FN-RET-01~04, P20)
 
-core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml`, 태그 Community)에 반영했다. 공유물·반응 저장과 열람 검사는 learning #386(구현 예정, [ERD 4.4](erd.md#44-구현-예정-변경-learning_db)), 공개 설정은 core `student.community_enabled`(ERD 3.1).
+core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml`, 태그 Community)에 반영했다. 공유물·반응 저장과 열람 검사는 learning #386(구현, [ERD 4.3.1](erd.md#431-커뮤니티-공유물반응-p20-386), 내부 경로 4.1·`contracts/openapi/learning-service.yaml`), 공개 설정은 core `student.community_enabled`(ERD 3.1).
 
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
@@ -524,7 +525,7 @@ core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml
 | DELETE | `/community-posts/{postId}/reactions/{reaction}` | 학생 | 반응 취소(멱등, 적립 포인트 회수 없음). 성공 204 | RET-03 | 구현(#388) |
 | GET | `/children/{childId}/community-posts` | 학부모 | 연결·동의가 유효한 자녀의 공유물·상태·받은 반응 수(내 공유물과 같은 모양). 다른 학생 공유물 조회 경로 없음 | RET-02 | 구현(#388) |
 
-- 공유물 생성 API는 없다. 커뮤니티 공개가 켜진 학생의 돌아보기 저장(`POST /attempts/{id}/reflection`, 학습 완료) 성공 후 core가 learning에 공유를 요청한다. 학생·미션당 1개로 그 미션을 처음 마무리한 시도의 마지막 답변 `content`만 공유하고(다시 풀기는 공유하지 않음) 메모·판정·되묻기는 넣지 않는다
+- 공유물 생성 API는 없다. 커뮤니티 공개가 켜진 학생의 돌아보기 저장(`POST /attempts/{id}/reflection`, 학습 완료) 성공 후 core가 learning에 공유를 요청한다. 학생·미션당 1개로 그 미션을 처음 마무리한 시도의 마지막 답변만 공유하고(다시 풀기는 공유하지 않음) 메모·판정·되묻기는 넣지 않는다. `answer`는 learning `{inputType, text(입력 틀 칸 이름을 붙인 원문), content(입력 방식별 제출 내용)}`를 그대로 전달한다(#386)
 - 작성자 표시: learning은 학생 ID를 돌려주고 core가 별명·꾸미기(`look`: 테마·캐릭터, 착용 아이템은 #389)로 바꾼 뒤 학생 ID를 지워 응답한다. 반응 수는 learning이 주더라도 목록에서 뺀다
 - core 재확인(#388): learning 공개 전환·검토 호출이 실패하거나 늦어도, core는 지금 공개할 수 없는 작성자(설정 끔·현재 보호자 동의 없음·비활성)와 접수·처리 중이거나 계속 숨김으로 처리된 신고가 걸린 공유물을 목록에서 빼고 반응을 404로 막는다. 내 공유물·자녀 공유물 상태도 core가 아는 비공개(`HIDDEN_SETTING`·`HIDDEN_REPORT`)로 덮어 보여 준다
 - 신고: 기존 `POST /error-reports`에 `targetType: COMMUNITY_POST`, `targetId: postId` 추가(유형 5종 그대로). 접수 즉시 공유물 `HIDDEN_REPORT`, 관리자는 기존 `/admin/error-reports`에서 `RESOLVED` + `reviewResult: VISIBLE`(다시 공개)·`REMOVED`(계속 숨김, 생략 시 기본)로 처리. 같은 공유물의 신고가 여럿이면 계속 숨김이 하나라도 있으면 `REMOVED`, 처리 중이 있으면 `HIDDEN_REPORT`. 신고 행은 신고한 학생의 것(`student_id` = 신고 학생, 작성자 ID는 learning에만), 관리자 상세 `linkedPost`(원문, 열람마다 `SUPPORT_ORIGINAL_VIEW` 감사)
@@ -867,13 +868,13 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 | GET | `/internal/students/{studentId}/weekly-theme?gradeBand&date` | core | learning 구현 예정(#385, core 호출 #387): 이번 주 테마·요일 상태·되돌아보기 목록 |
 | POST | `/internal/students/{studentId}/weekly-theme/review-views` | core | learning 구현 예정(#385, core 호출 #387): `?gradeBand&date`(본문 없음), 열람 기록, `{firstViewThisWeek, completed}` 반환(포인트·완주 판정 근거) |
 | GET | `/internal/students/{studentId}/weekly-theme/summary?weekStart` | report | 구현 예정: 주간 리포트 테마 요약 소재 |
-| POST | `/internal/community/posts` | core | 구현 예정(learning #386, core 호출은 #388): `X-User-Role: SYSTEM`, scope = 그 학생. `{studentId, attemptId}` → 마지막 답변 공유(학습 완료·표현 필터 통과, 학생·미션당 1개 멱등). `201 {postId}` 새 공유, `200 {postId}` 이미 있음, 그 밖(공유 대상 아님 등)은 core가 공유 안 함으로 본다 |
-| GET | `/internal/community/missions/{missionId}/posts?viewerStudentId&seed&page&size` | core | 구현 예정(#386): `STUDENT`, scope = viewer. 열람 검사(viewer 마무리 여부, 아니면 `403 COMMUNITY_LOCKED`)·`VISIBLE` 무작위 목록 `{items:[{postId, studentId, answer, myReactions[], createdAt}]}` |
-| GET | `/internal/community/students/{studentId}/posts` | core | 구현 예정(#386): `STUDENT`(본인)·`PARENT`(자녀), scope = 그 학생. `{items:[{postId, missionId, missionTitle, answer, status, reactions:{NEW_IDEA…: 수}, createdAt}]}` |
-| PUT·DELETE | `/internal/community/posts/{postId}/reactions/{reaction}?studentId` | core | 구현 예정(#386): `STUDENT`, scope = 반응한 학생. 반응 생성·취소, PUT `200 {created}`(포인트 적립 근거). 오류 `403 COMMUNITY_LOCKED`·`404 COMMUNITY_POST_NOT_FOUND`·`409 COMMUNITY_OWN_POST`는 core가 그대로 전달 |
-| PUT | `/internal/students/{studentId}/community-visibility` | core | 구현 예정(#386): `SYSTEM`, scope = 그 학생. `{visible, reason}`(`SETTING`·`CONSENT`·`TRANSFER`) → 공유물 `VISIBLE`↔`HIDDEN_SETTING`(`HIDDEN_REPORT`·`REMOVED`는 그대로), 같은 값 반복 멱등. core는 커밋 뒤 호출하고 실패는 기록 후 다음 설정 저장 때 다시 보낸다 |
-| PUT | `/internal/community/posts/{postId}/moderation` | core | 구현 예정(#386): `SYSTEM`, scope 없음. `{status, errorReportId}`(`HIDDEN_REPORT`·`VISIBLE`·`REMOVED`) 멱등. `VISIBLE`은 `HIDDEN_REPORT`에서만 되돌림 |
-| GET | `/internal/community/posts/{postId}` | core | 구현 예정(#386, #388에서 추가 요청): `SYSTEM`, scope 없음. 신고 대상 확인·관리자 원문 열람 `{postId, studentId, missionId, status, answer}`, 파기·없음 `404` |
+| POST | `/internal/community/posts` | core | 구현(learning #386, core 호출은 #388): `X-User-Role: SYSTEM`, scope = 그 학생. `{studentId, attemptId}` → 그 미션을 처음 학습 완료한 시도의 마지막 답변 공유(지금 표현 필터 통과, 학생·미션당 1개 멱등). `201 {postId, created:true, status}` 새 공유, `200 {postId, created:false, status}` 이미 있음(다시 푼 시도로 요청해도 같음). 새 공유물은 core가 마지막으로 알린 공개 여부가 끔이면 `HIDDEN_SETTING`. 그 밖: 없는·남의 시도 `404`, 공유 대상 아님 `409 COMMUNITY_NOT_SHAREABLE` → core는 공유 안 함으로 본다. `postId`는 포인트 사건 키(#389) |
+| GET | `/internal/community/missions/{missionId}/posts?viewerStudentId&seed&page&size` | core | 구현(#386): `STUDENT`, scope = viewer(`viewerStudentId`와 같아야 함). 열람 검사(viewer가 그 미션을 학습 완료했는지, 아니면 `403 COMMUNITY_LOCKED`)·`VISIBLE` 무작위 목록(열람자 본인 공유물 제외, 반응 수 없음, 같은 `seed`면 같은 순서) `{items:[{postId, studentId, answer:{inputType, text, content}, myReactions[], createdAt}], page, size}`. `seed` 1~100자, `size` 1~100 |
+| GET | `/internal/community/students/{studentId}/posts` | core | 구현(#386): `STUDENT`(본인)·`PARENT`(자녀), scope = 그 학생. 모든 상태, 최근 공유 순 `{studentId, items:[{postId, missionId, missionTitle, answer, status, reactions:{NEW_IDEA…: 수(4종 모두)}, createdAt}]}` |
+| PUT·DELETE | `/internal/community/posts/{postId}/reactions/{reaction}?studentId` | core | 구현(#386): `STUDENT`, scope = 반응한 학생(`studentId`와 같아야 함). 반응 생성·취소(멱등), PUT `200 {postId, reaction, reactionId, created}`·DELETE `200 {postId, reaction, reactionId, deleted}`. `reactionId`는 학생·공유물·반응으로 정해 취소 뒤 다시 남겨도 같음(포인트 사건 키, #389). PUT은 `VISIBLE` 공유물만, 취소는 숨긴 공유물에서도 가능. 오류 `403 COMMUNITY_LOCKED`·`404 COMMUNITY_POST_NOT_FOUND`·`409 COMMUNITY_OWN_POST`는 core가 그대로 전달, 4종 밖 `400` |
+| PUT | `/internal/students/{studentId}/community-visibility` | core | 구현(#386): `SYSTEM`, scope = 그 학생. `{visible, reason}`(`SETTING`·`CONSENT`·`TRANSFER`) → 공유물 `VISIBLE`↔`HIDDEN_SETTING`(`HIDDEN_REPORT`·`REMOVED`는 그대로), 같은 값 반복 멱등, `200 {studentId, visible, changed(바꾼 수)}`. learning은 마지막 값을 `community_visibility`에 두고 신고 숨김을 풀 때·새 공유 때 설정 비공개를 지킨다. core는 커밋 뒤 호출하고 실패는 기록 후 다음 설정 저장 때 다시 보낸다 |
+| PUT | `/internal/community/posts/{postId}/moderation` | core | 구현(#386): `SYSTEM`, scope 없음. `{status, errorReportId}`(`HIDDEN_REPORT`·`VISIBLE`·`REMOVED`) 멱등 → `200 {postId, status(반영 뒤)}`. `VISIBLE`은 `HIDDEN_REPORT`에서만 되돌리고 작성자 공개가 끔이면 `HIDDEN_SETTING`으로, `REMOVED`는 끝 상태. 없는 공유물 `404 COMMUNITY_POST_NOT_FOUND` |
+| GET | `/internal/community/posts/{postId}` | core | 구현(#386, #388 요청): `SYSTEM`, scope 없음. 신고 대상 확인·관리자 원문 열람 `{postId, studentId, missionId, status, answer, createdAt}`(상태 무관), 파기·없음 `404 COMMUNITY_POST_NOT_FOUND` |
 | GET·POST·PUT | `/internal/admin/weekly-themes…` | core | learning 구현 예정(#385): 6.5 프록시 대상(core #387 구현) |
 
 - 기록 조회 공통 (#27): 학생 경로는 역할 `PARENT`·`STUDENT`·`SYSTEM`(`home`은 학생 본인 `STUDENT`만)이고 `X-Student-Scope`에 대상 학생이 없으면 `403`. `from`·`to`는 KST 날짜(양 끝 포함), 둘 다 주거나 둘 다 생략(생략하면 오늘 포함 최근 7일, P06), 한쪽만 주거나 `from > to`면 `400`. 응답 `period`는 실제 조회 기간. 집계 대상은 P08(기간 안에 답변 제출이 있는 시도, 미완료 포함·판정 상태 무관. 조회 종료일까지의 답변이 모두 처리 실패인 시도와 삭제 기록은 제외). 시도별 사실(완료·되묻기 받음·보완 답변·최근 답변)은 조회 종료일까지 일어난 것만. `state`는 집계 대상(비율은 분모) 0건 `NO_RECORD`, 1~4건 `INSUFFICIENT_SAMPLE`(비율 `value: null`), 5건 이상 `OK`. 메모·초안은 반환하지 않음(P05). 최상위 학생 식별자는 호출 역할과 무관하게 `studentId`(학부모 공개 응답의 `childId`는 core가 바꿈, core #40·report #51과 합의). 조회 장애는 `state`가 아니라 HTTP 오류(Problem Details)로 반환. 까닭을 잇는 말은 `왜냐하면`·`때문`·`그래서`·`따라서`(report와 확정)

@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.learning.community.repository.CommunityMapper">
+    <resultMap id="post" type="com.sagomungchi.learning.community.domain.CommunityPost">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="student_id" javaType="java.util.UUID"/>
+            <arg column="mission_id" javaType="java.util.UUID"/>
+            <arg column="attempt_id" javaType="java.util.UUID"/>
+            <arg column="answer_id" javaType="java.util.UUID"/>
+            <arg column="status" javaType="com.sagomungchi.learning.community.domain.CommunityPostStatus"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="status_changed_at" javaType="java.time.Instant"/>
+            <arg column="error_report_id" javaType="java.util.UUID"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="sharedAnswer" type="com.sagomungchi.learning.community.domain.SharedAnswerRow">
+        <constructor>
+            <idArg column="post_id" javaType="java.util.UUID"/>
+            <arg column="student_id" javaType="java.util.UUID"/>
+            <arg column="mission_id" javaType="java.util.UUID"/>
+            <arg column="mission_title" javaType="java.lang.String"/>
+            <arg column="status" javaType="com.sagomungchi.learning.community.domain.CommunityPostStatus"/>
+            <arg column="input_type" javaType="com.sagomungchi.learning.mission.domain.InputType"/>
+            <arg column="plain_text" javaType="java.lang.String"/>
+            <arg column="content_json" javaType="java.lang.String"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="reaction" type="com.sagomungchi.learning.community.domain.ReactionRow">
+        <constructor>
+            <arg column="post_id" javaType="java.util.UUID"/>
+            <arg column="reaction" javaType="com.sagomungchi.learning.community.domain.CommunityReaction"/>
+            <arg column="count" javaType="_int"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="postColumns">
+        id, student_id, mission_id, attempt_id, answer_id, status, created_at, status_changed_at, error_report_id
+    </sql>
+
+    <!-- 공유물 + 마지막 답변 + 시도에 고정된 미션 버전 제목. 메모(attempt_draft)·판정·되묻기는 읽지 않음 (P05) -->
+    <sql id="sharedAnswerSelect">
+        SELECT p.id AS post_id, p.student_id, p.mission_id, v.title AS mission_title, p.status,
+               a.input_type, a.plain_text, a.content::text AS content_json, p.created_at
+        FROM community_post p
+        JOIN answer a ON a.id = p.answer_id
+        JOIN attempt t ON t.id = p.attempt_id
+        JOIN mission_version v ON v.id = t.mission_version_id
+    </sql>
+
+    <select id="findPost" resultMap="post" flushCache="true" useCache="false">
+        SELECT <include refid="postColumns"/> FROM community_post WHERE id = #{id}
+        <if test="lock">FOR UPDATE</if>
+    </select>
+
+    <select id="findByStudentMission" resultMap="post" flushCache="true" useCache="false">
+        SELECT <include refid="postColumns"/> FROM community_post
+        WHERE student_id = #{studentId} AND mission_id = #{missionId}
+    </select>
+
+    <!-- UK (student_id, mission_id)·(attempt_id): 동시 공유 요청은 먼저 커밋된 하나만 남고 나머지는 0행 -->
+    <insert id="insertPost">
+        INSERT INTO community_post (id, student_id, mission_id, attempt_id, answer_id, status, created_at,
+                                    status_changed_at, error_report_id)
+        VALUES (#{id}, #{studentId}, #{missionId}, #{attemptId}, #{answerId}, #{status}, #{createdAt},
+                #{statusChangedAt}, #{errorReportId,jdbcType=OTHER})
+        ON CONFLICT DO NOTHING
+    </insert>
+
+    <update id="updateStatus">
+        UPDATE community_post
+        SET status = #{status}, status_changed_at = #{now},
+            error_report_id = COALESCE(#{errorReportId,jdbcType=OTHER}::uuid, error_report_id)
+        WHERE id = #{id}
+    </update>
+
+    <update id="switchStudentPosts">
+        UPDATE community_post SET status = #{to}, status_changed_at = #{now}
+        WHERE student_id = #{studentId} AND status = #{from}
+    </update>
+
+    <select id="lockVisibility" resultType="boolean" flushCache="true" useCache="false">
+        SELECT visible FROM community_visibility WHERE student_id = #{studentId} FOR UPDATE
+    </select>
+
+    <insert id="upsertVisibility">
+        INSERT INTO community_visibility (student_id, visible, reason, updated_at)
+        VALUES (#{studentId}, #{visible}, #{reason}, #{now})
+        ON CONFLICT (student_id) DO UPDATE
+        SET visible = EXCLUDED.visible, reason = EXCLUDED.reason, updated_at = EXCLUDED.updated_at
+    </insert>
+
+    <select id="findVisibility" resultType="boolean" flushCache="true" useCache="false">
+        SELECT visible FROM community_visibility WHERE student_id = #{studentId}
+    </select>
+
+    <!-- 무작위 순서: 같은 seed면 같은 순서 (md5(공유물 ID + seed), 동률은 ID). 인기순·순위 없음 (P20) -->
+    <select id="missionPosts" resultMap="sharedAnswer" flushCache="true" useCache="false">
+        <include refid="sharedAnswerSelect"/>
+        WHERE p.mission_id = #{missionId} AND p.status = 'VISIBLE' AND p.student_id &lt;&gt; #{viewer}
+        ORDER BY md5(p.id::text || #{seed}), p.id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="studentPosts" resultMap="sharedAnswer" flushCache="true" useCache="false">
+        <include refid="sharedAnswerSelect"/>
+        WHERE p.student_id = #{studentId}
+        ORDER BY p.created_at DESC, p.id
+    </select>
+
+    <select id="sharedAnswer" resultMap="sharedAnswer" flushCache="true" useCache="false">
+        <include refid="sharedAnswerSelect"/>
+        WHERE p.id = #{postId}
+    </select>
+
+    <select id="reactionsOf" resultMap="reaction" flushCache="true" useCache="false">
+        SELECT post_id, reaction, 1 AS count FROM community_reaction
+        WHERE student_id = #{studentId} AND post_id IN
+        <foreach collection="postIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY post_id, reaction
+    </select>
+
+    <select id="reactionCounts" resultMap="reaction" flushCache="true" useCache="false">
+        SELECT post_id, reaction, count(*)::int AS count FROM community_reaction
+        WHERE post_id IN
+        <foreach collection="postIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        GROUP BY post_id, reaction
+    </select>
+
+    <insert id="insertReaction">
+        INSERT INTO community_reaction (id, post_id, student_id, reaction, created_at)
+        VALUES (#{id}, #{postId}, #{studentId}, #{reaction}, #{now})
+        ON CONFLICT DO NOTHING
+    </insert>
+
+    <delete id="deleteReaction">
+        DELETE FROM community_reaction WHERE post_id = #{postId} AND student_id = #{studentId} AND reaction = #{reaction}
+    </delete>
+
+    <!-- 학생 삭제 (#386): CommunityRepository.deleteByStudent가 이 순서로 부름 -->
+    <delete id="deleteReactionsOnPostsOf">
+        DELETE FROM community_reaction WHERE post_id IN (SELECT id FROM community_post WHERE student_id = #{studentId})
+    </delete>
+
+    <delete id="deleteReactionsBy">
+        DELETE FROM community_reaction WHERE student_id = #{studentId}
+    </delete>
+
+    <delete id="deletePostsOf">
+        DELETE FROM community_post WHERE student_id = #{studentId}
+    </delete>
+
+    <delete id="deleteVisibility">
+        DELETE FROM community_visibility WHERE student_id = #{studentId}
+    </delete>
+</mapper>

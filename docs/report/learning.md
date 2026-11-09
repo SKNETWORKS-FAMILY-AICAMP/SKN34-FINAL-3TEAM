@@ -1,4 +1,4 @@
-# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82·#169·#137·#164·#205·#241·#207·#201·#262·#336·#353·#355)
+# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82·#169·#137·#164·#205·#241·#207·#201·#262·#336·#353·#355·#386)
 
 계약은 [API 명세](../design/api-spec.md) 2.2·3.1~3.8·4.1과 [learning OpenAPI](../../contracts/openapi/learning-service.yaml), 판정 상태는 [상태 다이어그램](../design/state-diagram.md) 3장.
 
@@ -761,3 +761,66 @@ learning `Element`에 `code`·`goodThought`를 더했을 때 응답을 받는 �
 - `ci-db-schema` 재현: `check_db_migrations.py`(일회용 PostgreSQL) 통과. develop(#359 V27 병합 뒤) 기준 core V26 → V27 → V28 적용, 48개 테이블·448개 칼럼이 ERD와 일치, 반복 마이그레이션 변화 없음. 적용 뒤 `ck_llm_usage_call_type`에 `MISSION_DRAFT` 확인
 - scoring `ruff check`·`pytest` 통과(199개, 임시 컨테이너)
 - 로컬 실연(2026-11-05, 이 브랜치로 core·learning 이미지 빌드, compose 별도 프로젝트에 호스트 포트는 core만 열고 공유 kind·컨테이너는 그대로, 끝난 뒤 볼륨까지 삭제): learning_db에 성취기준 시드 765행, ai 자리에는 learning 테스트 `sampleDraft`와 같은 초안을 돌려주는 대역(LLM 호출 없음). core 공개 경로로 성취기준 조회(`gradeBand=초5~6`·`q=6국01-02`) 200 → 초안 요청 202(`GENERATING`, `X-Admin-Operation-Id`) → learning 주기 작업이 대역 ai를 불러 `READY`(1회) → 목록 `status=READY` 1건 → 채택 201(`DRAFT`·`LLM_DRAFT`, 미션 경로로 조회 200) → 재채택·채택된 초안 버리기 409 `CONFLICT`, 없는 초안 404, 학년군 밖 요청 400 `VALIDATION_FAILED` → 새 초안 버리기 200(`DISCARDED`). 감사 14행이 위 결정대로 남음(채택 결과는 `MISSION`·미션 ID·`draftId`). 실제 LLM과 사용량 이벤트 흐름은 이 실연에 없음(사용량 소비는 위 테스트와 CHECK로 확인)
+
+## 24. 커뮤니티 공유물·반응·열람 검사 (#386)
+
+2026-11-06 결정 P20([서비스 기획 방향](service-direction.md) 2.2)의 learning 몫. 공개 설정·`COMMUNITY` 동의·신고·작성자 별명은 core #388(PR #403)이 먼저 develop에 들어가 있어, core `CommunityClient`가 부르는 경로·응답을 기준으로 맞췄다.
+
+| 위치 | 내용 |
+|---|---|
+| V13 | `community_post`(UK `(student_id, mission_id)`·`attempt_id`, FK 미션·시도·답변, 상태 CHECK), `community_reaction`(PK `(post_id, student_id, reaction)`, UK `id`), `community_visibility`(학생당 마지막 공개 여부), 인덱스 2개. 새 표만이라 채움 단계 없음. ERD 4.3.1 Mermaid·6장·8장 |
+| `community/` | `CommunityController`(내부 경로 7개·조작 8개), `CommunityService`, `CommunityRepository`·`CommunityMapper.xml`, `CommunityRules`(검토 전이·첫 상태·반응 ID) |
+| `AttemptService` | `communityShareSource`(시도·첫 학습 완료 여부·마지막 답변·시도 고정 미션 버전), `hasCompleted`(열람·반응 검사). `AttemptMapper.findFirstCompleted` |
+| `StudentDeletionService` | 시도 삭제 전에 `CommunityService.deleteByStudent`(같은 트랜잭션) |
+| 계약 | learning OpenAPI 경로 7개·스키마, `scripts/validate_learning_community_contracts.py`(실제 응답 10종 대조, ci-contracts 단계 추가), `verify_db_schema.py` 음성 사례 6개, gitops 로컬 learning 마이그레이션 리비전 v13 |
+
+### 결정
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| "마무리"의 뜻 | 공유·열람·반응 모두 학습 완료(`attempt.status = COMPLETED`, 돌아보기 저장)를 기준으로 함. 마무리(`finished_at`)만 한 시도는 아님 | FN-RET-02 "처음 마무리하면(학습 완료)", core가 돌아보기 저장 뒤 공유 요청 |
+| 공유 대상 시도 | 그 미션을 처음 학습 완료한 시도(`completed_at`·`id` 순 첫 행)만. 그 시도가 아니면 409 `COMMUNITY_NOT_SHAREABLE`. 공유물이 이미 있으면 어떤 시도로 요청해도 그 공유물을 200 | P20 "처음 마무리한 시도", "다시 풀기는 공유하지 않음". 설정을 끈 채 처음 완료하고 나중에 켠 뒤 다시 풀어도 공유하지 않음 |
+| 공유 답변 | 그 시도의 마지막 답변(`version` 최대). 응답 `answer`는 `{inputType, text, content}`: `text`는 `answer.plain_text`(입력 틀 칸 이름·선택지 이름을 붙인 원문), `content`는 입력 방식별 제출 내용. 답변 행을 조인하고 복사하지 않음 | 고르기·분류는 `content`만으로는 ID라 읽을 수 없음. web `answerText`가 `text`를 먼저 읽어 그대로 보임. 답변은 추가만이라 복사가 필요 없고 삭제 때 한 곳만 지움 |
+| 표현 필터 | 공유 때 지금 `ExpressionPolicy`로 마지막 답변의 학생 글을 다시 검사, 걸리면 공유 안 함(범주만 로그) | 제출 때 통과했어도 단어 목록이 바뀔 수 있음(#205). 걸린 말·원문은 남기지 않음(NFR-SEC-05) |
+| 열람 목록 | `VISIBLE`만, 열람자 본인 공유물 제외, 반응 수 없음, `ORDER BY md5(id || seed), id` + `LIMIT/OFFSET` | 같은 seed면 같은 순서·쪽 나누기 이어짐(P20 무작위·순위 없음). 본인 글을 core가 빼면 쪽 크기가 줄어 learning에서 뺌 |
+| 반응 ID | `UUID.nameUUIDFromBytes("community-reaction:{postId}:{studentId}:{reaction}")`. 취소 뒤 다시 남겨도 같은 ID | core #389 사건 키(ERD 3.5.1 반응 `postId:reaction`, 학생별 UK)와 1:1이라 어느 쪽을 써도 반응을 껐다 켜서 적립을 반복할 수 없음. 무작위 ID면 하루 상한까지 반복 적립 가능 |
+| 반응 검사 순서 | 공유물 잠금 → `VISIBLE` 아니면 404 → 본인 글 409 → 미완료 403. 취소는 공유물만 있으면 상태와 무관하게 허용 | 숨긴 글에 남긴 내 반응을 지울 수 없으면 안 됨. 잠금으로 신고 숨김과 반응을 차례로 처리 |
+| `community_visibility` 표 추가 | core가 공개 전환으로 알린 마지막 값을 저장. 신고 검토 다시 공개 때 끔이면 `HIDDEN_SETTING`으로, 새 공유물은 끔이면 `HIDDEN_SETTING`으로 저장 | ERD 설계에는 없던 표. `HIDDEN_REPORT` 동안 설정을 끄면 공개 전환이 그 행을 건드리지 않아(설계대로), 나중에 다시 공개하면 설정 끔인데 `VISIBLE`이 됨. learning 상태만으로도 비공개를 지키려고 둠(core도 목록에서 다시 거름) |
+| 검토 전이 | `HIDDEN_REPORT`는 `REMOVED`가 아니면 숨김(`HIDDEN_SETTING`에서도), `VISIBLE`은 `HIDDEN_REPORT`에서만, `REMOVED`는 끝 상태. 같은 요청 반복은 그대로, `error_report_id`는 상태를 마지막으로 바꾼 신고 | core `moderationStatus`가 계속 숨김 우선으로 다시 보냄. 공개 전환 지연 중 신고도 숨겨야 함 |
+| 공개 전환 처리 | 공개 여부 행을 먼저 잠근 뒤 학생 공유물을 일괄 전환, `changed` 수 반환 | 같은 학생의 전환 요청을 줄 세움 |
+| 학생 삭제 | 그 학생 공유물에 달린 반응 → 남긴 반응 → 공유물 → 공개 여부를 시도 삭제 전에. `PROFILE`·`RECORDS` 모두 | P09 "공유물·남긴 반응 파기". 공유물이 시도·답변을 FK로 참조 |
+
+### core 계약과 다른 점
+
+core 코드(`CommunityClient`)가 읽는 필드는 모두 맞췄고, 아래는 더한 것이다. core 쪽 수정은 없다.
+
+- 공유 응답: api-spec은 `{postId}`만 적었으나 `{postId, created, status}`. core는 `postId`와 HTTP 상태(201·200)만 읽음
+- 공유 거절: api-spec "그 밖은 공유 안 함"을 409 `COMMUNITY_NOT_SHAREABLE`(api-spec 1.3 추가)·없는 시도 404로 정함. core는 200·201 밖을 모두 공유 안 함으로 봄
+- 반응 응답: api-spec `{created}`에 `postId`·`reaction`·`reactionId` 추가, 취소는 `{…, deleted}`(core는 본문을 읽지 않음)
+- 목록 `answer`: core OpenAPI 설명은 "learning 마지막 답변 content 그대로"지만 `{inputType, text, content}` 객체. core는 그대로 넘기고 web `answerText`는 `text`를 읽으므로 화면은 맞음. core OpenAPI `CommunityPost.answer` 설명 문구 갱신은 core 몫으로 남김
+- 목록 응답에 `page`·`size`, 본인·자녀 목록에 `studentId`, 원문 조회에 `createdAt`(core는 읽지 않음)
+
+### 이슈와 다른 점
+
+- 마이그레이션 번호: #385(learning 주간 테마)가 V11(준비)·V12(최종)를 쓰고 먼저 병합하기로 해 이 변경은 V13. develop에 V11·V12가 들어오기 전에는 V10 → V13으로 적용됨(Flyway 빈 번호 허용, `outOfOrder` 꺼짐이라 V11·V12가 V13보다 뒤에 적용되는 DB가 생기지 않게 #385를 먼저 병합)
+
+- 이슈에 없던 것: `community_visibility` 표(위 결정), 반응 ID(#389 대비), 공유 때 표현 필터 재검사, learning 실제 응답 계약 검사와 ci-contracts 단계
+- ERD 4.4 구현 예정 표에서 커뮤니티 두 행을 4.3.1 Mermaid로 옮김. 4.4 절 번호는 주간 테마 링크(state-diagram·이 보고서 1장) 때문에 그대로 둠
+- `RecordServiceTest` 2건 수정: 고정 주(2026-11-02~08)를 쓰면서 완료 시각을 `now()`로 넣어 2026-11-09부터 실패하던 테스트라 완료 시각을 그 주 안(`inWeek`)으로 바꿈(제품 코드 영향 없음)
+
+### 한계
+
+- core와 실제로 붙인 공유 → 열람 → 반응 → 신고 숨김 흐름, web 화면 연동은 확인하지 않음(이슈 완료 조건 둘째 항목)
+- `HIDDEN_REPORT` 동안 받은 공개 전환은 `community_visibility`에만 남고 상태는 바꾸지 않음. 검토가 `REMOVED`로 끝나면 그대로 끝 상태
+- 공유 시점의 공개 여부는 core가 판정하고, learning `community_visibility`는 core 공개 전환 호출이 실패하면 늦을 수 있음. 이때 새 공유물이 `HIDDEN_SETTING`으로 저장될 수 있고 다음 설정 저장 때 복원됨(비공개 쪽으로 어긋남)
+
+### 검증
+
+- learning `./gradlew test bootJar` 통과: 332건, 실패 0, bootJar 생성. 로컬 JDK가 8이라 `eclipse-temurin:21-jdk` 임시 컨테이너와 Testcontainers로 실행. 새 `CommunityTest` 7건, `CommunityRulesTest` 3건, 확장한 `StudentDeletionTest` 4건(공유물·주고받은 반응·공개 여부까지 삭제) 포함
+- 루트 계약 테스트 `python -O -m unittest discover -s scripts/tests`: 184건 OK
+- ci-db-schema 방식 `scripts/check_db_migrations.py`(일회용 PostgreSQL 17.11 + Flyway 컨테이너): PASS
+  - learning V1~V10 → V13 적용, 24개 테이블·212개 컬럼이 ERD와 일치, 음성 사례 24건 거부
+  - 반복 마이그레이션에서 변화 없음
+- `scripts/validate_learning_community_contracts.py`: `CommunityTest` 실제 응답 10종이 learning OpenAPI와 일치하고, core `CommunityClient`가 읽는 필드도 있음
+- 확인하지 않은 것: 실제 core와 붙인 흐름, web 화면, 원격 CI
+

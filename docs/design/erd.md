@@ -1205,9 +1205,52 @@ erDiagram
 - #208 `processed_event`는 90일 뒤 삭제(V8 `processed_at` 인덱스). 재처리 방지 표식 `deleted_student`는 유지되므로 90일 이후 재전달도 삭제를 반복할 뿐 기록을 되살리지 않음
 - 멱등은 `answer`·`judgment_correction`의 `idempotency_key` UK로 처리, 별도 `idempotency_record` 없음
 
+### 4.3.1 커뮤니티 공유물·반응 (P20, #386)
+
+learning V13(V11·V12는 #385 주간 테마 몫). 공개 설정·`COMMUNITY` 동의·신고·작성자 별명은 core(#388, 3.1·3.3), 공유물·반응 저장과 열람 검사는 learning.
+
+```mermaid
+erDiagram
+  mission ||--o{ community_post : "미션"
+  attempt ||--o| community_post : "처음 학습 완료한 시도"
+  answer ||--o{ community_post : "그 시도의 마지막 답변"
+  community_post ||--o{ community_reaction : reactions
+  community_post {
+    uuid id PK
+    uuid student_id "core 학생 ID(논리 참조), UK (student_id, mission_id)"
+    uuid mission_id FK
+    uuid attempt_id FK,UK "그 미션을 처음 학습 완료한 시도"
+    uuid answer_id FK "그 시도의 마지막 답변"
+    varchar status "VISIBLE|HIDDEN_SETTING|HIDDEN_REPORT|REMOVED"
+    timestamptz created_at
+    timestamptz status_changed_at
+    uuid error_report_id "NULL 허용 · 상태를 마지막으로 바꾼 core 신고(논리 참조)"
+  }
+  community_reaction {
+    uuid id UK "학생·공유물·반응으로 정하는 이름 기반 UUID(core 포인트 사건 키)"
+    uuid post_id PK,FK
+    uuid student_id PK "반응한 학생"
+    varchar reaction PK "NEW_IDEA|CLEAR_REASON|DIFFERENT_VIEW|WANT_MORE"
+    timestamptz created_at
+  }
+  community_visibility {
+    uuid student_id PK "core가 마지막으로 알린 학생 공개 여부"
+    boolean visible
+    varchar reason "SETTING|CONSENT|TRANSFER"
+    timestamptz updated_at
+  }
+```
+
+- `community_post` UK `(student_id, mission_id)` → 학생·미션당 1개, UK `attempt_id`. 공유 대상은 그 미션을 처음 학습 완료(`attempt.status = COMPLETED`, `completed_at`·`id` 순 첫 행)한 시도의 마지막 답변(`answer.version` 최대)이고, 다시 푼 시도는 공유하지 않는다. 답변 원문은 `answer`를 조인해 읽고 따로 복사하지 않는다(답변은 추가만). 메모·판정·되묻기는 읽지 않음(P05)
+- 공유 때 지금 표현 필터(#205)를 다시 돌려 걸리면 공유하지 않는다(제출 뒤 단어 목록이 바뀐 경우)
+- 상태 전이(state-diagram 3.6): 공개 전환 `VISIBLE↔HIDDEN_SETTING`(다른 상태는 그대로), 신고 `HIDDEN_REPORT`(REMOVED 제외), 검토 다시 공개는 `HIDDEN_REPORT`에서만이고 `community_visibility.visible = false`면 `HIDDEN_SETTING`으로, `REMOVED`는 끝 상태. 새 공유물은 `community_visibility.visible = false`면 `HIDDEN_SETTING`, 그 밖(행 없음 포함)은 `VISIBLE`
+- `community_visibility`는 core가 공개 전환(`community-visibility`)으로 알린 마지막 값. 신고 숨김을 풀 때·새 공유 때 설정 비공개를 지키려고 둔다(ERD 4.4 구현 예정 표에 없던 추가 표, `docs/report/learning.md` 24장)
+- `community_reaction` PK `(post_id, student_id, reaction)`. `id`는 `UUID.nameUUIDFromBytes("community-reaction:{postId}:{studentId}:{reaction}")`라 취소 뒤 다시 남겨도 같다(core #389 포인트 사건 키로 반복 적립을 막음)
+- 학생 삭제(`student.deleted`, P09): 시도·답변보다 먼저 같은 트랜잭션에서 그 학생 공유물에 달린 반응 → 그 학생이 남긴 반응 → 공유물 → `community_visibility` 순서로 물리 삭제(FK NO ACTION)
+
 ### 4.4 구현 예정 변경 (learning_db)
 
-2026-11-06 서비스 기획 방향 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 저장 구조. 마이그레이션 전이라 위 Mermaid·6장 인덱스 표(실제 DB 계약, `scripts/verify_db_schema.py`가 대조)에는 넣지 않고 표로만 둔다. 구현 시 새 마이그레이션 버전과 함께 Mermaid·6장으로 옮긴다. 컬럼 기본값은 두지 않는다(검증 스크립트 규칙): 기존 행이 있는 테이블의 NOT NULL 컬럼은 준비 버전(nullable 추가)→기존 행 채움→최종 버전(NOT NULL·CHECK)으로 나눈다(8장). API는 [API 명세](api-spec.md)의 구현 예정 행.
+2026-11-06 서비스 기획 방향 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 저장 구조. 커뮤니티 공유물·반응(#386)은 V13으로 구현해 4.3.1 Mermaid로 옮겼다. 나머지는 마이그레이션 전이라 위 Mermaid·6장 인덱스 표(실제 DB 계약, `scripts/verify_db_schema.py`가 대조)에는 넣지 않고 표로만 둔다. 구현 시 새 마이그레이션 버전과 함께 Mermaid·6장으로 옮긴다. 컬럼 기본값은 두지 않는다(검증 스크립트 규칙): 기존 행이 있는 테이블의 NOT NULL 컬럼은 준비 버전(nullable 추가)→기존 행 채움→최종 버전(NOT NULL·CHECK)으로 나눈다(8장). API는 [API 명세](api-spec.md)의 구현 예정 행.
 
 | 테이블 | 구분 | 컬럼·제약 | 근거 |
 |---|---|---|---|
@@ -1215,11 +1258,9 @@ erDiagram
 | `weekly_theme_day` | 신규 | `theme_id FK`, `day_of_week smallint CHECK 1~5`(월~금), `mission_id FK`. PK `(theme_id, day_of_week)`, UK `(theme_id, mission_id)`. 다섯 생각 유형 1개씩은 게시 검사 | P23 |
 | `attempt` | 컬럼 추가 | `context varchar NOT NULL`(`THEME_DAY`·`THEME_REVIEW`·`EXTRA`, 기존 행 `EXTRA`로 채움), `theme_id FK NULL`, `theme_week_start date NULL`(재사용 테마도 그 주로 기록). 테마 컨텍스트면 둘 다 NOT NULL(CHECK) | P23 |
 | `theme_review_view` | 신규 | `student_id uuid`, `week_start date`, `theme_id FK`, `viewed_at`. PK `(student_id, week_start)` | P23, P21 |
-| `community_post` | 신규 | `id uuid PK`, `student_id uuid`, `mission_id FK`, `attempt_id FK`(처음 마무리한 시도), `answer_id FK`(그 시도의 마지막 답변), `status`(`VISIBLE`·`HIDDEN_SETTING`·`HIDDEN_REPORT`·`REMOVED`), `created_at`, `status_changed_at`, `error_report_id uuid NULL`(core 논리 참조). UK `(student_id, mission_id)` → 학생·미션당 1개, 다시 풀기는 공유하지 않음 | P20 |
-| `community_reaction` | 신규 | `post_id FK`, `student_id uuid`, `reaction`(`NEW_IDEA`·`CLEAR_REASON`·`DIFFERENT_VIEW`·`WANT_MORE`), `created_at`. PK `(post_id, student_id, reaction)` | P20 |
 
-- 학생 삭제(`student.deleted`): 그 학생의 `community_post`(달린 반응 포함)·`community_reaction`·`theme_review_view`를 다른 학습 기록과 함께 물리 삭제(P09)
-- 인덱스 후보: `community_post (mission_id, status)`, `community_reaction (student_id, created_at)`, `attempt (student_id, theme_week_start)`, `weekly_theme (grade_band, status, week_start)`
+- 학생 삭제(`student.deleted`): 그 학생의 `theme_review_view`를 다른 학습 기록과 함께 물리 삭제(P09). 커뮤니티 공유물·반응은 #386 구현(4.3.1)
+- 인덱스 후보: `attempt (student_id, theme_week_start)`, `weekly_theme (grade_band, status, week_start)`
 
 ---
 
@@ -1384,6 +1425,8 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | learning | `answer` | `(attempt_id, submitted_at)` | 시도 타임라인 |
 | learning | `judgment` | `(process_status, lease_until)` | 고착 `RUNNING` 탐지 |
 | learning | `mission_draft` | `(status, created_at)` | 초안 목록(상태 필터·최근 요청 순)·생성 작업 점유 (#353) |
+| learning | `community_post` | `(mission_id, status)` | 미션별 공개 공유물 목록 (#386, V13) |
+| learning | `community_reaction` | `(student_id, created_at)` | 학생 삭제 때 남긴 반응 정리 (#386, V13) |
 | learning | `processed_event` | `(processed_at)` | 보존 기간 정리 |
 | report | `weekly_report` | `(student_id, status, period_from)` | 자녀별 리포트 목록 |
 | report | `outbox_event` | `(created_at) WHERE published_at IS NULL`, `(subject, created_at, id) WHERE published_at IS NULL`, `(published_at) WHERE published_at IS NOT NULL` | 학생별 선두·발행 순서 및 재시도 대상, 보존 기간 정리 |
@@ -1396,7 +1439,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V35(V10·V11 결번), learning Flyway V1~V10, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`. 현재 84개 테이블·747개 컬럼(core 55/490, learning 21/194, report 8/63, `scripts/check_db_migrations.py` 결과, #387 V34 기준). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V35(V10·V11 결번), learning Flyway V1~V10·V13(V11·V12는 #385 예정), report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`. 현재 87개 테이블·765개 컬럼(core 55/490, learning 24/212, report 8/63, `scripts/check_db_migrations.py` 결과, core #389 V35·learning #386 V13 기준). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT

@@ -50,6 +50,13 @@
         WHERE student_id = #{studentId} AND mission_id = #{missionId} AND status = 'IN_PROGRESS'
     </select>
 
+    <!-- 커뮤니티(#386): 그 미션을 처음 학습 완료한 시도. 완료 시각이 같으면 ID 순 -->
+    <select id="findFirstCompleted" resultMap="attempt">
+        SELECT <include refid="columns"/> FROM attempt
+        WHERE student_id = #{studentId} AND mission_id = #{missionId} AND status = 'COMPLETED'
+        ORDER BY completed_at, id LIMIT 1
+    </select>
+
     <select id="findById" resultMap="attempt">
         SELECT <include refid="columns"/> FROM attempt WHERE id = #{id}
     </select>

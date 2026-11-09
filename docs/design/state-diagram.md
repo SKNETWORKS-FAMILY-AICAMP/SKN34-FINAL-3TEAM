@@ -327,26 +327,29 @@ stateDiagram-v2
 
 - 미션 상태(3.1)와 같은 전이 규칙. 코드값은 [ERD 4.4](erd.md#44-구현-예정-변경-learning_db). 위에 없는 전이는 `409 CONFLICT`
 
-### 3.6 `community_post.status` (구현 예정, P20)
+### 3.6 `community_post.status` (P20, learning #386 구현)
 
 ```mermaid
 stateDiagram-v2
   [*] --> VISIBLE: 미션 첫 학습 완료 + 커뮤니티 공개 켜짐
+  [*] --> HIDDEN_SETTING: 공유 직전 공개 끔이 먼저 반영됨
   VISIBLE --> HIDDEN_SETTING: 공개 끔·동의 철회·이관 수락
   HIDDEN_SETTING --> VISIBLE: 공개 켬 + 동의 유효
   VISIBLE --> HIDDEN_REPORT: 신고 접수
+  HIDDEN_SETTING --> HIDDEN_REPORT: 신고 접수(반영 지연 중)
   HIDDEN_REPORT --> VISIBLE: 검토 결과 다시 공개
+  HIDDEN_REPORT --> HIDDEN_SETTING: 다시 공개 + 지금 공개 끔
   HIDDEN_REPORT --> REMOVED: 검토 결과 계속 숨김
   REMOVED --> [*]
 ```
 
 | 전이 | 트리거 | 담당 |
 |---|---|---|
-| `VISIBLE ↔ HIDDEN_SETTING` | core `community-visibility` 호출(설정·동의·이관) | learning `CommunityPost.hideBySetting()`·`restore()` |
-| `VISIBLE → HIDDEN_REPORT` | `error_report(targetType = COMMUNITY_POST)` 접수 | core `ErrorReportService` → learning `moderation` |
-| `HIDDEN_REPORT → VISIBLE·REMOVED` | 신고 처리 완료(SERVICE_OPS) | 같은 경로 |
+| `VISIBLE ↔ HIDDEN_SETTING` | core `community-visibility` 호출(설정·동의·이관) | learning `CommunityService.setVisibility` |
+| `VISIBLE·HIDDEN_SETTING → HIDDEN_REPORT` | `error_report(targetType = COMMUNITY_POST)` 접수 | core `CommunityModerationService` → learning `moderation`(`CommunityRules.moderate`) |
+| `HIDDEN_REPORT → VISIBLE·HIDDEN_SETTING·REMOVED` | 신고 처리 완료(SERVICE_OPS). 다시 공개는 learning `community_visibility`가 끔이면 `HIDDEN_SETTING` | 같은 경로 |
 
-- `HIDDEN_REPORT`·`REMOVED`는 공개 설정을 다시 켜도 `VISIBLE`이 되지 않음
+- `HIDDEN_REPORT`·`REMOVED`는 공개 설정을 다시 켜도 `VISIBLE`이 되지 않음. `REMOVED`는 끝 상태라 검토 요청을 다시 받아도 그대로(멱등)
 - 학생·미션당 1행(UK `(student_id, mission_id)`). 다시 풀기 시도는 공유하지 않아 새 행·전이 없음
 - 공개 설정을 다시 켜면 `HIDDEN_SETTING`만 `VISIBLE`로 복원(이관 수락 후 새 보호자 동의 때도 같음)
 - 학생 삭제 시 상태와 관계없이 물리 삭제(P09)
