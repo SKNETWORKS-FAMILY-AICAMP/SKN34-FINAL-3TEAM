@@ -63,7 +63,7 @@ class ConsentChildrenTest : PostgresRepositoryTest() {
         val subject = UUID.randomUUID().toString()
         return auth.login(GoogleProfile(subject, "$subject@example.invalid", "합성 보호자"), null).also { users += it.identity.account.id }
     }
-    private fun choices(guardian: Boolean = false) = consent.documents().filter { (it.kind == "GUARDIAN") == guardian }
+    private fun choices(guardian: Boolean = false) = consent.documents().filter { if (guardian) it.kind == "GUARDIAN" else it.kind in setOf("TERMS", "PRIVACY") }
         .map { ConsentChoice(it.documentId, it.version, true) }
     private fun agree(user: UUID) = consent.save(user, null, choices())
     private fun register(user: UUID) = children.register(user, "별명", 3, 2017, choices(true))
@@ -95,23 +95,26 @@ class ConsentChildrenTest : PostgresRepositoryTest() {
         val current = publish("TERMS")
         assertEquals(current, consent.documents().single { it.kind == "TERMS" }.documentId)
         assertFalse(consent.documents().any { it.documentId == future })
-        mvc.get("/api/v1/consent-documents").andExpect { status { isOk() }; jsonPath("$.totalElements") { value(3) } }
+        // 필수 세 문서 + 선택 COMMUNITY(V31 시드, #388)
+        mvc.get("/api/v1/consent-documents").andExpect { status { isOk() }; jsonPath("$.totalElements") { value(4) } }
     }
-    @Test fun `migration seeds the three required 1_0 documents as the public publication`() {
+    @Test fun `migration seeds the three required 1_0 documents and optional COMMUNITY as the public publication`() {
         val seeded = mapOf("TERMS" to "00000000-0000-4000-8000-000002350001",
-            "PRIVACY" to "00000000-0000-4000-8000-000002350002", "GUARDIAN" to "00000000-0000-4000-8000-000002350003")
+            "PRIVACY" to "00000000-0000-4000-8000-000002350002", "GUARDIAN" to "00000000-0000-4000-8000-000002350003",
+            "COMMUNITY" to "00000000-0000-4000-8000-000003880001")
         // Synthetic fixtures (this class's or leftovers of other groups) move to the future and roll back with the test.
-        jdbc.update("UPDATE consent_document SET effective_from=effective_from+3650 WHERE id NOT IN (?,?,?)",
+        jdbc.update("UPDATE consent_document SET effective_from=effective_from+3650 WHERE id NOT IN (?,?,?,?)",
             *seeded.values.map(UUID::fromString).toTypedArray())
         val body = mvc.get("/api/v1/consent-documents").andExpect {
-            status { isOk() }; jsonPath("$.totalElements") { value(3) }
+            status { isOk() }; jsonPath("$.totalElements") { value(4) }
         }.andReturn().response.contentAsString
         val items = json.readTree(body)["items"].associateBy { it["kind"].asText() }
         assertEquals(seeded.keys, items.keys)
         seeded.forEach { (kind, id) ->
             val doc = items.getValue(kind)
             assertEquals(id, doc["documentId"].asText()); assertEquals("1.0", doc["version"].asText())
-            assertTrue(doc["required"].asBoolean()); assertEquals("2026-11-03", doc["effectiveFrom"].asText())
+            assertEquals(kind != "COMMUNITY", doc["required"].asBoolean())
+            assertEquals(if (kind == "COMMUNITY") "2026-11-08" else "2026-11-03", doc["effectiveFrom"].asText())
             assertTrue(doc["content"].asText().startsWith("※ 이 문서는 교육 과정 시연용 문서이며 법률 검토를 거치지 않았습니다."))
         }
     }

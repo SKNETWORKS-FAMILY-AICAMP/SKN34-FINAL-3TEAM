@@ -104,7 +104,7 @@ stateDiagram-v2
 | → `AGREED`·`WITHDRAWN` | 가입·자녀 등록·동의 변경 (`POST /me/consents`, `POST /children`) | `ConsentService.save` | 현재 문서 전체 항목과 필수 문서(`required`) 동의가 있어야 저장. 항목마다 최신 행과 선택이 다를 때만 새 행 저장(동의 AGREED, 선택 항목 미동의 WITHDRAWN). 재동의도 새 AGREED 행. 권한은 같은 문서·주체·자녀의 최신 행으로 판정 |
 | `AGREED → WITHDRAWN` | `POST /me/consents/{id}/withdrawal` | `ConsentService.withdraw` | 보호자 행 잠금 후 본인 행 확인, 이미 WITHDRAWN이면 그대로 반환. 행 유지 + `withdrawn_at`. 필수 동의 철회 시 대상 자녀(자녀 동의) 또는 계정 이용 차단, 삭제·탈퇴는 별도 요청. 선택 동의는 해당 기능만 중단 (P09) |
 
-- 구현 예정(P20): 선택 동의 문서 `COMMUNITY`(자녀 단위). 철회 시 커뮤니티 공개 설정을 끄고 공유물을 `HIDDEN_SETTING`으로 바꿈(3.6)
+- 선택 동의 문서 `COMMUNITY`(자녀 단위, P20, #388): 자녀 동의 요청에 `GUARDIAN`·`COMMUNITY` 중 보낼 문서만 담을 수 있고 `COMMUNITY`만 보낼 때는 현재 법정대리인 동의가 필요. 거부(`WITHDRAWN` 행)·철회 시 커뮤니티 공개 설정을 끄고 공유물을 `HIDDEN_SETTING`으로 바꿈(3.6). 이관 전 보호자의 옛 동의 철회는 영향 없음
 
 ### 2.4 `guardian_transfer.status` (#289 탈퇴 전 자녀 이관)
 
@@ -512,7 +512,7 @@ stateDiagram-v2
 
 - `R_*`·`Q_*` 접두어 = 각 테이블 `status` 값
 - 접수만으로 판정 변경 금지, `RECEIVED → RESOLVED` 직행 금지 (검토 기록 필수, FN-SUP-02)
-- 구현 예정(P20·P10): 대상 `COMMUNITY_POST` 신고 접수 시 공유물 `HIDDEN_REPORT`, `RESOLVED` 처리 결과로 `VISIBLE` 또는 `REMOVED`(3.6)
+- 대상 `COMMUNITY_POST` 신고(P20·P10, #388): 접수 시 공유물 `HIDDEN_REPORT`, `RESOLVED` + `review_result` `VISIBLE`(다시 공개)·`REMOVED`(계속 숨김, 생략 시 기본)로 공유물 상태를 정함(3.6). 같은 공유물에 신고가 여럿이면 `REMOVED` 우선, 처리 중이 있으면 `HIDDEN_REPORT`
 
 ### 5.1 core 정정 실행 기록 (#46)
 

@@ -116,6 +116,20 @@ class AdminOperationsContracts(unittest.TestCase):
                 if section=='schemas' and name=='NotificationSettings':
                     self.assertEqual(reviewed['properties']['items']['maxItems'],8)
                     reviewed['properties']['items']['maxItems']=6
+                # #388 (P20 community) adds only the optional COMMUNITY consent kind, the COMMUNITY_POST report target,
+                # the community reviewResult rule and the admin linkedPost. Remove exactly those additions.
+                if section=='schemas' and name=='ConsentDocument':
+                    kind=reviewed['properties']['kind']
+                    self.assertIn('COMMUNITY',kind.pop('description'))
+                    kind['enum'].remove('COMMUNITY')
+                if section=='schemas' and name=='SupportReportSubmission':
+                    target=reviewed['properties']['targetType']
+                    self.assertIn('COMMUNITY_POST',target.pop('description'))
+                    target['enum'].remove('COMMUNITY_POST')
+                if section=='schemas' and name=='SupportReview':
+                    self.assertIn('COMMUNITY_POST',reviewed['properties']['reviewResult'].pop('description'))
+                if section=='schemas' and name=='SupportReport':
+                    self.assertEqual(reviewed['properties'].pop('linkedPost'),{'$ref':'#/components/schemas/CommunityLinkedPost'})
                 canonical=json.dumps(reviewed,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
                 self.assertEqual(expected,hashlib.sha256(canonical).hexdigest(),f'{section}/{name}')
     def test_admin_paths_and_retry_key(self):

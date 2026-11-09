@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JacksonException
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.web.HttpExchangeResult
+import com.sagomungchi.core.community.service.CommunityService
 import com.sagomungchi.core.learning.service.LearningProxyService
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
@@ -13,7 +14,8 @@ import org.springframework.web.bind.annotation.*
 import java.util.UUID
 
 @RestController
-class LearningController(private val service: LearningProxyService, private val json: ObjectMapper) {
+class LearningController(private val service: LearningProxyService, private val json: ObjectMapper,
+                         private val community: CommunityService) {
     @GetMapping("/api/v1/missions")
     fun missions(@RequestParam(defaultValue = "0") page: Int, @RequestParam(defaultValue = "20") size: Int) =
         service.exchange("GET", "/missions", query = "page=$page&size=$size").http()
@@ -50,7 +52,10 @@ class LearningController(private val service: LearningProxyService, private val 
 
     @PostMapping("/api/v1/attempts/{attemptId}/reflection")
     fun reflection(@PathVariable attemptId: UUID, @RequestBody body: ByteArray) =
-        service.exchange("POST", "/attempts/$attemptId/reflection", body = objectBody(body)).http()
+        service.exchange("POST", "/attempts/$attemptId/reflection", body = objectBody(body)).also {
+            // 학습 완료 뒤 커뮤니티 공유(P20). 공유 실패는 학습 응답을 바꾸지 않는다.
+            if (it.status in 200..299) community.shareCompleted(attemptId)
+        }.http()
 
     private fun objectBody(body: ByteArray): ByteArray {
         val tree = try { json.readTree(body) } catch (_: JacksonException) { null }

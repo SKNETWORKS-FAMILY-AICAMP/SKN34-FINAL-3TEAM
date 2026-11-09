@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.community.repository.CommunityMapper">
+    <!-- 현재 연결 보호자의 최신 COMMUNITY 동의가 현재 게시 문서에 대해 유효한지. 이관 후 새 보호자 동의 전에는 거짓 -->
+    <sql id="consented">
+        EXISTS (SELECT 1 FROM guardianship g JOIN consent c ON c.subject_user_id=g.parent_user_id AND c.student_id=g.student_id
+            WHERE g.student_id=s.id AND g.status='LINKED'
+            AND c.document_id=(SELECT d.id FROM consent_document d WHERE d.kind='COMMUNITY'
+                AND d.effective_from &lt;= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date
+                ORDER BY d.effective_from DESC, d.created_at DESC, d.id DESC LIMIT 1)
+            AND c.id=(SELECT latest.id FROM consent latest WHERE latest.document_id=c.document_id
+                AND latest.subject_user_id=g.parent_user_id AND latest.student_id=s.id
+                ORDER BY latest.agreed_at DESC, latest.id DESC LIMIT 1)
+            AND c.agreed AND c.status='AGREED' AND c.withdrawn_at IS NULL)
+    </sql>
+    <resultMap id="state" type="com.sagomungchi.core.community.domain.CommunityState">
+        <constructor>
+            <arg column="community_enabled" javaType="_boolean"/>
+            <arg column="community_updated_at" javaType="java.time.OffsetDateTime"/>
+            <arg column="consent_granted" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+    <select id="state" resultMap="state" useCache="false" flushCache="true">
+        SELECT s.community_enabled, s.community_updated_at, <include refid="consented"/> AS consent_granted
+        FROM student s WHERE s.id=#{studentId} AND s.status='ACTIVE'
+        <if test="lock">FOR UPDATE OF s</if>
+    </select>
+    <update id="update">
+        UPDATE student SET community_enabled=#{enabled}, community_updated_at=#{now}, updated_at=now()
+        WHERE id=#{studentId} AND status='ACTIVE'
+    </update>
+    <update id="disable">
+        UPDATE student SET community_enabled=false, community_updated_at=#{now}, updated_at=now()
+        WHERE id=#{studentId} AND community_enabled
+    </update>
+    <update id="reset">
+        UPDATE student SET community_enabled=false, community_updated_at=NULL WHERE id=#{studentId}
+    </update>
+    <resultMap id="author" type="com.sagomungchi.core.community.domain.CommunityAuthor">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="nickname" javaType="java.lang.String"/>
+            <arg column="look_theme" javaType="java.lang.String"/>
+            <arg column="look_companion" javaType="java.lang.String"/>
+            <arg column="visible" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+    <select id="authors" resultMap="author" useCache="false" flushCache="true">
+        SELECT s.id, s.nickname, s.look_theme, s.look_companion,
+            (s.status='ACTIVE' AND s.community_enabled AND <include refid="consented"/>) AS visible
+        FROM student s WHERE s.id IN <foreach collection="ids" item="id" open="(" close=")" separator=",">#{id}</foreach>
+    </select>
+    <!-- 신고 접수·처리 중이거나 계속 숨김으로 처리된 공유물. learning 숨김 호출이 실패해도 core 응답에서 빼기 위한 확인 -->
+    <select id="reportHidden" resultType="java.util.UUID" useCache="false" flushCache="true">
+        SELECT DISTINCT target_id FROM error_report WHERE target_type='COMMUNITY_POST'
+        AND target_id IN <foreach collection="ids" item="id" open="(" close=")" separator=",">#{id}</foreach>
+        AND (status &lt;&gt; 'RESOLVED' OR review_result IS DISTINCT FROM 'VISIBLE')
+    </select>
+    <resultMap id="report" type="com.sagomungchi.core.community.domain.CommunityReportState">
+        <constructor>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="review_result" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+    <select id="reports" resultMap="report" useCache="false" flushCache="true">
+        SELECT status, review_result FROM error_report WHERE target_type='COMMUNITY_POST' AND target_id=#{postId}
+    </select>
+</mapper>
