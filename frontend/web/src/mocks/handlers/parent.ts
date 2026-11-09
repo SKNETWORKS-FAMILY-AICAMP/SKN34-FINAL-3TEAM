@@ -169,7 +169,8 @@ function streamMessage(
     messageId = retryId ?? crypto.randomUUID()
   let msg = c.messages.find((m) => m.messageId === messageId)
   if (!msg) {
-    msg = { messageId, question: data.question, status: 'RUNNING', scope }
+    // 대화의 첫 답변으로 정정 안내를 확인한다 (#244).
+    msg = { messageId, question: data.question, status: 'RUNNING', scope, correctionNotice: c.messages.length === 0 }
     c.messages.push(msg)
   } else {
     msg.status = 'RUNNING'

@@ -14,8 +14,10 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    and_,
     delete,
     func,
+    or_,
     select,
     text,
 )
@@ -27,6 +29,7 @@ from app.generation.locking import lock_key
 from app.generation.models import (
     GenerateReport,
     GenerationResult,
+    ItemType,
     JobConflict,
     PeriodType,
     ReportState,
@@ -180,6 +183,41 @@ class ReportRepository:
                 select(report_item)
                 .where(report_item.c.report_id == report_id)
                 .order_by(report_item.c.item_type, report_item.c.seq)
+            )
+            .mappings()
+            .all()
+        )
+
+    def correction_impact(self, session, student_id, attempt_id):
+        """Completed revisions built from an attempt (#244). Evidence links are dropped when
+        parent sharing is off, so match the attempt IDs every payload keeps."""
+        attempt = str(attempt_id)
+        weekly = and_(
+            weekly_report.c.period_type == PeriodType.WEEKLY,
+            report_item.c.item_type == ItemType.THINKING_TYPE,
+            report_item.c.payload["missions"].contains([{"attemptId": attempt}]),
+        )
+        daily = and_(
+            weekly_report.c.period_type == PeriodType.DAILY,
+            report_item.c.item_type == ItemType.PROBLEM,
+            report_item.c.payload["attemptId"].astext == attempt,
+        )
+        return (
+            session.execute(
+                select(
+                    weekly_report.c.id,
+                    weekly_report.c.period_type,
+                    weekly_report.c.period_from,
+                    weekly_report.c.revision,
+                )
+                .join(report_item, report_item.c.report_id == weekly_report.c.id)
+                .where(
+                    weekly_report.c.student_id == student_id,
+                    weekly_report.c.status == ReportStatus.COMPLETED,
+                    or_(weekly, daily),
+                )
+                .distinct()
+                .order_by(weekly_report.c.period_from, weekly_report.c.revision)
             )
             .mappings()
             .all()

@@ -8640,6 +8640,9 @@ components:
           anyOf:
           - $ref: '#/components/schemas/AnalysisNotice'
           - type: 'null'
+        correctionNotice:
+          type: boolean
+          description: 이 답변에 쓰인 판정 중 일부가 정정됨 (FN-SUP-03). 답변 내용은 바꾸지 않음
     AnalysisConversation:
       type: object
       required:
@@ -9895,6 +9898,9 @@ components:
         - verification
         - versions
         properties:
+          correctionNotice:
+            type: boolean
+            description: 이 판에 쓰인 판정 중 일부가 만들어진 뒤 정정됨 (FN-SUP-03). 리포트 내용은 바꾸지 않음
           revisions:
             type: array
             items:
@@ -11181,6 +11187,9 @@ components:
       - elements
       - heldReason
       properties:
+        corrected:
+          type: boolean
+          description: 정정이 있으면 true. elements는 원판정 그대로
         result:
           type: string
           enum:
@@ -12021,7 +12030,7 @@ components:
           format: date-time
         impact:
           description: aggregation은 학습 수치 집계에 대한 반영 여부. APPLIED=반영 확인, NOT_APPLIED=미반영 확인(변경 대상 없음 포함·오류/후속 필요 아님), UNKNOWN=확인
-            못함. 모든 UNKNOWN도 정정 성공과 양립함.
+            못함. 모든 UNKNOWN도 정정 성공과 양립함. conversation·report는 AFFECTED(이 판정을 쓴 결과 있음)·NOT_AFFECTED(없음)·UNKNOWN(조회 실패)이며 영향이 있으면 reportIds·messageIds·conversationIds를 포함. 관리자 응답에만 제공하고 신고자 응답은 null.
           type:
           - object
           - 'null'
