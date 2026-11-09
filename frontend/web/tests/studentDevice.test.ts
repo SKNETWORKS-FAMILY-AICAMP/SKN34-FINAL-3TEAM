@@ -95,10 +95,23 @@ test('PIN 로그인은 출생연도 누락·문자열 및 소수 학년을 계�
   t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({
     role: 'STUDENT', accessToken: 'invalid-child-token', child: { childId: 'c1', nickname: '별빛', grade: 3, ...fields },
   }), { headers: { 'Content-Type': 'application/json' } }))
-  for (const invalid of [{}, { birthYear: '2017' }, { birthYear: 2017, grade: 3.5 }]) {
+  for (const invalid of [{}, { birthYear: '2017' }, { birthYear: 2017, grade: 3.5 }, { birthYear: 2017, grade: '7' }, { birthYear: 2017, grade: 10 }]) {
     fields = invalid
     setAccessToken(null)
     await assert.rejects(studentDeviceApi.login('c1', '4831'), (e) => e instanceof ApiError && e.problem.code === 'CONTRACT_NOT_READY')
     assert.equal(withAuth().get('Authorization'), null)
+  }
+})
+
+test('자동 진급한 중학생도 출생연도를 보존하고 PIN으로 로그인한다 (#432·#423)', async t => {
+  let grade = 7
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ role: 'STUDENT', accessToken: 'student-token', child: { childId: 'c1', nickname: '별빛', grade, birthYear: 2014 } }))
+  t.after(() => setAccessToken(null))
+  for (const promoted of [7, 9]) {
+    grade = promoted
+    const session = await studentDeviceApi.login('c1', '4831')
+    assert.equal(session.child?.grade, promoted)
+    assert.equal(session.child?.birthYear, 2014)
+    assert.equal(session.entry, 'DEVICE')
   }
 })

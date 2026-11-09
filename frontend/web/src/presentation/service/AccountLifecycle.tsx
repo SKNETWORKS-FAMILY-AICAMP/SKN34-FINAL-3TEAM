@@ -6,9 +6,21 @@ import { useParentQuery, useParentMutation } from '../../data/parent/queries.ts'
 import { useReauthReturn } from '../../data/reauthReturn.ts'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import { QueryFeedback } from '../common/Workspace.tsx'
+import { useSession } from '../auth/sessionContext.ts'
+import { PasswordRecheck } from './PasswordRecheck.tsx'
 import './service.css'
 
-export function GoogleRecheck({ purpose, childId, scope, onProof }: { purpose: ReauthPurpose; childId?: string; scope?: DeletionScope; onProof: (token: string) => void }) {
+/** 탈퇴·자녀 해제·삭제·이관의 본인 재확인. Google 계정은 Google 새 탭, ID·비밀번호 계정(#415)은 비밀번호 재입력. */
+export function IdentityRecheck(props: { purpose: ReauthPurpose; childId?: string; scope?: DeletionScope; onProof: (token: string) => void }) {
+  const { session } = useSession()
+  return session?.authMethod === 'PASSWORD' ? <PasswordProof {...props} /> : <GoogleRecheck {...props} />
+}
+function PasswordProof({ purpose, childId, scope, onProof }: { purpose: ReauthPurpose; childId?: string; scope?: DeletionScope; onProof: (token: string) => void }) {
+  const [grant, setGrant] = useState<{ reauthToken: string; expiresAt: string } | null>(null)
+  useEffect(() => { if (!grant) return; const timer = setTimeout(() => { setGrant(null); onProof('') }, Math.max(0, Date.parse(grant.expiresAt) - Date.now())); return () => clearTimeout(timer) }, [grant, onProof])
+  return <PasswordRecheck purpose={purpose} childId={childId} scope={scope} onGrant={(value) => { setGrant(value); onProof(value?.reauthToken ?? '') }} />
+}
+function GoogleRecheck({ purpose, childId, scope, onProof }: { purpose: ReauthPurpose; childId?: string; scope?: DeletionScope; onProof: (token: string) => void }) {
   const [challenge,setChallenge]=useState(''),[proof,setProof]=useState<{ token:string; expiresAt:string }|null>(null),[notice,setNotice]=useState('')
   const start=useParentMutation(()=>serviceApi.startReauth({purpose,...(childId?{childId}:{}),...(scope?{scope}:{})}))
   const finish=useParentMutation(()=>serviceApi.finishReauth(challenge))
@@ -33,7 +45,7 @@ export function AccountLifecycle({ child }: { child: Child }) {
   const check=useParentMutation(()=>serviceApi.deletion(child.id,result!.deletionRequestId))
   return <div className="svc-page"><section className="ws-card ws-form"><h2>자녀 연결·기록 관리</h2><p>연결 해제와 기록 삭제는 다릅니다. 처리 중인 삭제는 전체 완료로 표시하지 않습니다.</p><QueryFeedback query={impact}/>{impact.data?.actions.map(a=><p key={a.scope}><strong>{a.scope}</strong> · {a.effect}</p>)}<p>거래 기록 보관 기간: {impact.data?.retainedTransactionsYears??'확인 중'}년</p>
     <label>요청할 작업<select value={choice} onChange={e=>{setChoice(e.target.value as typeof choice);setToken('');setConfirmed(false);setName('')}}><option value="UNLINK">보호자 연결 해제</option><option value="PROFILE">프로필과 학습 기록 삭제</option><option value="RECORDS">학습 기록 삭제 (프로필 유지)</option></select></label>
-    <GoogleRecheck key={choice+child.id} purpose={choice==='UNLINK'?'CHILD_UNLINK':'CHILD_DELETE'} childId={child.id} scope={choice==='UNLINK'?undefined:choice} onProof={setToken}/>
+    <IdentityRecheck key={choice+child.id} purpose={choice==='UNLINK'?'CHILD_UNLINK':'CHILD_DELETE'} childId={child.id} scope={choice==='UNLINK'?undefined:choice} onProof={setToken}/>
     <label>확인할 자녀 별명<input value={name} onChange={e=>setName(e.target.value)}/></label><label className="ws-check"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/>대상 자녀와 위의 처리 범위를 확인했습니다.</label>
     <button disabled={!impact.data||!token||!confirmed||name!==child.nickname||action.isPending} onClick={()=>void action.mutateAsync(undefined).then(r=>{setResult(r);setToken('');setConfirmed(false);setNotice(r?'삭제 요청을 접수했습니다. 서비스별 처리 상태를 확인해 주세요.':'연결 해제를 확인했습니다.')}).catch(()=>{})}>선택한 작업 요청</button><ErrorNotice error={action.error}/><p role="status">{notice}</p>
     {result&&<div><p>요청 {result.deletionRequestId} · {result.status}</p><p>완료한 서비스: {result.completedServices.join(', ')||'없음'}</p><button disabled={check.isPending} onClick={()=>void check.mutateAsync(undefined).then(setResult).catch(()=>{})}>삭제 처리 상태 확인</button><ErrorNotice error={check.error}/></div>}

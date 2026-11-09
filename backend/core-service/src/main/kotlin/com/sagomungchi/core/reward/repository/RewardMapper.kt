@@ -30,6 +30,7 @@ interface RewardMapper {
                      @Param("ledgerId") ledgerId: UUID?, @Param("now") now: OffsetDateTime): Int
 
     fun equipment(studentId: UUID): List<Map<String, Any?>>
+    fun equipmentOf(@Param("ids") studentIds: Collection<UUID>): List<Map<String, Any?>>
     fun clearEquipment(studentId: UUID): Int
     fun insertEquipment(@Param("studentId") studentId: UUID, @Param("slot") slot: String,
                         @Param("itemId") itemId: UUID, @Param("now") now: OffsetDateTime): Int

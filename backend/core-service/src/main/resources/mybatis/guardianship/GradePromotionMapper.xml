@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.guardianship.repository.GradePromotionMapper">
+    <resultMap id="promotion" type="com.sagomungchi.core.guardianship.domain.GradePromotion">
+        <constructor>
+            <arg column="student_id" javaType="java.util.UUID"/>
+            <arg column="nickname" javaType="java.lang.String"/>
+            <arg column="from_grade" javaType="_int"/>
+            <arg column="to_grade" javaType="_int"/>
+        </constructor>
+    </resultMap>
+    <!-- #432: 활성·비시연 학생 중 초3~중2, 그 학년도 2월 1일 전에 학년을 정했고 아직 진급 이력이 없는 학생만 올린다. -->
+    <select id="promote" resultMap="promotion" flushCache="true" useCache="false">
+        WITH promoted AS (
+            UPDATE student s SET grade=s.grade+1, grade_changed_at=#{now}, updated_at=#{now}
+            WHERE s.status='ACTIVE' AND NOT s.is_demo AND s.grade BETWEEN 3 AND 8
+              AND COALESCE(s.grade_changed_at, s.created_at) &lt; #{cutoff}
+              AND NOT EXISTS(SELECT 1 FROM student_grade_promotion p WHERE p.student_id=s.id AND p.school_year=#{year})
+            RETURNING s.id, s.nickname, s.grade-1 AS from_grade, s.grade AS to_grade
+        ), recorded AS (
+            INSERT INTO student_grade_promotion(student_id,school_year,from_grade,to_grade,promoted_at)
+            SELECT id,#{year},from_grade,to_grade,#{now} FROM promoted
+            RETURNING student_id
+        )
+        SELECT p.id AS student_id, p.nickname, p.from_grade, p.to_grade
+        FROM promoted p JOIN recorded r ON r.student_id=p.id ORDER BY p.id
+    </select>
+</mapper>

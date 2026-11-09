@@ -119,7 +119,7 @@ function ErrorDetail({ id }: { id: string }) {
             </button>
             <ErrorNotice error={correction.error} />
           </form>
-          {q.data.corrections.length > 0 && <p>판정 정정과 파생 결과 반영은 별개입니다. 아래 표시는 각 영역에서 확인된 반영 여부입니다.</p>}
+          {q.data.corrections.length > 0 && <p>판정 정정과 파생 결과 반영은 별개입니다. 아래 표시는 분석 대화·리포트의 영향 여부와 학습 수치 집계의 반영 여부입니다.</p>}
           {q.data.corrections.map((c, i) => (
             <section className="ws-card" key={i}>
               <p>

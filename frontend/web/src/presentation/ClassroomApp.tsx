@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router'
 import { useSession } from './auth/sessionContext.ts'
 import './student/pinpad.css'
 import { roleStart } from '../domain/navigation.ts'
+import { gradeLabel } from '../domain/grade.ts'
 import { StudentWorld } from './student/world/StudentWorld.tsx'
 import type { StudentPage } from './student/world/StudentWorld.tsx'
 import { ThinkingMap } from './student/world/ThinkingMap.tsx'
@@ -47,6 +48,7 @@ import { ParentAnalysis, ParentReport } from './parent/ParentFeatures.tsx'
 import './classroom.css'
 import { QueryStateNotice } from './common/QueryStateNotice.tsx'
 import { ParentUnlock } from './auth/ParentUnlock.tsx'
+import { ParentIdLogin } from './auth/ParentPasswordForms.tsx'
 
 const { recentPeriod, previousWeek } = displayPeriods
 type Page = 'home' | 'journal' | 'missions' | 'report' | 'analysis' | 'activities' | 'community' | 'points' | 'settings'
@@ -256,7 +258,7 @@ export function ClassroomApp() {
               <p className="ux-help">
                 {isDemo
                   ? '화면 시연용 계정입니다. 실제 이메일·아동 개인정보를 입력하지 마세요.'
-                  : 'Google 계정으로 로그인하고 자녀를 등록해 주세요.'}
+                  : 'Google 계정이나 아이디로 로그인하고 자녀를 등록해 주세요.'}
               </p>
             </div>
             <div className="ux-login-forms">
@@ -269,8 +271,10 @@ export function ClassroomApp() {
               <section className="ux-login-form">
                 <h2>학부모 로그인</h2>
                 <a className="cj-primary" href="/api/v1/auth/google/authorize">Google 계정으로 계속하기</a>
+                <ParentIdLogin />
                 <nav className="ux-login-links" aria-label="로그인 도움 메뉴">
                   <Link to="/login-help">로그인 도움말</Link>
+                  <Link to="/signup">아이디로 가입</Link>
                 </nav>
                 <p>처음 로그인하면 이용 동의와 자녀 등록을 진행합니다.</p>
                 {new URLSearchParams(location.search).has('oauthError') &&
@@ -472,7 +476,7 @@ export function ClassroomApp() {
                   >
                     {children.data?.map((c) => (
                       <option value={c.id} key={c.id}>
-                        {c.nickname} · 초{c.grade}
+                        {c.nickname} · {gradeLabel(c.grade)}
                       </option>
                     ))}
                   </select>
@@ -597,7 +601,7 @@ export function ClassroomApp() {
                       {session.role === 'PARENT' && child && (
                         <div className="ux-parent-entry">
                           <span>
-                            <strong>{child.nickname}</strong> · 초등 {child.grade}학년 ·{' '}
+                            <strong>{child.nickname}</strong> · {gradeLabel(child.grade)} ·{' '}
                             {child.plan === 'FREE' ? '무료' : child.plan === 'PREMIUM' ? '프리미엄' : '이용권 확인 필요'}
                           </span>
                           <button
@@ -709,7 +713,7 @@ export function ClassroomApp() {
                   <h2>{child?.nickname ?? '자녀'}의 공책</h2>
                   <p>
                     {child
-                      ? `초등 ${child.grade}학년 · ${session.role === 'STUDENT' ? '학생' : '학부모'}`
+                      ? `${gradeLabel(child.grade)} · ${session.role === 'STUDENT' ? '학생' : '학부모'}`
                       : '자녀 선택'}
                   </p>
                 </div>

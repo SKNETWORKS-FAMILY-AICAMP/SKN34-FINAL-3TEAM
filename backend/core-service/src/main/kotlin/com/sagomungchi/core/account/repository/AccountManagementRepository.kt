@@ -21,6 +21,7 @@ interface AccountManagementMapper {
  fun receipt(hash: String): WithdrawalRow?
  fun complete(@Param("user") user: UUID, @Param("now") now: OffsetDateTime): Int
  fun withdrawn(@Param("user") user: UUID, @Param("now") now: OffsetDateTime): Int
+ fun deleteParentCredential(user: UUID): Int
  fun audit(@Param("id") id: UUID, @Param("actor") actor: UUID, @Param("action") action: String, @Param("target") target: UUID, @Param("now") now: OffsetDateTime): Int
 }
 @Repository
@@ -34,6 +35,7 @@ class AccountManagementRepository(private val mapper: AccountManagementMapper) {
  fun request(id: UUID, user: UUID, hash: String, now: OffsetDateTime) { check(mapper.request(id,user,hash,now)==1) }
  fun latest(user: UUID)=mapper.latest(user)
  fun receipt(hash: String)=mapper.receipt(hash)
- fun complete(user: UUID, now: OffsetDateTime) { if(mapper.complete(user,now)>0) mapper.withdrawn(user,now) }
+ /** #415: a withdrawn password account keeps no password hash; its login ID is released by withdrawn(). */
+ fun complete(user: UUID, now: OffsetDateTime) { if(mapper.complete(user,now)>0) { mapper.withdrawn(user,now); mapper.deleteParentCredential(user) } }
  fun audit(actor: UUID, action: String, target: UUID, now: OffsetDateTime) { check(mapper.audit(UUID.randomUUID(),actor,action,target,now)==1) }
 }

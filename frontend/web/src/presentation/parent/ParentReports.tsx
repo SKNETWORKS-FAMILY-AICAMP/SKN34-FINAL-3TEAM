@@ -148,6 +148,9 @@ function ReportDetail({
           <p>
             실제 리포트 기간 · {r.period.from} ~ {r.period.to} · {r.revision}판
           </p>
+          {r.correctionNotice && (
+            <p role="note">이 리포트에 쓰인 판정 중 일부가 리포트를 만든 뒤 정정되었습니다. 리포트 내용은 만들어진 때 그대로입니다.</p>
+          )}
           <label>
             리포트 판{' '}
             <select

@@ -28,12 +28,12 @@ class PublicAuthFilter(private val auth: AuthService, private val properties: Au
         val studentDeviceEntry = (request.method == "GET" && path == "/auth/student/profiles") ||
             (request.method == "POST" && path in setOf("/auth/student/devices", "/auth/student/login"))
         try {
-            if (request.method == "POST" && (studentDeviceEntry || path in setOf("/auth/admin/login", "/auth/refresh", "/auth/parent-unlock", "/auth/logout", "/auth/student/logout", "/auth/student-sessions", "/me/reauth"))) {
+            if (request.method == "POST" && (studentDeviceEntry || path in setOf("/auth/admin/login", "/auth/parent/login", "/auth/parent/signup", "/auth/refresh", "/auth/parent-unlock", "/auth/logout", "/auth/student/logout", "/auth/student-sessions", "/me/reauth", "/me/reauth/password"))) {
                 if (request.getHeader("Origin") != properties.webOrigin || request.getHeader("X-Requested-With") != "XMLHttpRequest")
                     throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "허용되지 않은 요청 출처입니다.")
             }
             val public = (request.method == "GET" && path in setOf("/auth/google/authorize", "/auth/google/callback", "/auth/google/reauth/callback", "/consent-documents", "/products")) ||
-                (request.method == "POST" && path in setOf("/auth/admin/login", "/auth/refresh", "/auth/parent-unlock", "/auth/logout", "/auth/student/logout", "/webhooks/tosspayments")) || studentDeviceEntry
+                (request.method == "POST" && path in setOf("/auth/admin/login", "/auth/parent/login", "/auth/parent/signup", "/auth/refresh", "/auth/parent-unlock", "/auth/logout", "/auth/student/logout", "/webhooks/tosspayments")) || studentDeviceEntry
             val withdrawalReceipt = request.method == "GET" && path == "/me/withdrawal" && request.getHeader("X-Withdrawal-Status-Token") != null
             if (public || withdrawalReceipt) { chain.doFilter(request, response); return }
             val bearer = request.getHeader("Authorization")?.takeIf { it.startsWith("Bearer ") }?.removePrefix("Bearer ")
@@ -62,7 +62,7 @@ class PublicAuthFilter(private val auth: AuthService, private val properties: Au
             val consentRecovery = financialRecovery || transferRecovery || (request.method == "GET" && path == "/me") ||
                 (path == "/me/consents" && request.method in setOf("GET", "POST")) ||
                 (request.method == "POST" && path.matches(Regex("/me/consents/[^/]+/withdrawal"))) ||
-                (request.method == "POST" && path in setOf("/me/reauth", "/me/withdrawal")) ||
+                (request.method == "POST" && path in setOf("/me/reauth", "/me/reauth/password", "/me/withdrawal")) ||
                 (request.method == "GET" && path in setOf("/me/withdrawal", "/me/withdrawal/precheck")) ||
                 (path.matches(Regex("/children/[^/]+/deletion-impact")) && request.method == "GET") ||
                 (path.matches(Regex("/children/[^/]+/link")) && request.method == "DELETE") ||
@@ -110,7 +110,7 @@ class PublicAuthFilter(private val auth: AuthService, private val properties: Au
     private fun permission(path: String, method: String) = when {
         path.startsWith("/admin/missions") || path.startsWith("/admin/mission-drafts") ||
             path.startsWith("/admin/achievement-standards") || path.startsWith("/admin/look-items") ||
-            path.startsWith("/admin/weekly-themes") -> "CONTENT"
+            path.startsWith("/admin/theme-drafts") || path.startsWith("/admin/weekly-themes") -> "CONTENT"
         path.startsWith("/admin/refund-requests") -> if(method=="GET") "PAYMENT_VIEW" else "PAYMENT_REFUND"
         path.startsWith("/admin/payments") -> "PAYMENT_VIEW"
         else -> "SERVICE_OPS"

@@ -139,7 +139,7 @@ class NotificationIntegrationTest : IntegrationTestSupport() {
         assertEquals(first, jdbc.queryForObject("SELECT read_at FROM notification WHERE id=?", OffsetDateTime::class.java, id))
         mvc.get("/api/v1/notifications?unreadOnly=true") { header("Authorization", "Bearer $token") }.andExpect { jsonPath("$.items.length()") { value(0) } }
         mvc.get("/api/v1/notifications?size=101") { header("Authorization", "Bearer $token") }.andExpect { status { isBadRequest() } }
-        mvc.get("/api/v1/notification-settings") { header("Authorization", "Bearer $token") }.andExpect { jsonPath("$.items.length()") { value(8) } }
+        mvc.get("/api/v1/notification-settings") { header("Authorization", "Bearer $token") }.andExpect { jsonPath("$.items.length()") { value(9) } }
         mvc.put("/api/v1/notification-settings") { header("Authorization", "Bearer $token"); contentType=org.springframework.http.MediaType.APPLICATION_JSON
             content="""{"items":[{"type":"REPORT_FAILED","enabled":false}]}""" }.andExpect { status { isOk() } }
         mvc.put("/api/v1/notification-settings") { header("Authorization", "Bearer $token"); contentType=org.springframework.http.MediaType.APPLICATION_JSON

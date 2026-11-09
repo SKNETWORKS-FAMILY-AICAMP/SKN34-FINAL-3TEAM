@@ -17,9 +17,9 @@
 | 서비스 | 언어 | 책임 | 소유 저장소 |
 |---|---|---|---|
 | core-service | Spring Boot (Kotlin) | **유일한 공개 API**. 계정·인증·동의, 학부모-자녀 연결(권한 기준), 분석 대화 세션·이력, 주간·일일 리포트 작업·일정, 알림(SSE·인앱), 신고·문의·공지, 결제·구독(토스페이먼츠 테스트), 관리자 운영·모델 버전 레지스트리, LLM 사용량 집계 | core_db, Redis |
-| learning-service | Spring Boot (Kotlin) | 미션·기준표·예시 답·생각 열기 질문(버전 관리), 학습 시도·답변 버전·초안·도움 이용·돌아보기·자기 평가, 규칙 판정(고르기·수학 동치), 판정·되묻기 저장, 학습 기록 조회 API(대시보드·에이전트 도구·리포트 소재) | learning_db, S3(미션 장면) |
+| learning-service | Spring Boot (Kotlin) | 미션·기준표·예시 답·생각 열기 질문(버전 관리), 학습 시도·답변 버전·초안·도움 이용·돌아보기·자기 평가, 규칙 판정(고르기·수학 동치), 판정·되묻기 저장, 학습 기록 조회 API(대시보드·에이전트 도구·리포트 소재) | learning_db (미션 장면 이미지는 웹 정적 파일과 함께 CloudFront→S3로 서빙, learning은 S3를 쓰지 않음) |
 | ai-service | FastAPI | 서술 근거 구절 추출(LLM) + 원문 대조 판정(코드), 되묻기 생성·정답/금지어 유출 검사, LangGraph 분석 에이전트, 리포트 서술·저녁 질문 생성, 프롬프트 버전 | 없음 (상태 없음) |
-| scoring-service | FastAPI | M2 항목 점수(klue/roberta, 국어 우선), M1 수학 풀이 점검(후순위, 활성 범위만) 추론, CPU 추론 | 없음 (S3 가중치 읽기) |
+| scoring-service | FastAPI | M2 항목 점수(klue/roberta, 국어 우선), M1 수학 풀이 점검(후순위, 활성 범위만) 추론, CPU 추론, 관리자 모델 파일 사전 검사(#368), Pod별 모델 로딩 상태 보고(#370) | 없음 (S3 가중치 읽기) |
 | report-service | FastAPI | 주간·일일 리포트 기간·포함 기록 확정, 수치·전후 변화 코드 계산, 숫자·인용 대조, 렌더링(HTML/PDF/Markdown)·저장 | report_db, S3 |
 
 - 언어 분담 근거: 트랜잭션·권한·버전 관리·Outbox·스케줄·결제 = Spring 생태계(Spring AMQP, Flyway, ShedLock) 성숙 / LLM·모델 추론·렌더링 = Python 생태계
@@ -63,6 +63,9 @@
 외부: LLM API(ai) · 토스페이먼츠 테스트(core)
 ```
 
+- core→scoring 동기 HTTP는 관리자 모델 파일 사전 검사 중계 `POST /internal/models/preflight`(#368, 20초·재시도 없음)뿐이다. 판정 교차 확인(M2·M1)은 ai→scoring이다
+- `model.*`는 `model.version.activated`(core→ai·scoring)와 `model.loading.reported`(scoring→core, #370) 두 메시지다(1.4)
+
 ### 1.3 통신 원칙
 | 구간 | 방식 | 근거 |
 |---|---|---|
@@ -103,6 +106,7 @@
 | `report.completed` / `report.failed` | 이벤트 | report | core | 작업 상태 갱신, 학부모 알림 |
 | `llm.usage.recorded` | 이벤트 | ai, scoring | core | 호출 종류별 토큰·지연·실패·버전 집계 (학생 ID·원문 미포함) |
 | `model.version.activated` | 이벤트 | core | ai, scoring (Pod별 수신) | 모든 레플리카가 승인 scope의 활성 모델·프롬프트 버전 교체 (기동 시 core 내부 API로 현재 버전 조회) |
+| `model.loading.reported` | 이벤트 | scoring (Pod마다 기동·상태 변화 즉시, 이후 30초 주기로 전체 상태 재보고) | core | Pod·인스턴스별 최신 로딩 상태를 `model_loading_report`에 저장(같은 인스턴스는 더 큰 `sequence`만 반영, 1일 넘은 이벤트 무시), 관리자 `GET /admin/model-loading` 조회 (#370) |
 | `student.deleted` | 이벤트 | core | learning, report | 삭제 확정 학생의 학습 기록·리포트 물리 삭제, 처리 후 core 내부 API로 완료 보고. 페이로드에 `deletionRequestId`·`scope` 포함 (P09) |
 
 - 위 메시지는 모두 core 감사 큐 `core.event.audit`에도 바인딩되어 `event_log`에 기록된다(#208). 바인딩은 routing key별로 두며 `#` 와일드카드는 쓰지 않는다(report 발행자의 unroutable 감지 유지). 메시지를 추가하면 감사 바인딩도 함께 추가하고 `RabbitDefinitionsTest`가 누락을 검사한다.
@@ -131,10 +135,10 @@
    - report가 learning 기록 조회 → 코드 계산 → ai 서술·저녁 질문 → 숫자·인용 대조 → 렌더링·S3 저장
    - `report.completed` → core 알림
 
-2026-11-06 결정(6·8·9는 구현, 7의 포인트 적립 연결만 구현 예정):
+2026-11-06 결정(6~9 구현):
 
 6. **주간 테마**: core가 학생 학년으로 학년군을 정해 learning에 이번 주 테마 조회 → learning이 KST 요일로 문제 상태 계산. 시도 시작 시 learning이 `context` 검사, core가 무료 한도(`THEME_DAY`·`EXTRA` 신규 `201`, 합쳐 하루 1개) 집계(#387)
-7. **학습 완료 후**: 돌아보기 저장 성공 → core가 포인트 적립(미션당 최초 1회) → 커뮤니티 공개가 켜져 있고 그 미션 공유물이 없으면 learning에 공유 요청(학생·미션당 1개) → 공유 성공 시 포인트 적립. 공유 요청은 구현(#388), 두 포인트 적립 연결은 구현 예정(#389)
+7. **학습 완료 후**: 돌아보기 저장 성공 → core가 포인트 적립(미션당 최초 1회) → 커뮤니티 공개가 켜져 있고 그 미션 공유물이 없으면 learning에 공유 요청(학생·미션당 1개) → 공유 성공 시 포인트 적립. 공유 요청(#388)과 두 포인트 적립 연결(#389) 구현
 8. **일일 리포트**: core 스케줄러(ShedLock)가 매일 자정(다음 날 00:00 KST) 보호자가 연결된 자녀별 `report_job(period_type = DAILY)` + Outbox → `report.generate` → report가 learning 기록 조회 → 코드 계산·템플릿 구성 → 인용 대조 → 렌더링·S3 저장(ai 호출 없음) → `report.completed` → core 일일 알림
 9. **리포트 대화**: 학부모가 일일 리포트에서 대화 생성 → core가 리포트 소유·자녀 연결 확인 후 대화에 리포트 ID·판을 저장하고 범위를 그날로 고정 → 메시지마다 core가 report에서 그 판을 읽어 ai 요청에 넣음 → 이후는 4번 분석 대화 흐름 그대로
 
@@ -142,10 +146,10 @@
 - **Outbox**: DB 상태 변경 + 발행이 함께 필요한 서비스(core, report)만 적용 (learning은 발행 없음, 멱등 소비만). 같은 트랜잭션에 outbox 행 저장 → 릴레이 스케줄러가 publisher confirm 받은 후 발행 시각 기록 (참고 레포 `*OutboxScheduler` 패턴). core 릴레이는 ShedLock 단일 실행, 발행·confirm 대기는 DB 트랜잭션 밖, 발행 시각만 짧은 트랜잭션으로 기록
 - **core 발행 복구(#243)**: report #131과 같은 기준으로 subject별 선두만 1건씩 발행·confirm한다. 실패는 안전 오류 코드·횟수를 기록하고 1·5·15분 재시도 후 격리하며 다른 subject는 계속 처리한다. 브로커 연결 실패·confirm timeout은 그 주기를 중단한다. 격리 선두와 그 뒤 이벤트는 운영 SQL로 재처리할 때까지 대기한다. [정책·운영 SQL](../report/core-gateway.md#11-core-outbox-실패-격리-243)
 - **report 발행 복구(#131)**: 학생별 선두만 발행한다. 실패한 학생은 1·5·15분 재시도 후 격리하고 다른 학생은 계속 처리한다. 격리된 선두와 그 뒤 이벤트는 운영 CLI로 원래 이벤트 id를 재처리할 때까지 대기한다. 소비 재시도 큐/DLQ와 별개로 Outbox DB에 실패·격리 상태를 저장한다. [정책·운영 명령](../report/report.md#11-outbox-실패-격리와-학생별-발행-순서-131)
-- 구현 예정: 포인트 적립은 core가 learning 응답을 동기 프록시하는 경로(돌아보기 저장 성공 = 학습 완료, 공유·반응 성공, 되돌아보기 열람)에서 같은 core 트랜잭션으로 원장에 기록한다. learning은 계속 발행 없음(1.6 Outbox 원칙 유지). 프록시 응답 후 core 저장이 실패하면 사건 키(`student_id, event_type, source_key`)로 다음 같은 사건·조회 때 다시 적립할 수 있게 둔다(사건 키 멱등, 같은 사건 재요청·주간 테마 조회 때 보충)
+- #389 구현: 포인트 적립은 core가 learning 응답을 동기 프록시하는 경로(돌아보기 저장 성공 = 학습 완료, 공유·반응 성공, 되돌아보기 열람)에서 core 자체 트랜잭션(`RewardService.earn`, `REQUIRES_NEW`)으로 원장에 기록한다(실패해도 프록시 응답은 그대로). learning은 계속 발행 없음(1.6 Outbox 원칙 유지). 프록시 응답 후 core 저장이 실패하면 사건 키(`student_id, event_type, source_key`)로 다음 같은 사건·조회 때 다시 적립할 수 있게 둔다(사건 키 멱등, 같은 사건 재요청·주간 테마 조회 때 보충)
 - 공유물 생성(#388)도 돌아보기 저장 성공 직후 core → learning 내부 호출(학생·미션당 1개 멱등, 다시 풀기는 공유 안 함). 공개 설정 변경·동의 철회·이관 수락은 core → learning `community-visibility` 호출
 - 학생 삭제는 기존 `student.deleted` 소비 범위에 테마 열람 기록(learning #385 구현)·공유물·반응(learning #386 구현) 추가, core는 포인트·해금·착용 정보를 함께 삭제(`mission_daily_usage`는 #387에서 삭제 확정 트랜잭션에 포함)
-- **상태 없는 서비스(ai, scoring)**: 이벤트 발행은 처리 결과 반환 후 best-effort (사용량 집계용), 유실 시 Langfuse trace로 보정(Langfuse는 예정, 저장소 미구성)
+- **상태 없는 서비스(ai, scoring)**: 이벤트 발행은 처리 결과 반환 후 best-effort (사용량 집계용, scoring의 모델 로딩 상태 보고 #370 포함), 유실 시 Langfuse trace로 보정(Langfuse는 예정, 저장소 미구성)
 - **멱등 소비**: 소비자별 `processed_event(event_id UK)` 테이블 또는 DB 상태 전이 조건(`QUEUED→RUNNING`)
 - **이벤트 기록·보존(#208)**: core가 감사 큐로 모든 업무 메시지의 id·type·source·subject·봉투 시각·수신 시각을 `event_log`에 저장한다(payload 제외). 발행은 각 서비스 `outbox_event`, 소비는 `processed_event`·`llm_usage`·작업 상태와 `event_id`로 조인한다. ai·scoring은 DB 없이 유지하며, 브로커에 도달하지 못한 발행 실패는 `event_log`에 없고 서비스 로그로만 확인한다. `model.version.activated`의 Pod별 적용은 기록하지 않는다(readiness·snapshot 재조회로 보장). 발행 완료 outbox·processed_event·event_log는 90일 후 삭제하고 미발행·격리 행은 남긴다. [결정 근거](../report/core-gateway.md#9-rabbitmq-발행소비-기록-208)
 - **재시도**: 소비 실패 시 지연 재시도 3회(1·5·15분, P12) 후 DLQ 이동. `report.generate` 확정값을 모든 큐에 동일 적용
@@ -162,7 +166,7 @@
   - #43 계약: 내부 조회와 이벤트는 같은 kind·name별 revision·적용 scopes를 제공한다. 소비자는 초기 조회 중 이벤트를 보존·조정하고 더 높은 revision만 적용하며 승인 scope 밖에는 적용하지 않는다. core는 Pod 공유 소비 큐를 추가하지 않는다. scoring 소비·readiness는 #86에서 구현하며 ai는 #68 범위다.
   - scoring #86: 큐 바인딩·소비 시작 후 snapshot을 조회한다. 조회·로딩 중 이벤트는 이름별 최신 revision을 보존하고 readiness 전에 조정한다. 재연결 때 새 exclusive 큐를 바인딩하고 snapshot을 다시 조회하여 연결 중단 중 변경도 복구한다.
   - scoring 교체·롤백은 #85와 동일하게 S3/MinIO에서 재다운로드 → 메모리 로딩 → 임시 파일 정리 방식이다. 성공 후 참조를 교체하며 로딩 실패 시 기존 모델과 새 승인 범위의 교집합만 사용한다. 정상 기동 후 교체 실패는 기존 모델을 유지하고 재시도한다. 최초 조회·로딩 실패 또는 재연결 조정 중에는 readiness false다.
-  - ai #68: `PROMPT`의 `name`은 `judgment`·`followup`·`analysis`·`reportNarrative`·`reportTemplate`(#280 리포트 설정 제안), 각 승인 scope는 `ai/judgment`·`ai/followup`·`ai/analysis`·`ai/report-narrative`·`ai/report-template`다. 해당 scope가 없는 항목은 적용하지 않는다. 각 버전의 실제 system/user 프롬프트 본문은 ai 이미지의 코드에 함께 보관한다. core에 활성 항목이 없으면 현재 내장 버전을 사용한다. 활성 버전 본문이 이미지에 없으면 다른 본문에 그 버전명을 붙이지 않고 해당 기능의 새 요청을 503으로 거부하며 readiness는 false다. 요청마다 선택한 본문과 버전을 고정해 응답·사용량에 같은 버전을 기록한다.
+  - ai #68: `PROMPT`의 `name`은 `judgment`·`followup`·`analysis`·`reportNarrative`·`reportTemplate`(#280 리포트 설정 제안)·`missionDraft`(#354 미션 초안) 6개, 각 승인 scope는 `ai/judgment`·`ai/followup`·`ai/analysis`·`ai/report-narrative`·`ai/report-template`·`ai/mission-draft`다. 해당 scope가 없는 항목은 적용하지 않는다. 각 버전의 실제 system/user 프롬프트 본문은 ai 이미지의 코드에 함께 보관한다. core에 활성 항목이 없으면 현재 내장 버전을 사용한다. 활성 버전 본문이 이미지에 없으면 다른 본문에 그 버전명을 붙이지 않고 해당 기능의 새 요청을 503으로 거부하며 readiness는 false다. 요청마다 선택한 본문과 버전을 고정해 응답·사용량에 같은 버전을 기록한다.
   - ai도 큐 바인딩·소비 시작 후 snapshot을 조회하고 그사이 이벤트를 revision으로 조정한다. 재연결마다 새 큐를 먼저 바인딩하고 snapshot으로 유실 구간을 복구한다. readiness는 이 백그라운드 상태만 읽으며 probe가 core를 호출하지 않는다.
   - core 조회 실패 시 프로세스 종료 없이 readiness false 유지·재시도 (core 장애가 ai·scoring 기동 실패로 번지지 않게)
 - **이벤트 봉투**: CloudEvents 형식 `id, specversion, type, source, time, subject, dataschema, traceparent, data` → `contracts/events/*.schema.json`
@@ -350,7 +354,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  └─ repository/
 └─ admin/                        # 운영 현황·재처리·모델 버전 레지스트리·감사 이력·큐/DLQ
    ├─ controller/
-   ├─ consumer/                  # 재처리 감사 리스너(BEFORE_COMMIT 내부 이벤트, AMQP 아님)
+   ├─ consumer/                  # 재처리 감사 리스너(BEFORE_COMMIT 내부 이벤트, AMQP 아님), ModelLoadingConsumer(model.loading.reported AMQP 소비, 큐 core.model.loading.reported, #370)
    ├─ service/
    ├─ domain/
    ├─ repository/
@@ -368,11 +372,15 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 │  ├─ messaging/                 # 멱등 소비 (발행 없음)
 │  ├─ persistence/               # MyBatis 설정·PostgreSQL 타입 핸들러
 │  └─ web/                       # 공유 응답 DTO: MissionResponse·MissionListItemResponse·AnswerItem (#251)
-├─ mission/                      # 미션·기준표·예시 답·생각 열기 질문 버전, 관리자 작성·검토·공개
+├─ mission/                      # 미션·기준표·예시 답·생각 열기 질문 버전, 관리자 작성·검토·공개, 성취기준·미션 초안(#353)
 │  ├─ controller/
 │  ├─ service/
 │  ├─ domain/
-│  └─ repository/
+│  ├─ repository/
+│  ├─ client/
+│  │  └─ MissionDraftAiClient.kt # ai 미션 초안 요청 POST /internal/mission-drafts
+│  └─ scheduler/
+│     └─ MissionDraftScheduler.kt # 미션 초안 주기 생성 (처리는 MissionDraftService)
 ├─ attempt/                      # 학습 시도·초안·도움 이용·마무리·돌아보기·자기 평가
 │  ├─ controller/
 │  ├─ service/
@@ -460,6 +468,12 @@ backend/ai-service/
 │  │  ├─ service.py
 │  │  ├─ models.py               # 요청·응답 스키마
 │  │  └─ prompts.py
+│  ├─ mission_draft/             # 미션 초안 1회 생성·검사 (#354)
+│  │  ├─ router.py               # POST /internal/mission-drafts
+│  │  ├─ service.py
+│  │  ├─ models.py
+│  │  ├─ checks.py               # REQUIRED·QUESTION_LENGTH·LEAK 검사
+│  │  └─ prompts.py              # missionDraft 프롬프트 본문·버전
 │  ├─ prompt_versions/           # 활성 프롬프트 버전 (#68, #254 분리)
 │  │  ├─ router.py               # GET /internal/versions
 │  │  ├─ service.py              # PromptSync: core snapshot·대기 이벤트 조정
@@ -510,6 +524,8 @@ backend/scoring-service/
 │  ├─ model_versions.py          # core snapshot·이벤트의 scoring 대상 계약
 │  ├─ model_startup.py           # 기동 시 snapshot 조회·최초 로딩 재시도
 │  ├─ model_loader.py            # CPU 모델 로딩
+│  ├─ model_loading_reporter.py  # Pod별 로딩 상태 model.loading.reported 발행 (즉시·30초 주기, #370)
+│  ├─ preflight.py               # POST /internal/models/preflight 모델 파일 사전 검사 (core 중계, #368)
 │  ├─ versions.py                # 로딩 완료한 모델 버전 조회
 │  ├─ clients/
 │  │  ├─ base.py
@@ -518,7 +534,7 @@ backend/scoring-service/
 │  ├─ messaging/
 │  │  ├─ envelope.py
 │  │  ├─ connection.py
-│  │  ├─ publisher.py            # llm.usage.recorded
+│  │  ├─ publisher.py            # llm.usage.recorded·model.loading.reported
 │  │  └─ consumer.py             # model.version.activated, Pod별 exclusive 큐
 │  └─ health/
 │     └─ router.py
@@ -549,6 +565,8 @@ backend/report-service/
 │  │  ├─ narrative_generator.py  # ai 서술·대조, 대조 실패 시 템플릿
 │  │  ├─ records.py              # P06·P08 정규화 기록
 │  │  ├─ metrics.py
+│  │  ├─ daily.py                # 일일 리포트 사실 구성 (P24, LLM 미호출)
+│  │  ├─ theme_summary.py        # 주간 리포트 테마 요약 (learning #385 사실 검증)
 │  │  ├─ verifier.py
 │  │  ├─ presentation.py         # 조회·파일 렌더링 공통 조립
 │  │  ├─ template_settings.py    # 리포트 표시 설정 검증·적용 (#209)
@@ -664,10 +682,10 @@ backend/report-service/
 
 | 대상 | ingress 허용 | egress 허용 |
 |---|---|---|
-| core | ALB(서브넷 ipBlock), ai, scoring, learning, report-worker, Prometheus | learning, ai, report-api, RabbitMQ(5672·15672), Redis, RDS, 토스(NAT) |
-| learning | core, ai, report-api, report-worker, Prometheus | core, ai, RabbitMQ, RDS, S3 |
+| core | ALB(서브넷 ipBlock), ai, scoring, learning, report-worker, Prometheus | learning, ai, scoring(모델 사전 검사 #368), report-api, RabbitMQ(5672·15672), Redis, RDS, 토스(NAT) |
+| learning | core, ai, report-api, report-worker, Prometheus | core, ai, RabbitMQ, RDS |
 | ai | core, learning, report-worker, Prometheus | learning, scoring, core, RabbitMQ, LLM API(NAT) |
-| scoring | ai, Prometheus | core, RabbitMQ, S3 |
+| scoring | ai, core(모델 사전 검사 #368), Prometheus | core, RabbitMQ, S3 |
 | report-api | core, Prometheus | learning(근거 조회), RDS, S3 |
 | report-worker | Prometheus | core, learning, ai, RabbitMQ, RDS, S3 |
 | RabbitMQ·Redis | `app` 전체, KEDA(RabbitMQ), Prometheus | - |

@@ -9,6 +9,7 @@ import com.sagomungchi.core.community.domain.VisibilityReason
 import com.sagomungchi.core.community.repository.CommunityRepository
 import com.sagomungchi.core.guardianship.service.ChildAuthorizationService
 import com.sagomungchi.core.guardianship.service.StudentLearningContextService
+import com.sagomungchi.core.reward.service.ParticipationRewardService
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -27,7 +28,7 @@ import java.util.UUID
 class CommunityService(private val repository: CommunityRepository, private val client: CommunityClient,
     private val visibility: CommunityVisibilityService, private val authors: CommunityAuthorMapper,
     private val students: StudentLearningContextService, private val children: ChildAuthorizationService,
-    manager: PlatformTransactionManager) {
+    private val rewards: ParticipationRewardService, manager: PlatformTransactionManager) {
     data class Settings(val enabled: Boolean, val consentGranted: Boolean, val updatedAt: OffsetDateTime?)
     private data class Actor(val user: UUID, val student: UUID)
 
@@ -56,7 +57,7 @@ class CommunityService(private val repository: CommunityRepository, private val 
         return saved
     }
 
-    /** 돌아보기 저장(학습 완료) 뒤 공유 요청. 실패는 학습 응답을 바꾸지 않는다. 반환값은 포인트 적립(#389) 근거. */
+    /** 돌아보기 저장(학습 완료) 뒤 공유 요청. 실패는 학습 응답을 바꾸지 않는다. 반환값으로 호출자가 공유 포인트를 적립한다(#389). */
     fun shareCompleted(attemptId: UUID): CommunityClient.SharedPost? = try {
         val actor = student()
         if (repository.state(actor.student)?.visible != true) null else client.createPost(actor.student, attemptId)
@@ -96,13 +97,18 @@ class CommunityService(private val repository: CommunityRepository, private val 
         return mapOf("items" to ownPosts(childId, client.studentPosts(childId, "PARENT", parent)))
     }
 
-    /** 반응 남기기·취소. 생성 여부를 돌려준다(포인트 적립 근거, #389). */
+    /**
+     * 반응 남기기·취소. 생성 여부를 돌려준다. 남기기가 성공하면 반응 포인트를 적립한다(#389). 사건 키가 `postId:reaction`이라
+     * 이미 있던 반응(`created:false`)을 다시 보내도 중복 적립은 없고, 앞선 적립 저장 실패만 보충된다. 적립 실패는 응답을 바꾸지 않는다.
+     */
     fun react(postId: UUID, reaction: String, on: Boolean): Boolean {
         if (reaction !in Community.REACTIONS) invalid()
         val actor = student()
         if (on && postId in repository.reportHidden(setOf(postId)))
             throw BusinessException(HttpStatus.NOT_FOUND, "COMMUNITY_POST_NOT_FOUND", "볼 수 없는 공유물입니다.")
-        return client.react(postId, actor.student, actor.user, reaction, on)
+        val created = client.react(postId, actor.student, actor.user, reaction, on)
+        if (on) rewards.reactionGiven(actor.student, postId, reaction)
+        return created
     }
 
     /** 내 공유물·자녀 공유물. core가 아는 비공개(설정·동의·신고)를 상태에 덮어써 learning 반영 지연을 숨기지 않는다. */

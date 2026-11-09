@@ -118,7 +118,7 @@ class ReportHttpTest : IntegrationTestSupport() {
             .andExpect { status { isOk() }; jsonPath("$.revision") { value(2) }; jsonPath("$.state") { value("NO_RECORD") } }
             .andReturn().response.contentAsString
         val expected = json.readTree(response) as com.fasterxml.jackson.databind.node.ObjectNode
-        expected.put("parentSharingEnabled", true); expected.put("periodType", "WEEKLY")
+        expected.put("parentSharingEnabled", true); expected.put("periodType", "WEEKLY"); expected.put("correctionNotice", false)
         assertEquals(expected, json.readTree(result))
         assertEquals("revision=2", requests.single().query)
         assertEquals(actualReport, jdbc.queryForObject("SELECT report_id FROM report_view WHERE user_id=?", UUID::class.java, user))

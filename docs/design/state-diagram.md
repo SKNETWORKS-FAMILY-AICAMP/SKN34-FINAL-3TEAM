@@ -137,11 +137,11 @@ stateDiagram-v2
 
 ```mermaid
 stateDiagram-v2
-  [*] --> OPEN: Google 로그인 (PARENT·ADMIN)
+  [*] --> OPEN: Google 로그인 (PARENT·ADMIN) · 관리자 ID 로그인 (ADMIN)
   OPEN --> LOCKED: 동석 학생 진입 (locked_at, version+1)
   LOCKED --> OPEN: 보호자 비밀번호 확인 (version+1)
-  OPEN --> REVOKED: 로그아웃 · 탈퇴 · refresh 재사용
-  LOCKED --> REVOKED: 새 Google 로그인 · 탈퇴
+  OPEN --> REVOKED: 로그아웃 · 탈퇴 · refresh 재사용 · 새 로그인
+  LOCKED --> REVOKED: 새 로그인 · 탈퇴
   REVOKED --> [*]
 ```
 
@@ -149,9 +149,10 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
+| `→ OPEN` | `GET /auth/google/callback` · `POST /auth/admin/login {loginId,password}` | `AuthService.login` · `AuthService.adminLogin` → `startSession` | Google은 PARENT·ADMIN, ID 로그인은 `admin_credential` 행이 있는 ACTIVE ADMIN만(#369, [API 명세서](api-spec.md) 5.1). 둘 다 같은 브라우저의 이전 refresh 쿠키 세션과 그 세션에서 들어간 학생 세션을 폐기한 뒤 새 세션 발급 |
 | `OPEN → LOCKED` | `POST /auth/student-sessions` | `AuthService.enterStudent` | 부모 세션 행 잠금·version 일치·PARENT. 학생 auth_session을 `parent_session_id`=부모 세션으로 새로 만들고 학생 access만 발급. 부모 refresh 쿠키는 지우지 않음. 기존 부모 access는 `401 SESSION_CHANGED`, 잠긴 세션의 `/auth/refresh`는 refresh 토큰을 소비하지 않고 `401 PARENT_SESSION_LOCKED` |
 | `LOCKED → OPEN` | `POST /auth/parent-unlock {password}` | `AuthService.unlockParent`·`GuardianPasswordService.attempt` | refresh 쿠키의 잠긴 세션과 보호자 비밀번호 확인. 성공 시 `locked_at` 해제·version+1·그 세션에서 들어간 학생 세션 폐기·refresh 회전. 실패 횟수는 오류 응답 전에 커밋, 5회째부터 `423 GUARDIAN_PASSWORD_LOCKED`, 미설정은 `409 GUARDIAN_PASSWORD_NOT_SET`. 잠기지 않은 세션은 refresh와 같이 처리 |
-| `LOCKED → REVOKED` | 새 Google 로그인 | `AuthService.login` | 보호자 비밀번호 미설정·잠김일 때의 복귀 경로. 같은 브라우저의 이전 refresh 쿠키로 찾은 이전(잠긴) 세션과 그 세션에서 들어간 학생 세션을 폐기 |
+| `LOCKED → REVOKED` | 새 Google 로그인 · 관리자 ID 로그인 | `AuthService.login` · `AuthService.adminLogin` | 보호자 비밀번호 미설정·잠김일 때의 복귀 경로. 같은 브라우저의 이전 refresh 쿠키로 찾은 이전(잠긴) 세션과 그 세션에서 들어간 학생 세션을 폐기 |
 
 - 단독 PIN 학생 로그인은 별도 학생 세션을 만들며 부모 세션을 잠그지 않는다. 보호자 비밀번호(`guardian_password`)는 계정당 1행이며 설정·변경은 `PUT /me/guardian-password`(학부모 확인 → 규칙 검사 → `GUARDIAN_PASSWORD` 재인증 소비, 성공 시 실패 횟수·잠금 초기화). 근거: [API 명세서](api-spec.md) 5.1, [ERD](erd.md) V24
 
@@ -378,7 +379,7 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건부 UPDATE |
 |---|---|---|---|
-| → `QUEUED` | 스케줄(`SCHEDULE`)·`/regenerate`(`REGENERATE`)·`/admin/jobs/{id}/retry`(`ADMIN_RETRY`) | `ReportJobService` | 부분 UK `(student_id, period_from) WHERE trigger='SCHEDULE'` |
+| → `QUEUED` | 스케줄(`SCHEDULE`)·`/regenerate`(`REGENERATE`)·`/admin/jobs/{id}/retry`(`ADMIN_RETRY`) | `ReportJobService` | 부분 UK `(student_id, period_type, period_from) WHERE trigger='SCHEDULE'` (V30) |
 | `QUEUED → RUNNING` | `report.started` | `ReportJob.start()` | `WHERE id=:jobId AND status='QUEUED'`, `started_at` |
 | `QUEUED·RUNNING → COMPLETED` | `report.completed` | `ReportJob.complete(reportId)` | `WHERE id=:jobId AND status IN ('QUEUED','RUNNING')`, `report_id`·`completed_at` + 알림 |
 | `QUEUED·RUNNING → FAILED` | `report.failed` | `ReportJob.fail(reason)` | 위와 같음, `failure_reason` |
@@ -538,7 +539,9 @@ stateDiagram-v2
   APPROVED --> REFUND_REVIEW: 환불 요청
   REFUND_REVIEW --> REFUNDED: 환불 승인 + PG 취소 성공
   REFUND_REVIEW --> APPROVED: 환불 반려·PG 취소 실패
-  APPROVED --> CANCELED: PG 측 취소 통지 확인
+  APPROVED --> REFUNDED: PG 취소 확인 (FAILED 환불 재확인·PG 측 취소)
+  CONFIRMING --> REFUNDED: PG 취소 확인 (PG 승인 시각 있음)
+  CONFIRMING --> CANCELED: PG 취소 확인 (승인 전)
   REFUNDED --> [*]
   CANCELED --> [*]
   FAILED --> [*]
@@ -551,7 +554,9 @@ stateDiagram-v2
 | `CONFIRMING → APPROVED·FAILED` | 웹훅·`GET /payments/{orderId}`·스케줄러 재조회 | `PaymentService.refreshStatus`·`handleWebhook` | `WHERE status='CONFIRMING'`, 본문 대신 PG 조회 결과 사용 |
 | `APPROVED → REFUND_REVIEW` | `POST /payments/{id}/refund-requests` | `RefundService.request` → `Payment.startRefundReview()` | `WHERE status='APPROVED'`, 결제 7일 이내 + 프리미엄 기능 미사용 아니면 `409 REFUND_NOT_ALLOWED` (P14) |
 | `REFUND_REVIEW → REFUNDED·APPROVED` | 환불 승인 결과·반려 | `Payment.refund()` / 복귀 | `refund_request` 결과와 같은 트랜잭션 |
-| `APPROVED → CANCELED` | 웹훅 취소 통지 | `Payment.cancel()` | PG 조회로 확인된 경우만 |
+| `APPROVED·REFUND_REVIEW → REFUNDED` | 웹훅·조회로 PG `CANCELED`(잔액 0) 확인, 대기 환불(`REQUESTED`·`APPROVED`·`FAILED`)이 있을 때 | `PaymentWebhookService` → `RefundService.applyVerified` | 환불 행 `COMPLETED`와 같은 트랜잭션, 대상 구독 `CANCELED` (6.3) |
+| `APPROVED → REFUNDED` | 웹훅으로 PG `CANCELED`(잔액 0) 확인, 대기 환불 없음 | `PaymentWebhookService` → `PaymentService.accept` | 로컬 `approved_at`이 있으면 `CANCELED`가 아니라 `REFUNDED`. `REFUND_REVIEW` 단계를 거치지 않으며 대상 구독 `CANCELED`, `entitlement_status` 비움 |
+| `CONFIRMING → REFUNDED·CANCELED` | 승인 응답·웹훅·`GET /payments/{orderId}`·스케줄러 재조회에서 PG `CANCELED`(잔액 0) | `PaymentService.accept` | 로컬 또는 PG 응답에 승인 시각이 있으면 `REFUNDED`, 없으면(승인 전 취소) `CANCELED`. 대상 구독 `CANCELED` |
 
 | `entitlement_status` | 전이 | 담당 |
 |---|---|---|
@@ -586,7 +591,7 @@ stateDiagram-v2
 | `ACTIVE → RENEWAL_FAILED` | 청구 실패 | `Subscription.renewalFailed(graceUntil)` | `renewal_retry_count + 1`, 알림 `SUBSCRIPTION_CHANGED` |
 | `RENEWAL_FAILED → ACTIVE·CANCELED` | 재청구 성공 / `grace_until` 경과 | `extend` / `cancel()` | 3회 재청구 모두 실패하거나 `grace_until`(실패일 + 3일) 경과 시 `CANCELED` (P13). 같은 기간 재청구는 월별 주문을 유지하고 `payment_charge_attempt`로 시도마다 새 PG 주문 (#48) |
 | `ACTIVE → CANCELED` | `auto_renew = false` + `period_end` 경과 | `BillingScheduler.expireCanceled` → `cancel()` | `auto_renew_canceled_at` 기록 후에만, `canceled_at` = `period_end` 경과 시점 (P14) |
-| `ACTIVE → CANCELED` | 환불 완료(`payment REFUNDED`) | `RefundService` → `cancel()` | 같은 트랜잭션, `canceled_at` = 환불 완료 시점 (P14) |
+| `ACTIVE → CANCELED` | 환불 완료·PG 측 취소 확인(`payment REFUNDED·CANCELED`) | `RefundService.applyVerified`·`PaymentService.accept` → `cancelSubscription` | 같은 트랜잭션, `canceled_at` = 환불 완료 시점 (P14) |
 
 - 자동 갱신 해지(`DELETE /subscriptions/{id}/auto-renewal`)는 상태 전이 없이 `auto_renew = false`만 변경, `period_end` 전 해지 철회(`PUT`)는 `auto_renew = true` (P14)
 - `CANCELED` 이후 해당 자녀는 무료 플랜 한도 적용 (P13)
@@ -598,15 +603,31 @@ stateDiagram-v2
   [*] --> REQUESTED: 학부모 환불 요청
   REQUESTED --> APPROVED: 관리자 승인 (PAYMENT_REFUND)
   REQUESTED --> REJECTED: 관리자 반려 (사유)
+  REQUESTED --> REJECTED: 시스템 (결제 후 프리미엄 사용)
+  REQUESTED --> COMPLETED: PG 측 취소 확인 (웹훅)
   APPROVED --> COMPLETED: PG 취소 성공
-  APPROVED --> FAILED: PG 취소 실패
+  APPROVED --> FAILED: PG 취소 거절
+  FAILED --> REJECTED: 관리자 반려 (사유)
+  FAILED --> COMPLETED: PG 취소 재확인 (웹훅)
   COMPLETED --> [*]
   REJECTED --> [*]
-  FAILED --> [*]
+  note right of FAILED
+    대기 환불로 남음 (새 요청 행 없음)
+  end note
 ```
 
-- `REQUESTED → APPROVED`: 승인된 환불 합계 + 요청 금액 ≤ `payment.amount`, 아니면 `409 REFUND_NOT_ALLOWED` (FN-ADM-16)
-- `FAILED`는 종료, 재시도는 새 요청 행 (중복 취소 방지). 모든 전이에 `decided_by`·`audit_log`
+| 전이 | 트리거 | 담당 | 조건 |
+|---|---|---|---|
+| → `REQUESTED` | `POST /payments/{id}/refund-requests` | `RefundService.request` | 같은 주문에 대기 환불(`REQUESTED`·`APPROVED`·`FAILED`)이 있으면 새 행 없이 그 행을 반환(`PaymentMapper.pendingRefund`) |
+| `REQUESTED → REJECTED` (시스템) | 요청 직후 learning 사용 증빙 조회에서 결제 후 프리미엄 사용 확인 | `RefundService.request` | `decided_by` 없음, `reject_reason`="결제 후 프리미엄 기능 사용", 결제 `APPROVED` 복귀, 응답 `409 REFUND_NOT_ALLOWED` (P14) |
+| `REQUESTED → APPROVED` | `POST /admin/refund-requests/{id}/approve` (`PAYMENT_REFUND`) | `RefundService.approve` | 사용 증빙 확인(`usage_verified_at`) 뒤에만, 아니면 `409 REFUND_NOT_READY`. 7일·금액·미사용 재확인 실패는 `409 REFUND_NOT_ALLOWED` (FN-ADM-16) |
+| `REQUESTED·FAILED → REJECTED` (관리자) | `POST /admin/refund-requests/{id}/reject` (`PAYMENT_REFUND`) | `RefundService.reject` | 그 밖의 상태는 `409 REFUND_STATE_CHANGED`. 결제 `APPROVED` 복귀 |
+| `APPROVED → COMPLETED·FAILED` | 승인 직후 PG 취소 결과·`APPROVED` 복구 조회(스케줄러·`GET /payments/{orderId}`) | `RefundService.applyVerified` | PG `CANCELED`(잔액 0)면 `COMPLETED`, PG가 취소를 거절하면 `FAILED`(결제 `APPROVED` 복귀). 결과 불명확은 `APPROVED`로 남겨 조회 복구 (6.4) |
+| `REQUESTED·FAILED → COMPLETED` | 웹훅 뒤 PG 조회로 `CANCELED`(잔액 0) 확인 | `PaymentWebhookService` → `RefundService.applyVerified` | 결제 `REFUNDED`·구독 `CANCELED`와 같은 트랜잭션 |
+
+- `FAILED`는 종료가 아니다. 대기 환불로 남아 학부모 재요청은 같은 행을 돌려받고, 관리자 반려나 PG 취소 재확인으로만 끝난다. 관리자 승인(`approve`)은 `REQUESTED`만 받으므로 `FAILED`를 다시 PG 취소하지 않는다(중복 취소 방지)
+- `FAILED`도 대기 환불이므로 탈퇴(`WITHDRAWAL_BLOCKED`)·구독 변경·상품 권한 판단(`refundPending`)을 막는다([API 명세서](api-spec.md) 탈퇴 precheck)
+- 관리자 전이에는 `decided_by`·`audit_log`, 시스템 반려에는 `decided_by` 없음
 
 ### 6.4 결제 상태 적용 보완 (#48)
 

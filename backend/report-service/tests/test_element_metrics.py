@@ -133,6 +133,18 @@ def test_held_answer_codes_and_choice_missions_are_excluded():
     assert found["문제 해결하기 · 처음 답에서 확인된 생각 요소"].payload["denominator"] == 2
 
 
+def test_corrected_judgments_are_not_counted_like_held():
+    student = uuid4()
+    kept = attempt(student, answer(1, judged(element("ANALYZE_REASON", True))))
+    corrected = attempt(
+        student, answer(1, replace(judged(element("ANALYZE_REASON", True)), corrected=True))
+    )
+    values = metrics(student, [kept, corrected])
+    rate = next(i for label, i in values.items() if label not in BASE_METRICS)
+    assert (rate.payload["numerator"], rate.payload["denominator"]) == (1, 1)
+    assert len(rate.evidence) == 1
+
+
 def test_only_choice_missions_add_no_element_metrics():
     student = uuid4()
     choice = attempt(student, answer(1, judged(element("ANSWER_KEY", False), result="RETHINK")))

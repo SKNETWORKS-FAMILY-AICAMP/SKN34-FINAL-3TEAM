@@ -19,7 +19,8 @@ import java.util.UUID
 @Service
 class ReportQueryService(private val repository: ReportJobRepository, private val access: ReportAccessService,
     private val client: ReportClient, private val views: ReportViewService,private val entitlements: ReportEntitlementService,
-    private val learningContext: com.sagomungchi.core.guardianship.service.StudentLearningContextService) {
+    private val learningContext: com.sagomungchi.core.guardianship.service.StudentLearningContextService,
+    private val corrections: com.sagomungchi.core.support.service.CorrectionNoticeService) {
     /** [periodType] null lists daily and weekly together (P24 FN-RPT-15). */
     fun list(childId: UUID, status: ReportJobStatus?, periodType: ReportPeriodType? = null): JsonNode {
         // report-api lists generated reports only (RUNNING·COMPLETED·FAILED); a QUEUED job has no report yet.
@@ -60,6 +61,7 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
             withoutProblemOriginals(body as ObjectNode)
         (body as ObjectNode).put("parentSharingEnabled", allowed.parentSharingEnabled)
         body.put("periodType", job.periodType.name)
+        body.put("correctionNotice", corrections.report(UUID.fromString(body["reportId"].textValue())))
         return body
     }
 

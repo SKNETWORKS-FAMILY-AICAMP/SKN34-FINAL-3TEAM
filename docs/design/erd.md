@@ -73,13 +73,14 @@ erDiagram
   user_account ||--o{ guardian_transfer : recipient
   user_account ||--o{ deletion_request : requests
   student ||--o{ deletion_request : target
+  student ||--o{ student_grade_promotion : promoted
   user_account ||--o{ withdrawal_request : requests
 
   user_account {
     uuid id PK
     varchar role "STUDENT|PARENT|ADMIN"
-    varchar login_id UK "로그인 ID(이메일)"
-    varchar password_hash "NULL 허용 · 기존 데이터 보존, 로그인 미사용(관리자 비밀번호는 admin_credential)"
+    varchar login_id UK "로그인 ID(Google·관리자는 이메일, ID·비밀번호 학부모는 영문 소문자·숫자 아이디)"
+    varchar password_hash "NULL 허용 · 기존 데이터 보존, 로그인 미사용(비밀번호는 admin_credential·parent_credential)"
     varchar oauth_provider "NULL 허용 · GOOGLE"
     varchar oauth_subject "NULL 허용 · provider와 복합 UK"
     varchar display_name "NULL 허용"
@@ -112,7 +113,8 @@ erDiagram
     timestamptz pin_locked_at "NULL 허용"
     timestamptz pin_updated_at "NULL 허용"
     varchar nickname "가명, DELETED 표식은 NULL 허용"
-    int grade "3~6, 이후 제공 문제에만 적용 (P03), DELETED 표식은 NULL 허용"
+    int grade "3~9(초3~중3), 새 등록은 3~6 (P03), 매년 3월 자동 진급 (P26), 이후 제공 문제에만 적용, DELETED 표식은 NULL 허용"
+    timestamptz grade_changed_at "NULL 허용, 학년 수정·진급 시각. NULL은 등록 후 그대로(created_at 사용) (#432)"
     int birth_year "출생연도 (P01), DELETED 표식은 NULL 허용"
     boolean is_demo "시연 가상 학생"
     boolean parent_sharing_enabled "NOT NULL DEFAULT false, 학생 본인만 변경 (#206)"
@@ -125,6 +127,13 @@ erDiagram
     timestamptz created_at
     timestamptz updated_at
     timestamptz deleted_at "NULL 허용"
+  }
+  student_grade_promotion {
+    uuid student_id PK, FK "학생"
+    int school_year PK "진급한 학년도(3월이 속한 연도)"
+    int from_grade "3~8"
+    int to_grade "from_grade + 1"
+    timestamptz promoted_at
   }
   student_device {
     uuid id PK
@@ -201,19 +210,20 @@ erDiagram
 ```
 
 - #37: 동의 권한은 문서·주체·student_id별 agreed_at·id 내림차순 최신 행 기준이다. 같은 보호자의 동의 저장·철회·자녀 등록은 user_account 행 잠금으로 직렬화한다. 기존 스키마를 사용하며 V1~V8을 수정하지 않는다.
-- `consent_document` UK `(kind, version)`. V25가 1.0 문서 3종을 게시(#235), 개정은 행 수정 없이 새 version 행 추가. 동의는 철회해도 행 유지 → `status`·`withdrawn_at` 갱신 (FN-ACC-02)
+- `consent_document` UK `(kind, version)`. V25가 1.0 문서 3종을 게시(#235), 개정은 행 수정 없이 새 version 행 추가. V39가 TERMS·PRIVACY 1.1(시행 2026-11-09, 가입 방법에 아이디·비밀번호 가입, 처리 항목에 아이디·비밀번호 해시값·이름)을 추가했고, 필수 동의 판정이 현재 버전을 보므로 기존 회원도 다음 로그인 때 다시 동의한다 (#415). 동의는 철회해도 행 유지 → `status`·`withdrawn_at` 갱신 (FN-ACC-02)
 - `guardianship` 부분 UK `(parent_user_id, student_id) WHERE status = 'LINKED'`. 권한 확인은 이 테이블의 `LINKED` 행 기준 (아키텍처 1.1)
 - #289 V26: 추가 부분 UK `(student_id) WHERE status='LINKED'`로 현재 보호자 한 명을 보장한다. `guardian_transfer`는 `(student_id) WHERE status='PENDING'` 고유 인덱스, `(sender_id,created_at)`·`(recipient_id,created_at)` 조회 인덱스를 가진다. 발신자·수신자는 서로 달라야 하며 모두 실제 계정 FK다. `guardianship.transferred_at`은 이관으로 종료된 연결을 일반 해제와 구분한다. 기존 중복 LINKED 데이터는 자동 정리하지 않고 migration을 실패시킨다.
 - 연결 해제는 행 삭제 대신 `UNLINKED` 전환 → 해제 이후 조회 차단, 이력 보존 (FN-DSH-06)
 - `deletion_request`가 `CONFIRMED`가 되면 같은 트랜잭션에서 `outbox_event(student.deleted)` 저장
 - 로그인 수단·자녀 연결 변경 결과·시점은 `audit_log`에 기록 (FN-ACC-10)
 - `user_account.is_demo`·`student.is_demo` 행은 운영 현황·사용량·결제 집계에서 제외 (NFR-OPS-01)
-- `user_account.oauth_provider`·`oauth_subject`는 함께 NULL(기존 계정) 또는 GOOGLE·Google sub이며 복합 UNIQUE. `password_hash`는 nullable로 보존하고 이메일로 OAuth 계정을 자동 연결하지 않음 (#36)
+- `user_account.oauth_provider`·`oauth_subject`는 함께 NULL(기존 계정) 또는 GOOGLE·Google sub이며 복합 UNIQUE. `password_hash`는 nullable로 보존하고 이메일로 OAuth 계정을 자동 연결하지 않음 (#36). ID·비밀번호 학부모(#415)는 provider·subject가 모두 NULL이고 `login_id`가 아이디(4~30자, 소문자로 저장, `@` 없음)다. 레거시 `password_hash`는 NULL로 두고 비밀번호는 `parent_credential`에 둔다. 탈퇴 완료 시 `login_id`가 `withdrawn:<id>`로 바뀌어 아이디가 풀린다
 - 신규 student의 `pin_failed_count`는 앱이 0을 전달(SQL DEFAULT 없음). 학생 삭제 확정 때 `student_device_child` 제거·PIN 해시·잠금 삭제, 탈퇴 시 모든 기기 폐기 (#58)
 - `student.parent_sharing_enabled`는 비공개 기본값을 보장하기 위한 SQL DEFAULT false의 명시적 예외. 학생 본인만 바꾸며 원문 제공 경로는 같은 학생 행의 현재 설정을 다시 확인 (#206)
 - `student.community_enabled`도 같은 이유의 DEFAULT false 예외(P20, #388). V31에서 nullable로 추가하고 V32에서 기존 행을 false로 채운 뒤 NOT NULL. 학생 본인만 켜고 끄며, 공유물 공개는 이 값과 현재 연결 보호자의 현재 문서 `COMMUNITY` 동의가 모두 있어야 한다. 동의 거부·철회 시 false, 학생 삭제 확정 시 false·`community_updated_at` NULL로 되돌림. `consent_document` `COMMUNITY`는 선택(`required = false`) 자녀 단위 동의(V31 시드 1.0), `error_report`·`correction` `target_type`에 `COMMUNITY_POST`
 - `student.look_theme`·`look_companion`·`look_updated_at`은 함께 NULL(저장한 적 없음, API 기본값 `lake`·`mungchi`)이거나 함께 값(`student_look_saved_together`). 값 목록은 코드 상수와 CHECK로 고정, SQL DEFAULT 없음. 학생 삭제 확정 때 PIN 삭제와 같은 트랜잭션에서 NULL로 되돌림 (#234)
 - P22(#389, V35): `lake`·`mungchi` 외 테마·캐릭터는 포인트 해금 후에만 저장 가능(`student_look_unlock`, 3.5.1). 잠금 적용 전 저장된 값은 V35가 해금 행으로 옮김
+- P26(#432, V41): `ck_student_grade`를 3~9로 넓혔다(초3~중3, 새 등록은 앱에서 3~6). `grade_changed_at`은 학부모 수정에서 학년이 바뀔 때와 자동 진급 때 기록하며, 3월 진급은 `COALESCE(grade_changed_at, created_at)`이 그 학년도 2월 1일(KST) 전인 활성·비시연 학생(3~8)만 올린다. `student_grade_promotion`은 학년도마다 한 줄(PK `(student_id, school_year)`)이라 같은 3월에 다시 돌아도 한 번만 오른다. 프로필 삭제(`PROFILE`) 때 진급 이력도 지우고 `grade_changed_at`을 비운다
 
 ### 3.1.1 로그인 세션 (#36)
 
@@ -222,6 +232,7 @@ erDiagram
   user_account ||--o{ auth_session : owns
   user_account ||--o| guardian_password : sets
   user_account ||--o| admin_credential : "관리자 ID·비밀번호"
+  user_account ||--o| parent_credential : "학부모 ID·비밀번호"
   auth_session ||--o{ refresh_token : rotates
   auth_session ||--o{ auth_session : "guardian entry"
   auth_session {
@@ -251,12 +262,21 @@ erDiagram
     timestamptz created_at
     timestamptz updated_at
   }
+  parent_credential {
+    uuid user_id PK,FK
+    varchar password_hash
+    int failed_count
+    timestamptz locked_until "NULL 허용"
+    timestamptz created_at
+    timestamptz updated_at
+  }
 ```
 
 - `auth_session` CHECK: `version > 0`, `ck_auth_session_student`(role이 STUDENT면 `student_id` 필수, 그 외 역할은 NULL) (V8), `ck_auth_session_lock`(`locked_at`은 PARENT만)·`ck_auth_session_parent`(`parent_session_id`는 STUDENT만) (V24)
 - 동석 진입(FN-ACC-05, V24): 학부모 세션을 바꾸지 않고 `locked_at`을 기록·version을 올려 잠그고, `parent_session_id`로 연결한 학생 세션을 새로 만든다. 학부모는 보호자 비밀번호(`POST /auth/parent-unlock`)로 잠금을 풀며, 이때 그 세션의 학생 세션을 폐기한다. 새 Google 로그인·로그아웃으로 이전 세션을 폐기할 때도 학생 세션을 함께 폐기한다
 - `guardian_password`(V24): 계정당 1행, PBKDF2 해시·`failed_count >= 0`·5회째 `locked_at`. 설정·변경 시 실패 횟수·잠금 초기화(`GUARDIAN_PASSWORD` 재인증), 탈퇴 요청 시 삭제
 - `admin_credential`(V36, #369): ID·비밀번호 로그인이 허용된 관리자 목록. 로그인 ID는 `user_account.login_id`(ADMIN·ACTIVE 행만), PBKDF2 해시(`guardian_password`와 같은 형식)·`failed_count >= 0`. 연속 5회째 실패에 `locked_until` = 15분 뒤를 기록하고 횟수를 0으로 되돌린다. 행은 앱이 만들지 않고 `scripts/admin_account_sql.py`가 만든 SQL로만 생성·재설정(횟수·잠금 초기화)·삭제한다. 관리자 신원·권한·행위자 FK는 기존 `user_account`·`admin_permission`을 그대로 쓰며 레거시 `user_account.password_hash`는 사용하지 않는다
+- `parent_credential`(V38, #415): ID·비밀번호로 가입한 학부모의 비밀번호. `admin_credential`과 같은 모양(NOT NULL 컬럼에 SQL DEFAULT 없음, `failed_count >= 0`)·같은 잠금 규칙(연속 5회째 실패에 `locked_until` = 15분 뒤, 횟수 0으로)이며 로그인과 비밀번호 재확인(`POST /me/reauth/password`)의 실패를 함께 센다. 행은 가입 API(`POST /auth/parent/signup`)가 `user_account`(PARENT·ACTIVE, `oauth_provider`·`oauth_subject` NULL, `login_id` = 아이디)와 같은 트랜잭션에서 만든다. Google 계정에는 행을 만들지 않으며 로그인 조회도 `oauth_subject IS NULL`인 PARENT·ACTIVE 행만 본다. 탈퇴 완료 시 행을 삭제한다
 
 ### 3.1.2 재인증·삭제 완료 저장 (#45)
 
@@ -288,7 +308,7 @@ erDiagram
   }
 ```
 
-`withdrawal_request.status_token_hash varchar NULL 허용`을 추가한다(신규 요청은 해시 필수). PROFILE 완료 후 student의 nickname/grade/birth_year는 NULL로 지우며, DELETED가 아닌 행의 필수 프로필은 CHECK로 보존한다. 재인증 challenge의 purpose/자녀/scope 조합도 CHECK한다.
+`withdrawal_request.status_token_hash varchar NULL 허용`을 추가한다(신규 요청은 해시 필수). PROFILE 완료 후 student의 nickname/grade/birth_year는 NULL로 지우며, DELETED가 아닌 행의 필수 프로필은 CHECK로 보존한다. 재인증 challenge의 purpose/자녀/scope 조합도 CHECK한다. 비밀번호 재확인(#415)은 새 테이블 없이 `verified_at`·`issued_at`을 채운 challenge와 grant를 한 번에 만들고, `state_hash`(NOT NULL UK)에는 어디에도 보내지 않는 난수의 해시를 넣는다.
 
 ### 3.2 분석 대화·리포트 작업 (FN-AGT, FN-RPT)
 
@@ -468,7 +488,7 @@ erDiagram
     uuid id PK
     uuid user_id FK
     uuid child_id FK "NULL 허용"
-    varchar type "REPORT_COMPLETED|REPORT_FAILED|ERROR_REPORT_RESOLVED|INQUIRY_ANSWERED|PAYMENT_CHANGED|SUBSCRIPTION_CHANGED|DAILY_REPORT_COMPLETED|DAILY_REPORT_FAILED"
+    varchar type "REPORT_COMPLETED|REPORT_FAILED|ERROR_REPORT_RESOLVED|INQUIRY_ANSWERED|PAYMENT_CHANGED|SUBSCRIPTION_CHANGED|DAILY_REPORT_COMPLETED|DAILY_REPORT_FAILED|GRADE_PROMOTED"
     uuid source_event_id "사건 ID"
     varchar title "원문·결제 민감 정보 미포함"
     varchar link "상세 화면 경로"
@@ -516,7 +536,7 @@ erDiagram
     varchar target_type
     uuid target_id
     text reason
-    jsonb impact "NULL 허용 · 대화·집계·리포트 반영 여부"
+    jsonb impact "NULL 허용 · 대화·집계·리포트 반영 여부·영향 대상 ID (#244)"
     uuid corrected_by FK
     timestamptz created_at
   }
@@ -550,7 +570,7 @@ erDiagram
   }
 ```
 
-- #44: V12는 notification·notification_setting의 type CHECK에 REPORT_FAILED를 추가한다. #390: V30이 일일 리포트 완료·실패(`DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`)를 추가해 주간과 독립 수신 설정을 둔다(P24). V9는 #45, V13은 #58의 student_device_auth. 기존 마이그레이션은 수정하지 않는다. 알림 status는 Redis 발행 상태이며 읽음은 read_at으로 별도 관리한다.
+- #44: V12는 notification·notification_setting의 type CHECK에 REPORT_FAILED를 추가한다. #390: V30이 일일 리포트 완료·실패(`DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`)를 추가해 주간과 독립 수신 설정을 둔다(P24). #432: V41이 학년 자동 진급 안내 `GRADE_PROMOTED`를 추가한다(P26). V9는 #45, V13은 #58의 student_device_auth. 기존 마이그레이션은 수정하지 않는다. 알림 status는 Redis 발행 상태이며 읽음은 read_at으로 별도 관리한다.
 - `notification` UK `(user_id, type, source_event_id)` → 같은 사건 재처리 시 중복 생성 방지 (FN-SUP-08)
 - 판정 정정 원본은 learning `judgment_correction`, core `correction`은 신고 단위 정정 사유·영향 범위 기록 (FN-SUP-03)
 - 도움말(`/help`)은 정적 콘텐츠로 테이블 없음
@@ -747,7 +767,7 @@ erDiagram
     uuid id PK
     uuid event_id UK "llm.usage.recorded id"
     varchar service "ai|scoring"
-    varchar call_type "JUDGMENT|FOLLOWUP|ANALYSIS|REPORT_NARRATIVE|MISSION_DRAFT|M2|M1"
+    varchar call_type "JUDGMENT|FOLLOWUP|ANALYSIS|REPORT_NARRATIVE|MISSION_DRAFT|THEME_DRAFT|THEME_IMAGE|M2|M1"
     varchar model
     varchar prompt_version "NULL 허용"
     int input_tokens "NULL 허용"
@@ -806,6 +826,7 @@ erDiagram
 - `llm_usage`에 학생 ID·답변 원문 컬럼 없음 (NFR-PRF-02). 수집 데이터 보고서의 예정 필드 `llm_usage_log(call_type, model, input_tokens, output_tokens, ts)` 대응
 - `cost_usd`는 core 설정의 모델별 토큰 단가(기획서 3.9)로 소비 시 계산, 단가 변경 후에도 과거 값 유지 (FN-ADM-19)
 - #355: ai 미션 초안 호출(FN-ADM-20)의 `call_type` `MISSION_DRAFT`를 V28에서 CHECK에 더함. 호출 종류 목록은 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·core OpenAPI `CallType`과 ai·scoring 발행 목록이 같음(Mermaid 주석 값은 CHECK와 자동 대조, 1장)
+- #439: ai 주간 테마 생성(에픽 #436, ai #437)의 텍스트 호출 `THEME_DRAFT`·이미지 호출 `THEME_IMAGE`를 V40에서 CHECK에 더함(V28과 같은 방식, 허용 목록만 넓힘). 이미지 호출은 토큰이 없어 `cost_usd`가 null(미산정 호출로 셈)
 - `outbox_event`: 상태 변경과 같은 트랜잭션에 저장, 릴레이가 publisher confirm 후 `published_at` 기록 (아키텍처 1.6)
 - #243 `outbox_event` 실패·격리: 릴레이는 subject별 선두만 발행. 발행 실패는 `failure_count`·`last_error_code`·`last_failed_at`을 기록하고 1·5·15분 뒤 재시도, 4번째 실패에 `quarantined_at` 기록(report #131과 같은 컬럼·기준). 격리 선두와 같은 subject 뒤 행은 운영 재처리까지 대기, 다른 subject는 계속 발행 ([보고서](../report/core-gateway.md#11-core-outbox-실패-격리-243))
 - #208 `event_log`: 감사 큐 `core.event.audit`로 받은 모든 업무 메시지(ai·scoring 발행 포함)의 메타데이터. payload·원문은 저장하지 않음. 같은 id 재발행·재전달은 첫 행 유지. `outbox_event`·`processed_event`·`llm_usage`와 `event_id`로 조인해 발행·전달·소비를 추적 ([보고서](../report/core-gateway.md#9-rabbitmq-발행소비-기록-208))
@@ -1504,7 +1525,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V37(V10·V11 결번), learning Flyway V1~V13, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`. 현재 93개 테이블·808개 컬럼(core 57/502, learning 28/240, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V37·learning V13·report `20261109_07` 기준). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V39(V10·V11 결번), learning Flyway V1~V13, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`. 현재 94개 테이블·814개 컬럼(core 58/508, learning 28/240, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V39·learning V13·report `20261109_07` 기준). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT

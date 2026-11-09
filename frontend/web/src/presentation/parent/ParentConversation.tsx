@@ -180,6 +180,9 @@ export function ParentConversation({
                 m.verification.quotesMatched && m.verification.contentAllowed !== false ? (
                 <>
                   <p>{m.answer}</p>
+                  {m.correctionNotice && (
+                    <p role="note">이 답변에 쓰인 판정 중 일부가 정정되었습니다.</p>
+                  )}
                   <ReportProblem targetType="ANALYSIS" targetId={m.messageId}/>
                   {m.scope && (
                     <p>

@@ -104,6 +104,13 @@ class AdminOperationsContracts(unittest.TestCase):
                     for field in ('code','goodThought'):
                         reviewed['required'].remove(field)
                         reviewed['properties'].pop(field)
+                # #415 parent ID/password login adds loginId·authMethod to /me and makes email nullable for those accounts.
+                if section=='schemas' and name=='ParentMeResponse':
+                    for field in ('loginId','authMethod'):
+                        reviewed['required'].remove(field)
+                        reviewed['properties'].pop(field)
+                    self.assertEqual(reviewed['properties']['email']['type'],['string','null'])
+                    reviewed['properties']['email']={'type':'string','format':'email'}
                 # #387 adds the attempt start {context} body and the core limit/premium errors; restore only the approved fields.
                 if section=='paths' and name=='/missions/{missionId}/attempts':
                     post=reviewed['post']
@@ -122,6 +129,8 @@ class AdminOperationsContracts(unittest.TestCase):
                 # #355 adds only the ai mission draft usage type; the other call types stay fingerprinted.
                 if section=='schemas' and name=='CallType':
                     reviewed['enum'].remove('MISSION_DRAFT')
+                    # #439 adds only the ai weekly theme text/image usage types.
+                    reviewed['enum'].remove('THEME_DRAFT'); reviewed['enum'].remove('THEME_IMAGE')
                 # #390 (P24 daily report) adds only the periodType filter/field, daily detail fields and two
                 # daily notification types. Remove exactly those additions; every other field stays fingerprinted.
                 if section=='paths' and name=='/children/{childId}/reports':
@@ -134,15 +143,26 @@ class AdminOperationsContracts(unittest.TestCase):
                 if section=='schemas' and name in ('ReportSummary','ReportJobAccepted'):
                     reviewed['required'].remove('periodType'); reviewed['properties'].pop('periodType')
                 if section=='schemas' and name=='ReportDetail':
-                    for field in ('problems','themeSummary'):
+                    for field in ('problems','themeSummary','correctionNotice'):
                         reviewed['allOf'][1]['properties'].pop(field)
                 if section=='schemas' and name=='NotificationType':
-                    reviewed.pop('description')
-                    for value in ('DAILY_REPORT_COMPLETED','DAILY_REPORT_FAILED'):
+                    # #432 adds only the GRADE_PROMOTED type (described in the same sentence).
+                    self.assertIn('GRADE_PROMOTED',reviewed.pop('description'))
+                    for value in ('DAILY_REPORT_COMPLETED','DAILY_REPORT_FAILED','GRADE_PROMOTED'):
                         reviewed['enum'].remove(value)
                 if section=='schemas' and name=='NotificationSettings':
-                    self.assertEqual(reviewed['properties']['items']['maxItems'],8)
+                    self.assertEqual(reviewed['properties']['items']['maxItems'],9)
                     reviewed['properties']['items']['maxItems']=6
+                # #432 stores grades up to middle school third grade (9); only the upper bound changed.
+                if section=='schemas' and name in ('StudentDeviceToken','ChildListItem','DashboardChild','Child'):
+                    grade=reviewed['properties']['child']['properties']['grade'] if name=='StudentDeviceToken' else reviewed['properties']['grade']
+                    if name=='Child':
+                        self.assertEqual(grade['enum'],[3,4,5,6,7,8,9]); grade['enum']=[3,4,5,6]
+                    else:
+                        self.assertEqual(grade['maximum'],9); grade['maximum']=6
+                if section=='paths' and name=='/children/{childId}':
+                    grade=reviewed['patch']['requestBody']['content']['application/json']['schema']['properties']['grade']
+                    self.assertEqual(grade['maximum'],9); grade['maximum']=6
                 # #388 (P20 community) adds only the optional COMMUNITY consent kind, the COMMUNITY_POST report target,
                 # the community reviewResult rule and the admin linkedPost. Remove exactly those additions.
                 if section=='schemas' and name=='ConsentDocument':
@@ -157,6 +177,13 @@ class AdminOperationsContracts(unittest.TestCase):
                     self.assertIn('COMMUNITY_POST',reviewed['properties']['reviewResult'].pop('description'))
                 if section=='schemas' and name=='SupportReport':
                     self.assertEqual(reviewed['properties'].pop('linkedPost'),{'$ref':'#/components/schemas/CommunityLinkedPost'})
+                # #244 adds the corrected flag and extends the impact description; retain the original fingerprints.
+                if section=='schemas' and name=='DashboardJudgment':
+                    self.assertEqual(reviewed['properties'].pop('corrected')['type'],'boolean')
+                if section=='schemas' and name=='SupportCorrection':
+                    original,added=reviewed['properties']['impact']['description'].split(' conversation·report는 AFFECTED')
+                    self.assertIn('신고자 응답은 null',added)
+                    reviewed['properties']['impact']['description']=original
                 # #367 adds optional evidence limitations; retain the original evidence fingerprint.
                 if section=='schemas' and name=='EvaluationEvidence':
                     self.assertEqual(reviewed['properties'].pop('limitations')['default'],[])

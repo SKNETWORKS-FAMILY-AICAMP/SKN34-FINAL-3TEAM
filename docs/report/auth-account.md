@@ -1,4 +1,4 @@
-# 인증·계정 (#36·#37·#45·#58·#196·#206·#235·#289·#369, P01 개정)
+# 인증·계정 (#36·#37·#45·#58·#196·#206·#235·#289·#369·#415·#432, P01 개정·P26)
 
 계약은 [API 명세](../design/api-spec.md) 3.11·5.1·5.3·5.4·5.6과 [core OpenAPI](../../contracts/openapi/core-service.yaml), 저장 구조는 [ERD](../design/erd.md) 3.1.
 
@@ -7,9 +7,9 @@
 - Google Authorization Code + PKCE S256을 core 콜백에서 처리. `authorize` → Google → `callback`(refresh 쿠키 설정) → web `/oauth/complete` → `POST /auth/refresh` → `GET /me`. 서비스 토큰은 URL에 넣지 않음
 - access JWT는 HS256(Spring Security JOSE), 부모·학생 기본 15분, 프론트 메모리에만 보관. refresh는 256비트 난수·SHA-256 해시 저장, HttpOnly·Secure·SameSite=Strict, 부모·관리자 세션은 최초 발급부터 7일(회전으로 연장 안 함). 학생은 refresh 없음
 - Google ID 토큰은 JWKS 서명·iss·aud·exp·nonce 검증. OAuth 상태 쿠키는 HttpOnly·SameSite=Lax·10분. web origin과 `/api`는 동일 origin, 쿠키 API는 Origin·`X-Requested-With` 검사
-- 계정 식별은 `(oauth_provider, oauth_subject)`. 이메일은 연락 정보이며 기존 이메일 계정과 자동 연결하지 않음(같은 이메일은 `ACCOUNT_EXISTS`). 기존 계정에 가짜 subject를 채우지 않고 비밀번호 컬럼은 nullable로 보존·사용 중단. 신규 계정은 PARENT, 관리자는 운영자가 role·권한 지정(관리자 ID·비밀번호 로그인은 11장 `admin_credential`)
+- 계정 식별은 `(oauth_provider, oauth_subject)`. 이메일은 연락 정보이며 기존 이메일 계정과 자동 연결하지 않음(같은 이메일은 `ACCOUNT_EXISTS`). 기존 계정에 가짜 subject를 채우지 않고 비밀번호 컬럼은 nullable로 보존·사용 중단. 신규 계정은 PARENT, 관리자는 운영자가 role·권한 지정(관리자 ID·비밀번호 로그인은 11장 `admin_credential`, 학부모 ID·비밀번호 가입·로그인은 12장 `parent_credential`)
 - 매 요청에서 DB의 세션·계정·연결 상태 확인. 로그아웃·역할 전환 후 이전 access 즉시 거부. refresh는 원자적 1회 소비, 재사용 시 해당 세션 폐기(다른 기기 유지)
-- 같은 브라우저의 탭은 역할을 공유하며 Web Locks로 refresh·전환·로그아웃을 직렬화하고 BroadcastChannel로 알림. 학생 전환을 받은 탭은 토큰·캐시를 지우고 학생 진입 화면으로. 보호자 복귀는 보호자 비밀번호(7장) 또는 Google 로그인
+- 같은 브라우저의 탭은 역할을 공유하며 Web Locks로 refresh·전환·로그아웃을 직렬화하고 BroadcastChannel로 알림. 학생 전환을 받은 탭은 토큰·캐시를 지우고 학생 진입 화면으로. 보호자 복귀는 보호자 비밀번호(7장) 또는 다시 로그인(Google 또는 아이디, 12장)
 - 키: JWT 키는 base64 32바이트 이상 난수, core에만 Secret으로 주입. 단일 HS256 키라 교체 시 기존 access·OAuth 상태 토큰이 무효화됨. Google 키가 없으면 로그인 시작은 명시적 503(가짜 로그인 없음)
 - Google SSO가 보호자 본인 재확인을 보장하지는 않음(추가 본인 확인은 별도 제품 정책)
 
@@ -215,7 +215,7 @@
 - 동의 API: 기존 `POST /me/consents`의 자녀 요청은 `GUARDIAN`·`COMMUNITY` 중 보낼 문서만 담을 수 있게 바꿨습니다(웹 #394는 COMMUNITY 하나만 보냄). 법정대리인 동의가 아직 없는 등록·이관 수락에서는 예전처럼 GUARDIAN까지 함께 보내야 하며, COMMUNITY만 보낼 때는 그 자녀의 현재 법정대리인 동의가 필요합니다(없으면 400). 계정 동의는 TERMS·PRIVACY 전체만 받습니다. 공개 문서 목록 검사는 필수 세 문서가 있어야 하고, COMMUNITY는 선택 문서여야 합니다.
 - 동의 거부(`WITHDRAWN` 행)·철회는 같은 트랜잭션에서 자녀 설정을 끄고, 동의는 켜 둔 설정의 공유물을 복원합니다. 이관 전 보호자가 옛 동의를 철회해도 지금 보호자의 자녀 설정은 바꾸지 않습니다.
 - learning 반영: 설정·동의·이관(`GuardianTransferService.accept`)은 `CommunityVisibilityService.sync`로 트랜잭션 안에서 공개 여부를 정하고 **커밋 뒤** learning `PUT /internal/students/{id}/community-visibility {visible, reason}`을 부릅니다. 실패는 기록만 하고 사용자 요청은 성공으로 둡니다. 대신 core 목록·반응 응답이 현재 설정·동의로 다시 걸러 비공개를 지킵니다(support-admin 3장과 같은 원칙).
-- 공유 요청: 돌아보기 저장(`POST /attempts/{id}/reflection`) 2xx 뒤 공개 판정이 참이면 learning `POST /internal/community/posts {studentId, attemptId}`를 SYSTEM으로 부릅니다. 실패해도 학습 응답은 그대로입니다. 반환한 `postId`·새 공유 여부는 포인트 적립(#389)이 이어 쓸 수 있게 `CommunityService.shareCompleted`의 결과로 둡니다.
+- 공유 요청: 돌아보기 저장(`POST /attempts/{id}/reflection`) 2xx 뒤 공개 판정이 참이면 learning `POST /internal/community/posts {studentId, attemptId}`를 SYSTEM으로 부릅니다. 실패해도 학습 응답은 그대로입니다. 반환한 `postId`·새 공유 여부는 `CommunityService.shareCompleted`의 결과로 두고, #389 적립 연결에서 이 `postId`로 공유 포인트를 적립합니다(core-gateway 14절).
 - 작성자 표시: 미션 공유물 목록은 learning이 준 학생 ID를 별명·꾸미기(`look: {theme, companion}`, 저장 전 `lake`·`mungchi`)로 바꾸고 학생 ID·반응 수를 지웁니다. 본인 글, 지금 공개할 수 없는 작성자, 신고 숨김 공유물은 core가 뺍니다. 내 공유물·자녀 공유물은 learning 상태에 core가 아는 비공개(`HIDDEN_SETTING`·`HIDDEN_REPORT`)를 덮어 보여 줍니다. 학부모 경로는 현재 연결·동의(`requireCurrent`)를 확인합니다.
 - 학생 삭제 확정: PIN·꾸미기 초기화와 같은 트랜잭션에서 `community_enabled` false·`community_updated_at` NULL로 되돌립니다. 공유물·남긴 반응 파기는 learning이 기존 `student.deleted`로 처리합니다(#386).
 
@@ -234,8 +234,8 @@ Google 로그인만 있어 관리자 계정을 만들 방법이 SQL 손작업뿐
 
 - 운영 환경에서도 사용한다. 주소는 `/admin/login` 그대로 두고, 사용자 화면(`/login`·로그인 도움말)의 관리자 링크·문구는 지운다. 운영 플래그는 두지 않는다. `admin_credential` 행이 없으면 아무도 이 방법으로 로그인하지 못한다.
 - 관리자는 가입하지 않는다. 운영자가 `scripts/admin_account_sql.py`로 행을 만든다. 같은 ID로 다시 실행하면 비밀번호 재설정과 잠금 해제가 되고, `--disable`은 자격을 지우고 세션을 끝낸다.
-- 이번 범위는 관리자만이다. 학부모 ID·비밀번호 가입·로그인은 별도 이슈로 분리했다. 재인증(탈퇴·보호자 비밀번호·학생 PIN·자녀 삭제·보호자 이전)이 Google 전용이고, 비밀번호 찾기와 "Google 단일 로그인" 정책 문서(FN-ACC-08·10)도 함께 바꿔야 하기 때문이다.
-- 부하 테스트 계정 부족(load-test 4장)은 관리자 로그인으로 풀리지 않는다. 시험 대상이 학부모→학생 학습 흐름이고, 학생 세션은 자녀가 연결된 학부모만 받기 때문이다. 학부모 이슈에서 다룬다.
+- 이번 범위는 관리자만이다. 학부모 ID·비밀번호 가입·로그인은 별도 이슈로 분리했다(#415에서 진행, 12장). 재인증(탈퇴·보호자 비밀번호·학생 PIN·자녀 삭제·보호자 이전)이 Google 전용이고, 비밀번호 찾기와 "Google 단일 로그인" 정책 문서(FN-ACC-08·10)도 함께 바꿔야 하기 때문이다.
+- 부하 테스트 계정 부족(load-test 4장)은 관리자 로그인으로 풀리지 않는다. 시험 대상이 학부모→학생 학습 흐름이고, 학생 세션은 자녀가 연결된 학부모만 받기 때문이다. #415에서 진행(12장).
 
 ### 설계
 
@@ -288,18 +288,144 @@ python scripts/admin_account_sql.py --login-id ops-kim --disable | psql "$CORE_D
 - 다중 인증(MFA)·IP 허용 목록은 이번에 넣지 않았다. 운영에서 관리자 비밀번호 로그인을 넓게 쓰기 전에 검토가 필요하다.
 - 잠금은 ID 단위라 같은 IP에서 여러 ID를 시도하는 것은 막지 않는다. 요청 속도 제한은 별도 과제다.
 - 화면설계서 캡처(C03·A00)는 변경 전 화면이다. 설명 문구만 고쳤다.
-- 학부모 ID·비밀번호 가입·로그인(부하 테스트 계정 포함)은 후속 이슈다.
+- 학부모 ID·비밀번호 가입·로그인(부하 테스트 계정 포함)은 #415에서 진행(12장).
 
+## 12. 학부모 ID·비밀번호 가입·로그인 (#415)
 
-## 12. 웹 로그인 유지·복구 보완 (2026-11-09)
+학부모 로그인이 Google뿐이라 Google 계정이 없는 사용자는 가입할 수 없었고, 부하 시험(load-test 4장)에 필요한 시험 계정도 Google 계정 수만큼만 만들 수 있었다. 11장의 관리자 ID·비밀번호 로그인과 같은 방식으로 학부모 가입·로그인을 넣었다. 계약은 api-spec 1.3·2.1·5.1·5.6, 흐름은 sequence-diagram 2.1.2·2.1.3, 저장은 ERD 3.1.1 `parent_credential`.
+
+### 결정 (2026-11-09 사용자 확인)
+
+- 학부모는 Google 또는 아이디·비밀번호로 가입·로그인한다. 두 방법은 자동 연결하지 않는다(기존 `ACCOUNT_EXISTS` 원칙). 한 계정은 한 가지 로그인 수단만 쓴다.
+- 아이디는 영문·숫자 4~30자이고 앞뒤 공백을 지운 뒤 소문자로 저장·비교한다. `@`를 쓸 수 없어 Google 계정의 `login_id`(이메일)와 겹치지 않는다. 비밀번호 8~128자, 이름 1~80자.
+- 비밀번호 찾기는 제공하지 않는다. 화면에는 "비밀번호 찾기는 아직 제공하지 않습니다. 비밀번호를 잊었다면 로그인이 유지된 기기에서 문의하기를 이용하거나 새 아이디로 가입해 주세요."라고 안내한다. 메일 발송은 별도 과제다.
+- 중요 작업의 본인 재확인은 비밀번호 계정이면 로그인 비밀번호를 다시 입력한다. 실패 횟수는 로그인과 함께 센다.
+- 동의 문서 TERMS·PRIVACY 1.1(시행 2026-11-09)을 추가한다. 필수 동의 판정이 현재 버전을 보므로 기존 회원도 다음 로그인 때 다시 동의한다.
+
+### 설계
+
+- 저장
+  - 새 테이블 `parent_credential`(V38)은 `admin_credential`과 같은 모양이다(`user_id` PK·FK, `password_hash`, `failed_count >= 0`, `locked_until`, `created_at`, `updated_at`, NOT NULL 컬럼에 기본값 없음).
+  - 로그인 ID는 `user_account.login_id`(UNIQUE). 비밀번호 계정은 `oauth_provider`·`oauth_subject`가 NULL이고 레거시 `user_account.password_hash`는 NULL로 두고 쓰지 않는다.
+  - 탈퇴 완료 시 `parent_credential` 행을 지운다. `login_id`는 기존처럼 `withdrawn:<id>`로 바뀌어 아이디가 다시 풀린다.
+  - 해시는 `PinHasher`(PBKDF2-SHA256 60만 회). 관리자와 학부모의 검사·잠금은 `PasswordCredentialService` 하나로 묶었다(값 객체 `AdminCredential` → `PasswordCredential`).
+- 가입 `POST /auth/parent/signup {loginId,password,name}`
+  - 형식 위반은 400 `VALIDATION_FAILED`, 이미 쓰는 아이디는 409 `LOGIN_ID_TAKEN`(대소문자 무관).
+  - 같은 IP는 Redis 고정 창으로 기본 10분 5회(`AUTH_SIGNUP_LIMIT_PER_IP`·`AUTH_SIGNUP_LIMIT_WINDOW`)까지다. 넘으면 429 `SIGNUP_RATE_LIMITED`, Redis 장애는 503 `SIGNUP_UNAVAILABLE`. 중복 아이디 거절은 횟수에 넣지 않는다.
+  - 성공하면 PARENT 계정과 `parent_credential`을 한 트랜잭션에서 만들고 `audit_log`에 `PARENT_PASSWORD_SIGNUP`을 남긴다. Google 신규 가입과 같은 `startSession`(이전 refresh 쿠키 세션 폐기)으로 refresh 응답과 같은 본문(`role: PARENT`, `nextAction: CONSENT_REQUIRED`, `startPath: /parent/onboarding`)과 HttpOnly refresh 쿠키를 준다. 이후 동의·자녀 등록은 Google 가입과 같다.
+  - `AUTH_NEW_ACCOUNT_DEMO=true`면 `is_demo`로 저장한다.
+- 로그인 `POST /auth/parent/login {loginId,password}`
+  - 없는 ID·틀린 비밀번호·Google 계정·관리자·비활성 계정은 같은 401 `INVALID_CREDENTIALS`다. 없는 ID도 더미 해시를 검사한다.
+  - 연속 5회째 실패에 15분 잠금(423 `LOGIN_LOCKED`), 잠금 뒤 횟수는 0. 실패 횟수는 오류 응답 전에 커밋한다. 성공 감사는 `PARENT_PASSWORD_LOGIN`.
+- 비밀번호 재확인 `POST /me/reauth/password {purpose,childId?,scope?,password}`
+  - 목적·자녀·범위 규칙은 `/me/reauth`와 같다. 비밀번호가 맞으면 검증·발급을 마친 `reauth_challenge`와 `reauth_grant`를 한 번에 만들어 `{reauthToken,expiresAt}`를 준다. 그래서 기존 7개 사용처(탈퇴·보호자 비밀번호·학생 PIN·자녀 해제·자녀 삭제·자녀 이관·이관 수락)의 consume 검사는 바뀌지 않았다.
+  - 틀리면 403 `REAUTH_PASSWORD_INVALID`, 로그인과 실패 횟수를 함께 세어 5회째부터 423 `LOGIN_LOCKED`. Google 계정은 409 `REAUTH_METHOD_MISMATCH`. 감사 `PASSWORD_REAUTHENTICATED`. 필수 동의 누락 상태에서도 `/me/reauth`와 같은 동의 복구 목록으로 쓸 수 있다.
+- `GET /me`에 `authMethod`(Google subject가 없으면 `PASSWORD`, 있으면 `GOOGLE`)와 `loginId`(비밀번호 학부모만, 그 외 null)를 더했다. 비밀번호 학부모의 `email`은 null이다.
+- 문구: `REAUTH_REQUIRED`는 "해당 작업의 본인 재확인이 필요합니다."로 바꿔 로그인 수단에 중립적으로 했다. 보호자 비밀번호 잠김 안내의 "Google로 다시 로그인"은 "다시 로그인"으로 바꿨다.
+- 모든 새 경로는 정확한 web Origin·`X-Requested-With`를 요구한다.
+
+### 다른 선택지와 고르지 않은 이유
+
+- 역할과 무관한 자격 테이블로 일반화: `admin_credential`(V36)과 관리자 경로·스크립트를 함께 바꿔야 해서, 같은 모양의 별도 테이블로 두고 검사 로직만 공유했다.
+- `/me/reauth`에 `password` 필드 추가: Google 시작 응답(`challengeId`·`authorizationUrl`)과 바로 발급 응답(`reauthToken`)이 한 경로에 섞이고, #97의 운영 금지 규칙과 충돌해 별도 경로로 뒀다.
+- SQL 스크립트로 시험 계정 생성: 동의 문서 버전·기기 토큰 해시·PIN까지 SQL로 맞추면 깨지기 쉽고 RDS 직접 접속이 필요하다. 공개 가입 API로 만들면 실제 사용자와 같은 검사를 거친다.
+
+### 웹
+
+- 실제 모드 `/login`: Google 버튼과 함께 "또는 아이디로 로그인" 폼과 "아이디로 가입" 링크를 둔다.
+- `/signup`: Google 카드와 아이디 가입 폼(아이디·이름·비밀번호·확인). 가입 후 `/parent/onboarding`으로 간다.
+- 재확인 UI: `/me`의 `authMethod`가 `PASSWORD`면 Google 새 탭 대신 로그인 비밀번호를 입력받는다(탈퇴·자녀 해제/삭제·이관·보호자 비밀번호·자녀 PIN 모두, `PasswordRecheck`).
+- 로그인 도움말: 두 방법이 서로 연결되지 않는다는 안내와 비밀번호 찾기 안내를 더했다.
+- MSW 핸들러도 같은 계약이다. 개발 시연(목업)의 이메일 로그인은 그대로 둔다.
+
+### 부하 시험
+
+- `evaluation/load/prepare_accounts.py`가 공개 API로 시험 계정을 만든다(가입 → 동의 → 자녀 3명 → 기기 등록 → 비밀번호 재확인 → PIN). 비밀번호·PIN·기기 쿠키는 저장소 밖 비밀 파일에만 쓴다.
+- k6 `core-load.js`는 계정에 `loginId`가 있으면 `POST /auth/parent/login`으로 access를 받는다. 회전하는 refresh 토큰이 없어 비밀 파일을 다시 쓰지 않는다. `loginId`가 없으면 옛 refresh 방식이다.
+- AWS 데모는 `AUTH_NEW_ACCOUNT_DEMO=true`라 시험 계정이 `is_demo`로 저장되어 운영 집계에서 빠진다.
+- k6 `setup()`은 쿠키 저장소 하나를 공유한다. 앞 계정의 refresh 쿠키가 남은 채로 다음 계정이 로그인하면 `startSession`이 그 세션을 "이전 세션"으로 폐기하므로, 계정마다 빈 쿠키 저장소(`jar: new http.CookieJar()`)로 로그인한다.
+- 로컬 격리 compose 확인(2026-11-09, `AUTH_NEW_ACCOUNT_DEMO=true`)
+  - 시험 계정 4개(`load1`~`load4`, 자녀 3명씩) 준비 → k6 VU 8·30초. 보호자 ID 로그인 4건, 학생 로그인 12건, 학습 칸 60개(1차의 15개 → 4배), 알림 SSE·조회 API 정상.
+  - 학습 시도 시작은 무료 자녀 하루 미션 한도(`429 USAGE_LIMIT_REACHED`, #387)에 금방 걸렸다. 프리미엄도 하루 3개라 2차 시험(#384)은 시험 동안 한도를 어떻게 다룰지 먼저 정해야 한다. 학생 기록 비공개 기본값(`403 STUDENT_RECORDS_PRIVATE`, #206)도 조회 오류로 섞인다.
+
+### API 변경
+
+- 추가: `POST /api/v1/auth/parent/signup` → 200 refresh 응답과 같은 본문 + refresh 쿠키, 400 `VALIDATION_FAILED`, 409 `LOGIN_ID_TAKEN`, 429 `SIGNUP_RATE_LIMITED`, 503 `SIGNUP_UNAVAILABLE`, 403(출처 헤더). OpenAPI `parentPasswordSignup`.
+- 추가: `POST /api/v1/auth/parent/login` → 200 + refresh 쿠키, 401 `INVALID_CREDENTIALS`, 423 `LOGIN_LOCKED`. OpenAPI `parentPasswordLogin`.
+- 추가: `POST /api/v1/me/reauth/password` → 200 `{reauthToken,expiresAt}`, 403 `REAUTH_PASSWORD_INVALID`, 409 `REAUTH_METHOD_MISMATCH`, 423 `LOGIN_LOCKED`. OpenAPI `reauthenticatePassword`.
+- 변경: `GET /me`(`ParentMeResponse`)에 `authMethod`·`loginId`, 비밀번호 학부모의 `email` null. `REAUTH_REQUIRED` 문구.
+- DB: core V38 `parent_credential`, V39 TERMS·PRIVACY 1.1(가입 방법에 "아이디·비밀번호 가입", 처리 항목에 "(아이디·비밀번호로 가입한 경우) 아이디, 비밀번호(해시값), 이름"). local GitOps 마이그레이션 revision `v39`. 마이그레이션 번호는 develop 머지 순서에 따라 바뀔 수 있어 머지 직전 확정한다.
+
+### 남은 위험·후속
+
+- CloudFront·ALB 뒤에서는 가입 IP 한도가 실제 사용자 IP가 아니라 엣지 단위로 묶일 수 있다(`forward-headers-strategy: native`). AWS 확인은 #384 때 한다.
+- 로그인 상태에서 비밀번호를 바꾸는 기능이 없다(후속). 비밀번호 찾기(메일 발송)도 별도 과제다.
+- 아이디 존재 여부는 가입 409로 알 수 있다. 일반적인 가입 UX와 같은 수준으로 받아들였다.
+- 다중 인증(MFA)은 없다.
+- 자녀 이관의 받는 학부모 조회는 Google 이메일 기준이라, 아이디·비밀번호 학부모는 이관을 받는 쪽이 될 수 없다(보내는 쪽은 비밀번호 재확인으로 가능).
+- 화면설계서 캡처(SC-01-001·SC-01-002·SC-01-003)와 생성물 사용자 흐름도 HTML·PDF는 아이디 폼 추가 전 화면·흐름이다.
+
+## 13. 학년 자동 진급 (#432, P26)
+
+### 배경
+
+- 2026-11-09 kind 실사용 피드백: "시간 흐름에 따라 자동으로 학년 바뀌는지". 그때까지 학년은 등록 때 넣은 값이었고, 학부모가 정보 수정(FN-ACC-09)에서만 바꿀 수 있었다.
+
+### 결정 (2026-11-09 동섭)
+
+- 매년 3월 1일(KST)에 자동으로 한 학년 올린다. 학부모에게 확인 알림만 보내는 방식과 지금처럼 수동으로 두는 방식은 쓰지 않는다.
+- 초6은 졸업 처리하지 않고 중1로 올린다. 기획서 대상은 초1~중3이고 중학교는 추후 확장이라(기능 명세 1.5 학년 확장) 학년은 중3까지 저장한다. 문항·테마·채점은 아직 초3~6뿐이므로 중학생은 중학교 과정이 생기기 전까지 초6 문제와 초5~6 테마를 받는다.
+- 새 등록은 지금 지원 학년인 초3~6(P03)만 받는다. 수정은 중3까지 고를 수 있다(진급이 틀렸을 때 고치기 위해).
+
+### 설계
+
+| 항목 | 내용 |
+|---|---|
+| 일정 | `GradePromotionScheduler` 3월 매일 00:05 KST, ShedLock `core-grade-promotion`. 3월 1일을 놓쳐도(배포·장애) 그 달 안의 다음 실행이 따라잡는다. 3월이 아니면 아무것도 하지 않는다 |
+| 대상 | 활성·비시연 학생 중 학년 3~8, 그 학년도 2월 1일(KST) 전에 학년을 정했고(`COALESCE(grade_changed_at, created_at)`), 그 학년도 진급 이력이 없는 학생 |
+| 중복 방지 | `student_grade_promotion` PK `(student_id, school_year)`. 같은 3월에 다시 돌거나 학부모가 3월에 되돌려도 다시 올리지 않는다. 조건을 UPDATE 문 안에 두어 학부모 수정과 겹치면 바뀐 행으로 다시 판단한다 |
+| 미리 바꾼 학생 | 1~2월에 새 학년을 미리 넣은 경우를 2월 1일 기준으로 가른다. 학부모 수정은 학년이 실제로 바뀔 때만 `grade_changed_at`을 남긴다(별명만 바꾸면 그대로) |
+| 알림 | 진급과 같은 트랜잭션에서 현재 연결·동의가 유효한 보호자에게 `GRADE_PROMOTED`("{별명}의 학년이 {새 학년}으로 올라갔어요. 다르면 정보 관리에서 고쳐 주세요.", 링크 `/parent/settings`). 원천 ID는 학생·학년도에서 만든다. 수신 거부한 보호자는 알림만 받지 않고 학년은 오른다 |
+| 학습 전달 | `StudentLearningContext.learningGrade = min(grade, 6)`. 미션 조회·시도 시작·학생 홈은 이 값을, 주간 테마는 이 값으로 정한 학년군을 learning에 보낸다 |
+| 삭제 | 프로필 삭제(`PROFILE`) 때 진급 이력을 지우고 `grade_changed_at`을 비운다 |
+| web | 학년 표시를 "초등 N학년"·"중학교 N학년"으로 바꾸고, 등록·정보 수정 화면에 자동 진급 안내를 넣었다. 정보 수정은 중3까지 고를 수 있다 |
+
+### 겹칠 때 영향
+
+- 진행 중인 시도: learning이 시도 시작 때 학년을 저장하므로 진급 전에 시작한 문제는 그 학년으로 끝낸다.
+- 주간 테마: 2027-03-01은 월요일이라 테마 주와 겹치지 않는다. 3월 1일이 주 중간인 해에는 4→5학년만 학년군이 바뀌어 그 주 주말 되돌아보기가 새 학년군 기준이 된다. 그대로 둔다.
+- 리포트·커뮤니티·무료 한도·결제는 학년을 쓰지 않아 영향이 없다.
+
+### API·DB 변경
+
+- core V41(번호는 머지 순서에 따라 바뀔 수 있음): `ck_student_grade` 3~9, `student.grade_changed_at`, `student_grade_promotion`, 알림 유형 `GRADE_PROMOTED`. local GitOps 마이그레이션 revision `v41`.
+- OpenAPI: PATCH `/children/{childId}`·자녀 목록·대시보드 자녀·학생 기기 로그인 응답의 `grade` 최대 9, `Child.grade` enum 3~9, 알림 유형과 설정 개수 1~9. 자녀 등록은 3~6 그대로.
+
+### 검증
+
+- core `GradePromotionTest`: 3월에 학년 3·6·8은 4·7·9로 오르고 9·시연·삭제 요청·2월에 바꾼 학생은 그대로, 같은 3월 재실행은 다시 올리지 않음, 2월 28일 23:59와 4월 1일 00:00(KST)은 실행 안 함, 수신 거부 보호자는 알림 없음.
+- core `AccountManagementTest`: 수정 3~9 허용·2·10 거부, 별명만 바꾸면 `grade_changed_at` 유지, 프로필 삭제 때 진급 이력 삭제. `LearningProxyIntegrationTest`·`WeeklyThemeProxyIntegrationTest`: 저장 학년 8·9가 `grade=6`·`G5_6`으로 전달.
+- web `tests/grade.test.ts`, 목업 자녀 수정 7 허용·10 거부, 알림 설정 9개.
+
+### 한계·후속
+
+- 중학교 과정(중학생 문항·테마 학년군·M2 적용 범위)은 별도 이슈로 다룬다. 그때 `StudentGrade.LEARNING_MAX`와 learning·ai의 학년 범위를 함께 넓힌다.
+- 2월 이후 학년을 고친 학생은 그 해 자동 진급에서 빠진다. 화면 안내로 알리고, 진급하지 않은 학생에게는 따로 알림을 보내지 않는다.
+- kind·AWS 같은 실제 환경에서 3월 실행은 확인하지 않았다(테스트는 시각을 넘겨 확인).
+
+## 14. 웹 로그인 유지·복구 보완 (2026-11-09)
 
 - 사용자 피드백: 15분 후 로그인 유지와 Google 복귀 절차가 불안정함. 현재 core 설정은 접근 토큰 15분, 학부모·관리자 refresh 세션은 최초 로그인부터 7일이다. 학생은 접근 전용 15분이며 보호자 refresh로 학생 권한을 갱신하지 않는다. 이번 웹 수정은 이 서버 정책을 변경하지 않는다.
 - `refreshAccessToken`이 연결 오류·잘못된 성공 응답·요청 제한을 인증 만료로 바꾸던 문제를 수정했다. 서버가 실제 401을 확인한 경우만 세션을 정리한다. 연결 오류는 재시도 가능한 오류로 표시하고 입력·로그인 상태를 유지한다. 정상 refresh는 같은 로그인 세대에서 접근 토큰만 교체한다.
 - 로그인 전환과 토큰 갱신을 구분했다. 이전 로그인에서 발송한 응답이 늦게 도착하면 새 로그인 상태를 지우지 않고, 이전 쓰기 요청을 새 계정 토큰으로 재전송하지 않는다. 동시 만료 요청은 기존 공유 refresh와 Web Locks를 사용한다.
 - 세션 복원은 진행 중 요청만 합친다. 완료된 성공·실패 Promise를 영구 보관하지 않아 오래된 권한/온보딩 상태나 일시적인 장애 결과를 재사용하지 않는다. 세션 확인 장애 화면에는 페이지 전체 새로고침 대신 재확인 버튼을 둔다. OAuth 완료는 시작 시 확인한 세션을 사용하고, 실패해도 Google 코드를 재사용하지 않고 쿠키 기반 복원을 재시도한다.
 - 탭의 sessionStorage나 BroadcastChannel 제한이 정상 토큰 발급을 로그인 실패로 바꾸지 않도록 했다. 토큰을 브라우저 저장소나 URL로 옮기지 않는다.
-- 최신 이슈 대조: #425는 **중요 작업의 Google 재인증 팝업** 문제다. 현재 core 콜백이 VERIFIED JSON을 보여 주는 동작이 원인이며 HTML 완료 페이지·BroadcastChannel·자동 종료와 원래 탭의 자동 완료 수신을 요구한다. 담당자는 `20220348-kim`이며 이 웹 세션 유지 수정과 구분한다. core 콜백·API 명세·OpenAPI·재인증 소비자는 이번 변경에서 바꾸지 않았고 #425 완료로 표시하지 않는다. #415는 별도의 학부모 ID/비밀번호 가입 기능이며 기본안 승인이 남아 있어 추가하지 않는다.
+- 후속 develop 병합으로 #425 재인증 자동 복귀(PR #442)와 #415 아이디·비밀번호 인증(PR #446)을 반영했다. Google 계정의 새 탭 자동 완료와 비밀번호 계정의 로그인 비밀번호 재확인을 함께 유지한다. 일반 로그인 유지와 중요 작업 재인증은 각각 검증한다.
 - 검증: 실제 Google/DB 대신 운영 빌드에 합성 HttpOnly·SameSite=Strict 쿠키와 15분 접근 만료 응답을 사용한다. `npm run test:auth`는 콜백 1회 → 자동 갱신 → 새로고침 복원, 갱신 연결 실패 뒤 입력 보존·복구, 콜백 후 503 복구, 동시 탭 쿠키 회전·실제 만료 진입을 검증한다. 이 검사를 웹 CI에도 추가했다. 실제 Google·kind 검증과 학생 지속시간 정책 변경은 포함하지 않는다.
 - PR은 사용자의 명시적 허락 뒤에만 게시한다. 로컬 검증·커밋은 게시 승인을 의미하지 않는다.
 
-검증 결과: 단위 250건과 로그인 유지 브라우저 4건 통과. 기존 MSW 화면 35건, 운영 HTTP 대역 포인트/꾸미기 9건·모델 운영 15건도 통과했다. TypeScript·lint·운영 빌드·운영 목업 제외 검사를 통과했다. 브라우저 검사 산출물(HTML·보고서·캡처)은 Vite 감시 대상에서 제외해 검사 도중 앱이 재로드되지 않도록 했다.
+최초 검증 결과: 단위 250건과 로그인 유지 브라우저 4건 통과. 기존 MSW 화면 35건, 운영 HTTP 대역 포인트/꾸미기 9건·모델 운영 15건도 통과했다. TypeScript·lint·운영 빌드·운영 목업 제외 검사를 통과했다. 브라우저 검사 산출물(HTML·보고서·캡처)은 Vite 감시 대상에서 제외해 검사 도중 앱이 재로드되지 않도록 했다.
+
+후속 `b1562c2b` 통합 후 단위 271건, 로그인 유지·재인증 브라우저 7건, TypeScript·lint·운영 빌드·목업 제외 검사를 통과했다. 재인증 브라우저 3건은 합성 완료 페이지로 입력 보존·자동 완료·새 탭 종료·저장용 증명 전달을 확인한다. 실제 Google 및 kind 성공 검증은 아직 완료하지 않았다. 채널 생성이 차단된 환경은 수동 확인으로 계속 사용할 수 있다.
+
+최종 통합 검증: 단위 271건, 브라우저 77건(일반 화면 46·로그인/재인증 7·꾸미기 9·모델 운영 15), TypeScript·lint·운영 빌드·운영 목업 제외 검사 통과. 실제 Google 계정 인증 후 자동 복귀와 kind 실사용은 별도 확인이 남아 있다.

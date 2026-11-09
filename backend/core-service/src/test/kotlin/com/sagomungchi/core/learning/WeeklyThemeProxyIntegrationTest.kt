@@ -83,6 +83,9 @@ class WeeklyThemeProxyIntegrationTest : PostgresRepositoryTest() {
         jdbc.update("DELETE FROM auth_session WHERE user_id=?", user)
         jdbc.update("DELETE FROM guardianship WHERE parent_user_id=?", user)
         jdbc.update("DELETE FROM user_account WHERE id=?", user)
+        // 되돌아보기 열람 응답 뒤 적립(#389)이 원장·잔액을 만든다
+        jdbc.update("DELETE FROM reward_point_ledger WHERE student_id=?", child)
+        jdbc.update("DELETE FROM reward_point_balance WHERE student_id=?", child)
         jdbc.update("DELETE FROM student WHERE id=?", child)
         documents.forEach { jdbc.update("DELETE FROM consent_document WHERE id=?", it) }; documents.clear()
         jdbc.update("DELETE FROM product WHERE id=?", free)
@@ -108,6 +111,34 @@ class WeeklyThemeProxyIntegrationTest : PostgresRepositoryTest() {
         jdbc.update("UPDATE student SET grade=4 WHERE id=?", child)
         call("GET", "/api/v1/students/me/weekly-theme").andExpect(status().isOk())
         assertTrue(stub.requests.last().target.contains("gradeBand=G3_4"))
+        // #432: 중학생은 중학교 과정 확장 전까지 초5~6 테마를 받는다.
+        jdbc.update("UPDATE student SET grade=9 WHERE id=?", child)
+        call("GET", "/api/v1/students/me/weekly-theme").andExpect(status().isOk())
+        assertTrue(stub.requests.last().target.contains("gradeBand=G5_6"))
+    }
+
+    @Test fun `theme story fields pass through and story views send only the kind with the core band and date`() {
+        // #439: learning(#438) 새 필드는 core가 바꾸지 않는다. 이미지 URL도 미션 장면처럼 learning 값 그대로
+        val theme = "{\"themeId\":\"${UUID.randomUUID()}\",\"intro\":\"시작\",\"outro\":null,\"introImageUrl\":\"https://cdn.example.test/t/intro.png\"," +
+            "\"outroImageUrl\":null,\"introSeen\":false,\"outroSeen\":false,\"days\":[]}"
+        stub.respond = { if (it.method == "GET") LearningHttpStub.Reply(body = theme) else LearningHttpStub.Reply(body = "{\"kind\":\"INTRO\",\"firstViewThisWeek\":true}") }
+        call("GET", "/api/v1/students/me/weekly-theme").andExpect(status().isOk()).andExpect(content().string(theme))
+        call("POST", "/api/v1/students/me/weekly-theme/story-views", "{\"kind\":\"INTRO\"}").andExpect(status().isOk())
+            .andExpect(header().string("Cache-Control", "no-store")).andExpect(jsonPath("$.firstViewThisWeek").value(true))
+        val view = stub.requests.last()
+        assertEquals("POST" to "/internal/students/$child/weekly-theme/story-views?gradeBand=G5_6&date=2026-11-09", view.method to view.target)
+        assertEquals("{\"kind\":\"INTRO\"}", view.body)
+        assertEquals(child.toString(), view.header("X-Student-Scope")); assertEquals("STUDENT", view.header("X-User-Role"))
+
+        // 요일 검사는 learning 몫이라 월요일 OUTRO 거부도 그대로 전달한다
+        stub.respond = { LearningHttpStub.Reply(409, "{\"status\":409,\"code\":\"THEME_STORY_NOT_ALLOWED\"}", mapOf("Content-Type" to "application/problem+json")) }
+        call("POST", "/api/v1/students/me/weekly-theme/story-views", "{\"kind\":\"OUTRO\"}").andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("THEME_STORY_NOT_ALLOWED"))
+
+        stub.requests.clear()
+        listOf("{}", "{\"kind\":\"REVIEW\"}", "{\"kind\":\"intro\"}", "{\"kind\":null}", "{\"kind\":\"INTRO\",\"date\":\"2026-11-14\"}", "[\"INTRO\"]")
+            .forEach { call("POST", "/api/v1/students/me/weekly-theme/story-views", it).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_FAILED")) }
+        assertTrue(stub.requests.isEmpty())
     }
 
     @Test fun `free child starts one theme day mission then gets 429 while resume and review keep working`() {

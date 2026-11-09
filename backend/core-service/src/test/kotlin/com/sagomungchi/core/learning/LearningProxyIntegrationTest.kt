@@ -88,6 +88,8 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
             jdbc.update("DELETE FROM auth_session WHERE user_id=?", user)
             jdbc.update("DELETE FROM guardianship WHERE parent_user_id=?", user)
             jdbc.update("DELETE FROM user_account WHERE id=?", user)
+            jdbc.update("DELETE FROM reward_point_ledger WHERE student_id=?", child)
+            jdbc.update("DELETE FROM reward_point_balance WHERE student_id=?", child)
             jdbc.update("DELETE FROM student WHERE id=?", child)
         }
         documents.forEach { jdbc.update("DELETE FROM consent_document WHERE id=?", it) }; documents.clear()
@@ -135,8 +137,8 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
                 .andExpect(status().`is`(if (path.endsWith("/answers")) 201 else 200))
                 .andExpect(header().string("ETag", "\"8\""))
                 .andExpect(content().string("{ \"raw\": \"생각\" }"))
-            val received = stub.requests.last()
-            assertEquals(method, received.method)
+            // 돌아보기 저장 뒤 core는 학습 완료 적립(#389)을 위해 시도 상세를 GET으로 다시 읽는다
+            val received = stub.requests.last { it.method == method }
             val expectedQuery = when {
                 method == "GET" && path == "/missions" -> "?grade=3&demo=false&page=0&size=20"
                 method == "GET" && path.startsWith("/missions/") -> "?grade=3&demo=false"
@@ -198,8 +200,9 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
         val mission = UUID.randomUUID()
         val routes = listOf("GET" to "/missions", "GET" to "/missions/$mission", "POST" to "/missions/$mission/attempts")
         // The same signed session must use current core data, never client values or a cached profile.
-        listOf(5 to true, 3 to false).forEach { (grade, demo) ->
-            jdbc.update("UPDATE student SET grade=?,is_demo=? WHERE id=?", grade, demo, child)
+        // #432: 중학생(7~9)은 중학교 과정 확장 전까지 초6 문제를 받는다.
+        listOf(Triple(5, true, 5), Triple(3, false, 3), Triple(8, false, 6)).forEach { (stored, demo, grade) ->
+            jdbc.update("UPDATE student SET grade=?,is_demo=? WHERE id=?", stored, demo, child)
             routes.forEach { (method, path) ->
                 val forgedQuery = "grade=6&grade=4&demo=${!demo}&demo=${!demo}&studentId=${UUID.randomUUID()}&page=1&size=2"
                 call(method, "/api/v1$path?$forgedQuery").andExpect(status().isOk())
@@ -208,7 +211,7 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
                 assertEquals(child.toString(), stub.requests.last().header("X-Student-Scope"))
             }
         }
-        assertEquals(6, stub.requests.size)
+        assertEquals(9, stub.requests.size)
     }
 
     @Test fun `attempt start preserves learning 201 for a newly created attempt`() {

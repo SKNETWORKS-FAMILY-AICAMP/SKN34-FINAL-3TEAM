@@ -40,7 +40,7 @@ test('비공개 자녀의 수치·리포트·설정·결제는 이용 가능하�
   await expect(page.getByRole('region', { name: '이 리포트로 AI에게 질문하기' })).toHaveCount(0)
   await navigate(page, '계정·자녀 설정')
   await expect(page.getByLabel('조회 시작일')).toHaveCount(0)
-  await expect(page.getByText('학년은 자동으로 바뀌지 않습니다.', { exact: false })).toBeVisible()
+  await expect(page.getByText('학년은 매년 3월 1일에 자동으로 한 학년 올라가요', { exact: false })).toBeVisible()
   await page.getByRole('tab', { name: '계정 관리', exact: true }).click()
   await expect(page.getByRole('heading', { name: '회원 탈퇴', exact: true })).toBeVisible()
   await expect(page.getByLabel('새 학년', { exact: true })).toHaveCount(0)

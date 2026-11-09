@@ -31,7 +31,7 @@ class LearningRecordService(private val client: LearningRecordClient, private va
         val child = students.requireLinked(UUID.fromString(context.userId), studentId)
         val profile = if (resource == "home") learningContext.requireLinked(UUID.fromString(context.userId), studentId) else null
         client.dashboard(studentId, resource, query.parameters(resource == "attempts") +
-            (profile?.let { "&grade=${it.grade}&demo=${it.demo}" } ?: ""), false, child.takeIf { resource == "home" })
+            (profile?.let { "&grade=${it.learningGrade}&demo=${it.demo}" } ?: ""), false, child.takeIf { resource == "home" })
     }
 
     fun parentDashboard(studentId: UUID, resource: String, query: DashboardQuery) = run {

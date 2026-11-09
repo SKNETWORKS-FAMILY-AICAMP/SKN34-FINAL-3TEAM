@@ -6,6 +6,7 @@ import { sharingApi } from '../../data/classroom/sharingApi.ts'
 import { useParentQuery } from '../../data/parent/queries.ts'
 import { useAuthentication, displayPeriods } from '../../data/classroom/useClassroom.ts'
 import type { Child, Period } from '../../domain/classroom.ts'
+import { gradeLabel } from '../../domain/grade.ts'
 import type { Scope } from '../../domain/parent.ts'
 import { validPeriod } from '../../domain/parent.ts'
 import { Workspace, QueryFeedback } from '../common/Workspace.tsx'
@@ -58,7 +59,7 @@ export function ParentWorkspace() {
     actions={<>
       <label>자녀 선택<select aria-label="자녀 선택" value={childId} onChange={e => { const c = children.data?.items.find(c => c.id === e.target.value); if (c) select(c) }}>
         {!child && <option value={childId}>{childId ? '연결 여부 확인 필요' : '자녀를 선택해 주세요'}</option>}
-        {children.data?.items.map(c => <option value={c.id} key={c.id}>{c.nickname} · 초{c.grade}</option>)}
+        {children.data?.items.map(c => <option value={c.id} key={c.id}>{c.nickname} · {gradeLabel(c.grade)}</option>)}
       </select></label>
       <button className="cj-secondary" onClick={() => setRegistration(true)}>자녀 등록</button>
       {child && <button className="cj-primary" disabled={auth.enter.isPending || child.guardianConsentRequired} onClick={() => void auth.enter.mutateAsync(child).then(s => { setSession(s); navigate('/student/home') }).catch(() => {})}>이 자녀로 학습 시작</button>}
