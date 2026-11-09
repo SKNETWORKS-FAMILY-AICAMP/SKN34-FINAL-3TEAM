@@ -26,6 +26,8 @@ test('등록 JSON에 승인 정보·알 수 없는 평가 필드·잘못된 타�
   assert.throws(() => parseRegistrationFile('{'))
   for (const key of ['approved', 'scopes', 'reason', 'reanalysisPlanned', 'approvedBy', 'unknown'])
     assert.throws(() => parseRegistrationFile(JSON.stringify({ requests: [{ ...request(), [key]: true }] })), /등록 API에 없는 필드/)
+  for (const key of ['approved', 'approval', 'scopes', 'activeScopes', 'reason', 'reanalysisPlanned', 'approvedBy', 'status'])
+    assert.throws(() => parseRegistrationFile(JSON.stringify({ [key]: true, requests: [request()] })), /승인·활성화 정보/)
   assert.throws(() => parseRegistrationFile(JSON.stringify({ requests: [{ ...request(), evaluation: { ...request().evaluation, activeScopes: [] } }] })), /알 수 없는 평가/)
   assert.throws(() => parseRegistrationFile(JSON.stringify({ requests: [{ ...request(), evaluation: { ...request().evaluation, limitations: [null] } }] })), /문자열 목록/)
 })

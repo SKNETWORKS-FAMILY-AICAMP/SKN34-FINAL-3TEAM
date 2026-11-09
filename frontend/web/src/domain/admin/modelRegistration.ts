@@ -32,6 +32,8 @@ export function parseRegistrationFile(text: string): RegistrationFile {
   const raw: unknown = JSON.parse(text)
   if (!object(raw) || !Array.isArray(raw.requests) || !raw.requests.length || raw.requests.length > 100)
     return fail('requests', '1~100개 모델 등록 목록이 필요합니다.')
+  for (const key of ['approved', 'approval', 'scopes', 'activeScopes', 'reason', 'reanalysisPlanned', 'approvedBy', 'activatedAt', 'status'])
+    if (Object.hasOwn(raw, key)) fail(key, '등록 파일에 승인·활성화 정보는 넣을 수 없습니다.')
   const requests = raw.requests.map((entry: unknown, index: number) => {
     const path = `requests[${index}]`
     if (!object(entry)) return fail(path, 'JSON 객체여야 합니다.')

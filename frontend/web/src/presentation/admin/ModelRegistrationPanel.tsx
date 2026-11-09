@@ -78,6 +78,7 @@ export function ModelRegistrationPanel({ existing, listReady }: { existing: Mode
           const candidates = withManifestLimitations(file, parsed)
           setRows(before => before.map((r, i) => JSON.stringify(r.evaluation.limitations) === JSON.stringify(originals[i].evaluation.limitations)
             ? { ...r, evaluation: { ...r.evaluation, limitations: candidates[i].evaluation.limitations } } : r))
+          setOriginals(before => before.map((r, i) => ({ ...r, evaluation: { ...r.evaluation, limitations: candidates[i].evaluation.limitations } })))
         }
       } else {
         const parsed = parseRegistrationFile(text)
