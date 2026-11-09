@@ -69,9 +69,9 @@ flowchart TD
 
   PJ --> RP["SC-03-007 리포트 (일일·주간)<br/>/parent/report"]
   RP --> RD["SC-03-008 리포트 상세<br/>판 선택·재생성·PDF/MD 다운로드"]
-  RP -->|"일일 리포트"| DR["일일 리포트 상세<br/>/parent/report?periodType=DAILY"]
+  RP -->|"일일 리포트"| DR["일일 리포트 상세<br/>/parent/report (종류: 일일)"]
   DR -->|"이 리포트로 물어보기 (프리미엄)"| ANS
-  PJ -->|"자녀 커뮤니티·포인트"| PCM["자녀 공유물·받은 반응·포인트<br/>/parent/community"]
+  PJ -->|"자녀 커뮤니티·포인트"| PCM["자녀 공유물·받은 반응·포인트<br/>/parent/journal (대시보드 아래)"]
 
   PJ --> SET["SC-03-009 정보 관리<br/>/parent/settings (동의 확인·철회)"]
   PJ --> DEV["SC-03-010 자녀 기기·PIN<br/>/parent/devices"]
@@ -122,9 +122,9 @@ flowchart TD
   H -->|"생각 활동 (FN-DSH-04, #240)"| ACT["생각 활동<br/>/student/activities"]
   H -->|"공개 설정 (#206)"| SHR["내 답 공개 설정<br/>/student/settings (기본 비공개)<br/>커뮤니티 공개 (기본 끔)"]
   H -->|"생각 유형 선택 (프리미엄 추가 문제)"| MS["SC-02-006 미션 고르기<br/>/student/missions?type="]
-  H -->|"이번 주 테마"| TH["이번 주 테마<br/>/student/theme<br/>월요일 도입 이야기·요일별 문제"]
+  H -->|"이번 주 테마"| TH["이번 주 테마<br/>/student/home 홈 카드<br/>월요일 도입 이야기·요일별 문제"]
   TH -->|"오늘 문제 시작 (당일만)"| MG
-  H -->|"토·일 되돌아보기"| RV["되돌아보기<br/>/student/theme/review<br/>마무리한 문제·놓친 문제 표시"]
+  H -->|"토·일 되돌아보기"| RV["되돌아보기<br/>/student/home 홈 카드(토·일)<br/>마무리한 문제·놓친 문제 표시"]
   RV -->|"다시 풀기"| MG
   DECO -->|"포인트로 해금·착용"| DECO
   MS --> MG["SC-02-007 미션 안내"]
@@ -136,7 +136,7 @@ flowchart TD
   FB -->|"이대로 돌아보기·마무리 안내"| FIN["SC-02-011 마무리<br/>정답·예시 답·들어가면 좋은 생각"]
   FIN --> REF["SC-02-012 돌아보기<br/>난이도 필수·달라진 점 선택"]
   REF -->|"학습 완료"| JN["SC-02-013 내 공책<br/>/student/journal"]
-  REF -->|"같은 미션 풀이 보기"| CM["커뮤니티<br/>/student/community?missionId=<br/>무작위 목록·반응 4종·신고"]
+  REF -->|"같은 미션 풀이 보기"| CM["커뮤니티<br/>/student/community<br/>마무리한 미션 선택·무작위 목록·반응 4종·신고"]
   H --> JN
   JN --> JD["SC-02-014 기록 상세"]
   JD -->|"진행 중 시도 이어하기"| W
@@ -168,8 +168,8 @@ flowchart LR
   end
   subgraph CON["CONTENT"]
     MI["SC-04-008 미션 관리<br/>/admin/missions"] --> ME["SC-04-009 미션 작성·검토<br/>/admin/missions?missionId="]
-    WT["주간 테마 관리<br/>/admin/weekly-themes"]
-    LI["꾸미기 아이템<br/>/admin/look-items"]
+    WT["주간 테마 관리<br/>/admin/themes"]
+    LI["꾸미기 아이템<br/>/admin/looks"]
   end
   subgraph PAY["PAYMENT_VIEW · PAYMENT_REFUND"]
     PM["SC-04-010 결제·환불<br/>/admin/payments"]
@@ -205,7 +205,7 @@ flowchart TD
     B4 --> B5["SC-02-010 피드백·되묻기"]
     B5 --> B6["SC-02-011~012 마무리·돌아보기"]
     B6 -->|"다른 날 다시"| B2
-    B6 -->|"토·일"| B7["되돌아보기·다시 풀기<br/>/student/theme/review"]
+    B6 -->|"토·일"| B7["되돌아보기·다시 풀기<br/>/student/home 홈 카드"]
   end
 
   subgraph SYS["시스템"]
@@ -368,4 +368,4 @@ flowchart LR
 
 - 학부모 구독 결제·구독 관리(UC-17·UC-18, #184): `/parent/billing`(이용권·결제)에서 상품 선택 → 토스 결제위젯 결제 → `/payment/success`·`/payment/fail` 결과 확인, 같은 화면의 구독 관리에서 자동결제 수단 등록(`/payment/billing/success`·`/payment/billing/fail`)·자동 갱신 해지·철회·환불 요청. 테스트 키 환경만 사용(P14). 단계별 화면 흐름도는 미반영
 - 이용 동의 화면(`/parent/onboarding`)과 관리자 메뉴 큐·DLQ(`/admin/queues`)는 화면설계서 v2.1에 별도 화면 ID 없음
-- 2026-11-06 결정 화면(UC-29~34, 구현 예정): 이번 주 테마·되돌아보기·커뮤니티·자녀 커뮤니티·일일 리포트 상세·관리자 주간 테마·꾸미기 아이템은 화면설계서 v2.1에 없어 화면 ID 없이 이름·URL로 표시. URL은 구현 시 확정, 화면 ID는 화면설계서 개정 때 부여
+- 2026-11-06 결정 화면(UC-29~34, #393~#395 구현): 이번 주 테마·되돌아보기·커뮤니티·자녀 커뮤니티·일일 리포트 상세·관리자 주간 테마·꾸미기 아이템은 화면설계서 v2.1에 없어 화면 ID 없이 이름·URL로 표시. URL은 웹 구현 기준(주간 테마·되돌아보기는 별도 페이지 없이 학생 홈 카드, 자녀 공유물·포인트는 학부모 대시보드 아래), 화면 ID는 화면설계서 개정 때 부여

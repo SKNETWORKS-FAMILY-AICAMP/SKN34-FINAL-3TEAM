@@ -53,7 +53,7 @@
 | 초안 저장 잠금 | 시도 행을 잠그고(`lockOwned`) 열림 확인 후 저장 | 마무리·돌아보기와 같은 순서로 직렬화([점검 기록 B14](audit.md)) |
 | 쓰기 막는 때 | `COMPLETED` 시도의 초안·생각 열기는 409 `ATTEMPT_CLOSED`. 마무리 뒤 막는 것은 답변 제출 | state-diagram 3.2, P04 |
 | 생각 열기 | 열지 않은 질문을 `seq` 순으로, 다 열면 마지막 질문 반복, 열 때마다 `hint_usage` 기록. 질문 없는 미션 404 | 도움 이용 집계 근거(P08) |
-| 하루 미션 한도 | learning은 확인하지 않음 | core 책임. #210 결정으로 Redis가 아닌 PostgreSQL(`mission_daily_usage`, 무료 하루 1개, 구현 예정) |
+| 하루 미션 한도 | learning은 확인하지 않음 | core 책임. #210 결정으로 Redis가 아닌 PostgreSQL(`mission_daily_usage`, 무료 하루 1개, #387 구현) |
 
 ## 3. 답변 제출 (#24)
 
@@ -101,7 +101,7 @@
 - 자기 평가: 마무리 뒤·완료 전. `{checks:[{elementId, checked}]}` 일부만 보내도 되고 재전송은 `checked`만 변경. 응답은 요소마다 `{elementId, label, selfChecked, aiChecked, quote}`
 - 마무리 경합: 판정 `saveResult` 트랜잭션 시작에서 시도 행을 `FOR UPDATE`로 다시 읽어 닫혔으면 되묻기를 저장하지 않음(마무리 대기·거절은 P04에 없는 조건이라 채택하지 않음)
 - 잠금 순서는 모두 시도 → 판정
-- 구현 예정(P20·P21, [서비스 기획 방향](service-direction.md)): 돌아보기 저장(학습 완료) 성공 뒤 core가 포인트를 적립하고, 커뮤니티 공개가 켜진 학생이면 learning에 공유를 요청한다(학생·미션당 1개, 처음 마무리한 시도의 마지막 답변). 시작 요청 `context`가 `THEME_DAY`면 신규 시도만 요일 검사
+- P20·P21([서비스 기획 방향](service-direction.md)): 돌아보기 저장(학습 완료) 성공 뒤 core가 포인트를 적립하고(적립 연결은 #389 후속, 구현 예정), 커뮤니티 공개가 켜진 학생이면 learning에 공유를 요청한다(#388 구현, 학생·미션당 1개, 처음 마무리한 시도의 마지막 답변). 시작 요청 `context`가 `THEME_DAY`면 신규 시도만 요일 검사
 
 ## 6. 학습 기록 조회 (#27)
 

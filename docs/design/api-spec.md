@@ -172,6 +172,10 @@
 | 미션 운영 | `DRAFT` 작성 중 · `REVIEW_REQUIRED` 검토 필요 · `PUBLISHED` 공개 · `UNPUBLISHED` 비공개 |
 | 미션 생성 방식 (#353) | `MANUAL` 사람 작성 · `LLM_DRAFT` LLM 초안 채택 |
 | 미션 초안 (#353) | `GENERATING` 생성 중 · `READY` 검사 통과 · `CHECK_FAILED` 검사 실패(상한) · `FAILED` 생성 실패(AI 호출) · `ADOPTED` 채택 · `DISCARDED` 버림 |
+| 주간 테마 운영 (#385) | `DRAFT` 작성 중 · `REVIEW_REQUIRED` 검토 필요 · `PUBLISHED` 게시 · `UNPUBLISHED` 게시 중단 |
+| 테마 요일 문제 (#385) | `LOCKED` 잠김 · `OPEN` 열림 · `CLOSED` 닫힘 (저장하지 않고 KST 날짜로 계산) |
+| 커뮤니티 공유물 (#386) | `VISIBLE` 공개 · `HIDDEN_SETTING` 설정 비공개 · `HIDDEN_REPORT` 신고 숨김 · `REMOVED` 운영 숨김 |
+| 꾸미기 아이템 (#389) | `ON_SALE` 판매 중 · `STOPPED` 판매 중단 |
 | 초안 저장 | `SAVED` (저장 중·저장 실패는 클라이언트 상태) |
 | 판정 처리 | `PENDING` · `RUNNING` · `DONE` · `FAILED` |
 | 판정 결과 | `CORRECT` 정답 · `PARTIAL` 부분 정답 · `RETHINK` 다시 생각 · `HELD` 판정 보류 (처리 실패는 처리 상태 `FAILED`) |
@@ -1076,7 +1080,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - source·해시·수정 필드·파일 목록은 기존 MODEL_REGISTER 감사 detail에 기록한다. 출처/해시는 클라이언트 신고이며 서버에서 원본 파일·S3·품질을 검증한 결과가 아니다. actor·등록 ID·시각·상태는 서버가 정한다.
 - 브라우저가 기존 registration 파일의 requests[]를 파싱해 개별 POST한다. manifest는 선택이며 원래 두 파일 형식은 유지한다. 파일 업로드·일괄 등록 API는 없다. 주의사항 우선순위는 명시된 evaluation.limitations → 최상위 주의와 해당 모델 manifest 주의 후보이며 운영자가 확인한다.
 - 등록 요청의 승인 여부·활성화 범위·사유·재분석 계획·승인자 및 알 수 없는 필드는 400 VALIDATION_FAILED. 유효한 타입의 업무 검증 실패는 기존 422 MODEL_APPROVAL_REJECTED, 중복은 409 MODEL_VERSION_CONFLICT. 공통 Problem Details 형식은 유지한다.
-- 프론트 전달용 예시와 역할 분담: [#367 API 전달 문서](../report/issue-367-registration-api.md). 화면·웹 타입은 프론트 담당 범위다.
+- 프론트 전달용 예시와 역할 분담: [#367 API 전달 내용](../report/ai.md#11-모델-등록-api-367). 화면·웹 타입은 프론트 담당 범위다.
 
 #### 5.2.1 모델 파일 사전 검사 (#368)
 
@@ -1350,4 +1354,4 @@ report-worker는 생성 시작 시 한 번 조회하여 command에 고정한다.
 
 ### scoring Pod별 모델 로딩 확인 (#370)
 
-`GET /api/v1/admin/model-loading` (SERVICE_OPS): `pods[]`의 Pod·프로세스·보고 시각·stale·모델 상태와 `summaries[]`의 활성 name/version/revision별 observedPods·loadedPods·failedPods를 반환한다. 분모는 최근 120초 안에 보고한 Pod이며 Kubernetes 전체 replica 수가 아니다. 0개는 미확인이다. 품질 승인·추론 확인과 분리한다. 이벤트 `model.loading.reported.v1`로 30초마다 전체 상태를 재보고하며 상태 보관·배포 순서는 [#370 설계](../report/issue-370-model-loading.md)를 따른다.
+`GET /api/v1/admin/model-loading` (SERVICE_OPS): `pods[]`의 Pod·프로세스·보고 시각·stale·모델 상태와 `summaries[]`의 활성 name/version/revision별 observedPods·loadedPods·failedPods를 반환한다. 분모는 최근 120초 안에 보고한 Pod이며 Kubernetes 전체 replica 수가 아니다. 0개는 미확인이다. 품질 승인·추론 확인과 분리한다. 이벤트 `model.loading.reported.v1`로 30초마다 전체 상태를 재보고하며 상태 보관·배포 순서는 [#370 설계](../report/ai.md#13-pod별-모델-로딩-보고-370)를 따른다.

@@ -37,7 +37,7 @@
 
 - 7일은 환불 요청 시각 기준, 전액만. 승인 시 요청 당시 기간·금액·사용을 다시 확인. REQUESTED는 새 프리미엄 사용의 동결 상태. 증빙 조회 실패는 503이며 미사용으로 간주하지 않음. snapshot/charge attempt가 없는 과거 거래도 사용 근거 불명확으로 차단
 - `payment_premium_usage`가 FEEDBACK/CONVERSATION/REPORT_VIEW의 RESERVED/USED 증빙 소유. 미완료 예약을 미사용으로 간주하지 않음
-- 구현 예정(P14 개정, [서비스 기획 방향](service-direction.md)): 프리미엄 추가 문제 시도 `EXTRA_MISSION` 종류를 추가하고, 일일 리포트 대화는 기존 CONVERSATION으로 기록. 배포 시점부터 기존 구독자 환불 판정에도 적용
+- P14 개정(#387·#392, [서비스 기획 방향](service-direction.md)): 프리미엄 추가 문제 시도 `EXTRA_MISSION` 종류를 추가하고, 일일 리포트 대화는 기존 CONVERSATION으로 기록. 배포 시점부터 기존 구독자 환불 판정에도 적용
 - learning의 SYSTEM+정확한 학생 scope 증빙 API가 결제 이후 DONE 및 진행 중 피드백을 실제 learning DB에서 확인(MyBatis 캐시 없이 매번 조회, 원문 미반환)
 - FeedbackFacade: 답변·시도 소유권 확인 → core 사용 예약 → 판정 리스/처리·DB commit → core 완료. 응답 유실은 예약을 남겨 보수적으로 판단
 - core 예약·완료 409는 Problem Details `code`로 구분(#276). `REFUND_IN_PROGRESS`·`PAYMENT_USAGE_RETRY_REQUIRES_NEW_SOURCE`·`PAYMENT_USAGE_STATE_CHANGED`는 같은 코드 409와 코드별 학생 안내, 그 밖의 409는 `PAYMENT_USAGE_UNAVAILABLE` 503
