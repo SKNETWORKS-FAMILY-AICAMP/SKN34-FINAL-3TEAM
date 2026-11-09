@@ -213,7 +213,7 @@ erDiagram
 - `student.parent_sharing_enabled`는 비공개 기본값을 보장하기 위한 SQL DEFAULT false의 명시적 예외. 학생 본인만 바꾸며 원문 제공 경로는 같은 학생 행의 현재 설정을 다시 확인 (#206)
 - `student.community_enabled`도 같은 이유의 DEFAULT false 예외(P20, #388). V31에서 nullable로 추가하고 V32에서 기존 행을 false로 채운 뒤 NOT NULL. 학생 본인만 켜고 끄며, 공유물 공개는 이 값과 현재 연결 보호자의 현재 문서 `COMMUNITY` 동의가 모두 있어야 한다. 동의 거부·철회 시 false, 학생 삭제 확정 시 false·`community_updated_at` NULL로 되돌림. `consent_document` `COMMUNITY`는 선택(`required = false`) 자녀 단위 동의(V31 시드 1.0), `error_report`·`correction` `target_type`에 `COMMUNITY_POST`
 - `student.look_theme`·`look_companion`·`look_updated_at`은 함께 NULL(저장한 적 없음, API 기본값 `lake`·`mungchi`)이거나 함께 값(`student_look_saved_together`). 값 목록은 코드 상수와 CHECK로 고정, SQL DEFAULT 없음. 학생 삭제 확정 때 PIN 삭제와 같은 트랜잭션에서 NULL로 되돌림 (#234)
-- 구현 예정(P22): `lake`·`mungchi` 외 테마·캐릭터는 포인트 해금 후에만 저장 가능(`student_look_unlock`, 3.6). 잠금 적용 전 저장된 값은 해금 행으로 옮김
+- P22(#389, V35): `lake`·`mungchi` 외 테마·캐릭터는 포인트 해금 후에만 저장 가능(`student_look_unlock`, 3.5.1). 잠금 적용 전 저장된 값은 V35가 해금 행으로 옮김
 
 ### 3.1.1 로그인 세션 (#36)
 
@@ -795,21 +795,83 @@ erDiagram
 - `idempotency_record`: 공개 API의 `Idempotency-Key` 대상(답변 제출·주문·승인·환불·재처리·신고) 공통. 같은 키·다른 본문은 `request_hash` 불일치로 422 (API 1.4)
 - #38의 response_body는 원문 보존용 JSON 봉투 `{body: base64, headers: {이름: [값]}}`다. response_status가 NULL이면 미확정이며 봉투도 NULL이다. expires_at은 DB 시계 기준 24시간이며 만료 행은 같은 키 접수 시와 주기 청소에서 제거한다. 세션 advisory lock은 테이블을 추가하지 않으며 사용자·키 해시로 잠근다. endpoint에는 메서드와 실제 공개 경로를 저장한다.
 
+### 3.5.1 포인트·꾸미기 (P21·P22, #389)
+
+2026-11-06 결정 [기능명세 1.4](functional-spec.md#14-확정-정책) P21·P22의 core `reward` 저장 구조(V35). 결제와 분리하고, 포인트는 참여로만 적립하며(판정 결과 무관) 순위·소멸·회수가 없다. API는 [API 명세 2.10·3.12](api-spec.md#210-포인트꾸미기-fn-ret-0506-p21p22).
+
+```mermaid
+erDiagram
+  student ||--o{ reward_point_ledger : earns
+  student ||--o| reward_point_balance : holds
+  student ||--o{ student_look_unlock : unlocks
+  reward_point_ledger |o--o| student_look_unlock : pays
+  student ||--o{ student_look_equipment : wears
+  look_item ||--o{ student_look_equipment : equipped
+  user_account ||--o{ look_item : creates
+
+  reward_rule {
+    varchar(32) event_type PK "MISSION_COMPLETED|REVIEW_VIEWED|COMMUNITY_POSTED|REACTION_GIVEN|THEME_COMPLETED"
+    int amount "1 이상, 사건 1회 적립값"
+    int daily_cap "NULL 허용 · 한국 시간 하루 적립 횟수 상한(1 이상)"
+    boolean active "false면 적립하지 않음"
+    timestamptz updated_at
+  }
+  reward_point_ledger {
+    uuid id PK
+    uuid student_id FK
+    varchar(32) event_type "MISSION_COMPLETED|REVIEW_VIEWED|COMMUNITY_POSTED|REACTION_GIVEN|THEME_COMPLETED|UNLOCK"
+    varchar(200) source_key "사건 키, (student_id, event_type, source_key) UK"
+    int amount "적립 양수, UNLOCK 음수"
+    timestamptz created_at
+  }
+  reward_point_balance {
+    uuid student_id PK,FK
+    int balance "0 이상, 원장과 같은 트랜잭션에서 갱신"
+    timestamptz updated_at
+  }
+  look_item {
+    uuid id PK
+    varchar(40) code UK "대문자·숫자·밑줄 3~40자, 학생 itemKey"
+    varchar(16) slot "HAT|OUTFIT|ACCESSORY|BACKGROUND"
+    varchar(40) name
+    int price_points "1 이상"
+    varchar(200) asset_key "그림 키"
+    varchar(16) status "ON_SALE|STOPPED"
+    uuid created_by FK
+    timestamptz created_at
+    timestamptz updated_at
+  }
+  student_look_unlock {
+    uuid student_id PK,FK
+    varchar(64) item_key PK "THEME:코드, COMPANION:코드, look_item.code"
+    uuid ledger_id FK,UK "NULL 허용 · 잠금 전 저장 값 이관분은 NULL"
+    timestamptz unlocked_at
+  }
+  student_look_equipment {
+    uuid student_id PK,FK
+    varchar(16) slot PK "HAT|OUTFIT|ACCESSORY|BACKGROUND"
+    uuid look_item_id FK
+    timestamptz updated_at
+  }
+```
+
+- `reward_rule` 시드(V35)는 P21 초기값: 학습 완료 10·되돌아보기 10·공유 5·반응 1(하루 5회)·완주 30. 값·상한·사용 여부는 데이터로 바꾸며 이미 쌓인 원장은 바꾸지 않는다. `daily_cap`은 적립 횟수(포인트 합이 아님)
+- `reward_point_ledger` UK `(student_id, event_type, source_key)`로 사건당 1회. 사건 키: 학습 완료 `missionId`(미션당 최초 1회), 되돌아보기·완주 `weekStart`(ISO date, 주 1회), 공유 `postId`, 반응 `postId:reaction`, 해금 `itemKey`. CHECK로 `UNLOCK`만 음수, 그 외 양수(0 없음). 인덱스 `(student_id, created_at)`는 내역과 하루 상한 집계용
+- 적립·해금은 학생 행 `FOR SHARE`(삭제 확정과 직렬화) → `reward_point_balance` 행 `FOR UPDATE` 순서로 잠가 학생별로 직렬화한다. 같은 사건 동시 적립, 다른 키로 같은 항목 동시 해금도 한 번만 반영. 잔액 CHECK `>= 0`
+- `look_item`: 관리자(CONTENT) 등록 아이템. 삭제 없이 `STOPPED`로 판매 중단, 이미 해금한 학생은 계속 착용. `code`는 바꾸지 않으며 `:`가 없어 테마·캐릭터 키와 겹치지 않는다. 변경은 같은 트랜잭션에서 `audit_log`(`target_type = LOOK_ITEM`)
+- `student_look_unlock`: 테마·캐릭터 해금값(테마 100·캐릭터 150)은 코드 상수라 테이블이 없다. `THEME:lake`·`COMPANION:mungchi`는 행 없이 항상 해금. V35가 잠금 전 저장된 `student.look_theme`·`look_companion`(무료 제외)을 `ledger_id` NULL 행으로 옮겼다(포인트 차감 없음). 포인트 해금 행은 그 `UNLOCK` 원장 행을 `ledger_id`로 가리킨다(UK)
+- `student_look_equipment`: 학생·슬롯당 아이템 하나. 해금 여부와 아이템 슬롯 일치는 서비스 검증. 판매 중단 아이템도 해금했으면 착용 가능
+- 학생 삭제 확정(P09): `student.look_*` NULL과 같은 트랜잭션에서 착용 → 해금 → 원장 → 잔액 순서로 삭제(FK 순서)
+
 ### 3.6 구현 예정 변경 (core_db)
 
 2026-11-06 서비스 기획 방향 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 저장 구조. 커뮤니티 공개 설정·`COMMUNITY` 동의·신고 대상(#388)은 V31·V32로 구현해 3.1·3.3 Mermaid로, 일일 리포트 고정 대화(#392)의 `conversation.report_id`·`report_revision`은 V33으로 구현해 3.2 Mermaid로 옮겼다. 나머지는 마이그레이션 전이라 위 Mermaid·6장 인덱스 표(실제 DB 계약, `scripts/verify_db_schema.py`가 대조)에는 넣지 않고 표로만 둔다. 구현 시 새 마이그레이션 버전과 함께 Mermaid·6장으로 옮긴다. 컬럼 기본값은 두지 않는다(검증 스크립트 규칙): 기존 행이 있는 테이블의 NOT NULL 컬럼은 준비 버전(nullable 추가)→기존 행 채움→최종 버전(NOT NULL·CHECK)으로 나눈다(8장). API는 [API 명세](api-spec.md)의 구현 예정 행.
 
 | 테이블 | 구분 | 컬럼·제약 | 근거 |
 |---|---|---|---|
-| `reward_rule` | 신규 | `event_type varchar PK`(`MISSION_COMPLETED`·`REVIEW_VIEWED`·`COMMUNITY_POSTED`·`REACTION_GIVEN`·`THEME_COMPLETED`), `amount int NOT NULL CHECK > 0`, `daily_cap int NULL`, `active boolean NOT NULL`, `updated_at`. 시드는 P21 초기값(10·10·5·1(하루 상한 5)·30) | P21 |
-| `reward_point_ledger` | 신규 | `id uuid PK`, `student_id FK`, `event_type`(`reward_rule` 값 + `UNLOCK`), `source_key varchar NOT NULL`, `amount int NOT NULL`(적립 양수, 사용 음수), `created_at`. UK `(student_id, event_type, source_key)` → 사건당 1회. `source_key` 규칙: 학습 완료 `missionId`, 되돌아보기·완주 `weekStart`(ISO date), 공유 `postId`, 반응 `postId:reaction`, 해금 `itemKey` | P21 |
-| `reward_point_balance` | 신규 | `student_id PK,FK`, `balance int NOT NULL CHECK >= 0`, `updated_at`. 원장 행과 같은 트랜잭션에서 갱신(해금 동시 요청은 이 행 잠금으로 직렬화) | P21 |
-| `look_item` | 신규 | `id uuid PK`, `code varchar UK`, `slot`(`HAT`·`OUTFIT`·`ACCESSORY`·`BACKGROUND`), `name`, `price_points int CHECK > 0`, `asset_key`, `status`(`ON_SALE`·`STOPPED`), `created_by FK user_account`, `created_at`, `updated_at`. 삭제 없음 | P22 |
-| `student_look_unlock` | 신규 | `student_id FK`, `item_key varchar`(`THEME:<code>`·`COMPANION:<code>`·`look_item.code`), `ledger_id FK NULL`(잠금 전 선택 이관분은 NULL), `unlocked_at`. PK `(student_id, item_key)`. 테마·캐릭터 해금값(테마 100·캐릭터 150)은 코드 상수 | P22 |
-| `student_look_equipment` | 신규 | `student_id FK`, `slot`, `look_item_id FK`, `updated_at`. PK `(student_id, slot)`. 해금된 아이템만(서비스 검증) | P22 |
+| (없음) | - | 2026-11-06 결정의 core_db 변경은 모두 구현해 위 Mermaid·6장으로 옮겼다 | - |
 
-- 학생 삭제 확정: `reward_point_ledger`·`reward_point_balance`·`student_look_unlock`·`student_look_equipment`를 같은 트랜잭션에서 삭제(`community_enabled` false는 #388 구현 3.1, `mission_daily_usage`는 #387 구현 3.4)
-- 인덱스 후보: `reward_point_ledger (student_id, created_at)`(내역·반응 하루 상한)
+- 포인트·꾸미기(`reward_rule`·`reward_point_ledger`·`reward_point_balance`·`look_item`·`student_look_unlock`·`student_look_equipment`, P21·P22)는 #389 V35로 구현해 3.5.1 Mermaid와 6장으로 옮겼다(학생 삭제 확정 때 함께 삭제)
 - `report_job.period_type`·일일 알림 유형(P24)은 #390 V29·V30으로 구현해 3.2·3.3 Mermaid와 6장으로 옮겼다
 
 ---
@@ -1315,6 +1377,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | core | `llm_usage` | `(occurred_at, call_type)` | 사용량·비용 집계 |
 | core | `outbox_event` | `(subject, created_at, id) WHERE published_at IS NULL`, `(published_at) WHERE published_at IS NOT NULL` | subject별 선두·발행 순서 및 재시도 대상(#243), 보존 기간 정리 |
 | core | `processed_event` | `(processed_at)` | 보존 기간 정리 |
+| core | `reward_point_ledger` | `(student_id, created_at)` | 포인트 내역·반응 하루 상한 집계 (#389) |
 | core | `event_log` | `(received_at)`, `(event_type, event_time)` | 보존 기간 정리, 유형·기간별 추적 |
 | learning | `mission` | `(status, sort_order)`, `mission_version (thinking_type, grade_min, grade_max)` | 학년·유형별 공개 미션 목록 |
 | learning | `attempt` | `(student_id, started_at)` | 기간별 기록 조회 (대시보드·에이전트·리포트) |
@@ -1333,7 +1396,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V34(V10·V11 결번), learning Flyway V1~V10, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`. 현재 78개 테이블·715개 컬럼(core 49/458, learning 21/194, report 8/63, `scripts/check_db_migrations.py` 결과, #387 V34 기준). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V35(V10·V11 결번), learning Flyway V1~V10, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`. 현재 84개 테이블·747개 컬럼(core 55/490, learning 21/194, report 8/63, `scripts/check_db_migrations.py` 결과, #387 V34 기준). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT
