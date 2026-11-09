@@ -17,6 +17,9 @@ class AttemptRepository(private val mapper: AttemptMapper) {
 
     fun findById(id: UUID): Attempt? = mapper.findById(id)
 
+    /** 그 미션을 처음 학습 완료한 시도 (커뮤니티 공유 단위·열람 검사, #386) */
+    fun findFirstCompleted(studentId: UUID, missionId: UUID): Attempt? = mapper.findFirstCompleted(studentId, missionId)
+
     fun findPreviousFinished(current: Attempt): Attempt? = mapper.findPreviousFinished(current)
 
     /** 행 잠금(SELECT … FOR UPDATE). 같은 시도의 답변 제출·마무리를 한 줄로 세움 */

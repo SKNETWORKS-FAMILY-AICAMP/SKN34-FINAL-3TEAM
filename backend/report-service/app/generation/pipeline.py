@@ -7,11 +7,13 @@ from uuid import UUID
 from app.clients.ai_client import AiClient
 from app.clients.learning_client import LearningClient
 from app.clients.storage import ObjectStorage
+from app.config import get_settings
 from app.generation.models import GenerateReport, GenerationResult, WeeklyReport
 from app.generation.narrative_generator import NarrativeGenerator
 from app.generation.ports import ReportGenerator
 from app.generation.record_generator import RecordGenerator
 from app.generation.records import RecordContractError
+from app.generation.theme_summary import ThemeSummaryBuilder
 from app.rendering.generator import RenderingGenerator
 from app.rendering.renderer import ReportRenderer
 from app.security import current_user_context
@@ -52,8 +54,12 @@ class NamedGenerator:
                 command,
                 display_name=profile.nickname,
                 parent_sharing_enabled=profile.parent_sharing_enabled,
-                narrative_enabled=command.narrative_enabled and profile.parent_sharing_enabled,
-                template_snapshot=profile.template_snapshot,
+                narrative_enabled=command.narrative_enabled
+                and profile.parent_sharing_enabled
+                and command.period_type == "WEEKLY",
+                template_snapshot=profile.template_snapshot
+                if command.period_type == "WEEKLY"
+                else None,
             ),
             report,
         )
@@ -68,7 +74,16 @@ def build_pipeline(
     return NamedGenerator(
         provider,
         RenderingGenerator(
-            NarrativeGenerator(RecordGenerator(learning), ai, learning),
+            NarrativeGenerator(
+                RecordGenerator(
+                    learning,
+                    theme_builder=ThemeSummaryBuilder(learning)
+                    if get_settings().report_theme_summary_enabled
+                    else None,
+                ),
+                ai,
+                learning,
+            ),
             ReportRenderer(),
             storage,
         ),

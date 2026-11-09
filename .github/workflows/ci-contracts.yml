@@ -89,3 +89,14 @@ jobs:
         run: .venv-contracts/bin/python scripts/validate_community_contracts.py
       - name: 실제 포인트·꾸미기 응답 계약 검사
         run: .venv-contracts/bin/python scripts/validate_reward_contracts.py
+      # core가 부르는 learning 커뮤니티 내부 응답(#386)도 실제 PostgreSQL 테스트에서 만든다.
+      - name: learning 커뮤니티 계약 산출물 생성
+        working-directory: backend/learning-service
+        run: |
+          chmod +x gradlew
+          ./gradlew test --no-daemon --tests 'com.sagomungchi.learning.community.CommunityTest' --tests 'com.sagomungchi.learning.attempt.service.AttemptComparisonIntegrationTest'
+      - name: 실제 learning 커뮤니티 응답 계약 검사
+        run: .venv-contracts/bin/python scripts/validate_learning_community_contracts.py
+
+      - name: 실제 learning 테마 요약과 report 소비 계약 검사
+        run: .venv-contracts/bin/python scripts/validate_theme_summary_contracts.py

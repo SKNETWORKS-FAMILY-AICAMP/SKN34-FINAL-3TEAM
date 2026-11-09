@@ -11,6 +11,10 @@ import java.util.UUID
  */
 @Repository
 class RecordRepository(private val mapper: RecordMapper) {
+    /** 일일 리포트는 답변 제출일 대신 완료일로 조회한다 (#391). */
+    fun findCompleted(studentId: UUID, period: Period): List<UUID> =
+        mapper.findCompleted(studentId, period.start(), period.endExclusive())
+
     /** 집계 대상 시도 (P08), 최근 답변 순 */
     fun findEligible(studentId: UUID, period: Period): List<EligibleAttempt> =
         mapper.findEligible(studentId, period.start(), period.endExclusive())

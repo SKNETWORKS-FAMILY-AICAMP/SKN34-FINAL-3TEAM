@@ -72,6 +72,40 @@ sequenceDiagram
   W->>C: 원래 요청 재시도
 ```
 
+#### 2.1.1 관리자 ID·비밀번호 로그인 (#369)
+
+가입 없이 운영자가 `scripts/admin_account_sql.py`로 `admin_credential` 행을 만든 관리자만 해당. 사용자 화면에는 링크가 없고 `/admin/login`을 직접 입력해 들어온다. 이후 refresh·`/me`는 2.1과 같다 ([API 명세 5.1](api-spec.md#51-36-google-oauth토큰-구현-계약-개정-p01-정렬))
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor A as 관리자
+  participant W as Web /admin/login
+  participant C as core
+  participant DB as core_db
+
+  A->>W: 로그인 ID·비밀번호
+  W->>C: POST /auth/admin/login {loginId,password} (Origin·X-Requested-With)
+  rect rgba(128,128,128,0.12)
+    C->>DB: admin_credential + user_account(login_id, ADMIN·ACTIVE) 조회 FOR UPDATE
+    alt 없음
+      C->>C: 더미 해시 검사 (응답 시간 맞춤)
+      C-->>W: 401 INVALID_CREDENTIALS
+    else locked_until > 지금
+      C-->>W: 423 ADMIN_LOGIN_LOCKED
+    else 비밀번호 틀림
+      C->>DB: failed_count+1 (5회째면 locked_until=15분 뒤, 횟수 0) 커밋
+      C-->>W: 401 INVALID_CREDENTIALS 또는 423 ADMIN_LOGIN_LOCKED
+    else 성공
+      C->>DB: 횟수·잠금 초기화, audit_log ADMIN_PASSWORD_LOGIN
+      C->>DB: 이전 refresh 쿠키 세션 폐기, ADMIN auth_session·refresh_token 저장 (7일)
+      C-->>W: 200 {accessToken, expiresIn, role:ADMIN, startPath:/admin/home} + Set-Cookie sagomungchi_refresh
+    end
+  end
+  W->>C: GET /me (Bearer)
+  C-->>W: 200 role·permissions → 권한별 관리자 메뉴
+```
+
 ### 2.2 자녀 등록·법정대리인 동의
 
 ```mermaid
@@ -587,7 +621,7 @@ sequenceDiagram
 
 ### 3.5 학습 완료 → 포인트 적립·자동 공유 (P20·P21, 구현 예정)
 
-구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 공유 요청(core #388)과 learning 공유 저장(#386)은 구현, 포인트 적립(#389)은 구현 예정. 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -606,8 +640,8 @@ sequenceDiagram
   end
   opt community_enabled 이고 COMMUNITY 동의 유효
     C->>L: POST /internal/community/posts {studentId, attemptId}
-    L->>L: 학습 완료·표현 필터 통과 확인, 마지막 답변으로 공유물 저장 (학생·미션당 1개, 다시 풀기는 저장 안 함)
-    L-->>C: 201 {postId} 또는 200 (이미 있음)
+    L->>L: 처음 학습 완료한 시도·지금 표현 필터 통과 확인, 마지막 답변으로 공유물 저장 (학생·미션당 1개, 다시 풀기는 저장 안 함)
+    L-->>C: 201 {postId, created} 또는 200 (이미 있음), 공유 대상 아님 409
     rect rgba(128,128,128,0.12)
       C->>CDB: reward_point_ledger (COMMUNITY_POSTED, source_key = postId) + 잔액
     end
@@ -644,9 +678,9 @@ sequenceDiagram
   C-->>W: 200 {earned}
 ```
 
-### 3.7 커뮤니티 열람·반응·신고 (P20, 구현 예정)
+### 3.7 커뮤니티 열람·반응·신고 (P20, core #388·learning #386 구현)
 
-구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 반응 포인트 적립(#389)만 구현 예정. 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -659,7 +693,7 @@ sequenceDiagram
 
   W->>C: GET /missions/{missionId}/community-posts?seed
   C->>L: GET /internal/community/missions/{missionId}/posts?viewerStudentId&seed
-  alt viewer가 이 미션을 마무리하지 않음
+  alt viewer가 이 미션을 학습 완료하지 않음
     L-->>C: 403 COMMUNITY_LOCKED
     C-->>W: 403
   else 마무리함
@@ -669,9 +703,9 @@ sequenceDiagram
   end
   W->>C: PUT /community-posts/{postId}/reactions/NEW_IDEA
   C->>L: PUT /internal/community/posts/{postId}/reactions/NEW_IDEA?studentId
-  L-->>C: {created: true}
+  L-->>C: {postId, reaction, reactionId, created: true}
   opt 생성됨이고 오늘 반응 적립 상한 미만
-    C->>CDB: reward_point_ledger (REACTION_GIVEN, source_key = postId:reaction) + 잔액
+    C->>CDB: reward_point_ledger (REACTION_GIVEN, source_key = postId:reaction, reactionId와 1:1) + 잔액
   end
   C-->>W: 204
   W->>C: POST /error-reports {targetType: COMMUNITY_POST, targetId}
@@ -976,7 +1010,7 @@ ADMIN/SERVICE_OPS → OperationsController → 공통 IdempotencyService → Rep
 
 ### 6.5 일일 리포트 생성·알림 (P24)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). core 몫(일정·작업·`report.generate`·알림)은 #390으로 구현했고 report-worker 몫은 구현 예정(#391). 1장 공통 규칙을 따른다.
+core 일정·작업·알림은 #390, report 생성·저장·조회는 #391에서 구현했다. learning daily-attempts는 완료일로 조회한다.
 
 ```mermaid
 sequenceDiagram

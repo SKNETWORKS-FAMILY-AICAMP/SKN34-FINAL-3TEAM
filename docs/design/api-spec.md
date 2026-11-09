@@ -97,6 +97,7 @@
 | `REFRESH_REUSED` | 401 | 이미 사용된 refresh 재사용 → 해당 세션 전체 폐기 (5.1) |
 | `OAUTH_FAILED` / `OAUTH_UNAVAILABLE` | 401 / 503 | Google 인증 실패 / Google 로그인 미설정·연결 실패. 콜백은 `/auth/complete?error=<code>`로 전달 (5.1) |
 | `ACCOUNT_EXISTS` | 409 | 같은 이메일의 기존 계정은 자동 연결하지 않음 (5.1) |
+| `INVALID_CREDENTIALS` / `ADMIN_LOGIN_LOCKED` | 401 / 423 | 관리자 ID·비밀번호 로그인 실패(없는 ID·틀린 비밀번호·비관리자·비활성 계정 구분 없음) / 연속 5회 실패 후 15분 잠금 (5.1, #369) |
 | `AUTH_UNAVAILABLE` | 503 | 인증 상태 확인 실패(DB 장애 등) |
 | `CONSENT_REQUIRED` | 403 | 필수 계정 동의 또는 GUARDIAN 동의 전 접근 (5.3) |
 | `CONSENT_DOCUMENT_CHANGED` / `CONSENT_DOCUMENTS_UNAVAILABLE` | 409 / 503 | 제출한 동의 문서 버전이 현재와 다름 / 게시된 동의 문서 확인 실패 (5.3) |
@@ -121,6 +122,7 @@
 | `ANALYSIS_FIRST_RESPONSE_TIMEOUT` / `ANALYSIS_TIMEOUT` / `ANALYSIS_FAILED` | 504 / 504 / 502 | 분석 대화 SSE `error` 이벤트 전용: ai 첫 이벤트 20초 안에 없음 / 전체 120초 초과 / 원인 코드가 없는 처리 실패(원래 오류 상태가 있으면 그 상태). `retryable: true`, 메시지는 FAILED로 저장 (3.3) |
 | `REPORT_PREMIUM_REQUIRED` / `REPORT_JOB_IDENTITY_MISMATCH` | 403 / 409 | 무료 이용권에서 프리미엄 리포트 항목 요청 / report 복구 응답의 작업 식별자 불일치 (5.9) |
 | `COMMUNITY_CONSENT_REQUIRED` / `COMMUNITY_LOCKED` / `COMMUNITY_OWN_POST` / `COMMUNITY_POST_NOT_FOUND` | 409 / 403 / 409 / 404 | 보호자 `COMMUNITY` 동의 없이 공개 켜기 / 미션 미마무리 학생의 커뮤니티 열람·반응(learning 판정 전달) / 본인 공유물 반응·신고 / 숨김·파기·없는 공유물 반응·신고 (2.9, #388) |
+| `COMMUNITY_NOT_SHAREABLE` | 409 | learning 내부 공유 요청 거절: 학습 완료 전·다시 푼 시도·답변 없음·지금 표현 필터(#205)에 걸림. core는 공유 안 함으로 보고 학생 응답에 내보내지 않음 (4.1, #386) |
 | `INSUFFICIENT_POINTS` / `LOOK_ITEM_NOT_ON_SALE` / `LOOK_LOCKED` | 409 | 해금 포인트 부족 / 판매 중단 아이템 해금 / 해금하지 않은 테마·캐릭터·아이템 선택 (2.10, 3.12, #389) |
 | `LOOK_ITEM_NOT_FOUND` / `LOOK_ITEM_CODE_DUPLICATE` | 404 / 409 | 없는 꾸미기 항목 해금 / 관리자 아이템 코드 중복 (2.8, 2.10, #389) |
 | `THEME_DAY_CLOSED` / `THEME_REVIEW_NOT_ALLOWED` / `PREMIUM_REQUIRED` | 409 / 409 / 403 | 오늘 요일이 아닌 테마 문제 신규 시도 / 토·일 외 또는 마무리하지 않은 테마 문제 다시 풀기·평일 되돌아보기 열람(두 코드는 learning #385, core는 그대로 전달) / 추가 문제(`EXTRA`)를 끈 상품(`features.extraMissions = false`)의 시도(core #387, 현재 무료도 허용) (2.11) |
@@ -236,6 +238,7 @@
 | GET | `/consent-documents` | 공개 | 현재 이용 안내·동의 문서(버전) 조회 | ACC-02 | 제안 |
 | GET | `/auth/google/authorize` | 공개 | Google 로그인·가입 시작 (Authorization Code + PKCE) | ACC-01, ACC-03 | 제안 |
 | GET | `/auth/google/callback` | 공개 | Google 코드 교환·ID 토큰 검증 → refresh 쿠키 → web 복귀 | ACC-03 | 제안 |
+| POST | `/auth/admin/login` | 공개 | 등록된 관리자 ID·비밀번호 로그인 `{loginId,password}` → refresh 응답과 같은 형식 + refresh 쿠키. 가입 없음, `admin_credential` 행으로만 등록 (#369, 5.1) | ACC-03, ADM-01 | 핵심 |
 | POST | `/auth/refresh` | 쿠키 | access token 재발급 | ACC-04 | 제안 |
 | POST | `/auth/logout` | 인증 | refresh token 폐기 | ACC-04 | 제안 |
 | POST | `/auth/student/logout` | 학생 Bearer | 해당 학생 세션만 폐기, 보호자 refresh·기기 쿠키 유지 | ACC-04, ACC-05 | 핵심 |
@@ -365,7 +368,7 @@
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
 | GET | `/children/{childId}/reports?status&periodType` | 학부모 | 대상 기간·생성 상태별 목록. `periodType`(`DAILY`·`WEEKLY`, 생략 시 전체) 필터, 항목에 항상 `periodType`(report가 생략하면 core가 `WEEKLY`로 채움, #390) | RPT-10, RPT-11, RPT-15 | 핵심 |
-| GET | `/reports/{reportId}?revision` | 학부모 | 상세: 기간·포함 기준·`Metric[]`·생각 유형 요약·전후 변화·돌아보기·원문 인용·저녁 질문·버전, `periodType`(core가 작업 기준으로 채움, #390). 구현 예정(report #391): 일일 `problems[]`, 주간 `themeSummary`(아래). 기본 최신판, `revision`으로 이전판 조회 (P06) | RPT-02~10, RPT-12 | 핵심 |
+| GET | `/reports/{reportId}?revision` | 학부모 | 상세: 기간·포함 기준·`Metric[]`·생각 유형 요약·전후 변화·돌아보기·원문 인용·저녁 질문·버전, `periodType`(core가 작업 기준으로 채움, #390). #391 구현: 일일 `problems[]`, 주간 `themeSummary`(아래). 기본 최신판, `revision`으로 이전판 조회 (P06) | RPT-02~10, RPT-12 | 핵심 |
 | GET | `/reports/{reportId}/evidence/{itemId}` | 학부모 | 리포트 항목의 원본 기록 | RPT-03, RPT-12 | 핵심 |
 | GET | `/reports/{reportId}/download?format=pdf\|md` | 학부모 | 권한 확인 후 `{url, expiresAt}`(단기 presigned URL) 반환, 웹이 해당 URL로 이동. Bearer 인증이라 302 대신 JSON (PDF·Markdown, P06) | RPT-13 | 핵심 |
 | POST | `/reports/{reportId}/regenerate` | 학부모·관리자 | 같은 기간 재생성(일일은 그날, 주간은 그 주) → `report.generate`, 새 판(`revision + 1`) 추가·기존 판 보존. 학부모 리포트당 1회(초과 409, 기간 종류·대상 기간별), 관리자 무제한. 응답에 `periodType` (P06, P24) | RPT-12, RPT-15 | 핵심 |
@@ -374,8 +377,8 @@
 - 생성 내용(FN-RPT-02~09)은 report-service가 계산하고, 그 결과를 상세 응답 스키마(3.4)로 제공
 - 기록 없는 주·표본 부족 주는 `COMPLETED` + `state: NO_RECORD|INSUFFICIENT_SAMPLE`로 표시하며, 생성 실패(`FAILED`)와 구분 (FN-RPT-11). `NO_RECORD`는 LLM 미호출 (P06)
 - 무료 플랜은 수치만 제공(`narrative: null`, 생각 유형 `summary` 없음) (P13)
-- 일일 리포트(FN-RPT-14·15, P24): core 스케줄러가 대상일이 끝난 자정(다음 날 00:00 KST, ShedLock `core-daily-reports`)에 보호자가 연결된 자녀별 전날(KST) 대상으로 작업을 만든다(#390, 기록 없는 날 포함, 생성 시각은 2026-11-09 결정). report 쪽 생성 내용은 구현 예정(#391). 상세의 일일 항목은 `problems:[{missionId, title, context, judgment, followups[], finalAnswer, elements[], reflection, quotes[]}]`, `metrics`는 개수만, `eveningQuestion`·`narrative` 없음. 토·일은 되돌아보기 다시 풀기·추가 문제 시도도 포함
-- 주간 테마 요약(FN-RPT-17, 구현 예정): 주간 상세에 `themeSummary:{themeId, title, days[], completed, reviewRetries[]}`. 테마 미참여 주는 `state: NO_RECORD` 요약
+- 일일 리포트(FN-RPT-14·15, P24): core 스케줄러가 대상일이 끝난 자정(다음 날 00:00 KST, ShedLock `core-daily-reports`)에 보호자가 연결된 자녀별 전날(KST) 대상으로 작업을 만든다(#390, 기록 없는 날 포함, 생성 시각은 2026-11-09 결정). report 생성·저장·조회·다운로드 구현(#391). 상세의 일일 항목은 `problems:[{missionId, title, context, judgment, followups[], finalAnswer, elements[], reflection, quotes[]}]`, `metrics`는 개수만, `eveningQuestion`·`narrative` 없음. 토·일은 되돌아보기 다시 풀기·추가 문제 시도도 포함
+- 주간 테마 요약(FN-RPT-17, #391 구현): 주간 상세에 `themeSummary:{themeId, title, days[], completed, reviewRetries[]}`. 테마 미참여 주는 `state: NO_RECORD` 요약
 - 다운로드·근거·재생성 경로는 2.5 그대로이며 일일에도 같은 규칙(학부모 리포트당 1회, 관리자 무제한)
 - 일일 리포트는 이용권과 관계없이 전체 제공(서술이 없어 `X-Report-Narrative-Enabled`와 무관). 주간 무료 규칙은 그대로
 - 알림 유형: `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`(2.7 설정 1~8개, #390)
@@ -512,7 +515,7 @@
 
 ### 2.9 커뮤니티 (FN-RET-01~04, P20)
 
-core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml`, 태그 Community)에 반영했다. 공유물·반응 저장과 열람 검사는 learning #386(구현 예정, [ERD 4.4](erd.md#44-구현-예정-변경-learning_db)), 공개 설정은 core `student.community_enabled`(ERD 3.1).
+core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml`, 태그 Community)에 반영했다. 공유물·반응 저장과 열람 검사는 learning #386(구현, [ERD 4.3.1](erd.md#431-커뮤니티-공유물반응-p20-386), 내부 경로 4.1·`contracts/openapi/learning-service.yaml`), 공개 설정은 core `student.community_enabled`(ERD 3.1).
 
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
@@ -524,7 +527,7 @@ core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml
 | DELETE | `/community-posts/{postId}/reactions/{reaction}` | 학생 | 반응 취소(멱등, 적립 포인트 회수 없음). 성공 204 | RET-03 | 구현(#388) |
 | GET | `/children/{childId}/community-posts` | 학부모 | 연결·동의가 유효한 자녀의 공유물·상태·받은 반응 수(내 공유물과 같은 모양). 다른 학생 공유물 조회 경로 없음 | RET-02 | 구현(#388) |
 
-- 공유물 생성 API는 없다. 커뮤니티 공개가 켜진 학생의 돌아보기 저장(`POST /attempts/{id}/reflection`, 학습 완료) 성공 후 core가 learning에 공유를 요청한다. 학생·미션당 1개로 그 미션을 처음 마무리한 시도의 마지막 답변 `content`만 공유하고(다시 풀기는 공유하지 않음) 메모·판정·되묻기는 넣지 않는다
+- 공유물 생성 API는 없다. 커뮤니티 공개가 켜진 학생의 돌아보기 저장(`POST /attempts/{id}/reflection`, 학습 완료) 성공 후 core가 learning에 공유를 요청한다. 학생·미션당 1개로 그 미션을 처음 마무리한 시도의 마지막 답변만 공유하고(다시 풀기는 공유하지 않음) 메모·판정·되묻기는 넣지 않는다. `answer`는 learning `{inputType, text(입력 틀 칸 이름을 붙인 원문), content(입력 방식별 제출 내용)}`를 그대로 전달한다(#386)
 - 작성자 표시: learning은 학생 ID를 돌려주고 core가 별명·꾸미기(`look`: 테마·캐릭터, 착용 아이템은 #389)로 바꾼 뒤 학생 ID를 지워 응답한다. 반응 수는 learning이 주더라도 목록에서 뺀다
 - core 재확인(#388): learning 공개 전환·검토 호출이 실패하거나 늦어도, core는 지금 공개할 수 없는 작성자(설정 끔·현재 보호자 동의 없음·비활성)와 접수·처리 중이거나 계속 숨김으로 처리된 신고가 걸린 공유물을 목록에서 빼고 반응을 404로 막는다. 내 공유물·자녀 공유물 상태도 core가 아는 비공개(`HIDDEN_SETTING`·`HIDDEN_REPORT`)로 덮어 보여 준다
 - 신고: 기존 `POST /error-reports`에 `targetType: COMMUNITY_POST`, `targetId: postId` 추가(유형 5종 그대로). 접수 즉시 공유물 `HIDDEN_REPORT`, 관리자는 기존 `/admin/error-reports`에서 `RESOLVED` + `reviewResult: VISIBLE`(다시 공개)·`REMOVED`(계속 숨김, 생략 시 기본)로 처리. 같은 공유물의 신고가 여럿이면 계속 숨김이 하나라도 있으면 `REMOVED`, 처리 중이 있으면 `HIDDEN_REPORT`. 신고 행은 신고한 학생의 것(`student_id` = 신고 학생, 작성자 ID는 learning에만), 관리자 상세 `linkedPost`(원문, 열람마다 `SUPPORT_ORIGINAL_VIEW` 감사)
@@ -866,14 +869,14 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 | GET | `/internal/payment-usage/students/{studentId}?since` | core | SYSTEM + 해당 학생 scope. 결제 후 피드백 사용(DONE·RUNNING) 여부, 원문 미포함 (#48 환불 사용 확인) |
 | GET | `/internal/students/{studentId}/weekly-theme?gradeBand&date` | core | 학생 본인 `STUDENT`(#385, core 호출 #387): 이번 주 테마·요일 상태·되돌아보기 목록(2.11 모양). 그 주 게시본, 없으면 그 주 이전 최근 게시본(`reused`). 게시 테마가 없으면 `404` |
 | POST | `/internal/students/{studentId}/weekly-theme/review-views` | core | 학생 본인 `STUDENT`(#385, core 호출 #387): `?gradeBand&date`(본문 없음), 열람 기록(학생·주당 1행 멱등), `{firstViewThisWeek, completed}` 반환(포인트·완주 판정 근거). 평일 `409 THEME_REVIEW_NOT_ALLOWED` |
-| GET | `/internal/students/{studentId}/weekly-theme/summary?weekStart` | report | #385(소비는 report #391): 역할 `PARENT`·`STUDENT`·`SYSTEM` + 대상 학생 scope. `{studentId, weekStart, state(OK·NO_RECORD), themeId, title, days:[{day, missionId, title, completed}], completed, reviewRetries:[{missionId, title, attemptId}]}`. 그 주 테마 시도가 없으면 `NO_RECORD`, 월요일이 아니면 `400` |
-| POST | `/internal/community/posts` | core | 구현 예정(learning #386, core 호출은 #388): `X-User-Role: SYSTEM`, scope = 그 학생. `{studentId, attemptId}` → 마지막 답변 공유(학습 완료·표현 필터 통과, 학생·미션당 1개 멱등). `201 {postId}` 새 공유, `200 {postId}` 이미 있음, 그 밖(공유 대상 아님 등)은 core가 공유 안 함으로 본다 |
-| GET | `/internal/community/missions/{missionId}/posts?viewerStudentId&seed&page&size` | core | 구현 예정(#386): `STUDENT`, scope = viewer. 열람 검사(viewer 마무리 여부, 아니면 `403 COMMUNITY_LOCKED`)·`VISIBLE` 무작위 목록 `{items:[{postId, studentId, answer, myReactions[], createdAt}]}` |
-| GET | `/internal/community/students/{studentId}/posts` | core | 구현 예정(#386): `STUDENT`(본인)·`PARENT`(자녀), scope = 그 학생. `{items:[{postId, missionId, missionTitle, answer, status, reactions:{NEW_IDEA…: 수}, createdAt}]}` |
-| PUT·DELETE | `/internal/community/posts/{postId}/reactions/{reaction}?studentId` | core | 구현 예정(#386): `STUDENT`, scope = 반응한 학생. 반응 생성·취소, PUT `200 {created}`(포인트 적립 근거). 오류 `403 COMMUNITY_LOCKED`·`404 COMMUNITY_POST_NOT_FOUND`·`409 COMMUNITY_OWN_POST`는 core가 그대로 전달 |
-| PUT | `/internal/students/{studentId}/community-visibility` | core | 구현 예정(#386): `SYSTEM`, scope = 그 학생. `{visible, reason}`(`SETTING`·`CONSENT`·`TRANSFER`) → 공유물 `VISIBLE`↔`HIDDEN_SETTING`(`HIDDEN_REPORT`·`REMOVED`는 그대로), 같은 값 반복 멱등. core는 커밋 뒤 호출하고 실패는 기록 후 다음 설정 저장 때 다시 보낸다 |
-| PUT | `/internal/community/posts/{postId}/moderation` | core | 구현 예정(#386): `SYSTEM`, scope 없음. `{status, errorReportId}`(`HIDDEN_REPORT`·`VISIBLE`·`REMOVED`) 멱등. `VISIBLE`은 `HIDDEN_REPORT`에서만 되돌림 |
-| GET | `/internal/community/posts/{postId}` | core | 구현 예정(#386, #388에서 추가 요청): `SYSTEM`, scope 없음. 신고 대상 확인·관리자 원문 열람 `{postId, studentId, missionId, status, answer}`, 파기·없음 `404` |
+| GET | `/internal/students/{studentId}/weekly-theme/summary?weekStart` | report | #385(소비는 report #391): 역할 `PARENT`·`STUDENT`·`SYSTEM` + 대상 학생 scope. `{studentId, weekStart, state(OK·NO_RECORD), themeId, title, days:[{day, missionId, title, completed}], completed, reviewRetries:[{missionId, title, attemptId, comparison}]}`. 비교는 #207 규칙을 재사용해 `{state, elements}`만 제공하며 마무리 전 `null`, 답변 원문은 제외. 그 주 테마 시도가 없으면 `NO_RECORD`, 월요일이 아니면 `400` |
+| POST | `/internal/community/posts` | core | 구현(learning #386, core 호출은 #388): `X-User-Role: SYSTEM`, scope = 그 학생. `{studentId, attemptId}` → 그 미션을 처음 학습 완료한 시도의 마지막 답변 공유(지금 표현 필터 통과, 학생·미션당 1개 멱등). `201 {postId, created:true, status}` 새 공유, `200 {postId, created:false, status}` 이미 있음(다시 푼 시도로 요청해도 같음). 새 공유물은 core가 마지막으로 알린 공개 여부가 끔이면 `HIDDEN_SETTING`. 그 밖: 없는·남의 시도 `404`, 공유 대상 아님 `409 COMMUNITY_NOT_SHAREABLE` → core는 공유 안 함으로 본다. `postId`는 포인트 사건 키(#389) |
+| GET | `/internal/community/missions/{missionId}/posts?viewerStudentId&seed&page&size` | core | 구현(#386): `STUDENT`, scope = viewer(`viewerStudentId`와 같아야 함). 열람 검사(viewer가 그 미션을 학습 완료했는지, 아니면 `403 COMMUNITY_LOCKED`)·`VISIBLE` 무작위 목록(열람자 본인 공유물 제외, 반응 수 없음, 같은 `seed`면 같은 순서) `{items:[{postId, studentId, answer:{inputType, text, content}, myReactions[], createdAt}], page, size}`. `seed` 1~100자, `size` 1~100 |
+| GET | `/internal/community/students/{studentId}/posts` | core | 구현(#386): `STUDENT`(본인)·`PARENT`(자녀), scope = 그 학생. 모든 상태, 최근 공유 순 `{studentId, items:[{postId, missionId, missionTitle, answer, status, reactions:{NEW_IDEA…: 수(4종 모두)}, createdAt}]}` |
+| PUT·DELETE | `/internal/community/posts/{postId}/reactions/{reaction}?studentId` | core | 구현(#386): `STUDENT`, scope = 반응한 학생(`studentId`와 같아야 함). 반응 생성·취소(멱등), PUT `200 {postId, reaction, reactionId, created}`·DELETE `200 {postId, reaction, reactionId, deleted}`. `reactionId`는 학생·공유물·반응으로 정해 취소 뒤 다시 남겨도 같음(포인트 사건 키, #389). PUT은 `VISIBLE` 공유물만, 취소는 숨긴 공유물에서도 가능. 오류 `403 COMMUNITY_LOCKED`·`404 COMMUNITY_POST_NOT_FOUND`·`409 COMMUNITY_OWN_POST`는 core가 그대로 전달, 4종 밖 `400` |
+| PUT | `/internal/students/{studentId}/community-visibility` | core | 구현(#386): `SYSTEM`, scope = 그 학생. `{visible, reason}`(`SETTING`·`CONSENT`·`TRANSFER`) → 공유물 `VISIBLE`↔`HIDDEN_SETTING`(`HIDDEN_REPORT`·`REMOVED`는 그대로), 같은 값 반복 멱등, `200 {studentId, visible, changed(바꾼 수)}`. learning은 마지막 값을 `community_visibility`에 두고 신고 숨김을 풀 때·새 공유 때 설정 비공개를 지킨다. core는 커밋 뒤 호출하고 실패는 기록 후 다음 설정 저장 때 다시 보낸다 |
+| PUT | `/internal/community/posts/{postId}/moderation` | core | 구현(#386): `SYSTEM`, scope 없음. `{status, errorReportId}`(`HIDDEN_REPORT`·`VISIBLE`·`REMOVED`) 멱등 → `200 {postId, status(반영 뒤)}`. `VISIBLE`은 `HIDDEN_REPORT`에서만 되돌리고 작성자 공개가 끔이면 `HIDDEN_SETTING`으로, `REMOVED`는 끝 상태. 없는 공유물 `404 COMMUNITY_POST_NOT_FOUND` |
+| GET | `/internal/community/posts/{postId}` | core | 구현(#386, #388 요청): `SYSTEM`, scope 없음. 신고 대상 확인·관리자 원문 열람 `{postId, studentId, missionId, status, answer, createdAt}`(상태 무관), 파기·없음 `404 COMMUNITY_POST_NOT_FOUND` |
 | GET·POST·PUT | `/internal/admin/weekly-themes…` | core | #385(core #387 프록시): `ADMIN` + `X-User-Id`. 목록 `GET ?gradeBand&weekStart&status&page&size` → `{items, page, size, totalElements}`, 작성 `POST`(201)·수정 `PUT /{id}`(새 버전) 본문 `{gradeBand, weekStart, title, intro, days:[{day, missionId}]}`, 검토 요청·게시·중단 `POST /{id}/review-request`·`/publish`·`/unpublish` `{}` → 모두 `AdminWeeklyTheme` = `{themeId, gradeBand, weekStart, status, version, publishedVersion, reviewRequested, title, intro, days, publishedAt, createdAt, updatedAt}`. 오류: 형식·월요일 아닌 주·없는 미션 `400`, 상태상 불가 전이·게시 중 학년군·주 변경 `409 CONFLICT`, 게시 검사 `422 WEEKLY_THEME_PUBLISH_INCOMPLETE` + `errors:[{code, message}]` |
 
 - 기록 조회 공통 (#27): 학생 경로는 역할 `PARENT`·`STUDENT`·`SYSTEM`(`home`은 학생 본인 `STUDENT`만)이고 `X-Student-Scope`에 대상 학생이 없으면 `403`. `from`·`to`는 KST 날짜(양 끝 포함), 둘 다 주거나 둘 다 생략(생략하면 오늘 포함 최근 7일, P06), 한쪽만 주거나 `from > to`면 `400`. 응답 `period`는 실제 조회 기간. 집계 대상은 P08(기간 안에 답변 제출이 있는 시도, 미완료 포함·판정 상태 무관. 조회 종료일까지의 답변이 모두 처리 실패인 시도와 삭제 기록은 제외). 시도별 사실(완료·되묻기 받음·보완 답변·최근 답변)은 조회 종료일까지 일어난 것만. `state`는 집계 대상(비율은 분모) 0건 `NO_RECORD`, 1~4건 `INSUFFICIENT_SAMPLE`(비율 `value: null`), 5건 이상 `OK`. 메모·초안은 반환하지 않음(P05). 최상위 학생 식별자는 호출 역할과 무관하게 `studentId`(학부모 공개 응답의 `childId`는 core가 바꿈, core #40·report #51과 합의). 조회 장애는 `state`가 아니라 HTTP 오류(Problem Details)로 반환. 까닭을 잇는 말은 `왜냐하면`·`때문`·`그래서`·`따라서`(report와 확정)
@@ -985,15 +988,15 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 | Method | Path | 설명 |
 |---|---|---|
-| GET | `/internal/reports?studentId&status&periodType` | 리포트 목록. core는 `periodType` 필터를 그대로 전달하고 항목의 `periodType`(생략 = `WEEKLY`)이 필터와 다르면 502로 거부한다(#390). report 필터 구현은 #391 |
+| GET | `/internal/reports?studentId&status&periodType` | 리포트 목록. periodType 생략은 두 종류, DAILY/WEEKLY 필터 지원 (#391). core는 필터를 전달하고 응답 종류가 다르면 502로 거부한다(#390) |
 | GET | `/internal/reports/{reportId}?revision` | 상세 (3.4 스키마), 기본 최신판·양의 revision으로 이전판 조회 |
 | GET | `/internal/reports/{reportId}/evidence/{itemId}` | 항목 근거 |
 | GET | `/internal/reports/{reportId}/files/{format}` | 단기 presigned URL 발급 → `{url, expiresAt}` |
-| POST | `/internal/report-jobs/{jobId}/reconcile` | core 작업 복구: `{studentId, periodFrom, periodTo}` 대조 후 현재 상태 반환, 불일치 409 `REPORT_JOB_IDENTITY_MISMATCH` (5.9) |
+| POST | `/internal/report-jobs/{jobId}/reconcile` | core 작업 복구: `{studentId, periodFrom, periodTo, periodType?}` 대조 후 현재 상태 반환, 불일치 409 `REPORT_JOB_IDENTITY_MISMATCH` (5.9) |
 
 - core는 현재 이용 권한으로 `X-Report-Narrative-Enabled:true|false`를 설정해야 함(공개 요청의 같은 헤더는 전달하지 않음). report는 누락 시 false로 처리해 응답·다운로드에서 AI 서술·생각 유형 summary·저녁 질문을 가림
-- P24: 일일 리포트는 같은 경로를 쓰고 최신 판 선택·재생성 판 단위가 학생·`periodType`·대상 기간이 된다(report 몫은 #391). `report.generate` 페이로드에 `periodType`(`DAILY`·`WEEKLY`, 생략 시 `WEEKLY`)을 추가했고 core는 일일에만 넣는다. 새 메시지 없음([이벤트 계약](../../contracts/events/report-messages.md), #390). 일일 상세·다운로드는 `X-Report-Narrative-Enabled: false`로 요청하며 상품 권한을 조회하지 않는다
-- 목록은 학생/대상 주별 최신 revision을 고른 뒤 status를 적용하며 1.1 페이지 봉투를 사용한다. 상세의 기본값은 같은 학생·대상 주 최신판, `revision` 지정 시 해당 판이다. evidence/files 경로는 전달한 실제 reportId 판에 속한 항목·파일을 조회한다.
+- P24: 일일 리포트는 같은 경로를 쓰고 최신 판 선택·재생성 판 단위가 학생·`periodType`·대상 기간이 된다(#391 구현). `report.generate` 페이로드에 `periodType`(`DAILY`·`WEEKLY`, 생략 시 `WEEKLY`)을 추가했고 core는 일일에만 넣는다. 새 메시지 없음([이벤트 계약](../../contracts/events/report-messages.md), #390). 일일 상세·다운로드는 `X-Report-Narrative-Enabled: false`로 요청하며 상품 권한을 조회하지 않는다
+- 목록은 학생/기간 종류/시작일별 최신 revision을 고른 뒤 status를 적용하며 1.1 페이지 봉투를 사용한다. 상세의 기본값은 같은 학생·기간 종류·시작일 최신판, `revision` 지정 시 해당 판이다. evidence/files 경로는 전달한 실제 reportId 판에 속한 항목·파일을 조회한다.
 - 파일 키는 `reports/{studentId}/{reportId}/r{revision}/{full|free}/{pdf|md|html}`다. DB `report_file`에는 full 키 3개를 저장하며 무료용 파생 파일도 생성한다. 다운로드 수명은 설정값이며 운영 기본안은 300초다. 버전·형식·학생이 맞지 않는 키를 서명하지 않는다.
 
 ### 4.5 core-service (호출: ai, scoring, learning, report)
@@ -1026,6 +1029,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 기기 진입 3개 경로(`POST /auth/student/devices`, `GET /auth/student/profiles`, `POST /auth/student/login`)만 Bearer 검사에서 제외. POST는 다른 쿠키 API와 같이 정확한 web Origin·`X-Requested-With` 검사 유지. 다른 메서드·유사 경로와 `/auth/student-sessions`는 제외하지 않음
 
 - 학부모·관리자: Google core 콜백 → refresh 쿠키 → web `/oauth/complete` → refresh → `/me`. access는 HS256, 기본 15분·메모리 보관. refresh는 256비트 난수·SHA-256 해시 저장, 최초 로그인부터 최대 7일이며 회전으로 연장하지 않는다. 재사용 시 해당 세션 폐기.
+- 관리자 ID·비밀번호(#369, 2026-11-09): `POST /auth/admin/login {loginId,password}`는 `user_account.login_id`가 같고 `role=ADMIN`·`status=ACTIVE`이며 `admin_credential` 행이 있는 계정만 받는다. 가입 API는 없고 운영자가 `scripts/admin_account_sql.py`로 행을 만들거나 비밀번호 재설정·비활성화한다. 비밀번호는 PBKDF2-SHA256(60만 회, 보호자 비밀번호와 같은 해시)으로만 저장한다. 없는 ID·틀린 비밀번호·비관리자·비활성 계정은 같은 401 `INVALID_CREDENTIALS`(없는 ID도 해시 검사를 한 번 해 응답 시간 차이를 줄임), 연속 5회째 실패부터 15분간 423 `ADMIN_LOGIN_LOCKED`이며 실패 횟수는 오류 응답 전에 커밋한다. 성공하면 실패 횟수를 지우고 `audit_log`에 `ADMIN_PASSWORD_LOGIN`을 남긴 뒤 Google 로그인과 같은 ADMIN 세션·refresh 쿠키를 발급한다(이전 refresh 쿠키의 세션은 폐기). 정확한 web Origin·`X-Requested-With` 검사를 받는다. web은 `/admin/login`에서만 이 폼을 보여 주고 사용자 화면에는 관리자 로그인 링크·문구를 두지 않는다. 기존 Google 관리자 로그인은 유지한다.
 - 학생(동석·단독 공통): access 전용, refresh 미발급. 동석 `/auth/student-sessions`는 별도 학생 auth_session(`parent_session_id` = 학부모 세션)을 만들고, 학부모 세션은 `locked_at`을 기록하고 version을 올려 잠근다. 학부모 refresh 쿠키는 지우지 않는다. 잠긴 세션의 `/auth/refresh`는 refresh 토큰을 소비하지 않고 401 `PARENT_SESSION_LOCKED`이며 기존 부모 access는 `SESSION_CHANGED`로 거부한다. 단독 PIN 로그인은 별도 학생 auth_session을 생성하며 기존 부모 세션을 변경하지 않는다.
 - 학부모 복귀(보호자 비밀번호, 2026-11-03): `POST /auth/parent-unlock {password}`는 refresh 쿠키의 잠긴 학부모 세션과 계정의 보호자 비밀번호를 확인한다. 성공하면 잠금을 풀고 version을 올리며, 그 세션에서 들어간 학생 세션을 폐기하고, refresh를 회전해 refresh 응답과 같은 본문·쿠키를 준다. 실패는 비밀번호 실패 횟수를 커밋한 뒤 401 `GUARDIAN_PASSWORD_INVALID`(`remainingAttempts`), 5회째와 이후는 423 `GUARDIAN_PASSWORD_LOCKED`, 미설정은 409 `GUARDIAN_PASSWORD_NOT_SET`이다. 이때는 Google 로그인으로 돌아오며, 새 로그인은 이전(잠긴) 세션과 그 학생 세션을 폐기한다. 잠기지 않은 세션은 refresh와 같이 처리한다.
 - 보호자 비밀번호는 `guardian_password`(계정당 1행)에 PBKDF2 해시·실패 횟수·잠금 시각만 저장한다. 설정·변경은 `PUT /me/guardian-password`에서 `GUARDIAN_PASSWORD` 재인증 grant(5.6)를 같은 트랜잭션에서 1회 소비하며, 성공 시 실패 횟수·잠금을 초기화한다. 탈퇴 요청 시 삭제한다.
@@ -1039,7 +1043,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 부모/관리자 refresh는 Web Locks로 탭 간 직렬화한다. 학생 전환·로그아웃 알림을 받은 다른 탭은 토큰·캐시를 지우며 학생 refresh로 다시 로그인하지 않는다. 학생→부모 복귀는 Google 로그인부터 시작한다.
 - PIN/동석 학생의 종료는 `POST /auth/student/logout`을 사용한다. `Origin`·`X-Requested-With`와 유효한 학생 Bearer를 검증하고 그 세션만 폐기한다(204, Cache-Control: no-store, Set-Cookie 없음). 누락·만료·위조 Bearer는 401, 다른 역할·출처는 403이며 동반된 보호자 refresh로 대체 인증하거나 보호자 세션을 폐기하지 않는다. 기존 `/auth/logout`의 보호자·관리자 로그아웃 계약은 유지한다.
 - 학생에서 보호자 로그인 화면으로 전환할 때는 해당 탭의 access·화면 캐시만 정리하며 전역 LOGOUT을 방송하지 않는다. 탭별 비밀정보 없는 `sessionStorage` 전환 표식으로 새로고침 후에도 보호자 쿠키 자동 복원을 차단하고, Google OAuth 완료 후에만 보호자 역할을 복원한다. PIN 진입 및 학생 만료 경로는 유지한다.
-- 계정 복구·비밀번호 변경 API는 Google 단일 로그인 범위에서 제외(기기·PIN 저장은 core V13, Google 재인증은 5.6).
+- 계정 복구·비밀번호 변경 API는 Google 단일 로그인 범위에서 제외(기기·PIN 저장은 core V13, Google 재인증은 5.6). 관리자 비밀번호 재설정도 API 없이 `scripts/admin_account_sql.py`로만 한다(#369).
 
 ### 5.2 #43 모델 레지스트리 확정 계약
 
@@ -1073,6 +1077,16 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 브라우저가 기존 registration 파일의 requests[]를 파싱해 개별 POST한다. manifest는 선택이며 원래 두 파일 형식은 유지한다. 파일 업로드·일괄 등록 API는 없다. 주의사항 우선순위는 명시된 evaluation.limitations → 최상위 주의와 해당 모델 manifest 주의 후보이며 운영자가 확인한다.
 - 등록 요청의 승인 여부·활성화 범위·사유·재분석 계획·승인자 및 알 수 없는 필드는 400 VALIDATION_FAILED. 유효한 타입의 업무 검증 실패는 기존 422 MODEL_APPROVAL_REJECTED, 중복은 409 MODEL_VERSION_CONFLICT. 공통 Problem Details 형식은 유지한다.
 - 프론트 전달용 예시와 역할 분담: [#367 API 전달 문서](../report/issue-367-registration-api.md). 화면·웹 타입은 프론트 담당 범위다.
+
+#### 5.2.1 모델 파일 사전 검사 (#368)
+
+- 관리자 `POST /api/v1/admin/models/preflight`: SERVICE_OPS 권한. core가 내부 토큰을 붙여 scoring `POST /internal/models/preflight`로 동기 중계한다. core HTTP 제한 20초, 자동 재시도 없음.
+- 요청: `name`, `version`, `artifactUri`, manifest의 `files[{file,bytes,sha256}]`. config.json·tokenizer.json·tokenizer_config.json·train_info.json·score_cuts.json·model.safetensors를 각각 한 번씩 받는다. 승인 관련 필드·알 수 없는 필드는 거부한다.
+- 응답: `{status: PASS|FAIL, code, files:[{file,status,code}]}`. 검사 대상 파일이 없거나 불일치해도 검사 결과는 HTTP 200/FAIL이다. 잘못된 요청 400, 권한 401/403, scoring 응답 오류 502, 연결/시간 제한 503은 기존 RFC 9457 형식이다.
+- scoring은 설정된 S3 버킷의 models/ 경로만 검사한다. 각 파일 HEAD로 존재·크기를 확인한다. 세 메타데이터 JSON만 ETag 조건(If-Match)으로 고정하여 최대 1MiB 본문을 읽고 SHA-256을 직접 대조한다. 나머지 파일은 S3가 제공하는 전체 SHA-256을 비교하며 ETag·사용자 메타데이터·COMPOSITE 체크섬을 파일 해시로 사용하지 않는다. 없는 체크섬은 CHECKSUM_UNAVAILABLE이다.
+- `validate_metadata`를 재사용해 학습 입력·점수 경계와 config의 회귀 출력 수를 확인한다. 모델·토크나이저 로딩, 점수 추론, 파일 쓰기는 하지 않는다. scoring은 15초 작업 예산과 개별 S3 연결/읽기 1초·재시도 없음으로 제한한다.
+- 결과는 `MODEL_PREFLIGHT` 감사 action의 SUCCESS/FAILURE에 남긴다. 등록 전 검사여서 target_id는 null이며 이름·버전·경로·manifest 파일·결과를 detail에 저장한다. evaluation/evidence와 기존 모델 레코드는 변경하지 않는다.
+- 화면 결과는 해당 입력 스냅샷에만 유효하다. 입력 변경 시 재검사를 안내한다. 검사 통과는 파일·형식 확인일 뿐 품질 승인·활성화·추론 성공이 아니며 자동 등록/활성화하지 않는다.
 
 ### 5.3 #37 동의·자녀 구현 계약
 
@@ -1323,6 +1337,16 @@ report-worker는 생성 시작 시 한 번 조회하여 command에 고정한다.
 - 조회·수신자 거절·발신자 단건/일괄 취소는 동의 회복 경로다(#307). 활성 학부모 계정·유효 세션·요청 소유권은 계속 검사한다. 플래그 off여도 PENDING 삭제/탈퇴 차단은 유지하며, 명시적 취소/거절로 대기를 해소한 후 기존 재인증·최종 확인을 거쳐 삭제/탈퇴한다. 자동 취소·자동 탈퇴·대기 검사 우회는 하지 않는다.
 - 같은 대상·수신자·대화 선택의 대기 요청 재전송과 같은 종료 상태 재전송은 멱등 처리한다. 다른 종료 상태로 바꾸면 `409 TRANSFER_ALREADY_RESOLVED`다.
 
+
+#### #391 report 일일 생성·주간 테마 소비 계약
+
+- report 내부 목록 `GET /internal/reports`는 선택 `periodType=DAILY|WEEKLY`를 받는다. 미지정은 두 종류 모두이며 `(studentId,periodType,periodFrom)`별 최신 판이다. 상세·목록에 periodType을 반환하고 상세 problems는 일일, themeSummary는 주간에 사용한다. 구체적인 중첩 필드는 report OpenAPI를 따른다. core 공개 프록시는 #390에서 연결한다.
+- 일일 항목은 PROBLEM으로 저장한다. `mission.id`, `feedback.followup.question`, 판정·요소와 제출 답변을 기존 learning 응답에서 읽는다. `context`는 #385 적용 전 null이며 임의로 추정하지 않는다. 원문 비공개면 finalAnswer=null, followups/quotes=[], reflection.text=null, evidence 없음. 일일은 비율·서술·저녁 질문을 생성하지 않는다.
+- learning `GET /internal/records/students/{studentId}/daily-attempts?from&to&page&size`는 같은 KST 날짜의 **완료 시각**으로 조회한다. 기존 P08의 제출일 조회와 분리하며 응답은 RecordPage와 같다. 전날 제출·오늘 완료도 포함한다. 학생 scope·삭제 검사와 페이지 제한은 기존 기록 조회와 같다.
+- learning 주간 테마 summary API 구현은 #385에 남아 있다. report 소비 계약은 `{studentId,weekStart,state,themeId,title,days:[{day(MON~FRI),missionId,title?,completed}],completed,reviewRetries:[{missionId,title?,comparison?{state,elements:[{label,previousSatisfied,currentSatisfied}]}}]}`이다. 날짜·학생 범위를 검증하며 NO_RECORD는 themeId/title=null, 배열=[], completed=false다. HTTP 오류·형식 오류를 NO_RECORD로 숨기지 않는다. 실제 producer와의 연동 확인은 #385 완료 후 수행한다.
+- 복구 요청 `POST /internal/report-jobs/{jobId}/reconcile`도 periodType을 받는다. 미지정 WEEKLY, DAILY는 하루만 허용한다. 응답은 기존 7개 필드를 유지하며 periodType을 추가하지 않는다.
+
+- #391 learning 기록 목록·상세·일일 완료 목록은 `context: THEME_DAY|THEME_REVIEW|EXTRA`를 실제 시도에서 반환한다. 주간 요약은 기존 #207 비교 규칙의 상태·요소만 포함하며 답변 원문·인용은 반환하지 않는다.
 
 ### scoring Pod별 모델 로딩 확인 (#370)
 

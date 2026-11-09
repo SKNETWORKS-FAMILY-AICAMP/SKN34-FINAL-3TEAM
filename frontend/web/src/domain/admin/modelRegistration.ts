@@ -139,3 +139,18 @@ export function actionBlockers(v: ModelVersion, action: 'activate' | 'rollback',
   if (action === 'activate' && !approved) result.push('평가 근거와 선택 범위를 확인한 사람의 승인 체크가 필요합니다.')
   return result
 }
+
+export interface PreflightRequest { name: string; version: string; artifactUri: string; files: ManifestModel['files'] }
+export interface PreflightResult { status: 'PASS' | 'FAIL'; code: string; files: { file: string; status: 'PASS' | 'FAIL'; code: string }[] }
+export const preflightMessage = (code: string) => ({
+  FILES_AND_METADATA_VERIFIED: '파일·형식 확인 완료', FILE_CHECK_FAILED: '파일 검사 실패',
+  INVALID_ARTIFACT_URI: '허용된 모델 버킷·경로가 아닙니다', UNSUPPORTED_MODEL: '사전 검사를 지원하지 않는 모델입니다',
+  PREFLIGHT_TIMEOUT: '검사 시간이 초과되었습니다', OUTPUT_MISMATCH: '모델 출력 수·회귀 설정 불일치',
+  INVALID_METADATA: '학습 설정·점수 경계 형식 불일치', OK: '확인', SIZE_MISMATCH: '파일 크기 불일치',
+  HASH_MISMATCH: 'SHA-256 불일치', CHECKSUM_UNAVAILABLE: '전체 파일 SHA-256을 조회할 수 없음',
+  JSON_TOO_LARGE: '메타데이터 JSON 크기 초과', FILE_MISSING: '파일 없음', ACCESS_DENIED: '읽기 권한 없음',
+  OBJECT_CHANGED: '검사 중 파일이 변경됨', STORAGE_UNAVAILABLE: '저장소 응답 확인 불가',
+}[code] ?? '검사 결과를 확인해 주세요')
+
+export const PREFLIGHT_FILES = ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'train_info.json', 'score_cuts.json', 'model.safetensors']
+export const supportsPreflight = (files: ManifestModel['files']) => files.length === 6 && new Set(files.map(f => f.file)).size === 6 && files.every(f => PREFLIGHT_FILES.includes(f.file))

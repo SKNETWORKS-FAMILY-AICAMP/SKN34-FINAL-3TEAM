@@ -62,10 +62,16 @@ try {
   assert.equal(await a.getByLabel('비밀번호', { exact: true }).count(), 0)
   assert.equal(await b.getByLabel('가입 비밀번호').count(), 0)
   assert.equal(await a.getByRole('link', { name: 'Google 계정으로 계속하기' }).getAttribute('href'), '/api/v1/auth/google/authorize')
+  // #369: 사용자 로그인 화면은 관리자 주소를 링크하지 않는다.
+  assert.equal(await a.locator('a[href="/admin/login"]').count(), 0)
+  assert.equal(await a.getByText('관리자').count(), 0)
   await b.goto(origin + '/admin/login')
   await b.getByRole('heading', { name: '관리자 로그인', exact: true }).waitFor()
   assert.equal(await b.getByRole('link', { name: 'Google 계정으로 계속하기' }).getAttribute('href'), '/api/v1/auth/google/authorize')
-  assert.equal(await b.getByLabel('비밀번호', { exact: true }).count(), 0)
+  // 등록된 관리자 ID·비밀번호 폼은 실제 모드에서도 보이고, 시연 계정 안내는 없다.
+  assert.equal(await b.getByLabel('로그인 ID', { exact: true }).count(), 1)
+  assert.equal(await b.getByLabel('비밀번호', { exact: true }).count(), 1)
+  assert.equal(await b.getByText('demo-only').count(), 0)
   loggedIn = true
   await Promise.all([a.goto(origin + '/oauth/complete'), b.goto(origin + '/oauth/complete')])
   await Promise.all([a.waitForURL('**/parent/onboarding'), b.waitForURL('**/parent/onboarding')])

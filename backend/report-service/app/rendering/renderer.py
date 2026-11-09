@@ -43,7 +43,9 @@ class ReportRenderer:
     def render(self, report: dict, display_name: str) -> dict[str, bytes]:
         if not display_name.strip():
             raise ValueError("A trusted display name is required for report files")
-        html = self._templates.get_template("weekly.html").render(report=report, name=display_name)
+        html = self._templates.get_template(
+            "daily.html" if report.get("periodType") == "DAILY" else "weekly.html"
+        ).render(report=report, name=display_name)
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(args=["--disable-dev-shm-usage"])
             try:
@@ -77,6 +79,49 @@ class ReportRenderer:
                 value = value.replace(char, "\\" + char)
             return value
 
+        if report.get("periodType") == "DAILY":
+            lines = [
+                f"# {safe(display_name)}의 일일 리포트",
+                report["period"]["from"],
+                f"{report['revision']}판 · {STATE_LABELS[report['state']]}",
+                "",
+            ]
+            for metric in report["metrics"]:
+                lines.append(f"{safe(metric['label'])}: {metric['count']}건")
+            for problem in report.get("problems", []):
+                lines.extend(
+                    [
+                        "",
+                        "## " + safe(problem["title"]),
+                        "판정: " + safe(problem["judgment"] or "판정 대기"),
+                    ]
+                )
+                for followup in problem["followups"]:
+                    lines.extend(
+                        [safe(followup["question"]), safe(followup["answer"] or "보완 답변 없음")]
+                    )
+                lines.extend(
+                    [
+                        "### 마지막 답변",
+                        safe(problem["finalAnswer"] or "원문 비공개 또는 답변 없음"),
+                    ]
+                )
+                for element in problem["elements"]:
+                    lines.append(
+                        safe(element["label"]) + (": 확인" if element["satisfied"] else ": 미확인")
+                    )
+                reflection = problem["reflection"]
+                lines.extend(
+                    [
+                        "### 돌아보기",
+                        safe(reflection["difficulty"] or "미작성"),
+                        safe(reflection["text"] or ""),
+                    ]
+                )
+                for quote in problem["quotes"]:
+                    if quote["verified"]:
+                        lines.append(safe(quote["text"]))
+            return "\n".join(lines) + "\n"
         lines = [
             f"# {safe(display_name)}의 주간 리포트",
             "",
@@ -176,4 +221,32 @@ class ReportRenderer:
         ordered = prefix + [
             line for key in settings.section_order for line in sections.get("## " + labels[key], [])
         ]
+        theme = report.get("themeSummary")
+        if theme:
+            ordered.extend(["", "## 이번 주 테마", safe(theme["title"] or "참여 기록 없음")])
+            if theme["state"] != "NO_RECORD":
+                ordered.append("완주: " + ("완료" if theme["completed"] else "미완료"))
+                ordered.extend(
+                    safe(day["day"]) + ": " + ("완료" if day["completed"] else "미완료")
+                    for day in theme["days"]
+                )
+                ordered.extend(
+                    "다시 풀기: " + safe(retry.get("title") or retry["missionId"])
+                    for retry in theme["reviewRetries"]
+                )
+            for retry in theme["reviewRetries"]:
+                comparison = retry.get("comparison")
+                if not comparison:
+                    continue
+                if comparison["state"] == "COMPARABLE":
+                    for element in comparison["elements"]:
+                        before = "확인" if element["previousSatisfied"] else "미확인"
+                        after = "확인" if element["currentSatisfied"] else "미확인"
+                        ordered.append(safe(element["label"]) + f": {before} → {after}")
+                else:
+                    ordered.append(
+                        "기준이 달라 비교하지 않음"
+                        if comparison["state"] == "CRITERIA_CHANGED"
+                        else "이전 기록 없음"
+                    )
         return "\n".join(ordered) + "\n"

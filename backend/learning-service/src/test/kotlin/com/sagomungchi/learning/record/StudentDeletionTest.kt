@@ -15,6 +15,9 @@ import com.sagomungchi.learning.answer.domain.AnswerContent
 import com.sagomungchi.learning.answer.service.AnswerService
 import com.sagomungchi.learning.answer.service.SubmitCommand
 import com.sagomungchi.learning.attempt.service.AttemptService
+import com.sagomungchi.learning.community.domain.CommunityReaction
+import com.sagomungchi.learning.community.domain.VisibilityReason
+import com.sagomungchi.learning.community.service.CommunityService
 import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.record.domain.DeletionScope
 import com.sagomungchi.learning.record.service.StudentDeletionService
@@ -46,6 +49,7 @@ class StudentDeletionTest {
     @Autowired lateinit var service: StudentDeletionService
     @Autowired lateinit var attemptService: AttemptService
     @Autowired lateinit var answerService: AnswerService
+    @Autowired lateinit var communityService: CommunityService
     @Autowired lateinit var jdbc: JdbcTemplate
 
     @BeforeEach
@@ -132,7 +136,7 @@ class StudentDeletionTest {
 
     /**
      * 표마다 행이 있는 학생: 시도·초안·생각 열기·답변 2개(보완 답변이 되묻기를 가리켜 답변 → 되묻기 → 판정 → 답변 고리)·
-     * 판정·판정 요소·되묻기·정정·돌아보기·자기 평가
+     * 판정·판정 요소·되묻기·정정·돌아보기·자기 평가, 커뮤니티 공유물·주고받은 반응·공개 여부
      */
     private fun recorded(): UUID {
         val student = UUID.randomUUID()
@@ -153,12 +157,27 @@ class StudentDeletionTest {
         jdbc.update("INSERT INTO hint_usage (id, attempt_id, hint_question_id, opened_at) VALUES (?, ?, ?, now())", UUID.randomUUID(), attemptId, mission.hintIds.first())
         jdbc.update("INSERT INTO reflection (id, attempt_id, difficulty, changed_text, created_at) VALUES (?, ?, 'EASY', '돌아보기', now())", UUID.randomUUID(), attemptId)
         jdbc.update("INSERT INTO self_assessment (id, attempt_id, rubric_element_id, checked, created_at) VALUES (?, ?, ?, true, now())", UUID.randomUUID(), attemptId, element)
+        // 커뮤니티(#386): 학습 완료 뒤 공유, 같은 미션을 마친 친구와 서로 반응, 공개 여부 기록
+        complete(attemptId)
+        val post = asSystem(student) { communityService.share(student, attemptId) }.postId
+        val friend = UUID.randomUUID()
+        val friendAttempt = asStudent(friend) { attemptService.start(friend, mission.id, 3, demo = false).attempt.id }
+        asStudent(friend) { answerService.submit(friendAttempt, UUID.randomUUID(), narrative("친구 답")) }
+        complete(friendAttempt)
+        val friendPost = asSystem(friend) { communityService.share(friend, friendAttempt) }.postId
+        communityService.react(friendPost, student, CommunityReaction.NEW_IDEA)
+        communityService.react(post, friend, CommunityReaction.WANT_MORE)
+        communityService.setVisibility(student, true, VisibilityReason.SETTING)
         // 커밋되는 DB라 학년군·주당 게시 1개(부분 UK)와 겹치지 않게 호출마다 다른 주
         val week = java.time.LocalDate.of(2026, 11, 9).plusWeeks(weeks.incrementAndGet().toLong())
         val theme = rows.publishedTheme(listOf(mission.id), week)
         jdbc.update("INSERT INTO theme_review_view (student_id, week_start, theme_id, viewed_at) VALUES (?, ?, ?, now())", student, week, theme)
         assertEquals(TABLES, counts(student).filterValues { it > 0 }.keys.toList(), "모든 표에 행이 있어야 삭제를 확인할 수 있음")
         return student
+    }
+
+    private fun complete(attemptId: UUID) {
+        jdbc.update("UPDATE attempt SET status = 'COMPLETED', finished_at = now(), completed_at = now() WHERE id = ?", attemptId)
     }
 
     /** 학생의 새 시도 하나(다른 미션). 처리한 이벤트를 다시 받아도 남아야 하는 기록 */
@@ -205,6 +224,10 @@ class StudentDeletionTest {
             "judgment_correction" to "x.judgment_id IN ($JUDGMENTS)",
             "reflection" to "x.attempt_id IN ($ATTEMPTS)",
             "self_assessment" to "x.attempt_id IN ($ATTEMPTS)",
+            "community_post" to "x.student_id = ?",
+            // 그 학생이 남긴 반응과 그 학생 공유물에 달린 반응
+            "community_reaction" to "?::uuid IN (x.student_id, (SELECT p.student_id FROM community_post p WHERE p.id = x.post_id))",
+            "community_visibility" to "x.student_id = ?",
             // 되돌아보기 열람 기록 (#385, ERD 4.4)
             "theme_review_view" to "x.student_id = ?",
         )

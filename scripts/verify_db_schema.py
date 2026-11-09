@@ -532,13 +532,48 @@ $$, '23503');
 UPDATE attempt SET context = 'THEME_DAY', theme_id = '00000000-0000-4000-8000-000000000120',
                    theme_week_start = '2026-11-09'
 WHERE id = '00000000-0000-4000-8000-000000000107';
+-- #386 community: one post per student and mission, fixed status and reaction sets, reactions need a post.
+INSERT INTO community_post
+    (id, student_id, mission_id, attempt_id, answer_id, status, created_at, status_changed_at)
+VALUES ('00000000-0000-4000-8000-000003860001', '00000000-0000-4000-8000-000000000002',
+        '00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000105',
+        '00000000-0000-4000-8000-000000000108', 'VISIBLE', now(), now());
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE community_post SET status = 'HIDDEN'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO community_post
+        (id, student_id, mission_id, attempt_id, answer_id, status, created_at, status_changed_at)
+    SELECT '00000000-0000-4000-8000-000003860002', student_id, mission_id,
+           '00000000-0000-4000-8000-000000000107', answer_id, status, created_at, status_changed_at
+    FROM community_post
+$$, '23505');
+INSERT INTO community_reaction (id, post_id, student_id, reaction, created_at)
+VALUES ('00000000-0000-4000-8000-000003860003', '00000000-0000-4000-8000-000003860001',
+        '00000000-0000-4000-8000-000000000003', 'NEW_IDEA', now());
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE community_reaction SET reaction = 'LIKE'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO community_reaction (id, post_id, student_id, reaction, created_at)
+    SELECT '00000000-0000-4000-8000-000003860004', post_id, student_id, reaction, created_at
+    FROM community_reaction
+$$, '23505');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE community_reaction SET post_id = '00000000-0000-4000-8000-999999999999'
+$$, '23503');
+INSERT INTO community_visibility (student_id, visible, reason, updated_at)
+VALUES ('00000000-0000-4000-8000-000000000002', false, 'CONSENT', now());
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE community_visibility SET reason = 'OTHER'
+$$, '23514');
 """
 
 REPORT_CASES = """
 INSERT INTO weekly_report
-    (id, job_id, student_id, period_from, period_to, revision, status, created_at)
+    (id, job_id, student_id, period_from, period_to, revision, status, created_at, period_type)
 VALUES ('00000000-0000-4000-8000-000000000201', '00000000-0000-4000-8000-000000000202',
-        '00000000-0000-4000-8000-000000000002', '2026-01-01', '2026-01-07', 1, 'RUNNING', now());
+        '00000000-0000-4000-8000-000000000002', '2026-01-01', '2026-01-07', 1, 'RUNNING', now(), 'WEEKLY');
 SELECT pg_temp.expect_sqlstate($$
     UPDATE weekly_report SET status = 'INVALID'
     WHERE id = '00000000-0000-4000-8000-000000000201'
@@ -551,16 +586,16 @@ UPDATE weekly_report SET status = 'COMPLETED', state = 'NO_RECORD', generated_at
 WHERE id = '00000000-0000-4000-8000-000000000201';
 SELECT pg_temp.expect_sqlstate($$
     INSERT INTO weekly_report
-        (id, job_id, student_id, period_from, period_to, revision, status, created_at)
+        (id, job_id, student_id, period_from, period_to, revision, status, created_at, period_type)
     SELECT '00000000-0000-4000-8000-000000000203', job_id, student_id, period_from,
-           period_to, 2, 'RUNNING', created_at FROM weekly_report
+           period_to, 2, 'RUNNING', created_at, period_type FROM weekly_report
     WHERE id = '00000000-0000-4000-8000-000000000201'
 $$, '23505');
 SELECT pg_temp.expect_sqlstate($$
     INSERT INTO weekly_report
-        (id, job_id, student_id, period_from, period_to, revision, status, created_at)
+        (id, job_id, student_id, period_from, period_to, revision, status, created_at, period_type)
     SELECT '00000000-0000-4000-8000-000000000204', '00000000-0000-4000-8000-000000000205',
-           student_id, period_from, period_to, revision, 'RUNNING', created_at FROM weekly_report
+           student_id, period_from, period_to, revision, 'RUNNING', created_at, period_type FROM weekly_report
     WHERE id = '00000000-0000-4000-8000-000000000201'
 $$, '23505');
 INSERT INTO report_item (id, report_id, item_type, seq, payload, state, verified)
@@ -573,9 +608,9 @@ $$, '23503');
 INSERT INTO report_item_evidence (id, item_id, attempt_id, answer_id, answer_version)
 VALUES ('00000000-0000-4000-8000-000000000207', '00000000-0000-4000-8000-000000000206',
         '00000000-0000-4000-8000-999999999998', '00000000-0000-4000-8000-999999999997', 1);
-INSERT INTO report_job_guard(job_id,student_id,period_from,period_to,failure_reason,created_at)
+INSERT INTO report_job_guard(job_id,student_id,period_from,period_to,failure_reason,created_at,period_type)
 VALUES ('00000000-0000-4000-8000-000000000099','00000000-0000-4000-8000-000000000002',
-        '2026-10-19','2026-10-25','REPORT_NOT_CREATED',now());
+        '2026-10-19','2026-10-25','REPORT_NOT_CREATED',now(),'WEEKLY');
 SELECT pg_temp.expect_sqlstate($$UPDATE report_job_guard SET period_to=period_from$$, '23514');
 SELECT pg_temp.expect_sqlstate($$UPDATE report_job_guard SET failure_reason='INVALID'$$, '23514');
 SELECT pg_temp.expect_sqlstate($$INSERT INTO report_job_guard SELECT * FROM report_job_guard$$, '23505');

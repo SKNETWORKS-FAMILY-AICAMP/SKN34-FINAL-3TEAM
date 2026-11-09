@@ -7,6 +7,11 @@ from typing import Any
 from uuid import UUID
 
 
+class PeriodType(StrEnum):
+    DAILY = "DAILY"
+    WEEKLY = "WEEKLY"
+
+
 class ReportStatus(StrEnum):
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
@@ -32,8 +37,13 @@ class GenerateReport:
     parent_sharing_enabled: bool = False
 
     template_snapshot: dict[str, Any] | None = None
+    period_type: PeriodType = PeriodType.WEEKLY
 
     def __post_init__(self) -> None:
+        if self.period_type not in PeriodType:
+            raise ValueError("Unknown report period type")
+        if self.period_type == PeriodType.DAILY and self.period_from != self.period_to:
+            raise ValueError("Daily reports cover exactly one date")
         if self.period_from > self.period_to:
             raise ValueError("Report period is reversed")
         if not self.trigger:
@@ -52,6 +62,7 @@ class WeeklyReport:
     revision: int
     status: ReportStatus
     state: ReportState | None
+    period_type: PeriodType = PeriodType.WEEKLY
 
 
 @dataclass(frozen=True)
@@ -65,6 +76,7 @@ class GenerationResult:
     evening_question: str | None = None
     generated_at: datetime | None = None
     files: tuple["ReportFile", ...] = ()
+    theme_summary: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -80,6 +92,7 @@ class ItemType(StrEnum):
     CHANGE = "CHANGE"
     REFLECTION = "REFLECTION"
     QUOTE = "QUOTE"
+    PROBLEM = "PROBLEM"
 
 
 @dataclass(frozen=True)

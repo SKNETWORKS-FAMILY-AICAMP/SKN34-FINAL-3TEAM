@@ -65,6 +65,23 @@ class RecordController(private val service: RecordService) {
         return RecordPageResponse.from(studentId, period, service.attempts(studentId, period, status, page, size))
     }
 
+    /** 일일 리포트용 완료일 조회. 기존 학부모 기록의 제출일 집계는 변경하지 않는다. */
+    @GetMapping("/records/students/{studentId}/daily-attempts")
+    fun dailyAttempts(
+        @PathVariable studentId: UUID,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate,
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "100") size: Int,
+    ): RecordPageResponse {
+        requireStudentRecord(studentId)
+        requirePage(page, size)
+        if (from != to) throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "하루만 조회할 수 있습니다")
+        val period = Period.of(from, to)
+        return RecordPageResponse.from(studentId, period, service.dailyAttempts(studentId, period, page, size))
+            .copy(inclusionRule = "해당 KST 날짜에 완료한 모든 시도. 주말 되돌아보기 재시도·추가 문제 포함.")
+    }
+
     /** 기간은 화면 유지용 정보 (core #40): 검증·기본값 적용 후 그대로 돌려주고, 이력은 자르지 않음 */
     @GetMapping("/records/students/{studentId}/attempts/{attemptId}")
     fun attempt(

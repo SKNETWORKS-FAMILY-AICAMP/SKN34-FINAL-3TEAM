@@ -23,6 +23,7 @@ from app.messaging.publisher import EventPublisher, UsagePublisher
 from app.model_loader import ModelLoader
 from app.model_loading_reporter import ModelLoadingReporter
 from app.model_registry import ModelRegistry
+from app.preflight import router as preflight_router
 from app.security import InternalAuthMiddleware
 from app.versions import router as versions_router
 
@@ -74,6 +75,7 @@ def create_app() -> FastAPI:
     app.add_middleware(InternalAuthMiddleware)
     app.include_router(health_router)
     app.include_router(versions_router)
+    app.include_router(preflight_router)
     app.include_router(m2_router)
     app.include_router(m1_router)
     return app

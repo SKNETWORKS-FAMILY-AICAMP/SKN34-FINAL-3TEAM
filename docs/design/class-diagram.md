@@ -267,6 +267,7 @@ classDiagram
     +startGoogle() StartedGoogleLogin
     +completeGoogle(code, state, error, stateCookie, previousRefresh) IssuedAuth
     +login(profile, previousRefresh) IssuedAuth
+    +adminLogin(loginId, password, previousRefresh) IssuedAuth
     +authenticate(accessToken) AuthenticatedAccount
     +refresh(refreshToken) IssuedAuth
     +enterStudent(refreshToken, studentId, expected) IssuedAuth
@@ -555,7 +556,7 @@ classDiagram
 - 동의는 별도 entity 없이 선택마다 새 `consent` 행(AGREED·WITHDRAWN)을 저장하고 최신 행으로 판정 (상태 다이어그램 2.3, [이슈 #37 보고서](../report/auth-account.md))
 - `StudentAccessService`·`ConsentAccessService`는 인증용 읽기 전용 확인. 쓰기(자녀 등록·동의 저장)는 `GuardianshipService`·`ConsentService`(#37) 소유
 - 공개 API 컨텍스트는 `PublicAuthFilter`가 설정하고 finally에서 해제 (`InternalAuthFilter`와 같은 방식)
-- 이메일·비밀번호 가입·로그인·로그인 수단 변경 없음. Google 계정은 `(oauth_provider, oauth_subject)`로 식별, 최초 콜백에서 `AuthService.login`이 PARENT 계정 생성 (API 명세 5.1)
+- 이메일·비밀번호 가입·로그인·로그인 수단 변경 없음(예외: 가입 없는 관리자 ID·비밀번호 로그인 `AuthService.adminLogin`, `admin_credential`·`PinHasher` 해시·5회 실패 15분 잠금, #369). Google 계정은 `(oauth_provider, oauth_subject)`로 식별, 최초 콜백에서 `AuthService.login`이 PARENT 계정 생성 (API 명세 5.1)
 - 재확인 토큰(`reauthToken`)은 Google 재인증 기반(#45), DB reauth_challenge/reauth_grant 저장
 - `AuthService.enterStudent` (`POST /auth/student-sessions`): 학부모 Bearer 세션 행을 잠그고 연결·활성 자녀·필수·법정대리인 동의 확인 → 학부모 세션 `locked_at`·version 증가, `parent_session_id`를 가진 학생 세션 생성 → `STUDENT` access만 발급, 학부모 refresh 쿠키는 유지(잠김) (P01, 학부모 동석). 학생 계정·시연 링크 없음
 - `AuthService.unlockParent` (`POST /auth/parent-unlock`): 잠긴 학부모 refresh + `GuardianPasswordService.attempt`(PIN과 같은 해시·5회 잠금) → 잠금 해제·학생 세션 폐기·refresh 회전. `GuardianPasswordService.set`은 `GUARDIAN_PASSWORD` 재인증 grant를 1회 소비 (FN-ACC-05, 2026-11-03)
@@ -1746,9 +1747,9 @@ classDiagram
 - `evidence`: `deleted_student`에 있는 학생 근거는 `available: false` (FN-ACC-13)
 - `AttemptService.deleteByStudent`: CASCADE 없이 한 트랜잭션에서 `judgment_correction`·`judgment_element` → `self_assessment`·`reflection`·`hint_usage`·`attempt_draft` → `followup`(`answer.followup_id`는 `SET CONSTRAINTS … DEFERRED`로 커밋 때 검사) → `judgment` → `answer` → `attempt` 순서로 학생의 시도 이하 기록 삭제(#128, ERD 4.3). 호출한 쪽 트랜잭션 안에서 실행
 
-### 4.4 주간 테마·커뮤니티 (theme · community, 구현 예정)
+### 4.4 주간 테마·커뮤니티 (theme 구현 예정 · community #386 구현)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 클래스. 주간 테마(`theme`)는 #385로 구현한 이름·시그니처, 커뮤니티는 구현 예정이라 구현 시 조정할 수 있다. 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임-구현-예정).
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 클래스. 주간 테마(`theme`)는 #385, 커뮤니티(`community`)는 #386으로 구현한 이름·시그니처. 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임-구현-예정).
 
 ```mermaid
 classDiagram
@@ -1800,26 +1801,32 @@ classDiagram
     <<service>>
     +start(studentId, missionId, grade, demo, context) AttemptStart
   }
-  class CommunityInternalController {
+  class CommunityController {
     <<controller>>
-    +create(studentId, attemptId) PostResult
-    +missionPosts(missionId, viewerId, seed, page) Page
-    +react(postId, studentId, reaction) ReactionResult
-    +visibility(studentId, visible, reason)
-    +moderate(postId, status, errorReportId)
+    +share(studentId, attemptId) ShareResponse
+    +post(postId) PostDetailView
+    +missionPosts(missionId, viewerStudentId, seed, page, size) MissionPostPage
+    +studentPosts(studentId) StudentPostList
+    +react(postId, reaction, studentId) ReactionCreated
+    +cancelReaction(postId, reaction, studentId) ReactionDeleted
+    +visibility(studentId, visible, reason) VisibilityResult
+    +moderate(postId, status, errorReportId) ModerationResponse
   }
-  class CommunityPostService {
+  class CommunityService {
     <<service>>
-    +share(studentId, attemptId) CommunityPost
-    +list(missionId, viewerId, seed, page) Page
-    +setVisibility(studentId, visible)
+    +share(studentId, attemptId) SharedPost
+    +missionPosts(missionId, viewer, seed, page, size) List
+    +studentPosts(studentId) List
+    +react(postId, studentId, reaction) ReactionResult
+    +setVisibility(studentId, visible, reason) VisibilityResult
+    +moderate(postId, status, errorReportId) CommunityPostStatus
+    +deleteByStudent(studentId) int
   }
-  class CommunityPost {
-    <<entity>>
-    +hideBySetting()
-    +hideByReport()
-    +restore()
-    +remove()
+  class CommunityRules {
+    <<domain>>
+    +moderate(current, requested, authorVisible) CommunityPostStatus
+    +initialStatus(authorVisible) CommunityPostStatus
+    +reactionId(postId, studentId, reaction) UUID
   }
 
   WeeklyThemeController --> WeeklyThemeService
@@ -1828,14 +1835,14 @@ classDiagram
   WeeklyThemeAdminService ..> ThemePublishCheck
   WeeklyThemeAdminService --> MissionService : 게시본 미션
   AttemptService --> WeeklyThemeService : context 검사
-  CommunityInternalController --> CommunityPostService
-  CommunityPostService ..> CommunityPost
-  CommunityPostService --> AttemptService : 마무리 여부·마지막 답변
+  CommunityController --> CommunityService
+  CommunityService ..> CommunityRules
+  CommunityService --> AttemptService : 학습 완료 여부·첫 완료 시도·마지막 답변
 ```
 
 - 기존 `AttemptService.start`(4.1)에 `context` 인자를 추가하고 `THEME_DAY`·`THEME_REVIEW`는 `WeeklyThemeService.checkStart`로 요일·되돌아보기 검사. 진행 중 시도 반환은 검사하지 않음(자정 후 이어하기)
-- `CommunityPostService.share`는 학생·미션당 1개(UK `(student_id, mission_id)`), 이미 있으면 기존 공유물을 그대로 반환
-- 학생 삭제 소비(4.3 `record`)가 테마 열람 기록 삭제(`WeeklyThemeService.deleteByStudent`, #385 구현)와 `CommunityPostService`(구현 예정)를 함께 호출
+- `CommunityService.share`는 학생·미션당 1개(UK `(student_id, mission_id)`), 이미 있으면 기존 공유물을 그대로 반환. 처음 학습 완료한 시도가 아니면(다시 풀기) 공유하지 않고, 공유 때 `ExpressionPolicy`(#205)를 다시 확인
+- 학생 삭제 소비(4.3 `record`)의 `StudentDeletionService`가 같은 트랜잭션에서 시도 삭제 전에 `CommunityService.deleteByStudent`(#386), 시도 삭제 뒤 테마 열람 기록 삭제(`WeeklyThemeService.deleteByStudent`, #385)를 호출
 - 테마 게시 중 수정은 미션과 같은 버전 방식(`weekly_theme_version`, 현재본·게시본·검토 요청본). 학생 조회·시작 검사는 게시본, 관리자 편집은 현재본
 
 ---
@@ -2341,11 +2348,11 @@ classDiagram
 - `GenerationService.generate`: `job_id`로 기존 행 조회 → 없으면 `RUNNING` 생성, `COMPLETED·FAILED`면 ACK만, `RUNNING`이면 같은 행으로 재실행. 기록 없음·표본 부족은 `COMPLETED + state`, 실패는 `FAILED` (FN-RPT-11)
 - `query_router`·`QueryService`: 모든 조회에서 리포트의 `student_id`가 `X-Student-Scope`에 있는지 검사, 없으면 403 (API 4장)
 - 수치·전후 변화는 `MetricsCalculator`(코드)에서만 계산, ai는 서술·저녁 질문만 (FN-RPT-03, 05)
-- `ReportVerifier`: 서술 속 숫자·인용을 계산 결과·learning 원문과 대조, 실패 시 서술을 템플릿 요약으로 교체(`narrative.source = TEMPLATE`, P16). `NO_RECORD`·무료 플랜(`narrativeEnabled = false`)·구현 예정 일일 리포트(`periodType = DAILY`)는 ai 호출 생략 (P06·P13)
+- `ReportVerifier`: 서술 속 숫자·인용을 계산 결과·learning 원문과 대조, 실패 시 서술을 템플릿 요약으로 교체(`narrative.source = TEMPLATE`, P16). `NO_RECORD`·무료 플랜(`narrativeEnabled = false`)·일일 리포트(`periodType = DAILY`)는 ai 호출 생략 (P06·P13)
 
-### 7.1 리포트 기간 종류 (core report · report-service, 구현 예정)
+### 7.1 리포트 기간 종류 (report #391 구현 · core #390 연동)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 구현 예정 클래스. 이름·시그니처는 구현 시 조정할 수 있고 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임-구현-예정).
+2026-11-06 결정의 report 부분은 #391에서 구현했다. core 스케줄·알림(#390)은 구현했고 대화(#392)도 구현했으며 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임-구현-예정).
 
 ```mermaid
 classDiagram
@@ -2370,16 +2377,17 @@ classDiagram
   }
   class DailyReportBuilder {
     <<module>>
-    +build(records) DailyReport
+    +build(records, sharing, learning) GenerationResult
   }
   class ThemeSummaryBuilder {
     <<module>>
-    +build(themeSummary) ThemeSummary
+    +build(studentId, period) ThemeSummary
   }
 
   ReportScheduler --> ReportJobService
-  GenerationService --> DailyReportBuilder : periodType = DAILY
-  GenerationService --> ThemeSummaryBuilder : periodType = WEEKLY
+  GenerationService --> RecordGenerator
+  RecordGenerator --> DailyReportBuilder : periodType = DAILY
+  RecordGenerator --> ThemeSummaryBuilder : periodType = WEEKLY
 ```
 
 - core(#390 구현): `WeeklyReportScheduler`·`DailyReportScheduler`가 각자 ShedLock으로 `ReportScheduleService.generate(at, periodType)`을 부르고, `ReportJobService.scheduled(parent, child, ReportPeriod)`가 보호자가 연결된 자녀별 작업 + Outbox를 저장한다(정기 부분 UK `(student_id, period_type, period_from)`). 기간 종류는 domain `ReportPeriodType`(`DAILY`·`WEEKLY`)과 `ReportPeriod(from, to, type)`이며 일일은 서술 없음(`narrative = false`)이라 상품 권한을 조회하지 않는다. 일일 상세 원문 제공 여부는 `ReportEntitlementService.dailyDetailEnabled` 한 곳에서 정한다
@@ -2388,6 +2396,9 @@ classDiagram
 - report `ReportRepository`의 revision 잠금·UK 단위는 `(student_id, period_type, period_from)`
 
 ---
+
+
+- 테마 소비는 `REPORT_THEME_SUMMARY_ENABLED=true`가 기본이다. #385/#391 learning을 먼저 배포한다. false는 새 주간 요약만 생략하는 복귀 설정이며 조회 오류를 참여 없음으로 바꾸지 않는다.
 
 ## 8. 확인 필요 가정
 - 요금제 사용 한도(P13): core가 `product.limits`로 확인 후 `USAGE_LIMIT_REACHED`. 분석 대화는 `ProductEntitlementService.reserve`가 보호자 잠금 안에서 자녀별 `payment_premium_usage` KST 일자 집계로 판정(#225, `AnalysisUsageService`는 Redis 미사용). 학생별 미션 시작(무료 하루 1개, 당일 테마 문제만)·피드백 한도는 미구현이며 #210 결정에 따라 PostgreSQL로 구현 예정(미션은 `usage/MissionUsageService`·`mission_daily_usage`, 3.6). 생각 유형별 미션 고르기(`EXTRA`)는 프리미엄 사용(`EXTRA_MISSION`) 기록

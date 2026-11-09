@@ -31,6 +31,7 @@ import kotlin.test.assertTrue
 class WeeklyThemeServiceTest : PostgresRepositoryTest() {
     @Autowired lateinit var repository: WeeklyThemeRepository
     @Autowired lateinit var jdbc: JdbcTemplate
+    @Autowired lateinit var reports: WeeklyThemeReportService
 
     private lateinit var rows: TestRows
     private lateinit var missions: List<TestRows.SeededMission>
@@ -68,6 +69,19 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
             it, studentId, mission.id, mission.versionId, mission.rubricVersionId, if (completedAt != null) "COMPLETED" else "IN_PROGRESS",
             startedAt, finishedAt, completedAt, startedAt, context, theme, week,
         )
+    }
+
+    @Test
+    fun `리포트 요약은 미마무리 다시 풀기의 비교를 공개하지 않음`() {
+        attempt(missions[0], "THEME_REVIEW", at(WEEK.plusDays(5)))
+        com.sagomungchi.learning._common.security.UserContextHolder.set(
+            com.sagomungchi.learning._common.security.UserContext(null, "SYSTEM", setOf(student.toString()), null))
+        try {
+            val summary = reports.summary(student, WEEK)
+            assertNull(summary.reviewRetries.single().comparison)
+        } finally {
+            com.sagomungchi.learning._common.security.UserContextHolder.clear()
+        }
     }
 
     private fun assertError(status: HttpStatus, code: String, block: () -> Unit) {

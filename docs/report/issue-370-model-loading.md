@@ -15,7 +15,7 @@
 - 이벤트 `model.loading.reported`, source `scoring-service`, schema v1. Pod명(기본 hostname), 프로세스별 UUID, 단조 증가 sequence, 전체 모델 상태를 보낸다.
 - 성공·실패·진행 중에 target name/version/revision과 현재 메모리에 남은 버전/revision을 구분한다. 실패에는 예외 유형만 포함하고 원문·URI·자격 증명은 포함하지 않는다.
 - 로딩 중 변경 신호와 30초 heartbeat로 발행한다. 발행은 2초 제한, 단일 태스크이며 실패하면 다음 전체 보고에서 회복한다. 새 로딩 실패 시 기존 모델 유지 동작은 변경하지 않는다.
-- core `model_loading_report`(V36)에 프로세스별 최신 전체 상태를 저장한다. 같은 instance의 중복·역순 sequence와 역행 시각은 무시한다. 같은 Pod명은 가장 최근 보고 프로세스만 조회한다.
+- core `model_loading_report`(V37)에 프로세스별 최신 전체 상태를 저장한다. 같은 instance의 중복·역순 sequence와 역행 시각은 무시한다. 같은 Pod명은 가장 최근 보고 프로세스만 조회한다.
 - `GET /api/v1/admin/model-loading`은 기존 SERVICE_OPS 권한을 요구한다. 상태는 승인·평가 JSONB에 저장하지 않는다.
 - 120초 이상 보고가 없으면 stale로 표시하고 성공/실패 집계에서 제외한다. 24시간 지난 기록은 조회에서 제외하고 매시간 정리한다. 축소·비정상 종료·보고 통신 장애는 모두 보고 만료로 표현하며 죽은 Pod라고 단정하지 않는다.
 - 화면 분모는 최근 보고된 Pod 수다. 전체 배포 replica 수는 모르므로 전체 배포 성공으로 표시하지 않는다. 아직 보고하지 않은 Pod가 존재할 수 있고 보고 0개는 미확인이다.
@@ -23,7 +23,7 @@
 
 ## 배포 순서
 
-V36 migration → RabbitMQ definitions(새 core 큐·재시도·DLQ 바인딩) → core → scoring → web 순서로 반영한다. 기존 라우팅·모델 승인·활성화 계약은 유지한다. 새 공유 큐는 코드에서 선언하지 않는다. 추가 AWS IAM 권한이나 Kubernetes 조회 권한은 없다.
+V37 migration → RabbitMQ definitions(새 core 큐·재시도·DLQ 바인딩) → core → scoring → web 순서로 반영한다. 기존 라우팅·모델 승인·활성화 계약은 유지한다. 새 공유 큐는 코드에서 선언하지 않는다. 추가 AWS IAM 권한이나 Kubernetes 조회 권한은 없다.
 
 ## 검증
 
@@ -52,10 +52,17 @@ V36 migration → RabbitMQ definitions(새 core 큐·재시도·DLQ 바인딩) �
 - [x] Pod 축소·재시작 시 오래된 기록 처리 규칙
 
 ### 완료 조건
-- [x] 레플리카 2개 이상인 local 환경에서 한 Pod 로딩 실패 시 화면에 구분되어 보임을 확인
+- [ ] 레플리카 2개 이상인 local 환경에서 한 Pod 로딩 실패 시 화면에 구분되어 보임을 확인
+  - 두 scoring 프로세스와 실제 RabbitMQ·core·DB·HTTP 응답, 해당 응답을 사용한 브라우저 표시를 검증했다. 실제 Kubernetes Pod 2개와 브라우저 직접 연결은 미검증이므로 원문 조건은 미체크한다.
 - [x] 관련 테스트 통과
 
 ### 유지할 원칙
 - 로딩 성공을 품질 승인으로 표시하지 않음. 추론 확인은 자동 판정하지 않음
 
-AWS는 재가동·배포하지 않았다. 기존 운영 이미지와 prod migration digest는 변경하지 않았다. 배포 시 V36이 포함된 migration 이미지를 별도로 반영해야 한다.
+AWS는 재가동·배포하지 않았다. 기존 운영 이미지와 prod migration digest는 변경하지 않았다. 배포 시 V37이 포함된 migration 이미지를 별도로 반영해야 한다.
+
+## 최신 develop 병합 충돌 해결 (2026-11-09)
+
+develop `ef18b2ac`(#391·#369 포함)을 병합했다. OpenAPI의 #368 사전 검사와 #370 로딩 상태 스키마, API 명세의 #391·#370 절, ai 보고서의 #368·#370 절을 모두 보존했다. #369가 V36을 사용하므로 아직 병합되지 않은 모델 로딩 상태 마이그레이션만 V37로 변경하고 로컬 migration revision을 v37로 맞췄다. 이미 병합된 V36 파일은 수정하지 않았다.
+
+병합 후 재검증: core 관련 42개(실제 두 scoring 프로세스 연동 포함)·bootJar, scoring 전체 215개·Ruff, 계약 회귀 203개, web 빌드·브라우저 15개, 세 DB 전체 마이그레이션·재적용·report 왕복·ERD 대조·역할 격리 통과. core V36 관리자 인증과 V37 모델 로딩 상태를 동시에 적용했다.

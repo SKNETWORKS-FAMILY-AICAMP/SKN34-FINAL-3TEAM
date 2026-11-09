@@ -1,4 +1,4 @@
-# 인증·계정 (#36·#37·#45·#58·#196·#206·#235·#289, P01 개정)
+# 인증·계정 (#36·#37·#45·#58·#196·#206·#235·#289·#369, P01 개정)
 
 계약은 [API 명세](../design/api-spec.md) 3.11·5.1·5.3·5.4·5.6과 [core OpenAPI](../../contracts/openapi/core-service.yaml), 저장 구조는 [ERD](../design/erd.md) 3.1.
 
@@ -7,7 +7,7 @@
 - Google Authorization Code + PKCE S256을 core 콜백에서 처리. `authorize` → Google → `callback`(refresh 쿠키 설정) → web `/oauth/complete` → `POST /auth/refresh` → `GET /me`. 서비스 토큰은 URL에 넣지 않음
 - access JWT는 HS256(Spring Security JOSE), 부모·학생 기본 15분, 프론트 메모리에만 보관. refresh는 256비트 난수·SHA-256 해시 저장, HttpOnly·Secure·SameSite=Strict, 부모·관리자 세션은 최초 발급부터 7일(회전으로 연장 안 함). 학생은 refresh 없음
 - Google ID 토큰은 JWKS 서명·iss·aud·exp·nonce 검증. OAuth 상태 쿠키는 HttpOnly·SameSite=Lax·10분. web origin과 `/api`는 동일 origin, 쿠키 API는 Origin·`X-Requested-With` 검사
-- 계정 식별은 `(oauth_provider, oauth_subject)`. 이메일은 연락 정보이며 기존 이메일 계정과 자동 연결하지 않음(같은 이메일은 `ACCOUNT_EXISTS`). 기존 계정에 가짜 subject를 채우지 않고 비밀번호 컬럼은 nullable로 보존·사용 중단. 신규 계정은 PARENT, 관리자는 운영자가 role·권한 지정
+- 계정 식별은 `(oauth_provider, oauth_subject)`. 이메일은 연락 정보이며 기존 이메일 계정과 자동 연결하지 않음(같은 이메일은 `ACCOUNT_EXISTS`). 기존 계정에 가짜 subject를 채우지 않고 비밀번호 컬럼은 nullable로 보존·사용 중단. 신규 계정은 PARENT, 관리자는 운영자가 role·권한 지정(관리자 ID·비밀번호 로그인은 11장 `admin_credential`)
 - 매 요청에서 DB의 세션·계정·연결 상태 확인. 로그아웃·역할 전환 후 이전 access 즉시 거부. refresh는 원자적 1회 소비, 재사용 시 해당 세션 폐기(다른 기기 유지)
 - 같은 브라우저의 탭은 역할을 공유하며 Web Locks로 refresh·전환·로그아웃을 직렬화하고 BroadcastChannel로 알림. 학생 전환을 받은 탭은 토큰·캐시를 지우고 학생 진입 화면으로. 보호자 복귀는 보호자 비밀번호(7장) 또는 Google 로그인
 - 키: JWT 키는 base64 32바이트 이상 난수, core에만 Secret으로 주입. 단일 HS256 키라 교체 시 기존 access·OAuth 상태 토큰이 무효화됨. Google 키가 없으면 로그인 시작은 명시적 503(가짜 로그인 없음)
@@ -224,3 +224,67 @@
 - learning 반영 실패 시 learning 저장 상태는 다음 설정 저장·같은 신고 재전송·같은 검토 재처리 때까지 늦을 수 있습니다. core 응답은 막지만, learning 내부에서 직접 읽는 다른 경로가 생기면 같은 재확인이 필요합니다. 자동 재시도 작업은 두지 않았습니다.
 - COMMUNITY 문서를 개정하면 옛 판 동의는 바로 무효가 되지만 learning 공유물은 다음 반영 때까지 `VISIBLE`로 남습니다(core 응답에서는 빠짐).
 - 동의 문서 원문: 이번에 COMMUNITY 1.0을 새로 시드했고 기존 원문은 고치지 않았습니다. 개인정보 처리방침 1.0은 처리 목적에 커뮤니티 공개가 없고 "제3자에게 제공하지 않습니다"라고 적혀 있어, 다른 학생에게 별명·답변을 보여 주는 처리를 목적·선택 동의 항목에 더하는 개정이 필요합니다. 법정대리인 동의서 1.0도 수집·이용 목적에 커뮤니티가 없어 선택 동의 문서로 보완했으나 함께 안내할지 검토가 필요합니다.
+
+## 11. 관리자 ID·비밀번호 로그인 (#369)
+
+Google 로그인만 있어 관리자 계정을 만들 방법이 SQL 손작업뿐이었고, 그 때문에 #356 관리자 화면을 실제 흐름으로 확인하지 못했다. 계약은 api-spec 2.1·5.1, 흐름은 sequence-diagram 2.1.1, 저장은 ERD 3.1.1 `admin_credential`.
+
+### 결정 (2026-11-09 사용자 확인)
+
+- 운영 환경에서도 사용한다. 주소는 `/admin/login` 그대로 두고, 사용자 화면(`/login`·로그인 도움말)의 관리자 링크·문구는 지운다. 운영 플래그는 두지 않는다. `admin_credential` 행이 없으면 아무도 이 방법으로 로그인하지 못한다.
+- 관리자는 가입하지 않는다. 운영자가 `scripts/admin_account_sql.py`로 행을 만든다. 같은 ID로 다시 실행하면 비밀번호 재설정과 잠금 해제가 되고, `--disable`은 자격을 지우고 세션을 끝낸다.
+- 이번 범위는 관리자만이다. 학부모 ID·비밀번호 가입·로그인은 별도 이슈로 분리했다. 재인증(탈퇴·보호자 비밀번호·학생 PIN·자녀 삭제·보호자 이전)이 Google 전용이고, 비밀번호 찾기와 "Google 단일 로그인" 정책 문서(FN-ACC-08·10)도 함께 바꿔야 하기 때문이다.
+- 부하 테스트 계정 부족(load-test 4장)은 관리자 로그인으로 풀리지 않는다. 시험 대상이 학부모→학생 학습 흐름이고, 학생 세션은 자녀가 연결된 학부모만 받기 때문이다. 학부모 이슈에서 다룬다.
+
+### 설계
+
+- 관리자 신원은 기존 `user_account(role=ADMIN)`·`admin_permission`을 그대로 쓴다. 관리자 행위자 FK(`admin_permission.granted_by`, `audit_log`, 재처리 요청 등)가 모두 `user_account(id)`를 가리키기 때문에, 관리자 전용 계정 테이블로 완전히 떼어 내지 않았다. 새 테이블 `admin_credential`(V36)은 **비밀번호 로그인이 허용된 관리자 목록**이고 해시·실패 횟수·잠금 시각만 담는다.
+- 로그인 ID는 `user_account.login_id`(UNIQUE)다. 레거시 `user_account.password_hash`는 읽지 않는다. 옛 데이터가 로그인 수단으로 되살아나지 않게 하기 위해서다.
+- 해시는 보호자 비밀번호와 같은 `PinHasher`(PBKDF2-SHA256 60만 회, `pbkdf2-sha256$반복$salt$hash`)를 쓴다. 스크립트는 Python 표준 라이브러리로 같은 형식을 만든다. 같은 고정 벡터를 core 통합 테스트와 스크립트 테스트가 함께 검사한다.
+- `POST /auth/admin/login`은 쿠키를 쓰는 다른 인증 API와 같이 정확한 web Origin·`X-Requested-With`를 요구한다. 성공하면 Google 로그인과 같은 `startSession`(이전 refresh 쿠키 세션 폐기 → ADMIN 세션 → refresh 발급)을 거친다. 따라서 refresh·`/me`·권한 검사·로그아웃은 바뀌지 않았다.
+- 실패 처리
+  - 없는 ID, 틀린 비밀번호, ADMIN이 아니거나 ACTIVE가 아닌 계정은 모두 같은 401 `INVALID_CREDENTIALS`다.
+  - 없는 ID에도 더미 해시를 한 번 검사해 응답 시간 차이를 줄인다.
+  - 연속 5회째 실패에 `locked_until`을 15분 뒤로 잡고 실패 횟수는 0으로 되돌린다. 잠긴 동안은 맞는 비밀번호도 423 `ADMIN_LOGIN_LOCKED`다.
+  - 실패 횟수는 오류 응답 전에 커밋한다(보호자 비밀번호와 같은 방식).
+  - 시간 잠금을 고른 이유: 영구 잠금은 ID를 아는 누구나 관리자를 막을 수 있고, 풀려면 운영자가 스크립트를 다시 돌려야 한다.
+- 성공한 로그인은 `audit_log`에 `ADMIN_PASSWORD_LOGIN`으로 남긴다. 실패는 행위자 FK가 없어 남기지 않는다.
+- web
+  - `/admin/login`은 실제·목업 모드 모두 ID·비밀번호 폼을 기본으로 보여 준다. 기존 Google 관리자 로그인은 보조로 둔다(e2e Google 관리자 흐름 유지).
+  - 목업에서만 시연 계정을 미리 채우고 목록을 보여 준다. MSW 핸들러는 같은 계약(관리자 시연 계정만, 실패는 401 `INVALID_CREDENTIALS`)이다.
+  - 로그인 뒤 `/me`를 다시 읽어 권한·시작 화면을 정하고, 다른 탭에 역할 변경을 알린다.
+
+### 다른 서비스 조사
+
+- Django: 사용자 테이블의 `is_staff` 플래그와 `createsuperuser` 명령으로 관리자를 만든다. 공개 가입 경로는 없다.
+- Rails ActiveAdmin: 기본으로 별도 `AdminUser` 모델(Devise)을 만들고 공개 가입은 없다.
+- OWASP
+  - `/admin` 같은 경로는 쉽게 추측되므로, 주소를 숨기는 것은 보안 수단이 아니다.
+  - 관리 기능은 일반 기능과 분리하고, 접근 통제와 감사 기록을 갖춰야 한다.
+  - 관리자 화면에는 다중 인증을 권장한다(ASVS 4.3.1).
+- 이번 구현은 Django처럼 기존 계정 테이블의 역할을 쓰고, 가입 없이 명령(스크립트)으로 만든다. 주소를 숨기는 것은 사용자에게 보이지 않게 하는 목적일 뿐이다. 실제 보호는 서버의 잠금·감사 기록·권한 검사가 맡는다. SPA 번들에 라우트가 모두 들어 있어 주소를 바꿔도 숨겨지지 않으므로, `/admin/login`을 유지했다.
+
+### 운영 사용법
+
+```bash
+# 생성·재설정(같은 ID 재실행 = 비밀번호 재설정·잠금 해제). --permissions를 빼면 기존 권한 유지
+python scripts/admin_account_sql.py --login-id ops-kim --name 김운영 --permissions ALL | psql "$CORE_DB_URL"
+# 비대화형: ADMIN_PASSWORD 환경 변수(12~128자). 출력에는 해시만 들어간다
+# 비활성화: 자격 삭제 + 그 계정의 세션 폐기
+python scripts/admin_account_sql.py --login-id ops-kim --disable | psql "$CORE_DB_URL"
+```
+
+- 권한 값은 `CONTENT`·`PAYMENT_VIEW`·`PAYMENT_REFUND`·`SERVICE_OPS` 또는 `ALL`이다. 같은 `login_id`가 ADMIN이 아닌 계정(예: Google 학부모 이메일)이거나 비활성이면 SQL이 예외로 멈춘다.
+- 기존 Google 관리자 계정(login_id = 이메일)에 비밀번호를 붙일 때도 같은 명령을 쓴다.
+
+### API 변경
+
+- 추가: `POST /api/v1/auth/admin/login {loginId,password}` → 200 refresh 응답과 같은 본문 + refresh 쿠키, 401 `INVALID_CREDENTIALS`, 423 `ADMIN_LOGIN_LOCKED`, 403(출처 헤더). OpenAPI `adminPasswordLogin`.
+- DB: core V36 `admin_credential`. local GitOps 마이그레이션 revision `v36`.
+
+### 남은 위험·후속
+
+- 다중 인증(MFA)·IP 허용 목록은 이번에 넣지 않았다. 운영에서 관리자 비밀번호 로그인을 넓게 쓰기 전에 검토가 필요하다.
+- 잠금은 ID 단위라 같은 IP에서 여러 ID를 시도하는 것은 막지 않는다. 요청 속도 제한은 별도 과제다.
+- 화면설계서 캡처(C03·A00)는 변경 전 화면이다. 설명 문구만 고쳤다.
+- 학부모 ID·비밀번호 가입·로그인(부하 테스트 계정 포함)은 후속 이슈다.

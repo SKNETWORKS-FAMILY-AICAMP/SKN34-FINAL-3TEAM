@@ -22,6 +22,8 @@ body:has(.admin-login-page){margin:0;background:#fff}
 .admin-login-page footer{border-top:1px solid #e5e5e5;margin-top:28px;padding-top:16px}
 .admin-login-page footer a{display:inline-flex;align-items:center;min-height:44px;color:#444;text-underline-offset:4px}
 .admin-login-oauth>p{font-size:13px;color:#626262}
+.admin-login-oauth{margin-top:24px;padding-top:20px;border-top:1px solid #e5e5e5}
+.admin-login-google{display:flex;justify-content:center;align-items:center;min-height:46px;width:100%;padding:10px 14px;font-weight:600;color:#252525;background:#fff;border:1px solid #bbb;border-radius:4px;text-decoration:none}
 .admin-login-page [role=alert]{font-size:14px;overflow-wrap:anywhere}
 @media(max-width:600px){.admin-login-page header{padding:0 20px}.admin-login-page main{margin-top:40px}}
 
