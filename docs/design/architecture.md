@@ -665,10 +665,10 @@ backend/report-service/
 | 대상 | ingress 허용 | egress 허용 |
 |---|---|---|
 | core | ALB(서브넷 ipBlock), ai, scoring, learning, report-worker, Prometheus | learning, ai, report-api, RabbitMQ(5672·15672), Redis, RDS, 토스(NAT) |
-| learning | core, ai, report-worker, Prometheus | core, ai, RabbitMQ, RDS, S3 |
+| learning | core, ai, report-api, report-worker, Prometheus | core, ai, RabbitMQ, RDS, S3 |
 | ai | core, learning, report-worker, Prometheus | learning, scoring, core, RabbitMQ, LLM API(NAT) |
 | scoring | ai, Prometheus | core, RabbitMQ, S3 |
-| report-api | core, Prometheus | RDS, S3 |
+| report-api | core, Prometheus | learning(근거 조회), RDS, S3 |
 | report-worker | Prometheus | core, learning, ai, RabbitMQ, RDS, S3 |
 | RabbitMQ·Redis | `app` 전체, KEDA(RabbitMQ), Prometheus | - |
 
