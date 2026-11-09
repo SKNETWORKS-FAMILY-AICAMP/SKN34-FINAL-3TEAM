@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import { studentDeviceApi } from '../../data/studentDevice/api.ts'
 import { useParentMutation } from '../../data/parent/queries.ts'
+import { useReauthReturn } from '../../data/reauthReturn.ts'
 import { qrDemoEnabled, useDeviceAdmin, useGuardianPassword, usePairingOrigins, useStudentDevices } from '../../data/studentDevice/queries.ts'
 import type { Child } from '../../domain/classroom.ts'
 import {
@@ -74,9 +75,13 @@ function GuardianPasswordSettings() {
       if (url.protocol !== 'https:' && url.origin !== window.location.origin) throw new Error('잘못된 재인증 주소입니다.')
       popup.location.href = url.href
       setChallenge(result.challengeId)
-      setNotice('Google 확인을 마친 뒤 이 화면에서 완료 확인을 눌러 주세요.')
+      setNotice('Google 확인을 마치면 이 화면에서 자동으로 완료됩니다. 넘어오지 않으면 완료 확인을 눌러 주세요.')
     }).catch(() => { popup.close(); setNotice('Google 재확인을 시작하지 못했습니다.') })
   }
+  function complete() {
+    void finish.mutateAsync(challenge).then((value) => { setGrant(value); setNotice('재확인을 완료했습니다. 5분 안에 비밀번호를 정해 주세요.') }).catch(() => {})
+  }
+  useReauthReturn(challenge, !!challenge && !token && !finish.isPending, complete)
   return (
     <section className="ws-card" aria-labelledby="guardian-password-h">
       <h2 id="guardian-password-h">보호자 비밀번호</h2>
@@ -102,8 +107,7 @@ function GuardianPasswordSettings() {
         <button type="button" className="cj-secondary" disabled={start.isPending || finish.isPending} onClick={begin}>
           보호자 비밀번호 Google 본인 확인
         </button>
-        {challenge && !token && <button type="button" className="cj-secondary" disabled={finish.isPending}
-          onClick={() => { void finish.mutateAsync(challenge).then((value) => { setGrant(value); setNotice('재확인을 완료했습니다. 5분 안에 비밀번호를 정해 주세요.') }).catch(() => {}) }}>
+        {challenge && !token && <button type="button" className="cj-secondary" disabled={finish.isPending} onClick={complete}>
           보호자 비밀번호 완료 확인
         </button>}
         <ErrorNotice error={start.error ?? finish.error} />
@@ -159,9 +163,13 @@ function ChildPin({ child }: { child: Child }) {
       if (url.protocol !== 'https:' && url.origin !== window.location.origin) throw new Error('잘못된 재인증 주소입니다.')
       popup.location.href = url.href
       setChallenge(result.challengeId)
-      setNotice('Google 확인을 마친 뒤 이 화면에서 완료 확인을 눌러 주세요.')
+      setNotice('Google 확인을 마치면 이 화면에서 자동으로 완료됩니다. 넘어오지 않으면 완료 확인을 눌러 주세요.')
     }).catch(() => { popup.close(); setNotice('Google 재확인을 시작하지 못했습니다.') })
   }
+  function complete() {
+    void finish.mutateAsync(challenge).then((value) => { setGrant(value); setNotice('재확인을 완료했습니다. 5분 안에 PIN을 정해 주세요.') }).catch(() => {})
+  }
+  useReauthReturn(challenge, !!challenge && !token && !finish.isPending, complete)
   const [pin, setPin] = useState(''),
     [again, setAgain] = useState(''),
     [problem, setProblem] = useState<string | null>(null)
@@ -199,8 +207,7 @@ function ChildPin({ child }: { child: Child }) {
       <button type="button" className="cj-secondary" disabled={start.isPending || finish.isPending} onClick={begin}>
         {child.nickname} Google 본인 확인
       </button>
-      {challenge && !token && <button type="button" className="cj-secondary" disabled={finish.isPending}
-        onClick={() => { void finish.mutateAsync(challenge).then((value) => { setGrant(value); setNotice('재확인을 완료했습니다. 5분 안에 PIN을 정해 주세요.') }).catch(() => {}) }}>
+      {challenge && !token && <button type="button" className="cj-secondary" disabled={finish.isPending} onClick={complete}>
         {child.nickname} 완료 확인
       </button>}
       <ErrorNotice error={start.error ?? finish.error} />

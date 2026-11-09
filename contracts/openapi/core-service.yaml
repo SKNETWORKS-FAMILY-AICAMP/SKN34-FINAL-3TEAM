@@ -5029,21 +5029,26 @@ paths:
       tags:
       - Account
       summary: 별도 Google 재인증 callback
+      description: >-
+        브라우저 새 탭이 받는 작은 HTML 안내 페이지를 돌려준다(#425). 성공하면 같은 출처
+        BroadcastChannel `sagomungchi-reauth`로 `{type:"REAUTH_VERIFIED",challengeId}`만 알리고 창을
+        닫는다. 닫히지 않으면 안내 문구를 보인다. 재인증 토큰은 싣지 않으며, 원래 탭이 `POST /me/reauth {challengeId}`로
+        수령한다. 응답에는 `Content-Security-Policy`(script-src·style-src nonce), `Cache-Control: no-store`,
+        `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`가 붙는다. 실패도 JSON 대신 안내 HTML이며
+        스크립트·알림이 없다.
       responses:
         '200':
-          description: 정상 처리
+          description: 재인증 확인 완료 안내 HTML(`data-reauth-status="VERIFIED"`, `data-challenge-id`), 재인증 상태 쿠키 삭제
           content:
-            application/json:
+            text/html:
               schema:
-                type: object
-        '400':
-          description: 유효하지 않은 입력
-        '401':
-          description: 인증 실패
+                type: string
         '403':
-          description: 권한/재인증 실패
-        '409':
-          description: 정책/상태 충돌
+          description: 재인증 실패 안내 HTML(`data-reauth-status="FAILED"`, 스크립트 없음)
+          content:
+            text/html:
+              schema:
+                type: string
       security: []
       parameters:
       - in: query

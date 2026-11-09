@@ -31,7 +31,8 @@
 - 재인증 사용 절차(#58 PIN 변경 예)
   1. 원래 세션에서 `POST /me/reauth {"purpose":"PIN_CHANGE","childId":...}`(Origin·`X-Requested-With` 필요)
   2. 응답 `authorizationUrl`을 새 창에서 열어 Google 확인. Google 콘솔에 `<webOrigin>/api/v1/auth/google/reauth/callback` 등록 필요. callback은 VERIFIED 안내만, 로그인·refresh는 바꾸지 않음
-  3. 원래 세션에서 `{"challengeId":...}`로 `reauthToken` 1회 수령(메모리 보관)
+     - #425: callback은 JSON 대신 안내 HTML. 같은 출처 `BroadcastChannel('sagomungchi-reauth')`로 challengeId만 알리고 창을 닫음(닫히지 않으면 안내 문구). 팝업 `opener=null` 유지 때문에 postMessage는 쓰지 않음. CSP nonce·`no-store`·`no-referrer`·`nosniff`. 실패도 스크립트 없는 안내 HTML(403)
+  3. 원래 세션에서 `{"challengeId":...}`로 `reauthToken` 1회 수령(메모리 보관). 웹은 `useReauthReturn`(`frontend/web/src/data/reauthReturn.ts`)으로 채널 알림을 받으면 자동 수령, 수동 "완료 확인"은 대체 수단
   4. 변경 요청의 `X-Reauth-Token`. 서비스는 권한 검사 후 같은 트랜잭션에서 `ReauthenticationService.consume(...)`(MANDATORY, 실패 시 소비도 롤백)
 - 탈퇴 자격 조회용 최소 payment service·repository(결제 쓰기 없음), P09 core 대화·근거 삭제용 conversation service. 기능 간 접근은 service 경유
 - 재인증·서비스별 완료 행은 V9. 상태 조회 영수증(`statusToken`)은 탈퇴 후 로그인 차단과 상태 조회를 함께 제공하기 위한 최소 계약
