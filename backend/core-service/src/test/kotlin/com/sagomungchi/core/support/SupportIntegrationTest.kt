@@ -54,6 +54,9 @@ class SupportIntegrationTest: IntegrationTestSupport() {
  @Autowired lateinit var notifications: NotificationService
  @Autowired lateinit var manager: PlatformTransactionManager
  @MockitoBean lateinit var outboxRelay: OutboxRelay
+ @Autowired lateinit var reportClient: com.sagomungchi.core.report.client.ReportClient
+ @Autowired lateinit var notices: com.sagomungchi.core.support.service.CorrectionNoticeService
+ @org.springframework.test.context.bean.override.mockito.MockitoSpyBean lateinit var conversationLookup: com.sagomungchi.core.conversation.service.ConversationSupportService
  private lateinit var user: UUID
  private lateinit var student: UUID
  private lateinit var sibling: UUID
@@ -63,6 +66,7 @@ class SupportIntegrationTest: IntegrationTestSupport() {
  private lateinit var adminToken: String
  private lateinit var judgment: UUID
  private lateinit var attempt: UUID
+ private lateinit var answer: UUID
  private val applied=ConcurrentHashMap<String,String>()
  private val supplierApplications=AtomicInteger()
  private val targets=ConcurrentHashMap<String,Pair<UUID,UUID>>()
@@ -71,15 +75,16 @@ class SupportIntegrationTest: IntegrationTestSupport() {
  @Volatile private var suppliedImpact=mapOf("conversation" to "UNKNOWN","aggregation" to "NOT_APPLIED","report" to "UNKNOWN")
  companion object {
   val stub=LearningHttpStub()
-  @JvmStatic @DynamicPropertySource fun learning(registry: DynamicPropertyRegistry) { registry.add("app.services.learning") { stub.url } }
-  @JvmStatic @AfterAll fun stop() { stub.close() }
+  val reportStub=LearningHttpStub()
+  @JvmStatic @DynamicPropertySource fun learning(registry: DynamicPropertyRegistry) { registry.add("app.services.learning") { stub.url };registry.add("app.services.report") { reportStub.url } }
+  @JvmStatic @AfterAll fun stop() { stub.close();reportStub.close() }
  }
  @BeforeEach fun prepare() {
-  stub.reset();client.circuit.reset();applied.clear();supplierApplications.set(0);targets.clear();loseResponse=false;failCorrection=false
+  stub.reset();client.circuit.reset();reportClient.queryCircuit.reset();reportStub.reset();reportStub.respond={ LearningHttpStub.Reply(503,"{}") };applied.clear();supplierApplications.set(0);targets.clear();loseResponse=false;failCorrection=false
   suppliedImpact=mapOf("conversation" to "UNKNOWN","aggregation" to "NOT_APPLIED","report" to "UNKNOWN")
   user=parent(jdbc);student=child(jdbc,user);sibling=child(jdbc,user)
   parentToken=tokens.access(session(jdbc,user,"PARENT"));studentToken=tokens.access(session(jdbc,user,"STUDENT",student));siblingToken=tokens.access(session(jdbc,user,"STUDENT",sibling))
-  adminToken=tokens.access(session(jdbc,account(jdbc),"ADMIN"));judgment=UUID.randomUUID();attempt=UUID.randomUUID()
+  adminToken=tokens.access(session(jdbc,account(jdbc),"ADMIN"));judgment=UUID.randomUUID();attempt=UUID.randomUUID();answer=UUID.randomUUID()
   targets[judgment.toString()]=student to attempt;targets[attempt.toString()]=student to attempt
   stub.respond={ req ->
    val id=req.target.substringAfterLast('/')
@@ -88,7 +93,7 @@ class SupportIntegrationTest: IntegrationTestSupport() {
      val t=targets[id]
      if(t==null) LearningHttpStub.Reply(404,"{}") else LearningHttpStub.Reply(body=json.writeValueAsString(mapOf("studentId" to t.first,"attemptId" to t.second,"judgmentId" to judgment,"previousResult" to "RETHINK")))
     }
-    req.target.contains("/support/attempts/") -> LearningHttpStub.Reply(body=json.writeValueAsString(mapOf("studentId" to student,"attemptId" to attempt,"draft" to "never forward","memo" to "private","answers" to listOf(mapOf("answerId" to UUID.randomUUID(),"version" to 1,"text" to "원문은 그대로","feedback" to mapOf("status" to "DONE","judgment" to mapOf("result" to "RETHINK")))))))
+    req.target.contains("/support/attempts/") -> LearningHttpStub.Reply(body=json.writeValueAsString(mapOf("studentId" to student,"attemptId" to attempt,"draft" to "never forward","memo" to "private","answers" to listOf(mapOf("answerId" to answer,"version" to 1,"text" to "원문은 그대로","feedback" to mapOf("status" to "DONE","judgment" to mapOf("judgmentId" to judgment,"result" to "RETHINK")))))))
     req.target.endsWith("/corrections") -> {
      if(failCorrection) LearningHttpStub.Reply(503,"{}") else {
       val key=req.header("Idempotency-Key")!!
@@ -209,6 +214,75 @@ class SupportIntegrationTest: IntegrationTestSupport() {
   stub.respond={ req -> if(req.target.contains("/support/attempts/")) LearningHttpStub.Reply(body=json.writeValueAsString(mapOf("studentId" to sibling,"attemptId" to attempt,"answers" to emptyList<String>()))) else original(req) }
   call("GET","/admin/error-reports/$id",adminToken,expected=502)
   assertEquals(0,count("SELECT count(*) FROM audit_log WHERE action='SUPPORT_ORIGINAL_VIEW' AND target_id=?",UUID.fromString(id)))
+ }
+ private fun conversation(report: UUID?=null,revision: Int?=null): UUID {
+  val id=UUID.randomUUID()
+  jdbc.update("INSERT INTO conversation(id,parent_user_id,student_id,period_from,period_to,created_at,updated_at,report_id,report_revision) VALUES(?,?,?,DATE '2026-10-19',DATE '2026-10-19',now(),now(),?,?)",id,user,student,report,revision)
+  return id
+ }
+ private fun message(conversation: UUID,seq: Int=1): UUID {
+  val id=UUID.randomUUID()
+  jdbc.update("INSERT INTO conversation_message(id,conversation_id,seq,question,answer,scope_changed,status,retry_count,created_at) VALUES(?,?,?,'합성 질문','합성 답변',false,'COMPLETED',0,now())",id,conversation,seq)
+  return id
+ }
+ private fun cite(message: UUID,cited: UUID) {
+  jdbc.update("INSERT INTO message_evidence(id,message_id,attempt_id,answer_id,answer_version,kind) VALUES(?,?,?,?,1,'ANSWER')",UUID.randomUUID(),message,attempt,cited)
+ }
+ private fun reportsAffected(vararg items: Map<String,Any>) { reportStub.respond={ LearningHttpStub.Reply(body=json.writeValueAsString(mapOf("items" to items.toList()))) } }
+ private fun corrected(): Pair<String,JsonNode> {
+  val id=submit()["reportId"].asText();review(id)
+  return id to correction(id,UUID.randomUUID())["corrections"][0]["impact"]
+ }
+ @Test fun `correction records outputs that used the attempt and shows impact only to administrators`() {
+  val conversationId=conversation();val citing=message(conversationId);val otherAnswer=message(conversationId,2);cite(citing,answer);cite(otherAnswer,UUID.randomUUID())
+  val report=UUID.randomUUID();reportsAffected(mapOf("reportId" to report,"periodType" to "WEEKLY","periodFrom" to "2026-10-19","revision" to 1))
+  val (id,impact)=corrected()
+  assertEquals("AFFECTED",impact["report"].asText());assertEquals("AFFECTED",impact["conversation"].asText());assertEquals("NOT_APPLIED",impact["aggregation"].asText())
+  assertEquals(listOf(report.toString()),impact["reportIds"].map { it.asText() });assertEquals(listOf(citing.toString()),impact["messageIds"].map { it.asText() })
+  assertTrue(reportStub.requests.single().target.contains("attemptId=$attempt"))
+  assertEquals("RESOLVED",call("GET","/admin/error-reports/$id",adminToken)["status"].asText())
+  assertTrue(call("GET","/error-reports/$id")["corrections"][0]["impact"].isNull)
+  assertTrue(notices.report(report));assertTrue(!notices.report(UUID.randomUUID()))
+  assertEquals(setOf(citing),notices.messages(conversationId,listOf(citing,otherAnswer)))
+ }
+ @Test fun `correction without any output that used the attempt is not affected`() {
+  reportsAffected()
+  val (_,impact)=corrected()
+  assertEquals("NOT_AFFECTED",impact["report"].asText());assertEquals("NOT_AFFECTED",impact["conversation"].asText())
+  assertEquals(setOf("conversation","aggregation","report"),impact.fieldNames().asSequence().toSet())
+ }
+ @Test fun `every answer of a conversation pinned to an affected daily revision carries the notice`() {
+  val report=UUID.randomUUID();val pinned=conversation(report,2);val first=message(pinned);val later=message(pinned,2);val otherRevision=conversation(report,1);val other=message(otherRevision)
+  reportsAffected(mapOf("reportId" to report,"periodType" to "DAILY","periodFrom" to "2026-10-19","revision" to 2))
+  val (_,impact)=corrected()
+  assertEquals("AFFECTED",impact["conversation"].asText());assertEquals(listOf(pinned.toString()),impact["conversationIds"].map { it.asText() })
+  assertEquals(setOf(first,later),notices.messages(pinned,listOf(first,later)))
+  assertTrue(notices.messages(otherRevision,listOf(other)).isEmpty())
+ }
+ @Test fun `a failed conversation lookup stays unknown and does not block the correction`() {
+  reportsAffected()
+  org.mockito.Mockito.doThrow(IllegalStateException("test-only lookup failure")).`when`(conversationLookup).citing(answer)
+  val (id,impact)=corrected()
+  assertEquals("UNKNOWN",impact["conversation"].asText());assertEquals("NOT_AFFECTED",impact["report"].asText())
+  assertEquals("RESOLVED",call("GET","/admin/error-reports/$id",adminToken)["status"].asText())
+ }
+ @Test fun `an answer of the same attempt that was not corrected is not affected`() {
+  reportsAffected();cite(message(conversation()),UUID.randomUUID())
+  val (_,impact)=corrected()
+  assertEquals("NOT_AFFECTED",impact["conversation"].asText())
+ }
+ @Test fun `a failed judged answer lookup stays unknown and does not block the correction`() {
+  reportsAffected();val normal=stub.respond
+  stub.respond={ req -> if(req.target.contains("/support/attempts/")) LearningHttpStub.Reply(503,"{}") else normal(req) }
+  val (id,impact)=corrected()
+  assertEquals("UNKNOWN",impact["conversation"].asText());assertEquals("NOT_AFFECTED",impact["report"].asText())
+  stub.respond=normal
+  assertEquals("RESOLVED",call("GET","/admin/error-reports/$id",adminToken)["status"].asText())
+ }
+ @Test fun `citing answers stay affected when the report lookup fails`() {
+  val citing=message(conversation());cite(citing,answer)
+  val (_,impact)=corrected()
+  assertEquals("UNKNOWN",impact["report"].asText());assertEquals("AFFECTED",impact["conversation"].asText())
  }
  @Test fun `all unknown derived impacts still resolve confirmed judgment correction and preserve producer headers`() {
   suppliedImpact=mapOf("conversation" to "UNKNOWN","aggregation" to "UNKNOWN","report" to "UNKNOWN")

@@ -106,6 +106,100 @@ sequenceDiagram
   C-->>W: 200 role·permissions → 권한별 관리자 메뉴
 ```
 
+#### 2.1.2 학부모 ID·비밀번호 가입·로그인 (#415)
+
+학부모는 Google(2.1) 대신 아이디·비밀번호로 가입·로그인할 수 있다. 두 방법은 자동 연결하지 않으며 한 계정은 한 가지 로그인 수단만 쓴다. 아이디는 앞뒤 공백 제거 후 소문자로 비교한다. 이후 refresh·`/me`·동의·자녀 등록은 2.1·2.2와 같다 ([API 명세 5.1](api-spec.md#51-36-google-oauth토큰-구현-계약-개정-p01-정렬))
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor P as 학부모
+  participant W as Web /signup·/login
+  participant C as core
+  participant R as Redis
+  participant DB as core_db
+
+  P->>W: 아이디로 가입 (아이디·이름·비밀번호·확인)
+  W->>C: POST /auth/parent/signup {loginId,password,name} (Origin·X-Requested-With)
+  alt 형식 위반 (아이디 영문·숫자 4~30자, 비밀번호 8~128자, 이름 1~80자)
+    C-->>W: 400 VALIDATION_FAILED
+  else 이미 쓰는 아이디
+    C-->>W: 409 LOGIN_ID_TAKEN (가입 한도에 세지 않음)
+  else
+    C->>R: auth:parent-signup:ip:<IP> INCR (고정 창, 기본 10분 5회)
+    alt Redis 장애
+      C-->>W: 503 SIGNUP_UNAVAILABLE
+    else 한도 초과
+      C-->>W: 429 SIGNUP_RATE_LIMITED
+    else
+      C->>C: 비밀번호 PBKDF2 해시 (트랜잭션 밖)
+      rect rgba(128,128,128,0.12)
+        C->>DB: user_account(PARENT·ACTIVE, login_id, OAuth·password_hash NULL, AUTH_NEW_ACCOUNT_DEMO면 is_demo) ON CONFLICT 확인
+        C->>DB: parent_credential 저장, audit_log PARENT_PASSWORD_SIGNUP
+        C->>DB: 이전 refresh 쿠키 세션 폐기, PARENT auth_session·refresh_token 저장 (7일)
+      end
+      C-->>W: 200 {accessToken, role:PARENT, nextAction:CONSENT_REQUIRED, startPath:/parent/onboarding} + Set-Cookie sagomungchi_refresh
+    end
+  end
+
+  P->>W: 아이디로 로그인
+  W->>C: POST /auth/parent/login {loginId,password} (Origin·X-Requested-With)
+  rect rgba(128,128,128,0.12)
+    C->>DB: parent_credential + user_account(login_id, PARENT·ACTIVE·oauth_subject NULL) 조회 FOR UPDATE
+    alt 없음 (Google 계정·관리자·비활성 포함)
+      C->>C: 더미 해시 검사 (응답 시간 맞춤)
+      C-->>W: 401 INVALID_CREDENTIALS
+    else locked_until > 지금
+      C-->>W: 423 LOGIN_LOCKED
+    else 비밀번호 틀림
+      C->>DB: failed_count+1 (5회째면 locked_until=15분 뒤, 횟수 0) 커밋
+      C-->>W: 401 INVALID_CREDENTIALS 또는 423 LOGIN_LOCKED
+    else 성공
+      C->>DB: 횟수·잠금 초기화, audit_log PARENT_PASSWORD_LOGIN
+      C->>DB: 이전 refresh 쿠키 세션 폐기, PARENT auth_session·refresh_token 저장 (7일)
+      C-->>W: 200 {accessToken, role:PARENT, nextAction, startPath} + Set-Cookie sagomungchi_refresh
+    end
+  end
+  W->>C: GET /me (Bearer)
+  C-->>W: 200 {authMethod:PASSWORD, loginId, email:null, nextAction, startPath}
+```
+
+#### 2.1.3 비밀번호 재확인 (#415)
+
+`/me`의 `authMethod`가 `PASSWORD`인 학부모는 중요 작업(탈퇴·보호자 비밀번호·학생 PIN·자녀 해제·자녀 삭제·자녀 이관·이관 수락)에서 Google 재인증 대신 로그인 비밀번호를 다시 입력한다. 검증·발급을 마친 challenge·grant를 한 번에 만들어, 각 작업의 grant 소비는 Google 재인증과 같다 ([API 명세 5.6](api-spec.md#56-45-계정-관리google비밀번호-재확인삭제탈퇴-계약))
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web(비밀번호 학부모)
+  participant C as core
+  participant DB as core_db
+
+  W->>C: POST /me/reauth/password {purpose, childId?, scope?, password} (Bearer)
+  alt 목적·자녀·범위 조합 오류
+    C-->>W: 400 VALIDATION_FAILED
+  else
+    rect rgba(128,128,128,0.12)
+      C->>DB: 계정 행 잠금, Google subject 확인 → parent_credential FOR UPDATE
+      alt Google 계정 (자격 행 없음)
+        C-->>W: 409 REAUTH_METHOD_MISMATCH
+      else 자녀 소유권 없음
+        C-->>W: 403 CHILD_NOT_LINKED (/me/reauth와 같음)
+      else locked_until > 지금
+        C-->>W: 423 LOGIN_LOCKED
+      else 비밀번호 틀림
+        C->>DB: failed_count+1 (로그인과 같은 횟수, 5회째면 locked_until=15분 뒤, 횟수 0) 커밋
+        C-->>W: 403 REAUTH_PASSWORD_INVALID 또는 423 LOGIN_LOCKED
+      else 성공
+        C->>DB: reauth_challenge(VERIFIED·ISSUED) + reauth_grant 저장, audit_log PASSWORD_REAUTHENTICATED
+        C-->>W: 200 {reauthToken, expiresAt} (5분·1회용 grant)
+      end
+    end
+  end
+  W->>C: 중요 작업 요청 + X-Reauth-Token
+  C->>DB: 같은 트랜잭션에서 grant 1회 소비 (Google 재인증과 같은 검사)
+```
+
 ### 2.2 자녀 등록·법정대리인 동의
 
 ```mermaid
@@ -323,7 +417,7 @@ sequenceDiagram
 
   S->>C: POST /guardian-transfers/recipient {email}
   C-->>S: 200 받는 학부모 확인 (없음·본인·한도 초과 안내)
-  S->>C: POST /me/reauth {purpose: CHILD_TRANSFER, childId} → Google 재인증 → {challengeId}로 reauthToken 수령
+  S->>C: POST /me/reauth {purpose: CHILD_TRANSFER, childId} → Google 재인증 → {challengeId}로 reauthToken 수령 (비밀번호 계정은 /me/reauth/password, 2.1.3)
   S->>C: POST /guardian-transfers {childId, recipientId, includeConversations} + X-Reauth-Token
   C->>DB: 두 계정 잠금 → 학생 잠금, ACTIVE·필수 동의·현재 연결·받는 쪽 3명 미만·탈퇴 가능 상태 확인
   alt 같은 자녀에 다른 대기 요청
@@ -580,7 +674,7 @@ sequenceDiagram
 
 ### 3.4 주간 테마 문제 시작 (P23·P13, learning #385·core #387)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). learning #385·core #387 구현. 포인트 보충(마지막 항목)은 원장·적립 진입점(#389) 위에 주간 테마 프록시 연결이 남은 구현 예정. 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). learning #385·core #387 구현. 포인트 보충(마지막 항목)은 #389 적립 연결로 구현. 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -594,7 +688,10 @@ sequenceDiagram
   C->>L: GET /internal/students/{id}/weekly-theme?gradeBand&date (KST)
   L->>L: 그 주 게시 테마, 없으면 최근 게시 테마 재사용
   L-->>C: 테마·요일 상태·되돌아보기 목록
-  C-->>W: 200
+  opt days[].attemptStatus = COMPLETED (#389 보충)
+    C->>CDB: reward_point_ledger (MISSION_COMPLETED, source_key = missionId) — 있으면 건너뜀
+  end
+  C-->>W: 200 (learning 응답 그대로)
   W->>C: POST /missions/{missionId}/attempts {context: THEME_DAY}
   opt 무료 자녀
     C->>CDB: mission_daily_usage 오늘(KST) 건수 확인
@@ -618,11 +715,11 @@ sequenceDiagram
 
 - `EXTRA`는 무료면 core가 403 `PREMIUM_REQUIRED`, 프리미엄이면 `payment_premium_usage(EXTRA_MISSION)` 기록. `THEME_REVIEW`는 한도 집계 없이 learning이 토·일·마무리한 문제인지 검사
 - 진행 중 시도 반환(`200`)은 요일 검사 없이 이어하기(자정 후 포함). 재사용 테마의 이미 푼 문제도 그 주 당일이면 `THEME_DAY` 신규 시도
-- 주간 테마 조회 때 core는 응답의 당일 완료 시도와 원장을 대조해 누락된 `MISSION_COMPLETED` 적립을 보충
+- 주간 테마 조회 때 core는 응답에서 이번 주 학습 완료한 요일 문제(`attemptStatus = COMPLETED`)마다 `MISSION_COMPLETED`를 다시 부르고, 원장 사건 키 UK로 이미 있는 것은 건너뛰어 누락분만 보충한다(#389). 추가 문제(EXTRA)는 응답에 없어 보충 대상이 아니다
 
-### 3.5 학습 완료 → 포인트 적립·자동 공유 (P20·P21, 구현 예정)
+### 3.5 학습 완료 → 포인트 적립·자동 공유 (P20·P21, core #388·#389·learning #386 구현)
 
-구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 공유 요청(core #388)과 learning 공유 저장(#386)은 구현, 포인트 적립(#389)은 구현 예정. 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 공유 요청(core #388), learning 공유 저장(#386), 포인트 적립 연결(#389) 구현. 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -634,7 +731,9 @@ sequenceDiagram
 
   W->>C: POST /attempts/{id}/reflection
   C->>L: 돌아보기 저장 (3.3과 같음)
-  L-->>C: 200 학습 완료 {missionId, context}
+  L-->>C: 200 {attemptId, status: COMPLETED, reflection} (같은 시도 재요청은 409 ATTEMPT_CLOSED)
+  C->>L: GET /internal/attempts/{id} (상태·미션 확인)
+  L-->>C: {status: COMPLETED, mission.id}
   rect rgba(128,128,128,0.12)
     C->>CDB: reward_point_ledger (MISSION_COMPLETED, source_key = missionId) — UK면 건너뜀
     C->>CDB: reward_point_balance += 10
@@ -647,14 +746,15 @@ sequenceDiagram
       C->>CDB: reward_point_ledger (COMMUNITY_POSTED, source_key = postId) + 잔액
     end
   end
-  C-->>W: 200 학습 완료 + 적립 포인트
+  C-->>W: learning 응답 그대로 (200 학습 완료 또는 409 ATTEMPT_CLOSED)
 ```
 
-- 공유·적립 저장 실패는 학습 완료 응답을 바꾸지 않는다. 원장은 사건 키 UK로 멱등이라 같은 사건 재요청·주간 테마 조회(3.4) 때 보충
+- 공유·적립 저장 실패는 학습 완료 응답을 바꾸지 않는다(적립은 `RewardService.earn` 자체 트랜잭션, 실패는 로그만). 원장은 사건 키 UK로 멱등이라 같은 돌아보기 재요청(`409 ATTEMPT_CLOSED`)·주간 테마 조회(3.4) 때 보충
+- 응답에 적립 결과를 넣지 않는다. 웹은 `GET /students/me/points`로 잔액을 본다
 
-### 3.6 되돌아보기 열람·완주 보너스 (P21·P23, learning #385, 적립 연결 구현 예정)
+### 3.6 되돌아보기 열람·완주 보너스 (P21·P23, learning #385·core #389 구현)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). learning 열람 기록·완주 판정은 #385 구현. core 원장·적립 진입점은 #389 구현, 이 응답 뒤 적립 연결은 구현 예정. 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). learning 열람 기록·완주 판정은 #385, core 열람 응답 뒤 적립 연결은 #389 구현. 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -669,19 +769,19 @@ sequenceDiagram
   L->>L: 토·일 확인(아니면 409 THEME_REVIEW_NOT_ALLOWED), theme_review_view 저장 (주 1회 멱등)
   L-->>C: {firstViewThisWeek, completed}
   rect rgba(128,128,128,0.12)
-    opt firstViewThisWeek
-      C->>CDB: reward_point_ledger (REVIEW_VIEWED, source_key = weekStart) + 잔액
-    end
+    C->>CDB: reward_point_ledger (REVIEW_VIEWED, source_key = weekStart) + 잔액 — 이미 있으면 건너뜀(재요청 보충)
     opt completed (월~금 5문제 각 당일 학습 완료)
       C->>CDB: reward_point_ledger (THEME_COMPLETED, source_key = weekStart) + 잔액
     end
   end
-  C-->>W: 200 {earned}
+  C-->>W: 200 {firstViewThisWeek, completed} (learning 응답 그대로)
 ```
+
+- `weekStart`는 core가 learning에 넘긴 KST 날짜의 월요일. `firstViewThisWeek`와 무관하게 적립을 부르고 사건 키로 1회만 남겨, 앞선 적립 저장이 실패했으면 열람 재요청 때 보충
 
 ### 3.7 커뮤니티 열람·반응·신고 (P20, core #388·learning #386 구현)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 반응 포인트 적립(#389)만 구현 예정. 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 반응 포인트 적립·작성자 착용 아이템 표시는 #389 구현. 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -699,13 +799,13 @@ sequenceDiagram
     C-->>W: 403
   else 마무리함
     L-->>C: VISIBLE 공유물 무작위 목록 (studentId 포함, 반응 수 없음)
-    C->>CDB: 작성자 별명·꾸미기 조회
-    C-->>W: 200 (studentId 제거, author = 별명·look)
+    C->>CDB: 작성자 별명·꾸미기·착용 아이템 조회
+    C-->>W: 200 (studentId 제거, author = 별명·look{theme, companion, equipped})
   end
   W->>C: PUT /community-posts/{postId}/reactions/NEW_IDEA
   C->>L: PUT /internal/community/posts/{postId}/reactions/NEW_IDEA?studentId
   L-->>C: {postId, reaction, reactionId, created: true}
-  opt 생성됨이고 오늘 반응 적립 상한 미만
+  opt 반응 남기기 성공, 같은 키 없음, 오늘 반응 적립 상한 미만
     C->>CDB: reward_point_ledger (REACTION_GIVEN, source_key = postId:reaction, reactionId와 1:1) + 잔액
   end
   C-->>W: 204
@@ -1226,6 +1326,7 @@ sequenceDiagram
   participant C as core
   participant DB as core_db
   participant L as learning
+  participant R as report
 
   W->>C: POST /error-reports {targetType: JUDGMENT, targetId, comment} (Idempotency-Key)
   C->>DB: error_report RECEIVED
@@ -1235,8 +1336,13 @@ sequenceDiagram
   C->>L: POST /internal/judgments/{judgmentId}/corrections (Idempotency-Key)
   L->>L: judgment_correction 추가 (기존 판정·원본 답변 불변)
   L-->>C: 201
+  C->>R: GET /internal/reports/correction-impact?studentId&attemptId (#244, 실패 시 UNKNOWN)
+  R-->>C: 그 시도로 만든 완료 판
+  C->>L: GET /internal/support/attempts/{attemptId} (판정의 답변 ID 확인, #244)
+  L-->>C: 답변·판정 ID
+  C->>DB: 그 답변을 인용한 대화 답변, 영향받은 일일 판의 고정 대화 조회
   rect rgba(128,128,128,0.12)
-    C->>DB: correction 저장 (impact: 대화·집계·리포트 반영 여부)
+    C->>DB: correction 저장 (impact: 대화·집계·리포트 영향·대상 ID)
     C->>DB: error_report RESOLVED + audit_log
   end
   C->>C: NotificationService.notify (ERROR_REPORT_RESOLVED)

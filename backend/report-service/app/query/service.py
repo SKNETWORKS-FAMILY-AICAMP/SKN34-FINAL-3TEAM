@@ -70,6 +70,26 @@ class QueryService:
         ensure_query_allowed(session, row["student_id"])
         return row
 
+    async def correction_impact(self, student_id: UUID, attempt_id: UUID):
+        require_student(student_id)
+
+        def query():
+            with self._factory() as session:
+                ensure_query_allowed(session, student_id)
+                return {
+                    "items": [
+                        {
+                            "reportId": str(row["id"]),
+                            "periodType": row["period_type"],
+                            "periodFrom": row["period_from"].isoformat(),
+                            "revision": row["revision"],
+                        }
+                        for row in self._reports.correction_impact(session, student_id, attempt_id)
+                    ]
+                }
+
+        return await run_db(query)
+
     async def detail(self, report_id: UUID, revision: int | None, narrative_enabled: bool):
         def query():
             with self._factory() as session:

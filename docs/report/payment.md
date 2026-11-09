@@ -1,4 +1,4 @@
-# 결제·구독과 상품 권한 (#48·#184·#167)
+# 결제·구독과 상품 권한 (#48·#184·#167·#419)
 
 토스페이먼츠 테스트 환경만 연동(실결제 키는 네트워크 호출 전 거부). 계약은 [API 명세](../design/api-spec.md) 2.6·3.5, 상태는 [상태 다이어그램](../design/state-diagram.md) 6장, 저장은 [ERD](../design/erd.md) 3.4.
 
@@ -96,3 +96,19 @@
 - core·learning 통합 테스트(실제 PostgreSQL·Redis·RabbitMQ, PG·learning HTTP는 계약 대역)로 금액/주문/소유권 위조, PG 응답 불일치, 동시 승인/취소, 응답 유실·권한 DB 실패 복구, 같은 기간 중복 청구, 말일·유예·3회 재청구, billing/해지 경합, 탈퇴/동의 철회 복구, 환불 조건·관리자 권한 검증
 - 실제 bootJar 두 프로세스로 core→learning 증빙 조회, 환불 동결 차단, 반려 후 피드백 DONE/USED, 사용 후 409 환불 거부 확인(결제 상태는 합성 fixture)
 - 실제 토스 테스트 결제 승인·구독 `ACTIVE`는 kind 환경에서 확인(#236, [local-platform](local-platform.md) 13장). 빌링 발급·정기 청구·취소·웹훅 송신은 실제 PG로 미검증
+
+## 9. 상태 전이 서술 정합화 (#419)
+
+2026-11-09 develop 정합성 검증에서 나온 상태·권한 서술 차이는 모두 **문서를 코드에 맞추는 쪽**으로 정했다(사용자 확정, 동작 변경 없음). 반영 위치는 [상태 다이어그램](../design/state-diagram.md) 2.5·4.1·6.1~6.3, [API 명세](../design/api-spec.md) 시도 비교·리포트 재생성 행이다.
+
+| 항목 | 결정 | 근거 코드 |
+|---|---|---|
+| A1 환불 `FAILED` | 종료 상태가 아니라 대기 환불. `FAILED → REJECTED`(관리자 반려)·`FAILED → COMPLETED`(웹훅 뒤 PG 취소 재확인) 추가, 재요청은 새 행 없이 기존 행 반환. 관리자 승인은 `REQUESTED`만 받아 같은 결제를 다시 취소하지 않음. `FAILED`가 탈퇴를 막는 기존 계약은 유지 | `RefundService.reject`(`REQUESTED`·`FAILED` 허용), `applyVerified`(`REQUESTED`·`APPROVED`·`FAILED` 허용), `PaymentMapper.xml` `pendingRefund`·`refundPending`, `PaymentWebhookService` |
+| A2 결제 취소 | PG `CANCELED` 확인 시 승인 시각이 있으면 `REFUNDED`, 없으면 `CANCELED`. 승인 결제는 `REFUND_REVIEW` 없이 `APPROVED → REFUNDED`, 확인 중 결제는 `CONFIRMING → REFUNDED·CANCELED`. 대상 구독은 함께 `CANCELED` | `PaymentService.accept` `CANCELED` 분기 |
+| A3 시도 비교 | `GET /attempts/{attemptId}/comparison`은 학생 본인 전용. 학부모 조회 기능은 만들지 않음 | core `PublicAuthFilter`(`/attempts/` 비학생 403), learning `AttemptController.comparison`의 `requireSelfStudent()`, OpenAPI `getAttemptComparison` |
+| A4 리포트 재생성 | 관리자는 `SERVICE_OPS` 권한만 무제한 재생성 | `PublicAuthFilter` `adminReportRegeneration` → `requirePermission(SERVICE_OPS)`, OpenAPI `regenerateReport` |
+| A5 시스템 반려 | `REQUESTED → REJECTED`를 시스템 전이로 추가(결제 후 프리미엄 사용 확인, `decided_by` 없음, 409 `REFUND_NOT_ALLOWED`) | `RefundService.request` 증빙 조회 뒤 분기 |
+| 함께 정리 | 정기 리포트 작업 부분 UK `(student_id, period_type, period_from)`, 세션 진입에 `POST /auth/admin/login` 추가 | `V30__daily_report_period_type.sql`, `AuthService.adminLogin` → `startSession` |
+
+- 검증 중 함께 찾은 차이: 대기 중인 `REQUESTED` 환불도 웹훅으로 PG 취소가 확인되면 바로 `COMPLETED`가 된다(`applyVerified`). 상태 다이어그램 6.3에 같이 적었다
+- 코드·계약 변경이 없으므로 core 테스트·OpenAPI는 그대로다

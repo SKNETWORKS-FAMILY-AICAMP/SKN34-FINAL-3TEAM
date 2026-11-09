@@ -26,6 +26,9 @@ interface SupportMapper {
  fun correction(reportId: UUID): Correction?
  fun insertCorrection(value: Correction): Int
  fun updateCorrection(value: Correction): Int
+ fun correctedReport(id: UUID): Boolean
+ fun correctedConversation(id: UUID): Boolean
+ fun correctedMessages(@Param("ids") ids: List<UUID>): List<UUID>
  fun notices(@Param("role") role: String, @Param("offset") offset: Long, @Param("limit") limit: Int): List<Notice>
  fun noticeCount(role: String): Long
  fun adminNotices(@Param("status") status: String?, @Param("role") role: String?, @Param("offset") offset: Long, @Param("limit") limit: Int): List<Notice>

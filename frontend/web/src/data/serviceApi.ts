@@ -13,6 +13,8 @@ export const serviceApi = {
   saveSettings: (data: NotificationSettings) => apiFetch<NotificationSettings>('/notification-settings', json(data, 'PUT')),
   startReauth: (data: { purpose: ReauthPurpose; childId?: string; scope?: DeletionScope }) => apiFetch<{ challengeId: string; authorizationUrl: string; expiresAt: string }>('/me/reauth', json(data)),
   finishReauth: (challengeId: string) => apiFetch<{ reauthToken: string; expiresAt: string }>('/me/reauth', json({ challengeId })),
+  // #415: ID·비밀번호 계정은 로그인 비밀번호를 다시 입력해 같은 1회 재인증 토큰을 바로 받는다.
+  passwordReauth: (data: { purpose: ReauthPurpose; childId?: string; scope?: DeletionScope; password: string }) => apiFetch<{ reauthToken: string; expiresAt: string }>('/me/reauth/password', json(data)),
   impact: (childId: string, signal?: AbortSignal) => apiFetch<{ childId: string; actions: { scope: string; effect: string }[]; retainedTransactionsYears: number; deviceCleanupPending: boolean }>(`/children/${id(childId)}/deletion-impact`, { signal }),
   unlink: (childId: string, token: string) => apiFetch<void>(`/children/${id(childId)}/link`, { method: 'DELETE', headers: { 'X-Reauth-Token': token } }),
   deleteChild: (childId: string, scope: DeletionScope, token: string) => apiFetch<DeletionRequest>(`/children/${id(childId)}/deletion-requests`, { ...json({ scope }), headers: { 'Content-Type': 'application/json', 'X-Reauth-Token': token } }),

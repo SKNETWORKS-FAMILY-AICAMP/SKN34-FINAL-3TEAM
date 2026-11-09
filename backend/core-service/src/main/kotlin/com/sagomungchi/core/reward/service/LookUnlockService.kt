@@ -110,6 +110,14 @@ class LookUnlockService(private val mapper: RewardMapper, private val rewards: R
         return LookCatalog.ITEM_SLOTS.associateWith { worn[it] }
     }
 
+    /** 여러 학생의 슬롯별 착용 코드(커뮤니티 작성자 `look`, #389). 학생마다 네 슬롯을 모두 담는다. */
+    fun equipmentOf(studentIds: Set<UUID>): Map<UUID, Map<String, String?>> {
+        if (studentIds.isEmpty()) return emptyMap()
+        val worn = mapper.equipmentOf(studentIds).groupBy({ UUID.fromString(it["student_id"] as String) }) {
+            it["slot"] as String to it["code"] as String }
+        return studentIds.associateWith { id -> worn[id].orEmpty().toMap().let { slots -> LookCatalog.ITEM_SLOTS.associateWith { slots[it] } } }
+    }
+
     private fun notFound() = BusinessException(HttpStatus.NOT_FOUND, "LOOK_ITEM_NOT_FOUND", "없는 꾸미기 항목입니다.")
     private fun locked() = BusinessException(HttpStatus.CONFLICT, "LOOK_LOCKED", "아직 해금하지 않은 꾸미기예요.")
     private fun invalid() = BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "VALIDATION_FAILED", "고를 수 있는 아이템을 확인해 주세요.")

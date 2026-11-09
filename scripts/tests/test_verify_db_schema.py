@@ -31,9 +31,10 @@ class ContractTests(unittest.TestCase):
         migrations = ROOT / "backend/core-service/src/main/resources/db/migration"
         text = "".join(
             (migrations / name).read_text(encoding="utf-8")
-            for name in ("V25__seed_consent_documents.sql", "V31__prepare_community_settings.sql")
+            for name in ("V25__seed_consent_documents.sql", "V31__prepare_community_settings.sql",
+                         "V39__consent_documents_password_signup.sql")
         )
-        self.assertEqual(len(seeds["consent_document"]), 4)
+        self.assertEqual(len(seeds["consent_document"]), 6)
         for seed in seeds["consent_document"]:
             self.assertIn(f"('{seed}', ", text)
 

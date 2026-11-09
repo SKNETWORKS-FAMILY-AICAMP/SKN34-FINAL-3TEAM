@@ -194,7 +194,8 @@ export function ensureReports(c: Child) {
   }
   // 일일 리포트: 매일 자정(다음 날 00:00 KST)에 그날 대상으로 만든다(목업은 최근 사흘).
   for (const offset of [1, 2, 3]) {
-    const r = makeDaily(c, kstDate(offset))
+    // 가장 최근 일일 리포트로 정정 안내를 확인한다 (#244).
+    const r = { ...makeDaily(c, kstDate(offset)), correctionNotice: offset === 1 }
     if (!reports.has(r.reportId)) reports.set(r.reportId, [r])
   }
   return [...reports.values()].filter((v) => v[0].childId === c.id).map((v) => v.at(-1)!)

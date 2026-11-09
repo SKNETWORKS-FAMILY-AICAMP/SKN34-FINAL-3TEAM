@@ -248,6 +248,9 @@ classDiagram
     +authorize() Redirect
     +callback(code, state, error) Redirect
     +refresh(cookie) TokenResponse
+    +adminLogin(request) TokenResponse
+    +parentSignup(request) TokenResponse
+    +parentLogin(request) TokenResponse
     +logout(cookie, bearer)
     +student(request) TokenResponse
     +me() MeResponse
@@ -268,6 +271,8 @@ classDiagram
     +completeGoogle(code, state, error, stateCookie, previousRefresh) IssuedAuth
     +login(profile, previousRefresh) IssuedAuth
     +adminLogin(loginId, password, previousRefresh) IssuedAuth
+    +parentLogin(loginId, password, previousRefresh) IssuedAuth
+    +parentSignup(loginId, password, name, clientIp, previousRefresh) IssuedAuth
     +authenticate(accessToken) AuthenticatedAccount
     +refresh(refreshToken) IssuedAuth
     +enterStudent(refreshToken, studentId, expected) IssuedAuth
@@ -298,6 +303,36 @@ classDiagram
     +refresh(hash) RefreshToken
     +consume(id, now) Int
     +revoke(sessionId, now)
+    +adminCredential(loginId) PasswordCredential
+    +parentCredential(loginId) PasswordCredential
+    +parentCredentialOf(userId) PasswordCredential
+    +loginIdExists(loginId) Boolean
+    +insertPasswordParent(id, loginId, name, now, demo) Boolean
+    +insertParentCredential(userId, hash, now)
+  }
+  class PasswordCredentialService {
+    <<service>>
+    +hash(password) String
+    +verify(realm, credential, password, now) Failure
+  }
+  class PasswordCredential {
+    <<value>>
+    +userId UUID
+    +passwordHash String
+    +failedCount Int
+    +lockedUntil OffsetDateTime
+  }
+  class SignupRateLimiter {
+    <<repository>>
+    +acquire(clientIp)
+  }
+  class ReauthenticationService {
+    <<service>>
+    +start(identity, purpose, childId, scope) Started
+    +callback(code, state, error, cookie) UUID
+    +issue(identity, challengeId) Issued
+    +withPassword(identity, purpose, childId, scope, password) Issued
+    +consume(identity, token, purpose, childId, scope)
   }
   class AuthSession {
     <<value>>
@@ -309,7 +344,10 @@ classDiagram
   class StudentAccessService {
     <<service>>
     +linkedStudents(userId) List
+    +requireOwned(userId, studentId) LinkedStudent
     +requireLinked(userId, studentId) LinkedStudent
+    +lockActive(studentId)
+    +activeParents(studentId) List
   }
   class ConsentAccessService {
     <<service>>
@@ -389,11 +427,31 @@ classDiagram
     <<service>>
     +register(userId, nickname, grade, birthYear, choices) LinkedStudent
     +children(userId) List
-    +unlink(parentId, childId)
-    +authorizeChild(childId) UserContext
-    +authorizeLinkedChildren() UserContext
-    +linkedStudentIds(parentId) Set
-    +requestDeletion(parentId, reauthToken, childId, scope) DeletionRequest
+  }
+  class ChildManagementController {
+    <<controller>>
+    +update(childId, request) LinkedStudent
+    +impact(childId) Map
+    +unlink(childId, reauthToken)
+    +delete(childId, request, reauthToken) ChildDeletionState
+    +status(childId, requestId) ChildDeletionState
+    +complete(deletionRequestId, request) ChildDeletionState
+  }
+  class ChildManagementService {
+    <<service>>
+    +update(identity, id, nickname, grade) LinkedStudent
+    +impact(identity, id) Map
+    +unlink(identity, id, token)
+    +delete(identity, id, scope, token) ChildDeletionState
+    +deleteForWithdrawal(user)
+    +status(identity, child, id) ChildDeletionState
+    +complete(id, service, systemRole, studentScope) ChildDeletionState
+    -confirm(user, id, scope) DeletionRequest
+  }
+  class ChildAuthorizationService {
+    <<service>>
+    +requireOwned(user, child, linked)
+    +requireCurrent(user, child)
   }
   class UserAccount {
     <<entity>>
@@ -483,14 +541,24 @@ classDiagram
     +insert(entry)
     +withdraw(userId, consentId, now)
   }
-  class StudentRepository { <<repository>> }
+  class ChildManagementRepository {
+    <<repository>>
+    +owned(user, student, linked) Boolean
+    +lock(student) UUID
+    +unlink(user, student, now)
+    +pending(student) DeletionRequest
+    +insert(request)
+    +block(student, now)
+    +completion(id, service, now)
+    +complete(id, now)
+    +eraseProfile(student, now)
+  }
   class StudentAccessRepository {
     <<repository>>
     +linkedStudents(userId) List
     +linkedCount(userId) Int
     +insert(child, userId, demo, now)
   }
-  class DeletionRequestRepository { <<repository>> }
   class StudentDeviceRepository { <<repository>> }
   class OutboxWriter { <<messaging>> }
 
@@ -499,6 +567,12 @@ classDiagram
   AuthService --> GoogleOAuthClient : 트랜잭션 밖 코드 교환
   AuthService --> TokenService
   AuthService --> AuthRepository
+  AuthService --> PasswordCredentialService : 관리자·학부모 비밀번호 검사
+  AuthService --> SignupRateLimiter : 학부모 가입 IP 한도(Redis)
+  PasswordCredentialService --> AuthRepository : 실패 횟수·잠금
+  PasswordCredentialService ..> PasswordCredential
+  ReauthenticationService --> PasswordCredentialService : 비밀번호 재확인
+  ReauthenticationService --> AuthRepository : parent_credential
   AuthService --> StudentAccessService : 연결 자녀
   AuthService --> ConsentAccessService : 필수·법정대리인 동의
   AuthService ..> AuthSession
@@ -528,10 +602,14 @@ classDiagram
   GuardianshipService --> ConsentAccessService : 현재 동의 확인
   GuardianshipService --> StudentAccessService
   GuardianshipService --> LearningRecordService : 기록 유무
-  GuardianshipService --> StudentRepository
   GuardianshipService --> StudentAccessRepository : 연결 자녀·등록
-  GuardianshipService --> DeletionRequestRepository
-  GuardianshipService --> OutboxWriter : student.deleted
+  ChildManagementController --> ChildManagementService
+  ChildManagementService --> ChildAuthorizationService : 보호자 소유 자녀
+  ChildManagementService --> ReauthenticationService : 해제·삭제 재확인
+  ChildManagementService --> ChildManagementRepository : 학생 행 잠금·삭제 요청
+  ChildManagementService --> OutboxWriter : student.deleted
+  ChildAuthorizationService --> ChildManagementRepository
+  ChildAuthorizationService --> StudentAccessService : requireCurrent
   GuardianTransferController --> GuardianTransferService
   GuardianTransferService --> GuardianTransferRepository : 연결 교체·상태
   GuardianTransferService --> ReauthenticationService : CHILD_TRANSFER·TRANSFER_ACCEPT
@@ -540,24 +618,27 @@ classDiagram
   GuardianTransferService ..> GuardianTransfer
   GuardianTransferAccessService --> GuardianTransferRepository
   AccountService --> GuardianTransferAccessService : 대기 중 탈퇴 차단
-  GuardianshipService --> GuardianTransferAccessService : 대기 중 해제·삭제 차단
+  ChildManagementService --> GuardianTransferAccessService : 대기 중 해제·삭제 차단
   AuthService --> GuardianPasswordService : 학부모 복귀
   MeController --> GuardianPasswordService : 보호자 비밀번호 설정
   AccountService ..> UserAccount
   GuardianshipService ..> Student
   GuardianshipService ..> Guardianship
-  GuardianshipService ..> DeletionRequest
+  ChildManagementService ..> DeletionRequest
 ```
 
-- `GuardianshipService.authorizeChild(childId)`: 학부모는 `guardianship LINKED` 확인 후 `studentScope = {childId}`로 컨텍스트 갱신, 학생은 본인 ID만. 미연결 시 `403 CHILD_NOT_LINKED` (FN-AGT-02, NFR-SEC-02)
-- 자녀 범위가 필요한 모든 controller는 하위 호출 전에 `authorizeChild` 호출 → `InternalRestClientFactory`가 그 컨텍스트를 헤더로 전달
-- `authorizeLinkedChildren()`: 경로에 자녀 ID가 없는 API(`/reports/{reportId}` 등)용. `studentScope = 연결 자녀 전체`로 전달하고 소유 서비스가 리소스의 학생 ID로 검사, 403은 core가 `CHILD_NOT_LINKED`로 변환
+- 자녀 인가는 중앙 메서드 없이 각 기능 service 안에서 한다. controller는 인가 service를 직접 부르지 않는다 (FN-AGT-02, NFR-SEC-02)
+  - `StudentAccessService.requireOwned(userId, studentId)`: 현재 연결 자녀인지 확인, 아니면 `403 CHILD_NOT_LINKED`. `requireLinked`는 여기에 필수·법정대리인 동의까지 확인한다
+  - `ChildAuthorizationService.requireCurrent`(연결+동의, 분석 대화 `ConversationService`·리포트 설정 `ReportTemplateService`·기기 로그인)·`requireOwned`(해제·삭제 대상 포함 소유 확인, `ChildManagementService`)
+  - 리포트는 `ReportAccessService.parent`·`requireGuardian`·`regeneration`(관리자 `SERVICE_OPS` 재생성 허용)이 `StudentAccessService.requireLinked`를 호출한다(3.3). 학습 프록시는 `StudentLearningContextService.requireLinked`(3.2)
+- 인가 후 하위 호출 직전에 해당 service·client가 `UserContextHolder`의 `studentScope`를 그 학생 한 명(`{studentId}`)으로 바꾸고 `InternalRestClientFactory`가 헤더로 전달한다. `reportId`처럼 경로에 자녀 ID가 없는 API도 core가 소유 작업에서 학생 ID를 먼저 찾아 같은 방식으로 좁힌다(연결 자녀 전체 범위 전달 없음)
+- `student.deleted` 발행은 `ChildManagementService`(삭제 확정 `confirm`)가 `OutboxWriter`로 한다. `GuardianshipService`는 자녀 등록(`register`)·목록(`children`)만 소유한다
 - 구현 상태: 인증(`AuthController`·`AuthService`·`TokenService`·`GoogleOAuthClient`), 동의·자녀(`ConsentController`·`ConsentService`·`ChildrenController`·`GuardianshipService`), 기기·PIN(`StudentDeviceController`·`StudentAuthService`·`StudentPinService`·`StudentDeviceCleanupService`), 학생 공개 설정(#206 `StudentSharingController` + `StudentLearningContextService.ownSharing`·`requireShared`), 꾸미기 설정(#234 `StudentLookController`·`StudentLookService`·domain `StudentLook`), 계정 관리(`ReauthenticationService`·`AccountManagementService`·`AccountWithdrawalService`·`ChildManagementService`), 보호자 비밀번호(V24 `GuardianPasswordService`, `AccountManagementController`의 `/me/guardian-password`), 탈퇴 전 자녀 이관(#289 `GuardianTransferController`·`GuardianTransferService`·`GuardianTransferAccessService`·domain `GuardianTransfer`·`GuardianTransferRepository`, 상담 이전 `conversation/service/ConversationTransferService`) 구현됨. 그림의 `MeController`·`AccountService`와 Student entity 메서드명은 추상 이름이며, 탈퇴·자녀 해제/삭제의 이관 대기 차단은 실제로 `AccountWithdrawalService`·`ChildManagementService`가 `GuardianTransferAccessService`를 호출한다
 - 동의는 별도 entity 없이 선택마다 새 `consent` 행(AGREED·WITHDRAWN)을 저장하고 최신 행으로 판정 (상태 다이어그램 2.3, [이슈 #37 보고서](../report/auth-account.md))
-- `StudentAccessService`·`ConsentAccessService`는 인증용 읽기 전용 확인. 쓰기(자녀 등록·동의 저장)는 `GuardianshipService`·`ConsentService`(#37) 소유
+- `StudentAccessService`·`ConsentAccessService`는 인증·인가용 읽기 확인(학생 행 잠금 포함). 쓰기는 자녀 등록 `GuardianshipService`, 정보 수정·해제·삭제 `ChildManagementService`, 동의 저장 `ConsentService`(#37) 소유
 - 공개 API 컨텍스트는 `PublicAuthFilter`가 설정하고 finally에서 해제 (`InternalAuthFilter`와 같은 방식)
-- 이메일·비밀번호 가입·로그인·로그인 수단 변경 없음(예외: 가입 없는 관리자 ID·비밀번호 로그인 `AuthService.adminLogin`, `admin_credential`·`PinHasher` 해시·5회 실패 15분 잠금, #369). Google 계정은 `(oauth_provider, oauth_subject)`로 식별, 최초 콜백에서 `AuthService.login`이 PARENT 계정 생성 (API 명세 5.1)
-- 재확인 토큰(`reauthToken`)은 Google 재인증 기반(#45), DB reauth_challenge/reauth_grant 저장
+- ID·비밀번호 로그인은 관리자(#369, 가입 없음, `AuthService.adminLogin`, `admin_credential`)와 학부모(#415, `AuthService.parentSignup`·`parentLogin`, `parent_credential`) 두 가지다. 둘 다 `PasswordCredentialService`(`PinHasher` PBKDF2 해시·5회 실패 15분 잠금·없는 ID 더미 해시 검사)와 값 객체 `PasswordCredential`(옛 `AdminCredential`)을 공유하고, 실패는 커밋 뒤 던진다. 학부모 가입은 `SignupRateLimiter`(Redis 고정 창, IP당 기본 10분 5회)를 거친다. 로그인 수단 변경·연결과 비밀번호 찾기·변경은 없다. Google 계정은 `(oauth_provider, oauth_subject)`로 식별, 최초 콜백에서 `AuthService.login`이 PARENT 계정 생성 (API 명세 5.1)
+- 재확인 토큰(`reauthToken`)은 Google 재인증 기반(#45), DB reauth_challenge/reauth_grant 저장. 비밀번호 학부모는 `ReauthenticationService.withPassword`(`POST /me/reauth/password`, #415)가 로그인 비밀번호를 확인하고 검증·발급을 마친 challenge·grant를 한 번에 만들어 `consume`은 그대로다. 실패는 로그인과 같은 `parent_credential` 횟수를 쓴다
 - `AuthService.enterStudent` (`POST /auth/student-sessions`): 학부모 Bearer 세션 행을 잠그고 연결·활성 자녀·필수·법정대리인 동의 확인 → 학부모 세션 `locked_at`·version 증가, `parent_session_id`를 가진 학생 세션 생성 → `STUDENT` access만 발급, 학부모 refresh 쿠키는 유지(잠김) (P01, 학부모 동석). 학생 계정·시연 링크 없음
 - `AuthService.unlockParent` (`POST /auth/parent-unlock`): 잠긴 학부모 refresh + `GuardianPasswordService.attempt`(PIN과 같은 해시·5회 잠금) → 잠금 해제·학생 세션 폐기·refresh 회전. `GuardianPasswordService.set`은 `GUARDIAN_PASSWORD` 재인증 grant를 1회 소비 (FN-ACC-05, 2026-11-03)
 - `StudentAuthService.login`: 기기 쿠키 해시로 `StudentDevice` 조회 → `isUsable`(미해제·미만료)·자녀 등록 확인 → `ChildAuthorizationService.requireCurrent`·`StudentAccessService.requireLinked` → 잠금·PIN 검사 → 동석 경로와 같은 `STUDENT` 토큰 발급, refresh 미발급 (P01, API 명세 3.11)
@@ -669,8 +750,7 @@ classDiagram
     +streamAnalysis(request) Flow~AnalysisEvent~
     +cancel(streamId)
   }
-  class GuardianshipService { <<service>> }
-  class JobExecutionService { <<service>> }
+  class ChildAuthorizationService { <<service>> }
   class SseEmitters { <<web>> }
 
   LearningController --> LearningProxyService
@@ -685,14 +765,13 @@ classDiagram
   DashboardController --> LearningRecordService
   LearningRecordService --> StudentAccessService : 현재 연결·ACTIVE·동의
   LearningRecordService --> StudentLearningContextService : home 학년·demo
-  ConversationController --> GuardianshipService
   ConversationController --> ConversationService
   ConversationController --> SseEmitters
   ConversationService --> ConversationRepository
   ConversationService --> ConversationMessageRepository
   ConversationService --> AiClient
   ConversationService --> LearningClient : 근거 원문
-  ConversationService --> JobExecutionService : 실행 이력
+  ConversationService --> ChildAuthorizationService : requireCurrent
   ConversationService ..> Conversation
   ConversationService ..> ConversationMessage
 ```
@@ -728,19 +807,29 @@ classDiagram
   }
   class ReportJobService {
     <<service>>
-    +scheduleWeekly(periodFrom, periodTo)
-    +regenerate(reportId, requestedBy) ReportJob
-    +retry(jobId, adminId) ReportJob
-    +onStarted(event)
-    +onCompleted(event)
-    +onFailed(event)
+    +scheduled(parent, studentId, period) ReportJobAccepted
+    +regenerate(reportId, actor) ReportJobAccepted
+    +enqueueAdminRetry(original, actor) ReportJobAccepted
+  }
+  class ReportAccessService {
+    <<service>>
+    +parent(studentId) UUID
+    +requireGuardian(parent, studentId)
+    +regeneration(actor, studentId) Boolean
+  }
+  class ReportLifecycleService {
+    <<service>>
+    +apply(event)
+    +reconcile(job, result)
+    +failForDeletion(studentId)
   }
   class ReportQueryService {
     <<service>>
-    +list(childId, status) Page
-    +detail(reportId) ReportDetail
-    +evidence(reportId, itemId) Evidence
-    +downloadUrl(reportId, format) DownloadUrl
+    +list(childId, status, periodType) JsonNode
+    +detail(reportId, revision) JsonNode
+    +pinned(reportId, revision) JsonNode
+    +evidence(reportId, itemId) JsonNode
+    +download(reportId, format) JsonNode
   }
   class ReportJob {
     <<entity>>
@@ -759,10 +848,8 @@ classDiagram
   }
   class ReportClient {
     <<client>>
-    +list(studentId, status) Page
-    +detail(reportId) ReportDetail
-    +evidence(reportId, itemId) Evidence
-    +fileUrl(reportId, format) DownloadUrl
+    +get(studentId, path, query, narrativeEnabled) JsonNode
+    +reconcile(job) ReportReconciliation
   }
   class NotificationController {
     <<controller>>
@@ -808,14 +895,18 @@ classDiagram
   class OutboxWriter { <<messaging>> }
   class ProcessedEventRepository { <<repository>> }
 
-  ReportController --> GuardianshipService
   ReportController --> ReportQueryService
   ReportController --> ReportJobService
   ReportScheduler --> ReportJobService
-  ReportEventConsumer --> ReportJobService
+  ReportJobService --> ReportAccessService : 보호자·SERVICE_OPS 재생성
+  ReportJobService --> StudentAccessService : lockActive
   ReportJobService --> ReportJobRepository
   ReportJobService --> ReportCommandWriter
-  ReportJobService --> ProcessedEventRepository
+  ReportEventConsumer --> ReportLifecycleService
+  ReportLifecycleService --> ProcessedEventRepository
+  ReportLifecycleService --> ReportJobRepository
+  ReportQueryService --> ReportAccessService : requireGuardian
+  ReportAccessService --> StudentAccessService : requireLinked
   ReportLifecycleService ..> ReportNotificationListener : ReportJobFinished (같은 트랜잭션)
   ReportNotificationListener --> NotificationService
   ReportCommandWriter --> OutboxWriter
@@ -829,7 +920,7 @@ classDiagram
   NotificationDispatchService --> NotificationRedisPublisher
   NotificationDispatchService --> NotificationDeliveryService
   NotificationRedisSubscriber --> NotificationStreams
-  class GuardianshipService { <<service>> }
+  class StudentAccessService { <<service>> }
 ```
 
 - `ReportScheduler`: `@Scheduled` + `@SchedulerLock`(ShedLock), 매주 월 00:00 KST(일요일 자정, 2026-11-09 결정), 직전 월~일(KST) 대상, 기록 없는 학생 포함 (P06). 학생별 `report_job(SCHEDULE)` + outbox 저장, 부분 UK로 중복 방지
@@ -837,7 +928,7 @@ classDiagram
 - `ReportEventConsumer`: 큐 `core.report.events`, `processed_event`로 멱등, 상태 전이는 조건부 UPDATE (상태 다이어그램 4.1)
 - 알림: 리포트 종료 전이 트랜잭션에서 `QUEUED` 저장 → 커밋 후 `NotificationDispatchService`가 `NotificationRedisPublisher`로 `core:notifications:v1` 발행(발행기는 Redis 발행만) → `NotificationDeliveryService`로 `COMPLETED`·`FAILED` 기록. 관리자 재처리 `NotificationRetryService`도 `dispatch`를 호출(#250). 다른 레플리카의 `NotificationRedisSubscriber`(`notification/consumer`, 구독 연결·채널 이름은 `notification/config/NotificationRedisConfiguration`, #168)가 `NotificationStreams`로 SSE 전달 (아키텍처 1.6)
 - 리포트 조회 API에 `ReportQueryService`를 둬서 controller → client 직접 호출 금지 규칙 준수 (리포트 열람 기록 `report_view` 저장 포함)
-- `ReportController`의 `reportId` 경로는 `GuardianshipService.authorizeLinkedChildren()` 사용 (3.1)
+- 리포트 인가는 controller가 아니라 service 안에서 한다. `ReportQueryService`·`ReportViewService`는 `reportId`로 소유 작업(`ReportJobRepository.byReport`)을 찾은 뒤 `ReportAccessService.parent`(학부모 역할 + `StudentAccessService.requireLinked`)로 확인하고, `ReportClient.get`이 `studentScope`를 그 학생 한 명으로 좁혀 report에 전달한다. 재생성은 `ReportJobService.regenerate` → `ReportAccessService.regeneration`(학부모는 연결 확인, 관리자는 `SERVICE_OPS`) (3.1)
 - 구현 이름: `ReportScheduler` = `report/scheduler/WeeklyReportScheduler`·`DailyReportScheduler`(P24, #390) + `ReportScheduleService`, `ReportEventConsumer` = `report/consumer/ReportLifecycleConsumer` + `ReportLifecycleService`, `ReportCommandWriter` = `report/messaging/ReportGenerateWriter`, `ReportViewRepository` = `ReportJobRepository`(`report_view` 포함). 종료 이벤트 유실 복구(#132)는 `ReportRecoveryScheduler` + `ReportRecoveryService`. 학부모 리포트 표시 설정(#209)은 `ReportTemplateController`·`ReportTemplateService`(제안은 `conversation/service/AnalysisTemplateService.reportTemplate` → `AiClient.reportTemplate`, 학생 잠금·활성 학부모 조회는 `guardianship/service/StudentAccessService`, #279)·`ReportTemplateRepository`·domain `ReportTemplateSettings`
 
 #### 3.3.1 리포트 복구 호출 구조 (#132)
@@ -1066,10 +1157,34 @@ classDiagram
     +list(type, status) Page
     +retry(jobId, adminId) JobExecution
   }
-  class JobExecutionService {
+  class ModelPreflightController {
+    <<controller>>
+    +check(body, request) ModelPreflightResult
+  }
+  class ModelPreflightService {
     <<service>>
-    +begin(jobType, jobId, triggeredBy) JobExecution
-    +finish(executionId, status, errorCode)
+    +check(request, actor) ModelPreflightResult
+  }
+  class ScoringPreflightClient {
+    <<client>>
+    +check(request) ModelPreflightResult
+  }
+  class ModelPreflightAudit {
+    <<repository>>
+    +save(actor, request, result, error)
+  }
+  class ModelLoadingConsumer {
+    <<consumer>>
+    +receive(event, message, channel)
+  }
+  class ModelLoadingService {
+    <<service>>
+    +record(event)
+    +list() Map
+  }
+  class ModelLoadingController {
+    <<controller>>
+    +list() Map
   }
   class ModelVersionService {
     <<service>>
@@ -1120,10 +1235,15 @@ classDiagram
     +insertIfAbsent(usage) Int
     +summarize(from, until, callType) List~UsageSummary~
   }
-  class QueueStatsRepository {
-    <<repository>>
-    +queues() List
+  class OperationsQueueService {
+    <<service>>
+    +queues() Map
   }
+  class QueueManagementClient {
+    <<client>>
+    +queues() Map
+  }
+  class OperationRetryRepository { <<repository>> }
 
   SupportController --> ErrorReportService
   SupportController --> InquiryService
@@ -1141,13 +1261,19 @@ classDiagram
   AdminController --> ErrorReportService
   AdminController --> RefundService
   AdminController --> AuditLogService
-  AdminController --> QueueStatsRepository
+  AdminController --> OperationsQueueService
+  OperationsQueueService --> QueueManagementClient : RabbitMQ 관리 API
   AdminMissionController --> LearningClient
   AdminMissionController --> AuditLogService
   InternalModelVersionController --> ModelVersionService
-  AdminJobService --> ReportJobService : 리포트 재처리
-  AdminJobService --> ConversationService : 대화 재처리
-  AdminJobService --> JobExecutionService
+  AdminJobService --> ReportJobService : 리포트 재처리(ReportAdminRetryService → enqueueAdminRetry)
+  AdminJobService --> ConversationService : 대화 재처리(ConversationAdminRetryService)
+  AdminJobService --> OperationRetryRepository : job_execution·감사
+  ModelPreflightController --> ModelPreflightService
+  ModelPreflightService --> ScoringPreflightClient : POST /internal/models/preflight
+  ModelPreflightService --> ModelPreflightAudit : 결과 감사
+  ModelLoadingConsumer --> ModelLoadingService : model.loading.reported
+  ModelLoadingController --> ModelLoadingService
   ModelVersionService --> OutboxWriter : model.version.activated
   ModelVersionService --> ModelVersionRepository : 상태·감사 같은 트랜잭션
   ModelVersionRepository --> ModelVersionMapper
@@ -1161,13 +1287,16 @@ classDiagram
   class OutboxWriter { <<messaging>> }
 ```
 
+- 정정 영향(#244): `SupportService` → `ReportSupportService.affected`·`ConversationSupportService.citing`/`pinned`로 조회해 `correction.impact`에 기록. `ReportQueryService`·`ConversationService`는 `CorrectionNoticeService`로 `correctionNotice` 표시 여부를 읽음
 - `SupportLearningClient` = `support/client/LearningSupportClient.kt` (아키텍처 2.6). `ErrorReportService`·`InquiryService`·`NoticeService` = `SupportService` + `SupportCommands` + `SupportAccessService`(#46)
-- 운영(#47) 구현 이름: `AdminController` = `admin/controller/OperationsController`, `AdminJobService` = `OperationRetryService`(+ `OperationsService` 조회), `QueueStatsRepository` = `OperationsQueueService` + `admin/client/QueueManagementClient`, 감사 이력 조회 = `OperationsService.audits`. 관리자 미션(#145) `AdminMissionController` = `learning/controller/AdminMissionsController` + `AdminLearningService`
+- 운영(#47) 구현 이름: `AdminController` = `admin/controller/OperationsController`, `AdminJobService` = `OperationRetryService`(+ `OperationsService` 조회), 큐 현황 = `OperationsQueueService` + `admin/client/QueueManagementClient`, 감사 이력 조회 = `OperationsService.audits`. 관리자 미션(#145) `AdminMissionController` = `learning/controller/AdminMissionsController` + `AdminLearningService`
 - 구현된 #43 공개 경로는 #36 `PublicAuthFilter → AuthService.requirePermission(SERVICE_OPS)`를 재사용한다. 내부 조회는 `InternalAuthFilter`의 내부 토큰 검사를 사용한다. 다른 관리자 기능의 권한 범위는 API 1.2를 따른다.
 - #43은 실제 구현된 `ModelVersionController`·`AiUsageController`·`InternalModelVersionController`를 구분해 표시했다. 내부 응답은 `{items: List<ActiveModelVersion>}`이며 평가·관리자 정보는 제외한다. 나머지 운영 기능은 #47에서 구현됨(위 구현 이름).
 - `ModelVersion`은 불변 data class다. 상태 전이는 `ModelVersionService`의 `activate`·`rollback`과 private `switch`에서 `copy` 후 Repository에 저장하며 Domain의 `activate()`·`deactivate()` 메서드는 없다.
 - `AuditLogService`는 아직 구현되지 않은 공용 감사 서비스 설계다. #43은 `ModelVersionService → ModelVersionRepository.audit → ModelVersionMapper.audit → audit_log` 경로로 감사 기록을 저장한다. 상태·감사·Outbox를 같은 트랜잭션으로 유지하며, #47 등에서 공용 감사 기능을 실제 도입할 때 이 경로의 통합을 검토한다. 현재 사용처만을 위해 공용 서비스를 추가하지 않는다 ([#43 보고서](../report/ai.md)).
-- `QueueStatsRepository`: RabbitMQ 관리 API(15672) 조회, 큐 길이·DLQ 적재량 (참고 레포 `QueueOperations*`)
+- `OperationsQueueService` → `QueueManagementClient`: RabbitMQ 관리 API(15672) 조회, `definitions.json`의 고정 35개 큐(기본 큐 7개 × 기본·재시도 3·DLQ) 길이·DLQ 적재량 (참고 레포 `QueueOperations*`, api-spec 5.2)
+- 모델 파일 사전 검사(#368): `ModelPreflightController`(`POST /api/v1/admin/models/preflight`, SERVICE_OPS) → `ModelPreflightService` → `ScoringPreflightClient`(같은 파일, `InternalRestClientFactory` 20초·재시도 없음) → scoring `POST /internal/models/preflight`. 결과·오류는 `ModelPreflightAudit`로 감사 기록 (api-spec 5.2.1, scoring 6장 `preflight.py`)
+- 모델 로딩 상태(#370): scoring `ModelLoadingReporter`가 발행한 `model.loading.reported`를 `admin/consumer/ModelLoadingConsumer`(큐 `core.model.loading.reported`, `RetryingConsumer`)가 받아 `ModelLoadingService.record`로 `model_loading_report`에 Pod·인스턴스별 최신 상태를 저장한다. `ModelLoadingController`(`GET /api/v1/admin/model-loading`)가 `list`로 조회 (아키텍처 1.4)
 - #336 구현 전: `AdminMissionController`(= `learning/controller/AdminMissionsController`)가 성취기준 표·미션 초안 경로도 같은 방식으로 learning에 넘기고 초안 요청·채택·버리기를 감사 기록한다(api-spec 2.8). 사용량 호출 종류(`usage/domain/UsageSummary.CallType`)에 `MISSION_DRAFT` 추가
 
 ### 3.6 커뮤니티·포인트·꾸미기 (community #388 · reward #389 구현)
@@ -1263,11 +1392,11 @@ classDiagram
   LookItemAdminService ..> LookItem
 ```
 
-- #389 구현: `RewardService.earn`이 적립 유일 진입점(`REQUIRES_NEW`, 적립하지 않은 이유는 `EarnOutcome`으로 반환, 예외 없음). 저장소는 MyBatis `RewardMapper` 하나이고 위 엔티티·저장소 상자는 설계 단위다. 아래 사건 연결은 #387·#388 뒤 후속
+- #389 구현: `RewardService.earn`이 적립 유일 진입점(`REQUIRES_NEW`, 적립하지 않은 이유는 `EarnOutcome`으로 반환, 예외 없음). 저장소는 MyBatis `RewardMapper` 하나이고 위 엔티티·저장소 상자는 설계 단위다. 아래 사건 연결도 #389 후속 PR로 구현했다: `ParticipationRewardService`(사건별 `earn` 호출, 어떤 실패도 던지지 않음)를 `LearningProxyService.reflection·weeklyTheme·reviewViewed`와 `CommunityService.react`가 부른다. 커뮤니티 작성자 `look.equipped`는 `CommunityAuthorMapper`가 `LookUnlockService.equipmentOf`로 채운다
 - 학습 완료 적립: 기존 `LearningProxyService`의 돌아보기 저장 성공 후 `RewardService.earn(MISSION_COMPLETED, missionId)` → `CommunityService.shareCompleted`(설정·동의 확인, 학생·미션당 1개라 다시 풀기는 learning이 무시). 적립 저장 실패는 학습 응답을 실패로 바꾸지 않고, 같은 사건 재요청·주간 테마 조회 때 `award`가 사건 키 UK로 멱등 보충. 여러 기능 조합이므로 구현 시 `facade`로 묶음
 - `StudentLookService`(#234, API 3.12)는 저장 전에 `LookUnlockService`로 해금 여부를 확인하고 `equipped` 슬롯을 검증·교체한다. 학생 삭제 확정의 `clear`가 `RewardService.deleteStudent`도 부른다(#389)
 - 신고 연결(#388 구현): 기존 `SupportService`(3.5)가 `targetType = COMMUNITY_POST` 접수·처리 결과 저장 뒤 `CommunityModerationService.apply`(같은 공유물 신고 전체로 `HIDDEN_REPORT`·`VISIBLE`·`REMOVED`를 정해 learning `moderation` 호출)
-- 동의 철회·이관 수락·공개 설정 변경(#388 구현): 기존 `ConsentService`·`GuardianTransferService`와 `CommunityService.updateSettings`가 `CommunityVisibilityService.sync` 호출(트랜잭션 안에서 설정·현재 보호자 동의로 공개 여부를 정하고 커밋 뒤 learning `community-visibility`). 학생 삭제 확정은 `ChildManagementService`가 `reset`. 공유 요청은 `LearningController` 돌아보기 저장 성공 뒤 `CommunityService.shareCompleted`(포인트 적립 연결은 #389)
+- 동의 철회·이관 수락·공개 설정 변경(#388 구현): 기존 `ConsentService`·`GuardianTransferService`와 `CommunityService.updateSettings`가 `CommunityVisibilityService.sync` 호출(트랜잭션 안에서 설정·현재 보호자 동의로 공개 여부를 정하고 커밋 뒤 learning `community-visibility`). 학생 삭제 확정은 `ChildManagementService`가 `reset`. 공유 요청은 `LearningProxyService.reflection` 돌아보기 저장 성공(또는 `409 ATTEMPT_CLOSED` 재요청) 뒤 `CommunityService.shareCompleted`, 결과 `postId`로 공유 포인트 적립(#389)
 - 무료 하루 미션 한도: `MissionUsageService`(`usage/`)가 `THEME_DAY` 신규 시도 `201`을 `mission_daily_usage`에 기록·집계, 시도 시작 프록시 전에 확인
 
 ---
@@ -1305,8 +1434,8 @@ classDiagram
     +getForAdmin(missionId) AdminMission
     +preview(missionId) MissionPreview
     +create(command) Mission
-    +update(missionId, command) MissionVersion
-    +putRubric(missionId, command) RubricVersion
+    +update(missionId, command) AdminMissionVersion
+    +putRubric(missionId, command) AdminRubric
     +requestReview(missionId, missionVersion, rubricVersion)
     +review(missionId, reviewerId, missionVersion, rubricVersion, result, comment)
     +publish(missionId)
@@ -1324,17 +1453,17 @@ classDiagram
     +unpublish()
     +requirePublishable(snapshot)
   }
-  class MissionVersion { <<entity>> }
-  class RubricVersion {
-    <<entity>>
-    +elements List
+  class AdminMissionVersion { <<value>> }
+  class AdminRubric {
+    <<value>>
+    +elements List~AdminRubricElement~
     +answerKey AnswerKey
     +forbiddenTerms List
     +keywords List
     +essayType String
   }
-  class RubricElement {
-    <<entity>>
+  class AdminRubricElement {
+    <<value>>
     +judgeVerified Boolean
   }
   class AttemptController {
@@ -1425,9 +1554,9 @@ classDiagram
   MissionService --> MissionRepository
   MissionService --> RubricRepository
   MissionService ..> Mission
-  Mission *-- MissionVersion
-  Mission *-- RubricVersion
-  RubricVersion *-- RubricElement
+  Mission *-- AdminMissionVersion
+  Mission *-- AdminRubric
+  AdminRubric *-- AdminRubricElement
   AttemptController --> AttemptService
   AttemptService --> MissionService : 공개 미션·당시 버전
   AttemptService --> AttemptRepository
@@ -2156,6 +2285,18 @@ classDiagram
     +close()
   }
   class UsagePublisher { <<messaging>> }
+  class preflight_router {
+    <<router>>
+    +preflight(body) PreflightResult
+  }
+  class PreflightService {
+    <<service>>
+    +check(request) PreflightResult
+  }
+  class ModelLoadingReporter {
+    <<messaging>>
+    +start()
+  }
 
   m2_router --> M2Service
   m1_router --> M1Service
@@ -2170,12 +2311,18 @@ classDiagram
   ModelVersionConsumer --> ModelStartup : 큐 바인딩 후 시작·이벤트 전달
   M2Service --> UsagePublisher
   M1Service ..> UsagePublisher : 활성 추론 후속 연결
+  preflight_router --> PreflightService : core 중계 요청만
+  PreflightService --> S3ModelArtifacts : HEAD·메타데이터 JSON 해시
+  ModelLoadingReporter --> ModelRegistry : Pod 전체 상태
+  ModelLoadingReporter --> UsagePublisher : model.loading.reported
 ```
 
 - `LoadedModel.predict`는 CPU 동기 추론 → `run_in_threadpool`로 호출해 이벤트 루프 차단 방지 (아키텍처 2.3)
 - 활성 범위 밖 학년·문항이면 `{active: false}` 반환. #88 현재 M1은 미학습으로 항상 비활성이며 추론·사용량 발행을 하지 않는다. 향후 M1 확신도 0.8 미만이면 scoring은 실수 위치를 제외하고 ai가 보류를 결정한다(P15).
 - 가중치는 S3 `artifact_uri`에서 로딩, 승인된 버전만 (아키텍처 5장)
 - #85 구현: 레지스트리·S3 로더·versions 라우터. `get(name, scope)`는 승인 범위를 검사한 모델만 반환한다. #86은 `ModelVersionConsumer`·`ModelStartup`으로 이벤트 보존·재연결·모델 교체를 연결한다. #87은 m2 라우터·M2Service·사용량 발행, #88은 M1 미학습 비활성 계약을 제공한다.
+- #368 `preflight.py`: core만 부르는 `POST /internal/models/preflight`(router·`PreflightService`). 설정 버킷의 `models/` 경로 파일 존재·크기·SHA-256과 메타데이터를 검사하고 모델을 로딩하지 않는다 (api-spec 5.2.1)
+- #370 `model_loading_reporter.py`: `ModelLoadingReporter`가 `ModelRegistry` 상태를 기동·변화 즉시와 30초 주기로 `model.loading.reported`에 담아 별도 `EventPublisher` 인스턴스(`messaging/publisher.py`, 그림은 `UsagePublisher`로 묶음)로 발행한다. 발행 실패는 로딩과 분리된다 (core 소비는 3.5)
 
 ---
 
@@ -2398,7 +2545,7 @@ classDiagram
 ---
 
 
-- 테마 소비는 `REPORT_THEME_SUMMARY_ENABLED=true`가 기본이다. #385/#391 learning을 먼저 배포한다. false는 새 주간 요약만 생략하는 복귀 설정이며 조회 오류를 참여 없음으로 바꾸지 않는다.
+- 테마 소비는 코드(`app/config.py` `report_theme_summary_enabled`)·kind `report-worker` 값 모두 `REPORT_THEME_SUMMARY_ENABLED=true`가 기본이다. 단, Docker Compose(`compose.yaml`)는 `${REPORT_THEME_SUMMARY_ENABLED:-false}`로 꺼 두므로 로컬 Compose에서 주간 테마 요약을 보려면 `.env`에서 켠다(기본값 통일은 별도 정리 이슈). #385/#391 learning을 먼저 배포한다. false는 새 주간 요약만 생략하는 복귀 설정이며 조회 오류를 참여 없음으로 바꾸지 않는다.
 
 ## 8. 확인 필요 가정
 - 요금제 사용 한도(P13): core가 `product.limits`로 확인 후 `USAGE_LIMIT_REACHED`. 분석 대화는 `ProductEntitlementService.reserve`가 보호자 잠금 안에서 자녀별 `payment_premium_usage` KST 일자 집계로 판정(#225, `AnalysisUsageService`는 Redis 미사용). 학생별 미션 시작 한도(무료 `THEME_DAY`·`EXTRA` 합쳐 하루 1개)는 #387에서 `ProductEntitlementService.missionStart`·`usage/MissionUsageService`·`mission_daily_usage`(#210 PostgreSQL 결정)로 구현, 피드백 한도는 미구현. 생각 유형별 미션 고르기(`EXTRA`)는 프리미엄 사용(`EXTRA_MISSION`) 기록

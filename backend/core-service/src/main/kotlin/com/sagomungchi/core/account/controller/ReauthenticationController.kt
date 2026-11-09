@@ -30,6 +30,14 @@ class ReauthenticationController(private val service: ReauthenticationService, p
    .header(HttpHeaders.SET_COOKIE,cookie(started.stateCookie,Duration.ofMinutes(10)).toString())
    .body(mapOf("challengeId" to started.challengeId,"authorizationUrl" to started.authorizationUrl,"expiresAt" to started.expiresAt))
  }
+ data class PasswordRequest(val purpose: ReauthPurpose?=null,val childId: UUID?=null,val scope: String?=null,val password: String?=null)
+ /** #415: ID/password accounts re-enter the login password and get the same reauth grant as the Google flow. */
+ @PostMapping("/api/v1/me/reauth/password")
+ fun password(@RequestBody body: PasswordRequest, request: HttpServletRequest): ResponseEntity<Any> {
+  val identity=request.getAttribute(RequestAttributes.IDENTITY) as AuthenticatedAccount
+  val issued=service.withPassword(identity,body.purpose ?: throw invalid(),body.childId,body.scope,body.password)
+  return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(issued)
+ }
  /**
   * Google 재인증 콜백 (#425). 새 탭에 API 응답 대신 작은 HTML을 돌려준다.
   * 성공하면 같은 출처 BroadcastChannel로 원래 탭에 challengeId만 알리고 창을 닫는다.

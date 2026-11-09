@@ -57,7 +57,8 @@
 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 401 | 미인증 / 만료 → 재인증 안내 (FN-ACC-04) |
 | `FORBIDDEN` | 403 | 역할·관리자 권한 부족, 지원 조회의 권한·학생 범위 거부 (5.7) |
 | `CHILD_NOT_LINKED` | 403 | 연결되지 않은 자녀 요청 (FN-AGT-02, FN-RPT-12) |
-| `REAUTH_REQUIRED` | 403 | 중요 정보 변경 전 재확인 필요 (FN-ACC-10) |
+| `REAUTH_REQUIRED` | 403 | 중요 정보 변경 전 재확인 필요 (FN-ACC-10). 문구는 로그인 수단과 무관하게 "해당 작업의 본인 재확인이 필요합니다." (#415) |
+| `REAUTH_PASSWORD_INVALID` / `REAUTH_METHOD_MISMATCH` | 403 / 409 | 비밀번호 재확인에서 틀린 비밀번호(로그인 실패 횟수에 포함) / Google 계정이 비밀번호 재확인을 요청 (5.6, #415) |
 | `STUDENT_DEVICE_INVALID` | 401 | 학생 기기 자격증명 없음·해제·만료, 해당 기기에 등록되지 않은 자녀 (FN-ACC-05) |
 | `STUDENT_PIN_INVALID` | 401 | PIN 불일치, `remainingAttempts` 포함 (FN-ACC-05) |
 | `STUDENT_PIN_LOCKED` | 423 | PIN 연속 5회 실패로 잠금, 학부모 PIN 재설정 필요 (FN-ACC-05) |
@@ -97,7 +98,10 @@
 | `REFRESH_REUSED` | 401 | 이미 사용된 refresh 재사용 → 해당 세션 전체 폐기 (5.1) |
 | `OAUTH_FAILED` / `OAUTH_UNAVAILABLE` | 401 / 503 | Google 인증 실패 / Google 로그인 미설정·연결 실패. 콜백은 `/auth/complete?error=<code>`로 전달 (5.1) |
 | `ACCOUNT_EXISTS` | 409 | 같은 이메일의 기존 계정은 자동 연결하지 않음 (5.1) |
-| `INVALID_CREDENTIALS` / `ADMIN_LOGIN_LOCKED` | 401 / 423 | 관리자 ID·비밀번호 로그인 실패(없는 ID·틀린 비밀번호·비관리자·비활성 계정 구분 없음) / 연속 5회 실패 후 15분 잠금 (5.1, #369) |
+| `INVALID_CREDENTIALS` / `ADMIN_LOGIN_LOCKED` | 401 / 423 | 관리자·학부모 ID·비밀번호 로그인 실패(없는 ID·틀린 비밀번호·Google 계정·다른 역할·비활성 계정 구분 없음) / 관리자 연속 5회 실패 후 15분 잠금 (5.1, #369·#415) |
+| `LOGIN_LOCKED` | 423 | 학부모 ID·비밀번호 로그인 또는 비밀번호 재확인 연속 5회 실패 후 15분 잠금(두 경로의 실패 횟수를 함께 셈) (5.1·5.6, #415) |
+| `LOGIN_ID_TAKEN` | 409 | 학부모 ID·비밀번호 가입에서 이미 쓰는 아이디(대소문자 무관) (5.1, #415) |
+| `SIGNUP_RATE_LIMITED` / `SIGNUP_UNAVAILABLE` | 429 / 503 | 같은 IP의 학부모 ID·비밀번호 가입 한도(기본 10분 5회) 초과 / 가입 한도 저장소(Redis) 장애 (5.1, #415) |
 | `AUTH_UNAVAILABLE` | 503 | 인증 상태 확인 실패(DB 장애 등) |
 | `CONSENT_REQUIRED` | 403 | 필수 계정 동의 또는 GUARDIAN 동의 전 접근 (5.3) |
 | `CONSENT_DOCUMENT_CHANGED` / `CONSENT_DOCUMENTS_UNAVAILABLE` | 409 / 503 | 제출한 동의 문서 버전이 현재와 다름 / 게시된 동의 문서 확인 실패 (5.3) |
@@ -243,6 +247,8 @@
 | GET | `/auth/google/authorize` | 공개 | Google 로그인·가입 시작 (Authorization Code + PKCE) | ACC-01, ACC-03 | 제안 |
 | GET | `/auth/google/callback` | 공개 | Google 코드 교환·ID 토큰 검증 → refresh 쿠키 → web 복귀 | ACC-03 | 제안 |
 | POST | `/auth/admin/login` | 공개 | 등록된 관리자 ID·비밀번호 로그인 `{loginId,password}` → refresh 응답과 같은 형식 + refresh 쿠키. 가입 없음, `admin_credential` 행으로만 등록 (#369, 5.1) | ACC-03, ADM-01 | 핵심 |
+| POST | `/auth/parent/signup` | 공개 | 학부모 ID·비밀번호 가입 `{loginId,password,name}` → refresh 응답과 같은 형식(`nextAction: CONSENT_REQUIRED`, `startPath: /parent/onboarding`) + refresh 쿠키. 같은 IP 가입 한도 (#415, 5.1) | ACC-01 | 핵심 |
+| POST | `/auth/parent/login` | 공개 | 학부모 ID·비밀번호 로그인 `{loginId,password}` → refresh 응답과 같은 형식 + refresh 쿠키. 5회 실패 15분 잠금 (#415, 5.1) | ACC-03 | 핵심 |
 | POST | `/auth/refresh` | 쿠키 | access token 재발급 | ACC-04 | 제안 |
 | POST | `/auth/logout` | 인증 | refresh token 폐기 | ACC-04 | 제안 |
 | POST | `/auth/student/logout` | 학생 Bearer | 해당 학생 세션만 폐기, 보호자 refresh·기기 쿠키 유지 | ACC-04, ACC-05 | 핵심 |
@@ -253,9 +259,10 @@
 | POST | `/auth/student/devices` | 공개 | 페어링 코드로 기기 등록 `{pairingCode, label}` → 기기 자격증명 쿠키 발급, 등록 자녀 프로필 반환 (P01, 3.11) | ACC-14 | 제안 |
 | GET | `/auth/student/profiles` | 기기 쿠키 | 이 기기에 등록된 자녀 프로필 `{childId, nickname, pinSet, pinLocked}` (P01, `/children` 확장과 같은 필드명) | ACC-05 | 제안 |
 | POST | `/auth/student/login` | 기기 쿠키 | 학생 진입(단독): `{childId, pin}` → 학생 세션(`STUDENT` 토큰) 발급. refresh 미발급 (P01, 3.11) | ACC-05 | 제안 |
-| GET | `/me` | 인증 | 본인 정보·역할·관리자 권한 | ACC-09 | 우선1 |
+| GET | `/me` | 인증 | 본인 정보·역할·관리자 권한·로그인 수단(`authMethod`, 비밀번호 학부모는 `loginId`) | ACC-09 | 우선1 |
 | PATCH | `/me` | 인증 | 본인 정보 수정 | ACC-09 | 우선1 |
 | POST | `/me/reauth` | 인증 | Google 재인증 시작 `{purpose, childId?, scope?}` → `{challengeId, authorizationUrl, expiresAt}`, callback 후 `{challengeId}`로 단기 `reauthToken` 수령 (5.6) | ACC-10 | 우선1 |
+| POST | `/me/reauth/password` | 학부모 | 비밀번호 계정의 재확인 `{purpose, childId?, scope?, password}` → `{reauthToken, expiresAt}` 바로 발급. Google 계정은 409 (#415, 5.6) | ACC-10 | 우선1 |
 | GET | `/auth/google/reauth/callback` | 공개(재인증 상태 쿠키) | Google 재인증 callback → 완료 안내 HTML(원래 탭에 challengeId 알림 후 창 닫기) (5.6) | ACC-10 | 우선1 |
 | GET | `/me/consents` | 학부모 | 동의 이력(주체·문서 버전·시점·철회 상태) | ACC-02 | 제안 |
 | POST | `/me/consents` | 학부모 | 현재 문서의 동의 항목 저장 `{consents:[{documentId,version,agreed}], childId?}`. 계정은 TERMS·PRIVACY, 자녀는 GUARDIAN | ACC-02 | 제안 |
@@ -301,7 +308,7 @@
 | POST | `/attempts/{attemptId}/finish` | 학생 | 마무리 → 정답(닫힌 문제)·예시 답(열린 문제)·근거 확인된 체크리스트 공개. 판정 `DONE` 1회 이상 아니면 409 (P04) | LRN-11, JDG-09 | 핵심 |
 | POST | `/attempts/{attemptId}/self-assessment` | 학생 | 자기 체크 저장 → AI 확인 항목과 나란히 반환 (원본·판정 불변) | LRN-13 | 선택 |
 | POST | `/attempts/{attemptId}/reflection` | 학생 | 돌아보기 `{difficulty(필수), text(선택)}` 저장 → 학습 완료 처리 (P04) | LRN-12, LRN-14 | 핵심 |
-| GET | `/attempts/{attemptId}/comparison` | 학생 · 학부모 | 같은 학생·미션의 직전 마무리 시도와 현재 시도 비교 `NO_PREVIOUS\|COMPARABLE\|CRITERIA_CHANGED` (#207, 5.15). 학부모는 학생 공개 설정을 따름 | LRN-09, LRN-11 | — |
+| GET | `/attempts/{attemptId}/comparison` | 학생 본인 | 같은 학생·미션의 직전 마무리 시도와 현재 시도 비교 `NO_PREVIOUS\|COMPARABLE\|CRITERIA_CHANGED` (#207, 5.15). 학생 세션 전용(학부모·관리자 403), 현재 시도 마무리 이후만 | LRN-09, LRN-11 | — |
 
 - #38 미션 조회의 `grade`·`demo`는 검증된 STUDENT의 연결된 활성 학생을 core DB에서 읽어 결정한다. 공개 요청의 동일 이름 query는 사용하지 않는다. 목록은 `page`·`size`만 learning에 전달하고, 상세도 같은 학생 학년·시연 여부를 붙인다. 학년별 문항 노출·시연 전용 미션 판단은 learning 소유다.
 
@@ -354,7 +361,7 @@
 |---|---|---|---|---|---|
 | POST | `/conversations` | 학부모 | 대화 생성 `{childId, from, to}` (기본 기간 최근 7일·오늘 포함, P06). 무료 플랜은 `USAGE_LIMIT_REACHED` (P13). `{childId, reportId}`이면 일일 리포트 고정 대화(아래, #392) | AGT-01 | 핵심 |
 | GET | `/conversations?childId` | 학부모 | 본인 대화 목록 | AGT-11 | 핵심 |
-| GET | `/conversations/{conversationId}` | 학부모 | 질문·답변·대상 자녀·기간·참조 기록 | AGT-11 | 핵심 |
+| GET | `/conversations/{conversationId}` | 학부모 | 질문·답변·대상 자녀·기간·참조 기록. 답변별 `correctionNotice`(5.7, #244) | AGT-11 | 핵심 |
 | POST | `/conversations/{conversationId}/messages` | 학부모 | **SSE**. 질문 → 범위 확인 → 기록 조회·계산 → 숫자·인용 대조 → 확정 답변. 범위 변경 시 `scope` 동봉 | AGT-02~06, AGT-08~10 | 핵심 |
 | POST | `/conversations/{conversationId}/messages/{messageId}/retry` | 학부모 | **SSE**. 실패한 질문 재처리 | AGT-10 | 핵심 |
 | GET | `/conversations/{conversationId}/messages/{messageId}/evidence` | 학부모 | 답변 근거(미션·답변 시점·원문, 전후 답변 연결) | AGT-07 | 핵심 |
@@ -375,7 +382,7 @@
 | GET | `/reports/{reportId}?revision` | 학부모 | 상세: 기간·포함 기준·`Metric[]`·생각 유형 요약·전후 변화·돌아보기·원문 인용·저녁 질문·버전, `periodType`(core가 작업 기준으로 채움, #390). #391 구현: 일일 `problems[]`, 주간 `themeSummary`(아래). 기본 최신판, `revision`으로 이전판 조회 (P06) | RPT-02~10, RPT-12 | 핵심 |
 | GET | `/reports/{reportId}/evidence/{itemId}` | 학부모 | 리포트 항목의 원본 기록 | RPT-03, RPT-12 | 핵심 |
 | GET | `/reports/{reportId}/download?format=pdf\|md` | 학부모 | 권한 확인 후 `{url, expiresAt}`(단기 presigned URL) 반환, 웹이 해당 URL로 이동. Bearer 인증이라 302 대신 JSON (PDF·Markdown, P06) | RPT-13 | 핵심 |
-| POST | `/reports/{reportId}/regenerate` | 학부모·관리자 | 같은 기간 재생성(일일은 그날, 주간은 그 주) → `report.generate`, 새 판(`revision + 1`) 추가·기존 판 보존. 학부모 리포트당 1회(초과 409, 기간 종류·대상 기간별), 관리자 무제한. 응답에 `periodType` (P06, P24) | RPT-12, RPT-15 | 핵심 |
+| POST | `/reports/{reportId}/regenerate` | 학부모·관리자(`SERVICE_OPS`) | 같은 기간 재생성(일일은 그날, 주간은 그 주) → `report.generate`, 새 판(`revision + 1`) 추가·기존 판 보존. 학부모 리포트당 1회(초과 409, 기간 종류·대상 기간별), 관리자는 `SERVICE_OPS` 권한만 무제한(그 밖의 관리자 403). 응답에 `periodType` (P06, P24) | RPT-12, RPT-15 | 핵심 |
 
 - 자동 생성(FN-RPT-01)은 core 스케줄러가 주가 끝난 일요일 자정(월요일 00:00 KST)에 직전 월~일(KST) 대상으로 수행하며 공개 API는 없음 (P06, 2026-11-09 결정)
 - 생성 내용(FN-RPT-02~09)은 report-service가 계산하고, 그 결과를 상세 응답 스키마(3.4)로 제공
@@ -461,7 +468,7 @@
 - jobs는 `{items,page,size,totalElements}`, 상세는 `{jobId,type,status,retryCount,failureReason,createdAt,executions,retryable,retryUnavailableReason}`다. CONVERSATION ID는 conversation_message.id, REPORT는 report_job.id, NOTIFICATION은 notification.id다. updatedAt은 존재하지 않아 반환하지 않는다. executions는 실제 job_execution을 attemptNo 순으로 반환한다. error_detail·원문 실패 메시지·감사 detail은 공개하지 않고 알려진 오류 코드만 노출하며 그 외는 REDACTED_ERROR다. UUID가 종류 간 충돌하면 409 JOB_ID_AMBIGUOUS다.
 - retry는 UUID Idempotency-Key 필수, 실패 상태만 허용한다. NOTIFICATION은 동일 ID를 RUNNING으로 원자 선점하고 새 job_execution을 남긴 뒤 트랜잭션 밖에서 기존 Redis publisher/DeliveryService를 호출한다. Redis 확인은 브라우저 수신 확인이 아니다. 실제 결과를 200 작업 상세로 반환하고 감사 기록을 남긴다. RUNNING 고착은 자동 재실행하지 않는다. REPORT는 위 REPORT 접수 계약에 따라 새 jobId로 재처리하며 원작업을 보존한다. CONVERSATION은 하단 계약대로 DB 대기 작업으로 202 접수한다. 리포트 regenerate를 대신 호출하지 않는다. 실패한 요청은 실행 이력으로 위장하지 않으며 거절 감사만 남긴다.
 - audit-logs는 targetType/targetId 및 기간·페이지 필터. 항목은 `{id,actorUserId,action,targetType,targetId,result,createdAt}`이며 자유형 detail은 노출하지 않는다. 기존 감사 저장 경로를 교체하지 않는다.
-- queues는 `{vhost,items:[{name,kind:WORK|RETRY|DLQ,messages,messagesReady,messagesUnacknowledged,consumers,state}]}`다. definitions.json의 `/` vhost와 고정 30개 큐만 읽는다(#208 감사 큐 `core.event.audit`·재시도 3·DLQ 포함). 누락·인증·HTTP·타임아웃·잘못된 응답은 명시적인 503/504이며 0으로 치환하지 않는다. `ADMIN_RABBIT_MANAGEMENT_URL`, `ADMIN_RABBIT_MANAGEMENT_USERNAME`, `ADMIN_RABBIT_MANAGEMENT_PASSWORD`를 환경에서 읽는다(기본 자격 증명 없음). 기존 AMQP 설정과 독립이며 production 의존성은 추가하지 않는다.
+- queues는 `{vhost,items:[{name,kind:WORK|RETRY|DLQ,messages,messagesReady,messagesUnacknowledged,consumers,state}]}`다. definitions.json의 `/` vhost와 고정 35개 큐(기본 큐 7개×기본·재시도 3·DLQ)만 읽는다(#208 감사 큐 `core.event.audit`, #370 `core.model.loading.reported` 포함). 누락·인증·HTTP·타임아웃·잘못된 응답은 명시적인 503/504이며 0으로 치환하지 않는다. `ADMIN_RABBIT_MANAGEMENT_URL`, `ADMIN_RABBIT_MANAGEMENT_USERNAME`, `ADMIN_RABBIT_MANAGEMENT_PASSWORD`를 환경에서 읽는다(기본 자격 증명 없음). 기존 AMQP 설정과 독립이며 production 의존성은 추가하지 않는다.
 - missions는 표의 명시된 메서드/경로만 `/internal/admin/missions`로 프록시한다. 검증된 ADMIN 사용자 컨텍스트, 빈 학생 범위, 내부 토큰과 trace를 기존 LearningClient/InternalRestClientFactory로 전달한다. JSON object 본문과 목록 status/grade/thinkingType/page/size만 전달한다. 버전·기준표·검토·게시 정책/DTO는 learning 소유다. learning 공급자 계약은 4.1 `/internal/admin/missions…`(#145)와 learning OpenAPI다. 404는 application/problem+json JSON 객체의 status=404·code=NOT_FOUND가 일치할 때 404 NOT_FOUND와 고정 문구 "미션을 찾을 수 없습니다."로 반환한다(#163). 불명확한 404와 API 미지원 405/501은 기존 503 ADMIN_MISSIONS_UNAVAILABLE다. 나머지 Problem Details는 기존 code/status와 구조화된 missingFields만 허용하며 자유형 오류 문구는 전달하지 않는다. 성공 응답은 learning 관리자 콘텐츠 계약을 그대로 반환한다. 쓰기는 요청 감사 후 호출하고 응답 missionId·버전으로 결과 감사를 남긴다(하단 #47 미션 운영 후속 계약). 서비스 간 재시도는 없다.
 - #355: 성취기준 표·미션 초안(아래 표 `/admin/achievement-standards`·`/admin/mission-drafts…`)도 같은 방식으로 learning `/internal/admin/achievement-standards`·`/internal/admin/mission-drafts…`(4.1)로 프록시하고 CONTENT 권한이다. learning 오류 코드(`VALIDATION_FAILED`·`NOT_FOUND`·`CONFLICT`)는 그대로 전달하고 404 고정 문구는 "미션 초안을 찾을 수 없습니다.", 미지원 405/501은 미션과 같은 `ADMIN_MISSIONS_UNAVAILABLE`이다. 초안 요청·채택·버리기는 요청·결과 감사를 남긴다(`audit_log.action` `MISSION_DRAFT_REQUEST`·`MISSION_DRAFT_ADOPT`·`MISSION_DRAFT_DISCARD` + `_REQUESTED`·`_SUCCEEDED`·`_REJECTED`·`_UNKNOWN`). 대상은 `target_type = MISSION_DRAFT`·초안 ID(요청의 요청 감사는 아직 ID가 없어 NULL)이고, 채택 결과만 응답 `missionId`(`target_type = MISSION`, detail `draftId`·버전, FN-ADM-13). 목록 필터는 표의 쿼리만 전달하고 `status`·`page`·`size`는 core가 먼저 검사한다.
 
@@ -528,14 +535,14 @@ core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml
 |---|---|---|---|---|---|
 | GET | `/students/me/community-settings` | 학생 | `{enabled, consentGranted, updatedAt}`. `consentGranted`는 현재 연결 보호자의 현재 문서 `COMMUNITY` 동의 | RET-01 | 구현(#388) |
 | PUT | `/students/me/community-settings` | 학생 | `{enabled}`. 켜기는 보호자 선택 동의(`COMMUNITY`) 필요, 없으면 409 `COMMUNITY_CONSENT_REQUIRED`. 끄면 기존 공유물 즉시 비공개. 같은 값이어도 learning 공개 상태를 다시 맞춤 | RET-01 | 구현(#388) |
-| GET | `/missions/{missionId}/community-posts?seed&page&size` | 학생 | 같은 미션 공유물 무작위 목록 `{items:[{postId, author:{nickname, look}, answer, myReactions[], createdAt}]}`. 반응 수·학생 ID 미포함. 같은 `seed`면 같은 순서. 이 미션을 마무리하지 않았으면 403 `COMMUNITY_LOCKED`. `look`은 `{theme, companion}`(저장 전 `lake`·`mungchi`) | RET-02 | 구현(#388) |
+| GET | `/missions/{missionId}/community-posts?seed&page&size` | 학생 | 같은 미션 공유물 무작위 목록 `{items:[{postId, author:{nickname, look}, answer, myReactions[], createdAt}]}`. 반응 수·학생 ID 미포함. 같은 `seed`면 같은 순서. 이 미션을 마무리하지 않았으면 403 `COMMUNITY_LOCKED`. `look`은 `{theme, companion, equipped:{HAT, OUTFIT, ACCESSORY, BACKGROUND}}`(저장 전 `lake`·`mungchi`, 착용 없는 슬롯 null, #389) | RET-02 | 구현(#388·#389) |
 | GET | `/students/me/community-posts` | 학생 | 내 공유물 `{items:[{postId, missionId, missionTitle, answer, status, reactions:{4종: 수}, createdAt}]}` | RET-02, RET-03 | 구현(#388) |
 | PUT | `/community-posts/{postId}/reactions/{reaction}` | 학생 | 반응 남기기(멱등). `reaction`: `NEW_IDEA`·`CLEAR_REASON`·`DIFFERENT_VIEW`·`WANT_MORE`. 본인 글 409 `COMMUNITY_OWN_POST`, 열람 권한 없으면 403 `COMMUNITY_LOCKED`, 신고 숨김·없는 글 404 `COMMUNITY_POST_NOT_FOUND`, 4종 외 400. 성공 204 | RET-03 | 구현(#388) |
 | DELETE | `/community-posts/{postId}/reactions/{reaction}` | 학생 | 반응 취소(멱등, 적립 포인트 회수 없음). 성공 204 | RET-03 | 구현(#388) |
 | GET | `/children/{childId}/community-posts` | 학부모 | 연결·동의가 유효한 자녀의 공유물·상태·받은 반응 수(내 공유물과 같은 모양). 다른 학생 공유물 조회 경로 없음 | RET-02 | 구현(#388) |
 
 - 공유물 생성 API는 없다. 커뮤니티 공개가 켜진 학생의 돌아보기 저장(`POST /attempts/{id}/reflection`, 학습 완료) 성공 후 core가 learning에 공유를 요청한다. 학생·미션당 1개로 그 미션을 처음 마무리한 시도의 마지막 답변만 공유하고(다시 풀기는 공유하지 않음) 메모·판정·되묻기는 넣지 않는다. `answer`는 learning `{inputType, text(입력 틀 칸 이름을 붙인 원문), content(입력 방식별 제출 내용)}`를 그대로 전달한다(#386)
-- 작성자 표시: learning은 학생 ID를 돌려주고 core가 별명·꾸미기(`look`: 테마·캐릭터, 착용 아이템은 #389)로 바꾼 뒤 학생 ID를 지워 응답한다. 반응 수는 learning이 주더라도 목록에서 뺀다
+- 작성자 표시: learning은 학생 ID를 돌려주고 core가 별명·꾸미기(`look`: 테마·캐릭터·착용 아이템 네 슬롯, #389)로 바꾼 뒤 학생 ID를 지워 응답한다. 반응 수는 learning이 주더라도 목록에서 뺀다
 - core 재확인(#388): learning 공개 전환·검토 호출이 실패하거나 늦어도, core는 지금 공개할 수 없는 작성자(설정 끔·현재 보호자 동의 없음·비활성)와 접수·처리 중이거나 계속 숨김으로 처리된 신고가 걸린 공유물을 목록에서 빼고 반응을 404로 막는다. 내 공유물·자녀 공유물 상태도 core가 아는 비공개(`HIDDEN_SETTING`·`HIDDEN_REPORT`)로 덮어 보여 준다
 - 신고: 기존 `POST /error-reports`에 `targetType: COMMUNITY_POST`, `targetId: postId` 추가(유형 5종 그대로). 접수 즉시 공유물 `HIDDEN_REPORT`, 관리자는 기존 `/admin/error-reports`에서 `RESOLVED` + `reviewResult: VISIBLE`(다시 공개)·`REMOVED`(계속 숨김, 생략 시 기본)로 처리. 같은 공유물의 신고가 여럿이면 계속 숨김이 하나라도 있으면 `REMOVED`, 처리 중이 있으면 `HIDDEN_REPORT`. 신고 행은 신고한 학생의 것(`student_id` = 신고 학생, 작성자 ID는 learning에만), 관리자 상세 `linkedPost`(원문, 열람마다 `SUPPORT_ORIGINAL_VIEW` 감사)
 - 보호자 동의: 기존 `/me/consents`에 문서 종류 `COMMUNITY`(선택, 자녀 단위 `childId`) 추가. 자녀 동의 요청은 `GUARDIAN`·`COMMUNITY` 중 보낼 문서만 담을 수 있고, `COMMUNITY`만 보낼 때는 그 자녀의 현재 법정대리인 동의가 있어야 한다(없으면 400). 거부·철회 시 core가 설정을 끄고 공유물을 비공개로 바꾼다(P09 선택 동의). 이관 전 보호자의 옛 동의 철회는 지금 보호자의 설정을 바꾸지 않는다
@@ -543,7 +550,7 @@ core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml
 
 ### 2.10 포인트·꾸미기 (FN-RET-05·06, P21·P22)
 
-2026-11-06 결정. #389로 조회·해금·착용·관리자 아이템을 구현했다(OpenAPI `RewardPoints`·`LookCatalog`·`LookUnlockResult`·`StudentLook.equipped`). 적립 사건 연결(학습 완료·공유·반응·되돌아보기·완주)은 #387·#388 뒤 후속이다. 꾸미기 설정 확장은 3.12. 저장은 [ERD 3.5.1](erd.md#351-포인트꾸미기-p21p22-389).
+2026-11-06 결정. #389로 조회·해금·착용·관리자 아이템을 구현했다(OpenAPI `RewardPoints`·`LookCatalog`·`LookUnlockResult`·`StudentLook.equipped`). 적립 사건 연결(학습 완료·공유·반응·되돌아보기·완주)도 #387·#388 뒤 구현했다(공개 응답 모양 변화 없음). 꾸미기 설정 확장은 3.12. 저장은 [ERD 3.5.1](erd.md#351-포인트꾸미기-p21p22-389).
 
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
@@ -554,7 +561,7 @@ core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml
 | PUT | `/students/me/preferences` | 학생 | 3.12 확장: `{theme, companion, equipped?:{HAT, OUTFIT, ACCESSORY, BACKGROUND}}`(슬롯별 아이템 `itemKey` 또는 null, 생략하면 착용 유지). 잠긴 항목 409 `LOOK_LOCKED`, 모르는 슬롯·코드·다른 슬롯 아이템 422 | RET-06 | 핵심(#389) |
 
 - `eventType`: `MISSION_COMPLETED`·`REVIEW_VIEWED`·`COMMUNITY_POSTED`·`REACTION_GIVEN`·`THEME_COMPLETED`(적립), `UNLOCK`(사용, 음수)
-- 적립은 별도 API가 없다. core `RewardService.earn(studentId, event, sourceKey)` 한 곳에서 처리하고(#389 구현, 자체 트랜잭션·예외 없이 결과 반환), 아래 사건 연결은 #387·#388 뒤 후속이다. core가 learning 응답을 프록시하는 경로에서 처리한다: 돌아보기 저장 성공(학습 완료·미션당 최초 1회), 공유 생성 성공, 반응 생성 성공(하루 상한), 되돌아보기 열람(주 1회), 열람 시 완주 판정. 값·상한은 `reward_rule` 데이터(P21 초기값). 원장 사건 키 `source_key`로 멱등, 학습 응답 후 적립 저장이 실패하면 응답은 성공으로 두고 같은 사건 재요청·`/students/me/weekly-theme` 조회 때 보충
+- 적립은 별도 API가 없다. core `RewardService.earn(studentId, event, sourceKey)` 한 곳에서 처리하고(#389 구현, 자체 트랜잭션·예외 없이 결과 반환), core가 learning 응답을 프록시하는 경로에서 부른다(#389 구현): 돌아보기 저장 성공(학습 완료·미션당 최초 1회, 미션은 core가 learning 시도 상세로 확인), 공유 생성 성공(이미 있는 공유물 200 포함), 반응 남기기 성공(하루 상한, 취소는 적립 없음), 되돌아보기 열람(주 1회), 열람 응답 `completed`면 완주. 사건 키는 학습 완료 `missionId`, 공유 `postId`, 반응 `postId:reaction`, 되돌아보기·완주 그 주 월요일(KST). 값·상한은 `reward_rule` 데이터(P21 초기값). 원장 사건 키 `source_key`로 멱등, 학습 응답 후 적립 저장이 실패하면 응답은 그대로 두고 같은 사건 재요청(돌아보기 재요청 `409 ATTEMPT_CLOSED` 포함, 같은 반응·열람 재요청)·`/students/me/weekly-theme` 조회(이번 주 학습 완료한 요일 문제) 때 보충. 적립 결과는 응답에 넣지 않고 `/students/me/points`로 조회
 - `itemKey`: 테마·캐릭터는 `THEME:forest`·`COMPANION:tori` 형식(해금값은 코드 상수), 아이템은 관리자가 등록한 `look_item.code`. `THEME:lake`·`COMPANION:mungchi`는 항상 해금, 나머지 테마 100·캐릭터 150 포인트(코드 상수). 잠금 적용 전 저장된 `look_theme`·`look_companion`은 마이그레이션에서 해금 행으로 옮긴다
 - 다른 학생 잔액·순위 API는 없다(1.3)
 
@@ -680,6 +687,7 @@ data: {}
 {
   "reportId": "r-44", "childId": "s-1", "status": "COMPLETED", "state": "OK",
   "period": { "from": "2026-11-02", "to": "2026-11-08" },
+  "correctionNotice": false, // 이 판에 쓰인 판정 중 일부가 만들어진 뒤 정정됨 (5.7, #244)
   "revision": 1, "revisions": [{ "revision": 1, "generatedAt": "2026-11-09T00:00:00+09:00" }],
   "inclusionRule": "기간 내 답변 제출이 있는 시도(미완료 포함), 처리 실패만 있는 시도·삭제 기록 제외",
   "metrics": [ /* Metric[] */ ],
@@ -859,7 +867,7 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 | POST · GET · PUT | `/internal/attempts/...` | core | 시도·초안·도움·답변·마무리·돌아보기·자기 평가 (2.2 경로와 1:1). 생각 열기 응답 형식은 `{question, seq, total}`이며, 질문이 없는 미션은 `404`를 반환함. 시도 상세 `answers[]`는 `{answerId, version, submittedAt, inputType, text(입력 틀 칸 이름을 붙인 원문), followupId, content, feedback}`, `feedback`은 아래 피드백 결과와 같은 모양(판정 전이면 `{status, judgment:null, followup:null, nextActions:[], versions:null}`), 시도 `nextActions`는 마지막 답변의 `nextActions`. 시도 상세의 `reveal`·`revealKind`·`checklist`는 마무리 뒤에만, `reflection{difficulty, text}`는 돌아보기 뒤에만(그 전에는 `null`). 마무리 `finish` → `200 {attemptId, finishedAt, reveal(시도 기준표 버전의 예시 답, 닫힌 문제는 정답과 해설), revealKind(고르기·순서·분류·풀이 단계 `ANSWER`, 서술·논술 `EXAMPLE`), checklist(기준표 요소 전체 3.2 `Element[]`, 이 시도의 처리 완료 판정 중 원문 구절과 함께 충족된 요소만 체크·가장 최근 구절)}`, 판정 `DONE` 1회 미만이면 `409 REVEAL_CONDITION_UNMET`, 다시 요청하면 기록하지 않고 같은 결과. 돌아보기 `reflection` `{difficulty(EASY·NORMAL·HARD, 필수), text(선택, 빈 글은 null)}` → `200 {attemptId, status:"COMPLETED", reflection}`(완료 시점은 시도 상세·기록 조회), 난이도 없음·값 밖 `400`, 마무리 전 `409 REVEAL_CONDITION_UNMET`, 완료 뒤 `409 ATTEMPT_CLOSED`. 자기 평가 `self-assessment` `{checks:[{elementId, checked}]}` → `200 [{elementId, label, selfChecked(체크 안 한 요소는 null), aiChecked, quote}]`(기준표 요소 전체), 마무리 전 `409 REVEAL_CONDITION_UNMET`, 완료 뒤 `409 ATTEMPT_CLOSED`, 비었거나 같은 요소 두 번·기준표 밖 요소 `400`, 다시 보내면 `checked`만 바꿈 |
 | POST | `/internal/attempts/{id}/answers` | core | 답변 제출 (3.1·3.8 형식). `Idempotency-Key`(UUID) 필수, 없거나 형식 오류면 `400`. 같은 키·같은 본문은 처음 답변을 `201`로 다시, 다른 본문은 `422 IDEMPOTENCY_KEY_REUSED`. 미션 입력 방식과 다르면 `400`, 누락은 `422 ANSWER_INCOMPLETE`, 서술·풀이·논술 글에 욕설·비속어·성적·혐오·위협 표현이나 연락처(전화번호·이메일)가 있으면 `422 ANSWER_INAPPROPRIATE`(누락 검사 다음·되묻기 연결 검사 전, 저장·판정 없이 차단. `detail`은 범주별 고정 문구로 표현은 "고운 말로 바꿔서 다시 적어 주세요.", 연락처는 "전화번호나 이메일 같은 개인정보는 빼고 다시 적어 주세요."이고 걸린 단어·원문은 넣지 않음. 혐오 표현과 `새끼`처럼 뜻이 둘인 말은 미션 본문에 나온 말이면 허용, #205), 마무리·완료한 시도는 `409 ATTEMPT_CLOSED`. 보완 답변은 가장 최근 미답 되묻기의 `followupId` 필수(아니면 `422 ANSWER_INCOMPLETE`). 저장하면 같은 트랜잭션에서 초안 `content.answer`를 비우고 `memo`는 유지, 초안 `version` +1 |
 | POST | `/internal/answers/{answerId}/feedback` | core | 판정 오케스트레이션: 규칙 판정 또는 ai 호출 → 저장 → 결과 반환 (동기). `200` 결과는 3.2 `result`와 같은 `{status, judgment{judgmentId, result, trial, elements[{elementId(rubric_element.id), label, satisfied, quote, sourceType}], heldReason}, followup{followupId, type, question, source}, nextActions, versions{mission, rubric, model, prompt}}`, `versions.mission`·`rubric`은 `미션 code@버전`, 규칙 판정이면 `model`·`prompt` 없음. 다른 요청이 처리 중이면(그사이 다른 요청이 실패한 경우도 포함, 다시 요청하면 실행) `200 {status:"RUNNING", judgment:null, followup:null, nextActions:[], versions:null}`. ai·LLM 실패·타임아웃·서킷 차단은 판정 `FAILED` 후 `503 AI_UNAVAILABLE` + `retryable`(ai가 false로 준 오류·ai 4xx·계약 밖 응답은 false), 그 밖의 예상 못 한 오류는 판정 `FAILED` 후 `500`. 허용 안 되는 판정 전이는 `409 JUDGMENT_STATE_CONFLICT`(learning 내부 방어 코드: 처리 중이 아닌 판정을 끝내거나 실패로 기록하려 함, state-diagram 1.3. 획득한 리스로만 저장해 정상 흐름에서는 없어 1.3 공통 오류 표에는 넣지 않음). `nextActions`는 지금 할 수 있는 행동: 이 판정의 되묻기에 아직 답하지 않았으면 `[ANSWER_FOLLOWUP, FINISH]`, 되묻기가 없으면 `[FINISH]`, 마무리·완료한 시도는 `[]` |
-| POST | `/internal/judgments/{judgmentId}/corrections` | core | 신고 정정 반영(SUP-03, #80). `X-User-Role: ADMIN`, `X-Student-Scope`에 판정 학생 정확히 1명, `X-User-Id`(UUID, 정정한 관리자 = `corrected_by`) 필수. 요청 `{reportId(UUID), reason(1자 이상), corrected(CORRECT·PARTIAL·RETHINK·HELD)}` + `Idempotency-Key`(UUID, core가 저장한 정정 ID). 기존 판정·요소·답변은 그대로 두고 `judgment_correction` 행 추가. `200 {correctionId, previousResult(정정 직전에 보이던 결과, 앞선 정정이 있으면 그 결과), corrected, createdAt, impact{conversation, aggregation, report}}`. 같은 키·같은 요청(판정·본문)은 처음 응답 전체를 다시 `200`, 다른 요청이면 `422 IDEMPOTENCY_KEY_REUSED`. 같은 `reportId` 정정이 다른 키로 이미 있으면 `409 CORRECTION_REPORT_CONFLICT`, 판정이 `DONE` 전이면 `409 JUDGMENT_STATE_CONFLICT`, 판정 없음 `404`, 역할·학생 범위 위반 `403`, 헤더·본문 형식 오류 `400`(409·422 코드는 learning 내부용, 공개 오류는 core #46이 바꿔 정함). 이후 피드백 결과·시도 상세·기록(#27)의 `judgment.result`는 최신 정정 결과(정정이 있으면 `heldReason: null`), 판정 요소·되묻기·`nextActions`는 원판정 그대로. `impact.aggregation`은 learning 수치 집계가 판정 결과를 쓰지 않아 `NOT_APPLIED`(변경 대상 없음), `conversation`·`report`는 learning이 확인할 수 없어 `UNKNOWN` (core #46 계약 `support-learning-required.yaml`) |
+| POST | `/internal/judgments/{judgmentId}/corrections` | core | 신고 정정 반영(SUP-03, #80). `X-User-Role: ADMIN`, `X-Student-Scope`에 판정 학생 정확히 1명, `X-User-Id`(UUID, 정정한 관리자 = `corrected_by`) 필수. 요청 `{reportId(UUID), reason(1자 이상), corrected(CORRECT·PARTIAL·RETHINK·HELD)}` + `Idempotency-Key`(UUID, core가 저장한 정정 ID). 기존 판정·요소·답변은 그대로 두고 `judgment_correction` 행 추가. `200 {correctionId, previousResult(정정 직전에 보이던 결과, 앞선 정정이 있으면 그 결과), corrected, createdAt, impact{conversation, aggregation, report}}`(값은 `APPLIED`·`NOT_APPLIED`·`UNKNOWN`, 5.7.1. `AFFECTED`·`NOT_AFFECTED`는 core가 채우며 learning은 보내지 않음). 같은 키·같은 요청(판정·본문)은 처음 응답 전체를 다시 `200`, 다른 요청이면 `422 IDEMPOTENCY_KEY_REUSED`. 같은 `reportId` 정정이 다른 키로 이미 있으면 `409 CORRECTION_REPORT_CONFLICT`, 판정이 `DONE` 전이면 `409 JUDGMENT_STATE_CONFLICT`, 판정 없음 `404`, 역할·학생 범위 위반 `403`, 헤더·본문 형식 오류 `400`(409·422 코드는 learning 내부용, 공개 오류는 core #46이 바꿔 정함). 이후 피드백 결과·시도 상세·기록(#27)의 `judgment.result`는 최신 정정 결과(정정이 있으면 `heldReason: null`), 판정 요소·되묻기·`nextActions`는 원판정 그대로. `impact.aggregation`은 learning 수치 집계가 판정 결과를 쓰지 않아 `NOT_APPLIED`(변경 대상 없음), `conversation`·`report`는 learning이 확인할 수 없어 `UNKNOWN` (core #46 계약 `support-learning-required.yaml`) |
 | GET | `/internal/support/targets/{targetType}/{targetId}` | core | 신고·문의 대상 확인(#46 접수·정정 전 확인, #146). `targetType` JUDGMENT·FOLLOWUP·ATTEMPT. `X-User-Role` STUDENT·PARENT·ADMIN(ADMIN은 `X-Student-Scope`에 학생 정확히 1명), `X-User-Id`(UUID) 필수. `200 {studentId, attemptId, judgmentId?, previousResult?}`: JUDGMENT는 `judgmentId`·`previousResult`(지금 보이는 결과, 최신 정정 반영, 판정 `DONE` 전이면 없음), FOLLOWUP은 되묻기를 만든 판정의 `judgmentId`, ATTEMPT는 둘 다 없음(없는 칸은 생략). 원문 없음. 대상 없음 `404`, 대상 학생이 범위 밖·역할 위반 `403`, `X-User-Id` 누락·형식 오류 `400` |
 | GET | `/internal/support/attempts/{attemptId}` | core | 관리자 신고·문의 원문(#46, SERVICE_OPS 검사는 core, #146). `X-User-Role: ADMIN`, `X-Student-Scope`에 학생 정확히 1명, `X-User-Id`(UUID) 필수. `200 {studentId, attemptId, answers:[{answerId, version, text, feedback}]}`(답변 버전 순, `text`는 시도 상세와 같은 원문, `feedback`은 피드백 결과와 같은 모양). 초안·메모·학생 이름·돌아보기는 넣지 않음. 학생 전용 `/internal/attempts/{id}`와 별도. 시도 없음 `404`, 역할·범위 위반 `403`, `X-User-Id` 오류 `400` |
 | GET | `/internal/records/students/{studentId}/exists` | core | 전체 보존 기록의 존재 여부 `{studentId,hasRecords}`. #37 선행 최소 API, P08 제출·실패·삭제 제외 기준 적용 |
@@ -902,6 +910,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - `attempts.items[]`의 필수 입력:
   - `attemptId`, `studentId`, `mission:{title,thinkingType}`, `status:IN_PROGRESS|COMPLETED`, `answers[]`, `hintUsages:[{openedAt}]`. 학생 메모·초안은 포함하지 않는다. #27은 attempts에 삭제 표식 항목을 넣지 않는다. 삭제 뒤 정상 조회는 `NO_RECORD`, `items:[]`, `totalElements:0`이다. 이것은 evidence의 삭제된 답변 표시나 #55 삭제 완료 처리를 대신하지 않는다.
   - `answers[]`: `{answerId,version,submittedAt,inputType,text,followupId,content,feedback}`. `feedback`은 학생 시도 상세와 같은 `{status:PENDING|RUNNING|DONE|FAILED,judgment,followup,nextActions,versions}`이고, `judgment`는 처리 전·실패면 null, 아니면 `{judgmentId,result,trial,elements[{elementId,label,code,goodThought,satisfied,quote,sourceType}],heldReason}`. 생각 요소 지표(FN-RPT-05)는 `code`(FN 1.5 표준 요소)로 미션을 넘어 같은 요소를 세고 `goodThought = false`인 필수 요소만 충족률·보완률 분모로 쓴다. report는 시범 판정(`trial`)을 포함해 계산하고 계산식에 표시하며, `HELD` 판정과 정답 요소(`ANSWER_KEY`·`FINAL_ANSWER`)는 쓰지 않는다 (FN-RPT-05, #262·#344). `text`는 표시·근거용 평문 전체이고 null이 아닌 문자열이다(내용이 없으면 `""`). 풀이·논술의 칸 이름과 고르기의 선택지 이름이 포함될 수 있다. 수치 재계산에는 `content`의 학생 작성 칸만 사용해야 하며 표시용 `text`를 그대로 세면 안 된다. 시도당 1번부터 조회 종료일 끝까지의 답변 버전을 제공한다. 최초 답변·도움 이용을 비교할 수 있도록 조회 시작일 이전의 답변도 포함한다. report는 종료일 이후 답변을 사용하지 않는다.
+  - `feedback.judgment.corrected`: 최신 정정이 있으면 true. 정정은 결과만 바꾸고 `elements`는 원판정 그대로이므로 report는 요소 지표(FN-RPT-05)와 일일 리포트 요소 표시에서 제외한다 (#244).
   - `hintUsages[]`는 조회 시작일 이전 기록을 포함하여 최초 답변 이전 열람 여부를 판정할 수 있는 전체 열람 시각을 제공한다. 열람이 없으면 빈 배열이며 단순 `helped` 값으로 대체하지 않는다. `submittedAt`·`openedAt`·`completedAt`·`createdAt`은 시간대 오프셋이 있는 ISO 8601 시각이다.
   - 완료 시도는 `completedAt`을 제공한다. learning **입력**의 `reflection`은 해당 기간에 작성한 `{difficulty:EASY|NORMAL|HARD,text:string|null,createdAt}` 또는 `null`이다. 미작성·기간 밖이면 `null`을 사용하고 report는 필드 생략도 허용한다. 선택 텍스트가 null이어도 난이도·작성 시각이 있는 돌아보기는 작성한 기록이다. `{written:false}`만 있는 객체는 입력 형식이 아니다.
   - report **출력/저장 항목**의 `reflections[]`는 미작성·기간 밖이면 `{attemptId,written:false,difficulty:null,text:null}`이다. 입력에 기간 밖 돌아보기가 포함되어도 report가 작성 시각으로 제외한다. 작성한 항목은 `written:true`이며 내부 계산·저장에는 난이도 코드를 유지한다. 입력과 3.4 출력 형식을 혼용하지 않는다.
@@ -1002,6 +1011,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | GET | `/internal/reports/{reportId}?revision` | 상세 (3.4 스키마), 기본 최신판·양의 revision으로 이전판 조회 |
 | GET | `/internal/reports/{reportId}/evidence/{itemId}` | 항목 근거 |
 | GET | `/internal/reports/{reportId}/files/{format}` | 단기 presigned URL 발급 → `{url, expiresAt}` |
+| GET | `/internal/reports/correction-impact?studentId&attemptId` | 판정 정정 영향 조회(#244, FN-SUP-03). 그 시도로 만든 완료 판 `{items:[{reportId, periodType, periodFrom, revision}]}`. 주간은 `THINKING_TYPE`의 `missions[].attemptId`, 일일은 `PROBLEM`의 `attemptId`로 찾음(보호자 공유가 꺼지면 근거 연결을 저장하지 않으므로 근거 테이블로는 찾지 않음) |
 | POST | `/internal/report-jobs/{jobId}/reconcile` | core 작업 복구: `{studentId, periodFrom, periodTo, periodType?}` 대조 후 현재 상태 반환, 불일치 409 `REPORT_JOB_IDENTITY_MISMATCH` (5.9) |
 
 - core는 현재 이용 권한으로 `X-Report-Narrative-Enabled:true|false`를 설정해야 함(공개 요청의 같은 헤더는 전달하지 않음). report는 누락 시 false로 처리해 응답·다운로드에서 AI 서술·생각 유형 summary·저녁 질문을 가림
@@ -1034,26 +1044,27 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 ### 5.1 #36 Google OAuth·토큰 구현 계약 (개정 P01 정렬)
 
-인증 경로의 정식 공개 계약은 [core-service OpenAPI](../../contracts/openapi/core-service.yaml). 이 절은 부모·관리자 Google 인증과 동석 학생 진입, 학생 기기·PIN은 3.11.
+인증 경로의 정식 공개 계약은 [core-service OpenAPI](../../contracts/openapi/core-service.yaml). 이 절은 부모·관리자 Google 인증, 관리자·학부모 ID·비밀번호 로그인과 동석 학생 진입, 학생 기기·PIN은 3.11.
 
 - 기기 진입 3개 경로(`POST /auth/student/devices`, `GET /auth/student/profiles`, `POST /auth/student/login`)만 Bearer 검사에서 제외. POST는 다른 쿠키 API와 같이 정확한 web Origin·`X-Requested-With` 검사 유지. 다른 메서드·유사 경로와 `/auth/student-sessions`는 제외하지 않음
 
 - 학부모·관리자: Google core 콜백 → refresh 쿠키 → web `/oauth/complete` → refresh → `/me`. access는 HS256, 기본 15분·메모리 보관. refresh는 256비트 난수·SHA-256 해시 저장, 최초 로그인부터 최대 7일이며 회전으로 연장하지 않는다. 재사용 시 해당 세션 폐기.
 - 관리자 ID·비밀번호(#369, 2026-11-09): `POST /auth/admin/login {loginId,password}`는 `user_account.login_id`가 같고 `role=ADMIN`·`status=ACTIVE`이며 `admin_credential` 행이 있는 계정만 받는다. 가입 API는 없고 운영자가 `scripts/admin_account_sql.py`로 행을 만들거나 비밀번호 재설정·비활성화한다. 비밀번호는 PBKDF2-SHA256(60만 회, 보호자 비밀번호와 같은 해시)으로만 저장한다. 없는 ID·틀린 비밀번호·비관리자·비활성 계정은 같은 401 `INVALID_CREDENTIALS`(없는 ID도 해시 검사를 한 번 해 응답 시간 차이를 줄임), 연속 5회째 실패부터 15분간 423 `ADMIN_LOGIN_LOCKED`이며 실패 횟수는 오류 응답 전에 커밋한다. 성공하면 실패 횟수를 지우고 `audit_log`에 `ADMIN_PASSWORD_LOGIN`을 남긴 뒤 Google 로그인과 같은 ADMIN 세션·refresh 쿠키를 발급한다(이전 refresh 쿠키의 세션은 폐기). 정확한 web Origin·`X-Requested-With` 검사를 받는다. web은 `/admin/login`에서만 이 폼을 보여 주고 사용자 화면에는 관리자 로그인 링크·문구를 두지 않는다. 기존 Google 관리자 로그인은 유지한다.
+- 학부모 ID·비밀번호(#415, 2026-11-09): 학부모는 Google 또는 ID·비밀번호 중 한 가지로 가입·로그인한다. 두 방법은 자동 연결하지 않으며(같은 사람이라도 별개 계정, `ACCOUNT_EXISTS` 원칙 유지) 한 계정은 한 가지 로그인 수단만 쓴다. `POST /auth/parent/signup {loginId,password,name}`은 아이디(영문·숫자 4~30자, 앞뒤 공백 제거 후 소문자로 저장·비교, `@` 불가라 Google 계정의 이메일 login_id와 겹치지 않음)·비밀번호(8~128자)·이름(1~80자)을 검사해 400 `VALIDATION_FAILED`, 이미 쓰는 아이디는 409 `LOGIN_ID_TAKEN`이다. 같은 IP는 Redis 고정 창으로 기본 10분 5회(`AUTH_SIGNUP_LIMIT_PER_IP`·`AUTH_SIGNUP_LIMIT_WINDOW`)까지이며 넘으면 429 `SIGNUP_RATE_LIMITED`, Redis 장애는 503 `SIGNUP_UNAVAILABLE`이다. 중복 아이디 거절은 횟수에 넣지 않는다. 성공하면 `user_account`(PARENT·ACTIVE, `login_id`=아이디, `oauth_provider`·`oauth_subject`·레거시 `password_hash` NULL, `AUTH_NEW_ACCOUNT_DEMO=true`면 `is_demo`)와 `parent_credential`(PBKDF2 해시)을 만들고 `audit_log`에 `PARENT_PASSWORD_SIGNUP`을 남긴 뒤 Google 신규 가입과 같은 세션·refresh 쿠키를 발급한다(이전 refresh 쿠키의 세션은 폐기, `nextAction: CONSENT_REQUIRED`, `startPath: /parent/onboarding`). `POST /auth/parent/login {loginId,password}`는 관리자 로그인과 같은 규칙이다. 없는 ID·틀린 비밀번호·Google 계정·관리자·비활성 계정은 같은 401 `INVALID_CREDENTIALS`(없는 ID도 더미 해시 검사), 연속 5회째 실패부터 15분간 423 `LOGIN_LOCKED`이고 잠금 뒤 횟수는 0으로 되돌린다. 실패 횟수는 오류 응답 전에 커밋하며 비밀번호 재확인(5.6) 실패와 함께 센다. 성공 감사는 `PARENT_PASSWORD_LOGIN`. 두 경로 모두 정확한 web Origin·`X-Requested-With` 검사를 받는다. 비밀번호 찾기·로그인 상태의 비밀번호 변경 API는 없다.
 - 학생(동석·단독 공통): access 전용, refresh 미발급. 동석 `/auth/student-sessions`는 별도 학생 auth_session(`parent_session_id` = 학부모 세션)을 만들고, 학부모 세션은 `locked_at`을 기록하고 version을 올려 잠근다. 학부모 refresh 쿠키는 지우지 않는다. 잠긴 세션의 `/auth/refresh`는 refresh 토큰을 소비하지 않고 401 `PARENT_SESSION_LOCKED`이며 기존 부모 access는 `SESSION_CHANGED`로 거부한다. 단독 PIN 로그인은 별도 학생 auth_session을 생성하며 기존 부모 세션을 변경하지 않는다.
 - 학부모 복귀(보호자 비밀번호, 2026-11-03): `POST /auth/parent-unlock {password}`는 refresh 쿠키의 잠긴 학부모 세션과 계정의 보호자 비밀번호를 확인한다. 성공하면 잠금을 풀고 version을 올리며, 그 세션에서 들어간 학생 세션을 폐기하고, refresh를 회전해 refresh 응답과 같은 본문·쿠키를 준다. 실패는 비밀번호 실패 횟수를 커밋한 뒤 401 `GUARDIAN_PASSWORD_INVALID`(`remainingAttempts`), 5회째와 이후는 423 `GUARDIAN_PASSWORD_LOCKED`, 미설정은 409 `GUARDIAN_PASSWORD_NOT_SET`이다. 이때는 Google 로그인으로 돌아오며, 새 로그인은 이전(잠긴) 세션과 그 학생 세션을 폐기한다. 잠기지 않은 세션은 refresh와 같이 처리한다.
 - 보호자 비밀번호는 `guardian_password`(계정당 1행)에 PBKDF2 해시·실패 횟수·잠금 시각만 저장한다. 설정·변경은 `PUT /me/guardian-password`에서 `GUARDIAN_PASSWORD` 재인증 grant(5.6)를 같은 트랜잭션에서 1회 소비하며, 성공 시 실패 횟수·잠금을 초기화한다. 탈퇴 요청 시 삭제한다.
 - JWT에는 `sub`(계정 UUID), `sid`, `ver`, `role`, `studentId`(학생만), `iss`, `aud`, `iat`, `exp`, `jti`를 넣는다. 매 요청에서 세션·현재 계정·자녀 연결·동의를 확인한다. 기기 해제 시 기존 학생 access를 즉시 폐기하는 별도 정책은 추가하지 않는다.
 - 학부모 access 기본 15분, 학생은 `AUTH_STUDENT_ACCESS_TTL`로 별도 관리하며 초기 기본값은 15분이다. 학생 만료·새로고침 시 자동 refresh하지 않고 학생 진입 화면으로 이동한다. 기기·PIN API로 단독 재진입하며 미등록 기기는 등록을 안내한다. 토큰을 영구 저장해 새로고침을 우회하지 않는다.
 - 부모 refresh 응답 `{accessToken,expiresIn,role,child:null,nextAction,startPath}` + 회전 쿠키. 동석 응답 `{accessToken,expiresIn,role:STUDENT,child,nextAction:READY,startPath:/student/home}`, Set-Cookie 없음(잠긴 학부모 refresh 유지). child는 `{id,nickname,grade,birthYear}`(기존 #7 소비자 계약)이다. 단독 PIN 로그인 응답(3.11)은 `child.childId`를 쓰므로 프론트 경계에서 정규화한다.
-- `GET /me`는 부모/관리자에게 `{userId,name,email,role,permissions,child:null,nextAction,startPath}`, 학생에게 `{role,child,nextAction,startPath}`만 반환한다. 학생에게 부모 개인정보·권한을 반환하지 않는다. 학생은 `/me/consents` 등 부모 계정 관리 API를 사용할 수 없다.
+- `GET /me`는 부모/관리자에게 `{userId,name,email,loginId,authMethod,role,permissions,child:null,nextAction,startPath}`, 학생에게 `{role,child,nextAction,startPath}`만 반환한다. `authMethod`는 Google subject가 있으면 `GOOGLE`, 없으면 `PASSWORD`(#415)다. `loginId`는 비밀번호 학부모만 아이디를 주고 그 외는 null이며, 비밀번호 학부모의 `email`은 null이다. 학생에게 부모 개인정보·권한을 반환하지 않는다. 학생은 `/me/consents` 등 부모 계정 관리 API를 사용할 수 없다.
 - 로그아웃은 현재 쿠키의 부모 세션 또는 Bearer로 전달된 학생 세션을 종료하고 refresh 쿠키를 삭제한다. 다른 기기는 유지한다. 쿠키 API는 정확한 web Origin과 `X-Requested-With: XMLHttpRequest`를 요구한다.
 - web/API 동일 origin. refresh 쿠키 `sagomungchi_refresh`: HttpOnly·Secure·SameSite=Strict·Path=/api/v1/auth. OAuth 상태 쿠키 `sagomungchi_oauth`: HttpOnly·Secure·SameSite=Lax·Path=/api/v1/auth/google, 10분. 로컬 HTTP만 Secure=false.
 - Google state·nonce·PKCE S256 및 ID 토큰 JWKS 서명·iss·aud·exp·nonce 검증. 서비스 토큰을 URL에 넣지 않는다. callback 성공은 `/oauth/complete`, 실패는 `/login?oauthError=<고정 코드>`.
 - 부모/관리자 refresh는 Web Locks로 탭 간 직렬화한다. 학생 전환·로그아웃 알림을 받은 다른 탭은 토큰·캐시를 지우며 학생 refresh로 다시 로그인하지 않는다. 학생→부모 복귀는 Google 로그인부터 시작한다.
 - PIN/동석 학생의 종료는 `POST /auth/student/logout`을 사용한다. `Origin`·`X-Requested-With`와 유효한 학생 Bearer를 검증하고 그 세션만 폐기한다(204, Cache-Control: no-store, Set-Cookie 없음). 누락·만료·위조 Bearer는 401, 다른 역할·출처는 403이며 동반된 보호자 refresh로 대체 인증하거나 보호자 세션을 폐기하지 않는다. 기존 `/auth/logout`의 보호자·관리자 로그아웃 계약은 유지한다.
 - 학생에서 보호자 로그인 화면으로 전환할 때는 해당 탭의 access·화면 캐시만 정리하며 전역 LOGOUT을 방송하지 않는다. 탭별 비밀정보 없는 `sessionStorage` 전환 표식으로 새로고침 후에도 보호자 쿠키 자동 복원을 차단하고, Google OAuth 완료 후에만 보호자 역할을 복원한다. PIN 진입 및 학생 만료 경로는 유지한다.
-- 계정 복구·비밀번호 변경 API는 Google 단일 로그인 범위에서 제외(기기·PIN 저장은 core V13, Google 재인증은 5.6). 관리자 비밀번호 재설정도 API 없이 `scripts/admin_account_sql.py`로만 한다(#369).
+- 계정 복구·비밀번호 찾기·비밀번호 변경 API는 제공하지 않는다(기기·PIN 저장은 core V13, Google·비밀번호 재인증은 5.6). 학부모 ID·비밀번호 계정도 비밀번호 찾기가 없으며 화면에서 문의하기·새 아이디 가입을 안내한다(#415). 관리자 비밀번호 재설정도 API 없이 `scripts/admin_account_sql.py`로만 한다(#369).
 
 ### 5.2 #43 모델 레지스트리 확정 계약
 
@@ -1136,10 +1147,11 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 새 HTTP API·이벤트 버전·DB 컬럼은 필요 없다. 요청 접수·원작업 연결·감사는 core(2.8 #47 REPORT 실패 작업 재처리).
 - 요청·결과 예시: [report-admin-retry](../../contracts/examples/report-admin-retry/). 기존 [공유 메시지 계약](../../contracts/events/report-messages.md)과 같은 스키마를 사용한다.
 
-### 5.6 #45 계정 관리·Google 재확인·삭제·탈퇴 계약
+### 5.6 #45 계정 관리·Google·비밀번호 재확인·삭제·탈퇴 계약
 
 - 기존 Google 로그인과 별도 재인증 흐름을 사용한다. `POST /me/reauth`에 `{purpose: PIN_CHANGE|CHILD_UNLINK|CHILD_DELETE|WITHDRAWAL|GUARDIAN_PASSWORD|CHILD_TRANSFER|TRANSFER_ACCEPT, childId?, scope?}`를 보내면 `{challengeId,authorizationUrl,expiresAt}`를 반환하고 HttpOnly/Secure/SameSite=Lax 재인증 상태 쿠키를 설정한다. CHILD_DELETE는 PROFILE/RECORDS scope를 반드시 지정한다. WITHDRAWAL·GUARDIAN_PASSWORD·TRANSFER_ACCEPT는 자녀/scope를 허용하지 않는다. CHILD_TRANSFER를 포함한 다른 자녀 작업은 childId 필수이며 CHILD_DELETE 외에는 scope를 허용하지 않는다.
 - Google redirect URI는 web origin + `/api/v1/auth/google/reauth/callback`이다. 기존 GoogleOAuthClient의 code·PKCE·서명·iss·aud·exp·nonce 검증을 재사용한다. callback은 현재 계정의 Google sub와 일치할 때만 challenge를 VERIFIED로 바꾸며 로그인/refresh를 발급하지 않는다. 계정 선택은 비밀번호/MFA 재입력을 보장하지 않는다. 클라이언트는 원래 로그인 세션을 유지한 상태에서 `POST /me/reauth`에 `{challengeId}`를 보내 `{reauthToken,expiresAt}`를 한 번 수령한다. 아직 callback 전이면 409 REAUTH_PENDING이다. callback 응답은 작은 안내 HTML이다(#425). 성공하면 같은 출처 `BroadcastChannel('sagomungchi-reauth')`로 `{type:"REAUTH_VERIFIED",challengeId}`만 알리고 `window.close()`를 호출하며, 닫히지 않으면 "확인이 끝났습니다. 이 창을 닫고 원래 화면으로 돌아가 주세요."를 보인다. 원래 탭은 자기 challengeId 알림을 받으면 위 수령 요청을 자동으로 보내고, 수동 "완료 확인"은 대체 수단으로 남긴다. 팝업은 `opener=null`이라 postMessage 대신 BroadcastChannel을 쓴다. 응답 헤더는 `Content-Security-Policy`(script-src·style-src nonce, default-src 'none'), `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`다. 실패(403 REAUTH_REQUIRED 조건)도 스크립트 없는 안내 HTML로 응답한다.
+- 비밀번호 재확인(#415): ID·비밀번호 학부모는 Google 대신 `POST /me/reauth/password {purpose, childId?, scope?, password}`로 로그인 비밀번호를 다시 입력해 `{reauthToken,expiresAt}`를 바로 받는다. 목적·자녀·범위 규칙과 소유권 검사는 `/me/reauth`와 같다. 비밀번호가 맞으면 검증·발급을 마친 `reauth_challenge`와 `reauth_grant`를 한 트랜잭션에 만들어, 기존 7개 사용처(탈퇴·보호자 비밀번호·학생 PIN·자녀 해제·자녀 삭제·자녀 이관·이관 수락)의 consume 검사는 바뀌지 않는다. 틀리면 403 `REAUTH_PASSWORD_INVALID`이고 로그인과 실패 횟수를 함께 세어 5회째부터 15분간 423 `LOGIN_LOCKED`이다(횟수는 오류 응답 전에 커밋). Google 계정(또는 `parent_credential` 행이 없는 계정)은 409 `REAUTH_METHOD_MISMATCH`. 성공 감사는 `PASSWORD_REAUTHENTICATED`. 필수 동의 누락 상태에서도 `/me/reauth`와 같은 동의 복구 목록으로 허용한다. 웹은 `/me`의 `authMethod`가 `PASSWORD`면 Google 새 탭 대신 비밀번호 입력을 보인다.
 - challenge 10분, reauthToken 5분(설정값, 세션 만료 이내). 토큰은 256비트 난수, DB에는 SHA-256 해시만 저장한다. 프론트는 메모리에만 보관한다. 사용자·세션 ID/version·purpose·childId·삭제 scope에 결합하며 변경 트랜잭션에서 정확히 1회 소비한다. 일반 access/로그인 상태는 재인증 증명이 아니다. 잘못된 계정·만료·위조·다른 범위·중복 사용은 403 REAUTH_REQUIRED다.
 - #58은 `ReauthenticationService.consume(identity, token, ReauthPurpose.PIN_CHANGE, childId)`를 PIN 변경의 같은 트랜잭션 안에서 호출한다(MANDATORY). 기존 인증/현재 자녀 권한 검사를 별도로 수행한다.
 - PATCH /me `{name}` → `{userId,name}`; PATCH /children/{id} `{nickname?,grade?}` → 현재 자녀. 공백·범위 밖 입력 거부. 기존 기록/학년을 변경하지 않는다. 학생 역할 금지, 계정·자녀의 현재 동의를 검사한다.
@@ -1180,7 +1192,10 @@ learning 구현 명세는 4.1 표와 learning OpenAPI다(정정 #80, 대상·원
 - 정정 대상의 처리 상태가 `DONE` 이전이면 409. 동일 `reportId`에 다른 `Idempotency-Key`를 사용하면 409. 같은 키·같은 본문은 `correctionId`·이전 결과·정정 결과·시각·impact를 포함한 **최초 응답 전체**를 재현하고, 같은 키·다른 본문은 422다. 응답 유실·core 저장 실패 후에도 같은 영속 키로 재개한다.
 - 정정 응답은 `{correctionId,previousResult,corrected,createdAt,impact:{conversation,aggregation,report}}`다. `impact.aggregation`은 **학습 수치 집계**에 대한 정정 반영 여부이며 개별 기록 상세의 판정 표시와 구분한다.
 - impact의 `APPLIED`는 해당 영역에 정정 반영을 확인함, `NOT_APPLIED`는 해당 영역에 정정 반영을 수행하지 않았음을 확인함, `UNKNOWN`은 반영 여부를 확인하지 못함이다. 집계가 판정 결과를 사용하지 않아 변경 대상이 없는 경우도 `aggregation: NOT_APPLIED`이며 오류나 후속 처리 필요를 뜻하지 않는다. learning은 `conversation`·`report`에 UNKNOWN을 반환할 수 있다.
-- **모든 impact가 UNKNOWN이어도 판정 정정 성공과 신고 RESOLVED 전이가 가능**하다. core는 공급자가 확인한 정정 성공을 기준으로 완료 처리하고 impact는 그대로 보존한다. 관리자 화면은 이를 대화·집계·리포트까지 모두 반영됐다는 의미로 표시하지 않는다.
+- **모든 impact가 UNKNOWN이어도 판정 정정 성공과 신고 RESOLVED 전이가 가능**하다. core는 공급자가 확인한 정정 성공을 기준으로 완료 처리하고 impact의 `aggregation`은 그대로 보존하며 `conversation`·`report`는 아래 #244대로 채운다. 관리자 화면은 이를 대화·집계·리포트까지 모두 반영됐다는 의미로 표시하지 않는다.
+- #244 영향 판정: 위 값은 learning 응답 계약이고 "정정을 반영했는지"를 뜻한다. 새 값 `AFFECTED`·`NOT_AFFECTED`는 "정정 대상 판정이 쓰였는지"를 뜻하며 core가 저장·공개할 때만 쓴다. 새 정정의 `conversation`·`report`에는 `APPLIED`·`NOT_APPLIED`가 오지 않는다. core는 정정 성공 후 DB 트랜잭션 밖에서 대화·리포트 영향을 조회해, 저장·공개하는 impact의 `conversation`·`report`를 `AFFECTED`(이 판정을 쓴 리포트·대화 답변이 있음)·`NOT_AFFECTED`(없음)·`UNKNOWN`(조회 실패)로 채운다. `aggregation`은 learning 값 그대로다. 영향이 있으면 `reportIds`·`messageIds`·`conversationIds`도 저장한다. 조회 실패는 정정 성공과 RESOLVED 전이를 막지 않고 다시 조회하지 않는다.
+- #244 찾는 범위: 리포트는 `GET /internal/reports/correction-impact`, 대화는 정정한 판정의 답변 ID(`GET /support/attempts/{attemptId}`의 `feedback.judgment.judgmentId`로 확인)를 `message_evidence`의 `answer_id`(`ANSWER`)로 찾는다. 일일 리포트 고정 대화는 질문마다 고정된 판을 다시 읽으므로 영향받은 판(자녀·대상일·판)에 고정된 대화 전체가 대상이다. 리포트는 보호자 공유가 꺼지면 근거 연결이 없어 시도 단위로 찾으므로, 같은 시도의 다른 답변을 정정해도 `AFFECTED`가 될 수 있다.
+- #244 표시: 리포트 상세와 대화 답변 응답의 `correctionNotice`(boolean)가 true면 화면에 정정 안내를 표시한다. 리포트·답변 내용은 바꾸지 않고 재생성하지 않는다. 재생성한 새 판은 리포트 ID가 달라 표시되지 않는다. `impact`는 관리자 응답에만 제공하고 신고자(학생·학부모) 응답에서는 `null`이다.
 - `/support/targets/...`(신고 대상 확인·최초 정정 전 조회)와 `/support/attempts/...`(관리자 원문 조회)는 #146에서 구현했다.
 
 #### 5.7.2 #163 지원 GET 공개 오류 매핑 (2026-10-30 사용자 승인)
@@ -1207,7 +1222,7 @@ learning 구현 명세는 4.1 표와 learning OpenAPI다(정정 #80, 대상·원
 | 409 (DONE 이전·reportId/키 충돌) | **409 SUPPORT_CORRECTION_CONFLICT** | 정정 FAILED, 신고 IN_REVIEW 유지, 완료 알림 없음 |
 | 422 (같은 키·다른 본문) | **422 SUPPORT_CORRECTION_REJECTED** | 정정 FAILED, 신고 IN_REVIEW 유지, 완료 알림 없음 |
 | 실제 정정 POST의 그 외 비-2xx (403·404 포함), 조회 API의 409·422 등 위 GET 예외 외 오류 | **503 SUPPORT_DEPENDENCY_UNAVAILABLE** | 완료로 표시하지 않음 |
-| 2xx의 잘못된 JSON·필수 필드·impact 코드 | **502 SUPPORT_INVALID_RESPONSE** | 완료로 표시하지 않음 |
+| 2xx의 잘못된 JSON·필수 필드·impact 코드(learning 응답의 `APPLIED`·`NOT_APPLIED`·`UNKNOWN`만 허용. `AFFECTED`·`NOT_AFFECTED`는 core가 계산하므로 검사 대상 아님) | **502 SUPPORT_INVALID_RESPONSE** | 완료로 표시하지 않음 |
 | 전송/시간 초과/서킷 차단 | 기존 LEARNING_UNAVAILABLE(503) / LEARNING_TIMEOUT(504) / LEARNING_CIRCUIT_OPEN(503) | 완료로 표시하지 않음 |
 
 core 자체의 권한·상태·본문 충돌 오류는 기존 계약을 유지한다. 이 표는 공급자 HTTP 응답 변환 계약이다.

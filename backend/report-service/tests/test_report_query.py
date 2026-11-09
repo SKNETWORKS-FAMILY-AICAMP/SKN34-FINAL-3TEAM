@@ -13,9 +13,14 @@ from app.bootstrap import create_app
 from app.clients.learning_client import LearningClient
 from app.clients.storage import ObjectStorage, report_key
 from app.database import transaction
-from app.generation.models import ItemType, ReportFile
+from app.generation.models import ItemType, PeriodType, ReportFile, ReportItem, ReportState
 from app.generation.records import EvidenceRecord
-from app.generation.repository import ReportRepository, report_file, report_item
+from app.generation.repository import (
+    ReportRepository,
+    report_file,
+    report_item,
+    report_item_evidence,
+)
 from app.query.router import query_service
 from app.query.service import QueryService
 from tests.render_helpers import fixed_result
@@ -290,6 +295,82 @@ def test_missing_and_invalid_revision_errors(api, report_factory, report_student
         client.get(f"/internal/reports/{uuid4()}", headers=headers(report_student_id)).status_code
         == 404
     )
+
+
+def correction_impact(client, student, attempt):
+    return client.get(
+        "/internal/reports/correction-impact",
+        params={"studentId": str(student), "attemptId": str(attempt)},
+        headers=headers(student),
+    )
+
+
+def test_correction_impact_finds_weekly_revisions_without_evidence_links(
+    api, report_factory, report_student_id
+):
+    first = seed_report(report_factory, report_student_id)
+    second = seed_report(report_factory, report_student_id)
+    with transaction(report_factory) as session:
+        payloads = session.scalars(
+            select(report_item.c.payload).where(
+                report_item.c.report_id == first, report_item.c.item_type == "THINKING_TYPE"
+            )
+        ).all()
+        attempt = next(m["attemptId"] for p in payloads for m in p["missions"])
+        session.execute(
+            report_item.update()
+            .where(report_item.c.report_id == second, report_item.c.item_type == "THINKING_TYPE")
+            .values(payload={"missions": [{"attemptId": attempt}]})
+        )
+        # Parent sharing off stores no evidence links; the attempt IDs in the payload remain.
+        session.execute(report_item_evidence.delete())
+    client, _, _ = api
+    response = correction_impact(client, report_student_id, attempt)
+    assert response.status_code == 200
+    assert [(i["reportId"], i["periodType"], i["revision"]) for i in response.json()["items"]] == [
+        (str(first), "WEEKLY", 1),
+        (str(second), "WEEKLY", 2),
+    ]
+    assert correction_impact(client, report_student_id, uuid4()).json() == {"items": []}
+
+
+def test_correction_impact_finds_daily_problem_by_attempt(api, report_factory, report_student_id):
+    repository = ReportRepository()
+    attempt = uuid4()
+    command = command_for(report_student_id)
+    daily = replace(command, period_type=PeriodType.DAILY, period_to=command.period_from)
+    _, result = fixed_result(report_student_id)
+    with transaction(report_factory) as session:
+        report, _ = repository.get_or_create(session, daily)
+        problem = ReportItem(ItemType.PROBLEM, 1, {"attemptId": str(attempt)}, ReportState.OK, True)
+        repository.finish(
+            session,
+            report.id,
+            result=replace(
+                result, items=(problem,), narrative=None, evening_question=None, theme_summary=None
+            ),
+        )
+    client, _, _ = api
+    response = correction_impact(client, report_student_id, attempt)
+    assert response.status_code == 200
+    assert response.json()["items"] == [
+        {
+            "reportId": str(report.id),
+            "periodType": "DAILY",
+            "periodFrom": command.period_from.isoformat(),
+            "revision": 1,
+        }
+    ]
+
+
+def test_correction_impact_rejects_another_student_scope(api, report_student_id):
+    client, _, _ = api
+    response = client.get(
+        "/internal/reports/correction-impact",
+        params={"studentId": str(uuid4()), "attemptId": str(uuid4())},
+        headers=headers(report_student_id),
+    )
+    assert response.status_code == 403
 
 
 def test_openapi_matches_checked_in_contract():

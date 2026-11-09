@@ -277,7 +277,7 @@ core는 기존 대화 소유권·연결·동의·이용권과 학부모 행 잠�
 
 ### 범위 밖
 
-판정 정정의 요소 지표 반영(정정은 `judgment_correction`에 결과만 남기고 요소 충족은 바꾸지 않음, #244 FN-SUP-03), 같은 유형·학년군 미션끼리 기간 비교(FN-RPT-05), 요소 기반 추천(FBF-38)·생각 조각(FN-DSH-13), web 요소 고르기(#356, 관리자 code 검사는 #353에서 구현), 실제 LLM으로 학생부터 리포트까지의 E2E(지금 E2E의 llm-stub는 항상 모든 요소를 찾음).
+판정 정정의 요소 지표 반영(정정은 `judgment_correction`에 결과만 남기고 요소 충족은 바꾸지 않음. #244에서 정정된 판정을 요소 지표·일일 요소 표시에서 제외), 같은 유형·학년군 미션끼리 기간 비교(FN-RPT-05), 요소 기반 추천(FBF-38)·생각 조각(FN-DSH-13), web 요소 고르기(#356, 관리자 code 검사는 #353에서 구현), 실제 LLM으로 학생부터 리포트까지의 E2E(지금 E2E의 llm-stub는 항상 모든 요소를 찾음).
 
 ### 검증
 
@@ -400,3 +400,10 @@ P24 일일 리포트는 LLM을 호출하지 않고 문제별 판정·되묻기�
 - 기존 주간 데이터의 ID·revision·서술 내용과 실패 guard를 유지하며 `period_type=WEEKLY`로 채우는 테스트를 통과했다. 일일 데이터가 있으면 downgrade를 거부해 삭제·판 충돌을 막는다.
 - 열린 PR #408의 `core V34__admin_credential.sql`은 develop의 `V34__mission_daily_usage_and_extra_mission.sql`과 번호가 중복된다. #408 병합 전 번호 조정이 필요하나 report 전용 #391과는 독립이다. 다른 PR 파일은 수정하지 않았다. 이후 #408이 `V36__admin_credential.sql`로 번호를 조정해 해소됐다.
 - 로컬 CI DB 검사: core 55표/490컬럼, learning 28표/240컬럼, report 8표/66컬럼. 111개 부정 제약 사례·98개 CHECK 값 집합·46개 인덱스·6개 역할 격리·반복 적용·report 왕복 마이그레이션 통과.
+
+## #244 판정 정정 영향 조회와 요소 지표 제외 (2026-11-09)
+
+- 내부 API `GET /internal/reports/correction-impact?studentId&attemptId`: 그 시도로 만든 완료 판 목록. core가 정정 성공 후 호출(api-spec 4.4·5.7)
+- 주간은 `THINKING_TYPE.missions[].attemptId`, 일일은 `PROBLEM.attemptId`로 찾음. 보호자 공유가 꺼진 판은 근거 연결을 저장하지 않아 `report_item_evidence`로는 찾을 수 없음
+- `judgment.corrected`가 true인 판정은 요소 지표(`usable_judgment`)와 일일 요소 표시에서 제외. 제외 경로는 `HELD`와 같음(FN-RPT-05)
+- 이미 만들어진 판은 바꾸지 않음. 표시·기록은 [support-admin](support-admin.md) 「정정 영향 판정과 표시」
