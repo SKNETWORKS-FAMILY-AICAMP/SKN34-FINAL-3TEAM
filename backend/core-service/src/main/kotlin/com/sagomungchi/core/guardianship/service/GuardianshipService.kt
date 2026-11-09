@@ -31,7 +31,7 @@ class GuardianshipService(private val repository: StudentAccessRepository, priva
         if (!consentAccess.hasRequiredConsents(userId))
             throw BusinessException(HttpStatus.FORBIDDEN, "CONSENT_REQUIRED", "필수 동의를 먼저 완료해 주세요.")
         val name = nickname.trim()
-        if (name.isBlank() || name.length > 40 || grade !in 3..6 || birthYear !in 1900..LocalDate.now(ZoneId.of("Asia/Seoul")).year)
+        if (name.isBlank() || name.length > 40 || !StudentGrade.registrable(grade) || birthYear !in 1900..LocalDate.now(ZoneId.of("Asia/Seoul")).year)
             throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "별명·학년·출생연도를 확인해 주세요.")
         if (repository.linkedCount(userId) >= MAX_CHILDREN)
             throw BusinessException(HttpStatus.CONFLICT, "CHILD_LIMIT_REACHED", "자녀는 최대 3명까지 등록할 수 있습니다.")

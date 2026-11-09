@@ -3,6 +3,7 @@ import { refreshAccessToken, notifyAuthChange, hasAccessToken, isStudentSession,
 import { ApiError, apiFetch, apiResponse, setAccessToken } from '../apiClient.ts'
 import { streamSse } from '../sse.ts'
 import { blankAnswer, publicAttempt } from '../../domain/classroom.ts'
+import { isStoredGrade } from '../../domain/grade.ts'
 import type {
   AnswerContent,
   AnalysisResult,
@@ -184,9 +185,7 @@ export function createApiGateway(): ClassroomGateway {
         if (
           typeof c.id !== 'string' ||
           typeof c.nickname !== 'string' ||
-          !Number.isInteger(c.grade) ||
-          Number(c.grade) < 3 ||
-          Number(c.grade) > 6
+          !isStoredGrade(c.grade)
         )
           return contractError('학생 범위를 복원하지 못했습니다.')
         return { role: 'STUDENT', child: c as unknown as Child, nextAction: me.nextAction, startPath: me.startPath } as Session
@@ -214,7 +213,7 @@ export function createApiGateway(): ClassroomGateway {
       return list(await apiFetch<unknown>('/children')).map((raw) => {
         const c = object(raw)
         const grade = Number(c.grade)
-        if (grade < 3 || grade > 6) return contractError('자녀의 지원 학년은 3~6입니다.')
+        if (!isStoredGrade(grade)) return contractError('자녀 학년은 초3~중3(3~9)입니다.')
         return {
           id: text(c.childId ?? c.id, 'childId'),
           nickname: text(c.nickname, 'nickname'),

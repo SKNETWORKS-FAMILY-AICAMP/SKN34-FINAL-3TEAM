@@ -1,6 +1,7 @@
 import { ApiError, apiFetch, setAccessToken } from '../apiClient.ts'
 import { json } from '../parent/api.ts'
 import type { Child, Session } from '../../domain/classroom.ts'
+import { isStoredGrade } from '../../domain/grade.ts'
 import type { GuardianPasswordState, Pairing, StudentDevice, StudentProfile } from '../../domain/studentDevice.ts'
 
 const contractError = (detail: string): never => {
@@ -82,7 +83,7 @@ export const studentDeviceApi = {
       return contractError('학생 세션 role·accessToken이 필요합니다.')
     const c = raw.child ?? {}
     const grade = Number(c.grade)
-    if (c.childId !== childId || typeof c.nickname !== 'string' || !(grade >= 3 && grade <= 6))
+    if (c.childId !== childId || typeof c.nickname !== 'string' || !isStoredGrade(grade))
       return contractError('로그인한 자녀 정보가 요청과 다릅니다.')
     setAccessToken(raw.accessToken, 'STUDENT')
     const child: Child = {

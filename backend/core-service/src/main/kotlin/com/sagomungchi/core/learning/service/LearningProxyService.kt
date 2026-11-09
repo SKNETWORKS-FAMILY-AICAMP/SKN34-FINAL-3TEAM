@@ -108,11 +108,11 @@ class LearningProxyService(private val client: LearningClient, private val idemp
         students.requireLinked(UUID.fromString(context.userId), UUID.fromString(context.studentScope.single()))
 
     private fun profileQuery(context: UserContext) =
-        linked(context).let { student -> listOf("grade=${student.grade}", "demo=${student.demo}").joinToString("&") }
+        linked(context).let { student -> listOf("grade=${student.learningGrade}", "demo=${student.demo}").joinToString("&") }
 
-    /** 학년군은 core 학년에서 정한다(초3~4 `G3_4`, 초5~6 `G5_6`). 날짜는 KST 오늘이라 무료 한도와 같은 날을 쓴다 */
+    /** 학년군은 core 학년에서 정한다(초3~4 `G3_4`, 초5~6과 중학생 `G5_6`, #432). 날짜는 KST 오늘이라 무료 한도와 같은 날을 쓴다 */
     private fun themeQuery(context: UserContext, date: LocalDate = entitlements.today()): String {
-        val band = if (linked(context).grade <= 4) "G3_4" else "G5_6"
+        val band = if (linked(context).learningGrade <= 4) "G3_4" else "G5_6"
         return "gradeBand=$band&date=$date"
     }
 

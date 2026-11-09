@@ -5657,7 +5657,7 @@ paths:
                 grade:
                   type: integer
                   minimum: 3
-                  maximum: 6
+                  maximum: 9
               required: []
               additionalProperties: false
   /children/{childId}/deletion-impact:
@@ -10371,13 +10371,13 @@ components:
             grade:
               type: integer
               minimum: 3
-              maximum: 6
+              maximum: 9
             birthYear:
               type: integer
     NotificationType:
       type: string
-      description: 일일 리포트(P24)는 주간과 별도 유형이라 수신 설정도 따로 한다.
-      enum: [REPORT_COMPLETED, REPORT_FAILED, ERROR_REPORT_RESOLVED, INQUIRY_ANSWERED, PAYMENT_CHANGED, SUBSCRIPTION_CHANGED, DAILY_REPORT_COMPLETED, DAILY_REPORT_FAILED]
+      description: 일일 리포트(P24)는 주간과 별도 유형이라 수신 설정도 따로 한다. GRADE_PROMOTED는 3월 학년 자동 진급 안내(#432).
+      enum: [REPORT_COMPLETED, REPORT_FAILED, ERROR_REPORT_RESOLVED, INQUIRY_ANSWERED, PAYMENT_CHANGED, SUBSCRIPTION_CHANGED, DAILY_REPORT_COMPLETED, DAILY_REPORT_FAILED, GRADE_PROMOTED]
     Notification:
       type: object
       additionalProperties: false
@@ -10397,7 +10397,7 @@ components:
         items:
           type: array
           minItems: 1
-          maxItems: 8
+          maxItems: 9
           description: 유형 중복 금지. PUT은 지정 유형만 갱신하며 GET/응답은 전체 유형 반환.
           items:
             type: object
@@ -11054,6 +11054,9 @@ components:
           - 4
           - 5
           - 6
+          - 7
+          - 8
+          - 9
         birthYear:
           type: integer
     ParentTokenResponse:
@@ -11453,7 +11456,7 @@ components:
         grade:
           type: integer
           minimum: 3
-          maximum: 6
+          maximum: 9
         birthYear:
           type: integer
           minimum: 1900
@@ -12463,7 +12466,7 @@ components:
         grade:
           type: integer
           minimum: 3
-          maximum: 6
+          maximum: 9
         birthYear:
           type: integer
     DashboardHome:

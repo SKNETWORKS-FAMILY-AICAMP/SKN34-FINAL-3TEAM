@@ -4,6 +4,7 @@ import { parentApi } from '../../data/parent/api.ts'
 import { useParentDashboard, useParentQuery } from '../../data/parent/queries.ts'
 import type { Child, Metric, PublicAttempt } from '../../domain/classroom.ts'
 import { thinkingLabels } from '../../domain/classroom.ts'
+import { gradeLabel } from '../../domain/grade.ts'
 import type { Scope } from '../../domain/parent.ts'
 import { metricText } from '../../domain/parent.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
@@ -41,7 +42,7 @@ export function ParentDashboard({ child, scope }: { child: Child; scope: Scope }
         <span className="pd-eyebrow">대시보드 · 공책</span>
         <h1>{child.nickname}의 학습 기록</h1>
         <p className="pd-sub">
-          초등 {child.grade}학년
+          {gradeLabel(child.grade)}
           {summary && ` · 실제 조회 기간 ${summary.period.from} ~ ${summary.period.to} (KST)`}
         </p>
       </header>

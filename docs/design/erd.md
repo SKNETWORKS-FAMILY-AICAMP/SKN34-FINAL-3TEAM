@@ -73,6 +73,7 @@ erDiagram
   user_account ||--o{ guardian_transfer : recipient
   user_account ||--o{ deletion_request : requests
   student ||--o{ deletion_request : target
+  student ||--o{ student_grade_promotion : promoted
   user_account ||--o{ withdrawal_request : requests
 
   user_account {
@@ -112,7 +113,8 @@ erDiagram
     timestamptz pin_locked_at "NULL 허용"
     timestamptz pin_updated_at "NULL 허용"
     varchar nickname "가명, DELETED 표식은 NULL 허용"
-    int grade "3~6, 이후 제공 문제에만 적용 (P03), DELETED 표식은 NULL 허용"
+    int grade "3~9(초3~중3), 새 등록은 3~6 (P03), 매년 3월 자동 진급 (P26), 이후 제공 문제에만 적용, DELETED 표식은 NULL 허용"
+    timestamptz grade_changed_at "NULL 허용, 학년 수정·진급 시각. NULL은 등록 후 그대로(created_at 사용) (#432)"
     int birth_year "출생연도 (P01), DELETED 표식은 NULL 허용"
     boolean is_demo "시연 가상 학생"
     boolean parent_sharing_enabled "NOT NULL DEFAULT false, 학생 본인만 변경 (#206)"
@@ -125,6 +127,13 @@ erDiagram
     timestamptz created_at
     timestamptz updated_at
     timestamptz deleted_at "NULL 허용"
+  }
+  student_grade_promotion {
+    uuid student_id PK, FK "학생"
+    int school_year PK "진급한 학년도(3월이 속한 연도)"
+    int from_grade "3~8"
+    int to_grade "from_grade + 1"
+    timestamptz promoted_at
   }
   student_device {
     uuid id PK
@@ -214,6 +223,7 @@ erDiagram
 - `student.community_enabled`도 같은 이유의 DEFAULT false 예외(P20, #388). V31에서 nullable로 추가하고 V32에서 기존 행을 false로 채운 뒤 NOT NULL. 학생 본인만 켜고 끄며, 공유물 공개는 이 값과 현재 연결 보호자의 현재 문서 `COMMUNITY` 동의가 모두 있어야 한다. 동의 거부·철회 시 false, 학생 삭제 확정 시 false·`community_updated_at` NULL로 되돌림. `consent_document` `COMMUNITY`는 선택(`required = false`) 자녀 단위 동의(V31 시드 1.0), `error_report`·`correction` `target_type`에 `COMMUNITY_POST`
 - `student.look_theme`·`look_companion`·`look_updated_at`은 함께 NULL(저장한 적 없음, API 기본값 `lake`·`mungchi`)이거나 함께 값(`student_look_saved_together`). 값 목록은 코드 상수와 CHECK로 고정, SQL DEFAULT 없음. 학생 삭제 확정 때 PIN 삭제와 같은 트랜잭션에서 NULL로 되돌림 (#234)
 - P22(#389, V35): `lake`·`mungchi` 외 테마·캐릭터는 포인트 해금 후에만 저장 가능(`student_look_unlock`, 3.5.1). 잠금 적용 전 저장된 값은 V35가 해금 행으로 옮김
+- P26(#432, V41): `ck_student_grade`를 3~9로 넓혔다(초3~중3, 새 등록은 앱에서 3~6). `grade_changed_at`은 학부모 수정에서 학년이 바뀔 때와 자동 진급 때 기록하며, 3월 진급은 `COALESCE(grade_changed_at, created_at)`이 그 학년도 2월 1일(KST) 전인 활성·비시연 학생(3~8)만 올린다. `student_grade_promotion`은 학년도마다 한 줄(PK `(student_id, school_year)`)이라 같은 3월에 다시 돌아도 한 번만 오른다. 프로필 삭제(`PROFILE`) 때 진급 이력도 지우고 `grade_changed_at`을 비운다
 
 ### 3.1.1 로그인 세션 (#36)
 
@@ -478,7 +488,7 @@ erDiagram
     uuid id PK
     uuid user_id FK
     uuid child_id FK "NULL 허용"
-    varchar type "REPORT_COMPLETED|REPORT_FAILED|ERROR_REPORT_RESOLVED|INQUIRY_ANSWERED|PAYMENT_CHANGED|SUBSCRIPTION_CHANGED|DAILY_REPORT_COMPLETED|DAILY_REPORT_FAILED"
+    varchar type "REPORT_COMPLETED|REPORT_FAILED|ERROR_REPORT_RESOLVED|INQUIRY_ANSWERED|PAYMENT_CHANGED|SUBSCRIPTION_CHANGED|DAILY_REPORT_COMPLETED|DAILY_REPORT_FAILED|GRADE_PROMOTED"
     uuid source_event_id "사건 ID"
     varchar title "원문·결제 민감 정보 미포함"
     varchar link "상세 화면 경로"
@@ -560,7 +570,7 @@ erDiagram
   }
 ```
 
-- #44: V12는 notification·notification_setting의 type CHECK에 REPORT_FAILED를 추가한다. #390: V30이 일일 리포트 완료·실패(`DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`)를 추가해 주간과 독립 수신 설정을 둔다(P24). V9는 #45, V13은 #58의 student_device_auth. 기존 마이그레이션은 수정하지 않는다. 알림 status는 Redis 발행 상태이며 읽음은 read_at으로 별도 관리한다.
+- #44: V12는 notification·notification_setting의 type CHECK에 REPORT_FAILED를 추가한다. #390: V30이 일일 리포트 완료·실패(`DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`)를 추가해 주간과 독립 수신 설정을 둔다(P24). #432: V41이 학년 자동 진급 안내 `GRADE_PROMOTED`를 추가한다(P26). V9는 #45, V13은 #58의 student_device_auth. 기존 마이그레이션은 수정하지 않는다. 알림 status는 Redis 발행 상태이며 읽음은 read_at으로 별도 관리한다.
 - `notification` UK `(user_id, type, source_event_id)` → 같은 사건 재처리 시 중복 생성 방지 (FN-SUP-08)
 - 판정 정정 원본은 learning `judgment_correction`, core `correction`은 신고 단위 정정 사유·영향 범위 기록 (FN-SUP-03)
 - 도움말(`/help`)은 정적 콘텐츠로 테이블 없음

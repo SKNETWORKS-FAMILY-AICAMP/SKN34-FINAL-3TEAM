@@ -269,7 +269,7 @@
 | POST | `/me/consents/{consentId}/withdrawal` | 학부모 | 동의 철회. 필수 동의면 해당 자녀(또는 계정) 이용 차단 후 삭제·탈퇴 안내, 선택 동의면 해당 기능만 중단 (P09) | ACC-02 | 제안 |
 | GET | `/children` | 학부모 | 연결 자녀 목록(닉네임·학년·기록 유무, 5.3). PIN 상태 `pinSet`·`pinLocked`는 실제 저장 상태로 반환. 빈 목록이면 자녀 등록 안내 | ACC-07, ACC-14 | 제안 |
 | POST | `/children` | 학부모 | 자녀 프로필 등록 `{nickname, grade(3~6), birthYear}` + 법정대리인 동의(전원 만 14세 미만 간주). 3명 초과 시 409 (P01, P02, P03) | ACC-06, ACC-02 | 제안 |
-| PATCH | `/children/{childId}` | 학부모 | 닉네임·학년(3~6) 수정 (학년은 이후 제공 문제에만 적용) | ACC-09 | 우선1 |
+| PATCH | `/children/{childId}` | 학부모 | 닉네임·학년(3~9, 7~9는 중1~3) 수정 (학년은 이후 제공 문제에만 적용, 학년이 바뀌면 `grade_changed_at` 기록해 그 해 자동 진급 판단에 씀, P26 #432) | ACC-09 | 우선1 |
 | PUT | `/children/{childId}/pin` | 학부모 | PIN 설정·변경 `{pin}` (`X-Reauth-Token`). 실패 횟수·잠금 해제 (P01) | ACC-14, ACC-10 | 제안 |
 | POST | `/student-devices/pairings` | 학부모 | 1회용 페어링 코드 발급 `{childIds[]}` → `{pairingCode, expiresAt}` (10분, QR은 클라이언트가 코드로 생성) (P01) | ACC-14 | 제안 |
 | GET | `/student-devices` | 학부모 | 등록 기기 목록 `{deviceId, label, children[], createdAt, lastUsedAt, expiresAt}` | ACC-14 | 제안 |
@@ -392,7 +392,7 @@
 - 주간 테마 요약(FN-RPT-17, #391 구현): 주간 상세에 `themeSummary:{themeId, title, days[], completed, reviewRetries[]}`. 테마 미참여 주는 `state: NO_RECORD` 요약
 - 다운로드·근거·재생성 경로는 2.5 그대로이며 일일에도 같은 규칙(학부모 리포트당 1회, 관리자 무제한)
 - 일일 리포트는 이용권과 관계없이 전체 제공(서술이 없어 `X-Report-Narrative-Enabled`와 무관). 주간 무료 규칙은 그대로
-- 알림 유형: `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`(2.7 설정 1~8개, #390)
+- 알림 유형: `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`(2.7 설정 1~9개, #390)
 - 리포트 고정 대화의 질문은 그 대상일 밖으로 범위를 바꾸지 않는다. 다른 날 질문은 범위 확인에서 새 대화 안내
 
 ### 2.6 결제·구독 (FN-PAY) — 토스페이먼츠 테스트 환경만
@@ -437,7 +437,7 @@
 
 - #44 권한: 학생 세션의 account.id는 보호자 ID를 공유하므로 학생은 모든 알림/설정 API에서 403이다. PARENT·ADMIN은 인증된 본인 계정만 사용하며 userId 입력을 받지 않는다. 학생 전용 알림함은 현재 제공하지 않는다.
 - 목록: `GET /notifications?unreadOnly=false&page=0&size=20` → `{items:[{id,childId,type,title,link,readAt,createdAt}],page,size,hasNext}`. size 1~100, 최신 createdAt·id 내림차순. 읽음 PATCH와 전체 읽음 POST는 204, 반복해도 최초 readAt 유지, 타인/없는 ID는 404.
-- 설정: GET → `{items:[{type,enabled}]}`, PUT도 동일한 객체(1~8개 중복 없는 유형)로 지정 유형만 갱신하고 전체 유효 설정을 반환. 미저장 유형 기본 true, 채널은 IN_APP 고정. 유형은 REPORT_COMPLETED, REPORT_FAILED, ERROR_REPORT_RESOLVED, INQUIRY_ANSWERED, PAYMENT_CHANGED, SUBSCRIPTION_CHANGED, DAILY_REPORT_COMPLETED, DAILY_REPORT_FAILED. 수신 거부는 이후 알림 생성을 막으며 기존 알림은 보존한다.
+- 설정: GET → `{items:[{type,enabled}]}`, PUT도 동일한 객체(1~9개 중복 없는 유형)로 지정 유형만 갱신하고 전체 유효 설정을 반환. 미저장 유형 기본 true, 채널은 IN_APP 고정. 유형은 REPORT_COMPLETED, REPORT_FAILED, ERROR_REPORT_RESOLVED, INQUIRY_ANSWERED, PAYMENT_CHANGED, SUBSCRIPTION_CHANGED, DAILY_REPORT_COMPLETED, DAILY_REPORT_FAILED, GRADE_PROMOTED. `GRADE_PROMOTED`는 3월 학년 자동 진급 안내(P26, #432): 제목 "{별명}의 학년이 {새 학년}으로 올라갔어요. 다르면 정보 관리에서 고쳐 주세요.", 링크 `/parent/settings`, 원천 ID는 학생·학년도로 정해 같은 진급을 두 번 알리지 않는다. 수신 거부는 이후 알림 생성을 막으며 기존 알림은 보존한다.
 - 리포트 실패는 REPORT_FAILED로 독립 설정한다. 일일 리포트(P24)는 DAILY_REPORT_COMPLETED·DAILY_REPORT_FAILED로 주간과 따로 설정한다(#390). 완료·실패 모두 현재 연결·동의가 유효한 보호자에게 생성한다. 상세 링크 권한은 이동 시 다시 검사한다. 실패 링크는 리포트 목록으로 이동한다.
 - SSE는 `event: notification`에 목록 항목과 같은 데이터를 전송한다. 15초 `: ping`, 최대 5분 후 재연결. 각 전송·heartbeat에서 세션/동의를 재검사하고 만료·폐기 시 연결을 닫는다. 학생으로 역할을 바꾸면 기존 보호자 구독도 폐기된 세션 검사로 닫힌다.
 - 구독 준비 후 `event: ready`를 받으면 목록 API를 첫 페이지부터 재조회해 id로 병합한다. 연결 중에도 주기적으로 목록을 동기화한다. Last-Event-ID 재생은 제공하지 않는다. Redis Pub/Sub은 유실 가능하며 SSE를 영구 전달 보장으로 사용하지 않는다.
@@ -579,7 +579,7 @@ core 경로는 #387 구현·OpenAPI 반영(태그 `WeeklyTheme`, 시도 `Attempt
 - `THEME_DAY`: 그 미션이 이번 주 테마의 오늘(KST) 요일 문제일 때만 신규 시도. 아니면 409 `THEME_DAY_CLOSED`. 무료 하루 1개(P13 개정) 집계 대상
 - `THEME_REVIEW`: 토·일에 그 주 마무리한 테마 문제만. 놓친 문제는 409 `THEME_REVIEW_NOT_ALLOWED`. 무료 한도 제외, #207 비교 규칙 그대로
 - `EXTRA`: 생각 유형별 미션 고르기(2.2 `/missions`). 2026-11-08 동섭 결정: 설계 문서의 'EXTRA는 프리미엄 추가 문제'와 달리 지금은 무료도 허용하고 무료 하루 1개에 함께 센다. 무료 상품 `features.extraMissions = false`로 바꾸면 코드 수정 없이 프리미엄 전용(무료 403 `PREMIUM_REQUIRED`, 프리미엄 `EXTRA_MISSION` 사용 기록). 무료 한도·전환 방법은 [core 보고서 13절](../report/core-gateway.md#13-주간-테마-프록시무료-하루-1개추가-문제-프리미엄-387)
-- 무료 하루 1개 한도는 #210 결정대로 core `mission_daily_usage` 집계(2.2). 학년군(초3~4 `G3_4`, 초5~6 `G5_6`)과 KST 날짜는 core가 정해 learning에 넘긴다(클라이언트 값 미사용). 응답은 `Cache-Control: no-store`
+- 무료 하루 1개 한도는 #210 결정대로 core `mission_daily_usage` 집계(2.2). 학년군(초3~4 `G3_4`, 초5~6과 중학생 `G5_6`, P26 #432)과 KST 날짜는 core가 정해 learning에 넘긴다(클라이언트 값 미사용). 응답은 `Cache-Control: no-store`
 - 진행 중인 시도의 이어하기(`200`)는 요일 검사를 하지 않는다. 재사용 테마의 이미 푼 문제도 그 주 `OPEN` 요일에는 `THEME_DAY` 신규 시도 가능(무료 한도 집계)
 
 ---
@@ -862,7 +862,7 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 
 | Method | Path | 호출자 | 설명 |
 |---|---|---|---|
-| GET | `/internal/missions?grade&demo&page&size`, `/internal/missions/{id}?grade&demo` | core | 학생용 미션 조회 (2.2 프록시). core가 학생 학년 `grade`(3~6, 필수)와 시연 학생 여부 `demo`(`student.is_demo`, 기본 `false`)를 붙임. `demo_only` 미션은 `demo=true`일 때만 노출. 미션에 분류 그룹 `categories`·수학 답 단위 `answerUnit` 포함(3.8, #79) |
+| GET | `/internal/missions?grade&demo&page&size`, `/internal/missions/{id}?grade&demo` | core | 학생용 미션 조회 (2.2 프록시). core가 학생 학년 `grade`(3~6, 필수. 저장 학년 7~9인 중학생은 중학교 과정 확장 전까지 6으로 맞춤, P26 #432)와 시연 학생 여부 `demo`(`student.is_demo`, 기본 `false`)를 붙임. `demo_only` 미션은 `demo=true`일 때만 노출. 미션에 분류 그룹 `categories`·수학 답 단위 `answerUnit` 포함(3.8, #79) |
 | POST | `/internal/missions/{id}/attempts?grade&demo` | core | 시도 시작·이어하기 (2.2와 1:1). 조회와 동일하게 core가 인증된 학생의 `grade`(필수, 3~6)와 `demo`(`student.is_demo`, 기본값 `false`)를 전달함. 공개 요청의 `grade`·`demo` 값은 사용하지 않음. 진행 중인 시도가 있으면 미션의 공개 여부나 제공 범위와 관계없이 해당 시도를 반환(`200`)하고, 신규 시도는 `201`을 반환함. core는 응답 상태를 그대로 전달하며, 신규 시도의 제공 범위 검사와 기존 시도의 시작 당시 버전 유지는 learning이 담당함. #387: core가 body `{context}`를 그대로 넘기고(요일·되돌아보기 검사는 learning #385), 무료 `THEME_DAY` `201`만 core `mission_daily_usage`에 집계(2.2) |
 | POST · GET · PUT | `/internal/attempts/...` | core | 시도·초안·도움·답변·마무리·돌아보기·자기 평가 (2.2 경로와 1:1). 생각 열기 응답 형식은 `{question, seq, total}`이며, 질문이 없는 미션은 `404`를 반환함. 시도 상세 `answers[]`는 `{answerId, version, submittedAt, inputType, text(입력 틀 칸 이름을 붙인 원문), followupId, content, feedback}`, `feedback`은 아래 피드백 결과와 같은 모양(판정 전이면 `{status, judgment:null, followup:null, nextActions:[], versions:null}`), 시도 `nextActions`는 마지막 답변의 `nextActions`. 시도 상세의 `reveal`·`revealKind`·`checklist`는 마무리 뒤에만, `reflection{difficulty, text}`는 돌아보기 뒤에만(그 전에는 `null`). 마무리 `finish` → `200 {attemptId, finishedAt, reveal(시도 기준표 버전의 예시 답, 닫힌 문제는 정답과 해설), revealKind(고르기·순서·분류·풀이 단계 `ANSWER`, 서술·논술 `EXAMPLE`), checklist(기준표 요소 전체 3.2 `Element[]`, 이 시도의 처리 완료 판정 중 원문 구절과 함께 충족된 요소만 체크·가장 최근 구절)}`, 판정 `DONE` 1회 미만이면 `409 REVEAL_CONDITION_UNMET`, 다시 요청하면 기록하지 않고 같은 결과. 돌아보기 `reflection` `{difficulty(EASY·NORMAL·HARD, 필수), text(선택, 빈 글은 null)}` → `200 {attemptId, status:"COMPLETED", reflection}`(완료 시점은 시도 상세·기록 조회), 난이도 없음·값 밖 `400`, 마무리 전 `409 REVEAL_CONDITION_UNMET`, 완료 뒤 `409 ATTEMPT_CLOSED`. 자기 평가 `self-assessment` `{checks:[{elementId, checked}]}` → `200 [{elementId, label, selfChecked(체크 안 한 요소는 null), aiChecked, quote}]`(기준표 요소 전체), 마무리 전 `409 REVEAL_CONDITION_UNMET`, 완료 뒤 `409 ATTEMPT_CLOSED`, 비었거나 같은 요소 두 번·기준표 밖 요소 `400`, 다시 보내면 `checked`만 바꿈 |
 | POST | `/internal/attempts/{id}/answers` | core | 답변 제출 (3.1·3.8 형식). `Idempotency-Key`(UUID) 필수, 없거나 형식 오류면 `400`. 같은 키·같은 본문은 처음 답변을 `201`로 다시, 다른 본문은 `422 IDEMPOTENCY_KEY_REUSED`. 미션 입력 방식과 다르면 `400`, 누락은 `422 ANSWER_INCOMPLETE`, 서술·풀이·논술 글에 욕설·비속어·성적·혐오·위협 표현이나 연락처(전화번호·이메일)가 있으면 `422 ANSWER_INAPPROPRIATE`(누락 검사 다음·되묻기 연결 검사 전, 저장·판정 없이 차단. `detail`은 범주별 고정 문구로 표현은 "고운 말로 바꿔서 다시 적어 주세요.", 연락처는 "전화번호나 이메일 같은 개인정보는 빼고 다시 적어 주세요."이고 걸린 단어·원문은 넣지 않음. 혐오 표현과 `새끼`처럼 뜻이 둘인 말은 미션 본문에 나온 말이면 허용, #205), 마무리·완료한 시도는 `409 ATTEMPT_CLOSED`. 보완 답변은 가장 최근 미답 되묻기의 `followupId` 필수(아니면 `422 ANSWER_INCOMPLETE`). 저장하면 같은 트랜잭션에서 초안 `content.answer`를 비우고 `memo`는 유지, 초안 `version` +1 |

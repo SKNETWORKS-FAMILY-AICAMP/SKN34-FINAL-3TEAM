@@ -5,6 +5,7 @@ import { useStudentLook } from '../../../data/studentLook/queries.ts'
 import { DEFAULT_LOOK, THEMES } from '../../../domain/studentLook.ts'
 import type { Theme } from '../../../domain/studentLook.ts'
 import type { Child } from '../../../domain/classroom.ts'
+import { gradeLabel } from '../../../domain/grade.ts'
 import { ThemeBackdrop } from './ThemeArt.tsx'
 import { LookContext, themeVars } from './lookContext.ts'
 import './student-world.css'
@@ -60,7 +61,7 @@ export function StudentWorld({
             <div className="st-brand">
               <span className="st-wordmark">{t.sub}</span>
               <span className="st-sub">
-                {child.nickname} · 초등 {child.grade}학년
+                {child.nickname} · {gradeLabel(child.grade)}
               </span>
             </div>
             <nav aria-label="학생 메뉴" className="st-nav">

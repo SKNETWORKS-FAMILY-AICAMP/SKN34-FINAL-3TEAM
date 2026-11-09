@@ -200,8 +200,9 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
         val mission = UUID.randomUUID()
         val routes = listOf("GET" to "/missions", "GET" to "/missions/$mission", "POST" to "/missions/$mission/attempts")
         // The same signed session must use current core data, never client values or a cached profile.
-        listOf(5 to true, 3 to false).forEach { (grade, demo) ->
-            jdbc.update("UPDATE student SET grade=?,is_demo=? WHERE id=?", grade, demo, child)
+        // #432: 중학생(7~9)은 중학교 과정 확장 전까지 초6 문제를 받는다.
+        listOf(Triple(5, true, 5), Triple(3, false, 3), Triple(8, false, 6)).forEach { (stored, demo, grade) ->
+            jdbc.update("UPDATE student SET grade=?,is_demo=? WHERE id=?", stored, demo, child)
             routes.forEach { (method, path) ->
                 val forgedQuery = "grade=6&grade=4&demo=${!demo}&demo=${!demo}&studentId=${UUID.randomUUID()}&page=1&size=2"
                 call(method, "/api/v1$path?$forgedQuery").andExpect(status().isOk())
@@ -210,7 +211,7 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
                 assertEquals(child.toString(), stub.requests.last().header("X-Student-Scope"))
             }
         }
-        assertEquals(6, stub.requests.size)
+        assertEquals(9, stub.requests.size)
     }
 
     @Test fun `attempt start preserves learning 201 for a newly created attempt`() {

@@ -20,6 +20,7 @@ interface ChildManagementMapper {
  fun services(id: UUID): List<String>
  fun complete(@Param("id") id: UUID, @Param("now") now: OffsetDateTime): Int
  fun eraseProfile(@Param("student") student: UUID, @Param("now") now: OffsetDateTime): Int
+ fun erasePromotions(student: UUID): Int
  fun children(user: UUID): List<UUID>
  fun pendingForUser(user: UUID): Int
 }
@@ -37,7 +38,7 @@ class ChildManagementRepository(private val mapper: ChildManagementMapper) {
  fun completion(id: UUID, service: String, now: OffsetDateTime) { mapper.completion(id,service,now) }
  fun services(id: UUID)=mapper.services(id)
  fun complete(id: UUID, now: OffsetDateTime) { check(mapper.complete(id,now)==1) }
- fun eraseProfile(student: UUID, now: OffsetDateTime) { check(mapper.eraseProfile(student,now)==1) }
+ fun eraseProfile(student: UUID, now: OffsetDateTime) { check(mapper.eraseProfile(student,now)==1); mapper.erasePromotions(student) }
  fun children(user: UUID)=mapper.children(user)
  fun pendingForUser(user: UUID)=mapper.pendingForUser(user)
 }

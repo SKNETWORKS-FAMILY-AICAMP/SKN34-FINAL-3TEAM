@@ -28,7 +28,7 @@ class ChildManagementService(private val repository: ChildManagementRepository,
   if(repository.lock(id)==null) throw unavailable()
   val current=repository.profile(id) ?: throw unavailable()
   val clean=nickname?.trim() ?: current.nickname; val nextGrade=grade ?: current.grade
-  if((nickname==null && grade==null) || clean.isBlank() || clean.length>40 || nextGrade !in 3..6)
+  if((nickname==null && grade==null) || clean.isBlank() || clean.length>40 || !StudentGrade.stored(nextGrade))
    throw BusinessException(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED","별명·학년을 확인해 주세요.")
   repository.update(id,clean,nextGrade,now()); accounts.audit(identity.account.id,"CHILD_UPDATED",id)
   return current.copy(nickname=clean,grade=nextGrade)

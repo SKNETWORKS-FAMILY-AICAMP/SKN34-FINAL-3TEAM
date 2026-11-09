@@ -74,5 +74,15 @@ class NotificationService(private val repository: NotificationRepository, privat
             sourceEventId,title,"/parent/settings",null,OffsetDateTime.now())
         if(repository.insert(value)) events.publishEvent(NotificationStored(value.id,userId))
     }
+    /** #432: 수신자는 호출자가 notificationParents로 고른다. 원천 ID는 학생·학년도에서 만들어 같은 진급을 두 번 알리지 않는다. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun gradePromoted(userId: UUID, promotion: com.sagomungchi.core.guardianship.domain.GradePromotion, schoolYear: Int) {
+        val label = com.sagomungchi.core.guardianship.domain.StudentGrade.label(promotion.toGrade)
+        val value = Notification(UUID.randomUUID(), userId, promotion.studentId, NotificationType.GRADE_PROMOTED,
+            UUID.nameUUIDFromBytes("grade-promotion:${promotion.studentId}:$schoolYear".toByteArray()),
+            "${promotion.nickname}의 학년이 ${label}으로 올라갔어요. 다르면 정보 관리에서 고쳐 주세요.",
+            "/parent/settings", null, OffsetDateTime.now())
+        if (repository.insert(value)) events.publishEvent(NotificationStored(value.id, userId))
+    }
     fun find(userId: UUID, id: UUID) = repository.find(userId, id)
 }
