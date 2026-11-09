@@ -37,6 +37,15 @@ class ContractTests(unittest.TestCase):
         for seed in seeds["consent_document"]:
             self.assertIn(f"('{seed}', ", text)
 
+    def test_reward_rule_seed_rows_are_exempt_by_event_type(self):
+        seeds = MIGRATION_SEED_ROWS["core_db"]
+        sql = populated_sql(["reward_rule"], seeds)
+        self.assertIn("FROM reward_rule WHERE event_type NOT IN ('MISSION_COMPLETED'", sql)
+        migration = next((ROOT / "backend/core-service/src/main/resources/db/migration").glob("V*__reward_points_and_look_unlocks.sql"))
+        text = migration.read_text(encoding="utf-8")
+        for seed in seeds["reward_rule"]:
+            self.assertIn(f"('{seed}', ", text)
+
     def test_empty_erd_cannot_succeed_without_checks(self):
         with self.assertRaises(ValidationError):
             erd_contract("")

@@ -4,9 +4,11 @@ import java.time.OffsetDateTime
 
 /**
  * 학생 화면 꾸미기 설정 (api-spec 3.12, #234). 값 목록은 웹 `domain/studentLook.ts`의 ThemeId·CompanionId와 같고
- * V23 CHECK와도 맞춘다. 숫자 레벨·보상·잠금 없이 언제든 바꾼다.
+ * V23 CHECK와도 맞춘다. `lake`·`mungchi` 외 테마·캐릭터와 캐릭터 아이템(`equipped`)은 포인트로 해금한 것만 고른다(P22, #389).
+ * `equipped`는 슬롯(HAT·OUTFIT·ACCESSORY·BACKGROUND)별 아이템 코드 또는 null이다.
  */
-data class StudentLook(val theme: String, val companion: String, val updatedAt: OffsetDateTime?) {
+data class StudentLook @JvmOverloads constructor(val theme: String, val companion: String, val updatedAt: OffsetDateTime?,
+                                                 val equipped: Map<String, String?>? = null) {
     companion object {
         val THEMES = setOf("lake", "forest", "factory", "space", "sea")
         val COMPANIONS = setOf("mungchi", "tori", "mongdol", "kongi", "monggeul")

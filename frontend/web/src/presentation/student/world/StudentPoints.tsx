@@ -12,7 +12,8 @@ const when = (iso: string) =>
 
 /** 내 포인트 (P21, API 명세 2.10). 잔액은 나와 학부모님만 보고, 순위·소멸은 없다. */
 export function StudentPoints({ child }: { child: Child }) {
-  const points = useMyPoints(child.id)
+  const [page, setPage] = useState(0)
+  const points = useMyPoints(child.id, page)
   const [decorating, setDecorating] = useState(false)
   return (
     <main className="st-paper st-sheet st-points-page">
@@ -21,7 +22,7 @@ export function StudentPoints({ child }: { child: Child }) {
       </h1>
       {points.isPending && <p role="status">포인트를 확인하고 있어요.</p>}
       <ErrorNotice error={points.error} retry={() => void points.refetch()} />
-      {points.data && (
+      {points.data && !points.error && (
         <>
           <p className="st-balance">
             지금 <strong>{points.data.balance}</strong>포인트
@@ -45,6 +46,12 @@ export function StudentPoints({ child }: { child: Child }) {
               ))}
             </ul>
           )}
+          {points.data.totalElements > points.data.size && <nav className="st-points-pages" aria-label="포인트 내역 페이지">
+            <button type="button" className="st-button" disabled={page === 0 || points.isFetching} onClick={() => setPage(p => p - 1)}>이전 내역</button>
+            <span>{page + 1} / {Math.ceil(points.data.totalElements / points.data.size)}쪽</span>
+            <button type="button" className="st-button" disabled={(page + 1) * points.data.size >= points.data.totalElements || points.isFetching}
+              onClick={() => setPage(p => p + 1)}>다음 내역</button>
+          </nav>}
         </>
       )}
       <h2>포인트는 이렇게 쌓여요</h2>

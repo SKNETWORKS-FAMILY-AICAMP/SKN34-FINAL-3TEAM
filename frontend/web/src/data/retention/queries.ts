@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { retentionApi } from './api.ts'
-import type { Reaction } from '../../domain/retention.ts'
+import type { LookItem, Points, Reaction } from '../../domain/retention.ts'
 
 /** 참여 기능 조회는 학습 화면을 막지 않는다: 실패해도 재시도 없이 오류만 보인다. */
 const quiet = { retry: false } as const
 
-export const useMyPoints = (childId: string | undefined) =>
-  useQuery({ queryKey: ['points', childId], queryFn: ({ signal }) => retentionApi.myPoints(signal), enabled: !!childId, ...quiet })
+export const useMyPoints = (childId: string | undefined, page = 0) =>
+  useQuery({ queryKey: ['points', childId, page], queryFn: ({ signal }) => retentionApi.myPoints(signal, page), enabled: !!childId, ...quiet })
 export const useChildPoints = (childId: string | undefined) =>
   useQuery({
     queryKey: ['parent', 'points', childId],
@@ -22,10 +22,17 @@ export function useUnlock(childId: string | undefined) {
   const cache = useQueryClient()
   return useMutation({
     mutationFn: ({ itemKey, key }: { itemKey: string; key: string }) => retentionApi.unlock(itemKey, key),
-    onSettled: () => {
-      void cache.invalidateQueries({ queryKey: ['look-items', childId] })
-      void cache.invalidateQueries({ queryKey: ['points', childId] })
+    onSuccess: (result) => {
+      // 차감액을 추측하지 않고 서버가 확정한 잔액·해금만 반영한다.
+      cache.setQueriesData<Points>({ queryKey: ['points', childId] }, before => before ? { ...before, balance: result.balance } : before)
+      cache.setQueryData<LookItem[]>(['look-items', childId], before => before?.map(item =>
+        item.itemKey === result.itemKey ? { ...item, unlocked: true } : item))
     },
+    onSettled: () => Promise.all([
+      cache.invalidateQueries({ queryKey: ['look-items', childId] }),
+      cache.invalidateQueries({ queryKey: ['points', childId] }),
+      cache.invalidateQueries({ queryKey: ['parent', 'points', childId] }),
+    ]),
   })
 }
 

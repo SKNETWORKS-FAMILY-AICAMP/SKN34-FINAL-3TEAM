@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.reward.repository.RewardMapper">
+    <sql id="item">id,code,slot,name,price_points,asset_key,status,created_at,updated_at</sql>
+
+    <select id="rule" resultType="com.sagomungchi.core.reward.domain.RewardRule" flushCache="true" useCache="false">
+        SELECT event_type,amount,daily_cap,active FROM reward_rule WHERE event_type=#{eventType}
+    </select>
+    <!-- 학생 삭제 확정(status 변경)과 직렬화한다. 삭제가 먼저 끝나면 적립·해금하지 않는다. -->
+    <select id="activeStudent" resultType="java.util.UUID" flushCache="true" useCache="false">
+        SELECT id FROM student WHERE id=#{studentId} AND status='ACTIVE' FOR SHARE
+    </select>
+    <insert id="ensureBalance">
+        INSERT INTO reward_point_balance(student_id,balance,updated_at) VALUES(#{studentId},0,#{now})
+        ON CONFLICT (student_id) DO NOTHING
+    </insert>
+    <select id="lockBalance" resultType="java.lang.Integer" flushCache="true" useCache="false">
+        SELECT balance FROM reward_point_balance WHERE student_id=#{studentId} FOR UPDATE
+    </select>
+    <select id="balance" resultType="java.lang.Integer" flushCache="true" useCache="false">
+        SELECT balance FROM reward_point_balance WHERE student_id=#{studentId}
+    </select>
+    <select id="ledgerExists" resultType="boolean" flushCache="true" useCache="false">
+        SELECT EXISTS(SELECT 1 FROM reward_point_ledger
+            WHERE student_id=#{studentId} AND event_type=#{eventType} AND source_key=#{sourceKey})
+    </select>
+    <select id="countSince" resultType="int" flushCache="true" useCache="false">
+        SELECT count(*) FROM reward_point_ledger
+        WHERE student_id=#{studentId} AND event_type=#{eventType} AND created_at &gt;= #{from} AND created_at &lt; #{to}
+    </select>
+    <insert id="insertLedger">
+        INSERT INTO reward_point_ledger(id,student_id,event_type,source_key,amount,created_at)
+        VALUES(#{id},#{studentId},#{eventType},#{sourceKey},#{amount},#{now})
+        ON CONFLICT (student_id,event_type,source_key) DO NOTHING
+    </insert>
+    <update id="addBalance">
+        UPDATE reward_point_balance SET balance=balance+#{delta},updated_at=#{now} WHERE student_id=#{studentId}
+    </update>
+    <select id="ledger" resultType="com.sagomungchi.core.reward.domain.PointEntry" flushCache="true" useCache="false">
+        SELECT event_type,amount,created_at FROM reward_point_ledger WHERE student_id=#{studentId}
+        ORDER BY created_at DESC,id DESC OFFSET #{offset} LIMIT #{limit}
+    </select>
+    <select id="ledgerCount" resultType="long" flushCache="true" useCache="false">
+        SELECT count(*) FROM reward_point_ledger WHERE student_id=#{studentId}
+    </select>
+
+    <select id="unlockedKeys" resultType="string" flushCache="true" useCache="false">
+        SELECT item_key FROM student_look_unlock WHERE student_id=#{studentId}
+    </select>
+    <select id="isUnlocked" resultType="boolean" flushCache="true" useCache="false">
+        SELECT EXISTS(SELECT 1 FROM student_look_unlock WHERE student_id=#{studentId} AND item_key=#{itemKey})
+    </select>
+    <insert id="insertUnlock">
+        INSERT INTO student_look_unlock(student_id,item_key,ledger_id,unlocked_at) VALUES(#{studentId},#{itemKey},#{ledgerId},#{now})
+    </insert>
+
+    <select id="equipment" resultType="map" flushCache="true" useCache="false">
+        SELECT e.slot AS slot,i.code AS code FROM student_look_equipment e JOIN look_item i ON i.id=e.look_item_id
+        WHERE e.student_id=#{studentId}
+    </select>
+    <delete id="clearEquipment">DELETE FROM student_look_equipment WHERE student_id=#{studentId}</delete>
+    <insert id="insertEquipment">
+        INSERT INTO student_look_equipment(student_id,slot,look_item_id,updated_at) VALUES(#{studentId},#{slot},#{itemId},#{now})
+    </insert>
+
+    <select id="items" resultType="com.sagomungchi.core.reward.domain.LookItem" flushCache="true" useCache="false">
+        SELECT <include refid="item"/> FROM look_item
+        <where>
+            <if test="status != null">status=#{status}</if>
+            <if test="slot != null">AND slot=#{slot}</if>
+        </where>
+        ORDER BY created_at DESC,id DESC OFFSET #{offset} LIMIT #{limit}
+    </select>
+    <select id="itemCount" resultType="long" flushCache="true" useCache="false">
+        SELECT count(*) FROM look_item
+        <where>
+            <if test="status != null">status=#{status}</if>
+            <if test="slot != null">AND slot=#{slot}</if>
+        </where>
+    </select>
+    <select id="allItems" resultType="com.sagomungchi.core.reward.domain.LookItem" flushCache="true" useCache="false">
+        SELECT <include refid="item"/> FROM look_item ORDER BY slot,created_at,id
+    </select>
+    <select id="item" resultType="com.sagomungchi.core.reward.domain.LookItem" flushCache="true" useCache="false">
+        SELECT <include refid="item"/> FROM look_item WHERE id=#{id}
+    </select>
+    <select id="lockItem" resultType="com.sagomungchi.core.reward.domain.LookItem" flushCache="true" useCache="false">
+        SELECT <include refid="item"/> FROM look_item WHERE id=#{id} FOR UPDATE
+    </select>
+    <select id="itemByCode" resultType="com.sagomungchi.core.reward.domain.LookItem" flushCache="true" useCache="false">
+        SELECT <include refid="item"/> FROM look_item WHERE code=#{code}
+    </select>
+    <insert id="insertItem">
+        INSERT INTO look_item(id,code,slot,name,price_points,asset_key,status,created_by,created_at,updated_at)
+        VALUES(#{item.id},#{item.code},#{item.slot},#{item.name},#{item.pricePoints},#{item.assetKey},#{item.status},#{actor},#{item.createdAt},#{item.updatedAt})
+        ON CONFLICT (code) DO NOTHING
+    </insert>
+    <update id="updateItem">
+        UPDATE look_item SET name=#{item.name},price_points=#{item.pricePoints},asset_key=#{item.assetKey},status=#{item.status},updated_at=#{item.updatedAt}
+        WHERE id=#{item.id}
+    </update>
+    <insert id="audit">
+        INSERT INTO audit_log(id,actor_user_id,action,target_type,target_id,result,detail,created_at)
+        VALUES(#{id},#{actor},#{action},'LOOK_ITEM',#{target},'SUCCESS',CAST(#{detail} AS jsonb),CURRENT_TIMESTAMP)
+    </insert>
+
+    <delete id="deleteEquipment">DELETE FROM student_look_equipment WHERE student_id=#{studentId}</delete>
+    <delete id="deleteUnlocks">DELETE FROM student_look_unlock WHERE student_id=#{studentId}</delete>
+    <delete id="deleteLedger">DELETE FROM reward_point_ledger WHERE student_id=#{studentId}</delete>
+    <delete id="deleteBalance">DELETE FROM reward_point_balance WHERE student_id=#{studentId}</delete>
+</mapper>

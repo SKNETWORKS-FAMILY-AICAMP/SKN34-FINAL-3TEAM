@@ -121,7 +121,8 @@
 | `ANALYSIS_FIRST_RESPONSE_TIMEOUT` / `ANALYSIS_TIMEOUT` / `ANALYSIS_FAILED` | 504 / 504 / 502 | 분석 대화 SSE `error` 이벤트 전용: ai 첫 이벤트 20초 안에 없음 / 전체 120초 초과 / 원인 코드가 없는 처리 실패(원래 오류 상태가 있으면 그 상태). `retryable: true`, 메시지는 FAILED로 저장 (3.3) |
 | `REPORT_PREMIUM_REQUIRED` / `REPORT_JOB_IDENTITY_MISMATCH` | 403 / 409 | 무료 이용권에서 프리미엄 리포트 항목 요청 / report 복구 응답의 작업 식별자 불일치 (5.9) |
 | `COMMUNITY_CONSENT_REQUIRED` / `COMMUNITY_LOCKED` / `COMMUNITY_OWN_POST` / `COMMUNITY_POST_NOT_FOUND` | 409 / 403 / 409 / 404 | 보호자 `COMMUNITY` 동의 없이 공개 켜기 / 미션 미마무리 학생의 커뮤니티 열람·반응(learning 판정 전달) / 본인 공유물 반응·신고 / 숨김·파기·없는 공유물 반응·신고 (2.9, #388) |
-| `INSUFFICIENT_POINTS` / `LOOK_ITEM_NOT_ON_SALE` / `LOOK_LOCKED` | 409 | 구현 예정: 해금 포인트 부족 / 판매 중단 아이템 해금 / 해금하지 않은 테마·캐릭터·아이템 선택 (2.10, 3.12) |
+| `INSUFFICIENT_POINTS` / `LOOK_ITEM_NOT_ON_SALE` / `LOOK_LOCKED` | 409 | 해금 포인트 부족 / 판매 중단 아이템 해금 / 해금하지 않은 테마·캐릭터·아이템 선택 (2.10, 3.12, #389) |
+| `LOOK_ITEM_NOT_FOUND` / `LOOK_ITEM_CODE_DUPLICATE` | 404 / 409 | 없는 꾸미기 항목 해금 / 관리자 아이템 코드 중복 (2.8, 2.10, #389) |
 | `THEME_DAY_CLOSED` / `THEME_REVIEW_NOT_ALLOWED` / `PREMIUM_REQUIRED` | 409 / 409 / 403 | 오늘 요일이 아닌 테마 문제 신규 시도 / 토·일 외 또는 마무리하지 않은 테마 문제 다시 풀기(두 코드는 learning 구현 예정 #385, core는 그대로 전달) / 추가 문제(`EXTRA`)를 끈 상품(`features.extraMissions = false`)의 시도(core #387, 현재 무료도 허용) (2.11) |
 | `CONVERSATION_REPORT_INVALID` / `WEEKLY_THEME_PUBLISH_INCOMPLETE` | 422 | 이 자녀의 완료된 일일 리포트가 아닌 리포트로 대화 생성 (2.4, #392) / 테마 게시 검사 실패(learning #385 구현 예정, core는 그대로 전달 #387) (2.8) |
 | `SUPPORT_STATE_CONFLICT` / `CORRECTION_TARGET_UNSUPPORTED` | 409 / 422 | 신고·문의 처리 상태 전이 위반·완료 답변 변경 / 정정할 수 없는 신고 대상 (5.7) |
@@ -502,10 +503,10 @@
 | GET·POST | `/admin/weekly-themes?gradeBand&weekStart&status` | CONTENT | 테마 목록·작성 `{gradeBand, weekStart, title, intro, days:[{day, missionId}]}`. `gradeBand`는 `G3_4`·`G5_6` | ADM-22 | core 프록시 #387 |
 | GET·PUT | `/admin/weekly-themes/{themeId}` | CONTENT | 상세·수정(게시 중 수정은 재검토) | ADM-22 | core 프록시 #387 |
 | POST | `/admin/weekly-themes/{themeId}/review-request` · `/publish` · `/unpublish` | CONTENT | 미션과 같은 작성→검토→게시. 게시 검사: 게시 미션만, 다섯 생각 유형 1개씩, 학년군에 맞는 미션, 같은 학년군·주 게시 1개 | ADM-22 | core 프록시 #387 |
-| GET·POST | `/admin/look-items` | CONTENT | 아이템 목록·등록 `{code, slot, name, pricePoints, assetKey}`. `slot`은 `HAT`·`OUTFIT`·`ACCESSORY`·`BACKGROUND` | ADM-23 | 구현 예정 |
-| PATCH | `/admin/look-items/{itemId}` | CONTENT | 이름·필요 포인트·그림 수정, `status`(`ON_SALE`·`STOPPED`, 삭제 없음) | ADM-23 | 구현 예정 |
+| GET·POST | `/admin/look-items?status&slot&page&size` | CONTENT | 아이템 목록(최신 등록순 `{items, page, size, totalElements}`)·등록 `{code, slot, name, pricePoints, assetKey?}` → 201 `{itemId, code, slot, name, pricePoints, assetKey, status, createdAt, updatedAt}`. `slot`은 `HAT`·`OUTFIT`·`ACCESSORY`·`BACKGROUND`, `code`는 대문자·숫자·밑줄 3~40자(변경 불가, 중복 409 `LOOK_ITEM_CODE_DUPLICATE`), 이름 1~40자, 포인트 1~10000, 형식 오류 422 | ADM-23 | 핵심(#389) |
+| PATCH | `/admin/look-items/{itemId}` | CONTENT | 이름·필요 포인트·그림 수정, `status`(`ON_SALE`·`STOPPED`, 삭제 없음). 판매 중단해도 해금한 학생은 계속 착용, 가격 변경은 해금한 학생과 무관. 없는 아이템 404 | ADM-23 | 핵심(#389) |
 
-- 테마는 core가 learning `/internal/admin/weekly-themes…`로 프록시(#355 미션 초안과 같은 방식, core #387 구현·learning #385 구현 예정), 아이템은 core 소유. 변경은 `audit_log`(`WEEKLY_THEME_*`·`LOOK_ITEM_*`)
+- 테마는 core가 learning `/internal/admin/weekly-themes…`로 프록시(#355 미션 초안과 같은 방식, core #387 구현·learning #385 구현 예정), 아이템은 core 소유. 변경은 `audit_log`(`WEEKLY_THEME_*`·`LOOK_ITEM_*`). 아이템은 같은 트랜잭션에서 `LOOK_ITEM_CREATED`·`LOOK_ITEM_UPDATED`·`LOOK_ITEM_STOPPED`·`LOOK_ITEM_RESUMED`(`target_type = LOOK_ITEM`, 수정은 `detail.before`에 이전 값)
 - 커뮤니티 신고 검토는 기존 `/admin/error-reports`(SERVICE_OPS). 신고 연결 공유물 원문 열람은 감사 기록(P07)
 
 
@@ -532,18 +533,18 @@ core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml
 
 ### 2.10 포인트·꾸미기 (FN-RET-05·06, P21·P22)
 
-구현 예정(2026-11-06 결정, OpenAPI 미반영). 꾸미기 설정 확장은 3.12.
+2026-11-06 결정. #389로 조회·해금·착용·관리자 아이템을 구현했다(OpenAPI `RewardPoints`·`LookCatalog`·`LookUnlockResult`·`StudentLook.equipped`). 적립 사건 연결(학습 완료·공유·반응·되돌아보기·완주)은 #387·#388 뒤 후속이다. 꾸미기 설정 확장은 3.12. 저장은 [ERD 3.5.1](erd.md#351-포인트꾸미기-p21p22-389).
 
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
-| GET | `/students/me/points?page&size` | 학생 | `{balance, items:[{eventType, amount, createdAt}]}` (최신순) | RET-05 | 구현 예정 |
-| GET | `/children/{childId}/points?page&size` | 학부모 | 연결 자녀 잔액·내역 | RET-05 | 구현 예정 |
-| GET | `/students/me/look-items` | 학생 | 테마·캐릭터·아이템 목록 `{items:[{itemKey, slot, name, pricePoints, unlocked, onSale}]}` | RET-06 | 구현 예정 |
-| POST | `/students/me/look-items/{itemKey}/unlock` | 학생 | 포인트 해금. `Idempotency-Key` 필수. 잔액 부족 409 `INSUFFICIENT_POINTS`, 판매 중단 409 `LOOK_ITEM_NOT_ON_SALE`, 이미 해금 200(차감 없음) | RET-06 | 구현 예정 |
-| PUT | `/students/me/preferences` | 학생 | 3.12 확장: `{theme, companion, equipped:{HAT, OUTFIT, ACCESSORY, BACKGROUND}}`(슬롯별 `itemKey` 또는 null). 잠긴 항목 409 `LOOK_LOCKED` | RET-06 | 구현 예정 |
+| GET | `/students/me/points?page&size` | 학생 | `{balance, items:[{eventType, amount, createdAt}], page, size, totalElements}` (최신순, size 1~100) | RET-05 | 핵심(#389) |
+| GET | `/children/{childId}/points?page&size` | 학부모 | 연결 자녀 잔액·내역(같은 모양). 학생 공개 설정(#206)과 무관, 연결 아닌 자녀 403 | RET-05 | 핵심(#389) |
+| GET | `/students/me/look-items` | 학생 | 테마·캐릭터·아이템 목록 `{items:[{itemKey, slot, name, pricePoints, unlocked, onSale, assetKey}]}`(테마·캐릭터 `assetKey` null). 판매 중단 아이템은 해금한 학생에게만 `onSale:false`로 보임 | RET-06 | 핵심(#389) |
+| POST | `/students/me/look-items/{itemKey}/unlock` | 학생 | 포인트 해금 → 200 `{itemKey, unlocked:true, balance}`. `Idempotency-Key`(UUID) 필수(없으면 400), 같은 키 재전송은 처음 응답, 같은 키·다른 항목 422 `IDEMPOTENCY_KEY_REUSED`. 잔액 부족 409 `INSUFFICIENT_POINTS`, 판매 중단 409 `LOOK_ITEM_NOT_ON_SALE`, 없는 항목 404 `LOOK_ITEM_NOT_FOUND`, 이미 해금(무료 포함) 200(차감 없음). 잔액 행 잠금으로 다른 키 동시 요청도 1회만 차감 | RET-06 | 핵심(#389) |
+| PUT | `/students/me/preferences` | 학생 | 3.12 확장: `{theme, companion, equipped?:{HAT, OUTFIT, ACCESSORY, BACKGROUND}}`(슬롯별 아이템 `itemKey` 또는 null, 생략하면 착용 유지). 잠긴 항목 409 `LOOK_LOCKED`, 모르는 슬롯·코드·다른 슬롯 아이템 422 | RET-06 | 핵심(#389) |
 
 - `eventType`: `MISSION_COMPLETED`·`REVIEW_VIEWED`·`COMMUNITY_POSTED`·`REACTION_GIVEN`·`THEME_COMPLETED`(적립), `UNLOCK`(사용, 음수)
-- 적립은 별도 API가 없다. core가 learning 응답을 프록시하는 경로에서 처리한다: 돌아보기 저장 성공(학습 완료·미션당 최초 1회), 공유 생성 성공, 반응 생성 성공(하루 상한), 되돌아보기 열람(주 1회), 열람 시 완주 판정. 값·상한은 `reward_rule` 데이터(P21 초기값). 원장 사건 키 `source_key`로 멱등, 학습 응답 후 적립 저장이 실패하면 응답은 성공으로 두고 같은 사건 재요청·`/students/me/weekly-theme` 조회 때 보충
+- 적립은 별도 API가 없다. core `RewardService.earn(studentId, event, sourceKey)` 한 곳에서 처리하고(#389 구현, 자체 트랜잭션·예외 없이 결과 반환), 아래 사건 연결은 #387·#388 뒤 후속이다. core가 learning 응답을 프록시하는 경로에서 처리한다: 돌아보기 저장 성공(학습 완료·미션당 최초 1회), 공유 생성 성공, 반응 생성 성공(하루 상한), 되돌아보기 열람(주 1회), 열람 시 완주 판정. 값·상한은 `reward_rule` 데이터(P21 초기값). 원장 사건 키 `source_key`로 멱등, 학습 응답 후 적립 저장이 실패하면 응답은 성공으로 두고 같은 사건 재요청·`/students/me/weekly-theme` 조회 때 보충
 - `itemKey`: 테마·캐릭터는 `THEME:forest`·`COMPANION:tori` 형식(해금값은 코드 상수), 아이템은 관리자가 등록한 `look_item.code`. `THEME:lake`·`COMPANION:mungchi`는 항상 해금, 나머지 테마 100·캐릭터 150 포인트(코드 상수). 잠금 적용 전 저장된 `look_theme`·`look_companion`은 마이그레이션에서 해금 행으로 옮긴다
 - 다른 학생 잔액·순위 API는 없다(1.3)
 
@@ -800,7 +801,7 @@ If-Match: "7"
 | Method | Path | 역할 | 설명 |
 |---|---|---|---|
 | GET | `/students/me/preferences` | 학생 | 현재 설정. 저장한 적 없으면 기본값과 `updatedAt:null` |
-| PUT | `/students/me/preferences` | 학생 | 설정 전체 교체 `{theme, companion}`. 구현 예정: `equipped` 추가(아래) |
+| PUT | `/students/me/preferences` | 학생 | 설정 전체 교체 `{theme, companion, equipped?}`(#389, 아래) |
 
 ```jsonc
 // GET 200 / PUT 200
@@ -809,9 +810,9 @@ If-Match: "7"
 - `theme`: `lake`(호수)·`forest`(숲)·`factory`(공장)·`space`(소행성)·`sea`(바닷속). 기본 `lake`
 - `companion`: `mungchi`(뭉치)·`tori`(토리)·`mongdol`(몽돌)·`kongi`(콩이)·`monggeul`(몽글). 기본 `mungchi`
 - 목록에 없는 값·누락·null은 `422 VALIDATION_FAILED`(이전 설정 유지). 학생 토큰 전용, 학부모·관리자 토큰은 `403 FORBIDDEN`. 응답 `Cache-Control: no-store`
-- 현재 구현은 잠금 없이 언제든 바꿀 수 있다. 구현 예정(P22): `lake`·`mungchi` 외 테마·캐릭터는 포인트로 해금한 것만 저장(잠긴 값 `409 LOOK_LOCKED`), 잠금 적용 전 저장된 값은 해금된 것으로 이관. 숫자 레벨·순위와 무관한 참여 보상이라 기능 명세 1.3 원칙과 충돌하지 않음
+- P22(#389): `lake`·`mungchi` 외 테마·캐릭터는 포인트로 해금한 것만 저장(잠긴 값 `409 LOOK_LOCKED`, 이전 설정 유지), 잠금 적용 전 저장된 값은 V35가 해금된 것으로 이관했다. 숫자 레벨·순위와 무관한 참여 보상이라 기능 명세 1.3 원칙과 충돌하지 않음
 - 저장: core `student.look_theme`·`look_companion`·`look_updated_at`(V23, 세 열 함께 NULL 또는 함께 값). 값 목록은 코드 상수와 DB CHECK로 고정한다. 학생 삭제 확정 시 기본값(NULL)으로 되돌린다. OpenAPI `StudentLook`
-- 구현 예정(P22): PUT `{theme, companion, equipped:{HAT, OUTFIT, ACCESSORY, BACKGROUND}}`(슬롯별 `itemKey` 또는 null, 해금한 아이템만). 해금은 2.10
+- P22(#389): PUT `{theme, companion, equipped?:{HAT, OUTFIT, ACCESSORY, BACKGROUND}}`(슬롯별 아이템 `itemKey` 또는 null, 해금한 아이템만, 생략·null이면 착용 유지). GET·PUT 응답은 항상 네 슬롯의 `equipped`를 담는다. 판매 중단 아이템도 해금했으면 착용 가능. 학생 삭제 확정 때 해금·착용·포인트도 지운다. 해금은 2.10
 
 ### 3.13 지원·알림·계정 화면 연결
 
@@ -1047,6 +1048,10 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - GET `/api/v1/admin/model-versions?kind&page=0&size=20`: `{items,page,size,totalElements}`. size 1~100, page 0 이상. kind 생략 시 전체 종류. 항목은 `{id,kind,name,version,refId,artifactUri,evalResult,status,approvedBy,activatedAt,createdAt}`다.
 - POST 같은 경로: `{kind,name,version,refId?,artifactUri?,evaluation,registration?}` → 201 항목. `(kind,name,version)` 중복은 409. RUBRIC은 learning 원본 UUID인 refId 필수, 다른 종류는 refId를 받지 않는다. 원본 내용·수정·존재 확인을 core에서 소유하지 않는다.
 - `evaluation`은 `{datasetId,datasetVersion,baselineVersion,comparisonReport,trainingEvaluationSeparation,quoteAccuracy,calculationAccuracy,humanReview,evaluatedScopes,limitations?}`다. 문자열 필드는 모두 비어 있지 않은 평가 근거·검토 기록 또는 그 참조이며 `baselineVersion`은 비교한 기존 버전 식별값이다. 최초 등록도 비교 기준을 명시한다. `evaluatedScopes`는 평가한 범위 키의 중복 없는 비어 있지 않은 배열이다. 평가·활성화·복귀 범위 배열의 null 항목은 422로 거부한다.
+- #367: `evaluation.limitations?: string[]`는 임시 기준·평가 한계·미검증 사항이다. 생략한 기존 기록은 빈 목록으로 읽는다. `MODEL` 등록은 `artifactUri`가 필수이며 빈 값은 422 `MODEL_APPROVAL_REJECTED`다.
+- 웹 등록 파일은 최상위 설명 키와 `requests[]`를 가진 JSON이다. `requests[]`는 기존 등록 본문만 허용하며 승인·활성화·사유·재분석·승인자 필드는 거부한다. 브라우저에서 파싱해 모델별 미리보기와 개별 POST를 제공한다. 별도 파일 업로드 API는 없다. `<버킷>` 일괄 치환 전에는 등록을 차단한다.
+- manifest는 `models[]`의 `name/version/scope/files[{file,bytes,sha256}]`를 대조한다. 최상위 `주의`와 일치 모델의 `주의`를 limitations 후보로 쓰되 명시한 `evaluation.limitations`(빈 목록 포함)가 우선한다. JSON·manifest·해시 목록의 확인은 실제 산출물 해시 대조나 로딩·품질 승인을 의미하지 않는다.
+- #366: 감사 목록의 `MODEL_VERSION`에는 선택 `detail` 객체(name·version·scopes·reason·reanalysisPlanned·previousVersionId)를 반환한다. 다른 대상 및 허용 목록 밖 detail 필드는 공개하지 않는다. 웹에서 펼쳐 본다.
 - 범위 키는 소비자가 동일하게 사용하는 소문자 논리 식별자(예: `judgment/grade-3/narrative`, 최대 200자, `[a-z0-9][a-z0-9._:/-]*`)다. core는 문자열의 정확한 집합 포함 관계만 확인하며 와일드카드·계층 확장을 하지 않는다. 원본 평가 문항·학생 원문은 저장하지 않는다. 검토 기록의 사실성·품질 수치의 적합성은 사람이 판단하며 서버는 자료 자체를 실행·검증했다고 주장하지 않는다.
 - POST `/{versionId}/activate`: `{approved:true,scopes,reason,reanalysisPlanned}`. REGISTERED만 최초 승인·활성화할 수 있다. 필수 평가 근거 누락·미승인·평가 외 범위는 422, 이미 활성화 이력이 있는 대상은 409다. 승인자는 요청 값이 아닌 #36 인증 계정 ID다. 기존 ACTIVE는 INACTIVE가 되고 승인·평가 이력은 보존한다.
 - POST `/{versionId}/rollback`: `{scopes,reason,reanalysisPlanned}`. 같은 kind·name의 현재 ACTIVE가 있고, 대상이 과거 승인·활성화된 INACTIVE이며 요청 범위가 당시 승인 범위의 부분 집합일 때만 성공한다. 잘못된 상태는 409, 승인 외 범위는 422다. 원 승인자·승인 범위는 보존하고 복귀 수행자는 감사 이력에 별도 기록한다.

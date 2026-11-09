@@ -40,7 +40,9 @@ class StudentLookContractTest(unittest.TestCase):
     def test_response_is_closed_and_put_replaces_both_values(self):
         look = self.schemas["StudentLook"]
         self.assertFalse(look["additionalProperties"])
-        self.assertEqual(set(look["required"]), {"theme", "companion", "updatedAt"})
+        self.assertEqual(set(look["required"]), {"theme", "companion", "updatedAt", "equipped"})
+        # #389: equipped is optional on PUT (omitted keeps current items)
+        self.assertIn("equipped", self.path["put"]["requestBody"]["content"]["application/json"]["schema"]["properties"])
         self.assertEqual(set(self.path), {"get", "put"})
         body = self.path["put"]["requestBody"]["content"]["application/json"]["schema"]
         self.assertEqual(set(body["required"]), {"theme", "companion"})

@@ -309,6 +309,56 @@ paths:
       responses:
         '204': {description: 반응 취소}
         default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/points:
+    get:
+      tags: [Students]
+      operationId: getStudentPoints
+      summary: 학생 본인 포인트 잔액·내역 (#389, P21). 최신순, Cache-Control no-store
+      description: 참여로만 적립(판정 무관), 순위·소멸 없음. 다른 학생 잔액 경로는 없다. 학부모·관리자 토큰 403
+      parameters:
+      - {name: page, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
+      - {name: size, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: 잔액·내역
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RewardPoints'}
+        '400': {description: 'page·size 범위 밖(VALIDATION_FAILED)'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/look-items:
+    get:
+      tags: [Students]
+      operationId: getStudentLookItems
+      summary: 테마 5·캐릭터 5와 판매 중이거나 이미 해금한 캐릭터 아이템 목록 (#389, P22). Cache-Control no-store
+      description: 'itemKey는 테마 THEME:<code>·캐릭터 COMPANION:<code>(해금값 코드 상수, lake·mungchi 무료, 나머지 테마 100·캐릭터 150), 아이템은 look_item.code. 판매 중단 아이템은 해금한 학생에게만 onSale false로 보인다.'
+      responses:
+        '200':
+          description: 꾸미기 목록
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LookCatalog'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/look-items/{itemKey}/unlock:
+    post:
+      tags: [Students]
+      operationId: unlockStudentLookItem
+      summary: 포인트로 꾸미기 해금 (#389, P22). 영구 해금, 즉시 차감, 환급 없음
+      description: 'Idempotency-Key(UUID) 필수, 없거나 형식 오류면 400 VALIDATION_FAILED. 같은 키 재전송은 처음 응답을 그대로, 같은 키로 다른 항목은 422 IDEMPOTENCY_KEY_REUSED. 잔액 행 잠금으로 동시 해금도 한 번만 차감하고, 이미 해금(무료 포함)이면 차감 없이 200. 잔액 부족 409 INSUFFICIENT_POINTS, 판매 중단 409 LOOK_ITEM_NOT_ON_SALE, 없는 항목 404 LOOK_ITEM_NOT_FOUND, 학생 삭제 진행 409 STUDENT_UNAVAILABLE'
+      parameters:
+      - {name: itemKey, in: path, required: true, schema: {type: string, maxLength: 64}}
+      - {name: Idempotency-Key, in: header, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: 해금 결과와 해금 뒤 잔액
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LookUnlockResult'}
+        '400': {description: 'Idempotency-Key 누락·형식 오류(VALIDATION_FAILED)'}
+        '404': {description: 'LOOK_ITEM_NOT_FOUND'}
+        '409': {description: 'INSUFFICIENT_POINTS · LOOK_ITEM_NOT_ON_SALE · STUDENT_UNAVAILABLE · IDEMPOTENCY_IN_PROGRESS'}
+        '422': {description: 'IDEMPOTENCY_KEY_REUSED'}
+        default: {$ref: '#/components/responses/LearningProblem'}
   /students/me/preferences:
     get:
       tags: [Students]
@@ -324,7 +374,8 @@ paths:
     put:
       tags: [Students]
       operationId: updateStudentLook
-      summary: 학생 본인만 꾸미기 설정 전체 교체. 목록 외 값 422, 학부모·관리자 403
+      summary: 학생 본인만 꾸미기 설정 전체 교체. 목록 외 값 422, 해금하지 않은 테마·캐릭터·아이템 409 LOOK_LOCKED(#389), 학부모·관리자 403
+      description: 'theme·companion은 전체 교체. equipped는 보냈을 때만 네 슬롯 전체 교체(생략·null이면 기존 착용 유지). 슬롯 값은 그 슬롯의 look_item 코드 또는 null이며, 모르는 슬롯·코드나 다른 슬롯 아이템은 422 VALIDATION_FAILED, 해금하지 않은 아이템은 409 LOOK_LOCKED. 판매 중단돼도 이미 해금한 아이템은 착용 가능 (api-spec 2.10·3.12, P22)'
       requestBody:
         required: true
         content:
@@ -335,6 +386,10 @@ paths:
               properties:
                 theme: {$ref: '#/components/schemas/StudentLookTheme'}
                 companion: {$ref: '#/components/schemas/StudentLookCompanion'}
+                equipped:
+                  oneOf:
+                  - {$ref: '#/components/schemas/LookEquipped'}
+                  - {type: 'null'}
       responses:
         '200':
           description: 저장된 꾸미기 설정 (Cache-Control no-store)
@@ -355,6 +410,23 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/StudentSharingPreference'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /children/{childId}/points:
+    get:
+      tags: [Children]
+      operationId: getChildPoints
+      summary: 연결 자녀 포인트 잔액·내역 (#389, P21). 학생 공개 설정(#206)과 무관, Cache-Control no-store
+      parameters:
+      - {name: childId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: page, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
+      - {name: size, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: 잔액·내역
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RewardPoints'}
+        '403': {description: '연결되지 않은 자녀(CHILD_NOT_LINKED)·학부모 외 토큰(FORBIDDEN)'}
         default: {$ref: '#/components/responses/LearningProblem'}
   /internal/students/{studentId}/profile:
     servers:
@@ -1230,6 +1302,63 @@ paths:
             schema:
               $ref: '#/components/schemas/AdminMissionDocument'
       summary: adminMissionsUnpublish (CONTENT)
+  /admin/look-items:
+    get:
+      operationId: adminLookItemsList
+      tags: [Admin]
+      description: 'CONTENT 권한 (#389, ADM-23). 관리자 등록 캐릭터 아이템 목록(최신 등록순). 테마·캐릭터 해금값은 코드 상수라 목록에 없다.'
+      parameters:
+      - {name: status, in: query, required: false, schema: {$ref: '#/components/schemas/LookItemStatus'}}
+      - {name: slot, in: query, required: false, schema: {$ref: '#/components/schemas/LookItemSlot'}}
+      - {name: page, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
+      - {name: size, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+      responses:
+        '200':
+          description: 아이템 목록
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminLookItemPage'}
+        '400': {description: '조회 조건 오류(VALIDATION_FAILED)'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: adminLookItemCreate
+      tags: [Admin]
+      description: 'CONTENT 권한. 새 아이템은 ON_SALE. code는 대문자·숫자·밑줄 3~40자이고 바꿀 수 없다. 같은 트랜잭션에서 audit_log LOOK_ITEM_CREATED'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminLookItemCreate'}
+      responses:
+        '201':
+          description: 등록한 아이템
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminLookItem'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {description: '같은 code(LOOK_ITEM_CODE_DUPLICATE)'}
+        '422': {description: '형식 오류(VALIDATION_FAILED)'}
+  /admin/look-items/{itemId}:
+    patch:
+      operationId: adminLookItemUpdate
+      tags: [Admin]
+      description: 'CONTENT 권한. 이름·필요 포인트·그림 키·판매 상태 수정(삭제 없음, code·slot 불변). 판매 중단해도 이미 해금한 학생은 계속 착용한다. 가격 변경은 이미 해금한 학생에게 영향 없음. audit_log LOOK_ITEM_UPDATED·LOOK_ITEM_STOPPED·LOOK_ITEM_RESUMED(이전 값 detail.before)'
+      parameters:
+      - {name: itemId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminLookItemUpdate'}
+      responses:
+        '200':
+          description: 수정한 아이템
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminLookItem'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {description: '없는 아이템(NOT_FOUND)'}
+        '422': {description: '형식 오류·바꿀 값 없음(VALIDATION_FAILED)'}
   /admin/achievement-standards:
     get:
       operationId: adminAchievementStandardsList
@@ -7759,11 +7888,118 @@ components:
     StudentLook:
       type: object
       additionalProperties: false
-      required: [theme, companion, updatedAt]
+      required: [theme, companion, updatedAt, equipped]
       properties:
         theme: {$ref: '#/components/schemas/StudentLookTheme'}
         companion: {$ref: '#/components/schemas/StudentLookCompanion'}
         updatedAt: {type: [string, 'null'], format: date-time}
+        equipped: {$ref: '#/components/schemas/LookEquipped'}
+    LookItemSlot: {type: string, enum: [HAT, OUTFIT, ACCESSORY, BACKGROUND]}
+    LookItemStatus: {type: string, enum: [ON_SALE, STOPPED]}
+    LookEquipped:
+      type: object
+      description: 캐릭터 아이템 슬롯별 look_item 코드 또는 null(#389). 응답은 네 슬롯을 모두 담는다
+      additionalProperties: false
+      required: [HAT, OUTFIT, ACCESSORY, BACKGROUND]
+      properties:
+        HAT: {type: [string, 'null']}
+        OUTFIT: {type: [string, 'null']}
+        ACCESSORY: {type: [string, 'null']}
+        BACKGROUND: {type: [string, 'null']}
+    RewardPointEventType:
+      type: string
+      description: 적립 사건(양수)과 해금 사용 UNLOCK(음수)
+      enum: [MISSION_COMPLETED, REVIEW_VIEWED, COMMUNITY_POSTED, REACTION_GIVEN, THEME_COMPLETED, UNLOCK]
+    RewardPointEntry:
+      type: object
+      additionalProperties: false
+      required: [eventType, amount, createdAt]
+      properties:
+        eventType: {$ref: '#/components/schemas/RewardPointEventType'}
+        amount: {type: integer}
+        createdAt: {type: string, format: date-time}
+    RewardPoints:
+      type: object
+      additionalProperties: false
+      required: [balance, items, page, size, totalElements]
+      properties:
+        balance: {type: integer, minimum: 0}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/RewardPointEntry'}
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1}
+        totalElements: {type: integer, minimum: 0}
+    LookCatalogItem:
+      type: object
+      additionalProperties: false
+      required: [itemKey, slot, name, pricePoints, unlocked, onSale, assetKey]
+      properties:
+        itemKey: {type: string}
+        slot: {type: string, enum: [THEME, COMPANION, HAT, OUTFIT, ACCESSORY, BACKGROUND]}
+        name: {type: string}
+        pricePoints: {type: integer, minimum: 0}
+        unlocked: {type: boolean}
+        onSale: {type: boolean}
+        assetKey: {type: [string, 'null'], description: 캐릭터 아이템 그림 키. 테마·캐릭터는 null}
+    LookCatalog:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/LookCatalogItem'}
+    LookUnlockResult:
+      type: object
+      additionalProperties: false
+      required: [itemKey, unlocked, balance]
+      properties:
+        itemKey: {type: string}
+        unlocked: {type: boolean, const: true}
+        balance: {type: integer, minimum: 0}
+    AdminLookItem:
+      type: object
+      additionalProperties: false
+      required: [itemId, code, slot, name, pricePoints, assetKey, status, createdAt, updatedAt]
+      properties:
+        itemId: {type: string, format: uuid}
+        code: {type: string, pattern: '^[A-Z0-9_]{3,40}$'}
+        slot: {$ref: '#/components/schemas/LookItemSlot'}
+        name: {type: string, minLength: 1, maxLength: 40}
+        pricePoints: {type: integer, minimum: 1, maximum: 10000}
+        assetKey: {type: string, maxLength: 200}
+        status: {$ref: '#/components/schemas/LookItemStatus'}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    AdminLookItemPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalElements]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/AdminLookItem'}
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1}
+        totalElements: {type: integer, minimum: 0}
+    AdminLookItemCreate:
+      type: object
+      required: [code, slot, name, pricePoints]
+      properties:
+        code: {type: string, pattern: '^[A-Z0-9_]{3,40}$'}
+        slot: {$ref: '#/components/schemas/LookItemSlot'}
+        name: {type: string, minLength: 1, maxLength: 40, description: 앞뒤 공백 제거}
+        pricePoints: {type: integer, minimum: 1, maximum: 10000}
+        assetKey: {type: string, maxLength: 200, description: 생략하면 빈 문자열}
+    AdminLookItemUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        name: {type: string, minLength: 1, maxLength: 40}
+        pricePoints: {type: integer, minimum: 1, maximum: 10000}
+        assetKey: {type: string, maxLength: 200}
+        status: {$ref: '#/components/schemas/LookItemStatus'}
     AttemptComparison:
       type: object
       required: [attemptId, state, previous, current, elements]
@@ -8384,6 +8620,17 @@ components:
         createdAt:
           type: string
           format: date-time
+        detail:
+          description: MODEL_VERSION 조치의 허용된 상세만 반환한다. 다른 대상의 원문 detail은 null이다 (#366).
+          type: [object, 'null']
+          additionalProperties: false
+          properties:
+            name: {type: string}
+            version: {type: string}
+            scopes: {type: array, items: {type: string}}
+            reason: {type: string}
+            reanalysisPlanned: {type: boolean}
+            previousVersionId: {type: [string, 'null'], format: uuid}
     OperationJobPage:
       type: object
       additionalProperties: false

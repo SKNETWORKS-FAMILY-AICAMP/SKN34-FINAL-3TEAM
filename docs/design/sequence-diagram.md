@@ -318,9 +318,9 @@ sequenceDiagram
 - 구독·결제·환불의 명의는 바꾸지 않는다. 보내는 학부모의 진행 중 구독·결제·환불이 있으면 요청·수락 모두 막는다. 학부모 전역 리포트 설정은 이전하지 않고, 학생 공개 설정·학습·리포트 기록은 유지한다. 새 학부모는 학생 기기를 다시 등록한다
 - 서버 `APP_GUARDIAN_TRANSFER_ENABLED`·웹 `VITE_GUARDIAN_TRANSFER_ENABLED`로 신규 대상 조회·요청·수락을 제어한다(기본 꺼짐). 본인 요청 조회·거절·취소는 기능 off·동의 누락에도 유지하고, 취소 후 탈퇴는 별도 재인증·최종 확인을 거친다(#307). 상세 범위와 검증은 [이관 구현 기록](../report/auth-account.md#6-탈퇴-전-자녀-이관-289)
 
-### 2.6 꾸미기 해금·착용 (P22, 구현 예정)
+### 2.6 꾸미기 해금·착용 (P22, #389)
 
-구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25), #389 구현. 1장 공통 규칙을 따른다. 잠금 순서는 학생 행 `FOR SHARE`(삭제 확정과 직렬화) → 잔액 행 `FOR UPDATE`.
 
 ```mermaid
 sequenceDiagram
@@ -331,7 +331,7 @@ sequenceDiagram
 
   W->>C: POST /students/me/look-items/{itemKey}/unlock (Idempotency-Key)
   rect rgba(128,128,128,0.12)
-    C->>CDB: reward_point_balance 행 잠금
+    C->>CDB: student 행 공유 잠금 → reward_point_balance 행 잠금
     alt 이미 해금
       C-->>W: 200 (차감 없음)
     else 판매 중단·잔액 부족

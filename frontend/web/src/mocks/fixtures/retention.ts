@@ -65,6 +65,7 @@ interface State {
   ledger: Record<string, (PointEvent & { sourceKey: string })[]>
   unlocked: Record<string, string[]>
   unlockKeys: Record<string, string>
+  unlockResults: Record<string, { itemKey: string; unlocked: true; balance: number }>
   community: Record<string, { enabled: boolean; updatedAt: string | null }>
   consent: Record<string, boolean>
   posts: MockPost[]
@@ -87,6 +88,7 @@ const empty = (): State => ({
   ledger: {},
   unlocked: {},
   unlockKeys: {},
+  unlockResults: {},
   community: {},
   consent: {},
   posts: [],
@@ -162,6 +164,7 @@ export function pointsOf(studentId: string, page = 0, size = 20) {
   return {
     balance: balanceOf(studentId),
     items: items.slice(page * size, page * size + size).map(({ eventType, amount, createdAt }) => ({ eventType, amount, createdAt })),
+    page, size, totalElements: items.length,
   }
 }
 /** 같은 사건 키는 한 번만 적립(원장 UK `(student_id, event_type, source_key)` 흉내). */
@@ -192,6 +195,7 @@ export function lookCatalog(studentId: string) {
       pricePoints: i.pricePoints,
       unlocked: owned.has(i.code),
       onSale: i.status === 'ON_SALE',
+      assetKey: i.assetKey,
     })),
   ].filter((i) => i.onSale || i.unlocked)
 }

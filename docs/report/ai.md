@@ -587,6 +587,6 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 
 MODEL_REGISTER 감사 detail에 source·jsonSha256·manifestSha256·modifiedFields·artifactFiles를 기록한다. 원본 파일을 서버에 업로드하지 않으므로 해시/크기는 클라이언트 신고로 취급하며 파일·품질 검증 성공으로 간주하지 않는다. 등록 요청의 승인 관련 값·알 수 없는 필드는 거부하며 기존 사람 승인·활성화·복귀와 이벤트 계약은 유지한다.
 
-[프론트 전달 문서](issue-367-registration-api.md)에 원본 바이트 해시 방식, 요청 예시, 응답 위치, 오류와 각 담당 범위를 정리했다. 프론트 화면·웹 타입·실제 두 파일 가져오기와 전체 이슈 완료 조건은 이번 백엔드 작업 완료와 구분한다.
+[프론트 전달 문서](issue-367-registration-api.md)에 원본 바이트 해시 방식, 요청 예시, 응답 위치, 오류와 각 담당 범위를 정리했다. 후속 통합에서 PR #409의 프론트와 연결해 등록 출처 메타데이터도 함께 전달한다. 검증 결과는 해당 문서의 통합 검증 항목을 기준으로 본다.
 
-검증: core ModelVersionHttpTest·ModelVersionRepositoryTest·ModelVersionMessagingTest 총 23개 및 bootJar 통과. 등록/목록의 limitations, 구버전 JSONB, MANUAL 기본값, JSON_IMPORT 감사·인증 사용자, 중복 시 원본 유지, 자동 활성화 없음, 필수 경로·해시·파일 크기·상대 경로·알 수 없는 필드 거부와 기존 활성화·복귀를 확인했다. 계약 검증기 전체 187개 통과. GitHub CI·프론트 테스트·실제 두 파일 브라우저 가져오기는 미확인이다.
+검증: core ModelVersionHttpTest·ModelVersionRepositoryTest·ModelVersionMessagingTest 총 23개 및 bootJar 통과. 등록/목록의 limitations, 구버전 JSONB, MANUAL 기본값, JSON_IMPORT 감사·인증 사용자, 중복 시 원본 유지, 자동 활성화 없음, 필수 경로·해시·파일 크기·상대 경로·알 수 없는 필드 거부와 기존 활성화·복귀를 확인했다. 계약 검증기 전체 187개 통과. 이는 최초 백엔드 단독 검증 기록이다. 후속 프론트 통합 결과는 [등록 API 통합 검증](issue-367-registration-api.md)을 참고한다. GitHub CI와 운영 품질 승인은 로컬 검증과 구분한다.

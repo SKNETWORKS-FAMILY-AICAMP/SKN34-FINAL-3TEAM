@@ -17,16 +17,18 @@ import { setAccessToken } from '../src/data/apiClient.ts'
 
 test.afterEach(() => setAccessToken(null))
 
-test('포인트·해금 목록은 모르는 사건·칸을 버리고 숫자가 아니면 0으로 둔다', () => {
-  assert.deepEqual(
-    readPoints({ balance: 'x', items: [{ eventType: 'UNLOCK', amount: -100, createdAt: 't' }, { eventType: 'RANK', amount: 9, createdAt: 't' }] }),
-    { balance: 0, items: [{ eventType: 'UNLOCK', amount: -100, createdAt: 't' }] },
-  )
-  const items = readLookItems({ items: [{ itemKey: 'THEME:space', slot: 'THEME', pricePoints: 100, unlocked: false }, { itemKey: 'x', slot: 'SHOES' }] })
-  assert.equal(items.length, 1)
-  assert.equal(items[0].onSale, true, 'onSale 생략은 판매 중')
-  assert.equal(isLookUnlocked(items, 'THEME:space'), false)
-  assert.equal(isLookUnlocked(undefined, 'THEME:lake'), true, '호수·뭉치는 목록이 없어도 열림')
+test('포인트는 실제 페이지 정보를 보존하고 잘못된 잔액·목록은 성공으로 바꾸지 않는다', () => {
+  const entry = { eventType: 'UNLOCK', amount: -100, createdAt: '2026-11-09T00:00:00Z' }
+  const value = { balance: 50, items: [entry], page: 1, size: 20, totalElements: 21 }
+  assert.deepEqual(readPoints(value), value)
+  for (const invalid of [{ ...value, balance: '50' }, { ...value, balance: -1 }, { ...value, items: null }, { ...value, size: 0 }])
+    assert.throws(() => readPoints(invalid), /확인하지 못/)
+  assert.throws(() => readLookItems({}), /확인하지 못/)
+  const item = { itemKey: 'THEME:space', name: '소행성', slot: 'THEME' as const, pricePoints: 100, unlocked: false, onSale: true, assetKey: null }
+  assert.deepEqual(readLookItems({ items: [item, { itemKey: 'x', slot: 'SHOES' }] }), [item])
+  assert.throws(() => readLookItems({ items: [{ ...item, pricePoints: '100' }] }), /확인하지 못/)
+  assert.equal(isLookUnlocked([item], 'THEME:space'), false)
+  assert.equal(isLookUnlocked(undefined, 'THEME:lake'), true)
   assert.equal(isLookUnlocked(undefined, 'COMPANION:mungchi'), true)
 })
 
@@ -83,7 +85,7 @@ test('참여 어댑터는 명세 경로·메서드·멱등 키를 보낸다', as
   setAccessToken('synthetic-student', 'STUDENT')
   t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
     calls.push({ url: String(url), init })
-    return new Response(null, { status: 204 })
+    return String(url).endsWith('/unlock') ? Response.json({ itemKey: 'THEME:space', unlocked: true, balance: 50 }) : new Response(null, { status: 204 })
   })
   await retentionApi.unlock('THEME:space', 'key-1')
   await retentionApi.react('p1', 'WANT_MORE', true)
@@ -106,4 +108,25 @@ test('참여 어댑터는 명세 경로·메서드·멱등 키를 보낸다', as
   assert.equal(new Headers(calls[4].init.headers).get('Idempotency-Key'), 'key-2')
   assert.deepEqual(JSON.parse(String(calls[4].init.body)), { targetType: 'COMMUNITY_POST', targetId: 'p1', category: 'INAPPROPRIATE', comment: '이상해요' })
   assert.equal(JSON.parse(String(calls[5].init.body)).equipped.HAT, 'HAT_ACORN')
+})
+
+
+test('#389 실제 조회·해금 응답과 assetKey를 보존하고 HTTP 캐시를 재사용하지 않는다', async t => {
+  setAccessToken('synthetic-student', 'STUDENT')
+  const calls: { url: string; init: RequestInit }[] = []
+  const points = { balance: 120, items: [], page: 2, size: 20, totalElements: 40 }
+  const item = { itemKey: 'HAT_ACORN', slot: 'HAT', name: '도토리 모자', pricePoints: 40, unlocked: false, onSale: true, assetKey: 'looks/hat-acorn.svg' }
+  t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
+    calls.push({ url: String(url), init })
+    return Response.json(String(url).endsWith('/unlock') ? { itemKey: item.itemKey, unlocked: true, balance: 80 }
+      : String(url).endsWith('/look-items') ? { items: [item] } : points)
+  })
+  assert.deepEqual(await retentionApi.myPoints(undefined, 2), points)
+  assert.deepEqual(await retentionApi.childPoints('child/id', undefined, 2), points)
+  assert.deepEqual(await retentionApi.lookItems(), [item])
+  assert.deepEqual(await retentionApi.unlock(item.itemKey, crypto.randomUUID()), { itemKey: item.itemKey, unlocked: true, balance: 80 })
+  assert.equal(calls[0].url, '/api/v1/students/me/points?page=2&size=20')
+  assert.equal(calls[1].url, '/api/v1/children/child%2Fid/points?page=2&size=20')
+  assert.ok(calls.every(call => call.init.cache === 'no-store'))
+  assert.equal(calls[3].init.body, undefined)
 })
