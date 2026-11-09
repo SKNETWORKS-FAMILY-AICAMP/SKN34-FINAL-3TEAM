@@ -129,3 +129,55 @@ test('기준표 저장은 화면에서 편집하지 않는 keywords·essayType�
   assert.deepEqual([empty.keywords, empty.essayType], [[], null])
   assert.equal((await call('/admin/missions/' + mission.missionId + '/rubric', { ...body, essayType: '일기' }, 'PUT')).status, 400)
 })
+
+test('성취기준 표 조회·미션 초안 요청→생성→채택·버리기 (#356)', async () => {
+  await login('content@example.test')
+  const std = await call('/admin/achievement-standards?gradeBand=' + encodeURIComponent('초5~6') + '&q=' + encodeURIComponent('6국'))
+  assert.equal(std.status, 200)
+  assert.ok(std.data.items.length && std.data.items.every((s: { gradeBand: string; code: string }) => s.gradeBand === '초5~6' && s.code.startsWith('6국')))
+  assert.equal((await call('/admin/achievement-standards?gradeBand=' + encodeURIComponent('초7~8'))).status, 400)
+  const body = { standardCodes: ['6국01-02'], achievementLevels: { '6국01-02': 'B' }, thinkingType: 'EVALUATE', gradeMin: 5, gradeMax: 6, inputType: 'ESSAY' }
+  assert.equal((await call('/admin/mission-drafts', { ...body, gradeMin: 3, gradeMax: 4 })).status, 400, '학년군 밖·논술 학년')
+  assert.equal((await call('/admin/mission-drafts', { ...body, achievementLevels: { '6국01-02': 'D' } })).status, 400, '초등 단계 A~C')
+  const requested = await call('/admin/mission-drafts', body)
+  assert.equal(requested.status, 202)
+  assert.equal(requested.data.status, 'GENERATING')
+  const id = requested.data.draftId
+  assert.equal((await call(`/admin/mission-drafts/${id}/adopt`, {})).status, 409, '생성 중 채택 불가')
+  assert.equal((await call(`/admin/mission-drafts/${id}/discard`, {})).status, 409, '생성 중 버리기 불가')
+  let detail = (await call(`/admin/mission-drafts/${id}`)).data
+  if (detail.status === 'GENERATING') detail = (await call(`/admin/mission-drafts/${id}`)).data
+  assert.equal(detail.status, 'READY')
+  assert.deepEqual(detail.draft.elements.map((e: { code: string }) => e.code), ['EVALUATE_CLAIM', 'EVALUATE_EVIDENCE', 'EVALUATE_PERSPECTIVE'])
+  const adopted = await call(`/admin/mission-drafts/${id}/adopt`, {})
+  assert.equal(adopted.status, 201)
+  assert.equal(adopted.data.source, 'LLM_DRAFT')
+  assert.deepEqual(adopted.data.versions[0].achievementLevels, { '6국01-02': 'B' })
+  assert.ok(adopted.data.rubrics[0].elements.every((e: { points: number; judgeVerified: boolean }) => e.points === 1 && !e.judgeVerified))
+  assert.equal((await call(`/admin/mission-drafts/${id}`)).data.missionId, adopted.data.missionId)
+  assert.equal((await call(`/admin/mission-drafts/${id}/discard`, {})).status, 409, '채택한 초안은 버릴 수 없음')
+  assert.equal((await call('/admin/mission-drafts/draft-failed/discard', {})).data.status, 'DISCARDED')
+  assert.equal((await call('/admin/mission-drafts/none')).status, 404)
+  const list = await call('/admin/mission-drafts?status=ADOPTED')
+  assert.ok(list.data.items.some((d: { draftId: string }) => d.draftId === id))
+})
+
+test('기준표 저장은 #262 code 모양·중복을 400으로, 게시는 성취기준 표로 검사한다', async () => {
+  await login('admin@example.test')
+  const m = (await call('/admin/missions/content-1')).data
+  const { version: _version, ...rubric } = m.rubrics.find((r: { version: number }) => r.version === m.currentRubricVersion)
+  const element = rubric.elements[0]
+  for (const elements of [[{ ...element, code: crypto.randomUUID() }], [element, element], [{ ...element, standardCode: '' }]])
+    assert.equal((await call('/admin/missions/content-1/rubric', { ...rubric, elements }, 'PUT')).status, 400)
+  const { version: _v, createdAt: _c, ...v } = m.versions.find((x: { version: number }) => x.version === m.currentVersion)
+  assert.equal((await call('/admin/missions/content-1', { ...v, achievementLevels: { '4과03-01': 'F' }, demoOnly: true }, 'PATCH')).status, 400)
+  const saved = await call('/admin/missions/content-1', { ...v, achievementStandards: ['[4과03-01]'], achievementLevels: null, demoOnly: true }, 'PATCH')
+  assert.equal(saved.status, 200)
+  const pair = { missionVersion: saved.data.currentVersion, rubricVersion: saved.data.currentRubricVersion }
+  await call('/admin/missions/content-1/review-request', pair)
+  await call('/admin/missions/content-1/review', { ...pair, result: 'APPROVED', comment: '확인' })
+  const failed = await call('/admin/missions/content-1/publish', {})
+  assert.equal(failed.status, 422)
+  assert.ok(failed.data.missingFields.includes('achievementStandards'), '대괄호 코드는 표에 없음')
+  assert.ok(failed.data.missingFields.includes('rubric.elements.standardCode'))
+})

@@ -18,6 +18,7 @@ import type {
   Usage,
   EvaluationEvidence,
 } from '../../domain/admin/operations.ts'
+import type { AchievementStandard, MissionDraft, MissionDraftRequest } from '../../domain/admin/missionStandards.ts'
 const operationFilters = (values: Record<string, string | undefined>) => new URLSearchParams(
   Object.entries(values).filter((entry): entry is [string, string] => entry[1] !== undefined && entry[1] !== ''),
 )
@@ -68,6 +69,26 @@ export const adminApi = {
     ),
   action: (id: string, action: string, data: unknown = {}) =>
     apiFetch<AdminMission>(`/admin/missions/${p(id)}/${action}`, json(data)),
+  /** 성취기준 표 조회 (api-spec 2.8, #355). gradeBand는 '초3~4' 같은 한글 값 */
+  standards: (filters: Record<string, string>, signal?: AbortSignal) =>
+    apiFetch<Page<AchievementStandard>>(`/admin/achievement-standards?${operationFilters(filters)}`, { signal }),
+  /** 미션에 저장된 코드의 표 행. 코드마다 q로 찾아 같은 코드만 남김(표에 없는 코드는 빠짐) */
+  standardsByCodes: async (codes: string[], signal?: AbortSignal) => {
+    const found: Record<string, AchievementStandard> = {}
+    await Promise.all([...new Set(codes.map((c) => c.trim()).filter(Boolean))].map(async (code) => {
+      const hit = (await adminApi.standards({ q: code, size: '100' }, signal)).items.find((s) => s.code === code)
+      if (hit) found[code] = hit
+    }))
+    return found
+  },
+  drafts: (filters: Record<string, string>, signal?: AbortSignal) =>
+    apiFetch<Page<MissionDraft>>(`/admin/mission-drafts?${operationFilters(filters)}`, { signal }),
+  draft: (id: string, signal?: AbortSignal) =>
+    apiFetch<MissionDraft>(`/admin/mission-drafts/${p(id)}`, { signal }),
+  /** 202: 생성·자동 검사는 비동기 (state-diagram 3.4) */
+  requestDraft: (body: MissionDraftRequest) => apiFetch<MissionDraft>('/admin/mission-drafts', json(body)),
+  adoptDraft: (id: string) => apiFetch<AdminMission>(`/admin/mission-drafts/${p(id)}/adopt`, json({})),
+  discardDraft: (id: string) => apiFetch<MissionDraft>(`/admin/mission-drafts/${p(id)}/discard`, json({})),
   models: (signal?: AbortSignal) =>
     apiFetch<Page<ModelVersion>>('/admin/model-versions', { signal }),
   allModels: async (signal?: AbortSignal) => {
@@ -109,7 +130,7 @@ export function missionWritePayload(data: Omit<MissionVersion, 'version' | 'crea
     title: data.title, subject: data.subject, gradeMin: data.gradeMin, gradeMax: data.gradeMax,
     thinkingType: data.thinkingType, inputType: data.inputType, question: data.question, guide: data.guide,
     sceneUri: data.sceneUri, staticSceneUri: data.staticSceneUri,
-    achievementStandards: data.achievementStandards, choices: data.choices ?? [], categories: data.categories ?? [],
+    achievementStandards: data.achievementStandards, achievementLevels: data.achievementLevels ?? null, choices: data.choices ?? [], categories: data.categories ?? [],
     answerUnit: data.inputType === 'SOLUTION_STEPS' ? data.answerUnit?.trim() || null : null,
     inputTemplate: ['SOLUTION_STEPS', 'ESSAY'].includes(data.inputType) ? data.inputTemplate ?? [] : [],
     demoOnly: data.demoOnly,
