@@ -72,6 +72,40 @@ sequenceDiagram
   W->>C: 원래 요청 재시도
 ```
 
+#### 2.1.1 관리자 ID·비밀번호 로그인 (#369)
+
+가입 없이 운영자가 `scripts/admin_account_sql.py`로 `admin_credential` 행을 만든 관리자만 해당. 사용자 화면에는 링크가 없고 `/admin/login`을 직접 입력해 들어온다. 이후 refresh·`/me`는 2.1과 같다 ([API 명세 5.1](api-spec.md#51-36-google-oauth토큰-구현-계약-개정-p01-정렬))
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor A as 관리자
+  participant W as Web /admin/login
+  participant C as core
+  participant DB as core_db
+
+  A->>W: 로그인 ID·비밀번호
+  W->>C: POST /auth/admin/login {loginId,password} (Origin·X-Requested-With)
+  rect rgba(128,128,128,0.12)
+    C->>DB: admin_credential + user_account(login_id, ADMIN·ACTIVE) 조회 FOR UPDATE
+    alt 없음
+      C->>C: 더미 해시 검사 (응답 시간 맞춤)
+      C-->>W: 401 INVALID_CREDENTIALS
+    else locked_until > 지금
+      C-->>W: 423 ADMIN_LOGIN_LOCKED
+    else 비밀번호 틀림
+      C->>DB: failed_count+1 (5회째면 locked_until=15분 뒤, 횟수 0) 커밋
+      C-->>W: 401 INVALID_CREDENTIALS 또는 423 ADMIN_LOGIN_LOCKED
+    else 성공
+      C->>DB: 횟수·잠금 초기화, audit_log ADMIN_PASSWORD_LOGIN
+      C->>DB: 이전 refresh 쿠키 세션 폐기, ADMIN auth_session·refresh_token 저장 (7일)
+      C-->>W: 200 {accessToken, expiresIn, role:ADMIN, startPath:/admin/home} + Set-Cookie sagomungchi_refresh
+    end
+  end
+  W->>C: GET /me (Bearer)
+  C-->>W: 200 role·permissions → 권한별 관리자 메뉴
+```
+
 ### 2.2 자녀 등록·법정대리인 동의
 
 ```mermaid

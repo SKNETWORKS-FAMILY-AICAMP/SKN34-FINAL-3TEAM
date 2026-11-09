@@ -9,11 +9,13 @@ import com.sagomungchi.core.account.service.dto.AuthDestination
 import com.sagomungchi.core.account.service.dto.IssuedAuth
 import com.sagomungchi.core.account.service.dto.StartedGoogleLogin
 import com.sagomungchi.core.consent.service.ConsentAccessService
+import com.sagomungchi.core.guardianship.service.PinHasher
 import com.sagomungchi.core.guardianship.service.StudentAccessService
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
+import java.time.Duration
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.util.UUID
@@ -27,9 +29,13 @@ class AuthService(
     private val students: StudentAccessService,
     private val consents: ConsentAccessService,
     private val passwords: GuardianPasswordService,
+    private val hasher: PinHasher,
+    private val accounts: AccountManagementService,
     transactionManager: PlatformTransactionManager,
 ) {
     private val transactions = TransactionTemplate(transactionManager)
+    /** Verified when the login ID is unknown so the response time does not reveal registered IDs. */
+    private val dummyHash by lazy { hasher.hash(tokens.randomToken()) }
 
     fun startGoogle(): StartedGoogleLogin {
         val state = tokens.randomToken(); val nonce = tokens.randomToken(); val verifier = tokens.randomToken()
@@ -55,12 +61,52 @@ class AuthService(
         }
         requireActive(account)
         if (account.role !in setOf("PARENT", "ADMIN")) throw unauthenticated()
-        // Replacing a locked parent session also ends the student sessions entered from it.
+        startSession(account, previousRefresh, now)
+    })
+
+    /**
+     * #369: ID/password login for ADMIN accounts registered in admin_credential (no signup; rows come from a script).
+     * Unknown ID and wrong password give the same 401. The 5th consecutive failure locks the ID for 15 minutes.
+     */
+    fun adminLogin(loginId: String?, password: String?, previousRefresh: String?): IssuedAuth {
+        val id = loginId?.trim().orEmpty()
+        val secret = password.orEmpty()
+        if (id.isEmpty() || id.length > 254 || secret.isEmpty() || secret.length > 128) throw invalidCredentials()
+        val outcome = requireNotNull(transactions.execute {
+            val now = now()
+            val credential = repository.adminCredential(id)
+            if (credential == null) {
+                hasher.matches(secret, dummyHash)
+                return@execute Outcome(null, "INVALID_CREDENTIALS")
+            }
+            if (credential.lockedUntil?.isAfter(now) == true) return@execute Outcome(null, "ADMIN_LOGIN_LOCKED")
+            if (!hasher.matches(secret, credential.passwordHash)) {
+                val count = credential.failedCount + 1
+                val locked = count >= ADMIN_FAILURE_LIMIT
+                // The counter restarts after a lock, so an expired lock gives the next 5 attempts again.
+                repository.updateAdminCredential(credential.userId, if (locked) 0 else count, if (locked) now.plus(ADMIN_LOCK) else null, now)
+                return@execute Outcome(null, if (locked) "ADMIN_LOGIN_LOCKED" else "INVALID_CREDENTIALS")
+            }
+            if (credential.failedCount != 0 || credential.lockedUntil != null) repository.updateAdminCredential(credential.userId, 0, null, now)
+            val account = repository.account(credential.userId) ?: throw invalidCredentials()
+            accounts.audit(account.id, "ADMIN_PASSWORD_LOGIN", account.id)
+            Outcome(startSession(account, previousRefresh, now), null)
+        })
+        // Throw after commit so the failure counter is not rolled back.
+        when (outcome.failure) {
+            null -> return requireNotNull(outcome.issued)
+            "ADMIN_LOGIN_LOCKED" -> throw BusinessException(HttpStatus.LOCKED, "ADMIN_LOGIN_LOCKED", "로그인 시도가 많아 잠시 잠겼습니다. 15분 뒤 다시 시도해 주세요.")
+            else -> throw invalidCredentials()
+        }
+    }
+
+    /** Caller holds the transaction. Replacing a locked parent session also ends the student sessions entered from it. */
+    private fun startSession(account: AuthAccount, previousRefresh: String?, now: OffsetDateTime): IssuedAuth {
         previousRefresh?.let { repository.refresh(tokens.hash(it))?.sessionId }?.let { repository.revoke(it, now); repository.revokeGuardianEntries(it, now) }
         val session = AuthSession(UUID.randomUUID(), account.id, account.role, null, 1, now.plus(properties.refreshTtl), null, now)
         repository.insertSession(session)
-        issue(session)
-    })
+        return issue(session)
+    }
 
     /** Device caller holds the parent account lock and has verified device, child and PIN. */
     @org.springframework.transaction.annotation.Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)
@@ -218,6 +264,11 @@ class AuthService(
     private fun unauthenticated() = BusinessException(HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "로그인이 필요합니다.")
     private fun changed() = BusinessException(HttpStatus.UNAUTHORIZED, "SESSION_CHANGED", "다른 탭에서 로그인 상태가 변경되었습니다.")
     private fun forbidden() = BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "이 작업을 수행할 권한이 없습니다.")
+    private fun invalidCredentials() = BusinessException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "아이디 또는 비밀번호를 확인해 주세요.")
     private fun parentLocked() = BusinessException(HttpStatus.UNAUTHORIZED, "PARENT_SESSION_LOCKED", "학생 화면을 사용하고 있습니다. 보호자 비밀번호로 돌아와 주세요.")
     private data class Outcome(val issued: IssuedAuth?, val failure: String?, val remainingAttempts: Int? = null)
+    private companion object {
+        const val ADMIN_FAILURE_LIMIT = 5
+        val ADMIN_LOCK: Duration = Duration.ofMinutes(15)
+    }
 }

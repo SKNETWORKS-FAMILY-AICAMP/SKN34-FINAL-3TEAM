@@ -37,6 +37,14 @@
             <arg column="created_at" javaType="java.time.OffsetDateTime"/>
         </constructor>
     </resultMap>
+    <resultMap id="adminCredential" type="com.sagomungchi.core.account.domain.AdminCredential">
+        <constructor>
+            <idArg column="user_id" javaType="java.util.UUID"/>
+            <arg column="password_hash" javaType="java.lang.String"/>
+            <arg column="failed_count" javaType="_int"/>
+            <arg column="locked_until" javaType="java.time.OffsetDateTime"/>
+        </constructor>
+    </resultMap>
     <select id="findAccount" resultMap="account">
         SELECT id, role, login_id, display_name, status, oauth_subject FROM user_account WHERE id = #{id}
     </select>
@@ -73,4 +81,14 @@
     <update id="consumeRefresh">UPDATE refresh_token SET used_at=#{now} WHERE id=#{id} AND used_at IS NULL AND revoked_at IS NULL</update>
     <update id="revokeSession">UPDATE auth_session SET revoked_at=#{now} WHERE id=#{id} AND revoked_at IS NULL</update>
     <update id="revokeGuardianEntries">UPDATE auth_session SET revoked_at=#{now} WHERE parent_session_id=#{parent} AND revoked_at IS NULL</update>
+    <select id="findAdminCredential" resultMap="adminCredential" flushCache="true" useCache="false">
+        SELECT c.user_id, c.password_hash, c.failed_count, c.locked_until FROM admin_credential c
+        JOIN user_account u ON u.id = c.user_id
+        WHERE u.login_id = #{loginId} AND u.role = 'ADMIN' AND u.status = 'ACTIVE'
+        FOR UPDATE OF c
+    </select>
+    <update id="updateAdminCredential">
+        UPDATE admin_credential SET failed_count=#{failedCount}, locked_until=#{lockedUntil,jdbcType=TIMESTAMP_WITH_TIMEZONE}, updated_at=#{now}
+        WHERE user_id=#{userId}
+    </update>
 </mapper>

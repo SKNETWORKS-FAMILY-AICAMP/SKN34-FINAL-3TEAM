@@ -1,5 +1,6 @@
 package com.sagomungchi.core.account.repository
 
+import com.sagomungchi.core.account.domain.AdminCredential
 import com.sagomungchi.core.account.domain.AuthAccount
 import com.sagomungchi.core.account.domain.AuthSession
 import com.sagomungchi.core.account.domain.RefreshToken
@@ -22,4 +23,9 @@ class AuthRepository(private val mapper: AuthMapper) {
     fun consume(id: UUID, now: OffsetDateTime) = mapper.consumeRefresh(id, now)
     fun revoke(id: UUID, now: OffsetDateTime) { mapper.revokeSession(id, now) }
     fun revokeGuardianEntries(parent: UUID, now: OffsetDateTime) { mapper.revokeGuardianEntries(parent, now) }
+    /** Locks the credential row so concurrent attempts count failures one at a time. */
+    fun adminCredential(loginId: String): AdminCredential? = mapper.findAdminCredential(loginId)
+    fun updateAdminCredential(userId: UUID, failedCount: Int, lockedUntil: OffsetDateTime?, now: OffsetDateTime) {
+        check(mapper.updateAdminCredential(userId, failedCount, lockedUntil, now) == 1)
+    }
 }

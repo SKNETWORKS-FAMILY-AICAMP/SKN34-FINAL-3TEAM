@@ -159,6 +159,22 @@ const id = (value: string | readonly string[] | undefined) => {
   if (!value) throw new Error('경로 식별값이 없습니다.')
   return String(value)
 }
+async function mockSignIn(email: string, password: string) {
+  const session = await store.login(email, password)
+  lockParentSession(false)
+  if (!permissionsFor(email).length)
+    store.replaceChildren(structuredClone(mockAccountChildren.get(email) ?? []))
+  mockIdentity.email = email
+  mockIdentity.permissions = permissionsFor(email)
+  mockRole = mockIdentity.permissions.length ? 'ADMIN' : 'PARENT'
+  if (mockRole === 'ADMIN')
+    store.restoreSnapshot({
+      ...store.snapshot(),
+      session: { role: 'ADMIN', permissions: mockIdentity.permissions },
+    })
+  child = undefined
+  return { ...session, role: mockRole, accessToken: issueToken() }
+}
 export const studentHandlers = [
   http.post('/api/v1/auth/login', ({ request }) =>
     respond(async () => {
@@ -169,20 +185,17 @@ export const studentHandlers = [
           code: 'UNAUTHENTICATED',
           title: '시연 계정을 확인해 주세요.',
         })
-      const session = await store.login(data.email, data.password)
-      lockParentSession(false)
-      if (!permissionsFor(data.email).length)
-        store.replaceChildren(structuredClone(mockAccountChildren.get(data.email) ?? []))
-      mockIdentity.email = data.email
-      mockIdentity.permissions = permissionsFor(data.email)
-      mockRole = mockIdentity.permissions.length ? 'ADMIN' : 'PARENT'
-      if (mockRole === 'ADMIN')
-        store.restoreSnapshot({
-          ...store.snapshot(),
-          session: { role: 'ADMIN', permissions: mockIdentity.permissions },
-        })
-      child = undefined
-      return { ...session, role: mockRole, accessToken: issueToken() }
+      return mockSignIn(data.email, data.password)
+    }),
+  ),
+  // #369 core POST /auth/admin/login과 같은 계약: 관리자 시연 계정만, 실패는 모두 401 INVALID_CREDENTIALS.
+  http.post('/api/v1/auth/admin/login', ({ request }) =>
+    respond(async () => {
+      const data = (await request.json()) as { loginId?: string; password?: string }
+      const loginId = data.loginId?.trim() ?? ''
+      if (!permissionsFor(loginId).length || data.password !== 'demo-only')
+        throw new ApiError({ status: 401, code: 'INVALID_CREDENTIALS', title: '아이디 또는 비밀번호를 확인해 주세요.' })
+      return mockSignIn(loginId, 'demo-only')
     }),
   ),
   http.post('/api/v1/auth/refresh', () =>

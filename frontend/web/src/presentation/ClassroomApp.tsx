@@ -269,11 +269,10 @@ export function ClassroomApp() {
             }} />
             {!isDemo ? (
               <section className="ux-login-form">
-                <h2>학부모·관리자 로그인</h2>
+                <h2>학부모 로그인</h2>
                 <a className="cj-primary" href="/api/v1/auth/google/authorize">Google 계정으로 계속하기</a>
                 <nav className="ux-login-links" aria-label="로그인 도움 메뉴">
                   <Link to="/login-help">로그인 도움말</Link>
-                  <Link to="/admin/login">관리자 로그인</Link>
                 </nav>
                 <p>처음 로그인하면 이용 동의와 자녀 등록을 진행합니다.</p>
                 {new URLSearchParams(location.search).has('oauthError') &&
@@ -317,17 +316,10 @@ export function ClassroomApp() {
               <ErrorNotice error={auth.login.error} />
               <nav className="ux-login-links" aria-label="로그인 도움 메뉴">
                   <Link to="/login-help">로그인 도움말</Link>
-                  <Link to="/admin/login">관리자 로그인</Link>
                 </nav>
               <button type="button" className="cj-secondary ux-login-signup" onClick={() => navigate('/signup')}>
                 처음이신가요? 이용 등록
               </button>
-              {isDemo && (
-                <small className="ux-login-demo-note">
-                  관리자 시연: admin / content / ops / payment / refund@example.test · 비밀번호
-                  demo-only
-                </small>
-              )}
             </form>}
             </div>
           </main>

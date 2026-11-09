@@ -11,7 +11,7 @@ import type {
   Reflection,
   Report,
 } from '../../domain/classroom.ts'
-import { unlockParentSession } from '../apiClient.ts'
+import { apiFetch, notifyAuthChange, setAccessToken, unlockParentSession } from '../apiClient.ts'
 import { createApiGateway } from './apiGateway.ts'
 import { getThinkingActivities, saveReflection } from './learningApi.ts'
 import { demoEmailLogin } from './demoLogin.ts'
@@ -43,6 +43,21 @@ export function useAuthentication() {
     },
     onSuccess: () => cache.clear(),
   })
+  // #369: 등록된 관리자 ID·비밀번호 로그인. 실제·목업 모두 같은 경로이며, 권한·시작 화면은 /me로 다시 읽는다.
+  const adminLogin = useMutation({
+    mutationFn: async ({ loginId, password }: { loginId: string; password: string }) => {
+      const raw = (await apiFetch<Record<string, unknown>>('/auth/admin/login', {
+        method: 'POST',
+        body: JSON.stringify({ loginId, password }),
+      })) ?? {}
+      if (raw.role !== 'ADMIN' || typeof raw.accessToken !== 'string') throw new Error('관리자 로그인 응답이 계약과 다릅니다.')
+      setAccessToken(raw.accessToken, 'ADMIN')
+      const next = await restoreSession(true)
+      notifyAuthChange(next.role)
+      return next
+    },
+    onSuccess: () => cache.clear(),
+  })
   const logout = useMutation({ mutationFn: () => gateway.logout(), onSettled: () => cache.clear() })
   const enter = useMutation({
     mutationFn: (child: Child) => gateway.enterStudent(child),
@@ -56,7 +71,7 @@ export function useAuthentication() {
     },
     onSuccess: () => cache.clear(),
   })
-  return { login, logout, enter, unlock }
+  return { login, adminLogin, logout, enter, unlock }
 }
 export function useMockInvalidation() {
   const cache = useQueryClient()

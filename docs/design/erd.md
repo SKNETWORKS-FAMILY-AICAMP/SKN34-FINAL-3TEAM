@@ -79,7 +79,7 @@ erDiagram
     uuid id PK
     varchar role "STUDENT|PARENT|ADMIN"
     varchar login_id UK "로그인 ID(이메일)"
-    varchar password_hash "NULL 허용 · 기존 데이터 보존, 로그인 미사용"
+    varchar password_hash "NULL 허용 · 기존 데이터 보존, 로그인 미사용(관리자 비밀번호는 admin_credential)"
     varchar oauth_provider "NULL 허용 · GOOGLE"
     varchar oauth_subject "NULL 허용 · provider와 복합 UK"
     varchar display_name "NULL 허용"
@@ -221,6 +221,7 @@ erDiagram
 erDiagram
   user_account ||--o{ auth_session : owns
   user_account ||--o| guardian_password : sets
+  user_account ||--o| admin_credential : "관리자 ID·비밀번호"
   auth_session ||--o{ refresh_token : rotates
   auth_session ||--o{ auth_session : "guardian entry"
   auth_session {
@@ -242,11 +243,20 @@ erDiagram
     timestamptz locked_at "NULL 허용"
     timestamptz updated_at
   }
+  admin_credential {
+    uuid user_id PK,FK
+    varchar password_hash
+    int failed_count
+    timestamptz locked_until "NULL 허용"
+    timestamptz created_at
+    timestamptz updated_at
+  }
 ```
 
 - `auth_session` CHECK: `version > 0`, `ck_auth_session_student`(role이 STUDENT면 `student_id` 필수, 그 외 역할은 NULL) (V8), `ck_auth_session_lock`(`locked_at`은 PARENT만)·`ck_auth_session_parent`(`parent_session_id`는 STUDENT만) (V24)
 - 동석 진입(FN-ACC-05, V24): 학부모 세션을 바꾸지 않고 `locked_at`을 기록·version을 올려 잠그고, `parent_session_id`로 연결한 학생 세션을 새로 만든다. 학부모는 보호자 비밀번호(`POST /auth/parent-unlock`)로 잠금을 풀며, 이때 그 세션의 학생 세션을 폐기한다. 새 Google 로그인·로그아웃으로 이전 세션을 폐기할 때도 학생 세션을 함께 폐기한다
 - `guardian_password`(V24): 계정당 1행, PBKDF2 해시·`failed_count >= 0`·5회째 `locked_at`. 설정·변경 시 실패 횟수·잠금 초기화(`GUARDIAN_PASSWORD` 재인증), 탈퇴 요청 시 삭제
+- `admin_credential`(V36, #369): ID·비밀번호 로그인이 허용된 관리자 목록. 로그인 ID는 `user_account.login_id`(ADMIN·ACTIVE 행만), PBKDF2 해시(`guardian_password`와 같은 형식)·`failed_count >= 0`. 연속 5회째 실패에 `locked_until` = 15분 뒤를 기록하고 횟수를 0으로 되돌린다. 행은 앱이 만들지 않고 `scripts/admin_account_sql.py`가 만든 SQL로만 생성·재설정(횟수·잠금 초기화)·삭제한다. 관리자 신원·권한·행위자 FK는 기존 `user_account`·`admin_permission`을 그대로 쓰며 레거시 `user_account.password_hash`는 사용하지 않는다
 
 ### 3.1.2 재인증·삭제 완료 저장 (#45)
 
