@@ -8,6 +8,10 @@ import type {
   ModelVersion,
 } from '../../domain/admin/operations.ts'
 import { essayTypes, missingMissionFields } from '../../domain/admin/operations.ts'
+import type { AchievementStandard, GeneratedDraft, MissionDraft, MissionDraftRequest } from '../../domain/admin/missionStandards.ts'
+import {
+  answerKeyInputs, commonElementsOf, discardableDraft, draftRequestErrors, gradeBands, isLevelShape, isValidElementCode,
+} from '../../domain/admin/missionStandards.ts'
 import type { LearningMission } from '../../domain/learning.ts'
 import type { Period } from '../../domain/classroom.ts'
 import { validPeriod } from '../../domain/parent.ts'
@@ -16,6 +20,8 @@ import { fixtureStore as store } from '../fixtures/student.ts'
 import {
   jobs,
   missions,
+  missionDrafts,
+  achievementStandards,
   audits,
   audit,
   modelVersions,
@@ -52,6 +58,49 @@ const mission = (id: string) => {
   if (!m) fail('NOT_FOUND', '미션이 없습니다.', 404)
   return m!
 }
+/** core가 learning 400을 다시 쓸 때의 제목 (AdminLearningService.sanitize): detail 없이 코드만 전달 */
+const learningFail = (status = 400, code = 'VALIDATION_FAILED'): never =>
+  fail(code, '학습 서비스가 관리자 요청을 처리하지 못했습니다.', status)
+const standardsByCode = () => Object.fromEntries(achievementStandards.map((s) => [s.code, s])) as Record<string, AchievementStandard>
+const draft = (id: string) => {
+  const d = missionDrafts.find((d) => d.draftId === id)
+  if (!d) fail('NOT_FOUND', '미션 초안을 찾을 수 없습니다.', 404)
+  return d!
+}
+/** 목업 생성 진행: 생성 중 초안은 두 번째 조회부터 1회 시도로 READY (실제는 10초 주기 작업, state-diagram 3.4) */
+const draftReads = new Map<string, number>()
+function advance(d: MissionDraft) {
+  if (d.status !== 'GENERATING') return d
+  const reads = (draftReads.get(d.draftId) ?? 0) + 1
+  draftReads.set(d.draftId, reads)
+  if (reads < 2) return d
+  Object.assign(d, { status: 'READY', attempts: d.attempts + 1, draft: generated(d.input), updatedAt: stamp(),
+    versions: { prompt: 'mission-draft-mock-1', model: 'mock-model' } })
+  return d
+}
+/** 입력 방식·유형에 맞는 목업 초안 (learning DraftRules.elementCodes와 같은 code) */
+function generated(input: MissionDraftRequest): GeneratedDraft {
+  const std = standardsByCode()[input.standardCodes[0]], keyed = answerKeyInputs.includes(input.inputType)
+  const choices = keyed ? [{ id: 'c1', label: '첫째' }, { id: 'c2', label: '둘째' }] : null
+  const categories = input.inputType === 'CLASSIFICATION' ? [{ id: 'g1', label: '모둠 1' }] : null
+  const elements = keyed
+    ? [{ code: 'ANSWER_KEY', label: '정답', description: '고른 답이 정답과 같음', goodThought: true, standardCode: null }]
+    : [...commonElementsOf(input.thinkingType).map((e) => ({ code: e.code, label: e.label, description: e.description, goodThought: true, standardCode: std.code })),
+      ...(input.inputType === 'SOLUTION_STEPS' ? [{ code: 'FINAL_ANSWER', label: '최종 답', description: '최종 답이 정답과 같음', goodThought: true, standardCode: null }] : [])]
+  return {
+    title: `[목업 초안] ${std.area}`, question: `${std.statement.replace(/[.]$/, '')}에 대해 생각을 말해 보세요.`, guide: '장면을 살펴보세요.',
+    sceneNote: '목업 장면 메모', choices, categories,
+    answerKey: input.inputType === 'CHOICE' ? { choiceIds: ['c1'] } : input.inputType === 'ORDERING' ? { choiceIds: ['c1', 'c2'] }
+      : input.inputType === 'CLASSIFICATION' ? { assignments: [{ choiceId: 'c1', categoryId: 'g1' }, { choiceId: 'c2', categoryId: 'g1' }] }
+      : input.inputType === 'SOLUTION_STEPS' ? { finalAnswer: '30' } : null,
+    exampleAnswer: ['NARRATIVE', 'ESSAY'].includes(input.inputType) ? '목업 예시 답입니다.' : null,
+    forbiddenTerms: ['정답'], hints: ['무엇을 보았나요?'], elements,
+  }
+}
+const inputTemplates: Partial<Record<MissionDraftRequest['inputType'], string[]>> = {
+  SOLUTION_STEPS: ['① 무엇을 구하나요?', '② 어떻게 구할까요?', '③ 계산', '④ 확인해 보기'],
+  ESSAY: ['주장', '까닭 1', '까닭 2', '반대 의견에 답하기'],
+}
 const job = (id: string) => {
   const j = jobs.find((j) => j.jobId === id)
   if (!j) fail('NOT_FOUND', '작업이 없습니다.', 404)
@@ -82,6 +131,9 @@ function versionData(d: Partial<MissionVersion>, version: number): MissionVersio
     (inputType === 'ESSAY' && d.gradeMin! < 5)
   )
     fail('VALIDATION_FAILED', '지원 학년을 확인해 주세요.')
+  // learning requireLevelShape: 저장 때는 {코드: A~E} 모양만 (#353)
+  if (d.achievementLevels && Object.entries(d.achievementLevels).some(([code, level]) => !code.trim() || !isLevelShape(level)))
+    learningFail()
   return {
     version,
     title: d.title!,
@@ -97,6 +149,7 @@ function versionData(d: Partial<MissionVersion>, version: number): MissionVersio
     sceneUri: d.sceneUri ?? '',
     staticSceneUri: d.staticSceneUri ?? '',
     achievementStandards: d.achievementStandards ?? [],
+    achievementLevels: d.achievementLevels ?? null,
     choices: d.choices,
     categories: d.categories,
     createdAt: stamp(),
@@ -256,6 +309,8 @@ export const adminHandlers = [
         v = versionData(data, 1),
         m: AdminMission = {
           missionId: crypto.randomUUID(),
+          code: `MOCK-${missions.length + 1}`,
+          source: 'MANUAL',
           status: 'DRAFT',
           demoOnly: data.demoOnly,
           currentVersion: 1,
@@ -304,6 +359,11 @@ export const adminHandlers = [
         d = (await request.json()) as Omit<Rubric, 'version'>
       if (d.elements?.some((e) => !e.label.trim() || !Number.isInteger(e.points) || e.points <= 0))
         fail('VALIDATION_FAILED', '요소 이름과 양의 정수 배점을 확인해 주세요.')
+      // learning #262 저장 검사: code 모양·중복, standardCode는 null 또는 비지 않은 값
+      const codes = d.elements?.map((e) => e.code) ?? []
+      if (codes.some((c) => !c?.trim() || !isValidElementCode(c)) || new Set(codes).size !== codes.length ||
+          d.elements?.some((e) => e.standardCode != null && !e.standardCode.trim()))
+        learningFail()
       // learning AdminRubricRequest와 같이 keywords ≤100개·각 1~200자, essayType은 다섯 값 또는 null. 빠지면 빈 값으로 저장한다 (#306).
       const keywords = d.keywords ?? [], essayType = d.essayType ?? null
       if (!Array.isArray(keywords) || keywords.length > 100 || keywords.some((k) => typeof k !== 'string' || !k.length || k.length > 200))
@@ -382,7 +442,7 @@ export const adminHandlers = [
         }
         if (action === 'publish') {
           if (!reviewable(m)) fail('CONFLICT', '검토 가능한 상태가 아닙니다.', 409)
-          const missing = missingMissionFields(m)
+          const missing = missingMissionFields(m, standardsByCode())
           if (mode === 'publish-missing') missing.push('staticSceneUri')
           if (missing.length) {
             audit('MISSION_PUBLISH', 'MISSION', m.missionId, 'FAILURE', missing.join(', '))
@@ -433,6 +493,92 @@ export const adminHandlers = [
         return m
       }),
     ),
+  ),
+  http.get('/api/v1/admin/achievement-standards', ({ request }) =>
+    respond(async () => {
+      allow(request, 'CONTENT'); queryFault()
+      const q = new URL(request.url).searchParams
+      const index = Number(q.get('page') ?? 0), size = Number(q.get('size') ?? 20), band = q.get('gradeBand'), text = q.get('q') ?? ''
+      if (!Number.isInteger(index) || index < 0 || !Number.isInteger(size) || size < 1 || size > 100 || text.length > 100 ||
+          (band && !(band in gradeBands))) fail('VALIDATION_FAILED', '조회 조건을 확인해 주세요.')
+      const rows = mode === 'empty' ? [] : achievementStandards.filter((s) =>
+        (!q.get('subject') || s.subject === q.get('subject')) && (!band || s.gradeBand === band) &&
+        (!text || s.code.includes(text) || s.statement.includes(text)))
+      return { items: rows.slice(index * size, (index + 1) * size), page: index, size, totalElements: rows.length }
+    }),
+  ),
+  http.post('/api/v1/admin/mission-drafts', ({ request }) =>
+    respond(async () => {
+      allow(request, 'CONTENT')
+      const body = (await request.json()) as MissionDraftRequest
+      if (!Array.isArray(body.standardCodes) || new Set(body.standardCodes).size !== body.standardCodes.length ||
+          draftRequestErrors(body, standardsByCode()).length) learningFail()
+      const d: MissionDraft = {
+        draftId: crypto.randomUUID(), status: 'GENERATING', attempts: 0, maxAttempts: 3,
+        input: { ...body, achievementLevels: body.achievementLevels ?? null }, checkResults: [], draft: null, failureCode: null,
+        versions: { prompt: null, model: null }, missionId: null, requestedBy: 'mock-admin', createdAt: stamp(), updatedAt: stamp(),
+      }
+      missionDrafts.unshift(d)
+      audit('MISSION_DRAFT_REQUEST', 'MISSION_DRAFT', d.draftId, 'SUCCESS', '초안 생성 요청')
+      return d
+    }, 202),
+  ),
+  http.get('/api/v1/admin/mission-drafts', ({ request }) =>
+    respond(async () => {
+      allow(request, 'CONTENT'); queryFault()
+      const q = new URL(request.url).searchParams
+      const index = Number(q.get('page') ?? 0), size = Number(q.get('size') ?? 20), status = q.get('status')
+      if (!Number.isInteger(index) || index < 0 || !Number.isInteger(size) || size < 1 || size > 100 ||
+          (status && !['GENERATING', 'READY', 'CHECK_FAILED', 'FAILED', 'ADOPTED', 'DISCARDED'].includes(status)))
+        fail('VALIDATION_FAILED', '조회 조건을 확인해 주세요.')
+      const rows = mode === 'empty' ? [] : missionDrafts.map(advance).filter((d) => !status || d.status === status)
+      return { items: rows.slice(index * size, (index + 1) * size), page: index, size, totalElements: rows.length }
+    }),
+  ),
+  http.get('/api/v1/admin/mission-drafts/:draftId', ({ request, params }) =>
+    respond(async () => {
+      allow(request, 'CONTENT'); queryFault()
+      return advance(draft(String(params.draftId)))
+    }),
+  ),
+  http.post('/api/v1/admin/mission-drafts/:draftId/adopt', ({ request, params }) =>
+    respond(async () => {
+      allow(request, 'CONTENT')
+      const d = draft(String(params.draftId))
+      if (d.status !== 'READY' || !d.draft) learningFail(409, 'CONFLICT')
+      const g = d.draft!, input = d.input
+      // learning DraftRules: 교과는 첫 성취기준 교과, 장면·단위 비움, 시연 전용 아님, 요소 배점 1·검증 전
+      const m: AdminMission = {
+        missionId: crypto.randomUUID(), code: `MOCK-${missions.length + 1}`, source: 'LLM_DRAFT', status: 'DRAFT', demoOnly: false,
+        currentVersion: 1, currentRubricVersion: 1, publishedVersion: null, publishedRubricVersion: null,
+        versions: [{
+          version: 1, title: g.title, subject: standardsByCode()[input.standardCodes[0]]?.subject ?? '', gradeMin: input.gradeMin,
+          gradeMax: input.gradeMax, thinkingType: input.thinkingType, inputType: input.inputType, question: g.question, guide: g.guide,
+          answerUnit: null, inputTemplate: inputTemplates[input.inputType] ?? [], sceneUri: null, staticSceneUri: null,
+          achievementStandards: input.standardCodes, achievementLevels: input.achievementLevels, choices: g.choices ?? [],
+          categories: g.categories ?? [], createdAt: stamp(),
+        }],
+        rubrics: [{
+          version: 1, elements: g.elements.map((e) => ({ ...e, points: 1, commonErrors: [], judgeVerified: false })),
+          answerKey: g.answerKey, exampleAnswer: g.exampleAnswer, forbiddenTerms: g.forbiddenTerms, hints: g.hints, keywords: [], essayType: null,
+        }],
+        reviews: [],
+      }
+      missions.push(m)
+      Object.assign(d, { status: 'ADOPTED', missionId: m.missionId, updatedAt: stamp() })
+      audit('MISSION_DRAFT_ADOPT', 'MISSION_DRAFT', d.draftId, 'SUCCESS', `미션 ${m.missionId} 생성`)
+      return m
+    }, 201),
+  ),
+  http.post('/api/v1/admin/mission-drafts/:draftId/discard', ({ request, params }) =>
+    respond(async () => {
+      allow(request, 'CONTENT')
+      const d = draft(String(params.draftId))
+      if (!discardableDraft(d.status)) learningFail(409, 'CONFLICT')
+      Object.assign(d, { status: 'DISCARDED', updatedAt: stamp() })
+      audit('MISSION_DRAFT_DISCARD', 'MISSION_DRAFT', d.draftId, 'SUCCESS', '초안 버림')
+      return d
+    }),
   ),
   http.get('/api/v1/admin/model-versions', ({ request }) =>
     respond(async () => {
@@ -491,7 +637,7 @@ export const adminHandlers = [
       queryFault()
       const p = period(request),
         filter = new URL(request.url).searchParams.get('callType')
-      if (filter && !['JUDGMENT','FOLLOWUP','ANALYSIS','REPORT_NARRATIVE','M2','M1'].includes(filter)) fail('VALIDATION_FAILED','호출 종류를 확인해 주세요.',400)
+      if (filter && !['JUDGMENT','FOLLOWUP','ANALYSIS','REPORT_NARRATIVE','MISSION_DRAFT','M2','M1'].includes(filter)) fail('VALIDATION_FAILED','호출 종류를 확인해 주세요.',400)
       return {
         period: p,
         items: [],

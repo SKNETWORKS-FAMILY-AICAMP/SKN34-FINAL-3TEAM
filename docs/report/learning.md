@@ -545,7 +545,7 @@ learning `Element`에 `code`·`goodThought`를 더했을 때 응답을 받는 �
 
 ### 구현 인계
 
-구현 완료: learning 시드·저장·게시 검사(#344·#353), web 요소 code 선택·사전 검사는 #356(진행 중).
+구현 완료: learning 시드·저장·게시 검사(#344·#353), web 요소 code 선택·사전 검사(#356, [frontend 11절](frontend.md#11-356-관리자-성취기준-고르기성취수준-단계미션-초안-화면-2026-11-09)).
 
 ### 설계·이슈와 다른 점
 
@@ -630,7 +630,7 @@ learning `Element`에 `code`·`goodThought`를 더했을 때 응답을 받는 �
 
 ### 구현 인계
 
-구현 완료: learning 표·시드·관리자 검사·초안 작업(#353, 22절), ai 초안 생성·검사(#354, [ai 9장](ai.md#9-미션-초안-생성자동-검사-336-설계-354-구현)), core 프록시·`MISSION_DRAFT` 사용량(#355, 23절). web 화면은 #356(진행 중).
+구현 완료: learning 표·시드·관리자 검사·초안 작업(#353, 22절), ai 초안 생성·검사(#354, [ai 9장](ai.md#9-미션-초안-생성자동-검사-336-설계-354-구현)), core 프록시·`MISSION_DRAFT` 사용량(#355, 23절), web 화면(#356, [frontend 11절](frontend.md#11-356-관리자-성취기준-고르기성취수준-단계미션-초안-화면-2026-11-09)).
 
 ### 영향 확인
 
@@ -707,8 +707,8 @@ learning `Element`에 `code`·`goodThought`를 더했을 때 응답을 받는 �
 
 - **배포 순서**: ai(#357)를 먼저 배포. learning이 먼저 나가면 초안 요청이 AI 호출 실패 3회로 `FAILED`가 됨(초안이 없으면 ai를 부르지 않음)
 - **성취기준 시드를 먼저 넣어야 게시 가능**: 게시 검사가 성취기준 표를 읽으므로, V10 적용 뒤 `achievement_standards.sql`을 넣기 전에는 모든 미션의 게시가 `achievementStandards`로 막힘. 운영·로컬 모두 마이그레이션 직후 시드를 넣음
-- **관리자 화면 기준표 저장**: #262 저장 검사로 자유 code(`e1` 모양이 아닌 값)는 400. web(#356) 전까지 관리자 화면에서 표준 코드·`e`+숫자만 써야 함
-- **대괄호 성취기준 코드**: 관리자 화면에서 `[6국01-02]`처럼 넣은 미션은 표에 없어 게시가 막힘(표는 대괄호 없음)
+- **관리자 화면 기준표 저장**: #262 저장 검사로 자유 code(`e1` 모양이 아닌 값)는 400. web(#356)에서 요소 종류·code 고르기와 저장 전 검사로 반영
+- **대괄호 성취기준 코드**: 관리자 화면에서 `[6국01-02]`처럼 넣은 미션은 표에 없어 게시가 막힘(표는 대괄호 없음). web(#356)부터 표에서만 고름, 이미 넣은 미션은 다시 골라야 함
 - 사용량 `MISSION_DRAFT`는 core(#355) 전까지 DLQ에 남음(#354). #355에서 반영(23절)
 
 ### 검증
@@ -749,7 +749,7 @@ learning `Element`에 `code`·`goodThought`를 더했을 때 응답을 받는 �
 
 - 이슈 작업 위치 "`AdminMissionsController`"에 넣지 않고 같은 패키지 새 컨트롤러로(위 결정)
 - 이슈에 없던 것: gitops 로컬 core 마이그레이션 리비전 v28(`test_core_migration_versions.py`), 새 계약 테스트 `test_admin_mission_drafts_contract.py`(core ↔ learning·core OpenAPI 경로 6개, 쿼리 이름, 초안 상태, CONTENT, 호출 종류 일곱 곳 대조), `LlmUsageQueryTest` 호출 종류 수 6 → 7
-- web의 사용량 호출 종류 이름표·목업(`frontend/web/src/presentation/admin/adminFormatting.ts`·`src/mocks/handlers/admin.ts`)에는 `MISSION_DRAFT`가 없음. web 범위(#356)라 바꾸지 않음
+- web의 사용량 호출 종류 이름표·목업(`frontend/web/src/presentation/admin/adminFormatting.ts`·`src/mocks/handlers/admin.ts`)에는 `MISSION_DRAFT`가 없음. web 범위(#356)라 바꾸지 않음(#356에서 반영)
 
 ### 한계
 
