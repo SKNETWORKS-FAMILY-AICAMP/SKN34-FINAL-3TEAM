@@ -199,8 +199,8 @@ PR #409 화면 구현을 core 등록 계약과 연결했다. 원본 registration
 
 ### 검증
 
-- web `lint`·`test`(253건)·`test:types`·`build` 통과, 브라우저 `test:browser` 30건 통과(새 `tests/browser/admin-missions.spec.ts` 2건 × laptop·tablet)
+- web `lint`·`test`(262건)·`test:types`·`build` 통과, 브라우저 `test:browser` 37건 통과(새 `tests/browser/admin-missions.spec.ts` 2건 × laptop·tablet, develop 2026-11-09 리베이스 뒤)
 - 새 단위 테스트: `tests/missionStandards.test.ts`(code 모양·적합, 학년군·단계, 초안 요청 검사, 게시 전 확인, 저장 본문), `tests/adminMockLifecycle.test.ts`(표 조회·초안 요청→READY→채택·버리기 409, 기준표 PUT 400, 대괄호 코드 게시 422)
 - 바뀐 테스트: `tests/learningAlignment.test.ts`의 자유 code `STEPS`를 `e2`로, 고르기는 `ANSWER_KEY`만(#262 규칙)
 - 수동 스크립트 `tests/parent-admin-browser.mjs`·`tests/learning-alignment-browser.mjs`의 성취기준·요소 code 입력을 새 화면에 맞춤. 두 스크립트는 이번 변경 전 단계(학생 `내 생각과 까닭`, 학부모 `이 자녀로 학습 시작`)에서 멈춰 고친 부분까지 실행하지 못함(CI 대상 아님)
-- 실제 core·learning·ai 연동 확인은 하지 않음(이 문서 9·10절과 같이 로컬 Docker·JDK 실행 제약). 완료 조건의 "실제 관리자 흐름 확인"은 남음
+- 실제 core·learning·ai 연동 확인은 하지 않음(이 문서 9·10절과 같이 로컬 Docker·JDK 실행 제약). 완료 조건의 "실제 관리자 흐름 확인"은 #451로 넘김
