@@ -1226,6 +1226,7 @@ sequenceDiagram
   participant C as core
   participant DB as core_db
   participant L as learning
+  participant R as report
 
   W->>C: POST /error-reports {targetType: JUDGMENT, targetId, comment} (Idempotency-Key)
   C->>DB: error_report RECEIVED
@@ -1235,8 +1236,13 @@ sequenceDiagram
   C->>L: POST /internal/judgments/{judgmentId}/corrections (Idempotency-Key)
   L->>L: judgment_correction 추가 (기존 판정·원본 답변 불변)
   L-->>C: 201
+  C->>R: GET /internal/reports/correction-impact?studentId&attemptId (#244, 실패 시 UNKNOWN)
+  R-->>C: 그 시도로 만든 완료 판
+  C->>L: GET /internal/support/attempts/{attemptId} (판정의 답변 ID 확인, #244)
+  L-->>C: 답변·판정 ID
+  C->>DB: 그 답변을 인용한 대화 답변, 영향받은 일일 판의 고정 대화 조회
   rect rgba(128,128,128,0.12)
-    C->>DB: correction 저장 (impact: 대화·집계·리포트 반영 여부)
+    C->>DB: correction 저장 (impact: 대화·집계·리포트 영향·대상 ID)
     C->>DB: error_report RESOLVED + audit_log
   end
   C->>C: NotificationService.notify (ERROR_REPORT_RESOLVED)

@@ -1161,6 +1161,7 @@ classDiagram
   class OutboxWriter { <<messaging>> }
 ```
 
+- 정정 영향(#244): `SupportService` → `ReportSupportService.affected`·`ConversationSupportService.citing`/`pinned`로 조회해 `correction.impact`에 기록. `ReportQueryService`·`ConversationService`는 `CorrectionNoticeService`로 `correctionNotice` 표시 여부를 읽음
 - `SupportLearningClient` = `support/client/LearningSupportClient.kt` (아키텍처 2.6). `ErrorReportService`·`InquiryService`·`NoticeService` = `SupportService` + `SupportCommands` + `SupportAccessService`(#46)
 - 운영(#47) 구현 이름: `AdminController` = `admin/controller/OperationsController`, `AdminJobService` = `OperationRetryService`(+ `OperationsService` 조회), `QueueStatsRepository` = `OperationsQueueService` + `admin/client/QueueManagementClient`, 감사 이력 조회 = `OperationsService.audits`. 관리자 미션(#145) `AdminMissionController` = `learning/controller/AdminMissionsController` + `AdminLearningService`
 - 구현된 #43 공개 경로는 #36 `PublicAuthFilter → AuthService.requirePermission(SERVICE_OPS)`를 재사용한다. 내부 조회는 `InternalAuthFilter`의 내부 토큰 검사를 사용한다. 다른 관리자 기능의 권한 범위는 API 1.2를 따른다.
