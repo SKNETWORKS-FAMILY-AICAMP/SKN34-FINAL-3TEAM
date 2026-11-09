@@ -598,6 +598,14 @@
       "destination_type": "queue",
       "routing_key": "core.model.loading.reported",
       "arguments": {}
+    },
+    {
+      "source": "events.topic",
+      "vhost": "/",
+      "destination": "core.event.audit",
+      "destination_type": "queue",
+      "routing_key": "model.loading.reported",
+      "arguments": {}
     }
   ]
 }

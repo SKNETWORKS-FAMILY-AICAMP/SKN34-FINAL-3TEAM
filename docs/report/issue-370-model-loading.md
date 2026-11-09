@@ -66,3 +66,11 @@ AWS는 재가동·배포하지 않았다. 기존 운영 이미지와 prod migrat
 develop `ef18b2ac`(#391·#369 포함)을 병합했다. OpenAPI의 #368 사전 검사와 #370 로딩 상태 스키마, API 명세의 #391·#370 절, ai 보고서의 #368·#370 절을 모두 보존했다. #369가 V36을 사용하므로 아직 병합되지 않은 모델 로딩 상태 마이그레이션만 V37로 변경하고 로컬 migration revision을 v37로 맞췄다. 이미 병합된 V36 파일은 수정하지 않았다.
 
 병합 후 재검증: core 관련 42개(실제 두 scoring 프로세스 연동 포함)·bootJar, scoring 전체 215개·Ruff, 계약 회귀 203개, web 빌드·브라우저 15개, 세 DB 전체 마이그레이션·재적용·report 왕복·ERD 대조·역할 격리 통과. core V36 관리자 인증과 V37 모델 로딩 상태를 동시에 적용했다.
+
+## PR #416 core CI 실패 보완
+
+최초 원격 core 전체 검사(585개, 실패 2개)에서 `RabbitDefinitionsTest`가 `model.loading.reported`의 감사 큐 바인딩 누락을 찾았고, `QueueManagementClientTest`는 기존 큐 30개·DLQ 6개 고정값 때문에 실패했다. 앞선 로컬 core 42개 검증에는 두 테스트가 포함되지 않았다.
+
+기존 감사 정책을 유지하도록 `events.topic / model.loading.reported → core.event.audit` 명시적 바인딩을 추가했다. EventAuditConsumer는 기존처럼 이벤트 봉투 메타데이터만 기록하며 모델 상태 본문은 event_log에 저장하지 않는다. 큐 조회 테스트는 버전 관리되는 definitions의 전체 큐·DLQ 수와 실제 브로커 조회 결과를 비교하도록 바꿨다. 기존 allowlist 일치·누락 큐 오류 검증은 유지한다.
+
+수정 후 core 전체 test·bootJar 통과: 585개 중 실패 0개, 조건부 제외 3개. 저장소 계약 회귀 203개 통과.
