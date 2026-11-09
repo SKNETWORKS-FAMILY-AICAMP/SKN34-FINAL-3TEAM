@@ -39,16 +39,27 @@ export interface PointEvent {
 export interface Points {
   balance: number
   items: PointEvent[]
+  page: number
+  size: number
+  totalElements: number
 }
 const isPointEvent = (v: unknown): v is PointEventType => typeof v === 'string' && v in POINT_EVENT_LABELS
+const nonNegativeInteger = (v: unknown): v is number => Number.isSafeInteger(v) && Number(v) >= 0
+function rewardContractError(): never {
+  throw new Error('포인트·꾸미기 정보를 확인하지 못했어요. 다시 확인해 주세요.')
+}
 
 export function readPoints(raw: unknown): Points {
-  const v = (raw ?? {}) as { balance?: unknown; items?: unknown }
-  const items = Array.isArray(v.items) ? v.items : []
+  const v = (raw ?? {}) as Record<keyof Points, unknown>
+  if (!nonNegativeInteger(v.balance) || !Array.isArray(v.items) || !nonNegativeInteger(v.page) ||
+      !nonNegativeInteger(v.size) || v.size < 1 || v.size > 100 || !nonNegativeInteger(v.totalElements) ||
+      v.items.length > v.size || v.items.length > v.totalElements) return rewardContractError()
   return {
-    balance: typeof v.balance === 'number' && Number.isFinite(v.balance) ? v.balance : 0,
-    items: items.flatMap((x) => {
+    balance: v.balance, page: v.page, size: v.size, totalElements: v.totalElements,
+    items: v.items.flatMap((x) => {
       const e = (x ?? {}) as Record<string, unknown>
+      if (!Number.isSafeInteger(e.amount) || typeof e.createdAt !== 'string' || !Number.isFinite(Date.parse(e.createdAt)))
+        return rewardContractError()
       return isPointEvent(e.eventType) && typeof e.amount === 'number' && typeof e.createdAt === 'string'
         ? [{ eventType: e.eventType, amount: e.amount, createdAt: e.createdAt }]
         : []
@@ -85,25 +96,34 @@ export interface LookItem {
   pricePoints: number
   unlocked: boolean
   onSale: boolean
+  assetKey: string | null
 }
 const isSlot = (v: unknown): v is LookSlot => typeof v === 'string' && v in SLOT_LABELS
 
 export function readLookItems(raw: unknown): LookItem[] {
-  const items = Array.isArray((raw as { items?: unknown })?.items) ? (raw as { items: unknown[] }).items : []
+  const items = (raw as { items?: unknown })?.items
+  if (!Array.isArray(items)) return rewardContractError()
   return items.flatMap((x) => {
     const v = (x ?? {}) as Record<string, unknown>
     if (typeof v.itemKey !== 'string' || !isSlot(v.slot)) return []
+    if (!v.itemKey || typeof v.name !== 'string' || !nonNegativeInteger(v.pricePoints) ||
+        typeof v.unlocked !== 'boolean' || typeof v.onSale !== 'boolean' ||
+        (v.assetKey !== null && typeof v.assetKey !== 'string')) return rewardContractError()
     return [
       {
         itemKey: v.itemKey,
         slot: v.slot,
-        name: typeof v.name === 'string' ? v.name : v.itemKey,
-        pricePoints: typeof v.pricePoints === 'number' ? v.pricePoints : 0,
-        unlocked: v.unlocked === true,
-        onSale: v.onSale !== false,
+        name: v.name, pricePoints: v.pricePoints, unlocked: v.unlocked, onSale: v.onSale,
+        assetKey: v.assetKey,
       },
     ]
   })
+}
+export interface UnlockResult { itemKey: string; unlocked: true; balance: number }
+export function readUnlockResult(raw: unknown, itemKey: string): UnlockResult {
+  const value = (raw ?? {}) as Partial<UnlockResult>
+  if (value.itemKey !== itemKey || value.unlocked !== true || !nonNegativeInteger(value.balance)) return rewardContractError()
+  return { itemKey, unlocked: true, balance: value.balance }
 }
 export function readEquipped(raw: unknown): Equipped {
   const v = (raw ?? {}) as Partial<Record<ItemSlot, unknown>>
@@ -125,6 +145,7 @@ export function baseLookCatalog(): Omit<LookItem, 'unlocked'>[] {
       name: t.title,
       pricePoints: t.id === FREE_THEME ? 0 : THEME_PRICE,
       onSale: true,
+      assetKey: null,
     })),
     ...COMPANIONS.map((c) => ({
       itemKey: companionKey(c.id),
@@ -132,6 +153,7 @@ export function baseLookCatalog(): Omit<LookItem, 'unlocked'>[] {
       name: c.label,
       pricePoints: c.id === FREE_COMPANION ? 0 : COMPANION_PRICE,
       onSale: true,
+      assetKey: null,
     })),
   ]
 }

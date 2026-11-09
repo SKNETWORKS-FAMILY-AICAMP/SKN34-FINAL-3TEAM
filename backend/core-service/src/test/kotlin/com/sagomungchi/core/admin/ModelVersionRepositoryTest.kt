@@ -37,6 +37,8 @@ class ModelVersionRepositoryTest : PostgresRepositoryTest() {
         val command = registration()
         listOf(
             command.copy(evaluation = evidence().copy(datasetId = "")),
+            command.copy(artifactUri = null),
+            command.copy(artifactUri = " "),
             command.copy(evaluation = evidence().copy(datasetVersion = "")),
             command.copy(evaluation = evidence().copy(baselineVersion = "")),
             command.copy(evaluation = evidence().copy(comparisonReport = "")),
@@ -51,6 +53,15 @@ class ModelVersionRepositoryTest : PostgresRepositoryTest() {
         ).forEach { invalid ->
             assertEquals("MODEL_APPROVAL_REJECTED", assertFailsWith<BusinessException> { service.register(invalid, actor) }.code)
         }
+    }
+
+    @Test fun `limitations survive registration and legacy evidence defaults to an empty list`() {
+        val actor = account(jdbc)
+        val command = registration().copy(evaluation = evidence().copy(limitations = listOf("임시 점수 경계", "검증 범위 제한")))
+        val saved = service.register(command, actor)
+        assertEquals(command.evaluation.limitations, repository.find(saved.id)!!.evalResult!!.evidence.limitations)
+        jdbc.update("UPDATE model_version SET eval_result = eval_result #- '{evidence,limitations}' WHERE id=?", saved.id)
+        assertEquals(emptyList(), repository.find(saved.id)!!.evalResult!!.evidence.limitations)
     }
 
     @Test fun `activation rejects unapproved out of scope duplicate and empty scopes without side effects`() {

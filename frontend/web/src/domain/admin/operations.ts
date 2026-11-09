@@ -67,6 +67,7 @@ export interface Audit {
   targetId: string | null
   result: 'SUCCESS' | 'FAILURE'
   createdAt: string
+  detail?: Record<string, unknown> | null
 }
 export interface MissionVersion {
   version: number
@@ -138,6 +139,7 @@ export interface EvaluationEvidence {
   datasetId: string; datasetVersion: string; baselineVersion: string; comparisonReport: string
   trainingEvaluationSeparation: string; quoteAccuracy: string; calculationAccuracy: string; humanReview: string
   evaluatedScopes: string[]
+  limitations?: string[]
 }
 export interface EvaluationRecord {
   evidence: EvaluationEvidence

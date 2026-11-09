@@ -369,3 +369,36 @@ test('공통 QueryClient는 같은 쿼리의 동시 HTTP를 합치고 명시적 
   queryClient.clear()
   assert.equal(queryClient.getQueryData(options.queryKey), undefined)
 })
+
+
+test('#389 해금 확정 응답은 선택 자녀의 모든 페이지 잔액·해금에만 반영한다', async t => {
+  const { useUnlock } = await import('../src/data/retention/queries.ts')
+  const cache = client()
+  const points = { balance: 150, items: [], page: 0, size: 20, totalElements: 21 }
+  const item = { itemKey: 'THEME:forest', name: '숲', slot: 'THEME', pricePoints: 100, unlocked: false, onSale: true, assetKey: null }
+  cache.setQueryData(['points', child.id, 0], points)
+  cache.setQueryData(['points', child.id, 1], { ...points, page: 1 })
+  cache.setQueryData(['points', 'other-child', 0], points)
+  cache.setQueryData(['look-items', child.id], [item])
+  mockFetch(t, (_url, init) => {
+    assert.equal(init.method, 'POST')
+    assert.equal(init.body, undefined)
+    assert.equal(new Headers(init.headers).get('Idempotency-Key'), '00000000-0000-4000-8000-000000000001')
+    return Response.json({ itemKey: item.itemKey, unlocked: true, balance: 50 })
+  })
+  const h = await mount(t, () => useUnlock(child.id), cache)
+  await act(async () => { await h.get().mutateAsync({ itemKey: item.itemKey, key: '00000000-0000-4000-8000-000000000001' }) })
+  for (const page of [0, 1]) assert.equal(cache.getQueryData<typeof points>(['points', child.id, page])?.balance, 50)
+  assert.equal(cache.getQueryData<typeof points>(['points', 'other-child', 0])?.balance, 150)
+  assert.deepEqual(cache.getQueryData(['look-items', child.id]), [{ ...item, unlocked: true }])
+})
+
+test('#389 다른 항목의 해금 응답은 성공·잔액 변경으로 표시하지 않는다', async t => {
+  const { useUnlock } = await import('../src/data/retention/queries.ts')
+  const cache = client(), points = { balance: 150, items: [], page: 0, size: 20, totalElements: 0 }
+  cache.setQueryData(['points', child.id, 0], points)
+  mockFetch(t, () => Response.json({ itemKey: 'THEME:space', unlocked: true, balance: 50 }))
+  const h = await mount(t, () => useUnlock(child.id), cache)
+  await act(async () => { await assert.rejects(h.get().mutateAsync({ itemKey: 'THEME:forest', key: crypto.randomUUID() }), /확인하지 못/) })
+  assert.deepEqual(cache.getQueryData(['points', child.id, 0]), points)
+})

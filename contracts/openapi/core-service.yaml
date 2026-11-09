@@ -7943,6 +7943,17 @@ components:
         createdAt:
           type: string
           format: date-time
+        detail:
+          description: MODEL_VERSION 조치의 허용된 상세만 반환한다. 다른 대상의 원문 detail은 null이다 (#366).
+          type: [object, 'null']
+          additionalProperties: false
+          properties:
+            name: {type: string}
+            version: {type: string}
+            scopes: {type: array, items: {type: string}}
+            reason: {type: string}
+            reanalysisPlanned: {type: boolean}
+            previousVersionId: {type: [string, 'null'], format: uuid}
     OperationJobPage:
       type: object
       additionalProperties: false
@@ -9083,6 +9094,11 @@ components:
           items:
             type: string
             pattern: ^[a-z0-9][a-z0-9._:/-]{0,199}$
+        limitations:
+          type: array
+          default: []
+          items: {type: string}
+          description: 임시 기준·평가 한계·미검증 사항. 기존 기록은 빈 목록으로 읽는다 (#367).
     RegisterModelVersion:
       type: object
       additionalProperties: false

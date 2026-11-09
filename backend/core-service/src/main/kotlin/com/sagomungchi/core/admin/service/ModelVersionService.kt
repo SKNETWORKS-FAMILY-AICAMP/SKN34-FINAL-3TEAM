@@ -29,6 +29,7 @@ class ModelVersionService(private val repository: ModelVersionRepository, privat
         if (command.name.isBlank() || command.name.length > 100 || command.version.isBlank() || command.version.length > 100 ||
             (command.artifactUri != null && (command.artifactUri.isBlank() || command.artifactUri.length > 2048))) invalid("버전 식별값이 유효하지 않습니다.")
         if ((command.kind == ModelKind.RUBRIC) != (command.refId != null)) invalid("RUBRIC만 learning 기준표 refId를 필수로 사용합니다.")
+        if (command.kind == ModelKind.MODEL && command.artifactUri.isNullOrBlank()) invalid("MODEL은 artifactUri가 필요합니다.")
         if (!command.evaluation.complete()) invalid("고정 평가·비교·분리·인용·계산·사람 검토 근거와 평가 범위가 필요합니다.")
         val version = ModelVersion(UUID.randomUUID(), command.kind, command.name, command.version, command.refId,
             command.artifactUri, EvaluationRecord(command.evaluation), VersionStatus.REGISTERED, null, null, now())
