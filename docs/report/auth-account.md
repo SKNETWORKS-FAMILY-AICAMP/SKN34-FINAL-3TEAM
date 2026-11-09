@@ -215,7 +215,7 @@
 - 동의 API: 기존 `POST /me/consents`의 자녀 요청은 `GUARDIAN`·`COMMUNITY` 중 보낼 문서만 담을 수 있게 바꿨습니다(웹 #394는 COMMUNITY 하나만 보냄). 법정대리인 동의가 아직 없는 등록·이관 수락에서는 예전처럼 GUARDIAN까지 함께 보내야 하며, COMMUNITY만 보낼 때는 그 자녀의 현재 법정대리인 동의가 필요합니다(없으면 400). 계정 동의는 TERMS·PRIVACY 전체만 받습니다. 공개 문서 목록 검사는 필수 세 문서가 있어야 하고, COMMUNITY는 선택 문서여야 합니다.
 - 동의 거부(`WITHDRAWN` 행)·철회는 같은 트랜잭션에서 자녀 설정을 끄고, 동의는 켜 둔 설정의 공유물을 복원합니다. 이관 전 보호자가 옛 동의를 철회해도 지금 보호자의 자녀 설정은 바꾸지 않습니다.
 - learning 반영: 설정·동의·이관(`GuardianTransferService.accept`)은 `CommunityVisibilityService.sync`로 트랜잭션 안에서 공개 여부를 정하고 **커밋 뒤** learning `PUT /internal/students/{id}/community-visibility {visible, reason}`을 부릅니다. 실패는 기록만 하고 사용자 요청은 성공으로 둡니다. 대신 core 목록·반응 응답이 현재 설정·동의로 다시 걸러 비공개를 지킵니다(support-admin 3장과 같은 원칙).
-- 공유 요청: 돌아보기 저장(`POST /attempts/{id}/reflection`) 2xx 뒤 공개 판정이 참이면 learning `POST /internal/community/posts {studentId, attemptId}`를 SYSTEM으로 부릅니다. 실패해도 학습 응답은 그대로입니다. 반환한 `postId`·새 공유 여부는 포인트 적립(#389)이 이어 쓸 수 있게 `CommunityService.shareCompleted`의 결과로 둡니다.
+- 공유 요청: 돌아보기 저장(`POST /attempts/{id}/reflection`) 2xx 뒤 공개 판정이 참이면 learning `POST /internal/community/posts {studentId, attemptId}`를 SYSTEM으로 부릅니다. 실패해도 학습 응답은 그대로입니다. 반환한 `postId`·새 공유 여부는 `CommunityService.shareCompleted`의 결과로 두고, #389 적립 연결에서 이 `postId`로 공유 포인트를 적립합니다(core-gateway 14절).
 - 작성자 표시: 미션 공유물 목록은 learning이 준 학생 ID를 별명·꾸미기(`look: {theme, companion}`, 저장 전 `lake`·`mungchi`)로 바꾸고 학생 ID·반응 수를 지웁니다. 본인 글, 지금 공개할 수 없는 작성자, 신고 숨김 공유물은 core가 뺍니다. 내 공유물·자녀 공유물은 learning 상태에 core가 아는 비공개(`HIDDEN_SETTING`·`HIDDEN_REPORT`)를 덮어 보여 줍니다. 학부모 경로는 현재 연결·동의(`requireCurrent`)를 확인합니다.
 - 학생 삭제 확정: PIN·꾸미기 초기화와 같은 트랜잭션에서 `community_enabled` false·`community_updated_at` NULL로 되돌립니다. 공유물·남긴 반응 파기는 learning이 기존 `student.deleted`로 처리합니다(#386).
 

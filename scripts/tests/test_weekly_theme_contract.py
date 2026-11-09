@@ -54,7 +54,9 @@ class WeeklyThemeContractTest(unittest.TestCase):
         proxy = PROXY.read_text(encoding='utf-8')
         self.assertIn('"/students/${context.studentScope.single()}/weekly-theme"', proxy)
         self.assertIn('"/students/${context.studentScope.single()}/weekly-theme/review-views"', proxy)
-        self.assertIn('"gradeBand=$band&date=${entitlements.today()}"', proxy)
+        # 날짜는 클라이언트 값이 아니라 core KST 오늘(열람 적립 #389은 같은 날짜로 주 시작일을 정함)
+        self.assertIn('date: LocalDate = entitlements.today()', proxy)
+        self.assertIn('"gradeBand=$band&date=$date"', proxy)
 
     def test_free_mission_limit_lives_in_usage_and_policy_in_entitlement(self):
         usage = (CORE / 'usage/service/MissionUsageService.kt').read_text(encoding='utf-8')

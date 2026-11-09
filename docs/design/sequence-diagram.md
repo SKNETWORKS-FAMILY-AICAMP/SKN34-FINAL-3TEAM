@@ -580,7 +580,7 @@ sequenceDiagram
 
 ### 3.4 주간 테마 문제 시작 (P23·P13, learning #385·core #387)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). learning #385·core #387 구현. 포인트 보충(마지막 항목)은 원장·적립 진입점(#389) 위에 주간 테마 프록시 연결이 남은 구현 예정. 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). learning #385·core #387 구현. 포인트 보충(마지막 항목)은 #389 적립 연결로 구현. 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -594,7 +594,10 @@ sequenceDiagram
   C->>L: GET /internal/students/{id}/weekly-theme?gradeBand&date (KST)
   L->>L: 그 주 게시 테마, 없으면 최근 게시 테마 재사용
   L-->>C: 테마·요일 상태·되돌아보기 목록
-  C-->>W: 200
+  opt days[].attemptStatus = COMPLETED (#389 보충)
+    C->>CDB: reward_point_ledger (MISSION_COMPLETED, source_key = missionId) — 있으면 건너뜀
+  end
+  C-->>W: 200 (learning 응답 그대로)
   W->>C: POST /missions/{missionId}/attempts {context: THEME_DAY}
   opt 무료 자녀
     C->>CDB: mission_daily_usage 오늘(KST) 건수 확인
@@ -618,11 +621,11 @@ sequenceDiagram
 
 - `EXTRA`는 무료면 core가 403 `PREMIUM_REQUIRED`, 프리미엄이면 `payment_premium_usage(EXTRA_MISSION)` 기록. `THEME_REVIEW`는 한도 집계 없이 learning이 토·일·마무리한 문제인지 검사
 - 진행 중 시도 반환(`200`)은 요일 검사 없이 이어하기(자정 후 포함). 재사용 테마의 이미 푼 문제도 그 주 당일이면 `THEME_DAY` 신규 시도
-- 주간 테마 조회 때 core는 응답의 당일 완료 시도와 원장을 대조해 누락된 `MISSION_COMPLETED` 적립을 보충
+- 주간 테마 조회 때 core는 응답에서 이번 주 학습 완료한 요일 문제(`attemptStatus = COMPLETED`)마다 `MISSION_COMPLETED`를 다시 부르고, 원장 사건 키 UK로 이미 있는 것은 건너뛰어 누락분만 보충한다(#389). 추가 문제(EXTRA)는 응답에 없어 보충 대상이 아니다
 
-### 3.5 학습 완료 → 포인트 적립·자동 공유 (P20·P21, 구현 예정)
+### 3.5 학습 완료 → 포인트 적립·자동 공유 (P20·P21, core #388·#389·learning #386 구현)
 
-구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 공유 요청(core #388)과 learning 공유 저장(#386)은 구현, 포인트 적립(#389)은 구현 예정. 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 공유 요청(core #388), learning 공유 저장(#386), 포인트 적립 연결(#389) 구현. 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -634,7 +637,9 @@ sequenceDiagram
 
   W->>C: POST /attempts/{id}/reflection
   C->>L: 돌아보기 저장 (3.3과 같음)
-  L-->>C: 200 학습 완료 {missionId, context}
+  L-->>C: 200 {attemptId, status: COMPLETED, reflection} (같은 시도 재요청은 409 ATTEMPT_CLOSED)
+  C->>L: GET /internal/attempts/{id} (상태·미션 확인)
+  L-->>C: {status: COMPLETED, mission.id}
   rect rgba(128,128,128,0.12)
     C->>CDB: reward_point_ledger (MISSION_COMPLETED, source_key = missionId) — UK면 건너뜀
     C->>CDB: reward_point_balance += 10
@@ -647,14 +652,15 @@ sequenceDiagram
       C->>CDB: reward_point_ledger (COMMUNITY_POSTED, source_key = postId) + 잔액
     end
   end
-  C-->>W: 200 학습 완료 + 적립 포인트
+  C-->>W: learning 응답 그대로 (200 학습 완료 또는 409 ATTEMPT_CLOSED)
 ```
 
-- 공유·적립 저장 실패는 학습 완료 응답을 바꾸지 않는다. 원장은 사건 키 UK로 멱등이라 같은 사건 재요청·주간 테마 조회(3.4) 때 보충
+- 공유·적립 저장 실패는 학습 완료 응답을 바꾸지 않는다(적립은 `RewardService.earn` 자체 트랜잭션, 실패는 로그만). 원장은 사건 키 UK로 멱등이라 같은 돌아보기 재요청(`409 ATTEMPT_CLOSED`)·주간 테마 조회(3.4) 때 보충
+- 응답에 적립 결과를 넣지 않는다. 웹은 `GET /students/me/points`로 잔액을 본다
 
-### 3.6 되돌아보기 열람·완주 보너스 (P21·P23, learning #385, 적립 연결 구현 예정)
+### 3.6 되돌아보기 열람·완주 보너스 (P21·P23, learning #385·core #389 구현)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). learning 열람 기록·완주 판정은 #385 구현. core 원장·적립 진입점은 #389 구현, 이 응답 뒤 적립 연결은 구현 예정. 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). learning 열람 기록·완주 판정은 #385, core 열람 응답 뒤 적립 연결은 #389 구현. 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -669,19 +675,19 @@ sequenceDiagram
   L->>L: 토·일 확인(아니면 409 THEME_REVIEW_NOT_ALLOWED), theme_review_view 저장 (주 1회 멱등)
   L-->>C: {firstViewThisWeek, completed}
   rect rgba(128,128,128,0.12)
-    opt firstViewThisWeek
-      C->>CDB: reward_point_ledger (REVIEW_VIEWED, source_key = weekStart) + 잔액
-    end
+    C->>CDB: reward_point_ledger (REVIEW_VIEWED, source_key = weekStart) + 잔액 — 이미 있으면 건너뜀(재요청 보충)
     opt completed (월~금 5문제 각 당일 학습 완료)
       C->>CDB: reward_point_ledger (THEME_COMPLETED, source_key = weekStart) + 잔액
     end
   end
-  C-->>W: 200 {earned}
+  C-->>W: 200 {firstViewThisWeek, completed} (learning 응답 그대로)
 ```
+
+- `weekStart`는 core가 learning에 넘긴 KST 날짜의 월요일. `firstViewThisWeek`와 무관하게 적립을 부르고 사건 키로 1회만 남겨, 앞선 적립 저장이 실패했으면 열람 재요청 때 보충
 
 ### 3.7 커뮤니티 열람·반응·신고 (P20, core #388·learning #386 구현)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 반응 포인트 적립(#389)만 구현 예정. 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 반응 포인트 적립·작성자 착용 아이템 표시는 #389 구현. 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -699,13 +705,13 @@ sequenceDiagram
     C-->>W: 403
   else 마무리함
     L-->>C: VISIBLE 공유물 무작위 목록 (studentId 포함, 반응 수 없음)
-    C->>CDB: 작성자 별명·꾸미기 조회
-    C-->>W: 200 (studentId 제거, author = 별명·look)
+    C->>CDB: 작성자 별명·꾸미기·착용 아이템 조회
+    C-->>W: 200 (studentId 제거, author = 별명·look{theme, companion, equipped})
   end
   W->>C: PUT /community-posts/{postId}/reactions/NEW_IDEA
   C->>L: PUT /internal/community/posts/{postId}/reactions/NEW_IDEA?studentId
   L-->>C: {postId, reaction, reactionId, created: true}
-  opt 생성됨이고 오늘 반응 적립 상한 미만
+  opt 반응 남기기 성공, 같은 키 없음, 오늘 반응 적립 상한 미만
     C->>CDB: reward_point_ledger (REACTION_GIVEN, source_key = postId:reaction, reactionId와 1:1) + 잔액
   end
   C-->>W: 204

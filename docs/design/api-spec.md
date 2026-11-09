@@ -525,14 +525,14 @@ core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml
 |---|---|---|---|---|---|
 | GET | `/students/me/community-settings` | 학생 | `{enabled, consentGranted, updatedAt}`. `consentGranted`는 현재 연결 보호자의 현재 문서 `COMMUNITY` 동의 | RET-01 | 구현(#388) |
 | PUT | `/students/me/community-settings` | 학생 | `{enabled}`. 켜기는 보호자 선택 동의(`COMMUNITY`) 필요, 없으면 409 `COMMUNITY_CONSENT_REQUIRED`. 끄면 기존 공유물 즉시 비공개. 같은 값이어도 learning 공개 상태를 다시 맞춤 | RET-01 | 구현(#388) |
-| GET | `/missions/{missionId}/community-posts?seed&page&size` | 학생 | 같은 미션 공유물 무작위 목록 `{items:[{postId, author:{nickname, look}, answer, myReactions[], createdAt}]}`. 반응 수·학생 ID 미포함. 같은 `seed`면 같은 순서. 이 미션을 마무리하지 않았으면 403 `COMMUNITY_LOCKED`. `look`은 `{theme, companion}`(저장 전 `lake`·`mungchi`) | RET-02 | 구현(#388) |
+| GET | `/missions/{missionId}/community-posts?seed&page&size` | 학생 | 같은 미션 공유물 무작위 목록 `{items:[{postId, author:{nickname, look}, answer, myReactions[], createdAt}]}`. 반응 수·학생 ID 미포함. 같은 `seed`면 같은 순서. 이 미션을 마무리하지 않았으면 403 `COMMUNITY_LOCKED`. `look`은 `{theme, companion, equipped:{HAT, OUTFIT, ACCESSORY, BACKGROUND}}`(저장 전 `lake`·`mungchi`, 착용 없는 슬롯 null, #389) | RET-02 | 구현(#388·#389) |
 | GET | `/students/me/community-posts` | 학생 | 내 공유물 `{items:[{postId, missionId, missionTitle, answer, status, reactions:{4종: 수}, createdAt}]}` | RET-02, RET-03 | 구현(#388) |
 | PUT | `/community-posts/{postId}/reactions/{reaction}` | 학생 | 반응 남기기(멱등). `reaction`: `NEW_IDEA`·`CLEAR_REASON`·`DIFFERENT_VIEW`·`WANT_MORE`. 본인 글 409 `COMMUNITY_OWN_POST`, 열람 권한 없으면 403 `COMMUNITY_LOCKED`, 신고 숨김·없는 글 404 `COMMUNITY_POST_NOT_FOUND`, 4종 외 400. 성공 204 | RET-03 | 구현(#388) |
 | DELETE | `/community-posts/{postId}/reactions/{reaction}` | 학생 | 반응 취소(멱등, 적립 포인트 회수 없음). 성공 204 | RET-03 | 구현(#388) |
 | GET | `/children/{childId}/community-posts` | 학부모 | 연결·동의가 유효한 자녀의 공유물·상태·받은 반응 수(내 공유물과 같은 모양). 다른 학생 공유물 조회 경로 없음 | RET-02 | 구현(#388) |
 
 - 공유물 생성 API는 없다. 커뮤니티 공개가 켜진 학생의 돌아보기 저장(`POST /attempts/{id}/reflection`, 학습 완료) 성공 후 core가 learning에 공유를 요청한다. 학생·미션당 1개로 그 미션을 처음 마무리한 시도의 마지막 답변만 공유하고(다시 풀기는 공유하지 않음) 메모·판정·되묻기는 넣지 않는다. `answer`는 learning `{inputType, text(입력 틀 칸 이름을 붙인 원문), content(입력 방식별 제출 내용)}`를 그대로 전달한다(#386)
-- 작성자 표시: learning은 학생 ID를 돌려주고 core가 별명·꾸미기(`look`: 테마·캐릭터, 착용 아이템은 #389)로 바꾼 뒤 학생 ID를 지워 응답한다. 반응 수는 learning이 주더라도 목록에서 뺀다
+- 작성자 표시: learning은 학생 ID를 돌려주고 core가 별명·꾸미기(`look`: 테마·캐릭터·착용 아이템 네 슬롯, #389)로 바꾼 뒤 학생 ID를 지워 응답한다. 반응 수는 learning이 주더라도 목록에서 뺀다
 - core 재확인(#388): learning 공개 전환·검토 호출이 실패하거나 늦어도, core는 지금 공개할 수 없는 작성자(설정 끔·현재 보호자 동의 없음·비활성)와 접수·처리 중이거나 계속 숨김으로 처리된 신고가 걸린 공유물을 목록에서 빼고 반응을 404로 막는다. 내 공유물·자녀 공유물 상태도 core가 아는 비공개(`HIDDEN_SETTING`·`HIDDEN_REPORT`)로 덮어 보여 준다
 - 신고: 기존 `POST /error-reports`에 `targetType: COMMUNITY_POST`, `targetId: postId` 추가(유형 5종 그대로). 접수 즉시 공유물 `HIDDEN_REPORT`, 관리자는 기존 `/admin/error-reports`에서 `RESOLVED` + `reviewResult: VISIBLE`(다시 공개)·`REMOVED`(계속 숨김, 생략 시 기본)로 처리. 같은 공유물의 신고가 여럿이면 계속 숨김이 하나라도 있으면 `REMOVED`, 처리 중이 있으면 `HIDDEN_REPORT`. 신고 행은 신고한 학생의 것(`student_id` = 신고 학생, 작성자 ID는 learning에만), 관리자 상세 `linkedPost`(원문, 열람마다 `SUPPORT_ORIGINAL_VIEW` 감사)
 - 보호자 동의: 기존 `/me/consents`에 문서 종류 `COMMUNITY`(선택, 자녀 단위 `childId`) 추가. 자녀 동의 요청은 `GUARDIAN`·`COMMUNITY` 중 보낼 문서만 담을 수 있고, `COMMUNITY`만 보낼 때는 그 자녀의 현재 법정대리인 동의가 있어야 한다(없으면 400). 거부·철회 시 core가 설정을 끄고 공유물을 비공개로 바꾼다(P09 선택 동의). 이관 전 보호자의 옛 동의 철회는 지금 보호자의 설정을 바꾸지 않는다
@@ -540,7 +540,7 @@ core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml
 
 ### 2.10 포인트·꾸미기 (FN-RET-05·06, P21·P22)
 
-2026-11-06 결정. #389로 조회·해금·착용·관리자 아이템을 구현했다(OpenAPI `RewardPoints`·`LookCatalog`·`LookUnlockResult`·`StudentLook.equipped`). 적립 사건 연결(학습 완료·공유·반응·되돌아보기·완주)은 #387·#388 뒤 후속이다. 꾸미기 설정 확장은 3.12. 저장은 [ERD 3.5.1](erd.md#351-포인트꾸미기-p21p22-389).
+2026-11-06 결정. #389로 조회·해금·착용·관리자 아이템을 구현했다(OpenAPI `RewardPoints`·`LookCatalog`·`LookUnlockResult`·`StudentLook.equipped`). 적립 사건 연결(학습 완료·공유·반응·되돌아보기·완주)도 #387·#388 뒤 구현했다(공개 응답 모양 변화 없음). 꾸미기 설정 확장은 3.12. 저장은 [ERD 3.5.1](erd.md#351-포인트꾸미기-p21p22-389).
 
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
@@ -551,7 +551,7 @@ core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml
 | PUT | `/students/me/preferences` | 학생 | 3.12 확장: `{theme, companion, equipped?:{HAT, OUTFIT, ACCESSORY, BACKGROUND}}`(슬롯별 아이템 `itemKey` 또는 null, 생략하면 착용 유지). 잠긴 항목 409 `LOOK_LOCKED`, 모르는 슬롯·코드·다른 슬롯 아이템 422 | RET-06 | 핵심(#389) |
 
 - `eventType`: `MISSION_COMPLETED`·`REVIEW_VIEWED`·`COMMUNITY_POSTED`·`REACTION_GIVEN`·`THEME_COMPLETED`(적립), `UNLOCK`(사용, 음수)
-- 적립은 별도 API가 없다. core `RewardService.earn(studentId, event, sourceKey)` 한 곳에서 처리하고(#389 구현, 자체 트랜잭션·예외 없이 결과 반환), 아래 사건 연결은 #387·#388 뒤 후속이다. core가 learning 응답을 프록시하는 경로에서 처리한다: 돌아보기 저장 성공(학습 완료·미션당 최초 1회), 공유 생성 성공, 반응 생성 성공(하루 상한), 되돌아보기 열람(주 1회), 열람 시 완주 판정. 값·상한은 `reward_rule` 데이터(P21 초기값). 원장 사건 키 `source_key`로 멱등, 학습 응답 후 적립 저장이 실패하면 응답은 성공으로 두고 같은 사건 재요청·`/students/me/weekly-theme` 조회 때 보충
+- 적립은 별도 API가 없다. core `RewardService.earn(studentId, event, sourceKey)` 한 곳에서 처리하고(#389 구현, 자체 트랜잭션·예외 없이 결과 반환), core가 learning 응답을 프록시하는 경로에서 부른다(#389 구현): 돌아보기 저장 성공(학습 완료·미션당 최초 1회, 미션은 core가 learning 시도 상세로 확인), 공유 생성 성공(이미 있는 공유물 200 포함), 반응 남기기 성공(하루 상한, 취소는 적립 없음), 되돌아보기 열람(주 1회), 열람 응답 `completed`면 완주. 사건 키는 학습 완료 `missionId`, 공유 `postId`, 반응 `postId:reaction`, 되돌아보기·완주 그 주 월요일(KST). 값·상한은 `reward_rule` 데이터(P21 초기값). 원장 사건 키 `source_key`로 멱등, 학습 응답 후 적립 저장이 실패하면 응답은 그대로 두고 같은 사건 재요청(돌아보기 재요청 `409 ATTEMPT_CLOSED` 포함, 같은 반응·열람 재요청)·`/students/me/weekly-theme` 조회(이번 주 학습 완료한 요일 문제) 때 보충. 적립 결과는 응답에 넣지 않고 `/students/me/points`로 조회
 - `itemKey`: 테마·캐릭터는 `THEME:forest`·`COMPANION:tori` 형식(해금값은 코드 상수), 아이템은 관리자가 등록한 `look_item.code`. `THEME:lake`·`COMPANION:mungchi`는 항상 해금, 나머지 테마 100·캐릭터 150 포인트(코드 상수). 잠금 적용 전 저장된 `look_theme`·`look_companion`은 마이그레이션에서 해금 행으로 옮긴다
 - 다른 학생 잔액·순위 API는 없다(1.3)
 
