@@ -471,6 +471,75 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         val mismatch=draftCall("POST","/weekly-themes/$theme/publish",access,"{}")
         assertEquals(503,mismatch.status);assertEquals("LEARNING_INVALID_RESPONSE",json.readTree(mismatch.contentAsString)["code"].asText())
     }
+    @Test fun `theme draft proxy forwards every route with CONTENT and verified admin headers only`() {
+        val (admin,access)=token("CONTENT");val draft=UUID.randomUUID();val theme=UUID.randomUUID()
+        val routes=listOf(
+            Triple("POST","/theme-drafts","/internal/admin/theme-drafts"),
+            Triple("GET","/theme-drafts?status=READY&source=AUTO","/internal/admin/theme-drafts"),
+            Triple("GET","/theme-drafts/$draft","/internal/admin/theme-drafts/$draft"),
+            Triple("POST","/theme-drafts/$draft/adopt","/internal/admin/theme-drafts/$draft/adopt"),
+            Triple("POST","/theme-drafts/$draft/discard","/internal/admin/theme-drafts/$draft/discard"),
+            Triple("POST","/theme-drafts/$draft/regenerate","/internal/admin/theme-drafts/$draft/regenerate"))
+        val payload="""{"gradeBand":"G3_4","weekStart":"2026-11-16","topic":"합성 주제"}"""
+        for((method,path,internal) in routes) {
+            missionStatus=when { path.endsWith("/adopt") -> 201; method=="POST" && (path=="/theme-drafts" || path.endsWith("/regenerate")) -> 202; else -> 200 }
+            missionBody=if(path.endsWith("/adopt")) """{"themeId":"$theme","status":"DRAFT"}""" else """{"draftId":"$draft","status":"GENERATING","items":[]}"""
+            val response=draftCall(method,path,access,if(method=="GET") null else payload)
+            assertEquals(missionStatus,response.status,path)
+            val received=requests.last();assertEquals(method,received.method);assertEquals(internal,received.path)
+            assertEquals(admin.toString(),received.user);assertEquals("ADMIN",received.role);assertNull(received.scope)
+            if(method=="POST") { assertEquals(payload,received.body);assertNotNull(response.getHeader("X-Admin-Operation-Id")) }
+        }
+        val (_,ops)=token("SERVICE_OPS");requests.clear()
+        for((method,path,_) in routes) assertEquals(403,draftCall(method,path,ops,if(method=="GET") null else "{}").status,path)
+        assertTrue(requests.isEmpty())
+        for(path in listOf("/theme-drafts?status=PRIVATE","/theme-drafts?source=MANUAL","/theme-drafts?size=101","/theme-drafts?page=-1"))
+            assertEquals(400,draftCall("GET",path,access).status,path)
+        assertEquals(400,draftCall("POST","/theme-drafts",access,"[]").status)
+        assertTrue(requests.isEmpty())
+    }
+    @Test fun `theme draft request regenerate adopt discard audit the draft and adopted theme`() {
+        val (admin,access)=token("CONTENT");val draft=UUID.randomUUID();val renewed=UUID.randomUUID();val theme=UUID.randomUUID()
+        missionStatus=202;missionBody="""{"draftId":"$draft","status":"GENERATING","request":{"note":"private secret"}}"""
+        val requested=draftCall("POST","/theme-drafts",access,"""{"gradeBand":"G5_6"}""")
+        assertEquals(202,requested.status);assertTrue(requested.contentAsString.contains("GENERATING"))
+        // 다시 생성은 learning이 새 초안을 만들어도 응답 draftId를 대상으로 남긴다
+        missionBody="""{"draftId":"$renewed","status":"GENERATING"}"""
+        assertEquals(202,draftCall("POST","/theme-drafts/$draft/regenerate",access,"{}").status)
+        missionStatus=201;missionBody="""{"themeId":"$theme","status":"DRAFT","missionIds":["${UUID.randomUUID()}"]}"""
+        assertEquals(201,draftCall("POST","/theme-drafts/$draft/adopt",access,"{}").status)
+        missionStatus=409;missionBody="""{"status":409,"code":"CONFLICT","detail":"private secret"}"""
+        val conflict=draftCall("POST","/theme-drafts/$draft/discard",access,"{}")
+        assertEquals(409,conflict.status);assertEquals("CONFLICT",json.readTree(conflict.contentAsString)["code"].asText());assertFalse(conflict.contentAsString.contains("secret"))
+        val rows=jdbc.queryForList("SELECT action,target_type,target_id,result,detail::text AS detail FROM audit_log WHERE actor_user_id=? ORDER BY created_at,action",admin)
+        fun row(action: String)=rows.single { it["action"]==action }
+        assertEquals(listOf(null,"THEME_DRAFT"),listOf(row("THEME_DRAFT_REQUEST_REQUESTED")["target_id"],row("THEME_DRAFT_REQUEST_REQUESTED")["target_type"]))
+        assertEquals(listOf(draft,"THEME_DRAFT","SUCCESS"),row("THEME_DRAFT_REQUEST_SUCCEEDED").let { listOf(it["target_id"],it["target_type"],it["result"]) })
+        assertEquals(listOf(renewed,"THEME_DRAFT","SUCCESS"),row("THEME_DRAFT_REGENERATE_SUCCEEDED").let { listOf(it["target_id"],it["target_type"],it["result"]) })
+        assertEquals(listOf(draft,"THEME_DRAFT"),listOf(row("THEME_DRAFT_ADOPT_REQUESTED")["target_id"],row("THEME_DRAFT_ADOPT_REQUESTED")["target_type"]))
+        val adopted=row("THEME_DRAFT_ADOPT_SUCCEEDED")
+        assertEquals(listOf(theme,"WEEKLY_THEME","SUCCESS"),listOf(adopted["target_id"],adopted["target_type"],adopted["result"]))
+        val detail=json.readTree(adopted["detail"].toString())
+        assertEquals(draft.toString(),detail["draftId"].asText());assertEquals(201,detail["httpStatus"].asInt())
+        assertEquals(listOf(draft,"THEME_DRAFT","FAILURE"),row("THEME_DRAFT_DISCARD_REJECTED").let { listOf(it["target_id"],it["target_type"],it["result"]) })
+        assertEquals(8,rows.size);assertFalse(rows.toString().contains("secret"))
+    }
+    @Test fun `theme draft results that do not name the draft or theme stay unknown and are not retried`() {
+        val (admin,access)=token("CONTENT");val draft=UUID.randomUUID()
+        for((path,body) in listOf("/theme-drafts/$draft/discard" to """{"draftId":"${UUID.randomUUID()}","status":"DISCARDED"}""",
+            "/theme-drafts" to """{"status":"GENERATING"}""", "/theme-drafts/$draft/regenerate" to """{"draftId":"$draft"}""",
+            "/theme-drafts/$draft/adopt" to """{"draftId":"$draft","status":"ADOPTED"}""")) {
+            requests.clear();missionStatus=200;missionBody=body
+            val response=draftCall("POST",path,access,"{}")
+            assertEquals(503,response.status,path);assertEquals("LEARNING_INVALID_RESPONSE",json.readTree(response.contentAsString)["code"].asText())
+            assertEquals(1,requests.size)
+        }
+        assertEquals(4,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action LIKE 'THEME_DRAFT_%_UNKNOWN'",Int::class.java,admin))
+        missionStatus=404;missionBody="""{"status":404,"code":"NOT_FOUND","detail":"student secret"}"""
+        val missing=draftCall("GET","/theme-drafts/$draft",access)
+        assertEquals(404,missing.status);assertEquals("테마 초안을 찾을 수 없습니다.",json.readTree(missing.contentAsString)["title"].asText())
+        assertFalse(missing.contentAsString.contains("secret"))
+    }
     companion object {
         data class Seen(val method: String,val path: String,val body: String,val role: String?,val scope: String?,val token: String?,val user: String?)
         val requests=CopyOnWriteArrayList<Seen>()

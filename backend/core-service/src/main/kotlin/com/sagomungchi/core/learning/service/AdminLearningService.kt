@@ -95,6 +95,33 @@ class AdminLearningService(private val client: LearningClient,private val json: 
         }
         return audited(method,path,query,body,actor,auditAction,MissionAuditService.WEEKLY_THEME,id,THEME_NOT_FOUND) { node -> themeResult(node,id) }
     }
+    /**
+     * 테마 초안 (#439, api-spec 2.8·4.1). learning `/internal/admin/theme-drafts…`(#438)로 미션 초안과 같은 방식으로 넘김.
+     * 요청·버리기·다시 생성은 응답 초안 ID(target_type THEME_DRAFT), 채택은 만든 테마 ID(WEEKLY_THEME, detail에 draftId)로 결과 감사.
+     * 다시 생성은 learning이 같은 초안을 되살리든 새 초안을 만들든 응답 draftId를 대상으로 남긴다.
+     */
+    fun themeDrafts(method: String,id: UUID?=null,action: String?=null,query: String?=null,body: ByteArray?=null): HttpExchangeResult {
+        val path = "/admin/theme-drafts" + (id?.let { "/$it" } ?: "") + (action?.let { "/$it" } ?: "")
+        val actor=verifiedActor(body)
+        if(method=="GET") return sanitize(exchange(method,path,query,body),THEME_DRAFT_NOT_FOUND)
+        val draft=MissionAuditService.THEME_DRAFT
+        return when {
+            method=="POST" && id==null && action==null ->
+                audited(method,path,query,body,actor,"THEME_DRAFT_REQUEST",draft,null,THEME_DRAFT_NOT_FOUND) { node -> themeDraftResult(node,null) }
+            method=="POST" && id!=null && action=="discard" ->
+                audited(method,path,query,body,actor,"THEME_DRAFT_DISCARD",draft,id,THEME_DRAFT_NOT_FOUND) { node -> themeDraftResult(node,id) }
+            method=="POST" && id!=null && action=="regenerate" ->
+                audited(method,path,query,body,actor,"THEME_DRAFT_REGENERATE",draft,id,THEME_DRAFT_NOT_FOUND) { node -> themeDraftResult(node,null) }
+            method=="POST" && id!=null && action=="adopt" ->
+                audited(method,path,query,body,actor,"THEME_DRAFT_ADOPT",draft,id,THEME_DRAFT_NOT_FOUND) { node -> themeResult(node,null).copy(draft=id) }
+            else -> throw BusinessException(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED","지원하지 않는 테마 초안 작업입니다.")
+        }
+    }
+    private fun themeDraftResult(node: JsonNode,id: UUID?): AuditTarget {
+        val draft=runCatching { UUID.fromString(node.path("draftId").asText()) }.getOrNull()
+        if(draft==null || (id!=null && id!=draft) || !node.path("status").isTextual) unavailable("LEARNING_INVALID_RESPONSE")
+        return AuditTarget(MissionAuditService.THEME_DRAFT,draft)
+    }
     private fun themeResult(node: JsonNode,id: UUID?): AuditTarget {
         val theme=runCatching { UUID.fromString(node.path("themeId").asText()) }.getOrNull()
         if(theme==null || (id!=null && id!=theme) || !node.path("status").isTextual) unavailable("LEARNING_INVALID_RESPONSE")
@@ -185,5 +212,6 @@ class AdminLearningService(private val client: LearningClient,private val json: 
         const val DRAFT_NOT_FOUND="미션 초안을 찾을 수 없습니다."
         const val STANDARD_NOT_FOUND="성취기준을 찾을 수 없습니다."
         const val THEME_NOT_FOUND="주간 테마를 찾을 수 없습니다."
+        const val THEME_DRAFT_NOT_FOUND="테마 초안을 찾을 수 없습니다."
     }
 }
