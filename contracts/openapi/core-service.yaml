@@ -12,6 +12,7 @@ tags:
 - name: Account
 - name: Feedback
 - name: Learning
+- name: WeeklyTheme
 - name: Consent
 - name: Children
 - name: Admin
@@ -1298,6 +1299,380 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
       summary: adminAchievementStandardsList (CONTENT)
+  /admin/weekly-themes:
+    get:
+      operationId: adminWeeklyThemesList
+      tags:
+      - Admin
+      description: 'CONTENT 권한 (#387). learning GET /internal/admin/weekly-themes로 넘김. 필터 gradeBand·weekStart(KST 월요일)·status, 필드는 api-spec 2.8·4.1.'
+      parameters:
+      - name: gradeBand
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [G3_4, G5_6]
+      - name: weekStart
+        in: query
+        required: false
+        description: KST 월요일 날짜
+        schema:
+          type: string
+          format: date
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [DRAFT, REVIEW_REQUIRED, PUBLISHED, UNPUBLISHED]
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          default: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "주간 테마를 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE, 감사 저장 실패는 MISSION_AUDIT_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      summary: adminWeeklyThemesList (CONTENT)
+    post:
+      operationId: adminWeeklyThemesCreate
+      tags:
+      - Admin
+      description: 'CONTENT 권한 (#387). learning POST /internal/admin/weekly-themes로 넘김. 요청 감사 후 단일 호출, 응답 themeId(target_type WEEKLY_THEME)로 결과 감사(audit_log WEEKLY_THEME_*). learning 오류 코드(400 VALIDATION_FAILED·404 NOT_FOUND·409 CONFLICT·422 WEEKLY_THEME_PUBLISH_INCOMPLETE)는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
+      parameters: []
+      responses:
+        '201':
+          description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "주간 테마를 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE, 감사 저장 실패는 MISSION_AUDIT_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+      summary: adminWeeklyThemesCreate (CONTENT)
+  /admin/weekly-themes/{themeId}:
+    get:
+      operationId: adminWeeklyThemesDetail
+      tags:
+      - Admin
+      description: 'CONTENT 권한 (#387). learning GET /internal/admin/weekly-themes/{themeId}로 넘김.'
+      parameters:
+      - name: themeId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "주간 테마를 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE, 감사 저장 실패는 MISSION_AUDIT_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      summary: adminWeeklyThemesDetail (CONTENT)
+    put:
+      operationId: adminWeeklyThemesUpdate
+      tags:
+      - Admin
+      description: 'CONTENT 권한 (#387). learning PUT /internal/admin/weekly-themes/{themeId}로 넘김. 게시 중 수정은 재검토(learning). 요청 감사 후 단일 호출, 응답 themeId(target_type WEEKLY_THEME)로 결과 감사(audit_log WEEKLY_THEME_*). learning 오류 코드(400 VALIDATION_FAILED·404 NOT_FOUND·409 CONFLICT·422 WEEKLY_THEME_PUBLISH_INCOMPLETE)는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
+      parameters:
+      - name: themeId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "주간 테마를 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE, 감사 저장 실패는 MISSION_AUDIT_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+      summary: adminWeeklyThemesUpdate (CONTENT)
+  /admin/weekly-themes/{themeId}/review-request:
+    post:
+      operationId: adminWeeklyThemesReviewRequest
+      tags:
+      - Admin
+      description: 'CONTENT 권한 (#387). learning POST /internal/admin/weekly-themes/{themeId}/review-request로 넘김. 요청 감사 후 단일 호출, 응답 themeId(target_type WEEKLY_THEME)로 결과 감사(audit_log WEEKLY_THEME_*). learning 오류 코드(400 VALIDATION_FAILED·404 NOT_FOUND·409 CONFLICT·422 WEEKLY_THEME_PUBLISH_INCOMPLETE)는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
+      parameters:
+      - name: themeId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "주간 테마를 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE, 감사 저장 실패는 MISSION_AUDIT_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+      summary: adminWeeklyThemesReviewRequest (CONTENT)
+  /admin/weekly-themes/{themeId}/publish:
+    post:
+      operationId: adminWeeklyThemesPublish
+      tags:
+      - Admin
+      description: 'CONTENT 권한 (#387). learning POST /internal/admin/weekly-themes/{themeId}/publish로 넘김. 요청 감사 후 단일 호출, 응답 themeId(target_type WEEKLY_THEME)로 결과 감사(audit_log WEEKLY_THEME_*). learning 오류 코드(400 VALIDATION_FAILED·404 NOT_FOUND·409 CONFLICT·422 WEEKLY_THEME_PUBLISH_INCOMPLETE)는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
+      parameters:
+      - name: themeId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "주간 테마를 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: WEEKLY_THEME_PUBLISH_INCOMPLETE — 게시 검사 실패(월~금 게시 미션·다섯 생각 유형 1개씩·학년군·같은 학년군·주 게시 1개)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE, 감사 저장 실패는 MISSION_AUDIT_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+      summary: adminWeeklyThemesPublish (CONTENT)
+  /admin/weekly-themes/{themeId}/unpublish:
+    post:
+      operationId: adminWeeklyThemesUnpublish
+      tags:
+      - Admin
+      description: 'CONTENT 권한 (#387). learning POST /internal/admin/weekly-themes/{themeId}/unpublish로 넘김. 요청 감사 후 단일 호출, 응답 themeId(target_type WEEKLY_THEME)로 결과 감사(audit_log WEEKLY_THEME_*). learning 오류 코드(400 VALIDATION_FAILED·404 NOT_FOUND·409 CONFLICT·422 WEEKLY_THEME_PUBLISH_INCOMPLETE)는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
+      parameters:
+      - name: themeId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "주간 테마를 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE, 감사 저장 실패는 MISSION_AUDIT_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+      summary: adminWeeklyThemesUnpublish (CONTENT)
   /admin/mission-drafts:
     post:
       operationId: adminMissionDraftsRequest
@@ -3368,17 +3743,51 @@ paths:
       tags: [Learning]
       summary: 학생 시도 시작·이어하기
       description: >-
-        STUDENT 전용. 검증된 본인 학생의 grade·demo를 core DB에서 결정해 /internal/missions/{missionId}/attempts에 쿼리로 전달하며 클라이언트 query는 사용하지 않는다.
-        learning은 신규 생성 201·기존 진행 시도 반환 200을 구분하며 core는 상태를 그대로 전달한다. 신규 시도 제공 범위 검사·기존 진행 시도 선택과 당시 버전 유지는 learning 소유다.
-        일일 한도는 core Redis 책임이며 learning은 관여하지 않는다. 후속 한도 연계는 201만 집계하고 200은 집계하지 않는다.
-        한도 도달 시에도 기존 이어하기는 허용하고 신규 생성만 차단해야 한다. 한도 검사·기존 시도 판별·신규 생성 차단의 처리 순서는 후속 구현에서 검증한다. Redis 한도 기능은 현재 프록시 구현 범위 밖이다.
+        STUDENT 전용. 검증된 본인 학생의 grade·demo를 core DB에서 결정해 /internal/missions/{missionId}/attempts에 쿼리로,
+        본문 {context}를 그대로 전달하며 클라이언트 query는 사용하지 않는다(#387, api-spec 2.2·2.11).
+        context 생략(본문 없음·{}·null)은 EXTRA(생각 유형별 미션 고르기). 요일·되돌아보기 검사는 learning(THEME_DAY_CLOSED·THEME_REVIEW_NOT_ALLOWED 409),
+        무료·프리미엄 판정과 사용 기록은 core. learning은 신규 생성 201·기존 진행 시도 반환 200을 구분하며 core는 상태를 그대로 전달한다.
+        무료 THEME_DAY·EXTRA는 합쳐 KST 하루 product.limits.dailyMissions개까지 신규 201만 core mission_daily_usage에 기록하고, 한도 도달 시 신규 생성만 429로 막는다
+        (같은 미션의 진행 중 시도 이어하기 200은 허용). THEME_REVIEW는 한도 제외. EXTRA 허용은 상품 features.extraMissions(없으면 허용)로 정하며
+        2026-11-08 결정으로 지금은 무료도 허용하고 무료 THEME_DAY와 합쳐 하루 한도에 센다. 무료 상품에서 false로 바꾸면 무료 403 PREMIUM_REQUIRED,
+        프리미엄은 신규 201을 payment_premium_usage(kind EXTRA_MISSION, source_id 시도 ID)로 기록해 환불 판정의 프리미엄 사용에 넣는다.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AttemptStartRequest'}
       responses:
         '200':
           $ref: '#/components/responses/LearningResult'
-          description: 기존 진행 시도 반환(이어하기). 후속 일일 한도 집계 대상 아님.
+          description: 기존 진행 시도 반환(이어하기). 일일 한도 집계 대상 아님.
         '201':
           $ref: '#/components/responses/LearningResult'
-          description: 신규 시도 생성. 후속 core Redis 일일 한도 집계 대상.
+          description: 신규 시도 생성. 무료 THEME_DAY·EXTRA는 일일 한도, 무료에서 꺼진 동안의 프리미엄 EXTRA는 프리미엄 사용으로 기록.
+        '400':
+          description: VALIDATION_FAILED — JSON object가 아니거나 context 외 필드·허용 밖 값
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '403':
+          description: PREMIUM_REQUIRED(features.extraMissions가 false인 상품의 EXTRA) 또는 core 인증·연결 오류
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '409':
+          description: learning THEME_DAY_CLOSED·THEME_REVIEW_NOT_ALLOWED·MISSION_NOT_AVAILABLE 그대로, 또는 REFUND_IN_PROGRESS(환불 처리 중 프리미엄 EXTRA)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '429':
+          description: USAGE_LIMIT_REACHED — 무료 THEME_DAY·EXTRA 오늘(KST) 신규 시작 한도 도달. detail에 가능 범위·초기화 시점(다음 날 0시 KST)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '503':
+          description: PAYMENT_ENTITLEMENT_CONFIRMING·PAYMENT_PRODUCT_UNAVAILABLE(limits.dailyMissions 누락·features.extraMissions 형식 오류 포함)·PAYMENT_FREE_PRODUCT_UNAVAILABLE 또는 learning 전송 장애
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
         default: {$ref: '#/components/responses/LearningProblem'}
   /attempts/{attemptId}:
     parameters:
@@ -5283,6 +5692,38 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /students/me/weekly-theme:
+    get:
+      operationId: getWeeklyTheme
+      tags: [WeeklyTheme]
+      summary: 이번 주 학년군 테마 (#387)
+      description: >-
+        STUDENT 전용(FN-RET-07·08, api-spec 2.11). core가 본인 학생 학년으로 학년군(초3~4 G3_4, 초5~6 G5_6)과 KST 오늘 날짜를 정해
+        learning GET /internal/students/{studentId}/weekly-theme?gradeBand&date로 넘기고 결과를 그대로 전달한다. 클라이언트 query는 쓰지 않는다. Cache-Control no-store.
+      responses:
+        '200':
+          description: 테마·요일 상태·되돌아보기 목록(learning 소유 모양)
+          headers:
+            Cache-Control: {schema: {type: string}, description: no-store}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WeeklyThemeDocument'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/weekly-theme/review-views:
+    post:
+      operationId: recordWeeklyThemeReviewView
+      tags: [WeeklyTheme]
+      summary: 토·일 되돌아보기 열람 기록 (#387)
+      description: >-
+        STUDENT 전용(FN-RET-08). learning POST /internal/students/{studentId}/weekly-theme/review-views?gradeBand&date로 넘김(멱등·주 1회는 learning).
+        응답 {firstViewThisWeek, completed}는 포인트·완주 판정 근거(#389). Cache-Control no-store.
+      responses:
+        '200':
+          description: 열람 기록 결과(learning 소유 모양)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WeeklyThemeDocument'}
+        default: {$ref: '#/components/responses/LearningProblem'}
   /students/me/attempts:
     get:
       operationId: dashboardStudentAttempts
@@ -8158,6 +8599,22 @@ components:
                 minimum: 0
               state:
                 type: string
+    AdminWeeklyThemeDocument:
+      type: object
+      additionalProperties: true
+      description: 'learning 소유 주간 테마 JSON object (#387, #385). 작성·수정 {gradeBand, weekStart, title, intro, days:[{day, missionId}]}, 응답에 themeId·status. core는 성공 응답을 그대로 전달한다.'
+    WeeklyThemeDocument:
+      type: object
+      additionalProperties: true
+      description: 'learning 소유 학생 주간 테마 JSON object (#387, #385, api-spec 2.11). {themeId, weekStart, title, intro, reused, days[], review, completed} 또는 열람 결과 {firstViewThisWeek, completed}.'
+    AttemptStartRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        context:
+          type: [string, 'null']
+          enum: [THEME_DAY, THEME_REVIEW, EXTRA, null]
+          description: 생략·null이면 EXTRA (#387, api-spec 2.11)
     AdminMissionDraftDocument:
       type: object
       additionalProperties: true

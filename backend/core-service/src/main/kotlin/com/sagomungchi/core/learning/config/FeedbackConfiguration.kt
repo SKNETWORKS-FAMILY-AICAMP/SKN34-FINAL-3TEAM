@@ -8,6 +8,7 @@ import com.sagomungchi.core.learning.client.LearningClient
 import com.sagomungchi.core.learning.client.LearningHttpProperties
 import com.sagomungchi.core.learning.service.FeedbackService
 import com.sagomungchi.core.learning.service.LearningProxyService
+import com.sagomungchi.core.payment.service.ProductEntitlementService
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -18,7 +19,7 @@ class FeedbackConfiguration {
     /** Reuse #38 without changing the general JSON client's 30-second budget or idempotency. */
     @Bean
     fun feedbackService(factory: InternalRestClientFactory, idempotency: IdempotencyService,
-                        students: StudentLearningContextService, json: ObjectMapper,
+                        students: StudentLearningContextService, json: ObjectMapper, entitlements: ProductEntitlementService,
                         @Value("\${app.feedback.timeout:80s}") timeout: Duration): FeedbackService = FeedbackService(
-        LearningProxyService(LearningClient.forFeedback(factory, LearningHttpProperties(timeout), json), idempotency, students))
+        LearningProxyService(LearningClient.forFeedback(factory, LearningHttpProperties(timeout), json), idempotency, students, entitlements, json))
 }

@@ -220,18 +220,32 @@ class FakeOpener:
     """경로별 응답. 실패할 경로는 HTTP 상태 코드로 지정한다."""
 
     def __init__(
-        self, fail=None, rotate=True, missions=None, start_status=201, answers=None
+        self,
+        fail=None,
+        rotate=True,
+        theme=None,
+        start_status=201,
+        answers=None,
+        input_type="NARRATIVE",
     ):
         self.calls = []
         self.fail = fail or {}
         self.rotate = rotate
-        self.missions = MISSIONS if missions is None else missions
+        self.theme = WEEKDAY_THEME if theme is None else theme
         self.start_status = start_status
         self.answers = answers or []
+        self.input_type = input_type
 
     def open(self, request, timeout=None):
         path = request.full_url.split("example.test", 1)[1]
-        self.calls.append((request.get_method(), path, dict(request.header_items())))
+        self.calls.append(
+            (
+                request.get_method(),
+                path,
+                dict(request.header_items()),
+                json.loads(request.data) if request.data else None,
+            )
+        )
         for key, code in self.fail.items():
             if key in path:
                 raise HTTPError(request.full_url, code, "fail", Message(), io.BytesIO())
@@ -239,14 +253,16 @@ class FakeOpener:
             return FakeResponse(
                 200, {"accessToken": "student-token", "role": "STUDENT"}
             )
-        if path.startswith("/api/v1/missions?"):
-            return FakeResponse(
-                200, {"items": self.missions, "totalElements": len(self.missions)}
-            )
+        if path == "/api/v1/students/me/weekly-theme":
+            return FakeResponse(200, self.theme)
         if path.endswith("/attempts"):
             return FakeResponse(
                 self.start_status,
-                {"attemptId": ATTEMPT, "answers": self.answers},
+                {
+                    "attemptId": ATTEMPT,
+                    "answers": self.answers,
+                    "mission": {"inputType": self.input_type},
+                },
             )
         if path.endswith(f"/attempts/{ATTEMPT}"):
             return FakeResponse(200, {"attemptId": ATTEMPT, "answers": self.answers})
@@ -281,13 +297,41 @@ ATTEMPT = "11111111-1111-1111-1111-111111111111"
 STORED_ANSWER = [{"answerId": "a-0", "inputType": "NARRATIVE"}]
 FIXTURE_MISSION = FIXTURE["missionId"]
 OTHER_MISSION = "44444444-4444-4444-4444-444444444444"
-COMPLETED_ONLY = [
-    {"id": OTHER_MISSION, "inputType": "NARRATIVE", "status": "COMPLETED"},
-]
-MISSIONS = [
-    {"id": FIXTURE_MISSION, "inputType": "NARRATIVE", "status": "NOT_STARTED"},
-    {"id": OTHER_MISSION, "inputType": "NARRATIVE", "status": "NOT_STARTED"},
-]
+TODAY_MISSION = "55555555-5555-5555-5555-555555555555"
+
+
+def theme(today=None, review_open=False, review=()):
+    """api-spec 2.11 학생 주간 테마 모양. today가 있으면 그 미션이 오늘 OPEN 요일 문제."""
+    days = [
+        {
+            "day": "MON",
+            "missionId": OTHER_MISSION,
+            "state": "CLOSED",
+            "attemptStatus": "COMPLETED",
+        },
+    ]
+    if today:
+        days.append(
+            {"day": "TUE", "missionId": today, "state": "OPEN", "attemptStatus": None}
+        )
+    return {
+        "themeId": "66666666-6666-6666-6666-666666666666",
+        "days": days,
+        "review": {
+            "open": review_open,
+            "missions": [
+                {"missionId": mission, "completed": completed, "missed": not completed}
+                for mission, completed in review
+            ],
+        },
+    }
+
+
+WEEKDAY_THEME = theme(today=TODAY_MISSION)
+WEEKEND_THEME = theme(
+    review_open=True,
+    review=[(OTHER_MISSION, True), (FIXTURE_MISSION, True), (TODAY_MISSION, False)],
+)
 
 
 class SmokeTests(unittest.TestCase):
@@ -345,48 +389,61 @@ class SmokeTests(unittest.TestCase):
         self.assertFalse(any(c[1].endswith("/auth/refresh") for c in opener.calls))
         self.assertEqual(saved["parentRefreshCookie"], "old-refresh")
 
-    def started_mission(self, opener):
-        return next(
-            c[1].split("/")[4] for c in opener.calls if c[1].endswith("/attempts")
-        )
+    def started(self, opener):
+        """(시작한 미션 ID, 시작 본문). context를 빼면 EXTRA라 항상 명시해야 한다."""
+        call = next(c for c in opener.calls if c[1].endswith("/attempts"))
+        return call[1].split("/")[4], call[3]
 
-    def test_uses_fixture_mission_when_not_started(self):
+    def test_weekday_starts_today_theme_problem_with_theme_day(self):
         opener = FakeOpener()
         result, _ = self.run_smoke(opener)
         self.assertTrue(result["ok"])
-        self.assertEqual(self.started_mission(opener), FIXTURE_MISSION)
-
-    def test_skips_fixture_mission_left_in_progress(self):
-        opener = FakeOpener(
-            missions=[
-                {
-                    "id": FIXTURE_MISSION,
-                    "inputType": "NARRATIVE",
-                    "status": "IN_PROGRESS",
-                },
-                {
-                    "id": "55555555-5555-5555-5555-555555555555",
-                    "inputType": "CHOICE",
-                    "status": "NOT_STARTED",
-                },
-                {
-                    "id": OTHER_MISSION,
-                    "inputType": "NARRATIVE",
-                    "status": "NOT_STARTED",
-                },
-            ]
+        self.assertEqual(
+            self.started(opener), (TODAY_MISSION, {"context": "THEME_DAY"})
         )
+        self.assertFalse(
+            any(c[1].startswith("/api/v1/missions?") for c in opener.calls)
+        )
+
+    def test_weekend_review_prefers_fixture_mission_among_completed(self):
+        opener = FakeOpener(theme=WEEKEND_THEME)
         result, _ = self.run_smoke(opener)
         self.assertTrue(result["ok"])
-        self.assertEqual(self.started_mission(opener), OTHER_MISSION)
-
-    def test_without_fresh_mission_reads_answer_of_resumed_attempt(self):
-        opener = FakeOpener(
-            missions=COMPLETED_ONLY, start_status=200, answers=STORED_ANSWER
+        self.assertEqual(
+            self.started(opener), (FIXTURE_MISSION, {"context": "THEME_REVIEW"})
         )
+        other = FakeOpener(theme=theme(review_open=True, review=[(OTHER_MISSION, True)]))
+        self.assertTrue(self.run_smoke(other)[0]["ok"])
+        self.assertEqual(
+            self.started(other), (OTHER_MISSION, {"context": "THEME_REVIEW"})
+        )
+
+    def test_without_open_day_or_completed_review_fails_before_starting(self):
+        for value in (
+            theme(),
+            theme(review_open=True, review=[(TODAY_MISSION, False)]),
+            theme(review_open=False, review=[(FIXTURE_MISSION, True)]),
+            {"days": None},
+        ):
+            opener = FakeOpener(theme=value)
+            result, _ = self.run_smoke(opener)
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["steps"][-1]["step"], "pick-mission")
+            self.assertFalse(any(c[1].endswith("/attempts") for c in opener.calls))
+
+    def test_free_limit_429_is_reported_without_extra_fallback(self):
+        opener = FakeOpener(fail={"/attempts": 429})
+        result, _ = self.run_smoke(opener)
+        self.assertFalse(result["ok"])
+        self.assertIn(
+            "/api/v1/missions/{id}/attempts: HTTP 429", result["steps"][-1]["error"]
+        )
+        self.assertEqual(1, sum(c[1].endswith("/attempts") for c in opener.calls))
+
+    def test_resumed_attempt_with_answer_only_reads_it(self):
+        opener = FakeOpener(start_status=200, answers=STORED_ANSWER)
         result, _ = self.run_smoke(opener)
         self.assertTrue(result["ok"])
-        self.assertEqual(self.started_mission(opener), FIXTURE_MISSION)
         self.assertIn("read-answer", [s["step"] for s in result["steps"]])
         self.assertFalse(any(c[1].endswith("/answers") for c in opener.calls))
         self.assertTrue(
@@ -394,20 +451,34 @@ class SmokeTests(unittest.TestCase):
         )
 
     def test_resumed_attempt_without_answer_still_submits(self):
-        opener = FakeOpener(missions=COMPLETED_ONLY, start_status=200)
+        opener = FakeOpener(start_status=200)
         result, _ = self.run_smoke(opener)
         self.assertTrue(result["ok"])
         self.assertIn("submit-answer", [s["step"] for s in result["steps"]])
 
     def test_read_answer_fails_when_attempt_has_no_answer_id(self):
-        opener = FakeOpener(
-            missions=COMPLETED_ONLY,
-            start_status=200,
-            answers=[{"inputType": "NARRATIVE"}],
-        )
+        opener = FakeOpener(start_status=200, answers=[{"inputType": "NARRATIVE"}])
         result, _ = self.run_smoke(opener)
         self.assertFalse(result["ok"])
         self.assertEqual(result["steps"][-1]["step"], "read-answer")
+
+    def test_answer_follows_the_started_problem_input_type(self):
+        choice = {"inputType": "CHOICE", "choiceId": "c-1"}
+        opener = FakeOpener(input_type="CHOICE")
+        result, _ = self.run_smoke(opener, {**FIXTURE, "answers": [choice]})
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            next(c[3] for c in opener.calls if c[1].endswith("/answers")), choice
+        )
+        missing = FakeOpener(input_type="CHOICE")
+        result, _ = self.run_smoke(missing)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["steps"][-1]["step"], "start-attempt")
+        self.assertFalse(any(c[1].endswith("/answers") for c in missing.calls))
+
+    def test_fixture_answers_must_name_input_types(self):
+        with self.assertRaises(smoke.CheckFailed):
+            self.run_smoke(FakeOpener(), {**FIXTURE, "answers": [{"text": "x"}]})
 
     def test_missing_rotation_fails(self):
         result, _ = self.run_smoke(FakeOpener(rotate=False))

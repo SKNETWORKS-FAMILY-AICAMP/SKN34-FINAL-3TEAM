@@ -79,6 +79,27 @@ class AdminLearningService(private val client: LearningClient,private val json: 
             else -> throw BusinessException(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED","지원하지 않는 초안 작업입니다.")
         }
     }
+    /**
+     * 주간 테마 (#387, api-spec 2.8·4.1). learning `/internal/admin/weekly-themes…`(#385)로 미션과 같은 방식(CONTENT, ADMIN + X-User-Id + 빈 학생 범위)으로 넘김.
+     * 게시 검사(요일·생각 유형·학년군·같은 주 게시 1개)는 learning이 하고, 변경은 요청 감사 → 한 번 호출 → 응답 테마 ID로 결과 감사(`WEEKLY_THEME_*`).
+     */
+    fun weeklyThemes(method: String,id: UUID?=null,action: String?=null,query: String?=null,body: ByteArray?=null): HttpExchangeResult {
+        val path = "/admin/weekly-themes" + (id?.let { "/$it" } ?: "") + (action?.let { "/$it" } ?: "")
+        val actor=verifiedActor(body)
+        if(method=="GET") return sanitize(exchange(method,path,query,body),THEME_NOT_FOUND)
+        val auditAction=when {
+            method=="POST" && id==null && action==null -> "WEEKLY_THEME_CREATE"
+            method=="PUT" && id!=null && action==null -> "WEEKLY_THEME_UPDATE"
+            method=="POST" && id!=null && action in setOf("review-request","publish","unpublish") -> "WEEKLY_THEME_${action!!.replace('-','_').uppercase()}"
+            else -> throw BusinessException(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED","지원하지 않는 주간 테마 작업입니다.")
+        }
+        return audited(method,path,query,body,actor,auditAction,MissionAuditService.WEEKLY_THEME,id,THEME_NOT_FOUND) { node -> themeResult(node,id) }
+    }
+    private fun themeResult(node: JsonNode,id: UUID?): AuditTarget {
+        val theme=runCatching { UUID.fromString(node.path("themeId").asText()) }.getOrNull()
+        if(theme==null || (id!=null && id!=theme) || !node.path("status").isTextual) unavailable("LEARNING_INVALID_RESPONSE")
+        return AuditTarget(MissionAuditService.WEEKLY_THEME,theme)
+    }
     private data class AuditTarget(val type: String,val id: UUID,val version: Int?=null,val rubric: Int?=null,val draft: UUID?=null)
     private fun missionResult(node: JsonNode,id: UUID?): AuditTarget {
         val mission=runCatching { UUID.fromString(node.path("missionId").asText()) }.getOrNull()
@@ -143,7 +164,7 @@ class AdminLearningService(private val client: LearningClient,private val json: 
         if(node?.isObject!=true) unavailable("LEARNING_INVALID_RESPONSE")
         if(response.status !in 200..299) {
             val allowedCodes = setOf("VALIDATION_FAILED","FORBIDDEN","MISSION_PUBLISH_INCOMPLETE","MISSION_NOT_AVAILABLE",
-                "MISSION_VERSION_CONFLICT","CONFLICT","NOT_FOUND","INTERNAL_ERROR","AI_UNAVAILABLE")
+                "MISSION_VERSION_CONFLICT","CONFLICT","NOT_FOUND","INTERNAL_ERROR","AI_UNAVAILABLE","WEEKLY_THEME_PUBLISH_INCOMPLETE")
             val code = node.path("code").asText().takeIf { it in allowedCodes } ?: "LEARNING_REQUEST_FAILED"
             val safe = json.createObjectNode().put("code",code).put("status",response.status).put("title","학습 서비스가 관리자 요청을 처리하지 못했습니다.")
             if(node.path("missingFields").isArray) safe.set<com.fasterxml.jackson.databind.JsonNode>("missingFields",
@@ -163,5 +184,6 @@ class AdminLearningService(private val client: LearningClient,private val json: 
         const val MISSION_NOT_FOUND="미션을 찾을 수 없습니다."
         const val DRAFT_NOT_FOUND="미션 초안을 찾을 수 없습니다."
         const val STANDARD_NOT_FOUND="성취기준을 찾을 수 없습니다."
+        const val THEME_NOT_FOUND="주간 테마를 찾을 수 없습니다."
     }
 }

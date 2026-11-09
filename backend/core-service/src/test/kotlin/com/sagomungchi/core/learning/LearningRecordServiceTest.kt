@@ -38,7 +38,7 @@ class LearningRecordServiceTest {
                 assertEquals(403,assertFailsWith<BusinessException> { service.exists(child) }.status.value())
             }
             UserContextHolder.set(parent(child))
-            val proxy=LearningProxyService(client,mock(IdempotencyService::class.java),mock(StudentLearningContextService::class.java))
+            val proxy=LearningProxyService(client,mock(IdempotencyService::class.java),mock(StudentLearningContextService::class.java),mock(com.sagomungchi.core.payment.service.ProductEntitlementService::class.java),jacksonObjectMapper())
             assertEquals("FORBIDDEN",assertFailsWith<BusinessException> { proxy.exchange("GET","/missions") }.code)
             assertTrue(stub.requests.isEmpty())
         } finally { UserContextHolder.clear() }
@@ -65,7 +65,7 @@ class LearningRecordServiceTest {
             repeat(20) { assertNull(service.exists(child)) }
             assertEquals(CircuitBreaker.State.OPEN,client.circuit.state)
             UserContextHolder.set(context.copy(role="STUDENT"))
-            val proxy=LearningProxyService(client,mock(IdempotencyService::class.java),mock(StudentLearningContextService::class.java))
+            val proxy=LearningProxyService(client,mock(IdempotencyService::class.java),mock(StudentLearningContextService::class.java),mock(com.sagomungchi.core.payment.service.ProductEntitlementService::class.java),jacksonObjectMapper())
             assertEquals("LEARNING_CIRCUIT_OPEN",assertFailsWith<BusinessException> { proxy.exchange("GET","/attempts/test") }.code)
             assertEquals(20,stub.requests.size)
         } finally { UserContextHolder.clear() }

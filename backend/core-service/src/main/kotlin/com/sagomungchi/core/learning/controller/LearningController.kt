@@ -24,7 +24,8 @@ class LearningController(private val service: LearningProxyService, private val 
     fun mission(@PathVariable missionId: UUID) = service.exchange("GET", "/missions/$missionId").http()
 
     @PostMapping("/api/v1/missions/{missionId}/attempts")
-    fun start(@PathVariable missionId: UUID) = service.exchange("POST", "/missions/$missionId/attempts").http()
+    fun start(@PathVariable missionId: UUID, @RequestBody(required = false) body: ByteArray?) =
+        service.startAttempt(missionId, attemptContext(body)).http()
 
     @GetMapping("/api/v1/attempts/{attemptId}")
     fun attempt(@PathVariable attemptId: UUID) = service.exchange("GET", "/attempts/$attemptId").http(noStore = true)
@@ -63,6 +64,19 @@ class LearningController(private val service: LearningProxyService, private val 
             throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "JSON object 본문이 필요합니다.")
         return body
     }
+
+    /** #387: 본문 없음·`{}`·`context: null`은 `EXTRA`. 다른 필드나 값은 learning을 부르기 전에 400 */
+    private fun attemptContext(body: ByteArray?): String {
+        if (body == null || body.isEmpty()) return "EXTRA"
+        val tree = json.readTree(objectBody(body))
+        val value = tree.get("context")
+        if (tree.fieldNames().asSequence().any { it != "context" } ||
+            (value != null && !value.isNull && (!value.isTextual || value.asText() !in ATTEMPT_CONTEXTS)))
+            throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "context는 THEME_DAY·THEME_REVIEW·EXTRA 중 하나입니다.")
+        return if (value == null || value.isNull) "EXTRA" else value.asText()
+    }
+
+    private companion object { val ATTEMPT_CONTEXTS = setOf("THEME_DAY", "THEME_REVIEW", "EXTRA") }
 
     private fun HttpExchangeResult.http(noStore: Boolean = false) = ResponseEntity(body, HttpHeaders().also { target ->
         headers.forEach { (name, values) -> target[name] = values }

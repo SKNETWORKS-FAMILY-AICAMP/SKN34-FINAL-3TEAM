@@ -92,6 +92,21 @@ class AdminOperationsContracts(unittest.TestCase):
                     for field in ('code','goodThought'):
                         reviewed['required'].remove(field)
                         reviewed['properties'].pop(field)
+                # #387 adds the attempt start {context} body and the core limit/premium errors; restore only the approved fields.
+                if section=='paths' and name=='/missions/{missionId}/attempts':
+                    post=reviewed['post']
+                    self.assertIn('USAGE_LIMIT_REACHED',post['responses']['429']['description'])
+                    self.assertIn('PREMIUM_REQUIRED',post['responses']['403']['description'])
+                    post.pop('requestBody')
+                    for status in ('400','403','409','429','503'):
+                        post['responses'].pop(status)
+                    post['description']=('STUDENT 전용. 검증된 본인 학생의 grade·demo를 core DB에서 결정해 /internal/missions/{missionId}/attempts에 쿼리로 전달하며 '
+                        '클라이언트 query는 사용하지 않는다. learning은 신규 생성 201·기존 진행 시도 반환 200을 구분하며 core는 상태를 그대로 전달한다. '
+                        '신규 시도 제공 범위 검사·기존 진행 시도 선택과 당시 버전 유지는 learning 소유다. 일일 한도는 core Redis 책임이며 learning은 관여하지 않는다. '
+                        '후속 한도 연계는 201만 집계하고 200은 집계하지 않는다. 한도 도달 시에도 기존 이어하기는 허용하고 신규 생성만 차단해야 한다. '
+                        '한도 검사·기존 시도 판별·신규 생성 차단의 처리 순서는 후속 구현에서 검증한다. Redis 한도 기능은 현재 프록시 구현 범위 밖이다.')
+                    post['responses']['200']['description']='기존 진행 시도 반환(이어하기). 후속 일일 한도 집계 대상 아님.'
+                    post['responses']['201']['description']='신규 시도 생성. 후속 core Redis 일일 한도 집계 대상.'
                 # #355 adds only the ai mission draft usage type; the other call types stay fingerprinted.
                 if section=='schemas' and name=='CallType':
                     reviewed['enum'].remove('MISSION_DRAFT')

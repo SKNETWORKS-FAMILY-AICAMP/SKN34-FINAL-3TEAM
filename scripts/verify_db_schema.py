@@ -193,7 +193,7 @@ UPDATE error_report SET category = 'OTHER';
 INSERT INTO product
     (id, code, name, price, billing_cycle, child_limit, features, limits, active, created_at)
 VALUES ('00000000-0000-4000-8000-000000000015', 'FREE', 'schema-test', 0, 'MONTHLY', 1,
-        '{}', '{"dailyMissions":3}', true, now()),
+        '{}', '{"dailyMissions":1}', true, now()),
        ('00000000-0000-4000-8000-000000000016', 'PREMIUM', 'schema-test', 14900, 'MONTHLY', 1,
         '{}', '{"dailyFeedback":50}', true, now()),
        ('00000000-0000-4000-8000-000000000017', 'PREMIUM_V2', 'schema-test', 15000, 'MONTHLY', 1,

@@ -2,6 +2,7 @@ package com.sagomungchi.core.payment.service
 
 import com.sagomungchi.core.payment.domain.*
 import com.sagomungchi.core.payment.repository.PaymentRepository
+import com.sagomungchi.core.usage.service.MissionUsageService
 import com.sagomungchi.core.payment.service.PaymentTransactions.Companion.conflict
 import com.sagomungchi.core.payment.service.PaymentTransactions.Companion.forbidden
 import com.sagomungchi.core.payment.service.PaymentTransactions.Companion.unavailable
@@ -12,15 +13,19 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
 
 data class UsagePermit(val reservationId: UUID?, val premium: Boolean)
+/** #387: 시도 시작 판정 결과. 신규 시도(learning 201) 뒤 [ProductEntitlementService.missionStarted]가 같은 판정으로 기록한다 */
+data class MissionStartPermit(val student: UUID, val context: String, val counted: Boolean, val premiumUsage: Boolean,
+    val subscriptionId: UUID?, val date: LocalDate)
 private val KST=ZoneId.of("Asia/Seoul")
 
 @Service
 class ProductEntitlementService(private val repository: PaymentRepository, private val tx: PaymentTransactions,
-    private val students: StudentAccessService, private val json: ObjectMapper,
+    private val students: StudentAccessService, private val json: ObjectMapper, private val missionUsage: MissionUsageService,
     @Value("\${app.payment.free-product-id:}") private val freeProductId: String) {
     fun forParent(parent: UUID, student: UUID): ProductEntitlement { students.requireLinked(parent,student); return forStudent(student) }
     /** Ownership cannot change while usage/renewal still resolves the former subscription owner. */
@@ -79,6 +84,58 @@ class ProductEntitlementService(private val repository: PaymentRepository, priva
     fun finishUsage(student: UUID, reservation: UUID, used: Boolean) {
         val sub=repository.active(student) ?: conflict("PAYMENT_USAGE_STATE_CHANGED")
         tx.locked(sub.parentUserId) { repository.usageFinish(reservation,student,used,tx.now()) }
+    }
+    /** KST 오늘. 주간 테마 조회·시도 한도가 같은 날짜를 쓴다 */
+    fun today(): LocalDate = tx.today()
+
+    /**
+     * #387 (P13·P14 개정, 2026-11-08 동섭 결정): 시도 시작 전 판정. 무료·프리미엄 정책은 이 함수와 [missionStarted]에만 둔다.
+     * - `THEME_REVIEW`: 상품과 무관, 한도 제외
+     * - `EXTRA`(생각 유형별 고르기): 상품 `features.extraMissions`가 `false`인 상품이면 403 `PREMIUM_REQUIRED`(없거나 `true`면 허용).
+     *   지금은 FREE·PREMIUM 모두 허용하고, 무료 상품에서 `false`로 바꾸면 코드 수정 없이 프리미엄 전용이 된다.
+     *   무료 상품에서 꺼진 동안에만 프리미엄 `EXTRA`가 프리미엄 사용(환불 판정, P14)이라 환불 처리 중이면 409.
+     * - 무료 `THEME_DAY`·`EXTRA`: 합쳐서 KST 하루 `limits.dailyMissions`개. 한도에 닿아도 같은 미션의 진행 중 시도 이어하기(learning 200)는
+     *   막지 않도록 마지막 기록 시도를 [resumable]로 learning에 확인한다. learning 호출 전이라 트랜잭션·잠금 없이 판정한다.
+     */
+    fun missionStart(student: UUID, context: String, mission: UUID, resumable: (UUID) -> Boolean): MissionStartPermit {
+        val today=tx.today()
+        if(context=="THEME_REVIEW") return MissionStartPermit(student,context,false,false,null,today)
+        require(context in setOf("THEME_DAY","EXTRA"))
+        val entitlement=forStudent(student)
+        val free=entitlement.subscriptionId==null
+        var premiumUsage=false
+        if(context=="EXTRA") {
+            if(!extraMissions(entitlement.product)) throw BusinessException(HttpStatus.FORBIDDEN,"PREMIUM_REQUIRED",
+                "추가 문제는 프리미엄 이용권에서 풀 수 있습니다.","무료 이용권은 하루 1개 당일 테마 문제를 풀 수 있습니다.")
+            premiumUsage=!free && !extraMissions(freeProduct())
+            if(premiumUsage && entitlement.refundPending) conflict("REFUND_IN_PROGRESS")
+        }
+        // 집계·한도 확인은 usage(MissionUsageService), 한도 수는 무료 상품 데이터
+        if(free) missionUsage.requireAvailable(student,today,dailyMissions(entitlement.product),mission,resumable)
+        return MissionStartPermit(student,context,free,premiumUsage,entitlement.subscriptionId,today)
+    }
+    /** learning이 신규 시도(201)를 만든 뒤에만 부름. 무료 `THEME_DAY`·`EXTRA`는 한도 집계, 프리미엄 전용 `EXTRA`는 환불 판정용 사용 기록(시도 ID로 1회) */
+    fun missionStarted(permit: MissionStartPermit, attempt: UUID, mission: UUID) {
+        if(permit.counted) missionUsage.record(attempt,permit.student,mission,permit.date,tx.now())
+        if(permit.premiumUsage) {
+            val sub=permit.subscriptionId?.let { repository.subscription(it) } ?: conflict("PAYMENT_USAGE_STATE_CHANGED")
+            tx.locked(sub.parentUserId) {
+                val existing=repository.usage("EXTRA_MISSION",attempt)
+                if(existing!=null) { if(existing.studentId!=permit.student) forbidden() }
+                else check(repository.reserve(PremiumUsage(UUID.randomUUID(),permit.student,sub.id,"EXTRA_MISSION",attempt,"USED",tx.now(),tx.now()))==1)
+            }
+        }
+    }
+    private fun dailyMissions(product: Product): Int {
+        val value=product.limits["dailyMissions"].takeIf { it is Int || it is Long || it is java.math.BigInteger } as Number?
+        if(value==null || value.toLong() !in 0..Int.MAX_VALUE.toLong()) unavailable("PAYMENT_PRODUCT_UNAVAILABLE")
+        return value.toInt()
+    }
+    /** 추가 문제 허용. 값이 없으면 허용(현행), boolean이 아니면 상품 오류 */
+    private fun extraMissions(product: Product): Boolean = when(val value=product.features["extraMissions"]) {
+        null -> true
+        is Boolean -> value
+        else -> unavailable("PAYMENT_PRODUCT_UNAVAILABLE")
     }
     @Transactional
     fun reportViewed(parent: UUID, student: UUID, report: UUID) {

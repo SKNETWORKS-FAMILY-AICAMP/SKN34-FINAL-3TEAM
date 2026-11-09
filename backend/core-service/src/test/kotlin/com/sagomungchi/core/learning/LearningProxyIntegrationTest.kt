@@ -52,6 +52,7 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
     private val body = "{ \"inputType\":\"NARRATIVE\", \"text\":\"내 생각\" }"
 
     companion object {
+        private const val REVIEW_CONTEXT = "{\"context\":\"THEME_REVIEW\"}"
         private val stub = LearningHttpStub()
         @JvmStatic @DynamicPropertySource fun learning(registry: DynamicPropertyRegistry) {
             registry.add("app.services.learning") { stub.url }
@@ -100,7 +101,9 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
         .also { req ->
             key?.let { req.header("Idempotency-Key", it) }
             ifMatch?.let { req.header("If-Match", it) }
-            content?.let { req.contentType(MediaType.APPLICATION_JSON).content(it) }
+            // #387: 시도 시작의 context 생략은 EXTRA(상품 판정)라, 프록시 자체 검사는 상품과 무관한 되돌아보기로 한다
+            (content ?: REVIEW_CONTEXT.takeIf { method == "POST" && path.substringBefore('?').endsWith("/attempts") && path.contains("/missions/") })
+                ?.let { req.contentType(MediaType.APPLICATION_JSON).content(it) }
         })
 
     @Test fun `attempt details disable storage while preserving draft ETag across completion changes`() {
@@ -217,6 +220,17 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
             .andExpect(status().isCreated()).andExpect(content().string(response))
 
         assertEquals("/internal/missions/$mission/attempts?grade=3&demo=false", stub.requests.single().target)
+        assertEquals(REVIEW_CONTEXT, stub.requests.single().body)
+        assertEquals("application/json", stub.requests.single().header("Content-Type"))
+    }
+
+    @Test fun `attempt start rejects unknown context fields and values before forwarding`() {
+        val mission = UUID.randomUUID()
+        listOf("{\"context\":\"DAILY\"}", "{\"context\":1}", "{\"context\":\"THEME_DAY\",\"themeId\":\"x\"}", "[]", "nope").forEach {
+            call("POST", "/api/v1/missions/$mission/attempts", content = it).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+        }
+        assertTrue(stub.requests.isEmpty())
     }
 
     @Test fun `attempt start preserves learning 200 for an existing in-progress attempt`() {
