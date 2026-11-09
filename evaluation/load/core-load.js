@@ -99,8 +99,10 @@ function fail(step, res) {
   throw new Error(`${step} 실패: HTTP ${res.status} ${code}`)
 }
 
-// 순서 주의: 보호자 refresh는 쓰는 순간 회전한다. 실패할 수 있는 단계(학생 로그인·미션 조회)를 먼저 끝내고,
-// 갱신 뒤에는 예외를 던지지 않아야 handleSummary가 새 refresh 토큰을 비밀 파일에 저장할 수 있다.
+// 보호자 access는 계정마다 두 방식 중 하나로 받는다.
+// - loginId·password가 있으면(#415, prepare_accounts.py) ID·비밀번호 로그인. 회전하는 값이 없어 비밀 파일을 다시 쓰지 않는다.
+// - 없으면 옛 방식: refreshToken을 갱신한다. 순서 주의: refresh는 쓰는 순간 회전하므로 실패할 수 있는 단계
+//   (학생 로그인·미션 조회)를 먼저 끝내고, 갱신 뒤에는 예외를 던지지 않아야 handleSummary가 새 refresh 토큰을 저장할 수 있다.
 export function setup() {
   const students = SECRETS.accounts.map((account, i) =>
     account.children.map((child, j) => {
@@ -128,6 +130,18 @@ export function setup() {
   // 여기부터 예외 금지. 갱신에 실패한 계정은 기존 토큰을 그대로 두고 시험을 멈춘다.
   let abortReason = null
   const accounts = SECRETS.accounts.map((account, i) => {
+    if (account.loginId) {
+      // 계정마다 빈 쿠키 저장소를 쓴다. setup VU의 공용 저장소에 앞 계정의 refresh 쿠키가 남아 있으면
+      // 로그인이 그 세션을 '이전 세션'으로 폐기해 앞 계정의 access가 401이 된다.
+      const login = http.post(`${BASE}/auth/parent/login`, JSON.stringify({ loginId: account.loginId, password: account.password }), {
+        jar: new http.CookieJar(),
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', Origin: ORIGIN },
+        tags: { name: 'auth_parent_login', kind: 'setup' },
+      })
+      const parentToken = login.status === 200 ? json(login)?.accessToken : undefined
+      if (!parentToken) abortReason ??= `보호자 ID 로그인(계정 ${i}) 실패: HTTP ${login.status} ${json(login)?.code ?? ''}`
+      return { parentToken, children: students[i] }
+    }
     const refreshed = http.post(`${BASE}/auth/refresh`, null, {
       headers: { Cookie: `sagomungchi_refresh=${account.refreshToken}`, 'X-Requested-With': 'XMLHttpRequest', Origin: ORIGIN },
       tags: { name: 'auth_refresh', kind: 'setup' },
@@ -318,11 +332,12 @@ export function analyze(data) {
 }
 
 // 회전된 보호자 refresh 토큰을 비밀 파일에 되돌려 써서 다음 단계가 이어 쓰게 한다. 결과에는 지표만 남긴다.
+// ID·비밀번호 계정만 있으면 바뀐 값이 없으므로 비밀 파일을 건드리지 않는다.
 export function handleSummary(data) {
   const out = {}
   const setup = data.setup_data
-  if (setup?.accounts) {
-    const next = { ...SECRETS, accounts: SECRETS.accounts.map((a, i) => ({ ...a, refreshToken: setup.accounts[i].rotated })) }
+  if (setup?.accounts?.some((a) => a.rotated)) {
+    const next = { ...SECRETS, accounts: SECRETS.accounts.map((a, i) => (setup.accounts[i].rotated ? { ...a, refreshToken: setup.accounts[i].rotated } : a)) }
     out[SECRETS_PATH] = JSON.stringify(next, null, 2)
   }
   const stamp = new Date(Date.now() + 9 * 3600 * 1000).toISOString().replace(/[:.]/g, '-').slice(0, 19)

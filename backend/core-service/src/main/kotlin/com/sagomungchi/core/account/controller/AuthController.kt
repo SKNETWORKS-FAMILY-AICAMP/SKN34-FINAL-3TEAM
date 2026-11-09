@@ -50,6 +50,15 @@ class AuthController(
     fun adminLogin(@RequestBody body: AdminLoginRequest, request: HttpServletRequest, response: HttpServletResponse): Map<String, Any?> =
         issue(service.adminLogin(body.loginId, body.password, cookies.read(request, AuthCookies.REFRESH)), response)
 
+    /** #415: parent ID/password signup. Rate-limited per client IP; starts a PARENT session like Google signup. */
+    @PostMapping("/api/v1/auth/parent/signup")
+    fun parentSignup(@RequestBody body: ParentSignupRequest, request: HttpServletRequest, response: HttpServletResponse): Map<String, Any?> =
+        issue(service.parentSignup(body.loginId, body.password, body.name, request.remoteAddr, cookies.read(request, AuthCookies.REFRESH)), response)
+
+    @PostMapping("/api/v1/auth/parent/login")
+    fun parentLogin(@RequestBody body: AdminLoginRequest, request: HttpServletRequest, response: HttpServletResponse): Map<String, Any?> =
+        issue(service.parentLogin(body.loginId, body.password, cookies.read(request, AuthCookies.REFRESH)), response)
+
     @PostMapping("/api/v1/auth/refresh")
     fun refresh(request: HttpServletRequest, response: HttpServletResponse): Map<String, Any?> =
         issue(service.refresh(cookies.read(request, AuthCookies.REFRESH)), response)
@@ -91,7 +100,13 @@ class AuthController(
         val child = service.student(identity)
         if (identity.session.role == "STUDENT") return mapOf("role" to "STUDENT", "child" to child,
             "nextAction" to destination.nextAction, "startPath" to destination.startPath)
-        return mapOf("userId" to identity.account.id, "name" to identity.account.name, "email" to identity.account.email,
+        // #415: an account without a Google subject signs in with ID/password; its login_id is an ID, not an email.
+        val password = identity.account.subject.isNullOrBlank()
+        val passwordParent = password && identity.session.role == "PARENT"
+        return mapOf("userId" to identity.account.id, "name" to identity.account.name,
+            "email" to (if (passwordParent) null else identity.account.email),
+            "loginId" to (if (passwordParent) identity.account.email else null),
+            "authMethod" to (if (password) "PASSWORD" else "GOOGLE"),
             "role" to identity.session.role, "permissions" to identity.permissions,
             "child" to child, "nextAction" to destination.nextAction, "startPath" to destination.startPath)
     }
@@ -112,4 +127,5 @@ class AuthController(
     data class StudentSessionRequest(val childId: UUID)
     data class ParentUnlockRequest(val password: String)
     data class AdminLoginRequest(val loginId: String?, val password: String?)
+    data class ParentSignupRequest(val loginId: String?, val password: String?, val name: String?)
 }

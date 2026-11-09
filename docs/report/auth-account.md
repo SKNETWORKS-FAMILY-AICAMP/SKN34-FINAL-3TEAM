@@ -1,4 +1,4 @@
-# 인증·계정 (#36·#37·#45·#58·#196·#206·#235·#289·#369, P01 개정)
+# 인증·계정 (#36·#37·#45·#58·#196·#206·#235·#289·#369·#415, P01 개정)
 
 계약은 [API 명세](../design/api-spec.md) 3.11·5.1·5.3·5.4·5.6과 [core OpenAPI](../../contracts/openapi/core-service.yaml), 저장 구조는 [ERD](../design/erd.md) 3.1.
 
@@ -7,9 +7,9 @@
 - Google Authorization Code + PKCE S256을 core 콜백에서 처리. `authorize` → Google → `callback`(refresh 쿠키 설정) → web `/oauth/complete` → `POST /auth/refresh` → `GET /me`. 서비스 토큰은 URL에 넣지 않음
 - access JWT는 HS256(Spring Security JOSE), 부모·학생 기본 15분, 프론트 메모리에만 보관. refresh는 256비트 난수·SHA-256 해시 저장, HttpOnly·Secure·SameSite=Strict, 부모·관리자 세션은 최초 발급부터 7일(회전으로 연장 안 함). 학생은 refresh 없음
 - Google ID 토큰은 JWKS 서명·iss·aud·exp·nonce 검증. OAuth 상태 쿠키는 HttpOnly·SameSite=Lax·10분. web origin과 `/api`는 동일 origin, 쿠키 API는 Origin·`X-Requested-With` 검사
-- 계정 식별은 `(oauth_provider, oauth_subject)`. 이메일은 연락 정보이며 기존 이메일 계정과 자동 연결하지 않음(같은 이메일은 `ACCOUNT_EXISTS`). 기존 계정에 가짜 subject를 채우지 않고 비밀번호 컬럼은 nullable로 보존·사용 중단. 신규 계정은 PARENT, 관리자는 운영자가 role·권한 지정(관리자 ID·비밀번호 로그인은 11장 `admin_credential`)
+- 계정 식별은 `(oauth_provider, oauth_subject)`. 이메일은 연락 정보이며 기존 이메일 계정과 자동 연결하지 않음(같은 이메일은 `ACCOUNT_EXISTS`). 기존 계정에 가짜 subject를 채우지 않고 비밀번호 컬럼은 nullable로 보존·사용 중단. 신규 계정은 PARENT, 관리자는 운영자가 role·권한 지정(관리자 ID·비밀번호 로그인은 11장 `admin_credential`, 학부모 ID·비밀번호 가입·로그인은 12장 `parent_credential`)
 - 매 요청에서 DB의 세션·계정·연결 상태 확인. 로그아웃·역할 전환 후 이전 access 즉시 거부. refresh는 원자적 1회 소비, 재사용 시 해당 세션 폐기(다른 기기 유지)
-- 같은 브라우저의 탭은 역할을 공유하며 Web Locks로 refresh·전환·로그아웃을 직렬화하고 BroadcastChannel로 알림. 학생 전환을 받은 탭은 토큰·캐시를 지우고 학생 진입 화면으로. 보호자 복귀는 보호자 비밀번호(7장) 또는 Google 로그인
+- 같은 브라우저의 탭은 역할을 공유하며 Web Locks로 refresh·전환·로그아웃을 직렬화하고 BroadcastChannel로 알림. 학생 전환을 받은 탭은 토큰·캐시를 지우고 학생 진입 화면으로. 보호자 복귀는 보호자 비밀번호(7장) 또는 다시 로그인(Google 또는 아이디, 12장)
 - 키: JWT 키는 base64 32바이트 이상 난수, core에만 Secret으로 주입. 단일 HS256 키라 교체 시 기존 access·OAuth 상태 토큰이 무효화됨. Google 키가 없으면 로그인 시작은 명시적 503(가짜 로그인 없음)
 - Google SSO가 보호자 본인 재확인을 보장하지는 않음(추가 본인 확인은 별도 제품 정책)
 
@@ -234,8 +234,8 @@ Google 로그인만 있어 관리자 계정을 만들 방법이 SQL 손작업뿐
 
 - 운영 환경에서도 사용한다. 주소는 `/admin/login` 그대로 두고, 사용자 화면(`/login`·로그인 도움말)의 관리자 링크·문구는 지운다. 운영 플래그는 두지 않는다. `admin_credential` 행이 없으면 아무도 이 방법으로 로그인하지 못한다.
 - 관리자는 가입하지 않는다. 운영자가 `scripts/admin_account_sql.py`로 행을 만든다. 같은 ID로 다시 실행하면 비밀번호 재설정과 잠금 해제가 되고, `--disable`은 자격을 지우고 세션을 끝낸다.
-- 이번 범위는 관리자만이다. 학부모 ID·비밀번호 가입·로그인은 별도 이슈로 분리했다. 재인증(탈퇴·보호자 비밀번호·학생 PIN·자녀 삭제·보호자 이전)이 Google 전용이고, 비밀번호 찾기와 "Google 단일 로그인" 정책 문서(FN-ACC-08·10)도 함께 바꿔야 하기 때문이다.
-- 부하 테스트 계정 부족(load-test 4장)은 관리자 로그인으로 풀리지 않는다. 시험 대상이 학부모→학생 학습 흐름이고, 학생 세션은 자녀가 연결된 학부모만 받기 때문이다. 학부모 이슈에서 다룬다.
+- 이번 범위는 관리자만이다. 학부모 ID·비밀번호 가입·로그인은 별도 이슈로 분리했다(#415에서 진행, 12장). 재인증(탈퇴·보호자 비밀번호·학생 PIN·자녀 삭제·보호자 이전)이 Google 전용이고, 비밀번호 찾기와 "Google 단일 로그인" 정책 문서(FN-ACC-08·10)도 함께 바꿔야 하기 때문이다.
+- 부하 테스트 계정 부족(load-test 4장)은 관리자 로그인으로 풀리지 않는다. 시험 대상이 학부모→학생 학습 흐름이고, 학생 세션은 자녀가 연결된 학부모만 받기 때문이다. #415에서 진행(12장).
 
 ### 설계
 
@@ -288,4 +288,79 @@ python scripts/admin_account_sql.py --login-id ops-kim --disable | psql "$CORE_D
 - 다중 인증(MFA)·IP 허용 목록은 이번에 넣지 않았다. 운영에서 관리자 비밀번호 로그인을 넓게 쓰기 전에 검토가 필요하다.
 - 잠금은 ID 단위라 같은 IP에서 여러 ID를 시도하는 것은 막지 않는다. 요청 속도 제한은 별도 과제다.
 - 화면설계서 캡처(C03·A00)는 변경 전 화면이다. 설명 문구만 고쳤다.
-- 학부모 ID·비밀번호 가입·로그인(부하 테스트 계정 포함)은 후속 이슈다.
+- 학부모 ID·비밀번호 가입·로그인(부하 테스트 계정 포함)은 #415에서 진행(12장).
+
+## 12. 학부모 ID·비밀번호 가입·로그인 (#415)
+
+학부모 로그인이 Google뿐이라 Google 계정이 없는 사용자는 가입할 수 없었고, 부하 시험(load-test 4장)에 필요한 시험 계정도 Google 계정 수만큼만 만들 수 있었다. 11장의 관리자 ID·비밀번호 로그인과 같은 방식으로 학부모 가입·로그인을 넣었다. 계약은 api-spec 1.3·2.1·5.1·5.6, 흐름은 sequence-diagram 2.1.2·2.1.3, 저장은 ERD 3.1.1 `parent_credential`.
+
+### 결정 (2026-11-09 사용자 확인)
+
+- 학부모는 Google 또는 아이디·비밀번호로 가입·로그인한다. 두 방법은 자동 연결하지 않는다(기존 `ACCOUNT_EXISTS` 원칙). 한 계정은 한 가지 로그인 수단만 쓴다.
+- 아이디는 영문·숫자 4~30자이고 앞뒤 공백을 지운 뒤 소문자로 저장·비교한다. `@`를 쓸 수 없어 Google 계정의 `login_id`(이메일)와 겹치지 않는다. 비밀번호 8~128자, 이름 1~80자.
+- 비밀번호 찾기는 제공하지 않는다. 화면에는 "비밀번호 찾기는 아직 제공하지 않습니다. 비밀번호를 잊었다면 로그인이 유지된 기기에서 문의하기를 이용하거나 새 아이디로 가입해 주세요."라고 안내한다. 메일 발송은 별도 과제다.
+- 중요 작업의 본인 재확인은 비밀번호 계정이면 로그인 비밀번호를 다시 입력한다. 실패 횟수는 로그인과 함께 센다.
+- 동의 문서 TERMS·PRIVACY 1.1(시행 2026-11-09)을 추가한다. 필수 동의 판정이 현재 버전을 보므로 기존 회원도 다음 로그인 때 다시 동의한다.
+
+### 설계
+
+- 저장
+  - 새 테이블 `parent_credential`(V38)은 `admin_credential`과 같은 모양이다(`user_id` PK·FK, `password_hash`, `failed_count >= 0`, `locked_until`, `created_at`, `updated_at`, NOT NULL 컬럼에 기본값 없음).
+  - 로그인 ID는 `user_account.login_id`(UNIQUE). 비밀번호 계정은 `oauth_provider`·`oauth_subject`가 NULL이고 레거시 `user_account.password_hash`는 NULL로 두고 쓰지 않는다.
+  - 탈퇴 완료 시 `parent_credential` 행을 지운다. `login_id`는 기존처럼 `withdrawn:<id>`로 바뀌어 아이디가 다시 풀린다.
+  - 해시는 `PinHasher`(PBKDF2-SHA256 60만 회). 관리자와 학부모의 검사·잠금은 `PasswordCredentialService` 하나로 묶었다(값 객체 `AdminCredential` → `PasswordCredential`).
+- 가입 `POST /auth/parent/signup {loginId,password,name}`
+  - 형식 위반은 400 `VALIDATION_FAILED`, 이미 쓰는 아이디는 409 `LOGIN_ID_TAKEN`(대소문자 무관).
+  - 같은 IP는 Redis 고정 창으로 기본 10분 5회(`AUTH_SIGNUP_LIMIT_PER_IP`·`AUTH_SIGNUP_LIMIT_WINDOW`)까지다. 넘으면 429 `SIGNUP_RATE_LIMITED`, Redis 장애는 503 `SIGNUP_UNAVAILABLE`. 중복 아이디 거절은 횟수에 넣지 않는다.
+  - 성공하면 PARENT 계정과 `parent_credential`을 한 트랜잭션에서 만들고 `audit_log`에 `PARENT_PASSWORD_SIGNUP`을 남긴다. Google 신규 가입과 같은 `startSession`(이전 refresh 쿠키 세션 폐기)으로 refresh 응답과 같은 본문(`role: PARENT`, `nextAction: CONSENT_REQUIRED`, `startPath: /parent/onboarding`)과 HttpOnly refresh 쿠키를 준다. 이후 동의·자녀 등록은 Google 가입과 같다.
+  - `AUTH_NEW_ACCOUNT_DEMO=true`면 `is_demo`로 저장한다.
+- 로그인 `POST /auth/parent/login {loginId,password}`
+  - 없는 ID·틀린 비밀번호·Google 계정·관리자·비활성 계정은 같은 401 `INVALID_CREDENTIALS`다. 없는 ID도 더미 해시를 검사한다.
+  - 연속 5회째 실패에 15분 잠금(423 `LOGIN_LOCKED`), 잠금 뒤 횟수는 0. 실패 횟수는 오류 응답 전에 커밋한다. 성공 감사는 `PARENT_PASSWORD_LOGIN`.
+- 비밀번호 재확인 `POST /me/reauth/password {purpose,childId?,scope?,password}`
+  - 목적·자녀·범위 규칙은 `/me/reauth`와 같다. 비밀번호가 맞으면 검증·발급을 마친 `reauth_challenge`와 `reauth_grant`를 한 번에 만들어 `{reauthToken,expiresAt}`를 준다. 그래서 기존 7개 사용처(탈퇴·보호자 비밀번호·학생 PIN·자녀 해제·자녀 삭제·자녀 이관·이관 수락)의 consume 검사는 바뀌지 않았다.
+  - 틀리면 403 `REAUTH_PASSWORD_INVALID`, 로그인과 실패 횟수를 함께 세어 5회째부터 423 `LOGIN_LOCKED`. Google 계정은 409 `REAUTH_METHOD_MISMATCH`. 감사 `PASSWORD_REAUTHENTICATED`. 필수 동의 누락 상태에서도 `/me/reauth`와 같은 동의 복구 목록으로 쓸 수 있다.
+- `GET /me`에 `authMethod`(Google subject가 없으면 `PASSWORD`, 있으면 `GOOGLE`)와 `loginId`(비밀번호 학부모만, 그 외 null)를 더했다. 비밀번호 학부모의 `email`은 null이다.
+- 문구: `REAUTH_REQUIRED`는 "해당 작업의 본인 재확인이 필요합니다."로 바꿔 로그인 수단에 중립적으로 했다. 보호자 비밀번호 잠김 안내의 "Google로 다시 로그인"은 "다시 로그인"으로 바꿨다.
+- 모든 새 경로는 정확한 web Origin·`X-Requested-With`를 요구한다.
+
+### 다른 선택지와 고르지 않은 이유
+
+- 역할과 무관한 자격 테이블로 일반화: `admin_credential`(V36)과 관리자 경로·스크립트를 함께 바꿔야 해서, 같은 모양의 별도 테이블로 두고 검사 로직만 공유했다.
+- `/me/reauth`에 `password` 필드 추가: Google 시작 응답(`challengeId`·`authorizationUrl`)과 바로 발급 응답(`reauthToken`)이 한 경로에 섞이고, #97의 운영 금지 규칙과 충돌해 별도 경로로 뒀다.
+- SQL 스크립트로 시험 계정 생성: 동의 문서 버전·기기 토큰 해시·PIN까지 SQL로 맞추면 깨지기 쉽고 RDS 직접 접속이 필요하다. 공개 가입 API로 만들면 실제 사용자와 같은 검사를 거친다.
+
+### 웹
+
+- 실제 모드 `/login`: Google 버튼과 함께 "또는 아이디로 로그인" 폼과 "아이디로 가입" 링크를 둔다.
+- `/signup`: Google 카드와 아이디 가입 폼(아이디·이름·비밀번호·확인). 가입 후 `/parent/onboarding`으로 간다.
+- 재확인 UI: `/me`의 `authMethod`가 `PASSWORD`면 Google 새 탭 대신 로그인 비밀번호를 입력받는다(탈퇴·자녀 해제/삭제·이관·보호자 비밀번호·자녀 PIN 모두, `PasswordRecheck`).
+- 로그인 도움말: 두 방법이 서로 연결되지 않는다는 안내와 비밀번호 찾기 안내를 더했다.
+- MSW 핸들러도 같은 계약이다. 개발 시연(목업)의 이메일 로그인은 그대로 둔다.
+
+### 부하 시험
+
+- `evaluation/load/prepare_accounts.py`가 공개 API로 시험 계정을 만든다(가입 → 동의 → 자녀 3명 → 기기 등록 → 비밀번호 재확인 → PIN). 비밀번호·PIN·기기 쿠키는 저장소 밖 비밀 파일에만 쓴다.
+- k6 `core-load.js`는 계정에 `loginId`가 있으면 `POST /auth/parent/login`으로 access를 받는다. 회전하는 refresh 토큰이 없어 비밀 파일을 다시 쓰지 않는다. `loginId`가 없으면 옛 refresh 방식이다.
+- AWS 데모는 `AUTH_NEW_ACCOUNT_DEMO=true`라 시험 계정이 `is_demo`로 저장되어 운영 집계에서 빠진다.
+- k6 `setup()`은 쿠키 저장소 하나를 공유한다. 앞 계정의 refresh 쿠키가 남은 채로 다음 계정이 로그인하면 `startSession`이 그 세션을 "이전 세션"으로 폐기하므로, 계정마다 빈 쿠키 저장소(`jar: new http.CookieJar()`)로 로그인한다.
+- 로컬 격리 compose 확인(2026-11-09, `AUTH_NEW_ACCOUNT_DEMO=true`)
+  - 시험 계정 4개(`load1`~`load4`, 자녀 3명씩) 준비 → k6 VU 8·30초. 보호자 ID 로그인 4건, 학생 로그인 12건, 학습 칸 60개(1차의 15개 → 4배), 알림 SSE·조회 API 정상.
+  - 학습 시도 시작은 무료 자녀 하루 미션 한도(`429 USAGE_LIMIT_REACHED`, #387)에 금방 걸렸다. 프리미엄도 하루 3개라 2차 시험(#384)은 시험 동안 한도를 어떻게 다룰지 먼저 정해야 한다. 학생 기록 비공개 기본값(`403 STUDENT_RECORDS_PRIVATE`, #206)도 조회 오류로 섞인다.
+
+### API 변경
+
+- 추가: `POST /api/v1/auth/parent/signup` → 200 refresh 응답과 같은 본문 + refresh 쿠키, 400 `VALIDATION_FAILED`, 409 `LOGIN_ID_TAKEN`, 429 `SIGNUP_RATE_LIMITED`, 503 `SIGNUP_UNAVAILABLE`, 403(출처 헤더). OpenAPI `parentPasswordSignup`.
+- 추가: `POST /api/v1/auth/parent/login` → 200 + refresh 쿠키, 401 `INVALID_CREDENTIALS`, 423 `LOGIN_LOCKED`. OpenAPI `parentPasswordLogin`.
+- 추가: `POST /api/v1/me/reauth/password` → 200 `{reauthToken,expiresAt}`, 403 `REAUTH_PASSWORD_INVALID`, 409 `REAUTH_METHOD_MISMATCH`, 423 `LOGIN_LOCKED`. OpenAPI `reauthenticatePassword`.
+- 변경: `GET /me`(`ParentMeResponse`)에 `authMethod`·`loginId`, 비밀번호 학부모의 `email` null. `REAUTH_REQUIRED` 문구.
+- DB: core V38 `parent_credential`, V39 TERMS·PRIVACY 1.1(가입 방법에 "아이디·비밀번호 가입", 처리 항목에 "(아이디·비밀번호로 가입한 경우) 아이디, 비밀번호(해시값), 이름"). local GitOps 마이그레이션 revision `v39`. 마이그레이션 번호는 develop 머지 순서에 따라 바뀔 수 있어 머지 직전 확정한다.
+
+### 남은 위험·후속
+
+- CloudFront·ALB 뒤에서는 가입 IP 한도가 실제 사용자 IP가 아니라 엣지 단위로 묶일 수 있다(`forward-headers-strategy: native`). AWS 확인은 #384 때 한다.
+- 로그인 상태에서 비밀번호를 바꾸는 기능이 없다(후속). 비밀번호 찾기(메일 발송)도 별도 과제다.
+- 아이디 존재 여부는 가입 409로 알 수 있다. 일반적인 가입 UX와 같은 수준으로 받아들였다.
+- 다중 인증(MFA)은 없다.
+- 자녀 이관의 받는 학부모 조회는 Google 이메일 기준이라, 아이디·비밀번호 학부모는 이관을 받는 쪽이 될 수 없다(보내는 쪽은 비밀번호 재확인으로 가능).
+- 화면설계서 캡처(SC-01-001·SC-01-002·SC-01-003)와 생성물 사용자 흐름도 HTML·PDF는 아이디 폼 추가 전 화면·흐름이다.

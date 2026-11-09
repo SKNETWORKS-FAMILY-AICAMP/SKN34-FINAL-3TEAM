@@ -106,6 +106,100 @@ sequenceDiagram
   C-->>W: 200 role·permissions → 권한별 관리자 메뉴
 ```
 
+#### 2.1.2 학부모 ID·비밀번호 가입·로그인 (#415)
+
+학부모는 Google(2.1) 대신 아이디·비밀번호로 가입·로그인할 수 있다. 두 방법은 자동 연결하지 않으며 한 계정은 한 가지 로그인 수단만 쓴다. 아이디는 앞뒤 공백 제거 후 소문자로 비교한다. 이후 refresh·`/me`·동의·자녀 등록은 2.1·2.2와 같다 ([API 명세 5.1](api-spec.md#51-36-google-oauth토큰-구현-계약-개정-p01-정렬))
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor P as 학부모
+  participant W as Web /signup·/login
+  participant C as core
+  participant R as Redis
+  participant DB as core_db
+
+  P->>W: 아이디로 가입 (아이디·이름·비밀번호·확인)
+  W->>C: POST /auth/parent/signup {loginId,password,name} (Origin·X-Requested-With)
+  alt 형식 위반 (아이디 영문·숫자 4~30자, 비밀번호 8~128자, 이름 1~80자)
+    C-->>W: 400 VALIDATION_FAILED
+  else 이미 쓰는 아이디
+    C-->>W: 409 LOGIN_ID_TAKEN (가입 한도에 세지 않음)
+  else
+    C->>R: auth:parent-signup:ip:<IP> INCR (고정 창, 기본 10분 5회)
+    alt Redis 장애
+      C-->>W: 503 SIGNUP_UNAVAILABLE
+    else 한도 초과
+      C-->>W: 429 SIGNUP_RATE_LIMITED
+    else
+      C->>C: 비밀번호 PBKDF2 해시 (트랜잭션 밖)
+      rect rgba(128,128,128,0.12)
+        C->>DB: user_account(PARENT·ACTIVE, login_id, OAuth·password_hash NULL, AUTH_NEW_ACCOUNT_DEMO면 is_demo) ON CONFLICT 확인
+        C->>DB: parent_credential 저장, audit_log PARENT_PASSWORD_SIGNUP
+        C->>DB: 이전 refresh 쿠키 세션 폐기, PARENT auth_session·refresh_token 저장 (7일)
+      end
+      C-->>W: 200 {accessToken, role:PARENT, nextAction:CONSENT_REQUIRED, startPath:/parent/onboarding} + Set-Cookie sagomungchi_refresh
+    end
+  end
+
+  P->>W: 아이디로 로그인
+  W->>C: POST /auth/parent/login {loginId,password} (Origin·X-Requested-With)
+  rect rgba(128,128,128,0.12)
+    C->>DB: parent_credential + user_account(login_id, PARENT·ACTIVE·oauth_subject NULL) 조회 FOR UPDATE
+    alt 없음 (Google 계정·관리자·비활성 포함)
+      C->>C: 더미 해시 검사 (응답 시간 맞춤)
+      C-->>W: 401 INVALID_CREDENTIALS
+    else locked_until > 지금
+      C-->>W: 423 LOGIN_LOCKED
+    else 비밀번호 틀림
+      C->>DB: failed_count+1 (5회째면 locked_until=15분 뒤, 횟수 0) 커밋
+      C-->>W: 401 INVALID_CREDENTIALS 또는 423 LOGIN_LOCKED
+    else 성공
+      C->>DB: 횟수·잠금 초기화, audit_log PARENT_PASSWORD_LOGIN
+      C->>DB: 이전 refresh 쿠키 세션 폐기, PARENT auth_session·refresh_token 저장 (7일)
+      C-->>W: 200 {accessToken, role:PARENT, nextAction, startPath} + Set-Cookie sagomungchi_refresh
+    end
+  end
+  W->>C: GET /me (Bearer)
+  C-->>W: 200 {authMethod:PASSWORD, loginId, email:null, nextAction, startPath}
+```
+
+#### 2.1.3 비밀번호 재확인 (#415)
+
+`/me`의 `authMethod`가 `PASSWORD`인 학부모는 중요 작업(탈퇴·보호자 비밀번호·학생 PIN·자녀 해제·자녀 삭제·자녀 이관·이관 수락)에서 Google 재인증 대신 로그인 비밀번호를 다시 입력한다. 검증·발급을 마친 challenge·grant를 한 번에 만들어, 각 작업의 grant 소비는 Google 재인증과 같다 ([API 명세 5.6](api-spec.md#56-45-계정-관리google비밀번호-재확인삭제탈퇴-계약))
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web(비밀번호 학부모)
+  participant C as core
+  participant DB as core_db
+
+  W->>C: POST /me/reauth/password {purpose, childId?, scope?, password} (Bearer)
+  alt 목적·자녀·범위 조합 오류
+    C-->>W: 400 VALIDATION_FAILED
+  else
+    rect rgba(128,128,128,0.12)
+      C->>DB: 계정 행 잠금, Google subject 확인 → parent_credential FOR UPDATE
+      alt Google 계정 (자격 행 없음)
+        C-->>W: 409 REAUTH_METHOD_MISMATCH
+      else 자녀 소유권 없음
+        C-->>W: 403 CHILD_NOT_LINKED (/me/reauth와 같음)
+      else locked_until > 지금
+        C-->>W: 423 LOGIN_LOCKED
+      else 비밀번호 틀림
+        C->>DB: failed_count+1 (로그인과 같은 횟수, 5회째면 locked_until=15분 뒤, 횟수 0) 커밋
+        C-->>W: 403 REAUTH_PASSWORD_INVALID 또는 423 LOGIN_LOCKED
+      else 성공
+        C->>DB: reauth_challenge(VERIFIED·ISSUED) + reauth_grant 저장, audit_log PASSWORD_REAUTHENTICATED
+        C-->>W: 200 {reauthToken, expiresAt} (5분·1회용 grant)
+      end
+    end
+  end
+  W->>C: 중요 작업 요청 + X-Reauth-Token
+  C->>DB: 같은 트랜잭션에서 grant 1회 소비 (Google 재인증과 같은 검사)
+```
+
 ### 2.2 자녀 등록·법정대리인 동의
 
 ```mermaid
@@ -323,7 +417,7 @@ sequenceDiagram
 
   S->>C: POST /guardian-transfers/recipient {email}
   C-->>S: 200 받는 학부모 확인 (없음·본인·한도 초과 안내)
-  S->>C: POST /me/reauth {purpose: CHILD_TRANSFER, childId} → Google 재인증 → {challengeId}로 reauthToken 수령
+  S->>C: POST /me/reauth {purpose: CHILD_TRANSFER, childId} → Google 재인증 → {challengeId}로 reauthToken 수령 (비밀번호 계정은 /me/reauth/password, 2.1.3)
   S->>C: POST /guardian-transfers {childId, recipientId, includeConversations} + X-Reauth-Token
   C->>DB: 두 계정 잠금 → 학생 잠금, ACTIVE·필수 동의·현재 연결·받는 쪽 3명 미만·탈퇴 가능 상태 확인
   alt 같은 자녀에 다른 대기 요청

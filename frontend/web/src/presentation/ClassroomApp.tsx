@@ -47,6 +47,7 @@ import { ParentAnalysis, ParentReport } from './parent/ParentFeatures.tsx'
 import './classroom.css'
 import { QueryStateNotice } from './common/QueryStateNotice.tsx'
 import { ParentUnlock } from './auth/ParentUnlock.tsx'
+import { ParentIdLogin } from './auth/ParentPasswordForms.tsx'
 
 const { recentPeriod, previousWeek } = displayPeriods
 type Page = 'home' | 'journal' | 'missions' | 'report' | 'analysis' | 'activities' | 'community' | 'points' | 'settings'
@@ -258,7 +259,7 @@ export function ClassroomApp() {
               <p className="ux-help">
                 {isDemo
                   ? '화면 시연용 계정입니다. 실제 이메일·아동 개인정보를 입력하지 마세요.'
-                  : 'Google 계정으로 로그인하고 자녀를 등록해 주세요.'}
+                  : 'Google 계정이나 아이디로 로그인하고 자녀를 등록해 주세요.'}
               </p>
             </div>
             <div className="ux-login-forms">
@@ -271,8 +272,10 @@ export function ClassroomApp() {
               <section className="ux-login-form">
                 <h2>학부모 로그인</h2>
                 <a className="cj-primary" href="/api/v1/auth/google/authorize">Google 계정으로 계속하기</a>
+                <ParentIdLogin />
                 <nav className="ux-login-links" aria-label="로그인 도움 메뉴">
                   <Link to="/login-help">로그인 도움말</Link>
+                  <Link to="/signup">아이디로 가입</Link>
                 </nav>
                 <p>처음 로그인하면 이용 동의와 자녀 등록을 진행합니다.</p>
                 {new URLSearchParams(location.search).has('oauthError') &&

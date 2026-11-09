@@ -104,6 +104,13 @@ class AdminOperationsContracts(unittest.TestCase):
                     for field in ('code','goodThought'):
                         reviewed['required'].remove(field)
                         reviewed['properties'].pop(field)
+                # #415 parent ID/password login adds loginId·authMethod to /me and makes email nullable for those accounts.
+                if section=='schemas' and name=='ParentMeResponse':
+                    for field in ('loginId','authMethod'):
+                        reviewed['required'].remove(field)
+                        reviewed['properties'].pop(field)
+                    self.assertEqual(reviewed['properties']['email']['type'],['string','null'])
+                    reviewed['properties']['email']={'type':'string','format':'email'}
                 # #387 adds the attempt start {context} body and the core limit/premium errors; restore only the approved fields.
                 if section=='paths' and name=='/missions/{missionId}/attempts':
                     post=reviewed['post']

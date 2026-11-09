@@ -191,7 +191,8 @@ export function createApiGateway(): ClassroomGateway {
           return contractError('학생 범위를 복원하지 못했습니다.')
         return { role: 'STUDENT', child: c as unknown as Child, nextAction: me.nextAction, startPath: me.startPath } as Session
       }
-      return { role: me.role, permissions: me.permissions, nextAction: me.nextAction, startPath: me.startPath } as Session
+      return { role: me.role, permissions: me.permissions, nextAction: me.nextAction, startPath: me.startPath,
+        ...(me.authMethod === 'PASSWORD' || me.authMethod === 'GOOGLE' ? { authMethod: me.authMethod } : {}) } as Session
     },
     async home(child) {
       const raw = object(await apiFetch('/students/me/home'))

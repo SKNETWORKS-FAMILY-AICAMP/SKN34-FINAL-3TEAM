@@ -11,6 +11,7 @@ import {
   mockIdentity,
   mockAccountChildren,
   mockConsentHistory, mockConsentRequired, mockGuardianConsentRequired,
+  mockPasswordParents, mockPasswordLogin,
   workspaceScenario as mode,
 } from '../fixtures/accounts.ts'
 import {
@@ -413,6 +414,26 @@ export const parentHandlers = [
       if (typeof password !== 'string' || pinProblem(password)) fail('VALIDATION_FAILED', '보호자 비밀번호는 반복·연속되지 않는 숫자 4~6자리입니다.', 422)
       consumeActionReauth(request, 'GUARDIAN_PASSWORD')
       return setGuardianPassword(password as string)
+    }),
+  ),
+  // #415 core POST /me/reauth/password와 같은 계약: ID·비밀번호 계정만, 맞으면 /me/reauth 완료와 같은 1회 토큰.
+  http.post('/api/v1/me/reauth/password', ({ request }) =>
+    respond(async () => {
+      parentGuard(request, true)
+      const body = (await request.json()) as { password?: unknown; purpose?: string; childId?: string; scope?: string }
+      const accountWide = ['WITHDRAWAL', 'GUARDIAN_PASSWORD', 'TRANSFER_ACCEPT'].includes(body.purpose ?? '')
+      if (!['PIN_CHANGE','CHILD_UNLINK','CHILD_DELETE','WITHDRAWAL','GUARDIAN_PASSWORD','CHILD_TRANSFER','TRANSFER_ACCEPT'].includes(body.purpose ?? '') ||
+        (accountWide && (body.childId !== undefined || body.scope !== undefined)) || (!accountWide && !body.childId) ||
+        (body.purpose === 'CHILD_DELETE' && !['PROFILE','RECORDS'].includes(body.scope ?? '')) ||
+        (body.purpose !== 'CHILD_DELETE' && body.scope !== undefined))
+        fail('VALIDATION_FAILED', '재인증 대상과 작업 범위를 확인해 주세요.')
+      const loginId = mockPasswordLogin.loginId
+      if (!loginId) fail('REAUTH_METHOD_MISMATCH', 'Google 계정은 Google로 본인 확인을 해 주세요.', 409)
+      if (!accountWide) await parentChild(request, body.childId!)
+      if (body.password !== mockPasswordParents.get(loginId!)?.password) fail('REAUTH_PASSWORD_INVALID', '비밀번호를 확인해 주세요.', 403)
+      const reauthToken = crypto.randomUUID(), expires = Date.now() + 300000
+      pinGrants.set(reauthToken, { childId: body.childId, purpose: body.purpose, scope: body.scope, bearer: request.headers.get('Authorization') ?? '', expires })
+      return { reauthToken, expiresAt: new Date(expires).toISOString() }
     }),
   ),
   http.post('/api/v1/me/reauth', ({ request }) =>

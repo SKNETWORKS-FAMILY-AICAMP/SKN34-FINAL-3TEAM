@@ -5,6 +5,7 @@ AWS 데모 환경(CloudFront → ALB → core)에 k6로 부하를 주어 core·N
 | 파일 | 내용 |
 |---|---|
 | `core-load.js` | k6 시나리오. 한 번 실행이 VU 단계 하나다 |
+| `prepare_accounts.py` | ID·비밀번호 시험 계정 준비(가입·동의·자녀·기기·PIN)와 비밀 파일 작성 (#415) |
 | `run-stage.ps1` | 한 단계 실행: k6 → 같은 시간대 서버 지표 수집. 로그·결과를 결과 폴더에 남긴다 |
 | `collect_metrics.py` | Prometheus(core·learning JVM, DB 풀, HTTP, RabbitMQ)·CloudWatch(RDS, ALB, NAT)·Pod 재시작 수집 |
 | `llm-stub.k8s.yaml` | 데모 `app` 네임스페이스용 LLM 스텁 Deployment·Service·NetworkPolicy |
@@ -30,21 +31,29 @@ AWS 데모 환경(CloudFront → ALB → core)에 k6로 부하를 주어 core·N
 
 ## 비밀 파일 준비 (담당자)
 
-토큰과 PIN은 **저장소 밖** 파일에만 둔다. 출력하지 않고 커밋하지 않는다.
+토큰·비밀번호·PIN은 **저장소 밖** 파일에만 둔다. 출력하지 않고 커밋하지 않는다.
 
-1. 브라우저 **시크릿 창**에서 CloudFront 주소로 시험 계정(`is_demo=true`)에 로그인한다.
-2. 같은 창에서 학생 기기를 등록하고, 자녀 PIN을 설정한다.
-3. 개발자 도구 → Application → Cookies에서 두 값을 복사한다.
-   - `sagomungchi_refresh`: 보호자 refresh 토큰 (경로 `/api/v1/auth`)
-   - `student_device`: 학생 기기 자격 증명 (경로 `/api/v1/auth/student`)
-4. **로그아웃하지 말고 시크릿 창을 닫는다.** 로그아웃하면 세션이 폐기된다. 창을 열어 둔 채 브라우저가 옛 refresh 토큰을 다시 쓰면 `REFRESH_REUSED`로 세션 전체가 폐기된다.
-5. 아래 형식으로 파일을 만든다(예: `C:\Users\<사용자>\sagomungchi-load\secrets.json`).
+### 기본: ID·비밀번호 시험 계정 (#415)
+
+`prepare_accounts.py`가 공개 API로 계정을 만든다. 순서는 ID·비밀번호 가입 → 약관·처리방침 동의 → 자녀(법정대리인 동의) → 학생 기기 등록 → 비밀번호 재확인 → 자녀 PIN이다. 비밀번호·PIN·기기 쿠키는 비밀 파일에만 쓴다.
+
+```powershell
+python evaluation/load/prepare_accounts.py --base-url https://d3jf0rnm6vhd9v.cloudfront.net `
+  --count 4 --prefix load --wait --secrets 'C:\Users\<사용자>\sagomungchi-load\secrets.json'
+```
+
+- 판정 경로까지 보려면 계정 수 × 자녀 3 × 미션 5 ≥ 학습 VU(전체의 20%)가 필요하다(`docs/report/load-test.md` 4장). 300 VU는 4개다.
+- AWS 데모는 `AUTH_NEW_ACCOUNT_DEMO=true`라서 가입한 계정이 `is_demo=true`로 저장되어 운영 집계에서 빠진다. 로컬은 이 값을 켠 core에서 만든다.
+- 가입은 같은 IP에서 10분에 5회까지다(`AUTH_SIGNUP_LIMIT_PER_IP`). `--wait`를 주면 한도에 걸릴 때 1분씩 기다렸다 다시 시도한다.
+- 같은 `--prefix`·`--secrets`로 다시 실행하면 파일에 없는 계정만 더 만든다. ID는 `<prefix><번호>`(영문 소문자·숫자)다.
+- k6 `setup()`은 실행할 때마다 계정마다 `POST /auth/parent/login`으로 보호자 access를 새로 받는다. 회전하는 refresh 토큰이 없으므로 비밀 파일을 다시 쓰지 않고, 시크릿 창·로그아웃 주의도 필요 없다.
 
 ```json
 {
   "accounts": [
     {
-      "refreshToken": "<sagomungchi_refresh 값>",
+      "loginId": "load1",
+      "password": "<생성된 비밀번호>",
       "deviceCookie": "<student_device 값>",
       "children": [{ "childId": "<자녀 UUID>", "pin": "<PIN>" }]
     }
@@ -52,9 +61,21 @@ AWS 데모 환경(CloudFront → ALB → core)에 k6로 부하를 주어 core·N
 }
 ```
 
+### 옛 방식: Google 계정 refresh 토큰
+
+`loginId`가 없는 계정은 이전처럼 refresh 토큰을 쓴다. 같은 파일에 섞어도 된다.
+
+1. 브라우저 **시크릿 창**에서 CloudFront 주소로 시험 계정(`is_demo=true`)에 로그인한다.
+2. 같은 창에서 학생 기기를 등록하고, 자녀 PIN을 설정한다.
+3. 개발자 도구 → Application → Cookies에서 두 값을 복사한다.
+   - `sagomungchi_refresh`: 보호자 refresh 토큰 (경로 `/api/v1/auth`)
+   - `student_device`: 학생 기기 자격 증명 (경로 `/api/v1/auth/student`)
+4. **로그아웃하지 말고 시크릿 창을 닫는다.** 로그아웃하면 세션이 폐기된다. 창을 열어 둔 채 브라우저가 옛 refresh 토큰을 다시 쓰면 `REFRESH_REUSED`로 세션 전체가 폐기된다.
+5. 계정 항목에 `loginId`·`password` 대신 `"refreshToken": "<sagomungchi_refresh 값>"`을 넣는다.
+
 계정·자녀가 여러 개면 `accounts`·`children`에 더한다. VU 번호 순서대로 나눠 쓴다.
 
-**refresh 토큰 회전:** 보호자 refresh 토큰은 한 번 쓰면 새 값으로 바뀐다. `setup()`이 한 번 갱신한 access 토큰(15분)을 모든 VU가 함께 쓰고, `handleSummary`가 바뀐 refresh 토큰을 같은 비밀 파일에 되돌려 쓴다. 그래서 다음 단계를 그대로 이어 실행할 수 있다. 실행이 비정상 종료되어 파일이 갱신되지 않았으면 1~5를 다시 한다. 학생 토큰은 매 실행 `setup()`에서 기기 쿠키와 PIN으로 새로 받는다.
+**refresh 토큰 회전:** 보호자 refresh 토큰은 한 번 쓰면 새 값으로 바뀐다. `setup()`이 한 번 갱신한 access 토큰(15분)을 모든 VU가 함께 쓰고, `handleSummary`가 바뀐 refresh 토큰을 같은 비밀 파일에 되돌려 쓴다(ID·비밀번호 계정은 그대로 둔다). 그래서 다음 단계를 그대로 이어 실행할 수 있다. 실행이 비정상 종료되어 파일이 갱신되지 않았으면 1~5를 다시 한다. 학생 토큰은 매 실행 `setup()`에서 기기 쿠키와 PIN으로 새로 받는다.
 
 ## 실행
 
@@ -110,4 +131,5 @@ pwsh -NoProfile -File evaluation/load/run-stage.ps1 -Vus 10 `
 
 - LLM 스텁·core JVM 옵션 원복
 - 시험 계정 자녀의 시도·답변·판정은 시험 데이터다. 삭제 범위와 방법은 실행 전에 확인받는다.
+- ID·비밀번호 시험 계정(`load<번호>`)은 `is_demo=true`라 집계에서 빠진다. 계정 탈퇴 여부는 시험 데이터 삭제와 함께 실행 전에 확인받는다.
 - 비밀 파일은 시험이 끝나면 지운다. 보호자 화면의 기기 목록에서 시험용 학생 기기를 해제한다. k6가 이어 쓰던 보호자 세션은 refresh 만료로 끝난다.
