@@ -252,7 +252,7 @@
 | GET | `/me` | 인증 | 본인 정보·역할·관리자 권한 | ACC-09 | 우선1 |
 | PATCH | `/me` | 인증 | 본인 정보 수정 | ACC-09 | 우선1 |
 | POST | `/me/reauth` | 인증 | Google 재인증 시작 `{purpose, childId?, scope?}` → `{challengeId, authorizationUrl, expiresAt}`, callback 후 `{challengeId}`로 단기 `reauthToken` 수령 (5.6) | ACC-10 | 우선1 |
-| GET | `/auth/google/reauth/callback` | 공개(재인증 상태 쿠키) | Google 재인증 callback → `{challengeId, status: VERIFIED}` (5.6) | ACC-10 | 우선1 |
+| GET | `/auth/google/reauth/callback` | 공개(재인증 상태 쿠키) | Google 재인증 callback → 완료 안내 HTML(원래 탭에 challengeId 알림 후 창 닫기) (5.6) | ACC-10 | 우선1 |
 | GET | `/me/consents` | 학부모 | 동의 이력(주체·문서 버전·시점·철회 상태) | ACC-02 | 제안 |
 | POST | `/me/consents` | 학부모 | 현재 문서의 동의 항목 저장 `{consents:[{documentId,version,agreed}], childId?}`. 계정은 TERMS·PRIVACY, 자녀는 GUARDIAN | ACC-02 | 제안 |
 | POST | `/me/consents/{consentId}/withdrawal` | 학부모 | 동의 철회. 필수 동의면 해당 자녀(또는 계정) 이용 차단 후 삭제·탈퇴 안내, 선택 동의면 해당 기능만 중단 (P09) | ACC-02 | 제안 |
@@ -1129,7 +1129,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 ### 5.6 #45 계정 관리·Google 재확인·삭제·탈퇴 계약
 
 - 기존 Google 로그인과 별도 재인증 흐름을 사용한다. `POST /me/reauth`에 `{purpose: PIN_CHANGE|CHILD_UNLINK|CHILD_DELETE|WITHDRAWAL|GUARDIAN_PASSWORD|CHILD_TRANSFER|TRANSFER_ACCEPT, childId?, scope?}`를 보내면 `{challengeId,authorizationUrl,expiresAt}`를 반환하고 HttpOnly/Secure/SameSite=Lax 재인증 상태 쿠키를 설정한다. CHILD_DELETE는 PROFILE/RECORDS scope를 반드시 지정한다. WITHDRAWAL·GUARDIAN_PASSWORD·TRANSFER_ACCEPT는 자녀/scope를 허용하지 않는다. CHILD_TRANSFER를 포함한 다른 자녀 작업은 childId 필수이며 CHILD_DELETE 외에는 scope를 허용하지 않는다.
-- Google redirect URI는 web origin + `/api/v1/auth/google/reauth/callback`이다. 기존 GoogleOAuthClient의 code·PKCE·서명·iss·aud·exp·nonce 검증을 재사용한다. callback은 현재 계정의 Google sub와 일치할 때만 challenge를 VERIFIED로 바꾸며 로그인/refresh를 발급하지 않는다. 계정 선택은 비밀번호/MFA 재입력을 보장하지 않는다. 클라이언트는 원래 로그인 세션을 유지한 상태에서 `POST /me/reauth`에 `{challengeId}`를 보내 `{reauthToken,expiresAt}`를 한 번 수령한다. 아직 callback 전이면 409 REAUTH_PENDING이다. callback 응답은 완료 안내 JSON이다.
+- Google redirect URI는 web origin + `/api/v1/auth/google/reauth/callback`이다. 기존 GoogleOAuthClient의 code·PKCE·서명·iss·aud·exp·nonce 검증을 재사용한다. callback은 현재 계정의 Google sub와 일치할 때만 challenge를 VERIFIED로 바꾸며 로그인/refresh를 발급하지 않는다. 계정 선택은 비밀번호/MFA 재입력을 보장하지 않는다. 클라이언트는 원래 로그인 세션을 유지한 상태에서 `POST /me/reauth`에 `{challengeId}`를 보내 `{reauthToken,expiresAt}`를 한 번 수령한다. 아직 callback 전이면 409 REAUTH_PENDING이다. callback 응답은 작은 안내 HTML이다(#425). 성공하면 같은 출처 `BroadcastChannel('sagomungchi-reauth')`로 `{type:"REAUTH_VERIFIED",challengeId}`만 알리고 `window.close()`를 호출하며, 닫히지 않으면 "확인이 끝났습니다. 이 창을 닫고 원래 화면으로 돌아가 주세요."를 보인다. 원래 탭은 자기 challengeId 알림을 받으면 위 수령 요청을 자동으로 보내고, 수동 "완료 확인"은 대체 수단으로 남긴다. 팝업은 `opener=null`이라 postMessage 대신 BroadcastChannel을 쓴다. 응답 헤더는 `Content-Security-Policy`(script-src·style-src nonce, default-src 'none'), `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`다. 실패(403 REAUTH_REQUIRED 조건)도 스크립트 없는 안내 HTML로 응답한다.
 - challenge 10분, reauthToken 5분(설정값, 세션 만료 이내). 토큰은 256비트 난수, DB에는 SHA-256 해시만 저장한다. 프론트는 메모리에만 보관한다. 사용자·세션 ID/version·purpose·childId·삭제 scope에 결합하며 변경 트랜잭션에서 정확히 1회 소비한다. 일반 access/로그인 상태는 재인증 증명이 아니다. 잘못된 계정·만료·위조·다른 범위·중복 사용은 403 REAUTH_REQUIRED다.
 - #58은 `ReauthenticationService.consume(identity, token, ReauthPurpose.PIN_CHANGE, childId)`를 PIN 변경의 같은 트랜잭션 안에서 호출한다(MANDATORY). 기존 인증/현재 자녀 권한 검사를 별도로 수행한다.
 - PATCH /me `{name}` → `{userId,name}`; PATCH /children/{id} `{nickname?,grade?}` → 현재 자녀. 공백·범위 밖 입력 거부. 기존 기록/학년을 변경하지 않는다. 학생 역할 금지, 계정·자녀의 현재 동의를 검사한다.

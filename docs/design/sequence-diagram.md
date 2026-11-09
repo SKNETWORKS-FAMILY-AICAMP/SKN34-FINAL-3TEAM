@@ -201,6 +201,7 @@ sequenceDiagram
   C-->>W: 200 {challengeId, authorizationUrl}
   W->>G: Google 재인증 (팝업)
   G-->>C: GET /auth/google/reauth/callback → challenge VERIFIED
+  C-->>W: 안내 HTML → BroadcastChannel로 challengeId 알림·새 탭 닫기 (#425)
   W->>C: POST /me/reauth {challengeId}
   C-->>W: 200 {reauthToken, expiresAt} (5분·1회용 grant)
   W->>C: PUT /me/guardian-password {password} + X-Reauth-Token

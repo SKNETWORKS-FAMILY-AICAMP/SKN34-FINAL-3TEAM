@@ -23,6 +23,8 @@ class AccountManagementContractTest(unittest.TestCase):
             headers = api["paths"][path][method]["parameters"]
             self.assertTrue(any(p["name"] == "X-Reauth-Token" and p["required"] for p in headers))
         self.assertEqual(api["paths"]["/auth/google/reauth/callback"]["get"]["security"], [])
+        callback = api["paths"]["/auth/google/reauth/callback"]["get"]["responses"]
+        self.assertEqual({code: list(r["content"]) for code, r in callback.items()}, {"200": ["text/html"], "403": ["text/html"]})
         self.assertEqual(api["paths"]["/me/withdrawal"]["get"]["security"], [{"BearerAuth": []}, {"WithdrawalReceipt": []}])
         self.assertNotIn("WithdrawalReceipt", api["security"][0])
         completion=api["paths"]["/internal/deletion-requests/{deletionRequestId}/completions"]["post"]

@@ -16,6 +16,8 @@ import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import com.sagomungchi.core.learning.LearningHttpStub
 import org.mockito.ArgumentMatchers.anyString
+import org.hamcrest.Matchers.containsString
+import org.hamcrest.Matchers.not
 import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
@@ -323,7 +325,15 @@ class AccountManagementTest : PostgresRepositoryTest() {
   val id=json.readTree(response.contentAsString)["challengeId"].asText()
   val cookie=response.getHeaders("Set-Cookie").first().substringAfter("=").substringBefore(";")
   val state=tokens.verify(cookie,"oauth").getClaimAsString("state")
-  mvc.get("/api/v1/auth/google/reauth/callback") { param("code","new-code");param("state",state);cookie(Cookie(ReauthenticationController.COOKIE,cookie)) }.andExpect { status { isOk() };jsonPath("$.status") { value("VERIFIED") };jsonPath("$.reauthToken") { doesNotExist() } }
+  mvc.get("/api/v1/auth/google/reauth/callback") { param("code","new-code");param("state","forged");cookie(Cookie(ReauthenticationController.COOKIE,cookie)) }
+   .andExpect { status { isForbidden() };content { contentTypeCompatibleWith(MediaType.TEXT_HTML) };content { string(containsString("data-reauth-status=\"FAILED\"")) };content { string(not(containsString("<script"))) } }
+  val page=mvc.get("/api/v1/auth/google/reauth/callback") { param("code","new-code");param("state",state);cookie(Cookie(ReauthenticationController.COOKIE,cookie)) }
+   .andExpect { status { isOk() };content { contentTypeCompatibleWith(MediaType.TEXT_HTML) };header { string("Cache-Control","no-store") };header { string("Referrer-Policy","no-referrer") } }.andReturn().response
+  val html=page.contentAsString
+  val nonce=Regex("script-src 'nonce-([A-Za-z0-9_-]+)'").find(page.getHeader("Content-Security-Policy")!!)!!.groupValues[1]
+  assertTrue(html.contains("data-challenge-id=\"$id\"") && html.contains("<script nonce=\"$nonce\">") && html.contains("BroadcastChannel('sagomungchi-reauth')") && html.contains("window.close()"))
+  assertFalse(html.contains("reauthToken"))
+  assertTrue(page.getHeaders("Set-Cookie").any { it.startsWith("${ReauthenticationController.COOKIE}=;") && it.contains("Max-Age=0") })
   assertEquals(p.identity.session.id,auth.authenticate(p.accessToken).session.id)
   mvc.post("/api/v1/me/reauth") { header("Authorization","Bearer ${p.accessToken}");header("Origin","http://localhost:5173");header("X-Requested-With","XMLHttpRequest");contentType=MediaType.APPLICATION_JSON;content="{\"challengeId\":\"$id\"}" }.andExpect { status { isOk() };jsonPath("$.reauthToken") { isString() };header { string("Cache-Control","no-store") } }
  }
