@@ -407,3 +407,13 @@ P24 일일 리포트는 LLM을 호출하지 않고 문제별 판정·되묻기�
 - 주간은 `THINKING_TYPE.missions[].attemptId`, 일일은 `PROBLEM.attemptId`로 찾음. 보호자 공유가 꺼진 판은 근거 연결을 저장하지 않아 `report_item_evidence`로는 찾을 수 없음
 - `judgment.corrected`가 true인 판정은 요소 지표(`usable_judgment`)와 일일 요소 표시에서 제외. 제외 경로는 `HELD`와 같음(FN-RPT-05)
 - 이미 만들어진 판은 바꾸지 않음. 표시·기록은 [support-admin](support-admin.md) 「정정 영향 판정과 표시」
+
+## #424 일일·주간 리포트 실서버 생성 확인 (2026-11-10)
+
+local kind에 develop `b1562c2b` 이미지를 올려 core → RabbitMQ → report-worker → core 알림까지 실제로 확인했다.
+
+- **일일 리포트**: 2026-11-10 00:00 정기 실행은 대상 0건이었다. #446이 이용약관·처리방침 1.1(V39)을 시행해, 1.0에만 동의한 기존 학부모가 재동의 전까지 필수 동의 판정에서 빠졌기 때문이다(설계대로). 재동의 뒤 core와 같은 형식의 작업·`report.generate` outbox 행을 넣어 확인: outbox 발행 → KEDA가 report-worker를 0→1로 기동 → 두 자녀 `COMPLETED` → `DAILY_REPORT_COMPLETED` 알림 2건
+- **정기 스케줄러**: 실행 시각만 2분 간격으로 바꾼 임시 core 이미지로 실제 스케줄러를 돌린 뒤 원래 이미지로 되돌렸다. 일일·주간 두 잠금이 같은 시각에 실행되어 주간 리포트(2026-11-02~08) 2건을 새로 만들고 완료, 이미 있는 일일 작업은 다시 만들지 않음, `REPORT_COMPLETED` 알림 2건. 재동의하지 않은 다른 학부모의 자녀는 대상에서 빠짐
+- **미확인**: 실제 00:00 정각 실행(cron 표현식). 코드 테스트로만 검증
+- **운영 주의**: 약관·처리방침을 개정하면 기존 학부모의 리포트 생성·알림이 재동의 전까지 멈춘다. 시연 계정은 개정 뒤 다시 로그인해 동의해야 한다
+- **kind 주의**: platform-data 차트를 새 큐 정의 전에 적용했으면 RabbitMQ에 `core.model.loading.reported`가 없어 core가 큐 선언 오류를 반복한다. platform-data를 다시 적용하면 `rabbitmq-init` Job이 새 정의를 넣는다
