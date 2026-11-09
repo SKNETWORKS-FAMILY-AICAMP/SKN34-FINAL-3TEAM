@@ -189,6 +189,20 @@ class AdminOperationsContracts(unittest.TestCase):
                     self.assertEqual(reviewed['properties'].pop('limitations')['default'],[])
                 if section=='schemas' and name=='RegisterModelVersion':
                     self.assertEqual(reviewed.pop('allOf')[0]['then']['required'],['artifactUri'])
+                # #423 documents the existing response bodies (Kotlin DTO / report EvidencePage) instead of bare objects.
+                # Check the approved refs, then restore the reviewed {type: object} shape so everything else stays fingerprinted.
+                documented={('/me','patch','200'):'AccountName',('/children/{childId}','patch','200'):'Child',
+                    ('/children/{childId}/deletion-impact','get','200'):'ChildDeletionImpact',
+                    ('/me/withdrawal/precheck','get','200'):'WithdrawalPrecheck',
+                    ('/me/withdrawal','post','202'):'WithdrawalRequested',('/me/withdrawal','get','200'):'WithdrawalStatus'}
+                for (path,method,status),ref in documented.items():
+                    if section=='paths' and name==path:
+                        content=reviewed[method]['responses'][status]['content']['application/json']
+                        self.assertEqual(content['schema'],{'$ref':'#/components/schemas/'+ref})
+                        content['schema']={'type':'object'}
+                if section=='schemas' and name=='ReportEvidence':
+                    self.assertIn('EvidencePage',reviewed['description'])
+                    reviewed={'type':'object','description':'report-api 근거 JSON을 보존. 삭제 근거는 available=false. 구체적인 필드는 #54에서 확정한다.'}
                 canonical=json.dumps(reviewed,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
                 self.assertEqual(expected,hashlib.sha256(canonical).hexdigest(),f'{section}/{name}')
     def test_admin_paths_and_retry_key(self):

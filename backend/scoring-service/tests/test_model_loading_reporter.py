@@ -1,6 +1,9 @@
+import json
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
+from jsonschema import Draft202012Validator, FormatChecker
 
 from app.model_loading_reporter import ModelLoadingReporter
 from app.model_registry import ModelRegistry
@@ -52,3 +55,31 @@ async def test_heartbeat_empty_snapshot_and_failure_do_not_break_loading():
     await registry.replace([])
     await reporter.publish()
     assert publisher.publish.call_args.args[0].data["models"] == []
+
+
+@pytest.mark.anyio
+async def test_actual_payloads_match_model_loading_event_contract():
+    # 가상 예시가 아니라 reporter가 실제로 보내는 LOADED·FAILED·빈 data를 계약으로 검사한다.
+    path = Path(__file__).resolve().parents[3] / "contracts/events"
+    schema = json.loads(
+        (path / "model.loading.reported.v1.schema.json").read_text(encoding="utf-8")
+    )
+    validator = Draft202012Validator(schema, format_checker=FormatChecker())
+    registry = ModelRegistry(loaded)
+    publisher = AsyncMock()
+    reporter = ModelLoadingReporter(registry, publisher)
+    await reporter.publish()
+    await registry.load(version(1))
+    await reporter.publish()
+
+    def broken(v):
+        raise ValueError("secret s3://credential/path")
+
+    registry._loader = broken
+    with pytest.raises(ValueError):
+        await registry.load(version(2))
+    await reporter.publish()
+    payloads = [call.args[0].data for call in publisher.publish.call_args_list]
+    assert [[m["status"] for m in p["models"]] for p in payloads] == [[], ["LOADED"], ["FAILED"]]
+    for payload in payloads:
+        validator.validate(payload)

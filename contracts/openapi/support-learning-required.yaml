@@ -234,7 +234,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CorrectionCommand'
+              $ref: '#/components/schemas/CorrectionRequest'
       x-tracking-scope: '#80'
       x-correction-rules:
         requiredProcessStatus: DONE
@@ -258,6 +258,7 @@ components:
   schemas:
     SupportTarget:
       type: object
+      additionalProperties: false
       required:
       - studentId
       - attemptId
@@ -272,14 +273,10 @@ components:
           type: string
           format: uuid
         previousResult:
-          type: string
-          enum:
-          - CORRECT
-          - PARTIAL
-          - RETHINK
-          - HELD
+          $ref: '#/components/schemas/JudgmentResult'
     SupportOriginal:
       type: object
+      additionalProperties: false
       required:
       - studentId
       - attemptId
@@ -295,6 +292,7 @@ components:
           type: array
           items:
             type: object
+            additionalProperties: false
             required:
             - answerId
             - version
@@ -311,8 +309,15 @@ components:
                 type: string
               feedback:
                 type: object
-                description: PublicAttempt feedback。draft/memo/name excluded
-    CorrectionCommand:
+                description: learning FeedbackResult와 같은 피드백. draft·memo·이름은 담지 않는다.
+    JudgmentResult:
+      type: string
+      enum:
+      - CORRECT
+      - PARTIAL
+      - RETHINK
+      - HELD
+    CorrectionRequest:
       type: object
       required:
       - reportId
@@ -326,14 +331,10 @@ components:
           type: string
           minLength: 1
         corrected:
-          type: string
-          enum:
-          - CORRECT
-          - PARTIAL
-          - RETHINK
-          - HELD
+          $ref: '#/components/schemas/JudgmentResult'
     CorrectionResult:
       type: object
+      additionalProperties: false
       required:
       - correctionId
       - previousResult
@@ -345,24 +346,15 @@ components:
           type: string
           format: uuid
         previousResult:
-          type: string
-          enum:
-          - CORRECT
-          - PARTIAL
-          - RETHINK
-          - HELD
+          $ref: '#/components/schemas/JudgmentResult'
         corrected:
-          type: string
-          enum:
-          - CORRECT
-          - PARTIAL
-          - RETHINK
-          - HELD
+          $ref: '#/components/schemas/JudgmentResult'
         createdAt:
           type: string
           format: date-time
         impact:
           type: object
+          additionalProperties: false
           required:
           - conversation
           - aggregation
