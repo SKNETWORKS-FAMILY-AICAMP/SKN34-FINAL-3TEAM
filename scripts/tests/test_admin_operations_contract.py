@@ -76,6 +76,15 @@ class AdminOperationsContracts(unittest.TestCase):
                                 cookie['description']=cookie['description'].replace(
                                     '로그아웃은 refresh 쿠키를 만료시킨다. 학생 전환(/auth/student-sessions)은 잠긴 부모 refresh 쿠키를 지우지 않는다(V24).',
                                     '학생 전환·로그아웃은 refresh 쿠키를 만료시킨다.')
+                # #425 turns the Google reauth callback into a browser HTML page (JSON body removed). Check the new
+                # HTML-only responses, then restore the reviewed JSON shape so query parameters and security stay fingerprinted.
+                if section=='paths' and name=='/auth/google/reauth/callback':
+                    callback=reviewed['get']
+                    self.assertIn('sagomungchi-reauth',callback.pop('description'))
+                    self.assertEqual({code:list(r['content']) for code,r in callback['responses'].items()},{'200':['text/html'],'403':['text/html']})
+                    callback['responses']={'200':{'description':'정상 처리','content':{'application/json':{'schema':{'type':'object'}}}},
+                        '400':{'description':'유효하지 않은 입력'},'401':{'description':'인증 실패'},
+                        '403':{'description':'권한/재인증 실패'},'409':{'description':'정책/상태 충돌'}}
                 if section=='paths' and name=='/auth/refresh':
                     self.assertIn('PARENT_SESSION_LOCKED',reviewed['post']['responses']['401']['description'])
                     reviewed['post']['responses']['401']={'$ref':'#/components/responses/Unauthenticated'}

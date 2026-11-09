@@ -3,6 +3,7 @@ import type { Child } from '../../domain/classroom.ts'
 import type { DeletionRequest, DeletionScope, ReauthPurpose } from '../../domain/service.ts'
 import { serviceApi } from '../../data/serviceApi.ts'
 import { useParentQuery, useParentMutation } from '../../data/parent/queries.ts'
+import { useReauthReturn } from '../../data/reauthReturn.ts'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import './service.css'
@@ -16,9 +17,13 @@ export function GoogleRecheck({ purpose, childId, scope, onProof }: { purpose: R
     const popup=window.open('about:blank','_blank')
     if(!popup){setNotice('팝업을 허용한 뒤 다시 시도해 주세요.');return}
     popup.opener=null;onProof('');setProof(null);setChallenge('')
-    void start.mutateAsync(undefined).then(data=>{const url=new URL(data.authorizationUrl,location.origin);if(url.protocol!=='https:'&&url.origin!==location.origin)throw new Error('재확인 주소가 올바르지 않습니다.');popup.location.href=url.href;setChallenge(data.challengeId);setNotice('Google 확인을 마친 뒤 완료 확인을 눌러 주세요.')}).catch(()=>{popup.close();setNotice('본인 확인을 시작하지 못했습니다.')})
+    void start.mutateAsync(undefined).then(data=>{const url=new URL(data.authorizationUrl,location.origin);if(url.protocol!=='https:'&&url.origin!==location.origin)throw new Error('재확인 주소가 올바르지 않습니다.');popup.location.href=url.href;setChallenge(data.challengeId);setNotice('Google 확인을 마치면 이 화면에서 자동으로 완료됩니다. 넘어오지 않으면 완료 확인을 눌러 주세요.')}).catch(()=>{popup.close();setNotice('본인 확인을 시작하지 못했습니다.')})
   }
-  return <div className="ws-form"><button type="button" onClick={begin} disabled={start.isPending||finish.isPending}>Google 본인 확인</button>{challenge&&!proof&&<button type="button" disabled={finish.isPending} onClick={()=>void finish.mutateAsync(undefined).then(data=>{setProof({token:data.reauthToken,expiresAt:data.expiresAt});onProof(data.reauthToken);setNotice('재확인을 마쳤습니다. 선택한 작업만 한 번 실행할 수 있습니다.')}).catch(()=>{})}>완료 확인</button>}<p role="status">{notice}</p><ErrorNotice error={start.error??finish.error}/></div>
+  function complete() {
+    void finish.mutateAsync(undefined).then(data=>{setProof({token:data.reauthToken,expiresAt:data.expiresAt});onProof(data.reauthToken);setNotice('재확인을 마쳤습니다. 선택한 작업만 한 번 실행할 수 있습니다.')}).catch(()=>{})
+  }
+  useReauthReturn(challenge,!!challenge&&!proof&&!finish.isPending,complete)
+  return <div className="ws-form"><button type="button" onClick={begin} disabled={start.isPending||finish.isPending}>Google 본인 확인</button>{challenge&&!proof&&<button type="button" disabled={finish.isPending} onClick={complete}>완료 확인</button>}<p role="status">{notice}</p><ErrorNotice error={start.error??finish.error}/></div>
 }
 export function AccountLifecycle({ child }: { child: Child }) {
   const impact=useParentQuery(['deletion-impact',child.id],signal=>serviceApi.impact(child.id,signal))

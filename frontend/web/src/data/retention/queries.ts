@@ -55,6 +55,7 @@ export function useRecordReviewView(childId: string | undefined) {
   })
 }
 
+/** 보호자가 다른 창·기기에서 동의하면 학생이 창으로 돌아올 때 바로 반영되도록 포커스마다 다시 읽는다(#433). */
 export const useCommunitySettings = (childId: string | undefined) =>
   useQuery({
     queryKey: ['community-settings', childId],

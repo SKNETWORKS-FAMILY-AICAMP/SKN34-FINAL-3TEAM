@@ -52,12 +52,21 @@ function CommunitySharing({ child }: { child: Child }) {
     <p>켜 두면 내가 마무리한 미션의 답이 같은 미션을 마무리한 친구들에게 별명으로 보여요. 처음에는 꺼져 있어요.</p>
     {query.isPending && <p role="status">친구 공개 설정을 읽고 있어요.</p>}
     <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-    {value && !value.consentGranted && <p className="st-meta" role="note">학부모님이 커뮤니티 이용에 동의해 주셔야 켤 수 있어요. 학부모님께 부탁해 보세요.</p>}
     {value && <fieldset disabled={save.isPending}>
       <legend>친구 공개</legend>
       <label><input type="radio" name="community" checked={!enabled} onChange={() => save.mutate(false)} />나만 볼게요</label>
-      <label><input type="radio" name="community" checked={!!enabled} disabled={!value.consentGranted} onChange={() => save.mutate(true)} />친구들에게 보여 줄게요</label>
+      <label>
+        <input type="radio" name="community" aria-label="친구들에게 보여 줄게요" checked={!!enabled} disabled={!value.consentGranted}
+          aria-describedby={value.consentGranted ? undefined : 'community-consent-note'} onChange={() => save.mutate(true)} />
+        친구들에게 보여 줄게요
+        {!value.consentGranted && <strong className="st-badge"> · 보호자 동의가 필요해요</strong>}
+      </label>
     </fieldset>}
+    {value && !value.consentGranted && <div className="st-consent-note" id="community-consent-note" role="note">
+      <p><strong>아직 켤 수 없어요. 학부모님 동의가 먼저 필요해요.</strong></p>
+      <p>학부모님이 계정·자녀 설정 › 공개·동의 › 풀이 공유 커뮤니티에서 동의해 주시면 켤 수 있어요.</p>
+      <p className="st-meta">동의를 받은 뒤 이 화면으로 돌아오면 자동으로 다시 확인해요.</p>
+    </div>}
     {needsConsent ? <p role="alert">학부모님 동의가 아직 없어서 켜지 못했어요.</p> : <ErrorNotice error={save.error} />}
     {value && <p role="status">{save.isPending ? '친구 공개 설정을 저장하고 있어요.' : `친구 공개 ${value.enabled && value.consentGranted ? '켜짐' : '꺼짐'}`}</p>}
     <div className="st-sharing-actions">

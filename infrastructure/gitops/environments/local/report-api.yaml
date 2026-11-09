@@ -32,6 +32,9 @@ pdb:
 networkPolicy:
   enabled: true
   ingressFromApps: [core-service]
+  # #418: 리포트 근거 조회(GET /internal/records/evidence). prod report-api.json과 같은 허용
+  egressToApps:
+    - {name: learning-service, port: 8081}
   egressToPlatform:
     - {name: postgres, port: 5432}
     - {name: minio, port: 9000}
