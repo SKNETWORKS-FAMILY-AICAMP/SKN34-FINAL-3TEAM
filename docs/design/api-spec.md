@@ -1347,3 +1347,7 @@ report-worker는 생성 시작 시 한 번 조회하여 command에 고정한다.
 - 복구 요청 `POST /internal/report-jobs/{jobId}/reconcile`도 periodType을 받는다. 미지정 WEEKLY, DAILY는 하루만 허용한다. 응답은 기존 7개 필드를 유지하며 periodType을 추가하지 않는다.
 
 - #391 learning 기록 목록·상세·일일 완료 목록은 `context: THEME_DAY|THEME_REVIEW|EXTRA`를 실제 시도에서 반환한다. 주간 요약은 기존 #207 비교 규칙의 상태·요소만 포함하며 답변 원문·인용은 반환하지 않는다.
+
+### scoring Pod별 모델 로딩 확인 (#370)
+
+`GET /api/v1/admin/model-loading` (SERVICE_OPS): `pods[]`의 Pod·프로세스·보고 시각·stale·모델 상태와 `summaries[]`의 활성 name/version/revision별 observedPods·loadedPods·failedPods를 반환한다. 분모는 최근 120초 안에 보고한 Pod이며 Kubernetes 전체 replica 수가 아니다. 0개는 미확인이다. 품질 승인·추론 확인과 분리한다. 이벤트 `model.loading.reported.v1`로 30초마다 전체 상태를 재보고하며 상태 보관·배포 순서는 [#370 설계](../report/issue-370-model-loading.md)를 따른다.

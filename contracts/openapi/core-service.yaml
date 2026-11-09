@@ -4505,6 +4505,20 @@ paths:
         '400': {$ref: '#/components/responses/InvalidRequest'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/model-loading:
+    get:
+      operationId: listModelLoading
+      tags: [ModelRegistry]
+      summary: SERVICE_OPS scoring Pod별 로딩 보고
+      description: 최근 120초 보고 기준. 전체 배포 replica 수나 품질·추론 승인을 의미하지 않는다. 24시간 지난 기록은 제외한다.
+      responses:
+        '200':
+          description: Pod별 상태와 활성 버전별 관측 집계
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ModelLoadingStatus'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /admin/model-versions:
     get:
       operationId: listModelVersions
@@ -7892,6 +7906,50 @@ components:
                 - ACCESS_DENIED
                 - OBJECT_CHANGED
                 - STORAGE_UNAVAILABLE
+
+    ModelLoadingStatus:
+      type: object
+      required: [observedAt, staleAfterSeconds, populationSource, pods, summaries]
+      properties:
+        observedAt: {type: string, format: date-time}
+        staleAfterSeconds: {type: integer, const: 120}
+        populationSource: {type: string, const: RECENT_REPORTS}
+        pods:
+          type: array
+          items:
+            type: object
+            required: [podId, instanceId, reportedAt, stale, models]
+            properties:
+              podId: {type: string}
+              instanceId: {type: string, format: uuid}
+              reportedAt: {type: string, format: date-time}
+              stale: {type: boolean}
+              models:
+                type: array
+                items:
+                  type: object
+                  required: [name, version, revision, status, errorType, loadedVersion, loadedRevision, previousModelRetained]
+                  properties:
+                    name: {type: string}
+                    version: {type: string}
+                    revision: {type: integer, minimum: 1}
+                    status: {type: string, enum: [LOADING, LOADED, FAILED]}
+                    errorType: {type: [string, 'null']}
+                    loadedVersion: {type: [string, 'null']}
+                    loadedRevision: {type: [integer, 'null']}
+                    previousModelRetained: {type: boolean}
+        summaries:
+          type: array
+          items:
+            type: object
+            required: [name, version, revision, observedPods, loadedPods, failedPods]
+            properties:
+              name: {type: string}
+              version: {type: string}
+              revision: {type: [integer, 'null']}
+              observedPods: {type: integer, minimum: 0}
+              loadedPods: {type: integer, minimum: 0}
+              failedPods: {type: array, items: {type: string}}
     GuardianTransferView:
       type: object
       required:

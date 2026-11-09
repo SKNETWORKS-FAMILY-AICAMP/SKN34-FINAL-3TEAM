@@ -21,6 +21,7 @@ from app.messaging.connection import AmqpConnection
 from app.messaging.consumer import ModelVersionConsumer
 from app.messaging.publisher import EventPublisher, UsagePublisher
 from app.model_loader import ModelLoader
+from app.model_loading_reporter import ModelLoadingReporter
 from app.model_registry import ModelRegistry
 from app.preflight import router as preflight_router
 from app.security import InternalAuthMiddleware
@@ -56,11 +57,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         app.state.m1_service = M1Service()
         app.state.readiness_checks = {"rabbitmq": rabbitmq_ready, "models": consumer.is_ready}
+        reporter = ModelLoadingReporter(registry, EventPublisher(amqp))
+        reporter.start()
         consumer.start()
         try:
             yield
         finally:
             await consumer.close()
+            await reporter.close()
             await usage.close()
             await amqp.close()
 

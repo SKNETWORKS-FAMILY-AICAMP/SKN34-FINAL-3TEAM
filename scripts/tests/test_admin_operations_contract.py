@@ -170,5 +170,5 @@ class AdminOperationsContracts(unittest.TestCase):
             if name.startswith('Operation'): Draft202012Validator.check_schema(schema)
     def test_queue_allowlist(self):
         definition=json.loads((ROOT/'infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json').read_text())
-        self.assertEqual(30,len(definition['queues']))
+        self.assertEqual(35,len(definition['queues']))  # #370 work + 3 retry + DLQ 추가
         self.assertEqual({'/'},{q['vhost'] for q in definition['queues']})

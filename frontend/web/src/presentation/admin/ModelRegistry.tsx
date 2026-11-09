@@ -5,6 +5,7 @@ import type { ModelVersion } from '../../domain/admin/operations.ts'
 import { actionBlockers, EVIDENCE_LABELS, KNOWN_MODEL_SCOPES } from '../../domain/admin/modelRegistration.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
+import { ModelLoadingStatus } from './ModelLoadingStatus.tsx'
 import { ModelRegistrationPanel } from './ModelRegistrationPanel.tsx'
 import '../service/service.css'
 import './modelRegistry.css'
@@ -38,7 +39,7 @@ function VersionCard({ version: v }: { version: ModelVersion }) {
       <ol><li>등록: {v.status === 'REGISTERED' ? '등록 완료, 승인 전' : '등록 완료'}</li>
         <li>사전 검사: 이 화면에서 확인할 수 없습니다. 산출물·해시·범위 호환성을 별도로 확인하세요.</li>
         <li>승인·활성화: {v.status === 'ACTIVE' ? 'core 활성화 완료, 로딩은 scoring에서 확인' : v.status === 'INACTIVE' ? '현재 비활성' : '사람 승인 대기'}</li>
-        <li>로딩 확인: scoring의 각 replica에서 <code>/internal/versions</code>의 이름·버전·active와 readiness 응답 200을 확인하세요.</li>
+        <li>로딩 확인: {v.kind === 'MODEL' && v.status === 'ACTIVE' ? <ModelLoadingStatus name={v.name} version={v.version} revision={record?.revision ?? 0} /> : '활성 scoring 모델의 Pod 보고를 표시합니다.'}</li>
         <li>추론 확인: 해당 범위의 합성 입력으로 추론하고 적용 버전과 결과를 확인하세요. <code>scripts/verify_scoring_m2.py</code>를 참고하세요.</li></ol>
     </details>
     {v.status !== 'ACTIVE' && <fieldset className="ws-form" disabled={mutation.isPending}>

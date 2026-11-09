@@ -712,6 +712,14 @@ erDiagram
   user_account ||--o{ audit_log : acts
   user_account |o--o{ model_version : approves
 
+  model_loading_report {
+    uuid instance_id PK "프로세스 기동 UUID"
+    varchar pod_id "Pod명"
+    bigint sequence "양수 · 프로세스별 보고 순번"
+    timestamptz reported_at "보고 생성 시각"
+    timestamptz received_at "core 수신 시각"
+    jsonb models "모델별 로딩 전체 상태 배열"
+  }
   model_version {
     uuid id PK
     varchar kind "RUBRIC|MODEL|PROMPT|GENERATION"
@@ -791,6 +799,7 @@ erDiagram
   }
 ```
 
+- `model_loading_report`: 운영 관측 전용으로 승인 모델과 FK를 만들지 않는다. 과거 버전·실패·빈 snapshot도 보관한다. 120초 보고 만료, 24시간 보관, Pod 재시작 시 최신 프로세스 보고를 사용한다. PK instance_id, sequence > 0, models는 JSON 배열이며 나머지 컬럼은 모두 NOT NULL이다.
 - `model_version` UK `(kind, name, version)`, 부분 UK `(kind, name) WHERE status = 'ACTIVE'`. 롤백은 이전 버전 재활성화 + `audit_log` 기록 (FN-ADM-18)
 - #43 `eval_result`는 API 5.2의 불변 평가 근거·최초 승인과 현재 적용 범위·그룹 revision을 저장한다. DDL·기존 ACTIVE 부분 UK는 유지한다. 교체는 동일 그룹 transaction advisory lock 이후 상태·감사·Outbox를 원자적으로 저장한다.
 - 기준표 원본은 learning `rubric_version`, core는 `kind = RUBRIC` 행의 `ref_id`로 연결해 승인·활성 상태만 관리
