@@ -6,7 +6,7 @@ const browser=await chromium.launch({headless:true,executablePath:process.env.CH
 if(out)await mkdir(out,{recursive:true})
 const errors=[],checks=[],layouts=[]
 async function fresh(){const c=await browser.newContext({viewport:{width:1440,height:1000}});await c.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//,r=>r.abort());const p=await c.newPage();p.setDefaultTimeout(10000);p.on('pageerror',e=>errors.push(e.message));return p}
-async function login(p,email='admin@example.test'){await p.goto(base+'/admin/login');await p.getByRole('heading',{name:'관리자 로그인',exact:true}).waitFor();await p.getByLabel('이메일',{exact:true}).fill(email);await p.getByRole('button',{name:'시연 계정으로 로그인',exact:true}).click();await p.waitForURL('**/admin/home')}
+async function login(p,email='admin@example.test'){await p.goto(base+'/admin/login');await p.getByRole('heading',{name:'관리자 로그인',exact:true}).waitFor();await p.getByLabel('로그인 ID',{exact:true}).fill(email);await p.getByRole('button',{name:'로그인',exact:true}).click();await p.waitForURL('**/admin/home')}
 async function nav(p,label){await p.getByRole('navigation',{name:'관리자 메뉴',includeHidden:true}).waitFor({state:'attached'});let link=p.getByRole('navigation',{name:'관리자 메뉴',includeHidden:true}).getByRole('link',{name:label,exact:true,includeHidden:true});if(!await link.isVisible())await p.getByRole('button',{name:'메뉴',exact:true}).click();await link.click();await p.waitForTimeout(250)}
 try{
  const p=await fresh();await login(p);checks.push('관리자 전용 로그인 → 권한별 시작 화면')

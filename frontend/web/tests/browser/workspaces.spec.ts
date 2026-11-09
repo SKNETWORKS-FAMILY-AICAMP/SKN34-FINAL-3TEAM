@@ -9,8 +9,8 @@ test.beforeEach(async ({ page }) => {
 
 async function login(page: Page, role: 'parent' | 'admin' = 'parent', email?: string) {
   await page.goto(role === 'admin' ? '/admin/login' : '/login')
-  if (email) await page.getByRole('textbox', { name: '이메일', exact: true }).fill(email)
-  await page.getByRole('button', { name: '시연 계정으로 로그인', exact: true }).click()
+  if (email) await page.getByRole('textbox', { name: role === 'admin' ? '로그인 ID' : '이메일', exact: true }).fill(email)
+  await page.getByRole('button', { name: role === 'admin' ? '로그인' : '시연 계정으로 로그인', exact: true }).click()
   await expect(page).toHaveURL(role === 'admin' ? /\/admin\/home/ : /\/parent\/journal/)
 }
 
@@ -104,6 +104,20 @@ test('학생 시연 기기 준비 → PIN 인증 → 학생 홈', async ({ page 
   await page.getByRole('button', { name: /확인|들어가기/ }).click()
   await expect(page).toHaveURL(/\/student\/home/)
   await expect(page.getByRole('heading', { name: /학습 홈/ })).toBeAttached()
+})
+
+test('관리자 로그인은 사용자 화면에 링크가 없고, 학부모 계정·틀린 비밀번호는 같은 안내를 준다 (#369)', async ({ page }) => {
+  await page.goto('/login')
+  await expect(page.getByRole('heading', { name: '학부모 로그인', exact: true })).toBeVisible()
+  await expect(page.locator('a[href="/admin/login"]')).toHaveCount(0)
+  await page.goto('/admin/login')
+  for (const [id, password] of [['parent@example.test', 'demo-only'], ['admin@example.test', 'wrong-password']]) {
+    await page.getByRole('textbox', { name: '로그인 ID', exact: true }).fill(id)
+    await page.getByLabel('비밀번호', { exact: true }).fill(password)
+    await page.getByRole('button', { name: '로그인', exact: true }).click()
+    await expect(page.getByText('아이디 또는 비밀번호를 확인해 주세요.')).toBeVisible()
+    await expect(page).toHaveURL(/\/admin\/login/)
+  }
 })
 
 test('관리자 큐·DLQ와 작업 재처리의 선택 상태를 분리한다', async ({ page }) => {

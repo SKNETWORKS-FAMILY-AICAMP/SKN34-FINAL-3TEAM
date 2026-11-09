@@ -97,6 +97,7 @@
 | `REFRESH_REUSED` | 401 | 이미 사용된 refresh 재사용 → 해당 세션 전체 폐기 (5.1) |
 | `OAUTH_FAILED` / `OAUTH_UNAVAILABLE` | 401 / 503 | Google 인증 실패 / Google 로그인 미설정·연결 실패. 콜백은 `/auth/complete?error=<code>`로 전달 (5.1) |
 | `ACCOUNT_EXISTS` | 409 | 같은 이메일의 기존 계정은 자동 연결하지 않음 (5.1) |
+| `INVALID_CREDENTIALS` / `ADMIN_LOGIN_LOCKED` | 401 / 423 | 관리자 ID·비밀번호 로그인 실패(없는 ID·틀린 비밀번호·비관리자·비활성 계정 구분 없음) / 연속 5회 실패 후 15분 잠금 (5.1, #369) |
 | `AUTH_UNAVAILABLE` | 503 | 인증 상태 확인 실패(DB 장애 등) |
 | `CONSENT_REQUIRED` | 403 | 필수 계정 동의 또는 GUARDIAN 동의 전 접근 (5.3) |
 | `CONSENT_DOCUMENT_CHANGED` / `CONSENT_DOCUMENTS_UNAVAILABLE` | 409 / 503 | 제출한 동의 문서 버전이 현재와 다름 / 게시된 동의 문서 확인 실패 (5.3) |
@@ -237,6 +238,7 @@
 | GET | `/consent-documents` | 공개 | 현재 이용 안내·동의 문서(버전) 조회 | ACC-02 | 제안 |
 | GET | `/auth/google/authorize` | 공개 | Google 로그인·가입 시작 (Authorization Code + PKCE) | ACC-01, ACC-03 | 제안 |
 | GET | `/auth/google/callback` | 공개 | Google 코드 교환·ID 토큰 검증 → refresh 쿠키 → web 복귀 | ACC-03 | 제안 |
+| POST | `/auth/admin/login` | 공개 | 등록된 관리자 ID·비밀번호 로그인 `{loginId,password}` → refresh 응답과 같은 형식 + refresh 쿠키. 가입 없음, `admin_credential` 행으로만 등록 (#369, 5.1) | ACC-03, ADM-01 | 핵심 |
 | POST | `/auth/refresh` | 쿠키 | access token 재발급 | ACC-04 | 제안 |
 | POST | `/auth/logout` | 인증 | refresh token 폐기 | ACC-04 | 제안 |
 | POST | `/auth/student/logout` | 학생 Bearer | 해당 학생 세션만 폐기, 보호자 refresh·기기 쿠키 유지 | ACC-04, ACC-05 | 핵심 |
@@ -1027,6 +1029,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 기기 진입 3개 경로(`POST /auth/student/devices`, `GET /auth/student/profiles`, `POST /auth/student/login`)만 Bearer 검사에서 제외. POST는 다른 쿠키 API와 같이 정확한 web Origin·`X-Requested-With` 검사 유지. 다른 메서드·유사 경로와 `/auth/student-sessions`는 제외하지 않음
 
 - 학부모·관리자: Google core 콜백 → refresh 쿠키 → web `/oauth/complete` → refresh → `/me`. access는 HS256, 기본 15분·메모리 보관. refresh는 256비트 난수·SHA-256 해시 저장, 최초 로그인부터 최대 7일이며 회전으로 연장하지 않는다. 재사용 시 해당 세션 폐기.
+- 관리자 ID·비밀번호(#369, 2026-11-09): `POST /auth/admin/login {loginId,password}`는 `user_account.login_id`가 같고 `role=ADMIN`·`status=ACTIVE`이며 `admin_credential` 행이 있는 계정만 받는다. 가입 API는 없고 운영자가 `scripts/admin_account_sql.py`로 행을 만들거나 비밀번호 재설정·비활성화한다. 비밀번호는 PBKDF2-SHA256(60만 회, 보호자 비밀번호와 같은 해시)으로만 저장한다. 없는 ID·틀린 비밀번호·비관리자·비활성 계정은 같은 401 `INVALID_CREDENTIALS`(없는 ID도 해시 검사를 한 번 해 응답 시간 차이를 줄임), 연속 5회째 실패부터 15분간 423 `ADMIN_LOGIN_LOCKED`이며 실패 횟수는 오류 응답 전에 커밋한다. 성공하면 실패 횟수를 지우고 `audit_log`에 `ADMIN_PASSWORD_LOGIN`을 남긴 뒤 Google 로그인과 같은 ADMIN 세션·refresh 쿠키를 발급한다(이전 refresh 쿠키의 세션은 폐기). 정확한 web Origin·`X-Requested-With` 검사를 받는다. web은 `/admin/login`에서만 이 폼을 보여 주고 사용자 화면에는 관리자 로그인 링크·문구를 두지 않는다. 기존 Google 관리자 로그인은 유지한다.
 - 학생(동석·단독 공통): access 전용, refresh 미발급. 동석 `/auth/student-sessions`는 별도 학생 auth_session(`parent_session_id` = 학부모 세션)을 만들고, 학부모 세션은 `locked_at`을 기록하고 version을 올려 잠근다. 학부모 refresh 쿠키는 지우지 않는다. 잠긴 세션의 `/auth/refresh`는 refresh 토큰을 소비하지 않고 401 `PARENT_SESSION_LOCKED`이며 기존 부모 access는 `SESSION_CHANGED`로 거부한다. 단독 PIN 로그인은 별도 학생 auth_session을 생성하며 기존 부모 세션을 변경하지 않는다.
 - 학부모 복귀(보호자 비밀번호, 2026-11-03): `POST /auth/parent-unlock {password}`는 refresh 쿠키의 잠긴 학부모 세션과 계정의 보호자 비밀번호를 확인한다. 성공하면 잠금을 풀고 version을 올리며, 그 세션에서 들어간 학생 세션을 폐기하고, refresh를 회전해 refresh 응답과 같은 본문·쿠키를 준다. 실패는 비밀번호 실패 횟수를 커밋한 뒤 401 `GUARDIAN_PASSWORD_INVALID`(`remainingAttempts`), 5회째와 이후는 423 `GUARDIAN_PASSWORD_LOCKED`, 미설정은 409 `GUARDIAN_PASSWORD_NOT_SET`이다. 이때는 Google 로그인으로 돌아오며, 새 로그인은 이전(잠긴) 세션과 그 학생 세션을 폐기한다. 잠기지 않은 세션은 refresh와 같이 처리한다.
 - 보호자 비밀번호는 `guardian_password`(계정당 1행)에 PBKDF2 해시·실패 횟수·잠금 시각만 저장한다. 설정·변경은 `PUT /me/guardian-password`에서 `GUARDIAN_PASSWORD` 재인증 grant(5.6)를 같은 트랜잭션에서 1회 소비하며, 성공 시 실패 횟수·잠금을 초기화한다. 탈퇴 요청 시 삭제한다.
@@ -1040,7 +1043,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 부모/관리자 refresh는 Web Locks로 탭 간 직렬화한다. 학생 전환·로그아웃 알림을 받은 다른 탭은 토큰·캐시를 지우며 학생 refresh로 다시 로그인하지 않는다. 학생→부모 복귀는 Google 로그인부터 시작한다.
 - PIN/동석 학생의 종료는 `POST /auth/student/logout`을 사용한다. `Origin`·`X-Requested-With`와 유효한 학생 Bearer를 검증하고 그 세션만 폐기한다(204, Cache-Control: no-store, Set-Cookie 없음). 누락·만료·위조 Bearer는 401, 다른 역할·출처는 403이며 동반된 보호자 refresh로 대체 인증하거나 보호자 세션을 폐기하지 않는다. 기존 `/auth/logout`의 보호자·관리자 로그아웃 계약은 유지한다.
 - 학생에서 보호자 로그인 화면으로 전환할 때는 해당 탭의 access·화면 캐시만 정리하며 전역 LOGOUT을 방송하지 않는다. 탭별 비밀정보 없는 `sessionStorage` 전환 표식으로 새로고침 후에도 보호자 쿠키 자동 복원을 차단하고, Google OAuth 완료 후에만 보호자 역할을 복원한다. PIN 진입 및 학생 만료 경로는 유지한다.
-- 계정 복구·비밀번호 변경 API는 Google 단일 로그인 범위에서 제외(기기·PIN 저장은 core V13, Google 재인증은 5.6).
+- 계정 복구·비밀번호 변경 API는 Google 단일 로그인 범위에서 제외(기기·PIN 저장은 core V13, Google 재인증은 5.6). 관리자 비밀번호 재설정도 API 없이 `scripts/admin_account_sql.py`로만 한다(#369).
 
 ### 5.2 #43 모델 레지스트리 확정 계약
 

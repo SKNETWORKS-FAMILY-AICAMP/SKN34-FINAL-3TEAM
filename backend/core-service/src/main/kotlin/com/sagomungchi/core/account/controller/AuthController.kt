@@ -45,6 +45,11 @@ class AuthController(
         }
     }
 
+    /** #369: registered admins only. No signup; a previous refresh cookie's session is replaced like Google login. */
+    @PostMapping("/api/v1/auth/admin/login")
+    fun adminLogin(@RequestBody body: AdminLoginRequest, request: HttpServletRequest, response: HttpServletResponse): Map<String, Any?> =
+        issue(service.adminLogin(body.loginId, body.password, cookies.read(request, AuthCookies.REFRESH)), response)
+
     @PostMapping("/api/v1/auth/refresh")
     fun refresh(request: HttpServletRequest, response: HttpServletResponse): Map<String, Any?> =
         issue(service.refresh(cookies.read(request, AuthCookies.REFRESH)), response)
@@ -106,4 +111,5 @@ class AuthController(
         .cacheControl(CacheControl.noStore()).header("Referrer-Policy", "no-referrer")
     data class StudentSessionRequest(val childId: UUID)
     data class ParentUnlockRequest(val password: String)
+    data class AdminLoginRequest(val loginId: String?, val password: String?)
 }

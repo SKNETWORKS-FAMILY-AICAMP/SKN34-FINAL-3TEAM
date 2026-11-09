@@ -46,3 +46,6 @@ data class AuthenticatedAccount(
 )
 
 data class GoogleProfile(val subject: String, val email: String, val name: String?)
+
+/** #369: password login allowed only for ADMIN accounts that have an admin_credential row. */
+data class AdminCredential(val userId: UUID, val passwordHash: String, val failedCount: Int, val lockedUntil: OffsetDateTime?)

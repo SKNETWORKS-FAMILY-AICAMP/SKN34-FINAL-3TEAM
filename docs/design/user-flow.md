@@ -17,6 +17,7 @@
 | 역할 부여 | URL 입력만으로 역할을 주지 않음. 로그인 응답의 `role`·`startPath`·`nextAction`, 학생 세션으로만 진입 |
 | 메뉴 노출 | 학부모·학생은 역할 고정 메뉴, 관리자는 승인 권한(`CONTENT`·`SERVICE_OPS`·`PAYMENT_VIEW`·`PAYMENT_REFUND`)별 메뉴 |
 | 목업 화면 | SC-01-001·SC-01-002의 이메일·비밀번호 폼은 개발 목업. 운영 모드는 Google 인증으로 시작하고 이용 동의는 `/parent/onboarding`에서 진행 |
+| 관리자 주소 | 사용자 화면(`/login`·도움말 등)에 `/admin/login` 링크·관리자 문구 없음. 관리자는 주소를 직접 입력하고, 등록된 ID·비밀번호 또는 Google로 로그인 (#369) |
 
 ---
 
@@ -27,7 +28,7 @@ flowchart LR
   U(("사용자")) --> Q{"누가 어디서 시작?"}
   Q -->|"학부모"| L["SC-01-001 로그인<br/>/login"]
   Q -->|"자녀 (등록 기기)"| SL["SC-02-001~003 자녀 기기 진입<br/>/student/login"]
-  Q -->|"관리자"| AL["SC-04-000 관리자 로그인<br/>/admin/login"]
+  Q -->|"관리자 (주소 직접 입력)"| AL["SC-04-000 관리자 로그인<br/>/admin/login"]
 
   L --> G("Google 인증") --> NA{"nextAction"}
   NA -->|"CONSENT_REQUIRED"| ON["이용 동의<br/>/parent/onboarding"]
@@ -41,7 +42,7 @@ flowchart LR
   SL -->|"PIN 확인"| SH
   SH -->|"로그아웃 → 학부모 화면으로 돌아가기 (보호자 비밀번호, V24)"| L
 
-  AL --> AG("Google 인증 + 승인 권한") --> AH["SC-04-001 운영 현황<br/>/admin/home"]
+  AL --> AG("등록 관리자 ID·비밀번호 또는 Google 인증 + 승인 권한") --> AH["SC-04-001 운영 현황<br/>/admin/home"]
 ```
 
 ---

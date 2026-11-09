@@ -267,6 +267,7 @@ classDiagram
     +startGoogle() StartedGoogleLogin
     +completeGoogle(code, state, error, stateCookie, previousRefresh) IssuedAuth
     +login(profile, previousRefresh) IssuedAuth
+    +adminLogin(loginId, password, previousRefresh) IssuedAuth
     +authenticate(accessToken) AuthenticatedAccount
     +refresh(refreshToken) IssuedAuth
     +enterStudent(refreshToken, studentId, expected) IssuedAuth
@@ -555,7 +556,7 @@ classDiagram
 - 동의는 별도 entity 없이 선택마다 새 `consent` 행(AGREED·WITHDRAWN)을 저장하고 최신 행으로 판정 (상태 다이어그램 2.3, [이슈 #37 보고서](../report/auth-account.md))
 - `StudentAccessService`·`ConsentAccessService`는 인증용 읽기 전용 확인. 쓰기(자녀 등록·동의 저장)는 `GuardianshipService`·`ConsentService`(#37) 소유
 - 공개 API 컨텍스트는 `PublicAuthFilter`가 설정하고 finally에서 해제 (`InternalAuthFilter`와 같은 방식)
-- 이메일·비밀번호 가입·로그인·로그인 수단 변경 없음. Google 계정은 `(oauth_provider, oauth_subject)`로 식별, 최초 콜백에서 `AuthService.login`이 PARENT 계정 생성 (API 명세 5.1)
+- 이메일·비밀번호 가입·로그인·로그인 수단 변경 없음(예외: 가입 없는 관리자 ID·비밀번호 로그인 `AuthService.adminLogin`, `admin_credential`·`PinHasher` 해시·5회 실패 15분 잠금, #369). Google 계정은 `(oauth_provider, oauth_subject)`로 식별, 최초 콜백에서 `AuthService.login`이 PARENT 계정 생성 (API 명세 5.1)
 - 재확인 토큰(`reauthToken`)은 Google 재인증 기반(#45), DB reauth_challenge/reauth_grant 저장
 - `AuthService.enterStudent` (`POST /auth/student-sessions`): 학부모 Bearer 세션 행을 잠그고 연결·활성 자녀·필수·법정대리인 동의 확인 → 학부모 세션 `locked_at`·version 증가, `parent_session_id`를 가진 학생 세션 생성 → `STUDENT` access만 발급, 학부모 refresh 쿠키는 유지(잠김) (P01, 학부모 동석). 학생 계정·시연 링크 없음
 - `AuthService.unlockParent` (`POST /auth/parent-unlock`): 잠긴 학부모 refresh + `GuardianPasswordService.attempt`(PIN과 같은 해시·5회 잠금) → 잠금 해제·학생 세션 폐기·refresh 회전. `GuardianPasswordService.set`은 `GUARDIAN_PASSWORD` 재인증 grant를 1회 소비 (FN-ACC-05, 2026-11-03)
