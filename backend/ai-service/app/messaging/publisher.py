@@ -22,7 +22,15 @@ EVENTS_EXCHANGE = "events.topic"
 LLM_USAGE_RECORDED = "llm.usage.recorded"
 
 CallType = Literal[
-    "JUDGMENT", "FOLLOWUP", "ANALYSIS", "REPORT_NARRATIVE", "MISSION_DRAFT", "M2", "M1"
+    "JUDGMENT",
+    "FOLLOWUP",
+    "ANALYSIS",
+    "REPORT_NARRATIVE",
+    "MISSION_DRAFT",
+    "THEME_DRAFT",
+    "THEME_IMAGE",
+    "M2",
+    "M1",
 ]
 
 

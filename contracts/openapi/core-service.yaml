@@ -2108,6 +2108,323 @@ paths:
             schema:
               $ref: '#/components/schemas/AdminMissionDraftDocument'
       summary: adminMissionDraftsDiscard (CONTENT)
+  /admin/theme-drafts:
+    post:
+      operationId: adminThemeDraftsRequest
+      tags:
+      - Admin
+      description: 'CONTENT 권한 (#439). learning POST /internal/admin/theme-drafts로 넘김. 요청 감사 후 단일 호출, 응답 draftId(target_type THEME_DRAFT)으로 결과 감사. learning 오류 코드(400 VALIDATION_FAILED·404 NOT_FOUND·409 CONFLICT)는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
+      parameters: []
+      responses:
+        '202':
+          description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminThemeDraftDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "테마 초안을 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminThemeDraftDocument'
+      summary: adminThemeDraftsRequest (CONTENT)
+    get:
+      operationId: adminThemeDraftsList
+      tags:
+      - Admin
+      description: 'CONTENT 권한 (#439). learning GET /internal/admin/theme-drafts(최근 요청 순)로 넘김. 필터 status·source(AUTO 주간 자동, ADMIN 관리자 요청). 필드·오류는 api-spec 2.8·4.1을 따른다.'
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          default: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - GENERATING
+          - READY
+          - CHECK_FAILED
+          - FAILED
+          - ADOPTED
+          - DISCARDED
+      - name: source
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - AUTO
+          - ADMIN
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminThemeDraftDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "테마 초안을 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      summary: adminThemeDraftsList (CONTENT)
+  /admin/theme-drafts/{draftId}:
+    get:
+      operationId: adminThemeDraftsDetail
+      tags:
+      - Admin
+      description: 'CONTENT 권한 (#439). learning GET /internal/admin/theme-drafts/{draftId}로 넘김. 필드·오류는 api-spec 2.8·4.1을 따른다.'
+      parameters:
+      - name: draftId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminThemeDraftDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "테마 초안을 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      summary: adminThemeDraftsDetail (CONTENT)
+  /admin/theme-drafts/{draftId}/adopt:
+    post:
+      operationId: adminThemeDraftsAdopt
+      tags:
+      - Admin
+      description: 'CONTENT 권한 (#439). learning POST /internal/admin/theme-drafts/{draftId}/adopt로 넘김. 요청 감사 후 단일 호출, 응답 themeId(target_type WEEKLY_THEME, detail draftId)로 결과 감사. 채택은 미션 5개 DRAFT와 테마 DRAFT를 learning 한 트랜잭션으로 만든다(#438). learning 오류 코드(400 VALIDATION_FAILED·404 NOT_FOUND·409 CONFLICT)는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
+      parameters:
+      - name: draftId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '201':
+          description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "테마 초안을 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminThemeDraftDocument'
+      summary: adminThemeDraftsAdopt (CONTENT)
+  /admin/theme-drafts/{draftId}/discard:
+    post:
+      operationId: adminThemeDraftsDiscard
+      tags:
+      - Admin
+      description: 'CONTENT 권한 (#439). learning POST /internal/admin/theme-drafts/{draftId}/discard로 넘김. 요청 감사 후 단일 호출, 응답 draftId(target_type THEME_DRAFT)으로 결과 감사. learning 오류 코드(400 VALIDATION_FAILED·404 NOT_FOUND·409 CONFLICT)는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
+      parameters:
+      - name: draftId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminThemeDraftDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "테마 초안을 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminThemeDraftDocument'
+      summary: adminThemeDraftsDiscard (CONTENT)
+  /admin/theme-drafts/{draftId}/regenerate:
+    post:
+      operationId: adminThemeDraftsRegenerate
+      tags:
+      - Admin
+      description: 'CONTENT 권한 (#439). learning POST /internal/admin/theme-drafts/{draftId}/regenerate로 넘김. 요청 감사 후 단일 호출, 실패·검사 실패 초안을 다시 생성 대기로 돌리고(GENERATING) 응답 draftId(target_type THEME_DRAFT)으로 결과 감사. learning이 새 초안을 만들면 그 draftId가 대상. learning 오류 코드(400 VALIDATION_FAILED·404 NOT_FOUND·409 CONFLICT)는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
+      parameters:
+      - name: draftId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '202':
+          description: 생성 대기(GENERATING)
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminThemeDraftDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "테마 초안을 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminThemeDraftDocument'
+      summary: adminThemeDraftsRegenerate (CONTENT)
   /products:
     get:
       operationId: listPaymentProducts
@@ -6218,6 +6535,34 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/WeeklyThemeDocument'}
         default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/weekly-theme/story-views:
+    post:
+      operationId: recordWeeklyThemeStoryView
+      tags: [WeeklyTheme]
+      summary: 시작·종료 이야기 열람 기록 (#439)
+      description: >-
+        STUDENT 전용(FN-RET-07·08, 에픽 #436). 본문 {kind}가 INTRO·OUTRO가 아니면 core가 400 VALIDATION_FAILED로 막고, 맞으면 {kind}만 다시 만들어
+        learning POST /internal/students/{studentId}/weekly-theme/story-views?gradeBand&date로 넘긴다. INTRO는 월요일·OUTRO는 토요일만 허용하고
+        주 1회 멱등은 learning(#438) 판정이며 응답·오류 코드를 그대로 전달한다. Cache-Control no-store.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/WeeklyThemeStoryViewRequest'}
+      responses:
+        '200':
+          description: 열람 기록 결과(learning 소유 모양)
+          headers:
+            Cache-Control: {schema: {type: string}, description: no-store}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WeeklyThemeDocument'}
+        '400':
+          description: kind 누락·INTRO/OUTRO 밖 값·다른 필드 VALIDATION_FAILED
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        default: {$ref: '#/components/responses/LearningProblem'}
   /students/me/attempts:
     get:
       operationId: dashboardStudentAttempts
@@ -9368,7 +9713,16 @@ components:
     WeeklyThemeDocument:
       type: object
       additionalProperties: true
-      description: 'learning 소유 학생 주간 테마 JSON object (#387, #385, api-spec 2.11). {themeId, weekStart, title, intro, reused, days[], review, completed} 또는 열람 결과 {firstViewThisWeek, completed}.'
+      description: 'learning 소유 학생 주간 테마 JSON object (#387, #385, api-spec 2.11). {themeId, weekStart, title, intro, reused, days[], review, completed}(#439부터 outro·introImageUrl·outroImageUrl·introSeen·outroSeen 추가, core는 바꾸지 않고 전달) 또는 되돌아보기 열람 결과 {firstViewThisWeek, completed}·이야기 열람 결과(learning #438 소유).'
+    WeeklyThemeStoryViewRequest:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [INTRO, OUTRO]
+          description: INTRO 월요일 시작 이야기, OUTRO 토요일 종료 이야기 (#439)
     AttemptStartRequest:
       type: object
       additionalProperties: false
@@ -9381,6 +9735,10 @@ components:
       type: object
       additionalProperties: true
       description: 'learning 소유 성취기준 표·미션 초안 JSON object (#355). 필드는 api-spec 4.1 `/internal/admin/achievement-standards`·`/internal/admin/mission-drafts…`, core는 성공 응답을 그대로 전달한다.'
+    AdminThemeDraftDocument:
+      type: object
+      additionalProperties: true
+      description: 'learning 소유 테마 초안 JSON object (#439, learning #438). 필드는 api-spec 4.1 `/internal/admin/theme-drafts…`, core는 성공 응답을 그대로 전달한다. 요청·버리기·다시 생성 응답에 draftId·status가 있어야 결과 감사를 남긴다.'
     AdminMissionDocument:
       type: object
       additionalProperties: true
@@ -10646,7 +11004,7 @@ components:
             $ref: '#/components/schemas/ActiveModelVersion'
     CallType:
       type: string
-      enum: [JUDGMENT, FOLLOWUP, ANALYSIS, REPORT_NARRATIVE, MISSION_DRAFT, M2, M1]
+      enum: [JUDGMENT, FOLLOWUP, ANALYSIS, REPORT_NARRATIVE, MISSION_DRAFT, THEME_DRAFT, THEME_IMAGE, M2, M1]
     AiUsageResponse:
       type: object
       additionalProperties: false

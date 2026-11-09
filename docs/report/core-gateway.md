@@ -440,3 +440,38 @@ WHERE id = :event_id AND quarantined_at IS NOT NULL AND published_at IS NULL;
 - **작성자 `look.equipped`**: 커뮤니티 작성자 표시(`CommunityAuthorMapper`)에 착용 네 슬롯을 더했다(`StudentLook.equipped`와 같은 모양, 없으면 null). 공개 가능한 작성자만 한 번에 조회한다
 - 검증: `RewardEarnIntegrationTest`(가짜 learning) — 미션당 1회·닫힌 재요청·다시 풀기 무적립, 적립 실패(`RewardService` spy가 예외) 중에도 돌아보기·반응·열람 응답 유지 후 재요청 보충, 주간 테마 조회 보충(완료 요일만·깨진 응답은 그대로 전달), 열람 주 1회·완주, 반응 키 1회·하루 상한 5, 학습 완료 적립 → 해금 → 착용 → 다른 학생이 본 작성자 `look.equipped`. 기존 `CommunityIntegrationTest`에 `equipped` 슬롯 확인 추가
 - 남은 확인: kind 실서버에서 web → core → learning으로 "학습 완료 → 적립 → 해금 → 착용"을 직접 확인하지 않았다
+
+## 15. 테마 초안 관리자 프록시·이야기 열람 프록시·사용량 THEME_DRAFT (#439)
+
+에픽 #436(주간 테마 LLM 생성과 시작·종료 화면)의 core 몫. learning #438·ai #437이 동시에 진행 중이라 api-spec 2.8·2.11·4.1과 에픽 결정 요약대로 클라이언트를 만들고, 테스트는 learning 계약 대역(HTTP 서버)으로 했다.
+
+### API 변경
+
+| 경로 | 권한 | learning 내부 경로 | 응답·오류 |
+|---|---|---|---|
+| `POST /api/v1/admin/theme-drafts` | CONTENT | `POST /internal/admin/theme-drafts` | `202` 초안(`GENERATING`), 본문 그대로 전달 |
+| `GET /api/v1/admin/theme-drafts?status&source&page&size` | CONTENT | 같은 경로·query | `status` 6종·`source`(`AUTO`·`ADMIN`)·페이지 밖 값은 learning 호출 전 `400 VALIDATION_FAILED` |
+| `GET /api/v1/admin/theme-drafts/{draftId}` | CONTENT | `GET …/{draftId}` | 없는 초안 `404 NOT_FOUND`(고정 문구 "테마 초안을 찾을 수 없습니다.") |
+| `POST /api/v1/admin/theme-drafts/{draftId}/adopt` | CONTENT | `POST …/adopt` | `201` 만든 테마(`themeId`). 미션 5개·테마 `DRAFT` 생성은 learning 한 트랜잭션 |
+| `POST /api/v1/admin/theme-drafts/{draftId}/discard` | CONTENT | `POST …/discard` | `200` 초안. 상태상 불가 `409 CONFLICT` |
+| `POST /api/v1/admin/theme-drafts/{draftId}/regenerate` | CONTENT | `POST …/regenerate` | `202` 초안(`GENERATING`) |
+| `POST /api/v1/students/me/weekly-theme/story-views` | 학생 | `POST /internal/students/{id}/weekly-theme/story-views?gradeBand&date` | 본문 `{kind: INTRO\|OUTRO}`만 허용(그 밖 `400`), 응답·요일 오류는 learning 그대로 |
+| `GET /api/v1/students/me/weekly-theme` | 학생 | (변경 없음) | `outro`·`introImageUrl`·`outroImageUrl`·`introSeen`·`outroSeen`을 바꾸지 않고 전달 |
+| `GET /api/v1/admin/ai-usage?callType` | SERVICE_OPS | — | `callType`에 `THEME_DRAFT`·`THEME_IMAGE` 추가 |
+
+### 결정과 근거
+
+- **관리자 경로는 미션 초안(#355)과 같은 방식**: `AdminThemeDraftsController` → `AdminLearningService.themeDrafts`가 ADMIN + `X-User-Id` + 빈 학생 범위로 넘긴다. 요청 본문(학년군·주·주제·유형별 성취기준) 값 검사와 상태 전이는 learning 소유라 core는 JSON object인지만 본다. 컨트롤러를 `AdminWeeklyThemesController`에 넣지 않고 따로 둔 것은 미션 초안이 `AdminMissionDraftsController`로 따로 있는 것과 맞추고, 주간 테마 계약 검사(경로 7개)를 건드리지 않기 위해서다
+- **감사**: 요청 감사 → learning 1회 → 결과 감사(`audit_log` `THEME_DRAFT_{REQUEST,DISCARD,REGENERATE,ADOPT}_*`). 요청·버리기·다시 생성은 응답 `draftId`(`target_type = THEME_DRAFT`), 채택은 만든 테마 `themeId`(`WEEKLY_THEME`, `detail.draftId`)가 대상이라 이후 `WEEKLY_THEME_*` 감사와 이어진다. 다시 생성은 learning이 같은 초안을 되살리든 새 초안을 만들든 응답 `draftId`를 대상으로 남긴다. 응답에 대상 ID가 없으면 `UNKNOWN`으로 남기고 `503 LEARNING_INVALID_RESPONSE`, 다시 부르지 않는다(#355와 같음)
+- **이야기 열람**: 학년군·KST 날짜는 되돌아보기 열람(#387)과 같이 core가 정하고, 본문은 `{kind}`만 다시 만들어 넘긴다(클라이언트가 날짜 등을 끼워 넣지 못하게). INTRO 월요일·OUTRO 토요일·주 1회 멱등 판정은 learning이 `date`로 한다. 포인트 적립은 없다(되돌아보기 열람·완주 적립은 기존 `review-views` 그대로)
+- **이미지 URL**: 기존 미션 장면(`sceneUri`·`staticSceneUri`)처럼 learning이 준 값을 core가 바꾸지 않고 전달한다. ai가 올린 S3 키를 브라우저가 열 수 있는 URL로 바꾸는 일은 learning 응답 몫이다(api-spec 2.11)
+- **사용량**: `THEME_DRAFT`(텍스트 그래프 호출)·`THEME_IMAGE`(이미지 1장 호출)를 이벤트 스키마·core `CallType`·core OpenAPI·ERD·ai/scoring 발행 목록에 같은 순서로 더하고 `V40__theme_draft_call_type.sql`이 `ck_llm_usage_call_type`을 넓힌다(V28과 같은 방식, 기존 행 영향 없음). ai/scoring 발행 목록은 타입 목록만 바뀌고 실제 발행은 ai #437이 한다. 이미지 호출은 토큰이 없어 `cost_usd`가 null이고 관리자 사용량에서 `unpricedCalls`로 센다(장당 단가는 #437 측정 뒤 결정)
+- **마이그레이션 번호**: 이슈 본문은 V38이지만 열린 #446이 V38·V39를 쓰므로 V40. gitops 로컬 core 리비전 v40. #446보다 먼저 머지하면 V38·V39가 이미 V40을 적용한 DB에서 순서 밖이 되므로 #446 뒤에 머지하고, 머지 직전 develop에 다른 core 마이그레이션이 생기면 번호를 다시 맞춘다
+
+### 검증
+
+- `AdminOperationsIntegrationTest`: 테마 초안 6경로가 CONTENT·관리자 헤더·빈 학생 범위로 넘어감, SERVICE_OPS 403, 필터 값·페이지 400(learning 미호출), 요청·다시 생성·채택·버리기 감사 대상(채택은 `WEEKLY_THEME` + `draftId`), 대상 없는 응답 `UNKNOWN`·재호출 없음, 404 고정 문구
+- `WeeklyThemeProxyIntegrationTest`: 새 필드 그대로 전달, 이야기 열람 query·본문·학생 헤더, learning 409 전달, 잘못된 `kind`·추가 필드·배열 400(learning 미호출)
+- `ModelVersionHttpTest`·`LlmUsageQueryTest`: `THEME_DRAFT`·`THEME_IMAGE` 저장(V40 CHECK)·호출 종류별 조회, 토큰 없는 이미지 호출 미산정
+- `scripts/tests/test_theme_drafts_contract.py`: core 컨트롤러 ↔ 공개 OpenAPI 경로·query·상태/출처 값·CONTENT·감사 동작·`kind` 값. learning OpenAPI에 `/admin/theme-drafts`가 올라오면 3자 대조가 자동으로 켜진다(지금은 건너뜀). `test_admin_mission_drafts_contract.py` 호출 종류 목록 대조
+- **남은 확인**: learning #438 머지 후 실제로 붙여 관리자 초안 요청 → 채택, 학생 월요일 INTRO 기록 확인. learning이 경로·query·응답 필드를 다르게 정하면 core와 `test_theme_drafts_contract.py`를 맞춘다

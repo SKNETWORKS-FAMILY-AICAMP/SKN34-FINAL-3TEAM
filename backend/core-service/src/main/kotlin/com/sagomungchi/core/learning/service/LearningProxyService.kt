@@ -69,7 +69,7 @@ class LearningProxyService(private val client: LearningClient, private val idemp
         return response
     }
 
-    /** 이번 주(KST) 학년군 테마 (#387, api-spec 2.11). 200이면 이번 주 학습 완료한 요일 문제의 누락 적립을 보충한다(#389) */
+    /** 이번 주(KST) 학년군 테마 (#387, api-spec 2.11). #439 새 필드(`outro`·이미지 URL·`introSeen`·`outroSeen`)도 바꾸지 않고 전달. 200이면 이번 주 학습 완료한 요일 문제의 누락 적립을 보충한다(#389) */
     fun weeklyTheme(): HttpExchangeResult {
         val context = verifiedStudent()
         val response = client.exchange("GET", "/students/${context.studentScope.single()}/weekly-theme", themeQuery(context))
@@ -85,6 +85,19 @@ class LearningProxyService(private val client: LearningClient, private val idemp
             themeQuery(context, today))
         if (response.status == 200) rewards.reviewViewed(UUID.fromString(context.studentScope.single()), today, response.body)
         return response
+    }
+
+    /**
+     * 시작·종료 이야기 열람 기록 (#439, api-spec 2.11). 본문 `{kind: INTRO|OUTRO}`만 core가 확인해 다시 만들어 넘기고
+     * 요일(INTRO 월요일·OUTRO 토요일)·주 1회 멱등은 learning이 `date`로 판정한다. 응답·오류는 그대로 전달
+     */
+    fun storyViewed(body: ByteArray): HttpExchangeResult {
+        val context = verifiedStudent()
+        val node = try { json.readTree(body) } catch (_: Exception) { null }
+        val kind = node?.takeIf { it.isObject && it.size() == 1 }?.path("kind")?.takeIf { it.isTextual }?.asText()
+        if (kind !in STORY_KINDS) throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "kind는 INTRO 또는 OUTRO여야 합니다.")
+        return client.exchange("POST", "/students/${context.studentScope.single()}/weekly-theme/story-views", themeQuery(context),
+            json.writeValueAsBytes(mapOf("kind" to kind)))
     }
 
     private fun verifiedStudent() = UserContextHolder.currentOrNull()?.takeIf {
@@ -128,5 +141,8 @@ class LearningProxyService(private val client: LearningClient, private val idemp
         UUID.fromString(json.readTree(response.body).path("attemptId").asText())
     } catch (_: Exception) { null }
 
-    private companion object { val log = LoggerFactory.getLogger(LearningProxyService::class.java) }
+    private companion object {
+        val log = LoggerFactory.getLogger(LearningProxyService::class.java)
+        val STORY_KINDS = setOf("INTRO", "OUTRO")
+    }
 }
