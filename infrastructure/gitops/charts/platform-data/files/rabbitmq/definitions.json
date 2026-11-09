@@ -364,6 +364,62 @@
       "arguments": {
         "x-queue-type": "quorum"
       }
+    },
+    {
+      "name": "core.model.loading.reported",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "core.model.loading.reported"
+      }
+    },
+    {
+      "name": "core.model.loading.reported.retry.1",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 60000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "core.model.loading.reported"
+      }
+    },
+    {
+      "name": "core.model.loading.reported.retry.2",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 300000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "core.model.loading.reported"
+      }
+    },
+    {
+      "name": "core.model.loading.reported.retry.3",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 900000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "core.model.loading.reported"
+      }
+    },
+    {
+      "name": "core.model.loading.reported.dlq",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum"
+      }
     }
   ],
   "bindings": [
@@ -525,6 +581,22 @@
       "destination": "core.event.audit",
       "destination_type": "queue",
       "routing_key": "model.version.activated",
+      "arguments": {}
+    },
+    {
+      "source": "events.topic",
+      "vhost": "/",
+      "destination": "core.model.loading.reported",
+      "destination_type": "queue",
+      "routing_key": "model.loading.reported",
+      "arguments": {}
+    },
+    {
+      "source": "dlx",
+      "vhost": "/",
+      "destination": "core.model.loading.reported.dlq",
+      "destination_type": "queue",
+      "routing_key": "core.model.loading.reported",
       "arguments": {}
     }
   ]

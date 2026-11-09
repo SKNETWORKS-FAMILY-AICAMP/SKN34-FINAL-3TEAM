@@ -590,3 +590,8 @@ MODEL_REGISTER 감사 detail에 source·jsonSha256·manifestSha256·modifiedFiel
 [프론트 전달 문서](issue-367-registration-api.md)에 원본 바이트 해시 방식, 요청 예시, 응답 위치, 오류와 각 담당 범위를 정리했다. 후속 통합에서 PR #409의 프론트와 연결해 등록 출처 메타데이터도 함께 전달한다. 검증 결과는 해당 문서의 통합 검증 항목을 기준으로 본다.
 
 검증: core ModelVersionHttpTest·ModelVersionRepositoryTest·ModelVersionMessagingTest 총 23개 및 bootJar 통과. 등록/목록의 limitations, 구버전 JSONB, MANUAL 기본값, JSON_IMPORT 감사·인증 사용자, 중복 시 원본 유지, 자동 활성화 없음, 필수 경로·해시·파일 크기·상대 경로·알 수 없는 필드 거부와 기존 활성화·복귀를 확인했다. 계약 검증기 전체 187개 통과. 이는 최초 백엔드 단독 검증 기록이다. 후속 프론트 통합 결과는 [등록 API 통합 검증](issue-367-registration-api.md)을 참고한다. GitHub CI와 운영 품질 승인은 로컬 검증과 구분한다.
+
+
+## #370 Pod별 모델 로딩 보고 (2026-11-09)
+
+3.1.5 후속: scoring의 model.loading.reported 전체 상태 이벤트와 30초 heartbeat를 core가 별도 model_loading_report(V36)에 수집한다. SERVICE_OPS 조회 API와 활성 모델 카드에서 최근 보고 Pod 대비 로딩 완료 수·실패·기존 모델 유지·보고 만료를 구분한다. 전체 Kubernetes replica 수나 품질·추론 승인으로 표현하지 않는다. [설계·배포·검증](issue-370-model-loading.md).

@@ -22,6 +22,8 @@ class ModelRegistry:
         self._models: dict[str, LoadedModel] = {}
         self._desired: dict[str, ActiveModelVersion] = {}
         self._locks: dict[str, asyncio.Lock] = {}
+        self._loading: dict[str, dict] = {}
+        self.changed = asyncio.Event()
 
     def get(self, name: str, scope: str) -> LoadedModel | None:
         model = self._models.get(name)
@@ -44,6 +46,23 @@ class ModelRegistry:
             for name, model in sorted(self._models.items())
         ]
 
+    def loading_status(self) -> list[dict]:
+        return [dict(item) for _, item in sorted(self._loading.items())]
+
+    def _report(self, target: ActiveModelVersion, status: str, error: str | None = None) -> None:
+        current = self._models.get(target.name)
+        self._loading[target.name] = {
+            "name": target.name,
+            "version": target.version,
+            "revision": target.revision,
+            "status": status,
+            "errorType": error,
+            "loadedVersion": current.metadata.version if current else None,
+            "loadedRevision": current.metadata.revision if current else None,
+            "previousModelRetained": status == "FAILED" and current is not None,
+        }
+        self.changed.set()
+
     async def load(self, version: ActiveModelVersion) -> bool:
         name = version.name
         desired = self._desired.get(name)
@@ -61,12 +80,19 @@ class ModelRegistry:
             if current is not None and current.metadata.revision == version.revision:
                 return False
             # 다운로드·CPU 로딩이 이벤트 루프를 막지 않는다. 실패 시 기존 모델 그대로 유지.
-            loaded = await run_in_threadpool(self._loader, version)
-            if loaded.metadata != version:
-                raise ValueError("loaded model metadata mismatch")
+            self._report(version, "LOADING")
+            try:
+                loaded = await run_in_threadpool(self._loader, version)
+                if loaded.metadata != version:
+                    raise ValueError("loaded model metadata mismatch")
+            except Exception as exc:
+                if self._desired.get(name) == version:
+                    self._report(version, "FAILED", type(exc).__name__[:100])
+                raise
             if self._desired.get(name) != version:
                 return False
             self._models[name] = loaded
+            self._report(version, "LOADED")
             logger.info("Model loaded name=%s revision=%s", name, version.revision)
             return True
 
@@ -79,6 +105,8 @@ class ModelRegistry:
         for name in set(self._desired) - names:
             self._desired.pop(name, None)
             self._models.pop(name, None)
+            self._loading.pop(name, None)
+            self.changed.set()
         failed = False
         for version in versions:
             try:
