@@ -27,6 +27,13 @@ export const permissionsFor = (email: string): Permission[] =>
           : email === 'refund@example.test'
             ? ['PAYMENT_REFUND']
             : []
+/**
+ * #415 ID·비밀번호 학부모(core parent_credential과 같은 규칙). 개발 목업 전용이며 비밀번호는 메모리에만 둔다.
+ * 목업 저장소는 이메일을 키로 쓰므로 `<id>@id.example.test`를 내부 키로만 쓴다(/me에는 노출하지 않음).
+ */
+export const mockPasswordParents = new Map<string, { password: string; email: string; failed: number; lockedUntil: number }>()
+export const mockPasswordLogin = { loginId: null as string | null }
+export const passwordParentKey = (loginId: string) => `${loginId}@id.example.test`
 export let workspaceScenario = 'normal'
 export function setWorkspaceScenario(value: string) {
   workspaceScenario = value

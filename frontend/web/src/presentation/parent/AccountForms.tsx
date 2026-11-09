@@ -10,6 +10,7 @@ import { useParentQuery, useParentMutation } from '../../data/parent/queries.ts'
 import { isDemo } from '../../data/classroom/useClassroom.ts'
 import { Workspace, QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
+import { ParentIdSignup } from '../auth/ParentPasswordForms.tsx'
 export function ConsentFields({
   documents,
   value,
@@ -49,10 +50,11 @@ export function ConsentFields({
   )
 }
 export function SignupPage() {
+  // #415: 실제 모드는 Google 또는 아이디·비밀번호로 가입한다. 한 계정은 한 가지 로그인 수단만 쓴다(자동 연결 없음).
   if (!isDemo) return <Workspace title="이용 등록" nav={[]}><section className="ws-card">
     <h2>Google 계정으로 시작하기</h2><p>로그인 후 이용 동의와 자녀 등록을 진행합니다.</p>
     <a className="cj-primary" href="/api/v1/auth/google/authorize">Google 계정으로 계속하기</a>
-  </section></Workspace>
+  </section><section className="ws-card"><ParentIdSignup /></section></Workspace>
   return <DemoSignupPage />
 }
 function DemoSignupPage() {

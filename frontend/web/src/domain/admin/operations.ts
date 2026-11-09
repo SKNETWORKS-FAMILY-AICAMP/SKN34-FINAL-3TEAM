@@ -169,7 +169,7 @@ export interface ErrorReport {
   comment: string
   reviewReason?: string
   linkedAttempt?: PublicAttempt
-  corrections: { reason: string; corrected: string; createdAt: string; impact: string | Record<string, string> | null }[]
+  corrections: { reason: string; corrected: string; createdAt: string; impact: string | Record<string, string | string[]> | null }[]
 }
 /** A successful judgment correction does not imply that derived outputs were updated. */
 export function correctionImpactText(impact: ErrorReport['corrections'][number]['impact']): string {
@@ -184,10 +184,15 @@ export function correctionImpactText(impact: ErrorReport['corrections'][number][
     APPLIED: '반영 확인',
     NOT_APPLIED: '미반영 확인(변경 대상 없음 포함, 오류·후속 처리 필요 아님)',
     UNKNOWN: '반영 여부 미확인',
+    AFFECTED: '영향 있음(정정 안내 표시)',
+    NOT_AFFECTED: '영향 없음',
   }
-  if (areas.some(([key]) => !Object.hasOwn(states, impact[key])))
+  if (areas.some(([key]) => !Object.hasOwn(states, String(impact[key]))))
     return '반영 정보의 형식을 확인할 수 없습니다.'
-  return areas.map(([key, label]) => `${label}: ${states[impact[key]]}`).join(' / ')
+  // 대화·리포트는 판정이 쓰였는지(영향), 집계는 정정을 반영했는지로 구분한다 (#244).
+  const text = (key: string) =>
+    key !== 'aggregation' && impact[key] === 'UNKNOWN' ? '영향 여부 미확인' : states[String(impact[key])]
+  return areas.map(([key, label]) => `${label}: ${text(key)}`).join(' / ')
 }
 
 export interface Usage {

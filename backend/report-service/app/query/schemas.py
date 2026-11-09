@@ -194,6 +194,17 @@ class Evidence(Response):
     submitted_at: AwareDatetime | None = None
 
 
+class CorrectionImpactItem(Response):
+    report_id: UUID
+    period_type: PeriodType
+    period_from: date
+    revision: int
+
+
+class CorrectionImpact(Response):
+    items: list[CorrectionImpactItem]
+
+
 class EvidencePage(Response):
     items: list[Evidence]
 

@@ -29,6 +29,9 @@
 <update id="updateReport">UPDATE error_report SET status=#{status},review_result=#{reviewResult},resolution_reason=#{resolutionReason},reviewed_by=#{reviewedBy},resolved_at=#{resolvedAt} WHERE id=#{id}</update>
 <update id="updateInquiry">UPDATE inquiry SET status=#{status},answer=#{answer},answered_by=#{answeredBy},answered_at=#{answeredAt} WHERE id=#{id}</update>
 <select id="correction" resultMap="correction">SELECT * FROM correction WHERE error_report_id=#{reportId} AND request_key IS NOT NULL</select>
+<select id="correctedReport" resultType="boolean" useCache="false" flushCache="true">SELECT EXISTS(SELECT 1 FROM correction WHERE processing_status='COMPLETED' AND impact-&gt;'reportIds' @&gt; to_jsonb(CAST(#{id} AS text)))</select>
+<select id="correctedConversation" resultType="boolean" useCache="false" flushCache="true">SELECT EXISTS(SELECT 1 FROM correction WHERE processing_status='COMPLETED' AND impact-&gt;'conversationIds' @&gt; to_jsonb(CAST(#{id} AS text)))</select>
+<select id="correctedMessages" resultType="java.util.UUID" useCache="false" flushCache="true">SELECT DISTINCT CAST(m.id AS uuid) FROM correction c CROSS JOIN LATERAL jsonb_array_elements_text(c.impact-&gt;'messageIds') AS m(id) WHERE c.processing_status='COMPLETED' AND CAST(m.id AS uuid) IN <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach></select>
 <select id="corrections" resultMap="correction">SELECT * FROM correction WHERE error_report_id=#{reportId} ORDER BY created_at,id</select>
 <update id="updateCorrection">UPDATE correction SET processing_status=#{processingStatus},impact=CAST(#{impact} AS jsonb),provider_result=CAST(#{providerResult} AS jsonb),completed_at=#{completedAt} WHERE id=#{id}</update>
 <sql id="visible">ended_at IS NULL AND visible_from &lt;= CURRENT_TIMESTAMP AND (visible_to IS NULL OR visible_to &gt; CURRENT_TIMESTAMP) AND target_roles @&gt; jsonb_build_array(CAST(#{role} AS text))</sql>

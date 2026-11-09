@@ -135,6 +135,9 @@ class ReportReadService:
     def items(self, session, report_id):
         return self._repository.items(session, report_id)
 
+    def correction_impact(self, session, student_id, attempt_id):
+        return self._repository.correction_impact(session, student_id, attempt_id)
+
     def evidence(self, session, report_id, item_id):
         return self._repository.evidence(session, report_id, item_id)
 

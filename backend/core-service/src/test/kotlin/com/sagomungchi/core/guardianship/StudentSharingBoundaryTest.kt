@@ -68,7 +68,7 @@ class StudentSharingBoundaryTest {
             "reflections":[{"written":true,"difficulty":"NORMAL","text":"합성비밀 돌아보기"}]}""")
         `when`(client.get(student, "/internal/reports/$report", emptyMap(), false)).thenReturn(body)
         `when`(views.recordWithSharing(report, student, parent, false)).thenReturn(ReportViewAccess(false, false))
-        val service = ReportQueryService(repository, access, client, views, entitlement, privacy)
+        val service = ReportQueryService(repository, access, client, views, entitlement, privacy, mock(com.sagomungchi.core.support.service.CorrectionNoticeService::class.java))
         val result = service.detail(report, null)
         assertEquals(3, result["metrics"][0]["count"].asInt())
         assertFalse(result["parentSharingEnabled"].asBoolean())

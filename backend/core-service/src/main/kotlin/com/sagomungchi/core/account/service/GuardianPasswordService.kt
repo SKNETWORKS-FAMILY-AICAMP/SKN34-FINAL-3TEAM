@@ -59,7 +59,7 @@ class GuardianPasswordService(private val repository: GuardianPasswordRepository
 class GuardianPasswordFailure(code: String,val remainingAttempts: Int?) : BusinessException(
     when(code) { "GUARDIAN_PASSWORD_LOCKED" -> HttpStatus.LOCKED; "GUARDIAN_PASSWORD_NOT_SET" -> HttpStatus.CONFLICT; else -> HttpStatus.UNAUTHORIZED },
     code,when(code) {
-        "GUARDIAN_PASSWORD_LOCKED" -> "보호자 비밀번호가 잠겼습니다. Google로 다시 로그인해 주세요."
-        "GUARDIAN_PASSWORD_NOT_SET" -> "보호자 비밀번호가 없습니다. Google로 다시 로그인해 주세요."
+        "GUARDIAN_PASSWORD_LOCKED" -> "보호자 비밀번호가 잠겼습니다. 다시 로그인해 주세요."
+        "GUARDIAN_PASSWORD_NOT_SET" -> "보호자 비밀번호가 없습니다. 다시 로그인해 주세요."
         else -> "보호자 비밀번호를 확인해 주세요."
     })

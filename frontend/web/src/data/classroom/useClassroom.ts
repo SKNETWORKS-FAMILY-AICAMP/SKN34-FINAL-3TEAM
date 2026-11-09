@@ -58,6 +58,15 @@ export function useAuthentication() {
     },
     onSuccess: () => cache.clear(),
   })
+  // #415: 학부모 ID·비밀번호 로그인·가입. 성공하면 관리자 로그인과 같이 /me로 세션·시작 화면을 다시 읽는다.
+  const parentLogin = useMutation({
+    mutationFn: ({ loginId, password }: { loginId: string; password: string }) => passwordSession('/auth/parent/login', { loginId, password }),
+    onSuccess: () => cache.clear(),
+  })
+  const parentSignup = useMutation({
+    mutationFn: (data: { loginId: string; password: string; name: string }) => passwordSession('/auth/parent/signup', data),
+    onSuccess: () => cache.clear(),
+  })
   const logout = useMutation({ mutationFn: () => gateway.logout(), onSettled: () => cache.clear() })
   const enter = useMutation({
     mutationFn: (child: Child) => gateway.enterStudent(child),
@@ -71,7 +80,15 @@ export function useAuthentication() {
     },
     onSuccess: () => cache.clear(),
   })
-  return { login, adminLogin, logout, enter, unlock }
+  return { login, adminLogin, parentLogin, parentSignup, logout, enter, unlock }
+}
+async function passwordSession(path: '/auth/parent/login' | '/auth/parent/signup', body: Record<string, string>) {
+  const raw = (await apiFetch<Record<string, unknown>>(path, { method: 'POST', body: JSON.stringify(body) })) ?? {}
+  if (raw.role !== 'PARENT' || typeof raw.accessToken !== 'string') throw new Error('학부모 로그인 응답이 계약과 다릅니다.')
+  setAccessToken(raw.accessToken, 'PARENT')
+  const next = await restoreSession(true)
+  notifyAuthChange(next.role)
+  return next
 }
 export function useMockInvalidation() {
   const cache = useQueryClient()

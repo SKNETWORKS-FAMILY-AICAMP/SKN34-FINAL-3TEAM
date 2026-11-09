@@ -98,10 +98,13 @@ class ConsentChildrenTest : PostgresRepositoryTest() {
         // 필수 세 문서 + 선택 COMMUNITY(V31 시드, #388)
         mvc.get("/api/v1/consent-documents").andExpect { status { isOk() }; jsonPath("$.totalElements") { value(4) } }
     }
-    @Test fun `migration seeds the three required 1_0 documents and optional COMMUNITY as the public publication`() {
-        val seeded = mapOf("TERMS" to "00000000-0000-4000-8000-000002350001",
-            "PRIVACY" to "00000000-0000-4000-8000-000002350002", "GUARDIAN" to "00000000-0000-4000-8000-000002350003",
+    @Test fun `migration seeds the required documents and optional COMMUNITY as the public publication`() {
+        // #415 V39 publishes TERMS·PRIVACY 1.1 (ID/password signup); GUARDIAN stays 1.0 (#235), COMMUNITY 1.0 (#388).
+        val seeded = mapOf("TERMS" to "00000000-0000-4000-8000-000004150001",
+            "PRIVACY" to "00000000-0000-4000-8000-000004150002", "GUARDIAN" to "00000000-0000-4000-8000-000002350003",
             "COMMUNITY" to "00000000-0000-4000-8000-000003880001")
+        val versions = mapOf("TERMS" to "1.1", "PRIVACY" to "1.1", "GUARDIAN" to "1.0", "COMMUNITY" to "1.0")
+        val effective = mapOf("TERMS" to "2026-11-09", "PRIVACY" to "2026-11-09", "GUARDIAN" to "2026-11-03", "COMMUNITY" to "2026-11-08")
         // Synthetic fixtures (this class's or leftovers of other groups) move to the future and roll back with the test.
         jdbc.update("UPDATE consent_document SET effective_from=effective_from+3650 WHERE id NOT IN (?,?,?,?)",
             *seeded.values.map(UUID::fromString).toTypedArray())
@@ -112,9 +115,9 @@ class ConsentChildrenTest : PostgresRepositoryTest() {
         assertEquals(seeded.keys, items.keys)
         seeded.forEach { (kind, id) ->
             val doc = items.getValue(kind)
-            assertEquals(id, doc["documentId"].asText()); assertEquals("1.0", doc["version"].asText())
+            assertEquals(id, doc["documentId"].asText()); assertEquals(versions.getValue(kind), doc["version"].asText())
             assertEquals(kind != "COMMUNITY", doc["required"].asBoolean())
-            assertEquals(if (kind == "COMMUNITY") "2026-11-08" else "2026-11-03", doc["effectiveFrom"].asText())
+            assertEquals(effective.getValue(kind), doc["effectiveFrom"].asText())
             assertTrue(doc["content"].asText().startsWith("※ 이 문서는 교육 과정 시연용 문서이며 법률 검토를 거치지 않았습니다."))
         }
     }

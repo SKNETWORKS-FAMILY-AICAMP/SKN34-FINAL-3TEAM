@@ -9,7 +9,7 @@ import { useSession } from '../auth/sessionContext.ts'
 import { ConsentFields } from '../parent/AccountForms.tsx'
 import { Workspace, QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
-import { GoogleRecheck } from './AccountLifecycle.tsx'
+import { IdentityRecheck } from './AccountLifecycle.tsx'
 import type { Consent } from '../../domain/parent.ts'
 import { TransferDialog, guardianTransferEnabled } from './GuardianTransferUi.tsx'
 import './service.css'
@@ -72,13 +72,13 @@ export function GuardianTransfers() {
       <p>자녀 프로필·학습 기록·리포트는 기본으로 이관됩니다.</p>
       <label className="ws-check"><input type="checkbox" checked={include} onChange={e => setInclude(e.target.checked)}/>내가 이 자녀에 대해 나눈 분석 상담 대화도 함께 이관합니다.</label>
       <p>선택하면 기존 질문과 AI 답변을 받는 학부모도 볼 수 있습니다. 실제 이관은 상대방 수락 후 완료됩니다.</p>
-      <GoogleRecheck purpose="CHILD_TRANSFER" childId={child.id} onProof={setToken}/>
+      <IdentityRecheck purpose="CHILD_TRANSFER" childId={child.id} onProof={setToken}/>
       <button disabled={send.isPending} onClick={close}>취소</button><button disabled={!token || send.isPending} onClick={() => void send.mutateAsync(undefined).then(() => { close(); setNotice('이관 요청을 보냈습니다. 상대방 수락 전에는 탈퇴·삭제되지 않습니다.') }).catch(showError)}>이관 요청</button><ErrorNotice error={send.error}/>
     </TransferDialog>}
     {canTransfer && accepting && <TransferDialog title="자녀 이관 수락">
       <p>{accepting.senderName ?? '학부모'}님의 자녀 {accepting.childName ?? ''}을 연결합니다.</p><p>프로필·학습 기록·리포트 포함 · 기존 분석 상담 대화 {accepting.includeConversations ? '포함' : '미포함'}</p>
       <QueryFeedback query={documents}/>{documents.data && <ConsentFields documents={documents.data.items.filter(d => d.kind === 'GUARDIAN')} value={consents} onChange={setConsents}/>}
-      <GoogleRecheck purpose="TRANSFER_ACCEPT" onProof={setToken}/>
+      <IdentityRecheck purpose="TRANSFER_ACCEPT" onProof={setToken}/>
       <button disabled={accept.isPending} onClick={close}>닫기</button><button disabled={!token || accept.isPending || !documents.data || !documents.data.items.filter(d => d.kind === 'GUARDIAN' && d.required).every(d => consents.some(c => c.documentId === d.documentId && c.version === d.version && c.agreed))} onClick={() => void accept.mutateAsync(undefined).then(async () => { close(); setNotice('이관을 완료했습니다.'); await refreshIdentity() }).catch(showError)}>동의하고 수락</button><ErrorNotice error={accept.error}/>
     </TransferDialog>}
     {limitOpen && <TransferDialog title="자녀 등록 한도"><p>해당 학부모는 자녀 등록 한도(3명)에 도달하여 이관받을 수 없습니다.</p><button onClick={() => setLimitOpen(false)}>확인</button></TransferDialog>}

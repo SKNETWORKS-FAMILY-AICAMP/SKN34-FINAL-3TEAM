@@ -10,6 +10,7 @@ import {
   permissionsFor,
   mockAccountChildren,
   mockConsentRequired, mockGuardianConsentRequired,
+  mockPasswordParents, mockPasswordLogin, passwordParentKey,
 } from '../fixtures/accounts.ts'
 import {
   fixtureStore as store,
@@ -161,6 +162,7 @@ const id = (value: string | readonly string[] | undefined) => {
 }
 async function mockSignIn(email: string, password: string) {
   const session = await store.login(email, password)
+  mockPasswordLogin.loginId = null
   lockParentSession(false)
   if (!permissionsFor(email).length)
     store.replaceChildren(structuredClone(mockAccountChildren.get(email) ?? []))
@@ -196,6 +198,50 @@ export const studentHandlers = [
       if (!permissionsFor(loginId).length || data.password !== 'demo-only')
         throw new ApiError({ status: 401, code: 'INVALID_CREDENTIALS', title: '아이디 또는 비밀번호를 확인해 주세요.' })
       return mockSignIn(loginId, 'demo-only')
+    }),
+  ),
+  // #415 core POST /auth/parent/signup·login과 같은 계약: ID는 영문·숫자 4~30자(소문자로 저장), 비밀번호 8~128자,
+  // 실패는 401 INVALID_CREDENTIALS, 연속 5회째부터 15분간 423 LOGIN_LOCKED.
+  http.post('/api/v1/auth/parent/signup', ({ request }) =>
+    respond(async () => {
+      const data = (await request.json()) as { loginId?: unknown; password?: unknown; name?: unknown }
+      const loginId = typeof data.loginId === 'string' ? data.loginId.trim().toLowerCase() : ''
+      const invalid = (title: string) => new ApiError({ status: 400, code: 'VALIDATION_FAILED', title })
+      if (!/^[a-z0-9]{4,30}$/.test(loginId)) throw invalid('아이디는 영문 소문자와 숫자 4~30자로 입력해 주세요.')
+      if (typeof data.password !== 'string' || data.password.length < 8 || data.password.length > 128) throw invalid('비밀번호는 8~128자로 입력해 주세요.')
+      if (typeof data.name !== 'string' || !data.name.trim() || data.name.trim().length > 80) throw invalid('이름을 확인해 주세요.')
+      if (mockPasswordParents.has(loginId)) throw new ApiError({ status: 409, code: 'LOGIN_ID_TAKEN', title: '이미 사용 중인 아이디입니다.' })
+      const email = passwordParentKey(loginId)
+      mockAccounts.add(email)
+      mockAccountChildren.set(email, [])
+      mockPasswordParents.set(loginId, { password: data.password, email, failed: 0, lockedUntil: 0 })
+      const issued = await mockSignIn(email, 'demo-only')
+      mockPasswordLogin.loginId = loginId
+      return { ...issued, nextAction: 'CONSENT_REQUIRED', startPath: '/parent/onboarding' }
+    }),
+  ),
+  http.post('/api/v1/auth/parent/login', ({ request }) =>
+    respond(async () => {
+      const data = (await request.json()) as { loginId?: unknown; password?: unknown }
+      const loginId = typeof data.loginId === 'string' ? data.loginId.trim().toLowerCase() : ''
+      const account = mockPasswordParents.get(loginId)
+      const invalid = () => new ApiError({ status: 401, code: 'INVALID_CREDENTIALS', title: '아이디 또는 비밀번호를 확인해 주세요.' })
+      if (!account) throw invalid()
+      if (account.lockedUntil > Date.now())
+        throw new ApiError({ status: 423, code: 'LOGIN_LOCKED', title: '로그인 시도가 많아 잠시 잠겼습니다. 15분 뒤 다시 시도해 주세요.' })
+      if (data.password !== account.password) {
+        account.failed += 1
+        if (account.failed >= 5) {
+          account.failed = 0
+          account.lockedUntil = Date.now() + 15 * 60_000
+          throw new ApiError({ status: 423, code: 'LOGIN_LOCKED', title: '로그인 시도가 많아 잠시 잠겼습니다. 15분 뒤 다시 시도해 주세요.' })
+        }
+        throw invalid()
+      }
+      account.failed = 0
+      const issued = await mockSignIn(account.email, 'demo-only')
+      mockPasswordLogin.loginId = loginId
+      return issued
     }),
   ),
   http.post('/api/v1/auth/refresh', () =>
@@ -259,6 +305,10 @@ export const studentHandlers = [
         ...s,
         ...(s.role === 'PARENT' ? { nextAction, startPath: nextAction === 'CONSENT_REQUIRED' ? '/parent/onboarding' : nextAction === 'CHILD_REGISTRATION_REQUIRED' ? '/parent/children/new' : '/parent/journal' } : {}),
         ...mockIdentity,
+        // #415: ID·비밀번호 계정은 email 대신 loginId, 재확인은 비밀번호로 한다.
+        ...(mockPasswordLogin.loginId
+          ? { email: null, loginId: mockPasswordLogin.loginId, authMethod: 'PASSWORD' }
+          : { loginId: null, authMethod: 'GOOGLE' }),
         role: mockRole ?? s.role,
         permissions: s.role === 'ADMIN' ? (s.permissions ?? mockIdentity.permissions) : [],
       }

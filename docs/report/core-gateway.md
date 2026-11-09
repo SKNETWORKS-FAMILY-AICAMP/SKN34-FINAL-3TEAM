@@ -64,6 +64,8 @@
 - 하위 호출 서킷(#167): AI 전체 스트림 집계. OPEN은 기존 AI_UNAVAILABLE/FAILED, 사용자 취소·core 소비자 실패는 집계 제외, 차감은 보존. 최근/최소 20건·실패율 50%·30초 차단·half-open 1건
 - 재현: `scripts/verify_analysis_evidence.py`(실제 core·learning JAR로 근거 조회·타 보호자 404·위조 messageId 404·학생 범위 위조 403·삭제 후 `available:false` 확인)
 
+- 정정 안내(#244): 대화 상세의 답변별 `correctionNotice`. 기록과 판단은 [support-admin](support-admin.md) 「정정 영향 판정과 표시」
+
 ## 6. Redis 사용 필요성과 PostgreSQL 대체 비교 (#210)
 
 10/29 [멘토링](planning-decisions.md#1-1029-오프라인-멘토링-결정후속)의 재검토 권고에 따라 core의 Redis 사용처와 PostgreSQL 대체안을 비교한다. 담당자 결정은 **B. 부분 대체**(2026-11-02, [선택지와 결정](#선택지와-결정))이며, 대체 구현은 별도 이슈로 진행한다. 이 절 작성 시 코드·설정·계약·마이그레이션은 바꾸지 않았다. 부하·비용 수치는 실측이 없어 모두 추정이다. 코드 위치는 `backend/core-service/src/main/kotlin/com/sagomungchi/core/` 기준이다.
@@ -375,7 +377,7 @@ WHERE id = :event_id AND quarantined_at IS NOT NULL AND published_at IS NULL;
 - **관리자 주간 테마**: `/admin/weekly-themes…`(`AdminWeeklyThemesController`)를 learning `/internal/admin/weekly-themes…`로 관리자 미션·미션 초안(#355)과 같은 방식(CONTENT, ADMIN + `X-User-Id` + 빈 학생 범위)으로 넘긴다. 목록 필터 `gradeBand`·`weekStart`(KST 월요일)·`status`는 core에서 검사. 작성·수정·검토 요청·게시·게시 중단은 요청 감사 → learning 1회 → 응답 `themeId`로 결과 감사(`audit_log` `WEEKLY_THEME_{CREATE,UPDATE,REVIEW_REQUEST,PUBLISH,UNPUBLISH}_*`, `target_type = WEEKLY_THEME`). 게시 검사 실패 `422 WEEKLY_THEME_PUBLISH_INCOMPLETE`는 코드만 전달하고 공급자 문구는 지운다
 - **학생 삭제**: 삭제 확정(`ChildManagementService.confirm`) 트랜잭션 안에서 `MissionUsageService.deleteStudent`가 `mission_daily_usage`를 지운다(P09). `payment_premium_usage`는 거래 기록이라 남긴다
 - **위치**: 아키텍처 1.1.1·2.6(c370228b)대로 집계·한도 확인·삭제는 기존 `usage` 패키지(`MissionUsageService`, `MissionDailyUsageRepository`, `mybatis/usage/`)가 맡는다. 어떤 시도를 셀지·한도 수·`EXTRA` 허용은 무료·프리미엄 판단과 함께 `ProductEntitlementService`가 정해 넘긴다. `learning` 패키지는 DB·JDBC·`@Transactional`을 쓰지 않는다(`test_learning_openapi.py`)
-- **#389 연결 지점**: 포인트 적립 코드는 넣지 않았다. 학습 완료 적립 보충은 `LearningProxyService.weeklyTheme()` 응답 뒤, 되돌아보기·완주 적립은 `reviewViewed()`의 `{firstViewThisWeek, completed}` 응답 뒤에 붙인다
+- **#389 연결 지점**: 이 PR에는 포인트 적립 코드를 넣지 않았다. 이후 #389 적립 연결에서 학습 완료 적립 보충을 `LearningProxyService.weeklyTheme()` 응답 뒤, 되돌아보기·완주 적립을 `reviewViewed()`의 `{firstViewThisWeek, completed}` 응답 뒤에 붙였다(14절 적립 연결)
 - **마이그레이션**: core `V34__mission_daily_usage_and_extra_mission.sql`(develop V33 #392 다음)(새 테이블, `payment_premium_usage_kind_check`에 `EXTRA_MISSION` 추가, 기존 행 변경 없음). gitops 로컬 core 리비전 v33 → v34
 - **배포 후 확인**: `scripts/verify_cd_deployment.py`가 body `{}`로 시도를 시작하면 이제 `EXTRA`라 무료 시연 학생은 하루 1개를 추가 문제로 쓰고, `EXTRA`를 프리미엄 전용으로 바꾸면 무료는 403·프리미엄은 배포마다 프리미엄 사용이 남는다. 그래서 주간 테마에서 평일은 오늘 `OPEN` 문제를 `THEME_DAY`로, 토·일은 마무리한 문제를 `THEME_REVIEW`로 시작하게 바꿨다([CD README](../../infrastructure/cd/README.md) D)
 - **검증**: `WeeklyThemeProxyIntegrationTest`(무료 1개 뒤 429, 이어하기 허용·완료 시도 재시작 429, 되돌아보기 비집계, 무료 `EXTRA` 허용·합산, `extraMissions=false`면 무료 `EXTRA` 403, learning 409 전달, 학년군·KST 날짜, 삭제), `PaymentIntegrationTest`(`THEME_DAY`·`EXTRA` 합산 1개, KST 0시 초기화, `dailyMissions` 누락·`extraMissions` 형식 오류 503, 무료 상품 `extraMissions=false` 전환 후 무료 403·프리미엄 `EXTRA` 1회 기록·환불 거부 `REFUND_PREMIUM_USAGE_PRESENT`, 무료에 열려 있을 때 프리미엄 기록 없음), `AdminOperationsIntegrationTest`(주간 테마 7경로·CONTENT·감사·422), `LearningProxyIntegrationTest`(`context` 검사·본문 전달), `scripts/tests/test_weekly_theme_contract.py`·`test_cd_deployment.py`
@@ -392,7 +394,7 @@ WHERE id = :event_id AND quarantined_at IS NOT NULL AND published_at IS NULL;
 | 조회 | `GET /students/me/points`, `GET /children/{childId}/points` | - |
 | 꾸미기 | `GET /students/me/look-items`, `POST …/unlock`, `PUT /students/me/preferences` 잠금·`equipped` | - |
 | 관리자 | `/admin/look-items` 목록·등록·수정·판매 중단(CONTENT, 감사) | - |
-| 적립 사건 연결 | 없음(서비스 메서드와 테스트만) | 학습 완료(`LearningProxyService` 돌아보기 저장), 공유·반응(#388), 되돌아보기 열람·완주·주간 테마 조회 보충(#387) |
+| 적립 사건 연결 | 없음(서비스 메서드와 테스트만) | 후속 PR로 연결함(아래 "적립 연결") |
 
 적립 연결을 뒤로 미룬 이유: 사건이 생기는 경로(`LearningProxyService`, 커뮤니티·주간 테마 프록시)를 #387·#388이 동시에 고치고 있어, 같은 파일을 두 PR이 바꾸면 충돌과 중복 적립 위험이 생긴다. 먼저 사건 키 멱등인 `earn`을 만들어 두면 후속 PR은 사건 확인 뒤 한 줄로 부르면 된다.
 
@@ -415,4 +417,26 @@ WHERE id = :event_id AND quarantined_at IS NOT NULL AND published_at IS NULL;
 - `RewardIntegrationTest`(PostgreSQL·RabbitMQ 컨테이너): 시드 규칙값, 사건 키 1회·KST 하루 상한(23:30·다음날 00:10), 비활성 규칙·삭제 진행 학생 미적립, 학생·학부모만 조회, 목록 가격·판매 중단 노출, 해금 키 재사용·다른 키 재해금 무차감·부족·중단·없는 항목, 다른 키 4건 동시 해금 1회 차감, 잠금 409·`equipped` 슬롯·생략 유지·판매 중단 아이템 착용, 관리자 CONTENT·형식·코드 중복·감사 4종, 학생 삭제 정리, DB 부호·UK·잔액 CHECK
 - `LookUnlockMigrationTest`: V34 상태에 저장된 꾸미기를 넣고 V35 적용 → 유료 값만 `ledger_id` NULL 해금 행, 원장 0행
 - 계약: `scripts/validate_reward_contracts.py`가 실제 MockMvc 응답(포인트·목록·착용·관리자 아이템)을 OpenAPI로 검사(`ci-contracts`). `scripts/verify_db_schema.py`에 `reward_rule` 시드 예외(`event_type` 키)와 V35 음성 사례 13건 추가
-- 남은 일: 적립 사건 연결(위 표), 학습 완료 → 적립 → 해금 → 착용 종단 확인(이슈 완료 조건), 웹 실서버 연결 확인(#393~#395)
+- 남은 일: 학습 완료 → 적립 → 해금 → 착용 실서버 종단 확인(이슈 완료 조건), 웹 실서버 연결 확인(#393~#395)
+
+### 적립 연결 (후속 PR)
+
+#387·#388이 머지된 뒤 사건이 생기는 프록시 경로에 `earn`을 붙였다. 연결은 `ParticipationRewardService` 한 곳에 모아 각 경로는 사건 확인 뒤 한 줄로 부른다.
+
+| 사건 | 부르는 곳 | 조건 | 사건 키 |
+|---|---|---|---|
+| 학습 완료 `MISSION_COMPLETED` | `LearningProxyService.reflection` | 돌아보기 저장 2xx 또는 `409 ATTEMPT_CLOSED`(같은 사건 재요청) 뒤 learning 시도 상세가 `COMPLETED` | 시도 상세 `mission.id` |
+| 공유 `COMMUNITY_POSTED` | 같은 곳, `CommunityService.shareCompleted` 결과 | 공유 응답 201(새 공유)·200(이미 있음) | `postId` |
+| 반응 `REACTION_GIVEN` | `CommunityService.react` | 반응 남기기 2xx(취소는 적립 없음) | `postId:reaction` |
+| 되돌아보기 `REVIEW_VIEWED` | `LearningProxyService.reviewViewed` | 열람 기록 200 | 그 주 월요일(KST) |
+| 완주 `THEME_COMPLETED` | 같은 곳 | 열람 응답 `completed:true` | 그 주 월요일(KST) |
+| 보충 | `LearningProxyService.weeklyTheme` | 조회 200의 `days[].attemptStatus == COMPLETED` 미션 | 학습 완료와 같음 |
+
+- **응답을 바꾸지 않음**: `ParticipationRewardService`는 응답 해석·`earn` 실패를 모두 로그로만 남기고 던지지 않는다. `earn`은 자체 트랜잭션(`REQUIRES_NEW`)이고 프록시 경로에는 바깥 트랜잭션이 없어, 적립이 실패해도 learning 응답·상태 코드·본문이 그대로 나간다. 공개 API 응답 모양은 바뀌지 않았다(적립 결과는 `GET /students/me/points`로 본다). 시퀀스 다이어그램 설계안의 응답 `{earned}`는 넣지 않았다: 웹이 이미 잔액을 따로 조회하고, learning 응답을 그대로 넘기는 프록시 원칙을 지키려는 것
+- **학습 완료 미션은 시도 상세로 확인**: learning 돌아보기 응답은 `{attemptId, status, reflection}`라 미션 ID가 없다. 저장 뒤 `GET /internal/attempts/{id}`를 한 번 더 불러 `COMPLETED`와 `mission.id`를 확인한다(클라이언트가 보낸 값은 쓰지 않음). 다시 풀기는 같은 미션 키라 적립하지 않는다(P21 미션당 최초 1회)
+- **보충 경로**: 같은 돌아보기 재요청은 learning이 `409 ATTEMPT_CLOSED`를 돌려주지만 core는 그 응답을 그대로 넘기면서 학습 완료·공유 적립을 다시 시도한다. 반응은 이미 남긴 반응을 다시 보내면(`created:false`) 같은 키로 보충만 된다. 되돌아보기·완주는 열람 기록이 멱등이라 열람 재요청이 보충이다. 주간 테마 조회는 이번 주 요일 문제 중 학습 완료한 미션만 보충하고, 추가 문제(EXTRA)는 응답에 없어 보충하지 않는다(FN-RET-05). 주간 테마 조회는 열람 여부를 알려 주지 않아 되돌아보기·완주 보충은 하지 않는다
+- **반복 적립 방지**: 반응 키 `postId:reaction`은 learning 반응 ID(같은 학생·공유물·반응이면 같은 ID)와 1:1이라 껐다 켜도 한 번이다. 하루 상한은 `earn`이 KST 하루 횟수로 막는다
+- **주 시작일**: 열람 응답에는 `weekStart`가 없어 core가 learning에 넘긴 날짜(`entitlements.today()`, KST)의 월요일로 정한다. learning도 같은 날짜로 그 주를 정한다
+- **작성자 `look.equipped`**: 커뮤니티 작성자 표시(`CommunityAuthorMapper`)에 착용 네 슬롯을 더했다(`StudentLook.equipped`와 같은 모양, 없으면 null). 공개 가능한 작성자만 한 번에 조회한다
+- 검증: `RewardEarnIntegrationTest`(가짜 learning) — 미션당 1회·닫힌 재요청·다시 풀기 무적립, 적립 실패(`RewardService` spy가 예외) 중에도 돌아보기·반응·열람 응답 유지 후 재요청 보충, 주간 테마 조회 보충(완료 요일만·깨진 응답은 그대로 전달), 열람 주 1회·완주, 반응 키 1회·하루 상한 5, 학습 완료 적립 → 해금 → 착용 → 다른 학생이 본 작성자 `look.equipped`. 기존 `CommunityIntegrationTest`에 `equipped` 슬롯 확인 추가
+- 남은 확인: kind 실서버에서 web → core → learning으로 "학습 완료 → 적립 → 해금 → 착용"을 직접 확인하지 않았다

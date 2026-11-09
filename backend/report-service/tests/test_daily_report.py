@@ -90,6 +90,19 @@ def test_daily_facts_weekend_and_monday_never_call_ai(day):
     assert problem.evidence
 
 
+def test_corrected_judgment_shows_new_result_without_original_elements():
+    _, records, learning = daily_fixture()
+    attempt = records.attempts[0]
+    last = attempt.answers[-1]
+    judgment = replace(last.judgment, result="RETHINK", corrected=True)
+    corrected = replace(attempt, answers=(*attempt.answers[:-1], replace(last, judgment=judgment)))
+    result = asyncio.run(
+        DailyReportBuilder().build(replace(records, attempts=(corrected,)), True, learning)
+    )
+    problem = next(i for i in result.items if i.type == ItemType.PROBLEM)
+    assert problem.payload["judgment"] == "RETHINK" and problem.payload["elements"] == []
+
+
 def test_private_daily_has_no_answer_quote_or_evidence_before_storage():
     command, records, learning = daily_fixture()
     result = asyncio.run(

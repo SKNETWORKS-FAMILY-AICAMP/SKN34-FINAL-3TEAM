@@ -83,7 +83,7 @@ class DailyReportBuilder:
                 "elements": [
                     {"label": e.label or e.code, "satisfied": e.satisfied} for e in elements
                 ]
-                if judgment and judgment.result != "HELD"
+                if judgment and judgment.result != "HELD" and not judgment.corrected
                 else [],
                 "reflection": {
                     "written": reflection is not None,

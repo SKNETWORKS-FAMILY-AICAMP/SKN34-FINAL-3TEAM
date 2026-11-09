@@ -88,6 +88,8 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
             jdbc.update("DELETE FROM auth_session WHERE user_id=?", user)
             jdbc.update("DELETE FROM guardianship WHERE parent_user_id=?", user)
             jdbc.update("DELETE FROM user_account WHERE id=?", user)
+            jdbc.update("DELETE FROM reward_point_ledger WHERE student_id=?", child)
+            jdbc.update("DELETE FROM reward_point_balance WHERE student_id=?", child)
             jdbc.update("DELETE FROM student WHERE id=?", child)
         }
         documents.forEach { jdbc.update("DELETE FROM consent_document WHERE id=?", it) }; documents.clear()
@@ -135,8 +137,8 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
                 .andExpect(status().`is`(if (path.endsWith("/answers")) 201 else 200))
                 .andExpect(header().string("ETag", "\"8\""))
                 .andExpect(content().string("{ \"raw\": \"생각\" }"))
-            val received = stub.requests.last()
-            assertEquals(method, received.method)
+            // 돌아보기 저장 뒤 core는 학습 완료 적립(#389)을 위해 시도 상세를 GET으로 다시 읽는다
+            val received = stub.requests.last { it.method == method }
             val expectedQuery = when {
                 method == "GET" && path == "/missions" -> "?grade=3&demo=false&page=0&size=20"
                 method == "GET" && path.startsWith("/missions/") -> "?grade=3&demo=false"

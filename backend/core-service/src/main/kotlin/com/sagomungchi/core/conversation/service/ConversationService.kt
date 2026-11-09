@@ -28,7 +28,8 @@ class ConversationService(private val repository: ConversationRepository, privat
     private val events: org.springframework.context.ApplicationEventPublisher,
     private val learningContext: com.sagomungchi.core.guardianship.service.StudentLearningContextService,
     private val reportJobs: com.sagomungchi.core.report.repository.ReportJobRepository,
-    private val reports: com.sagomungchi.core.report.service.ReportQueryService) {
+    private val reports: com.sagomungchi.core.report.service.ReportQueryService,
+    private val corrections: com.sagomungchi.core.support.service.CorrectionNoticeService) {
 
     fun parent(): UUID {
         val context = UserContextHolder.currentOrNull()
@@ -94,7 +95,11 @@ class ConversationService(private val repository: ConversationRepository, privat
     }
     fun detail(id: UUID): Map<String, Any?> {
         val parent = parent()
-        return locked(parent, id) { row -> view(row, repository.messages(id).map(::messageView)) }
+        return locked(parent, id) { row ->
+            val messages = repository.messages(id)
+            val corrected = corrections.messages(id, messages.map { it.id })
+            view(row, messages.map { messageView(it, it.id in corrected) })
+        }
     }
     /** Parent -> student -> conversation order matches #45. Never lock the conversation before the student. */
     fun <T : Any> locked(parent: UUID, id: UUID, block: (ConversationRow) -> T): T = tx.execute {
@@ -434,12 +439,12 @@ class ConversationService(private val repository: ConversationRepository, privat
         "conversationId" to row.id, "childId" to row.studentId, "period" to mapOf("from" to row.periodFrom, "to" to row.periodTo),
         "reportId" to row.reportId, "reportRevision" to row.reportRevision,
         "title" to "학습 기록 분석", "createdAt" to row.createdAt, "messages" to messages)
-    private fun messageView(row: MessageRow): Map<String, Any?> = mapOf("messageId" to row.id, "question" to row.question,
+    private fun messageView(row: MessageRow, corrected: Boolean): Map<String, Any?> = mapOf("messageId" to row.id, "question" to row.question,
         "status" to row.status, "scope" to row.scope(), "answer" to row.answer, "source" to row.source,
         "metrics" to row.metrics?.let(json::readTree), "verification" to row.verification?.let(json::readTree),
         "clarification" to row.clarification?.let(json::readTree), "recordCount" to row.recordCount,
         "fallback" to (row.fallback?.let(json::readTree) ?: row.failureCode?.takeIf { row.source == "TEMPLATE" }?.let { mapOf("reason" to it) }),
-        "notice" to row.notice?.let(json::readTree),
+        "notice" to row.notice?.let(json::readTree), "correctionNotice" to corrected,
         "failureCode" to row.failureCode?.takeIf { row.status == "FAILED" }, "retryable" to (row.status == "FAILED"),
         "evidence" to repository.evidence(row.id).map { mapOf("evidenceId" to it.id,"kind" to it.kind, "attemptId" to it.attemptId, "answerId" to it.answerId, "answerVersion" to it.answerVersion) })
     private fun verification(node: JsonNode, requirePassed: Boolean): Boolean {

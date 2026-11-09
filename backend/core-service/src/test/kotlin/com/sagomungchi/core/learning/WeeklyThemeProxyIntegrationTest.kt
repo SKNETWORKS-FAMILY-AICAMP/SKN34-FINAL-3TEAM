@@ -83,6 +83,9 @@ class WeeklyThemeProxyIntegrationTest : PostgresRepositoryTest() {
         jdbc.update("DELETE FROM auth_session WHERE user_id=?", user)
         jdbc.update("DELETE FROM guardianship WHERE parent_user_id=?", user)
         jdbc.update("DELETE FROM user_account WHERE id=?", user)
+        // 되돌아보기 열람 응답 뒤 적립(#389)이 원장·잔액을 만든다
+        jdbc.update("DELETE FROM reward_point_ledger WHERE student_id=?", child)
+        jdbc.update("DELETE FROM reward_point_balance WHERE student_id=?", child)
         jdbc.update("DELETE FROM student WHERE id=?", child)
         documents.forEach { jdbc.update("DELETE FROM consent_document WHERE id=?", it) }; documents.clear()
         jdbc.update("DELETE FROM product WHERE id=?", free)

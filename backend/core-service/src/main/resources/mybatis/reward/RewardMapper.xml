@@ -58,6 +58,12 @@
         SELECT e.slot AS slot,i.code AS code FROM student_look_equipment e JOIN look_item i ON i.id=e.look_item_id
         WHERE e.student_id=#{studentId}
     </select>
+    <!-- 커뮤니티 작성자 표시(#389): 여러 학생의 착용 아이템 -->
+    <select id="equipmentOf" resultType="map" flushCache="true" useCache="false">
+        SELECT e.student_id::text AS student_id,e.slot AS slot,i.code AS code
+        FROM student_look_equipment e JOIN look_item i ON i.id=e.look_item_id
+        WHERE e.student_id IN <foreach collection="ids" item="id" open="(" close=")" separator=",">#{id}</foreach>
+    </select>
     <delete id="clearEquipment">DELETE FROM student_look_equipment WHERE student_id=#{studentId}</delete>
     <insert id="insertEquipment">
         INSERT INTO student_look_equipment(student_id,slot,look_item_id,updated_at) VALUES(#{studentId},#{slot},#{itemId},#{now})

@@ -49,7 +49,7 @@ export function ParentUnlock({ onUnlocked }: { onUnlocked: (session: Session) =>
       {problem
         ? <p role="alert">{unlockProblem(problem.code, problem.remainingAttempts)}</p>
         : unlock.error && <p role="alert">{unlockProblem('')}</p>}
-      <small>보호자 비밀번호가 없거나 잊었다면 아래에서 Google로 다시 로그인해 주세요.</small>
+      <small>보호자 비밀번호가 없거나 잊었다면 아래에서 다시 로그인해 주세요.</small>
     </form>
   )
 }

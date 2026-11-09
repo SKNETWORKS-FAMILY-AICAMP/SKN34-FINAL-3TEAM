@@ -1911,6 +1911,9 @@ body {
 }
 
 /* 로그인 보조 링크와 가입/시연 안내를 독립된 행으로 배치한다. */
+#class-journal .ux-login-id { display:grid; gap:10px; margin-top:16px; }
+#class-journal .ux-login-or { margin:0; color:var(--cj-muted); font-size:.92em; }
+#class-journal .ux-login-id small { line-height:1.5; }
 #class-journal .ux-login-links { display:flex; flex-wrap:wrap; align-items:center; gap:8px 20px; margin:16px 0; }
 #class-journal .ux-login-links a { display:inline-flex; align-items:center; min-height:40px; line-height:1.5; text-underline-offset:3px; }
 #class-journal .ux-login-signup { display:block; width:100%; margin:0 0 16px; }

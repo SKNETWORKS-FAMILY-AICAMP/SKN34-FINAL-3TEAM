@@ -158,6 +158,8 @@ class JudgmentCorrectionTest : PostgresRepositoryTest() {
         val after = asStudent(done) { service.result(done.answerId) }
         assertEquals(JudgmentResult.CORRECT, after.judgment?.result)
         assertNull(after.judgment?.heldReason)
+        assertEquals(false, before.judgment?.corrected)
+        assertEquals(true, after.judgment?.corrected)
         assertEquals(before.judgment?.elements, after.judgment?.elements)
         assertEquals(before.followup, after.followup)
         assertEquals(listOf(NextAction.ANSWER_FOLLOWUP, NextAction.FINISH), after.nextActions)
