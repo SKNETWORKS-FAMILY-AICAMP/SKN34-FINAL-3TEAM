@@ -31,6 +31,7 @@ data class StoredJudgment(
     val promptVersion: String?,
     val missionLabel: String,
     val rubricLabel: String,
+    val corrected: Boolean = false,
 )
 
 data class StoredElement(
