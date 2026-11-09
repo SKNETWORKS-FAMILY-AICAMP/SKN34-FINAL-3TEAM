@@ -10,7 +10,7 @@ export type HelpItem = { title: string; body: string }
 export const notificationLabels = {
   REPORT_COMPLETED: '리포트 생성 완료', REPORT_FAILED: '리포트 생성 실패', ERROR_REPORT_RESOLVED: '오류 신고 처리',
   INQUIRY_ANSWERED: '문의 답변', PAYMENT_CHANGED: '결제 변경', SUBSCRIPTION_CHANGED: '구독 변경',
-  // 일일 리포트(P24, 구현 예정): 주간과 따로 받을지 정한다.
+  // 일일 리포트(P24): 주간과 따로 받을지 정한다(core `DAILY_REPORT_*`, 설정 1~8개).
   DAILY_REPORT_COMPLETED: '일일 리포트 생성 완료', DAILY_REPORT_FAILED: '일일 리포트 생성 실패',
 } as const
 export type NotificationType = keyof typeof notificationLabels

@@ -47,5 +47,5 @@ class StudentProfileContractTest(unittest.TestCase):
 
     def test_generate_event_stays_free_of_nickname(self):
         schema = json.loads((ROOT / "contracts/events/report.generate.v1.schema.json").read_text(encoding="utf-8"))
-        self.assertEqual(set(schema["properties"]), {"jobId", "studentId", "periodFrom", "periodTo", "trigger", "narrativeEnabled"})
+        self.assertEqual(set(schema["properties"]), {"jobId", "studentId", "periodFrom", "periodTo", "trigger", "narrativeEnabled", "periodType"})
         self.assertFalse(schema["additionalProperties"])

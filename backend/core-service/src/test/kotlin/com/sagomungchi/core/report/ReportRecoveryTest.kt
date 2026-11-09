@@ -115,7 +115,7 @@ class ReportRecoveryTest : PostgresRepositoryTest() {
         assertEquals("REPORT_NOT_CREATED", repository.find(job.id)!!.failureReason)
         assertNull(repository.find(job.id)!!.reportId)
         assertEquals(1, executionCount(job)); assertEquals(0, notificationCount(job))
-        assertFalse(repository.inProgress(job.studentId, job.periodFrom))
+        assertFalse(repository.inProgress(job.studentId, job.period))
     }
 
     @Test fun `lost completion and failed result each record once and reject identity mismatch`() {

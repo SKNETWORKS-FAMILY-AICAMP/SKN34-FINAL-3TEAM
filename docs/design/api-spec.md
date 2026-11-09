@@ -363,21 +363,21 @@
 ### 2.5 리포트 (FN-RPT)
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
-| GET | `/children/{childId}/reports?status` | 학부모 | 대상 주·생성 상태별 목록. 구현 예정: `periodType`(`DAILY`·`WEEKLY`, 생략 시 전체) 필터, 항목에 `periodType` | RPT-10, RPT-11 | 핵심 |
-| GET | `/reports/{reportId}?revision` | 학부모 | 상세: 기간·포함 기준·`Metric[]`·생각 유형 요약·전후 변화·돌아보기·원문 인용·저녁 질문·버전. 구현 예정: `periodType`, 일일 `problems[]`, 주간 `themeSummary`(아래). 기본 최신판, `revision`으로 이전판 조회 (P06) | RPT-02~10, RPT-12 | 핵심 |
+| GET | `/children/{childId}/reports?status&periodType` | 학부모 | 대상 기간·생성 상태별 목록. `periodType`(`DAILY`·`WEEKLY`, 생략 시 전체) 필터, 항목에 항상 `periodType`(report가 생략하면 core가 `WEEKLY`로 채움, #390) | RPT-10, RPT-11, RPT-15 | 핵심 |
+| GET | `/reports/{reportId}?revision` | 학부모 | 상세: 기간·포함 기준·`Metric[]`·생각 유형 요약·전후 변화·돌아보기·원문 인용·저녁 질문·버전, `periodType`(core가 작업 기준으로 채움, #390). 구현 예정(report #391): 일일 `problems[]`, 주간 `themeSummary`(아래). 기본 최신판, `revision`으로 이전판 조회 (P06) | RPT-02~10, RPT-12 | 핵심 |
 | GET | `/reports/{reportId}/evidence/{itemId}` | 학부모 | 리포트 항목의 원본 기록 | RPT-03, RPT-12 | 핵심 |
 | GET | `/reports/{reportId}/download?format=pdf\|md` | 학부모 | 권한 확인 후 `{url, expiresAt}`(단기 presigned URL) 반환, 웹이 해당 URL로 이동. Bearer 인증이라 302 대신 JSON (PDF·Markdown, P06) | RPT-13 | 핵심 |
-| POST | `/reports/{reportId}/regenerate` | 학부모·관리자 | 같은 주 재생성 → `report.generate`, 새 판(`revision + 1`) 추가·기존 판 보존. 학부모 리포트당 1회(초과 409), 관리자 무제한 (P06) | RPT-12 | 핵심 |
+| POST | `/reports/{reportId}/regenerate` | 학부모·관리자 | 같은 기간 재생성(일일은 그날, 주간은 그 주) → `report.generate`, 새 판(`revision + 1`) 추가·기존 판 보존. 학부모 리포트당 1회(초과 409, 기간 종류·대상 기간별), 관리자 무제한. 응답에 `periodType` (P06, P24) | RPT-12, RPT-15 | 핵심 |
 
 - 자동 생성(FN-RPT-01)은 core 스케줄러가 매주 월요일 07:00 KST에 직전 월~일(KST) 대상으로 수행하며 공개 API는 없음 (P06)
 - 생성 내용(FN-RPT-02~09)은 report-service가 계산하고, 그 결과를 상세 응답 스키마(3.4)로 제공
 - 기록 없는 주·표본 부족 주는 `COMPLETED` + `state: NO_RECORD|INSUFFICIENT_SAMPLE`로 표시하며, 생성 실패(`FAILED`)와 구분 (FN-RPT-11). `NO_RECORD`는 LLM 미호출 (P06)
 - 무료 플랜은 수치만 제공(`narrative: null`, 생각 유형 `summary` 없음) (P13)
-- 일일 리포트(FN-RPT-14·15, P24, 구현 예정): core 스케줄러가 매일 07:00 KST에 보호자가 연결된 자녀별 전날(KST) 대상으로 생성. 상세의 일일 항목은 `problems:[{missionId, title, context, judgment, followups[], finalAnswer, elements[], reflection, quotes[]}]`, `metrics`는 개수만, `eveningQuestion`·`narrative` 없음. 토·일은 되돌아보기 다시 풀기·추가 문제 시도도 포함
+- 일일 리포트(FN-RPT-14·15, P24): core 스케줄러가 매일 07:00 KST(ShedLock `core-daily-reports`)에 보호자가 연결된 자녀별 전날(KST) 대상으로 작업을 만든다(#390, 기록 없는 날 포함). report 쪽 생성 내용은 구현 예정(#391). 상세의 일일 항목은 `problems:[{missionId, title, context, judgment, followups[], finalAnswer, elements[], reflection, quotes[]}]`, `metrics`는 개수만, `eveningQuestion`·`narrative` 없음. 토·일은 되돌아보기 다시 풀기·추가 문제 시도도 포함
 - 주간 테마 요약(FN-RPT-17, 구현 예정): 주간 상세에 `themeSummary:{themeId, title, days[], completed, reviewRetries[]}`. 테마 미참여 주는 `state: NO_RECORD` 요약
 - 다운로드·근거·재생성 경로는 2.5 그대로이며 일일에도 같은 규칙(학부모 리포트당 1회, 관리자 무제한)
 - 일일 리포트는 이용권과 관계없이 전체 제공(서술이 없어 `X-Report-Narrative-Enabled`와 무관). 주간 무료 규칙은 그대로
-- 알림 유형 추가: `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`(2.7 설정 1~8개)
+- 알림 유형: `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`(2.7 설정 1~8개, #390)
 - 리포트 고정 대화의 질문은 그 대상일 밖으로 범위를 바꾸지 않는다. 다른 날 질문은 범위 확인에서 새 대화 안내
 
 ### 2.6 결제·구독 (FN-PAY) — 토스페이먼츠 테스트 환경만
@@ -422,8 +422,8 @@
 
 - #44 권한: 학생 세션의 account.id는 보호자 ID를 공유하므로 학생은 모든 알림/설정 API에서 403이다. PARENT·ADMIN은 인증된 본인 계정만 사용하며 userId 입력을 받지 않는다. 학생 전용 알림함은 현재 제공하지 않는다.
 - 목록: `GET /notifications?unreadOnly=false&page=0&size=20` → `{items:[{id,childId,type,title,link,readAt,createdAt}],page,size,hasNext}`. size 1~100, 최신 createdAt·id 내림차순. 읽음 PATCH와 전체 읽음 POST는 204, 반복해도 최초 readAt 유지, 타인/없는 ID는 404.
-- 설정: GET → `{items:[{type,enabled}]}`, PUT도 동일한 객체(1~6개, 구현 예정 일일 리포트 2종 추가 후 1~8개 중복 없는 유형)로 지정 유형만 갱신하고 전체 유효 설정을 반환. 미저장 유형 기본 true, 채널은 IN_APP 고정. 유형은 REPORT_COMPLETED, REPORT_FAILED, ERROR_REPORT_RESOLVED, INQUIRY_ANSWERED, PAYMENT_CHANGED, SUBSCRIPTION_CHANGED. 수신 거부는 이후 알림 생성을 막으며 기존 알림은 보존한다.
-- 리포트 실패는 REPORT_FAILED로 독립 설정한다. 완료·실패 모두 현재 연결·동의가 유효한 보호자에게 생성한다. 상세 링크 권한은 이동 시 다시 검사한다. 실패 링크는 리포트 목록으로 이동한다.
+- 설정: GET → `{items:[{type,enabled}]}`, PUT도 동일한 객체(1~8개 중복 없는 유형)로 지정 유형만 갱신하고 전체 유효 설정을 반환. 미저장 유형 기본 true, 채널은 IN_APP 고정. 유형은 REPORT_COMPLETED, REPORT_FAILED, ERROR_REPORT_RESOLVED, INQUIRY_ANSWERED, PAYMENT_CHANGED, SUBSCRIPTION_CHANGED, DAILY_REPORT_COMPLETED, DAILY_REPORT_FAILED. 수신 거부는 이후 알림 생성을 막으며 기존 알림은 보존한다.
+- 리포트 실패는 REPORT_FAILED로 독립 설정한다. 일일 리포트(P24)는 DAILY_REPORT_COMPLETED·DAILY_REPORT_FAILED로 주간과 따로 설정한다(#390). 완료·실패 모두 현재 연결·동의가 유효한 보호자에게 생성한다. 상세 링크 권한은 이동 시 다시 검사한다. 실패 링크는 리포트 목록으로 이동한다.
 - SSE는 `event: notification`에 목록 항목과 같은 데이터를 전송한다. 15초 `: ping`, 최대 5분 후 재연결. 각 전송·heartbeat에서 세션/동의를 재검사하고 만료·폐기 시 연결을 닫는다. 학생으로 역할을 바꾸면 기존 보호자 구독도 폐기된 세션 검사로 닫힌다.
 - 구독 준비 후 `event: ready`를 받으면 목록 API를 첫 페이지부터 재조회해 id로 병합한다. 연결 중에도 주기적으로 목록을 동기화한다. Last-Event-ID 재생은 제공하지 않는다. Redis Pub/Sub은 유실 가능하며 SSE를 영구 전달 보장으로 사용하지 않는다.
 - DB 저장이 원본이다. 커밋 이후 Redis에 발행하며 발행 실패는 DB 전달 상태 FAILED/REDIS_PUBLISH_FAILED와 로그로 기록한다. COMPLETED는 Redis 발행 성공이며 브라우저 수신 확인이 아니다(구독자 0명도 발행 성공). 프로세스가 커밋 직후 종료되면 QUEUED로 남아도 목록에서 조회된다. 발행 실패 때문에 리포트 상태를 되돌리지 않는다.
@@ -431,7 +431,7 @@
 - 알림 생성(FN-SUP-08)은 내부 사건(리포트 완료·실패, 신고·문의 처리, 구독·결제 변경)에서 발생
   - 사건 ID 기준으로 1회만 생성
   - 알림 본문에는 학생 원문·결제 민감 정보를 넣지 않고 상세 화면 링크만 담음 (FN-SUP-11)
-- 구현 예정(2026-11-06 결정): 신고 대상 `COMMUNITY_POST`(2.9, 학생만), 알림 유형 `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`(주간과 독립 수신 설정)
+- 구현 예정(2026-11-06 결정): 신고 대상 `COMMUNITY_POST`(2.9, 학생만)
 
 ### 2.8 관리자 (FN-ADM, FN-SUP 관리 측) — `/api/v1/admin`
 
@@ -982,14 +982,14 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 | Method | Path | 설명 |
 |---|---|---|
-| GET | `/internal/reports?studentId&status` | 리포트 목록. 구현 예정: `periodType` 필터 |
+| GET | `/internal/reports?studentId&status&periodType` | 리포트 목록. core는 `periodType` 필터를 그대로 전달하고 항목의 `periodType`(생략 = `WEEKLY`)이 필터와 다르면 502로 거부한다(#390). report 필터 구현은 #391 |
 | GET | `/internal/reports/{reportId}?revision` | 상세 (3.4 스키마), 기본 최신판·양의 revision으로 이전판 조회 |
 | GET | `/internal/reports/{reportId}/evidence/{itemId}` | 항목 근거 |
 | GET | `/internal/reports/{reportId}/files/{format}` | 단기 presigned URL 발급 → `{url, expiresAt}` |
 | POST | `/internal/report-jobs/{jobId}/reconcile` | core 작업 복구: `{studentId, periodFrom, periodTo}` 대조 후 현재 상태 반환, 불일치 409 `REPORT_JOB_IDENTITY_MISMATCH` (5.9) |
 
 - core는 현재 이용 권한으로 `X-Report-Narrative-Enabled:true|false`를 설정해야 함(공개 요청의 같은 헤더는 전달하지 않음). report는 누락 시 false로 처리해 응답·다운로드에서 AI 서술·생각 유형 summary·저녁 질문을 가림
-- 구현 예정(P24): 일일 리포트는 같은 경로를 쓰고 최신 판 선택·재생성 판 단위가 학생·`periodType`·대상 기간이 된다. `report.generate` 페이로드에 `periodType`(`DAILY`·`WEEKLY`, 생략 시 `WEEKLY`) 추가, 새 메시지 없음([이벤트 계약](../../contracts/events/report-messages.md)은 구현 시 갱신)
+- P24: 일일 리포트는 같은 경로를 쓰고 최신 판 선택·재생성 판 단위가 학생·`periodType`·대상 기간이 된다(report 몫은 #391). `report.generate` 페이로드에 `periodType`(`DAILY`·`WEEKLY`, 생략 시 `WEEKLY`)을 추가했고 core는 일일에만 넣는다. 새 메시지 없음([이벤트 계약](../../contracts/events/report-messages.md), #390). 일일 상세·다운로드는 `X-Report-Narrative-Enabled: false`로 요청하며 상품 권한을 조회하지 않는다
 - 목록은 학생/대상 주별 최신 revision을 고른 뒤 status를 적용하며 1.1 페이지 봉투를 사용한다. 상세의 기본값은 같은 학생·대상 주 최신판, `revision` 지정 시 해당 판이다. evidence/files 경로는 전달한 실제 reportId 판에 속한 항목·파일을 조회한다.
 - 파일 키는 `reports/{studentId}/{reportId}/r{revision}/{full|free}/{pdf|md|html}`다. DB `report_file`에는 full 키 3개를 저장하며 무료용 파생 파일도 생성한다. 다운로드 수명은 설정값이며 운영 기본안은 300초다. 버전·형식·학생이 맞지 않는 키를 서명하지 않는다.
 

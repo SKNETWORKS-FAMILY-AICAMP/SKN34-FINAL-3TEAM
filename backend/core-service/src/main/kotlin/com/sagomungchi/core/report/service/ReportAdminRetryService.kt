@@ -29,15 +29,16 @@ class ReportAdminRetryService(private val jobs: ReportJobRepository, private val
         val original = jobs.find(originalId) ?: missing()
         access.regeneration(actor,original.studentId)
         students.requireReportRetryActive(original.studentId)
-        jobs.lockWeek(original.studentId,original.periodFrom)
+        jobs.lockPeriod(original.studentId,original.period)
         val locked = jobs.lock(originalId) ?: missing()
         retries.byOriginal(originalId)?.let {
             throw BusinessException(HttpStatus.CONFLICT,"REPORT_ALREADY_RETRIED","이미 재처리 작업이 접수됐습니다. 연결된 새 작업을 확인해 주세요.")
         }
         if (locked.status != ReportJobStatus.FAILED)
             throw BusinessException(HttpStatus.CONFLICT,"JOB_NOT_FAILED","실패한 작업만 재처리할 수 있습니다.")
-        if (jobs.inProgress(locked.studentId,locked.periodFrom))
-            throw BusinessException(HttpStatus.CONFLICT,"REPORT_GENERATION_IN_PROGRESS","같은 주 리포트를 생성하고 있습니다.")
+        if (jobs.inProgress(locked.studentId,locked.period))
+            throw BusinessException(HttpStatus.CONFLICT,"REPORT_GENERATION_IN_PROGRESS",
+                if (locked.periodType == ReportPeriodType.DAILY) "같은 날 리포트를 생성하고 있습니다." else "같은 주 리포트를 생성하고 있습니다.")
         val accepted = creation.enqueueAdminRetry(locked,actor.account.id)
         val created = requireNotNull(jobs.find(accepted.jobId))
         val retry = ReportJobRetry(originalId,created.id,actor.account.id,key,created.createdAt.toInstant())

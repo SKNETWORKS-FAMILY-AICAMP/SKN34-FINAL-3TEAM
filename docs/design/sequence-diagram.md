@@ -971,9 +971,9 @@ sequenceDiagram
 
 ADMIN/SERVICE_OPS → OperationsController → 공통 IdempotencyService → ReportAdminRetryService → 학생 상태 잠금 service·report 학생/주/원작업 잠금 → 새 report_job + report_job_retry + report.generate Outbox + JOB_RETRY_REQUESTED 감사 커밋 → 202/Location. 이후 기존 Outbox relay → report(#152) → 새 jobId의 report.* → 기존 ReportLifecycleService → processed_event + report_job + job_execution + 결과 감사가 같은 트랜잭션으로 커밋된다. DB 트랜잭션 안에서 report HTTP·브로커 네트워크 호출을 하지 않는다.
 
-### 6.5 일일 리포트 생성·알림 (P24, 구현 예정)
+### 6.5 일일 리포트 생성·알림 (P24)
 
-구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). core 몫(일정·작업·`report.generate`·알림)은 #390으로 구현했고 report-worker 몫은 구현 예정(#391). 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram

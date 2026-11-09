@@ -45,10 +45,16 @@ class NotificationService(private val repository: NotificationRepository, privat
         return settings(identity)
     }
     @Transactional(propagation = Propagation.MANDATORY)
-    fun report(userId: UUID, childId: UUID, sourceEventId: UUID, reportId: UUID, failed: Boolean) {
-        val value = Notification(UUID.randomUUID(), userId, childId,
-            if (failed) NotificationType.REPORT_FAILED else NotificationType.REPORT_COMPLETED, sourceEventId,
-            if (failed) "주간 리포트 생성에 실패했습니다." else "주간 리포트가 완성되었습니다.",
+    fun report(userId: UUID, childId: UUID, sourceEventId: UUID, reportId: UUID, failed: Boolean, daily: Boolean = false) {
+        val type = when {
+            daily && failed -> NotificationType.DAILY_REPORT_FAILED
+            daily -> NotificationType.DAILY_REPORT_COMPLETED
+            failed -> NotificationType.REPORT_FAILED
+            else -> NotificationType.REPORT_COMPLETED
+        }
+        val name = if (daily) "일일 리포트" else "주간 리포트"
+        val value = Notification(UUID.randomUUID(), userId, childId, type, sourceEventId,
+            if (failed) "$name 생성에 실패했습니다." else "${name}가 완성되었습니다.",
             if (failed) "/parent/report?childId=$childId" else "/parent/report?childId=$childId&reportId=$reportId", null, OffsetDateTime.now())
         if (repository.insert(value)) events.publishEvent(NotificationStored(value.id, userId))
     }

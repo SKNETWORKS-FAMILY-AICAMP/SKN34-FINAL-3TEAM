@@ -171,7 +171,7 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
     @Test fun `conversation retry rejects invalid owner without fabricated execution`() {
         val (actor,access)=token();val student=UUID.randomUUID();val report=UUID.randomUUID();val conv=UUID.randomUUID();val message=UUID.randomUUID()
         jdbc.update("INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,pin_failed_count,created_at,updated_at) VALUES(?,'synthetic',3,2017,false,'ACTIVE',0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",student)
-        jdbc.update("INSERT INTO report_job(id,student_id,period_from,period_to,trigger,status,retry_count,created_at) VALUES(?,?,'2026-01-01','2026-01-07','SCHEDULE','FAILED',0,CURRENT_TIMESTAMP)",report,student)
+        jdbc.update("INSERT INTO report_job(id,student_id,period_type,period_from,period_to,trigger,status,retry_count,created_at) VALUES(?,?,'WEEKLY','2026-01-01','2026-01-07','SCHEDULE','FAILED',0,CURRENT_TIMESTAMP)",report,student)
         jdbc.update("INSERT INTO conversation(id,parent_user_id,student_id,period_from,period_to,created_at,updated_at) VALUES(?,?,?,'2026-01-01','2026-01-07',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",conv,actor,student)
         jdbc.update("INSERT INTO conversation_message(id,conversation_id,seq,question,scope_changed,status,retry_count,created_at) VALUES(?,?,1,'student secret',false,'FAILED',0,CURRENT_TIMESTAMP)",message,conv)
         mvc.post("/api/v1/admin/jobs/$message/retry") { header("Authorization","Bearer $access");header("Idempotency-Key",UUID.randomUUID()) }.andExpect { status { isForbidden() } }

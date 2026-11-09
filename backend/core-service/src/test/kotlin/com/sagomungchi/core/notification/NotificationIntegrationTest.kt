@@ -57,8 +57,8 @@ class NotificationIntegrationTest : IntegrationTestSupport() {
     @MockitoBean lateinit var outboxRelay: OutboxRelay
 
     private fun job(student: UUID): UUID = UUID.randomUUID().also {
-        jdbc.update("""INSERT INTO report_job(id,student_id,period_from,period_to,trigger,status,retry_count,created_at)
-            VALUES(?,?,?,?,'REGENERATE','QUEUED',0,?)""", it, student, WEEK.from, WEEK.to, OffsetDateTime.now())
+        jdbc.update("""INSERT INTO report_job(id,student_id,period_type,period_from,period_to,trigger,status,retry_count,created_at)
+            VALUES(?,?,'WEEKLY',?,?,'REGENERATE','QUEUED',0,?)""", it, student, WEEK.from, WEEK.to, OffsetDateTime.now())
     }
     private fun count(user: UUID) = jdbc.queryForObject("SELECT count(*) FROM notification WHERE user_id=?", Int::class.java, user)
     private fun bearer(user: UUID) = tokens.access(session(jdbc, user, "PARENT"))
@@ -139,7 +139,7 @@ class NotificationIntegrationTest : IntegrationTestSupport() {
         assertEquals(first, jdbc.queryForObject("SELECT read_at FROM notification WHERE id=?", OffsetDateTime::class.java, id))
         mvc.get("/api/v1/notifications?unreadOnly=true") { header("Authorization", "Bearer $token") }.andExpect { jsonPath("$.items.length()") { value(0) } }
         mvc.get("/api/v1/notifications?size=101") { header("Authorization", "Bearer $token") }.andExpect { status { isBadRequest() } }
-        mvc.get("/api/v1/notification-settings") { header("Authorization", "Bearer $token") }.andExpect { jsonPath("$.items.length()") { value(6) } }
+        mvc.get("/api/v1/notification-settings") { header("Authorization", "Bearer $token") }.andExpect { jsonPath("$.items.length()") { value(8) } }
         mvc.put("/api/v1/notification-settings") { header("Authorization", "Bearer $token"); contentType=org.springframework.http.MediaType.APPLICATION_JSON
             content="""{"items":[{"type":"REPORT_FAILED","enabled":false}]}""" }.andExpect { status { isOk() } }
         mvc.put("/api/v1/notification-settings") { header("Authorization", "Bearer $token"); contentType=org.springframework.http.MediaType.APPLICATION_JSON

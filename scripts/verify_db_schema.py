@@ -196,21 +196,35 @@ SELECT pg_temp.expect_sqlstate($$
 $$, '23505');
 
 INSERT INTO report_job
-    (id, student_id, period_from, period_to, trigger, status, retry_count, created_at)
+    (id, student_id, period_type, period_from, period_to, trigger, status, retry_count, created_at)
 VALUES ('00000000-0000-4000-8000-000000000006', '00000000-0000-4000-8000-000000000002',
-        '2026-01-01', '2026-01-07', 'SCHEDULE', 'QUEUED', 0, now());
+        'WEEKLY', '2026-01-01', '2026-01-07', 'SCHEDULE', 'QUEUED', 0, now());
 SELECT pg_temp.expect_sqlstate($$
     INSERT INTO report_job
-        (id, student_id, period_from, period_to, trigger, status, retry_count, created_at)
-    SELECT '00000000-0000-4000-8000-000000000007', student_id, period_from, period_to,
+        (id, student_id, period_type, period_from, period_to, trigger, status, retry_count, created_at)
+    SELECT '00000000-0000-4000-8000-000000000007', student_id, period_type, period_from, period_to,
            trigger, status, retry_count, created_at FROM report_job
     WHERE id = '00000000-0000-4000-8000-000000000006'
 $$, '23505');
 INSERT INTO report_job
-    (id, student_id, period_from, period_to, trigger, status, retry_count, created_at)
-SELECT '00000000-0000-4000-8000-000000000008', student_id, period_from, period_to,
+    (id, student_id, period_type, period_from, period_to, trigger, status, retry_count, created_at)
+SELECT '00000000-0000-4000-8000-000000000008', student_id, period_type, period_from, period_to,
        'REGENERATE', status, retry_count, created_at FROM report_job
 WHERE id = '00000000-0000-4000-8000-000000000006';
+-- P24 (#390): a daily job of the same period_from is a different scheduled job; a daily job is one day.
+INSERT INTO report_job
+    (id, student_id, period_type, period_from, period_to, trigger, status, retry_count, created_at)
+VALUES ('00000000-0000-4000-8000-000000000096', '00000000-0000-4000-8000-000000000002',
+        'DAILY', '2026-01-01', '2026-01-01', 'SCHEDULE', 'QUEUED', 0, now());
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO report_job
+        (id, student_id, period_type, period_from, period_to, trigger, status, retry_count, created_at)
+    VALUES ('00000000-0000-4000-8000-000000000097', '00000000-0000-4000-8000-000000000002',
+            'DAILY', '2026-01-02', '2026-01-03', 'REGENERATE', 'QUEUED', 0, now())
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE report_job SET period_type = NULL WHERE id = '00000000-0000-4000-8000-000000000096'
+$$, '23502');
 
 INSERT INTO model_version (id, kind, name, version, status, created_at)
 VALUES ('00000000-0000-4000-8000-000000000009', 'MODEL', 'schema-test', '1', 'ACTIVE', now());

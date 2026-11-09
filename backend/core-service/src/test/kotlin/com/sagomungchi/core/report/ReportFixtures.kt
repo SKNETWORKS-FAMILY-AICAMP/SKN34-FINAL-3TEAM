@@ -33,7 +33,7 @@ internal fun actor(jdbc: JdbcTemplate, user: UUID, role: String = "PARENT", perm
 
 internal fun completedJob(jdbc: JdbcTemplate, student: UUID, period: ReportPeriod = WEEK): Pair<UUID, UUID> {
     val job = UUID.randomUUID(); val report = UUID.randomUUID(); val at = OffsetDateTime.now()
-    jdbc.update("""INSERT INTO report_job(id,student_id,period_from,period_to,trigger,status,report_id,retry_count,created_at,completed_at)
-        VALUES(?,?,?,?,'SCHEDULE','COMPLETED',?,0,?,?)""", job, student, period.from, period.to, report, at, at)
+    jdbc.update("""INSERT INTO report_job(id,student_id,period_type,period_from,period_to,trigger,status,report_id,retry_count,created_at,completed_at)
+        VALUES(?,?,?,?,?,'SCHEDULE','COMPLETED',?,0,?,?)""", job, student, period.type.name, period.from, period.to, report, at, at)
     return job to report
 }

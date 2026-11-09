@@ -118,7 +118,7 @@ class ReportHttpTest : IntegrationTestSupport() {
             .andExpect { status { isOk() }; jsonPath("$.revision") { value(2) }; jsonPath("$.state") { value("NO_RECORD") } }
             .andReturn().response.contentAsString
         val expected = json.readTree(response) as com.fasterxml.jackson.databind.node.ObjectNode
-        expected.put("parentSharingEnabled", true)
+        expected.put("parentSharingEnabled", true); expected.put("periodType", "WEEKLY")
         assertEquals(expected, json.readTree(result))
         assertEquals("revision=2", requests.single().query)
         assertEquals(actualReport, jdbc.queryForObject("SELECT report_id FROM report_view WHERE user_id=?", UUID::class.java, user))
@@ -126,6 +126,81 @@ class ReportHttpTest : IntegrationTestSupport() {
         assertEquals(2, views()); assertNull(requests.last().query)
         val dir = Path.of("build/contracts"); Files.createDirectories(dir)
         Files.writeString(dir.resolve("report-detail.json"), result)
+    }
+
+    @Test fun `list forwards the period type filter and rejects a report-api item of another type`() {
+        val day = com.sagomungchi.core.report.domain.ReportPeriod(WEEK.to, WEEK.to, com.sagomungchi.core.report.domain.ReportPeriodType.DAILY)
+        response = json.writeValueAsString(mapOf("items" to listOf(detail(period = day) + ("periodType" to "DAILY"))))
+        mvc.get("/api/v1/children/$student/reports?periodType=DAILY") { header("Authorization", "Bearer $token") }
+            .andExpect { status { isOk() }; jsonPath("$.items[0].periodType") { value("DAILY") }; jsonPath("$.items[0].period.to") { value(WEEK.to.toString()) } }
+        assertEquals("studentId=$student&periodType=DAILY", requests.single().query)
+        // Without a filter both types are listed; a report-api that predates P24 omits the field, which is WEEKLY.
+        response = json.writeValueAsString(mapOf("items" to listOf(detail(), detail(period = day) + ("periodType" to "DAILY"))))
+        mvc.get("/api/v1/children/$student/reports") { header("Authorization", "Bearer $token") }
+            .andExpect { status { isOk() }; jsonPath("$.items[0].periodType") { value("WEEKLY") }; jsonPath("$.items[1].periodType") { value("DAILY") } }
+        response = json.writeValueAsString(mapOf("items" to listOf(detail())))
+        mvc.get("/api/v1/children/$student/reports?periodType=DAILY") { header("Authorization", "Bearer $token") }
+            .andExpect { status { isBadGateway() }; jsonPath("$.code") { value("REPORT_CONTRACT_INVALID") } }
+        // A daily item must be one day.
+        response = json.writeValueAsString(mapOf("items" to listOf(detail() + ("periodType" to "DAILY"))))
+        mvc.get("/api/v1/children/$student/reports") { header("Authorization", "Bearer $token") }
+            .andExpect { status { isBadGateway() } }
+        mvc.get("/api/v1/children/$student/reports?periodType=MONTHLY") { header("Authorization", "Bearer $token") }
+            .andExpect { status { isBadRequest() } }
+        assertEquals(0, views())
+    }
+
+    @Test fun `daily detail is full for free without consulting the product and hides originals when sharing is off`() {
+        val day = com.sagomungchi.core.report.domain.ReportPeriod(WEEK.to, WEEK.to, com.sagomungchi.core.report.domain.ReportPeriodType.DAILY)
+        val daily = completedJob(jdbc, student, day).second
+        val problem = mapOf("missionId" to "m-1", "attemptId" to UUID.randomUUID().toString(), "title" to "합성 미션", "context" to "THEME_DAY",
+            "judgment" to "PARTIAL", "followups" to listOf(mapOf("question" to "합성비밀 되묻기", "answer" to "합성비밀 보완")),
+            "finalAnswer" to "합성비밀 최종 답", "elements" to listOf(mapOf("label" to "근거", "satisfied" to true)),
+            "reflection" to mapOf("difficulty" to "NORMAL", "text" to "합성비밀 돌아보기", "written" to true),
+            "quotes" to listOf(mapOf("answerId" to UUID.randomUUID().toString(), "text" to "합성비밀 인용", "verified" to true)))
+        response = json.writeValueAsString(detail(daily, period = day) + mapOf("periodType" to "DAILY", "problems" to listOf(problem)))
+        `when`(entitlement.dailyDetailEnabled(student)).thenReturn(true)
+        val result = mvc.get("/api/v1/reports/$daily") { header("Authorization", "Bearer $token") }
+            .andExpect { status { isOk() }; jsonPath("$.periodType") { value("DAILY") }
+                jsonPath("$.problems[0].finalAnswer") { value("합성비밀 최종 답") }; jsonPath("$.problems[0].quotes[0].text") { value("합성비밀 인용") } }
+            .andReturn().response.contentAsString
+        org.mockito.Mockito.verify(entitlement, org.mockito.Mockito.never()).narrativeEnabled(student)
+        assertEquals(1, views())
+        val dir = Path.of("build/contracts"); Files.createDirectories(dir)
+        Files.writeString(dir.resolve("report-detail-daily.json"), result)
+
+        // The single P13/P24 switch: turning it off keeps only the numeric part of problems[].
+        `when`(entitlement.dailyDetailEnabled(student)).thenReturn(false)
+        mvc.get("/api/v1/reports/$daily") { header("Authorization", "Bearer $token") }
+            .andExpect { status { isOk() }; jsonPath("$.problems[0].judgment") { value("PARTIAL") }; jsonPath("$.problems[0].finalAnswer") { value(null) } }
+        `when`(entitlement.dailyDetailEnabled(student)).thenReturn(true)
+        jdbc.update("UPDATE student SET parent_sharing_enabled=false WHERE id=?", student)
+        val hidden = mvc.get("/api/v1/reports/$daily") { header("Authorization", "Bearer $token") }
+            .andExpect { status { isOk() }; jsonPath("$.problems[0].judgment") { value("PARTIAL") }
+                jsonPath("$.problems[0].elements[0].label") { value("근거") }; jsonPath("$.problems[0].finalAnswer") { value(null) }
+                jsonPath("$.problems[0].reflection") { value(null) }; jsonPath("$.problems[0].followups.length()") { value(0) }
+                jsonPath("$.problems[0].quotes.length()") { value(0) } }
+            .andReturn().response.contentAsString
+        assertFalse(hidden.contains("합성비밀"))
+        // The job says DAILY; a report-api body claiming a week for it is a contract violation.
+        jdbc.update("UPDATE student SET parent_sharing_enabled=true WHERE id=?", student)
+        response = json.writeValueAsString(detail(daily))
+        mvc.get("/api/v1/reports/$daily") { header("Authorization", "Bearer $token") }.andExpect { status { isBadGateway() } }
+    }
+
+    @Test fun `free daily download and parent regeneration stay on the daily period`() {
+        val day = com.sagomungchi.core.report.domain.ReportPeriod(WEEK.to, WEEK.to, com.sagomungchi.core.report.domain.ReportPeriodType.DAILY)
+        val daily = completedJob(jdbc, student, day).second
+        response = json.writeValueAsString(detail(daily, period = day) + ("periodType" to "DAILY"))
+        fileResponse = """{"url":"https://storage.example.test/daily","expiresAt":"2026-11-01T01:00:00Z"}"""
+        mvc.get("/api/v1/reports/$daily/download?format=md") { header("Authorization", "Bearer $token") }
+            .andExpect { status { isOk() }; jsonPath("$.url") { value("https://storage.example.test/daily") } }
+        mvc.post("/api/v1/reports/$daily/regenerate") { header("Authorization", "Bearer $token") }
+            .andExpect { status { isAccepted() }; jsonPath("$.periodType") { value("DAILY") }
+                jsonPath("$.period.from") { value(WEEK.to.toString()) }; jsonPath("$.period.to") { value(WEEK.to.toString()) } }
+        mvc.post("/api/v1/reports/$daily/regenerate") { header("Authorization", "Bearer $token") }
+            .andExpect { status { isConflict() } }
+        org.mockito.Mockito.verify(entitlement, org.mockito.Mockito.never()).narrativeEnabled(student)
     }
 
     @Test fun `evidence and pdf md downloads use exact internal routes and downloads count as usage views`() {
@@ -253,8 +328,9 @@ class ReportHttpTest : IntegrationTestSupport() {
         mvc.post("/api/v1/reports/$report/regenerate") { header("Authorization", "Bearer $bearer") }.andExpect { status { isForbidden() } }
     }
     private fun views() = jdbc.queryForObject("SELECT count(*) FROM report_view WHERE user_id=?", Int::class.java, user)
-    private fun detail(id: UUID = report, revision: Int = 1): Map<String, Any?> = mapOf(
-        "reportId" to id, "childId" to student, "period" to WEEK, "status" to "COMPLETED", "state" to "NO_RECORD", "revision" to revision,
+    private fun detail(id: UUID = report, revision: Int = 1,
+        period: com.sagomungchi.core.report.domain.ReportPeriod = WEEK): Map<String, Any?> = mapOf(
+        "reportId" to id, "childId" to student, "period" to period, "status" to "COMPLETED", "state" to "NO_RECORD", "revision" to revision,
         "revisions" to listOf(mapOf("revision" to revision, "generatedAt" to "2026-10-26T07:00:00+09:00")),
         "inclusionRule" to "기간 내 제출 기록", "metrics" to emptyList<Any>(), "thinkingTypes" to emptyList<Any>(),
         "changes" to emptyList<Any>(), "reflections" to emptyList<Any>(), "quotes" to emptyList<Any>(),

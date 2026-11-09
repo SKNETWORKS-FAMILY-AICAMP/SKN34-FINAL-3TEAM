@@ -4786,7 +4786,7 @@ paths:
       tags:
       - Reports
       operationId: listChildReports
-      summary: 연결 자녀의 주간 리포트 목록
+      summary: 연결 자녀의 일일·주간 리포트 목록
       parameters:
       - name: childId
         in: path
@@ -4803,6 +4803,12 @@ paths:
           - RUNNING
           - COMPLETED
           - FAILED
+      - name: periodType
+        in: query
+        required: false
+        description: 리포트 기간 종류(P24). 생략하면 일일·주간을 함께 반환한다. 다른 값은 400
+        schema:
+          $ref: '#/components/schemas/ReportPeriodType'
       responses:
         '200':
           description: report-api 조회 결과
@@ -5063,6 +5069,7 @@ paths:
       - Reports
       operationId: regenerateReport
       summary: 학부모 1회·SERVICE_OPS 관리자 재생성
+      description: 원래 리포트의 기간 종류와 대상 기간(일일은 그날, 주간은 그 주)을 그대로 쓴다. 학부모 재생성 1회는 기간 종류·대상 기간별로 센다(P06·P24).
       parameters:
       - name: reportId
         in: path
@@ -8571,7 +8578,8 @@ components:
               type: integer
     NotificationType:
       type: string
-      enum: [REPORT_COMPLETED, REPORT_FAILED, ERROR_REPORT_RESOLVED, INQUIRY_ANSWERED, PAYMENT_CHANGED, SUBSCRIPTION_CHANGED]
+      description: 일일 리포트(P24)는 주간과 별도 유형이라 수신 설정도 따로 한다.
+      enum: [REPORT_COMPLETED, REPORT_FAILED, ERROR_REPORT_RESOLVED, INQUIRY_ANSWERED, PAYMENT_CHANGED, SUBSCRIPTION_CHANGED, DAILY_REPORT_COMPLETED, DAILY_REPORT_FAILED]
     Notification:
       type: object
       additionalProperties: false
@@ -8591,7 +8599,7 @@ components:
         items:
           type: array
           minItems: 1
-          maxItems: 6
+          maxItems: 8
           description: 유형 중복 금지. PUT은 지정 유형만 갱신하며 GET/응답은 전체 유형 반환.
           items:
             type: object
@@ -8599,6 +8607,11 @@ components:
             properties:
               type: {$ref: '#/components/schemas/NotificationType'}
               enabled: {type: boolean}
+    ReportPeriodType:
+      description: 'P24 일일(DAILY, from = to = 대상일 KST)·P06 주간(WEEKLY, 월~일 KST)'
+      enum:
+      - DAILY
+      - WEEKLY
     ReportPeriod:
       type: object
       required:
@@ -8616,6 +8629,7 @@ components:
       required:
       - reportId
       - childId
+      - periodType
       - period
       - status
       - revision
@@ -8626,6 +8640,9 @@ components:
         childId:
           type: string
           format: uuid
+        periodType:
+          description: core가 항상 채운다. report-api가 생략하면 WEEKLY로 본다.
+          $ref: '#/components/schemas/ReportPeriodType'
         period:
           $ref: '#/components/schemas/ReportPeriod'
         status:
@@ -8722,6 +8739,64 @@ components:
             type: object
           versions:
             type: object
+          problems:
+            description: 'DAILY만(P24, FN-RPT-14). 이용권과 관계없이 전체 제공한다. 보호자 공개(#206)가 꺼지면 core가 followups·quotes를 비우고 finalAnswer·reflection을 null로 바꾼다. 일일은 eveningQuestion·narrative가 항상 null이다.'
+            type: array
+            items:
+              $ref: '#/components/schemas/DailyReportProblem'
+          themeSummary:
+            description: WEEKLY만(FN-RPT-17). report가 계산한 값을 그대로 전달한다.
+            type:
+            - object
+            - 'null'
+    DailyReportProblem:
+      type: object
+      required:
+      - missionId
+      - title
+      - judgment
+      - followups
+      - finalAnswer
+      - elements
+      - reflection
+      - quotes
+      properties:
+        missionId:
+          type: string
+        attemptId:
+          type: string
+        title:
+          type: string
+        context:
+          enum:
+          - THEME_DAY
+          - THEME_REVIEW
+          - EXTRA
+          - null
+        judgment:
+          type:
+          - string
+          - 'null'
+        followups:
+          type: array
+          items:
+            type: object
+        finalAnswer:
+          type:
+          - string
+          - 'null'
+        elements:
+          type: array
+          items:
+            type: object
+        reflection:
+          type:
+          - object
+          - 'null'
+        quotes:
+          type: array
+          items:
+            type: object
     ReportEvidence:
       type: object
       description: 'report-api 근거 JSON을 보존. 삭제 근거는 available=false. 구체적인 필드는 #54에서 확정한다.'
@@ -8743,6 +8818,7 @@ components:
       required:
       - jobId
       - childId
+      - periodType
       - period
       - status
       properties:
@@ -8752,6 +8828,8 @@ components:
         childId:
           type: string
           format: uuid
+        periodType:
+          $ref: '#/components/schemas/ReportPeriodType'
         period:
           $ref: '#/components/schemas/ReportPeriod'
         status:
