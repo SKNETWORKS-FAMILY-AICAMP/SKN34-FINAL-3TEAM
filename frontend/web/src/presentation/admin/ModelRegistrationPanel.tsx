@@ -3,8 +3,8 @@ import { adminApi } from '../../data/admin/api.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { useAdminMutation } from '../../data/admin/queries.ts'
 import type { ModelVersion } from '../../domain/admin/operations.ts'
-import { changedRegistrationFields, registrationRequest, EVIDENCE_LABELS, parseManifestFile, parseRegistrationFile, splitScopes, validateRegistration, withManifestLimitations } from '../../domain/admin/modelRegistration.ts'
-import type { ManifestModel, ModelRegistration, RegistrationFile } from '../../domain/admin/modelRegistration.ts'
+import { supportsPreflight, preflightMessage, changedRegistrationFields, registrationRequest, EVIDENCE_LABELS, parseManifestFile, parseRegistrationFile, splitScopes, validateRegistration, withManifestLimitations } from '../../domain/admin/modelRegistration.ts'
+import type { PreflightResult, ManifestModel, ModelRegistration, RegistrationFile } from '../../domain/admin/modelRegistration.ts'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 
 const blank = (): ModelRegistration => ({ kind: 'PROMPT', name: '', version: '', evaluation: {
@@ -27,7 +27,12 @@ function RegistrationForm({ value, onChange, existing, listReady, manifest, sibl
   const field = (path: string) => <>{changed.includes(path) && <small>수정됨</small>}
     {!saved && validation.errors.filter(e => e.path === path).map(e => <small className="model-error" key={e.message}>{e.message}</small>)}
     {conflict && ['name', 'version'].includes(path) && <small className="model-error">{mutation.error?.message}</small>}</>
-  const locked = saved || mutation.isPending
+  const preflight = useAdminMutation(adminApi.preflightModel)
+  const candidate = manifest?.find(m => m.name === value.name && m.version === value.version)
+  const preflightBody = { name: value.name, version: value.version, artifactUri: value.artifactUri ?? '', files: candidate?.files ?? [] }
+  const preflightKey = JSON.stringify(preflightBody)
+  const [checked, setChecked] = useState<{ key: string; result?: PreflightResult; error?: unknown }>()
+  const locked = saved || mutation.isPending || preflight.isPending
   const evidence = (key: keyof ModelRegistration['evaluation'], data: string | string[]) => onChange({ ...value, evaluation: { ...value.evaluation, [key]: data } })
   return <form className="ws-card ws-form model-registration" aria-label={title} onSubmit={e => {
     e.preventDefault()
@@ -42,11 +47,25 @@ function RegistrationForm({ value, onChange, existing, listReady, manifest, sibl
       <p>기본값은 PROMPT입니다. M2 가중치 모델을 등록하려면 MODEL을 선택하세요.</p>
       {(['name', 'version'] as const).map(key => <label key={key}>{key === 'name' ? '이름' : '버전'}<input aria-label={key === 'name' ? '모델 이름' : '모델 버전'} aria-describedby={`${id}-${key}-error`} value={value[key]} onChange={e => onChange({ ...value, [key]: e.target.value })} /><span id={`${id}-${key}-error`}>{field(key)}</span></label>)}
       {value.kind === 'RUBRIC' && <label>기준표 원본 UUID<input value={value.refId ?? ''} onChange={e => onChange({ ...value, refId: e.target.value })} />{field('refId')}</label>}
-      <label>아티팩트 주소 {value.kind === 'MODEL' ? '(필수)' : '(선택)'}<input value={value.artifactUri ?? ''} onChange={e => onChange({ ...value, artifactUri: e.target.value || undefined })} />{field('artifactUri')}</label>
+      <label>아티팩트 주소 {value.kind === 'MODEL' ? '(필수)' : '(선택)'}<input aria-label="아티팩트 주소" value={value.artifactUri ?? ''} onChange={e => onChange({ ...value, artifactUri: e.target.value || undefined })} />{field('artifactUri')}</label>
       {Object.entries(EVIDENCE_LABELS).map(([key, label]) => <label key={key}>{label}<textarea aria-label={label} value={value.evaluation[key as keyof typeof EVIDENCE_LABELS]} onChange={e => evidence(key as keyof typeof EVIDENCE_LABELS, e.target.value)} />{field(`evaluation.${key}`)}</label>)}
       <label>평가 범위 (쉼표 또는 줄바꿈)<textarea aria-label="평가 범위" value={scopeText} onChange={e => { setScopeText(e.target.value); evidence('evaluatedScopes', splitScopes(e.target.value)) }} />{field('evaluation.evaluatedScopes')}</label>
       <label>한계·주의 (줄마다 한 항목)<textarea value={(value.evaluation.limitations ?? []).join('\n')} onChange={e => evidence('limitations', e.target.value ? e.target.value.split('\n') : [])} />{field('evaluation.limitations')}</label>
     </fieldset>
+    <section aria-label="모델 사전 검사">
+      <button type="button" disabled={locked || !listReady || value.kind !== 'MODEL' || !candidate || !supportsPreflight(candidate.files) || !!validation.errors.length} onClick={() => {
+        const key = preflightKey
+        setChecked(undefined); onBusy?.(true)
+        void preflight.mutateAsync(preflightBody).then(result => setChecked({ key, result }))
+          .catch(error => setChecked({ key, error })).finally(() => onBusy?.(false))
+      }}>{preflight.isPending ? '사전 검사 중' : '사전 검사'}</button>
+      <p>manifest의 필수 여섯 파일이 필요합니다. 파일·형식 확인이며 품질 승인·활성화·추론 확인이 아닙니다.</p>
+      {checked && checked.key !== preflightKey && <p role="status">입력이 변경되었습니다. 사전 검사를 다시 실행해 주세요.</p>}
+      {checked?.key === preflightKey && <><ErrorNotice error={checked.error} />{checked.result && <div role="status">
+        <strong>{preflightMessage(checked.result.code)}</strong>
+        <ul>{checked.result.files.map(f => <li key={f.file}>{f.file}: {preflightMessage(f.code)}</li>)}</ul>
+      </div>}</>}
+    </section>
     {manifest && <details><summary>manifest 파일 목록·해시</summary>{manifest.filter(m => m.name === value.name && m.version === value.version).flatMap(m => m.files).map(f => <p key={f.file}><strong>{f.file}</strong> · {f.bytes.toLocaleString()} bytes<br /><code>{f.sha256}</code></p>)}</details>}
     <ul>{validation.warnings.map((w, i) => <li key={i}>경고 · {w.message}</li>)}</ul>
     {field('manifest')}

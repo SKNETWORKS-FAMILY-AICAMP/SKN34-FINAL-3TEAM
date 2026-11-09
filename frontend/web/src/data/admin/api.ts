@@ -1,4 +1,4 @@
-import type { RegistrationProvenance } from '../../domain/admin/modelRegistration.ts'
+import type { PreflightRequest, PreflightResult, RegistrationProvenance } from '../../domain/admin/modelRegistration.ts'
 import { apiFetch } from '../apiClient.ts'
 import { json } from '../parent/api.ts'
 import type { Page } from '../../domain/parent.ts'
@@ -23,6 +23,7 @@ const operationFilters = (values: Record<string, string | undefined>) => new URL
 )
 const p = (id: string) => encodeURIComponent(id)
 export const adminApi = {
+  preflightModel: (body: PreflightRequest) => apiFetch<PreflightResult>('/admin/models/preflight', { ...json(body), signal: AbortSignal.timeout(25_000) }),
   overview: (period: Period, signal?: AbortSignal) =>
     apiFetch<Overview>(`/admin/overview?${new URLSearchParams({ ...period })}`, { signal }),
   jobs: (type: string, status: string, signal?: AbortSignal, period?: Period) =>
