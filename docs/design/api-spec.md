@@ -308,7 +308,7 @@
 | POST | `/attempts/{attemptId}/finish` | 학생 | 마무리 → 정답(닫힌 문제)·예시 답(열린 문제)·근거 확인된 체크리스트 공개. 판정 `DONE` 1회 이상 아니면 409 (P04) | LRN-11, JDG-09 | 핵심 |
 | POST | `/attempts/{attemptId}/self-assessment` | 학생 | 자기 체크 저장 → AI 확인 항목과 나란히 반환 (원본·판정 불변) | LRN-13 | 선택 |
 | POST | `/attempts/{attemptId}/reflection` | 학생 | 돌아보기 `{difficulty(필수), text(선택)}` 저장 → 학습 완료 처리 (P04) | LRN-12, LRN-14 | 핵심 |
-| GET | `/attempts/{attemptId}/comparison` | 학생 · 학부모 | 같은 학생·미션의 직전 마무리 시도와 현재 시도 비교 `NO_PREVIOUS\|COMPARABLE\|CRITERIA_CHANGED` (#207, 5.15). 학부모는 학생 공개 설정을 따름 | LRN-09, LRN-11 | — |
+| GET | `/attempts/{attemptId}/comparison` | 학생 본인 | 같은 학생·미션의 직전 마무리 시도와 현재 시도 비교 `NO_PREVIOUS\|COMPARABLE\|CRITERIA_CHANGED` (#207, 5.15). 학생 세션 전용(학부모·관리자 403), 현재 시도 마무리 이후만 | LRN-09, LRN-11 | — |
 
 - #38 미션 조회의 `grade`·`demo`는 검증된 STUDENT의 연결된 활성 학생을 core DB에서 읽어 결정한다. 공개 요청의 동일 이름 query는 사용하지 않는다. 목록은 `page`·`size`만 learning에 전달하고, 상세도 같은 학생 학년·시연 여부를 붙인다. 학년별 문항 노출·시연 전용 미션 판단은 learning 소유다.
 
@@ -382,7 +382,7 @@
 | GET | `/reports/{reportId}?revision` | 학부모 | 상세: 기간·포함 기준·`Metric[]`·생각 유형 요약·전후 변화·돌아보기·원문 인용·저녁 질문·버전, `periodType`(core가 작업 기준으로 채움, #390). #391 구현: 일일 `problems[]`, 주간 `themeSummary`(아래). 기본 최신판, `revision`으로 이전판 조회 (P06) | RPT-02~10, RPT-12 | 핵심 |
 | GET | `/reports/{reportId}/evidence/{itemId}` | 학부모 | 리포트 항목의 원본 기록 | RPT-03, RPT-12 | 핵심 |
 | GET | `/reports/{reportId}/download?format=pdf\|md` | 학부모 | 권한 확인 후 `{url, expiresAt}`(단기 presigned URL) 반환, 웹이 해당 URL로 이동. Bearer 인증이라 302 대신 JSON (PDF·Markdown, P06) | RPT-13 | 핵심 |
-| POST | `/reports/{reportId}/regenerate` | 학부모·관리자 | 같은 기간 재생성(일일은 그날, 주간은 그 주) → `report.generate`, 새 판(`revision + 1`) 추가·기존 판 보존. 학부모 리포트당 1회(초과 409, 기간 종류·대상 기간별), 관리자 무제한. 응답에 `periodType` (P06, P24) | RPT-12, RPT-15 | 핵심 |
+| POST | `/reports/{reportId}/regenerate` | 학부모·관리자(`SERVICE_OPS`) | 같은 기간 재생성(일일은 그날, 주간은 그 주) → `report.generate`, 새 판(`revision + 1`) 추가·기존 판 보존. 학부모 리포트당 1회(초과 409, 기간 종류·대상 기간별), 관리자는 `SERVICE_OPS` 권한만 무제한(그 밖의 관리자 403). 응답에 `periodType` (P06, P24) | RPT-12, RPT-15 | 핵심 |
 
 - 자동 생성(FN-RPT-01)은 core 스케줄러가 주가 끝난 일요일 자정(월요일 00:00 KST)에 직전 월~일(KST) 대상으로 수행하며 공개 API는 없음 (P06, 2026-11-09 결정)
 - 생성 내용(FN-RPT-02~09)은 report-service가 계산하고, 그 결과를 상세 응답 스키마(3.4)로 제공
