@@ -516,7 +516,7 @@ erDiagram
     varchar target_type
     uuid target_id
     text reason
-    jsonb impact "NULL 허용 · 대화·집계·리포트 반영 여부"
+    jsonb impact "NULL 허용 · 대화·집계·리포트 반영 여부·영향 대상 ID (#244)"
     uuid corrected_by FK
     timestamptz created_at
   }

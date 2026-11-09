@@ -84,6 +84,7 @@ export interface MessageResult {
   verification: AnalysisVerification
 }
 export interface ConversationMessage extends Partial<MessageResult> {
+  correctionNotice?: boolean
   messageId: string
   question: string
   status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED'
@@ -153,6 +154,7 @@ export interface ReportItem {
 }
 export interface WeeklyReport extends ReportItem {
   parentSharingEnabled?: boolean
+  correctionNotice?: boolean
   /** 일일 리포트만(DAILY) */
   problems?: DailyProblem[]
   /** 주간 리포트의 테마 요약(없으면 생략) */

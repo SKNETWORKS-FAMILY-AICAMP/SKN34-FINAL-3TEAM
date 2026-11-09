@@ -2745,9 +2745,10 @@ components:
     Judgment:
       type: object
       additionalProperties: false
-      required: [judgmentId, result, trial, elements, heldReason]
+      required: [judgmentId, result, trial, elements, heldReason, corrected]
       properties:
         judgmentId: {type: string, format: uuid, description: 신고(targetType JUDGMENT)·정정 대상 ID (#146)}
+        corrected: {type: boolean, description: 정정이 있으면 true. elements는 원판정 그대로라 report 요소 지표에서 제외 (FN-RPT-05)}
         result:
           type: string
           enum: [CORRECT, PARTIAL, RETHINK, HELD]

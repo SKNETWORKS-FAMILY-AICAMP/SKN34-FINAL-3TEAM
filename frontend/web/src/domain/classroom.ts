@@ -83,6 +83,8 @@ export interface Feedback {
     trial: boolean
     heldReason?: string | null
     elements?: FeedbackElement[]
+    /** 정정 여부. 리포트 집계용이라 화면에서는 쓰지 않음 (#244) */
+    corrected?: boolean
   } | null
   followup?: {
     followupId: string

@@ -132,6 +132,8 @@
 
 core #46 관리자가 신고를 검토해 판정을 고치면 core가 `POST /internal/judgments/{judgmentId}/corrections`로 알림. 원판정·요소·답변은 그대로 두고 `judgment_correction` 행을 추가하고, 조회 때 최신 정정 결과를 보여 줌(FN-SUP-03, ERD "덮어쓰기 금지"). 설계 이름(`CorrectionController`·`JudgmentService.correct`·`CorrectionRepository`·`JudgmentCorrection`) 그대로, DB 변경 없음(V2 테이블). core 소비 계약은 `feature/core-support`의 `contracts/openapi/support-learning-required.yaml`(0.2.0 `x-correction-rules`)
 
+#244: 기록 응답 `judgment.corrected`를 추가(최신 정정이 있으면 true). 정정은 결과만 바꾸고 요소는 원판정 그대로라 report가 요소 지표에서 뺄 때 씀. 전체 내용은 [support-admin](support-admin.md) 「정정 영향 판정과 표시」
+
 | 항목 | 정한 내용 | 근거 |
 |---|---|---|
 | 인증 | 내부 토큰 + `ADMIN` + `X-Student-Scope`에 판정 학생 정확히 1명 + UUID `X-User-Id`(= `corrected_by`). 토큰 401, 역할·범위 403, `X-User-Id`·`Idempotency-Key` 누락·형식 400, 빈 사유 400 | core 계약 |

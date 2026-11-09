@@ -134,7 +134,7 @@ class AdminOperationsContracts(unittest.TestCase):
                 if section=='schemas' and name in ('ReportSummary','ReportJobAccepted'):
                     reviewed['required'].remove('periodType'); reviewed['properties'].pop('periodType')
                 if section=='schemas' and name=='ReportDetail':
-                    for field in ('problems','themeSummary'):
+                    for field in ('problems','themeSummary','correctionNotice'):
                         reviewed['allOf'][1]['properties'].pop(field)
                 if section=='schemas' and name=='NotificationType':
                     reviewed.pop('description')
@@ -157,6 +157,13 @@ class AdminOperationsContracts(unittest.TestCase):
                     self.assertIn('COMMUNITY_POST',reviewed['properties']['reviewResult'].pop('description'))
                 if section=='schemas' and name=='SupportReport':
                     self.assertEqual(reviewed['properties'].pop('linkedPost'),{'$ref':'#/components/schemas/CommunityLinkedPost'})
+                # #244 adds the corrected flag and extends the impact description; retain the original fingerprints.
+                if section=='schemas' and name=='DashboardJudgment':
+                    self.assertEqual(reviewed['properties'].pop('corrected')['type'],'boolean')
+                if section=='schemas' and name=='SupportCorrection':
+                    original,added=reviewed['properties']['impact']['description'].split(' conversation·report는 AFFECTED')
+                    self.assertIn('신고자 응답은 null',added)
+                    reviewed['properties']['impact']['description']=original
                 # #367 adds optional evidence limitations; retain the original evidence fingerprint.
                 if section=='schemas' and name=='EvaluationEvidence':
                     self.assertEqual(reviewed['properties'].pop('limitations')['default'],[])

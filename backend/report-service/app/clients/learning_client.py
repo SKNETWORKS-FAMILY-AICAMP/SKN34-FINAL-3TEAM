@@ -63,6 +63,7 @@ class JudgmentInput(InputModel):
     result: Literal["CORRECT", "PARTIAL", "RETHINK", "HELD"]
     trial: StrictBool
     elements: list[ElementInput]
+    corrected: StrictBool = False
 
     def record(self) -> JudgmentRecord:
         ids = [e.element_id for e in self.elements]
@@ -75,6 +76,7 @@ class JudgmentInput(InputModel):
                 JudgedElement(e.element_id, e.code, e.good_thought, e.satisfied, e.label, e.quote)
                 for e in self.elements
             ),
+            self.corrected,
         )
 
 
