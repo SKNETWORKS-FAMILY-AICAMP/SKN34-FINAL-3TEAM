@@ -11,7 +11,7 @@ interface MissionAuditMapper {
                @Param("target") target: UUID?,@Param("result") result: String,@Param("detail") detail: String): Int
 }
 
-/** 관리자 미션·미션 초안(#355) 감사. target_type은 MISSION 또는 MISSION_DRAFT */
+/** 관리자 미션·미션 초안(#355)·주간 테마(#387) 감사. target_type은 MISSION·MISSION_DRAFT·WEEKLY_THEME */
 @Repository
 class MissionAuditRepository(private val mapper: MissionAuditMapper) {
     fun insert(id: UUID,actor: UUID,action: String,targetType: String,target: UUID?,result: String,detail: String) {

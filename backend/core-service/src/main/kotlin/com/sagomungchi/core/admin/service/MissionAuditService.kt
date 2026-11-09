@@ -28,5 +28,6 @@ class MissionAuditService(private val repository: MissionAuditRepository, privat
     companion object {
         const val MISSION="MISSION"
         const val MISSION_DRAFT="MISSION_DRAFT"
+        const val WEEKLY_THEME="WEEKLY_THEME"
     }
 }
