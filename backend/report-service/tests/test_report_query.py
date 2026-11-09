@@ -438,9 +438,9 @@ def test_file_key_scope_mismatch_is_not_signed(api, report_factory, report_stude
     assert storage.calls == []
 
 
-@pytest.mark.parametrize("supplier_status", [200, 410, 503])
+@pytest.mark.parametrize("supplier", ["deleted", "empty", 503])
 def test_actual_learning_client_deleted_and_unavailable_evidence(
-    api, report_factory, report_student_id, supplier_status
+    api, report_factory, report_student_id, supplier
 ):
     report_id = seed_report(report_factory, report_student_id)
     with report_factory() as session:
@@ -453,7 +453,11 @@ def test_actual_learning_client_deleted_and_unavailable_evidence(
 
     def respond(request):
         assert request.url.path == "/internal/records/evidence"
-        return httpx.Response(supplier_status, json={"items": []})
+        if supplier == "deleted":
+            answer_ids = request.url.params["answerIds"].split(",")
+            items = [{"answerId": answer_id, "available": False} for answer_id in answer_ids]
+            return httpx.Response(200, json={"items": items})
+        return httpx.Response(200 if supplier == "empty" else supplier, json={"items": []})
 
     async def service():
         async with httpx.AsyncClient(
@@ -465,7 +469,7 @@ def test_actual_learning_client_deleted_and_unavailable_evidence(
     response = client.get(
         f"/internal/reports/{report_id}/evidence/{item_id}", headers=headers(report_student_id)
     )
-    if supplier_status == 410:
+    if supplier == "deleted":
         assert response.status_code == 200
         [item] = response.json()["items"]
         assert item["available"] is False and "quote" not in item

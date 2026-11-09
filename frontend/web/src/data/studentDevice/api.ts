@@ -90,9 +90,9 @@ export const studentDeviceApi = {
       id: childId,
       nickname: c.nickname,
       grade,
-      // PIN 로그인 응답(API 명세 3.11)에는 출생연도가 없다. 학생 화면은 쓰지 않으므로 0으로 둔다.
+      // PIN 로그인 응답(API 명세 3.11, StudentDeviceToken)은 birthYear를 담고 plan은 담지 않는다.
+      // 시연 mock처럼 birthYear가 빠진 응답은 학생 화면이 출생연도를 쓰지 않으므로 0으로 둔다.
       birthYear: Number(c.birthYear ?? 0),
-      plan: c.plan === 'PREMIUM' || c.plan === 'FREE' ? c.plan : undefined,
     }
     return { role: 'STUDENT', entry: 'DEVICE', child }
   },

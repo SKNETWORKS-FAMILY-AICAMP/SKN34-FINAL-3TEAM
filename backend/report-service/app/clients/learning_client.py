@@ -287,14 +287,6 @@ class LearningClient:
                 "/internal/records/evidence",
                 params={"answerIds": ",".join(str(key) for key in batch)},
             )
-            if response.status_code == 410:
-                results.extend(
-                    EvidenceRecord(
-                        key, expected[key].attempt_id, expected[key].answer_version, None, False
-                    )
-                    for key in batch
-                )
-                continue
             response.raise_for_status()
             parsed = EvidenceResponse.model_validate(response.json())
             seen = set()
