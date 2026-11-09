@@ -132,6 +132,14 @@ class RecordService(
         return RecordPage(QueryState.of(attempts.size), items, page, size, attempts.size)
     }
 
+    /** P24: 주말 재시도·추가 문제도 완료일 기준. 기존 P08 집계와 분리 (#391). */
+    @Transactional(readOnly = true)
+    fun dailyAttempts(studentId: UUID, period: Period, page: Int, size: Int): RecordPage {
+        val ids = repository.findCompleted(studentId, period)
+        val items = ids.drop(page * size).take(size).map(::fullRecord)
+        return RecordPage(QueryState.of(ids.size), items, page, size, ids.size)
+    }
+
     /**
      * 학부모 시도 상세 (api-spec 2.3). 기간과 무관하게 시도의 전체 답변·되묻기·도움·돌아보기 (core #40: 기간은 화면 유지용).
      * 이 학생의 기록된 시도가 아니면 404

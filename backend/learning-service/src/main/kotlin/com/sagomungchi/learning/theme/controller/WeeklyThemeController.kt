@@ -27,6 +27,7 @@ import java.util.UUID
 @RequestMapping("/internal/students/{studentId}/weekly-theme")
 class WeeklyThemeController(
     private val service: WeeklyThemeService,
+    private val reports: com.sagomungchi.learning.theme.service.WeeklyThemeReportService,
 ) {
     @GetMapping
     fun current(
@@ -61,7 +62,7 @@ class WeeklyThemeController(
         if (weekStart.dayOfWeek != DayOfWeek.MONDAY) {
             throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "요청 오류", "weekStart는 월요일 날짜")
         }
-        return service.summary(studentId, weekStart)
+        return reports.summary(studentId, weekStart)
     }
 
     /** 학생 본인만: 경로 학생이 세션 학생과 다르면 403 */

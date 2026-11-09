@@ -26,4 +26,4 @@ th { background:#edf4f5; } .text { white-space:pre-wrap; overflow-wrap:anywhere;
 {% elif section == 'narrative' %}{% if report.narrative %}<h2>이번 주 요약</h2><p class="text">{{ report.narrative.text }}</p><div class="small">출처: {{ 'AI 서술' if report.narrative.source == 'LLM' else '계산 기반 요약' }}</div>{% endif %}
 {% elif section == 'eveningQuestion' %}{% if report.eveningQuestion %}<h2>이번 주 저녁 질문</h2><p class="text">{{ report.eveningQuestion }}</p>{% endif %}
 {% endif %}{% endfor %}<div class="footer small">수치는 실제 기록을 코드로 계산한 관찰 결과입니다. 능력·등급·사고력 향상을 판정하지 않습니다.</div>
-</body></html>
+{% if report.get("themeSummary") %}{% include "theme.html" %}{% endif %}</body></html>

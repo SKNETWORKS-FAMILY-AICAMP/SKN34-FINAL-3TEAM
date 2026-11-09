@@ -651,6 +651,38 @@ paths:
                 $ref: '#/components/schemas/RecordThinkingTypes'
         '400': {$ref: '#/components/responses/Problem'}
         '403': {$ref: '#/components/responses/Problem'}
+  /records/students/{studentId}/daily-attempts:
+    get:
+      operationId: dailyAttempts
+      summary: 일일 리포트 완료일 기준 목록
+      description: 같은 KST 날짜에 완료한 시도. 전날 답변·오늘 완료도 포함하며 제출일 기준 P08과 분리한다.
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/RecordRole'
+        - $ref: '#/components/parameters/RecordScope'
+        - name: from
+          in: query
+          required: true
+          schema: {type: string, format: date}
+        - name: to
+          in: query
+          required: true
+          schema: {type: string, format: date}
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 0, default: 0}
+        - name: size
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        '200':
+          description: 조회 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordAttemptPage'
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
   /records/students/{studentId}/attempts:
     get:
       operationId: recordAttempts
@@ -2864,6 +2896,7 @@ components:
       properties:
         attemptId: {type: string, format: uuid}
         studentId: {type: string, format: uuid}
+        context: {type: string, enum: [THEME_DAY, THEME_REVIEW, EXTRA]}
         mission: {$ref: '#/components/schemas/Mission'}
         status: {type: string, enum: [IN_PROGRESS, COMPLETED]}
         finishedAt: {type: [string, 'null'], format: date-time, description: "마무리(정답·예시 답 공개) 시각, 그 뒤 답변 제출 불가. 마무리 전 null"}
@@ -2901,6 +2934,7 @@ components:
       properties:
         attemptId: {type: string, format: uuid}
         studentId: {type: string, format: uuid}
+        context: {type: string, enum: [THEME_DAY, THEME_REVIEW, EXTRA]}
         mission: {$ref: '#/components/schemas/Mission'}
         status: {type: string, enum: [IN_PROGRESS, COMPLETED]}
         finishedAt: {type: [string, 'null'], format: date-time, description: "마무리(정답·예시 답 공개) 시각, 그 뒤 답변 제출 불가. 마무리 전 null"}
@@ -3228,6 +3262,23 @@ components:
               missionId: {type: string, format: uuid}
               title: {type: string}
               attemptId: {type: string, format: uuid}
+              comparison:
+                description: 마무리 전 null. 같은 기준표일 때만 요소 비교. 답변 원문 제외.
+                type: [object, 'null']
+                required: [state, elements]
+                properties:
+                  state: {type: string, enum: [NO_PREVIOUS, COMPARABLE, CRITERIA_CHANGED]}
+                  elements:
+                    type: array
+                    items:
+                      type: object
+                      required: [elementId, label, previousSatisfied, currentSatisfied, change]
+                      properties:
+                        elementId: {type: string, format: uuid}
+                        label: {type: string}
+                        previousSatisfied: {type: boolean}
+                        currentSatisfied: {type: boolean}
+                        change: {type: string, enum: [ADDED, RETAINED, NOT_CONFIRMED, NOT_CONFIRMED_NOW]}
     ThemeDayMission:
       type: object
       required: [day, missionId]

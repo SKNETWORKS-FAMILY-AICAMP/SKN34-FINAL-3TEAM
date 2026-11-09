@@ -2347,11 +2347,11 @@ classDiagram
 - `GenerationService.generate`: `job_id`로 기존 행 조회 → 없으면 `RUNNING` 생성, `COMPLETED·FAILED`면 ACK만, `RUNNING`이면 같은 행으로 재실행. 기록 없음·표본 부족은 `COMPLETED + state`, 실패는 `FAILED` (FN-RPT-11)
 - `query_router`·`QueryService`: 모든 조회에서 리포트의 `student_id`가 `X-Student-Scope`에 있는지 검사, 없으면 403 (API 4장)
 - 수치·전후 변화는 `MetricsCalculator`(코드)에서만 계산, ai는 서술·저녁 질문만 (FN-RPT-03, 05)
-- `ReportVerifier`: 서술 속 숫자·인용을 계산 결과·learning 원문과 대조, 실패 시 서술을 템플릿 요약으로 교체(`narrative.source = TEMPLATE`, P16). `NO_RECORD`·무료 플랜(`narrativeEnabled = false`)·구현 예정 일일 리포트(`periodType = DAILY`)는 ai 호출 생략 (P06·P13)
+- `ReportVerifier`: 서술 속 숫자·인용을 계산 결과·learning 원문과 대조, 실패 시 서술을 템플릿 요약으로 교체(`narrative.source = TEMPLATE`, P16). `NO_RECORD`·무료 플랜(`narrativeEnabled = false`)·일일 리포트(`periodType = DAILY`)는 ai 호출 생략 (P06·P13)
 
-### 7.1 리포트 기간 종류 (core report · report-service, 구현 예정)
+### 7.1 리포트 기간 종류 (report #391 구현 · core #390 연동)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 구현 예정 클래스. 이름·시그니처는 구현 시 조정할 수 있고 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임-구현-예정).
+2026-11-06 결정의 report 부분은 #391에서 구현했다. core 스케줄·알림(#390)은 구현했고 대화(#392)도 구현했으며 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임-구현-예정).
 
 ```mermaid
 classDiagram
@@ -2376,16 +2376,17 @@ classDiagram
   }
   class DailyReportBuilder {
     <<module>>
-    +build(records) DailyReport
+    +build(records, sharing, learning) GenerationResult
   }
   class ThemeSummaryBuilder {
     <<module>>
-    +build(themeSummary) ThemeSummary
+    +build(studentId, period) ThemeSummary
   }
 
   ReportScheduler --> ReportJobService
-  GenerationService --> DailyReportBuilder : periodType = DAILY
-  GenerationService --> ThemeSummaryBuilder : periodType = WEEKLY
+  GenerationService --> RecordGenerator
+  RecordGenerator --> DailyReportBuilder : periodType = DAILY
+  RecordGenerator --> ThemeSummaryBuilder : periodType = WEEKLY
 ```
 
 - core(#390 구현): `WeeklyReportScheduler`·`DailyReportScheduler`가 각자 ShedLock으로 `ReportScheduleService.generate(at, periodType)`을 부르고, `ReportJobService.scheduled(parent, child, ReportPeriod)`가 보호자가 연결된 자녀별 작업 + Outbox를 저장한다(정기 부분 UK `(student_id, period_type, period_from)`). 기간 종류는 domain `ReportPeriodType`(`DAILY`·`WEEKLY`)과 `ReportPeriod(from, to, type)`이며 일일은 서술 없음(`narrative = false`)이라 상품 권한을 조회하지 않는다. 일일 상세 원문 제공 여부는 `ReportEntitlementService.dailyDetailEnabled` 한 곳에서 정한다
@@ -2394,6 +2395,9 @@ classDiagram
 - report `ReportRepository`의 revision 잠금·UK 단위는 `(student_id, period_type, period_from)`
 
 ---
+
+
+- 테마 소비는 `REPORT_THEME_SUMMARY_ENABLED=true`가 기본이다. #385/#391 learning을 먼저 배포한다. false는 새 주간 요약만 생략하는 복귀 설정이며 조회 오류를 참여 없음으로 바꾸지 않는다.
 
 ## 8. 확인 필요 가정
 - 요금제 사용 한도(P13): core가 `product.limits`로 확인 후 `USAGE_LIMIT_REACHED`. 분석 대화는 `ProductEntitlementService.reserve`가 보호자 잠금 안에서 자녀별 `payment_premium_usage` KST 일자 집계로 판정(#225, `AnalysisUsageService`는 Redis 미사용). 학생별 미션 시작(무료 하루 1개, 당일 테마 문제만)·피드백 한도는 미구현이며 #210 결정에 따라 PostgreSQL로 구현 예정(미션은 `usage/MissionUsageService`·`mission_daily_usage`, 3.6). 생각 유형별 미션 고르기(`EXTRA`)는 프리미엄 사용(`EXTRA_MISSION`) 기록

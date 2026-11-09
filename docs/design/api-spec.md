@@ -366,7 +366,7 @@
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
 | GET | `/children/{childId}/reports?status&periodType` | 학부모 | 대상 기간·생성 상태별 목록. `periodType`(`DAILY`·`WEEKLY`, 생략 시 전체) 필터, 항목에 항상 `periodType`(report가 생략하면 core가 `WEEKLY`로 채움, #390) | RPT-10, RPT-11, RPT-15 | 핵심 |
-| GET | `/reports/{reportId}?revision` | 학부모 | 상세: 기간·포함 기준·`Metric[]`·생각 유형 요약·전후 변화·돌아보기·원문 인용·저녁 질문·버전, `periodType`(core가 작업 기준으로 채움, #390). 구현 예정(report #391): 일일 `problems[]`, 주간 `themeSummary`(아래). 기본 최신판, `revision`으로 이전판 조회 (P06) | RPT-02~10, RPT-12 | 핵심 |
+| GET | `/reports/{reportId}?revision` | 학부모 | 상세: 기간·포함 기준·`Metric[]`·생각 유형 요약·전후 변화·돌아보기·원문 인용·저녁 질문·버전, `periodType`(core가 작업 기준으로 채움, #390). #391 구현: 일일 `problems[]`, 주간 `themeSummary`(아래). 기본 최신판, `revision`으로 이전판 조회 (P06) | RPT-02~10, RPT-12 | 핵심 |
 | GET | `/reports/{reportId}/evidence/{itemId}` | 학부모 | 리포트 항목의 원본 기록 | RPT-03, RPT-12 | 핵심 |
 | GET | `/reports/{reportId}/download?format=pdf\|md` | 학부모 | 권한 확인 후 `{url, expiresAt}`(단기 presigned URL) 반환, 웹이 해당 URL로 이동. Bearer 인증이라 302 대신 JSON (PDF·Markdown, P06) | RPT-13 | 핵심 |
 | POST | `/reports/{reportId}/regenerate` | 학부모·관리자 | 같은 기간 재생성(일일은 그날, 주간은 그 주) → `report.generate`, 새 판(`revision + 1`) 추가·기존 판 보존. 학부모 리포트당 1회(초과 409, 기간 종류·대상 기간별), 관리자 무제한. 응답에 `periodType` (P06, P24) | RPT-12, RPT-15 | 핵심 |
@@ -375,8 +375,8 @@
 - 생성 내용(FN-RPT-02~09)은 report-service가 계산하고, 그 결과를 상세 응답 스키마(3.4)로 제공
 - 기록 없는 주·표본 부족 주는 `COMPLETED` + `state: NO_RECORD|INSUFFICIENT_SAMPLE`로 표시하며, 생성 실패(`FAILED`)와 구분 (FN-RPT-11). `NO_RECORD`는 LLM 미호출 (P06)
 - 무료 플랜은 수치만 제공(`narrative: null`, 생각 유형 `summary` 없음) (P13)
-- 일일 리포트(FN-RPT-14·15, P24): core 스케줄러가 대상일이 끝난 자정(다음 날 00:00 KST, ShedLock `core-daily-reports`)에 보호자가 연결된 자녀별 전날(KST) 대상으로 작업을 만든다(#390, 기록 없는 날 포함, 생성 시각은 2026-11-09 결정). report 쪽 생성 내용은 구현 예정(#391). 상세의 일일 항목은 `problems:[{missionId, title, context, judgment, followups[], finalAnswer, elements[], reflection, quotes[]}]`, `metrics`는 개수만, `eveningQuestion`·`narrative` 없음. 토·일은 되돌아보기 다시 풀기·추가 문제 시도도 포함
-- 주간 테마 요약(FN-RPT-17, 구현 예정): 주간 상세에 `themeSummary:{themeId, title, days[], completed, reviewRetries[]}`. 테마 미참여 주는 `state: NO_RECORD` 요약
+- 일일 리포트(FN-RPT-14·15, P24): core 스케줄러가 대상일이 끝난 자정(다음 날 00:00 KST, ShedLock `core-daily-reports`)에 보호자가 연결된 자녀별 전날(KST) 대상으로 작업을 만든다(#390, 기록 없는 날 포함, 생성 시각은 2026-11-09 결정). report 생성·저장·조회·다운로드 구현(#391). 상세의 일일 항목은 `problems:[{missionId, title, context, judgment, followups[], finalAnswer, elements[], reflection, quotes[]}]`, `metrics`는 개수만, `eveningQuestion`·`narrative` 없음. 토·일은 되돌아보기 다시 풀기·추가 문제 시도도 포함
+- 주간 테마 요약(FN-RPT-17, #391 구현): 주간 상세에 `themeSummary:{themeId, title, days[], completed, reviewRetries[]}`. 테마 미참여 주는 `state: NO_RECORD` 요약
 - 다운로드·근거·재생성 경로는 2.5 그대로이며 일일에도 같은 규칙(학부모 리포트당 1회, 관리자 무제한)
 - 일일 리포트는 이용권과 관계없이 전체 제공(서술이 없어 `X-Report-Narrative-Enabled`와 무관). 주간 무료 규칙은 그대로
 - 알림 유형: `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`(2.7 설정 1~8개, #390)
@@ -867,7 +867,7 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 | GET | `/internal/payment-usage/students/{studentId}?since` | core | SYSTEM + 해당 학생 scope. 결제 후 피드백 사용(DONE·RUNNING) 여부, 원문 미포함 (#48 환불 사용 확인) |
 | GET | `/internal/students/{studentId}/weekly-theme?gradeBand&date` | core | 학생 본인 `STUDENT`(#385, core 호출 #387): 이번 주 테마·요일 상태·되돌아보기 목록(2.11 모양). 그 주 게시본, 없으면 그 주 이전 최근 게시본(`reused`). 게시 테마가 없으면 `404` |
 | POST | `/internal/students/{studentId}/weekly-theme/review-views` | core | 학생 본인 `STUDENT`(#385, core 호출 #387): `?gradeBand&date`(본문 없음), 열람 기록(학생·주당 1행 멱등), `{firstViewThisWeek, completed}` 반환(포인트·완주 판정 근거). 평일 `409 THEME_REVIEW_NOT_ALLOWED` |
-| GET | `/internal/students/{studentId}/weekly-theme/summary?weekStart` | report | #385(소비는 report #391): 역할 `PARENT`·`STUDENT`·`SYSTEM` + 대상 학생 scope. `{studentId, weekStart, state(OK·NO_RECORD), themeId, title, days:[{day, missionId, title, completed}], completed, reviewRetries:[{missionId, title, attemptId}]}`. 그 주 테마 시도가 없으면 `NO_RECORD`, 월요일이 아니면 `400` |
+| GET | `/internal/students/{studentId}/weekly-theme/summary?weekStart` | report | #385(소비는 report #391): 역할 `PARENT`·`STUDENT`·`SYSTEM` + 대상 학생 scope. `{studentId, weekStart, state(OK·NO_RECORD), themeId, title, days:[{day, missionId, title, completed}], completed, reviewRetries:[{missionId, title, attemptId, comparison}]}`. 비교는 #207 규칙을 재사용해 `{state, elements}`만 제공하며 마무리 전 `null`, 답변 원문은 제외. 그 주 테마 시도가 없으면 `NO_RECORD`, 월요일이 아니면 `400` |
 | POST | `/internal/community/posts` | core | 구현(learning #386, core 호출은 #388): `X-User-Role: SYSTEM`, scope = 그 학생. `{studentId, attemptId}` → 그 미션을 처음 학습 완료한 시도의 마지막 답변 공유(지금 표현 필터 통과, 학생·미션당 1개 멱등). `201 {postId, created:true, status}` 새 공유, `200 {postId, created:false, status}` 이미 있음(다시 푼 시도로 요청해도 같음). 새 공유물은 core가 마지막으로 알린 공개 여부가 끔이면 `HIDDEN_SETTING`. 그 밖: 없는·남의 시도 `404`, 공유 대상 아님 `409 COMMUNITY_NOT_SHAREABLE` → core는 공유 안 함으로 본다. `postId`는 포인트 사건 키(#389) |
 | GET | `/internal/community/missions/{missionId}/posts?viewerStudentId&seed&page&size` | core | 구현(#386): `STUDENT`, scope = viewer(`viewerStudentId`와 같아야 함). 열람 검사(viewer가 그 미션을 학습 완료했는지, 아니면 `403 COMMUNITY_LOCKED`)·`VISIBLE` 무작위 목록(열람자 본인 공유물 제외, 반응 수 없음, 같은 `seed`면 같은 순서) `{items:[{postId, studentId, answer:{inputType, text, content}, myReactions[], createdAt}], page, size}`. `seed` 1~100자, `size` 1~100 |
 | GET | `/internal/community/students/{studentId}/posts` | core | 구현(#386): `STUDENT`(본인)·`PARENT`(자녀), scope = 그 학생. 모든 상태, 최근 공유 순 `{studentId, items:[{postId, missionId, missionTitle, answer, status, reactions:{NEW_IDEA…: 수(4종 모두)}, createdAt}]}` |
@@ -986,15 +986,15 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 | Method | Path | 설명 |
 |---|---|---|
-| GET | `/internal/reports?studentId&status&periodType` | 리포트 목록. core는 `periodType` 필터를 그대로 전달하고 항목의 `periodType`(생략 = `WEEKLY`)이 필터와 다르면 502로 거부한다(#390). report 필터 구현은 #391 |
+| GET | `/internal/reports?studentId&status&periodType` | 리포트 목록. periodType 생략은 두 종류, DAILY/WEEKLY 필터 지원 (#391). core는 필터를 전달하고 응답 종류가 다르면 502로 거부한다(#390) |
 | GET | `/internal/reports/{reportId}?revision` | 상세 (3.4 스키마), 기본 최신판·양의 revision으로 이전판 조회 |
 | GET | `/internal/reports/{reportId}/evidence/{itemId}` | 항목 근거 |
 | GET | `/internal/reports/{reportId}/files/{format}` | 단기 presigned URL 발급 → `{url, expiresAt}` |
-| POST | `/internal/report-jobs/{jobId}/reconcile` | core 작업 복구: `{studentId, periodFrom, periodTo}` 대조 후 현재 상태 반환, 불일치 409 `REPORT_JOB_IDENTITY_MISMATCH` (5.9) |
+| POST | `/internal/report-jobs/{jobId}/reconcile` | core 작업 복구: `{studentId, periodFrom, periodTo, periodType?}` 대조 후 현재 상태 반환, 불일치 409 `REPORT_JOB_IDENTITY_MISMATCH` (5.9) |
 
 - core는 현재 이용 권한으로 `X-Report-Narrative-Enabled:true|false`를 설정해야 함(공개 요청의 같은 헤더는 전달하지 않음). report는 누락 시 false로 처리해 응답·다운로드에서 AI 서술·생각 유형 summary·저녁 질문을 가림
-- P24: 일일 리포트는 같은 경로를 쓰고 최신 판 선택·재생성 판 단위가 학생·`periodType`·대상 기간이 된다(report 몫은 #391). `report.generate` 페이로드에 `periodType`(`DAILY`·`WEEKLY`, 생략 시 `WEEKLY`)을 추가했고 core는 일일에만 넣는다. 새 메시지 없음([이벤트 계약](../../contracts/events/report-messages.md), #390). 일일 상세·다운로드는 `X-Report-Narrative-Enabled: false`로 요청하며 상품 권한을 조회하지 않는다
-- 목록은 학생/대상 주별 최신 revision을 고른 뒤 status를 적용하며 1.1 페이지 봉투를 사용한다. 상세의 기본값은 같은 학생·대상 주 최신판, `revision` 지정 시 해당 판이다. evidence/files 경로는 전달한 실제 reportId 판에 속한 항목·파일을 조회한다.
+- P24: 일일 리포트는 같은 경로를 쓰고 최신 판 선택·재생성 판 단위가 학생·`periodType`·대상 기간이 된다(#391 구현). `report.generate` 페이로드에 `periodType`(`DAILY`·`WEEKLY`, 생략 시 `WEEKLY`)을 추가했고 core는 일일에만 넣는다. 새 메시지 없음([이벤트 계약](../../contracts/events/report-messages.md), #390). 일일 상세·다운로드는 `X-Report-Narrative-Enabled: false`로 요청하며 상품 권한을 조회하지 않는다
+- 목록은 학생/기간 종류/시작일별 최신 revision을 고른 뒤 status를 적용하며 1.1 페이지 봉투를 사용한다. 상세의 기본값은 같은 학생·기간 종류·시작일 최신판, `revision` 지정 시 해당 판이다. evidence/files 경로는 전달한 실제 reportId 판에 속한 항목·파일을 조회한다.
 - 파일 키는 `reports/{studentId}/{reportId}/r{revision}/{full|free}/{pdf|md|html}`다. DB `report_file`에는 full 키 3개를 저장하며 무료용 파생 파일도 생성한다. 다운로드 수명은 설정값이며 운영 기본안은 300초다. 버전·형식·학생이 맞지 않는 키를 서명하지 않는다.
 
 ### 4.5 core-service (호출: ai, scoring, learning, report)
@@ -1333,3 +1333,14 @@ report-worker는 생성 시작 시 한 번 조회하여 command에 고정한다.
 - 새 이관 경로는 기존 개인정보·보호자 동의·재인증을 우회하지 않는다. 기존 삭제/탈퇴 경로는 그대로 유지한다.
 - 조회·수신자 거절·발신자 단건/일괄 취소는 동의 회복 경로다(#307). 활성 학부모 계정·유효 세션·요청 소유권은 계속 검사한다. 플래그 off여도 PENDING 삭제/탈퇴 차단은 유지하며, 명시적 취소/거절로 대기를 해소한 후 기존 재인증·최종 확인을 거쳐 삭제/탈퇴한다. 자동 취소·자동 탈퇴·대기 검사 우회는 하지 않는다.
 - 같은 대상·수신자·대화 선택의 대기 요청 재전송과 같은 종료 상태 재전송은 멱등 처리한다. 다른 종료 상태로 바꾸면 `409 TRANSFER_ALREADY_RESOLVED`다.
+
+
+#### #391 report 일일 생성·주간 테마 소비 계약
+
+- report 내부 목록 `GET /internal/reports`는 선택 `periodType=DAILY|WEEKLY`를 받는다. 미지정은 두 종류 모두이며 `(studentId,periodType,periodFrom)`별 최신 판이다. 상세·목록에 periodType을 반환하고 상세 problems는 일일, themeSummary는 주간에 사용한다. 구체적인 중첩 필드는 report OpenAPI를 따른다. core 공개 프록시는 #390에서 연결한다.
+- 일일 항목은 PROBLEM으로 저장한다. `mission.id`, `feedback.followup.question`, 판정·요소와 제출 답변을 기존 learning 응답에서 읽는다. `context`는 #385 적용 전 null이며 임의로 추정하지 않는다. 원문 비공개면 finalAnswer=null, followups/quotes=[], reflection.text=null, evidence 없음. 일일은 비율·서술·저녁 질문을 생성하지 않는다.
+- learning `GET /internal/records/students/{studentId}/daily-attempts?from&to&page&size`는 같은 KST 날짜의 **완료 시각**으로 조회한다. 기존 P08의 제출일 조회와 분리하며 응답은 RecordPage와 같다. 전날 제출·오늘 완료도 포함한다. 학생 scope·삭제 검사와 페이지 제한은 기존 기록 조회와 같다.
+- learning 주간 테마 summary API 구현은 #385에 남아 있다. report 소비 계약은 `{studentId,weekStart,state,themeId,title,days:[{day(MON~FRI),missionId,title?,completed}],completed,reviewRetries:[{missionId,title?,comparison?{state,elements:[{label,previousSatisfied,currentSatisfied}]}}]}`이다. 날짜·학생 범위를 검증하며 NO_RECORD는 themeId/title=null, 배열=[], completed=false다. HTTP 오류·형식 오류를 NO_RECORD로 숨기지 않는다. 실제 producer와의 연동 확인은 #385 완료 후 수행한다.
+- 복구 요청 `POST /internal/report-jobs/{jobId}/reconcile`도 periodType을 받는다. 미지정 WEEKLY, DAILY는 하루만 허용한다. 응답은 기존 7개 필드를 유지하며 periodType을 추가하지 않는다.
+
+- #391 learning 기록 목록·상세·일일 완료 목록은 `context: THEME_DAY|THEME_REVIEW|EXTRA`를 실제 시도에서 반환한다. 주간 요약은 기존 #207 비교 규칙의 상태·요소만 포함하며 답변 원문·인용은 반환하지 않는다.

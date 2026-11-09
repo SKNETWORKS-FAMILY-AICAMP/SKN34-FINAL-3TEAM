@@ -353,3 +353,50 @@ ShedLock 이름(`core-weekly-reports`·`core-daily-reports`)·`lockAtMostFor`(30
 - core: `./gradlew test bootJar` 통과(525개, 실패 0, 로컬 JDK 21 + Testcontainers). `ReportPeriodTest` 주간·일일 cron 00:00, 월요일 00:00 실행이 조기(-100ms)·정각·지연(+5초, +29분)이어도 일일 10-25·주간 10-19~10-25를 고르는 경계 테스트, `ReportScheduleLockTest` 스케줄러가 여유를 더한 시각으로 호출, `DailyReportScheduleTest` 00:00 실행 시각
 - 계약·스크립트: 루트 `python -O -m unittest discover -s scripts/tests` 175개 통과
 - `git grep -nE "0 0 7|07:00"`: core·계약·`docs/report`·`docs/design`에 현재 시각으로 남은 07:00 없음(21장 표의 이전 값·서비스 기획 방향 7장 변경 전 서술은 이력)
+
+
+## #391 일일 리포트와 주간 테마 요약 (2026-11-09)
+
+### 범위와 기존 기능 보호
+
+P24 일일 리포트는 LLM을 호출하지 않고 문제별 판정·되묻기와 보완 답변·마지막 답변·생각 요소·돌아보기·검증된 인용을 조립한다. 무료/full 파일에 같은 내용을 제공하며 비율·서술·저녁 질문·학부모 주간 템플릿은 적용하지 않는다. 기록이 없으면 COMPLETED/NO_RECORD다. 월요일 일일·주간이 공존하고 재생성 revision·최신 판 선택은 학생/기간 종류/시작일별로 분리한다.
+
+기존 P08 조회는 제출일 기준이므로, 전날 제출하고 오늘 마무리한 시도를 빠뜨리지 않도록 learning 기록 조회에 daily-attempts를 추가했다. 기존 P08 SQL·주간 계산은 변경하지 않았다. 주말도 context로 걸러내지 않아 되돌아보기 재시도·추가 문제를 포함한다. learning 기록 응답에 실제 attempt.context를 추가해 THEME_DAY·THEME_REVIEW·EXTRA를 구분한다.
+
+원문 비공개면 답변·되묻기·인용·돌아보기 원문·evidence를 저장/파일 생성 전에 제거한다. 공개 인용은 learning evidence로 재조회하고 학생·시도·답변 버전·부분 문자열 일치를 확인한다. 실패를 정상 인용으로 저장하거나 NO_RECORD로 처리하지 않는다. themeSummary는 별도 learning API에서 읽으며 기존 수치를 일일 리포트로 재집계하지 않는다. 비교는 learning이 COMPARABLE로 제공한 요소만 표시하고 CRITERIA_CHANGED에는 변화 수치를 붙이지 않는다.
+
+### DB·메시지·조회
+
+- Alembic 20261109_06: weekly_report.period_type/theme_summary, report_job_guard.period_type nullable 준비 및 기존 WEEKLY 채움.
+- 20261109_07: NOT NULL·기간 종류 CHECK·일일 날짜/서술 금지 CHECK·UK/목록 인덱스 확정, report_item.PROBLEM 허용. SQL 기본값 없음.
+- Python None은 narrative/theme_summary의 SQL NULL로 저장한다(JSON null과 구분).
+- report.generate.v1 periodType 생략은 WEEKLY로 유지. DAILY는 같은 날짜, WEEKLY는 월~일만 허용한다. report.* 생명주기 이벤트는 기존 jobId 연결을 유지한다.
+- 목록 periodType 미지정은 두 종류, 지정 시 해당 종류. 상세에서 다른 종류의 같은 revision을 고르지 않는다. 복구 작업도 기간 종류를 검사한다.
+- 일일 데이터가 있으면 downgrade를 거부한다. 데이터 삭제로 되돌리지 않는다.
+
+### 배포 순서
+
+1. 기존 DB를 백업하고 report worker 소비를 중단해 진행 작업이 끝나는 것을 확인한다. 구버전 report-api의 복구/쓰기 요청도 차단한 뒤 준비/최종 마이그레이션을 적용한다. 새 learning·report-api·report-worker로 교체 후 쓰기와 소비를 재개한다. 구버전 writer와 최종 NOT NULL 스키마를 섞는 롤링 배포는 허용하지 않는다. 큐에 대기한 기존 주간 메시지는 periodType 생략=WEEKLY로 새 worker가 처리한다.
+2. develop에 합쳐진 #390 core와 연결한다. 기간 종료 자정(KST) 생성은 #400에서 구현됐다. 이번 변경은 복구 요청에도 periodType을 전달한다.
+3. #385와 #391 learning producer를 먼저 배포하고 report worker를 배포한다. **REPORT_THEME_SUMMARY_ENABLED=true**가 기본값이며 로컬 배포 설정도 true다. 다시 false로 내리면 새 주간 생성에서 테마 조회만 생략하며 기존 리포트는 보존한다.
+4. 테마 응답은 학생/주 시작일·요일 중복·5일 완주·비교 기준을 검증한다. upstream 오류는 작업 실패로 처리한다. NO_RECORD는 정상적인 미참여 응답일 때만 사용한다.
+
+배포·팀 스케줄 실행·실제 #385/#390 통합은 아직 수행하지 않았다. 구현 테스트와 운영 연동 완료를 구분한다.
+
+### 검증
+
+- report 전체 pytest 384개 통과. 이후 준비 단계의 구버전 writer 추가 행 보존 사례를 보완한 마이그레이션 테스트 1개도 통과.
+- report Ruff check·format 통과(110파일).
+- scripts 계약·검증기 회귀 검사 195개 통과.
+- learning 전체 369개·bootJar 통과. 주간 요약의 #207 비교 결과·미마무리 비교 비노출, 기록 context·완료일 기준·학생 범위 검증 포함.
+- core 리포트 전체 및 ci-contracts 대상 통합 테스트 220개·bootJar 통과.
+- ci-contracts 실제 산출물 검증기 11개 통과. 실제 learning PostgreSQL 테스트 응답을 learning·report OpenAPI 양쪽과 대조하고 report ThemeSummaryBuilder·HTML 렌더링까지 확인.
+- ci-db-schema와 같은 전체 DB 스크립트 통과. 상세 수치는 아래 참조.
+- 원격 GitHub CI와 운영 배포·AWS 스케줄 실행은 아직 확인하지 않았다. 위 결과는 로컬 CI 동등 검사이며 운영 완료와 구분한다.
+
+### 최신 develop 병합·마이그레이션 충돌 확인 (2026-11-09)
+
+- 기준 develop `a53df3af`. report Alembic 이력은 `20261102_05 → 20261109_06 → 20261109_07` 단일 head이며 core·learning Flyway 파일은 이번 변경에서 추가·수정하지 않는다.
+- 기존 주간 데이터의 ID·revision·서술 내용과 실패 guard를 유지하며 `period_type=WEEKLY`로 채우는 테스트를 통과했다. 일일 데이터가 있으면 downgrade를 거부해 삭제·판 충돌을 막는다.
+- 열린 PR #408의 `core V34__admin_credential.sql`은 develop의 `V34__mission_daily_usage_and_extra_mission.sql`과 번호가 중복된다. #408 병합 전 번호 조정이 필요하나 report 전용 #391과는 독립이다. 다른 PR 파일은 수정하지 않았다.
+- 로컬 CI DB 검사: core 55표/490컬럼, learning 28표/240컬럼, report 8표/66컬럼. 111개 부정 제약 사례·98개 CHECK 값 집합·46개 인덱스·6개 역할 격리·반복 적용·report 왕복 마이그레이션 통과.

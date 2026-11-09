@@ -8,7 +8,7 @@ from app.database import transaction
 from app.deletion.service import ensure_generation_allowed
 from app.errors import ApiError
 from app.generation.codec import ReportV1Codec
-from app.generation.models import GenerationBusy, JobConflict, ReportEvent, ReportStatus
+from app.generation.models import GenerationBusy, JobConflict, PeriodType, ReportEvent, ReportStatus
 from app.generation.repository import ReportRepository
 from app.outbox.repository import OutboxRepository
 from app.security import current_user_context
@@ -23,6 +23,7 @@ class ReconciledJob:
     status: str
     report_id: UUID | None = None
     failure_reason: str | None = None
+    period_type: PeriodType = PeriodType.WEEKLY
 
 
 class ReconciliationService:
@@ -30,7 +31,7 @@ class ReconciliationService:
         self._factory, self._locks = factory, locks
         self._repository = ReportRepository()
 
-    def reconcile(self, job_id, student_id, period_from, period_to):
+    def reconcile(self, job_id, student_id, period_from, period_to, period_type=PeriodType.WEEKLY):
         context = current_user_context()
         if (
             context is None
@@ -38,12 +39,17 @@ class ReconciliationService:
             or context.student_scope != {str(student_id)}
         ):
             raise ApiError(403, "FORBIDDEN", "SYSTEM과 단일 학생 범위가 필요합니다")
-        if period_from.weekday() != 0 or (period_to - period_from).days != 6:
-            raise ApiError(400, "VALIDATION_FAILED", "리포트 기간은 월요일부터 일요일입니다")
+        if (period_type == PeriodType.DAILY and period_from != period_to) or (
+            period_type == PeriodType.WEEKLY
+            and (period_from.weekday() != 0 or (period_to - period_from).days != 6)
+        ):
+            raise ApiError(
+                400, "VALIDATION_FAILED", "일일은 하루, 주간은 월요일부터 일요일이어야 합니다"
+            )
 
         def result(status, report_id=None, reason=None):
             return ReconciledJob(
-                job_id, student_id, period_from, period_to, status, report_id, reason
+                job_id, student_id, period_from, period_to, status, report_id, reason, period_type
             )
 
         try:
@@ -57,9 +63,12 @@ class ReconciliationService:
                     report.student_id,
                     report.period_from,
                     report.period_to,
-                ) != (student_id, period_from, period_to):
+                    report.period_type,
+                ) != (student_id, period_from, period_to, period_type):
                     raise JobConflict("Report job student/period does not match")
-                guard = self._repository.guard(session, job_id, student_id, period_from, period_to)
+                guard = self._repository.guard(
+                    session, job_id, student_id, period_from, period_to, period_type
+                )
                 try:
                     allowed = ensure_generation_allowed(session, student_id, None)
                 except GenerationBusy:
@@ -82,7 +91,9 @@ class ReconciliationService:
                     reason = self._repository.failure_reason(session, report.id)
                     return result(report.status, report.id, reason)
                 if guard is None:
-                    self._repository.block(session, job_id, student_id, period_from, period_to)
+                    self._repository.block(
+                        session, job_id, student_id, period_from, period_to, period_type
+                    )
                 return result("FAILED", reason="REPORT_NOT_CREATED")
         except JobConflict as exc:
             raise ApiError(

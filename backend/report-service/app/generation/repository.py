@@ -28,6 +28,7 @@ from app.generation.models import (
     GenerateReport,
     GenerationResult,
     JobConflict,
+    PeriodType,
     ReportState,
     ReportStatus,
     WeeklyReport,
@@ -39,6 +40,7 @@ report_job_guard = Table(
     metadata,
     Column("job_id", PG_UUID(as_uuid=True), primary_key=True),
     Column("student_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("period_type", String, nullable=False),
     Column("period_from", Date, nullable=False),
     Column("period_to", Date, nullable=False),
     Column("failure_reason", String, nullable=False),
@@ -50,6 +52,7 @@ weekly_report = Table(
     Column("id", PG_UUID(as_uuid=True), primary_key=True),
     Column("job_id", PG_UUID(as_uuid=True), nullable=False),
     Column("student_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("period_type", String, nullable=False),
     Column("period_from", Date, nullable=False),
     Column("period_to", Date, nullable=False),
     Column("revision", Integer, nullable=False),
@@ -59,7 +62,8 @@ weekly_report = Table(
     Column("failure_reason", String),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("generated_at", DateTime(timezone=True)),
-    Column("narrative", JSONB),
+    Column("narrative", JSONB(none_as_null=True)),
+    Column("theme_summary", JSONB(none_as_null=True)),
     Column("verification", JSONB),
     Column("versions", JSONB),
     Column("evening_question", Text),
@@ -104,19 +108,24 @@ def _report(row) -> WeeklyReport:
         period_from=row["period_from"],
         period_to=row["period_to"],
         revision=row["revision"],
+        period_type=PeriodType(row["period_type"]),
         status=ReportStatus(row["status"]),
         state=ReportState(row["state"]) if row["state"] is not None else None,
     )
 
 
 class ReportRepository:
-    def latest_page(self, session, student_id, status, page, size):
+    def latest_page(self, session, student_id, status, page, size, period_type=None):
         ranked = (
             select(
                 weekly_report,
                 func.row_number()
                 .over(
-                    partition_by=(weekly_report.c.student_id, weekly_report.c.period_from),
+                    partition_by=(
+                        weekly_report.c.student_id,
+                        weekly_report.c.period_type,
+                        weekly_report.c.period_from,
+                    ),
                     order_by=weekly_report.c.revision.desc(),
                 )
                 .label("rank"),
@@ -125,6 +134,8 @@ class ReportRepository:
             .subquery()
         )
         condition = ranked.c.rank == 1
+        if period_type:
+            condition &= ranked.c.period_type == period_type
         if status:
             condition &= ranked.c.status == status
         total = session.scalar(select(func.count()).select_from(ranked).where(condition))
@@ -132,7 +143,7 @@ class ReportRepository:
             session.execute(
                 select(ranked)
                 .where(condition)
-                .order_by(ranked.c.period_from.desc())
+                .order_by(ranked.c.period_from.desc(), ranked.c.period_type)
                 .offset(page * size)
                 .limit(size)
             )
@@ -148,13 +159,14 @@ class ReportRepository:
             .one_or_none()
         )
 
-    def revisions(self, session, student_id, period_from):
+    def revisions(self, session, student_id, period_from, period_type=PeriodType.WEEKLY):
         return (
             session.execute(
                 select(weekly_report)
                 .where(
                     weekly_report.c.student_id == student_id,
                     weekly_report.c.period_from == period_from,
+                    weekly_report.c.period_type == period_type,
                 )
                 .order_by(weekly_report.c.revision.desc())
             )
@@ -211,27 +223,38 @@ class ReportRepository:
         session.execute(delete(report_file).where(report_file.c.report_id.in_(reports)))
         session.execute(delete(weekly_report).where(weekly_report.c.student_id == student_id))
 
-    def guard(self, session, job_id, student_id, period_from, period_to):
+    def guard(
+        self, session, job_id, student_id, period_from, period_to, period_type=PeriodType.WEEKLY
+    ):
         row = (
             session.execute(select(report_job_guard).where(report_job_guard.c.job_id == job_id))
             .mappings()
             .one_or_none()
         )
-        if row is not None and (row["student_id"], row["period_from"], row["period_to"]) != (
+        if row is not None and (
+            row["student_id"],
+            row["period_from"],
+            row["period_to"],
+            row["period_type"],
+        ) != (
             student_id,
             period_from,
             period_to,
+            period_type,
         ):
             raise JobConflict("Report job guard student/period does not match")
         return row
 
-    def block(self, session, job_id, student_id, period_from, period_to):
+    def block(
+        self, session, job_id, student_id, period_from, period_to, period_type=PeriodType.WEEKLY
+    ):
         session.execute(
             report_job_guard.insert().values(
                 job_id=job_id,
                 student_id=student_id,
                 period_from=period_from,
                 period_to=period_to,
+                period_type=period_type,
                 failure_reason="REPORT_NOT_CREATED",
                 created_at=datetime.now(UTC),
             )
@@ -300,14 +323,24 @@ class ReportRepository:
         # Also serializes revision allocation for different jobs for the same student/week.
         session.execute(
             text("SELECT pg_advisory_xact_lock(:key)"),
-            {"key": lock_key(f"report-period:{command.student_id}:{command.period_from}")},
+            {
+                "key": lock_key(
+                    f"report-period:{command.student_id}:{command.period_type}:{command.period_from}"
+                )
+            },
         )
         existing = self.find_by_job(session, command.job_id)
         if existing is not None:
-            if (existing.student_id, existing.period_from, existing.period_to) != (
+            if (
+                existing.student_id,
+                existing.period_from,
+                existing.period_to,
+                existing.period_type,
+            ) != (
                 command.student_id,
                 command.period_from,
                 command.period_to,
+                command.period_type,
             ):
                 raise JobConflict("Report job student/period does not match")
             return existing, False
@@ -315,6 +348,7 @@ class ReportRepository:
             select(func.coalesce(func.max(weekly_report.c.revision), 0) + 1).where(
                 weekly_report.c.student_id == command.student_id,
                 weekly_report.c.period_from == command.period_from,
+                weekly_report.c.period_type == command.period_type,
             )
         )
         row = (
@@ -326,6 +360,7 @@ class ReportRepository:
                     student_id=command.student_id,
                     period_from=command.period_from,
                     period_to=command.period_to,
+                    period_type=command.period_type,
                     revision=revision,
                     status=ReportStatus.RUNNING,
                     state=None,
@@ -355,6 +390,7 @@ class ReportRepository:
             "failure_reason": failure_reason,
             "generated_at": (result.generated_at or datetime.now(UTC)) if result else None,
             "narrative": result.narrative if result else None,
+            "theme_summary": result.theme_summary if result else None,
             "verification": result.verification if result else None,
             "versions": result.versions if result else None,
             "evening_question": result.evening_question if result else None,

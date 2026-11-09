@@ -571,9 +571,9 @@ $$, '23514');
 
 REPORT_CASES = """
 INSERT INTO weekly_report
-    (id, job_id, student_id, period_from, period_to, revision, status, created_at)
+    (id, job_id, student_id, period_from, period_to, revision, status, created_at, period_type)
 VALUES ('00000000-0000-4000-8000-000000000201', '00000000-0000-4000-8000-000000000202',
-        '00000000-0000-4000-8000-000000000002', '2026-01-01', '2026-01-07', 1, 'RUNNING', now());
+        '00000000-0000-4000-8000-000000000002', '2026-01-01', '2026-01-07', 1, 'RUNNING', now(), 'WEEKLY');
 SELECT pg_temp.expect_sqlstate($$
     UPDATE weekly_report SET status = 'INVALID'
     WHERE id = '00000000-0000-4000-8000-000000000201'
@@ -586,16 +586,16 @@ UPDATE weekly_report SET status = 'COMPLETED', state = 'NO_RECORD', generated_at
 WHERE id = '00000000-0000-4000-8000-000000000201';
 SELECT pg_temp.expect_sqlstate($$
     INSERT INTO weekly_report
-        (id, job_id, student_id, period_from, period_to, revision, status, created_at)
+        (id, job_id, student_id, period_from, period_to, revision, status, created_at, period_type)
     SELECT '00000000-0000-4000-8000-000000000203', job_id, student_id, period_from,
-           period_to, 2, 'RUNNING', created_at FROM weekly_report
+           period_to, 2, 'RUNNING', created_at, period_type FROM weekly_report
     WHERE id = '00000000-0000-4000-8000-000000000201'
 $$, '23505');
 SELECT pg_temp.expect_sqlstate($$
     INSERT INTO weekly_report
-        (id, job_id, student_id, period_from, period_to, revision, status, created_at)
+        (id, job_id, student_id, period_from, period_to, revision, status, created_at, period_type)
     SELECT '00000000-0000-4000-8000-000000000204', '00000000-0000-4000-8000-000000000205',
-           student_id, period_from, period_to, revision, 'RUNNING', created_at FROM weekly_report
+           student_id, period_from, period_to, revision, 'RUNNING', created_at, period_type FROM weekly_report
     WHERE id = '00000000-0000-4000-8000-000000000201'
 $$, '23505');
 INSERT INTO report_item (id, report_id, item_type, seq, payload, state, verified)
@@ -608,9 +608,9 @@ $$, '23503');
 INSERT INTO report_item_evidence (id, item_id, attempt_id, answer_id, answer_version)
 VALUES ('00000000-0000-4000-8000-000000000207', '00000000-0000-4000-8000-000000000206',
         '00000000-0000-4000-8000-999999999998', '00000000-0000-4000-8000-999999999997', 1);
-INSERT INTO report_job_guard(job_id,student_id,period_from,period_to,failure_reason,created_at)
+INSERT INTO report_job_guard(job_id,student_id,period_from,period_to,failure_reason,created_at,period_type)
 VALUES ('00000000-0000-4000-8000-000000000099','00000000-0000-4000-8000-000000000002',
-        '2026-10-19','2026-10-25','REPORT_NOT_CREATED',now());
+        '2026-10-19','2026-10-25','REPORT_NOT_CREATED',now(),'WEEKLY');
 SELECT pg_temp.expect_sqlstate($$UPDATE report_job_guard SET period_to=period_from$$, '23514');
 SELECT pg_temp.expect_sqlstate($$UPDATE report_job_guard SET failure_reason='INVALID'$$, '23514');
 SELECT pg_temp.expect_sqlstate($$INSERT INTO report_job_guard SELECT * FROM report_job_guard$$, '23505');

@@ -32,3 +32,8 @@ narrativeEnabled는 core의 현재 상품 권한 조회로 결정한다. 무료=
 - 같은 관리자 요청의 중복 전송은 **같은 새 jobId와 같은 업무 본문**을 유지한다. 봉투 id가 같거나 달라도 report의 jobId 업무 멱등은 동일하다. 실패한 기존 jobId 메시지만 다시 보내면 재실행하지 않는다(#50).
 - 새 jobId마다 새 reportId와 다음 revision을 배정하고 이전 판을 보존한다. 시작·종료 결과는 항상 그 새 jobId와 reportId에 연결한다. 지연된 원작업 이벤트는 core가 원작업에만 적용하며, 종료 상태는 되돌리지 않는다.
 - 요청·결과 [JSON 예시](../examples/report-admin-retry/)는 자동 계약 검사 대상이다. 같은 성공 재처리의 started/completed와, 별도 재처리 실패의 started/failed를 구분했다. 완료와 실패는 한 실행에서 동시에 발행하지 않는다.
+
+
+### #391 기간 종류 확장
+
+`report.generate.v1`의 선택 필드 `periodType`은 DAILY/WEEKLY이며 생략하면 WEEKLY다. DAILY는 periodFrom=periodTo, WEEKLY는 월요일부터 일요일이다. 기존 생명주기 이벤트는 jobId로 core 작업에 연결되므로 필드를 추가하지 않는다. revision은 자녀·기간 종류·시작일별 독립 배정한다. 복구 요청에도 같은 periodType을 전달한다(생략 WEEKLY).

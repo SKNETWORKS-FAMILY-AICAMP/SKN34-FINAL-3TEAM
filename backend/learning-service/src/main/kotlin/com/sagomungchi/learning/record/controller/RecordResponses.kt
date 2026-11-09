@@ -90,6 +90,7 @@ data class RecordAttemptResponse(
     val reflection: RecordReflection?,
     val completedAt: Instant?,
     val hintUsages: List<HintUsage>,
+    val context: com.sagomungchi.learning.attempt.domain.AttemptContext,
 ) {
     companion object {
         /** 시도 상세(AttemptResponse)와 같은 값을 AttemptDetail에서 직접 만듦: 다른 기능 controller DTO를 거치지 않음 (#251) */
@@ -110,6 +111,7 @@ data class RecordAttemptResponse(
                 reflection = detail.reflection?.let { RecordReflection(it.difficulty, it.text, checkNotNull(record.reflectionCreatedAt)) },
                 completedAt = detail.attempt.completedAt,
                 hintUsages = record.hintUsages.map(::HintUsage),
+                context = detail.attempt.context,
             )
         }
     }

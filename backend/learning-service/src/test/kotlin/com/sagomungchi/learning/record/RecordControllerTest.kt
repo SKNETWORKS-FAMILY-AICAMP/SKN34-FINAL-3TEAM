@@ -73,6 +73,22 @@ class RecordControllerTest {
     }
 
     @Test
+    fun `일일 조회는 완료일 기준을 안내하고 다른 학생 범위와 여러 날짜를 거부`() {
+        val day = Period(LocalDate.parse("2026-11-08"), LocalDate.parse("2026-11-08"))
+        given(service.dailyAttempts(student, day, 0, 100))
+            .willReturn(RecordPage(QueryState.NO_RECORD, emptyList(), 0, 100, 0))
+        val path = "/internal/records/students/$student/daily-attempts?from=2026-11-08&to=2026-11-08"
+        mockMvc.get(path) { caller("SYSTEM") }.andExpect {
+            status { isOk() }
+            jsonPath("$.state") { value("NO_RECORD") }
+            jsonPath("$.inclusionRule") { value("해당 KST 날짜에 완료한 모든 시도. 주말 되돌아보기 재시도·추가 문제 포함.") }
+        }
+        mockMvc.get(path) { caller("SYSTEM", UUID.randomUUID()) }.andExpect { status { isForbidden() } }
+        mockMvc.get(path.replace("to=2026-11-08", "to=2026-11-09")) { caller("SYSTEM") }
+            .andExpect { status { isBadRequest() } }
+    }
+
+    @Test
     fun `요약은 studentId·상태·실제 기간·집계 기준과 지표, 기간은 KST 날짜`() {
         val metric = Metric.ratio("완료한 활동", 3, 5, "완료 / 대상", week)
         given(service.summary(student, week)).willReturn(Summary(QueryState.OK, listOf(metric)))
@@ -155,6 +171,7 @@ class RecordControllerTest {
 
         mockMvc.get("/internal/records/students/$student/attempts?from=2026-11-02&to=2026-11-08") { caller() }.andExpect {
             status { isOk() }
+            jsonPath("$.items[0].context") { value("EXTRA") }
             jsonPath("$.items[0].attemptId") { value(attempt.id.toString()) }
             jsonPath("$.items[0].helped") { value(true) }
             jsonPath("$.items[0].draft") { doesNotExist() }

@@ -12,6 +12,7 @@ COLLECTIONS = {
     ItemType.CHANGE: "changes",
     ItemType.REFLECTION: "reflections",
     ItemType.QUOTE: "quotes",
+    ItemType.PROBLEM: "problems",
 }
 
 
@@ -49,6 +50,8 @@ def from_result(report: WeeklyReport, result: GenerationResult) -> dict:
             ],
             "inclusionRule": result.inclusion_rule,
             "narrative": result.narrative,
+            "periodType": report.period_type,
+            "themeSummary": result.theme_summary,
             "verification": result.verification
             or {"numbersMatched": False, "quotesMatched": False},
             "versions": result.versions or {"prompt": None, "model": None},

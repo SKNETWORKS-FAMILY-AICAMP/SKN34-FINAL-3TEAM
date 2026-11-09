@@ -36,6 +36,7 @@ import java.util.UUID
 @TestPropertySource(properties = ["app.internal.token=test-token", "app.internal.connect-timeout=1s", "app.internal.read-timeout=1s"])
 class WeeklyThemeControllerTest(@Autowired private val mockMvc: MockMvc) {
     @MockitoBean lateinit var service: WeeklyThemeService
+    @MockitoBean lateinit var reports: com.sagomungchi.learning.theme.service.WeeklyThemeReportService
 
     private val student = UUID.randomUUID()
     private val mission = UUID.randomUUID()
@@ -111,7 +112,7 @@ class WeeklyThemeControllerTest(@Autowired private val mockMvc: MockMvc) {
 
     @Test
     fun `주간 요약은 학부모·학생·시스템이 범위 학생만, 월요일이 아니면 400`() {
-        given(service.summary(student, monday)).willReturn(
+        given(reports.summary(student, monday)).willReturn(
             WeeklyThemeSummary(student, monday, ThemeSummaryState.NO_RECORD, null, null, emptyList(), false, emptyList()),
         )
 

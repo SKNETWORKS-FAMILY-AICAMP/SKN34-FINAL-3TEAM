@@ -61,7 +61,10 @@ data class WeeklyThemeSummary(
 data class ThemeSummaryDay(val day: ThemeDay, val missionId: UUID, val title: String, val completed: Boolean)
 
 /** 토·일 되돌아보기 다시 풀기(THEME_REVIEW) 시도 */
-data class ThemeReviewRetry(val missionId: UUID, val title: String, val attemptId: UUID)
+data class ThemeReviewRetry(val missionId: UUID, val title: String, val attemptId: UUID,
+    val comparison: ThemeRetryComparison? = null)
+data class ThemeRetryComparison(val state: com.sagomungchi.learning.attempt.domain.ComparisonState,
+    val elements: List<com.sagomungchi.learning.attempt.domain.ComparedElement>)
 
 /** 관리자 테마 (api-spec 2.8·4.1). version은 편집 중인 현재본, publishedVersion은 학생에게 제공 중인 게시본 */
 data class AdminWeeklyTheme(

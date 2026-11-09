@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.sagomungchi.learning.record.repository.RecordMapper">
+    <select id="findCompleted" resultType="java.util.UUID">
+        SELECT a.id FROM attempt a
+        WHERE a.student_id = #{studentId} AND a.status = 'COMPLETED'
+          AND a.completed_at &gt;= #{start} AND a.completed_at &lt; #{end}
+          AND NOT EXISTS (SELECT 1 FROM deleted_student d WHERE d.student_id = a.student_id)
+        ORDER BY a.completed_at, a.id
+    </select>
     <resultMap id="eligible" type="com.sagomungchi.learning.record.repository.EligibleAttempt">
         <constructor>
             <idArg column="attempt_id" javaType="java.util.UUID"/>

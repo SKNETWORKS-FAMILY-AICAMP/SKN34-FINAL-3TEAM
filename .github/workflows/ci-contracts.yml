@@ -94,6 +94,9 @@ jobs:
         working-directory: backend/learning-service
         run: |
           chmod +x gradlew
-          ./gradlew test --no-daemon --tests 'com.sagomungchi.learning.community.CommunityTest'
+          ./gradlew test --no-daemon --tests 'com.sagomungchi.learning.community.CommunityTest' --tests 'com.sagomungchi.learning.attempt.service.AttemptComparisonIntegrationTest'
       - name: 실제 learning 커뮤니티 응답 계약 검사
         run: .venv-contracts/bin/python scripts/validate_learning_community_contracts.py
+
+      - name: 실제 learning 테마 요약과 report 소비 계약 검사
+        run: .venv-contracts/bin/python scripts/validate_theme_summary_contracts.py

@@ -906,3 +906,12 @@ core 코드(`CommunityClient`)가 읽는 필드는 모두 맞췄고, 아래는 �
   - 반복 마이그레이션에서 변화 없음
 - `scripts/validate_learning_community_contracts.py`: `CommunityTest` 실제 응답 10종이 learning OpenAPI와 일치하고, core `CommunityClient`가 읽는 필드도 있음
 - 확인하지 않은 것: 실제 core와 붙인 흐름, web 화면, 원격 CI
+
+
+## #391 일일 리포트 완료일 조회 지원
+
+`/internal/records/students/{studentId}/daily-attempts`는 같은 KST 날짜의 COMPLETED 시도를 완료 시각으로 찾는다. 기존 제출일 기준 P08 목록은 유지한다. 기존 RecordPage/원문 제외 정책·학생 scope·삭제 표식을 재사용하며 새 DB 컬럼은 없다. 전날 제출·오늘 완료, 진행 중 제외, 다른 학생 제외를 서비스 DB 테스트로 검증한다. 테마·context 자체 구현은 #385 범위다.
+
+### #391 후속 반영
+
+기록 목록·상세·daily-attempts에 실제 `attempt.context`를 추가했다. 주간 요약은 `WeeklyThemeReportService`가 #207 비교 로직을 재사용해 `reviewRetries[].comparison`에 상태와 요소 변화만 담는다. 학생 범위를 검사하고, 미마무리 시도는 null이며 원문·인용은 전달하지 않는다. 위 #385 이력의 기록 context 후속은 이 변경으로 완료했고 학생 시도 상세 context는 이번 범위 밖이다.

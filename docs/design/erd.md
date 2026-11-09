@@ -1320,6 +1320,7 @@ erDiagram
   report_job_guard {
     uuid job_id PK "core 작업 논리 참조"
     uuid student_id "core 학생 논리 참조"
+    varchar period_type "DAILY|WEEKLY"
     date period_from
     date period_to
     varchar failure_reason "REPORT_NOT_CREATED"
@@ -1339,6 +1340,7 @@ erDiagram
     uuid id PK
     uuid job_id UK "core report_job"
     uuid student_id "core 논리 참조"
+    varchar period_type "DAILY|WEEKLY"
     date period_from
     date period_to
     int revision "재생성 회차"
@@ -1346,6 +1348,7 @@ erDiagram
     varchar state "NULL 허용 · OK|NO_RECORD|INSUFFICIENT_SAMPLE"
     text inclusion_rule "NULL 허용 · 포함 기준 (P06, P08)"
     text evening_question "NULL 허용"
+    jsonb theme_summary "NULL 허용 · 주간 테마 요약"
     jsonb narrative "NULL 허용 · text, source, modelExplanation"
     jsonb verification "NULL 허용 · numbersMatched, quotesMatched, contentAllowed"
     jsonb versions "NULL 허용 · prompt, model"
@@ -1356,7 +1359,7 @@ erDiagram
   report_item {
     uuid id PK "evidence itemId"
     uuid report_id FK
-    varchar item_type "METRIC|THINKING_TYPE|CHANGE|REFLECTION|QUOTE"
+    varchar item_type "METRIC|THINKING_TYPE|CHANGE|REFLECTION|QUOTE|PROBLEM"
     int seq
     jsonb payload "Metric, 유형 요약, 전후 변화 등"
     varchar state "OK|NO_RECORD|INSUFFICIENT_SAMPLE"
@@ -1403,8 +1406,7 @@ erDiagram
 - #208 보존: worker가 1시간 주기로 90일 지난 발행 완료 `outbox_event`·`processed_event` 삭제(`EVENT_RETENTION_DAYS`). 미발행·격리(`published_at IS NULL`) 행과 `report_deletion_guard`는 유지
 - `weekly_report.job_id` UK → 같은 `report.generate` 재전달 시 1회만 생성. 상태 전이 `RUNNING → COMPLETED|FAILED`와 `outbox_event(report.*)`를 같은 트랜잭션에 저장
 - #152 관리자 재처리는 새 jobId로 다음 revision을 만든다. 원래 실패 행·기존 파일은 보존한다. 원작업↔재처리 연결은 core #47 소유이며 report DB에 교차 서비스 FK·원작업 컬럼을 추가하지 않는다. 연결 저장은 3.2.2.
-- 재생성은 기존 행을 덮지 않고 `revision` 증가 행 추가, UK `(student_id, period_from, revision)` (기존 판 보존·최신판 기본 조회, P06). 학부모 요청 재생성은 리포트당 1회 → core `report_job(REGENERATE)` 건수로 확인
-  - 구현 예정(P24): 일일 리포트와 함께 UK를 `(student_id, period_type, period_from, revision)`로 교체(5.2)
+- 재생성은 기존 행을 덮지 않고 `revision` 증가 행 추가, UK `(student_id, period_type, period_from, revision)` (기존 판 보존·최신판 기본 조회, P06). 학부모 요청 재생성은 리포트당 1회 → core `report_job(REGENERATE)` 건수로 확인
 - 기록 없는 주·표본 부족 주는 `status = COMPLETED` + `state`로 구분, 생성 실패(`FAILED`)와 분리 (FN-RPT-11). state는 COMPLETED일 때만 NOT NULL (상태 다이어그램 4.2).
 - `report_item` UK `(report_id, item_type, seq)`. 상세 응답(API 3.4)은 `item_type`별로 묶어 조립
 - `report_file` UK `(report_id, format)`. 다운로드는 `s3_key`로 presigned URL 발급 (FN-RPT-13)
@@ -1416,7 +1418,8 @@ erDiagram
 |---|---|
 | job_id | uuid PK, core 작업 논리 참조 |
 | student_id | uuid NOT NULL, 학생별 삭제 인덱스 |
-| period_from / period_to | date NOT NULL, 월~일 7일 |
+| period_type | varchar NOT NULL, DAILY·WEEKLY |
+| period_from / period_to | date NOT NULL, DAILY는 하루, WEEKLY는 월~일 7일 |
 | failure_reason | varchar(100) NOT NULL, REPORT_NOT_CREATED |
 | created_at | timestamptz NOT NULL |
 
@@ -1424,18 +1427,13 @@ erDiagram
 
 core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. job_execution은 기존 attempt_no=1 upsert로 종료를 기록하며 동일 복구/늦은 이벤트가 이력을 늘리거나 종료를 되돌리지 않는다.
 
-### 5.2 구현 예정 변경 (report_db)
+### 5.2 일일·주간 기간 분리 (#391)
 
-2026-11-06 서비스 기획 방향 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 저장 구조. 마이그레이션 전이라 위 Mermaid·6장 인덱스 표(실제 DB 계약, `scripts/verify_db_schema.py`가 대조)에는 넣지 않고 표로만 둔다. 구현 시 새 마이그레이션 버전과 함께 Mermaid·6장으로 옮긴다. 컬럼 기본값은 두지 않는다(검증 스크립트 규칙): 기존 행이 있는 테이블의 NOT NULL 컬럼은 준비 버전(nullable 추가)→기존 행 채움→최종 버전(NOT NULL·CHECK)으로 나눈다(8장). API는 [API 명세](api-spec.md)의 구현 예정 행.
+`20261109_06`에서 nullable `period_type`·`theme_summary`와 guard의 기간 종류를 준비하고 기존 행을 WEEKLY로 채운다. `20261109_07`에서 NOT NULL·CHECK·UK와 목록 인덱스를 확정한다. SQL DEFAULT는 없다. 일일은 날짜가 같고 narrative·evening_question·theme_summary가 NULL이어야 한다.
 
-| 테이블 | 구분 | 컬럼·제약 | 근거 |
-|---|---|---|---|
-| `weekly_report` | 컬럼 추가 | `period_type varchar NOT NULL`(`DAILY`·`WEEKLY`, 기존 행 `WEEKLY`로 채움), `theme_summary jsonb NULL`(주간만). 테이블 이름은 유지. 일일은 `narrative`·`evening_question` 항상 NULL. 재생성 UK를 `(student_id, period_type, period_from, revision)`으로 교체(월요일 일일·주간의 `period_from`이 같음), revision 잠금 단위도 `(자녀, period_type, period_from)` | P24, FN-RPT-17 |
-| `report_item` | 값 추가 | 일일 문제별 항목(판정 결과·되묻기·보완 답변·생각 요소·돌아보기·인용) 종류 추가, 기존 근거 연결(`report_item_evidence`) 재사용 | P24 |
-| `report_file` | 변경 없음 | 파일 키 규칙 그대로(`reports/{studentId}/{reportId}/r{revision}/...`) | P24 |
+재생성 UK는 `(student_id, period_type, period_from, revision)`이고 advisory lock은 `(student_id, period_type, period_from)` 단위다. `report_item.PROBLEM`은 문제별 사실을 보존하며 검증된 인용만 기존 evidence FK 구조로 연결한다. 목록은 종류별 최신 revision을 반환하고, 상세의 이전 판도 같은 종류에서만 찾는다. 파일 키·삭제 FK는 유지한다.
 
-- 인덱스: 목록 인덱스 `(student_id, status, period_from)`을 `(student_id, period_type, status, period_from)`으로 교체
-- `report.generate` 메시지 `periodType` 추가와 `periodFrom/To` 의미(주 또는 하루)는 구현 시 [이벤트 계약](../../contracts/events/report-messages.md)에 반영
+일일 데이터가 있는 DB의 downgrade는 실패시켜 임의 삭제·주간 revision 충돌을 막는다. 운영에서는 복원 계획 없이 되돌리지 않는다. core 스케줄(#390)과 learning 테마 요약(#385)은 별도 구현이다.
 
 ---
 
@@ -1474,7 +1472,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | learning | `community_post` | `(mission_id, status)` | 미션별 공개 공유물 목록 (#386, V13) |
 | learning | `community_reaction` | `(student_id, created_at)` | 학생 삭제 때 남긴 반응 정리 (#386, V13) |
 | learning | `processed_event` | `(processed_at)` | 보존 기간 정리 |
-| report | `weekly_report` | `(student_id, status, period_from)` | 자녀별 리포트 목록 |
+| report | `weekly_report` | `(student_id, period_type, status, period_from)` | 자녀별 리포트 목록 |
 | report | `outbox_event` | `(created_at) WHERE published_at IS NULL`, `(subject, created_at, id) WHERE published_at IS NULL`, `(published_at) WHERE published_at IS NOT NULL` | 학생별 선두·발행 순서 및 재시도 대상, 보존 기간 정리 |
 | report | `processed_event` | `(processed_at)` | 보존 기간 정리 |
 
