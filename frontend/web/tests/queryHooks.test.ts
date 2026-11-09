@@ -402,3 +402,25 @@ test('#389 다른 항목의 해금 응답은 성공·잔액 변경으로 표시�
   await act(async () => { await assert.rejects(h.get().mutateAsync({ itemKey: 'THEME:forest', key: crypto.randomUUID() }), /확인하지 못/) })
   assert.deepEqual(cache.getQueryData(['points', child.id, 0]), points)
 })
+
+test('#433 친구 공개 설정은 창으로 돌아오면 다시 읽어 보호자 동의를 바로 반영한다', async t => {
+  const { useCommunitySettings } = await import('../src/data/retention/queries.ts')
+  const { focusManager } = await import('@tanstack/react-query')
+  let consentGranted = false, calls = 0
+  mockFetch(t, (url) => {
+    assert.match(url, /\/students\/me\/community-settings$/)
+    calls++
+    return Response.json({ enabled: false, consentGranted, updatedAt: null })
+  })
+  t.after(() => focusManager.setFocused(undefined))
+  // 앱 기본값이 바뀌어도(오래 신선·포커스 재조회 끔) 이 조회는 포커스마다 다시 읽어야 한다.
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000, refetchOnWindowFocus: false } } })
+  const h = await mount(t, () => useCommunitySettings(child.id), cache)
+  await until(() => h.get().isSuccess)
+  assert.equal(h.get().data?.consentGranted, false)
+  consentGranted = true // 보호자가 다른 창에서 동의했다.
+  await act(async () => { focusManager.setFocused(false) })
+  await act(async () => { focusManager.setFocused(true) })
+  await until(() => h.get().data?.consentGranted === true)
+  assert.equal(calls, 2)
+})
