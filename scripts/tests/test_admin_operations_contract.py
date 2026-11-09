@@ -22,6 +22,12 @@ class AdminOperationsContracts(unittest.TestCase):
             for name,expected in baseline[section].items():
                 self.assertIn(name,current)
                 reviewed=deepcopy(current[name])
+                # #367 extends registration only; retain all prior fields in the fingerprint.
+                if section=='schemas' and name=='EvaluationEvidence':
+                    reviewed['properties'].pop('limitations',None)
+                if section=='schemas' and name=='RegisterModelVersion':
+                    reviewed['properties'].pop('registration',None)
+                    reviewed.pop('allOf',None)
                 # #163 explicitly approves only these support operation error responses.
                 # Normalize the approved additions while preserving every original field.
                 support_operations={'/error-reports':'post','/inquiries':'post',

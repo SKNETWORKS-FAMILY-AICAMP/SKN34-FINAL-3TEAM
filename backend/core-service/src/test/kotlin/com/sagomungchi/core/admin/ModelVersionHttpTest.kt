@@ -175,4 +175,95 @@ class ModelVersionHttpTest : PostgresRepositoryTest() {
             content = json.writeValueAsString(approval().copy(approved = false))
         }.andExpect { status { isUnprocessableEntity() } }
     }
+    private fun registerHttp(access: String, body: Any) = mvc.post("/api/v1/admin/model-versions") {
+        header("Authorization", "Bearer $access"); contentType = MediaType.APPLICATION_JSON
+        content = json.writeValueAsString(body)
+    }
+
+    @Test fun `JSON import preserves limitations provenance actor and does not activate`() {
+        val (actor, access) = adminToken()
+        val command = registration().copy(
+            evaluation = evidence().copy(limitations = listOf("임시 경계이며 품질 승인 아님")),
+            registration = com.sagomungchi.core.admin.domain.RegistrationMetadata(
+                com.sagomungchi.core.admin.domain.RegistrationSource.JSON_IMPORT,
+                "a".repeat(64), "b".repeat(64), listOf("artifactUri", "evaluation.limitations"),
+                listOf(com.sagomungchi.core.admin.domain.RegistrationArtifact("config.json", 123, "c".repeat(64)))))
+        val result = registerHttp(access, command).andExpect {
+            status { isCreated() }; jsonPath("$.status") { value("REGISTERED") }
+            jsonPath("$.evalResult.evidence.limitations[0]") { value("임시 경계이며 품질 승인 아님") }
+            jsonPath("$.evalResult.activeScopes.length()") { value(0) }
+        }.andReturn().response.contentAsString
+        val id = UUID.fromString(json.readTree(result)["id"].asText())
+        val detail = json.readTree(jdbc.queryForObject("SELECT detail::text FROM audit_log WHERE target_id=? AND action='MODEL_REGISTER'", String::class.java, id))
+        assertEquals("JSON_IMPORT", detail["source"].asText())
+        assertEquals("a".repeat(64), detail["jsonSha256"].asText())
+        assertEquals("b".repeat(64), detail["manifestSha256"].asText())
+        assertEquals("c".repeat(64), detail["artifactFiles"][0]["sha256"].asText())
+        assertEquals("artifactUri", detail["modifiedFields"][0].asText())
+        assertEquals(actor, jdbc.queryForObject("SELECT actor_user_id FROM audit_log WHERE target_id=?", UUID::class.java, id))
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM outbox_event WHERE subject=?", Int::class.java, id.toString()))
+        registerHttp(access, command.copy(evaluation = evidence())).andExpect { status { isConflict() }; jsonPath("$.code") { value("MODEL_VERSION_CONFLICT") } }
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE target_id=?", Int::class.java, id))
+        mvc.get("/api/v1/admin/model-versions") { header("Authorization", "Bearer $access") }
+            .andExpect { status { isOk() }; jsonPath("$.items[?(@.id == '$id')].evalResult.evidence.limitations[0]") { value(org.hamcrest.Matchers.hasItem("임시 경계이며 품질 승인 아님")) } }
+    }
+
+    @Test fun `old manual requests and stored evidence default to empty limitations`() {
+        val (_, access) = adminToken()
+        val body = json.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(registration())
+        body.remove("registration")
+        (body["evaluation"] as com.fasterxml.jackson.databind.node.ObjectNode).remove("limitations")
+        val result = registerHttp(access, body).andExpect { status { isCreated() }; jsonPath("$.evalResult.evidence.limitations.length()") { value(0) } }.andReturn().response.contentAsString
+        val id = UUID.fromString(json.readTree(result)["id"].asText())
+        jdbc.update("UPDATE model_version SET eval_result=eval_result #- '{evidence,limitations}' WHERE id=?", id)
+        assertTrue(service.list(null, 0, 100).items.single { it.id == id }.evalResult!!.evidence.limitations.isEmpty())
+        assertEquals("MANUAL", jdbc.queryForObject("SELECT detail->>'source' FROM audit_log WHERE target_id=?", String::class.java, id))
+    }
+
+    @Test fun `MODEL requires artifact URI and invalid provenance has no registration side effects`() {
+        val (_, access) = adminToken()
+        val valid = json.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(registration())
+        val before = jdbc.queryForObject("SELECT count(*) FROM model_version", Int::class.java)
+        val invalidBodies = listOf(
+            valid.deepCopy().putNull("artifactUri"), valid.deepCopy().put("artifactUri", " "),
+            valid.deepCopy().set<com.fasterxml.jackson.databind.node.ObjectNode>("registration", json.readTree("""{"source":"JSON_IMPORT","jsonSha256":"bad"}""")),
+            valid.deepCopy().set<com.fasterxml.jackson.databind.node.ObjectNode>("registration", json.readTree("""{"source":"MANUAL","jsonSha256":"${"a".repeat(64)}"}""")),
+            valid.deepCopy().apply { (get("evaluation") as com.fasterxml.jackson.databind.node.ObjectNode).putArray("limitations").addNull() })
+        invalidBodies.forEach { registerHttp(access, it).andExpect { status { isUnprocessableEntity() }; jsonPath("$.code") { value("MODEL_APPROVAL_REJECTED") } } }
+        assertEquals(before, jdbc.queryForObject("SELECT count(*) FROM model_version", Int::class.java))
+    }
+
+    @Test fun `registration rejects approval fields and unknown nested fields`() {
+        val (_, access) = adminToken()
+        listOf("approved", "scopes", "reason", "reanalysisPlanned", "approvedBy", "unexpected").forEach { field ->
+            val body = json.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(registration()).put(field, "forbidden")
+            registerHttp(access, body).andExpect { status { isBadRequest() } }
+        }
+        val body = json.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(registration())
+        (body["evaluation"] as com.fasterxml.jackson.databind.node.ObjectNode).put("approved", true)
+        registerHttp(access, body).andExpect { status { isBadRequest() } }
+    }
+
+    @Test fun `manifest metadata rejects missing bytes invalid paths and duplicate files`() {
+        val (_, access) = adminToken()
+        fun request() = json.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(registration()).apply {
+            set<com.fasterxml.jackson.databind.node.ObjectNode>("registration", json.readTree("""{
+                "source":"JSON_IMPORT","jsonSha256":"${"a".repeat(64)}","manifestSha256":"${"b".repeat(64)}",
+                "artifactFiles":[{"file":"config.json","bytes":123,"sha256":"${"c".repeat(64)}"}]}"""))
+        }
+        for (missing in listOf(true, false)) {
+            val body = request()
+            val file = body["registration"]["artifactFiles"][0] as com.fasterxml.jackson.databind.node.ObjectNode
+            if (missing) file.remove("bytes") else file.putNull("bytes")
+            registerHttp(access, body).andExpect { status { isBadRequest() } }
+        }
+        val traversal = request()
+        (traversal["registration"]["artifactFiles"][0] as com.fasterxml.jackson.databind.node.ObjectNode).put("file", "../config.json")
+        registerHttp(access, traversal).andExpect { status { isUnprocessableEntity() } }
+        val duplicates = request()
+        val files = duplicates["registration"]["artifactFiles"] as com.fasterxml.jackson.databind.node.ArrayNode
+        files.add(files[0].deepCopy<com.fasterxml.jackson.databind.JsonNode>())
+        registerHttp(access, duplicates).andExpect { status { isUnprocessableEntity() } }
+    }
+
 }

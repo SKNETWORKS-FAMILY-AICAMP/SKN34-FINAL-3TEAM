@@ -20,7 +20,7 @@ class ModelVersionController(private val service: ModelVersionService) {
     @PostMapping("/api/v1/admin/model-versions")
     @ResponseStatus(HttpStatus.CREATED)
     fun register(@Valid @RequestBody body: RegisterRequest, request: HttpServletRequest) = service.register(
-        RegisterVersion(body.kind, body.name, body.version, body.refId, body.artifactUri, body.evaluation), actor(request))
+        RegisterVersion(body.kind, body.name, body.version, body.refId, body.artifactUri, body.evaluation, body.registration), actor(request))
 
     @PostMapping("/api/v1/admin/model-versions/{versionId}/activate")
     fun activate(@PathVariable versionId: UUID, @Valid @RequestBody body: ActivateRequest, request: HttpServletRequest) =
@@ -34,7 +34,11 @@ class ModelVersionController(private val service: ModelVersionService) {
 }
 
 data class RegisterRequest(val kind: ModelKind, val name: String, val version: String, val refId: UUID? = null,
-    val artifactUri: String? = null, val evaluation: EvaluationEvidence)
+    val artifactUri: String? = null, val evaluation: EvaluationEvidence,
+    val registration: RegistrationMetadata = RegistrationMetadata()) {
+    @com.fasterxml.jackson.annotation.JsonAnySetter
+    fun unknown(name: String, value: Any?) { throw IllegalArgumentException("Unknown registration field: $name") }
+}
 data class ActivateRequest(@field:NotNull val approved: Boolean?, val scopes: List<String>, val reason: String, @field:NotNull val reanalysisPlanned: Boolean?)
 data class RollbackRequest(val scopes: List<String>, val reason: String, @field:NotNull val reanalysisPlanned: Boolean?)
 
