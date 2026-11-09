@@ -21,17 +21,13 @@ class ReauthenticationService(private val repository: ReauthenticationRepository
  private val accounts: AccountManagementService, private val auth: AuthRepository,
  private val google: GoogleOAuthClient, private val tokens: TokenService,
  private val properties: AuthProperties, private val students: ChildAuthorizationService,
+ private val credentials: PasswordCredentialService,
  manager: PlatformTransactionManager) {
  private val tx=TransactionTemplate(manager)
  data class Started(val challengeId: UUID, val authorizationUrl: String, val expiresAt: OffsetDateTime, val stateCookie: String)
  data class Issued(val reauthToken: String, val expiresAt: OffsetDateTime)
  fun start(identity: AuthenticatedAccount, purpose: ReauthPurpose, childId: UUID?, scope: String?): Started {
-  val accountWide=purpose in setOf(ReauthPurpose.WITHDRAWAL,ReauthPurpose.GUARDIAN_PASSWORD,ReauthPurpose.TRANSFER_ACCEPT)
-  if((accountWide && (childId!=null || scope!=null)) ||
-   (!accountWide && childId==null) ||
-   (purpose==ReauthPurpose.CHILD_DELETE && scope !in setOf("PROFILE","RECORDS")) ||
-   (purpose!=ReauthPurpose.CHILD_DELETE && scope!=null))
-   throw BusinessException(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED","재인증 대상과 작업 범위를 확인해 주세요.")
+  validate(purpose,childId,scope)
   val id=UUID.randomUUID(); val state=tokens.randomToken(); val nonce="$id:${tokens.randomToken()}"; val verifier=tokens.randomToken()
   val url=google.reauthAuthorizationUrl(state,nonce,verifier)
   return requireNotNull(tx.execute {
@@ -75,6 +71,39 @@ class ReauthenticationService(private val repository: ReauthenticationRepository
   repository.issue(id,now()); repository.insertGrant(ReauthGrant(tokens.hash(token),id,expiry,null))
   Issued(token,expiry)
  })
+ /**
+  * #415: password accounts re-enter the login password instead of Google. A matching password records a challenge that is
+  * verified and issued at once, so [consume] and every purpose's check stay the same as for Google. Failures share the
+  * login counter (5 failures lock login and re-confirmation for 15 minutes) and are thrown after commit.
+  */
+ fun withPassword(identity: AuthenticatedAccount, purpose: ReauthPurpose, childId: UUID?, scope: String?, password: String?): Issued {
+  validate(purpose,childId,scope)
+  val secret=password.orEmpty()
+  if(secret.isEmpty() || secret.length>PasswordCredentialService.PASSWORD_MAX) throw passwordInvalid()
+  val outcome=requireNotNull(tx.execute {
+   accounts.lock(identity)
+   if(!identity.account.subject.isNullOrBlank()) throw methodMismatch()
+   val credential=auth.parentCredentialOf(identity.account.id) ?: throw methodMismatch()
+   if(childId!=null) students.requireOwned(identity.account.id,childId,purpose!=ReauthPurpose.CHILD_DELETE)
+   val now=now()
+   credentials.verify(PasswordCredentialService.Realm.PARENT,credential,secret,now)?.let { return@execute it }
+   val id=UUID.randomUUID()
+   val expiry=minOf(now.plus(properties.reauthTtl),identity.session.expiresAt)
+   // state_hash is NOT NULL UNIQUE; a random value that is never sent anywhere keeps the Google callback unusable here.
+   repository.insert(ReauthChallenge(id,identity.account.id,identity.session.id,identity.session.version,purpose.name,
+    childId,scope,tokens.hash(tokens.randomToken()),expiry,null,null))
+   repository.verify(id,now); repository.issue(id,now)
+   val token=tokens.randomToken()
+   repository.insertGrant(ReauthGrant(tokens.hash(token),id,expiry,null))
+   accounts.audit(identity.account.id,"PASSWORD_REAUTHENTICATED",id)
+   Issued(token,expiry)
+  })
+  return when(outcome) {
+   is Issued -> outcome
+   PasswordCredentialService.Failure.LOCKED -> throw AuthService.loginLocked()
+   else -> throw passwordInvalid()
+  }
+ }
  /** #58 PIN service consumes this in the same transaction as the actual PIN mutation. */
  @Transactional(propagation=Propagation.MANDATORY)
  fun consume(identity: AuthenticatedAccount, token: String?, purpose: ReauthPurpose, childId: UUID?=null, scope: String?=null) {
@@ -86,9 +115,19 @@ class ReauthenticationService(private val repository: ReauthenticationRepository
   if(c.verifiedAt==null || c.issuedAt==null || c.purpose!=purpose.name || c.studentId!=childId || c.scope!=scope ||
    grant.usedAt!=null || !grant.expiresAt.isAfter(now()) || repository.consume(hash,now())!=1) throw required()
  }
+ private fun validate(purpose: ReauthPurpose, childId: UUID?, scope: String?) {
+  val accountWide=purpose in setOf(ReauthPurpose.WITHDRAWAL,ReauthPurpose.GUARDIAN_PASSWORD,ReauthPurpose.TRANSFER_ACCEPT)
+  if((accountWide && (childId!=null || scope!=null)) ||
+   (!accountWide && childId==null) ||
+   (purpose==ReauthPurpose.CHILD_DELETE && scope !in setOf("PROFILE","RECORDS")) ||
+   (purpose!=ReauthPurpose.CHILD_DELETE && scope!=null))
+   throw BusinessException(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED","재인증 대상과 작업 범위를 확인해 주세요.")
+ }
  private fun checkBinding(c: ReauthChallenge, identity: AuthenticatedAccount) {
   if(c.userId!=identity.account.id || c.sessionId!=identity.session.id || c.sessionVersion!=identity.session.version) throw required()
  }
  private fun now()=AccountManagementService.now()
- private fun required()=BusinessException(HttpStatus.FORBIDDEN,"REAUTH_REQUIRED","해당 작업의 Google 재인증이 필요합니다.")
+ private fun required()=BusinessException(HttpStatus.FORBIDDEN,"REAUTH_REQUIRED","해당 작업의 본인 재확인이 필요합니다.")
+ private fun passwordInvalid()=BusinessException(HttpStatus.FORBIDDEN,"REAUTH_PASSWORD_INVALID","비밀번호를 확인해 주세요.")
+ private fun methodMismatch()=BusinessException(HttpStatus.CONFLICT,"REAUTH_METHOD_MISMATCH","Google 계정은 Google로 본인 확인을 해 주세요.")
 }

@@ -3,6 +3,8 @@ import QRCode from 'qrcode'
 import { studentDeviceApi } from '../../data/studentDevice/api.ts'
 import { useParentMutation } from '../../data/parent/queries.ts'
 import { useReauthReturn } from '../../data/reauthReturn.ts'
+import { useSession } from '../auth/sessionContext.ts'
+import { PasswordRecheck } from '../service/PasswordRecheck.tsx'
 import { qrDemoEnabled, useDeviceAdmin, useGuardianPassword, usePairingOrigins, useStudentDevices } from '../../data/studentDevice/queries.ts'
 import type { Child } from '../../domain/classroom.ts'
 import {
@@ -48,6 +50,7 @@ export function StudentDevices({ items }: { items: Child[] }) {
 /** 학생 화면에서 잠긴 학부모 화면으로 돌아올 때 쓰는 보호자 비밀번호 (FN-ACC-05). */
 function GuardianPasswordSettings() {
   const state = useGuardianPassword()
+  const byPassword = useSession().session?.authMethod === 'PASSWORD'
   const [challenge, setChallenge] = useState('')
   const [grant, setGrant] = useState<{ reauthToken: string; expiresAt: string } | null>(null)
   const [notice, setNotice] = useState('')
@@ -85,7 +88,7 @@ function GuardianPasswordSettings() {
   return (
     <section className="ws-card" aria-labelledby="guardian-password-h">
       <h2 id="guardian-password-h">보호자 비밀번호</h2>
-      <p>자녀가 학습을 마친 뒤 Google 로그인 없이 학부모 화면으로 돌아올 때 입력합니다. 자녀가 모르는 숫자 4~6자리로 정해 주세요. 5번 틀리면 잠기고, 여기서 다시 정하면 풀립니다.</p>
+      <p>자녀가 학습을 마친 뒤 다시 로그인하지 않고 학부모 화면으로 돌아올 때 입력합니다. 자녀가 모르는 숫자 4~6자리로 정해 주세요. 5번 틀리면 잠기고, 여기서 다시 정하면 풀립니다.</p>
       <QueryFeedback query={state} />
       <form
         className="ws-form"
@@ -104,10 +107,12 @@ function GuardianPasswordSettings() {
         }}
       >
         <p>현재 상태: <strong data-guardian-password-state={current ? (current.locked ? 'locked' : current.set ? 'set' : 'none') : 'unknown'}>{status}</strong></p>
-        <button type="button" className="cj-secondary" disabled={start.isPending || finish.isPending} onClick={begin}>
-          보호자 비밀번호 Google 본인 확인
-        </button>
-        {challenge && !token && <button type="button" className="cj-secondary" disabled={finish.isPending} onClick={complete}>
+        {byPassword
+          ? <PasswordRecheck purpose="GUARDIAN_PASSWORD" label="보호자 비밀번호 본인 확인" onGrant={(value) => { setGrant(value); if (value) setNotice('재확인을 완료했습니다. 5분 안에 비밀번호를 정해 주세요.') }} />
+          : <button type="button" className="cj-secondary" disabled={start.isPending || finish.isPending} onClick={begin}>
+            보호자 비밀번호 Google 본인 확인
+          </button>}
+        {!byPassword && challenge && !token && <button type="button" className="cj-secondary" disabled={finish.isPending} onClick={complete}>
           보호자 비밀번호 완료 확인
         </button>}
         <ErrorNotice error={start.error ?? finish.error} />
@@ -136,12 +141,13 @@ function GuardianPasswordSettings() {
 function PinSettings({ items }: { items: Child[] }) {
   return <section className="ws-card" aria-labelledby="pin-h">
     <h2 id="pin-h">자녀 PIN</h2>
-    <p>자녀별 Google 본인 확인 후 PIN을 정해 주세요. 5번 틀려 잠긴 PIN도 여기서 다시 정하면 풀립니다.</p>
+    <p>자녀별 본인 확인 후 PIN을 정해 주세요. 5번 틀려 잠긴 PIN도 여기서 다시 정하면 풀립니다.</p>
     {items.map((c) => <ChildPin key={c.id} child={c} />)}
   </section>
 }
 
 function ChildPin({ child }: { child: Child }) {
+  const byPassword = useSession().session?.authMethod === 'PASSWORD'
   const [challenge, setChallenge] = useState('')
   const [grant, setGrant] = useState<{ reauthToken: string; expiresAt: string } | null>(null)
   const [notice, setNotice] = useState('')
@@ -204,10 +210,12 @@ function ChildPin({ child }: { child: Child }) {
       <p>
         현재 상태: <strong data-pin-state={state}>{status}</strong>
       </p>
-      <button type="button" className="cj-secondary" disabled={start.isPending || finish.isPending} onClick={begin}>
-        {child.nickname} Google 본인 확인
-      </button>
-      {challenge && !token && <button type="button" className="cj-secondary" disabled={finish.isPending} onClick={complete}>
+      {byPassword
+        ? <PasswordRecheck purpose="PIN_CHANGE" childId={child.id} label={`${child.nickname} 본인 확인`} onGrant={(value) => { setGrant(value); if (value) setNotice('재확인을 완료했습니다. 5분 안에 PIN을 정해 주세요.') }} />
+        : <button type="button" className="cj-secondary" disabled={start.isPending || finish.isPending} onClick={begin}>
+          {child.nickname} Google 본인 확인
+        </button>}
+      {!byPassword && challenge && !token && <button type="button" className="cj-secondary" disabled={finish.isPending} onClick={complete}>
         {child.nickname} 완료 확인
       </button>}
       <ErrorNotice error={start.error ?? finish.error} />

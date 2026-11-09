@@ -20,6 +20,8 @@ export interface Session {
   entry?: 'DEVICE' | 'GUARDIAN'
   child?: Child
   permissions?: import('./admin/operations.ts').Permission[]
+  /** #415: PASSWORD는 ID·비밀번호 계정. 본인 재확인을 Google 대신 로그인 비밀번호로 한다. */
+  authMethod?: 'GOOGLE' | 'PASSWORD'
 }
 export type InputType =
   'NARRATIVE' | 'SOLUTION_STEPS' | 'ESSAY' | 'CHOICE' | 'ORDERING' | 'CLASSIFICATION'

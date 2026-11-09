@@ -57,7 +57,8 @@
 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 401 | 미인증 / 만료 → 재인증 안내 (FN-ACC-04) |
 | `FORBIDDEN` | 403 | 역할·관리자 권한 부족, 지원 조회의 권한·학생 범위 거부 (5.7) |
 | `CHILD_NOT_LINKED` | 403 | 연결되지 않은 자녀 요청 (FN-AGT-02, FN-RPT-12) |
-| `REAUTH_REQUIRED` | 403 | 중요 정보 변경 전 재확인 필요 (FN-ACC-10) |
+| `REAUTH_REQUIRED` | 403 | 중요 정보 변경 전 재확인 필요 (FN-ACC-10). 문구는 로그인 수단과 무관하게 "해당 작업의 본인 재확인이 필요합니다." (#415) |
+| `REAUTH_PASSWORD_INVALID` / `REAUTH_METHOD_MISMATCH` | 403 / 409 | 비밀번호 재확인에서 틀린 비밀번호(로그인 실패 횟수에 포함) / Google 계정이 비밀번호 재확인을 요청 (5.6, #415) |
 | `STUDENT_DEVICE_INVALID` | 401 | 학생 기기 자격증명 없음·해제·만료, 해당 기기에 등록되지 않은 자녀 (FN-ACC-05) |
 | `STUDENT_PIN_INVALID` | 401 | PIN 불일치, `remainingAttempts` 포함 (FN-ACC-05) |
 | `STUDENT_PIN_LOCKED` | 423 | PIN 연속 5회 실패로 잠금, 학부모 PIN 재설정 필요 (FN-ACC-05) |
@@ -97,7 +98,10 @@
 | `REFRESH_REUSED` | 401 | 이미 사용된 refresh 재사용 → 해당 세션 전체 폐기 (5.1) |
 | `OAUTH_FAILED` / `OAUTH_UNAVAILABLE` | 401 / 503 | Google 인증 실패 / Google 로그인 미설정·연결 실패. 콜백은 `/auth/complete?error=<code>`로 전달 (5.1) |
 | `ACCOUNT_EXISTS` | 409 | 같은 이메일의 기존 계정은 자동 연결하지 않음 (5.1) |
-| `INVALID_CREDENTIALS` / `ADMIN_LOGIN_LOCKED` | 401 / 423 | 관리자 ID·비밀번호 로그인 실패(없는 ID·틀린 비밀번호·비관리자·비활성 계정 구분 없음) / 연속 5회 실패 후 15분 잠금 (5.1, #369) |
+| `INVALID_CREDENTIALS` / `ADMIN_LOGIN_LOCKED` | 401 / 423 | 관리자·학부모 ID·비밀번호 로그인 실패(없는 ID·틀린 비밀번호·Google 계정·다른 역할·비활성 계정 구분 없음) / 관리자 연속 5회 실패 후 15분 잠금 (5.1, #369·#415) |
+| `LOGIN_LOCKED` | 423 | 학부모 ID·비밀번호 로그인 또는 비밀번호 재확인 연속 5회 실패 후 15분 잠금(두 경로의 실패 횟수를 함께 셈) (5.1·5.6, #415) |
+| `LOGIN_ID_TAKEN` | 409 | 학부모 ID·비밀번호 가입에서 이미 쓰는 아이디(대소문자 무관) (5.1, #415) |
+| `SIGNUP_RATE_LIMITED` / `SIGNUP_UNAVAILABLE` | 429 / 503 | 같은 IP의 학부모 ID·비밀번호 가입 한도(기본 10분 5회) 초과 / 가입 한도 저장소(Redis) 장애 (5.1, #415) |
 | `AUTH_UNAVAILABLE` | 503 | 인증 상태 확인 실패(DB 장애 등) |
 | `CONSENT_REQUIRED` | 403 | 필수 계정 동의 또는 GUARDIAN 동의 전 접근 (5.3) |
 | `CONSENT_DOCUMENT_CHANGED` / `CONSENT_DOCUMENTS_UNAVAILABLE` | 409 / 503 | 제출한 동의 문서 버전이 현재와 다름 / 게시된 동의 문서 확인 실패 (5.3) |
@@ -243,6 +247,8 @@
 | GET | `/auth/google/authorize` | 공개 | Google 로그인·가입 시작 (Authorization Code + PKCE) | ACC-01, ACC-03 | 제안 |
 | GET | `/auth/google/callback` | 공개 | Google 코드 교환·ID 토큰 검증 → refresh 쿠키 → web 복귀 | ACC-03 | 제안 |
 | POST | `/auth/admin/login` | 공개 | 등록된 관리자 ID·비밀번호 로그인 `{loginId,password}` → refresh 응답과 같은 형식 + refresh 쿠키. 가입 없음, `admin_credential` 행으로만 등록 (#369, 5.1) | ACC-03, ADM-01 | 핵심 |
+| POST | `/auth/parent/signup` | 공개 | 학부모 ID·비밀번호 가입 `{loginId,password,name}` → refresh 응답과 같은 형식(`nextAction: CONSENT_REQUIRED`, `startPath: /parent/onboarding`) + refresh 쿠키. 같은 IP 가입 한도 (#415, 5.1) | ACC-01 | 핵심 |
+| POST | `/auth/parent/login` | 공개 | 학부모 ID·비밀번호 로그인 `{loginId,password}` → refresh 응답과 같은 형식 + refresh 쿠키. 5회 실패 15분 잠금 (#415, 5.1) | ACC-03 | 핵심 |
 | POST | `/auth/refresh` | 쿠키 | access token 재발급 | ACC-04 | 제안 |
 | POST | `/auth/logout` | 인증 | refresh token 폐기 | ACC-04 | 제안 |
 | POST | `/auth/student/logout` | 학생 Bearer | 해당 학생 세션만 폐기, 보호자 refresh·기기 쿠키 유지 | ACC-04, ACC-05 | 핵심 |
@@ -253,9 +259,10 @@
 | POST | `/auth/student/devices` | 공개 | 페어링 코드로 기기 등록 `{pairingCode, label}` → 기기 자격증명 쿠키 발급, 등록 자녀 프로필 반환 (P01, 3.11) | ACC-14 | 제안 |
 | GET | `/auth/student/profiles` | 기기 쿠키 | 이 기기에 등록된 자녀 프로필 `{childId, nickname, pinSet, pinLocked}` (P01, `/children` 확장과 같은 필드명) | ACC-05 | 제안 |
 | POST | `/auth/student/login` | 기기 쿠키 | 학생 진입(단독): `{childId, pin}` → 학생 세션(`STUDENT` 토큰) 발급. refresh 미발급 (P01, 3.11) | ACC-05 | 제안 |
-| GET | `/me` | 인증 | 본인 정보·역할·관리자 권한 | ACC-09 | 우선1 |
+| GET | `/me` | 인증 | 본인 정보·역할·관리자 권한·로그인 수단(`authMethod`, 비밀번호 학부모는 `loginId`) | ACC-09 | 우선1 |
 | PATCH | `/me` | 인증 | 본인 정보 수정 | ACC-09 | 우선1 |
 | POST | `/me/reauth` | 인증 | Google 재인증 시작 `{purpose, childId?, scope?}` → `{challengeId, authorizationUrl, expiresAt}`, callback 후 `{challengeId}`로 단기 `reauthToken` 수령 (5.6) | ACC-10 | 우선1 |
+| POST | `/me/reauth/password` | 학부모 | 비밀번호 계정의 재확인 `{purpose, childId?, scope?, password}` → `{reauthToken, expiresAt}` 바로 발급. Google 계정은 409 (#415, 5.6) | ACC-10 | 우선1 |
 | GET | `/auth/google/reauth/callback` | 공개(재인증 상태 쿠키) | Google 재인증 callback → 완료 안내 HTML(원래 탭에 challengeId 알림 후 창 닫기) (5.6) | ACC-10 | 우선1 |
 | GET | `/me/consents` | 학부모 | 동의 이력(주체·문서 버전·시점·철회 상태) | ACC-02 | 제안 |
 | POST | `/me/consents` | 학부모 | 현재 문서의 동의 항목 저장 `{consents:[{documentId,version,agreed}], childId?}`. 계정은 TERMS·PRIVACY, 자녀는 GUARDIAN | ACC-02 | 제안 |
@@ -1028,26 +1035,27 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 ### 5.1 #36 Google OAuth·토큰 구현 계약 (개정 P01 정렬)
 
-인증 경로의 정식 공개 계약은 [core-service OpenAPI](../../contracts/openapi/core-service.yaml). 이 절은 부모·관리자 Google 인증과 동석 학생 진입, 학생 기기·PIN은 3.11.
+인증 경로의 정식 공개 계약은 [core-service OpenAPI](../../contracts/openapi/core-service.yaml). 이 절은 부모·관리자 Google 인증, 관리자·학부모 ID·비밀번호 로그인과 동석 학생 진입, 학생 기기·PIN은 3.11.
 
 - 기기 진입 3개 경로(`POST /auth/student/devices`, `GET /auth/student/profiles`, `POST /auth/student/login`)만 Bearer 검사에서 제외. POST는 다른 쿠키 API와 같이 정확한 web Origin·`X-Requested-With` 검사 유지. 다른 메서드·유사 경로와 `/auth/student-sessions`는 제외하지 않음
 
 - 학부모·관리자: Google core 콜백 → refresh 쿠키 → web `/oauth/complete` → refresh → `/me`. access는 HS256, 기본 15분·메모리 보관. refresh는 256비트 난수·SHA-256 해시 저장, 최초 로그인부터 최대 7일이며 회전으로 연장하지 않는다. 재사용 시 해당 세션 폐기.
 - 관리자 ID·비밀번호(#369, 2026-11-09): `POST /auth/admin/login {loginId,password}`는 `user_account.login_id`가 같고 `role=ADMIN`·`status=ACTIVE`이며 `admin_credential` 행이 있는 계정만 받는다. 가입 API는 없고 운영자가 `scripts/admin_account_sql.py`로 행을 만들거나 비밀번호 재설정·비활성화한다. 비밀번호는 PBKDF2-SHA256(60만 회, 보호자 비밀번호와 같은 해시)으로만 저장한다. 없는 ID·틀린 비밀번호·비관리자·비활성 계정은 같은 401 `INVALID_CREDENTIALS`(없는 ID도 해시 검사를 한 번 해 응답 시간 차이를 줄임), 연속 5회째 실패부터 15분간 423 `ADMIN_LOGIN_LOCKED`이며 실패 횟수는 오류 응답 전에 커밋한다. 성공하면 실패 횟수를 지우고 `audit_log`에 `ADMIN_PASSWORD_LOGIN`을 남긴 뒤 Google 로그인과 같은 ADMIN 세션·refresh 쿠키를 발급한다(이전 refresh 쿠키의 세션은 폐기). 정확한 web Origin·`X-Requested-With` 검사를 받는다. web은 `/admin/login`에서만 이 폼을 보여 주고 사용자 화면에는 관리자 로그인 링크·문구를 두지 않는다. 기존 Google 관리자 로그인은 유지한다.
+- 학부모 ID·비밀번호(#415, 2026-11-09): 학부모는 Google 또는 ID·비밀번호 중 한 가지로 가입·로그인한다. 두 방법은 자동 연결하지 않으며(같은 사람이라도 별개 계정, `ACCOUNT_EXISTS` 원칙 유지) 한 계정은 한 가지 로그인 수단만 쓴다. `POST /auth/parent/signup {loginId,password,name}`은 아이디(영문·숫자 4~30자, 앞뒤 공백 제거 후 소문자로 저장·비교, `@` 불가라 Google 계정의 이메일 login_id와 겹치지 않음)·비밀번호(8~128자)·이름(1~80자)을 검사해 400 `VALIDATION_FAILED`, 이미 쓰는 아이디는 409 `LOGIN_ID_TAKEN`이다. 같은 IP는 Redis 고정 창으로 기본 10분 5회(`AUTH_SIGNUP_LIMIT_PER_IP`·`AUTH_SIGNUP_LIMIT_WINDOW`)까지이며 넘으면 429 `SIGNUP_RATE_LIMITED`, Redis 장애는 503 `SIGNUP_UNAVAILABLE`이다. 중복 아이디 거절은 횟수에 넣지 않는다. 성공하면 `user_account`(PARENT·ACTIVE, `login_id`=아이디, `oauth_provider`·`oauth_subject`·레거시 `password_hash` NULL, `AUTH_NEW_ACCOUNT_DEMO=true`면 `is_demo`)와 `parent_credential`(PBKDF2 해시)을 만들고 `audit_log`에 `PARENT_PASSWORD_SIGNUP`을 남긴 뒤 Google 신규 가입과 같은 세션·refresh 쿠키를 발급한다(이전 refresh 쿠키의 세션은 폐기, `nextAction: CONSENT_REQUIRED`, `startPath: /parent/onboarding`). `POST /auth/parent/login {loginId,password}`는 관리자 로그인과 같은 규칙이다. 없는 ID·틀린 비밀번호·Google 계정·관리자·비활성 계정은 같은 401 `INVALID_CREDENTIALS`(없는 ID도 더미 해시 검사), 연속 5회째 실패부터 15분간 423 `LOGIN_LOCKED`이고 잠금 뒤 횟수는 0으로 되돌린다. 실패 횟수는 오류 응답 전에 커밋하며 비밀번호 재확인(5.6) 실패와 함께 센다. 성공 감사는 `PARENT_PASSWORD_LOGIN`. 두 경로 모두 정확한 web Origin·`X-Requested-With` 검사를 받는다. 비밀번호 찾기·로그인 상태의 비밀번호 변경 API는 없다.
 - 학생(동석·단독 공통): access 전용, refresh 미발급. 동석 `/auth/student-sessions`는 별도 학생 auth_session(`parent_session_id` = 학부모 세션)을 만들고, 학부모 세션은 `locked_at`을 기록하고 version을 올려 잠근다. 학부모 refresh 쿠키는 지우지 않는다. 잠긴 세션의 `/auth/refresh`는 refresh 토큰을 소비하지 않고 401 `PARENT_SESSION_LOCKED`이며 기존 부모 access는 `SESSION_CHANGED`로 거부한다. 단독 PIN 로그인은 별도 학생 auth_session을 생성하며 기존 부모 세션을 변경하지 않는다.
 - 학부모 복귀(보호자 비밀번호, 2026-11-03): `POST /auth/parent-unlock {password}`는 refresh 쿠키의 잠긴 학부모 세션과 계정의 보호자 비밀번호를 확인한다. 성공하면 잠금을 풀고 version을 올리며, 그 세션에서 들어간 학생 세션을 폐기하고, refresh를 회전해 refresh 응답과 같은 본문·쿠키를 준다. 실패는 비밀번호 실패 횟수를 커밋한 뒤 401 `GUARDIAN_PASSWORD_INVALID`(`remainingAttempts`), 5회째와 이후는 423 `GUARDIAN_PASSWORD_LOCKED`, 미설정은 409 `GUARDIAN_PASSWORD_NOT_SET`이다. 이때는 Google 로그인으로 돌아오며, 새 로그인은 이전(잠긴) 세션과 그 학생 세션을 폐기한다. 잠기지 않은 세션은 refresh와 같이 처리한다.
 - 보호자 비밀번호는 `guardian_password`(계정당 1행)에 PBKDF2 해시·실패 횟수·잠금 시각만 저장한다. 설정·변경은 `PUT /me/guardian-password`에서 `GUARDIAN_PASSWORD` 재인증 grant(5.6)를 같은 트랜잭션에서 1회 소비하며, 성공 시 실패 횟수·잠금을 초기화한다. 탈퇴 요청 시 삭제한다.
 - JWT에는 `sub`(계정 UUID), `sid`, `ver`, `role`, `studentId`(학생만), `iss`, `aud`, `iat`, `exp`, `jti`를 넣는다. 매 요청에서 세션·현재 계정·자녀 연결·동의를 확인한다. 기기 해제 시 기존 학생 access를 즉시 폐기하는 별도 정책은 추가하지 않는다.
 - 학부모 access 기본 15분, 학생은 `AUTH_STUDENT_ACCESS_TTL`로 별도 관리하며 초기 기본값은 15분이다. 학생 만료·새로고침 시 자동 refresh하지 않고 학생 진입 화면으로 이동한다. 기기·PIN API로 단독 재진입하며 미등록 기기는 등록을 안내한다. 토큰을 영구 저장해 새로고침을 우회하지 않는다.
 - 부모 refresh 응답 `{accessToken,expiresIn,role,child:null,nextAction,startPath}` + 회전 쿠키. 동석 응답 `{accessToken,expiresIn,role:STUDENT,child,nextAction:READY,startPath:/student/home}`, Set-Cookie 없음(잠긴 학부모 refresh 유지). child는 `{id,nickname,grade,birthYear}`(기존 #7 소비자 계약)이다. 단독 PIN 로그인 응답(3.11)은 `child.childId`를 쓰므로 프론트 경계에서 정규화한다.
-- `GET /me`는 부모/관리자에게 `{userId,name,email,role,permissions,child:null,nextAction,startPath}`, 학생에게 `{role,child,nextAction,startPath}`만 반환한다. 학생에게 부모 개인정보·권한을 반환하지 않는다. 학생은 `/me/consents` 등 부모 계정 관리 API를 사용할 수 없다.
+- `GET /me`는 부모/관리자에게 `{userId,name,email,loginId,authMethod,role,permissions,child:null,nextAction,startPath}`, 학생에게 `{role,child,nextAction,startPath}`만 반환한다. `authMethod`는 Google subject가 있으면 `GOOGLE`, 없으면 `PASSWORD`(#415)다. `loginId`는 비밀번호 학부모만 아이디를 주고 그 외는 null이며, 비밀번호 학부모의 `email`은 null이다. 학생에게 부모 개인정보·권한을 반환하지 않는다. 학생은 `/me/consents` 등 부모 계정 관리 API를 사용할 수 없다.
 - 로그아웃은 현재 쿠키의 부모 세션 또는 Bearer로 전달된 학생 세션을 종료하고 refresh 쿠키를 삭제한다. 다른 기기는 유지한다. 쿠키 API는 정확한 web Origin과 `X-Requested-With: XMLHttpRequest`를 요구한다.
 - web/API 동일 origin. refresh 쿠키 `sagomungchi_refresh`: HttpOnly·Secure·SameSite=Strict·Path=/api/v1/auth. OAuth 상태 쿠키 `sagomungchi_oauth`: HttpOnly·Secure·SameSite=Lax·Path=/api/v1/auth/google, 10분. 로컬 HTTP만 Secure=false.
 - Google state·nonce·PKCE S256 및 ID 토큰 JWKS 서명·iss·aud·exp·nonce 검증. 서비스 토큰을 URL에 넣지 않는다. callback 성공은 `/oauth/complete`, 실패는 `/login?oauthError=<고정 코드>`.
 - 부모/관리자 refresh는 Web Locks로 탭 간 직렬화한다. 학생 전환·로그아웃 알림을 받은 다른 탭은 토큰·캐시를 지우며 학생 refresh로 다시 로그인하지 않는다. 학생→부모 복귀는 Google 로그인부터 시작한다.
 - PIN/동석 학생의 종료는 `POST /auth/student/logout`을 사용한다. `Origin`·`X-Requested-With`와 유효한 학생 Bearer를 검증하고 그 세션만 폐기한다(204, Cache-Control: no-store, Set-Cookie 없음). 누락·만료·위조 Bearer는 401, 다른 역할·출처는 403이며 동반된 보호자 refresh로 대체 인증하거나 보호자 세션을 폐기하지 않는다. 기존 `/auth/logout`의 보호자·관리자 로그아웃 계약은 유지한다.
 - 학생에서 보호자 로그인 화면으로 전환할 때는 해당 탭의 access·화면 캐시만 정리하며 전역 LOGOUT을 방송하지 않는다. 탭별 비밀정보 없는 `sessionStorage` 전환 표식으로 새로고침 후에도 보호자 쿠키 자동 복원을 차단하고, Google OAuth 완료 후에만 보호자 역할을 복원한다. PIN 진입 및 학생 만료 경로는 유지한다.
-- 계정 복구·비밀번호 변경 API는 Google 단일 로그인 범위에서 제외(기기·PIN 저장은 core V13, Google 재인증은 5.6). 관리자 비밀번호 재설정도 API 없이 `scripts/admin_account_sql.py`로만 한다(#369).
+- 계정 복구·비밀번호 찾기·비밀번호 변경 API는 제공하지 않는다(기기·PIN 저장은 core V13, Google·비밀번호 재인증은 5.6). 학부모 ID·비밀번호 계정도 비밀번호 찾기가 없으며 화면에서 문의하기·새 아이디 가입을 안내한다(#415). 관리자 비밀번호 재설정도 API 없이 `scripts/admin_account_sql.py`로만 한다(#369).
 
 ### 5.2 #43 모델 레지스트리 확정 계약
 
@@ -1130,10 +1138,11 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 새 HTTP API·이벤트 버전·DB 컬럼은 필요 없다. 요청 접수·원작업 연결·감사는 core(2.8 #47 REPORT 실패 작업 재처리).
 - 요청·결과 예시: [report-admin-retry](../../contracts/examples/report-admin-retry/). 기존 [공유 메시지 계약](../../contracts/events/report-messages.md)과 같은 스키마를 사용한다.
 
-### 5.6 #45 계정 관리·Google 재확인·삭제·탈퇴 계약
+### 5.6 #45 계정 관리·Google·비밀번호 재확인·삭제·탈퇴 계약
 
 - 기존 Google 로그인과 별도 재인증 흐름을 사용한다. `POST /me/reauth`에 `{purpose: PIN_CHANGE|CHILD_UNLINK|CHILD_DELETE|WITHDRAWAL|GUARDIAN_PASSWORD|CHILD_TRANSFER|TRANSFER_ACCEPT, childId?, scope?}`를 보내면 `{challengeId,authorizationUrl,expiresAt}`를 반환하고 HttpOnly/Secure/SameSite=Lax 재인증 상태 쿠키를 설정한다. CHILD_DELETE는 PROFILE/RECORDS scope를 반드시 지정한다. WITHDRAWAL·GUARDIAN_PASSWORD·TRANSFER_ACCEPT는 자녀/scope를 허용하지 않는다. CHILD_TRANSFER를 포함한 다른 자녀 작업은 childId 필수이며 CHILD_DELETE 외에는 scope를 허용하지 않는다.
 - Google redirect URI는 web origin + `/api/v1/auth/google/reauth/callback`이다. 기존 GoogleOAuthClient의 code·PKCE·서명·iss·aud·exp·nonce 검증을 재사용한다. callback은 현재 계정의 Google sub와 일치할 때만 challenge를 VERIFIED로 바꾸며 로그인/refresh를 발급하지 않는다. 계정 선택은 비밀번호/MFA 재입력을 보장하지 않는다. 클라이언트는 원래 로그인 세션을 유지한 상태에서 `POST /me/reauth`에 `{challengeId}`를 보내 `{reauthToken,expiresAt}`를 한 번 수령한다. 아직 callback 전이면 409 REAUTH_PENDING이다. callback 응답은 작은 안내 HTML이다(#425). 성공하면 같은 출처 `BroadcastChannel('sagomungchi-reauth')`로 `{type:"REAUTH_VERIFIED",challengeId}`만 알리고 `window.close()`를 호출하며, 닫히지 않으면 "확인이 끝났습니다. 이 창을 닫고 원래 화면으로 돌아가 주세요."를 보인다. 원래 탭은 자기 challengeId 알림을 받으면 위 수령 요청을 자동으로 보내고, 수동 "완료 확인"은 대체 수단으로 남긴다. 팝업은 `opener=null`이라 postMessage 대신 BroadcastChannel을 쓴다. 응답 헤더는 `Content-Security-Policy`(script-src·style-src nonce, default-src 'none'), `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`다. 실패(403 REAUTH_REQUIRED 조건)도 스크립트 없는 안내 HTML로 응답한다.
+- 비밀번호 재확인(#415): ID·비밀번호 학부모는 Google 대신 `POST /me/reauth/password {purpose, childId?, scope?, password}`로 로그인 비밀번호를 다시 입력해 `{reauthToken,expiresAt}`를 바로 받는다. 목적·자녀·범위 규칙과 소유권 검사는 `/me/reauth`와 같다. 비밀번호가 맞으면 검증·발급을 마친 `reauth_challenge`와 `reauth_grant`를 한 트랜잭션에 만들어, 기존 7개 사용처(탈퇴·보호자 비밀번호·학생 PIN·자녀 해제·자녀 삭제·자녀 이관·이관 수락)의 consume 검사는 바뀌지 않는다. 틀리면 403 `REAUTH_PASSWORD_INVALID`이고 로그인과 실패 횟수를 함께 세어 5회째부터 15분간 423 `LOGIN_LOCKED`이다(횟수는 오류 응답 전에 커밋). Google 계정(또는 `parent_credential` 행이 없는 계정)은 409 `REAUTH_METHOD_MISMATCH`. 성공 감사는 `PASSWORD_REAUTHENTICATED`. 필수 동의 누락 상태에서도 `/me/reauth`와 같은 동의 복구 목록으로 허용한다. 웹은 `/me`의 `authMethod`가 `PASSWORD`면 Google 새 탭 대신 비밀번호 입력을 보인다.
 - challenge 10분, reauthToken 5분(설정값, 세션 만료 이내). 토큰은 256비트 난수, DB에는 SHA-256 해시만 저장한다. 프론트는 메모리에만 보관한다. 사용자·세션 ID/version·purpose·childId·삭제 scope에 결합하며 변경 트랜잭션에서 정확히 1회 소비한다. 일반 access/로그인 상태는 재인증 증명이 아니다. 잘못된 계정·만료·위조·다른 범위·중복 사용은 403 REAUTH_REQUIRED다.
 - #58은 `ReauthenticationService.consume(identity, token, ReauthPurpose.PIN_CHANGE, childId)`를 PIN 변경의 같은 트랜잭션 안에서 호출한다(MANDATORY). 기존 인증/현재 자녀 권한 검사를 별도로 수행한다.
 - PATCH /me `{name}` → `{userId,name}`; PATCH /children/{id} `{nickname?,grade?}` → 현재 자녀. 공백·범위 밖 입력 거부. 기존 기록/학년을 변경하지 않는다. 학생 역할 금지, 계정·자녀의 현재 동의를 검사한다.
