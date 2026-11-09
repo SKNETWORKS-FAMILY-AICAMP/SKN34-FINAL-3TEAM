@@ -18,10 +18,12 @@ function VersionCard({ version: v }: { version: ModelVersion }) {
   const mutation = useAdminMutation(() => adminApi.modelAction(v.id, action, reason.trim(), scopes, reanalysis))
   const record = v.evalResult
   const allowed = (action === 'activate' ? record?.evidence.evaluatedScopes : record?.approval?.scopes) ?? []
-  const blockers = actionBlockers(v, action, scopes, reason, approved, mutation.isPending)
+  const blockers = v.status === 'ACTIVE' ? ['현재 활성 버전입니다. 다른 버전을 승인하거나 이전 승인 버전으로 되돌릴 수 있습니다.']
+    : actionBlockers(v, action, scopes, reason, approved, mutation.isPending)
   const verb = action === 'activate' ? '활성화' : '이 버전으로 되돌리기'
   return <article className="ws-card model-version" aria-label={`${v.name} ${v.version}`}>
     <h2>{v.name} · {v.version}</h2><p>{v.kind} · {v.status} · 승인자 {v.approvedBy ?? '미승인'}</p>
+    {v.status === 'ACTIVE' && <p role="status">core 활성화 완료, 로딩은 scoring에서 확인</p>}
     {record ? <>
       <dl className="model-evidence">{Object.entries(EVIDENCE_LABELS).map(([key, label]) => <div key={key}>
         <dt>{label}</dt><dd>{record.evidence[key as keyof typeof EVIDENCE_LABELS]}</dd>

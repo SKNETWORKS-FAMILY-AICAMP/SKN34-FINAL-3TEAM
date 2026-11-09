@@ -25,7 +25,7 @@ function RegistrationForm({ value, onChange, existing, listReady, manifest, sibl
   const conflict = mutation.error instanceof ApiError && mutation.error.problem.code === 'MODEL_VERSION_CONFLICT'
   const changed = original ? Object.keys(paths(value)).filter(key => JSON.stringify(paths(value)[key]) !== JSON.stringify(paths(original)[key])) : []
   const field = (path: string) => <>{changed.includes(path) && <small>수정됨</small>}
-    {validation.errors.filter(e => e.path === path).map(e => <small className="model-error" key={e.message}>{e.message}</small>)}
+    {!saved && validation.errors.filter(e => e.path === path).map(e => <small className="model-error" key={e.message}>{e.message}</small>)}
     {conflict && ['name', 'version'].includes(path) && <small className="model-error">{mutation.error?.message}</small>}</>
   const locked = saved || mutation.isPending
   const evidence = (key: keyof ModelRegistration['evaluation'], data: string | string[]) => onChange({ ...value, evaluation: { ...value.evaluation, [key]: data } })

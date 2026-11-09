@@ -142,3 +142,16 @@ node tests/qr-device-browser.mjs
 검증 결과: 웹 단위 236건, 운영 빌드 API 대역 브라우저 9건(1440/768/390), 기존 MSW 브라우저 24건, 테스트 포함 TypeScript·lint·운영 빌드·운영 목업 제외 검사 통과. 실제 core/DB 적립·차감 종단 검증은 포함하지 않는다.
 
 화면 점검: 기존 디자인의 컴포넌트 확장으로 새 방향 추첨 없이 적용했다. 상단의 뭉치·현재 테마·잔액을 이 화면의 표정으로 유지한다. 디자인 검사기에는 실제 모달의 그림자(`heavy-shadow`)·비활성 배경 가림(`covered-text`)·기존 개발 안내의 바깥 여백(`edge-text`)을 명시적 예외로 줬다. 결과는 0 FAIL·8 WARN이며, 경고는 기존 종이색·글꼴·강조 테두리·아이콘/테마 그림의 다색과 배경 화면의 안내 대비·숫자/제목 규칙이다. 이번 연동 작업에서 기존 학생 디자인 전체를 바꾸지 않기 위해 유지했다. 소스 lint의 `unlock` 경고는 사용자 문구가 아닌 API 식별자 오탐이다. 캡처/측정은 `frontend/web/.taste-skill/reward-after/`와 `reward-inspection/final/`에 로컬 보관했다.
+
+## 10. #366·#367 모델 버전 운영 화면 (2026-11-09)
+
+- 최신 develop `239fc8cc`를 로컬 병합했다. 감사 통합 테스트·OpenAPI·API 명세·계약 테스트는 자동 병합됐으며 미해결 충돌은 없다.
+- 공용 범위·사유·승인을 제거했다. 등록 폼의 평가 범위와 카드별 활성화/복귀 범위를 분리하고, 최초 활성화는 평가 범위에서 기본 미선택, 복귀는 원 승인 범위 안에서 선택한다. 사유·승인·재분석 계획과 처리 상태는 버전마다 독립이다.
+- 평가셋·비교·검토·한계, 미적용 평가 범위, 비활성 이유를 함께 표시한다. ACTIVE는 core 활성화 완료만 나타내며 scoring replica별 로딩/readiness와 합성 추론은 별도 확인하도록 안내한다. 알려진 범위 목록 밖 값은 경고이며 유효한 키를 막지 않는다.
+- 브라우저에서 2MB 이하 registration·manifest JSON을 읽어 모델별 편집 폼으로 가져온다. 각 항목을 기존 등록 API로 따로 보내며 파일 업로드·자동 활성화는 하지 않는다. `<버킷>` 일괄 치환, 전체 페이지 목록과 가져온 항목 간 중복, 필수 근거·범위 형식·manifest 일치·알 수 없는 요청 필드를 검증한다. 수정 표시, 항목별 422, 이름·버전에 연결한 409를 제공한다.
+- 최상위/manifest `주의`를 한계 후보로 모으고 명시한 `evaluation.limitations`(빈 목록 포함)는 그대로 우선한다. core에도 기본 빈 목록 필드를 추가해 재조회 때 보존한다. MODEL artifactUri 필수 검증 및 OpenAPI 조건을 맞췄다.
+- MODEL_VERSION 감사 detail은 name/version/scopes/reason/reanalysisPlanned/previousVersionId만 조회·펼치기 한다. 다른 대상의 원문과 허용되지 않은 필드는 반환하지 않는다. 관련 HTTP·저장 테스트를 추가했다.
+- 전달받은 실제 `registration_1103.json`·`manifest.json`으로 1440/768/390에서 가져오기→버킷 치환→두 항목 개별 등록을 확인했다. 이 검증의 서버는 운영 빌드에 연결한 HTTP 대역이다. 실제 core/DB 등록·모델 산출물 해시·scoring 로딩 검증으로 간주하지 않는다. 기존 운영 ACTIVE 레코드는 변경하지 않았다. 원본 두 파일·가중치는 커밋하지 않았다.
+- 검증: 웹 단위 243건, 기존 MSW 브라우저 24건, 모델 운영 브라우저 9건, 꾸미기 운영 브라우저 9건, TypeScript·lint·운영 빌드 통과. 모델·감사·주간 테마 계약 테스트 14건 통과. 브라우저 검증은 `npm run build` 후 `npm run test:models` / `npm run test:rewards`. 실제 파일 재현은 `MODEL_REGISTRATION_FILE`·`MODEL_MANIFEST_FILE` 환경 변수로 경로를 전달한다(없으면 합성 JSON 사용).
+- 로컬 core 검증 제약: 설치된 JDK/Gradle이 프로젝트 컴파일 전 `Unable to establish loopback connection`으로 실패했다. 로컬 Docker 엔진도 사용할 수 없어 core/DB 테스트 통과를 주장하지 않는다. CI의 core 테스트 확인이 필요하다.
+- #367 core 후속 범위: 등록 감사의 source·가져온 JSON SHA-256·변경 필드·산출물 해시 저장은 별도 계약/구현이 남는다. 웹은 가져온 원본의 SHA-256와 manifest 파일 해시를 확인용으로 표시하며, 아직 없는 감사 입력 필드를 임의로 POST하지 않는다. 따라서 이 변경으로 #367 전체 완료를 선언하지 않는다.

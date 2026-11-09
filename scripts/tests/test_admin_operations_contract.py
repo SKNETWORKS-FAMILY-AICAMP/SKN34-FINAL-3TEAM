@@ -148,6 +148,8 @@ class AdminOperationsContracts(unittest.TestCase):
                 # #367 adds optional evidence limitations; retain the original evidence fingerprint.
                 if section=='schemas' and name=='EvaluationEvidence':
                     self.assertEqual(reviewed['properties'].pop('limitations')['default'],[])
+                if section=='schemas' and name=='RegisterModelVersion':
+                    self.assertEqual(reviewed.pop('allOf')[0]['then']['required'],['artifactUri'])
                 canonical=json.dumps(reviewed,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
                 self.assertEqual(expected,hashlib.sha256(canonical).hexdigest(),f'{section}/{name}')
     def test_admin_paths_and_retry_key(self):

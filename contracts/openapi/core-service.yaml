@@ -9564,6 +9564,14 @@ components:
       - name
       - version
       - evaluation
+      allOf:
+      - if:
+          properties: {kind: {const: MODEL}}
+          required: [kind]
+        then:
+          required: [artifactUri]
+          properties:
+            artifactUri: {type: string, minLength: 1}
       properties:
         kind:
           $ref: '#/components/schemas/ModelKind'
