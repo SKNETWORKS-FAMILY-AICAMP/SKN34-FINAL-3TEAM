@@ -166,7 +166,8 @@
       }
     ],
     "ingressFromApps": [
-      "ai-service"
+      "ai-service",
+      "core-service"
     ]
   },
   "probes": {

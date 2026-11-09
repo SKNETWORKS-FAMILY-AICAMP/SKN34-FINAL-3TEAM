@@ -30,7 +30,7 @@ pdb:
   enabled: false
 networkPolicy:
   enabled: true
-  ingressFromApps: [ai-service]
+  ingressFromApps: [ai-service, core-service]
   egressToApps:
     - {name: core-service, port: 8080}
   egressToPlatform:

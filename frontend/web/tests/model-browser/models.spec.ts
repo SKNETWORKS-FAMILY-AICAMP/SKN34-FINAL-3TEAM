@@ -24,6 +24,12 @@ async function server(page: Page, models: ModelVersion[] = []) {
       }
       return route.fulfill({ response })
     }
+    if (path === '/admin/models/preflight') {
+      state.writes.push({ path, body: req.postDataJSON() })
+      const files = req.postDataJSON().files as { file: string }[]
+      return json({ status: state.failure ? 'FAIL' : 'PASS', code: state.failure ? 'FILE_CHECK_FAILED' : 'FILES_AND_METADATA_VERIFIED',
+        files: files.map(f => ({ file: f.file, status: state.failure ? 'FAIL' : 'PASS', code: state.failure ? 'HASH_MISMATCH' : 'OK' })) })
+    }
     if (path === '/auth/refresh') return json({ accessToken: 'synthetic-admin', role: 'ADMIN' })
     if (path === '/me') return json({ role: 'ADMIN', permissions: ['SERVICE_OPS'], nextAction: 'READY', startPath: '/admin/home' })
     if (path === '/notifications' || path === '/admin/audit-logs') return json({ items: path.includes('audit') ? state.audits : [], page: 0, size: 100, totalElements: state.audits.length })
@@ -92,7 +98,7 @@ test('서술·논술 카드의 범위와 사유는 독립이고 복귀는 원 �
 async function upload(page: Page) {
   const requests = [entry('m2-klue-narrative', '3.0', ['judgment/grade-5/narrative', 'judgment/grade-6/narrative']), entry()]
   const registration = process.env.MODEL_REGISTRATION_FILE ? await readFile(process.env.MODEL_REGISTRATION_FILE) : Buffer.from(JSON.stringify({ 주의: '품질 승인 근거가 아니라 평가 기록', requests }))
-  const manifest = process.env.MODEL_MANIFEST_FILE ? await readFile(process.env.MODEL_MANIFEST_FILE) : Buffer.from(JSON.stringify({ models: requests.map((r, i) => ({ name: r.name, version: r.version, scope: r.evaluation.evaluatedScopes, ...(i === 1 ? { 주의: '임시 경계' } : {}), files: [{ file: 'model.safetensors', bytes: 442539656, sha256: 'a'.repeat(64) }] })) }))
+  const manifest = process.env.MODEL_MANIFEST_FILE ? await readFile(process.env.MODEL_MANIFEST_FILE) : Buffer.from(JSON.stringify({ models: requests.map((r, i) => ({ name: r.name, version: r.version, scope: r.evaluation.evaluatedScopes, ...(i === 1 ? { 주의: '임시 경계' } : {}), files: ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'train_info.json', 'score_cuts.json', 'model.safetensors'].map(file => ({ file, bytes: 100, sha256: 'a'.repeat(64) })) })) }))
   await page.getByLabel('registration JSON', { exact: true }).setInputFiles({ name: 'registration_1103.json', mimeType: 'application/json', buffer: registration })
   const first = page.getByRole('form', { name: '가져온 모델 1', exact: true }), second = page.getByRole('form', { name: '가져온 모델 2', exact: true })
   await expect(first).toBeVisible()
@@ -148,4 +154,23 @@ test('등록 422·409는 각 항목에 남고 다른 항목은 등록할 수 있
   await second.getByRole('button', { name: '버전 등록', exact: true }).click()
   await expect(second.getByRole('status').filter({ hasText: '등록 완료' })).toContainText('등록 완료')
   await expect(first.getByRole('button', { name: '버전 등록', exact: true })).toBeEnabled()
+})
+
+test('사전 검사는 파일 확인만 표시하고 입력 변경 시 결과를 만료한다', async ({ page }) => {
+  const state = await server(page)
+  const { first } = await upload(page)
+  const check = first.getByRole('button', { name: '사전 검사', exact: true })
+  await check.click()
+  await expect(first.getByText('파일·형식 확인 완료', { exact: true })).toBeVisible()
+  expect(state.writes).toHaveLength(1)
+  expect(state.writes[0].path).toBe('/admin/models/preflight')
+  expect(state.models).toHaveLength(0)
+  await first.getByLabel('아티팩트 주소', { exact: true }).fill('s3://local-validation-models/models/changed/3.0/')
+  await expect(first.getByText('입력이 변경되었습니다. 사전 검사를 다시 실행해 주세요.')).toBeVisible()
+  await expect(first.getByText('파일·형식 확인 완료', { exact: true })).toHaveCount(0)
+  state.failure = 1
+  await check.click()
+  await expect(first.getByText('파일 검사 실패', { exact: true })).toBeVisible()
+  expect(state.models).toHaveLength(0)
+  expect(state.writes.every(w => w.path === '/admin/models/preflight')).toBe(true)
 })

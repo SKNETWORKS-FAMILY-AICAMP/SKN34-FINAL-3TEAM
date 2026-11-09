@@ -23,7 +23,12 @@ def test_documented_operations_and_response_models_match_runtime():
     assert (
         actual
         == documented
-        == {("get", "/versions"), ("post", "/m2/scores"), ("post", "/m1/checks")}
+        == {
+            ("get", "/versions"),
+            ("post", "/m2/scores"),
+            ("post", "/m1/checks"),
+            ("post", "/models/preflight"),
+        }
     )
     for name in (
         "ModelVersionSummary",

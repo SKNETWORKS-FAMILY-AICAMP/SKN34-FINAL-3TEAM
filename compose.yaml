@@ -142,6 +142,7 @@ services:
       LEARNING_URL: http://learning-service:8081
       AI_URL: http://ai-service:8000
       REPORT_URL: http://report-api:8002
+      SCORING_URL: http://scoring-service:8001
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?base64 JWT 서명 키 설정 필요}
       AUTH_WEB_ORIGIN: ${AUTH_WEB_ORIGIN:-http://localhost:5173}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}

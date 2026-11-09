@@ -1075,6 +1075,16 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 등록 요청의 승인 여부·활성화 범위·사유·재분석 계획·승인자 및 알 수 없는 필드는 400 VALIDATION_FAILED. 유효한 타입의 업무 검증 실패는 기존 422 MODEL_APPROVAL_REJECTED, 중복은 409 MODEL_VERSION_CONFLICT. 공통 Problem Details 형식은 유지한다.
 - 프론트 전달용 예시와 역할 분담: [#367 API 전달 문서](../report/issue-367-registration-api.md). 화면·웹 타입은 프론트 담당 범위다.
 
+#### 5.2.1 모델 파일 사전 검사 (#368)
+
+- 관리자 `POST /api/v1/admin/models/preflight`: SERVICE_OPS 권한. core가 내부 토큰을 붙여 scoring `POST /internal/models/preflight`로 동기 중계한다. core HTTP 제한 20초, 자동 재시도 없음.
+- 요청: `name`, `version`, `artifactUri`, manifest의 `files[{file,bytes,sha256}]`. config.json·tokenizer.json·tokenizer_config.json·train_info.json·score_cuts.json·model.safetensors를 각각 한 번씩 받는다. 승인 관련 필드·알 수 없는 필드는 거부한다.
+- 응답: `{status: PASS|FAIL, code, files:[{file,status,code}]}`. 검사 대상 파일이 없거나 불일치해도 검사 결과는 HTTP 200/FAIL이다. 잘못된 요청 400, 권한 401/403, scoring 응답 오류 502, 연결/시간 제한 503은 기존 RFC 9457 형식이다.
+- scoring은 설정된 S3 버킷의 models/ 경로만 검사한다. 각 파일 HEAD로 존재·크기를 확인한다. 세 메타데이터 JSON만 ETag 조건(If-Match)으로 고정하여 최대 1MiB 본문을 읽고 SHA-256을 직접 대조한다. 나머지 파일은 S3가 제공하는 전체 SHA-256을 비교하며 ETag·사용자 메타데이터·COMPOSITE 체크섬을 파일 해시로 사용하지 않는다. 없는 체크섬은 CHECKSUM_UNAVAILABLE이다.
+- `validate_metadata`를 재사용해 학습 입력·점수 경계와 config의 회귀 출력 수를 확인한다. 모델·토크나이저 로딩, 점수 추론, 파일 쓰기는 하지 않는다. scoring은 15초 작업 예산과 개별 S3 연결/읽기 1초·재시도 없음으로 제한한다.
+- 결과는 `MODEL_PREFLIGHT` 감사 action의 SUCCESS/FAILURE에 남긴다. 등록 전 검사여서 target_id는 null이며 이름·버전·경로·manifest 파일·결과를 detail에 저장한다. evaluation/evidence와 기존 모델 레코드는 변경하지 않는다.
+- 화면 결과는 해당 입력 스냅샷에만 유효하다. 입력 변경 시 재검사를 안내한다. 검사 통과는 파일·형식 확인일 뿐 품질 승인·활성화·추론 성공이 아니며 자동 등록/활성화하지 않는다.
+
 ### 5.3 #37 동의·자녀 구현 계약
 
 - 문서 조회·저장·철회·자녀 등록의 정식 스키마는 core OpenAPI를 따른다. GET /consent-documents는 3종 현재 문서를 목록 봉투로 반환한다. 현재=KST 시행일 이하에서 effective_from·created_at·id 내림차순 첫 문서. 게시 문서가 없거나 불완전하면 503 CONSENT_DOCUMENTS_UNAVAILABLE이며 가짜 본문을 생성하지 않는다. 1.0 문서 3종(공식 원문 기반, 시연용·법률 검토 없음)은 core V25 마이그레이션이 게시한다(#235, 출처는 auth-account 보고서). 개정은 기존 행을 고치지 않고 새 version 행을 추가한다.

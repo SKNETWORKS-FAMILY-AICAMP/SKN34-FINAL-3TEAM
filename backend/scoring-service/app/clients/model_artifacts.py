@@ -16,15 +16,15 @@ class S3ModelArtifacts:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
 
-    def _client(self):
+    def _client(self, connect_timeout=5, read_timeout=30):
         # 자격 증명은 SDK 체인(환경 변수·IRSA 등)으로만 읽는다.
         return boto3.client(
             "s3",
             endpoint_url=self._settings.s3_endpoint_url,
             region_name=self._settings.s3_region,
             config=Config(
-                connect_timeout=5,
-                read_timeout=30,
+                connect_timeout=connect_timeout,
+                read_timeout=read_timeout,
                 retries={"total_max_attempts": 1},
                 s3={"addressing_style": "path"},
             ),

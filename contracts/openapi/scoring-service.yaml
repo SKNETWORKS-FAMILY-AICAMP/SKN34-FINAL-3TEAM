@@ -8,6 +8,38 @@ servers:
 security:
 - InternalToken: []
 paths:
+  /models/preflight:
+    post:
+      summary: 내부 모델 파일·형식 사전 검사
+      description: 등록·품질 승인·활성화를 수행하지 않는다. 가중치 본문은 읽지 않으며 S3 전체 SHA-256이 없거나 COMPOSITE이면
+        CHECKSUM_UNAVAILABLE. 작은 JSON 3개만 최대 1MiB씩 읽는다. core 제한 20초, scoring 작업 예산 15초.
+        파일 검사 실패도 200의 FAIL이며 core 감사 result=FAILURE로 저장한다.
+      operationId: preflightInternalModel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelPreflightRequest'
+      responses:
+        '200':
+          description: 파일·형식 검사 결과. 품질 승인 아님
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelPreflightResult'
+        '400':
+          description: VALIDATION_FAILED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: UNAUTHENTICATED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /versions:
     get:
       summary: 실제 로딩 완료한 모델 name·version·revision (name 순 정렬)
@@ -89,6 +121,119 @@ components:
       in: header
       name: X-Internal-Token
   schemas:
+    ModelPreflightArtifact:
+      type: object
+      additionalProperties: false
+      required:
+      - file
+      - bytes
+      - sha256
+      properties:
+        file:
+          type: string
+          enum:
+          - config.json
+          - tokenizer.json
+          - tokenizer_config.json
+          - train_info.json
+          - score_cuts.json
+          - model.safetensors
+        bytes:
+          type: integer
+          minimum: 0
+        sha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+    ModelPreflightRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      - version
+      - artifactUri
+      - files
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        version:
+          type: string
+          minLength: 1
+          maxLength: 100
+        artifactUri:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        files:
+          type: array
+          minItems: 6
+          maxItems: 6
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/ModelPreflightArtifact'
+          description: 여섯 파일명을 각각 한 번씩 포함한다.
+    ModelPreflightResult:
+      type: object
+      additionalProperties: false
+      required:
+      - status
+      - code
+      - files
+      properties:
+        status:
+          type: string
+          enum:
+          - PASS
+          - FAIL
+        code:
+          type: string
+          enum:
+          - FILES_AND_METADATA_VERIFIED
+          - INVALID_ARTIFACT_URI
+          - UNSUPPORTED_MODEL
+          - PREFLIGHT_TIMEOUT
+          - FILE_CHECK_FAILED
+          - OUTPUT_MISMATCH
+          - INVALID_METADATA
+        files:
+          type: array
+          maxItems: 6
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - file
+            - status
+            - code
+            properties:
+              file:
+                type: string
+                enum:
+                - config.json
+                - tokenizer.json
+                - tokenizer_config.json
+                - train_info.json
+                - score_cuts.json
+                - model.safetensors
+              status:
+                type: string
+                enum:
+                - PASS
+                - FAIL
+              code:
+                type: string
+                enum:
+                - OK
+                - SIZE_MISMATCH
+                - JSON_TOO_LARGE
+                - HASH_MISMATCH
+                - INVALID_METADATA
+                - CHECKSUM_UNAVAILABLE
+                - FILE_MISSING
+                - ACCESS_DENIED
+                - OBJECT_CHANGED
+                - STORAGE_UNAVAILABLE
     ModelVersionSummary:
       properties:
         name:
