@@ -101,7 +101,7 @@
 - 자기 평가: 마무리 뒤·완료 전. `{checks:[{elementId, checked}]}` 일부만 보내도 되고 재전송은 `checked`만 변경. 응답은 요소마다 `{elementId, label, selfChecked, aiChecked, quote}`
 - 마무리 경합: 판정 `saveResult` 트랜잭션 시작에서 시도 행을 `FOR UPDATE`로 다시 읽어 닫혔으면 되묻기를 저장하지 않음(마무리 대기·거절은 P04에 없는 조건이라 채택하지 않음)
 - 잠금 순서는 모두 시도 → 판정
-- P20·P21([서비스 기획 방향](service-direction.md)): 돌아보기 저장(학습 완료) 성공 뒤 core가 포인트를 적립하고(적립 연결은 #389 후속, 구현 예정), 커뮤니티 공개가 켜진 학생이면 learning에 공유를 요청한다(#388 구현, 학생·미션당 1개, 처음 마무리한 시도의 마지막 답변). 시작 요청 `context`가 `THEME_DAY`면 신규 시도만 요일 검사
+- P20·P21([서비스 기획 방향](service-direction.md)): 돌아보기 저장(학습 완료) 성공 뒤 core가 포인트를 적립하고(core #389 구현, 미션은 시도 상세로 확인), 커뮤니티 공개가 켜진 학생이면 learning에 공유를 요청한다(#388 구현, 학생·미션당 1개, 처음 마무리한 시도의 마지막 답변). 시작 요청 `context`가 `THEME_DAY`면 신규 시도만 요일 검사
 
 ## 6. 학습 기록 조회 (#27)
 
@@ -826,7 +826,7 @@ learning `Element`에 `code`·`goodThought`를 더했을 때 응답을 받는 �
 
 ### 후속 (이슈 댓글 초안, 직접 달지 않음)
 
-- #389(원장·`RewardService.earn` 머지, 사건 연결은 후속): 되돌아보기·완주 적립 근거는 `POST …/review-views` 응답 `{firstViewThisWeek, completed}`. 완주는 월~금 다섯 문제 각 요일(KST) 안 학습 완료. 학습 완료 적립 보충에 필요한 시도 `context`는 learning 시도 상세 응답에 아직 없음(후속)
+- #389(원장·`RewardService.earn`, 사건 연결 모두 core 구현): 되돌아보기·완주 적립 근거는 `POST …/review-views` 응답 `{firstViewThisWeek, completed}`. 완주는 월~금 다섯 문제 각 요일(KST) 안 학습 완료. 학습 완료 적립 보충은 주간 테마 응답 `days[].attemptStatus`(`COMPLETED`)로 하므로 시도 `context`가 없어도 된다(추가 문제는 보충 대상 아님)
 - #391: 주간 요약 `GET /internal/students/{id}/weekly-theme/summary?weekStart`(SYSTEM + 학생 scope) 응답은 learning OpenAPI `WeeklyThemeSummary`. 일일 리포트 `problems[].context`는 learning 기록 응답에 `context`를 더하는 후속 작업이 필요
 - #395: 관리자 응답에 `version`·`publishedVersion`·`reviewRequested`, 게시 검사 `errors[].code` 6종이 더 있음. 별도 검토(승인) 화면 없이 "검토 요청 → 게시"
 - #393: 학생 응답 `days[].title`·`review.missions[].title` 채움, 학년군에 게시 테마가 없으면 404

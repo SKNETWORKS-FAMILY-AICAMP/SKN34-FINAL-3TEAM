@@ -8113,10 +8113,11 @@ components:
         look:
           type: object
           additionalProperties: false
-          required: [theme, companion]
+          required: [theme, companion, equipped]
           properties:
             theme: {$ref: '#/components/schemas/StudentLookTheme'}
             companion: {$ref: '#/components/schemas/StudentLookCompanion'}
+            equipped: {$ref: '#/components/schemas/LookEquipped'}
     CommunityPost:
       type: object
       additionalProperties: false
