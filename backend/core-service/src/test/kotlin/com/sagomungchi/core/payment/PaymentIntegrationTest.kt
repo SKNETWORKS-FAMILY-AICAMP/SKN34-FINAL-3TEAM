@@ -120,6 +120,7 @@ class PaymentIntegrationTest: PostgresRepositoryTest() {
         jdbc.execute("DROP TRIGGER IF EXISTS issue48_reject_subscription ON subscription")
         jdbc.execute("DROP FUNCTION IF EXISTS issue48_reject_subscription()")
         jdbc.update("DELETE FROM payment_premium_usage WHERE student_id=?",student)
+        jdbc.update("DELETE FROM mission_daily_usage WHERE student_id=?",student)
         jdbc.update("DELETE FROM pg_webhook_event WHERE order_no IN (SELECT a.pg_order_no FROM payment_charge_attempt a JOIN payment_order o ON o.id=a.order_id WHERE o.parent_user_id=?)",owner)
         jdbc.update("DELETE FROM refund_request WHERE requested_by=?",owner)
         jdbc.update("DELETE FROM payment_charge_attempt WHERE order_id IN (SELECT id FROM payment_order WHERE parent_user_id=?)",owner)
@@ -395,6 +396,54 @@ class PaymentIntegrationTest: PostgresRepositoryTest() {
         transactions.locked(owner) { analysis.recordAttempt(owner,student,UUID.randomUUID()) }
         assertEquals("USED",jdbc.queryForObject("SELECT status FROM payment_premium_usage WHERE student_id=?",String::class.java,student))
         error("REFUND_PREMIUM_USAGE_PRESENT") { refunds.request(owner,paid.paymentId!!,"분석 이후 요청") }
+    }
+    @Test fun `free theme day and extra starts share one per KST day while review resume and the next day stay open`() {
+        jdbc.update("UPDATE product SET limits=jsonb_set(limits,'{dailyMissions}','1') WHERE id=?",free)
+        val first=UUID.randomUUID();val other=UUID.randomUUID();val attempt=UUID.randomUUID()
+        val permit=entitlements.missionStart(student,"THEME_DAY",first) { fail("한도 전에는 이어하기 확인을 하지 않음") }
+        assertTrue(permit.counted);assertFalse(permit.premiumUsage)
+        entitlements.missionStarted(permit,attempt,first);entitlements.missionStarted(permit,attempt,first)
+        assertEquals(listOf(mapOf("usage_date" to java.sql.Date.valueOf("2026-10-28"),"mission_id" to first)),
+            jdbc.queryForList("SELECT usage_date,mission_id FROM mission_daily_usage WHERE student_id=?",student))
+        assertEquals("USAGE_LIMIT_REACHED",assertFailsWith<BusinessException> {
+            entitlements.missionStart(student,"THEME_DAY",other) { fail("다른 미션은 기록 시도가 없음") } }.code)
+        // 무료에 열려 있는 추가 문제도 같은 하루 1개에 들어간다
+        error("USAGE_LIMIT_REACHED") { entitlements.missionStart(student,"EXTRA",other) { false } }
+        // 한도 뒤에도 같은 미션의 진행 중 시도(learning 200)는 이어서 풀 수 있고, 완료된 시도로 새로 시작하는 것은 막는다
+        entitlements.missionStart(student,"THEME_DAY",first) { assertEquals(attempt,it); true }
+        error("USAGE_LIMIT_REACHED") { entitlements.missionStart(student,"THEME_DAY",first) { false } }
+        entitlements.missionStart(student,"THEME_REVIEW",other) { fail("되돌아보기는 한도와 무관") }
+        at=Instant.parse("2026-10-28T15:00:00Z") // KST 10/29 00:00 초기화
+        val extra=entitlements.missionStart(student,"EXTRA",other) { false }
+        assertEquals(java.time.LocalDate.parse("2026-10-29"),extra.date);assertTrue(extra.counted);assertFalse(extra.premiumUsage)
+        entitlements.missionStarted(extra,UUID.randomUUID(),other)
+        error("USAGE_LIMIT_REACHED") { entitlements.missionStart(student,"THEME_DAY",first) { false } }
+        // 무료 상품에서 추가 문제를 끄면 코드 수정 없이 프리미엄 전용
+        jdbc.update("UPDATE product SET features=jsonb_set(features,'{extraMissions}','false') WHERE id=?",free)
+        error("PREMIUM_REQUIRED") { entitlements.missionStart(student,"EXTRA",other) { false } }
+        jdbc.update("UPDATE product SET features=jsonb_set(features,'{extraMissions}','\"no\"') WHERE id=?",free)
+        error("PAYMENT_PRODUCT_UNAVAILABLE") { entitlements.missionStart(student,"EXTRA",other) { false } }
+        jdbc.update("UPDATE product SET features='{}'::jsonb,limits=limits-'dailyMissions' WHERE id=?",free)
+        error("PAYMENT_PRODUCT_UNAVAILABLE") { entitlements.missionStart(student,"THEME_DAY",other) { false } }
+        // 무료 시도는 프리미엄 사용을 남기지 않음
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM payment_premium_usage WHERE student_id=?",Int::class.java,student))
+    }
+    @Test fun `premium extra is premium usage only while the free product turns extra missions off`() {
+        val paid=approved();val mission=UUID.randomUUID();val attempt=UUID.randomUUID()
+        val day=entitlements.missionStart(student,"THEME_DAY",mission) { fail("프리미엄은 하루 한도 없음") }
+        assertFalse(day.counted);entitlements.missionStarted(day,UUID.randomUUID(),mission)
+        // 무료에도 열려 있으면 프리미엄 사용이 아니다(환불 판정 영향 없음)
+        val open=entitlements.missionStart(student,"EXTRA",mission) { false }
+        assertFalse(open.counted);assertFalse(open.premiumUsage);entitlements.missionStarted(open,UUID.randomUUID(),mission)
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM mission_daily_usage WHERE student_id=?",Int::class.java,student))
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM payment_premium_usage WHERE student_id=?",Int::class.java,student))
+        jdbc.update("UPDATE product SET features=jsonb_set(features,'{extraMissions}','false') WHERE id=?",free)
+        val extra=entitlements.missionStart(student,"EXTRA",mission) { false }
+        assertTrue(extra.premiumUsage)
+        entitlements.missionStarted(extra,attempt,mission);entitlements.missionStarted(extra,attempt,mission)
+        assertEquals(listOf(mapOf("kind" to "EXTRA_MISSION","source_id" to attempt,"status" to "USED")),
+            jdbc.queryForList("SELECT kind,source_id,status FROM payment_premium_usage WHERE student_id=?",student))
+        error("REFUND_PREMIUM_USAGE_PRESENT") { refunds.request(owner,paid.paymentId!!,"추가 문제 사용 후 요청") }
     }
     @Test fun `lost cancellation response recovers refund with one cancel call`() {
         val paid=approved();val r=refunds.request(owner,paid.paymentId!!,"합성 사유")

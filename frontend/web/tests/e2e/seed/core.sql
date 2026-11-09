@@ -11,7 +11,7 @@ ON CONFLICT DO NOTHING;
 -- 무료(기본 이용권)·유료(결제 E2E) 상품
 INSERT INTO product (id, code, name, price, billing_cycle, child_limit, features, limits, active, created_at) VALUES
   (:'free_product_id'::uuid, 'E2E-FREE', 'E2E 무료', 0, 'MONTHLY', 1, '{}',
-   '{"dailyConversations":0,"reportNarrative":false}', true, now()),
+   '{"dailyMissions":1,"dailyConversations":0,"reportNarrative":false}', true, now()),
   ('00000000-0000-4000-8000-0000000e2e02', 'E2E-PLUS', 'E2E 프리미엄', 14900, 'MONTHLY', 1, '{}',
    '{"dailyConversations":30,"reportNarrative":true}', true, now())
 ON CONFLICT DO NOTHING;

@@ -60,7 +60,7 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
 ```
 
 - 구현 예정(P25, [서비스 기획 방향](service-direction.md)): 일일 리포트 고정 대화는 core가 범위(그날)와 리포트 요약을 요청에 넣는다. ai는 report를 직접 호출하지 않고 기존 흐름을 그대로 쓴다
-- 구성: `analysis_agent/graph.py`(조립), `service.py`(`AnalysisService`: 범위·기한·프롬프트 선택, 그래프 실행·최종 상태 → 이벤트, #253), `state.py`, `context.py`(`AgentContext`), `nodes/`(understand·retrieve·respond), `tools.py`(`RecordTools`, 호출마다 권한 재확인), `calculators.py`, `verification.py`, `templates.py`, `prompts.py`(`analysis@2`), `router.py`(SSE), `clients/learning_client.py`(learning 기록 조회 HTTP, #65)
+- 구성: `analysis_agent/graph.py`(조립), `service.py`(`AnalysisService`: 범위·기한·프롬프트 선택, 그래프 실행·최종 상태 → 이벤트, #253), `state.py`, `context.py`(`AgentContext`), `nodes/`(understand·retrieve·respond), `tools.py`(`RecordTools`, 호출마다 권한 재확인), `calculators.py`, `verification.py`, `templates.py`, `prompts.py`(`analysis@3`, #392), `router.py`(SSE), `clients/learning_client.py`(learning 기록 조회 HTTP, #65)
 - LLM 호출은 기존 `LlmClient` 사용(재시도·사용량 이벤트 `ANALYSIS`·대체 모델 유지). classify는 `generate`(구조화 출력), answer는 `stream`(일반 텍스트). LangGraph는 분기·상태·스트리밍만
 - 도구 선택은 질문 유형 → 도구 표(6유형). 학생·기간은 LLM이 아니라 core가 확인한 `scope`만 사용
 
@@ -454,7 +454,7 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 |---|---|---|
 | `judgment` | `ai/judgment` | `judgment/prompts.py`, `judge@2` |
 | `followup` | `ai/followup` | `followup/prompts.py`, `followup@4` |
-| `analysis` | `ai/analysis` | `analysis_agent/prompts.py`, `analysis@2` |
+| `analysis` | `ai/analysis` | `analysis_agent/prompts.py`, `analysis@3` (#392) |
 | `reportNarrative` | `ai/report-narrative` | `report_narrative/prompts.py`, `report@1` |
 | `reportTemplate` | `ai/report-template` | `analysis_agent/template_prompts.py`, `analysis-template@1` (#280) |
 | `missionDraft` | `ai/mission-draft` | `mission_draft/prompts.py`, `mission-draft@1` (#354) |
@@ -557,3 +557,41 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 - 비용: 바꾸기 전에는 논술에서 ai 1번에 LLM 호출 2번이 모두 시간 초과, learning 3번 반복으로 호출 6번에 결과가 없었다. 바꾼 뒤에는 보통 호출 1번에 끝난다. 시간 초과 호출의 과금 여부는 우리 사용량 기록(토큰 없음)으로는 알 수 없다
 - P12 예외라 팀 확인이 필요하다(이슈 #353 확인 필요)
 - 확인: 바꾼 뒤 로컬에서 learning 주기 작업으로 `gpt-6-luna` 입력 방식 6가지 초안이 모두 첫 시도에 `READY`(learning.md 22절). ai 테스트 `test_call_can_override_timeout_and_retries_without_changing_defaults`·`test_mission_draft_waits_60_seconds_once_with_63_second_deadline`
+
+## 10. 일일 리포트 고정 대화 리포트 요약 입력 (#392)
+
+2026-11-06 결정 P25(FN-RPT-16)의 ai 몫. core가 메시지마다 고정 판을 읽어 넘긴 리포트 요약을 분석 에이전트 입력에 더한다. ai는 report를 직접 호출하지 않는다(core 쪽은 [core 보고서 12장](core-gateway.md#12-일일-리포트-고정-대화-392)).
+
+### 구현
+
+| 영역 | 내용 |
+|---|---|
+| 요청 | `AnalysisRequest.report: ReportSummary \| None`(`reportId`, `revision ≥ 1`, `date`, `metrics[{label, count}]`, `problems[{title, context, judgment, elements[{label, satisfied}]}]`). 있으면 `scope.from = scope.to = date`가 아니면 400 |
+| 프롬프트 | `analysis@3`. 답변 user 본문에 `[고정 리포트] {날짜} 일일 리포트, 문제 N개` + 지표·문제 JSON(판정·맥락은 웹 학부모 화면과 같은 한글 문구). `ANSWER_SYSTEM` 규칙 1에 `[고정 리포트]` 숫자 허용, 규칙 6에 판정 문구를 능력 평가로 바꾸지 않기. 일반 대화는 블록이 없다 |
+| 대조 | `verification.report_numbers`: 리포트 지표 개수·문제 수·문제 제목 속 숫자를 `compute` 노드에서 `Computation.extra_numbers`에 더한다. 인용 대조는 그대로 learning `[원문]`만 |
+| 범위 확인 | 고정 대화에서 `DIFFERENT_PERIOD`면 "이 대화는 {날짜} 일일 리포트로 고정돼 있어요. 다른 날은 새 대화에서 물어봐 주세요."(`PINNED_PERIOD_MESSAGE`). `current`는 고정 범위 그대로 |
+
+### 결정
+
+1. **리포트 인용은 받지 않음**: 요약에 원문을 넣으면 근거(`Evidence`) 구조와 core 근거 ID 저장을 바꿔야 한다. 인용은 그날 learning 기록으로 충분해 개수·판정만 받는다(사용자 확인)
+2. **프롬프트 버전 올림**: 모듈 규칙대로 `analysis@2 → analysis@3`. 어떤 환경에서 `analysis@2`를 활성 버전으로 지정해 두었다면 이 이미지에서는 `503 AI_PROMPT_VERSION_UNAVAILABLE`이 되므로 배포 때 `analysis@3`으로 바꾸거나 활성 항목을 지운다
+
+### 검증
+
+- `uv run pytest`: 고정 리포트 요약이 답변 프롬프트에 들어가고 요약 숫자가 대조를 통과(`test_router`), 같은 답변이 일반 대화에서는 규칙 응답, 하루가 아닌 범위 400, 고정 대화의 다른 기간 안내 문구(`test_nodes`)
+
+
+## #367 백엔드 등록 계약 구현 (2026-11-09)
+
+기존 등록 API에 EvaluationEvidence.limitations(기본 [])와 registration 출처 메타데이터를 추가했다. MODEL의 artifactUri 누락은 등록 시 422로 거부한다. 기존 evaluation JSONB를 사용하므로 DB 마이그레이션은 없다. 기존 행은 limitations=[]로 읽히고 평가 근거를 덮어쓰지 않는다.
+
+MODEL_REGISTER 감사 detail에 source·jsonSha256·manifestSha256·modifiedFields·artifactFiles를 기록한다. 원본 파일을 서버에 업로드하지 않으므로 해시/크기는 클라이언트 신고로 취급하며 파일·품질 검증 성공으로 간주하지 않는다. 등록 요청의 승인 관련 값·알 수 없는 필드는 거부하며 기존 사람 승인·활성화·복귀와 이벤트 계약은 유지한다.
+
+[프론트 전달 문서](issue-367-registration-api.md)에 원본 바이트 해시 방식, 요청 예시, 응답 위치, 오류와 각 담당 범위를 정리했다. 후속 통합에서 PR #409의 프론트와 연결해 등록 출처 메타데이터도 함께 전달한다. 검증 결과는 해당 문서의 통합 검증 항목을 기준으로 본다.
+
+검증: core ModelVersionHttpTest·ModelVersionRepositoryTest·ModelVersionMessagingTest 총 23개 및 bootJar 통과. 등록/목록의 limitations, 구버전 JSONB, MANUAL 기본값, JSON_IMPORT 감사·인증 사용자, 중복 시 원본 유지, 자동 활성화 없음, 필수 경로·해시·파일 크기·상대 경로·알 수 없는 필드 거부와 기존 활성화·복귀를 확인했다. 계약 검증기 전체 187개 통과. 이는 최초 백엔드 단독 검증 기록이다. 후속 프론트 통합 결과는 [등록 API 통합 검증](issue-367-registration-api.md)을 참고한다. GitHub CI와 운영 품질 승인은 로컬 검증과 구분한다.
+
+
+## #368 사전 검사 구현 (2026-11-09)
+
+scoring의 읽기 전용 파일·메타데이터 검사, core 관리자 동기 중계와 별도 MODEL_PREFLIGHT 감사, web 미리보기 검사 버튼을 연결했다. 가중치 본문은 다운로드하지 않으며 전체 S3 SHA-256이 없으면 실패한다. core→scoring local/prod NetworkPolicy와 서비스 URL을 반영했다. 실제 local core·scoring·MinIO·PostgreSQL에서 정상/해시 불일치/누락을 검증했다. 후속 AWS 읽기 전용 확인에서 실제 Pod Identity 연결·S3 읽기 정책과 12개 객체 HEAD를 확인했다. 객체 모두 S3 SHA-256이 없으며 scoring replicas=0이라 실제 Pod 실행 검증은 남았다. 업로드 방식 조율이 필요해 해당 항목은 미완료로 유지한다. 운영 배포·재가동·객체 및 정책 변경은 하지 않았다. [계약·검증·원문 체크리스트](issue-368-model-preflight.md)를 참고한다.

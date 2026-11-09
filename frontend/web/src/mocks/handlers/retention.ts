@@ -85,24 +85,32 @@ export const retentionHandlers = [
       guard(request)
       const me = mockStudent()
       const key = request.headers.get('Idempotency-Key')
-      if (!key) fail(400, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency-Key가 필요합니다.')
+      if (!key || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key))
+        fail(400, 'VALIDATION_FAILED', 'Idempotency-Key(UUID)가 필요합니다.')
       const itemKey = decodeURIComponent(String(params.itemKey))
       const receipt = `${me.id}:${key}`
       if (retentionState.unlockKeys[receipt]) {
         if (retentionState.unlockKeys[receipt] !== itemKey) fail(409, 'IDEMPOTENCY_KEY_REUSED', '다른 요청에 쓴 키입니다.')
-        return { itemKey, unlocked: true, balance: balanceOf(me.id) }
+        return retentionState.unlockResults[receipt] ?? { itemKey, unlocked: true, balance: balanceOf(me.id) }
       }
       const item = lookCatalog(me.id).find((i) => i.itemKey === itemKey) ??
         // 판매 중단 아이템은 목록에서 빠지므로 관리자 목록으로 한 번 더 찾는다.
         retentionState.items.filter((i) => i.code === itemKey).map((i) => ({ itemKey: i.code, pricePoints: i.pricePoints, unlocked: false, onSale: false }))[0]
       if (!item) fail(404, 'LOOK_ITEM_NOT_FOUND', '없는 꾸미기 항목입니다.')
-      if (item!.unlocked || isUnlocked(me.id, itemKey)) return { itemKey, unlocked: true, balance: balanceOf(me.id) }
+      if (item!.unlocked || isUnlocked(me.id, itemKey)) {
+        const result = { itemKey, unlocked: true as const, balance: balanceOf(me.id) }
+        retentionState.unlockKeys[receipt] = itemKey
+        retentionState.unlockResults[receipt] = result
+        return saved(result)
+      }
       if (!item!.onSale) fail(409, 'LOOK_ITEM_NOT_ON_SALE', '지금은 해금할 수 없는 항목이에요.')
       if (balanceOf(me.id) < item!.pricePoints) fail(409, 'INSUFFICIENT_POINTS', '포인트가 모자라요.')
       retentionState.ledger[me.id].push({ eventType: 'UNLOCK', amount: -item!.pricePoints, createdAt: new Date().toISOString(), sourceKey: receipt })
       unlockedOf(me.id).push(itemKey)
       retentionState.unlockKeys[receipt] = itemKey
-      return saved({ itemKey, unlocked: true, balance: balanceOf(me.id) })
+      const result = { itemKey, unlocked: true as const, balance: balanceOf(me.id) }
+      retentionState.unlockResults[receipt] = result
+      return saved(result)
     }),
   ),
 

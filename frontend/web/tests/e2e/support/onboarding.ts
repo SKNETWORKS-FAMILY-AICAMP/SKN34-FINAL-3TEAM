@@ -10,7 +10,10 @@ export async function onboardParent(page: Page, nickname: string) {
   const response = await documentsLoaded
   expect(response.ok()).toBe(true)
   const { items } = await response.json() as { items: ConsentDocument[] }
-  expect(items.map((document) => document.kind).sort()).toEqual(['GUARDIAN', 'PRIVACY', 'TERMS'])
+  // #388(V31)부터 선택 동의 COMMUNITY도 함께 온다. 필수 문서는 그대로 세 종류다
+  expect(items.filter((document) => document.required).map((document) => document.kind).sort())
+    .toEqual(['GUARDIAN', 'PRIVACY', 'TERMS'])
+  expect(items.filter((document) => !document.required).map((document) => document.kind)).toEqual(['COMMUNITY'])
 
   // V25 이후에는 합성 시드보다 최신인 공식 문서가 선택된다. 현재 응답의 제목으로 실제 체크박스를 찾는다.
   async function agree(kind: ConsentDocument['kind']) {

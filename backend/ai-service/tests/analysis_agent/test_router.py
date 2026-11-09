@@ -94,7 +94,7 @@ def test_verified_llm_answer() -> None:
         "contentAllowed": True,
     }
     assert [(e["kind"], e["answerId"]) for e in result["evidence"]] == [("ANSWER", "a-2")]
-    assert result["versions"] == {"model": "fake-model", "prompt": "analysis@2"}
+    assert result["versions"] == {"model": "fake-model", "prompt": "analysis@3"}
     assert [r.call_type for r in llm.requests] == ["ANALYSIS", "ANALYSIS"]
     assert len(llm.usages) == 2  # 노드별 LLM 호출마다 사용량 1건
 
@@ -351,3 +351,52 @@ def test_invalid_final_template_is_error_without_result_or_done(monkeypatch):
     assert parsed[-1][1]["code"] == "FINAL_RESPONSE_VERIFICATION_FAILED"
     assert parsed[-1][1]["retryable"] is True
     assert not any(name in {"result", "done"} for name, _ in parsed)
+
+
+# --- 일일 리포트 고정 대화 (#392) ----------------------------------------------
+
+REPORT = {
+    "reportId": "r-1",
+    "revision": 2,
+    "date": "2026-10-20",
+    "metrics": [{"label": "푼 문제", "count": 7}],
+    "problems": [
+        {
+            "title": "쉬는 시간 토론",
+            "context": "THEME_DAY",
+            "judgment": "PARTIAL",
+            "elements": [{"label": "까닭", "satisfied": True}],
+        }
+    ],
+}
+PINNED = {
+    **BODY,
+    "scope": {"studentId": "s-1", "from": "2026-10-20", "to": "2026-10-20"},
+    "report": REPORT,
+}
+
+
+def test_pinned_report_summary_goes_to_prompt_and_its_numbers_verify() -> None:
+    # 7은 리포트 요약에만 있는 숫자: 고정 리포트 대화에서만 대조를 통과
+    llm = FakeLlm(classified("COUNT"), "그날 리포트에는 푼 문제가 7개로 나와요.")
+    parsed = events(post(llm, body=PINNED))
+    result = parsed[-2][1]
+    assert result["source"] == "LLM"
+    assert result["verification"]["numbersMatched"] is True
+    assert result["scope"] == {"childId": "s-1", "from": "2026-10-20", "to": "2026-10-20"}
+    answer_prompt = llm.requests[1].user
+    assert "[고정 리포트] 2026-10-20 일일 리포트, 문제 1개" in answer_prompt
+    assert "일부 확인" in answer_prompt and "PARTIAL" not in answer_prompt
+    assert "주간 테마 오늘 문제" in answer_prompt
+
+
+def test_report_numbers_are_not_allowed_without_report() -> None:
+    llm = FakeLlm(classified("COUNT"), "그날 리포트에는 푼 문제가 7개로 나와요.")
+    result = events(post(llm))[-2][1]
+    assert result["source"] == "TEMPLATE"
+    assert "[고정 리포트]" not in llm.requests[1].user
+
+
+def test_pinned_report_requires_one_day_scope() -> None:
+    response = post(FakeLlm(), body={**PINNED, "scope": BODY["scope"]})
+    assert response.status_code == 400  # 요청 검증 실패 (app.errors)

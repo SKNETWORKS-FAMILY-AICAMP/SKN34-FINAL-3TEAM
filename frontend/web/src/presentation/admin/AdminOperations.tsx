@@ -263,6 +263,9 @@ function AuditLog({ period }: { period: Period }) {
               <p>
                 {a.actorUserId} · {a.targetType} / {a.targetId} · {a.createdAt}
               </p>
+              {a.targetType === 'MODEL_VERSION' && <details><summary>모델 버전 조치 상세</summary>
+                {a.detail ? <dl>{Object.entries({ name: '모델 이름', version: '버전', scopes: '적용 범위', reason: '변경 사유', reanalysisPlanned: '재분석 계획 (실행 아님)', previousVersionId: '이전 버전 ID' }).map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{a.detail![key] == null ? '기록 없음' : typeof a.detail![key] === 'boolean' ? (a.detail![key] ? '있음' : '없음') : Array.isArray(a.detail![key]) ? (a.detail![key] as unknown[]).map(String).join(', ') : String(a.detail![key])}</dd></div>)}</dl> : <p>이 기록에는 조회 가능한 상세 정보가 없습니다.</p>}
+              </details>}
             </article>
           ))}
         </div>

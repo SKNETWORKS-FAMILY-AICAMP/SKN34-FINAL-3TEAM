@@ -44,7 +44,7 @@ def run(node, state, llm: FakeLlm | None = None, tools: FakeRecords | None = Non
 def state(intent: str, empty: bool = False, **extra) -> dict:
     return {
         "request": REQUEST,
-        "prompt_version": "analysis@2",
+        "prompt_version": "analysis@3",
         "intent": intent,
         "computation": compute(intent, records(empty), SCOPE),
         **extra,
@@ -82,6 +82,22 @@ def test_classify_scope_issue_asks_clarification(issue) -> None:
         "childId": STUDENT,
         **PERIOD,
     }
+
+
+def test_pinned_conversation_guides_other_days_to_new_conversation() -> None:
+    pinned = AnalysisRequest.model_validate(
+        {
+            "conversationId": "c-1",
+            "question": "지난주는 어땠어?",
+            "scope": {"studentId": STUDENT, "from": PERIOD["from"], "to": PERIOD["from"]},
+            "report": {"reportId": "r-1", "revision": 1, "date": PERIOD["from"]},
+        }
+    )
+    llm = FakeLlm(Classification(intent="COUNT", scope_issue="DIFFERENT_PERIOD"))
+    update, _ = run(understand.classify, {"request": pinned}, llm)
+    assert update["clarification"].message == understand.PINNED_PERIOD_MESSAGE.format(
+        day=PERIOD["from"]
+    )
 
 
 def test_classify_llm_failure_counts_without_classification() -> None:
@@ -188,7 +204,7 @@ def test_check_confirms_verified_draft() -> None:
     assert result.fallback is None
     assert [e.answer_id for e in result.evidence] == ["a-2"]
     assert result.versions.model == "fake-model"
-    assert result.versions.prompt == "analysis@2"
+    assert result.versions.prompt == "analysis@3"
     assert written == [status("숫자와 인용을 기록과 맞춰 보는 중")]
 
 

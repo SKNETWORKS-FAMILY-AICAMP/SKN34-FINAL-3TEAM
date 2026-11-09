@@ -47,12 +47,7 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
         val shared = learningContext.sharingEnabled(job.studentId)
         val requestedNarrative = shared && job.periodType.narrative && entitlements.narrativeEnabled(job.studentId)
         val body = client.get(job.studentId, "/internal/reports/$reportId", query, requestedNarrative)
-        contract {
-            require(validateIdentity(body) == job.periodType)
-            require(UUID.fromString(body["childId"]?.textValue()) == job.studentId)
-            require(body["period"]["from"].textValue() == job.periodFrom.toString() && body["period"]["to"].textValue() == job.periodTo.toString())
-            if (revision != null) require(body["revision"].intValue() == revision)
-        }
+        validateDetail(job, body, revision)
         val allowed = views.recordWithSharing(UUID.fromString(body["reportId"].textValue()), job.studentId, parent, requestedNarrative)
         if (!allowed.narrativeEnabled) (body as ObjectNode).apply {
             putNull("narrative")
@@ -65,6 +60,19 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
             withoutProblemOriginals(body as ObjectNode)
         (body as ObjectNode).put("parentSharingEnabled", allowed.parentSharingEnabled)
         body.put("periodType", job.periodType.name)
+        return body
+    }
+
+    /**
+     * P25 pinned conversation (#392): the same ownership and contract checks as [detail] for one revision (latest when
+     * null), without view accounting or narrative. The caller turns it into counts and judgments only.
+     */
+    fun pinned(reportId: UUID, revision: Int?): JsonNode {
+        val job = owned(reportId)
+        learningContext.requireShared(job.studentId)
+        val query = revision?.let { mapOf("revision" to it.toString()) } ?: emptyMap()
+        val body = client.get(job.studentId, "/internal/reports/$reportId", query, false)
+        validateDetail(job, body, revision)
         return body
     }
 
@@ -139,6 +147,12 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
         val type = body["periodType"]?.takeUnless { it.isNull }?.let { ReportPeriodType.valueOf(it.textValue()) } ?: ReportPeriodType.WEEKLY
         ReportPeriod(LocalDate.parse(body["period"]?.get("from")?.textValue()), LocalDate.parse(body["period"]?.get("to")?.textValue()), type)
         return type
+    }
+    private fun validateDetail(job: ReportJob, body: JsonNode, revision: Int?) = contract {
+        require(validateIdentity(body) == job.periodType)
+        require(UUID.fromString(body["childId"]?.textValue()) == job.studentId)
+        require(body["period"]["from"].textValue() == job.periodFrom.toString() && body["period"]["to"].textValue() == job.periodTo.toString())
+        if (revision != null) require(body["revision"].intValue() == revision)
     }
     private fun contract(validate: () -> Unit) {
         try { validate() } catch (_: Exception) {

@@ -4,16 +4,20 @@
 않는다. 판정(LLM)·결제·환불은 호출하지 않는다. 부모 refresh 쿠키는 사용할 때마다 회전하므로
 새 값을 같은 fixture 파일에 바로 다시 쓴다(재사용하면 core가 세션을 폐기한다).
 
-답변을 낼 미션은 학생 미션 목록에서 고른다. 판정을 부르지 않으므로 확인마다 진행 중 시도가 하나
-남고, 그 시도에 첫 답변을 다시 내면 learning이 422를 준다. 그래서 fixture missionId가 시작 전이면
-그 미션을, 아니면 answer.inputType이 같은 다른 시작 전 미션을 쓴다. 시작 전 미션이 없으면 fixture
-미션의 진행 중 시도를 돌려받아 저장된 답변을 조회만 한다(read-answer, 답변 쓰기는 확인하지 않음).
+답변을 낼 미션은 학생 주간 테마(#387, GET /students/me/weekly-theme)에서 고른다. 월~금은 오늘 열린
+요일 문제를 context THEME_DAY로, 토·일은 그 주 마무리한 문제를 THEME_REVIEW(fixture missionId 우선)로
+시작한다. context를 빼면 EXTRA(추가 문제)가 되어 무료 학생의 하루 1개를 쓰고, 무료 상품에서 EXTRA를 끄면
+무료 학생은 403, 프리미엄 학생은 확인마다 환불 판정용 프리미엄 사용이 기록되므로 EXTRA는 쓰지 않는다. 무료 학생은 THEME_DAY 신규 시작이 하루 1개라, 같은 날 다시
+확인하면 진행 중 시도를 200으로 돌려받는다. 판정을 부르지 않으므로 그 시도에 이미 답변이 있으면 다시 내지
+않고(learning 422) 저장된 답변을 조회만 한다(read-answer). 답변 입력 방식은 시작 응답의 mission.inputType에
+맞는 fixture 답변(answer 또는 answers[])을 쓴다.
 
 fixture 파일(작업자 PC에만 두고 Git·Actions Secret에 넣지 않음):
 {
   "dedicatedDemoFixture": true, "allowAnswerSubmission": true,
   "childId": "<UUID>", "studentPin": "<PIN>", "studentDeviceCookie": "<student_device 값>",
-  "missionId": "<공개 시연 미션 UUID>", "answer": {"inputType": "NARRATIVE", "text": "..."},
+  "missionId": "<되돌아보기 때 먼저 고를 테마 미션 UUID>", "answer": {"inputType": "NARRATIVE", "text": "..."},
+  "answers": [{"inputType": "CHOICE", "...": "..."}],  (선택: 다른 입력 방식 테마 문제용)
   "parentRefreshCookie": "<sagomungchi_refresh 값, 최대 7일>"
 }
 """
@@ -33,8 +37,6 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 REFRESH_COOKIE = "sagomungchi_refresh"
 MAX_BODY = 4 * 1024 * 1024
-MISSION_PAGE_SIZE = 100
-MAX_MISSION_PAGES = 10
 STEP_COUNT = 6
 
 
@@ -77,7 +79,22 @@ def load_fixture(path):
             raise CheckFailed(f"fixture 값 형식 오류: {field}")
     if not isinstance(data.get("answer"), dict) or not data["answer"].get("inputType"):
         raise CheckFailed("fixture answer에 inputType이 필요합니다")
+    extra = data.get("answers", [])
+    if not isinstance(extra, list) or not all(
+        isinstance(item, dict) and item.get("inputType") for item in extra
+    ):
+        raise CheckFailed("fixture answers는 inputType이 있는 답변 목록이어야 합니다")
     return data
+
+
+def answer_for(data, input_type):
+    """시작한 테마 문제 입력 방식에 맞는 fixture 답변. 입력 방식을 모르면 기본 answer."""
+    if not input_type:
+        return data["answer"]
+    for item in [data["answer"], *data.get("answers", [])]:
+        if item.get("inputType") == input_type:
+            return item
+    raise CheckFailed(f"테마 문제 입력 방식 {input_type}에 맞는 fixture 답변이 없음")
 
 
 def save_fixture(path, data):
@@ -135,18 +152,27 @@ def template(path):
     return re.sub(r"[0-9a-fA-F-]{36}", "{id}", path)
 
 
-def fresh_mission(missions, preferred, input_type):
-    """답변을 낼 시작 전 미션 ID. fixture 미션을 먼저, 없으면 같은 입력 방식의 첫 미션."""
-    candidates = [
-        str(item.get("id"))
-        for item in missions
-        if isinstance(item, dict)
-        and item.get("status") == "NOT_STARTED"
-        and item.get("inputType") == input_type
+def theme_mission(theme, preferred):
+    """(미션 ID, context). 오늘 열린 요일 문제는 THEME_DAY, 없으면 토·일 되돌아보기의 마무리한 문제."""
+    days = theme.get("days")
+    review = theme.get("review")
+    if not isinstance(days, list) or not isinstance(review, dict):
+        raise CheckFailed("주간 테마 응답 형식이 아님")
+    today = [
+        str(day.get("missionId"))
+        for day in days
+        if isinstance(day, dict) and day.get("state") == "OPEN" and day.get("missionId")
     ]
-    if str(preferred) in candidates:
-        return str(preferred)
-    return candidates[0] if candidates else None
+    if today:
+        return today[0], "THEME_DAY"
+    done = [
+        str(item.get("missionId"))
+        for item in review.get("missions") or []
+        if isinstance(item, dict) and item.get("completed") is True and item.get("missionId")
+    ]
+    if review.get("open") is True and done:
+        return (str(preferred) if str(preferred) in done else done[0]), "THEME_REVIEW"
+    raise CheckFailed("오늘 시작할 테마 문제나 되돌아보기 문제가 없음")
 
 
 def rotated_refresh(set_cookies):
@@ -193,34 +219,16 @@ def verify(base, fixture_path, opener=None):
         student = step("student-login", student_login)
 
         def pick_mission():
-            missions = []
-            page = 0
-            while True:
-                _, body, _ = call(
-                    base,
-                    "GET",
-                    f"/api/v1/missions?page={page}&size={MISSION_PAGE_SIZE}",
-                    token=student,
-                    opener=opener,
-                )
-                items = body.get("items")
-                if not isinstance(items, list):
-                    raise CheckFailed("미션 목록 응답 형식이 아님")
-                missions.extend(items)
-                page += 1
-                if (
-                    not items
-                    or len(missions) >= int(body.get("totalElements") or 0)
-                    or page >= MAX_MISSION_PAGES
-                ):
-                    break
-            fresh = fresh_mission(
-                missions, data["missionId"], data["answer"]["inputType"]
+            _, body, _ = call(
+                base,
+                "GET",
+                "/api/v1/students/me/weekly-theme",
+                token=student,
+                opener=opener,
             )
-            # 시작 전 미션이 없으면 fixture 미션의 진행 중 시도를 읽기만 한다
-            return fresh or str(data["missionId"])
+            return theme_mission(body, data["missionId"])
 
-        mission = step("pick-mission", pick_mission)
+        mission, context = step("pick-mission", pick_mission)
 
         def start_attempt():
             status, body, _ = call(
@@ -228,16 +236,18 @@ def verify(base, fixture_path, opener=None):
                 "POST",
                 f"/api/v1/missions/{mission}/attempts",
                 token=student,
-                body={},
+                body={"context": context},
                 opener=opener,
             )
             if status not in (200, 201) or not body.get("attemptId"):
                 raise CheckFailed("시도 시작 응답에 attemptId가 없음")
             # 201은 새 시도. 200은 진행 중 시도 재사용이며 답변이 있으면 다시 내지 않는다
             answered = status == 200 and bool(body.get("answers"))
-            return body["attemptId"], answered
+            mission_body = body.get("mission")
+            input_type = mission_body.get("inputType") if isinstance(mission_body, dict) else None
+            return body["attemptId"], answered, (None if answered else answer_for(data, input_type))
 
-        attempt, answered = step("start-attempt", start_attempt)
+        attempt, answered, answer = step("start-attempt", start_attempt)
 
         def read_answer():
             _, body, _ = call(
@@ -259,7 +269,7 @@ def verify(base, fixture_path, opener=None):
                 "POST",
                 f"/api/v1/attempts/{attempt}/answers",
                 token=student,
-                body=data["answer"],
+                body=answer,
                 headers={"Idempotency-Key": str(uuid.uuid4())},
                 opener=opener,
             )

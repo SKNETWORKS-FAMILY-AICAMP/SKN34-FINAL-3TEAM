@@ -12,14 +12,66 @@ tags:
 - name: Account
 - name: Feedback
 - name: Learning
+- name: WeeklyTheme
 - name: Consent
 - name: Children
 - name: Admin
 - name: ModelRegistry
 - name: Support
+- name: Community
 security:
 - BearerAuth: []
 paths:
+  /admin/models/preflight:
+    post:
+      summary: SERVICE_OPS 모델 파일·형식 사전 검사
+      description: 등록·품질 승인·활성화를 수행하지 않는다. 가중치 본문은 읽지 않으며 S3 전체 SHA-256이 없거나 COMPOSITE이면
+        CHECKSUM_UNAVAILABLE. 작은 JSON 3개만 최대 1MiB씩 읽는다. core 제한 20초, scoring 작업 예산 15초.
+        파일 검사 실패도 200의 FAIL이며 core 감사 result=FAILURE로 저장한다.
+      operationId: preflightModel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelPreflightRequest'
+      responses:
+        '200':
+          description: 파일·형식 검사 결과. 품질 승인 아님
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelPreflightResult'
+        '400':
+          description: VALIDATION_FAILED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: UNAUTHENTICATED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: FORBIDDEN
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: MODEL_PREFLIGHT_INVALID_RESPONSE
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: MODEL_PREFLIGHT_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /conversations/{id}/report-template:
     get:
       operationId: getReportTemplate
@@ -213,6 +265,150 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/StudentSharingPreference'}
         default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/community-settings:
+    get:
+      tags: [Community]
+      operationId: getCommunitySettings
+      summary: 학생 본인 커뮤니티 공개 설정 (P20, FN-RET-01). 기본 끔
+      responses:
+        '200':
+          description: 현재 설정과 보호자 동의 여부 (Cache-Control no-store)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CommunitySettings'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+    put:
+      tags: [Community]
+      operationId: updateCommunitySettings
+      summary: 학생 본인만 변경. 켜기는 현재 보호자 COMMUNITY 동의 필요(없으면 409 COMMUNITY_CONSENT_REQUIRED). 끄면 공유물 HIDDEN_SETTING, 다시 켜면 HIDDEN_SETTING만 복원
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses:
+        '200':
+          description: 저장된 설정 (Cache-Control no-store)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CommunitySettings'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /missions/{missionId}/community-posts:
+    get:
+      tags: [Community]
+      operationId: listMissionCommunityPosts
+      summary: 같은 미션을 마무리한 학생만 무작위 목록 열람(같은 seed면 같은 순서). 미마무리 403 COMMUNITY_LOCKED
+      description: 작성자는 별명·꾸미기로 바꾸고 학생 ID·반응 수를 내보내지 않는다. 지금 공개할 수 없는 작성자(설정 끔·현재 보호자 동의 없음)와 신고 처리 중·계속 숨김 공유물은 core가 다시 거른다
+      parameters:
+      - {name: missionId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: seed, in: query, schema: {type: string, maxLength: 100}}
+      - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: 공유물 목록 (Cache-Control no-store)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CommunityPostPage'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/community-posts:
+    get:
+      tags: [Community]
+      operationId: listMyCommunityPosts
+      summary: 내 공유물·상태·받은 반응 종류별 수 (FN-RET-02·03)
+      responses:
+        '200':
+          description: 내 공유물 (Cache-Control no-store)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CommunityOwnPostList'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /children/{childId}/community-posts:
+    get:
+      tags: [Community]
+      operationId: listChildCommunityPosts
+      summary: 연결·동의가 유효한 자녀의 공유물·상태·받은 반응 수. 다른 학생 공유물 경로 없음
+      parameters:
+      - {name: childId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: 자녀 공유물 (Cache-Control no-store)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CommunityOwnPostList'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /community-posts/{postId}/reactions/{reaction}:
+    parameters:
+    - {name: postId, in: path, required: true, schema: {type: string, format: uuid}}
+    - {name: reaction, in: path, required: true, schema: {$ref: '#/components/schemas/CommunityReaction'}}
+    put:
+      tags: [Community]
+      operationId: addCommunityReaction
+      summary: 반응 남기기(멱등). 본인 글 409 COMMUNITY_OWN_POST, 열람 권한 없음 403 COMMUNITY_LOCKED, 숨김·없는 글 404 COMMUNITY_POST_NOT_FOUND, 4종 외 400
+      responses:
+        '204': {description: 반응 저장}
+        default: {$ref: '#/components/responses/LearningProblem'}
+    delete:
+      tags: [Community]
+      operationId: removeCommunityReaction
+      summary: 반응 취소(멱등, 적립 포인트 회수 없음)
+      responses:
+        '204': {description: 반응 취소}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/points:
+    get:
+      tags: [Students]
+      operationId: getStudentPoints
+      summary: 학생 본인 포인트 잔액·내역 (#389, P21). 최신순, Cache-Control no-store
+      description: 참여로만 적립(판정 무관), 순위·소멸 없음. 다른 학생 잔액 경로는 없다. 학부모·관리자 토큰 403
+      parameters:
+      - {name: page, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
+      - {name: size, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: 잔액·내역
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RewardPoints'}
+        '400': {description: 'page·size 범위 밖(VALIDATION_FAILED)'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/look-items:
+    get:
+      tags: [Students]
+      operationId: getStudentLookItems
+      summary: 테마 5·캐릭터 5와 판매 중이거나 이미 해금한 캐릭터 아이템 목록 (#389, P22). Cache-Control no-store
+      description: 'itemKey는 테마 THEME:<code>·캐릭터 COMPANION:<code>(해금값 코드 상수, lake·mungchi 무료, 나머지 테마 100·캐릭터 150), 아이템은 look_item.code. 판매 중단 아이템은 해금한 학생에게만 onSale false로 보인다.'
+      responses:
+        '200':
+          description: 꾸미기 목록
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LookCatalog'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/look-items/{itemKey}/unlock:
+    post:
+      tags: [Students]
+      operationId: unlockStudentLookItem
+      summary: 포인트로 꾸미기 해금 (#389, P22). 영구 해금, 즉시 차감, 환급 없음
+      description: 'Idempotency-Key(UUID) 필수, 없거나 형식 오류면 400 VALIDATION_FAILED. 같은 키 재전송은 처음 응답을 그대로, 같은 키로 다른 항목은 422 IDEMPOTENCY_KEY_REUSED. 잔액 행 잠금으로 동시 해금도 한 번만 차감하고, 이미 해금(무료 포함)이면 차감 없이 200. 잔액 부족 409 INSUFFICIENT_POINTS, 판매 중단 409 LOOK_ITEM_NOT_ON_SALE, 없는 항목 404 LOOK_ITEM_NOT_FOUND, 학생 삭제 진행 409 STUDENT_UNAVAILABLE'
+      parameters:
+      - {name: itemKey, in: path, required: true, schema: {type: string, maxLength: 64}}
+      - {name: Idempotency-Key, in: header, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: 해금 결과와 해금 뒤 잔액
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LookUnlockResult'}
+        '400': {description: 'Idempotency-Key 누락·형식 오류(VALIDATION_FAILED)'}
+        '404': {description: 'LOOK_ITEM_NOT_FOUND'}
+        '409': {description: 'INSUFFICIENT_POINTS · LOOK_ITEM_NOT_ON_SALE · STUDENT_UNAVAILABLE · IDEMPOTENCY_IN_PROGRESS'}
+        '422': {description: 'IDEMPOTENCY_KEY_REUSED'}
+        default: {$ref: '#/components/responses/LearningProblem'}
   /students/me/preferences:
     get:
       tags: [Students]
@@ -228,7 +424,8 @@ paths:
     put:
       tags: [Students]
       operationId: updateStudentLook
-      summary: 학생 본인만 꾸미기 설정 전체 교체. 목록 외 값 422, 학부모·관리자 403
+      summary: 학생 본인만 꾸미기 설정 전체 교체. 목록 외 값 422, 해금하지 않은 테마·캐릭터·아이템 409 LOOK_LOCKED(#389), 학부모·관리자 403
+      description: 'theme·companion은 전체 교체. equipped는 보냈을 때만 네 슬롯 전체 교체(생략·null이면 기존 착용 유지). 슬롯 값은 그 슬롯의 look_item 코드 또는 null이며, 모르는 슬롯·코드나 다른 슬롯 아이템은 422 VALIDATION_FAILED, 해금하지 않은 아이템은 409 LOOK_LOCKED. 판매 중단돼도 이미 해금한 아이템은 착용 가능 (api-spec 2.10·3.12, P22)'
       requestBody:
         required: true
         content:
@@ -239,6 +436,10 @@ paths:
               properties:
                 theme: {$ref: '#/components/schemas/StudentLookTheme'}
                 companion: {$ref: '#/components/schemas/StudentLookCompanion'}
+                equipped:
+                  oneOf:
+                  - {$ref: '#/components/schemas/LookEquipped'}
+                  - {type: 'null'}
       responses:
         '200':
           description: 저장된 꾸미기 설정 (Cache-Control no-store)
@@ -259,6 +460,23 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/StudentSharingPreference'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /children/{childId}/points:
+    get:
+      tags: [Children]
+      operationId: getChildPoints
+      summary: 연결 자녀 포인트 잔액·내역 (#389, P21). 학생 공개 설정(#206)과 무관, Cache-Control no-store
+      parameters:
+      - {name: childId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: page, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
+      - {name: size, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: 잔액·내역
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RewardPoints'}
+        '403': {description: '연결되지 않은 자녀(CHILD_NOT_LINKED)·학부모 외 토큰(FORBIDDEN)'}
         default: {$ref: '#/components/responses/LearningProblem'}
   /internal/students/{studentId}/profile:
     servers:
@@ -1134,6 +1352,63 @@ paths:
             schema:
               $ref: '#/components/schemas/AdminMissionDocument'
       summary: adminMissionsUnpublish (CONTENT)
+  /admin/look-items:
+    get:
+      operationId: adminLookItemsList
+      tags: [Admin]
+      description: 'CONTENT 권한 (#389, ADM-23). 관리자 등록 캐릭터 아이템 목록(최신 등록순). 테마·캐릭터 해금값은 코드 상수라 목록에 없다.'
+      parameters:
+      - {name: status, in: query, required: false, schema: {$ref: '#/components/schemas/LookItemStatus'}}
+      - {name: slot, in: query, required: false, schema: {$ref: '#/components/schemas/LookItemSlot'}}
+      - {name: page, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
+      - {name: size, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+      responses:
+        '200':
+          description: 아이템 목록
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminLookItemPage'}
+        '400': {description: '조회 조건 오류(VALIDATION_FAILED)'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: adminLookItemCreate
+      tags: [Admin]
+      description: 'CONTENT 권한. 새 아이템은 ON_SALE. code는 대문자·숫자·밑줄 3~40자이고 바꿀 수 없다. 같은 트랜잭션에서 audit_log LOOK_ITEM_CREATED'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminLookItemCreate'}
+      responses:
+        '201':
+          description: 등록한 아이템
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminLookItem'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {description: '같은 code(LOOK_ITEM_CODE_DUPLICATE)'}
+        '422': {description: '형식 오류(VALIDATION_FAILED)'}
+  /admin/look-items/{itemId}:
+    patch:
+      operationId: adminLookItemUpdate
+      tags: [Admin]
+      description: 'CONTENT 권한. 이름·필요 포인트·그림 키·판매 상태 수정(삭제 없음, code·slot 불변). 판매 중단해도 이미 해금한 학생은 계속 착용한다. 가격 변경은 이미 해금한 학생에게 영향 없음. audit_log LOOK_ITEM_UPDATED·LOOK_ITEM_STOPPED·LOOK_ITEM_RESUMED(이전 값 detail.before)'
+      parameters:
+      - {name: itemId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminLookItemUpdate'}
+      responses:
+        '200':
+          description: 수정한 아이템
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminLookItem'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {description: '없는 아이템(NOT_FOUND)'}
+        '422': {description: '형식 오류·바꿀 값 없음(VALIDATION_FAILED)'}
   /admin/achievement-standards:
     get:
       operationId: adminAchievementStandardsList
@@ -1203,6 +1478,380 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
       summary: adminAchievementStandardsList (CONTENT)
+  /admin/weekly-themes:
+    get:
+      operationId: adminWeeklyThemesList
+      tags:
+      - Admin
+      description: 'CONTENT 권한 (#387). learning GET /internal/admin/weekly-themes로 넘김. 필터 gradeBand·weekStart(KST 월요일)·status, 필드는 api-spec 2.8·4.1.'
+      parameters:
+      - name: gradeBand
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [G3_4, G5_6]
+      - name: weekStart
+        in: query
+        required: false
+        description: KST 월요일 날짜
+        schema:
+          type: string
+          format: date
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [DRAFT, REVIEW_REQUIRED, PUBLISHED, UNPUBLISHED]
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          default: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "주간 테마를 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE, 감사 저장 실패는 MISSION_AUDIT_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      summary: adminWeeklyThemesList (CONTENT)
+    post:
+      operationId: adminWeeklyThemesCreate
+      tags:
+      - Admin
+      description: 'CONTENT 권한 (#387). learning POST /internal/admin/weekly-themes로 넘김. 요청 감사 후 단일 호출, 응답 themeId(target_type WEEKLY_THEME)로 결과 감사(audit_log WEEKLY_THEME_*). learning 오류 코드(400 VALIDATION_FAILED·404 NOT_FOUND·409 CONFLICT·422 WEEKLY_THEME_PUBLISH_INCOMPLETE)는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
+      parameters: []
+      responses:
+        '201':
+          description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "주간 테마를 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE, 감사 저장 실패는 MISSION_AUDIT_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+      summary: adminWeeklyThemesCreate (CONTENT)
+  /admin/weekly-themes/{themeId}:
+    get:
+      operationId: adminWeeklyThemesDetail
+      tags:
+      - Admin
+      description: 'CONTENT 권한 (#387). learning GET /internal/admin/weekly-themes/{themeId}로 넘김.'
+      parameters:
+      - name: themeId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "주간 테마를 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE, 감사 저장 실패는 MISSION_AUDIT_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      summary: adminWeeklyThemesDetail (CONTENT)
+    put:
+      operationId: adminWeeklyThemesUpdate
+      tags:
+      - Admin
+      description: 'CONTENT 권한 (#387). learning PUT /internal/admin/weekly-themes/{themeId}로 넘김. 게시 중 수정은 재검토(learning). 요청 감사 후 단일 호출, 응답 themeId(target_type WEEKLY_THEME)로 결과 감사(audit_log WEEKLY_THEME_*). learning 오류 코드(400 VALIDATION_FAILED·404 NOT_FOUND·409 CONFLICT·422 WEEKLY_THEME_PUBLISH_INCOMPLETE)는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
+      parameters:
+      - name: themeId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "주간 테마를 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE, 감사 저장 실패는 MISSION_AUDIT_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+      summary: adminWeeklyThemesUpdate (CONTENT)
+  /admin/weekly-themes/{themeId}/review-request:
+    post:
+      operationId: adminWeeklyThemesReviewRequest
+      tags:
+      - Admin
+      description: 'CONTENT 권한 (#387). learning POST /internal/admin/weekly-themes/{themeId}/review-request로 넘김. 요청 감사 후 단일 호출, 응답 themeId(target_type WEEKLY_THEME)로 결과 감사(audit_log WEEKLY_THEME_*). learning 오류 코드(400 VALIDATION_FAILED·404 NOT_FOUND·409 CONFLICT·422 WEEKLY_THEME_PUBLISH_INCOMPLETE)는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
+      parameters:
+      - name: themeId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "주간 테마를 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE, 감사 저장 실패는 MISSION_AUDIT_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+      summary: adminWeeklyThemesReviewRequest (CONTENT)
+  /admin/weekly-themes/{themeId}/publish:
+    post:
+      operationId: adminWeeklyThemesPublish
+      tags:
+      - Admin
+      description: 'CONTENT 권한 (#387). learning POST /internal/admin/weekly-themes/{themeId}/publish로 넘김. 요청 감사 후 단일 호출, 응답 themeId(target_type WEEKLY_THEME)로 결과 감사(audit_log WEEKLY_THEME_*). learning 오류 코드(400 VALIDATION_FAILED·404 NOT_FOUND·409 CONFLICT·422 WEEKLY_THEME_PUBLISH_INCOMPLETE)는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
+      parameters:
+      - name: themeId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "주간 테마를 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: WEEKLY_THEME_PUBLISH_INCOMPLETE — 게시 검사 실패(월~금 게시 미션·다섯 생각 유형 1개씩·학년군·같은 학년군·주 게시 1개)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE, 감사 저장 실패는 MISSION_AUDIT_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+      summary: adminWeeklyThemesPublish (CONTENT)
+  /admin/weekly-themes/{themeId}/unpublish:
+    post:
+      operationId: adminWeeklyThemesUnpublish
+      tags:
+      - Admin
+      description: 'CONTENT 권한 (#387). learning POST /internal/admin/weekly-themes/{themeId}/unpublish로 넘김. 요청 감사 후 단일 호출, 응답 themeId(target_type WEEKLY_THEME)로 결과 감사(audit_log WEEKLY_THEME_*). learning 오류 코드(400 VALIDATION_FAILED·404 NOT_FOUND·409 CONFLICT·422 WEEKLY_THEME_PUBLISH_INCOMPLETE)는 그대로 전달. 503 MISSION_AUDIT_UNAVAILABLE 또는 통신 장애는 결과 미확정일 수 있으므로 자동 재요청 금지. 확인 번호는 X-Admin-Operation-Id 또는 오류 detail.'
+      parameters:
+      - name: themeId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 성공
+          headers:
+            X-Admin-Operation-Id:
+              description: 요청 감사 ID
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+        default:
+          $ref: '#/components/responses/LearningProblem'
+        '400':
+          $ref: '#/components/responses/LearningProblem'
+        '401':
+          $ref: '#/components/responses/LearningProblem'
+        '403':
+          $ref: '#/components/responses/LearningProblem'
+        '404':
+          description: NOT_FOUND — application/problem+json 객체의 HTTP 404·정수 status 404·문자열 code NOT_FOUND 일치. 고정 문구 "주간 테마를 찾을 수 없습니다.". 공급자 자유형 상세는 전달하지 않음.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 불명확한 404·미지원 405/501은 ADMIN_MISSIONS_UNAVAILABLE, 감사 저장 실패는 MISSION_AUDIT_UNAVAILABLE. 전송·서킷 차단은 기존 LEARNING_UNAVAILABLE / LEARNING_CIRCUIT_OPEN.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWeeklyThemeDocument'
+      summary: adminWeeklyThemesUnpublish (CONTENT)
   /admin/mission-drafts:
     post:
       operationId: adminMissionDraftsRequest
@@ -3273,17 +3922,51 @@ paths:
       tags: [Learning]
       summary: 학생 시도 시작·이어하기
       description: >-
-        STUDENT 전용. 검증된 본인 학생의 grade·demo를 core DB에서 결정해 /internal/missions/{missionId}/attempts에 쿼리로 전달하며 클라이언트 query는 사용하지 않는다.
-        learning은 신규 생성 201·기존 진행 시도 반환 200을 구분하며 core는 상태를 그대로 전달한다. 신규 시도 제공 범위 검사·기존 진행 시도 선택과 당시 버전 유지는 learning 소유다.
-        일일 한도는 core Redis 책임이며 learning은 관여하지 않는다. 후속 한도 연계는 201만 집계하고 200은 집계하지 않는다.
-        한도 도달 시에도 기존 이어하기는 허용하고 신규 생성만 차단해야 한다. 한도 검사·기존 시도 판별·신규 생성 차단의 처리 순서는 후속 구현에서 검증한다. Redis 한도 기능은 현재 프록시 구현 범위 밖이다.
+        STUDENT 전용. 검증된 본인 학생의 grade·demo를 core DB에서 결정해 /internal/missions/{missionId}/attempts에 쿼리로,
+        본문 {context}를 그대로 전달하며 클라이언트 query는 사용하지 않는다(#387, api-spec 2.2·2.11).
+        context 생략(본문 없음·{}·null)은 EXTRA(생각 유형별 미션 고르기). 요일·되돌아보기 검사는 learning(THEME_DAY_CLOSED·THEME_REVIEW_NOT_ALLOWED 409),
+        무료·프리미엄 판정과 사용 기록은 core. learning은 신규 생성 201·기존 진행 시도 반환 200을 구분하며 core는 상태를 그대로 전달한다.
+        무료 THEME_DAY·EXTRA는 합쳐 KST 하루 product.limits.dailyMissions개까지 신규 201만 core mission_daily_usage에 기록하고, 한도 도달 시 신규 생성만 429로 막는다
+        (같은 미션의 진행 중 시도 이어하기 200은 허용). THEME_REVIEW는 한도 제외. EXTRA 허용은 상품 features.extraMissions(없으면 허용)로 정하며
+        2026-11-08 결정으로 지금은 무료도 허용하고 무료 THEME_DAY와 합쳐 하루 한도에 센다. 무료 상품에서 false로 바꾸면 무료 403 PREMIUM_REQUIRED,
+        프리미엄은 신규 201을 payment_premium_usage(kind EXTRA_MISSION, source_id 시도 ID)로 기록해 환불 판정의 프리미엄 사용에 넣는다.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AttemptStartRequest'}
       responses:
         '200':
           $ref: '#/components/responses/LearningResult'
-          description: 기존 진행 시도 반환(이어하기). 후속 일일 한도 집계 대상 아님.
+          description: 기존 진행 시도 반환(이어하기). 일일 한도 집계 대상 아님.
         '201':
           $ref: '#/components/responses/LearningResult'
-          description: 신규 시도 생성. 후속 core Redis 일일 한도 집계 대상.
+          description: 신규 시도 생성. 무료 THEME_DAY·EXTRA는 일일 한도, 무료에서 꺼진 동안의 프리미엄 EXTRA는 프리미엄 사용으로 기록.
+        '400':
+          description: VALIDATION_FAILED — JSON object가 아니거나 context 외 필드·허용 밖 값
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '403':
+          description: PREMIUM_REQUIRED(features.extraMissions가 false인 상품의 EXTRA) 또는 core 인증·연결 오류
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '409':
+          description: learning THEME_DAY_CLOSED·THEME_REVIEW_NOT_ALLOWED·MISSION_NOT_AVAILABLE 그대로, 또는 REFUND_IN_PROGRESS(환불 처리 중 프리미엄 EXTRA)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '429':
+          description: USAGE_LIMIT_REACHED — 무료 THEME_DAY·EXTRA 오늘(KST) 신규 시작 한도 도달. detail에 가능 범위·초기화 시점(다음 날 0시 KST)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '503':
+          description: PAYMENT_ENTITLEMENT_CONFIRMING·PAYMENT_PRODUCT_UNAVAILABLE(limits.dailyMissions 누락·features.extraMissions 형식 오류 포함)·PAYMENT_FREE_PRODUCT_UNAVAILABLE 또는 learning 전송 장애
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
         default: {$ref: '#/components/responses/LearningProblem'}
   /attempts/{attemptId}:
     parameters:
@@ -5188,6 +5871,38 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /students/me/weekly-theme:
+    get:
+      operationId: getWeeklyTheme
+      tags: [WeeklyTheme]
+      summary: 이번 주 학년군 테마 (#387)
+      description: >-
+        STUDENT 전용(FN-RET-07·08, api-spec 2.11). core가 본인 학생 학년으로 학년군(초3~4 G3_4, 초5~6 G5_6)과 KST 오늘 날짜를 정해
+        learning GET /internal/students/{studentId}/weekly-theme?gradeBand&date로 넘기고 결과를 그대로 전달한다. 클라이언트 query는 쓰지 않는다. Cache-Control no-store.
+      responses:
+        '200':
+          description: 테마·요일 상태·되돌아보기 목록(learning 소유 모양)
+          headers:
+            Cache-Control: {schema: {type: string}, description: no-store}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WeeklyThemeDocument'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/weekly-theme/review-views:
+    post:
+      operationId: recordWeeklyThemeReviewView
+      tags: [WeeklyTheme]
+      summary: 토·일 되돌아보기 열람 기록 (#387)
+      description: >-
+        STUDENT 전용(FN-RET-08). learning POST /internal/students/{studentId}/weekly-theme/review-views?gradeBand&date로 넘김(멱등·주 1회는 learning).
+        응답 {firstViewThisWeek, completed}는 포인트·완주 판정 근거(#389). Cache-Control no-store.
+      responses:
+        '200':
+          description: 열람 기록 결과(learning 소유 모양)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WeeklyThemeDocument'}
+        default: {$ref: '#/components/responses/LearningProblem'}
   /students/me/attempts:
     get:
       operationId: dashboardStudentAttempts
@@ -6405,7 +7120,9 @@ paths:
       - Conversations
       operationId: post_conversations
       description: '#41 계약: docs/report/core-gateway.md 5장. 첫 응답 20초·전체
-        120초, 취소 FAILED, delta 미저장.'
+        120초, 취소 FAILED, delta 미저장. reportId가 있으면 일일 리포트 고정 대화(P25, #392):
+        자녀·대상일(from = to)·최신 판을 고정하고 메시지마다 그 판을 ai 요청에 요약으로 넣는다.
+        고정 대화의 다른 기간 scope는 400.'
       responses:
         '201':
           description: 성공
@@ -6413,8 +7130,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AnalysisConversation'
+        '400':
+          description: VALIDATION_FAILED(reportId와 from·to를 함께 지정 등)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '403':
           description: 권한 없음(FORBIDDEN·CHILD_NOT_LINKED 등) 또는 STUDENT_RECORDS_PRIVATE(학생이 답변 원문을 학부모에게 비공개로 설정, #206)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: 'CONVERSATION_REPORT_INVALID(이 자녀의 완료된 일일 리포트가 아님. 주간·다른 자녀·없는 리포트, #392)'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: USAGE_LIMIT_REACHED(무료 플랜·하루 한도, 리포트 확인보다 먼저)
           content:
             application/problem+json:
               schema:
@@ -6439,6 +7174,10 @@ paths:
                 to:
                   type: string
                   format: date
+                reportId:
+                  description: 일일 리포트 ID(P25). 지정하면 from·to를 함께 보내지 않는다.
+                  type: string
+                  format: uuid
     get:
       tags:
       - Conversations
@@ -6976,6 +7715,119 @@ components:
         type: string
         const: XMLHttpRequest
   schemas:
+    ModelPreflightArtifact:
+      type: object
+      additionalProperties: false
+      required:
+      - file
+      - bytes
+      - sha256
+      properties:
+        file:
+          type: string
+          enum:
+          - config.json
+          - tokenizer.json
+          - tokenizer_config.json
+          - train_info.json
+          - score_cuts.json
+          - model.safetensors
+        bytes:
+          type: integer
+          minimum: 0
+        sha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+    ModelPreflightRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      - version
+      - artifactUri
+      - files
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        version:
+          type: string
+          minLength: 1
+          maxLength: 100
+        artifactUri:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        files:
+          type: array
+          minItems: 6
+          maxItems: 6
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/ModelPreflightArtifact'
+          description: 여섯 파일명을 각각 한 번씩 포함한다.
+    ModelPreflightResult:
+      type: object
+      additionalProperties: false
+      required:
+      - status
+      - code
+      - files
+      properties:
+        status:
+          type: string
+          enum:
+          - PASS
+          - FAIL
+        code:
+          type: string
+          enum:
+          - FILES_AND_METADATA_VERIFIED
+          - INVALID_ARTIFACT_URI
+          - UNSUPPORTED_MODEL
+          - PREFLIGHT_TIMEOUT
+          - FILE_CHECK_FAILED
+          - OUTPUT_MISMATCH
+          - INVALID_METADATA
+        files:
+          type: array
+          maxItems: 6
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - file
+            - status
+            - code
+            properties:
+              file:
+                type: string
+                enum:
+                - config.json
+                - tokenizer.json
+                - tokenizer_config.json
+                - train_info.json
+                - score_cuts.json
+                - model.safetensors
+              status:
+                type: string
+                enum:
+                - PASS
+                - FAIL
+              code:
+                type: string
+                enum:
+                - OK
+                - SIZE_MISMATCH
+                - JSON_TOO_LARGE
+                - HASH_MISMATCH
+                - INVALID_METADATA
+                - CHECKSUM_UNAVAILABLE
+                - FILE_MISSING
+                - ACCESS_DENIED
+                - OBJECT_CHANGED
+                - STORAGE_UNAVAILABLE
     GuardianTransferView:
       type: object
       required:
@@ -7115,16 +7967,202 @@ components:
       properties:
         studentId: {type: string, format: uuid}
         parentSharingEnabled: {type: boolean, default: false}
+    CommunityReaction: {type: string, enum: [NEW_IDEA, CLEAR_REASON, DIFFERENT_VIEW, WANT_MORE]}
+    CommunityPostStatus: {type: string, enum: [VISIBLE, HIDDEN_SETTING, HIDDEN_REPORT, REMOVED]}
+    CommunitySettings:
+      type: object
+      additionalProperties: false
+      required: [enabled, consentGranted, updatedAt]
+      properties:
+        enabled: {type: boolean, description: 학생 본인 공개 설정. 기본 false}
+        consentGranted: {type: boolean, description: 현재 연결 보호자의 COMMUNITY 동의 유효 여부}
+        updatedAt: {type: ['string', 'null'], format: date-time}
+    CommunityAuthor:
+      type: object
+      additionalProperties: false
+      required: [nickname, look]
+      properties:
+        nickname: {type: string}
+        look:
+          type: object
+          additionalProperties: false
+          required: [theme, companion]
+          properties:
+            theme: {$ref: '#/components/schemas/StudentLookTheme'}
+            companion: {$ref: '#/components/schemas/StudentLookCompanion'}
+    CommunityPost:
+      type: object
+      additionalProperties: false
+      required: [postId, author, answer, myReactions, createdAt]
+      description: 학생 ID·반응 수 없음. answer는 learning 마지막 답변 content 그대로
+      properties:
+        postId: {type: string, format: uuid}
+        author: {$ref: '#/components/schemas/CommunityAuthor'}
+        answer: {}
+        myReactions: {type: array, items: {$ref: '#/components/schemas/CommunityReaction'}}
+        createdAt: {type: ['string', 'null'], format: date-time}
+    CommunityPostPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/CommunityPost'}}
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1, maximum: 100}
+    CommunityOwnPost:
+      type: object
+      additionalProperties: false
+      required: [postId, missionId, missionTitle, answer, status, reactions, createdAt]
+      properties:
+        postId: {type: string, format: uuid}
+        missionId: {type: ['string', 'null'], format: uuid}
+        missionTitle: {type: ['string', 'null']}
+        answer: {}
+        status: {$ref: '#/components/schemas/CommunityPostStatus'}
+        reactions:
+          type: object
+          additionalProperties: false
+          required: [NEW_IDEA, CLEAR_REASON, DIFFERENT_VIEW, WANT_MORE]
+          properties:
+            NEW_IDEA: {type: integer, minimum: 0}
+            CLEAR_REASON: {type: integer, minimum: 0}
+            DIFFERENT_VIEW: {type: integer, minimum: 0}
+            WANT_MORE: {type: integer, minimum: 0}
+        createdAt: {type: ['string', 'null'], format: date-time}
+    CommunityOwnPostList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/CommunityOwnPost'}}
+    CommunityLinkedPost:
+      type: object
+      description: 관리자 신고 상세의 공유물 원문(SERVICE_OPS, 열람마다 SUPPORT_ORIGINAL_VIEW 감사). 파기된 공유물은 available=false만
+      required: [postId, available]
+      properties:
+        postId: {type: string, format: uuid}
+        available: {type: boolean}
+        missionId: {type: ['string', 'null'], format: uuid}
+        status: {$ref: '#/components/schemas/CommunityPostStatus'}
+        answer: {}
+        authorStudentId: {type: string, format: uuid}
     StudentLookTheme: {type: string, enum: [lake, forest, factory, space, sea]}
     StudentLookCompanion: {type: string, enum: [mungchi, tori, mongdol, kongi, monggeul]}
     StudentLook:
       type: object
       additionalProperties: false
-      required: [theme, companion, updatedAt]
+      required: [theme, companion, updatedAt, equipped]
       properties:
         theme: {$ref: '#/components/schemas/StudentLookTheme'}
         companion: {$ref: '#/components/schemas/StudentLookCompanion'}
         updatedAt: {type: [string, 'null'], format: date-time}
+        equipped: {$ref: '#/components/schemas/LookEquipped'}
+    LookItemSlot: {type: string, enum: [HAT, OUTFIT, ACCESSORY, BACKGROUND]}
+    LookItemStatus: {type: string, enum: [ON_SALE, STOPPED]}
+    LookEquipped:
+      type: object
+      description: 캐릭터 아이템 슬롯별 look_item 코드 또는 null(#389). 응답은 네 슬롯을 모두 담는다
+      additionalProperties: false
+      required: [HAT, OUTFIT, ACCESSORY, BACKGROUND]
+      properties:
+        HAT: {type: [string, 'null']}
+        OUTFIT: {type: [string, 'null']}
+        ACCESSORY: {type: [string, 'null']}
+        BACKGROUND: {type: [string, 'null']}
+    RewardPointEventType:
+      type: string
+      description: 적립 사건(양수)과 해금 사용 UNLOCK(음수)
+      enum: [MISSION_COMPLETED, REVIEW_VIEWED, COMMUNITY_POSTED, REACTION_GIVEN, THEME_COMPLETED, UNLOCK]
+    RewardPointEntry:
+      type: object
+      additionalProperties: false
+      required: [eventType, amount, createdAt]
+      properties:
+        eventType: {$ref: '#/components/schemas/RewardPointEventType'}
+        amount: {type: integer}
+        createdAt: {type: string, format: date-time}
+    RewardPoints:
+      type: object
+      additionalProperties: false
+      required: [balance, items, page, size, totalElements]
+      properties:
+        balance: {type: integer, minimum: 0}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/RewardPointEntry'}
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1}
+        totalElements: {type: integer, minimum: 0}
+    LookCatalogItem:
+      type: object
+      additionalProperties: false
+      required: [itemKey, slot, name, pricePoints, unlocked, onSale, assetKey]
+      properties:
+        itemKey: {type: string}
+        slot: {type: string, enum: [THEME, COMPANION, HAT, OUTFIT, ACCESSORY, BACKGROUND]}
+        name: {type: string}
+        pricePoints: {type: integer, minimum: 0}
+        unlocked: {type: boolean}
+        onSale: {type: boolean}
+        assetKey: {type: [string, 'null'], description: 캐릭터 아이템 그림 키. 테마·캐릭터는 null}
+    LookCatalog:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/LookCatalogItem'}
+    LookUnlockResult:
+      type: object
+      additionalProperties: false
+      required: [itemKey, unlocked, balance]
+      properties:
+        itemKey: {type: string}
+        unlocked: {type: boolean, const: true}
+        balance: {type: integer, minimum: 0}
+    AdminLookItem:
+      type: object
+      additionalProperties: false
+      required: [itemId, code, slot, name, pricePoints, assetKey, status, createdAt, updatedAt]
+      properties:
+        itemId: {type: string, format: uuid}
+        code: {type: string, pattern: '^[A-Z0-9_]{3,40}$'}
+        slot: {$ref: '#/components/schemas/LookItemSlot'}
+        name: {type: string, minLength: 1, maxLength: 40}
+        pricePoints: {type: integer, minimum: 1, maximum: 10000}
+        assetKey: {type: string, maxLength: 200}
+        status: {$ref: '#/components/schemas/LookItemStatus'}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    AdminLookItemPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalElements]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/AdminLookItem'}
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1}
+        totalElements: {type: integer, minimum: 0}
+    AdminLookItemCreate:
+      type: object
+      required: [code, slot, name, pricePoints]
+      properties:
+        code: {type: string, pattern: '^[A-Z0-9_]{3,40}$'}
+        slot: {$ref: '#/components/schemas/LookItemSlot'}
+        name: {type: string, minLength: 1, maxLength: 40, description: 앞뒤 공백 제거}
+        pricePoints: {type: integer, minimum: 1, maximum: 10000}
+        assetKey: {type: string, maxLength: 200, description: 생략하면 빈 문자열}
+    AdminLookItemUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        name: {type: string, minLength: 1, maxLength: 40}
+        pricePoints: {type: integer, minimum: 1, maximum: 10000}
+        assetKey: {type: string, maxLength: 200}
+        status: {$ref: '#/components/schemas/LookItemStatus'}
     AttemptComparison:
       type: object
       required: [attemptId, state, previous, current, elements]
@@ -7495,6 +8533,18 @@ components:
           properties:
             from: *analysis_id001
             to: *analysis_id001
+        reportId:
+          description: '일일 리포트 고정 대화의 리포트 ID(P25, #392). 일반 대화는 null'
+          type:
+          - string
+          - 'null'
+          format: uuid
+        reportRevision:
+          description: 고정한 리포트 판. reportId와 함께 null 또는 값
+          type:
+          - integer
+          - 'null'
+          minimum: 1
         title:
           type: string
         createdAt:
@@ -7733,6 +8783,17 @@ components:
         createdAt:
           type: string
           format: date-time
+        detail:
+          description: MODEL_VERSION 조치의 허용된 상세만 반환한다. 다른 대상의 원문 detail은 null이다 (#366).
+          type: [object, 'null']
+          additionalProperties: false
+          properties:
+            name: {type: string}
+            version: {type: string}
+            scopes: {type: array, items: {type: string}}
+            reason: {type: string}
+            reanalysisPlanned: {type: boolean}
+            previousVersionId: {type: [string, 'null'], format: uuid}
     OperationJobPage:
       type: object
       additionalProperties: false
@@ -7937,6 +8998,22 @@ components:
                 minimum: 0
               state:
                 type: string
+    AdminWeeklyThemeDocument:
+      type: object
+      additionalProperties: true
+      description: 'learning 소유 주간 테마 JSON object (#387, #385). 작성·수정 {gradeBand, weekStart, title, intro, days:[{day, missionId}]}, 응답에 themeId·status. core는 성공 응답을 그대로 전달한다.'
+    WeeklyThemeDocument:
+      type: object
+      additionalProperties: true
+      description: 'learning 소유 학생 주간 테마 JSON object (#387, #385, api-spec 2.11). {themeId, weekStart, title, intro, reused, days[], review, completed} 또는 열람 결과 {firstViewThisWeek, completed}.'
+    AttemptStartRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        context:
+          type: [string, 'null']
+          enum: [THEME_DAY, THEME_REVIEW, EXTRA, null]
+          description: 생략·null이면 EXTRA (#387, api-spec 2.11)
     AdminMissionDraftDocument:
       type: object
       additionalProperties: true
@@ -8873,6 +9950,11 @@ components:
           items:
             type: string
             pattern: ^[a-z0-9][a-z0-9._:/-]{0,199}$
+        limitations:
+          type: array
+          default: []
+          maxItems: 100
+          items: {type: string, minLength: 1, maxLength: 4000, pattern: '.*\S.*'}
     RegisterModelVersion:
       type: object
       additionalProperties: false
@@ -8881,6 +9963,14 @@ components:
       - name
       - version
       - evaluation
+      allOf:
+      - if:
+          properties: {kind: {const: MODEL}}
+          required: [kind]
+        then:
+          required: [artifactUri]
+          properties:
+            artifactUri: {type: string, minLength: 1, maxLength: 2048, pattern: '.*\S.*'}
       properties:
         kind:
           $ref: '#/components/schemas/ModelKind'
@@ -8904,6 +9994,111 @@ components:
           maxLength: 2048
         evaluation:
           $ref: '#/components/schemas/EvaluationEvidence'
+        registration:
+          $ref: '#/components/schemas/ModelRegistrationMetadata'
+    ModelRegistrationMetadata:
+      type: object
+      additionalProperties: false
+      description: 클라이언트가 신고한 출처. 서버의 파일 검증·품질 승인을 의미하지 않음. 생략 시 MANUAL.
+      properties:
+        source:
+          type: string
+          enum:
+          - MANUAL
+          - JSON_IMPORT
+          default: MANUAL
+        jsonSha256:
+          type:
+          - string
+          - 'null'
+          pattern: ^[a-f0-9]{64}$
+        manifestSha256:
+          type:
+          - string
+          - 'null'
+          pattern: ^[a-f0-9]{64}$
+        modifiedFields:
+          type: array
+          default: []
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+            - kind
+            - name
+            - version
+            - refId
+            - artifactUri
+            - evaluation.datasetId
+            - evaluation.datasetVersion
+            - evaluation.baselineVersion
+            - evaluation.comparisonReport
+            - evaluation.trainingEvaluationSeparation
+            - evaluation.quoteAccuracy
+            - evaluation.calculationAccuracy
+            - evaluation.humanReview
+            - evaluation.evaluatedScopes
+            - evaluation.limitations
+        artifactFiles:
+          type: array
+          default: []
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/ModelRegistrationArtifact'
+      allOf:
+      - if:
+          required:
+          - source
+          properties:
+            source:
+              const: JSON_IMPORT
+        then:
+          required:
+          - jsonSha256
+          properties:
+            jsonSha256: &registrationSha256
+              type: string
+              pattern: ^[a-f0-9]{64}$
+        else:
+          properties:
+            jsonSha256:
+              type: 'null'
+            manifestSha256:
+              type: 'null'
+            modifiedFields:
+              maxItems: 0
+            artifactFiles:
+              maxItems: 0
+      - if:
+          required:
+          - artifactFiles
+          properties:
+            artifactFiles:
+              minItems: 1
+        then:
+          required:
+          - manifestSha256
+          properties:
+            manifestSha256: *registrationSha256
+    ModelRegistrationArtifact:
+      type: object
+      additionalProperties: false
+      required:
+      - file
+      - bytes
+      - sha256
+      properties:
+        file:
+          type: string
+          minLength: 1
+          maxLength: 255
+          pattern: ^(?!/)(?!.*(?:^|/)\.{1,2}(?:/|$))(?!.*//)(?!.*[\\:])(?!\s*$).*[^/]$
+          description: 선택한 모델의 manifest 상대 파일 경로. 중복·절대 경로·상위 경로 금지.
+        bytes:
+          type: integer
+          minimum: 0
+        sha256: *registrationSha256
     ActivateModelVersion:
       type: object
       additionalProperties: false
@@ -9357,6 +10552,8 @@ components:
           - TERMS
           - PRIVACY
           - GUARDIAN
+          - COMMUNITY
+          description: COMMUNITY는 자녀 단위 선택 동의(required=false, P20). 게시됐을 때만 목록에 포함
         version:
           type: string
         title:
@@ -10563,6 +11760,8 @@ components:
           - JUDGMENT
           - ANALYSIS
           - REPORT
+          - COMMUNITY_POST
+          description: COMMUNITY_POST는 학생 세션만(학부모 400), targetId는 postId. 본인 글 409 COMMUNITY_OWN_POST, 볼 수 없는 글 404 COMMUNITY_POST_NOT_FOUND. 접수 즉시 숨김(P20)
         targetId:
           type: string
           format: uuid
@@ -10625,6 +11824,7 @@ components:
           maxLength: 10000
         reviewResult:
           type: string
+          description: COMMUNITY_POST 신고를 RESOLVED로 바꿀 때는 VISIBLE(다시 공개)·REMOVED(계속 숨김)만, 생략하면 REMOVED. 그 밖의 값은 400
     SupportCorrectionCommand:
       type: object
       required:
@@ -10776,6 +11976,8 @@ components:
             $ref: '#/components/schemas/SupportCorrection'
         linkedAttempt:
           $ref: '#/components/schemas/SupportAttempt'
+        linkedPost:
+          $ref: '#/components/schemas/CommunityLinkedPost'
     SupportInquiry:
       type: object
       required:

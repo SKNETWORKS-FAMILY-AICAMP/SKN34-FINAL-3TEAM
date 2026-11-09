@@ -120,7 +120,23 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         mvc.get("/api/v1/admin/jobs?from=2026-01-01&to=2026-01-03&type=NOTIFICATION&status=FAILED&size=1") { header("Authorization","Bearer $access") }.andExpect { status { isOk() };jsonPath("$.items.length()") { value(1) } }
         mvc.get("/api/v1/admin/jobs?from=2026-01-01&to=2026-01-03&page=1001") { header("Authorization","Bearer $access") }.andExpect { status { isBadRequest() } }
         val audits=mvc.get("/api/v1/admin/audit-logs?targetId=$id&targetType=NOTIFICATION") { header("Authorization","Bearer $access") }.andExpect { status { isOk() } }.andReturn().response.contentAsString
-        assertFalse(audits.contains("secret"));assertFalse(audits.contains("detail"))
+        assertFalse(audits.contains("secret"));assertTrue(json.readTree(audits)["items"].all { it["detail"] == null || it["detail"].isNull })
+    }
+    @Test fun `model version audit query exposes only the approved operation fields`() {
+        val (actor,access)=token(); val target=UUID.randomUUID(); val previous=UUID.randomUUID()
+        val detail=json.writeValueAsString(mapOf("name" to "m2-klue-essay", "version" to "3.1",
+            "scopes" to listOf("judgment/grade-5/essay"), "reason" to "범위를 확인하고 승인",
+            "reanalysisPlanned" to true, "previousVersionId" to previous, "secret" to "private student text"))
+        jdbc.update("INSERT INTO audit_log(id,actor_user_id,action,target_type,target_id,result,detail,created_at) VALUES(?,?,'MODEL_ACTIVATE','MODEL_VERSION',?,'SUCCESS',CAST(? AS jsonb),CURRENT_TIMESTAMP)", UUID.randomUUID(),actor,target,detail)
+        val body=mvc.get("/api/v1/admin/audit-logs?targetId=$target&targetType=MODEL_VERSION") {
+            header("Authorization","Bearer $access")
+        }.andExpect {
+            status { isOk() }; jsonPath("$.items[0].detail.scopes[0]") { value("judgment/grade-5/essay") }
+            jsonPath("$.items[0].detail.reason") { value("범위를 확인하고 승인") }
+            jsonPath("$.items[0].detail.reanalysisPlanned") { value(true) }
+            jsonPath("$.items[0].detail.previousVersionId") { value(previous.toString()) }
+        }.andReturn().response.contentAsString
+        assertFalse(body.contains("secret")); assertFalse(body.contains("private student text"))
     }
     @Test fun `real Redis retry stores actual execution and audit and replays same key response`() {
         val (actor,access)=token();val id=notification(actor);val key=UUID.randomUUID()
@@ -409,6 +425,51 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         missionStatus=405;missionBody="not-json"
         val unsupported=draftCall("GET","/achievement-standards",access)
         assertEquals(503,unsupported.status);assertEquals("ADMIN_MISSIONS_UNAVAILABLE",json.readTree(unsupported.contentAsString)["code"].asText())
+    }
+    @Test fun `weekly theme proxy forwards every route with CONTENT and audits changes by theme`() {
+        val (admin,access)=token("CONTENT");val theme=UUID.randomUUID()
+        val routes=listOf(
+            Triple("GET","/weekly-themes?gradeBand=G3_4&weekStart=2026-11-09&status=DRAFT","/internal/admin/weekly-themes"),
+            Triple("POST","/weekly-themes","/internal/admin/weekly-themes"),
+            Triple("GET","/weekly-themes/$theme","/internal/admin/weekly-themes/$theme"),
+            Triple("PUT","/weekly-themes/$theme","/internal/admin/weekly-themes/$theme"),
+            Triple("POST","/weekly-themes/$theme/review-request","/internal/admin/weekly-themes/$theme/review-request"),
+            Triple("POST","/weekly-themes/$theme/publish","/internal/admin/weekly-themes/$theme/publish"),
+            Triple("POST","/weekly-themes/$theme/unpublish","/internal/admin/weekly-themes/$theme/unpublish"))
+        val payload="""{"gradeBand":"G3_4","weekStart":"2026-11-09","title":"합성 테마","intro":"도입","days":[]}"""
+        for((method,path,internal) in routes) {
+            missionStatus=if(method=="POST" && path=="/weekly-themes") 201 else 200
+            missionBody="""{"themeId":"$theme","status":"DRAFT","items":[]}"""
+            val response=draftCall(method,path,access,if(method=="GET") null else payload)
+            assertEquals(missionStatus,response.status,path)
+            val received=requests.last();assertEquals(method,received.method);assertEquals(internal,received.path)
+            assertEquals(admin.toString(),received.user);assertEquals("ADMIN",received.role);assertNull(received.scope)
+            if(method!="GET") { assertEquals(payload,received.body);assertNotNull(response.getHeader("X-Admin-Operation-Id")) }
+        }
+        val rows=jdbc.queryForList("SELECT action,target_type,target_id,result FROM audit_log WHERE actor_user_id=? AND action LIKE 'WEEKLY_THEME_%'",admin)
+        assertEquals(10,rows.size);assertTrue(rows.all { it["target_type"]=="WEEKLY_THEME" })
+        for(action in listOf("CREATE","UPDATE","REVIEW_REQUEST","PUBLISH","UNPUBLISH"))
+            assertEquals(listOf(theme,"SUCCESS"),rows.single { it["action"]=="WEEKLY_THEME_${action}_SUCCEEDED" }.let { listOf(it["target_id"],it["result"]) },action)
+        val (_,ops)=token("SERVICE_OPS");requests.clear()
+        for((method,path,_) in routes) assertEquals(403,draftCall(method,path,ops,if(method=="GET") null else "{}").status,path)
+        for(path in listOf("/weekly-themes?gradeBand=G1_2","/weekly-themes?weekStart=2026-11-10","/weekly-themes?status=PRIVATE","/weekly-themes?size=101"))
+            assertEquals(400,draftCall("GET",path,access).status,path)
+        assertEquals(400,draftCall("POST","/weekly-themes",access,"[]").status)
+        assertTrue(requests.isEmpty())
+    }
+    @Test fun `weekly theme publish check failure keeps the learning code and hides supplier text`() {
+        val (admin,access)=token("CONTENT");val theme=UUID.randomUUID()
+        missionStatus=422;missionBody="""{"status":422,"code":"WEEKLY_THEME_PUBLISH_INCOMPLETE","detail":"student secret"}"""
+        val failed=draftCall("POST","/weekly-themes/$theme/publish",access,"{}")
+        assertEquals(422,failed.status);assertEquals("WEEKLY_THEME_PUBLISH_INCOMPLETE",json.readTree(failed.contentAsString)["code"].asText())
+        assertFalse(failed.contentAsString.contains("secret"))
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action='WEEKLY_THEME_PUBLISH_REJECTED'",Int::class.java,admin))
+        missionStatus=404;missionBody="""{"status":404,"code":"NOT_FOUND","detail":"secret"}"""
+        val missing=draftCall("GET","/weekly-themes/$theme",access)
+        assertEquals(404,missing.status);assertEquals("주간 테마를 찾을 수 없습니다.",json.readTree(missing.contentAsString)["title"].asText())
+        missionStatus=200;missionBody="""{"themeId":"${UUID.randomUUID()}","status":"PUBLISHED"}"""
+        val mismatch=draftCall("POST","/weekly-themes/$theme/publish",access,"{}")
+        assertEquals(503,mismatch.status);assertEquals("LEARNING_INVALID_RESPONSE",json.readTree(mismatch.contentAsString)["code"].asText())
     }
     companion object {
         data class Seen(val method: String,val path: String,val body: String,val role: String?,val scope: String?,val token: String?,val user: String?)

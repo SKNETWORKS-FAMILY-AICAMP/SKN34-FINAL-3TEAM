@@ -23,7 +23,7 @@ import java.nio.file.Path
 import java.util.UUID
 import kotlin.test.*
 
-/** #234 학생 꾸미기 설정: 기본값·전체 교체·목록 외 값 422·학생 외 403·다른 학생과 분리. */
+/** #234 학생 꾸미기 설정: 기본값·전체 교체·목록 외 값 422·학생 외 403·다른 학생과 분리. 잠금(#389)은 RewardIntegrationTest. */
 @AutoConfigureMockMvc
 @TestPropertySource(properties=["spring.rabbitmq.listener.simple.auto-startup=false"])
 class StudentLookIntegrationTest: IntegrationTestSupport() {
@@ -41,6 +41,9 @@ class StudentLookIntegrationTest: IntegrationTestSupport() {
         studentToken = tokens.access(session(jdbc, user, "STUDENT", student))
         siblingToken = tokens.access(session(jdbc, user, "STUDENT", sibling))
         parentToken = tokens.access(session(jdbc, user, "PARENT"))
+        // #389 잠금: 이 테스트가 고르는 유료 테마·캐릭터는 해금해 둔다(해금 자체는 RewardIntegrationTest).
+        for (key in listOf("THEME:space", "COMPANION:monggeul", "THEME:forest", "COMPANION:tori"))
+            jdbc.update("INSERT INTO student_look_unlock(student_id,item_key,ledger_id,unlocked_at) VALUES(?,?,NULL,now())", student, key)
     }
 
     private fun call(method: String, token: String?, body: Any? = null, expected: Int = 200, snapshot: String? = null): JsonNode {
@@ -63,7 +66,8 @@ class StudentLookIntegrationTest: IntegrationTestSupport() {
         assertEquals(saved, call("GET", studentToken))
         // 형제 학생은 같은 보호자 계정을 공유해도 자기 설정만 본다.
         assertTrue(call("GET", siblingToken)["updatedAt"].isNull)
-        assertEquals(setOf("theme", "companion", "updatedAt"), saved.fieldNames().asSequence().toSet())
+        assertEquals(setOf("theme", "companion", "updatedAt", "equipped"), saved.fieldNames().asSequence().toSet())
+        assertEquals(setOf("HAT", "OUTFIT", "ACCESSORY", "BACKGROUND"), saved["equipped"].fieldNames().asSequence().toSet())
     }
 
     @Test fun `values outside the list are 422 and keep the previous setting`() {

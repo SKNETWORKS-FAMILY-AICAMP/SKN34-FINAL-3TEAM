@@ -1,4 +1,4 @@
-# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82·#169·#137·#164·#205·#241·#207·#201·#262·#336·#353·#355)
+# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82·#169·#137·#164·#205·#241·#207·#201·#262·#336·#353·#355·#385·#386)
 
 계약은 [API 명세](../design/api-spec.md) 2.2·3.1~3.8·4.1과 [learning OpenAPI](../../contracts/openapi/learning-service.yaml), 판정 상태는 [상태 다이어그램](../design/state-diagram.md) 3장.
 
@@ -9,7 +9,7 @@
 - 상세는 목록과 같은 범위. 비공개·범위 밖 409 `MISSION_NOT_AVAILABLE`, 없으면 404
 - 수행 상태는 `MissionRepository`가 미션별 가장 최근 시도로 읽음(없으면 `NOT_STARTED`). `AttemptService`를 부르면 순환이라 Repository에서 직접
 - 진행 중 시도는 시작 당시 미션 버전을 유지(P07). 목록·상세는 현재 공개 버전
-- 구현 예정(2026-11-06 결정, [서비스 기획 방향](service-direction.md)): 학생 기본 경로가 주간 테마 당일 문제로 바뀌고 이 목록은 프리미엄 추가 문제(`EXTRA`) 고르기로 쓴다. 테마·요일 검사는 learning `theme`([API 2.11](../design/api-spec.md), [ERD 4.4](../design/erd.md#44-구현-예정-변경-learning_db))
+- 2026-11-06 결정([서비스 기획 방향](service-direction.md)): 학생 기본 경로가 주간 테마 당일 문제로 바뀌고 이 목록은 추가 문제(`EXTRA`) 고르기로 쓴다. 테마·요일 검사는 learning `theme`(24절, [API 2.11](../design/api-spec.md), [ERD 4.2.1](../design/erd.md#421-주간-테마-p23-385-v11v12))
 
 ### 데모 미션 시드
 
@@ -762,7 +762,156 @@ learning `Element`에 `code`·`goodThought`를 더했을 때 응답을 받는 �
 - scoring `ruff check`·`pytest` 통과(199개, 임시 컨테이너)
 - 로컬 실연(2026-11-05, 이 브랜치로 core·learning 이미지 빌드, compose 별도 프로젝트에 호스트 포트는 core만 열고 공유 kind·컨테이너는 그대로, 끝난 뒤 볼륨까지 삭제): learning_db에 성취기준 시드 765행, ai 자리에는 learning 테스트 `sampleDraft`와 같은 초안을 돌려주는 대역(LLM 호출 없음). core 공개 경로로 성취기준 조회(`gradeBand=초5~6`·`q=6국01-02`) 200 → 초안 요청 202(`GENERATING`, `X-Admin-Operation-Id`) → learning 주기 작업이 대역 ai를 불러 `READY`(1회) → 목록 `status=READY` 1건 → 채택 201(`DRAFT`·`LLM_DRAFT`, 미션 경로로 조회 200) → 재채택·채택된 초안 버리기 409 `CONFLICT`, 없는 초안 404, 학년군 밖 요청 400 `VALIDATION_FAILED` → 새 초안 버리기 200(`DISCARDED`). 감사 14행이 위 결정대로 남음(채택 결과는 `MISSION`·미션 ID·`draftId`). 실제 LLM과 사용량 이벤트 흐름은 이 실연에 없음(사용량 소비는 위 테스트와 CHECK로 확인)
 
+## 24. 주간 테마·요일 문제·되돌아보기 (#385)
+
+2026-11-06 결정 P23(학년군별 주 1테마, 월~금 하루 1문제, 그 요일에만 신규 시도, 토·일 되돌아보기·다시 풀기)의 learning 몫. core 프록시·무료 하루 1개 한도는 #387(develop 머지), 웹은 #393·#395(MSW 목업 기준)이다.
+
+| 위치 | 내용 |
+|---|---|
+| `V11__prepare_weekly_themes.sql` | `weekly_theme`·`weekly_theme_version`·`weekly_theme_day`·`theme_review_view`, 게시 부분 UK, `attempt.context`·`theme_id`·`theme_week_start`(nullable) 추가와 기존 행 `EXTRA` 채움, 인덱스 2개 |
+| `V12__apply_attempt_context.sql` | `LOCK TABLE attempt` + 사전 검사 뒤 `context NOT NULL`, `ck_attempt_context`·`ck_attempt_theme_context` |
+| `theme/domain` | `GradeBand`·`ThemeDay`·`DayState`·`ThemeWeek`(KST 주·요일 상태), `WeeklyTheme`(상태 전이), `ThemePublishCheck`(게시 검사), 응답 모양 |
+| `theme/repository` + `mybatis/theme/WeeklyThemeMapper.xml` | 테마·버전·요일, 이번 주 테마 해석, 학생 테마 시도, 열람 기록(`ON CONFLICT DO NOTHING`), 학생 삭제 |
+| `theme/service/WeeklyThemeService` | `current`·`checkStart`·`recordReviewView`·`summary`·`deleteByStudent(MANDATORY)` |
+| `theme/service/WeeklyThemeAdminService` | 목록·작성·상세·수정(새 버전)·검토 요청·게시·중단 |
+| `theme/controller` | `WeeklyThemeController`(`/internal/students/{id}/weekly-theme…` 3경로), `AdminWeeklyThemeController`(`/internal/admin/weekly-themes…` 7경로) |
+| `attempt` | `AttemptContext`·`ThemeAttempt`, `Attempt`에 3칸, `AttemptController.start` 선택 본문 `{context}`, `AttemptService.start(…, context)` |
+| `_common/config/ClockConfig` | `Clock.system(Asia/Seoul)` 빈. 요일 판정만 쓰고 기존 `Instant.now()`는 그대로 |
+| `record/service/StudentDeletionService` | 같은 트랜잭션에서 `weeklyThemeService.deleteByStudent` |
+| 계약·문서 | learning OpenAPI 10경로·스키마, ERD 4.2·4.2.1·6장·8장, api-spec 1.3·2.8·2.11·4.1, state-diagram 3.2.1·3.5, sequence-diagram 3.4·3.6, class-diagram 4.1·4.4, architecture `theme/`, gitops 로컬 learning 마이그레이션 리비전 v10 → v12 |
+
+### 결정
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 게시 중 수정 | 미션(V7)과 같은 버전 방식. `weekly_theme_version`을 두고 테마 행에 `current_version_id`·`published_version_id`·`review_version_id`. 학생 조회·시작 검사는 게시본, 관리자 편집은 현재본, 재검토·재게시 때 교체하고 상태는 `PUBLISHED` 유지 | api-spec 2.8 "게시 중 수정은 재검토". 상태만 두면 수정하는 순간 학생 화면이 바뀜 |
+| 학년군·주 위치 | 테마 행(버전 밖). 게시 중 변경은 409 `CONFLICT` | 게시 부분 UK `(grade_band, week_start)`가 테마 행에 있어야 함. 이미 그 주 학생에게 제공 중인 테마의 주가 바뀌면 안 됨 |
+| 검토·승인 | 별도 `/review` 경로 없음. 검토 요청한 버전(`review_version_id`)이 현재본일 때의 게시가 승인. 검토 중 수정은 `DRAFT` | core #387이 7경로만 프록시. 미션처럼 검토 경로를 두면 core도 바꿔야 함 |
+| 학년군 검사 | 미션 게시본이 학년군 전체를 덮음(`gradeMin ≤ 학년군 최소`, `gradeMax ≥ 학년군 최대`), 초3~4는 논술 불가, 시연 전용 제외 | 학년군 안 어느 학생에게나 그 요일 문제가 열려야 함(`MissionView.isOpenTo`와 같은 규칙) |
+| 오류 코드 | 허용 안 되는 전이 409 `CONFLICT`, 게시 검사 422 `WEEKLY_THEME_PUBLISH_INCOMPLETE` + `errors:[{code, message}]`(코드 6종: `DAYS_INCOMPLETE`·`MISSION_NOT_PUBLISHED`·`MISSION_DEMO_ONLY`·`GRADE_BAND_MISMATCH`·`THINKING_TYPES`·`WEEK_ALREADY_PUBLISHED`) | 웹 `publishProblems()`가 `errors[].message`를 그대로 보여 줌. 동시 게시가 부분 UK에 걸려도 같은 422 |
+| 작성 중 저장 | 다섯 요일을 다 채우지 않아도 저장(요일·미션 중복과 없는 미션만 400). 다섯 요일은 게시 검사 | 미션 작성과 같음 |
+| 이번 주 테마 | 그 주 게시본, 없으면 그 주 이전 최근 게시본(`reused`). 미래 주 게시본은 쓰지 않음. 학년군에 게시 테마가 없으면 404 | P23 "미게시 주는 최근 게시 테마 재사용" |
+| 시작 순서 | 진행 중 시도 반환(검사 없음) → 미션 공개·범위(기존) → 테마 검사. 학년군은 시도 학년으로 정함(core와 같은 규칙) | 자정이 지나도 이어하기(P23). core는 `themeId`를 넘기지 않음(#387) |
+| `THEME_DAY` | 이번 주 테마의 오늘(KST, learning 시계) 요일 문제만. 아니면 409 `THEME_DAY_CLOSED`. 이미 끝낸 문제도 그날이면 새 시도 | api-spec 2.11 |
+| `THEME_REVIEW` | 토·일 + 이번 주 테마 문제 + 이번 주 그 문제 `THEME_DAY` 시도를 마무리(`finished_at`)했을 때만. 아니면 409 `THEME_REVIEW_NOT_ALLOWED` | "그 주 마무리한 문제만" |
+| 요일 상태·되돌아보기 | `state`는 오늘 `OPEN`, 지난 요일 `CLOSED`, 안 온 요일 `LOCKED`(토·일은 모두 `CLOSED`). `attemptStatus`는 이번 주 그 요일 문제 최근 `THEME_DAY` 시도. `review.missions[].completed` = 마무리함, `missed` = 지난 요일인데 마무리 안 함 | 웹 `readWeeklyTheme`(`NOT_STARTED`·`IN_PROGRESS`·`COMPLETED`) |
+| 완주 | 월~금 다섯 문제 각각 그 요일(KST) 안에 학습 완료(`completed_at`) | P23 "각 당일 학습 완료". 금요일 문제를 토요일 01시에 끝내면 완주 아님 |
+| 열람 기록 | `theme_review_view` 학생·주당 1행, 다시 보내도 200(`firstViewThisWeek`만 false). 평일은 409 `THEME_REVIEW_NOT_ALLOWED` | #389 포인트 멱등 근거 |
+| 주간 요약 | 역할 `PARENT`·`STUDENT`·`SYSTEM` + 대상 학생 scope(기록 조회와 같음). 테마는 그 주 학생 테마 시도에서 정함(주 중간에 바뀌면 마지막 요일 문제 시도의 테마), 테마 시도가 없으면 `NO_RECORD` | report는 학년군을 모름. 학생이 실제로 푼 테마를 요약 |
+| 날짜 기준 | 조회·열람은 core가 넘긴 `date`, 시작 검사는 learning `Clock`(KST) | core 시작 프록시는 날짜를 넘기지 않음(#387). 둘 다 KST 오늘이라 같은 날 |
+
+### 설계·이슈와 다른 점
+
+- ERD 4.4 설계는 `weekly_theme`에 `title`·`intro`를 두고 `weekly_theme_day (theme_id, …)`였다. 게시 중 수정을 버전으로 두려고 테이블 1개(`weekly_theme_version`)와 컬럼 3개(`current_·published_·review_version_id`)를 더하고 제목·소개·요일 문제를 버전으로 옮김(`weekly_theme_day (theme_version_id, day_of_week)`). 순환 FK는 미션처럼 `DEFERRABLE INITIALLY IMMEDIATE`(작성 트랜잭션만 현재 버전 검사를 미룸)
+- `weekly_theme.week_start` 월요일 CHECK(`ck_weekly_theme_week_start_monday`)를 더함. API도 월요일이 아니면 400
+- 상태도 3.5의 "수정 요청"(검토 반려) 전이는 없다(위 결정). "검토 중 수정"으로 `DRAFT`
+- 학생 응답 `days[]`·`review.missions[]`에 `title`을 더함(api-spec 2.11에 반영). 웹 목업은 `review.missions[].title`을 선택 필드로 읽음
+- 관리자 응답 `AdminWeeklyTheme`에 `version`·`publishedVersion`·`reviewRequested`·`publishedAt`·`createdAt`을 더함. 웹 `AdminWeeklyTheme` 타입(`themeId, gradeBand, weekStart, title, intro, days, status, updatedAt`)은 그대로 읽힘
+- 계획에 있던 `scripts/check_policy_migrations.py`는 고치지 않음: learning V3 시점에 행을 넣고 V5까지만 적용해 `context` 컬럼이 아직 없음(V11 준비 버전이 그 행을 `EXTRA`로 채움)
+- 계획의 `AttemptServiceTest` 추가 사례는 고정 시계를 쓰려고 `AttemptThemeStartTest`로 나눔(같은 Testcontainers 기반)
+- `scripts/tests/test_weekly_theme_contract.py`(#387)를 3자 대조로 넓힘: core `service.weeklyThemes(…)` 경로 = learning OpenAPI 관리자 7경로, core 학생 프록시 경로의 `gradeBand`·`date`, 시작 `context` 값, 게시 오류 코드 = domain
+
+### API 변경
+
+- learning OpenAPI 1.2.0: 학생 `GET /students/{studentId}/weekly-theme`·`POST …/review-views`·`GET …/summary`, 관리자 `/admin/weekly-themes` 5경로(조작 7개). 시작 `POST /missions/{id}/attempts`에 선택 본문 `AttemptStartRequest`, 409 `THEME_DAY_CLOSED`·`THEME_REVIEW_NOT_ALLOWED`. 조작 수 42 → 52(`test_record_exists_openapi`)
+- 시도 상세·기록 응답에는 아직 `context`를 내보내지 않음(아래 한계)
+
+### 한계
+
+- **테마 미션 공개 중단**: 게시 테마의 미션이 나중에 공개 중단되면 그 요일 신규 시작은 409 `MISSION_NOT_AVAILABLE`(미션 검사가 먼저). 요일 목록 표시는 미션 현재본 제목으로 계속 보임
+- **다른 컨텍스트 진행 중 시도**: 같은 미션에 `EXTRA` 진행 중 시도가 있으면 `THEME_DAY` 요청도 그 시도를 원래 `context` 그대로 200으로 돌려줌(진행 중 부분 UK가 학생·미션당 하나). 그 시도는 요일 상태·완주에 들어가지 않음
+- **주 중간 게시·중단**: 주 중간에 게시·중단하면 그 주 테마가 바뀐다. 시도에는 당시 `theme_id`를 저장하고, 요일 상태·완주는 이번 주 테마의 미션과 이번 주 시도를 미션 ID로 맞춤
+- **`context` 노출**: 시도 상세·기록 응답의 `context`(#389 포인트 완주·#391 일일 리포트 `problems[].context`)와 웹 목업 차이 정정(#395)은 후속
+- **같은 트랜잭션 재조회**: MyBatis 세션 캐시라 한 트랜잭션에서 같은 조회를 다시 하면 앞 결과를 씀(요청 하나에 한 번씩만 읽어 실제 흐름에는 영향 없음, 테스트만 조정)
+
+### 후속 (이슈 댓글 초안, 직접 달지 않음)
+
+- #389(원장·`RewardService.earn` 머지, 사건 연결은 후속): 되돌아보기·완주 적립 근거는 `POST …/review-views` 응답 `{firstViewThisWeek, completed}`. 완주는 월~금 다섯 문제 각 요일(KST) 안 학습 완료. 학습 완료 적립 보충에 필요한 시도 `context`는 learning 시도 상세 응답에 아직 없음(후속)
+- #391: 주간 요약 `GET /internal/students/{id}/weekly-theme/summary?weekStart`(SYSTEM + 학생 scope) 응답은 learning OpenAPI `WeeklyThemeSummary`. 일일 리포트 `problems[].context`는 learning 기록 응답에 `context`를 더하는 후속 작업이 필요
+- #395: 관리자 응답에 `version`·`publishedVersion`·`reviewRequested`, 게시 검사 `errors[].code` 6종이 더 있음. 별도 검토(승인) 화면 없이 "검토 요청 → 게시"
+- #393: 학생 응답 `days[].title`·`review.missions[].title` 채움, 학년군에 게시 테마가 없으면 404
+
+### 검증
+
+- learning `./gradlew clean test bootJar`(JDK 21 임시 컨테이너 + Testcontainers, develop #410 병합 뒤): 356건 모두 통과, bootJar 생성. 기존 `RecordServiceTest` 2건이 기간을 2026-11-02~08로 고정하고 완료 시각을 `now()`로 넣어 11-09부터 실패하던 것을 기간 안 고정 시각으로 고침
+  - 새 테스트: `WeeklyThemeServiceTest` 7건(요일 상태·소개·재사용·404·시작 검사·되돌아보기 열람 멱등·완주 경계·주간 요약), `WeeklyThemeAdminServiceTest` 10건(버전·전이 409·검토 중 수정·게시 중 수정과 게시본·게시 검사 6종·같은 주 1개·중단 후 재사용·404/400), `AttemptThemeStartTest` 5건(THEME_DAY 저장·자정 뒤 이어하기·THEME_REVIEW·미션 검사 먼저·DB CHECK), `WeeklyThemeControllerTest`·`AdminWeeklyThemeControllerTest`, `AttemptControllerTest` 본문 `context` 사례, `StudentDeletionTest`에 `theme_review_view`
+- 루트 `python -O -m unittest discover -s scripts/tests`: 192건 OK(develop #410 병합 뒤)(`test_weekly_theme_contract.py` 3자 대조 3건 추가, OpenAPI 조작 52)
+- ci-db-schema 방식 `scripts/check_db_migrations.py`(일회용 PostgreSQL 17 + Flyway 컨테이너): PASS. learning V1~V12 적용, learning_db 25개 표·222개 컬럼(전체 88개·775개, #407 병합 뒤)이 ERD와 일치, learning 음성 사례 33건(테마 CHECK·FK·부분 UK·`context` CHECK 추가), 반복 마이그레이션 변화 없음
+- learning 단독 실연(2026-11-09 월요일, 일회용 네트워크·PostgreSQL에 V1~V12 + 데모 미션 시드, 이 브랜치 bootJar, core가 넘기는 내부 토큰·역할·학생 범위 헤더로 직접 호출, 끝난 뒤 컨테이너·네트워크 삭제): 게시 테마 없음 404 → 작성 201 → 검토 요청 없이 게시 409 `CONFLICT` → 검토 요청·게시 200 → 같은 주 둘째 테마 422 `errors[WEEK_ALREADY_PUBLISHED]` → 학생 월요일 조회(MON `OPEN`, 소개 있음) → 오늘 `THEME_DAY` 시작 201(시도에 `THEME_DAY`·테마·2026-11-09 저장) → 화요일 문제 409 `THEME_DAY_CLOSED` → 잘못된 `context` 400 → 같은 미션 다시 시작 200 → 평일 열람 409 `THEME_REVIEW_NOT_ALLOWED` → 토·일 날짜 열람 `firstViewThisWeek` true 뒤 false → 토요일 조회 `review.open` → 다음 주 `reused` → SYSTEM 주간 요약 `OK` → 게시 중 수정(v2) 뒤 학생은 게시본 제목
+  - 데모 시드 초3 미션은 학년 하나(3~3)라 G3_4 학년군 전체를 덮지 않아 그대로는 게시 검사에 걸린다. 실연 DB에서만 3~4로 넓혔다(아래 후속)
+- core와 붙인 실제 흐름(core 공개 경로 → learning)은 확인하지 못함. core 쪽은 #387 테스트와 위 3자 계약 테스트로만 확인
+
+### 후속 작업
+
+- 데모 테마 시드: 지금 데모 미션은 학년 하나씩이라 학년군 테마를 게시할 수 없음. 학년군 전체 범위 미션 또는 데모 테마 시드가 필요
+- 시도 상세·기록 응답의 `context` 노출(#389·#391), 웹 목업 차이 정정(#393·#395)
+
+## 25. 커뮤니티 공유물·반응·열람 검사 (#386)
+
+2026-11-06 결정 P20([서비스 기획 방향](service-direction.md) 2.2)의 learning 몫. 공개 설정·`COMMUNITY` 동의·신고·작성자 별명은 core #388(PR #403)이 먼저 develop에 들어가 있어, core `CommunityClient`가 부르는 경로·응답을 기준으로 맞췄다.
+
+| 위치 | 내용 |
+|---|---|
+| V13 | `community_post`(UK `(student_id, mission_id)`·`attempt_id`, FK 미션·시도·답변, 상태 CHECK), `community_reaction`(PK `(post_id, student_id, reaction)`, UK `id`), `community_visibility`(학생당 마지막 공개 여부), 인덱스 2개. 새 표만이라 채움 단계 없음. ERD 4.3.1 Mermaid·6장·8장 |
+| `community/` | `CommunityController`(내부 경로 7개·조작 8개), `CommunityService`, `CommunityRepository`·`CommunityMapper.xml`, `CommunityRules`(검토 전이·첫 상태·반응 ID) |
+| `AttemptService` | `communityShareSource`(시도·첫 학습 완료 여부·마지막 답변·시도 고정 미션 버전), `hasCompleted`(열람·반응 검사). `AttemptMapper.findFirstCompleted` |
+| `StudentDeletionService` | 시도 삭제 전에 `CommunityService.deleteByStudent`(같은 트랜잭션) |
+| 계약 | learning OpenAPI 경로 7개·스키마, `scripts/validate_learning_community_contracts.py`(실제 응답 10종 대조, ci-contracts 단계 추가), `verify_db_schema.py` 음성 사례 6개, gitops 로컬 learning 마이그레이션 리비전 v13 |
+
+### 결정
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| "마무리"의 뜻 | 공유·열람·반응 모두 학습 완료(`attempt.status = COMPLETED`, 돌아보기 저장)를 기준으로 함. 마무리(`finished_at`)만 한 시도는 아님 | FN-RET-02 "처음 마무리하면(학습 완료)", core가 돌아보기 저장 뒤 공유 요청 |
+| 공유 대상 시도 | 그 미션을 처음 학습 완료한 시도(`completed_at`·`id` 순 첫 행)만. 그 시도가 아니면 409 `COMMUNITY_NOT_SHAREABLE`. 공유물이 이미 있으면 어떤 시도로 요청해도 그 공유물을 200 | P20 "처음 마무리한 시도", "다시 풀기는 공유하지 않음". 설정을 끈 채 처음 완료하고 나중에 켠 뒤 다시 풀어도 공유하지 않음 |
+| 공유 답변 | 그 시도의 마지막 답변(`version` 최대). 응답 `answer`는 `{inputType, text, content}`: `text`는 `answer.plain_text`(입력 틀 칸 이름·선택지 이름을 붙인 원문), `content`는 입력 방식별 제출 내용. 답변 행을 조인하고 복사하지 않음 | 고르기·분류는 `content`만으로는 ID라 읽을 수 없음. web `answerText`가 `text`를 먼저 읽어 그대로 보임. 답변은 추가만이라 복사가 필요 없고 삭제 때 한 곳만 지움 |
+| 표현 필터 | 공유 때 지금 `ExpressionPolicy`로 마지막 답변의 학생 글을 다시 검사, 걸리면 공유 안 함(범주만 로그) | 제출 때 통과했어도 단어 목록이 바뀔 수 있음(#205). 걸린 말·원문은 남기지 않음(NFR-SEC-05) |
+| 열람 목록 | `VISIBLE`만, 열람자 본인 공유물 제외, 반응 수 없음, `ORDER BY md5(id || seed), id` + `LIMIT/OFFSET` | 같은 seed면 같은 순서·쪽 나누기 이어짐(P20 무작위·순위 없음). 본인 글을 core가 빼면 쪽 크기가 줄어 learning에서 뺌 |
+| 반응 ID | `UUID.nameUUIDFromBytes("community-reaction:{postId}:{studentId}:{reaction}")`. 취소 뒤 다시 남겨도 같은 ID | core #389 사건 키(ERD 3.5.1 반응 `postId:reaction`, 학생별 UK)와 1:1이라 어느 쪽을 써도 반응을 껐다 켜서 적립을 반복할 수 없음. 무작위 ID면 하루 상한까지 반복 적립 가능 |
+| 반응 검사 순서 | 공유물 잠금 → `VISIBLE` 아니면 404 → 본인 글 409 → 미완료 403. 취소는 공유물만 있으면 상태와 무관하게 허용 | 숨긴 글에 남긴 내 반응을 지울 수 없으면 안 됨. 잠금으로 신고 숨김과 반응을 차례로 처리 |
+| `community_visibility` 표 추가 | core가 공개 전환으로 알린 마지막 값을 저장. 신고 검토 다시 공개 때 끔이면 `HIDDEN_SETTING`으로, 새 공유물은 끔이면 `HIDDEN_SETTING`으로 저장 | ERD 설계에는 없던 표. `HIDDEN_REPORT` 동안 설정을 끄면 공개 전환이 그 행을 건드리지 않아(설계대로), 나중에 다시 공개하면 설정 끔인데 `VISIBLE`이 됨. learning 상태만으로도 비공개를 지키려고 둠(core도 목록에서 다시 거름) |
+| 검토 전이 | `HIDDEN_REPORT`는 `REMOVED`가 아니면 숨김(`HIDDEN_SETTING`에서도), `VISIBLE`은 `HIDDEN_REPORT`에서만, `REMOVED`는 끝 상태. 같은 요청 반복은 그대로, `error_report_id`는 상태를 마지막으로 바꾼 신고 | core `moderationStatus`가 계속 숨김 우선으로 다시 보냄. 공개 전환 지연 중 신고도 숨겨야 함 |
+| 공개 전환 처리 | 공개 여부 행을 먼저 잠근 뒤 학생 공유물을 일괄 전환, `changed` 수 반환 | 같은 학생의 전환 요청을 줄 세움 |
+| 학생 삭제 | 그 학생 공유물에 달린 반응 → 남긴 반응 → 공유물 → 공개 여부를 시도 삭제 전에. `PROFILE`·`RECORDS` 모두 | P09 "공유물·남긴 반응 파기". 공유물이 시도·답변을 FK로 참조 |
+
+### core 계약과 다른 점
+
+core 코드(`CommunityClient`)가 읽는 필드는 모두 맞췄고, 아래는 더한 것이다. core 쪽 수정은 없다.
+
+- 공유 응답: api-spec은 `{postId}`만 적었으나 `{postId, created, status}`. core는 `postId`와 HTTP 상태(201·200)만 읽음
+- 공유 거절: api-spec "그 밖은 공유 안 함"을 409 `COMMUNITY_NOT_SHAREABLE`(api-spec 1.3 추가)·없는 시도 404로 정함. core는 200·201 밖을 모두 공유 안 함으로 봄
+- 반응 응답: api-spec `{created}`에 `postId`·`reaction`·`reactionId` 추가, 취소는 `{…, deleted}`(core는 본문을 읽지 않음)
+- 목록 `answer`: core OpenAPI 설명은 "learning 마지막 답변 content 그대로"지만 `{inputType, text, content}` 객체. core는 그대로 넘기고 web `answerText`는 `text`를 읽으므로 화면은 맞음. core OpenAPI `CommunityPost.answer` 설명 문구 갱신은 core 몫으로 남김
+- 목록 응답에 `page`·`size`, 본인·자녀 목록에 `studentId`, 원문 조회에 `createdAt`(core는 읽지 않음)
+
+### 이슈와 다른 점
+
+- 마이그레이션 번호: #385(24장)가 V11(준비)·V12(최종)를 쓰고 먼저 병합해 이 변경은 V13
+
+- 이슈에 없던 것: `community_visibility` 표(위 결정), 반응 ID(#389 대비), 공유 때 표현 필터 재검사, learning 실제 응답 계약 검사와 ci-contracts 단계
+- ERD 4.4 구현 예정 표에서 커뮤니티 두 행을 4.3.1 Mermaid로 옮김. 4.4 절 번호는 주간 테마 링크(state-diagram·이 보고서 1장) 때문에 그대로 둠
+
+### 한계
+
+- core와 실제로 붙인 공유 → 열람 → 반응 → 신고 숨김 흐름, web 화면 연동은 확인하지 않음(이슈 완료 조건 둘째 항목)
+- `HIDDEN_REPORT` 동안 받은 공개 전환은 `community_visibility`에만 남고 상태는 바꾸지 않음. 검토가 `REMOVED`로 끝나면 그대로 끝 상태
+- 공유 시점의 공개 여부는 core가 판정하고, learning `community_visibility`는 core 공개 전환 호출이 실패하면 늦을 수 있음. 이때 새 공유물이 `HIDDEN_SETTING`으로 저장될 수 있고 다음 설정 저장 때 복원됨(비공개 쪽으로 어긋남)
+
+### 검증
+
+- learning `./gradlew test bootJar` 통과: 366건, 실패 0(develop #385 병합 뒤), bootJar 생성. 로컬 JDK가 8이라 `eclipse-temurin:21-jdk` 임시 컨테이너와 Testcontainers로 실행. 새 `CommunityTest` 7건, `CommunityRulesTest` 3건, 확장한 `StudentDeletionTest` 4건(공유물·주고받은 반응·공개 여부까지 삭제) 포함
+- 루트 계약 테스트 `python -O -m unittest discover -s scripts/tests`: 192건 OK
+- ci-db-schema 방식 `scripts/check_db_migrations.py`(일회용 PostgreSQL 17.11 + Flyway 컨테이너): PASS
+  - learning V1~V13 적용, 28개 테이블·240개 컬럼이 ERD와 일치, 음성 사례 39건 거부
+  - 반복 마이그레이션에서 변화 없음
+- `scripts/validate_learning_community_contracts.py`: `CommunityTest` 실제 응답 10종이 learning OpenAPI와 일치하고, core `CommunityClient`가 읽는 필드도 있음
+- 확인하지 않은 것: 실제 core와 붙인 흐름, web 화면, 원격 CI
+
 
 ## #391 일일 리포트 완료일 조회 지원
 
 `/internal/records/students/{studentId}/daily-attempts`는 같은 KST 날짜의 COMPLETED 시도를 완료 시각으로 찾는다. 기존 제출일 기준 P08 목록은 유지한다. 기존 RecordPage/원문 제외 정책·학생 scope·삭제 표식을 재사용하며 새 DB 컬럼은 없다. 전날 제출·오늘 완료, 진행 중 제외, 다른 학생 제외를 서비스 DB 테스트로 검증한다. 테마·context 자체 구현은 #385 범위다.
+
+### #391 후속 반영
+
+기록 목록·상세·daily-attempts에 실제 `attempt.context`를 추가했다. 주간 요약은 `WeeklyThemeReportService`가 #207 비교 로직을 재사용해 `reviewRetries[].comparison`에 상태와 요소 변화만 담는다. 학생 범위를 검사하고, 미마무리 시도는 null이며 원문·인용은 전달하지 않는다. 위 #385 이력의 기록 context 후속은 이 변경으로 완료했고 학생 시도 상세 context는 이번 범위 밖이다.

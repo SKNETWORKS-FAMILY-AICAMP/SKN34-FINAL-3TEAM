@@ -1,4 +1,4 @@
-# core 학습 프록시·SSE·대시보드·알림·분석 대화·이벤트 기록 (#38·#39·#40·#41·#44·#119·#168·#195·#208·#210·#225·#243·#286)
+# core 학습 프록시·SSE·대시보드·알림·분석 대화·이벤트 기록·포인트 (#38·#39·#40·#41·#44·#119·#168·#195·#208·#210·#225·#243·#286·#387·#389·#392)
 
 계약은 [API 명세](../design/api-spec.md) 1.4·2.2·2.3·2.7·3.2, 구조는 [아키텍처](../design/architecture.md) 1.3·1.6.
 
@@ -12,7 +12,7 @@
   - 확정 응답은 원문·필수 헤더·상태를 보관. 미확정·5xx·전송 실패는 같은 키로 learning 재호출. core 저장 실패는 503(learning 성공을 성공으로 가장하지 않음)
   - learning이 키의 UK·본문 대조·최초 응답 재구성·답변/판정 원자적 저장을 제공해야 두 DB 사이 중복 생성이 없음(core TTL 24시간 이후에도 learning UK 유지)
 - 시도 상세(#195): core 공개 `GET /attempts/{attemptId}`는 `Cache-Control: no-store`, 웹도 상세·제출·마무리·돌아보기 후 재조회에 `cache: 'no-store'`. 초안 버전은 피드백·마무리·돌아보기 상태의 버전이 아니라서 상세 표현의 HTTP 캐시 검증자(ETag)로 쓰면 304로 상태 변경을 놓침. 초안 ETag/If-Match·409 계약은 그대로
-- 일일 한도(P13): 미구현. 무료 하루 1개(당일 테마 문제 `THEME_DAY`, 2026-11-06 결정). #210 결정에 따라 PostgreSQL `mission_daily_usage`로 구현 예정(6장, [ERD 3.6](../design/erd.md#36-구현-예정-변경-core_db)). learning의 신규 `201`·이어하기 `200`을 그대로 전달하고, 한도 연계 시 `201`만 집계·한도 도달 시 신규 생성만 차단
+- 일일 한도(P13): #387에서 구현(13절). 무료 하루 1개(당일 테마 문제 `THEME_DAY`, 2026-11-06 결정)를 #210 결정대로 PostgreSQL `mission_daily_usage`로 집계. learning의 신규 `201`·이어하기 `200`을 그대로 전달하고 `201`만 집계·한도 도달 시 신규 생성만 차단
 
 ## 2. 피드백 SSE (#39)
 
@@ -323,3 +323,96 @@ SET failure_count = 0, next_attempt_at = NULL, quarantined_at = NULL,
     manual_retry_count = manual_retry_count + 1, last_requeued_at = now()
 WHERE id = :event_id AND quarantined_at IS NOT NULL AND published_at IS NULL;
 ```
+
+## 12. 일일 리포트 고정 대화 (#392)
+
+2026-11-06 결정 P25(FN-RPT-16)의 core 몫. 학부모가 일일 리포트에서 만든 분석 대화를 자녀·그날·리포트 판으로 고정한다. 계약은 [API 명세](../design/api-spec.md) 2.4·4.2, 흐름은 [시퀀스 5.1](../design/sequence-diagram.md#51-일일-리포트-대화-p25).
+
+### 구현
+
+| 영역 | 내용 |
+|---|---|
+| DB | V33 `conversation.report_id uuid`·`report_revision int`(NULL 허용, 기본값 없음). `ck_conversation_report_pair`(함께 NULL 또는 함께 값)·`ck_conversation_report_revision`(1 이상)·`ck_conversation_report_day`(고정이면 `period_from = period_to`). 둘 다 NULL 허용이라 준비/최종 분리 없음 |
+| 생성 | `POST /conversations {childId, reportId}` → `ConversationService.createForReport`. ① 트랜잭션: 자녀 연결·공유·이용권(무료 429) ② `ReportJobRepository.byReport`로 일일·같은 자녀 확인(아니면 422, HTTP 없음) ③ 트랜잭션 밖 `ReportQueryService.pinned(reportId, null)`로 최신 판·`COMPLETED` 확인 ④ 트랜잭션: 연결·이용권 재확인 후 `from = to = 대상일`, `report_id`·`report_revision` 저장. `reportId`와 `from`·`to`를 같이 보내면 400 |
+| 응답 | 대화 생성·목록·상세에 `reportId`·`reportRevision`(일반 대화 null) |
+| 메시지 | `AnalysisStreamService`가 ai 호출 직전(트랜잭션 밖) `ConversationService.report`로 고정 판을 `?revision=N`으로 다시 읽어 ai 요청 `report`에 요약을 넣는다. 재생성으로 새 판이 생겨도 대화는 처음 판을 쓴다 |
+| 범위 | 고정 대화에 다른 기간 `scope`를 보내면 400(`scope_changed` 없음, 차감 전). 질문 속 다른 날은 ai `DIFFERENT_PERIOD` 범위 확인이 새 대화로 안내 |
+| 한도 | 기존 `usage.consume` 경로 그대로라 분석 대화 하루 30회를 공유(질문마다 1회) |
+| 오류 | 판 조회 실패는 메시지 `FAILED`·SSE `error`(`REPORT_UNAVAILABLE`·`REPORT_NOT_FOUND`·`REPORT_CONTRACT_INVALID`·`REPORT_SCOPE_REJECTED`). 관리자 작업 목록에 보이도록 `OperationErrors` 허용 목록에 추가 |
+
+### 결정
+
+1. **요약은 개수·판정만**: `{reportId, revision, date, metrics[{label, count}], problems[{title, context, judgment, elements[{label, satisfied}]}]}`. 되묻기·최종 답·돌아보기·인용 원문은 넣지 않는다. 인용 근거는 그날 learning 기록(`[원문]`)만 써서 기존 근거 ID 저장·숫자/인용 대조를 그대로 유지한다
+2. **판 조회는 `detail`이 아닌 `pinned`**: `detail`은 `report_view` 열람 기록을 남기고 서술 권한을 조회한다. 대화 메시지마다 열람으로 세지 않도록 같은 소유·계약 검사(`validateDetail`, `detail`과 공유)만 하는 `ReportQueryService.pinned`를 두었다(서술 요청 false)
+3. **일일 여부는 core `report_job` 기준**: report-api 응답 전에 core DB로 일일·자녀를 확인해 주간·다른 자녀·없는 리포트에 report 호출을 하지 않는다. 다른 보호자 리포트도 같은 422로 존재 여부를 구분하지 않는다
+4. **무료 판정이 먼저**: 웹 목업(#394)과 같은 순서로 429를 422보다 먼저 돌려준다
+5. **판 조회 실패도 차감 유지**: 기존 "받아들인 질문은 환불 없음" 원칙(5장)을 따른다
+
+### API 변경
+
+- core `POST /conversations` 요청 `reportId`(선택), 응답 `AnalysisConversation.reportId`·`reportRevision`(nullable), 400·422 `CONVERSATION_REPORT_INVALID`·429 명시
+- ai `POST /internal/analysis/stream` 요청 `report`(선택, `AnalysisReportSummary`). 있으면 `scope.from = scope.to = report.date`([ai 보고서 10장](ai.md#10-일일-리포트-고정-대화-리포트-요약-입력-392))
+
+### 검증
+
+- core: 새 `ReportConversationIntegrationTest`(일일 고정·최신 판 고정·메시지마다 `?revision` 조회·요약에 원문 없음·30회 공유 1회 차감, 주간·다른 자녀·없음·미완료 422, 무료 429는 report 호출 없음, 다른 기간 400, 판 조회 실패 `FAILED`)와 `./gradlew test bootJar`
+- DB: `verify_db_schema.py`에 쌍·판·하루 CHECK 음수 사례 3건
+- 범위 밖: report 일일 상세 실제 생성(#391) 뒤 실서버 연결, 웹 실서버 확인(#394는 목업 기준)
+
+## 13. 주간 테마 프록시·무료 하루 1개·추가 문제 프리미엄 (#387)
+
+2026-11-06 결정(P23, P13·P14 개정, [서비스 방향](service-direction.md) 2.4·2.6)의 core 몫. 에픽 #396, #233 회의 안건(무료 미션 한도)의 구현. learning 테마 API(#385)는 동시에 구현 중이라 api-spec 2.11·4.1 계약대로 클라이언트를 만들고 테스트는 learning 계약 대역으로 했다.
+
+- **학생 주간 테마**: `GET /students/me/weekly-theme`·`POST /students/me/weekly-theme/review-views`(`WeeklyThemeController`)를 learning `/internal/students/{studentId}/weekly-theme…?gradeBand&date`로 넘긴다. 학년군(초3~4 `G3_4`, 초5~6 `G5_6`)은 core 학년, 날짜는 `paymentClock` 기준 KST 오늘이라 무료 한도와 같은 날을 쓴다. 클라이언트 query는 버림. 요일 상태가 날마다 바뀌어 `Cache-Control: no-store`. 열람 기록에도 같은 query를 붙인다(4.1 표에 없던 값, learning이 학생의 주를 정하는 근거)
+- **시도 `context`**: `POST /missions/{id}/attempts`의 본문 없음·`{}`·`context: null`은 `EXTRA`. `context` 외 필드나 허용 밖 값은 learning 호출 전 400. learning에는 학년·시연 query와 `{context}` 본문을 넘기고 `themeId`는 넘기지 않는다(그 주 테마는 learning이 학년·날짜로 정함, api-spec 4.1 비고를 이렇게 고침). 요일(`THEME_DAY_CLOSED`)·되돌아보기(`THEME_REVIEW_NOT_ALLOWED`) 검사는 learning이 하고 core는 그대로 전달
+- **결정(2026-11-08 동섭)**: 무료 하루 1개(`limits.dailyMissions` 3 → 1, 신규 `201`만 집계)는 확정. 생각 유형별 고르기(`EXTRA`)의 프리미엄 전용은 미정이라 **지금은 무료도 허용**하고, 무료의 `EXTRA` 신규 시작도 `THEME_DAY`와 합쳐 하루 1개로 센다. 설계 문서(서비스 방향 2.4·기능명세 P13·api-spec 2.11 초안)의 'EXTRA는 프리미엄 추가 문제' 서술과 다르다. 프리미엄 전용으로 바꿀 때는 코드 수정 없이 상품 데이터만 바꾼다(아래 전환 방법)
+- **판정 한 곳**: 무료·프리미엄 판단은 `ProductEntitlementService.forStudent`를 거치고, 시도 정책은 같은 서비스의 `missionStart`·`missionStarted`에만 둔다. learning 호출 전에 `THEME_REVIEW`는 상품과 무관하게 통과, `EXTRA`는 학생 상품의 `features.extraMissions`가 `false`면 403 `PREMIUM_REQUIRED`(없으면 허용, boolean이 아니면 503 `PAYMENT_PRODUCT_UNAVAILABLE`), 무료 `THEME_DAY`·`EXTRA`는 KST 오늘 `mission_daily_usage` 건수가 무료 상품 `limits.dailyMissions` 이상이면 429 `USAGE_LIMIT_REACHED`. 무료 상품에서 `EXTRA`가 꺼진 동안의 프리미엄 `EXTRA`만 프리미엄 사용이라 환불 처리 중이면 409 `REFUND_IN_PROGRESS`. `limits.dailyMissions`가 없거나 음수면 503 `PAYMENT_PRODUCT_UNAVAILABLE`(#48 원칙대로 임의 값으로 대체하지 않음). 프리미엄은 하루 미션 한도 없음(프리미엄 하루 피드백 50회는 이번 범위 밖)
+- **기록**: learning이 신규 `201`을 돌려준 뒤에만 `missionStarted`가 무료 `THEME_DAY`·`EXTRA`는 `mission_daily_usage(attempt_id PK, student_id, mission_id, usage_date)`에, 무료 상품에서 `EXTRA`가 꺼진 동안의 프리미엄 `EXTRA`는 부모 잠금 안에서 `payment_premium_usage(kind = EXTRA_MISSION, source_id = 시도 ID, USED)`에 남긴다. 둘 다 시도 ID로 1회(PK·`UNIQUE(kind, source_id)`). `EXTRA_MISSION` 행은 기존 환불 검사(`usageCount`)가 그대로 세어 환불 판정의 프리미엄 사용이 된다(P14). 무료에도 열려 있는 지금은 프리미엄 `EXTRA`를 기록하지 않아 환불 판정에 영향이 없다. 이어하기 `200`은 기록하지 않는다
+- **전환 방법**: (1) 무료 한도 수는 무료 상품(`PAYMENT_FREE_PRODUCT_ID` 행) `limits.dailyMissions`. 운영 DB는 `infrastructure/aws/set-free-product-daily-missions.sql`로 1로 바꾼 뒤 배포한다(값이 없으면 503). (2) `EXTRA` 프리미엄 전용 전환은 무료 상품 `features`에 `"extraMissions": false`를 넣는다(`UPDATE product SET features = jsonb_set(features, '{extraMissions}', 'false') WHERE id = <무료 상품 ID>`). 그 순간부터 무료 `EXTRA`는 403, 프리미엄 `EXTRA` 신규 시도는 `EXTRA_MISSION` 사용으로 기록된다. 되돌리려면 키를 지우거나 `true`. 프리미엄 상품 `features`는 비워 두면 허용
+- **한도 뒤 이어하기**: 한도 확인은 learning 호출 전이라 이어하기(`200`)와 신규(`201`)를 구분할 수 없다. 한도에 닿았으면 같은 학생·미션의 마지막 기록 시도를 learning `GET /internal/attempts/{id}`로 읽어 `IN_PROGRESS`일 때만 넘긴다(learning은 미션당 진행 중 시도 하나를 200으로 반환). 그래서 ERD 3.6 설계에 `mission_id` 컬럼과 `(student_id, mission_id, created_at)` 인덱스를 더했다. 이미 마무리한 시도로 같은 날 다시 시작하는 것은 신규라 429
+- **실패 처리**: 기록 저장 실패는 학습 응답(201)을 바꾸지 않고 ERROR 로그만 남긴다. 이미 learning에 시도가 생겼고, 같은 요청을 다시 보내면 200 이어하기라 학생이 막히지 않기 때문이다(그 대신 그 1건은 한도·환불 근거에서 빠질 수 있음). 학생 피드백 제출 때 프리미엄 `FEEDBACK` 사용은 따로 남으므로 환불 근거가 모두 사라지지는 않는다
+- **동시 요청**: 한도 확인과 기록 사이에 잠금을 두지 않는다(learning HTTP 동안 DB 잠금을 잡지 않는 기존 원칙). 같은 미션은 learning이 진행 중 시도를 하나로 묶어 신규가 1건이지만, 무료 학생이 서로 다른 미션(`THEME_DAY`와 `EXTRA`, 또는 `EXTRA` 둘)을 동시에 시작하면 한도를 1건 넘길 수 있다. 하루 1개 정책의 학습 화면 흐름에서는 드물어 잠금 대신 허용 오차로 둔다
+- **관리자 주간 테마**: `/admin/weekly-themes…`(`AdminWeeklyThemesController`)를 learning `/internal/admin/weekly-themes…`로 관리자 미션·미션 초안(#355)과 같은 방식(CONTENT, ADMIN + `X-User-Id` + 빈 학생 범위)으로 넘긴다. 목록 필터 `gradeBand`·`weekStart`(KST 월요일)·`status`는 core에서 검사. 작성·수정·검토 요청·게시·게시 중단은 요청 감사 → learning 1회 → 응답 `themeId`로 결과 감사(`audit_log` `WEEKLY_THEME_{CREATE,UPDATE,REVIEW_REQUEST,PUBLISH,UNPUBLISH}_*`, `target_type = WEEKLY_THEME`). 게시 검사 실패 `422 WEEKLY_THEME_PUBLISH_INCOMPLETE`는 코드만 전달하고 공급자 문구는 지운다
+- **학생 삭제**: 삭제 확정(`ChildManagementService.confirm`) 트랜잭션 안에서 `MissionUsageService.deleteStudent`가 `mission_daily_usage`를 지운다(P09). `payment_premium_usage`는 거래 기록이라 남긴다
+- **위치**: 아키텍처 1.1.1·2.6(c370228b)대로 집계·한도 확인·삭제는 기존 `usage` 패키지(`MissionUsageService`, `MissionDailyUsageRepository`, `mybatis/usage/`)가 맡는다. 어떤 시도를 셀지·한도 수·`EXTRA` 허용은 무료·프리미엄 판단과 함께 `ProductEntitlementService`가 정해 넘긴다. `learning` 패키지는 DB·JDBC·`@Transactional`을 쓰지 않는다(`test_learning_openapi.py`)
+- **#389 연결 지점**: 포인트 적립 코드는 넣지 않았다. 학습 완료 적립 보충은 `LearningProxyService.weeklyTheme()` 응답 뒤, 되돌아보기·완주 적립은 `reviewViewed()`의 `{firstViewThisWeek, completed}` 응답 뒤에 붙인다
+- **마이그레이션**: core `V34__mission_daily_usage_and_extra_mission.sql`(develop V33 #392 다음)(새 테이블, `payment_premium_usage_kind_check`에 `EXTRA_MISSION` 추가, 기존 행 변경 없음). gitops 로컬 core 리비전 v33 → v34
+- **배포 후 확인**: `scripts/verify_cd_deployment.py`가 body `{}`로 시도를 시작하면 이제 `EXTRA`라 무료 시연 학생은 하루 1개를 추가 문제로 쓰고, `EXTRA`를 프리미엄 전용으로 바꾸면 무료는 403·프리미엄은 배포마다 프리미엄 사용이 남는다. 그래서 주간 테마에서 평일은 오늘 `OPEN` 문제를 `THEME_DAY`로, 토·일은 마무리한 문제를 `THEME_REVIEW`로 시작하게 바꿨다([CD README](../../infrastructure/cd/README.md) D)
+- **검증**: `WeeklyThemeProxyIntegrationTest`(무료 1개 뒤 429, 이어하기 허용·완료 시도 재시작 429, 되돌아보기 비집계, 무료 `EXTRA` 허용·합산, `extraMissions=false`면 무료 `EXTRA` 403, learning 409 전달, 학년군·KST 날짜, 삭제), `PaymentIntegrationTest`(`THEME_DAY`·`EXTRA` 합산 1개, KST 0시 초기화, `dailyMissions` 누락·`extraMissions` 형식 오류 503, 무료 상품 `extraMissions=false` 전환 후 무료 403·프리미엄 `EXTRA` 1회 기록·환불 거부 `REFUND_PREMIUM_USAGE_PRESENT`, 무료에 열려 있을 때 프리미엄 기록 없음), `AdminOperationsIntegrationTest`(주간 테마 7경로·CONTENT·감사·422), `LearningProxyIntegrationTest`(`context` 검사·본문 전달), `scripts/tests/test_weekly_theme_contract.py`·`test_cd_deployment.py`
+- **남은 확인**: learning #385가 api-spec 4.1과 다른 경로·응답을 정하면 core 클라이언트와 `test_weekly_theme_contract.py`를 맞춘다. learning OpenAPI에 경로가 올라오면 #355처럼 core ↔ learning 3자 대조로 넓힌다
+## 14. 참여 포인트·꾸미기 해금 (#389)
+
+2026-11-06 결정 P21·P22([서비스 기획 방향](service-direction.md) 2.3)의 core `reward` 도메인 앞부분. 계약은 [API 명세](../design/api-spec.md) 2.8·2.10·3.12, 저장은 [ERD 3.5.1](../design/erd.md#351-포인트꾸미기-p21p22-389)(V35). 결제와 패키지·테이블을 나눴다(포인트는 돈이 아니고 환급·환불 경로가 없음).
+
+### 범위
+
+| 구분 | 이번 PR | 후속 |
+|---|---|---|
+| 규칙·원장·잔액 | `reward_rule`(P21 초기값 시드)·`reward_point_ledger`·`reward_point_balance`, 적립 진입점 `RewardService.earn` | - |
+| 조회 | `GET /students/me/points`, `GET /children/{childId}/points` | - |
+| 꾸미기 | `GET /students/me/look-items`, `POST …/unlock`, `PUT /students/me/preferences` 잠금·`equipped` | - |
+| 관리자 | `/admin/look-items` 목록·등록·수정·판매 중단(CONTENT, 감사) | - |
+| 적립 사건 연결 | 없음(서비스 메서드와 테스트만) | 학습 완료(`LearningProxyService` 돌아보기 저장), 공유·반응(#388), 되돌아보기 열람·완주·주간 테마 조회 보충(#387) |
+
+적립 연결을 뒤로 미룬 이유: 사건이 생기는 경로(`LearningProxyService`, 커뮤니티·주간 테마 프록시)를 #387·#388이 동시에 고치고 있어, 같은 파일을 두 PR이 바꾸면 충돌과 중복 적립 위험이 생긴다. 먼저 사건 키 멱등인 `earn`을 만들어 두면 후속 PR은 사건 확인 뒤 한 줄로 부르면 된다.
+
+### 결정과 근거
+
+- **적립 진입점 하나(`earn`)**: 규칙 조회 → 학생 활성 확인 → 잔액 잠금 → 같은 사건 확인 → 하루 상한 → 원장 1행 + 잔액 갱신. 적립하지 않은 이유(`DUPLICATE`·`DAILY_CAP_REACHED`·`RULE_INACTIVE`·`STUDENT_UNAVAILABLE`)는 예외 없이 결과로 돌려 학습 응답을 막지 않는다(P21 "적립 저장 실패는 학습 응답 유지"). `REQUIRES_NEW`라 호출자 트랜잭션이 있어도 적립 실패가 그 트랜잭션을 망치지 않는다
+- **멱등은 사건 키 UK로**: `(student_id, event_type, source_key)`가 같으면 두 번째 적립이 없다. 그래서 저장 실패 뒤 같은 사건 재요청·주간 테마 조회 때 같은 `earn`을 다시 부르는 것으로 보충이 끝난다(별도 재시도 큐·Outbox 없음, 서비스 기획 방향 5장 "새 메시지를 두지 않음")
+- **하루 상한은 횟수, 한국 시간**: `daily_cap`은 하루 적립 횟수다. 반응 1점·5회라 지금은 포인트와 같지만, 운영이 점수를 바꿔도 "하루 반응 다섯 번"이라는 뜻이 유지된다. 하루 경계는 학생 생활 기준인 KST 자정
+- **잠금 순서 학생 행(공유) → 잔액 행(배타)**: 학생 삭제 확정은 학생 행을 `FOR UPDATE`로 잡고 포인트·해금을 지운다. 적립·해금이 학생 행을 `FOR SHARE`로 먼저 잡아, 삭제와 겹치면 삭제가 끝난 뒤 `ACTIVE`가 아님을 보고 멈춘다(삭제 뒤 원장이 다시 생기지 않음). 같은 학생의 적립·해금은 잔액 행으로 직렬화해 동시 해금도 1회만 차감되고 하루 상한도 넘지 않는다
+- **해금 이중 방어**: `Idempotency-Key`는 같은 요청 재전송(응답 재사용)을, 해금 PK `(student_id, item_key)`와 원장 UK `(student, UNLOCK, itemKey)`는 다른 키로 보낸 같은 해금을 막는다. 공통 멱등 저장(`IdempotencyService`)은 업무 커밋 뒤 응답 저장 사이에 틈이 있는데(지원 신고와 같은 문제), 이 틈에서 재요청해도 "이미 해금 200"으로 끝나 차감이 두 번 일어나지 않는다
+- **테마·캐릭터는 코드 상수, 아이템만 테이블**: 결정 "기존 테마·캐릭터 해금값은 코드 상수". 값 목록이 V23 CHECK·웹 상수와 이미 묶여 있어 테이블로 옮기면 세 곳이 어긋날 수 있다. 관리자 아이템 `code`는 `^[A-Z0-9_]{3,40}$`(DB CHECK)라 `THEME:`·`COMPANION:` 키와 겹치지 않는다
+- **판매 중단과 착용**: 영구 해금이라 판매 중단 뒤에도 해금한 학생 목록에는 `onSale:false`로 남고 계속 착용한다. 해금하지 않은 학생 목록에서는 빠진다(웹 목업과 같은 동작)
+- **잠금 전 선택 이관**: V35가 `student.look_theme`·`look_companion`(무료 제외)을 `ledger_id` NULL 해금 행으로 옮긴다. 포인트를 차감하지 않고, 원장에도 남기지 않는다(받은 적 없는 포인트를 쓴 기록이 생기지 않게)
+- **`equipped` 생략은 유지**: 웹은 테마·캐릭터만 바꿀 때 `equipped`를 보내지 않는다(`studentLook/api.ts`). 생략·null을 "비우기"로 읽으면 테마를 바꿀 때마다 아이템이 벗겨진다. 비우려면 슬롯을 null로 보낸다
+- **학부모 조회와 공개 설정**: 포인트는 학습 원문이 아니라 #206 학생 공개 설정과 무관하게 연결 학부모가 본다(결정 "잔액은 본인·학부모만")
+- **학생 삭제**: 기존 `ChildManagementService.confirm`이 부르는 `StudentLookService.clear`가 착용 → 해금 → 원장 → 잔액을 같은 트랜잭션에서 지운다. `confirm` 본문을 바꾸지 않아 #388(`community_enabled` 끄기)과 같은 줄을 다투지 않는다
+
+### 검증
+
+- `RewardIntegrationTest`(PostgreSQL·RabbitMQ 컨테이너): 시드 규칙값, 사건 키 1회·KST 하루 상한(23:30·다음날 00:10), 비활성 규칙·삭제 진행 학생 미적립, 학생·학부모만 조회, 목록 가격·판매 중단 노출, 해금 키 재사용·다른 키 재해금 무차감·부족·중단·없는 항목, 다른 키 4건 동시 해금 1회 차감, 잠금 409·`equipped` 슬롯·생략 유지·판매 중단 아이템 착용, 관리자 CONTENT·형식·코드 중복·감사 4종, 학생 삭제 정리, DB 부호·UK·잔액 CHECK
+- `LookUnlockMigrationTest`: V34 상태에 저장된 꾸미기를 넣고 V35 적용 → 유료 값만 `ledger_id` NULL 해금 행, 원장 0행
+- 계약: `scripts/validate_reward_contracts.py`가 실제 MockMvc 응답(포인트·목록·착용·관리자 아이템)을 OpenAPI로 검사(`ci-contracts`). `scripts/verify_db_schema.py`에 `reward_rule` 시드 예외(`event_type` 키)와 V35 음성 사례 13건 추가
+- 남은 일: 적립 사건 연결(위 표), 학습 완료 → 적립 → 해금 → 착용 종단 확인(이슈 완료 조건), 웹 실서버 연결 확인(#393~#395)

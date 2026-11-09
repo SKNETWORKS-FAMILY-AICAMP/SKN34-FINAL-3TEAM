@@ -4,6 +4,7 @@ import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.attempt.domain.Attempt
 import com.sagomungchi.learning.attempt.domain.AttemptComparison
+import com.sagomungchi.learning.attempt.domain.AttemptContext
 import com.sagomungchi.learning.attempt.domain.ComparisonAnswer
 import com.sagomungchi.learning.attempt.domain.ComparisonSnapshot
 import com.sagomungchi.learning.attempt.domain.AttemptDraft
@@ -23,6 +24,7 @@ import com.sagomungchi.learning.judgment.domain.TimelineAnswer
 import com.sagomungchi.learning.judgment.service.JudgmentService
 import com.sagomungchi.learning.mission.domain.MissionView
 import com.sagomungchi.learning.mission.service.MissionService
+import com.sagomungchi.learning.theme.service.WeeklyThemeService
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
@@ -52,6 +54,17 @@ data class AttemptDetail(
 /** 시도와 답변 타임라인(버전 순, 각 답변이 답한 되묻기 질문 포함) */
 data class AttemptTimeline(val attempt: Attempt, val answers: List<TimelineAnswer>)
 
+/**
+ * 커뮤니티 공유 원천 (#386, P20): 시도, 그 미션을 처음 학습 완료한 시도인지, 마지막 답변, 시도에 고정된 미션 버전.
+ * 메모·판정·되묻기는 담지 않음 (P05)
+ */
+data class CommunityShareSource(
+    val attempt: Attempt,
+    val firstCompleted: Boolean,
+    val lastAnswer: TimelineAnswer?,
+    val mission: MissionView,
+)
+
 /** 초안 버전 불일치. 최신 초안을 함께 돌려줌 (api-spec 3.6) */
 class DraftConflictException(val latest: AttemptDraft) :
     BusinessException(HttpStatus.CONFLICT, "ATTEMPT_DRAFT_CONFLICT", "초안 충돌", "다른 화면에서 더 최신 초안이 저장됨")
@@ -62,17 +75,21 @@ class AttemptService(
     private val draftRepository: AttemptDraftRepository,
     private val missionService: MissionService,
     private val judgmentService: JudgmentService,
+    private val weeklyThemeService: WeeklyThemeService,
 ) {
     /**
      * 시도 시작 (state-diagram 3.2, sequence-diagram 3.1). 진행 중 시도가 있으면 미션 공개·범위와 무관하게 그 시도를 돌려줌
      * (공개 중단 뒤에도 기존 시도는 당시 버전 유지, state-diagram 3.1). 없으면 공개·범위를 확인하고 현재 버전을 고정해 만듦.
+     * 테마 컨텍스트(#385, P23)는 신규 시도만 요일·되돌아보기 검사(409 THEME_DAY_CLOSED·THEME_REVIEW_NOT_ALLOWED)를 하고 그 주 테마를 시도에 저장.
+     * 진행 중 시도는 컨텍스트와 무관하게 원래 컨텍스트 그대로 돌려줌(자정이 지나도 이어하기)
      */
     @Transactional
-    fun start(studentId: UUID, missionId: UUID, grade: Int, demo: Boolean): AttemptStart {
+    fun start(studentId: UUID, missionId: UUID, grade: Int, demo: Boolean, context: AttemptContext = AttemptContext.EXTRA): AttemptStart {
         attemptRepository.findInProgress(studentId, missionId)?.let { return AttemptStart(it, created = false) }
         missionService.get(missionId, grade, demo)
+        val theme = if (context == AttemptContext.EXTRA) null else weeklyThemeService.checkStart(studentId, missionId, grade, context)
         val now = now()
-        val attempt = Attempt.start(studentId, missionId, missionService.currentVersions(missionId), grade, now)
+        val attempt = Attempt.start(studentId, missionId, missionService.currentVersions(missionId), grade, now, context, theme)
         if (attemptRepository.insertIfNoneInProgress(attempt)) {
             draftRepository.insert(AttemptDraft.empty(attempt.id, now))
             return AttemptStart(attempt, created = true)
@@ -190,6 +207,23 @@ class AttemptService(
      * 제출 가능 여부는 같은 키 재요청을 먼저 처리한 뒤 Attempt.requireAnswerable()로 확인. 호출한 쪽 트랜잭션 필요
      */
     fun lockForAnswer(attemptId: UUID): Attempt = lockOwned(attemptId)
+
+    /** 커뮤니티 공유 원천 (#386). 없거나 다른 학생의 시도면 null */
+    @Transactional(readOnly = true)
+    fun communityShareSource(studentId: UUID, attemptId: UUID): CommunityShareSource? {
+        val attempt = attemptRepository.findById(attemptId)?.takeIf { it.studentId == studentId } ?: return null
+        val first = attemptRepository.findFirstCompleted(studentId, attempt.missionId)
+        return CommunityShareSource(
+            attempt = attempt,
+            firstCompleted = first?.id == attempt.id,
+            lastAnswer = judgmentService.timeline(attempt.id).maxByOrNull { it.version },
+            mission = missionService.getVersion(attempt.missionVersionId),
+        )
+    }
+
+    /** 커뮤니티 열람·반응 검사 (#386, P20): 그 미션을 학습 완료(마무리 후 돌아보기)한 적이 있는지 */
+    @Transactional(readOnly = true)
+    fun hasCompleted(studentId: UUID, missionId: UUID): Boolean = attemptRepository.findFirstCompleted(studentId, missionId) != null
 
     /**
      * 학생 삭제(class-diagram 4.3 StudentDeletionService --> AttemptService, #128): 학생의 시도 이하 기록 전부 물리 삭제.

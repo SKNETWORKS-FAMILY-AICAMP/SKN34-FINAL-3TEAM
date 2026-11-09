@@ -232,7 +232,7 @@ def verify(args):
 
         for _ in range(4):
             m,v,r,h = mission(); a,b = uid(),uid()
-            sql('learning', "INSERT INTO attempt(id,student_id,mission_id,mission_version_id,rubric_version_id,grade,status,started_at,updated_at) VALUES(%s,%s,%s,%s,%s,3,'IN_PROGRESS',%s,%s)", (a,child,m,v,r,early,early))
+            sql('learning', "INSERT INTO attempt(id,student_id,mission_id,mission_version_id,rubric_version_id,grade,status,started_at,updated_at,context) VALUES(%s,%s,%s,%s,%s,3,'IN_PROGRESS',%s,%s,'EXTRA')", (a,child,m,v,r,early,early))
             sql('learning', 'INSERT INTO attempt_draft(attempt_id,version,content,saved_at) VALUES(%s,1,%s::jsonb,%s)', (a,json.dumps({'answer':{},'memo':memo}),early))
             sql('learning', "INSERT INTO answer(id,attempt_id,version,input_type,content,plain_text,dictated_by_guardian,idempotency_key,submitted_at) VALUES(%s,%s,1,'NARRATIVE',%s::jsonb,'합성 기록',false,%s,%s)", (b,a,json.dumps({'inputType':'NARRATIVE','text':'합성 기록'}),uid(),early))
             sql('learning', "INSERT INTO judgment(id,answer_id,process_status,rubric_version_id,retry_count,created_at) VALUES(%s,%s,'PENDING',%s,0,%s)", (uid(),b,r,early))

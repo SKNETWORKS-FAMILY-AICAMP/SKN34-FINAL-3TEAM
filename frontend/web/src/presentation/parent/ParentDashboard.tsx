@@ -251,7 +251,7 @@ function ReportCard({ child }: { child: Child }) {
     <section aria-labelledby="report-h" className="pd-card pd-report">
       <h2 id="report-h">주간 리포트</h2>
       <QueryFeedback query={list} />
-      {list.data && !list.error && !latest && <p>아직 생성된 리포트가 없습니다. 직전 주 리포트는 월요일 오전 7시에 생성됩니다.</p>}
+      {list.data && !list.error && !latest && <p>아직 생성된 리포트가 없습니다. 주간 리포트는 일요일 자정에 한 주 기록으로 생성됩니다.</p>}
       {latest && (
         <div className="pd-report-meta">
           <span className="pd-num">

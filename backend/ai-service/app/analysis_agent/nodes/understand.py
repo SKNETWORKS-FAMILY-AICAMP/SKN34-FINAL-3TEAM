@@ -20,6 +20,10 @@ CLARIFY_MESSAGES = {
     "DIFFERENT_PERIOD": "질문한 기간이 골라 둔 조회 기간과 달라요. 어느 기간을 볼지 골라 주세요.",
     "UNCLEAR": "어느 자녀의 어떤 기간 기록을 볼지 확인이 필요해요. 자녀와 기간을 골라 주세요.",
 }
+# 일일 리포트 고정 대화(#392)는 범위를 바꾸지 않고 다른 날 질문을 새 대화로 안내
+PINNED_PERIOD_MESSAGE = (
+    "이 대화는 {day} 일일 리포트로 고정돼 있어요. 다른 날은 새 대화에서 물어봐 주세요."
+)
 
 
 async def classify(state: AnalysisState, runtime: Runtime[AgentContext]) -> AnalysisState:
@@ -43,7 +47,11 @@ async def classify(state: AnalysisState, runtime: Runtime[AgentContext]) -> Anal
         scope = request.scope
         update["clarification"] = Clarification(
             reason=issue,
-            message=CLARIFY_MESSAGES[issue],
+            message=(
+                PINNED_PERIOD_MESSAGE.format(day=request.report.day.isoformat())
+                if issue == "DIFFERENT_PERIOD" and request.report
+                else CLARIFY_MESSAGES[issue]
+            ),
             current=ResultScope.model_validate(
                 {"childId": scope.student_id, "from": scope.from_, "to": scope.to}
             ),

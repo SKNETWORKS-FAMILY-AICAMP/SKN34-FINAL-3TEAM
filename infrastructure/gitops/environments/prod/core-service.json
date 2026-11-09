@@ -245,6 +245,10 @@
     {
       "name": "AUTH_NEW_ACCOUNT_DEMO",
       "value": "true"
+    },
+    {
+      "name": "SCORING_URL",
+      "value": "http://scoring-service.app.svc.cluster.local:8001"
     }
   ],
   "extraVolumeMounts": [
@@ -357,6 +361,10 @@
       {
         "name": "report-api",
         "port": 8002
+      },
+      {
+        "name": "scoring-service",
+        "port": 8001
       }
     ],
     "egressToPlatform": [

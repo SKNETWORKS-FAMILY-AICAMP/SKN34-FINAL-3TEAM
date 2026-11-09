@@ -1,11 +1,11 @@
-# 주간·일일 리포트 (#42·#50~#56·#129·#131·#132·#152·#167·#206·#209·#252·#344·#390)
+# 주간·일일 리포트 (#42·#50~#56·#129·#131·#132·#152·#167·#206·#209·#252·#344·#390·#400)
 
 계약은 [API 명세](../design/api-spec.md) 3.4·4.1.1·4.2.1·4.4·5.5, 메시지는 [report-messages](../../contracts/events/report-messages.md).
 
 ## 1. core 주간 리포트 (#42)
 
-- 매주 월요일 07:00 Asia/Seoul, 직전 월~일 `LocalDate`, 집계 경계 `[월 00:00 KST, 다음 월 00:00 KST)`. 기록 없는 자녀도 대상
-- P24 일일 리포트([서비스 기획 방향](service-direction.md)): core 몫(매일 07:00 전날 작업·`report_job.period_type`·정기 UK·알림·조회)은 20장(#390). report 몫(`weekly_report.period_type`, 재생성 UK·revision 잠금, 일일 템플릿·테마 요약)은 구현 예정([ERD 5.2](../design/erd.md#52-구현-예정-변경-report_db), #391)
+- 매주 월요일 00:00 Asia/Seoul(일요일 자정, 21장), 직전 월~일 `LocalDate`, 집계 경계 `[월 00:00 KST, 다음 월 00:00 KST)`. 기록 없는 자녀도 대상
+- P24 일일 리포트([서비스 기획 방향](service-direction.md)): core 몫(매일 00:00 전날 작업·`report_job.period_type`·정기 UK·알림·조회)은 20장(#390). report 몫(`weekly_report.period_type`, 재생성 UK·revision 잠금, 일일 템플릿·테마 요약)은 구현 예정([ERD 5.2](../design/erd.md#52-구현-예정-변경-report_db), #391)
 - ShedLock(Spring/JDBC, 기존 `shedlock` 테이블, `usingDbTime`) + SCHEDULE 부분 UK로 재실행 중복 방지, 자녀·기간별 advisory transaction lock으로 정기·재생성 직렬화. 자녀별 실패는 격리하고 실행 끝에 전파
 - 작업 저장과 `OutboxWriter.append`는 같은 트랜잭션, HTTP는 밖. core `OutboxRelay`는 #166 이후 DB 트랜잭션 밖에서 발행·confirm을 기다리고 발행 시각만 짧은 트랜잭션으로 기록
 - 재생성: 부모는 자녀·주 계열 REGENERATE 1회(재생성 결과로 다시 요청해도 우회 불가), SERVICE_OPS 관리자는 ADMIN_RETRY 무제한. revision은 report가 배정
@@ -296,7 +296,7 @@ core는 기존 대화 소유권·연결·동의·이용권과 학부모 행 잠�
 |---|---|
 | DB | V29 `report_job.period_type` NULL 허용 추가 → V30 기존 행 `WEEKLY` 채움, NOT NULL·`ck_report_job_period_type`·`ck_report_job_daily_period`(일일은 `period_from = period_to`), V2 `uq_report_job_scheduled_week (student_id, period_from)`를 `uq_report_job_scheduled_period (student_id, period_type, period_from) WHERE trigger='SCHEDULE'`로, 목록 인덱스를 `(student_id, period_type, period_from)`으로 교체. 알림 CHECK에 `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`. 기본값 없음(검증 스크립트 규칙) |
 | 도메인 | `ReportPeriodType(DAILY·WEEKLY)`, `ReportPeriod(from, to, type)`(주간 월~일, 일일 하루 검사), `ReportPeriod.previousDay`(KST 전날, 토·일 포함), `ReportJob.periodType`·`period` |
-| 일정 | `DailyReportScheduler` 매일 00:00 KST, ShedLock `core-daily-reports`(주간 `core-weekly-reports`와 따로라 월요일에 둘 다 돈다). 대상·동의·자녀별 실패 격리는 주간과 같은 `ReportScheduleService.generate(at, type)`. 기록 없는 날도 작업을 만든다 |
+| 일정 | `DailyReportScheduler` 매일 00:00 KST(대상일 자정, 21장), ShedLock `core-daily-reports`(주간 `core-weekly-reports`와 따로라 월요일에 둘 다 돈다). 대상·동의·자녀별 실패 격리는 주간과 같은 `ReportScheduleService.generate(at, type)`. 기록 없는 날도 작업을 만든다 |
 | 잠금·횟수 | advisory lock 키·정기 작업 조회·진행 중 검사·학부모 재생성 1회 모두 `(학생, period_type, period_from)` 단위. 월요일 일일·주간 작업이 서로 막지 않는다 |
 | 메시지 | `report.generate`에 선택 필드 `periodType`. 일일만 `"DAILY"`를 넣고 주간은 필드를 생략(=WEEKLY). 일일 `narrativeEnabled`는 항상 false이고 상품 권한을 조회하지 않는다 |
 | 알림 | `ReportJobFinished.periodType`으로 일일 완료·실패를 `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`("일일 리포트가 완성되었습니다." 등)로 만든다. 수신 설정은 유형별 독립이라 PUT 1~8개 |
@@ -328,6 +328,32 @@ core는 기존 대화 소유권·연결·동의·이용권과 학부모 행 잠�
 - DB: `scripts/check_db_migrations.py`(적용·재실행·report 왕복, ERD 대조). 일일 CHECK·NOT NULL·정기 UK 음수 사례를 `verify_db_schema.py`에 추가
 - 범위 밖: report와 붙인 월요일 일일·주간 실제 생성·완료 알림(#391 머지 후), web 화면 확인(#394 머지됨, mock 기준 동기화만 확인)
 
+## 21. 리포트 생성 시각 자정 변경 (#400)
+
+2026-11-09 결정([서비스 기획 방향 7장](service-direction.md#7-2026-11-09-생성-시각-변경), 설계 PR #399): 다음 날·월요일 아침 생성은 학부모가 그날·그 주 기록을 바로 볼 수 없어 대상 기간이 끝나는 자정에 만든다. 주 경계 월~일·대상 기간 규칙·알림 즉시 발송은 그대로이고 실행 시각만 바꿨다.
+
+### 구현
+
+| 항목 | 이전 | 이후 |
+|---|---|---|
+| 주간 `WeeklyReportScheduler` | `0 0 7 * * MON` | `0 0 0 * * MON`(일요일 자정) |
+| 일일 `DailyReportScheduler` | `0 0 7 * * *` | `0 0 0 * * *`(대상일 자정) |
+| 서비스에 넘기는 실행 시각 | `clock.instant()` | `clock.instant() + EARLY_RUN_GRACE`(1분) |
+
+ShedLock 이름(`core-weekly-reports`·`core-daily-reports`)·`lockAtMostFor`(30분)·`lockAtLeastFor`(1분), `ReportPeriod.previousDay/previousWeek`, 월요일 주간·일일 동시 실행은 그대로다.
+
+### 결정
+
+1. **조기 실행 여유 1분**: 아침 실행은 시각이 몇 초 앞뒤로 흔들려도 같은 KST 날짜였지만 00:00은 기간 경계 바로 위다. 스케줄러가 몇 ms라도 일찍 깨면(23:59:59.9) `clock.instant()`의 KST 날짜가 전날이 되어 일일은 이틀 전, 주간은 2주 전을 고른다. 기간 함수는 "실행 시각의 KST 날짜 기준 전날·직전 주" 의미를 유지하고, 스케줄러만 1분을 더해 넘긴다. 늦은 실행은 같은 KST 날짜 안이면 대상이 같다
+2. **API·스키마 변경 없음**: 공개·내부 API, `report.generate` 메시지, DB는 바뀌지 않는다. `api-spec.md`·`class-diagram.md`의 "자정 변경은 구현 예정" 표기와 계약 문서 시각만 정리했다
+3. **화면 문구는 다루지 않음**: web 학부모 화면 안내는 #401. `docs/outputs/user-flow`·`docs/screen-design` 산출물의 생성 시각 표기도 이 PR 범위 밖이다
+
+### 검증
+
+- core: `./gradlew test bootJar` 통과(525개, 실패 0, 로컬 JDK 21 + Testcontainers). `ReportPeriodTest` 주간·일일 cron 00:00, 월요일 00:00 실행이 조기(-100ms)·정각·지연(+5초, +29분)이어도 일일 10-25·주간 10-19~10-25를 고르는 경계 테스트, `ReportScheduleLockTest` 스케줄러가 여유를 더한 시각으로 호출, `DailyReportScheduleTest` 00:00 실행 시각
+- 계약·스크립트: 루트 `python -O -m unittest discover -s scripts/tests` 175개 통과
+- `git grep -nE "0 0 7|07:00"`: core·계약·`docs/report`·`docs/design`에 현재 시각으로 남은 07:00 없음(21장 표의 이전 값·서비스 기획 방향 7장 변경 전 서술은 이력)
+
 
 ## #391 일일 리포트와 주간 테마 요약 (2026-11-09)
 
@@ -335,7 +361,7 @@ core는 기존 대화 소유권·연결·동의·이용권과 학부모 행 잠�
 
 P24 일일 리포트는 LLM을 호출하지 않고 문제별 판정·되묻기와 보완 답변·마지막 답변·생각 요소·돌아보기·검증된 인용을 조립한다. 무료/full 파일에 같은 내용을 제공하며 비율·서술·저녁 질문·학부모 주간 템플릿은 적용하지 않는다. 기록이 없으면 COMPLETED/NO_RECORD다. 월요일 일일·주간이 공존하고 재생성 revision·최신 판 선택은 학생/기간 종류/시작일별로 분리한다.
 
-기존 P08 조회는 제출일 기준이므로, 전날 제출하고 오늘 마무리한 시도를 빠뜨리지 않도록 learning 기록 조회에 daily-attempts를 추가했다. 기존 P08 SQL·주간 계산은 변경하지 않았다. 주말도 context로 걸러내지 않아 되돌아보기 재시도·추가 문제를 포함한다. #385 context가 아직 없는 기존 기록은 null로 표시하고 추정하지 않는다.
+기존 P08 조회는 제출일 기준이므로, 전날 제출하고 오늘 마무리한 시도를 빠뜨리지 않도록 learning 기록 조회에 daily-attempts를 추가했다. 기존 P08 SQL·주간 계산은 변경하지 않았다. 주말도 context로 걸러내지 않아 되돌아보기 재시도·추가 문제를 포함한다. learning 기록 응답에 실제 attempt.context를 추가해 THEME_DAY·THEME_REVIEW·EXTRA를 구분한다.
 
 원문 비공개면 답변·되묻기·인용·돌아보기 원문·evidence를 저장/파일 생성 전에 제거한다. 공개 인용은 learning evidence로 재조회하고 학생·시도·답변 버전·부분 문자열 일치를 확인한다. 실패를 정상 인용으로 저장하거나 NO_RECORD로 처리하지 않는다. themeSummary는 별도 learning API에서 읽으며 기존 수치를 일일 리포트로 재집계하지 않는다. 비교는 learning이 COMPARABLE로 제공한 요소만 표시하고 CRITERIA_CHANGED에는 변화 수치를 붙이지 않는다.
 
@@ -348,21 +374,29 @@ P24 일일 리포트는 LLM을 호출하지 않고 문제별 판정·되묻기�
 - 목록 periodType 미지정은 두 종류, 지정 시 해당 종류. 상세에서 다른 종류의 같은 revision을 고르지 않는다. 복구 작업도 기간 종류를 검사한다.
 - 일일 데이터가 있으면 downgrade를 거부한다. 데이터 삭제로 되돌리지 않는다.
 
-### 배포 순서와 남은 연동
+### 배포 순서
 
-1. report 준비/최종 마이그레이션을 적용하고 일일 완료일 조회가 있는 learning과 report를 배포한다. 기존 DB 백업·배포 절차를 따른다.
-2. develop에 합쳐진 #390 core와 연결한다. 기간 종료 자정(KST) 생성 정책은 확정됐으나 core 시각 변경은 별도 작업이다. 이번 변경은 복구 요청에도 periodType을 전달한다.
-3. #385 테마 summary producer와 API 계약을 확인한 뒤 **REPORT_THEME_SUMMARY_ENABLED=true**로 worker를 재시작한다. 기본 false라 기존 주간 생성은 아직 없는 API에 의존하지 않는다. 다시 false로 내리면 새 주간 생성에서 테마 조회만 생략하며 기존 리포트는 보존한다.
+1. 기존 DB를 백업하고 report worker 소비를 중단해 진행 작업이 끝나는 것을 확인한다. 구버전 report-api의 복구/쓰기 요청도 차단한 뒤 준비/최종 마이그레이션을 적용한다. 새 learning·report-api·report-worker로 교체 후 쓰기와 소비를 재개한다. 구버전 writer와 최종 NOT NULL 스키마를 섞는 롤링 배포는 허용하지 않는다. 큐에 대기한 기존 주간 메시지는 periodType 생략=WEEKLY로 새 worker가 처리한다.
+2. develop에 합쳐진 #390 core와 연결한다. 기간 종료 자정(KST) 생성은 #400에서 구현됐다. 이번 변경은 복구 요청에도 periodType을 전달한다.
+3. #385와 #391 learning producer를 먼저 배포하고 report worker를 배포한다. **REPORT_THEME_SUMMARY_ENABLED=true**가 기본값이며 로컬 배포 설정도 true다. 다시 false로 내리면 새 주간 생성에서 테마 조회만 생략하며 기존 리포트는 보존한다.
 4. 테마 응답은 학생/주 시작일·요일 중복·5일 완주·비교 기준을 검증한다. upstream 오류는 작업 실패로 처리한다. NO_RECORD는 정상적인 미참여 응답일 때만 사용한다.
 
 배포·팀 스케줄 실행·실제 #385/#390 통합은 아직 수행하지 않았다. 구현 테스트와 운영 연동 완료를 구분한다.
 
 ### 검증
 
-- report 전체 pytest: 383개 통과. 마지막 복구 HTTP 계약 추가 후 일일·복구 관련 26개 통과(전체 실행과 중복 포함).
-- report Ruff check·format 통과.
-- scripts 계약·검증기 회귀 검사: 175개 통과.
-- CI DB 스크립트: 세 DB 마이그레이션·ERD 대조, 반복 실행 무변경, report downgrade/upgrade, 6개 DB 역할 격리 통과. 73개 부정 제약 사례·87개 CHECK 값 집합·38개 인덱스 확인.
-- learning RecordServiceTest·RecordControllerTest 29개와 bootJar 통과.
-- core ReportRecoveryTest 7개와 bootJar 통과. 일일 복구 요청 periodType 전달·기존 응답 필드 유지 검증.
-- 원격 GitHub CI 전체 및 #385/#390 실제 연동은 아직 확인하지 않았다. 로컬 검증을 원격 CI 통과로 표기하지 않는다.
+- report 전체 pytest 384개 통과. 이후 준비 단계의 구버전 writer 추가 행 보존 사례를 보완한 마이그레이션 테스트 1개도 통과.
+- report Ruff check·format 통과(110파일).
+- scripts 계약·검증기 회귀 검사 195개 통과.
+- learning 전체 369개·bootJar 통과. 주간 요약의 #207 비교 결과·미마무리 비교 비노출, 기록 context·완료일 기준·학생 범위 검증 포함.
+- core 리포트 전체 및 ci-contracts 대상 통합 테스트 220개·bootJar 통과.
+- ci-contracts 실제 산출물 검증기 11개 통과. 실제 learning PostgreSQL 테스트 응답을 learning·report OpenAPI 양쪽과 대조하고 report ThemeSummaryBuilder·HTML 렌더링까지 확인.
+- ci-db-schema와 같은 전체 DB 스크립트 통과. 상세 수치는 아래 참조.
+- 원격 GitHub CI와 운영 배포·AWS 스케줄 실행은 아직 확인하지 않았다. 위 결과는 로컬 CI 동등 검사이며 운영 완료와 구분한다.
+
+### 최신 develop 병합·마이그레이션 충돌 확인 (2026-11-09)
+
+- 기준 develop `a53df3af`. report Alembic 이력은 `20261102_05 → 20261109_06 → 20261109_07` 단일 head이며 core·learning Flyway 파일은 이번 변경에서 추가·수정하지 않는다.
+- 기존 주간 데이터의 ID·revision·서술 내용과 실패 guard를 유지하며 `period_type=WEEKLY`로 채우는 테스트를 통과했다. 일일 데이터가 있으면 downgrade를 거부해 삭제·판 충돌을 막는다.
+- 열린 PR #408의 `core V34__admin_credential.sql`은 develop의 `V34__mission_daily_usage_and_extra_mission.sql`과 번호가 중복된다. #408 병합 전 번호 조정이 필요하나 report 전용 #391과는 독립이다. 다른 PR 파일은 수정하지 않았다.
+- 로컬 CI DB 검사: core 55표/490컬럼, learning 28표/240컬럼, report 8표/66컬럼. 111개 부정 제약 사례·98개 CHECK 값 집합·46개 인덱스·6개 역할 격리·반복 적용·report 왕복 마이그레이션 통과.

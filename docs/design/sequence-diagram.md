@@ -318,9 +318,9 @@ sequenceDiagram
 - 구독·결제·환불의 명의는 바꾸지 않는다. 보내는 학부모의 진행 중 구독·결제·환불이 있으면 요청·수락 모두 막는다. 학부모 전역 리포트 설정은 이전하지 않고, 학생 공개 설정·학습·리포트 기록은 유지한다. 새 학부모는 학생 기기를 다시 등록한다
 - 서버 `APP_GUARDIAN_TRANSFER_ENABLED`·웹 `VITE_GUARDIAN_TRANSFER_ENABLED`로 신규 대상 조회·요청·수락을 제어한다(기본 꺼짐). 본인 요청 조회·거절·취소는 기능 off·동의 누락에도 유지하고, 취소 후 탈퇴는 별도 재인증·최종 확인을 거친다(#307). 상세 범위와 검증은 [이관 구현 기록](../report/auth-account.md#6-탈퇴-전-자녀-이관-289)
 
-### 2.6 꾸미기 해금·착용 (P22, 구현 예정)
+### 2.6 꾸미기 해금·착용 (P22, #389)
 
-구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25), #389 구현. 1장 공통 규칙을 따른다. 잠금 순서는 학생 행 `FOR SHARE`(삭제 확정과 직렬화) → 잔액 행 `FOR UPDATE`.
 
 ```mermaid
 sequenceDiagram
@@ -331,7 +331,7 @@ sequenceDiagram
 
   W->>C: POST /students/me/look-items/{itemKey}/unlock (Idempotency-Key)
   rect rgba(128,128,128,0.12)
-    C->>CDB: reward_point_balance 행 잠금
+    C->>CDB: student 행 공유 잠금 → reward_point_balance 행 잠금
     alt 이미 해금
       C-->>W: 200 (차감 없음)
     else 판매 중단·잔액 부족
@@ -543,9 +543,9 @@ sequenceDiagram
   end
 ```
 
-### 3.4 주간 테마 문제 시작 (P23·P13, 구현 예정)
+### 3.4 주간 테마 문제 시작 (P23·P13, learning #385·core #387)
 
-구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). learning #385·core #387 구현. 포인트 보충(마지막 항목)은 원장·적립 진입점(#389) 위에 주간 테마 프록시 연결이 남은 구현 예정. 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -567,7 +567,8 @@ sequenceDiagram
       C-->>W: 429 USAGE_LIMIT_REACHED
     end
   end
-  C->>L: POST /internal/missions/{id}/attempts?grade {context, themeId}
+  C->>L: POST /internal/missions/{id}/attempts?grade {context}
+  L->>L: 진행 중 시도면 그대로 반환, 아니면 미션 공개·범위 → 학년군(grade)·KST 오늘로 그 주 테마 확인
   alt 신규 시도인데 오늘 요일 문제가 아님
     L-->>C: 409 THEME_DAY_CLOSED
     C-->>W: 409
@@ -586,7 +587,7 @@ sequenceDiagram
 
 ### 3.5 학습 완료 → 포인트 적립·자동 공유 (P20·P21, 구현 예정)
 
-구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 공유 요청(core #388)과 learning 공유 저장(#386)은 구현, 포인트 적립(#389)은 구현 예정. 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -605,8 +606,8 @@ sequenceDiagram
   end
   opt community_enabled 이고 COMMUNITY 동의 유효
     C->>L: POST /internal/community/posts {studentId, attemptId}
-    L->>L: 학습 완료·표현 필터 통과 확인, 마지막 답변으로 공유물 저장 (학생·미션당 1개, 다시 풀기는 저장 안 함)
-    L-->>C: 201 {postId} 또는 200 (이미 있음)
+    L->>L: 처음 학습 완료한 시도·지금 표현 필터 통과 확인, 마지막 답변으로 공유물 저장 (학생·미션당 1개, 다시 풀기는 저장 안 함)
+    L-->>C: 201 {postId, created} 또는 200 (이미 있음), 공유 대상 아님 409
     rect rgba(128,128,128,0.12)
       C->>CDB: reward_point_ledger (COMMUNITY_POSTED, source_key = postId) + 잔액
     end
@@ -616,9 +617,9 @@ sequenceDiagram
 
 - 공유·적립 저장 실패는 학습 완료 응답을 바꾸지 않는다. 원장은 사건 키 UK로 멱등이라 같은 사건 재요청·주간 테마 조회(3.4) 때 보충
 
-### 3.6 되돌아보기 열람·완주 보너스 (P21·P23, 구현 예정)
+### 3.6 되돌아보기 열람·완주 보너스 (P21·P23, learning #385, 적립 연결 구현 예정)
 
-구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). learning 열람 기록·완주 판정은 #385 구현. core 원장·적립 진입점은 #389 구현, 이 응답 뒤 적립 연결은 구현 예정. 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -629,8 +630,8 @@ sequenceDiagram
   participant L as learning
 
   W->>C: POST /students/me/weekly-theme/review-views
-  C->>L: POST /internal/students/{id}/weekly-theme/review-views
-  L->>L: 토·일 확인, theme_review_view 저장 (주 1회 멱등)
+  C->>L: POST /internal/students/{id}/weekly-theme/review-views?gradeBand&date
+  L->>L: 토·일 확인(아니면 409 THEME_REVIEW_NOT_ALLOWED), theme_review_view 저장 (주 1회 멱등)
   L-->>C: {firstViewThisWeek, completed}
   rect rgba(128,128,128,0.12)
     opt firstViewThisWeek
@@ -643,9 +644,9 @@ sequenceDiagram
   C-->>W: 200 {earned}
 ```
 
-### 3.7 커뮤니티 열람·반응·신고 (P20, 구현 예정)
+### 3.7 커뮤니티 열람·반응·신고 (P20, core #388·learning #386 구현)
 
-구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 반응 포인트 적립(#389)만 구현 예정. 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -658,7 +659,7 @@ sequenceDiagram
 
   W->>C: GET /missions/{missionId}/community-posts?seed
   C->>L: GET /internal/community/missions/{missionId}/posts?viewerStudentId&seed
-  alt viewer가 이 미션을 마무리하지 않음
+  alt viewer가 이 미션을 학습 완료하지 않음
     L-->>C: 403 COMMUNITY_LOCKED
     C-->>W: 403
   else 마무리함
@@ -668,9 +669,9 @@ sequenceDiagram
   end
   W->>C: PUT /community-posts/{postId}/reactions/NEW_IDEA
   C->>L: PUT /internal/community/posts/{postId}/reactions/NEW_IDEA?studentId
-  L-->>C: {created: true}
+  L-->>C: {postId, reaction, reactionId, created: true}
   opt 생성됨이고 오늘 반응 적립 상한 미만
-    C->>CDB: reward_point_ledger (REACTION_GIVEN, source_key = postId:reaction) + 잔액
+    C->>CDB: reward_point_ledger (REACTION_GIVEN, source_key = postId:reaction, reactionId와 1:1) + 잔액
   end
   C-->>W: 204
   W->>C: POST /error-reports {targetType: COMMUNITY_POST, targetId}
@@ -764,9 +765,9 @@ sequenceDiagram
 - 무료 플랜은 대화 생성 시 `429 USAGE_LIMIT_REACHED`, 프리미엄은 하루 30회 (P13). 일일 리포트 고정 대화도 같은 30회 (5.1)
 - 근거 확인(`/evidence`): core가 `message_evidence` ID로 learning `/internal/records/evidence` 조회, 삭제된 기록은 `available: false`
 
-### 5.1 일일 리포트 대화 (P25, 구현 예정)
+### 5.1 일일 리포트 대화 (P25)
 
-구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). core·ai 몫은 #392로 구현했다(report 일일 상세 생성은 #391). 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -779,10 +780,11 @@ sequenceDiagram
 
   W->>C: POST /conversations {childId, reportId}
   C->>CDB: 자녀 연결·이용권 확인 (무료면 USAGE_LIMIT_REACHED)
-  C->>R: GET /internal/reports/{reportId}
-  alt 일일 아님·다른 자녀
+  C->>CDB: report_job 조회 (일일·같은 자녀)
+  C->>R: GET /internal/reports/{reportId} (최신 판)
+  alt 일일 아님·다른 자녀·없음·미완료
     C-->>W: 422 CONVERSATION_REPORT_INVALID
-  else 일일 리포트
+  else 완료된 일일 리포트
     C->>CDB: conversation 저장 (from = to = 대상일, report_id·report_revision)
     C-->>W: 201
   end
@@ -792,7 +794,8 @@ sequenceDiagram
   A-->>C: 대조 완료 답변 또는 규칙 응답 (P16)
   C-->>W: SSE 결과 (분석 대화 하루 30회 공유 차감)
 ```
-- 고정 대화는 범위 변경 없이 다른 날 질문을 새 대화로 안내. ai는 report를 직접 호출하지 않음
+- 고정 대화는 범위 변경 없이 다른 날 질문을 새 대화로 안내(다른 기간 `scope`는 400, 질문 속 다른 날은 ai `DIFFERENT_PERIOD` 안내). ai는 report를 직접 호출하지 않음
+- report HTTP는 트랜잭션 밖에서 호출하고 대화 저장 트랜잭션에서 연결·이용권을 다시 확인한다. 메시지의 판 조회는 열람 기록(`report_view`)을 남기지 않는다
 
 ---
 
@@ -1204,7 +1207,7 @@ sequenceDiagram
   C->>C: NotificationService.notify (ERROR_REPORT_RESOLVED)
 ```
 
-- 구현 예정(P20): `targetType: COMMUNITY_POST` 신고는 접수 즉시 공유물 숨김(3.7)
+- `targetType: COMMUNITY_POST` 신고는 접수 즉시 공유물 숨김(3.7, #388). learning 숨김 호출이 실패해도 core 목록·반응이 신고 행으로 먼저 숨긴다
 - 접수만으로 판정을 바꾸지 않음 (FN-SUP-02). 정정 없이 종료하는 경우 `IN_REVIEW → RESOLVED`만 수행
 
 ---

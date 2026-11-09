@@ -831,8 +831,8 @@ classDiagram
   class GuardianshipService { <<service>> }
 ```
 
-- `ReportScheduler`: `@Scheduled` + `@SchedulerLock`(ShedLock), 매주 월 00:00 KST(일요일 자정. 현재 구현 07:00, 자정 변경은 2026-11-09 결정으로 구현 예정), 직전 월~일(KST) 대상, 기록 없는 학생 포함 (P06). 학생별 `report_job(SCHEDULE)` + outbox 저장, 부분 UK로 중복 방지
-- P24(#390): `DailyReportScheduler`가 매일 00:00 KST(대상일 자정. 현재 구현 07:00, 자정 변경은 2026-11-09 결정으로 구현 예정. 잠금 `core-daily-reports`) `ReportScheduleService.generate(at, DAILY)`로 전날 작업을 만든다. `period_type`은 7.1
+- `ReportScheduler`: `@Scheduled` + `@SchedulerLock`(ShedLock), 매주 월 00:00 KST(일요일 자정, 2026-11-09 결정), 직전 월~일(KST) 대상, 기록 없는 학생 포함 (P06). 학생별 `report_job(SCHEDULE)` + outbox 저장, 부분 UK로 중복 방지
+- P24(#390): `DailyReportScheduler`가 매일 00:00 KST(대상일 자정, 2026-11-09 결정. 잠금 `core-daily-reports`) `ReportScheduleService.generate(at, DAILY)`로 전날 작업을 만든다. `period_type`은 7.1
 - `ReportEventConsumer`: 큐 `core.report.events`, `processed_event`로 멱등, 상태 전이는 조건부 UPDATE (상태 다이어그램 4.1)
 - 알림: 리포트 종료 전이 트랜잭션에서 `QUEUED` 저장 → 커밋 후 `NotificationDispatchService`가 `NotificationRedisPublisher`로 `core:notifications:v1` 발행(발행기는 Redis 발행만) → `NotificationDeliveryService`로 `COMPLETED`·`FAILED` 기록. 관리자 재처리 `NotificationRetryService`도 `dispatch`를 호출(#250). 다른 레플리카의 `NotificationRedisSubscriber`(`notification/consumer`, 구독 연결·채널 이름은 `notification/config/NotificationRedisConfiguration`, #168)가 `NotificationStreams`로 SSE 전달 (아키텍처 1.6)
 - 리포트 조회 API에 `ReportQueryService`를 둬서 controller → client 직접 호출 금지 규칙 준수 (리포트 열람 기록 `report_view` 저장 포함)
@@ -1214,14 +1214,22 @@ classDiagram
   }
   class RewardService {
     <<service>>
-    +award(studentId, eventType, sourceKey) boolean
-    +unlock(studentId, itemKey) UnlockResult
-    +balance(studentId) int
+    +earn(studentId, event, sourceKey) EarnResult
+    +points(studentId, page, size) Points
+    +deleteStudent(studentId)
+  }
+  class LookUnlockService {
+    <<service>>
+    +catalog() List
+    +unlock(itemKey, idempotencyKey) UnlockResult
+    +requireUnlocked(studentId, theme, companion)
+    +replaceEquipment(studentId, equipped)
   }
   class LookItemAdminService {
     <<service>>
-    +create(command, adminId) LookItem
-    +update(itemId, command, adminId) LookItem
+    +list(status, slot, page, size) Page
+    +create(command) LookItem
+    +update(itemId, command) LookItem
   }
   class RewardPointLedger {
     <<entity>>
@@ -1245,16 +1253,20 @@ classDiagram
   CommunityService --> CommunityClient
   CommunityService --> RewardService : 공유 성공 시 적립
   RewardController --> RewardService
+  RewardController --> LookUnlockService
+  RewardController --> LookItemAdminService
+  LookUnlockService --> RewardService : 잔액 잠금
   RewardService --> RewardRuleRepository
   RewardService --> RewardLedgerRepository
   RewardService ..> RewardPointLedger
   LookItemAdminService ..> LookItem
 ```
 
-- 학습 완료 적립: 기존 `LearningProxyService`의 돌아보기 저장 성공 후 `RewardService.award(MISSION_COMPLETED, missionId)` → `CommunityService.shareCompleted`(설정·동의 확인, 학생·미션당 1개라 다시 풀기는 learning이 무시). 적립 저장 실패는 학습 응답을 실패로 바꾸지 않고, 같은 사건 재요청·주간 테마 조회 때 `award`가 사건 키 UK로 멱등 보충. 여러 기능 조합이므로 구현 시 `facade`로 묶음
-- `StudentLookService`(#234, API 3.12)는 저장 전에 `RewardService`로 해금 여부를 확인, `equipped` 슬롯 검증 추가
-- 신고 연결: 기존 `ErrorReportService`(3.5)가 `targetType = COMMUNITY_POST` 접수 시 `CommunityService.moderate(HIDDEN_REPORT)`, 처리 결과 저장 시 `VISIBLE`·`REMOVED`
-- 동의 철회·이관 수락·공개 설정 변경: 기존 `ConsentService`·`GuardianTransferService`와 `CommunityService.updateSettings`가 `applyVisibility` 호출(끄면 `HIDDEN_SETTING`, 다시 켜면 `HIDDEN_SETTING`만 복원)
+- #389 구현: `RewardService.earn`이 적립 유일 진입점(`REQUIRES_NEW`, 적립하지 않은 이유는 `EarnOutcome`으로 반환, 예외 없음). 저장소는 MyBatis `RewardMapper` 하나이고 위 엔티티·저장소 상자는 설계 단위다. 아래 사건 연결은 #387·#388 뒤 후속
+- 학습 완료 적립: 기존 `LearningProxyService`의 돌아보기 저장 성공 후 `RewardService.earn(MISSION_COMPLETED, missionId)` → `CommunityService.shareCompleted`(설정·동의 확인, 학생·미션당 1개라 다시 풀기는 learning이 무시). 적립 저장 실패는 학습 응답을 실패로 바꾸지 않고, 같은 사건 재요청·주간 테마 조회 때 `award`가 사건 키 UK로 멱등 보충. 여러 기능 조합이므로 구현 시 `facade`로 묶음
+- `StudentLookService`(#234, API 3.12)는 저장 전에 `LookUnlockService`로 해금 여부를 확인하고 `equipped` 슬롯을 검증·교체한다. 학생 삭제 확정의 `clear`가 `RewardService.deleteStudent`도 부른다(#389)
+- 신고 연결(#388 구현): 기존 `SupportService`(3.5)가 `targetType = COMMUNITY_POST` 접수·처리 결과 저장 뒤 `CommunityModerationService.apply`(같은 공유물 신고 전체로 `HIDDEN_REPORT`·`VISIBLE`·`REMOVED`를 정해 learning `moderation` 호출)
+- 동의 철회·이관 수락·공개 설정 변경(#388 구현): 기존 `ConsentService`·`GuardianTransferService`와 `CommunityService.updateSettings`가 `CommunityVisibilityService.sync` 호출(트랜잭션 안에서 설정·현재 보호자 동의로 공개 여부를 정하고 커밋 뒤 learning `community-visibility`). 학생 삭제 확정은 `ChildManagementService`가 `reset`. 공유 요청은 `LearningController` 돌아보기 저장 성공 뒤 `CommunityService.shareCompleted`(포인트 적립 연결은 #389)
 - 무료 하루 미션 한도: `MissionUsageService`(`usage/`)가 `THEME_DAY` 신규 시도 `201`을 `mission_daily_usage`에 기록·집계, 시도 시작 프록시 전에 확인
 
 ---
@@ -1434,7 +1446,7 @@ classDiagram
 ```
 
 - `AttemptService.start`: 부분 UK `(student_id, mission_id) WHERE IN_PROGRESS` 충돌 시 기존 시도 반환 (FN-LRN-16)
-- 구현 예정(P23): `start`에 `context`(`THEME_DAY`·`THEME_REVIEW`·`EXTRA`) 추가, 신규 시도만 요일·되돌아보기 검사(4.4)
+- P23(#385): `start`에 `context`(`THEME_DAY`·`THEME_REVIEW`·`EXTRA`, 생략 `EXTRA`) 추가, 신규 시도만 `WeeklyThemeService.checkStart`로 요일·되돌아보기 검사하고 그 주 테마를 시도에 저장(4.4)
 - `AttemptDraft.update(content, now)`가 다음 버전을 만들고 `AttemptDraftRepository.updateIfVersion(next, ifMatch)`가 `UPDATE ... WHERE version = :ifMatch` 실행, 영향 0행이면 `ATTEMPT_DRAFT_CONFLICT` + 최신 초안 (FN-LRN-17)
 - `AnswerService.submit`: 같은 트랜잭션에 `answer` 버전 추가 + `judgment(PENDING)` 생성. 같은 `idempotency_key`·같은 본문이면 기존 답변 반환, 다른 본문이면 `422 IDEMPOTENCY_KEY_REUSED` (FN-LRN-10, API 1.4). `lockForAnswer`가 시도 행을 잠가(`FOR UPDATE`) 같은 시도의 제출을 한 줄로 세움. 저장하면 `clearSubmittedDraft`로 초안의 `answer`를 비우고 `memo`는 유지, 초안 version +1 (FN-LRN-15·16)
 - 보완 답변 연결: 첫 답변은 `followupId` 없이, 버전 2부터는 이 시도의 가장 최근 되묻기 중 아직 답하지 않은 것만 (`JudgmentService.unansweredLatestFollowupId`). 아니면 `422 ANSWER_INCOMPLETE`. 판정 전 추가 제출·되묻기 2회 뒤 제출도 여기서 막힘 (P04)
@@ -1734,77 +1746,103 @@ classDiagram
 - `evidence`: `deleted_student`에 있는 학생 근거는 `available: false` (FN-ACC-13)
 - `AttemptService.deleteByStudent`: CASCADE 없이 한 트랜잭션에서 `judgment_correction`·`judgment_element` → `self_assessment`·`reflection`·`hint_usage`·`attempt_draft` → `followup`(`answer.followup_id`는 `SET CONSTRAINTS … DEFERRED`로 커밋 때 검사) → `judgment` → `answer` → `attempt` 순서로 학생의 시도 이하 기록 삭제(#128, ERD 4.3). 호출한 쪽 트랜잭션 안에서 실행
 
-### 4.4 주간 테마·커뮤니티 (theme · community, 구현 예정)
+### 4.4 주간 테마·커뮤니티 (theme 구현 예정 · community #386 구현)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 구현 예정 클래스. 이름·시그니처는 구현 시 조정할 수 있고 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임-구현-예정).
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 클래스. 주간 테마(`theme`)는 #385, 커뮤니티(`community`)는 #386으로 구현한 이름·시그니처. 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임-구현-예정).
 
 ```mermaid
 classDiagram
   direction TB
-  class ThemeInternalController {
+  class WeeklyThemeController {
     <<controller>>
-    +weeklyTheme(studentId, gradeBand, date) WeeklyThemeView
-    +recordReviewView(studentId) ReviewViewResult
-    +summary(studentId, weekStart) ThemeSummary
+    +current(studentId, gradeBand, date) WeeklyThemeView
+    +reviewViewed(studentId, gradeBand, date) ReviewViewResult
+    +summary(studentId, weekStart) WeeklyThemeSummary
   }
-  class ThemeAdminController {
+  class AdminWeeklyThemeController {
     <<controller>>
-    +list(gradeBand, weekStart, status) Page
-    +save(command) WeeklyTheme
-    +requestReview(themeId)
-    +publish(themeId)
-    +unpublish(themeId)
+    +list(gradeBand, weekStart, status, page, size) AdminWeeklyThemePage
+    +create(request) AdminWeeklyTheme
+    +update(themeId, request) AdminWeeklyTheme
+    +requestReview(themeId) AdminWeeklyTheme
+    +publish(themeId) AdminWeeklyTheme
+    +unpublish(themeId) AdminWeeklyTheme
   }
   class WeeklyThemeService {
     <<service>>
-    +current(gradeBand, date) WeeklyTheme
-    +dayStates(studentId, theme, date) List
-    +checkStart(studentId, missionId, context, date)
-    +completion(studentId, weekStart) boolean
+    +current(studentId, gradeBand, date) WeeklyThemeView
+    +checkStart(studentId, missionId, grade, context) ThemeAttempt
+    +recordReviewView(studentId, gradeBand, date) ReviewViewResult
+    +summary(studentId, weekStart) WeeklyThemeSummary
+    +deleteByStudent(studentId) int
+  }
+  class WeeklyThemeAdminService {
+    <<service>>
+    +create(author, content) AdminWeeklyTheme
+    +update(themeId, author, content) AdminWeeklyTheme
+    +requestReview(themeId) AdminWeeklyTheme
+    +publish(themeId) AdminWeeklyTheme
+    +unpublish(themeId) AdminWeeklyTheme
   }
   class WeeklyTheme {
     <<entity>>
-    +publish()
-    +validateDays()
+    +requireEditable(gradeBand, weekStart)
+    +edited()
+    +requestReview()
+    +publish(errors)
+    +unpublish()
+  }
+  class ThemePublishCheck {
+    <<domain>>
+    +errors(gradeBand, days, missions, otherPublished) List
   }
   class AttemptService {
     <<service>>
-    +start(studentId, missionId, context) Attempt
+    +start(studentId, missionId, grade, demo, context) AttemptStart
   }
-  class CommunityInternalController {
+  class CommunityController {
     <<controller>>
-    +create(studentId, attemptId) PostResult
-    +missionPosts(missionId, viewerId, seed, page) Page
-    +react(postId, studentId, reaction) ReactionResult
-    +visibility(studentId, visible, reason)
-    +moderate(postId, status, errorReportId)
+    +share(studentId, attemptId) ShareResponse
+    +post(postId) PostDetailView
+    +missionPosts(missionId, viewerStudentId, seed, page, size) MissionPostPage
+    +studentPosts(studentId) StudentPostList
+    +react(postId, reaction, studentId) ReactionCreated
+    +cancelReaction(postId, reaction, studentId) ReactionDeleted
+    +visibility(studentId, visible, reason) VisibilityResult
+    +moderate(postId, status, errorReportId) ModerationResponse
   }
-  class CommunityPostService {
+  class CommunityService {
     <<service>>
-    +share(studentId, attemptId) CommunityPost
-    +list(missionId, viewerId, seed, page) Page
-    +setVisibility(studentId, visible)
+    +share(studentId, attemptId) SharedPost
+    +missionPosts(missionId, viewer, seed, page, size) List
+    +studentPosts(studentId) List
+    +react(postId, studentId, reaction) ReactionResult
+    +setVisibility(studentId, visible, reason) VisibilityResult
+    +moderate(postId, status, errorReportId) CommunityPostStatus
+    +deleteByStudent(studentId) int
   }
-  class CommunityPost {
-    <<entity>>
-    +hideBySetting()
-    +hideByReport()
-    +restore()
-    +remove()
+  class CommunityRules {
+    <<domain>>
+    +moderate(current, requested, authorVisible) CommunityPostStatus
+    +initialStatus(authorVisible) CommunityPostStatus
+    +reactionId(postId, studentId, reaction) UUID
   }
 
-  ThemeInternalController --> WeeklyThemeService
-  ThemeAdminController --> WeeklyThemeService
-  WeeklyThemeService ..> WeeklyTheme
+  WeeklyThemeController --> WeeklyThemeService
+  AdminWeeklyThemeController --> WeeklyThemeAdminService
+  WeeklyThemeAdminService ..> WeeklyTheme
+  WeeklyThemeAdminService ..> ThemePublishCheck
+  WeeklyThemeAdminService --> MissionService : 게시본 미션
   AttemptService --> WeeklyThemeService : context 검사
-  CommunityInternalController --> CommunityPostService
-  CommunityPostService ..> CommunityPost
-  CommunityPostService --> AttemptService : 마무리 여부·마지막 답변
+  CommunityController --> CommunityService
+  CommunityService ..> CommunityRules
+  CommunityService --> AttemptService : 학습 완료 여부·첫 완료 시도·마지막 답변
 ```
 
 - 기존 `AttemptService.start`(4.1)에 `context` 인자를 추가하고 `THEME_DAY`·`THEME_REVIEW`는 `WeeklyThemeService.checkStart`로 요일·되돌아보기 검사. 진행 중 시도 반환은 검사하지 않음(자정 후 이어하기)
-- `CommunityPostService.share`는 학생·미션당 1개(UK `(student_id, mission_id)`), 이미 있으면 기존 공유물을 그대로 반환
-- 학생 삭제 소비(4.3 `record`)가 `CommunityPostService`·테마 열람 기록 삭제를 함께 호출
+- `CommunityService.share`는 학생·미션당 1개(UK `(student_id, mission_id)`), 이미 있으면 기존 공유물을 그대로 반환. 처음 학습 완료한 시도가 아니면(다시 풀기) 공유하지 않고, 공유 때 `ExpressionPolicy`(#205)를 다시 확인
+- 학생 삭제 소비(4.3 `record`)의 `StudentDeletionService`가 같은 트랜잭션에서 시도 삭제 전에 `CommunityService.deleteByStudent`(#386), 시도 삭제 뒤 테마 열람 기록 삭제(`WeeklyThemeService.deleteByStudent`, #385)를 호출
+- 테마 게시 중 수정은 미션과 같은 버전 방식(`weekly_theme_version`, 현재본·게시본·검토 요청본). 학생 조회·시작 검사는 게시본, 관리자 편집은 현재본
 
 ---
 
@@ -2313,7 +2351,7 @@ classDiagram
 
 ### 7.1 리포트 기간 종류 (report #391 구현 · core #390 연동)
 
-2026-11-06 결정의 report 부분은 #391에서 구현했다. core 스케줄·알림(#390)은 구현했고 대화(#392)는 구현 예정이며 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임-구현-예정).
+2026-11-06 결정의 report 부분은 #391에서 구현했다. core 스케줄·알림(#390)은 구현했고 대화(#392)도 구현했으며 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임-구현-예정).
 
 ```mermaid
 classDiagram
@@ -2330,7 +2368,7 @@ classDiagram
   }
   class ConversationService {
     <<service>>
-    +createForReport(parentId, childId, reportId) Conversation
+    +createForReport(childId, reportId) Conversation
   }
   class GenerationService {
     <<service>>
@@ -2353,13 +2391,13 @@ classDiagram
 
 - core(#390 구현): `WeeklyReportScheduler`·`DailyReportScheduler`가 각자 ShedLock으로 `ReportScheduleService.generate(at, periodType)`을 부르고, `ReportJobService.scheduled(parent, child, ReportPeriod)`가 보호자가 연결된 자녀별 작업 + Outbox를 저장한다(정기 부분 UK `(student_id, period_type, period_from)`). 기간 종류는 domain `ReportPeriodType`(`DAILY`·`WEEKLY`)과 `ReportPeriod(from, to, type)`이며 일일은 서술 없음(`narrative = false`)이라 상품 권한을 조회하지 않는다. 일일 상세 원문 제공 여부는 `ReportEntitlementService.dailyDetailEnabled` 한 곳에서 정한다
 - report-service `GenerationService`(7장)는 `periodType`으로 분기. `DailyReportBuilder`는 ai 서술 호출 없이 템플릿만 구성하고 기존 대조·렌더링을 재사용
-- `ConversationService.createForReport`는 리포트 소유·일일 여부 확인 후 기존 `create`와 같은 대화를 만들고 기간을 그날로 고정, `conversation.report_id`·`report_revision` 저장. 메시지마다 `ReportClient`로 그 판 상세를 읽어 ai 요청에 리포트 요약으로 전달
+- core(#392 구현): `ConversationService.createForReport`는 `ReportJobRepository.byReport`로 일일·같은 자녀를 확인하고 `ReportQueryService.pinned`(최신 판)로 완료 여부를 본 뒤 기존 `create`와 같은 대화를 만들고 기간을 그날로 고정, `conversation.report_id`·`report_revision` 저장. 메시지마다 `ConversationService.report`가 `ReportQueryService.pinned(reportId, revision)`(열람 기록 없음)으로 그 판을 읽어 ai 요청 `report`에 개수·판정 요약으로 전달. ai는 `AnalysisRequest.report`(`ReportSummary`)를 답변 프롬프트 `[고정 리포트]`와 숫자 대조 허용값에 넣는다
 - report `ReportRepository`의 revision 잠금·UK 단위는 `(student_id, period_type, period_from)`
 
 ---
 
 
-- 테마 소비는 `REPORT_THEME_SUMMARY_ENABLED=false`가 기본이다. #385 API 배포·계약 확인 후 켜며, 켰을 때 조회 오류를 참여 없음으로 바꾸지 않는다.
+- 테마 소비는 `REPORT_THEME_SUMMARY_ENABLED=true`가 기본이다. #385/#391 learning을 먼저 배포한다. false는 새 주간 요약만 생략하는 복귀 설정이며 조회 오류를 참여 없음으로 바꾸지 않는다.
 
 ## 8. 확인 필요 가정
 - 요금제 사용 한도(P13): core가 `product.limits`로 확인 후 `USAGE_LIMIT_REACHED`. 분석 대화는 `ProductEntitlementService.reserve`가 보호자 잠금 안에서 자녀별 `payment_premium_usage` KST 일자 집계로 판정(#225, `AnalysisUsageService`는 Redis 미사용). 학생별 미션 시작(무료 하루 1개, 당일 테마 문제만)·피드백 한도는 미구현이며 #210 결정에 따라 PostgreSQL로 구현 예정(미션은 `usage/MissionUsageService`·`mission_daily_usage`, 3.6). 생각 유형별 미션 고르기(`EXTRA`)는 프리미엄 사용(`EXTRA_MISSION`) 기록

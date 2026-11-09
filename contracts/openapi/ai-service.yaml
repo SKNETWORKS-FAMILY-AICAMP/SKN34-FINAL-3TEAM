@@ -1256,10 +1256,76 @@ components:
             $ref: '#/components/schemas/AnalysisTurn'
           maxItems: 20
           type: array
+        report:
+          $ref: '#/components/schemas/AnalysisReportSummary'
       required:
       - conversationId
       - question
       - scope
+      type: object
+    AnalysisReportSummary:
+      description: '일일 리포트 고정 대화(P25, #392). core가 메시지마다 고정 판을 읽어 넣은 개수·판정만 (원문·인용 없음).
+        있으면 scope.from = scope.to = date. ai는 report를 직접 호출하지 않는다.'
+      properties:
+        reportId:
+          type: string
+        revision:
+          minimum: 1
+          type: integer
+        date:
+          format: date
+          type: string
+        metrics:
+          items:
+            properties:
+              label:
+                type: string
+              count:
+                minimum: 0
+                type: integer
+            required:
+            - label
+            - count
+            type: object
+          type: array
+        problems:
+          items:
+            properties:
+              title:
+                type: string
+              context:
+                enum:
+                - THEME_DAY
+                - THEME_REVIEW
+                - EXTRA
+                - null
+              judgment:
+                enum:
+                - CORRECT
+                - PARTIAL
+                - RETHINK
+                - HELD
+                - null
+              elements:
+                items:
+                  properties:
+                    label:
+                      type: string
+                    satisfied:
+                      type: boolean
+                  required:
+                  - label
+                  - satisfied
+                  type: object
+                type: array
+            required:
+            - title
+            type: object
+          type: array
+      required:
+      - reportId
+      - revision
+      - date
       type: object
     AnalysisResult:
       properties:

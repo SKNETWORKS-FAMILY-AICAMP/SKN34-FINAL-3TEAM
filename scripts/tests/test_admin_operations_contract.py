@@ -22,6 +22,9 @@ class AdminOperationsContracts(unittest.TestCase):
             for name,expected in baseline[section].items():
                 self.assertIn(name,current)
                 reviewed=deepcopy(current[name])
+                # #367 extends registration only; retain all prior fields in the fingerprint.
+                if section=='schemas' and name=='RegisterModelVersion':
+                    reviewed['properties'].pop('registration',None)
                 # #163 explicitly approves only these support operation error responses.
                 # Normalize the approved additions while preserving every original field.
                 support_operations={'/error-reports':'post','/inquiries':'post',
@@ -92,6 +95,21 @@ class AdminOperationsContracts(unittest.TestCase):
                     for field in ('code','goodThought'):
                         reviewed['required'].remove(field)
                         reviewed['properties'].pop(field)
+                # #387 adds the attempt start {context} body and the core limit/premium errors; restore only the approved fields.
+                if section=='paths' and name=='/missions/{missionId}/attempts':
+                    post=reviewed['post']
+                    self.assertIn('USAGE_LIMIT_REACHED',post['responses']['429']['description'])
+                    self.assertIn('PREMIUM_REQUIRED',post['responses']['403']['description'])
+                    post.pop('requestBody')
+                    for status in ('400','403','409','429','503'):
+                        post['responses'].pop(status)
+                    post['description']=('STUDENT 전용. 검증된 본인 학생의 grade·demo를 core DB에서 결정해 /internal/missions/{missionId}/attempts에 쿼리로 전달하며 '
+                        '클라이언트 query는 사용하지 않는다. learning은 신규 생성 201·기존 진행 시도 반환 200을 구분하며 core는 상태를 그대로 전달한다. '
+                        '신규 시도 제공 범위 검사·기존 진행 시도 선택과 당시 버전 유지는 learning 소유다. 일일 한도는 core Redis 책임이며 learning은 관여하지 않는다. '
+                        '후속 한도 연계는 201만 집계하고 200은 집계하지 않는다. 한도 도달 시에도 기존 이어하기는 허용하고 신규 생성만 차단해야 한다. '
+                        '한도 검사·기존 시도 판별·신규 생성 차단의 처리 순서는 후속 구현에서 검증한다. Redis 한도 기능은 현재 프록시 구현 범위 밖이다.')
+                    post['responses']['200']['description']='기존 진행 시도 반환(이어하기). 후속 일일 한도 집계 대상 아님.'
+                    post['responses']['201']['description']='신규 시도 생성. 후속 core Redis 일일 한도 집계 대상.'
                 # #355 adds only the ai mission draft usage type; the other call types stay fingerprinted.
                 if section=='schemas' and name=='CallType':
                     reviewed['enum'].remove('MISSION_DRAFT')
@@ -116,6 +134,25 @@ class AdminOperationsContracts(unittest.TestCase):
                 if section=='schemas' and name=='NotificationSettings':
                     self.assertEqual(reviewed['properties']['items']['maxItems'],8)
                     reviewed['properties']['items']['maxItems']=6
+                # #388 (P20 community) adds only the optional COMMUNITY consent kind, the COMMUNITY_POST report target,
+                # the community reviewResult rule and the admin linkedPost. Remove exactly those additions.
+                if section=='schemas' and name=='ConsentDocument':
+                    kind=reviewed['properties']['kind']
+                    self.assertIn('COMMUNITY',kind.pop('description'))
+                    kind['enum'].remove('COMMUNITY')
+                if section=='schemas' and name=='SupportReportSubmission':
+                    target=reviewed['properties']['targetType']
+                    self.assertIn('COMMUNITY_POST',target.pop('description'))
+                    target['enum'].remove('COMMUNITY_POST')
+                if section=='schemas' and name=='SupportReview':
+                    self.assertIn('COMMUNITY_POST',reviewed['properties']['reviewResult'].pop('description'))
+                if section=='schemas' and name=='SupportReport':
+                    self.assertEqual(reviewed['properties'].pop('linkedPost'),{'$ref':'#/components/schemas/CommunityLinkedPost'})
+                # #367 adds optional evidence limitations; retain the original evidence fingerprint.
+                if section=='schemas' and name=='EvaluationEvidence':
+                    self.assertEqual(reviewed['properties'].pop('limitations')['default'],[])
+                if section=='schemas' and name=='RegisterModelVersion':
+                    self.assertEqual(reviewed.pop('allOf')[0]['then']['required'],['artifactUri'])
                 canonical=json.dumps(reviewed,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
                 self.assertEqual(expected,hashlib.sha256(canonical).hexdigest(),f'{section}/{name}')
     def test_admin_paths_and_retry_key(self):
@@ -128,7 +165,7 @@ class AdminOperationsContracts(unittest.TestCase):
         schemas=self.doc['components']['schemas']
         self.assertNotIn('updatedAt',schemas['OperationJob']['properties'])
         self.assertNotIn('errorDetail',schemas['OperationExecution']['properties'])
-        self.assertNotIn('detail',schemas['OperationAudit']['properties'])
+        self.assertFalse(schemas['OperationAudit']['properties']['detail']['additionalProperties'])
         for name,schema in schemas.items():
             if name.startswith('Operation'): Draft202012Validator.check_schema(schema)
     def test_queue_allowlist(self):

@@ -1,0 +1,16 @@
+.model-registry { display: grid; gap: 24px; }
+.model-registry .ws-form fieldset, .model-registry fieldset.ws-form { border: 0; padding: 0; margin: 12px 0; min-width: 0; }
+.model-registry .ws-card { min-width: 0; overflow-wrap: anywhere; }
+.model-registry .ws-form label { display: grid; gap: 6px; }
+.model-registry .ws-form label.ws-check { display: flex; align-items: flex-start; }
+.model-registry .ws-form input[type=checkbox] { flex: 0 0 auto; width: auto; margin-top: 4px; }
+.model-registry textarea { min-height: 84px; resize: vertical; }
+.model-registry small { display: block; }
+.model-registry .model-error { color: #a42a23; }
+.model-registry pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.model-evidence { display: grid; gap: 12px; }
+.model-evidence div { display: grid; grid-template-columns: minmax(130px, 1fr) 4fr; gap: 16px; }
+.model-evidence dt { font-weight: 600; }
+.model-evidence dd { margin: 0; white-space: pre-wrap; }
+.model-stages { margin: 16px 0; }
+@media (max-width: 600px) { .model-evidence div { grid-template-columns: 1fr; gap: 4px; } }

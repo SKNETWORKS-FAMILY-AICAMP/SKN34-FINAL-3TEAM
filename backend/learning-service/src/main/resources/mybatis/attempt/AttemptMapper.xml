@@ -14,6 +14,9 @@
             <arg column="finished_at" javaType="java.time.Instant"/>
             <arg column="completed_at" javaType="java.time.Instant"/>
             <arg column="updated_at" javaType="java.time.Instant"/>
+            <arg column="context" javaType="com.sagomungchi.learning.attempt.domain.AttemptContext"/>
+            <arg column="theme_id" javaType="java.util.UUID"/>
+            <arg column="theme_week_start" javaType="java.time.LocalDate"/>
         </constructor>
     </resultMap>
 
@@ -33,7 +36,7 @@
 
     <sql id="columns">
         id, student_id, mission_id, mission_version_id, rubric_version_id, grade, status,
-        started_at, finished_at, completed_at, updated_at
+        started_at, finished_at, completed_at, updated_at, context, theme_id, theme_week_start
     </sql>
 
     <!-- 부분 UK uq_attempt_in_progress: 동시 시작은 먼저 커밋된 시도만 남고 나머지는 0행 (FN-LRN-16) -->
@@ -41,13 +44,21 @@
         INSERT INTO attempt (<include refid="columns"/>)
         VALUES (#{id}, #{studentId}, #{missionId}, #{missionVersionId}, #{rubricVersionId}, #{grade}, #{status},
                 #{startedAt}, #{finishedAt,jdbcType=TIMESTAMP_WITH_TIMEZONE},
-                #{completedAt,jdbcType=TIMESTAMP_WITH_TIMEZONE}, #{updatedAt})
+                #{completedAt,jdbcType=TIMESTAMP_WITH_TIMEZONE}, #{updatedAt}, #{context},
+                #{themeId,jdbcType=OTHER}, #{themeWeekStart,jdbcType=DATE})
         ON CONFLICT (student_id, mission_id) WHERE status = 'IN_PROGRESS' DO NOTHING
     </insert>
 
     <select id="findInProgress" resultMap="attempt">
         SELECT <include refid="columns"/> FROM attempt
         WHERE student_id = #{studentId} AND mission_id = #{missionId} AND status = 'IN_PROGRESS'
+    </select>
+
+    <!-- 커뮤니티(#386): 그 미션을 처음 학습 완료한 시도. 완료 시각이 같으면 ID 순 -->
+    <select id="findFirstCompleted" resultMap="attempt">
+        SELECT <include refid="columns"/> FROM attempt
+        WHERE student_id = #{studentId} AND mission_id = #{missionId} AND status = 'COMPLETED'
+        ORDER BY completed_at, id LIMIT 1
     </select>
 
     <select id="findById" resultMap="attempt">

@@ -69,7 +69,7 @@ Node 22 alpine 표준 라이브러리만 사용(RS256 서명 필요). 각 이미
 - `compose.e2e.yaml`: `compose.yaml`·`compose.minio.yaml`과 함께 지정하는 오버레이. 스텁 3종, core·ai 환경 변수 재정의, report-api·worker는 버킷 생성 후 기동. scoring-service는 E2E 흐름에서 호출하지 않아 제외
 - `e2e-seed`: 마이그레이션 직후 `frontend/web/tests/e2e/seed/core.sql`(core_db)과 `backend/learning-service/db/seed/demo_missions.sql`(learning_db) 실행
 - `core.sql`(재실행 결과 동일): 필수 동의 문서 3종, 무료(`PAYMENT_FREE_PRODUCT_ID`)·유료(`E2E 프리미엄`, 14,900원) 상품, ADMIN 계정(Google sub `e2e-admin`)과 관리자 권한 4종
-- 주간 리포트: cron이 월요일 07:00·지난주 기간이라 테스트가 `report_job`(QUEUED)과 `report.generate` outbox 이벤트를 이번 주 기간으로 직접 삽입(`tests/e2e/support/db.ts`). 이후 OutboxRelay → RabbitMQ → report-worker → 완료 이벤트는 실제 경로
+- 주간 리포트: cron이 월요일 00:00·지난주 기간이라 테스트가 `report_job`(QUEUED)과 `report.generate` outbox 이벤트를 이번 주 기간으로 직접 삽입(`tests/e2e/support/db.ts`). 이후 OutboxRelay → RabbitMQ → report-worker → 완료 이벤트는 실제 경로
 
 ### 테스트 (`frontend/web/tests/e2e/`, `npm run test:e2e`)
 

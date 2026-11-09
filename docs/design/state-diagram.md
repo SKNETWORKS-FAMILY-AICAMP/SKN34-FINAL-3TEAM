@@ -104,7 +104,7 @@ stateDiagram-v2
 | → `AGREED`·`WITHDRAWN` | 가입·자녀 등록·동의 변경 (`POST /me/consents`, `POST /children`) | `ConsentService.save` | 현재 문서 전체 항목과 필수 문서(`required`) 동의가 있어야 저장. 항목마다 최신 행과 선택이 다를 때만 새 행 저장(동의 AGREED, 선택 항목 미동의 WITHDRAWN). 재동의도 새 AGREED 행. 권한은 같은 문서·주체·자녀의 최신 행으로 판정 |
 | `AGREED → WITHDRAWN` | `POST /me/consents/{id}/withdrawal` | `ConsentService.withdraw` | 보호자 행 잠금 후 본인 행 확인, 이미 WITHDRAWN이면 그대로 반환. 행 유지 + `withdrawn_at`. 필수 동의 철회 시 대상 자녀(자녀 동의) 또는 계정 이용 차단, 삭제·탈퇴는 별도 요청. 선택 동의는 해당 기능만 중단 (P09) |
 
-- 구현 예정(P20): 선택 동의 문서 `COMMUNITY`(자녀 단위). 철회 시 커뮤니티 공개 설정을 끄고 공유물을 `HIDDEN_SETTING`으로 바꿈(3.6)
+- 선택 동의 문서 `COMMUNITY`(자녀 단위, P20, #388): 자녀 동의 요청에 `GUARDIAN`·`COMMUNITY` 중 보낼 문서만 담을 수 있고 `COMMUNITY`만 보낼 때는 현재 법정대리인 동의가 필요. 거부(`WITHDRAWN` 행)·철회 시 커뮤니티 공개 설정을 끄고 공유물을 `HIDDEN_SETTING`으로 바꿈(3.6). 이관 전 보호자의 옛 동의 철회는 영향 없음
 
 ### 2.4 `guardian_transfer.status` (#289 탈퇴 전 자녀 이관)
 
@@ -223,7 +223,7 @@ stateDiagram-v2
 - 되묻기는 시도당 최대 2회, 2회째 보완 답변 판정 후 되묻기 생성 없이 마무리 안내. 고르기 `CORRECT`도 되묻기 없이 마무리 안내 (P04)
 - 초안 `attempt_draft.version`: 저장마다 +1, `WHERE version = :ifMatch` (상태값 없음)
 
-#### 3.2.1 테마 요일 문제 열림 (파생, DB 미저장, 구현 예정, P23)
+#### 3.2.1 테마 요일 문제 열림 (파생, DB 미저장, P23, #385)
 
 ```mermaid
 stateDiagram-v2
@@ -236,6 +236,7 @@ stateDiagram-v2
 - `OPEN`일 때만 `THEME_DAY` 신규 시도. 토·일 되돌아보기는 `CLOSED` 문제 중 그 주에 마무리한 것만 `THEME_REVIEW`로 다시 풀기, 놓친 문제는 표시만
 - 시작 요청 `context`(`THEME_DAY`·`THEME_REVIEW`·`EXTRA`)는 신규 시도에만 검사. 진행 중 시도 반환(부분 UK 충돌)은 요일과 무관하게 이어하기 허용, 완주 판정은 당일 KST 학습 완료만 인정
 - 재사용 테마의 이미 푼 문제도 그 주 `OPEN` 요일에는 `THEME_DAY` 신규 시도 가능
+- 구현(#385): `ThemeWeek.stateOf`가 KST 날짜로 계산하고 토·일에는 다섯 요일 모두 `CLOSED`. 시작 검사는 learning 시계(KST), 조회·열람은 core가 넘긴 날짜 기준
 
 ### 3.3 `judgment.process_status` (판정 처리)
 
@@ -307,14 +308,14 @@ stateDiagram-v2
 
 - 다시 만들려면 새 초안을 요청한다(검사에 실패한 초안을 되살리지 않음). 검사 통과(`READY`)는 공개 승인이 아니며 채택 뒤 3.1 검토·게시를 거친다(P19, FAC-18)
 
-### 3.5 `weekly_theme.status` (구현 예정, P23)
+### 3.5 `weekly_theme.status` (P23, #385)
 
 ```mermaid
 stateDiagram-v2
   [*] --> DRAFT: 테마 작성
   DRAFT --> REVIEW_REQUIRED: 검토 요청
-  REVIEW_REQUIRED --> DRAFT: 수정 요청
-  REVIEW_REQUIRED --> PUBLISHED: 승인 + 게시 검사 통과
+  REVIEW_REQUIRED --> DRAFT: 검토 중 수정
+  REVIEW_REQUIRED --> PUBLISHED: 게시(검토 요청한 현재본 = 승인) + 게시 검사 통과
   PUBLISHED --> PUBLISHED: 수정·재검토·재게시
   PUBLISHED --> UNPUBLISHED: 제공 중단
   UNPUBLISHED --> REVIEW_REQUIRED: 수정 후 재검토
@@ -322,31 +323,34 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 조건 |
 |---|---|---|
-| `REVIEW_REQUIRED → PUBLISHED` | `POST /admin/weekly-themes/{id}/publish` (CONTENT) | 월~금 5개 요일 모두 게시 미션, 다섯 생각 유형 1개씩, 미션 학년이 학년군 안, 같은 학년군·주 `PUBLISHED` 없음. 아니면 `422 WEEKLY_THEME_PUBLISH_INCOMPLETE` |
+| `REVIEW_REQUIRED → PUBLISHED` | `POST /admin/weekly-themes/{id}/publish` (CONTENT) | 검토 요청한 버전이 현재본(아니면 `409 CONFLICT`). 월~금 5개 요일 모두 게시 미션(시연 전용 제외), 다섯 생각 유형 1개씩, 미션 학년 범위가 학년군 전체를 덮음(초3~4 논술 불가), 같은 학년군·주 `PUBLISHED` 없음. 아니면 `422 WEEKLY_THEME_PUBLISH_INCOMPLETE` + `errors` |
 | `PUBLISHED → UNPUBLISHED` | `/unpublish` | 그 주 학생에게는 최근 게시 테마 재사용(P23). 이미 시작한 시도는 유지 |
 
-- 미션 상태(3.1)와 같은 전이 규칙. 코드값은 [ERD 4.4](erd.md#44-구현-예정-변경-learning_db). 위에 없는 전이는 `409 CONFLICT`
+- 미션 상태(3.1)와 같은 전이 규칙. 별도 검토(승인·수정 요청) 경로는 없다(core #387이 7경로만 프록시): 검토 요청한 버전(`review_version_id`)이 현재본일 때의 게시가 승인이고, 검토 중 수정은 `DRAFT`로 돌아간다. 게시 중 수정은 새 버전을 현재본으로 두고 `PUBLISHED`를 유지하며 학생에게는 재게시 전까지 게시본이 보인다. 코드값은 [ERD 4.2.1](erd.md#421-주간-테마-p23-385-v11v12). 위에 없는 전이는 `409 CONFLICT`
 
-### 3.6 `community_post.status` (구현 예정, P20)
+### 3.6 `community_post.status` (P20, learning #386 구현)
 
 ```mermaid
 stateDiagram-v2
   [*] --> VISIBLE: 미션 첫 학습 완료 + 커뮤니티 공개 켜짐
+  [*] --> HIDDEN_SETTING: 공유 직전 공개 끔이 먼저 반영됨
   VISIBLE --> HIDDEN_SETTING: 공개 끔·동의 철회·이관 수락
   HIDDEN_SETTING --> VISIBLE: 공개 켬 + 동의 유효
   VISIBLE --> HIDDEN_REPORT: 신고 접수
+  HIDDEN_SETTING --> HIDDEN_REPORT: 신고 접수(반영 지연 중)
   HIDDEN_REPORT --> VISIBLE: 검토 결과 다시 공개
+  HIDDEN_REPORT --> HIDDEN_SETTING: 다시 공개 + 지금 공개 끔
   HIDDEN_REPORT --> REMOVED: 검토 결과 계속 숨김
   REMOVED --> [*]
 ```
 
 | 전이 | 트리거 | 담당 |
 |---|---|---|
-| `VISIBLE ↔ HIDDEN_SETTING` | core `community-visibility` 호출(설정·동의·이관) | learning `CommunityPost.hideBySetting()`·`restore()` |
-| `VISIBLE → HIDDEN_REPORT` | `error_report(targetType = COMMUNITY_POST)` 접수 | core `ErrorReportService` → learning `moderation` |
-| `HIDDEN_REPORT → VISIBLE·REMOVED` | 신고 처리 완료(SERVICE_OPS) | 같은 경로 |
+| `VISIBLE ↔ HIDDEN_SETTING` | core `community-visibility` 호출(설정·동의·이관) | learning `CommunityService.setVisibility` |
+| `VISIBLE·HIDDEN_SETTING → HIDDEN_REPORT` | `error_report(targetType = COMMUNITY_POST)` 접수 | core `CommunityModerationService` → learning `moderation`(`CommunityRules.moderate`) |
+| `HIDDEN_REPORT → VISIBLE·HIDDEN_SETTING·REMOVED` | 신고 처리 완료(SERVICE_OPS). 다시 공개는 learning `community_visibility`가 끔이면 `HIDDEN_SETTING` | 같은 경로 |
 
-- `HIDDEN_REPORT`·`REMOVED`는 공개 설정을 다시 켜도 `VISIBLE`이 되지 않음
+- `HIDDEN_REPORT`·`REMOVED`는 공개 설정을 다시 켜도 `VISIBLE`이 되지 않음. `REMOVED`는 끝 상태라 검토 요청을 다시 받아도 그대로(멱등)
 - 학생·미션당 1행(UK `(student_id, mission_id)`). 다시 풀기 시도는 공유하지 않아 새 행·전이 없음
 - 공개 설정을 다시 켜면 `HIDDEN_SETTING`만 `VISIBLE`로 복원(이관 수락 후 새 보호자 동의 때도 같음)
 - 학생 삭제 시 상태와 관계없이 물리 삭제(P09)
@@ -512,7 +516,7 @@ stateDiagram-v2
 
 - `R_*`·`Q_*` 접두어 = 각 테이블 `status` 값
 - 접수만으로 판정 변경 금지, `RECEIVED → RESOLVED` 직행 금지 (검토 기록 필수, FN-SUP-02)
-- 구현 예정(P20·P10): 대상 `COMMUNITY_POST` 신고 접수 시 공유물 `HIDDEN_REPORT`, `RESOLVED` 처리 결과로 `VISIBLE` 또는 `REMOVED`(3.6)
+- 대상 `COMMUNITY_POST` 신고(P20·P10, #388): 접수 시 공유물 `HIDDEN_REPORT`, `RESOLVED` + `review_result` `VISIBLE`(다시 공개)·`REMOVED`(계속 숨김, 생략 시 기본)로 공유물 상태를 정함(3.6). 같은 공유물에 신고가 여럿이면 `REMOVED` 우선, 처리 중이 있으면 `HIDDEN_REPORT`
 
 ### 5.1 core 정정 실행 기록 (#46)
 

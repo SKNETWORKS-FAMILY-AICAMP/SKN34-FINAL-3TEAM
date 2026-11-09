@@ -1,3 +1,4 @@
+import type { PreflightRequest, PreflightResult, RegistrationProvenance } from '../../domain/admin/modelRegistration.ts'
 import { apiFetch } from '../apiClient.ts'
 import { json } from '../parent/api.ts'
 import type { Page } from '../../domain/parent.ts'
@@ -22,6 +23,7 @@ const operationFilters = (values: Record<string, string | undefined>) => new URL
 )
 const p = (id: string) => encodeURIComponent(id)
 export const adminApi = {
+  preflightModel: (body: PreflightRequest) => apiFetch<PreflightResult>('/admin/models/preflight', { ...json(body), signal: AbortSignal.timeout(25_000) }),
   overview: (period: Period, signal?: AbortSignal) =>
     apiFetch<Overview>(`/admin/overview?${new URLSearchParams({ ...period })}`, { signal }),
   jobs: (type: string, status: string, signal?: AbortSignal, period?: Period) =>
@@ -68,6 +70,15 @@ export const adminApi = {
     apiFetch<AdminMission>(`/admin/missions/${p(id)}/${action}`, json(data)),
   models: (signal?: AbortSignal) =>
     apiFetch<Page<ModelVersion>>('/admin/model-versions', { signal }),
+  allModels: async (signal?: AbortSignal) => {
+    const items: ModelVersion[] = []
+    for (let page = 0; ; page++) {
+      const result = await apiFetch<Page<ModelVersion>>(`/admin/model-versions?page=${page}&size=100`, { signal, cache: 'no-store' })
+      items.push(...result.items)
+      if (items.length >= result.totalElements) return { ...result, items }
+      if (!result.items.length) throw new Error('전체 모델 목록을 확인하지 못했습니다. 다시 조회해 주세요.')
+    }
+  },
   registerModel: (data: {
     kind: string
     name: string
@@ -75,6 +86,7 @@ export const adminApi = {
     evaluation: EvaluationEvidence
     refId?: string
     artifactUri?: string
+    registration?: RegistrationProvenance
   }) => apiFetch<ModelVersion>('/admin/model-versions', json(data)),
   modelAction: (id: string, action: 'activate' | 'rollback', reason: string, scopes: string[], reanalysisPlanned = false) =>
     apiFetch<ModelVersion>(

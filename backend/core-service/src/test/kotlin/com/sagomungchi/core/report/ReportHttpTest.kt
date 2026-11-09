@@ -331,9 +331,9 @@ class ReportHttpTest : IntegrationTestSupport() {
     private fun detail(id: UUID = report, revision: Int = 1,
         period: com.sagomungchi.core.report.domain.ReportPeriod = WEEK): Map<String, Any?> = mapOf(
         "reportId" to id, "childId" to student, "period" to period, "status" to "COMPLETED", "state" to "NO_RECORD", "revision" to revision,
-        "revisions" to listOf(mapOf("revision" to revision, "generatedAt" to "2026-10-26T07:00:00+09:00")),
+        "revisions" to listOf(mapOf("revision" to revision, "generatedAt" to "2026-10-26T00:00:00+09:00")),
         "inclusionRule" to "기간 내 제출 기록", "metrics" to emptyList<Any>(), "thinkingTypes" to emptyList<Any>(),
         "changes" to emptyList<Any>(), "reflections" to emptyList<Any>(), "quotes" to emptyList<Any>(),
         "eveningQuestion" to null, "narrative" to null, "verification" to mapOf("numbersMatched" to true, "quotesMatched" to true),
-        "versions" to mapOf("prompt" to null, "model" to null), "generatedAt" to "2026-10-26T07:00:00+09:00")
+        "versions" to mapOf("prompt" to null, "model" to null), "generatedAt" to "2026-10-26T00:00:00+09:00")
 }

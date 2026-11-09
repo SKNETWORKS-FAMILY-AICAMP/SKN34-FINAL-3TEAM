@@ -5,6 +5,7 @@ import com.sagomungchi.learning._common.exception.Problems
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.attempt.domain.AttemptStatus
 import com.sagomungchi.learning.attempt.domain.AttemptComparison
+import com.sagomungchi.learning.attempt.domain.AttemptContext
 import com.sagomungchi.learning.attempt.domain.SelfAssessmentItem
 import com.sagomungchi.learning.attempt.domain.SelfCheck
 import com.sagomungchi.learning.attempt.service.AttemptService
@@ -28,6 +29,9 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
+/** 시도 시작 본문 (api-spec 2.11). context 생략·null은 EXTRA */
+data class AttemptStartRequest(val context: AttemptContext? = null)
+
 /**
  * 학습 시도·초안·생각 열기·마무리·돌아보기·자기 평가 (api-spec 2.2, 4.1). 시작은 미션 조회와 같이 core가 grade·demo를 붙임.
  * 초안 버전은 ETag·If-Match (api-spec 1.4)
@@ -37,15 +41,19 @@ import java.util.UUID
 class AttemptController(
     private val attemptService: AttemptService,
 ) {
-    /** 새 시도면 201, 진행 중 시도를 돌려주면 200 (sequence-diagram 3.1) */
+    /**
+     * 새 시도면 201, 진행 중 시도를 돌려주면 200 (sequence-diagram 3.1). 본문 `{context}`(api-spec 2.11, #385):
+     * 본문 없음·`{}`·`null`은 EXTRA, 정해진 값 밖은 400
+     */
     @PostMapping("/missions/{missionId}/attempts")
     fun start(
         @PathVariable missionId: UUID,
         @RequestParam @Min(MIN_GRADE) @Max(MAX_GRADE) grade: Int,
         @RequestParam(defaultValue = "false") demo: Boolean,
+        @RequestBody(required = false) request: AttemptStartRequest?,
     ): ResponseEntity<AttemptResponse> {
         val studentId = UserContextHolder.current().requireSelfStudent()
-        val started = attemptService.start(studentId, missionId, grade, demo)
+        val started = attemptService.start(studentId, missionId, grade, demo, request?.context ?: AttemptContext.EXTRA)
         return withDraftETag(
             ResponseEntity.status(if (started.created) HttpStatus.CREATED else HttpStatus.OK),
             AttemptResponse.from(attemptService.get(started.attempt.id)),

@@ -54,12 +54,33 @@ def test_backfill_keeps_old_report_and_guard_and_downgrade_refuses_daily_data(po
             """),
                 {"job": uuid4(), "student": student},
             )
+        migrate("20261109_06")
+        # A previous worker can still write during the nullable prepare phase.
+        # Finalize must backfill these late rows as well, without a SQL default.
+        with engine.begin() as conn:
+            conn.execute(
+                text("""
+                INSERT INTO report_job_guard(job_id,student_id,period_from,period_to,
+                    failure_reason,created_at)
+                VALUES(:job,:student,'2026-11-02','2026-11-08','REPORT_NOT_CREATED',now())
+                """),
+                {"job": uuid4(), "student": student},
+            )
+            assert (
+                conn.scalar(text("SELECT count(*) FROM report_job_guard WHERE period_type IS NULL"))
+                == 1
+            )
         migrate("head")
         with engine.begin() as conn:
             row = conn.execute(text("SELECT * FROM weekly_report")).mappings().one()
             assert row["id"] == identifier and row["revision"] == 3
             assert row["narrative"] == {"text": "preserve"} and row["period_type"] == "WEEKLY"
-            assert conn.scalar(text("SELECT period_type FROM report_job_guard")) == "WEEKLY"
+            assert (
+                conn.scalar(
+                    text("SELECT count(*) FROM report_job_guard WHERE period_type = 'WEEKLY'")
+                )
+                == 2
+            )
             conn.execute(
                 text("""
                 INSERT INTO weekly_report(id,job_id,student_id,period_from,period_to,

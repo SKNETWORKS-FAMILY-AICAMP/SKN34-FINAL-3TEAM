@@ -288,11 +288,11 @@ def test_daily_job_guard_accepts_one_day_and_preserves_identity(db_session):
         repo.guard(*args, PeriodType.WEEKLY)
 
 
-def test_theme_rollout_is_disabled_by_default():
+def test_theme_summary_is_enabled_with_merged_producer():
     from app.config import Settings
 
     settings = Settings(internal_token="test-token", database_url="postgresql://unused")
-    assert settings.report_theme_summary_enabled is False
+    assert settings.report_theme_summary_enabled is True
 
 
 def test_daily_reader_uses_completion_endpoint_and_keeps_existing_mission_fields():

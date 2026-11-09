@@ -144,7 +144,7 @@
 - **report 발행 복구(#131)**: 학생별 선두만 발행한다. 실패한 학생은 1·5·15분 재시도 후 격리하고 다른 학생은 계속 처리한다. 격리된 선두와 그 뒤 이벤트는 운영 CLI로 원래 이벤트 id를 재처리할 때까지 대기한다. 소비 재시도 큐/DLQ와 별개로 Outbox DB에 실패·격리 상태를 저장한다. [정책·운영 명령](../report/report.md#11-outbox-실패-격리와-학생별-발행-순서-131)
 - 구현 예정: 포인트 적립은 core가 learning 응답을 동기 프록시하는 경로(돌아보기 저장 성공 = 학습 완료, 공유·반응 성공, 되돌아보기 열람)에서 같은 core 트랜잭션으로 원장에 기록한다. learning은 계속 발행 없음(1.6 Outbox 원칙 유지). 프록시 응답 후 core 저장이 실패하면 사건 키(`student_id, event_type, source_key`)로 다음 같은 사건·조회 때 다시 적립할 수 있게 둔다(사건 키 멱등, 같은 사건 재요청·주간 테마 조회 때 보충)
 - 구현 예정: 공유물 생성도 돌아보기 저장 성공 직후 core → learning 내부 호출(학생·미션당 1개 멱등, 다시 풀기는 공유 안 함). 공개 설정 변경·동의 철회·이관 수락은 core → learning `community-visibility` 호출
-- 구현 예정: 학생 삭제는 기존 `student.deleted` 소비 범위에 공유물·반응·테마 열람 기록 추가(learning), core는 포인트·해금·착용 정보와 `mission_daily_usage`를 함께 삭제
+- 학생 삭제는 기존 `student.deleted` 소비 범위에 테마 열람 기록(learning #385 구현)·공유물·반응(learning 구현 예정) 추가, core는 포인트·해금·착용 정보를 함께 삭제(`mission_daily_usage`는 #387에서 삭제 확정 트랜잭션에 포함)
 - **상태 없는 서비스(ai, scoring)**: 이벤트 발행은 처리 결과 반환 후 best-effort (사용량 집계용), 유실 시 Langfuse trace로 보정(Langfuse는 예정, 저장소 미구성)
 - **멱등 소비**: 소비자별 `processed_event(event_id UK)` 테이블 또는 DB 상태 전이 조건(`QUEUED→RUNNING`)
 - **이벤트 기록·보존(#208)**: core가 감사 큐로 모든 업무 메시지의 id·type·source·subject·봉투 시각·수신 시각을 `event_log`에 저장한다(payload 제외). 발행은 각 서비스 `outbox_event`, 소비는 `processed_event`·`llm_usage`·작업 상태와 `event_id`로 조인한다. ai·scoring은 DB 없이 유지하며, 브로커에 도달하지 못한 발행 실패는 `event_log`에 없고 서비스 로그로만 확인한다. `model.version.activated`의 Pod별 적용은 기록하지 않는다(readiness·snapshot 재조회로 보장). 발행 완료 outbox·processed_event·event_log는 90일 후 삭제하고 미발행·격리 행은 남긴다. [결정 근거](../report/core-gateway.md#9-rabbitmq-발행소비-기록-208)
@@ -332,12 +332,12 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  │  ├─ TossClient.kt
 │  │  └─ PremiumUsageClient.kt   # learning 프리미엄 사용 증빙 조회
 │  └─ scheduler/                 # 정기 청구
-├─ usage/                        # LLM 사용량 집계, 무료 미션 하루 한도(구현 예정, `mission_daily_usage`)
+├─ usage/                        # LLM 사용량 집계, 무료 미션 하루 한도(#387 `MissionUsageService`, `mission_daily_usage`)
 │  ├─ consumer/
 │  ├─ service/
 │  ├─ domain/                    # LlmUsageRecorded·UsageSummary
 │  └─ repository/
-├─ community/                    # (구현 예정, P20) 커뮤니티 공개 설정·learning 프록시·작성자 표시 변환·신고 연결
+├─ community/                    # (P20, #388) 커뮤니티 공개 설정·learning 프록시·작성자 표시 변환·신고 연결
 │  ├─ controller/
 │  ├─ service/
 │  ├─ domain/
@@ -396,7 +396,7 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 │  │  └─ PaymentUsageClient.kt   # core 프리미엄 사용 예약·확정 (#48)
 │  └─ facade/
 │     └─ FeedbackFacade.kt
-├─ theme/                        # (구현 예정, P23) 주간 테마·요일별 미션·게시 검사, 되돌아보기 열람
+├─ theme/                        # (P23, #385) 주간 테마·요일별 미션·게시 검사, 되돌아보기 열람·완주·주간 요약
 │  ├─ controller/
 │  ├─ service/
 │  ├─ domain/
@@ -923,4 +923,4 @@ SKN34-FINAL-3TEAM/
 
 ### 7.1 구현 결정 요약
 
-클래스 수준 결정(인증·주간 리포트·삭제·결제·신고 연결 경계)은 [클래스 다이어그램](class-diagram.md) 3장과 보고서([auth-account](../report/auth-account.md)·[report](../report/report.md)·[payment](../report/payment.md)·[support-admin](../report/support-admin.md))를 따른다. Redis 사용 범위는 6장 저장소 행과 [core-gateway #210](../report/core-gateway.md#6-redis-사용-필요성과-postgresql-대체-비교-210). 무료 플랜 미션 일일 한도(P13, 하루 1개)는 미구현이며 #210 결정에 따라 core `mission_daily_usage`(PostgreSQL)로 구현 예정
+클래스 수준 결정(인증·주간 리포트·삭제·결제·신고 연결 경계)은 [클래스 다이어그램](class-diagram.md) 3장과 보고서([auth-account](../report/auth-account.md)·[report](../report/report.md)·[payment](../report/payment.md)·[support-admin](../report/support-admin.md))를 따른다. Redis 사용 범위는 6장 저장소 행과 [core-gateway #210](../report/core-gateway.md#6-redis-사용-필요성과-postgresql-대체-비교-210). 무료 플랜 미션 일일 한도(P13, 하루 1개)는 #210 결정에 따라 core `usage`의 `mission_daily_usage`(PostgreSQL)로 구현(#387, [core-gateway 13절](../report/core-gateway.md#13-주간-테마-프록시무료-하루-1개추가-문제-프리미엄-387))

@@ -66,15 +66,15 @@ test('포인트 해금: 잔액 부족·판매 중단은 409, 같은 키는 한 �
   assert.equal(items.some((i) => i.itemKey === 'HAT_CROWN'), false, '판매 중단·미해금 아이템은 목록에 없음')
 
   assert.equal((await call('/students/me/look-items/THEME%3Aspace/unlock', undefined, 'POST')).status, 400, '키 없으면 거절')
-  assert.equal((await call('/students/me/look-items/HAT_CROWN/unlock', undefined, 'POST', { 'Idempotency-Key': 'k-crown' })).data.code, 'LOOK_ITEM_NOT_ON_SALE')
+  assert.equal((await call('/students/me/look-items/HAT_CROWN/unlock', undefined, 'POST', { 'Idempotency-Key': '00000000-0000-4000-8000-000000000001' })).data.code, 'LOOK_ITEM_NOT_ON_SALE')
 
-  const first = await call('/students/me/look-items/THEME%3Aspace/unlock', undefined, 'POST', { 'Idempotency-Key': 'k-space' })
+  const first = await call('/students/me/look-items/THEME%3Aspace/unlock', undefined, 'POST', { 'Idempotency-Key': '00000000-0000-4000-8000-000000000002' })
   assert.equal(first.status, 200)
-  const again = await call('/students/me/look-items/THEME%3Aspace/unlock', undefined, 'POST', { 'Idempotency-Key': 'k-space' })
+  const again = await call('/students/me/look-items/THEME%3Aspace/unlock', undefined, 'POST', { 'Idempotency-Key': '00000000-0000-4000-8000-000000000002' })
   assert.equal(again.data.balance, first.data.balance, '같은 키 재요청은 차감하지 않음')
   assert.equal(first.data.balance, before.balance - 100)
 
-  const broke = await call('/students/me/look-items/COMPANION%3Atori/unlock', undefined, 'POST', { 'Idempotency-Key': 'k-tori' })
+  const broke = await call('/students/me/look-items/COMPANION%3Atori/unlock', undefined, 'POST', { 'Idempotency-Key': '00000000-0000-4000-8000-000000000003' })
   assert.equal(broke.status, 409)
   assert.equal(broke.data.code, 'INSUFFICIENT_POINTS')
 

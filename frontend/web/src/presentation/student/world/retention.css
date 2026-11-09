@@ -192,8 +192,8 @@
   flex-direction: column;
   gap: 6px;
 }
-#class-journal .st-pick[aria-disabled='true'] {
-  opacity: 0.7;
+#class-journal .st-pick:disabled {
+  opacity: 1;
   cursor: default;
 }
 #class-journal .st-lock {
@@ -209,6 +209,43 @@
 #class-journal .st-points {
   font-weight: 700;
   margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+#class-journal .st-custom-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #edf4ed;
+  padding: 12px 16px;
+  border-radius: 14px;
+}
+#class-journal .st-custom-summary .st-companion { flex: none; }
+#class-journal .st-custom-summary p { margin: 4px 0; }
+#class-journal .st-unlock-confirm {
+  padding: 16px;
+  border: 2px solid #375f46;
+  border-radius: 14px;
+  background: #f2f6f0;
+}
+#class-journal .st-unlock-confirm p { margin: 10px 0; }
+#class-journal .st-custom-actions,
+#class-journal .st-points-pages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+#class-journal .st-custom button:focus-visible {
+  outline: 3px solid #375f46;
+  outline-offset: 3px;
+}
+#class-journal .st-custom button { min-height: 44px; }
+@media (max-width: 480px) {
+  #class-journal .st-custom .st-pick-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  #class-journal .st-slot-item { flex-wrap: wrap; }
+  #class-journal .st-custom-summary { gap: 10px; padding: 10px; }
+  #class-journal .st-custom-summary .st-companion { width: 64px; height: 64px; }
 }
 #class-journal .st-slot {
   display: flex;
