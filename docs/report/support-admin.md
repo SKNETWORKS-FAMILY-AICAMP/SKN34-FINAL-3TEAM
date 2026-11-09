@@ -13,7 +13,7 @@
 - 공지: 등록/수정/종료 전후를 audit_log에 보존하며 DELETE는 `ended_at`만 기록. help/notices는 인증 필요(PublicAuthFilter 공개 예외에서 제거)
 - ANALYSIS/REPORT 대상 정정은 공급자 계약이 없어 422 `CORRECTION_TARGET_UNSUPPORTED`
 - 대상 `COMMUNITY_POST`(P20·P10, #388): 접수 즉시 숨김, 처리 결과로 다시 공개 또는 계속 숨김, 원문 열람 감사. 결정은 3장
-- 구현 예정(FN-ADM-22·23): 관리자 주간 테마(learning 프록시, 미션과 같은 작성→검토→게시)·꾸미기 아이템(core 소유) 관리, CONTENT 권한·`audit_log`
+- FN-ADM-22·23(#387·#389·#395): 관리자 주간 테마(learning 프록시, 미션과 같은 작성→검토→게시)·꾸미기 아이템(core 소유) 관리, CONTENT 권한·`audit_log`
 
 ### 정정 impact 의미
 

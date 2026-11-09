@@ -654,7 +654,7 @@ stateDiagram-v2
 
 report #131은 위 미발행 상태를 `next_attempt_at`·`quarantined_at`으로 세분한다. 별도 status 컬럼은 추가하지 않는다. 최초 실패 후 1·5·15분으로 재시도하고 총 4회 실패 시 격리한다. 해당 학생의 후속 이벤트는 선두를 추월하지 않으며 다른 학생의 발행은 계속된다. 운영 CLI의 수동 재처리는 같은 id·payload·순서 위치를 유지하면서 실패 횟수·대기·격리를 초기화하고 수동 처리 횟수와 시각을 남긴다. [상세 정책](../report/report.md#11-outbox-실패-격리와-학생별-발행-순서-131)
 
-### 7.3 `look_item.status` (구현 예정, P22)
+### 7.3 `look_item.status` (P22, core #389 V35)
 
 ```mermaid
 stateDiagram-v2
