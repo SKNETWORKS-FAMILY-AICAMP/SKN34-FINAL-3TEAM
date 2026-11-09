@@ -117,6 +117,7 @@ node tests/qr-device-browser.mjs
 
 - 문구: 리포트 목록(`ParentReports`) 일일·주간 생성 안내, 주간 리포트 화면(`ParentFeatures`) 기간 안내·생성 중 안내, 대시보드(`ParentDashboard`) 빈 목록 안내
 - 목업 `generatedAt`: 주간은 직전 주 종료 자정 `2026-10-26T00:00:00+09:00`, 일일은 대상일 다음 날 00:00 KST(`${date}T15:00:00Z`). 실서버 어댑터 테스트 예시 시각과 e2e 주간 cron 주석도 같은 기준으로 정리
+- e2e `queueWeeklyReport`: #398(V30)로 NOT NULL이 된 `report_job.period_type`에 `WEEKLY`를 넣는다. outbox 명령은 `ReportGenerateWriter`처럼 주간이면 `periodType`을 생략
 - API 경로·스키마 변경 없음
 - core 스케줄 변경(#400) 반영 전까지 실서버는 07:00에 생성하므로 안내와 실제 생성 시각이 잠시 다를 수 있다
 

@@ -19,8 +19,8 @@ WITH target AS (
          date_trunc('week', now() AT TIME ZONE 'Asia/Seoul')::date AS mon
   FROM student s WHERE s.nickname = '${name}'
 ), job AS (
-  INSERT INTO report_job (id, student_id, period_from, period_to, trigger, requested_by, status, report_id, failure_reason, retry_count, trace_id, created_at)
-  SELECT job, student, mon, mon + 6, 'SCHEDULE', NULL, 'QUEUED', NULL, NULL, 0, NULL, now() FROM target
+  INSERT INTO report_job (id, student_id, period_type, period_from, period_to, trigger, requested_by, status, report_id, failure_reason, retry_count, trace_id, created_at)
+  SELECT job, student, 'WEEKLY', mon, mon + 6, 'SCHEDULE', NULL, 'QUEUED', NULL, NULL, 0, NULL, now() FROM target
   RETURNING id
 )
 INSERT INTO outbox_event (id, event_type, routing_key, subject, payload, created_at, failure_count, manual_retry_count)
