@@ -16,6 +16,7 @@ data class EvaluationEvidence(
     val calculationAccuracy: String,
     val humanReview: String,
     val evaluatedScopes: List<String>,
+    val limitations: List<String> = emptyList(),
 ) {
     fun complete() = listOf(datasetId, datasetVersion, baselineVersion, comparisonReport,
         trainingEvaluationSeparation, quoteAccuracy, calculationAccuracy, humanReview).all { it.isNotBlank() } && validScopes(evaluatedScopes)

@@ -88,7 +88,7 @@ export function audit(
   targetType: string,
   targetId: string,
   result: 'SUCCESS' | 'FAILURE',
-  _detail: string,
+  detail: string | Record<string, unknown>,
 ) {
   audits.unshift({
     id: crypto.randomUUID(),
@@ -98,6 +98,7 @@ export function audit(
     targetId,
     result,
     createdAt: stamp(),
+      ...(targetType === 'MODEL_VERSION' && typeof detail === 'object' ? { detail } : {}),
   })
 }
 // active: 지금 쓰는 버전만 현재 범위를 가짐, revision: 같은 종류·이름 안의 변경 순번 (core 규칙)

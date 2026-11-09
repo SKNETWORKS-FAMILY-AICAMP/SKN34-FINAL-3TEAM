@@ -120,7 +120,23 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         mvc.get("/api/v1/admin/jobs?from=2026-01-01&to=2026-01-03&type=NOTIFICATION&status=FAILED&size=1") { header("Authorization","Bearer $access") }.andExpect { status { isOk() };jsonPath("$.items.length()") { value(1) } }
         mvc.get("/api/v1/admin/jobs?from=2026-01-01&to=2026-01-03&page=1001") { header("Authorization","Bearer $access") }.andExpect { status { isBadRequest() } }
         val audits=mvc.get("/api/v1/admin/audit-logs?targetId=$id&targetType=NOTIFICATION") { header("Authorization","Bearer $access") }.andExpect { status { isOk() } }.andReturn().response.contentAsString
-        assertFalse(audits.contains("secret"));assertFalse(audits.contains("detail"))
+        assertFalse(audits.contains("secret"));assertTrue(json.readTree(audits)["items"].all { it["detail"] == null || it["detail"].isNull })
+    }
+    @Test fun `model version audit query exposes only the approved operation fields`() {
+        val (actor,access)=token(); val target=UUID.randomUUID(); val previous=UUID.randomUUID()
+        val detail=json.writeValueAsString(mapOf("name" to "m2-klue-essay", "version" to "3.1",
+            "scopes" to listOf("judgment/grade-5/essay"), "reason" to "범위를 확인하고 승인",
+            "reanalysisPlanned" to true, "previousVersionId" to previous, "secret" to "private student text"))
+        jdbc.update("INSERT INTO audit_log(id,actor_user_id,action,target_type,target_id,result,detail,created_at) VALUES(?,?,'MODEL_ACTIVATE','MODEL_VERSION',?,'SUCCESS',CAST(? AS jsonb),CURRENT_TIMESTAMP)", UUID.randomUUID(),actor,target,detail)
+        val body=mvc.get("/api/v1/admin/audit-logs?targetId=$target&targetType=MODEL_VERSION") {
+            header("Authorization","Bearer $access")
+        }.andExpect {
+            status { isOk() }; jsonPath("$.items[0].detail.scopes[0]") { value("judgment/grade-5/essay") }
+            jsonPath("$.items[0].detail.reason") { value("범위를 확인하고 승인") }
+            jsonPath("$.items[0].detail.reanalysisPlanned") { value(true) }
+            jsonPath("$.items[0].detail.previousVersionId") { value(previous.toString()) }
+        }.andReturn().response.contentAsString
+        assertFalse(body.contains("secret")); assertFalse(body.contains("private student text"))
     }
     @Test fun `real Redis retry stores actual execution and audit and replays same key response`() {
         val (actor,access)=token();val id=notification(actor);val key=UUID.randomUUID()

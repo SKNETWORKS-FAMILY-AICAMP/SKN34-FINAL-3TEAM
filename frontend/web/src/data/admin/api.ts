@@ -68,6 +68,15 @@ export const adminApi = {
     apiFetch<AdminMission>(`/admin/missions/${p(id)}/${action}`, json(data)),
   models: (signal?: AbortSignal) =>
     apiFetch<Page<ModelVersion>>('/admin/model-versions', { signal }),
+  allModels: async (signal?: AbortSignal) => {
+    const items: ModelVersion[] = []
+    for (let page = 0; ; page++) {
+      const result = await apiFetch<Page<ModelVersion>>(`/admin/model-versions?page=${page}&size=100`, { signal, cache: 'no-store' })
+      items.push(...result.items)
+      if (items.length >= result.totalElements) return { ...result, items }
+      if (!result.items.length) throw new Error('전체 모델 목록을 확인하지 못했습니다. 다시 조회해 주세요.')
+    }
+  },
   registerModel: (data: {
     kind: string
     name: string

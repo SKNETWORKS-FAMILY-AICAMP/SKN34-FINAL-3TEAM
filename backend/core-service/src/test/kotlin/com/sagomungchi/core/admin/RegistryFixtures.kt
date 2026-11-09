@@ -14,7 +14,8 @@ internal fun evidence(scopes: List<String> = listOf(SCOPE_A, SCOPE_B)) = Evaluat
     "fixed-eval-1", "v1", "judge@previous", "evaluation/run-123", "split/by-item/report-123",
     "quotes/review-123", "calculations/review-123", "human/review-123", scopes)
 internal fun registration(name: String = UUID.randomUUID().toString(), version: String = "v1", kind: ModelKind = ModelKind.MODEL) =
-    RegisterVersion(kind, name, version, if (kind == ModelKind.RUBRIC) UUID.randomUUID() else null, null, evidence())
+    RegisterVersion(kind, name, version, if (kind == ModelKind.RUBRIC) UUID.randomUUID() else null,
+        if (kind == ModelKind.MODEL) "s3://test-models/models/$name/$version/" else null, evidence())
 internal fun approval(scopes: List<String> = listOf(SCOPE_A)) = ActivateVersion(true, scopes, "평가 근거 확인 후 승인", false)
 internal fun account(jdbc: JdbcTemplate, role: String = "ADMIN", permission: String? = "SERVICE_OPS"): UUID {
     val user = UUID.randomUUID(); val now = OffsetDateTime.now(ZoneOffset.UTC)
