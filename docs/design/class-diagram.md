@@ -1214,14 +1214,22 @@ classDiagram
   }
   class RewardService {
     <<service>>
-    +award(studentId, eventType, sourceKey) boolean
-    +unlock(studentId, itemKey) UnlockResult
-    +balance(studentId) int
+    +earn(studentId, event, sourceKey) EarnResult
+    +points(studentId, page, size) Points
+    +deleteStudent(studentId)
+  }
+  class LookUnlockService {
+    <<service>>
+    +catalog() List
+    +unlock(itemKey, idempotencyKey) UnlockResult
+    +requireUnlocked(studentId, theme, companion)
+    +replaceEquipment(studentId, equipped)
   }
   class LookItemAdminService {
     <<service>>
-    +create(command, adminId) LookItem
-    +update(itemId, command, adminId) LookItem
+    +list(status, slot, page, size) Page
+    +create(command) LookItem
+    +update(itemId, command) LookItem
   }
   class RewardPointLedger {
     <<entity>>
@@ -1245,14 +1253,18 @@ classDiagram
   CommunityService --> CommunityClient
   CommunityService --> RewardService : 공유 성공 시 적립
   RewardController --> RewardService
+  RewardController --> LookUnlockService
+  RewardController --> LookItemAdminService
+  LookUnlockService --> RewardService : 잔액 잠금
   RewardService --> RewardRuleRepository
   RewardService --> RewardLedgerRepository
   RewardService ..> RewardPointLedger
   LookItemAdminService ..> LookItem
 ```
 
-- 학습 완료 적립: 기존 `LearningProxyService`의 돌아보기 저장 성공 후 `RewardService.award(MISSION_COMPLETED, missionId)` → `CommunityService.shareCompleted`(설정·동의 확인, 학생·미션당 1개라 다시 풀기는 learning이 무시). 적립 저장 실패는 학습 응답을 실패로 바꾸지 않고, 같은 사건 재요청·주간 테마 조회 때 `award`가 사건 키 UK로 멱등 보충. 여러 기능 조합이므로 구현 시 `facade`로 묶음
-- `StudentLookService`(#234, API 3.12)는 저장 전에 `RewardService`로 해금 여부를 확인, `equipped` 슬롯 검증 추가
+- #389 구현: `RewardService.earn`이 적립 유일 진입점(`REQUIRES_NEW`, 적립하지 않은 이유는 `EarnOutcome`으로 반환, 예외 없음). 저장소는 MyBatis `RewardMapper` 하나이고 위 엔티티·저장소 상자는 설계 단위다. 아래 사건 연결은 #387·#388 뒤 후속
+- 학습 완료 적립: 기존 `LearningProxyService`의 돌아보기 저장 성공 후 `RewardService.earn(MISSION_COMPLETED, missionId)` → `CommunityService.shareCompleted`(설정·동의 확인, 학생·미션당 1개라 다시 풀기는 learning이 무시). 적립 저장 실패는 학습 응답을 실패로 바꾸지 않고, 같은 사건 재요청·주간 테마 조회 때 `award`가 사건 키 UK로 멱등 보충. 여러 기능 조합이므로 구현 시 `facade`로 묶음
+- `StudentLookService`(#234, API 3.12)는 저장 전에 `LookUnlockService`로 해금 여부를 확인하고 `equipped` 슬롯을 검증·교체한다. 학생 삭제 확정의 `clear`가 `RewardService.deleteStudent`도 부른다(#389)
 - 신고 연결(#388 구현): 기존 `SupportService`(3.5)가 `targetType = COMMUNITY_POST` 접수·처리 결과 저장 뒤 `CommunityModerationService.apply`(같은 공유물 신고 전체로 `HIDDEN_REPORT`·`VISIBLE`·`REMOVED`를 정해 learning `moderation` 호출)
 - 동의 철회·이관 수락·공개 설정 변경(#388 구현): 기존 `ConsentService`·`GuardianTransferService`와 `CommunityService.updateSettings`가 `CommunityVisibilityService.sync` 호출(트랜잭션 안에서 설정·현재 보호자 동의로 공개 여부를 정하고 커밋 뒤 learning `community-visibility`). 학생 삭제 확정은 `ChildManagementService`가 `reset`. 공유 요청은 `LearningController` 돌아보기 저장 성공 뒤 `CommunityService.shareCompleted`(포인트 적립 연결은 #389)
 - 무료 하루 미션 한도: `MissionUsageService`(`usage/`)가 `THEME_DAY` 신규 시도 `201`을 `mission_daily_usage`에 기록·집계, 시도 시작 프록시 전에 확인

@@ -10,13 +10,13 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ContractArtifactPresenceTest(unittest.TestCase):
-    def test_missing_artifacts_fail_all_seven_validators(self):
+    def test_missing_artifacts_fail_all_validators(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "scripts").mkdir()
             shutil.copytree(ROOT / "contracts", root / "contracts")
             for name in ("report", "notification", "support", "payment",
-                         "admin_report_retry", "analysis", "admin_operations"):
+                         "admin_report_retry", "analysis", "admin_operations", "reward"):
                 with self.subTest(validator=name):
                     script = root / "scripts" / f"validate_{name}_contracts.py"
                     shutil.copyfile(ROOT / "scripts" / script.name, script)
