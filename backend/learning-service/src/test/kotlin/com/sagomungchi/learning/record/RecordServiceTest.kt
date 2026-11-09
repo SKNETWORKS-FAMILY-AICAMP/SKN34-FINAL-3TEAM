@@ -106,7 +106,8 @@ class RecordServiceTest : PostgresRepositoryTest() {
         assertEquals(listOf(0, 4, null), listOf(completedSmall.numerator, completedSmall.denominator, completedSmall.value))
 
         answer(attempts[4], "놀 수 있어서 좋아요")
-        jdbc.update("UPDATE attempt SET status = 'COMPLETED', finished_at = now(), completed_at = now() WHERE id = ?", attempts[0].id)
+        // 완료 시각은 조회 기간 안 고정 시각(now()면 기간이 지난 뒤 기간 밖이 됨)
+        jdbc.update("UPDATE attempt SET status = 'COMPLETED', finished_at = ?, completed_at = ? WHERE id = ?", inWeek.plusMinutes(30), inWeek.plusMinutes(30), attempts[0].id)
         val full = service.summary(student, week)
         assertEquals(QueryState.OK, full.state)
         val count = full.metrics.single { it.label == "학습한 활동" }
@@ -365,7 +366,7 @@ class RecordServiceTest : PostgresRepositoryTest() {
         val before = service.stats(week)
         val done = attempt(title = "완료")
         answer(done, "답")
-        jdbc.update("UPDATE attempt SET status = 'COMPLETED', finished_at = now(), completed_at = now() WHERE id = ?", done.id)
+        jdbc.update("UPDATE attempt SET status = 'COMPLETED', finished_at = ?, completed_at = ? WHERE id = ?", inWeek.plusMinutes(30), inWeek.plusMinutes(30), done.id)
         answer(attempt(title = "진행 중"), "답")
         val other = UUID.randomUUID()
         answer(attempt(title = "다른 학생", owner = other), "답")

@@ -335,10 +335,10 @@ VALUES ('00000000-0000-4000-8000-000000000104', '00000000-0000-4000-8000-0000000
         'e1', 'schema-test', 1, false, false, 0);
 INSERT INTO attempt
     (id, student_id, mission_id, mission_version_id, rubric_version_id,
-     grade, status, started_at, updated_at)
+     grade, status, started_at, updated_at, context)
 VALUES ('00000000-0000-4000-8000-000000000105', '00000000-0000-4000-8000-000000000002',
         '00000000-0000-4000-8000-000000000101', '00000000-0000-4000-8000-000000000102',
-        '00000000-0000-4000-8000-000000000103', 3, 'IN_PROGRESS', now(), now());
+        '00000000-0000-4000-8000-000000000103', 3, 'IN_PROGRESS', now(), now(), 'EXTRA');
 SELECT pg_temp.expect_sqlstate($$
     UPDATE attempt SET status = 'NOT_STARTED'
     WHERE id = '00000000-0000-4000-8000-000000000105'
@@ -350,16 +350,16 @@ $$, '23503');
 SELECT pg_temp.expect_sqlstate($$
     INSERT INTO attempt
         (id, student_id, mission_id, mission_version_id, rubric_version_id,
-         grade, status, started_at, updated_at)
+         grade, status, started_at, updated_at, context)
     SELECT '00000000-0000-4000-8000-000000000106', student_id, mission_id, mission_version_id,
-           rubric_version_id, grade, status, started_at, updated_at FROM attempt
+           rubric_version_id, grade, status, started_at, updated_at, context FROM attempt
     WHERE id = '00000000-0000-4000-8000-000000000105'
 $$, '23505');
 INSERT INTO attempt
     (id, student_id, mission_id, mission_version_id, rubric_version_id,
-     grade, status, started_at, updated_at)
+     grade, status, started_at, updated_at, context)
 SELECT '00000000-0000-4000-8000-000000000107', student_id, mission_id, mission_version_id,
-       rubric_version_id, grade, 'COMPLETED', started_at, updated_at FROM attempt
+       rubric_version_id, grade, 'COMPLETED', started_at, updated_at, context FROM attempt
 WHERE id = '00000000-0000-4000-8000-000000000105';
 INSERT INTO answer
     (id, attempt_id, version, input_type, content, dictated_by_guardian,
@@ -445,6 +445,93 @@ SELECT pg_temp.expect_sqlstate($$DELETE FROM followup_bank_question$$, '23503');
 UPDATE followup SET source = 'LLM', bank_question_id = NULL;
 UPDATE followup SET source = 'LLM_RETRY';
 UPDATE followup SET source = 'BANK', bank_question_id = '00000000-0000-4000-8000-000000000115';
+
+-- #385 주간 테마: 순환 FK(테마 → 현재 버전)는 작성 트랜잭션에서 커밋 때로 미룬다
+SET CONSTRAINTS fk_weekly_theme_current_version_id DEFERRED;
+INSERT INTO weekly_theme
+    (id, grade_band, week_start, status, current_version_id, created_by, created_at, updated_at)
+VALUES ('00000000-0000-4000-8000-000000000120', 'G3_4', '2026-11-09', 'PUBLISHED',
+        '00000000-0000-4000-8000-000000000121', '00000000-0000-4000-8000-000000000001', now(), now());
+INSERT INTO weekly_theme_version (id, theme_id, version, title, intro, created_by, created_at)
+VALUES ('00000000-0000-4000-8000-000000000121', '00000000-0000-4000-8000-000000000120', 1,
+        'schema-test', 'synthetic intro only', '00000000-0000-4000-8000-000000000001', now());
+SET CONSTRAINTS fk_weekly_theme_current_version_id IMMEDIATE;
+UPDATE weekly_theme SET published_version_id = current_version_id, review_version_id = current_version_id
+WHERE id = '00000000-0000-4000-8000-000000000120';
+INSERT INTO weekly_theme_day (theme_version_id, day_of_week, mission_id)
+VALUES ('00000000-0000-4000-8000-000000000121', 1, '00000000-0000-4000-8000-000000000101');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE weekly_theme SET grade_band = 'G1_2' WHERE id = '00000000-0000-4000-8000-000000000120'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE weekly_theme SET status = 'ARCHIVED' WHERE id = '00000000-0000-4000-8000-000000000120'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE weekly_theme SET week_start = '2026-11-10' WHERE id = '00000000-0000-4000-8000-000000000120'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE weekly_theme SET current_version_id = '00000000-0000-4000-8000-999999999999'
+    WHERE id = '00000000-0000-4000-8000-000000000120'
+$$, '23503');
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO weekly_theme
+        (id, grade_band, week_start, status, current_version_id, created_by, created_at, updated_at)
+    SELECT '00000000-0000-4000-8000-000000000122', grade_band, week_start, 'PUBLISHED',
+           current_version_id, created_by, created_at, updated_at FROM weekly_theme
+    WHERE id = '00000000-0000-4000-8000-000000000120'
+$$, '23505');
+INSERT INTO weekly_theme
+    (id, grade_band, week_start, status, current_version_id, created_by, created_at, updated_at)
+SELECT '00000000-0000-4000-8000-000000000123', grade_band, week_start, 'DRAFT',
+       current_version_id, created_by, created_at, updated_at FROM weekly_theme
+WHERE id = '00000000-0000-4000-8000-000000000120';
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO weekly_theme_version (id, theme_id, version, title, intro, created_by, created_at)
+    SELECT '00000000-0000-4000-8000-000000000124', theme_id, version, title, intro, created_by, created_at
+    FROM weekly_theme_version WHERE id = '00000000-0000-4000-8000-000000000121'
+$$, '23505');
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO weekly_theme_day (theme_version_id, day_of_week, mission_id)
+    VALUES ('00000000-0000-4000-8000-000000000121', 6, '00000000-0000-4000-8000-000000000101')
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO weekly_theme_day (theme_version_id, day_of_week, mission_id)
+    VALUES ('00000000-0000-4000-8000-000000000121', 2, '00000000-0000-4000-8000-000000000101')
+$$, '23505');
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO weekly_theme_day (theme_version_id, day_of_week, mission_id)
+    VALUES ('00000000-0000-4000-8000-000000000121', 2, '00000000-0000-4000-8000-999999999999')
+$$, '23503');
+INSERT INTO theme_review_view (student_id, week_start, theme_id, viewed_at)
+VALUES ('00000000-0000-4000-8000-000000000002', '2026-11-09',
+        '00000000-0000-4000-8000-000000000120', now());
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO theme_review_view (student_id, week_start, theme_id, viewed_at)
+    VALUES ('00000000-0000-4000-8000-000000000002', '2026-11-09',
+            '00000000-0000-4000-8000-000000000120', now())
+$$, '23505');
+-- 시도 context: 테마 컨텍스트는 테마·주 시작일이 함께, EXTRA는 둘 다 없음
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE attempt SET context = NULL WHERE id = '00000000-0000-4000-8000-000000000107'
+$$, '23502');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE attempt SET context = 'DAILY' WHERE id = '00000000-0000-4000-8000-000000000107'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE attempt SET context = 'THEME_DAY' WHERE id = '00000000-0000-4000-8000-000000000107'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE attempt SET theme_id = '00000000-0000-4000-8000-000000000120', theme_week_start = '2026-11-09'
+    WHERE id = '00000000-0000-4000-8000-000000000107'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE attempt SET context = 'THEME_REVIEW', theme_id = '00000000-0000-4000-8000-999999999999',
+                       theme_week_start = '2026-11-09'
+    WHERE id = '00000000-0000-4000-8000-000000000107'
+$$, '23503');
+UPDATE attempt SET context = 'THEME_DAY', theme_id = '00000000-0000-4000-8000-000000000120',
+                   theme_week_start = '2026-11-09'
+WHERE id = '00000000-0000-4000-8000-000000000107';
 """
 
 REPORT_CASES = """

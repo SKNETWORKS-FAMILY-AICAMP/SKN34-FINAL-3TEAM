@@ -543,9 +543,9 @@ sequenceDiagram
   end
 ```
 
-### 3.4 주간 테마 문제 시작 (P23·P13, 구현 예정)
+### 3.4 주간 테마 문제 시작 (P23·P13, learning #385·core #387)
 
-구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). learning #385·core #387 구현. 포인트 보충(마지막 항목)은 원장·적립 진입점(#389) 위에 주간 테마 프록시 연결이 남은 구현 예정. 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -567,7 +567,8 @@ sequenceDiagram
       C-->>W: 429 USAGE_LIMIT_REACHED
     end
   end
-  C->>L: POST /internal/missions/{id}/attempts?grade {context, themeId}
+  C->>L: POST /internal/missions/{id}/attempts?grade {context}
+  L->>L: 진행 중 시도면 그대로 반환, 아니면 미션 공개·범위 → 학년군(grade)·KST 오늘로 그 주 테마 확인
   alt 신규 시도인데 오늘 요일 문제가 아님
     L-->>C: 409 THEME_DAY_CLOSED
     C-->>W: 409
@@ -616,9 +617,9 @@ sequenceDiagram
 
 - 공유·적립 저장 실패는 학습 완료 응답을 바꾸지 않는다. 원장은 사건 키 UK로 멱등이라 같은 사건 재요청·주간 테마 조회(3.4) 때 보충
 
-### 3.6 되돌아보기 열람·완주 보너스 (P21·P23, 구현 예정)
+### 3.6 되돌아보기 열람·완주 보너스 (P21·P23, learning #385, 적립 연결 구현 예정)
 
-구현 예정(2026-11-06 결정, [기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). learning 열람 기록·완주 판정은 #385 구현. core 원장·적립 진입점은 #389 구현, 이 응답 뒤 적립 연결은 구현 예정. 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -629,8 +630,8 @@ sequenceDiagram
   participant L as learning
 
   W->>C: POST /students/me/weekly-theme/review-views
-  C->>L: POST /internal/students/{id}/weekly-theme/review-views
-  L->>L: 토·일 확인, theme_review_view 저장 (주 1회 멱등)
+  C->>L: POST /internal/students/{id}/weekly-theme/review-views?gradeBand&date
+  L->>L: 토·일 확인(아니면 409 THEME_REVIEW_NOT_ALLOWED), theme_review_view 저장 (주 1회 멱등)
   L-->>C: {firstViewThisWeek, completed}
   rect rgba(128,128,128,0.12)
     opt firstViewThisWeek
