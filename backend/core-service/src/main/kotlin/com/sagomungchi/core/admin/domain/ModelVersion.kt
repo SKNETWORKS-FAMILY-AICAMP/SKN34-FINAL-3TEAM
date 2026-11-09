@@ -18,6 +18,8 @@ data class EvaluationEvidence(
     val evaluatedScopes: List<String>,
     val limitations: List<String> = emptyList(),
 ) {
+    @com.fasterxml.jackson.annotation.JsonAnySetter
+    fun unknown(name: String, value: Any?) { throw IllegalArgumentException("Unknown evaluation field: $name") }
     fun complete() = listOf(datasetId, datasetVersion, baselineVersion, comparisonReport,
         trainingEvaluationSeparation, quoteAccuracy, calculationAccuracy, humanReview).all { it.isNotBlank() } && validScopes(evaluatedScopes)
     fun covers(scopes: List<String>) = validScopes(scopes) && evaluatedScopes.containsAll(scopes)

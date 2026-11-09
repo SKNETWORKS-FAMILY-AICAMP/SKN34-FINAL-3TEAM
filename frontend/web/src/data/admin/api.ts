@@ -1,3 +1,4 @@
+import type { RegistrationProvenance } from '../../domain/admin/modelRegistration.ts'
 import { apiFetch } from '../apiClient.ts'
 import { json } from '../parent/api.ts'
 import type { Page } from '../../domain/parent.ts'
@@ -84,6 +85,7 @@ export const adminApi = {
     evaluation: EvaluationEvidence
     refId?: string
     artifactUri?: string
+    registration?: RegistrationProvenance
   }) => apiFetch<ModelVersion>('/admin/model-versions', json(data)),
   modelAction: (id: string, action: 'activate' | 'rollback', reason: string, scopes: string[], reanalysisPlanned = false) =>
     apiFetch<ModelVersion>(

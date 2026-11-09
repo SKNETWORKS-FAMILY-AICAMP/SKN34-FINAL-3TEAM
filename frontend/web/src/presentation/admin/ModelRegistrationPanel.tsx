@@ -3,7 +3,7 @@ import { adminApi } from '../../data/admin/api.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { useAdminMutation } from '../../data/admin/queries.ts'
 import type { ModelVersion } from '../../domain/admin/operations.ts'
-import { EVIDENCE_LABELS, parseManifestFile, parseRegistrationFile, splitScopes, validateRegistration, withManifestLimitations } from '../../domain/admin/modelRegistration.ts'
+import { changedRegistrationFields, registrationRequest, EVIDENCE_LABELS, parseManifestFile, parseRegistrationFile, splitScopes, validateRegistration, withManifestLimitations } from '../../domain/admin/modelRegistration.ts'
 import type { ManifestModel, ModelRegistration, RegistrationFile } from '../../domain/admin/modelRegistration.ts'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 
@@ -11,19 +11,19 @@ const blank = (): ModelRegistration => ({ kind: 'PROMPT', name: '', version: '',
   datasetId: '', datasetVersion: '', baselineVersion: '', comparisonReport: '', trainingEvaluationSeparation: '',
   quoteAccuracy: '', calculationAccuracy: '', humanReview: '', evaluatedScopes: [], limitations: [],
 } })
-const paths = (v: ModelRegistration): Record<string, unknown> => ({ kind: v.kind, name: v.name, version: v.version,
-  artifactUri: v.artifactUri, refId: v.refId, ...Object.fromEntries(Object.entries(v.evaluation).map(([key, value]) => [`evaluation.${key}`, value])) })
 
-function RegistrationForm({ value, onChange, existing, listReady, manifest, siblings, original, title, onBusy }: {
+
+function RegistrationForm({ value, onChange, existing, listReady, manifest, siblings, original, title, onBusy, jsonSha256, manifestSha256 }: {
   value: ModelRegistration; onChange: (value: ModelRegistration) => void; existing: ModelVersion[]; listReady: boolean
+  jsonSha256?: string; manifestSha256?: string
   manifest?: ManifestModel[]; siblings?: ModelRegistration[]; original?: ModelRegistration; title: string; onBusy?: (busy: boolean) => void
 }) {
   const id = useId(), [saved, setSaved] = useState(false)
   const [scopeText, setScopeText] = useState(value.evaluation.evaluatedScopes.join('\n'))
-  const mutation = useAdminMutation((snapshot: ModelRegistration) => adminApi.registerModel(snapshot))
+  const mutation = useAdminMutation((snapshot: ModelRegistration) => adminApi.registerModel(registrationRequest(snapshot, original, jsonSha256, manifestSha256, manifest)))
   const validation = validateRegistration(value, existing, manifest, siblings)
   const conflict = mutation.error instanceof ApiError && mutation.error.problem.code === 'MODEL_VERSION_CONFLICT'
-  const changed = original ? Object.keys(paths(value)).filter(key => JSON.stringify(paths(value)[key]) !== JSON.stringify(paths(original)[key])) : []
+  const changed = original ? changedRegistrationFields(value, original) : []
   const field = (path: string) => <>{changed.includes(path) && <small>수정됨</small>}
     {!saved && validation.errors.filter(e => e.path === path).map(e => <small className="model-error" key={e.message}>{e.message}</small>)}
     {conflict && ['name', 'version'].includes(path) && <small className="model-error">{mutation.error?.message}</small>}</>
@@ -45,7 +45,7 @@ function RegistrationForm({ value, onChange, existing, listReady, manifest, sibl
       <label>아티팩트 주소 {value.kind === 'MODEL' ? '(필수)' : '(선택)'}<input value={value.artifactUri ?? ''} onChange={e => onChange({ ...value, artifactUri: e.target.value || undefined })} />{field('artifactUri')}</label>
       {Object.entries(EVIDENCE_LABELS).map(([key, label]) => <label key={key}>{label}<textarea aria-label={label} value={value.evaluation[key as keyof typeof EVIDENCE_LABELS]} onChange={e => evidence(key as keyof typeof EVIDENCE_LABELS, e.target.value)} />{field(`evaluation.${key}`)}</label>)}
       <label>평가 범위 (쉼표 또는 줄바꿈)<textarea aria-label="평가 범위" value={scopeText} onChange={e => { setScopeText(e.target.value); evidence('evaluatedScopes', splitScopes(e.target.value)) }} />{field('evaluation.evaluatedScopes')}</label>
-      <label>한계·주의 (줄마다 한 항목)<textarea value={(value.evaluation.limitations ?? []).join('\n')} onChange={e => evidence('limitations', e.target.value.split('\n'))} />{field('evaluation.limitations')}</label>
+      <label>한계·주의 (줄마다 한 항목)<textarea value={(value.evaluation.limitations ?? []).join('\n')} onChange={e => evidence('limitations', e.target.value ? e.target.value.split('\n') : [])} />{field('evaluation.limitations')}</label>
     </fieldset>
     {manifest && <details><summary>manifest 파일 목록·해시</summary>{manifest.filter(m => m.name === value.name && m.version === value.version).flatMap(m => m.files).map(f => <p key={f.file}><strong>{f.file}</strong> · {f.bytes.toLocaleString()} bytes<br /><code>{f.sha256}</code></p>)}</details>}
     <ul>{validation.warnings.map((w, i) => <li key={i}>경고 · {w.message}</li>)}</ul>
@@ -62,6 +62,7 @@ export function ModelRegistrationPanel({ existing, listReady }: { existing: Mode
   const [manual, setManual] = useState(blank), [file, setFile] = useState<RegistrationFile>()
   const [rows, setRows] = useState<ModelRegistration[]>([]), [originals, setOriginals] = useState<ModelRegistration[]>([])
   const [manifest, setManifest] = useState<ManifestModel[]>(), [hash, setHash] = useState('')
+  const [manifestHash, setManifestHash] = useState('')
   const [bucket, setBucket] = useState(''), [error, setError] = useState<unknown>(), [busy, setBusy] = useState(0)
   const [reading, setReading] = useState(false), [manifestInvalid, setManifestInvalid] = useState(false)
   const seq = useRef(0)
@@ -70,28 +71,30 @@ export function ModelRegistrationPanel({ existing, listReady }: { existing: Mode
     setReading(true); setError(undefined)
     try {
       const text = await readJson(input)
+      const digest = await crypto.subtle.digest('SHA-256', await input.arrayBuffer())
+      const fileHash = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('')
       if (token !== seq.current) return
       if (type === 'manifest') {
         const parsed = parseManifestFile(text)
-        setManifest(parsed); setManifestInvalid(false)
+        setManifest(parsed); setManifestHash(fileHash); setManifestInvalid(false)
         if (file) {
           const candidates = withManifestLimitations(file, parsed)
-          setRows(before => before.map((r, i) => JSON.stringify(r.evaluation.limitations) === JSON.stringify(originals[i].evaluation.limitations)
+          const previousCandidates = manifest ? withManifestLimitations(file, manifest) : file.requests
+          setRows(before => before.map((r, i) => JSON.stringify(r.evaluation.limitations) === JSON.stringify(previousCandidates[i].evaluation.limitations)
             ? { ...r, evaluation: { ...r.evaluation, limitations: candidates[i].evaluation.limitations } } : r))
-          setOriginals(before => before.map((r, i) => ({ ...r, evaluation: { ...r.evaluation, limitations: candidates[i].evaluation.limitations } })))
+
         }
       } else {
         const parsed = parseRegistrationFile(text)
-        const digest = await crypto.subtle.digest('SHA-256', await input.arrayBuffer())
         if (token !== seq.current) return
-        setHash(Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join(''))
+        setHash(fileHash)
         const initial = manifest ? withManifestLimitations(parsed, manifest) : parsed.requests
-        setFile(parsed); setOriginals(structuredClone(initial)); setRows(initial); setBucket('')
+        setFile(parsed); setOriginals(JSON.parse(text).requests); setRows(initial); setBucket('')
       }
     } catch (e) {
       if (token !== seq.current) return
       setError(e)
-      if (type === 'registration') { setFile(undefined); setRows([]) } else { setManifestInvalid(true); setManifest(undefined) }
+      if (type === 'registration') { setFile(undefined); setRows([]) } else { setManifestInvalid(true); setManifest(undefined); setManifestHash('') }
     } finally { if (token === seq.current) setReading(false) }
   }
   const locked = busy > 0 || reading
@@ -111,7 +114,7 @@ export function ModelRegistrationPanel({ existing, listReady }: { existing: Mode
       </>}
     </section>
     {rows.map((row, i) => <RegistrationForm key={`${hash}:${i}`} title={`가져온 모델 ${i + 1}`} value={row} original={originals[i]} existing={existing} listReady={listReady && !reading && !manifestInvalid}
-      manifest={manifest} siblings={rows} onBusy={pending => setBusy(n => n + (pending ? 1 : -1))}
+      jsonSha256={hash} manifestSha256={manifestHash || undefined} manifest={manifest} siblings={rows} onBusy={pending => setBusy(n => n + (pending ? 1 : -1))}
       onChange={value => setRows(before => before.map((r, index) => index === i ? value : r))} />)}
   </section>
 }

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseRegistrationFile, parseManifestFile, validateRegistration, withManifestLimitations, actionBlockers, EVIDENCE_LABELS } from '../src/domain/admin/modelRegistration.ts'
+import { registrationRequest, parseRegistrationFile, parseManifestFile, validateRegistration, withManifestLimitations, actionBlockers, EVIDENCE_LABELS } from '../src/domain/admin/modelRegistration.ts'
 import type { ModelRegistration } from '../src/domain/admin/modelRegistration.ts'
 import type { ModelVersion } from '../src/domain/admin/operations.ts'
 import { adminApi } from '../src/data/admin/api.ts'
@@ -69,4 +69,19 @@ test('중복 검사는 첫 페이지를 넘어 전체 모델 목록을 대조한
     return Response.json({ items: [{ id: String(page) }], page, size: 1, totalElements: 2 })
   }
   try { assert.equal((await adminApi.allModels()).items.length, 2); assert.ok(urls[1].includes('page=1')) } finally { globalThis.fetch = original }
+})
+
+
+test('가져오기 감사 정보는 원본 대비 변경과 모델별 파일만 전달하고 수동 등록은 생략한다', () => {
+  const original = request()
+  const current = structuredClone(original)
+  current.artifactUri = current.artifactUri!.replace('<버킷>', 'local')
+  current.evaluation.limitations = ['검토 필요']
+  const result = registrationRequest(current, original, 'a'.repeat(64), 'b'.repeat(64), parseManifestFile(JSON.stringify(manifest())))
+  assert.deepEqual(result.registration?.modifiedFields, ['artifactUri', 'evaluation.limitations'])
+  assert.equal(result.registration?.source, 'JSON_IMPORT')
+  assert.equal(result.registration?.artifactFiles.length, 1)
+  assert.equal(registrationRequest(current).registration, undefined)
+  assert.equal(original.evaluation.limitations, undefined)
+  assert.ok(validateRegistration({ ...current, evaluation: { ...current.evaluation, limitations: [' '] } }, []).errors.some(e => e.path === 'evaluation.limitations'))
 })

@@ -29,12 +29,18 @@ class ModelVersionService(private val repository: ModelVersionRepository, privat
         if (command.name.isBlank() || command.name.length > 100 || command.version.isBlank() || command.version.length > 100 ||
             (command.artifactUri != null && (command.artifactUri.isBlank() || command.artifactUri.length > 2048))) invalid("버전 식별값이 유효하지 않습니다.")
         if ((command.kind == ModelKind.RUBRIC) != (command.refId != null)) invalid("RUBRIC만 learning 기준표 refId를 필수로 사용합니다.")
-        if (command.kind == ModelKind.MODEL && command.artifactUri.isNullOrBlank()) invalid("MODEL은 artifactUri가 필요합니다.")
         if (!command.evaluation.complete()) invalid("고정 평가·비교·분리·인용·계산·사람 검토 근거와 평가 범위가 필요합니다.")
+        if (command.kind == ModelKind.MODEL && command.artifactUri.isNullOrBlank()) invalid("MODEL 등록에는 artifactUri가 필요합니다.")
+        if (command.evaluation.limitations.size > 100 || command.evaluation.limitations.any { it.isNullOrBlank() || it.length > 4000 })
+            invalid("limitations는 4,000자 이하의 비어 있지 않은 문자열을 최대 100개까지 받습니다.")
+        if (!command.registration.valid()) invalid("등록 출처·파일 해시·수정 필드 정보가 유효하지 않습니다.")
         val version = ModelVersion(UUID.randomUUID(), command.kind, command.name, command.version, command.refId,
             command.artifactUri, EvaluationRecord(command.evaluation), VersionStatus.REGISTERED, null, null, now())
         if (!repository.insert(version)) conflict("이미 등록된 버전입니다.")
-        repository.audit(actor, "MODEL_REGISTER", version.id, mapOf("kind" to version.kind, "name" to version.name, "version" to version.version), version.createdAt)
+        repository.audit(actor, "MODEL_REGISTER", version.id, mapOf("kind" to version.kind, "name" to version.name, "version" to version.version,
+            "source" to command.registration.source, "jsonSha256" to command.registration.jsonSha256,
+            "manifestSha256" to command.registration.manifestSha256, "modifiedFields" to command.registration.modifiedFields,
+            "artifactFiles" to command.registration.artifactFiles), version.createdAt)
         return version
     }
 
@@ -104,7 +110,8 @@ class ModelVersionService(private val repository: ModelVersionRepository, privat
 }
 
 data class RegisterVersion(val kind: ModelKind, val name: String, val version: String, val refId: UUID?,
-                           val artifactUri: String?, val evaluation: EvaluationEvidence)
+                           val artifactUri: String?, val evaluation: EvaluationEvidence,
+                           val registration: RegistrationMetadata = RegistrationMetadata())
 data class ActivateVersion(val approved: Boolean, val scopes: List<String>, val reason: String, val reanalysisPlanned: Boolean)
 data class RollbackVersion(val scopes: List<String>, val reason: String, val reanalysisPlanned: Boolean)
 data class ModelVersionPage(val items: List<ModelVersion>, val page: Int, val size: Int, val totalElements: Long)

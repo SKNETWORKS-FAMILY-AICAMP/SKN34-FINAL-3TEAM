@@ -16,6 +16,29 @@ export interface ModelRegistration {
   kind: ModelVersion['kind']; name: string; version: string; artifactUri?: string; refId?: string
   evaluation: EvaluationEvidence
 }
+export interface RegistrationProvenance {
+  source: 'JSON_IMPORT'; jsonSha256: string; manifestSha256?: string
+  modifiedFields: string[]; artifactFiles: ManifestModel['files']
+}
+export type RegistrationRequest = ModelRegistration & { registration?: RegistrationProvenance }
+const registrationPaths = (v: ModelRegistration): Record<string, unknown> => ({
+  kind: v.kind, name: v.name, version: v.version, refId: v.refId, artifactUri: v.artifactUri,
+  ...Object.fromEntries(Object.entries(v.evaluation).map(([key, value]) => [`evaluation.${key}`, value])),
+})
+export function changedRegistrationFields(value: ModelRegistration, original: ModelRegistration) {
+  const a = registrationPaths(value), b = registrationPaths(original)
+  return [...new Set([...Object.keys(a), ...Object.keys(b)])].filter(key => JSON.stringify(a[key]) !== JSON.stringify(b[key]))
+}
+export function registrationRequest(value: ModelRegistration, original?: ModelRegistration,
+  jsonSha256?: string, manifestSha256?: string, manifest?: ManifestModel[]): RegistrationRequest {
+  const result: RegistrationRequest = structuredClone(value)
+  if (original && jsonSha256) result.registration = {
+    source: 'JSON_IMPORT', jsonSha256, ...(manifestSha256 ? { manifestSha256 } : {}),
+    modifiedFields: changedRegistrationFields(value, original),
+    artifactFiles: manifest?.find(m => m.name === value.name && m.version === value.version)?.files.map(f => ({ ...f, sha256: f.sha256.toLowerCase() })) ?? [],
+  }
+  return result
+}
 export interface FieldIssue { path: string; message: string }
 export interface ManifestModel {
   name: string; version: string; scope: string[]; limitations: string[]
@@ -65,8 +88,9 @@ export function parseManifestFile(text: string): ManifestModel[] {
     const files = entry.files.map((file: unknown, i: number) => {
       if (!object(file) || typeof file.file !== 'string' || !Number.isSafeInteger(file.bytes) || Number(file.bytes) < 0 ||
           typeof file.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(file.sha256)) return fail(`${path}.files[${i}]`, '파일 이름·크기·SHA-256을 확인해 주세요.')
-      return { file: file.file, bytes: Number(file.bytes), sha256: file.sha256 }
+      return { file: file.file, bytes: Number(file.bytes), sha256: file.sha256.toLowerCase() }
     })
+    if (files.length > 100 || files.some(f => !f.file.trim() || f.file.length > 255 || /[\\:]/.test(f.file) || f.file.split('/').some(s => !s || s === '.' || s === '..'))) return fail(`${path}.files`, '유효한 상대 파일 경로를 최대 100개까지 입력해 주세요.')
     if (!files.length || new Set(files.map(f => f.file)).size !== files.length) return fail(`${path}.files`, '파일 목록이 비었거나 중복됐습니다.')
     return { name: entry.name, version: entry.version, scope: entry.scope as string[], limitations: notice(entry['주의']), files }
   })
@@ -86,6 +110,7 @@ export function validateRegistration(value: ModelRegistration, existing: ModelVe
   if ([...existing, ...siblings].some(v => v !== value && v.kind === value.kind && v.name === value.name && v.version === value.version)) {
     error('name', '같은 종류·이름·버전이 이미 있습니다.'); error('version', '새 버전으로 등록해 주세요.')
   }
+  if ((value.evaluation.limitations ?? []).length > 100 || (value.evaluation.limitations ?? []).some(s => !s.trim() || s.length > 4000)) error('evaluation.limitations', '주의사항은 빈 줄 없이 항목당 4000자, 최대 100개로 입력해 주세요.')
   const matched = manifest?.filter(m => m.name === value.name && m.version === value.version)
   if (manifest && (!matched || matched.length !== 1 || [...matched[0].scope].sort().join('\n') !== [...value.evaluation.evaluatedScopes].sort().join('\n')))
     error('manifest', 'manifest의 이름·버전·scope와 일치하지 않습니다.')
