@@ -75,7 +75,7 @@ class ReportClient(factory: InternalRestClientFactory, private val json: ObjectM
         try {
             val body = try {
                 recoveryCircuit.executeSupplier { recoveryHttp.post().uri("/internal/report-jobs/{id}/reconcile", job.id)
-                    .body(mapOf("studentId" to job.studentId, "periodFrom" to job.periodFrom, "periodTo" to job.periodTo))
+                    .body(mapOf("studentId" to job.studentId, "periodFrom" to job.periodFrom, "periodTo" to job.periodTo, "periodType" to job.periodType.name))
                     .retrieve().body(String::class.java) }
             } catch (_: CallNotPermittedException) { throw unavailable()
             } catch (ex: RestClientResponseException) {

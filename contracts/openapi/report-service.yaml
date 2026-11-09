@@ -89,6 +89,22 @@
             }
           },
           {
+            "name": "periodType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PeriodType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Periodtype"
+            }
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -706,6 +722,245 @@
         ],
         "title": "ChangeCounts"
       },
+      "ComparedElement": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "previousSatisfied": {
+            "type": "boolean",
+            "title": "Previoussatisfied"
+          },
+          "currentSatisfied": {
+            "type": "boolean",
+            "title": "Currentsatisfied"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "previousSatisfied",
+          "currentSatisfied"
+        ],
+        "title": "ComparedElement"
+      },
+      "DailyElement": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "satisfied": {
+            "type": "boolean",
+            "title": "Satisfied"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "satisfied"
+        ],
+        "title": "DailyElement"
+      },
+      "DailyFollowup": {
+        "properties": {
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "question",
+          "answer"
+        ],
+        "title": "DailyFollowup"
+      },
+      "DailyProblem": {
+        "properties": {
+          "itemId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Itemid"
+          },
+          "missionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Missionid"
+          },
+          "attemptId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Attemptid"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "context": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "THEME_DAY",
+                  "THEME_REVIEW",
+                  "EXTRA"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context"
+          },
+          "judgment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "CORRECT",
+                  "PARTIAL",
+                  "RETHINK",
+                  "HELD"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judgment"
+          },
+          "followups": {
+            "items": {
+              "$ref": "#/components/schemas/DailyFollowup"
+            },
+            "type": "array",
+            "title": "Followups"
+          },
+          "finalAnswer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finalanswer"
+          },
+          "elements": {
+            "items": {
+              "$ref": "#/components/schemas/DailyElement"
+            },
+            "type": "array",
+            "title": "Elements"
+          },
+          "reflection": {
+            "$ref": "#/components/schemas/DailyReflection"
+          },
+          "quotes": {
+            "items": {
+              "$ref": "#/components/schemas/DailyQuote"
+            },
+            "type": "array",
+            "title": "Quotes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "missionId",
+          "attemptId",
+          "title",
+          "context",
+          "judgment",
+          "followups",
+          "finalAnswer",
+          "elements",
+          "reflection",
+          "quotes"
+        ],
+        "title": "DailyProblem"
+      },
+      "DailyQuote": {
+        "properties": {
+          "answerId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Answerid"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "verified": {
+            "type": "boolean",
+            "title": "Verified"
+          }
+        },
+        "type": "object",
+        "required": [
+          "answerId",
+          "text",
+          "verified"
+        ],
+        "title": "DailyQuote"
+      },
+      "DailyReflection": {
+        "properties": {
+          "written": {
+            "type": "boolean",
+            "title": "Written"
+          },
+          "difficulty": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "written",
+          "difficulty",
+          "text"
+        ],
+        "title": "DailyReflection"
+      },
       "Download": {
         "properties": {
           "url": {
@@ -956,6 +1211,14 @@
         ],
         "title": "PeriodResponse"
       },
+      "PeriodType": {
+        "type": "string",
+        "enum": [
+          "DAILY",
+          "WEEKLY"
+        ],
+        "title": "PeriodType"
+      },
       "Quote": {
         "properties": {
           "itemId": {
@@ -1021,6 +1284,10 @@
             "type": "string",
             "format": "date",
             "title": "Periodto"
+          },
+          "periodType": {
+            "$ref": "#/components/schemas/PeriodType",
+            "default": "WEEKLY"
           }
         },
         "additionalProperties": false,
@@ -1164,6 +1431,10 @@
       },
       "ReportDetail": {
         "properties": {
+          "periodType": {
+            "$ref": "#/components/schemas/PeriodType",
+            "default": "WEEKLY"
+          },
           "reportId": {
             "type": "string",
             "format": "uuid",
@@ -1189,6 +1460,23 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ReportState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "problems": {
+            "items": {
+              "$ref": "#/components/schemas/DailyProblem"
+            },
+            "type": "array",
+            "title": "Problems"
+          },
+          "themeSummary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThemeSummary"
               },
               {
                 "type": "null"
@@ -1362,6 +1650,10 @@
       },
       "ReportSummary": {
         "properties": {
+          "periodType": {
+            "$ref": "#/components/schemas/PeriodType",
+            "default": "WEEKLY"
+          },
           "reportId": {
             "type": "string",
             "format": "uuid",
@@ -1404,6 +1696,67 @@
           "state"
         ],
         "title": "ReportSummary"
+      },
+      "RetryComparison": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "NO_PREVIOUS",
+              "COMPARABLE",
+              "CRITERIA_CHANGED"
+            ],
+            "title": "State"
+          },
+          "elements": {
+            "items": {
+              "$ref": "#/components/schemas/ComparedElement"
+            },
+            "type": "array",
+            "title": "Elements"
+          }
+        },
+        "type": "object",
+        "required": [
+          "state",
+          "elements"
+        ],
+        "title": "RetryComparison"
+      },
+      "ReviewRetry": {
+        "properties": {
+          "missionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Missionid"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "comparison": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetryComparison"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "missionId"
+        ],
+        "title": "ReviewRetry"
       },
       "Revision": {
         "properties": {
@@ -1517,6 +1870,111 @@
           "text"
         ],
         "title": "TextAnswer"
+      },
+      "ThemeDay": {
+        "properties": {
+          "day": {
+            "type": "string",
+            "enum": [
+              "MON",
+              "TUE",
+              "WED",
+              "THU",
+              "FRI"
+            ],
+            "title": "Day"
+          },
+          "missionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Missionid"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "completed": {
+            "type": "boolean",
+            "title": "Completed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "day",
+          "missionId",
+          "completed"
+        ],
+        "title": "ThemeDay"
+      },
+      "ThemeSummary": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "OK",
+              "NO_RECORD"
+            ],
+            "title": "State"
+          },
+          "themeId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Themeid"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/ThemeDay"
+            },
+            "type": "array",
+            "title": "Days"
+          },
+          "completed": {
+            "type": "boolean",
+            "title": "Completed"
+          },
+          "reviewRetries": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewRetry"
+            },
+            "type": "array",
+            "title": "Reviewretries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "state",
+          "themeId",
+          "title",
+          "days",
+          "completed",
+          "reviewRetries"
+        ],
+        "title": "ThemeSummary"
       },
       "Thinking": {
         "properties": {

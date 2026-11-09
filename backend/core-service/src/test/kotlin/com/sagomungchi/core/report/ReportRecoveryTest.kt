@@ -206,4 +206,21 @@ class ReportRecoveryTest : PostgresRepositoryTest() {
         assertEquals(ReportJobStatus.QUEUED,repository.find(recent.id)!!.status)
         assertEquals(1,executionCount(old))
     }
+    @Test fun `daily recovery sends period type and accepts legacy response fields`() {
+        val parent = parent(jdbc); val child = child(jdbc, parent)
+        val id = jobs.scheduled(parent, child, ReportPeriod(WEEK.from, WEEK.from, ReportPeriodType.DAILY))!!.jobId
+        val job = repository.find(id)!!
+        jdbc.update("UPDATE report_job SET created_at=? WHERE id=?", OffsetDateTime.now().minusMinutes(61), id)
+        var sentType: String? = null
+        respond = { body ->
+            sentType = json.readTree(body).path("periodType").asText()
+            200 to json.writeValueAsString(mapOf("jobId" to id, "studentId" to child,
+                "periodFrom" to job.periodFrom, "periodTo" to job.periodTo, "status" to "FAILED",
+                "reportId" to null, "failureReason" to "REPORT_NOT_CREATED"))
+        }
+        recovery.recover()
+        assertEquals("DAILY", sentType)
+        assertEquals(ReportJobStatus.FAILED, repository.find(id)!!.status)
+    }
+
 }

@@ -91,6 +91,7 @@ class GenerationService:
                     command.student_id,
                     command.period_from,
                     command.period_to,
+                    command.period_type,
                 )
                 is not None
             ):
@@ -122,14 +123,14 @@ class ReportReadService:
     def __init__(self):
         self._repository = ReportRepository()
 
-    def latest_page(self, session, student_id, status, page, size):
-        return self._repository.latest_page(session, student_id, status, page, size)
+    def latest_page(self, session, student_id, status, page, size, period_type=None):
+        return self._repository.latest_page(session, student_id, status, page, size, period_type)
 
     def find(self, session, report_id):
         return self._repository.find(session, report_id)
 
-    def revisions(self, session, student_id, period_from):
-        return self._repository.revisions(session, student_id, period_from)
+    def revisions(self, session, student_id, period_from, period_type="WEEKLY"):
+        return self._repository.revisions(session, student_id, period_from, period_type)
 
     def items(self, session, report_id):
         return self._repository.items(session, report_id)

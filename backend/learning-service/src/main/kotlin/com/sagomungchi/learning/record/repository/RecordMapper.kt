@@ -59,6 +59,7 @@ data class ReflectionRow(val attemptId: UUID, val difficulty: Difficulty, val te
 
 @Mapper
 interface RecordMapper {
+    fun findCompleted(@Param("studentId") studentId: UUID, @Param("start") start: Instant, @Param("end") end: Instant): List<UUID>
     fun findEligible(@Param("studentId") studentId: UUID, @Param("start") start: Instant, @Param("end") end: Instant): List<EligibleAttempt>
     fun findAnswerPairs(@Param("studentId") studentId: UUID, @Param("start") start: Instant, @Param("end") end: Instant): List<AnswerPair>
     fun isRecorded(@Param("studentId") studentId: UUID, @Param("attemptId") attemptId: UUID): Boolean

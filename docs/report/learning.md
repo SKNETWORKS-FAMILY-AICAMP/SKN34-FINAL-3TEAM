@@ -761,3 +761,8 @@ learning `Element`에 `code`·`goodThought`를 더했을 때 응답을 받는 �
 - `ci-db-schema` 재현: `check_db_migrations.py`(일회용 PostgreSQL) 통과. develop(#359 V27 병합 뒤) 기준 core V26 → V27 → V28 적용, 48개 테이블·448개 칼럼이 ERD와 일치, 반복 마이그레이션 변화 없음. 적용 뒤 `ck_llm_usage_call_type`에 `MISSION_DRAFT` 확인
 - scoring `ruff check`·`pytest` 통과(199개, 임시 컨테이너)
 - 로컬 실연(2026-11-05, 이 브랜치로 core·learning 이미지 빌드, compose 별도 프로젝트에 호스트 포트는 core만 열고 공유 kind·컨테이너는 그대로, 끝난 뒤 볼륨까지 삭제): learning_db에 성취기준 시드 765행, ai 자리에는 learning 테스트 `sampleDraft`와 같은 초안을 돌려주는 대역(LLM 호출 없음). core 공개 경로로 성취기준 조회(`gradeBand=초5~6`·`q=6국01-02`) 200 → 초안 요청 202(`GENERATING`, `X-Admin-Operation-Id`) → learning 주기 작업이 대역 ai를 불러 `READY`(1회) → 목록 `status=READY` 1건 → 채택 201(`DRAFT`·`LLM_DRAFT`, 미션 경로로 조회 200) → 재채택·채택된 초안 버리기 409 `CONFLICT`, 없는 초안 404, 학년군 밖 요청 400 `VALIDATION_FAILED` → 새 초안 버리기 200(`DISCARDED`). 감사 14행이 위 결정대로 남음(채택 결과는 `MISSION`·미션 ID·`draftId`). 실제 LLM과 사용량 이벤트 흐름은 이 실연에 없음(사용량 소비는 위 테스트와 CHECK로 확인)
+
+
+## #391 일일 리포트 완료일 조회 지원
+
+`/internal/records/students/{studentId}/daily-attempts`는 같은 KST 날짜의 COMPLETED 시도를 완료 시각으로 찾는다. 기존 제출일 기준 P08 목록은 유지한다. 기존 RecordPage/원문 제외 정책·학생 scope·삭제 표식을 재사용하며 새 DB 컬럼은 없다. 전날 제출·오늘 완료, 진행 중 제외, 다른 학생 제외를 서비스 DB 테스트로 검증한다. 테마·context 자체 구현은 #385 범위다.

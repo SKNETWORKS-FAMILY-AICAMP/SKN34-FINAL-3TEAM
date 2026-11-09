@@ -973,7 +973,7 @@ ADMIN/SERVICE_OPS → OperationsController → 공통 IdempotencyService → Rep
 
 ### 6.5 일일 리포트 생성·알림 (P24)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). core 몫(일정·작업·`report.generate`·알림)은 #390으로 구현했고 report-worker 몫은 구현 예정(#391). 1장 공통 규칙을 따른다.
+core 일정·작업·알림은 #390, report 생성·저장·조회는 #391에서 구현했다. learning daily-attempts는 완료일로 조회한다.
 
 ```mermaid
 sequenceDiagram

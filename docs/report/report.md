@@ -296,7 +296,7 @@ core는 기존 대화 소유권·연결·동의·이용권과 학부모 행 잠�
 |---|---|
 | DB | V29 `report_job.period_type` NULL 허용 추가 → V30 기존 행 `WEEKLY` 채움, NOT NULL·`ck_report_job_period_type`·`ck_report_job_daily_period`(일일은 `period_from = period_to`), V2 `uq_report_job_scheduled_week (student_id, period_from)`를 `uq_report_job_scheduled_period (student_id, period_type, period_from) WHERE trigger='SCHEDULE'`로, 목록 인덱스를 `(student_id, period_type, period_from)`으로 교체. 알림 CHECK에 `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`. 기본값 없음(검증 스크립트 규칙) |
 | 도메인 | `ReportPeriodType(DAILY·WEEKLY)`, `ReportPeriod(from, to, type)`(주간 월~일, 일일 하루 검사), `ReportPeriod.previousDay`(KST 전날, 토·일 포함), `ReportJob.periodType`·`period` |
-| 일정 | `DailyReportScheduler` 매일 07:00 KST, ShedLock `core-daily-reports`(주간 `core-weekly-reports`와 따로라 월요일에 둘 다 돈다). 대상·동의·자녀별 실패 격리는 주간과 같은 `ReportScheduleService.generate(at, type)`. 기록 없는 날도 작업을 만든다 |
+| 일정 | `DailyReportScheduler` 매일 00:00 KST, ShedLock `core-daily-reports`(주간 `core-weekly-reports`와 따로라 월요일에 둘 다 돈다). 대상·동의·자녀별 실패 격리는 주간과 같은 `ReportScheduleService.generate(at, type)`. 기록 없는 날도 작업을 만든다 |
 | 잠금·횟수 | advisory lock 키·정기 작업 조회·진행 중 검사·학부모 재생성 1회 모두 `(학생, period_type, period_from)` 단위. 월요일 일일·주간 작업이 서로 막지 않는다 |
 | 메시지 | `report.generate`에 선택 필드 `periodType`. 일일만 `"DAILY"`를 넣고 주간은 필드를 생략(=WEEKLY). 일일 `narrativeEnabled`는 항상 false이고 상품 권한을 조회하지 않는다 |
 | 알림 | `ReportJobFinished.periodType`으로 일일 완료·실패를 `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`("일일 리포트가 완성되었습니다." 등)로 만든다. 수신 설정은 유형별 독립이라 PUT 1~8개 |
@@ -327,3 +327,42 @@ core는 기존 대화 소유권·연결·동의·이용권과 학부모 행 잠�
 - 계약: 루트 `python -O -m unittest discover -s scripts/tests`(report.generate `periodType` 스키마 검사 추가, 계약 지문 테스트에 #390 승인 변경 정규화), `validate_report_contracts.py`(실제 일일 명령·일일 상세 산출물 추가), `validate_notification_contracts.py`
 - DB: `scripts/check_db_migrations.py`(적용·재실행·report 왕복, ERD 대조). 일일 CHECK·NOT NULL·정기 UK 음수 사례를 `verify_db_schema.py`에 추가
 - 범위 밖: report와 붙인 월요일 일일·주간 실제 생성·완료 알림(#391 머지 후), web 화면 확인(#394 머지됨, mock 기준 동기화만 확인)
+
+
+## #391 일일 리포트와 주간 테마 요약 (2026-11-09)
+
+### 범위와 기존 기능 보호
+
+P24 일일 리포트는 LLM을 호출하지 않고 문제별 판정·되묻기와 보완 답변·마지막 답변·생각 요소·돌아보기·검증된 인용을 조립한다. 무료/full 파일에 같은 내용을 제공하며 비율·서술·저녁 질문·학부모 주간 템플릿은 적용하지 않는다. 기록이 없으면 COMPLETED/NO_RECORD다. 월요일 일일·주간이 공존하고 재생성 revision·최신 판 선택은 학생/기간 종류/시작일별로 분리한다.
+
+기존 P08 조회는 제출일 기준이므로, 전날 제출하고 오늘 마무리한 시도를 빠뜨리지 않도록 learning 기록 조회에 daily-attempts를 추가했다. 기존 P08 SQL·주간 계산은 변경하지 않았다. 주말도 context로 걸러내지 않아 되돌아보기 재시도·추가 문제를 포함한다. #385 context가 아직 없는 기존 기록은 null로 표시하고 추정하지 않는다.
+
+원문 비공개면 답변·되묻기·인용·돌아보기 원문·evidence를 저장/파일 생성 전에 제거한다. 공개 인용은 learning evidence로 재조회하고 학생·시도·답변 버전·부분 문자열 일치를 확인한다. 실패를 정상 인용으로 저장하거나 NO_RECORD로 처리하지 않는다. themeSummary는 별도 learning API에서 읽으며 기존 수치를 일일 리포트로 재집계하지 않는다. 비교는 learning이 COMPARABLE로 제공한 요소만 표시하고 CRITERIA_CHANGED에는 변화 수치를 붙이지 않는다.
+
+### DB·메시지·조회
+
+- Alembic 20261109_06: weekly_report.period_type/theme_summary, report_job_guard.period_type nullable 준비 및 기존 WEEKLY 채움.
+- 20261109_07: NOT NULL·기간 종류 CHECK·일일 날짜/서술 금지 CHECK·UK/목록 인덱스 확정, report_item.PROBLEM 허용. SQL 기본값 없음.
+- Python None은 narrative/theme_summary의 SQL NULL로 저장한다(JSON null과 구분).
+- report.generate.v1 periodType 생략은 WEEKLY로 유지. DAILY는 같은 날짜, WEEKLY는 월~일만 허용한다. report.* 생명주기 이벤트는 기존 jobId 연결을 유지한다.
+- 목록 periodType 미지정은 두 종류, 지정 시 해당 종류. 상세에서 다른 종류의 같은 revision을 고르지 않는다. 복구 작업도 기간 종류를 검사한다.
+- 일일 데이터가 있으면 downgrade를 거부한다. 데이터 삭제로 되돌리지 않는다.
+
+### 배포 순서와 남은 연동
+
+1. report 준비/최종 마이그레이션을 적용하고 일일 완료일 조회가 있는 learning과 report를 배포한다. 기존 DB 백업·배포 절차를 따른다.
+2. develop에 합쳐진 #390 core와 연결한다. 기간 종료 자정(KST) 생성 정책은 확정됐으나 core 시각 변경은 별도 작업이다. 이번 변경은 복구 요청에도 periodType을 전달한다.
+3. #385 테마 summary producer와 API 계약을 확인한 뒤 **REPORT_THEME_SUMMARY_ENABLED=true**로 worker를 재시작한다. 기본 false라 기존 주간 생성은 아직 없는 API에 의존하지 않는다. 다시 false로 내리면 새 주간 생성에서 테마 조회만 생략하며 기존 리포트는 보존한다.
+4. 테마 응답은 학생/주 시작일·요일 중복·5일 완주·비교 기준을 검증한다. upstream 오류는 작업 실패로 처리한다. NO_RECORD는 정상적인 미참여 응답일 때만 사용한다.
+
+배포·팀 스케줄 실행·실제 #385/#390 통합은 아직 수행하지 않았다. 구현 테스트와 운영 연동 완료를 구분한다.
+
+### 검증
+
+- report 전체 pytest: 383개 통과. 마지막 복구 HTTP 계약 추가 후 일일·복구 관련 26개 통과(전체 실행과 중복 포함).
+- report Ruff check·format 통과.
+- scripts 계약·검증기 회귀 검사: 175개 통과.
+- CI DB 스크립트: 세 DB 마이그레이션·ERD 대조, 반복 실행 무변경, report downgrade/upgrade, 6개 DB 역할 격리 통과. 73개 부정 제약 사례·87개 CHECK 값 집합·38개 인덱스 확인.
+- learning RecordServiceTest·RecordControllerTest 29개와 bootJar 통과.
+- core ReportRecoveryTest 7개와 bootJar 통과. 일일 복구 요청 periodType 전달·기존 응답 필드 유지 검증.
+- 원격 GitHub CI 전체 및 #385/#390 실제 연동은 아직 확인하지 않았다. 로컬 검증을 원격 CI 통과로 표기하지 않는다.

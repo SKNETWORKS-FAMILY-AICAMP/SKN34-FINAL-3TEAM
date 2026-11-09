@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     s3_public_endpoint_url: str | None = None
     s3_bucket: str = "sagomungchi-local-reports"
     s3_region: str = "ap-northeast-2"
+    # Enable after the #385 learning producer is deployed; keep existing weekly generation safe.
+    report_theme_summary_enabled: bool = False
     report_download_ttl_seconds: int = Field(default=300, ge=1, le=3600)
 
 

@@ -47,6 +47,8 @@ class JudgedElement:
     code: str
     good_thought: bool
     satisfied: bool
+    label: str | None = None
+    quote: str | None = None
 
 
 @dataclass(frozen=True)
@@ -67,6 +69,7 @@ class AnswerRecord:
     input_type: str = "NARRATIVE"
     # Present only for DONE judgments (API 4.1.1); None while pending/running/failed.
     judgment: JudgmentRecord | None = None
+    followup: str | None = None
 
 
 @dataclass(frozen=True)
@@ -87,6 +90,8 @@ class AttemptRecord:
     hint_opened_at: tuple[datetime, ...]
     completed_at: datetime | None = None
     reflection: ReflectionRecord | None = None
+    mission_id: UUID | None = None
+    context: str | None = None
 
 
 @dataclass(frozen=True)

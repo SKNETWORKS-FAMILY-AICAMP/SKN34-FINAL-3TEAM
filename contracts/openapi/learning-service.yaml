@@ -638,6 +638,38 @@ paths:
                 $ref: '#/components/schemas/RecordThinkingTypes'
         '400': {$ref: '#/components/responses/Problem'}
         '403': {$ref: '#/components/responses/Problem'}
+  /records/students/{studentId}/daily-attempts:
+    get:
+      operationId: dailyAttempts
+      summary: 일일 리포트 완료일 기준 목록
+      description: 같은 KST 날짜에 완료한 시도. 전날 답변·오늘 완료도 포함하며 제출일 기준 P08과 분리한다.
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/RecordRole'
+        - $ref: '#/components/parameters/RecordScope'
+        - name: from
+          in: query
+          required: true
+          schema: {type: string, format: date}
+        - name: to
+          in: query
+          required: true
+          schema: {type: string, format: date}
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 0, default: 0}
+        - name: size
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        '200':
+          description: 조회 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordAttemptPage'
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
   /records/students/{studentId}/attempts:
     get:
       operationId: recordAttempts

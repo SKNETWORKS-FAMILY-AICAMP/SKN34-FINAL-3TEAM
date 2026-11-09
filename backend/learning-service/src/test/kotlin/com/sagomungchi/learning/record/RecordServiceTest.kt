@@ -95,6 +95,25 @@ class RecordServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
+    fun `일일 리포트는 제출일 대신 완료일로 조회하고 주간 P08은 유지한다`() {
+        val prior = attempt(title = "어제 답변 오늘 완료")
+        answer(prior, "어제 쓴 답", inWeek.minusDays(1))
+        jdbc.update("UPDATE attempt SET status = 'COMPLETED', finished_at = ?, completed_at = ? WHERE id = ?", inWeek, inWeek, prior.id)
+        val ongoing = attempt(title = "오늘 진행 중")
+        answer(ongoing, "오늘 답변")
+        val other = attempt(owner = UUID.randomUUID())
+        answer(other, "다른 학생 답변")
+        jdbc.update("UPDATE attempt SET status = 'COMPLETED', finished_at = ?, completed_at = ? WHERE id = ?", inWeek, inWeek, other.id)
+        val day = Period(inWeek.toLocalDate(), inWeek.toLocalDate())
+        val daily = service.dailyAttempts(student, day, 0, 20)
+        assertEquals(listOf(prior.id), daily.items.map { it.detail.attempt.id })
+        assertEquals(1, daily.totalElements)
+        assertEquals(listOf(ongoing.id), service.attempts(student, day, null, 0, 20).items.map { it.detail.attempt.id })
+        val next = Period(inWeek.toLocalDate().plusDays(1), inWeek.toLocalDate().plusDays(1))
+        assertEquals(QueryState.NO_RECORD, service.dailyAttempts(student, next, 0, 20).state)
+    }
+
+    @Test
     fun `기록이 0건이면 NO_RECORD, 1~4건이면 표본 부족으로 비율 대신 개수만, 5건 이상이면 OK와 비율 (P08)`() {
         assertEquals(QueryState.NO_RECORD, service.summary(student, week).state)
 
@@ -106,7 +125,7 @@ class RecordServiceTest : PostgresRepositoryTest() {
         assertEquals(listOf(0, 4, null), listOf(completedSmall.numerator, completedSmall.denominator, completedSmall.value))
 
         answer(attempts[4], "놀 수 있어서 좋아요")
-        jdbc.update("UPDATE attempt SET status = 'COMPLETED', finished_at = now(), completed_at = now() WHERE id = ?", attempts[0].id)
+        jdbc.update("UPDATE attempt SET status = 'COMPLETED', finished_at = ?, completed_at = ? WHERE id = ?", inWeek, inWeek, attempts[0].id)
         val full = service.summary(student, week)
         assertEquals(QueryState.OK, full.state)
         val count = full.metrics.single { it.label == "학습한 활동" }
@@ -280,7 +299,7 @@ class RecordServiceTest : PostgresRepositoryTest() {
         answer(attempt(title = "진행 중"), "답")
         val done = attempt(title = "완료")
         answer(done, "답")
-        jdbc.update("UPDATE attempt SET status = 'COMPLETED', finished_at = now(), completed_at = now() WHERE id = ?", done.id)
+        jdbc.update("UPDATE attempt SET status = 'COMPLETED', finished_at = ?, completed_at = ? WHERE id = ?", inWeek, inWeek, done.id)
 
         val completed = service.attempts(student, week, AttemptStatus.COMPLETED, 0, 20)
         assertEquals(listOf("완료") to 1, completed.items.map { it.detail.mission.title } to completed.totalElements)
@@ -365,7 +384,7 @@ class RecordServiceTest : PostgresRepositoryTest() {
         val before = service.stats(week)
         val done = attempt(title = "완료")
         answer(done, "답")
-        jdbc.update("UPDATE attempt SET status = 'COMPLETED', finished_at = now(), completed_at = now() WHERE id = ?", done.id)
+        jdbc.update("UPDATE attempt SET status = 'COMPLETED', finished_at = ?, completed_at = ? WHERE id = ?", inWeek, inWeek, done.id)
         answer(attempt(title = "진행 중"), "답")
         val other = UUID.randomUUID()
         answer(attempt(title = "다른 학생", owner = other), "답")
