@@ -25,7 +25,7 @@
 | 문자열·금액 | varchar는 길이 제한 없는 PostgreSQL varchar. ShedLock만 name varchar(64), locked_by varchar(255). 원화는 int, cost_usd는 반올림 정책 없는 numeric |
 | FK 삭제·순환 참조 | 기본 ON DELETE/UPDATE NO ACTION. mission.current_*·published_*와 answer.followup_id만 DEFERRABLE INITIALLY IMMEDIATE. 삭제는 P09에 따라 `student.deleted` 이벤트로 서비스별 물리 삭제. learning 하위 기록은 CASCADE 없이 서비스가 한 트랜잭션에서 순서대로 삭제(4.3, #128) |
 
-- 테이블 없이 Redis에 두는 값: SSE 알림 중계 (아키텍처 1.6). 분석 대화 일일 사용량은 `payment_premium_usage` KST 일자 집계(#225), 무료 플랜 미션 일일 한도(P13)는 미구현·저장소 미정(#210)
+- 테이블 없이 Redis에 두는 값: SSE 알림 중계 (아키텍처 1.6). 분석 대화 일일 사용량은 `payment_premium_usage` KST 일자 집계(#225), 무료 플랜 미션 일일 한도(P13)는 `mission_daily_usage` KST 일자 집계(#387, 3.4)
 - 생각 메모는 `attempt_draft.content.memo`에 저장 (P05). 음성 시범 미구현으로 음성 데이터 없음 (P03)
 - 학생 별도 계정 없음: 학생 세션은 `student.id`로 발급하는 토큰만. 발급 경로는 학부모 인증(동석) 또는 학부모 등록 기기 + 자녀 PIN(단독). PIN·기기 저장 구조는 3.1 (P01)
 - 학생 기기 페어링 코드(10분·1회용)는 테이블 없이 Redis 저장
@@ -549,6 +549,8 @@ erDiagram
 
 #48: 무료 상품 버전은 PAYMENT_FREE_PRODUCT_ID로 지정한다(2026-10-28 사용자 확정). 상품·주문·구독 조건은 snapshot으로 보존한다. V15의 payment_charge_attempt는 논리 주문당 확정 실패 재청구 이력을 분리하며 `(order_id,attempt_no)`·pg_order_no·멱등키 UK를 갖는다. 기존 정기 주문 기간 UK는 유지한다. subscription.billing_anchor_day는 최초 일자를 보존한다. payment_premium_usage는 환불과 경합하는 사용 예약·완료 증빙을 소유한다. 상세 경계는 [보고서](../report/payment.md)를 따른다.
 
+#387(V34, P13·P14 개정): `mission_daily_usage`는 무료 자녀의 `THEME_DAY`·`EXTRA` 신규 시도(learning `201`)만 시도 ID PK로 기록하고 `(student_id, usage_date)` 건수를 `product.limits.dailyMissions`와 비교한다(#210 PostgreSQL 결정, core는 learning 시도를 직접 볼 수 없음). `mission_id`는 한도 도달 뒤 같은 미션의 진행 중 시도 이어하기(`200`)를 막지 않도록 마지막 기록 시도를 찾는 데 쓴다(3.6 설계에 더한 컬럼). 학생 삭제 확정 때 같은 트랜잭션에서 지운다. `EXTRA` 허용은 상품 `features.extraMissions`(없으면 허용)로 정하며, 무료 상품에서 `false`일 때만 프리미엄 `EXTRA` 신규 시도를 `payment_premium_usage.kind = EXTRA_MISSION`(`source_id` = 시도 ID, `USED`)으로 남겨 환불 판정의 프리미엄 사용에 넣는다(2026-11-08 결정: 지금은 무료도 허용, 기록 없음). 상세는 [core 보고서](../report/core-gateway.md#13-주간-테마-프록시무료-하루-1개추가-문제-프리미엄-387).
+
 ```mermaid
 erDiagram
   product ||--o{ payment_order : ordered
@@ -560,6 +562,7 @@ erDiagram
   subscription |o--o{ payment_order : "청구 대상"
   payment_order ||--o| payment : "승인"
   payment ||--o{ refund_request : refunds
+  student ||--o{ mission_daily_usage : "무료 하루 미션"
 
   payment_charge_attempt {
     uuid id PK
@@ -577,11 +580,18 @@ erDiagram
     uuid id PK
     uuid student_id FK
     uuid subscription_id FK
-    varchar kind "FEEDBACK|CONVERSATION|REPORT_VIEW"
+    varchar kind "FEEDBACK|CONVERSATION|REPORT_VIEW|EXTRA_MISSION"
     uuid source_id
     varchar status "RESERVED|USED|FAILED"
     timestamptz created_at
     timestamptz updated_at
+  }
+  mission_daily_usage {
+    uuid attempt_id PK "learning 시도 논리 참조"
+    uuid student_id FK
+    uuid mission_id "learning 미션 논리 참조, 한도 뒤 이어하기 확인"
+    date usage_date "KST"
+    timestamptz created_at
   }
   product {
     uuid id PK
@@ -591,7 +601,7 @@ erDiagram
     varchar billing_cycle "MONTHLY|YEARLY"
     int child_limit
     jsonb features
-    jsonb limits "dailyMissions, dailyFeedback, dailyConversations, reportNarrative (P13)"
+    jsonb limits "dailyMissions(무료 THEME_DAY·EXTRA 합산), dailyFeedback, dailyConversations, reportNarrative (P13)"
     boolean active
     timestamptz created_at
   }
@@ -797,12 +807,9 @@ erDiagram
 | `look_item` | 신규 | `id uuid PK`, `code varchar UK`, `slot`(`HAT`·`OUTFIT`·`ACCESSORY`·`BACKGROUND`), `name`, `price_points int CHECK > 0`, `asset_key`, `status`(`ON_SALE`·`STOPPED`), `created_by FK user_account`, `created_at`, `updated_at`. 삭제 없음 | P22 |
 | `student_look_unlock` | 신규 | `student_id FK`, `item_key varchar`(`THEME:<code>`·`COMPANION:<code>`·`look_item.code`), `ledger_id FK NULL`(잠금 전 선택 이관분은 NULL), `unlocked_at`. PK `(student_id, item_key)`. 테마·캐릭터 해금값(테마 100·캐릭터 150)은 코드 상수 | P22 |
 | `student_look_equipment` | 신규 | `student_id FK`, `slot`, `look_item_id FK`, `updated_at`. PK `(student_id, slot)`. 해금된 아이템만(서비스 검증) | P22 |
-| `mission_daily_usage` | 신규 | `attempt_id uuid PK`(learning 논리 참조), `student_id FK`, `usage_date date NOT NULL`(KST), `created_at`. 무료 하루 미션 한도 집계(#210 PostgreSQL 결정): `THEME_DAY` 신규 시도 `201`만 기록, `(student_id, usage_date)` 건수로 판정 | P13 |
-| `payment_premium_usage` | 값 추가 | `kind`에 `EXTRA_MISSION`(프리미엄 추가 문제 시도, 환불 판정 근거, `source_id` = 시도 ID) | P14 |
-| `product` | 데이터 | FREE `limits.dailyMissions` 3 → 1 | P13 |
 
-- 학생 삭제 확정: `reward_point_ledger`·`reward_point_balance`·`student_look_unlock`·`student_look_equipment`·`mission_daily_usage`를 같은 트랜잭션에서 삭제(`community_enabled` false는 #388 구현, 3.1)
-- 인덱스 후보: `reward_point_ledger (student_id, created_at)`(내역·반응 하루 상한), `mission_daily_usage (student_id, usage_date)`
+- 학생 삭제 확정: `reward_point_ledger`·`reward_point_balance`·`student_look_unlock`·`student_look_equipment`를 같은 트랜잭션에서 삭제(`community_enabled` false는 #388 구현 3.1, `mission_daily_usage`는 #387 구현 3.4)
+- 인덱스 후보: `reward_point_ledger (student_id, created_at)`(내역·반응 하루 상한)
 - `report_job.period_type`·일일 알림 유형(P24)은 #390 V29·V30으로 구현해 3.2·3.3 Mermaid와 6장으로 옮겼다
 
 ---
@@ -1301,6 +1308,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | core | `notification` | `(user_id, read_at, created_at)` | 읽지 않은 알림 |
 | core | `payment` | `(status, updated_at)` | `CONFIRMING` 재조회, 결제 운영 조회 |
 | core | `subscription` | `(next_billing_date) WHERE auto_renew` | 정기 청구 대상 |
+| core | `mission_daily_usage` | `(student_id, usage_date)`, `(student_id, mission_id, created_at)` | 무료 하루 미션 건수, 한도 뒤 같은 미션 이어하기 확인 (#387, V34) |
 | core | `auth_session` | `(user_id)` | 사용자별 세션 폐기 |
 | core | `auth_session` | `(parent_session_id) WHERE parent_session_id IS NOT NULL` | 잠금 해제·재로그인 시 동석 학생 세션 폐기 (V24) |
 | core | `refresh_token` | `(session_id)` | 세션별 토큰 폐기·재사용 탐지 |
@@ -1325,7 +1333,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V32(V10·V11 결번), learning Flyway V1~V10, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`. 현재 77개 테이블·708개 컬럼(core 48/451, learning 21/194, report 8/63, `scripts/check_db_migrations.py` 결과, #388 V32 기준). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V34(V10·V11 결번), learning Flyway V1~V10, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`. 현재 78개 테이블·715개 컬럼(core 49/458, learning 21/194, report 8/63, `scripts/check_db_migrations.py` 결과, #387 V34 기준). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT
