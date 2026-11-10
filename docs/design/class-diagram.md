@@ -2174,7 +2174,7 @@ classDiagram
 - 규칙 응답(`analysis_agent/templates.py`): 대조 실패·LLM 키 부재·호출 실패 시 계산된 `metrics`·`evidence`만 템플릿 문장으로 구성, `source = TEMPLATE`·`fallback` 표시 (FN-AGT-10, P16)
 - 구현 이름(#65·#66, #253): `router.py`는 SSE 형식 변환만 하고 `service.py`의 `AnalysisService`가 범위·기한 확인, 프롬프트 선택, 그래프 실행, 최종 상태의 이벤트 변환, 설정 제안(`propose_template`)을 맡는다. `AgentState` = `state.py`의 `AnalysisState`. `nodes`는 `nodes/understand.py`(`classify`, 범위 확인 포함)·`nodes/retrieve.py`(`retrieve` = plan·run_tools, `compute`)·`nodes/respond.py`(`answer`·`check` = verify, `fallback`·`insufficient`·`unsupported`)로 나뉨. 실제 분기는 [ai 보고서 2장](../report/ai.md#2-분석-대화-에이전트-langgraph)
 - `NarrativeService`: 서술·저녁 질문만 생성, 숫자 계산·대조는 report-service 담당
-- (예정, #477) `ExplanationService`(`report_explanation/`): 리포트 설명 1건 생성(FN-RPT-09). 설명 전용 `OpenAICompatibleLlm`(클러스터 안 설명 sLLM 서버 base_url)만 쓰고 다른 호출의 제공자는 그대로. 규칙 후처리·금지어·점수·등급 표현 검사·인용 부분 문자열 확인 뒤 반환, 설명 모델 미활성이면 `{active:false}` (api-spec 4.2.3)
+- #477 `ExplanationService`(`report_explanation/`): 리포트 설명 1건 생성(FN-RPT-09). `ActiveVersions.model`로 설명 모델 활성 범위를 확인하고, 항목 선택·후처리·검사·인용 고르기는 `checks` 규칙. 설명 전용 `OpenAICompatibleLlm`(`create_explanation_llm`, `app.state.explanation_llm`)의 평문 `stream`만 쓰고 다른 호출의 제공자는 그대로. 미활성이면 `{active:false}`, 검사 실패 422 (api-spec 4.2.3)
 
 ### 5.3 메시징·클라이언트
 

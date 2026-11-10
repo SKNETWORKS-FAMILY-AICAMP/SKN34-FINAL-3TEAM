@@ -932,11 +932,12 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | POST | `/internal/followups` | learning | `{timeline[], judgment, rubric, mission, grade}` → `{type, question, source, leakCheck{passed}, versions}` (정답·금지어 검사 실패 시 1회 재생성 `LLM_RETRY`, 재실패 시 `question` 없이 `leakCheck.passed = false` → learning이 질문 은행 `BANK` 선택, P16) |
 | POST | `/internal/analysis/stream` | core | **SSE**. `{conversationId, question, scope{studentId, from, to}, history[], report?}` → 3.3과 같은 이벤트. `report`는 일일 리포트 고정 대화(2.4, #392)의 요약 `{reportId, revision, date, metrics[{label, count}], problems[{title, context, judgment, elements[{label, satisfied}]}]}`, 있으면 `from = to = date` |
 | POST | `/internal/report-narratives` | report | `{metrics[], thinkingTypes[], changes[], reflections[], quotes[], tone?}`(tone 생략 시 DEFAULT, #209) → `{narrative, eveningQuestion, citedQuotes[], versions}` (4.2.1) |
-| GET | `/internal/versions` | core | 현재 호출에 사용하는 프롬프트 버전 `{prompts:{judgment,followup,analysis,reportNarrative,reportTemplate,missionDraft}}` (#280 `reportTemplate`, #354 `missionDraft` 추가. core에 이 응답을 읽는 코드는 없음) |
+| POST | `/internal/report-explanations` | report | `{grade, inputType, text, scores}` → `{active:true, explanation:{text, quote}, versions}` 또는 `{active:false}` (4.2.3, #477) |
+| GET | `/internal/versions` | core | 현재 호출에 사용하는 프롬프트 버전 `{prompts:{judgment,followup,analysis,reportNarrative,reportTemplate,missionDraft,reportExplanation}}` (#280 `reportTemplate`, #354 `missionDraft`, #477 `reportExplanation` 추가. core에 이 응답을 읽는 코드는 없음) |
 | POST | `/internal/analysis/report-template` | core | `{question, current}` → `{settings}` 또는 `{clarification}` 중 하나 (#209, 2.4). 미보유 활성 본문은 503 `AI_PROMPT_VERSION_UNAVAILABLE`(#280). core 호출은 별도 서킷 `ai-report-template`(아키텍처 1.3) |
 | POST | `/internal/mission-drafts` | learning | 미션 초안 1회 생성·검사 (#354, FN-ADM-20). `{standards:[{code, statement, level?:{grade, text}}], thinkingType, elementCodes:[{code, label, description}], gradeMin, gradeMax, inputType, previousFailures:[{check, reason}]}` → `{draft:{title, question, guide, sceneNote, choices?, categories?, answerKey?, exampleAnswer?, forbiddenTerms[], hints[], elements:[{code, label, description, goodThought, standardCode}]}, checks:{passed, failures:[{check, reason}]}, versions:{prompt, model}}`. `level`은 성취수준 문장이 있을 때만, `elementCodes`는 learning이 FN 1.5 표에서 그 유형 코드와 입력 방식에 맞는 정답 코드를 채움(코드 목록은 learning 소유). ai 검사 `check`: `REQUIRED`(필수 항목·입력 방식별 선택지·정답 키·예시 답), `QUESTION_LENGTH`(`TOO_LONG`, `gradeMin` 학년의 상한, 설정 `MISSION_DRAFT_QUESTION_MAX_CHARS` 기본 전 학년 200자, P19 확정 전 기준안), `LEAK`(질문·안내·생각 열기 질문 속 정답 키·금지어 노출과, 안내·생각 열기 질문 속 예시 답 노출(질문에 이미 있는 글은 빼고 비교, 질문은 예시 답과 비교하지 않음), `reason`은 되묻기 노출 검사 코드 `ANSWER_KEY`·`FORBIDDEN_TERM`·`EXAMPLE_ANSWER` 그대로. 정답 키 글은 고르기면 정답 선택지 이름, 풀이면 최종 답이고 숫자뿐인 답은 숫자 경계로 비교, 순서·분류는 비교하지 않음). 검사 실패도 `200`(`checks.passed=false`), 형식에 맞는 초안을 못 만들면 `502 AI_BAD_RESPONSE`, 그 밖 LLM 실패는 `503 AI_UNAVAILABLE`(둘 다 `retryable`). 호출 1번에 생성 1회이고 재생성 반복은 learning이 함. 시간은 P12 예외(#353): LLM 60초 1회(재시도 없음)·마감 63초, learning→ai 대기 70초. 주기 작업이라 기다리는 사람이 없고, 기본 모델 `gpt-6-luna`가 실제 성취기준으로 15~31.7초 걸림(ai.md 9.2). LLM 입력에 학생 정보 없음. 사용량 `callType = MISSION_DRAFT`(core #355가 받음. 그 전에 발행된 메시지는 core 소비자가 거부해 DLQ에 남아 있음) |
 
-- #68 프롬프트 레지스트리의 `PROMPT name`은 위 응답의 여섯 키와 같다. 승인 scope는 차례대로 `ai/judgment`·`ai/followup`·`ai/analysis`·`ai/report-narrative`·`ai/report-template`·`ai/mission-draft`(#354 `missionDraft`)이며 요청 범위 밖 이벤트는 적용하지 않는다. core에 해당 활성 항목이 없으면 ai 이미지에 포함된 기존 본문·버전을 사용한다. 활성화된 버전의 실제 본문이 이미지에 없으면 해당 기능의 새 요청과 `/internal/versions`는 `503 AI_PROMPT_VERSION_UNAVAILABLE`로 실패하고 `/health/ready`의 `versions`는 DOWN이다. 기존 본문을 새 버전명으로 보고하지 않는다. 진행 중인 요청은 시작 때 선택한 본문·버전으로 완료한다.
+- #68 프롬프트 레지스트리의 `PROMPT name`은 위 응답의 일곱 키와 같다. 승인 scope는 차례대로 `ai/judgment`·`ai/followup`·`ai/analysis`·`ai/report-narrative`·`ai/report-template`·`ai/mission-draft`(#354 `missionDraft`)·`ai/report-explanation`(#477 `reportExplanation`)이며 요청 범위 밖 이벤트는 적용하지 않는다. core에 해당 활성 항목이 없으면 ai 이미지에 포함된 기존 본문·버전을 사용한다. 활성화된 버전의 실제 본문이 이미지에 없으면 해당 기능의 새 요청과 `/internal/versions`는 `503 AI_PROMPT_VERSION_UNAVAILABLE`로 실패하고 `/health/ready`의 `versions`는 DOWN이다. 기존 본문을 새 버전명으로 보고하지 않는다. 진행 중인 요청은 시작 때 선택한 본문·버전으로 완료한다.
 
 #### 4.2.2 판정 모델 교차 확인 (#69, 2026-11-03)
 
@@ -959,14 +960,17 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 대조 실패만 코드 기반 템플릿 요약으로 전환한다. AI 시간 초과·5xx·응답 스키마 오류·learning 원문 조회 실패는 `FAILED`로 처리한다. 학생 이름·닉네임 필드는 요청에 넣지 않으며, 알려진 닉네임이 본문에 포함된 경우 전송 전에 가린다.
 - LLM 요청에는 학생 이름·식별정보를 넣지 않음. 학생·시도·답변 ID도 넣지 않으므로 가명 토큰이 필요 없음(원문은 요청 안 번호로만 지칭) (NFR-SEC-03)
 
-#### 4.2.3 report 설명 요청·응답 (FN-RPT-09, #477 구현 예정)
+#### 4.2.3 report 설명 요청·응답 (FN-RPT-09, #477)
 
-- 경로(가칭) `POST /internal/report-explanations`, 호출자 report. 대표 답변 1개당 1회 호출한다(학생·주당 최대 3회)
-- 요청 `{grade, inputType:"NARRATIVE"|"ESSAY", text, scores}`. `text`는 학생 작성 칸 평문, `scores`는 learning `modelScores.m2`의 항목별 점수다. 학생·시도·답변 ID와 이름·닉네임은 넣지 않는다(NFR-SEC-03)
-- 응답 `{active:true, explanation:{text, quote}, versions:{prompt, model}}` 또는 `{active:false}`(설명 모델 미활성·승인 범위 밖). `quote`는 `text`의 부분 문자열이어야 하며 아니면 ai가 실패로 처리한다
-- ai는 설명 전용 OpenAI 호환 클라이언트로 클러스터 안 설명 sLLM 서버를 호출한다(다른 호출의 LLM 제공자는 그대로). 생성 뒤 규칙 후처리(점수·등급·숫자 표현 제거, 학부모용 문장 틀)와 금지어·점수·등급 표현 검사를 하고, 통과하지 못하면 실패 응답을 반환하고(오류 코드는 #477에서 확정) report가 "설명 미포함"을 결정한다
-- 시간 초과·5xx·검사 실패는 리포트 생성 실패로 바꾸지 않는다. report는 해당 설명만 빼고 `explanations.state = NOT_INCLUDED`로 저장한다(P16). 호출당 마감 시간과 전체 대기 상한은 #475 실측 뒤 정한다
-- 사용량 이벤트 `callType`과 프롬프트 이름·승인 scope는 #477·#480에서 4.2 표·#68 레지스트리 목록·`llm.usage.recorded` 스키마와 함께 추가한다
+- `POST /internal/report-explanations`, 호출자 report. 대표 답변 1개당 1회 호출한다(학생·주당 최대 3회)
+- 요청 `{grade(3~6), inputType:"NARRATIVE"|"ESSAY", text, scores}`. `text`는 학생 작성 칸 평문(공백만이면 400), `scores`는 learning `modelScores.m2.scores` 그대로다. 서술은 9개 키(`hol` 1~4, 나머지 1~5), 논술은 `org`·`cont`·`exp`(0~3) 3개 키가 정확히 있어야 하며 아니면 `400 VALIDATION_FAILED`. 학생·시도·답변 ID와 이름·닉네임은 넣지 않는다(NFR-SEC-03)
+- 활성 확인: core 모델 레지스트리의 `MODEL` `report-explanation`이 scope `explanation/grade-{grade}/{narrative|essay}`에 활성이어야 한다(활성 목록·`model.version.activated`로 받음, #480). 아니면 sLLM을 부르지 않고 `200 {active:false}`
+- 설명 항목: 가장 높은 항목 1개(잘한 점) + 가장 낮은 항목 1개(함께 이야기해 볼 점). 동점은 항목 표 순서(서술 과제 수행→명료성→구체성→적절성→연결성→통일성→어휘→어법, 논술 구성→내용→표현)로 앞선 항목, 모든 항목이 같은 점수면 1개(범위 중간 이상이면 잘한 점, 아니면 함께 이야기해 볼 점). 서술 총점 `hol`은 고르지 않는다
+- 생성: 항목마다 설명 전용 OpenAI 호환 클라이언트(`EXPLANATION_BASE_URL`, 다른 호출의 LLM 제공자는 그대로)로 평문 1회, 재시도 없음. 입력 형식은 #475 학습 쌍과 같다([AI 보고서](../report/ai.md)). 사용량 `callType = REPORT_EXPLANATION`(#480), 프롬프트 이름 `reportExplanation`
+- 규칙 후처리·검사: 숫자나 금지어(레벨·등급·점수·사고력 등, 분석 대화 검증과 같은 목록)가 있는 문장은 버리고 항목당 앞 2문장까지 남긴다. 남는 문장이 없는 항목이 하나라도 있으면 `422 AI_EXPLANATION_REJECTED`(`retryable:false`)
+- 응답 `{active:true, explanation:{text, quote}, versions:{model, prompt}}`. `text`는 `잘한 점: …`·`함께 이야기해 볼 점: …` 줄(1~2줄), `quote`는 설명과 낱말(앞 두 글자 기준)이 2개 이상 겹치는 학생 글 문장 중 가장 많이 겹치는 문장(원문 부분 문자열), 없으면 null이다. `versions.model`은 레지스트리 `이름@버전`
+- 오류: 설명 sLLM 주소 미설정·호출 실패·마감 초과는 `503 AI_UNAVAILABLE`(+`retryable`). 시간 초과·5xx·422는 리포트 생성 실패로 바꾸지 않는다. report는 해당 설명만 빼고 `explanations.state = NOT_INCLUDED`로 저장한다(P16)
+- 시간 기준안(#475 CPU 실측 전 임시값, P12 예외: 주 1회 배치라 기다리는 사람이 없음): 항목 1회 `EXPLANATION_LLM_TIMEOUT=60`초, 요청 전체 마감 `EXPLANATION_DEADLINE=125`초. report→ai 대기는 이보다 길게 #479에서 정한다
 
 ### 4.3 scoring-service (호출: ai)
 
