@@ -134,6 +134,8 @@ class AdminOperationsContracts(unittest.TestCase):
                     reviewed['enum'].remove('MISSION_DRAFT')
                     # #439 adds only the ai weekly theme text/image usage types.
                     reviewed['enum'].remove('THEME_DRAFT'); reviewed['enum'].remove('THEME_IMAGE')
+                    # #480 adds only the report explanation sLLM usage type.
+                    reviewed['enum'].remove('REPORT_EXPLANATION')
                 # #390 (P24 daily report) adds only the periodType filter/field, daily detail fields and two
                 # daily notification types. Remove exactly those additions; every other field stays fingerprinted.
                 if section=='paths' and name=='/children/{childId}/reports':

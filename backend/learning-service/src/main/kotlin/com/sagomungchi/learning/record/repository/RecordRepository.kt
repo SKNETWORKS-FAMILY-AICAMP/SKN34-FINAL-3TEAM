@@ -38,6 +38,10 @@ class RecordRepository(private val mapper: RecordMapper) {
     fun findReflections(attemptIds: List<UUID>): Map<UUID, ReflectionRow> =
         if (attemptIds.isEmpty()) emptyMap() else mapper.findReflections(attemptIds).associateBy { it.attemptId }
 
+    /** 답변별 판정 모델 점수 JSON 원문 (report 설명 대상 선정용, #478). 판정 행이 없는 답변은 빠짐 */
+    fun findModelScores(answerIds: List<UUID>): Map<UUID, String?> =
+        if (answerIds.isEmpty()) emptyMap() else mapper.findModelScores(answerIds).associate { it.answerId to it.modelScores }
+
     /** 이어할 시도: 진행 중 시도 중 가장 최근에 손댄 것 하나 (기간과 무관, 초안만 있는 시도 포함) */
     fun findResume(studentId: UUID): UUID? = mapper.findResume(studentId)
 }

@@ -231,6 +231,8 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-6-luna}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_JSON_MODE: ${OPENAI_JSON_MODE:-json_schema}
+      EXPLANATION_BASE_URL: ${EXPLANATION_BASE_URL:-}
+      EXPLANATION_MODEL: ${EXPLANATION_MODEL:-report-explanation}
     ports:
       - "${AI_HOST_PORT:-8000}:8000"
     healthcheck:
