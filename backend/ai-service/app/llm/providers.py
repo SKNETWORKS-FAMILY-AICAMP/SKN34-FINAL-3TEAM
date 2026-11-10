@@ -324,6 +324,30 @@ def create_llm(settings: Settings, recorder: UsageRecorder) -> LlmClient:
     raise ValueError(f"지원하지 않는 LLM_PROVIDER: {settings.llm_provider}")
 
 
+def create_explanation_llm(settings: Settings, recorder: UsageRecorder) -> LlmClient:
+    """리포트 설명 전용 sLLM 클라이언트 (#477). 평문 생성(stream)만 쓰고 재시도 없음.
+
+    주소가 없으면 UnconfiguredLlm: 서버는 기동하고 설명만 503 AI_UNAVAILABLE.
+    """
+    if not settings.explanation_base_url:
+        return UnconfiguredLlm(settings.explanation_model, recorder)
+    return OpenAICompatibleLlm(
+        api_key=settings.explanation_api_key,
+        model=settings.explanation_model,
+        base_url=settings.explanation_base_url,
+        json_mode="json_object",
+        timeout=settings.explanation_llm_timeout,
+        max_retries=0,
+        backoff_seconds=settings.llm_retry_backoff,
+        recorder=recorder,
+    )
+
+
 def get_llm(request: Request) -> LlmClient:
     """라우터 의존성: 기동 시 만든 app.state.llm. 테스트는 dependency_overrides로 교체."""
     return request.app.state.llm
+
+
+def get_explanation_llm(request: Request) -> LlmClient:
+    """라우터 의존성: 기동 시 만든 app.state.explanation_llm (#477)."""
+    return request.app.state.explanation_llm
