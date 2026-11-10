@@ -11,21 +11,26 @@ import { ApiError } from '../../data/apiClient.ts'
 import { QueryFeedback, MetricCards, EvidenceItems } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { ReportTemplateEditor } from './ReportTemplateEditor.tsx'
+import type { ReportContext } from './ParentInsights.tsx'
 export function ParentConversation({
   child,
   scope,
   onScope,
   canReadOriginals = false,
+  report,
+  onClearReport,
 }: {
   canReadOriginals?: boolean
   child: Child
   scope: Scope
   onScope: (scope: Scope) => void
+  report?: ReportContext
+  onClearReport?: () => void
 }) {
   const cache = useQueryClient(),
     list = useParentQuery(['conversations', child.id], (signal) =>
       parentApi.conversations(child.id, signal),
-      canReadOriginals,
+      canReadOriginals && !report,
     ),
     [id, setId] = useState<string | null>(null),
     detail = useParentQuery(
@@ -68,7 +73,7 @@ export function ParentConversation({
     try {
       let conversationId = id
       if (!conversationId) {
-        const c = await parentApi.create(confirmedScope)
+        const c = report?.periodType === 'DAILY' ? await parentApi.createForReport(child.id, report.reportId) : await parentApi.create(confirmedScope)
         if (!active.current || abort.signal.aborted) return
         conversationId = c.conversationId
         setId(conversationId)
@@ -106,7 +111,7 @@ export function ParentConversation({
     controller.current?.abort(); controller.current = abort
     setStartingTemplate(true); setError(null)
     try {
-      const conversation = await parentApi.create(scope)
+      const conversation = report?.periodType === 'DAILY' ? await parentApi.createForReport(child.id, report.reportId) : await parentApi.create(scope)
       if (!active.current || abort.signal.aborted) return
       setId(conversation.conversationId)
       void cache.invalidateQueries({ queryKey: ['parent', 'conversations'] })
@@ -116,11 +121,11 @@ export function ParentConversation({
   }
   const messages = detail.data?.childId === child.id && !detail.error ? detail.data.messages : [],
     pending = state.phase === 'RUNNING'
-  if (!canReadOriginals) return <section className="ws-stack"><header><h1>AI 챗봇</h1><p>학습 기록을 바탕으로 궁금한 점을 질문하는 대화입니다.</p></header><div className="parent-private-records" role="note"><h2>답변 원문이 비공개여서 기록 분석 질문은 잠시 쉬어요</h2><p>학습 현황과 리포트의 수치는 계속 볼 수 있습니다. 원문을 분석하는 대화는 아이가 공개한 뒤 이용할 수 있습니다.</p><div className="ws-actions"><Link to={`/parent/journal?childId=${encodeURIComponent(child.id)}`} className="cj-secondary">학습 현황 보기</Link><Link to={`/parent/report?childId=${encodeURIComponent(child.id)}`} className="cj-secondary">리포트 보기</Link></div></div></section>
+  if (!canReadOriginals) return <section className="ws-stack"><header><h2>AI 챗봇</h2><p>학습 기록을 바탕으로 궁금한 점을 질문하는 대화입니다.</p></header><div className="parent-private-records" role="note"><h2>답변 원문이 비공개여서 기록 분석 질문은 잠시 쉬어요</h2><p>학습 현황과 리포트의 수치는 계속 볼 수 있습니다. 원문을 분석하는 대화는 아이가 공개한 뒤 이용할 수 있습니다.</p><div className="ws-actions"><Link to={`/parent/journal?childId=${encodeURIComponent(child.id)}`} className="cj-secondary">학습 현황 보기</Link><Link to={`/parent/report?childId=${encodeURIComponent(child.id)}`} className="cj-secondary">리포트 보기</Link></div></div></section>
   return (
     <>
       <header className="parent-page-head">
-      <h1>AI 챗봇</h1>
+      <h2>AI 챗봇</h2>
       <p>학습 기록에 대해 궁금한 점을 질문하고 답변의 근거를 확인하세요. 리포트는 정해진 주기로 자동 생성됩니다.</p>
       <p>
         {child.nickname} · 선택 기간 {scope.from} ~ {scope.to}
@@ -128,9 +133,12 @@ export function ParentConversation({
       </header>
       <div className="pc-layout">
         <aside className="ws-card">
-          <h2>이전 대화</h2>
-          <QueryFeedback query={list} />
-          {list.data &&
+          <h3>{report ? '질문에 연결한 리포트' : '이전 대화'}</h3>
+          {report && <div role="note"><p>{report.periodType === 'DAILY' ? '일일' : '주간'} 리포트 · {report.period.from} ~ {report.period.to}</p>
+            {report.periodType === 'DAILY' && <p>대화 시작 시 최신 리포트 판과 해당 날짜로 연결됩니다.</p>}
+            <button className="cj-secondary" onClick={onClearReport}>전체 기록으로 질문하기</button></div>}
+          {!report && <QueryFeedback query={list} />}
+          {!report && list.data &&
             !list.error &&
             list.data.items.map((c) => (
               <button
@@ -235,7 +243,7 @@ export function ParentConversation({
                   className="cj-secondary"
                   key={i}
                   onClick={() => {
-                    if (option.scope.childId !== child.id) {
+                    if (option.scope.childId !== child.id || report?.periodType === 'DAILY' && (option.scope.from !== scope.from || option.scope.to !== scope.to)) {
                       controller.current?.abort()
                       onScope(option.scope)
                     } else {

@@ -55,6 +55,4 @@ test('#425 재인증 화면은 채널을 구독하고 수동 완료 확인과 op
     assert.match(source, /opener\s*=\s*null/, file)
     assert.match(source, /완료 확인/, file)
   }
-  const devices = readFileSync(new URL('../src/presentation/parent/StudentDevices.tsx', import.meta.url), 'utf8')
-  assert.equal(devices.match(/useReauthReturn\(/g)?.length, 2)
 })

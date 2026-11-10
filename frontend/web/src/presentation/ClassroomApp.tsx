@@ -461,7 +461,7 @@ export function ClassroomApp() {
                     setDetail(null)
                   }}
                 >
-                  <Brand />
+                  <Brand linked={false} />
                 </button>
                 {session.role === 'PARENT' ? (
                   <select

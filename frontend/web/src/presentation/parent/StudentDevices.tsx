@@ -39,12 +39,12 @@ function useNow(active: boolean) {
  */
 export function StudentDevices({ items }: { items: Child[] }) {
   return (
-    <div className="ws-grid">
-      <GuardianPasswordSettings />
+    <section className="parent-devices"><header className="parent-page-head"><h1>기기·PIN</h1><p>자녀의 PIN을 정하고 학습할 기기를 연결하세요.</p></header><div className="ws-grid">
       <PinSettings items={items} />
+      <GuardianPasswordSettings />
       <PairingIssue items={items} />
       <DeviceList />
-    </div>
+    </div></section>
   )
 }
 
@@ -117,7 +117,7 @@ function GuardianPasswordSettings() {
           보호자 비밀번호 완료 확인
         </button>}
         <ErrorNotice error={start.error ?? finish.error} />
-        <p role="status">{notice}</p>
+        {notice && <p role="status">{notice}</p>}
         <label>
           새 보호자 비밀번호
           <input aria-label="새 보호자 비밀번호" type="password" inputMode="numeric" autoComplete="new-password" maxLength={PIN_MAX}
@@ -140,119 +140,49 @@ function GuardianPasswordSettings() {
 }
 
 function PinSettings({ items }: { items: Child[] }) {
-  return <section className="ws-card" aria-labelledby="pin-h">
+  const [selected, setSelected] = useState(items[0]?.id ?? '')
+  const child = items.find(item => item.id === selected) ?? items[0]
+  return <section className="ws-card parent-pin-settings" aria-labelledby="pin-h">
     <h2 id="pin-h">자녀 PIN</h2>
-    <p>자녀별 본인 확인 후 PIN을 정해 주세요. 5번 틀려 잠긴 PIN도 여기서 다시 정하면 풀립니다.</p>
-    {items.map((c) => <ChildPin key={c.id} child={c} />)}
+    <p>PIN을 정할 자녀를 골라 주세요. 잠긴 PIN도 다시 정하면 풀립니다.</p>
+    <div className="parent-child-pills" role="tablist" aria-label="PIN 설정할 자녀">
+      {items.map((item, index) => <button key={item.id} type="button" role="tab" id={`pin-tab-${item.id}`}
+        aria-selected={child?.id === item.id} aria-controls={`pin-panel-${item.id}`} tabIndex={child?.id === item.id ? 0 : -1}
+        onClick={() => setSelected(item.id)} onKeyDown={event => {
+          const next = event.key === 'ArrowRight' ? (index + 1) % items.length : event.key === 'ArrowLeft' ? (index + items.length - 1) % items.length : event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : null
+          if (next === null) return
+          event.preventDefault(); setSelected(items[next].id); document.getElementById(`pin-tab-${items[next].id}`)?.focus()
+        }}>{item.nickname}</button>)}
+    </div>
+    {child ? <div role="tabpanel" id={`pin-panel-${child.id}`} aria-labelledby={`pin-tab-${child.id}`}><ChildPin key={child.id} child={child} /></div>
+      : <p>계정·자녀 설정에서 자녀를 먼저 등록해 주세요.</p>}
   </section>
 }
 
 function ChildPin({ child }: { child: Child }) {
-  const byPassword = useSession().session?.authMethod === 'PASSWORD'
-  const [challenge, setChallenge] = useState('')
-  const [grant, setGrant] = useState<{ reauthToken: string; expiresAt: string } | null>(null)
-  const [notice, setNotice] = useState('')
-  const start = useParentMutation(studentDeviceApi.startPinReauth)
-  const finish = useParentMutation(studentDeviceApi.finishPinReauth)
-  useEffect(() => {
-    if (!grant) return
-    const timeout = window.setTimeout(() => setGrant(null), Math.max(0, Date.parse(grant.expiresAt) - Date.now()))
-    return () => window.clearTimeout(timeout)
-  }, [grant])
-  const token = grant?.reauthToken ?? ''
-  function begin() {
-    const popup = window.open('about:blank', '_blank')
-    if (!popup) { setNotice('팝업을 허용한 뒤 다시 시도해 주세요.'); return }
-    popup.opener = null
-    setGrant(null); setChallenge(''); setNotice('')
-    void start.mutateAsync(child.id).then((result) => {
-      const url = new URL(result.authorizationUrl, window.location.origin)
-      if (url.protocol !== 'https:' && url.origin !== window.location.origin) throw new Error('잘못된 재인증 주소입니다.')
-      popup.location.href = url.href
-      setChallenge(result.challengeId)
-      setNotice('Google 확인을 마치면 이 화면에서 자동으로 완료됩니다. 넘어오지 않으면 완료 확인을 눌러 주세요.')
-    }).catch(() => { popup.close(); setNotice('Google 재확인을 시작하지 못했습니다.') })
-  }
-  function complete() {
-    void finish.mutateAsync(challenge).then((value) => { setGrant(value); setNotice('재확인을 완료했습니다. 5분 안에 PIN을 정해 주세요.') }).catch(() => {})
-  }
-  useReauthReturn(challenge, !!challenge && !token && !finish.isPending, complete)
-  const [pin, setPin] = useState(''),
-    [again, setAgain] = useState(''),
-    [problem, setProblem] = useState<string | null>(null)
+  const [pin, setPin] = useState(''), [again, setAgain] = useState(''), [notice, setNotice] = useState(''), [problem, setProblem] = useState<string | null>(null)
   const { setPin: save } = useDeviceAdmin()
   const state = child.pinLocked === true ? 'locked' : child.pinSet === true ? 'set' : child.pinSet === false ? 'none' : 'unknown'
   const status = state === 'locked' ? '잠김 · 다시 정해야 풀려요' : state === 'set' ? '설정됨' : state === 'none' ? '아직 없음' : '확인 필요'
-  return (
-    <form
-      className="ws-form"
-      aria-label={`${child.nickname} PIN`}
-      onSubmit={(e) => {
-        e.preventDefault()
-        const p = pinProblem(pin) ?? (pin !== again ? '두 번 입력한 PIN이 다릅니다.' : null)
-        setProblem(p)
-        if (p) return
-        save.mutate(
-          { childId: child.id, pin, reauthToken: token },
-          {
-            onSuccess: () => {
-              setPin('')
-              setAgain('')
-              setGrant(null); setChallenge('')
-              setNotice(`${child.nickname}의 PIN을 저장했습니다.${child.pinLocked ? ' 잠금도 풀렸습니다.' : ''}`)
-            },
-          },
-        )
-      }}
-    >
-      <h3>
-        {child.nickname} <small>· {gradeLabel(child.grade)}</small>
-      </h3>
-      <p>
-        현재 상태: <strong data-pin-state={state}>{status}</strong>
-      </p>
-      {byPassword
-        ? <PasswordRecheck purpose="PIN_CHANGE" childId={child.id} label={`${child.nickname} 본인 확인`} onGrant={(value) => { setGrant(value); if (value) setNotice('재확인을 완료했습니다. 5분 안에 PIN을 정해 주세요.') }} />
-        : <button type="button" className="cj-secondary" disabled={start.isPending || finish.isPending} onClick={begin}>
-          {child.nickname} Google 본인 확인
-        </button>}
-      {!byPassword && challenge && !token && <button type="button" className="cj-secondary" disabled={finish.isPending} onClick={complete}>
-        {child.nickname} 완료 확인
-      </button>}
-      <ErrorNotice error={start.error ?? finish.error} />
-      <p role="status">{notice}</p>
-      <label>
-        새 PIN
-        <input
-          aria-label={`${child.nickname} 새 PIN`}
-          type="password"
-          inputMode="numeric"
-          autoComplete="new-password"
-          maxLength={PIN_MAX}
-          value={pin}
-          onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-        />
-      </label>
-      <label>
-        새 PIN 다시 입력
-        <input
-          aria-label={`${child.nickname} 새 PIN 확인`}
-          type="password"
-          inputMode="numeric"
-          autoComplete="new-password"
-          maxLength={PIN_MAX}
-          value={again}
-          onChange={(e) => setAgain(e.target.value.replace(/\D/g, ''))}
-        />
-      </label>
-      {problem && <p role="alert">{problem}</p>}
-      <button className="cj-primary" disabled={!token || save.isPending || start.isPending || finish.isPending}>
-        {child.pinSet === true ? 'PIN 바꾸기' : child.pinSet === false ? 'PIN 정하기' : 'PIN 설정·변경'}
-      </button>
-      {!token && <small>본인 재확인 후 저장할 수 있습니다.</small>}
-      <ErrorNotice error={save.error} />
-    </form>
-  )
+  return <form className="ws-form" aria-label={`${child.nickname} PIN`} onSubmit={event => {
+    event.preventDefault(); setNotice('')
+    const error = pinProblem(pin) ?? (pin !== again ? '두 번 입력한 PIN이 다릅니다.' : null)
+    setProblem(error)
+    if (error) return
+    save.mutate({ childId: child.id, pin }, { onSuccess: () => {
+      setPin(''); setAgain(''); setNotice(`${child.nickname}의 PIN을 저장했습니다.${child.pinLocked ? ' 잠금도 풀렸습니다.' : ''}`)
+    } })
+  }}>
+    <h3>{child.nickname} <small>· {gradeLabel(child.grade)}</small></h3>
+    <p>현재 상태: <strong data-pin-state={state}>{status}</strong></p>
+    <label>새 PIN<input aria-label={`${child.nickname} 새 PIN`} type="password" inputMode="numeric" autoComplete="new-password" maxLength={PIN_MAX}
+      value={pin} onChange={event => setPin(event.target.value.replace(/\D/g, ''))} /></label>
+    <label>새 PIN 다시 입력<input aria-label={`${child.nickname} 새 PIN 확인`} type="password" inputMode="numeric" autoComplete="new-password" maxLength={PIN_MAX}
+      value={again} onChange={event => setAgain(event.target.value.replace(/\D/g, ''))} /></label>
+    {problem && <p role="alert">{problem}</p>}
+    <button className="cj-primary" disabled={save.isPending}>{save.isPending ? 'PIN 저장 중…' : child.pinSet ? 'PIN 바꾸기' : 'PIN 정하기'}</button>
+    <ErrorNotice error={save.error} />{notice && <p role="status">{notice}</p>}
+  </form>
 }
 
 function PairingIssue({ items }: { items: Child[] }) {

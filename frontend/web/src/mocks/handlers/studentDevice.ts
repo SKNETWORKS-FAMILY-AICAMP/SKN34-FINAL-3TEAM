@@ -16,7 +16,7 @@ import {
   persistDeviceState,
 } from '../fixtures/studentDevice.ts'
 import { respond, startDeviceStudentSession } from './student.ts'
-import { fail, page, parentChild, parentGuard, consumePinReauth, mockChildConsentMetadata } from './parent.ts'
+import { fail, page, parentChild, parentGuard, mockChildConsentMetadata } from './parent.ts'
 import { demoRequest, sharedDeviceDemo, sharedParentRequest } from '../sharedDevice.ts'
 import type { SharedLogin } from '../sharedDevice.ts'
 
@@ -77,7 +77,6 @@ export const studentDeviceHandlers = [
           errors: [{ field: 'pin', reason: problem }],
         })
       const hash = await hashPin(c.id, pin)
-      consumePinReauth(request, c.id)
       if (sharedDeviceDemo) return sharedParentRequest(`/pins/${encodeURIComponent(c.id)}`, {
         method: 'PUT', body: JSON.stringify({ pin }),
       })

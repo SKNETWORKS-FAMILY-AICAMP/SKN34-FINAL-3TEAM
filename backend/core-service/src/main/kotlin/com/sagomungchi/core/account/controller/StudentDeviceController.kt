@@ -29,8 +29,8 @@ class StudentDeviceController(private val service: StudentAuthService,private va
         service.revoke(identity(request),deviceId); return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build()
     }
     @PutMapping("/api/v1/children/{childId}/pin")
-    fun pin(@PathVariable childId: UUID,@RequestBody body: PinRequest,@RequestHeader("X-Reauth-Token",required=false) token: String?,request: HttpServletRequest): ResponseEntity<Void> {
-        pins.set(identity(request),childId,body.pin,token); return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build()
+    fun pin(@PathVariable childId: UUID,@RequestBody body: PinRequest,request: HttpServletRequest): ResponseEntity<Void> {
+        pins.set(identity(request),childId,body.pin); return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build()
     }
     @PostMapping("/api/v1/auth/student/devices")
     fun register(@RequestBody body: RegistrationRequest,request: HttpServletRequest): ResponseEntity<Any> {

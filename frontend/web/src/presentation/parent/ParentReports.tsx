@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { ReportProblem } from '../service/ReportProblem.tsx'
-import type { Child, Period } from '../../domain/classroom.ts'
+import type { Child } from '../../domain/classroom.ts'
 import type { DailyProblem, ReportPeriodType, ThemeSummary } from '../../domain/parent.ts'
 import { reportPeriodType } from '../../domain/parent.ts'
-import { ReportChat } from './ReportChat.tsx'
+import type { ReportContext } from './ParentInsights.tsx'
 import { parentApi } from '../../data/parent/api.ts'
 import { useParentQuery, useParentMutation } from '../../data/parent/queries.ts'
 import { thinkingLabels } from '../../domain/classroom.ts'
@@ -13,10 +13,10 @@ import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { EvidenceQuery } from './ParentConversation.tsx'
 export function ParentReports({
   child,
-  onAnalysis,
+  onAskReport,
 }: {
   child: Child
-  onAnalysis: (p: Period) => void
+  onAskReport: (report: ReportContext) => void
 }) {
   const [status, setStatus] = useState(''),
     [kind, setKind] = useState<ReportPeriodType | ''>(''),
@@ -27,7 +27,7 @@ export function ParentReports({
     )
   return (
     <>
-      <header className="parent-page-head"><h1>리포트</h1>
+      <header className="parent-page-head"><h2>리포트</h2>
       <p>
         하루·한 주의 학습을 자동으로 정리한 결과입니다. 궁금한 점은 AI 챗봇에서 질문할 수 있습니다.
       </p>
@@ -93,7 +93,7 @@ export function ParentReports({
           id={id}
           revision={revision}
           onRevision={setRevision}
-          onAnalysis={onAnalysis}
+          onAskReport={onAskReport}
         />
       )}
     </>
@@ -104,13 +104,13 @@ function ReportDetail({
   id,
   revision,
   onRevision,
-  onAnalysis,
+  onAskReport,
 }: {
   child: Child
   id: string
   revision: number | undefined
   onRevision: (v: number | undefined) => void
-  onAnalysis: (p: Period) => void
+  onAskReport: (report: ReportContext) => void
 }) {
   const q = useParentQuery(
       ['report', child.id, id, revision ?? 'latest'],
@@ -143,6 +143,12 @@ function ReportDetail({
       <h2>{daily ? '일일 리포트 상세' : '리포트 상세'}</h2>
       <ReportProblem targetType="REPORT" targetId={id}/>
       <QueryFeedback query={q} />
+      {r && ready && r.parentSharingEnabled !== false && (
+        <div className="parent-report-question"><h3>이 리포트에서 이어서 질문하기</h3>
+          <p>{child.plan === 'FREE' ? 'AI 질문은 프리미엄 기능입니다. 리포트의 수치는 계속 확인할 수 있습니다.' : '리포트의 자녀와 기간을 AI 챗봇에 연결합니다.'}</p>
+          <button className="cj-primary" disabled={child.plan === 'FREE'} onClick={() => onAskReport({ reportId: r.reportId, revision: r.revision, period: r.period, periodType: daily ? 'DAILY' : 'WEEKLY' })}>이 리포트로 질문하기</button>
+        </div>
+      )}
       {r && (
         <>
           <p>
@@ -264,11 +270,6 @@ function ReportDetail({
               )}
               <p>{r.parentSharingEnabled === false ? '원문 비공개 중에는 기존 파일을 제공하지 않습니다. 위 학습 수치는 계속 확인할 수 있습니다.' : '다운로드는 서버가 제공하는 최신판 파일입니다.'}</p>
               <div className="ws-actions">
-                {!daily && (
-                  <button className="cj-secondary" disabled={r.parentSharingEnabled === false} onClick={() => onAnalysis(r.period)}>
-                    AI 챗봇으로 이 기간 질문하기
-                  </button>
-                )}
                 <button
                   className="cj-secondary"
                   disabled={download.isPending || r.parentSharingEnabled === false}
@@ -309,16 +310,7 @@ function ReportDetail({
         </>
       )}
       {r && ready && r.parentSharingEnabled === false && <p role="note">원문 비공개 중에는 원문 근거·AI 질문·파일 다운로드를 이용할 수 없습니다. 위 학습 수치는 계속 확인할 수 있습니다.</p>}
-      {r && ready && r.parentSharingEnabled !== false && (
-        <ReportChat
-          key={`${r.reportId}-${r.revision}`}
-          child={child}
-          scope={{ childId: child.id, from: r.period.from, to: r.period.to }}
-          reportId={daily ? r.reportId : undefined}
-          onAnalysis={onAnalysis}
-        />
-      )}
-      <p role="status">{notice}</p>
+      {notice && <p role="status">{notice}</p>}
       <ErrorNotice error={regenerate.error} />
       <ErrorNotice error={download.error} />
       {proof && r && (
