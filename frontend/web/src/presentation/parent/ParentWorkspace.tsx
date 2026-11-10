@@ -77,7 +77,7 @@ export function ParentWorkspace() {
       : childId && !child && children.data && !children.error ? <section className="ws-card"><h1>자녀 연결 확인</h1><p role="alert">연결되지 않은 자녀의 기록은 표시하지 않습니다.</p></section>
       : child && (!hasPeriod || validPeriod(scope)) && !children.error ? <div className="parent-content" key={`${child.id}:${page === 'report' ? 'insights' : hasPeriod ? scope.from + ':' + scope.to : page}`}>
         {page === 'journal' && <ParentSharingNotice studentId={child.id} />}
-        {page === 'report' ? <ParentInsights child={child} scope={scope} canReadOriginals={canReadOriginals} sharingPending={sharing.isPending}
+        {page === 'report' ? <ParentInsights key={`${scope.from}:${scope.to}:${canReadOriginals}:${sharing.isPending}`} child={child} scope={scope} canReadOriginals={canReadOriginals} sharingPending={sharing.isPending}
           periodControl={<details className="parent-scope"><summary>질문할 기간 · {scope.from} ~ {scope.to}</summary><PeriodFilter key={`${scope.from}:${scope.to}`} period={scope} onApply={({ from, to }) => {
             const next = new URLSearchParams(params); next.set('from', from); next.set('to', to); setParams(next)
           }} /></details>}

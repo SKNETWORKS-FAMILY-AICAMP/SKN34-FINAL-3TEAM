@@ -215,11 +215,13 @@ export function QueryFeedback({
     </>
   )
 }
-export function MetricCards({ metrics }: { metrics: Metric[] }) {
+export function MetricCards({ metrics, highlighted }: { metrics: Metric[]; highlighted?: number[] }) {
   return (
     <div className="ws-metrics">
       {metrics.map((m, i) => (
-        <article className="ws-card" key={i}>
+        <article className={highlighted ? 'ws-card report-highlight-target' : 'ws-card'} key={i}
+          data-answer-highlight={highlighted?.includes(i) ? 'true' : undefined} tabIndex={highlighted ? -1 : undefined}>
+          {highlighted?.includes(i) && <span className="report-highlight-label">선택한 답변의 근거</span>}
           <h3>{m.label}</h3>
           <strong className="ws-number">{metricText(m)}</strong>
           <QueryStateNotice state={m.state} />

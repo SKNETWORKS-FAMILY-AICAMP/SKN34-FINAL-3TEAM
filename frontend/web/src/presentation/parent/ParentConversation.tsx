@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ReportProblem } from '../service/ReportProblem.tsx'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Child } from '../../domain/classroom.ts'
-import type { Scope, StreamState, ConversationMessage, Evidence } from '../../domain/parent.ts'
+import type { Scope, StreamState, ConversationMessage, Conversation, MessageResult, Evidence } from '../../domain/parent.ts'
 import { parentApi } from '../../data/parent/api.ts'
 import { useParentQuery } from '../../data/parent/queries.ts'
 import { ApiError } from '../../data/apiClient.ts'
@@ -12,6 +12,7 @@ import { QueryFeedback, MetricCards, EvidenceItems } from '../common/Workspace.t
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { ReportTemplateEditor } from './ReportTemplateEditor.tsx'
 import type { ReportContext } from './ParentInsights.tsx'
+import type { ReportAnswer } from '../../domain/reportHighlight.ts'
 export function ParentConversation({
   child,
   scope,
@@ -19,6 +20,8 @@ export function ParentConversation({
   canReadOriginals = false,
   report,
   onClearReport,
+  onAnswer,
+  selectedMessageId,
 }: {
   canReadOriginals?: boolean
   child: Child
@@ -26,6 +29,8 @@ export function ParentConversation({
   onScope: (scope: Scope) => void
   report?: ReportContext
   onClearReport?: () => void
+  onAnswer?: (answer: ReportAnswer | null, reveal?: boolean) => void
+  selectedMessageId?: string
 }) {
   const cache = useQueryClient(),
     list = useParentQuery(['conversations', child.id], (signal) =>
@@ -44,6 +49,7 @@ export function ParentConversation({
     [proof, setProof] = useState<{ conversationId: string; messageId: string } | null>(null),
     controller = useRef<AbortController | null>(null),
     active = useRef(true),
+    conversationRef = useRef<Conversation | null>(null),
     [lastQuestion, setLastQuestion] = useState(''),
     [startingTemplate, setStartingTemplate] = useState(false),
     [templateOpen, setTemplateOpen] = useState(false)
@@ -68,14 +74,17 @@ export function ParentConversation({
     const abort = new AbortController()
     controller.current = abort
     setError(null)
+    onAnswer?.(null)
     setLastQuestion(text)
     setState({ phase: 'RUNNING', temporary: '' })
     try {
+      let result: MessageResult | undefined
       let conversationId = id
       if (!conversationId) {
         const c = report?.periodType === 'DAILY' ? await parentApi.createForReport(child.id, report.reportId) : await parentApi.create(confirmedScope)
         if (!active.current || abort.signal.aborted) return
         conversationId = c.conversationId
+        conversationRef.current = c
         setId(conversationId)
       }
       await parentApi.message(
@@ -83,12 +92,17 @@ export function ParentConversation({
         text,
         confirmedScope,
         (s) => {
+          if (s.phase === 'DONE') result = s.result
           if (active.current && !abort.signal.aborted) setState(s)
         },
         abort.signal,
         retry?.messageId,
       )
       if (!active.current || abort.signal.aborted) return
+      if (result) {
+        const context = detail.data?.conversationId === conversationId ? detail.data : conversationRef.current
+        onAnswer?.({ conversationId, message: { ...result, question: text, status: 'COMPLETED' }, reportId: context?.reportId, reportRevision: context?.reportRevision })
+      }
       setQuestion('')
       void cache.invalidateQueries({ queryKey: ['parent', 'conversation'] })
       void cache.invalidateQueries({ queryKey: ['parent', 'conversations'] })
@@ -101,6 +115,7 @@ export function ParentConversation({
   }
   function open(conversationId: string) {
     controller.current?.abort()
+    onAnswer?.(null); conversationRef.current = null
     setId(conversationId)
     setState({ phase: 'IDLE', temporary: '' })
     setError(null)
@@ -110,10 +125,12 @@ export function ParentConversation({
     const abort = new AbortController()
     controller.current?.abort(); controller.current = abort
     setStartingTemplate(true); setError(null)
+    onAnswer?.(null)
     try {
       const conversation = report?.periodType === 'DAILY' ? await parentApi.createForReport(child.id, report.reportId) : await parentApi.create(scope)
       if (!active.current || abort.signal.aborted) return
       setId(conversation.conversationId)
+      conversationRef.current = conversation
       void cache.invalidateQueries({ queryKey: ['parent', 'conversations'] })
     } catch (e) {
       if (active.current && !abort.signal.aborted) setError(e)
@@ -153,6 +170,7 @@ export function ParentConversation({
             className="cj-secondary"
             onClick={() => {
               controller.current?.abort()
+              onAnswer?.(null); conversationRef.current = null
               setId(null)
               setState({ phase: 'IDLE', temporary: '' })
               setError(null)
@@ -209,6 +227,10 @@ export function ParentConversation({
                     </p>
                   )}
                   {m.metrics && <MetricCards metrics={m.metrics} />}
+                  {onAnswer && <button className="cj-secondary" aria-pressed={selectedMessageId === m.messageId} disabled={pending}
+                    onClick={() => onAnswer({ conversationId: id!, message: m, reportId: detail.data?.reportId, reportRevision: detail.data?.reportRevision }, true)}>
+                    리포트 근거 위치 보기
+                  </button>}
                   <p>
                     출처 {m.source} · 조회 기록 {m.recordCount}건
                   </p>
