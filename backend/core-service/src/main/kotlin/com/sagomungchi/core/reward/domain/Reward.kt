@@ -13,8 +13,12 @@ enum class RewardEvent {
     COMMUNITY_POSTED,
     /** 커뮤니티 반응 생성. 사건 키 `postId:reaction`, 하루 상한 */
     REACTION_GIVEN,
-    /** 주간 테마 완주. 사건 키 `weekStart` */
+    /** 주간 테마 개근(월~금 각 문제를 그 요일 KST 안에 학습 완료, #485 이전 이름 "완주"). 사건 키 `weekStart` */
     THEME_COMPLETED,
+    /** 당일 풀이(#485): 요일 문제를 그 요일 KST 안에 학습 완료. 사건 키 `weekStart:day`(예 `2026-11-09:MON`) */
+    THEME_ON_TIME,
+    /** 주간 완주(#485): 그 주 토요일까지 다섯 문제 학습 완료(일요일 완료 제외는 learning 판정). 사건 키 `weekStart` */
+    THEME_FINISHED,
 }
 
 /** 원장에만 쓰는 사용 사건. 사건 키는 해금 항목 `itemKey` */

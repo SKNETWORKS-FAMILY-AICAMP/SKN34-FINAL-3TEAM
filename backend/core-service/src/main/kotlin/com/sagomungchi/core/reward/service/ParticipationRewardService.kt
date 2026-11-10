@@ -1,5 +1,6 @@
 package com.sagomungchi.core.reward.service
 
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core.reward.domain.EarnResult
 import com.sagomungchi.core.reward.domain.RewardEvent
@@ -31,7 +32,7 @@ class ParticipationRewardService(private val rewards: RewardService, private val
 
     /**
      * 토·일 되돌아보기 열람 기록 응답 `{firstViewThisWeek, completed}` 뒤. 열람은 주 1회(사건 키 `weekStart`)라
-     * 첫 열람 여부와 무관하게 부르고(재요청 보충), `completed`(월~금 각 당일 학습 완료)면 완주 보너스도 같은 키로 적립한다.
+     * 첫 열람 여부와 무관하게 부르고(재요청 보충), `completed`(개근: 월~금 각 당일 학습 완료)면 개근 보너스도 같은 키로 적립한다.
      */
     fun reviewViewed(studentId: UUID, date: LocalDate, body: ByteArray) {
         val completed = guard("review view response") { json.readTree(body).path("completed").asBoolean(false) } ?: return
@@ -41,16 +42,30 @@ class ParticipationRewardService(private val rewards: RewardService, private val
     }
 
     /**
-     * 주간 테마 조회 응답 뒤 보충: 요일 문제 중 `attemptStatus == COMPLETED`(이번 주 그 요일 문제를 학습 완료)인 미션의
-     * 학습 완료 적립이 원장에 없으면 채운다. 이미 있으면 사건 키 UK로 건너뛴다. 추가 문제(EXTRA)는 이 응답에 없어 보충 대상이 아니다.
+     * 주간 테마 조회 응답 뒤 보충(#389·#485). 모두 사건 키가 멱등이라 조회할 때마다 불러도 한 번만 적립된다.
+     * - 요일 문제 `attemptStatus == COMPLETED`: 그 미션의 학습 완료(추가 문제 EXTRA는 이 응답에 없어 대상 아님)
+     * - 요일 문제 `completedOnDay == true`: 당일 풀이, 사건 키 `weekStart:day`
+     * - 주 `perfectAttendance == true`: 개근(`THEME_COMPLETED`), 사건 키 `weekStart`. 일요일이 닫혀 되돌아보기 열람이 없어도 여기서 채운다
+     * - 주 `finished == true`: 주간 완주, 사건 키 `weekStart`(토요일까지 5개, 일요일 완료 제외는 learning 판정)
+     * learning #484의 새 칸(`completedOnDay`·`perfectAttendance`·`finished`)이 없거나 boolean `true`가 아니면 그 적립은 건너뛴다.
+     * `weekStart`가 날짜가 아니면 새 사건 적립만 건너뛴다.
      */
     fun weeklyThemeViewed(studentId: UUID, body: ByteArray) {
-        val missions = guard("weekly theme response") {
-            json.readTree(body).path("days").filter { it.path("attemptStatus").asText() == "COMPLETED" }
-                .mapNotNull { runCatching { UUID.fromString(it.path("missionId").asText()) }.getOrNull() }
-        } ?: return
-        missions.distinct().forEach { missionCompleted(studentId, it) }
+        val root = guard("weekly theme response") { json.readTree(body) } ?: return
+        val days = root.path("days")
+        days.filter { it.path("attemptStatus").asText() == "COMPLETED" }
+            .mapNotNull { runCatching { UUID.fromString(it.path("missionId").asText()) }.getOrNull() }
+            .distinct().forEach { missionCompleted(studentId, it) }
+        val weekStart = runCatching { LocalDate.parse(root.path("weekStart").asText()) }.getOrNull()
+            ?.takeIf { it.dayOfWeek == DayOfWeek.MONDAY }?.toString() ?: return
+        days.filter { it.path("completedOnDay").isBoolean && it.path("completedOnDay").booleanValue() }
+            .mapNotNull { it.path("day").asText().takeIf { day -> day in WEEKDAYS } }
+            .distinct().forEach { earn(studentId, RewardEvent.THEME_ON_TIME, "$weekStart:$it") }
+        if (flag(root, "perfectAttendance")) earn(studentId, RewardEvent.THEME_COMPLETED, weekStart)
+        if (flag(root, "finished")) earn(studentId, RewardEvent.THEME_FINISHED, weekStart)
     }
+
+    private fun flag(node: JsonNode, name: String) = node.path(name).let { it.isBoolean && it.booleanValue() }
 
     private fun earn(studentId: UUID, event: RewardEvent, sourceKey: String): EarnResult? =
         guard("earn $event student=$studentId key=$sourceKey") { rewards.earn(studentId, event, sourceKey) }
@@ -60,5 +75,9 @@ class ParticipationRewardService(private val rewards: RewardService, private val
         null
     }
 
-    private companion object { val log = LoggerFactory.getLogger(ParticipationRewardService::class.java) }
+    private companion object {
+        val log = LoggerFactory.getLogger(ParticipationRewardService::class.java)
+        /** 테마 요일 문제(learning `ThemeDay`). 당일 풀이 사건 키의 `day` */
+        val WEEKDAYS = setOf("MON", "TUE", "WED", "THU", "FRI")
+    }
 }
