@@ -490,3 +490,28 @@ local kind(develop `b1562c2b`)에서 테스트 학부모·학생·관리자 계�
 | 알림 | 일일·주간 리포트 완료 알림이 학부모 알림 화면에 보이고 읽지 않음 개수로 표시 |
 
 - 되돌아보기 열람(+10)·주간 테마 완주(+30) 적립은 주말·5일 연속 학습이 필요해 미확인
+
+## 17. 리포트 설명 사용량 REPORT_EXPLANATION·설명 모델 등록 (#480, 2026-11-10)
+
+에픽 #473(설명 sLLM)의 core 몫. ai #477이 리포트 설명을 만들 때 발행할 사용량 호출 종류를 받고, 설명 모델을 기존 모델 레지스트리에 등록·승인할 수 있는지 확인했다.
+
+### API 변경
+
+| 경로 | 변경 |
+|---|---|
+| `GET /api/v1/admin/ai-usage?callType` | `callType`에 `REPORT_EXPLANATION` 추가(응답 항목도 같은 값) |
+| `llm.usage.recorded` v1 이벤트 | `callType` enum에 `REPORT_EXPLANATION` 추가 |
+
+### 결정과 근거
+
+- **이름 `REPORT_EXPLANATION`**: 같은 리포트 생성 흐름의 서술 호출이 `REPORT_NARRATIVE`라 같은 접두로 맞춤. 설명 항목 1개당 sLLM 1회라 답변 하나에 최대 2건이 쌓인다(잘한 점·함께 이야기해 볼 점, #477)
+- **목록 동기화**: 이벤트 스키마·core `CallType`·core OpenAPI·ERD Mermaid 주석·ai/scoring 발행 목록에 `THEME_IMAGE` 다음, `M2` 앞에 더하고 `V42__report_explanation_call_type.sql`이 `ck_llm_usage_call_type`을 넓힌다(V28·V40과 같은 방식, 기존 행 영향 없음). gitops 로컬 core 리비전 v42. 실제 발행은 ai #477이 한다
+- **비용**: 클러스터 안 CPU sLLM이라 토큰 단가를 설정하지 않는다. 토큰은 기록하되 `cost_usd`는 null이고 관리자 사용량에서 `unpricedCalls`로 센다(`THEME_IMAGE`와 같음). 노드 비용은 인프라 비용으로 따로 본다(#476)
+- **모델 레지스트리 코드 변경 없음**: 이름·scope가 자유 형식(`ModelVersion.validScopes`)이라 `MODEL` `report-explanation`, scope `explanation/grade-{학년}/{narrative|essay}`(M2 `judgment/grade-{학년}/{narrative|essay}`와 같은 모양)를 그대로 등록·승인·복귀할 수 있다. 활성 목록(`/internal/model-versions/active`)과 `model.version.activated` 이벤트로 ai가 활성 범위를 읽는 일은 ai #477 몫이다
+- **AI 사용량 화면**: web `callTypeLabel`에 "리포트 설명", MSW 사용량 필터 허용 목록에 값 추가
+- **마이그레이션 번호 충돌 주의**: 미병합 브랜치 `feature/theme-draft-core-proxy`(`THEME_VIDEO`)도 V42로 같은 CHECK·목록을 고친다. 나중에 머지하는 쪽이 번호를 V43으로 바꾸고 CHECK·목록에 두 값을 모두 넣어야 한다
+
+### 검증
+
+- `ModelVersionHttpTest`: `report-explanation` 모델을 설명 scope 2개로 등록·활성화하고 활성 목록에 이름·scope가 보임, `REPORT_EXPLANATION` 사용량 저장(V42 CHECK)·호출 종류별 조회·미산정
+- `scripts/tests/test_admin_mission_drafts_contract.py`(호출 종류 목록 7곳 대조)·`test_admin_operations_contract.py`(OpenAPI 지문)·`test_core_migration_versions.py`(로컬 리비전)
