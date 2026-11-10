@@ -476,8 +476,14 @@ def dialogue_lines(generated: dict, discovery: str, hook: str) -> list[dict[str,
 
 
 def is_target(theme: Theme, speaker: str | None) -> bool:
-    """화자가 찾는 대상인지(이름 일부만 써도 같은 대상: '강아지 보리'와 '보리')."""
+    """화자가 찾는 대상인지(이름 일부만 써도 같은 대상: '강아지 보리'와 '보리').
+
+    뭉치·등장인물은 대상이 아니다. 대상 이름에 주인 이름이 들어가면('지우의 책갈피') 주인 '지우'를
+    대상으로 잘못 보던 오탐을 막음(실측 repo-auto3-1, 2026-11-11: 대화가 TARGET_SPEAKS로 빠짐).
+    """
     s, target = compact(speaker), compact(theme.get("target"))
+    if s in {"뭉치"} | {compact(c.get("name")) for c in theme.get("characters") or []}:
+        return False
     return len(s) >= 2 and bool(target) and (s in target or target in s)
 
 

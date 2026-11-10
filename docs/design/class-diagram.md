@@ -2353,6 +2353,7 @@ classDiagram
     +retrieve()
     +plan_theme()
     +check_theme()
+    +fix_theme(칸 하나만 고치면 되는 사유뿐이면 그 칸만 고쳐 쓰기)
     +generate_mission(유형 5개 병렬, 요일마다 review_missions 포함)
     +missions_done()
     +generate_dialogue(요일 5개 병렬)
@@ -2398,7 +2399,7 @@ classDiagram
 
 - 구조(구현 #437 글 단계): `router.py`가 실행기(`ThemeDraftRunner`)를 고르고 `service.py`의 `ThemeDraftGraphRunner`가 그래프 실행·응답 조립, `graph.py`가 LangGraph `StateGraph`(요일별 노드는 `Send` 병렬), `nodes/`가 노드, `models.py`가 요청·응답과 LLM 구조화 출력, `checks.py`·`prompts.py`. `review_story`가 `PASS`면 `generate_images → generate_videos → generate_motion`(`nodes/images.py`·`video.py`·`motion.py`). 그림 클라이언트나 저장소가 없으면 세 단계를 건너뛰고 `warnings(IMAGE, ALL, 그림 설정 없음)`만 남김
 - 모델 설정: 테마 전용 `theme_generation_model`(기본 `gpt-6-luna`)·`theme_review_model`(기본 `gpt-6.1-terra`), 같은 OpenAI 키. 기본 `OPENAI_MODEL`과 따로 둔다(로컬·운영 `OPENAI_MODEL`이 검토 모델과 같은 `gpt-6.1-terra`라 그대로 쓰면 생성·검토가 같은 모델이 됨). 두 값이 같거나 키가 없으면 기동은 막지 않고 테마 경로만 `503 AI_UNAVAILABLE`(`retryable: false`, `NotReadyRunner`). 다른 경로는 그대로 동작
-- 시간·상한 기준안: LLM 호출 타임아웃 180초·재시도 0(재시도 대신 실패 사유 넣은 다시 생성), 단계마다 다시 생성 상한 2(첫 생성 포함 최대 3회), 글 검토 재검토 상한 2, 마감까지 180초 미만 남으면 다음 다시 생성을 시작하지 않음(`DEADLINE` 사유를 붙여 실패), 최대 출력 토큰 줄거리·검토 32000·대화 8000
+- 시간·상한 기준안: LLM 호출 타임아웃 300초(2026-11-11 180초에서 변경, 줄거리 1회 실측 130~170초)·재시도 0(재시도 대신 실패 사유 넣은 다시 생성), 단계마다 다시 생성 상한 2(첫 생성 포함 최대 3회), 줄거리 검사 사유가 모두 칸 하나만 고치면 되는 것(글자 수·증거 발견 줄 단서 값·후보·정답 이름, 글 칸만)이면 `fix_theme`이 그 칸만 고쳐 쓰고 다시 검사(상한 2, 넘으면 줄거리 다시 생성), 글 검토 재검토 상한 2, 마감까지 180초 미만 남으면 다음 다시 생성을 시작하지 않음(`DEADLINE` 사유를 붙여 실패), 최대 출력 토큰 줄거리·검토 32000·대화 8000
 - `ThemeDraftService.generate`: 요청 1번에 그래프를 한 번 끝까지 실행한다. 그래프 안에서 실패한 부분만 실패 사유를 넣어 상한(기준안 단계마다 2회)까지 다시 만들고(미션은 실패한 유형만, 대화는 실패한 요일만, 영상은 실패한 컷만), 마감까지 남은 시간이 부족하면 다음 재생성을 시작하지 않는다. 그래도 실패하면 `failure{stage, reasons}`를 담아 200으로 돌려준다(`THEME`·`MISSION`·`REVIEW`·`IMAGE`). 대화·영상·움직임은 끝내 실패하면 그 항목만 빼고 `warnings`에 남긴다. learning은 `failure`가 있으면 `CHECK_FAILED`로 두고 다음 시도에 `previousFailures`로 넘긴다. 마감은 기준안 15분(learning→ai 16분 안)
 - 요일 배치: 줄거리 단계에서 기준안(월 `ANALYZE`·화 `EVALUATE`·수 `CREATE`·목 `SOLVE`·금 `REFLECT`, 에픽 확인 필요)대로 정하고 응답 `day`로 돌려준다. learning이 다시 검사
 - 줄거리 구조화 출력의 내부 칸(응답 `theme`에서는 뺌, 계약 그대로): 후보 특징 표 `features`(특징 이름·고른 성취기준 코드 `standardCode`(장면에서 골랐으면 비움)·후보별 값, 그날 성취기준 내용에서 고르는 것을 기본으로 하고 안 되면 장면에서), 요일별 단서 조건 `condition`(`RULE`·`HINT`, 특징, 허용 값), 단서 증거 `evidence`(`TRACE`·`SIGHTING`·`RECORD`와 그때), 요일별 증거 발견 줄 `discovery`(미션 전 대화 마지막 줄, 40자)와 수사 연결 문장 `missionHook`(증거 발견 줄 다음 대화 맨 끝 줄, 뭉치, 40자), 찾는 대상 `target`, 시작·종료 콘티(`introCuts`·`outroCuts`, 컷마다 장면·동작·문구·뭉치 표정 `mungchiMood`). 후보 기준안 모든 학년 4개. 뭉치는 테마 역할로 사건을 해결하러 가는 주인공이고 찾는 대상의 주인은 등장인물 중 한 명(사용자 결정 2026-11-11)

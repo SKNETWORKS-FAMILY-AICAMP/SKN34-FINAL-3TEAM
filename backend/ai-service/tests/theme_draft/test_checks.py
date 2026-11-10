@@ -571,6 +571,25 @@ def test_check_dialogue_exact_codes(
     assert codes(bad) == sorted(expected)
 
 
+def test_owner_name_in_target_is_not_target_speaking() -> None:
+    """대상 이름에 주인 이름이 들어가도('지호의 강아지 보리') 등장인물 지호는 대상이 아님
+    (실측 repo-auto3-1 오탐). 이름 일부 '보리'는 여전히 대상."""
+    theme = theme_with(target="지호의 강아지 보리")
+    assert not checks.is_target(theme, "지호") and not checks.is_target(theme, "뭉치")
+    assert checks.is_target(theme, "보리")
+    s = get_settings()
+    bad = checks.check_dialogue(
+        theme,
+        "MON",
+        dlg(lines=say("같이 찾아 줘", "지호")),
+        draft_of("ANALYZE"),
+        3,
+        s.followup_example_overlap_chars,
+    )
+    assert "TARGET_SPEAKS" not in codes(bad)
+    assert checks.dialogue_speakers(theme, [{"speaker": "지호"}, {"speaker": "보리"}]) == ["지호"]
+
+
 def test_dialogue_lines_end_with_discovery_then_hook() -> None:
     """끝 두 줄은 그날 증거 발견 줄(화자 기본 뭉치)과 뭉치의 수사 연결 문장 그대로, 단서·앞 요일
     요약 줄은 없음."""
