@@ -475,3 +475,18 @@ WHERE id = :event_id AND quarantined_at IS NOT NULL AND published_at IS NULL;
 - `ModelVersionHttpTest`·`LlmUsageQueryTest`: `THEME_DRAFT`·`THEME_IMAGE` 저장(V40 CHECK)·호출 종류별 조회, 토큰 없는 이미지 호출 미산정
 - `scripts/tests/test_theme_drafts_contract.py`: core 컨트롤러 ↔ 공개 OpenAPI 경로·query·상태/출처 값·CONTENT·감사 동작·`kind` 값. learning OpenAPI에 `/admin/theme-drafts`가 올라오면 3자 대조가 자동으로 켜진다(지금은 건너뜀). `test_admin_mission_drafts_contract.py` 호출 종류 목록 대조
 - **남은 확인**: learning #438 머지 후 실제로 붙여 관리자 초안 요청 → 채택, 학생 월요일 INTRO 기록 확인. learning이 경로·query·응답 필드를 다르게 정하면 core와 `test_theme_drafts_contract.py`를 맞춘다
+
+## 16. 리포트 고정 대화·참여 포인트·커뮤니티 신고 실서버 확인 (#424, 2026-11-10)
+
+local kind(develop `b1562c2b`)에서 테스트 학부모·학생·관리자 계정으로 core 공개 API를 실제로 호출해 확인했다. 프리미엄은 토스 결제 대신 결제 완료와 같은 모양의 구독 행(로컬 프리미엄 상품, 한 달)을 kind DB에 넣어 줬다.
+
+| 흐름 | 결과 |
+|---|---|
+| 리포트 고정 대화 생성 | 학생이 학부모 원문 공개를 켜기 전에는 403 `STUDENT_RECORDS_PRIVATE`. 켠 뒤 201, `reportId`·`reportRevision 1`·그날 범위로 고정 |
+| 질문 | 날짜 표현 없는 질문은 학생 원문을 그대로 인용해 답변(`result`). "오늘 …"으로 물으면 같은 날짜인데도 `DIFFERENT_PERIOD` 되묻기 → #454 |
+| 사용량 | 질문마다 `payment_premium_usage` `CONVERSATION` 1건(되묻기 포함, #41 시도 기준) |
+| 참여 포인트 | 미션 완료 +10, 공유 +5, 반응 +1(잔액 15 → 16), 꾸미기 해금 차감·착용 저장. 착용 아이템이 캐릭터에 그려지지 않는 것은 웹 미구현 → #455 |
+| 커뮤니티 신고 처리 | 학생 신고 접수 → 관리자 목록 1건 → `IN_REVIEW` → `RESOLVED`(`reviewResult: VISIBLE`). `RECEIVED`에서 바로 `RESOLVED`는 409 `SUPPORT_STATE_CONFLICT` |
+| 알림 | 일일·주간 리포트 완료 알림이 학부모 알림 화면에 보이고 읽지 않음 개수로 표시 |
+
+- 되돌아보기 열람(+10)·주간 테마 완주(+30) 적립은 주말·5일 연속 학습이 필요해 미확인
