@@ -386,3 +386,5 @@ local kind(`sagomungchi-local`)에 develop `8eb4d081`(core V41, learning V13) �
 develop `2d9b8d68`을 병합했다. #422가 PIN 경로를 `StudentDeviceController`에서 `ChildManagementController`로 옮긴 충돌 한 곳은 새 컨트롤러 위치를 유지하고 추가 재인증 제거를 반영해 해결했다. PIN 서비스는 세 인자로 호출하며 중복 경로를 남기지 않는다. 승인된 PIN 계약 변경에 맞춰 기존 운영 API 보존 검사 스냅샷의 해당 경로 해시 한 개를 갱신했다.
 
 병합 후 web 타입·lint·단위 288건·운영 빌드·운영 목업 제외 검사, 운영 HTTP 39건과 모델 운영 화면 15건이 통과했다. core bootJar 빌드도 통과했다. 이전 PR #458은 병합되어 있으므로 후속 PR로 준비하며, 테마 grade 계약은 #438 → core 선행 반영 조건을 설명에 명시한다. 게시 요청 전까지 원격에 올리지 않는다.
+
+최종 확인: core AccountHttpTest·StudentDeviceAuthTest, 전체 계약 214건(기존 1건 건너뜀)이 통과했다. 신규 공개 API 경로는 없으며 PIN 재인증 정책 변경만 기존 계약에 반영한다. PR 설명 초안은 로컬 `.taste-skill/pr-preparation/pr-body.md`에 보관한다.
