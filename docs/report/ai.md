@@ -883,6 +883,19 @@ AWS 실제 역할 연결·정책 및 객체 HEAD 확인까지 완료했다. 다�
 
 남은 조치: #212 업로드 담당자와 전체 파일 SHA-256을 S3에 제공하는 업로드 방식을 맞추고, 서비스 재가동 시 실제 scoring Pod의 읽기·통신을 확인한다. 체크섬 검사 완화, 가중치 다운로드, 운영 객체 재업로드, 정책 변경, 서비스 재가동은 수행하지 않았다.
 
+### 12.8 kind 확인 (2026-11-10)
+
+local kind에 배포된 이미지(develop `ecc6b71d`)로 core → scoring → MinIO 경로를 다시 확인했다. 확인용 모델은 학습하지 않은 작은 BERT 형태(출력 9개, 회귀)다. scoring Pod 안에서 만들어 실제 로더로 불러지는 것까지 확인했다. 이 모델을 `sagomungchi-local-models`에 `ChecksumSHA256`을 붙여 올렸다.
+
+| 경우 | scoring 내부 API | 관리자 화면(registration·manifest JSON 가져오기 → 사전 검사) |
+| --- | --- | --- |
+| 정상 | PASS `FILES_AND_METADATA_VERIFIED` | 파일·형식 확인 완료 |
+| 해시 불일치(manifest의 가중치 sha256만 변경) | FAIL, `model.safetensors` `HASH_MISMATCH` | SHA-256 불일치 |
+| 파일 누락(가중치 없는 경로) | FAIL, `model.safetensors` `FILE_MISSING` | 파일 없음 |
+
+- 감사 `MODEL_PREFLIGHT`는 SUCCESS 1·FAILURE 2였고, 자동 등록된 MODEL 행은 0이다. 확인 후 MinIO 객체를 지웠다
+- AWS는 실행하지 않았다. 남은 S3 SHA-256 업로드 방식 결정과 실제 Pod 확인은 #493으로 분리했다
+
 ## 13. Pod별 모델 로딩 보고 (#370)
 
 ### 13.1 요약 (2026-11-09)
@@ -941,8 +954,8 @@ V37 migration → RabbitMQ definitions(새 core 큐·재시도·DLQ 바인딩) �
 - [x] Pod 축소·재시작 시 오래된 기록 처리 규칙
 
 #### 완료 조건
-- [ ] 레플리카 2개 이상인 local 환경에서 한 Pod 로딩 실패 시 화면에 구분되어 보임을 확인
-  - 두 scoring 프로세스와 실제 RabbitMQ·core·DB·HTTP 응답, 해당 응답을 사용한 브라우저 표시를 검증했다. 실제 Kubernetes Pod 2개와 브라우저 직접 연결은 미검증이므로 원문 조건은 미체크한다.
+- [x] 레플리카 2개 이상인 local 환경에서 한 Pod 로딩 실패 시 화면에 구분되어 보임을 확인
+  - 11/09에는 두 scoring 프로세스와 그 응답을 쓴 브라우저 표시까지만 검증했다. 11/10 kind의 실제 Pod 2개와 관리자 화면 직접 연결로 확인했다(13.9).
 - [x] 관련 테스트 통과
 
 #### 유지할 원칙
@@ -963,6 +976,17 @@ develop `ef18b2ac`(#391·#369 포함)을 병합했다. OpenAPI의 #368 사전 �
 기존 감사 정책을 유지하도록 `events.topic / model.loading.reported → core.event.audit` 명시적 바인딩을 추가했다. EventAuditConsumer는 기존처럼 이벤트 봉투 메타데이터만 기록하며 모델 상태 본문은 event_log에 저장하지 않는다. 큐 조회 테스트는 버전 관리되는 definitions의 전체 큐·DLQ 수와 실제 브로커 조회 결과를 비교하도록 바꿨다. 기존 allowlist 일치·누락 큐 오류 검증은 유지한다.
 
 수정 후 core 전체 test·bootJar 통과: 585개 중 실패 0개, 조건부 제외 3개. 저장소 계약 회귀 203개 통과.
+
+### 13.9 kind 실제 Pod 2개 확인 (2026-11-10)
+
+1. 12.8의 확인용 모델을 관리자 화면에서 등록·활성화했다. 범위는 실제 채점과 겹치지 않는 `kindcheck/issue-370`이다. 기존 scoring Pod가 `LOADED`를 보고했다
+2. MinIO의 `model.safetensors`를 같은 크기의 깨진 파일로 바꾸고 scoring을 레플리카 2로 늘렸다. 새 Pod는 `SafetensorError`로 실패하고 Ready가 되지 않았다
+3. `GET /api/v1/admin/model-loading` 응답은 `observedPods 2, loadedPods 1, failedPods [새 Pod]`였다. 관리자 화면 로딩 확인 단계에는 다음이 보였다
+   - "최근 보고 Pod 2개 중 로딩 완료 1개"
+   - 실패 Pod·오류 유형·"기존 모델 없음"
+   - 120초 넘은 이전 Pod의 "보고 만료"
+
+되돌림: 레플리카 1개로 복구했다. MinIO 객체를 지웠다. 확인용 `model_version` 행은 활성화 해제 API가 없어 DB에서 지웠고, 감사 이력은 남겼다. 확인 중 생긴 로딩 보고 행을 지웠다. scoring을 다시 시작해 빈 모델 목록 보고를 확인했다(Deployment에 `restartedAt` annotation 추가).
 
 ## 14. 리포트 설명 API (#477, 2026-11-10)
 
