@@ -328,6 +328,18 @@ class GeneratedDialogue(BaseModel):
     discoverySpeaker: str
 
 
+class GeneratedFix(BaseModel):
+    path: str  # 받은 칸 경로 그대로(예: TUE.clue, title, introCuts2.caption)
+    text: str
+
+
+class GeneratedFixes(BaseModel):
+    """줄거리 검사가 칸 하나만 고치면 되는 사유(길이·증거 발견 줄 단서 값·후보 이름)로만 실패했을
+    때 그 칸만 고쳐 쓴 결과(fix_theme). 다른 칸은 그대로 둔다."""
+
+    fixes: list[GeneratedFix]
+
+
 class StoryReviewItem(BaseModel):
     id: StoryReviewId
     verdict: ReviewVerdict

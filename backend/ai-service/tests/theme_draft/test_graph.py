@@ -20,6 +20,7 @@ from app.prompt_versions.registry import ActiveVersions
 from app.theme_draft.checks import DAY_KO, DAY_TYPE, DAYS
 from app.theme_draft.models import (
     GeneratedDialogue,
+    GeneratedFixes,
     GeneratedMissionReview,
     GeneratedStoryReview,
     GeneratedTheme,
@@ -31,6 +32,7 @@ from app.theme_draft.service import ThemeDraftGraphRunner
 from tests.theme_draft.fixtures import (
     DISCOVERY,
     HOOK,
+    day_with,
     dialogue,
     generated_theme,
     mission_draft,
@@ -78,16 +80,20 @@ class ScriptedLlm(LlmClient):
 
 
 def gen_llm(
-    theme: Handler | None = None, draft: Handler | None = None, dlg: Handler | None = None
+    theme: Handler | None = None,
+    draft: Handler | None = None,
+    dlg: Handler | None = None,
+    fix: Handler | None = None,
 ) -> ScriptedLlm:
-    return ScriptedLlm(
-        "gen-model",
-        {
-            GeneratedTheme: theme or (lambda n, d: generated_theme()),
-            GeneratedDraft: draft or (lambda n, d: mission_draft(DAY_TYPE[d])),
-            GeneratedDialogue: dlg or (lambda n, d: dialogue()),
-        },
-    )
+    """fix가 없으면 칸 고쳐 쓰기 호출은 처리기가 없어 시험이 실패한다(예상 밖 호출을 드러냄)."""
+    handlers: dict[type, Handler] = {
+        GeneratedTheme: theme or (lambda n, d: generated_theme()),
+        GeneratedDraft: draft or (lambda n, d: mission_draft(DAY_TYPE[d])),
+        GeneratedDialogue: dlg or (lambda n, d: dialogue()),
+    }
+    if fix:
+        handlers[GeneratedFixes] = fix
+    return ScriptedLlm("gen-model", handlers)
 
 
 def review_llm(story: Handler | None = None, mission: Handler | None = None) -> ScriptedLlm:
@@ -111,7 +117,13 @@ def run(
     return response.model_copy(update={"warnings": skipped})
 
 
-BROKEN_THEME = theme_with(title="텃밭의 비밀")  # ANSWER_LEAK
+# ANSWER_LEAK(등장인물 이름에 정답): 칸 하나 고쳐 쓰기로 못 고쳐 줄거리를 다시 만듦
+BROKEN_THEME = theme_with(characters=[{"name": "텃밭지기", "look": "노란 우비를 입은 아이"}])
+LONG_HOOK = day_with(valid_theme(), "WED", missionHook="가" * 45)  # LENGTH WED.missionHook
+
+
+def fixes(*pairs: tuple[str, str]) -> GeneratedFixes:
+    return GeneratedFixes.model_validate({"fixes": [{"path": p, "text": t} for p, t in pairs]})
 
 
 def test_happy_path_assembles_contract_response() -> None:
@@ -199,6 +211,49 @@ def test_theme_check_failure_regenerates_with_reason() -> None:
     response = run(gen, review_llm())
     assert response.failure is None and gen.count("GeneratedTheme") == 2
     assert "ANSWER_LEAK" in gen.users("GeneratedTheme")[1]
+
+
+def test_fixable_failure_rewrites_only_those_fields() -> None:
+    """칸 하나만 고치면 되는 사유뿐이면 줄거리 전체 대신 그 칸만 고쳐 쓰고 다시 검사(받지 않은
+    경로는 무시)."""
+    gen = gen_llm(
+        theme=lambda n, d: generated_theme(LONG_HOOK),
+        fix=lambda n, d: fixes(("WED.missionHook", HOOK["WED"]), ("title", "바뀐 제목")),
+    )
+    response = run(gen, review_llm())
+    assert response.failure is None
+    assert gen.count("GeneratedTheme") == 1 and gen.count("GeneratedFixes") == 1
+    user = gen.users("GeneratedFixes")[0]
+    assert (
+        "path: WED.missionHook" in user
+        and "지금 글(45자)" in user
+        and "상한: 공백 포함 40자" in user
+    )
+    assert "후보 이름" in user  # 칸 종류별 지킬 점
+    assert response.theme is not None and response.theme.title == valid_theme()["title"]
+    wed = next(x for x in response.dialogues if x.day == "WED")
+    assert wed.lines[-1].text == HOOK["WED"]
+
+
+def test_fix_cap_then_regenerates_plan() -> None:
+    """칸 고쳐 쓰기가 상한까지 실패하면 그 사유를 넣어 줄거리를 다시 만듦(횟수는 따로 셈)."""
+    gen = gen_llm(
+        theme=lambda n, d: generated_theme(LONG_HOOK if n == 1 else None),
+        fix=lambda n, d: fixes(("WED.missionHook", "나" * 44)),
+    )
+    response = run(gen, review_llm())
+    assert response.failure is None
+    assert gen.count("GeneratedFixes") == get_settings().theme_max_text_fix
+    assert gen.count("GeneratedTheme") == 2
+    assert "LENGTH WED.missionHook 44자 > 40" in gen.users("GeneratedTheme")[1]
+
+
+def test_mixed_failure_regenerates_plan_without_fix() -> None:
+    """칸 하나로 못 고치는 사유가 섞이면 칸 고쳐 쓰기 없이 줄거리를 다시 만듦."""
+    mixed = day_with(BROKEN_THEME, "WED", missionHook="가" * 45)
+    gen = gen_llm(theme=lambda n, d: generated_theme(mixed if n == 1 else None))
+    response = run(gen, review_llm())
+    assert response.failure is None and gen.count("GeneratedTheme") == 2
 
 
 def test_theme_check_keeps_failing_until_cap() -> None:

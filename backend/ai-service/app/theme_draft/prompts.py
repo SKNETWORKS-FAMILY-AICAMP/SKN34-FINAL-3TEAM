@@ -20,6 +20,10 @@ from app.theme_draft.checks import (
     DIALOGUE_LINES,
     HINTS,
     Theme,
+    feature_table,
+    text_at,
+    text_max,
+    theme_day,
 )
 from app.theme_draft.models import ThemeDraftRequest
 
@@ -195,6 +199,68 @@ def plan_user(request: ThemeDraftRequest, feedback: list[tuple[str, list[str]]])
     if feedback:
         lines += ["", "이전 테마가 검사를 통과하지 못했다. 아래를 고쳐서 새로 만든다:"]
         lines += [f"- {stage}: {reason}" for stage, reasons in feedback for reason in reasons]
+    return "\n".join(lines)
+
+
+FIX_SYSTEM = (
+    "너는 초등학생용 주간 테마 글에서 검사에 걸린 칸 몇 개만 고쳐 쓰는 편집자다.\n"
+    "- 받은 칸만 다시 쓴다. 다른 칸과 이야기 속 사실은 바꾸지 않는다.\n"
+    "- 칸마다 적힌 검사 사유와 지킬 점을 고친다. 뜻은 그대로 두고 말을 줄이거나 바꾼다.\n"
+    "- 글자 수는 공백·문장부호를 포함해 센다. 상한보다 3~5자 짧게 쓴다.\n"
+    "- 출력: fixes에 받은 칸마다 {path, text} 하나씩. path는 받은 그대로 쓴다."
+)
+
+
+def fix_rules(theme: Theme, path: str) -> list[str]:
+    """칸 종류별로 줄거리 프롬프트와 같은 지킬 점(검사를 다시 통과하도록)."""
+    cands = theme.get("candidates") or []
+    names = f"후보 이름({', '.join(cands)})은 쓰지 않는다."
+    head, _, key = path.partition(".")
+    if key in ("clue", "discovery", "missionHook"):
+        day = theme_day(theme, head)
+        cond = day.get("condition") or {}
+        allowed = cond.get("allowed") or []
+        if key == "clue":
+            values = (feature_table(theme)[0].get(cond.get("feature") or "") or {}).values()
+            others = sorted({v for v in values if v not in allowed})
+            return [
+                f"특징 '{cond.get('feature')}'의 값 낱말 {allowed}를 모두 그대로 쓴다.",
+                f"허용 밖 값 낱말 {others}는 쓰지 않는다." if others else "",
+                "말한 사람을 붙이지 않고, 새 사실을 더하지 않는다.",
+                names,
+            ]
+        if key == "discovery":
+            kind = (day.get("evidence") or {}).get("kind")
+            return [
+                f"뭉치가 그날 증거({kind})를 찾았다는 말만 한다.",
+                f"단서 결론 낱말 {allowed}은 쓰지 않는다.",
+                names,
+            ]
+        return [
+            "찾은 증거를 풀려면 그날 배울 것이 필요하다는 이유만 말하고 도움을 청한다.",
+            "증거 자체를 살피라고 하지 않는다.",
+            names,
+        ]
+    if key == "caption":
+        return ["영상 위에 띄우는 짧은 문구. 정답 이름·정답 장소를 쓰지 않는다."]
+    return ["정답 이름은 종료 이야기(outro)에만 쓴다." if path != "outro" else ""]
+
+
+def fix_user(theme: Theme, targets: dict[str, list[str]]) -> str:
+    lines = [
+        f"테마: {theme.get('title')} / 찾는 대상: {theme.get('target')}",
+        "",
+        "고칠 칸:",
+    ]
+    for path, reasons in targets.items():
+        text = text_at(theme, path)
+        lines += [
+            f"- path: {path}",
+            f"  지금 글({len(text)}자): {text}",
+            f"  상한: 공백 포함 {text_max(path)}자",
+            f"  검사 사유: {' / '.join(reasons)}",
+            *[f"  지킬 점: {r}" for r in fix_rules(theme, path) if r],
+        ]
     return "\n".join(lines)
 
 

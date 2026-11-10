@@ -302,6 +302,45 @@ def test_check_theme_exact_codes(name: str, build: Callable[[], dict], expected:
     assert codes(checks.check_theme(build(), GRADE, CODES)) == sorted(expected)
 
 
+@pytest.mark.parametrize(
+    ("bad", "expected"),
+    [
+        (
+            [
+                "LENGTH TUE.clue 44자 > 40",
+                "LENGTH WED.missionHook 47자 > 40",
+                "LENGTH title 25자 > 20",
+            ],
+            ["TUE.clue", "WED.missionHook", "title"],
+        ),
+        (["LENGTH outroCuts3.caption 33자 > 30"], ["outroCuts3.caption"]),
+        (["CLUE_EARLY TUE discovery에 그날 단서 결론(허용 값 ['흙'])"], ["TUE.discovery"]),
+        (["ANSWER_LEAK MON.missionHook에 후보 이름 ['창고']"], ["MON.missionHook"]),
+        (["ANSWER_LEAK intro에 정답 이름"], ["intro"]),
+        # 이야기 틀·정답 논리·표에 닿는 사유가 하나라도 있으면 칸 고쳐 쓰기 없음
+        (["LENGTH TUE.clue 44자 > 40", "LOGIC 정답 텃밭이 MON 단서로 빠짐"], []),
+        (["ANSWER_LEAK characters.텃밭지기에 정답 이름"], []),
+        (["ANSWER_LEAK introCuts1.scene에 정답 이름"], []),
+        (["CLUE_TEXT TUE 단서 문장에 허용 값 낱말 없음"], []),
+    ],
+)
+def test_fix_targets_only_single_field_reasons(bad: list[str], expected: list[str]) -> None:
+    targets = checks.fix_targets(bad)
+    assert list(targets) == expected
+    assert all(r in sum(targets.values(), []) for r in bad) or not targets
+
+
+def test_text_at_and_set_text_at_paths() -> None:
+    theme = valid_theme()
+    checks.set_text_at(theme, "WED.missionHook", "새 문장")
+    checks.set_text_at(theme, "outroCuts2.caption", "새 문구")
+    checks.set_text_at(theme, "title", "새 제목")
+    assert checks.theme_day(theme, "WED")["missionHook"] == "새 문장"
+    assert theme["outroCuts"][1]["caption"] == "새 문구" and theme["title"] == "새 제목"
+    assert checks.text_at(theme, "outroCuts2.caption") == "새 문구"
+    assert (checks.text_max("WED.clue"), checks.text_max("introCuts1.caption")) == (40, 30)
+
+
 def test_llm_output_has_no_rules_out() -> None:
     """rulesOut은 표·조건으로 정해지는 값이라 LLM 출력 형식에 없다(코드가 채움)."""
     assert "rulesOut" not in GeneratedDay.model_fields

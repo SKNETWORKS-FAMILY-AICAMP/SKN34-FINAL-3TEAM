@@ -1,7 +1,8 @@
 """주간 테마 초안 LangGraph (class-diagram 5.5, #437).
 
 START → retrieve(#470 자리) → plan_theme → check_theme
-  check_theme: 실패·상한 전 → plan_theme / 끝내 실패 → END(failure THEME)
+  check_theme: 칸 하나만 고치면 되는 사유뿐 → fix_theme → check_theme
+               / 실패·상한 전 → plan_theme / 끝내 실패 → END(failure THEME)
                / 통과 → generate_mission ×5 (Send, 요일마다 생성·검사·미션 검토)
 → missions_done: 실패 요일 → END(failure MISSION) / 통과 → generate_dialogue ×5 (Send)
 → review_story: 끝내 FAIL → END / 형식 오류 → review_story
@@ -22,7 +23,7 @@ from app.theme_draft.nodes.dialogue import generate_dialogue
 from app.theme_draft.nodes.images import generate_images
 from app.theme_draft.nodes.mission import generate_mission
 from app.theme_draft.nodes.motion import generate_motion
-from app.theme_draft.nodes.plan import check_theme_node, plan_theme, retrieve
+from app.theme_draft.nodes.plan import check_theme_node, fix_theme, plan_theme, retrieve
 from app.theme_draft.nodes.review import review_story
 from app.theme_draft.nodes.video import generate_videos
 
@@ -42,6 +43,8 @@ def mission_sends(state: ThemeState) -> list[Send]:
 def after_check(state: ThemeState) -> list[Send] | str:
     if state.get("failure"):
         return END
+    if state.get("fix_targets"):
+        return "fix_theme"
     if state.get("plan_bad"):
         return "plan_theme"
     return mission_sends(state)
@@ -91,6 +94,7 @@ def build_graph() -> CompiledStateGraph:
     graph.add_node("retrieve", retrieve)
     graph.add_node("plan_theme", plan_theme)
     graph.add_node("check_theme", check_theme_node)
+    graph.add_node("fix_theme", fix_theme)
     graph.add_node("generate_mission", generate_mission)
     graph.add_node("missions_done", missions_done)
     graph.add_node("generate_dialogue", generate_dialogue)
@@ -102,7 +106,10 @@ def build_graph() -> CompiledStateGraph:
     graph.add_edge(START, "retrieve")
     graph.add_edge("retrieve", "plan_theme")
     graph.add_edge("plan_theme", "check_theme")
-    graph.add_conditional_edges("check_theme", after_check, ["plan_theme", "generate_mission", END])
+    graph.add_conditional_edges(
+        "check_theme", after_check, ["fix_theme", "plan_theme", "generate_mission", END]
+    )
+    graph.add_edge("fix_theme", "check_theme")
     graph.add_edge("generate_mission", "missions_done")
     graph.add_conditional_edges("missions_done", after_missions, ["generate_dialogue", END])
     graph.add_edge("generate_dialogue", "review_story")

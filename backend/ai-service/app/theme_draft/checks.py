@@ -131,6 +131,57 @@ def theme_day(theme: Theme, day: str) -> dict:
     return next(d for d in theme["days"] if d["day"] == day)
 
 
+# 칸 하나만 고쳐 쓰면 되는 줄거리 검사 사유(fix_theme). 이야기 틀·정답 논리·표에 닿지 않는 글 칸만
+FIX_PATH = re.compile(
+    r"^(?:title|bigQuestion|intro|outro"
+    r"|(?:MON|TUE|WED|THU|FRI)\.(?:place|sceneNote|clue|discovery|missionHook)"
+    r"|(?:introCuts|outroCuts)[1-4]\.caption)$"
+)
+FIX_REASON = (
+    re.compile(r"^LENGTH (\S+) \d+자 > \d+$"),
+    re.compile(r"^CLUE_EARLY (MON|TUE|WED|THU|FRI) (discovery)에 "),
+    re.compile(r"^ANSWER_LEAK (\S+?)에 "),
+)
+
+
+def fix_targets(bad: list[str]) -> dict[str, list[str]]:
+    """사유가 모두 칸 하나만 고치면 되는 것이면 {칸 경로: [사유]}, 하나라도 아니면 빈 사전."""
+    targets: dict[str, list[str]] = {}
+    for reason in bad:
+        path = None
+        for pattern in FIX_REASON:
+            if m := pattern.match(reason):
+                path = ".".join(m.groups())
+                break
+        if path is None or not FIX_PATH.match(path):
+            return {}
+        targets.setdefault(path, []).append(reason)
+    return targets
+
+
+def _cut_or_day(theme: Theme, path: str) -> tuple[dict, str]:
+    head, _, key = path.partition(".")
+    if not key:
+        return theme, head
+    if m := re.fullmatch(r"(introCuts|outroCuts)(\d)", head):
+        return theme[m.group(1)][int(m.group(2)) - 1], key
+    return theme_day(theme, head), key
+
+
+def text_at(theme: Theme, path: str) -> str:
+    where, key = _cut_or_day(theme, path)
+    return str(where.get(key) or "")
+
+
+def set_text_at(theme: Theme, path: str, text: str) -> None:
+    where, key = _cut_or_day(theme, path)
+    where[key] = text
+
+
+def text_max(path: str) -> int:
+    return CAPTION_MAX if path.endswith(".caption") else TEXT_MAX[path.rpartition(".")[2]]
+
+
 def feature_table(theme: Theme) -> tuple[dict[str, dict[str, str]], list[str]]:
     """{특징 이름: {후보: 값}}과 표 형식 문제."""
     cands = theme.get("candidates") or []

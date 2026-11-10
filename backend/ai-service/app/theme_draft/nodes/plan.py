@@ -1,12 +1,17 @@
 """retrieve(자리) → plan_theme(줄거리 생성, rulesOut은 코드가 표에서 채움) → check_theme(코드 검사).
 
-실패하면 사유를 넣어 다시 만든다(상한·마감).
+실패하면 사유를 넣어 다시 만든다(상한·마감). 사유가 모두 칸 하나만 고치면 되는 것(글자 수·증거
+발견 줄의 단서 값·후보 이름)이면 줄거리 전체 대신 fix_theme이 그 칸만 고쳐 쓰고 다시 검사한다
+(상한 theme_max_text_fix, 넘으면 줄거리 다시 생성). 줄거리를 새로 만들면 다른 칸이 새로 틀리고
+한 번에 130~170초가 걸려서(실측 2026-11-11 repo-*-4).
 """
+
+import copy
 
 from langgraph.runtime import Runtime
 
-from app.theme_draft.checks import DAYS, check_theme, fill_rules_out
-from app.theme_draft.models import GeneratedTheme
+from app.theme_draft.checks import DAYS, check_theme, fill_rules_out, fix_targets, set_text_at
+from app.theme_draft.models import GeneratedFixes, GeneratedTheme
 from app.theme_draft.nodes import DEADLINE_REASON, THEME_CALL_TYPE, ThemeContext, ThemeState
 
 
@@ -34,6 +39,35 @@ async def plan_theme(state: ThemeState, runtime: Runtime[ThemeContext]) -> Theme
     return {
         "theme": fill_rules_out(generated.data.model_dump()),
         "plan_attempts": state.get("plan_attempts", 0) + 1,
+        "fix_attempts": 0,
+    }
+
+
+async def fix_theme(state: ThemeState, runtime: Runtime[ThemeContext]) -> ThemeState:
+    """검사에 걸린 칸만 고쳐 쓴다. 받은 경로가 아닌 칸은 무시하고 결과는 check_theme이 다시
+    본다."""
+    ctx = runtime.context
+    targets = state.get("fix_targets") or {}
+    theme = copy.deepcopy(state["theme"])
+    assert theme is not None
+    generated = await ctx.llm.generate(
+        system=ctx.prompt.body.FIX_SYSTEM,
+        user=ctx.prompt.body.fix_user(theme, targets),
+        output=GeneratedFixes,
+        call_type=THEME_CALL_TYPE,
+        prompt_version=ctx.prompt.version,
+        max_tokens=ctx.settings.theme_dialogue_max_tokens,
+        deadline=ctx.deadline,
+        timeout=ctx.settings.theme_llm_timeout,
+        max_retries=ctx.settings.theme_llm_retries,
+    )
+    for fix in generated.data.fixes:
+        if fix.path in targets:
+            set_text_at(theme, fix.path, fix.text.strip())
+    return {
+        "theme": theme,
+        "fix_attempts": state.get("fix_attempts", 0) + 1,
+        "fix_targets": {},
     }
 
 
@@ -44,6 +78,13 @@ async def check_theme_node(state: ThemeState, runtime: Runtime[ThemeContext]) ->
     if not bad:
         # 줄거리가 새로 정해지면 미션·대화는 다섯 요일 모두 새로
         return {"plan_bad": [], "days_todo": list(DAYS), "mission_seed": {}}
+    targets = fix_targets(bad)
+    if (
+        targets
+        and state.get("fix_attempts", 0) < ctx.settings.theme_max_text_fix
+        and ctx.can_regenerate()
+    ):
+        return {"plan_bad": bad, "fix_targets": targets}
     out: ThemeState = {
         "plan_bad": bad,
         "plan_feedback": [*(state.get("plan_feedback") or []), ("THEME", bad)],

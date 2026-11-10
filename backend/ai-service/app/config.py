@@ -85,9 +85,14 @@ class Settings(BaseSettings):
     # 텍스트 시험은 생성 luna·검토 terra로 검증. 같은 OpenAI 키를 쓰고, 둘이 같으면 테마 경로만 503
     theme_generation_model: str = "gpt-6-luna"
     theme_review_model: str = "gpt-6.1-terra"
-    theme_llm_timeout: float = 180.0  # 호출 1번 상한(기준안). 시험 최장 약 75초
+    # 호출 1번 상한(기준안). 줄거리 1회 실측 130~170초(2026-11-11, 출력 약 1만 토큰)에 180초로는
+    # 시간 초과가 나서(repo-fair4-4) 300초로 올림. 전체는 theme_draft_deadline이 막음
+    theme_llm_timeout: float = 300.0
     theme_llm_retries: int = 0  # 재시도 대신 그래프의 실패 사유 넣은 다시 생성
     theme_max_regen: int = 2  # 단계마다 다시 생성 상한(기준안, 첫 생성 포함 최대 3회)
+    # 줄거리 검사가 칸 하나만 고치면 되는 사유로만 실패하면 줄거리 전체 대신 그 칸만 고쳐 쓰는
+    # 상한(기준안). 줄거리 다시 생성 횟수와 따로 셈
+    theme_max_text_fix: int = 2
     theme_review_max_rerun: int = 2  # 글 검토 뒤 다시 만들고 재검토하는 상한(기준안)
     # 마감까지 이보다 적게 남으면 다시 생성을 시작하지 않음(기준안)
     theme_min_regen_seconds: float = 180.0

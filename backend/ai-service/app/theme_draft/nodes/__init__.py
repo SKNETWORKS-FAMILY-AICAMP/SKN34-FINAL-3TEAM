@@ -41,6 +41,8 @@ class ThemeState(TypedDict, total=False):
     plan_feedback: list[tuple[str, list[str]]]  # 줄거리 다시 만들 때 넣는 (단계, 사유)
     plan_attempts: int
     plan_bad: list[str]
+    fix_targets: dict[str, list[str]]  # fix_theme이 고칠 칸 경로 → 사유(비면 고칠 칸 없음)
+    fix_attempts: int  # 지금 줄거리에서 칸 고쳐 쓰기 횟수(줄거리를 새로 만들면 0)
     theme: dict[str, Any] | None  # GeneratedTheme.model_dump()
     days_todo: list[str]  # 이번에 미션·대화를 (다시) 만들 요일
     request_seed: dict[str, list[str]]  # 요청 previousFailures의 MISSION 사유(요일별, 매번 넣음)
