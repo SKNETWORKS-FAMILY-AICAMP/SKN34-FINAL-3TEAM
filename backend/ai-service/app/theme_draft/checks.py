@@ -46,7 +46,7 @@ TEXT_MAX = {
     "missionHook": 60,
 }
 DAY_TEXTS = ("place", "sceneNote", "clue", "discovery", "missionHook")
-CUTS = 4  # 시작·종료 영상 콘티 컷 수(6초 × 4 = 24초, 사용자 결정 2026-11-11)
+CUTS = 4  # 시작·종료 영상 콘티 컷 수(4·6·8·6초, theme_video_cut_seconds, 사용자 결정 2026-11-11)
 CAPTION_MAX = 30  # 컷 문구(움직임 captions로 웹이 띄움) 글자 상한(기준안)
 MUNGCHI_MOODS = ("none", "smile", "surprised", "determined")
 # 시작 콘티 1 평소 모습·2 사건에는 뭉치가 없고 3 출동·4 현장 도착에는 나옴(사용자 결정 2026-11-11)
@@ -523,3 +523,104 @@ def public_theme(theme: Theme) -> dict:
         **{k: theme[k] for k in keep},
         "days": [{k: d[k] for k in day_keep} for d in theme["days"]],
     }
+
+
+# --- 그림·영상·움직임 (#437 그림 단계) ------------------------------------------------
+IMAGE_REVIEW_IDS = ("MUNGCHI", "ANSWER_HINT", "TEXT", "SAFETY", "SCENE_FIT")
+MISSION_IMAGE_REVIEW_IDS = (*IMAGE_REVIEW_IDS, "MISSION_FIT")
+VIDEO_REVIEW_IDS = ("MORPH", "ANSWER_HINT", "TEXT", "SAFETY")
+
+# 움직임 상한(기준안, ai.md 15.1 움직임 행)
+ZOOM = (1.0, 1.4)
+CAMERA_SECONDS = (8.0, 20.0)
+TRANSITION_SECONDS = (0.3, 1.2)
+EFFECT_LAYERS = 2
+EFFECT_COUNT = (1, 20)
+EFFECT_SIZE = (1.0, 6.0)
+EFFECT_SPEED = (2.0, 20.0)
+EFFECT_OPACITY = (0.2, 0.8)
+SPEAKER_ZOOM = 1.2  # 화자 초점 확대(새로 정한 값, 생성 모델은 위치만 정함)
+HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+def dialogue_speakers(theme: Theme, lines: list[dict] | None) -> list[str]:
+    """움직임 speakers에 넣을 그 요일 대화 화자(나온 순서, 찾는 대상 제외)."""
+    names = [x.get("speaker") or "" for x in lines or []]
+    return [s for s in dict.fromkeys(names) if s.strip() and not is_target(theme, s)]
+
+
+def motion(generated: dict, speakers: list[str], captions: list[dict]) -> tuple[dict, list[str]]:
+    """생성 모델의 움직임 값 → ThemeMotion 모양과 맞춘 항목 사유(warnings MOTION).
+
+    상한 밖 숫자는 상한으로 맞추고, 색이 #RRGGBB가 아니면 그 효과를 빼고, 화자가 아닌 이름은
+    뺀다. 다시 생성하지 않는다(정해진 처리, ai.md 15.1).
+    """
+    notes: list[str] = []
+
+    def fit(name: str, value: float, bounds: tuple[float, float]) -> float:
+        lo, hi = bounds
+        out = min(max(value, lo), hi)
+        if out != value:
+            notes.append(f"MOTION_RANGE {name} {value}→{out}")
+        return out
+
+    def point(name: str, p: dict, zoom: float | None = None) -> dict:
+        if zoom is None:
+            zoom = fit(f"{name}.zoom", float(p.get("zoom", 1)), ZOOM)
+        return {
+            "x": fit(f"{name}.x", float(p.get("x", 50)), (0.0, 100.0)),
+            "y": fit(f"{name}.y", float(p.get("y", 50)), (0.0, 100.0)),
+            "zoom": zoom,
+        }
+
+    out_speakers: dict[str, dict] = {}
+    for s in generated.get("speakers") or []:
+        name = s.get("name") or ""
+        if name not in speakers:
+            notes.append(f"MOTION_SPEAKER 대화 화자가 아닌 {name!r}를 뺌")
+            continue
+        out_speakers[name] = point(f"speakers.{name}", s, SPEAKER_ZOOM)
+    effects = []
+    for i, e in enumerate(generated.get("effects") or []):
+        if i >= EFFECT_LAYERS:
+            notes.append(f"MOTION_EFFECT 효과는 {EFFECT_LAYERS}층까지(나머지 뺌)")
+            break
+        if not HEX_COLOR.match(str(e.get("color") or "")):
+            notes.append(f"MOTION_EFFECT effects{i}.color {e.get('color')!r}가 #RRGGBB가 아니라 뺌")
+            continue
+        direction = int(e.get("direction", 0))
+        if not 0 <= direction <= 359:
+            notes.append(f"MOTION_RANGE effects{i}.direction {direction}→{direction % 360}")
+            direction %= 360
+        effects.append(
+            {
+                "shape": e["shape"],
+                "color": e["color"],
+                "count": int(fit(f"effects{i}.count", int(e.get("count", 1)), EFFECT_COUNT)),
+                "size": fit(f"effects{i}.size", float(e.get("size", 1)), EFFECT_SIZE),
+                "direction": direction,
+                "speed": fit(f"effects{i}.speed", float(e.get("speed", 2)), EFFECT_SPEED),
+                "opacity": fit(f"effects{i}.opacity", float(e.get("opacity", 0.5)), EFFECT_OPACITY),
+            }
+        )
+    result = {
+        "version": 1,
+        "transition": {
+            "kind": generated["transition"],
+            "seconds": fit(
+                "transition.seconds", float(generated["transitionSeconds"]), TRANSITION_SECONDS
+            ),
+        },
+        "camera": {
+            "from": point("camera.from", generated["cameraFrom"]),
+            "to": point("camera.to", generated["cameraTo"]),
+            "seconds": fit("camera.seconds", float(generated["cameraSeconds"]), CAMERA_SECONDS),
+        },
+        "speakers": out_speakers,
+        "effects": effects,
+        "captions": [
+            {"start": c["start"], "end": c["end"], "text": c["text"][:CAPTION_MAX]}
+            for c in captions
+        ],
+    }
+    return result, notes

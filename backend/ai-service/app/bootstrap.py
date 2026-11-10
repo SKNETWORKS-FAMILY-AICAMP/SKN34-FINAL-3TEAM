@@ -16,6 +16,7 @@ from app.errors import register_error_handlers
 from app.followup.router import router as followup_router
 from app.health.router import router as health_router
 from app.judgment.router import router as judgment_router
+from app.llm.media import create_media_clients
 from app.llm.providers import create_explanation_llm, create_llm, create_theme_llms
 from app.messaging.connection import AmqpConnection
 from app.messaging.consumer import ModelVersionConsumer
@@ -29,6 +30,7 @@ from app.report_explanation.router import router as report_explanation_router
 from app.report_narrative.router import router as report_narrative_router
 from app.security import InternalAuthMiddleware
 from app.theme_draft.router import router as theme_draft_router
+from app.theme_draft.storage import create_storage
 
 
 @asynccontextmanager
@@ -67,6 +69,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.theme_llm, app.state.theme_review_llm = create_theme_llms(settings, usage_recorder)
     app.state.theme_llm.langfuse = langfuse
     app.state.theme_review_llm.langfuse = langfuse
+    # 테마 그림·영상·S3 (#437). 버킷이 비면 None이라 그림·영상·움직임을 건너뛰고 경고만
+    app.state.theme_image, app.state.theme_video = create_media_clients(settings, usage_recorder)
+    app.state.theme_storage = create_storage(settings)
 
     async def rabbitmq_ready() -> bool:
         return amqp.is_connected

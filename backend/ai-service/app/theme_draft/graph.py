@@ -1,13 +1,14 @@
-"""주간 테마 초안 LangGraph (class-diagram 5.5, #437). 지금은 글 단계까지.
+"""주간 테마 초안 LangGraph (class-diagram 5.5, #437).
 
 START → retrieve(#470 자리) → plan_theme → check_theme
   check_theme: 실패·상한 전 → plan_theme / 끝내 실패 → END(failure THEME)
                / 통과 → generate_mission ×5 (Send, 요일마다 생성·검사·미션 검토)
 → missions_done: 실패 요일 → END(failure MISSION) / 통과 → generate_dialogue ×5 (Send)
-→ review_story: PASS·끝내 FAIL → END / 형식 오류 → review_story
+→ review_story: 끝내 FAIL → END / 형식 오류 → review_story
                 / 이야기 틀·단서 → plan_theme / 문제·낱말 → generate_mission(그 요일)
-그림·영상·움직임(generate_images → review_images → generate_videos → review_videos
-→ generate_motion)은 다음 단계에서 review_story 뒤에 붙인다.
+                / PASS → generate_images
+→ generate_images(그림마다 검토 포함): 설정 없음·미션 그림 끝내 실패 → END / 통과 → generate_videos
+→ generate_videos(컷마다 검토 포함, 꺼져 있으면 경고만) → generate_motion → END
 """
 
 from functools import lru_cache
@@ -18,9 +19,12 @@ from langgraph.types import Send
 
 from app.theme_draft.nodes import ThemeContext, ThemeState
 from app.theme_draft.nodes.dialogue import generate_dialogue
+from app.theme_draft.nodes.images import generate_images
 from app.theme_draft.nodes.mission import generate_mission
+from app.theme_draft.nodes.motion import generate_motion
 from app.theme_draft.nodes.plan import check_theme_node, plan_theme, retrieve
 from app.theme_draft.nodes.review import review_story
+from app.theme_draft.nodes.video import generate_videos
 
 
 def mission_sends(state: ThemeState) -> list[Send]:
@@ -69,7 +73,16 @@ def after_review(state: ThemeState) -> list[Send] | str:
         return "plan_theme"
     if route == "DAYS":
         return mission_sends(state)
-    return END  # PASS·FAIL
+    if route == "PASS":
+        return "generate_images"
+    return END  # FAIL
+
+
+def after_images(state: ThemeState) -> str:
+    """그림 설정이 없거나(그림 없음) 미션 그림이 끝내 실패하면 영상·움직임 없이 끝."""
+    if state.get("failure") or not state.get("scene_images"):
+        return END
+    return "generate_videos"
 
 
 @lru_cache
@@ -82,6 +95,9 @@ def build_graph() -> CompiledStateGraph:
     graph.add_node("missions_done", missions_done)
     graph.add_node("generate_dialogue", generate_dialogue)
     graph.add_node("review_story", review_story)
+    graph.add_node("generate_images", generate_images)
+    graph.add_node("generate_videos", generate_videos)
+    graph.add_node("generate_motion", generate_motion)
 
     graph.add_edge(START, "retrieve")
     graph.add_edge("retrieve", "plan_theme")
@@ -91,6 +107,11 @@ def build_graph() -> CompiledStateGraph:
     graph.add_conditional_edges("missions_done", after_missions, ["generate_dialogue", END])
     graph.add_edge("generate_dialogue", "review_story")
     graph.add_conditional_edges(
-        "review_story", after_review, ["review_story", "plan_theme", "generate_mission", END]
+        "review_story",
+        after_review,
+        ["review_story", "plan_theme", "generate_mission", "generate_images", END],
     )
+    graph.add_conditional_edges("generate_images", after_images, ["generate_videos", END])
+    graph.add_edge("generate_videos", "generate_motion")
+    graph.add_edge("generate_motion", END)
     return graph.compile(name="theme_draft")

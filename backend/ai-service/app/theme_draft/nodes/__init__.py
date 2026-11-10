@@ -5,6 +5,7 @@ reducer를 쓴다. 요일 값이 빈 목록·None이면 '그 요일 문제 없�
 (다시 만들어 통과하면 이전 값을 지운다).
 """
 
+import operator
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -12,10 +13,12 @@ from typing import Annotated, Any, TypedDict
 
 from app.config import Settings
 from app.llm.base import LlmClient
+from app.llm.media import ImageClient, VideoClient
 from app.mission_draft.models import Draft, Failure
 from app.mission_draft.service import MissionDraftService
 from app.prompt_versions.models import PromptChoice
 from app.theme_draft.models import ThemeDraftRequest
+from app.theme_draft.storage import ThemeStorage, new_run_id
 
 THEME_CALL_TYPE = "THEME_DRAFT"  # 글 생성·검토 사용량 (api-spec 4.6)
 # 기존 미션 초안 장치(FAILURE_FIX·CHECK_FIX)가 아는 검사. learning 검사 실패(previousFailures
@@ -52,6 +55,14 @@ class ThemeState(TypedDict, total=False):
     review_route: str  # PASS·FAIL·AGAIN(형식만 틀림)·PLAN(줄거리부터)·DAYS(그 요일 미션·대화)
     review_warnings: list[dict]
     failure: dict | None
+    # 그림·영상·움직임(review_story PASS 뒤 차례로 실행)
+    outfit_image: bytes  # 테마 옷 뭉치(모든 그림의 첫 참조)
+    scene_images: dict[str, bytes]  # MON~FRI 미션 그림, INTRO1~4·OUTRO1~4 컷 첫 그림(통과한 것만)
+    image_keys: dict[str, str]  # 장면 → S3 키(INTRO·OUTRO는 4번째 컷 첫 그림)
+    video_skip: list[str]  # 컷 그림이 끝내 실패해 영상을 만들지 않을 장면(INTRO·OUTRO)
+    video_keys: dict[str, str]
+    motions: dict[str, dict]  # 장면 → ThemeMotion 모양
+    media_warnings: Annotated[list[dict], operator.add]  # {stage, item, reason}
 
 
 @dataclass
@@ -65,6 +76,11 @@ class ThemeContext:
     deadline: float
     clock: Callable[[], float] = field(default=time.monotonic)
     knowledge: dict[str, list[str]] | None = None  # #470 근거 자리(요일별), 지금은 비움
+    image: ImageClient | None = None  # 없으면(버킷·키 없음) 그림·영상·움직임을 건너뜀
+    video: VideoClient | None = None  # 없으면(THEME_VIDEO_ENABLED=false) 영상만 건너뜀
+    storage: ThemeStorage | None = None
+    run_id: str = field(default_factory=new_run_id)  # S3 theme-drafts/{run_id}/
+    mungchi: bytes = b""  # 기본 뭉치 그림(assets/mungchi-2d.png)
 
     @property
     def grade(self) -> int:

@@ -500,3 +500,242 @@ def mission_review_user(
     if target:
         body["target"] = f"{target}(이야기에서 아직 찾지 못한 대상)"
     return json.dumps(body, ensure_ascii=False)
+
+
+# ---------------------------------------------------------------------------
+# 그림·영상·움직임 (#437 그림 단계, 사용자 결정 2026-11-11). 그림·영상 모델에 주는 고정 문구는
+# 영어, 테마 글(인물 모습·장면 메모·미션 질문·콘티)은 한국어 그대로 넣는다.
+# ---------------------------------------------------------------------------
+IMAGE_STYLE = (
+    "Style: 2D cartoon illustration for children, thick even dark-brown outlines, flat colors "
+    "with simple soft shading, simple painted background, not 3D, 16:9."
+)
+MUNGCHI_LOOK = (
+    "Mungchi (the main character): a cream-colored fluffy cotton-ball body with about 12 soft "
+    "round bumps, the face low in the center of the body, small dot eyes with a tiny highlight "
+    "(no eye whites), pink cheeks, small hands at the lower front on the left and right, short "
+    "brown feet. Mungchi wears the theme outfit: {outfit}. Keep Mungchi exactly like the "
+    "reference picture."
+)
+IMAGE_RULES = (
+    "Rules: no thought bubbles or speech bubbles. No letters, words or numbers anywhere "
+    "(signs, books and labels stay blank). Every face is clearly visible. Leave some empty "
+    "space at the top of the picture."
+)
+
+
+def outfit_prompt(theme: Theme) -> str:
+    """기본 뭉치 그림을 고쳐 테마 옷만 더하는 지시(모든 그림의 첫 참조가 됨)."""
+    return (
+        "Edit this picture. Keep the picture exactly as it is: Mungchi's body, face, eyes, "
+        "cheeks, feet, hand positions, size, position, colors and the background stay "
+        f"identical. Only add the theme outfit: {theme['outfit']}. Nothing in the hands. "
+        f"{IMAGE_STYLE}"
+    )
+
+
+def _characters(theme: Theme) -> str:
+    looks = "; ".join(f"{c['name']}: {c['look']}" for c in theme["characters"])
+    return f"Other characters (draw them the same in every picture, Korean): {looks}"
+
+
+def _fixes(feedback: list[str]) -> list[str]:
+    if not feedback:
+        return []
+    return ["Fix these problems from the previous attempt:", *[f"- {x}" for x in feedback]]
+
+
+# 콘티 mungchiMood → 입 모양(표정은 입으로만, 점 눈은 그대로). none·없음은 표정 문구를 넣지 않음
+MOOD_MOUTH = {
+    "smile": "a small smiling mouth",
+    "surprised": "a small round o-shaped mouth",
+    "determined": "a closed straight-line mouth",
+}
+
+
+def mood_mouth(cut: dict) -> str | None:
+    return MOOD_MOUTH.get(cut.get("mungchiMood") or "none")
+
+
+def _no_target(theme: Theme) -> str:
+    return f"Do not draw {theme.get('target') or 'the missing target'} anywhere in this picture."
+
+
+def mission_image_prompt(theme: Theme, day: str, draft: Draft, feedback: list[str]) -> str:
+    """요일 미션 그림: 스타일·뭉치·인물·그날 장면 + 그날 증거 발견 줄 + 미션 질문·생각 열기 질문.
+
+    증거 발견 줄(discovery)의 증거 물건은 살펴보기 단계에서 학생이 누를 수 있게 보이게 그린다.
+    """
+    d = next(x for x in theme["days"] if x["day"] == day)
+    hints = " / ".join(h for h in draft.hints if h.strip())
+    lines = [
+        IMAGE_STYLE,
+        MUNGCHI_LOOK.format(outfit=theme["outfit"]),
+        _characters(theme),
+        f"Scene (Korean): 장소 {d['place']}. {d['sceneNote']}",
+        "Today's evidence (Korean). Draw the evidence object it mentions clearly visible: "
+        f"{d['discovery']}"
+        if d.get("discovery")
+        else "",
+        "Today's question for the student (Korean). Every object or place the question and the "
+        f"thinking prompts point to must be visible in the picture: {draft.question}",
+        f"Thinking prompts (Korean): {hints}" if hints else "",
+        _no_target(theme),
+        IMAGE_RULES,
+        *_fixes(feedback),
+    ]
+    return "\n".join(x for x in lines if x)
+
+
+def cut_shows_target(scene: str, index: int) -> bool:
+    """찾는 대상이 나와도 되는 컷: 시작 1컷(주인이 지닌 모습)과 종료 3·4컷(발견·축하)."""
+    return (scene, index) in (("INTRO", 1), ("OUTRO", 3), ("OUTRO", 4))
+
+
+def cut_has_mungchi(scene: str, index: int) -> bool:
+    """시작 1·2컷에는 뭉치가 나오지 않는다(뭉치 참조도 넣지 않음)."""
+    return not (scene == "INTRO" and index in (1, 2))
+
+
+def cut_has_characters(scene: str, index: int) -> bool:
+    """시작 3컷은 뭉치 혼자 출동(인물 참조를 넣지 않음)."""
+    return not (scene == "INTRO" and index == 3)
+
+
+def cut_image_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list[str]) -> str:
+    """시작·종료 영상 컷의 첫 그림(영상이 이 그림에서 시작). mungchiMood는 있으면 쓴다."""
+    lines = [IMAGE_STYLE]
+    if cut_has_mungchi(scene, index):
+        lines.append(MUNGCHI_LOOK.format(outfit=theme["outfit"]))
+        if mouth := mood_mouth(cut):
+            lines.append(f"Mungchi's expression: {mouth}, dot eyes unchanged.")
+    else:
+        lines.append("Mungchi does not appear in this picture.")
+    if cut_has_characters(scene, index):
+        lines.append(_characters(theme))
+    else:
+        lines.append("Only Mungchi is in this picture (no other characters).")
+    lines.append(f"Scene (Korean): {cut['scene']}")
+    if cut_shows_target(scene, index):
+        lines.append(f"{theme.get('target') or 'The missing target'} may appear as the scene says.")
+    else:
+        lines.append(_no_target(theme))
+    lines += [IMAGE_RULES, *_fixes(feedback)]
+    return "\n".join(lines)
+
+
+IMAGE_REVIEW_SYSTEM = (
+    "너는 초등학생 학습 서비스의 그림 검토자다. 첫 그림이 검토할 그림이고, 두 번째 그림은 "
+    "주인공 뭉치의 기준 모습(테마 옷)이다. 주어진 항목(items)마다 verdict를 PASS(문제 없음)·"
+    "WARN(애매해서 사람이 볼 것)·FAIL(분명한 결함, 다시 그려야 함) 중 하나로 쓰고 근거 한 "
+    "문장(reason)을 쓴다. 주어진 항목을 모두 한 번씩 쓴다. 분명한 결함만 FAIL로 한다.\n"
+    "MUNGCHI: 뭉치가 나와야 하는 그림이면 기준 모습과 같은지(크림색 몽글몽글한 몸, 몸 아래쪽 "
+    "가운데 얼굴, 흰자 없는 점 눈, 분홍 볼, 작은 손, 갈색 짧은 발, 테마 옷). 뭉치가 나오지 "
+    "않아야 하는 그림이면 나오지 않는지.\n"
+    "ANSWER_HINT: 찾는 대상이 나오면 안 되는 그림(targetAllowed false)에 찾는 대상이 보이는지, "
+    "정답 장소가 드러나는지(생각 풍선·화살표 등으로 대상이 있는 곳을 보여 주는지).\n"
+    "TEXT: 글자·숫자 같은 글이 보이는지(간판·책·표지에 쓴 글 포함).\n"
+    "SAFETY: 무섭거나 위험한 모습, 폭력, 실존 인물·상표가 있는지.\n"
+    "SCENE_FIT: 주어진 장면(장소·인물·하는 일)과 그림이 맞는지.\n"
+    "MISSION_FIT(items에 있을 때만): 미션 질문과 생각 열기 질문이 가리키는 물건·장소, 그날 증거 "
+    "발견 줄(discovery)이 말하는 증거 물건이 그림에 다 보이는지.\n"
+)
+
+
+def image_review_user(
+    theme: Theme,
+    scene_text: str,
+    *,
+    ids: tuple[str, ...],
+    has_mungchi: bool,
+    shows_target: bool,
+    question: str | None = None,
+    hints: list[str] | None = None,
+    discovery: str | None = None,
+) -> str:
+    body: dict = {
+        "items": list(ids),
+        "scene": scene_text,
+        "mungchi": "나와야 함" if has_mungchi else "나오지 않아야 함",
+        "characters": theme["characters"],
+        "target": theme.get("target") or "",
+        "targetAllowed": shows_target,
+        "answerPlace": theme.get("answer") or "",
+    }
+    if question is not None:
+        body |= {"missionQuestion": question, "hints": hints or [], "discovery": discovery or ""}
+    return json.dumps(body, ensure_ascii=False)
+
+
+VIDEO_NEGATIVE = (
+    "big eyes, eye whites, changing eye shape, body morphing, extra limbs, 3D render, text, "
+    "flashing lights, scary, sudden cuts"
+)
+
+
+def video_prompt(theme: Theme, cut: dict, feedback: list[str]) -> str:
+    """컷 동작 + 고정 문구(첫 그림만 고정해 그 그림에서 시작)."""
+    mouth = mood_mouth(cut)
+    lines = [
+        f"Action (Korean): {cut['action']}",
+        "Keep the 2D cartoon style of the first frame with thick even outlines.",
+        "Keep Mungchi's round fluffy shape and small dot eyes unchanged (no eye whites).",
+        f"Mungchi's expression: {mouth}." if mouth else "",
+        "Natural, simple movement. Only one camera move. No text.",
+        f"Do not show where {theme.get('target') or 'the missing target'} is put or hidden.",
+        *_fixes(feedback),
+    ]
+    return "\n".join(x for x in lines if x)
+
+
+VIDEO_REVIEW_SYSTEM = (
+    "너는 초등학생 학습 서비스의 영상 검토자다. 주어진 그림들은 영상 컷 하나에서 2초마다 뽑은 "
+    "장면이다. 네 항목마다 verdict를 PASS·WARN·FAIL 중 하나로 쓰고 근거 한 문장(reason)을 쓴다. "
+    "네 항목을 모두 한 번씩 쓴다. 분명한 결함만 FAIL로 한다.\n"
+    "MORPH: 인물·뭉치의 몸·얼굴·눈 모양이 장면 사이에 녹아내리듯 바뀌거나 팔다리가 늘어나는지, "
+    "2D 그림체가 3D로 바뀌는지.\n"
+    "ANSWER_HINT: 찾는 대상이 나오면 안 되는 컷(targetAllowed false)에 보이거나 정답 장소가 "
+    "드러나는지.\n"
+    "TEXT: 글자·숫자가 보이는지.\n"
+    "SAFETY: 무섭거나 위험한 모습, 번쩍이는 빛, 폭력이 있는지.\n"
+)
+
+
+def video_review_user(theme: Theme, cut: dict, shows_target: bool) -> str:
+    return json.dumps(
+        {
+            "scene": cut["scene"],
+            "action": cut["action"],
+            "target": theme.get("target") or "",
+            "targetAllowed": shows_target,
+            "answerPlace": theme.get("answer") or "",
+        },
+        ensure_ascii=False,
+    )
+
+
+MOTION_SYSTEM = (
+    "너는 초등학생 학습 서비스의 장면 연출을 정한다. 주어진 그림 한 장에 웹이 입힐 움직임 값을 "
+    "정한다. 좌표 x·y는 그림 너비·높이에 대한 %(왼쪽 위 0, 오른쪽 아래 100).\n"
+    "- transition: 장면이 바뀌는 방식(none·fade·slide-left·slide-right·zoom), transitionSeconds "
+    "0.3~1.2.\n"
+    "- cameraFrom·cameraTo: 천천히 움직이는 카메라의 시작·끝 중심과 확대(zoom 1.0~1.4), "
+    "cameraSeconds 8~20. 장면의 중심 인물이나 물건 쪽으로 부드럽게.\n"
+    "- speakers: 주어진 화자 이름(speakers)마다 그림 속 그 인물 얼굴의 중심 x·y. 주어진 이름만 "
+    "쓰고, 화자가 없으면 빈 목록. 뭉치는 크림색 솜뭉치 모양의 주인공이다.\n"
+    "- effects: 장면 분위기에 맞는 가벼운 효과(눈·꽃잎·잎·물방울 등) 0~2층. color는 #RRGGBB, "
+    "count 1~20, size 1~6(그림 너비 %), direction 0~359도(0은 아래로 떨어짐), speed 2~20, "
+    "opacity 0.2~0.8. 효과가 어울리지 않으면 빈 목록. 번쩍이거나 무서운 효과는 쓰지 않는다.\n"
+)
+
+
+def motion_user(theme: Theme, scene: str, scene_text: str, speakers: list[str]) -> str:
+    return json.dumps(
+        {
+            "scene": scene,
+            "sceneText": scene_text,
+            "styleNote": theme.get("styleNote") or "",
+            "speakers": speakers,
+        },
+        ensure_ascii=False,
+    )

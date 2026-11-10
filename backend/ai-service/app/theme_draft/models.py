@@ -286,7 +286,10 @@ MungchiMood = Literal["none", "smile", "surprised", "determined"]
 
 
 class GeneratedCut(BaseModel):
-    """시작·종료 영상 콘티의 한 컷(6초). 내부 칸이라 응답 theme에는 넣지 않는다."""
+    """시작·종료 영상 콘티의 한 컷(길이는 theme_video_cut_seconds, 기본 4·6·8·6초).
+
+    내부 칸이라 응답 theme에는 넣지 않는다.
+    """
 
     scene: str
     action: str
@@ -347,7 +350,8 @@ class GeneratedMissionReview(BaseModel):
     items: list[MissionReviewItem]
 
 
-ImageReviewId = Literal["MUNGCHI", "ANSWER_HINT", "TEXT", "SAFETY"]
+# MISSION_FIT(미션 그림만: 질문·생각 열기가 가리키는 것이 다 보이는지)·SCENE_FIT(장면 일치)
+ImageReviewId = Literal["MUNGCHI", "ANSWER_HINT", "TEXT", "SAFETY", "MISSION_FIT", "SCENE_FIT"]
 VideoReviewId = Literal["MORPH", "ANSWER_HINT", "TEXT", "SAFETY"]
 
 
@@ -370,7 +374,7 @@ class VideoReviewItem(BaseModel):
 
 
 class GeneratedVideoReview(BaseModel):
-    """영상 컷 1개 검토(앞·가운데·끝 장면을 봄)."""
+    """영상 컷 1개 검토(2초마다 뽑은 장면을 봄)."""
 
     items: list[VideoReviewItem]
 

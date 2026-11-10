@@ -105,7 +105,10 @@ def run(
 ) -> ThemeDraftResponse:
     request = ThemeDraftRequest.model_validate(body or request_body())
     runner = ThemeDraftGraphRunner(gen, review, get_settings(), ActiveVersions())
-    return asyncio.run(runner.run(request, time.monotonic() + deadline_in))
+    response = asyncio.run(runner.run(request, time.monotonic() + deadline_in))
+    # 글 단계 시험은 그림 설정이 없어 그림·영상·움직임을 건너뜀. 그 경고는 test_media_graph에서 봄
+    skipped = [w for w in response.warnings if (w.stage, w.reason) != ("IMAGE", "그림 설정 없음")]
+    return response.model_copy(update={"warnings": skipped})
 
 
 BROKEN_THEME = theme_with(title="텃밭의 비밀")  # ANSWER_LEAK
