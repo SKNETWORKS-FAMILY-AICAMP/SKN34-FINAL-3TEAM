@@ -8,11 +8,12 @@ core가 연결을 끊으면 이벤트 생성기가 취소되어 그래프·LLM �
 import logging
 import time
 from collections.abc import AsyncIterator, Callable
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel
 
-from app.analysis_agent.context import AgentContext
+from app.analysis_agent.context import AgentContext, kst_today
 from app.analysis_agent.graph import build_graph
 from app.analysis_agent.models import AnalysisRequest, StreamError
 from app.analysis_agent.state import AnalysisState
@@ -41,10 +42,12 @@ class AnalysisService:
         settings: Settings,
         versions: ActiveVersions,
         learning_factory: Callable[[UserContext], LearningClient] | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._llm = llm
         self._settings = settings
         self._versions = versions
+        self._clock = clock  # 테스트에서 요청 시각 고정용. 없으면 현재 시각
         self._learning_factory = learning_factory or (
             lambda user: LearningClient(settings.learning_url, user)
         )
@@ -57,7 +60,10 @@ class AnalysisService:
         prompt = self._versions.prompt("analysis")
         # 프롬프트 선택 뒤에 연결을 만들어 선택 실패 시 닫을 연결이 없음
         tools = RecordTools(self._learning_factory(user), user)
-        context = AgentContext(llm=self._llm, tools=tools, deadline=deadline, prompt=prompt)
+        today = kst_today(self._clock() if self._clock else None)
+        context = AgentContext(
+            llm=self._llm, tools=tools, deadline=deadline, prompt=prompt, today=today
+        )
         return self._events(body, context)
 
     async def propose_template(
