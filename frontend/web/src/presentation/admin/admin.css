@@ -126,3 +126,9 @@ body:has(.admin-shell){background:#fff}
 @media(max-width:1180px){#class-journal :is(.ad-split,.ad-two){grid-template-columns:minmax(0,1fr)}}
 @media(max-width:860px){#class-journal .admin-shell :is(button,.cj-secondary){min-height:40px}}
 @media(pointer:coarse){#class-journal .admin-shell :is(button,.cj-secondary){min-height:44px}}
+@media(max-width:760px){
+  #class-journal .ad-topbar{height:auto;min-height:56px;flex-wrap:wrap;gap:8px;padding:6px 16px}
+  #class-journal .ad-brand .ad-brand-context{display:none}
+  #class-journal .ad-account{gap:6px;flex:0 0 auto;margin-left:auto}
+  #class-journal .admin-shell .ad-account>button{white-space:nowrap;flex-shrink:0;min-height:44px}
+}
