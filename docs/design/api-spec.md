@@ -910,6 +910,7 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 | GET | `/internal/community/posts/{postId}` | core | 구현(#386, #388 요청): `SYSTEM`, scope 없음. 신고 대상 확인·관리자 원문 열람 `{postId, studentId, missionId, status, answer, createdAt}`(상태 무관), 파기·없음 `404 COMMUNITY_POST_NOT_FOUND` |
 | GET · POST | `/internal/admin/theme-drafts…` | core | learning #438(core #439 프록시, 에픽 #436): 인증·권한 전달은 관리자 미션과 같음. 요청 `POST`(202)·목록 `GET ?status&source&page&size`·상세 `GET /{draftId}`·채택 `POST /{draftId}/adopt`(201, 응답에 만든 `themeId`)·버리기 `POST /{draftId}/discard`·다시 생성 `POST /{draftId}/regenerate`(202). 요청·버리기·다시 생성 응답에 `draftId`·`status`가 있어야 core가 결과 감사를 남김(없으면 core `503 LEARNING_INVALID_RESPONSE`). 초안 본문 모양·오류 코드는 learning #438 소유 |
 | GET·POST·PUT | `/internal/admin/weekly-themes…` | core | #385(core #387 프록시): `ADMIN` + `X-User-Id`. 목록 `GET ?gradeBand&weekStart&status&page&size` → `{items, page, size, totalElements}`, 작성 `POST`(201)·수정 `PUT /{id}`(새 버전) 본문 `{gradeBand, weekStart, title, intro, days:[{day, missionId}]}`, 검토 요청·게시·중단 `POST /{id}/review-request`·`/publish`·`/unpublish` `{}` → 모두 `AdminWeeklyTheme` = `{themeId, gradeBand, weekStart, status, version, publishedVersion, reviewRequested, title, intro, days, publishedAt, createdAt, updatedAt}`. 오류: 형식·월요일 아닌 주·없는 미션 `400`, 상태상 불가 전이·게시 중 학년군·주 변경 `409 CONFLICT`, 게시 검사 `422 WEEKLY_THEME_PUBLISH_INCOMPLETE` + `errors:[{code, message}]` |
+| GET · POST | `/internal/knowledge…` | ai, learning 내부 | 교육과정 지식 근거·검색(#463, 계약 #464 C5, 구현 #469, **구현 전·팀 확인 전**). `SYSTEM` 역할, 학생 범위·학생 정보 없음. 다섯 경로와 응답은 4.1.2 |
 
 - 기록 조회 공통 (#27): 학생 경로는 역할 `PARENT`·`STUDENT`·`SYSTEM`(`home`은 학생 본인 `STUDENT`만)이고 `X-Student-Scope`에 대상 학생이 없으면 `403`. `from`·`to`는 KST 날짜(양 끝 포함), 둘 다 주거나 둘 다 생략(생략하면 오늘 포함 최근 7일, P06), 한쪽만 주거나 `from > to`면 `400`. 응답 `period`는 실제 조회 기간. 집계 대상은 P08(기간 안에 답변 제출이 있는 시도, 미완료 포함·판정 상태 무관. 조회 종료일까지의 답변이 모두 처리 실패인 시도와 삭제 기록은 제외). 시도별 사실(완료·되묻기 받음·보완 답변·최근 답변)은 조회 종료일까지 일어난 것만. `state`는 집계 대상(비율은 분모) 0건 `NO_RECORD`, 1~4건 `INSUFFICIENT_SAMPLE`(비율 `value: null`), 5건 이상 `OK`. 메모·초안은 반환하지 않음(P05). 최상위 학생 식별자는 호출 역할과 무관하게 `studentId`(학부모 공개 응답의 `childId`는 core가 바꿈, core #40·report #51과 합의). 조회 장애는 `state`가 아니라 HTTP 오류(Problem Details)로 반환. 까닭을 잇는 말은 `왜냐하면`·`때문`·`그래서`·`따라서`(report와 확정)
 
@@ -934,6 +935,29 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - `evidence`는 `{items:[...]}`다. 정상 항목은 `answerId,attemptId,answerVersion,quote,missionTitle,submittedAt,available:true`이며 `quote`는 attempts의 `text`와 같은 전체 평문이다. 없는 답변·삭제 학생은 `available:false`로 원문을 제공하지 않는다. 요청 ID를 중복 제거한 순서대로 정상/삭제 항목을 함께 반환하며 누락하지 않는다. report는 ID를 중복 없이 보내고 시도·버전·원문을 대조한다.
 - 동일 시도가 여러 주에 걸치면 각 주에 제출된 답변 존재 여부로 포함한다. 변화는 포함된 시도의 최초 답변과 해당 주 종료일 이전 마지막 답변을 비교한다. 조회 이후에 추가된 답변으로 과거 주의 마지막 답변을 바꾸지 않는다.
 
+#### 4.1.2 교육과정 지식 내부 API (#463, 계약 #464 C5, 구현 #469)
+
+**구현 전 계약(기준안, 팀 확인 전)**. 저장 구조는 [ERD 4.5](erd.md#45-교육과정-지식-rag-463-계약-464-구현-전), 요청·응답 칸은 learning OpenAPI(`x-implementation-status: planned-issue-469`), ai 쪽 모델은 `backend/ai-service/app/knowledge/contracts.py`, 가짜 구현은 `app/knowledge/fake.py`(샘플 `scripts/knowledge/samples/`). 계약을 바꾸면 이 절·OpenAPI·`contracts.py`·`scripts/tests/test_knowledge_contracts.py`를 같이 고치고 #465~#471 담당에게 알린다(변경 절차 기준안, #464 확인 필요).
+
+| Method | Path | 호출자 | 요청 → 응답 |
+|---|---|---|---|
+| GET | `/internal/knowledge/standards?codes&grade&thinkingType` | learning 미션 초안 작업(같은 서비스 안), ai 테마 미션 생성 | 코드(쉼표, 1~10개) → `KnowledgeBundle {datasetVersion, items:[{standard{code, subject, grades, semesters, noticeGradeBand, area, statement, explanation, ref}, domain(고려 사항을 가진 영역, 없으면 null), covers:[내용 요소], fits:[{thinkingType, reason}], gradeMatch}], missingCodes, subjectGuides:[교과 지침], thinkingType(그 유형 출제 지침 또는 null), reason}`. 유사도 검색 없음. `grade`를 주면 `gradeMatch`(그 학년에 배우는 성취기준인지), 안 주면 null |
+| GET | `/internal/knowledge/thinking-types/{type}` | ai | → `{datasetVersion, guide:{type, name, basis[{framework, attribution}], elements[{code, label, description}], questionMust[], questionMustNot[], ref}, reason}`. 팀이 우리 말로 쓴 지침과 출처 표기만(블룸·VALUE 원문 없음) |
+| POST | `/internal/knowledge/search` | ai | `{vector, embeddingModel, k(1~20, 기본 5), minSimilarity(기본 0.7), filters{kinds, subjects, grades, semesters, thinkingTypes}}` → `{datasetVersion, items:[{ref, kind, subject, area, standardCode, domainId, thinkingType, grades, semesters, text, similarity}], reason}`(유사도 높은 순) |
+| POST | `/internal/knowledge/theme-candidates` | ai 테마 `retrieve` 노드 | `{vector, embeddingModel, grade, semester, k(유형당 1~10, 기본 3), minSimilarity}` → `{datasetVersion, grade, semester, types:[{thinkingType, candidates:[{code, statement, subject, area, similarity, matchedBy, fitReason, ref}], reason}], reason}`. 다섯 유형 모두, 후보 없는 유형은 빈 목록과 `NO_CANDIDATE` |
+| POST | `/internal/knowledge/learned` | ai 테마 `check_theme` | `{concepts:[{text, vector}](1~20개), embeddingModel, grade, semester, minSimilarity}` → `{datasetVersion, grade, semester, items:[{text, verdict, matched{contentId, text, similarity, ref}, learnedIn:[{standardCode, semester}], reason}], reason}` |
+
+- 인증: `X-Internal-Token` + `X-User-Role: SYSTEM`(사용자 요청 없는 호출과 같음, 4장 공통). `X-Student-Scope`·학생 정보는 받지 않는다. 토큰 오류 `401 UNAUTHENTICATED`, SYSTEM 외 역할 `403 FORBIDDEN`
+- 활성 판만 읽는다(`knowledge_dataset.status = ACTIVE`, C9). 응답 조각마다 근거 표시 `ref = {kind, id, datasetVersion}`(C7 `sources` 항목과 같은 모양)
+- 대체 사유(`reason`): 근거가 없어도 오류가 아니라 `200`에 사유를 담는다. `NO_ACTIVE_DATASET`(활성 판 없음, `datasetVersion: null`)·`BELOW_THRESHOLD`(최소 유사도 넘는 조각 없음)·`NO_CANDIDATE`(그 유형 후보 없음)·`CODE_NOT_FOUND`(요청 코드가 하나도 없음, 일부만 없으면 `missingCodes`만)·`NO_REVIEWED_RELATION`(비슷한 내용 요소는 있으나 확인된 covers 없음). 생성 쪽은 사유가 있으면 근거 없이 기존 방식으로 생성하고 결과에 표시한다(#470)
+- 오류: 형식·상한 밖·학기가 그 학년 것이 아님(`grade: 3`에 `semester: "4-1"`) `400 VALIDATION_FAILED`, 요청 `embeddingModel`·벡터 길이가 활성 판과 다름 `409 KNOWLEDGE_EMBEDDING_MISMATCH`(learning이 ai를 되부르지 않으므로 벡터는 부르는 쪽이 C6로 만든다), 예상하지 못한 조회 실패 `500`
+- 내용: 성취기준 묶음의 `domain`은 성취기준이 속한 영역(국어·수학·도덕은 내용 체계와 고려 사항이 같은 영역, 사회·과학은 단원 = 고려 사항·탐구 활동만이고 내용 체계 항목은 `covers`로 이어짐, ERD 4.5). 고려 사항은 영역 단위라 같은 영역 성취기준끼리 같은 글. 교과 지침은 요청 성취기준의 교과마다 한 번(`subjectGuides`)
+- 검색 거르기: 빈 배열·생략은 거르지 않음, 칸 안은 OR·칸끼리는 AND, `grades`·`semesters`는 조각 값과 겹치면 통과. 교과 지침·생각 유형 조각은 학년·학기와 무관해 학년·학기 거르기를 받지 않는다. 유사도 = 1 − 코사인 거리(0~1)
+- 테마 후보: 그 학기(`knowledge_standard_semester`) 성취기준마다 성취기준 조각과 확인된 covers 내용 요소 조각 중 가장 비슷한 것을 점수·`matchedBy`로 쓰고, 최소 유사도 이상만 확인된 `knowledge_fits` 유형별로 점수 순 k개
+- 배움 확인: 개념마다 가장 비슷한 내용 요소(최소 유사도 이상)를 찾고 확인된 covers → 성취기준 학기(`learnedIn`)가 요청 학기와 같거나 앞이면 `LEARNED`, 모두 뒤면 `NOT_YET`. 비슷한 내용 요소가 없으면 `HOLD`+`BELOW_THRESHOLD`, 확인된 covers가 없으면 `HOLD`+`NO_REVIEWED_RELATION`(확인 전 관계는 학기 판단에 쓰지 않음). 학기 순서는 `3-1 < 3-2 < 4-1 …`. 선수 관계(`WITH RECURSIVE`)를 판정에 더할지는 #469에서 정하고 응답 모양은 같다
+- 기준안 값: 코드 1~10개, k 기본 5·최대 20, 테마 유형당 기본 3·최대 10, 개념 1~20개, 최소 유사도 0.7(에픽, 결과서 양식 예시 값), learning 질의당 2초 이하(#469), ai→learning 대기 시간은 #470에서 정함. 실측 후 조정
+- 팀 확인: 경로·칸·사유 코드·`SYSTEM` 인증(#469 inyoung9629, #470), 미션 초안 작업이 같은 서비스 안에서 이 API 대신 서비스 메서드를 직접 부를지(#470)
+
 ### 4.2 ai-service (호출: learning, core, report)
 
 구현된 경로의 요청·응답 계약: [contracts/openapi/ai-service.yaml](../../contracts/openapi/ai-service.yaml) (`scripts/tests/test_ai_openapi.py`가 라우터 경로와 대조)
@@ -947,7 +971,8 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | POST | `/internal/report-explanations` | report | `{grade, inputType, text, scores}` → `{active:true, explanation:{text, quote}, versions}` 또는 `{active:false}` (4.2.3, #477) |
 | GET | `/internal/versions` | core | 현재 호출에 사용하는 프롬프트 버전 `{prompts:{judgment,followup,analysis,reportNarrative,reportTemplate,missionDraft,reportExplanation}}` (#280 `reportTemplate`, #354 `missionDraft`, #477 `reportExplanation` 추가. core에 이 응답을 읽는 코드는 없음) |
 | POST | `/internal/analysis/report-template` | core | `{question, current}` → `{settings}` 또는 `{clarification}` 중 하나 (#209, 2.4). 미보유 활성 본문은 503 `AI_PROMPT_VERSION_UNAVAILABLE`(#280). core 호출은 별도 서킷 `ai-report-template`(아키텍처 1.3) |
-| POST | `/internal/mission-drafts` | learning | 미션 초안 1회 생성·검사 (#354, FN-ADM-20). `{standards:[{code, statement, level?:{grade, text}}], thinkingType, elementCodes:[{code, label, description}], gradeMin, gradeMax, inputType, previousFailures:[{check, reason}]}` → `{draft:{title, question, guide, sceneNote, choices?, categories?, answerKey?, exampleAnswer?, forbiddenTerms[], hints[], elements:[{code, label, description, goodThought, standardCode}]}, checks:{passed, failures:[{check, reason}]}, versions:{prompt, model}}`. `level`은 성취수준 문장이 있을 때만, `elementCodes`는 learning이 FN 1.5 표에서 그 유형 코드와 입력 방식에 맞는 정답 코드를 채움(코드 목록은 learning 소유). ai 검사 `check`: `REQUIRED`(필수 항목·입력 방식별 선택지·정답 키·예시 답), `QUESTION_LENGTH`(`TOO_LONG`, `gradeMin` 학년의 상한, 설정 `MISSION_DRAFT_QUESTION_MAX_CHARS` 기본 전 학년 200자, P19 확정 전 기준안), `LEAK`(질문·안내·생각 열기 질문 속 정답 키·금지어 노출과, 안내·생각 열기 질문 속 예시 답 노출(질문에 이미 있는 글은 빼고 비교, 질문은 예시 답과 비교하지 않음), `reason`은 되묻기 노출 검사 코드 `ANSWER_KEY`·`FORBIDDEN_TERM`·`EXAMPLE_ANSWER` 그대로. 정답 키 글은 고르기면 정답 선택지 이름, 풀이면 최종 답이고 숫자뿐인 답은 숫자 경계로 비교, 순서·분류는 비교하지 않음). 검사 실패도 `200`(`checks.passed=false`), 형식에 맞는 초안을 못 만들면 `502 AI_BAD_RESPONSE`, 그 밖 LLM 실패는 `503 AI_UNAVAILABLE`(둘 다 `retryable`). 호출 1번에 생성 1회이고 재생성 반복은 learning이 함. 시간은 P12 예외(#353): LLM 60초 1회(재시도 없음)·마감 63초, learning→ai 대기 70초. 주기 작업이라 기다리는 사람이 없고, 기본 모델 `gpt-6-luna`가 실제 성취기준으로 15~31.7초 걸림(ai.md 9.2). LLM 입력에 학생 정보 없음. 사용량 `callType = MISSION_DRAFT`(core #355가 받음. 그 전에 발행된 메시지는 core 소비자가 거부해 DLQ에 남아 있음) |
+| POST | `/internal/mission-drafts` | learning | 미션 초안 1회 생성·검사 (#354, FN-ADM-20). `{standards:[{code, statement, level?:{grade, text}}], thinkingType, elementCodes:[{code, label, description}], gradeMin, gradeMax, inputType, previousFailures:[{check, reason}]}` → `{draft:{title, question, guide, sceneNote, choices?, categories?, answerKey?, exampleAnswer?, forbiddenTerms[], hints[], elements:[{code, label, description, goodThought, standardCode}]}, checks:{passed, failures:[{check, reason}]}, versions:{prompt, model}}`. `level`은 성취수준 문장이 있을 때만, `elementCodes`는 learning이 FN 1.5 표에서 그 유형 코드와 입력 방식에 맞는 정답 코드를 채움(코드 목록은 learning 소유). ai 검사 `check`: `REQUIRED`(필수 항목·입력 방식별 선택지·정답 키·예시 답), `QUESTION_LENGTH`(`TOO_LONG`, `gradeMin` 학년의 상한, 설정 `MISSION_DRAFT_QUESTION_MAX_CHARS` 기본 전 학년 200자, P19 확정 전 기준안), `LEAK`(질문·안내·생각 열기 질문 속 정답 키·금지어 노출과, 안내·생각 열기 질문 속 예시 답 노출(질문에 이미 있는 글은 빼고 비교, 질문은 예시 답과 비교하지 않음), `reason`은 되묻기 노출 검사 코드 `ANSWER_KEY`·`FORBIDDEN_TERM`·`EXAMPLE_ANSWER` 그대로. 정답 키 글은 고르기면 정답 선택지 이름, 풀이면 최종 답이고 숫자뿐인 답은 숫자 경계로 비교, 순서·분류는 비교하지 않음). 검사 실패도 `200`(`checks.passed=false`), 형식에 맞는 초안을 못 만들면 `502 AI_BAD_RESPONSE`, 그 밖 LLM 실패는 `503 AI_UNAVAILABLE`(둘 다 `retryable`). 호출 1번에 생성 1회이고 재생성 반복은 learning이 함. 시간은 P12 예외(#353): LLM 60초 1회(재시도 없음)·마감 63초, learning→ai 대기 70초. 주기 작업이라 기다리는 사람이 없고, 기본 모델 `gpt-6-luna`가 실제 성취기준으로 15~31.7초 걸림(ai.md 9.2). LLM 입력에 학생 정보 없음. 사용량 `callType = MISSION_DRAFT`(core #355가 받음. 그 전에 발행된 메시지는 core 소비자가 거부해 DLQ에 남아 있음). 근거 칸 `knowledge`·응답 `sources`는 4.2.5(#464 C7, 구현 전) |
+| POST | `/internal/embeddings` | learning(지식 적재), 스크립트(관계 후보), ai 내부(검색 질의) | 교육과정 지식 본문·질의 임베딩(#463, 계약 #464 C6, 구현 #467, **구현 전·팀 확인 전**). `{texts[]}` → `{model, dimensions, vectors[]}`, 4.2.4 |
 
 - #68 프롬프트 레지스트리의 `PROMPT name`은 위 응답의 일곱 키와 같다. 승인 scope는 차례대로 `ai/judgment`·`ai/followup`·`ai/analysis`·`ai/report-narrative`·`ai/report-template`·`ai/mission-draft`(#354 `missionDraft`)·`ai/report-explanation`(#477 `reportExplanation`)이며 요청 범위 밖 이벤트는 적용하지 않는다. core에 해당 활성 항목이 없으면 ai 이미지에 포함된 기존 본문·버전을 사용한다. 활성화된 버전의 실제 본문이 이미지에 없으면 해당 기능의 새 요청과 `/internal/versions`는 `503 AI_PROMPT_VERSION_UNAVAILABLE`로 실패하고 `/health/ready`의 `versions`는 DOWN이다. 기존 본문을 새 버전명으로 보고하지 않는다. 진행 중인 요청은 시작 때 선택한 본문·버전으로 완료한다.
 
@@ -988,6 +1013,28 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - #479의 인용은 PR #491과 같이 nullable이다. `quote=null`이면 인용 영역을 생략하고, 값이 있으면 해당 답변·버전의 실제 원문 부분 문자열인지 다시 검사한다. 설명 문장에 숫자·점수·등급·금지 표현이 있으면 그 설명만 제외한다. 상세 `explanations.items[].quote`도 null을 허용한다.
 - #479 시간 기준안: 설명 호출당 130초(AI 마감 125초보다 길게), 답변 선정·근거 확인을 포함한 설명 단계 전체 400초. 각각 `REPORT_EXPLANATION_TIMEOUT_SECONDS`, `REPORT_EXPLANATION_BUDGET_SECONDS`로 조절한다. 최대 세 답변을 순차 호출하고 재시도하지 않는다. 실제 CPU 실측 전 임시값이며 만료 시 이미 검증한 설명만 유지한다.
 - #479 저장: 설명 상태는 기존 `weekly_report.verification` JSONB의 `explanationState`에 보관하고 설명 본문은 `EXPLANATION` 항목·근거 테이블에 저장한다. 이전 리포트에 상태가 없으면 `explanations=null`, 일일·무료 응답/파일도 null이다. 기존 요약 검증 결과와 설명 검증 결과는 독립적이다.
+
+#### 4.2.4 지식 임베딩 (#463, 계약 #464 C6, 구현 #467)
+
+**구현 전 계약(기준안, 팀 확인 전)**. ai OpenAPI `/embeddings`(`x-implementation-status: planned-issue-467`), 모델 `contracts.py` `EmbeddingRequest`·`EmbeddingResponse`.
+
+- `POST /internal/embeddings` `{texts:[string]}` → `200 {model, dimensions, vectors:[[number]]}`. `vectors`는 `texts`와 같은 순서·같은 개수. 내부 토큰만 확인한다(4.2 다른 경로와 같음)
+- 입력은 교육과정 지식 본문(C2 조각 본문)과 검색 질의 문장만. 학생 정보·학생 답은 받지 않는다(FN-ADM-20 원칙)
+- 상한(기준안, #467): 한 요청 `texts` 1~64개, 본문당 1~8,000자. 넘거나 빈 글·공백만이면 `400 VALIDATION_FAILED`. 64개를 넘는 적재는 부르는 쪽이 나눠 보낸다
+- 모델·차원(기준안, 에픽 #463): OpenAI `text-embedding-3-small`, 1536차원. 설정값이며 응답에 함께 돌려줘 learning이 판(`knowledge_dataset.embedding_model`·`embedding_dimensions`, C2)과 다른 벡터를 넣지 않게 한다
+- 오류: 제공자 응답의 벡터 개수·차원이 맞지 않음 `502 AI_BAD_RESPONSE`, 제공자 미설정·호출 실패·시간 초과 `503 AI_UNAVAILABLE`(둘 다 `retryable`, 기존 `AI_*` 실패 코드와 같은 방식)
+- 사용량: 기존 `llm.usage.recorded`로 호출마다 토큰 수·모델 기록. `callType`은 기준안 `KNOWLEDGE_EMBEDDING`(4.6). core CHECK·이벤트 스키마·core OpenAPI·ERD·ai·scoring 발행 목록을 함께 바꿔야 해 #467이 core 담당과 같이 반영한다(이 계약 고정에서는 목록을 바꾸지 않음)
+- 가짜 구현(개발용, `app/knowledge/fake.py` `FakeEmbedder`): 모델 이름 `fake-bigram-v1`. 벡터 = NFC·소문자·공백 제거 → 글자 2개씩(한 글자면 그 글자) → 조각마다 SHA-256 앞 4바이트(big endian) % 차원 위치에 5번째 바이트가 짝수면 +1·홀수면 −1 → 길이 1로 맞춤(모두 0이면 0번 위치 1.0). 같은 글은 언제나 같은 벡터라 learning 시험 대역(#466)이 같은 규칙으로 만들 수 있다
+
+#### 4.2.5 미션 초안 근거 칸 (#463, 계약 #464 C7, 구현 #470)
+
+**구현 전 계약(기준안, 팀 확인 전)**. 미션 초안 요청·응답(4.2 `/internal/mission-drafts`)에 칸을 더한다. ai OpenAPI `MissionDraftRequest.knowledge`·`MissionDraftResponse.sources`(`x-implementation-status: planned-issue-470`).
+
+- 요청 `knowledge`(선택, null 허용): learning 미션 초안 작업이 요청 성취기준 코드·생각 유형·`gradeMin`으로 4.1.2 `GET /internal/knowledge/standards?codes&grade&thinkingType`를 조회해 **응답 본문 그대로** 넣는다. 조회 실패·`reason` 있음이면 칸을 비우고 진행한다(기존 동작 보존)
+- 응답 `sources:[{kind, id, datasetVersion}]`: ai가 프롬프트에 넣은 근거 조각 표시(`contracts.sources_of`: 성취기준·영역·내용 요소·교과 지침·유형 지침 순서, 중복 제거). 근거 없이 생성했으면 빈 배열
+- learning은 `sources`를 초안과 함께 저장하고 관리자 초안 상세(P19)에 보여 준다. 저장 칸·관리자 화면·core 프록시 모양은 #470에서 팀 확인 후 정한다
+- 테마 초안(#437) 미션 생성도 같은 근거 묶음·`sources` 모양을 쓴다(그래프 쪽 반영은 #470)
+- 프롬프트 문구가 바뀌면 프롬프트 버전을 올린다(`mission-draft@2` 등, #470)
 
 
 ### 4.3 scoring-service (호출: ai)
@@ -1073,6 +1120,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 응답은 `{period:{from,to},items:[{callType,calls,failures,latencyMs,inputTokens,outputTokens,costUsd,unpricedCalls}]}`다. 기간에 실제 호출이 있는 종류만 반환한다. `latencyMs`는 성공·실패를 포함한 호출당 평균 지연(ms)이다. 토큰은 합계이며 하나라도 미기록이면 해당 합계는 null이다.
 - `costUsd`는 저장된 소비 시점 비용의 합계다. 단가 미등록 등 null 비용이 하나라도 있으면 합계도 null이며 `unpricedCalls`로 미산정 호출 수를 공개한다. 빈 결과는 `items:[]`이고 null을 0으로 치환하지 않는다. 수집·멱등 처리·과거 단가 계산은 변경하지 않는다.
 - 요금제 한도, 월 예산 알림, 결제·구독 구현은 #43 조회 범위에 포함하지 않는다.
+- #464 기준안: 지식 임베딩(4.2.4) 사용량 `callType = KNOWLEDGE_EMBEDDING`을 #467에서 추가한다(core 담당 확인 전). 추가 전까지 위 9개 목록은 그대로다.
 
 ## 5. 구현 계약
 

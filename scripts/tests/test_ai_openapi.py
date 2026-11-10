@@ -23,7 +23,13 @@ class AiOpenApiTests(unittest.TestCase):
                 full = (prefix[1] if prefix else "") + path
                 if full.startswith("/internal/"):
                     actual.add((method, full.removeprefix("/internal")))
-        documented = {(method, path) for path, methods in self.spec["paths"].items() for method in methods}
+        # #464: x-implementation-status가 붙은 경로는 계약만 먼저 정한 구현 전 항목(#467 임베딩)
+        documented = {
+            (method, path)
+            for path, methods in self.spec["paths"].items()
+            for method, operation in methods.items()
+            if not operation.get("x-implementation-status")
+        }
         self.assertEqual(len(actual), 8)
         self.assertEqual(actual, documented)
 

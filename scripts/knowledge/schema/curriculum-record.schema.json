@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sagomungchi.local/knowledge/curriculum-record.schema.json",
+  "title": "지식 RAG 추출 레코드 (#464 계약 C1)",
+  "description": "교육과정 고시 원문 단위 레코드 JSONL 한 줄. kind마다 칸이 다르다. 학년은 초3·초4·초5·초6(grades)으로 나누고 고시 원문 학년군 표기는 noticeGradeBand에만 둔다. 평가원 성취수준·경기도교육청 자료 문장·블룸 원서·VALUE 루브릭 문장은 넣지 않는다(api-spec 4.1.2, erd 4.5).",
+  "oneOf": [
+    {"$ref": "#/$defs/standard"},
+    {"$ref": "#/$defs/domain"},
+    {"$ref": "#/$defs/content"},
+    {"$ref": "#/$defs/subjectGuide"},
+    {"$ref": "#/$defs/thinkingType"}
+  ],
+  "$defs": {
+    "subject": {"type": "string", "enum": ["국어", "도덕", "사회", "수학", "과학"]},
+    "noticeGradeBand": {"description": "고시 원문 학년군 표기(성취기준 표 grade_band와 같은 글자)", "type": "string", "enum": ["초3~4", "초5~6"]},
+    "grade": {"type": "integer", "minimum": 3, "maximum": 6},
+    "semester": {"type": "string", "pattern": "^[3-6]-[12]$"},
+    "standardCode": {"description": "대괄호 없는 성취기준 코드(성취기준 표와 같음)", "type": "string", "pattern": "^[0-9][가-힣]+[0-9]{2}-[0-9]{2}$"},
+    "thinkingTypeCode": {"type": "string", "enum": ["ANALYZE", "EVALUATE", "CREATE", "SOLVE", "REFLECT"]},
+    "domainId": {"description": "교과:원문학년군:영역", "type": "string", "pattern": "^(국어|도덕|사회|수학|과학):초[3-6]~[3-6]:.+$"},
+    "text": {"type": "string", "minLength": 1},
+    "notes": {"description": "비운 칸 사유·원문 특이점", "type": "array", "items": {"$ref": "#/$defs/text"}},
+    "reviewed": {"description": "사람이 원문과 대조해 확인했는지", "type": "boolean"},
+    "source": {
+      "description": "원문 위치. pages는 인쇄 쪽, pdfPages는 PDF 쪽(있으면)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["doc", "section"],
+      "properties": {
+        "doc": {"$ref": "#/$defs/text"},
+        "notice": {"$ref": "#/$defs/text"},
+        "section": {"$ref": "#/$defs/text"},
+        "pages": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 1}},
+        "pdfPages": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 1}}
+      }
+    },
+    "curriculumSource": {
+      "description": "고시 원문 레코드는 고시 번호와 쪽수까지 남긴다",
+      "allOf": [{"$ref": "#/$defs/source"}, {"required": ["notice", "pages"]}]
+    },
+    "contentItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["group", "text"],
+      "properties": {
+        "group": {"description": "내용 체계 표의 묶음 이름(예: 담화 유형). 없으면 null", "type": ["string", "null"], "minLength": 1},
+        "text": {"$ref": "#/$defs/text"}
+      }
+    },
+    "standard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "code", "subject", "grades", "semesters", "noticeGradeBand", "area", "domainId", "statement", "explanation", "reviewed", "source"],
+      "properties": {
+        "kind": {"const": "standard"},
+        "code": {"$ref": "#/$defs/standardCode"},
+        "subject": {"$ref": "#/$defs/subject"},
+        "grades": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/grade"}},
+        "semesters": {"description": "학기 대응 자료에서 옮긴 학기. 자료가 없으면 빈 배열(초5·6 도덕)", "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/semester"}},
+        "semesterSource": {"$ref": "#/$defs/text"},
+        "noticeGradeBand": {"$ref": "#/$defs/noticeGradeBand"},
+        "area": {"description": "성취기준 표 area(성취기준 영역·단원 이름)", "$ref": "#/$defs/text"},
+        "domainId": {"description": "적용 시 고려 사항을 가진 영역 레코드 id", "$ref": "#/$defs/domainId"},
+        "statement": {"description": "성취기준 문장(성취기준 표와 같아야 함)", "$ref": "#/$defs/text"},
+        "explanation": {"description": "(가) 성취기준 해설 항목 원문. 원문에 없으면 null", "type": ["string", "null"], "minLength": 1},
+        "reviewed": {"$ref": "#/$defs/reviewed"},
+        "source": {"$ref": "#/$defs/curriculumSource"},
+        "notes": {"$ref": "#/$defs/notes"}
+      }
+    },
+    "domain": {
+      "description": "영역 레코드. BOTH: 내용 체계 영역과 성취기준 영역이 같음(국어·수학·도덕). CONTENT_SYSTEM: 내용 체계 영역만(사회·과학). STANDARD_GROUP: 성취기준 단원만(사회·과학, 고려 사항·탐구 활동)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "subject", "noticeGradeBand", "area", "scope", "coreIdeas", "knowledge", "process", "values", "considerations", "reviewed", "source"],
+      "properties": {
+        "kind": {"const": "domain"},
+        "id": {"$ref": "#/$defs/domainId"},
+        "subject": {"$ref": "#/$defs/subject"},
+        "noticeGradeBand": {"$ref": "#/$defs/noticeGradeBand"},
+        "area": {"$ref": "#/$defs/text"},
+        "scope": {"type": "string", "enum": ["BOTH", "CONTENT_SYSTEM", "STANDARD_GROUP"]},
+        "coreIdeas": {"description": "내용 체계 핵심 아이디어", "type": "array", "items": {"$ref": "#/$defs/text"}},
+        "knowledge": {"description": "지식⋅이해(그 학년군 칸)", "type": "array", "items": {"$ref": "#/$defs/contentItem"}},
+        "process": {"description": "과정⋅기능", "type": "array", "items": {"$ref": "#/$defs/contentItem"}},
+        "values": {"description": "가치⋅태도", "type": "array", "items": {"$ref": "#/$defs/contentItem"}},
+        "considerations": {"description": "(나) 성취기준 적용 시 고려 사항 항목 원문", "type": "array", "items": {"$ref": "#/$defs/text"}},
+        "activities": {"description": "과학 단원의 <탐구 활동> 항목", "type": "array", "items": {"$ref": "#/$defs/text"}},
+        "reviewed": {"$ref": "#/$defs/reviewed"},
+        "source": {"$ref": "#/$defs/curriculumSource"},
+        "notes": {"$ref": "#/$defs/notes"}
+      },
+      "allOf": [
+        {"if": {"properties": {"scope": {"const": "STANDARD_GROUP"}}},
+         "then": {"properties": {"coreIdeas": {"maxItems": 0}, "knowledge": {"maxItems": 0}, "process": {"maxItems": 0}, "values": {"maxItems": 0}}}},
+        {"if": {"properties": {"scope": {"const": "CONTENT_SYSTEM"}}},
+         "then": {"properties": {"considerations": {"maxItems": 0}, "activities": {"maxItems": 0}}}}
+      ]
+    },
+    "content": {
+      "description": "내용 요소 레코드(내용 체계 항목 하나). 학년·학기는 두지 않고 적재 때 확인된 covers로 정한다(C2)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "domainId", "subject", "noticeGradeBand", "area", "category", "group", "text", "reviewed", "source"],
+      "properties": {
+        "kind": {"const": "content"},
+        "id": {"description": "영역ID:구분(K·P·V):본문 SHA-256 앞 8자(NFC)", "type": "string", "pattern": "^(국어|도덕|사회|수학|과학):초[3-6]~[3-6]:.+:[KPV]:[0-9a-f]{8}$"},
+        "domainId": {"$ref": "#/$defs/domainId"},
+        "subject": {"$ref": "#/$defs/subject"},
+        "noticeGradeBand": {"$ref": "#/$defs/noticeGradeBand"},
+        "area": {"$ref": "#/$defs/text"},
+        "category": {"type": "string", "enum": ["K", "P", "V"]},
+        "group": {"type": ["string", "null"], "minLength": 1},
+        "text": {"$ref": "#/$defs/text"},
+        "reviewed": {"$ref": "#/$defs/reviewed"},
+        "source": {"$ref": "#/$defs/curriculumSource"},
+        "notes": {"$ref": "#/$defs/notes"}
+      }
+    },
+    "subjectGuide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "subject", "teaching", "assessment", "reviewed", "source"],
+      "properties": {
+        "kind": {"const": "subject_guide"},
+        "id": {"type": "string", "pattern": "^(국어|도덕|사회|수학|과학):guide$"},
+        "subject": {"$ref": "#/$defs/subject"},
+        "teaching": {"description": "교수⋅학습(방향·방법) 항목 원문", "type": "array", "minItems": 1, "items": {"$ref": "#/$defs/text"}},
+        "assessment": {"description": "평가(방향·방법) 항목 원문", "type": "array", "minItems": 1, "items": {"$ref": "#/$defs/text"}},
+        "excerpt": {"description": "원문 일부만 옮겼으면 true(샘플)", "type": "boolean"},
+        "reviewed": {"$ref": "#/$defs/reviewed"},
+        "source": {"$ref": "#/$defs/curriculumSource"},
+        "notes": {"$ref": "#/$defs/notes"}
+      }
+    },
+    "thinkingType": {
+      "description": "생각 유형 출제 지침. 팀이 우리 말로 쓴 지침과 출처 표기만(블룸 원서·VALUE 루브릭 문장·번역 금지)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "type", "name", "basis", "elements", "questionMust", "questionMustNot", "reviewed", "source"],
+      "properties": {
+        "kind": {"const": "thinking_type"},
+        "type": {"$ref": "#/$defs/thinkingTypeCode"},
+        "name": {"type": "string", "enum": ["분석하기", "따져 보기", "새로 만들기", "문제 해결하기", "돌아보기"]},
+        "basis": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["framework", "attribution"],
+            "properties": {
+              "framework": {"description": "근거 틀 이름", "$ref": "#/$defs/text"},
+              "attribution": {"description": "출처 표기(참고했다는 사실만, 보증처럼 쓰지 않음)", "$ref": "#/$defs/text"}
+            }
+          }
+        },
+        "elements": {
+          "description": "FN 1.5 표준 요소(#262)",
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["code", "label", "description"],
+            "properties": {
+              "code": {"type": "string", "pattern": "^(ANALYZE|EVALUATE|CREATE|SOLVE|REFLECT)_[A-Z]+$"},
+              "label": {"$ref": "#/$defs/text"},
+              "description": {"$ref": "#/$defs/text"},
+              "requiredDefault": {"description": "필수 요소 기본값. FN 1.5는 미션 요소마다 정하므로 정하지 않았으면 null", "type": ["boolean", "null"]}
+            }
+          }
+        },
+        "questionMust": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/text"}},
+        "questionMustNot": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/text"}},
+        "reviewed": {"$ref": "#/$defs/reviewed"},
+        "source": {"$ref": "#/$defs/source"},
+        "notes": {"$ref": "#/$defs/notes"}
+      }
+    }
+  }
+}

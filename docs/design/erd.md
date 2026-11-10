@@ -1349,6 +1349,83 @@ erDiagram
 
 2026-11-06 서비스 기획 방향 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 저장 구조. 주간 테마(#385)는 V11·V12로 구현해 4.2·4.2.1 Mermaid와 6장으로 옮겼다(설계와 달리 게시 중 수정을 미션처럼 버전으로 두려고 `weekly_theme_version` 테이블과 `weekly_theme.current_·published_·review_version_id`를 더하고, 제목·소개는 버전으로, 요일 문제는 버전 기준 `weekly_theme_day (theme_version_id, …)`로 옮김, [learning 보고서](../report/learning.md)). 커뮤니티 공유물·반응(#386)은 V13으로 구현해 4.3.1 Mermaid와 6장으로 옮겼다. 이로써 learning_db에 남은 설계 표는 없다. 아래 원칙은 이후 변경에도 같다: 컬럼 기본값은 두지 않는다(검증 스크립트 규칙): 기존 행이 있는 테이블의 NOT NULL 컬럼은 준비 버전(nullable 추가)→기존 행 채움→최종 버전(NOT NULL·CHECK)으로 나눈다(8장).
 
+### 4.5 교육과정 지식 RAG (#463, 계약 #464, 구현 전)
+
+**구현 전 설계 표(기준안, 계약 C2·C3·C9)**. #466이 Flyway(다음 번호, 병합 때 다시 확인)로 만들 때 위 Mermaid·6장 인덱스·8장 버전으로 옮긴다(4.1.1·4.4 선례: `scripts/verify_db_schema.py`가 Mermaid를 실제 DB와 대조하므로 구현 전에는 Mermaid에 넣지 않음). 테이블 칸은 #466 이슈 표를 따르고, 그 표에 없던 칸은 "기준안 추가"로 표시했다. 추출 레코드(C1)는 `scripts/knowledge/schema/curriculum-record.schema.json`, 관계 확인 파일(C4)은 `relation-review.schema.json`, 조회 API(C5)는 [api-spec 4.1.2](api-spec.md#412-교육과정-지식-내부-api-463-계약-464-c5-구현-469).
+
+- 저장소: `learning_db` 안(새 DB 없음, 에픽 결정). `vector` 확장은 migrate 계정이 만들 수 없어 관리자 계정 bootstrap이 만든다(#466)
+- 학년은 초3·초4·초5·초6(`grades`), 고시 원문 학년군(`초3~4`·`초5~6`)은 `notice_grade_band`에만 둔다
+- 학생 정보·학생 답은 어느 칸에도 없다. 평가원 성취수준·경기도교육청 자료 문장·블룸 원서·VALUE 루브릭 문장도 넣지 않는다(경기도 자료는 코드↔학년·학기 대응만)
+
+`knowledge_dataset` (판)
+
+| 칸 | 타입 | NULL | 내용 |
+|---|---|---|---|
+| `version` | varchar(32) PK | | 판 이름(C9 이름 규칙) |
+| `status` | varchar | | CHECK `LOADING`·`ACTIVE`·`RETIRED`. 부분 UNIQUE `(status) WHERE status = 'ACTIVE'`로 활성 판은 하나 |
+| `source` | jsonb | | 원문 고시 번호·추출 판(`curriculum-v1` 등)·관계 확인 파일·학기 대응 자료 이름 |
+| `embedding_model` | varchar | | 기준안 추가: 조각 임베딩 모델(C6 응답 `model`). 검색 요청 `embeddingModel`과 다르면 409 |
+| `embedding_dimensions` | int | | 기준안 추가: 벡터 길이(C6 응답 `dimensions`, 기준안 1536) |
+| `chunk_count`, `relation_count` | int | | 결과서 5절 숫자(활성화 때 채움) |
+| `created_at` | timestamptz | | |
+| `activated_at` | timestamptz | 허용 | `ACTIVE`가 된 때 |
+
+`knowledge_chunk` (지식 조각, PK `(dataset_version, id)`)
+
+| 칸 | 타입 | NULL | 내용 |
+|---|---|---|---|
+| `dataset_version` | varchar(32) FK | | → `knowledge_dataset.version` |
+| `id` | varchar(300) | | 조각 ID(아래 조각 표) |
+| `kind` | varchar | | CHECK `STANDARD`·`DOMAIN`·`CONTENT`·`SUBJECT_GUIDE`·`THINKING_TYPE` |
+| `subject` | varchar | 허용 | 교과(생각 유형은 NULL) |
+| `area` | varchar | 허용 | 영역·단원 이름 |
+| `standard_code` | varchar | 허용 | 성취기준 조각만 |
+| `domain_id` | varchar | 허용 | 성취기준(고려 사항을 가진 영역)·영역·내용 요소 조각 |
+| `thinking_type` | varchar | 허용 | 생각 유형 조각만. CHECK 다섯 유형 |
+| `grades` | smallint[] | | 학년(3~6). 빈 배열 허용 |
+| `semesters` | varchar[] | | 학기(`3-1` …). 빈 배열 허용 |
+| `notice_grade_band` | varchar | 허용 | 고시 원문 학년군 표기(출처·검사용) |
+| `text` | text | | 임베딩하는 본문(아래 본문 규칙) |
+| `record` | jsonb | | 기준안 추가: C1 레코드 원본. C5 응답이 문장·해설·고려 사항·내용 체계를 따로 돌려줘야 해서 본문을 다시 쪼개지 않으려고 둠 |
+| `embedding` | vector(1536) | 허용 | 적재 중(`LOADING`)에는 비어 있을 수 있고 활성화 전 모두 채워야 함(앱 검사) |
+| `content_hash` | char(64) | | `text`(NFC)의 SHA-256 16진수. 이전 판과 같으면 임베딩 재사용 |
+| `source` | jsonb | | C1 `source`(문서·절·쪽) |
+
+조각 ID·본문·학년·학기 규칙(C1 레코드 → 조각, 가짜 구현 `fake.chunk_text`와 같음)
+
+| kind | ID | 본문(`text`) | `grades` | `semesters` |
+|---|---|---|---|---|
+| `STANDARD` | 성취기준 코드(`4수01-06`) | `[코드] 문장` + 해설이 있으면 줄바꿈 `해설: …` | 레코드 `grades` | 레코드 `semesters`(학기 대응 자료) |
+| `DOMAIN` | `교과:원문학년군:영역`(`국어:초3~4:읽기`) | 첫 줄 `교과 학년군 영역`, 이어서 `핵심 아이디어:`·`지식⋅이해:`·`과정⋅기능:`·`가치⋅태도:`·`적용 시 고려 사항:`·`탐구 활동:` 줄(있는 것만) | 원문 학년군의 학년(`초3~4` → 3·4) | 이 영역 성취기준(내용 체계만인 영역은 확인된 covers로 이어진 성취기준)의 학기 합 |
+| `CONTENT` | `영역ID:구분:본문해시8자`(구분 `K`·`P`·`V`, 해시는 항목 글 NFC의 SHA-256 앞 8자) | `교과 학년군 영역 범주이름: 묶음 - 항목`(묶음 없으면 항목만) | 확인된 covers로 이어진 성취기준 학년 합 | 같은 성취기준 학기 합. 확인 전에는 빈 배열(학기 판단에 쓰지 않음) |
+| `SUBJECT_GUIDE` | `교과:guide` | `교과 교수⋅학습:` 다음 항목들, `평가:` 다음 항목들(줄마다) | 빈 배열 | 빈 배열(학년·학기 거르기 제외) |
+| `THINKING_TYPE` | 유형 코드(`ANALYZE`) | `이름(코드)`, `근거:`, `요소:`, `질문에 꼭:`, `피할 것:` 줄 | 빈 배열 | 빈 배열(학년·학기 거르기 제외) |
+
+- 영역 레코드 `scope`(C1): 국어·수학·도덕은 내용 체계 영역과 성취기준 영역이 같아 한 레코드(`BOTH`). 사회·과학은 내용 체계 영역(예: 과학 `운동과 에너지`, `CONTENT_SYSTEM`)과 성취기준 단원(예: `힘과 우리 생활`, `STANDARD_GROUP`: 고려 사항·탐구 활동)이 달라 레코드를 나눈다. 성취기준의 `domain_id`는 고려 사항을 가진 레코드이고 내용 체계 항목은 covers로 잇는다(원문 대조 결과, 에픽 "고려 사항은 영역마다"를 사회·과학에서는 단원으로 읽음)
+- 도덕은 성취기준·고려 사항이 원문에서 `[초등학교]` 한 묶음(3~4·5~6학년군 함께)이고 내용 체계만 학년군 칸이 나뉜다. 기준안: 영역 레코드는 내용 체계 학년군(`도덕:초3~4:…`)으로 두고 고려 사항은 같은 글을 넣는다(#465 확인)
+- 인덱스: `embedding` HNSW(`vector_cosine_ops`, 기준안), `(dataset_version, kind, subject)`, `grades`·`semesters` GIN
+
+관계 테이블(모두 `dataset_version` 포함, FK `(dataset_version, …)` → `knowledge_chunk(dataset_version, id)`, 자동 삭제 없음)
+
+| 테이블 | 칸(PK 굵게) | 출처 |
+|---|---|---|
+| `knowledge_standard_semester` | **dataset_version, standard_code, semester**, grade(smallint, CHECK 3~6) | 학기 대응 자료(자동). C1 성취기준 `semesters` |
+| `knowledge_fits` | **dataset_version, standard_code, thinking_type**, reason(text), reviewed_by(varchar), reviewed_at(timestamptz) | C4 확인 파일 FITS 수락·수정 행만 |
+| `knowledge_prerequisite` | **dataset_version, standard_code, prerequisite_code**, reason, reviewed_by, reviewed_at. CHECK 두 코드 다름 | C4 PREREQUISITE 수락·수정 행만 |
+| `knowledge_covers` | **dataset_version, standard_code, content_id**, reviewed_by, reviewed_at | C4 COVERS 수락·수정 행만 |
+
+- C4 → C3: `ACCEPT`는 `target`, `MODIFY`는 `modifiedTarget`을 대상으로 넣고 `reason`·`reviewer`·`reviewedAt`(KST 날짜 00:00)을 옮긴다. `REJECT`·빈 칸(확인 전)은 넣지 않는다. 같은 관계가 여러 번 나오면 `reviewedAt`이 늦은 행. `reviewer = SAMPLE`(샘플 파일)은 거부
+- `knowledge_prerequisite.prerequisite_code` FK는 기준안에서 **두지 않는다**: 초3 1학기의 앞 학기 선수는 초1~2 성취기준인데 지식 저장소 범위가 초3~6이라 조각이 없을 수 있다. 대신 `achievement_standard` 코드인지 적재 때 검사(#468·#466 확인)
+- 성취기준 문장은 적재 때 `achievement_standard`와 코드로 대조하고 다르면 적재를 멈춘다(#466)
+
+판 규칙(C9, 기준안)
+
+- 이름: `kn-YYYYMMDD-NN`(KST 적재 시작일과 그날 순번 2자리, 예 `kn-20261111-01`). 추출 판(`curriculum-v1`)·고시 번호·관계 확인 파일 이름은 `knowledge_dataset.source`에 둔다
+- 적재·교체 순서: ① 새 판 `LOADING` 행 → ② C1 레코드를 조각으로(같은 판 안에서 `id` 중복이면 멈춤) → ③ 현재 `ACTIVE` 판과 모델·차원이 같고 `content_hash`가 같은 조각은 임베딩을 복사, 나머지는 C6에 64개 이하로 나눠 요청 → ④ 학기 관계(C1 `semesters`) → ⑤ 사람 확인 관계 옮기기(아래) → ⑥ 새 확인 파일(C4) 적재(늦은 `reviewedAt` 우선) → ⑦ 검사(임베딩 모두 채움, 성취기준 문장 대조, 관계 양 끝 존재, 수 기록) → ⑧ 한 트랜잭션에서 이전 `ACTIVE` → `RETIRED`, 새 판 → `ACTIVE`(`activated_at`). 실패하면 새 판은 `LOADING`으로 남고 활성 판은 그대로다. 같은 입력으로 다시 돌리면 같은 조각·관계 수(멱등)
+- 사람 확인 관계 옮기기: 이전 활성 판의 fits·prerequisite·covers 중 양 끝 ID가 새 판에도 있으면 `reviewed_by`·`reviewed_at`·`reason` 그대로 옮긴다. 끝이 없어진 관계는 옮기지 않고 다시 확인할 목록(C4 행 모양, decision 빈 칸)으로 출력한다. 끝은 있지만 본문(`content_hash`)이 바뀐 관계는 옮기되 다시 확인 권장 목록에도 넣는다(기준안)
+- 제거: `RETIRED` 판만 관리 명령으로 지운다. 한 트랜잭션에서 관계 → 조각 → 판 행 순서. `ACTIVE`·`LOADING`은 지우지 않는다
+- 검색·조회는 `ACTIVE` 판만 읽는다(C5)
+
 ---
 
 ## 5. report_db
