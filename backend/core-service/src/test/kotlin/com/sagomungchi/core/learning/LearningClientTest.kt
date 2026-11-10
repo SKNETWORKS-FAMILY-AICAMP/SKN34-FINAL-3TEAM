@@ -5,8 +5,8 @@ import com.sagomungchi.core._common.config.InternalRestClientFactory
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.security.UserContext
 import com.sagomungchi.core._common.security.UserContextHolder
-import com.sagomungchi.core.learning.client.LearningClient
-import com.sagomungchi.core.learning.client.LearningHttpProperties
+import com.sagomungchi.core._common.client.LearningClient
+import com.sagomungchi.core._common.client.LearningHttpProperties
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import org.junit.jupiter.api.Test
 import org.springframework.web.client.RestClient

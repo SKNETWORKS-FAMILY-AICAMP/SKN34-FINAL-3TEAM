@@ -7,7 +7,7 @@ import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.security.UserContext
 import com.sagomungchi.core._common.security.UserContextHolder
 import com.sagomungchi.core._common.web.HttpExchangeResult
-import com.sagomungchi.core.learning.client.LearningClient
+import com.sagomungchi.core._common.client.LearningClient
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import java.net.URLEncoder

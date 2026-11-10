@@ -12,7 +12,7 @@ import com.sagomungchi.learning.theme.domain.ThemePublishError
 import com.sagomungchi.learning.theme.domain.WeeklyTheme
 import com.sagomungchi.learning.theme.domain.WeeklyThemePublishIncompleteException
 import com.sagomungchi.learning.theme.domain.WeeklyThemeStatus
-import com.sagomungchi.learning.theme.repository.ThemeContent
+import com.sagomungchi.learning.theme.domain.ThemeContent
 import com.sagomungchi.learning.theme.repository.ThemeHeader
 import com.sagomungchi.learning.theme.repository.WeeklyThemeRepository
 import org.springframework.dao.DuplicateKeyException

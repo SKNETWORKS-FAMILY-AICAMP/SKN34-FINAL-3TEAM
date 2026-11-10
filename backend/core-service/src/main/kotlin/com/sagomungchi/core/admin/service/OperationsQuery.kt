@@ -1,13 +1,10 @@
 package com.sagomungchi.core.admin.service
 import com.sagomungchi.core.admin.domain.OperationPeriod
-import com.sagomungchi.core._common.exception.BusinessException
-import org.springframework.http.HttpStatus
+import com.sagomungchi.core._common.web.invalidOperations
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
-fun operationPage(page: Int, size: Int) { if (page !in 0..1000 || size !in 1..100) invalidOperations() }
-fun invalidOperations(): Nothing = throw BusinessException(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED","조회 조건을 확인해 주세요.")
         fun resolveOperationPeriod(from: String?, to: String?): OperationPeriod {
             if ((from==null)!=(to==null)) invalidOperations()
             fun date(value: String): LocalDate {

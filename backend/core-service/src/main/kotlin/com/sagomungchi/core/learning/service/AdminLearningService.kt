@@ -3,7 +3,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.JsonNode
 import com.sagomungchi.core.admin.domain.OperationPeriod
 import com.sagomungchi.core.admin.service.MissionAuditService
-import com.sagomungchi.core.learning.client.LearningClient
+import com.sagomungchi.core._common.client.LearningClient
 import com.sagomungchi.core._common.security.UserContextHolder
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.web.HttpExchangeResult

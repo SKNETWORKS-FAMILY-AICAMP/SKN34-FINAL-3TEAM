@@ -7,6 +7,8 @@ import com.sagomungchi.core.notification.service.NotificationOperationsService
 import com.sagomungchi.core.conversation.service.ConversationOperationsService
 import com.sagomungchi.core.learning.service.AdminLearningService
 import com.sagomungchi.core._common.exception.BusinessException
+import com.sagomungchi.core._common.web.invalidOperations
+import com.sagomungchi.core._common.web.operationPage
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import java.util.UUID

@@ -20,7 +20,7 @@ class ModelVersionController(private val service: ModelVersionService) {
     @PostMapping("/api/v1/admin/model-versions")
     @ResponseStatus(HttpStatus.CREATED)
     fun register(@Valid @RequestBody body: RegisterRequest, request: HttpServletRequest) = service.register(
-        RegisterVersion(body.kind, body.name, body.version, body.refId, body.artifactUri, body.evaluation, body.registration), actor(request))
+        RegisterVersion(body.kind, body.name, body.version, body.refId, body.artifactUri, body.evaluation, body.registration.toMetadata()), actor(request))
 
     @PostMapping("/api/v1/admin/model-versions/{versionId}/activate")
     fun activate(@PathVariable versionId: UUID, @Valid @RequestBody body: ActivateRequest, request: HttpServletRequest) =
@@ -35,9 +35,32 @@ class ModelVersionController(private val service: ModelVersionService) {
 
 data class RegisterRequest(val kind: ModelKind, val name: String, val version: String, val refId: UUID? = null,
     val artifactUri: String? = null, val evaluation: EvaluationEvidence,
-    val registration: RegistrationMetadata = RegistrationMetadata()) {
+    val registration: RegistrationRequest = RegistrationRequest()) {
     @com.fasterxml.jackson.annotation.JsonAnySetter
     fun unknown(name: String, value: Any?) { throw IllegalArgumentException("Unknown registration field: $name") }
+}
+
+/** 등록 출처 본문(#367). 모르는 칸은 거부하고 검사는 domain [RegistrationMetadata.valid] */
+data class RegistrationRequest(
+    val source: RegistrationSource = RegistrationSource.MANUAL,
+    val jsonSha256: String? = null,
+    val manifestSha256: String? = null,
+    val modifiedFields: List<String> = emptyList(),
+    val artifactFiles: List<RegistrationArtifactRequest?> = emptyList(),
+) {
+    @com.fasterxml.jackson.annotation.JsonAnySetter
+    fun unknown(name: String, value: Any?) { throw IllegalArgumentException("Unknown registration field: $name") }
+    fun toMetadata() = RegistrationMetadata(source, jsonSha256, manifestSha256, modifiedFields, artifactFiles.map { it?.toArtifact() })
+}
+
+/** 파일 하나의 크기·해시. `bytes` 누락·null은 본문 오류 */
+data class RegistrationArtifactRequest(val file: String,
+    @param:com.fasterxml.jackson.annotation.JsonProperty(value = "bytes", required = true)
+    @param:com.fasterxml.jackson.annotation.JsonSetter(nulls = com.fasterxml.jackson.annotation.Nulls.FAIL)
+    val bytes: Long, val sha256: String) {
+    @com.fasterxml.jackson.annotation.JsonAnySetter
+    fun unknown(name: String, value: Any?) { throw IllegalArgumentException("Unknown artifact field: $name") }
+    fun toArtifact() = RegistrationArtifact(file, bytes, sha256)
 }
 data class ActivateRequest(@field:NotNull val approved: Boolean?, val scopes: List<String>, val reason: String, @field:NotNull val reanalysisPlanned: Boolean?)
 data class RollbackRequest(val scopes: List<String>, val reason: String, @field:NotNull val reanalysisPlanned: Boolean?)

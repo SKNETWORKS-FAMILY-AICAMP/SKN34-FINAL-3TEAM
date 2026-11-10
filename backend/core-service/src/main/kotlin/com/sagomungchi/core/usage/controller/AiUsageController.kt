@@ -1,4 +1,4 @@
-package com.sagomungchi.core.admin.controller
+package com.sagomungchi.core.usage.controller
 
 import com.sagomungchi.core.usage.domain.CallType
 import com.sagomungchi.core.usage.domain.UsageSummary

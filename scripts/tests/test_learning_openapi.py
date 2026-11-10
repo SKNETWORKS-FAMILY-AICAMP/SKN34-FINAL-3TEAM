@@ -35,8 +35,10 @@ class LearningOpenApiTests(unittest.TestCase):
         self.assertTrue({"201", "409", "422", "503", "504"}.issubset(responses))
 
     def test_proxy_does_not_access_learning_database_or_add_retry(self):
-        directory = ROOT / "backend/core-service/src/main/kotlin/com/sagomungchi/core/learning"
-        sources = "\n".join(file.read_text(encoding="utf-8") for file in directory.rglob("*.kt"))
+        core = ROOT / "backend/core-service/src/main/kotlin/com/sagomungchi/core"
+        # #422: learning 내부 API 전송(LearningClient)은 _common/client 공용
+        files = [*(core / "learning").rglob("*.kt"), *(core / "_common/client").rglob("*.kt")]
+        sources = "\n".join(file.read_text(encoding="utf-8") for file in files)
         for forbidden in ("JdbcTemplate", "DataSource", "@Transactional", "Retry.decorate", "Retry.of", "learning_db"):
             self.assertNotIn(forbidden, sources)
         self.assertIn('factory.create("learning", properties.readTimeout)', sources)

@@ -5,8 +5,8 @@ import com.sagomungchi.core._common.config.AppProperties
 import com.sagomungchi.core._common.config.InternalRestClientFactory
 import com.sagomungchi.core._common.security.UserContext
 import com.sagomungchi.core._common.security.UserContextHolder
-import com.sagomungchi.core.learning.client.LearningClient
-import com.sagomungchi.core.learning.client.LearningHttpProperties
+import com.sagomungchi.core._common.client.LearningClient
+import com.sagomungchi.core._common.client.LearningHttpProperties
 import com.sagomungchi.core.learning.client.LearningRecordClient
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.junit.jupiter.api.Test
