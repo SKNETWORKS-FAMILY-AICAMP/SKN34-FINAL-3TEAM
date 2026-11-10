@@ -515,3 +515,8 @@ local kind(develop `b1562c2b`)에서 테스트 학부모·학생·관리자 계�
 
 - `ModelVersionHttpTest`: `report-explanation` 모델을 설명 scope 2개로 등록·활성화하고 활성 목록에 이름·scope가 보임, `REPORT_EXPLANATION` 사용량 저장(V42 CHECK)·호출 종류별 조회·미산정
 - `scripts/tests/test_admin_mission_drafts_contract.py`(호출 종류 목록 7곳 대조)·`test_admin_operations_contract.py`(OpenAPI 지문)·`test_core_migration_versions.py`(로컬 리비전)
+
+## #479 리포트 설명에 필요한 프로필·열람 경계 (2026-11-10)
+
+- SYSTEM 전용 `GET /internal/students/{studentId}/profile`에 기존 저장값 `grade`를 추가한다. report가 설명 대상 학년을 임의로 정하지 않도록 하기 위한 필드다. 기존 내부 토큰·학생 범위·활성 학생 검사와 `no-store`는 유지한다. DB와 이벤트 변경은 없다.
+- 공개 리포트 상세의 `explanations`는 report 계약대로 전달하되, 현재 무료 이용권/원문 비공개이면 null로 가린다. 기존 서술·원문 경계와 같은 위치에서 재검사한다. 인용 `quote`는 PR #491에 맞춰 null을 허용한다.

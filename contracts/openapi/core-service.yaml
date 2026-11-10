@@ -9303,11 +9303,12 @@ components:
     InternalStudentProfile:
       type: object
       additionalProperties: false
-      required: [studentId, nickname, parentSharingEnabled]
+      required: [studentId, nickname, parentSharingEnabled, grade]
       properties:
         studentId: {type: string, format: uuid}
         nickname: {type: string}
         parentSharingEnabled: {type: boolean, default: false}
+        grade: {type: integer, minimum: 3, maximum: 9, description: '저장 학년. report 설명의 승인 범위 확인용 (#479)'}
     OperationPeriod:
       type: object
       additionalProperties: false
@@ -10483,6 +10484,28 @@ components:
         - verification
         - versions
         properties:
+          explanations:
+            description: '#479 검증된 대표 답변 설명. 일일·무료·현재 원문 비공개이면 null. 과거 리포트는 누락/null 허용.'
+            oneOf:
+            - type: 'null'
+            - type: object
+              required: [state, items]
+              properties:
+                state: {type: string, enum: [INCLUDED, NOT_INCLUDED, NO_TARGET]}
+                items:
+                  type: array
+                  maxItems: 3
+                  items:
+                    type: object
+                    required: [attemptId, answerId, answerVersion, missionTitle, thinkingType, quote, text]
+                    properties:
+                      attemptId: {type: string, format: uuid}
+                      answerId: {type: string, format: uuid}
+                      answerVersion: {type: integer, minimum: 1}
+                      missionTitle: {type: string}
+                      thinkingType: {type: string, enum: [ANALYZE, EVALUATE, CREATE, SOLVE, REFLECT]}
+                      quote: {type: [string, 'null']}
+                      text: {type: string}
           correctionNotice:
             type: boolean
             description: 이 판에 쓰인 판정 중 일부가 만들어진 뒤 정정됨 (FN-SUP-03). 리포트 내용은 바꾸지 않음

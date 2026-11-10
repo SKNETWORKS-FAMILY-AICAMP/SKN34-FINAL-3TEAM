@@ -64,6 +64,7 @@ class JudgmentInput(InputModel):
     trial: StrictBool
     elements: list[ElementInput]
     corrected: StrictBool = False
+    model_scores: object = None
 
     def record(self) -> JudgmentRecord:
         ids = [e.element_id for e in self.elements]
@@ -77,6 +78,7 @@ class JudgmentInput(InputModel):
                 for e in self.elements
             ),
             self.corrected,
+            self.model_scores,
         )
 
 
@@ -333,7 +335,7 @@ class LearningClient:
         response.raise_for_status()
         return response.json()
 
-    async def _pages(self, student_id: UUID, period: Period, suffix: str) -> list[dict]:
+    async def _pages(self, student_id: UUID, period: Period, suffix: str, **params) -> list[dict]:
         items, page, expected_total, expected_size = [], 0, None, None
         attempt_ids = set()
         while True:
@@ -344,6 +346,7 @@ class LearningClient:
                     **period.payload(),
                     "page": page,
                     "size": 100,
+                    **params,
                 },
             )
             response = PageInput.model_validate(raw)
@@ -376,6 +379,24 @@ class LearningClient:
             if len(response.items) != response.size:
                 raise RecordContractError("Learning records have a missing page")
             page += 1
+
+    async def explanation_attempts(
+        self, student_id: UUID, period: Period
+    ) -> tuple[AttemptRecord, ...]:
+        context = current_user_context()
+        if context is None or context.role != "SYSTEM":
+            raise RecordContractError("Model scores require a SYSTEM context")
+        context.require_student(str(student_id))
+        rows = await self._pages(student_id, period, "attempts", includeModelScores="true")
+        attempts = []
+        for row in rows:
+            if row.get("available") is False:
+                continue
+            attempt = AttemptInput.model_validate(row).record()
+            if attempt.student_id != student_id:
+                raise RecordContractError("Learning returned another student's attempt")
+            attempts.append(attempt)
+        return tuple(attempts)
 
     async def daily_records(self, student_id: UUID, period: Period) -> LearningRecords:
         context = current_user_context()

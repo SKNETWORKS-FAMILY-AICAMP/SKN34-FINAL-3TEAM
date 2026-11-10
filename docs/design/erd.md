@@ -1400,7 +1400,7 @@ erDiagram
   report_item {
     uuid id PK "evidence itemId"
     uuid report_id FK
-    varchar item_type "METRIC|THINKING_TYPE|CHANGE|REFLECTION|QUOTE|PROBLEM"
+    varchar item_type "METRIC|THINKING_TYPE|CHANGE|REFLECTION|QUOTE|PROBLEM|EXPLANATION"
     int seq
     jsonb payload "Metric, 유형 요약, 전후 변화 등"
     varchar state "OK|NO_RECORD|INSUFFICIENT_SAMPLE"
@@ -1450,7 +1450,7 @@ erDiagram
 - 재생성은 기존 행을 덮지 않고 `revision` 증가 행 추가, UK `(student_id, period_type, period_from, revision)` (기존 판 보존·최신판 기본 조회, P06). 학부모 요청 재생성은 리포트당 1회 → core `report_job(REGENERATE)` 건수로 확인
 - 기록 없는 주·표본 부족 주는 `status = COMPLETED` + `state`로 구분, 생성 실패(`FAILED`)와 분리 (FN-RPT-11). state는 COMPLETED일 때만 NOT NULL (상태 다이어그램 4.2).
 - `report_item` UK `(report_id, item_type, seq)`. 상세 응답(API 3.4)은 `item_type`별로 묶어 조립
-- #479에서 `item_type`에 `EXPLANATION`(리포트 설명, FN-RPT-09)을 Alembic CHECK와 이 Mermaid 주석에 함께 추가 예정. `payload`는 `{missionTitle, thinkingType, quote, text}`, 근거 답변은 `report_item_evidence`, 검사 통과분만 저장(`verified = true`). 리포트당 최대 3행이며 설명 상태(`INCLUDED`·`NOT_INCLUDED`·`NO_TARGET`, API 3.4)는 행 유무만으로 구분되지 않으므로 #479에서 저장 위치를 확정한다(기존 `weekly_report` jsonb 활용 우선, 컬럼을 추가하면 Mermaid도 함께 갱신). 삭제는 기존 리포트 삭제(P09)에 포함
+- #479: `item_type=EXPLANATION`은 Alembic CHECK에 추가한다. `payload`는 `{attemptId, answerId, answerVersion, missionTitle, thinkingType, quote, text}`, `quote`는 null 허용, 근거 답변은 `report_item_evidence`에 연결하며 검사 통과분만 저장(`verified=true`). 리포트당 최대 3행이다. 상태(`INCLUDED`·`NOT_INCLUDED`·`NO_TARGET`)는 기존 `weekly_report.verification` JSONB의 `explanationState`에 보관한다. 이전 행은 값 없이 유지한다. 삭제는 기존 리포트 삭제(P09)에 포함하며 새 테이블·컬럼은 추가하지 않는다.
 - `report_file` UK `(report_id, format)`. 다운로드는 `s3_key`로 presigned URL 발급 (FN-RPT-13)
 - #55의 `20261027_02`는 `report_deletion_guard`를 추가한다. 삭제 중 생성·조회를 막고 완료 후에도 PROFILE·RECORDS 모두 생성을 차단한다. 최신 #45의 자동 학습 재개 금지와 일치시키며 재개는 별도 계약이 필요하다. 학생 UUID·삭제 요청 UUID·범위·시각·처리 상태만 남기며 원문·이름·리포트 내용은 저장하지 않는다.
 

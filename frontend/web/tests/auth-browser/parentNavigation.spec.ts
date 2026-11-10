@@ -258,6 +258,18 @@ test('다른 자녀를 고르면 답변 선택과 연결한 리포트를 함께 
 const explanation = { attemptId: 'attempt-explanation', answerId: 'answer-explanation', answerVersion: 1, missionTitle: '나무가 하는 일',
   thinkingType: 'ANALYZE' as const, quote: '나무가 그늘을 만들어 줍니다.', text: '나무의 역할을 그늘이라는 구체적인 예로 설명했습니다.' }
 
+test('#479: 인용 없는 검증 설명은 요약 검증 실패와 독립적으로 표시한다', async ({ page, context }) => {
+  const { report } = await parentServer(context, 'WEEKLY')
+  report.explanations = { state: 'INCLUDED', items: [{ ...explanation, quote: null }] }
+  report.verification = { numbersMatched: false, quotesMatched: false }
+  await page.goto(`/parent/report?childId=${childId}`)
+  await page.getByRole('button', { name: '리포트 상세 보기', exact: true }).click()
+  const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
+  await expect(area.getByRole('article')).toHaveCount(1)
+  await expect(area.locator('blockquote')).toHaveCount(0)
+  await expect(area.getByText(explanation.text, { exact: true })).toBeVisible()
+})
+
 test('#481: 주간 설명 카드의 미션·유형·인용·설명과 AI 관찰을 표시한다', async ({ page, context }) => {
   const { report, children } = await parentServer(context, 'WEEKLY')
   children[0].grade = 5

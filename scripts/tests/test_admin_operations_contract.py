@@ -22,6 +22,9 @@ class AdminOperationsContracts(unittest.TestCase):
             for name,expected in baseline[section].items():
                 self.assertIn(name,current)
                 reviewed=deepcopy(current[name])
+                # #479 adds optional explanations; preserve every pre-existing report field.
+                if section=='schemas' and name=='ReportDetail':
+                    reviewed['allOf'][1]['properties'].pop('explanations',None)
                 # #367 extends registration only; retain all prior fields in the fingerprint.
                 if section=='schemas' and name=='RegisterModelVersion':
                     reviewed['properties'].pop('registration',None)

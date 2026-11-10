@@ -249,4 +249,25 @@ class ReportRenderer:
                         if comparison["state"] == "CRITERIA_CHANGED"
                         else "이전 기록 없음"
                     )
+        explanations = report.get("explanations")
+        if explanations:
+            ordered.extend(["", "## 대표 답변 설명 · AI 관찰", ""])
+            if explanations["state"] == "INCLUDED":
+                for item in explanations["items"]:
+                    ordered.extend(
+                        [
+                            "### " + safe(item["missionTitle"]),
+                            safe(THINKING_LABELS[item["thinkingType"]]),
+                        ]
+                    )
+                    if item["quote"] is not None:
+                        ordered.append(safe(item["quote"]))
+                    ordered.append(safe(item["text"]))
+            elif explanations["state"] == "NOT_INCLUDED":
+                ordered.append(
+                    "설명 미포함 · 설명을 제공하지 못했습니다. "
+                    "학습 수치와 기록은 계속 확인할 수 있습니다."
+                )
+            else:
+                ordered.append("설명 대상 답변이 없어 AI 관찰 설명이 포함되지 않았습니다.")
         return "\n".join(ordered) + "\n"
