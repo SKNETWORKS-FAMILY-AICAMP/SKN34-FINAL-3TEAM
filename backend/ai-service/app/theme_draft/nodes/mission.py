@@ -18,7 +18,6 @@ from app.theme_draft.checks import (
     MISSION_REVIEW_IDS,
     check_mission,
     check_review,
-    finish_mission,
 )
 from app.theme_draft.models import GeneratedMissionReview
 from app.theme_draft.nodes import (
@@ -66,8 +65,11 @@ async def review_mission(
 
 
 async def generate_mission(payload: dict[str, Any], runtime: Runtime[ThemeContext]) -> ThemeState:
-    """payload: {day, theme, seed}. 그 요일의 "
-    "drafts·raw_drafts·mission_failures·mission_warnings를 돌려준다."""
+    """payload: {day, theme, seed}. 그 요일의 drafts·mission_failures·mission_warnings를 돌려준다.
+
+    금요일 안내(guide)도 LLM이 만든 그대로 둔다(단서는 학생이 그날 미션을 마친 뒤 learning이
+    보여 주므로 코드가 단서 목록을 넣지 않음, 사용자 결정 2026-11-11).
+    """
     ctx = runtime.context
     day, theme = payload["day"], payload["theme"]
     feedback: list[str] = list(payload.get("seed") or [])
@@ -101,15 +103,13 @@ async def generate_mission(payload: dict[str, Any], runtime: Runtime[ThemeContex
             bad, warns = await review_mission(ctx, day, request, draft, theme.get("target"))
         if not bad:
             return {
-                "drafts": {day: finish_mission(theme, day, draft)},
-                "raw_drafts": {day: draft},
+                "drafts": {day: draft},
                 "mission_failures": {day: []},
                 "mission_warnings": {day: warns},
             }
         feedback = uniq([*feedback, *bad])
     return {
-        "drafts": {day: finish_mission(theme, day, draft)},
-        "raw_drafts": {day: draft},
+        "drafts": {day: draft},
         "mission_failures": {day: bad},
         "mission_warnings": {day: []},
     }

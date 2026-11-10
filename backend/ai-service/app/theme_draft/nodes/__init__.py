@@ -43,7 +43,6 @@ class ThemeState(TypedDict, total=False):
     request_seed: dict[str, list[str]]  # 요청 previousFailures의 MISSION 사유(요일별, 매번 넣음)
     mission_seed: dict[str, list[str]]  # 글 검토가 요일을 다시 보낼 때 넣는 사유
     drafts: Annotated[dict[str, Draft], merge]
-    raw_drafts: Annotated[dict[str, Draft], merge]
     mission_failures: Annotated[dict[str, list[str]], merge]
     mission_warnings: Annotated[dict[str, list[str]], merge]
     dialogues: Annotated[dict[str, list[dict] | None], merge]

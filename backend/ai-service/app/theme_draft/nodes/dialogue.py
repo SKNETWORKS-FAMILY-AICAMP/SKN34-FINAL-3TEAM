@@ -1,14 +1,14 @@
 """generate_dialogue(요일마다 Send로 병렬). 실패한 요일만 사유를 넣어 다시(상한·마감).
 
 끝내 실패하면 그 요일 대화는 빼고 warnings(DIALOGUE)에 남긴다(#437 기준안).
-단서 문장은 코드가 그대로 넣는다.
+그날 증거 발견 줄(discovery)은 코드가 마지막 줄로 그대로 넣는다(단서는 미션 뒤 learning이 보여 줌).
 """
 
 from typing import Any
 
 from langgraph.runtime import Runtime
 
-from app.theme_draft.checks import check_dialogue, day_clue, dialogue_lines
+from app.theme_draft.checks import check_dialogue, dialogue_lines, theme_day
 from app.theme_draft.models import GeneratedDialogue
 from app.theme_draft.nodes import DEADLINE_REASON, THEME_CALL_TYPE, ThemeContext, ThemeState, uniq
 
@@ -40,7 +40,7 @@ async def generate_dialogue(payload: dict[str, Any], runtime: Runtime[ThemeConte
         )
         if not bad:
             return {
-                "dialogues": {day: dialogue_lines(out, day_clue(theme, day))},
+                "dialogues": {day: dialogue_lines(out, theme_day(theme, day)["discovery"])},
                 "dialogue_omitted": {day: []},
             }
         feedback = uniq([*feedback, *bad])

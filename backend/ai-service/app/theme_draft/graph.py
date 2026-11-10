@@ -55,7 +55,7 @@ def after_missions(state: ThemeState) -> list[Send] | str:
     return [
         Send(
             "generate_dialogue",
-            {"day": d, "theme": state["theme"], "draft": state["raw_drafts"][d]},
+            {"day": d, "theme": state["theme"], "draft": state["drafts"][d]},
         )
         for d in state["days_todo"]
     ]

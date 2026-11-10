@@ -5,6 +5,8 @@
   지붕(놀이터·텃밭 없음, 창고·정자 있음), 물기(모두 젖음)
 - 월·화 HINT(물기), 수 RULE(지붕 없음 → 창고·정자), 목 RULE(땅 흙 → 놀이터·창고),
   금 HINT(물기) → 수요일까지 놀이터·텃밭 2개 남고, 마지막 틀린 후보(놀이터)는 목요일에 빠짐
+- 뭉치는 구조대로 출동한 해결사, 보리의 주인은 지호. 요일마다 증거 발견 줄(discovery)과
+  수사 연결 문장(missionHook)은 단서 결론(허용 값)·후보·정답을 말하지 않음
 """
 
 import copy
@@ -24,6 +26,22 @@ from tests.theme_draft.helpers import DAY_TYPES, STANDARDS
 
 CANDIDATES = ["놀이터", "텃밭", "창고", "정자"]
 ANSWER = "텃밭"
+# 요일별 (증거 발견 줄, 수사 연결 문장). 미션 질문은 수사 연결 문장으로 시작함
+DISCOVERY = {
+    "MON": "길에 보리 발자국이 찍혀 있어! 어디로 갔는지 알 수 있을지도 몰라.",
+    "TUE": "빵집 아저씨가 보리를 봤대! 그때 모습을 물어보자.",
+    "WED": "지호 친구가 보리가 가는 걸 봤대! 들어 보자.",
+    "THU": "골목에 보리 발자국이 또 있어! 무엇이 묻었는지 살펴보자.",
+    "FRI": "가게 앞 사진에 보리가 찍혔대! 자세히 보자.",
+}
+HOOK = {
+    "MON": "발자국 주인이 다닌 곳을 알려면 동물이 사는 환경을 알아야 해. 뭉치에게 알려 줘.",
+    "TUE": "아저씨 말을 잘 들으려면 사실과 의견을 나눌 줄 알아야 해. 뭉치에게 알려 줘.",
+    "WED": "친구가 본 것을 잘 기억하려면 동물의 특징을 살펴봐야 해. 뭉치를 도와줘.",
+    "THU": "발자국 수를 세어 보면 보리가 얼마나 걸었는지 알 수 있어. 뭉치와 함께 계산해 줘.",
+    "FRI": "사진을 보기 전에 이번 주 뭉치의 수사를 돌아보자. 뭉치에게 알려 줘.",
+}
+TYPE_DAY = {t: d for d, t in DAY_TYPES.items()}
 
 
 def feature(name: str, values: dict[str, str], code: str | None = None) -> dict[str, Any]:
@@ -52,6 +70,8 @@ def day(
         "clueType": clue_type,
         "condition": {"kind": kind, "feature": feat, "allowed": allowed},
         "evidence": {"kind": ev, "when": "보리가 사라진 날 오후"},
+        "discovery": DISCOVERY[d],
+        "missionHook": HOOK[d],
     }
 
 
@@ -63,8 +83,8 @@ def valid_theme() -> dict[str, Any]:
         "world": "작은 마을의 비 온 뒤 오후",
         "characters": [{"name": "지호", "look": "노란 우비를 입은 아이"}],
         "styleNote": "밝은 수채화",
-        "outfit": "주황 조끼",
-        "intro": "비가 그친 오후, 강아지 보리가 사라졌어요. 뭉치와 지호가 단서를 모아요.",
+        "outfit": "구조대 주황 조끼",
+        "intro": "비가 그친 오후, 지호의 강아지 보리가 사라졌어요. 구조대 뭉치가 출동해요.",
         "outro": "보리는 텃밭 고랑에서 흙투성이로 낮잠을 자고 있었어요.",
         "bigQuestion": "보리는 어디에 숨어 있을까?",
         "target": "강아지 보리",
@@ -118,27 +138,55 @@ def valid_theme() -> dict[str, Any]:
     }
 
 
-def cut(scene: str, action: str, caption: str) -> dict[str, str]:
-    return {"scene": scene, "action": action, "caption": caption}
+def cut(scene: str, action: str, caption: str, mood: str) -> dict[str, str]:
+    return {"scene": scene, "action": action, "caption": caption, "mungchiMood": mood}
 
 
+# 시작: 1 평소 모습과 주인·2 사건(뭉치 없음, none) → 3 뭉치 혼자 출동·4 현장 도착(none 아님)
 INTRO_CUTS = [
     cut(
-        "비 그친 마을 길을 뭉치와 지호가 걷는다", "보리가 꼬리를 흔들며 앞장선다", "비가 그친 오후."
+        "비 그친 마을 길에서 지호가 보리와 공놀이를 한다",
+        "보리가 공을 물고 꼬리를 흔든다",
+        "비가 그친 오후.",
+        "none",
     ),
-    cut("보리가 지호 곁에서 공을 문다", "지호가 보리 목줄을 쓰다듬는다", "보리는 지호의 단짝이야."),
-    cut("빈 목줄만 남은 길모퉁이", "지호가 주위를 둘러보며 놀란다", "그런데… 보리가 사라졌다."),
     cut(
-        "뭉치와 지호가 마주 보고 고개를 끄덕인다",
-        "둘이 함께 주먹을 쥔다",
+        "빈 목줄만 남은 길모퉁이에서 지호가 두리번거린다",
+        "지호가 깜짝 놀라 주위를 둘러본다",
+        "보리가 사라졌다!",
+        "none",
+    ),
+    cut(
+        "주황 조끼를 입은 뭉치가 마을 길을 달려간다",
+        "뭉치가 힘차게 달린다",
+        "구조대 뭉치 출동!",
+        "determined",
+    ),
+    cut(
+        "뭉치와 지호가 길모퉁이에서 마주 본다",
+        "둘이 함께 고개를 끄덕인다",
         "보리는 어디에 숨어 있을까?",
+        "determined",
     ),
 ]
+# 종료: 1 단서 정리 → 2 정답 장소로 → 3 찾아 주인에게 돌려줌 → 4 함께 기뻐함
 OUTRO_CUTS = [
-    cut("뭉치와 지호가 단서 쪽지를 펼쳐 본다", "쪽지를 하나씩 짚는다", "모은 단서를 다시 볼까?"),
-    cut("둘이 텃밭으로 달려간다", "고랑 사이를 달린다", "지붕 없는 흙밭으로!"),
-    cut("텃밭 고랑에서 보리가 잠들어 있다", "지호가 보리를 안아 올린다", "찾았다, 텃밭이었어!"),
-    cut("뭉치와 지호와 보리가 함께 웃는다", "모두 폴짝 뛴다", "단서가 길을 알려 줬어."),
+    cut(
+        "뭉치가 단서 쪽지를 펼쳐 놓는다",
+        "쪽지를 하나씩 짚는다",
+        "모은 단서를 정리해 볼까?",
+        "determined",
+    ),
+    cut(
+        "뭉치와 지호가 텃밭으로 달려간다", "고랑 사이를 달린다", "지붕 없는 흙밭으로!", "determined"
+    ),
+    cut(
+        "텃밭 고랑에서 찾은 보리를 뭉치가 지호에게 건넨다",
+        "지호가 보리를 안아 올린다",
+        "찾았다, 텃밭이었어!",
+        "surprised",
+    ),
+    cut("뭉치와 지호와 보리가 함께 웃는다", "모두 폴짝 뛴다", "단서가 길을 알려 줬어.", "smile"),
 ]
 
 
@@ -160,12 +208,15 @@ def generated_theme(theme: dict[str, Any] | None = None) -> GeneratedTheme:
 
 
 def mission_draft(thinking_type: str, hints: int = 3, **overrides: Any) -> GeneratedDraft:
-    """초3 미션 초안(생각 열기 3개). SOLVE는 풀이(최종 답), 나머지는 서술."""
+    """초3 미션 초안(생각 열기 3개). SOLVE는 풀이(최종 답), 나머지는 서술.
+
+    질문은 그 요일 수사 연결 문장으로 시작한다(HOOK_MISSING 통과)."""
     code = STANDARDS[thinking_type][0]
     solve = thinking_type == "SOLVE"
     body: dict[str, Any] = {
         "title": "뭉치의 탐정 수첩",
-        "question": "뭉치와 지호가 마을 길에서 본 것을 떠올려 보고 까닭과 함께 써 보자.",
+        "question": HOOK[TYPE_DAY[thinking_type]]
+        + " 뭉치와 지호가 마을 길에서 본 것을 떠올려 보고 까닭과 함께 써 보자.",
         "guide": None,
         "sceneNote": None,
         "choices": None,
@@ -192,12 +243,11 @@ def mission_draft(thinking_type: str, hints: int = 3, **overrides: Any) -> Gener
     return GeneratedDraft(**body)
 
 
-def dialogue(d: str, speaker: str = "지호", **overrides: Any) -> GeneratedDialogue:
-    """초3 대화(단서 줄 포함 2~3줄). 월요일은 recap 없음."""
+def dialogue(speaker: str = "뭉치", **overrides: Any) -> GeneratedDialogue:
+    """초3 대화(증거 발견 줄 포함 2~3줄): LLM 줄 1줄 + 코드가 넣는 증거 발견 줄."""
     body: dict[str, Any] = {
-        "recap": None if d == "MON" else "앞에서 모은 단서를 다시 볼까?",
-        "lines": [GeneratedLine(speaker="뭉치", text="여기 뭔가 있어!")],
-        "clueSpeaker": speaker,
+        "lines": [GeneratedLine(speaker="지호", text="여기 뭔가 있는 것 같아!")],
+        "discoverySpeaker": speaker,
     }
     body.update(overrides)
     return GeneratedDialogue(**body)

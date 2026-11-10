@@ -10,7 +10,10 @@ from app.config import get_settings
 from app.mission_draft.models import Draft, MissionDraftRequest
 from app.theme_draft import checks
 from app.theme_draft.models import GeneratedDay, ThemeDraftRequest
+from app.theme_draft.prompts import llm_line_range
 from tests.theme_draft.fixtures import (
+    DISCOVERY,
+    HOOK,
     day_with,
     dialogue,
     feature,
@@ -160,7 +163,7 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
     ("character without look", themed(characters=[{"name": "지호", "look": ""}]), ["CHARACTERS"]),
     ("mungchi as character", themed(characters=[{"name": "뭉치", "look": "솜"}]), ["CHARACTERS"]),
     ("candidate color word", edit(lambda t: _rename(t, "창고", "빨간창고")), ["CANDIDATES"]),
-    ("candidate one char", edit(lambda t: _rename(t, "창고", "곳")), ["CANDIDATES"]),
+    ("candidate one char", edit(lambda t: _rename(t, "창고", "샘")), ["CANDIDATES"]),
     ("days out of order", edit(lambda t: t["days"].reverse()), ["DAYS"]),
     ("wrong thinking type", on_day("MON", thinkingType="SOLVE"), ["DAYS MON"]),
     ("clue empty", on_day("TUE", clue=""), ["CLUE_TEXT TUE", "REQUIRED"]),
@@ -240,6 +243,54 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
         edit(lambda t: t["outroCuts"][2].update(caption="텃밭이었어!")),
         [],
     ),
+    # 시작 콘티 뭉치 표정: 1·2(평소 모습·사건)는 뭉치가 없어 none, 3·4(출동·도착)는 none이 아님
+    (
+        "mungchi in intro cut 1",
+        edit(lambda t: t["introCuts"][0].update(mungchiMood="smile")),
+        ["CUT_MOOD"],
+    ),
+    (
+        "mungchi missing in intro cut 3",
+        edit(lambda t: t["introCuts"][2].update(mungchiMood="none")),
+        ["CUT_MOOD"],
+    ),
+    (
+        "mungchi mood unknown",
+        edit(lambda t: t["outroCuts"][3].update(mungchiMood="angry")),
+        ["CUT_MOOD"],
+    ),
+    (
+        "outro cut without mungchi is fine",
+        edit(lambda t: t["outroCuts"][1].update(mungchiMood="none")),
+        [],
+    ),
+    # 증거 발견 줄·수사 연결 문장: 필수·길이, 단서 결론(허용 값)·후보·정답 금지
+    ("discovery empty", on_day("MON", discovery=" "), ["REQUIRED"]),
+    ("discovery too long", on_day("TUE", discovery="가" * 41), ["LENGTH"]),
+    ("mission hook empty", on_day("WED", missionHook=""), ["REQUIRED"]),
+    ("mission hook too long", on_day("THU", missionHook="가" * 61), ["LENGTH"]),
+    (
+        "discovery tells clue value",
+        on_day("THU", discovery="골목 발자국에 흙이 묻어 있어!"),
+        ["CLUE_EARLY THU"],
+    ),
+    (
+        "mission hook tells clue value",
+        on_day("WED", missionHook="지붕 없음을 알려면 동물의 특징을 살펴봐야 해. 뭉치를 도와줘."),
+        ["CLUE_EARLY WED"],
+    ),
+    # 1자 줄기(젖음→젖)는 보지 않음(오탐이 많음), 정확히 같은 낱말만
+    ("one char stem is not clue early", on_day("MON", discovery="젖은 발자국이 찍혀 있어!"), []),
+    (
+        "discovery names candidate",
+        on_day("MON", discovery="놀이터 앞에 보리 발자국이 있어!"),
+        ["ANSWER_LEAK"],
+    ),
+    (
+        "mission hook names answer",
+        on_day("FRI", missionHook="텃밭 사진을 보기 전에 이번 주 수사를 돌아보자."),
+        ["ANSWER_LEAK"],
+    ),
 ]
 
 
@@ -297,6 +348,24 @@ def test_value_in_text(value: str, text: str, found: bool) -> None:
     assert checks.value_in_text(value, text) is found
 
 
+@pytest.mark.parametrize(
+    ("value", "text", "found"),
+    [
+        ("흙", "흙탕물", True),  # 정확히 일치
+        ("2:3", "비율이 2대3이었어", True),
+        ("미끄러움", "길이 미끄러웠어", True),  # 줄기 '미끄러'(3자) 일치
+        ("초록색", "초록 모자를 봤어", True),  # 줄기 '초록'(2자)
+        ("좁음", "길이 좁았어", False),  # 1자 줄기 '좁'은 보지 않음(value_in_text와 다름)
+        ("젖음", "젖은 발자국", False),
+        ("없음", "지붕이 없음", True),
+        ("모래", "바닥은 나무였어", False),
+    ],
+)
+def test_mentions_value_needs_two_char_stem(value: str, text: str, found: bool) -> None:
+    """CLUE_EARLY 비교(증거 발견 줄·수사 연결 문장·대화가 같이 씀)."""
+    assert checks.mentions_value(value, text) is found
+
+
 # ---------------------------------------------------------------- 미션
 def mission_inputs(thinking_type: str = "ANALYZE") -> MissionDraftRequest:
     request = ThemeDraftRequest.model_validate(request_body())
@@ -323,8 +392,39 @@ MISSION_CASES: list[tuple[str, str, dict[str, Any], list[str]]] = [
     (
         "theme answer in question",
         "ANALYZE",
-        {"question": "텃밭에 간 까닭을 써 보자."},
+        {"question": HOOK["MON"] + " 텃밭에 간 까닭을 써 보자."},
         ["THEME_ANSWER_LEAK"],
+    ),
+    # 질문은 그날 수사 연결 문장으로 시작(공백 무시, 앞에 따옴표 같은 몇 글자는 허용)
+    (
+        "question without hook",
+        "ANALYZE",
+        {"question": "뭉치와 지호가 마을 길에서 본 것을 떠올려 보고 까닭과 함께 써 보자."},
+        ["HOOK_MISSING MON"],
+    ),
+    (
+        "question with other day hook",
+        "ANALYZE",
+        {"question": HOOK["TUE"] + " 본 것을 써 보자."},
+        ["HOOK_MISSING MON"],
+    ),
+    (
+        "hook in the middle",
+        "ANALYZE",
+        {"question": "뭉치와 지호가 마을 길을 걷다가 생각했어. " + HOOK["MON"]},
+        ["HOOK_MISSING MON"],
+    ),
+    (
+        "hook spacing differs",
+        "ANALYZE",
+        {"question": HOOK["MON"].replace(" ", "") + " 본 것을 까닭과 함께 써 보자."},
+        [],
+    ),
+    (
+        "quoted hook",
+        "ANALYZE",
+        {"question": "\u201c" + HOOK["MON"] + "\u201d 본 것을 까닭과 함께 써 보자."},
+        [],
     ),
     (
         "theme answer in example",
@@ -335,7 +435,7 @@ MISSION_CASES: list[tuple[str, str, dict[str, Any], list[str]]] = [
     ("kana in title", "ANALYZE", {"title": "탐정です"}, ["LANGUAGE"]),
     ("missing example answer", "ANALYZE", {"exampleAnswer": None}, ["REQUIRED"]),
     ("solve answer in hint", "SOLVE", {"hints": None}, ["LEAK"]),
-    ("question too long", "ANALYZE", {"question": "가" * 400}, ["QUESTION_LENGTH"]),
+    ("question too long", "ANALYZE", {"question": HOOK["MON"] + "가" * 400}, ["QUESTION_LENGTH"]),
 ]
 
 
@@ -392,78 +492,53 @@ def test_mission_checks_leave_element_and_standard_code_to_learning() -> None:
     )
 
 
-def test_friday_guide_lists_all_clues_after_check() -> None:
-    theme = valid_theme()
-    fri = checks.finish_mission(theme, "FRI", draft_of("REFLECT"))
-    assert fri.guide is not None and fri.guide.count("요일:") == 5
-    assert checks.finish_mission(theme, "MON", draft_of("ANALYZE")).guide is None
-
-
 # ---------------------------------------------------------------- 대화
-def dlg(d: str, **kw: Any) -> dict:
-    return dialogue(d, **kw).model_dump()
+def dlg(**kw: Any) -> dict:
+    return dialogue(**kw).model_dump()
+
+
+def say(text: str, speaker: str = "지호") -> list[dict[str, str]]:
+    return [{"speaker": speaker, "text": text}]
 
 
 DIALOGUE_CASES: list[tuple[str, str, Callable[[], dict], list[str]]] = [
-    ("valid mon", "MON", lambda: dlg("MON"), []),
-    ("valid fri", "FRI", lambda: dlg("FRI"), []),
-    ("recap on monday", "MON", lambda: dlg("MON", recap="어제 단서"), ["RECAP"]),
-    ("no recap tuesday", "TUE", lambda: dlg("TUE", recap=None), ["RECAP"]),
+    ("valid mon", "MON", lambda: dlg(), []),
+    ("valid fri", "FRI", lambda: dlg(), []),
+    # 화자가 비면 뭉치(기본), 등장인물도 말할 수 있음
+    ("empty discovery speaker is mungchi", "TUE", lambda: dlg(speaker=" "), []),
+    ("character says discovery", "TUE", lambda: dlg(speaker="지호"), []),
+    ("too many lines", "TUE", lambda: dlg(lines=say("가자") * 3), ["LINE_COUNT"]),
+    ("too few lines", "MON", lambda: dlg(lines=[]), ["LINE_COUNT"]),
     (
-        "too many lines",
-        "TUE",
-        lambda: dlg("TUE", lines=[{"speaker": "뭉치", "text": "가자"}] * 2),
-        ["LINE_COUNT"],
-    ),
-    (
-        "clue speaker unknown",
+        "discovery speaker unknown",
         "MON",
-        lambda: dlg("MON", speaker="할머니"),
-        ["CLUE_SPEAKER", "SPEAKER"],
+        lambda: dlg(speaker="할머니"),
+        ["DISCOVERY_SPEAKER", "SPEAKER"],
     ),
     (
-        "line repeats clue",
+        "line repeats discovery",
         "FRI",
-        lambda: dlg(
-            "FRI", lines=[{"speaker": "뭉치", "text": "보리가 지나간 길에 젖은 자국이 있대"}]
-        ),
-        ["CLUE_REPEATED"],
+        lambda: dlg(lines=say("가게 앞 사진에 보리가 찍혔대")),
+        ["DISCOVERY_REPEATED"],
     ),
+    # 단서는 미션을 마친 뒤 보여 주므로 대화 줄이 그날 허용 값을 말하면 안 됨
     (
-        "name prefix",
-        "MON",
-        lambda: dlg("MON", lines=[{"speaker": "뭉치", "text": "뭉치: 가 보자"}]),
-        ["SPEAKER_IN_TEXT"],
+        "line tells clue value",
+        "THU",
+        lambda: dlg(lines=say("발바닥에 흙이 묻었네")),
+        ["CLUE_EARLY THU"],
     ),
-    (
-        "line too long",
-        "MON",
-        lambda: dlg("MON", lines=[{"speaker": "뭉치", "text": "가" * 41}]),
-        ["LINE_LENGTH"],
-    ),
-    (
-        "kana line",
-        "MON",
-        lambda: dlg("MON", lines=[{"speaker": "뭉치", "text": "가자です"}]),
-        ["LANGUAGE"],
-    ),
+    ("other day value is fine", "MON", lambda: dlg(lines=say("흙길을 따라가 보자")), []),
+    ("name prefix", "MON", lambda: dlg(lines=say("뭉치: 가 보자", "뭉치")), ["SPEAKER_IN_TEXT"]),
+    ("line too long", "MON", lambda: dlg(lines=say("가" * 41)), ["LINE_LENGTH"]),
+    ("kana line", "MON", lambda: dlg(lines=say("가자です")), ["LANGUAGE"]),
     # 찾는 대상이 말함(이름 일부 '보리'로도 같은 대상). 시험 forest3 유형 결함을 재구성
-    (
-        "target speaks",
-        "MON",
-        lambda: dlg("MON", lines=[{"speaker": "보리", "text": "멍멍"}]),
-        ["SPEAKER", "TARGET_SPEAKS"],
-    ),
-    (
-        "self name",
-        "MON",
-        lambda: dlg("MON", lines=[{"speaker": "뭉치", "text": "뭉치는 궁금해"}]),
-        ["SELF_NAME"],
-    ),
+    ("target speaks", "MON", lambda: dlg(lines=say("멍멍", "보리")), ["SPEAKER", "TARGET_SPEAKS"]),
+    ("self name", "MON", lambda: dlg(lines=say("뭉치는 궁금해", "뭉치")), ["SELF_NAME"]),
     (
         "theme answer in line",
         "MON",
-        lambda: dlg("MON", lines=[{"speaker": "뭉치", "text": "텃밭에 가 볼까"}]),
+        lambda: dlg(lines=say("텃밭에 가 볼까")),
         ["THEME_ANSWER_LEAK"],
     ),
 ]
@@ -487,12 +562,22 @@ def test_check_dialogue_exact_codes(
     assert codes(bad) == sorted(expected)
 
 
-def test_dialogue_lines_put_clue_verbatim_last() -> None:
+def test_dialogue_lines_put_discovery_verbatim_last() -> None:
+    """마지막 줄은 그날 증거 발견 줄 그대로(화자 기본 뭉치), 단서·앞 요일 요약 줄은 없음."""
     theme = valid_theme()
-    lines = checks.dialogue_lines(dlg("TUE"), checks.day_clue(theme, "TUE"))
-    assert lines[0]["speaker"] == "뭉치" and lines[-1] == {
-        "speaker": "지호",
-        "text": theme["days"][1]["clue"],
+    lines = checks.dialogue_lines(dlg(speaker=""), checks.theme_day(theme, "TUE")["discovery"])
+    assert lines[-1] == {"speaker": "뭉치", "text": DISCOVERY["TUE"]}
+    assert len(lines) == 2 and lines[0]["speaker"] == "지호"
+    assert not any(d["clue"] in x["text"] for d in theme["days"] for x in lines)
+
+
+def test_llm_line_range_leaves_one_line_for_discovery() -> None:
+    """학년별 줄 수(증거 발견 줄 포함)에서 증거 발견 줄 1줄만 뺌(요약 줄 없음)."""
+    assert {g: llm_line_range(g) for g in (3, 4, 5, 6)} == {
+        3: (1, 2),
+        4: (1, 2),
+        5: (0, 1),
+        6: (0, 1),
     }
 
 
@@ -511,5 +596,7 @@ def test_check_review_splits_fail_warn_and_shape() -> None:
 def test_public_theme_drops_internal_fields() -> None:
     public = checks.public_theme(checks.fill_rules_out(copy.deepcopy(valid_theme())))
     assert not {"features", "target", "introCuts", "outroCuts"} & set(public)
-    assert not {"clueType", "condition", "evidence"} & set(public["days"][0])
+    assert not {"clueType", "condition", "evidence", "discovery", "missionHook"} & set(
+        public["days"][0]
+    )
     assert public["days"][2]["rulesOut"] == ["창고", "정자"]
