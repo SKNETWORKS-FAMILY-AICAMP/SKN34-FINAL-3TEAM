@@ -896,6 +896,7 @@ erDiagram
   }
 ```
 
+- 2026-11-10 개정(#483, core #485 새 마이그레이션 전): 사건 종류에 당일 풀이(기준안 `THEME_ON_TIME`, 5)·주간 완주(기준안 `THEME_FINISHED`, 10)를 더한다. `reward_rule`·`reward_point_ledger`의 `event_type` CHECK를 새 버전 마이그레이션으로 넓히고(V35는 고치지 않음) `reward_rule` 행을 추가한다. `THEME_COMPLETED`(30)는 개근(월~금 각 당일 학습 완료)으로 그대로 쓴다. 사건 키는 당일 풀이 `weekStart:day`(예 `2026-11-09:MON`, 요일당 1회), 주간 완주 `weekStart`. 위 Mermaid의 CHECK 목록은 마이그레이션 병합 때 갱신한다
 - `reward_rule` 시드(V35)는 P21 초기값: 학습 완료 10·되돌아보기 10·공유 5·반응 1(하루 5회)·완주 30. 값·상한·사용 여부는 데이터로 바꾸며 이미 쌓인 원장은 바꾸지 않는다. `daily_cap`은 적립 횟수(포인트 합이 아님)
 - `reward_point_ledger` UK `(student_id, event_type, source_key)`로 사건당 1회. 사건 키: 학습 완료 `missionId`(미션당 최초 1회), 되돌아보기·완주 `weekStart`(ISO date, 주 1회), 공유 `postId`, 반응 `postId:reaction`, 해금 `itemKey`. CHECK로 `UNLOCK`만 음수, 그 외 양수(0 없음). 인덱스 `(student_id, created_at)`는 내역과 하루 상한 집계용
 - 적립·해금은 학생 행 `FOR SHARE`(삭제 확정과 직렬화) → `reward_point_balance` 행 `FOR UPDATE` 순서로 잠가 학생별로 직렬화한다. 같은 사건 동시 적립, 다른 키로 같은 항목 동시 해금도 한 번만 반영. 잔액 CHECK `>= 0`
@@ -1225,7 +1226,7 @@ erDiagram
   - `previous`·`corrected`는 `{"result": "PARTIAL"}` 모양. `previous`는 정정 직전에 보이던 결과(앞선 정정이 있으면 그 결과), 최신 정정은 `created_at` 가장 늦은 행 (#80)
 - `self_assessment` UK `(attempt_id, rubric_element_id)`. AI 판정·원본 답변과 별도 저장 (FN-LRN-13)
 - 도움 이용 비율 집계 근거 = `hint_usage.opened_at` vs 최초 `answer.submitted_at` (최초 답변 전 열람 없는 시도 / 집계 대상 시도, P08)
-- `attempt.context`(#385, V11 준비·V12 최종): `THEME_DAY`(오늘 요일 테마 문제)·`THEME_REVIEW`(토·일 되돌아보기 다시 풀기)·`EXTRA`(생각 유형별 고르기). 기존 행은 V11에서 `EXTRA`로 채움. CHECK `ck_attempt_theme_context`: 테마 컨텍스트는 `theme_id`·`theme_week_start`가 함께 있고 `EXTRA`는 둘 다 NULL. 진행 중 시도 부분 UK는 컨텍스트와 무관하게 학생·미션당 하나
+- `attempt.context`(#385, V11 준비·V12 최종): `THEME_DAY`(오늘 요일 테마 문제)·`THEME_REVIEW`(토·일 되돌아보기 다시 풀기)·`EXTRA`(생각 유형별 고르기). 2026-11-10 개정(#483) 뒤 뜻: `THEME_DAY`는 공개된 테마 문제 신규 시도(월~토, 프리미엄 일요일), `THEME_REVIEW`는 토요일(프리미엄 일요일) 다시 풀기. 값·CHECK는 그대로이며, 당일 풀이는 `completed_at`과 문제 요일로 계산하고 큰 질문 정답 고르기 결과 저장 위치는 learning #484에서 정한다. 기존 행은 V11에서 `EXTRA`로 채움. CHECK `ck_attempt_theme_context`: 테마 컨텍스트는 `theme_id`·`theme_week_start`가 함께 있고 `EXTRA`는 둘 다 NULL. 진행 중 시도 부분 UK는 컨텍스트와 무관하게 학생·미션당 하나
 
 ### 4.2.1 주간 테마 (P23, #385 V11·V12)
 
