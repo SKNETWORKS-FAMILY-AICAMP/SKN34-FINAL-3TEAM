@@ -520,4 +520,3 @@ local kind(develop `b1562c2b`)에서 테스트 학부모·학생·관리자 계�
 
 - SYSTEM 전용 `GET /internal/students/{studentId}/profile`에 기존 저장값 `grade`를 추가한다. report가 설명 대상 학년을 임의로 정하지 않도록 하기 위한 필드다. 기존 내부 토큰·학생 범위·활성 학생 검사와 `no-store`는 유지한다. DB와 이벤트 변경은 없다.
 - 공개 리포트 상세의 `explanations`는 report 계약대로 전달하되, 현재 무료 이용권/원문 비공개이면 null로 가린다. 기존 서술·원문 경계와 같은 위치에서 재검사한다. 인용 `quote`는 PR #491에 맞춰 null을 허용한다.
-
