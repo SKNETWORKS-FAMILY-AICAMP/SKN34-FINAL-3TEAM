@@ -2073,7 +2073,7 @@ classDiagram
 | `JudgmentService` | `judgment/service.py` | 사전 보류(`TOO_SHORT`·`UNVERIFIED_SCOPE`) → 추출 → 대조 → 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정 (업무 판단은 service, 아키텍처 2.1) → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`, `M2_CROSS_CHECK_ENABLED` 기본 꺼짐이면 기록만) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`, `M1_CHECK_ENABLED` 기본 꺼짐) → 응답. scoring 호출은 `clients/scoring_client.ScoringClient`(`m2_scores(body, timeout)`·`m1_check(body, timeout)`, 요청 본문은 `cross_check.m2_body`·`m1_body`가 만들고 `timeout`은 `SCORING_TIMEOUT`과 남은 판정 시간 중 작은 값, 비활성 응답이면 `None`), 불일치 계산은 `judgment/cross_check.py` (#69, api-spec 4.2.2) |
 | `LeakGuard` | `followup/leak_guard.py` | 모듈 함수 `find_leaks()`(글 하나 검사는 `find_text_leaks()`, 미션 초안 검사와 공유). 정답 키·예시 답·금지어 포함 검사. 실패 시 1회 재생성(`LLM_RETRY`), 재실패 시 `question` 없이 `leakCheck.passed = false` 반환 → learning이 질문 은행 선택 (`BANK`, P16) |
 | `LlmClient` | `llm/base.py`, 제공자는 `llm/providers.py` | 제공자 교체 지점(Claude·OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`), LLM 호출 재시도는 이 클래스에서만 (아키텍처 1.3), 호출마다 사용량 콜백(`BackgroundUsageRecorder` → `UsagePublisher`, 발행 실패는 로그만). `stream`은 분석 대화 답변의 일반 텍스트 조각(첫 조각 전 실패만 재시도) |
-| `ActiveVersions` | `prompt_versions/registry.py` (#254, 조정은 `prompt_versions/service.py` `PromptSync`) | #68에서 내장 버전과 core 활성 `PROMPT` 여섯 이름(#280 `reportTemplate`, #354 `missionDraft` 포함, 5.4)·승인 scope를 조정한다. 선택한 실제 본문·버전을 요청 동안 고정하고 `/internal/versions`에 같은 버전을 제공한다. 미보유 활성 버전은 명시적 503과 readiness DOWN |
+| `ActiveVersions` | `prompt_versions/registry.py` (#254, 조정은 `prompt_versions/service.py` `PromptSync`) | #68에서 내장 버전과 core 활성 `PROMPT` 일곱 이름(#280 `reportTemplate`, #354 `missionDraft` 5.4, #437 `themeDraft` 5.5 포함)·승인 scope를 조정한다. 선택한 실제 본문·버전을 요청 동안 고정하고 `/internal/versions`에 같은 버전을 제공한다. 미보유 활성 버전은 명시적 503과 readiness DOWN |
 
 ### 5.2 분석 에이전트·리포트 서술 (analysis_agent · report_narrative)
 
@@ -2241,6 +2241,76 @@ classDiagram
 - `DraftChecks`(`checks.py` 모듈 함수 `check`): `REQUIRED`(제목·질문·요소·생각 열기 질문, 입력 방식별 선택지·분류 칸·정답 키·예시 답), `QUESTION_LENGTH`(`gradeMin` 학년 상한, 설정 `mission_draft_question_max_chars` 기본 전 학년 200자, P19 확정 전 기준안), `LEAK`(질문·안내·생각 열기 질문 각각에 `followup/leak_guard.find_text_leaks`, 학생 답 없이 정답 키·금지어·예시 답만. 예시 답은 안내·생각 열기 질문만, 질문에 있는 글을 빼고 비교. 숫자뿐인 최종 답은 숫자 경계로 비교). 성취기준 실재·요소 code 규칙은 표와 규칙을 가진 learning이 검사
 - 프롬프트: `prompts.py` 내장 `mission-draft@1`, #68 레지스트리 이름 `missionDraft`·scope `ai/mission-draft`(`ActiveVersions`·`/internal/versions`에 추가). 입력은 성취기준 문장·(있으면) 성취수준 문장·생각 유형·그 유형 표준 요소 공통 설명·학년·입력 방식뿐이고 학생 정보는 없음
 - 사용량: `LlmClient` 콜백 → `UsagePublisher`, `callType = MISSION_DRAFT`(이벤트 스키마·core enum·core CHECK와 같이 추가, ERD 3.5)
+
+### 5.5 주간 테마 초안 (theme_draft, #437)
+
+에픽 #436, FN-ADM-22, api-spec 4.2 `POST /internal/theme-drafts`. 새 모듈 `app/theme_draft/`는 분석 에이전트(5.2)처럼 LangGraph 그래프를 서비스가 실행하고, 미션 생성은 미션 초안(5.4)의 생성·검사를 재사용한다.
+
+```mermaid
+classDiagram
+  direction LR
+  class theme_draft_router {
+    <<router>>
+    +create(ThemeDraftRequest) ThemeDraftResponse
+  }
+  class ThemeDraftService {
+    <<service>>
+    +generate(request) ThemeDraftResponse
+  }
+  class ThemeDraftGraph {
+    <<graph>>
+    +plan_theme()
+    +check_theme()
+    +generate_mission(유형 5개 병렬)
+    +generate_dialogue(요일 5개 병렬)
+    +review_story()
+    +generate_images(장면 7개 병렬)
+    +review_images()
+    +generate_videos(장면 7개 병렬)
+    +review_videos()
+    +generate_motion(장면 7개)
+  }
+  class ThemeChecks {
+    <<domain>>
+    +answer_logic(theme, features, conditions) list~Failure~
+    +clue_rules(theme) list~Failure~
+    +dialogue(lines, mission) list~Failure~
+    +motion(motion) list~Failure~
+  }
+  class MissionDraftService { <<service>> }
+  class DraftChecks { <<domain>> }
+  class LeakGuard { <<domain>> }
+  class LlmClient { <<client>> }
+  class ReviewLlmClient { <<client>> }
+  class ImageClient { <<client>> }
+  class VideoClient { <<client>> }
+  class ThemeStorage { <<client>> }
+  class ActiveVersions { <<registry>> }
+
+  theme_draft_router --> ThemeDraftService
+  ThemeDraftService --> ThemeDraftGraph : 마감 안에서 1회 실행
+  ThemeDraftService --> ActiveVersions : themeDraft 프롬프트
+  ThemeDraftGraph --> LlmClient : 줄거리·대화·움직임
+  ThemeDraftGraph --> MissionDraftService : 유형별 미션 생성 재사용
+  ThemeDraftGraph --> ReviewLlmClient : 글·그림·영상 검토(생성과 다른 모델, 설정)
+  ThemeDraftGraph --> ImageClient
+  ThemeDraftGraph --> VideoClient : 앞·이번 장면 그림을 시작·끝으로
+  ThemeDraftGraph --> ThemeStorage : S3 theme-drafts/
+  ThemeDraftGraph --> ThemeChecks
+  MissionDraftService --> DraftChecks
+  ThemeChecks --> LeakGuard : 정답·대화 유출 검사
+```
+
+- `ThemeDraftService.generate`: 요청 1번에 그래프를 한 번 끝까지 실행한다. 그래프 안에서 실패한 부분만 실패 사유를 넣어 상한(기준안 단계마다 2회)까지 다시 만들고(미션은 실패한 유형만, 대화는 실패한 요일만, 영상은 실패한 장면만), 마감까지 남은 시간이 부족하면 다음 재생성을 시작하지 않는다. 그래도 실패하면 `failure{stage, reasons}`를 담아 200으로 돌려준다(`THEME`·`MISSION`·`REVIEW`·`IMAGE`). 대화·영상·움직임은 끝내 실패하면 그 항목만 빼고 `warnings`에 남긴다. learning은 `failure`가 있으면 `CHECK_FAILED`로 두고 다음 시도에 `previousFailures`로 넘긴다. 마감은 기준안 15분(learning→ai 16분 안)
+- 요일 배치: 줄거리 단계에서 기준안(월 `ANALYZE`·화 `EVALUATE`·수 `CREATE`·목 `SOLVE`·금 `REFLECT`, 에픽 확인 필요)대로 정하고 응답 `day`로 돌려준다. learning이 다시 검사
+- 줄거리 구조화 출력의 내부 칸(응답 `theme`에서는 뺌, 계약 그대로): 후보 특징 표 `features`(특징 이름과 후보별 값, 그날 성취기준 내용에서 고르는 것을 기본으로 하고 안 되면 장면에서)와 요일별 단서 조건 `condition`(`RULE`·`HINT`, 특징, 허용 값)
+- `ThemeChecks`(`checks.py` 모듈 함수): 정답 논리는 특징 표로 판정한다. `RULE`은 `rulesOut` = 허용 값 밖의 후보(비어 있지 않음), `HINT`는 `rulesOut` 빈 배열이고 정답 값이 허용 값 안, 월~수 `HINT`는 그때 남은 후보 2개 이상과 맞음(답을 정하지 않음), 틀린 후보는 모두 `RULE`로 빠짐, 수요일까지 후보 2개 이상 남음(마지막 틀린 후보는 목요일 이후), 정답은 어떤 단서로도 빠지지 않음, 요일별 단서 5개(기준안 40자). 단서 규칙 중 코드로 볼 수 있는 것(정답 이름은 종료 이야기에만, 후보 이름의 색 낱말, 단서 종류 중복), 대화 형식·줄 수·길이·유출, 움직임 개수·속도·크기 상한. 검토 LLM은 단서 문장이 조건을 그대로 말하는지, 표 값이 자연스러운지, 없음에만 기대지 않는지, `HINT`가 일찍 답을 정하지 않는지를 본다
+- 미션: 유형마다 `MissionDraftService`의 생성·`DraftChecks`를 그대로 쓰고, 테마 이야기 조각과 학년별 생각 열기 질문 개수(기준안 초3 3개·초4 2개·초5 1개·초6 1개)를 더 넣는다. 그날 장면·사건 자료(장소·인물·물건·그날까지 알려진 단서)는 문제 소재로 쓸 수 있고, 정답 쓰기·정답 추리 문제·새 사건 사실·미션 답이 단서가 되는 것은 막는다. 기존 `/internal/mission-drafts` 동작은 바꾸지 않는다
+- 대화: 그날 단서 문장은 코드가 대화 한 줄로 그대로 넣고(말하는 사람은 LLM이 고름) LLM은 나머지 줄만 만든다
+- `ThemeStorage`(`storage.py`): 실행마다 ID를 만들어 `theme-drafts/{실행 ID}/{장면}.png`·`.mp4`로 올리고 키만 돌려준다(report-service `clients/storage.py` 패턴, boto3)
+- 지식 검색(#470): `plan_theme` 앞 `retrieve` 노드와 `check_theme` 범위 확인 자리만 두고 기능 스위치(기본 꺼짐)로 막는다
+- 프롬프트: `prompts.py` 내장 `theme-draft@1`(생성·검토 묶음), #68 레지스트리 이름 `themeDraft`·scope `ai/theme-draft`. 입력에 학생 정보 없음
+- 사용량: 글 생성·검토 `THEME_DRAFT`, 이미지 `THEME_IMAGE`, 영상 `THEME_VIDEO`. `THEME_VIDEO`는 사용량 이벤트 스키마와 core enum·DB 제약에 먼저 들어간 뒤에만 보냄(core 담당이 마이그레이션 준비)
 
 ---
 
