@@ -220,6 +220,14 @@ class GeneratedDay(BaseModel):
     evidence: GeneratedEvidence
 
 
+class GeneratedCut(BaseModel):
+    """시작·종료 영상 콘티의 한 컷(6초). 내부 칸이라 응답 theme에는 넣지 않는다."""
+
+    scene: str
+    action: str
+    caption: str
+
+
 class GeneratedTheme(BaseModel):
     title: str
     world: str
@@ -234,6 +242,8 @@ class GeneratedTheme(BaseModel):
     answer: str
     features: list[GeneratedFeature]
     days: list[GeneratedDay]
+    introCuts: list[GeneratedCut]
+    outroCuts: list[GeneratedCut]
 
 
 class GeneratedLine(BaseModel):

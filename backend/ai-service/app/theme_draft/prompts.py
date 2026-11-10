@@ -60,6 +60,18 @@ PLAN_SYSTEM = (
     "- intro는 사건과 큰 질문을 소개하는 시작 이야기(200자 이내). outro는 토요일 종료 이야기(300자 "
     "이내): 정답을 밝히고 "
     "다섯 단서로 어떻게 정답만 남는지 짧게 정리한다.\n"
+    "- introCuts·outroCuts는 시작·종료 영상 콘티로 각각 정확히 4컷(컷마다 6초 무음 영상). scene은 "
+    "그 컷 끝에 보이는 장면(누가 어디서, 무엇이 보이는지), action은 그 컷의 동작 하나, caption은 "
+    "영상 위에 띄울 짧은 문구(30자 이내, 학년에 맞는 말투).\n"
+    "- introCuts 순서: 1 세계와 인물(무엇을 준비하거나 하는 중인지), "
+    "2 찾는 대상이 왜 중요한지(대상을 쓰거나 지니는 모습은 되지만 "
+    "어디에 두는지는 보여 주지 않음), 3 사건(대상이 사라진 걸 알아채는 순간), "
+    "4 큰 질문 앞(인물들이 모여 찾기로 함). "
+    "시작 콘티에는 정답 이름·정답 장소를 쓰지 않는다.\n"
+    "- outroCuts 순서: 1 금요일 장면에서 모은 단서를 함께 봄, 2 정답 장소로 감, "
+    "3 정답 장소에서 대상을 찾음, 4 함께 기뻐함.\n"
+    "- 영상 속에는 글자를 넣지 않으므로 scene·action에 글자·숫자가 보이는 "
+    "장면(쓰인 간판 등)을 쓰지 않는다.\n"
     "\n"
     "큰 질문·후보·정답\n"
     "- bigQuestion은 누구·어디·무엇으로 답이 하나로 정해지는 질문(40자 이내). 지나간 일을 "
@@ -413,6 +425,9 @@ def review_user(
         "protagonist": "뭉치: 솜뭉치 모양의 주인공 캐릭터(찾는 대상이 아님)",
         "characters": theme["characters"],
         "features": theme["features"],
+        # 시작·종료 영상 콘티(문구는 학생이 영상 위에서 봄)
+        "introCuts": theme.get("introCuts") or [],
+        "outroCuts": theme.get("outroCuts") or [],
     }
     return json.dumps(
         {"grade": f"초{request.grade}", "theme": summary, "days": days}, ensure_ascii=False

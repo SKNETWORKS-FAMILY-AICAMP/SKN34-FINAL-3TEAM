@@ -113,7 +113,33 @@ def valid_theme() -> dict[str, Any]:
                 "RECORD",
             ),
         ],
+        "introCuts": copy.deepcopy(INTRO_CUTS),
+        "outroCuts": copy.deepcopy(OUTRO_CUTS),
     }
+
+
+def cut(scene: str, action: str, caption: str) -> dict[str, str]:
+    return {"scene": scene, "action": action, "caption": caption}
+
+
+INTRO_CUTS = [
+    cut(
+        "비 그친 마을 길을 뭉치와 지호가 걷는다", "보리가 꼬리를 흔들며 앞장선다", "비가 그친 오후."
+    ),
+    cut("보리가 지호 곁에서 공을 문다", "지호가 보리 목줄을 쓰다듬는다", "보리는 지호의 단짝이야."),
+    cut("빈 목줄만 남은 길모퉁이", "지호가 주위를 둘러보며 놀란다", "그런데… 보리가 사라졌다."),
+    cut(
+        "뭉치와 지호가 마주 보고 고개를 끄덕인다",
+        "둘이 함께 주먹을 쥔다",
+        "보리는 어디에 숨어 있을까?",
+    ),
+]
+OUTRO_CUTS = [
+    cut("뭉치와 지호가 단서 쪽지를 펼쳐 본다", "쪽지를 하나씩 짚는다", "모은 단서를 다시 볼까?"),
+    cut("둘이 텃밭으로 달려간다", "고랑 사이를 달린다", "지붕 없는 흙밭으로!"),
+    cut("텃밭 고랑에서 보리가 잠들어 있다", "지호가 보리를 안아 올린다", "찾았다, 텃밭이었어!"),
+    cut("뭉치와 지호와 보리가 함께 웃는다", "모두 폴짝 뛴다", "단서가 길을 알려 줬어."),
+]
 
 
 def theme_with(**changes: Any) -> dict[str, Any]:

@@ -42,6 +42,8 @@ TEXT_MAX = {
     "sceneNote": 150,
     "clue": LINE_MAX,
 }
+CUTS = 4  # 시작·종료 영상 콘티 컷 수(6초 × 4 = 24초, 사용자 결정 2026-11-11)
+CAPTION_MAX = 30  # 컷 문구(움직임 captions로 웹이 띄움) 글자 상한(기준안)
 CANDIDATE_CHARS = (2, 10)
 FEATURES = (2, 5)
 CHARACTERS = (1, 3)
@@ -207,6 +209,24 @@ def check_logic(theme: Theme, cands: list[str], answer: str, days: list[dict]) -
     return bad
 
 
+def check_cuts(theme: Theme) -> list[str]:
+    """시작·종료 영상 콘티: 정확히 4컷, 칸 비지 않음, 문구 길이."""
+    bad = []
+    for key in ("introCuts", "outroCuts"):
+        cuts = theme.get(key) or []
+        if len(cuts) != CUTS:
+            bad.append(f"CUTS {key} {CUTS}컷 필요(지금 {len(cuts)}컷)")
+        for i, cut in enumerate(cuts, 1):
+            for k in ("scene", "action", "caption"):
+                if not str(cut.get(k) or "").strip():
+                    bad.append(f"REQUIRED {key}{i}.{k}")
+            if len(cut.get("caption") or "") > CAPTION_MAX:
+                bad.append(
+                    f"LENGTH {key}{i}.caption {len(cut.get('caption') or '')}자 > {CAPTION_MAX}"
+                )
+    return bad
+
+
 def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None) -> list[str]:
     """check_theme 노드의 코드 검사. 빈 목록이면 통과."""
     bad = []
@@ -255,6 +275,7 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
             elif len(v) > TEXT_MAX[k]:
                 bad.append(f"LENGTH {d['day']}.{k} {len(v)}자 > {TEXT_MAX[k]}")
     bad += check_logic(theme, cands, answer, days)
+    bad += check_cuts(theme)
     types = [d.get("clueType") for d in days]
     if any(x not in CLUE_TYPES for x in types) or len(set(types)) != len(types):
         bad.append(f"CLUE_TYPE 다섯 단서는 서로 다른 종류(지금 {types})")
@@ -270,6 +291,12 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
         fields += [
             (f"characters.{c.get('name')}", (c.get("name") or "") + (c.get("look") or ""))
             for c in chars
+        ]
+        # 시작 영상 콘티도 정답 전(종료 콘티는 정답을 보여 줌)
+        fields += [
+            (f"introCuts{i + 1}.{k}", c.get(k))
+            for i, c in enumerate(theme.get("introCuts") or [])
+            for k in ("scene", "action", "caption")
         ]
         bad += [f"ANSWER_LEAK {name}에 정답 이름" for name, text in fields if key in compact(text)]
     dumped = json.dumps(theme, ensure_ascii=False)

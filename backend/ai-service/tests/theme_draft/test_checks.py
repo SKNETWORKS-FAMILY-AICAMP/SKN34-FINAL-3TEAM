@@ -216,6 +216,30 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
         ["CLUE_TEXT THU"],
     ),
     ("kind invalid", cond("MON", kind="MAYBE"), ["CONDITION MON"]),
+    # 시작·종료 영상 콘티
+    ("intro cuts three", edit(lambda t: t["introCuts"].pop()), ["CUTS"]),
+    ("outro cuts five", edit(lambda t: t["outroCuts"].append(dict(t["outroCuts"][0]))), ["CUTS"]),
+    (
+        "cut caption too long",
+        edit(lambda t: t["introCuts"][0].update(caption="가" * 31)),
+        ["LENGTH"],
+    ),
+    ("cut action empty", edit(lambda t: t["outroCuts"][1].update(action=" ")), ["REQUIRED"]),
+    (
+        "answer in intro caption",
+        edit(lambda t: t["introCuts"][3].update(caption="텃밭에 있을까?")),
+        ["ANSWER_LEAK"],
+    ),
+    (
+        "answer in intro scene",
+        edit(lambda t: t["introCuts"][2].update(scene="텃밭 옆 길모퉁이")),
+        ["ANSWER_LEAK"],
+    ),
+    (
+        "answer in outro cut is fine",
+        edit(lambda t: t["outroCuts"][2].update(caption="텃밭이었어!")),
+        [],
+    ),
 ]
 
 
@@ -486,6 +510,6 @@ def test_check_review_splits_fail_warn_and_shape() -> None:
 
 def test_public_theme_drops_internal_fields() -> None:
     public = checks.public_theme(checks.fill_rules_out(copy.deepcopy(valid_theme())))
-    assert not {"features", "target"} & set(public)
+    assert not {"features", "target", "introCuts", "outroCuts"} & set(public)
     assert not {"clueType", "condition", "evidence"} & set(public["days"][0])
     assert public["days"][2]["rulesOut"] == ["창고", "정자"]
