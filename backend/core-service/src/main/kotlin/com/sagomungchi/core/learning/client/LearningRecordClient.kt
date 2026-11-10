@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.node.ObjectNode
+import com.sagomungchi.core._common.client.LearningClient
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.web.HttpExchangeResult
 import com.sagomungchi.core.guardianship.domain.LinkedStudent

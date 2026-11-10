@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.admin.repository.ModelLoadingMapper">
+    <resultMap id="report" type="com.sagomungchi.core.admin.repository.ModelLoadingRow">
+        <constructor>
+            <arg column="pod_id" javaType="java.lang.String"/>
+            <arg column="instance_id" javaType="java.util.UUID"/>
+            <arg column="reported_at" javaType="java.time.OffsetDateTime"/>
+            <arg column="models" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+    <insert id="upsert">
+        INSERT INTO model_loading_report(instance_id,pod_id,sequence,reported_at,received_at,models)
+        VALUES (#{instanceId},#{podId},#{sequence},#{reportedAt},CURRENT_TIMESTAMP,CAST(#{models} AS jsonb))
+        ON CONFLICT(instance_id) DO UPDATE SET
+            sequence=EXCLUDED.sequence, reported_at=EXCLUDED.reported_at, models=EXCLUDED.models,
+            received_at=CURRENT_TIMESTAMP
+        WHERE model_loading_report.pod_id=EXCLUDED.pod_id
+          AND model_loading_report.sequence &lt; EXCLUDED.sequence
+          AND model_loading_report.reported_at &lt;= EXCLUDED.reported_at
+    </insert>
+    <select id="recent" resultMap="report">
+        SELECT DISTINCT ON (pod_id) * FROM model_loading_report
+        WHERE reported_at &gt;= #{since} ORDER BY pod_id, reported_at DESC, received_at DESC
+    </select>
+    <delete id="deleteExpired">
+        DELETE FROM model_loading_report WHERE reported_at &lt; CURRENT_TIMESTAMP - INTERVAL '1 day'
+    </delete>
+</mapper>

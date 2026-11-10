@@ -154,3 +154,6 @@ export const preflightMessage = (code: string) => ({
 
 export const PREFLIGHT_FILES = ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'train_info.json', 'score_cuts.json', 'model.safetensors']
 export const supportsPreflight = (files: ManifestModel['files']) => files.length === 6 && new Set(files.map(f => f.file)).size === 6 && files.every(f => PREFLIGHT_FILES.includes(f.file))
+
+export type ModelLoadingState = { name: string; version: string; revision: number; status: 'LOADING' | 'LOADED' | 'FAILED'; errorType: string | null; loadedVersion: string | null; loadedRevision: number | null; previousModelRetained: boolean }
+export type LoadingReport = { observedAt: string; staleAfterSeconds: number; populationSource: 'RECENT_REPORTS'; pods: { podId: string; instanceId: string; reportedAt: string; stale: boolean; models: ModelLoadingState[] }[]; summaries: { name: string; version: string; revision: number; observedPods: number; loadedPods: number; failedPods: string[] }[] }

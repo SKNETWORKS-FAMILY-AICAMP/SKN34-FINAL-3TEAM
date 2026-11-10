@@ -3,7 +3,7 @@ package com.sagomungchi.core.admin
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.core.account.service.TokenService
-import com.sagomungchi.core.admin.service.ModelPreflightRequest
+import com.sagomungchi.core.admin.controller.ModelPreflightRequest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import org.springframework.beans.factory.annotation.Autowired
@@ -30,7 +30,7 @@ class ModelPreflightLocalIntegrationTest : PostgresRepositoryTest() {
         val request = json.readValue(Files.readString(Path.of(System.getenv("PREFLIGHT_REQUEST_FILE"))), ModelPreflightRequest::class.java)
         val actor = account(jdbc); val token = tokens.access(session(jdbc, actor))
         val cases = listOf(request to "PASS",
-            request.copy(files=request.files.map { if (it.file=="model.safetensors") it.copy(sha256="0".repeat(64)) else it }) to "FAIL",
+            request.copy(files=request.files.map { if (it?.file=="model.safetensors") it.copy(sha256="0".repeat(64)) else it }) to "FAIL",
             request.copy(artifactUri="s3://models/models/missing/3.0/") to "FAIL")
         cases.forEach { (body, expected) ->
             val response = mvc.post("/api/v1/admin/models/preflight") {

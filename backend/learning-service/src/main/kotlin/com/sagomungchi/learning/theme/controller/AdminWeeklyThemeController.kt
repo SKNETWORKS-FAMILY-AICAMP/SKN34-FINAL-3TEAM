@@ -11,7 +11,7 @@ import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeDayMission
 import com.sagomungchi.learning.theme.domain.WeeklyThemePublishIncompleteException
 import com.sagomungchi.learning.theme.domain.WeeklyThemeStatus
-import com.sagomungchi.learning.theme.repository.ThemeContent
+import com.sagomungchi.learning.theme.domain.ThemeContent
 import com.sagomungchi.learning.theme.service.WeeklyThemeAdminService
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.format.annotation.DateTimeFormat

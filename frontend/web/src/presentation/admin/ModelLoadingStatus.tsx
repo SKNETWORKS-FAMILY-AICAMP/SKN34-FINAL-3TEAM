@@ -1,10 +1,7 @@
-import { useQuery } from '@tanstack/react-query'
-import { apiFetch } from '../../data/apiClient.ts'
+import { useModelLoading } from '../../data/admin/queries.ts'
 
-type ModelState = { name: string; version: string; revision: number; status: 'LOADING' | 'LOADED' | 'FAILED'; errorType: string | null; loadedVersion: string | null; loadedRevision: number | null; previousModelRetained: boolean }
-export type LoadingReport = { observedAt: string; staleAfterSeconds: number; populationSource: 'RECENT_REPORTS'; pods: { podId: string; instanceId: string; reportedAt: string; stale: boolean; models: ModelState[] }[]; summaries: { name: string; version: string; revision: number; observedPods: number; loadedPods: number; failedPods: string[] }[] }
 export function ModelLoadingStatus({ name, version, revision }: { name: string; version: string; revision: number }) {
-  const q = useQuery({ queryKey: ['admin', 'model-loading'], queryFn: ({ signal }) => apiFetch<LoadingReport>('/admin/model-loading', { signal }), refetchInterval: 15000, retry: false })
+  const q = useModelLoading()
   if (q.isPending) return <div>Pod 로딩 보고 조회 중</div>
   if (q.isError) return <div role="alert">로딩 보고를 조회하지 못했습니다. 로딩 성공 여부는 알 수 없습니다.<button onClick={() => void q.refetch()}>다시 조회</button></div>
   const summary = q.data.summaries.find(s => s.name === name && s.version === version && s.revision === revision)

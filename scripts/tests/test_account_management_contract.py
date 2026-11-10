@@ -38,7 +38,7 @@ class AccountManagementContractTest(unittest.TestCase):
         operations=[]
         for name in ("account/controller/AccountManagementController.kt", "account/controller/ReauthenticationController.kt", "guardianship/controller/ChildManagementController.kt"):
             operations += [(method.lower(),path.removeprefix("/api/v1")) for method,path in re.findall(r'@(Get|Post|Put|Patch|Delete)Mapping\("([^\"]+)"\)',(source/name).read_text(encoding="utf-8"))]
-        self.assertEqual(len(operations),15)  # #415 POST /me/reauth/password
+        self.assertEqual(len(operations),16)  # #415 POST /me/reauth/password, #422 PUT /children/{childId}/pin 이동
         for method,path in operations:
             self.assertIn(method,api["paths"][path],path)
 

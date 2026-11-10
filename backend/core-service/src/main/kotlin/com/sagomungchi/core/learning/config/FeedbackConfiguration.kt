@@ -5,8 +5,8 @@ import com.sagomungchi.core._common.config.InternalRestClientFactory
 import com.sagomungchi.core._common.web.IdempotencyService
 import com.sagomungchi.core.community.service.CommunityService
 import com.sagomungchi.core.guardianship.service.StudentLearningContextService
-import com.sagomungchi.core.learning.client.LearningClient
-import com.sagomungchi.core.learning.client.LearningHttpProperties
+import com.sagomungchi.core._common.client.LearningClient
+import com.sagomungchi.core._common.client.LearningHttpProperties
 import com.sagomungchi.core.learning.service.FeedbackService
 import com.sagomungchi.core.learning.service.LearningProxyService
 import com.sagomungchi.core.payment.service.ProductEntitlementService

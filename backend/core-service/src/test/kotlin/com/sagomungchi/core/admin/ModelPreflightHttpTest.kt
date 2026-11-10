@@ -3,7 +3,8 @@ package com.sagomungchi.core.admin
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.core.account.service.TokenService
-import com.sagomungchi.core.admin.domain.RegistrationArtifact
+import com.sagomungchi.core.admin.controller.*
+import com.sagomungchi.core.admin.domain.*
 import com.sagomungchi.core.admin.service.*
 import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.BeforeEach
@@ -26,7 +27,7 @@ class ModelPreflightHttpTest : PostgresRepositoryTest() {
     @Autowired lateinit var tokens: TokenService
     @Autowired lateinit var json: ObjectMapper
     private fun body() = ModelPreflightRequest("m2-klue-narrative", "3.0", "s3://models/models/test/3.0/",
-        PREFLIGHT_FILES.map { RegistrationArtifact(it, 1, "a".repeat(64)) })
+        PREFLIGHT_FILES.map { RegistrationArtifactRequest(it, 1, "a".repeat(64)) })
     private fun success() = ModelPreflightResult("PASS", "FILES_AND_METADATA_VERIFIED", PREFLIGHT_FILES.map { PreflightFileResult(it, "PASS", "OK") })
     @BeforeEach fun setup() { response = json.writeValueAsString(success()); upstreamStatus = 200; received = ""; internalToken = "" }
     private fun call(body: Any, permission: String? = "SERVICE_OPS") = mvc.post("/api/v1/admin/models/preflight") {

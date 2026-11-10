@@ -1,4 +1,4 @@
-package com.sagomungchi.core.learning.client
+package com.sagomungchi.core._common.client
 
 import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.ObjectMapper

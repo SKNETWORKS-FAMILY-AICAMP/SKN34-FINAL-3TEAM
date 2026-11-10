@@ -1,4 +1,4 @@
-package com.sagomungchi.core.learning.client
+package com.sagomungchi.core._common.client
 
 import org.springframework.boot.context.properties.ConfigurationProperties
 import java.time.Duration

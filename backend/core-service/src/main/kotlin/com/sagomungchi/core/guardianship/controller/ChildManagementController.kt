@@ -4,16 +4,22 @@ import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core._common.security.UserContextHolder
 import com.sagomungchi.core.guardianship.domain.DeletionScope
 import com.sagomungchi.core.guardianship.service.ChildManagementService
+import com.sagomungchi.core.guardianship.service.StudentPinService
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.*
 import org.springframework.web.bind.annotation.*
 import java.util.UUID
 
 @RestController
-class ChildManagementController(private val service: ChildManagementService) {
+class ChildManagementController(private val service: ChildManagementService,private val pins: StudentPinService) {
  data class Profile(val nickname: String?=null,val grade: Int?=null)
  data class Deletion(val scope: DeletionScope)
  data class Completion(val service: String)
+ data class PinRequest(val pin: String)
+ @PutMapping("/api/v1/children/{childId}/pin")
+ fun pin(@PathVariable childId: UUID,@RequestBody body: PinRequest,@RequestHeader("X-Reauth-Token",required=false) token: String?,request: HttpServletRequest): ResponseEntity<Void> {
+  pins.set(identity(request),childId,body.pin,token); return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build()
+ }
  @PatchMapping("/api/v1/children/{childId}")
  fun update(@PathVariable childId: UUID,@RequestBody body: Profile, request: HttpServletRequest)=
   ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(service.update(identity(request),childId,body.nickname,body.grade))

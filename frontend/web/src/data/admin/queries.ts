@@ -30,3 +30,8 @@ export function useStandardsByCodes(codes: string[]) {
   const key = [...new Set(codes.filter((c) => c.trim()))].sort()
   return useAdminQuery(['standards-by-code', key], (signal) => adminApi.standardsByCodes(key, signal), key.length > 0)
 }
+
+/** scoring Pod 모델 로딩 보고 (#370). 15초마다 다시 조회 */
+export function useModelLoading() {
+  return useAdminQuery(['model-loading'], (signal) => adminApi.modelLoading(signal), true, () => 15000)
+}
