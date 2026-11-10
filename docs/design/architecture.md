@@ -36,7 +36,7 @@
 | 서비스 | 추가 책임 | 기능 패키지 |
 |---|---|---|
 | core-service | 커뮤니티 공개 설정·보호자 선택 동의·공유물 신고 연결, 작성자 별명·꾸미기 표시 변환, 포인트 규칙·원장·잔액, 테마·캐릭터·아이템 해금·착용, 꾸미기 아이템 관리, 무료 하루 미션 1개 집계, 일일 리포트 일정(매일 자정, 다음 날 00:00)·작업, 리포트 고정 대화 생성 | `community`(설정·learning 프록시·신고 연결), `reward`(포인트·해금·아이템). 무료 미션 한도는 기존 `usage`(`MissionUsageService`), 일일 일정은 기존 `report`, 리포트 고정 대화는 기존 `conversation`, 동의 문서 종류는 기존 `consent` |
-| learning-service | 주간 테마·요일별 미션 배치·게시 검사, 시도 `context`(당일·되돌아보기·추가 문제) 검사, 되돌아보기 열람 기록·완주 판정 소재, 커뮤니티 공유물·반응·열람 검사(같은 미션 마무리 여부)·숨김 상태 | `theme`, `community` |
+| learning-service | 주간 테마·요일별 미션 배치·게시 검사, 학년별 테마(#438)·테마 초안 저장·생성 주기 작업·채택, 시작·종료 이야기 열람 기록, 테마 그림·영상 presigned URL 발급(#438), 시도 `context`(당일·되돌아보기·추가 문제) 검사, 되돌아보기 열람 기록·완주 판정 소재, 커뮤니티 공유물·반응·열람 검사(같은 미션 마무리 여부)·숨김 상태 | `theme`, `community` |
 | report-service | 일일 리포트(템플릿, LLM 미호출) 기간 확정·계산·대조·렌더링, 주간 리포트 테마 요약 | 기존 리포트 생성 흐름에 기간 종류 분기 |
 | ai-service | 리포트 고정 대화의 범위(그날)와 core가 넣어 주는 리포트 요약 입력 처리(report 직접 호출 없음). 일일 리포트 서술은 없음 | 기존 분석 에이전트 |
 | scoring-service | 변경 없음 | - |
@@ -137,7 +137,7 @@
 
 2026-11-06 결정(6~9 구현):
 
-6. **주간 테마**: core가 학생 학년으로 학년군을 정해 learning에 이번 주 테마 조회 → learning이 KST 요일로 문제 상태 계산. 시도 시작 시 learning이 `context` 검사, core가 무료 한도(`THEME_DAY`·`EXTRA` 신규 `201`, 합쳐 하루 1개) 집계(#387)
+6. **주간 테마**: core가 학생 학년으로 테마 학년(`G3`~`G6`, 중학생 `G6`, #438)을 정해 learning에 이번 주 테마 조회 → learning이 KST 요일로 문제 상태·단서·정답 공개 계산. 테마 초안은 learning 주기 작업이 ai `POST /internal/theme-drafts`를 1회씩 불러 저장하고 관리자가 채택(#438). 시도 시작 시 learning이 `context` 검사, core가 무료 한도(`THEME_DAY`·`EXTRA` 신규 `201`, 합쳐 하루 1개) 집계(#387)
 7. **학습 완료 후**: 돌아보기 저장 성공 → core가 포인트 적립(미션당 최초 1회) → 커뮤니티 공개가 켜져 있고 그 미션 공유물이 없으면 learning에 공유 요청(학생·미션당 1개) → 공유 성공 시 포인트 적립. 공유 요청(#388)과 두 포인트 적립 연결(#389) 구현
 8. **일일 리포트**: core 스케줄러(ShedLock)가 매일 자정(다음 날 00:00 KST) 보호자가 연결된 자녀별 `report_job(period_type = DAILY)` + Outbox → `report.generate` → report가 learning 기록 조회 → 코드 계산·템플릿 구성 → 인용 대조 → 렌더링·S3 저장(ai 호출 없음) → `report.completed` → core 일일 알림
 9. **리포트 대화**: 학부모가 일일 리포트에서 대화 생성 → core가 리포트 소유·자녀 연결 확인 후 대화에 리포트 ID·판을 저장하고 범위를 그날로 고정 → 메시지마다 core가 report에서 그 판을 읽어 ai 요청에 넣음 → 이후는 4번 분석 대화 흐름 그대로
@@ -374,6 +374,7 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 │  ├─ security/
 │  ├─ messaging/                 # 멱등 소비 (발행 없음)
 │  ├─ persistence/               # MyBatis 설정·PostgreSQL 타입 핸들러
+│  ├─ storage/                   # AssetUrls: S3 키 → 단기 presigned URL (AWS SDK S3 presigner, 미션 장면·테마 그림·영상, #438)
 │  └─ web/                       # 공유 응답 DTO: MissionResponse·MissionListItemResponse·AnswerItem (#251)
 ├─ mission/                      # 미션·기준표·예시 답·생각 열기 질문 버전, 관리자 작성·검토·공개, 성취기준·미션 초안(#353)
 │  ├─ controller/
@@ -408,8 +409,10 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 │  └─ facade/
 │     └─ FeedbackFacade.kt
 ├─ theme/                        # (P23, #385) 주간 테마·요일별 미션·게시 검사, 되돌아보기 열람·완주·주간 요약
-│  ├─ controller/
-│  ├─ service/
+│  ├─ controller/                # + AdminThemeDraftController (#438)
+│  ├─ service/                   # + ThemeDraftService (#438)
+│  ├─ scheduler/                 # ThemeDraftScheduler: 생성 주기·주간 자동 크론 (#438)
+│  ├─ client/                    # ThemeDraftAiClient: ai 서킷 ai-theme-draft (#438)
 │  ├─ domain/
 │  └─ repository/
 ├─ community/                    # (P20, #386) 공유물·반응·열람 검사·숨김 상태

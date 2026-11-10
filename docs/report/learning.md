@@ -1,4 +1,4 @@
-# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82·#169·#137·#164·#205·#241·#207·#201·#262·#336·#353·#355·#385·#386)
+# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82·#169·#137·#164·#205·#241·#207·#201·#262·#336·#353·#355·#385·#386·#438)
 
 계약은 [API 명세](../design/api-spec.md) 2.2·3.1~3.8·4.1과 [learning OpenAPI](../../contracts/openapi/learning-service.yaml), 판정 상태는 [상태 다이어그램](../design/state-diagram.md) 3장.
 
@@ -939,3 +939,75 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 
 - 토·일 되돌아보기 열람: 주말에만 열려 확인하지 않음
 - 주간 테마 완주(월~금 다섯 문제): 하루 1개라 한 번에 확인할 수 없음
+
+## 27. 테마 초안 작업·학년별 테마·이야기 열람 (#438)
+
+에픽 #436의 learning 몫. ai 생성 그래프는 #437(같은 브랜치 `feature/theme-draft-ai`), core 프록시·사용량은 #439, web은 #440·#441이다. 이 절은 설계 단계 기록이며 구현·검증 결과는 이어서 덧붙인다. PR은 core 담당 요청대로 `Refs #438`로 연결하고, 병합 뒤 kind에서 core와 함께 확인한 다음 #438·#439를 같이 닫는다.
+
+### 설계에서 정한 것
+
+| 위치 | 내용 |
+|---|---|
+| ERD 4.1·4.2.1·4.3·6장·8장 | `weekly_theme.grade`(V14 준비·복사 → V15 NOT NULL·CHECK·부분 UK·`grade_band` 제거), 버전·요일 새 칸(이야기·S3 키·움직임·정답 구조·대화·생각 열기 위치·영상), `theme_story_view`, `theme_draft`, `mission.source` `LLM_THEME`, `mission_version.scene_motion` |
+| state-diagram 3.2.1·3.5·3.5.1 | 단서 공개, 엔딩 상태일 때의 종료 공개(조건은 #483·#484), 학년 게시 검사, `theme_draft.status`(미션 초안과 같은 전이) |
+| sequence-diagram 3.4·3.6·3.6.1·11.1 | `grade` 전달·전환 호환, `themeScene`, 이야기 열람, 테마 초안 생성·채택 |
+| functional-spec P23·P26·FN-LRN-03·06·FN-ADM-22 | 학년별 테마(확정), 큰 질문·정답 구조(기준안, 엔딩은 #483), 테마 초안 흐름, 테마 문제 대화·그림 위 생각 열기 |
+| api-spec 1.3·4.1 | `THEME_STORY_NOT_ALLOWED`, learning 내부 경로의 `grade`·새 응답 칸·`ThemeDraft` 모양·`themeScene`·`sceneMotion` |
+| architecture 1.1.1·흐름 6·모듈 트리 | learning 책임, `theme/scheduler`·`theme/client`·`_common/storage` |
+
+### 결정
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 학년별 테마 | `G3`·`G4`·`G5`·`G6`, 중학생 `G6`(core가 정해 넘김). 게시 부분 UK `(grade, week_start)` | 담당자 결정 2026-11-10(이슈 본문). P26 중학생 초6 문제 |
+| 기존 학년군 테마 (기준안) | `G3_4` 행은 `G3`로 바꾸고 같은 내용의 `G4` 테마(새 ID, 버전·요일 복사, 상태·게시본 같음)를 V14가 만듦. `G5_6` → `G5`·`G6`. 기존 시도·열람 기록의 `theme_id`는 원래 행 | 이슈 기준안. 원래 행을 남기면 시도·열람 기록의 FK를 바꾸지 않아도 됨. 요일 상태·완주는 미션 ID로 맞추므로 결과가 같음 |
+| 마이그레이션 나눔 | V14(nullable 추가·복사·새 표·새 칸), V15(`grade` NOT NULL·CHECK·UK·인덱스, `grade_band` 제거) | ERD 8장 준비·최종 버전, V11·V12 선례 |
+| 전환 호환 | 학생 경로 세 개(이번 주 테마·되돌아보기 열람·이야기 열람)만 `grade`가 없으면 `gradeBand`(`G3_4` → `G3`, `G5_6` → `G5`)로 읽음. 관리자 경로는 `grade`만 | 이슈 "전환 기간 호환"은 학생 테마 조회가 끊기지 않게 하려는 것. 관리자 화면은 web #441과 같이 바뀜 |
+| 게시 검사 학년 | 미션 학년 범위가 테마 학년을 포함(`gradeMin ≤ 학년 ≤ gradeMax`), 초3·초4 논술 불가. 오류 코드 `GRADE_BAND_MISMATCH` → `GRADE_MISMATCH` | 학년별 테마에서 '학년군'은 틀린 뜻. 웹 `publishProblems`는 `errors[].message`만 보여 주고 core는 422를 그대로 넘겨 코드를 읽는 곳은 learning 도메인·테스트·OpenAPI enum뿐(사용자 결정 2026-11-10) |
+| 시도 학년 → 테마 학년 | `min(학년, 6)`(7~9는 `G6`) | P26 중학생 초6 테마 |
+| 다시 생성 | 같은 `input`·학년·주로 새 초안(`source = ADMIN`, attempts 0), 원래 초안은 그대로. `READY`·`CHECK_FAILED`·`FAILED`·`DISCARDED`에서만, `GENERATING`·`ADOPTED`는 409 | 사용자 결정 2026-11-10. 미션 초안 상태도 3.4 "되살리지 않고 새로 요청"과 같고, 자동 초안 부분 UK와도 부딪히지 않음 |
+| 이미지·영상 URL | DB에는 ai가 올린 S3 키를 두고, 응답 때 learning이 단기 presigned URL로 바꿈(AWS SDK S3 presigner 의존성 추가). core는 그대로 전달 | 사용자 결정 2026-11-10. 리포트 PDF 다운로드(report presigned, core 전달)와 같은 방식이고 core #439 가정("URL은 learning 응답에서")과 같음. core에는 S3 연결이 없음 |
+| URL 유효기간 (기준안) | 1시간(`app.assets.url-ttl`, 1초~3600초) | 학생이 테마 화면·영상을 보는 동안 열려 있어야 함. 리포트 다운로드 300초는 바로 받는 파일이라 짧음. 상한은 report와 같은 3600초 |
+| 사람이 넣은 장면 주소 | `http(s)://`·`/`로 시작하면 그대로, 그 밖은 S3 키로 보고 presign | 기존 미션 `sceneUri`는 저장 값을 그대로 내보냄. 데모·수동 미션 동작을 바꾸지 않음 |
+| 문제 전 영상 위치 | 미션이 아니라 테마 요일 칸(`weekly_theme_day.video_uri`). 응답은 시도 시작·이어하기의 `themeScene.videoUrl`만(관리자 응답 미리보기 URL은 별도) | 같은 미션이 학년별 테마 여럿(`G3`·`G4` 복사)에 들어갈 수 있어 미션 응답에 넣으면 어느 테마 영상인지 정할 수 없음 |
+| 정답 구조 공개 | 요일 단서는 그 요일이 `OPEN`·`CLOSED`일 때(기준안). 종료 이야기·정답·결정적 단서·종료 장면은 엔딩 상태일 때만 넣고, 엔딩 여부는 한 곳(`ThemeEnding`)에서 판단. #484 전까지는 토·일을 엔딩으로 봄 | 주간 테마 규칙 개정 #483(2026-11-10 팀 공유): 엔딩 = 큰 질문 정답 맞힘 즉시, 틀리면 토요일 다시 풀기 뒤. 정답 고르기·엔딩 판정은 learning #484 몫으로 두기로 함(사용자 결정 2026-11-10). 공개 칸과 판단 자리만 #438에 두면 #484는 판단만 바꾸면 됨 |
+| 시작 이야기 시점 | 온보딩 영상처럼 그 주 처음 들어왔을 때 한 번(월~토, 일요일 제외). INTRO 열람 기록을 월~토에 받고, `intro`(글)는 #385의 '월요일만'에서 매일 채움으로 바꿈. 시작 그림·영상·움직임 URL도 주 내내 | 사용자 결정 2026-11-10(에픽 '월요일 첫 진입'에서 바꿈), #483 팀 규칙의 '그 주 월~토 첫 진입(기준안)'과 같음. 월요일에 안 온 학생도 이야기를 처음부터 봄. 일요일은 #483에서 테마가 닫혀 뺌 |
+| 이야기 열람 응답 | `{kind, firstViewThisWeek}`. INTRO는 일요일, OUTRO는 엔딩 상태가 아니면(#484 전까지 토요일 밖) `409 THEME_STORY_NOT_ALLOWED` | core #439 가정값과 같은 코드. 되돌아보기 열람의 `firstViewThisWeek`와 같은 모양. OUTRO 조건은 #483 '엔딩 상태일 때'(#438 코멘트 2026-11-10) |
+| 자동 생성 성취기준 (기준안) | 그 학년이 속한 학년군 표에서 `SOLVE`는 수학, 나머지 넷은 국어. 같은 학년의 최근 4주 테마 초안에 쓴 코드는 빼고 무작위 1개. 입력은 FN 1.5 기본(서술·논술·서술·풀이 단계·서술), 초3·초4 따져 보기는 서술. 성취수준은 비움 | 사용자 결정 2026-11-10. P15 국어 우선, FN 1.5 문제 해결하기 수학 예외, P03 논술 초5~6. 지식 검색(#470) 연결 뒤 유형별 후보로 바꿀 수 있음 |
+| 관리자 요청의 빈 유형 | 고르지 않은 유형은 자동 규칙으로 learning이 채워 `input`에 저장 | 에픽 "관리자 요청은 유형별 지정 가능". ai 요청은 유형 5개가 다 있어야 함 |
+| 생성 시도 상한 (기준안) | 3회(`app.theme-draft.max-attempts`) | 이슈 기준안, 미션 초안과 같음 |
+| 대기·리스 (기준안) | ai 마감 15분, learning→ai 대기 16분(`app.theme-draft.ai-read-timeout`), 리스 18분 | 이슈·ai.md 14장 기준안. 실측 후 조정 |
+| 주기·크론 (기준안) | 생성 주기 10초(미션 초안과 같음), 주간 자동 수요일 03:00 KST(`app.theme-draft.weekly-cron`) | 에픽 기준안 |
+| 서킷 | `ai-theme-draft`(값은 `aiCircuitBreaker`와 같음) | 미션 초안·판정과 따로 둬 테마 실패가 다른 호출을 막지 않게(#305·#353 같은 이유) |
+| 검사 실패 기록 | `check_results[].failures[].stage`: ai `THEME`·`MISSION`·`REVIEW`·`IMAGE`, learning 검사 `LEARNING`, AI 호출 실패 `AI_CALL`(사유는 실패 코드). ai에 보내는 `previousFailures`에는 ai 단계 실패를 그대로, learning 실패는 `MISSION`(미션 규칙)·`THEME`(요일 배치·정답 논리)으로 바꿔 넣고 AI 호출 실패는 넣지 않음 | ai 계약 `previousFailures[].stage`가 ai 단계 네 개. 관리자 화면에서는 어느 쪽 검사인지 보여야 함 |
+| learning 검사 | 요일·유형 배치(월 `ANALYZE`·화 `EVALUATE`·수 `CREATE`·목 `SOLVE`·금 `REFLECT`, 기준안), 미션 5개는 `DraftRules.learningFailures`(게시 규칙, 학년 = 테마 학년), 정답 논리, 대화 화자·장면 키 모양은 보지 않음 | 이슈 "learning 검사". 미션 규칙은 미션 초안과 같은 함수. 대화·영상·움직임은 ai가 실패해도 빼고 성공으로 돌려주는 항목(ai.md 14.1) |
+| 채택 | 미션 5개 `DRAFT`(`source = LLM_THEME`, 학년 범위 = 테마 학년, 장면 그림 키를 `scene_uri`·`static_scene_uri`에, 움직임 `scene_motion`, 요소 배점 1)와 테마 `DRAFT`(요일 배치·이야기·장면·대화·정답 구조, `hint_spots` NULL)를 한 트랜잭션 | 이슈·에픽. 미션 생성은 `MissionService.createFromDraft` 재사용 |
+| `answer_clue` (결정적 단서) | 채택 때 learning이 요일 단서 중 마지막 틀린 후보를 빼는 날(`rulesOut`이 비지 않은 마지막 요일)의 `clue`로 채움, 관리자가 고칠 수 있음 | 엔딩 화면에 정답과 근거를 함께 보여 줄 수 있게. ai 응답 계약에는 칸이 없고 바꾸지 않으므로 단서 구조에서 계산 |
+| 생각 열기 위치 검사 | `x`·`y` 0~100, `seq`는 그날 미션 현재 기준표의 생각 열기 순번, 같은 순번 중복 금지. 위반 400 | 이슈 "범위 밖 좌표, 그 미션에 없는 순번은 저장 거부" |
+| 스케줄러 스레드 | `spring.task.scheduling.pool.size` 3 → 5 | 이슈. 작업마다 스레드 하나(생성 주기·주간 크론 추가)라 긴 ai 대기가 고착 판정 탐지를 밀지 않게 |
+| 지식 API 수용 | 주기 작업은 스케줄러 스레드, ai가 부르는 learning 지식 API(#469)는 Tomcat 요청 스레드라 서로 막지 않음. 지식 API 시간 상한은 #469 몫 | 이슈 "웹 요청 스레드와 작업 스레드 분리 확인" |
+
+### API 변경 (예정, 구현 때 learning OpenAPI 반영)
+
+- 학생 `GET /internal/students/{id}/weekly-theme`·`POST …/review-views`: query `gradeBand` → `grade`(전환 기간 `gradeBand`도 받음). 이번 주 테마 응답에 `bigQuestion`·`candidates`·`introImageUrl`·`introVideoUrl`·`introMotion`·`introSeen`·`outroSeen`, 토·일에만 `outro`·`outroImageUrl`·`outroVideoUrl`·`outroMotion`·`answer`·`answerClue`, `days[]`에 `clue`·`rulesOut`(`LOCKED`면 null)·`videoUrl`
+- 새 `POST /internal/students/{id}/weekly-theme/story-views?grade&date` `{kind}` → `{kind, firstViewThisWeek}`, 409 `THEME_STORY_NOT_ALLOWED`
+- 관리자 `/internal/admin/weekly-themes…`: `gradeBand` → `grade`(목록·본문·응답), 본문·응답에 이야기·S3 키·움직임·정답 구조·요일 `clue`·`rulesOut`·`dialogue`·`hintSpots`·`videoUri`, 응답에 미리보기 URL
+- 새 `/internal/admin/theme-drafts…` 경로 6개(요청·목록·상세·채택·버리기·다시 생성)
+- 시도 시작·이어하기 응답 `themeScene`, 학생 미션 응답 `sceneMotion`
+
+### 설계·이슈와 다른 점
+
+- 이슈·에픽 "INTRO는 월요일만·OUTRO는 토요일만" → INTRO 월~토 그 주 첫 진입, OUTRO 엔딩 상태(#483과 같음, 에픽 본문은 #483에서 고침)
+- 이슈 정답 공개 시점 "토요일(기준안)" → 엔딩 상태(#483). 엔딩 판정은 #484
+- 이슈 "학생 미션 응답에 … 테마 요일 문제 전 영상 URL" → 미션 조회 응답이 아니라 시도 응답(`mission`을 함께 담음)의 `themeScene.videoUrl`(위 결정 "문제 전 영상 위치", 사용자 결정 2026-11-10)
+- api-spec 2.8 공개 줄(테마 게시 검사 "학년군 전체를 덮는 학년 범위")은 core `feature/theme-grade-proxy`가 바로 옆 줄(초안 요청 본문 `grade`)을 고치고 있어 병합 충돌을 피하려고 이 이슈에서 고치지 않음. 공개 줄 문구는 core PR에서 함께 맞추도록 core 담당에게 알릴 것(아직 알리지 않음)
+- api-spec 2.11 공개 줄(새 응답 칸 이름)도 core 두 브랜치가 같은 줄을 고치고 있어 learning 내부 4.1에만 칸 이름을 적음
+
+### 남은 확인
+
+- 정답 고르기 위치·저장·엔딩 판정은 #484(#483 확인 필요 '큰 질문 정답 고르기 위치'). #484에서 `ThemeEnding` 판단을 바꾸고 OUTRO·종료 칸 조건이 따라감
+- core: INTRO 월~토·OUTRO 엔딩 허용에 맞춘 api-spec 2.11 공개 줄 문구(#439 코멘트로 프록시 범위는 그대로 확인됨)
+- 누적 공개·토요일 새로 풀기·일요일 닫힘·포인트는 #483(문서)·#484(learning)에서 바뀜. 이 이슈는 지금 요일 규칙 위에 구현하고, 요일 상태가 바뀌어도 단서 공개(`LOCKED`면 뺌)는 그대로 맞음
+- 인프라: learning에는 지금 S3 역할이 없음(report는 `report-s3-role` Pod Identity). 테마 버킷 `theme-drafts/*` 읽기 역할(presign 서명용)과 버킷 이름(ai 쓰기 버킷과 같아야 함), 로컬은 report처럼 브라우저가 닿는 MinIO 주소(`S3_PUBLIC_ENDPOINT_URL`과 같은 값)
+- presigned URL 한계(설계 유지): 응답마다 새로 서명해 주소가 바뀌므로 브라우저 캐시가 맞지 않고, 영상을 보는 중에 응답을 다시 받으면 처음부터 재생될 수 있음(장면당 6초라 영향 작음). 임시 자격 증명으로 서명하면 자격 증명 만료 때 URL도 함께 만료돼 1시간보다 짧을 수 있음. 만료된 URL의 403은 웹이 이번 주 테마를 다시 받아 처리(#440). 문제가 보이면 서명 시각을 구간 단위로 맞추는 방식을 검토
+- 생성 시도 상한·대기·리스·크론·URL 유효기간·자동 성취기준 규칙·학년군 테마 복사 방식은 기준안(이슈 확인 필요)

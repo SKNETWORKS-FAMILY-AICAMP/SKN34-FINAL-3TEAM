@@ -238,6 +238,8 @@ stateDiagram-v2
 - 시작 요청 `context`(`THEME_DAY`·`THEME_REVIEW`·`EXTRA`)는 신규 시도에만 검사. 진행 중 시도 반환(부분 UK 충돌)은 요일과 무관하게 이어하기 허용, 완주 판정은 당일 KST 학습 완료만 인정
 - 재사용 테마의 이미 푼 문제도 그 주 `OPEN` 요일에는 `THEME_DAY` 신규 시도 가능
 - 구현(#385): `ThemeWeek.stateOf`가 KST 날짜로 계산하고 토·일에는 다섯 요일 모두 `CLOSED`. 시작 검사는 learning 시계(KST), 조회·열람은 core가 넘긴 날짜 기준
+- 정답 구조 공개(#438): 요일 단서(`clue`·`rulesOut`)는 그 요일이 `OPEN`·`CLOSED`일 때만 학생 응답에 넣고 `LOCKED`면 뺀다(기준안). 이야기 열람 기록은 INTRO 월~토(그 주 처음 들어온 날 1번, 2026-11-10 사용자 결정으로 에픽의 '월요일 첫 진입'에서 바꿈)에 받는다
+- 종료 공개(#438 칸, 조건은 #483·#484): 종료 이야기·정답·결정적 단서·종료 장면 그림·영상·움직임은 엔딩 상태일 때만 학생 응답에 넣고 OUTRO 열람 기록도 그때만 받는다(엔딩 전 정답 제외). 엔딩 조건(큰 질문 정답을 맞히면 바로, 틀리면 토요일 다시 풀기를 마친 뒤, 무료 일요일 제외)과 정답 고르기 저장·판정은 주간 테마 규칙 개정 #483·learning #484가 정한다. #438은 엔딩 여부를 한 곳(`ThemeEnding`)에서 판단하게 두고, #484 전까지는 지금 규칙대로 토·일을 엔딩으로 본다(OUTRO 기록은 토요일, 일요일 첫 진입은 화면 없음)
 
 ### 3.3 `judgment.process_status` (판정 처리)
 
@@ -324,10 +326,40 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 조건 |
 |---|---|---|
-| `REVIEW_REQUIRED → PUBLISHED` | `POST /admin/weekly-themes/{id}/publish` (CONTENT) | 검토 요청한 버전이 현재본(아니면 `409 CONFLICT`). 월~금 5개 요일 모두 게시 미션(시연 전용 제외), 다섯 생각 유형 1개씩, 미션 학년 범위가 학년군 전체를 덮음(초3~4 논술 불가), 같은 학년군·주 `PUBLISHED` 없음. 아니면 `422 WEEKLY_THEME_PUBLISH_INCOMPLETE` + `errors` |
+| `REVIEW_REQUIRED → PUBLISHED` | `POST /admin/weekly-themes/{id}/publish` (CONTENT) | 검토 요청한 버전이 현재본(아니면 `409 CONFLICT`). 월~금 5개 요일 모두 게시 미션(시연 전용 제외), 다섯 생각 유형 1개씩, 미션 학년 범위가 테마 학년을 포함(초3·초4 논술 불가, #438 학년별 테마), 같은 학년·주 `PUBLISHED` 없음. 아니면 `422 WEEKLY_THEME_PUBLISH_INCOMPLETE` + `errors` |
 | `PUBLISHED → UNPUBLISHED` | `/unpublish` | 그 주 학생에게는 최근 게시 테마 재사용(P23). 이미 시작한 시도는 유지 |
 
 - 미션 상태(3.1)와 같은 전이 규칙. 별도 검토(승인·수정 요청) 경로는 없다(core #387이 7경로만 프록시): 검토 요청한 버전(`review_version_id`)이 현재본일 때의 게시가 승인이고, 검토 중 수정은 `DRAFT`로 돌아간다. 게시 중 수정은 새 버전을 현재본으로 두고 `PUBLISHED`를 유지하며 학생에게는 재게시 전까지 게시본이 보인다. 코드값은 [ERD 4.2.1](erd.md#421-주간-테마-p23-385-v11v12). 위에 없는 전이는 `409 CONFLICT`
+- 테마 초안 채택(3.5.1)으로 만든 테마도 `DRAFT`에서 시작한다(자동 게시 없음, 미션 5개도 `DRAFT`라 미션 게시 뒤에 테마 게시 검사를 통과)
+
+#### 3.5.1 `theme_draft.status` (#438)
+
+미션 초안(3.4)과 같은 상태·전이. 코드값은 [ERD 4.2.1](erd.md#421-주간-테마-p23-385-v11v12).
+
+```mermaid
+stateDiagram-v2
+  [*] --> GENERATING: 관리자 요청 또는 주간 자동 (attempts 0)
+  GENERATING --> GENERATING: 생성 1회 실패, 상한 미만 (사유 기록 후 다시 생성)
+  GENERATING --> READY: ai 결과(failure 없음)·learning 검사 통과
+  GENERATING --> CHECK_FAILED: 상한 도달, 마지막 실패가 검사(ai failure 단계 또는 learning 검사)
+  GENERATING --> FAILED: 상한 도달, 마지막 실패가 AI 호출
+  READY --> ADOPTED: 채택 (DRAFT 미션 5개 + DRAFT 테마)
+  READY --> DISCARDED: 버리기
+  CHECK_FAILED --> DISCARDED: 버리기
+  FAILED --> DISCARDED: 버리기
+```
+
+| 전이 | 트리거 | 담당 | 조건 |
+|---|---|---|---|
+| → `GENERATING` (관리자) | `POST /admin/theme-drafts` (CONTENT) | `ThemeDraftService.request` | 학년 `G3`~`G6`, 적용 주 월요일이고 이번 주 이후, 지정한 유형별 성취기준이 표에 있고 그 학년을 포함하는 학년군, 입력 방식이 유형·학년에 맞음(초3·초4 논술 불가), 유형 중복 없음(400). 고르지 않은 유형은 자동 생성과 같은 규칙으로 learning이 채움. `source = ADMIN` |
+| → `GENERATING` (자동) | `ThemeDraftScheduler` 주간 크론(기준안 수요일 03:00 KST) | `ThemeDraftService.createWeekly` | 다음 주 `G3`·`G4`·`G5`·`G6` 각 1개, `source = AUTO`. 부분 UK `(grade, week_start) WHERE source = 'AUTO'` + `ON CONFLICT DO NOTHING`이라 레플리카가 같이 돌아도 학년·주당 하나 |
+| → `GENERATING` (다시 생성) | `POST /admin/theme-drafts/{id}/regenerate` | `ThemeDraftService.regenerate` | 원래 초안이 `READY`·`CHECK_FAILED`·`FAILED`·`DISCARDED`일 때 같은 `input`·학년·주로 **새 초안**(`source = ADMIN`, attempts 0)을 만들고 원래 초안은 그대로 둔다(사용자 결정 2026-11-10). `GENERATING`·`ADOPTED`는 `409 CONFLICT`. 응답은 새 초안(`draftId`) |
+| 생성 1회 | `ThemeDraftScheduler` 주기(기준안 10초) | `ThemeDraftService.generateNext` → `ThemeDraft.recordAttempt` | 리스 점유(기준안 18분) 뒤 ai 1회(대기 기준안 16분) + learning 검사. 점유한 리스가 그대로일 때만 저장해 늦은 작업이 덮어쓰지 않음. 작업이 중간에 죽으면 리스가 지나 다른 레플리카가 다시 맡고 그 시도는 세지 않음 |
+| `GENERATING → READY·CHECK_FAILED·FAILED` | 같음 | `ThemeDraft.recordAttempt` | 상한 기준안 3회(미션 초안과 같음). ai `200`의 `failure`(`THEME`·`MISSION`·`REVIEW`·`IMAGE`)와 learning 검사 실패는 검사 실패, ai `502`·`503`·대기 초과·서킷 열림은 AI 호출 실패(`failure_code`는 판정과 같은 `AI_TIMEOUT`·`AI_UNAVAILABLE`·`AI_BAD_RESPONSE`·`AI_CIRCUIT_OPEN`) |
+| `READY → ADOPTED` | `POST /admin/theme-drafts/{id}/adopt` | `ThemeDraftService.adopt` | 초안 행 잠금, 미션 5개(`DRAFT`, `source = LLM_THEME`)와 테마(`DRAFT`)를 같은 트랜잭션에. 그 뒤는 3.1·3.5 |
+| → `DISCARDED` | `POST /admin/theme-drafts/{id}/discard` | `ThemeDraft.discard` | `READY`·`CHECK_FAILED`·`FAILED`만. 나머지는 `409 CONFLICT` |
+
+- 검사 통과(`READY`)는 공개 승인이 아니다. 채택 뒤 미션 검토·게시(3.1)와 테마 검토 요청·게시(3.5)를 거친다(P19)
 
 ### 3.6 `community_post.status` (P20, learning #386 구현)
 
