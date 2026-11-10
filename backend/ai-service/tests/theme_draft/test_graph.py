@@ -113,6 +113,14 @@ def test_happy_path_assembles_contract_response() -> None:
     response = run(gen, review)
     assert response.failure is None and response.warnings == []
     assert response.theme is not None and response.theme.answer == "텃밭"
+    # LLM 출력에 없는 rulesOut을 코드가 표로 채워 응답에 넣음
+    assert [d.rules_out for d in response.theme.days] == [
+        [],
+        [],
+        ["창고", "정자"],
+        ["놀이터", "창고"],
+        [],
+    ]
     assert [m.day for m in response.missions] == list(DAYS)
     assert [m.thinking_type for m in response.missions] == [DAY_TYPE[d] for d in DAYS]
     assert [d.day for d in response.dialogues] == list(DAYS)

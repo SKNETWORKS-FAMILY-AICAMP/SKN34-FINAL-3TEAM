@@ -1,11 +1,11 @@
-"""retrieve(자리) → plan_theme(줄거리 생성) → check_theme(코드 검사).
+"""retrieve(자리) → plan_theme(줄거리 생성, rulesOut은 코드가 표에서 채움) → check_theme(코드 검사).
 
 실패하면 사유를 넣어 다시 만든다(상한·마감).
 """
 
 from langgraph.runtime import Runtime
 
-from app.theme_draft.checks import DAYS, check_theme
+from app.theme_draft.checks import DAYS, check_theme, fill_rules_out
 from app.theme_draft.models import GeneratedTheme
 from app.theme_draft.nodes import DEADLINE_REASON, THEME_CALL_TYPE, ThemeContext, ThemeState
 
@@ -32,7 +32,7 @@ async def plan_theme(state: ThemeState, runtime: Runtime[ThemeContext]) -> Theme
         max_retries=ctx.settings.theme_llm_retries,
     )
     return {
-        "theme": generated.data.model_dump(),
+        "theme": fill_rules_out(generated.data.model_dump()),
         "plan_attempts": state.get("plan_attempts", 0) + 1,
     }
 

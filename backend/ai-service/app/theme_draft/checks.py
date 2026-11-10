@@ -120,6 +120,24 @@ def feature_table(theme: Theme) -> tuple[dict[str, dict[str, str]], list[str]]:
     return table, bad
 
 
+def fill_rules_out(theme: Theme) -> Theme:
+    """요일별 rulesOut을 특징 표와 조건으로 채운다(LLM은 쓰지 않음, 실측 repo-beach5-1).
+
+    RULE은 허용 값 밖 후보 전부(이미 빠진 후보 포함, 후보 순서), HINT는 빈 배열. 표·조건이
+    틀린 날은 빈 배열로 두고 사유는 check_logic이 낸다.
+    """
+    table, _ = feature_table(theme)
+    cands = theme.get("candidates") or []
+    days = []
+    for d in theme.get("days") or []:
+        cond = d.get("condition") or {}
+        vals = table.get(cond.get("feature")) or {}
+        allowed = set(cond.get("allowed") or [])
+        rule = cond.get("kind") == "RULE" and bool(vals)
+        days.append({**d, "rulesOut": [c for c in cands if rule and vals[c] not in allowed]})
+    return {**theme, "days": days}
+
+
 def check_logic(theme: Theme, cands: list[str], answer: str, days: list[dict]) -> list[str]:
     """특징 표로 정답 논리를 계산해 확인한다(검토 모델에 맡기지 않음)."""
     table, bad = feature_table(theme)
@@ -154,17 +172,12 @@ def check_logic(theme: Theme, cands: list[str], answer: str, days: list[dict]) -
         if outside:
             bad.append(f"CLUE_TEXT {day} 단서 문장에 허용 밖 값 {outside} 낱말이 있음")
         fit = [c for c in cands if vals[c] in allowed]
-        rules_out = set(d.get("rulesOut") or [])
         if vals[answer] not in allowed:
             bad.append(f"LOGIC {day} 단서가 정답을 뺌(정답 값 {vals[answer]})")
         if cond.get("kind") == "RULE":
-            expect = set(cands) - set(fit)
+            expect = set(cands) - set(fit)  # = fill_rules_out이 채우는 rulesOut
             if not expect:
                 bad.append(f"LOGIC {day} RULE인데 빠지는 후보가 없음")
-            if rules_out != expect:
-                bad.append(
-                    f"LOGIC {day} rulesOut {sorted(rules_out)}이 표 계산 {sorted(expect)}과 다름"
-                )
             # learning 결정적 단서 = rulesOut이 비지 않은 마지막 요일(#438)이라 새로 빼는 날만 RULE
             if expect and not [c for c in remaining if c not in fit]:
                 bad.append(
@@ -173,8 +186,6 @@ def check_logic(theme: Theme, cands: list[str], answer: str, days: list[dict]) -
             for c in expect - {answer}:
                 first_out.setdefault(c, i)
         elif cond.get("kind") == "HINT":
-            if rules_out:
-                bad.append(f"LOGIC {day} HINT인데 rulesOut {sorted(rules_out)}")
             live = [c for c in remaining if vals[c] in allowed]
             hidden = [c for c in remaining if vals[c] not in allowed]
             if hidden:  # 남은 후보를 빼면 사실상 RULE(시험 lab3-inventor-6: 화요일에 답이 정해짐)

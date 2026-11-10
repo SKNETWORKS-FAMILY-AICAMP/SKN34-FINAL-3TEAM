@@ -207,6 +207,9 @@ class GeneratedEvidence(BaseModel):
 
 
 class GeneratedDay(BaseModel):
+    """rulesOut은 LLM이 쓰지 않는다. 특징 표와 condition으로 정해지는 값이라 코드가 채운다
+    (checks.fill_rules_out)."""
+
     day: Day
     thinkingType: ThinkingType
     place: str
@@ -215,7 +218,6 @@ class GeneratedDay(BaseModel):
     clueType: ClueType
     condition: GeneratedCondition
     evidence: GeneratedEvidence
-    rulesOut: list[str]
 
 
 class GeneratedTheme(BaseModel):

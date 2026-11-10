@@ -41,7 +41,6 @@ def day(
     kind: str,
     feat: str,
     allowed: list[str],
-    rules_out: list[str],
     ev: str = "TRACE",
 ) -> dict[str, Any]:
     return {
@@ -53,12 +52,12 @@ def day(
         "clueType": clue_type,
         "condition": {"kind": kind, "feature": feat, "allowed": allowed},
         "evidence": {"kind": ev, "when": "보리가 사라진 날 오후"},
-        "rulesOut": rules_out,
     }
 
 
 def valid_theme() -> dict[str, Any]:
-    """check_theme(grade=3)을 통과하는 줄거리(GeneratedTheme.model_dump() 모양)."""
+    """check_theme(grade=3)을 통과하는 줄거리(GeneratedTheme.model_dump() 모양, rulesOut 없음:
+    코드가 fill_rules_out으로 채움)."""
     return {
         "title": "보리를 찾아라",
         "world": "작은 마을의 비 온 뒤 오후",
@@ -77,7 +76,7 @@ def valid_theme() -> dict[str, Any]:
             feature("물기", {c: "젖음" for c in CANDIDATES}, code=STANDARDS["ANALYZE"][0]),
         ],
         "days": [
-            day("MON", "보리 발자국이 젖어 있었어.", "발자국", "HINT", "물기", ["젖음"], []),
+            day("MON", "보리 발자국이 젖어 있었어.", "발자국", "HINT", "물기", ["젖음"]),
             day(
                 "TUE",
                 "보리 털이 비에 젖어 반짝였대.",
@@ -85,7 +84,6 @@ def valid_theme() -> dict[str, Any]:
                 "HINT",
                 "물기",
                 ["젖음"],
-                [],
                 "SIGHTING",
             ),
             day(
@@ -95,7 +93,6 @@ def valid_theme() -> dict[str, Any]:
                 "RULE",
                 "지붕",
                 ["없음"],
-                ["정자", "창고"],
                 "SIGHTING",
             ),
             day(
@@ -105,7 +102,6 @@ def valid_theme() -> dict[str, Any]:
                 "RULE",
                 "땅",
                 ["흙"],
-                ["놀이터", "창고"],
             ),
             day(
                 "FRI",
@@ -114,7 +110,6 @@ def valid_theme() -> dict[str, Any]:
                 "HINT",
                 "물기",
                 ["젖음"],
-                [],
                 "RECORD",
             ),
         ],

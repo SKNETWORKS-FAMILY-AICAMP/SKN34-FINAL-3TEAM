@@ -9,7 +9,7 @@ import pytest
 from app.config import get_settings
 from app.mission_draft.models import Draft, MissionDraftRequest
 from app.theme_draft import checks
-from app.theme_draft.models import ThemeDraftRequest
+from app.theme_draft.models import GeneratedDay, ThemeDraftRequest
 from tests.theme_draft.fixtures import (
     day_with,
     dialogue,
@@ -68,12 +68,10 @@ def _rename(theme: dict, old: str, new: str) -> None:
         for v in f["values"]:
             if v["candidate"] == old:
                 v["candidate"] = new
-    for d in theme["days"]:
-        d["rulesOut"] = [new if c == old else c for c in d["rulesOut"]]
 
 
 def _answer_out(theme: dict) -> None:
-    # 목요일 조건을 모래로: 정답(흙)이 빠지고 rulesOut도 표와 다름
+    # 목요일 조건을 모래로: 정답(흙)이 빠지고 놀이터는 어떤 RULE로도 빠지지 않음
     thu = theme["days"][3]
     thu["condition"]["allowed"] = ["모래"]
     thu["clue"] = "보리 발바닥에 모래가 묻어 있었어."
@@ -85,7 +83,6 @@ def _stale_rule(theme: dict) -> None:
     fri.update(
         clue="보리는 지붕이 없는 데서 놀았어.",
         condition={"kind": "RULE", "feature": "지붕", "allowed": ["없음"]},
-        rulesOut=["정자", "창고"],
     )
 
 
@@ -96,17 +93,14 @@ def _early_finish(theme: dict) -> None:
     days[1].update(
         clue="보리는 지붕이 없는 곳으로 갔대.",
         condition={"kind": "RULE", "feature": "지붕", "allowed": ["없음"]},
-        rulesOut=["정자", "창고"],
     )
     days[2].update(
         clue="보리 발바닥에 흙이 묻어 있었어.",
         condition={"kind": "RULE", "feature": "땅", "allowed": ["흙"]},
-        rulesOut=["놀이터", "창고"],
     )
     days[3].update(
         clue="보리 털이 아직 젖어 있었대.",
         condition={"kind": "HINT", "feature": "물기", "allowed": ["젖음"]},
-        rulesOut=[],
     )
 
 
@@ -116,7 +110,6 @@ def _never_out(theme: dict) -> None:
     wed.update(
         clue="보리 털이 젖어 있었대.",
         condition={"kind": "HINT", "feature": "물기", "allowed": ["젖음"]},
-        rulesOut=[],
     )
 
 
@@ -126,7 +119,6 @@ def _inventor6(theme: dict) -> None:
     tue.update(
         clue="보리 발에 흙이 조금 있었대.",
         condition={"kind": "HINT", "feature": "땅", "allowed": ["흙"]},
-        rulesOut=[],
     )
 
 
@@ -135,17 +127,14 @@ def _narrow_hint(theme: dict) -> None:
     theme["days"][1].update(
         clue="보리 발에 흙이 묻었대.",
         condition={"kind": "RULE", "feature": "땅", "allowed": ["흙"]},
-        rulesOut=["놀이터", "창고"],
     )
     theme["days"][2].update(
         clue="보리는 지붕이 없는 곳으로 갔대.",
         condition={"kind": "HINT", "feature": "지붕", "allowed": ["없음"]},
-        rulesOut=[],
     )
     theme["days"][3].update(
         clue="보리는 지붕이 없는 데로 갔어.",
         condition={"kind": "RULE", "feature": "지붕", "allowed": ["없음"]},
-        rulesOut=["정자", "창고"],
     )
 
 
@@ -207,12 +196,8 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
     ),
     ("unknown condition feature", cond("MON", feature="소리"), ["CONDITION MON"]),
     ("allowed outside table", cond("MON", allowed=["마름"]), ["CONDITION MON"]),
-    # RULE: rulesOut = 허용 값 밖 후보
-    ("rule rulesOut mismatch", on_day("WED", rulesOut=["창고"]), ["LOGIC WED"]),
-    # HINT인데 rulesOut
-    ("hint with rulesOut", on_day("MON", rulesOut=["창고"]), ["LOGIC MON"]),
     # 정답을 빼는 단서
-    ("clue excludes answer", edit(_answer_out), ["LOGIC", "LOGIC THU", "LOGIC THU"]),
+    ("clue excludes answer", edit(_answer_out), ["LOGIC", "LOGIC THU"]),
     # 이미 빠진 후보만 빼는 RULE(learning 결정적 단서 계산과 어긋남)
     ("rule removes nothing new", edit(_stale_rule), ["LOGIC FRI"]),
     # 마지막 틀린 후보가 수요일에 빠짐
@@ -239,6 +224,33 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
 )
 def test_check_theme_exact_codes(name: str, build: Callable[[], dict], expected: list[str]) -> None:
     assert codes(checks.check_theme(build(), GRADE, CODES)) == sorted(expected)
+
+
+def test_llm_output_has_no_rules_out() -> None:
+    """rulesOut은 표·조건으로 정해지는 값이라 LLM 출력 형식에 없다(코드가 채움)."""
+    assert "rulesOut" not in GeneratedDay.model_fields
+
+
+def test_fill_rules_out_from_table() -> None:
+    """RULE은 허용 값 밖 후보 전부(이미 빠진 후보 포함, 후보 순서), HINT는 빈 배열."""
+    filled = checks.fill_rules_out(valid_theme())
+    assert [d["rulesOut"] for d in filled["days"]] == [
+        [],
+        [],
+        ["창고", "정자"],  # 수 RULE 지붕 없음
+        ["놀이터", "창고"],  # 목 RULE 땅 흙: 수요일에 빠진 창고도 다시 적음
+        [],
+    ]
+    assert "rulesOut" not in valid_theme()["days"][0]  # 원본은 그대로
+
+
+def test_fill_rules_out_overwrites_and_tolerates_broken_condition() -> None:
+    theme = day_with(valid_theme(), "WED", rulesOut=["텃밭"])
+    theme = day_with(theme, "THU", condition={"kind": "RULE", "feature": "소리", "allowed": ["흙"]})
+    days = checks.fill_rules_out(theme)["days"]
+    assert days[2]["rulesOut"] == ["창고", "정자"]  # 다른 값이 있어도 표로 다시 채움
+    assert days[3]["rulesOut"] == []  # 표에 없는 특징: 비우고 사유는 check_logic이 냄
+    assert "CONDITION THU" in codes(checks.check_theme(theme, GRADE, CODES))
 
 
 def test_candidate_count_is_four_for_every_grade() -> None:
@@ -473,6 +485,7 @@ def test_check_review_splits_fail_warn_and_shape() -> None:
 
 
 def test_public_theme_drops_internal_fields() -> None:
-    public = checks.public_theme(copy.deepcopy(valid_theme()))
+    public = checks.public_theme(checks.fill_rules_out(copy.deepcopy(valid_theme())))
     assert not {"features", "target"} & set(public)
     assert not {"clueType", "condition", "evidence"} & set(public["days"][0])
+    assert public["days"][2]["rulesOut"] == ["창고", "정자"]
