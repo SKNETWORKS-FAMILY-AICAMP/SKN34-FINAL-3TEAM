@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.learning._common.persistence.JacksonJsonbTypeHandler
 import com.sagomungchi.learning.theme.domain.DialogueLine
 import com.sagomungchi.learning.theme.domain.HintSpot
+import com.sagomungchi.learning.theme.domain.ThemeAttemptFailures
+import com.sagomungchi.learning.theme.domain.ThemeDraftInput
+import com.sagomungchi.learning.theme.domain.ThemeDraftOutput
 import org.apache.ibatis.type.TypeReference
 import org.mybatis.spring.boot.autoconfigure.ConfigurationCustomizer
 import org.springframework.context.annotation.Bean
@@ -19,7 +22,7 @@ class HintSpotListTypeHandler(objectMapper: ObjectMapper) : JacksonJsonbTypeHand
     objectMapper, objectMapper.typeFactory.constructCollectionType(List::class.java, HintSpot::class.java),
 )
 
-/** 구체 타입으로만 등록하고 XML typeHandler로 지정. 움직임 JSON은 mission.repository.MotionTypeHandler(미션 장면과 함께 씀) */
+/** 구체 타입으로만 등록하고 XML typeHandler로 지정(테마 초안 핸들러는 ThemeDraftRepository.kt). 움직임 JSON은 mission.repository.MotionTypeHandler(미션 장면과 함께 씀) */
 @Configuration(proxyBeanMethods = false)
 class ThemePersistenceConfig {
     @Bean
@@ -27,6 +30,10 @@ class ThemePersistenceConfig {
         configuration.typeHandlerRegistry.apply {
             register(object : TypeReference<List<DialogueLine>>() {}, DialogueListTypeHandler(objectMapper))
             register(object : TypeReference<List<HintSpot>>() {}, HintSpotListTypeHandler(objectMapper))
+            // 테마 초안 입력·검사 결과·생성 결과 (ThemeDraftRepository)
+            register(object : TypeReference<ThemeDraftInput>() {}, ThemeDraftInputTypeHandler(objectMapper))
+            register(object : TypeReference<List<ThemeAttemptFailures>>() {}, ThemeFailuresTypeHandler(objectMapper))
+            register(object : TypeReference<ThemeDraftOutput>() {}, ThemeDraftOutputTypeHandler(objectMapper))
         }
     }
 }

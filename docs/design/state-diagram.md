@@ -378,8 +378,8 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
-| → `GENERATING` (관리자) | `POST /admin/theme-drafts` (CONTENT) | `ThemeDraftService.request` | 학년 `G3`~`G6`, 적용 주 월요일이고 이번 주 이후, 지정한 유형별 성취기준이 표에 있고 그 학년을 포함하는 학년군, 입력 방식이 유형·학년에 맞음(초3·초4 논술 불가), 유형 중복 없음(400). 고르지 않은 유형은 자동 생성과 같은 규칙으로 learning이 채움. `source = ADMIN` |
-| → `GENERATING` (자동) | `ThemeDraftScheduler` 주간 크론(기준안 수요일 03:00 KST) | `ThemeDraftService.createWeekly` | 다음 주 `G3`·`G4`·`G5`·`G6` 각 1개, `source = AUTO`. 부분 UK `(grade, week_start) WHERE source = 'AUTO'` + `ON CONFLICT DO NOTHING`이라 레플리카가 같이 돌아도 학년·주당 하나 |
+| → `GENERATING` (관리자) | `POST /admin/theme-drafts` (CONTENT) | `ThemeDraftService.request` | 학년 `G3`~`G6`, 적용 주 월요일이고 이번 주 이후, 지정한 유형별 성취기준이 표에 있고 그 학년을 포함하는 학년군, 입력 방식이 유형·학년에 맞음(초3·초4 논술 불가), 유형 중복 없음(400). 고르지 않은 유형은 자동 생성과 같은 규칙으로 learning이 채움(채울 성취기준이 표에 없으면 `409 CONFLICT`). `source = ADMIN` |
+| → `GENERATING` (자동) | `ThemeDraftScheduler` 주간 크론(기준안 수요일 03:00 KST) | `ThemeDraftService.createWeekly` | 다음 주 `G3`·`G4`·`G5`·`G6` 각 1개, `source = AUTO`. 그 학년·주에 게시 테마가 있으면 그 학년은 건너뜀(사용자 결정 2026-11-10). 부분 UK `(grade, week_start) WHERE source = 'AUTO'` + `ON CONFLICT DO NOTHING`이라 레플리카가 같이 돌아도 학년·주당 하나 |
 | → `GENERATING` (다시 생성) | `POST /admin/theme-drafts/{id}/regenerate` | `ThemeDraftService.regenerate` | 원래 초안이 `READY`·`CHECK_FAILED`·`FAILED`·`DISCARDED`일 때 같은 `input`·학년·주로 **새 초안**(`source = ADMIN`, attempts 0)을 만들고 원래 초안은 그대로 둔다(사용자 결정 2026-11-10). `GENERATING`·`ADOPTED`는 `409 CONFLICT`. 응답은 새 초안(`draftId`) |
 | 생성 1회 | `ThemeDraftScheduler` 주기(기준안 10초) | `ThemeDraftService.generateNext` → `ThemeDraft.recordAttempt` | 리스 점유(기준안 18분) 뒤 ai 1회(대기 기준안 16분) + learning 검사. 점유한 리스가 그대로일 때만 저장해 늦은 작업이 덮어쓰지 않음. 작업이 중간에 죽으면 리스가 지나 다른 레플리카가 다시 맡고 그 시도는 세지 않음 |
 | `GENERATING → READY·CHECK_FAILED·FAILED` | 같음 | `ThemeDraft.recordAttempt` | 상한 기준안 3회(미션 초안과 같음). ai `200`의 `failure`(`THEME`·`MISSION`·`REVIEW`·`IMAGE`)와 learning 검사 실패는 검사 실패, ai `502`·`503`·대기 초과·서킷 열림은 AI 호출 실패(`failure_code`는 판정과 같은 `AI_TIMEOUT`·`AI_UNAVAILABLE`·`AI_BAD_RESPONSE`·`AI_CIRCUIT_OPEN`) |

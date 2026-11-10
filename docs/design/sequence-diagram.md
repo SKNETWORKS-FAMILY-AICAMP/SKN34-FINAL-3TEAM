@@ -1572,7 +1572,7 @@ sequenceDiagram
     L->>LDB: 학년·주·성취기준·입력 방식 확인, 비운 유형은 자동 규칙으로 채움 → theme_draft GENERATING (ADMIN)
     L-->>AW: 202 ThemeDraft {draftId, status} (core 경유, 결과 감사)
   else 주간 자동 (기준안 수요일 03:00 KST)
-    L->>LDB: 다음 주 G3·G4·G5·G6 theme_draft GENERATING (AUTO) ON CONFLICT DO NOTHING
+    L->>LDB: 다음 주 G3·G4·G5·G6 theme_draft GENERATING (AUTO) ON CONFLICT DO NOTHING (그 학년·주 게시 테마가 있으면 건너뜀)
   end
 
   loop ThemeDraftScheduler 주기 (기준안 10초)
@@ -1585,9 +1585,9 @@ sequenceDiagram
     alt 모두 통과
       L->>LDB: READY + output (점유한 리스일 때만)
     else 실패, 상한 미만
-      L->>LDB: attempts+1, 실패 사유 추가, 리스 비움 → 다음 주기 다시 생성
+      L->>LDB: attempts+1, 실패 사유 추가, output 갱신(ai 결과를 받았으면, failure여도), 리스 비움 → 다음 주기 다시 생성
     else 실패, 상한 도달 (기준안 3회)
-      L->>LDB: CHECK_FAILED 또는 FAILED
+      L->>LDB: CHECK_FAILED(output 갱신) 또는 FAILED(AI 호출 실패, 이전 output 유지)
     end
   end
 

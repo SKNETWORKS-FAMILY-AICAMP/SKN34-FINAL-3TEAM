@@ -1981,15 +1981,18 @@ classDiagram
   }
   class ThemeDraftRules {
     <<domain>>
-    +learningFailures(output, input, standards) List
-    +missionInputs(input, grade) List
-    +autoStandards(grade, recentCodes, table, random) List
+    +learningFailures(output, input, grade, standards) List
+    +missionInput(mission, grade) DraftInput
+    +autoStandards(grade, requested, recentCodes, tables, random) List
+    +adoptedMissions(output, input, grade, standards, author) List
+    +themeContent(output, grade, weekStart, missionIds) ThemeContent
   }
   class ThemeDraftScheduler { <<scheduler>> }
   class ThemeDraftAiClient { <<client>> }
   class ThemeDraftRepository {
     <<repository>>
     +insertAutoIfAbsent(draft) Boolean
+    +findInputs(grade, from, until) List
     +claimNext(now, leaseUntil) ThemeDraft
     +saveAttempt(draft, claimedLease)
   }
@@ -2044,8 +2047,8 @@ classDiagram
   ThemeDraftService --> ThemeDraftAiClient : 생성 1회
   ThemeDraftService ..> ThemeDraft
   ThemeDraftService ..> ThemeDraftRules
-  ThemeDraftService --> MissionService : createFromDraft(LLM_THEME)
-  ThemeDraftService --> WeeklyThemeAdminService : 테마 DRAFT 생성
+  ThemeDraftService --> MissionService : createFromDraft(LLM_THEME)·성취기준 조회
+  ThemeDraftService --> WeeklyThemeAdminService : 테마 DRAFT 생성·게시 여부
   CommunityController --> CommunityService
   CommunityService ..> CommunityRules
   CommunityService --> AttemptService : 학습 완료 여부·첫 완료 시도·마지막 답변
@@ -2065,6 +2068,7 @@ classDiagram
 - 테마 초안: 미션 초안(4.1.1)과 같은 구조. `ThemeDraftScheduler`는 주기(기준안 10초)마다 `generateNext`, 주간 크론(기준안 수요일 03:00 KST)에 `createWeekly`(다음 주 `G3`~`G6`, 부분 UK + `ON CONFLICT DO NOTHING`). `generateNext`는 리스(기준안 18분) 점유 → 트랜잭션 밖 ai 1회(`ThemeDraftAiClient`, 서킷 `ai-theme-draft`, 대기 기준안 16분) → `ThemeDraftRules.learningFailures`(요일·유형 배치, 미션 5개는 `DraftRules.learningFailures` 재사용, 정답 논리) → 점유 리스 대조 저장. `previousFailures`는 시간순, ai 단계 실패 그대로·learning 실패는 `THEME`/`MISSION`(사유 `<요일> <코드> <자세히>`)·AI 호출 실패 제외(#437 합의)
 - 채택: 초안 잠금 → 미션 5개 `MissionService.createFromDraft(command, rubric, LLM_THEME)`(장면 키·`sceneMotion`) → `WeeklyThemeAdminService`로 테마 `DRAFT`(`hint_spots` NULL, `answer_clue` = 결정적 단서) → `ADOPTED` + `theme_id`, 한 트랜잭션. 다시 생성은 같은 입력의 새 초안(`ADMIN`)
 - `MissionService.createFromDraft`에 출처 인자(기본 `LLM_DRAFT`). `MissionCommand`에 `sceneMotion`, 관리자 미션 수정 본문에 없으면 `sceneUri`가 같을 때 이전 버전 값을 이어받음
+- 다른 기능은 service로만 부른다(architecture 계층 규칙): 성취기준은 `MissionService.standards(codes)`·`standardsOf(교과, 학년군)`, 주간 자동이 건너뛸 학년(그 학년·주 게시 테마 있음)은 `WeeklyThemeAdminService.publishedExists`. 자동 성취기준이 피할 최근 코드는 `ThemeDraftRepository.findInputs`(같은 학년, 적용 주 앞 4주)
 - `spring.task.scheduling.pool.size` 5(작업마다 스레드 하나). 주기 작업이 ai를 기다리는 동안에도 Tomcat 요청 스레드가 다른 내부 API(#469 지식 API 포함)를 처리
 
 ---

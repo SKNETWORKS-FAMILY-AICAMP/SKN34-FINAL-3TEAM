@@ -19,7 +19,7 @@ data class AdminMission(
     val versions: List<AdminMissionVersion>,
     val rubrics: List<AdminRubric>,
     val reviews: List<AdminReview>,
-    /** 처음 만든 방식 (#353): 사람 작성 MANUAL, 초안 채택 LLM_DRAFT */
+    /** 처음 만든 방식 (#353): 사람 작성 MANUAL, 초안 채택 LLM_DRAFT, 테마 초안 채택 LLM_THEME(#438) */
     val source: MissionSource = MissionSource.MANUAL,
 )
 

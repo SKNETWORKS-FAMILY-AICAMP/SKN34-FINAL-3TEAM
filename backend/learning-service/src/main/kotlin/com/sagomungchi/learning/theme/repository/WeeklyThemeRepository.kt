@@ -17,6 +17,9 @@ class WeeklyThemeRepository(private val mapper: WeeklyThemeMapper) {
     /** 그 주 게시본, 없으면 그 주 이전 최근 게시본 */
     fun findLatestPublished(grade: ThemeGrade, weekStart: LocalDate): ThemeHeader? = mapper.findLatestPublished(grade, weekStart)
 
+    /** 그 학년·주에 게시 테마가 있음 (주간 자동 초안을 건너뜀, #438) */
+    fun existsPublished(grade: ThemeGrade, weekStart: LocalDate): Boolean = mapper.existsPublished(grade, weekStart)
+
     fun existsOtherPublished(id: UUID, grade: ThemeGrade, weekStart: LocalDate): Boolean =
         mapper.existsOtherPublished(id, grade, weekStart)
 

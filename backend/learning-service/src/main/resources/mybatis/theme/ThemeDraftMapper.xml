@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 테마 초안 (#438, ERD 4.2.1 theme_draft, state-diagram 3.5.1). 생성 작업 점유는 mission_draft.lease_until과 같은 방식 -->
+<mapper namespace="com.sagomungchi.learning.theme.repository.ThemeDraftMapper">
+    <resultMap id="draft" type="com.sagomungchi.learning.theme.repository.ThemeDraftRow">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="grade" javaType="com.sagomungchi.learning.theme.domain.ThemeGrade"/>
+            <arg column="week_start" javaType="java.time.LocalDate"/>
+            <arg column="source" javaType="com.sagomungchi.learning.theme.domain.ThemeDraftSource"/>
+            <arg column="status" javaType="com.sagomungchi.learning.mission.domain.DraftStatus"/>
+            <arg column="requested_by" javaType="java.util.UUID"/>
+            <arg column="input" javaType="com.sagomungchi.learning.theme.domain.ThemeDraftInput"
+                 typeHandler="com.sagomungchi.learning.theme.repository.ThemeDraftInputTypeHandler"/>
+            <arg column="attempts" javaType="_int"/>
+            <arg column="check_results" javaType="java.util.List" typeHandler="com.sagomungchi.learning.theme.repository.ThemeFailuresTypeHandler"/>
+            <arg column="output" javaType="com.sagomungchi.learning.theme.domain.ThemeDraftOutput"
+                 typeHandler="com.sagomungchi.learning.theme.repository.ThemeDraftOutputTypeHandler"/>
+            <arg column="failure_code" javaType="java.lang.String"/>
+            <arg column="model_version" javaType="java.lang.String"/>
+            <arg column="prompt_version" javaType="java.lang.String"/>
+            <arg column="lease_until" javaType="java.time.Instant"/>
+            <arg column="theme_id" javaType="java.util.UUID"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="columns">
+        id, grade, week_start, source, status, requested_by, input, attempts, check_results, output, failure_code, model_version,
+        prompt_version, lease_until, theme_id, created_at, updated_at
+    </sql>
+
+    <sql id="insertColumns">
+        INSERT INTO theme_draft (id, grade, week_start, source, status, requested_by, input, attempts, created_at, updated_at)
+        VALUES (#{d.id}, #{d.grade}, #{d.weekStart}, #{d.source}, #{d.status}, #{d.requestedBy,jdbcType=OTHER},
+                #{d.input,typeHandler=com.sagomungchi.learning.theme.repository.ThemeDraftInputTypeHandler,jdbcType=OTHER},
+                #{d.attempts}, #{d.createdAt}, #{d.updatedAt})
+    </sql>
+
+    <insert id="insert">
+        <include refid="insertColumns"/>
+    </insert>
+
+    <!-- 주간 자동: 학년·주당 자동 초안 1개(부분 UK uq_theme_draft_auto_week), 레플리카가 같이 돌면 한 곳만 1행 -->
+    <insert id="insertAutoIfAbsent">
+        <include refid="insertColumns"/>
+        ON CONFLICT (grade, week_start) WHERE source = 'AUTO' DO NOTHING
+    </insert>
+
+    <select id="findById" resultMap="draft" flushCache="true" useCache="false">
+        SELECT <include refid="columns"/> FROM theme_draft WHERE id = #{id}
+        <if test="lock">FOR UPDATE</if>
+    </select>
+
+    <sql id="filter">
+        <where>
+            <if test="status != null">status = #{status}</if>
+            <if test="source != null">AND source = #{source}</if>
+        </where>
+    </sql>
+
+    <select id="findPage" resultMap="draft" flushCache="true" useCache="false">
+        SELECT <include refid="columns"/> FROM theme_draft
+        <include refid="filter"/>
+        ORDER BY created_at DESC, id
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="count" resultType="long" flushCache="true" useCache="false">
+        SELECT count(*) FROM theme_draft <include refid="filter"/>
+    </select>
+
+    <select id="findInputs" resultType="com.sagomungchi.learning.theme.domain.ThemeDraftInput" flushCache="true" useCache="false">
+        SELECT input FROM theme_draft
+        WHERE grade = #{grade} AND week_start &gt;= #{from} AND week_start &lt; #{until}
+        ORDER BY created_at
+    </select>
+
+    <!-- 점유: 조건을 다시 확인하는 UPDATE 하나라 레플리카가 동시에 실행해도 한 곳만 잡음 -->
+    <select id="claimNext" resultMap="draft" flushCache="true" useCache="false">
+        UPDATE theme_draft SET lease_until = #{leaseUntil}, updated_at = #{now}
+        WHERE id = (
+            SELECT id FROM theme_draft
+            WHERE status = 'GENERATING' AND (lease_until IS NULL OR lease_until &lt; #{now})
+            ORDER BY created_at, id
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+        )
+        AND status = 'GENERATING' AND (lease_until IS NULL OR lease_until &lt; #{now})
+        RETURNING <include refid="columns"/>
+    </select>
+
+    <!-- 점유한 리스 값이 그대로일 때만: 리스가 지나 다른 작업이 다시 잡았으면 0행 -->
+    <update id="saveAttempt">
+        UPDATE theme_draft
+        SET status = #{d.status}, attempts = #{d.attempts},
+            check_results = #{d.checkResults,typeHandler=com.sagomungchi.learning.theme.repository.ThemeFailuresTypeHandler,jdbcType=OTHER},
+            output = #{d.output,typeHandler=com.sagomungchi.learning.theme.repository.ThemeDraftOutputTypeHandler,jdbcType=OTHER},
+            failure_code = #{d.failureCode,jdbcType=VARCHAR},
+            model_version = #{d.versions.model,jdbcType=VARCHAR}, prompt_version = #{d.versions.prompt,jdbcType=VARCHAR},
+            lease_until = NULL, updated_at = #{d.updatedAt}
+        WHERE id = #{d.id} AND status = 'GENERATING' AND lease_until = #{claimedLease}
+    </update>
+
+    <!-- 채택·버리기: 서비스가 FOR UPDATE로 잠근 행 -->
+    <update id="updateState">
+        UPDATE theme_draft SET status = #{d.status}, theme_id = #{d.themeId,jdbcType=OTHER}, updated_at = #{d.updatedAt}
+        WHERE id = #{d.id}
+    </update>
+</mapper>

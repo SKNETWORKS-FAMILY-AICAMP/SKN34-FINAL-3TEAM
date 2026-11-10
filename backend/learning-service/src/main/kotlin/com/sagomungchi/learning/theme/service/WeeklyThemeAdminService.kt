@@ -55,6 +55,10 @@ class WeeklyThemeAdminService(
     @Transactional(readOnly = true)
     fun get(themeId: UUID): AdminWeeklyTheme = view(header(themeId))
 
+    /** 그 학년·주에 게시 테마가 있음. 테마 초안 주간 자동 생성이 건너뛸 학년을 고름 (#438, 사용자 결정 2026-11-10) */
+    @Transactional(readOnly = true)
+    fun publishedExists(grade: ThemeGrade, weekStart: LocalDate): Boolean = repository.existsPublished(grade, weekStart)
+
     /** 작성: DRAFT·버전 1. 없는 미션은 400 */
     @Transactional
     fun create(author: UUID, content: ThemeContent): AdminWeeklyTheme {

@@ -173,6 +173,25 @@ data class ThemeStory(
     val answerClue: String? = null,
 )
 
+/**
+ * 테마 칸 길이·개수 상한. 관리자 본문 검사(AdminWeeklyThemeController)와 테마 초안 learning 검사(ThemeDraftRules)가 같이 씀.
+ * 제목·시작 이야기는 #385, 나머지는 #438 기준안(learning.md #438 절)
+ */
+object ThemeLimits {
+    const val TITLE = 100
+    const val INTRO = 2000
+    const val URI = 500
+    const val QUESTION = 200
+    const val NAME = 100
+    const val ANSWER_CLUE = 500
+    const val CANDIDATES = 10
+    const val CLUE = 200
+    const val DIALOGUE = 20
+    const val SPEAKER = 40
+    const val LINE = 200
+    const val SPOTS = 10
+}
+
 /** 테마 저장 내용 (작성·수정 본문을 검사한 값) */
 data class ThemeContent(
     val grade: ThemeGrade,

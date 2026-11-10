@@ -1000,6 +1000,7 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 | 이야기 열람 응답 | `{kind, firstViewThisWeek}`. INTRO는 일요일, OUTRO는 엔딩 상태가 아니면(#484 전까지 토요일 밖) `409 THEME_STORY_NOT_ALLOWED` | core #439 가정값과 같은 코드. 되돌아보기 열람의 `firstViewThisWeek`와 같은 모양. OUTRO 조건은 #483 '엔딩 상태일 때'(#438 코멘트 2026-11-10) |
 | 자동 생성 성취기준 (기준안) | 그 학년이 속한 학년군 표에서 `SOLVE`는 수학, 나머지 넷은 국어. 같은 학년의 최근 4주 테마 초안에 쓴 코드는 빼고 무작위 1개. 입력은 FN 1.5 기본(서술·논술·서술·풀이 단계·서술), 초3·초4 따져 보기는 서술. 성취수준은 비움 | 사용자 결정 2026-11-10. P15 국어 우선, FN 1.5 문제 해결하기 수학 예외, P03 논술 초5~6. 지식 검색(#470) 연결 뒤 유형별 후보로 바꿀 수 있음 |
 | 관리자 요청의 빈 유형 | 고르지 않은 유형은 자동 규칙으로 learning이 채워 `input`에 저장 | 에픽 "관리자 요청은 유형별 지정 가능". ai 요청은 유형 5개가 다 있어야 함 |
+| 주간 자동과 게시 테마 | 그 학년·주에 이미 게시 테마가 있으면 그 학년 자동 초안은 만들지 않음 | 사용자 결정 2026-11-10. 사람이 먼저 게시한 주에 쓰지 않을 초안을 만들어 ai 비용을 쓰지 않게. 필요하면 관리자 요청으로 만듦 |
 | 생성 시도 상한 (기준안) | 3회(`app.theme-draft.max-attempts`) | 이슈 기준안, 미션 초안과 같음 |
 | 대기·리스 (기준안) | ai 마감 15분, learning→ai 대기 16분(`app.theme-draft.ai-read-timeout`), 리스 18분 | 이슈·ai.md 15장 기준안. 실측 후 조정 |
 | 주기·크론 (기준안) | 생성 주기 10초(미션 초안과 같음), 주간 자동 수요일 03:00 KST(`app.theme-draft.weekly-cron`) | 에픽 기준안 |
@@ -1019,7 +1020,7 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 | 지식 API 수용 | ai 호출은 트랜잭션 밖(16분 동안 DB 연결을 잡지 않음), 스케줄러 풀 5, 웹 요청은 Tomcat 스레드라 주기 작업이 ai를 기다리는 동안에도 응답. 느린 ai 대역 중 learning 내부 API가 바로 응답하는 테스트로 확인. 지식 API 자체의 시간 상한(기준안 질의당 2초)은 #469 할 일 | 이슈 '웹 요청 스레드와 작업 스레드 분리 확인'. #469 지식 API는 아직 없음(열림, 담당 inyoung9629) |
 | ai 서킷 값 | 느린 호출 설정 없음(16분 대기를 실패로 세지 않음), 최소 호출 20건이라 주 몇 건인 테마 호출로는 거의 열리지 않음 | `aiCircuitBreaker` 그대로 재사용. 기록만 |
 
-### API 변경 (예정, 구현 때 learning OpenAPI 반영)
+### API 변경 (learning OpenAPI 1.3.0에 반영)
 
 - 학생 `GET /internal/students/{id}/weekly-theme`·`POST …/review-views`: query `gradeBand` → `grade`(전환 기간 `gradeBand`도 받음). 이번 주 테마 응답에 `bigQuestion`·`candidates`·`introImageUrl`·`introVideoUrl`·`introMotion`·`introSeen`·`outroSeen`, 토·일에만 `outro`·`outroImageUrl`·`outroVideoUrl`·`outroMotion`·`answer`·`answerClue`, `days[]`에 `clue`·`rulesOut`(`LOCKED`면 null)·`videoUrl`
 - 새 `POST /internal/students/{id}/weekly-theme/story-views?grade&date` `{kind}` → `{kind, firstViewThisWeek}`, 409 `THEME_STORY_NOT_ALLOWED`
@@ -1095,3 +1096,40 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 - 테스트: `MissionServiceTest`(학생 조회의 ai 키 presign, 그 밖 값·움직임 그대로), `AdminMissionServiceTest`(장면이 같으면 움직임 이어받기·장면 바꾸면 비움·관리자 응답 장면 저장 값), `AttemptThemeStartTest`(테마 시도 `themeScene` 대화·위치·영상 URL, EXTRA는 null), `AssetUrlsTest`(상대 경로 그대로)
 - core OpenAPI `Mission`·시도 응답에 `sceneMotion`·`themeScene`을 더하는 일은 core 몫(#439 "core는 그대로 넘기므로 core OpenAPI만 맞춤")
 - 기존 테스트 수정: 미션 응답 JSON 칸 목록을 고정한 `MissionControllerTest`·`SharedResponsesJsonTest`에 `sceneMotion`을 더함(의도한 계약 추가)
+
+### 구현 4: 테마 초안
+
+| 위치 | 내용 |
+|---|---|
+| `theme/domain/ThemeDraft.kt` | `ThemeDraft`(미션 초안과 같은 상태·`recordAttempt`·채택·버리기, 다시 생성은 새 ADMIN 초안), 입력(`ThemeDraftInput`·`ThemeMissionInput`), 실패(`ThemeFailure{stage, reasons}`), ai 응답 모양(`GeneratedTheme`·`GeneratedThemeMission`·`GeneratedDialogue`·`ThemeWarning`·`ThemeDraftOutput`), 응답(`ThemeDraftView`·`ThemeDraftScene`). `previousFailures`는 learning 실패를 THEME·MISSION으로 나누고 AI 호출 실패·빈 사유 묶음은 뺌 |
+| `theme/domain/ThemeDraftRules.kt` | 요일 배치 기준안, 학년군·자동 교과·기본 입력 방식, `autoStandards`, `learningFailures`, 채택 변환(`adoptedMissions`·`themeContent`) |
+| `theme/repository`·`ThemeDraftMapper.xml` | 요청 저장, 주간 자동 `ON CONFLICT (grade, week_start) WHERE source = 'AUTO' DO NOTHING`, 잠금 조회, 상태·출처 목록, 같은 학년 최근 입력(`findInputs`), 점유(`FOR UPDATE SKIP LOCKED` + 조건부 UPDATE), 리스 대조 저장. jsonb 핸들러 3개(입력·검사 결과·생성 결과) |
+| `theme/client/ThemeDraftAiClient.kt` | `POST /internal/theme-drafts`, 서킷 `ai-theme-draft`, 대기 `app.theme-draft.ai-read-timeout`, 오류 분류는 `postToAi`(미션 초안과 같음) |
+| `theme/scheduler/ThemeDraftScheduler.kt` | 생성 주기(`app.theme-draft.interval`, 10초)와 주간 자동(`app.theme-draft.weekly-cron`, 수요일 03:00 `Asia/Seoul`, 다음 주) |
+| `theme/service/ThemeDraftService.kt` | 요청 검사·자동 채움, `createWeekly`(게시 테마 있는 학년 건너뜀, 학년마다 실패 격리), `generateNext`(트랜잭션 밖 ai 1회), 채택·버리기·다시 생성, 응답 장면 URL |
+| `theme/controller/AdminThemeDraftController.kt` | `/internal/admin/theme-drafts` 6개(요청 202·목록·상세·채택 201·버리기·다시 생성 202), ADMIN·`X-User-Id` |
+| 설정 | `AppProperties.ThemeDraft`(enabled·max-attempts 3·ai-read-timeout 16분·lease 18분, 리스가 대기보다 길어야 함), `application.yml` `app.theme-draft.*`, `spring.task.scheduling.pool.size` 5 |
+| 계약 | learning OpenAPI 테마 초안 경로 6개·`ThemeDraft*` 스키마·`GeneratedTheme`, `AdminMission.source`에 `LLM_THEME`. `test_record_exists_openapi` 조작 수 62 → 68. core #439 3자 대조(`test_theme_drafts_contract.py`의 learning 쪽)가 건너뛰지 않고 통과 |
+
+결정(구현 중 정한 것):
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| learning 검사 사유 | 미션 규칙은 `<요일> <DraftRules 검사 코드> <자세히>`(그 요일 미션이 없거나 유형이 다르면 `<요일> SHAPE …`), 그 밖은 `PLACEMENT`(요일·유형 배치)·`LOGIC`(정답 논리)·`LENGTH`(글 길이)·`SHAPE`(theme 없음·제목 빈 값)로 시작. `check_results`에는 `LEARNING` 한 묶음 | ai `previousFailures`로 바꿀 때 요일 접두어만 보고 `MISSION`·`THEME`을 가름(#437 합의 형식). 미션 문제는 ai가 그 요일 미션만 다시 만들게 `MISSION`으로 |
+| ai `failure`가 있을 때 | learning 검사를 하지 않고 ai 실패만 기록, 받은 결과는 `output`에 저장 | 끝내 실패한 결과는 일부가 비어(`theme: null` 등) learning 검사가 뜻이 없음. 관리자가 실패한 초안도 볼 수 있게 |
+| 정답 논리 검사 | 관리자 저장과 같은 `ThemeAnswerRules`에 "후보·정답 필수"를 더함 | 채택 때 `WeeklyThemeAdminService.create`가 같은 검사를 하므로 READY 초안이 채택에서 400이 나지 않게 |
+| 글 길이 | 관리자 테마 본문 상한(제목 100·이야기 2000·큰 질문 200·후보·정답 100·후보 10개·단서 200)을 넘으면 실패. 상한 상수를 `AdminWeeklyThemeController`에서 도메인 `ThemeLimits`로 옮겨 둘이 같이 씀 | 채택한 테마를 관리자 화면에서 다시 저장할 때 400이 나지 않게. 대화·장면 키는 보지 않음(설계 "대화·장면 키 모양은 보지 않음") |
+| 이전 실패 | 사유가 빈 묶음은 `previousFailures`에서 뺌 | ai 요청은 `reasons` 1개 이상이라 빈 묶음이면 422(`AI_BAD_RESPONSE`)로 같은 초안이 계속 실패함. ai 응답 `failure.reasons`에는 최소 개수가 없음 |
+| 자동 성취기준 기간 | 같은 학년, 적용 주가 `[적용 주 − 4주, 적용 주)`인 초안(상태·출처 무관)의 코드를 피함. 피하면 남는 게 없으면 최근 코드도 후보로 되돌리고, 한 초안 안에서는 겹치지 않게 | "최근 4주"를 적용 주 기준으로 셈. 같은 주 다른 초안은 넣지 않음 |
+| 자동으로 못 채울 때 | 관리자 요청은 `409 CONFLICT`(표에 성취기준이 없음), 주간 자동은 그 학년만 건너뛰고 로그 | 요청 값 잘못이 아니라 서버 데이터 문제라 400이 아님. 성취기준 시드를 넣지 않은 환경 |
+| 적용 주 | 이번 주(KST) 월요일도 허용. 다시 생성은 원래 초안의 주를 그대로 쓰고 다시 검사하지 않음 | api-spec 4.1 "이번 주 이후". 다시 생성은 상태 전이만 봄(state-diagram 3.5.1) |
+| 응답 장면 | 생성 결과가 있으면 장면 7개를 INTRO·MON~FRI·OUTRO 순으로 늘 넣고(값이 없으면 null), 없으면 빈 배열. `draft`에는 그림·영상·움직임을 넣지 않고 `scenes`로 | api-spec 4.1 `ThemeDraft` 모양. 웹이 장면 칸을 고정 순서로 그릴 수 있게 |
+| 다른 기능 호출 | 성취기준은 `MissionService.standards`·`standardsOf`(새 메서드, `AchievementStandardRepository.findAll`), 게시 여부는 `WeeklyThemeAdminService.publishedExists`(새 메서드, `WeeklyThemeRepository.existsPublished`) | architecture 계층 규칙 "기능 간 호출은 상대 기능의 service로만" |
+| ai 요청 날짜 | `weekStart`는 `@JsonFormat(shape = STRING)`으로 ObjectMapper 날짜 설정과 관계없이 ISO 문자열 | ai `date` 칸. Spring Boot 기본 설정에서는 원래 문자열이지만 설정에 기대지 않게 |
+| 주간 자동 실패 격리 | 학년마다 따로 처리해 한 학년이 실패해도 나머지는 만듦 | 크론이 주 1회라 한 학년 오류로 넷 다 빠지지 않게 |
+
+- 기존 파일 수정: `MissionSource`에 `LLM_THEME`, `MissionService.createFromDraft` 출처 인자(기본 `LLM_DRAFT`)·`standards`·`standardsOf`, `AchievementStandardRepository.findAll`(+ 매퍼), `AdminWeeklyThemeController` 상한 상수 → `ThemeLimits`, `WeeklyThemeRepository.existsPublished`(+ 매퍼)·`WeeklyThemeAdminService.publishedExists`, `ThemeTypeHandlers.kt`에 테마 초안 핸들러 등록, 테스트 기반 `PostgresRepositoryTest`에 `app.theme-draft.enabled=false`(미션 초안과 같은 이유), `SchedulingPoolTest` 3 → 5
+- 테스트: `ThemeDraftTest`(상태·시도 기록·이전 실패 변환·채택·버리기·다시 생성), `ThemeDraftRulesTest`(배치·자동 입력 방식·자동 성취기준과 되돌림·learning 검사 사유와 단계·채택 변환·결정적 단서), `ThemeDraftServiceTest`(요청 검사·자동 채움·최근 4주 피함·주간 자동 학년별 하나·게시 학년 건너뜀·리스 18분·ai 입력·실패 누적과 THEME/MISSION 전달·늦은 작업 저장 안 함·채택 미션 5개 LLM_THEME와 테마 DRAFT·다시 생성·목록·장면 URL), `ThemeDraftAiClientTest`(계약 필드·응답 읽기·오류 분류·대기·서킷 분리), `AdminThemeDraftControllerTest`(경로 6개·상태 코드·응답 모양·403·400), `ThemeDraftConcurrencyTest`(레플리카 4곳 주간 자동·점유·채택 경쟁, 느린 ai 대기 중 내부 API 즉시 응답과 DB 연결 0개), `ThemeDraftAiStubFlowTest`(실제 HTTP로 ai 계약 스텁에 붙여 요청 → READY → 채택 → 테마·미션 DRAFT)
+- 지식 API 시간 상한(기준안 질의당 2초)은 #469 몫이라 여기서는 스레드 분리만 확인
+- 검증: learning `./gradlew clean test bootJar` 436건 통과 + 뒤에 더한 `ThemeDraftServiceTest`(늦은 작업)·`ThemeDraftAiStubFlowTest` 통과(합계 438건, 로컬 JDK 21·Testcontainers). 루트 `python -O -m unittest discover -s scripts/tests` 215건 OK(core #439 3자 대조 포함), `validate_learning_community_contracts.py`·`validate_theme_summary_contracts.py` 통과. 이 단계는 마이그레이션·ERD를 바꾸지 않아 `ci-db-schema`(`check_db_migrations.py`)는 구현 1 결과 그대로
+- ai 스텁 흐름은 ai 계약(api-spec 4.2) 모양의 WireMock 응답으로 확인했고, #437 그래프와 실제로 붙여 보는 것은 #437 구현 뒤 kind 확인 때

@@ -2,6 +2,7 @@ package com.sagomungchi.learning.mission.service
 
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.storage.AssetUrls
+import com.sagomungchi.learning.mission.domain.AchievementStandard
 import com.sagomungchi.learning.mission.domain.AdminMission
 import com.sagomungchi.learning.mission.domain.AdminMissionFilter
 import com.sagomungchi.learning.mission.domain.AdminMissionPage
@@ -84,6 +85,12 @@ class MissionService(
     private fun withSceneUrls(mission: MissionView): MissionView =
         mission.copy(sceneUri = assetUrls.url(mission.sceneUri), staticSceneUri = assetUrls.url(mission.staticSceneUri))
 
+    /** 성취기준 표에 있는 코드만 (테마 초안 #438이 미션 저장소를 직접 부르지 않게 service로 냄, architecture 계층 규칙) */
+    fun standards(codes: Collection<String>): Map<String, AchievementStandard> = standardRepository.findByCodes(codes)
+
+    /** 교과·학년군의 성취기준 전체, 코드 순 (테마 초안 자동 성취기준 #438) */
+    fun standardsOf(subject: String, gradeBand: String): List<AchievementStandard> = standardRepository.findAll(subject, gradeBand)
+
     /** 판정용 기준표·정답 키 (class-diagram 4.2 FeedbackFacade --> MissionService). 시도에 고정된 두 버전으로 찾음 */
     fun rubric(missionVersionId: UUID, rubricVersionId: UUID): Rubric =
         missionRepository.findRubric(missionVersionId, rubricVersionId)
@@ -124,12 +131,13 @@ class MissionService(
 
     /**
      * 초안 채택 (class-diagram 4.1.1 createFromDraft, #353): create·putRubric과 같은 규칙으로 DRAFT 미션·첫 버전·첫 기준표를
-     * 호출한 쪽 트랜잭션 안에서 만듦(source LLM_DRAFT). 이후 수정·검토·게시는 관리자 미션 경로 그대로(자동 공개 없음, P19)
+     * 호출한 쪽 트랜잭션 안에서 만듦(source 기본 LLM_DRAFT, 테마 초안 채택은 LLM_THEME #438). 이후 수정·검토·게시는 관리자 미션 경로 그대로
+     * (자동 공개 없음, P19)
      */
     @Transactional
-    fun createFromDraft(command: MissionCommand, rubric: RubricCommand): UUID {
+    fun createFromDraft(command: MissionCommand, rubric: RubricCommand, source: MissionSource = MissionSource.LLM_DRAFT): UUID {
         val now = now()
-        val missionId = missionRepository.create(command, now, MissionSource.LLM_DRAFT)
+        val missionId = missionRepository.create(command, now, source)
         rubricRepository.append(missionId, rubric, now)
         return missionId
     }

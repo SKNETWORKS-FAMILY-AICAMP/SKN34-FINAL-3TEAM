@@ -10,6 +10,7 @@ data class AppProperties(
     val messaging: Messaging = Messaging(),
     val judgment: Judgment = Judgment(),
     val missionDraft: MissionDraft = MissionDraft(),
+    val themeDraft: ThemeDraft = ThemeDraft(),
 ) {
     data class Internal(
         val token: String,
@@ -42,4 +43,21 @@ data class AppProperties(
          */
         val aiReadTimeout: Duration = Duration.ofSeconds(70),
     )
+
+    /**
+     * 주간 테마 초안 (#438, class-diagram 4.4). 생성 주기 app.theme-draft.interval·주간 자동 크론 app.theme-draft.weekly-cron(ThemeDraftScheduler).
+     * 값은 모두 기준안(learning.md #438 절): 상한 3회(미션 초안과 같음), ai 대기 16분(ai 마감 15분, P12 예외), 리스 18분(대기보다 길게).
+     * enabled는 생성 주기와 주간 자동을 함께 끔
+     */
+    data class ThemeDraft(
+        val enabled: Boolean = true,
+        val maxAttempts: Int = 3,
+        val aiReadTimeout: Duration = Duration.ofMinutes(16),
+        val lease: Duration = Duration.ofMinutes(18),
+    ) {
+        init {
+            require(maxAttempts >= 1) { "app.theme-draft.max-attempts는 1 이상: $maxAttempts" }
+            require(lease > aiReadTimeout) { "app.theme-draft.lease는 ai-read-timeout보다 길어야 함: $lease ≤ $aiReadTimeout" }
+        }
+    }
 }

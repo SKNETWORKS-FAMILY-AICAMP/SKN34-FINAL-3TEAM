@@ -93,6 +93,7 @@ interface WeeklyThemeMapper {
     fun findHeader(@Param("id") id: UUID, @Param("lock") lock: Boolean): ThemeHeader?
     fun findLatestPublished(@Param("grade") grade: ThemeGrade, @Param("weekStart") weekStart: LocalDate): ThemeHeader?
     fun existsOtherPublished(@Param("id") id: UUID, @Param("grade") grade: ThemeGrade, @Param("weekStart") weekStart: LocalDate): Boolean
+    fun existsPublished(@Param("grade") grade: ThemeGrade, @Param("weekStart") weekStart: LocalDate): Boolean
     fun findIds(
         @Param("grade") grade: ThemeGrade?,
         @Param("weekStart") weekStart: LocalDate?,

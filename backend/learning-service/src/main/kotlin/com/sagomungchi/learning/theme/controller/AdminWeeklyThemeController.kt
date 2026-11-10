@@ -11,6 +11,7 @@ import com.sagomungchi.learning.theme.domain.HintSpot
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeDayMission
 import com.sagomungchi.learning.theme.domain.ThemeGrade
+import com.sagomungchi.learning.theme.domain.ThemeLimits
 import com.sagomungchi.learning.theme.domain.ThemeStory
 import com.sagomungchi.learning.theme.domain.WeeklyThemePublishIncompleteException
 import com.sagomungchi.learning.theme.domain.WeeklyThemeStatus
@@ -201,18 +202,18 @@ class AdminWeeklyThemeController(
     private companion object {
         const val ADMIN_ROLE = "ADMIN"
         const val MAX_SIZE = 100
-        const val MAX_TITLE = 100
-        const val MAX_INTRO = 2000
-        // #438 새 칸 길이·개수 상한 (기준안, learning.md #438 절)
-        const val MAX_URI = 500
-        const val MAX_QUESTION = 200
-        const val MAX_NAME = 100
-        const val MAX_ANSWER_CLUE = 500
-        const val MAX_CANDIDATES = 10
-        const val MAX_CLUE = 200
-        const val MAX_DIALOGUE = 20
-        const val MAX_SPEAKER = 40
-        const val MAX_LINE = 200
-        const val MAX_SPOTS = 10
+        // 길이·개수 상한은 테마 초안 검사와 같이 쓰려고 도메인 ThemeLimits에 둠 (#438)
+        const val MAX_TITLE = ThemeLimits.TITLE
+        const val MAX_INTRO = ThemeLimits.INTRO
+        const val MAX_URI = ThemeLimits.URI
+        const val MAX_QUESTION = ThemeLimits.QUESTION
+        const val MAX_NAME = ThemeLimits.NAME
+        const val MAX_ANSWER_CLUE = ThemeLimits.ANSWER_CLUE
+        const val MAX_CANDIDATES = ThemeLimits.CANDIDATES
+        const val MAX_CLUE = ThemeLimits.CLUE
+        const val MAX_DIALOGUE = ThemeLimits.DIALOGUE
+        const val MAX_SPEAKER = ThemeLimits.SPEAKER
+        const val MAX_LINE = ThemeLimits.LINE
+        const val MAX_SPOTS = ThemeLimits.SPOTS
     }
 }

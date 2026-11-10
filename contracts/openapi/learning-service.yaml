@@ -1680,6 +1680,175 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /admin/theme-drafts:
+    post:
+      operationId: requestThemeDraft
+      summary: 주간 테마 초안 요청 → 202 GENERATING (#438, FN-ADM-22)
+      description: >-
+        core #439가 CONTENT 확인 후 넘김. 학년(G3~G6)·적용 주(이번 주 이후 월요일)·주제(100자 이하)·missions(유형마다 최대 1개,
+        성취기준 실재·그 학년을 포함하는 학년군, 초3·초4 논술 불가)를 확인(400)하고, 고르지 않은 유형은 자동 규칙(그 학년군 표에서 SOLVE 수학·
+        나머지 국어, 같은 학년 최근 4주 초안 코드를 피해 무작위 1개, FN 1.5 기본 입력 방식)으로 채워 input에 저장(source ADMIN, attempts 0).
+        생성·검사는 learning 주기 작업이 ai 1회씩 반복(state-diagram 3.5.1). 자동으로 채울 성취기준이 표에 없으면 409.
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThemeDraftRequest'
+      responses:
+        '202':
+          description: 접수
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemeDraft'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: CONFLICT(비운 유형을 채울 성취기준이 표에 없음)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+    get:
+      operationId: listThemeDrafts
+      summary: 테마 초안 목록, 최근 요청 순 (#438)
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/ThemeDraftStatus'}}
+        - {name: source, in: query, schema: {$ref: '#/components/schemas/ThemeDraftSource'}}
+        - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemeDraftPage'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+  /admin/theme-drafts/{draftId}:
+    get:
+      operationId: getThemeDraft
+      summary: 테마 초안 상세 (상태·시도·검사 실패·생성 결과·장면 미리보기·버전)
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/DraftId'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemeDraft'
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /admin/theme-drafts/{draftId}/adopt:
+    post:
+      operationId: adoptThemeDraft
+      summary: 검사 통과(READY) 테마 초안 채택 → DRAFT 미션 5개(LLM_THEME) + DRAFT 테마
+      description: >-
+        초안 행을 잠그고 한 트랜잭션에 미션 5개(미션 초안 채택과 같은 규칙, 요소 배점 1, 학년 범위 = 테마 학년, 그날 장면 그림 키를
+        sceneUri·staticSceneUri에, 움직임을 sceneMotion에)와 테마(요일 배치·단서·rulesOut·대화·문제 전 영상, 이야기·장면·움직임·큰 질문·후보·정답,
+        answerClue는 결정적 단서, hintSpots는 비움)를 만든 뒤 ADOPTED. 자동 게시 없음(P19). 본문은 {}.
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/DraftId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+      responses:
+        '201':
+          description: 만든 테마
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWeeklyTheme'
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: CONFLICT(READY가 아님)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /admin/theme-drafts/{draftId}/discard:
+    post:
+      operationId: discardThemeDraft
+      summary: 테마 초안 버리기 (READY·CHECK_FAILED·FAILED만)
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/DraftId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemeDraft'
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: CONFLICT(GENERATING·ADOPTED·DISCARDED)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /admin/theme-drafts/{draftId}/regenerate:
+    post:
+      operationId: regenerateThemeDraft
+      summary: 같은 입력으로 새 테마 초안 → 202 GENERATING (원래 초안은 그대로)
+      description: >-
+        원래 초안이 READY·CHECK_FAILED·FAILED·DISCARDED일 때 같은 input·학년·주로 새 초안(source ADMIN, attempts 0, 요청자는 X-User-Id)을
+        만들고 새 초안을 돌려줌(사용자 결정 2026-11-10). 본문은 {}.
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - $ref: '#/components/parameters/DraftId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+      responses:
+        '202':
+          description: 새 초안
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemeDraft'
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: CONFLICT(GENERATING·ADOPTED)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /community/posts:
     post:
       operationId: shareCommunityPost
@@ -2439,7 +2608,7 @@ components:
               comment: {type: [string, 'null']}
               reviewerId: {type: string, format: uuid}
               createdAt: {type: string, format: date-time}
-        source: {type: string, enum: [MANUAL, LLM_DRAFT], description: '처음 만든 방식 (#353): 사람 작성 MANUAL, 초안 채택 LLM_DRAFT'}
+        source: {type: string, enum: [MANUAL, LLM_DRAFT, LLM_THEME], description: '처음 만든 방식 (#353): 사람 작성 MANUAL, 초안 채택 LLM_DRAFT, 테마 초안 채택 LLM_THEME(#438)'}
     AdminMissionVersion:
       type: object
       additionalProperties: false
@@ -3466,6 +3635,193 @@ components:
         candidates: {type: [array, 'null'], maxItems: 10, items: {type: string, maxLength: 100}}
         answer: {type: [string, 'null'], maxLength: 100}
         answerClue: {type: [string, 'null'], maxLength: 500}
+    ThemeDraftStatus:
+      type: string
+      enum: [GENERATING, READY, CHECK_FAILED, FAILED, ADOPTED, DISCARDED]
+    ThemeDraftSource:
+      type: string
+      enum: [AUTO, ADMIN]
+      description: 주간 자동(수요일 03:00 KST, 그 학년·주 게시 테마가 있으면 건너뜀) AUTO, 관리자 요청·다시 생성 ADMIN
+    ThemeDraftRequest:
+      type: object
+      required: [grade, weekStart]
+      properties:
+        grade: {$ref: '#/components/schemas/ThemeGrade'}
+        weekStart: {type: string, format: date, description: 적용 주 KST 월요일, 이번 주 이후}
+        topic: {type: [string, 'null'], maxLength: 100, description: 주제(앞뒤 공백 제거, 비면 null)}
+        missions:
+          type: [array, 'null']
+          maxItems: 5
+          description: 유형마다 최대 1개. 고르지 않은 유형은 learning이 자동 규칙으로 채움
+          items:
+            type: object
+            required: [thinkingType, standardCodes, inputType]
+            properties:
+              thinkingType: {$ref: '#/components/schemas/ThinkingType'}
+              standardCodes: {type: array, minItems: 1, items: {type: string}}
+              inputType: {$ref: '#/components/schemas/InputType'}
+    ThemeMissionInput:
+      type: object
+      additionalProperties: false
+      required: [thinkingType, inputType, standardCodes]
+      properties:
+        thinkingType: {$ref: '#/components/schemas/ThinkingType'}
+        inputType: {$ref: '#/components/schemas/InputType'}
+        standardCodes: {type: array, items: {type: string}}
+    ThemeDraftFailure:
+      type: object
+      additionalProperties: false
+      required: [stage, reasons]
+      properties:
+        stage:
+          type: string
+          description: >-
+            ai THEME·MISSION·REVIEW·IMAGE, learning 검사 LEARNING(사유는 `<요일> <검사 코드> <자세히>`면 미션 규칙,
+            그 밖은 PLACEMENT·LOGIC·LENGTH·SHAPE로 시작), AI 호출 실패 AI_CALL(사유는 실패 코드)
+        reasons: {type: array, items: {type: string}}
+    GeneratedTheme:
+      type: object
+      additionalProperties: false
+      description: ai 테마 틀 (api-spec 4.2 theme). 세계관·인물·그림 메모·장소는 그림 생성용이라 테마에 저장하지 않음
+      required: [title, world, characters, styleNote, outfit, intro, outro, bigQuestion, candidates, answer, days]
+      properties:
+        title: {type: string}
+        world: {type: string}
+        characters:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, look]
+            properties:
+              name: {type: string}
+              look: {type: string}
+        styleNote: {type: string}
+        outfit: {type: string}
+        intro: {type: string}
+        outro: {type: string}
+        bigQuestion: {type: string}
+        candidates: {type: array, items: {type: string}}
+        answer: {type: string}
+        days:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [day, thinkingType, place, sceneNote, clue, rulesOut]
+            properties:
+              day: {$ref: '#/components/schemas/ThemeDay'}
+              thinkingType: {$ref: '#/components/schemas/ThinkingType'}
+              place: {type: string}
+              sceneNote: {type: string}
+              clue: {type: string}
+              rulesOut: {type: array, items: {type: string}}
+    ThemeDraftScene:
+      type: object
+      additionalProperties: false
+      required: [scene, imageUrl, videoUrl, motion]
+      properties:
+        scene: {type: string, enum: [INTRO, MON, TUE, WED, THU, FRI, OUTRO]}
+        imageUrl: {type: [string, 'null'], description: 장면 그림 presigned URL (버킷 설정이 없거나 그림이 없으면 null)}
+        videoUrl: {type: [string, 'null'], description: 장면 영상 presigned URL}
+        motion: {$ref: '#/components/schemas/ThemeMotion'}
+    ThemeDraft:
+      type: object
+      additionalProperties: false
+      description: 주간 테마 초안 (api-spec 4.1, state-diagram 3.5.1, #438)
+      required: [draftId, status, source, grade, weekStart, attempts, maxAttempts, input, checkResults, draft, scenes, failureCode, versions,
+                 themeId, requestedBy, createdAt, updatedAt]
+      properties:
+        draftId: {type: string, format: uuid}
+        status: {$ref: '#/components/schemas/ThemeDraftStatus'}
+        source: {$ref: '#/components/schemas/ThemeDraftSource'}
+        grade: {$ref: '#/components/schemas/ThemeGrade'}
+        weekStart: {type: string, format: date}
+        attempts: {type: integer, description: 생성 시도 횟수 (AI 호출 실패 포함)}
+        maxAttempts: {type: integer}
+        input:
+          type: object
+          additionalProperties: false
+          required: [topic, missions]
+          description: 유형 5개 입력(월~금 배치 순, 관리자가 고르지 않은 유형은 learning이 채운 값)
+          properties:
+            topic: {type: [string, 'null']}
+            missions: {type: array, items: {$ref: '#/components/schemas/ThemeMissionInput'}}
+        checkResults:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [attempt, failures]
+            properties:
+              attempt: {type: integer}
+              failures: {type: array, items: {$ref: '#/components/schemas/ThemeDraftFailure'}}
+        draft:
+          description: 마지막 생성 결과 중 theme·missions·dialogues·warnings (없으면 null, 장면은 scenes)
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [theme, missions, dialogues, warnings]
+              properties:
+                theme:
+                  oneOf:
+                    - $ref: '#/components/schemas/GeneratedTheme'
+                    - type: 'null'
+                missions:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [day, thinkingType, draft]
+                    properties:
+                      day: {$ref: '#/components/schemas/ThemeDay'}
+                      thinkingType: {$ref: '#/components/schemas/ThinkingType'}
+                      draft: {$ref: '#/components/schemas/GeneratedDraft'}
+                dialogues:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [day, lines]
+                    properties:
+                      day: {$ref: '#/components/schemas/ThemeDay'}
+                      lines: {type: array, items: {$ref: '#/components/schemas/DialogueLine'}}
+                warnings:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [stage, item, reason]
+                    properties:
+                      stage: {type: string}
+                      item: {type: string}
+                      reason: {type: string}
+            - type: 'null'
+        scenes:
+          type: array
+          description: 생성 결과가 있으면 장면 7개(INTRO·MON~FRI·OUTRO) 순서, 없으면 빈 배열
+          items: {$ref: '#/components/schemas/ThemeDraftScene'}
+        failureCode: {type: [string, 'null'], description: '마지막 AI 호출 실패 (AI_TIMEOUT·AI_UNAVAILABLE·AI_BAD_RESPONSE·AI_CIRCUIT_OPEN)'}
+        versions:
+          type: object
+          additionalProperties: false
+          required: [prompt, model]
+          properties:
+            prompt: {type: [string, 'null']}
+            model: {type: [string, 'null']}
+        themeId: {type: [string, 'null'], format: uuid, description: 채택해 만든 테마}
+        requestedBy: {type: [string, 'null'], format: uuid, description: 요청한 관리자, 주간 자동은 null}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ThemeDraftPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalElements]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/ThemeDraft'}}
+        page: {type: integer}
+        size: {type: integer}
+        totalElements: {type: integer}
     AdminWeeklyTheme:
       type: object
       required: [themeId, grade, weekStart, status, version, publishedVersion, reviewRequested, title, intro, days, publishedAt, createdAt, updatedAt]

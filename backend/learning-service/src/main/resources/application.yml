@@ -36,9 +36,9 @@ spring:
   task:
     scheduling:
       pool:
-        # @Scheduled 작업마다 스레드 하나(고착 판정 탐지·처리 이벤트 정리·미션 초안 생성, #353).
-        # 기본값 1이면 초안 생성(ai 대기 최대 70초) 동안 고착 판정 탐지(P12 1분)가 밀림
-        size: 3
+        # @Scheduled 작업마다 스레드 하나(고착 판정 탐지·처리 이벤트 정리·미션 초안 생성 #353, 테마 초안 생성·주간 자동 #438).
+        # 기본값 1이면 초안 생성(ai 대기 최대 70초, 테마 16분) 동안 고착 판정 탐지(P12 1분)가 밀림
+        size: 5
 
 mybatis:
   mapper-locations: classpath:mybatis/**/*.xml
@@ -78,6 +78,13 @@ app:
     interval: PT10S # 기준안 (learning.md 21절)
     max-attempts: 3 # 기준안, 첫 생성 포함 (P19 확인)
     ai-read-timeout: 70s # 초안 ai 호출만 (P12 예외): ai LLM 60초 1회·마감 63초, 생성 리스 90초 안
+  theme-draft:
+    enabled: true # 주간 테마 초안 생성 주기·주간 자동 (#438). GENERATING 초안이 없으면 ai를 부르지 않음
+    interval: PT10S # 기준안 (미션 초안과 같음)
+    weekly-cron: "0 0 3 * * WED" # 기준안: 수요일 03:00 KST에 다음 주 G3~G6 자동 초안(그 학년·주 게시 테마가 있으면 건너뜀)
+    max-attempts: 3 # 기준안, 첫 생성 포함
+    ai-read-timeout: 16m # 기준안: 테마 ai 호출만 (P12 예외), ai 마감 15분
+    lease: 18m # 기준안: 생성 리스, ai 대기보다 길게
   assets:
     # 테마 그림·영상·테마 미션 장면의 S3 키 → 단기 presigned URL (#438). 버킷이 비면 키 값은 URL로 바꾸지 않고 null.
     # ai가 theme-drafts/에 쓰는 버킷과 같아야 함. 자격 증명은 AWS 기본 체인(로컬 AWS_ACCESS_KEY_ID·AWS_SECRET_ACCESS_KEY, EKS Pod Identity)

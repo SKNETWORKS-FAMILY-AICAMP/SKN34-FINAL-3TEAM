@@ -95,6 +95,10 @@
         LIMIT 1
     </select>
 
+    <select id="existsPublished" resultType="boolean" flushCache="true" useCache="false">
+        SELECT EXISTS (SELECT 1 FROM weekly_theme WHERE grade = #{grade} AND week_start = #{weekStart} AND status = 'PUBLISHED')
+    </select>
+
     <select id="existsOtherPublished" resultType="boolean">
         SELECT EXISTS (
             SELECT 1 FROM weekly_theme
