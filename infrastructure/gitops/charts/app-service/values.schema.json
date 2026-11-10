@@ -39,7 +39,39 @@
         "enabled": {"type": "boolean"},
         "minReplicaCount": {"type": "integer", "minimum": 0},
         "maxReplicaCount": {"type": "integer", "minimum": 1},
-        "queues": {"type": "array", "items": {"type": "string", "minLength": 1}}
+        "queues": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "cron": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["timezone", "start", "end"],
+            "properties": {
+              "timezone": {"type": "string", "minLength": 1},
+              "start": {"type": "string", "minLength": 1},
+              "end": {"type": "string", "minLength": 1},
+              "desiredReplicas": {"type": "integer", "minimum": 1}
+            }
+          }
+        },
+        "renderReplicaCount": {"type": "boolean"}
+      }
+    },
+    "nodeSelector": {"type": "object"},
+    "tolerations": {"type": "array"},
+    "modelDownload": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": {"type": "string"},
+            "tag": {"type": "string"},
+            "digest": {"type": "string"}
+          }
+        },
+        "mountPath": {"type": "string", "pattern": "^/"},
+        "sizeLimit": {"type": "string", "minLength": 1}
       }
     },
     "migration": {
