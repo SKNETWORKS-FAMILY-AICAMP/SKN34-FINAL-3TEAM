@@ -102,7 +102,7 @@ class CallTypeListTest(unittest.TestCase):
         schema = json.loads((ROOT / 'contracts/events/llm.usage.recorded.v1.schema.json').read_text(encoding='utf-8'))
         expected = schema['properties']['callType']['enum']
         self.assertIn('MISSION_DRAFT', expected)
-        self.assertTrue({'THEME_DRAFT', 'THEME_IMAGE'} <= set(expected))  # #439
+        self.assertTrue({'THEME_DRAFT', 'THEME_IMAGE', 'THEME_VIDEO'} <= set(expected))  # #439·#436
         public = yaml.safe_load((ROOT / 'contracts/openapi/core-service.yaml').read_text(encoding='utf-8'))
         enum = (ROOT / 'backend/core-service/src/main/kotlin/com/sagomungchi/core/usage/domain/UsageSummary.kt').read_text(encoding='utf-8')
         migrations = sorted((ROOT / 'backend/core-service/src/main/resources/db/migration').glob('V*__*.sql'),

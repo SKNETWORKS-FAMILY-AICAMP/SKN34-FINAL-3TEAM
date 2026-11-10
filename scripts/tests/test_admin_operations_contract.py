@@ -130,7 +130,7 @@ class AdminOperationsContracts(unittest.TestCase):
                 if section=='schemas' and name=='CallType':
                     reviewed['enum'].remove('MISSION_DRAFT')
                     # #439 adds only the ai weekly theme text/image usage types.
-                    reviewed['enum'].remove('THEME_DRAFT'); reviewed['enum'].remove('THEME_IMAGE')
+                    reviewed['enum'].remove('THEME_DRAFT'); reviewed['enum'].remove('THEME_IMAGE'); reviewed['enum'].remove('THEME_VIDEO')
                 # #390 (P24 daily report) adds only the periodType filter/field, daily detail fields and two
                 # daily notification types. Remove exactly those additions; every other field stays fingerprinted.
                 if section=='paths' and name=='/children/{childId}/reports':

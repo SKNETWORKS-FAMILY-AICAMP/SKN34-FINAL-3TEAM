@@ -113,19 +113,19 @@ class ModelVersionHttpTest : PostgresRepositoryTest() {
         }
     }
 
-    @Test fun `theme draft and image usage are stored and listed by call type with token-less images unpriced`() {
+    @Test fun `theme draft, image and video usage are stored and listed by call type with token-less images unpriced`() {
         val (_, access) = adminToken()
         fun record(callType: String, input: Int?, output: Int?) = usage.record(com.sagomungchi.core._common.messaging.EventEnvelope(type = "llm.usage.recorded",
             source = "ai-service", dataschema = "llm.usage.recorded.v1", data = com.sagomungchi.core.usage.domain.LlmUsageRecorded(
                 "ai", callType, "no-price", "theme-draft@1", input, output, 1200, true, null, OffsetDateTime.parse("2041-01-01T12:00:00+09:00"))))
-        record("THEME_DRAFT", 100, 200); record("THEME_IMAGE", null, null); record("THEME_IMAGE", null, null)
+        record("THEME_DRAFT", 100, 200); record("THEME_IMAGE", null, null); record("THEME_IMAGE", null, null); record("THEME_VIDEO", null, null)
         mvc.get("/api/v1/admin/ai-usage?from=2041-01-01&to=2041-01-01&callType=THEME_IMAGE") { header("Authorization", "Bearer $access") }.andExpect {
             status { isOk() }; jsonPath("$.items.length()") { value(1) }; jsonPath("$.items[0].callType") { value("THEME_IMAGE") }
             jsonPath("$.items[0].calls") { value(2) }; jsonPath("$.items[0].unpricedCalls") { value(2) }
             jsonPath("$.items[0].costUsd") { value(org.hamcrest.Matchers.nullValue()) }
         }
         mvc.get("/api/v1/admin/ai-usage?from=2041-01-01&to=2041-01-01") { header("Authorization", "Bearer $access") }
-            .andExpect { status { isOk() }; jsonPath("$.items[*].callType") { value(org.hamcrest.Matchers.containsInAnyOrder("THEME_DRAFT", "THEME_IMAGE")) } }
+            .andExpect { status { isOk() }; jsonPath("$.items[*].callType") { value(org.hamcrest.Matchers.containsInAnyOrder("THEME_DRAFT", "THEME_IMAGE", "THEME_VIDEO")) } }
     }
 
     @Test fun `usage HTTP allows 366 days but rejects excess periods and unsupported years with 400`() {

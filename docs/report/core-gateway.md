@@ -490,3 +490,11 @@ local kind(develop `b1562c2b`)에서 테스트 학부모·학생·관리자 계�
 | 알림 | 일일·주간 리포트 완료 알림이 학부모 알림 화면에 보이고 읽지 않음 개수로 표시 |
 
 - 되돌아보기 열람(+10)·주간 테마 완주(+30) 적립은 주말·5일 연속 학습이 필요해 미확인
+
+## 17. 주간 테마 영상 사용량 THEME_VIDEO·응답 칸 추가 (에픽 #436)
+
+learning #438이 테마를 학년별로 나누고 이번 주 테마 응답에 정답 구조(큰 질문·후보·공개 후 정답)와 영상 URL을 더하면서, ai 사용량에 영상 호출 종류가 생겼다. 학년 전달 방식(`gradeBand` → `grade`)은 #438 머지 뒤에 들어가야 해서 별도 PR로 나눴다.
+
+- **`THEME_VIDEO`**: `V42__theme_video_call_type.sql`이 `ck_llm_usage_call_type`을 넓힌다(V28·V40과 같은 방식, 기존 행 영향 없음). 이벤트 스키마·core `CallType`·core OpenAPI·ERD·ai/scoring 발행 목록을 같은 순서로 맞췄다. 영상 호출은 토큰이 없어 이미지처럼 `cost_usd` null, 관리자 사용량에서 `unpricedCalls`로 센다. gitops 로컬 core 리비전 v42
+- **응답 칸 추가**: core는 이번 주 테마 응답을 바꾸지 않고 전달하므로 OpenAPI·api-spec 설명만 고쳤다. core가 읽는 값은 포인트 보충용 `days[].attemptStatus`·`missionId`뿐이고, learning이 이름을 유지하기로 했다. 공개 전 정답은 learning이 응답에서 뺀다(core는 걸러내지 않음). 필드 이름은 learning #438 설계 문서를 따른다
+- 검증: `ModelVersionHttpTest`에 `THEME_VIDEO` 저장(V42 CHECK)·호출 종류별 조회 추가, 호출 종류 대조 계약 테스트, DB 스키마 검사

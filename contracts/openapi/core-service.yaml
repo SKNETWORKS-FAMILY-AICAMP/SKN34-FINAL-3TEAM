@@ -9713,7 +9713,7 @@ components:
     WeeklyThemeDocument:
       type: object
       additionalProperties: true
-      description: 'learning 소유 학생 주간 테마 JSON object (#387, #385, api-spec 2.11). {themeId, weekStart, title, intro, reused, days[], review, completed}(#439부터 outro·introImageUrl·outroImageUrl·introSeen·outroSeen 추가, core는 바꾸지 않고 전달) 또는 되돌아보기 열람 결과 {firstViewThisWeek, completed}·이야기 열람 결과(learning #438 소유).'
+      description: 'learning 소유 학생 주간 테마 JSON object (#387, #385, api-spec 2.11). {themeId, weekStart, title, intro, reused, days[], review, completed}(#439부터 outro·introImageUrl·outroImageUrl·introSeen·outroSeen 추가, 에픽 #436 정답 구조·영상 URL 추가(필드 이름은 learning #438 소유). core는 바꾸지 않고 전달하며 포인트 보충에 days[].attemptStatus·missionId만 읽는다. 공개 전 정답은 learning이 응답에서 뺀다) 또는 되돌아보기 열람 결과 {firstViewThisWeek, completed}·이야기 열람 결과(learning #438 소유).'
     WeeklyThemeStoryViewRequest:
       type: object
       additionalProperties: false
@@ -11042,7 +11042,7 @@ components:
             $ref: '#/components/schemas/ActiveModelVersion'
     CallType:
       type: string
-      enum: [JUDGMENT, FOLLOWUP, ANALYSIS, REPORT_NARRATIVE, MISSION_DRAFT, THEME_DRAFT, THEME_IMAGE, M2, M1]
+      enum: [JUDGMENT, FOLLOWUP, ANALYSIS, REPORT_NARRATIVE, MISSION_DRAFT, THEME_DRAFT, THEME_IMAGE, THEME_VIDEO, M2, M1]
     AiUsageResponse:
       type: object
       additionalProperties: false
