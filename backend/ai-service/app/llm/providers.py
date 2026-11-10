@@ -343,6 +343,41 @@ def create_explanation_llm(settings: Settings, recorder: UsageRecorder) -> LlmCl
     )
 
 
+def theme_llm_problem(settings: Settings) -> str | None:
+    """테마 생성·검토 모델 설정 문제. 있으면 테마 경로만 503 (ai 서비스 전체는 계속 동작)."""
+    if settings.theme_generation_model == settings.theme_review_model:
+        return "테마 검토 모델이 생성 모델과 같음(THEME_REVIEW_MODEL을 다르게 설정)"
+    if not settings.openai_api_key:
+        return "테마 생성용 OpenAI 키가 없음"
+    return None
+
+
+def create_theme_llms(settings: Settings, recorder: UsageRecorder) -> tuple[LlmClient, LlmClient]:
+    """주간 테마 생성용·검토용 클라이언트 (#437). 같은 OpenAI 키, 모델은 테마 전용 설정.
+
+    기본 LLM_PROVIDER·OPENAI_MODEL과 따로 둔다(운영 OPENAI_MODEL이 검토 모델과 같아서).
+    """
+    if not settings.openai_api_key:
+        return (
+            UnconfiguredLlm(settings.theme_generation_model, recorder),
+            UnconfiguredLlm(settings.theme_review_model, recorder),
+        )
+
+    def make(model: str) -> LlmClient:
+        return OpenAICompatibleLlm(
+            api_key=settings.openai_api_key,
+            model=model,
+            base_url=None,
+            json_mode="json_schema",
+            timeout=settings.theme_llm_timeout,
+            max_retries=settings.theme_llm_retries,
+            backoff_seconds=settings.llm_retry_backoff,
+            recorder=recorder,
+        )
+
+    return make(settings.theme_generation_model), make(settings.theme_review_model)
+
+
 def get_llm(request: Request) -> LlmClient:
     """라우터 의존성: 기동 시 만든 app.state.llm. 테스트는 dependency_overrides로 교체."""
     return request.app.state.llm
@@ -351,3 +386,8 @@ def get_llm(request: Request) -> LlmClient:
 def get_explanation_llm(request: Request) -> LlmClient:
     """라우터 의존성: 기동 시 만든 app.state.explanation_llm (#477)."""
     return request.app.state.explanation_llm
+
+
+def get_theme_llms(request: Request) -> tuple[LlmClient, LlmClient]:
+    """라우터 의존성: 기동 시 만든 테마 생성·검토 클라이언트 (#437)."""
+    return request.app.state.theme_llm, request.app.state.theme_review_llm

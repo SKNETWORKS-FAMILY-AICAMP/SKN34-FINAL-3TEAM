@@ -16,7 +16,7 @@ from app.errors import register_error_handlers
 from app.followup.router import router as followup_router
 from app.health.router import router as health_router
 from app.judgment.router import router as judgment_router
-from app.llm.providers import create_explanation_llm, create_llm
+from app.llm.providers import create_explanation_llm, create_llm, create_theme_llms
 from app.messaging.connection import AmqpConnection
 from app.messaging.consumer import ModelVersionConsumer
 from app.messaging.publisher import EventPublisher, UsagePublisher
@@ -63,6 +63,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # 리포트 설명만 클러스터 안 sLLM (#477). 다른 호출의 제공자는 그대로
     app.state.explanation_llm = create_explanation_llm(settings, recorder=usage_recorder)
     app.state.explanation_llm.langfuse = langfuse
+    # 주간 테마 초안 생성·검토 (#437). 모델은 테마 전용 설정, 같은 OpenAI 키
+    app.state.theme_llm, app.state.theme_review_llm = create_theme_llms(settings, usage_recorder)
+    app.state.theme_llm.langfuse = langfuse
+    app.state.theme_review_llm.langfuse = langfuse
 
     async def rabbitmq_ready() -> bool:
         return amqp.is_connected

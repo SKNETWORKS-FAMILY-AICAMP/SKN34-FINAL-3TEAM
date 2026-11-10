@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.bootstrap import create_app
+from app.config import get_settings
 from app.theme_draft.models import ThemeDraftRequest, ThemeDraftResponse, ThemeFailureResult
 from app.theme_draft.router import get_theme_draft_runner
 from tests.theme_draft.helpers import mission_body, request_body, sample_response
@@ -141,8 +142,15 @@ def test_essay_allowed_from_grade_five() -> None:
     assert post(request_body(grade=5, missions=missions), FakeRunner()).status_code == 200
 
 
-def test_runner_not_ready_is_503_not_retryable() -> None:
-    response = post(request_body())  # 그래프가 붙기 전 기본 구현
+def test_runner_not_ready_is_503_not_retryable(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 테마 모델 설정이 틀린 동안(여기서는 키 없음)의 기본 구현. 셸에 키가 있어도 실제 호출하지 않게
+    # 지움
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    get_settings.cache_clear()
+    try:
+        response = post(request_body())
+    finally:
+        get_settings.cache_clear()
     assert response.status_code == 503
     assert response.json()["code"] == "AI_UNAVAILABLE" and response.json()["retryable"] is False
 

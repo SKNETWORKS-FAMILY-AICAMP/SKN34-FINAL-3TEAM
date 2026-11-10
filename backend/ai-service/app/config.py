@@ -79,6 +79,22 @@ class Settings(BaseSettings):
     # 마감 기준안 15분(learning→ai 대기 16분 안). 텍스트 시험에서 글 단계만 6~13분이라
     # 마감까지 남은 시간이 부족하면 다음 재생성을 시작하지 않음(ai.md 15절)
     theme_draft_deadline: float = 900.0
+    # 테마 생성·검토 모델은 테마 전용 설정(사용자 결정 2026-11-10). 로컬·운영 OPENAI_MODEL이
+    # gpt-6.1-terra라 기존 클라이언트를 쓰면 생성 = 검토가 되고 생성 비용이 약 10배.
+    # 텍스트 시험은 생성 luna·검토 terra로 검증. 같은 OpenAI 키를 쓰고, 둘이 같으면 테마 경로만 503
+    theme_generation_model: str = "gpt-6-luna"
+    theme_review_model: str = "gpt-6.1-terra"
+    theme_llm_timeout: float = 180.0  # 호출 1번 상한(기준안). 시험 최장 약 75초
+    theme_llm_retries: int = 0  # 재시도 대신 그래프의 실패 사유 넣은 다시 생성
+    theme_max_regen: int = 2  # 단계마다 다시 생성 상한(기준안, 첫 생성 포함 최대 3회)
+    theme_review_max_rerun: int = 2  # 글 검토 뒤 다시 만들고 재검토하는 상한(기준안)
+    # 마감까지 이보다 적게 남으면 다시 생성을 시작하지 않음(기준안)
+    theme_min_regen_seconds: float = 180.0
+    theme_plan_max_tokens: int = 32000  # 줄거리·검토는 추론 출력이 길어 넉넉히(시험 최대 약 11,500)
+    theme_review_max_tokens: int = 32000
+    theme_dialogue_max_tokens: int = 8000
+    # 지식 검색(#470) 연결 자리. 꺼져 있으면 요청의 성취기준으로 지금 틀대로 동작
+    theme_knowledge_enabled: bool = False
 
     # 리포트 설명 sLLM (#477, FN-RPT-09). 클러스터 안 설명 전용 OpenAI 호환 서버(#476)이며
     # 다른 호출의 LLM 제공자(llm_provider)와 별개.

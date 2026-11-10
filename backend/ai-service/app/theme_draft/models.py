@@ -9,7 +9,7 @@ learning 테마 초안 생성 작업이 호출 1번에 그래프를 한 번 끝�
 from datetime import date
 from typing import Any, Literal, Self
 
-from pydantic import Field, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from app.followup.models import LlmVersions, ThinkingType
 from app.judgment.models import ApiModel
@@ -145,3 +145,125 @@ class ThemeDraftResponse(ApiModel):
     warnings: list[ThemeWarning]
     failure: ThemeFailureResult | None
     versions: LlmVersions
+
+
+# ---------------------------------------------------------------------------
+# LLM 구조화 출력 형식(테마 틀 스키마). 응답 JSON 키를 그대로 받으려고 camelCase 필드.
+# 정답 논리 검사용 내부 칸(features·target·clueType·condition·evidence)은 응답 Theme에 넣지 않는다.
+# ---------------------------------------------------------------------------
+ClueType = Literal[
+    "목격",
+    "기록",
+    "시각",
+    "잠김",
+    "소리",
+    "색",
+    "냄새",
+    "재질",
+    "무게",
+    "습성",
+    "발자국",
+    "온도",
+    "물기",
+    "크기",
+]
+ReviewVerdict = Literal["PASS", "WARN", "FAIL"]
+StoryReviewId = Literal["CLUE_LOGIC", "ANSWER_HINT", "GRADE_VOCAB", "STANDARD_FIT", "SAFETY"]
+MissionReviewId = Literal["EXAMPLE_COMPLETE", "STANDARD_FIT", "MATERIAL"]
+
+
+class GeneratedCharacter(BaseModel):
+    name: str
+    look: str
+
+
+class GeneratedFeatureValue(BaseModel):
+    candidate: str
+    value: str
+
+
+class GeneratedFeature(BaseModel):
+    """후보 특징 표의 특징 하나. standardCode는 고른 그날 성취기준(장면에서 골랐으면 null, RAG "
+    "#470 근거 자리)."""
+
+    name: str
+    standardCode: str | None
+    values: list[GeneratedFeatureValue]
+
+
+class GeneratedCondition(BaseModel):
+    """단서가 말하는 조건. RULE은 그때 남은 후보를 새로 빼고, HINT는 남은 후보를 빼지 않는다."""
+
+    kind: Literal["RULE", "HINT"]
+    feature: str
+    allowed: list[str]
+
+
+class GeneratedEvidence(BaseModel):
+    """단서의 증거 종류와 때. 못 찾은 대상 몸의 자국 같은 종류는 고를 수 없게 목록으로 둔다."""
+
+    kind: Literal["TRACE", "SIGHTING", "RECORD"]
+    when: str
+
+
+class GeneratedDay(BaseModel):
+    day: Day
+    thinkingType: ThinkingType
+    place: str
+    sceneNote: str
+    clue: str
+    clueType: ClueType
+    condition: GeneratedCondition
+    evidence: GeneratedEvidence
+    rulesOut: list[str]
+
+
+class GeneratedTheme(BaseModel):
+    title: str
+    world: str
+    characters: list[GeneratedCharacter]
+    styleNote: str
+    outfit: str
+    intro: str
+    outro: str
+    bigQuestion: str
+    target: str
+    candidates: list[str]
+    answer: str
+    features: list[GeneratedFeature]
+    days: list[GeneratedDay]
+
+
+class GeneratedLine(BaseModel):
+    speaker: str
+    text: str
+
+
+class GeneratedDialogue(BaseModel):
+    """그날 단서 문장은 코드가 clueSpeaker의 줄로 그대로 넣는다(LLM은 나머지 줄만)."""
+
+    recap: str | None
+    lines: list[GeneratedLine]
+    clueSpeaker: str
+
+
+class StoryReviewItem(BaseModel):
+    id: StoryReviewId
+    verdict: ReviewVerdict
+    days: list[Day]
+    reason: str
+
+
+class GeneratedStoryReview(BaseModel):
+    items: list[StoryReviewItem]
+
+
+class MissionReviewItem(BaseModel):
+    id: MissionReviewId
+    verdict: ReviewVerdict
+    reason: str
+
+
+class GeneratedMissionReview(BaseModel):
+    verdict: ReviewVerdict
+    items: list[MissionReviewItem]
