@@ -99,6 +99,7 @@ export function Workspace({
             ['scope-change', '응답 범위 변경'],
             ['report-running', '리포트 생성 중'],
             ['report-failed', '리포트 생성 실패'],
+            ['explanation-missing', '주간 리포트 설명 미포함'],
             ['deleted-evidence', '삭제된 근거'],
             ['gone-evidence', '근거 410'],
             ['unlinked', '연결 안 된 자녀'],

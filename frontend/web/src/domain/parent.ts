@@ -153,6 +153,8 @@ export interface ReportItem {
   generatedAt?: string | null
 }
 export interface WeeklyReport extends ReportItem {
+  /** api-spec 3.4, #473·#481. 이전 API 응답의 필드 생략도 허용한다. */
+  explanations?: { state: 'INCLUDED' | 'NOT_INCLUDED' | 'NO_TARGET'; items: ReportExplanation[] } | null
   parentSharingEnabled?: boolean
   correctionNotice?: boolean
   /** 일일 리포트만(DAILY) */
@@ -190,6 +192,15 @@ export interface WeeklyReport extends ReportItem {
   verification: { numbersMatched: boolean; quotesMatched: boolean }
   generatedAt?: string
   versions?: Record<string, string | null>
+}
+export interface ReportExplanation {
+  attemptId: string
+  answerId: string
+  answerVersion: number
+  missionTitle: string
+  thinkingType: ThinkingType
+  quote: string
+  text: string
 }
 export function validPeriod(p: Period) {
   return (

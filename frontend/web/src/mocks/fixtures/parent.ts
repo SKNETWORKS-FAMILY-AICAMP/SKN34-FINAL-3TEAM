@@ -114,6 +114,7 @@ export function makeWeekly(c: Child, p: Period, revision = 1): WeeklyReport {
               ? '답변 전후를 나란히 읽고, 덧붙인 생각을 확인해 보세요. 능력이나 향상을 진단하는 결과는 아닙니다.'
               : '이번 주 집계할 기록이 없습니다.',
             source: 'TEMPLATE',
+            modelExplanation: null,
           }
         : null,
     eveningQuestion:
@@ -122,6 +123,20 @@ export function makeWeekly(c: Child, p: Period, revision = 1): WeeklyReport {
     versions: { prompt: 'mock-report@1', model: null },
     generatedAt: '2026-10-26T00:00:00+09:00',
     themeSummary: themeSummary(rows),
+    // 직접 작성한 화면 검증용 합성 설명이다. M2·설명 모델 실행 결과로 사용하지 않는다.
+    explanations: c.plan === 'FREE' ? null : { state: 'NO_TARGET', items: [] },
+  }
+  if (c.plan === 'PREMIUM') {
+    const used = new Set<string>()
+    const candidates = rows.filter(a => a.answers.length &&
+      (c.grade >= 5 && a.mission.inputType === 'NARRATIVE' || c.grade >= 4 && a.mission.inputType === 'ESSAY'))
+      .sort((a, b) => b.answers.at(-1)!.submittedAt.localeCompare(a.answers.at(-1)!.submittedAt))
+      .filter(a => { if (used.has(a.mission.thinkingType)) return false; used.add(a.mission.thinkingType); return true }).slice(0, 3)
+    if (candidates.length) report.explanations = { state: 'INCLUDED', items: candidates.map(a => ({
+      attemptId: a.attemptId, answerId: a.answers.at(-1)!.answerId, answerVersion: a.answers.at(-1)!.version,
+      missionTitle: a.mission.title, thinkingType: a.mission.thinkingType, quote: a.answers.at(-1)!.text,
+      text: '답변에 적힌 생각과 그 까닭을 함께 읽어 보세요. 아이에게 어떤 부분을 더 설명하고 싶은지 물어볼 수 있습니다.',
+    })) }
   }
   return c.plan === 'FREE'
     ? { ...report, thinkingTypes: [], changes: [], reflections: [], quotes: [] }
@@ -181,6 +196,7 @@ export function makeDaily(c: Child, date: string, revision = 1): WeeklyReport {
       }
     }),
     narrative: null,
+    explanations: null,
     verification: { numbersMatched: true, quotesMatched: true },
     versions: { prompt: null, model: null },
     generatedAt: `${date}T15:00:00Z`,
