@@ -851,7 +851,7 @@ erDiagram
   user_account ||--o{ look_item : creates
 
   reward_rule {
-    varchar(32) event_type PK "MISSION_COMPLETED|REVIEW_VIEWED|COMMUNITY_POSTED|REACTION_GIVEN|THEME_COMPLETED"
+    varchar(32) event_type PK "MISSION_COMPLETED|REVIEW_VIEWED|COMMUNITY_POSTED|REACTION_GIVEN|THEME_COMPLETED|THEME_ON_TIME|THEME_FINISHED"
     int amount "1 이상, 사건 1회 적립값"
     int daily_cap "NULL 허용 · 한국 시간 하루 적립 횟수 상한(1 이상)"
     boolean active "false면 적립하지 않음"
@@ -860,7 +860,7 @@ erDiagram
   reward_point_ledger {
     uuid id PK
     uuid student_id FK
-    varchar(32) event_type "MISSION_COMPLETED|REVIEW_VIEWED|COMMUNITY_POSTED|REACTION_GIVEN|THEME_COMPLETED|UNLOCK"
+    varchar(32) event_type "MISSION_COMPLETED|REVIEW_VIEWED|COMMUNITY_POSTED|REACTION_GIVEN|THEME_COMPLETED|THEME_ON_TIME|THEME_FINISHED|UNLOCK"
     varchar(200) source_key "사건 키, (student_id, event_type, source_key) UK"
     int amount "적립 양수, UNLOCK 음수"
     timestamptz created_at

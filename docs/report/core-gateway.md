@@ -363,6 +363,8 @@ WHERE id = :event_id AND quarantined_at IS NOT NULL AND published_at IS NULL;
 
 ## 13. 주간 테마 프록시·무료 하루 1개·추가 문제 프리미엄 (#387)
 
+> 2026-11-10 개정(#483)으로 무료 한도·추가 문제·일요일이 바뀌었다. 지금 규칙은 이 문서 18절을 따른다.
+
 2026-11-06 결정(P23, P13·P14 개정, [서비스 방향](service-direction.md) 2.4·2.6)의 core 몫. 에픽 #396, #233 회의 안건(무료 미션 한도)의 구현. learning 테마 API(#385)는 동시에 구현 중이라 api-spec 2.11·4.1 계약대로 클라이언트를 만들고 테스트는 learning 계약 대역으로 했다.
 
 - **학생 주간 테마**: `GET /students/me/weekly-theme`·`POST /students/me/weekly-theme/review-views`(`WeeklyThemeController`)를 learning `/internal/students/{studentId}/weekly-theme…?gradeBand&date`로 넘긴다. 학년군(초3~4 `G3_4`, 초5~6 `G5_6`)은 core 학년, 날짜는 `paymentClock` 기준 KST 오늘이라 무료 한도와 같은 날을 쓴다. 클라이언트 query는 버림. 요일 상태가 날마다 바뀌어 `Cache-Control: no-store`. 열람 기록에도 같은 query를 붙인다(4.1 표에 없던 값, learning이 학생의 주를 정하는 근거)
@@ -429,7 +431,7 @@ WHERE id = :event_id AND quarantined_at IS NOT NULL AND published_at IS NULL;
 | 공유 `COMMUNITY_POSTED` | 같은 곳, `CommunityService.shareCompleted` 결과 | 공유 응답 201(새 공유)·200(이미 있음) | `postId` |
 | 반응 `REACTION_GIVEN` | `CommunityService.react` | 반응 남기기 2xx(취소는 적립 없음) | `postId:reaction` |
 | 되돌아보기 `REVIEW_VIEWED` | `LearningProxyService.reviewViewed` | 열람 기록 200 | 그 주 월요일(KST) |
-| 완주 `THEME_COMPLETED` | 같은 곳 | 열람 응답 `completed:true` | 그 주 월요일(KST) |
+| 완주 `THEME_COMPLETED`(#485부터 "개근") | 같은 곳 | 열람 응답 `completed:true` | 그 주 월요일(KST) |
 | 보충 | `LearningProxyService.weeklyTheme` | 조회 200의 `days[].attemptStatus == COMPLETED` 미션 | 학습 완료와 같음 |
 
 - **응답을 바꾸지 않음**: `ParticipationRewardService`는 응답 해석·`earn` 실패를 모두 로그로만 남기고 던지지 않는다. `earn`은 자체 트랜잭션(`REQUIRES_NEW`)이고 프록시 경로에는 바깥 트랜잭션이 없어, 적립이 실패해도 learning 응답·상태 코드·본문이 그대로 나간다. 공개 API 응답 모양은 바뀌지 않았다(적립 결과는 `GET /students/me/points`로 본다). 시퀀스 다이어그램 설계안의 응답 `{earned}`는 넣지 않았다: 웹이 이미 잔액을 따로 조회하고, learning 응답을 그대로 넘기는 프록시 원칙을 지키려는 것
@@ -520,3 +522,55 @@ local kind(develop `b1562c2b`)에서 테스트 학부모·학생·관리자 계�
 
 - SYSTEM 전용 `GET /internal/students/{studentId}/profile`에 기존 저장값 `grade`를 추가한다. report가 설명 대상 학년을 임의로 정하지 않도록 하기 위한 필드다. 기존 내부 토큰·학생 범위·활성 학생 검사와 `no-store`는 유지한다. DB와 이벤트 변경은 없다.
 - 공개 리포트 상세의 `explanations`는 report 계약대로 전달하되, 현재 무료 이용권/원문 비공개이면 null로 가린다. 기존 서술·원문 경계와 같은 위치에서 재검사한다. 인용 `quote`는 PR #491에 맞춰 null을 허용한다.
+
+## 18. 무료 테마 주 5문제·추가 문제 프리미엄 전용·프리미엄 일요일·당일 풀이·주간 완주 포인트 (#485, 2026-11-10)
+
+주간 테마 규칙 개정(#483, 2026-11-10 결정)의 core 몫. 문제 공개·엔딩·일요일 닫힘 판정과 당일 풀이·개근·주간 완주 값은 learning #484가 정하고, core는 상품으로 무료·프리미엄을 판단해 learning에 넘기고 learning 응답으로 포인트를 적립한다. 13·14절의 #387·#389 동작 중 아래와 다른 부분은 이 절이 우선한다.
+
+### API 변경
+
+| 경로 | 변경 |
+|---|---|
+| `POST /missions/{missionId}/attempts` | 무료 `THEME_DAY`를 하루 한도에서 뺌(같은 날 여러 개 시작 가능). 무료 `EXTRA`는 상품 데이터(V43)로 `403 PREMIUM_REQUIRED`. learning 쿼리에 `sundayTheme=true\|false` 추가. 429 문구는 추가 문제 기준 |
+| `GET /students/me/weekly-theme` | learning 쿼리에 `sundayTheme` 추가. 200 응답 뒤 당일 풀이·개근·주간 완주 적립 보충. 응답 본문은 그대로 |
+| `POST /students/me/weekly-theme/review-views`·`story-views` | learning 쿼리에 `sundayTheme` 추가 |
+| `GET /students/me/points`·`GET /children/{childId}/points` | `items[].eventType`에 `THEME_ON_TIME`·`THEME_FINISHED` 추가 |
+
+오류 코드는 새로 만들지 않았다. 일요일 거부는 learning 오류(기존 `THEME_DAY_CLOSED`·`THEME_REVIEW_NOT_ALLOWED`, #484가 정하는 코드)를 그대로 전달한다.
+
+### learning과 맞춘 계약(기준안, #484 확정 전)
+
+| 방향 | 이름 | 뜻 |
+|---|---|---|
+| core → learning | 쿼리 `sundayTheme=true\|false` | 시도 시작(`/internal/missions/{id}/attempts`)·주간 테마 조회·열람 기록 3종에 항상 붙인다. KST 일요일이고 상품이 허용할 때만 `true`. learning은 `true`일 때만 일요일 신규 시작·다시 풀기를 연다 |
+| learning → core | `days[].completedOnDay` (boolean) | 그 요일 문제를 그 요일 KST 안에 학습 완료(당일 풀이) |
+| learning → core | `perfectAttendance` (boolean) | 월~금 모두 당일 풀이(개근). 기존 `completed`와 같은 판정 |
+| learning → core | `finished` (boolean) | 그 주 토요일 23:59(KST)까지 다섯 문제 학습 완료(주간 완주). 일요일 완료 제외 |
+
+learning이 아직 위 칸을 주지 않으면 core는 그 적립만 건너뛰고 응답은 그대로 넘긴다(boolean `true`일 때만 적립). learning이 모르는 쿼리 `sundayTheme`는 무시되므로 배포 순서와 무관하다.
+
+### 결정과 근거
+
+- **무료 한도**: `ProductEntitlementService.missionStart`에서 `THEME_DAY`·`THEME_REVIEW`는 상품 조회·한도 확인 없이 통과한다. 무료 "테마 문제 주 5개"는 learning 누적 공개(월~금 하루 1개 공개, 토요일까지 풀기)가 곧 상한이라 core가 따로 세지 않는다. `mission_daily_usage`·`limits.dailyMissions`는 지우지 않고 무료 상품에서 `EXTRA`를 다시 켤 때의 무료 `EXTRA` 하루 한도로만 남겼다(되돌릴 수 있게, 상품 데이터만으로 전환)
+- **추가 문제 프리미엄 전용**: 코드 분기(#387)는 그대로 두고 V43이 무료 상품(`price = 0`) `features.extraMissions`를 `false`로 바꾼다. 그 순간부터 무료 `EXTRA`는 403, 프리미엄 `EXTRA` 신규 시도는 `EXTRA_MISSION` 프리미엄 사용으로 기록된다(13절 기록 규칙)
+- **프리미엄 일요일 값**: 상품 기능 값 `features.sundayTheme`(기준안 이름). V43이 유료 상품(`price > 0`)에 `true`, 무료 상품에 `false`를 넣는다. 구독은 결제 시점 상품 스냅숏을 쓰므로 기존 구독 스냅숏에는 값이 없다. 그래서 값이 없으면 구독 중(프리미엄)은 `true`, 무료는 `false`로 본다. boolean이 아니면 503 `PAYMENT_PRODUCT_UNAVAILABLE`(#48 원칙, 임의 값 대체 없음). 판단은 `ProductEntitlementService.sundayTheme` 한 곳
+- **일요일만 상품 조회**: KST 일요일이 아니면 상품을 읽지 않고 `false`를 넘긴다. 평일 주간 테마 조회·테마 문제 시작에 결제 조회 실패 경로를 새로 만들지 않기 위함이다. 일요일 조회·열람 기록은 상품 확인이 실패(결제 확정 중·상품 오류)해도 막지 않고 `false`(닫힘)로 넘긴다. 시도 시작은 503으로 실패한다(프리미엄 학생이 무료로 잘못 처리되지 않게)
+- **일요일 거부는 learning**: 무료 학생의 일요일 시작·다시 풀기 거부는 learning(#484)이 `sundayTheme=false`로 판정하고 core는 오류를 그대로 전달한다. 요일·공개 판정을 learning 한 곳에 두는 #387 원칙을 따른다
+- **포인트 사건**: `THEME_ON_TIME`(당일 풀이 +5, 사건 키 `weekStart:day`, 예 `2026-11-09:MON`)·`THEME_FINISHED`(주간 완주 +10, 사건 키 `weekStart`)를 더했다. 개근 +30은 기존 `THEME_COMPLETED`를 그대로 쓴다(사건 키 `weekStart`가 같아 되돌아보기 열람 적립과 주간 테마 조회 보충이 한 번으로 합쳐짐). `day`는 learning `ThemeDay`(`MON`~`FRI`) 값만 받는다. 매일 푼 학생 50+25+30+10 = 115점, 금·토에 몰아 푼 학생 50+10 = 60점
+- **적립 시점(개근이 빠지지 않게)**: 일요일이 닫혀 토·일 되돌아보기 열람이 줄어든다. 그래서 `ParticipationRewardService.weeklyThemeViewed`가 주간 테마 조회 200마다 `completedOnDay`·`perfectAttendance`·`finished`를 읽어 사건 키로 보충한다. 토요일 열람의 `completed`도 지금처럼 개근으로 적립한다. 일요일에 끝낸 주는 learning이 `finished=false`로 주므로 주간 완주가 없다
+- **`weekStart`**: 주간 테마 응답의 `weekStart`(KST 월요일)를 쓴다. 날짜가 아니거나 월요일이 아니면 새 사건 적립만 건너뛴다(학습 완료 보충은 그대로)
+- **값은 데이터**: 5·10점은 `reward_rule` 행이라 운영이 행만 고쳐 조정한다
+- **표시 이름**: web `POINT_EVENT_LABELS`에 당일 풀이·주간 완주를 더하고 `THEME_COMPLETED`를 "주간 테마 개근"으로 바꿨다. 모르는 사건 종류는 내역에서 걸러지므로(`isPointEvent`) 함께 넣어야 새 적립이 보인다. 화면 문구 전반은 web #487
+
+### 마이그레이션
+
+`V43__theme_free_limit_and_daily_points.sql`(develop V42 #480 다음): `reward_rule`·`reward_point_ledger`의 사건 종류 CHECK에 두 사건 추가(기존 행은 새 목록에도 있어 통과), `reward_rule` 2행(5·10점), 상품 `features` 갱신(무료 `extraMissions:false`·`sundayTheme:false`, 유료 `sundayTheme:true`, 빈 DB는 영향 없음). V35는 고치지 않았다. gitops 로컬 core 리비전 v43. 번호는 머지 순서로 정한다(먼저 머지되는 쪽이 다음 번호). 미병합 `feature/theme-draft-core-proxy`(#439)도 V42 다음 번호를 쓰므로 머지 직전에 develop 최신 번호를 다시 확인한다
+
+### 검증
+
+- `PaymentIntegrationTest`: 무료 `THEME_DAY` 같은 날 여러 개 비집계, 무료 `EXTRA`만 하루 한도(이어하기·KST 0시 초기화), `extraMissions=false` 403·형식 오류 503, `dailyMissions` 누락은 무료 `EXTRA`만 503. 일요일 값: 평일 `false`, 무료 `false`, 프리미엄 스냅숏 값 없음 `true`, 스냅숏 `false`/`true`, 형식 오류 503
+- `WeeklyThemeProxyIntegrationTest`: 무료 테마 문제 3개 시작·되돌아보기 비집계, 무료 `EXTRA` 켠 경우 한도·이어하기, 무료 `EXTRA` 403, 일요일 `sundayTheme=false` 전달과 learning 409 전달, 상품 허용 시 `true`, 상품 오류 시 조회는 `false`·시작은 503, 기존 경로의 `sundayTheme` 쿼리
+- `RewardEarnIntegrationTest`: 매일 푼 학생 115점(당일 풀이 5건·개근·주간 완주, 재조회 중복 없음), learning 칸 없음·문자열·주말 요일·월요일 아닌 `weekStart`는 새 사건 건너뜀, 일요일에 끝낸 주(`finished=false`) 주간 완주 없음, 몰아 푼 학생 60점. `RewardIntegrationTest` 시드 규칙값
+- `LearningProxyIntegrationTest`: 시도 시작 쿼리에 `sundayTheme`, 실행 요일과 무관하게 평일 시계로 고정
+- DB: `verify_db_schema.py` 시드 예외에 두 사건, 새 사건 원장 행·음수 거부 사례
+- 남은 확인: learning #484가 칸 이름·쿼리 이름을 바꾸면 core 파싱·쿼리와 이 절을 맞춘다. 병합 후 kind에서 learning과 함께 한 주 흐름(무료 일요일 거부·프리미엄 일요일 허용·적립)을 확인한다

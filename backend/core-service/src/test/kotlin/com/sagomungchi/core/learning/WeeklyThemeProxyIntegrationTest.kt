@@ -28,7 +28,8 @@ import java.util.UUID
 import kotlin.test.*
 
 /**
- * #387: 실제 인증·필터·PostgreSQL과 learning 계약 대역(#385 미구현)으로 주간 테마 프록시와 무료 하루 1개·추가 문제 판정을 확인한다.
+ * #387·#485: 실제 인증·필터·PostgreSQL과 learning 계약 대역으로 주간 테마 프록시, 무료 테마 문제 무제한 시작(주 5개는 learning 공개),
+ * 추가 문제 판정과 일요일 허용 값 전달을 확인한다.
  * KST 날짜는 paymentClock으로 고정한다(2026-11-09 월 10:00 KST).
  */
 @AutoConfigureMockMvc
@@ -105,8 +106,8 @@ class WeeklyThemeProxyIntegrationTest : PostgresRepositoryTest() {
             .andExpect(header().string("Cache-Control", "no-store")).andExpect(content().string(theme))
         call("POST", "/api/v1/students/me/weekly-theme/review-views").andExpect(status().isOk())
         val (read, view) = stub.requests
-        assertEquals("GET" to "/internal/students/$child/weekly-theme?gradeBand=G5_6&date=2026-11-09", read.method to read.target)
-        assertEquals("POST" to "/internal/students/$child/weekly-theme/review-views?gradeBand=G5_6&date=2026-11-09", view.method to view.target)
+        assertEquals("GET" to "/internal/students/$child/weekly-theme?gradeBand=G5_6&date=2026-11-09&sundayTheme=false", read.method to read.target)
+        assertEquals("POST" to "/internal/students/$child/weekly-theme/review-views?gradeBand=G5_6&date=2026-11-09&sundayTheme=false", view.method to view.target)
         listOf(read, view).forEach { assertEquals(child.toString(), it.header("X-Student-Scope")); assertEquals("STUDENT", it.header("X-User-Role")) }
         jdbc.update("UPDATE student SET grade=4 WHERE id=?", child)
         call("GET", "/api/v1/students/me/weekly-theme").andExpect(status().isOk())
@@ -126,7 +127,7 @@ class WeeklyThemeProxyIntegrationTest : PostgresRepositoryTest() {
         call("POST", "/api/v1/students/me/weekly-theme/story-views", "{\"kind\":\"INTRO\"}").andExpect(status().isOk())
             .andExpect(header().string("Cache-Control", "no-store")).andExpect(jsonPath("$.firstViewThisWeek").value(true))
         val view = stub.requests.last()
-        assertEquals("POST" to "/internal/students/$child/weekly-theme/story-views?gradeBand=G5_6&date=2026-11-09", view.method to view.target)
+        assertEquals("POST" to "/internal/students/$child/weekly-theme/story-views?gradeBand=G5_6&date=2026-11-09&sundayTheme=false", view.method to view.target)
         assertEquals("{\"kind\":\"INTRO\"}", view.body)
         assertEquals(child.toString(), view.header("X-Student-Scope")); assertEquals("STUDENT", view.header("X-User-Role"))
 
@@ -141,46 +142,39 @@ class WeeklyThemeProxyIntegrationTest : PostgresRepositoryTest() {
         assertTrue(stub.requests.isEmpty())
     }
 
-    @Test fun `free child starts one theme day mission then gets 429 while resume and review keep working`() {
-        val today = UUID.randomUUID(); val other = UUID.randomUUID(); val attempt = UUID.randomUUID()
-        stub.respond = { LearningHttpStub.Reply(201, "{\"attemptId\":\"$attempt\",\"status\":\"IN_PROGRESS\",\"mission\":{\"id\":\"$today\"}}") }
-        start(today, "THEME_DAY").andExpect(status().isCreated())
-        assertEquals("{\"context\":\"THEME_DAY\"}", stub.requests.single().body)
-        assertEquals(listOf(mapOf("attempt_id" to attempt, "mission_id" to today, "usage_date" to java.sql.Date.valueOf("2026-11-09"))),
-            jdbc.queryForList("SELECT attempt_id,mission_id,usage_date FROM mission_daily_usage WHERE student_id=?", child))
-
-        stub.requests.clear()
-        start(other, "THEME_DAY").andExpect(status().isTooManyRequests()).andExpect(jsonPath("$.code").value("USAGE_LIMIT_REACHED"))
-        assertTrue(stub.requests.isEmpty())
-
-        // 같은 미션의 진행 중 시도: learning에 그 시도를 확인한 뒤 이어하기(200)를 그대로 전달하고 다시 세지 않는다
-        stub.respond = { if (it.method == "GET") LearningHttpStub.Reply(200, "{\"attemptId\":\"$attempt\",\"status\":\"IN_PROGRESS\",\"mission\":{\"id\":\"$today\"}}")
-            else LearningHttpStub.Reply(200, "{\"attemptId\":\"$attempt\"}") }
-        start(today, "THEME_DAY").andExpect(status().isOk())
-        assertEquals(listOf("GET /internal/attempts/$attempt", "POST /internal/missions/$today/attempts?grade=5&demo=false"),
-            stub.requests.map { "${it.method} ${it.target}" })
-        // 이미 마무리한 시도로 같은 날 새로 시작하는 것은 신규라 막는다
-        stub.requests.clear()
-        stub.respond = { LearningHttpStub.Reply(200, "{\"attemptId\":\"$attempt\",\"status\":\"COMPLETED\",\"mission\":{\"id\":\"$today\"}}") }
-        start(today, "THEME_DAY").andExpect(status().isTooManyRequests())
-        assertEquals(listOf("GET"), stub.requests.map { it.method })
-
-        stub.requests.clear()
+    @Test fun `free child starts several theme day missions on one day without counting them`() {
+        // #485: 공개된 테마 문제는 하루 상한 없이 시작한다(주 5개는 learning 공개 규칙). core는 세지 않는다
+        val missions = List(3) { UUID.randomUUID() }
         stub.respond = { LearningHttpStub.Reply(201, "{\"attemptId\":\"${UUID.randomUUID()}\"}") }
-        start(other, "THEME_REVIEW").andExpect(status().isCreated())
-        assertEquals("{\"context\":\"THEME_REVIEW\"}", stub.requests.single().body)
-        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM mission_daily_usage WHERE student_id=?", Int::class.java, child))
+        missions.forEach { start(it, "THEME_DAY").andExpect(status().isCreated()) }
+        start(UUID.randomUUID(), "THEME_REVIEW").andExpect(status().isCreated())
+        assertEquals(missions.map { "POST /internal/missions/$it/attempts?grade=5&demo=false&sundayTheme=false" },
+            stub.requests.take(3).map { "${it.method} ${it.target}" })
+        assertEquals(listOf("THEME_DAY", "THEME_DAY", "THEME_DAY", "THEME_REVIEW").map { "{\"context\":\"$it\"}" }, stub.requests.map { it.body })
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM mission_daily_usage WHERE student_id=?", Int::class.java, child))
     }
 
-    @Test fun `free child extra mission is allowed by default and shares the one per day limit`() {
-        val mission = UUID.randomUUID(); val attempt = UUID.randomUUID()
-        stub.respond = { LearningHttpStub.Reply(201, "{\"attemptId\":\"$attempt\"}") }
+    @Test fun `free product that turns extra back on counts only extra against the daily limit and keeps resume open`() {
+        val mission = UUID.randomUUID(); val other = UUID.randomUUID(); val attempt = UUID.randomUUID()
+        stub.respond = { LearningHttpStub.Reply(201, "{\"attemptId\":\"$attempt\",\"status\":\"IN_PROGRESS\",\"mission\":{\"id\":\"$mission\"}}") }
         start(mission, null).andExpect(status().isCreated())
         assertEquals("{\"context\":\"EXTRA\"}", stub.requests.single().body)
-        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM mission_daily_usage WHERE student_id=?", Int::class.java, child))
+        assertEquals(listOf(mapOf("attempt_id" to attempt, "mission_id" to mission, "usage_date" to java.sql.Date.valueOf("2026-11-09"))),
+            jdbc.queryForList("SELECT attempt_id,mission_id,usage_date FROM mission_daily_usage WHERE student_id=?", child))
         stub.requests.clear()
-        start(UUID.randomUUID(), "THEME_DAY").andExpect(status().isTooManyRequests())
+        start(other, "EXTRA").andExpect(status().isTooManyRequests()).andExpect(jsonPath("$.code").value("USAGE_LIMIT_REACHED"))
         assertTrue(stub.requests.isEmpty())
+        // 같은 미션의 진행 중 시도: learning에 그 시도를 확인한 뒤 이어하기(200)를 그대로 전달하고 다시 세지 않는다
+        stub.respond = { if (it.method == "GET") LearningHttpStub.Reply(200, "{\"attemptId\":\"$attempt\",\"status\":\"IN_PROGRESS\",\"mission\":{\"id\":\"$mission\"}}")
+            else LearningHttpStub.Reply(200, "{\"attemptId\":\"$attempt\"}") }
+        start(mission, "EXTRA").andExpect(status().isOk())
+        assertEquals(listOf("GET /internal/attempts/$attempt", "POST /internal/missions/$mission/attempts?grade=5&demo=false&sundayTheme=false"),
+            stub.requests.map { "${it.method} ${it.target}" })
+        // 추가 문제 한도와 무관하게 테마 문제는 계속 시작한다
+        stub.requests.clear()
+        stub.respond = { LearningHttpStub.Reply(201, "{\"attemptId\":\"${UUID.randomUUID()}\"}") }
+        start(other, "THEME_DAY").andExpect(status().isCreated())
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM mission_daily_usage WHERE student_id=?", Int::class.java, child))
     }
 
     @Test fun `free product with extra missions off makes extra 403 before learning whether context is omitted or explicit`() {
@@ -193,6 +187,30 @@ class WeeklyThemeProxyIntegrationTest : PostgresRepositoryTest() {
         assertTrue(stub.requests.isEmpty())
     }
 
+    @Test fun `sunday sends the product sunday value to learning and passes the free refusal through`() {
+        `when`(clock.instant()).thenReturn(Instant.parse("2026-11-15T01:00:00Z"))  // KST 11/15(일) 10:00
+        stub.respond = { if (it.method == "GET") LearningHttpStub.Reply(body = "{\"days\":[]}")
+            else LearningHttpStub.Reply(409, "{\"status\":409,\"code\":\"THEME_DAY_CLOSED\"}", mapOf("Content-Type" to "application/problem+json")) }
+        call("GET", "/api/v1/students/me/weekly-theme").andExpect(status().isOk())
+        val mission = UUID.randomUUID()
+        start(mission, "THEME_DAY").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("THEME_DAY_CLOSED"))
+        assertEquals(listOf("/internal/students/$child/weekly-theme?gradeBand=G5_6&date=2026-11-15&sundayTheme=false",
+            "/internal/missions/$mission/attempts?grade=5&demo=false&sundayTheme=false"), stub.requests.map { it.target })
+        // 상품이 일요일을 허용하면(프리미엄 기준안 features.sundayTheme) true를 넘긴다
+        jdbc.update("UPDATE product SET features='{\"sundayTheme\":true}'::jsonb WHERE id=?", free)
+        stub.requests.clear()
+        call("GET", "/api/v1/students/me/weekly-theme").andExpect(status().isOk())
+        start(mission, "THEME_REVIEW").andExpect(status().isConflict())
+        assertEquals(listOf("sundayTheme=true", "sundayTheme=true"), stub.requests.map { it.target.substringAfterLast('&') })
+        // 상품 값 오류: 조회는 닫힌 일요일(false)로 넘기고, 시작은 503
+        jdbc.update("UPDATE product SET features='{\"sundayTheme\":\"yes\"}'::jsonb WHERE id=?", free)
+        stub.requests.clear()
+        call("GET", "/api/v1/students/me/weekly-theme").andExpect(status().isOk())
+        assertTrue(stub.requests.single().target.endsWith("sundayTheme=false"))
+        start(mission, "THEME_DAY").andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.code").value("PAYMENT_PRODUCT_UNAVAILABLE"))
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM mission_daily_usage WHERE student_id=?", Int::class.java, child))
+    }
+
     @Test fun `learning day check refusal is passed through and nothing is counted`() {
         val mission = UUID.randomUUID()
         stub.respond = { LearningHttpStub.Reply(409, "{\"status\":409,\"code\":\"THEME_DAY_CLOSED\"}", mapOf("Content-Type" to "application/problem+json")) }
@@ -203,7 +221,8 @@ class WeeklyThemeProxyIntegrationTest : PostgresRepositoryTest() {
     @Test fun `deleting the child removes its mission usage in the same confirmation`() {
         val attempt = UUID.randomUUID()
         stub.respond = { LearningHttpStub.Reply(201, "{\"attemptId\":\"$attempt\"}") }
-        start(UUID.randomUUID(), "THEME_DAY").andExpect(status().isCreated())
+        start(UUID.randomUUID(), "EXTRA").andExpect(status().isCreated())
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM mission_daily_usage WHERE student_id=?", Int::class.java, child))
         org.springframework.transaction.support.TransactionTemplate(transactions).executeWithoutResult { missionUsageCleanup.deleteStudent(child) }
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM mission_daily_usage WHERE student_id=?", Int::class.java, child))
     }
