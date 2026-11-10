@@ -44,6 +44,9 @@ class ThemeState(TypedDict, total=False):
     theme: dict[str, Any] | None  # GeneratedTheme.model_dump()
     days_todo: list[str]  # 이번에 미션·대화를 (다시) 만들 요일
     request_seed: dict[str, list[str]]  # 요청 previousFailures의 MISSION 사유(요일별, 매번 넣음)
+    image_seed: dict[
+        str, list[str]
+    ]  # 요청 previousFailures의 IMAGE 사유(그림 이름별, "*"는 모든 그림)
     mission_seed: dict[str, list[str]]  # 글 검토가 요일을 다시 보낼 때 넣는 사유
     drafts: Annotated[dict[str, Draft], merge]
     mission_failures: Annotated[dict[str, list[str]], merge]

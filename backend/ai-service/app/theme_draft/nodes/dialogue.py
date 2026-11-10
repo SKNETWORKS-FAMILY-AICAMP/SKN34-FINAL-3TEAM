@@ -1,7 +1,8 @@
 """generate_dialogue(요일마다 Send로 병렬). 실패한 요일만 사유를 넣어 다시(상한·마감).
 
 끝내 실패하면 그 요일 대화는 빼고 warnings(DIALOGUE)에 남긴다(#437 기준안).
-그날 증거 발견 줄(discovery)은 코드가 마지막 줄로 그대로 넣는다(단서는 미션 뒤 learning이 보여 줌).
+그날 증거 발견 줄(discovery)과 수사 연결 문장(missionHook)은 코드가 끝 두 줄로 그대로 넣는다
+(단서는 미션 뒤 learning이 보여 줌).
 """
 
 from typing import Any
@@ -40,7 +41,13 @@ async def generate_dialogue(payload: dict[str, Any], runtime: Runtime[ThemeConte
         )
         if not bad:
             return {
-                "dialogues": {day: dialogue_lines(out, theme_day(theme, day)["discovery"])},
+                "dialogues": {
+                    day: dialogue_lines(
+                        out,
+                        theme_day(theme, day)["discovery"],
+                        theme_day(theme, day)["missionHook"],
+                    )
+                },
                 "dialogue_omitted": {day: []},
             }
         feedback = uniq([*feedback, *bad])

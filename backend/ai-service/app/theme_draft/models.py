@@ -262,9 +262,9 @@ class GeneratedDay(BaseModel):
     """rulesOut은 LLM이 쓰지 않는다. 특징 표와 condition으로 정해지는 값이라 코드가 채운다
     (checks.fill_rules_out).
 
-    discovery(미션 전 대화 마지막 줄로 코드가 그대로 넣는 증거 발견 한 줄)와 missionHook(그날
-    미션 질문 첫머리 수사 연결 문장)은 내부 칸이라 응답 theme에는 넣지 않는다. 단서는 학생이
-    그날 미션을 마친 뒤 보여 주므로 둘 다 단서 결론·후보·정답을 말하지 않는다
+    discovery(증거 발견 한 줄)와 missionHook(뭉치의 수사 연결 문장)은 코드가 미션 전 대화 끝 두
+    줄로 그대로 넣는 내부 칸이라 응답 theme에는 넣지 않는다. 단서는 학생이 그날 미션을 마친 뒤
+    보여 주므로 둘 다 후보·정답을 말하지 않고, discovery는 단서 결론도 말하지 않는다
     (사용자 결정 2026-11-11).
     """
 
@@ -321,8 +321,8 @@ class GeneratedLine(BaseModel):
 
 
 class GeneratedDialogue(BaseModel):
-    """그날 증거 발견 줄(discovery)은 코드가 discoverySpeaker의 마지막 줄로 그대로 넣는다
-    (LLM은 나머지 줄만, 화자가 비면 뭉치)."""
+    """그날 증거 발견 줄(discovery)은 discoverySpeaker의 줄, 수사 연결 문장(missionHook)은 뭉치의
+    줄로 코드가 끝 두 줄에 그대로 넣는다(LLM은 나머지 줄만, 화자가 비면 뭉치)."""
 
     lines: list[GeneratedLine]
     discoverySpeaker: str

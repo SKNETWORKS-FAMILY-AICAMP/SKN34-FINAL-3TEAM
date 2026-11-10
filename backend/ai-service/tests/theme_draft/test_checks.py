@@ -268,16 +268,17 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
     ("discovery empty", on_day("MON", discovery=" "), ["REQUIRED"]),
     ("discovery too long", on_day("TUE", discovery="가" * 41), ["LENGTH"]),
     ("mission hook empty", on_day("WED", missionHook=""), ["REQUIRED"]),
-    ("mission hook too long", on_day("THU", missionHook="가" * 61), ["LENGTH"]),
+    ("mission hook too long", on_day("THU", missionHook="가" * 41), ["LENGTH"]),
     (
         "discovery tells clue value",
         on_day("THU", discovery="골목 발자국에 흙이 묻어 있어!"),
         ["CLUE_EARLY THU"],
     ),
+    # 수사 연결 문장은 배울 개념을 말하는 자리라 단서 값 낱말이 나와도 코드로 막지 않음(글 검토 몫)
     (
-        "mission hook tells clue value",
-        on_day("WED", missionHook="지붕 없음을 알려면 동물의 특징을 살펴봐야 해. 뭉치를 도와줘."),
-        ["CLUE_EARLY WED"],
+        "mission hook may name the concept",
+        on_day("WED", missionHook="지붕 없음을 알려면 특징을 살펴봐야 해. 도와줄래?"),
+        [],
     ),
     # 1자 줄기(젖음→젖)는 보지 않음(오탐이 많음), 정확히 같은 낱말만
     ("one char stem is not clue early", on_day("MON", discovery="젖은 발자국이 찍혀 있어!"), []),
@@ -392,39 +393,8 @@ MISSION_CASES: list[tuple[str, str, dict[str, Any], list[str]]] = [
     (
         "theme answer in question",
         "ANALYZE",
-        {"question": HOOK["MON"] + " 텃밭에 간 까닭을 써 보자."},
+        {"question": "텃밭에 간 까닭을 써 보자."},
         ["THEME_ANSWER_LEAK"],
-    ),
-    # 질문은 그날 수사 연결 문장으로 시작(공백 무시, 앞에 따옴표 같은 몇 글자는 허용)
-    (
-        "question without hook",
-        "ANALYZE",
-        {"question": "뭉치와 지호가 마을 길에서 본 것을 떠올려 보고 까닭과 함께 써 보자."},
-        ["HOOK_MISSING MON"],
-    ),
-    (
-        "question with other day hook",
-        "ANALYZE",
-        {"question": HOOK["TUE"] + " 본 것을 써 보자."},
-        ["HOOK_MISSING MON"],
-    ),
-    (
-        "hook in the middle",
-        "ANALYZE",
-        {"question": "뭉치와 지호가 마을 길을 걷다가 생각했어. " + HOOK["MON"]},
-        ["HOOK_MISSING MON"],
-    ),
-    (
-        "hook spacing differs",
-        "ANALYZE",
-        {"question": HOOK["MON"].replace(" ", "") + " 본 것을 까닭과 함께 써 보자."},
-        [],
-    ),
-    (
-        "quoted hook",
-        "ANALYZE",
-        {"question": "\u201c" + HOOK["MON"] + "\u201d 본 것을 까닭과 함께 써 보자."},
-        [],
     ),
     (
         "theme answer in example",
@@ -435,7 +405,7 @@ MISSION_CASES: list[tuple[str, str, dict[str, Any], list[str]]] = [
     ("kana in title", "ANALYZE", {"title": "탐정です"}, ["LANGUAGE"]),
     ("missing example answer", "ANALYZE", {"exampleAnswer": None}, ["REQUIRED"]),
     ("solve answer in hint", "SOLVE", {"hints": None}, ["LEAK"]),
-    ("question too long", "ANALYZE", {"question": HOOK["MON"] + "가" * 400}, ["QUESTION_LENGTH"]),
+    ("question too long", "ANALYZE", {"question": "가" * 400}, ["QUESTION_LENGTH"]),
 ]
 
 
@@ -562,17 +532,20 @@ def test_check_dialogue_exact_codes(
     assert codes(bad) == sorted(expected)
 
 
-def test_dialogue_lines_put_discovery_verbatim_last() -> None:
-    """마지막 줄은 그날 증거 발견 줄 그대로(화자 기본 뭉치), 단서·앞 요일 요약 줄은 없음."""
+def test_dialogue_lines_end_with_discovery_then_hook() -> None:
+    """끝 두 줄은 그날 증거 발견 줄(화자 기본 뭉치)과 뭉치의 수사 연결 문장 그대로, 단서·앞 요일
+    요약 줄은 없음."""
     theme = valid_theme()
-    lines = checks.dialogue_lines(dlg(speaker=""), checks.theme_day(theme, "TUE")["discovery"])
-    assert lines[-1] == {"speaker": "뭉치", "text": DISCOVERY["TUE"]}
-    assert len(lines) == 2 and lines[0]["speaker"] == "지호"
-    assert not any(d["clue"] in x["text"] for d in theme["days"] for x in lines)
+    d = checks.theme_day(theme, "TUE")
+    lines = checks.dialogue_lines(dlg(speaker=""), d["discovery"], d["missionHook"])
+    assert lines[-2] == {"speaker": "뭉치", "text": DISCOVERY["TUE"]}
+    assert lines[-1] == {"speaker": "뭉치", "text": HOOK["TUE"]}
+    assert len(lines) == 3 and lines[0]["speaker"] == "지호"
+    assert not any(x["clue"] in y["text"] for x in theme["days"] for y in lines)
 
 
-def test_llm_line_range_leaves_one_line_for_discovery() -> None:
-    """학년별 줄 수(증거 발견 줄 포함)에서 증거 발견 줄 1줄만 뺌(요약 줄 없음)."""
+def test_llm_line_range_leaves_two_fixed_lines() -> None:
+    """학년별 줄 수(끝 두 줄 포함)에서 증거 발견 줄·수사 연결 문장 2줄을 뺌(요약 줄 없음)."""
     assert {g: llm_line_range(g) for g in (3, 4, 5, 6)} == {
         3: (1, 2),
         4: (1, 2),

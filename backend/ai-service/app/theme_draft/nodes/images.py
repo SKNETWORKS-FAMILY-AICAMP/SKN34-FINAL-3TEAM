@@ -73,11 +73,13 @@ class Drawn:
     warns: list[str] = field(default_factory=list)
 
 
-async def draw(ctx: ThemeContext, theme: Theme, shot: Shot, outfit: bytes) -> Drawn:
+async def draw(
+    ctx: ThemeContext, theme: Theme, shot: Shot, outfit: bytes, seed: list[str] | None = None
+) -> Drawn:
     """그리기 → 검토 → FAIL이면 사유를 넣어 다시(상한·마감). 그림 호출 실패도 사유로 다시."""
     assert ctx.image is not None
     body = ctx.prompt.body
-    feedback: list[str] = []
+    feedback: list[str] = list(seed or [])  # 요청 previousFailures의 IMAGE 사유(처음부터)
     bad: list[str] = []
     for attempt in range(ctx.settings.theme_max_regen + 1):
         if attempt and not ctx.can_regenerate():
@@ -219,7 +221,14 @@ async def generate_images(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
     if outfit is None:
         return {"failure": {"stage": "IMAGE", "reasons": [f"OUTFIT {r}" for r in bad]}}
 
-    first = await draw(ctx, theme, cut_shot(ctx, theme, "INTRO", 1, outfit, None), outfit)
+    image_seed = state.get("image_seed") or {}
+
+    def seed_of(key: str) -> list[str]:
+        return [*image_seed.get(key, []), *image_seed.get("*", [])]
+
+    first = await draw(
+        ctx, theme, cut_shot(ctx, theme, "INTRO", 1, outfit, None), outfit, seed_of("INTRO1")
+    )
     person = first.image  # 인물 기준 그림(시작 1컷이 끝내 실패하면 인물 참조 없이)
     shots = [mission_shot(ctx, theme, d, state["drafts"][d], outfit, person) for d in DAYS]
     shots += [
@@ -231,7 +240,7 @@ async def generate_images(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
     drawn = dict(
         zip(
             [s.key for s in shots],
-            await asyncio.gather(*(draw(ctx, theme, s, outfit) for s in shots)),
+            await asyncio.gather(*(draw(ctx, theme, s, outfit, seed_of(s.key)) for s in shots)),
             strict=True,
         )
     )

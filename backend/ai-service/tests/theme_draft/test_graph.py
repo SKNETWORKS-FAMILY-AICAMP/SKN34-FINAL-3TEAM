@@ -133,10 +133,10 @@ def test_happy_path_assembles_contract_response() -> None:
     # 금요일 안내는 LLM이 만든 그대로(단서는 미션 뒤 learning이 보여 주므로 코드가 넣지 않음)
     fri = response.missions[-1].draft
     assert fri.guide is None
-    # 대화 마지막 줄 = 그날 증거 발견 줄 그대로(화자 기본 뭉치), 단서·요약 줄 없음
+    # 대화 끝 두 줄 = 그날 증거 발견 줄(화자 기본 뭉치)·수사 연결 문장 그대로, 단서·요약 줄 없음
     for dlg_out in response.dialogues:
-        assert dlg_out.lines[-1].speaker == "뭉치"
-        assert dlg_out.lines[-1].text == DISCOVERY[dlg_out.day]
+        assert [x.speaker for x in dlg_out.lines[-2:]] == ["뭉치", "뭉치"]
+        assert [x.text for x in dlg_out.lines[-2:]] == [DISCOVERY[dlg_out.day], HOOK[dlg_out.day]]
         clues = [d.clue for d in response.theme.days]
         assert not any(c in line.text for c in clues for line in dlg_out.lines)
     # 증거 발견 줄·수사 연결 문장은 내부 칸이라 응답 theme에 없음
@@ -158,8 +158,8 @@ def test_happy_path_assembles_contract_response() -> None:
 
 def test_mission_prompt_gets_hook_not_clues() -> None:
     """단서는 학생이 그날 미션을 마친 뒤 보여 주므로 미션 user 글에 그날·앞 요일 단서가 없고, 그날
-    증거 발견 줄·수사 연결 문장과 '질문은 수사 연결 문장으로 시작' 규칙이 있다. 금요일도 큰 질문·
-    후보·단서 목록을 주지 않는다."""
+    증거 발견 줄·수사 연결 문장(대화로 나가니 질문에 다시 쓰지 않는다는 규칙)이 있다. 금요일도
+    큰 질문·후보·단서 목록을 주지 않는다."""
     gen = gen_llm()
     run(gen, review_llm())
     theme = valid_theme()
@@ -168,7 +168,7 @@ def test_mission_prompt_gets_hook_not_clues() -> None:
         user = gen.users("GeneratedDraft", day)[0]
         assert not [c for c in clues if c in user], day
         assert HOOK[day] in user and DISCOVERY[day] in user
-        assert "수사 연결 문장으로 그대로 시작" in user
+        assert "question에 다시 쓰지 않는다" in user
         others = [HOOK[d] for d in DAYS if d != day]
         assert not [h for h in others if h in user]
     fri = gen.users("GeneratedDraft", "FRI")[0]

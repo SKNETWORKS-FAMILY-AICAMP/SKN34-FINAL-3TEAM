@@ -29,7 +29,7 @@ DAY_TYPE = {"MON": "ANALYZE", "TUE": "EVALUATE", "WED": "CREATE", "THU": "SOLVE"
 # 학년별 기준안(#437 본문)
 CANDIDATES = {3: 4, 4: 4, 5: 4, 6: 4}  # 모든 학년 4개(사용자 결정 2026-11-10)
 HINTS = {3: 3, 4: 2, 5: 1, 6: 1}
-DIALOGUE_LINES = {3: (2, 3), 4: (2, 3), 5: (1, 2), 6: (1, 2)}  # 증거 발견 줄 포함
+DIALOGUE_LINES = {3: (3, 4), 4: (3, 4), 5: (2, 3), 6: (2, 3)}  # 끝 두 줄(증거 발견·수사 연결) 포함
 LINE_MAX = 40
 LAST_ELIMINATION_MIN = DAYS.index("THU")  # 마지막 틀린 후보는 목요일 이후(수요일까지 2개 이상 남음)
 # 글자 수 상한(기준안, 학년 공통). 단서는 한 줄 글로 보여 주고(learning이 그날 미션 완료 뒤)
@@ -43,7 +43,7 @@ TEXT_MAX = {
     "sceneNote": 150,
     "clue": LINE_MAX,
     "discovery": LINE_MAX,
-    "missionHook": 60,
+    "missionHook": LINE_MAX,  # 대화 한 줄로 나감(증거 발견 줄 다음, 뭉치)
 }
 DAY_TEXTS = ("place", "sceneNote", "clue", "discovery", "missionHook")
 CUTS = 4  # 시작·종료 영상 콘티 컷 수(4·6·8·6초, theme_video_cut_seconds, 사용자 결정 2026-11-11)
@@ -51,7 +51,6 @@ CAPTION_MAX = 30  # 컷 문구(움직임 captions로 웹이 띄움) 글자 상�
 MUNGCHI_MOODS = ("none", "smile", "surprised", "determined")
 # 시작 콘티 1 평소 모습·2 사건에는 뭉치가 없고 3 출동·4 현장 도착에는 나옴(사용자 결정 2026-11-11)
 INTRO_MUNGCHI = (False, False, True, True)
-HOOK_HEAD = 12  # 미션 질문이 missionHook으로 시작하는지 볼 때 겹칠 앞 글자 수(공백 제외)
 CANDIDATE_CHARS = (2, 10)
 FEATURES = (2, 5)
 CHARACTERS = (1, 3)
@@ -321,11 +320,13 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
                 bad.append(f"REQUIRED {d['day']}.{k}")
             elif len(v) > TEXT_MAX[k]:
                 bad.append(f"LENGTH {d['day']}.{k} {len(v)}자 > {TEXT_MAX[k]}")
-        # 단서는 그날 미션을 마친 뒤 보여 주므로 미션 전 글(증거 발견 줄·수사 연결 문장)은 단서
-        # 결론·후보 이름을 말하지 않는다(정답 이름은 아래 ANSWER_LEAK에서 함께 봄)
+        # 단서는 그날 미션을 마친 뒤 보여 주므로 증거 발견 줄은 단서 결론을 말하지 않는다. 수사 연결
+        # 문장은 그날 배울 개념을 말하는 자리라 개념 낱말이 단서 값과 같을 수밖에 없어
+        # (특징을 성취기준
+        # 내용에서 고름, 실측 repo-fair4-3) 코드로 막지 않고 글 검토(정답 암시)가 본다
+        if early := early_values(d, d.get("discovery")):
+            bad.append(f"CLUE_EARLY {d['day']} discovery에 그날 단서 결론(허용 값 {early})")
         for k in ("discovery", "missionHook"):
-            if early := early_values(d, d.get(k)):
-                bad.append(f"CLUE_EARLY {d['day']} {k}에 그날 단서 결론(허용 값 {early})")
             named = [c for c in cands if c != answer and compact(c) in compact(d.get(k))]
             if named:
                 bad.append(f"ANSWER_LEAK {d['day']}.{k}에 후보 이름 {named}")
@@ -380,22 +381,16 @@ def check_mission(
     question_max: dict[int, int],
     overlap: int,
 ) -> list[str]:
-    """테마 미션 검사: 기존 미션 초안 ai 검사 + 학년별 생각 열기 개수 + 수사 연결 문장으로 시작
-    + 테마 정답 유출 + 언어."""
+    """테마 미션 검사: 기존 미션 초안 ai 검사 + 학년별 생각 열기 개수 + 테마 정답 유출 + 언어.
+
+    수사 연결 문장은 질문이 아니라 문제 앞 대화 마지막 줄로 나간다(질문에 넣으면 증거 내용을 살피게
+    돼 자료 부족·길이 초과로 막혔음, 실측 repo-beach5-3·museum6-3, 사용자 결정 2026-11-11)."""
     bad = [
         f"{f.check} {f.reason}" for f in mission_checks.check(draft, request, question_max, overlap)
     ]
     hints = len([h for h in draft.hints if h.strip()])
     if hints != HINTS[grade]:
         bad.append(f"HINT_COUNT 생각 열기 질문 {hints}개(초{grade}는 {HINTS[grade]}개)")
-    # 질문은 그날 missionHook으로 시작한다(공백 무시 앞 HOOK_HEAD자가 질문 앞부분에 있으면 통과,
-    # 앞에 따옴표 같은 몇 글자가 붙는 것은 허용)
-    day = next(d for d in theme["days"] if d["thinkingType"] == request.thinking_type)
-    hook = compact(day.get("missionHook"))[:HOOK_HEAD]
-    if hook and not overlaps(hook, compact(draft.question)[: 2 * HOOK_HEAD], len(hook)):
-        bad.append(
-            f"HOOK_MISSING {day['day']} 질문이 수사 연결 문장(missionHook)으로 시작하지 않음"
-        )
     key = compact(theme["answer"])
     texts = [
         draft.question,
@@ -416,14 +411,16 @@ def discovery_speaker(generated: dict) -> str:
     return (generated.get("discoverySpeaker") or "").strip() or "뭉치"
 
 
-def dialogue_lines(generated: dict, discovery: str) -> list[dict[str, str]]:
-    """LLM 줄 + 그날 증거 발견 줄 그대로(discoverySpeaker, 기본 뭉치).
+def dialogue_lines(generated: dict, discovery: str, hook: str) -> list[dict[str, str]]:
+    """LLM 줄 + 그날 증거 발견 줄(discoverySpeaker, 기본 뭉치) + 수사 연결 문장(뭉치).
 
     단서는 학생이 그날 미션을 마친 뒤 learning이 보여 주므로 대화에 넣지 않고, 앞 요일 단서
-    요약 줄도 두지 않는다(아직 못 얻은 단서를 흘리므로, 사용자 결정 2026-11-11).
+    요약 줄도 두지 않는다(아직 못 얻은 단서를 흘리므로, 사용자 결정 2026-11-11). 수사 연결 문장은
+    문제 바로 앞에서 왜 오늘 이것을 배우는지 잇는다.
     """
     return [{"speaker": x["speaker"], "text": x["text"]} for x in generated.get("lines") or []] + [
-        {"speaker": discovery_speaker(generated), "text": discovery}
+        {"speaker": discovery_speaker(generated), "text": discovery},
+        {"speaker": "뭉치", "text": hook},
     ]
 
 
@@ -438,17 +435,17 @@ def check_dialogue(
 ) -> list[str]:
     bad = []
     d = theme_day(theme, day)
-    discovery = d["discovery"]
-    lines = dialogue_lines(generated, discovery)
+    discovery, hook = d["discovery"], d["missionHook"]
+    lines = dialogue_lines(generated, discovery, hook)
     llm_lines = generated.get("lines") or []
     lo, hi = DIALOGUE_LINES[grade]
     if not lo <= len(lines) <= hi:
-        bad.append(f"LINE_COUNT {len(lines)}줄(초{grade}는 증거 발견 줄 포함 {lo}~{hi}줄)")
+        bad.append(f"LINE_COUNT {len(lines)}줄(초{grade}는 끝 두 줄 포함 {lo}~{hi}줄)")
     speakers = {"뭉치"} | {c["name"] for c in theme["characters"]}
     if discovery_speaker(generated) not in speakers:
         bad.append(f"DISCOVERY_SPEAKER 증거 발견 줄 화자는 {sorted(speakers)} 중 하나")
-    if any(overlaps(x.get("text"), discovery, overlap) for x in llm_lines):
-        bad.append("DISCOVERY_REPEATED LLM 줄이 증거 발견 줄을 미리 말함")
+    if any(overlaps(x.get("text"), t, overlap) for x in llm_lines for t in (discovery, hook)):
+        bad.append("DISCOVERY_REPEATED LLM 줄이 증거 발견 줄·수사 연결 문장을 미리 말함")
     if early := sorted({v for x in llm_lines for v in early_values(d, x.get("text"))}):
         bad.append(f"CLUE_EARLY {day} 대화 줄이 그날 단서 결론(허용 값 {early})을 미리 말함")
     if any(SPEAKER_PREFIX.match(x["text"]) for x in lines):
@@ -471,14 +468,14 @@ def check_dialogue(
     key = compact(theme["answer"])
     for x in lines:
         text = x["text"]
-        # 질문과 증거 발견 줄은 학생이 이미 보는 글이라 예시 답과 겹쳐도 유출로 보지 않음
+        # 질문과 끝 두 줄은 학생이 이미 보는 글이라 예시 답과 겹쳐도 유출로 보지 않음
         for reason in find_text_leaks(
             text,
             answers,
             draft.forbidden_terms,
             draft.example_answer,
             overlap,
-            [draft.question, discovery],
+            [draft.question, discovery, hook],
         ):
             bad.append(f"LEAK {reason}")
         if numeric and any(mission_checks._has_number(text, n) for n in numeric):

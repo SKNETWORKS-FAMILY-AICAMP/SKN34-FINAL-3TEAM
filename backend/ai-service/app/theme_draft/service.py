@@ -33,6 +33,7 @@ from app.theme_draft.nodes import ThemeContext, ThemeState
 from app.theme_draft.storage import ThemeStorage, new_run_id
 
 DAY_PREFIX = re.compile(r"^(MON|TUE|WED|THU|FRI)\s+(.+)$")
+IMAGE_PREFIX = re.compile(r"^(MON|TUE|WED|THU|FRI|INTRO[1-4]|OUTRO[1-4])\s+(.+)$")
 # 기본 뭉치 그림(기준안, 앱 원본 솜뭉치 그림이 저장되면 바꿈)
 MUNGCHI_IMAGE = Path(__file__).parent / "assets" / "mungchi-2d.png"
 
@@ -62,10 +63,12 @@ def initial_state(request: ThemeDraftRequest) -> ThemeState:
     """previousFailures → 처음부터 넣을 사유. THEME·REVIEW는 줄거리, MISSION은 요일별 미션.
 
     MISSION 사유는 "<요일> <검사 코드> <자세히>"이고 요일이 없으면 다섯 요일 모두에 넣는다.
-    IMAGE 사유는 아직 넣지 않는다(그림 단계에 어떻게 넣을지 정하지 않음).
+    IMAGE 사유는 "<그림 이름> <검사 코드> <자세히>"(그림 이름 MON~FRI·INTRO1~4·OUTRO1~4)면 그
+    그림을 그릴 때마다, 이름이 없으면 모든 그림에 넣는다(설계 "IMAGE는 그림 단계에서 씀").
     """
     plan_feedback: list[tuple[str, list[str]]] = []
     seed: dict[str, list[str]] = {}
+    image_seed: dict[str, list[str]] = {}
     for failure in request.previous_failures:
         if failure.stage in ("THEME", "REVIEW"):
             plan_feedback.append((failure.stage, list(failure.reasons)))
@@ -74,10 +77,17 @@ def initial_state(request: ThemeDraftRequest) -> ThemeState:
                 m = DAY_PREFIX.match(reason.strip())
                 for day in [m.group(1)] if m else DAYS:
                     seed.setdefault(day, []).append(m.group(2) if m else reason.strip())
+        elif failure.stage == "IMAGE":
+            for reason in failure.reasons:
+                m = IMAGE_PREFIX.match(reason.strip())
+                image_seed.setdefault(m.group(1) if m else "*", []).append(
+                    m.group(2) if m else reason.strip()
+                )
     return {
         "plan_feedback": plan_feedback,
         "plan_attempts": 0,
         "request_seed": seed,
+        "image_seed": image_seed,
         "mission_seed": {},
         "review_runs": 0,
     }

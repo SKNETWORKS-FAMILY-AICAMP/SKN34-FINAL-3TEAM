@@ -26,7 +26,7 @@ from tests.theme_draft.helpers import DAY_TYPES, STANDARDS
 
 CANDIDATES = ["놀이터", "텃밭", "창고", "정자"]
 ANSWER = "텃밭"
-# 요일별 (증거 발견 줄, 수사 연결 문장). 미션 질문은 수사 연결 문장으로 시작함
+# 요일별 (증거 발견 줄, 수사 연결 문장). 둘 다 미션 전 대화 끝 두 줄로 나감
 DISCOVERY = {
     "MON": "길에 보리 발자국이 찍혀 있어! 어디로 갔는지 알 수 있을지도 몰라.",
     "TUE": "빵집 아저씨가 보리를 봤대! 그때 모습을 물어보자.",
@@ -34,12 +34,12 @@ DISCOVERY = {
     "THU": "골목에 보리 발자국이 또 있어! 무엇이 묻었는지 살펴보자.",
     "FRI": "가게 앞 사진에 보리가 찍혔대! 자세히 보자.",
 }
-HOOK = {
-    "MON": "발자국 주인이 다닌 곳을 알려면 동물이 사는 환경을 알아야 해. 뭉치에게 알려 줘.",
-    "TUE": "아저씨 말을 잘 들으려면 사실과 의견을 나눌 줄 알아야 해. 뭉치에게 알려 줘.",
-    "WED": "친구가 본 것을 잘 기억하려면 동물의 특징을 살펴봐야 해. 뭉치를 도와줘.",
-    "THU": "발자국 수를 세어 보면 보리가 얼마나 걸었는지 알 수 있어. 뭉치와 함께 계산해 줘.",
-    "FRI": "사진을 보기 전에 이번 주 뭉치의 수사를 돌아보자. 뭉치에게 알려 줘.",
+HOOK = {  # 증거 발견 줄 다음 뭉치의 수사 연결(대화 마지막 줄, 40자 이내)
+    "MON": "발자국을 풀려면 동물이 사는 환경을 알아야 해. 도와줄래?",
+    "TUE": "아저씨 말을 따지려면 사실과 의견을 나눠야 해. 도와줄래?",
+    "WED": "본 것을 기억하려면 동물의 특징을 알아야 해. 도와줄래?",
+    "THU": "발자국 수를 세려면 계산이 필요해. 같이 해 볼래?",
+    "FRI": "사진을 보기 전에 이번 주를 돌아보자. 도와줄래?",
 }
 TYPE_DAY = {t: d for d, t in DAY_TYPES.items()}
 
@@ -210,13 +210,12 @@ def generated_theme(theme: dict[str, Any] | None = None) -> GeneratedTheme:
 def mission_draft(thinking_type: str, hints: int = 3, **overrides: Any) -> GeneratedDraft:
     """초3 미션 초안(생각 열기 3개). SOLVE는 풀이(최종 답), 나머지는 서술.
 
-    질문은 그 요일 수사 연결 문장으로 시작한다(HOOK_MISSING 통과)."""
+    수사 연결 문장은 대화 마지막 줄로 나가므로 질문에 넣지 않는다."""
     code = STANDARDS[thinking_type][0]
     solve = thinking_type == "SOLVE"
     body: dict[str, Any] = {
         "title": "뭉치의 탐정 수첩",
-        "question": HOOK[TYPE_DAY[thinking_type]]
-        + " 뭉치와 지호가 마을 길에서 본 것을 떠올려 보고 까닭과 함께 써 보자.",
+        "question": "뭉치와 지호가 마을 길에서 본 것을 떠올려 보고 까닭과 함께 써 보자.",
         "guide": None,
         "sceneNote": None,
         "choices": None,

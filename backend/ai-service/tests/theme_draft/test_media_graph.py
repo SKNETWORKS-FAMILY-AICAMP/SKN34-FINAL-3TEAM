@@ -156,8 +156,9 @@ def run(
     video: FakeVideoClient | None = None,
     storage: MemoryThemeStorage | None = None,
     deadline_in: float = 900,
+    **body: Any,
 ) -> ThemeDraftResponse:
-    request = ThemeDraftRequest.model_validate(request_body())
+    request = ThemeDraftRequest.model_validate(request_body(**body))
     runner = ThemeDraftGraphRunner(
         gen,
         review,
@@ -291,6 +292,28 @@ def test_image_review_fail_redraws_only_that_image_with_reason() -> None:
     tue = prompts_with(image, "장소 마을 tue 길")
     assert len(tue) == 2 and "SCENE_FIT SCENE_FIT 사유" in tue[1][0]
     assert len(prompts_with(image, "장소 마을 wed 길")) == 1
+
+
+def test_request_image_failures_seed_image_prompts() -> None:
+    """요청 previousFailures의 IMAGE 사유: 그림 이름이 붙으면 그 그림, 없으면 모든 그림의 첫
+    그리기부터 들어감(테마 옷 뭉치는 제외)."""
+    failures = [{"stage": "IMAGE", "reasons": ["TUE MISSION_FIT 녹음기 안 보임", "TEXT 글자 있음"]}]
+    image = FakeImageClient()
+    response = run(
+        gen_llm(),
+        review_llm(),
+        image=image,
+        storage=MemoryThemeStorage(),
+        previousFailures=failures,
+    )
+    assert response.failure is None
+    assert "MISSION_FIT 녹음기 안 보임" not in image.calls[0][0]  # 테마 옷 뭉치
+    assert "TEXT 글자 있음" not in image.calls[0][0]
+    tue = prompts_with(image, "장소 마을 tue 길")
+    assert len(tue) == 1 and "MISSION_FIT 녹음기 안 보임" in tue[0][0]
+    assert "TUE MISSION_FIT" not in tue[0][0]  # 그림 이름은 떼고 넣음
+    assert "MISSION_FIT 녹음기 안 보임" not in prompts_with(image, "장소 마을 wed 길")[0][0]
+    assert all("TEXT 글자 있음" in c[0] for c in image.calls[1:])
 
 
 def test_mission_image_failure_is_image_failure_with_text() -> None:
