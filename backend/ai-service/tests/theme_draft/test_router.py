@@ -83,9 +83,11 @@ def test_service_passes_deadline_from_settings() -> None:
     runner = FakeRunner()
     started = time.monotonic()
     post(request_body(), runner)
+    finished = time.monotonic()
     ((request, deadline),) = runner.calls
     assert request.grade == 3 and request.mission_for("SOLVE").input_type == "SOLUTION_STEPS"
-    assert 899 <= deadline - started <= 901  # 기준안 15분
+    # 기준안 15분. 요청 처리(앱 기동 포함) 시간이 기계마다 달라 요청 전후 시각으로 범위를 잡음
+    assert started + 900 <= deadline <= finished + 900
 
 
 def test_missing_internal_token_is_401() -> None:
