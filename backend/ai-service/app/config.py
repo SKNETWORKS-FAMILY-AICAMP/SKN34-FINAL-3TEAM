@@ -104,7 +104,7 @@ class Settings(BaseSettings):
     image_size: str = "1536x864"  # 16:9 바로 생성(공식 크기 조건 안)
     image_quality: str = "medium"
     theme_image_timeout: float = 280.0  # 그림 1장 상한(기준안, 실측 약 30초)
-    # 영상은 시작·종료만(컷 4개 × 6초). 운영 Google 인증(기준안 WIF)이 정해질 때까지 기본 꺼짐.
+    # 영상은 시작·종료만(컷 4개). 운영 Google 인증(기준안 WIF)이 정해질 때까지 기본 꺼짐.
     # 로컬은 gcloud로 받은 접근 토큰을 VIDEO_ACCESS_TOKEN에 넣어 시험(출력·커밋 금지)
     theme_video_enabled: bool = False
     video_provider: Literal["veo", "fake"] = "veo"
@@ -113,6 +113,10 @@ class Settings(BaseSettings):
     video_location: str = "us-central1"
     video_access_token: SecretStr | None = None
     theme_video_timeout: float = 400.0  # 컷 1개 생성·대기 상한(기준안, 실측 약 115초)
+    # 시작·종료 영상 컷 길이(초, 컷 4개). 첫 그림만 고정하고 0.5초씩 겹쳐 녹아들게 이음
+    # (사용자 결정 2026-11-11, 4+6+8+6-1.5 = 22.5초)
+    theme_video_cut_seconds: list[int] = [4, 6, 8, 6]
+    theme_motion_max_tokens: int = 8000  # 움직임 출력(기준안, 대화와 같은 값)
     asset_s3_bucket: str | None = None
     s3_endpoint_url: str | None = None  # 로컬 MinIO만, 비면 AWS S3
     s3_region: str = "ap-northeast-2"

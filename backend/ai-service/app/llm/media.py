@@ -3,10 +3,11 @@
 #437, class-diagram 5.5 ImageClient·VideoClient.
 
 - 그림: OpenAI images edits(참조 그림 여러 장). 사용량은 THEME_IMAGE로 기록(토큰은 응답 usage).
-- 영상: Google Cloud Veo(시작·끝 그림 고정, 무음). THEME_VIDEO는 core enum에 들어가기 전이라
+- 영상: Google Cloud Veo(첫 그림만 고정, 무음). THEME_VIDEO는 core enum에 들어가기 전이라
   사용량 이벤트를 보내지 않고 로그만 남긴다(ai.md 15.1 사용량). 운영 인증(WIF)은 인프라 확인 전이라
   접근 토큰을 설정으로 받는다(로컬 시험용).
-- 컷 이어 붙이기·장면 뽑기는 imageio-ffmpeg에 들어 있는 ffmpeg 실행 파일로 한다(Docker 수정 없음).
+- 컷 이어 붙이기(0.5초 녹아드는 전환)·장면 뽑기는 imageio-ffmpeg에 들어 있는 ffmpeg 실행 파일로
+  한다(Docker 수정 없음).
 - 시험은 가짜 구현(FakeImageClient·FakeVideoClient)을 쓴다.
 """
 
@@ -40,7 +41,7 @@ class ImageClient(Protocol):
     async def edit(
         self, prompt: str, refs: Sequence[bytes], *, prompt_version: str, deadline: float
     ) -> bytes:
-        """참조 그림(refs)을 넣어 새 그림 1장(PNG 바이트)."""
+        """참조 그림(refs)을 넣어 새 그림 1장(PNG 바이트). refs가 비면 글로만 그린다."""
         ...
 
 
@@ -48,9 +49,16 @@ class VideoClient(Protocol):
     model: str
 
     async def generate(
-        self, prompt: str, first: bytes, last: bytes, *, seconds: int, deadline: float
+        self,
+        prompt: str,
+        first: bytes,
+        last: bytes | None = None,
+        *,
+        seconds: int,
+        deadline: float,
+        negative: str | None = None,
     ) -> bytes:
-        """시작·끝 그림을 고정한 무음 영상 1개(MP4 바이트)."""
+        """첫 그림(first)을 고정한 무음 영상 1개(MP4 바이트). last가 있을 때만 끝 그림도 고정."""
         ...
 
 
@@ -88,15 +96,25 @@ class OpenAIImageClient:
         started = time.monotonic()
         usage = None
         try:
-            response = await self._client.images.edit(
-                model=self.model,
-                image=files,  # type: ignore[arg-type]
-                prompt=prompt,
-                size=self._size,  # type: ignore[arg-type]
-                quality=self._quality,  # type: ignore[arg-type]
-                n=1,
-                timeout=timeout,
-            )
+            if files:
+                response = await self._client.images.edit(
+                    model=self.model,
+                    image=files,  # type: ignore[arg-type]
+                    prompt=prompt,
+                    size=self._size,  # type: ignore[arg-type]
+                    quality=self._quality,  # type: ignore[arg-type]
+                    n=1,
+                    timeout=timeout,
+                )
+            else:  # 참조 그림이 없는 그림(뭉치·인물이 안 나오는 시작 첫 컷)은 글로만 생성
+                response = await self._client.images.generate(
+                    model=self.model,
+                    prompt=prompt,
+                    size=self._size,  # type: ignore[arg-type]
+                    quality=self._quality,  # type: ignore[arg-type]
+                    n=1,
+                    timeout=timeout,
+                )
             usage = response.usage
             data = response.data[0].b64_json if response.data else None
             if not data:
@@ -141,7 +159,11 @@ def image_status(status: int) -> tuple[str, bool]:
 
 
 class VeoVideoClient:
-    """Veo REST(predictLongRunning → fetchPredictOperation 대기). 시험(2026-11-11)과 같은 호출."""
+    """Veo REST(predictLongRunning → fetchPredictOperation 대기). 시험(2026-11-11)과 같은 호출.
+
+    첫 그림만 고정한다(사용자 결정 2026-11-11). 끝 그림까지 고정하면 비슷한 두 그림 사이를
+    억지로 이어 움직임이 흐물거리고 배경이 같아짐(실측). last를 주면 lastFrame도 보낸다.
+    """
 
     def __init__(
         self,
@@ -175,7 +197,14 @@ class VeoVideoClient:
         return response.json()
 
     async def generate(
-        self, prompt: str, first: bytes, last: bytes, *, seconds: int, deadline: float
+        self,
+        prompt: str,
+        first: bytes,
+        last: bytes | None = None,
+        *,
+        seconds: int,
+        deadline: float,
+        negative: str | None = None,
     ) -> bytes:
         began = time.monotonic()
         limit = began + _remaining(deadline, self._timeout)
@@ -186,16 +215,19 @@ class VeoVideoClient:
                 "mimeType": image_mime(data),
             }
 
-        body = {
-            "instances": [{"prompt": prompt, "image": frame(first), "lastFrame": frame(last)}],
-            "parameters": {
-                "aspectRatio": "16:9",
-                "durationSeconds": seconds,
-                "sampleCount": 1,
-                "resolution": "720p",
-                "generateAudio": False,
-            },
+        instance: dict = {"prompt": prompt, "image": frame(first)}
+        if last is not None:
+            instance["lastFrame"] = frame(last)
+        parameters: dict = {
+            "aspectRatio": "16:9",
+            "durationSeconds": seconds,
+            "sampleCount": 1,
+            "resolution": "720p",
+            "generateAudio": False,
         }
+        if negative:
+            parameters["negativePrompt"] = negative
+        body = {"instances": [instance], "parameters": parameters}
         operation = await self._post(f"{self._base}:predictLongRunning", body)
         while time.monotonic() + self._poll < limit:
             await asyncio.sleep(self._poll)
@@ -250,18 +282,27 @@ class FakeImageClient:
 
 
 class FakeVideoClient:
-    """ffmpeg로 만든 아주 작은 진짜 MP4(이어 붙이기·장면 뽑기까지 시험되게)."""
+    """ffmpeg로 만든 아주 작은 진짜 MP4(이어 붙이기·장면 뽑기까지 시험되게). 길이는 seconds."""
 
     def __init__(self, model: str = "fake-video") -> None:
         self.model = model
-        self.calls: list[tuple[str, bytes, bytes]] = []
+        self.calls: list[tuple[str, bytes, bytes | None, int]] = []  # (지시문, 첫, 끝, 초)
+        self.negatives: list[str | None] = []
 
     async def generate(
-        self, prompt: str, first: bytes, last: bytes, *, seconds: int, deadline: float
+        self,
+        prompt: str,
+        first: bytes,
+        last: bytes | None = None,
+        *,
+        seconds: int,
+        deadline: float,
+        negative: str | None = None,
     ) -> bytes:
         _remaining(deadline, 1e9)
-        self.calls.append((prompt, first, last))
-        return await asyncio.to_thread(color_clip, len(self.calls))
+        self.calls.append((prompt, first, last, seconds))
+        self.negatives.append(negative)
+        return await asyncio.to_thread(color_clip, len(self.calls), seconds)
 
 
 # --- ffmpeg -------------------------------------------------------------------------
@@ -324,6 +365,77 @@ def concat_mp4(clips: Sequence[bytes]) -> bytes:
                 "+faststart",
                 str(out),
             ]
+        )
+        return out.read_bytes()
+
+
+FADE_SECONDS = 0.5  # 컷 사이 녹아드는 전환 길이(사용자 결정 2026-11-11)
+
+
+def xfade_starts(durations: Sequence[float], fade: float = FADE_SECONDS) -> list[float]:
+    """녹아드는 전환으로 이은 영상에서 컷 i가 시작하는 시각 = 앞 컷 길이 합 - i × fade."""
+    return [sum(durations[:i]) - i * fade for i in range(len(durations))]
+
+
+def xfade_caption_times(
+    durations: Sequence[float], fade: float = FADE_SECONDS
+) -> list[tuple[float, float]]:
+    """컷마다 문구를 띄울 (시작, 끝) 초. 경계는 겹치는 구간 한가운데(컷 시작 + fade/2).
+
+    첫 컷은 0초부터, 마지막 컷은 영상 끝(컷 합 - 겹침)까지.
+    """
+    starts = xfade_starts(durations, fade)
+    total = sum(durations) - (len(durations) - 1) * fade if durations else 0.0
+    bounds = [0.0] + [s + fade / 2 for s in starts[1:]] + [total]
+    return [(round(bounds[i], 2), round(bounds[i + 1], 2)) for i in range(len(durations))]
+
+
+def join_xfade(
+    clips: Sequence[bytes], durations: Sequence[float], fade: float = FADE_SECONDS
+) -> bytes:
+    """컷들을 fade초씩 겹쳐 녹아들게 이어 한 파일로(libx264·yuv420p·24fps로 다시 인코딩).
+
+    길이 = 컷 길이 합 - (컷 수 - 1) × fade. 컷 길이는 요청한 길이(durations)를 쓴다.
+    """
+    if len(clips) != len(durations) or not clips:
+        raise ValueError("컷 수와 길이 수가 같아야 함")
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp)
+        inputs: list[str] = []
+        for i, clip in enumerate(clips):
+            path = folder / f"{i}.mp4"
+            path.write_bytes(clip)
+            inputs += ["-i", str(path)]
+        parts = [
+            f"[{i}:v]fps=24,format=yuv420p,setsar=1,settb=AVTB[v{i}]" for i in range(len(clips))
+        ]
+        last = "v0"
+        starts = xfade_starts(durations, fade)
+        for i in range(1, len(clips)):
+            parts.append(
+                f"[{last}][v{i}]xfade=transition=fade:duration={fade}:offset={starts[i]:.3f}[x{i}]"
+            )
+            last = f"x{i}"
+        out = folder / "out.mp4"
+        _ffmpeg(
+            [
+                *inputs,
+                "-filter_complex",
+                ";".join(parts),
+                "-map",
+                f"[{last}]",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-r",
+                "24",
+                "-an",
+                "-movflags",
+                "+faststart",
+                str(out),
+            ],
+            timeout=180,
         )
         return out.read_bytes()
 
