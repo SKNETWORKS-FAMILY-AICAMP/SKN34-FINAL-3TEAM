@@ -29,6 +29,8 @@ data class MissionResponse(
     val inputTemplate: List<String>,
     val categories: List<OptionResponse>,
     val answerUnit: String?,
+    /** 장면 그림 움직임 (#438, ai JSON 그대로). sceneUri·staticSceneUri의 ai 키는 learning이 presigned URL로 바꿔 줌 */
+    val sceneMotion: Map<String, Any?>? = null,
 ) {
     companion object
 }
@@ -53,6 +55,7 @@ data class MissionListItemResponse(
     val inputTemplate: List<String>,
     val categories: List<OptionResponse>,
     val answerUnit: String?,
+    val sceneMotion: Map<String, Any?>?,
     /** ProgressStatus 이름 */
     val status: String,
     val attemptId: UUID?,
@@ -77,6 +80,7 @@ data class MissionListItemResponse(
             inputTemplate = mission.inputTemplate,
             categories = mission.categories,
             answerUnit = mission.answerUnit,
+            sceneMotion = mission.sceneMotion,
             status = status,
             attemptId = attemptId,
             position = position,

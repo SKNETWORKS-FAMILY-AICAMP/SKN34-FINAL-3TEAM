@@ -29,7 +29,8 @@ data class AssetProperties(
 
 /**
  * 저장 값 → 브라우저가 여는 URL (class-diagram 4.4 AssetUrls, ERD 4.2.1).
- * ai가 올린 S3 키(`theme-drafts/{실행 ID}/{장면}`)는 단기 presigned GET URL로, 사람이 넣은 주소(`http(s)://`·`/`)는 그대로.
+ * ai가 올린 S3 키(`theme-drafts/{실행 ID}/{장면}`)만 단기 presigned GET URL로 바꾸고, 그 밖의 값(사람이 넣은 주소·경로)은 지금처럼 그대로.
+ * 관리자 화면은 장면 칸을 자유 글로 받아 기존 값의 형식을 알 수 없으므로 접두어로만 구분한다.
  * 서명은 로컬 계산이라 S3를 부르지 않는다. 응답마다 새로 서명하므로 주소가 바뀌고, 임시 자격 증명이면 그 만료 때 URL도 만료될 수 있다
  */
 class AssetUrls(
@@ -49,10 +50,10 @@ class AssetUrls(
             .build()
     }
 
-    /** 빈 값은 null, 주소는 그대로, S3 키는 presigned URL(버킷 설정이 없으면 null) */
+    /** 빈 값은 null, ai 키(`theme-drafts/…`)는 presigned URL(버킷 설정이 없으면 null), 그 밖은 그대로 */
     fun url(stored: String?): String? = when {
         stored.isNullOrBlank() -> null
-        stored.startsWith("http://") || stored.startsWith("https://") || stored.startsWith("/") -> stored
+        !stored.startsWith(KEY_PREFIX) -> stored
         else -> presigner?.presignGetObject { request ->
             request.signatureDuration(properties.urlTtl).getObjectRequest { it.bucket(properties.bucket).key(stored) }
         }?.url()?.toString()
@@ -60,6 +61,11 @@ class AssetUrls(
 
     override fun close() {
         presigner?.close()
+    }
+
+    companion object {
+        /** ai가 테마 초안 그림·영상을 올리는 키 접두어 (api-spec 4.2) */
+        const val KEY_PREFIX = "theme-drafts/"
     }
 }
 

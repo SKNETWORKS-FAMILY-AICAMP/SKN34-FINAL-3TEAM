@@ -19,15 +19,7 @@ class HintSpotListTypeHandler(objectMapper: ObjectMapper) : JacksonJsonbTypeHand
     objectMapper, objectMapper.typeFactory.constructCollectionType(List::class.java, HintSpot::class.java),
 )
 
-/** weekly_theme_version.intro_motion·outro_motion, mission_version.scene_motion: ai가 정한 움직임 JSON 객체 그대로 (#438) */
-class MotionTypeHandler(objectMapper: ObjectMapper) : JacksonJsonbTypeHandler<Map<String, Any?>>(
-    objectMapper, objectMapper.typeFactory.constructMapType(Map::class.java, String::class.java, Any::class.java),
-)
-
-/**
- * 구체 타입으로 등록하고 XML typeHandler로 지정. 움직임의 Map<String, Any?>는 판정 ContentMapTypeHandler와 같은 타입이라 전역 매핑이 겹치지만
- * 둘 다 같은 방식으로 읽고 쓰며, 각 XML이 자기 핸들러 클래스를 지정한다
- */
+/** 구체 타입으로만 등록하고 XML typeHandler로 지정. 움직임 JSON은 mission.repository.MotionTypeHandler(미션 장면과 함께 씀) */
 @Configuration(proxyBeanMethods = false)
 class ThemePersistenceConfig {
     @Bean
@@ -35,7 +27,6 @@ class ThemePersistenceConfig {
         configuration.typeHandlerRegistry.apply {
             register(object : TypeReference<List<DialogueLine>>() {}, DialogueListTypeHandler(objectMapper))
             register(object : TypeReference<List<HintSpot>>() {}, HintSpotListTypeHandler(objectMapper))
-            register(object : TypeReference<Map<String, Any?>>() {}, MotionTypeHandler(objectMapper))
         }
     }
 }

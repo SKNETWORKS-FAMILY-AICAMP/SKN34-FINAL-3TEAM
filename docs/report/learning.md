@@ -993,7 +993,7 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 | 다시 생성 | 같은 `input`·학년·주로 새 초안(`source = ADMIN`, attempts 0), 원래 초안은 그대로. `READY`·`CHECK_FAILED`·`FAILED`·`DISCARDED`에서만, `GENERATING`·`ADOPTED`는 409 | 사용자 결정 2026-11-10. 미션 초안 상태도 3.4 "되살리지 않고 새로 요청"과 같고, 자동 초안 부분 UK와도 부딪히지 않음 |
 | 이미지·영상 URL | DB에는 ai가 올린 S3 키를 두고, 응답 때 learning이 단기 presigned URL로 바꿈(AWS SDK S3 presigner 의존성 추가). core는 그대로 전달 | 사용자 결정 2026-11-10. 리포트 PDF 다운로드(report presigned, core 전달)와 같은 방식이고 core #439 가정("URL은 learning 응답에서")과 같음. core에는 S3 연결이 없음 |
 | URL 유효기간 (기준안) | 1시간(`app.assets.url-ttl`, 1초~3600초) | 학생이 테마 화면·영상을 보는 동안 열려 있어야 함. 리포트 다운로드 300초는 바로 받는 파일이라 짧음. 상한은 report와 같은 3600초 |
-| 사람이 넣은 장면 주소 | `http(s)://`·`/`로 시작하면 그대로, 그 밖은 S3 키로 보고 presign | 기존 미션 `sceneUri`는 저장 값을 그대로 내보냄. 데모·수동 미션 동작을 바꾸지 않음 |
+| 사람이 넣은 장면 주소 | ai 키(`theme-drafts/`로 시작)만 presign, 그 밖의 값(`http(s)://`·`/`·상대 경로 등)은 지금처럼 그대로 | 기존 미션 `sceneUri`는 저장 값을 그대로 내보냄. 관리자 화면이 장면 칸을 자유 글로 받아 운영·kind DB 값의 형식을 알 수 없어, 처음 정한 "`http(s)://`·`/`가 아니면 S3 키"로 하면 상대 경로가 버킷 설정이 없는 환경에서 null이 될 수 있음(구현 3에서 좁힘) |
 | 문제 전 영상 위치 | 미션이 아니라 테마 요일 칸(`weekly_theme_day.video_uri`). 응답은 시도 시작·이어하기의 `themeScene.videoUrl`만(관리자 응답 미리보기 URL은 별도) | 같은 미션이 학년별 테마 여럿(`G3`·`G4` 복사)에 들어갈 수 있어 미션 응답에 넣으면 어느 테마 영상인지 정할 수 없음 |
 | 정답 구조 공개 | 요일 단서는 그 요일이 `OPEN`·`CLOSED`일 때(기준안). 종료 이야기·정답·결정적 단서·종료 장면은 엔딩 상태일 때만 넣고, 엔딩 여부는 한 곳(`ThemeEnding`)에서 판단. #484 전까지는 토·일을 엔딩으로 봄 | 주간 테마 규칙 개정 #483(2026-11-10 팀 공유): 엔딩 = 큰 질문 정답 맞힘 즉시, 틀리면 토요일 다시 풀기 뒤. 정답 고르기·엔딩 판정은 learning #484 몫으로 두기로 함(사용자 결정 2026-11-10). 공개 칸과 판단 자리만 #438에 두면 #484는 판단만 바꾸면 됨 |
 | 시작 이야기 시점 | 온보딩 영상처럼 그 주 처음 들어왔을 때 한 번(월~토, 일요일 제외). INTRO 열람 기록을 월~토에 받고, `intro`(글)는 #385의 '월요일만'에서 매일 채움으로 바꿈. 시작 그림·영상·움직임 URL도 주 내내 | 사용자 결정 2026-11-10(에픽 '월요일 첫 진입'에서 바꿈), #483 팀 규칙의 '그 주 월~토 첫 진입(기준안)'과 같음. 월요일에 안 온 학생도 이야기를 처음부터 봄. 일요일은 #483에서 테마가 닫혀 뺌 |
@@ -1069,7 +1069,7 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 
 | 위치 | 내용 |
 |---|---|
-| `_common/storage/AssetUrls.kt` | `AssetProperties`(`app.assets.bucket`·`region`·`public-endpoint`·`url-ttl`, 1초~1시간), S3 키 → presigned GET URL(공개 주소가 있으면 경로 방식), `http(s)://`·`/`는 그대로, 버킷이 비면 null. AWS SDK `software.amazon.awssdk:s3` 2.56.0(netty·apache HTTP 클라이언트 제외, 서명만) |
+| `_common/storage/AssetUrls.kt` | `AssetProperties`(`app.assets.bucket`·`region`·`public-endpoint`·`url-ttl`, 1초~1시간), ai 키(`theme-drafts/`) → presigned GET URL(공개 주소가 있으면 경로 방식), 그 밖은 그대로, 버킷이 비면 ai 키는 null. AWS SDK `software.amazon.awssdk:s3` 2.56.0(netty·apache HTTP 클라이언트 제외, 서명만) |
 | `theme/domain` | `ThemeStory`·`DialogueLine`·`HintSpot`, `ThemeDayMission` 요일 칸, `ThemeAnswerRules`(정답 논리·새로 빼는 날·생각 열기 위치·결정적 단서), `ThemeCarryOver`(작성 정리·수정 이어받기), `ThemeEnding`(#484 전까지 토·일), `StoryViewResult`·`ThemeStoryKind` |
 | `theme/repository` | 버전·요일 새 칸 저장·조회, `findContent`(이어받기용), 이야기 열람 기록·조회, 학생 삭제에 `theme_story_view`. jsonb 핸들러 `DialogueListTypeHandler`·`HintSpotListTypeHandler`·`MotionTypeHandler` |
 | `theme/service` | 관리자: 작성 정리·수정 이어받기 → 정답 논리·생각 열기 위치(그날 미션 현재 기준표 순번) 검사 400, 응답에 저장 값 + 미리보기 URL. 학생: `intro` 매일, 큰 질문·후보, 공개된 요일 단서, 엔딩일 때만 종료 이야기·정답·결정적 단서·종료 장면, 시작 장면 URL, `introSeen`·`outroSeen`, `recordStoryView`(INTRO 월~토, OUTRO 엔딩이고 일요일 아님, 409 `THEME_STORY_NOT_ALLOWED`) |
@@ -1079,3 +1079,19 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 
 - 테스트: `AssetUrlsTest`(공개 주소 경로 방식·AWS 주소·그대로·null·유효기간 범위), `ThemeAnswerRulesTest`(정답 논리 위반 모음, 정답 빼기·이미 빠진 후보 다시 빼기, 구조 함께·없을 때 rulesOut, 작성 중, 생각 열기 위치, 결정적 단서, 이어받기·비우기, 미션 바꾼 요일, 후보 비우면 rulesOut 비움, 엔딩 토·일), `WeeklyThemeAdminServiceTest`(새 칸 저장·응답, 지금 웹처럼 제목만 고쳐도 내용 유지, 빈 값 비우기, 미션 바꾼 요일 위치 버림, 정답 논리·생각 열기 위치 400, 수정도 합친 결과로 검사), `WeeklyThemeServiceTest`(평일 공개 요일 단서만·결말 숨김, 토요일 결말·정답·결정적 단서·종료 장면 URL, 이야기 열람 요일 규칙·멱등·다음 주 초기화·404), `WeeklyThemeControllerTest`(이야기 열람 본문·400·403), `StudentDeletionTest`(`theme_story_view` 삭제)
 - 관리자 미션 화면의 장면 값·테마 미션 `sceneMotion`·`themeScene`은 다음 단계(시도·미션 응답)
+
+### 구현 3: 시도·미션 응답
+
+| 위치 | 내용 |
+|---|---|
+| `mission/domain` | `MissionView.sceneMotion`, `MissionCommand.sceneMotion`(테마 초안 채택만 채움)·`carryMotion`(관리자 수정 때 장면이 같으면 현재 버전 움직임을 이어받고 장면을 바꾸면 비움), `MissionScene` |
+| `mission/repository`·매퍼 | 학생 미션 조회에 `scene_motion`, 버전 저장에 `scene_motion`, 현재 버전 장면 조회 `findCurrentScene`. 움직임 JSON 핸들러 `MotionTypeHandler`를 mission 쪽으로 옮김(theme이 mission을 참조하는 방향) |
+| `mission/service/MissionService` | 학생용 조회(`listForStudent`·`get`·`getVersion`·`preview`)에서 장면 ai 키를 presigned URL로(`withSceneUrls`), 관리자 수정에 `carryMotion` |
+| 응답 | 공유 `MissionResponse`·`MissionListItemResponse`에 `sceneMotion`(미션·시도·기록 변환 세 곳). 시도 상세·응답에 `themeScene{dialogue, hintSpots, videoUrl}`(`WeeklyThemeService.scene`: 시도 테마 게시본, 없으면 현재본의 그 미션 요일. EXTRA는 null) |
+| `AssetUrls` | 서명 대상을 ai 키(`theme-drafts/` 접두어)로 좁힘(위 결정 "사람이 넣은 장면 주소") |
+| 계약 | learning OpenAPI `Mission.sceneMotion`, `Attempt.themeScene`, `ThemeScene` |
+
+- 결정: 장면 URL 변환은 컨트롤러 세 곳(미션·시도·기록)과 관리자 미리보기에서 따로 하지 않고 MissionService 학생용 조회 한 곳에서 함. 판정·답변도 `getVersion`을 쓰지만 장면 칸은 읽지 않고 서명은 로컬 계산이라 비용이 작음. 관리자 미션 조회(`getForAdmin`)는 다른 타입이라 저장 값 그대로
+- 테스트: `MissionServiceTest`(학생 조회의 ai 키 presign, 그 밖 값·움직임 그대로), `AdminMissionServiceTest`(장면이 같으면 움직임 이어받기·장면 바꾸면 비움·관리자 응답 장면 저장 값), `AttemptThemeStartTest`(테마 시도 `themeScene` 대화·위치·영상 URL, EXTRA는 null), `AssetUrlsTest`(상대 경로 그대로)
+- core OpenAPI `Mission`·시도 응답에 `sceneMotion`·`themeScene`을 더하는 일은 core 몫(#439 "core는 그대로 넘기므로 core OpenAPI만 맞춤")
+- 기존 테스트 수정: 미션 응답 JSON 칸 목록을 고정한 `MissionControllerTest`·`SharedResponsesJsonTest`에 `sceneMotion`을 더함(의도한 계약 추가)

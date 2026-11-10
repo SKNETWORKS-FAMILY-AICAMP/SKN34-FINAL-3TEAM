@@ -10,6 +10,7 @@ import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.ReviewViewResult
 import com.sagomungchi.learning.theme.domain.StoryViewResult
 import com.sagomungchi.learning.theme.domain.ThemeEnding
+import com.sagomungchi.learning.theme.domain.ThemeScene
 import com.sagomungchi.learning.theme.domain.ThemeStoryKind
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeDayView
@@ -123,6 +124,17 @@ class WeeklyThemeService(
         val theme = repository.findLatestPublished(grade, week) ?: notFound()
         val first = repository.recordStoryView(studentId, week, kind.name, theme.id, Instant.now(clock).truncatedTo(ChronoUnit.MICROS))
         return StoryViewResult(kind, first)
+    }
+
+    /**
+     * 테마 시도의 문제 장면 (#438, api-spec 4.1 themeScene). 시도에 저장된 테마의 게시본(없으면 현재본)에서 그 미션의 요일 칸.
+     * 테마가 그 미션을 더는 담지 않으면(재게시로 바뀜) 모두 null
+     */
+    @Transactional(readOnly = true)
+    fun scene(themeId: UUID, missionId: UUID): ThemeScene {
+        val theme = repository.findHeader(themeId) ?: return ThemeScene(null, null, null)
+        val day = repository.findDays(theme.publishedVersionId ?: theme.currentVersionId).firstOrNull { it.missionId == missionId }
+        return ThemeScene(day?.dialogue, day?.hintSpots, assetUrls.url(day?.videoUri))
     }
 
     /**

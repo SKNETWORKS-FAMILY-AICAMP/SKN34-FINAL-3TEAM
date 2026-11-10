@@ -22,6 +22,7 @@ import org.mockito.Mockito.mock
 import org.springframework.http.HttpStatus
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class MissionServiceTest {
     private val student = UUID.randomUUID()
@@ -47,8 +48,22 @@ class MissionServiceTest {
     private fun service(mapper: FakeMapper) =
         MissionService(
             MissionRepository(mapper, mock(AdminMissionMapper::class.java)), mock(RubricRepository::class.java),
-            mock(AchievementStandardRepository::class.java),
+            mock(AchievementStandardRepository::class.java), com.sagomungchi.learning.TestAssets.urls,
         )
+
+    @Test
+    fun `학생 조회는 장면의 ai 키를 presigned URL로 바꾸고 다른 값과 움직임은 그대로 (#438)`() {
+        val themed = missionView(grade = 3, sortOrder = 1).copy(
+            sceneUri = "theme-drafts/run/MON.png", staticSceneUri = "/scenes/still.png", sceneMotion = mapOf("pan" to "left"),
+        )
+        val service = service(FakeMapper(listOf(themed)))
+
+        val item = service.listForStudent(UUID.randomUUID(), 3, false).single().mission
+        assertTrue(item.sceneUri!!.startsWith(com.sagomungchi.learning.TestAssets.BASE + "theme-drafts/run/MON.png?"), item.sceneUri)
+        assertEquals("/scenes/still.png", item.staticSceneUri)
+        assertEquals(mapOf("pan" to "left"), item.sceneMotion)
+        assertEquals(item.staticSceneUri, service.get(themed.id, 3, false).staticSceneUri)
+    }
 
     @Test
     fun `목록은 학생 학년 미션만 순서대로, 위치와 전체 수를 붙임`() {

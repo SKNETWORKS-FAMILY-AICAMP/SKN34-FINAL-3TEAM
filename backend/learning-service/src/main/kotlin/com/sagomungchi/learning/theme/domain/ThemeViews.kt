@@ -54,6 +54,12 @@ data class ThemeDayView(
     val rulesOut: List<String>? = null,
 )
 
+/**
+ * 테마 문제 장면 (#438, api-spec 4.1): 시도의 테마 게시본에서 그 미션 요일의 문제 전 대화, 그림 위 생각 열기 위치, 문제 전 영상 URL.
+ * 칸이 비면 null. 생각 열기 자체는 순서대로 하나씩 여는 기존 동작 그대로이고 hintSpots는 표시 위치만
+ */
+data class ThemeScene(val dialogue: List<DialogueLine>?, val hintSpots: List<HintSpot>?, val videoUrl: String?)
+
 /** 시작·종료 이야기 (#438, theme_story_view.kind) */
 enum class ThemeStoryKind { INTRO, OUTRO }
 

@@ -31,8 +31,8 @@
             <arg column="outro_image_uri" javaType="java.lang.String"/>
             <arg column="intro_video_uri" javaType="java.lang.String"/>
             <arg column="outro_video_uri" javaType="java.lang.String"/>
-            <arg column="intro_motion" javaType="java.util.Map" typeHandler="com.sagomungchi.learning.theme.repository.MotionTypeHandler"/>
-            <arg column="outro_motion" javaType="java.util.Map" typeHandler="com.sagomungchi.learning.theme.repository.MotionTypeHandler"/>
+            <arg column="intro_motion" javaType="java.util.Map" typeHandler="com.sagomungchi.learning.mission.repository.MotionTypeHandler"/>
+            <arg column="outro_motion" javaType="java.util.Map" typeHandler="com.sagomungchi.learning.mission.repository.MotionTypeHandler"/>
             <arg column="big_question" javaType="java.lang.String"/>
             <arg column="candidates" javaType="java.util.List" typeHandler="com.sagomungchi.learning.mission.repository.StringListTypeHandler"/>
             <arg column="answer" javaType="java.lang.String"/>
@@ -161,8 +161,8 @@
                                           candidates, answer, answer_clue, created_by, created_at)
         VALUES (#{id}, #{themeId}, #{version}, #{title}, #{intro}, #{story.outro}, #{story.introImageUri}, #{story.outroImageUri},
                 #{story.introVideoUri}, #{story.outroVideoUri},
-                #{story.introMotion,typeHandler=com.sagomungchi.learning.theme.repository.MotionTypeHandler,jdbcType=OTHER},
-                #{story.outroMotion,typeHandler=com.sagomungchi.learning.theme.repository.MotionTypeHandler,jdbcType=OTHER},
+                #{story.introMotion,typeHandler=com.sagomungchi.learning.mission.repository.MotionTypeHandler,jdbcType=OTHER},
+                #{story.outroMotion,typeHandler=com.sagomungchi.learning.mission.repository.MotionTypeHandler,jdbcType=OTHER},
                 #{story.bigQuestion},
                 #{story.candidates,typeHandler=com.sagomungchi.learning.mission.repository.StringListTypeHandler,jdbcType=OTHER},
                 #{story.answer}, #{story.answerClue}, #{createdBy}, #{now})

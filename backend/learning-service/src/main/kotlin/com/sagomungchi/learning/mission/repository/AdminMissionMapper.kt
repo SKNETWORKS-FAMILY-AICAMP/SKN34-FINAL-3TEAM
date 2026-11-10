@@ -34,6 +34,8 @@ interface AdminMissionMapper {
         @Param("source") source: MissionSource,
         @Param("now") now: Instant,
     ): Int
+    /** 현재 버전 장면·움직임 (#438) */
+    fun findCurrentScene(missionId: UUID): com.sagomungchi.learning.mission.domain.MissionScene?
     fun insertVersion(
         @Param("id") id: UUID,
         @Param("missionId") missionId: UUID,

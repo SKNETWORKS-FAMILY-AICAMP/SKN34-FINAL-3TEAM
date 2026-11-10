@@ -2596,7 +2596,7 @@ components:
         label: {type: string}
     Mission:
       type: object
-      required: [id, title, subject, grade, gradeMax, thinkingType, inputType, question, hint, sceneUri, staticSceneUri, choices, inputTemplate, categories, answerUnit]
+      required: [id, title, subject, grade, gradeMax, thinkingType, inputType, question, hint, sceneUri, staticSceneUri, choices, inputTemplate, categories, answerUnit, sceneMotion]
       properties:
         id: {type: string, format: uuid}
         title: {type: string}
@@ -2607,8 +2607,9 @@ components:
         inputType: {$ref: '#/components/schemas/InputType'}
         question: {type: string}
         hint: {type: [string, 'null'], description: 미션 안내 (mission_version.guide)}
-        sceneUri: {type: [string, 'null']}
-        staticSceneUri: {type: [string, 'null']}
+        sceneUri: {type: [string, 'null'], description: '장면. ai 키(theme-drafts/…)는 learning이 단기 presigned URL로 바꿈(#438), 그 밖은 저장 값 그대로'}
+        staticSceneUri: {type: [string, 'null'], description: 움직임 줄이기 장면. sceneUri와 같은 규칙}
+        sceneMotion: {$ref: '#/components/schemas/ThemeMotion'}
         choices:
           type: array
           items: {$ref: '#/components/schemas/Choice'}
@@ -2665,7 +2666,7 @@ components:
     Attempt:
       type: object
       additionalProperties: false
-      required: [attemptId, studentId, mission, status, finishedAt, answers, helped, draft, nextActions, reveal, revealKind, checklist, reflection]
+      required: [attemptId, studentId, mission, status, finishedAt, answers, helped, draft, nextActions, reveal, revealKind, checklist, reflection, themeScene]
       properties:
         attemptId: {type: string, format: uuid}
         studentId: {type: string, format: uuid}
@@ -2697,6 +2698,20 @@ components:
           oneOf:
             - $ref: '#/components/schemas/Reflection'
             - type: 'null'
+        themeScene:
+          description: >-
+            테마 시도(context THEME_DAY·THEME_REVIEW)의 문제 장면(#438). 그 시도 테마 게시본의 그 미션 요일 값, EXTRA는 null.
+            생각 열기는 순서대로 하나씩 여는 기존 동작 그대로이고 hintSpots는 그림 위 표시 위치만
+          oneOf:
+            - $ref: '#/components/schemas/ThemeScene'
+            - type: 'null'
+    ThemeScene:
+      type: object
+      required: [dialogue, hintSpots, videoUrl]
+      properties:
+        dialogue: {type: [array, 'null'], items: {$ref: '#/components/schemas/DialogueLine'}}
+        hintSpots: {type: [array, 'null'], items: {$ref: '#/components/schemas/HintSpot'}}
+        videoUrl: {type: [string, 'null'], description: 문제 전 영상 presigned URL}
     AnswerItem:
       type: object
       additionalProperties: false

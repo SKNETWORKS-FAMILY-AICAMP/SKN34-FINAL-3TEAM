@@ -49,6 +49,8 @@ data class AttemptDetail(
     val feedbacks: Map<UUID, FeedbackResult>,
     val revealed: FinishResult?,
     val reflection: Reflection?,
+    /** 테마 시도(THEME_DAY·THEME_REVIEW)의 문제 장면 (#438). EXTRA는 null */
+    val themeScene: com.sagomungchi.learning.theme.domain.ThemeScene? = null,
 )
 
 /** 시도와 답변 타임라인(버전 순, 각 답변이 답한 되묻기 질문 포함) */
@@ -114,6 +116,8 @@ class AttemptService(
             feedbacks = feedbacks,
             revealed = attempt.finishedAt?.let { revealed(attempt, it, mission, answers, feedbacks) },
             reflection = attemptRepository.findReflection(attempt.id),
+            themeScene = attempt.themeId?.takeIf { attempt.context != AttemptContext.EXTRA }
+                ?.let { weeklyThemeService.scene(it, attempt.missionId) },
         )
     }
 
