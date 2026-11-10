@@ -58,11 +58,14 @@ class RecordController(private val service: RecordService) {
         @RequestParam(required = false) status: AttemptStatus?,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "20") size: Int,
+        @RequestParam(defaultValue = "false") includeModelScores: Boolean,
     ): RecordPageResponse {
         requireStudentRecord(studentId)
+        // 판정 모델 점수는 report 주기 작업(SYSTEM)만: core는 학부모·학생 응답을 그대로 넘기고 ai 분석 대화도 이 경로를 읽음 (#478)
+        if (includeModelScores) requireRole(SYSTEM_ROLES)
         requirePage(page, size)
         val period = Period.of(from, to)
-        return RecordPageResponse.from(studentId, period, service.attempts(studentId, period, status, page, size))
+        return RecordPageResponse.from(studentId, period, service.attempts(studentId, period, status, page, size, includeModelScores))
     }
 
     /** 일일 리포트용 완료일 조회. 기존 학부모 기록의 제출일 집계는 변경하지 않는다. */
@@ -188,5 +191,6 @@ class RecordController(private val service: RecordService) {
         private const val MAX_GRADE = 6L
         private val STUDENT_RECORD_ROLES = setOf("PARENT", "STUDENT", "SYSTEM")
         private val STATS_ROLES = setOf("ADMIN", "SYSTEM")
+        private val SYSTEM_ROLES = setOf("SYSTEM")
     }
 }
