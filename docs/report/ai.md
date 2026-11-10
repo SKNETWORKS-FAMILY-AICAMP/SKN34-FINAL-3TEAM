@@ -623,6 +623,8 @@ MODEL_REGISTER 감사 detail에 source·jsonSha256·manifestSha256·modifiedFiel
 
 ### 11.3 파일을 읽고 요청을 만드는 순서
 
+S3 산출물을 먼저 준비할 때는 [전체 SHA-256 업로드 절차](model-artifact-upload.md)를 따른다. 기존 manifest와 로컬 원본 대조 → 단일 PutObject → S3 전체 SHA-256 확인 → 사전 검사 순서다. manifest의 파일 해시를 등록 감사에 저장하는 것과 S3가 전체 체크섬을 보유하는 것은 별개다. 기존 모델의 체크섬 보완 때문에 같은 모델을 다시 등록하거나 활성화하지 않는다.
+
 1. registration_1103.json 원본 바이트를 읽어 SHA-256을 계산한다. `file.arrayBuffer()` → `crypto.subtle.digest('SHA-256', buffer)` → 소문자 16진수 64자리. BOM·공백·개행을 포함한 원본 파일 그대로이며 파싱/재직렬화한 JSON으로 계산하지 않는다.
 2. 파싱한 requests[]를 모델별 카드로 만든다. 최상위 설명(title/version/date/author/주의/<버킷>)은 POST 본문에 보내지 않는다. requests[]의 승인 관련 값이나 알 수 없는 필드는 가져오기 단계에서 거부한다.
 3. 선택한 manifest도 원본 바이트로 해시한다. name/version/scope를 대조하고 해당 모델 files[]만 고른다. manifest가 없으면 manifestSha256 생략, artifactFiles는 []다.
@@ -817,6 +819,8 @@ scoring의 읽기 전용 파일·메타데이터 검사, core 관리자 동기 �
 
 따라서 기존 AWS 객체가 multipart COMPOSITE이거나 SHA-256을 저장하지 않았다면 사전 검사가 실패할 수 있다. 객체를 임의로 다시 업로드하거나 운영 모델을 교체하지 않았다. 업로드 방식 보완이 필요하면 #212 담당자와 해당 객체 상태를 확인한 뒤 별도로 반영한다.
 
+2026-11-10 #493에서 단일 PutObject에 전체 원본 SHA-256을 명시하는 방식으로 정했다([12.9](#129-전체-sha-256-업로드-방식-결정-493)). 이후 사용자 추가 지시로 기존 두 모델 12개 객체의 실제 S3 보완과 CloudShell 자격 증명의 사전 검사 PASS를 확인했다([12.10](#1210-aws-s3-보완과-cloudshell-사전-검사-493)). 실제 Pod 검증은 남아 있다.
+
 저장소의 `scoring-s3-read` IAM 정책은 s3:ListBucket·s3:GetObject를 허용한다. 사용 API는 HeadObject·GetObject이며 새 쓰기 권한은 필요 없다. JSON GET은 If-Match로 고정하여 GetObjectVersion 권한을 요구하지 않는다. SSE-KMS 객체의 checksum 조회에는 추가 KMS 권한이 필요할 수 있다. #212 문서의 Pod Identity·S3 Gateway 경로를 검토했고, 2026-11-09 AWS 콘솔 CloudShell에서 실제 IAM 연결·정책과 S3 객체 HEAD를 조회했다. 배포·정책 수정은 하지 않았다. NetworkPolicy YAML/JSON 검증은 실제 클러스터 통신 검증과 구분한다.
 
 ### 12.4 로컬 재현
@@ -883,6 +887,8 @@ AWS 실제 역할 연결·정책 및 객체 HEAD 확인까지 완료했다. 다�
 
 남은 조치: #212 업로드 담당자와 전체 파일 SHA-256을 S3에 제공하는 업로드 방식을 맞추고, 서비스 재가동 시 실제 scoring Pod의 읽기·통신을 확인한다. 체크섬 검사 완화, 가중치 다운로드, 운영 객체 재업로드, 정책 변경, 서비스 재가동은 수행하지 않았다.
 
+위 기록은 11/09 읽기 전용 확인 결과로 보존한다. 이후 업로드 방식 결정과 11/10 실제 S3 보완 결과는 [#493 업로드 안내](model-artifact-upload.md)에 별도로 기록했다.
+
 ### 12.8 kind 확인 (2026-11-10)
 
 local kind에 배포된 이미지(develop `ecc6b71d`)로 core → scoring → MinIO 경로를 다시 확인했다. 확인용 모델은 학습하지 않은 작은 BERT 형태(출력 9개, 회귀)다. scoring Pod 안에서 만들어 실제 로더로 불러지는 것까지 확인했다. 이 모델을 `sagomungchi-local-models`에 `ChecksumSHA256`을 붙여 올렸다.
@@ -895,6 +901,28 @@ local kind에 배포된 이미지(develop `ecc6b71d`)로 core → scoring → Mi
 
 - 감사 `MODEL_PREFLIGHT`는 SUCCESS 1·FAILURE 2였고, 자동 등록된 MODEL 행은 0이다. 확인 후 MinIO 객체를 지웠다
 - AWS는 실행하지 않았다. 남은 S3 SHA-256 업로드 방식 결정과 실제 Pod 확인은 #493으로 분리했다
+
+### 12.9 전체 SHA-256 업로드 방식 결정 (#493)
+
+2026-11-10 develop `fd119af1` 기준. 모델별 6개 파일을 `aws s3api put-object`로 단일 업로드하고, 원본 전체 SHA-256의 Base64 값을 명시한다. 현재 약 443MB 가중치는 단일 PUT 한도 안에 있다. multipart SHA-256은 COMPOSITE라 기존 사전 검사 계약을 만족하지 못한다.
+
+- [업로드 안내](model-artifact-upload.md): 공식 근거, 신규 객체 명령, 기존 서술 3.0·논술 3.1의 동일 원본 보완 방침, 메타데이터 보존·동시 변경 방지·복구 및 실제 Pod 확인 절차
+- [로컬 준비 도구](../../scripts/prepare_model_upload.py): 기존 manifest 기반 사전 검사 요청과 로컬 6개 파일을 크기·SHA-256으로 대조하고 업로드 계획만 생성. AWS 접속·업로드·등록·활성화 기능 없음
+- 기존 두 모델은 아래 12.10에서 실제 S3 보완을 완료했다. EKS·RDS 재가동과 권한 변경은 하지 않았고 실제 scoring Pod 검증은 **미완료**다.
+- ETag·사용자 metadata·COMPOSITE 거부와 작은 JSON만 GET하는 계약을 유지한다. 서비스 코드·API·DB·IAM·배포 설정은 변경하지 않는다. 로컬 검증 결과는 [업로드 안내 6절](model-artifact-upload.md#6-로컬-검증)에 따로 기록한다.
+
+### 12.10 AWS S3 보완과 CloudShell 사전 검사 (#493)
+
+2026-11-10 사용자 추가 지시에 따라 서버를 켜지 않고 기존 모델 버킷의 12개 객체를 보완했다. 로컬 원본 및 S3 기존 버전 본문을 담당자 manifest와 대조한 뒤 동일 원본·속성으로 단일 PutObject를 실행했다. 전체 SHA-256·크기 일치와 이전 버전 보존을 확인했다. #212의 IAM·버킷·네트워크 설정은 변경하지 않았다. 별도 담당자 연락을 수행한 것으로 기록하지 않는다.
+
+| 검증 대상 | 결과 |
+| --- | --- |
+| 기존 서술 3.0·논술 3.1, 총 12개 객체 | 모두 FULL_OBJECT SHA-256과 manifest 일치, 원본 바이트·속성 유지, 이전 버전 보존 |
+| CloudShell 운영자 자격 증명으로 실제 S3 대상 검사 | 두 모델 모두 PASS / FILES_AND_METADATA_VERIFIED, 모델별 HEAD 6회·작은 JSON GET 3회 |
+| EKS·RDS | 작업 전후 두 nodegroup desiredSize=0, RDS stopped. 재가동 없음 |
+| 실제 scoring Pod Identity 및 관리자 → core → scoring | 미실행. 재가동 후 별도 검증 필요 |
+
+검사는 `83500294`의 원본 사전 검사 소스 8개를 해시 대조한 뒤 CloudShell Python 3.13에서 직접 실행했다. 배포 이미지/Python 3.12 Pod의 HTTP·권한·네트워크 검증으로 간주하지 않는다. 자세한 실행 범위·복구 정보는 [업로드 안내 7절](model-artifact-upload.md#7-실제-aws-s3-보완검사-결과-2026-11-10), [객체별 증빙](evidence/issue493-s3-sha256-20261110.json)에 둔다.
 
 ## 13. Pod별 모델 로딩 보고 (#370)
 
