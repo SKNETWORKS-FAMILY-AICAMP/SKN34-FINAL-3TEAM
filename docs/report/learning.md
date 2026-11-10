@@ -961,7 +961,8 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 |---|---|---|
 | 학년별 테마 | `G3`·`G4`·`G5`·`G6`, 중학생 `G6`(core가 정해 넘김). 게시 부분 UK `(grade, week_start)` | 담당자 결정 2026-11-10(이슈 본문). P26 중학생 초6 문제 |
 | 기존 학년군 테마 (기준안) | `G3_4` 행은 `G3`로 바꾸고 같은 내용의 `G4` 테마(새 ID, 버전·요일 복사, 상태·게시본 같음)를 V14가 만듦. `G5_6` → `G5`·`G6`. 기존 시도·열람 기록의 `theme_id`는 원래 행 | 이슈 기준안. 원래 행을 남기면 시도·열람 기록의 FK를 바꾸지 않아도 됨. 요일 상태·완주는 미션 ID로 맞추므로 결과가 같음 |
-| 마이그레이션 나눔 | V14(nullable 추가·복사·새 표·새 칸), V15(`grade` NOT NULL·CHECK·UK·인덱스, `grade_band` 제거) | ERD 8장 준비·최종 버전, V11·V12 선례 |
+| 마이그레이션 나눔 | V14: `grade` nullable 추가 → 옛 게시 부분 UK(`grade_band, week_start`)·인덱스를 지우고 → `G3_4` 행은 `G3`, `G5_6` 행은 `G5`로 채운 뒤 `G4`·`G6` 복사본(테마·버전·요일, 순환 FK는 `SET CONSTRAINTS … DEFERRED`) → 학년 기준 부분 UK·인덱스 생성, 새 표·새 칸, `mission.source` CHECK. V15: `grade` NOT NULL·CHECK, `grade_band` 제거 | ERD 8장 준비·최종 버전, V11·V12 선례. 옛 UK를 먼저 지우지 않으면 복사본도 `grade_band = 'G3_4'`라 게시 UK에 걸림 |
+| 복사본 ID | 원래 ID와 학년으로 정하는 값 `md5(원래 id || ':G4')::uuid`(버전도 같은 방식) | 저장소 마이그레이션에 `gen_random_uuid()` 선례가 없고, 어느 환경에서 돌려도 같은 ID라 테스트로 확인 가능. ERD 1장 'DB UUID 기본값 없음'은 컬럼 기본값 규칙이라 해당 없음 |
 | 전환 호환 | 학생 경로 세 개(이번 주 테마·되돌아보기 열람·이야기 열람)만 `grade`가 없으면 `gradeBand`(`G3_4` → `G3`, `G5_6` → `G5`)로 읽음. 관리자 경로는 `grade`만 | 이슈 "전환 기간 호환"은 학생 테마 조회가 끊기지 않게 하려는 것. 관리자 화면은 web #441과 같이 바뀜 |
 | 게시 검사 학년 | 미션 학년 범위가 테마 학년을 포함(`gradeMin ≤ 학년 ≤ gradeMax`), 초3·초4 논술 불가. 오류 코드 `GRADE_BAND_MISMATCH` → `GRADE_MISMATCH` | 학년별 테마에서 '학년군'은 틀린 뜻. 웹 `publishProblems`는 `errors[].message`만 보여 주고 core는 422를 그대로 넘겨 코드를 읽는 곳은 learning 도메인·테스트·OpenAPI enum뿐(사용자 결정 2026-11-10) |
 | 시도 학년 → 테마 학년 | `min(학년, 6)`(7~9는 `G6`) | P26 중학생 초6 테마 |
@@ -979,13 +980,17 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 | 대기·리스 (기준안) | ai 마감 15분, learning→ai 대기 16분(`app.theme-draft.ai-read-timeout`), 리스 18분 | 이슈·ai.md 14장 기준안. 실측 후 조정 |
 | 주기·크론 (기준안) | 생성 주기 10초(미션 초안과 같음), 주간 자동 수요일 03:00 KST(`app.theme-draft.weekly-cron`) | 에픽 기준안 |
 | 서킷 | `ai-theme-draft`(값은 `aiCircuitBreaker`와 같음) | 미션 초안·판정과 따로 둬 테마 실패가 다른 호출을 막지 않게(#305·#353 같은 이유) |
-| 검사 실패 기록 | `check_results[].failures[].stage`: ai `THEME`·`MISSION`·`REVIEW`·`IMAGE`, learning 검사 `LEARNING`, AI 호출 실패 `AI_CALL`(사유는 실패 코드). ai에 보내는 `previousFailures`에는 ai 단계 실패를 그대로, learning 실패는 `MISSION`(미션 규칙)·`THEME`(요일 배치·정답 논리)으로 바꿔 넣고 AI 호출 실패는 넣지 않음 | ai 계약 `previousFailures[].stage`가 ai 단계 네 개. 관리자 화면에서는 어느 쪽 검사인지 보여야 함 |
+| 검사 실패 기록 | `check_results[].failures[].stage`: ai `THEME`·`MISSION`·`REVIEW`·`IMAGE`, learning 검사 `LEARNING`, AI 호출 실패 `AI_CALL`(사유는 실패 코드). ai에 보내는 `previousFailures`는 이전 시도 실패를 시간순으로 쌓되, ai 단계 실패는 그대로, learning 실패는 요일·유형 배치·정답 논리 → `THEME`, 미션 게시 규칙(`ELEMENT_CODE`·`STANDARD_CODE`·`SHAPE`) → `MISSION`으로 바꾸고 AI 호출 실패는 넣지 않음. 사유 형식: `MISSION`은 `<요일> <검사 코드> <자세히>`(예: `TUE ELEMENT_CODE rubric.elements.code`, 요일은 응답 `days[].day`와 같은 `MON`~`FRI`), 그 밖은 `<검사 코드> <자세히>` | ai 요청 `stage`는 네 값 enum이라 다른 값은 422(#437과 합의, 사용자 결정 2026-11-10, api-spec 4.2는 #437이 반영). ai는 요일 접두어로 그 요일 미션 재생성에만 사유를 씀. AI 호출 실패는 내용 피드백이 아니라 뺌(미션 초안은 넘기는 것과 다름). 관리자 화면에서는 어느 쪽 검사인지 보여야 해 `check_results`에는 따로 기록 |
 | learning 검사 | 요일·유형 배치(월 `ANALYZE`·화 `EVALUATE`·수 `CREATE`·목 `SOLVE`·금 `REFLECT`, 기준안), 미션 5개는 `DraftRules.learningFailures`(게시 규칙, 학년 = 테마 학년), 정답 논리, 대화 화자·장면 키 모양은 보지 않음 | 이슈 "learning 검사". 미션 규칙은 미션 초안과 같은 함수. 대화·영상·움직임은 ai가 실패해도 빼고 성공으로 돌려주는 항목(ai.md 14.1) |
 | 채택 | 미션 5개 `DRAFT`(`source = LLM_THEME`, 학년 범위 = 테마 학년, 장면 그림 키를 `scene_uri`·`static_scene_uri`에, 움직임 `scene_motion`, 요소 배점 1)와 테마 `DRAFT`(요일 배치·이야기·장면·대화·정답 구조, `hint_spots` NULL)를 한 트랜잭션 | 이슈·에픽. 미션 생성은 `MissionService.createFromDraft` 재사용 |
+| 미션 생성 재사용 | `MissionService.createFromDraft`에 출처 인자(기본 `LLM_DRAFT`)를 더해 테마는 `LLM_THEME`. 미션 5개마다 미션 초안 입력 모양(`DraftInput`)을 만들어 `DraftRules.missionCommand`·`learningFailures`를 그대로 씀 | 기존 함수가 출처를 `LLM_DRAFT`로 고정. 미션 초안 동작은 그대로(사용자 결정 2026-11-10) |
+| 장면 움직임 보존 | `MissionCommand`에 `sceneMotion`. 관리자 미션 수정 본문에 `sceneMotion`이 없으면 `sceneUri`가 이전 버전과 같을 때만 이전 값을 이어받고, 장면을 바꾸면 비움 | 웹 `missionWritePayload`는 정해진 칸만 보내 `sceneMotion`이 없어 수정 때마다 움직임이 사라짐. 관리자 미션 계약(web·core)을 바꾸지 않으려고(사용자 결정 2026-11-10) |
+| 관리자 응답의 장면 값 | 관리자 미션 응답 `sceneUri`·`staticSceneUri`는 저장된 S3 키 그대로, presigned URL 변환은 학생 응답만. 테마 편집 응답에는 미리보기 URL 칸을 따로 둠 | 웹이 관리자 응답 `sceneUri`를 그대로 다시 저장하므로 URL로 바꾸면 만료되는 URL이 키 대신 저장됨. 관리자 미션 화면의 테마 장면 미리보기는 안 보임(사용자 결정 2026-11-10) |
 | `answer_clue` (결정적 단서) | 채택 때 learning이 요일 단서 중 마지막 틀린 후보를 빼는 날(`rulesOut`이 비지 않은 마지막 요일)의 `clue`로 채움, 관리자가 고칠 수 있음 | 엔딩 화면에 정답과 근거를 함께 보여 줄 수 있게. ai 응답 계약에는 칸이 없고 바꾸지 않으므로 단서 구조에서 계산 |
 | 생각 열기 위치 검사 | `x`·`y` 0~100, `seq`는 그날 미션 현재 기준표의 생각 열기 순번, 같은 순번 중복 금지. 위반 400 | 이슈 "범위 밖 좌표, 그 미션에 없는 순번은 저장 거부" |
 | 스케줄러 스레드 | `spring.task.scheduling.pool.size` 3 → 5 | 이슈. 작업마다 스레드 하나(생성 주기·주간 크론 추가)라 긴 ai 대기가 고착 판정 탐지를 밀지 않게 |
-| 지식 API 수용 | 주기 작업은 스케줄러 스레드, ai가 부르는 learning 지식 API(#469)는 Tomcat 요청 스레드라 서로 막지 않음. 지식 API 시간 상한은 #469 몫 | 이슈 "웹 요청 스레드와 작업 스레드 분리 확인" |
+| 지식 API 수용 | ai 호출은 트랜잭션 밖(16분 동안 DB 연결을 잡지 않음), 스케줄러 풀 5, 웹 요청은 Tomcat 스레드라 주기 작업이 ai를 기다리는 동안에도 응답. 느린 ai 대역 중 learning 내부 API가 바로 응답하는 테스트로 확인. 지식 API 자체의 시간 상한(기준안 질의당 2초)은 #469 할 일 | 이슈 '웹 요청 스레드와 작업 스레드 분리 확인'. #469 지식 API는 아직 없음(열림, 담당 inyoung9629) |
+| ai 서킷 값 | 느린 호출 설정 없음(16분 대기를 실패로 세지 않음), 최소 호출 20건이라 주 몇 건인 테마 호출로는 거의 열리지 않음 | `aiCircuitBreaker` 그대로 재사용. 기록만 |
 
 ### API 변경 (예정, 구현 때 learning OpenAPI 반영)
 
@@ -1002,6 +1007,7 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 - 이슈 "학생 미션 응답에 … 테마 요일 문제 전 영상 URL" → 미션 조회 응답이 아니라 시도 응답(`mission`을 함께 담음)의 `themeScene.videoUrl`(위 결정 "문제 전 영상 위치", 사용자 결정 2026-11-10)
 - api-spec 2.8 공개 줄(테마 게시 검사 "학년군 전체를 덮는 학년 범위")은 core `feature/theme-grade-proxy`가 바로 옆 줄(초안 요청 본문 `grade`)을 고치고 있어 병합 충돌을 피하려고 이 이슈에서 고치지 않음. 공개 줄 문구는 core PR에서 함께 맞추도록 core 담당에게 알릴 것(아직 알리지 않음)
 - api-spec 2.11 공개 줄(새 응답 칸 이름)도 core 두 브랜치가 같은 줄을 고치고 있어 learning 내부 4.1에만 칸 이름을 적음
+- 이슈 작업 위치에 없던 것: `scripts/verify_db_schema.py` 주간 테마 음성 시험(`grade_band` → `grade`, `ci-db-schema` 완료 조건), gitops 로컬 learning 마이그레이션 리비전 v13 → v15(`test_core_migration_versions.py`), `test_record_exists_openapi` 조작 수 52 → 59
 
 ### 남은 확인
 
@@ -1010,4 +1016,8 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 - 누적 공개·토요일 새로 풀기·일요일 닫힘·포인트는 #483(문서)·#484(learning)에서 바뀜. 이 이슈는 지금 요일 규칙 위에 구현하고, 요일 상태가 바뀌어도 단서 공개(`LOCKED`면 뺌)는 그대로 맞음
 - 인프라: learning에는 지금 S3 역할이 없음(report는 `report-s3-role` Pod Identity). 테마 버킷 `theme-drafts/*` 읽기 역할(presign 서명용)과 버킷 이름(ai 쓰기 버킷과 같아야 함), 로컬은 report처럼 브라우저가 닿는 MinIO 주소(`S3_PUBLIC_ENDPOINT_URL`과 같은 값)
 - presigned URL 한계(설계 유지): 응답마다 새로 서명해 주소가 바뀌므로 브라우저 캐시가 맞지 않고, 영상을 보는 중에 응답을 다시 받으면 처음부터 재생될 수 있음(장면당 6초라 영향 작음). 임시 자격 증명으로 서명하면 자격 증명 만료 때 URL도 함께 만료돼 1시간보다 짧을 수 있음. 만료된 URL의 403은 웹이 이번 주 테마를 다시 받아 처리(#440). 문제가 보이면 서명 시각을 구간 단위로 맞추는 방식을 검토
+- 마이그레이션 번호: 지금 원격 어디에도 learning V14 이상은 없음. #466(지식 저장소, 김동섭 님)이 '다음 번호'로 learning 마이그레이션을 더하므로 먼저 병합되는 쪽이 번호를 갖고, 나중 쪽이 병합 직전에 번호와 ERD 8장·`verify_db_schema.py`·gitops 리비전을 맞춤(`outOfOrder` 꺼짐, #353·#355 선례). #484는 #438 뒤라 V16 이후
+- 주간 자동 크론 시각(수요일 03:00)에 learning이 모두 내려가 있으면 그 주 자동 초안이 생기지 않음(관리자 요청으로 대신)
+- 관리자 테마 목록 필터는 core PR(#439 후속 `feature/theme-grade-proxy`) 병합 전까지 맞지 않을 수 있음(develop web은 이미 `grade`를 보냄)
+- 초안 요청 `topic` 100자 이하·`weekStart` 이번 주 이후 월요일은 새로 정한 기준안
 - 생성 시도 상한·대기·리스·크론·URL 유효기간·자동 성취기준 규칙·학년군 테마 복사 방식은 기준안(이슈 확인 필요)
