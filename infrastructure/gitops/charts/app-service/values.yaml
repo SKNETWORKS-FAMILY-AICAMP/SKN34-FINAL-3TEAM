@@ -57,6 +57,25 @@ extraVolumeMounts: []
 # Pod scheduling (#372): e.g. prefer the fixed application nodegroup so HPA scale-down
 # empties Karpenter nodes first. Changing it rolls the Deployment.
 affinity: {}
+# Dedicated nodes (#476): e.g. the explanation sLLM runs only on its tainted Karpenter NodePool.
+nodeSelector: {}
+tolerations: []
+
+# Model fetch before start (#476). The initContainer writes into an emptyDir at mountPath,
+# which the app container mounts read-only. command/args/env decide the source (MinIO or S3).
+modelDownload:
+  enabled: false
+  image:
+    repository: ""
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  command: []
+  args: []
+  env: []
+  resources: {}
+  mountPath: /models
+  sizeLimit: 4Gi
 
 hpa:
   enabled: false
@@ -72,6 +91,12 @@ keda:
   cooldownPeriod: 300
   queueLength: "1"
   queues: []
+  # Time windows (#476): [{timezone, start, end, desiredReplicas}] in cron format.
+  cron: []
+  # Render replicas: replicaCount even under KEDA, so a first install starts at that count
+  # (0 for the sLLM) instead of the Deployment default 1. A helm upgrade inside an active
+  # window then resets it until KEDA's next poll.
+  renderReplicaCount: false
   rabbitmqSecret:
     name: ""
     key: RABBITMQ_URL
