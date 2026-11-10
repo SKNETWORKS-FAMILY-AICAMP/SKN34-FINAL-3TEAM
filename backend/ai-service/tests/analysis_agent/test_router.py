@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from datetime import UTC, datetime
 
 import pytest
 from fastapi import Request
@@ -94,7 +95,7 @@ def test_verified_llm_answer() -> None:
         "contentAllowed": True,
     }
     assert [(e["kind"], e["answerId"]) for e in result["evidence"]] == [("ANSWER", "a-2")]
-    assert result["versions"] == {"model": "fake-model", "prompt": "analysis@3"}
+    assert result["versions"] == {"model": "fake-model", "prompt": "analysis@4"}
     assert [r.call_type for r in llm.requests] == ["ANALYSIS", "ANALYSIS"]
     assert len(llm.usages) == 2  # 노드별 LLM 호출마다 사용량 1건
 
@@ -400,3 +401,25 @@ def test_report_numbers_are_not_allowed_without_report() -> None:
 def test_pinned_report_requires_one_day_scope() -> None:
     response = post(FakeLlm(), body={**PINNED, "scope": BODY["scope"]})
     assert response.status_code == 400  # 요청 검증 실패 (app.errors)
+
+
+def test_request_clock_sets_classify_today() -> None:
+    # 요청 시각은 주입한 시계로 고정. KST 자정 직후면 UTC 날짜가 아니라 한국 날짜 (#454)
+    llm = FakeLlm(classified("COUNT"), "3개 시도를 했어요.")
+    service = AnalysisService(
+        llm,
+        get_settings(),
+        ActiveVersions(),
+        lambda user: FakeRecords(),  # type: ignore[arg-type]
+        clock=lambda: datetime(2026, 10, 26, 15, 30, tzinfo=UTC),
+    )
+    user = UserContext(user_id="p-1", role="PARENT", student_scope=frozenset({"s-1"}))
+
+    async def scenario() -> None:
+        async for _ in service.stream(AnalysisRequest.model_validate(BODY), user):
+            pass
+
+    asyncio.run(scenario())
+    assert llm.requests[0].user.startswith(
+        "[오늘] 2026-10-27(화)\n[골라 둔 범위] 2026-10-20(화) ~ 2026-10-26(월)\n"
+    )

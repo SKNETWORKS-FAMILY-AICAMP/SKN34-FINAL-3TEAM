@@ -60,7 +60,7 @@ START → classify ─(범위 불명확·충돌)→ END [clarification]
 ```
 
 - P25(#392, [서비스 기획 방향](service-direction.md)): 일일 리포트 고정 대화는 core가 범위(그날)와 리포트 요약을 요청에 넣는다. ai는 report를 직접 호출하지 않고 기존 흐름을 그대로 쓴다
-- 구성: `analysis_agent/graph.py`(조립), `service.py`(`AnalysisService`: 범위·기한·프롬프트 선택, 그래프 실행·최종 상태 → 이벤트, #253), `state.py`, `context.py`(`AgentContext`), `nodes/`(understand·retrieve·respond), `tools.py`(`RecordTools`, 호출마다 권한 재확인), `calculators.py`, `verification.py`, `templates.py`, `prompts.py`(`analysis@3`, #392), `router.py`(SSE), `clients/learning_client.py`(learning 기록 조회 HTTP, #65)
+- 구성: `analysis_agent/graph.py`(조립), `service.py`(`AnalysisService`: 범위·기한·프롬프트 선택, 그래프 실행·최종 상태 → 이벤트, #253), `state.py`, `context.py`(`AgentContext`), `nodes/`(understand·retrieve·respond), `tools.py`(`RecordTools`, 호출마다 권한 재확인), `calculators.py`, `verification.py`, `templates.py`, `prompts.py`(`analysis@4`, #454), `router.py`(SSE), `clients/learning_client.py`(learning 기록 조회 HTTP, #65)
 - LLM 호출은 기존 `LlmClient` 사용(재시도·사용량 이벤트 `ANALYSIS`·대체 모델 유지). classify는 `generate`(구조화 출력), answer는 `stream`(일반 텍스트). LangGraph는 분기·상태·스트리밍만
 - 도구 선택은 질문 유형 → 도구 표(6유형). 학생·기간은 LLM이 아니라 core가 확인한 `scope`만 사용
 
@@ -454,7 +454,7 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 |---|---|---|
 | `judgment` | `ai/judgment` | `judgment/prompts.py`, `judge@2` |
 | `followup` | `ai/followup` | `followup/prompts.py`, `followup@4` |
-| `analysis` | `ai/analysis` | `analysis_agent/prompts.py`, `analysis@3` (#392) |
+| `analysis` | `ai/analysis` | `analysis_agent/prompts.py`, `analysis@4` (#454) |
 | `reportNarrative` | `ai/report-narrative` | `report_narrative/prompts.py`, `report@1` |
 | `reportTemplate` | `ai/report-template` | `analysis_agent/template_prompts.py`, `analysis-template@1` (#280) |
 | `missionDraft` | `ai/mission-draft` | `mission_draft/prompts.py`, `mission-draft@1` (#354) |
@@ -579,6 +579,26 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 ### 검증
 
 - `uv run pytest`: 고정 리포트 요약이 답변 프롬프트에 들어가고 요약 숫자가 대조를 통과(`test_router`), 같은 답변이 일반 대화에서는 규칙 응답, 하루가 아닌 범위 400, 고정 대화의 다른 기간 안내 문구(`test_nodes`)
+
+### 10.1 상대 날짜 질문 분류 (#454)
+
+2026-11-10 kind 실서버 확인(#424)에서 2026-11-10 일일 리포트로 고정된 대화에 "오늘 우리 아이가 어떤 생각을 했는지 알려 줘"처럼 물으면 `clarification` `DIFFERENT_PERIOD`로 끝났다. 날짜 표현이 없는 같은 질문은 정상 답변했다. 분류 user 본문에 `[골라 둔 범위]`만 있고 현재 날짜가 없어 LLM이 "오늘·어제·이번 주"가 언제인지 알 수 없었다. 되묻기도 분석 대화 사용 1회로 차감되므로 잘못된 되묻기가 하루 30회 한도를 쓴다. 일반 분석 대화(기간 선택)에도 같은 영향이 있었다.
+
+| 영역 | 내용 |
+|---|---|
+| 오늘 날짜 | ai가 요청 시작 때 직접 계산한다. `AnalysisService.stream`이 `kst_today`(`context.py`, UTC+9 고정 오프셋. 한국은 서머타임이 없어 `tzdata` 불필요)로 정한 날짜를 `AgentContext.today`에 넣고, 분류·되묻기까지 같은 값을 쓴다. 시계는 `AnalysisService(clock=...)`로 주입해 테스트에서 고정한다 |
+| 프롬프트 | `analysis@4`. 분류 user 본문 맨 앞에 `[오늘] 2026-11-10(화)`를 넣고 `[골라 둔 범위]`에도 요일을 붙인다. `CLASSIFY_SYSTEM`에 상대 표현(오늘·어제·그제·이번 주·지난주·이번 달·지난달)을 `[오늘]` 기준 실제 날짜 범위로 바꿔 비교하고, 한 주는 월~일, 같으면 `NONE`·다르면 `DIFFERENT_PERIOD`라는 규칙과 예시를 더했다. 답변 프롬프트는 바꾸지 않았다 |
+
+#### 결정
+
+1. **core 요청에 날짜를 넣지 않음**: 요청 시각 기준 한국 날짜는 ai가 계산할 수 있어 api-spec 4.2·OpenAPI·core 변경이 필요 없다. core와 ai의 시계 차이는 자정 전후 몇 초 범위라 영향이 작다
+2. **프롬프트 버전 올림**: 이미지는 이름마다 본문 한 개만 보유하고 본문을 바꾸면 `PROMPT_VERSION`을 올리는 모듈 규칙(10장 결정 2와 같은 방식)에 따라 `analysis@3 → analysis@4`. core 활성 버전 시드에는 `analysis` 항목이 없어(기본 버전 사용) 시드 변경은 없다. 어떤 환경에서 `analysis@3`을 활성 버전으로 지정해 두었다면 이 이미지에서는 `503 AI_PROMPT_VERSION_UNAVAILABLE`이 되므로 배포 때 `analysis@4`로 바꾸거나 활성 항목을 지운다. `/internal/versions`의 `analysis` 값은 `analysis@4`
+3. **범위 안의 더 좁은 기간도 다른 기간으로 봄**: 일반 대화에서 한 주를 골라 두고 "오늘"을 물으면 계산은 한 주 전체로 하므로, 같은 범위가 아니면 `DIFFERENT_PERIOD`로 기간을 다시 고르게 한다(이슈 기준 "같으면 NONE, 다르면 DIFFERENT_PERIOD")
+
+#### 검증
+
+- `uv run pytest`: 고정 범위가 오늘(2026-11-10)·어제(2026-11-09)일 때 분류 입력에 `[오늘] 2026-11-10(화)`와 요일 붙은 범위가 들어가고 규칙이 system에 있음(`test_nodes`), KST 자정 경계(`test_kst_today_uses_korean_date`), 주입한 시계가 UTC 15시 이후면 다음 날로 들어감(`test_router`), `/internal/versions` `analysis@4`(`test_versions`)
+- 실제 LLM으로 "오늘 …" 질문이 되묻기 없이 답변되는지는 머지 후 kind에서 확인한다(이슈 완료 조건)
 
 ## 11. 모델 등록 API (#367)
 
