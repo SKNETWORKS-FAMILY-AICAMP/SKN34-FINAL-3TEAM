@@ -1,5 +1,6 @@
 package com.sagomungchi.learning.theme.service
 
+import com.sagomungchi.learning.TestAssets
 import com.sagomungchi.learning.TestRows
 import com.sagomungchi.learning._common.exception.errorCodeOf
 import com.sagomungchi.learning._common.exception.httpStatusOf
@@ -9,6 +10,7 @@ import com.sagomungchi.learning.attempt.domain.ThemeAttempt
 import com.sagomungchi.learning.theme.domain.DayState
 import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.ThemeDay
+import com.sagomungchi.learning.theme.domain.ThemeStoryKind
 import com.sagomungchi.learning.theme.domain.ThemeSummaryState
 import com.sagomungchi.learning.theme.repository.WeeklyThemeRepository
 import org.junit.jupiter.api.BeforeEach
@@ -68,7 +70,7 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
 
     /** 그 날짜 KST 정오의 고정 시계 */
     private fun serviceOn(date: LocalDate) =
-        WeeklyThemeService(repository, Clock.fixed(date.atTime(12, 0).atZone(KST).toInstant(), KST))
+        WeeklyThemeService(repository, Clock.fixed(date.atTime(12, 0).atZone(KST).toInstant(), KST), TestAssets.urls)
 
     private fun at(date: LocalDate, hour: Int = 10): OffsetDateTime = date.atTime(hour, 0).atZone(KST).toOffsetDateTime()
 
@@ -111,7 +113,7 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
-    fun `수요일에는 월·화 CLOSED, 수 OPEN, 목·금 LOCKED이고 소개는 월요일에만`() {
+    fun `수요일에는 월·화 CLOSED, 수 OPEN, 목·금 LOCKED이고 소개는 매일`() {
         val wednesday = WEEK.plusDays(2)
         attempt(missions[0], "THEME_DAY", at(WEEK), at(WEEK, 11), at(WEEK, 12))
         attempt(missions[2], "THEME_DAY", at(wednesday))
@@ -120,7 +122,7 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
 
         assertEquals(themeId to WEEK, view.themeId to view.weekStart)
         assertEquals("물의 여행", view.title)
-        assertNull(view.intro)
+        assertEquals("이번 주는 물", view.intro) // #438: 시작 이야기를 그 주 첫 진입에 보여 주려고 매일 채움
         assertFalse(view.reused)
         assertEquals(ThemeDay.entries, view.days.map { it.day })
         assertEquals(missions.map { it.id }, view.days.map { it.missionId })
@@ -227,6 +229,71 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
         assertEquals(listOf(retry), summary.reviewRetries.map { it.attemptId })
         assertEquals("테마 1", summary.reviewRetries.single().title)
         assertEquals(ThemeSummaryState.NO_RECORD, service.summary(student, WEEK.plusWeeks(1)).state)
+    }
+
+    /** 게시 테마에 이야기·정답 구조·요일 단서를 넣음 (화·목·금에 틀린 후보를 하나씩 뺌) */
+    private fun addStory() {
+        val versionId = jdbc.queryForObject("SELECT published_version_id FROM weekly_theme WHERE id = ?", UUID::class.java, themeId)
+        jdbc.update(
+            """UPDATE weekly_theme_version SET outro = '강아지는 이웃집에 있었어요', intro_image_uri = 'theme-drafts/run/INTRO.png',
+                   outro_image_uri = 'theme-drafts/run/OUTRO.png', outro_video_uri = 'theme-drafts/run/OUTRO.mp4',
+                   intro_motion = '{"zoom":1.1}'::jsonb, outro_motion = '{"pan":"left"}'::jsonb, big_question = '강아지는 어디에 있을까?',
+                   candidates = '["고양이","강아지","토끼","햄스터"]'::jsonb, answer = '강아지', answer_clue = '금요일 단서'
+               WHERE id = ?""",
+            versionId,
+        )
+        val out = mapOf(2 to "[\"토끼\"]", 4 to "[\"고양이\"]", 5 to "[\"햄스터\"]")
+        (1..5).forEach { day ->
+            jdbc.update(
+                "UPDATE weekly_theme_day SET clue = ?, rules_out = ?::jsonb WHERE theme_version_id = ? AND day_of_week = ?",
+                "단서 $day", out[day] ?: "[]", versionId, day,
+            )
+        }
+    }
+
+    @Test
+    fun `평일에는 공개된 요일 단서까지만, 결말·정답은 엔딩(토·일)에만 (#438)`() {
+        addStory()
+        val wednesday = WEEK.plusDays(2)
+        val view = serviceOn(wednesday).current(student, ThemeGrade.G3, wednesday)
+
+        assertEquals("강아지는 어디에 있을까?" to listOf("고양이", "강아지", "토끼", "햄스터"), view.bigQuestion to view.candidates)
+        assertEquals(listOf("단서 1", "단서 2", "단서 3", null, null), view.days.map { it.clue })
+        assertEquals(listOf(emptyList(), listOf("토끼"), emptyList(), null, null), view.days.map { it.rulesOut })
+        assertTrue(view.introImageUrl!!.startsWith(TestAssets.BASE + "theme-drafts/run/INTRO.png?"), view.introImageUrl)
+        assertEquals(mapOf("zoom" to 1.1), view.introMotion)
+        assertNull(view.introVideoUrl)
+        listOf(view.outro, view.outroImageUrl, view.outroVideoUrl, view.outroMotion, view.answer, view.answerClue).forEach { assertNull(it) }
+
+        val saturday = WEEK.plusDays(5)
+        val ended = serviceOn(saturday).current(student, ThemeGrade.G3, saturday)
+        assertEquals("강아지는 이웃집에 있었어요" to "강아지", ended.outro to ended.answer)
+        assertEquals("금요일 단서", ended.answerClue)
+        assertTrue(ended.outroVideoUrl!!.startsWith(TestAssets.BASE + "theme-drafts/run/OUTRO.mp4?"), ended.outroVideoUrl)
+        assertEquals(mapOf("pan" to "left"), ended.outroMotion)
+        assertEquals(listOf("단서 1", "단서 2", "단서 3", "단서 4", "단서 5"), ended.days.map { it.clue })
+    }
+
+    @Test
+    fun `이야기 열람에서 INTRO는 월~토, OUTRO는 엔딩이고 일요일이 아닐 때, 주 1회 멱등 (#438)`() {
+        val sunday = WEEK.plusDays(6)
+        assertError(HttpStatus.CONFLICT, "THEME_STORY_NOT_ALLOWED") { serviceOn(sunday).recordStoryView(student, ThemeGrade.G3, sunday, ThemeStoryKind.INTRO) }
+        val thursday = WEEK.plusDays(3)
+        assertEquals(true, serviceOn(thursday).recordStoryView(student, ThemeGrade.G3, thursday, ThemeStoryKind.INTRO).firstViewThisWeek)
+        assertEquals(false, serviceOn(thursday).recordStoryView(student, ThemeGrade.G3, thursday, ThemeStoryKind.INTRO).firstViewThisWeek)
+        assertError(HttpStatus.CONFLICT, "THEME_STORY_NOT_ALLOWED") {
+            serviceOn(WEEK.plusDays(4)).recordStoryView(student, ThemeGrade.G3, WEEK.plusDays(4), ThemeStoryKind.OUTRO)
+        }
+        assertError(HttpStatus.CONFLICT, "THEME_STORY_NOT_ALLOWED") { serviceOn(sunday).recordStoryView(student, ThemeGrade.G3, sunday, ThemeStoryKind.OUTRO) }
+        assertFalse(serviceOn(thursday).current(student, ThemeGrade.G3, thursday).outroSeen)
+
+        val saturday = WEEK.plusDays(5)
+        assertEquals(true, serviceOn(saturday).recordStoryView(student, ThemeGrade.G3, saturday, ThemeStoryKind.OUTRO).firstViewThisWeek)
+        val view = serviceOn(saturday).current(student, ThemeGrade.G3, saturday)
+        assertEquals(true to true, view.introSeen to view.outroSeen)
+        // 다음 주는 다시 처음
+        assertFalse(serviceOn(WEEK.plusWeeks(1)).current(student, ThemeGrade.G3, WEEK.plusWeeks(1)).introSeen)
+        assertError(HttpStatus.NOT_FOUND, "NOT_FOUND") { serviceOn(WEEK).recordStoryView(student, ThemeGrade.G5, WEEK, ThemeStoryKind.INTRO) }
     }
 
     private companion object {

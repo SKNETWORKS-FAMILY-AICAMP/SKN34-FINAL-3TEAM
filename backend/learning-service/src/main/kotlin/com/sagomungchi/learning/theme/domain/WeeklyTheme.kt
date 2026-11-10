@@ -135,8 +135,43 @@ object ThemePublishCheck {
             (mission.inputType != InputType.ESSAY || grade.grade >= MissionView.ESSAY_MIN_GRADE)
 }
 
-/** 요일 하나의 문제 (`weekly_theme_day`) */
-data class ThemeDayMission(val day: ThemeDay, val missionId: UUID)
+/**
+ * 요일 하나의 문제 (`weekly_theme_day`). #438: 그날 단서·빠지는 후보, 문제 전 대화, 그림 위 생각 열기 위치, 문제 전 영상 S3 키(모두 선택).
+ * `rulesOut`의 빈 목록은 "그날 단서로 빠지는 후보 없음"이라는 값이다
+ */
+data class ThemeDayMission(
+    val day: ThemeDay,
+    val missionId: UUID,
+    val clue: String? = null,
+    val rulesOut: List<String>? = null,
+    val dialogue: List<DialogueLine>? = null,
+    val hintSpots: List<HintSpot>? = null,
+    val videoUri: String? = null,
+)
+
+/** 문제 전 대화 한 줄 (#438) */
+data class DialogueLine(val speaker: String, val text: String)
+
+/** 그림 위 생각 열기 위치 (#438): 그날 미션 기준표의 생각 열기 순번과 그림 기준 0~100% 좌표 */
+data class HintSpot(val seq: Int, val x: Double, val y: Double)
+
+/**
+ * 테마 이야기·장면·정답 구조 (`weekly_theme_version`, #438, 기준안). 사람이 쓴 테마는 비워도 되어 모두 선택.
+ * `*Uri`는 ai가 올린 S3 키(응답 URL은 AssetUrls), 움직임은 ai가 정한 JSON 객체 그대로
+ */
+data class ThemeStory(
+    val outro: String? = null,
+    val introImageUri: String? = null,
+    val outroImageUri: String? = null,
+    val introVideoUri: String? = null,
+    val outroVideoUri: String? = null,
+    val introMotion: Map<String, Any?>? = null,
+    val outroMotion: Map<String, Any?>? = null,
+    val bigQuestion: String? = null,
+    val candidates: List<String>? = null,
+    val answer: String? = null,
+    val answerClue: String? = null,
+)
 
 /** 테마 저장 내용 (작성·수정 본문을 검사한 값) */
 data class ThemeContent(
@@ -145,4 +180,5 @@ data class ThemeContent(
     val title: String,
     val intro: String,
     val days: List<ThemeDayMission>,
+    val story: ThemeStory = ThemeStory(),
 )

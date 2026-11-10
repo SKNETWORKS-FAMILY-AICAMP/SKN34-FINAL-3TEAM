@@ -3,6 +3,8 @@ package com.sagomungchi.learning.theme.controller
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.theme.domain.ReviewViewResult
+import com.sagomungchi.learning.theme.domain.StoryViewResult
+import com.sagomungchi.learning.theme.domain.ThemeStoryKind
 import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.WeeklyThemeSummary
 import com.sagomungchi.learning.theme.domain.WeeklyThemeView
@@ -12,12 +14,16 @@ import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.util.UUID
+
+/** 이야기 열람 본문 (#438): `{kind}`. 다른 칸·값 검사는 core(api-spec 2.11), learning은 kind가 없으면 400 */
+data class StoryViewRequest(val kind: ThemeStoryKind? = null)
 
 /**
  * 학생 주간 테마 내부 API (api-spec 2.11·4.1, #385). core #387이 `/api/v1/students/me/weekly-theme…`를 넘김:
@@ -51,6 +57,21 @@ class WeeklyThemeController(
     ): ReviewViewResult {
         requireSelf(studentId)
         return service.recordReviewView(studentId, themeGrade(grade, gradeBand), date)
+    }
+
+    /** 시작·종료 이야기 열람 기록 (#438). 주 1회 멱등: 다시 보내도 200, firstViewThisWeek만 false */
+    @PostMapping("/story-views")
+    fun storyViewed(
+        @PathVariable studentId: UUID,
+        @RequestParam(required = false) grade: ThemeGrade?,
+        @RequestParam(required = false) gradeBand: String?,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate,
+        @RequestBody request: StoryViewRequest,
+    ): StoryViewResult {
+        requireSelf(studentId)
+        val kind = request.kind
+            ?: throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "요청 오류", "kind는 INTRO·OUTRO 중 하나")
+        return service.recordStoryView(studentId, themeGrade(grade, gradeBand), date, kind)
     }
 
     /** 주간 리포트 테마 요약 (FN-RPT-17). weekStart는 KST 월요일 */

@@ -5,6 +5,8 @@ import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning.mission.domain.ThinkingType
 import com.sagomungchi.learning.theme.domain.DayState
 import com.sagomungchi.learning.theme.domain.ThemeGrade
+import com.sagomungchi.learning.theme.domain.ThemeStoryKind
+import com.sagomungchi.learning.theme.domain.StoryViewResult
 import com.sagomungchi.learning.theme.domain.ReviewViewResult
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeDayView
@@ -21,6 +23,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockHttpServletRequestDsl
@@ -97,6 +100,28 @@ class WeeklyThemeControllerTest(@Autowired private val mockMvc: MockMvc) {
         mockMvc.get("$base?grade=G3&date=11-09") { as_() }.andExpect { status { isBadRequest() } }
         mockMvc.get("$base?grade=G3") { as_() }.andExpect { status { isBadRequest() } }
         verifyNoInteractions(service)
+    }
+
+    @Test
+    fun `이야기 열람은 본문 kind로 서비스에 넘기고 kind가 없거나 모르는 값이면 400 (#438)`() {
+        val thursday = monday.plusDays(3)
+        given(service.recordStoryView(student, ThemeGrade.G4, thursday, ThemeStoryKind.INTRO))
+            .willReturn(StoryViewResult(ThemeStoryKind.INTRO, firstViewThisWeek = true))
+
+        mockMvc.post("$base/story-views?grade=G4&date=2026-11-12") {
+            as_(); contentType = MediaType.APPLICATION_JSON; content = """{"kind":"INTRO"}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.kind") { value("INTRO") }
+            jsonPath("$.firstViewThisWeek") { value(true) }
+        }
+        mockMvc.post("$base/story-views?grade=G4&date=2026-11-12") { as_(); contentType = MediaType.APPLICATION_JSON; content = "{}" }
+            .andExpect { status { isBadRequest() } }
+        mockMvc.post("$base/story-views?grade=G4&date=2026-11-12") { as_(); contentType = MediaType.APPLICATION_JSON; content = """{"kind":"MIDDLE"}""" }
+            .andExpect { status { isBadRequest() } }
+        mockMvc.post("$base/story-views?grade=G4&date=2026-11-12") {
+            as_(scope = UUID.randomUUID()); contentType = MediaType.APPLICATION_JSON; content = """{"kind":"INTRO"}"""
+        }.andExpect { status { isForbidden() } }
     }
 
     @Test

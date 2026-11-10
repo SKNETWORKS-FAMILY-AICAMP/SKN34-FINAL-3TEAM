@@ -29,6 +29,13 @@ dependencies {
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("io.github.resilience4j:resilience4j-circuitbreaker:2.3.0") // ai 호출 서킷 브레이커 (아키텍처 1.3, core와 같은 버전). 재시도 모듈은 쓰지 않음
+    // 테마 그림·영상 S3 키 → 단기 presigned URL (#438, _common/storage/AssetUrls). 서명만 하므로 HTTP 클라이언트는 빼고,
+    // 자격 증명은 기본 체인(로컬 MinIO 환경 변수, EKS Pod Identity)
+    implementation(platform("software.amazon.awssdk:bom:2.56.0"))
+    implementation("software.amazon.awssdk:s3") {
+        exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
+        exclude(group = "software.amazon.awssdk", module = "apache-client")
+    }
     runtimeOnly("org.postgresql:postgresql")
     // Test-only: production migrations run in the dedicated migration job.
     testImplementation("org.testcontainers:postgresql")

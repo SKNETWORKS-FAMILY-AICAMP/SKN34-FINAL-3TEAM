@@ -3,6 +3,10 @@ package com.sagomungchi.learning.theme.repository
 import com.sagomungchi.learning.attempt.domain.AttemptContext
 import com.sagomungchi.learning.attempt.domain.AttemptStatus
 import com.sagomungchi.learning.mission.domain.ThinkingType
+import com.sagomungchi.learning.theme.domain.DialogueLine
+import com.sagomungchi.learning.theme.domain.HintSpot
+import com.sagomungchi.learning.theme.domain.ThemeDayMission
+import com.sagomungchi.learning.theme.domain.ThemeStory
 import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.WeeklyThemeStatus
 import org.apache.ibatis.annotations.Mapper
@@ -29,11 +33,48 @@ data class ThemeHeader(
     val updatedAt: Instant,
 )
 
-/** `weekly_theme_version`의 제목·소개 */
-data class ThemeVersionRow(val id: UUID, val version: Int, val title: String, val intro: String)
+/** `weekly_theme_version`의 제목·소개와 이야기·장면·정답 구조(#438) */
+data class ThemeVersionRow(
+    val id: UUID,
+    val version: Int,
+    val title: String,
+    val intro: String,
+    val outro: String? = null,
+    val introImageUri: String? = null,
+    val outroImageUri: String? = null,
+    val introVideoUri: String? = null,
+    val outroVideoUri: String? = null,
+    val introMotion: Map<String, Any?>? = null,
+    val outroMotion: Map<String, Any?>? = null,
+    val bigQuestion: String? = null,
+    val candidates: List<String>? = null,
+    val answer: String? = null,
+    val answerClue: String? = null,
+) {
+    val story: ThemeStory
+        get() = ThemeStory(outro, introImageUri, outroImageUri, introVideoUri, outroVideoUri, introMotion, outroMotion,
+            bigQuestion, candidates, answer, answerClue)
+}
 
-/** 요일 미션과 그 미션의 표시용 제목·생각 유형(게시본, 없으면 현재본) */
-data class ThemeDayRow(val dayOfWeek: Int, val missionId: UUID, val title: String, val thinkingType: ThinkingType)
+/**
+ * 요일 미션과 그 미션의 표시용 제목·생각 유형·장면(게시본, 없으면 현재본), 요일 칸(#438: 단서·빠지는 후보·대화·생각 열기 위치·영상 키)
+ */
+data class ThemeDayRow(
+    val dayOfWeek: Int,
+    val missionId: UUID,
+    val title: String,
+    val thinkingType: ThinkingType,
+    val clue: String? = null,
+    val rulesOut: List<String>? = null,
+    val dialogue: List<DialogueLine>? = null,
+    val hintSpots: List<HintSpot>? = null,
+    val videoUri: String? = null,
+    val sceneUri: String? = null,
+) {
+    fun toMission(): ThemeDayMission = ThemeDayMission(
+        com.sagomungchi.learning.theme.domain.ThemeDay.ofNumber(dayOfWeek), missionId, clue, rulesOut, dialogue, hintSpots, videoUri,
+    )
+}
 
 /** 학생의 그 주 테마 시도 */
 data class ThemeAttemptRow(
@@ -84,10 +125,11 @@ interface WeeklyThemeMapper {
         @Param("version") version: Int,
         @Param("title") title: String,
         @Param("intro") intro: String,
+        @Param("story") story: ThemeStory,
         @Param("createdBy") createdBy: UUID,
         @Param("now") now: Instant,
     ): Int
-    fun insertDay(@Param("versionId") versionId: UUID, @Param("dayOfWeek") dayOfWeek: Int, @Param("missionId") missionId: UUID): Int
+    fun insertDay(@Param("versionId") versionId: UUID, @Param("dayOfWeek") dayOfWeek: Int, @Param("day") day: ThemeDayMission): Int
     fun updateHeader(
         @Param("id") id: UUID,
         @Param("grade") grade: ThemeGrade,
@@ -108,4 +150,15 @@ interface WeeklyThemeMapper {
         @Param("now") now: Instant,
     ): Int
     fun deleteReviewViewsByStudent(studentId: UUID): Int
+
+    /** 이번 주 이야기 열람 종류(INTRO·OUTRO) */
+    fun findStoryViews(@Param("studentId") studentId: UUID, @Param("weekStart") weekStart: LocalDate): List<String>
+    fun insertStoryView(
+        @Param("studentId") studentId: UUID,
+        @Param("weekStart") weekStart: LocalDate,
+        @Param("kind") kind: String,
+        @Param("themeId") themeId: UUID,
+        @Param("now") now: Instant,
+    ): Int
+    fun deleteStoryViewsByStudent(studentId: UUID): Int
 }

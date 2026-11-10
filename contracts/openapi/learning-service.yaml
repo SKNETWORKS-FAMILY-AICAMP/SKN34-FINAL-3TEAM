@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: learning 내부 API
-  version: 1.2.0
+  version: 1.3.0
   description: >-
     core가 호출하는 learning 내부 API (api-spec 4.1). 구현된 경로만 담는다.
     학생 학습 API는 core가 검증한 STUDENT 컨텍스트(X-Student-Scope에 본인 1명)를 요구하고,
@@ -972,6 +972,44 @@ paths:
         '404': {$ref: '#/components/responses/Problem'}
         '409':
           description: THEME_REVIEW_NOT_ALLOWED(토·일이 아님)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /students/{studentId}/weekly-theme/story-views:
+    post:
+      operationId: recordWeeklyThemeStoryView
+      summary: 시작·종료 이야기 열람 기록 (주 1회 멱등, #438)
+      description: >-
+        core #439가 학생 본인 세션으로 넘김(api-spec 2.11). 학생·주·종류당 1행(theme_story_view)이라 다시 보내도 200이고
+        firstViewThisWeek만 false. INTRO는 월~토(그 주 첫 진입에 한 번, 일요일 제외), OUTRO는 엔딩 상태이고 일요일이 아닐 때
+        (엔딩 조건은 #483·#484, 그 전까지 토요일). 그 밖은 409 THEME_STORY_NOT_ALLOWED, 게시 테마가 없으면 404.
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/StudentRole'
+        - $ref: '#/components/parameters/StudentScope'
+        - $ref: '#/components/parameters/ThemeGradeQuery'
+        - $ref: '#/components/parameters/GradeBandQuery'
+        - $ref: '#/components/parameters/ThemeDate'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoryViewRequest'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryViewResult'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: THEME_STORY_NOT_ALLOWED(INTRO 일요일, OUTRO 엔딩 전·일요일)
           content:
             application/problem+json:
               schema:
@@ -3218,24 +3256,40 @@ components:
       enum: [MON, TUE, WED, THU, FRI]
     WeeklyTheme:
       type: object
-      required: [themeId, weekStart, title, intro, reused, days, review, completed]
+      required: [themeId, weekStart, title, intro, reused, days, review, completed, bigQuestion, candidates, introImageUrl,
+                 introVideoUrl, introMotion, introSeen, outroSeen, outro, outroImageUrl, outroVideoUrl, outroMotion, answer, answerClue]
       properties:
         themeId: {type: string, format: uuid}
         weekStart: {type: string, format: date, description: 이번 주 KST 월요일(재사용 테마도 이번 주)}
         title: {type: string}
-        intro: {type: [string, 'null'], description: 월요일에만 채움}
+        intro: {type: [string, 'null'], description: 시작 이야기. 매일 채움(#438, 이전에는 월요일만)}
+        bigQuestion: {type: [string, 'null'], description: 한 주 큰 질문(#438, 사람이 쓴 테마는 null일 수 있음)}
+        candidates: {type: [array, 'null'], items: {type: string}, description: 큰 질문 후보}
+        introImageUrl: {type: [string, 'null'], description: 시작 장면 그림 presigned URL}
+        introVideoUrl: {type: [string, 'null'], description: 시작 장면 영상 presigned URL}
+        introMotion: {$ref: '#/components/schemas/ThemeMotion'}
+        introSeen: {type: boolean, description: 이번 주 시작 이야기를 봄}
+        outroSeen: {type: boolean, description: 이번 주 종료 이야기를 봄}
+        outro: {type: [string, 'null'], description: '종료 이야기. 엔딩 상태일 때만(조건 #483·#484, 그 전까지 토·일)'}
+        outroImageUrl: {type: [string, 'null'], description: 종료 장면 그림. 엔딩 상태일 때만}
+        outroVideoUrl: {type: [string, 'null'], description: 종료 장면 영상. 엔딩 상태일 때만}
+        outroMotion: {$ref: '#/components/schemas/ThemeMotion'}
+        answer: {type: [string, 'null'], description: 정답. 엔딩 상태일 때만}
+        answerClue: {type: [string, 'null'], description: 결정적 단서. 엔딩 상태일 때만}
         reused: {type: boolean, description: 그 주 게시 테마가 없어 이전 게시 테마를 다시 씀}
         days:
           type: array
           items:
             type: object
-            required: [day, missionId, title, thinkingType, state, attemptStatus]
+            required: [day, missionId, title, thinkingType, state, attemptStatus, clue, rulesOut]
             properties:
               day: {$ref: '#/components/schemas/ThemeDay'}
               missionId: {type: string, format: uuid}
               title: {type: string}
               thinkingType: {$ref: '#/components/schemas/ThinkingType'}
               state: {type: string, enum: [LOCKED, OPEN, CLOSED]}
+              clue: {type: [string, 'null'], description: 그날 단서(#438). LOCKED면 null}
+              rulesOut: {type: [array, 'null'], items: {type: string}, description: 그날 단서로 빠지는 후보(빈 배열 가능). LOCKED면 null}
               attemptStatus:
                 type: string
                 description: 이번 주 그 요일 문제(THEME_DAY) 최근 시도 상태
@@ -3256,6 +3310,38 @@ components:
                   completed: {type: boolean, description: 이번 주 그 문제 요일 시도를 마무리함(다시 풀기 가능)}
                   missed: {type: boolean, description: 지난 요일인데 마무리하지 않음(풀 수 없음)}
         completed: {type: boolean, description: 월~금 다섯 문제를 각 요일(KST) 안에 학습 완료(완주)}
+    ThemeMotion:
+      type: [object, 'null']
+      additionalProperties: true
+      description: 장면 움직임(#438). ai가 정한 JSON 객체 그대로(형식은 ai 기준안)
+    ThemeStoryKind:
+      type: string
+      enum: [INTRO, OUTRO]
+    StoryViewRequest:
+      type: object
+      required: [kind]
+      properties:
+        kind: {$ref: '#/components/schemas/ThemeStoryKind'}
+    StoryViewResult:
+      type: object
+      required: [kind, firstViewThisWeek]
+      properties:
+        kind: {$ref: '#/components/schemas/ThemeStoryKind'}
+        firstViewThisWeek: {type: boolean}
+    DialogueLine:
+      type: object
+      required: [speaker, text]
+      properties:
+        speaker: {type: string, minLength: 1, maxLength: 40}
+        text: {type: string, minLength: 1, maxLength: 200}
+    HintSpot:
+      type: object
+      required: [seq, x, y]
+      description: 그림 위 생각 열기 위치(#438). seq는 그날 미션 현재 기준표의 생각 열기 순번, x·y는 그림 기준 0~100%
+      properties:
+        seq: {type: integer, minimum: 1}
+        x: {type: number, minimum: 0, maximum: 100}
+        y: {type: number, minimum: 0, maximum: 100}
     ThemeReviewViewResult:
       type: object
       required: [firstViewThisWeek, completed]
@@ -3312,9 +3398,30 @@ components:
     ThemeDayMission:
       type: object
       required: [day, missionId]
+      description: >-
+        요일 문제(#438 요일 칸은 선택). 수정 때 없거나 null이면 그 요일의 이전 버전 값을 이어받음(생각 열기 위치는 미션이 같을 때만),
+        dialogue·hintSpots·clue·videoUri는 빈 값이면 비움. rulesOut의 빈 배열은 "빠지는 후보 없음"
       properties:
         day: {$ref: '#/components/schemas/ThemeDay'}
         missionId: {type: string, format: uuid}
+        clue: {type: [string, 'null'], maxLength: 200}
+        rulesOut: {type: [array, 'null'], maxItems: 10, items: {type: string, maxLength: 100}}
+        dialogue: {type: [array, 'null'], maxItems: 20, items: {$ref: '#/components/schemas/DialogueLine'}}
+        hintSpots: {type: [array, 'null'], maxItems: 10, items: {$ref: '#/components/schemas/HintSpot'}}
+        videoUri: {type: [string, 'null'], maxLength: 500, description: 문제 전 영상 S3 키}
+    AdminThemeDay:
+      type: object
+      required: [day, missionId, clue, rulesOut, dialogue, hintSpots, videoUri, videoUrl, sceneImageUrl]
+      properties:
+        day: {$ref: '#/components/schemas/ThemeDay'}
+        missionId: {type: string, format: uuid}
+        clue: {type: [string, 'null']}
+        rulesOut: {type: [array, 'null'], items: {type: string}}
+        dialogue: {type: [array, 'null'], items: {$ref: '#/components/schemas/DialogueLine'}}
+        hintSpots: {type: [array, 'null'], items: {$ref: '#/components/schemas/HintSpot'}}
+        videoUri: {type: [string, 'null'], description: 저장된 S3 키}
+        videoUrl: {type: [string, 'null'], description: 미리보기 presigned URL}
+        sceneImageUrl: {type: [string, 'null'], description: '그날 미션 장면 미리보기 URL(게시본, 없으면 현재본)'}
     AdminWeeklyThemeRequest:
       type: object
       required: [grade, weekStart, title, intro, days]
@@ -3328,6 +3435,22 @@ components:
           maxItems: 5
           description: 요일·미션은 겹치지 않음
           items: {$ref: '#/components/schemas/ThemeDayMission'}
+        outro:
+          type: [string, 'null']
+          maxLength: 2000
+          description: >-
+            #438 이야기·정답 구조 칸은 모두 선택. 수정 때 없거나 null이면 이전 버전 값을 이어받고, 빈 값(빈 문자열·빈 배열·빈 객체)이면 비움.
+            저장 때 정답 논리와 생각 열기 위치를 검사(400)
+        introImageUri: {type: [string, 'null'], maxLength: 500}
+        outroImageUri: {type: [string, 'null'], maxLength: 500}
+        introVideoUri: {type: [string, 'null'], maxLength: 500}
+        outroVideoUri: {type: [string, 'null'], maxLength: 500}
+        introMotion: {$ref: '#/components/schemas/ThemeMotion'}
+        outroMotion: {$ref: '#/components/schemas/ThemeMotion'}
+        bigQuestion: {type: [string, 'null'], maxLength: 200}
+        candidates: {type: [array, 'null'], maxItems: 10, items: {type: string, maxLength: 100}}
+        answer: {type: [string, 'null'], maxLength: 100}
+        answerClue: {type: [string, 'null'], maxLength: 500}
     AdminWeeklyTheme:
       type: object
       required: [themeId, grade, weekStart, status, version, publishedVersion, reviewRequested, title, intro, days, publishedAt, createdAt, updatedAt]
@@ -3341,10 +3464,25 @@ components:
         reviewRequested: {type: boolean, description: 현재본을 검토 요청함(게시 가능)}
         title: {type: string}
         intro: {type: string}
-        days: {type: array, items: {$ref: '#/components/schemas/ThemeDayMission'}}
+        days: {type: array, items: {$ref: '#/components/schemas/AdminThemeDay'}}
         publishedAt: {type: [string, 'null'], format: date-time}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
+        outro: {type: [string, 'null']}
+        introImageUri: {type: [string, 'null'], description: 저장된 S3 키}
+        outroImageUri: {type: [string, 'null']}
+        introVideoUri: {type: [string, 'null']}
+        outroVideoUri: {type: [string, 'null']}
+        introMotion: {$ref: '#/components/schemas/ThemeMotion'}
+        outroMotion: {$ref: '#/components/schemas/ThemeMotion'}
+        bigQuestion: {type: [string, 'null']}
+        candidates: {type: [array, 'null'], items: {type: string}}
+        answer: {type: [string, 'null']}
+        answerClue: {type: [string, 'null'], description: 결정적 단서}
+        introImageUrl: {type: [string, 'null'], description: 미리보기 presigned URL}
+        outroImageUrl: {type: [string, 'null']}
+        introVideoUrl: {type: [string, 'null']}
+        outroVideoUrl: {type: [string, 'null']}
     AdminWeeklyThemePage:
       type: object
       required: [items, page, size, totalElements]

@@ -172,6 +172,7 @@ class StudentDeletionTest {
         val week = java.time.LocalDate.of(2026, 11, 9).plusWeeks(weeks.incrementAndGet().toLong())
         val theme = rows.publishedTheme(listOf(mission.id), week)
         jdbc.update("INSERT INTO theme_review_view (student_id, week_start, theme_id, viewed_at) VALUES (?, ?, ?, now())", student, week, theme)
+        jdbc.update("INSERT INTO theme_story_view (student_id, week_start, kind, theme_id, viewed_at) VALUES (?, ?, 'INTRO', ?, now())", student, week, theme)
         assertEquals(TABLES, counts(student).filterValues { it > 0 }.keys.toList(), "모든 표에 행이 있어야 삭제를 확인할 수 있음")
         return student
     }
@@ -230,6 +231,7 @@ class StudentDeletionTest {
             "community_visibility" to "x.student_id = ?",
             // 되돌아보기 열람 기록 (#385, ERD 4.4)
             "theme_review_view" to "x.student_id = ?",
+            "theme_story_view" to "x.student_id = ?",
         )
         private val TABLES = OWNER.keys.toList()
 

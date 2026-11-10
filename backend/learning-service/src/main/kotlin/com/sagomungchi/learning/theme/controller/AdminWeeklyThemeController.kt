@@ -6,9 +6,12 @@ import com.sagomungchi.learning._common.exception.statusOf
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.theme.domain.AdminWeeklyTheme
 import com.sagomungchi.learning.theme.domain.AdminWeeklyThemePage
+import com.sagomungchi.learning.theme.domain.DialogueLine
+import com.sagomungchi.learning.theme.domain.HintSpot
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeDayMission
 import com.sagomungchi.learning.theme.domain.ThemeGrade
+import com.sagomungchi.learning.theme.domain.ThemeStory
 import com.sagomungchi.learning.theme.domain.WeeklyThemePublishIncompleteException
 import com.sagomungchi.learning.theme.domain.WeeklyThemeStatus
 import com.sagomungchi.learning.theme.domain.ThemeContent
@@ -31,16 +34,38 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.util.UUID
 
-/** 작성·수정 본문 (api-spec 2.8). 수정은 전체 교체. 빠진 칸은 400. 학년은 `grade`(G3~G6, #438, 관리자 경로는 전환 호환 없음) */
+/**
+ * 작성·수정 본문 (api-spec 2.8). 수정은 전체 교체. 빠진 칸은 400. 학년은 `grade`(G3~G6, #438, 관리자 경로는 전환 호환 없음).
+ * #438 이야기·정답 구조·요일 칸은 모두 선택: 수정 때 없거나 null이면 이전 버전 값을 이어받고 빈 값(""·[]·{})이면 비움(ThemeCarryOver)
+ */
 data class WeeklyThemeRequest(
     val grade: ThemeGrade? = null,
     val weekStart: LocalDate? = null,
     val title: String? = null,
     val intro: String? = null,
     val days: List<WeeklyThemeDayRequest>? = null,
+    val outro: String? = null,
+    val introImageUri: String? = null,
+    val outroImageUri: String? = null,
+    val introVideoUri: String? = null,
+    val outroVideoUri: String? = null,
+    val introMotion: Map<String, Any?>? = null,
+    val outroMotion: Map<String, Any?>? = null,
+    val bigQuestion: String? = null,
+    val candidates: List<String>? = null,
+    val answer: String? = null,
+    val answerClue: String? = null,
 )
 
-data class WeeklyThemeDayRequest(val day: ThemeDay? = null, val missionId: UUID? = null)
+data class WeeklyThemeDayRequest(
+    val day: ThemeDay? = null,
+    val missionId: UUID? = null,
+    val clue: String? = null,
+    val rulesOut: List<String>? = null,
+    val dialogue: List<DialogueLine>? = null,
+    val hintSpots: List<HintSpot>? = null,
+    val videoUri: String? = null,
+)
 
 /**
  * 관리자 주간 테마 내부 API (api-spec 2.8·4.1, FN-ADM-22, #385). core #387이 `/api/v1/admin/weekly-themes…`를
@@ -114,7 +139,23 @@ class AdminWeeklyThemeController(
     /** 요일·미션은 겹치지 않음. 다섯 요일을 다 채우는지는 게시 검사(작성 중 저장 허용) */
     private fun WeeklyThemeRequest.toContent(): ThemeContent {
         val days = days.orEmpty().map {
-            ThemeDayMission(it.day ?: missing("days.day"), it.missionId ?: missing("days.missionId"))
+            val day = it.day ?: missing("days.day")
+            ThemeDayMission(
+                day = day,
+                missionId = it.missionId ?: missing("days.missionId"),
+                clue = it.clue?.also { clue -> limit("$day clue", clue, MAX_CLUE) },
+                rulesOut = it.rulesOut?.also { out -> items("$day rulesOut", out, MAX_CANDIDATES, MAX_NAME) },
+                dialogue = it.dialogue?.also { lines ->
+                    if (lines.size > MAX_DIALOGUE) invalid("$day dialogue는 ${MAX_DIALOGUE}줄 이하")
+                    lines.forEach { line ->
+                        if (line.speaker.isBlank() || line.text.isBlank()) invalid("$day dialogue의 speaker·text 필요")
+                        limit("$day dialogue speaker", line.speaker, MAX_SPEAKER)
+                        limit("$day dialogue text", line.text, MAX_LINE)
+                    }
+                },
+                hintSpots = it.hintSpots?.also { spots -> if (spots.size > MAX_SPOTS) invalid("$day hintSpots는 ${MAX_SPOTS}개 이하") },
+                videoUri = it.videoUri?.also { uri -> limit("$day videoUri", uri, MAX_URI) },
+            )
         }
         if (days.map { it.day }.toSet().size != days.size) invalid("요일이 겹침")
         if (days.map { it.missionId }.toSet().size != days.size) invalid("같은 미션을 두 요일에 넣을 수 없음")
@@ -124,7 +165,29 @@ class AdminWeeklyThemeController(
             title = title?.trim()?.takeIf { it.isNotEmpty() && it.length <= MAX_TITLE } ?: invalid("title은 1~${MAX_TITLE}자"),
             intro = intro?.takeIf { it.length <= MAX_INTRO } ?: invalid("intro는 ${MAX_INTRO}자 이하"),
             days = days.sortedBy { it.day.number },
+            story = ThemeStory(
+                outro = outro?.also { limit("outro", it, MAX_INTRO) },
+                introImageUri = introImageUri?.also { limit("introImageUri", it, MAX_URI) },
+                outroImageUri = outroImageUri?.also { limit("outroImageUri", it, MAX_URI) },
+                introVideoUri = introVideoUri?.also { limit("introVideoUri", it, MAX_URI) },
+                outroVideoUri = outroVideoUri?.also { limit("outroVideoUri", it, MAX_URI) },
+                introMotion = introMotion,
+                outroMotion = outroMotion,
+                bigQuestion = bigQuestion?.also { limit("bigQuestion", it, MAX_QUESTION) },
+                candidates = candidates?.also { items("candidates", it, MAX_CANDIDATES, MAX_NAME) },
+                answer = answer?.also { limit("answer", it, MAX_NAME) },
+                answerClue = answerClue?.also { limit("answerClue", it, MAX_ANSWER_CLUE) },
+            ),
         )
+    }
+
+    private fun limit(field: String, value: String, max: Int) {
+        if (value.length > max) invalid("${field}는 ${max}자 이하")
+    }
+
+    private fun items(field: String, values: List<String>, maxItems: Int, maxLength: Int) {
+        if (values.size > maxItems) invalid("${field}는 ${maxItems}개 이하")
+        values.forEach { limit(field, it, maxLength) }
     }
 
     private fun requireMonday(date: LocalDate) {
@@ -140,5 +203,16 @@ class AdminWeeklyThemeController(
         const val MAX_SIZE = 100
         const val MAX_TITLE = 100
         const val MAX_INTRO = 2000
+        // #438 새 칸 길이·개수 상한 (기준안, learning.md #438 절)
+        const val MAX_URI = 500
+        const val MAX_QUESTION = 200
+        const val MAX_NAME = 100
+        const val MAX_ANSWER_CLUE = 500
+        const val MAX_CANDIDATES = 10
+        const val MAX_CLUE = 200
+        const val MAX_DIALOGUE = 20
+        const val MAX_SPEAKER = 40
+        const val MAX_LINE = 200
+        const val MAX_SPOTS = 10
     }
 }

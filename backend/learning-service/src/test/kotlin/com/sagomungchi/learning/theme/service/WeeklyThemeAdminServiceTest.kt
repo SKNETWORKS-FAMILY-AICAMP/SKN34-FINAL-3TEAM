@@ -4,7 +4,10 @@ import com.sagomungchi.learning.TestRows
 import com.sagomungchi.learning._common.exception.errorCodeOf
 import com.sagomungchi.learning._common.exception.httpStatusOf
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
+import com.sagomungchi.learning.theme.domain.DialogueLine
+import com.sagomungchi.learning.theme.domain.HintSpot
 import com.sagomungchi.learning.theme.domain.ThemeGrade
+import com.sagomungchi.learning.theme.domain.ThemeStory
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeDayMission
 import com.sagomungchi.learning.theme.domain.WeeklyThemePublishIncompleteException
@@ -178,6 +181,85 @@ class WeeklyThemeAdminServiceTest : PostgresRepositoryTest() {
         assertEquals(WeeklyThemeStatus.PUBLISHED, service.publish(id).status)
     }
 
+    /** 후보 4개, 화·목·금에 틀린 후보를 하나씩 뺌. 월요일 대화·생각 열기 위치, 장면 키 */
+    private fun storyContent(ids: List<UUID> = missions, title: String = "물의 여행") = content(ids, title).let { base ->
+        base.copy(
+            days = base.days.map { day ->
+                day.copy(
+                    clue = "${day.day} 단서",
+                    rulesOut = OUT[day.day] ?: emptyList(),
+                    dialogue = listOf(DialogueLine("뭉치", "${day.day} 이야기")),
+                    hintSpots = if (day.day == ThemeDay.MON) listOf(HintSpot(1, 10.0, 20.0), HintSpot(2, 80.0, 40.0)) else null,
+                    videoUri = "theme-drafts/run/${day.day}.mp4",
+                )
+            },
+            story = ThemeStory(
+                outro = "강아지는 이웃집에 있었어요", introImageUri = "theme-drafts/run/INTRO.png", outroImageUri = "theme-drafts/run/OUTRO.png",
+                introMotion = mapOf("zoom" to 1.1), bigQuestion = "강아지는 어디에 있을까?",
+                candidates = listOf("고양이", "강아지", "토끼", "햄스터"), answer = "강아지", answerClue = "FRI 단서",
+            ),
+        )
+    }
+
+    @Test
+    fun `이야기·정답 구조·요일 칸을 저장하고 관리자 응답에 저장 값과 미리보기 칸을 담음 (#438)`() {
+        val saved = service.create(admin, storyContent())
+
+        assertEquals("강아지는 이웃집에 있었어요", saved.outro)
+        assertEquals("theme-drafts/run/INTRO.png", saved.introImageUri)
+        assertEquals(mapOf("zoom" to 1.1), saved.introMotion)
+        assertEquals(listOf("고양이", "강아지", "토끼", "햄스터") to "강아지", saved.candidates to saved.answer)
+        val monday = saved.days.first()
+        assertEquals(listOf(HintSpot(1, 10.0, 20.0), HintSpot(2, 80.0, 40.0)), monday.hintSpots)
+        assertEquals(listOf(DialogueLine("뭉치", "MON 이야기")), monday.dialogue)
+        assertEquals(emptyList(), monday.rulesOut)
+        assertEquals(listOf("햄스터"), saved.days.last().rulesOut)
+        assertEquals("theme-drafts/run/MON.mp4", monday.videoUri)
+        // 테스트 앱은 버킷 설정이 없어 S3 키의 미리보기 URL은 null (URL 서명은 AssetUrlsTest·WeeklyThemeServiceTest)
+        assertNull(saved.introImageUrl)
+        assertNull(monday.videoUrl)
+    }
+
+    @Test
+    fun `수정 본문에 없는 칸은 이전 버전에서 이어받고 빈 값은 비움, 미션을 바꾼 요일은 생각 열기 위치를 이어받지 않음 (#438)`() {
+        val id = service.create(admin, storyContent()).themeId
+        // 지금 관리자 웹(#395)처럼 새 칸 없이 제목만 고침
+        val kept = service.update(id, admin, content(title = "새 제목"))
+        assertEquals("새 제목" to 2, kept.title to kept.version)
+        assertEquals("강아지는 이웃집에 있었어요", kept.outro)
+        assertEquals(listOf("고양이", "강아지", "토끼", "햄스터"), kept.candidates)
+        assertEquals("FRI 단서", kept.days.last().clue)
+        assertEquals(listOf(HintSpot(1, 10.0, 20.0), HintSpot(2, 80.0, 40.0)), kept.days.first().hintSpots)
+
+        val other = rows.mission(grade = 3, gradeMax = 4, thinkingType = "ANALYZE").id
+        val swapped = content(listOf(other) + missions.drop(1)).let { it.copy(story = ThemeStory(outro = "", introMotion = emptyMap())) }
+        val changed = service.update(id, admin, swapped)
+        assertNull(changed.outro)
+        assertNull(changed.introMotion)
+        assertEquals("theme-drafts/run/INTRO.png", changed.introImageUri)
+        assertNull(changed.days.first().hintSpots)
+        assertEquals("MON 단서", changed.days.first().clue)
+    }
+
+    @Test
+    fun `정답 논리와 생각 열기 위치를 저장 때 검사해 400 (#438)`() {
+        assertError(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED") {
+            service.create(admin, storyContent().let { it.copy(story = it.story.copy(answer = "거북이")) })
+        }
+        assertError(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED") {
+            service.create(admin, storyContent().let { c -> c.copy(days = c.days.map { it.copy(rulesOut = emptyList()) }) })
+        }
+        assertError(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED") {
+            service.create(admin, storyContent().let { c -> c.copy(days = c.days.map { if (it.day == ThemeDay.MON) it.copy(hintSpots = listOf(HintSpot(3, 1.0, 1.0))) else it }) })
+        }
+        val id = service.create(admin, storyContent()).themeId
+        // 수정도 합친 결과로 검사: 후보만 바꾸면 이어받은 rulesOut이 후보 밖이 됨
+        assertError(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED") {
+            service.update(id, admin, content().copy(story = ThemeStory(candidates = listOf("사자", "강아지"))))
+        }
+        assertEquals(1, service.get(id).version)
+    }
+
     @Test
     fun `없는 테마는 404, 없는 미션은 400`() {
         assertError(HttpStatus.NOT_FOUND, "NOT_FOUND") { service.get(UUID.randomUUID()) }
@@ -186,5 +268,6 @@ class WeeklyThemeAdminServiceTest : PostgresRepositoryTest() {
 
     private companion object {
         val WEEK: LocalDate = LocalDate.of(2026, 11, 9)
+        val OUT = mapOf(ThemeDay.TUE to listOf("토끼"), ThemeDay.THU to listOf("고양이"), ThemeDay.FRI to listOf("햄스터"))
     }
 }

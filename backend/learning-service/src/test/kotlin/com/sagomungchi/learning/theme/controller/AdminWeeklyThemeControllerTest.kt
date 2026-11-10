@@ -3,6 +3,7 @@ package com.sagomungchi.learning.theme.controller
 import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning._common.exception.DomainException
 import com.sagomungchi.learning._common.exception.ErrorKind
+import com.sagomungchi.learning.theme.domain.AdminThemeDay
 import com.sagomungchi.learning.theme.domain.AdminWeeklyTheme
 import com.sagomungchi.learning.theme.domain.AdminWeeklyThemePage
 import com.sagomungchi.learning.theme.domain.ThemeGrade
@@ -45,7 +46,7 @@ class AdminWeeklyThemeControllerTest(@Autowired private val mockMvc: MockMvc) {
     private val now = Instant.parse("2026-11-08T01:00:00Z")
     private val theme = AdminWeeklyTheme(
         themeId, ThemeGrade.G3, monday, WeeklyThemeStatus.DRAFT, 1, null, false, "물의 여행", "소개",
-        listOf(ThemeDayMission(ThemeDay.MON, mission)), null, now, now,
+        listOf(AdminThemeDay(ThemeDay.MON, mission)), null, now, now,
     )
     private val body = """{"grade":"G3","weekStart":"2026-11-09","title":"물의 여행","intro":"소개","days":[{"day":"MON","missionId":"$mission"}]}"""
 

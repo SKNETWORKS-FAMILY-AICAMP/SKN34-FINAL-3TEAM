@@ -26,6 +26,17 @@
             <arg column="version" javaType="_int"/>
             <arg column="title" javaType="java.lang.String"/>
             <arg column="intro" javaType="java.lang.String"/>
+            <arg column="outro" javaType="java.lang.String"/>
+            <arg column="intro_image_uri" javaType="java.lang.String"/>
+            <arg column="outro_image_uri" javaType="java.lang.String"/>
+            <arg column="intro_video_uri" javaType="java.lang.String"/>
+            <arg column="outro_video_uri" javaType="java.lang.String"/>
+            <arg column="intro_motion" javaType="java.util.Map" typeHandler="com.sagomungchi.learning.theme.repository.MotionTypeHandler"/>
+            <arg column="outro_motion" javaType="java.util.Map" typeHandler="com.sagomungchi.learning.theme.repository.MotionTypeHandler"/>
+            <arg column="big_question" javaType="java.lang.String"/>
+            <arg column="candidates" javaType="java.util.List" typeHandler="com.sagomungchi.learning.mission.repository.StringListTypeHandler"/>
+            <arg column="answer" javaType="java.lang.String"/>
+            <arg column="answer_clue" javaType="java.lang.String"/>
         </constructor>
     </resultMap>
 
@@ -35,6 +46,12 @@
             <arg column="mission_id" javaType="java.util.UUID"/>
             <arg column="title" javaType="java.lang.String"/>
             <arg column="thinking_type" javaType="com.sagomungchi.learning.mission.domain.ThinkingType"/>
+            <arg column="clue" javaType="java.lang.String"/>
+            <arg column="rules_out" javaType="java.util.List" typeHandler="com.sagomungchi.learning.mission.repository.StringListTypeHandler"/>
+            <arg column="dialogue" javaType="java.util.List" typeHandler="com.sagomungchi.learning.theme.repository.DialogueListTypeHandler"/>
+            <arg column="hint_spots" javaType="java.util.List" typeHandler="com.sagomungchi.learning.theme.repository.HintSpotListTypeHandler"/>
+            <arg column="video_uri" javaType="java.lang.String"/>
+            <arg column="scene_uri" javaType="java.lang.String"/>
         </constructor>
     </resultMap>
 
@@ -107,12 +124,15 @@
     </select>
 
     <select id="findVersion" resultMap="version">
-        SELECT id, version, title, intro FROM weekly_theme_version WHERE id = #{versionId}
+        SELECT id, version, title, intro, outro, intro_image_uri, outro_image_uri, intro_video_uri, outro_video_uri,
+               intro_motion, outro_motion, big_question, candidates, answer, answer_clue
+        FROM weekly_theme_version WHERE id = #{versionId}
     </select>
 
-    <!-- 요일 미션 표시: 미션 게시본 제목·생각 유형, 게시본이 없으면(공개 중단 등) 현재본 -->
+    <!-- 요일 미션 표시: 미션 게시본 제목·생각 유형·장면, 게시본이 없으면(공개 중단 등) 현재본. 요일 칸(#438) 함께 -->
     <select id="findDays" resultMap="day">
-        SELECT d.day_of_week, d.mission_id, v.title, v.thinking_type
+        SELECT d.day_of_week, d.mission_id, v.title, v.thinking_type,
+               d.clue, d.rules_out, d.dialogue, d.hint_spots, d.video_uri, v.scene_uri
         FROM weekly_theme_day d
         JOIN mission m ON m.id = d.mission_id
         JOIN mission_version v ON v.id = COALESCE(m.published_version_id, m.current_version_id)
@@ -136,13 +156,25 @@
     </insert>
 
     <insert id="insertVersion">
-        INSERT INTO weekly_theme_version (id, theme_id, version, title, intro, created_by, created_at)
-        VALUES (#{id}, #{themeId}, #{version}, #{title}, #{intro}, #{createdBy}, #{now})
+        INSERT INTO weekly_theme_version (id, theme_id, version, title, intro, outro, intro_image_uri, outro_image_uri,
+                                          intro_video_uri, outro_video_uri, intro_motion, outro_motion, big_question,
+                                          candidates, answer, answer_clue, created_by, created_at)
+        VALUES (#{id}, #{themeId}, #{version}, #{title}, #{intro}, #{story.outro}, #{story.introImageUri}, #{story.outroImageUri},
+                #{story.introVideoUri}, #{story.outroVideoUri},
+                #{story.introMotion,typeHandler=com.sagomungchi.learning.theme.repository.MotionTypeHandler,jdbcType=OTHER},
+                #{story.outroMotion,typeHandler=com.sagomungchi.learning.theme.repository.MotionTypeHandler,jdbcType=OTHER},
+                #{story.bigQuestion},
+                #{story.candidates,typeHandler=com.sagomungchi.learning.mission.repository.StringListTypeHandler,jdbcType=OTHER},
+                #{story.answer}, #{story.answerClue}, #{createdBy}, #{now})
     </insert>
 
     <insert id="insertDay">
-        INSERT INTO weekly_theme_day (theme_version_id, day_of_week, mission_id)
-        VALUES (#{versionId}, #{dayOfWeek}, #{missionId})
+        INSERT INTO weekly_theme_day (theme_version_id, day_of_week, mission_id, clue, rules_out, dialogue, hint_spots, video_uri)
+        VALUES (#{versionId}, #{dayOfWeek}, #{day.missionId}, #{day.clue},
+                #{day.rulesOut,typeHandler=com.sagomungchi.learning.mission.repository.StringListTypeHandler,jdbcType=OTHER},
+                #{day.dialogue,typeHandler=com.sagomungchi.learning.theme.repository.DialogueListTypeHandler,jdbcType=OTHER},
+                #{day.hintSpots,typeHandler=com.sagomungchi.learning.theme.repository.HintSpotListTypeHandler,jdbcType=OTHER},
+                #{day.videoUri})
     </insert>
 
     <update id="updateHeader">
@@ -183,5 +215,20 @@
 
     <delete id="deleteReviewViewsByStudent">
         DELETE FROM theme_review_view WHERE student_id = #{studentId}
+    </delete>
+
+    <select id="findStoryViews" resultType="string">
+        SELECT kind FROM theme_story_view WHERE student_id = #{studentId} AND week_start = #{weekStart}
+    </select>
+
+    <!-- 이야기 열람은 학생·주·종류당 1행(#438): 다시 열람하면 0행(첫 열람 아님) -->
+    <insert id="insertStoryView">
+        INSERT INTO theme_story_view (student_id, week_start, kind, theme_id, viewed_at)
+        VALUES (#{studentId}, #{weekStart}, #{kind}, #{themeId}, #{now})
+        ON CONFLICT (student_id, week_start, kind) DO NOTHING
+    </insert>
+
+    <delete id="deleteStoryViewsByStudent">
+        DELETE FROM theme_story_view WHERE student_id = #{studentId}
     </delete>
 </mapper>

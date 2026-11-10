@@ -56,7 +56,7 @@ class AttemptThemeStartTest : PostgresRepositoryTest() {
     /** 그 날짜 KST 정오의 시계를 쓰는 시도 서비스 */
     private fun on(date: LocalDate) = AttemptService(
         attemptRepository, draftRepository, missionService, judgmentService,
-        WeeklyThemeService(themeRepository, Clock.fixed(date.atTime(12, 0).atZone(KST).toInstant(), KST)),
+        WeeklyThemeService(themeRepository, Clock.fixed(date.atTime(12, 0).atZone(KST).toInstant(), KST), com.sagomungchi.learning.TestAssets.urls),
     )
 
     private fun assertError(status: HttpStatus, code: String, block: () -> Unit) {

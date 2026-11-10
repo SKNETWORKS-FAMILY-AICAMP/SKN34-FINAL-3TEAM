@@ -29,6 +29,12 @@ class WeeklyThemeRepository(private val mapper: WeeklyThemeMapper) {
 
     fun findDays(versionId: UUID): List<ThemeDayRow> = mapper.findDays(versionId)
 
+    /** 버전의 저장 내용(이야기·정답 구조·요일 칸 포함). 관리자 수정의 이전 버전 복사(#438)에 씀 */
+    fun findContent(header: ThemeHeader, versionId: UUID): ThemeContent {
+        val version = findVersion(versionId)
+        return ThemeContent(header.grade, header.weekStart, version.title, version.intro, findDays(versionId).map { it.toMission() }, version.story)
+    }
+
     /** 모든 미션 ID가 있는지 */
     fun missionsExist(ids: List<UUID>): Boolean = ids.isEmpty() || mapper.countMissions(ids.distinct()) == ids.distinct().size
 
@@ -67,11 +73,18 @@ class WeeklyThemeRepository(private val mapper: WeeklyThemeMapper) {
     fun recordReviewView(studentId: UUID, weekStart: LocalDate, themeId: UUID, now: Instant): Boolean =
         mapper.insertReviewView(studentId, weekStart, themeId, now) == 1
 
-    /** 학생 삭제: 그 학생의 되돌아보기 열람 기록. 호출한 쪽 트랜잭션 안에서만 */
-    fun deleteByStudent(studentId: UUID): Int = mapper.deleteReviewViewsByStudent(studentId)
+    /** 이번 주 이야기 열람 종류(INTRO·OUTRO, #438) */
+    fun findStoryViews(studentId: UUID, weekStart: LocalDate): Set<String> = mapper.findStoryViews(studentId, weekStart).toSet()
+
+    /** 이야기 열람 기록(학생·주·종류당 1행). 이번 요청이 그 주 첫 열람이면 true */
+    fun recordStoryView(studentId: UUID, weekStart: LocalDate, kind: String, themeId: UUID, now: Instant): Boolean =
+        mapper.insertStoryView(studentId, weekStart, kind, themeId, now) == 1
+
+    /** 학생 삭제: 그 학생의 되돌아보기·이야기 열람 기록(#438). 호출한 쪽 트랜잭션 안에서만 */
+    fun deleteByStudent(studentId: UUID): Int = mapper.deleteReviewViewsByStudent(studentId) + mapper.deleteStoryViewsByStudent(studentId)
 
     private fun insertVersion(versionId: UUID, themeId: UUID, version: Int, content: ThemeContent, createdBy: UUID, now: Instant) {
-        check(mapper.insertVersion(versionId, themeId, version, content.title, content.intro, createdBy, now) == 1)
-        content.days.forEach { check(mapper.insertDay(versionId, it.day.number, it.missionId) == 1) }
+        check(mapper.insertVersion(versionId, themeId, version, content.title, content.intro, content.story, createdBy, now) == 1)
+        content.days.forEach { check(mapper.insertDay(versionId, it.day.number, it) == 1) }
     }
 }

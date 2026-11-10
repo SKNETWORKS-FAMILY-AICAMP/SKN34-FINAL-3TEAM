@@ -1012,6 +1012,9 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 | 관리자 응답의 장면 값 | 관리자 미션 응답 `sceneUri`·`staticSceneUri`는 저장된 S3 키 그대로, presigned URL 변환은 학생 응답만. 테마 편집 응답에는 미리보기 URL 칸을 따로 둠 | 웹이 관리자 응답 `sceneUri`를 그대로 다시 저장하므로 URL로 바꾸면 만료되는 URL이 키 대신 저장됨. 관리자 미션 화면의 테마 장면 미리보기는 안 보임(사용자 결정 2026-11-10) |
 | `answer_clue` (결정적 단서) | 채택 때 learning이 요일 단서 중 마지막 틀린 후보를 빼는 날(`rulesOut`이 비지 않은 마지막 요일)의 `clue`로 채움, 관리자가 고칠 수 있음 | 엔딩 화면에 정답과 근거를 함께 보여 줄 수 있게. ai 응답 계약에는 칸이 없고 바꾸지 않으므로 단서 구조에서 계산 |
 | 생각 열기 위치 검사 | `x`·`y` 0~100, `seq`는 그날 미션 현재 기준표의 생각 열기 순번, 같은 순번 중복 금지. 위반 400 | 이슈 "범위 밖 좌표, 그 미션에 없는 순번은 저장 거부" |
+| 관리자 수정의 이전 버전 복사 | 이야기·정답 구조·요일 칸이 본문에 없거나 null이면 현재 버전 값을 새 버전에 이어받고, 빈 값(""·[]·{})이면 비움. 요일 칸은 요일별, 생각 열기 위치는 그 요일 미션이 같을 때만. `rulesOut`의 빈 배열은 정상 값이라 비우기로 쓰지 않고 후보·정답을 비우면 함께 비움. 저장 검사는 합친 결과로 | 사용자 결정 2026-11-10. 지금 관리자 웹(#395)은 새 칸을 보내지 않아 전체 교체면 LLM 테마를 한 번 고칠 때 내용이 사라짐. 이슈 "테마 새 버전 만들 때 함께 복사" |
+| 정답 구조 저장 검사 보강 | `rulesOut`이 빈 배열이 아닌 날은 그때까지 남은 후보를 적어도 하나 새로 뺌 | #437 ai 보장(2026-11-10 회신)과 같은 성질. 결정적 단서(마지막으로 후보를 빼는 날의 단서) 계산의 전제라 관리자 편집도 같은 규칙으로 |
+| 새 칸 길이·개수 상한 (기준안) | S3 키 500자, 큰 질문 200자, 후보·정답·rulesOut 값 100자·10개, 결정적 단서 500자, 단서 200자, 대화 20줄(화자 40자·글 200자), 생각 열기 위치 10개, 종료 이야기 2000자(시작 이야기와 같음) | 새로 정한 값. 화면·ai 출력 확인 뒤 조정 |
 | 스케줄러 스레드 | `spring.task.scheduling.pool.size` 3 → 5 | 이슈. 작업마다 스레드 하나(생성 주기·주간 크론 추가)라 긴 ai 대기가 고착 판정 탐지를 밀지 않게 |
 | 지식 API 수용 | ai 호출은 트랜잭션 밖(16분 동안 DB 연결을 잡지 않음), 스케줄러 풀 5, 웹 요청은 Tomcat 스레드라 주기 작업이 ai를 기다리는 동안에도 응답. 느린 ai 대역 중 learning 내부 API가 바로 응답하는 테스트로 확인. 지식 API 자체의 시간 상한(기준안 질의당 2초)은 #469 할 일 | 이슈 '웹 요청 스레드와 작업 스레드 분리 확인'. #469 지식 API는 아직 없음(열림, 담당 inyoung9629) |
 | ai 서킷 값 | 느린 호출 설정 없음(16분 대기를 실패로 세지 않음), 최소 호출 20건이라 주 몇 건인 테마 호출로는 거의 열리지 않음 | `aiCircuitBreaker` 그대로 재사용. 기록만 |
@@ -1061,3 +1064,18 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 - 테스트: `ThemeGradeMigrationTest`(V13 상태에 학년군 테마를 넣고 최신까지: 원래 행 G3·G5, G4·G6 복사본의 버전·요일·게시 상태, `grade_band` 제거·학년 CHECK·NOT NULL, 학년·주 게시 UK), `ThemeGradeTest`, `WeeklyThemeServiceTest`(학년마다 자기 테마, 4학년은 G4·중학생은 G6로 시작 검사), `WeeklyThemeAdminServiceTest`(3학년 전용 미션은 G4 테마에 `GRADE_MISMATCH`, 같은 주 G4는 따로 게시), `WeeklyThemeControllerTest`(전환 기간 `gradeBand` 읽기·`grade` 우선·400)
 - 검증: learning `./gradlew test` 379건 통과(로컬 JDK 21·Testcontainers `postgres:17.11-alpine`). `check_db_migrations.py`(CI와 같은 `pgvector/pgvector:0.8.7-pg17-trixie` 일회용 서버): learning V1~V15 적용, learning_db 30개 표·279개 칼럼 ERD 일치, 음성 50건, 반복 마이그레이션 변화 없음
 - core는 develop(#485)부터 learning 테마 경로에 `sundayTheme`(프리미엄 일요일 허용)을 함께 보낸다. #438은 이 값을 읽지 않고(모르는 query는 무시), 일요일 열림 판단은 #484
+
+### 구현 2: 이야기·정답 구조·이야기 열람·presigned URL
+
+| 위치 | 내용 |
+|---|---|
+| `_common/storage/AssetUrls.kt` | `AssetProperties`(`app.assets.bucket`·`region`·`public-endpoint`·`url-ttl`, 1초~1시간), S3 키 → presigned GET URL(공개 주소가 있으면 경로 방식), `http(s)://`·`/`는 그대로, 버킷이 비면 null. AWS SDK `software.amazon.awssdk:s3` 2.56.0(netty·apache HTTP 클라이언트 제외, 서명만) |
+| `theme/domain` | `ThemeStory`·`DialogueLine`·`HintSpot`, `ThemeDayMission` 요일 칸, `ThemeAnswerRules`(정답 논리·새로 빼는 날·생각 열기 위치·결정적 단서), `ThemeCarryOver`(작성 정리·수정 이어받기), `ThemeEnding`(#484 전까지 토·일), `StoryViewResult`·`ThemeStoryKind` |
+| `theme/repository` | 버전·요일 새 칸 저장·조회, `findContent`(이어받기용), 이야기 열람 기록·조회, 학생 삭제에 `theme_story_view`. jsonb 핸들러 `DialogueListTypeHandler`·`HintSpotListTypeHandler`·`MotionTypeHandler` |
+| `theme/service` | 관리자: 작성 정리·수정 이어받기 → 정답 논리·생각 열기 위치(그날 미션 현재 기준표 순번) 검사 400, 응답에 저장 값 + 미리보기 URL. 학생: `intro` 매일, 큰 질문·후보, 공개된 요일 단서, 엔딩일 때만 종료 이야기·정답·결정적 단서·종료 장면, 시작 장면 URL, `introSeen`·`outroSeen`, `recordStoryView`(INTRO 월~토, OUTRO 엔딩이고 일요일 아님, 409 `THEME_STORY_NOT_ALLOWED`) |
+| `theme/controller` | 관리자 본문 새 칸과 모양 검사(길이·개수), 학생 `POST /story-views {kind}`(kind 없거나 모르는 값 400) |
+| 계약 | learning OpenAPI 1.3.0: 이번 주 테마 새 칸·요일 `clue`·`rulesOut`, `/students/{id}/weekly-theme/story-views`, `ThemeMotion`·`DialogueLine`·`HintSpot`·`StoryViewRequest`·`StoryViewResult`·`AdminThemeDay`, 관리자 본문·응답 새 칸. `test_record_exists_openapi` 조작 수 61 → 62 |
+| 설정 | `app.assets.*`(`ASSET_S3_BUCKET`·`S3_REGION`·`S3_PUBLIC_ENDPOINT_URL`, 유효기간 기준안 1시간) |
+
+- 테스트: `AssetUrlsTest`(공개 주소 경로 방식·AWS 주소·그대로·null·유효기간 범위), `ThemeAnswerRulesTest`(정답 논리 위반 모음, 정답 빼기·이미 빠진 후보 다시 빼기, 구조 함께·없을 때 rulesOut, 작성 중, 생각 열기 위치, 결정적 단서, 이어받기·비우기, 미션 바꾼 요일, 후보 비우면 rulesOut 비움, 엔딩 토·일), `WeeklyThemeAdminServiceTest`(새 칸 저장·응답, 지금 웹처럼 제목만 고쳐도 내용 유지, 빈 값 비우기, 미션 바꾼 요일 위치 버림, 정답 논리·생각 열기 위치 400, 수정도 합친 결과로 검사), `WeeklyThemeServiceTest`(평일 공개 요일 단서만·결말 숨김, 토요일 결말·정답·결정적 단서·종료 장면 URL, 이야기 열람 요일 규칙·멱등·다음 주 초기화·404), `WeeklyThemeControllerTest`(이야기 열람 본문·400·403), `StudentDeletionTest`(`theme_story_view` 삭제)
+- 관리자 미션 화면의 장면 값·테마 미션 `sceneMotion`·`themeScene`은 다음 단계(시도·미션 응답)

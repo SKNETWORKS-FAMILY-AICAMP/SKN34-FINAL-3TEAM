@@ -78,3 +78,10 @@ app:
     interval: PT10S # 기준안 (learning.md 21절)
     max-attempts: 3 # 기준안, 첫 생성 포함 (P19 확인)
     ai-read-timeout: 70s # 초안 ai 호출만 (P12 예외): ai LLM 60초 1회·마감 63초, 생성 리스 90초 안
+  assets:
+    # 테마 그림·영상·테마 미션 장면의 S3 키 → 단기 presigned URL (#438). 버킷이 비면 키 값은 URL로 바꾸지 않고 null.
+    # ai가 theme-drafts/에 쓰는 버킷과 같아야 함. 자격 증명은 AWS 기본 체인(로컬 AWS_ACCESS_KEY_ID·AWS_SECRET_ACCESS_KEY, EKS Pod Identity)
+    bucket: ${ASSET_S3_BUCKET:}
+    region: ${S3_REGION:ap-northeast-2}
+    public-endpoint: ${S3_PUBLIC_ENDPOINT_URL:} # 로컬 MinIO처럼 브라우저가 여는 주소로 서명할 때만(경로 방식), 비면 AWS S3
+    url-ttl: PT1H # 기준안. 학생이 테마 화면·영상을 보는 동안 열려 있어야 함(1초~1시간)
