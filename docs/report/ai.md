@@ -1064,7 +1064,10 @@ target: 그 항목의 전문가 이유 문장(71818 score.personal.*.feedback �
 
 ### 15.2 API 변경
 
-- 새 경로 `POST /internal/theme-drafts`(api-spec 4.2). OpenAPI(`contracts/openapi/ai-service.yaml`)와 경로 대조 시험(`scripts/tests/test_ai_openapi.py`, 7 → 8개)은 라우터와 같은 커밋에 넣는다(시험이 실제 라우터와 문서 경로를 대조하므로)
+- 새 경로 `POST /internal/theme-drafts`(api-spec 4.2). OpenAPI(`contracts/openapi/ai-service.yaml`)와 경로 대조 시험(`scripts/tests/test_ai_openapi.py`, 8 → 9개. develop에 리포트 설명 경로 #477이 먼저 들어와 8에서 시작)은 라우터와 같은 커밋에 넣는다(시험이 실제 라우터와 문서 경로를 대조하므로). OpenAPI 스키마는 FastAPI가 모델에서 뽑은 것을 기준으로 옮기고 미션 초안 스키마(`MissionDraftStandard`·`MissionDraftElementCode`·`MissionDraftDraft`)를 재사용
+- 요청 검사(400 `VALIDATION_FAILED`): `gradeMin` = `gradeMax`(학년별 테마), `missions`는 생각 유형 5개에 1개씩, 논술은 초5~6, `previousFailures[].reasons`는 1개 이상
+- 응답: 줄거리 단계에서 끝내 실패하면 쓸 수 있는 테마가 없어 `theme`은 `null`(+ `failure.stage = THEME`). `warnings[].stage`는 `THEME`·`MISSION`·`DIALOGUE`·`REVIEW`·`IMAGE`·`VIDEO`·`MOTION`(끝내 실패해도 그 항목만 빼는 단계 포함). `motions` 값 형식은 움직임 단계에서 확정(지금은 JSON 객체)
+- 그래프가 붙기 전에는 `503 AI_UNAVAILABLE`(`retryable: false`, 다시 불러도 같음)
 - 요청 `previousFailures[].stage`는 `THEME`·`MISSION`·`REVIEW`·`IMAGE` 네 값만 받는다(그 밖 422, 사용자 결정 2026-11-10, #438과 맞춤). learning 검사 실패는 요일·유형 배치·정답 논리면 `THEME`, 미션 게시 규칙(`ELEMENT_CODE`·`STANDARD_CODE`·`SHAPE` 등)이면 `MISSION`으로 바꿔 넣고, AI 호출 실패(502·503·대기 초과·서킷)는 넣지 않는다(learning `check_results`에는 `AI_CALL`로 남음). `reasons`는 `MISSION`이면 `"<요일> <검사 코드> <자세히>"`(요일 `MON`~`FRI`)로 시작해 ai가 그 요일 미션 재생성에만 넣고, 그 밖은 `"<검사 코드> <자세히>"`. 근거: 응답 `failure.stage`와 같은 값이라 learning이 받은 값을 그대로 돌려줌(api-spec 4.2 "이전 시도들의 failure를 그대로"), ai가 다시 만들 곳을 stage로 바로 정함, AI 호출 실패는 고칠 내용이 없음(미션 초안은 `AI_CALL`을 "형식에 맞게 다시 만든다"로만 바꿈), 정해진 값이라 잘못된 값이 422로 드러남. 미션 초안 선례(자유 문자열, `AI_CALL` 포함)와 다름
 - `GET /internal/versions` 응답에 `themeDraft` 추가(core에 읽는 코드 없음)
 

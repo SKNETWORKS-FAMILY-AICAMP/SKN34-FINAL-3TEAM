@@ -388,6 +388,61 @@ paths:
                   properties:
                     retryable:
                       type: boolean
+  /theme-drafts:
+    post:
+      summary: '주간 테마 초안 1회 생성 (api-spec 4.2, #437). 그래프 안에서 실패한 부분만 다시 만들고, 끝내 실패하면 200 + failure. 다시 부르기는 learning'
+      operationId: createThemeDraft
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThemeDraftRequest'
+        required: true
+      responses:
+        '200':
+          description: 성공 또는 끝내 실패(failure)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemeDraftResponse'
+        '400':
+          description: VALIDATION_FAILED (`errors[]`에 필드별 사유)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: UNAUTHENTICATED (내부 토큰 불일치)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: AI_BAD_RESPONSE (LLM이 형식에 맞는 응답을 끝내 만들지 못함). `retryable` 포함
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Problem'
+                - type: object
+                  required:
+                  - retryable
+                  properties:
+                    retryable:
+                      type: boolean
+        '503':
+          description: AI_UNAVAILABLE (LLM 미설정·호출 실패·마감 15분 초과, 그래프 준비 전에는 retryable false) 또는 AI_PROMPT_VERSION_UNAVAILABLE. `retryable` 포함
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Problem'
+                - type: object
+                  required:
+                  - retryable
+                  properties:
+                    retryable:
+                      type: boolean
 components:
   securitySchemes:
     InternalToken:
@@ -653,6 +708,358 @@ components:
       - checks
       - versions
       type: object
+    ThemeDraftRequest:
+      properties:
+        gradeMin:
+          type: integer
+          maximum: 6.0
+          minimum: 3.0
+        gradeMax:
+          type: integer
+          maximum: 6.0
+          minimum: 3.0
+        weekStart:
+          type: string
+          format: date
+        topic:
+          anyOf:
+          - type: string
+          - type: 'null'
+        missions:
+          items:
+            $ref: '#/components/schemas/ThemeMissionInput'
+          type: array
+          maxItems: 5
+          minItems: 5
+        previousFailures:
+          items:
+            $ref: '#/components/schemas/ThemeFailure'
+          type: array
+      type: object
+      required:
+      - gradeMin
+      - gradeMax
+      - weekStart
+      - missions
+      description: 학년별 테마라 gradeMin = gradeMax, missions는 생각 유형 5개에 1개씩, 논술은 초5~6. previousFailures[].stage는 THEME·MISSION·REVIEW·IMAGE만(그 밖 400)
+    ThemeMissionInput:
+      properties:
+        thinkingType:
+          type: string
+          enum:
+          - ANALYZE
+          - EVALUATE
+          - CREATE
+          - SOLVE
+          - REFLECT
+        inputType:
+          type: string
+          enum:
+          - CHOICE
+          - ORDERING
+          - CLASSIFICATION
+          - NARRATIVE
+          - SOLUTION_STEPS
+          - ESSAY
+        standards:
+          items:
+            $ref: '#/components/schemas/MissionDraftStandard'
+          type: array
+          minItems: 1
+        elementCodes:
+          items:
+            $ref: '#/components/schemas/MissionDraftElementCode'
+          type: array
+          minItems: 1
+      type: object
+      required:
+      - thinkingType
+      - inputType
+      - standards
+      - elementCodes
+      description: '유형 하나의 미션 입력.
+
+
+        성취기준·요소 code·입력 방식은 learning이 채움(코드 목록은 learning 소유).'
+    ThemeFailure:
+      properties:
+        stage:
+          type: string
+          enum:
+          - THEME
+          - MISSION
+          - REVIEW
+          - IMAGE
+        reasons:
+          items:
+            type: string
+          type: array
+          minItems: 1
+      type: object
+      required:
+      - stage
+      - reasons
+      description: '이전 시도의 실패.
+
+
+        learning 검사 실패는 배치·정답 논리면 THEME, 미션 규칙이면 MISSION으로 바꿔 넣고
+
+        AI 호출 실패는 넣지 않는다. MISSION 사유는 "<요일> <검사 코드> <자세히>"로 시작.'
+    ThemeDraftResponse:
+      properties:
+        theme:
+          anyOf:
+          - $ref: '#/components/schemas/Theme'
+          - type: 'null'
+        missions:
+          items:
+            $ref: '#/components/schemas/ThemeMission'
+          type: array
+        dialogues:
+          items:
+            $ref: '#/components/schemas/ThemeDialogue'
+          type: array
+        images:
+          additionalProperties:
+            type: string
+          propertyNames:
+            enum:
+            - INTRO
+            - MON
+            - TUE
+            - WED
+            - THU
+            - FRI
+            - OUTRO
+          type: object
+        videos:
+          additionalProperties:
+            type: string
+          propertyNames:
+            enum:
+            - INTRO
+            - MON
+            - TUE
+            - WED
+            - THU
+            - FRI
+            - OUTRO
+          type: object
+        motions:
+          additionalProperties:
+            additionalProperties: true
+            type: object
+          propertyNames:
+            enum:
+            - INTRO
+            - MON
+            - TUE
+            - WED
+            - THU
+            - FRI
+            - OUTRO
+          type: object
+          description: 장면별 움직임 JSON. 형식은 움직임 단계에서 확정(#437 확인 필요)
+        warnings:
+          items:
+            $ref: '#/components/schemas/ThemeWarning'
+          type: array
+        failure:
+          anyOf:
+          - $ref: '#/components/schemas/ThemeFailureResult'
+          - type: 'null'
+        versions:
+          $ref: '#/components/schemas/LlmVersions'
+      type: object
+      required:
+      - theme
+      - missions
+      - dialogues
+      - images
+      - videos
+      - motions
+      - warnings
+      - failure
+      - versions
+      description: 끝내 실패하면 200 + failure(learning CHECK_FAILED). 줄거리 단계에서 끝내 실패하면 theme은 null. 대화·영상·움직임은 끝내 실패해도 그 항목만 빼고 warnings. 정답 논리 검사용 내부 칸(특징 표 등)은 넣지 않음
+    Theme:
+      properties:
+        world:
+          type: string
+        characters:
+          items:
+            $ref: '#/components/schemas/ThemeCharacter'
+          type: array
+        styleNote:
+          type: string
+        outfit:
+          type: string
+        intro:
+          type: string
+        outro:
+          type: string
+        bigQuestion:
+          type: string
+        candidates:
+          items:
+            type: string
+          type: array
+        answer:
+          type: string
+        days:
+          items:
+            $ref: '#/components/schemas/ThemeDay'
+          type: array
+      type: object
+      required:
+      - title
+      - world
+      - characters
+      - styleNote
+      - outfit
+      - intro
+      - outro
+      - bigQuestion
+      - candidates
+      - answer
+      - days
+    ThemeCharacter:
+      properties:
+        name:
+          type: string
+        look:
+          type: string
+      type: object
+      required:
+      - name
+      - look
+    ThemeDay:
+      properties:
+        day:
+          type: string
+          enum:
+          - MON
+          - TUE
+          - WED
+          - THU
+          - FRI
+        thinkingType:
+          type: string
+          enum:
+          - ANALYZE
+          - EVALUATE
+          - CREATE
+          - SOLVE
+          - REFLECT
+        place:
+          type: string
+        sceneNote:
+          type: string
+        clue:
+          type: string
+        rulesOut:
+          items:
+            type: string
+          type: array
+      type: object
+      required:
+      - day
+      - thinkingType
+      - place
+      - sceneNote
+      - clue
+      - rulesOut
+    ThemeMission:
+      properties:
+        day:
+          type: string
+          enum:
+          - MON
+          - TUE
+          - WED
+          - THU
+          - FRI
+        thinkingType:
+          type: string
+          enum:
+          - ANALYZE
+          - EVALUATE
+          - CREATE
+          - SOLVE
+          - REFLECT
+        draft:
+          $ref: '#/components/schemas/MissionDraftDraft'
+      type: object
+      required:
+      - day
+      - thinkingType
+      - draft
+    ThemeDialogue:
+      properties:
+        day:
+          type: string
+          enum:
+          - MON
+          - TUE
+          - WED
+          - THU
+          - FRI
+        lines:
+          items:
+            $ref: '#/components/schemas/ThemeDialogueLine'
+          type: array
+      type: object
+      required:
+      - day
+      - lines
+    ThemeDialogueLine:
+      properties:
+        speaker:
+          type: string
+        text:
+          type: string
+      type: object
+      required:
+      - speaker
+      - text
+    ThemeWarning:
+      properties:
+        stage:
+          type: string
+          enum:
+          - THEME
+          - MISSION
+          - DIALOGUE
+          - REVIEW
+          - IMAGE
+          - VIDEO
+          - MOTION
+        item:
+          type: string
+        reason:
+          type: string
+      type: object
+      required:
+      - stage
+      - item
+      - reason
+    ThemeFailureResult:
+      properties:
+        stage:
+          type: string
+          enum:
+          - THEME
+          - MISSION
+          - REVIEW
+          - IMAGE
+        reasons:
+          items:
+            type: string
+          type: array
+      type: object
+      required:
+      - stage
+      - reasons
     TemplateSettings:
       additionalProperties: false
       properties:

@@ -28,6 +28,7 @@ from app.prompt_versions.service import PromptSync
 from app.report_explanation.router import router as report_explanation_router
 from app.report_narrative.router import router as report_narrative_router
 from app.security import InternalAuthMiddleware
+from app.theme_draft.router import router as theme_draft_router
 
 
 @asynccontextmanager
@@ -96,6 +97,7 @@ def create_app() -> FastAPI:
     app.include_router(judgment_router)
     app.include_router(followup_router)
     app.include_router(mission_draft_router)
+    app.include_router(theme_draft_router)
     app.include_router(analysis_router)
     app.include_router(report_narrative_router)
     app.include_router(report_explanation_router)

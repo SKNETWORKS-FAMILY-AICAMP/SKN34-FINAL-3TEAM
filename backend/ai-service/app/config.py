@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     # 데모 시드 최대 193자에 여유
     mission_draft_question_max_chars: dict[int, int] = {3: 200, 4: 200, 5: 200, 6: 200}
 
+    # 주간 테마 초안 생성 (#437, api-spec 4.2). 호출 1번에 그래프를 한 번 끝까지 실행하고
+    # 다시 부르기는 learning.
+    # 마감 기준안 15분(learning→ai 대기 16분 안). 텍스트 시험에서 글 단계만 6~13분이라
+    # 마감까지 남은 시간이 부족하면 다음 재생성을 시작하지 않음(ai.md 15절)
+    theme_draft_deadline: float = 900.0
+
     # 리포트 설명 sLLM (#477, FN-RPT-09). 클러스터 안 설명 전용 OpenAI 호환 서버(#476)이며
     # 다른 호출의 LLM 제공자(llm_provider)와 별개.
     # 주소가 비어 있으면 설명만 503(report는 설명 미포함)
