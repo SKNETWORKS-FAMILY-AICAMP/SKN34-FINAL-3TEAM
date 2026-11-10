@@ -1,0 +1,14 @@
+{
+  "version": "kn-20261111-01",
+  "status": "ACTIVE",
+  "sample": true,
+  "source": {
+    "notice": "교육부 고시 제2022-33호",
+    "doc": "교육부 고시 제2022-33호 [별책 2] 초등학교 교육과정",
+    "extract": "sample-464",
+    "records": "curriculum.sample.jsonl",
+    "relations": "relations-review.sample.csv",
+    "semesterMap": "경기도교육청 「2022 개정 교육과정 1~4학년 평가계획 도움자료」 교과별 시트(코드↔학기만 사용)"
+  },
+  "embedding": {"model": "fake-bigram-v1", "dimensions": 1536}
+}
