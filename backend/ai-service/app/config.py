@@ -3,6 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
 
@@ -95,6 +96,26 @@ class Settings(BaseSettings):
     theme_dialogue_max_tokens: int = 8000
     # 지식 검색(#470) 연결 자리. 꺼져 있으면 요청의 성취기준으로 지금 틀대로 동작
     theme_knowledge_enabled: bool = False
+
+    # 테마 그림·영상(#437, 사용자 결정 2026-11-10·11). 그림은 OpenAI(같은 키), 2D 만화풍.
+    # 버킷(ASSET_S3_BUCKET, learning과 같은 버킷)이 비면 그림·영상·움직임을 건너뛰고 경고만
+    image_provider: Literal["openai", "fake"] = "openai"
+    image_model: str = "gpt-image-2.6-sunburst"
+    image_size: str = "1536x864"  # 16:9 바로 생성(공식 크기 조건 안)
+    image_quality: str = "medium"
+    theme_image_timeout: float = 280.0  # 그림 1장 상한(기준안, 실측 약 30초)
+    # 영상은 시작·종료만(컷 4개 × 6초). 운영 Google 인증(기준안 WIF)이 정해질 때까지 기본 꺼짐.
+    # 로컬은 gcloud로 받은 접근 토큰을 VIDEO_ACCESS_TOKEN에 넣어 시험(출력·커밋 금지)
+    theme_video_enabled: bool = False
+    video_provider: Literal["veo", "fake"] = "veo"
+    video_model: str = "veo-3.1-fast-generate-001"
+    video_project: str | None = None
+    video_location: str = "us-central1"
+    video_access_token: SecretStr | None = None
+    theme_video_timeout: float = 400.0  # 컷 1개 생성·대기 상한(기준안, 실측 약 115초)
+    asset_s3_bucket: str | None = None
+    s3_endpoint_url: str | None = None  # 로컬 MinIO만, 비면 AWS S3
+    s3_region: str = "ap-northeast-2"
 
     # 리포트 설명 sLLM (#477, FN-RPT-09). 클러스터 안 설명 전용 OpenAI 호환 서버(#476)이며
     # 다른 호출의 LLM 제공자(llm_provider)와 별개.

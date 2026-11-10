@@ -7,7 +7,7 @@ learning 테마 초안 생성 작업이 호출 1번에 그래프를 한 번 끝�
 """
 
 from datetime import date
-from typing import Any, Literal, Self
+from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -129,6 +129,59 @@ class ThemeFailureResult(ApiModel):
     reasons: list[str]
 
 
+VideoScene = Literal["INTRO", "OUTRO"]  # 영상은 시작·종료만(사용자 결정 2026-11-11)
+EffectShape = Literal["circle", "leaf", "petal", "drop", "star", "snow", "bubble", "confetti"]
+TransitionKind = Literal["none", "fade", "slide-left", "slide-right", "zoom"]
+
+
+class MotionPoint(BaseModel):
+    """그림 너비·높이 % 좌표와 확대(생각 열기 위치와 같은 기준)."""
+
+    x: float = Field(ge=0, le=100)
+    y: float = Field(ge=0, le=100)
+    zoom: float = Field(ge=1, le=1.4)
+
+
+class MotionTransition(BaseModel):
+    kind: TransitionKind
+    seconds: float = Field(ge=0.3, le=1.2)
+
+
+class MotionCamera(BaseModel):
+    from_: MotionPoint = Field(alias="from")
+    to: MotionPoint
+    seconds: float = Field(ge=8, le=20)
+
+    model_config = {"populate_by_name": True, "serialize_by_alias": True}
+
+
+class MotionEffect(BaseModel):
+    shape: EffectShape
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    count: int = Field(ge=1, le=20)
+    size: float = Field(ge=1, le=6)
+    direction: int = Field(ge=0, le=359)
+    speed: float = Field(ge=2, le=20)
+    opacity: float = Field(ge=0.2, le=0.8)
+
+
+class MotionCaption(BaseModel):
+    start: float = Field(ge=0)
+    end: float = Field(ge=0)
+    text: str = Field(max_length=30)
+
+
+class ThemeMotion(BaseModel):
+    """장면 움직임 형식 v1(api-spec 4.2·ai-service.yaml ThemeMotion). learning은 그대로 저장."""
+
+    version: Literal[1] = 1
+    transition: MotionTransition
+    camera: MotionCamera | None
+    speakers: dict[str, MotionPoint]
+    effects: list[MotionEffect] = Field(max_length=2)
+    captions: list[MotionCaption] = Field(max_length=8)
+
+
 class ThemeDraftResponse(ApiModel):
     """끝내 실패하면 failure를 담아 200(learning CHECK_FAILED).
 
@@ -139,9 +192,8 @@ class ThemeDraftResponse(ApiModel):
     missions: list[ThemeMission]
     dialogues: list[ThemeDialogue]
     images: dict[Scene, str]
-    videos: dict[Scene, str]
-    # 움직임 JSON 형식은 움직임 단계에서 확정(#437 확인 필요 "움직임 JSON 형식과 상한 값")
-    motions: dict[Scene, dict[str, Any]]
+    videos: dict[VideoScene, str]
+    motions: dict[Scene, ThemeMotion]
     warnings: list[ThemeWarning]
     failure: ThemeFailureResult | None
     versions: LlmVersions
@@ -279,3 +331,65 @@ class MissionReviewItem(BaseModel):
 class GeneratedMissionReview(BaseModel):
     verdict: ReviewVerdict
     items: list[MissionReviewItem]
+
+
+ImageReviewId = Literal["MUNGCHI", "ANSWER_HINT", "TEXT", "SAFETY"]
+VideoReviewId = Literal["MORPH", "ANSWER_HINT", "TEXT", "SAFETY"]
+
+
+class ImageReviewItem(BaseModel):
+    id: ImageReviewId
+    verdict: ReviewVerdict
+    reason: str
+
+
+class GeneratedImageReview(BaseModel):
+    """그림 1장 검토(검토 모델이 그림을 봄)."""
+
+    items: list[ImageReviewItem]
+
+
+class VideoReviewItem(BaseModel):
+    id: VideoReviewId
+    verdict: ReviewVerdict
+    reason: str
+
+
+class GeneratedVideoReview(BaseModel):
+    """영상 컷 1개 검토(앞·가운데·끝 장면을 봄)."""
+
+    items: list[VideoReviewItem]
+
+
+class GeneratedPoint(BaseModel):
+    x: float
+    y: float
+    zoom: float
+
+
+class GeneratedSpeaker(BaseModel):
+    name: str
+    x: float
+    y: float
+
+
+class GeneratedEffect(BaseModel):
+    shape: EffectShape
+    color: str
+    count: int
+    size: float
+    direction: int
+    speed: float
+    opacity: float
+
+
+class GeneratedMotion(BaseModel):
+    """생성 모델이 그림을 보고 정하는 움직임 값. 상한은 코드가 맞춘다(checks.motion)."""
+
+    transition: TransitionKind
+    transitionSeconds: float
+    cameraFrom: GeneratedPoint
+    cameraTo: GeneratedPoint
+    cameraSeconds: float
+    speakers: list[GeneratedSpeaker]
+    effects: list[GeneratedEffect]
