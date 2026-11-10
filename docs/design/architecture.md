@@ -207,9 +207,11 @@ CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 �
 - Domain은 모든 레이어가 참조 가능, Domain은 다른 레이어를 참조하지 않음
 - 기능 간 호출은 상대 기능의 service로만 (다른 기능의 repository 직접 참조 금지)
 - 기능 간 호출 예: 자녀 기록 존재 조회는 `GuardianshipService` → `LearningRecordService` → `LearningRecordClient` → `LearningClient`(학생 전용 `LearningProxyService` 권한과 분리, 서킷·타임아웃 공유, 최대 3명 병렬). 학생 학년·시연 여부는 `StudentLearningContextService`로 조회. 전체 구현 경로는 class-diagram 3장
-- 여러 기능에 걸친 흐름은 `facade`로 조합 (참고 레포 `applicationpreparation/facade` 패턴)
+- 여러 기능에 걸친 흐름은 주도 기능의 service가 상대 기능 service를 호출해 조합한다(core 현행: `LearningProxyService`·`GuardianTransferService`·`SupportService` 등). `facade`는 조합 대상이 많아 service 책임이 흐려질 때만 둔다(선례: learning `judgment/facade/FeedbackFacade`, 참고 레포 `applicationpreparation/facade` 패턴). core는 facade 없이 service 조합이 기준이며 실제 구조에 맞춰 문구를 고쳤다(#422)
 - 공통 코드: Spring `_common/`, Python `app/` 루트의 `config.py`·`errors.py`·`security.py`·`messaging/`·`clients/base.py`
   - `_common`은 기능 패키지를 참조하지 않는다. 기능에 의존하는 공통 처리는 그 기능에 둔다(예: `PublicAuthFilter` → account, #251)
+  - 여러 기능 client가 같은 하위 서비스 연결을 쓰면 전송은 `_common/client`에 둔다(core `LearningClient`: learning 내부 API, 서킷·타임아웃 공유). 기능별 요청·응답 해석은 각 기능 `client`(learning `LearningRecordClient`, community `CommunityClient`, support `LearningSupportClient`)가 맡고, 다른 기능의 client를 참조하지 않는다(#422)
+  - 여러 기능 controller가 쓰는 기능 타입 없는 요청 검사는 `_common/web`(예: 관리자 목록 페이지 범위 `operationPage`, #422)
   - 응답 DTO(Spring): 여러 기능 응답이 같은 OpenAPI component를 공유하면 `_common/web`(예: learning `MissionResponse`·`MissionListItemResponse`·`AnswerItem`), 스키마가 다르면 기능별 controller DTO. `_common/web` DTO는 기능 타입 없이 열거값은 이름 문자열, 값 객체는 같은 모양의 DTO, 기능 타입이 필요한 칸은 타입 인자로 두고, domain → DTO 변환은 쓰는 기능의 controller에 둔다(데이터 표현이라 매핑 중복 허용, 업무 로직은 service 재사용) (#251)
 - DB 트랜잭션은 Application 레이어에서만 시작, 트랜잭션 안에서 외부 HTTP·AMQP 호출 금지
 - 멱등성: `_common/web/IdempotencyService`가 `idempotency_record`와 PostgreSQL 세션 잠금을 관리. HTTP 동안 auto-commit 연결 1개만 보유하고 트랜잭션·행 잠금은 보유하지 않음 (api-spec 1.4)
@@ -258,6 +260,7 @@ Spring (core)
 ```
 backend/core-service/src/main/kotlin/com/sagomungchi/core/
 ├─ _common/
+│  ├─ client/                    # LearningClient·LearningHttpProperties: learning 내부 API 공용 전송·서킷 (#422)
 │  ├─ config/
 │  ├─ exception/
 │  ├─ security/
@@ -265,7 +268,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ json/                      # JsonObject: domain이 드는 jsonb 객체 값 (#168)
 │  ├─ persistence/               # MyBatis 설정·PostgreSQL 타입 핸들러
 │  ├─ scheduler/                 # IdempotencyCleanupScheduler: 만료 멱등 키 정리 주기 실행 (#314)
-│  └─ web/                       # IdempotencyService, SseEmitters (core만)
+│  └─ web/                       # IdempotencyService, SseEmitters, 관리자 목록 페이지 범위 검사 PageQuery (core만)
 │     └─ repository/             # IdempotencyRepository
 ├─ account/                      # Google 로그인·세션·탈퇴
 │  ├─ controller/                # PublicAuthFilter(공개 API 인증, #251) 포함
@@ -292,8 +295,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ service/                   # LearningProxyService, FeedbackService, LearningRecordService
 │  ├─ config/                    # FeedbackConfiguration (피드백 전용 클라이언트·서킷)
 │  └─ client/
-│     ├─ LearningClient.kt
-│     └─ LearningRecordClient.kt
+│     └─ LearningRecordClient.kt # 전송은 _common/client/LearningClient
 ├─ conversation/                 # 분석 대화, 예시 질문
 │  ├─ controller/                # SSE
 │  ├─ scheduler/                 # ConversationRetryWorker: 관리자 재처리 대기 요청 DB 선점·실행 (#47)
@@ -337,6 +339,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  │  └─ PremiumUsageClient.kt   # learning 프리미엄 사용 증빙 조회
 │  └─ scheduler/                 # 정기 청구
 ├─ usage/                        # LLM 사용량 집계, 무료 미션 하루 한도(#387 `MissionUsageService`, `mission_daily_usage`)
+│  ├─ controller/                # AiUsageController: 관리자 AI 사용량 조회 (#422)
 │  ├─ consumer/
 │  ├─ service/
 │  ├─ domain/                    # LlmUsageRecorded·UsageSummary

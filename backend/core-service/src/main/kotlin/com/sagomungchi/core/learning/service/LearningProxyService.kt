@@ -8,7 +8,7 @@ import com.sagomungchi.core._common.web.HttpExchangeResult
 import com.sagomungchi.core._common.web.IdempotencyService
 import com.sagomungchi.core.guardianship.service.StudentLearningContextService
 import com.sagomungchi.core.community.service.CommunityService
-import com.sagomungchi.core.learning.client.LearningClient
+import com.sagomungchi.core._common.client.LearningClient
 import com.sagomungchi.core.payment.service.ProductEntitlementService
 import com.sagomungchi.core.reward.service.ParticipationRewardService
 import org.slf4j.LoggerFactory

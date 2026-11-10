@@ -137,3 +137,12 @@ object ThemePublishCheck {
 
 /** 요일 하나의 문제 (`weekly_theme_day`) */
 data class ThemeDayMission(val day: ThemeDay, val missionId: UUID)
+
+/** 테마 저장 내용 (작성·수정 본문을 검사한 값) */
+data class ThemeContent(
+    val gradeBand: GradeBand,
+    val weekStart: LocalDate,
+    val title: String,
+    val intro: String,
+    val days: List<ThemeDayMission>,
+)

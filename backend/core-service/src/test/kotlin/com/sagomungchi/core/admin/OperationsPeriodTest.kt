@@ -1,7 +1,7 @@
 package com.sagomungchi.core.admin
 import com.sagomungchi.core.admin.domain.*
 import com.sagomungchi.core.admin.service.resolveOperationPeriod
-import com.sagomungchi.core.admin.service.operationPage
+import com.sagomungchi.core._common.web.operationPage
 import com.sagomungchi.core._common.exception.BusinessException
 import org.junit.jupiter.api.Test
 import java.time.Instant

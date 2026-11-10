@@ -3,7 +3,7 @@ package com.sagomungchi.core.learning
 import com.sagomungchi.core._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.core.account.domain.GoogleProfile
 import com.sagomungchi.core.account.service.AuthService
-import com.sagomungchi.core.learning.client.LearningClient
+import com.sagomungchi.core._common.client.LearningClient
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach

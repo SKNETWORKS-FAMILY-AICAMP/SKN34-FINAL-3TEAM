@@ -10,7 +10,7 @@ import com.sagomungchi.core.admin.session
 import com.sagomungchi.core.community.service.CommunityVisibilityService
 import com.sagomungchi.core.consent.service.ConsentService
 import com.sagomungchi.core.learning.LearningHttpStub
-import com.sagomungchi.core.learning.client.LearningClient
+import com.sagomungchi.core._common.client.LearningClient
 import com.sagomungchi.core.report.child
 import com.sagomungchi.core.report.parent
 import org.junit.jupiter.api.AfterAll

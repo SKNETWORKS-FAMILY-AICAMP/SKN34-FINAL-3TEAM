@@ -2,6 +2,7 @@ package com.sagomungchi.core.admin
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core.IntegrationTestSupport
+import com.sagomungchi.core.admin.domain.*
 import com.sagomungchi.core.admin.service.*
 import com.sagomungchi.core.account.service.TokenService
 import org.junit.jupiter.api.Test

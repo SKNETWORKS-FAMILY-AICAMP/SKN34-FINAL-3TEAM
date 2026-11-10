@@ -1,21 +1,13 @@
 package com.sagomungchi.learning.theme.repository
 
 import com.sagomungchi.learning.theme.domain.GradeBand
+import com.sagomungchi.learning.theme.domain.ThemeContent
 import com.sagomungchi.learning.theme.domain.ThemeDayMission
 import com.sagomungchi.learning.theme.domain.WeeklyThemeStatus
 import org.springframework.stereotype.Repository
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
-
-/** 테마 저장 내용 (작성·수정 본문을 검사한 값) */
-data class ThemeContent(
-    val gradeBand: GradeBand,
-    val weekStart: LocalDate,
-    val title: String,
-    val intro: String,
-    val days: List<ThemeDayMission>,
-)
 
 /** 주간 테마·버전·요일 미션, 학생 테마 시도·되돌아보기 열람. 트랜잭션은 시작하지 않음 */
 @Repository

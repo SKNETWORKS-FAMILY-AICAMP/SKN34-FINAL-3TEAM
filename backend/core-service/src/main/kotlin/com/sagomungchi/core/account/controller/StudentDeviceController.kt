@@ -6,7 +6,6 @@ import com.sagomungchi.core.account.config.AuthProperties
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core.account.service.StudentAuthService
 import com.sagomungchi.core.account.service.StudentPinFailure
-import com.sagomungchi.core.guardianship.service.StudentPinService
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.*
 import org.springframework.web.bind.annotation.*
@@ -15,11 +14,10 @@ import java.time.OffsetDateTime
 import java.util.UUID
 
 @RestController
-class StudentDeviceController(private val service: StudentAuthService,private val pins: StudentPinService,private val properties: AuthProperties) {
+class StudentDeviceController(private val service: StudentAuthService,private val properties: AuthProperties) {
     data class PairingRequest(val childIds: List<UUID>)
     data class RegistrationRequest(val pairingCode: String,val label: String)
     data class LoginRequest(val childId: UUID,val pin: String)
-    data class PinRequest(val pin: String)
     @PostMapping("/api/v1/student-devices/pairings")
     fun pairing(@RequestBody body: PairingRequest,request: HttpServletRequest)=ok(service.pairing(identity(request),body.childIds))
     @GetMapping("/api/v1/student-devices")
@@ -27,10 +25,6 @@ class StudentDeviceController(private val service: StudentAuthService,private va
     @DeleteMapping("/api/v1/student-devices/{deviceId}")
     fun revoke(@PathVariable deviceId: UUID,request: HttpServletRequest): ResponseEntity<Void> {
         service.revoke(identity(request),deviceId); return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build()
-    }
-    @PutMapping("/api/v1/children/{childId}/pin")
-    fun pin(@PathVariable childId: UUID,@RequestBody body: PinRequest,request: HttpServletRequest): ResponseEntity<Void> {
-        pins.set(identity(request),childId,body.pin); return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build()
     }
     @PostMapping("/api/v1/auth/student/devices")
     fun register(@RequestBody body: RegistrationRequest,request: HttpServletRequest): ResponseEntity<Any> {

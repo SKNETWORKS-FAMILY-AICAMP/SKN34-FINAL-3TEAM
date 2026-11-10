@@ -2,7 +2,7 @@ package com.sagomungchi.core.support.client
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.sagomungchi.core.learning.client.LearningClient
+import com.sagomungchi.core._common.client.LearningClient
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.security.UserContextHolder
 import org.springframework.http.HttpStatus

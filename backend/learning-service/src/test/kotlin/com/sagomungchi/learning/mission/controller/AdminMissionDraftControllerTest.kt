@@ -15,7 +15,6 @@ import com.sagomungchi.learning.mission.domain.MissionStatus
 import com.sagomungchi.learning.mission.domain.StandardFilter
 import com.sagomungchi.learning.mission.domain.StandardPage
 import com.sagomungchi.learning.mission.domain.ThinkingType
-import com.sagomungchi.learning.mission.repository.AchievementStandardRepository
 import com.sagomungchi.learning.mission.service.DraftCommand
 import com.sagomungchi.learning.mission.service.MissionDraftService
 import com.sagomungchi.learning.mission.service.MissionService
@@ -43,7 +42,6 @@ import java.util.UUID
 class AdminMissionDraftControllerTest(@Autowired private val mockMvc: MockMvc) {
     @MockitoBean lateinit var drafts: MissionDraftService
     @MockitoBean lateinit var missions: MissionService
-    @MockitoBean lateinit var standards: AchievementStandardRepository
 
     private val admin = UUID.randomUUID()
     private val now = Instant.parse("2026-11-04T00:00:00Z")
@@ -84,7 +82,7 @@ class AdminMissionDraftControllerTest(@Autowired private val mockMvc: MockMvc) {
     @Test
     fun `성취기준 조회는 필터를 넘기고 봉투, 학년군 값이 틀리면 400`() {
         val row = AchievementStandard("6국01-02", "국어", "초5~6", "듣기·말하기", "주장을 파악하며 듣는다.", 3, null, "2022 개정", "고시", null)
-        given(standards.search(StandardFilter("국어", "초5~6", "주장", 0, 20))).willReturn(StandardPage(listOf(row), 0, 20, 1))
+        given(drafts.standards(StandardFilter("국어", "초5~6", "주장", 0, 20))).willReturn(StandardPage(listOf(row), 0, 20, 1))
 
         mockMvc.get("/internal/admin/achievement-standards?subject=국어&gradeBand=초5~6&q=주장") { asAdmin() }.andExpect {
             status { isOk() }

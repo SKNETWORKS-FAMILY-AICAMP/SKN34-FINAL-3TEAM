@@ -15,7 +15,7 @@
 | 레이어 표기 | `<<controller>>` `<<consumer>>` `<<scheduler>>` = Presentation / `<<service>>` `<<facade>>` = Application / `<<entity>>` `<<value>>` = Domain / `<<repository>>` `<<client>>` `<<messaging>>` = Infrastructure |
 | 화살표 | `-->` 의존(호출), `..>` 생성·반환, `*--` 소유(같은 집합), `<|..` 구현 |
 | 의존 방향 | Presentation → Application → Infrastructure 단방향, Domain은 전 레이어가 참조 (아키텍처 2.2) |
-| 기능 간 호출 | 상대 기능의 `service`만 호출. 여러 기능 조합은 `facade` |
+| 기능 간 호출 | 상대 기능의 `service`만 호출. 여러 기능 조합은 주도 기능 `service`가 하고, 조합 대상이 많을 때만 `facade` (아키텍처 2.2, #422) |
 | 트랜잭션 | `<<service>>`·`<<facade>>` 메서드에서만 시작, 트랜잭션 안에서 HTTP·AMQP 호출 금지 |
 | Spring 루트 패키지 | `com.sagomungchi.<service>`, 다이어그램은 루트 이하 경로 생략 |
 | Python | 파일 1개 = 다이어그램 클래스 1개 기준. 함수 모음 모듈은 `<<module>>`로 표기 |
@@ -362,7 +362,6 @@ classDiagram
     +register(request) DeviceResponse
     +profiles(deviceCookie) List
     +login(request, deviceCookie) StudentToken
-    +pin(childId, request, reauthToken)
   }
   class MeController {
     <<controller>>
@@ -436,6 +435,7 @@ classDiagram
     +delete(childId, request, reauthToken) ChildDeletionState
     +status(childId, requestId) ChildDeletionState
     +complete(deletionRequestId, request) ChildDeletionState
+    +pin(childId, request, reauthToken)
   }
   class ChildManagementService {
     <<service>>
@@ -579,7 +579,7 @@ classDiagram
   MeController --> AccountService
   ConsentController --> ConsentService
   ChildrenController --> GuardianshipService
-  StudentDeviceController --> StudentPinService : PIN 변경
+  ChildManagementController --> StudentPinService : PIN 변경
   StudentDeviceController --> StudentAuthService
   StudentAuthService --> ChildAuthorizationService : 현재 자녀 권한
   StudentAuthService --> AuthService : 독립 학생 세션
@@ -633,7 +633,7 @@ classDiagram
   - 리포트는 `ReportAccessService.parent`·`requireGuardian`·`regeneration`(관리자 `SERVICE_OPS` 재생성 허용)이 `StudentAccessService.requireLinked`를 호출한다(3.3). 학습 프록시는 `StudentLearningContextService.requireLinked`(3.2)
 - 인가 후 하위 호출 직전에 해당 service·client가 `UserContextHolder`의 `studentScope`를 그 학생 한 명(`{studentId}`)으로 바꾸고 `InternalRestClientFactory`가 헤더로 전달한다. `reportId`처럼 경로에 자녀 ID가 없는 API도 core가 소유 작업에서 학생 ID를 먼저 찾아 같은 방식으로 좁힌다(연결 자녀 전체 범위 전달 없음)
 - `student.deleted` 발행은 `ChildManagementService`(삭제 확정 `confirm`)가 `OutboxWriter`로 한다. `GuardianshipService`는 자녀 등록(`register`)·목록(`children`)만 소유한다
-- 구현 상태: 인증(`AuthController`·`AuthService`·`TokenService`·`GoogleOAuthClient`), 동의·자녀(`ConsentController`·`ConsentService`·`ChildrenController`·`GuardianshipService`), 기기·PIN(`StudentDeviceController`·`StudentAuthService`·`StudentPinService`·`StudentDeviceCleanupService`), 학생 공개 설정(#206 `StudentSharingController` + `StudentLearningContextService.ownSharing`·`requireShared`), 꾸미기 설정(#234 `StudentLookController`·`StudentLookService`·domain `StudentLook`), 계정 관리(`ReauthenticationService`·`AccountManagementService`·`AccountWithdrawalService`·`ChildManagementService`), 보호자 비밀번호(V24 `GuardianPasswordService`, `AccountManagementController`의 `/me/guardian-password`), 탈퇴 전 자녀 이관(#289 `GuardianTransferController`·`GuardianTransferService`·`GuardianTransferAccessService`·domain `GuardianTransfer`·`GuardianTransferRepository`, 상담 이전 `conversation/service/ConversationTransferService`) 구현됨. 그림의 `MeController`·`AccountService`와 Student entity 메서드명은 추상 이름이며, 탈퇴·자녀 해제/삭제의 이관 대기 차단은 실제로 `AccountWithdrawalService`·`ChildManagementService`가 `GuardianTransferAccessService`를 호출한다
+- 구현 상태: 인증(`AuthController`·`AuthService`·`TokenService`·`GoogleOAuthClient`), 동의·자녀(`ConsentController`·`ConsentService`·`ChildrenController`·`GuardianshipService`), 기기·PIN(`StudentDeviceController`·`StudentAuthService`·`StudentPinService`·`StudentDeviceCleanupService`, PIN 변경 `PUT /children/{childId}/pin`은 guardianship `ChildManagementController`, #422), 학생 공개 설정(#206 `StudentSharingController` + `StudentLearningContextService.ownSharing`·`requireShared`), 꾸미기 설정(#234 `StudentLookController`·`StudentLookService`·domain `StudentLook`), 계정 관리(`ReauthenticationService`·`AccountManagementService`·`AccountWithdrawalService`·`ChildManagementService`), 보호자 비밀번호(V24 `GuardianPasswordService`, `AccountManagementController`의 `/me/guardian-password`), 탈퇴 전 자녀 이관(#289 `GuardianTransferController`·`GuardianTransferService`·`GuardianTransferAccessService`·domain `GuardianTransfer`·`GuardianTransferRepository`, 상담 이전 `conversation/service/ConversationTransferService`) 구현됨. 그림의 `MeController`·`AccountService`와 Student entity 메서드명은 추상 이름이며, 탈퇴·자녀 해제/삭제의 이관 대기 차단은 실제로 `AccountWithdrawalService`·`ChildManagementService`가 `GuardianTransferAccessService`를 호출한다
 - 동의는 별도 entity 없이 선택마다 새 `consent` 행(AGREED·WITHDRAWN)을 저장하고 최신 행으로 판정 (상태 다이어그램 2.3, [이슈 #37 보고서](../report/auth-account.md))
 - `StudentAccessService`·`ConsentAccessService`는 인증·인가용 읽기 확인(학생 행 잠금 포함). 쓰기는 자녀 등록 `GuardianshipService`, 정보 수정·해제·삭제 `ChildManagementService`, 동의 저장 `ConsentService`(#37) 소유
 - 공개 API 컨텍스트는 `PublicAuthFilter`가 설정하고 finally에서 해제 (`InternalAuthFilter`와 같은 방식)
@@ -779,6 +779,7 @@ classDiagram
 
 - `learning/`은 controller → service(`LearningProxyService`·`FeedbackService`·`LearningRecordService`) → `LearningClient` 구조 (아키텍처 1.3·2.6). 공통 프록시는 `exchange`로 경로·본문을 그대로 전달하고 학생 컨텍스트·답변 멱등을 service에서 처리 ([이슈 #38 보고서](../report/core-gateway.md))
 - 구현 상태: `LearningController`·`LearningProxyService`·`StudentLearningContextService`·`FeedbackController`·`FeedbackService`·`LearningRecordService`·`LearningRecordClient`·`LearningClient.exchange` 구현됨(마무리·돌아보기·자기 평가 포함). 분석 대화(#41)는 `ConversationController`·`ConversationService`(`prepare`·`transport`·`complete`·`fail`·`evidence`·`examples`)·`AnalysisStreamService`(SSE 실행)·`ConversationRepository`·`AiClient.stream`으로 구현됨. 그림의 `ConversationMessageRepository`는 `ConversationRepository`에, `Conversation`·`ConversationMessage` 엔티티 메서드는 서비스 검증에 포함되고, `JobExecutionService` 없이 `conversation_message` 상태·`retry_count`로 실행을 기록한다. `LearningClient.evidence`는 `LearningRecordClient.evidence`, `correctJudgment`는 `support/client/LearningSupportClient.correct`(3.5)
+- `LearningClient`는 learning 내부 API 공용 전송으로 `_common/client`에 둔다(#422). 기능별 client(`learning/client/LearningRecordClient`, `community/client/CommunityClient`, `support/client/LearningSupportClient`)와 learning service가 같은 서킷·타임아웃을 공유하며, 다른 기능의 client를 직접 참조하지 않는다
 - `DashboardController`(학생 3개·학부모 4개 조회) → `LearningRecordService` → `LearningRecordClient` → `LearningClient`. 집계·home·상세는 learning 기록 API가 계산하고 core는 수치를 계산하지 않음 ([core 보고서](../report/core-gateway.md))
 - `FeedbackController`: learning 동기 응답을 기다리는 동안 heartbeat만 전송, 응답을 `status`·`result`·`error`·`done` 이벤트로 변환. 클라이언트 단절과 무관하게 learning 호출 유지 (아키텍처 1.3)
 - `ConversationService.stream`: ai SSE 이벤트를 그대로 중계, `result` 수신 시 `complete`(트랜잭션), 클라이언트 단절 시 `AiClient.cancel` + `fail(STREAM_INTERRUPTED)` (재시도 가능)
@@ -1170,9 +1171,19 @@ classDiagram
     <<client>>
     +check(request) ModelPreflightResult
   }
-  class ModelPreflightAudit {
+  class MissionAuditRepository {
     <<repository>>
-    +save(actor, request, result, error)
+    +insert(id, actor, action, targetType, target, result, detail)
+  }
+  class ModelLoadingRepository {
+    <<repository>>
+    +save(report, reportedAt)
+    +recent(since) List
+    +deleteExpired()
+  }
+  class ModelLoadingCleanupScheduler {
+    <<scheduler>>
+    +cleanup()
   }
   class ModelLoadingConsumer {
     <<consumer>>
@@ -1182,6 +1193,7 @@ classDiagram
     <<service>>
     +record(event)
     +list() Map
+    +cleanup()
   }
   class ModelLoadingController {
     <<controller>>
@@ -1272,9 +1284,11 @@ classDiagram
   AdminJobService --> OperationRetryRepository : job_execution·감사
   ModelPreflightController --> ModelPreflightService
   ModelPreflightService --> ScoringPreflightClient : POST /internal/models/preflight
-  ModelPreflightService --> ModelPreflightAudit : 결과 감사
+  ModelPreflightService --> MissionAuditRepository : 결과 감사
   ModelLoadingConsumer --> ModelLoadingService : model.loading.reported
   ModelLoadingController --> ModelLoadingService
+  ModelLoadingCleanupScheduler --> ModelLoadingService : 1시간 주기
+  ModelLoadingService --> ModelLoadingRepository
   ModelVersionService --> OutboxWriter : model.version.activated
   ModelVersionService --> ModelVersionRepository : 상태·감사 같은 트랜잭션
   ModelVersionRepository --> ModelVersionMapper
@@ -1292,12 +1306,12 @@ classDiagram
 - `SupportLearningClient` = `support/client/LearningSupportClient.kt` (아키텍처 2.6). `ErrorReportService`·`InquiryService`·`NoticeService` = `SupportService` + `SupportCommands` + `SupportAccessService`(#46)
 - 운영(#47) 구현 이름: `AdminController` = `admin/controller/OperationsController`, `AdminJobService` = `OperationRetryService`(+ `OperationsService` 조회), 큐 현황 = `OperationsQueueService` + `admin/client/QueueManagementClient`, 감사 이력 조회 = `OperationsService.audits`. 관리자 미션(#145) `AdminMissionController` = `learning/controller/AdminMissionsController` + `AdminLearningService`
 - 구현된 #43 공개 경로는 #36 `PublicAuthFilter → AuthService.requirePermission(SERVICE_OPS)`를 재사용한다. 내부 조회는 `InternalAuthFilter`의 내부 토큰 검사를 사용한다. 다른 관리자 기능의 권한 범위는 API 1.2를 따른다.
-- #43은 실제 구현된 `ModelVersionController`·`AiUsageController`·`InternalModelVersionController`를 구분해 표시했다. 내부 응답은 `{items: List<ActiveModelVersion>}`이며 평가·관리자 정보는 제외한다. 나머지 운영 기능은 #47에서 구현됨(위 구현 이름).
+- #43은 실제 구현된 `ModelVersionController`·`AiUsageController`·`InternalModelVersionController`를 구분해 표시했다. `AiUsageController`는 자기 기능 service만 부르도록 `usage/controller`에 둔다(#422, 경로 `GET /api/v1/admin/ai-usage` 동일). 내부 응답은 `{items: List<ActiveModelVersion>}`이며 평가·관리자 정보는 제외한다. 나머지 운영 기능은 #47에서 구현됨(위 구현 이름).
 - `ModelVersion`은 불변 data class다. 상태 전이는 `ModelVersionService`의 `activate`·`rollback`과 private `switch`에서 `copy` 후 Repository에 저장하며 Domain의 `activate()`·`deactivate()` 메서드는 없다.
 - `AuditLogService`는 아직 구현되지 않은 공용 감사 서비스 설계다. #43은 `ModelVersionService → ModelVersionRepository.audit → ModelVersionMapper.audit → audit_log` 경로로 감사 기록을 저장한다. 상태·감사·Outbox를 같은 트랜잭션으로 유지하며, #47 등에서 공용 감사 기능을 실제 도입할 때 이 경로의 통합을 검토한다. 현재 사용처만을 위해 공용 서비스를 추가하지 않는다 ([#43 보고서](../report/ai.md)).
 - `OperationsQueueService` → `QueueManagementClient`: RabbitMQ 관리 API(15672) 조회, `definitions.json`의 고정 35개 큐(기본 큐 7개 × 기본·재시도 3·DLQ) 길이·DLQ 적재량 (참고 레포 `QueueOperations*`, api-spec 5.2)
-- 모델 파일 사전 검사(#368): `ModelPreflightController`(`POST /api/v1/admin/models/preflight`, SERVICE_OPS) → `ModelPreflightService` → `ScoringPreflightClient`(같은 파일, `InternalRestClientFactory` 20초·재시도 없음) → scoring `POST /internal/models/preflight`. 결과·오류는 `ModelPreflightAudit`로 감사 기록 (api-spec 5.2.1, scoring 6장 `preflight.py`)
-- 모델 로딩 상태(#370): scoring `ModelLoadingReporter`가 발행한 `model.loading.reported`를 `admin/consumer/ModelLoadingConsumer`(큐 `core.model.loading.reported`, `RetryingConsumer`)가 받아 `ModelLoadingService.record`로 `model_loading_report`에 Pod·인스턴스별 최신 상태를 저장한다. `ModelLoadingController`(`GET /api/v1/admin/model-loading`)가 `list`로 조회 (아키텍처 1.4)
+- 모델 파일 사전 검사(#368): `ModelPreflightController`(`POST /api/v1/admin/models/preflight`, SERVICE_OPS) → `ModelPreflightService` → `admin/client/ScoringPreflightClient`(`InternalRestClientFactory` 20초·재시도 없음) → scoring `POST /internal/models/preflight`. 결과·오류는 `MissionAuditRepository`(MyBatis `audit_log`, `target_type = MODEL_VERSION`, 대상 ID 없음)로 감사 기록. 검사 대상·결과 값 객체는 `admin/domain/ModelPreflight.kt`, 모르는 칸 거부는 controller DTO `ModelPreflightRequest`·`RegistrationArtifactRequest`가 맡고 domain은 Jackson에 의존하지 않는다(#422, api-spec 5.2.1, scoring 6장 `preflight.py`)
+- 모델 로딩 상태(#370): scoring `ModelLoadingReporter`가 발행한 `model.loading.reported`를 `admin/consumer/ModelLoadingConsumer`(큐 `core.model.loading.reported`, `RetryingConsumer`)가 받아 `ModelLoadingService.record`로 `model_loading_report`에 Pod·인스턴스별 최신 상태를 저장한다. `ModelLoadingController`(`GET /api/v1/admin/model-loading`)가 `list`로 조회 (아키텍처 1.4). 저장·조회·삭제 SQL은 `ModelLoadingRepository`(MyBatis `ModelLoadingMapper`), 1일 지난 보고 정리는 `admin/scheduler/ModelLoadingCleanupScheduler`가 1시간마다 `ModelLoadingService.cleanup` 호출(#422)
 - #336 구현 전: `AdminMissionController`(= `learning/controller/AdminMissionsController`)가 성취기준 표·미션 초안 경로도 같은 방식으로 learning에 넘기고 초안 요청·채택·버리기를 감사 기록한다(api-spec 2.8). 사용량 호출 종류(`usage/domain/UsageSummary.CallType`)에 `MISSION_DRAFT` 추가
 
 ### 3.6 커뮤니티·포인트·꾸미기 (community #388 · reward #389 구현)
@@ -1394,7 +1408,7 @@ classDiagram
 ```
 
 - #389 구현: `RewardService.earn`이 적립 유일 진입점(`REQUIRES_NEW`, 적립하지 않은 이유는 `EarnOutcome`으로 반환, 예외 없음). 저장소는 MyBatis `RewardMapper` 하나이고 위 엔티티·저장소 상자는 설계 단위다. 아래 사건 연결도 #389 후속 PR로 구현했다: `ParticipationRewardService`(사건별 `earn` 호출, 어떤 실패도 던지지 않음)를 `LearningProxyService.reflection·weeklyTheme·reviewViewed`와 `CommunityService.react`가 부른다. 커뮤니티 작성자 `look.equipped`는 `CommunityAuthorMapper`가 `LookUnlockService.equipmentOf`로 채운다
-- 학습 완료 적립: 기존 `LearningProxyService`의 돌아보기 저장 성공 후 `RewardService.earn(MISSION_COMPLETED, missionId)` → `CommunityService.shareCompleted`(설정·동의 확인, 학생·미션당 1개라 다시 풀기는 learning이 무시). 적립 저장 실패는 학습 응답을 실패로 바꾸지 않고, 같은 사건 재요청·주간 테마 조회 때 `award`가 사건 키 UK로 멱등 보충. 여러 기능 조합이므로 구현 시 `facade`로 묶음
+- 학습 완료 적립: 기존 `LearningProxyService`의 돌아보기 저장 성공 후 `RewardService.earn(MISSION_COMPLETED, missionId)` → `CommunityService.shareCompleted`(설정·동의 확인, 학생·미션당 1개라 다시 풀기는 learning이 무시). 적립 저장 실패는 학습 응답을 실패로 바꾸지 않고, 같은 사건 재요청·주간 테마 조회 때 `award`가 사건 키 UK로 멱등 보충. 구현은 `LearningProxyService.reflection`이 learning 저장 뒤 `ParticipationRewardService`(적립)·`CommunityService.shareCompleted`(공유)를 차례로 호출한다. 다른 기능 service 호출이라 의존 규칙(아키텍처 2.2)에 맞고, core의 다른 다기능 흐름과 같이 별도 `facade` 없이 service에서 조합한다(#422). `LearningController`는 `LearningProxyService`만 부른다
 - `StudentLookService`(#234, API 3.12)는 저장 전에 `LookUnlockService`로 해금 여부를 확인하고 `equipped` 슬롯을 검증·교체한다. 학생 삭제 확정의 `clear`가 `RewardService.deleteStudent`도 부른다(#389)
 - 신고 연결(#388 구현): 기존 `SupportService`(3.5)가 `targetType = COMMUNITY_POST` 접수·처리 결과 저장 뒤 `CommunityModerationService.apply`(같은 공유물 신고 전체로 `HIDDEN_REPORT`·`VISIBLE`·`REMOVED`를 정해 learning `moderation` 호출)
 - 동의 철회·이관 수락·공개 설정 변경(#388 구현): 기존 `ConsentService`·`GuardianTransferService`와 `CommunityService.updateSettings`가 `CommunityVisibilityService.sync` 호출(트랜잭션 안에서 설정·현재 보호자 동의로 공개 여부를 정하고 커밋 뒤 learning `community-visibility`). 학생 삭제 확정은 `ChildManagementService`가 `reset`. 공유 요청은 `LearningProxyService.reflection` 돌아보기 저장 성공(또는 `409 ATTEMPT_CLOSED` 재요청) 뒤 `CommunityService.shareCompleted`, 결과 `postId`로 공유 포인트 적립(#389)
@@ -1619,6 +1633,7 @@ classDiagram
   }
   class MissionDraftService {
     <<service>>
+    +standards(filter) StandardPage
     +request(command) MissionDraft
     +adopt(draftId, author) AdminMission
     +discard(draftId) MissionDraft
@@ -1644,8 +1659,7 @@ classDiagram
   }
   class MissionService { <<service>> }
 
-  AdminMissionDraftController --> MissionDraftService
-  AdminMissionDraftController --> AchievementStandardRepository
+  AdminMissionDraftController --> MissionDraftService : 성취기준 검색 포함
   MissionDraftScheduler --> MissionDraftService : 주기 실행
   MissionDraftService --> MissionDraftRepository
   MissionDraftService --> AchievementStandardRepository

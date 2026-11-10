@@ -13,7 +13,7 @@ import com.sagomungchi.core.report.parent
 import com.sagomungchi.core.report.child
 import com.sagomungchi.core.report.completedJob
 import com.sagomungchi.core.learning.LearningHttpStub
-import com.sagomungchi.core.learning.client.LearningClient
+import com.sagomungchi.core._common.client.LearningClient
 import com.sagomungchi.core.support.service.*
 import com.sagomungchi.core.notification.service.NotificationService
 import com.sagomungchi.core.notification.domain.*

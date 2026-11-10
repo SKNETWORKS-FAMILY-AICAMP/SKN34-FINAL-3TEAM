@@ -14,7 +14,6 @@ import com.sagomungchi.learning.mission.domain.MissionDraft
 import com.sagomungchi.learning.mission.domain.StandardFilter
 import com.sagomungchi.learning.mission.domain.StandardPage
 import com.sagomungchi.learning.mission.domain.ThinkingType
-import com.sagomungchi.learning.mission.repository.AchievementStandardRepository
 import com.sagomungchi.learning.mission.service.DraftCommand
 import com.sagomungchi.learning.mission.service.MissionDraftService
 import com.sagomungchi.learning.mission.service.MissionService
@@ -75,7 +74,6 @@ data class MissionDraftPageResponse(val items: List<MissionDraftResponse>, val p
 class AdminMissionDraftController(
     private val draftService: MissionDraftService,
     private val missionService: MissionService,
-    private val standardRepository: AchievementStandardRepository,
 ) {
     @GetMapping("/achievement-standards")
     fun standards(
@@ -90,7 +88,7 @@ class AdminMissionDraftController(
         if (gradeBand != null && gradeBand !in AchievementStandard.GRADE_BAND_NAMES) {
             invalid("gradeBand는 ${AchievementStandard.GRADE_BAND_NAMES.joinToString("·")} 중 하나")
         }
-        return standardRepository.search(StandardFilter(subject?.takeIf(String::isNotBlank), gradeBand, q?.takeIf(String::isNotBlank), page, size))
+        return draftService.standards(StandardFilter(subject?.takeIf(String::isNotBlank), gradeBand, q?.takeIf(String::isNotBlank), page, size))
     }
 
     @PostMapping("/mission-drafts")

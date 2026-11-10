@@ -41,7 +41,7 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
     @Autowired lateinit var retry: OperationRetryService
     @Autowired lateinit var operations: OperationsService
     @MockitoSpyBean lateinit var missionAudits: com.sagomungchi.core.admin.repository.MissionAuditRepository
-    @MockitoSpyBean lateinit var learningClient: com.sagomungchi.core.learning.client.LearningClient
+    @MockitoSpyBean lateinit var learningClient: com.sagomungchi.core._common.client.LearningClient
     @MockitoSpyBean lateinit var publisher: NotificationRedisPublisher
     private fun token(permission: String?="SERVICE_OPS",role: String="ADMIN"): Pair<UUID,String> {
         val user=account(jdbc,role,permission)

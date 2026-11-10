@@ -18,7 +18,7 @@ class ModelRegistryContractTests(unittest.TestCase):
     def test_registry_and_usage_operations_match_openapi(self):
         sources = ROOT / "backend/core-service/src/main/kotlin/com/sagomungchi/core"
         actual = set()
-        for source in [sources / "admin/controller/ModelVersionController.kt", sources / "admin/controller/AiUsageController.kt"]:
+        for source in [sources / "admin/controller/ModelVersionController.kt", sources / "usage/controller/AiUsageController.kt"]:
             for method, path in re.findall(r'@(Get|Post)Mapping\("([^\"]+)"\)', source.read_text(encoding="utf-8")):
                 actual.add((method.lower(), path.removeprefix("/api/v1")))
         documented = {(method, path) for path, methods in self.api["paths"].items()
