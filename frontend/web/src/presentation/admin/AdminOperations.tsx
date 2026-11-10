@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router'
 import { adminApi } from '../../data/admin/api.ts'
 import { useAdminQuery, useAdminMutation } from '../../data/admin/queries.ts'
 import type { Permission } from '../../domain/admin/operations.ts'
-import { hasPermission, jobLabels, jobRetryMessage } from '../../domain/admin/operations.ts'
+import { hasPermission, jobLabels, jobTypeLabels, jobRetryMessage, missionLabels } from '../../domain/admin/operations.ts'
 import type { Period } from '../../domain/classroom.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
@@ -55,22 +55,40 @@ function Overview({ period, permissions }: { period: Period; permissions: Permis
                     key={c.type + c.status}
                     to={`/admin/jobs?${new URLSearchParams({ ...period, type: c.type, status: c.status })}`}
                   >
-                    {c.type} · {jobLabels[c.status]} <strong>{c.count}건</strong>
+                    {jobTypeLabels[c.type]} · {jobLabels[c.status]} <strong>{c.count}건</strong>
                   </Link>
                 ))}
               </div>
             </>
           )}
-          {hasPermission(permissions, 'CONTENT') && (
-            <>
-              <h3>미션 공개 현황</h3>
-              <p>미션 공개 현황은 관리자 미션 공급자 연결 후 조회할 수 있습니다.</p>
-            </>
-          )}
         </>
       )}
+      {hasPermission(permissions, 'CONTENT') && <MissionPublication />}
     </>
   )
+}
+function MissionPublication() {
+  const q = useAdminQuery(['missions', 'overview'], async signal => {
+    // counts는 페이지·필터와 무관한 전체 네 상태의 집계다. 미션 본문은 한 건만 요청한다.
+    const { counts } = await adminApi.missions({ page: '0', size: '1' }, signal)
+    if (!Array.isArray(counts) || counts.length !== Object.keys(missionLabels).length ||
+      new Set(counts.map(c => c?.status)).size !== counts.length ||
+      counts.some(c => !c || !Object.hasOwn(missionLabels, c.status) || !Number.isSafeInteger(c.count) || c.count < 0)) {
+      throw new Error('미션 공개 현황의 집계를 확인하지 못했습니다.')
+    }
+    return counts
+  })
+  return <section className="ad-mission-publication" aria-labelledby="mission-publication-title">
+    <h2 id="mission-publication-title">미션 공개 현황</h2>
+    <p>현재 등록된 전체 미션의 상태입니다.</p>
+    <QueryFeedback query={q} />
+    {q.data && !q.error && <div className="ws-metrics">
+      {Object.entries(missionLabels).map(([status, label]) => <Link className="ws-card" key={status}
+        to={`/admin/missions?${new URLSearchParams({ status })}`}>
+        <h3>{label}</h3><strong className="ws-number">{q.data.find(c => c.status === status)!.count}개</strong>
+      </Link>)}
+    </div>}
+  </section>
 }
 function Jobs() {
   const [params, setParams] = useSearchParams(),
@@ -101,8 +119,8 @@ function Jobs() {
             onChange={(e) => filter('type', e.target.value)}
           >
             <option value="">전체</option>
-            {['REPORT', 'CONVERSATION', 'NOTIFICATION'].map((t) => (
-              <option key={t}>{t}</option>
+            {Object.entries(jobTypeLabels).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
             ))}
           </select>
         </label>
@@ -129,7 +147,7 @@ function Jobs() {
           {q.data.items.map((j) => (
             <article className="ws-card" key={j.jobId}>
               <h3>
-                {j.type} · {j.jobId}
+                {jobTypeLabels[j.type]} · {j.jobId}
               </h3>
               <p>
                 {jobLabels[j.status]} · 재처리 {j.retryCount}회
@@ -174,7 +192,7 @@ function JobDetail({ id }: { id: string }) {
       {q.data && !q.error && (
         <>
           <h3>
-            {q.data.type} · {jobLabels[q.data.status]}
+            {jobTypeLabels[q.data.type]} · {jobLabels[q.data.status]}
           </h3>
           <p>{q.data.failureReason ?? '실패 원인 없음'}</p>
           {q.data.status === 'FAILED' && !q.data.retryable && (

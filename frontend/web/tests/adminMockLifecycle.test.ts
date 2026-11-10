@@ -31,6 +31,24 @@ function registration(name: string, version: string) {
   } }
 }
 
+test('#460: 미션 집계는 페이지·필터와 무관하며 빈 시나리오와 실제 0개를 구분한다', async () => {
+  await login('content@example.test')
+  const all = await call('/admin/missions?page=0&size=1')
+  assert.equal(all.status, 200)
+  assert.equal(all.data.items.length, 1)
+  assert.equal(all.data.counts.length, 4)
+  assert.equal(all.data.counts.reduce((sum: number, c: { count: number }) => sum + c.count, 0), all.data.totalElements)
+  const filtered = await call('/admin/missions?status=DRAFT&page=0&size=1')
+  assert.deepEqual(filtered.data.counts, all.data.counts)
+  setWorkspaceScenario('empty')
+  const empty = await call('/admin/missions?page=0&size=1')
+  assert.equal(empty.data.totalElements, 0)
+  assert.equal(empty.data.items.length, 0)
+  assert.deepEqual(empty.data.counts.map((c: { count: number }) => c.count), [0, 0, 0, 0])
+  await login()
+  assert.equal((await call('/admin/missions?page=0&size=1')).status, 403)
+})
+
 test('관리자 MSW는 일반 보호자·결제 전용 계정의 운영 API를 거부', async () => {
   for (const email of ['parent@example.test', 'payment@example.test']) {
     await login(email)

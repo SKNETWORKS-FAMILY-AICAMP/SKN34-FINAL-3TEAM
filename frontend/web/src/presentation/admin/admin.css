@@ -123,6 +123,12 @@ body:has(.admin-shell){background:#fff}
 #class-journal .admin-shell .ws-stack{display:grid;gap:16px}
 #class-journal .admin-shell .ws-toolbar{display:flex;gap:12px;flex-wrap:wrap;align-items:end}
 #class-journal .admin-shell .ws-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:16px}
+#class-journal .ad-mission-publication{margin-top:24px}
+#class-journal .admin-shell .ad-mission-publication .ws-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}
+#class-journal .ad-mission-publication .ws-card{display:grid;gap:8px}
+#class-journal .ad-mission-publication .ws-card h3{margin:0}
+#class-journal .ad-mission-publication .ws-card:hover{border-color:#a3a3a3}
+@media(max-width:1100px){#class-journal .admin-shell .ad-mission-publication .ws-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:1180px){#class-journal :is(.ad-split,.ad-two){grid-template-columns:minmax(0,1fr)}}
 @media(max-width:860px){#class-journal .admin-shell :is(button,.cj-secondary){min-height:40px}}
 @media(pointer:coarse){#class-journal .admin-shell :is(button,.cj-secondary){min-height:44px}}
