@@ -110,10 +110,10 @@ class LearningProxyService(private val client: LearningClient, private val idemp
     private fun profileQuery(context: UserContext) =
         linked(context).let { student -> listOf("grade=${student.learningGrade}", "demo=${student.demo}").joinToString("&") }
 
-    /** 학년군은 core 학년에서 정한다(초3~4 `G3_4`, 초5~6과 중학생 `G5_6`, #432). 날짜는 KST 오늘이라 무료 한도와 같은 날을 쓴다 */
+    /** 테마 학년은 core 학년 그대로(`G3`~`G6`, 중학생은 `G6` #432, 학년별 테마 #436). 날짜는 KST 오늘이라 무료 한도와 같은 날을 쓴다 */
     private fun themeQuery(context: UserContext, date: LocalDate = entitlements.today()): String {
-        val band = if (linked(context).learningGrade <= 4) "G3_4" else "G5_6"
-        return "gradeBand=$band&date=$date"
+        val grade = "G${linked(context).learningGrade}"
+        return "grade=$grade&date=$date"
     }
 
     /** 학습 완료 확인: 시도 상세가 `COMPLETED`면 그 미션 ID. 조회 실패·다른 상태는 null(적립하지 않음) */
