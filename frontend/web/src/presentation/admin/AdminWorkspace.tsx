@@ -11,6 +11,7 @@ import { Brand, ErrorNotice } from '../shared/ClassroomParts.tsx'
 import { AdminOperations } from './AdminOperations.tsx'
 import { MissionManager } from './MissionManager.tsx'
 import { MissionDraftManager } from './MissionDraftManager.tsx'
+import { ThemeDraftManager } from './ThemeDraftManager.tsx'
 import { ErrorManager } from './ModelManager.tsx'
 import { ModelRegistry } from './ModelRegistry.tsx'
 import { SupportManager } from './SupportManager.tsx'
@@ -21,7 +22,7 @@ import '../common/workspace.css'
 import './admin.css'
 
 const permissionLabel: Record<Permission, string> = { CONTENT: '콘텐츠', SERVICE_OPS: '서비스 운영', PAYMENT_VIEW: '결제 조회', PAYMENT_REFUND: '환불 승인' }
-const titles: Record<string, string> = { home: '운영 요약', jobs: '작업 목록', queues: '큐·DLQ 현황', errors: '신고 검토', support: '문의 답변과 공지 관리', models: '버전 관리', usage: 'AI 호출량·비용', audit: '운영 조치·열람 이력', missions: '미션 목록', 'mission-drafts': '미션 초안 요청·검사', themes: '주간 테마', looks: '꾸미기 아이템', payments: '거래와 환불 요청' }
+const titles: Record<string, string> = { home: '운영 요약', jobs: '작업 목록', queues: '큐·DLQ 현황', errors: '신고 검토', support: '문의 답변과 공지 관리', models: '버전 관리', usage: 'AI 호출량·비용', audit: '운영 조치·열람 이력', missions: '미션 목록', 'mission-drafts': '미션 초안 요청·검사', themes: '주간 테마', 'theme-drafts': '테마 초안 요청·상태', looks: '꾸미기 아이템', payments: '거래와 환불 요청' }
 export function AdminWorkspace() {
   const { session, setSession, setExpired } = useSession(), location = useLocation(), navigate = useNavigate()
   const [params, setParams] = useSearchParams(), cache = useQueryClient(), auth = useAuthentication()
@@ -37,6 +38,7 @@ export function AdminWorkspace() {
     { group: '콘텐츠', path: 'missions', label: '미션 관리', visible: can('CONTENT') },
     { group: '콘텐츠', path: 'mission-drafts', label: '미션 초안', visible: can('CONTENT') },
     { group: '콘텐츠', path: 'themes', label: '주간 테마', visible: can('CONTENT') },
+    { group: '콘텐츠', path: 'theme-drafts', label: '테마 초안', visible: can('CONTENT') },
     { group: '콘텐츠', path: 'looks', label: '꾸미기 아이템', visible: can('CONTENT') },
     { group: '결제', path: 'payments', label: '결제·환불', visible: can('PAYMENT_VIEW') || can('PAYMENT_REFUND') },
   ].filter((n) => n.visible)
@@ -72,6 +74,7 @@ export function AdminWorkspace() {
         : page === 'missions' ? <MissionManager />
         : page === 'mission-drafts' ? <MissionDraftManager />
         : page === 'themes' ? <WeeklyThemeManager />
+        : page === 'theme-drafts' ? <ThemeDraftManager />
         : page === 'looks' ? <LookItemManager />
         : page === 'models' ? <ModelRegistry />
         : page === 'errors' ? <ErrorManager />

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link, useSearchParams } from 'react-router'
 import { adminApi } from '../../data/admin/api.ts'
 import { adminRetentionApi as api } from '../../data/admin/retentionApi.ts'
 import { useAdminMutation, useAdminQuery } from '../../data/admin/queries.ts'
@@ -30,11 +31,17 @@ const nextMonday = () => {
 export function WeeklyThemeManager() {
   const [gradeBand, setGradeBand] = useState(''), [status, setStatus] = useState('')
   const list = useAdminQuery(['weekly-themes', gradeBand, status], (s) => api.themes({ gradeBand, status }, s))
-  const [editing, setEditing] = useState<AdminWeeklyTheme | 'new' | null>(null)
+  const [params, setParams] = useSearchParams()
+  const themeId = params.get('themeId') ?? ''
+  const linked = useAdminQuery(['weekly-theme', themeId], signal => api.theme(themeId, signal), !!themeId && themeId !== 'new')
+  const [local, setEditing] = useState<AdminWeeklyTheme | 'new' | null>(null)
+  const editing = themeId === 'new' ? 'new' : local && local !== 'new' && local.themeId === themeId ? local : linked.data
+  const selectId = (id: string | null) => { const next = new URLSearchParams(params); if (id) next.set('themeId', id); else next.delete('themeId'); setParams(next) }
   // 저장 뒤 편집 중인 테마가 바뀌어도 창을 다시 만들지 않게, 열 때마다 바뀌는 키를 따로 둔다.
   const [opened, setOpened] = useState(0)
   const open = (t: AdminWeeklyTheme | 'new') => {
     setEditing(t)
+    selectId(t === 'new' ? 'new' : t.themeId)
     setOpened((n) => n + 1)
   }
   const rows = list.error ? [] : (list.data?.items ?? [])
@@ -82,12 +89,13 @@ export function WeeklyThemeManager() {
         </div>
         {list.data && !list.error && !rows.length && <Empty>조건에 맞는 테마가 없습니다.</Empty>}
       </Panel>
-      {editing && (
+      {themeId && themeId !== 'new' && <QueryFeedback query={linked} />}
+      {editing && !linked.error && (
         <ThemeEditor
-          key={opened}
+          key={`${themeId}:${opened}`}
           theme={editing === 'new' ? undefined : editing}
-          onSaved={setEditing}
-          onClose={() => setEditing(null)}
+          onSaved={theme => { setEditing(theme); selectId(theme.themeId) }}
+          onClose={() => { setEditing(null); selectId(null) }}
         />
       )}
     </div>
@@ -155,12 +163,14 @@ function ThemeEditor({
               {DAY_LABELS[d]}요일
               <select aria-label={`${DAY_LABELS[d]}요일 미션`} required value={days[d]} onChange={(e) => setDays({ ...days, [d]: e.target.value })}>
                 <option value="">미션 선택</option>
+                {days[d] && !choices.some(c => c.id === days[d]) && <option value={days[d]}>연결된 미션 · 미션 관리에서 게시 상태 확인</option>}
                 {choices.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.title}{c.type ? ` · ${thinkingLabels[c.type]}` : ''}{c.grades ? ` · ${c.grades}` : ''}
                   </option>
                 ))}
               </select>
+              {days[d] && <Link to={'/admin/missions?missionId=' + encodeURIComponent(days[d])}>{DAY_LABELS[d]}요일 미션 편집</Link>}
             </label>
           ))}
           {duplicateType && <p role="alert">같은 생각 유형이 두 번 들어 있습니다. 게시 검사에서 막힙니다.</p>}

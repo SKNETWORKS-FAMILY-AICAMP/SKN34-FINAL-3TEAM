@@ -1,5 +1,13 @@
 /* 1440 = sidebar 192 + main 1248; main content = 1248 - padding 28×2 = 1192px. */
 body:has(.admin-shell){background:#fff}
+#class-journal .ad-theme-drafts>.ad-split{margin-top:20px}
+#class-journal .ad-theme-drafts .ad-draft-id{white-space:normal;overflow-wrap:anywhere}
+#class-journal .ad-theme-drafts dd{margin:4px 0 12px}
+#class-journal .ad-theme-drafts fieldset{min-width:0;margin:12px 0;padding:12px;border:1px solid #ddd;border-radius:5px}
+#class-journal .ad-theme-drafts legend label{display:flex;align-items:center;gap:8px;min-height:32px}
+#class-journal .ad-theme-drafts summary{cursor:pointer;min-height:36px;padding:8px 0}
+@media(max-width:760px){#class-journal .admin-shell .ad-theme-drafts :is(summary,legend label,button,select,input:not([type=checkbox])){min-height:44px}}
+@media(max-width:760px){#class-journal .ad-theme-drafts .ad-table{min-width:0;table-layout:fixed;width:100%}#class-journal .ad-theme-drafts th:nth-child(2){width:86px}#class-journal .ad-theme-drafts th:nth-child(3){width:64px}}
 #class-journal:has(>.admin-shell){padding:0;margin:0;background:#fff;min-height:100vh}
 #class-journal .admin-shell{--cj-ink:#171717;--cj-muted:#626262;--cj-line:#e5e5e5;--cj-accent:#202020;--cj-accent-dark:#000;--cj-paper:#fff;--cj-bg:#fff;--cj-mint:#f0f0f0;--cj-warm:#f7f7f7;--cj-warn:#444;--cj-danger:#333;display:grid;grid-template-columns:192px minmax(0,1fr);grid-template-rows:56px 1fr;min-height:100vh;background:#fff;color:#171717;font-family:Arial,'Noto Sans KR',sans-serif;font-size:13px;line-height:1.55}
 #class-journal .admin-shell *{box-sizing:border-box}
