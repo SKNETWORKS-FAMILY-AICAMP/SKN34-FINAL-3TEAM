@@ -840,7 +840,7 @@ components:
             - INTRO
             - OUTRO
           type: object
-          description: 시작·종료 영상 S3 키(6초 컷 4개를 이은 24초). 요일 영상은 없음. 끝내 실패하거나 건너뛰면 그 장면은 빠지고 warnings(VIDEO)
+          description: 시작·종료 영상 S3 키(컷 4개 4·6·8·6초를 0.5초 녹아드는 전환으로 이은 22.5초). 요일 영상은 없음. 끝내 실패하거나 건너뛰면 그 장면은 빠지고 warnings(VIDEO)
         motions:
           additionalProperties:
             $ref: '#/components/schemas/ThemeMotion'

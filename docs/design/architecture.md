@@ -486,11 +486,11 @@ backend/ai-service/
 │  │  ├─ router.py               # POST /internal/theme-drafts
 │  │  ├─ service.py              # ThemeDraftService: 마감·그래프 실행·응답 조립
 │  │  ├─ graph.py                # plan_theme → … → generate_motion
-│  │  ├─ nodes/                  # 줄거리·미션·대화·검토·이미지·영상·움직임 노드
+│  │  ├─ nodes/                  # plan·mission·dialogue·review·images·video·motion 노드
 │  │  ├─ models.py               # 요청·응답·테마 틀 스키마
 │  │  ├─ checks.py               # 정답 논리·단서 규칙·대화·움직임 검사
 │  │  ├─ storage.py              # S3 theme-drafts/ 업로드 (boto3)
-│  │  ├─ assets/                 # 기본 뭉치 그림(그림 생성 고정 참조, 기준안)
+│  │  ├─ assets/                 # mungchi-2d.png 기본 뭉치 그림(테마 옷 뭉치의 원본, 기준안)
 │  │  └─ prompts.py              # themeDraft 프롬프트 본문·버전(생성·검토)
 │  ├─ prompt_versions/           # 활성 프롬프트 버전 (#68, #254 분리)
 │  │  ├─ router.py               # GET /internal/versions
