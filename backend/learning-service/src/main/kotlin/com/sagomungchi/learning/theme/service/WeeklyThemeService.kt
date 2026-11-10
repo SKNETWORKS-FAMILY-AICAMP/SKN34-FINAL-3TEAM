@@ -5,7 +5,7 @@ import com.sagomungchi.learning.attempt.domain.AttemptContext
 import com.sagomungchi.learning.attempt.domain.ThemeAttempt
 import com.sagomungchi.learning.record.domain.Period
 import com.sagomungchi.learning.theme.domain.DayState
-import com.sagomungchi.learning.theme.domain.GradeBand
+import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.ReviewViewResult
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeDayView
@@ -34,18 +34,18 @@ import java.util.UUID
 
 /**
  * 학생 주간 테마 (P23, FN-RET-07·08, class-diagram 4.4). 요일 상태는 날짜로 계산하고 저장하지 않는다(state-diagram 3.2.1).
- * 이번 주 테마는 학년군의 그 주 게시본, 없으면 그 주 이전 최근 게시본을 다시 쓴다. 학생에게는 게시본만 보인다
+ * 이번 주 테마는 학년의 그 주 게시본, 없으면 그 주 이전 최근 게시본을 다시 쓴다. 학생에게는 게시본만 보인다
  */
 @Service
 class WeeklyThemeService(
     private val repository: WeeklyThemeRepository,
     private val clock: Clock,
 ) {
-    /** 이번 주 테마·요일 상태·되돌아보기 목록 (api-spec 2.11). 학년군에 게시 테마가 하나도 없으면 404 */
+    /** 이번 주 테마·요일 상태·되돌아보기 목록 (api-spec 2.11). 학년에 게시 테마가 하나도 없으면 404 */
     @Transactional(readOnly = true)
-    fun current(studentId: UUID, gradeBand: GradeBand, date: LocalDate): WeeklyThemeView {
+    fun current(studentId: UUID, grade: ThemeGrade, date: LocalDate): WeeklyThemeView {
         val week = ThemeWeek.startOf(date)
-        val theme = repository.findLatestPublished(gradeBand, week) ?: notFound()
+        val theme = repository.findLatestPublished(grade, week) ?: notFound()
         val version = repository.findVersion(published(theme))
         val days = repository.findDays(version.id)
         val attempts = repository.findStudentAttempts(studentId, week)
@@ -82,14 +82,14 @@ class WeeklyThemeService(
      * 테마 시도 시작 검사 (sequence-diagram 3.4·3.6). 진행 중 시도 반환은 부른 쪽(AttemptService)이 먼저 처리해 여기 오지 않는다.
      * THEME_DAY: 오늘(KST) 요일의 이번 주 테마 문제만, 아니면 409 THEME_DAY_CLOSED.
      * THEME_REVIEW: 토·일에 이번 주 테마 문제이고 이번 주 그 문제 THEME_DAY 시도를 마무리했을 때만, 아니면 409 THEME_REVIEW_NOT_ALLOWED.
-     * 학년군은 시도 학년으로 정함(core가 학년군을 정하는 규칙과 같음)
+     * 테마 학년은 시도 학년으로 정함(core가 학생 학년으로 테마 학년을 정하는 규칙과 같음, 7~9는 G6)
      */
     @Transactional(readOnly = true)
     fun checkStart(studentId: UUID, missionId: UUID, grade: Int, context: AttemptContext): ThemeAttempt {
         require(context != AttemptContext.EXTRA) { "테마 컨텍스트만 검사" }
         val today = LocalDate.now(clock)
         val week = ThemeWeek.startOf(today)
-        val theme = repository.findLatestPublished(GradeBand.of(grade), week)
+        val theme = repository.findLatestPublished(ThemeGrade.of(grade), week)
         val days = theme?.let { repository.findDays(published(it)) }.orEmpty()
         if (context == AttemptContext.THEME_DAY) {
             val day = ThemeDay.of(today)
@@ -109,12 +109,12 @@ class WeeklyThemeService(
 
     /** 토·일 되돌아보기 열람 기록 (주 1회 멱등). 평일이면 409 THEME_REVIEW_NOT_ALLOWED, 게시 테마가 없으면 404 */
     @Transactional
-    fun recordReviewView(studentId: UUID, gradeBand: GradeBand, date: LocalDate): ReviewViewResult {
+    fun recordReviewView(studentId: UUID, grade: ThemeGrade, date: LocalDate): ReviewViewResult {
         if (!ThemeWeek.isWeekend(date)) {
             throw BusinessException(HttpStatus.CONFLICT, "THEME_REVIEW_NOT_ALLOWED", "되돌아보기 기간이 아님", "되돌아보기는 토·일에 열려요.")
         }
         val week = ThemeWeek.startOf(date)
-        val theme = repository.findLatestPublished(gradeBand, week) ?: notFound()
+        val theme = repository.findLatestPublished(grade, week) ?: notFound()
         val first = repository.recordReviewView(studentId, week, theme.id, Instant.now(clock).truncatedTo(ChronoUnit.MICROS))
         val days = repository.findDays(published(theme))
         return ReviewViewResult(first, completedWeek(days, repository.findStudentAttempts(studentId, week), week))

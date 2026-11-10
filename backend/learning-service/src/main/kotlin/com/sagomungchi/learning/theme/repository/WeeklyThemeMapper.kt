@@ -3,7 +3,7 @@ package com.sagomungchi.learning.theme.repository
 import com.sagomungchi.learning.attempt.domain.AttemptContext
 import com.sagomungchi.learning.attempt.domain.AttemptStatus
 import com.sagomungchi.learning.mission.domain.ThinkingType
-import com.sagomungchi.learning.theme.domain.GradeBand
+import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.WeeklyThemeStatus
 import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
@@ -14,7 +14,7 @@ import java.util.UUID
 /** `weekly_theme` 행과 세 버전 번호(현재·게시·검토 요청) */
 data class ThemeHeader(
     val id: UUID,
-    val gradeBand: GradeBand,
+    val grade: ThemeGrade,
     val weekStart: LocalDate,
     val status: WeeklyThemeStatus,
     val currentVersionId: UUID,
@@ -50,17 +50,17 @@ data class ThemeAttemptRow(
 @Mapper
 interface WeeklyThemeMapper {
     fun findHeader(@Param("id") id: UUID, @Param("lock") lock: Boolean): ThemeHeader?
-    fun findLatestPublished(@Param("gradeBand") gradeBand: GradeBand, @Param("weekStart") weekStart: LocalDate): ThemeHeader?
-    fun existsOtherPublished(@Param("id") id: UUID, @Param("gradeBand") gradeBand: GradeBand, @Param("weekStart") weekStart: LocalDate): Boolean
+    fun findLatestPublished(@Param("grade") grade: ThemeGrade, @Param("weekStart") weekStart: LocalDate): ThemeHeader?
+    fun existsOtherPublished(@Param("id") id: UUID, @Param("grade") grade: ThemeGrade, @Param("weekStart") weekStart: LocalDate): Boolean
     fun findIds(
-        @Param("gradeBand") gradeBand: GradeBand?,
+        @Param("grade") grade: ThemeGrade?,
         @Param("weekStart") weekStart: LocalDate?,
         @Param("status") status: WeeklyThemeStatus?,
         @Param("size") size: Int,
         @Param("offset") offset: Long,
     ): List<UUID>
     fun count(
-        @Param("gradeBand") gradeBand: GradeBand?,
+        @Param("grade") grade: ThemeGrade?,
         @Param("weekStart") weekStart: LocalDate?,
         @Param("status") status: WeeklyThemeStatus?,
     ): Long
@@ -71,7 +71,7 @@ interface WeeklyThemeMapper {
     fun deferCurrentVersionCheck()
     fun insertTheme(
         @Param("id") id: UUID,
-        @Param("gradeBand") gradeBand: GradeBand,
+        @Param("grade") grade: ThemeGrade,
         @Param("weekStart") weekStart: LocalDate,
         @Param("status") status: WeeklyThemeStatus,
         @Param("versionId") versionId: UUID,
@@ -90,7 +90,7 @@ interface WeeklyThemeMapper {
     fun insertDay(@Param("versionId") versionId: UUID, @Param("dayOfWeek") dayOfWeek: Int, @Param("missionId") missionId: UUID): Int
     fun updateHeader(
         @Param("id") id: UUID,
-        @Param("gradeBand") gradeBand: GradeBand,
+        @Param("grade") grade: ThemeGrade,
         @Param("weekStart") weekStart: LocalDate,
         @Param("status") status: WeeklyThemeStatus,
         @Param("currentVersionId") currentVersionId: UUID,

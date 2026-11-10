@@ -69,7 +69,7 @@ data class ThemeRetryComparison(val state: com.sagomungchi.learning.attempt.doma
 /** 관리자 테마 (api-spec 2.8·4.1). version은 편집 중인 현재본, publishedVersion은 학생에게 제공 중인 게시본 */
 data class AdminWeeklyTheme(
     val themeId: UUID,
-    val gradeBand: GradeBand,
+    val grade: ThemeGrade,
     val weekStart: LocalDate,
     val status: WeeklyThemeStatus,
     val version: Int,

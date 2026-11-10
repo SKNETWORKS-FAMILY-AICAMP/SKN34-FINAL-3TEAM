@@ -5,7 +5,7 @@ import com.sagomungchi.learning._common.exception.DomainException
 import com.sagomungchi.learning._common.exception.ErrorKind
 import com.sagomungchi.learning.theme.domain.AdminWeeklyTheme
 import com.sagomungchi.learning.theme.domain.AdminWeeklyThemePage
-import com.sagomungchi.learning.theme.domain.GradeBand
+import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeDayMission
 import com.sagomungchi.learning.theme.domain.ThemePublishError
@@ -44,10 +44,10 @@ class AdminWeeklyThemeControllerTest(@Autowired private val mockMvc: MockMvc) {
     private val monday = LocalDate.of(2026, 11, 9)
     private val now = Instant.parse("2026-11-08T01:00:00Z")
     private val theme = AdminWeeklyTheme(
-        themeId, GradeBand.G3_4, monday, WeeklyThemeStatus.DRAFT, 1, null, false, "물의 여행", "소개",
+        themeId, ThemeGrade.G3, monday, WeeklyThemeStatus.DRAFT, 1, null, false, "물의 여행", "소개",
         listOf(ThemeDayMission(ThemeDay.MON, mission)), null, now, now,
     )
-    private val body = """{"gradeBand":"G3_4","weekStart":"2026-11-09","title":"물의 여행","intro":"소개","days":[{"day":"MON","missionId":"$mission"}]}"""
+    private val body = """{"grade":"G3","weekStart":"2026-11-09","title":"물의 여행","intro":"소개","days":[{"day":"MON","missionId":"$mission"}]}"""
 
     private fun MockHttpServletRequestDsl.asAdmin(role: String = "ADMIN", userId: String? = admin.toString(), content: String? = null) {
         header("X-Internal-Token", "test-token")
@@ -61,13 +61,13 @@ class AdminWeeklyThemeControllerTest(@Autowired private val mockMvc: MockMvc) {
 
     @Test
     fun `작성은 201과 테마 전체, 작성자는 X-User-Id`() {
-        val content = ThemeContent(GradeBand.G3_4, monday, "물의 여행", "소개", listOf(ThemeDayMission(ThemeDay.MON, mission)))
+        val content = ThemeContent(ThemeGrade.G3, monday, "물의 여행", "소개", listOf(ThemeDayMission(ThemeDay.MON, mission)))
         given(service.create(admin, content)).willReturn(theme)
 
         mockMvc.post("/internal/admin/weekly-themes") { asAdmin(content = body) }.andExpect {
             status { isCreated() }
             jsonPath("$.themeId") { value(themeId.toString()) }
-            jsonPath("$.gradeBand") { value("G3_4") }
+            jsonPath("$.grade") { value("G3") }
             jsonPath("$.weekStart") { value("2026-11-09") }
             jsonPath("$.status") { value("DRAFT") }
             jsonPath("$.version") { value(1) }
@@ -80,9 +80,9 @@ class AdminWeeklyThemeControllerTest(@Autowired private val mockMvc: MockMvc) {
 
     @Test
     fun `목록은 필터를 넘기고 items·page·size·totalElements 봉투`() {
-        given(service.list(GradeBand.G5_6, monday, WeeklyThemeStatus.PUBLISHED, 1, 10)).willReturn(AdminWeeklyThemePage(listOf(theme), 1, 10, 11))
+        given(service.list(ThemeGrade.G5, monday, WeeklyThemeStatus.PUBLISHED, 1, 10)).willReturn(AdminWeeklyThemePage(listOf(theme), 1, 10, 11))
 
-        mockMvc.get("/internal/admin/weekly-themes?gradeBand=G5_6&weekStart=2026-11-09&status=PUBLISHED&page=1&size=10") { asAdmin() }.andExpect {
+        mockMvc.get("/internal/admin/weekly-themes?grade=G5&weekStart=2026-11-09&status=PUBLISHED&page=1&size=10") { asAdmin() }.andExpect {
             status { isOk() }
             jsonPath("$.items[0].themeId") { value(themeId.toString()) }
             jsonPath("$.totalElements") { value(11) }
@@ -91,7 +91,7 @@ class AdminWeeklyThemeControllerTest(@Autowired private val mockMvc: MockMvc) {
 
     @Test
     fun `수정·검토 요청·중단은 테마 전체를 돌려줌`() {
-        val content = ThemeContent(GradeBand.G3_4, monday, "물의 여행", "소개", listOf(ThemeDayMission(ThemeDay.MON, mission)))
+        val content = ThemeContent(ThemeGrade.G3, monday, "물의 여행", "소개", listOf(ThemeDayMission(ThemeDay.MON, mission)))
         given(service.update(themeId, admin, content)).willReturn(theme)
         given(service.requestReview(themeId)).willReturn(theme)
         given(service.unpublish(themeId)).willReturn(theme)
@@ -134,7 +134,7 @@ class AdminWeeklyThemeControllerTest(@Autowired private val mockMvc: MockMvc) {
         mockMvc.post("/internal/admin/weekly-themes") { asAdmin(userId = "not-uuid", content = body) }.andExpect { status { isBadRequest() } }
         listOf(
             body.replace("2026-11-09", "2026-11-10"),
-            body.replace("\"G3_4\"", "\"G1_2\""),
+            body.replace("\"G3\"", "\"G1_2\""),
             body.replace("\"물의 여행\"", "\"  \""),
             body.replace(""""intro":"소개",""", ""),
             body.replace("""[{"day":"MON","missionId":"$mission"}]""", """[{"day":"MON","missionId":"$mission"},{"day":"MON","missionId":"${UUID.randomUUID()}"}]"""),

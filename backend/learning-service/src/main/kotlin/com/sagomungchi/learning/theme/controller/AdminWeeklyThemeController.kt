@@ -6,9 +6,9 @@ import com.sagomungchi.learning._common.exception.statusOf
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.theme.domain.AdminWeeklyTheme
 import com.sagomungchi.learning.theme.domain.AdminWeeklyThemePage
-import com.sagomungchi.learning.theme.domain.GradeBand
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeDayMission
+import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.WeeklyThemePublishIncompleteException
 import com.sagomungchi.learning.theme.domain.WeeklyThemeStatus
 import com.sagomungchi.learning.theme.domain.ThemeContent
@@ -31,9 +31,9 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.util.UUID
 
-/** 작성·수정 본문 (api-spec 2.8). 수정은 전체 교체. 빠진 칸은 400 */
+/** 작성·수정 본문 (api-spec 2.8). 수정은 전체 교체. 빠진 칸은 400. 학년은 `grade`(G3~G6, #438, 관리자 경로는 전환 호환 없음) */
 data class WeeklyThemeRequest(
-    val gradeBand: GradeBand? = null,
+    val grade: ThemeGrade? = null,
     val weekStart: LocalDate? = null,
     val title: String? = null,
     val intro: String? = null,
@@ -54,7 +54,7 @@ class AdminWeeklyThemeController(
 ) {
     @GetMapping
     fun list(
-        @RequestParam(required = false) gradeBand: GradeBand?,
+        @RequestParam(required = false) grade: ThemeGrade?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) weekStart: LocalDate?,
         @RequestParam(required = false) status: WeeklyThemeStatus?,
         @RequestParam(defaultValue = "0") page: Int,
@@ -63,7 +63,7 @@ class AdminWeeklyThemeController(
         requireAdmin()
         if (page < 0 || size !in 1..MAX_SIZE) invalid("page는 0 이상, size는 1~$MAX_SIZE")
         weekStart?.let(::requireMonday)
-        return service.list(gradeBand, weekStart, status, page, size)
+        return service.list(grade, weekStart, status, page, size)
     }
 
     @PostMapping
@@ -119,7 +119,7 @@ class AdminWeeklyThemeController(
         if (days.map { it.day }.toSet().size != days.size) invalid("요일이 겹침")
         if (days.map { it.missionId }.toSet().size != days.size) invalid("같은 미션을 두 요일에 넣을 수 없음")
         return ThemeContent(
-            gradeBand = gradeBand ?: missing("gradeBand"),
+            grade = grade ?: missing("grade"),
             weekStart = (weekStart ?: missing("weekStart")).also(::requireMonday),
             title = title?.trim()?.takeIf { it.isNotEmpty() && it.length <= MAX_TITLE } ?: invalid("title은 1~${MAX_TITLE}자"),
             intro = intro?.takeIf { it.length <= MAX_INTRO } ?: invalid("intro는 ${MAX_INTRO}자 이하"),

@@ -4,7 +4,7 @@ import com.sagomungchi.learning.TestRows
 import com.sagomungchi.learning._common.exception.errorCodeOf
 import com.sagomungchi.learning._common.exception.httpStatusOf
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
-import com.sagomungchi.learning.theme.domain.GradeBand
+import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeDayMission
 import com.sagomungchi.learning.theme.domain.WeeklyThemePublishIncompleteException
@@ -43,7 +43,7 @@ class WeeklyThemeAdminServiceTest : PostgresRepositoryTest() {
         ids: List<UUID> = missions,
         title: String = "물의 여행",
         week: LocalDate = WEEK,
-        band: GradeBand = GradeBand.G3_4,
+        band: ThemeGrade = ThemeGrade.G3,
     ) = ThemeContent(band, week, title, "소개", ids.mapIndexed { index, id -> ThemeDayMission(ThemeDay.entries[index], id) })
 
     private fun published(content: ThemeContent = content()): UUID {
@@ -78,8 +78,8 @@ class WeeklyThemeAdminServiceTest : PostgresRepositoryTest() {
         val live = service.publish(created.themeId)
         assertEquals(WeeklyThemeStatus.PUBLISHED to 1, live.status to live.publishedVersion)
         assertTrue(live.publishedAt != null)
-        assertEquals(1L, service.list(GradeBand.G3_4, WEEK, WeeklyThemeStatus.PUBLISHED, 0, 20).totalElements)
-        assertEquals(0L, service.list(GradeBand.G5_6, null, null, 0, 20).totalElements)
+        assertEquals(1L, service.list(ThemeGrade.G3, WEEK, WeeklyThemeStatus.PUBLISHED, 0, 20).totalElements)
+        assertEquals(0L, service.list(ThemeGrade.G5, null, null, 0, 20).totalElements)
     }
 
     @Test
@@ -104,21 +104,21 @@ class WeeklyThemeAdminServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
-    fun `게시 중 수정은 재검토·재게시 전까지 학생에게 게시본, 학년군·주 변경은 409`() {
+    fun `게시 중 수정은 재검토·재게시 전까지 학생에게 게시본, 학년·주 변경은 409`() {
         val id = published()
 
         val edited = service.update(id, admin, content(title = "새 제목"))
         assertEquals(WeeklyThemeStatus.PUBLISHED, edited.status)
         assertEquals(2 to 1, edited.version to edited.publishedVersion)
-        assertEquals("물의 여행", studentService.current(UUID.randomUUID(), GradeBand.G3_4, WEEK).title)
+        assertEquals("물의 여행", studentService.current(UUID.randomUUID(), ThemeGrade.G3, WEEK).title)
         assertError(HttpStatus.CONFLICT, "CONFLICT") { service.update(id, admin, content(week = WEEK.plusWeeks(1))) }
-        assertError(HttpStatus.CONFLICT, "CONFLICT") { service.update(id, admin, content(band = GradeBand.G5_6)) }
+        assertError(HttpStatus.CONFLICT, "CONFLICT") { service.update(id, admin, content(band = ThemeGrade.G5)) }
 
         service.requestReview(id)
         val republished = service.publish(id)
 
         assertEquals(WeeklyThemeStatus.PUBLISHED to 2, republished.status to republished.publishedVersion)
-        assertEquals("새 제목", studentService.current(UUID.randomUUID(), GradeBand.G3_4, WEEK).title)
+        assertEquals("새 제목", studentService.current(UUID.randomUUID(), ThemeGrade.G3, WEEK).title)
     }
 
     @Test
@@ -130,12 +130,13 @@ class WeeklyThemeAdminServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
-    fun `학년군 전체를 덮지 않거나 시연 전용이거나 유형이 겹치면 게시 불가`() {
+    fun `테마 학년을 포함하지 않거나 시연 전용이거나 유형이 겹치면 게시 불가`() {
+        // 3학년 전용 미션(3~3)은 G3 테마에는 맞고 G4 테마에는 맞지 않음 (#438 학년별 테마)
         val third = rows.mission(grade = 3, thinkingType = "REFLECT").id
         val demo = rows.mission(grade = 3, gradeMax = 4, thinkingType = "SOLVE", demoOnly = true).id
-        val id = service.create(admin, content(missions.take(3) + demo + third)).themeId
+        val id = service.create(admin, content(missions.take(3) + demo + third, band = ThemeGrade.G4)).themeId
 
-        assertEquals(listOf("MISSION_DEMO_ONLY", "GRADE_BAND_MISMATCH"), publishErrors(id))
+        assertEquals(listOf("MISSION_DEMO_ONLY", "GRADE_MISMATCH"), publishErrors(id))
 
         val sameType = rows.mission(grade = 3, gradeMax = 4, thinkingType = "ANALYZE").id
         val other = service.create(admin, content(missions.take(4) + sameType, week = WEEK.plusWeeks(1))).themeId
@@ -143,20 +144,23 @@ class WeeklyThemeAdminServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
-    fun `초3~4 학년군에는 논술 미션을 넣을 수 없음`() {
+    fun `초3 테마에는 논술 미션을 넣을 수 없음`() {
         val essay = rows.mission(grade = 3, gradeMax = 6, thinkingType = "REFLECT", inputType = "ESSAY").id
         val id = service.create(admin, content(missions.take(4) + essay)).themeId
 
-        assertEquals(listOf("GRADE_BAND_MISMATCH"), publishErrors(id))
+        assertEquals(listOf("GRADE_MISMATCH"), publishErrors(id))
     }
 
     @Test
-    fun `같은 학년군·주에 게시 테마는 하나, 다른 주·학년군은 따로`() {
+    fun `같은 학년·주에 게시 테마는 하나, 다른 주·학년은 따로`() {
         published()
         val second = service.create(admin, content(title = "둘째")).themeId
 
         assertEquals(listOf("WEEK_ALREADY_PUBLISHED"), publishErrors(second))
         published(content(week = WEEK.plusWeeks(1)))
+        // #438 학년별 테마: 같은 주라도 G4는 따로 게시
+        published(content(title = "4학년", band = ThemeGrade.G4))
+        assertEquals(1L, service.list(ThemeGrade.G4, WEEK, WeeklyThemeStatus.PUBLISHED, 0, 20).totalElements)
     }
 
     @Test
@@ -167,7 +171,7 @@ class WeeklyThemeAdminServiceTest : PostgresRepositoryTest() {
         val stopped = service.unpublish(id)
 
         assertEquals(WeeklyThemeStatus.UNPUBLISHED, stopped.status)
-        val view = studentService.current(UUID.randomUUID(), GradeBand.G3_4, WEEK.plusWeeks(1))
+        val view = studentService.current(UUID.randomUUID(), ThemeGrade.G3, WEEK.plusWeeks(1))
         assertEquals(earlier to true, view.themeId to view.reused)
         assertError(HttpStatus.CONFLICT, "CONFLICT") { service.publish(id) }
         service.requestReview(id)

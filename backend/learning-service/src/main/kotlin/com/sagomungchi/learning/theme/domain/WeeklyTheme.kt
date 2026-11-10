@@ -26,7 +26,7 @@ class WeeklyThemePublishIncompleteException(val errors: List<ThemePublishError>)
 class WeeklyTheme(
     val id: UUID,
     status: WeeklyThemeStatus,
-    val gradeBand: GradeBand,
+    val grade: ThemeGrade,
     val weekStart: LocalDate,
     val currentVersion: Int,
     publishedVersion: Int?,
@@ -46,11 +46,11 @@ class WeeklyTheme(
     val reviewRequested: Boolean get() = reviewVersion != null && reviewVersion == currentVersion
 
     /**
-     * 수정 가능 여부: 게시 중에는 학년군·주를 바꿀 수 없다(이미 그 주 학생에게 제공 중). 나머지 상태는 모두 수정 가능
+     * 수정 가능 여부: 게시 중에는 학년·주를 바꿀 수 없다(이미 그 주 학생에게 제공 중). 나머지 상태는 모두 수정 가능
      */
-    fun requireEditable(gradeBand: GradeBand, weekStart: LocalDate) {
-        if (status == WeeklyThemeStatus.PUBLISHED && (gradeBand != this.gradeBand || weekStart != this.weekStart)) {
-            conflict("게시 중에는 학년군·주를 바꿀 수 없음")
+    fun requireEditable(grade: ThemeGrade, weekStart: LocalDate) {
+        if (status == WeeklyThemeStatus.PUBLISHED && (grade != this.grade || weekStart != this.weekStart)) {
+            conflict("게시 중에는 학년·주를 바꿀 수 없음")
         }
     }
 
@@ -96,11 +96,11 @@ class WeeklyTheme(
 
 /**
  * 게시 검사 (FN-ADM-22, api-spec 2.8). 실패를 모두 모아 돌려줌.
- * missions는 요일 미션 ID → 그 미션의 게시본(게시 중이 아니면 없음). otherPublished는 같은 학년군·주의 다른 게시 테마가 있는지
+ * missions는 요일 미션 ID → 그 미션의 게시본(게시 중이 아니면 없음). otherPublished는 같은 학년·주의 다른 게시 테마가 있는지
  */
 object ThemePublishCheck {
     fun errors(
-        gradeBand: GradeBand,
+        grade: ThemeGrade,
         days: List<ThemeDayMission>,
         missions: Map<UUID, MissionView>,
         otherPublished: Boolean,
@@ -117,22 +117,22 @@ object ThemePublishCheck {
         published.filter { (_, m) -> m.demoOnly }.forEach { (day, _) ->
             add(ThemePublishError("MISSION_DEMO_ONLY", "${day.day} 문제는 시연 전용 미션이라 넣을 수 없어요"))
         }
-        published.filter { (_, m) -> !covers(gradeBand, m) }.forEach { (day, _) ->
-            add(ThemePublishError("GRADE_BAND_MISMATCH", "${day.day} 문제는 ${gradeBand.minGrade}~${gradeBand.maxGrade}학년 전체에 맞는 미션이 아니에요"))
+        published.filter { (_, m) -> !covers(grade, m) }.forEach { (day, _) ->
+            add(ThemePublishError("GRADE_MISMATCH", "${day.day} 문제는 ${grade.grade}학년에 맞는 미션이 아니에요"))
         }
         val types = published.map { (_, m) -> m.thinkingType }
         if (types.size != ThinkingType.entries.size || types.toSet() != ThinkingType.entries.toSet()) {
             add(ThemePublishError("THINKING_TYPES", "다섯 생각 유형(분석·평가·창의·문제 해결·성찰)이 하나씩 있어야 해요"))
         }
-        if (otherPublished) add(ThemePublishError("WEEK_ALREADY_PUBLISHED", "같은 학년군·주에 이미 게시된 테마가 있어요"))
+        if (otherPublished) add(ThemePublishError("WEEK_ALREADY_PUBLISHED", "같은 학년·주에 이미 게시된 테마가 있어요"))
     }
 
     /**
-     * 학년군 전체를 포함하는 미션: 미션 게시본 학년 범위가 학년군을 덮고, 논술은 초5~6만(MissionView.isOpenTo와 같은 규칙)
+     * 테마 학년을 포함하는 미션 (#438): 미션 게시본 학년 범위 안에 테마 학년이 있고, 논술은 초5~6만(MissionView.isOpenTo와 같은 규칙)
      */
-    fun covers(gradeBand: GradeBand, mission: MissionView): Boolean =
-        mission.gradeMin <= gradeBand.minGrade && mission.gradeMax >= gradeBand.maxGrade &&
-            (mission.inputType != InputType.ESSAY || gradeBand.minGrade >= MissionView.ESSAY_MIN_GRADE)
+    fun covers(grade: ThemeGrade, mission: MissionView): Boolean =
+        grade.grade in mission.gradeMin..mission.gradeMax &&
+            (mission.inputType != InputType.ESSAY || grade.grade >= MissionView.ESSAY_MIN_GRADE)
 }
 
 /** 요일 하나의 문제 (`weekly_theme_day`) */
@@ -140,7 +140,7 @@ data class ThemeDayMission(val day: ThemeDay, val missionId: UUID)
 
 /** 테마 저장 내용 (작성·수정 본문을 검사한 값) */
 data class ThemeContent(
-    val gradeBand: GradeBand,
+    val grade: ThemeGrade,
     val weekStart: LocalDate,
     val title: String,
     val intro: String,

@@ -1045,3 +1045,19 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 - 관리자 테마 목록 필터는 core PR(#439 후속 `feature/theme-grade-proxy`) 병합 전까지 맞지 않을 수 있음(develop web은 이미 `grade`를 보냄)
 - 초안 요청 `topic` 100자 이하·`weekStart` 이번 주 이후 월요일은 새로 정한 기준안
 - 생성 시도 상한·대기·리스·크론·URL 유효기간·자동 성취기준 규칙·학년군 테마 복사 방식은 기준안(이슈 확인 필요)
+
+### 구현 1: 학년별 테마 전환
+
+| 위치 | 내용 |
+|---|---|
+| `V14__prepare_theme_grades_and_drafts.sql` | `grade` nullable 추가 → 옛 게시 UK·목록 인덱스 제거 → `G3_4`·`G5_6` 행을 `G3`·`G5`로 채우고 `G4`·`G6` 복사본(테마·버전·요일, ID `md5(원래 id || ':' || 학년)::uuid`, 순환 FK 지연) → 학년 기준 `uq_weekly_theme_published_week`·`ix_weekly_theme_grade_status_week`. 이야기·장면·정답 구조 칸, `theme_story_view`, `theme_draft`(부분 UK `uq_theme_draft_auto_week`, `ix_theme_draft_status_created`), `mission.source` `LLM_THEME`, `mission_version.scene_motion` |
+| `V15__apply_theme_grades.sql` | `grade` 빈 행 사전 검사 → NOT NULL·`ck_weekly_theme_grade`, `grade_band`·그 CHECK 제거 |
+| `theme/domain` | `GradeBand` → `ThemeGrade`(`of`는 7~9를 `G6`, 전환 기간 `fromBand`), 게시 검사는 학년 포함·`GRADE_MISMATCH` |
+| `theme/controller` | 학생 경로 `grade`(없으면 `gradeBand`, 둘 다 없거나 모르는 값 400), 관리자 `grade` |
+| `theme/repository`·`WeeklyThemeMapper.xml`·`theme/service` | `grade_band` → `grade`(이름 변경) |
+| 계약 | learning OpenAPI `ThemeGrade`·`ThemeGradeQuery`(선택)·`GradeBandQuery`(선택, 사용 중단), 관리자 목록·본문·응답 `grade`, `GRADE_MISMATCH`. `test_weekly_theme_contract.py` learning 쪽(관리자 query `grade`, 학생 `grade`·`gradeBand`·`date`, `ThemeGrade` enum = 도메인) |
+| 검증 스크립트·설정·문서 | `verify_db_schema.py` 주간 테마 음성 시험을 `grade`로 바꾸고 학년별 게시·이야기 열람·테마 초안 음성 시험 추가, gitops 로컬 learning 마이그레이션 리비전 v15, ERD 8장 learning V1~V15·30개 표·279개 칼럼 |
+
+- 테스트: `ThemeGradeMigrationTest`(V13 상태에 학년군 테마를 넣고 최신까지: 원래 행 G3·G5, G4·G6 복사본의 버전·요일·게시 상태, `grade_band` 제거·학년 CHECK·NOT NULL, 학년·주 게시 UK), `ThemeGradeTest`, `WeeklyThemeServiceTest`(학년마다 자기 테마, 4학년은 G4·중학생은 G6로 시작 검사), `WeeklyThemeAdminServiceTest`(3학년 전용 미션은 G4 테마에 `GRADE_MISMATCH`, 같은 주 G4는 따로 게시), `WeeklyThemeControllerTest`(전환 기간 `gradeBand` 읽기·`grade` 우선·400)
+- 검증: learning `./gradlew test` 379건 통과(로컬 JDK 21·Testcontainers `postgres:17.11-alpine`). `check_db_migrations.py`(CI와 같은 `pgvector/pgvector:0.8.7-pg17-trixie` 일회용 서버): learning V1~V15 적용, learning_db 30개 표·279개 칼럼 ERD 일치, 음성 50건, 반복 마이그레이션 변화 없음
+- core는 develop(#485)부터 learning 테마 경로에 `sundayTheme`(프리미엄 일요일 허용)을 함께 보낸다. #438은 이 값을 읽지 않고(모르는 query는 무시), 일요일 열림 판단은 #484

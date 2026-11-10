@@ -4,7 +4,7 @@ import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning.mission.domain.ThinkingType
 import com.sagomungchi.learning.theme.domain.DayState
-import com.sagomungchi.learning.theme.domain.GradeBand
+import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.ReviewViewResult
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeDayView
@@ -30,7 +30,7 @@ import org.springframework.test.web.servlet.post
 import java.time.LocalDate
 import java.util.UUID
 
-/** 학생 주간 테마 내부 API (#385, api-spec 2.11·4.1): core 프록시 조건(학생 본인·학년군·날짜)과 응답 모양 */
+/** 학생 주간 테마 내부 API (#385, api-spec 2.11·4.1): core 프록시 조건(학생 본인·학년·날짜)과 응답 모양 */
 @WebMvcTest(WeeklyThemeController::class)
 @EnableConfigurationProperties(AppProperties::class)
 @TestPropertySource(properties = ["app.internal.token=test-token", "app.internal.connect-timeout=1s", "app.internal.read-timeout=1s"])
@@ -52,7 +52,7 @@ class WeeklyThemeControllerTest(@Autowired private val mockMvc: MockMvc) {
 
     @Test
     fun `이번 주 테마는 요일·상태·되돌아보기를 그대로 돌려줌`() {
-        given(service.current(student, GradeBand.G3_4, monday)).willReturn(
+        given(service.current(student, ThemeGrade.G3, monday)).willReturn(
             WeeklyThemeView(
                 themeId, monday, "물의 여행", "소개", false,
                 listOf(ThemeDayView(ThemeDay.MON, mission, "첫 문제", ThinkingType.ANALYZE, DayState.OPEN, "NOT_STARTED")),
@@ -61,7 +61,7 @@ class WeeklyThemeControllerTest(@Autowired private val mockMvc: MockMvc) {
             ),
         )
 
-        mockMvc.get("$base?gradeBand=G3_4&date=2026-11-09") { as_() }.andExpect {
+        mockMvc.get("$base?grade=G3&date=2026-11-09") { as_() }.andExpect {
             status { isOk() }
             jsonPath("$.themeId") { value(themeId.toString()) }
             jsonPath("$.weekStart") { value("2026-11-09") }
@@ -80,9 +80,9 @@ class WeeklyThemeControllerTest(@Autowired private val mockMvc: MockMvc) {
     @Test
     fun `되돌아보기 열람은 본문 없이 firstViewThisWeek·completed`() {
         val sunday = monday.plusDays(6)
-        given(service.recordReviewView(student, GradeBand.G5_6, sunday)).willReturn(ReviewViewResult(firstViewThisWeek = true, completed = true))
+        given(service.recordReviewView(student, ThemeGrade.G5, sunday)).willReturn(ReviewViewResult(firstViewThisWeek = true, completed = true))
 
-        mockMvc.post("$base/review-views?gradeBand=G5_6&date=2026-11-15") { as_() }.andExpect {
+        mockMvc.post("$base/review-views?grade=G5&date=2026-11-15") { as_() }.andExpect {
             status { isOk() }
             jsonPath("$.firstViewThisWeek") { value(true) }
             jsonPath("$.completed") { value(true) }
@@ -90,21 +90,35 @@ class WeeklyThemeControllerTest(@Autowired private val mockMvc: MockMvc) {
     }
 
     @Test
-    fun `학생 본인이 아니거나 학생 역할이 아니면 403, 학년군·날짜가 틀리면 400`() {
-        mockMvc.get("$base?gradeBand=G3_4&date=2026-11-09") { as_(scope = UUID.randomUUID()) }.andExpect { status { isForbidden() } }
-        mockMvc.get("$base?gradeBand=G3_4&date=2026-11-09") { as_(role = "PARENT") }.andExpect { status { isForbidden() } }
-        mockMvc.get("$base?gradeBand=G1_2&date=2026-11-09") { as_() }.andExpect { status { isBadRequest() } }
-        mockMvc.get("$base?gradeBand=G3_4&date=11-09") { as_() }.andExpect { status { isBadRequest() } }
-        mockMvc.get("$base?gradeBand=G3_4") { as_() }.andExpect { status { isBadRequest() } }
+    fun `학생 본인이 아니거나 학생 역할이 아니면 403, 학년·날짜가 틀리면 400`() {
+        mockMvc.get("$base?grade=G3&date=2026-11-09") { as_(scope = UUID.randomUUID()) }.andExpect { status { isForbidden() } }
+        mockMvc.get("$base?grade=G3&date=2026-11-09") { as_(role = "PARENT") }.andExpect { status { isForbidden() } }
+        mockMvc.get("$base?grade=G1_2&date=2026-11-09") { as_() }.andExpect { status { isBadRequest() } }
+        mockMvc.get("$base?grade=G3&date=11-09") { as_() }.andExpect { status { isBadRequest() } }
+        mockMvc.get("$base?grade=G3") { as_() }.andExpect { status { isBadRequest() } }
         verifyNoInteractions(service)
     }
 
     @Test
+    fun `전환 기간에는 grade가 없으면 gradeBand를 낮은 학년으로 읽고, grade가 있으면 grade (#438)`() {
+        val sunday = monday.plusDays(6)
+        given(service.recordReviewView(student, ThemeGrade.G3, sunday)).willReturn(ReviewViewResult(firstViewThisWeek = true, completed = false))
+        given(service.recordReviewView(student, ThemeGrade.G5, sunday)).willReturn(ReviewViewResult(firstViewThisWeek = false, completed = false))
+        given(service.recordReviewView(student, ThemeGrade.G4, sunday)).willReturn(ReviewViewResult(firstViewThisWeek = false, completed = true))
+
+        mockMvc.post("$base/review-views?gradeBand=G3_4&date=2026-11-15") { as_() }.andExpect { jsonPath("$.firstViewThisWeek") { value(true) } }
+        mockMvc.post("$base/review-views?gradeBand=G5_6&date=2026-11-15") { as_() }.andExpect { jsonPath("$.firstViewThisWeek") { value(false) } }
+        mockMvc.post("$base/review-views?grade=G4&gradeBand=G3_4&date=2026-11-15") { as_() }.andExpect { jsonPath("$.completed") { value(true) } }
+        mockMvc.post("$base/review-views?gradeBand=G1_2&date=2026-11-15") { as_() }.andExpect { status { isBadRequest() } }
+        mockMvc.post("$base/review-views?date=2026-11-15") { as_() }.andExpect { status { isBadRequest() } }
+    }
+
+    @Test
     fun `서비스 오류 코드는 그대로 (평일 되돌아보기 409)`() {
-        given(service.recordReviewView(student, GradeBand.G3_4, monday))
+        given(service.recordReviewView(student, ThemeGrade.G3, monday))
             .willThrow(BusinessException(HttpStatus.CONFLICT, "THEME_REVIEW_NOT_ALLOWED", "되돌아보기 기간이 아님"))
 
-        mockMvc.post("$base/review-views?gradeBand=G3_4&date=2026-11-09") { as_() }.andExpect {
+        mockMvc.post("$base/review-views?grade=G3&date=2026-11-09") { as_() }.andExpect {
             status { isConflict() }
             jsonPath("$.code") { value("THEME_REVIEW_NOT_ALLOWED") }
         }

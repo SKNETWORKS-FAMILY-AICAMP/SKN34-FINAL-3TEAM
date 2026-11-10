@@ -7,7 +7,7 @@ import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.learning.attempt.domain.AttemptContext
 import com.sagomungchi.learning.attempt.domain.ThemeAttempt
 import com.sagomungchi.learning.theme.domain.DayState
-import com.sagomungchi.learning.theme.domain.GradeBand
+import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeSummaryState
 import com.sagomungchi.learning.theme.repository.WeeklyThemeRepository
@@ -43,6 +43,27 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
         rows = TestRows(jdbc)
         missions = rows.themeMissions()
         themeId = rows.publishedTheme(missions.map { it.id }, WEEK, title = "물의 여행", intro = "이번 주는 물")
+    }
+
+    @Test
+    fun `학생은 자기 학년 테마를 받고 중학생은 G6 테마 (#438)`() {
+        // 같은 미션으로 학년마다 다른 제목의 테마를 게시. 기본 테마(G3) 미션은 3~4학년이라 G4에도 맞음
+        val wide = rows.themeMissions(gradeMin = 3, gradeMax = 6)
+        val byGrade = listOf(ThemeGrade.G4, ThemeGrade.G5, ThemeGrade.G6).associateWith { grade ->
+            rows.publishedTheme(wide.map { it.id }, WEEK, grade = grade.name, title = "${grade.name} 테마")
+        }
+        val service = serviceOn(WEEK)
+
+        assertEquals("물의 여행", service.current(student, ThemeGrade.G3, WEEK).title)
+        byGrade.forEach { (grade, id) ->
+            assertEquals(id, service.current(student, grade, WEEK).themeId)
+            assertEquals("${grade.name} 테마", service.current(student, grade, WEEK).title)
+        }
+        // 시도 시작은 시도 학년으로 테마를 정함: 4학년은 G4, 중학생(7~9)은 G6
+        assertEquals(ThemeAttempt(byGrade.getValue(ThemeGrade.G4), WEEK), service.checkStart(student, wide[0].id, 4, AttemptContext.THEME_DAY))
+        assertEquals(ThemeAttempt(byGrade.getValue(ThemeGrade.G6), WEEK), service.checkStart(student, wide[0].id, 8, AttemptContext.THEME_DAY))
+        // 3학년 테마의 미션은 4학년 테마에 없으니 4학년 시작은 409
+        assertError(HttpStatus.CONFLICT, "THEME_DAY_CLOSED") { service.checkStart(student, missions[0].id, 4, AttemptContext.THEME_DAY) }
     }
 
     /** 그 날짜 KST 정오의 고정 시계 */
@@ -95,7 +116,7 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
         attempt(missions[0], "THEME_DAY", at(WEEK), at(WEEK, 11), at(WEEK, 12))
         attempt(missions[2], "THEME_DAY", at(wednesday))
 
-        val view = serviceOn(wednesday).current(student, GradeBand.G3_4, wednesday)
+        val view = serviceOn(wednesday).current(student, ThemeGrade.G3, wednesday)
 
         assertEquals(themeId to WEEK, view.themeId to view.weekStart)
         assertEquals("물의 여행", view.title)
@@ -110,7 +131,7 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
         assertEquals(listOf(true, false, false, false, false), view.review.missions.map { it.completed })
         assertEquals(listOf(false, true, false, false, false), view.review.missions.map { it.missed })
         assertFalse(view.completed)
-        assertEquals("이번 주는 물", serviceOn(WEEK).current(student, GradeBand.G3_4, WEEK).intro)
+        assertEquals("이번 주는 물", serviceOn(WEEK).current(student, ThemeGrade.G3, WEEK).intro)
     }
 
     @Test
@@ -118,7 +139,7 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
         attempt(missions[0], "THEME_DAY", at(WEEK), at(WEEK), at(WEEK))
         val nextMonday = WEEK.plusWeeks(1)
 
-        val view = serviceOn(nextMonday).current(student, GradeBand.G3_4, nextMonday)
+        val view = serviceOn(nextMonday).current(student, ThemeGrade.G3, nextMonday)
 
         assertEquals(themeId to nextMonday, view.themeId to view.weekStart)
         assertTrue(view.reused)
@@ -127,13 +148,13 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
-    fun `학년군에 게시 테마가 하나도 없거나 미래 주 테마만 있으면 404`() {
-        assertError(HttpStatus.NOT_FOUND, "NOT_FOUND") { serviceOn(WEEK).current(student, GradeBand.G5_6, WEEK) }
-        assertError(HttpStatus.NOT_FOUND, "NOT_FOUND") { serviceOn(WEEK).current(student, GradeBand.G3_4, WEEK.minusWeeks(1)) }
+    fun `학년에 게시 테마가 하나도 없거나 미래 주 테마만 있으면 404`() {
+        assertError(HttpStatus.NOT_FOUND, "NOT_FOUND") { serviceOn(WEEK).current(student, ThemeGrade.G5, WEEK) }
+        assertError(HttpStatus.NOT_FOUND, "NOT_FOUND") { serviceOn(WEEK).current(student, ThemeGrade.G3, WEEK.minusWeeks(1)) }
     }
 
     @Test
-    fun `THEME_DAY는 오늘 요일 문제만, 다른 요일·토요일·다른 학년군은 409 THEME_DAY_CLOSED`() {
+    fun `THEME_DAY는 오늘 요일 문제만, 다른 요일·토요일·다른 학년은 409 THEME_DAY_CLOSED`() {
         val wednesday = WEEK.plusDays(2)
         val service = serviceOn(wednesday)
 
@@ -172,9 +193,9 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
         }
         val sunday = WEEK.plusDays(6)
 
-        assertError(HttpStatus.CONFLICT, "THEME_REVIEW_NOT_ALLOWED") { serviceOn(WEEK).recordReviewView(student, GradeBand.G3_4, WEEK) }
-        val first = serviceOn(sunday).recordReviewView(student, GradeBand.G3_4, sunday)
-        val again = serviceOn(sunday).recordReviewView(student, GradeBand.G3_4, WEEK.plusDays(5))
+        assertError(HttpStatus.CONFLICT, "THEME_REVIEW_NOT_ALLOWED") { serviceOn(WEEK).recordReviewView(student, ThemeGrade.G3, WEEK) }
+        val first = serviceOn(sunday).recordReviewView(student, ThemeGrade.G3, sunday)
+        val again = serviceOn(sunday).recordReviewView(student, ThemeGrade.G3, WEEK.plusDays(5))
 
         assertTrue(first.firstViewThisWeek)
         assertFalse(again.firstViewThisWeek)
@@ -182,9 +203,9 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM theme_review_view WHERE student_id = ?", Int::class.java, student))
 
         jdbc.update("UPDATE attempt SET completed_at = ? WHERE mission_id = ?", at(WEEK.plusDays(4), 20), missions[4].id)
-        assertTrue(serviceOn(sunday).recordReviewView(student, GradeBand.G3_4, sunday).completed)
-        assertTrue(serviceOn(sunday).current(student, GradeBand.G3_4, sunday).completed)
-        assertTrue(serviceOn(sunday).current(student, GradeBand.G3_4, sunday).review.open)
+        assertTrue(serviceOn(sunday).recordReviewView(student, ThemeGrade.G3, sunday).completed)
+        assertTrue(serviceOn(sunday).current(student, ThemeGrade.G3, sunday).completed)
+        assertTrue(serviceOn(sunday).current(student, ThemeGrade.G3, sunday).review.open)
     }
 
     @Test

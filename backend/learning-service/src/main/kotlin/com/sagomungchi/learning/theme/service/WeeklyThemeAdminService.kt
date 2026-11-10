@@ -4,7 +4,7 @@ import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning.mission.service.MissionService
 import com.sagomungchi.learning.theme.domain.AdminWeeklyTheme
 import com.sagomungchi.learning.theme.domain.AdminWeeklyThemePage
-import com.sagomungchi.learning.theme.domain.GradeBand
+import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeDayMission
 import com.sagomungchi.learning.theme.domain.ThemePublishCheck
@@ -37,12 +37,12 @@ class WeeklyThemeAdminService(
     private val clock: Clock,
 ) {
     @Transactional(readOnly = true)
-    fun list(gradeBand: GradeBand?, weekStart: LocalDate?, status: WeeklyThemeStatus?, page: Int, size: Int): AdminWeeklyThemePage =
+    fun list(grade: ThemeGrade?, weekStart: LocalDate?, status: WeeklyThemeStatus?, page: Int, size: Int): AdminWeeklyThemePage =
         AdminWeeklyThemePage(
-            items = repository.findIds(gradeBand, weekStart, status, page, size).map(::get),
+            items = repository.findIds(grade, weekStart, status, page, size).map(::get),
             page = page,
             size = size,
-            totalElements = repository.count(gradeBand, weekStart, status),
+            totalElements = repository.count(grade, weekStart, status),
         )
 
     @Transactional(readOnly = true)
@@ -57,12 +57,12 @@ class WeeklyThemeAdminService(
         return get(id)
     }
 
-    /** 수정: 새 버전을 현재본으로. 게시 중 학년군·주 변경은 409, 검토 중 수정은 DRAFT로 */
+    /** 수정: 새 버전을 현재본으로. 게시 중 학년·주 변경은 409, 검토 중 수정은 DRAFT로 */
     @Transactional
     fun update(themeId: UUID, author: UUID, content: ThemeContent): AdminWeeklyTheme {
         val header = header(themeId, lock = true)
         val theme = entity(header)
-        theme.requireEditable(content.gradeBand, content.weekStart)
+        theme.requireEditable(content.grade, content.weekStart)
         requireMissions(content)
         theme.edited()
         repository.appendVersion(themeId, header.currentVersion + 1, content, theme.status, author, now())
@@ -79,8 +79,8 @@ class WeeklyThemeAdminService(
     }
 
     /**
-     * 게시·재게시: 검토 요청한 현재본만(아니면 409 CONFLICT). 게시 검사(게시 미션·시연 전용 제외·학년군 전체·다섯 유형 1개씩·
-     * 같은 학년군·주 게시 1개)를 모두 모아 실패하면 422 WEEKLY_THEME_PUBLISH_INCOMPLETE. 동시 게시가 부분 UK에 걸려도 같은 422
+     * 게시·재게시: 검토 요청한 현재본만(아니면 409 CONFLICT). 게시 검사(게시 미션·시연 전용 제외·테마 학년 포함·다섯 유형 1개씩·
+     * 같은 학년·주 게시 1개)를 모두 모아 실패하면 422 WEEKLY_THEME_PUBLISH_INCOMPLETE. 동시 게시가 부분 UK에 걸려도 같은 422
      */
     @Transactional
     fun publish(themeId: UUID): AdminWeeklyTheme {
@@ -89,8 +89,8 @@ class WeeklyThemeAdminService(
         theme.requirePublishable()
         val days = repository.findDays(header.currentVersionId).map { ThemeDayMission(ThemeDay.ofNumber(it.dayOfWeek), it.missionId) }
         val missions = days.mapNotNull { day -> missionService.publishedView(day.missionId)?.let { day.missionId to it } }.toMap()
-        theme.publish(ThemePublishCheck.errors(header.gradeBand, days, missions,
-            repository.existsOtherPublished(themeId, header.gradeBand, header.weekStart)))
+        theme.publish(ThemePublishCheck.errors(header.grade, days, missions,
+            repository.existsOtherPublished(themeId, header.grade, header.weekStart)))
         try {
             repository.publish(themeId, now())
         } catch (_: DuplicateKeyException) {
@@ -118,13 +118,13 @@ class WeeklyThemeAdminService(
         repository.findHeader(themeId, lock) ?: throw BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "주간 테마 없음")
 
     private fun entity(h: ThemeHeader) =
-        WeeklyTheme(h.id, h.status, h.gradeBand, h.weekStart, h.currentVersion, h.publishedVersion, h.reviewVersion)
+        WeeklyTheme(h.id, h.status, h.grade, h.weekStart, h.currentVersion, h.publishedVersion, h.reviewVersion)
 
     private fun view(h: ThemeHeader): AdminWeeklyTheme {
         val version = repository.findVersion(h.currentVersionId)
         return AdminWeeklyTheme(
             themeId = h.id,
-            gradeBand = h.gradeBand,
+            grade = h.grade,
             weekStart = h.weekStart,
             status = h.status,
             version = h.currentVersion,
@@ -142,6 +142,6 @@ class WeeklyThemeAdminService(
     private fun now(): Instant = Instant.now(clock).truncatedTo(ChronoUnit.MICROS)
 
     private companion object {
-        val WEEK_TAKEN = ThemePublishError("WEEK_ALREADY_PUBLISHED", "같은 학년군·주에 이미 게시된 테마가 있어요")
+        val WEEK_TAKEN = ThemePublishError("WEEK_ALREADY_PUBLISHED", "같은 학년·주에 이미 게시된 테마가 있어요")
     }
 }

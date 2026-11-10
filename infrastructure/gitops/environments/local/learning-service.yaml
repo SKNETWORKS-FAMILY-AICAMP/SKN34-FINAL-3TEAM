@@ -48,7 +48,7 @@ networkPolicy:
       ports: [{protocol: TCP, port: 5432}]
 migration:
   enabled: true
-  revision: v13
+  revision: v15
   image:
     repository: sagomungchi/learning-migrate
     tag: local

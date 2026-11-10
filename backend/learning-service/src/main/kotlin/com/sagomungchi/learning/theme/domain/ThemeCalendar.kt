@@ -4,14 +4,28 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
 
-/** 학년군 (P23). 초3~4 `G3_4`, 초5~6 `G5_6`. core가 학년으로 정해 넘기고, 시도 시작은 learning이 시도 학년으로 정함 */
-enum class GradeBand(val minGrade: Int, val maxGrade: Int) {
-    G3_4(3, 4),
-    G5_6(5, 6),
-    ;
+/**
+ * 테마 학년 (P23, #438 학년별 테마). 초3~초6 `G3`~`G6`. core가 학생 학년으로 정해 넘기고, 시도 시작은 learning이 시도 학년으로 정함.
+ * 중학생(저장 학년 7~9)은 중학교 과정 확장 전까지 초6 테마(`G6`, P26)
+ */
+enum class ThemeGrade(val grade: Int) {
+    G3(3), G4(4), G5(5), G6(6);
 
     companion object {
-        fun of(grade: Int): GradeBand = if (grade <= G3_4.maxGrade) G3_4 else G5_6
+        fun of(grade: Int): ThemeGrade {
+            require(grade >= G3.grade) { "테마 학년은 3 이상: $grade" }
+            return entries.firstOrNull { it.grade == grade } ?: G6
+        }
+
+        /**
+         * 전환 기간 호환(#438 → core 병합 사이): core가 아직 학년군(`gradeBand`)을 보내면 낮은 학년으로 읽음.
+         * V14가 학년군 테마를 학년마다 같은 내용으로 복사하므로 이 기간 내용은 같다. core 반영 뒤 지움
+         */
+        fun fromBand(band: String): ThemeGrade? = when (band) {
+            "G3_4" -> G3
+            "G5_6" -> G5
+            else -> null
+        }
     }
 }
 

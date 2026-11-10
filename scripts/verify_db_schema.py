@@ -469,11 +469,11 @@ UPDATE followup SET source = 'LLM', bank_question_id = NULL;
 UPDATE followup SET source = 'LLM_RETRY';
 UPDATE followup SET source = 'BANK', bank_question_id = '00000000-0000-4000-8000-000000000115';
 
--- #385 주간 테마: 순환 FK(테마 → 현재 버전)는 작성 트랜잭션에서 커밋 때로 미룬다
+-- #385 주간 테마: 순환 FK(테마 → 현재 버전)는 작성 트랜잭션에서 커밋 때로 미룬다. 학년은 #438 V14·V15부터 grade(G3~G6)
 SET CONSTRAINTS fk_weekly_theme_current_version_id DEFERRED;
 INSERT INTO weekly_theme
-    (id, grade_band, week_start, status, current_version_id, created_by, created_at, updated_at)
-VALUES ('00000000-0000-4000-8000-000000000120', 'G3_4', '2026-11-09', 'PUBLISHED',
+    (id, grade, week_start, status, current_version_id, created_by, created_at, updated_at)
+VALUES ('00000000-0000-4000-8000-000000000120', 'G3', '2026-11-09', 'PUBLISHED',
         '00000000-0000-4000-8000-000000000121', '00000000-0000-4000-8000-000000000001', now(), now());
 INSERT INTO weekly_theme_version (id, theme_id, version, title, intro, created_by, created_at)
 VALUES ('00000000-0000-4000-8000-000000000121', '00000000-0000-4000-8000-000000000120', 1,
@@ -484,8 +484,11 @@ WHERE id = '00000000-0000-4000-8000-000000000120';
 INSERT INTO weekly_theme_day (theme_version_id, day_of_week, mission_id)
 VALUES ('00000000-0000-4000-8000-000000000121', 1, '00000000-0000-4000-8000-000000000101');
 SELECT pg_temp.expect_sqlstate($$
-    UPDATE weekly_theme SET grade_band = 'G1_2' WHERE id = '00000000-0000-4000-8000-000000000120'
+    UPDATE weekly_theme SET grade = 'G3_4' WHERE id = '00000000-0000-4000-8000-000000000120'
 $$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE weekly_theme SET grade = NULL WHERE id = '00000000-0000-4000-8000-000000000120'
+$$, '23502');
 SELECT pg_temp.expect_sqlstate($$
     UPDATE weekly_theme SET status = 'ARCHIVED' WHERE id = '00000000-0000-4000-8000-000000000120'
 $$, '23514');
@@ -498,14 +501,14 @@ SELECT pg_temp.expect_sqlstate($$
 $$, '23503');
 SELECT pg_temp.expect_sqlstate($$
     INSERT INTO weekly_theme
-        (id, grade_band, week_start, status, current_version_id, created_by, created_at, updated_at)
-    SELECT '00000000-0000-4000-8000-000000000122', grade_band, week_start, 'PUBLISHED',
+        (id, grade, week_start, status, current_version_id, created_by, created_at, updated_at)
+    SELECT '00000000-0000-4000-8000-000000000122', grade, week_start, 'PUBLISHED',
            current_version_id, created_by, created_at, updated_at FROM weekly_theme
     WHERE id = '00000000-0000-4000-8000-000000000120'
 $$, '23505');
 INSERT INTO weekly_theme
-    (id, grade_band, week_start, status, current_version_id, created_by, created_at, updated_at)
-SELECT '00000000-0000-4000-8000-000000000123', grade_band, week_start, 'DRAFT',
+    (id, grade, week_start, status, current_version_id, created_by, created_at, updated_at)
+SELECT '00000000-0000-4000-8000-000000000123', grade, week_start, 'DRAFT',
        current_version_id, created_by, created_at, updated_at FROM weekly_theme
 WHERE id = '00000000-0000-4000-8000-000000000120';
 SELECT pg_temp.expect_sqlstate($$
@@ -532,6 +535,70 @@ SELECT pg_temp.expect_sqlstate($$
     INSERT INTO theme_review_view (student_id, week_start, theme_id, viewed_at)
     VALUES ('00000000-0000-4000-8000-000000000002', '2026-11-09',
             '00000000-0000-4000-8000-000000000120', now())
+$$, '23505');
+-- #438 다른 학년(G4)은 같은 주에 따로 게시할 수 있음 (게시 UK는 학년·주)
+SET CONSTRAINTS fk_weekly_theme_current_version_id DEFERRED;
+INSERT INTO weekly_theme
+    (id, grade, week_start, status, current_version_id, created_by, created_at, updated_at)
+VALUES ('00000000-0000-4000-8000-000000000125', 'G4', '2026-11-09', 'PUBLISHED',
+        '00000000-0000-4000-8000-000000000126', '00000000-0000-4000-8000-000000000001', now(), now());
+INSERT INTO weekly_theme_version (id, theme_id, version, title, intro, created_by, created_at)
+VALUES ('00000000-0000-4000-8000-000000000126', '00000000-0000-4000-8000-000000000125', 1,
+        'schema-test', 'synthetic intro only', '00000000-0000-4000-8000-000000000001', now());
+SET CONSTRAINTS fk_weekly_theme_current_version_id IMMEDIATE;
+-- #438 시작·종료 이야기 열람: 학생·주·종류당 1행, 종류는 INTRO·OUTRO
+INSERT INTO theme_story_view (student_id, week_start, kind, theme_id, viewed_at)
+VALUES ('00000000-0000-4000-8000-000000000002', '2026-11-09', 'INTRO',
+        '00000000-0000-4000-8000-000000000120', now());
+INSERT INTO theme_story_view (student_id, week_start, kind, theme_id, viewed_at)
+VALUES ('00000000-0000-4000-8000-000000000002', '2026-11-09', 'OUTRO',
+        '00000000-0000-4000-8000-000000000120', now());
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO theme_story_view (student_id, week_start, kind, theme_id, viewed_at)
+    VALUES ('00000000-0000-4000-8000-000000000002', '2026-11-09', 'INTRO',
+            '00000000-0000-4000-8000-000000000120', now())
+$$, '23505');
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO theme_story_view (student_id, week_start, kind, theme_id, viewed_at)
+    VALUES ('00000000-0000-4000-8000-000000000003', '2026-11-09', 'REVIEW',
+            '00000000-0000-4000-8000-000000000120', now())
+$$, '23514');
+-- #438 테마 초안: 학년·주(월요일)·출처·상태 CHECK, 자동 초안은 학년·주당 1개, 채택 테마 1개
+INSERT INTO theme_draft (id, grade, week_start, source, status, input, attempts, created_at, updated_at)
+VALUES ('00000000-0000-4000-8000-000000000127', 'G3', '2026-11-16', 'AUTO', 'GENERATING',
+        '{"missions":[]}', 0, now(), now());
+INSERT INTO theme_draft (id, grade, week_start, source, status, requested_by, input, attempts, created_at, updated_at)
+VALUES ('00000000-0000-4000-8000-000000000128', 'G3', '2026-11-16', 'ADMIN', 'GENERATING',
+        '00000000-0000-4000-8000-000000000001', '{"missions":[]}', 0, now(), now());
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO theme_draft (id, grade, week_start, source, status, input, attempts, created_at, updated_at)
+    VALUES ('00000000-0000-4000-8000-000000000129', 'G3', '2026-11-16', 'AUTO', 'GENERATING',
+            '{"missions":[]}', 0, now(), now())
+$$, '23505');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE theme_draft SET grade = 'G7' WHERE id = '00000000-0000-4000-8000-000000000128'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE theme_draft SET week_start = '2026-11-17' WHERE id = '00000000-0000-4000-8000-000000000128'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE theme_draft SET source = 'CORE' WHERE id = '00000000-0000-4000-8000-000000000128'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE theme_draft SET status = 'DONE' WHERE id = '00000000-0000-4000-8000-000000000128'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE theme_draft SET attempts = -1 WHERE id = '00000000-0000-4000-8000-000000000128'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE theme_draft SET theme_id = '00000000-0000-4000-8000-999999999999'
+    WHERE id = '00000000-0000-4000-8000-000000000128'
+$$, '23503');
+UPDATE theme_draft SET status = 'ADOPTED', theme_id = '00000000-0000-4000-8000-000000000120'
+WHERE id = '00000000-0000-4000-8000-000000000128';
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE theme_draft SET theme_id = '00000000-0000-4000-8000-000000000120'
+    WHERE id = '00000000-0000-4000-8000-000000000127'
 $$, '23505');
 -- 시도 context: 테마 컨텍스트는 테마·주 시작일이 함께, EXTRA는 둘 다 없음
 SELECT pg_temp.expect_sqlstate($$

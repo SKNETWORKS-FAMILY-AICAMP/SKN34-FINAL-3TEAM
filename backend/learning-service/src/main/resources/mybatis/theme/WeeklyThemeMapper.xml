@@ -4,7 +4,7 @@
     <resultMap id="header" type="com.sagomungchi.learning.theme.repository.ThemeHeader">
         <constructor>
             <idArg column="id" javaType="java.util.UUID"/>
-            <arg column="grade_band" javaType="com.sagomungchi.learning.theme.domain.GradeBand"/>
+            <arg column="grade" javaType="com.sagomungchi.learning.theme.domain.ThemeGrade"/>
             <arg column="week_start" javaType="java.time.LocalDate"/>
             <arg column="status" javaType="com.sagomungchi.learning.theme.domain.WeeklyThemeStatus"/>
             <arg column="current_version_id" javaType="java.util.UUID"/>
@@ -52,7 +52,7 @@
     </resultMap>
 
     <sql id="headerColumns">
-        SELECT t.id, t.grade_band, t.week_start, t.status,
+        SELECT t.id, t.grade, t.week_start, t.status,
                t.current_version_id, cv.version AS current_version,
                t.published_version_id, pv.version AS published_version,
                t.review_version_id, rv.version AS review_version,
@@ -70,10 +70,10 @@
         <if test="lock">FOR UPDATE OF t</if>
     </select>
 
-    <!-- 이번 주 테마: 그 주 게시본, 없으면 그 주 이전의 가장 최근 게시본(재사용). 학년군·주당 게시 1개(부분 UK) -->
+    <!-- 이번 주 테마: 그 주 게시본, 없으면 그 주 이전의 가장 최근 게시본(재사용). 학년·주당 게시 1개(부분 UK) -->
     <select id="findLatestPublished" resultMap="header">
         <include refid="headerColumns"/>
-        WHERE t.grade_band = #{gradeBand} AND t.status = 'PUBLISHED' AND t.week_start &lt;= #{weekStart}
+        WHERE t.grade = #{grade} AND t.status = 'PUBLISHED' AND t.week_start &lt;= #{weekStart}
         ORDER BY t.week_start DESC
         LIMIT 1
     </select>
@@ -81,23 +81,23 @@
     <select id="existsOtherPublished" resultType="boolean">
         SELECT EXISTS (
             SELECT 1 FROM weekly_theme
-            WHERE id &lt;&gt; #{id} AND grade_band = #{gradeBand} AND week_start = #{weekStart} AND status = 'PUBLISHED'
+            WHERE id &lt;&gt; #{id} AND grade = #{grade} AND week_start = #{weekStart} AND status = 'PUBLISHED'
         )
     </select>
 
     <sql id="filter">
         <where>
-            <if test="gradeBand != null">AND grade_band = #{gradeBand}</if>
+            <if test="grade != null">AND grade = #{grade}</if>
             <if test="weekStart != null">AND week_start = #{weekStart}</if>
             <if test="status != null">AND status = #{status}</if>
         </where>
     </sql>
 
-    <!-- 관리자 목록: 최근 주부터, 같은 주는 학년군 순 -->
+    <!-- 관리자 목록: 최근 주부터, 같은 주는 학년 순 -->
     <select id="findIds" resultType="java.util.UUID">
         SELECT id FROM weekly_theme
         <include refid="filter"/>
-        ORDER BY week_start DESC, grade_band, created_at DESC, id
+        ORDER BY week_start DESC, grade, created_at DESC, id
         LIMIT #{size} OFFSET #{offset}
     </select>
 
@@ -131,8 +131,8 @@
     </update>
 
     <insert id="insertTheme">
-        INSERT INTO weekly_theme (id, grade_band, week_start, status, current_version_id, created_by, created_at, updated_at)
-        VALUES (#{id}, #{gradeBand}, #{weekStart}, #{status}, #{versionId}, #{createdBy}, #{now}, #{now})
+        INSERT INTO weekly_theme (id, grade, week_start, status, current_version_id, created_by, created_at, updated_at)
+        VALUES (#{id}, #{grade}, #{weekStart}, #{status}, #{versionId}, #{createdBy}, #{now}, #{now})
     </insert>
 
     <insert id="insertVersion">
@@ -147,7 +147,7 @@
 
     <update id="updateHeader">
         UPDATE weekly_theme
-        SET grade_band = #{gradeBand}, week_start = #{weekStart}, status = #{status},
+        SET grade = #{grade}, week_start = #{weekStart}, status = #{status},
             current_version_id = #{currentVersionId}, updated_at = #{now}
         WHERE id = #{id}
     </update>
@@ -160,7 +160,7 @@
         UPDATE weekly_theme SET status = #{status}, review_version_id = current_version_id, updated_at = #{now} WHERE id = #{id}
     </update>
 
-    <!-- 게시·재게시: 게시본 <- 현재본. 같은 학년군·주의 다른 게시본과는 부분 UK uq_weekly_theme_published_week로 충돌 -->
+    <!-- 게시·재게시: 게시본 <- 현재본. 같은 학년·주의 다른 게시본과는 부분 UK uq_weekly_theme_published_week로 충돌 -->
     <update id="publish">
         UPDATE weekly_theme
         SET status = 'PUBLISHED', published_version_id = current_version_id, published_at = #{now}, updated_at = #{now}
