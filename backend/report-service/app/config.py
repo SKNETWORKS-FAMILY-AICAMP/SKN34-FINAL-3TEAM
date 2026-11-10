@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     s3_region: str = "ap-northeast-2"
     # Deploy with the #385/#391 learning producer; false is an explicit rollback switch.
     report_theme_summary_enabled: bool = True
+    # #479: ai deadline 125s; provisional until the CPU model is measured (#475).
+    report_explanation_timeout_seconds: float = Field(default=130.0, gt=0, le=600)
+    report_explanation_budget_seconds: float = Field(default=400.0, gt=0, le=1800)
     report_download_ttl_seconds: int = Field(default=300, ge=1, le=3600)
 
 

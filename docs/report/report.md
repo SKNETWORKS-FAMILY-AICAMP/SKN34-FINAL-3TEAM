@@ -417,3 +417,25 @@ local kind에 develop `b1562c2b` 이미지를 올려 core → RabbitMQ → repor
 - **미확인**: 실제 00:00 정각 실행(cron 표현식). 코드 테스트로만 검증
 - **운영 주의**: 약관·처리방침을 개정하면 기존 학부모의 리포트 생성·알림이 재동의 전까지 멈춘다. 시연 계정은 개정 뒤 다시 로그인해 동의해야 한다
 - **kind 주의**: platform-data 차트를 새 큐 정의 전에 적용했으면 RabbitMQ에 `core.model.loading.reported`가 없어 core가 큐 선언 오류를 반복한다. platform-data를 다시 적용하면 `rabbitmq-init` Job이 새 정의를 넣는다
+
+
+## #479 주간 대표 답변 설명 연동 (2026-11-10)
+
+### 구현·API 계약
+
+- 최신 develop `ab82541d`에서 시작했다. 벡터 검색 실험과 분리된 팀 저장소에서 작업한다. 설계 기준은 #473·병합된 #482, 공급 계약은 PR #489(learning)·#491(ai)와 #479 담당자 댓글이다.
+- 주간·프리미엄·원문 공개 대상만 설명 단계를 실행한다. 기존 수치 집계·요약 경로 뒤에 선택적 단계를 조합해, 점수 조회나 설명 실패가 기존 리포트 생성을 실패시키지 않는다. 일일·무료는 추가 조회/AI 호출 없이 `explanations=null`이다.
+- SYSTEM 범위의 기록 목록에 `includeModelScores=true`를 붙인다. `modelScores.m2`가 있는 기간 내 답변을 최근 순으로 정렬하고 생각 유형 중복 없이 최대 3개를 고른다. 정정된 판정·잘못된 점수·지원 범위 밖 학년·빈 글·이용 불가 근거는 설명에서 제외한다. 기존 기록 조회 경로와 계산 입력에는 점수 opt-in을 붙이지 않는다.
+- 기존 core 학생 프로필에 `grade`를 추가했다. 현재 저장 학년을 사용하며 서술 초5~6·논술 초4~6만 호출한다. 구버전 core에서 학년이 없으면 임의로 정하지 않고 설명만 미포함 처리한다. core DB 구조·생성 이벤트 필드는 변경하지 않는다.
+- `POST /internal/report-explanations` 요청은 `{grade,inputType,text,scores}`이고 점수는 `modelScores.m2.scores` 그대로다. 닉네임·학생/시도/답변 ID를 글에서도 가리고 식별 필드는 요청 본문에 넣지 않는다. 예외 로그에 응답·원문·점수·예외 본문을 남기지 않는다.
+- 활성 설명의 숫자·점수·등급·금지 표현과 인용을 다시 검사한다. 인용은 같은 답변/버전의 원문과 요청 글 양쪽의 부분 문자열이어야 한다. PR #491의 `quote=null`은 정상으로 받고 인용 영역만 생략한다. 이름이나 식별정보를 임의로 복원하지 않는다.
+- 상세 `explanations={state,items[]}`. 하나 이상 검증되면 INCLUDED, 대상은 있지만 미활성/실패/검사 탈락이면 NOT_INCLUDED, 대상 없음/원문 비공개이면 NO_TARGET. 일부 성공 시 검증된 항목만 INCLUDED로 유지한다. 기존 `narrative.modelExplanation`은 계속 null이다.
+- 상태는 기존 `weekly_report.verification.explanationState`에 저장한다. 본문은 `report_item.EXPLANATION`, 근거는 기존 `report_item_evidence`에 저장한다. Alembic `20261110_08`은 항목 CHECK만 확장하며 새 테이블·컬럼은 없다. 설명 데이터가 있으면 downgrade로 삭제하지 않고 거부한다. 기존 데이터 삭제·정정 영향 조회 체계를 재사용한다.
+- 상세·HTML·PDF·Markdown에 같은 상태와 검증 설명을 표시한다. 무료 다운로드 변형에는 설명을 넣지 않는다. core도 현재 이용권/공개 상태를 다시 검사해 설명을 가린다. 이전 리포트의 설명 상태 누락은 null로 제공한다.
+- web은 null 인용을 숨기고 본문을 표시한다. 기존 요약 검증 실패와 독립된 검증 설명이 표시되도록 한다. report는 검증하지 않은 EXPLANATION 항목을 상세에서 제외한다.
+
+### 대기 상한·배포 순서
+
+- CPU 실측 전 기준안: `REPORT_EXPLANATION_TIMEOUT_SECONDS=130`(ai 125초 마감보다 길게), `REPORT_EXPLANATION_BUDGET_SECONDS=400`(기록/근거 조회 포함 전체 단계). 최대 3건 순차, 재시도 없음. 전체 상한 초과도 이미 검증한 항목은 보존한다. 실제 모델 실측 뒤 조정하며 품질 승인을 뜻하지 않는다.
+- PR #490(core 사용량) → #491(ai API) 순서. #489(learning 점수 공급)와 이번 변경을 함께 연동한다. 공급자가 구버전이면 설명 미포함/대상 없음으로 기존 리포트는 유지된다. 프론트 #488은 기준 develop에 이미 병합됐다.
+- report-api의 로컬 migration revision을 `20261110-08`로 갱신한다. 실제 배포는 같은 소스의 마이그레이션 이미지와 앱 이미지로 수행해야 한다. 모델 학습 #475·서버 #476·모델 활성화·운영 배포는 이번 작업으로 완료 처리하지 않는다.

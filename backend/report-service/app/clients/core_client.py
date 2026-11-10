@@ -33,6 +33,7 @@ class CoreClient:
             nickname=profile["nickname"],
             parent_sharing_enabled=sharing,
             template_snapshot=validate_snapshot(settings.json()),
+            grade=profile.get("grade") if type(profile.get("grade")) is int else None,
         )
 
     async def report_deletion_completed(self, request_id: UUID):

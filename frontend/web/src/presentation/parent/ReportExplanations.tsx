@@ -13,10 +13,9 @@ export function ReportExplanations({ report, plan }: { report: WeeklyReport; pla
   else if (report.explanations.state === 'NOT_INCLUDED') notice = '설명 미포함 · 설명을 제공하지 못했습니다. 아래 학습 수치와 기록은 계속 확인할 수 있습니다.'
   else if (report.explanations.state === 'NO_TARGET') notice = '설명 대상 답변이 없어 AI 관찰 설명이 포함되지 않았습니다.'
   else if (report.explanations.state !== 'INCLUDED' || !Array.isArray(items) || !items.length || items.length > 3 ||
-    report.verification?.quotesMatched !== true || report.verification.numbersMatched !== true ||
     items.some(item => !item || !item.attemptId || !item.answerId || !Number.isSafeInteger(item.answerVersion) || item.answerVersion < 1 ||
       !Object.hasOwn(thinkingLabels, item.thinkingType) || typeof item.missionTitle !== 'string' || !item.missionTitle.trim() ||
-      typeof item.quote !== 'string' || !item.quote.trim() || typeof item.text !== 'string' || !item.text.trim())) {
+      (item.quote !== null && (typeof item.quote !== 'string' || !item.quote.trim())) || typeof item.text !== 'string' || !item.text.trim())) {
     notice = 'AI 관찰 설명 정보를 확인하지 못했습니다. 학습 수치와 기록은 계속 확인할 수 있습니다.'
   }
   if (notice) items = undefined
@@ -25,7 +24,7 @@ export function ReportExplanations({ report, plan }: { report: WeeklyReport; pla
     {notice ? <p role="note">{notice}</p> : <div className="ws-stack">{items!.map(item => <article className="ws-card" key={`${item.answerId}:${item.answerVersion}`}>
       <h4>{item.missionTitle}</h4>
       <p>{thinkingLabels[item.thinkingType]} · <span className="ws-tag">AI 관찰</span></p>
-      <blockquote>{item.quote}</blockquote>
+      {item.quote !== null && <blockquote>{item.quote}</blockquote>}
       <p>{item.text}</p>
     </article>)}</div>}
   </section>

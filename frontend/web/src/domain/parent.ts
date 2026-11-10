@@ -199,7 +199,7 @@ export interface ReportExplanation {
   answerVersion: number
   missionTitle: string
   thinkingType: ThinkingType
-  quote: string
+  quote: string | null
   text: string
 }
 export function validPeriod(p: Period) {

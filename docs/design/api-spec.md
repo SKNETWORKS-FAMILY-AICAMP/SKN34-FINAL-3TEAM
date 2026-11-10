@@ -714,7 +714,7 @@ data: {}
 
 - 리포트 상세의 `changes[].followup`은 문자열 또는 null이다. 학습 기록 API 4.1.1에서 되묻기 없이 제출한 보완 답변도 비교하므로, 질문이 없는 경우 null을 그대로 반환하고 최초/최종 답변 및 계산 수치는 유지한다. 저장된 결과를 임의 질문이나 빈 기록으로 대체하지 않는다.
 
-- 리포트 상세의 `explanations`(FN-RPT-09, #479 구현 예정): 주간 리포트만 `{state, items[]}`를 반환하고 일일 리포트·무료 플랜은 `null`이다(무료 전환 뒤 과거 리포트도 `narrative`처럼 null, P13). `state`는 `INCLUDED`(설명 1개 이상)·`NOT_INCLUDED`(대상 답변이 있으나 생성 실패·검사 실패·시간 초과·설명 모델 미활성, P16)·`NO_TARGET`(M2 점수가 있는 답변 없음 또는 원문 비공개, FN-RPT-07)이다. `items[]`는 대표 답변 최대 3개(생각 유형이 겹치지 않게, 같으면 최근 답변)의 `{attemptId, answerId, answerVersion, missionTitle, thinkingType, quote, text}`이며 "AI 관찰"로 표시한다. 점수·등급·숫자는 넣지 않는다. 저장은 report_db `report_item.item_type = EXPLANATION`(근거 `report_item_evidence`, 검사 통과분만)이고 설명이 빠져도 리포트 `status`·`state`는 바뀌지 않는다. 기존 `narrative.modelExplanation`은 계약 유지를 위해 항상 null이다. PDF·HTML·Markdown도 같은 항목·상태를 표시한다.
+- 리포트 상세의 `explanations`(FN-RPT-09, #479): 주간 리포트만 `{state, items[]}`를 반환하고 일일 리포트·무료 플랜은 `null`이다(무료 전환 뒤 과거 리포트도 `narrative`처럼 null, P13). `state`는 `INCLUDED`(설명 1개 이상)·`NOT_INCLUDED`(대상 답변이 있으나 생성 실패·검사 실패·시간 초과·설명 모델 미활성, P16)·`NO_TARGET`(M2 점수가 있는 답변 없음 또는 원문 비공개, FN-RPT-07)이다. `items[]`는 대표 답변 최대 3개(생각 유형이 겹치지 않게, 같으면 최근 답변)의 `{attemptId, answerId, answerVersion, missionTitle, thinkingType, quote, text}`이며 "AI 관찰"로 표시한다. 점수·등급·숫자는 넣지 않는다. 저장은 report_db `report_item.item_type = EXPLANATION`(근거 `report_item_evidence`, 검사 통과분만)이고 설명이 빠져도 리포트 `status`·`state`는 바뀌지 않는다. 기존 `narrative.modelExplanation`은 계약 유지를 위해 항상 null이다. PDF·HTML·Markdown도 같은 항목·상태를 표시한다.
 
 ### 3.5 결제 승인 — `POST /payments/confirm`
 
@@ -850,7 +850,7 @@ If-Match: "7"
 
 ### 4.0 core 학생 별명 조회 (#119, 호출: report-worker)
 
-`GET /internal/students/{studentId}/profile` → `200 {studentId, nickname, parentSharingEnabled}`. core OpenAPI의 이 operation은 `servers: /`로 공개 API prefix와 구분한다. 응답은 `Cache-Control: no-store`이며 이 세 필드만 제공한다(`parentSharingEnabled`는 학생 공유 설정, #206).
+`GET /internal/students/{studentId}/profile` → `200 {studentId, nickname, parentSharingEnabled, grade}`. core OpenAPI의 이 operation은 `servers: /`로 공개 API prefix와 구분한다. 응답은 `Cache-Control: no-store`이며 이 네 필드만 제공한다(`parentSharingEnabled`는 학생 공유 설정, #206).
 
 실제 `InternalAuthFilter`가 내부 토큰을 검사한 뒤 guardianship Controller → Application Service → 기존 `ChildManagementRepository.profile`을 호출한다. Service는 `SYSTEM` 역할과 대상 학생의 `X-Student-Scope` 포함 여부를 DB 조회 전에 확인한다. 학부모 Bearer만으로 호출할 수 없다.
 
@@ -961,9 +961,14 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 #### 4.2.3 report 설명 요청·응답 (FN-RPT-09, #477 구현 예정)
 
-- 경로(가칭) `POST /internal/report-explanations`, 호출자 report. 대표 답변 1개당 1회 호출한다(학생·주당 최대 3회)
-- 요청 `{grade, inputType:"NARRATIVE"|"ESSAY", text, scores}`. `text`는 학생 작성 칸 평문, `scores`는 learning `modelScores.m2`의 항목별 점수다. 학생·시도·답변 ID와 이름·닉네임은 넣지 않는다(NFR-SEC-03)
-- 응답 `{active:true, explanation:{text, quote}, versions:{prompt, model}}` 또는 `{active:false}`(설명 모델 미활성·승인 범위 밖). `quote`는 `text`의 부분 문자열이어야 하며 아니면 ai가 실패로 처리한다
+- #479 연동 기준(PR #489·#491): report는 SYSTEM 범위로 기록 목록에 `includeModelScores=true`를 붙이고 `modelScores.m2.scores`를 설명 요청의 `scores`로 전달한다. core의 기존 SYSTEM 전용 학생 프로필에 `grade`(저장 학년 3~9)를 추가한다. 학년 누락·지원 범위 밖이면 설명만 제외하며 임의 학년을 만들지 않는다.
+- #479의 인용은 PR #491과 같이 nullable이다. `quote=null`이면 인용 영역을 생략하고, 값이 있으면 해당 답변·버전의 실제 원문 부분 문자열인지 다시 검사한다. 설명 문장에 숫자·점수·등급·금지 표현이 있으면 그 설명만 제외한다. 상세 `explanations.items[].quote`도 null을 허용한다.
+- #479 시간 기준안: 설명 호출당 130초(AI 마감 125초보다 길게), 답변 선정·근거 확인을 포함한 설명 단계 전체 400초. 각각 `REPORT_EXPLANATION_TIMEOUT_SECONDS`, `REPORT_EXPLANATION_BUDGET_SECONDS`로 조절한다. 최대 세 답변을 순차 호출하고 재시도하지 않는다. 실제 CPU 실측 전 임시값이며 만료 시 이미 검증한 설명만 유지한다.
+- #479 저장: 설명 상태는 기존 `weekly_report.verification` JSONB의 `explanationState`에 보관하고 설명 본문은 `EXPLANATION` 항목·근거 테이블에 저장한다. 이전 리포트에 상태가 없으면 `explanations=null`, 일일·무료 응답/파일도 null이다. 기존 요약 검증 결과와 설명 검증 결과는 독립적이다.
+
+- 경로 `POST /internal/report-explanations`(PR #491), 호출자 report. 대표 답변 1개당 1회 호출한다(학생·주당 최대 3회)
+- 요청 `{grade, inputType:"NARRATIVE"|"ESSAY", text, scores}`. `text`는 학생 작성 칸 평문, `scores`는 learning `modelScores.m2.scores`의 항목별 점수다. 학생·시도·답변 ID와 이름·닉네임은 넣지 않는다(NFR-SEC-03)
+- 응답 `{active:true, explanation:{text, quote}, versions:{prompt, model}}` 또는 `{active:false}`(설명 모델 미활성·승인 범위 밖). `quote`는 null을 허용한다. 문자열이면 요청 `text`의 부분 문자열이어야 하며, report가 같은 답변·버전의 원문과도 대조한다
 - ai는 설명 전용 OpenAI 호환 클라이언트로 클러스터 안 설명 sLLM 서버를 호출한다(다른 호출의 LLM 제공자는 그대로). 생성 뒤 규칙 후처리(점수·등급·숫자 표현 제거, 학부모용 문장 틀)와 금지어·점수·등급 표현 검사를 하고, 통과하지 못하면 실패 응답을 반환하고(오류 코드는 #477에서 확정) report가 "설명 미포함"을 결정한다
 - 시간 초과·5xx·검사 실패는 리포트 생성 실패로 바꾸지 않는다. report는 해당 설명만 빼고 `explanations.state = NOT_INCLUDED`로 저장한다(P16). 호출당 마감 시간과 전체 대기 상한은 #475 실측 뒤 정한다
 - 사용량 이벤트 `callType`과 프롬프트 이름·승인 scope는 #477·#480에서 4.2 표·#68 레지스트리 목록·`llm.usage.recorded` 스키마와 함께 추가한다
