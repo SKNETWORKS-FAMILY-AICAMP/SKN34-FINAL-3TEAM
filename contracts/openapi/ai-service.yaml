@@ -838,17 +838,12 @@ components:
           propertyNames:
             enum:
             - INTRO
-            - MON
-            - TUE
-            - WED
-            - THU
-            - FRI
             - OUTRO
           type: object
+          description: 시작·종료 영상 S3 키(6초 컷 4개를 이은 24초). 요일 영상은 없음. 끝내 실패하거나 건너뛰면 그 장면은 빠지고 warnings(VIDEO)
         motions:
           additionalProperties:
-            additionalProperties: true
-            type: object
+            $ref: '#/components/schemas/ThemeMotion'
           propertyNames:
             enum:
             - INTRO
@@ -859,7 +854,7 @@ components:
             - FRI
             - OUTRO
           type: object
-          description: 장면별 움직임 JSON. 형식은 움직임 단계에서 확정(#437 확인 필요)
+          description: 장면별 움직임 JSON(형식 v1). learning은 받은 그대로 저장해 웹에 넘김
         warnings:
           items:
             $ref: '#/components/schemas/ThemeWarning'
@@ -1022,6 +1017,63 @@ components:
       required:
       - speaker
       - text
+    MotionPoint:
+      type: object
+      required: [x, y, zoom]
+      properties:
+        x: {type: number, minimum: 0, maximum: 100, description: 그림 너비 %}
+        y: {type: number, minimum: 0, maximum: 100, description: 그림 높이 %}
+        zoom: {type: number, minimum: 1, maximum: 1.4}
+    ThemeMotion:
+      type: object
+      required: [version, transition, camera, speakers, effects, captions]
+      description: '장면 움직임 형식 v1(#437 기준안). 좌표는 생각 열기 위치와 같은 그림 %. 밝기·불투명도를 바꾸는 칸이 없어 깜빡임이 생기지 않음.
+        웹 재생(#440 기준안): 문제 화면은 effects만, camera·speakers는 시작·종료와 문제 전 대화 화면, captions는 시작·종료 영상 위. 움직임 줄이기면 재생 안 함'
+      properties:
+        version: {type: integer, enum: [1]}
+        transition:
+          type: object
+          required: [kind, seconds]
+          properties:
+            kind: {type: string, enum: [none, fade, slide-left, slide-right, zoom]}
+            seconds: {type: number, minimum: 0.3, maximum: 1.2}
+        camera:
+          anyOf:
+          - type: object
+            required: [from, to, seconds]
+            properties:
+              from: {$ref: '#/components/schemas/MotionPoint'}
+              to: {$ref: '#/components/schemas/MotionPoint'}
+              seconds: {type: number, minimum: 8, maximum: 20}
+          - type: 'null'
+        speakers:
+          type: object
+          additionalProperties: {$ref: '#/components/schemas/MotionPoint'}
+          description: 대화 화자 이름 → 카메라 초점(요일 장면). 찾는 대상은 넣지 않음
+        effects:
+          type: array
+          maxItems: 2
+          items:
+            type: object
+            required: [shape, color, count, size, direction, speed, opacity]
+            properties:
+              shape: {type: string, enum: [circle, leaf, petal, drop, star, snow, bubble, confetti]}
+              color: {type: string, pattern: '^#[0-9A-Fa-f]{6}$'}
+              count: {type: integer, minimum: 1, maximum: 20}
+              size: {type: number, minimum: 1, maximum: 6, description: 그림 너비 %}
+              direction: {type: integer, minimum: 0, maximum: 359, description: 도}
+              speed: {type: number, minimum: 2, maximum: 20, description: 초당 그림 높이 %}
+              opacity: {type: number, minimum: 0.2, maximum: 0.8}
+        captions:
+          type: array
+          maxItems: 8
+          items:
+            type: object
+            required: [start, end, text]
+            properties:
+              start: {type: number, minimum: 0, description: 영상 시작부터 초}
+              end: {type: number, minimum: 0}
+              text: {type: string, maxLength: 30}
     ThemeWarning:
       properties:
         stage:

@@ -2357,9 +2357,9 @@ classDiagram
     +missions_done()
     +generate_dialogue(요일 5개 병렬)
     +review_story()
-    +generate_images(장면 7개 병렬)
+    +generate_images(장면 7장 + 영상 경계 그림 7장)
     +review_images()
-    +generate_videos(장면 7개 병렬)
+    +generate_videos(시작·종료 각 4컷 병렬, 이어 붙이기)
     +review_videos()
     +generate_motion(장면 7개)
   }
@@ -2401,7 +2401,7 @@ classDiagram
 - 구조(구현 #437 글 단계): `router.py`가 실행기(`ThemeDraftRunner`)를 고르고 `service.py`의 `ThemeDraftGraphRunner`가 그래프 실행·응답 조립, `graph.py`가 LangGraph `StateGraph`(요일별 노드는 `Send` 병렬), `nodes/`가 노드, `models.py`가 요청·응답과 LLM 구조화 출력, `checks.py`·`prompts.py`. 지금은 `review_story`까지 붙었고 `images`·`videos`·`motions`는 빈 값
 - 모델 설정: 테마 전용 `theme_generation_model`(기본 `gpt-6-luna`)·`theme_review_model`(기본 `gpt-6.1-terra`), 같은 OpenAI 키. 기본 `OPENAI_MODEL`과 따로 둔다(로컬·운영 `OPENAI_MODEL`이 검토 모델과 같은 `gpt-6.1-terra`라 그대로 쓰면 생성·검토가 같은 모델이 됨). 두 값이 같거나 키가 없으면 기동은 막지 않고 테마 경로만 `503 AI_UNAVAILABLE`(`retryable: false`, `NotReadyRunner`). 다른 경로는 그대로 동작
 - 시간·상한 기준안: LLM 호출 타임아웃 180초·재시도 0(재시도 대신 실패 사유 넣은 다시 생성), 단계마다 다시 생성 상한 2(첫 생성 포함 최대 3회), 글 검토 재검토 상한 2, 마감까지 180초 미만 남으면 다음 다시 생성을 시작하지 않음(`DEADLINE` 사유를 붙여 실패), 최대 출력 토큰 줄거리·검토 32000·대화 8000
-- `ThemeDraftService.generate`: 요청 1번에 그래프를 한 번 끝까지 실행한다. 그래프 안에서 실패한 부분만 실패 사유를 넣어 상한(기준안 단계마다 2회)까지 다시 만들고(미션은 실패한 유형만, 대화는 실패한 요일만, 영상은 실패한 장면만), 마감까지 남은 시간이 부족하면 다음 재생성을 시작하지 않는다. 그래도 실패하면 `failure{stage, reasons}`를 담아 200으로 돌려준다(`THEME`·`MISSION`·`REVIEW`·`IMAGE`). 대화·영상·움직임은 끝내 실패하면 그 항목만 빼고 `warnings`에 남긴다. learning은 `failure`가 있으면 `CHECK_FAILED`로 두고 다음 시도에 `previousFailures`로 넘긴다. 마감은 기준안 15분(learning→ai 16분 안)
+- `ThemeDraftService.generate`: 요청 1번에 그래프를 한 번 끝까지 실행한다. 그래프 안에서 실패한 부분만 실패 사유를 넣어 상한(기준안 단계마다 2회)까지 다시 만들고(미션은 실패한 유형만, 대화는 실패한 요일만, 영상은 실패한 컷만), 마감까지 남은 시간이 부족하면 다음 재생성을 시작하지 않는다. 그래도 실패하면 `failure{stage, reasons}`를 담아 200으로 돌려준다(`THEME`·`MISSION`·`REVIEW`·`IMAGE`). 대화·영상·움직임은 끝내 실패하면 그 항목만 빼고 `warnings`에 남긴다. learning은 `failure`가 있으면 `CHECK_FAILED`로 두고 다음 시도에 `previousFailures`로 넘긴다. 마감은 기준안 15분(learning→ai 16분 안)
 - 요일 배치: 줄거리 단계에서 기준안(월 `ANALYZE`·화 `EVALUATE`·수 `CREATE`·목 `SOLVE`·금 `REFLECT`, 에픽 확인 필요)대로 정하고 응답 `day`로 돌려준다. learning이 다시 검사
 - 줄거리 구조화 출력의 내부 칸(응답 `theme`에서는 뺌, 계약 그대로): 후보 특징 표 `features`(특징 이름·고른 성취기준 코드 `standardCode`(장면에서 골랐으면 비움)·후보별 값, 그날 성취기준 내용에서 고르는 것을 기본으로 하고 안 되면 장면에서), 요일별 단서 조건 `condition`(`RULE`·`HINT`, 특징, 허용 값), 단서 증거 `evidence`(`TRACE`·`SIGHTING`·`RECORD`와 그때), 찾는 대상 `target`. 후보 기준안 모든 학년 4개
 - `ThemeChecks`(`checks.py` 모듈 함수): 정답 논리는 특징 표로 판정한다. 요일별 `rulesOut`은 LLM이 쓰지 않고 코드가 표와 조건으로 채운다(`fill_rules_out`, `RULE`은 허용 값 밖의 후보 전부(이미 빠진 후보 포함), `HINT`는 빈 배열). `RULE`은 빠지는 후보가 비어 있지 않음, `HINT`는 그때 남은 후보가 모두 허용 값 안(남은 후보를 빼면 `RULE`이어야 함), `RULE`은 그때 남은 후보를 적어도 하나 새로 뺌(learning 결정적 단서 계산과 맞춤, #438), 틀린 후보는 모두 `RULE`로 빠짐, 수요일까지 후보 2개 이상 남음(마지막 틀린 후보는 목요일 이후), 정답은 어떤 단서로도 빠지지 않음, 요일별 단서 5개(기준안 40자), 단서 문장에 허용 값 낱말이 모두 있고 허용 밖 값 낱말이 없음(활용형·숫자 표기 차이 허용), `standardCode`는 이번 주 성취기준만, `evidence` 종류·때 필수, 찾는 대상은 대화 화자가 아님. 단서 규칙 중 코드로 볼 수 있는 것(정답 이름은 종료 이야기에만, 후보 이름의 색 낱말, 단서 종류 중복), 대화 형식·줄 수·길이·유출, 움직임 개수·속도·크기 상한. 검토 LLM은 단서 문장이 조건을 그대로 말하는지, 표 값이 자연스러운지, 없음에만 기대지 않는지, `HINT`가 일찍 답을 정하지 않는지를 본다
@@ -2410,8 +2410,11 @@ classDiagram
 - 대화: 그날 단서 문장은 코드가 대화 한 줄로 그대로 넣고(말하는 사람은 LLM이 고름) LLM은 나머지 줄만 만든다. 실패한 요일만 사유를 넣어 다시(상한 2), 끝내 실패하면 그 요일 대화만 빼고 `warnings(DIALOGUE)`
 - `review_story`: 검토 모델이 `CLUE_LOGIC`·`ANSWER_HINT`·`GRADE_VOCAB`·`STANDARD_FIT`·`SAFETY` 다섯 항목을 본다. `CLUE_LOGIC`·`ANSWER_HINT`·`SAFETY` `FAIL`은 사유를 넣어 줄거리부터(미션·대화 다섯 요일 모두 새로), `STANDARD_FIT`·`GRADE_VOCAB` `FAIL`은 그 요일(요일이 없으면 다섯 요일) 미션·대화만 다시 만들고 다시 검토한다. 항목 형식이 틀리면 검토만 다시. 재검토 상한(2)을 넘거나 마감이 가까우면 `failure.stage = REVIEW`, 마지막 검토의 `WARN`은 `warnings(REVIEW)`
 - `previousFailures` 반영: `THEME`·`REVIEW` 사유는 첫 줄거리 생성부터, `MISSION` 사유(`"<요일> <검사 코드> <자세히>"`)는 그 요일 미션 생성마다(요일이 없으면 다섯 요일) 넣는다. `IMAGE`는 그림 단계가 붙을 때 쓴다(글 단계는 무시)
-- 그림: `gpt-image-2.6-sunburst`, 1536×864, medium. 첫 장면(또는 인물 설정 그림)을 먼저 만들고 나머지 장면은 그 그림을 참조로 넣어 동시에 만든다. 프롬프트는 고정 스타일 + 뭉치(테마 옷) + 등장인물 모습 + 그날 장면 메모(한국어 그대로)이고, 찾는 대상과 사건 장면(생각 풍선 등)은 그리지 않는다. 영상: `veo-3.1-fast-generate-001`, 720p·6초·무음, 시작 = 앞 장면 그림, 끝 = 이번 장면 그림
-- `ThemeStorage`(`storage.py`): 실행마다 ID를 만들어 `theme-drafts/{실행 ID}/{장면}.png`·`.mp4`로 올리고 키만 돌려준다(report-service `clients/storage.py` 패턴, boto3)
+- 그림: `gpt-image-2.6-sunburst`, 1536×864, medium. 첫 장면(또는 인물 설정 그림)을 먼저 만들고 나머지 장면은 그 그림을 참조로 넣어 동시에 만든다. 프롬프트는 고정 스타일 + 뭉치(테마 옷) + 등장인물 모습 + 그날 장면 메모(한국어 그대로)이고, 찾는 대상과 사건 장면(생각 풍선 등)은 그리지 않는다. 영상: `veo-3.1-fast-generate-001`, 720p·6초·무음, 컷마다 시작·끝 경계 그림 고정(아래 그림체·영상 범위)
+- `ThemeStorage`(`storage.py`): 실행마다 ID를 만들어 `theme-drafts/{실행 ID}/{장면}.png`·`.mp4`로 올리고 키만 돌려준다(report-service `clients/storage.py` 패턴, boto3). 영상은 `INTRO`·`OUTRO`만
+- 그림체·뭉치·영상 범위(사용자 결정 2026-11-11): 2D 만화풍, 앱 솜뭉치 모양의 기본 뭉치 그림(`assets/`, 기준안)을 고쳐 테마 옷을 입힌 뒤 모든 그림의 참조로 쓴다. 영상은 시작·종료만이고 장면마다 6초 컷 4개를 경계 그림(시작 영상: 콘티 경계 4장 + 시작 그림, 종료 영상: 금요일 그림 + 콘티 경계 3장 + 종료 그림)으로 고정해 동시에 만든 뒤 이어 붙인다(`imageio-ffmpeg`). 콘티(컷마다 장면·동작·문구)는 `plan_theme`이 내부 칸으로 함께 만든다. 실패한 컷만 다시 만들고, 설정이 꺼져 있거나 마감이 가까우면 영상을 건너뛰고 `warnings(VIDEO)`
+- `ImageClient`·`VideoClient`(`app/llm/media.py`, 이슈 작업 위치 `app/llm/`): 그림 생성(참조 그림 여러 장, OpenAI images edits)과 영상 생성(Veo 시작·끝 고정, 토큰 공급은 설정), 컷 이어 붙이기·장면 뽑기(ffmpeg). 시험은 가짜 구현
+- 움직임(형식 v1, `models.ThemeMotion`): `transition`·`camera`·`speakers{이름: {x, y, zoom}}`·`effects[]`(최대 2층)·`captions[{start, end, text}]`(시작·종료 영상 문구). 좌표는 그림 %. 화자 위치는 생성 모델이 그림을 보고 정하고, 상한 밖 숫자는 `ThemeChecks.motion`이 맞추고 경고. 그림 입력은 `LlmClient.generate`의 선택 인자 `images`
 - 지식 검색(#470): `plan_theme` 앞 `retrieve` 노드와 `check_theme` 범위 확인 자리만 두고 기능 스위치(기본 꺼짐)로 막는다
 - 프롬프트: `prompts.py` 내장 `theme-draft@1`(생성·검토 묶음), #68 레지스트리 이름 `themeDraft`·scope `ai/theme-draft`. 입력에 학생 정보 없음
 - 사용량: 글 생성·검토 `THEME_DRAFT`, 이미지 `THEME_IMAGE`, 영상 `THEME_VIDEO`. `THEME_VIDEO`는 사용량 이벤트 스키마와 core enum·DB 제약에 먼저 들어간 뒤에만 보냄(core 담당이 마이그레이션 준비)

@@ -490,6 +490,7 @@ backend/ai-service/
 │  │  ├─ models.py               # 요청·응답·테마 틀 스키마
 │  │  ├─ checks.py               # 정답 논리·단서 규칙·대화·움직임 검사
 │  │  ├─ storage.py              # S3 theme-drafts/ 업로드 (boto3)
+│  │  ├─ assets/                 # 기본 뭉치 그림(그림 생성 고정 참조, 기준안)
 │  │  └─ prompts.py              # themeDraft 프롬프트 본문·버전(생성·검토)
 │  ├─ prompt_versions/           # 활성 프롬프트 버전 (#68, #254 분리)
 │  │  ├─ router.py               # GET /internal/versions
@@ -503,7 +504,8 @@ backend/ai-service/
 │  │  └─ core_client.py          # 기동·재연결 시 core 활성 버전 조회 (#68)
 │  ├─ llm/                       # LLM 클라이언트 래퍼 (제공자 교체 지점)
 │  │  ├─ base.py                 # 공통 인터페이스·재시도·타임아웃·사용량 기록
-│  │  └─ providers.py            # Claude·OpenAI·OpenAI 호환 sLLM, LLM_PROVIDER로 선택
+│  │  ├─ providers.py            # Claude·OpenAI·OpenAI 호환 sLLM, LLM_PROVIDER로 선택
+│  │  └─ media.py                # 그림·영상 생성 클라이언트(IMAGE_PROVIDER·VIDEO_PROVIDER, 가짜 구현), 컷 이어 붙이기 (#437, imageio-ffmpeg)
 │  ├─ messaging/
 │  │  ├─ envelope.py
 │  │  ├─ connection.py
