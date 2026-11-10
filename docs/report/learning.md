@@ -940,7 +940,30 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 - 토·일 되돌아보기 열람: 주말에만 열려 확인하지 않음
 - 주간 테마 완주(월~금 다섯 문제): 하루 1개라 한 번에 확인할 수 없음
 
-## 27. 테마 초안 작업·학년별 테마·이야기 열람 (#438)
+## 27. report 집계 입력 판정 모델 점수 (#478, 2026-11-10)
+
+리포트 설명(FN-RPT-09, 에픽 #473)의 대상 선정·설명 요청 입력으로 report가 답변별 M2 점수를 받는다. 저장값(`judgment.model_scores`)을 그대로 넘기며 새 컬럼은 없다.
+
+### 결정
+
+| 항목 | 결정 | 이유 |
+|---|---|---|
+| 노출 조건 | `GET /internal/records/students/{id}/attempts?includeModelScores=true`일 때만 `answers[].feedback.judgment.modelScores` 키를 넣음 | 같은 경로를 core가 학부모·학생 대시보드로 그대로 넘기고(`LearningRecordClient.dashboard`), ai 분석 대화 도구도 읽음. 키를 늘 넣으면 점수가 학부모 화면과 외부 LLM 요청에 섞임 |
+| 호출 권한 | 쿼리는 `X-User-Role: SYSTEM`(report 주기 작업)만, 그 밖 역할은 `403 FORBIDDEN` | core `DashboardQuery.parameters()`는 정해진 쿼리만 보내 학부모가 끼워 넣을 수 없지만, learning에서도 한 번 더 막음 |
+| 값 | 저장 JSON 원문(`{m2, m1, skipped}`), M2를 부르지 않았으면 `null`. 처리 중·실패 답변은 `judgment`가 null이라 키도 없음 | api-spec 4.1.1·4.2.2와 같은 모양. 점수 해석·선정은 report(#479) 몫 |
+| 구현 위치 | `RecordService.attempts`가 목록 답변의 점수를 한 번에 읽어(`RecordMapper.findModelScores`) `JudgmentView.modelScores`에 붙임 | 판정 조회(`JudgmentService.stored`)와 학생 시도 상세는 그대로 둠. `modelScores`는 `@JsonRawValue`·`NON_NULL`이라 Kotlin null이면 키가 없고 `"null"`이면 JSON null |
+
+### 범위 밖
+
+- report는 아직 이 쿼리를 보내지 않는다. 대상 선정·설명 호출은 #479에서 추가한다
+- `daily-attempts`·기록 상세·evidence에는 넣지 않는다(주간 리포트 설명만 대상)
+
+### 검증
+
+- `RecordControllerTest`: 학부모·학생이 쿼리를 보내면 403, SYSTEM은 원문 JSON과 null을 그대로 받음, 쿼리가 없으면 본문에 `modelScores` 문자열 자체가 없음
+- `RecordServiceTest`(PostgreSQL): 저장 점수 원문, M2 미호출 `"null"`, 처리 중 답변은 판정 없음, 쿼리 없으면 null
+
+## 28. 테마 초안 작업·학년별 테마·이야기 열람 (#438)
 
 에픽 #436의 learning 몫. ai 생성 그래프는 #437(같은 브랜치 `feature/theme-draft-ai`), core 프록시·사용량은 #439, web은 #440·#441이다. 이 절은 설계 단계 기록이며 구현·검증 결과는 이어서 덧붙인다. PR은 core 담당 요청대로 `Refs #438`로 연결하고, 병합 뒤 kind에서 core와 함께 확인한 다음 #438·#439를 같이 닫는다.
 
@@ -978,11 +1001,11 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 | 자동 생성 성취기준 (기준안) | 그 학년이 속한 학년군 표에서 `SOLVE`는 수학, 나머지 넷은 국어. 같은 학년의 최근 4주 테마 초안에 쓴 코드는 빼고 무작위 1개. 입력은 FN 1.5 기본(서술·논술·서술·풀이 단계·서술), 초3·초4 따져 보기는 서술. 성취수준은 비움 | 사용자 결정 2026-11-10. P15 국어 우선, FN 1.5 문제 해결하기 수학 예외, P03 논술 초5~6. 지식 검색(#470) 연결 뒤 유형별 후보로 바꿀 수 있음 |
 | 관리자 요청의 빈 유형 | 고르지 않은 유형은 자동 규칙으로 learning이 채워 `input`에 저장 | 에픽 "관리자 요청은 유형별 지정 가능". ai 요청은 유형 5개가 다 있어야 함 |
 | 생성 시도 상한 (기준안) | 3회(`app.theme-draft.max-attempts`) | 이슈 기준안, 미션 초안과 같음 |
-| 대기·리스 (기준안) | ai 마감 15분, learning→ai 대기 16분(`app.theme-draft.ai-read-timeout`), 리스 18분 | 이슈·ai.md 14장 기준안. 실측 후 조정 |
+| 대기·리스 (기준안) | ai 마감 15분, learning→ai 대기 16분(`app.theme-draft.ai-read-timeout`), 리스 18분 | 이슈·ai.md 15장 기준안. 실측 후 조정 |
 | 주기·크론 (기준안) | 생성 주기 10초(미션 초안과 같음), 주간 자동 수요일 03:00 KST(`app.theme-draft.weekly-cron`) | 에픽 기준안 |
 | 서킷 | `ai-theme-draft`(값은 `aiCircuitBreaker`와 같음) | 미션 초안·판정과 따로 둬 테마 실패가 다른 호출을 막지 않게(#305·#353 같은 이유) |
 | 검사 실패 기록 | `check_results[].failures[].stage`: ai `THEME`·`MISSION`·`REVIEW`·`IMAGE`, learning 검사 `LEARNING`, AI 호출 실패 `AI_CALL`(사유는 실패 코드). ai에 보내는 `previousFailures`는 이전 시도 실패를 시간순으로 쌓되, ai 단계 실패는 그대로, learning 실패는 요일·유형 배치·정답 논리 → `THEME`, 미션 게시 규칙(`ELEMENT_CODE`·`STANDARD_CODE`·`SHAPE`) → `MISSION`으로 바꾸고 AI 호출 실패는 넣지 않음. 사유 형식: `MISSION`은 `<요일> <검사 코드> <자세히>`(예: `TUE ELEMENT_CODE rubric.elements.code`, 요일은 응답 `days[].day`와 같은 `MON`~`FRI`), 그 밖은 `<검사 코드> <자세히>` | ai 요청 `stage`는 네 값 enum이라 다른 값은 422(#437과 합의, 사용자 결정 2026-11-10, api-spec 4.2는 #437이 반영). ai는 요일 접두어로 그 요일 미션 재생성에만 사유를 씀. AI 호출 실패는 내용 피드백이 아니라 뺌(미션 초안은 넘기는 것과 다름). 관리자 화면에서는 어느 쪽 검사인지 보여야 해 `check_results`에는 따로 기록 |
-| learning 검사 | 요일·유형 배치(월 `ANALYZE`·화 `EVALUATE`·수 `CREATE`·목 `SOLVE`·금 `REFLECT`, 기준안), 미션 5개는 `DraftRules.learningFailures`(게시 규칙, 학년 = 테마 학년), 정답 논리, 대화 화자·장면 키 모양은 보지 않음 | 이슈 "learning 검사". 미션 규칙은 미션 초안과 같은 함수. 대화·영상·움직임은 ai가 실패해도 빼고 성공으로 돌려주는 항목(ai.md 14.1) |
+| learning 검사 | 요일·유형 배치(월 `ANALYZE`·화 `EVALUATE`·수 `CREATE`·목 `SOLVE`·금 `REFLECT`, 기준안), 미션 5개는 `DraftRules.learningFailures`(게시 규칙, 학년 = 테마 학년), 정답 논리, 대화 화자·장면 키 모양은 보지 않음 | 이슈 "learning 검사". 미션 규칙은 미션 초안과 같은 함수. 대화·영상·움직임은 ai가 실패해도 빼고 성공으로 돌려주는 항목(ai.md 15.1) |
 | 채택 | 미션 5개 `DRAFT`(`source = LLM_THEME`, 학년 범위 = 테마 학년, 장면 그림 키를 `scene_uri`·`static_scene_uri`에, 움직임 `scene_motion`, 요소 배점 1)와 테마 `DRAFT`(요일 배치·이야기·장면·대화·정답 구조, `hint_spots` NULL)를 한 트랜잭션 | 이슈·에픽. 미션 생성은 `MissionService.createFromDraft` 재사용 |
 | 미션 생성 재사용 | `MissionService.createFromDraft`에 출처 인자(기본 `LLM_DRAFT`)를 더해 테마는 `LLM_THEME`. 미션 5개마다 미션 초안 입력 모양(`DraftInput`)을 만들어 `DraftRules.missionCommand`·`learningFailures`를 그대로 씀 | 기존 함수가 출처를 `LLM_DRAFT`로 고정. 미션 초안 동작은 그대로(사용자 결정 2026-11-10) |
 | 장면 움직임 보존 | `MissionCommand`에 `sceneMotion`. 관리자 미션 수정 본문에 `sceneMotion`이 없으면 `sceneUri`가 이전 버전과 같을 때만 이전 값을 이어받고, 장면을 바꾸면 비움 | 웹 `missionWritePayload`는 정해진 칸만 보내 `sceneMotion`이 없어 수정 때마다 움직임이 사라짐. 관리자 미션 계약(web·core)을 바꾸지 않으려고(사용자 결정 2026-11-10) |

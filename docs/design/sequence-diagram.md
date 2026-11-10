@@ -545,6 +545,7 @@ sequenceDiagram
 - learning도 시도·키(ERD UK)로 같은 키를 처리. core가 learning 응답을 받기 전에 끊겨 다시 보내도 답변은 1건
 - 표현 검사(#205)는 learning 안의 단어 목록 대조라 외부 호출이 없음. 막힌 요청은 저장하지 않고, core는 그 422(범주별 안내, 원문 없음)를 같은 키의 응답으로 저장. 웹은 답이 바뀌면 새 키를 만들어 고친 답은 새 요청이 됨. 초안 자동 저장은 검사하지 않음 (learning.md #205)
 - 메모는 초안 `content.memo`로 함께 저장, 학생 본인 조회에만 포함 (P05)
+- 2026-11-10 개정(#483, core #485 구현 전): 무료 플랜은 테마 문제(`THEME_DAY`)를 하루 한도 없이 공개된 만큼(주 5개) 시작하고, 추가 문제(`EXTRA`)는 프리미엄 전용(403 `PREMIUM_REQUIRED`). 아래는 이전 규칙
 - 무료 플랜은 하루 신규 미션 시도 1개(`THEME_DAY`·`EXTRA` 합산, 3.4)까지 허용 (P13). 신규 생성 `201`만 집계하고 이어하기 `200`은 항상 허용, 한도 초과 신규 생성만 `429 USAGE_LIMIT_REACHED` (API 2.2, #387 구현: #210 결정에 따라 PostgreSQL `mission_daily_usage`)
 
 ### 3.2 피드백 SSE (판정·되묻기)
@@ -672,9 +673,11 @@ sequenceDiagram
   end
 ```
 
-### 3.4 주간 테마 문제 시작 (P23·P13, learning #385·core #387)
+### 3.4 주간 테마 문제 시작 (P23·P13, learning #385·core #387 → 2026-11-10 개정 #483)
 
 2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). learning #385·core #387 구현. 포인트 보충(마지막 항목)은 #389 적립 연결로 구현. 1장 공통 규칙을 따른다.
+
+2026-11-10 개정(#483): 아래 그림은 바뀐 규칙(누적 공개·무료 테마 하루 한도 없음·프리미엄 일요일·당일 풀이/개근/주간 완주 보충)이다. 구현은 learning #484·core #485이며, 그 전 코드는 무료 `THEME_DAY`·`EXTRA` 합산 하루 1개(`mission_daily_usage`, `429 USAGE_LIMIT_REACHED`)와 오늘 요일 문제만 허용한다. 칸 이름·사건 이름·상품 기능 값은 기준안이다.
 
 ```mermaid
 sequenceDiagram
@@ -685,37 +688,36 @@ sequenceDiagram
   participant L as learning
 
   W->>C: GET /students/me/weekly-theme
-  C->>L: GET /internal/students/{id}/weekly-theme?grade&date (KST)
-  L->>L: 그 학년의 그 주 게시 테마, 없으면 최근 게시 테마 재사용
-  L-->>C: 테마·요일 상태·되돌아보기 목록·공개된 단서·이야기 열람 여부·이미지/영상 URL(presigned)
-  opt days[].attemptStatus = COMPLETED (#389 보충)
-    C->>CDB: reward_point_ledger (MISSION_COMPLETED, source_key = missionId) — 있으면 건너뜀
+  C->>CDB: 상품 기능 확인 (기준안 features.sundayTheme, 프리미엄 일요일 허용)
+  C->>L: GET /internal/students/{id}/weekly-theme?grade&date (KST) + 일요일 허용 값(전달 방식 #484·#485 합의)
+  L->>L: 그 학년의 그 주 게시 테마, 없으면 최근 게시 테마 재사용. 요일 상태(누적 공개)·당일 풀이·개근·주간 완주·엔딩 계산
+  L-->>C: 테마·요일 상태(days[].completedOnDay)·completed(개근)·finished(주간 완주)·ending·되돌아보기 목록·공개된 단서·이야기 열람 여부·이미지/영상 URL(presigned)
+  rect rgba(128,128,128,0.12)
+    Note over C,CDB: 보충 적립 — 원장 사건 키 UK로 이미 있으면 건너뜀
+    C->>CDB: days[].attemptStatus = COMPLETED → MISSION_COMPLETED (source_key = missionId)
+    C->>CDB: days[].completedOnDay → THEME_ON_TIME (source_key = weekStart:day)
+    C->>CDB: completed → THEME_COMPLETED 개근 (source_key = weekStart)
+    C->>CDB: finished → THEME_FINISHED 주간 완주 (source_key = weekStart)
   end
   C-->>W: 200 (learning 응답 그대로)
   W->>C: POST /missions/{missionId}/attempts {context: THEME_DAY}
-  opt 무료 자녀
-    C->>CDB: mission_daily_usage 오늘(KST) 건수 확인
-    alt 1개 이상
-      C-->>W: 429 USAGE_LIMIT_REACHED
-    end
-  end
-  C->>L: POST /internal/missions/{id}/attempts?grade {context}
+  Note over C: 무료도 THEME_DAY는 하루 한도 집계 없음 (EXTRA는 무료 403 PREMIUM_REQUIRED)
+  C->>L: POST /internal/missions/{id}/attempts?grade {context} + 일요일 허용 값
   L->>L: 진행 중 시도면 그대로 반환, 아니면 미션 공개·범위 → 테마 학년(grade, 중학생 G6)·KST 오늘로 그 주 테마 확인
-  alt 신규 시도인데 오늘 요일 문제가 아님
+  alt 신규 시도인데 공개 전(LOCKED) 문제이거나 일요일(허용 값 없음)
     L-->>C: 409 THEME_DAY_CLOSED
     C-->>W: 409
   else 신규 201 / 진행 중 200
     L-->>C: 시도
-    opt 201 이고 무료
-      C->>CDB: mission_daily_usage 기록
-    end
     C-->>W: 시도 (이후 3.1~3.3 흐름)
   end
 ```
 
-- `EXTRA`는 무료면 core가 403 `PREMIUM_REQUIRED`, 프리미엄이면 `payment_premium_usage(EXTRA_MISSION)` 기록. `THEME_REVIEW`는 한도 집계 없이 learning이 토·일·마무리한 문제인지 검사
-- 진행 중 시도 반환(`200`)은 요일 검사 없이 이어하기(자정 후 포함). 재사용 테마의 이미 푼 문제도 그 주 당일이면 `THEME_DAY` 신규 시도
-- 주간 테마 조회 때 core는 응답에서 이번 주 학습 완료한 요일 문제(`attemptStatus = COMPLETED`)마다 `MISSION_COMPLETED`를 다시 부르고, 원장 사건 키 UK로 이미 있는 것은 건너뛰어 누락분만 보충한다(#389). 추가 문제(EXTRA)는 응답에 없어 보충 대상이 아니다
+- 공개(`OPEN`)된 문제는 월~토(프리미엄 일요일) 언제든 `THEME_DAY` 신규 시도. 금요일에는 다섯 문제 모두 공개, 토요일에는 안 푼 문제 새로 풀기와 `THEME_REVIEW` 다시 풀기를 함께 허용
+- `EXTRA`는 무료 상품(`features.extraMissions = false`)이면 core가 403 `PREMIUM_REQUIRED`, 프리미엄이면 `payment_premium_usage(EXTRA_MISSION)` 기록. `THEME_REVIEW`는 한도 집계 없이 learning이 토요일(프리미엄 일요일)·마무리한 문제인지 검사(아니면 409 `THEME_REVIEW_NOT_ALLOWED`)
+- 진행 중 시도 반환(`200`)은 요일 검사 없이 이어하기(자정 후·일요일 포함). 당일 풀이는 학습 완료 시각이 그 요일 KST 안일 때만. 재사용 테마의 이미 푼 문제도 그 주 공개된 문제면 `THEME_DAY` 신규 시도
+- 주간 테마 조회 때 core는 응답에서 이번 주 학습 완료한 요일 문제(`attemptStatus = COMPLETED`)마다 `MISSION_COMPLETED`를 다시 부르고, 원장 사건 키 UK로 이미 있는 것은 건너뛰어 누락분만 보충한다(#389). 추가 문제(EXTRA)는 응답에 없어 보충 대상이 아니다. 당일 풀이·개근·주간 완주도 같은 방식으로 보충(기준안 core #485). 주간 완주는 learning이 토요일 23:59:59 KST까지의 완료만 세므로 프리미엄 일요일 완료로는 적립되지 않는다
+- 학습 완료 직후(3.5)에는 웹이 홈으로 돌아와 주간 테마를 다시 조회할 때 당일 풀이가 적립된다(적립 시점을 돌아보기 저장 응답 쪽으로 옮길지는 core #485에서 결정)
 - 학년별 테마(#438): core는 학생 학년 그대로 `grade=G3`~`G6`(중학생 `G6`)을 넘긴다. core 반영 전(병합 순서 #438 → core)에는 core가 `gradeBand`를 보내므로 learning은 `grade`가 없으면 `gradeBand`의 `G3_4`를 `G3`, `G5_6`을 `G5`로 읽는다(V14가 학년군 테마를 학년마다 같은 내용으로 복사하므로 이 기간 내용은 같음). core 반영 뒤 이 호환을 지운다
 - 테마 시도(#438): 시작·이어하기 응답에 `themeScene{dialogue, hintSpots, videoUrl}`(그 시도 테마 게시본의 그 미션 요일 값, `EXTRA`는 `null`). 생각 열기(`POST /attempts/{id}/hints`)는 순서대로 하나씩 여는 기존 동작·열람 기록 그대로이고 `hintSpots`는 그림 위 표시 위치만 정한다
 
@@ -754,9 +756,11 @@ sequenceDiagram
 - 공유·적립 저장 실패는 학습 완료 응답을 바꾸지 않는다(적립은 `RewardService.earn` 자체 트랜잭션, 실패는 로그만). 원장은 사건 키 UK로 멱등이라 같은 돌아보기 재요청(`409 ATTEMPT_CLOSED`)·주간 테마 조회(3.4) 때 보충
 - 응답에 적립 결과를 넣지 않는다. 웹은 `GET /students/me/points`로 잔액을 본다
 
-### 3.6 되돌아보기 열람·완주 보너스 (P21·P23, learning #385·core #389 구현)
+### 3.6 되돌아보기 열람·개근·주간 완주 (P21·P23, learning #385·core #389 구현 → 2026-11-10 개정 #483)
 
 2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). learning 열람 기록·완주 판정은 #385, core 열람 응답 뒤 적립 연결은 #389 구현. 1장 공통 규칙을 따른다.
+
+2026-11-10 개정(#483): 열람은 토요일(프리미엄은 일요일도)만 허용하고 무료 일요일은 `409 THEME_REVIEW_NOT_ALLOWED`. 이전 "완주 보너스"(`THEME_COMPLETED`, 월~금 각 당일 학습 완료)는 이름만 개근으로 바꿔 그대로 두고, 주간 완주(기준안 `THEME_FINISHED`, 응답 기준안 `finished`)를 같은 자리에서 적립한다. 일요일이 닫히므로 토요일에 열람하지 않은 학생도 3.4 주간 테마 조회 보충으로 빠지지 않게 한다(core #485).
 
 ```mermaid
 sequenceDiagram
@@ -768,15 +772,18 @@ sequenceDiagram
 
   W->>C: POST /students/me/weekly-theme/review-views
   C->>L: POST /internal/students/{id}/weekly-theme/review-views?grade&date
-  L->>L: 토·일 확인(아니면 409 THEME_REVIEW_NOT_ALLOWED), theme_review_view 저장 (주 1회 멱등)
-  L-->>C: {firstViewThisWeek, completed}
+  L->>L: 토요일(일요일 허용 값이면 일요일도) 확인(아니면 409 THEME_REVIEW_NOT_ALLOWED), theme_review_view 저장 (주 1회 멱등)
+  L-->>C: {firstViewThisWeek, completed, finished(기준안)}
   rect rgba(128,128,128,0.12)
     C->>CDB: reward_point_ledger (REVIEW_VIEWED, source_key = weekStart) + 잔액 — 이미 있으면 건너뜀(재요청 보충)
-    opt completed (월~금 5문제 각 당일 학습 완료)
+    opt completed (개근: 월~금 5문제 각 당일 학습 완료)
       C->>CDB: reward_point_ledger (THEME_COMPLETED, source_key = weekStart) + 잔액
     end
+    opt finished (주간 완주: 5문제 토요일까지 학습 완료, 기준안)
+      C->>CDB: reward_point_ledger (THEME_FINISHED, source_key = weekStart) + 잔액
+    end
   end
-  C-->>W: 200 {firstViewThisWeek, completed} (learning 응답 그대로)
+  C-->>W: 200 {firstViewThisWeek, completed, finished} (learning 응답 그대로)
 ```
 
 - `weekStart`는 core가 learning에 넘긴 KST 날짜의 월요일. `firstViewThisWeek`와 무관하게 적립을 부르고 사건 키로 1회만 남겨, 앞선 적립 저장이 실패했으면 열람 재요청 때 보충
@@ -818,7 +825,7 @@ sequenceDiagram
 
   W->>C: GET /missions/{missionId}/community-posts?seed
   C->>L: GET /internal/community/missions/{missionId}/posts?viewerStudentId&seed
-  alt viewer가 이 미션을 학습 완료하지 않음
+  alt viewer가 이 미션을 학습 완료하지 않음, 또는 큰 질문 정답 고르기 문제인데 viewer의 그 주 엔딩 전(2026-11-10 개정 #483, learning #484)
     L-->>C: 403 COMMUNITY_LOCKED
     C-->>W: 403
   else 마무리함
@@ -975,6 +982,7 @@ sequenceDiagram
   participant RDB as report_db
   participant L as learning
   participant A as ai
+  participant X as 설명 sLLM 서버
   participant S3 as S3
 
   SCH->>SCH: 매주 월 00:00 KST(일요일 자정), @SchedulerLock 획득 (ShedLock, 1개 레플리카만) (P06)
@@ -1021,6 +1029,19 @@ sequenceDiagram
     RW->>RW: ReportVerifier 숫자·인용 대조
     opt 대조 실패 (P16)
       RW->>RW: 템플릿 요약으로 교체 (narrative.source = TEMPLATE)
+    end
+  end
+  opt narrativeEnabled, 원문 공개, M2 점수가 있는 답변 있음 (FN-RPT-09, #479)
+    RW->>RW: 대표 답변 최대 3개 선정 (생각 유형이 겹치지 않게, 같으면 최근)
+    loop 대표 답변마다
+      RW->>A: POST /internal/report-explanations {grade, inputType, text, scores}
+      A->>X: OpenAI 호환 생성 요청 (월 00:00 전후 KEDA cron으로 1대 기동, #476)
+      X-->>A: 설명 초안
+      A->>A: 규칙 후처리, 금지어·점수·등급 표현 검사, 인용 부분 문자열 확인
+      A-->>RW: {active, explanation, versions} 또는 실패
+    end
+    opt 실패·시간 초과·설명 모델 미활성 (P16)
+      RW->>RW: 해당 설명 제외, explanations.state = NOT_INCLUDED (리포트 status·state 유지)
     end
   end
   RW->>RW: ReportRenderer HTML·PDF·MD

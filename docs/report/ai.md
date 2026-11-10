@@ -884,6 +884,19 @@ AWS 실제 역할 연결·정책 및 객체 HEAD 확인까지 완료했다. 다�
 
 남은 조치: #212 업로드 담당자와 전체 파일 SHA-256을 S3에 제공하는 업로드 방식을 맞추고, 서비스 재가동 시 실제 scoring Pod의 읽기·통신을 확인한다. 체크섬 검사 완화, 가중치 다운로드, 운영 객체 재업로드, 정책 변경, 서비스 재가동은 수행하지 않았다.
 
+### 12.8 kind 확인 (2026-11-10)
+
+local kind에 배포된 이미지(develop `ecc6b71d`)로 core → scoring → MinIO 경로를 다시 확인했다. 확인용 모델은 학습하지 않은 작은 BERT 형태(출력 9개, 회귀)다. scoring Pod 안에서 만들어 실제 로더로 불러지는 것까지 확인했다. 이 모델을 `sagomungchi-local-models`에 `ChecksumSHA256`을 붙여 올렸다.
+
+| 경우 | scoring 내부 API | 관리자 화면(registration·manifest JSON 가져오기 → 사전 검사) |
+| --- | --- | --- |
+| 정상 | PASS `FILES_AND_METADATA_VERIFIED` | 파일·형식 확인 완료 |
+| 해시 불일치(manifest의 가중치 sha256만 변경) | FAIL, `model.safetensors` `HASH_MISMATCH` | SHA-256 불일치 |
+| 파일 누락(가중치 없는 경로) | FAIL, `model.safetensors` `FILE_MISSING` | 파일 없음 |
+
+- 감사 `MODEL_PREFLIGHT`는 SUCCESS 1·FAILURE 2였고, 자동 등록된 MODEL 행은 0이다. 확인 후 MinIO 객체를 지웠다
+- AWS는 실행하지 않았다. 남은 S3 SHA-256 업로드 방식 결정과 실제 Pod 확인은 #493으로 분리했다
+
 ## 13. Pod별 모델 로딩 보고 (#370)
 
 ### 13.1 요약 (2026-11-09)
@@ -942,8 +955,8 @@ V37 migration → RabbitMQ definitions(새 core 큐·재시도·DLQ 바인딩) �
 - [x] Pod 축소·재시작 시 오래된 기록 처리 규칙
 
 #### 완료 조건
-- [ ] 레플리카 2개 이상인 local 환경에서 한 Pod 로딩 실패 시 화면에 구분되어 보임을 확인
-  - 두 scoring 프로세스와 실제 RabbitMQ·core·DB·HTTP 응답, 해당 응답을 사용한 브라우저 표시를 검증했다. 실제 Kubernetes Pod 2개와 브라우저 직접 연결은 미검증이므로 원문 조건은 미체크한다.
+- [x] 레플리카 2개 이상인 local 환경에서 한 Pod 로딩 실패 시 화면에 구분되어 보임을 확인
+  - 11/09에는 두 scoring 프로세스와 그 응답을 쓴 브라우저 표시까지만 검증했다. 11/10 kind의 실제 Pod 2개와 관리자 화면 직접 연결로 확인했다(13.9).
 - [x] 관련 테스트 통과
 
 #### 유지할 원칙
@@ -965,11 +978,65 @@ develop `ef18b2ac`(#391·#369 포함)을 병합했다. OpenAPI의 #368 사전 �
 
 수정 후 core 전체 test·bootJar 통과: 585개 중 실패 0개, 조건부 제외 3개. 저장소 계약 회귀 203개 통과.
 
-## 14. 주간 테마 초안 생성 (#437)
+### 13.9 kind 실제 Pod 2개 확인 (2026-11-10)
+
+1. 12.8의 확인용 모델을 관리자 화면에서 등록·활성화했다. 범위는 실제 채점과 겹치지 않는 `kindcheck/issue-370`이다. 기존 scoring Pod가 `LOADED`를 보고했다
+2. MinIO의 `model.safetensors`를 같은 크기의 깨진 파일로 바꾸고 scoring을 레플리카 2로 늘렸다. 새 Pod는 `SafetensorError`로 실패하고 Ready가 되지 않았다
+3. `GET /api/v1/admin/model-loading` 응답은 `observedPods 2, loadedPods 1, failedPods [새 Pod]`였다. 관리자 화면 로딩 확인 단계에는 다음이 보였다
+   - "최근 보고 Pod 2개 중 로딩 완료 1개"
+   - 실패 Pod·오류 유형·"기존 모델 없음"
+   - 120초 넘은 이전 Pod의 "보고 만료"
+
+되돌림: 레플리카 1개로 복구했다. MinIO 객체를 지웠다. 확인용 `model_version` 행은 활성화 해제 API가 없어 DB에서 지웠고, 감사 이력은 남겼다. 확인 중 생긴 로딩 보고 행을 지웠다. scoring을 다시 시작해 빈 모델 목록 보고를 확인했다(Deployment에 `restartedAt` annotation 추가).
+
+## 14. 리포트 설명 API (#477, 2026-11-10)
+
+에픽 #473(설명 sLLM)의 ai 몫. report가 대표 답변마다 부르면 M2 항목 점수와 학생 글로 학부모용 설명을 만든다(api-spec 4.2.3, FN-RPT-09). 모델 학습(#475)·서버 배포(#476) 전이라 지금은 설명 모델이 활성이 아니어서 항상 `{active:false}`를 돌려준다.
+
+### API
+
+| 경로 | 요청 | 응답 |
+|---|---|---|
+| `POST /internal/report-explanations` | `{grade, inputType, text, scores}` | `200 {active:true, explanation:{text, quote\|null}, versions:{model, prompt}}` · `200 {active:false}` · `400`·`422 AI_EXPLANATION_REJECTED`·`503 AI_UNAVAILABLE` |
+| `GET /internal/versions` | — | `prompts.reportExplanation` 추가(`report-explanation@1`) |
+
+### 결정과 근거
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 설명 항목 | 가장 높은 항목(잘한 점) 1개 + 가장 낮은 항목(함께 이야기해 볼 점) 1개, 동점은 항목 표 순서, 모두 같으면 1개. 서술 총점 `hol` 제외 | 학습 데이터(71818) 이유 문장이 항목당 1문장이라 모델도 항목 하나씩 생성. 9항목 전부는 CPU에서 답변당 9회라 길고 느림(사용자 결정 11/10) |
+| 인용 구절 | 설명과 낱말 앞 두 글자가 2개 이상 겹치는 학생 글 문장 중 가장 많이 겹치는 것, 없으면 null | 이유 문장에 근거 구절 표시가 없어 모델에게 구절까지 만들게 하면 틀리기 쉬움. 원문 문장을 그대로 잘라 써 부분 문자열 조건을 항상 만족(사용자 결정 11/10) |
+| 활성 확인 | 레지스트리 `MODEL` `report-explanation`, scope `explanation/grade-{학년}/{narrative\|essay}`(#480). `ActiveVersions`가 PROMPT와 함께 이 MODEL도 보관(`prompt_versions/models.tracked`) | 기존 활성 목록·`model.version.activated` 수신을 그대로 써 새 구독 없이 승인 범위를 지킴. M2 scope와 같은 모양 |
+| 클라이언트 | `create_explanation_llm` → `OpenAICompatibleLlm` 두 번째 인스턴스(`EXPLANATION_BASE_URL`·`EXPLANATION_MODEL`), 재시도 0, `app.state.explanation_llm` | 다른 호출의 `LLM_PROVIDER`는 그대로(닫힌 #341의 리포트 전용 제공자와 달리 OpenAI 호환 주소만 바꿈). 주소가 없으면 `UnconfiguredLlm`이라 설명만 503 |
+| 생성 방식 | `LlmClient.stream`의 평문을 모음(JSON 구조화 출력 안 씀), `callType = REPORT_EXPLANATION` | LoRA가 이유 문장 평문으로 학습되므로 JSON 강제는 학습 형식과 다름. 사용량 기록은 기존 스트림 경로 그대로 |
+| 후처리·검사 | 숫자나 금지어(분석 대화 `verification.FORBIDDEN`: 레벨·등급·점수·사고력·IQ·상위·하위·뒤처·영재)가 있는 문장을 버리고 항목당 앞 2문장. 남는 문장이 없으면 422 | 전문가 문장에 "4점" 같은 점수 표현이 섞임(`ml/m2/scripts/build_feedback.py` `SCORE_PAT`). 문장 안에서 숫자만 지우면 문장이 깨지므로 문장째 버림. 생성형 AI로 말투를 바꾸지 않음(NFR-DAT-03) |
+| 학부모 문장 틀 | `잘한 점: …` / `함께 이야기해 볼 점: …` 줄 | 점수 대신 칭찬과 대화 거리로 전달(D2 규칙 후처리) |
+| 시간 | 항목 1회 60초, 요청 마감 125초, 최대 256토큰. 모두 설정값 | CPU 양자화 모델 실측(#475) 전 임시값. 주 1회 배치라 P12 예외 |
+
+### #475 학습 입력 형식 (고정)
+
+```
+system: 너는 초등학생 글의 한 평가 항목에 대해 전문가가 쓴 이유 문장을 쓴다. (app/report_explanation/prompts.py SYSTEM)
+user:   [학년] 초{학년} [항목] {항목 이름} [점수] {점수}
+        {학생 글}
+target: 그 항목의 전문가 이유 문장(71818 score.personal.*.feedback 원문)
+```
+
+- 항목 이름: 서술 과제 수행·명료성·구체성·적절성·연결성·통일성·어휘·어법(`task_1`·`content_1~3`·`organization_1~2`·`expression_1~2`), 논술 구성·내용·표현(`org`·`cont`·`exp`). 문구를 바꾸면 `PROMPT_VERSION`을 올리고 #475 학습 쌍도 같이 바꾼다
+- 확인 필요(#475): 논술 M2는 545 데이터의 `{org,cont,exp}` 0~3점인데 이유 문장은 71819에만 있어 항목 체계가 다르다. 논술 설명 학습 쌍을 만들 때 항목 대응을 정해야 한다
+
+### 검증
+
+- `tests/report_explanation/`(20개): 항목 선택(동점·전부 같음·총점 제외), 후처리(숫자·금지어 문장 버림, 2문장), 문장 틀, 인용(겹침 최대·없으면 null), 활성·미등록·다른 학년·다른 입력 유형·같은 이름 PROMPT는 `{active:false}`이고 sLLM 미호출, 422·503, 사용량 `REPORT_EXPLANATION`, revision 순서·snapshot 전 이벤트 보관, 라우터 camelCase·`{active:false}` 단독·400·401·주소 미설정 503
+- `tests/test_versions.py`: `/internal/versions`에 `reportExplanation`
+- `scripts/tests/test_ai_openapi.py`: 라우터 8개와 OpenAPI 경로 일치
+- 남은 확인: 실제 sLLM 서버(#476)와 학습 모델(#475)로 생성 시간·후처리 통과율 측정, report 연동(#479)
+
+## 15. 주간 테마 초안 생성 (#437)
 
 에픽 #436의 ai 몫. 계약은 api-spec 4.2 `POST /internal/theme-drafts`, 구조는 class-diagram 5.5, learning 쪽 작업·저장은 #438. 이 절은 설계 단계 기록이며 구현·실측 결과는 이어서 덧붙인다.
 
-### 14.1 정한 내용
+### 15.1 정한 내용
 
 | 항목 | 정한 내용 | 근거 |
 |---|---|---|
@@ -994,13 +1061,13 @@ develop `ef18b2ac`(#391·#369 포함)을 병합했다. OpenAPI의 #368 사전 �
 | 지식 검색 | `retrieve` 노드·범위 확인 자리만 두고 기능 스위치(기본 꺼짐) | 지식 RAG 에픽 #463, 검색 연결 #470 |
 | 버전 응답 | `versions{prompt, model}`만 | 미션 초안과 같은 모양. 모델별 비용은 사용량 이벤트의 모델로 추적(사용자 결정) |
 
-### 14.2 API 변경
+### 15.2 API 변경
 
 - 새 경로 `POST /internal/theme-drafts`(api-spec 4.2). OpenAPI(`contracts/openapi/ai-service.yaml`)와 경로 대조 시험(`scripts/tests/test_ai_openapi.py`, 7 → 8개)은 라우터와 같은 커밋에 넣는다(시험이 실제 라우터와 문서 경로를 대조하므로)
 - 요청 `previousFailures[].stage`는 `THEME`·`MISSION`·`REVIEW`·`IMAGE` 네 값만 받는다(그 밖 422, 사용자 결정 2026-11-10, #438과 맞춤). learning 검사 실패는 요일·유형 배치·정답 논리면 `THEME`, 미션 게시 규칙(`ELEMENT_CODE`·`STANDARD_CODE`·`SHAPE` 등)이면 `MISSION`으로 바꿔 넣고, AI 호출 실패(502·503·대기 초과·서킷)는 넣지 않는다(learning `check_results`에는 `AI_CALL`로 남음). `reasons`는 `MISSION`이면 `"<요일> <검사 코드> <자세히>"`(요일 `MON`~`FRI`)로 시작해 ai가 그 요일 미션 재생성에만 넣고, 그 밖은 `"<검사 코드> <자세히>"`. 근거: 응답 `failure.stage`와 같은 값이라 learning이 받은 값을 그대로 돌려줌(api-spec 4.2 "이전 시도들의 failure를 그대로"), ai가 다시 만들 곳을 stage로 바로 정함, AI 호출 실패는 고칠 내용이 없음(미션 초안은 `AI_CALL`을 "형식에 맞게 다시 만든다"로만 바꿈), 정해진 값이라 잘못된 값이 422로 드러남. 미션 초안 선례(자유 문자열, `AI_CALL` 포함)와 다름
 - `GET /internal/versions` 응답에 `themeDraft` 추가(core에 읽는 코드 없음)
 
-### 14.3 남은 확인
+### 15.3 남은 확인
 
 - 요일↔유형 배치(에픽 확인 필요), 후보 수·`rulesOut` 형식과 "마지막 틀린 후보는 목요일 이후" 기준안(P23 개정 필요)
 - 이미지 모델·장당 비용, 영상 운영 인증·예산, 다른 제공자 검토용 팀 키(생기면 검토 설정만 바꿈)

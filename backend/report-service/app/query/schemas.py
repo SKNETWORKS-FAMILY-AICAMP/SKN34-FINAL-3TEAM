@@ -168,6 +168,7 @@ class Versions(Response):
 
 
 class ReportDetail(ReportSummary):
+    explanations: "ReportExplanations | None" = None
     problems: list[DailyProblem] = Field(default_factory=list)
     theme_summary: ThemeSummary | None = None
     revisions: list[Revision]
@@ -182,6 +183,21 @@ class ReportDetail(ReportSummary):
     verification: Verification
     versions: Versions
     generated_at: AwareDatetime | None
+
+
+class ReportExplanation(Response):
+    attempt_id: UUID
+    answer_id: UUID
+    answer_version: int = Field(ge=1)
+    mission_title: str
+    thinking_type: ThinkingType
+    quote: str | None
+    text: str
+
+
+class ReportExplanations(Response):
+    state: Literal["INCLUDED", "NOT_INCLUDED", "NO_TARGET"]
+    items: list[ReportExplanation] = Field(max_length=3)
 
 
 class Evidence(Response):

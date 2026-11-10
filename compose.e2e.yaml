@@ -22,7 +22,7 @@ services:
 
   # 동의 문서·상품·관리자(core_db)와 기존 데모 미션(learning_db) 적용
   e2e-seed:
-    image: postgres:17.11-alpine
+    image: pgvector/pgvector:0.8.7-pg17-trixie
     depends_on:
       core-migrate:
         condition: service_completed_successfully

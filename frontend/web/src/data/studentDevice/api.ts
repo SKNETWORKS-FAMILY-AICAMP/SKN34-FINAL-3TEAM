@@ -52,11 +52,8 @@ export const studentDeviceApi = {
   },
   revoke: (deviceId: string) =>
     apiFetch<void>(`/student-devices/${item(deviceId)}`, { method: 'DELETE' }),
-  setPin: (childId: string, pin: string, reauthToken: string) =>
-    apiFetch<void>(`/children/${item(childId)}/pin`, {
-      ...json({ pin }, 'PUT'),
-      headers: { 'Content-Type': 'application/json', 'X-Reauth-Token': reauthToken },
-    }),
+  setPin: (childId: string, pin: string) =>
+    apiFetch<void>(`/children/${item(childId)}/pin`, json({ pin }, 'PUT')),
 
   // ── 자녀 기기 ───────────────────────────────────────
   register: (pairingCode: string, label: string) =>

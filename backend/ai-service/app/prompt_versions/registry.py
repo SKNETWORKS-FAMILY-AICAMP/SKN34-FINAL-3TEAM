@@ -10,7 +10,8 @@ from app.errors import ApiError
 from app.followup import prompts as followup_prompts
 from app.judgment import prompts as judgment_prompts
 from app.mission_draft import prompts as mission_draft_prompts
-from app.prompt_versions.models import PROMPT_SCOPES, ActiveVersionItem, PromptChoice
+from app.prompt_versions.models import PROMPT_SCOPES, ActiveVersionItem, PromptChoice, tracked
+from app.report_explanation import prompts as report_explanation_prompts
 from app.report_narrative import prompts as report_narrative_prompts
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ BUILTIN_PROMPTS: dict[str, ModuleType] = {
     "reportNarrative": report_narrative_prompts,
     "reportTemplate": template_prompts,
     "missionDraft": mission_draft_prompts,
+    "reportExplanation": report_explanation_prompts,
 }
 
 
@@ -44,15 +46,15 @@ class ActiveVersions:
         """전체 snapshot 교체. 이벤트는 apply로 이름 한 개만 교체한다."""
         active: dict[str, ActiveVersionItem] = {}
         for item in items:
-            if item.kind != "PROMPT" or item.name not in PROMPT_SCOPES:
+            if not tracked(item):
                 continue
             if item.name in active:
-                raise ValueError("duplicate active prompt")
+                raise ValueError("duplicate active version")
             active[item.name] = item
         self._active = active
 
     def apply(self, item: ActiveVersionItem) -> None:
-        if item.kind != "PROMPT" or item.name not in PROMPT_SCOPES:
+        if not tracked(item):
             return
         previous = self._active.get(item.name)
         if previous is not None:
@@ -60,9 +62,7 @@ class ActiveVersions:
                 return
             if item.revision == previous.revision:
                 if item != previous:
-                    logger.warning(
-                        "Conflicting prompt activation revision ignored name=%s", item.name
-                    )
+                    logger.warning("Conflicting activation revision ignored name=%s", item.name)
                 return
         self._active[item.name] = item
 
@@ -81,6 +81,13 @@ class ActiveVersions:
                 retryable=True,
             )
         return PromptChoice(item.version, body)
+
+    def model(self, name: str, scope: str) -> ActiveVersionItem | None:
+        """활성 MODEL 중 그 scope가 승인된 것. 없으면 None (설명 모델 #477)"""
+        item = self._active.get(name)
+        if item is None or item.kind != "MODEL" or scope not in item.scopes:
+            return None
+        return item
 
     def is_ready(self) -> bool:
         try:

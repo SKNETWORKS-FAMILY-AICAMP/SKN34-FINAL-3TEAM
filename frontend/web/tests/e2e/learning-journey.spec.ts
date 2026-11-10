@@ -59,7 +59,7 @@ test.describe.serial('학생 미션 → 학부모 대시보드·리포트', () =
     await expect(page.getByRole('button', { name: `${mission} 원문 보기` })).toBeVisible()
 
     const [from, to] = queueWeeklyReport(nickname).split(' ')
-    await page.getByRole('link', { name: '리포트', exact: true }).click()
+    await page.getByRole('link', { name: '리포트·AI 챗봇', exact: true }).click()
     await page.waitForURL('**/parent/report**')
     const card = page.locator('article', { has: page.getByRole('heading', { name: `${from} ~ ${to}` }) })
     await expect(async () => {

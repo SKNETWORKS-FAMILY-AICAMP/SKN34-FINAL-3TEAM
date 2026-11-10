@@ -13,14 +13,15 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
 
 data class UsagePermit(val reservationId: UUID?, val premium: Boolean)
-/** #387: 시도 시작 판정 결과. 신규 시도(learning 201) 뒤 [ProductEntitlementService.missionStarted]가 같은 판정으로 기록한다 */
+/** #387·#485: 시도 시작 판정 결과. [sundayTheme]은 learning에 넘기는 일요일 허용 값. 신규 시도(learning 201) 뒤 [ProductEntitlementService.missionStarted]가 같은 판정으로 기록한다 */
 data class MissionStartPermit(val student: UUID, val context: String, val counted: Boolean, val premiumUsage: Boolean,
-    val subscriptionId: UUID?, val date: LocalDate)
+    val subscriptionId: UUID?, val date: LocalDate, val sundayTheme: Boolean = false)
 private val KST=ZoneId.of("Asia/Seoul")
 
 @Service
@@ -89,32 +90,51 @@ class ProductEntitlementService(private val repository: PaymentRepository, priva
     fun today(): LocalDate = tx.today()
 
     /**
-     * #387 (P13·P14 개정, 2026-11-08 동섭 결정): 시도 시작 전 판정. 무료·프리미엄 정책은 이 함수와 [missionStarted]에만 둔다.
+     * #387·#485 (P13·P14 개정, 2026-11-10 결정): 시도 시작 전 판정. 무료·프리미엄 정책은 이 함수와 [missionStarted]·[sundayTheme]에만 둔다.
      * - `THEME_REVIEW`: 상품과 무관, 한도 제외
+     * - `THEME_DAY`: 상품과 무관, 한도 제외. 무료 "테마 문제 주 5개"는 learning의 누적 공개(월~금 하루 1개)로 정해진다(#484)
      * - `EXTRA`(생각 유형별 고르기): 상품 `features.extraMissions`가 `false`인 상품이면 403 `PREMIUM_REQUIRED`(없거나 `true`면 허용).
-     *   지금은 FREE·PREMIUM 모두 허용하고, 무료 상품에서 `false`로 바꾸면 코드 수정 없이 프리미엄 전용이 된다.
-     *   무료 상품에서 꺼진 동안에만 프리미엄 `EXTRA`가 프리미엄 사용(환불 판정, P14)이라 환불 처리 중이면 409.
-     * - 무료 `THEME_DAY`·`EXTRA`: 합쳐서 KST 하루 `limits.dailyMissions`개. 한도에 닿아도 같은 미션의 진행 중 시도 이어하기(learning 200)는
-     *   막지 않도록 마지막 기록 시도를 [resumable]로 learning에 확인한다. learning 호출 전이라 트랜잭션·잠금 없이 판정한다.
+     *   #485 마이그레이션 V43이 무료 상품을 `false`로 바꿔 프리미엄 전용이다. 무료 상품에서 꺼진 동안 프리미엄 `EXTRA`는
+     *   프리미엄 사용(환불 판정, P14)이라 환불 처리 중이면 409.
+     * - 무료 상품에서 `EXTRA`를 다시 켜면 무료 `EXTRA`만 KST 하루 `limits.dailyMissions`개로 센다. 한도에 닿아도 같은 미션의
+     *   진행 중 시도 이어하기(learning 200)는 막지 않도록 마지막 기록 시도를 [resumable]로 learning에 확인한다.
+     * - 일요일 허용 값([sundayTheme])을 함께 돌려 learning 시작 요청에 넘긴다(일요일 거부는 learning).
+     * learning 호출 전이라 트랜잭션·잠금 없이 판정한다.
      */
     fun missionStart(student: UUID, context: String, mission: UUID, resumable: (UUID) -> Boolean): MissionStartPermit {
         val today=tx.today()
-        if(context=="THEME_REVIEW") return MissionStartPermit(student,context,false,false,null,today)
-        require(context in setOf("THEME_DAY","EXTRA"))
+        require(context in setOf("THEME_DAY","THEME_REVIEW","EXTRA"))
+        if(context!="EXTRA") return MissionStartPermit(student,context,false,false,null,today,sundayTheme(student,today))
         val entitlement=forStudent(student)
         val free=entitlement.subscriptionId==null
-        var premiumUsage=false
-        if(context=="EXTRA") {
-            if(!extraMissions(entitlement.product)) throw BusinessException(HttpStatus.FORBIDDEN,"PREMIUM_REQUIRED",
-                "추가 문제는 프리미엄 이용권에서 풀 수 있습니다.","무료 이용권은 하루 1개 당일 테마 문제를 풀 수 있습니다.")
-            premiumUsage=!free && !extraMissions(freeProduct())
-            if(premiumUsage && entitlement.refundPending) conflict("REFUND_IN_PROGRESS")
-        }
+        if(!extraMissions(entitlement.product)) throw BusinessException(HttpStatus.FORBIDDEN,"PREMIUM_REQUIRED",
+            "추가 문제는 프리미엄 이용권에서 풀 수 있습니다.","무료 이용권은 이번 주 공개된 테마 문제를 풀 수 있습니다.")
+        val premiumUsage=!free && !extraMissions(freeProduct())
+        if(premiumUsage && entitlement.refundPending) conflict("REFUND_IN_PROGRESS")
         // 집계·한도 확인은 usage(MissionUsageService), 한도 수는 무료 상품 데이터
         if(free) missionUsage.requireAvailable(student,today,dailyMissions(entitlement.product),mission,resumable)
-        return MissionStartPermit(student,context,free,premiumUsage,entitlement.subscriptionId,today)
+        return MissionStartPermit(student,context,free,premiumUsage,entitlement.subscriptionId,today,
+            sundayTheme(entitlement,today))
     }
-    /** learning이 신규 시도(201)를 만든 뒤에만 부름. 무료 `THEME_DAY`·`EXTRA`는 한도 집계, 프리미엄 전용 `EXTRA`는 환불 판정용 사용 기록(시도 ID로 1회) */
+    /**
+     * #485 프리미엄 일요일(P13, 1차): KST [date]가 일요일이고 상품이 일요일 테마 이용을 허용하면 true. learning이 이 값으로
+     * 일요일 테마 시작·다시 풀기·되돌아보기를 연다(#484). 일요일이 아니면 상품을 조회하지 않고 false.
+     * 값은 상품 `features.sundayTheme`. 없으면 구독 중(프리미엄)은 true·무료는 false로 본다. 기존 구독의 상품 스냅숏에
+     * 값이 없어도 프리미엄이 일요일을 쓰게 하기 위함이다. boolean이 아니면 상품 오류(503).
+     * 트랜잭션 프록시라 기본 인자(정적 `$default`가 프록시 필드를 읽음) 대신 오버로드로 둔다.
+     */
+    fun sundayTheme(student: UUID): Boolean = sundayTheme(student,tx.today())
+    fun sundayTheme(student: UUID, date: LocalDate): Boolean =
+        date.dayOfWeek==DayOfWeek.SUNDAY && sundayTheme(forStudent(student),date)
+    private fun sundayTheme(entitlement: ProductEntitlement, date: LocalDate): Boolean {
+        if(date.dayOfWeek!=DayOfWeek.SUNDAY) return false
+        return when(val value=entitlement.product.features["sundayTheme"]) {
+            null -> entitlement.subscriptionId!=null
+            is Boolean -> value
+            else -> unavailable("PAYMENT_PRODUCT_UNAVAILABLE")
+        }
+    }
+    /** learning이 신규 시도(201)를 만든 뒤에만 부름. 무료 `EXTRA`(무료 상품에서 켠 경우)는 한도 집계, 프리미엄 전용 `EXTRA`는 환불 판정용 사용 기록(시도 ID로 1회) */
     fun missionStarted(permit: MissionStartPermit, attempt: UUID, mission: UUID) {
         if(permit.counted) missionUsage.record(attempt,permit.student,mission,permit.date,tx.now())
         if(permit.premiumUsage) {

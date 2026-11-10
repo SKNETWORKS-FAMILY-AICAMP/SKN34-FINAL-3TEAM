@@ -51,6 +51,7 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
         validateDetail(job, body, revision)
         val allowed = views.recordWithSharing(UUID.fromString(body["reportId"].textValue()), job.studentId, parent, requestedNarrative)
         if (!allowed.narrativeEnabled) (body as ObjectNode).apply {
+            if (has("explanations")) putNull("explanations")
             putNull("narrative")
             putNull("eveningQuestion")
             path("thinkingTypes").forEach { (it as? ObjectNode)?.remove("summary") }
@@ -110,6 +111,7 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
 
     /** Whitelist numerical summaries; do not forward arbitrary derived text from old reports. */
     private fun withoutOriginals(body: ObjectNode) {
+        if (body.has("explanations")) body.putNull("explanations")
         body.putNull("narrative"); body.putNull("eveningQuestion")
         body.putArray("quotes")
         body.path("thinkingTypes").forEach { node ->

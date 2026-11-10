@@ -17,8 +17,8 @@ class ChildManagementController(private val service: ChildManagementService,priv
  data class Completion(val service: String)
  data class PinRequest(val pin: String)
  @PutMapping("/api/v1/children/{childId}/pin")
- fun pin(@PathVariable childId: UUID,@RequestBody body: PinRequest,@RequestHeader("X-Reauth-Token",required=false) token: String?,request: HttpServletRequest): ResponseEntity<Void> {
-  pins.set(identity(request),childId,body.pin,token); return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build()
+ fun pin(@PathVariable childId: UUID,@RequestBody body: PinRequest,request: HttpServletRequest): ResponseEntity<Void> {
+  pins.set(identity(request),childId,body.pin); return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build()
  }
  @PatchMapping("/api/v1/children/{childId}")
  fun update(@PathVariable childId: UUID,@RequestBody body: Profile, request: HttpServletRequest)=

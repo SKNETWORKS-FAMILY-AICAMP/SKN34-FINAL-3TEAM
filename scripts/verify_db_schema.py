@@ -27,7 +27,7 @@ def require(condition, message):
 
 
 # Reference rows that migrations publish on purpose (#235 V25 consent documents 1.0, #388 COMMUNITY 1.0,
-# #389 V35 reward rules, #415 V39 TERMS·PRIVACY 1.1). Only these exact keys may exist before the fixtures run;
+# #389 V35 reward rules, #485 V43 THEME_ON_TIME·THEME_FINISHED rules, #415 V39 TERMS·PRIVACY 1.1). Only these exact keys may exist before the fixtures run;
 # anything else means a non-isolated DB.
 MIGRATION_SEED_ROWS = {
     "core_db": {
@@ -45,6 +45,8 @@ MIGRATION_SEED_ROWS = {
             "COMMUNITY_POSTED",
             "REACTION_GIVEN",
             "THEME_COMPLETED",
+            "THEME_ON_TIME",
+            "THEME_FINISHED",
         ),
     },
 }
@@ -303,6 +305,12 @@ VALUES ('00000000-0000-4000-8000-000000000002',0,now());
 SELECT pg_temp.expect_sqlstate($$UPDATE reward_point_balance SET balance = -1$$, '23514');
 INSERT INTO reward_point_ledger(id,student_id,event_type,source_key,amount,created_at)
 VALUES ('00000000-0000-4000-8000-000000003891','00000000-0000-4000-8000-000000000002','MISSION_COMPLETED','mission-1',10,now());
+-- #485 V43: same-day solve and weekly finish are earn events with their own rules.
+INSERT INTO reward_point_ledger(id,student_id,event_type,source_key,amount,created_at)
+VALUES ('00000000-0000-4000-8000-000000004851','00000000-0000-4000-8000-000000000002','THEME_ON_TIME','2026-11-09:MON',5,now()),
+       ('00000000-0000-4000-8000-000000004852','00000000-0000-4000-8000-000000000002','THEME_FINISHED','2026-11-09',10,now());
+SELECT pg_temp.expect_sqlstate($$INSERT INTO reward_point_ledger(id,student_id,event_type,source_key,amount,created_at)
+VALUES ('00000000-0000-4000-8000-000000004853','00000000-0000-4000-8000-000000000002','THEME_ON_TIME','2026-11-09:MON',-5,now())$$, '23514');
 SELECT pg_temp.expect_sqlstate($$INSERT INTO reward_point_ledger(id,student_id,event_type,source_key,amount,created_at)
 VALUES ('00000000-0000-4000-8000-000000003892','00000000-0000-4000-8000-000000000002','MISSION_COMPLETED','mission-1',10,now())$$, '23505');
 SELECT pg_temp.expect_sqlstate($$INSERT INTO reward_point_ledger(id,student_id,event_type,source_key,amount,created_at)

@@ -16,4 +16,5 @@ class StudentDeviceContractTest(unittest.TestCase):
         self.assertIn('pinLocked',schemas['ChildListItem']['required'])
         self.assertIn('hasRecords',schemas['ChildListItem']['required'])
         params=paths['/children/{childId}/pin']['put']['parameters']
-        self.assertTrue(next(p for p in params if p['name']=='X-Reauth-Token')['required'])
+        self.assertNotIn('X-Reauth-Token', [p['name'] for p in params])
+        self.assertTrue(paths['/children/{childId}/pin']['put'].get('security', spec['security']))

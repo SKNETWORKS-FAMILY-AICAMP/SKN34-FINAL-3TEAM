@@ -8,11 +8,11 @@ import { thinkingLabels } from '../../domain/classroom.ts'
 import { DAY_LABELS, ITEM_SLOTS, SLOT_LABELS, THEME_DAYS } from '../../domain/retention.ts'
 import type { ItemSlot, ThemeDay } from '../../domain/retention.ts'
 import {
-  GRADE_BAND_LABELS,
+  THEME_GRADE_LABELS,
   publishProblems,
   THEME_STATUS_LABELS,
 } from '../../domain/admin/retention.ts'
-import type { AdminLookItem, AdminWeeklyTheme, GradeBand } from '../../domain/admin/retention.ts'
+import type { AdminLookItem, AdminWeeklyTheme, ThemeGrade } from '../../domain/admin/retention.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import { Badge, Empty, Panel } from './AdminUi.tsx'
@@ -25,12 +25,12 @@ const nextMonday = () => {
 }
 
 /**
- * 주간 테마 관리 (FN-ADM-22, CONTENT). 학년군별 주 1개, 월~금 하루 한 문제(다섯 생각 유형 하나씩).
- * 게시 검사(게시 미션만·유형 1개씩·학년군 맞음·같은 주 게시 1개)는 서버가 하고 실패 이유를 그대로 보인다.
+ * 주간 테마 관리 (FN-ADM-22, CONTENT). 학년별 주 1개, 월~금 하루 한 문제(다섯 생각 유형 하나씩).
+ * 게시 검사(게시 미션만·유형 1개씩·학년 맞음·같은 주 게시 1개)는 서버가 하고 실패 이유를 그대로 보인다.
  */
 export function WeeklyThemeManager() {
-  const [gradeBand, setGradeBand] = useState(''), [status, setStatus] = useState('')
-  const list = useAdminQuery(['weekly-themes', gradeBand, status], (s) => api.themes({ gradeBand, status }, s))
+  const [grade, setGrade] = useState(''), [status, setStatus] = useState('')
+  const list = useAdminQuery(['weekly-themes', grade, status], (s) => api.themes({ grade, status }, s))
   const [params, setParams] = useSearchParams()
   const themeId = params.get('themeId') ?? ''
   const linked = useAdminQuery(['weekly-theme', themeId], signal => api.theme(themeId, signal), !!themeId && themeId !== 'new')
@@ -50,10 +50,10 @@ export function WeeklyThemeManager() {
       <Panel title="주간 테마" action={<button onClick={() => open('new')}>새 테마</button>}>
         <div className="ad-toolbar">
           <label>
-            학년군
-            <select aria-label="테마 학년군" value={gradeBand} onChange={(e) => setGradeBand(e.target.value)}>
+            학년
+            <select aria-label="테마 학년" value={grade} onChange={(e) => setGrade(e.target.value)}>
               <option value="">전체</option>
-              {Object.entries(GRADE_BAND_LABELS).map(([v, l]) => (
+              {Object.entries(THEME_GRADE_LABELS).map(([v, l]) => (
                 <option key={v} value={v}>{l}</option>
               ))}
             </select>
@@ -72,14 +72,14 @@ export function WeeklyThemeManager() {
         <div className="ad-table-wrap">
           <table className="ad-table">
             <thead>
-              <tr><th>주 시작</th><th>제목</th><th>학년군</th><th>상태</th><th>관리</th></tr>
+              <tr><th>주 시작</th><th>제목</th><th>학년</th><th>상태</th><th>관리</th></tr>
             </thead>
             <tbody>
               {rows.map((t) => (
                 <tr key={t.themeId}>
                   <td>{t.weekStart}</td>
                   <td>{t.title}<small>수정 {date(t.updatedAt)}</small></td>
-                  <td>{GRADE_BAND_LABELS[t.gradeBand]}</td>
+                  <td>{THEME_GRADE_LABELS[t.grade]}</td>
                   <td><Badge active={t.status === 'PUBLISHED'}>{THEME_STATUS_LABELS[t.status]}</Badge></td>
                   <td><button onClick={() => open(t)} aria-label={`${t.title} 테마 열기`}>열기</button></td>
                 </tr>
@@ -111,7 +111,7 @@ function ThemeEditor({
   onSaved: (t: AdminWeeklyTheme) => void
   onClose: () => void
 }) {
-  const [gradeBand, setGradeBand] = useState<GradeBand>(theme?.gradeBand ?? 'G3_4')
+  const [grade, setGrade] = useState<ThemeGrade>(theme?.grade ?? 'G3')
   const [weekStart, setWeekStart] = useState(theme?.weekStart ?? nextMonday())
   const [title, setTitle] = useState(theme?.title ?? ''), [intro, setIntro] = useState(theme?.intro ?? '')
   const [days, setDays] = useState<Record<ThemeDay, string>>(
@@ -123,7 +123,7 @@ function ThemeEditor({
     const v = m.versions.find((x) => x.version === (m.publishedVersion ?? m.currentVersion)) ?? m.versions.at(-1)
     return { id: m.missionId, title: v?.title ?? m.missionId, type: v?.thinkingType, grades: v ? `초${v.gradeMin}~${v.gradeMax}` : '' }
   })
-  const input = () => ({ gradeBand, weekStart, title: title.trim(), intro: intro.trim(), days: THEME_DAYS.map((day) => ({ day, missionId: days[day] })) })
+  const input = () => ({ grade, weekStart, title: title.trim(), intro: intro.trim(), days: THEME_DAYS.map((day) => ({ day, missionId: days[day] })) })
   const save = useAdminMutation(() => (theme ? api.saveTheme(theme.themeId, input()) : api.createTheme(input())))
   const action = useAdminMutation((a: 'review-request' | 'publish' | 'unpublish') => api.themeAction(theme!.themeId, a))
   const types = THEME_DAYS.map((d) => choices.find((c) => c.id === days[d])?.type).filter(Boolean)
@@ -141,9 +141,9 @@ function ThemeEditor({
         }}
       >
         <div className="ad-two">
-          <label>학년군
-            <select aria-label="학년군" value={gradeBand} onChange={(e) => setGradeBand(e.target.value as GradeBand)}>
-              {Object.entries(GRADE_BAND_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          <label>학년
+            <select aria-label="학년" value={grade} onChange={(e) => setGrade(e.target.value as ThemeGrade)}>
+              {Object.entries(THEME_GRADE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </label>
           <label>주 시작(월요일)

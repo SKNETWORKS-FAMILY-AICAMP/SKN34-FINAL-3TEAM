@@ -40,7 +40,7 @@ async function reauthServer(context: BrowserContext) {
   return state
 }
 
-for (const guardian of [true, false]) {
+for (const guardian of [true]) {
   test(`${guardian ? '보호자 비밀번호' : '자녀 PIN'}: 새 탭 확인 후 입력을 보존하고 자동으로 저장 가능해진다`, async ({ page, context }) => {
     const state = await reauthServer(context)
     await page.goto('/parent/devices')
@@ -81,4 +81,19 @@ test('계정 관리 공통 Google 재확인도 원래 탭에서 자동 완료하
   expect(state.finishes).toBe(1)
   expect(state.writes).toEqual([])
   await expect(page.getByRole('button', { name: '선택한 작업 요청', exact: true })).toBeDisabled()
+})
+
+test('자녀 PIN은 Google 팝업 없이 보호자 세션으로 저장한다', async ({ page, context }) => {
+  const state = await reauthServer(context)
+  await page.goto('/parent/devices')
+  const form = page.getByRole('form', { name: '합성 자녀 PIN', exact: true })
+  await form.getByLabel('합성 자녀 새 PIN', { exact: true }).fill('5090')
+  await form.getByLabel('합성 자녀 새 PIN 확인', { exact: true }).fill('5090')
+  await expect(form.getByRole('button', { name: /Google|확인/ })).toHaveCount(0)
+  await form.getByRole('button', { name: 'PIN 정하기', exact: true }).click()
+  await expect.poll(() => state.writes.length).toBe(1)
+  expect(state.writes[0].body).toEqual({ pin: '5090' })
+  expect(state.writes[0].proof).toBeUndefined()
+  expect(state.starts).toEqual([])
+  expect(context.pages()).toHaveLength(1)
 })

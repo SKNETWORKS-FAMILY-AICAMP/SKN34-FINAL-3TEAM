@@ -298,7 +298,7 @@ export const adminHandlers = [
       })
       return { items: rows.slice(index * size, (index + 1) * size), page: index, size, totalElements: rows.length,
         counts: (['DRAFT', 'REVIEW_REQUIRED', 'PUBLISHED', 'UNPUBLISHED'] as const).map(
-          (status) => ({ status, count: missions.filter((m) => m.status === status).length })),
+          (status) => ({ status, count: mode === 'empty' ? 0 : missions.filter((m) => m.status === status).length })),
       }
     }),
   ),
@@ -637,7 +637,7 @@ export const adminHandlers = [
       queryFault()
       const p = period(request),
         filter = new URL(request.url).searchParams.get('callType')
-      if (filter && !['JUDGMENT','FOLLOWUP','ANALYSIS','REPORT_NARRATIVE','MISSION_DRAFT','M2','M1'].includes(filter)) fail('VALIDATION_FAILED','호출 종류를 확인해 주세요.',400)
+      if (filter && !['JUDGMENT','FOLLOWUP','ANALYSIS','REPORT_NARRATIVE','MISSION_DRAFT','REPORT_EXPLANATION','M2','M1'].includes(filter)) fail('VALIDATION_FAILED','호출 종류를 확인해 주세요.',400)
       return {
         period: p,
         items: [],
