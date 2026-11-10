@@ -165,6 +165,19 @@
         <foreach collection="attemptIds" item="id" open="(" separator="," close=")">#{id}</foreach>
     </select>
 
+    <resultMap id="modelScores" type="com.sagomungchi.learning.record.repository.ModelScoresRow">
+        <constructor>
+            <arg column="answer_id" javaType="java.util.UUID"/>
+            <arg column="model_scores" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 판정 모델 점수 JSON 원문 (report 설명 대상 선정용, #478). 답변당 판정은 하나(uq_judgment_answer_id) -->
+    <select id="findModelScores" resultMap="modelScores" flushCache="true" useCache="false">
+        SELECT answer_id, model_scores::text AS model_scores FROM judgment WHERE answer_id IN
+        <foreach collection="answerIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
     <!--
         이어할 시도 (FN-DSH-02, FN-LRN-16): 진행 중 시도 중 시작·답변 제출·초안 저장 중 가장 늦은 시각이 가장 최근인 것.
         기간과 무관하고 초안만 있는 시도도 포함. 초안은 저장 시각만 읽고 내용(메모 포함)은 읽지 않음 (P05)

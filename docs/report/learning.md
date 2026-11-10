@@ -939,3 +939,26 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 
 - 토·일 되돌아보기 열람: 주말에만 열려 확인하지 않음
 - 주간 테마 완주(월~금 다섯 문제): 하루 1개라 한 번에 확인할 수 없음
+
+## 27. report 집계 입력 판정 모델 점수 (#478, 2026-11-10)
+
+리포트 설명(FN-RPT-09, 에픽 #473)의 대상 선정·설명 요청 입력으로 report가 답변별 M2 점수를 받는다. 저장값(`judgment.model_scores`)을 그대로 넘기며 새 컬럼은 없다.
+
+### 결정
+
+| 항목 | 결정 | 이유 |
+|---|---|---|
+| 노출 조건 | `GET /internal/records/students/{id}/attempts?includeModelScores=true`일 때만 `answers[].feedback.judgment.modelScores` 키를 넣음 | 같은 경로를 core가 학부모·학생 대시보드로 그대로 넘기고(`LearningRecordClient.dashboard`), ai 분석 대화 도구도 읽음. 키를 늘 넣으면 점수가 학부모 화면과 외부 LLM 요청에 섞임 |
+| 호출 권한 | 쿼리는 `X-User-Role: SYSTEM`(report 주기 작업)만, 그 밖 역할은 `403 FORBIDDEN` | core `DashboardQuery.parameters()`는 정해진 쿼리만 보내 학부모가 끼워 넣을 수 없지만, learning에서도 한 번 더 막음 |
+| 값 | 저장 JSON 원문(`{m2, m1, skipped}`), M2를 부르지 않았으면 `null`. 처리 중·실패 답변은 `judgment`가 null이라 키도 없음 | api-spec 4.1.1·4.2.2와 같은 모양. 점수 해석·선정은 report(#479) 몫 |
+| 구현 위치 | `RecordService.attempts`가 목록 답변의 점수를 한 번에 읽어(`RecordMapper.findModelScores`) `JudgmentView.modelScores`에 붙임 | 판정 조회(`JudgmentService.stored`)와 학생 시도 상세는 그대로 둠. `modelScores`는 `@JsonRawValue`·`NON_NULL`이라 Kotlin null이면 키가 없고 `"null"`이면 JSON null |
+
+### 범위 밖
+
+- report는 아직 이 쿼리를 보내지 않는다. 대상 선정·설명 호출은 #479에서 추가한다
+- `daily-attempts`·기록 상세·evidence에는 넣지 않는다(주간 리포트 설명만 대상)
+
+### 검증
+
+- `RecordControllerTest`: 학부모·학생이 쿼리를 보내면 403, SYSTEM은 원문 JSON과 null을 그대로 받음, 쿼리가 없으면 본문에 `modelScores` 문자열 자체가 없음
+- `RecordServiceTest`(PostgreSQL): 저장 점수 원문, M2 미호출 `"null"`, 처리 중 답변은 판정 없음, 쿼리 없으면 null

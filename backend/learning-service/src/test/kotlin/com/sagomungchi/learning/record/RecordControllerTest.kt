@@ -7,6 +7,12 @@ import com.sagomungchi.learning.attempt.domain.Difficulty
 import com.sagomungchi.learning.attempt.domain.Reflection
 import com.sagomungchi.learning.attempt.domain.DraftContent
 import com.sagomungchi.learning.attempt.service.AttemptDetail
+import com.sagomungchi.learning.judgment.domain.FeedbackResult
+import com.sagomungchi.learning.judgment.domain.JudgmentResult
+import com.sagomungchi.learning.judgment.domain.JudgmentView
+import com.sagomungchi.learning.judgment.domain.ProcessStatus
+import com.sagomungchi.learning.judgment.domain.TimelineAnswer
+import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.domain.MissionListItem
 import com.sagomungchi.learning.mission.domain.MissionProgress
 import com.sagomungchi.learning.mission.domain.MissionSnapshot
@@ -26,9 +32,12 @@ import com.sagomungchi.learning.record.service.RecordService
 import com.sagomungchi.learning.record.service.Summary
 import com.sagomungchi.learning.record.service.ThinkingActivities
 import com.sagomungchi.learning.record.service.ThinkingActivity
+import org.hamcrest.Matchers.containsString
+import org.hamcrest.Matchers.not
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyInt
+import org.mockito.ArgumentMatchers.eq
 import org.mockito.ArgumentMatchers.isNull
 import org.mockito.BDDMockito.given
 import org.mockito.Mockito.verifyNoInteractions
@@ -166,7 +175,7 @@ class RecordControllerTest {
         val attempt = Attempt.start(student, mission.id, MissionSnapshot(UUID.randomUUID(), UUID.randomUUID()), 3, now)
         val draft = AttemptDraft.empty(attempt.id, now).update(DraftContent(mapOf("text" to "쓰던 답"), "비밀 메모"), now)
         val detail = AttemptDetail(attempt, mission, draft, helped = true, answers = emptyList(), feedbacks = emptyMap(), revealed = null, reflection = null)
-        given(service.attempts(any(UUID::class.java) ?: student, any(Period::class.java) ?: week, isNull(), anyInt(), anyInt()))
+        given(service.attempts(any(UUID::class.java) ?: student, any(Period::class.java) ?: week, isNull(), anyInt(), anyInt(), eq(false)))
             .willReturn(RecordPage(QueryState.INSUFFICIENT_SAMPLE, listOf(RecordAttempt(detail, listOf(now), null)), 0, 20, 1))
 
         mockMvc.get("/internal/records/students/$student/attempts?from=2026-11-02&to=2026-11-08") { caller() }.andExpect {
@@ -182,6 +191,59 @@ class RecordControllerTest {
             jsonPath("$.studentId") { value(student.toString()) }
             jsonPath("$.state") { value("INSUFFICIENT_SAMPLE") }
             jsonPath("$.inclusionRule") { value(RecordService.INCLUSION_RULE) }
+        }
+    }
+
+    @Test
+    fun `판정 모델 점수는 SYSTEM이 includeModelScores를 보낼 때만 원문 JSON, 학부모·학생은 403 (#478)`() {
+        listOf("PARENT", "STUDENT").forEach { role ->
+            mockMvc.get("/internal/records/students/$student/attempts?includeModelScores=true") { caller(role) }.andExpect {
+                status { isForbidden() }
+                jsonPath("$.code") { value("FORBIDDEN") }
+            }
+        }
+        verifyNoInteractions(service)
+
+        val mission = missionView(grade = 5)
+        val now = Instant.parse("2026-11-03T01:00:00Z")
+        val attempt = Attempt.start(student, mission.id, MissionSnapshot(UUID.randomUUID(), UUID.randomUUID()), 5, now)
+        val scored = TimelineAnswer(UUID.randomUUID(), 1, now, InputType.NARRATIVE, "답", null, null, mapOf("text" to "답"), ProcessStatus.DONE)
+        val unscored = scored.copy(answerId = UUID.randomUUID(), version = 2)
+        fun done(modelScores: String?) = FeedbackResult(
+            ProcessStatus.DONE, JudgmentView(UUID.randomUUID(), JudgmentResult.PARTIAL, false, emptyList(), null, modelScores = modelScores), null, emptyList(), null,
+        )
+        val detail = AttemptDetail(
+            attempt, mission, AttemptDraft.empty(attempt.id, now), helped = false, answers = listOf(scored, unscored),
+            feedbacks = mapOf(scored.answerId to done("""{"m2": {"scores": {"hol": 3}}, "m1": null, "skipped": null}"""), unscored.answerId to done("null")),
+            revealed = null, reflection = null,
+        )
+        given(service.attempts(any(UUID::class.java) ?: student, any(Period::class.java) ?: week, isNull(), anyInt(), anyInt(), eq(true)))
+            .willReturn(RecordPage(QueryState.OK, listOf(RecordAttempt(detail, emptyList(), null)), 0, 100, 1))
+
+        mockMvc.get("/internal/records/students/$student/attempts?includeModelScores=true&size=100") { caller("SYSTEM") }.andExpect {
+            status { isOk() }
+            jsonPath("$.items[0].answers[0].feedback.judgment.modelScores.m2.scores.hol") { value(3) }
+            jsonPath("$.items[0].answers[0].feedback.judgment.modelScores.m1") { value(null) }
+            // jsonPath exists·doesNotExist는 null 값을 없는 것으로 봐서 키 유무는 본문 문자열로 확인
+            content { string(containsString("\"modelScores\":null")) }
+        }
+    }
+
+    @Test
+    fun `판정 모델 점수를 요청하지 않으면 judgment에 modelScores 키가 없음 (학생 시도 상세·학부모·ai 응답 불변)`() {
+        val mission = missionView(grade = 5)
+        val now = Instant.parse("2026-11-03T01:00:00Z")
+        val attempt = Attempt.start(student, mission.id, MissionSnapshot(UUID.randomUUID(), UUID.randomUUID()), 5, now)
+        val answer = TimelineAnswer(UUID.randomUUID(), 1, now, InputType.NARRATIVE, "답", null, null, mapOf("text" to "답"), ProcessStatus.DONE)
+        val feedback = FeedbackResult(ProcessStatus.DONE, JudgmentView(UUID.randomUUID(), JudgmentResult.PARTIAL, false, emptyList(), null), null, emptyList(), null)
+        val detail = AttemptDetail(attempt, mission, AttemptDraft.empty(attempt.id, now), false, listOf(answer), mapOf(answer.answerId to feedback), null, null)
+        given(service.attempts(any(UUID::class.java) ?: student, any(Period::class.java) ?: week, isNull(), anyInt(), anyInt(), eq(false)))
+            .willReturn(RecordPage(QueryState.OK, listOf(RecordAttempt(detail, emptyList(), null)), 0, 20, 1))
+
+        mockMvc.get("/internal/records/students/$student/attempts") { caller("SYSTEM") }.andExpect {
+            status { isOk() }
+            jsonPath("$.items[0].answers[0].feedback.judgment.result") { value("PARTIAL") }
+            content { string(not(containsString("modelScores"))) }
         }
     }
 
