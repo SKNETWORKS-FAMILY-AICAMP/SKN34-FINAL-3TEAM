@@ -1900,13 +1900,14 @@ classDiagram
   direction TB
   class WeeklyThemeController {
     <<controller>>
-    +current(studentId, gradeBand, date) WeeklyThemeView
-    +reviewViewed(studentId, gradeBand, date) ReviewViewResult
+    +current(studentId, grade, date) WeeklyThemeView
+    +reviewViewed(studentId, grade, date) ReviewViewResult
+    +storyViewed(studentId, grade, date, kind) StoryViewResult
     +summary(studentId, weekStart) WeeklyThemeSummary
   }
   class AdminWeeklyThemeController {
     <<controller>>
-    +list(gradeBand, weekStart, status, page, size) AdminWeeklyThemePage
+    +list(grade, weekStart, status, page, size) AdminWeeklyThemePage
     +create(request) AdminWeeklyTheme
     +update(themeId, request) AdminWeeklyTheme
     +requestReview(themeId) AdminWeeklyTheme
@@ -1915,9 +1916,11 @@ classDiagram
   }
   class WeeklyThemeService {
     <<service>>
-    +current(studentId, gradeBand, date) WeeklyThemeView
+    +current(studentId, grade, date) WeeklyThemeView
     +checkStart(studentId, missionId, grade, context) ThemeAttempt
-    +recordReviewView(studentId, gradeBand, date) ReviewViewResult
+    +recordReviewView(studentId, grade, date) ReviewViewResult
+    +recordStoryView(studentId, grade, date, kind) StoryViewResult
+    +scene(attemptId) ThemeScene
     +summary(studentId, weekStart) WeeklyThemeSummary
     +deleteByStudent(studentId) int
   }
@@ -1931,7 +1934,7 @@ classDiagram
   }
   class WeeklyTheme {
     <<entity>>
-    +requireEditable(gradeBand, weekStart)
+    +requireEditable(grade, weekStart)
     +edited()
     +requestReview()
     +publish(errors)
@@ -1939,7 +1942,60 @@ classDiagram
   }
   class ThemePublishCheck {
     <<domain>>
-    +errors(gradeBand, days, missions, otherPublished) List
+    +errors(grade, days, missions, otherPublished) List
+  }
+  class ThemeAnswerRules {
+    <<domain>>
+    +errors(candidates, answer, days) List
+    +hintSpotErrors(spots, hintSeqs) List
+    +decisiveClue(candidates, answer, days) String
+  }
+  class ThemeEnding {
+    <<domain>>
+    +ended(studentId, week, date) Boolean
+  }
+  class AdminThemeDraftController {
+    <<controller>>
+    +request(body) ThemeDraftView
+    +list(status, source, page, size) Page
+    +detail(draftId) ThemeDraftView
+    +adopt(draftId) AdminWeeklyTheme
+    +discard(draftId) ThemeDraftView
+    +regenerate(draftId) ThemeDraftView
+  }
+  class ThemeDraftService {
+    <<service>>
+    +request(command, author) ThemeDraftView
+    +createWeekly(weekStart)
+    +regenerate(draftId, author) ThemeDraftView
+    +adopt(draftId, author) AdminWeeklyTheme
+    +discard(draftId) ThemeDraftView
+    +generateNext(now)
+  }
+  class ThemeDraft {
+    <<entity>>
+    +recordAttempt(result, maxAttempts, now)
+    +adopt(themeId)
+    +discard()
+    +previousFailures() List
+  }
+  class ThemeDraftRules {
+    <<domain>>
+    +learningFailures(output, input, standards) List
+    +missionInputs(input, grade) List
+    +autoStandards(grade, recentCodes, table, random) List
+  }
+  class ThemeDraftScheduler { <<scheduler>> }
+  class ThemeDraftAiClient { <<client>> }
+  class ThemeDraftRepository {
+    <<repository>>
+    +insertAutoIfAbsent(draft) Boolean
+    +claimNext(now, leaseUntil) ThemeDraft
+    +saveAttempt(draft, claimedLease)
+  }
+  class AssetUrls {
+    <<common>>
+    +url(stored) String
   }
   class AttemptService {
     <<service>>
@@ -1977,8 +2033,19 @@ classDiagram
   AdminWeeklyThemeController --> WeeklyThemeAdminService
   WeeklyThemeAdminService ..> WeeklyTheme
   WeeklyThemeAdminService ..> ThemePublishCheck
+  WeeklyThemeAdminService ..> ThemeAnswerRules : 저장 때 정답 논리·생각 열기 위치
   WeeklyThemeAdminService --> MissionService : 게시본 미션
-  AttemptService --> WeeklyThemeService : context 검사
+  WeeklyThemeService ..> ThemeEnding : 종료 공개·OUTRO
+  WeeklyThemeService --> AssetUrls : 그림·영상 URL
+  AttemptService --> WeeklyThemeService : context 검사·themeScene
+  AdminThemeDraftController --> ThemeDraftService
+  ThemeDraftScheduler --> ThemeDraftService : 생성 주기·주간 자동
+  ThemeDraftService --> ThemeDraftRepository
+  ThemeDraftService --> ThemeDraftAiClient : 생성 1회
+  ThemeDraftService ..> ThemeDraft
+  ThemeDraftService ..> ThemeDraftRules
+  ThemeDraftService --> MissionService : createFromDraft(LLM_THEME)
+  ThemeDraftService --> WeeklyThemeAdminService : 테마 DRAFT 생성
   CommunityController --> CommunityService
   CommunityService ..> CommunityRules
   CommunityService --> AttemptService : 학습 완료 여부·첫 완료 시도·마지막 답변
@@ -1988,6 +2055,17 @@ classDiagram
 - `CommunityService.share`는 학생·미션당 1개(UK `(student_id, mission_id)`), 이미 있으면 기존 공유물을 그대로 반환. 처음 학습 완료한 시도가 아니면(다시 풀기) 공유하지 않고, 공유 때 `ExpressionPolicy`(#205)를 다시 확인
 - 학생 삭제 소비(4.3 `record`)의 `StudentDeletionService`가 같은 트랜잭션에서 시도 삭제 전에 `CommunityService.deleteByStudent`(#386), 시도 삭제 뒤 테마 열람 기록 삭제(`WeeklyThemeService.deleteByStudent`, #385)를 호출
 - 테마 게시 중 수정은 미션과 같은 버전 방식(`weekly_theme_version`, 현재본·게시본·검토 요청본). 학생 조회·시작 검사는 게시본, 관리자 편집은 현재본
+
+#438 추가(학년별 테마·이야기·테마 초안, 결정과 근거는 [learning 보고서](../report/learning.md) #438 절):
+- 학년: `GradeBand`(`G3_4`·`G5_6`)를 `ThemeGrade`(`G3`~`G6`, `of(학년)`은 7~9를 `G6`)로 바꾼다. `ThemePublishCheck`는 미션 학년 범위가 테마 학년을 포함하는지 보고 실패 코드는 `GRADE_MISMATCH`. 학생 경로는 `grade`가 없으면 `gradeBand`(`G3_4` → `G3`, `G5_6` → `G5`)로 읽는다(core 반영 뒤 제거)
+- 이야기·정답 구조: 버전·요일 새 칸은 테마 새 버전 때 함께 복사. `ThemeAnswerRules`가 관리자 저장 때 정답 논리(정답·후보·`rulesOut`이 함께 있거나 함께 없음, 정답은 후보 안이고 어느 날에도 빠지지 않음, 틀린 후보는 적어도 한 날 빠짐)와 `hintSpots`(0~100, 그날 미션 현재 기준표의 생각 열기 순번, 중복 없음)를 검사(400). 결정적 단서 `decisiveClue`는 마지막 틀린 후보를 빼는 날의 단서
+- 학생 응답: 요일 단서는 `LOCKED`면 뺌, 종료 이야기·정답·결정적 단서·종료 장면과 OUTRO 열람은 `ThemeEnding.ended`일 때만. 엔딩 조건은 #483·#484가 정하고 그 전까지 `ThemeEnding`은 토·일을 엔딩으로 본다. INTRO는 월~토 그 주 첫 진입, `intro` 글은 매일. `theme_story_view` 학생·주·kind 멱등, 학생 삭제 때 `deleteByStudent`가 함께 지움
+- `AssetUrls`(`_common/storage`): S3 키를 단기 presigned URL(기준안 1시간)로 바꾸고 `http(s)://`·`/`로 시작하는 값은 그대로. 학생 미션·테마 응답과 관리자 테마 미리보기 칸에서 쓰고, 관리자 미션 응답은 저장 값 그대로
+- `themeScene`: 시도 시작·이어하기 응답에서 `context`가 `THEME_DAY`·`THEME_REVIEW`면 그 시도 `theme_id` 테마 게시본의 그 미션 요일 `{dialogue, hintSpots, videoUrl}`, `EXTRA`는 null
+- 테마 초안: 미션 초안(4.1.1)과 같은 구조. `ThemeDraftScheduler`는 주기(기준안 10초)마다 `generateNext`, 주간 크론(기준안 수요일 03:00 KST)에 `createWeekly`(다음 주 `G3`~`G6`, 부분 UK + `ON CONFLICT DO NOTHING`). `generateNext`는 리스(기준안 18분) 점유 → 트랜잭션 밖 ai 1회(`ThemeDraftAiClient`, 서킷 `ai-theme-draft`, 대기 기준안 16분) → `ThemeDraftRules.learningFailures`(요일·유형 배치, 미션 5개는 `DraftRules.learningFailures` 재사용, 정답 논리) → 점유 리스 대조 저장. `previousFailures`는 시간순, ai 단계 실패 그대로·learning 실패는 `THEME`/`MISSION`(사유 `<요일> <코드> <자세히>`)·AI 호출 실패 제외(#437 합의)
+- 채택: 초안 잠금 → 미션 5개 `MissionService.createFromDraft(command, rubric, LLM_THEME)`(장면 키·`sceneMotion`) → `WeeklyThemeAdminService`로 테마 `DRAFT`(`hint_spots` NULL, `answer_clue` = 결정적 단서) → `ADOPTED` + `theme_id`, 한 트랜잭션. 다시 생성은 같은 입력의 새 초안(`ADMIN`)
+- `MissionService.createFromDraft`에 출처 인자(기본 `LLM_DRAFT`). `MissionCommand`에 `sceneMotion`, 관리자 미션 수정 본문에 없으면 `sceneUri`가 같을 때 이전 버전 값을 이어받음
+- `spring.task.scheduling.pool.size` 5(작업마다 스레드 하나). 주기 작업이 ai를 기다리는 동안에도 Tomcat 요청 스레드가 다른 내부 API(#469 지식 API 포함)를 처리
 
 ---
 

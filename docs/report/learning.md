@@ -954,6 +954,7 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 | functional-spec P23·P26·FN-LRN-03·06·FN-ADM-22 | 학년별 테마(확정), 큰 질문·정답 구조(기준안, 엔딩은 #483), 테마 초안 흐름, 테마 문제 대화·그림 위 생각 열기 |
 | api-spec 1.3·4.1 | `THEME_STORY_NOT_ALLOWED`, learning 내부 경로의 `grade`·새 응답 칸·`ThemeDraft` 모양·`themeScene`·`sceneMotion` |
 | architecture 1.1.1·흐름 6·모듈 트리 | learning 책임, `theme/scheduler`·`theme/client`·`_common/storage` |
+| class-diagram 4.4 | `ThemeGrade`, 이야기 열람, `ThemeAnswerRules`·`ThemeEnding`, 테마 초안(`AdminThemeDraftController`·`ThemeDraftService`·`ThemeDraft`·`ThemeDraftRules`·`ThemeDraftScheduler`·`ThemeDraftAiClient`·`ThemeDraftRepository`), `AssetUrls`, `createFromDraft` 출처 인자 |
 
 ### 결정
 
