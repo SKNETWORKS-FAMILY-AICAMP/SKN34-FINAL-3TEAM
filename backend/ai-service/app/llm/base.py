@@ -10,7 +10,7 @@ import logging
 import re
 import time
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
@@ -34,6 +34,8 @@ class LlmRequest(Generic[T]):
     prompt_version: str
     max_tokens: int
     timeout: float  # 이번 요청 1회의 타임아웃(초). 마감이 있으면 남은 시간으로 줄어듦
+    # user 글 뒤에 붙이는 그림(PNG·JPEG·WebP 바이트). 테마 그림 검토·화자 위치(#437)만 씀
+    images: tuple[bytes, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -144,11 +146,13 @@ class LlmClient(ABC):
         deadline: float | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
+        images: Sequence[bytes] | None = None,
     ) -> LlmResult[T]:
         """deadline(time.monotonic 기준 시각)이 있으면 그 안에서만 요청·재시도.
 
         남은 시간이 없으면 요청하지 않고 LLM_DEADLINE_EXCEEDED로 실패 (사용량 기록 없음).
         timeout·max_retries를 주면 이 호출만 기본값(P12 15초·1회) 대신 씀 (미션 초안 #353)
+        images를 주면 user 글 뒤에 그림을 함께 보냄(테마 그림 검토·화자 위치 #437)
         """
         retries = self._max_retries if max_retries is None else max_retries
         for attempt in range(retries + 1):
@@ -158,7 +162,14 @@ class LlmClient(ABC):
                 if timeout_this <= 0:
                     raise LlmUnavailable("LLM_DEADLINE_EXCEEDED", retryable=True)
             request = LlmRequest(
-                system, user, output, call_type, prompt_version, max_tokens, timeout_this
+                system,
+                user,
+                output,
+                call_type,
+                prompt_version,
+                max_tokens,
+                timeout_this,
+                tuple(images or ()),
             )
             started = time.monotonic()
             observation = self._start_observation(request)

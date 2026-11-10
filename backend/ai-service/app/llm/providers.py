@@ -10,6 +10,7 @@
 스트림(_stream)은 일반 텍스트 조각만 내보내고 마지막에 StreamEnd(모델·토큰)를 보냄.
 """
 
+import base64
 import json
 from collections.abc import AsyncIterator
 from typing import Any, Literal
@@ -40,6 +41,41 @@ from app.llm.base import (
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 
+def image_mime(data: bytes) -> str:
+    """그림 바이트의 형식(앞 바이트로 판단). 모르는 형식은 PNG로 본다."""
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/png"
+
+
+def _b64(data: bytes) -> str:
+    return base64.b64encode(data).decode()
+
+
+def openai_content(request: LlmRequest[Any]) -> str | list[dict[str, Any]]:
+    """그림이 없으면 글 그대로(기존 요청과 같음), 있으면 글 + data URL 그림 조각."""
+    if not request.images:
+        return request.user
+    return [{"type": "text", "text": request.user}] + [
+        {"type": "image_url", "image_url": {"url": f"data:{image_mime(i)};base64,{_b64(i)}"}}
+        for i in request.images
+    ]
+
+
+def anthropic_content(request: LlmRequest[Any]) -> str | list[dict[str, Any]]:
+    if not request.images:
+        return request.user
+    return [
+        {
+            "type": "image",
+            "source": {"type": "base64", "media_type": image_mime(i), "data": _b64(i)},
+        }
+        for i in request.images
+    ] + [{"type": "text", "text": request.user}]
+
+
 class AnthropicLlm(LlmClient):
     def __init__(
         self,
@@ -67,7 +103,7 @@ class AnthropicLlm(LlmClient):
                 model=self.model,
                 max_tokens=request.max_tokens,
                 system=request.system,
-                messages=[{"role": "user", "content": request.user}],
+                messages=[{"role": "user", "content": anthropic_content(request)}],
                 output_config={
                     "effort": self._effort,
                     "format": {
@@ -171,7 +207,7 @@ class OpenAICompatibleLlm(LlmClient):
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system},
-                    {"role": "user", "content": request.user},
+                    {"role": "user", "content": openai_content(request)},  # type: ignore[misc]
                 ],
                 response_format=response_format,  # type: ignore[arg-type]
                 max_completion_tokens=request.max_tokens,
