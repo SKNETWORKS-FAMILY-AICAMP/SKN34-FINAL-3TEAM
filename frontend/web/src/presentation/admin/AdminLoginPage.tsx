@@ -21,7 +21,7 @@ export function AdminLoginPage() {
     } catch { setPassword('') }
   }
   return <div className="admin-login-page">
-    <header><Link to="/login" className="admin-login-brand" aria-label="사고뭉치 로그인"><Brand /><span className="admin-login-context">운영 관리</span></Link></header>
+    <header><Link to="/login" className="admin-login-brand" aria-label="사고뭉치 로그인"><Brand linked={false} /><span className="admin-login-context">운영 관리</span></Link></header>
     <main>
       <div className="admin-login-heading"><p>관리자 전용</p><h1>관리자 로그인</h1>
         <p>등록된 운영 계정으로 로그인해 주세요.<br />로그인 후 부여된 권한에 맞는 메뉴가 열립니다.</p></div>

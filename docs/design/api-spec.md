@@ -270,7 +270,7 @@
 | GET | `/children` | 학부모 | 연결 자녀 목록(닉네임·학년·기록 유무, 5.3). PIN 상태 `pinSet`·`pinLocked`는 실제 저장 상태로 반환. 빈 목록이면 자녀 등록 안내 | ACC-07, ACC-14 | 제안 |
 | POST | `/children` | 학부모 | 자녀 프로필 등록 `{nickname, grade(3~6), birthYear}` + 법정대리인 동의(전원 만 14세 미만 간주). 3명 초과 시 409 (P01, P02, P03) | ACC-06, ACC-02 | 제안 |
 | PATCH | `/children/{childId}` | 학부모 | 닉네임·학년(3~9, 7~9는 중1~3) 수정 (학년은 이후 제공 문제에만 적용, 학년이 바뀌면 `grade_changed_at` 기록해 그 해 자동 진급 판단에 씀, P26 #432) | ACC-09 | 우선1 |
-| PUT | `/children/{childId}/pin` | 학부모 | PIN 설정·변경 `{pin}` (`X-Reauth-Token`). 실패 횟수·잠금 해제 (P01) | ACC-14, ACC-10 | 제안 |
+| PUT | `/children/{childId}/pin` | 학부모 | PIN 설정·변경 `{pin}`. 활성 학부모 세션·현재 연결 자녀 권한 검사, 추가 재인증 없음. 숫자 4~6자리·반복/연속 거부(422), 잠금·실패 횟수 초기화·감사 | ACC-14 | 구현 |
 | POST | `/student-devices/pairings` | 학부모 | 1회용 페어링 코드 발급 `{childIds[]}` → `{pairingCode, expiresAt}` (10분, QR은 클라이언트가 코드로 생성) (P01) | ACC-14 | 제안 |
 | GET | `/student-devices` | 학부모 | 등록 기기 목록 `{deviceId, label, children[], createdAt, lastUsedAt, expiresAt}` | ACC-14 | 제안 |
 | DELETE | `/student-devices/{deviceId}` | 학부모 | 기기 등록 해제 → 이후 해당 기기 PIN 로그인 거부 | ACC-14 | 제안 |
@@ -807,7 +807,7 @@ If-Match: "7"
 - 학부모 화면의 실제 PIN 상태: `GET /children` 각 항목에 `pinSet`(설정 여부)·`pinLocked`(5회 실패 잠금 여부)를 반환한다. PIN 원문·해시·실패 횟수는 반환하지 않음
 - 기기 등록·해제·PIN 설정은 `audit_log` 기록 (FN-ACC-10). PIN 잠금 시 학부모 알림은 미정
 - 응답 형식: 프로필 `{items:[{childId,nickname,pinSet,pinLocked}]}`, 기기 목록 `{items:[{deviceId,label,children:[{childId,nickname}],createdAt,lastUsedAt,expiresAt}]}`(해제 기기 제외). PIN 설정·변경은 204(잠금 해제 포함), 별도 해제 API 없음
-- PIN 변경은 현재 세션·버전·`PIN_CHANGE`·자녀에 결합된 5분 재인증 grant를 같은 트랜잭션에서 1회 소비
+- PIN 변경은 활성 보호자 세션·현재 자녀 권한으로 처리하며 추가 재인증 grant를 요구하지 않는다(2026-11-10 사용자 요청). 해시 변경·잠금 해제·감사는 같은 트랜잭션이다.
 - 한도: 등록은 IP별, 페어링 발급은 보호자별 10분간 20회(설정 가능). 초과 429 `RATE_LIMITED`, Redis 장애 503 `STUDENT_AUTH_UNAVAILABLE`. IP는 직전 연결이 사설 대역(신뢰 프록시)일 때만 X-Forwarded-For를 오른쪽부터 해석한 첫 비신뢰 주소로 판정 (운영 조건 [아키텍처](architecture.md) 4.3)
 - 코드 소비는 Redis 원자적 GET+DEL. 이후 DB 등록이 실패해도 코드는 복원하지 않음(새 코드 발급)
 - 기기·학생 검사는 계정 행 잠금과 함께 재검사. PIN 실패는 커밋 후 오류 응답
@@ -1151,9 +1151,9 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 - 기존 Google 로그인과 별도 재인증 흐름을 사용한다. `POST /me/reauth`에 `{purpose: PIN_CHANGE|CHILD_UNLINK|CHILD_DELETE|WITHDRAWAL|GUARDIAN_PASSWORD|CHILD_TRANSFER|TRANSFER_ACCEPT, childId?, scope?}`를 보내면 `{challengeId,authorizationUrl,expiresAt}`를 반환하고 HttpOnly/Secure/SameSite=Lax 재인증 상태 쿠키를 설정한다. CHILD_DELETE는 PROFILE/RECORDS scope를 반드시 지정한다. WITHDRAWAL·GUARDIAN_PASSWORD·TRANSFER_ACCEPT는 자녀/scope를 허용하지 않는다. CHILD_TRANSFER를 포함한 다른 자녀 작업은 childId 필수이며 CHILD_DELETE 외에는 scope를 허용하지 않는다.
 - Google redirect URI는 web origin + `/api/v1/auth/google/reauth/callback`이다. 기존 GoogleOAuthClient의 code·PKCE·서명·iss·aud·exp·nonce 검증을 재사용한다. callback은 현재 계정의 Google sub와 일치할 때만 challenge를 VERIFIED로 바꾸며 로그인/refresh를 발급하지 않는다. 계정 선택은 비밀번호/MFA 재입력을 보장하지 않는다. 클라이언트는 원래 로그인 세션을 유지한 상태에서 `POST /me/reauth`에 `{challengeId}`를 보내 `{reauthToken,expiresAt}`를 한 번 수령한다. 아직 callback 전이면 409 REAUTH_PENDING이다. callback 응답은 작은 안내 HTML이다(#425). 성공하면 같은 출처 `BroadcastChannel('sagomungchi-reauth')`로 `{type:"REAUTH_VERIFIED",challengeId}`만 알리고 `window.close()`를 호출하며, 닫히지 않으면 "확인이 끝났습니다. 이 창을 닫고 원래 화면으로 돌아가 주세요."를 보인다. 원래 탭은 자기 challengeId 알림을 받으면 위 수령 요청을 자동으로 보내고, 수동 "완료 확인"은 대체 수단으로 남긴다. 팝업은 `opener=null`이라 postMessage 대신 BroadcastChannel을 쓴다. 응답 헤더는 `Content-Security-Policy`(script-src·style-src nonce, default-src 'none'), `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`다. 실패(403 REAUTH_REQUIRED 조건)도 스크립트 없는 안내 HTML로 응답한다.
-- 비밀번호 재확인(#415): ID·비밀번호 학부모는 Google 대신 `POST /me/reauth/password {purpose, childId?, scope?, password}`로 로그인 비밀번호를 다시 입력해 `{reauthToken,expiresAt}`를 바로 받는다. 목적·자녀·범위 규칙과 소유권 검사는 `/me/reauth`와 같다. 비밀번호가 맞으면 검증·발급을 마친 `reauth_challenge`와 `reauth_grant`를 한 트랜잭션에 만들어, 기존 7개 사용처(탈퇴·보호자 비밀번호·학생 PIN·자녀 해제·자녀 삭제·자녀 이관·이관 수락)의 consume 검사는 바뀌지 않는다. 틀리면 403 `REAUTH_PASSWORD_INVALID`이고 로그인과 실패 횟수를 함께 세어 5회째부터 15분간 423 `LOGIN_LOCKED`이다(횟수는 오류 응답 전에 커밋). Google 계정(또는 `parent_credential` 행이 없는 계정)은 409 `REAUTH_METHOD_MISMATCH`. 성공 감사는 `PASSWORD_REAUTHENTICATED`. 필수 동의 누락 상태에서도 `/me/reauth`와 같은 동의 복구 목록으로 허용한다. 웹은 `/me`의 `authMethod`가 `PASSWORD`면 Google 새 탭 대신 비밀번호 입력을 보인다.
+- 비밀번호 재확인(#415): ID·비밀번호 학부모는 Google 대신 `POST /me/reauth/password {purpose, childId?, scope?, password}`로 로그인 비밀번호를 다시 입력해 `{reauthToken,expiresAt}`를 바로 받는다. 목적·자녀·범위 규칙과 소유권 검사는 `/me/reauth`와 같다. 비밀번호가 맞으면 검증·발급을 마친 `reauth_challenge`와 `reauth_grant`를 한 트랜잭션에 만들어, 재인증 사용처(탈퇴·보호자 비밀번호·자녀 해제·자녀 삭제·자녀 이관·이관 수락)의 consume 검사는 바뀌지 않는다. 틀리면 403 `REAUTH_PASSWORD_INVALID`이고 로그인과 실패 횟수를 함께 세어 5회째부터 15분간 423 `LOGIN_LOCKED`이다(횟수는 오류 응답 전에 커밋). Google 계정(또는 `parent_credential` 행이 없는 계정)은 409 `REAUTH_METHOD_MISMATCH`. 성공 감사는 `PASSWORD_REAUTHENTICATED`. 필수 동의 누락 상태에서도 `/me/reauth`와 같은 동의 복구 목록으로 허용한다. 웹은 `/me`의 `authMethod`가 `PASSWORD`면 Google 새 탭 대신 비밀번호 입력을 보인다.
 - challenge 10분, reauthToken 5분(설정값, 세션 만료 이내). 토큰은 256비트 난수, DB에는 SHA-256 해시만 저장한다. 프론트는 메모리에만 보관한다. 사용자·세션 ID/version·purpose·childId·삭제 scope에 결합하며 변경 트랜잭션에서 정확히 1회 소비한다. 일반 access/로그인 상태는 재인증 증명이 아니다. 잘못된 계정·만료·위조·다른 범위·중복 사용은 403 REAUTH_REQUIRED다.
-- #58은 `ReauthenticationService.consume(identity, token, ReauthPurpose.PIN_CHANGE, childId)`를 PIN 변경의 같은 트랜잭션 안에서 호출한다(MANDATORY). 기존 인증/현재 자녀 권한 검사를 별도로 수행한다.
+- 2026-11-10 사용자 동선 변경: 학생 PIN 저장은 활성 학부모 세션과 현재 자녀 권한만 요구한다. PIN 해시 변경·잠금 해제·감사는 같은 트랜잭션이며 추가 Google/로그인 비밀번호 재인증을 요구하지 않는다. 보호자 비밀번호·자녀 삭제·탈퇴 등 다른 재인증 작업은 유지한다.
 - PATCH /me `{name}` → `{userId,name}`; PATCH /children/{id} `{nickname?,grade?}` → 현재 자녀. 공백·범위 밖 입력 거부. 기존 기록/학년을 변경하지 않는다. 학생 역할 금지, 계정·자녀의 현재 동의를 검사한다.
 - deletion-impact → `{childId,actions:[{scope,effect}],retainedTransactionsYears:5,deviceCleanupPending:false}`. 연결 해제는 UNLINKED 이력을 남기고 학생 세션을 폐기한다. 삭제 확정은 `X-Reauth-Token`, `{scope}` 필수, 202 `{deletionRequestId,childId,scope,status,completedServices}`. 동시에 진행 중인 다른 삭제는 409 DELETION_IN_PROGRESS다. 재확인이 유효한 요청을 즉시 CONFIRMED로 저장한다.
 - PROFILE은 연결 해제·학생 이용 차단 후 두 서비스 완료 시 프로필 필드를 지우고 DELETED 표식을 남긴다(FK/거래 보존용 ID 유지). RECORDS는 프로필을 유지하되 CONFIRMED부터 이용을 차단한다. 완료 후에도 자동 학습 재개는 하지 않는다. learning의 삭제 표식 이후 새 기록 허용 계약은 후속 통합 사항이다. 두 scope 모두 core 분석 대화·근거와 learning/report 기록을 삭제한다. 삭제 확정 때 `student_device_child`를 제거하고 PIN 해시·잠금을 지운다(ERD 3.1).
@@ -1163,7 +1163,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 탈퇴 precheck는 core payment 소유 서비스로 현재 subscription/refund_request를 실제 조회한다. ACTIVE(기간 내/자동갱신), RENEWAL_FAILED, 취소됐어도 기간 내 구독 및 REQUESTED/APPROVED/FAILED 환불은 409 WITHDRAWAL_BLOCKED다. DB 오류는 성공으로 대체하지 않는다. #48은 결제/환불 쓰기 시 같은 parent 계정 행 잠금 규약에 참여해야 한다.
 - POST /me/withdrawal은 WITHDRAWAL 재인증, 계정 행 잠금 후 재확인한다. 즉시 WITHDRAWAL_REQUESTED·전체 세션/refresh 폐기·자녀 PROFILE 삭제 요청/Outbox를 같은 트랜잭션에 저장한다. 자녀가 모두 삭제되면 WITHDRAWN 및 withdrawal COMPLETED다. 자녀가 없으면 즉시 완료한다. 요청 즉시 로그인/취소 불가다.
 - 응답 `{withdrawalRequestId,status,statusToken}`의 statusToken은 별도 256비트 조회 전용 영수증이다(DB에는 해시). 세션 폐기 후 `GET /me/withdrawal`에 `X-Withdrawal-Status-Token`으로 해당 요청의 `{withdrawalRequestId,status}`만 조회한다. 로그인/사용자 정보 접근 권한을 주지 않는다. 헤더/응답은 no-store다. 인증 상태에서도 자신의 최신 요청을 조회할 수 있다.
-- 연결 해제 뒤에도 같은 보호자의 등록 이력으로 PROFILE·RECORDS 삭제를 요청할 수 있다. PIN_CHANGE·CHILD_UNLINK 재인증은 현재 LINKED 소유권이 필요하다.
+- 연결 해제 뒤에도 같은 보호자의 등록 이력으로 PROFILE·RECORDS 삭제를 요청할 수 있다. 호환용 PIN_CHANGE·CHILD_UNLINK 재인증 발급은 현재 LINKED 소유권이 필요하다.
 - 진행 중인 RECORDS 삭제와 탈퇴가 겹치면 RECORDS 완료 뒤 새 PROFILE 요청·이벤트를 기록한다. 이벤트 scope를 바꾸거나 완료 보고를 다른 요청에 쓰지 않는다.
 - 탈퇴 완료 시 연락 이메일·표시 이름은 계정 tombstone으로 정리하고 Google sub는 재로그인 차단 표식으로 유지한다. 상품·거래·구독·환불 행은 변경하지 않는다.
 - learning은 `student.deleted`를 받아 학습 기록을 삭제한 뒤 `{service:"learning"}`으로 완료를 보고한다(#128, SYSTEM 컨텍스트 + 대상 학생 범위). 같은 이벤트를 다시 받으면 삭제 없이 보고만 다시 보낸다.

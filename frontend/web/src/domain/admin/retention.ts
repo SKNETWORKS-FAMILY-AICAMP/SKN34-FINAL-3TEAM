@@ -1,8 +1,8 @@
 import type { ItemSlot, ThemeDay } from '../retention.ts'
 
 /** 관리자 주간 테마 (FN-ADM-22, API 명세 2.8 구현 예정). 미션과 같은 작성→검토→게시 흐름. */
-export type GradeBand = 'G3_4' | 'G5_6'
-export const GRADE_BAND_LABELS: Record<GradeBand, string> = { G3_4: '초3~4', G5_6: '초5~6' }
+export type ThemeGrade = 'G3' | 'G4' | 'G5' | 'G6'
+export const THEME_GRADE_LABELS: Record<ThemeGrade, string> = { G3: '초3', G4: '초4', G5: '초5', G6: '초6' }
 export type ThemeStatus = 'DRAFT' | 'REVIEW_REQUIRED' | 'PUBLISHED' | 'UNPUBLISHED'
 export const THEME_STATUS_LABELS: Record<ThemeStatus, string> = {
   DRAFT: '작성 중',
@@ -12,7 +12,7 @@ export const THEME_STATUS_LABELS: Record<ThemeStatus, string> = {
 }
 export interface AdminWeeklyTheme {
   themeId: string
-  gradeBand: GradeBand
+  grade: ThemeGrade
   weekStart: string
   title: string
   intro: string
@@ -20,7 +20,7 @@ export interface AdminWeeklyTheme {
   status: ThemeStatus
   updatedAt: string
 }
-export type WeeklyThemeInput = Pick<AdminWeeklyTheme, 'gradeBand' | 'weekStart' | 'title' | 'intro' | 'days'>
+export type WeeklyThemeInput = Pick<AdminWeeklyTheme, 'grade' | 'weekStart' | 'title' | 'intro' | 'days'>
 
 /** 관리자 꾸미기 아이템 (FN-ADM-23). 삭제는 없고 판매 중단만 있다. */
 export type LookItemStatus = 'ON_SALE' | 'STOPPED'

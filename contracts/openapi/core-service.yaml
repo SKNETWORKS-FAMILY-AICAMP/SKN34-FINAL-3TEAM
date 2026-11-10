@@ -3952,13 +3952,7 @@ paths:
         schema:
           type: string
           format: uuid
-      - name: X-Reauth-Token
-        in: header
-        required: true
-        schema:
-          type: string
-      description: 5분·현재 세션/버전·PIN_CHANGE·자녀에 결합된 DB 재인증 grant를 PIN 변경과 같은 트랜잭션에서 1회 소비한다. 실패 시 소비도 롤백한다. 반복·연속 숫자는
-        422.
+      description: 활성 학부모 세션과 현재 연결 자녀 권한으로 PIN을 설정·변경한다. 추가 Google/비밀번호 재인증 토큰은 요구하지 않는다. 반복·연속 숫자는 422. 잠금·실패 횟수를 초기화하고 감사 이력을 남긴다.
   /auth/student/devices:
     post:
       operationId: registerStudentDevice

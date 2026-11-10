@@ -143,7 +143,7 @@ async function checkContext(request: Request, missionId: string) {
   const home = await store.home(child)
   const existing = home.missions.find((m) => m.id === missionId)?.status === 'IN_PROGRESS'
   if (existing) return // 이어하기(200)는 요일 검사를 하지 않는다
-  const week = weeklyThemeFor(child.id, home.missions)
+  const week = weeklyThemeFor(child.id, home.missions, child.grade)
   if (context === 'THEME_DAY' && !week.days.some((d) => d.missionId === missionId && d.state === 'OPEN'))
     throw new ApiError({ status: 409, code: 'THEME_DAY_CLOSED', title: '오늘 요일 문제가 아니에요.' })
   if (context === 'THEME_REVIEW' && !(mockWeekday() >= 5 && week.review.missions.some((r) => r.missionId === missionId && r.completed)))

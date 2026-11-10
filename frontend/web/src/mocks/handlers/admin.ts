@@ -298,7 +298,7 @@ export const adminHandlers = [
       })
       return { items: rows.slice(index * size, (index + 1) * size), page: index, size, totalElements: rows.length,
         counts: (['DRAFT', 'REVIEW_REQUIRED', 'PUBLISHED', 'UNPUBLISHED'] as const).map(
-          (status) => ({ status, count: missions.filter((m) => m.status === status).length })),
+          (status) => ({ status, count: mode === 'empty' ? 0 : missions.filter((m) => m.status === status).length })),
       }
     }),
   ),

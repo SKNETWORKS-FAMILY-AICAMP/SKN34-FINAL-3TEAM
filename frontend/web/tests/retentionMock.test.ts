@@ -7,7 +7,10 @@ import { parentHandlers } from '../src/mocks/handlers/parent.ts'
 import { adminHandlers } from '../src/mocks/handlers/admin.ts'
 import { studentHandlers } from '../src/mocks/handlers/student.ts'
 import { setWorkspaceScenario } from '../src/mocks/fixtures/accounts.ts'
-import { balanceOf, MOCK_WEEKDAY_KEY, resetRetention } from '../src/mocks/fixtures/retention.ts'
+import { balanceOf, MOCK_WEEKDAY_KEY, resetRetention, retentionState, themeMissions, weekStart } from '../src/mocks/fixtures/retention.ts'
+import type { Mission } from '../src/domain/classroom.ts'
+import { THEME_DAYS } from '../src/domain/retention.ts'
+import { THINKING_ORDER } from '../src/domain/studentLook.ts'
 import { saveSharing } from '../src/mocks/fixtures/sharing.ts'
 
 // 2026-11-06 결정(에픽 #396) 참여 기능 목업 계약: API 명세 2.4·2.5·2.8~2.11 구현 예정 경로.
@@ -165,15 +168,14 @@ test('학부모 리포트: 일일·주간 구분, 일일 리포트로만 고정 
 
 test('관리자: 주간 테마 작성→검토→게시 검사, 꾸미기 아이템은 삭제 없이 판매 중단', async () => {
   setWorkspaceScenario('normal')
-  token = (await call('/auth/login', { email: 'ops@example.test', password: 'demo-only' })).data.accessToken
+  token = (await call('/auth/login', { email: 'content@example.test', password: 'demo-only' })).data.accessToken
   const created = await call('/admin/weekly-themes', {
-    gradeBand: 'G3_4',
+    grade: 'G3',
     weekStart: '2026-11-16',
     title: '시험 테마',
     intro: '도입 이야기',
     days: [{ day: 'MON', missionId: '' }],
   })
-  if (created.status === 403) return // 시연 계정에 CONTENT 권한이 없으면 권한 검사만 확인한다.
   assert.equal(created.status, 201)
   const id = created.data.themeId as string
   assert.equal((await call(`/admin/weekly-themes/${id}/publish`, {})).status, 409, '검토 요청 전 게시 불가')
@@ -190,4 +192,30 @@ test('관리자: 주간 테마 작성→검토→게시 검사, 꾸미기 아이
   const stopped = await call(`/admin/look-items/${item.data.itemId}`, { status: 'STOPPED' }, 'PATCH')
   assert.equal(stopped.data.status, 'STOPPED')
   assert.ok((await call('/admin/look-items')).data.items.some((i: { code: string }) => i.code === 'HAT_TEST'), '삭제하지 않고 남는다')
+})
+
+test('관리자 테마 목업: 학년 네 개를 각각 저장·조회하며 숫자와 옛 학년군은 받지 않는다', async () => {
+  token = (await call('/auth/login', { email: 'content@example.test', password: 'demo-only' })).data.accessToken
+  const body = { weekStart: '2026-11-16', title: '학년별 검증 테마', intro: '도입 이야기', days: [] }
+  for (const grade of ['G3', 'G4', 'G5', 'G6']) {
+    const created = await call('/admin/weekly-themes', { ...body, grade })
+    assert.equal(created.status, 201)
+    assert.equal(created.data.grade, grade)
+    assert.equal(Object.hasOwn(created.data, 'gradeBand'), false)
+  }
+  for (const grade of ['G3', 'G4', 'G5', 'G6']) {
+    const filtered = await call(`/admin/weekly-themes?grade=${grade}`)
+    assert.equal(filtered.status, 200)
+    assert.deepEqual(filtered.data.items.map((t: { grade: string }) => t.grade), [grade])
+  }
+  for (const grade of ['G3_4', 'G5_6', 'G7', 3]) assert.equal((await call('/admin/weekly-themes', { ...body, grade })).status, 422)
+  assert.equal((await call('/admin/weekly-themes', { ...body, gradeBand: 'G3_4' })).status, 422)
+})
+
+test('테마 목업: 같은 주의 게시 테마가 여러 개여도 학생 학년의 테마만 고른다', () => {
+  const missions: Mission[] = THINKING_ORDER.map((thinkingType, i) => ({ id: `grade-mission-${i}`, title: '학년별 검증 미션', subject: '국어', grade: 3, gradeMax: 6,
+    thinkingType, inputType: 'NARRATIVE', question: '어떻게 생각하나요?', hint: '까닭을 생각해 보세요.', scene: 'korean' }))
+  for (const grade of ['G3', 'G4', 'G5', 'G6'] as const) retentionState.themes.push({ themeId: `theme-${grade}`, grade, weekStart: weekStart(), title: `${grade} 테마`, intro: '도입',
+    status: 'PUBLISHED', updatedAt: '2026-11-10T00:00:00Z', days: THEME_DAYS.map((day, i) => ({ day, missionId: missions[i].id })) })
+  for (const grade of [3, 4, 5, 6, 7, 8, 9]) assert.equal(themeMissions(missions, grade).themeId, `theme-G${Math.min(grade, 6)}`)
 })

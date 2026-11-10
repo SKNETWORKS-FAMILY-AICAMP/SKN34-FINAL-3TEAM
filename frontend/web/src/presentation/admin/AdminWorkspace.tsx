@@ -12,6 +12,7 @@ import { AdminOperations } from './AdminOperations.tsx'
 import { MissionManager } from './MissionManager.tsx'
 import { MissionDraftManager } from './MissionDraftManager.tsx'
 import { ThemeDraftManager } from './ThemeDraftManager.tsx'
+import { NotificationBell } from '../common/NotificationBell.tsx'
 import { ErrorManager } from './ModelManager.tsx'
 import { ModelRegistry } from './ModelRegistry.tsx'
 import { SupportManager } from './SupportManager.tsx'
@@ -51,10 +52,11 @@ export function AdminWorkspace() {
   }
   return <div id="class-journal"><div className="admin-shell">
     <a className="ad-skip" href="#admin-main">본문으로 이동</a>
-    <header className="ad-topbar"><Link to="/admin/home" className="ad-brand" aria-label="사고뭉치 관리자 홈"><Brand /><span className="ad-brand-context">운영 관리</span></Link>
+    <header className="ad-topbar"><Link to="/admin/home" className="ad-brand" aria-label="사고뭉치 관리자 홈"><Brand linked={false} /><span className="ad-brand-context">운영 관리</span></Link>
       <div className="ad-account"><span>승인 권한 · {permissions.map((p) => permissionLabel[p]).join(' · ') || '없음'}</span>
         <button onClick={() => void leave().catch(() => {})}>로그아웃</button>
         <button className="ad-menu-toggle" aria-expanded={menuOpen} aria-controls="admin-navigation" onClick={() => setMenuOpen(!menuOpen)}>메뉴</button>
+        <NotificationBell />
       </div></header>
     <aside className={`ad-sidebar${menuOpen ? ' is-open' : ''}`} id="admin-navigation"><nav aria-label="관리자 메뉴">
       {nav.map((n, i) => <div key={n.path}>

@@ -1,3 +1,4 @@
+import type { ThemeGrade } from '../../domain/admin/retention.ts'
 import type { Child, Mission } from '../../domain/classroom.ts'
 import {
   baseLookCatalog,
@@ -53,7 +54,7 @@ export interface MockLookItem {
 }
 export interface MockWeeklyTheme {
   themeId: string
-  gradeBand: 'G3_4' | 'G5_6'
+  grade: ThemeGrade
   weekStart: string
   title: string
   intro: string
@@ -205,8 +206,8 @@ export function isUnlocked(studentId: string, itemKey: string) {
 
 // ---------- 주간 테마 ----------
 /** 게시된 관리자 테마가 있으면 그것을, 없으면 학생 미션으로 다섯 유형 하나씩 고른 가상 테마를 쓴다. */
-export function themeMissions(missions: Mission[]) {
-  const published = retentionState.themes.find((t) => t.status === 'PUBLISHED' && t.weekStart === weekStart())
+export function themeMissions(missions: Mission[], grade: number) {
+  const published = retentionState.themes.find((t) => t.status === 'PUBLISHED' && t.weekStart === weekStart() && t.grade === `G${Math.min(grade, 6)}`)
   if (published) {
     const byId = new Map(missions.map((m) => [m.id, m]))
     const days = published.days.flatMap((d) => (byId.get(d.missionId) ? [{ day: d.day, mission: byId.get(d.missionId)! }] : []))
@@ -221,9 +222,9 @@ export function themeMissions(missions: Mission[]) {
     days: picked.slice(0, 5).map((mission, i) => ({ day: THEME_DAYS[i], mission })),
   }
 }
-export function weeklyThemeFor(studentId: string, missions: Mission[]) {
+export function weeklyThemeFor(studentId: string, missions: Mission[], grade: number) {
   const weekday = mockWeekday()
-  const theme = themeMissions(missions)
+  const theme = themeMissions(missions, grade)
   const weekend = weekday >= 5
   const days = theme.days.map(({ day, mission }, i) => ({
     day,

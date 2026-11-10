@@ -1,13 +1,9 @@
 import { useState } from 'react'
 function ServiceLinks({ role }: { role?: string }) {
-  const { session } = useSession()
-  // 스트림(RoleLayout)이 새 알림을 받으면 이 캐시가 다시 읽힌다.
-  const unread = useUnreadNotifications(!!role && role !== 'STUDENT' && (session?.nextAction ?? 'READY') === 'READY').data
   if (!role) return null
   const root = '/' + role.toLowerCase()
   return <nav aria-label="이용 지원" className="ws-actions" style={{ marginBottom: 20, flexWrap: 'wrap', gap: 16 }}>
     <Link to={root + '/help'}>도움말</Link><Link to={root + '/support'}>문의·오류 신고</Link><Link to={root + '/notices'}>공지</Link>
-    {role !== 'STUDENT' && <Link to={root + '/notifications'}>알림{unread?.items.length ? ` · 읽지 않음 ${unread.items.length}${unread.hasNext ? '+' : ''}` : ''}</Link>}
     {isDemo && <Link to="/review">개발 점검표</Link>}
   </nav>
 }
@@ -16,7 +12,7 @@ import { Link, useLocation, useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuthentication, isDemo } from '../../data/classroom/useClassroom.ts'
 import { useSession } from '../auth/sessionContext.ts'
-import { useUnreadNotifications } from '../../data/notifications.ts'
+import { NotificationBell } from './NotificationBell.tsx'
 import { Brand, ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { QueryStateNotice } from './QueryStateNotice.tsx'
 import type { Metric } from '../../domain/classroom.ts'
@@ -160,7 +156,7 @@ export function Workspace({
               <span>{title}</span>
             </div>
             {menu}
-            <details className="ws-support"><summary>도움말·알림</summary><ServiceLinks role={session?.role} /></details>
+            <details className="ws-support"><summary>도움말·문의</summary><ServiceLinks role={session?.role} /></details>
             {aside}
           </aside>
           <div className="ws-body">
@@ -171,6 +167,7 @@ export function Workspace({
                 {actions}
                 {logout}
               </div>
+              <NotificationBell />
             </header>
             <main className="ws-main">{children}</main>
             {footer}
@@ -189,6 +186,7 @@ export function Workspace({
           <div className="ws-header-actions">
             {actions}
             {logout}
+            <NotificationBell />
           </div>
         </header>
         {demo}
@@ -217,11 +215,13 @@ export function QueryFeedback({
     </>
   )
 }
-export function MetricCards({ metrics }: { metrics: Metric[] }) {
+export function MetricCards({ metrics, highlighted }: { metrics: Metric[]; highlighted?: number[] }) {
   return (
     <div className="ws-metrics">
       {metrics.map((m, i) => (
-        <article className="ws-card" key={i}>
+        <article className={highlighted ? 'ws-card report-highlight-target' : 'ws-card'} key={i}
+          data-answer-highlight={highlighted?.includes(i) ? 'true' : undefined} tabIndex={highlighted ? -1 : undefined}>
+          {highlighted?.includes(i) && <span className="report-highlight-label">선택한 답변의 근거</span>}
           <h3>{m.label}</h3>
           <strong className="ws-number">{metricText(m)}</strong>
           <QueryStateNotice state={m.state} />

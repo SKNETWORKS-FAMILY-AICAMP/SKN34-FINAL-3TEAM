@@ -59,7 +59,7 @@ export function StudentWorld({
         {!focus && (
           <header className="st-top">
             <div className="st-brand">
-              <span className="st-wordmark">{t.sub}</span>
+              <Link className="st-wordmark" to="/student/home">{t.sub}</Link>
               <span className="st-sub">
                 {child.nickname} · {gradeLabel(child.grade)}
               </span>
