@@ -4,16 +4,19 @@ LLM 호출은 두 번: 질문 분류·범위 확인(classify), 계산 결과를 
 학생 이름·ID는 넣지 않음 (NFR-SEC-03). 시도·답변 ID도 넣지 않고 원문은 S1, S2 번호로만 보여 줌.
 answer는 일반 텍스트: 아이 글은 큰따옴표로 옮기고, 출처는 대조 단계가 따옴표 구간으로 찾음.
 일일 리포트 고정 대화(#392)는 core가 넘긴 리포트 요약(개수·판정)을 [고정 리포트]로 덧붙임.
+분류에는 요청 시각 기준 한국 날짜를 [오늘]로 넣어 "오늘·어제"를 실제 날짜로 바꿔 비교함(#454).
 """
 
 import json
+from datetime import date
 
 from app.analysis_agent.calculators import Computation
 from app.analysis_agent.models import AnalysisRequest, Intent, ReportSummary, ScopeIssue
 from app.judgment.models import ApiModel
 
-PROMPT_VERSION = "analysis@3"
+PROMPT_VERSION = "analysis@4"
 HISTORY_TURNS = 6  # 맥락 파악에 쓰는 최근 이전 대화 수
+WEEKDAYS = "월화수목금토일"
 # 웹 학부모 일일 리포트와 같은 표시 문구 (ParentReports.tsx)
 JUDGMENT_LABELS = {
     "CORRECT": "맞게 썼어요",
@@ -52,6 +55,14 @@ scope_issue:
 - DIFFERENT_PERIOD: 골라 둔 기간과 다른 기간(지난달·작년·특정 날짜 등)을 묻는 질문
 - UNCLEAR: 누구 또는 언제를 묻는지 판단할 수 없음
 기간을 말하지 않은 후속 질문은 골라 둔 범위를 이어 쓰므로 NONE이다.
+
+[오늘]은 질문을 받은 날짜(한국 시간)다. 오늘·어제·그제·이번 주·지난주·이번 달·지난달 같은
+상대 표현은 [오늘]을 기준으로 실제 날짜 범위로 바꾼 뒤 [골라 둔 범위]와 비교한다.
+한 주는 월요일부터 일요일까지다.
+- 바꾼 날짜 범위가 골라 둔 범위와 같으면 NONE이다.
+  예: 오늘이 2026-11-10이고 골라 둔 범위가 2026-11-10 ~ 2026-11-10이면 "오늘"은 NONE,
+  "어제"는 DIFFERENT_PERIOD다. 골라 둔 범위가 2026-11-09 ~ 2026-11-09이면 "어제"가 NONE이다.
+- 바꾼 날짜 범위가 골라 둔 범위와 다르면 DIFFERENT_PERIOD이다.
 """
 
 ANSWER_SYSTEM = """\
@@ -72,9 +83,10 @@ ANSWER_SYSTEM = """\
 """
 
 
-def build_classify_user(request: AnalysisRequest) -> str:
+def build_classify_user(request: AnalysisRequest, today: date) -> str:
     return f"""\
-[골라 둔 범위] {request.scope.from_.isoformat()} ~ {request.scope.to.isoformat()}
+[오늘] {_day(today)}
+[골라 둔 범위] {_day(request.scope.from_)} ~ {_day(request.scope.to)}
 [이전 대화]
 {_history(request)}
 [질문]
@@ -109,6 +121,10 @@ def build_answer_user(request: AnalysisRequest, intent: Intent, computation: Com
 {_history(request)}
 [질문]
 {request.question}"""
+
+
+def _day(day: date) -> str:
+    return f"{day.isoformat()}({WEEKDAYS[day.weekday()]})"
 
 
 def _report(report: ReportSummary | None) -> str:

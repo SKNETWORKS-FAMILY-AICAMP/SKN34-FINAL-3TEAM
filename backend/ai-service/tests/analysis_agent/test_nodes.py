@@ -2,13 +2,14 @@
 
 import asyncio
 import time
+from datetime import UTC, date, datetime
 
 import pytest
 from langgraph.runtime import Runtime
 
 from app.analysis_agent import templates
 from app.analysis_agent.calculators import THOUGHT_LIMIT, compute
-from app.analysis_agent.context import AgentContext
+from app.analysis_agent.context import AgentContext, kst_today
 from app.analysis_agent.models import AnalysisRequest, StreamError, Verification
 from app.analysis_agent.nodes import respond, retrieve, understand
 from app.analysis_agent.nodes.events import delta, status
@@ -28,7 +29,13 @@ REQUEST = AnalysisRequest.model_validate(
 )
 
 
-def run(node, state, llm: FakeLlm | None = None, tools: FakeRecords | None = None):
+def run(
+    node,
+    state,
+    llm: FakeLlm | None = None,
+    tools: FakeRecords | None = None,
+    today: date = date(2026, 10, 27),
+):
     """노드 하나를 실행해 (바뀐 상태 조각, 보낸 스트림 조각)을 돌려줌."""
     written: list[dict] = []
     context = AgentContext(
@@ -36,6 +43,7 @@ def run(node, state, llm: FakeLlm | None = None, tools: FakeRecords | None = Non
         tools=tools or FakeRecords(),
         deadline=time.monotonic() + 60,
         prompt=ActiveVersions().prompt("analysis"),
+        today=today,
     )  # type: ignore[arg-type]
     update = asyncio.run(node(state, Runtime(context=context, stream_writer=written.append)))
     return update, written
@@ -44,7 +52,7 @@ def run(node, state, llm: FakeLlm | None = None, tools: FakeRecords | None = Non
 def state(intent: str, empty: bool = False, **extra) -> dict:
     return {
         "request": REQUEST,
-        "prompt_version": "analysis@3",
+        "prompt_version": "analysis@4",
         "intent": intent,
         "computation": compute(intent, records(empty), SCOPE),
         **extra,
@@ -98,6 +106,52 @@ def test_pinned_conversation_guides_other_days_to_new_conversation() -> None:
     assert update["clarification"].message == understand.PINNED_PERIOD_MESSAGE.format(
         day=PERIOD["from"]
     )
+
+
+def pinned_request(day: str, question: str) -> AnalysisRequest:
+    return AnalysisRequest.model_validate(
+        {
+            "conversationId": "c-1",
+            "question": question,
+            "scope": {"studentId": STUDENT, "from": day, "to": day},
+            "report": {"reportId": "r-1", "revision": 1, "date": day},
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("day", "question", "pinned_line"),
+    [
+        (
+            "2026-11-10",
+            "오늘 우리 아이가 어떤 생각을 했는지 알려 줘",
+            "[골라 둔 범위] 2026-11-10(화) ~ 2026-11-10(화)",
+        ),
+        (
+            "2026-11-09",
+            "어제 휴대폰 문제에서 아이가 내세운 주장이 뭐였어?",
+            "[골라 둔 범위] 2026-11-09(월) ~ 2026-11-09(월)",
+        ),
+    ],
+)
+def test_classify_input_has_today_for_relative_dates(day, question, pinned_line) -> None:
+    # "오늘·어제"를 실제 날짜로 바꿀 수 있게 요청 날짜(KST)와 요일을 함께 넘김 (#454)
+    llm = FakeLlm(Classification(intent="CHILD_THOUGHTS", scope_issue="NONE"))
+    request = pinned_request(day, question)
+    update, _ = run(understand.classify, {"request": request}, llm, today=date(2026, 11, 10))
+    assert "clarification" not in update
+    user = llm.requests[0].user
+    assert user.startswith("[오늘] 2026-11-10(화)\n")
+    assert pinned_line in user
+    assert question in user
+    system = llm.requests[0].system
+    assert "[오늘]" in system and "같으면 NONE" in system and "다르면 DIFFERENT_PERIOD" in system
+
+
+def test_kst_today_uses_korean_date() -> None:
+    # UTC 15시가 KST 자정. 서버 시간대와 관계없이 한국 날짜로 해석
+    assert kst_today(datetime(2026, 11, 9, 14, 59, tzinfo=UTC)) == date(2026, 11, 9)
+    assert kst_today(datetime(2026, 11, 9, 15, 0, tzinfo=UTC)) == date(2026, 11, 10)
 
 
 def test_classify_llm_failure_counts_without_classification() -> None:
@@ -204,7 +258,7 @@ def test_check_confirms_verified_draft() -> None:
     assert result.fallback is None
     assert [e.answer_id for e in result.evidence] == ["a-2"]
     assert result.versions.model == "fake-model"
-    assert result.versions.prompt == "analysis@3"
+    assert result.versions.prompt == "analysis@4"
     assert written == [status("숫자와 인용을 기록과 맞춰 보는 중")]
 
 
