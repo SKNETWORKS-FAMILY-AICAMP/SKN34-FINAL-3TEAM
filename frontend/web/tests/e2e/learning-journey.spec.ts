@@ -53,7 +53,7 @@ test.describe.serial('학생 미션 → 학부모 대시보드·리포트', () =
     await page.goto('/login')
     await page.getByRole('link', { name: 'Google 계정으로 계속하기' }).click()
     await page.waitForURL('**/parent/journal**')
-    await expect(page.getByRole('heading', { name: `${nickname}의 학습 기록` })).toBeVisible()
+    await expect(page.getByRole('heading', { name: `${nickname}의 학습 현황`, exact: true })).toBeVisible()
     const row = page.getByRole('row', { name: new RegExp(mission.replace('?', '\\?')) })
     await expect(row.getByText('완료', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: `${mission} 원문 보기` })).toBeVisible()
