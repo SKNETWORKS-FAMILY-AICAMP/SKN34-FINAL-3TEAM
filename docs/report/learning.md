@@ -962,3 +962,54 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 
 - `RecordControllerTest`: 학부모·학생이 쿼리를 보내면 403, SYSTEM은 원문 JSON과 null을 그대로 받음, 쿼리가 없으면 본문에 `modelScores` 문자열 자체가 없음
 - `RecordServiceTest`(PostgreSQL): 저장 점수 원문, M2 미호출 `"null"`, 처리 중 답변은 판정 없음, 쿼리 없으면 null
+
+## 28. 교육과정 지식 RAG 계약 고정 (#464, 에픽 #463, 2026-11-11)
+
+하위 이슈 #465~#471이 서로 기다리지 않도록 형식·테이블·내부 API·샘플·가짜 구현을 먼저 정했다. 기능은 구현하지 않았고 모든 값은 **기준안(팀 확인 전)**이다. ai 쪽(C6·C7·모델·가짜)은 [ai 15장](ai.md#15-교육과정-지식-rag-계약-464-2026-11-11).
+
+| 계약 | 위치 |
+|---|---|
+| C1 추출 레코드 | `scripts/knowledge/schema/curriculum-record.schema.json` |
+| C2 조각·판 테이블, C3 관계 테이블, C9 판 규칙 | [ERD 4.5](../design/erd.md#45-교육과정-지식-rag-463-계약-464-구현-전) |
+| C4 관계 확인 파일 | `scripts/knowledge/schema/relation-review.schema.json` |
+| C5 learning 지식 내부 API | [api-spec 4.1.2](../design/api-spec.md#412-교육과정-지식-내부-api-463-계약-464-c5-구현-469), learning OpenAPI `/knowledge/*`(`x-implementation-status: planned-issue-469`) |
+| C8 평가셋 | `scripts/knowledge/schema/eval-record.schema.json` |
+| 샘플 | `scripts/knowledge/samples/`(레코드 215줄, 확인 파일 29행, 평가셋 9줄, 판 설명) |
+
+### 결정
+
+| 항목 | 결정·기준안 | 근거 |
+|---|---|---|
+| 영역 레코드 나누기 | `scope`: 국어·수학·도덕 `BOTH`, 사회·과학은 내용 체계 영역(`CONTENT_SYSTEM`)과 성취기준 단원(`STANDARD_GROUP`: 고려 사항·탐구 활동)을 따로 | 원문 대조: 사회·과학은 내용 체계 영역(지리 인식, 운동과 에너지 …)과 성취기준 단원(우리가 사는 곳, 힘과 우리 생활 …)이 다르고 고려 사항은 단원마다 있음 |
+| 도덕 고려 사항 | 영역 레코드는 내용 체계 학년군(`도덕:초3~4:…`), 고려 사항은 `[초등학교]` 묶음 글을 그대로 | 원문 성취기준·고려 사항이 3~4·5~6학년군 함께 한 묶음 |
+| 내용 요소 학년·학기 | C1 레코드에 두지 않고 적재 때 확인된 covers로 계산 | covers는 #468 사람 확인 결과라 추출(#465) 단계에서 알 수 없음 |
+| 조각 칸 추가 | `knowledge_chunk.record`(C1 원본), `knowledge_dataset.embedding_model`·`embedding_dimensions` | C5가 문장·해설·고려 사항을 따로 돌려주고, 다른 모델·차원 벡터를 막으려고 |
+| 선수 FK | `prerequisite_code`는 조각 FK 없이 성취기준 표 코드 검사 | 초3-1의 앞 학기 선수는 초1~2 성취기준이라 저장소(초3~6) 밖 |
+| 대체 사유 | 근거 없음은 200 `reason`(`NO_ACTIVE_DATASET` 등 5개), 오류는 400·409·500 | 생성 쪽이 "근거 없이 기존 방식"을 오류 처리와 구분 |
+| 인증 | 내부 토큰 + `X-User-Role: SYSTEM`, 학생 범위 없음 | 사용자 요청 없는 호출(api-spec 4장), 학생 정보를 받지 않음 |
+| `learned` | 개념 1~20개 묶음 요청 | 테마 검사가 낱말 여러 개를 한 번에 확인 |
+| 판 이름 | `kn-YYYYMMDD-NN` | 같은 날 여러 번 적재해도 겹치지 않게, 추출 판은 `source`에 |
+| 구현 전 표시 | OpenAPI `x-implementation-status: planned-issue-…` | #27 선례(`planned-issue-27`) |
+
+### 샘플 출처와 확인 못 한 칸
+
+- 원문: 교육부 고시 제2022-33호 `[별책 2] 초등학교 교육과정` PDF(한 권에 국어·사회·도덕·수학·과학 초등 부분이 모두 있어 쪽수 대조가 한 문서로 됨). PDF 글자는 PyMuPDF로 읽기만 했고(실행 없음), 줄 범위로 옮긴 뒤 줄바꿈만 이었다. 레코드마다 `source.pages`(인쇄 쪽)·`pdfPages`(PDF 쪽)와 `reviewed: false`
+- 성취기준 15개(국어 3·수학 4·과학 3·사회 3·도덕 2, 모두 초3 1학기). 해설 있음 8개(4국02-04, 4수01-03, 4수01-06, 4과01-01, 4과02-01, 4사01-01, 4사02-01, 4사02-02), 없음 7개. 문장은 모두 `achievement_standards.sql`과 같음(만들 때 대조). 학기는 경기도교육청 「1~4학년 평가계획 도움자료」 교과별 시트에서 코드↔학기만
+- 영역 14개(국어 2·수학 2·도덕 2·과학 4·사회 4), 내용 요소 176개, 교과 지침 5개(샘플은 "(1) 방향" 항목만, `excerpt: true`), 생각 유형 5개(팀이 쓴 출제 지침과 출처 표기만, 블룸·VALUE 원문·번역 없음)
+- 비운 칸: 국어 듣기⋅말하기 내용 체계 "상황 맥락"(1∼2·3∼4학년 칸 경계 불명), 수학 도형과 측정 "각도(…)"(괄호 안 기호가 추출에서 빠짐), 과학 생명 과정⋅기능(표가 쪽을 넘어가 초등·중학교 칸 경계 불명). 각 레코드 `notes`에 사유
+- 넣지 않음: 평가원 성취수준 자료(같은 폴더에 있으나 쓰지 않음), 경기도 자료 문장
+
+### 설계·이슈와 다른 점
+
+- #465 "내용 요소에 다루는 성취기준의 학기를 붙임" → 적재 때 확인된 covers로(위 결정)
+- #466 테이블 표에 칸 3개 추가(위 결정), `prerequisite_code` FK 없음
+- 이슈 C5 `learned`(벡터 하나) → 개념 묶음
+- 에픽 "고려 사항은 영역마다" → 사회·과학은 단원마다(원문 대조)
+- 샘플 원문은 교과 별책 5~9 대신 별책 2(같은 고시, 초등 부분 합본). 실제 추출(#465)은 이슈대로 교과 별책
+- 생각 유형 `requiredDefault`(#465 "필수 기본값")는 null 허용(FN 1.5: 필수 여부는 미션 요소마다)
+- 작업 위치 밖 기존 파일 수정: `scripts/tests/test_record_exists_openapi.py`·`test_ai_openapi.py`(구현 전 표시 경로를 컨트롤러·라우터 대조에서 뺌, #27 선례와 같은 한 줄). 새 경로가 실제 컨트롤러·라우터 없이 OpenAPI에 들어가면 두 시험이 깨져서
+
+### 검증
+
+- `scripts/tests/test_knowledge_contracts.py` 23개: 샘플이 C1·C4·C8 스키마 통과, 성취기준 문장 = 시드, 내용 요소 ID 해시 규칙, 제외 출처 없음, 생각 유형에 영어 문장 없음·출처 표기, 확인 파일 대상 존재·`문장:`/`해설:` 인용이 원문 부분 문자열, OpenAPI ↔ api-spec 경로·사유 코드·상한, ai·learning 지식 스키마 같음, 가짜 응답이 OpenAPI 스키마 통과
+- 팀 확인 질문은 #464 확인 필요 항목으로 남김(C5 inyoung9629, C1·C4 subinss838, C2·C3·C6·C9 20220348-kim)
