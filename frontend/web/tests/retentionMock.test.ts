@@ -12,6 +12,7 @@ import type { Mission } from '../src/domain/classroom.ts'
 import { THEME_DAYS } from '../src/domain/retention.ts'
 import { THINKING_ORDER } from '../src/domain/studentLook.ts'
 import { saveSharing } from '../src/mocks/fixtures/sharing.ts'
+import { setMockChildPlan } from '../src/mocks/fixtures/childPlan.ts'
 
 // 2026-11-06 결정(에픽 #396) 참여 기능 목업 계약: API 명세 2.4·2.5·2.8~2.11 구현 예정 경로.
 const handlers = [...retentionHandlers, ...serviceHandlers, ...parentHandlers, ...adminHandlers, ...studentHandlers]
@@ -164,6 +165,22 @@ test('학부모 리포트: 일일·주간 구분, 일일 리포트로만 고정 
   }
   assert.equal((await call(`/children/${childId}/points`)).status, 200)
   assert.ok(Array.isArray((await call(`/children/${childId}/community-posts`)).data.items))
+})
+
+test('#481 목업: 저장된 주간 리포트도 설명 미포함·무료 전환·비공개를 현재 조건으로 적용한다', async () => {
+  const childId = await parent()
+  assert.equal(setMockChildPlan({ childId, plan: 'PREMIUM' }), true)
+  saveSharing(childId, true)
+  const id = (await call(`/children/${childId}/reports?periodType=WEEKLY`)).data.items[0].reportId
+  setWorkspaceScenario('explanation-missing')
+  assert.deepEqual((await call(`/reports/${id}`)).data.explanations, { state: 'NOT_INCLUDED', items: [] })
+  setWorkspaceScenario('normal')
+  assert.notEqual((await call(`/reports/${id}`)).data.explanations?.state, 'NOT_INCLUDED')
+  assert.equal(setMockChildPlan({ childId, plan: 'FREE' }), true)
+  assert.equal((await call(`/reports/${id}`)).data.explanations, null)
+  assert.equal(setMockChildPlan({ childId, plan: 'PREMIUM' }), true)
+  saveSharing(childId, false)
+  assert.deepEqual((await call(`/reports/${id}`)).data.explanations, { state: 'NO_TARGET', items: [] })
 })
 
 test('관리자: 주간 테마 작성→검토→게시 검사, 꾸미기 아이템은 삭제 없이 판매 중단', async () => {

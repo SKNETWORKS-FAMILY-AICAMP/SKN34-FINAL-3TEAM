@@ -70,7 +70,7 @@ async function parentServer(context: BrowserContext, periodType: 'DAILY' | 'WEEK
     if (path.endsWith('/attempts')) return json({ childId, items: [], page: 0, size: 20, totalElements: 0 })
     return json({ status: 404, code: 'NOT_FOUND', title: '합성 검사에 없는 요청입니다.' }, 404)
   })
-  return { calls, period, controls }
+  return { calls, period, controls, report, children }
 }
 
 async function capture(page: Page, name: string) {
@@ -253,4 +253,52 @@ test('다른 자녀를 고르면 답변 선택과 연결한 리포트를 함께 
   await expect(page.locator('[data-answer-highlight=true]')).toHaveCount(0)
   await expect(page.getByRole('heading', { name: '질문에 연결한 리포트', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '리포트 근거 위치 보기', exact: true })).toHaveCount(0)
+})
+
+const explanation = { attemptId: 'attempt-explanation', answerId: 'answer-explanation', answerVersion: 1, missionTitle: '나무가 하는 일',
+  thinkingType: 'ANALYZE' as const, quote: '나무가 그늘을 만들어 줍니다.', text: '나무의 역할을 그늘이라는 구체적인 예로 설명했습니다.' }
+
+test('#481: 주간 설명 카드의 미션·유형·인용·설명과 AI 관찰을 표시한다', async ({ page, context }) => {
+  const { report, children } = await parentServer(context, 'WEEKLY')
+  children[0].grade = 5
+  report.explanations = { state: 'INCLUDED', items: [explanation, { ...explanation, answerId: 'answer-two', thinkingType: 'CREATE', missionTitle: '새로운 나무집' }] }
+  await page.goto(`/parent/report?childId=${childId}`)
+  await page.getByRole('button', { name: '리포트 상세 보기', exact: true }).click()
+  const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
+  await expect(area.getByRole('article')).toHaveCount(2)
+  await expect(area.getByRole('heading', { name: explanation.missionTitle, exact: true })).toBeVisible()
+  await expect(area.getByText('AI 관찰', { exact: true })).toHaveCount(2)
+  await expect(area.getByText('분석하기 ·', { exact: false })).toBeVisible()
+  await expect(area.locator('blockquote').first()).toHaveText(explanation.quote)
+  await expect(area.getByText(explanation.text, { exact: true })).toHaveCount(2)
+  await capture(page, 'report-explanations')
+})
+
+for (const [state, notice] of [
+  ['NOT_INCLUDED', '설명 미포함'], ['NO_TARGET', '설명 대상 답변이 없어'], [null, '설명 정보가 제공되지 않았습니다.'], [undefined, '설명 정보가 제공되지 않았습니다.'],
+] as const) test(`#481: 설명 상태 ${String(state)}는 수치 리포트 실패와 구분한다`, async ({ page, context }) => {
+  const { report } = await parentServer(context, 'WEEKLY', true)
+  report.explanations = state == null ? state : { state, items: [] }
+  await page.goto(`/parent/report?childId=${childId}`)
+  await page.getByRole('button', { name: '리포트 상세 보기', exact: true }).click()
+  const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
+  await expect(area.getByRole('note')).toContainText(notice)
+  await expect(area.getByRole('article')).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: '답변 제출 시도 수', exact: true })).toBeVisible()
+  await expect(page.getByText('리포트 생성에 실패했습니다. 기록 없음과는 다릅니다.')).toHaveCount(0)
+})
+
+for (const kind of ['FREE', 'PRIVATE', 'DAILY', 'INVALID'] as const) test(`#481: ${kind} 응답에서는 설명 원문을 표시하지 않는다`, async ({ page, context }) => {
+  const { report, children } = await parentServer(context, kind === 'DAILY' ? 'DAILY' : 'WEEKLY')
+  report.explanations = { state: 'INCLUDED', items: [explanation] }
+  if (kind === 'FREE') children[0].plan = 'FREE'
+  if (kind === 'PRIVATE') report.parentSharingEnabled = false
+  if (kind === 'INVALID') report.explanations.items = []
+  await page.goto(`/parent/report?childId=${childId}`)
+  await page.getByRole('button', { name: '리포트 상세 보기', exact: true }).click()
+  await expect(page.getByText(explanation.quote, { exact: true })).toHaveCount(0)
+  await expect(page.getByText(explanation.text, { exact: true })).toHaveCount(0)
+  const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
+  if (kind === 'DAILY') await expect(area).toHaveCount(0)
+  else await expect(area.getByRole('note')).toContainText(kind === 'FREE' ? '프리미엄' : kind === 'PRIVATE' ? '비공개' : '확인하지 못했습니다.')
 })

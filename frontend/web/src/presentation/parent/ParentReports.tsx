@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ReportProblem } from '../service/ReportProblem.tsx'
+import { ReportExplanations } from './ReportExplanations.tsx'
 import type { Child } from '../../domain/classroom.ts'
 import type { DailyProblem, ReportPeriodType, ThemeSummary } from '../../domain/parent.ts'
 import { reportPeriodType } from '../../domain/parent.ts'
@@ -227,6 +228,7 @@ function ReportDetail({
                 <p>{r.parentSharingEnabled === false ? '아이의 답변 원문이 비공개여서 서술과 인용을 표시하지 않습니다. 학습 수치는 아래에서 확인할 수 있습니다.' : '수치 리포트입니다. 이 자녀의 플랜에는 서술 요약이 포함되지 않습니다.'}</p>
               )}
               <MetricCards metrics={r.metrics} highlighted={targets.metrics} />
+              <ReportExplanations report={r} plan={child.plan} />
               <div className="ws-actions">
                 {r.metrics.map((m, i) => (
                   <button
