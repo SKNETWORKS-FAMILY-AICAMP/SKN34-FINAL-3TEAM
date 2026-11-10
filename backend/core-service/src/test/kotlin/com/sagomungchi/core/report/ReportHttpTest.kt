@@ -221,9 +221,12 @@ class ReportHttpTest : IntegrationTestSupport() {
     @Test fun `current free entitlement hides past premium narrative while preserving numeric detail`() {
         val body=json.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(detail())
         body.putObject("narrative").put("text","유료 서술");body.put("eveningQuestion","유료 저녁 질문")
+        body.putObject("explanations").put("state", "INCLUDED").putArray("items")
+            .addObject().put("text", "유료 설명")
         response=json.writeValueAsString(body)
         mvc.get("/api/v1/reports/$report") { header("Authorization","Bearer $token") }.andExpect {
             status { isOk() };jsonPath("$.narrative") { value(null) };jsonPath("$.eveningQuestion") { value(null) }
+            jsonPath("$.explanations") { value(null) }
             jsonPath("$.metrics") { isArray() }
         }
         assertEquals(1,views())

@@ -70,6 +70,14 @@
     {
       "name": "LANGFUSE_ENABLED",
       "value": "false"
+    },
+    {
+      "name": "EXPLANATION_BASE_URL",
+      "value": "http://sllm-server.app.svc.cluster.local:8080/v1"
+    },
+    {
+      "name": "EXPLANATION_MODEL",
+      "value": "report-explanation"
     }
   ],
   "hpa": {
@@ -125,6 +133,10 @@
       {
         "name": "scoring-service",
         "port": 8001
+      },
+      {
+        "name": "sllm-server",
+        "port": 8080
       }
     ],
     "egressToPlatform": [

@@ -57,6 +57,7 @@ class JudgmentRecord:
     trial: bool
     elements: tuple[JudgedElement, ...]
     corrected: bool = False
+    model_scores: object = None
 
 
 @dataclass(frozen=True)

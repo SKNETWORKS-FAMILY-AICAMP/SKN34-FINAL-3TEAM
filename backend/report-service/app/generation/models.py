@@ -39,6 +39,9 @@ class GenerateReport:
     template_snapshot: dict[str, Any] | None = None
     period_type: PeriodType = PeriodType.WEEKLY
 
+    grade: int | None = None
+    explanation_enabled: bool = False
+
     def __post_init__(self) -> None:
         if self.period_type not in PeriodType:
             raise ValueError("Unknown report period type")
@@ -77,6 +80,7 @@ class GenerationResult:
     generated_at: datetime | None = None
     files: tuple["ReportFile", ...] = ()
     theme_summary: dict[str, Any] | None = None
+    explanation_state: str | None = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +97,7 @@ class ItemType(StrEnum):
     REFLECTION = "REFLECTION"
     QUOTE = "QUOTE"
     PROBLEM = "PROBLEM"
+    EXPLANATION = "EXPLANATION"
 
 
 @dataclass(frozen=True)

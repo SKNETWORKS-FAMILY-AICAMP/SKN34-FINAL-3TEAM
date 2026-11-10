@@ -224,20 +224,45 @@ stateDiagram-v2
 - 되묻기는 시도당 최대 2회, 2회째 보완 답변 판정 후 되묻기 생성 없이 마무리 안내. 고르기 `CORRECT`도 되묻기 없이 마무리 안내 (P04)
 - 초안 `attempt_draft.version`: 저장마다 +1, `WHERE version = :ifMatch` (상태값 없음)
 
-#### 3.2.1 테마 요일 문제 열림 (파생, DB 미저장, P23, #385)
+#### 3.2.1 테마 요일 문제 열림 (파생, DB 미저장, P23, #385 → 2026-11-10 개정 #483)
+
+2026-11-10 개정(#483, 구현 learning #484·core #485): 공개된 문제가 쌓이는 누적 공개로 바꾼다. 구현 전까지 코드는 아래 "이전 규칙"으로 동작한다.
 
 ```mermaid
 stateDiagram-v2
-  [*] --> LOCKED: 그 요일 전
-  LOCKED --> OPEN: 그 요일 KST 00:00
-  OPEN --> CLOSED: 다음 날 KST 00:00
+  [*] --> LOCKED: 그 요일 전 (공개 전)
+  LOCKED --> OPEN: 그 요일 KST 00:00 공개
+  OPEN --> OPEN: 다음 날로 넘어가도 유지 (그 주 토요일 끝까지)
+  OPEN --> CLOSED: 일요일 KST 00:00 (무료)
+  OPEN --> SUNDAY_OPEN: 일요일 KST 00:00 (프리미엄, 기준안 features.sundayTheme)
+  SUNDAY_OPEN --> CLOSED: 다음 주 월요일 KST 00:00
   CLOSED --> [*]
 ```
 
-- `OPEN`일 때만 `THEME_DAY` 신규 시도. 토·일 되돌아보기는 `CLOSED` 문제 중 그 주에 마무리한 것만 `THEME_REVIEW`로 다시 풀기, 놓친 문제는 표시만
-- 시작 요청 `context`(`THEME_DAY`·`THEME_REVIEW`·`EXTRA`)는 신규 시도에만 검사. 진행 중 시도 반환(부분 UK 충돌)은 요일과 무관하게 이어하기 허용, 완주 판정은 당일 KST 학습 완료만 인정
-- 재사용 테마의 이미 푼 문제도 그 주 `OPEN` 요일에는 `THEME_DAY` 신규 시도 가능
-- 구현(#385): `ThemeWeek.stateOf`가 KST 날짜로 계산하고 토·일에는 다섯 요일 모두 `CLOSED`. 시작 검사는 learning 시계(KST), 조회·열람은 core가 넘긴 날짜 기준
+- `SUNDAY_OPEN`은 응답 값이 아니라 설명용이다. 응답 `state`는 `LOCKED`·`OPEN`·`CLOSED` 셋 그대로이고, 프리미엄 일요일에는 `OPEN`으로 계산한다(일요일 허용 여부는 core가 상품으로 판단해 learning에 전달, 전달 방식은 #484·#485 합의)
+- 월요일에는 월 문제만, 금요일에는 다섯 문제 모두 `OPEN`. 토요일에는 다섯 문제 모두 `OPEN`
+- `OPEN`이면 `THEME_DAY` 신규 시도(안 푼 문제). 마무리한 문제 다시 풀기 `THEME_REVIEW`는 토요일(프리미엄은 일요일도)만. `LOCKED` 신규 시도와 무료 일요일 신규 시도는 `409 THEME_DAY_CLOSED`, 평일·무료 일요일 다시 풀기는 `409 THEME_REVIEW_NOT_ALLOWED`(기준안: 기존 코드 재사용, 일요일 전용 코드 신설 여부는 #484에서 결정)
+- 시작 요청 `context`(`THEME_DAY`·`THEME_REVIEW`·`EXTRA`)는 신규 시도에만 검사. 진행 중 시도 반환(부분 UK 충돌)은 요일과 무관하게 이어하기 허용(일요일 포함). 당일 풀이(기준안 `completedOnDay`)·개근은 그 요일 KST 안의 학습 완료 시각만 인정
+- 재사용 테마의 이미 푼 문제도 그 주 `OPEN`이면 `THEME_DAY` 신규 시도 가능
+- 이전 규칙(#385 구현): `ThemeWeek.stateOf`가 KST 날짜로 계산하고 그 요일만 `OPEN`, 다음 날 `CLOSED`, 토·일에는 다섯 요일 모두 `CLOSED`. 시작 검사는 learning 시계(KST), 조회·열람은 core가 넘긴 날짜 기준(개정 뒤에도 같음)
+
+#### 3.2.2 주간 테마 엔딩 (파생, 2026-11-10 개정 #483, 기준안 learning #484)
+
+큰 질문 정답 고르기(기준안: 금요일 문제 끝에서 후보 중 하나 고르기, #437) 결과로 학생·주마다 정한다. 저장 형식(고른 값 저장 위치)은 #484에서 정한다.
+
+```mermaid
+stateDiagram-v2
+  [*] --> NOT_ENDED: 그 주 테마 시작
+  NOT_ENDED --> ENDED: 정답 고르기에서 정답 (즉시, 평일 포함)
+  NOT_ENDED --> WAITING_RETRY: 정답 고르기에서 오답
+  WAITING_RETRY --> ENDED: 토요일(프리미엄 일요일) 그 문제 다시 풀기 마무리 (맞든 틀리든, 틀리면 정답 공개)
+  WAITING_RETRY --> [*]: 다시 풀기 없이 주가 끝남 (엔딩 없음)
+  NOT_ENDED --> [*]: 정답 고르기 없이 주가 끝남 (엔딩 없음)
+```
+
+- 응답 값은 기준안 `ending`(`NOT_ENDED`·`ENDED`, 이름은 #484에서 확정). `WAITING_RETRY`는 설명용이며 응답에서는 `NOT_ENDED`
+- `ENDED` 전에는 정답·종료 이야기(`outro`)를 응답에 넣지 않는다(#438 "공개 시점 전 제외"를 이 조건으로 바꿈). 종료 이야기 표시는 `ENDED` 뒤, 무료 일요일에는 이미 본 엔딩 다시 보기만
+- 정답 고르기가 있는 문제의 커뮤니티 열람은 `ENDED`인 학생만(P20, 아니면 `403 COMMUNITY_LOCKED`)
 
 ### 3.3 `judgment.process_status` (판정 처리)
 

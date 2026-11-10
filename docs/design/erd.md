@@ -896,6 +896,7 @@ erDiagram
   }
 ```
 
+- 2026-11-10 개정(#483, core #485 새 마이그레이션 전): 사건 종류에 당일 풀이(기준안 `THEME_ON_TIME`, 5)·주간 완주(기준안 `THEME_FINISHED`, 10)를 더한다. `reward_rule`·`reward_point_ledger`의 `event_type` CHECK를 새 버전 마이그레이션으로 넓히고(V35는 고치지 않음) `reward_rule` 행을 추가한다. `THEME_COMPLETED`(30)는 개근(월~금 각 당일 학습 완료)으로 그대로 쓴다. 사건 키는 당일 풀이 `weekStart:day`(예 `2026-11-09:MON`, 요일당 1회), 주간 완주 `weekStart`. 위 Mermaid의 CHECK 목록은 마이그레이션 병합 때 갱신한다
 - `reward_rule` 시드(V35)는 P21 초기값: 학습 완료 10·되돌아보기 10·공유 5·반응 1(하루 5회)·완주 30. 값·상한·사용 여부는 데이터로 바꾸며 이미 쌓인 원장은 바꾸지 않는다. `daily_cap`은 적립 횟수(포인트 합이 아님)
 - `reward_point_ledger` UK `(student_id, event_type, source_key)`로 사건당 1회. 사건 키: 학습 완료 `missionId`(미션당 최초 1회), 되돌아보기·완주 `weekStart`(ISO date, 주 1회), 공유 `postId`, 반응 `postId:reaction`, 해금 `itemKey`. CHECK로 `UNLOCK`만 음수, 그 외 양수(0 없음). 인덱스 `(student_id, created_at)`는 내역과 하루 상한 집계용
 - 적립·해금은 학생 행 `FOR SHARE`(삭제 확정과 직렬화) → `reward_point_balance` 행 `FOR UPDATE` 순서로 잠가 학생별로 직렬화한다. 같은 사건 동시 적립, 다른 키로 같은 항목 동시 해금도 한 번만 반영. 잔액 CHECK `>= 0`
@@ -1225,7 +1226,7 @@ erDiagram
   - `previous`·`corrected`는 `{"result": "PARTIAL"}` 모양. `previous`는 정정 직전에 보이던 결과(앞선 정정이 있으면 그 결과), 최신 정정은 `created_at` 가장 늦은 행 (#80)
 - `self_assessment` UK `(attempt_id, rubric_element_id)`. AI 판정·원본 답변과 별도 저장 (FN-LRN-13)
 - 도움 이용 비율 집계 근거 = `hint_usage.opened_at` vs 최초 `answer.submitted_at` (최초 답변 전 열람 없는 시도 / 집계 대상 시도, P08)
-- `attempt.context`(#385, V11 준비·V12 최종): `THEME_DAY`(오늘 요일 테마 문제)·`THEME_REVIEW`(토·일 되돌아보기 다시 풀기)·`EXTRA`(생각 유형별 고르기). 기존 행은 V11에서 `EXTRA`로 채움. CHECK `ck_attempt_theme_context`: 테마 컨텍스트는 `theme_id`·`theme_week_start`가 함께 있고 `EXTRA`는 둘 다 NULL. 진행 중 시도 부분 UK는 컨텍스트와 무관하게 학생·미션당 하나
+- `attempt.context`(#385, V11 준비·V12 최종): `THEME_DAY`(오늘 요일 테마 문제)·`THEME_REVIEW`(토·일 되돌아보기 다시 풀기)·`EXTRA`(생각 유형별 고르기). 2026-11-10 개정(#483) 뒤 뜻: `THEME_DAY`는 공개된 테마 문제 신규 시도(월~토, 프리미엄 일요일), `THEME_REVIEW`는 토요일(프리미엄 일요일) 다시 풀기. 값·CHECK는 그대로이며, 당일 풀이는 `completed_at`과 문제 요일로 계산하고 큰 질문 정답 고르기 결과 저장 위치는 learning #484에서 정한다. 기존 행은 V11에서 `EXTRA`로 채움. CHECK `ck_attempt_theme_context`: 테마 컨텍스트는 `theme_id`·`theme_week_start`가 함께 있고 `EXTRA`는 둘 다 NULL. 진행 중 시도 부분 UK는 컨텍스트와 무관하게 학생·미션당 하나
 
 ### 4.2.1 주간 테마 (P23, #385 V11·V12)
 
@@ -1400,7 +1401,7 @@ erDiagram
   report_item {
     uuid id PK "evidence itemId"
     uuid report_id FK
-    varchar item_type "METRIC|THINKING_TYPE|CHANGE|REFLECTION|QUOTE|PROBLEM"
+    varchar item_type "METRIC|THINKING_TYPE|CHANGE|REFLECTION|QUOTE|PROBLEM|EXPLANATION"
     int seq
     jsonb payload "Metric, 유형 요약, 전후 변화 등"
     varchar state "OK|NO_RECORD|INSUFFICIENT_SAMPLE"
@@ -1450,7 +1451,7 @@ erDiagram
 - 재생성은 기존 행을 덮지 않고 `revision` 증가 행 추가, UK `(student_id, period_type, period_from, revision)` (기존 판 보존·최신판 기본 조회, P06). 학부모 요청 재생성은 리포트당 1회 → core `report_job(REGENERATE)` 건수로 확인
 - 기록 없는 주·표본 부족 주는 `status = COMPLETED` + `state`로 구분, 생성 실패(`FAILED`)와 분리 (FN-RPT-11). state는 COMPLETED일 때만 NOT NULL (상태 다이어그램 4.2).
 - `report_item` UK `(report_id, item_type, seq)`. 상세 응답(API 3.4)은 `item_type`별로 묶어 조립
-- #479에서 `item_type`에 `EXPLANATION`(리포트 설명, FN-RPT-09)을 Alembic CHECK와 이 Mermaid 주석에 함께 추가 예정. `payload`는 `{missionTitle, thinkingType, quote, text}`, 근거 답변은 `report_item_evidence`, 검사 통과분만 저장(`verified = true`). 리포트당 최대 3행이며 설명 상태(`INCLUDED`·`NOT_INCLUDED`·`NO_TARGET`, API 3.4)는 행 유무만으로 구분되지 않으므로 #479에서 저장 위치를 확정한다(기존 `weekly_report` jsonb 활용 우선, 컬럼을 추가하면 Mermaid도 함께 갱신). 삭제는 기존 리포트 삭제(P09)에 포함
+- #479: `item_type=EXPLANATION`은 Alembic CHECK에 추가한다. `payload`는 `{attemptId, answerId, answerVersion, missionTitle, thinkingType, quote, text}`, `quote`는 null 허용, 근거 답변은 `report_item_evidence`에 연결하며 검사 통과분만 저장(`verified=true`). 리포트당 최대 3행이다. 상태(`INCLUDED`·`NOT_INCLUDED`·`NO_TARGET`)는 기존 `weekly_report.verification` JSONB의 `explanationState`에 보관한다. 이전 행은 값 없이 유지한다. 삭제는 기존 리포트 삭제(P09)에 포함하며 새 테이블·컬럼은 추가하지 않는다.
 - `report_file` UK `(report_id, format)`. 다운로드는 `s3_key`로 presigned URL 발급 (FN-RPT-13)
 - #55의 `20261027_02`는 `report_deletion_guard`를 추가한다. 삭제 중 생성·조회를 막고 완료 후에도 PROFILE·RECORDS 모두 생성을 차단한다. 최신 #45의 자동 학습 재개 금지와 일치시키며 재개는 별도 계약이 필요하다. 학생 UUID·삭제 요청 UUID·범위·시각·처리 상태만 남기며 원문·이름·리포트 내용은 저장하지 않는다.
 
