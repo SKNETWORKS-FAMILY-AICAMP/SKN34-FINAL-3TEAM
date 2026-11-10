@@ -8,7 +8,6 @@ function ServiceLinks({ role }: { role?: string }) {
   return <nav aria-label="이용 지원" className="ws-actions" style={{ marginBottom: 20, flexWrap: 'wrap', gap: 16 }}>
     <Link to={root + '/help'}>도움말</Link><Link to={root + '/support'}>문의·오류 신고</Link><Link to={root + '/notices'}>공지</Link>
     {role !== 'STUDENT' && <Link to={root + '/notifications'}>알림{unread?.items.length ? ` · 읽지 않음 ${unread.items.length}${unread.hasNext ? '+' : ''}` : ''}</Link>}
-    {role === 'PARENT' && <Link to="/parent/account">계정·자녀 관리</Link>}
     {isDemo && <Link to="/review">개발 점검표</Link>}
   </nav>
 }
@@ -49,6 +48,7 @@ export function Workspace({
     location = useLocation(),
     cache = useQueryClient()
   const [scenario, setScenario] = useState('normal')
+  const [menuOpen, setMenuOpen] = useState(false)
   async function leave() {
     try {
       await auth.logout.mutateAsync()
@@ -125,6 +125,7 @@ export function Workspace({
           key={n.path}
           to={n.path + location.search}
           aria-current={location.pathname === n.path ? 'page' : undefined}
+          onClick={() => setMenuOpen(false)}
         >
           {n.label}
         </Link>
@@ -133,8 +134,7 @@ export function Workspace({
   )
   const footer = (
     <footer className="ws-footer">
-      자체 제작 문항·가상 기록을 사용하는 시연입니다. 기록이 적다는 것이 능력 부족을 뜻하지는
-      않습니다.
+      {isDemo ? '개발 목업 · 학습 기록과 결제는 가상 데이터입니다.' : '사고뭉치 · 아이의 생각이 쌓이는 곳'}
     </footer>
   )
   const expiredModal = expired && session && (
@@ -160,20 +160,23 @@ export function Workspace({
               <span>{title}</span>
             </div>
             {menu}
+            <details className="ws-support"><summary>도움말·알림</summary><ServiceLinks role={session?.role} /></details>
             {aside}
           </aside>
           <div className="ws-body">
             {demo}
             <header className="ws-header">
+              <div className="ws-mobile-brand"><Brand /><button className="cj-secondary" aria-label="학부모 메뉴 열기" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>메뉴</button></div>
               <div className="ws-header-actions">
                 {actions}
                 {logout}
               </div>
             </header>
-            <main className="ws-main"><ServiceLinks role={session?.role} />{children}</main>
+            <main className="ws-main">{children}</main>
             {footer}
           </div>
           {expiredModal}
+          {menuOpen && <Modal title="학부모 메뉴" onClose={() => setMenuOpen(false)}><div className="ws-parent-menu">{menu}<div className="ws-menu-actions" onClick={event => { if ((event.target as Element).closest('button')) setMenuOpen(false) }}>{actions}{logout}</div><ServiceLinks role={session?.role} /></div></Modal>}
         </div>
       </div>
     )

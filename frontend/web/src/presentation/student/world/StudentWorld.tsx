@@ -63,10 +63,9 @@ export function StudentWorld({
               <span className="st-sub">
                 {child.nickname} · {gradeLabel(child.grade)}
               </span>
+              <details className="st-support-menu"><summary>도움말</summary><Link to="/student/help">이용 도움말</Link><Link to="/student/support">문의·오류 신고</Link></details>
             </div>
             <nav aria-label="학생 메뉴" className="st-nav">
-              <Link to="/student/help">도움말</Link>
-              <Link to="/student/support">문의·오류 신고</Link>
               {nav.map((n) => (
                 <button
                   type="button"

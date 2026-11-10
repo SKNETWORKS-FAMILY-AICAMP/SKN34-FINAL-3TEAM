@@ -187,7 +187,7 @@ export const studentDeviceHandlers = [
         const data = await request.json()
         const result = await demoRequest<SharedLogin>('/login', { method: 'POST', body: JSON.stringify(data) })
         const accessToken = startDeviceStudentSession(result.child, result.children)
-        return { accessToken, role: 'STUDENT', child: { ...result.child, childId: result.child.id } }
+        return { accessToken, role: 'STUDENT', child: { childId: result.child.id, nickname: result.child.nickname, grade: result.child.grade, birthYear: result.child.birthYear } }
       }
       const d = currentDevice() ?? deviceInvalid()
       const { childId, pin } = (await request.json()) as { childId: string; pin: string }
@@ -218,7 +218,7 @@ export const studentDeviceHandlers = [
       return {
         accessToken,
         role: 'STUDENT',
-        child: { childId: child!.id, nickname: child!.nickname, grade: child!.grade, plan: child!.plan },
+        child: { childId: child!.id, nickname: child!.nickname, grade: child!.grade, birthYear: child!.birthYear },
       }
     }),
   ),

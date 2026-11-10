@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router'
 import { useSession } from './auth/sessionContext.ts'
 import './student/pinpad.css'
 import { roleStart } from '../domain/navigation.ts'
@@ -44,7 +44,6 @@ import { StudentPoints } from './student/world/StudentPoints.tsx'
 import type { AttemptContext } from '../domain/retention.ts'
 import { StudentSharingPage } from './student/StudentSharingPage.tsx'
 import { StudentWorkPage } from './student/StudentWorkPage.tsx'
-import { ParentAnalysis, ParentReport } from './parent/ParentFeatures.tsx'
 import './classroom.css'
 import { QueryStateNotice } from './common/QueryStateNotice.tsx'
 import { ParentUnlock } from './auth/ParentUnlock.tsx'
@@ -69,8 +68,7 @@ export function ClassroomApp() {
   const setWork = (id: string | null) =>
     navigate(id ? `/student/attempts/${encodeURIComponent(id)}` : '/student/journal')
   const [detail, setDetail] = useState<PublicAttempt | null>(null)
-  const [period, setPeriod] = useState<Period>(recentPeriod),
-    [analysisPeriod, setAnalysisPeriod] = useState<Period>(recentPeriod)
+  const [period, setPeriod] = useState<Period>(recentPeriod)
   const [startContext, setStartContext] = useState<AttemptContext | undefined>()
   const [instructions, setInstructions] = useState<import('../domain/classroom.ts').Mission | null>(
     null,
@@ -154,24 +152,20 @@ export function ClassroomApp() {
       : [
           { page: 'journal', label: '아이의 공책', icon: NotebookPen },
           { page: 'report', label: '주간 리포트', icon: BookOpen },
-          { page: 'analysis', label: '기록에 물어보기', icon: MessagesSquare },
+          { page: 'analysis', label: 'AI 챗봇', icon: MessagesSquare },
         ]
   const switchChild = (id: string) => {
     setSelected(id)
     setDetail(null)
     setEvidenceId(null)
     setSubject('all')
-    setAnalysisPeriod(recentPeriod)
     setMessage('')
   }
-  const evidence = (id: string) => setEvidenceId(id)
   return (
     <div id="class-journal">
-      <div className="ux-preview">
+      {isDemo && <div className="ux-preview">
         <span>
-          {isDemo
-            ? import.meta.env.VITE_PAYMENT_TEST === 'true' ? '결제 테스트 모드 · 학습 데이터는 가상 · 토스 테스트 결제 연동' : 'MSW 목업 모드 · 실제 API 요청을 가로채는 가상 응답 · 운영 서버 호출 없음'
-            : 'API 연결 모드 · core 공개 API만 호출 · 오류 시 예시 데이터 대체 없음'}
+          {import.meta.env.VITE_PAYMENT_TEST === 'true' ? '결제 테스트 모드 · 학습 데이터는 가상 · 토스 테스트 결제 연동' : 'MSW 목업 모드 · 실제 API 요청을 가로채는 가상 응답 · 운영 서버 호출 없음'}
         </span>
         {isDemo && (
           <label>
@@ -216,8 +210,8 @@ export function ClassroomApp() {
             </select>
           </label>
         )}
-        <small>develop 66f6052 기준 · PC 정식 / 태블릿 확장 시안</small>
-      </div>
+        <small>화면 동작 확인용 개발 시연</small>
+      </div>}
       <div className={session?.role === 'STUDENT' ? 'cj-app cj-app-student' : 'cj-app'}>
         {expired && session && (
           <Modal title="다시 로그인해 주세요." onClose={() => {}}>
@@ -478,7 +472,7 @@ export function ClassroomApp() {
                   >
                     {children.data?.map((c) => (
                       <option value={c.id} key={c.id}>
-                        {c.nickname} · 초{c.grade}
+                        {c.nickname} · {gradeLabel(c.grade)}
                       </option>
                     ))}
                   </select>
@@ -540,23 +534,8 @@ export function ClassroomApp() {
                 )}
                 {child && detail ? (
                   <RecordDetail record={detail} child={child} onClose={() => setDetail(null)} />
-                ) : child && page === 'report' && session.role === 'PARENT' ? (
-                  <ParentReport
-                    key={child.id}
-                    child={child}
-                    onEvidence={evidence}
-                    onAnalysis={(p) => {
-                      setAnalysisPeriod(p)
-                      setPage('analysis')
-                    }}
-                  />
-                ) : child && page === 'analysis' && session.role === 'PARENT' ? (
-                  <ParentAnalysis
-                    key={`${child.id}:${analysisPeriod.from}:${analysisPeriod.to}`}
-                    child={child}
-                    period={analysisPeriod}
-                    onEvidence={evidence}
-                  />
+                ) : child && session.role === 'PARENT' && (page === 'report' || page === 'analysis') ? (
+                  <Navigate to={'/parent/' + page + '?' + new URLSearchParams({ childId: child.id })} replace />
                 ) : (
                   <>
                     <div className="cj-feedbar">
@@ -826,11 +805,7 @@ export function ClassroomApp() {
           </Modal>
         )}
       </div>
-      <div className="cj-announcement" role="status">
-        {isDemo
-          ? '실제 아동 정보·음성·AI Hub 원본을 사용하지 않는 UX 검증용 예시입니다.'
-          : '인증 토큰은 메모리에만 보관합니다. 내부 서비스에는 브라우저가 직접 연결하지 않습니다.'}
-      </div>
+      {isDemo && <div className="cj-announcement" role="status">실제 아동 정보·음성·AI Hub 원본을 사용하지 않는 UX 검증용 예시입니다.</div>}
     </div>
   )
 }

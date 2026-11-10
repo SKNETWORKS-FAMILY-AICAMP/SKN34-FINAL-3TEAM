@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { parentApi } from '../../data/parent/api.ts'
 import { useParentDashboard, useParentQuery } from '../../data/parent/queries.ts'
 import type { Child, Metric, PublicAttempt } from '../../domain/classroom.ts'
@@ -24,11 +24,11 @@ const stateText = {
  * 학부모 대시보드 (FN-DSH-06~10, 학부모 대시보드 시안).
  * 숫자는 서버 Metric 그대로 쓰고, 표본이 적으면 비율을 만들지 않는다. 기록 없는 유형은 '미관찰'로 둔다.
  */
-export function ParentDashboard({ child, scope }: { child: Child; scope: Scope }) {
+export function ParentDashboard({ child, scope, canReadOriginals = false, sharingPending = false }: { child: Child; scope: Scope; canReadOriginals?: boolean; sharingPending?: boolean }) {
   const scopeKey = `${scope.childId}:${scope.from}:${scope.to}`
   const [selection, setSelection] = useState({ key: scopeKey, page: 0, record: null as string | null })
   const current = selection.key === scopeKey ? selection : { key: scopeKey, page: 0, record: null }
-  const q = useParentDashboard(scope, current.page)
+  const q = useParentDashboard(scope, current.page, canReadOriginals)
   const record = current.record
   const setRecord = (id: string | null) => setSelection({ ...current, record: id })
   const summary = q.summary.data && !q.summary.error ? q.summary.data : null
@@ -39,8 +39,8 @@ export function ParentDashboard({ child, scope }: { child: Child; scope: Scope }
   return (
     <div className="pd">
       <header className="pd-head">
-        <span className="pd-eyebrow">대시보드 · 공책</span>
-        <h1>{child.nickname}의 학습 기록</h1>
+        <span className="pd-eyebrow">학습 현황</span>
+        <h1>{child.nickname}의 학습 현황</h1>
         <p className="pd-sub">
           {gradeLabel(child.grade)}
           {summary && ` · 실제 조회 기간 ${summary.period.from} ~ ${summary.period.to} (KST)`}
@@ -107,9 +107,7 @@ export function ParentDashboard({ child, scope }: { child: Child; scope: Scope }
                   )}
                   <span className="pd-links">
                     {t.missions.map((m) => (
-                      <button type="button" key={m.attemptId} onClick={() => setRecord(m.attemptId)}>
-                        {m.title}
-                      </button>
+                      <span key={m.attemptId}>{canReadOriginals ? <button type="button" onClick={() => setRecord(m.attemptId)}>{m.title}</button> : m.title}</span>
                     ))}
                   </span>
                 </li>
@@ -122,11 +120,15 @@ export function ParentDashboard({ child, scope }: { child: Child; scope: Scope }
 
       <section aria-labelledby="rec-h" className="pd-card">
         <div className="pd-card-head">
-          <h2 id="rec-h">학습 기록</h2>
+          <h2 id="rec-h">답변 원문</h2>
           <span>{summary?.inclusionRule}</span>
         </div>
-        <QueryFeedback query={q.records} />
-        {q.records.data && !q.records.error && (
+        {canReadOriginals ? <QueryFeedback query={q.records} /> : <div className="parent-private-records" role="note">
+          <h3>{sharingPending ? '공개 설정 확인 중' : '답변 원문은 아이가 비공개로 두었어요'}</h3>
+          <p>학습 횟수와 생각 활동, 리포트 수치, 포인트는 계속 확인할 수 있습니다. 원문 공개 여부는 아이가 직접 정합니다.</p>
+          <Link className="cj-secondary" to={`/parent/report?childId=${encodeURIComponent(child.id)}`}>리포트 수치 보기</Link>
+        </div>}
+        {canReadOriginals && q.records.data && !q.records.error && (
           <>
             {q.records.data.state === 'FAILED' || q.records.data.state === 'PROCESSING' ? (
               <p role="status">{stateText[q.records.data.state]} · 다시 조회해 주세요.</p>
@@ -172,7 +174,7 @@ export function ParentDashboard({ child, scope }: { child: Child; scope: Scope }
           </>
         )}
       </section>
-      {record && (
+      {canReadOriginals && record && (
         <Modal title="학습 기록 원문" onClose={() => setRecord(null)}>
           <RecordDetail scope={scope} id={record} />
         </Modal>
@@ -269,7 +271,7 @@ function ReportCard({ child }: { child: Child }) {
           리포트 열기
         </button>
         <button type="button" className="cj-secondary" onClick={() => go('/parent/analysis')}>
-          기록에 물어보기
+          AI 챗봇으로 질문하기
         </button>
       </div>
     </section>

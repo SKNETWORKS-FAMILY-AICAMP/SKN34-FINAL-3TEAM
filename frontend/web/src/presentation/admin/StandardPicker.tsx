@@ -10,13 +10,14 @@ import { QueryFeedback } from '../common/Workspace.tsx'
  * 성취기준 표에서 고르기·성취기준별 성취수준 단계 (FN 1.5·FN-ADM-21, #356).
  * 표는 읽기 전용, 고른 코드 배열과 {코드: 단계}를 함께 돌려줌. 바깥 form 안에 들어가므로 form을 만들지 않음
  */
-export function StandardPicker({ codes, levels, gradeMin, gradeMax, subject, onChange }: {
+export function StandardPicker({ codes, levels, gradeMin, gradeMax, subject, onChange, showLevels = true }: {
   codes: string[]
   levels: Record<string, string>
   gradeMin: number
   gradeMax: number
   subject: string
   onChange: (codes: string[], levels: Record<string, string>, rows: Record<string, AchievementStandard>) => void
+  showLevels?: boolean
 }) {
   const saved = useStandardsByCodes(codes),
     [picked, setPicked] = useState<Record<string, AchievementStandard>>({}),
@@ -43,7 +44,7 @@ export function StandardPicker({ codes, levels, gradeMin, gradeMax, subject, onC
   const rows = search.error ? [] : search.data?.items ?? []
   return (
     <fieldset className="ws-form" aria-label="성취기준 고르기">
-      <legend>성취기준·성취수준</legend>
+      <legend>{showLevels ? '성취기준·성취수준' : '성취기준'}</legend>
       {!codes.length && <p>성취기준 표에서 1개 이상 고르세요.</p>}
       <ul aria-label="고른 성취기준">
         {codes.map((code) => {
@@ -53,7 +54,7 @@ export function StandardPicker({ codes, levels, gradeMin, gradeMax, subject, onC
               <strong>{code}</strong>{' '}
               {s ? `${s.gradeBand} · ${s.subject} · ${s.area} · ${s.statement}`
                 : saved.isFetching ? '표에서 확인 중' : '성취기준 표에 없는 코드입니다. 빼고 표에서 다시 고르세요.'}
-              {s && (
+              {s && showLevels && (
                 <label>
                   성취수준 단계
                   <select aria-label={`성취수준 ${code}`} value={levels[code] ?? ''} onChange={(e) => level(code, e.target.value)}>

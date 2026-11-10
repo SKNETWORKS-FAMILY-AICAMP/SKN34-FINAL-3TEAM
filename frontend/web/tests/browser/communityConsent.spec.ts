@@ -10,6 +10,7 @@ async function parentLogin(page: Page) {
   await page.goto('/login')
   await page.getByRole('button', { name: '시연 계정으로 로그인', exact: true }).click()
   await expect(page).toHaveURL(/\/parent\/journal/)
+  await expect(page.getByLabel('자녀 선택')).not.toHaveValue('')
 }
 
 async function studentLogin(page: Page) {
@@ -29,7 +30,7 @@ test('동의 없음: 친구 공개 선택지 옆에 보호자 동의가 필요�
   const section = page.getByRole('region', { name: '친구들에게 내 답 보여 주기' })
   await expect(friendsOption(page)).toBeDisabled()
   await expect(section.getByText('· 보호자 동의가 필요해요')).toBeVisible()
-  await expect(section.getByRole('note')).toContainText('정보 관리 › 동의 이력·철회 › 풀이 공유 커뮤니티')
+  await expect(section.getByRole('note')).toContainText('계정·자녀 설정 › 공개·동의 › 풀이 공유 커뮤니티')
   await expect(friendsOption(page)).toHaveAttribute('aria-describedby', 'community-consent-note')
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 })
@@ -58,7 +59,10 @@ test('동의 후 공개 켜기: 대시보드 링크로 동의하고 자녀 화�
 
 test('재동의 대상: 커뮤니티 동의 영역을 숨기지 않고 법정대리인 동의를 먼저 안내한다', async ({ page }) => {
   await parentLogin(page)
-  await page.getByRole('link', { name: '정보 관리', exact: true }).click()
+  const menu = page.getByRole('button', { name: '학부모 메뉴 열기' })
+  if (await menu.isVisible()) await menu.click()
+  await page.getByRole('link', { name: '계정·자녀 설정', exact: true }).filter({ visible: true }).click()
+  await page.getByRole('tab', { name: '공개·동의', exact: true }).click()
   await expect(page).toHaveURL(/\/parent\/settings/)
   const consent = page.locator('#community-consent')
   await expect(consent.getByRole('button', { name: '커뮤니티 이용에 동의' })).toBeVisible()

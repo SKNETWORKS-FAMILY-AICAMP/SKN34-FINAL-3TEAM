@@ -51,7 +51,7 @@ export const retentionApi = {
 
   // 커뮤니티 (2.9)
   communitySettings: async (signal?: AbortSignal): Promise<CommunitySettings> =>
-    readCommunitySettings(await apiFetch<unknown>('/students/me/community-settings', { signal })),
+    readCommunitySettings(await apiFetch<unknown>('/students/me/community-settings', { signal, cache: 'no-store' })),
   saveCommunitySettings: async (enabled: boolean): Promise<CommunitySettings> =>
     readCommunitySettings(await apiFetch<unknown>('/students/me/community-settings', json({ enabled }, 'PUT'))),
   missionPosts: async (missionId: string, seed: string, signal?: AbortSignal): Promise<CommunityPost[]> =>

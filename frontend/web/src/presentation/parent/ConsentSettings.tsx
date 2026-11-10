@@ -31,7 +31,7 @@ export function ConsentSettings({ child }: { child?: Child }) {
     <h2>동의 이력·철회</h2>
     <p>필수 동의 철회 시 계정 또는 해당 자녀의 이용이 제한됩니다. 삭제·탈퇴는 별도 요청이며 이 화면에서 실행하지 않습니다.</p>
     <QueryFeedback query={history} />
-    {history.data?.items.map((entry) => <article key={entry.consentId}>
+    {history.data?.items.filter(entry => !entry.studentId || entry.studentId === child?.id).map((entry) => <article key={entry.consentId}>
       <p>{entry.document.title} · v{entry.document.version} · {entry.studentId ? `자녀 ${entry.studentId === child?.id ? child.nickname : entry.studentId}` : '계정'} · {entry.status === 'WITHDRAWN' ? '철회/거부' : '동의'}</p>
       <p>기록 시점 {entry.agreedAt}{entry.withdrawnAt && ` · 철회 ${entry.withdrawnAt}`}</p>
       {entry.agreed && entry.status === 'AGREED' && <button className="cj-secondary" disabled={withdraw.isPending} onClick={() => {
@@ -63,13 +63,14 @@ function CommunityConsent({ child }: { child: Child }) {
   const documents = useParentQuery(['consents'], (signal) => parentApi.documents(signal))
   const save = useParentMutation(parentApi.saveConsents), withdraw = useParentMutation(parentApi.withdrawConsent)
   const doc = documents.data?.items.find((d) => d.kind === 'COMMUNITY')
-  const current = history.data?.items.find((e) => e.document.kind === 'COMMUNITY' && e.studentId === child.id)
+  const current = history.data?.items.find((e) => e.document.kind === 'COMMUNITY' && e.studentId === child.id && e.document.documentId === doc?.documentId && e.document.version === doc?.version)
   const agreed = !!current && current.agreed && current.status === 'AGREED'
   const blocked = !!child.guardianConsentRequired
   const ref = useRef<HTMLElement>(null), { hash } = useLocation()
   // 대시보드의 "커뮤니티 동의하기"(#433)로 들어오면 이 영역을 바로 보여 준다.
   useEffect(() => { if (hash === `#${COMMUNITY_CONSENT_ANCHOR}`) ref.current?.scrollIntoView?.({ block: 'start' }) }, [hash])
   return <section id={COMMUNITY_CONSENT_ANCHOR} ref={ref} aria-labelledby="community-consent-h">
+    <QueryFeedback query={history} />
     <h3 id="community-consent-h">{child.nickname} 풀이 공유 커뮤니티 (선택)</h3>
     {blocked && <p role="note">법정대리인 동의를 먼저 마쳐 주세요. 위의 법정대리인 재동의를 저장하면 커뮤니티 동의를 할 수 있습니다.</p>}
     {!blocked && <QueryFeedback query={documents} />}
@@ -82,7 +83,7 @@ function CommunityConsent({ child }: { child: Child }) {
           커뮤니티 동의 철회
         </button>
       ) : (
-        <button className="cj-secondary" disabled={save.isPending} onClick={() => {
+        <button className="cj-secondary" disabled={save.isPending || history.isPending || !!history.error} onClick={() => {
           void save.mutateAsync({ childId: child.id, consents: [{ documentId: doc.documentId, version: doc.version, agreed: true }] }).catch(() => {})
         }}>
           커뮤니티 이용에 동의

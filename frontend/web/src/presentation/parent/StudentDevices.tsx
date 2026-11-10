@@ -7,6 +7,7 @@ import { useSession } from '../auth/sessionContext.ts'
 import { PasswordRecheck } from '../service/PasswordRecheck.tsx'
 import { qrDemoEnabled, useDeviceAdmin, useGuardianPassword, usePairingOrigins, useStudentDevices } from '../../data/studentDevice/queries.ts'
 import type { Child } from '../../domain/classroom.ts'
+import { gradeLabel } from '../../domain/grade.ts'
 import {
   PIN_MAX,
   deviceExpired,
@@ -205,7 +206,7 @@ function ChildPin({ child }: { child: Child }) {
       }}
     >
       <h3>
-        {child.nickname} <small>· 초{child.grade}</small>
+        {child.nickname} <small>· {gradeLabel(child.grade)}</small>
       </h3>
       <p>
         현재 상태: <strong data-pin-state={state}>{status}</strong>
@@ -320,7 +321,7 @@ function PairingIssue({ items }: { items: Child[] }) {
                   setPicked((p) => (e.target.checked ? [...p, c.id] : p.filter((id) => id !== c.id)))
                 }
               />
-              {c.nickname} · 초{c.grade}
+              {c.nickname} · {gradeLabel(c.grade)}
             </label>
           ))}
         </fieldset>

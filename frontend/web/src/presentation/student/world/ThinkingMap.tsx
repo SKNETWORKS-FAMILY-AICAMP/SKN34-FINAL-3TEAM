@@ -3,6 +3,7 @@ import { Palette } from 'lucide-react'
 import { useStudentHome } from '../../../data/classroom/useClassroom.ts'
 import type { Child, Mission, ThinkingType } from '../../../domain/classroom.ts'
 import { thinkingLabels } from '../../../domain/classroom.ts'
+import { gradeLabel } from '../../../domain/grade.ts'
 import { companionLabel, islands, thinkingHue, todayMission } from '../../../domain/studentLook.ts'
 import { ErrorNotice, Modal } from '../../shared/ClassroomParts.tsx'
 import { Customize } from './Customize.tsx'
@@ -102,7 +103,7 @@ export function ThinkingMap({
               ) : today ? (
                 <>
                   <p className="st-kicker">
-                    오늘의 미션 · {thinkingLabels[today.thinkingType]} · 초{child.grade}
+                    오늘의 미션 · {thinkingLabels[today.thinkingType]} · {gradeLabel(child.grade)}
                   </p>
                   <h2 id="today-h">{today.title}</h2>
                   <p className="st-meta">{today.subject} · 10분이면 충분해요.</p>

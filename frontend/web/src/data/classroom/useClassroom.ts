@@ -22,9 +22,13 @@ const gateway = createApiGateway()
 let restoration: ReturnType<typeof gateway.restore> | undefined
 export function restoreSession(fresh = false) {
   if (fresh) restoration = undefined
-  return (restoration ??= gateway.restore().catch((error) => {
-    throw error
-  }))
+  if (!restoration) {
+    const pending = gateway.restore().finally(() => {
+      if (restoration === pending) restoration = undefined
+    })
+    restoration = pending
+  }
+  return restoration
 }
 export const isDemo = typeof import.meta.env !== 'undefined' && import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true'
 export const displayPeriods = calendarPeriods(

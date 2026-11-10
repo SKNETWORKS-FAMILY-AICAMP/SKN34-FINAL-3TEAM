@@ -6,17 +6,19 @@ export const API_BASE = '/api/v1'
 let accessToken: string | null = null
 let refreshInFlight: Promise<void> | null = null
 let tokenRevision = 0
+let authGeneration = 0
 let accessRole: 'PARENT' | 'STUDENT' | 'ADMIN' | undefined
 let studentMode = false
 const parentLoginKey = 'sagomungchi:parent-login-required'
 let parentLoginPending = false
 export function parentLoginRequired() {
-  return parentLoginPending || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(parentLoginKey) === 'true')
+  try { return parentLoginPending || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(parentLoginKey) === 'true') }
+  catch { return parentLoginPending }
 }
 export function requireParentLogin() {
   setAccessToken(null)
   parentLoginPending = true
-  if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(parentLoginKey, 'true')
+  try { if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(parentLoginKey, 'true') } catch { /* 탭 메모리의 복귀 표시는 유지한다. */ }
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('sagomungchi:parent-login-required'))
 }
 // 동석 학생 진입으로 학부모 세션이 잠긴 탭 표시. 값은 여부뿐이며 토큰은 저장하지 않는다 (FN-ACC-05).
@@ -41,13 +43,17 @@ export function studentAuthenticationRequired() {
 }
 
 export function setAccessToken(token: string | null, role?: 'PARENT' | 'STUDENT' | 'ADMIN') {
+  authGeneration++
+  assignAccessToken(token, role)
+}
+function assignAccessToken(token: string | null, role?: 'PARENT' | 'STUDENT' | 'ADMIN') {
   accessRole = token ? role ?? accessRole : undefined
   studentMode = accessRole === 'STUDENT'
   accessToken = token
   tokenRevision++
   if (token && (accessRole === 'PARENT' || accessRole === 'ADMIN')) {
     parentLoginPending = false
-    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(parentLoginKey)
+    try { if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(parentLoginKey) } catch { /* 저장소 제한으로 정상 로그인을 실패시키지 않는다. */ }
     markParentSessionLocked(false)
   }
 }
@@ -64,10 +70,14 @@ export async function withAuthLock<T>(action: () => Promise<T>): Promise<T> {
 }
 let channel: BroadcastChannel | undefined
 function authChannel() {
-  if (typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined')
-    return (channel ??= new BroadcastChannel('sagomungchi-auth'))
+  try {
+    if (typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined')
+      return (channel ??= new BroadcastChannel('sagomungchi-auth'))
+  } catch { /* 탭 알림이 차단되어도 서버의 세션 검증은 유지된다. */ }
 }
-export function notifyAuthChange(mode: 'PARENT' | 'STUDENT' | 'ADMIN' | 'LOGOUT' = 'PARENT') { authChannel()?.postMessage(mode) }
+export function notifyAuthChange(mode: 'PARENT' | 'STUDENT' | 'ADMIN' | 'LOGOUT' = 'PARENT') {
+  try { authChannel()?.postMessage(mode) } catch { /* 다른 탭 알림 실패를 현재 로그인 실패로 바꾸지 않는다. */ }
+}
 export function watchAuthChange(listener: (mode: string) => void) {
   const target = authChannel()
   const handler = (event: MessageEvent) => {
@@ -99,17 +109,20 @@ export async function refreshAccessToken() {
         !data ||
         typeof data !== 'object' ||
         !('accessToken' in data) ||
-        typeof data.accessToken !== 'string'
+        typeof data.accessToken !== 'string' || !data.accessToken
       )
-        throw new Error('토큰 재발급 응답을 확인하지 못했습니다.')
+        throw new ApiError({ status: 502, code: 'AUTH_RESPONSE_INVALID', title: '로그인 확인 응답을 읽지 못했습니다. 다시 확인해 주세요.', retryable: true })
       // 로그아웃/다른 로그인과 경합한 늦은 refresh 응답은 기존 세션을 되살리지 않는다.
-      if (revision !== tokenRevision) throw new Error('인증 상태가 변경되었습니다.')
-      if ('role' in data && data.role === 'STUDENT') throw new Error('학생 refresh 발급은 허용되지 않습니다.')
+      if (revision !== tokenRevision) throw authChanged()
+      if ('role' in data && data.role === 'STUDENT') throw new ApiError({ status: 502, code: 'AUTH_RESPONSE_INVALID', title: '로그인 확인 응답이 올바르지 않습니다.', retryable: false })
       const role = 'role' in data && data.role === 'ADMIN' ? 'ADMIN' : 'PARENT'
-      setAccessToken(data.accessToken, role)
+      assignAccessToken(data.accessToken, role)
     })
       .catch((error) => {
-        if (error instanceof ApiError && error.problem.status >= 500) throw error
+        // 연결·서버·응답 오류는 세션 만료의 증거가 아니다. 다음 확인에서 다시 시도한다.
+        if (!(error instanceof ApiError)) throw new ApiError({ status: 503, code: 'AUTH_UNAVAILABLE', title: '로그인 상태를 확인하지 못했습니다. 연결을 확인한 뒤 다시 시도해 주세요.', retryable: true })
+        if (error.problem.status !== 401) throw error
+        if (error.problem.code === 'SESSION_CHANGED' || revision !== tokenRevision) throw authChanged()
         if (error instanceof ApiError && error.problem.code === 'PARENT_SESSION_LOCKED') markParentSessionLocked(true)
         if (revision === tokenRevision) {
           setAccessToken(null)
@@ -161,20 +174,27 @@ export async function waitForPendingRefresh() {
 
 /** JSON·SSE가 공유하는 인증 요청. 만료 시 refresh 1회 공유, 원 요청은 한 번만 재시도한다. */
 export async function apiRequest(path: string, init: RequestInit = {}): Promise<Response> {
+  const generation = authGeneration
+  let sentRevision = tokenRevision
   const send = () => {
-    const execute = () => fetch(API_BASE + path, { ...init, headers: withAuth(init.headers), credentials: 'same-origin' })
+    const execute = () => {
+      if (generation !== authGeneration) throw authChanged()
+      sentRevision = tokenRevision
+      return fetch(API_BASE + path, { ...init, headers: withAuth(init.headers), credentials: 'same-origin' })
+    }
     return ['/auth/logout', '/auth/student-sessions'].includes(path) ? withAuthLock(execute) : execute()
   }
-  const sentRevision = tokenRevision
   // 학생 기기·PIN 엔드포인트(API 명세 3.11)의 401은 로그인 단계 오류다. 학생 재로그인 처리로 바꾸지 않는다.
   const studentEntry = path.startsWith('/auth/student/')
   let response = await send()
+  if (generation !== authGeneration) throw authChanged()
   if (response.status === 401 && !studentEntry && !['/auth/refresh', '/auth/logout'].includes(path)) {
     const error = await toApiError(response.clone())
     if (error.problem.code === 'TOKEN_EXPIRED') {
       if (studentMode) throw studentAuthenticationRequired()
       if (sentRevision === tokenRevision) await refreshAccessToken()
       response = await send()
+      if (generation !== authGeneration) throw authChanged()
     }
   }
   if (!response.ok) {
@@ -196,6 +216,10 @@ export async function apiRequest(path: string, init: RequestInit = {}): Promise<
     throw error
   }
   return response
+}
+
+function authChanged() {
+  return new ApiError({ status: 401, code: 'SESSION_CHANGED', title: '로그인 상태가 변경되어 이전 요청을 중단했습니다. 현재 화면에서 다시 확인해 주세요.', retryable: false })
 }
 
 export function withAuth(headers: HeadersInit = {}): Headers {

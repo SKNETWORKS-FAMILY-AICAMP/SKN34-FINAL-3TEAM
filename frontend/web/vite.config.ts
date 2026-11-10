@@ -39,6 +39,8 @@ export default defineConfig(({ mode }) => {
     },
   ],
   server: {
+    // 검사에서 저장한 HTML은 앱 진입점이 아니다. 파일 생성으로 로그인 입력을 재로드하지 않는다.
+    watch: { ignored: ['**/test-results/**', '**/playwright-report/**', '**/.taste-skill/**'] },
     ...(paymentTest ? { host: '127.0.0.1', strictPort: true } : {}),
     // 공개 API는 core-service만 호출 (compose 실행 시 localhost:8080, CORE_HOST_PORT로 변경 가능)
     // kind(#236): CORE_PROXY_TARGET=http://127.0.0.1, CORE_PROXY_HOST=api.sagomungchi.local로 Ingress 호스트 규칙에 맞춤

@@ -44,6 +44,8 @@ test('#425 구독 해제·빈 challengeId·BroadcastChannel 미지원이면 자�
   subscribeReauthReturn('', () => { calls += 1 }, () => { opened += 1; return null })()
   assert.equal(opened, 0)
   assert.doesNotThrow(() => subscribeReauthReturn('challenge-d', () => { calls += 1 }, () => null)())
+  assert.doesNotThrow(() => subscribeReauthReturn('challenge-d', () => { calls += 1 }, () => { throw new DOMException('blocked', 'SecurityError') })())
+  assert.equal(calls, 0)
 })
 
 test('#425 재인증 화면은 채널을 구독하고 수동 완료 확인과 opener=null을 유지한다', () => {

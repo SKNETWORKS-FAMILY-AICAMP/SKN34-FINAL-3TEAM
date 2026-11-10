@@ -66,7 +66,7 @@ flowchart TD
   PJ -->|"자녀 추가 (최대 3명)"| CN["SC-03-002 자녀 등록<br/>/parent/children/new"]
   PJ -->|"이 자녀로 학습 시작"| ST(["학생 화면 (3.2)"])
 
-  PJ --> AN["SC-03-004 기록에 물어보기<br/>/parent/analysis"]
+  PJ --> AN["SC-03-004 AI 챗봇<br/>/parent/analysis"]
   AN -->|"질문 입력·예시 질문"| ANS["SC-03-005 답변<br/>(SSE 진행 표시)"]
   ANS -->|"근거 선택"| EV["SC-03-006 답변 근거<br/>미션·답변 시점·원문"]
   ANS -->|"후속 질문 (자녀·기간 유지)"| ANS
@@ -78,14 +78,14 @@ flowchart TD
   DR -->|"이 리포트로 물어보기 (프리미엄)"| ANS
   PJ -->|"자녀 커뮤니티·포인트"| PCM["자녀 공유물·받은 반응·포인트<br/>/parent/journal (대시보드 아래)"]
 
-  PJ --> SET["SC-03-009 정보 관리<br/>/parent/settings (동의 확인·철회)"]
+  PJ --> SET["SC-03-009 계정·자녀 설정<br/>/parent/settings (프로필·공개/동의·계정 관리)"]
   PJ --> DEV["SC-03-010 자녀 기기·PIN<br/>/parent/devices"]
   DEV -->|"기기 추가"| QR["SC-03-011 등록 코드·QR<br/>10분·1회용"]
   DEV -->|"PIN 설정·잠금 해제·기기 해제"| DEV
 
   DEV -->|"보호자 비밀번호 설정·변경 (본인 재확인)"| DEV
 
-  PJ --> ACC["SC-03-016 계정·자녀 관리<br/>/parent/account"]
+  SET --> ACC["SC-03-016 계정 관리 탭<br/>/parent/settings?section=account"]
   ACC -->|"연결 해제·삭제·탈퇴 (본인 재확인)"| WD["탈퇴 접수 결과<br/>/withdrawal-status"]
   ACC -->|"탈퇴 전 자녀 이관 (#289)"| TR["자녀 이관<br/>/parent/transfers"]
   TR -->|"받는 학부모 이메일 확인 → 본인 재확인 → 요청"| TRP["이관 대기 (보낸·받은 요청, 5초 갱신)"]
@@ -175,6 +175,8 @@ flowchart LR
   subgraph CON["CONTENT"]
     MI["SC-04-008 미션 관리<br/>/admin/missions"] --> ME["SC-04-009 미션 작성·검토<br/>/admin/missions?missionId="]
     WT["주간 테마 관리<br/>/admin/themes"]
+    TD["테마 초안 요청·상태<br/>/admin/theme-drafts"] -.->|"상세 계약 확정 후 연결: 채택"| WT
+    TD -.->|"채택 후 연결 예정: 요일별 미션"| ME
     LI["꾸미기 아이템<br/>/admin/looks"]
   end
   subgraph PAY["PAYMENT_VIEW · PAYMENT_REFUND"]
@@ -188,6 +190,8 @@ flowchart LR
 
 - 승인 권한이 없는 메뉴는 표시하지 않음. 공통(운영 현황·감사 이력)만 모든 관리자에게 노출
 - 커뮤니티 공유물 신고는 SC-04-003 오류 신고에서 대상 `COMMUNITY_POST`로 검토(신고 시 숨김 → 다시 공개·계속 숨김). 주간 테마는 미션과 같은 작성→검토→게시
+- #441 목표 흐름: CONTENT 운영자는 학년군·적용 주·선택 주제/유형별 성취기준·입력 방식으로 초안을 요청한다. 출처·상태로 목록을 고르고, 이야기·그림·요일별 문제·실패 사유를 확인한다. 채택은 게시가 아니며 미션 5개와 테마의 검토·게시를 각각 진행한다. 버리기·다시 생성은 서버가 확정한 상태와 식별자를 따른다. 503·연결 장애 후 쓰기를 자동 재요청하지 않는다.
+- develop `f6db19da` 기준 #438의 상세 DTO·#440 움직임 재생기는 미구현이다. core #439가 보장하는 `draftId`·`status`·채택 `themeId`와 공개 경로를 먼저 소비한다. 요청·목록·상태 확인을 먼저 연결하며 상세 미리보기·생성 상태 전이·움직임 목업은 추가하지 않는다. 움직임 JSON을 임의 규칙으로 실행하지 않는다.
 
 ---
 
@@ -295,7 +299,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-  AN["SC-03-004 기록에 물어보기"] --> C{"선택 자녀 이용권"}
+  AN["SC-03-004 AI 챗봇"] --> C{"선택 자녀 이용권"}
   C -->|"무료"| N1["프리미엄 안내, 질문 전송 불가 (P13)"]
   C -->|"프리미엄"| Q["질문 전송"]
   Q --> R{"처리 결과"}
@@ -381,3 +385,5 @@ flowchart LR
 - 학부모 구독 결제·구독 관리(UC-17·UC-18, #184): `/parent/billing`(이용권·결제)에서 상품 선택 → 토스 결제위젯 결제 → `/payment/success`·`/payment/fail` 결과 확인, 같은 화면의 구독 관리에서 자동결제 수단 등록(`/payment/billing/success`·`/payment/billing/fail`)·자동 갱신 해지·철회·환불 요청. 테스트 키 환경만 사용(P14). 단계별 화면 흐름도는 미반영
 - 이용 동의 화면(`/parent/onboarding`)과 관리자 메뉴 큐·DLQ(`/admin/queues`)는 화면설계서 v2.1에 별도 화면 ID 없음
 - 2026-11-06 결정 화면(UC-29~34, #393~#395 구현): 이번 주 테마·되돌아보기·커뮤니티·자녀 커뮤니티·일일 리포트 상세·관리자 주간 테마·꾸미기 아이템은 화면설계서 v2.1에 없어 화면 ID 없이 이름·URL로 표시. URL은 웹 구현 기준(주간 테마·되돌아보기는 별도 페이지 없이 학생 홈 카드, 자녀 공유물·포인트는 학부모 대시보드 아래), 화면 ID는 화면설계서 개정 때 부여
+
+- #427 기존 `/parent/account` 주소는 자녀·기간 조건을 보존해 계정 관리 탭으로 연결한다. 이용 동의 전에도 이 탭의 탈퇴 절차는 접근할 수 있다. #426~#429 웹 기준은 [학부모 화면 사용성 기준](frontend-usability.md)을 따른다.

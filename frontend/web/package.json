@@ -13,6 +13,7 @@
     "test:types": "tsc -p tsconfig.tests.json --noEmit",
     "test:browser": "playwright test",
     "test:rewards": "playwright test -c playwright.reward.config.ts",
+    "test:auth": "playwright test -c playwright.auth.config.ts",
     "test:e2e": "playwright test -c playwright.e2e.config.ts",
     "preview": "vite preview",
     "test:models": "playwright test -c playwright.model.config.ts"

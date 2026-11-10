@@ -31,10 +31,10 @@ export function useParentMutation<T, V>(fn: (v: V) => Promise<T>) {
     },
   })
 }
-export function useParentDashboard(scope: Scope, page = 0) {
+export function useParentDashboard(scope: Scope, page = 0, recordsEnabled = true) {
   return {
     summary: useParentQuery(['summary', scope], (signal) => parentApi.summary(scope, signal)),
     thinking: useParentQuery(['thinking', scope], (signal) => parentApi.thinking(scope, signal)),
-    records: useParentQuery(['records', scope, page], (signal) => parentApi.records(scope, signal, page)),
+    records: useParentQuery(['records', scope, page], (signal) => parentApi.records(scope, signal, page), recordsEnabled),
   }
 }

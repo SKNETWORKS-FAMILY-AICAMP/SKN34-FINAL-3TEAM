@@ -6,7 +6,8 @@ async function login(page: Page, email: string) {
   await expect(page).toHaveURL(/\/parent\//)
 }
 async function openTransfers(page: Page) {
-  await page.getByRole('link', { name: '계정·자녀 관리', exact: true }).click()
+  await page.getByRole('link', { name: '계정·자녀 설정', exact: true }).click()
+  await page.getByRole('tab', { name: '계정 관리', exact: true }).click()
   await page.getByRole('link', { name: '자녀 이관 · 받은 요청 확인' }).click()
   await expect(page.getByRole('heading', { name: '자녀 이관', exact: true })).toBeVisible()
 }

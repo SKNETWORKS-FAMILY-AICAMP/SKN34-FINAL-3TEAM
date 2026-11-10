@@ -14,7 +14,8 @@ export function RoleLayout({ role }: { role: Role }) {
   if (!ready) return <p role="status">로그인 상태를 확인하고 있습니다.</p>
   if (!session) return <Navigate to={parentLoginRequired() ? '/login' : role === 'STUDENT' ? '/student/login' : loginPath} replace state={{ from: location.pathname + location.search }} />
   const transferInbox = location.pathname === '/parent/transfers'
-  if (session.role === 'PARENT' && session.nextAction && session.nextAction !== 'READY' && !transferInbox && location.pathname !== session.startPath && !['/parent/account','/parent/help','/parent/support','/parent/billing'].includes(location.pathname))
+  const accountSettings = location.pathname === '/parent/settings' && new URLSearchParams(location.search).get('section') === 'account'
+  if (session.role === 'PARENT' && session.nextAction && session.nextAction !== 'READY' && !transferInbox && !accountSettings && location.pathname !== session.startPath && !['/parent/account','/parent/help','/parent/support','/parent/billing'].includes(location.pathname))
     return <Navigate to={session.startPath ?? '/parent/onboarding'} replace />
   if (session.role !== role) return <Navigate to={roleStart(session.role)} replace />
   return (

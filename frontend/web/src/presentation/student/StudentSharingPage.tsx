@@ -1,9 +1,10 @@
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { sharingApi } from '../../data/classroom/sharingApi.ts'
 import { useCommunitySettings, useSaveCommunitySettings } from '../../data/retention/queries.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import type { Child } from '../../domain/classroom.ts'
-import { ErrorNotice } from '../shared/ClassroomParts.tsx'
+import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import './learning-settings.css'
 
 export function StudentSharingPage({ child }: { child: Child }) {
@@ -40,6 +41,7 @@ export function StudentSharingPage({ child }: { child: Child }) {
  * 켠 뒤 마무리한 미션의 마지막 답만 자동으로 공유되고, 끄면 바로 비공개가 된다.
  */
 function CommunitySharing({ child }: { child: Child }) {
+  const [guide, setGuide] = useState(false)
   const query = useCommunitySettings(child.id)
   const save = useSaveCommunitySettings(child.id)
   const value = query.error ? undefined : query.data
@@ -54,7 +56,7 @@ function CommunitySharing({ child }: { child: Child }) {
       <legend>친구 공개</legend>
       <label><input type="radio" name="community" checked={!enabled} onChange={() => save.mutate(false)} />나만 볼게요</label>
       <label>
-        <input type="radio" name="community" checked={!!enabled} disabled={!value.consentGranted}
+        <input type="radio" name="community" aria-label="친구들에게 보여 줄게요" checked={!!enabled} disabled={!value.consentGranted}
           aria-describedby={value.consentGranted ? undefined : 'community-consent-note'} onChange={() => save.mutate(true)} />
         친구들에게 보여 줄게요
         {!value.consentGranted && <strong className="st-badge"> · 보호자 동의가 필요해요</strong>}
@@ -62,10 +64,16 @@ function CommunitySharing({ child }: { child: Child }) {
     </fieldset>}
     {value && !value.consentGranted && <div className="st-consent-note" id="community-consent-note" role="note">
       <p><strong>아직 켤 수 없어요. 학부모님 동의가 먼저 필요해요.</strong></p>
-      <p>학부모님이 학부모 화면의 정보 관리 › 동의 이력·철회 › 풀이 공유 커뮤니티에서 동의해 주시면 켤 수 있어요.</p>
+      <p>학부모님이 계정·자녀 설정 › 공개·동의 › 풀이 공유 커뮤니티에서 동의해 주시면 켤 수 있어요.</p>
       <p className="st-meta">동의를 받은 뒤 이 화면으로 돌아오면 자동으로 다시 확인해요.</p>
     </div>}
     {needsConsent ? <p role="alert">학부모님 동의가 아직 없어서 켜지 못했어요.</p> : <ErrorNotice error={save.error} />}
+    {value && <p role="status">{save.isPending ? '친구 공개 설정을 저장하고 있어요.' : `친구 공개 ${value.enabled && value.consentGranted ? '켜짐' : '꺼짐'}`}</p>}
+    <div className="st-sharing-actions">
+      {value && !value.consentGranted && <button type="button" className="st-button" onClick={() => setGuide(true)}>보호자 동의 방법 보기</button>}
+      <button type="button" className="st-button" disabled={query.isFetching || save.isPending} onClick={() => void query.refetch()}>동의 상태 다시 확인</button>
+    </div>
     <p>끄면 이미 나눈 답도 바로 안 보이게 돼요. 다시 켜면 다시 보여요.</p>
+    {guide && <Modal title="친구 공개를 켜려면" onClose={() => setGuide(false)}><ol><li>학부모님이 학부모 화면에 로그인해요.</li><li>계정·자녀 설정 → 공개·동의에서 커뮤니티 이용에 동의해요.</li><li>이 화면으로 돌아와 동의 상태 다시 확인을 눌러 주세요.</li><li>친구들에게 보여 줄게요를 직접 골라 주세요.</li></ol><p>보호자가 동의해도 내 답이 바로 공개되지는 않아요. 마지막 선택은 내가 해요.</p><button type="button" className="st-button" onClick={() => setGuide(false)}>알겠어요</button></Modal>}
   </section>
 }

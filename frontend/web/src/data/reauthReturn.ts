@@ -16,7 +16,9 @@ export function subscribeReauthReturn(
   open: (name: string) => ChannelLike | null = (name) => (typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(name)),
 ): () => void {
   if (!challengeId) return () => {}
-  const channel = open(REAUTH_CHANNEL)
+  let channel: ChannelLike | null
+  // 브라우저 정책으로 채널 생성이 막혀도 수동 완료 확인은 사용할 수 있어야 한다.
+  try { channel = open(REAUTH_CHANNEL) } catch { return () => {} }
   if (!channel) return () => {}
   let closed = false
   const close = () => { if (!closed) { closed = true; channel.onmessage = null; channel.close() } }

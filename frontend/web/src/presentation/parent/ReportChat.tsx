@@ -11,7 +11,7 @@ interface Turn {
 }
 
 /**
- * 리포트 상세의 "이 리포트로 물어보기" (P25, API 명세 2.4). 분석 대화 API를 그대로 쓴다.
+ * 리포트 상세의 "이 리포트로 AI에게 질문하기" (P25, API 명세 2.4). 분석 대화 API를 그대로 쓴다.
  * - 일일 리포트(reportId): 서버가 그 리포트의 자녀·대상일·판으로 대화를 고정한다. 다른 날 질문은 새 대화로 안내된다.
  * - 주간 리포트: 리포트 기간으로 대화를 만든다.
  * 프리미엄 전용이고 분석 대화 하루 한도를 함께 쓴다. 자녀·리포트가 바뀌면 부모가 key를 바꿔 새로 만든다.
@@ -83,14 +83,15 @@ export function ReportChat({
   if (child.plan === 'FREE')
     return (
       <p className="ws-card">
-        이 리포트로 물어보기는 프리미엄 기능입니다. 무료 플랜에서도 리포트 내용은 그대로 확인할 수 있습니다.
+        이 리포트로 AI에게 질문하기는 프리미엄 기능입니다. 무료 플랜에서도 리포트 내용은 그대로 확인할 수 있습니다.
       </p>
     )
   const pending = state.phase === 'RUNNING'
   const fixedDay = reportId && scope.from === scope.to ? scope.from : null
   return (
-    <section className="ws-card ws-report-chat" aria-label="이 리포트로 물어보기">
-      <h2>이 리포트로 물어보기</h2>
+    <section className="ws-card ws-report-chat" aria-label="이 리포트로 AI에게 질문하기">
+      <h2>이 리포트로 AI에게 질문하기</h2>
+      <p>AI 챗봇에 이 리포트의 자녀와 기간을 연결해 질문합니다. 같은 대화 기능과 하루 이용 한도를 사용합니다.</p>
       <p>
         {fixedDay
           ? `${fixedDay} 하루 리포트와 그날 학습 기록으로만 답합니다. 다른 날은 그날 리포트에서 새로 물어봐 주세요.`
@@ -172,7 +173,7 @@ export function ReportChat({
               className="cj-secondary"
               onClick={() => onAnalysis({ from: scope.from, to: scope.to })}
             >
-              기록에 물어보기에서 이어 보기
+              AI 챗봇에서 이어 보기
             </button>
           )}
         </div>

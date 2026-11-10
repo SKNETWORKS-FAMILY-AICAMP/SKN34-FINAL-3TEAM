@@ -35,7 +35,7 @@ function GoogleRecheck({ purpose, childId, scope, onProof }: { purpose: ReauthPu
     void finish.mutateAsync(undefined).then(data=>{setProof({token:data.reauthToken,expiresAt:data.expiresAt});onProof(data.reauthToken);setNotice('재확인을 마쳤습니다. 선택한 작업만 한 번 실행할 수 있습니다.')}).catch(()=>{})
   }
   useReauthReturn(challenge,!!challenge&&!proof&&!finish.isPending,complete)
-  return <div className="ws-form"><button type="button" onClick={begin} disabled={start.isPending||finish.isPending}>Google 본인 확인</button>{challenge&&!proof&&<button type="button" disabled={finish.isPending} onClick={complete}>완료 확인</button>}<p role="status">{notice}</p><ErrorNotice error={start.error??finish.error}/></div>
+  return <div className="ws-form"><button type="button" onClick={begin} disabled={start.isPending||finish.isPending}>Google 본인 확인</button>{challenge&&!proof&&<button type="button" disabled={finish.isPending} onClick={complete}>완료 확인</button>}{notice && <p role="status">{notice}</p>}<ErrorNotice error={start.error??finish.error}/></div>
 }
 export function AccountLifecycle({ child }: { child: Child }) {
   const impact=useParentQuery(['deletion-impact',child.id],signal=>serviceApi.impact(child.id,signal))
@@ -47,7 +47,7 @@ export function AccountLifecycle({ child }: { child: Child }) {
     <label>요청할 작업<select value={choice} onChange={e=>{setChoice(e.target.value as typeof choice);setToken('');setConfirmed(false);setName('')}}><option value="UNLINK">보호자 연결 해제</option><option value="PROFILE">프로필과 학습 기록 삭제</option><option value="RECORDS">학습 기록 삭제 (프로필 유지)</option></select></label>
     <IdentityRecheck key={choice+child.id} purpose={choice==='UNLINK'?'CHILD_UNLINK':'CHILD_DELETE'} childId={child.id} scope={choice==='UNLINK'?undefined:choice} onProof={setToken}/>
     <label>확인할 자녀 별명<input value={name} onChange={e=>setName(e.target.value)}/></label><label className="ws-check"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/>대상 자녀와 위의 처리 범위를 확인했습니다.</label>
-    <button disabled={!impact.data||!token||!confirmed||name!==child.nickname||action.isPending} onClick={()=>void action.mutateAsync(undefined).then(r=>{setResult(r);setToken('');setConfirmed(false);setNotice(r?'삭제 요청을 접수했습니다. 서비스별 처리 상태를 확인해 주세요.':'연결 해제를 확인했습니다.')}).catch(()=>{})}>선택한 작업 요청</button><ErrorNotice error={action.error}/><p role="status">{notice}</p>
+    <button disabled={!impact.data||!token||!confirmed||name!==child.nickname||action.isPending} onClick={()=>void action.mutateAsync(undefined).then(r=>{setResult(r);setToken('');setConfirmed(false);setNotice(r?'삭제 요청을 접수했습니다. 서비스별 처리 상태를 확인해 주세요.':'연결 해제를 확인했습니다.')}).catch(()=>{})}>선택한 작업 요청</button><ErrorNotice error={action.error}/>{notice && <p role="status">{notice}</p>}
     {result&&<div><p>요청 {result.deletionRequestId} · {result.status}</p><p>완료한 서비스: {result.completedServices.join(', ')||'없음'}</p><button disabled={check.isPending} onClick={()=>void check.mutateAsync(undefined).then(setResult).catch(()=>{})}>삭제 처리 상태 확인</button><ErrorNotice error={check.error}/></div>}
   </section></div>
 }

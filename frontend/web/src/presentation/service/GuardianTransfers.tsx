@@ -43,7 +43,7 @@ export function GuardianTransfers() {
   }
   return <Workspace title="자녀 이관" nav={[{ path: '/parent/journal', label: '대시보드·공책' }, { path: '/parent/transfers', label: '자녀 이관' }]}><div className="svc-page ws-stack transfer-page"><h1>자녀 이관</h1>
     <p>{canTransfer ? '가입에 사용한 이메일로 요청을 보내고, 상대방이 수락하면 자녀가 연결됩니다.' : '지금은 기존 이관 요청의 확인·취소·거절만 할 수 있습니다. 취소만으로 탈퇴하거나 자녀가 삭제되지는 않습니다.'}</p>
-    <nav><Link to="/parent/account">계정·탈퇴 관리</Link> · <Link to="/parent/children/new">자녀 등록</Link></nav>
+    <nav><Link to="/parent/settings?section=account">계정 관리</Link> · <Link to="/parent/children/new">자녀 등록</Link></nav>
     {canTransfer && <section className="ws-card ws-form"><h2>이관 요청 보내기</h2><QueryFeedback query={children}/>
       {child ? <>
         <label>이관할 자녀<select value={child.id} onChange={e => { setChildId(e.target.value); setRecipient(null); setToken('') }}>{children.data?.items.map(c => <option key={c.id} value={c.id}>{c.nickname}</option>)}</select></label>

@@ -954,7 +954,7 @@
     "status": "이번 화면 보완 (연동 별도)",
     "note": "최신 API에 맞춘 화면/어댑터를 추가했습니다. 지원·도움말 일부는 개발 전용 메모리 목업이며 실제 서버 완료와 구분합니다.",
     "evidence": "src/presentation/service/AccountPage.tsx, AccountLifecycle.tsx, Withdrawal.tsx",
-    "path": "/parent/account"
+    "path": "/parent/settings?section=account"
   },
   {
     "row": 91,
@@ -965,7 +965,7 @@
     "status": "이번 화면 보완 (연동 별도)",
     "note": "최신 API에 맞춘 화면/어댑터를 추가했습니다. 지원·도움말 일부는 개발 전용 메모리 목업이며 실제 서버 완료와 구분합니다.",
     "evidence": "src/presentation/service/AccountPage.tsx, AccountLifecycle.tsx, Withdrawal.tsx",
-    "path": "/parent/account"
+    "path": "/parent/settings?section=account"
   },
   {
     "row": 92,
@@ -1273,7 +1273,7 @@
     "status": "이번 화면 보완 (연동 별도)",
     "note": "최신 API에 맞춘 화면/어댑터를 추가했습니다. 지원·도움말 일부는 개발 전용 메모리 목업이며 실제 서버 완료와 구분합니다.",
     "evidence": "src/presentation/service/AccountPage.tsx, AccountLifecycle.tsx, Withdrawal.tsx",
-    "path": "/parent/account"
+    "path": "/parent/settings?section=account"
   },
   {
     "row": 120,
@@ -1284,7 +1284,7 @@
     "status": "이번 화면 보완 (연동 별도)",
     "note": "최신 API에 맞춘 화면/어댑터를 추가했습니다. 지원·도움말 일부는 개발 전용 메모리 목업이며 실제 서버 완료와 구분합니다.",
     "evidence": "src/presentation/service/AccountPage.tsx, AccountLifecycle.tsx, Withdrawal.tsx",
-    "path": "/parent/account"
+    "path": "/parent/settings?section=account"
   },
   {
     "row": 121,
@@ -1645,7 +1645,7 @@
     "name": "리포트 파일 다운로드",
     "description": "학부모는 권한이 있는 자녀의 리포트를 파일로 내려받을 수 있어야 한다. 대상 자녀·기간·수치 근거를 포함하고 다운로드 시 권한을 확인한다. 초안의 Markdown 제공과 PDF 예정은 검토 기준으로 두어 형식별 제공 범위와 시점을 P06에서 정한다.",
     "status": "기존 화면 구현",
-    "note": "ParentReports.tsx에서 API 권한 확인 후 다운로드 URL·만료를 확인합니다. 기존 ParentFeatures 안내와 구분합니다.",
+    "note": "ParentReports.tsx에서 API 권한 확인 후 다운로드 URL·만료를 확인합니다. 예전 리포트 화면은 제거하고 설정·리포트 경로를 통합했습니다.",
     "evidence": "src/presentation/parent/ParentReports.tsx",
     "path": "/parent/report"
   },

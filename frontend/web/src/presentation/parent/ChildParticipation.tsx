@@ -14,8 +14,8 @@ const when = (iso: string) =>
  * 자녀의 참여 기록 (P20·P21, API 명세 2.9·2.10). 자녀 공유물·받은 반응·포인트만 본다.
  * 다른 학생의 글·잔액·순위는 보여 주지 않는다.
  */
-export function ChildParticipation({ child }: { child: Child }) {
-  const posts = useChildPosts(child.id)
+export function ChildParticipation({ child, canReadOriginals = false }: { child: Child; canReadOriginals?: boolean }) {
+  const posts = useChildPosts(child.id, canReadOriginals)
   const points = useChildPoints(child.id)
   return (
     <section className="ws-card" aria-labelledby="participation-h">
@@ -36,11 +36,11 @@ export function ChildParticipation({ child }: { child: Child }) {
       )}
       <h3>커뮤니티에 나눈 생각</h3>
       <CommunityConsentStatus child={child} />
-      <QueryFeedback query={posts} />
-      {posts.data && !posts.error && !posts.data.length && (
+      {canReadOriginals ? <QueryFeedback query={posts} /> : <p>공유한 답변 원문은 아이가 학부모 공개를 켠 뒤 확인할 수 있습니다.</p>}
+      {canReadOriginals && posts.data && !posts.error && !posts.data.length && (
         <p>아직 나눈 생각이 없습니다. 커뮤니티 공개는 보호자 동의 후 자녀가 직접 켭니다.</p>
       )}
-      {posts.data?.map((p) => (
+      {canReadOriginals && posts.data?.map((p) => (
         <article className="ws-card" key={p.postId}>
           <p>
             {p.missionTitle} · {POST_STATUS_LABELS[p.status]}
@@ -59,7 +59,7 @@ export function ChildParticipation({ child }: { child: Child }) {
 }
 
 /**
- * 커뮤니티 선택 동의 상태와 동의 위치(정보 관리 › 동의 이력·철회)로 가는 링크(#433).
+ * 커뮤니티 선택 동의 상태와 동의 위치(계정·자녀 설정 › 공개·동의)로 가는 링크(#433).
  * 동의가 없으면 자녀의 "친구들에게 보여 줄게요"가 꺼져 있으므로 여기서 바로 안내한다.
  */
 function CommunityConsentStatus({ child }: { child: Child }) {
@@ -71,7 +71,7 @@ function CommunityConsentStatus({ child }: { child: Child }) {
   const message = child.guardianConsentRequired
     ? '법정대리인 동의를 먼저 마쳐 주세요. 그다음 커뮤니티 동의를 할 수 있습니다.'
     : !known
-      ? '커뮤니티 동의 상태는 정보 관리에서 확인할 수 있습니다.'
+      ? '커뮤니티 동의 상태는 계정·자녀 설정의 공개·동의에서 확인할 수 있습니다.'
       : agreed
         ? '커뮤니티 이용에 동의했습니다. 친구 공개는 자녀가 직접 켜고 끕니다.'
         : '커뮤니티 이용에 아직 동의하지 않아 자녀가 친구 공개를 켤 수 없습니다.'
