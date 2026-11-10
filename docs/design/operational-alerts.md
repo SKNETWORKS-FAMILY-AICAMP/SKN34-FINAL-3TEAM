@@ -33,6 +33,7 @@ OTel Java agent가 켜진 경우에만 export되고 없으면 no-op이다. expor
 예산 300 USD와 80%(240 USD) 판정은 Grafana 규칙 임계값이다. 새 exporter·주기 실행 계층·DB 계정은 추가하지 않았다.
 이벤트 발행 유실(best-effort)은 반영되지 않으므로 실제 비용보다 작을 수 있다.
 일일 리포트는 템플릿만 써 `llm_usage`가 늘지 않고, 일일 리포트 대화는 기존 분석 대화 호출 종류로 집계되어 예산 규칙에 포함된다.
+리포트 설명(FN-RPT-09, #473)은 클러스터 안 sLLM이라 토큰 단가가 없어 미산정 호출로 집계되고 예산 합산에는 들어가지 않는다. 비용은 sLLM 서버 노드 시간(EC2)으로 나타난다.
 
 ## 업무별 오류율·지연
 
@@ -61,3 +62,4 @@ prod는 core·learning의 Java agent와 Collector egress를 켜야 이 규칙들
 - ai·scoring·report-api는 자체 span이 없다. ai 호출 구간은 호출한 쪽 span으로만 보인다.
 - local values는 Tempo·trace를 켜지 않는다. 검증 시 opt-in으로 켠다.
 - 임계값은 초기 기준이다. 실측 부하 기반 조정과 서비스별 담당 라우팅은 후속이다.
+- 리포트 설명(#476·#479): 배치 시간대 설명 sLLM 서버 기동 실패와 설명 `NOT_INCLUDED` 비율 경보는 아직 없다. 설명이 빠져도 리포트는 `COMPLETED`로 끝나 기존 DLQ·오류율 규칙에 잡히지 않으므로 #479에서 지표를 정하고 임계값은 실측 뒤 정한다.

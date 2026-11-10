@@ -951,6 +951,7 @@ sequenceDiagram
   participant RDB as report_db
   participant L as learning
   participant A as ai
+  participant X as 설명 sLLM 서버
   participant S3 as S3
 
   SCH->>SCH: 매주 월 00:00 KST(일요일 자정), @SchedulerLock 획득 (ShedLock, 1개 레플리카만) (P06)
@@ -997,6 +998,19 @@ sequenceDiagram
     RW->>RW: ReportVerifier 숫자·인용 대조
     opt 대조 실패 (P16)
       RW->>RW: 템플릿 요약으로 교체 (narrative.source = TEMPLATE)
+    end
+  end
+  opt narrativeEnabled, 원문 공개, M2 점수가 있는 답변 있음 (FN-RPT-09, #479)
+    RW->>RW: 대표 답변 최대 3개 선정 (생각 유형이 겹치지 않게, 같으면 최근)
+    loop 대표 답변마다
+      RW->>A: POST /internal/report-explanations {grade, inputType, text, scores}
+      A->>X: OpenAI 호환 생성 요청 (월 00:00 전후 KEDA cron으로 1대 기동, #476)
+      X-->>A: 설명 초안
+      A->>A: 규칙 후처리, 금지어·점수·등급 표현 검사, 인용 부분 문자열 확인
+      A-->>RW: {active, explanation, versions} 또는 실패
+    end
+    opt 실패·시간 초과·설명 모델 미활성 (P16)
+      RW->>RW: 해당 설명 제외, explanations.state = NOT_INCLUDED (리포트 status·state 유지)
     end
   end
   RW->>RW: ReportRenderer HTML·PDF·MD

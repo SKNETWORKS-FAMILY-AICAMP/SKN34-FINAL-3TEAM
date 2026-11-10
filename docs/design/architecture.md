@@ -18,12 +18,13 @@
 |---|---|---|---|
 | core-service | Spring Boot (Kotlin) | **유일한 공개 API**. 계정·인증·동의, 학부모-자녀 연결(권한 기준), 분석 대화 세션·이력, 주간·일일 리포트 작업·일정, 알림(SSE·인앱), 신고·문의·공지, 결제·구독(토스페이먼츠 테스트), 관리자 운영·모델 버전 레지스트리, LLM 사용량 집계 | core_db, Redis |
 | learning-service | Spring Boot (Kotlin) | 미션·기준표·예시 답·생각 열기 질문(버전 관리), 학습 시도·답변 버전·초안·도움 이용·돌아보기·자기 평가, 규칙 판정(고르기·수학 동치), 판정·되묻기 저장, 학습 기록 조회 API(대시보드·에이전트 도구·리포트 소재) | learning_db (미션 장면 이미지는 웹 정적 파일과 함께 CloudFront→S3로 서빙, learning은 S3를 쓰지 않음) |
-| ai-service | FastAPI | 서술 근거 구절 추출(LLM) + 원문 대조 판정(코드), 되묻기 생성·정답/금지어 유출 검사, LangGraph 분석 에이전트, 리포트 서술·저녁 질문 생성, 프롬프트 버전 | 없음 (상태 없음) |
+| ai-service | FastAPI | 서술 근거 구절 추출(LLM) + 원문 대조 판정(코드), 되묻기 생성·정답/금지어 유출 검사, LangGraph 분석 에이전트, 리포트 서술·저녁 질문 생성, 리포트 설명 생성 요청·검사(설명 sLLM 호출, #477), 프롬프트 버전 | 없음 (상태 없음) |
 | scoring-service | FastAPI | M2 항목 점수(klue/roberta, 국어 우선), M1 수학 풀이 점검(후순위, 활성 범위만) 추론, CPU 추론, 관리자 모델 파일 사전 검사(#368), Pod별 모델 로딩 상태 보고(#370) | 없음 (S3 가중치 읽기) |
 | report-service | FastAPI | 주간·일일 리포트 기간·포함 기록 확정, 수치·전후 변화 코드 계산, 숫자·인용 대조, 렌더링(HTML/PDF/Markdown)·저장 | report_db, S3 |
 
 - 언어 분담 근거: 트랜잭션·권한·버전 관리·Outbox·스케줄·결제 = Spring 생태계(Spring AMQP, Flyway, ShedLock) 성숙 / LLM·모델 추론·렌더링 = Python 생태계
 - scoring 분리 근거: PyTorch 이미지·메모리 요구가 ai-service와 달라 배포·확장 단위 분리, 모델 미활성 시 ai-service 영향 없음
+- 설명 sLLM 서버(FN-RPT-09, #476): 업무 서비스가 아니라 ai만 호출하는 OpenAI 호환 내부 추론 서버(llama.cpp 등). 상태·DB 없음, S3의 승인된 양자화 모델을 CPU로 추론하며 평소 0대이고 주간 리포트 생성 시간대만 켬(4.4). 학생 글은 클러스터 밖으로 나가지 않음
 - 다른 서비스 DB 직접 접근 금지, API 또는 이벤트로만 연동 (참고 레포 원칙 동일)
 - DB 권한으로 강제(#230): 인스턴스 1개(로컬 PostgreSQL·운영 RDS)에 DB별 migrate(DDL)·app(DML) 계정을 두고 각 DB의 PUBLIC CONNECT 회수 → 다른 서비스 DB 접속 불가. 로컬·운영 모두 `charts/platform-data/files/postgres/rds-bootstrap.sql`로 생성, 관리자 계정은 초기화 전용 ([결정](../report/db-dev-guide.md#8-서비스별-db-계정-230))
 - 권한 기준: 학부모-자녀 연결은 core만 소유. core가 요청마다 권한 확인 후 내부 호출에 사용자 컨텍스트·허용 학생 범위 전달 (2.3)
@@ -133,6 +134,7 @@
 5. **자동 리포트**
    - core 스케줄러(ShedLock)가 자녀별 report_job + Outbox → `report.generate`
    - report가 learning 기록 조회 → 코드 계산 → ai 서술·저녁 질문 → 숫자·인용 대조 → 렌더링·S3 저장
+   - 주간 리포트의 프리미엄·원문 공개 자녀는 서술 뒤 M2 점수가 있는 대표 답변 최대 3개를 ai에 설명 요청(ai → 설명 sLLM 서버, 검사 통과분만 `EXPLANATION` 항목). 실패·시간 초과·모델 미활성은 설명 없이 진행 (FN-RPT-09, P16, #479)
    - `report.completed` → core 알림
 
 2026-11-06 결정(6~9 구현):
@@ -687,10 +689,11 @@ backend/report-service/
 |---|---|---|
 | core | ALB(서브넷 ipBlock), ai, scoring, learning, report-worker, Prometheus | learning, ai, scoring(모델 사전 검사 #368), report-api, RabbitMQ(5672·15672), Redis, RDS, 토스(NAT) |
 | learning | core, ai, report-api, report-worker, Prometheus | core, ai, RabbitMQ, RDS |
-| ai | core, learning, report-worker, Prometheus | learning, scoring, core, RabbitMQ, LLM API(NAT) |
+| ai | core, learning, report-worker, Prometheus | learning, scoring, core, RabbitMQ, LLM API(NAT), 설명 sLLM 서버(#476) |
 | scoring | ai, core(모델 사전 검사 #368), Prometheus | core, RabbitMQ, S3 |
 | report-api | core, Prometheus | learning(근거 조회), RDS, S3 |
 | report-worker | Prometheus | core, learning, ai, RabbitMQ, RDS, S3 |
+| 설명 sLLM 서버(#476) | ai, Prometheus | S3(모델 로딩) |
 | RabbitMQ·Redis | `app` 전체, KEDA(RabbitMQ), Prometheus | - |
 
   - 전 Pod 공통 egress: kube-dns(53), OTel Collector·Langfuse(`observability`)
@@ -721,6 +724,10 @@ backend/report-service/
 - 일일 리포트 부하(P24, #390)
   - 월요일 00:00에 주간·일일 리포트 작업이 함께 생긴다(자녀당 2건). 일일은 LLM을 부르지 않아 비용 경보(P13 80%)에는 영향이 없고, report-worker(KEDA) 적체·DLQ 경보는 기존 기준으로 함께 본다([운영 경보](operational-alerts.md))
   - 자녀 수만큼 매일 작업이 생겨 report_db·S3 파일이 주간 대비 약 7배로 늘어난다. 보관 기간은 기존(P09 이용 중 보관)과 같음
+- 설명 sLLM 서버(FN-RPT-09·NFR-PRF-03, #476)
+  - 평소 replica 0. 주간 리포트 생성 시간대(월 00:00 전후)만 KEDA cron 트리거로 1대. AWS 데모는 KEDA 미설치 상태라 #476에서 KEDA 설치 또는 같은 시각의 replica 조정 방식 중 선택
+  - 3B급 양자화 모델 CPU 추론은 t3 계열에 맞지 않아 Karpenter에 설명 전용 CPU NodePool(연산형 On-Demand, taint로 다른 Pod 배치 차단)을 두고 비면 정리
+  - 생성 시간은 건당 20~30초 가정(30명 × 3건 약 40분), #475 실측 후 시간대·대기 상한 조정
 - 종료 처리: core는 preStop 지연 + terminationGracePeriod로 SSE 정리 시간 확보 (롤링 배포·축소 시 단절은 클라이언트 재연결로 처리)
   - 피드백 executor 종료 대기는 최대 85초, heartbeat timer 종료 대기는 최대 5초다. 배포 시 `terminationGracePeriodSeconds`는 preStop 지연 + Spring/Tomcat 종료 단계의 예산 + 이 최대 90초 + 안전 여유보다 길게 설정하고 실제 롤링 종료로 검증한다. local chart 시작값은 preStop 15초·grace 180초([로컬 플랫폼](../report/local-platform.md) 8장). SIGKILL·프로세스 강제 종료 후에도 진행 중 호출이 보존된다는 의미는 아니다.
 - probe: readiness는 자기 연결과 백그라운드 초기화 상태만 확인, 요청마다 하위 서비스 호출 금지. ai는 RabbitMQ 구독·core 활성 버전 snapshot 조정·사용 가능한 프롬프트 본문을 완료해야 Ready이며 core 조회 실패·재연결 조정·미보유 활성 본문은 NotReady다(#68).
@@ -789,7 +796,7 @@ SKN34-FINAL-3TEAM/
 ├─ ml/                           # 모델 학습 (클러스터 밖 실행, 이미지 빌드·배포 대상 아님)
 │  ├─ m2/
 │  ├─ m1/                        # 수학 풀이 점검 학습·평가 코드(#263, 기준선까지·본 학습 전)
-│  └─ sllm/                      # (예정)
+│  └─ sllm/                      # 설명 sLLM 학습·평가·양자화 (#475)
 ├─ evaluation/                   # 판정 일치도(QWK, #199)·(예정) 되묻기 유출·에이전트 숫자/인용 대조 평가
 │  ├─ datasets/                  # 평가셋별 cases.jsonl·fixtures (자체 작성 예시 답안, AI Hub 원문 미포함)
 │  ├─ runners/                   # 서비스 호출·채점 스크립트 (judgment_eval.py, 테스트는 ai-service tests)
@@ -912,7 +919,7 @@ SKN34-FINAL-3TEAM/
 - `definitions.json`은 Helm `.Files` 접근 범위인 `platform-data` chart 안에 두고, compose도 같은 파일 마운트
 - 공통 코드: 공통 라이브러리 없이 서비스별 보유(이벤트 봉투·Outbox·AMQP 연결), `contracts/events` 스키마로 계약 테스트. 중복이 문제 될 때 `libs/` 검토
 - Docker 빌드 컨텍스트는 서비스 폴더, `contracts/` 계약 테스트는 CI에서만 실행
-- 모델 학습 코드(M2·M1·sLLM)는 `ml/`에서 관리, scoring은 승인된 가중치(S3)만 로딩
+- 모델 학습 코드(M2·M1·sLLM)는 `ml/`에서 관리, scoring·설명 sLLM 서버는 승인된 가중치(S3)만 로딩
 - 참고 레포 대비 추가: `contracts/`, `ml/`, `infrastructure/aws/` / 제외: `mobile/`, `ops-service`(LLMOps는 Langfuse + `evaluation/`로 시작, 필요 시 추가)
 
 ---
@@ -939,7 +946,7 @@ SKN34-FINAL-3TEAM/
 ---
 
 ## 7. 확인 필요 가정
-- 학습·일괄 생성(RunPod GPU, sLLM 설명)은 클러스터 밖에서 수행, 결과(가중치·주간 설명 문장)만 S3로 반입
+- 학습(M2·M1·설명 sLLM)은 클러스터 밖 RunPod GPU에서 AI Hub 데이터만으로 수행하고 결과(가중치)만 S3로 반입. 설명 문장 생성은 클러스터 안 CPU sLLM 서버에서 수행해 학생 글이 AWS 밖으로 나가지 않음 (2026-11-10 결정, #473)
 - AWS 계정 EKS 생성 권한·예산 한도: 권한 없으면 EC2 1대 + k3s로 대체 (HA·Cluster Autoscaler·Pod Identity 제외)
 
 ### 7.1 구현 결정 요약

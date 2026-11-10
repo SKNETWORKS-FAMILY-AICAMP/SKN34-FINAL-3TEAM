@@ -423,6 +423,7 @@ stateDiagram-v2
 | `RUNNING → FAILED` | 예외 | `ReportRepository.finish`(실패 사유) | 위와 같음 + `outbox(report.failed)` |
 
 - 기록 없는 주·표본 부족 주는 `COMPLETED` + `state`, 처리 실패(`FAILED`)와 구분 (FN-RPT-11)
+- 리포트 설명(FN-RPT-09, #479)의 생성 실패·검사 실패·시간 초과·모델 미활성은 `FAILED`로 바꾸지 않는다. `COMPLETED`로 끝내고 설명 상태만 `NOT_INCLUDED`로 남긴다(api-spec 3.4, P16)
 - #391 구현(P24): 일일 리포트도 같은 행·전이를 쓰고 `period_type = DAILY`로 구분. 기록 없는 날은 `COMPLETED` + `NO_RECORD`. 재생성 판 UK는 `(student_id, period_type, period_from, revision)`
 - 재생성은 새 행(`revision + 1`), 기존 결과 보존·최신판 기본 조회 (P06)
 - #152 관리자 실패 재처리도 **새 jobId·새 행**으로 위 전이를 시작한다. 원래 FAILED 행은 유지하며 같은 jobId의 COMPLETED·FAILED 메시지는 ACK 후 종료한다. 원작업 연결은 core #47이 관리하고, report는 요청한 새 jobId별 이벤트만 발행한다.

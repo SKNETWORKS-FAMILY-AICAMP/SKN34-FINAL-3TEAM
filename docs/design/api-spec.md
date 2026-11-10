@@ -513,7 +513,7 @@
 | POST | `/admin/model-versions` | SERVICE_OPS | 버전 등록 (평가 기록 첨부) | ADM-17 | 우선1 |
 | POST | `/admin/model-versions/{versionId}/activate` | SERVICE_OPS | 승인 조건(NFR-AIQ-05) 확인 후 활성화 → `model.version.activated` | ADM-18 | 우선1 |
 | POST | `/admin/model-versions/{versionId}/rollback` | SERVICE_OPS | 이전 승인 버전 복귀, 재분석 여부 기록 | ADM-18 | 우선1 |
-| GET | `/admin/ai-usage?from&to&callType` | SERVICE_OPS | 되묻기·판정·분석·리포트·미션 초안(#355, `MISSION_DRAFT`)·주간 테마 생성(#439, 텍스트 `THEME_DRAFT`·이미지 `THEME_IMAGE`)별 호출량·실패·지연·토큰·비용 (요금제 한도 P13, 월 LLM 비용 예산 80% 경보 P10) | ADM-19 | 우선1 |
+| GET | `/admin/ai-usage?from&to&callType` | SERVICE_OPS | 되묻기·판정·분석·리포트·미션 초안(#355, `MISSION_DRAFT`)·리포트 설명(FN-RPT-09, #480에서 callType 추가 예정)·주간 테마 생성(#439, 텍스트 `THEME_DRAFT`·이미지 `THEME_IMAGE`)별 호출량·실패·지연·토큰·비용 (요금제 한도 P13, 월 LLM 비용 예산 80% 경보 P10) | ADM-19 | 우선1 |
 | GET·POST | `/admin/weekly-themes?gradeBand&weekStart&status` | CONTENT | 테마 목록·작성 `{gradeBand, weekStart, title, intro, days:[{day, missionId}]}`. `gradeBand`는 `G3_4`·`G5_6` | ADM-22 | core 프록시 #387 |
 | GET·PUT | `/admin/weekly-themes/{themeId}` | CONTENT | 상세·수정(게시 중 수정은 재검토) | ADM-22 | core 프록시 #387 |
 | POST | `/admin/weekly-themes/{themeId}/review-request` · `/publish` · `/unpublish` | CONTENT | 미션과 같은 작성→검토→게시(본문 `{}`). 별도 검토 경로 없이 검토 요청한 현재본의 게시가 승인, 아니면 `409 CONFLICT`. 게시 검사: 월~금 다섯 요일, 게시 미션만(시연 전용 제외), 다섯 생각 유형 1개씩, 학년군 전체를 덮는 학년 범위(초3~4 논술 불가), 같은 학년군·주 게시 1개 | ADM-22 | core 프록시 #387 |
@@ -714,6 +714,8 @@ data: {}
 
 - 리포트 상세의 `changes[].followup`은 문자열 또는 null이다. 학습 기록 API 4.1.1에서 되묻기 없이 제출한 보완 답변도 비교하므로, 질문이 없는 경우 null을 그대로 반환하고 최초/최종 답변 및 계산 수치는 유지한다. 저장된 결과를 임의 질문이나 빈 기록으로 대체하지 않는다.
 
+- 리포트 상세의 `explanations`(FN-RPT-09, #479 구현 예정): 주간 리포트만 `{state, items[]}`를 반환하고 일일 리포트·무료 플랜은 `null`이다(무료 전환 뒤 과거 리포트도 `narrative`처럼 null, P13). `state`는 `INCLUDED`(설명 1개 이상)·`NOT_INCLUDED`(대상 답변이 있으나 생성 실패·검사 실패·시간 초과·설명 모델 미활성, P16)·`NO_TARGET`(M2 점수가 있는 답변 없음 또는 원문 비공개, FN-RPT-07)이다. `items[]`는 대표 답변 최대 3개(생각 유형이 겹치지 않게, 같으면 최근 답변)의 `{attemptId, answerId, answerVersion, missionTitle, thinkingType, quote, text}`이며 "AI 관찰"로 표시한다. 점수·등급·숫자는 넣지 않는다. 저장은 report_db `report_item.item_type = EXPLANATION`(근거 `report_item_evidence`, 검사 통과분만)이고 설명이 빠져도 리포트 `status`·`state`는 바뀌지 않는다. 기존 `narrative.modelExplanation`은 계약 유지를 위해 항상 null이다. PDF·HTML·Markdown도 같은 항목·상태를 표시한다.
+
 ### 3.5 결제 승인 — `POST /payments/confirm`
 
 learning 최소 연동(#48): `GET /internal/payment-usage/students/{studentId}?since=<date-time>`는 SYSTEM+정확한 학생 scope에서 `{studentId,since,used}`를 반환한다. DONE 피드백의 completed_at 또는 진행 중 피드백을 확인하며 원문을 반환하지 않는다. learning 공개 피드백 경로는 실행 전에 core `POST /internal/payment-usage/reservations {studentId,sourceId}`를 호출하고 DONE 저장 후 `POST /internal/payment-usage/completions {studentId,reservationId,used:true}`를 호출한다. 두 core 경로는 내부 토큰과 STUDENT+본인 scope가 필요하다. 예약 응답은 `{reservationId:uuid|null,premium:boolean}`이며 미완료 예약은 환불 증빙 불명확으로 남긴다. core 409는 Problem Details `code`로 구분해 learning이 같은 코드로 전달한다(1.3, #276). 새 외부 서비스나 dependency 없이 기존 내부 HTTP를 사용한다.
@@ -911,6 +913,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
   - `attemptId`, `studentId`, `mission:{title,thinkingType}`, `status:IN_PROGRESS|COMPLETED`, `answers[]`, `hintUsages:[{openedAt}]`. 학생 메모·초안은 포함하지 않는다. #27은 attempts에 삭제 표식 항목을 넣지 않는다. 삭제 뒤 정상 조회는 `NO_RECORD`, `items:[]`, `totalElements:0`이다. 이것은 evidence의 삭제된 답변 표시나 #55 삭제 완료 처리를 대신하지 않는다.
   - `answers[]`: `{answerId,version,submittedAt,inputType,text,followupId,content,feedback}`. `feedback`은 학생 시도 상세와 같은 `{status:PENDING|RUNNING|DONE|FAILED,judgment,followup,nextActions,versions}`이고, `judgment`는 처리 전·실패면 null, 아니면 `{judgmentId,result,trial,elements[{elementId,label,code,goodThought,satisfied,quote,sourceType}],heldReason}`. 생각 요소 지표(FN-RPT-05)는 `code`(FN 1.5 표준 요소)로 미션을 넘어 같은 요소를 세고 `goodThought = false`인 필수 요소만 충족률·보완률 분모로 쓴다. report는 시범 판정(`trial`)을 포함해 계산하고 계산식에 표시하며, `HELD` 판정과 정답 요소(`ANSWER_KEY`·`FINAL_ANSWER`)는 쓰지 않는다 (FN-RPT-05, #262·#344). `text`는 표시·근거용 평문 전체이고 null이 아닌 문자열이다(내용이 없으면 `""`). 풀이·논술의 칸 이름과 고르기의 선택지 이름이 포함될 수 있다. 수치 재계산에는 `content`의 학생 작성 칸만 사용해야 하며 표시용 `text`를 그대로 세면 안 된다. 시도당 1번부터 조회 종료일 끝까지의 답변 버전을 제공한다. 최초 답변·도움 이용을 비교할 수 있도록 조회 시작일 이전의 답변도 포함한다. report는 종료일 이후 답변을 사용하지 않는다.
   - `feedback.judgment.corrected`: 최신 정정이 있으면 true. 정정은 결과만 바꾸고 `elements`는 원판정 그대로이므로 report는 요소 지표(FN-RPT-05)와 일일 리포트 요소 표시에서 제외한다 (#244).
+  - `feedback.judgment.modelScores`(#478 구현 예정): learning `judgment.model_scores` 저장값 그대로(4.2.2 `modelScores`와 같은 `{m2, m1, skipped}`), M2를 부르지 않았으면 null. report 집계 입력에만 넣고 학생 시도 상세 응답에는 넣지 않는다. report는 리포트 설명(FN-RPT-09) 대상 선정·설명 요청 입력에만 쓰며 점수를 수치·화면에 표시하지 않는다
   - `hintUsages[]`는 조회 시작일 이전 기록을 포함하여 최초 답변 이전 열람 여부를 판정할 수 있는 전체 열람 시각을 제공한다. 열람이 없으면 빈 배열이며 단순 `helped` 값으로 대체하지 않는다. `submittedAt`·`openedAt`·`completedAt`·`createdAt`은 시간대 오프셋이 있는 ISO 8601 시각이다.
   - 완료 시도는 `completedAt`을 제공한다. learning **입력**의 `reflection`은 해당 기간에 작성한 `{difficulty:EASY|NORMAL|HARD,text:string|null,createdAt}` 또는 `null`이다. 미작성·기간 밖이면 `null`을 사용하고 report는 필드 생략도 허용한다. 선택 텍스트가 null이어도 난이도·작성 시각이 있는 돌아보기는 작성한 기록이다. `{written:false}`만 있는 객체는 입력 형식이 아니다.
   - report **출력/저장 항목**의 `reflections[]`는 미작성·기간 밖이면 `{attemptId,written:false,difficulty:null,text:null}`이다. 입력에 기간 밖 돌아보기가 포함되어도 report가 작성 시각으로 제외한다. 작성한 항목은 `written:true`이며 내부 계산·저장에는 난이도 코드를 유지한다. 입력과 3.4 출력 형식을 혼용하지 않는다.
@@ -955,6 +958,15 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - report는 learning evidence의 같은 answer ID·version·원문과 인용을 대조하고, 서술·저녁 질문의 숫자가 계산 결과에 포함되는지 검사한다. 지원하지 않는 한글 수사 표현은 검증 통과로 간주하지 않는다. 검증 메타데이터는 `numbersMatched`, `quotesMatched`, `contentAllowed`다.
 - 대조 실패만 코드 기반 템플릿 요약으로 전환한다. AI 시간 초과·5xx·응답 스키마 오류·learning 원문 조회 실패는 `FAILED`로 처리한다. 학생 이름·닉네임 필드는 요청에 넣지 않으며, 알려진 닉네임이 본문에 포함된 경우 전송 전에 가린다.
 - LLM 요청에는 학생 이름·식별정보를 넣지 않음. 학생·시도·답변 ID도 넣지 않으므로 가명 토큰이 필요 없음(원문은 요청 안 번호로만 지칭) (NFR-SEC-03)
+
+#### 4.2.3 report 설명 요청·응답 (FN-RPT-09, #477 구현 예정)
+
+- 경로(가칭) `POST /internal/report-explanations`, 호출자 report. 대표 답변 1개당 1회 호출한다(학생·주당 최대 3회)
+- 요청 `{grade, inputType:"NARRATIVE"|"ESSAY", text, scores}`. `text`는 학생 작성 칸 평문, `scores`는 learning `modelScores.m2`의 항목별 점수다. 학생·시도·답변 ID와 이름·닉네임은 넣지 않는다(NFR-SEC-03)
+- 응답 `{active:true, explanation:{text, quote}, versions:{prompt, model}}` 또는 `{active:false}`(설명 모델 미활성·승인 범위 밖). `quote`는 `text`의 부분 문자열이어야 하며 아니면 ai가 실패로 처리한다
+- ai는 설명 전용 OpenAI 호환 클라이언트로 클러스터 안 설명 sLLM 서버를 호출한다(다른 호출의 LLM 제공자는 그대로). 생성 뒤 규칙 후처리(점수·등급·숫자 표현 제거, 학부모용 문장 틀)와 금지어·점수·등급 표현 검사를 하고, 통과하지 못하면 실패 응답을 반환하고(오류 코드는 #477에서 확정) report가 "설명 미포함"을 결정한다
+- 시간 초과·5xx·검사 실패는 리포트 생성 실패로 바꾸지 않는다. report는 해당 설명만 빼고 `explanations.state = NOT_INCLUDED`로 저장한다(P16). 호출당 마감 시간과 전체 대기 상한은 #475 실측 뒤 정한다
+- 사용량 이벤트 `callType`과 프롬프트 이름·승인 scope는 #477·#480에서 4.2 표·#68 레지스트리 목록·`llm.usage.recorded` 스키마와 함께 추가한다
 
 ### 4.3 scoring-service (호출: ai)
 
