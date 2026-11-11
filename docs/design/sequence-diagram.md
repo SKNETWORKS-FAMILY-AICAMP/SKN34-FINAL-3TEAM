@@ -1278,7 +1278,7 @@ sequenceDiagram
     SCH->>DB: payment_order 저장 (RENEWAL, billing_period_start) — 부분 UK로 이중 청구 방지
     alt UK 충돌 + 기존 결제 APPROVED·CONFIRMING
       SCH->>SCH: 건너뜀
-    else 신규 주문 또는 UK 충돌 + 기존 결제 FAILED (재청구 매일 1회 최대 3회 P13, 11장 가정)
+    else 신규 주문 또는 UK 충돌 + 기존 결제 FAILED (재청구 매일 1회 최대 3회 P13, 12장 가정)
       SCH->>T: 빌링키 자동결제 API
       alt 성공
         SCH->>DB: payment APPROVED, subscription 기간 연장·next_billing_date 갱신

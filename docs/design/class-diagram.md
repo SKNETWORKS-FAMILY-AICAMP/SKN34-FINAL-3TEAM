@@ -1316,7 +1316,7 @@ classDiagram
 
 ### 3.6 커뮤니티·포인트·꾸미기 (community #388 · reward #389 구현)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 core 클래스. 커뮤니티는 #388, 포인트·꾸미기는 #389로 구현했고 `RewardService.earn` 호출 연결(학습 완료·공유·반응·되돌아보기 열람)만 구현 예정. 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 core 클래스. 커뮤니티는 #388, 포인트·꾸미기와 `RewardService.earn` 호출 연결(학습 완료·공유·반응·되돌아보기 열람, `ParticipationRewardService`)은 #389로 구현했다. 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
 
 ```mermaid
 classDiagram
