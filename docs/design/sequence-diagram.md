@@ -1004,17 +1004,28 @@ sequenceDiagram
       RW->>RW: 템플릿 요약으로 교체 (narrative.source = TEMPLATE)
     end
   end
-  opt narrativeEnabled, 원문 공개, M2 점수가 있는 답변 있음 (FN-RPT-09, #479)
-    RW->>RW: 대표 답변 최대 3개 선정 (생각 유형이 겹치지 않게, 같으면 최근)
-    loop 대표 답변마다
-      RW->>A: POST /internal/report-explanations {grade, inputType, text, scores}
-      A->>X: OpenAI 호환 생성 요청 (월 00:00 전후 KEDA cron으로 1대 기동, #476)
-      X-->>A: 설명 초안
-      A->>A: 규칙 후처리, 금지어·점수·등급 표현 검사, 인용 부분 문자열 확인
-      A-->>RW: {active, explanation, versions} 또는 실패
-    end
-    opt 실패·시간 초과·설명 모델 미활성 (P16)
-      RW->>RW: 해당 설명 제외, explanations.state = NOT_INCLUDED (리포트 status·state 유지)
+  opt 주간, narrativeEnabled, 원문 공개 (FN-RPT-09, #479·#508, 단계 전체 400초 예산)
+    RW->>L: GET /internal/records/students/{id}/attempts?includeModelScores=true (SYSTEM)
+    L-->>RW: 기간 내 기록 + modelScores.m2
+    alt M2 점수가 있는 답변 없음
+      RW->>RW: explanations.state = NO_TARGET
+    else
+      RW->>RW: 최신순 정렬, 생각 유형마다 최신 답변부터 시도 (최대 3유형)
+      loop 유형별 후보 (ai 호출 전 제외 시 같은 유형 다음 답변)
+        RW->>RW: 자격 확인 (정정·빈 답변·학년·입력 유형·M2 점수 형식)
+        RW->>L: GET /internal/records/evidence?answerIds= (원문·버전 대조)
+        RW->>A: POST /internal/report-explanations {grade, inputType, text, scores} (호출당 130초, 유형당 1회)
+        A->>X: OpenAI 호환 생성 요청 (일 23:50~월 02:00 KEDA cron으로 1대 기동, #476)
+        X-->>A: 설명 초안
+        A->>A: 규칙 후처리, 금지어·점수·등급 표현 검사, 인용 선택
+        A-->>RW: {active, explanation, versions} 또는 실패
+        RW->>RW: report 재검사 (숫자·금지어·수량·별명·인용 원문 부분 문자열)
+      end
+      alt 하나라도 통과
+        RW->>RW: 통과분만 EXPLANATION 항목, explanations.state = INCLUDED
+      else 모두 실패·시간 초과·설명 모델 미활성·sLLM 가동 창 밖 (P16)
+        RW->>RW: explanations.state = NOT_INCLUDED (리포트 status·state 유지)
+      end
     end
   end
   RW->>RW: ReportRenderer HTML·PDF·MD
@@ -1052,7 +1063,7 @@ sequenceDiagram
   participant C as core DB
   participant R as report API
   participant D as report DB
-  S->>C: 생성 60분 이상 미종료 후보 조회
+  S->>C: 생성 4시간 이상 미종료 후보 조회 (#508)
   S->>R: POST reconcile (트랜잭션 밖)
   R->>D: 학생 shared/job exclusive session 잠금 시도
   alt 실행/삭제 잠금 사용 중
