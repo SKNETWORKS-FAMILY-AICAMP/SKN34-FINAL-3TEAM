@@ -14,6 +14,7 @@
 import asyncio
 import base64
 import logging
+import re
 import struct
 import subprocess
 import tempfile
@@ -319,16 +320,21 @@ def _ffmpeg(args: list[str], timeout: float = 60) -> None:
         raise RuntimeError(f"ffmpeg 실패: {result.stderr[-300:]!r}")
 
 
-def color_clip(seed: int, seconds: float = 1.0) -> bytes:
+def color_clip(seed: int, seconds: float = 1.0, still: bool = False) -> bytes:
+    """시험용 컷. 기본은 계속 움직이는 시험 무늬(멈춤 "
+    "감지에 걸리지 않음), still이면 단색 정지 화면."""
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "c.mp4"
         color = f"0x{(seed * 53) % 256:02x}{(seed * 97) % 256:02x}{(seed * 151) % 256:02x}"
+        source = f"color=c={color}:s=64x36:d={seconds}:r=12"
+        if not still:  # 매 장면 달라지는 잡음(멈춤 감지에 걸리지 않음)
+            source += ",noise=alls=80:allf=t+u"
         _ffmpeg(
             [
                 "-f",
                 "lavfi",
                 "-i",
-                f"color=c={color}:s=64x36:d={seconds}:r=12",
+                source,
                 "-c:v",
                 "mpeg4",
                 "-pix_fmt",
@@ -436,6 +442,71 @@ def join_xfade(
                 str(out),
             ],
             timeout=180,
+        )
+        return out.read_bytes()
+
+
+FREEZE_NOISE = 0.002  # freezedetect 잡음 허용(실측 Veo 컷의 멈춤 구간을 잡는 값)
+FREEZE_MIN = 0.3  # 이보다 짧은 멈춤은 무시(초)
+
+
+def freeze_spans(clip: bytes) -> tuple[float, list[tuple[float, float]]]:
+    """(컷 길이, 화면이 멈춘 구간[(시작, 끝)]). ffmpeg freezedetect로 잰다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "in.mp4"
+        src.write_bytes(clip)
+        result = subprocess.run(
+            [
+                imageio_ffmpeg.get_ffmpeg_exe(),
+                "-hide_banner",
+                "-i",
+                str(src),
+                "-vf",
+                f"freezedetect=n={FREEZE_NOISE}:d={FREEZE_MIN}",
+                "-f",
+                "null",
+                "-",
+            ],
+            capture_output=True,
+            timeout=60,
+            check=False,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg 실패: {result.stderr[-300:]!r}")
+    err = result.stderr
+    m = re.search(r"Duration: (\d+):(\d+):([\d.]+)", err)
+    duration = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3)) if m else 0.0
+    starts = [float(x) for x in re.findall(r"freeze_start: ([\d.]+)", err)]
+    ends = [float(x) for x in re.findall(r"freeze_end: ([\d.]+)", err)]
+    spans = [(s, ends[i] if i < len(ends) else duration) for i, s in enumerate(starts)]
+    return duration, spans
+
+
+def trim_clip(clip: bytes, start: float, end: float) -> bytes:
+    """컷의 [start, end) 구간만 남김(libx264·yuv420p로 다시 인코딩)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp)
+        src = folder / "in.mp4"
+        src.write_bytes(clip)
+        out = folder / "out.mp4"
+        _ffmpeg(
+            [
+                "-i",
+                str(src),
+                "-ss",
+                f"{start:.3f}",
+                "-to",
+                f"{end:.3f}",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-an",
+                str(out),
+            ]
         )
         return out.read_bytes()
 

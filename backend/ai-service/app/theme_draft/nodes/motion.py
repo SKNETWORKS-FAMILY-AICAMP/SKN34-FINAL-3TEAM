@@ -29,11 +29,18 @@ def scene_text(theme: Theme, scene: str) -> str:
     return theme[CUTS_KEY[scene]][-1]["scene"]
 
 
-def captions_of(ctx: ThemeContext, theme: Theme, scene: str, has_video: bool) -> list[dict]:
+def captions_of(
+    ctx: ThemeContext,
+    theme: Theme,
+    scene: str,
+    has_video: bool,
+    lengths: list[float] | None = None,
+) -> list[dict]:
+    """문구 시각은 실제 컷 길이로(앞뒤 정지 화면을 잘라 내면 요청 길이와 다름)."""
     if scene in DAYS or not has_video:
         return []
     cuts = theme[CUTS_KEY[scene]]
-    times = xfade_caption_times(ctx.settings.theme_video_cut_seconds)
+    times = xfade_caption_times(lengths or ctx.settings.theme_video_cut_seconds)
     return [
         {"start": s, "end": e, "text": c["caption"]} for (s, e), c in zip(times, cuts, strict=False)
     ]
@@ -78,7 +85,13 @@ async def scene_motion(
         )
     except LlmUnavailable as exc:
         return None, [warning("MOTION", scene, f"MOTION_CALL {exc.code}")]
-    captions = captions_of(ctx, theme, scene, scene in (state.get("video_keys") or {}))
+    captions = captions_of(
+        ctx,
+        theme,
+        scene,
+        scene in (state.get("video_keys") or {}),
+        (state.get("video_durations") or {}).get(scene),
+    )
     data = generated.data.model_dump()
     spot_list, spot_notes = spots(
         data.get("spots") or [],

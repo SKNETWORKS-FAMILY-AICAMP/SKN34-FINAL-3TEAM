@@ -608,7 +608,7 @@ def public_theme(theme: Theme) -> dict:
 # --- 그림·영상·움직임 (#437 그림 단계) ------------------------------------------------
 IMAGE_REVIEW_IDS = ("MUNGCHI", "ANSWER_HINT", "TEXT", "SAFETY", "SCENE_FIT")
 MISSION_IMAGE_REVIEW_IDS = (*IMAGE_REVIEW_IDS, "MISSION_FIT")
-VIDEO_REVIEW_IDS = ("MORPH", "ANSWER_HINT", "TEXT", "SAFETY")
+VIDEO_REVIEW_IDS = ("MORPH", "ANSWER_HINT", "TEXT", "SAFETY", "CONTINUITY")
 
 # 움직임 상한(기준안, ai.md 15.1 움직임 행)
 ZOOM = (1.0, 1.4)
@@ -633,6 +633,7 @@ def dialogue_speakers(theme: Theme, lines: list[dict] | None) -> list[str]:
 SPOTS = (2, 3)
 SPOT_LABEL_MAX = 10
 SPOT_LINE_MAX = 30
+SPOT_MIN_GAP = 8.0  # 살펴보기 위치끼리 최소 거리(그림 %, 기준안). 손가락으로 따로 누를 수 있게
 
 
 def spot_leaks(draft: Draft, text: str, overlap: int) -> bool:
@@ -688,6 +689,17 @@ def spots(
         kept.append(
             {"x": fx, "y": fy, "label": label, "line": line, "evidence": bool(s.get("evidence"))}
         )
+    # 가까운 위치(SPOT_MIN_GAP 안)는 하나만 남김. 증거를 먼저 남긴다
+    # (실측: 휴대전화 한 물건의 부분을 겹쳐 고름)
+    spaced: list[dict] = []
+    for k in sorted(kept, key=lambda k: not k["evidence"]):
+        if any(
+            ((k["x"] - o["x"]) ** 2 + (k["y"] - o["y"]) ** 2) ** 0.5 < SPOT_MIN_GAP for o in spaced
+        ):
+            notes.append(f"MOTION_SPOT {k['label']} 다른 살펴보기와 너무 가까워 뺌")
+            continue
+        spaced.append(k)
+    kept = [k for k in kept if any(k is o for o in spaced)]
     evidence = [k for k in kept if k["evidence"]]
     if not evidence:
         if kept:

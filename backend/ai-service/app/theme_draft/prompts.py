@@ -61,7 +61,13 @@ PLAN_SYSTEM = (
     "실존 인물·상표 금지. look은 그림을 그릴 사람이 "
     "장면마다 같은 "
     "모습으로 그릴 수 있게 쓰는 겉모습(옷·머리·소지품).\n"
-    "- outfit은 이 테마에서 뭉치가 입는 그 역할 차림. 실제 제복·휘장을 그대로 쓰지 않는다. "
+    "- outfit은 이 테마에서 뭉치가 입는 역할 차림이다. "
+    "그 역할을 한눈에 알아보게 머리에 쓰거나 몸·목에 "
+    "거는 것 1~2개를 꼭 넣는다(예: 탐정은 체크무늬 "
+    "탐정 모자와 목에 건 돋보기, 구조대는 주황 조끼와 "
+    "안전모, 순찰대는 노란 모자와 목에 건 호루라기, "
+    "탐험대는 챙 넓은 모자와 목에 건 망원경). 손에 드는 "
+    "물건은 넣지 않는다. 실제 기관 제복·휘장·글자는 쓰지 않는다. "
     "styleNote는 이 "
     "테마 그림의 색·분위기 메모.\n"
     "- 학생이 집·학교·마을에서 직접 보는 사물과 일만. 범죄·폭력·위험·무서운 일 금지. 시각은 '오후 "
@@ -97,6 +103,9 @@ PLAN_SYSTEM = (
     "- outroCuts 순서: 1 뭉치가 모은 단서를 정리함, 2 정답 장소로 감, "
     "3 정답 장소에서 대상을 찾아 주인에게 돌려줌, 4 함께 기뻐함. 종료 4컷에는 모두 뭉치가 나온다"
     "(mungchiMood는 none이 아님). 종료 콘티는 정답 공개 뒤라 정답 이름·정답 장소를 써도 된다.\n"
+    "- action은 그 자리에서 하는 작은 동작 하나(손 흔들기·고개 끄덕이기·껴안기·뛰며 좋아하기 등). "
+    "걸어서 화면 밖으로 나가거나 새 인물이 들어오는 동작은 쓰지 않는다(뭉치 출동 컷은 화면 안에서 "
+    "달려오는 모습). 컷 끝까지 scene에 나온 인물이 모두 화면 안에 있다.\n"
     "- 영상 속에는 글자를 넣지 않으므로 scene·action에 글자·숫자가 보이는 "
     "장면(쓰인 간판 등)을 쓰지 않는다.\n"
     "\n"
@@ -712,7 +721,8 @@ MUNGCHI_LOOK = (
     "Mungchi (the main character): a cream-colored fluffy cotton-ball body with about 12 soft "
     "round bumps, the face low in the center of the body, small dot eyes with a tiny highlight "
     "(no eye whites), pink cheeks, small hands at the lower front on the left and right, short "
-    "brown feet. Mungchi wears the theme outfit: {outfit}. Keep Mungchi exactly like the "
+    "brown feet, no arms (only the tiny hands). Mungchi wears the theme outfit: {outfit}. "
+    "Keep Mungchi exactly like the "
     "reference picture."
 )
 IMAGE_RULES = (
@@ -728,6 +738,7 @@ def outfit_prompt(theme: Theme) -> str:
         "Edit this picture. Keep the picture exactly as it is: Mungchi's body, face, eyes, "
         "cheeks, feet, hand positions, size, position, colors and the background stay "
         f"identical. Only add the theme outfit: {theme['outfit']}. Nothing in the hands. "
+        "Hats and items worn around the neck are part of the outfit. "
         "No letters, numbers, badges or emblems on the outfit. "
         f"{IMAGE_STYLE}"
     )
@@ -905,7 +916,9 @@ def image_review_user(
 
 
 VIDEO_NEGATIVE = (
-    "big eyes, eye whites, changing eye shape, body morphing, extra limbs, 3D render, text, "
+    "big eyes, eye whites, changing eye shape, body morphing, extra limbs, long arms, wings, "
+    "stretched limbs, outfit change, character leaving the frame, character disappearing, "
+    "characters merging, extreme zoom, cropped faces, freeze frame, 3D render, text, "
     "flashing lights, scary, sudden cuts"
 )
 
@@ -918,6 +931,8 @@ def video_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list
         mouth = mood_mouth(cut)
         mungchi = [
             "Keep Mungchi's round fluffy shape and small dot eyes unchanged (no eye whites).",
+            "Mungchi has only tiny hands at the lower front: no arms, wings or stretched limbs.",
+            "Mungchi's outfit, hat and items around the neck stay exactly as in the first frame.",
             f"Mungchi's expression: {mouth}." if mouth else "",
         ]
     else:
@@ -934,7 +949,10 @@ def video_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list
         f"Action (Korean): {cut['action']}",
         "Keep the 2D cartoon style of the first frame with thick even outlines.",
         *mungchi,
-        "Natural, simple movement. Only one camera move. No text.",
+        "Everyone in the first frame stays fully inside the frame until the end: nobody walks "
+        "out, disappears, appears or merges with another person.",
+        "Small, gentle movements in place, continuous until the end with no pauses.",
+        "Only a slow, slight camera move; never zoom in so close that someone is cut off. No text.",
         about_target,
         *_fixes(feedback),
     ]
@@ -942,9 +960,14 @@ def video_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list
 
 
 VIDEO_REVIEW_SYSTEM = (
-    "너는 초등학생 학습 서비스의 영상 검토자다. 주어진 그림들은 영상 컷 하나에서 2초마다 뽑은 "
-    "장면이다. 네 항목마다 verdict를 PASS·WARN·FAIL 중 하나로 쓰고 근거 한 문장(reason)을 쓴다. "
-    "네 항목을 모두 한 번씩 쓴다. 분명한 결함만 FAIL로 한다.\n"
+    "너는 초등학생 학습 서비스의 영상 검토자다. 첫 "
+    "그림은 컷의 첫 장면(기준)이고, 나머지는 영상에서 "
+    "1초마다 뽑은 장면이다. 다섯 항목마다 verdict를 PASS·WARN·FAIL 중 하나로 쓰고 근거 한 문장"
+    "(reason)을 쓴다. 다섯 항목을 모두 한 번씩 쓴다. 분명한 결함만 FAIL로 한다.\n"
+    "CONTINUITY: 기준 장면의 인물(뭉치 포함)이 끝까지 모두 화면 안에 보이는지(화면 밖으로 나가거나 "
+    "사라지거나 둘이 겹쳐 하나가 되거나 얼굴이 크게 "
+    "잘리지 않는지), 뭉치의 옷·모자·목에 건 것이 기준 "
+    "장면과 같은지, 뭉치에게 팔·날개가 새로 생기지 않는지.\n"
     "MORPH: 인물·뭉치의 몸·얼굴·눈 모양이 장면 사이에 녹아내리듯 바뀌거나 팔다리가 늘어나는지, "
     "2D 그림체가 3D로 바뀌는지, 뭉치가 나오지 않아야 하는 컷(mungchi 나오지 않아야 함)에 뭉치가 "
     "나타나는지. 손에 든 물건·자세·표정은 동작에 따라 달라도 된다.\n"
@@ -994,7 +1017,8 @@ MOTION_SYSTEM = (
     "TRACE면 흔적이 남은 자리·물건, RECORD면 사진·기록 "
     "물건, SIGHTING이면 그것을 본 사람. 찾는 대상 "
     "자체는 증거가 아니다. 나머지는 미션 질문·생각 열기 "
-    "질문에 나온 물건(evidence false). 그림에 실제로 보이는 것만 고르고 x·y는 그 중심. "
+    "질문에 나온 물건(evidence false). 그림에 실제로 보이는 것만 고르고 x·y는 그 중심. 서로 떨어진 "
+    "서로 다른 물건·사람만 고르고, 한 물건 안의 부분(화면 속 길·자막처럼)은 따로 고르지 않는다. "
     "label은 이름(10자 이내), line은 눌렀을 때 뭉치가 하는 짧은 말(30자 이내, 증거는 "
     "찾았다는 말, 다른 물건은 미션을 떠올리게 하는 말). "
     "label·line에 avoidWords(단서 결론 낱말·후보 "

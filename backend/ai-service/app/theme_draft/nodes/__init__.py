@@ -66,6 +66,7 @@ class ThemeState(TypedDict, total=False):
     image_keys: dict[str, str]  # 장면 → S3 키(INTRO·OUTRO는 4번째 컷 첫 그림)
     video_skip: list[str]  # 컷 그림이 끝내 실패해 영상을 만들지 않을 장면(INTRO·OUTRO)
     video_keys: dict[str, str]
+    video_durations: dict[str, list[float]]  # 장면 → 실제 컷 길이(앞뒤 정지 화면을 잘라 낸 뒤)
     motions: dict[str, dict]  # 장면 → ThemeMotion 모양
     media_warnings: Annotated[list[dict], operator.add]  # {stage, item, reason}
 

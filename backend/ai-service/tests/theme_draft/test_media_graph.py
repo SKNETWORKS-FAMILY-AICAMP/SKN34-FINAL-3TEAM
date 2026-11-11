@@ -557,7 +557,10 @@ def test_spots_leak_mission_answer() -> None:
     if not draft.forbidden_terms:
         draft = draft.model_copy(update={"forbidden_terms": [word]})
     out, notes = spots(
-        [EV, OTHER, spot("의자", f"{word} 이야기를 해 볼까?")], valid_theme(), "MON", draft
+        [EV, OTHER, spot("의자", f"{word} 이야기를 해 볼까?", False, 85, 75)],
+        valid_theme(),
+        "MON",
+        draft,
     )
     assert [s["label"] for s in out] == ["발자국", "마을 지도"]
     assert any("LEAK" in n for n in notes)
@@ -567,8 +570,8 @@ def spot(label: str, line: str, evidence: bool = False, x: float = 50, y: float 
     return {"label": label, "line": line, "evidence": evidence, "x": x, "y": y}
 
 
-EV = spot("발자국", "여기 발자국을 찾았어!", True)
-OTHER = spot("마을 지도", "지도로 길을 따라가 볼까?")
+EV = spot("발자국", "여기 발자국을 찾았어!", True, 20, 70)
+OTHER = spot("마을 지도", "지도로 길을 따라가 볼까?", False, 60, 40)
 
 
 @pytest.mark.parametrize(
@@ -589,14 +592,31 @@ OTHER = spot("마을 지도", "지도로 길을 따라가 볼까?")
             ["MOTION_SPOT"],
         ),
         ("no evidence", [OTHER, spot("나무", "나무 아래를 볼까?")], [], ["MOTION_SPOT"]),
-        ("two evidence", [EV, spot("털", "털을 찾았어!", True)], ["발자국", "털"], ["MOTION_SPOT"]),
+        (
+            "two evidence",
+            [EV, spot("털", "털을 찾았어!", True, 80, 30)],
+            ["발자국", "털"],
+            ["MOTION_SPOT"],
+        ),
         (
             "too many keeps evidence",
-            [OTHER, spot("나무", "나무 아래를 볼까?"), spot("의자", "의자를 볼까?"), EV],
+            [
+                OTHER,
+                spot("나무", "나무 아래를 볼까?", False, 85, 20),
+                spot("의자", "의자를 볼까?", False, 85, 80),
+                EV,
+            ],
             ["발자국", "마을 지도", "나무"],
             ["MOTION_SPOT"],
         ),
         ("long line", [EV, OTHER, spot("돌", "가" * 31)], ["발자국", "마을 지도"], ["MOTION_SPOT"]),
+        # 한 물건의 부분처럼 서로 가까운 위치는 하나만 남김(증거 우선, 실측 화요일)
+        (
+            "too close",
+            [spot("화면 속 길", "길을 볼까?", False, 22, 72), EV, OTHER],
+            ["발자국", "마을 지도"],
+            ["MOTION_SPOT"],
+        ),
         (
             "coords fitted",
             [spot("발자국", "찾았어!", True, 120, -3), OTHER],
@@ -648,3 +668,41 @@ def test_route_uses_media_clients_from_app_state(monkeypatch: pytest.MonkeyPatch
     assert set(body["images"]) == set(SCENES) and len(storage.objects) == 7
     assert set(body["motions"]["MON"]["camera"]) == {"from", "to", "seconds"}
     assert DAYS[0] in body["motions"]
+
+
+def test_cut_freezes_trims_ends_and_fails_middle() -> None:
+    """앞뒤 정지 화면은 잘라 내고 실제 길이를 돌려줌, 중간에 0.5초 넘게 멈추면 FREEZE(그 컷을
+    다시 만듦). 실측에서 컷 안 0.4~0.9초 멈춤이 재생 중 끊김으로 보였음."""
+    from app.llm.media import color_clip, concat_mp4
+    from app.theme_draft.nodes.video import cut_freezes
+
+    ends = concat_mp4(
+        [color_clip(1, 1, still=True), color_clip(2, 3), color_clip(3, 1, still=True)]
+    )
+    trimmed, length, bad = cut_freezes(ends, 5)
+    assert bad == [] and length == pytest.approx(3, abs=0.4) and trimmed != ends
+    middle = concat_mp4([color_clip(4, 2), color_clip(5, 1, still=True), color_clip(6, 2)])
+    _, _, bad = cut_freezes(middle, 5)
+    assert len(bad) == 1 and bad[0].startswith("FREEZE ")
+    _, _, bad = cut_freezes(color_clip(7, 4, still=True), 4)
+    assert len(bad) == 1 and bad[0].startswith("FREEZE ")
+
+
+def test_video_prompt_and_review_keep_everyone_and_outfit() -> None:
+    """영상 지시문·금지 조건·검토가 인물 유지·뭉치 모양·옷 유지를 다룸(실측: 인물이 사라지고 팔이
+    생기고 옷이 바뀜). 검토는 첫 장면 + 1초마다 장면, 항목 CONTINUITY."""
+    from app.theme_draft import prompts
+
+    theme = valid_theme()
+    text = prompts.video_prompt(theme, "OUTRO", 4, OUTRO_CUTS[3], [])
+    assert "nobody walks out, disappears, appears or merges" in text
+    assert (
+        "no arms, wings or stretched limbs" in text and "stay exactly as in the first frame" in text
+    )
+    assert "never zoom in so close" in text
+    for word in ("character leaving the frame", "wings", "outfit change", "freeze frame"):
+        assert word in VIDEO_NEGATIVE
+    assert "CONTINUITY" in VIDEO_REVIEW_IDS and "CONTINUITY:" in prompts.VIDEO_REVIEW_SYSTEM
+    assert (
+        "한눈에 알아보게" in prompts.PLAN_SYSTEM and "화면 밖으로 나가거나" in prompts.PLAN_SYSTEM
+    )

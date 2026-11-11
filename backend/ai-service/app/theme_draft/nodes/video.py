@@ -18,7 +18,7 @@ import subprocess
 from langgraph.runtime import Runtime
 
 from app.llm.base import LlmUnavailable
-from app.llm.media import join_xfade, video_frames
+from app.llm.media import freeze_spans, join_xfade, trim_clip, video_frames
 from app.theme_draft.checks import VIDEO_REVIEW_IDS, Theme, check_review
 from app.theme_draft.models import GeneratedVideoReview
 from app.theme_draft.nodes import DEADLINE_REASON, THEME_CALL_TYPE, ThemeContext, ThemeState, uniq
@@ -29,17 +29,47 @@ logger = logging.getLogger(__name__)
 
 VIDEO_OFF = "영상 설정 꺼짐"
 VIDEO_DEADLINE = "마감까지 남은 시간이 부족해 영상을 건너뜀"
-FRAME_EVERY = 2.0  # 검토 장면 간격(초)
-FRAME_COUNT = 4  # 8초 컷이면 0·2·4·6초
+FRAME_EVERY = 1.0  # 검토 장면 간격(초). 2초 간격 4장으로는 사이의 사라짐·변형을 놓쳤음(실측)
+FRAME_COUNT = 8  # 8초 컷이면 0~7초
+FREEZE_FAIL = 0.5  # 컷 중간에 이보다 오래 멈추면 그 컷을 다시 만듦(초, 기준안)
+MIN_KEEP = 0.6  # 앞뒤 정지 화면을 잘라도 요청 길이의 이 비율은 남아야 함
 DEADLINE_MARGIN = 60.0  # 이어 붙이기·올리기·움직임 몫
+
+
+def cut_freezes(clip: bytes, seconds: float) -> tuple[bytes, float, list[str]]:
+    """(앞뒤 정지 화면을 잘라 낸 컷, 실제 길이, 실패 사유). 중간 멈춤이 FREEZE_FAIL초를 넘거나
+    잘라 낸 뒤 너무 짧으면 FREEZE 사유(그 컷을 다시 만듦)."""
+    duration, spans = freeze_spans(clip)
+    duration = duration or float(seconds)
+    start, end = 0.0, duration
+    middle = []
+    for s, e in spans:
+        if s <= 0.05:
+            start = max(start, e)
+        elif e >= duration - 0.05:
+            end = min(end, s)
+        elif e - s >= FREEZE_FAIL:
+            middle.append((s, e))
+    if middle:
+        return (
+            clip,
+            duration,
+            ["FREEZE " + ", ".join(f"{s:.1f}~{e:.1f}초에 화면이 멈춤" for s, e in middle)],
+        )
+    if end - start < MIN_KEEP * seconds:
+        return clip, duration, [f"FREEZE 움직이는 부분이 {end - start:.1f}초뿐"]
+    if start > 0 or end < duration:
+        return trim_clip(clip, start, end), round(end - start, 3), []
+    return clip, duration, []
 
 
 async def film(
     ctx: ThemeContext, theme: Theme, scene: str, index: int, first: bytes, seconds: int
-) -> tuple[bytes | None, list[str], list[str]]:
-    """컷 1개: 생성 → 장면 뽑기 → 검토 → FAIL이면 사유를 넣어 다시(상한·마감).
+) -> tuple[bytes | None, list[str], list[str], float]:
+    """컷 1개: 생성 → 멈춤 확인(앞뒤 정지 화면 잘라 냄) → 장면 뽑기 → 검토 → FAIL이면 사유를 넣어
+    다시(상한·마감).
 
-    (영상, 끝내 실패한 사유, 통과한 검토의 WARN 사유).
+    (영상, 끝내 실패한 사유, 통과한 검토의 WARN 사유, 실제 길이).
     """
     assert ctx.video is not None
     body = ctx.prompt.body
@@ -59,6 +89,11 @@ async def film(
                 deadline=ctx.deadline,
                 negative=body.VIDEO_NEGATIVE,
             )
+            clip, length, frozen = await asyncio.to_thread(cut_freezes, clip, seconds)
+            if frozen:
+                bad = frozen
+                feedback = uniq([*feedback, *bad])
+                continue
             frames = await asyncio.to_thread(video_frames, clip, FRAME_EVERY, FRAME_COUNT)
             review = await ctx.review_llm.generate(
                 system=body.VIDEO_REVIEW_SYSTEM,
@@ -76,7 +111,7 @@ async def film(
                 deadline=ctx.deadline,
                 timeout=ctx.settings.theme_llm_timeout,
                 max_retries=ctx.settings.theme_llm_retries,
-                images=frames,
+                images=[first, *frames],
             )
         except LlmUnavailable as exc:
             bad = [f"VIDEO_CALL {exc.code}"]
@@ -90,13 +125,13 @@ async def film(
         fails, warns, shape = check_review(review.data.model_dump(), VIDEO_REVIEW_IDS)
         bad = shape + [f"{x['id']} {x['reason']}" for x in fails]
         if not bad:
-            return clip, [], [f"{x['id']} {x['reason']}" for x in warns]
+            return clip, [], [f"{x['id']} {x['reason']}" for x in warns], length
         feedback = uniq([*feedback, *bad])
-    return None, bad, []
+    return None, bad, [], 0.0
 
 
 async def join_and_put(
-    ctx: ThemeContext, scene: str, clips: list[bytes], durations: list[int]
+    ctx: ThemeContext, scene: str, clips: list[bytes], durations: list[float]
 ) -> tuple[str | None, str | None]:
     """(S3 키, 실패 사유)."""
     assert ctx.storage is not None
@@ -137,20 +172,26 @@ async def generate_videos(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
     )
     filmed = dict(zip(jobs, results, strict=True))
     keys: dict[str, str] = {}
+    lengths: dict[str, list[float]] = {}
     for scene in scenes:
         cuts = [filmed[(scene, i)] for i in range(1, len(durations) + 1)]
-        for i, (_, _, warns) in enumerate(cuts, 1):
+        for i, (_, _, warns, _) in enumerate(cuts, 1):
             warnings += [warning("VIDEO", f"{scene}{i}", w) for w in warns]
         failed = [
-            (i, r) for i, (clip, bad, _) in enumerate(cuts, 1) if clip is None for r in bad or ["?"]
+            (i, r)
+            for i, (clip, bad, _, _) in enumerate(cuts, 1)
+            if clip is None
+            for r in bad or ["?"]
         ]
         if failed:
             warnings += [warning("VIDEO", scene, f"{scene}{i} 영상 {r}") for i, r in failed]
             continue
-        key, error = await join_and_put(ctx, scene, [c for c, _, _ in cuts if c], durations)
+        actual = [length for _, _, _, length in cuts]
+        key, error = await join_and_put(ctx, scene, [c for c, _, _, _ in cuts if c], actual)
         if key:
             keys[scene] = key
-            logger.info("theme video %s %ss model=%s", scene, sum(durations), ctx.video.model)
+            lengths[scene] = actual
+            logger.info("theme video %s %.1fs model=%s", scene, sum(actual), ctx.video.model)
         else:
             warnings.append(warning("VIDEO", scene, error or "JOIN"))
-    return {"video_keys": keys, "media_warnings": warnings}
+    return {"video_keys": keys, "video_durations": lengths, "media_warnings": warnings}

@@ -386,7 +386,7 @@ class GeneratedMissionReview(BaseModel):
 
 # MISSION_FIT(미션 그림만: 질문·생각 열기가 가리키는 것이 다 보이는지)·SCENE_FIT(장면 일치)
 ImageReviewId = Literal["MUNGCHI", "ANSWER_HINT", "TEXT", "SAFETY", "MISSION_FIT", "SCENE_FIT"]
-VideoReviewId = Literal["MORPH", "ANSWER_HINT", "TEXT", "SAFETY"]
+VideoReviewId = Literal["MORPH", "ANSWER_HINT", "TEXT", "SAFETY", "CONTINUITY"]
 
 
 class ImageReviewItem(BaseModel):
