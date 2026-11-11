@@ -611,3 +611,28 @@ learning이 아직 위 칸을 주지 않으면 core는 그 적립만 건너뛰�
 
 - `scripts/tests/test_admin_mission_drafts_contract.py`(호출 종류 목록 7곳 대조)·`test_admin_operations_contract.py`(OpenAPI 지문)·`test_core_migration_versions.py`(로컬 리비전)
 - core `./gradlew test bootJar`: PR 검증 결과에 기록
+
+## 20. 주간 테마 영상 사용량 THEME_VIDEO·응답 칸 추가 (에픽 #436, 2026-11-11)
+
+learning #438이 이번 주 테마 응답에 큰 질문·후보·요일 단서와 시작·종료 장면 영상·움직임, 엔딩 뒤 정답을 더하고, ai #437이 시작·종료 장면 영상을 만들면서 사용량 호출 종류가 하나 늘었다. 학년 전달 방식(`gradeBand` → `grade`)은 별도 PR(`feature/theme-grade-proxy`)이다.
+
+### API 변경
+
+| 경로 | 변경 |
+|---|---|
+| `GET /api/v1/admin/ai-usage?callType` | `callType`에 `THEME_VIDEO` 추가(응답 항목도 같은 값) |
+| `llm.usage.recorded` v1 이벤트 | `callType` enum에 `THEME_VIDEO` 추가 |
+| `GET /students/me/weekly-theme` | 응답 본문은 learning 값을 그대로 전달(core 코드 변경 없음). OpenAPI·api-spec 설명만 새 칸에 맞춤 |
+
+### 결정과 근거
+
+- **목록 동기화**: 이벤트 스키마·core `CallType`·core OpenAPI·ERD Mermaid 주석·ai/scoring 발행 목록에 `KNOWLEDGE_EMBEDDING` 다음, `M2` 앞에 더하고 `V45__theme_video_call_type.sql`이 `ck_llm_usage_call_type`을 넓힌다(V28·V40·V42·V44와 같은 방식, 기존 행 영향 없음). gitops 로컬 core 리비전 v45. 처음 V42로 만들었으나 develop의 #480(V42)·#485(V43)·#467(V44)이 먼저 머지되어 "먼저 머지되는 쪽이 다음 번호" 규칙으로 V45로 옮겼다
+- **비용**: 영상 호출은 토큰이 없어 이미지처럼 `cost_usd` null, 관리자 사용량에서 `unpricedCalls`로 센다
+- **요일 영상 없음**: 확정안에서 영상은 시작·종료 장면(`introVideoUrl`·`outroVideoUrl`)만 만들고 요일 장면 영상은 없앴다(learning `ThemeScene.videoUrl`은 ai 채택 테마에서 null). 사용량도 테마 하나에 최대 2건이다
+- **응답 칸**: core는 이번 주 테마 응답을 바꾸지 않고 전달한다. core가 읽는 값은 포인트 적립용 `weekStart`·`completed`·`finished`·`days[].missionId`·`attemptStatus`·`day`·`completedOnDay`뿐이다(#389·#485). 정답·종료 이야기는 learning이 엔딩 전에 비운다(core는 걸러내지 않음)
+- **실제 발행**: ai가 `THEME_VIDEO`를 발행하는 코드는 #437 브랜치 몫이라 여기서 고치지 않았다. #437 머지 뒤 ai 발행과 관리자 사용량 집계를 함께 확인한다
+
+### 검증
+
+- `ModelVersionHttpTest`: `THEME_VIDEO` 저장(V45 CHECK)·호출 종류별 조회·미산정
+- `scripts/tests/test_admin_mission_drafts_contract.py`(호출 종류 목록 대조)·`test_admin_operations_contract.py`(OpenAPI 지문)·`test_core_migration_versions.py`(로컬 리비전)·DB 스키마 검사

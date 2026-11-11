@@ -102,7 +102,7 @@ class CallTypeListTest(unittest.TestCase):
         schema = json.loads((ROOT / 'contracts/events/llm.usage.recorded.v1.schema.json').read_text(encoding='utf-8'))
         expected = schema['properties']['callType']['enum']
         self.assertIn('MISSION_DRAFT', expected)
-        self.assertTrue({'THEME_DRAFT', 'THEME_IMAGE'} <= set(expected))  # #439
+        self.assertTrue({'THEME_DRAFT', 'THEME_IMAGE', 'THEME_VIDEO'} <= set(expected))  # #439·#436
         self.assertIn('REPORT_EXPLANATION', expected)  # #480
         self.assertIn('KNOWLEDGE_EMBEDDING', expected)  # #467
         public = yaml.safe_load((ROOT / 'contracts/openapi/core-service.yaml').read_text(encoding='utf-8'))
