@@ -591,3 +591,26 @@ def test_plan_names_and_variety_rules() -> None:
     assert "흔한 이름" not in prompts.PLAN_SYSTEM
     extra = prompts.mission_extra(valid_theme(), "MON", 3, [])
     assert "새 이름을 만들지 않는다" in extra
+
+
+def test_clue_logic_rules_in_prompts() -> None:
+    """글 검토 CLUE_LOGIC 실패 20건(실측 2026-11-11)을 줄이는 규칙: 허용 값 여럿은 그중 한 곳,
+    특징 밝히기, 값끼리 겹치지 않기, 이야기 때 맞추기, 종료 정리는 표 계산대로, RULE은 단정. 미션은
+    그날 특징만 알고 사건 현장의 그 값을 정하지 않음(값 낱말을 다 막으면 성취기준 개념을 못 씀)."""
+    from app.theme_draft import prompts
+
+    for rule in (
+        "그중 한 곳·하나에 있었다는",
+        "무엇에 대한 것인지",
+        "뜻이 겹치지 않아",
+        "evidence.when이 가리키는 그때와 맞춘다",
+        "이미 빠진 후보를 나중 단서가 뺐다고 쓰지 않는다",
+        "RULE 단서는 단정해서",
+    ):
+        assert rule in prompts.PLAN_SYSTEM
+    theme = valid_theme()
+    wed = " ".join(prompts.fix_rules(theme, "WED.clue"))
+    assert "단정해서" in wed and "중 한 곳" not in wed  # WED는 RULE·허용 값 하나
+    extra = prompts.mission_extra(theme, "THU", 3, [])
+    feature_line = extra.split("오늘 단서가 다루는 특징: '땅'")[1].split("\n")[0]
+    assert "흙" not in feature_line  # 단서 값 낱말은 알리지 않음

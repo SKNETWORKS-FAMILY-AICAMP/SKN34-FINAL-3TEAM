@@ -149,6 +149,17 @@ def _beach5(theme: dict) -> None:
     mon["clue"] = "보리 발자국에 흙이 묻어 있었어."
 
 
+def _all_values(theme: dict) -> None:
+    # 월요일 HINT(땅: 모래·흙·시멘트)인데 세 바닥을 '모두' 지났다고 씀(조건은 그중 한 곳)
+    _beach5(theme)
+    theme["days"][0]["clue"] = "보리 발자국이 모래·시멘트·흙 바닥을 모두 스쳤어."
+
+
+def _one_of_values(theme: dict) -> None:
+    _beach5(theme)
+    theme["days"][0]["clue"] = "보리 발자국은 모래·시멘트·흙 바닥 중 한 곳에 있었어."
+
+
 THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
     ("valid", valid_theme, []),
     ("title empty", themed(title=" "), ["REQUIRED"]),
@@ -231,6 +242,17 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
         ["CLUE_TEXT THU"],
     ),
     ("kind invalid", cond("MON", kind="MAYBE"), ["CONDITION MON"]),
+    # 단서 말투(실측 2026-11-11 글 검토 CLUE_LOGIC): 허용 값 여럿을 '모두' 있었다고 쓰거나 RULE을
+    # 흐리게 씀
+    ("clue says all allowed values", edit(_all_values), ["CLUE_WORDING MON"]),
+    ("clue says one of allowed values", edit(_one_of_values), []),
+    (
+        "rule clue hedges",
+        on_day("WED", clue="보리는 지붕이 없는 곳으로 갔을 수도 있대."),
+        ["CLUE_WORDING WED"],
+    ),
+    ("hint clue may hedge", on_day("MON", clue="보리 발자국이 젖어 있었던 것 같아."), []),
+    ("straight is not hedge", on_day("WED", clue="보리는 지붕이 없는 반듯한 곳으로 갔대."), []),
     # 시작·종료 영상 콘티
     ("intro cuts three", edit(lambda t: t["introCuts"].pop()), ["CUTS"]),
     ("outro cuts five", edit(lambda t: t["outroCuts"].append(dict(t["outroCuts"][0]))), ["CUTS"]),
@@ -382,6 +404,8 @@ def test_check_theme_exact_codes(name: str, build: Callable[[], dict], expected:
             ["outroCuts3.action", "introCuts3.scene"],
         ),
         (["CLUE_TEXT TUE 단서 문장에 허용 값 낱말 없음"], []),
+        # 단서 말투는 그 단서만 고쳐 씀
+        (["CLUE_WORDING WED clue 후보를 빼는 단서를 흐리게 씀('수도 있')"], ["WED.clue"]),
     ],
 )
 def test_fix_targets_only_single_field_reasons(bad: list[str], expected: list[str]) -> None:
