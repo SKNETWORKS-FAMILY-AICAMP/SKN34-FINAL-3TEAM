@@ -162,7 +162,26 @@ FIX_REASON = (
     re.compile(r"^CUT_ACTION ((?:introCuts|outroCuts)[1-4])\.(scene|action) "),
     re.compile(r"^CLUE_EARLY (MON|TUE|WED|THU|FRI) (discovery)에 "),
     re.compile(r"^ANSWER_LEAK (\S+?)에 "),
+    re.compile(r"^CLUE_WORDING (MON|TUE|WED|THU|FRI) (clue) "),
 )
+
+
+# 단서 말투(CLUE_WORDING). 실측 2026-11-11 글 검토 CLUE_LOGIC 20건 중 4건은 허용 값 여럿을
+# '모두' 있었던 것처럼 썼고(조건은 그중 하나), RULE 단서에 '~수도 있다'처럼 흐리게 써서 후보를
+# 뺄 수 없었다. '반듯한'·'번듯한'의 '듯'은 흐린 말이 아님
+ALL_VALUES_WORDS = re.compile(r"모두|전부|둘 다|셋 다|넷 다")
+HEDGE_WORDS = re.compile(r"수도 있|지도 모르|것 같|(?<![반번])듯|아마")
+
+
+def clue_wording_problems(day: dict) -> list[str]:
+    clue = day.get("clue") or ""
+    cond = day.get("condition") or {}
+    out = []
+    if len(cond.get("allowed") or []) >= 2 and (m := ALL_VALUES_WORDS.search(clue)):
+        out.append(f"허용 값 여럿을 모두 있었던 것처럼 씀('{m.group()}', 그중 한 곳·하나로 씀)")
+    if cond.get("kind") == "RULE" and (m := HEDGE_WORDS.search(clue)):
+        out.append(f"후보를 빼는 단서를 흐리게 씀('{m.group()}', 단정해서 씀)")
+    return out
 
 
 # 단서 문장이 기록(사진·영상·녹음 등)을 말하면 증거 종류는 RECORD, RECORD면 기록 낱말이 있어야 함
@@ -460,6 +479,8 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
                 "증거와 evidence 종류가 다름(사진·영상·녹음·기록·"
                 "일지·메모를 말하면 RECORD, RECORD면 그 기록을 말함)"
             )
+        for problem in clue_wording_problems(d):
+            bad.append(f"CLUE_WORDING {d['day']} clue {problem}")
         if early := early_values(d, d.get("discovery")):
             bad.append(f"CLUE_EARLY {d['day']} discovery에 그날 단서 결론(허용 값 {early})")
         for k in ("discovery", "missionHook"):
