@@ -28,7 +28,7 @@ AI_KEYS = (
 )
 KEYS = {
     "ai-service": AI_KEYS,
-    "core-service": ("APP_GUARDIAN_TRANSFER_ENABLED",),
+    "core-service": ("APP_GUARDIAN_TRANSFER_ENABLED", "AUTH_NEW_ACCOUNT_DEMO"),
     "scoring-service": ("M2_CONTENT3_RULE_ENABLED",),
 }
 FILES = (
@@ -64,7 +64,10 @@ def defaults():
     return {
         "ai-service": python_defaults("ai-service", AI_KEYS),
         "scoring-service": python_defaults("scoring-service", KEYS["scoring-service"]),
-        "core-service": {"APP_GUARDIAN_TRANSFER_ENABLED": "false"},
+        "core-service": {
+            "APP_GUARDIAN_TRANSFER_ENABLED": "false",
+            "AUTH_NEW_ACCOUNT_DEMO": "false",
+        },
     }
 
 
@@ -178,6 +181,7 @@ class RuntimeConfigTests(unittest.TestCase):
             "M1_CHECK_ENABLED": "true",
             "M1_MIN_CONFIDENCE": "0.9",
             "APP_GUARDIAN_TRANSFER_ENABLED": "true",
+            "AUTH_NEW_ACCOUNT_DEMO": "true",
             "M2_CONTENT3_RULE_ENABLED": "true",
         }
         services = compose(("compose.yaml",), overrides)["services"]

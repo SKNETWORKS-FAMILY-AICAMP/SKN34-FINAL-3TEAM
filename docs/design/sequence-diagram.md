@@ -166,7 +166,7 @@ sequenceDiagram
 
 #### 2.1.3 비밀번호 재확인 (#415)
 
-`/me`의 `authMethod`가 `PASSWORD`인 학부모는 중요 작업(탈퇴·보호자 비밀번호·학생 PIN·자녀 해제·자녀 삭제·자녀 이관·이관 수락)에서 Google 재인증 대신 로그인 비밀번호를 다시 입력한다. 검증·발급을 마친 challenge·grant를 한 번에 만들어, 각 작업의 grant 소비는 Google 재인증과 같다 ([API 명세 5.6](api-spec.md#56-45-계정-관리google비밀번호-재확인삭제탈퇴-계약))
+`/me`의 `authMethod`가 `PASSWORD`인 학부모는 중요 작업(탈퇴·보호자 비밀번호·자녀 해제·자녀 삭제·자녀 이관·이관 수락)에서 Google 재인증 대신 로그인 비밀번호를 다시 입력한다. 검증·발급을 마친 challenge·grant를 한 번에 만들어, 각 작업의 grant 소비는 Google 재인증과 같다 ([API 명세 5.6](api-spec.md#56-45-계정-관리google비밀번호-재확인삭제탈퇴-계약))
 
 ```mermaid
 sequenceDiagram
@@ -399,9 +399,9 @@ sequenceDiagram
   Note over K: access 만료 시 PIN 재입력. 학부모 화면은 학부모 로그인 필요
 ```
 
-- PIN 잠금 해제는 학부모 `PUT /children/{childId}/pin`(재확인 필요)으로만 가능
+- PIN 잠금 해제는 학부모 `PUT /children/{childId}/pin`(활성 보호자 세션·현재 자녀 권한, 추가 재인증 없음 2026-11-10)으로만 가능
 - 학부모가 기기를 해제하면(`DELETE /student-devices/{deviceId}`) 이후 PIN 로그인은 `401 STUDENT_DEVICE_INVALID`
-- 단독 로그인은 계정 행 잠금 → 기기 유효/등록 자녀 → 현재 연결·활성·동의 → PIN 설정·잠금·일치 순으로 재검사한다. 실패 횟수 커밋 후 401/423 응답한다. 성공은 별도 STUDENT auth_session을 생성하며 부모 세션을 변경하지 않는다. PIN 변경은 계정 잠금 → 현재 자녀 권한 → 학생 잠금 → DB 재인증 consume → PIN 갱신·감사 기록을 한 트랜잭션으로 실행한다.
+- 단독 로그인은 계정 행 잠금 → 기기 유효/등록 자녀 → 현재 연결·활성·동의 → PIN 설정·잠금·일치 순으로 재검사한다. 실패 횟수 커밋 후 401/423 응답한다. 성공은 별도 STUDENT auth_session을 생성하며 부모 세션을 변경하지 않는다. PIN 변경은 계정 잠금 → 현재 자녀 권한 → 학생 잠금 → PIN 갱신·감사 기록을 한 트랜잭션으로 실행한다.
 
 ### 2.5 탈퇴 전 자녀 이관 (#289)
 
@@ -986,7 +986,7 @@ sequenceDiagram
   end
   Note over RW,C: #119 core API를 기본 worker의 CoreClient.lookup에서 호출 (#56)
   RW->>C: GET /internal/students/{id}/profile (내부 토큰, SYSTEM, 학생 scope)
-  C-->>RW: 200 {studentId, nickname} (ACTIVE만, no-store)
+  C-->>RW: 200 {studentId, nickname, parentSharingEnabled, grade} (ACTIVE만, no-store)
   RW->>RW: nickname을 렌더링용 display_name으로 보관 (메시지에는 추가하지 않음)
   Note over RW,C: 403·404·통신 장애는 GENERATION_FAILED로 종료. HTTP 재시도·가짜 별명 없음
   RW->>L: GET /internal/records/students/{id}/thinking-types·attempts·changes
@@ -1302,13 +1302,21 @@ sequenceDiagram
   participant C as core
   participant DB as core_db
   participant T as Toss
+  participant L as learning
 
   W->>C: POST /payments/{id}/refund-requests (Idempotency-Key)
-  C->>DB: 결제 7일 이내 + 결제 후 해당 자녀의 피드백(learning 기록)·분석 대화·리포트 열람(report_view) 기록 없음 확인 (P14)
-  alt 조건 불충족
-    C-->>W: 409 REFUND_NOT_ALLOWED
+  C->>DB: 대기 환불 있으면 그 행 반환. 결제 7일 이내·결제 상태 + 결제 후 core 프리미엄 사용(payment_premium_usage) 없음 확인 (P14)
+  alt 사전 조건 불충족 (행 생성 없음)
+    C-->>W: 409 REFUND_NOT_ALLOWED / 409 REFUND_PREMIUM_USAGE_PRESENT
   end
   C->>DB: refund_request REQUESTED (전액), payment REFUND_REVIEW
+  C->>L: GET /internal/payment-usage/students/{id}?since (트랜잭션 밖, 실패 시 503 REFUND_USAGE_UNAVAILABLE)
+  alt 결제 후 프리미엄 사용 확인
+    C->>DB: refund_request REJECTED (시스템, "결제 후 프리미엄 기능 사용"), payment APPROVED 복귀
+    C-->>W: 409 REFUND_NOT_ALLOWED
+  else 미사용
+    C->>DB: usage_verified_at 기록
+  end
   alt 관리자 반려
     AW->>C: POST /admin/refund-requests/{id}/reject {reason}
     C->>DB: refund_request REJECTED (decided_by, reject_reason), payment REFUND_REVIEW → APPROVED

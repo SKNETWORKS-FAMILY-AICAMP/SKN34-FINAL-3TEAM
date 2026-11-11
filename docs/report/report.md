@@ -449,3 +449,24 @@ local kind에 develop `b1562c2b` 이미지를 올려 core → RabbitMQ → repor
 - 계약/스크립트 unittest 214개 실행, 실패 없음(기존 조건부 1개 제외). core 실제 생성/생명주기 이벤트와 일일·주간 상세 출력의 계약 검사도 통과했다.
 - `check_db_migrations.py`를 일회용 PostgreSQL에서 실행했다. 내부 `verify_db_schema.py`가 core 59표/514컬럼·learning 28표/240컬럼·report 8표/66컬럼, 부정 제약 115건·CHECK 98종·인덱스 49개를 검증했다. 6개 DB 역할 격리, 재적용 무변경, report downgrade/upgrade 왕복 통과. 팀 DB나 운영 데이터에는 적용하지 않았다.
 - #479의 생성·저장·렌더링 및 로컬 테스트 완료 조건은 충족했다. 확인 항목인 대기 상한은 담당자 댓글의 ai 마감 125초보다 긴 임시값(호출 130초·전체 400초)으로 구현했다. 실제 CPU 모델의 품질·지연 측정과 운영 배포는 별도이며, 해당 확인 체크박스를 실측 완료로 처리하지 않는다.
+
+## #500 학부모 리포트 목록 전체 반환 (2026-11-11)
+
+### 원인
+
+- core `ReportQueryService.list`가 report `GET /internal/reports`에 `studentId`·`status`·`periodType`만 넘기고 `page`·`size`를 넘기지 않았다. report 기본값(`page=0`, `size=20`)이 적용되어 최신 20건만 돌아왔다.
+- 공개 `ReportList`는 `{items}`만이라 web은 다음 페이지를 요청할 수단이 없었다. 일일(주 7건)+주간 기준 약 2.5주 뒤부터 학부모 목록에서 과거 리포트가 사라지고, 수업 화면 기간별 리포트 찾기(`apiGateway.ts`)도 오래된 기간을 `REPORT_NOT_GENERATED`로 보여 줬다.
+
+### 결정
+
+- 공개 API에 페이지를 추가하지 않고 core가 report 목록을 `page=0`부터 `size=100`(report 최대)으로 짧은 페이지가 나올 때까지 조회해 합친 `{items}`를 반환한다(사용자 승인).
+- 근거: 공개 API·openapi·web·MSW를 바꾸지 않고 학부모 목록과 수업 화면 두 증상을 함께 고친다. 자녀 1명당 1년 약 420건(일일 365+주간 52)이라 한 번에 돌려줘도 응답 크기가 작다.
+- 각 페이지에 기존 계약 검사(`items` 배열·자녀 일치·식별·기간 종류)를 그대로 적용하고, 한 페이지라도 위반하면 전체 502 `REPORT_CONTRACT_INVALID`다. 50페이지(5000건)를 넘으면 반복을 멈추고 같은 502로 거부한다. report 페이지 봉투 필드(`page`·`size`·`totalElements`)는 응답에서 뺀다.
+- report는 기간별 최신 revision을 고른 뒤 `(period_from desc, period_type)`으로 정렬하며 이 조합이 유일하므로 offset 페이지 사이 중복·누락이 없다.
+- 계층 정리: `ConversationService`가 report 기능의 `ReportJobRepository`를 직접 쓰던 것을 `ReportQueryService.job(reportId)`(report HTTP 호출 없음)로 바꿨다. 422 `CONVERSATION_REPORT_INVALID`와 report 미호출 동작은 같다.
+
+### 검증
+
+- core 전체 테스트 621개 통과(기존 건너뜀 3개). `ReportHttpTest`에 report 2페이지(100+20건) 합침·쿼리(`page=0&size=100`, `page=1&size=100`)·봉투 필드 제거·둘째 페이지 계약 위반 502 검사를 추가했다. `ReportConversationIntegrationTest`의 422·report 미호출 검사도 통과.
+- 계약/스크립트 unittest 225개 통과(기존 조건부 1개 건너뜀). `test_runtime_config.py`에 `AUTH_NEW_ACCOUNT_DEMO`를 추가해 compose 전달·기본값·덮어쓰기를 확인한다.
+- web lint·단위 테스트 291개 통과(문구만 변경). report-service와 공개 OpenAPI는 바꾸지 않았다.

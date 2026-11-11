@@ -115,7 +115,7 @@ $COMPOSE down -v
 
 - 기반은 `PostgresRepositoryTest` 상속(메시징 없는 테스트, [db-dev-guide](db-dev-guide.md) 5장). 처음 `IntegrationTestSupport`로 만들었을 때 그 DB 연결이 100/100에 닿아 다른 통합 테스트가 `too many clients`로 실패
 - 학생 403은 `PublicAuthFilter`(역할별 경로)와 서비스 `AccountManagementService.lock` 두 겹이고 둘 다 403 `FORBIDDEN`이라, 응답만으로는 필터 규칙 누락을 알 수 없음 → MockMvc `handler` 없음(컨트롤러 미도달)까지 확인
-- 재인증 실패는 `X-Reauth-Token`을 쓰는 연결 해제·PIN 설정 두 경로에만 해당. PIN 규칙 위반 422는 재인증보다 먼저 검사
+- 재인증 실패는 `X-Reauth-Token`을 쓰는 연결 해제 경로에만 해당. PIN 설정은 2026-11-10 재인증 제거([auth-account 15절](auth-account.md#15-학생-pin-추가-재인증-제거-2026-11-10)) 뒤 규칙 위반 422만 검사
 
 | 경로 | 확인한 성공·실패 |
 |---|---|
@@ -124,7 +124,7 @@ $COMPOSE down -v
 | `DELETE /children/{id}/link` | 204, 감사 `CHILD_UNLINKED`. 재인증 누락·다른 목적 토큰 403 `REAUTH_REQUIRED` |
 | `POST /student-devices/pairings` | 8자리 코드로 실제 기기 등록 201. 빈 목록·중복·4명 400 |
 | `GET`·`DELETE /student-devices` | 해제 기기 제외·토큰 해시 없음, 재해제 204·감사 1건. 다른 보호자 404 |
-| `PUT /children/{id}/pin` | 204, 감사 `STUDENT_PIN_CHANGED`. `1234` 422, 재인증 403 |
+| `PUT /children/{id}/pin` | 204, 감사 `STUDENT_PIN_CHANGED`. `1234` 422 (재인증 없음, 2026-11-10) |
 | `GET /auth/google/authorize` | 302, `Referrer-Policy: no-referrer`, 상태 쿠키 `sagomungchi_oauth`(HttpOnly·SameSite=Lax·600초), 쿠키·URL state 일치. 설정 없음 503 `OAUTH_UNAVAILABLE` |
 
 남은 위험: `IntegrationTestSupport`는 연결 풀 상한이 없어 설정이 다른 클래스마다 캐시된 Spring 컨텍스트가 연결 10개(Hikari 기본값)를 계속 점유. develop 원본만으로 최대 99/100이라 이 기반을 쓰는 클래스가 하나 더 생기면 `too many clients` 위험(공통 기반 조정은 core 담당 판단).

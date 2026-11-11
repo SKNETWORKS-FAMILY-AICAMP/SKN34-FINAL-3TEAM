@@ -28,7 +28,7 @@
 - 테이블 없이 Redis에 두는 값: SSE 알림 중계 (아키텍처 1.6). 분석 대화 일일 사용량은 `payment_premium_usage` KST 일자 집계(#225), 무료 플랜 미션 일일 한도(P13)는 `mission_daily_usage` KST 일자 집계(#387, 3.4)
 - 생각 메모는 `attempt_draft.content.memo`에 저장 (P05). 음성 시범 미구현으로 음성 데이터 없음 (P03)
 - 학생 별도 계정 없음: 학생 세션은 `student.id`로 발급하는 토큰만. 발급 경로는 학부모 인증(동석) 또는 학부모 등록 기기 + 자녀 PIN(단독). PIN·기기 저장 구조는 3.1 (P01)
-- 학생 기기 페어링 코드(10분·1회용)는 테이블 없이 Redis 저장
+- 학생 기기 페어링 코드(10분·1회용)와 학부모 ID 가입 IP별 횟수 제한(`auth:parent-signup:ip:<IP>`, 기본 10분 5회, #415)은 테이블 없이 Redis 저장
 - 코드 CHECK는 Mermaid 주석의 `A|B` 목록 또는 `CHECK[A]` 명시 표기로 자동 검증한다. 허용값이 하나인 경우에도 `CHECK[A]`로 표시해 일반 설명과 구분한다.
 
 ---
@@ -38,11 +38,11 @@
 | ID | 소유 (원본 테이블) | 참조하는 곳 |
 |---|---|---|
 | `student_id` | core `student.id` | learning `attempt`·`deleted_student`, report `weekly_report` |
-| `mission_id` | learning `mission.id` | (core는 프록시만, 저장 없음) |
-| `attempt_id`, `answer_id` | learning `attempt`·`answer` | core `message_evidence`, report `report_item_evidence` |
+| `mission_id` | learning `mission.id` | core `mission_daily_usage.mission_id`(무료 한도 집계, 3.4) |
+| `attempt_id`, `answer_id` | learning `attempt`·`answer` | core `message_evidence`·`mission_daily_usage.attempt_id`·`error_report.attempt_id`·`inquiry.attempt_id`, report `report_item_evidence` |
 | `judgment_id`, `followup_id` | learning `judgment`·`followup` | core `error_report.target_id` |
 | `job_id` | core `report_job.id` | report `weekly_report.job_id` |
-| `report_id` | report `weekly_report.id` | core `report_job.report_id`, `report_view.report_id`, `error_report.target_id` |
+| `report_id` | report `weekly_report.id` | core `report_job.report_id`, `report_view.report_id`, `error_report.target_id`, `conversation.report_id` |
 | `rubric_version_id` | learning `rubric_version.id` | core `model_version.ref_id` (`kind = RUBRIC`) |
 | `error_report_id` | core `error_report.id` | learning `judgment_correction` |
 | 사용자 ID | core `user_account.id` | learning `mission.created_by`·`mission_review.reviewer_id`·`judgment_correction.corrected_by` |
@@ -1528,7 +1528,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V39(V10·V11 결번), learning Flyway V1~V13, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`. 현재 94개 테이블·814개 컬럼(core 58/508, learning 28/240, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V39·learning V13·report `20261109_07` 기준). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V43(V10·V11 결번), learning Flyway V1~V13, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`. 현재 95개 테이블·820개 컬럼(core 59/514, learning 28/240, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V43·learning V13·report `20261109_07` 기준). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT
