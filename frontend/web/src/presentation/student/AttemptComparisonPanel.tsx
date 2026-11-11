@@ -15,16 +15,16 @@ export function AttemptComparisonPanel({ attempt }: { attempt: Attempt }) {
     <h3>이전 답과 나란히 볼까요?</h3>
     {query.isPending && <p role="status">이전에 마무리한 같은 미션을 찾고 있어요.</p>}
     <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-    {value?.state === 'NO_PREVIOUS' && <p>이 미션에서 처음 마무리한 답이에요. 다음에 다시 풀면 이번 답과 나란히 볼 수 있어요.</p>}
+    {value?.state === 'NO_PREVIOUS' && <p>처음 끝낸 답이에요. 다시 풀면 나란히 볼 수 있어요.</p>}
     {value?.previous && <>
-      <p>같은 미션에서 바로 전에 마무리한 답과 비교합니다. 이전 답은 그대로 남아 있어요.</p>
+      <p>바로 전에 쓴 답과 나란히 보여 줄게요.</p>
       <div className="st-comparison-pair">{[value.previous, value.current].map((snapshot, index) => <article key={snapshot.attemptId}>
         <h4>{index === 0 ? '이전 답' : '이번 답'}</h4>
         <p>{snapshot.mission.question}</p>
         <p className="st-comparison-meta">{new Date(snapshot.finishedAt).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' })} 마무리 · {snapshot.judgment ? judgmentLabels[snapshot.judgment] : '판정 없음'}</p>
         {snapshot.answers.map(answer => <div key={answer.answerId}><small>답변 {answer.version}</small><blockquote>{comparisonAnswerText(answer, snapshot.mission)}</blockquote></div>)}
       </article>)}</div>
-      {value.state === 'CRITERIA_CHANGED' ? <p role="status">문제나 확인 기준이 바뀌었어요. 두 답을 읽어 보되, 확인 항목의 개수로 비교하지 않습니다.</p>
+      {value.state === 'CRITERIA_CHANGED' ? <p role="status">문제가 조금 바뀌었어요. 두 답을 읽고 달라진 점을 찾아보세요.</p>
         : <ul className="st-comparison-elements">{value.elements.map(element => <li key={element.elementId}>
           <strong>{element.label}</strong><span>{comparisonLabels[element.change]}</span>
         </li>)}</ul>}
