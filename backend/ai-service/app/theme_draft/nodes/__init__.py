@@ -57,7 +57,9 @@ class ThemeState(TypedDict, total=False):
     dialogue_omitted: Annotated[dict[str, list[str]], merge]
     review_runs: int
     review_reasons: list[str]  # 마지막 검토 FAIL 사유
-    review_route: str  # PASS·FAIL·AGAIN(형식만 틀림)·PLAN(줄거리부터)·DAYS(그 요일 미션·대화)
+    # PASS·FAIL·AGAIN(형식만 틀림)·CLUE(단서만 고쳐 씀)·PLAN(줄거리부터)·DAYS(그 요일 미션·대화)
+    review_route: str
+    clue_fixed: bool  # 글 검토 CLUE_LOGIC으로 단서 문장만 고쳐 쓰기를 한 번 했는지(실행마다 한 번)
     review_warnings: list[dict]
     failure: dict | None
     # 그림·영상·움직임(review_story PASS 뒤 차례로 실행)

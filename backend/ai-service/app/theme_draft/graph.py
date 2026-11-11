@@ -6,6 +6,8 @@ START → retrieve(#470 자리) → plan_theme → check_theme
                / 통과 → generate_mission ×5 (Send, 요일마다 생성·검사·미션 검토)
 → missions_done: 실패 요일 → END(failure MISSION) / 통과 → generate_dialogue ×5 (Send)
 → review_story: 끝내 FAIL → END / 형식 오류 → review_story
+                / 단서 논리만(처음 한 번) → fix_clues(그 요일 단서만 고쳐 씀) → review_story
+                  (고친 단서가 코드 검사에 걸리면 plan_theme)
                 / 이야기 틀·단서 → plan_theme / 문제·낱말 → generate_mission(그 요일)
                 / PASS → generate_images
 → generate_images(그림마다 검토 포함): 설정 없음·미션 그림 끝내 실패 → END / 통과 → generate_videos
@@ -23,7 +25,14 @@ from app.theme_draft.nodes.dialogue import generate_dialogue
 from app.theme_draft.nodes.images import generate_images
 from app.theme_draft.nodes.mission import generate_mission
 from app.theme_draft.nodes.motion import generate_motion
-from app.theme_draft.nodes.plan import check_theme_node, fix_theme, plan_theme, retrieve
+from app.theme_draft.nodes.plan import (
+    after_fix_clues,
+    check_theme_node,
+    fix_clues,
+    fix_theme,
+    plan_theme,
+    retrieve,
+)
 from app.theme_draft.nodes.review import review_story
 from app.theme_draft.nodes.video import generate_videos
 
@@ -74,6 +83,8 @@ def after_review(state: ThemeState) -> list[Send] | str:
         return "review_story"
     if route == "PLAN":
         return "plan_theme"
+    if route == "CLUE":
+        return "fix_clues"
     if route == "DAYS":
         return mission_sends(state)
     if route == "PASS":
@@ -99,6 +110,7 @@ def build_graph() -> CompiledStateGraph:
     graph.add_node("missions_done", missions_done)
     graph.add_node("generate_dialogue", generate_dialogue)
     graph.add_node("review_story", review_story)
+    graph.add_node("fix_clues", fix_clues)
     graph.add_node("generate_images", generate_images)
     graph.add_node("generate_videos", generate_videos)
     graph.add_node("generate_motion", generate_motion)
@@ -116,8 +128,9 @@ def build_graph() -> CompiledStateGraph:
     graph.add_conditional_edges(
         "review_story",
         after_review,
-        ["review_story", "plan_theme", "generate_mission", "generate_images", END],
+        ["review_story", "fix_clues", "plan_theme", "generate_mission", "generate_images", END],
     )
+    graph.add_conditional_edges("fix_clues", after_fix_clues, ["plan_theme", "review_story"])
     graph.add_conditional_edges("generate_images", after_images, ["generate_videos", END])
     graph.add_edge("generate_videos", "generate_motion")
     graph.add_edge("generate_motion", END)

@@ -468,12 +468,28 @@ def test_video_skipped_near_deadline() -> None:
         image=FakeImageClient(),
         video=video,
         storage=MemoryThemeStorage(),
-        deadline_in=400,  # theme_video_timeout(400) + 60초 미만
+        deadline_in=290,  # theme_video_min_seconds(300) 미만
     )
     assert response.failure is None and video.calls == [] and response.videos == {}
     assert [(w.stage, w.item) for w in response.warnings] == [("VIDEO", "ALL")]
     assert "마감" in response.warnings[0].reason
     assert len(response.motions) == 7
+
+
+def test_video_runs_when_min_seconds_left() -> None:
+    """컷 1개 상한(400초)보다 짧게 남아도 기준(300초) 이상이면 영상을 만든다(마감까지만 기다림).
+    예전 기준(400 + 60초)은 줄거리를 한 번만 다시 만들어도 영상이 빠졌음(실측 2026-11-11)."""
+    video = FakeVideoClient()
+    response = run(
+        gen_llm(),
+        review_llm(),
+        image=FakeImageClient(),
+        video=video,
+        storage=MemoryThemeStorage(),
+        deadline_in=400,
+    )
+    assert response.failure is None and set(response.videos) == {"INTRO", "OUTRO"}
+    assert len(video.calls) == 8
 
 
 # --- 움직임 ---------------------------------------------------------------------------
