@@ -125,23 +125,23 @@
         },
         {
           "uid": "http-learning-errors",
-          "title": "Learning save 5xx error rate",
-          "expr": "(sum(rate(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/(attempts/.+|missions/.+/attempts)\",http_response_status_code=~\"5..\"}[5m])) or vector(0)) / sum(rate(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/(attempts/.+|missions/.+/attempts)\"}[5m])) and on() sum(increase(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/(attempts/.+|missions/.+/attempts)\"}[5m])) >= 10",
+          "title": "Student learning 5xx error rate",
+          "expr": "(sum(rate(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/(attempts/.+|missions/.+/(attempts|community-posts)|students/me/.+|community-posts/.+)\",http_response_status_code=~\"5..\"}[5m])) or vector(0)) / sum(rate(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/(attempts/.+|missions/.+/(attempts|community-posts)|students/me/.+|community-posts/.+)\"}[5m])) and on() sum(increase(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/(attempts/.+|missions/.+/(attempts|community-posts)|students/me/.+|community-posts/.+)\"}[5m])) >= 10",
           "operator": "gt",
           "threshold": 0.05,
           "for": "5m",
           "noDataState": "OK",
-          "summary": "Learning save API 5xx ratio exceeds 5% for 5 minutes (minimum 10 requests per 5 minutes)."
+          "summary": "Student learning API 5xx ratio exceeds 5% for 5 minutes (minimum 10 requests per 5 minutes)."
         },
         {
           "uid": "http-learning-latency",
-          "title": "Learning save p95 latency",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{exported_job=\"core-service\",http_route=~\"/api/v1/(attempts/.+|missions/.+/attempts)\"}[5m]))) and on() sum(increase(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/(attempts/.+|missions/.+/attempts)\"}[5m])) >= 10",
+          "title": "Student learning p95 latency",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{exported_job=\"core-service\",http_route=~\"/api/v1/(attempts/.+|missions/.+/(attempts|community-posts)|students/me/.+|community-posts/.+)\"}[5m]))) and on() sum(increase(http_server_request_duration_seconds_count{exported_job=\"core-service\",http_route=~\"/api/v1/(attempts/.+|missions/.+/(attempts|community-posts)|students/me/.+|community-posts/.+)\"}[5m])) >= 10",
           "operator": "gt",
           "threshold": 2,
           "for": "5m",
           "noDataState": "OK",
-          "summary": "Learning save API p95 latency exceeds 2 seconds for 5 minutes (minimum 10 requests per 5 minutes)."
+          "summary": "Student learning API p95 latency exceeds 2 seconds for 5 minutes (minimum 10 requests per 5 minutes)."
         },
         {
           "uid": "http-ai-errors",

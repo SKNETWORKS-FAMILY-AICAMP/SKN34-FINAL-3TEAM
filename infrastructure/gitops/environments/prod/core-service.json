@@ -404,7 +404,6 @@
     "ingressFromApps": [
       "learning-service",
       "ai-service",
-      "report-api",
       "report-worker",
       "scoring-service"
     ],
