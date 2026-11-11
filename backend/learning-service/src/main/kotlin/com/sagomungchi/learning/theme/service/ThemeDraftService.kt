@@ -29,6 +29,7 @@ import com.sagomungchi.learning.theme.domain.ThemeDraftViewPage
 import com.sagomungchi.learning.theme.domain.ThemeFailure
 import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.ThemeMissionInput
+import com.sagomungchi.learning.theme.domain.ThemeTopicSeeds
 import com.sagomungchi.learning.theme.domain.ThemeWeek
 import com.sagomungchi.learning.theme.repository.ThemeDraftRepository
 import org.slf4j.LoggerFactory
@@ -71,7 +72,7 @@ class ThemeDraftService(
 
     /**
      * 관리자 요청 (state-diagram 3.5.1): 학년·적용 주(이번 주 이후 월요일)·주제 길이·유형 중복·성취기준 실재·그 학년을 포함하는 학년군·
-     * 논술 학년을 확인(400)하고, 비운 유형은 자동 규칙으로 채워 GENERATING(ADMIN, attempts 0)
+     * 논술 학년을 확인(400)하고, 비운 유형은 자동 규칙으로, 비운 주제는 주제 씨앗으로 채워 GENERATING(ADMIN, attempts 0)
      */
     @Transactional
     fun request(command: ThemeDraftCommand): ThemeDraft {
@@ -249,8 +250,12 @@ class ThemeDraftService(
         previousFailures = draft.previousFailures,
     )
 
-    /** 유형 5개 입력: 고른 유형은 그대로, 비운 유형은 자동 규칙(그 학년 최근 4주 초안 코드는 피함). 고를 수 없으면 null */
+    /**
+     * 유형 5개 입력: 고른 유형은 그대로, 비운 유형은 자동 규칙(그 학년 최근 4주 초안 코드는 피함). 고를 수 없으면 null.
+     * 주제가 없으면(주간 자동·주제 없이 온 관리자 요청) 주제 씨앗을 골라 넣는다(ThemeTopicSeeds, 관리자가 쓴 주제는 그대로)
+     */
     private fun autoInput(grade: ThemeGrade, weekStart: LocalDate, topic: String?, requested: List<ThemeMissionInput>): ThemeDraftInput? {
+        val chosenTopic = topic ?: seedTopic(grade, weekStart)
         val missing = ThemeDraftRules.DAY_TYPES.values.any { type -> requested.none { it.thinkingType == type } }
         val tables = if (missing) {
             val band = ThemeDraftRules.gradeBand(grade)
@@ -264,7 +269,14 @@ class ThemeDraftService(
         } else {
             emptySet()
         }
-        return ThemeDraftRules.autoStandards(grade, requested, recent, tables, Random.Default)?.let { ThemeDraftInput(topic, it) }
+        return ThemeDraftRules.autoStandards(grade, requested, recent, tables, Random.Default)?.let { ThemeDraftInput(chosenTopic, it) }
+    }
+
+    /** 같은 학년 최근(씨앗 개수만큼의 주, 초안 상태 무관) 씨앗과 같은 주 다른 초안 씨앗을 빼고 고름 */
+    private fun seedTopic(grade: ThemeGrade, weekStart: LocalDate): String {
+        val recent = repository.findInputs(grade, weekStart.minusWeeks(ThemeTopicSeeds.RECENT_WEEKS), weekStart).mapNotNull { it.topic }
+        val sameWeek = repository.findWeekInputs(weekStart).mapNotNull { it.topic }.toSet()
+        return ThemeTopicSeeds.choose(weekStart, recent, sameWeek, Random.Default)
     }
 
     /** 적용 주는 월요일이고 이번 주(KST) 이후 */

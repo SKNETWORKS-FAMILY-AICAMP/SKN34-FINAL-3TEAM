@@ -77,6 +77,10 @@
         ORDER BY created_at
     </select>
 
+    <select id="findWeekInputs" resultType="com.sagomungchi.learning.theme.domain.ThemeDraftInput" flushCache="true" useCache="false">
+        SELECT input FROM theme_draft WHERE week_start = #{weekStart} ORDER BY created_at
+    </select>
+
     <!-- 점유: 조건을 다시 확인하는 UPDATE 하나라 레플리카가 동시에 실행해도 한 곳만 잡음 -->
     <select id="claimNext" resultMap="draft" flushCache="true" useCache="false">
         UPDATE theme_draft SET lease_until = #{leaseUntil}, updated_at = #{now}

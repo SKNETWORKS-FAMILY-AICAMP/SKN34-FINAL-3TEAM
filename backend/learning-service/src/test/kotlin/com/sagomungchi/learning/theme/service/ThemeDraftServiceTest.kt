@@ -23,7 +23,9 @@ import com.sagomungchi.learning.theme.domain.ThemeDraftRules
 import com.sagomungchi.learning.theme.domain.ThemeDraftSource
 import com.sagomungchi.learning.theme.domain.ThemeFailure
 import com.sagomungchi.learning.theme.domain.ThemeGrade
+import com.sagomungchi.learning.theme.domain.Season
 import com.sagomungchi.learning.theme.domain.ThemeMissionInput
+import com.sagomungchi.learning.theme.domain.ThemeTopicSeeds
 import com.sagomungchi.learning.theme.domain.ThemeWeek
 import com.sagomungchi.learning.theme.domain.WeeklyThemeStatus
 import com.sagomungchi.learning.theme.repository.ThemeDraftRepository
@@ -101,9 +103,9 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
-    fun `이번 주 테마도 요청할 수 있고 고르지 않으면 다섯 유형 모두 자동`() {
+    fun `이번 주 테마도 요청할 수 있고 고르지 않으면 다섯 유형 모두 자동, 주제가 없으면 주제 씨앗`() {
         val draft = service.request(command(grade = ThemeGrade.G3, weekStart = nextWeek.minusWeeks(1), topic = null, missions = emptyList()))
-        assertNull(draft.input.topic)
+        assertTrue(draft.input.topic in ThemeTopicSeeds.ALL.map { it.topic }, draft.input.topic)
         assertEquals(listOf(InputType.NARRATIVE, InputType.NARRATIVE, InputType.NARRATIVE, InputType.SOLUTION_STEPS, InputType.NARRATIVE),
             draft.input.missions.map { it.inputType }) // 초3 따져 보기는 서술
         assertTrue(draft.input.missions.flatMap { it.standardCodes }.all { it.startsWith("4") })
@@ -128,7 +130,7 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
-    fun `주간 자동은 학년마다 하나(AUTO, 요청자 없음), 다시 돌려도 그대로, 게시 테마가 있는 학년은 건너뜀`() {
+    fun `주간 자동은 학년마다 하나(AUTO, 요청자 없음, 학년마다 다른 주제 씨앗), 다시 돌려도 그대로, 게시 테마가 있는 학년은 건너뜀`() {
         val rows = TestRows(jdbc)
         rows.publishedTheme(rows.themeMissions(5, 6).map { it.id }, nextWeek, grade = "G6")
 
@@ -138,11 +140,29 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
         val auto = drafts.findPage(null, ThemeDraftSource.AUTO, 0, 10).items.filter { it.weekStart == nextWeek }
         assertEquals(setOf(ThemeGrade.G3, ThemeGrade.G4, ThemeGrade.G5), auto.map { it.grade }.toSet())
         auto.forEach {
-            assertEquals(listOf(DraftStatus.GENERATING, null, null, 5), listOf(it.status, it.requestedBy, it.input.topic, it.input.missions.size))
+            assertEquals(listOf(DraftStatus.GENERATING, null, 5), listOf(it.status, it.requestedBy, it.input.missions.size))
+            assertTrue(it.input.topic in ThemeTopicSeeds.ALL.map { seed -> seed.topic }, it.input.topic)
             val band = ThemeDraftRules.gradeBand(it.grade).take(2)
             assertTrue(it.input.missions.flatMap { m -> m.standardCodes }.all { code -> code.startsWith(if (band == "초3") "4" else "6") }, it.input.toString())
         }
+        assertEquals(3, auto.mapNotNull { it.input.topic }.toSet().size) // 같은 주 다른 학년과 겹치지 않음
         verifyNoInteractions(ai)
+    }
+
+    @Test
+    fun `주제 씨앗은 같은 학년 최근 씨앗을 피하고(다른 학년·기간 밖은 상관없음) 관리자가 쓴 주제는 그대로`() {
+        val week = nextWeek
+        val fitting = ThemeTopicSeeds.ALL.filter { it.fits(Season.of(week)) }.map { it.topic }
+        val (recent, rest) = fitting.dropLast(1) to fitting.last()
+        recent.forEachIndexed { index, topic -> seedTopic(ThemeGrade.G4, week.minusWeeks(index % 20 + 1L), topic) }
+        seedTopic(ThemeGrade.G4, week.minusWeeks(ThemeTopicSeeds.RECENT_WEEKS + 1), rest) // 기간 밖
+        seedTopic(ThemeGrade.G5, week.minusWeeks(1), rest) // 다른 학년
+
+        val draft = service.request(command(grade = ThemeGrade.G4, weekStart = week, topic = null, missions = emptyList()))
+        val written = service.request(command(grade = ThemeGrade.G4, weekStart = week, topic = "우리 반 텃밭", missions = emptyList()))
+
+        assertEquals(rest, draft.input.topic)
+        assertEquals("우리 반 텃밭", written.input.topic)
     }
 
     @Test
@@ -305,6 +325,11 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
         val missions = korean.mapIndexed { index, code -> ThemeMissionInput(ThinkingType.entries[index % 3], InputType.NARRATIVE, listOf(code)) } +
             math.map { ThemeMissionInput(ThinkingType.SOLVE, InputType.SOLUTION_STEPS, listOf(it)) }
         drafts.insert(ThemeDraft.requested(UUID.randomUUID(), grade, weekStart, ThemeDraftSource.ADMIN, admin, ThemeDraftInput(null, missions), Instant.now()))
+    }
+
+    private fun seedTopic(grade: ThemeGrade, weekStart: LocalDate, topic: String) {
+        val input = ThemeDraftFixtures.input(grade, topic)
+        drafts.insert(ThemeDraft.requested(UUID.randomUUID(), grade, weekStart, ThemeDraftSource.ADMIN, admin, input, Instant.now()))
     }
 
     private fun anyRequest(): AiThemeDraftRequest = any(AiThemeDraftRequest::class.java) ?: placeholder
