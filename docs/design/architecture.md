@@ -17,7 +17,7 @@
 | 서비스 | 언어 | 책임 | 소유 저장소 |
 |---|---|---|---|
 | core-service | Spring Boot (Kotlin) | **유일한 공개 API**. 계정·인증·동의, 학부모-자녀 연결(권한 기준), 분석 대화 세션·이력, 주간·일일 리포트 작업·일정, 알림(SSE·인앱), 신고·문의·공지, 결제·구독(토스페이먼츠 테스트), 관리자 운영·모델 버전 레지스트리, LLM 사용량 집계 | core_db, Redis |
-| learning-service | Spring Boot (Kotlin) | 미션·기준표·예시 답·생각 열기 질문(버전 관리), 학습 시도·답변 버전·초안·도움 이용·돌아보기·자기 평가, 규칙 판정(고르기·수학 동치), 판정·되묻기 저장, 학습 기록 조회 API(대시보드·에이전트 도구·리포트 소재) | learning_db (미션 장면 이미지는 웹 정적 파일과 함께 CloudFront→S3로 서빙, learning은 S3를 쓰지 않음) |
+| learning-service | Spring Boot (Kotlin) | 미션·기준표·예시 답·생각 열기 질문(버전 관리), 학습 시도·답변 버전·초안·도움 이용·돌아보기·자기 평가, 규칙 판정(고르기·수학 동치), 판정·되묻기 저장, 학습 기록 조회 API(대시보드·에이전트 도구·리포트 소재), 교육과정 지식 저장소(판 적재·활성화, pgvector, #466; 임베딩은 ai 호출) | learning_db (미션 장면 이미지는 웹 정적 파일과 함께 CloudFront→S3로 서빙, learning은 S3를 쓰지 않음) |
 | ai-service | FastAPI | 서술 근거 구절 추출(LLM) + 원문 대조 판정(코드), 되묻기 생성·정답/금지어 유출 검사, LangGraph 분석 에이전트, 리포트 서술·저녁 질문 생성, 리포트 설명 생성 요청·검사(설명 sLLM 호출, #477), 미션 초안·주간 테마 초안 생성(#354·#437), 프롬프트 버전 | 없음 (상태 없음). 테마 초안 이미지·영상은 S3 `theme-drafts/`에 쓰고 키만 반환(#437) |
 | scoring-service | FastAPI | M2 항목 점수(klue/roberta, 국어 우선), M1 수학 풀이 점검(후순위, 활성 범위만) 추론, CPU 추론, 관리자 모델 파일 사전 검사(#368), Pod별 모델 로딩 상태 보고(#370) | 없음 (S3 가중치 읽기) |
 | report-service | FastAPI | 주간·일일 리포트 기간·포함 기록 확정, 수치·전후 변화 코드 계산, 숫자·인용 대조, 렌더링(HTML/PDF/Markdown)·저장 | report_db, S3 |
@@ -676,7 +676,7 @@ backend/report-service/
 
 - stub(`infrastructure/stubs`)은 실서버 E2E 오버레이 `compose.e2e.yaml`에서만 연결한다(google·llm·toss-stub, 합성 값 `infrastructure/stubs/e2e.env`). 기본 Docker Compose의 ai-service는 그대로 `.env`의 `LLM_PROVIDER`·API 키로 실제 LLM을 호출하고, 키가 없으면 판정·되묻기가 `AI_UNAVAILABLE`로 실패한다(6장 LLM 제공자). kind에는 이 E2E용 `<target>-stub` Service가 없다. 예외로 local `sllm-server` release가 llm-stub 이미지(`sagomungchi/llm-stub:local`)를 설명 sLLM 대역으로 쓴다(4.4). [이슈 #246 보고서](../report/testing-ci.md#2-실서버-브라우저-e2e와-외부-스텁-246)
 
-- PostgreSQL은 learning_db 지식 저장소(#463·#466)를 위해 pgvector 포함 이미지(PG 17.11 Debian)를 쓴다. `vector`는 trusted 확장이 아니어서 서비스 migrate 계정의 Flyway가 만들 수 없고, 관리자 계정 bootstrap이 만든다(지식 테이블과 함께 #466에서 추가). alpine(musl)에서 초기화한 기존 데이터 디렉터리는 glibc와 text 정렬이 달라 이미지 교체 뒤 DB마다 `REINDEX DATABASE`를 한 번 실행하거나 볼륨을 새로 만든다
+- PostgreSQL은 learning_db 지식 저장소(#463·#466)를 위해 pgvector 포함 이미지(PG 17.11 Debian)를 쓴다. `vector`는 trusted 확장이 아니어서 서비스 migrate 계정의 Flyway가 만들 수 없고, 관리자 계정 bootstrap(`rds-bootstrap.sql`)이 learning_db에 만든다. 기존 볼륨 1회 적용은 [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466). alpine(musl)에서 초기화한 기존 데이터 디렉터리는 glibc와 text 정렬이 달라 이미지 교체 뒤 DB마다 `REINDEX DATABASE`를 한 번 실행하거나 볼륨을 새로 만든다
 
 - 로컬 kind 클러스터(`sagomungchi-local`)·Calico·ingress-nginx·MinIO의 버전·CIDR·버킷·자원 예산·초기화는 [로컬 플랫폼](../report/local-platform.md) 1~6장, 설치 절차는 [kind](../../infrastructure/kind/README.md)·[platform-data](../../infrastructure/gitops/charts/platform-data/README.md). API·HTTP·HTTPS는 loopback에서만 노출
 

@@ -12,10 +12,12 @@ from app.clients.base import internal_client
 from app.clients.core_client import CoreClient
 from app.clients.scoring_client import ScoringClient
 from app.config import get_settings
+from app.embedding.router import router as embedding_router
 from app.errors import register_error_handlers
 from app.followup.router import router as followup_router
 from app.health.router import router as health_router
 from app.judgment.router import router as judgment_router
+from app.llm.embeddings import create_embedder
 from app.llm.media import create_media_clients
 from app.llm.providers import create_explanation_llm, create_llm, create_theme_llms
 from app.messaging.connection import AmqpConnection
@@ -72,6 +74,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # 테마 그림·영상·S3 (#437). 버킷이 비면 None이라 그림·영상·움직임을 건너뛰고 경고만
     app.state.theme_image, app.state.theme_video = create_media_clients(settings, usage_recorder)
     app.state.theme_storage = create_storage(settings)
+    # 지식 임베딩 (#467). 사용량 callType KNOWLEDGE_EMBEDDING
+    app.state.embedder = create_embedder(settings, recorder=usage_recorder)
 
     async def rabbitmq_ready() -> bool:
         return amqp.is_connected
@@ -110,5 +114,6 @@ def create_app() -> FastAPI:
     app.include_router(analysis_router)
     app.include_router(report_narrative_router)
     app.include_router(report_explanation_router)
+    app.include_router(embedding_router)
     app.include_router(versions_router)
     return app

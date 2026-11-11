@@ -69,7 +69,7 @@ class LlmUsage:
 
     call_type: str
     model: str
-    prompt_version: str
+    prompt_version: str | None  # 프롬프트 없는 호출(임베딩 #467)은 None
     input_tokens: int | None
     output_tokens: int | None
     latency_ms: int

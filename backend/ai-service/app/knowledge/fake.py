@@ -27,7 +27,19 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-SAMPLES_DIR = Path(__file__).resolve().parents[4] / "scripts" / "knowledge" / "samples"
+
+def default_samples_dir() -> Path:
+    """저장소의 샘플 폴더(scripts/knowledge/samples).
+
+    import 시점이 아니라 부를 때 계산한다. 컨테이너는 `app`만 복사해 상위 폴더가 모자라므로,
+    가짜 임베딩만 쓰는 운영 경로는 이 함수를 부르지 않는다(#530).
+    """
+    parents = Path(__file__).resolve().parents
+    if len(parents) <= 4:
+        raise FileNotFoundError("저장소 샘플 폴더를 찾을 수 없음: samples_dir를 넘겨야 함")
+    return parents[4] / "scripts" / "knowledge" / "samples"
+
+
 FAKE_EMBEDDING_MODEL = "fake-bigram-v1"
 DIMENSIONS = 1536  # 기준안(C6)
 MAX_TEXTS = 64  # 기준안(C6)
@@ -199,7 +211,7 @@ class FakeKnowledgeApi:
         embedder: FakeEmbedder | None = None,
         active: bool = True,
     ) -> None:
-        directory = samples_dir or SAMPLES_DIR
+        directory = samples_dir or default_samples_dir()
         self.embedder = embedder or FakeEmbedder()
         self.active = active
         dataset = json.loads((directory / "dataset.sample.json").read_text(encoding="utf-8"))

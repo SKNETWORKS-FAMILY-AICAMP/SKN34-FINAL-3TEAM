@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     # 주간 테마 초안 생성 (#437, api-spec 4.2). 호출 1번에 그래프를 한 번 끝까지 실행하고
     # 다시 부르기는 learning.
     # 마감 기준안 15분(learning→ai 대기 16분 안). 텍스트 시험에서 글 단계만 6~13분이라
-    # 마감까지 남은 시간이 부족하면 다음 재생성을 시작하지 않음(ai.md 16절)
+    # 마감까지 남은 시간이 부족하면 다음 재생성을 시작하지 않음(ai.md 17절)
     theme_draft_deadline: float = 900.0
     # 테마 생성·검토 모델은 테마 전용 설정(사용자 결정 2026-11-10). 로컬·운영 OPENAI_MODEL이
     # gpt-6.1-terra라 기존 클라이언트를 쓰면 생성 = 검토가 되고 생성 비용이 약 10배.
@@ -151,6 +151,13 @@ class Settings(BaseSettings):
     explanation_llm_timeout: float = 60.0
     explanation_deadline: float = 125.0
     explanation_max_tokens: int = 256
+
+    # 지식 임베딩 (#467, api-spec 4.2.4 C6). openai는 OPENAI_API_KEY를 쓰고 OPENAI_BASE_URL(sLLM
+    # 대화용)은 쓰지 않음. 키가 없으면 임베딩만 503. fake는 개발용 fake-bigram-v1(사용량 없음).
+    # 타임아웃·재시도는 위 LLM 값(P12)을 그대로 씀. 개수·글자 상한은 계약 고정값(contracts.py)
+    embedding_provider: Literal["openai", "fake"] = "openai"
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimensions: int = 1536
 
     # 분석 대화 전체 마감(초). core 기준 전체 120초(P12)보다 짧게, LLM 호출은 이 안에서만
     analysis_deadline: float = 110.0

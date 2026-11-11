@@ -1,5 +1,6 @@
 package com.sagomungchi.learning.theme.repository
 
+import com.sagomungchi.learning._common.persistence.TEST_POSTGRES_IMAGE
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
@@ -15,19 +16,19 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 
 /**
- * #438 학년 전환 마이그레이션(V14·V15, ERD 4.2.1): V13까지 적용한 DB에 학년군 테마를 넣고 최신까지 올린다.
+ * #438 학년 전환 마이그레이션(V15·V16, ERD 4.2.1): V14(#466 지식 저장소)까지 적용한 DB에 학년군 테마를 넣고 최신까지 올린다.
  * 원래 행은 낮은 학년(G3·G5)으로 바뀌고, 높은 학년(G4·G6)은 테마·버전·요일이 원래 ID와 학년으로 정한 ID로 복사되며,
  * 게시 1개 제약은 학년·주 단위가 된다. 시도·열람 기록은 원래 행을 그대로 가리킨다
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ThemeGradeMigrationTest {
-    private val postgres = PostgreSQLContainer<Nothing>("postgres:17.11-alpine")
+    private val postgres = PostgreSQLContainer<Nothing>(TEST_POSTGRES_IMAGE)
     private lateinit var db: Connection
 
     @BeforeAll
     fun migrate() {
         postgres.start()
-        flyway("13").migrate()
+        flyway("14").migrate()
         db = DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password)
         db.createStatement().use { s ->
             s.execute(
@@ -118,7 +119,7 @@ class ThemeGradeMigrationTest {
         .apply { if (target != null) target(target) }
         .load()
 
-    /** V14와 같은 규칙: md5(원래 id || ':' || 학년)::uuid */
+    /** V15와 같은 규칙: md5(원래 id || ':' || 학년)::uuid */
     private fun copyId(id: String, grade: String): String = one("SELECT md5('$id' || ':' || '$grade')::uuid")!!
 
     private fun one(sql: String): String? = db.createStatement().use { s ->

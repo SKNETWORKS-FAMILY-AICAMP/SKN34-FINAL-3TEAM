@@ -1,6 +1,6 @@
 -- #438 학년별 주간 테마 준비, 테마 이야기·장면·정답 구조, 테마 초안, 이야기 열람 (ERD 4.2.1, 에픽 #436)
 -- 학년군(grade_band: G3_4·G5_6) → 학년(grade: G3~G6, 담당자 결정 2026-11-10). 이 버전은 grade를 nullable로 더하고 기존 행을 옮긴다.
--- NOT NULL·CHECK와 grade_band 제거는 V15 (ERD 8장 준비·최종 버전)
+-- NOT NULL·CHECK와 grade_band 제거는 V16 (ERD 8장 준비·최종 버전)
 
 ALTER TABLE weekly_theme ADD COLUMN grade varchar;
 

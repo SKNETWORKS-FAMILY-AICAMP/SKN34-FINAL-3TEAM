@@ -637,7 +637,7 @@ export const adminHandlers = [
       queryFault()
       const p = period(request),
         filter = new URL(request.url).searchParams.get('callType')
-      if (filter && !['JUDGMENT','FOLLOWUP','ANALYSIS','REPORT_NARRATIVE','MISSION_DRAFT','REPORT_EXPLANATION','M2','M1'].includes(filter)) fail('VALIDATION_FAILED','호출 종류를 확인해 주세요.',400)
+      if (filter && !['JUDGMENT','FOLLOWUP','ANALYSIS','REPORT_NARRATIVE','MISSION_DRAFT','REPORT_EXPLANATION','KNOWLEDGE_EMBEDDING','M2','M1'].includes(filter)) fail('VALIDATION_FAILED','호출 종류를 확인해 주세요.',400)
       return {
         period: p,
         items: [],

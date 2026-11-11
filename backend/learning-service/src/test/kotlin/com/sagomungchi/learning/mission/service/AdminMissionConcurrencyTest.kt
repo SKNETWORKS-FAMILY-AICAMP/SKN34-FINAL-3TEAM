@@ -1,5 +1,6 @@
 package com.sagomungchi.learning.mission.service
 
+import com.sagomungchi.learning._common.persistence.TEST_POSTGRES_IMAGE
 import com.sagomungchi.learning.mission.domain.Choice
 import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.domain.MissionCommand
@@ -61,7 +62,7 @@ class AdminMissionConcurrencyTest {
 
     companion object {
         private val postgres by lazy {
-            PostgreSQLContainer<Nothing>("postgres:17.11-alpine").apply {
+            PostgreSQLContainer<Nothing>(TEST_POSTGRES_IMAGE).apply {
                 start()
                 Flyway.configure().dataSource(jdbcUrl, username, password)
                     .locations("classpath:db/migration").load().migrate()

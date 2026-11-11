@@ -46,7 +46,7 @@ data class AiThemeMission(
 
 /**
  * 미션 근거 성취기준·정답 요소 코드. 미션 초안 요청과 같은 모양이지만 기능 client끼리 참조하지 않아 따로 둔다(architecture 2.2, #422·#501).
- * 테마 초안은 성취수준 문장을 넣지 않아(learning.md 29장 결정) level 칸이 없다
+ * 테마 초안은 성취수준 문장을 넣지 않아(learning.md 31장 결정) level 칸이 없다
  */
 data class AiThemeStandard(val code: String, val statement: String)
 

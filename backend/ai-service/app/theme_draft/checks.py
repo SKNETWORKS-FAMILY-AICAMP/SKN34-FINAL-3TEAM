@@ -2,7 +2,7 @@
 
 정답 논리는 줄거리가 함께 만든 후보 특징 표(features)와 요일별 단서 조건(condition)으로
 계산해 판정한다. LLM 추리 이야기 생성 연구처럼 논리 구조는 기계가 확인하고, 문장이 조건을
-그대로 말하는지·자연스러운지는 검토 모델이 본다(ai.md 16절). 텍스트 시험(2026-11-10)에서
+그대로 말하는지·자연스러운지는 검토 모델이 본다(ai.md 17절). 텍스트 시험(2026-11-10)에서
 실제로 터진 결함마다 검사를 둔다.
 
 미션은 검사 분담(learning.md 21절)대로 ai 검사(REQUIRED·QUESTION_LENGTH·LEAK)에 테마 몫
@@ -696,7 +696,7 @@ IMAGE_REVIEW_IDS = ("MUNGCHI", "ANSWER_HINT", "TEXT", "SAFETY", "SCENE_FIT")
 MISSION_IMAGE_REVIEW_IDS = (*IMAGE_REVIEW_IDS, "MISSION_FIT")
 VIDEO_REVIEW_IDS = ("MORPH", "ANSWER_HINT", "TEXT", "SAFETY", "CONTINUITY")
 
-# 움직임 상한(기준안, ai.md 16.1 움직임 행)
+# 움직임 상한(기준안, ai.md 17.1 움직임 행)
 ZOOM = (1.0, 1.4)
 CAMERA_SECONDS = (8.0, 20.0)
 TRANSITION_SECONDS = (0.3, 1.2)
@@ -812,7 +812,7 @@ def motion(
     """생성 모델의 움직임 값 → ThemeMotion 모양과 맞춘 항목 사유(warnings MOTION).
 
     상한 밖 숫자는 상한으로 맞추고, 색이 #RRGGBB가 아니면 그 효과를 빼고, 화자가 아닌 이름은
-    뺀다. 다시 생성하지 않는다(정해진 처리, ai.md 16.1).
+    뺀다. 다시 생성하지 않는다(정해진 처리, ai.md 17.1).
     """
     notes: list[str] = []
 

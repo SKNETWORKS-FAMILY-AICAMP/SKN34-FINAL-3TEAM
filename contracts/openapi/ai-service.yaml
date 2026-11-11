@@ -451,13 +451,14 @@ paths:
                       type: boolean
   /embeddings:
     post:
-      summary: '지식 본문·질의 임베딩 (api-spec 4.2.4, #464 계약 C6, 구현 #467). 순서 보존, 사용량 callType KNOWLEDGE_EMBEDDING(기준안)'
+      summary: '지식 본문·질의 임베딩 (api-spec 4.2.4, #464 계약 C6, 구현 #467). 순서 보존, 사용량 callType KNOWLEDGE_EMBEDDING'
       description: >-
         learning 지식 적재(#466)·관계 후보 스크립트(#468)·ai 검색 클라이언트(#470)가 부른다. 교육과정 지식과 질의 문장만 받고
-        학생 정보·학생 답은 받지 않는다. 기준안: 모델 text-embedding-3-small, 1536차원, 한 요청 texts 1~64개, 본문당 1~8,000자.
-        모델·차원은 설정값이며 응답에 함께 돌려줘 learning이 다른 차원을 넣지 않게 한다.
+        학생 정보·학생 답은 받지 않는다. 한 요청 texts 1~64개, 본문당 1~8,000자(공백만인 글 불가), 정의 밖 칸 불가.
+        모델·차원은 설정값(EMBEDDING_MODEL 기본 text-embedding-3-small, EMBEDDING_DIMENSIONS 기본 1536)이며
+        응답에 함께 돌려줘 learning이 다른 차원을 넣지 않게 한다. EMBEDDING_PROVIDER=fake이면 개발용 fake-bigram-v1.
+        제공자 요청 1회의 타임아웃·재시도는 LLM 공통 값(P12 15초·1회)을 쓴다.
       operationId: createEmbeddings
-      x-implementation-status: planned-issue-467
       requestBody:
         content:
           application/json:
@@ -2423,10 +2424,10 @@ components:
       properties:
         model:
           type: string
-          description: 실제로 쓴 임베딩 모델(기준안 text-embedding-3-small)
+          description: 실제로 쓴 임베딩 모델(기본 text-embedding-3-small, 개발용 fake-bigram-v1)
         dimensions:
           type: integer
-          description: 벡터 길이(기준안 1536)
+          description: 벡터 길이(기본 1536)
         vectors:
           type: array
           items:

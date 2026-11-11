@@ -19,7 +19,7 @@ enum class ThemeGrade(val grade: Int) {
 
         /**
          * 전환 기간 호환(#438 → core 병합 사이): core가 아직 학년군(`gradeBand`)을 보내면 낮은 학년으로 읽음.
-         * V14가 학년군 테마를 학년마다 같은 내용으로 복사하므로 이 기간 내용은 같다. core 반영 뒤 지움
+         * V15가 학년군 테마를 학년마다 같은 내용으로 복사하므로 이 기간 내용은 같다. core 반영 뒤 지움
          */
         fun fromBand(band: String): ThemeGrade? = when (band) {
             "G3_4" -> G3
