@@ -406,6 +406,11 @@ def test_check_theme_exact_codes(name: str, build: Callable[[], dict], expected:
         (["CLUE_TEXT TUE 단서 문장에 허용 값 낱말 없음"], []),
         # 단서 말투는 그 단서만 고쳐 씀
         (["CLUE_WORDING WED clue 후보를 빼는 단서를 흐리게 씀('수도 있')"], ["WED.clue"]),
+        # 증거 종류 불일치도 그 단서만 고쳐 씀(글자 수 초과와 섞여도 줄거리를 다시 만들지 않음)
+        (
+            ["LENGTH MON.clue 45자 > 40", "CLUE_EVIDENCE FRI clue 증거 종류가 다름"],
+            ["MON.clue", "FRI.clue"],
+        ),
     ],
 )
 def test_fix_targets_only_single_field_reasons(bad: list[str], expected: list[str]) -> None:

@@ -600,7 +600,7 @@ def test_clue_logic_rules_in_prompts() -> None:
     from app.theme_draft import prompts
 
     for rule in (
-        "그중 한 곳·하나에 있었다는",
+        "'나'로 이어 그중 하나였다는",
         "무엇에 대한 것인지",
         "뜻이 겹치지 않아",
         "evidence.when이 가리키는 그때와 맞춘다",
@@ -610,7 +610,11 @@ def test_clue_logic_rules_in_prompts() -> None:
         assert rule in prompts.PLAN_SYSTEM
     theme = valid_theme()
     wed = " ".join(prompts.fix_rules(theme, "WED.clue"))
-    assert "단정해서" in wed and "중 한 곳" not in wed  # WED는 RULE·허용 값 하나
+    assert "단정해서" in wed and "'A나 B'" not in wed  # WED는 RULE·허용 값 하나
+    # 증거 종류는 그대로 두고 문장만 맞춤(CLUE_EVIDENCE 칸 고쳐 쓰기): WED는 SIGHTING, FRI는 RECORD
+    assert "증거 종류가 목격" in wed
+    assert "증거 종류가 기록" in " ".join(prompts.fix_rules(theme, "FRI.clue"))
+    assert "중 한 곳" not in prompts.PLAN_SYSTEM  # 단서를 길게 만든 예시(40자 초과 13→26번)는 뺌
     extra = prompts.mission_extra(theme, "THU", 3, [])
     feature_line = extra.split("오늘 단서가 다루는 특징: '땅'")[1].split("\n")[0]
     assert "흙" not in feature_line  # 단서 값 낱말은 알리지 않음
