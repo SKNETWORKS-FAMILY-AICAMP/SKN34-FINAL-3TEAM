@@ -34,7 +34,7 @@ test('보호자 비밀번호 복귀·실제 학습·리포트 생성 후 이관�
   const mission = '쉬는 시간을 늘린다면?'
   await page.getByRole('navigation', { name: '학생 메뉴' }).getByRole('button', { name: '미션 고르기' }).click()
   await page.locator('article', { has: page.getByRole('heading', { name: mission }) }).getByRole('button', { name: '미션 열기' }).click()
-  await page.getByRole('button', { name: '작성하기 · 진행 중이면 이어서' }).click()
+  await page.getByRole('button', { name: '미션 시작하기' }).click()
   await page.getByLabel('내 생각과 까닭').fill('저는 찬성이에요. 쉬는 시간이 길면 친구들과 더 오래 놀 수 있기 때문이에요.')
   await page.getByRole('button', { name: '다 썼어요' }).click()
   await expect(page.getByText('정답을 확인했어요.')).toBeVisible({ timeout: 60_000 })
@@ -45,7 +45,7 @@ test('보호자 비밀번호 복귀·실제 학습·리포트 생성 후 이관�
   await expect(page.locator('article', { hasText: `국어 · ${mission}` })).toBeVisible()
   await page.getByRole('navigation', { name: '학생 메뉴' }).getByRole('button', { name: '공개 설정', exact: true }).click()
   await page.getByRole('radio', { name: '학부모님께 공개할게요' }).click()
-  await expect(page.getByRole('status').filter({ hasText: '현재 공개 상태입니다.' })).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: '지금은 공개예요.' })).toBeVisible()
   const [start, end] = queueWeeklyReport(nickname).split(' ')
   await page.goto('/login')
   await page.getByLabel('보호자 비밀번호', { exact: true }).fill('2580')

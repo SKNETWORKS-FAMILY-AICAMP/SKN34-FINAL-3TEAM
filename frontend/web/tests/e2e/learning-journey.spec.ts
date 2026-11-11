@@ -23,7 +23,7 @@ test.describe.serial('학생 미션 → 학부모 대시보드·리포트', () =
     await page.getByRole('navigation', { name: '학생 메뉴' }).getByRole('button', { name: '미션 고르기' }).click()
     await page.locator('article', { has: page.getByRole('heading', { name: mission }) })
       .getByRole('button', { name: '미션 열기' }).click()
-    await page.getByRole('button', { name: '작성하기 · 진행 중이면 이어서' }).click()
+    await page.getByRole('button', { name: '미션 시작하기' }).click()
     await page.waitForURL('**/student/attempts/**')
 
     await page.getByLabel('내 생각과 까닭').fill('저는 찬성이에요. 쉬는 시간이 길면 친구들과 더 오래 놀 수 있기 때문이에요.')
@@ -45,7 +45,7 @@ test.describe.serial('학생 미션 → 학부모 대시보드·리포트', () =
     // 답변 원문은 기본 비공개라 학부모 공책에 보이도록 학생이 공개로 바꾼다.
     await page.getByRole('navigation', { name: '학생 메뉴' }).getByRole('button', { name: '공개 설정', exact: true }).click()
     await page.getByRole('radio', { name: '학부모님께 공개할게요' }).click()
-    await expect(page.getByRole('status').filter({ hasText: '현재 공개 상태입니다.' })).toBeVisible()
+    await expect(page.getByRole('status').filter({ hasText: '지금은 공개예요.' })).toBeVisible()
   })
 
   // 학생 모드 진입 시 학부모 세션이 잠기므로(보호자 비밀번호 미설정) 새 컨텍스트에서 다시 로그인한다.
