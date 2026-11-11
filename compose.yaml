@@ -196,6 +196,8 @@ services:
       DB_PASSWORD: ${LEARNING_APP_PASSWORD}
       CORE_URL: http://core-service:8080
       AI_URL: http://ai-service:8000
+      # #466: ai 임베딩 API(#467) 전까지 지식 적재는 가짜 임베딩(fake-bigram-v1)
+      APP_KNOWLEDGE_EMBEDDING: fake
     ports:
       - "${LEARNING_HOST_PORT:-8081}:8081"
     healthcheck:

@@ -10,6 +10,7 @@ data class AppProperties(
     val messaging: Messaging = Messaging(),
     val judgment: Judgment = Judgment(),
     val missionDraft: MissionDraft = MissionDraft(),
+    val knowledge: Knowledge = Knowledge(),
 ) {
     data class Internal(
         val token: String,
@@ -46,5 +47,14 @@ data class AppProperties(
          * 생성 리스(90초) 안. 판정·되묻기 등 다른 내부 호출은 app.internal.read-timeout 35초 그대로
          */
         val aiReadTimeout: Duration = Duration.ofSeconds(70),
+    )
+
+    /**
+     * 교육과정 지식 적재 임베딩(#466, 계약 C6). embedding = ai(기본, ai `/internal/embeddings` #467) | fake(`fake-bigram-v1`,
+     * #467 전 개발·kind). embeddingModel은 ai일 때 판에 기록하는 모델 이름(응답 model과 다르면 적재 중단)
+     */
+    data class Knowledge(
+        val embedding: String = "ai",
+        val embeddingModel: String = "text-embedding-3-small",
     )
 }
