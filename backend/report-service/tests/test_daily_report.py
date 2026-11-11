@@ -22,7 +22,7 @@ from app.generation.records import (
     RecordContractError,
 )
 from app.generation.repository import ReportRepository, weekly_report
-from app.generation.theme_summary import ThemeSummaryBuilder
+from app.generation.theme_summary import ThemeSummary, ThemeSummaryBuilder
 from app.messaging.contracts import InvalidEvent
 from app.messaging.envelope import EventEnvelope
 from app.query.schemas import ReportDetail
@@ -287,6 +287,167 @@ def test_weekly_theme_does_not_replace_original_metrics_and_checks_comparison():
     raw["reviewRetries"][0]["comparison"]["state"] = "CRITERIA_CHANGED"
     with pytest.raises(RecordContractError, match="changed criteria"):
         asyncio.run(ThemeSummaryBuilder(learning).build(student, PERIOD))
+
+
+def theme_raw(student, days, completed=False, **extra):
+    from tests.record_helpers import PERIOD
+
+    return {
+        "studentId": str(student),
+        "weekStart": str(PERIOD.start),
+        "state": "OK",
+        "themeId": str(uuid4()),
+        "title": "합성 테마",
+        "days": [
+            {"day": name, "missionId": str(uuid4()), "completed": on_day, **fields}
+            for name, on_day, fields in days
+        ],
+        "completed": completed,
+        "reviewRetries": [],
+        **extra,
+    }
+
+
+def theme_markdown(summary):
+    from tests.render_helpers import fixed_detail
+
+    markdown = ReportRenderer.markdown({**fixed_detail(), "themeSummary": summary}, "학생")
+    return markdown[markdown.index("## 이번 주 테마") :]
+
+
+def render_theme(student, raw):
+    from tests.record_helpers import PERIOD
+
+    learning = AsyncMock()
+    learning.theme_summary.return_value = raw
+    summary = asyncio.run(ThemeSummaryBuilder(learning).build(student, PERIOD))
+    assert ThemeSummary.model_validate(summary).model_dump(mode="json", by_alias=True) == summary
+    markdown = theme_markdown(summary)
+    html = (
+        ReportRenderer()
+        ._templates.get_template("theme.html")
+        .render(report={"themeSummary": summary})
+    )
+    return summary, markdown, html
+
+
+WEEK = ["MON", "TUE", "WED", "THU", "FRI"]
+
+
+def test_theme_daily_solver_shows_on_day_attendance_finish_and_ending():
+    student = uuid4()
+    days = [(d, True, {"completedInWeek": True}) for d in WEEK]
+    _, markdown, html = render_theme(
+        student, theme_raw(student, days, completed=True, finished=True, ending="ENDED")
+    )
+    for text in (markdown, html):
+        assert text.count("그날 풀었어요") == 5
+        assert "개근: 했어요" in text and "주간 완주: 완료" in text and "엔딩: 봤어요" in text
+        assert "완주: 완료" not in text.replace("주간 완주: 완료", "")
+
+
+def test_theme_batch_solver_shows_later_without_attendance():
+    student = uuid4()
+    days = [(d, False, {"completedInWeek": True}) for d in WEEK[:3]]
+    days += [(d, True, {"completedInWeek": True}) for d in WEEK[3:]]
+    _, markdown, html = render_theme(
+        student, theme_raw(student, days, finished=True, ending="ENDED")
+    )
+    for text in (markdown, html):
+        assert text.count("나중에 풀었어요") == 3 and text.count("그날 풀었어요") == 2
+        assert "개근: 못 했어요" in text and "주간 완주: 완료" in text
+
+
+def test_theme_without_ending_shows_missed_days():
+    student = uuid4()
+    days = [("MON", True, {"completedInWeek": True}), ("TUE", False, {"completedInWeek": False})]
+    days += [(d, False, {"completedInWeek": False}) for d in WEEK[2:]]
+    _, markdown, html = render_theme(
+        student, theme_raw(student, days, finished=False, ending="NOT_ENDED")
+    )
+    for text in (markdown, html):
+        assert text.count("못 풀었어요") == 4 and "그날 풀었어요" in text
+        assert "주간 완주: 미완료" in text and "엔딩: 아직 못 봤어요" in text
+
+
+def test_theme_previous_input_keeps_previous_display():
+    student = uuid4()
+    raw = theme_raw(student, [("MON", True, {}), ("TUE", False, {})])
+    summary, markdown, html = render_theme(student, raw)
+    assert summary["finished"] is None and summary["ending"] is None
+    assert summary["days"][0]["completedInWeek"] is None
+    for text in (markdown, html):
+        assert "완주: 미완료" in text and "개근" not in text and "엔딩" not in text
+        assert "완료" in text and "풀었어요" not in text
+    assert "MON: 완료" in markdown and "TUE: 미완료" in markdown
+    # Stored reports from before #486 have no new keys at all.
+    stored = {
+        **summary,
+        "days": [{k: v for k, v in d.items() if k != "completedInWeek"} for d in summary["days"]],
+    }
+    stored.pop("finished"), stored.pop("ending")
+    assert theme_markdown(stored) == markdown
+
+
+@pytest.mark.parametrize(
+    ("days", "extra", "message"),
+    [
+        ([("MON", True, {"completedInWeek": False})], {}, "On-day completion"),
+        (
+            [(d, False, {"completedInWeek": d != "FRI"}) for d in WEEK],
+            {"finished": True},
+            "Weekly finish",
+        ),
+        (
+            [(d, False, {"completedInWeek": True}) for d in WEEK[:4]],
+            {"finished": True},
+            "Weekly finish",
+        ),
+    ],
+)
+def test_theme_new_fields_are_validated(days, extra, message):
+    from tests.record_helpers import PERIOD
+
+    student = uuid4()
+    learning = AsyncMock()
+    learning.theme_summary.return_value = theme_raw(student, days, **extra)
+    with pytest.raises(RecordContractError, match=message):
+        asyncio.run(ThemeSummaryBuilder(learning).build(student, PERIOD))
+
+
+@pytest.mark.parametrize("extra", [{"finished": True}, {"ending": "ENDED"}])
+def test_theme_no_record_rejects_finish_or_ending(extra):
+    from tests.record_helpers import PERIOD
+
+    student = uuid4()
+    learning = AsyncMock()
+    learning.theme_summary.return_value = {
+        "studentId": str(student),
+        "weekStart": str(PERIOD.start),
+        "state": "NO_RECORD",
+        "themeId": None,
+        "title": None,
+        "days": [],
+        "completed": False,
+        "reviewRetries": [],
+        **extra,
+    }
+    with pytest.raises(RecordContractError, match="Nonparticipation"):
+        asyncio.run(ThemeSummaryBuilder(learning).build(student, PERIOD))
+
+
+def test_daily_counts_batch_solved_theme_problems_on_completion_day():
+    command, records, learning = daily_fixture()
+    attempt = replace(records.attempts[0], context="THEME_DAY")
+    other = replace(attempt, id=uuid4(), mission_id=uuid4())
+    records = replace(records, attempts=(attempt, other))
+    result = asyncio.run(DailyReportBuilder().build(records, False, learning))
+    problems = [i for i in result.items if i.type == ItemType.PROBLEM]
+    assert {p.payload["missionId"] for p in problems} == {
+        str(attempt.mission_id),
+        str(other.mission_id),
+    }
+    assert all(p.payload["context"] == "THEME_DAY" for p in problems)
 
 
 def test_daily_job_guard_accepts_one_day_and_preserves_identity(db_session):

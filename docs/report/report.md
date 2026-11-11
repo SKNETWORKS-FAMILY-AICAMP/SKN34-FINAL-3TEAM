@@ -497,3 +497,33 @@ local kind에 develop `b1562c2b` 이미지를 올려 core → RabbitMQ → repor
 - 계약/스크립트 unittest 227개 통과(조건부 1개 건너뜀, #500 병합 후 재실행). local·prod report-worker 설명 값과 종료 유예 > 설명 단계를 확인하는 테스트를 추가했고, `helm template`(alpine/helm 4.3.1)으로 두 환경 모두 `terminationGracePeriodSeconds: 480`과 환경 변수 3개가 렌더링됨을 확인했다.
 - web 단위 테스트 291개, `tsc -b`, 테스트 타입 검사, oxlint 통과. 설명 줄바꿈의 실제 화면 확인은 하지 않았다.
 - 실제 sLLM·클러스터에서의 월요일 배치 시간은 측정하지 않았다(#475·#476). 위 4시간 기준은 계산값이다.
+
+## #486 주간 테마 요약 당일 풀이·엔딩 표시 (2026-11-11)
+
+### 결정(사용자 승인 2026-11-11)
+
+- 칸 모양: learning 테마 요약의 기존 `days[].completed`는 이름·뜻(그 요일 KST 안에 학습 완료 = 주간 테마 조회의 `completedOnDay`) 그대로 두고, `days[].completedInWeek`(그 주 테마 시도 안에 학습 완료, 프리미엄 일요일 포함)를 더한다. 최상위 `completed`는 개근, 새 `finished`는 주간 완주, 새 `ending`은 `NOT_ENDED`·`ENDED`다. 요약에는 `completedOnDay`를 따로 두지 않는다(#507 이름 정리 답). 기존 칸 뜻을 바꾸지 않아 이미 저장된 리포트 해석이 그대로다.
+- 범위: report만 먼저 구현한다. 새 칸은 선택 칸이라 learning #484가 값을 주기 전에도 배포 순서와 무관하다. learning 요약 값 계산은 #484 몫이며 칸 이름을 #484에 제안한다.
+- LLM 서술은 테마 요약을 입력으로 쓰지 않으므로 프롬프트는 바꾸지 않았다. 웹 화면 표시는 web #487 몫이다(core는 `themeSummary`를 객체 그대로 전달해 변경 없음).
+
+### API 변경
+
+- report 주간 상세 `themeSummary`(`contracts/openapi/report-service.yaml` `ThemeSummary`·`ThemeDay`)에 선택 칸 추가: `days[].completedInWeek: boolean|null`, `finished: boolean|null`, `ending: "NOT_ENDED"|"ENDED"|null`. learning이 주지 않으면 `null`로 저장·응답한다. 경로·오류 코드 변경 없음.
+- 소비 검증(`ThemeSummaryBuilder`, 위반 시 기존처럼 작업 실패): 당일 풀이(`completed=true`)인데 `completedInWeek=false` 거부, `finished=true`인데 다섯 요일이 아니거나 `completedInWeek=false`인 요일이 있으면 거부, `NO_RECORD`에 `finished=true`·`ending=ENDED` 거부.
+
+### 표시(Markdown·PDF)
+
+- 요일: `completed` → "그날 풀었어요", 아니고 `completedInWeek=true` → "나중에 풀었어요", `false` → "못 풀었어요".
+- 새 칸이 하나라도 있으면 "개근: 했어요/못 했어요", `finished`가 있으면 "주간 완주: 완료/미완료", `ending`이 있으면 "엔딩: 봤어요/아직 못 봤어요".
+- 이전 입력 호환: 새 칸이 없거나(`null`) 저장된 옛 리포트에 키가 아예 없으면 지금처럼 "완주: 완료/미완료"와 요일별 "완료/미완료"를 표시한다. 문구 계산은 `renderer.py` `theme_day_label`·`theme_status_lines` 한 곳에서 하고 `theme.html`도 같은 함수를 쓴다.
+
+### 일일·주간 기간 확인
+
+- 일일 리포트는 learning `daily-attempts`(완료 시각 기준, #391)로 읽으므로 몰아 푼 날은 그날 마무리한 테마 문제가 모두 그날 항목으로 잡힌다(문제 요일 기준 아님). 같은 날 완료한 서로 다른 `THEME_DAY` 문제 2개가 모두 항목이 되는 테스트를 추가했다.
+- 주간 리포트 생성 시각(월요일 00:00)은 바꾸지 않았다. learning 요약은 `attempt.theme_week_start`로 그 주 시도를 모으므로 프리미엄 일요일 풀이도 그 주에 들어간다. 한계: 일요일에 시작해 월요일 00:00 뒤 마무리한 시도는 생성 시점에 없어 재생성 때만 반영된다.
+
+### 검증 결과
+
+- report 전체 pytest 436개 통과(새 테스트 10개: 매일 푼 학생·몰아 푼 학생·엔딩 못 본 학생 표시, 새 칸 없는 이전 입력과 키 없는 저장본의 동일 표시, 새 칸 검증 오류 3종, NO_RECORD 오류 2종, 일일 몰아 푼 문제). Ruff check·format(113파일) 통과. OpenAPI 일치 테스트 통과.
+- 계약/스크립트 unittest 293개 통과(조건부 2개 건너뜀). learning `AttemptComparisonIntegrationTest`로 만든 실제 요약을 `validate_theme_summary_contracts.py`로 learning·report OpenAPI 양쪽과 대조해 PASS(새 칸 없는 지금 learning 응답 호환 확인).
+- core·learning 코드는 바꾸지 않아 `validate_report_contracts.py`(core 산출물)는 다시 돌리지 않았다. learning이 새 칸을 채운 실제 응답 대조와 kind 한 주 흐름 확인은 #484 병합 뒤 남는다.
