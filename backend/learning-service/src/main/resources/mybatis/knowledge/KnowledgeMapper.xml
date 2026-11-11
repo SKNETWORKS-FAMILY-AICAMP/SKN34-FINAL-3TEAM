@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 교육과정 지식 저장소 (#466, erd 4.5). vector·배열·jsonb는 글로 받아 형변환(::vector 방식, pgvector 드라이버 없음) -->
+<mapper namespace="com.sagomungchi.learning.knowledge.repository.KnowledgeMapper">
+    <resultMap id="dataset" type="com.sagomungchi.learning.knowledge.repository.DatasetRow">
+        <constructor>
+            <idArg column="version" javaType="java.lang.String"/>
+            <arg column="status" javaType="com.sagomungchi.learning.knowledge.domain.DatasetStatus"/>
+            <arg column="source" javaType="java.lang.String"/>
+            <arg column="embedding_model" javaType="java.lang.String"/>
+            <arg column="embedding_dimensions" javaType="_int"/>
+            <arg column="chunk_count" javaType="_int"/>
+            <arg column="relation_count" javaType="_int"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="activated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="chunkHash" type="com.sagomungchi.learning.knowledge.repository.ChunkHashRow">
+        <constructor>
+            <arg column="id" javaType="java.lang.String"/>
+            <arg column="kind" javaType="java.lang.String"/>
+            <arg column="content_hash" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="hashEmbedding" type="com.sagomungchi.learning.knowledge.repository.HashEmbeddingRow">
+        <constructor>
+            <arg column="content_hash" javaType="java.lang.String"/>
+            <arg column="embedding" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="relation" type="com.sagomungchi.learning.knowledge.repository.RelationRow">
+        <constructor>
+            <arg column="type" javaType="java.lang.String"/>
+            <arg column="standard_code" javaType="java.lang.String"/>
+            <arg column="target" javaType="java.lang.String"/>
+            <arg column="reason" javaType="java.lang.String"/>
+            <arg column="reviewed_by" javaType="java.lang.String"/>
+            <arg column="reviewed_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="kindCount" type="com.sagomungchi.learning.knowledge.repository.KindCount">
+        <constructor>
+            <arg column="kind" javaType="java.lang.String"/>
+            <arg column="count" javaType="_int"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="statement" type="com.sagomungchi.learning.knowledge.repository.StatementRow">
+        <constructor>
+            <arg column="code" javaType="java.lang.String"/>
+            <arg column="statement" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="datasetColumns">
+        version, status, source::text AS source, embedding_model, embedding_dimensions, chunk_count, relation_count,
+        created_at, activated_at
+    </sql>
+
+    <select id="findDataset" resultMap="dataset">
+        SELECT <include refid="datasetColumns"/> FROM knowledge_dataset WHERE version = #{version}
+        <if test="lock">FOR UPDATE</if>
+    </select>
+
+    <select id="findDatasets" resultMap="dataset">
+        SELECT <include refid="datasetColumns"/> FROM knowledge_dataset ORDER BY version DESC
+    </select>
+
+    <select id="findActive" resultMap="dataset">
+        SELECT <include refid="datasetColumns"/> FROM knowledge_dataset WHERE status = 'ACTIVE'
+        <if test="lock">FOR UPDATE</if>
+    </select>
+
+    <select id="findVersionsWithPrefix" resultType="java.lang.String">
+        SELECT version FROM knowledge_dataset WHERE starts_with(version, #{prefix}) ORDER BY version
+    </select>
+
+    <insert id="insertDataset">
+        INSERT INTO knowledge_dataset
+            (version, status, source, embedding_model, embedding_dimensions, chunk_count, relation_count, created_at,
+             activated_at)
+        VALUES (#{row.version}, #{row.status}, #{row.source}::jsonb, #{row.embeddingModel}, #{row.embeddingDimensions},
+                #{row.chunkCount}, #{row.relationCount}, #{row.createdAt}, #{row.activatedAt})
+    </insert>
+
+    <update id="updateCounts">
+        UPDATE knowledge_dataset SET chunk_count = #{chunkCount}, relation_count = #{relationCount}
+        WHERE version = #{version}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE knowledge_dataset SET status = #{status},
+            activated_at = COALESCE(#{activatedAt}, activated_at)
+        WHERE version = #{version}
+    </update>
+
+    <insert id="insertChunk">
+        INSERT INTO knowledge_chunk
+            (dataset_version, id, kind, subject, area, standard_code, domain_id, thinking_type, grades, semesters,
+             notice_grade_band, text, record, embedding, content_hash, source)
+        VALUES (#{row.datasetVersion}, #{row.id}, #{row.kind}, #{row.subject}, #{row.area}, #{row.standardCode},
+                #{row.domainId}, #{row.thinkingType}, #{row.grades}::smallint[], #{row.semesters}::varchar[],
+                #{row.noticeGradeBand}, #{row.text}, #{row.record}::jsonb, #{row.embedding}::vector,
+                #{row.contentHash}, #{row.source}::jsonb)
+    </insert>
+
+    <select id="findChunkHashes" resultMap="chunkHash">
+        SELECT id, kind, content_hash FROM knowledge_chunk WHERE dataset_version = #{version}
+    </select>
+
+    <!-- 같은 본문이면 같은 벡터: 해시마다 하나만 -->
+    <select id="findEmbeddingsByHash" resultMap="hashEmbedding">
+        SELECT DISTINCT ON (content_hash) content_hash, embedding::text AS embedding
+        FROM knowledge_chunk WHERE dataset_version = #{version} AND embedding IS NOT NULL
+        ORDER BY content_hash, id
+    </select>
+
+    <select id="countMissingEmbeddings" resultType="_int">
+        SELECT count(*) FROM knowledge_chunk WHERE dataset_version = #{version} AND embedding IS NULL
+    </select>
+
+    <select id="countChunksByKind" resultMap="kindCount">
+        SELECT kind, count(*) AS count FROM knowledge_chunk WHERE dataset_version = #{version} GROUP BY kind ORDER BY kind
+    </select>
+
+    <insert id="insertSemester">
+        INSERT INTO knowledge_standard_semester (dataset_version, standard_code, semester, grade)
+        VALUES (#{version}, #{row.standardCode}, #{row.semester}, #{row.grade})
+    </insert>
+
+    <insert id="insertRelation">
+        <choose>
+            <when test="row.type == 'FITS'">
+                INSERT INTO knowledge_fits (dataset_version, standard_code, thinking_type, reason, reviewed_by, reviewed_at)
+                VALUES (#{version}, #{row.standardCode}, #{row.target}, #{row.reason}, #{row.reviewedBy}, #{row.reviewedAt})
+            </when>
+            <when test="row.type == 'PREREQUISITE'">
+                INSERT INTO knowledge_prerequisite
+                    (dataset_version, standard_code, prerequisite_code, reason, reviewed_by, reviewed_at)
+                VALUES (#{version}, #{row.standardCode}, #{row.target}, #{row.reason}, #{row.reviewedBy}, #{row.reviewedAt})
+            </when>
+            <otherwise>
+                INSERT INTO knowledge_covers (dataset_version, standard_code, content_id, reviewed_by, reviewed_at)
+                VALUES (#{version}, #{row.standardCode}, #{row.target}, #{row.reviewedBy}, #{row.reviewedAt})
+            </otherwise>
+        </choose>
+    </insert>
+
+    <select id="findRelations" resultMap="relation">
+        SELECT 'FITS' AS type, standard_code, thinking_type AS target, reason, reviewed_by, reviewed_at
+        FROM knowledge_fits WHERE dataset_version = #{version}
+        UNION ALL
+        SELECT 'PREREQUISITE', standard_code, prerequisite_code, reason, reviewed_by, reviewed_at
+        FROM knowledge_prerequisite WHERE dataset_version = #{version}
+        UNION ALL
+        SELECT 'COVERS', standard_code, content_id, NULL, reviewed_by, reviewed_at
+        FROM knowledge_covers WHERE dataset_version = #{version}
+        ORDER BY 1, 2, 3
+    </select>
+
+    <select id="countRelations" resultMap="kindCount">
+        SELECT 'SEMESTER' AS kind, count(*) AS count FROM knowledge_standard_semester WHERE dataset_version = #{version}
+        UNION ALL SELECT 'FITS', count(*) FROM knowledge_fits WHERE dataset_version = #{version}
+        UNION ALL SELECT 'PREREQUISITE', count(*) FROM knowledge_prerequisite WHERE dataset_version = #{version}
+        UNION ALL SELECT 'COVERS', count(*) FROM knowledge_covers WHERE dataset_version = #{version}
+    </select>
+
+    <!-- 제거(C9): 서비스가 한 트랜잭션에서 관계 → 조각 → 판 순서로 부름. table은 KnowledgeRepository의 고정 목록만 -->
+    <delete id="deleteVersionRows">
+        DELETE FROM ${table} WHERE ${column} = #{version}
+    </delete>
+
+    <select id="findStatements" resultMap="statement">
+        SELECT code, statement FROM achievement_standard WHERE code IN
+        <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+    </select>
+</mapper>

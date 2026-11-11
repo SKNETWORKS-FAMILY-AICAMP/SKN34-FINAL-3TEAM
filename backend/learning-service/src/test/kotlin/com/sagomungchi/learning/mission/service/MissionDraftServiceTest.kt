@@ -54,7 +54,7 @@ class MissionDraftServiceTest : PostgresRepositoryTest() {
         assertEquals(765, jdbc.queryForObject("SELECT count(*) FROM achievement_standard", Int::class.java))
         assertEquals(
             listOf("중1~3" to 334, "초1~2" to 100, "초3~4" to 162, "초5~6" to 169),
-            jdbc.query("SELECT grade_band, count(*) FROM achievement_standard GROUP BY grade_band ORDER BY grade_band") { rs, _ -> rs.getString(1) to rs.getInt(2) },
+            jdbc.query("SELECT grade_band, count(*) FROM achievement_standard GROUP BY grade_band ORDER BY grade_band COLLATE \"C\"") { rs, _ -> rs.getString(1) to rs.getInt(2) },
         )
         val demo = listOf("4과04-02", "4국03-03", "4도02-02", "4수02-01", "4도01-04", "4과09-02", "4국02-04", "4과05-03", "4수01-04",
             "4수01-03", "4국03-05", "6과07-02", "6국01-02", "6도03-02", "6수03-14", "6국03-05", "6과14-02", "6국03-02", "6도04-01",

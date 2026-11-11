@@ -8,6 +8,7 @@ import com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor
 import com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
 import com.sagomungchi.learning.TestRows
+import com.sagomungchi.learning._common.persistence.TEST_POSTGRES_IMAGE
 import com.sagomungchi.learning._common.security.UserContext
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.answer.domain.AnswerContent
@@ -322,7 +323,7 @@ class FeedbackConcurrencyTest {
         private val ai = WireMockServer(options().dynamicPort()).apply { start() }
 
         private val postgres by lazy {
-            PostgreSQLContainer<Nothing>("postgres:17.11-alpine").apply {
+            PostgreSQLContainer<Nothing>(TEST_POSTGRES_IMAGE).apply {
                 start()
                 Flyway.configure().dataSource(jdbcUrl, username, password)
                     .locations("classpath:db/migration").load().migrate()
