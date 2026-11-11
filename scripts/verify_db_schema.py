@@ -590,6 +590,59 @@ VALUES ('00000000-0000-4000-8000-000000000002', false, 'CONSENT', now());
 SELECT pg_temp.expect_sqlstate($$
     UPDATE community_visibility SET reason = 'OTHER'
 $$, '23514');
+-- #466 knowledge store (erd 4.5)
+INSERT INTO knowledge_dataset
+    (version, status, source, embedding_model, embedding_dimensions, chunk_count, relation_count, created_at)
+VALUES ('kn-20261111-01', 'LOADING', '{}', 'schema-test', 1536, 0, 0, now());
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO knowledge_dataset
+        (version, status, source, embedding_model, embedding_dimensions, chunk_count, relation_count, created_at)
+    VALUES ('v1', 'LOADING', '{}', 'schema-test', 1536, 0, 0, now())
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE knowledge_dataset SET status = 'ACTIVE'
+$$, '23514');
+UPDATE knowledge_dataset SET status = 'ACTIVE', activated_at = now();
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO knowledge_dataset
+        (version, status, source, embedding_model, embedding_dimensions, chunk_count, relation_count, created_at,
+         activated_at)
+    VALUES ('kn-20261111-02', 'ACTIVE', '{}', 'schema-test', 1536, 0, 0, now(), now())
+$$, '23505');
+INSERT INTO knowledge_chunk
+    (dataset_version, id, kind, standard_code, grades, semesters, text, record, content_hash, source, embedding)
+VALUES ('kn-20261111-01', '4수01-01', 'STANDARD', '4수01-01', '{3}', '{3-1}', 'schema-test', '{}',
+        repeat('a', 64), '{}', array_fill(0.1, ARRAY[1536])::vector);
+INSERT INTO knowledge_chunk (dataset_version, id, kind, thinking_type, grades, semesters, text, record, content_hash, source)
+VALUES ('kn-20261111-01', 'SOLVE', 'THINKING_TYPE', 'SOLVE', '{}', '{}', 'schema-test', '{}', repeat('b', 64), '{}');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE knowledge_chunk SET grades = '{2}' WHERE id = '4수01-01'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE knowledge_chunk SET content_hash = repeat('G', 64) WHERE id = '4수01-01'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE knowledge_chunk SET embedding = array_fill(0.1, ARRAY[3])::vector WHERE id = '4수01-01'
+$$, '22000');
+INSERT INTO knowledge_standard_semester (dataset_version, standard_code, semester, grade)
+VALUES ('kn-20261111-01', '4수01-01', '3-1', 3);
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE knowledge_standard_semester SET semester = '4-1'
+$$, '23514');
+INSERT INTO knowledge_fits (dataset_version, standard_code, thinking_type, reason, reviewed_by, reviewed_at)
+VALUES ('kn-20261111-01', '4수01-01', 'SOLVE', 'schema-test', 'schema-test', now());
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE knowledge_fits SET thinking_type = 'ANALYZE'
+$$, '23503');
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO knowledge_prerequisite
+        (dataset_version, standard_code, prerequisite_code, reason, reviewed_by, reviewed_at)
+    VALUES ('kn-20261111-01', '4수01-01', '4수01-01', 'schema-test', 'schema-test', now())
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO knowledge_covers (dataset_version, standard_code, content_id, reviewed_by, reviewed_at)
+    VALUES ('kn-20261111-01', '4수01-01', 'missing', 'schema-test', now())
+$$, '23503');
 """
 
 REPORT_CASES = """
@@ -688,7 +741,7 @@ def erd_contract(text=None):
         elif line == "  }":
             table = None
         elif table:
-            match = re.match(r"^    (\w+(?:\([^)]*\))?) (\w+)([^\"]*)(?:\"(.*)\")?$", line)
+            match = re.match(r"^    (\w+(?:\([^)]*\))?(?:\[\])?) (\w+)([^\"]*)(?:\"(.*)\")?$", line)
             if not match:
                 raise ValueError(f"Unrecognized ERD column: {line}")
             typ, column, flags, comment = match.groups()
@@ -915,7 +968,10 @@ def verify_schema(query):
             SELECT json_agg(json_build_object(
                 'table', table_name, 'column', column_name, 'type', data_type,
                 'nullable', is_nullable, 'default', column_default,
-                'length', character_maximum_length))
+                'length', character_maximum_length, 'udt', udt_name,
+                'formatted', (SELECT format_type(a.atttypid, a.atttypmod) FROM pg_attribute a
+                              WHERE a.attrelid = format('public.%I', table_name)::regclass
+                                AND a.attname = column_name)))
             FROM information_schema.columns WHERE table_schema = 'public'
             AND table_name NOT IN ('flyway_schema_history', 'alembic_version');
         """,
@@ -939,12 +995,21 @@ def verify_schema(query):
                 "timestamptz": "timestamp with time zone",
                 "varchar": "character varying",
             }.get(typ, typ)
-            if typ.startswith("varchar("):
-                mapped = "character varying"
+            if typ.startswith(("varchar(", "char(")):
+                mapped = "character varying" if typ.startswith("varchar(") else "character"
                 require(
                     col["length"] == int(re.search(r"\d+", typ)[0]),
                     f"{database}.{key}: varchar length differs",
                 )
+            elif typ.endswith("[]"):
+                mapped = "ARRAY"  # #466 smallint[]·varchar[]: element type is checked through udt_name
+                require(
+                    col["udt"] == "_" + {"smallint": "int2", "varchar": "varchar"}[typ[:-2]],
+                    f"{database}.{key}: array element type differs",
+                )
+            elif typ.startswith("vector("):
+                mapped = "USER-DEFINED"  # #466 pgvector; the dimension is checked through format_type
+                require(col["formatted"] == typ, f"{database}.{key}: vector type differs")
             require(
                 col["type"] == mapped,
                 f"{database}.{key}: type expected={mapped} actual={col['type']}",

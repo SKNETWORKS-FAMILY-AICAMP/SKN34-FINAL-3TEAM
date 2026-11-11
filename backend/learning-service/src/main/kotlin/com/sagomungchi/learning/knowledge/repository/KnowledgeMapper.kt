@@ -1,40 +1,88 @@
 package com.sagomungchi.learning.knowledge.repository
 
-import com.fasterxml.jackson.databind.JsonNode
-import com.sagomungchi.learning.knowledge.dto.LearnedIn
-import com.sagomungchi.learning.knowledge.dto.SearchFilters
+import com.sagomungchi.learning.knowledge.domain.DatasetStatus
 import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
+import java.time.Instant
 
-data class KnowledgeDatasetRow(val version: String, val embeddingModel: String, val embeddingDimensions: Int)
-data class KnowledgeChunkRow(
-    val id: String, val kind: String, val subject: String?, val area: String?, val standardCode: String?,
-    val domainId: String?, val thinkingType: String?, val grades: JsonNode, val semesters: JsonNode,
-    val noticeGradeBand: String?, val text: String, val record: JsonNode, val similarity: Double?,
+/** `knowledge_dataset` 행. source는 JSON 글 */
+data class DatasetRow(
+    val version: String,
+    val status: DatasetStatus,
+    val source: String,
+    val embeddingModel: String,
+    val embeddingDimensions: Int,
+    val chunkCount: Int,
+    val relationCount: Int,
+    val createdAt: Instant,
+    val activatedAt: Instant?,
 )
-data class KnowledgeCoverRow(val standardCode: String, val contentId: String)
-data class KnowledgeFitRow(val standardCode: String, val thinkingType: String, val reason: String)
-data class KnowledgeThemeRow(
-    val thinkingType: String?, val code: String, val statement: String, val subject: String, val area: String,
-    val similarity: Double, val matchedKind: String, val matchedId: String, val fitReason: String?,
+
+/** 넣을 조각. 배열·벡터·jsonb는 PostgreSQL 글 표기(`{3,4}`, `[0.1,…]`, JSON)로 넘겨 SQL에서 형변환 */
+data class ChunkInsert(
+    val datasetVersion: String,
+    val id: String,
+    val kind: String,
+    val subject: String?,
+    val area: String?,
+    val standardCode: String?,
+    val domainId: String?,
+    val thinkingType: String?,
+    val grades: String,
+    val semesters: String,
+    val noticeGradeBand: String?,
+    val text: String,
+    val record: String,
+    val embedding: String,
+    val contentHash: String,
+    val source: String,
 )
+
+data class ChunkHashRow(val id: String, val kind: String, val contentHash: String)
+
+data class HashEmbeddingRow(val contentHash: String, val embedding: String)
+
+data class RelationRow(
+    val type: String,
+    val standardCode: String,
+    val target: String,
+    val reason: String?,
+    val reviewedBy: String,
+    val reviewedAt: Instant,
+)
+
+data class SemesterRow(val standardCode: String, val semester: String, val grade: Int)
+
+data class StatementRow(val code: String, val statement: String)
+
+data class KindCount(val kind: String, val count: Int)
 
 @Mapper
 interface KnowledgeMapper {
-    fun setLocalTimeout(@Param("milliseconds") milliseconds: String): String
-    fun findActiveDataset(): KnowledgeDatasetRow?
-    fun findChunks(@Param("version") version: String, @Param("kind") kind: String, @Param("ids") ids: List<String>): List<KnowledgeChunkRow>
-    fun findSubjectGuides(@Param("version") version: String, @Param("subjects") subjects: List<String>): List<KnowledgeChunkRow>
-    fun findCovers(@Param("version") version: String, @Param("codes") codes: List<String>): List<KnowledgeCoverRow>
-    fun findFits(@Param("version") version: String, @Param("codes") codes: List<String>): List<KnowledgeFitRow>
-    fun search(
-        @Param("version") version: String, @Param("vector") vector: String, @Param("k") k: Int,
-        @Param("minimum") minimum: Double, @Param("filters") filters: SearchFilters,
-    ): List<KnowledgeChunkRow>
-    fun themeCandidates(
-        @Param("version") version: String, @Param("vector") vector: String, @Param("grade") grade: Int,
-        @Param("semester") semester: String, @Param("k") k: Int, @Param("minimum") minimum: Double,
-    ): List<KnowledgeThemeRow>
-    fun nearestContent(@Param("version") version: String, @Param("vector") vector: String, @Param("minimum") minimum: Double): KnowledgeChunkRow?
-    fun learnedIn(@Param("version") version: String, @Param("contentId") contentId: String): List<LearnedIn>
+    fun findDataset(@Param("version") version: String, @Param("lock") lock: Boolean): DatasetRow?
+    fun findDatasets(): List<DatasetRow>
+    fun findActive(@Param("lock") lock: Boolean): DatasetRow?
+    fun findVersionsWithPrefix(@Param("prefix") prefix: String): List<String>
+    fun insertDataset(@Param("row") row: DatasetRow): Int
+    fun updateCounts(@Param("version") version: String, @Param("chunkCount") chunkCount: Int, @Param("relationCount") relationCount: Int): Int
+    fun updateStatus(
+        @Param("version") version: String,
+        @Param("status") status: DatasetStatus,
+        @Param("activatedAt") activatedAt: Instant?,
+    ): Int
+
+    fun insertChunk(@Param("row") row: ChunkInsert): Int
+    fun findChunkHashes(@Param("version") version: String): List<ChunkHashRow>
+    fun findEmbeddingsByHash(@Param("version") version: String): List<HashEmbeddingRow>
+    fun countMissingEmbeddings(@Param("version") version: String): Int
+    fun countChunksByKind(@Param("version") version: String): List<KindCount>
+
+    fun insertSemester(@Param("version") version: String, @Param("row") row: SemesterRow): Int
+    fun insertRelation(@Param("version") version: String, @Param("row") row: RelationRow): Int
+    fun findRelations(@Param("version") version: String): List<RelationRow>
+    fun countRelations(@Param("version") version: String): List<KindCount>
+
+    fun deleteVersionRows(@Param("table") table: String, @Param("column") column: String, @Param("version") version: String): Int
+
+    fun findStatements(@Param("codes") codes: List<String>): List<StatementRow>
 }

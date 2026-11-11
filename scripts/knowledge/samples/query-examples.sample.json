@@ -1,0 +1,9 @@
+{
+  "label": "C5 sample observations, not reviewed curriculum evidence",
+  "dataClassification": "sample",
+  "grade": 3,
+  "semester": "3-1",
+  "codes": ["4국02-04", "4수01-05", "4과01-01", "4사01-01", "4도01-01"],
+  "topics": ["친구와 사실과 의견을 구분해 이야기하기", "물건을 똑같이 나누는 방법", "우리 주변에서 힘이 작용하는 모습"],
+  "concepts": ["사실과 의견", "나눗셈", "힘", "우리 고장의 모습", "정직"]
+}

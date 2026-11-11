@@ -1063,8 +1063,49 @@ target: 그 항목의 전문가 이유 문장(71818 score.personal.*.feedback �
 
 에픽 #463 계약 고정의 ai 몫. 구현(#467 임베딩, #470 검색 연결) 전 계약이며 값은 기준안(팀 확인 전)이다. 테이블·샘플·결정 전체는 [learning 28장](learning.md#28-교육과정-지식-rag-계약-고정-464-에픽-463-2026-11-11).
 
-- C6 임베딩([api-spec 4.2.4](../design/api-spec.md#424-지식-임베딩-463-계약-464-c6-구현-467)): `POST /internal/embeddings` `{texts[]}` → `{model, dimensions, vectors[]}`, 1~64개·본문당 8,000자, 502·503. OpenAPI에 `x-implementation-status: planned-issue-467`. 사용량 `callType` 기준안 `KNOWLEDGE_EMBEDDING`은 core 목록과 함께 #467에서(이번에는 목록 그대로)
+- C6 임베딩([api-spec 4.2.4](../design/api-spec.md#424-지식-임베딩-463-계약-464-c6-구현-467)): `POST /internal/embeddings` `{texts[]}` → `{model, dimensions, vectors[]}`, 1~64개·본문당 8,000자, 502·503. 계약 고정 당시 OpenAPI에 `x-implementation-status: planned-issue-467`, 사용량 `callType`은 #467에서 추가(16장에서 구현·표시 제거)
 - C7 근거 칸([api-spec 4.2.5](../design/api-spec.md#425-미션-초안-근거-칸-463-계약-464-c7-구현-470)): 미션 초안 요청 `knowledge`(C5 standards 응답 그대로, 선택), 응답 `sources`(근거 조각 표시, 빈 배열 허용). OpenAPI 칸에 `planned-issue-470`. `mission_draft/models.py`는 바꾸지 않았다(#470)
 - `app/knowledge/contracts.py`: C5·C6·C7 pydantic 모델, `KnowledgeApi`·`Embedder`·`KnowledgeRetriever` Protocol, `RetrievalResult`(근거 없음은 예외 대신 `fallback` 사유), `sources_of`
 - `app/knowledge/fake.py`: 표준 라이브러리만 쓰는 가짜(계약 시험이 pydantic 없이 불러 씀). 샘플을 활성 판 하나로 올린 `FakeKnowledgeApi`(다섯 경로, 인증·400·409 포함), 글자 2개 조각 해시 벡터 `FakeEmbedder`(모델 `fake-bigram-v1`, 같은 글 같은 벡터), `as_knowledge_api()`·`as_embedder()`(Protocol 만족), `mock_transport()`(httpx), `serve()`(로컬 HTTP)
 - 검증: `tests/knowledge/test_contracts.py` 29개(모델 칸·필수 = OpenAPI, 사유·상한 = OpenAPI·가짜, Protocol 통해 응답, MockTransport·HTTP 서버), `scripts/tests/test_knowledge_contracts.py`(learning 28장). `test_ai_openapi.py`는 구현 전 표시 경로를 라우터 대조에서 뺌(라우터 8개 그대로)
+
+## 16. 지식 임베딩 API (#467, 2026-11-11)
+
+에픽 #463의 ai 몫. 15장 계약 C6를 구현했다. learning 지식 적재(#466)·관계 후보 스크립트(#468)·ai 검색 클라이언트(#470)가 가짜 임베딩 대신 이 API를 부른다.
+
+### API 변경
+
+| 경로·계약 | 변경 |
+|---|---|
+| `POST /internal/embeddings` | 구현. `{texts[]}` → `200 {model, dimensions, vectors[]}`(순서·개수 보존) · `400 VALIDATION_FAILED`(0개·65개 이상, 빈 글·공백만, 8,000자 초과, `texts` 밖 칸) · `401` · `502 AI_BAD_RESPONSE` · `503 AI_UNAVAILABLE`(둘 다 `retryable`) |
+| `contracts/openapi/ai-service.yaml` | `/embeddings`의 `x-implementation-status: planned-issue-467` 제거, 설명에 설정·시간 기준 |
+| `llm.usage.recorded` | `callType` `KNOWLEDGE_EMBEDDING` 추가(core V44, [core-gateway 19장](core-gateway.md#19-지식-임베딩-사용량-knowledge_embedding-467-2026-11-11)) |
+| 설정 | `EMBEDDING_PROVIDER`(openai\|fake, 기본 openai)·`EMBEDDING_MODEL`(text-embedding-3-small)·`EMBEDDING_DIMENSIONS`(1536). compose·`.env.example`에 추가 |
+
+### 결정과 근거
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 시간 기준 | 제공자 요청 1회 타임아웃·재시도·대기는 LLM 공통 `LLM_TIMEOUT` 15초·`LLM_MAX_RETRIES` 1회·`LLM_RETRY_BACKOFF` 1초(P12) 그대로 | 이슈 지침(기존 제공자 설정 재사용). 임베딩은 보통 1~2초라 충분하고 새 설정이 늘지 않음(사용자 결정 11/11) |
+| 제공자·주소 | `EMBEDDING_PROVIDER=openai`는 `OPENAI_API_KEY`를 쓰고 `OPENAI_BASE_URL`은 쓰지 않아 항상 OpenAI 기본 주소. 키가 없으면 `UnconfiguredEmbeddingClient`로 임베딩만 503(`retryable=false`), 서버는 기동 | `OPENAI_BASE_URL`은 sLLM 대화용이라 임베딩 모델이 없을 수 있음. `LLM_PROVIDER=anthropic`이어도 임베딩은 OpenAI(사용자 결정 11/11) |
+| 가짜 전환 | `EMBEDDING_PROVIDER=fake`면 계약 4.2.4 가짜 규칙(`fake-bigram-v1`, `knowledge/fake.py` `fake_vector`) 벡터를 돌려주고 사용량을 남기지 않음 | 키 없이 로컬·시험에서 learning 연동 확인. 외부 호출이 없어 비용·사용량이 없음 |
+| 구조 | `app/llm/embeddings.py` `EmbeddingClient`(재시도·사용량, `LlmClient`와 같은 방식)·`OpenAIEmbeddingClient`·`create_embedder` → `app.state.embedder`. `app/embedding/` 라우터·서비스. 요청·응답 모델은 `knowledge/contracts.py` 그대로 | 기존 `LlmError`·`status_error`·`LlmUnavailable`·사용량 recorder를 재사용하고 새 공통 라이브러리를 만들지 않음. `LlmClient`는 채팅 구조화 출력 전용이라 상속하지 않음 |
+| `Embedder` Protocol | `EmbeddingService.embed(texts)`가 `EmbeddingResponse`를 돌려줘 Protocol을 만족 | #470 검색 클라이언트가 HTTP 없이 같은 객체(`EmbeddingService(app.state.embedder)`)를 씀 |
+| 순서·검사 | OpenAI 응답 `data`를 `index`로 정렬. 개수·차원이 요청과 다르면 `LLM_INVALID_OUTPUT`(재시도 대상) → 재실패 시 502 | 계약 C6 순서 보존과 learning 판 차원 보호. OpenAI 요청에 `dimensions`를 보내 설정 차원을 명시 |
+| 사용량 | 요청 1회(재시도 포함) = 1건, `callType = KNOWLEDGE_EMBEDDING`, `promptVersion` null, `inputTokens` = `usage.prompt_tokens`, `outputTokens` = 0 | 임베딩은 출력 토큰이 없음. 0으로 남겨 core에 단가가 생기면 입력 토큰만으로 비용이 계산됨(null이면 계산 안 됨). `LlmUsage.prompt_version`을 `str \| None`으로 넓힘 |
+| 상한 | 개수 64·글자 8,000은 계약 고정값(`contracts.py` 상수, OpenAPI `maxItems`·`maxLength`)으로 두고 설정으로 만들지 않음 | 설정으로 바꾸면 OpenAPI·가짜·learning 대역과 어긋남 |
+| Langfuse | 임베딩 호출은 Langfuse generation을 만들지 않음 | 프롬프트·출력이 없는 호출이라 추적 가치가 낮고 사용량은 이벤트로 남음. 필요하면 후속 |
+
+### 검증
+
+- `tests/embedding/test_client.py`: 응답 순서가 섞여도 요청 순서, 요청 칸(model·dimensions·timeout), 사용량(callType·입력 토큰·출력 0·promptVersion null), 개수·차원 불일치 = `LLM_INVALID_OUTPUT`+사용량, SDK 오류 6종 분류·기록, 재시도 1회와 요청마다 사용량, 재시도 안 하는 오류, 가짜 규칙·사용량 없음, 미설정, 팩토리 기본값·LLM 공통 시간 기준·`OPENAI_BASE_URL` 무시·SDK 재시도 끔
+- `tests/embedding/test_router.py`: 200 모양·순서, 401, 상한 400(경계 64개·8,000자는 200), 502·503과 `retryable`, 키 없는 기본 앱 503, `Embedder` Protocol, 응답이 OpenAPI 스키마 통과
+- `scripts/tests/test_ai_openapi.py`(라우터 9개 = OpenAPI), `test_knowledge_contracts.py`(ai planned 표시 없음)
+- 실제 OpenAI 1회 호출(2026-11-11, `OpenAIEmbeddingClient`·재시도 0): 짧은 교육과정 문장 3개 → `text-embedding-3-small`, 벡터 3개 모두 1536차원·길이 약 1, 사용량 1건(`KNOWLEDGE_EMBEDDING`, 입력 42토큰·출력 0·성공), 2.2초. 관련 문장 쌍(분수 덧셈 두 문장) 코사인 0.46, 무관한 쌍 0.12
+
+### 한계·후속
+
+- OpenAI는 입력 하나 8,192토큰·요청 전체 300,000토큰 제한이 있다. 한국어 8,000자 글은 8,192토큰을 넘을 수 있고 64개를 모두 길게 보내면 요청 한도를 넘어 `LLM_BAD_REQUEST` → 503(`retryable=false`)이 된다. C2 조각은 성취기준·내용 요소 문장이라 짧아 지금은 해당 없음. 긴 글을 넣게 되면 상한(글자 수)을 다시 정한다
+- #466·#468·#470이 가짜에서 이 API로 바꾸는 일은 각 이슈 몫
+- 위 실측처럼 `text-embedding-3-small`의 관련 문장 코사인이 0.5 안팎이라 계약 기준안 `DEFAULT_MIN_SIMILARITY = 0.7`(C5)이면 근거가 대부분 `BELOW_THRESHOLD`가 될 수 있다. 실제 적재 데이터로 기준값을 다시 재는 일은 #466·#470에서 한다
+

@@ -86,6 +86,13 @@ class Settings(BaseSettings):
     explanation_deadline: float = 125.0
     explanation_max_tokens: int = 256
 
+    # 지식 임베딩 (#467, api-spec 4.2.4 C6). openai는 OPENAI_API_KEY를 쓰고 OPENAI_BASE_URL(sLLM
+    # 대화용)은 쓰지 않음. 키가 없으면 임베딩만 503. fake는 개발용 fake-bigram-v1(사용량 없음).
+    # 타임아웃·재시도는 위 LLM 값(P12)을 그대로 씀. 개수·글자 상한은 계약 고정값(contracts.py)
+    embedding_provider: Literal["openai", "fake"] = "openai"
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimensions: int = 1536
+
     # 분석 대화 전체 마감(초). core 기준 전체 120초(P12)보다 짧게, LLM 호출은 이 안에서만
     analysis_deadline: float = 110.0
 

@@ -5,7 +5,7 @@ import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning.knowledge.dto.*
 import com.sagomungchi.learning.knowledge.repository.KnowledgeChunkRow
 import com.sagomungchi.learning.knowledge.repository.KnowledgeDatasetRow
-import com.sagomungchi.learning.knowledge.repository.KnowledgeMapper
+import com.sagomungchi.learning.knowledge.repository.KnowledgeQueryMapper
 import com.sagomungchi.learning.mission.domain.ThinkingType
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -25,7 +25,7 @@ import kotlin.math.sqrt
 /** Read-only C5 queries. Tables/vector bootstrap are deployed by #466, never by this service. */
 @Service
 class KnowledgeService(
-    private val mapper: KnowledgeMapper,
+    private val mapper: KnowledgeQueryMapper,
     private val transactionManager: PlatformTransactionManager,
     @param:Value("\${app.knowledge.query-timeout-ms:2000}") private val queryTimeoutMs: Long,
     @param:Value("\${app.knowledge.search-default-k:5}") private val searchDefaultK: Int,

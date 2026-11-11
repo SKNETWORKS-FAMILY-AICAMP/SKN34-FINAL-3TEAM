@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.learning.knowledge.repository.KnowledgeQueryMapper">
+    <resultMap id="dataset" type="com.sagomungchi.learning.knowledge.repository.KnowledgeDatasetRow">
+        <constructor>
+            <arg column="version" javaType="java.lang.String"/>
+            <arg column="embedding_model" javaType="java.lang.String"/>
+            <arg column="embedding_dimensions" javaType="_int"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="chunk" type="com.sagomungchi.learning.knowledge.repository.KnowledgeChunkRow">
+        <constructor>
+            <idArg column="id" javaType="java.lang.String"/>
+            <arg column="kind" javaType="java.lang.String"/>
+            <arg column="subject" javaType="java.lang.String"/>
+            <arg column="area" javaType="java.lang.String"/>
+            <arg column="standard_code" javaType="java.lang.String"/>
+            <arg column="domain_id" javaType="java.lang.String"/>
+            <arg column="thinking_type" javaType="java.lang.String"/>
+            <arg column="grades" javaType="com.fasterxml.jackson.databind.JsonNode"/>
+            <arg column="semesters" javaType="com.fasterxml.jackson.databind.JsonNode"/>
+            <arg column="notice_grade_band" javaType="java.lang.String"/>
+            <arg column="text" javaType="java.lang.String"/>
+            <arg column="record" javaType="com.fasterxml.jackson.databind.JsonNode"/>
+            <arg column="similarity" javaType="java.lang.Double"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="theme" type="com.sagomungchi.learning.knowledge.repository.KnowledgeThemeRow">
+        <constructor>
+            <arg column="thinking_type" javaType="java.lang.String"/>
+            <arg column="code" javaType="java.lang.String"/>
+            <arg column="statement" javaType="java.lang.String"/>
+            <arg column="subject" javaType="java.lang.String"/>
+            <arg column="area" javaType="java.lang.String"/>
+            <arg column="similarity" javaType="_double"/>
+            <arg column="matched_kind" javaType="java.lang.String"/>
+            <arg column="matched_id" javaType="java.lang.String"/>
+            <arg column="fit_reason" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+    <sql id="chunkColumns">
+        c.id, c.kind, c.subject, c.area, c.standard_code, c.domain_id, c.thinking_type,
+        to_jsonb(c.grades) AS grades, to_jsonb(c.semesters) AS semesters,
+        c.notice_grade_band, c.text, c.record
+    </sql>
+
+    <!-- Transaction-local deadline, bound as data. It never changes another request's connection settings. -->
+    <select id="setLocalTimeout" resultType="string" timeout="2">
+        SELECT set_config('statement_timeout', #{milliseconds}, true)
+    </select>
+    <select id="findActiveDataset" resultMap="dataset" timeout="2">
+        SELECT version, embedding_model, embedding_dimensions FROM knowledge_dataset WHERE status = 'ACTIVE'
+    </select>
+    <select id="findChunks" resultMap="chunk" timeout="2">
+        SELECT <include refid="chunkColumns"/>, NULL::double precision AS similarity
+        FROM knowledge_chunk c WHERE c.dataset_version = #{version} AND c.kind = #{kind} AND c.id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY c.id
+    </select>
+    <select id="findSubjectGuides" resultMap="chunk" timeout="2">
+        SELECT <include refid="chunkColumns"/>, NULL::double precision AS similarity
+        FROM knowledge_chunk c WHERE c.dataset_version = #{version} AND c.kind = 'SUBJECT_GUIDE' AND c.subject IN
+        <foreach collection="subjects" item="subject" open="(" separator="," close=")">#{subject}</foreach>
+        ORDER BY c.subject, c.id
+    </select>
+    <select id="findCovers" resultType="com.sagomungchi.learning.knowledge.repository.KnowledgeCoverRow" timeout="2">
+        SELECT standard_code, content_id FROM knowledge_covers
+        WHERE dataset_version = #{version} AND reviewed_at IS NOT NULL
+          AND btrim(reviewed_by) NOT IN ('', 'SAMPLE') AND standard_code IN
+        <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+        ORDER BY standard_code, content_id
+    </select>
+    <select id="findFits" resultType="com.sagomungchi.learning.knowledge.repository.KnowledgeFitRow" timeout="2">
+        SELECT standard_code, thinking_type, reason FROM knowledge_fits
+        WHERE dataset_version = #{version} AND reviewed_at IS NOT NULL
+          AND btrim(reviewed_by) NOT IN ('', 'SAMPLE') AND standard_code IN
+        <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+        ORDER BY standard_code, thinking_type
+    </select>
+
+    <!-- Exact filtered top-k: filtering after ANN LIMIT would silently lose eligible results. -->
+    <select id="search" resultMap="chunk" timeout="2">
+        WITH scored AS MATERIALIZED (
+            SELECT c.*, c.embedding &lt;=&gt; CAST(#{vector} AS vector) AS distance
+            FROM knowledge_chunk c
+            WHERE c.dataset_version = #{version} AND c.embedding IS NOT NULL
+            <if test="!filters.kinds.isEmpty()">
+                AND c.kind IN <foreach collection="filters.kinds" item="v" open="(" separator="," close=")">#{v}</foreach>
+            </if>
+            <if test="!filters.subjects.isEmpty()">
+                AND c.subject IN <foreach collection="filters.subjects" item="v" open="(" separator="," close=")">#{v}</foreach>
+            </if>
+            <if test="!filters.thinkingTypes.isEmpty()">
+                AND c.thinking_type IN <foreach collection="filters.thinkingTypes" item="v" open="(" separator="," close=")">#{v}</foreach>
+            </if>
+            <if test="!filters.grades.isEmpty()">
+                AND (c.kind IN ('SUBJECT_GUIDE', 'THINKING_TYPE') OR c.grades &amp;&amp;
+                ARRAY[<foreach collection="filters.grades" item="v" separator=",">#{v}</foreach>]::smallint[])
+            </if>
+            <if test="!filters.semesters.isEmpty()">
+                AND (c.kind IN ('SUBJECT_GUIDE', 'THINKING_TYPE') OR c.semesters &amp;&amp;
+                ARRAY[<foreach collection="filters.semesters" item="v" separator=",">#{v}</foreach>]::varchar[])
+            </if>
+        )
+        SELECT <include refid="chunkColumns"/>, greatest(0.0, least(1.0, 1.0 - c.distance)) AS similarity
+        FROM scored c
+        WHERE c.distance BETWEEN -0.000001 AND 2.000001
+          AND greatest(0.0, least(1.0, 1.0 - c.distance)) &gt;= #{minimum}
+        ORDER BY similarity DESC, c.kind, c.id LIMIT #{k}
+    </select>
+
+    <select id="themeCandidates" resultMap="theme" timeout="2">
+        WITH eligible AS MATERIALIZED (
+            SELECT c.* FROM knowledge_chunk c
+            WHERE c.dataset_version = #{version} AND c.kind = 'STANDARD'
+              AND EXISTS (SELECT 1 FROM knowledge_standard_semester s
+                  WHERE s.dataset_version = #{version} AND s.standard_code = c.standard_code
+                    AND s.grade = #{grade} AND s.semester = #{semester})
+        ), matches AS (
+            SELECT e.standard_code AS code, e.kind AS matched_kind, e.id AS matched_id,
+                e.embedding &lt;=&gt; CAST(#{vector} AS vector) AS distance
+            FROM eligible e WHERE e.embedding IS NOT NULL
+            UNION ALL
+            SELECT e.standard_code AS code, c.kind, c.id, c.embedding &lt;=&gt; CAST(#{vector} AS vector)
+            FROM eligible e JOIN knowledge_covers r
+              ON r.dataset_version = #{version} AND r.standard_code = e.standard_code
+              AND r.reviewed_at IS NOT NULL AND btrim(r.reviewed_by) NOT IN ('', 'SAMPLE')
+            JOIN knowledge_chunk c ON c.dataset_version = #{version} AND c.id = r.content_id
+              AND c.kind = 'CONTENT' AND c.embedding IS NOT NULL
+        ), scored AS (
+            SELECT *, greatest(0.0, least(1.0, 1.0 - distance)) AS similarity,
+                row_number() OVER (PARTITION BY code
+                    ORDER BY greatest(0.0, least(1.0, 1.0 - distance)) DESC, matched_kind, matched_id) AS match_rank
+            FROM matches WHERE distance BETWEEN -0.000001 AND 2.000001
+              AND greatest(0.0, least(1.0, 1.0 - distance)) &gt;= #{minimum}
+        ), ranked AS (
+            SELECT f.thinking_type, e.standard_code AS code, e.record-&gt;&gt;'statement' AS statement,
+                e.subject, e.area, s.similarity,
+                s.matched_kind, s.matched_id, f.reason AS fit_reason,
+                row_number() OVER (PARTITION BY f.thinking_type ORDER BY s.similarity DESC, e.standard_code) AS type_rank
+            FROM scored s JOIN eligible e ON e.standard_code = s.code
+            LEFT JOIN knowledge_fits f ON f.dataset_version = #{version} AND f.standard_code = s.code
+              AND f.reviewed_at IS NOT NULL AND btrim(f.reviewed_by) NOT IN ('', 'SAMPLE')
+            WHERE s.match_rank = 1
+        )
+        SELECT thinking_type, code, statement, subject, area, similarity, matched_kind, matched_id, fit_reason
+        FROM ranked WHERE type_rank &lt;= #{k} ORDER BY thinking_type, similarity DESC, code
+    </select>
+
+    <select id="nearestContent" resultMap="chunk" timeout="2">
+        WITH scored AS MATERIALIZED (
+            SELECT c.*, c.embedding &lt;=&gt; CAST(#{vector} AS vector) AS distance
+            FROM knowledge_chunk c
+            WHERE c.dataset_version = #{version} AND c.kind = 'CONTENT' AND c.embedding IS NOT NULL
+        )
+        SELECT <include refid="chunkColumns"/>, greatest(0.0, least(1.0, 1.0 - c.distance)) AS similarity
+        FROM scored c WHERE c.distance BETWEEN -0.000001 AND 2.000001
+          AND greatest(0.0, least(1.0, 1.0 - c.distance)) &gt;= #{minimum}
+        ORDER BY similarity DESC, c.id LIMIT 1
+    </select>
+
+    <!-- UNION removes repeated codes, so prerequisite cycles terminate. A prerequisite is evidence
+         only if a reviewed covers edge names THIS content and an explicit semester is available. -->
+    <select id="learnedIn" resultType="com.sagomungchi.learning.knowledge.dto.LearnedIn" timeout="2">
+        WITH RECURSIVE standards(code) AS (
+            SELECT standard_code FROM knowledge_covers
+            WHERE dataset_version = #{version} AND content_id = #{contentId}
+              AND reviewed_at IS NOT NULL AND btrim(reviewed_by) NOT IN ('', 'SAMPLE')
+            UNION
+            SELECT p.prerequisite_code FROM standards s JOIN knowledge_prerequisite p
+              ON p.dataset_version = #{version} AND p.standard_code = s.code
+            WHERE p.reviewed_at IS NOT NULL AND btrim(p.reviewed_by) NOT IN ('', 'SAMPLE')
+        )
+        SELECT DISTINCT s.code AS standard_code, m.semester
+        FROM standards s JOIN knowledge_covers c
+          ON c.dataset_version = #{version} AND c.standard_code = s.code AND c.content_id = #{contentId}
+          AND c.reviewed_at IS NOT NULL AND btrim(c.reviewed_by) NOT IN ('', 'SAMPLE')
+        JOIN knowledge_standard_semester m ON m.dataset_version = #{version} AND m.standard_code = s.code
+        ORDER BY m.semester, s.code
+    </select>
+</mapper>

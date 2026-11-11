@@ -252,7 +252,9 @@ class OpenApiSpecTests(unittest.TestCase):
             self.assertEqual(self.ai["components"]["schemas"][name], self.learning["components"]["schemas"][name], name)
 
     def test_embedding_contract_c6(self):
-        self.assertEqual(self.planned(self.ai), {("post", "/embeddings"): "planned-issue-467"})
+        # #467에서 구현해 planned 표시를 뗐다(남은 ai 구현 전 항목은 C7 칸뿐)
+        self.assertEqual(self.planned(self.ai), {})
+        self.assertNotIn("x-implementation-status", self.ai["paths"]["/embeddings"]["post"])
         self.assertIn("`/internal/embeddings`", self.spec_42)
         texts = self.ai["components"]["schemas"]["EmbeddingRequest"]["properties"]["texts"]
         fake = load_fake()

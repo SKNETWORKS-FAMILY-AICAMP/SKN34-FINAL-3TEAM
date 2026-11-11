@@ -970,7 +970,7 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 | 계약 | 위치 |
 |---|---|
 | C1 추출 레코드 | `scripts/knowledge/schema/curriculum-record.schema.json` |
-| C2 조각·판 테이블, C3 관계 테이블, C9 판 규칙 | [ERD 4.5](../design/erd.md#45-교육과정-지식-rag-463-계약-464-구현-전) |
+| C2 조각·판 테이블, C3 관계 테이블, C9 판 규칙 | [ERD 4.5](../design/erd.md#45-교육과정-지식-rag-463-계약-464-구현-466) |
 | C4 관계 확인 파일 | `scripts/knowledge/schema/relation-review.schema.json` |
 | C5 learning 지식 내부 API | [api-spec 4.1.2](../design/api-spec.md#412-교육과정-지식-내부-api-463-계약-464-c5-구현-469), learning OpenAPI `/knowledge/*`(`x-implementation-status: planned-issue-469`) |
 | C8 평가셋 | `scripts/knowledge/schema/eval-record.schema.json` |
@@ -1016,7 +1016,130 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 - `scripts/tests/test_knowledge_contracts.py` 23개: 샘플이 C1·C4·C8 스키마 통과, 성취기준 문장 = 시드, 내용 요소 ID 해시 규칙, 제외 출처 없음, 생각 유형에 영어 문장 없음·출처 표기, 확인 파일 대상 존재·`문장:`/`해설:` 인용이 원문 부분 문자열, OpenAPI ↔ api-spec 경로·사유 코드·상한, ai·learning 지식 스키마 같음, 가짜 응답이 OpenAPI 스키마 통과
 - 팀 확인 질문은 #464 확인 필요 항목으로 남김(C1 #465, C2·C3·C9 #466, C4 #468, C5 #469, C6 #467, C7 #470, C8 #471. 담당자는 바뀔 수 있어 이슈 번호로 적음)
 
-## 29. 지식 검색 내부 API (#469, 2026-11-11)
+## 29. 교육과정 지식 저장소 (#466, 에픽 #463, 2026-11-11)
+
+#464 계약(C2·C3·C9)대로 `learning_db`에 지식 판·조각·관계 테이블과 판 적재·활성화·제거를 만들었다. 실제 추출본(#465)·실제 임베딩(#467)·사람 확인 관계(#468)가 나오면 같은 경로로 적재한다.
+
+| 항목 | 위치 |
+|---|---|
+| 테이블 | learning V14 `knowledge_dataset`·`knowledge_chunk`·`knowledge_standard_semester`·`knowledge_fits`·`knowledge_prerequisite`·`knowledge_covers`, [ERD 4.5](../design/erd.md#45-교육과정-지식-rag-463-계약-464-구현-466) |
+| 판 관리 API | `/internal/admin/knowledge/datasets…`, [api-spec 4.1.3](../design/api-spec.md#413-교육과정-지식-판-관리-466), 운영 스크립트 `scripts/knowledge/manage_datasets.py` |
+| 코드 | `knowledge/`(domain 조각·관계 규칙, client 임베딩, repository, service, controller), 매퍼 `mybatis/knowledge/KnowledgeMapper.xml` |
+| `vector` 확장 | 관리자 bootstrap(`rds-bootstrap.sql`), [DB 개발 가이드 8.7](db-dev-guide.md#87-learning_db-vector-확장-466) |
+
+### 결정 (동섭 2026-11-11)
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 관리 API 접근 | learning 내부 관리 경로 + 운영 스크립트, `SYSTEM` 역할, core 프록시·관리자 화면 없음 | 이슈 기준안. 판 적재는 개발자·운영자 작업이라 외부 노출 면을 늘리지 않음 |
+| 벡터 매퍼 | 문자열 + `::vector` 형변환(배열 `::smallint[]`·`::varchar[]`, jsonb `::jsonb`) | 새 의존성 없음, 조각 수천 개 규모라 속도 문제 없음. 읽기는 `embedding::text` |
+| 임베딩 | `app.knowledge.embedding` = `ai`(기본) \| `fake`. compose·kind는 #467 전까지 `fake` | `fake-bigram-v1`을 Kotlin으로 옮겨 ai 가짜와 같은 벡터(시험이 대조). #467 뒤 kind 값만 `ai`로 |
+| 적재 실행 | 동기 요청(스크립트가 10분까지 대기) | 실패 사유 칸이 계약(C2)에 없고, 실패하면 판이 `LOADING`으로 남는 C9 규칙으로 충분 |
+
+### 구현 메모
+
+- 조각 규칙(`KnowledgeChunks`): erd 4.5 조각 표와 `fake.chunk_text`를 그대로 옮겼다. 샘플 215개 조각의 `content_hash`, 가짜 벡터(빈 글·한 글자 포함), covers로 채운 내용 요소·영역 학년·학기가 ai 가짜 구현과 같다(`fake-parity.json`은 `fake.py`로 만든 대조 파일)
+- 활성화는 적재와 나눴다(이슈 "관리 API: 적재 시작·상태 조회·활성화·제거"). 적재 때 활성 판을 `source.previousVersion`에 두고, 활성화 때 활성 판이 바뀌었으면 409(옮긴 관계·재사용 벡터의 기준이 달라짐)
+- 같은 관계 여러 행: `reviewedAt`이 늦은 행, 같은 날이면 파일에서 뒤 행. 이전 판에서 옮긴 관계보다 늦은 `REJECT`는 그 관계를 뺀다(계약은 "REJECT는 넣지 않음"만 정해 옮긴 관계와의 관계를 기준안으로 정함)
+- `relation_count` = 학기·fits·prerequisite·covers 행 합. 원문 문서 수는 고시 원문 `source.doc`만(생각 유형은 팀이 쓴 지침이라 제외)
+- 실패한 `LOADING` 판은 C9대로 지우지 않는다. 쌓이면 판 이름 순번만 늘어난다(하루 99개 상한)
+- 이미지 교체에 따른 정렬: `MissionDraftServiceTest` 학년군 집계 정렬을 `COLLATE "C"`로 고정(Debian glibc는 `초1~2`가 `중1~3`보다 앞). 운영 `AchievementStandardMapper.xml` `ORDER BY subject, grade_band, code`도 kind 이미지 교체(#492) 때부터 glibc 순서
+
+### 결과서 숫자 (샘플, 가짜 임베딩)
+
+| 항목 | 값 |
+|---|---|
+| 원문 문서 | 1(교육부 고시 제2022-33호 별책 2) |
+| 조각 | 215(성취기준 15·영역 14·내용 요소 176·교과 지침 5·생각 유형 5), 본문 해시 215종 |
+| 임베딩 | 처음 적재 215개·4회 요청(64개씩), 같은 입력 재적재 0회(215개 재사용) |
+| 관계(확인 파일 없이) | 학기 15 |
+| 관계(샘플 확인 파일의 reviewer만 바꿔 확인한 것처럼) | 40 = 학기 15 + fits 5 + prerequisite 0 + covers 20(REJECT 2·확인 전 2 제외) |
+| 재적재 | 같은 입력이면 조각·관계 수 같음, 옮긴 관계는 다시 확인할 목록 0건 |
+
+- 샘플 확인 파일(reviewer `SAMPLE`)은 계약대로 적재가 거부한다. kind 샘플 적재는 확인 파일 없이 한다
+- 실제 추출본(#465)·실제 임베딩(#467)·확인 관계(#468) 숫자는 통합 적재 때 이 표에 더한다
+
+### 검증
+
+- learning `./gradlew test bootJar`(JDK 21, Testcontainers `pgvector/pgvector:0.8.7-pg17-trixie`): `KnowledgeRulesTest`(조각·가짜 벡터·covers가 ai 가짜와 같음, ID 겹침·SAMPLE·REJECT/MODIFY 규칙), `KnowledgeDatasetServiceTest`(적재·재적재 멱등·임베딩 재사용·교체·제거, 끝 없어진 관계는 다시 확인 목록, 본문 바뀐 끝은 옮기고 목록에도, 활성 판이 바뀌면 활성화 거부, 문장 불일치·SAMPLE은 판을 만들기 전에 멈춤, 관리 API SYSTEM 역할만)
+- `scripts/check_db_migrations.py`(임시 pgvector 서버): bootstrap → migrate 계정으로 V14 → ERD 대조 learning 34/286, 위반 입력 49건(V14 10건 추가), 재실행·계정 격리 통과. `verify_db_schema.py`가 `vector(n)`·`smallint[]`·`varchar[]`·`char(n)`을 읽도록 넓힘
+- 계약 시험(`scripts/tests`): OpenAPI ↔ 컨트롤러(66개), 지식 계약, 관리 스크립트(`test_knowledge_manage_datasets.py`, 내부 토큰·SYSTEM·recheck CSV)
+- learning 마이그레이션을 alpine 서버에 적용하던 검증 스크립트(`verify_report_learning.py`·`verify_feedback_learning.py`·`verify_scoring_models.py`·`report_integration/compose.yaml`)도 pgvector 이미지로 바꿨다(V14가 `vector` 타입을 씀)
+
+## 30. 지식 관계 후보 생성과 사람 확인 (#468, 에픽 #463, 2026-11-11)
+
+고시 자료로 자동으로 만들 수 없는 관계 세 가지(맞는 생각 유형 FITS·선수 PREREQUISITE·다루는 내용 요소 COVERS)의 후보를 만들고, 사람이 확인한 행만 #466 관계 테이블(C3)에 넘기는 도구. 이번에는 도구·시험·샘플 확인까지만 함. 초3·초4 전체 사람 확인과 수락률 정리(완료 조건)는 #465 실제 레코드가 나온 뒤 같은 도구로 진행(#466 저장소·#467 임베딩 API는 머지됨).
+
+| 파일 | 내용 |
+|---|---|
+| `scripts/knowledge/relation_candidates.py` | 후보 생성 → C4 확인 파일(decision 이하 빈 칸) |
+| `scripts/knowledge/review_relations.py` | C4 읽기·쓰기, `validate`·`compare`·`stats`·`coverage` |
+| `scripts/tests/test_knowledge_relations.py` | 가짜 LLM·가짜 임베딩 시험 15개 |
+
+### 결정
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| LLM 호출 | ai-service `create_llm` 재사용(LLM_PROVIDER·OPENAI_*·ANTHROPIC_* 설정 그대로), ai-service 환경(`uv run`)에서 실행. 사용량은 표준 오류에만 남기고 core 이벤트는 보내지 않음(`callType` 기준안 `KNOWLEDGE_RELATION`은 로컬 표시용) | 사용자 결정. 구조화 출력·재시도를 다시 만들지 않음 |
+| 사람 확인 | 두 명. 이슈 담당자 1차 파일 + 팀원 1명 교차 파일 → `compare`로 판단 다른 행 → 합의해 1차 파일을 고쳐 차이 0 → `validate --final` → #466 `manage_datasets.py load --reviews` | 사용자 결정(이슈 기준안) |
+| 학기×유형 빈 칸 | 목록만 보고, 그 학기 테마를 어떻게 채울지는 테마 생성 쪽 | 사용자 결정 |
+| 선수 범위 | 같은 교과·학기가 앞선 **초3~6** 성취기준만. 3-1은 선수 후보 없음 | 사용자 결정. 초1~2는 지식 자료 밖이고 성취기준 표 시드에도 학기가 없음. ERD 4.5 메모 갱신 |
+| 앞 학기 | 선수의 마지막 학기 < 이 성취기준의 첫 학기. 학기 정보가 없으면(초5·6 도덕 일부) 후보·수락 불가 | C1 `semesters` 배열 |
+| COVERS 범위 | 같은 교과·같은 고시 학년군 내용 요소 전체에서 유사도 상위 3(`--top`) | 사회·과학 성취기준 `domainId`는 단원(STANDARD_GROUP)이라 내용 체계 영역과 이어지지 않음(#464) |
+| 선수 겹침 | 확인된 COVERS 파일(`--covers`)이 있으면 그것, 없으면 이번 COVERS 유사도 상위. 겹침 많은 순 → 가까운 학기 순 상위 10개를 LLM에 주고 0~3개 | 이슈 "내용 요소가 겹치는 것 우선" |
+| evidence 형식(C4 보충) | 부분을 ` \| `로 잇고, `문장: `·`해설: `로 시작하는 부분은 원문 그대로(맨 뒤). `validate`가 부분 문자열 검사 | C4 "'문장:'으로 시작하면 그 뒤는 원문"을 지키면서 요소 코드·이유를 같이 남김 |
+| FITS 거르기 | 유형 코드·요소 코드가 틀리거나 인용이 원문에 없으면 버림, 최대 2개 | 이슈 "근거 없는 유형은 내지 않음" |
+| 결과 폴더 | `scripts/knowledge/relations-reviewed/<판>-candidates.csv`·`<판>-first.csv`·`<판>-cross.csv`. 실제 확인 파일이 생길 때 만듦 | 빈 폴더는 저장소에 남지 않음 |
+
+### 실행
+
+```
+cd backend/ai-service
+uv run python ../../scripts/knowledge/relation_candidates.py --records R --dataset-version kn-YYYYMMDD-NN \
+    --embedding http --out ../../scripts/knowledge/relations-reviewed/kn-YYYYMMDD-NN-candidates.csv
+python scripts/knowledge/review_relations.py validate FILE --records R [--final]
+python scripts/knowledge/review_relations.py compare FIRST CROSS
+python scripts/knowledge/review_relations.py stats FILE --records R
+python scripts/knowledge/review_relations.py coverage FILE --records R
+python scripts/knowledge/manage_datasets.py load --records R --reviews FIRST --dataset D   # #466 적재
+```
+
+- `--embedding fake`(기본)는 #464 가짜(`fake-bigram-v1`), `http`는 ai `POST /internal/embeddings`(#467, 환경 변수 `AI_URL` 기본 `http://localhost:8000`·`INTERNAL_TOKEN`, ai에 `EMBEDDING_PROVIDER=openai`와 키 필요)
+- `validate` 검사: C4 칸 조건, 코드 존재(성취기준·선수·내용 요소·수정 대상), 문장·대상 글 = 레코드, 후보 중복·수락 중복, 판 하나, 선수 같은 교과·(수락 행) 앞 학기, COVERS 같은 교과·학년군, 인용. `--final`은 미확인 행·`SAMPLE` 확인자 거부
+- LLM 입력은 성취기준 문장·해설, 생각 유형 지침, 내용 요소 글뿐(학생 정보 없음)
+- #466 적재가 돌려주는 `recheck` CSV(`--recheck-out`, 옮기지 못했거나 끝 본문이 바뀐 관계)도 C4 모양이라 같은 확인 절차로 다시 확인
+
+### 샘플 확인
+
+- #464 샘플 확인 파일 29행: `validate` 통과, `--final`은 SAMPLE 27행·미확인 2행으로 거부
+- `stats`: FITS 확인 6행 중 수락 5(83%), COVERS 20행 모두 수락(수정 1), 선수 1행 거절
+- `coverage`(3-1~4-2): 3-1은 다섯 유형 모두 1개씩, 3-2·4-1·4-2는 샘플에 성취기준이 없어 모두 빈 칸(실제 레코드로 다시)
+- 가짜 LLM으로 샘플 후보 생성: FITS 15·COVERS 45·선수 0(샘플은 모두 3-1), 모두 C4 스키마와 `validate` 통과
+- 참고: 샘플에서 사람이 수락한 COVERS 20행 중 13행이 가짜 임베딩 상위 3에 듦. 가짜 벡터는 글자 2개 해시라 품질 지표가 아니며 #467 실제 임베딩(`--embedding http`)으로 다시 잼
+
+### 이슈와 다른 점
+
+- 선수 "앞 학년 포함" → 초3~6 안에서만(위 결정). 3-1 성취기준은 선수 후보 없음
+- "후보 품질: 수락률(유형별·교과별)"은 `stats` 도구까지. 실제 수락률·거절 사유 정리와 학기×유형 표 보고는 실제 확인 뒤
+- `review_relations.py`의 "CSV 내보내기"는 `write_review_csv` 함수로 두고 `relation_candidates.py --out`이 부름(명령 하나로 생성·내보내기)
+- 작업 위치 밖 기존 파일 수정: `docs/design/erd.md` 4.5 선수 메모 한 줄
+
+### API 변경
+
+없음(스크립트만, C4 형식 그대로).
+
+### 검증
+
+- `scripts/tests/test_knowledge_relations.py` 15개: FITS 틀린 인용·요소 코드·중복 버림과 2개 제한·구분자 정리, 프롬프트 = 성취기준 글과 #262 규칙, COVERS 같은 교과·학년군 상위 3·유사도 내림차순, 선수 같은 교과·앞 학기·겹침 우선·목록 밖 코드 버림·3-1은 LLM을 부르지 않음, 확인된 COVERS 파일 사용, 샘플 후보 C4 스키마 통과, `validate` 오류 12종, CSV 왕복·BOM·머리행, `compare`·`stats`·`coverage` 숫자, CLI 종료 코드
+- `python -O -m unittest discover -s scripts/tests` 271개 통과(1개 건너뜀, develop #466·#467 머지 뒤), `ruff check` 통과
+- 실제 LLM 어댑터: ai-service 환경에서 `uv run`으로 실행해 키 미설정 `LLM_NOT_CONFIGURED`까지 확인. 로컬에 LLM·임베딩 키가 없어 실제 LLM·`--embedding http`로 후보를 만들지는 않음
+
+### 한계
+
+- 완료 조건(초3·초4 5개 교과 사람 확인, 학기×유형 표, 수락률·거절 사유, #466 인계)은 #465 뒤
+- 실제 LLM 프롬프트 품질(유형 판단·설명)은 아직 재지 않음. 첫 실제 실행 때 1차 확인 수락률로 보고 프롬프트 판(`relation-candidates-v1`)을 올림
+
+## 31. 지식 검색 내부 API (#469, 2026-11-11)
 
 ### 계약과 범위
 
@@ -1033,7 +1156,7 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 
 production vector 확장·C2/C3 테이블 Flyway·적재·활성 판 교체는 #466 소유다. #469는 해당 마이그레이션을 복제하거나 기존 마이그레이션을 고치지 않는다. 배포 전 #466의 확장과 테이블을 적용해야 하며, 활성 판이 없는 정상 테이블은 다섯 API 모두 200 `NO_ACTIVE_DATASET`으로 응답한다. 스키마 자체가 없는 배포 상태를 데이터 없음으로 숨기지 않는다.
 
-개발 검증은 일회용 pgvector PostgreSQL에서 계약과 같은 테스트 전용 테이블·#464 샘플을 사용한다. 샘플 관계의 검토자는 격리 시험에서만 `TEST_FIXTURE`로 바꿔 적재하고 실제 사람 확인으로 취급하지 않는다. 원본 `reviewer=SAMPLE`과 검토자·검토일이 없는 관계는 조회에서도 제외한다. 실제 적재본의 주제 3개·코드 5개·범위 확인 5개 결과와 지연, 유사도·k 보정은 #466·#467 이후 확인해야 한다. `HOLD`의 생성 측 처리는 #470과 통합할 때 검증한다.
+개발 검증은 일회용 pgvector PostgreSQL에서 실제 Flyway V14 테이블과 #464 샘플을 사용한다. 초기 시험용 DDL은 #466 병합 후 삭제했다. 샘플 관계의 검토자는 격리 자동 시험에서만 `TEST_FIXTURE`로 바꿔 적재하고 실제 사람 확인으로 취급하지 않는다. 원본 `reviewer=SAMPLE`과 검토자·검토일이 없는 관계는 조회에서도 제외한다. #466·#467 구현은 병합됐으며, #465 실제 추출본과 #468 사람 확인 관계가 제공되면 실제 적재본의 주제 3개·코드 5개·범위 확인 5개 결과와 지연, 유사도·k 보정을 검증한다. `HOLD`의 생성 측 처리는 #470과 확인한다.
 
 ### 검증
 
@@ -1056,6 +1179,34 @@ production vector 확장·C2/C3 테이블 Flyway·적재·활성 판 교체는 #
 
 설정은 `app.knowledge.query-timeout-ms`(기본 2000, 범위 1~2000), `search-default-k`(5), `theme-default-k`(3), `min-similarity`(0.7)이며 뒤 세 항목도 `app.knowledge` 아래에 둔다. 실제 적재 후 측정값으로 조정한다.
 
+### 실제 저장소·임베딩 연동 검증 (공개 샘플, 2026-11-11)
+
+develop `2af290c1`(#526·#527·#529·#531 포함)을 통합했다. #466 적재용 `KnowledgeMapper`는 그대로 유지하고 조회용은 `KnowledgeQueryMapper`로 분리했다. 실제 V14 마이그레이션과 성취기준 시드에서 관리 API 적재→활성화→다섯 조회, 동일 자료 재적재, 판 교체 후 새 본문·참조 반환까지 시험한다. `KnowledgeIngestionQueryIntegrationTest` 2개를 포함한 지식 관련 시험 40개가 통과했다.
+
+통합 후 learning 전체 `test bootJar`는 72개 시험 묶음·416개 모두 통과(실패·건너뜀 0개), 실행 JAR 빌드 성공이다. 지식 HTTP JSON 18개와 기존 커뮤니티·테마 요약 응답 계약 검사도 통과했다. 저장소 스크립트 시험은 272개 중 271개 통과·기존 조건부 1개 건너뜀, ai 지식·임베딩 시험은 55개 통과다. 위 초기 검증 기록보다 이후 결과다.
+
+별도 일회용 DB에 V1~V14 SQL과 성취기준 시드를 적용하고, 실제 learning JAR·ai C6 라우터·OpenAI 제공자를 HTTP로 연결했다. ai는 임베딩 라우터·내부 인증·오류 처리·제공자를 격리 실행했으며 사용량 메타데이터는 로컬에 기록했다. 이번 실행에 AMQP/core 사용량 저장 검증은 포함하지 않았다.
+
+- 데이터: `curriculum.sample.jsonl` 215개, `text-embedding-3-small` 1536차원. 임베딩 4회로 적재했고 적재 소요 시간은 5,609ms였다.
+- `reviewer=SAMPLE`을 실제 확인자로 바꾸지 않았다. 이번 HTTP 실행은 사람 확인 관계 없이 적재했으므로, 실제 관계를 통한 후보·배움 판단 품질 검증이 아니다.
+- 활성 판 `kn-20261111-01`에서 코드 5개·주제 3개·개념 5개를 조회했다. 13건 모두 HTTP 200이며 모델·차원·근거 판 일관성 검사를 통과했다. 아래 값은 각 요청 한 번의 클라이언트 경과 시간으로, 워밍업을 따로 제거하지 않았다.
+
+| 요청 | 개수 | 관측 결과 | 소요 시간 최소~최대 |
+|---|---:|---|---:|
+| 성취기준 코드 | 5 | 요청한 코드 모두 조회 | 19.369~99.235ms |
+| 주제 후보 | 3 | 기본 0.7 기준에서 모두 `BELOW_THRESHOLD`, 유형별 `NO_CANDIDATE` | 13.442~66.679ms |
+| 배움 확인 | 5 | 모두 `HOLD` + `BELOW_THRESHOLD` | 9.980~149.969ms |
+
+추가로 같은 성취기준 본문을 실제 모델로 임베딩해 검색했을 때 해당 코드가 1위(유사도 0.99999963)였고, 생각 유형 지침도 조회됐다. 동일 자료 재적재는 215개 임베딩을 전부 재사용해 외부 임베딩 호출이 0회였다. 전체 검증의 제공자 호출은 6회·입력 31,856토큰이었다. 응답은 정상이어도 위 후보 없음·보류를 검색 품질 통과로 세지 않는다. 현재 0.7 기준값은 실제 정답표를 확보한 뒤 보정해야 한다.
+
+조회 예시와 관측 기록기는 `scripts/knowledge/samples/query-examples.sample.json`, `scripts/knowledge/query_examples.py`다. 실행 중인 서비스 주소와 내부 토큰 환경 변수 `INTERNAL_TOKEN`을 준비한 뒤 다음처럼 실행한다. 실제 검증 때는 `--cases`를 실제 자료·검토 범위에 맞춘 파일로 바꾼다.
+
+```sh
+python scripts/knowledge/query_examples.py --learning-url http://127.0.0.1:8081 --ai-url http://127.0.0.1:8000 --cases scripts/knowledge/samples/query-examples.sample.json --output knowledge-observations.json
+```
+
+기록에는 실제 응답·지연·사용한 모델/판과 오류 시 부분 결과를 남긴다. `dataClassification`은 사용자가 입력한 표식이며 검토 인증이 아니다. `qualityAssessment`는 `not_evaluated`로 남기고, 이 기록만으로 실제 적재본 완료 조건을 자동 체크하지 않는다. 실험용 서버·DB는 실행 후 정리했다.
+
 ### 해야 할 일
 
 - [x] `GET /internal/knowledge/standards`: 성취기준 문장·해설, 영역, 교과 지침, 유형·내용 요소 관계 조회
@@ -1072,7 +1223,7 @@ production vector 확장·C2/C3 테이블 Flyway·적재·활성 판 교체는 #
 - [x] 다섯 API 시험 통과(샘플)
 - [ ] 통합 후 실제 적재본으로 주제 3개·코드 5개·범위 확인 5개의 결과와 지연 기록
 
-#466에서 실제 데이터·검토된 관계·임베딩이 저장된 ACTIVE 판, #467에서 저장 본문과 동일 모델·차원의 실제 질의 임베딩이 제공되면 통합 검증한다. 관련 이슈 전체 종료를 기다리는 조건은 아니다.
+#466 저장소와 #467 실제 임베딩 연결은 공개 샘플로 검증했다. 남은 입력은 #465 실제 교육과정 JSONL과 #468 사람 확인 관계 CSV다. 이를 #466으로 적재·활성화한 뒤 #467의 같은 모델·차원 질의 벡터로 실제 자료의 결과와 지연을 기록한다. 필요한 산출물의 제공이 조건이며, 관련 이슈 전체 종료 자체를 기다리는 조건은 아니다.
 
 ### 확인 필요
 

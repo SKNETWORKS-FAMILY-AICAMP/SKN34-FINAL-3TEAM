@@ -343,6 +343,7 @@ python scripts/admin_account_sql.py --login-id ops-kim --disable | psql "$CORE_D
 - `evaluation/load/prepare_accounts.py`가 공개 API로 시험 계정을 만든다(가입 → 동의 → 자녀 3명 → 기기 등록 → PIN). 비밀번호·PIN·기기 쿠키는 저장소 밖 비밀 파일에만 쓴다.
 - k6 `core-load.js`는 계정에 `loginId`가 있으면 `POST /auth/parent/login`으로 access를 받는다. 회전하는 refresh 토큰이 없어 비밀 파일을 다시 쓰지 않는다. `loginId`가 없으면 옛 refresh 방식이다.
 - AWS 데모는 `AUTH_NEW_ACCOUNT_DEMO=true`라 시험 계정이 `is_demo`로 저장되어 운영 집계에서 빠진다.
+- 가입 IP 제한(`AUTH_SIGNUP_LIMIT_PER_IP`·`AUTH_SIGNUP_LIMIT_WINDOW`)은 #517에서 compose·`.env.example`·로컬 GitOps에 같은 기본값(5회·10분)으로 전달한다. 로컬 부하 시험은 `.env`에서 늘릴 수 있다. prod values에는 넣지 않아 앱 기본값을 쓴다.
 - k6 `setup()`은 쿠키 저장소 하나를 공유한다. 앞 계정의 refresh 쿠키가 남은 채로 다음 계정이 로그인하면 `startSession`이 그 세션을 "이전 세션"으로 폐기하므로, 계정마다 빈 쿠키 저장소(`jar: new http.CookieJar()`)로 로그인한다.
 - 로컬 격리 compose 확인(2026-11-09, `AUTH_NEW_ACCOUNT_DEMO=true`). 당시 `compose.yaml`은 이 값을 core-service에 전달하지 않아 계정은 기본값(false)으로 저장됐을 수 있다. #500에서 compose 전달을 추가했다(기본 false)
   - 시험 계정 4개(`load1`~`load4`, 자녀 3명씩) 준비 → k6 VU 8·30초. 보호자 ID 로그인 4건, 학생 로그인 12건, 학습 칸 60개(1차의 15개 → 4배), 알림 SSE·조회 API 정상.

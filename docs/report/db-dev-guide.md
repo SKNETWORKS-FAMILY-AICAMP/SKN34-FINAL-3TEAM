@@ -217,3 +217,14 @@ with transaction(factory) as session:
 ### 8.6 검증
 
 - `scripts/check_db_migrations.py`(ci-db-schema): bootstrap → migrate 계정으로 Flyway·Alembic 적용 → bootstrap 재실행 → 재실행·report 왕복 → 6개 계정의 다른 DB 접속 거부, app 계정의 DML 보유·DDL 거부·이력 테이블 접근 불가 확인
+
+### 8.7 learning_db `vector` 확장 (#466)
+
+- 결정: 지식 저장소(#463)용 `vector`(pgvector 0.8.7)는 `rds-bootstrap.sql`의 learning_db 단계에서 관리자 계정이 `CREATE EXTENSION IF NOT EXISTS vector`로 만든다. pgvector는 trusted 확장이 아니어서 `learning_migrate`의 Flyway로는 만들 수 없다(`permission denied ... Must be superuser`). 확장은 schema public에 생기고 migrate·app 계정은 `vector` 타입·연산자·HNSW 인덱스를 그대로 쓴다
+- 이미지: 로컬 compose·kind·DB 스키마 CI·learning Testcontainers 모두 `pgvector/pgvector:0.8.7-pg17-trixie`(PG 17.11 Debian). alpine(musl)에서 초기화한 볼륨은 text 정렬이 달라 이미지 교체 뒤 DB마다 `REINDEX DATABASE` 1회 필요
+- 기존 볼륨 1회 적용: bootstrap은 빈 데이터 디렉터리에서만 돌므로 이미 있는 볼륨은 관리자 계정으로 한 번 실행한다(멱등, 재시작 없음). **learning V14 마이그레이션 전에** 해야 한다(없으면 migrate 계정의 V14가 superuser 권한 오류로 멈춤)
+  - Compose: `docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d learning_db -c "CREATE EXTENSION IF NOT EXISTS vector"'`
+  - kind: `kubectl -n platform exec postgres-0 -- sh -c 'psql -U "$POSTGRES_USER" -d learning_db -c "CREATE EXTENSION IF NOT EXISTS vector"'`
+  - 확인: `SELECT extversion FROM pg_extension WHERE extname = 'vector'` → `0.8.7`
+- 운영 RDS: AWS 재가동 때 `rds-bootstrap`을 다시 실행하면 같은 문장이 돈다. 그 전에 엔진 버전의 pgvector 버전과 파라미터 그룹 `rds.allowed_extensions`(설정돼 있다면 `vector` 포함)를 확인한다. 허용되지 않으면 `ON_ERROR_STOP`으로 bootstrap이 멈춘다
+- 지식 테이블(`knowledge_*`)은 learning V14(#466). V14 첫 문장 `CREATE EXTENSION IF NOT EXISTS vector`는 확장이 이미 있으면 권한 검사 없이 넘어가고(kind·RDS의 migrate 계정), 시험용 단독 DB(Testcontainers·검증 스크립트, superuser)에서는 직접 만든다. 확장이 없는 DB에 migrate 계정으로 돌리면 `permission denied to create extension "vector"`로 멈춘다(임시 컨테이너에서 세 경우 확인)

@@ -170,6 +170,8 @@ services:
       PAYMENT_BILLING_ENCRYPTION_KEY: ${PAYMENT_BILLING_ENCRYPTION_KEY:-}
       APP_GUARDIAN_TRANSFER_ENABLED: "${APP_GUARDIAN_TRANSFER_ENABLED:-false}"
       AUTH_NEW_ACCOUNT_DEMO: "${AUTH_NEW_ACCOUNT_DEMO:-false}"
+      AUTH_SIGNUP_LIMIT_PER_IP: "${AUTH_SIGNUP_LIMIT_PER_IP:-5}"
+      AUTH_SIGNUP_LIMIT_WINDOW: "${AUTH_SIGNUP_LIMIT_WINDOW:-10m}"
       # 관리자 큐 현황(GET /admin/queues): RabbitMQ 관리 API, 로컬은 기존 브로커 계정 재사용
       ADMIN_RABBIT_MANAGEMENT_URL: http://rabbitmq:15672
       ADMIN_RABBIT_MANAGEMENT_USERNAME: ${RABBITMQ_USER}
@@ -196,6 +198,8 @@ services:
       DB_PASSWORD: ${LEARNING_APP_PASSWORD}
       CORE_URL: http://core-service:8080
       AI_URL: http://ai-service:8000
+      # #466: ai 임베딩 API(#467) 전까지 지식 적재는 가짜 임베딩(fake-bigram-v1)
+      APP_KNOWLEDGE_EMBEDDING: fake
     ports:
       - "${LEARNING_HOST_PORT:-8081}:8081"
     healthcheck:
@@ -236,6 +240,9 @@ services:
       OPENAI_JSON_MODE: ${OPENAI_JSON_MODE:-json_schema}
       EXPLANATION_BASE_URL: ${EXPLANATION_BASE_URL:-}
       EXPLANATION_MODEL: ${EXPLANATION_MODEL:-report-explanation}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
     ports:
       - "${AI_HOST_PORT:-8000}:8000"
     healthcheck:

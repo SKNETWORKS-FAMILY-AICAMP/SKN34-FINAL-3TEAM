@@ -1,6 +1,8 @@
 package com.sagomungchi.learning.knowledge
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
+import com.sagomungchi.learning._common.persistence.TEST_POSTGRES_IMAGE
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -14,16 +16,18 @@ import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import org.springframework.transaction.support.TransactionTemplate
 import org.testcontainers.containers.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
+import java.io.File
 import java.sql.DriverManager
 
-/** Isolated pgvector DB; existing Flyway V1..V13 then test-only C2/C3. No production migration. */
+/** Isolated pgvector DB using the real Flyway migrations, including #466 V14. */
 @SpringBootTest(properties = [
     "app.internal.token=knowledge-test-token",
     "spring.rabbitmq.username=test", "spring.rabbitmq.password=test",
     "spring.rabbitmq.listener.simple.auto-startup=false",
     "app.mission-draft.enabled=false",
     "app.judgment.stuck-detection-enabled=false",
+    // Public curriculum samples and deterministic test vectors, never production embedding calls.
+    "app.knowledge.embedding=fake",
 ])
 @AutoConfigureMockMvc
 abstract class KnowledgePostgresTest {
@@ -42,16 +46,19 @@ abstract class KnowledgePostgresTest {
     companion object {
         private val tables = listOf("knowledge_dataset", "knowledge_chunk", "knowledge_standard_semester", "knowledge_fits", "knowledge_covers", "knowledge_prerequisite")
         private val postgres by lazy {
-            PostgreSQLContainer<Nothing>(
-                DockerImageName.parse("pgvector/pgvector:0.8.7-pg17-trixie").asCompatibleSubstituteFor("postgres"),
-            ).apply {
+            PostgreSQLContainer<Nothing>(TEST_POSTGRES_IMAGE).apply {
                 start()
+                // Matches the extension bootstrap prerequisite; V14 owns every knowledge table/index.
+                DriverManager.getConnection(jdbcUrl, username, password).use { connection ->
+                    connection.createStatement().use { it.execute("CREATE EXTENSION IF NOT EXISTS vector") }
+                }
                 Flyway.configure().dataSource(jdbcUrl, username, password)
                     .locations("classpath:db/migration").load().migrate()
                 DriverManager.getConnection(jdbcUrl, username, password).use { connection ->
-                    val ddl = requireNotNull(KnowledgePostgresTest::class.java.getResource("/knowledge/schema.sql"))
-                        .readText(Charsets.UTF_8)
-                    connection.createStatement().use { it.execute(ddl) }
+                    // Actual loader checks statements against this published achievement-standard seed.
+                    connection.createStatement().use {
+                        it.execute(File(PostgresRepositoryTest.STANDARDS_SEED).readText(Charsets.UTF_8))
+                    }
                 }
                 val jdbc = JdbcTemplate(DriverManagerDataSource(jdbcUrl, username, password))
                 KnowledgeFixtures(jdbc, jacksonObjectMapper()).load()

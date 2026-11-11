@@ -23,20 +23,21 @@ class AiOpenApiTests(unittest.TestCase):
                 full = (prefix[1] if prefix else "") + path
                 if full.startswith("/internal/"):
                     actual.add((method, full.removeprefix("/internal")))
-        # #464: x-implementation-status가 붙은 경로는 계약만 먼저 정한 구현 전 항목(#467 임베딩)
+        # #464: x-implementation-status가 붙은 경로는 계약만 먼저 정한 구현 전 항목. #467 임베딩은 구현됨
         documented = {
             (method, path)
             for path, methods in self.spec["paths"].items()
             for method, operation in methods.items()
             if not operation.get("x-implementation-status")
         }
-        self.assertEqual(len(actual), 8)
+        self.assertEqual(len(actual), 9)
+        self.assertIn(("post", "/embeddings"), actual)  # #467
         self.assertEqual(actual, documented)
 
     def test_internal_token_and_problem_responses(self):
         self.assertEqual(self.spec["security"], [{"InternalToken": []}])
         self.assertEqual(self.spec["components"]["securitySchemes"]["InternalToken"]["name"], "X-Internal-Token")
-        for path in ("/judgments", "/followups", "/report-narratives", "/mission-drafts"):
+        for path in ("/judgments", "/followups", "/report-narratives", "/mission-drafts", "/embeddings"):
             responses = self.spec["paths"][path]["post"]["responses"]
             self.assertTrue({"200", "400", "401", "503"} <= set(responses))
             self.assertNotIn("422", responses)
