@@ -955,7 +955,7 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 
 ### 범위 밖
 
-- report는 아직 이 쿼리를 보내지 않는다. 대상 선정·설명 호출은 #479에서 추가한다
+- report는 #479(PR #494)부터 주간 설명 단계에서 SYSTEM 범위로 이 쿼리를 보낸다(`LearningClient.explanation_attempts()`). 대상 선정·대체 규칙은 report 보고서 #508 절
 - `daily-attempts`·기록 상세·evidence에는 넣지 않는다(주간 리포트 설명만 대상)
 
 ### 검증

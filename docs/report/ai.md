@@ -1057,7 +1057,7 @@ target: 그 항목의 전문가 이유 문장(71818 score.personal.*.feedback �
 - `tests/report_explanation/`(20개): 항목 선택(동점·전부 같음·총점 제외), 후처리(숫자·금지어 문장 버림, 2문장), 문장 틀, 인용(겹침 최대·없으면 null), 활성·미등록·다른 학년·다른 입력 유형·같은 이름 PROMPT는 `{active:false}`이고 sLLM 미호출, 422·503, 사용량 `REPORT_EXPLANATION`, revision 순서·snapshot 전 이벤트 보관, 라우터 camelCase·`{active:false}` 단독·400·401·주소 미설정 503
 - `tests/test_versions.py`: `/internal/versions`에 `reportExplanation`
 - `scripts/tests/test_ai_openapi.py`: 라우터 8개와 OpenAPI 경로 일치
-- 남은 확인: 실제 sLLM 서버(#476)와 학습 모델(#475)로 생성 시간·후처리 통과율 측정, report 연동(#479)
+- 남은 확인: 실제 sLLM 서버(#476)와 학습 모델(#475)로 생성 시간·후처리 통과율 측정. report 연동은 #479(PR #494)에서 완료, 후속 정합화는 #508
 
 ## 15. 교육과정 지식 RAG 계약 (#464, 2026-11-11)
 

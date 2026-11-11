@@ -214,4 +214,4 @@ functional-spec(P13·P15·P16·FN-RPT-09·FN-ADM-19·NFR-PRF-03·NFR-AIQ-03), us
 - [ ] AI Hub 71818 피드백 문장의 서비스 이용 조건 (#475)
 - [ ] CPU 생성 시간 실측(가정 건당 20~30초)과 주간 리포트 설명 대기 상한 (#475·#479)
 - [ ] 기본 모델 비교 결과와 허용 기준 (#475, 11/22)
-- [ ] 설명 상태 저장 위치 (#479), 사용량 callType 이름 (#480), 화면 ID (#481)
+- [x] 설명 상태 저장 위치 (#479: `weekly_report.verification.explanationState`), 사용량 callType 이름 (#480), 화면 ID (#481)

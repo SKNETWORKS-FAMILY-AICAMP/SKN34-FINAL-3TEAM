@@ -340,7 +340,7 @@ python scripts/admin_account_sql.py --login-id ops-kim --disable | psql "$CORE_D
 
 ### 부하 시험
 
-- `evaluation/load/prepare_accounts.py`가 공개 API로 시험 계정을 만든다(가입 → 동의 → 자녀 3명 → 기기 등록 → 비밀번호 재확인 → PIN). 비밀번호·PIN·기기 쿠키는 저장소 밖 비밀 파일에만 쓴다.
+- `evaluation/load/prepare_accounts.py`가 공개 API로 시험 계정을 만든다(가입 → 동의 → 자녀 3명 → 기기 등록 → PIN). 비밀번호·PIN·기기 쿠키는 저장소 밖 비밀 파일에만 쓴다.
 - k6 `core-load.js`는 계정에 `loginId`가 있으면 `POST /auth/parent/login`으로 access를 받는다. 회전하는 refresh 토큰이 없어 비밀 파일을 다시 쓰지 않는다. `loginId`가 없으면 옛 refresh 방식이다.
 - AWS 데모는 `AUTH_NEW_ACCOUNT_DEMO=true`라 시험 계정이 `is_demo`로 저장되어 운영 집계에서 빠진다.
 - k6 `setup()`은 쿠키 저장소 하나를 공유한다. 앞 계정의 refresh 쿠키가 남은 채로 다음 계정이 로그인하면 `startSession`이 그 세션을 "이전 세션"으로 폐기하므로, 계정마다 빈 쿠키 저장소(`jar: new http.CookieJar()`)로 로그인한다.
@@ -437,3 +437,12 @@ python scripts/admin_account_sql.py --login-id ops-kim --disable | psql "$CORE_D
 사용자가 학생 PIN 설정의 Google 인증 제거를 요청했다. `StudentPinService.set`은 활성 보호자 세션 잠금·현재 자녀 권한을 검사하고 PIN 해시/실패 횟수/잠금 상태를 변경하며 같은 트랜잭션에 감사를 기록한다. 이 경로의 추가 재인증 grant 소비를 제거했다. HTTP 컨트롤러·web·MSW·OpenAPI도 추가 증명 없이 보호자 인증으로 저장하도록 맞췄다. 다른 중요 작업의 재인증과 학생 PIN 로그인·기기 등록 정책은 유지한다. PIN_CHANGE 재인증 발급은 이전 클라이언트 호환용으로 남는다.
 
 core 권한/HTTP/기기 20건과 기존 비밀번호 재인증 통합 8건, 공개 계약 14건, 합성 Google 로그인→추가 인증 없는 PIN 저장 E2E를 통과했다. 사용자가 개발 API 교체를 별도로 승인한 뒤 localhost:8080에 적용했다. 환경값은 Docker 내부에서만 재사용하고 호스트 파일·로그에 내보내지 않았다. 자세한 UI 범위와 검증 한계는 [frontend 16절](frontend.md#16-리포트챗봇과-학부모-설정-동선-통합-2026-11-10)을 따른다.
+
+
+### PIN 재인증 잔재 정리 (#516, 2026-11-11)
+
+부하 시험 계정 준비에서 자녀별 PIN_CHANGE grant 발급과 X-Reauth-Token 전송을 제거했다. 웹의 미사용 startPinReauth·목업 consumePinReauth를 삭제했다. finishPinReauth는 실제 보호자 비밀번호 설정에서 사용 중이므로 finishGuardianReauth로 이름과 호출부를 맞췄다. core의 grant 소비 주석도 현재 소비처로 수정했다. PIN_CHANGE 발급은 이전 클라이언트 호환을 위해 유지한다. 공개 API·DB 변경은 없다. 설계 3.11의 남아 있던 헤더 필수 설명과 부하 시험 준비 순서를 현재 정책에 맞췄다.
+
+검증: 계정 준비 unittest 4건(두 자녀 PIN까지 요청 순서·재인증 헤더 없음 포함), web 단위 291건·lint·test:types 통과. 실제 부하 계정을 생성하지 않았다.
+
+저장소 scripts/tests unittest 전체 215건 실행(214 통과·1 건너뜀). 기본 sandbox 임시 경로에서 권한 오류가 발생해 쓰기 가능한 임시 폴더로 TEMP·TMP를 지정한 재실행에서 통과했다.

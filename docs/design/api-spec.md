@@ -382,7 +382,7 @@
 ### 2.5 리포트 (FN-RPT)
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
-| GET | `/children/{childId}/reports?status&periodType` | 학부모 | 대상 기간·생성 상태별 목록. `periodType`(`DAILY`·`WEEKLY`, 생략 시 전체) 필터, 항목에 항상 `periodType`(report가 생략하면 core가 `WEEKLY`로 채움, #390). 페이지 없이 전체 반환(core가 report 목록을 `size=100`으로 끝까지 조회해 합침, #500) | RPT-10, RPT-11, RPT-15 | 핵심 |
+| GET | `/children/{childId}/reports?status&periodType` | 학부모 | 대상 기간·생성 상태별 목록. `status`는 `RUNNING`·`COMPLETED`·`FAILED`만 허용하며 `QUEUED`·알 수 없는 값은 400 `VALIDATION_FAILED`다(#518). `periodType`(`DAILY`·`WEEKLY`, 생략 시 전체) 필터, 항목에 항상 `periodType`(report가 생략하면 core가 `WEEKLY`로 채움, #390). 페이지 없이 전체 반환(core가 report 목록을 `size=100`으로 끝까지 조회해 합침, #500) | RPT-10, RPT-11, RPT-15 | 핵심 |
 | GET | `/reports/{reportId}?revision` | 학부모 | 상세: 기간·포함 기준·`Metric[]`·생각 유형 요약·전후 변화·돌아보기·원문 인용·저녁 질문·버전, `periodType`(core가 작업 기준으로 채움, #390). #391 구현: 일일 `problems[]`, 주간 `themeSummary`(아래). 기본 최신판, `revision`으로 이전판 조회 (P06) | RPT-02~10, RPT-12 | 핵심 |
 | GET | `/reports/{reportId}/evidence/{itemId}` | 학부모 | 리포트 항목의 원본 기록 `{items:[{attemptId,answerId,answerVersion,available,quote?,missionTitle?,submittedAt?}]}` (report `EvidencePage` 그대로, 삭제된 근거는 `available=false`·원문 없음) | RPT-03, RPT-12 | 핵심 |
 | GET | `/reports/{reportId}/download?format=pdf\|md` | 학부모 | 권한 확인 후 `{url, expiresAt}`(단기 presigned URL) 반환, 웹이 해당 URL로 이동. Bearer 인증이라 302 대신 JSON (PDF·Markdown, P06) | RPT-13 | 핵심 |
@@ -1007,11 +1007,11 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 규칙 후처리·검사: 숫자나 금지어(레벨·등급·점수·사고력 등, 분석 대화 검증과 같은 목록)가 있는 문장은 버리고 항목당 앞 2문장까지 남긴다. 남는 문장이 없는 항목이 하나라도 있으면 `422 AI_EXPLANATION_REJECTED`(`retryable:false`)
 - 응답 `{active:true, explanation:{text, quote}, versions:{model, prompt}}`. `text`는 `잘한 점: …`·`함께 이야기해 볼 점: …` 줄(1~2줄), `quote`는 설명과 낱말(앞 두 글자 기준)이 2개 이상 겹치는 학생 글 문장 중 가장 많이 겹치는 문장(원문 부분 문자열), 없으면 null이다. `versions.model`은 레지스트리 `이름@버전`
 - 오류: 설명 sLLM 주소 미설정·호출 실패·마감 초과는 `503 AI_UNAVAILABLE`(+`retryable`). 시간 초과·5xx·422는 리포트 생성 실패로 바꾸지 않는다. report는 해당 설명만 빼고 `explanations.state = NOT_INCLUDED`로 저장한다(P16)
-- 시간 기준안(#475 CPU 실측 전 임시값, P12 예외: 주 1회 배치라 기다리는 사람이 없음): 항목 1회 `EXPLANATION_LLM_TIMEOUT=60`초, 요청 전체 마감 `EXPLANATION_DEADLINE=125`초. report→ai 대기는 이보다 길게 #479에서 정한다
+- 시간 기준안(#475 CPU 실측 전 임시값, P12 예외: 주 1회 배치라 기다리는 사람이 없음): 항목 1회 `EXPLANATION_LLM_TIMEOUT=60`초, 요청 전체 마감 `EXPLANATION_DEADLINE=125`초. report→ai 대기는 아래 #479 시간 기준안(호출당 130초·단계 400초)을 따른다
 
 - #479 연동 기준(PR #489·#491): report는 SYSTEM 범위로 기록 목록에 `includeModelScores=true`를 붙이고 `modelScores.m2.scores`를 설명 요청의 `scores`로 전달한다. core의 기존 SYSTEM 전용 학생 프로필에 `grade`(저장 학년 3~9)를 추가한다. 학년 누락·지원 범위 밖이면 설명만 제외하며 임의 학년을 만들지 않는다.
 - #479의 인용은 PR #491과 같이 nullable이다. `quote=null`이면 인용 영역을 생략하고, 값이 있으면 해당 답변·버전의 실제 원문 부분 문자열인지 다시 검사한다. 설명 문장에 숫자·점수·등급·금지 표현이 있으면 그 설명만 제외한다. 상세 `explanations.items[].quote`도 null을 허용한다.
-- #479 시간 기준안: 설명 호출당 130초(AI 마감 125초보다 길게), 답변 선정·근거 확인을 포함한 설명 단계 전체 400초. 각각 `REPORT_EXPLANATION_TIMEOUT_SECONDS`, `REPORT_EXPLANATION_BUDGET_SECONDS`로 조절한다. 최대 세 답변을 순차 호출하고 재시도하지 않는다. 실제 CPU 실측 전 임시값이며 만료 시 이미 검증한 설명만 유지한다.
+- #479 시간 기준안: 설명 호출당 130초(AI 마감 125초보다 길게), 답변 선정·근거 확인을 포함한 설명 단계 전체 400초. 각각 `REPORT_EXPLANATION_TIMEOUT_SECONDS`, `REPORT_EXPLANATION_BUDGET_SECONDS`로 조절한다. 최대 세 답변을 순차 호출하고 재시도하지 않는다. 실제 CPU 실측 전 임시값이며 만료 시 이미 검증한 설명만 유지한다. sLLM 가동 창(일 23:50~월 02:00, #476) 밖의 호출은 실패로 끝나 그 리포트의 설명만 빠진다(`NOT_INCLUDED`, P16). 생각 유형마다 최신 답변부터 시도하며 ai 호출 전 제외(정정·빈 답변·학년·입력 유형·점수 형식·원문 대조 실패)는 같은 유형의 다음 답변으로 넘어가고, ai를 한 번 부른 유형은 결과와 관계없이 다시 부르지 않는다(#508).
 - #479 저장: 설명 상태는 기존 `weekly_report.verification` JSONB의 `explanationState`에 보관하고 설명 본문은 `EXPLANATION` 항목·근거 테이블에 저장한다. 이전 리포트에 상태가 없으면 `explanations=null`, 일일·무료 응답/파일도 null이다. 기존 요약 검증 결과와 설명 검증 결과는 독립적이다.
 
 #### 4.2.4 지식 임베딩 (#463, 계약 #464 C6, 구현 #467)
@@ -1216,7 +1216,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 - 자동 생성은 직전 KST 월~일, 주가 끝난 일요일 자정(월요일 00:00)이다(2026-11-09 결정). 부모 REGENERATE 한도는 자녀·주 계열 전체 1회(새 판을 기준으로 재요청해도 409 REPORT_REGENERATION_LIMIT). SERVICE_OPS 관리자는 같은 POST 경로에서 ADMIN_RETRY 작업을 무제한 생성한다. 생성 중 작업이 있으면 409 REPORT_GENERATION_IN_PROGRESS이다.
 - 재생성 202는 `{jobId, childId, period:{from,to}, status:"QUEUED"}`다. 이전 reportId는 보존되고 report가 revision을 배정한다. 상품·구독 권한은 payment의 ProductEntitlementService에서 확인한다. 상품 설정 불완전·권한 조회 실패는 명시적인 오류로 처리하고 job/Outbox를 생성하지 않는다.
-- reportId 조회의 자녀 연결·현재 필수/법정대리인 동의를 확인한 뒤 단일 학생 scope로 report-api를 호출한다. 없는 core reportId는 404 REPORT_NOT_FOUND다. 목록은 `{items:[3.4의 식별·기간·status·state·revision·generatedAt 필드]}`다. core는 report 목록을 `page=0`부터 `size=100`으로 짧은 페이지가 나올 때까지 조회해 합치며 각 페이지에 같은 계약 검사를 적용한다. 50페이지를 넘으면 502 REPORT_CONTRACT_INVALID다(#500). 상세는 3.4, 근거는 report-api JSON을 그대로 전달하고 다운로드는 pdf/md의 `{url,expiresAt}`다. report 장애는 503 REPORT_UNAVAILABLE, JSON 계약 위반은 502 REPORT_CONTRACT_INVALID다. 성공 상세의 실제 반환 reportId로 열람 기록을 남긴다.
+- reportId 조회의 자녀 연결·현재 필수/법정대리인 동의를 확인한 뒤 단일 학생 scope로 report-api를 호출한다. 없는 core reportId는 404 REPORT_NOT_FOUND다. 목록은 `{items:[3.4의 식별·기간·status·state·revision·generatedAt 필드]}`다. core는 report 목록을 `page=0`부터 `size=100`으로 짧은 페이지가 나올 때까지 조회해 합치며 각 페이지에 같은 계약 검사를 적용한다. 50페이지를 넘으면 502 REPORT_CONTRACT_INVALID다(#500). 목록 `status` 필터는 `RUNNING`·`COMPLETED`·`FAILED`만 허용한다. `QUEUED`는 아직 리포트가 없는 작업 상태로 목록 필터에 제공하지 않으며 요청하면 400 `VALIDATION_FAILED`다(#518). 상세는 3.4, 근거는 report-api JSON을 그대로 전달하고 다운로드는 pdf/md의 `{url,expiresAt}`다. report 장애는 503 REPORT_UNAVAILABLE, JSON 계약 위반은 502 REPORT_CONTRACT_INVALID다. 성공 상세의 실제 반환 reportId로 열람 기록을 남긴다.
 - v1 이벤트 스키마·봉투·생산자·소비자는 [report-messages.md](../../contracts/events/report-messages.md). 결정 근거는 [리포트 보고서](../report/report.md).
 
 #### 5.5.1 #152 관리자 실패 리포트 재처리 (report 공급 계약)
@@ -1328,7 +1328,7 @@ core 자체의 권한·상태·본문 충돌 오류는 기존 계약을 유지�
 
 기존 학생 shared/job exclusive session advisory lock 획득 실패는 BUSY다. 잠금 획득 후 저장된 종료 결과를 반환하거나 소유자 없는 RUNNING을 `REPORT_EXECUTION_ABANDONED`로 종료한다. 행이 없으면 `report_job_guard`에 `REPORT_NOT_CREATED`를 원자 저장한다. 삭제 표식 PENDING은 BUSY, COMPLETED는 `STUDENT_DELETED` 실패다. 동일 호출/응답 유실 재호출은 같은 저장 결과를 사용한다. 삭제 완료 후에는 삭제 결과가 우선한다. v1 이벤트의 reportId 필수 계약은 유지한다.
 
-core는 생성 후 60분 이상 QUEUED/RUNNING을 기본 1분마다 점검한다(`app.report.recovery.stale-after`, `app.report.recovery.interval`). 60분은 운영 후보 선정 정책이며 실행 시간 측정값/강제 중단 제한이 아니다. HTTP는 DB 트랜잭션·행 잠금 밖에서 수행하고 새 트랜잭션에서 학생·작업·종료 상태를 재검사한다. 자동 재생성·재생성 횟수 정책은 변경하지 않는다.
+core는 생성 후 4시간 이상 QUEUED/RUNNING을 기본 1분마다 점검한다(`app.report.recovery.stale-after` 기본 `PT4H`, `app.report.recovery.interval`). 4시간은 운영 후보 선정 정책이며 실행 시간 측정값/강제 중단 제한이 아니다. 월 00:00에는 주간·일일 작업이 함께 생성되고 report-worker 1대·prefetch 1로 차례로 처리되므로, 기준은 `주간 설명 대상 수 × (설명 단계 400초 + 기본 생성 시간) + 일일 처리 시간`보다 길어야 한다. 데모 30명 기준 30×(400+약 30)초 ≈ 215분 + 일일 수 분 < 240분이다(#508). 실행 중 작업은 report 리스가 잡혀 BUSY로 남으므로 이 기준은 큐에서 기다리는 작업에만 의미가 있다. 학생 수가 늘거나 #475 실측으로 설명 시간이 바뀌면 다시 계산한다. HTTP는 DB 트랜잭션·행 잠금 밖에서 수행하고 새 트랜잭션에서 학생·작업·종료 상태를 재검사한다. 자동 재생성·재생성 횟수 정책은 변경하지 않는다.
 
 ### 5.10 #41 분석 대화 구현 계약
 
