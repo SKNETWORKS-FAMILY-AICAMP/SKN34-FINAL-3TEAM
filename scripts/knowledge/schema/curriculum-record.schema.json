@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sagomungchi.local/knowledge/curriculum-record.schema.json",
   "title": "지식 RAG 추출 레코드 (#464 계약 C1)",
-  "description": "교육과정 고시 원문 단위 레코드 JSONL 한 줄. kind마다 칸이 다르다. 학년은 초3·초4·초5·초6(grades)으로 나누고 고시 원문 학년군 표기는 noticeGradeBand에만 둔다. 평가원 성취수준·경기도교육청 자료 문장·블룸 원서·VALUE 루브릭 문장은 넣지 않는다(api-spec 4.1.2, erd 4.5).",
+  "description": "교육과정 고시 원문 단위 레코드 JSONL 한 줄. kind마다 칸이 다르다. 학년은 초3·초4·초5·초6(grades)으로 나누고 고시 원문 학년군 표기는 noticeGradeBand에만 둔다. 평가원 성취수준·교육청(서울특별시·경기도) 수업-평가 자료 문장·블룸 원서·VALUE 루브릭 문장은 넣지 않는다(api-spec 4.1.2, erd 4.5).",
   "oneOf": [
     {"$ref": "#/$defs/standard"},
     {"$ref": "#/$defs/domain"},

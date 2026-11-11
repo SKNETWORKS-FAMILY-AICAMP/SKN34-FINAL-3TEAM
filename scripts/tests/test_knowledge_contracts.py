@@ -139,10 +139,11 @@ class SampleSchemaTests(unittest.TestCase):
             self.assertIn(domains[content["domainId"]]["scope"], ("BOTH", "CONTENT_SYSTEM"))
 
     def test_excluded_sources_are_absent(self):
-        """평가원 성취수준·경기도 자료 문장은 넣지 않는다(경기도 자료는 학기 대응 출처 표기만)."""
+        """평가원 성취수준·교육청(서울특별시·경기도) 자료 문장은 넣지 않는다(교육청 자료는 학기 대응
+        출처 표기만)."""
         for record in self.records:
             doc = record["source"]["doc"]
-            for word in ("성취수준", "평가원", "경기도"):
+            for word in ("성취수준", "평가원", "경기도", "교육청"):
                 self.assertNotIn(word, doc)
         for standard in self.by_kind["standard"]:
             self.assertIn("코드↔학기만", standard["semesterSource"])
