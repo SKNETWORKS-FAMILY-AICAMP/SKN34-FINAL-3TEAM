@@ -213,7 +213,7 @@ services:
       LEARNING_URL: http://learning-service:8081
       SCORING_URL: http://scoring-service:8001
       CORE_URL: http://core-service:8080
-      # #69: false여도 M2 점수는 기록한다. 시간·경계 기본값은 ai Settings와 동일.
+      # #69·#305: 교차 확인 false면 scoring을 부르지 않는다. 시간·경계 기본값은 ai Settings와 동일.
       JUDGE_DEADLINE: "${JUDGE_DEADLINE:-33.0}"
       SCORING_TIMEOUT: "${SCORING_TIMEOUT:-10.0}"
       SCORING_RESERVE: "${SCORING_RESERVE:-3.0}"

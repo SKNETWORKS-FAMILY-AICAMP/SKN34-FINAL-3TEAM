@@ -54,6 +54,18 @@ class AiOpenApiTests(unittest.TestCase):
         self.assertEqual(documented, expected)
         self.assertEqual(expected, {"SCORING_UNAVAILABLE", "SCORING_REJECTED"})
 
+    def test_versions_prompts_match_prompt_scopes(self):
+        # 실제 /versions 응답 키는 PROMPT_SCOPES 키와 같다 (#502)
+        source = (ROOT / "backend/ai-service/app/prompt_versions/models.py").read_text(encoding="utf-8")
+        scopes = re.search(r"PROMPT_SCOPES = \{([^}]*)\}", source)[1]
+        expected = set(re.findall(r'"([A-Za-z]+)":', scopes))
+        schema = self.spec["paths"]["/versions"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        prompts = schema["properties"]["prompts"]
+        self.assertFalse(prompts["additionalProperties"])
+        self.assertEqual(set(prompts["required"]), expected)
+        self.assertEqual(set(prompts["properties"]), expected)
+        self.assertEqual(len(expected), 7)
+
 
 if __name__ == "__main__":
     unittest.main()
