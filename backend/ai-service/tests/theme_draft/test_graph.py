@@ -20,6 +20,7 @@ from app.prompt_versions.registry import ActiveVersions
 from app.theme_draft.checks import DAY_KO, DAY_TYPE, DAYS
 from app.theme_draft.models import (
     GeneratedDialogue,
+    GeneratedExampleFix,
     GeneratedFixes,
     GeneratedMissionReview,
     GeneratedStoryReview,
@@ -84,6 +85,7 @@ def gen_llm(
     draft: Handler | None = None,
     dlg: Handler | None = None,
     fix: Handler | None = None,
+    example: Handler | None = None,
 ) -> ScriptedLlm:
     """fix가 없으면 칸 고쳐 쓰기 호출은 처리기가 없어 시험이 실패한다(예상 밖 호출을 드러냄)."""
     handlers: dict[type, Handler] = {
@@ -93,6 +95,8 @@ def gen_llm(
     }
     if fix:
         handlers[GeneratedFixes] = fix
+    if example:
+        handlers[GeneratedExampleFix] = example
     return ScriptedLlm("gen-model", handlers)
 
 
@@ -304,7 +308,7 @@ def test_existing_mission_check_reason_goes_through_mission_prompt() -> None:
 
 def test_mission_review_fail_until_cap_is_mission_failure() -> None:
     review = review_llm(
-        mission=lambda n, d: mission_review({"EXAMPLE_COMPLETE": "FAIL"} if d is None else {})
+        mission=lambda n, d: mission_review({"MATERIAL": "FAIL"} if d is None else {})
     )
     # 미션 검토 user에는 '오늘(…요일)'이 없어 요일 없이 들어옴 → 다섯 요일 모두 FAIL
     response = run(gen_llm(), review)
@@ -312,6 +316,46 @@ def test_mission_review_fail_until_cap_is_mission_failure() -> None:
     assert all(r.split()[1] == "MISSION_REVIEW" for r in response.failure.reasons)
     assert {r.split()[0] for r in response.failure.reasons} == set(DAYS)
     assert review.count("GeneratedStoryReview") == 0
+
+
+FIXED_EXAMPLE = "처음에는 혼자 했지만 지금은 친구와 나누어 해. 까닭은 함께하면 빠르기 때문이야."
+
+
+def example_fix(n: int, d: str | None) -> GeneratedExampleFix:
+    return GeneratedExampleFix(exampleAnswer=FIXED_EXAMPLE, finalAnswer="9개")
+
+
+def test_example_only_failure_rewrites_example_keeping_question() -> None:
+    """미션 검토가 예시 답 미완성으로만 실패하면 질문은 두고 예시 답만 고쳐 써서 다시 검토(미션 다시
+    생성 없음). 풀이만 최종 답도 바꿈."""
+    gen = gen_llm(example=example_fix)
+    review = review_llm(
+        mission=lambda n, d: mission_review(
+            {"EXAMPLE_COMPLETE": "FAIL"} if gen.count("GeneratedExampleFix") == 0 else {}
+        )
+    )
+    response = run(gen, review)
+    assert response.failure is None
+    assert gen.count("GeneratedDraft") == 5 and gen.count("GeneratedExampleFix") >= 1
+    fixed = [m for m in response.missions if m.draft.example_answer == FIXED_EXAMPLE]
+    assert fixed
+    for m in fixed:
+        assert m.draft.question == mission_draft(m.thinking_type).question
+        final = m.draft.answer_key.final_answer if m.draft.answer_key else None
+        assert (final == "9개") == (m.thinking_type == "SOLVE")
+    user = gen.users("GeneratedExampleFix")[0]
+    assert "EXAMPLE_COMPLETE 사유" in user and "reviewReasons" in user
+
+
+def test_example_fix_cap_then_regenerates_mission() -> None:
+    """예시 답 고쳐 쓰기가 상한까지 실패하면 미션을 다시 만들고, 끝내 실패하면 MISSION 실패."""
+    gen = gen_llm(example=example_fix)
+    review = review_llm(mission=lambda n, d: mission_review({"EXAMPLE_COMPLETE": "FAIL"}))
+    response = run(gen, review)
+    s = get_settings()
+    assert response.failure is not None and response.failure.stage == "MISSION"
+    assert gen.count("GeneratedDraft") == 5 * (s.theme_max_regen + 1)
+    assert gen.count("GeneratedExampleFix") == 5 * (s.theme_max_regen + 1) * s.theme_max_text_fix
 
 
 def test_mission_review_warn_becomes_warning() -> None:
@@ -439,3 +483,14 @@ def test_llm_failures_map_to_502_503(where: str, code: str, status: int) -> None
     with pytest.raises(ApiError) as caught:
         run(gen, review)
     assert caught.value.status == status
+
+
+def test_text_substitute_and_material_rules_in_prompts() -> None:
+    """글로 직접 할 수 없는 활동(듣기·말하기·조사·관찰)은 문제 글 자료로 대신하고 성취기준에 맞다고
+    봄(사용자 결정 2026-11-11). 내용을 적지 않은 사진·녹음을 살피게 하지 않음."""
+    from app.theme_draft import prompts
+
+    extra = prompts.mission_extra(valid_theme(), "MON", 3, [])
+    assert "녹음을 옮긴 글을 읽고 요약하기" in extra and "내용을 적지 않은 자료" in extra
+    assert "성취기준에 맞다고 본다" in prompts.MISSION_REVIEW_SYSTEM
+    assert "그 내용이 질문 글에 없으면 결함" in prompts.MISSION_REVIEW_SYSTEM

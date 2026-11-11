@@ -340,6 +340,14 @@ class GeneratedFixes(BaseModel):
     fixes: list[GeneratedFix]
 
 
+class GeneratedExampleFix(BaseModel):
+    """미션 검토가 예시 답 미완성(EXAMPLE_COMPLETE)으로만 실패했을 때 질문은 그대로 두고 예시 답만
+    고쳐 쓴 결과. finalAnswer는 풀이(SOLUTION_STEPS)만, 아니면 null."""
+
+    exampleAnswer: str
+    finalAnswer: str | None
+
+
 class StoryReviewItem(BaseModel):
     id: StoryReviewId
     verdict: ReviewVerdict

@@ -301,6 +301,11 @@ def story_text(theme: Theme, day: str, grade: int, knowledge: list[str] | None =
         "한다. 관찰·비교할 내용"
         "(사진·그림 속 모습, 수, 생김새)은 question 글에 직접 쓴다. 그림에만 있는 정보로 풀게 "
         "하지 않는다.",
+        "- 사진·녹음·그림·영상·지도·활동지를 보거나 듣게 하려면 그 내용을 question 글에 적는다. "
+        "내용을 적지 않은 자료를 살피라고 하지 않는다.",
+        "- 듣기·말하기·조사·관찰처럼 글로 직접 할 수 없는 활동은 그 자료(대화나 녹음을 옮긴 글, "
+        "조사 결과·사례, 관찰 기록)를 question 안에 글로 넣고, 학생이 그 글로 활동하게 한다"
+        "(예: 녹음을 옮긴 글을 읽고 요약하기, 발표할 말을 글로 쓰기).",
         "- 질문이 어떤 글을 비교·점검·고쳐 쓰게 하면(예: 처음 쓴 글과 고친 글) 그 글 자체를 "
         "question 안에 짧게 넣는다. "
         "학생이 질문 글만 읽고 답할 수 있어야 한다.",
@@ -544,10 +549,15 @@ MISSION_REVIEW_SYSTEM = (
     "맞는지.\n"
     "STANDARD_FIT: 질문이 주어진 성취기준의 핵심 행동을 학생이 직접 하게 하고 생각 유형과 맞는지. "
     "학생 혼자 글로 답하는 "
-    "미션이므로 협력·발표·실험 수행처럼 혼자 할 수 없는 부분은 보지 않는다.\n"
+    "미션이므로 협력·발표·실험 수행처럼 혼자 할 수 없는 부분은 보지 않는다. 듣기·말하기·조사·"
+    "관찰처럼 글로 직접 할 수 없는 행동은 질문 글에 준 자료(대화나 녹음을 옮긴 글, 조사 결과·"
+    "사례, 관찰 기록)를 읽고 하는 것으로 대신하며, 그렇게 대신한 것은 성취기준에 맞다고 본다"
+    "(예: 녹음을 옮긴 글을 읽고 요약하면 듣고 요약하기에 맞음). 그 행동의 생각 부분(요약·정리·"
+    "비교·판단)은 학생이 직접 해야 한다.\n"
     "MATERIAL: 답하는 데 필요한 것(읽을 글·비교할 글·수·관찰할 모습)이 질문 글 안에 다 있는지. "
     "그림에만 있는 정보나 주어지지 "
-    "않은 글(예: '처음 쓴 글'을 비교하라는데 그 글이 없음)에 기대면 결함. target이 주어지면, "
+    "않은 글(예: '처음 쓴 글'을 비교하라는데 그 글이 없음)에 기대면 결함. 사진·녹음·그림·영상·"
+    "지도·활동지를 보거나 듣게 하는데 그 내용이 질문 글에 없으면 결함. target이 주어지면, "
     "문제가 그 대상을 지금 보거나 "
     "곁에 있는 것처럼 쓰면 결함(아직 찾지 못한 대상).\n"
 )
@@ -573,6 +583,37 @@ def mission_review_user(
         body["knowledge"] = knowledge
     if target:
         body["target"] = f"{target}(이야기에서 아직 찾지 못한 대상)"
+    return json.dumps(body, ensure_ascii=False)
+
+
+EXAMPLE_FIX_SYSTEM = (
+    "너는 초등 미션의 예시 답만 고쳐 쓰는 출제자다. 질문·생각 열기 질문은 바꾸지 않는다.\n"
+    "- 예시 답은 질문이 묻는 것을 하나도 빠짐없이, 질문에 나온 순서대로 답한다. 질문이 여러 "
+    "가지를 물으면(예: 처음 생각·바뀐 생각·까닭, 쓰는 법·처리 방법) 각각 분명히 답한다.\n"
+    "- 질문 글에 준 자료만 쓰고 새 사실을 지어내지 않는다. 질문이 쓰라고 한 재료·조건은 모두 "
+    "쓴다.\n"
+    "- 그 학년 학생이 쓸 만한 말과 길이로 쓴다.\n"
+    "- 풀이 문제(inputType SOLUTION_STEPS)면 exampleAnswer에 구할 것·방법·계산·확인을 차례로 쓰고 "
+    "finalAnswer에 최종 답(값과 단위)을 쓴다. 풀이가 아니면 finalAnswer는 null.\n"
+    "- 검토 사유를 모두 고친다."
+)
+
+
+def example_fix_user(
+    request: MissionDraftRequest, draft: Draft, grade: int, reasons: list[str]
+) -> str:
+    key = draft.answer_key
+    body = {
+        "grade": f"초{grade}",
+        "thinkingType": THINKING_LABEL[request.thinking_type],
+        "inputType": request.input_type,
+        "standards": [{"code": s.code, "statement": s.statement} for s in request.standards],
+        "question": draft.question,
+        "hints": draft.hints,
+        "exampleAnswer": draft.example_answer,
+        "finalAnswer": key.final_answer if key else None,
+        "reviewReasons": reasons,
+    }
     return json.dumps(body, ensure_ascii=False)
 
 
