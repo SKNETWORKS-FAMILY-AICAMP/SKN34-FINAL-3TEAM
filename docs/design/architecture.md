@@ -942,7 +942,7 @@ SKN34-FINAL-3TEAM/
 | AI API | Python 3.12, FastAPI, Pydantic, uv, LangGraph, LangChain, OpenAI API(기본 `gpt-6.1-terra`)·Claude API(`LLM_PROVIDER`로 교체), aio-pika, httpx | 에이전트 그래프·도구 호출, 비동기 AMQP |
 | 모델 추론 | PyTorch, Hugging Face Transformers (M2 klue/roberta, M1) | 기획서 5장 모델 |
 | 리포트 | SQLAlchemy, Alembic, Jinja2, Playwright(Chromium PDF) | HTML 템플릿 → PDF·Markdown |
-| 저장소 | PostgreSQL(RDS), S3(로컬 MinIO), Redis(core 알림 중계·학생 기기 페어링·기기 등록 rate limit) | 서비스별 DB 분리, 판정 근거·기준표 JSONB, 파일 분리. Redis는 SSE 중계와 짧은 TTL 값만 담당하고 조회 캐시로 쓰지 않음, 분석 대화 사용량은 PostgreSQL 결제 사용 이력 집계로 이전(#210 결정, #225 구현) |
+| 저장소 | PostgreSQL(RDS), S3(로컬 MinIO), Redis(core 알림 중계·학생 기기 페어링·기기 등록 rate limit·학부모 ID 가입 IP별 횟수 제한) | 서비스별 DB 분리, 판정 근거·기준표 JSONB, 파일 분리. Redis는 SSE 중계와 짧은 TTL 값만 담당하고 조회 캐시로 쓰지 않음, 분석 대화 사용량은 PostgreSQL 결제 사용 이력 집계로 이전(#210 결정, #225 구현) |
 | 메시징 | RabbitMQ (quorum queue, topic/direct exchange, DLX) | 작업 큐 + fan-out 동시 지원, Kafka 대비 운영 부담 작음 |
 | 결제 | 토스페이먼츠 테스트 환경 (결제위젯·자동결제·웹훅) | 실결제 미연동 |
 | 컨테이너·오케스트레이션 | Docker, Compose, kind, Kubernetes, Helm | 로컬 → 운영 동일 chart |

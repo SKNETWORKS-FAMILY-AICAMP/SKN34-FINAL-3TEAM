@@ -17,7 +17,7 @@
 | 형식 | JSON(UTF-8), 필드 camelCase, 시각 ISO-8601 오프셋 포함(`2026-11-02T19:00:00+09:00`), 날짜 `YYYY-MM-DD`(KST) |
 | 식별자 | 문자열 ID(UUID). 학부모 경로의 `{childId}`는 학생 ID |
 | 기간 조회 | `from`, `to`(날짜, 양 끝 포함). 응답에 실제 조회 기간 `period` 반환 (FN-DSH-10) |
-| 목록 | `page`(0부터), `size`(기본 20, 최대 100) → `{items, page, size, totalElements}`. 예외: 알림은 `totalElements` 대신 `hasNext`(2.7), 리포트·학생 기기 목록은 `{items}`만(5.5·3.11), 자녀·동의 목록은 페이지 없이 전체를 `page: 0, size = items 수`로 반환(5.3) |
+| 목록 | `page`(0부터), `size`(기본 20, 최대 100) → `{items, page, size, totalElements}`. 예외: 알림은 `totalElements` 대신 `hasNext`(2.7), 리포트·학생 기기 목록은 `{items}`만(5.5·3.11, 리포트는 core가 report 페이지를 끝까지 모아 전체 반환 #500), 자녀·동의 목록은 페이지 없이 전체를 `page: 0, size = items 수`로 반환(5.3) |
 | 스트리밍 | `text/event-stream`, 각 이벤트 `event: <이름>` + `data: <JSON>` (1.6) |
 
 ### 1.2 인증·권한
@@ -31,7 +31,7 @@
 | `CONTENT` | 미션·기준표 작성·검토·공개·중단 (학생 원문 열람 불가) |
 | `PAYMENT_VIEW` | 결제·구독 조회, PG 대조 |
 | `PAYMENT_REFUND` | 환불 승인 |
-| `SERVICE_OPS` | 운영 현황, 작업 재처리, 신고·문의·공지, 모델·프롬프트 버전, AI 사용량 |
+| `SERVICE_OPS` | 작업·큐 현황, 작업 재처리, 신고·문의·공지, 모델·프롬프트 버전, AI 사용량 (운영 현황 `/admin/overview`·감사 로그 조회는 권한 없이 ADMIN 역할만, 2.8.1) |
 | 학생 원문 열람 | `SERVICE_OPS`가 오류 신고·문의에 연결된 시도의 답변·판정만, 열람마다 `audit_log` (P07) |
 
 - 리소스 권한 (FN 1.1, NFR-SEC-02)
@@ -96,7 +96,7 @@
 | `AI_UNAVAILABLE` | 503 / 502 | AI 처리 실패, `retryable` 포함 (처리 실패 상태, 보류와 구분). ai·learning 피드백은 503, core 분석 대화의 ai 연결 실패·서킷 차단·스트림 중단은 502 (#167) |
 | `SESSION_CHANGED` | 401 | 다른 탭에서 역할·세션이 바뀌어 access의 세션 version 불일치 (5.1) |
 | `REFRESH_REUSED` | 401 | 이미 사용된 refresh 재사용 → 해당 세션 전체 폐기 (5.1) |
-| `OAUTH_FAILED` / `OAUTH_UNAVAILABLE` | 401 / 503 | Google 인증 실패 / Google 로그인 미설정·연결 실패. 콜백은 `/auth/complete?error=<code>`로 전달 (5.1) |
+| `OAUTH_FAILED` / `OAUTH_UNAVAILABLE` | 401 / 503 | Google 인증 실패 / Google 로그인 미설정·연결 실패. 콜백 실패는 `/login?oauthError=<code>`로 이동 (5.1) |
 | `ACCOUNT_EXISTS` | 409 | 같은 이메일의 기존 계정은 자동 연결하지 않음 (5.1) |
 | `INVALID_CREDENTIALS` / `ADMIN_LOGIN_LOCKED` | 401 / 423 | 관리자·학부모 ID·비밀번호 로그인 실패(없는 ID·틀린 비밀번호·Google 계정·다른 역할·비활성 계정 구분 없음) / 관리자 연속 5회 실패 후 15분 잠금 (5.1, #369·#415) |
 | `LOGIN_LOCKED` | 423 | 학부모 ID·비밀번호 로그인 또는 비밀번호 재확인 연속 5회 실패 후 15분 잠금(두 경로의 실패 횟수를 함께 셈) (5.1·5.6, #415) |
@@ -127,6 +127,7 @@
 | `REPORT_PREMIUM_REQUIRED` / `REPORT_JOB_IDENTITY_MISMATCH` | 403 / 409 | 무료 이용권에서 프리미엄 리포트 항목 요청 / report 복구 응답의 작업 식별자 불일치 (5.9) |
 | `COMMUNITY_CONSENT_REQUIRED` / `COMMUNITY_LOCKED` / `COMMUNITY_OWN_POST` / `COMMUNITY_POST_NOT_FOUND` | 409 / 403 / 409 / 404 | 보호자 `COMMUNITY` 동의 없이 공개 켜기 / 미션 미마무리 학생의 커뮤니티 열람·반응(learning 판정 전달, 2026-11-10 개정 #483 뒤 큰 질문 정답 고르기 문제는 엔딩 전 학생도) / 본인 공유물 반응·신고 / 숨김·파기·없는 공유물 반응·신고 (2.9, #388) |
 | `COMMUNITY_NOT_SHAREABLE` | 409 | learning 내부 공유 요청 거절: 학습 완료 전·다시 푼 시도·답변 없음·지금 표현 필터(#205)에 걸림. core는 공유 안 함으로 보고 학생 응답에 내보내지 않음 (4.1, #386) |
+| `COMMUNITY_UNAVAILABLE` / `COMMUNITY_INVALID_RESPONSE` | 503 / 502 | learning 커뮤니티 내부 호출이 공개 오류 코드 외의 실패로 응답 / 잘못된 2xx 성공 응답 (2.9) |
 | `INSUFFICIENT_POINTS` / `LOOK_ITEM_NOT_ON_SALE` / `LOOK_LOCKED` | 409 | 해금 포인트 부족 / 판매 중단 아이템 해금 / 해금하지 않은 테마·캐릭터·아이템 선택 (2.10, 3.12, #389) |
 | `LOOK_ITEM_NOT_FOUND` / `LOOK_ITEM_CODE_DUPLICATE` | 404 / 409 | 없는 꾸미기 항목 해금 / 관리자 아이템 코드 중복 (2.8, 2.10, #389) |
 | `THEME_DAY_CLOSED` / `THEME_REVIEW_NOT_ALLOWED` / `PREMIUM_REQUIRED` | 409 / 409 / 403 | 오늘 요일이 아닌 테마 문제 신규 시도 / 토·일 외 또는 마무리하지 않은 테마 문제 다시 풀기·평일 되돌아보기 열람(두 코드는 learning #385, core는 그대로 전달) / 추가 문제(`EXTRA`)를 끈 상품(`features.extraMissions = false`)의 시도(core #387, 현재 무료도 허용) (2.11). 2026-11-10 개정(#483, learning #484·core #485) 뒤 뜻: `THEME_DAY_CLOSED`는 공개 전(`LOCKED`) 문제·일요일(허용 값 없는 무료) 신규 시도, `THEME_REVIEW_NOT_ALLOWED`는 토요일(프리미엄 일요일) 외 다시 풀기·열람 또는 마무리하지 않은 문제 다시 풀기, `PREMIUM_REQUIRED`는 무료 상품 `features.extraMissions = false`로 무료의 추가 문제 시도(기준안: 일요일 전용 코드는 새로 만들지 않음, #484에서 확정) |
@@ -137,6 +138,7 @@
 | `ADMIN_MISSIONS_UNAVAILABLE` / `MISSION_AUDIT_UNAVAILABLE` / `LEARNING_STATS_UNAVAILABLE` / `LEARNING_REQUEST_FAILED` | 503 / 503 / 503 / learning 상태 | core 관리자 미션·감사·통계 조회의 learning 실패 / 허용 목록 밖 learning 오류 코드 대체 (2.8) |
 | `QUEUE_MANAGEMENT_NOT_CONFIGURED` / `QUEUE_MANAGEMENT_UNAVAILABLE` / `QUEUE_MANAGEMENT_TIMEOUT` / `QUEUE_MANAGEMENT_INVALID_RESPONSE` / `QUEUE_MANAGEMENT_INCOMPLETE` | 503 / 503 / 504 / 503 / 503 | 관리자 큐 조회: RabbitMQ 관리 API 미설정 / 연결 실패 / 5초 초과 / 응답 형식 오류 / 정의된 큐 누락 (2.8) |
 | `AI_PROMPT_VERSION_UNAVAILABLE` / `SCORING_UNAVAILABLE` | 503 | ai 활성 프롬프트 본문 없음 / scoring 모델 미준비 (내부 API, 4.2·4.3) |
+| `MODEL_PREFLIGHT_UNAVAILABLE` / `MODEL_PREFLIGHT_INVALID_RESPONSE` | 503 / 502 | 모델 파일 사전 검사 중 scoring 연결 실패·제한 시간 초과 / scoring 응답 오류·형식 위반 (5.2.1) |
 | `PAYMENT_ENTITLEMENT_UNAVAILABLE` / `PAYMENT_USAGE_UNAVAILABLE` / `REFUND_IN_PROGRESS` | 503 / 503 / 409 | 분석·피드백 이용권 확인 실패 / learning→core 사용 증빙 실패 / 환불 진행 중 프리미엄 사용. learning 피드백은 core `/internal/payment-usage/*` 409의 `code` 중 `REFUND_IN_PROGRESS`·`PAYMENT_USAGE_RETRY_REQUIRES_NEW_SOURCE`·`PAYMENT_USAGE_STATE_CHANGED`만 같은 코드 409로 전달하고, 그 밖의 코드·형식 오류 409는 환불로 안내하지 않고 `PAYMENT_USAGE_UNAVAILABLE` 503 (#276) |
 | `PAYMENT_NOT_FOUND` / `BILLING_KEY_REQUIRED` / `INVALID_PAGE` / `INVALID_DATE_RANGE` / `PAYMENT_RECONCILIATION_RANGE_REQUIRED` | 404 / 409 / 409 / 409 / 409 | 결제 없음 / 빌링키 등록 전 자동 갱신 켜기 / 페이지 범위 오류 / 조회 기간 오류 / 대사 조회 기간 누락 (2.6) |
 | `SUBSCRIPTION_NOT_ACTIVE` / `SUBSCRIPTION_STATE_CHANGED` / `PRODUCT_NOT_PURCHASABLE` / `PRODUCT_TERMS_INVALID` / `PRODUCT_FEATURE_DISABLED` | 409 | 활성 구독 아님 / 처리 중 구독 상태 변경 / 월 단위·자녀 1명 유료 상품이 아님 / 상품 한도 설정 형식 오류 / 현재 이용권에 없는 기능 (2.6) |
@@ -380,7 +382,7 @@
 ### 2.5 리포트 (FN-RPT)
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
-| GET | `/children/{childId}/reports?status&periodType` | 학부모 | 대상 기간·생성 상태별 목록. `periodType`(`DAILY`·`WEEKLY`, 생략 시 전체) 필터, 항목에 항상 `periodType`(report가 생략하면 core가 `WEEKLY`로 채움, #390) | RPT-10, RPT-11, RPT-15 | 핵심 |
+| GET | `/children/{childId}/reports?status&periodType` | 학부모 | 대상 기간·생성 상태별 목록. `periodType`(`DAILY`·`WEEKLY`, 생략 시 전체) 필터, 항목에 항상 `periodType`(report가 생략하면 core가 `WEEKLY`로 채움, #390). 페이지 없이 전체 반환(core가 report 목록을 `size=100`으로 끝까지 조회해 합침, #500) | RPT-10, RPT-11, RPT-15 | 핵심 |
 | GET | `/reports/{reportId}?revision` | 학부모 | 상세: 기간·포함 기준·`Metric[]`·생각 유형 요약·전후 변화·돌아보기·원문 인용·저녁 질문·버전, `periodType`(core가 작업 기준으로 채움, #390). #391 구현: 일일 `problems[]`, 주간 `themeSummary`(아래). 기본 최신판, `revision`으로 이전판 조회 (P06) | RPT-02~10, RPT-12 | 핵심 |
 | GET | `/reports/{reportId}/evidence/{itemId}` | 학부모 | 리포트 항목의 원본 기록 `{items:[{attemptId,answerId,answerVersion,available,quote?,missionTitle?,submittedAt?}]}` (report `EvidencePage` 그대로, 삭제된 근거는 `available=false`·원문 없음) | RPT-03, RPT-12 | 핵심 |
 | GET | `/reports/{reportId}/download?format=pdf\|md` | 학부모 | 권한 확인 후 `{url, expiresAt}`(단기 presigned URL) 반환, 웹이 해당 URL로 이동. Bearer 인증이라 302 대신 JSON (PDF·Markdown, P06) | RPT-13 | 핵심 |
@@ -476,7 +478,7 @@
 
 | Method | Path | 권한 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
-| GET | `/admin/overview?from&to` | 관리자 | 학습 시도·완료 건수, 대화·리포트 처리 현황, 미션 공개 현황 (학생 원문 없음) | ADM-01, ADM-02, ADM-04 | 제안 |
+| GET | `/admin/overview?from&to` | 관리자 | 학습 시도·완료 건수, 대화·리포트·알림 처리 현황, 미션 공개 현황 (학생 원문 없음) | ADM-01, ADM-02, ADM-04 | 제안 |
 | GET | `/admin/jobs?type=CONVERSATION\|REPORT\|NOTIFICATION&status` | SERVICE_OPS | 작업 상태별 목록, 요약 수치 → 상세 이동 | ADM-03, ADM-05, SUP-11 | 제안 |
 | GET | `/admin/jobs/{jobId}` | SERVICE_OPS | 실패 원인·처리 이력 | ADM-07 | 제안 |
 | POST | `/admin/jobs/{jobId}/retry` | SERVICE_OPS | 권한·중복 확인 후 재처리, 실제 결과로 갱신 (`SERVICE_OPS` 전원, `audit_log`, P07). `Idempotency-Key` | ADM-07, SUP-11 | 제안 |
@@ -515,7 +517,7 @@
 | POST | `/admin/model-versions` | SERVICE_OPS | 버전 등록 (평가 기록 첨부) | ADM-17 | 우선1 |
 | POST | `/admin/model-versions/{versionId}/activate` | SERVICE_OPS | 승인 조건(NFR-AIQ-05) 확인 후 활성화 → `model.version.activated` | ADM-18 | 우선1 |
 | POST | `/admin/model-versions/{versionId}/rollback` | SERVICE_OPS | 이전 승인 버전 복귀, 재분석 여부 기록 | ADM-18 | 우선1 |
-| GET | `/admin/ai-usage?from&to&callType` | SERVICE_OPS | 되묻기·판정·분석·리포트·미션 초안(#355, `MISSION_DRAFT`)·리포트 설명(FN-RPT-09, #480 `REPORT_EXPLANATION`)·주간 테마 생성(#439, 텍스트 `THEME_DRAFT`·이미지 `THEME_IMAGE`)별 호출량·실패·지연·토큰·비용 (요금제 한도 P13, 월 LLM 비용 예산 80% 경보 P10) | ADM-19 | 우선1 |
+| GET | `/admin/ai-usage?from&to&callType` | SERVICE_OPS | 되묻기·판정·분석·리포트·미션 초안(#355, `MISSION_DRAFT`)·리포트 설명(FN-RPT-09, #480 `REPORT_EXPLANATION`)·주간 테마 생성(#439, 텍스트 `THEME_DRAFT`·이미지 `THEME_IMAGE`)·scoring 모델(`M2`·`M1`)별 호출량·실패·지연·토큰·비용 (요금제 한도 P13, 월 LLM 비용 예산 80% 경보 P10) | ADM-19 | 우선1 |
 | GET·POST | `/admin/weekly-themes?gradeBand&weekStart&status` | CONTENT | 테마 목록·작성 `{gradeBand, weekStart, title, intro, days:[{day, missionId}]}`. `gradeBand`는 `G3_4`·`G5_6` | ADM-22 | core 프록시 #387 |
 | GET·PUT | `/admin/weekly-themes/{themeId}` | CONTENT | 상세·수정(게시 중 수정은 재검토) | ADM-22 | core 프록시 #387 |
 | POST | `/admin/weekly-themes/{themeId}/review-request` · `/publish` · `/unpublish` | CONTENT | 미션과 같은 작성→검토→게시(본문 `{}`). 별도 검토 경로 없이 검토 요청한 현재본의 게시가 승인, 아니면 `409 CONFLICT`. 게시 검사: 월~금 다섯 요일, 게시 미션만(시연 전용 제외), 다섯 생각 유형 1개씩, 학년군 전체를 덮는 학년 범위(초3~4 논술 불가), 같은 학년군·주 게시 1개 | ADM-22 | core 프록시 #387 |
@@ -785,7 +787,7 @@ If-Match: "7"
 
 ### 3.10 관리자 화면 응답
 
-운영 현황·작업·큐·감사 응답은 2.8.1과 core OpenAPI, 미션 관리 계약은 4.1 관리자 미션 행. 학생 이름·답변 원문·메모는 운영 DTO에 넣지 않으며 모든 관리자 API는 `/me.permissions`로 검사한다.
+운영 현황·작업·큐·감사 응답은 2.8.1과 core OpenAPI, 미션 관리 계약은 4.1 관리자 미션 행. 학생 이름·답변 원문·메모는 운영 DTO에 넣지 않으며 관리자 API는 `/me.permissions`로 검사한다(운영 현황·감사 로그 조회만 ADMIN 역할, 2.8.1).
 
 ### 3.11 학생 기기 등록·PIN 로그인 (P01 개정)
 
@@ -813,7 +815,7 @@ If-Match: "7"
   - 불일치 시 `pin_failed_count` 증가, 5회째 `pin_locked_at` 기록 후 `423 STUDENT_PIN_LOCKED`. 성공 시 실패 횟수 0, 기기 `last_used_at` 갱신
   - refresh token 미발급. access 만료 시 PIN 재입력(초안은 자동 저장으로 보존). 학생 토큰 권한은 동석 경로와 동일
 - PIN 설정 `PUT /children/{childId}/pin`
-  - `X-Reauth-Token` 필수. 숫자 4~6자리, 동일 숫자 반복(`1111`)·연속(`1234`, `4321`) 거부 `422 VALIDATION_FAILED`
+  - 추가 재인증 없음(활성 보호자 세션·현재 자녀 권한만, 2026-11-10). 숫자 4~6자리, 동일 숫자 반복(`1111`)·연속(`1234`, `4321`) 거부 `422 VALIDATION_FAILED`
   - 해시 저장, 실패 횟수 0·잠금 해제. 잠긴 PIN의 해제 수단은 재설정뿐
 - 기기 해제 `DELETE /student-devices/{deviceId}`: `revoked_at` 기록, 기존 학생 access token은 만료까지 유효
 - 학부모 화면의 실제 PIN 상태: `GET /children` 각 항목에 `pinSet`(설정 여부)·`pinLocked`(5회 실패 잠금 여부)를 반환한다. PIN 원문·해시·실패 횟수는 반환하지 않음
@@ -1067,7 +1069,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 ### 4.6 #43 AI 사용량 조회 계약
 
-- `GET /api/v1/admin/ai-usage`: 기존 #36 Bearer·`SERVICE_OPS` 검사를 사용한다. 필수 `from`, `to`는 0001~9999 연도의 ISO 날짜이며 KST 기준 양 끝 날짜를 포함한다. 조회 기간은 양 끝 포함 최대 366일이다. `from > to`, 366일 초과 또는 허용 연도 밖의 날짜는 DB 조회 전에 400 `VALIDATION_FAILED`로 거부한다. 선택 `callType`은 사용량 이벤트의 9개 호출 종류 중 하나다(#355에서 `MISSION_DRAFT`, #439에서 주간 테마 생성 텍스트 `THEME_DRAFT`·이미지 `THEME_IMAGE` 추가). 이미지 호출은 토큰이 없어 `costUsd`가 null이고 `unpricedCalls`로 센다(장당 단가 반영은 ai #437 비용 측정 뒤).
+- `GET /api/v1/admin/ai-usage`: 기존 #36 Bearer·`SERVICE_OPS` 검사를 사용한다. 필수 `from`, `to`는 0001~9999 연도의 ISO 날짜이며 KST 기준 양 끝 날짜를 포함한다. 조회 기간은 양 끝 포함 최대 366일이다. `from > to`, 366일 초과 또는 허용 연도 밖의 날짜는 DB 조회 전에 400 `VALIDATION_FAILED`로 거부한다. 선택 `callType`은 사용량 이벤트의 10개 호출 종류 중 하나다(#355에서 `MISSION_DRAFT`, #439에서 주간 테마 생성 텍스트 `THEME_DRAFT`·이미지 `THEME_IMAGE`, #480에서 `REPORT_EXPLANATION` 추가). 이미지 호출은 토큰이 없어 `costUsd`가 null이고 `unpricedCalls`로 센다(장당 단가 반영은 ai #437 비용 측정 뒤).
 - 응답은 `{period:{from,to},items:[{callType,calls,failures,latencyMs,inputTokens,outputTokens,costUsd,unpricedCalls}]}`다. 기간에 실제 호출이 있는 종류만 반환한다. `latencyMs`는 성공·실패를 포함한 호출당 평균 지연(ms)이다. 토큰은 합계이며 하나라도 미기록이면 해당 합계는 null이다.
 - `costUsd`는 저장된 소비 시점 비용의 합계다. 단가 미등록 등 null 비용이 하나라도 있으면 합계도 null이며 `unpricedCalls`로 미산정 호출 수를 공개한다. 빈 결과는 `items:[]`이고 null을 0으로 치환하지 않는다. 수집·멱등 처리·과거 단가 계산은 변경하지 않는다.
 - 요금제 한도, 월 예산 알림, 결제·구독 구현은 #43 조회 범위에 포함하지 않는다.
@@ -1166,7 +1168,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 - 자동 생성은 직전 KST 월~일, 주가 끝난 일요일 자정(월요일 00:00)이다(2026-11-09 결정). 부모 REGENERATE 한도는 자녀·주 계열 전체 1회(새 판을 기준으로 재요청해도 409 REPORT_REGENERATION_LIMIT). SERVICE_OPS 관리자는 같은 POST 경로에서 ADMIN_RETRY 작업을 무제한 생성한다. 생성 중 작업이 있으면 409 REPORT_GENERATION_IN_PROGRESS이다.
 - 재생성 202는 `{jobId, childId, period:{from,to}, status:"QUEUED"}`다. 이전 reportId는 보존되고 report가 revision을 배정한다. 상품·구독 권한은 payment의 ProductEntitlementService에서 확인한다. 상품 설정 불완전·권한 조회 실패는 명시적인 오류로 처리하고 job/Outbox를 생성하지 않는다.
-- reportId 조회의 자녀 연결·현재 필수/법정대리인 동의를 확인한 뒤 단일 학생 scope로 report-api를 호출한다. 없는 core reportId는 404 REPORT_NOT_FOUND다. 목록은 `{items:[3.4의 식별·기간·status·state·revision·generatedAt 필드]}`다. 상세는 3.4, 근거는 report-api JSON을 그대로 전달하고 다운로드는 pdf/md의 `{url,expiresAt}`다. report 장애는 503 REPORT_UNAVAILABLE, JSON 계약 위반은 502 REPORT_CONTRACT_INVALID다. 성공 상세의 실제 반환 reportId로 열람 기록을 남긴다.
+- reportId 조회의 자녀 연결·현재 필수/법정대리인 동의를 확인한 뒤 단일 학생 scope로 report-api를 호출한다. 없는 core reportId는 404 REPORT_NOT_FOUND다. 목록은 `{items:[3.4의 식별·기간·status·state·revision·generatedAt 필드]}`다. core는 report 목록을 `page=0`부터 `size=100`으로 짧은 페이지가 나올 때까지 조회해 합치며 각 페이지에 같은 계약 검사를 적용한다. 50페이지를 넘으면 502 REPORT_CONTRACT_INVALID다(#500). 상세는 3.4, 근거는 report-api JSON을 그대로 전달하고 다운로드는 pdf/md의 `{url,expiresAt}`다. report 장애는 503 REPORT_UNAVAILABLE, JSON 계약 위반은 502 REPORT_CONTRACT_INVALID다. 성공 상세의 실제 반환 reportId로 열람 기록을 남긴다.
 - v1 이벤트 스키마·봉투·생산자·소비자는 [report-messages.md](../../contracts/events/report-messages.md). 결정 근거는 [리포트 보고서](../report/report.md).
 
 #### 5.5.1 #152 관리자 실패 리포트 재처리 (report 공급 계약)
