@@ -252,7 +252,7 @@ class ExtractedDataTests(unittest.TestCase):
         for code in differences:
             self.assertTrue(any(note.startswith("학기 대응:") for note in self.standards[code]["notes"]), code)
         moral = [r for r in self.standards.values() if r["subject"] == "도덕" and r["noticeGradeBand"] == "초5~6"]
-        self.assertTrue(all(any("기준안" in n for n in r["notes"]) for r in moral))  # 초5·초6 도덕 학기는 기준안
+        self.assertTrue(all(any("서울 5~6학년" in n for n in r["notes"]) for r in moral))  # 초5·초6 도덕 학기 출처 표시
 
     def test_summary_matches_records(self):
         self.assertEqual(self.summary["dataset"], "curriculum-v1")

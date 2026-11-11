@@ -843,7 +843,7 @@ class SubjectRecords:
         if raw_code != code:
             notes.append("원문 코드 표기는 줄표(–)이고 코드는 성취기준 표와 같은 붙임표(-)로 적음")
         if self.subject == "도덕" and band == "초5~6":
-            notes.append("초5·초6 도덕 학기는 서울 5~6학년 단원(키워드) 연결표에서 옮긴 기준안(사용자 확인 전)")
+            notes.append("초5·초6 도덕 학기는 서울 5~6학년 단원(키워드) 연결표에서 옮김(사용자 결정 2026-11-11)")
         basis = row.get("basis", "자료 없음")
         if basis in (BASIS_DIFF, BASIS_SHEET, "자료 없음"):
             notes.append(f"학기 대응: {basis} "
