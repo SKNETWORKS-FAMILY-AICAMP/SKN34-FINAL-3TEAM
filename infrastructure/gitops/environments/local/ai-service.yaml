@@ -33,12 +33,15 @@ env:
   - {name: OPENAI_API_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: OPENAI_API_KEY, optional: true}}}
   # #236: compose.yaml ai-service defaults; switch providers with LLM_PROVIDER and the matching key
   - {name: LLM_PROVIDER, value: openai}
-  - {name: OPENAI_MODEL, value: gpt-6.1-terra}
+  - {name: OPENAI_MODEL, value: gpt-6-luna}
   - {name: OPENAI_JSON_MODE, value: json_schema}
   - {name: ANTHROPIC_API_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: ANTHROPIC_API_KEY, optional: true}}}
   - {name: ANTHROPIC_MODEL, value: claude-sonnet-5-5}
   - {name: ANTHROPIC_EFFORT, value: medium}
   - {name: ANTHROPIC_FALLBACK, value: "true"}
+  # #476: 설명 sLLM 서버(평소 0대, KEDA cron). 모델이 활성일 때만 호출한다(#477).
+  - {name: EXPLANATION_BASE_URL, value: "http://sllm-server.app.svc.cluster.local:8080/v1"}
+  - {name: EXPLANATION_MODEL, value: report-explanation}
 hpa:
   enabled: false
 pdb:
@@ -50,6 +53,7 @@ networkPolicy:
     - {name: core-service, port: 8080}
     - {name: learning-service, port: 8081}
     - {name: scoring-service, port: 8001}
+    - {name: sllm-server, port: 8080}
   egressToPlatform:
     - {name: rabbitmq, port: 5672}
   # #236: LLM API over HTTPS. Calico OSS has no FQDN rules, so allow public 443 only.

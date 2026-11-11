@@ -19,7 +19,7 @@ report.started는 weekly_report RUNNING 저장과 같은 트랜잭션의 Outbox�
 - core는 일일 명령에만 `periodType: "DAILY"`를 넣고 주간 명령은 P24 이전과 같은 모양(필드 생략)으로 보낸다. `extra="forbid"`인 P24 이전 report-worker가 주간 명령을 거부하지 않게 하기 위해서다. report(#391)는 생략과 `WEEKLY`를 같게 처리한다.
 - 일일 명령의 `narrativeEnabled`는 항상 `false`다(템플릿만, LLM 미호출). core는 일일 명령을 만들 때 상품 권한을 조회하지 않으므로 결제 장애가 일일 생성을 막지 않는다. 스키마가 `DAILY`+`true`를 거부한다.
 - 매일 00:00 KST(대상일이 끝난 자정, ShedLock `core-daily-reports`)에 보호자가 연결된 자녀마다 전날 작업을 만든다. 기록 없는 날도 작업을 만들고 report가 "기록 없음" 리포트를 저장한다. 월요일에는 주간(`core-weekly-reports`)과 일일이 따로 돌며 두 작업의 `periodFrom`이 같을 수 있어, core 정기 UK·잠금·재생성 횟수는 모두 `(학생, periodType, periodFrom)` 단위다. report의 revision 잠금·UK도 같은 단위여야 한다(#391).
-- lifecycle 이벤트(`started`·`completed`·`failed`)와 복구 요청(`/internal/report-jobs/{jobId}/reconcile`)은 바꾸지 않았다. core는 jobId로 작업의 기간 종류를 알고, 일일 완료·실패에는 `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED` 알림을 만든다.
+- lifecycle 이벤트(`started`·`completed`·`failed`)는 바꾸지 않았다. 복구 요청(`/internal/report-jobs/{jobId}/reconcile`)은 #391에서 선택 `periodType`을 받는다(생략 WEEKLY). core는 jobId로 작업의 기간 종류를 알고, 일일 완료·실패에는 `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED` 알림을 만든다.
 - 실제 core 산출물 `report-generate-daily.json`도 `scripts/validate_report_contracts.py`가 이 스키마로 검사한다.
 
 narrativeEnabled는 core의 현재 상품 권한 조회로 결정한다. 무료=false / 프리미엄=true이며 권한 조회 실패 시 명령을 발행하지 않고 명시적으로 실패한다. report는 NO_RECORD에서 true여도 AI를 호출하지 않는다. #47 관리자 재처리 접수도 같은 계산을 사용한다(`ReportAdminRetryService`).

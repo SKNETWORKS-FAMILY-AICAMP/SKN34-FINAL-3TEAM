@@ -112,6 +112,7 @@ class QueryService:
                     "inclusionRule": row["inclusion_rule"],
                     "narrative": row["narrative"],
                     "themeSummary": row["theme_summary"],
+                    "explanationState": (row["verification"] or {}).get("explanationState"),
                     "verification": row["verification"]
                     or {"numbersMatched": False, "quotesMatched": False},
                     "versions": row["versions"] or {"prompt": None, "model": None},
@@ -120,6 +121,8 @@ class QueryService:
                 }
                 values = []
                 for item in items:
+                    if item["item_type"] == "EXPLANATION" and not item["verified"]:
+                        continue
                     payload = dict(item["payload"])
                     if item["item_type"] == "QUOTE":
                         payload["verified"] = item["verified"] and payload.get("verified", False)

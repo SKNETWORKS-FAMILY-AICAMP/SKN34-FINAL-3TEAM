@@ -57,6 +57,9 @@ data class AttemptTime(val attemptId: UUID, val at: Instant)
 /** 돌아보기 한 건과 작성 시각 */
 data class ReflectionRow(val attemptId: UUID, val difficulty: Difficulty, val text: String?, val createdAt: Instant)
 
+/** 답변의 판정 모델 점수 JSON 원문 (judgment.model_scores, 없으면 null) */
+data class ModelScoresRow(val answerId: UUID, val modelScores: String?)
+
 @Mapper
 interface RecordMapper {
     fun findCompleted(@Param("studentId") studentId: UUID, @Param("start") start: Instant, @Param("end") end: Instant): List<UUID>
@@ -67,5 +70,6 @@ interface RecordMapper {
     fun stats(@Param("start") start: Instant, @Param("end") end: Instant): StatsRow
     fun findHintUsages(@Param("attemptIds") attemptIds: List<UUID>): List<AttemptTime>
     fun findReflections(@Param("attemptIds") attemptIds: List<UUID>): List<ReflectionRow>
+    fun findModelScores(@Param("answerIds") answerIds: List<UUID>): List<ModelScoresRow>
     fun findResume(@Param("studentId") studentId: UUID): UUID?
 }

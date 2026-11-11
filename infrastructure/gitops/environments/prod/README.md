@@ -17,6 +17,8 @@
 | `core-alb-network.json` | app | ALB public subnet에서 core:8080 허용 |
 | `karpenter.json` | kube-system / karpenter | oci://public.ecr.aws/karpenter/karpenter 1.15.1 (#211) |
 | `karpenter-nodepool.json` | cluster | EC2NodeClass `application`, NodePool `application-burst`. Karpenter 설치 후 `kubectl apply` (#211) |
+| `sllm-server.json` | app / sllm-server | `../../charts/app-service`. 설명 sLLM(#476). 미적용: KEDA 설치, `sllm-server` ServiceAccount Pod Identity(모델 버킷 읽기), llama.cpp 서버 이미지 ECR 게시·digest, 모델 경로·SHA256(#475) |
+| `karpenter-nodepool-explanation.json` | cluster | NodePool `explanation-cpu`(taint `workload=explanation-sllm`). `karpenter-nodepool.json`의 EC2NodeClass `application` 뒤에 `kubectl apply` (#476, 미적용) |
 
 이 values는 현재 라이브 리소스에서 수집했다. Helm chart 기본값 전체를 복사한 파일은 아니다. 배포된 앱 chart의 기반은 `b67d8a462b6b3dc239ecfc14b2aa185766c0c293`이며, 저장소 chart 변경 시 렌더링 차이를 먼저 검토한다. 앱 이미지는 각 파일의 digest로 고정한다. core digest에는 아직 커밋되지 않은 이용권 수정이 들어 있으므로 기반 SHA만으로 같은 이미지를 재빌드할 수 있다고 주장하지 않는다. scoring은 PR #288 병합 SHA `f6250bdd131c4875feba99212212bfdb580c353e`를 사용한다.
 

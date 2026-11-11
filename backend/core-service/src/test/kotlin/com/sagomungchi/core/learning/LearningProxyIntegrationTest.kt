@@ -16,6 +16,7 @@ import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
@@ -23,6 +24,10 @@ import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.nio.ByteBuffer
 import java.security.MessageDigest
+import java.time.Clock
+import java.time.DayOfWeek
+import java.time.Instant
+import java.time.ZoneId
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -37,6 +42,9 @@ import kotlin.test.*
 @AutoConfigureMockMvc
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class LearningProxyIntegrationTest : PostgresRepositoryTest() {
+    /** #485: 시도 시작은 KST 일요일에만 상품으로 일요일 허용을 판단한다. 실행 요일과 무관하도록 일요일이면 하루 앞 시각을 쓴다 */
+    @MockitoBean(name = "paymentClock") lateinit var paymentClock: Clock
+
     @Autowired lateinit var mvc: MockMvc
     @Autowired lateinit var auth: AuthService
     @Autowired lateinit var jdbc: JdbcTemplate
@@ -61,6 +69,9 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
     }
 
     @BeforeEach fun prepare() {
+        org.mockito.Mockito.`when`(paymentClock.instant()).thenAnswer {
+            Instant.now().let { if (it.atZone(ZoneId.of("Asia/Seoul")).dayOfWeek == DayOfWeek.SUNDAY) it.minusSeconds(86_400) else it }
+        }
         stub.reset(); client.circuit.reset()
         subject = UUID.randomUUID().toString()
         val parent = auth.login(GoogleProfile(subject, "$subject@example.test", "테스트 보호자"), null)
@@ -142,7 +153,7 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
             val expectedQuery = when {
                 method == "GET" && path == "/missions" -> "?grade=3&demo=false&page=0&size=20"
                 method == "GET" && path.startsWith("/missions/") -> "?grade=3&demo=false"
-                method == "POST" && path == "/missions/$mission/attempts" -> "?grade=3&demo=false"
+                method == "POST" && path == "/missions/$mission/attempts" -> "?grade=3&demo=false&sundayTheme=false"
                 else -> ""
             }
             assertEquals("/internal$path$expectedQuery", received.target)
@@ -207,7 +218,8 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
                 val forgedQuery = "grade=6&grade=4&demo=${!demo}&demo=${!demo}&studentId=${UUID.randomUUID()}&page=1&size=2"
                 call(method, "/api/v1$path?$forgedQuery").andExpect(status().isOk())
                 val pagination = if (path == "/missions") "&page=1&size=2" else ""
-                assertEquals("/internal$path?grade=$grade&demo=$demo$pagination", stub.requests.last().target)
+                val sunday = if (method == "POST") "&sundayTheme=false" else ""  // #485 시도 시작만
+                assertEquals("/internal$path?grade=$grade&demo=$demo$pagination$sunday", stub.requests.last().target)
                 assertEquals(child.toString(), stub.requests.last().header("X-Student-Scope"))
             }
         }
@@ -222,7 +234,7 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
         call("POST", "/api/v1/missions/$mission/attempts?grade=6&demo=true")
             .andExpect(status().isCreated()).andExpect(content().string(response))
 
-        assertEquals("/internal/missions/$mission/attempts?grade=3&demo=false", stub.requests.single().target)
+        assertEquals("/internal/missions/$mission/attempts?grade=3&demo=false&sundayTheme=false", stub.requests.single().target)
         assertEquals(REVIEW_CONTEXT, stub.requests.single().body)
         assertEquals("application/json", stub.requests.single().header("Content-Type"))
     }
@@ -244,7 +256,7 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
         call("POST", "/api/v1/missions/$mission/attempts?grade=6&demo=true")
             .andExpect(status().isOk()).andExpect(content().string(response))
 
-        assertEquals("/internal/missions/$mission/attempts?grade=3&demo=false", stub.requests.single().target)
+        assertEquals("/internal/missions/$mission/attempts?grade=3&demo=false&sundayTheme=false", stub.requests.single().target)
     }
 
     @Test fun `mission queries and attempt start reject invalid session and unlinked student before forwarding`() {

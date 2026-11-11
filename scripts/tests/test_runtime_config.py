@@ -28,7 +28,7 @@ AI_KEYS = (
 )
 KEYS = {
     "ai-service": AI_KEYS,
-    "core-service": ("APP_GUARDIAN_TRANSFER_ENABLED",),
+    "core-service": ("APP_GUARDIAN_TRANSFER_ENABLED", "AUTH_NEW_ACCOUNT_DEMO"),
     "scoring-service": ("M2_CONTENT3_RULE_ENABLED",),
 }
 FILES = (
@@ -64,7 +64,10 @@ def defaults():
     return {
         "ai-service": python_defaults("ai-service", AI_KEYS),
         "scoring-service": python_defaults("scoring-service", KEYS["scoring-service"]),
-        "core-service": {"APP_GUARDIAN_TRANSFER_ENABLED": "false"},
+        "core-service": {
+            "APP_GUARDIAN_TRANSFER_ENABLED": "false",
+            "AUTH_NEW_ACCOUNT_DEMO": "false",
+        },
     }
 
 
@@ -178,6 +181,7 @@ class RuntimeConfigTests(unittest.TestCase):
             "M1_CHECK_ENABLED": "true",
             "M1_MIN_CONFIDENCE": "0.9",
             "APP_GUARDIAN_TRANSFER_ENABLED": "true",
+            "AUTH_NEW_ACCOUNT_DEMO": "true",
             "M2_CONTENT3_RULE_ENABLED": "true",
         }
         services = compose(("compose.yaml",), overrides)["services"]
@@ -199,10 +203,8 @@ class RuntimeConfigTests(unittest.TestCase):
         scoring = services[target.hostname]
         self.assertFalse(scoring.get("profiles"))
         self.assertFalse(scoring.get("ports"))
-        self.assertEqual(
-            ai["depends_on"][target.hostname]["condition"], "service_healthy"
-        )
-        self.assertTrue(ai["depends_on"][target.hostname]["required"])
+        # #305 이후 교차 확인 off면 scoring을 부르지 않으므로 기동 의존을 두지 않는다 (#502)
+        self.assertNotIn(target.hostname, ai.get("depends_on", {}))
         for service in ("ai-service", "scoring-service"):
             for key, value in defaults()[service].items():
                 self.assertEqual(services[service]["environment"][key], value)

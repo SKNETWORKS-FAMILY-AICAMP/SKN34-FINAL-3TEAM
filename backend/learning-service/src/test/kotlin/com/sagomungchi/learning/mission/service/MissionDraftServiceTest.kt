@@ -3,7 +3,7 @@ package com.sagomungchi.learning.mission.service
 import com.sagomungchi.learning._common.exception.errorCodeOf
 import com.sagomungchi.learning._common.exception.httpStatusOf
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
-import com.sagomungchi.learning.judgment.client.AiCallException
+import com.sagomungchi.learning._common.client.AiCallException
 import com.sagomungchi.learning.mission.client.AiDraftChecks
 import com.sagomungchi.learning.mission.client.AiDraftRequest
 import com.sagomungchi.learning.mission.client.AiDraftResponse

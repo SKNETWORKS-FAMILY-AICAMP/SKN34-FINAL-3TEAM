@@ -658,6 +658,7 @@ export const parentHandlers = [
           : r!
       const result = {
         ...recomputed,
+        explanations: c.plan === 'FREE' || recomputed.periodType === 'DAILY' ? null : mode === 'explanation-missing' ? { state: 'NOT_INCLUDED', items: [] } : recomputed.explanations,
         revisions: versions.map((v) => ({ revision: v.revision, generatedAt: v.generatedAt })),
         status:
           mode === 'report-running' ? 'RUNNING' : mode === 'report-failed' ? 'FAILED' : r!.status,

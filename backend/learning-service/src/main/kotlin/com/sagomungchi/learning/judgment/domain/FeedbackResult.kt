@@ -1,5 +1,7 @@
 package com.sagomungchi.learning.judgment.domain
 
+import com.fasterxml.jackson.annotation.JsonInclude
+import com.fasterxml.jackson.annotation.JsonRawValue
 import java.util.UUID
 
 /**
@@ -21,6 +23,8 @@ data class FeedbackResult(
 /**
  * judgmentId는 신고(targetType JUDGMENT)·정정 대상 ID (#146).
  * corrected는 정정이 있으면 true. 정정은 결과만 바꾸고 elements는 원판정 그대로라 report 요소 지표에서 뺌 (FN-RPT-05, #244)
+ * modelScores는 report 집계 입력(includeModelScores, #478)에서만 채움: 저장 JSON 원문, M2를 부르지 않았으면 "null".
+ * 그 밖의 응답(학생 시도 상세·학부모·ai)은 Kotlin null이라 키 자체가 없음 (api-spec 4.1.1)
  */
 data class JudgmentView(
     val judgmentId: UUID,
@@ -29,6 +33,7 @@ data class JudgmentView(
     val elements: List<ElementView>,
     val heldReason: String?,
     val corrected: Boolean = false,
+    @get:JsonRawValue @get:JsonInclude(JsonInclude.Include.NON_NULL) val modelScores: String? = null,
 )
 
 /**

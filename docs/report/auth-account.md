@@ -28,7 +28,7 @@
 ## 3. 계정 관리·재인증·삭제·탈퇴 (#45)
 
 - 재인증 토큰 5분·세션/작업/자녀 결합·1회 사용(사용자 결정). Google 계정 확인은 비밀번호·MFA 재입력을 보장하지 않음
-- 재인증 사용 절차(#58 PIN 변경 예)
+- 재인증 사용 절차(#58 당시 PIN 변경 예. PIN 설정은 15절에서 재인증을 제거했고, 같은 절차를 탈퇴·보호자 비밀번호·자녀 해제 등에 쓴다)
   1. 원래 세션에서 `POST /me/reauth {"purpose":"PIN_CHANGE","childId":...}`(Origin·`X-Requested-With` 필요)
   2. 응답 `authorizationUrl`을 새 창에서 열어 Google 확인. Google 콘솔에 `<webOrigin>/api/v1/auth/google/reauth/callback` 등록 필요. callback은 VERIFIED 안내만, 로그인·refresh는 바꾸지 않음
      - #425: callback은 JSON 대신 안내 HTML. 같은 출처 `BroadcastChannel('sagomungchi-reauth')`로 challengeId만 알리고 창을 닫음(닫히지 않으면 안내 문구). 팝업 `opener=null` 유지 때문에 postMessage는 쓰지 않음. CSP nonce·`no-store`·`no-referrer`·`nosniff`. 실패도 스크립트 없는 안내 HTML(403)
@@ -334,7 +334,7 @@ python scripts/admin_account_sql.py --login-id ops-kim --disable | psql "$CORE_D
 
 - 실제 모드 `/login`: Google 버튼과 함께 "또는 아이디로 로그인" 폼과 "아이디로 가입" 링크를 둔다.
 - `/signup`: Google 카드와 아이디 가입 폼(아이디·이름·비밀번호·확인). 가입 후 `/parent/onboarding`으로 간다.
-- 재확인 UI: `/me`의 `authMethod`가 `PASSWORD`면 Google 새 탭 대신 로그인 비밀번호를 입력받는다(탈퇴·자녀 해제/삭제·이관·보호자 비밀번호·자녀 PIN 모두, `PasswordRecheck`).
+- 재확인 UI: `/me`의 `authMethod`가 `PASSWORD`면 Google 새 탭 대신 로그인 비밀번호를 입력받는다(탈퇴·자녀 해제/삭제·이관·보호자 비밀번호 모두, `PasswordRecheck`. 자녀 PIN은 15절에서 재확인 제거).
 - 로그인 도움말: 두 방법이 서로 연결되지 않는다는 안내와 비밀번호 찾기 안내를 더했다.
 - MSW 핸들러도 같은 계약이다. 개발 시연(목업)의 이메일 로그인은 그대로 둔다.
 
@@ -344,7 +344,7 @@ python scripts/admin_account_sql.py --login-id ops-kim --disable | psql "$CORE_D
 - k6 `core-load.js`는 계정에 `loginId`가 있으면 `POST /auth/parent/login`으로 access를 받는다. 회전하는 refresh 토큰이 없어 비밀 파일을 다시 쓰지 않는다. `loginId`가 없으면 옛 refresh 방식이다.
 - AWS 데모는 `AUTH_NEW_ACCOUNT_DEMO=true`라 시험 계정이 `is_demo`로 저장되어 운영 집계에서 빠진다.
 - k6 `setup()`은 쿠키 저장소 하나를 공유한다. 앞 계정의 refresh 쿠키가 남은 채로 다음 계정이 로그인하면 `startSession`이 그 세션을 "이전 세션"으로 폐기하므로, 계정마다 빈 쿠키 저장소(`jar: new http.CookieJar()`)로 로그인한다.
-- 로컬 격리 compose 확인(2026-11-09, `AUTH_NEW_ACCOUNT_DEMO=true`)
+- 로컬 격리 compose 확인(2026-11-09, `AUTH_NEW_ACCOUNT_DEMO=true`). 당시 `compose.yaml`은 이 값을 core-service에 전달하지 않아 계정은 기본값(false)으로 저장됐을 수 있다. #500에서 compose 전달을 추가했다(기본 false)
   - 시험 계정 4개(`load1`~`load4`, 자녀 3명씩) 준비 → k6 VU 8·30초. 보호자 ID 로그인 4건, 학생 로그인 12건, 학습 칸 60개(1차의 15개 → 4배), 알림 SSE·조회 API 정상.
   - 학습 시도 시작은 무료 자녀 하루 미션 한도(`429 USAGE_LIMIT_REACHED`, #387)에 금방 걸렸다. 프리미엄도 하루 3개라 2차 시험(#384)은 시험 동안 한도를 어떻게 다룰지 먼저 정해야 한다. 학생 기록 비공개 기본값(`403 STUDENT_RECORDS_PRIVATE`, #206)도 조회 오류로 섞인다.
 

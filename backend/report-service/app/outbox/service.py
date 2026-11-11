@@ -3,6 +3,10 @@
 from app.outbox.repository import OutboxRepository
 
 
+def add_event(session, envelope):
+    OutboxRepository().add(session, envelope)
+
+
 def delete_subject(session, subject):
     OutboxRepository().delete_subject(session, subject)
 

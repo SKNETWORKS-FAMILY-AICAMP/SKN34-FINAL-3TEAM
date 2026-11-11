@@ -18,12 +18,13 @@
 |---|---|---|---|
 | core-service | Spring Boot (Kotlin) | **유일한 공개 API**. 계정·인증·동의, 학부모-자녀 연결(권한 기준), 분석 대화 세션·이력, 주간·일일 리포트 작업·일정, 알림(SSE·인앱), 신고·문의·공지, 결제·구독(토스페이먼츠 테스트), 관리자 운영·모델 버전 레지스트리, LLM 사용량 집계 | core_db, Redis |
 | learning-service | Spring Boot (Kotlin) | 미션·기준표·예시 답·생각 열기 질문(버전 관리), 학습 시도·답변 버전·초안·도움 이용·돌아보기·자기 평가, 규칙 판정(고르기·수학 동치), 판정·되묻기 저장, 학습 기록 조회 API(대시보드·에이전트 도구·리포트 소재) | learning_db (미션 장면 이미지는 웹 정적 파일과 함께 CloudFront→S3로 서빙, learning은 S3를 쓰지 않음) |
-| ai-service | FastAPI | 서술 근거 구절 추출(LLM) + 원문 대조 판정(코드), 되묻기 생성·정답/금지어 유출 검사, LangGraph 분석 에이전트, 리포트 서술·저녁 질문 생성, 프롬프트 버전 | 없음 (상태 없음) |
+| ai-service | FastAPI | 서술 근거 구절 추출(LLM) + 원문 대조 판정(코드), 되묻기 생성·정답/금지어 유출 검사, LangGraph 분석 에이전트, 리포트 서술·저녁 질문 생성, 리포트 설명 생성 요청·검사(설명 sLLM 호출, #477), 프롬프트 버전 | 없음 (상태 없음) |
 | scoring-service | FastAPI | M2 항목 점수(klue/roberta, 국어 우선), M1 수학 풀이 점검(후순위, 활성 범위만) 추론, CPU 추론, 관리자 모델 파일 사전 검사(#368), Pod별 모델 로딩 상태 보고(#370) | 없음 (S3 가중치 읽기) |
 | report-service | FastAPI | 주간·일일 리포트 기간·포함 기록 확정, 수치·전후 변화 코드 계산, 숫자·인용 대조, 렌더링(HTML/PDF/Markdown)·저장 | report_db, S3 |
 
 - 언어 분담 근거: 트랜잭션·권한·버전 관리·Outbox·스케줄·결제 = Spring 생태계(Spring AMQP, Flyway, ShedLock) 성숙 / LLM·모델 추론·렌더링 = Python 생태계
 - scoring 분리 근거: PyTorch 이미지·메모리 요구가 ai-service와 달라 배포·확장 단위 분리, 모델 미활성 시 ai-service 영향 없음
+- 설명 sLLM 서버(FN-RPT-09, #476): 업무 서비스가 아니라 ai만 호출하는 OpenAI 호환 내부 추론 서버(llama.cpp 등). 상태·DB 없음, S3의 승인된 양자화 모델을 CPU로 추론하며 평소 0대이고 주간 리포트 생성 시간대만 켬(4.4). 학생 글은 클러스터 밖으로 나가지 않음
 - 다른 서비스 DB 직접 접근 금지, API 또는 이벤트로만 연동 (참고 레포 원칙 동일)
 - DB 권한으로 강제(#230): 인스턴스 1개(로컬 PostgreSQL·운영 RDS)에 DB별 migrate(DDL)·app(DML) 계정을 두고 각 DB의 PUBLIC CONNECT 회수 → 다른 서비스 DB 접속 불가. 로컬·운영 모두 `charts/platform-data/files/postgres/rds-bootstrap.sql`로 생성, 관리자 계정은 초기화 전용 ([결정](../report/db-dev-guide.md#8-서비스별-db-계정-230))
 - 권한 기준: 학부모-자녀 연결은 core만 소유. core가 요청마다 권한 확인 후 내부 호출에 사용자 컨텍스트·허용 학생 범위 전달 (2.3)
@@ -81,7 +82,7 @@
 - #305 learning→ai 판정·되묻기는 서킷 `ai` 하나를 함께 쓰므로, 그 뒤 ai→scoring 실패가 이 서킷으로 번지지 않게 ai에서 끊는다. ai→scoring(M2·M1)은 교차 확인 플래그(`M2_CROSS_CHECK_ENABLED`·`M1_CHECK_ENABLED`, 기본 꺼짐)가 켜진 경우에만 부르고, scoring 장애·시간 초과·5xx·4xx(입력 한도 초과 등)·계약 밖 응답은 503으로 바꾸지 않는다. ai는 교차 확인을 생략한 LLM 판정을 200으로 돌려주고 `modelScores.skipped`(`SCORING_UNAVAILABLE`·`SCORING_REJECTED`)에 사유를 남긴다(api-spec 4.2.2). 따라서 scoring 장애는 learning `ai` 서킷의 실패로 집계되지 않고 scoring과 무관한 판정·되묻기를 막지 않는다. 대신 교차 확인 없이 확정된 판정은 다시 판정하지 않는다. ai→scoring에는 서킷·재시도를 따로 두지 않는다(요청마다 남은 판정 시간 안의 timeout만).
 - #280 core→ai 리포트 설정 제안(`AiClient.reportTemplate`, 25초)은 분석 스트림과 분리한 작은 서킷 `ai-report-template`(최근/최소 10건·실패율 50%·30초 차단·half-open 1건)을 쓴다. 설정 제안 실패가 분석 대화 스트림을 차단하지 않게 하기 위해서다. HTTP 4xx는 성공으로, 전송 오류·시간 초과·5xx(ai `AI_UNAVAILABLE`·`AI_PROMPT_VERSION_UNAVAILABLE` 포함)·빈 본문은 실패로 센다. OPEN은 기존 502 `AI_UNAVAILABLE`로 실패하며 이미 차감한 분석 사용량은 그대로 둔다. 재시도는 추가하지 않는다.
 - #167 분석 서킷은 헤더/첫 이벤트가 아닌 스트림 종료 결과를 집계한다. 중간 EOF·잘못된 스트림·시간 초과·error 이벤트는 실패, 정상 done/clarification 및 기존 TEMPLATE 결과는 성공이다. 사용자 취소·core 권한/저장/전송 처리 오류는 AI 실패 집계에서 제외하고 half-open 허가를 반환한다. OPEN은 기존 AI_UNAVAILABLE로 실패하며, 이미 접수한 분석 시도의 한도/사용 이력 차감은 보존한다. HTTP/1.1과 기존 body 종료·timer 취소를 유지한다.
-- 타임아웃 예산: 바깥 호출 타임아웃 > 안쪽 호출 합계 (예: core→learning > learning→ai judgments + followups). 전체 상한은 CloudFront·ALB 타임아웃(4.3) 이내. 이를 넘는 SSE(피드백 80초, 분석 대화 120초)는 15초 heartbeat가 유휴 타이머를 갱신하는 것을 전제로 함
+- 타임아웃 예산: 바깥 호출 타임아웃 > 안쪽 호출 합계 (예: core→learning 피드백 80초 > learning→core 결제 사용 예약 4초 + learning→ai judgments 35초 + followups 35초 + learning→core 사용 완료 4초 = 78초. learning→core는 `app.internal.core-read-timeout` 4초로 ai 35초와 따로 둔다, #501). 전체 상한은 CloudFront·ALB 타임아웃(4.3) 이내. 이를 넘는 SSE(피드백 80초, 분석 대화 120초)는 15초 heartbeat가 유휴 타이머를 갱신하는 것을 전제로 함
 - 재시도 계층: ai의 LLM 호출에서만 재시도, core·learning·report의 서비스 간 호출은 재시도 없음 (계층별 재시도 시 호출 수 곱셈 증폭)
 - #38 일반 core→learning JSON 프록시는 연결 2초·응답 30초를 사용한다(피드백의 80초 예산은 #39). Resilience4j count window 20·최소 20건·실패율 50%·차단 30초·half-open 1건으로 복구를 확인한다. 전송 오류·5xx를 실패로 집계하고 4xx는 정상 HTTP 결과로 센다.
 - SSE heartbeat: 모든 SSE는 15초마다 주석 줄(`: ping`) 전송. 피드백은 learning 동기 응답 대기 중 전송할 데이터가 없어 필수
@@ -133,6 +134,7 @@
 5. **자동 리포트**
    - core 스케줄러(ShedLock)가 자녀별 report_job + Outbox → `report.generate`
    - report가 learning 기록 조회 → 코드 계산 → ai 서술·저녁 질문 → 숫자·인용 대조 → 렌더링·S3 저장
+   - 주간 리포트의 프리미엄·원문 공개 자녀는 서술 뒤 M2 점수가 있는 대표 답변 최대 3개를 ai에 설명 요청(ai → 설명 sLLM 서버, 검사 통과분만 `EXPLANATION` 항목). 실패·시간 초과·모델 미활성은 설명 없이 진행 (FN-RPT-09, P16, #479)
    - `report.completed` → core 알림
 
 2026-11-06 결정(6~9 구현):
@@ -166,7 +168,7 @@
   - #43 계약: 내부 조회와 이벤트는 같은 kind·name별 revision·적용 scopes를 제공한다. 소비자는 초기 조회 중 이벤트를 보존·조정하고 더 높은 revision만 적용하며 승인 scope 밖에는 적용하지 않는다. core는 Pod 공유 소비 큐를 추가하지 않는다. scoring 소비·readiness는 #86에서 구현하며 ai는 #68 범위다.
   - scoring #86: 큐 바인딩·소비 시작 후 snapshot을 조회한다. 조회·로딩 중 이벤트는 이름별 최신 revision을 보존하고 readiness 전에 조정한다. 재연결 때 새 exclusive 큐를 바인딩하고 snapshot을 다시 조회하여 연결 중단 중 변경도 복구한다.
   - scoring 교체·롤백은 #85와 동일하게 S3/MinIO에서 재다운로드 → 메모리 로딩 → 임시 파일 정리 방식이다. 성공 후 참조를 교체하며 로딩 실패 시 기존 모델과 새 승인 범위의 교집합만 사용한다. 정상 기동 후 교체 실패는 기존 모델을 유지하고 재시도한다. 최초 조회·로딩 실패 또는 재연결 조정 중에는 readiness false다.
-  - ai #68: `PROMPT`의 `name`은 `judgment`·`followup`·`analysis`·`reportNarrative`·`reportTemplate`(#280 리포트 설정 제안)·`missionDraft`(#354 미션 초안) 6개, 각 승인 scope는 `ai/judgment`·`ai/followup`·`ai/analysis`·`ai/report-narrative`·`ai/report-template`·`ai/mission-draft`다. 해당 scope가 없는 항목은 적용하지 않는다. 각 버전의 실제 system/user 프롬프트 본문은 ai 이미지의 코드에 함께 보관한다. core에 활성 항목이 없으면 현재 내장 버전을 사용한다. 활성 버전 본문이 이미지에 없으면 다른 본문에 그 버전명을 붙이지 않고 해당 기능의 새 요청을 503으로 거부하며 readiness는 false다. 요청마다 선택한 본문과 버전을 고정해 응답·사용량에 같은 버전을 기록한다.
+  - ai #68: `PROMPT`의 `name`은 `judgment`·`followup`·`analysis`·`reportNarrative`·`reportTemplate`(#280 리포트 설정 제안)·`missionDraft`(#354 미션 초안)·`reportExplanation`(#477 리포트 설명) 7개, 각 승인 scope는 `ai/judgment`·`ai/followup`·`ai/analysis`·`ai/report-narrative`·`ai/report-template`·`ai/mission-draft`·`ai/report-explanation`다. 해당 scope가 없는 항목은 적용하지 않는다. 각 버전의 실제 system/user 프롬프트 본문은 ai 이미지의 코드에 함께 보관한다. core에 활성 항목이 없으면 현재 내장 버전을 사용한다. 활성 버전 본문이 이미지에 없으면 다른 본문에 그 버전명을 붙이지 않고 해당 기능의 새 요청을 503으로 거부하며 readiness는 false다. 요청마다 선택한 본문과 버전을 고정해 응답·사용량에 같은 버전을 기록한다.
   - ai도 큐 바인딩·소비 시작 후 snapshot을 조회하고 그사이 이벤트를 revision으로 조정한다. 재연결마다 새 큐를 먼저 바인딩하고 snapshot으로 유실 구간을 복구한다. readiness는 이 백그라운드 상태만 읽으며 probe가 core를 호출하지 않는다.
   - core 조회 실패 시 프로세스 종료 없이 readiness false 유지·재시도 (core 장애가 ai·scoring 기동 실패로 번지지 않게)
 - **이벤트 봉투**: CloudEvents 형식 `id, specversion, type, source, time, subject, dataschema, traceparent, data` → `contracts/events/*.schema.json`
@@ -369,10 +371,11 @@ Spring (learning)
 ```
 backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 ├─ _common/
+│  ├─ client/                    # ai 전송·오류 분류·서킷 설정(AiTransport): 판정·되묻기와 미션 초안이 공유 (#501)
 │  ├─ config/
 │  ├─ exception/
 │  ├─ security/
-│  ├─ messaging/                 # 멱등 소비 (발행 없음)
+│  ├─ messaging/                 # 소비 재시도·이벤트 봉투 (발행 없음). 멱등 소비 기록은 record/repository/ProcessedEventRepository
 │  ├─ persistence/               # MyBatis 설정·PostgreSQL 타입 핸들러
 │  └─ web/                       # 공유 응답 DTO: MissionResponse·MissionListItemResponse·AnswerItem (#251)
 ├─ mission/                      # 미션·기준표·예시 답·생각 열기 질문 버전, 관리자 작성·검토·공개, 성취기준·미션 초안(#353)
@@ -477,6 +480,12 @@ backend/ai-service/
 │  │  ├─ models.py
 │  │  ├─ checks.py               # REQUIRED·QUESTION_LENGTH·LEAK 검사
 │  │  └─ prompts.py              # missionDraft 프롬프트 본문·버전
+│  ├─ report_explanation/        # 리포트 설명: M2 항목 점수 → 학부모용 설명 (#477)
+│  │  ├─ router.py               # POST /internal/report-explanations
+│  │  ├─ service.py              # 설명 모델 활성 확인·항목별 sLLM 호출
+│  │  ├─ models.py
+│  │  ├─ checks.py               # 항목 고르기·규칙 후처리·검사·인용 구절
+│  │  └─ prompts.py              # reportExplanation 프롬프트 본문·버전
 │  ├─ prompt_versions/           # 활성 프롬프트 버전 (#68, #254 분리)
 │  │  ├─ router.py               # GET /internal/versions
 │  │  ├─ service.py              # PromptSync: core snapshot·대기 이벤트 조정
@@ -595,7 +604,7 @@ backend/report-service/
 │  │  ├─ repository.py           # 삭제 장벽·processed_event DB 작업 (#252)
 │  │  └─ state.py                # DeleteStudent·순수 삭제/생성 허용 규칙
 │  ├─ outbox/                    # report.started·completed·failed
-│  │  ├─ service.py              # 동일 트랜잭션의 subject별 삭제·발행 완료 보존 정리 진입점 (#252, #278)
+│  │  ├─ service.py              # 동일 트랜잭션의 이벤트 저장·subject별 삭제·발행 완료 보존 정리 진입점 (#252, #278, #503)
 │  │  ├─ repository.py
 │  │  ├─ relay.py                # 학생별 선두 발행·재시도·격리 (#131)
 │  │  └─ manage.py               # 격리 이벤트 운영 CLI (#131)
@@ -644,6 +653,7 @@ backend/report-service/
 |---|---|---|---|
 | 실행 | Docker Compose | kind 단일 노드 | EKS (eksctl) |
 | 상태 저장소 | 컨테이너 | `platform-data` Helm chart (StatefulSet) | RDS PostgreSQL, S3 / RabbitMQ·Redis는 StatefulSet + EBS gp3 |
+| PostgreSQL 이미지 | `pgvector/pgvector:0.8.7-pg17-trixie` | 같은 이미지 | RDS PostgreSQL 17 (`vector` 확장 허용 확인 필요) |
 | 이미지 | 로컬 빌드 | GHCR | ECR |
 | 배포 | `docker compose up` | Argo CD (local env) | 현재 데모: 수동 Helm / 목표: Argo CD (prod env) |
 | Ingress | - | ingress-nginx | AWS LB Controller (ALB) |
@@ -651,6 +661,8 @@ backend/report-service/
 | 외부 연동 | stub (LLM·토스·Google OAuth, E2E 오버레이) | stub 또는 테스트 키 | LLM API, 토스페이먼츠 테스트 키 |
 
 - stub(`infrastructure/stubs`)은 실서버 E2E 오버레이 `compose.e2e.yaml`에서만 연결한다(google·llm·toss-stub, 합성 값 `infrastructure/stubs/e2e.env`). 기본 Docker Compose의 ai-service는 그대로 `.env`의 `LLM_PROVIDER`·API 키로 실제 LLM을 호출하고, 키가 없으면 판정·되묻기가 `AI_UNAVAILABLE`로 실패한다(6장 LLM 제공자). kind의 `<target>-stub` Service는 미구성이다. [이슈 #246 보고서](../report/testing-ci.md#2-실서버-브라우저-e2e와-외부-스텁-246)
+
+- PostgreSQL은 learning_db 지식 저장소(#463·#466)를 위해 pgvector 포함 이미지(PG 17.11 Debian)를 쓴다. `vector`는 trusted 확장이 아니어서 서비스 migrate 계정의 Flyway가 만들 수 없고, 관리자 계정 bootstrap이 만든다(지식 테이블과 함께 #466에서 추가). alpine(musl)에서 초기화한 기존 데이터 디렉터리는 glibc와 text 정렬이 달라 이미지 교체 뒤 DB마다 `REINDEX DATABASE`를 한 번 실행하거나 볼륨을 새로 만든다
 
 - 로컬 kind 클러스터(`sagomungchi-local`)·Calico·ingress-nginx·MinIO의 버전·CIDR·버킷·자원 예산·초기화는 [로컬 플랫폼](../report/local-platform.md) 1~6장, 설치 절차는 [kind](../../infrastructure/kind/README.md)·[platform-data](../../infrastructure/gitops/charts/platform-data/README.md). API·HTTP·HTTPS는 loopback에서만 노출
 
@@ -679,6 +691,7 @@ backend/report-service/
 - 노드그룹: `application`, `platform-observability` 분리 (참고 레포 2그룹 구성 계승)
   - `application`: t3.medium 2대(최대 3), 앱·ESO·LB Controller·CoreDNS·Karpenter 컨트롤러·metrics-server 등. 관리형 노드그룹은 자동 확장하지 않는다
   - Karpenter NodePool `application-burst`: 평소 0대. 기존 노드에 자리가 없는 Pending Pod가 생길 때만 t3.medium·t3.large On-Demand(2a·2b)를 만들고 비면 정리한다(4.4). taint가 없어 platform Pod는 배치되지 않는다
+  - Karpenter NodePool `explanation-cpu`(#476): 설명 sLLM 전용. 평소 0대이고 KEDA cron이 sLLM Pod를 1대로 올릴 때만 연산형 On-Demand(기준안 c7i·c6i.xlarge, 4 vCPU·8GiB)를 만든다. label·taint `workload=explanation-sllm:NoSchedule`로 앱 Pod와 섞이지 않고, sLLM Pod는 t3 노드(`application`·`application-burst`)에 놓이지 않는다. 비면 5분 뒤 정리(`WhenEmpty`), 상한 CPU 4·메모리 8Gi(1대). EC2NodeClass는 `application`을 같이 쓴다
   - `platform-observability`: t3.medium 2대(2a·2b 1대씩, EBS PVC가 AZ별로 있음), label·taint `workload=platform:NoSchedule`. `platform-data`·`observability` chart의 `scheduling` 값으로 RabbitMQ·Redis·Prometheus·Grafana·Collector만 배치
 - Pod AWS 권한: EKS Pod Identity(서비스별 IAM 역할, trust는 클러스터·namespace·ServiceAccount 조건). IRSA(OIDC provider·SA annotation)는 쓰지 않음
 - NetworkPolicy: 기본 거부 + 아래 허용만 (호출 관계는 [API 명세서](api-spec.md) 4장). 공통 앱 chart·local Ingress·app/platform/observability NetworkPolicy 정의는 #171, 검증 범위는 [로컬 플랫폼](../report/local-platform.md#10-171-검증-결과와-교훈) 10장
@@ -687,10 +700,11 @@ backend/report-service/
 |---|---|---|
 | core | ALB(서브넷 ipBlock), ai, scoring, learning, report-worker, Prometheus | learning, ai, scoring(모델 사전 검사 #368), report-api, RabbitMQ(5672·15672), Redis, RDS, 토스(NAT) |
 | learning | core, ai, report-api, report-worker, Prometheus | core, ai, RabbitMQ, RDS |
-| ai | core, learning, report-worker, Prometheus | learning, scoring, core, RabbitMQ, LLM API(NAT) |
+| ai | core, learning, report-worker, Prometheus | learning, scoring, core, RabbitMQ, LLM API(NAT), 설명 sLLM 서버(#476) |
 | scoring | ai, core(모델 사전 검사 #368), Prometheus | core, RabbitMQ, S3 |
 | report-api | core, Prometheus | learning(근거 조회), RDS, S3 |
 | report-worker | Prometheus | core, learning, ai, RabbitMQ, RDS, S3 |
+| 설명 sLLM 서버(#476) | ai, Prometheus | S3(모델 로딩, initContainer)·Pod Identity agent / local: MinIO |
 | RabbitMQ·Redis | `app` 전체, KEDA(RabbitMQ), Prometheus | - |
 
   - 전 Pod 공통 egress: kube-dns(53), OTel Collector·Langfuse(`observability`)
@@ -721,6 +735,15 @@ backend/report-service/
 - 일일 리포트 부하(P24, #390)
   - 월요일 00:00에 주간·일일 리포트 작업이 함께 생긴다(자녀당 2건). 일일은 LLM을 부르지 않아 비용 경보(P13 80%)에는 영향이 없고, report-worker(KEDA) 적체·DLQ 경보는 기존 기준으로 함께 본다([운영 경보](operational-alerts.md))
   - 자녀 수만큼 매일 작업이 생겨 report_db·S3 파일이 주간 대비 약 7배로 늘어난다. 보관 기간은 기존(P09 이용 중 보관)과 같음
+- 설명 sLLM 서버(FN-RPT-09·NFR-PRF-03, #476)
+  - 공통 앱 chart(`app-service`)의 release `sllm-server`(Service `sllm-server:8080`, OpenAI 호환 `/v1/chat/completions`, 모델 이름 `report-explanation`). ai는 `EXPLANATION_BASE_URL=http://sllm-server.app.svc.cluster.local:8080/v1`로 부른다(#477)
+  - 평소 replica 0. KEDA cron 트리거(`Asia/Seoul`, 일 23:50 ~ 월 02:00) 동안만 1대, 창이 끝나면 `cooldownPeriod` 300초 뒤 0대. 첫 설치도 0대로 시작한다(`keda.renderReplicaCount`). 창 안에서 helm upgrade를 하면 다음 KEDA 확인(30초)까지 0대가 되므로 배치 시간에는 배포하지 않는다
+  - 시작할 때 initContainer(`amazon/aws-cli`)가 승인된 양자화 모델을 emptyDir `/models`에 받고, `MODEL_SHA256`이 있으면 대조한다. 서버 컨테이너는 읽기 전용으로 마운트한다. prod는 S3(Pod Identity), local은 MinIO `sagomungchi-local-models`
+  - readiness·startup은 `/health`(llama.cpp는 모델 적재 중 503). 모델을 다 올려야 Ready라 ai 요청이 적재 중 Pod로 가지 않는다
+  - 3B급 양자화 모델 CPU 추론은 t3 계열에 맞지 않아 Karpenter NodePool `explanation-cpu`(4.3)에만 놓는다(nodeSelector·toleration). Pod 요청 CPU 3·메모리 5Gi, llama.cpp `--threads 3 --parallel 1`
+  - local(kind)은 실제 모델 대신 OpenAI 호환 대역(`infrastructure/stubs/llm-stub`)으로 내려받기·readiness·NetworkPolicy·cron 0→1→0만 확인한다. 추론 속도·메모리는 #475 실측 대상
+  - AWS 데모는 KEDA 미설치(4.4 AWS 데모 적용)라 KEDA 설치·Pod Identity 연결·NodePool 적용·서버 이미지 ECR 게시가 남아 있다(AWS 작업 보류, `environments/prod/sllm-server.json`·`karpenter-nodepool-explanation.json`은 파일만 작성)
+  - 생성 시간은 건당 20~30초 가정(30명 × 3건 약 40분), #475 실측 후 시간대·대기 상한·인스턴스 유형 조정
 - 종료 처리: core는 preStop 지연 + terminationGracePeriod로 SSE 정리 시간 확보 (롤링 배포·축소 시 단절은 클라이언트 재연결로 처리)
   - 피드백 executor 종료 대기는 최대 85초, heartbeat timer 종료 대기는 최대 5초다. 배포 시 `terminationGracePeriodSeconds`는 preStop 지연 + Spring/Tomcat 종료 단계의 예산 + 이 최대 90초 + 안전 여유보다 길게 설정하고 실제 롤링 종료로 검증한다. local chart 시작값은 preStop 15초·grace 180초([로컬 플랫폼](../report/local-platform.md) 8장). SIGKILL·프로세스 강제 종료 후에도 진행 중 호출이 보존된다는 의미는 아니다.
 - probe: readiness는 자기 연결과 백그라운드 초기화 상태만 확인, 요청마다 하위 서비스 호출 금지. ai는 RabbitMQ 구독·core 활성 버전 snapshot 조정·사용 가능한 프롬프트 본문을 완료해야 Ready이며 core 조회 실패·재연결 조정·미보유 활성 본문은 NotReady다(#68).
@@ -737,7 +760,7 @@ backend/report-service/
 - #171 local 관측 chart: Collector·Prometheus·Grafana, 공통 앱 chart Java agent로 core·learning JVM/HTTP metrics. AI는 기본 비활성 Langfuse v4 LLM 계측. scoring·report exporter와 Langfuse backend·trace 저장은 아직 없음. `traceparent` 헤더와 AI 사용량 이벤트 봉투는 연결
 - Langfuse: LLM 호출·토큰·비용·trace
 - OpenTelemetry → Prometheus + Grafana: 서비스 지표, 큐 길이·DLQ 적재량(큐별 `<큐>.dlq`, #187), 판정·피드백·리포트 처리 지연
-- 경보(#185·#187): Grafana Alerting → 팀 디스코드 웹훅(`aws-alerts`). 수집 장애·작업 적체·DLQ 적재·RabbitMQ 메모리, core 공개 API 영역별(인증·학습 저장·AI 처리·리포트·결제) 5xx 비율·p95 지연, 월 LLM 비용 300 USD의 80%와 미산정 호출. 담당은 인프라 1명(동섭)이 전체를 받는다 (P10, P13). 임계값은 초기 기준이며 [경보 검증](../../infrastructure/gitops/operational-alerts/README.md)을 따른다
+- 경보(#185·#187): Grafana Alerting → 팀 디스코드 웹훅(`aws-alerts`). 수집 장애·작업 적체·DLQ 적재·RabbitMQ 메모리, core 공개 API 영역별(인증·학생 학습·AI 처리·리포트·결제) 5xx 비율과 p95 지연(AI 처리는 SSE 스트림이 섞여 5xx 비율만), 월 LLM 비용 300 USD의 80%와 미산정 호출. 담당은 인프라 1명(동섭)이 전체를 받는다 (P10, P13). 임계값은 초기 기준이며 [경보 검증](../../infrastructure/gitops/operational-alerts/README.md)을 따른다
 - trace 저장(#187): Collector → Tempo(observability chart 선택 구성) → Grafana. core·learning은 Java agent trace, report-worker는 OTel SDK 소비 span. ai·scoring·report-api의 자체 span은 아직 없음
 - 백업: RDS 자동 백업(일 1회) + PITR, 보관 7일, RPO 5분·RTO 4시간 (P12)
 - `traceparent`를 HTTP 헤더와 이벤트 봉투 양쪽에 전파 → 동기·비동기 구간 단일 trace. core outbox는 저장 시점 span을 봉투에 담고 relay가 그 context 아래에서 발행해 AMQP 헤더로 잇는다. report-worker는 봉투 값을 부모로 소비 span을 열고 결과 이벤트에 AMQP 헤더를 붙인다 (#187, kind 검증)
@@ -789,7 +812,7 @@ SKN34-FINAL-3TEAM/
 ├─ ml/                           # 모델 학습 (클러스터 밖 실행, 이미지 빌드·배포 대상 아님)
 │  ├─ m2/
 │  ├─ m1/                        # 수학 풀이 점검 학습·평가 코드(#263, 기준선까지·본 학습 전)
-│  └─ sllm/                      # (예정)
+│  └─ sllm/                      # 설명 sLLM 학습·평가·양자화 (#475)
 ├─ evaluation/                   # 판정 일치도(QWK, #199)·(예정) 되묻기 유출·에이전트 숫자/인용 대조 평가
 │  ├─ datasets/                  # 평가셋별 cases.jsonl·fixtures (자체 작성 예시 답안, AI Hub 원문 미포함)
 │  ├─ runners/                   # 서비스 호출·채점 스크립트 (judgment_eval.py, 테스트는 ai-service tests)
@@ -900,7 +923,7 @@ SKN34-FINAL-3TEAM/
   - `ci-ai-service`: `backend/ai-service/**`·`contracts/**` 전체·`evaluation/**`
   - `ci-core-service`: `backend/core-service/**`·`contracts/**` 전체·`definitions.json`
   - `ci-report-service`: `backend/report-service/**`·`contracts/events/**`·`contracts/openapi/report-service.yaml`·`contracts/examples/report-admin-retry/**`·`definitions.json`
-  - `ci-scoring-service`: `backend/scoring-service/**`·`contracts/openapi/scoring-service.yaml`·이벤트 스키마 3개(`envelope`·`model.version.activated`·`llm.usage.recorded`)
+  - `ci-scoring-service`: `backend/scoring-service/**`·`contracts/openapi/scoring-service.yaml`·이벤트 스키마 4개(`envelope`·`model.version.activated`·`model.loading.reported`·`llm.usage.recorded`)
   - `ci-learning-service`·`ci-web`·`ci-ml-m1`·`ci-ml-m2`: 자기 경로만
   - `ci-contracts`·`ci-db-schema`·`ci-gitops`·`e2e`·`cd-candidate`는 각 workflow의 `paths` 기준
 - DB 마이그레이션: 서비스별 Flyway(core·learning)·Alembic(report), 앱 기동이 아닌 `migration-job`(Argo CD PreSync hook)으로 1회 실행. 로컬 compose는 일회성 컨테이너로 동일 실행. 마이그레이션은 DB별 migrate 계정, 앱은 app 계정 사용(#230)
@@ -912,7 +935,7 @@ SKN34-FINAL-3TEAM/
 - `definitions.json`은 Helm `.Files` 접근 범위인 `platform-data` chart 안에 두고, compose도 같은 파일 마운트
 - 공통 코드: 공통 라이브러리 없이 서비스별 보유(이벤트 봉투·Outbox·AMQP 연결), `contracts/events` 스키마로 계약 테스트. 중복이 문제 될 때 `libs/` 검토
 - Docker 빌드 컨텍스트는 서비스 폴더, `contracts/` 계약 테스트는 CI에서만 실행
-- 모델 학습 코드(M2·M1·sLLM)는 `ml/`에서 관리, scoring은 승인된 가중치(S3)만 로딩
+- 모델 학습 코드(M2·M1·sLLM)는 `ml/`에서 관리, scoring·설명 sLLM 서버는 승인된 가중치(S3)만 로딩
 - 참고 레포 대비 추가: `contracts/`, `ml/`, `infrastructure/aws/` / 제외: `mobile/`, `ops-service`(LLMOps는 Langfuse + `evaluation/`로 시작, 필요 시 추가)
 
 ---
@@ -923,10 +946,10 @@ SKN34-FINAL-3TEAM/
 |---|---|---|
 | 프론트엔드 | React, Vite, TypeScript, Tailwind CSS, TanStack Query, 토스페이먼츠 결제위젯 SDK | 참고 레포 동일 계열, 기획서 4.4 |
 | 업무 API | Spring Boot 3, Kotlin, JDK 21, Spring Security JOSE(JWT HS256·Google JWKS), MyBatis, Flyway, Spring AMQP, ShedLock, Resilience4j | 참고 레포 구현 패턴 재사용, 다중 레플리카 스케줄 중복 방지 |
-| AI API | Python 3.12, FastAPI, Pydantic, uv, LangGraph, LangChain, OpenAI API(기본 `gpt-6.1-terra`)·Claude API(`LLM_PROVIDER`로 교체), aio-pika, httpx | 에이전트 그래프·도구 호출, 비동기 AMQP |
+| AI API | Python 3.12, FastAPI, Pydantic, uv, LangGraph, LangChain, OpenAI API(기본 `gpt-6-luna`)·Claude API(`LLM_PROVIDER`로 교체), aio-pika, httpx | 에이전트 그래프·도구 호출, 비동기 AMQP |
 | 모델 추론 | PyTorch, Hugging Face Transformers (M2 klue/roberta, M1) | 기획서 5장 모델 |
 | 리포트 | SQLAlchemy, Alembic, Jinja2, Playwright(Chromium PDF) | HTML 템플릿 → PDF·Markdown |
-| 저장소 | PostgreSQL(RDS), S3(로컬 MinIO), Redis(core 알림 중계·학생 기기 페어링·기기 등록 rate limit) | 서비스별 DB 분리, 판정 근거·기준표 JSONB, 파일 분리. Redis는 SSE 중계와 짧은 TTL 값만 담당하고 조회 캐시로 쓰지 않음, 분석 대화 사용량은 PostgreSQL 결제 사용 이력 집계로 이전(#210 결정, #225 구현) |
+| 저장소 | PostgreSQL(RDS), S3(로컬 MinIO), Redis(core 알림 중계·학생 기기 페어링·기기 등록 rate limit·학부모 ID 가입 IP별 횟수 제한) | 서비스별 DB 분리, 판정 근거·기준표 JSONB, 파일 분리. Redis는 SSE 중계와 짧은 TTL 값만 담당하고 조회 캐시로 쓰지 않음, 분석 대화 사용량은 PostgreSQL 결제 사용 이력 집계로 이전(#210 결정, #225 구현) |
 | 메시징 | RabbitMQ (quorum queue, topic/direct exchange, DLX) | 작업 큐 + fan-out 동시 지원, Kafka 대비 운영 부담 작음 |
 | 결제 | 토스페이먼츠 테스트 환경 (결제위젯·자동결제·웹훅) | 실결제 미연동 |
 | 컨테이너·오케스트레이션 | Docker, Compose, kind, Kubernetes, Helm | 로컬 → 운영 동일 chart |
@@ -939,7 +962,7 @@ SKN34-FINAL-3TEAM/
 ---
 
 ## 7. 확인 필요 가정
-- 학습·일괄 생성(RunPod GPU, sLLM 설명)은 클러스터 밖에서 수행, 결과(가중치·주간 설명 문장)만 S3로 반입
+- 학습(M2·M1·설명 sLLM)은 클러스터 밖 RunPod GPU에서 AI Hub 데이터만으로 수행하고 결과(가중치)만 S3로 반입. 설명 문장 생성은 클러스터 안 CPU sLLM 서버에서 수행해 학생 글이 AWS 밖으로 나가지 않음 (2026-11-10 결정, #473)
 - AWS 계정 EKS 생성 권한·예산 한도: 권한 없으면 EC2 1대 + k3s로 대체 (HA·Cluster Autoscaler·Pod Identity 제외)
 
 ### 7.1 구현 결정 요약

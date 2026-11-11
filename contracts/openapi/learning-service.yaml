@@ -706,6 +706,12 @@ paths:
         - name: size
           in: query
           schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+        - name: includeModelScores
+          in: query
+          description: >-
+            true면 answers[].feedback.judgment에 modelScores를 넣음(report 설명 대상 선정용, FN-RPT-09).
+            report 주기 작업(X-User-Role SYSTEM)만 허용하고 그 밖 역할은 403 (#478, api-spec 4.1.1)
+          schema: {type: boolean, default: false}
       responses:
         '200':
           description: 조회 결과
@@ -2749,6 +2755,13 @@ components:
       properties:
         judgmentId: {type: string, format: uuid, description: 신고(targetType JUDGMENT)·정정 대상 ID (#146)}
         corrected: {type: boolean, description: 정정이 있으면 true. elements는 원판정 그대로라 report 요소 지표에서 제외 (FN-RPT-05)}
+        modelScores:
+          description: >-
+            기록 목록에 includeModelScores=true(SYSTEM)로 요청했을 때만 있는 키. judgment.model_scores 저장값 그대로
+            ({m2, m1, skipped}, ai-service 판정 응답 modelScores), M2를 부르지 않았으면 null. 그 밖의 응답에는 키가 없음 (#478)
+          oneOf:
+            - {type: object}
+            - {type: 'null'}
         result:
           type: string
           enum: [CORRECT, PARTIAL, RETHINK, HELD]

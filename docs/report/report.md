@@ -417,3 +417,56 @@ local kind에 develop `b1562c2b` 이미지를 올려 core → RabbitMQ → repor
 - **미확인**: 실제 00:00 정각 실행(cron 표현식). 코드 테스트로만 검증
 - **운영 주의**: 약관·처리방침을 개정하면 기존 학부모의 리포트 생성·알림이 재동의 전까지 멈춘다. 시연 계정은 개정 뒤 다시 로그인해 동의해야 한다
 - **kind 주의**: platform-data 차트를 새 큐 정의 전에 적용했으면 RabbitMQ에 `core.model.loading.reported`가 없어 core가 큐 선언 오류를 반복한다. platform-data를 다시 적용하면 `rabbitmq-init` Job이 새 정의를 넣는다
+
+
+## #479 주간 대표 답변 설명 연동 (2026-11-10)
+
+### 구현·API 계약
+
+- develop `ab82541d`에서 시작하고, 작업 중 #489·#490·#491이 병합된 최신 `ecc6b71d`까지 통합했다. 벡터 검색 실험과 분리된 팀 저장소에서 작업한다. 설계 기준은 #473·병합된 #482, 공급 계약은 PR #489(learning)·#491(ai)와 #479 담당자 댓글이다. 병합 시 API 명세와 core 보고서 두 곳의 충돌은 양쪽 내용을 보존해 해결했다.
+- 주간·프리미엄·원문 공개 대상만 설명 단계를 실행한다. 기존 수치 집계·요약 경로 뒤에 선택적 단계를 조합해, 점수 조회나 설명 실패가 기존 리포트 생성을 실패시키지 않는다. 일일·무료는 추가 조회/AI 호출 없이 `explanations=null`이다.
+- SYSTEM 범위의 기록 목록에 `includeModelScores=true`를 붙인다. `modelScores.m2`가 있는 기간 내 답변을 최근 순으로 정렬하고 생각 유형 중복 없이 최대 3개를 고른다. 정정된 판정·잘못된 점수·지원 범위 밖 학년·빈 글·이용 불가 근거는 설명에서 제외한다. 기존 기록 조회 경로와 계산 입력에는 점수 opt-in을 붙이지 않는다.
+- 기존 core 학생 프로필에 `grade`를 추가했다. 현재 저장 학년을 사용하며 서술 초5~6·논술 초4~6만 호출한다. 구버전 core에서 학년이 없으면 임의로 정하지 않고 설명만 미포함 처리한다. core DB 구조·생성 이벤트 필드는 변경하지 않는다.
+- `POST /internal/report-explanations` 요청은 `{grade,inputType,text,scores}`이고 점수는 `modelScores.m2.scores` 그대로다. 닉네임·학생/시도/답변 ID를 글에서도 가리고 식별 필드는 요청 본문에 넣지 않는다. 예외 로그에 응답·원문·점수·예외 본문을 남기지 않는다.
+- 활성 설명의 숫자·점수·등급·금지 표현과 인용을 다시 검사한다. 인용은 같은 답변/버전의 원문과 요청 글 양쪽의 부분 문자열이어야 한다. PR #491의 `quote=null`은 정상으로 받고 인용 영역만 생략한다. 이름이나 식별정보를 임의로 복원하지 않는다.
+- 상세 `explanations={state,items[]}`. 하나 이상 검증되면 INCLUDED, 대상은 있지만 미활성/실패/검사 탈락이면 NOT_INCLUDED, 대상 없음/원문 비공개이면 NO_TARGET. 일부 성공 시 검증된 항목만 INCLUDED로 유지한다. 기존 `narrative.modelExplanation`은 계속 null이다.
+- 상태는 기존 `weekly_report.verification.explanationState`에 저장한다. 본문은 `report_item.EXPLANATION`, 근거는 기존 `report_item_evidence`에 저장한다. Alembic `20261110_08`은 항목 CHECK만 확장하며 새 테이블·컬럼은 없다. 설명 데이터가 있으면 downgrade로 삭제하지 않고 거부한다. 기존 데이터 삭제·정정 영향 조회 체계를 재사용한다.
+- 상세·HTML·PDF·Markdown에 같은 상태와 검증 설명을 표시한다. 무료 다운로드 변형에는 설명을 넣지 않는다. core도 현재 이용권/공개 상태를 다시 검사해 설명을 가린다. 이전 리포트의 설명 상태 누락은 null로 제공한다.
+- web은 null 인용을 숨기고 본문을 표시한다. 기존 요약 검증 실패와 독립된 검증 설명이 표시되도록 한다. report는 검증하지 않은 EXPLANATION 항목을 상세에서 제외한다.
+
+### 대기 상한·배포 순서
+
+- CPU 실측 전 기준안: `REPORT_EXPLANATION_TIMEOUT_SECONDS=130`(ai 125초 마감보다 길게), `REPORT_EXPLANATION_BUDGET_SECONDS=400`(기록/근거 조회 포함 전체 단계). 최대 3건 순차, 재시도 없음. 전체 상한 초과도 이미 검증한 항목은 보존한다. 실제 모델 실측 뒤 조정하며 품질 승인을 뜻하지 않는다.
+- PR #490(core 사용량) → #491(ai API) 순서. #489(learning 점수 공급)와 이번 변경을 함께 연동한다. 공급자가 구버전이면 설명 미포함/대상 없음으로 기존 리포트는 유지된다. 프론트 #488은 기준 develop에 이미 병합됐다.
+- report-api의 로컬 migration revision을 `20261110-08`로 갱신한다. 실제 배포는 같은 소스의 마이그레이션 이미지와 앱 이미지로 수행해야 한다. 모델 학습 #475·서버 #476·모델 활성화·운영 배포는 이번 작업으로 완료 처리하지 않는다.
+
+### 검증 결과와 완료 범위
+
+- report 전체 pytest 418개 통과 후 미포함 PDF/HTML/Markdown 렌더링 2개를 추가하고 설명 테스트 31개를 다시 실행해 모두 통과했다. 포함·인용 null·대상 없음·미활성·오류·호출/전체 시간 초과·부분 성공·무료/비공개/일일 제외·실제 PostgreSQL 저장/조회·COMPLETED 유지 검증을 포함한다. Ruff check·format(113파일) 통과.
+- 최신 develop 통합 후 core 프로필·열람·메시지·설명 모델 등록 테스트 49개 및 bootJar, learning 기록 컨트롤러·서비스 테스트 33개 및 bootJar, ai 설명 테스트 20개 통과.
+- 실제 ai 라우터를 합성 LLM으로 실행한 정상 인용·null 인용·미활성·422·503 응답 5종을 report 클라이언트와 생성기에 전달했다. report/core 상세 스키마와 대조하고 PDF·HTML·Markdown 생성까지 통과했다. 실제 모델 추론·클러스터 통신을 확인한 것은 아니다.
+- 프론트 build·타입 검사·lint 및 설명 카드 Playwright 10개 통과. 기존 요약 검증 결과가 false여도 별도로 검증된 설명은 표시하며, null 인용은 영역만 생략한다.
+- 계약/스크립트 unittest 214개 실행, 실패 없음(기존 조건부 1개 제외). core 실제 생성/생명주기 이벤트와 일일·주간 상세 출력의 계약 검사도 통과했다.
+- `check_db_migrations.py`를 일회용 PostgreSQL에서 실행했다. 내부 `verify_db_schema.py`가 core 59표/514컬럼·learning 28표/240컬럼·report 8표/66컬럼, 부정 제약 115건·CHECK 98종·인덱스 49개를 검증했다. 6개 DB 역할 격리, 재적용 무변경, report downgrade/upgrade 왕복 통과. 팀 DB나 운영 데이터에는 적용하지 않았다.
+- #479의 생성·저장·렌더링 및 로컬 테스트 완료 조건은 충족했다. 확인 항목인 대기 상한은 담당자 댓글의 ai 마감 125초보다 긴 임시값(호출 130초·전체 400초)으로 구현했다. 실제 CPU 모델의 품질·지연 측정과 운영 배포는 별도이며, 해당 확인 체크박스를 실측 완료로 처리하지 않는다.
+
+## #500 학부모 리포트 목록 전체 반환 (2026-11-11)
+
+### 원인
+
+- core `ReportQueryService.list`가 report `GET /internal/reports`에 `studentId`·`status`·`periodType`만 넘기고 `page`·`size`를 넘기지 않았다. report 기본값(`page=0`, `size=20`)이 적용되어 최신 20건만 돌아왔다.
+- 공개 `ReportList`는 `{items}`만이라 web은 다음 페이지를 요청할 수단이 없었다. 일일(주 7건)+주간 기준 약 2.5주 뒤부터 학부모 목록에서 과거 리포트가 사라지고, 수업 화면 기간별 리포트 찾기(`apiGateway.ts`)도 오래된 기간을 `REPORT_NOT_GENERATED`로 보여 줬다.
+
+### 결정
+
+- 공개 API에 페이지를 추가하지 않고 core가 report 목록을 `page=0`부터 `size=100`(report 최대)으로 짧은 페이지가 나올 때까지 조회해 합친 `{items}`를 반환한다(사용자 승인).
+- 근거: 공개 API·openapi·web·MSW를 바꾸지 않고 학부모 목록과 수업 화면 두 증상을 함께 고친다. 자녀 1명당 1년 약 420건(일일 365+주간 52)이라 한 번에 돌려줘도 응답 크기가 작다.
+- 각 페이지에 기존 계약 검사(`items` 배열·자녀 일치·식별·기간 종류)를 그대로 적용하고, 한 페이지라도 위반하면 전체 502 `REPORT_CONTRACT_INVALID`다. 50페이지(5000건)를 넘으면 반복을 멈추고 같은 502로 거부한다. report 페이지 봉투 필드(`page`·`size`·`totalElements`)는 응답에서 뺀다.
+- report는 기간별 최신 revision을 고른 뒤 `(period_from desc, period_type)`으로 정렬하며 이 조합이 유일하므로 offset 페이지 사이 중복·누락이 없다.
+- 계층 정리: `ConversationService`가 report 기능의 `ReportJobRepository`를 직접 쓰던 것을 `ReportQueryService.job(reportId)`(report HTTP 호출 없음)로 바꿨다. 422 `CONVERSATION_REPORT_INVALID`와 report 미호출 동작은 같다.
+
+### 검증
+
+- core 전체 테스트 621개 통과(기존 건너뜀 3개). `ReportHttpTest`에 report 2페이지(100+20건) 합침·쿼리(`page=0&size=100`, `page=1&size=100`)·봉투 필드 제거·둘째 페이지 계약 위반 502 검사를 추가했다. `ReportConversationIntegrationTest`의 422·report 미호출 검사도 통과.
+- 계약/스크립트 unittest 225개 통과(기존 조건부 1개 건너뜀). `test_runtime_config.py`에 `AUTH_NEW_ACCOUNT_DEMO`를 추가해 compose 전달·기본값·덮어쓰기를 확인한다.
+- web lint·단위 테스트 291개 통과(문구만 변경). report-service와 공개 OpenAPI는 바꾸지 않았다.

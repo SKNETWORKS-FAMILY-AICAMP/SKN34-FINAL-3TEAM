@@ -14,22 +14,28 @@ export type PointEventType =
   | 'COMMUNITY_POSTED'
   | 'REACTION_GIVEN'
   | 'THEME_COMPLETED'
+  | 'THEME_ON_TIME'
+  | 'THEME_FINISHED'
   | 'UNLOCK'
 export const POINT_EVENT_LABELS: Record<PointEventType, string> = {
   MISSION_COMPLETED: '미션 학습 완료',
   REVIEW_VIEWED: '되돌아보기',
   COMMUNITY_POSTED: '내 풀이 공유',
   REACTION_GIVEN: '친구 생각에 반응',
-  THEME_COMPLETED: '주간 테마 완주',
+  THEME_COMPLETED: '주간 테마 개근',
+  THEME_ON_TIME: '테마 문제 당일 풀이',
+  THEME_FINISHED: '주간 테마 완주',
   UNLOCK: '꾸미기 해금',
 }
-/** 초기 적립값(P21). 실제 값은 서버 `reward_rule` 데이터라 화면은 안내에만 쓴다. */
+/** 적립값(P21, #485 2026-11-10 개정). 실제 값은 서버 `reward_rule` 데이터라 화면은 안내에만 쓴다. */
 export const POINT_RULES: { type: Exclude<PointEventType, 'UNLOCK'>; amount: number; note: string }[] = [
   { type: 'MISSION_COMPLETED', amount: 10, note: '미션마다 처음 한 번' },
   { type: 'REVIEW_VIEWED', amount: 10, note: '토·일 되돌아보기, 한 주에 한 번' },
   { type: 'COMMUNITY_POSTED', amount: 5, note: '마무리한 풀이가 공유될 때' },
   { type: 'REACTION_GIVEN', amount: 1, note: '하루 5번까지' },
-  { type: 'THEME_COMPLETED', amount: 30, note: '월~금 문제를 그날 끝내고 되돌아보기까지' },
+  { type: 'THEME_ON_TIME', amount: 5, note: '테마 문제를 공개된 그날 끝내면' },
+  { type: 'THEME_COMPLETED', amount: 30, note: '월~금 문제를 모두 그날 끝내면' },
+  { type: 'THEME_FINISHED', amount: 10, note: '토요일까지 테마 문제 5개를 끝내면' },
 ]
 export interface PointEvent {
   eventType: PointEventType

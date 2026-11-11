@@ -113,7 +113,7 @@ class RecordService(
      * 지난 기간을 조회해도 그 뒤 답변이 섞이지 않음 (FN-RPT-02). 시도 상태·마무리 공개는 지금 상태
      */
     @Transactional(readOnly = true)
-    fun attempts(studentId: UUID, period: Period, status: AttemptStatus?, page: Int, size: Int): RecordPage {
+    fun attempts(studentId: UUID, period: Period, status: AttemptStatus?, page: Int, size: Int, includeModelScores: Boolean = false): RecordPage {
         val attempts = repository.findEligible(studentId, period).filter { status == null || it.status == status }
         val slice = attempts.drop(page * size).take(size).map { it.attemptId }
         val hints = repository.findHintUsages(slice)
@@ -129,7 +129,21 @@ class RecordService(
                 reflectedAt,
             )
         }
-        return RecordPage(QueryState.of(attempts.size), items, page, size, attempts.size)
+        return RecordPage(QueryState.of(attempts.size), if (includeModelScores) withModelScores(items) else items, page, size, attempts.size)
+    }
+
+    /**
+     * report 집계 입력에만 판정 모델 점수를 붙임 (api-spec 4.1.1, FN-RPT-09 설명 대상 선정, #478).
+     * 판정이 끝난 답변만, M2를 부르지 않았으면 "null". 점수 계산·표시에는 쓰지 않음
+     */
+    private fun withModelScores(items: List<RecordAttempt>): List<RecordAttempt> {
+        val scores = repository.findModelScores(items.flatMap { item -> item.detail.answers.map { it.answerId } })
+        return items.map { item ->
+            val feedbacks = item.detail.feedbacks.mapValues { (answerId, feedback) ->
+                feedback.judgment?.let { feedback.copy(judgment = it.copy(modelScores = scores[answerId] ?: "null")) } ?: feedback
+            }
+            item.copy(detail = item.detail.copy(feedbacks = feedbacks))
+        }
     }
 
     /** P24: 주말 재시도·추가 문제도 완료일 기준. 기존 P08 집계와 분리 (#391). */

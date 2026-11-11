@@ -64,6 +64,21 @@ class PaymentUsageClientTest {
         } finally { UserContextHolder.clear();server.stop() }
     }
 
+    @Test fun `core calls use the short core read timeout, not the 35 second ai timeout`() {
+        val server=WireMockServer(options().dynamicPort());server.start()
+        val student=UUID.randomUUID()
+        val props=AppProperties(AppProperties.Internal("synthetic-internal",Duration.ofSeconds(1),Duration.ofSeconds(5),Duration.ofMillis(300)),mapOf("core" to server.baseUrl()))
+        val client=PaymentUsageClient(InternalRestClientFactory(props,RestClient.builder()),jacksonObjectMapper())
+        UserContextHolder.set(UserContext(null,"STUDENT",setOf(student.toString()),null))
+        try {
+            server.stubFor(post(urlEqualTo("/internal/payment-usage/reservations"))
+                .willReturn(okJson("""{"reservationId":null,"premium":false}""").withFixedDelay(2000)))
+            val started=System.nanoTime()
+            assertEquals("PAYMENT_USAGE_UNAVAILABLE",assertFailsWith<BusinessException> { client.begin(student,UUID.randomUUID()) }.code)
+            assertTrue(Duration.ofNanos(System.nanoTime()-started)<Duration.ofMillis(1500),"core-read-timeout(300ms) 대신 read-timeout(5s)을 기다림")
+        } finally { UserContextHolder.clear();server.stop() }
+    }
+
     private fun problem(code: String)=aResponse().withStatus(409).withHeader("Content-Type","application/problem+json")
         .withBody("""{"type":"https://sagomungchi.dev/errors/x","title":"현재 거래 상태와 조건을 확인해 주세요.","status":409,"code":"$code"}""")
 }

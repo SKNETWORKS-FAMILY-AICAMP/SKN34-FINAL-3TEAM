@@ -24,7 +24,7 @@ class AiOpenApiTests(unittest.TestCase):
                 if full.startswith("/internal/"):
                     actual.add((method, full.removeprefix("/internal")))
         documented = {(method, path) for path, methods in self.spec["paths"].items() for method in methods}
-        self.assertEqual(len(actual), 7)
+        self.assertEqual(len(actual), 8)
         self.assertEqual(actual, documented)
 
     def test_internal_token_and_problem_responses(self):
@@ -53,6 +53,18 @@ class AiOpenApiTests(unittest.TestCase):
         documented = {value for option in schema["anyOf"] for value in option.get("enum", [])}
         self.assertEqual(documented, expected)
         self.assertEqual(expected, {"SCORING_UNAVAILABLE", "SCORING_REJECTED"})
+
+    def test_versions_prompts_match_prompt_scopes(self):
+        # 실제 /versions 응답 키는 PROMPT_SCOPES 키와 같다 (#502)
+        source = (ROOT / "backend/ai-service/app/prompt_versions/models.py").read_text(encoding="utf-8")
+        scopes = re.search(r"PROMPT_SCOPES = \{([^}]*)\}", source)[1]
+        expected = set(re.findall(r'"([A-Za-z]+)":', scopes))
+        schema = self.spec["paths"]["/versions"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        prompts = schema["properties"]["prompts"]
+        self.assertFalse(prompts["additionalProperties"])
+        self.assertEqual(set(prompts["required"]), expected)
+        self.assertEqual(set(prompts["properties"]), expected)
+        self.assertEqual(len(expected), 7)
 
 
 if __name__ == "__main__":

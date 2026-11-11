@@ -623,6 +623,8 @@ MODEL_REGISTER 감사 detail에 source·jsonSha256·manifestSha256·modifiedFiel
 
 ### 11.3 파일을 읽고 요청을 만드는 순서
 
+S3 산출물을 먼저 준비할 때는 [전체 SHA-256 업로드 절차](model-artifact-upload.md)를 따른다. 기존 manifest와 로컬 원본 대조 → 단일 PutObject → S3 전체 SHA-256 확인 → 사전 검사 순서다. manifest의 파일 해시를 등록 감사에 저장하는 것과 S3가 전체 체크섬을 보유하는 것은 별개다. 기존 모델의 체크섬 보완 때문에 같은 모델을 다시 등록하거나 활성화하지 않는다.
+
 1. registration_1103.json 원본 바이트를 읽어 SHA-256을 계산한다. `file.arrayBuffer()` → `crypto.subtle.digest('SHA-256', buffer)` → 소문자 16진수 64자리. BOM·공백·개행을 포함한 원본 파일 그대로이며 파싱/재직렬화한 JSON으로 계산하지 않는다.
 2. 파싱한 requests[]를 모델별 카드로 만든다. 최상위 설명(title/version/date/author/주의/<버킷>)은 POST 본문에 보내지 않는다. requests[]의 승인 관련 값이나 알 수 없는 필드는 가져오기 단계에서 거부한다.
 3. 선택한 manifest도 원본 바이트로 해시한다. name/version/scope를 대조하고 해당 모델 files[]만 고른다. manifest가 없으면 manifestSha256 생략, artifactFiles는 []다.
@@ -817,6 +819,8 @@ scoring의 읽기 전용 파일·메타데이터 검사, core 관리자 동기 �
 
 따라서 기존 AWS 객체가 multipart COMPOSITE이거나 SHA-256을 저장하지 않았다면 사전 검사가 실패할 수 있다. 객체를 임의로 다시 업로드하거나 운영 모델을 교체하지 않았다. 업로드 방식 보완이 필요하면 #212 담당자와 해당 객체 상태를 확인한 뒤 별도로 반영한다.
 
+2026-11-10 #493에서 단일 PutObject에 전체 원본 SHA-256을 명시하는 방식으로 정했다([12.9](#129-전체-sha-256-업로드-방식-결정-493)). 이후 사용자 추가 지시로 기존 두 모델 12개 객체의 실제 S3 보완과 CloudShell 자격 증명의 사전 검사 PASS를 확인했다([12.10](#1210-aws-s3-보완과-cloudshell-사전-검사-493)). 실제 Pod 검증은 남아 있다.
+
 저장소의 `scoring-s3-read` IAM 정책은 s3:ListBucket·s3:GetObject를 허용한다. 사용 API는 HeadObject·GetObject이며 새 쓰기 권한은 필요 없다. JSON GET은 If-Match로 고정하여 GetObjectVersion 권한을 요구하지 않는다. SSE-KMS 객체의 checksum 조회에는 추가 KMS 권한이 필요할 수 있다. #212 문서의 Pod Identity·S3 Gateway 경로를 검토했고, 2026-11-09 AWS 콘솔 CloudShell에서 실제 IAM 연결·정책과 S3 객체 HEAD를 조회했다. 배포·정책 수정은 하지 않았다. NetworkPolicy YAML/JSON 검증은 실제 클러스터 통신 검증과 구분한다.
 
 ### 12.4 로컬 재현
@@ -883,6 +887,43 @@ AWS 실제 역할 연결·정책 및 객체 HEAD 확인까지 완료했다. 다�
 
 남은 조치: #212 업로드 담당자와 전체 파일 SHA-256을 S3에 제공하는 업로드 방식을 맞추고, 서비스 재가동 시 실제 scoring Pod의 읽기·통신을 확인한다. 체크섬 검사 완화, 가중치 다운로드, 운영 객체 재업로드, 정책 변경, 서비스 재가동은 수행하지 않았다.
 
+위 기록은 11/09 읽기 전용 확인 결과로 보존한다. 이후 업로드 방식 결정과 11/10 실제 S3 보완 결과는 [#493 업로드 안내](model-artifact-upload.md)에 별도로 기록했다.
+
+### 12.8 kind 확인 (2026-11-10)
+
+local kind에 배포된 이미지(develop `ecc6b71d`)로 core → scoring → MinIO 경로를 다시 확인했다. 확인용 모델은 학습하지 않은 작은 BERT 형태(출력 9개, 회귀)다. scoring Pod 안에서 만들어 실제 로더로 불러지는 것까지 확인했다. 이 모델을 `sagomungchi-local-models`에 `ChecksumSHA256`을 붙여 올렸다.
+
+| 경우 | scoring 내부 API | 관리자 화면(registration·manifest JSON 가져오기 → 사전 검사) |
+| --- | --- | --- |
+| 정상 | PASS `FILES_AND_METADATA_VERIFIED` | 파일·형식 확인 완료 |
+| 해시 불일치(manifest의 가중치 sha256만 변경) | FAIL, `model.safetensors` `HASH_MISMATCH` | SHA-256 불일치 |
+| 파일 누락(가중치 없는 경로) | FAIL, `model.safetensors` `FILE_MISSING` | 파일 없음 |
+
+- 감사 `MODEL_PREFLIGHT`는 SUCCESS 1·FAILURE 2였고, 자동 등록된 MODEL 행은 0이다. 확인 후 MinIO 객체를 지웠다
+- AWS는 실행하지 않았다. 남은 S3 SHA-256 업로드 방식 결정과 실제 Pod 확인은 #493으로 분리했다
+
+### 12.9 전체 SHA-256 업로드 방식 결정 (#493)
+
+2026-11-10 develop `fd119af1` 기준. 모델별 6개 파일을 `aws s3api put-object`로 단일 업로드하고, 원본 전체 SHA-256의 Base64 값을 명시한다. 현재 약 443MB 가중치는 단일 PUT 한도 안에 있다. multipart SHA-256은 COMPOSITE라 기존 사전 검사 계약을 만족하지 못한다.
+
+- [업로드 안내](model-artifact-upload.md): 공식 근거, 신규 객체 명령, 기존 서술 3.0·논술 3.1의 동일 원본 보완 방침, 메타데이터 보존·동시 변경 방지·복구 및 실제 Pod 확인 절차
+- [로컬 준비 도구](../../scripts/prepare_model_upload.py): 기존 manifest 기반 사전 검사 요청과 로컬 6개 파일을 크기·SHA-256으로 대조하고 업로드 계획만 생성. AWS 접속·업로드·등록·활성화 기능 없음
+- 기존 두 모델은 아래 12.10에서 실제 S3 보완을 완료했다. EKS·RDS 재가동과 권한 변경은 하지 않았고 실제 scoring Pod 검증은 **미완료**다.
+- ETag·사용자 metadata·COMPOSITE 거부와 작은 JSON만 GET하는 계약을 유지한다. 서비스 코드·API·DB·IAM·배포 설정은 변경하지 않는다. 로컬 검증 결과는 [업로드 안내 6절](model-artifact-upload.md#6-로컬-검증)에 따로 기록한다.
+
+### 12.10 AWS S3 보완과 CloudShell 사전 검사 (#493)
+
+2026-11-10 사용자 추가 지시에 따라 서버를 켜지 않고 기존 모델 버킷의 12개 객체를 보완했다. 로컬 원본 및 S3 기존 버전 본문을 담당자 manifest와 대조한 뒤 동일 원본·속성으로 단일 PutObject를 실행했다. 전체 SHA-256·크기 일치와 이전 버전 보존을 확인했다. #212의 IAM·버킷·네트워크 설정은 변경하지 않았다. 별도 담당자 연락을 수행한 것으로 기록하지 않는다.
+
+| 검증 대상 | 결과 |
+| --- | --- |
+| 기존 서술 3.0·논술 3.1, 총 12개 객체 | 모두 FULL_OBJECT SHA-256과 manifest 일치, 원본 바이트·속성 유지, 이전 버전 보존 |
+| CloudShell 운영자 자격 증명으로 실제 S3 대상 검사 | 두 모델 모두 PASS / FILES_AND_METADATA_VERIFIED, 모델별 HEAD 6회·작은 JSON GET 3회 |
+| EKS·RDS | 작업 전후 두 nodegroup desiredSize=0, RDS stopped. 재가동 없음 |
+| 실제 scoring Pod Identity 및 관리자 → core → scoring | 미실행. 재가동 후 별도 검증 필요 |
+
+검사는 `83500294`의 원본 사전 검사 소스 8개를 해시 대조한 뒤 CloudShell Python 3.13에서 직접 실행했다. 배포 이미지/Python 3.12 Pod의 HTTP·권한·네트워크 검증으로 간주하지 않는다. 자세한 실행 범위·복구 정보는 [업로드 안내 7절](model-artifact-upload.md#7-실제-aws-s3-보완검사-결과-2026-11-10), [객체별 증빙](evidence/issue493-s3-sha256-20261110.json)에 둔다.
+
 ## 13. Pod별 모델 로딩 보고 (#370)
 
 ### 13.1 요약 (2026-11-09)
@@ -941,8 +982,8 @@ V37 migration → RabbitMQ definitions(새 core 큐·재시도·DLQ 바인딩) �
 - [x] Pod 축소·재시작 시 오래된 기록 처리 규칙
 
 #### 완료 조건
-- [ ] 레플리카 2개 이상인 local 환경에서 한 Pod 로딩 실패 시 화면에 구분되어 보임을 확인
-  - 두 scoring 프로세스와 실제 RabbitMQ·core·DB·HTTP 응답, 해당 응답을 사용한 브라우저 표시를 검증했다. 실제 Kubernetes Pod 2개와 브라우저 직접 연결은 미검증이므로 원문 조건은 미체크한다.
+- [x] 레플리카 2개 이상인 local 환경에서 한 Pod 로딩 실패 시 화면에 구분되어 보임을 확인
+  - 11/09에는 두 scoring 프로세스와 그 응답을 쓴 브라우저 표시까지만 검증했다. 11/10 kind의 실제 Pod 2개와 관리자 화면 직접 연결로 확인했다(13.9).
 - [x] 관련 테스트 통과
 
 #### 유지할 원칙
@@ -963,3 +1004,57 @@ develop `ef18b2ac`(#391·#369 포함)을 병합했다. OpenAPI의 #368 사전 �
 기존 감사 정책을 유지하도록 `events.topic / model.loading.reported → core.event.audit` 명시적 바인딩을 추가했다. EventAuditConsumer는 기존처럼 이벤트 봉투 메타데이터만 기록하며 모델 상태 본문은 event_log에 저장하지 않는다. 큐 조회 테스트는 버전 관리되는 definitions의 전체 큐·DLQ 수와 실제 브로커 조회 결과를 비교하도록 바꿨다. 기존 allowlist 일치·누락 큐 오류 검증은 유지한다.
 
 수정 후 core 전체 test·bootJar 통과: 585개 중 실패 0개, 조건부 제외 3개. 저장소 계약 회귀 203개 통과.
+
+### 13.9 kind 실제 Pod 2개 확인 (2026-11-10)
+
+1. 12.8의 확인용 모델을 관리자 화면에서 등록·활성화했다. 범위는 실제 채점과 겹치지 않는 `kindcheck/issue-370`이다. 기존 scoring Pod가 `LOADED`를 보고했다
+2. MinIO의 `model.safetensors`를 같은 크기의 깨진 파일로 바꾸고 scoring을 레플리카 2로 늘렸다. 새 Pod는 `SafetensorError`로 실패하고 Ready가 되지 않았다
+3. `GET /api/v1/admin/model-loading` 응답은 `observedPods 2, loadedPods 1, failedPods [새 Pod]`였다. 관리자 화면 로딩 확인 단계에는 다음이 보였다
+   - "최근 보고 Pod 2개 중 로딩 완료 1개"
+   - 실패 Pod·오류 유형·"기존 모델 없음"
+   - 120초 넘은 이전 Pod의 "보고 만료"
+
+되돌림: 레플리카 1개로 복구했다. MinIO 객체를 지웠다. 확인용 `model_version` 행은 활성화 해제 API가 없어 DB에서 지웠고, 감사 이력은 남겼다. 확인 중 생긴 로딩 보고 행을 지웠다. scoring을 다시 시작해 빈 모델 목록 보고를 확인했다(Deployment에 `restartedAt` annotation 추가).
+
+## 14. 리포트 설명 API (#477, 2026-11-10)
+
+에픽 #473(설명 sLLM)의 ai 몫. report가 대표 답변마다 부르면 M2 항목 점수와 학생 글로 학부모용 설명을 만든다(api-spec 4.2.3, FN-RPT-09). 모델 학습(#475)·서버 배포(#476) 전이라 지금은 설명 모델이 활성이 아니어서 항상 `{active:false}`를 돌려준다.
+
+### API
+
+| 경로 | 요청 | 응답 |
+|---|---|---|
+| `POST /internal/report-explanations` | `{grade, inputType, text, scores}` | `200 {active:true, explanation:{text, quote\|null}, versions:{model, prompt}}` · `200 {active:false}` · `400`·`422 AI_EXPLANATION_REJECTED`·`503 AI_UNAVAILABLE` |
+| `GET /internal/versions` | — | `prompts.reportExplanation` 추가(`report-explanation@1`) |
+
+### 결정과 근거
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 설명 항목 | 가장 높은 항목(잘한 점) 1개 + 가장 낮은 항목(함께 이야기해 볼 점) 1개, 동점은 항목 표 순서, 모두 같으면 1개. 서술 총점 `hol` 제외 | 학습 데이터(71818) 이유 문장이 항목당 1문장이라 모델도 항목 하나씩 생성. 9항목 전부는 CPU에서 답변당 9회라 길고 느림(사용자 결정 11/10) |
+| 인용 구절 | 설명과 낱말 앞 두 글자가 2개 이상 겹치는 학생 글 문장 중 가장 많이 겹치는 것, 없으면 null | 이유 문장에 근거 구절 표시가 없어 모델에게 구절까지 만들게 하면 틀리기 쉬움. 원문 문장을 그대로 잘라 써 부분 문자열 조건을 항상 만족(사용자 결정 11/10) |
+| 활성 확인 | 레지스트리 `MODEL` `report-explanation`, scope `explanation/grade-{학년}/{narrative\|essay}`(#480). `ActiveVersions`가 PROMPT와 함께 이 MODEL도 보관(`prompt_versions/models.tracked`) | 기존 활성 목록·`model.version.activated` 수신을 그대로 써 새 구독 없이 승인 범위를 지킴. M2 scope와 같은 모양 |
+| 클라이언트 | `create_explanation_llm` → `OpenAICompatibleLlm` 두 번째 인스턴스(`EXPLANATION_BASE_URL`·`EXPLANATION_MODEL`), 재시도 0, `app.state.explanation_llm` | 다른 호출의 `LLM_PROVIDER`는 그대로(닫힌 #341의 리포트 전용 제공자와 달리 OpenAI 호환 주소만 바꿈). 주소가 없으면 `UnconfiguredLlm`이라 설명만 503 |
+| 생성 방식 | `LlmClient.stream`의 평문을 모음(JSON 구조화 출력 안 씀), `callType = REPORT_EXPLANATION` | LoRA가 이유 문장 평문으로 학습되므로 JSON 강제는 학습 형식과 다름. 사용량 기록은 기존 스트림 경로 그대로 |
+| 후처리·검사 | 숫자나 금지어(분석 대화 `verification.FORBIDDEN`: 레벨·등급·점수·사고력·IQ·상위·하위·뒤처·영재)가 있는 문장을 버리고 항목당 앞 2문장. 남는 문장이 없으면 422 | 전문가 문장에 "4점" 같은 점수 표현이 섞임(`ml/m2/scripts/build_feedback.py` `SCORE_PAT`). 문장 안에서 숫자만 지우면 문장이 깨지므로 문장째 버림. 생성형 AI로 말투를 바꾸지 않음(NFR-DAT-03) |
+| 학부모 문장 틀 | `잘한 점: …` / `함께 이야기해 볼 점: …` 줄 | 점수 대신 칭찬과 대화 거리로 전달(D2 규칙 후처리) |
+| 시간 | 항목 1회 60초, 요청 마감 125초, 최대 256토큰. 모두 설정값 | CPU 양자화 모델 실측(#475) 전 임시값. 주 1회 배치라 P12 예외 |
+
+### #475 학습 입력 형식 (고정)
+
+```
+system: 너는 초등학생 글의 한 평가 항목에 대해 전문가가 쓴 이유 문장을 쓴다. (app/report_explanation/prompts.py SYSTEM)
+user:   [학년] 초{학년} [항목] {항목 이름} [점수] {점수}
+        {학생 글}
+target: 그 항목의 전문가 이유 문장(71818 score.personal.*.feedback 원문)
+```
+
+- 항목 이름: 서술 과제 수행·명료성·구체성·적절성·연결성·통일성·어휘·어법(`task_1`·`content_1~3`·`organization_1~2`·`expression_1~2`), 논술 구성·내용·표현(`org`·`cont`·`exp`). 문구를 바꾸면 `PROMPT_VERSION`을 올리고 #475 학습 쌍도 같이 바꾼다
+- 확인 필요(#475): 논술 M2는 545 데이터의 `{org,cont,exp}` 0~3점인데 이유 문장은 71819에만 있어 항목 체계가 다르다. 논술 설명 학습 쌍을 만들 때 항목 대응을 정해야 한다
+
+### 검증
+
+- `tests/report_explanation/`(20개): 항목 선택(동점·전부 같음·총점 제외), 후처리(숫자·금지어 문장 버림, 2문장), 문장 틀, 인용(겹침 최대·없으면 null), 활성·미등록·다른 학년·다른 입력 유형·같은 이름 PROMPT는 `{active:false}`이고 sLLM 미호출, 422·503, 사용량 `REPORT_EXPLANATION`, revision 순서·snapshot 전 이벤트 보관, 라우터 camelCase·`{active:false}` 단독·400·401·주소 미설정 503
+- `tests/test_versions.py`: `/internal/versions`에 `reportExplanation`
+- `scripts/tests/test_ai_openapi.py`: 라우터 8개와 OpenAPI 경로 일치
+- 남은 확인: 실제 sLLM 서버(#476)와 학습 모델(#475)로 생성 시간·후처리 통과율 측정, report 연동(#479)

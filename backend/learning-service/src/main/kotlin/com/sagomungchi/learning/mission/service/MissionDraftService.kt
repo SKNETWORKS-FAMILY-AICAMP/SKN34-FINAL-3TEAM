@@ -2,7 +2,7 @@ package com.sagomungchi.learning.mission.service
 
 import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning._common.exception.BusinessException
-import com.sagomungchi.learning.judgment.client.AiCallException
+import com.sagomungchi.learning._common.client.AiCallException
 import com.sagomungchi.learning.judgment.domain.Judgment
 import com.sagomungchi.learning.mission.client.AiDraftLevel
 import com.sagomungchi.learning.mission.client.AiDraftRequest

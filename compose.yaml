@@ -19,7 +19,9 @@ x-python-healthcheck: &python-healthcheck
 services:
   # ---------- 인프라 ----------
   postgres:
-    image: postgres:17.11-alpine
+    image: pgvector/pgvector:0.8.7-pg17-trixie
+    # #466: pgvector 포함 PostgreSQL 17.11(Debian). 기존 alpine(musl) 볼륨은 text 정렬이 달라 한 번 REINDEX DATABASE 필요
+    # (image는 postgres: 바로 다음 줄에 둔다. scripts/check_db_migrations.py가 이 위치로 읽음)
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?.env 설정 필요}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?.env 설정 필요}
@@ -167,6 +169,7 @@ services:
       TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY: ${TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY:-}
       PAYMENT_BILLING_ENCRYPTION_KEY: ${PAYMENT_BILLING_ENCRYPTION_KEY:-}
       APP_GUARDIAN_TRANSFER_ENABLED: "${APP_GUARDIAN_TRANSFER_ENABLED:-false}"
+      AUTH_NEW_ACCOUNT_DEMO: "${AUTH_NEW_ACCOUNT_DEMO:-false}"
       # 관리자 큐 현황(GET /admin/queues): RabbitMQ 관리 API, 로컬은 기존 브로커 계정 재사용
       ADMIN_RABBIT_MANAGEMENT_URL: http://rabbitmq:15672
       ADMIN_RABBIT_MANAGEMENT_USERNAME: ${RABBITMQ_USER}
@@ -211,7 +214,7 @@ services:
       LEARNING_URL: http://learning-service:8081
       SCORING_URL: http://scoring-service:8001
       CORE_URL: http://core-service:8080
-      # #69: false여도 M2 점수는 기록한다. 시간·경계 기본값은 ai Settings와 동일.
+      # #69·#305: 교차 확인 false면 scoring을 부르지 않는다. 시간·경계 기본값은 ai Settings와 동일.
       JUDGE_DEADLINE: "${JUDGE_DEADLINE:-33.0}"
       SCORING_TIMEOUT: "${SCORING_TIMEOUT:-10.0}"
       SCORING_RESERVE: "${SCORING_RESERVE:-3.0}"
@@ -220,7 +223,7 @@ services:
       M2_NARRATIVE_HIGH: "${M2_NARRATIVE_HIGH:-4.0}"
       M2_ESSAY_LOW: "${M2_ESSAY_LOW:-1.0}"
       M2_ESSAY_HIGH: "${M2_ESSAY_HIGH:-2.0}"
-      M1_CHECK_ENABLED: "${M1_CHECK_ENABLED:-false}"
+      M1_CHECK_ENABLED: "${M1_CHECK_ENABLED:-false}" # M1 미지원(#501): learning이 answerKey·solution을 보내지 않아 켜도 M1을 부르지 않음
       M1_MIN_CONFIDENCE: "${M1_MIN_CONFIDENCE:-0.8}"
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -231,6 +234,8 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-6-luna}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_JSON_MODE: ${OPENAI_JSON_MODE:-json_schema}
+      EXPLANATION_BASE_URL: ${EXPLANATION_BASE_URL:-}
+      EXPLANATION_MODEL: ${EXPLANATION_MODEL:-report-explanation}
     ports:
       - "${AI_HOST_PORT:-8000}:8000"
     healthcheck:
@@ -271,6 +276,8 @@ services:
       S3_BUCKET: ${REPORT_S3_BUCKET:-sagomungchi-local-reports}
       S3_REGION: ${REPORT_S3_REGION:-ap-northeast-2}
       REPORT_THEME_SUMMARY_ENABLED: ${REPORT_THEME_SUMMARY_ENABLED:-true}
+      REPORT_EXPLANATION_TIMEOUT_SECONDS: ${REPORT_EXPLANATION_TIMEOUT_SECONDS:-130}
+      REPORT_EXPLANATION_BUDGET_SECONDS: ${REPORT_EXPLANATION_BUDGET_SECONDS:-400}
       REPORT_DOWNLOAD_TTL_SECONDS: ${REPORT_DOWNLOAD_TTL_SECONDS:-300}
     ports:
       - "${REPORT_HOST_PORT:-8002}:8002"
