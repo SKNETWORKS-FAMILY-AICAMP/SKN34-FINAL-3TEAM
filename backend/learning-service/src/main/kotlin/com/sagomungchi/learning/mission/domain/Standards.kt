@@ -1,7 +1,7 @@
 package com.sagomungchi.learning.mission.domain
 
-/** 미션이 처음 만들어진 방식 (ERD 4.1 mission.source, #353). 버전마다 바뀌지 않음 */
-enum class MissionSource { MANUAL, LLM_DRAFT }
+/** 미션이 처음 만들어진 방식 (ERD 4.1 mission.source, #353). 버전마다 바뀌지 않음. LLM_THEME은 테마 초안 채택 (#438) */
+enum class MissionSource { MANUAL, LLM_DRAFT, LLM_THEME }
 
 /** 표준 요소 한 줄 (FN 1.5 #262): 코드·유형·이름·공통 설명 */
 data class StandardElement(val code: String, val thinkingType: ThinkingType, val label: String, val description: String)
