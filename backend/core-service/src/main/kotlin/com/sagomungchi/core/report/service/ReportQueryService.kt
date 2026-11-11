@@ -1,6 +1,8 @@
 package com.sagomungchi.core.report.service
 
 import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.node.ArrayNode
+import com.fasterxml.jackson.databind.node.JsonNodeFactory
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core.report.client.ReportClient
@@ -21,7 +23,10 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
     private val client: ReportClient, private val views: ReportViewService,private val entitlements: ReportEntitlementService,
     private val learningContext: com.sagomungchi.core.guardianship.service.StudentLearningContextService,
     private val corrections: com.sagomungchi.core.support.service.CorrectionNoticeService) {
-    /** [periodType] null lists daily and weekly together (P24 FN-RPT-15). */
+    /**
+     * [periodType] null lists daily and weekly together (P24 FN-RPT-15). report-api pages its list (default 20) but the
+     * public `{items}` has no page, so every page is gathered until a short one (#500).
+     */
     fun list(childId: UUID, status: ReportJobStatus?, periodType: ReportPeriodType? = null): JsonNode {
         // report-api lists generated reports only (RUNNING·COMPLETED·FAILED); a QUEUED job has no report yet.
         if (status == ReportJobStatus.QUEUED) invalidRequest()
@@ -29,16 +34,28 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
         val query = mutableMapOf("studentId" to childId.toString())
         status?.let { query["status"] = it.name }
         periodType?.let { query["periodType"] = it.name }
-        return client.get(childId, "/internal/reports", query).also { body -> contract {
-            require(body["items"]?.isArray == true)
-            body["items"].forEach { item ->
-                require(UUID.fromString(item["childId"]?.textValue()) == childId)
-                val type = validateIdentity(item)
-                require(periodType == null || type == periodType)
-                (item as ObjectNode).put("periodType", type.name)
+        val result = JsonNodeFactory.instance.objectNode()
+        val items = result.putArray("items")
+        for (page in 0 until LIST_MAX_PAGES) {
+            val body = client.get(childId, "/internal/reports", query + mapOf("page" to "$page", "size" to "$LIST_PAGE_SIZE"))
+            contract {
+                require(body["items"]?.isArray == true)
+                body["items"].forEach { item ->
+                    require(UUID.fromString(item["childId"]?.textValue()) == childId)
+                    val type = validateIdentity(item)
+                    require(periodType == null || type == periodType)
+                    (item as ObjectNode).put("periodType", type.name)
+                }
             }
-        } }
+            items.addAll(body["items"] as ArrayNode)
+            if (body["items"].size() < LIST_PAGE_SIZE) return result
+        }
+        // Over 5000 generated reports for one child is not a real history; refuse rather than loop without end.
+        contractInvalid()
     }
+
+    /** The report's job without calling report-api (#500): lets another feature check ownership and period by service. */
+    fun job(reportId: UUID): ReportJob? = repository.byReport(reportId)
 
     fun detail(reportId: UUID, revision: Int?): JsonNode {
         if (revision != null && revision < 1) invalidRequest()
@@ -51,6 +68,7 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
         validateDetail(job, body, revision)
         val allowed = views.recordWithSharing(UUID.fromString(body["reportId"].textValue()), job.studentId, parent, requestedNarrative)
         if (!allowed.narrativeEnabled) (body as ObjectNode).apply {
+            if (has("explanations")) putNull("explanations")
             putNull("narrative")
             putNull("eveningQuestion")
             path("thinkingTypes").forEach { (it as? ObjectNode)?.remove("summary") }
@@ -110,6 +128,7 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
 
     /** Whitelist numerical summaries; do not forward arbitrary derived text from old reports. */
     private fun withoutOriginals(body: ObjectNode) {
+        if (body.has("explanations")) body.putNull("explanations")
         body.putNull("narrative"); body.putNull("eveningQuestion")
         body.putArray("quotes")
         body.path("thinkingTypes").forEach { node ->
@@ -157,9 +176,15 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
         if (revision != null) require(body["revision"].intValue() == revision)
     }
     private fun contract(validate: () -> Unit) {
-        try { validate() } catch (_: Exception) {
-            throw BusinessException(HttpStatus.BAD_GATEWAY, "REPORT_CONTRACT_INVALID", "리포트 서비스 응답 형식을 확인할 수 없습니다.")
-        }
+        try { validate() } catch (_: Exception) { contractInvalid() }
     }
+    private fun contractInvalid(): Nothing =
+        throw BusinessException(HttpStatus.BAD_GATEWAY, "REPORT_CONTRACT_INVALID", "리포트 서비스 응답 형식을 확인할 수 없습니다.")
     private fun invalidRequest(): Nothing = throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "리포트 조회 조건을 확인해 주세요.")
+
+    private companion object {
+        /** report-api's maximum page size (api-spec 1.1). */
+        const val LIST_PAGE_SIZE = 100
+        const val LIST_MAX_PAGES = 50
+    }
 }

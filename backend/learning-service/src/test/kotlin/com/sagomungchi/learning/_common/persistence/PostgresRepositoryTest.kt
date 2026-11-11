@@ -24,7 +24,7 @@ abstract class PostgresRepositoryTest {
         const val STANDARDS_SEED = "db/seed/achievement_standards.sql"
 
         private val postgres by lazy {
-            PostgreSQLContainer<Nothing>("postgres:17.11-alpine").apply {
+            PostgreSQLContainer<Nothing>(TEST_POSTGRES_IMAGE).apply {
                 start()
                 Flyway.configure().dataSource(jdbcUrl, username, password)
                     .locations("classpath:db/migration").load().migrate()

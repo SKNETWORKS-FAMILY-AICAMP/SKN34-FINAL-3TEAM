@@ -78,15 +78,15 @@ test('PIN 로그인 어댑터: 다른 자녀 응답은 계약 오류로 거부�
   assert.equal(withAuth().get('Authorization'), null)
 })
 
-test('PIN 설정은 X-Reauth-Token과 PUT으로 보낸다', async (t) => {
+test('PIN 설정은 보호자 인증 요청으로 보내고 추가 재인증 헤더는 보내지 않는다', async (t) => {
   const seen: RequestInit[] = []
   t.mock.method(globalThis, 'fetch', async (_p: string, init: RequestInit) => {
     seen.push(init)
     return new Response(null, { status: 204 })
   })
-  await studentDeviceApi.setPin('c1', '4831', 'reauth-1')
+  await studentDeviceApi.setPin('c1', '4831')
   assert.equal(seen[0].method, 'PUT')
-  assert.equal(new Headers(seen[0].headers).get('X-Reauth-Token'), 'reauth-1')
+  assert.equal(new Headers(seen[0].headers).get('X-Reauth-Token'), null)
 })
 
 

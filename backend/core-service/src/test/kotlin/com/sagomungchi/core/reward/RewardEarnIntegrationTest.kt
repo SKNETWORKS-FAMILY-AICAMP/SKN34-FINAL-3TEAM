@@ -39,7 +39,7 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.test.*
 
 /**
- * #389 적립 연결: 학습 완료(돌아보기 저장)·공유·반응·되돌아보기 열람·완주가 core 프록시 응답 뒤 적립되고,
+ * #389·#485 적립 연결: 학습 완료(돌아보기 저장)·공유·반응·되돌아보기 열람·개근·당일 풀이·주간 완주가 core 프록시 응답 뒤 적립되고,
  * 같은 사건은 1회, 반응은 하루 상한, 적립 실패는 원래 응답을 바꾸지 않으며 재요청·주간 테마 조회 때 보충되는지 본다.
  * 실제 인증·DB를 쓰고 learning만 api-spec 4.1 내부 계약의 가짜 서버로 둔다.
  */
@@ -189,6 +189,47 @@ class RewardEarnIntegrationTest : IntegrationTestSupport() {
         themeBody = "{\"days\":\"broken\"}"
         assertEquals("broken", call("GET", "/students/me/weekly-theme", studentToken)["days"].asText())
         assertEquals(2, ledger().size)
+    }
+
+    @Test fun `daily solver earns same day solves perfect attendance and weekly finish once from the learning flags`() {
+        // #485 매일 푼 학생: 완료 50 + 당일 풀이 25 + 개근 30 + 주간 완주 10 = 115. 개근은 learning 칸 `completed`만 보낸다(#506)
+        val days = listOf("MON", "TUE", "WED", "THU", "FRI").map {
+            mapOf("day" to it, "missionId" to UUID.randomUUID(), "attemptStatus" to "COMPLETED", "completedOnDay" to true) }
+        themeBody = json.writeValueAsString(mapOf("weekStart" to "2026-11-09", "days" to days, "completed" to true, "finished" to true))
+        assertEquals(json.readTree(themeBody), call("GET", "/students/me/weekly-theme", studentToken))
+        call("GET", "/students/me/weekly-theme", studentToken)  // 같은 사건 키라 다시 조회해도 한 번
+        assertEquals(days.map { "2026-11-09:${it["day"]}" }.toSet(), ledger(RewardEvent.THEME_ON_TIME).map { it.second }.toSet())
+        assertEquals(listOf("THEME_COMPLETED" to "2026-11-09"), ledger(RewardEvent.THEME_COMPLETED))
+        assertEquals(listOf("THEME_FINISHED" to "2026-11-09"), ledger(RewardEvent.THEME_FINISHED))
+        assertEquals(5 + 5 + 1 + 1, ledger().size); assertEquals(115, balance())
+    }
+
+    @Test fun `crammed or sunday finished weeks earn only what learning flags and missing flags skip the new events`() {
+        val days = listOf("MON", "TUE", "WED", "THU", "FRI").map { mapOf("day" to it, "missionId" to UUID.randomUUID(), "attemptStatus" to "COMPLETED") }
+        // learning #484 칸이 아직 없으면 학습 완료만 적립하고 응답은 그대로
+        themeBody = json.writeValueAsString(mapOf("weekStart" to "2026-11-09", "days" to days, "completed" to false))
+        assertEquals(json.readTree(themeBody), call("GET", "/students/me/weekly-theme", studentToken))
+        assertEquals(setOf("MISSION_COMPLETED"), ledger().map { it.first }.toSet()); assertEquals(50, balance())
+        // 계약에 없는 칸 이름(perfectAttendance)으로는 개근을 적립하지 않는다(#506: 개근 칸은 completed)
+        themeBody = json.writeValueAsString(mapOf("weekStart" to "2026-11-09", "days" to days, "completed" to false, "perfectAttendance" to true))
+        call("GET", "/students/me/weekly-theme", studentToken)
+        assertEquals(5, ledger().size)
+        // 일요일 보충으로 끝낸 주: learning이 finished=false로 주므로 주간 완주 없음. 잘못된 값(문자열·주말 요일)도 건너뜀
+        themeBody = json.writeValueAsString(mapOf("weekStart" to "2026-11-09", "completed" to "true", "finished" to false,
+            "days" to days.map { it + ("completedOnDay" to "true") } + mapOf("day" to "SAT", "missionId" to UUID.randomUUID(), "attemptStatus" to "NOT_STARTED", "completedOnDay" to true)))
+        call("GET", "/students/me/weekly-theme", studentToken)
+        assertEquals(5, ledger().size)
+        // weekStart가 월요일이 아니면 새 사건은 건너뛴다
+        themeBody = json.writeValueAsString(mapOf("weekStart" to "2026-11-10", "days" to days, "completed" to true, "finished" to true))
+        call("GET", "/students/me/weekly-theme", studentToken)
+        assertEquals(5, ledger().size)
+        // 금·토에 몰아 푼 학생: 완료 50 + 주간 완주 10 = 60(당일 풀이·개근 없음)
+        themeBody = json.writeValueAsString(mapOf("weekStart" to "2026-11-09", "days" to days.map { it + ("completedOnDay" to false) },
+            "completed" to false, "finished" to true))
+        call("GET", "/students/me/weekly-theme", studentToken)
+        assertEquals(listOf("THEME_FINISHED" to "2026-11-09"), ledger(RewardEvent.THEME_FINISHED))
+        assertTrue(ledger(RewardEvent.THEME_ON_TIME).isEmpty()); assertTrue(ledger(RewardEvent.THEME_COMPLETED).isEmpty())
+        assertEquals(60, balance())
     }
 
     @Test fun `review view earns once a week and the completion bonus only when the week is completed`() {

@@ -19,6 +19,7 @@ test.describe.serial('학생 미션 → 학부모 대시보드·리포트', () =
     await page.getByRole('button', { name: '이 자녀로 학습 시작' }).click()
     await page.waitForURL('**/student/home**')
 
+    // 미션 고르기는 추가 문제(EXTRA)라 무료는 프리미엄 전용이지만, E2E 무료 상품은 시드에서 명시적으로 켰다(seed/core.sql, #506)
     await page.getByRole('navigation', { name: '학생 메뉴' }).getByRole('button', { name: '미션 고르기' }).click()
     await page.locator('article', { has: page.getByRole('heading', { name: mission }) })
       .getByRole('button', { name: '미션 열기' }).click()
@@ -59,7 +60,7 @@ test.describe.serial('학생 미션 → 학부모 대시보드·리포트', () =
     await expect(page.getByRole('button', { name: `${mission} 원문 보기` })).toBeVisible()
 
     const [from, to] = queueWeeklyReport(nickname).split(' ')
-    await page.getByRole('link', { name: '리포트', exact: true }).click()
+    await page.getByRole('link', { name: '리포트·AI 챗봇', exact: true }).click()
     await page.waitForURL('**/parent/report**')
     const card = page.locator('article', { has: page.getByRole('heading', { name: `${from} ~ ${to}` }) })
     await expect(async () => {

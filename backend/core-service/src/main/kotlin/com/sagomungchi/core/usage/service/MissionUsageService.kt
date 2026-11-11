@@ -11,7 +11,7 @@ import java.time.OffsetDateTime
 import java.util.UUID
 
 /**
- * #387 무료 하루 미션 한도(P13) 집계·한도 확인(architecture 1.1.1, #210 PostgreSQL 결정). 어떤 시도를 셀지·한도 수는
+ * #387 무료 하루 미션 한도(P13) 집계·한도 확인. #485부터 테마 문제(`THEME_DAY`)는 세지 않고, 무료 상품에서 추가 문제(`EXTRA`)를 켠 경우의 무료 `EXTRA`만 센다(architecture 1.1.1, #210 PostgreSQL 결정). 어떤 시도를 셀지·한도 수는
  * 무료·프리미엄을 판단하는 `ProductEntitlementService`가 정해 넘기고, 여기서는 `mission_daily_usage` 건수만 다룬다.
  */
 @Service
@@ -23,8 +23,8 @@ class MissionUsageService(private val repository: MissionDailyUsageRepository) {
     fun requireAvailable(student: UUID, date: LocalDate, limit: Int, mission: UUID, resumable: (UUID) -> Boolean) {
         if(repository.count(student,date)<limit) return
         if(repository.latestAttempt(student,mission)?.let(resumable)==true) return
-        throw BusinessException(HttpStatus.TOO_MANY_REQUESTS,"USAGE_LIMIT_REACHED","오늘 풀 수 있는 미션을 모두 시작했습니다.",
-            "무료 이용권은 하루 미션 ${limit}개(당일 테마 문제·추가 문제 합산)까지 새로 시작할 수 있습니다. 내일 0시(KST)에 초기화되며, 진행 중인 시도 이어하기와 주말 되돌아보기 다시 풀기는 할 수 있습니다.")
+        throw BusinessException(HttpStatus.TOO_MANY_REQUESTS,"USAGE_LIMIT_REACHED","오늘 풀 수 있는 추가 문제를 모두 시작했습니다.",
+            "무료 이용권은 하루 추가 문제 ${limit}개까지 새로 시작할 수 있습니다. 내일 0시(KST)에 초기화되며, 진행 중인 시도 이어하기와 공개된 테마 문제 풀기는 할 수 있습니다.")
     }
 
     /** learning 신규 시도(201) 뒤 1회. 같은 시도 ID는 다시 세지 않는다 */

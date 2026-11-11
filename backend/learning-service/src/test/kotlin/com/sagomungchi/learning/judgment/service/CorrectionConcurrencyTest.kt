@@ -2,6 +2,7 @@ package com.sagomungchi.learning.judgment.service
 
 import com.sagomungchi.learning.TestRows
 import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning._common.persistence.TEST_POSTGRES_IMAGE
 import com.sagomungchi.learning._common.security.UserContext
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.answer.domain.AnswerContent
@@ -139,7 +140,7 @@ class CorrectionConcurrencyTest {
 
     companion object {
         private val postgres by lazy {
-            PostgreSQLContainer<Nothing>("postgres:17.11-alpine").apply {
+            PostgreSQLContainer<Nothing>(TEST_POSTGRES_IMAGE).apply {
                 start()
                 Flyway.configure().dataSource(jdbcUrl, username, password)
                     .locations("classpath:db/migration").load().migrate()

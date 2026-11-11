@@ -13,7 +13,9 @@ scheduling:
 
 postgres:
   enabled: false
-  image: "postgres:17.11-alpine"
+  # #466: pgvector included, PostgreSQL 17.11 (Debian). Runs as uid 70 like the old alpine image.
+  # An existing alpine (musl) data directory needs REINDEX DATABASE once: glibc sorts text differently.
+  image: "pgvector/pgvector:0.8.7-pg17-trixie"
   usernameKey: "POSTGRES_USER"
   passwordKey: "POSTGRES_PASSWORD"
   # rds-bootstrap.sql env prefix -> role name (#230). Each password comes from existingSecret
@@ -78,6 +80,9 @@ minio:
   persistence:
     size: "2Gi"
   buckets: {}
+  # 초기화 Job이 없을 때만 만드는 자리 객체(#509). [{bucket, key}], bucket은 buckets 값 중 하나.
+  # 내용은 고정 문구이며, 파일 내용을 읽지 않는 local 대역(예: sllm-server의 llm-stub)용이다.
+  placeholderObjects: []
   resources: {}
   initialization:
     image: "curlimages/curl:8.17.0"

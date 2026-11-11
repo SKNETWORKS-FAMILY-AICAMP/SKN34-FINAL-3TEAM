@@ -15,10 +15,10 @@ from app.generation.models import (
     ReportStatus,
     WeeklyReport,
 )
-from app.generation.ports import ReportEventCodec, ReportGenerator
+from app.generation.ports import OutboxWriter, ReportEventCodec, ReportGenerator
 from app.generation.repository import ReportRepository
 from app.generation.unconfigured import GeneratorNotConfigured
-from app.outbox.repository import OutboxRepository
+from app.outbox import service as outbox_service
 from app.security import current_user_context
 
 
@@ -31,14 +31,14 @@ class GenerationService:
         codec: ReportEventCodec,
         *,
         repository: ReportRepository | None = None,
-        outbox: OutboxRepository | None = None,
+        outbox: OutboxWriter | None = None,
     ) -> None:
         self._factory = factory
         self._locks = locks
         self._generator = generator
         self._codec = codec
         self._repository = repository or ReportRepository()
-        self._outbox = outbox or OutboxRepository()
+        self._outbox = outbox
 
     async def generate(self, command: GenerateReport) -> None:
         # Preserve the lease even if cancellation arrives while acquisition is in a DB thread.
@@ -78,7 +78,10 @@ class GenerationService:
         envelope = self._codec.encode(event, context.traceparent if context else None)
         if envelope.type != event.event_type or envelope.subject != str(event.report.student_id):
             raise ValueError("Encoded event type/subject does not match report")
-        self._outbox.add(session, envelope)
+        if self._outbox is None:
+            outbox_service.add_event(session, envelope)
+        else:
+            self._outbox.add(session, envelope)
 
     def _start(self, command: GenerateReport) -> WeeklyReport | None:
         with transaction(self._factory) as session:

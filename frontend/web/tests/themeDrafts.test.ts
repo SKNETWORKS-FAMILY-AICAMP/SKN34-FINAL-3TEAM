@@ -4,17 +4,18 @@ import { adminRetentionApi as api } from '../src/data/admin/retentionApi.ts'
 import { ApiError, setAccessToken } from '../src/data/apiClient.ts'
 import { themeDraftOf, themeDraftRequestErrors } from '../src/domain/admin/themeDrafts.ts'
 import type { ThemeDraftRequest } from '../src/domain/admin/themeDrafts.ts'
+import type { ThemeGrade } from '../src/domain/admin/retention.ts'
 
 const draftId = '00000000-0000-4000-8000-000000000441'
 const themeId = '00000000-0000-4000-8000-000000000395'
-const input: ThemeDraftRequest = { gradeBand: 'G3_4', weekStart: '2026-11-16' }
+const input: ThemeDraftRequest = { grade: 'G3', weekStart: '2026-11-16' }
 
 test('#441: core가 보장한 식별자·상태만 소비하고 미확정 상세 필드를 해석하지 않는다', () => {
   assert.deepEqual(themeDraftOf({ draftId, status: 'GENERATING', draft: { invented: true }, source: 'UNKNOWN', createdAt: 0 }), { draftId, status: 'GENERATING' })
   for (const value of [null, [], {}, { draftId, status: 'SUCCESS' }, { draftId: '', status: 'READY' }]) assert.throws(() => themeDraftOf(value), /응답을 확인/)
 })
 
-test('#441: 요청은 월요일·학년군과 기존 성취기준/입력 방식만 검사한다', () => {
+test('#441: 요청은 월요일·학년과 기존 성취기준/입력 방식만 검사한다', () => {
   assert.deepEqual(themeDraftRequestErrors(input), [])
   assert.ok(themeDraftRequestErrors({ ...input, weekStart: '2026-11-17' }).length)
   assert.ok(themeDraftRequestErrors({ ...input, weekStart: '2026-02-30' }).length)
@@ -23,6 +24,35 @@ test('#441: 요청은 월요일·학년군과 기존 성취기준/입력 방식�
   assert.ok(themeDraftRequestErrors({ ...input, missions: [mission, mission] }).length)
   assert.ok(themeDraftRequestErrors({ ...input, missions: [{ ...mission, standardCodes: ['[4과03-01]'] }] }).length)
   assert.ok(themeDraftRequestErrors({ ...input, missions: [{ ...mission, inputType: 'ESSAY' }] }).length)
+})
+
+test('#441: 네 학년을 받고 초3·초4에서만 논술을 차단한다', () => {
+  for (const grade of ['G3', 'G4', 'G5', 'G6'] as const) {
+    assert.deepEqual(themeDraftRequestErrors({ ...input, grade }), [])
+    const errors = themeDraftRequestErrors({ ...input, grade, missions: [{ thinkingType: 'EVALUATE', standardCodes: ['4국03-01'], inputType: 'ESSAY' }] })
+    assert.equal(errors.includes('초3~4에는 논술을 지정할 수 없습니다.'), grade === 'G3' || grade === 'G4')
+  }
+  for (const grade of ['G3_4', 'G5_6', 'G2', 'G7', '3', 3, undefined]) {
+    assert.ok(themeDraftRequestErrors({ ...input, grade: grade as ThemeGrade }).includes('학년을 선택해 주세요.'))
+  }
+})
+
+test('#441: 초안 요청·기존 테마 저장·목록 필터는 grade만 전송한다', async t => {
+  const calls: { url: URL; init: RequestInit }[] = []
+  t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
+    calls.push({ url: new URL(url, 'http://localhost'), init })
+    return Response.json(init.method === 'POST' && url.endsWith('/theme-drafts') ? { draftId, status: 'GENERATING' } : { items: [] })
+  })
+  for (const grade of ['G3', 'G4', 'G5', 'G6'] as const) {
+    await api.requestThemeDraft({ ...input, grade })
+    assert.deepEqual(JSON.parse(String(calls.at(-1)!.init.body)), { grade, weekStart: input.weekStart })
+    await api.themes({ grade, status: 'DRAFT' })
+    assert.equal(calls.at(-1)!.url.searchParams.get('grade'), grade)
+    assert.equal(calls.at(-1)!.url.searchParams.has('gradeBand'), false)
+    const body = { grade, weekStart: input.weekStart, title: '학년별 테마', intro: '도입', days: [] }
+    await api.saveTheme(themeId, body)
+    assert.deepEqual(JSON.parse(String(calls.at(-1)!.init.body)), body)
+  }
 })
 
 // 아래 고정 HTTP 응답은 중계 경로·입출력 검사다. learning 생성 작업/상태 전이 목업을 구현하지 않는다.

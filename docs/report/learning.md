@@ -53,7 +53,7 @@
 | 초안 저장 잠금 | 시도 행을 잠그고(`lockOwned`) 열림 확인 후 저장 | 마무리·돌아보기와 같은 순서로 직렬화([점검 기록 B14](audit.md)) |
 | 쓰기 막는 때 | `COMPLETED` 시도의 초안·생각 열기는 409 `ATTEMPT_CLOSED`. 마무리 뒤 막는 것은 답변 제출 | state-diagram 3.2, P04 |
 | 생각 열기 | 열지 않은 질문을 `seq` 순으로, 다 열면 마지막 질문 반복, 열 때마다 `hint_usage` 기록. 질문 없는 미션 404 | 도움 이용 집계 근거(P08) |
-| 하루 미션 한도 | learning은 확인하지 않음 | core 책임. #210 결정으로 Redis가 아닌 PostgreSQL(`mission_daily_usage`, 무료 하루 1개, #387 구현) |
+| 하루 미션 한도 | learning은 확인하지 않음 | core 책임. #210 결정으로 Redis가 아닌 PostgreSQL(`mission_daily_usage`, 무료 하루 1개 #387 구현 → 2026-11-10 개정 core #485부터 무료 테마 문제는 한도 없음·무료 `EXTRA` 재활성 때만). 무료 테마 문제 주 5개는 learning 누적 공개 규칙(#484) |
 
 ## 3. 답변 제출 (#24)
 
@@ -766,7 +766,7 @@ learning `Element`에 `code`·`goodThought`를 더했을 때 응답을 받는 �
 
 ## 24. 주간 테마·요일 문제·되돌아보기 (#385)
 
-2026-11-06 결정 P23(학년군별 주 1테마, 월~금 하루 1문제, 그 요일에만 신규 시도, 토·일 되돌아보기·다시 풀기)의 learning 몫. core 프록시·무료 하루 1개 한도는 #387(develop 머지), 웹은 #393·#395(MSW 목업 기준)이다.
+2026-11-06 결정 P23(학년군별 주 1테마, 월~금 하루 1문제, 그 요일에만 신규 시도, 토·일 되돌아보기·다시 풀기)의 learning 몫. core 프록시·무료 하루 1개 한도는 #387(develop 머지), 웹은 #393·#395(MSW 목업 기준)이다. 이 절은 #385 구현 기록이다. 2026-11-10 개정(#483: 누적 공개·토요일까지 풀기·일요일 닫힘(프리미엄 이용)·즉시 엔딩·당일 풀이/개근/주간 완주)은 learning #484, core 몫은 #485(무료 테마 문제 한도 없음, [core 보고서 18절](core-gateway.md#18-무료-테마-주-5문제추가-문제-프리미엄-전용프리미엄-일요일당일-풀이주간-완주-포인트-485-2026-11-10))에서 다룬다.
 
 | 위치 | 내용 |
 |---|---|
@@ -797,7 +797,7 @@ learning `Element`에 `code`·`goodThought`를 더했을 때 응답을 받는 �
 | `THEME_DAY` | 이번 주 테마의 오늘(KST, learning 시계) 요일 문제만. 아니면 409 `THEME_DAY_CLOSED`. 이미 끝낸 문제도 그날이면 새 시도 | api-spec 2.11 |
 | `THEME_REVIEW` | 토·일 + 이번 주 테마 문제 + 이번 주 그 문제 `THEME_DAY` 시도를 마무리(`finished_at`)했을 때만. 아니면 409 `THEME_REVIEW_NOT_ALLOWED` | "그 주 마무리한 문제만" |
 | 요일 상태·되돌아보기 | `state`는 오늘 `OPEN`, 지난 요일 `CLOSED`, 안 온 요일 `LOCKED`(토·일은 모두 `CLOSED`). `attemptStatus`는 이번 주 그 요일 문제 최근 `THEME_DAY` 시도. `review.missions[].completed` = 마무리함, `missed` = 지난 요일인데 마무리 안 함 | 웹 `readWeeklyTheme`(`NOT_STARTED`·`IN_PROGRESS`·`COMPLETED`) |
-| 완주 | 월~금 다섯 문제 각각 그 요일(KST) 안에 학습 완료(`completed_at`) | P23 "각 당일 학습 완료". 금요일 문제를 토요일 01시에 끝내면 완주 아님 |
+| 완주(2026-11-10 개정으로 이름 "개근", 칸 `completed` 유지) | 월~금 다섯 문제 각각 그 요일(KST) 안에 학습 완료(`completed_at`) | P23 "각 당일 학습 완료". 금요일 문제를 토요일 01시에 끝내면 개근 아님. 개정 뒤 "주간 완주"(`finished`)는 토요일까지 다섯 문제 학습 완료로 따로 판정(learning #484) |
 | 열람 기록 | `theme_review_view` 학생·주당 1행, 다시 보내도 200(`firstViewThisWeek`만 false). 평일은 409 `THEME_REVIEW_NOT_ALLOWED` | #389 포인트 멱등 근거 |
 | 주간 요약 | 역할 `PARENT`·`STUDENT`·`SYSTEM` + 대상 학생 scope(기록 조회와 같음). 테마는 그 주 학생 테마 시도에서 정함(주 중간에 바뀌면 마지막 요일 문제 시도의 테마), 테마 시도가 없으면 `NO_RECORD` | report는 학년군을 모름. 학생이 실제로 푼 테마를 요약 |
 | 날짜 기준 | 조회·열람은 core가 넘긴 `date`, 시작 검사는 learning `Clock`(KST) | core 시작 프록시는 날짜를 넘기지 않음(#387). 둘 다 KST 오늘이라 같은 날 |
@@ -828,7 +828,7 @@ learning `Element`에 `code`·`goodThought`를 더했을 때 응답을 받는 �
 
 ### 후속 (이슈 댓글 초안, 직접 달지 않음)
 
-- #389(원장·`RewardService.earn`, 사건 연결 모두 core 구현): 되돌아보기·완주 적립 근거는 `POST …/review-views` 응답 `{firstViewThisWeek, completed}`. 완주는 월~금 다섯 문제 각 요일(KST) 안 학습 완료. 학습 완료 적립 보충은 주간 테마 응답 `days[].attemptStatus`(`COMPLETED`)로 하므로 시도 `context`가 없어도 된다(추가 문제는 보충 대상 아님)
+- #389(원장·`RewardService.earn`, 사건 연결 모두 core 구현): 되돌아보기·완주(개정 뒤 개근) 적립 근거는 `POST …/review-views` 응답 `{firstViewThisWeek, completed}`. 완주(개근)는 월~금 다섯 문제 각 요일(KST) 안 학습 완료. core #485부터 주간 테마 조회 응답 `completed`로도 개근을 보충하고(#506), 당일 풀이(`days[].completedOnDay`)·주간 완주(`finished`)는 learning #484가 조회 응답에 칸을 더하면 적립된다. 학습 완료 적립 보충은 주간 테마 응답 `days[].attemptStatus`(`COMPLETED`)로 하므로 시도 `context`가 없어도 된다(추가 문제는 보충 대상 아님)
 - #391: 주간 요약 `GET /internal/students/{id}/weekly-theme/summary?weekStart`(SYSTEM + 학생 scope) 응답은 learning OpenAPI `WeeklyThemeSummary`. 일일 리포트 `problems[].context`는 learning 기록 응답에 `context`를 더하는 후속 작업이 필요
 - #395: 관리자 응답에 `version`·`publishedVersion`·`reviewRequested`, 게시 검사 `errors[].code` 6종이 더 있음. 별도 검토(승인) 화면 없이 "검토 요청 → 게시"
 - #393: 학생 응답 `days[].title`·`review.missions[].title` 채움, 학년군에 게시 테마가 없으면 404
@@ -939,3 +939,202 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 
 - 토·일 되돌아보기 열람: 주말에만 열려 확인하지 않음
 - 주간 테마 완주(월~금 다섯 문제): 하루 1개라 한 번에 확인할 수 없음
+
+## 27. report 집계 입력 판정 모델 점수 (#478, 2026-11-10)
+
+리포트 설명(FN-RPT-09, 에픽 #473)의 대상 선정·설명 요청 입력으로 report가 답변별 M2 점수를 받는다. 저장값(`judgment.model_scores`)을 그대로 넘기며 새 컬럼은 없다.
+
+### 결정
+
+| 항목 | 결정 | 이유 |
+|---|---|---|
+| 노출 조건 | `GET /internal/records/students/{id}/attempts?includeModelScores=true`일 때만 `answers[].feedback.judgment.modelScores` 키를 넣음 | 같은 경로를 core가 학부모·학생 대시보드로 그대로 넘기고(`LearningRecordClient.dashboard`), ai 분석 대화 도구도 읽음. 키를 늘 넣으면 점수가 학부모 화면과 외부 LLM 요청에 섞임 |
+| 호출 권한 | 쿼리는 `X-User-Role: SYSTEM`(report 주기 작업)만, 그 밖 역할은 `403 FORBIDDEN` | core `DashboardQuery.parameters()`는 정해진 쿼리만 보내 학부모가 끼워 넣을 수 없지만, learning에서도 한 번 더 막음 |
+| 값 | 저장 JSON 원문(`{m2, m1, skipped}`), M2를 부르지 않았으면 `null`. 처리 중·실패 답변은 `judgment`가 null이라 키도 없음 | api-spec 4.1.1·4.2.2와 같은 모양. 점수 해석·선정은 report(#479) 몫 |
+| 구현 위치 | `RecordService.attempts`가 목록 답변의 점수를 한 번에 읽어(`RecordMapper.findModelScores`) `JudgmentView.modelScores`에 붙임 | 판정 조회(`JudgmentService.stored`)와 학생 시도 상세는 그대로 둠. `modelScores`는 `@JsonRawValue`·`NON_NULL`이라 Kotlin null이면 키가 없고 `"null"`이면 JSON null |
+
+### 범위 밖
+
+- report는 #479(PR #494)부터 주간 설명 단계에서 SYSTEM 범위로 이 쿼리를 보낸다(`LearningClient.explanation_attempts()`). 대상 선정·대체 규칙은 report 보고서 #508 절
+- `daily-attempts`·기록 상세·evidence에는 넣지 않는다(주간 리포트 설명만 대상)
+
+### 검증
+
+- `RecordControllerTest`: 학부모·학생이 쿼리를 보내면 403, SYSTEM은 원문 JSON과 null을 그대로 받음, 쿼리가 없으면 본문에 `modelScores` 문자열 자체가 없음
+- `RecordServiceTest`(PostgreSQL): 저장 점수 원문, M2 미호출 `"null"`, 처리 중 답변은 판정 없음, 쿼리 없으면 null
+
+## 28. 교육과정 지식 RAG 계약 고정 (#464, 에픽 #463, 2026-11-11)
+
+하위 이슈 #465~#471이 서로 기다리지 않도록 형식·테이블·내부 API·샘플·가짜 구현을 먼저 정했다. 기능은 구현하지 않았고 모든 값은 **기준안(팀 확인 전)**이다. ai 쪽(C6·C7·모델·가짜)은 [ai 15장](ai.md#15-교육과정-지식-rag-계약-464-2026-11-11).
+
+| 계약 | 위치 |
+|---|---|
+| C1 추출 레코드 | `scripts/knowledge/schema/curriculum-record.schema.json` |
+| C2 조각·판 테이블, C3 관계 테이블, C9 판 규칙 | [ERD 4.5](../design/erd.md#45-교육과정-지식-rag-463-계약-464-구현-466) |
+| C4 관계 확인 파일 | `scripts/knowledge/schema/relation-review.schema.json` |
+| C5 learning 지식 내부 API | [api-spec 4.1.2](../design/api-spec.md#412-교육과정-지식-내부-api-463-계약-464-c5-구현-469), learning OpenAPI `/knowledge/*`(`x-implementation-status: planned-issue-469`) |
+| C8 평가셋 | `scripts/knowledge/schema/eval-record.schema.json` |
+| 샘플 | `scripts/knowledge/samples/`(레코드 215줄, 확인 파일 29행, 평가셋 9줄, 판 설명) |
+
+### 결정
+
+| 항목 | 결정·기준안 | 근거 |
+|---|---|---|
+| 영역 레코드 나누기 | `scope`: 국어·수학·도덕 `BOTH`, 사회·과학은 내용 체계 영역(`CONTENT_SYSTEM`)과 성취기준 단원(`STANDARD_GROUP`: 고려 사항·탐구 활동)을 따로 | 원문 대조: 사회·과학은 내용 체계 영역(지리 인식, 운동과 에너지 …)과 성취기준 단원(우리가 사는 곳, 힘과 우리 생활 …)이 다르고 고려 사항은 단원마다 있음 |
+| 도덕 고려 사항 | 영역 레코드는 내용 체계 학년군(`도덕:초3~4:…`), 고려 사항은 `[초등학교]` 묶음 글을 그대로 | 원문 성취기준·고려 사항이 3~4·5~6학년군 함께 한 묶음 |
+| 내용 요소 학년·학기 | C1 레코드에 두지 않고 적재 때 확인된 covers로 계산 | covers는 #468 사람 확인 결과라 추출(#465) 단계에서 알 수 없음 |
+| 조각 칸 추가 | `knowledge_chunk.record`(C1 원본), `knowledge_dataset.embedding_model`·`embedding_dimensions` | C5가 문장·해설·고려 사항을 따로 돌려주고, 다른 모델·차원 벡터를 막으려고 |
+| 선수 FK | `prerequisite_code`는 조각 FK 없이 성취기준 표 코드 검사 | 초3-1의 앞 학기 선수는 초1~2 성취기준이라 저장소(초3~6) 밖 |
+| 대체 사유 | 근거 없음은 200 `reason`(`NO_ACTIVE_DATASET` 등 5개), 오류는 400·409·500 | 생성 쪽이 "근거 없이 기존 방식"을 오류 처리와 구분 |
+| 인증 | 내부 토큰 + `X-User-Role: SYSTEM`, 학생 범위 없음 | 사용자 요청 없는 호출(api-spec 4장), 학생 정보를 받지 않음 |
+| `learned` | 개념 1~20개 묶음 요청 | 테마 검사가 낱말 여러 개를 한 번에 확인 |
+| 판 이름 | `kn-YYYYMMDD-NN` | 같은 날 여러 번 적재해도 겹치지 않게, 추출 판은 `source`에 |
+| 구현 전 표시 | OpenAPI `x-implementation-status: planned-issue-…` | #27 선례(`planned-issue-27`) |
+
+### 샘플 출처와 확인 못 한 칸
+
+- 원문: 교육부 고시 제2022-33호 `[별책 2] 초등학교 교육과정` PDF(한 권에 국어·사회·도덕·수학·과학 초등 부분이 모두 있어 쪽수 대조가 한 문서로 됨). PDF 글자는 PyMuPDF로 읽기만 했고(실행 없음), 줄 범위로 옮긴 뒤 줄바꿈만 이었다. 레코드마다 `source.pages`(인쇄 쪽)·`pdfPages`(PDF 쪽)와 `reviewed: false`
+- 성취기준 15개(국어 3·수학 4·과학 3·사회 3·도덕 2, 모두 초3 1학기). 해설 있음 8개(4국02-04, 4수01-03, 4수01-06, 4과01-01, 4과02-01, 4사01-01, 4사02-01, 4사02-02), 없음 7개. 문장은 모두 `achievement_standards.sql`과 같음(만들 때 대조). 학기는 서울특별시교육청 「2022 개정 교육과정 1~4학년 평가계획 도움자료」(2025-02-04 게시) 교과별 시트에서 코드↔학기만(처음에 경기도교육청 자료로 잘못 적었던 것을 2026-11-11 고침)
+- 영역 14개(국어 2·수학 2·도덕 2·과학 4·사회 4), 내용 요소 176개, 교과 지침 5개(샘플은 "(1) 방향" 항목만, `excerpt: true`), 생각 유형 5개(팀이 쓴 출제 지침과 출처 표기만, 블룸·VALUE 원문·번역 없음)
+- 비운 칸: 국어 듣기⋅말하기 내용 체계 "상황 맥락"(1∼2·3∼4학년 칸 경계 불명), 수학 도형과 측정 "각도(…)"(괄호 안 기호가 추출에서 빠짐), 과학 생명 과정⋅기능(표가 쪽을 넘어가 초등·중학교 칸 경계 불명). 각 레코드 `notes`에 사유
+- 넣지 않음: 평가원 성취수준 자료(같은 폴더에 있으나 쓰지 않음), 교육청(서울특별시·경기도) 수업-평가 자료 문장
+- 고시 개정 확인: 국가교육위원회 고시 제2026-1호(2026-01-21 일부개정) 별책 2와 제2022-33호를 PDF로 대조한 결과, 초3~6 국어·수학·사회·과학·도덕 성취기준 331개 문장이 두 판 모두에 그대로 있고 초3~6 성취기준 코드 수도 511개로 같아 대상 교과 문장에 영향 없음(2026-11-11). 해설·고려 사항은 샘플 범위만, 내용 체계 표·교수·학습 및 평가는 대조 전. 샘플 성취기준 15개의 문장·해설도 두 판이 같음
+- 초5·초6 학기 대응 자료: 서울특별시교육청 「2022 개정 교육과정 5~6학년 단원(키워드) 연결표」(2026-01-20 게시, 5-1·5-2·6-1·6-2 학기 칸, 도덕 포함)로 #465 추출 때 채움(에픽의 "초5·초6 도덕 학기 대응 자료 확보" 해결). 1~4학년 자료에도 도덕 시트가 있음. 코드↔학년·학기 대응만 씀
+
+### 설계·이슈와 다른 점
+
+- #465 "내용 요소에 다루는 성취기준의 학기를 붙임" → 적재 때 확인된 covers로(위 결정)
+- #466 테이블 표에 칸 3개 추가(위 결정), `prerequisite_code` FK 없음
+- 이슈 C5 `learned`(벡터 하나) → 개념 묶음
+- 에픽 "고려 사항은 영역마다" → 사회·과학은 단원마다(원문 대조)
+- 샘플 원문은 교과 별책 5~9 대신 별책 2(같은 고시, 초등 부분 합본). 실제 추출(#465)은 이슈대로 교과 별책
+- 생각 유형 `requiredDefault`(#465 "필수 기본값")는 null 허용(FN 1.5: 필수 여부는 미션 요소마다)
+- 작업 위치 밖 기존 파일 수정: `scripts/tests/test_record_exists_openapi.py`·`test_ai_openapi.py`(구현 전 표시 경로를 컨트롤러·라우터 대조에서 뺌, #27 선례와 같은 한 줄). 새 경로가 실제 컨트롤러·라우터 없이 OpenAPI에 들어가면 두 시험이 깨져서
+
+### 검증
+
+- `scripts/tests/test_knowledge_contracts.py` 23개: 샘플이 C1·C4·C8 스키마 통과, 성취기준 문장 = 시드, 내용 요소 ID 해시 규칙, 제외 출처 없음, 생각 유형에 영어 문장 없음·출처 표기, 확인 파일 대상 존재·`문장:`/`해설:` 인용이 원문 부분 문자열, OpenAPI ↔ api-spec 경로·사유 코드·상한, ai·learning 지식 스키마 같음, 가짜 응답이 OpenAPI 스키마 통과
+- 팀 확인 질문은 #464 확인 필요 항목으로 남김(C1 #465, C2·C3·C9 #466, C4 #468, C5 #469, C6 #467, C7 #470, C8 #471. 담당자는 바뀔 수 있어 이슈 번호로 적음)
+
+## 29. 교육과정 지식 저장소 (#466, 에픽 #463, 2026-11-11)
+
+#464 계약(C2·C3·C9)대로 `learning_db`에 지식 판·조각·관계 테이블과 판 적재·활성화·제거를 만들었다. 실제 추출본(#465)·실제 임베딩(#467)·사람 확인 관계(#468)가 나오면 같은 경로로 적재한다.
+
+| 항목 | 위치 |
+|---|---|
+| 테이블 | learning V14 `knowledge_dataset`·`knowledge_chunk`·`knowledge_standard_semester`·`knowledge_fits`·`knowledge_prerequisite`·`knowledge_covers`, [ERD 4.5](../design/erd.md#45-교육과정-지식-rag-463-계약-464-구현-466) |
+| 판 관리 API | `/internal/admin/knowledge/datasets…`, [api-spec 4.1.3](../design/api-spec.md#413-교육과정-지식-판-관리-466), 운영 스크립트 `scripts/knowledge/manage_datasets.py` |
+| 코드 | `knowledge/`(domain 조각·관계 규칙, client 임베딩, repository, service, controller), 매퍼 `mybatis/knowledge/KnowledgeMapper.xml` |
+| `vector` 확장 | 관리자 bootstrap(`rds-bootstrap.sql`), [DB 개발 가이드 8.7](db-dev-guide.md#87-learning_db-vector-확장-466) |
+
+### 결정 (동섭 2026-11-11)
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 관리 API 접근 | learning 내부 관리 경로 + 운영 스크립트, `SYSTEM` 역할, core 프록시·관리자 화면 없음 | 이슈 기준안. 판 적재는 개발자·운영자 작업이라 외부 노출 면을 늘리지 않음 |
+| 벡터 매퍼 | 문자열 + `::vector` 형변환(배열 `::smallint[]`·`::varchar[]`, jsonb `::jsonb`) | 새 의존성 없음, 조각 수천 개 규모라 속도 문제 없음. 읽기는 `embedding::text` |
+| 임베딩 | `app.knowledge.embedding` = `ai`(기본) \| `fake`. compose·kind는 #467 전까지 `fake` | `fake-bigram-v1`을 Kotlin으로 옮겨 ai 가짜와 같은 벡터(시험이 대조). #467 뒤 kind 값만 `ai`로 |
+| 적재 실행 | 동기 요청(스크립트가 10분까지 대기) | 실패 사유 칸이 계약(C2)에 없고, 실패하면 판이 `LOADING`으로 남는 C9 규칙으로 충분 |
+
+### 구현 메모
+
+- 조각 규칙(`KnowledgeChunks`): erd 4.5 조각 표와 `fake.chunk_text`를 그대로 옮겼다. 샘플 215개 조각의 `content_hash`, 가짜 벡터(빈 글·한 글자 포함), covers로 채운 내용 요소·영역 학년·학기가 ai 가짜 구현과 같다(`fake-parity.json`은 `fake.py`로 만든 대조 파일)
+- 활성화는 적재와 나눴다(이슈 "관리 API: 적재 시작·상태 조회·활성화·제거"). 적재 때 활성 판을 `source.previousVersion`에 두고, 활성화 때 활성 판이 바뀌었으면 409(옮긴 관계·재사용 벡터의 기준이 달라짐)
+- 같은 관계 여러 행: `reviewedAt`이 늦은 행, 같은 날이면 파일에서 뒤 행. 이전 판에서 옮긴 관계보다 늦은 `REJECT`는 그 관계를 뺀다(계약은 "REJECT는 넣지 않음"만 정해 옮긴 관계와의 관계를 기준안으로 정함)
+- `relation_count` = 학기·fits·prerequisite·covers 행 합. 원문 문서 수는 고시 원문 `source.doc`만(생각 유형은 팀이 쓴 지침이라 제외)
+- 실패한 `LOADING` 판은 C9대로 지우지 않는다. 쌓이면 판 이름 순번만 늘어난다(하루 99개 상한)
+- 이미지 교체에 따른 정렬: `MissionDraftServiceTest` 학년군 집계 정렬을 `COLLATE "C"`로 고정(Debian glibc는 `초1~2`가 `중1~3`보다 앞). 운영 `AchievementStandardMapper.xml` `ORDER BY subject, grade_band, code`도 kind 이미지 교체(#492) 때부터 glibc 순서
+
+### 결과서 숫자 (샘플, 가짜 임베딩)
+
+| 항목 | 값 |
+|---|---|
+| 원문 문서 | 1(교육부 고시 제2022-33호 별책 2) |
+| 조각 | 215(성취기준 15·영역 14·내용 요소 176·교과 지침 5·생각 유형 5), 본문 해시 215종 |
+| 임베딩 | 처음 적재 215개·4회 요청(64개씩), 같은 입력 재적재 0회(215개 재사용) |
+| 관계(확인 파일 없이) | 학기 15 |
+| 관계(샘플 확인 파일의 reviewer만 바꿔 확인한 것처럼) | 40 = 학기 15 + fits 5 + prerequisite 0 + covers 20(REJECT 2·확인 전 2 제외) |
+| 재적재 | 같은 입력이면 조각·관계 수 같음, 옮긴 관계는 다시 확인할 목록 0건 |
+
+- 샘플 확인 파일(reviewer `SAMPLE`)은 계약대로 적재가 거부한다. kind 샘플 적재는 확인 파일 없이 한다
+- 실제 추출본(#465)·실제 임베딩(#467)·확인 관계(#468) 숫자는 통합 적재 때 이 표에 더한다
+
+### 검증
+
+- learning `./gradlew test bootJar`(JDK 21, Testcontainers `pgvector/pgvector:0.8.7-pg17-trixie`): `KnowledgeRulesTest`(조각·가짜 벡터·covers가 ai 가짜와 같음, ID 겹침·SAMPLE·REJECT/MODIFY 규칙), `KnowledgeDatasetServiceTest`(적재·재적재 멱등·임베딩 재사용·교체·제거, 끝 없어진 관계는 다시 확인 목록, 본문 바뀐 끝은 옮기고 목록에도, 활성 판이 바뀌면 활성화 거부, 문장 불일치·SAMPLE은 판을 만들기 전에 멈춤, 관리 API SYSTEM 역할만)
+- `scripts/check_db_migrations.py`(임시 pgvector 서버): bootstrap → migrate 계정으로 V14 → ERD 대조 learning 34/286, 위반 입력 49건(V14 10건 추가), 재실행·계정 격리 통과. `verify_db_schema.py`가 `vector(n)`·`smallint[]`·`varchar[]`·`char(n)`을 읽도록 넓힘
+- 계약 시험(`scripts/tests`): OpenAPI ↔ 컨트롤러(66개), 지식 계약, 관리 스크립트(`test_knowledge_manage_datasets.py`, 내부 토큰·SYSTEM·recheck CSV)
+- learning 마이그레이션을 alpine 서버에 적용하던 검증 스크립트(`verify_report_learning.py`·`verify_feedback_learning.py`·`verify_scoring_models.py`·`report_integration/compose.yaml`)도 pgvector 이미지로 바꿨다(V14가 `vector` 타입을 씀)
+
+## 30. 지식 관계 후보 생성과 사람 확인 (#468, 에픽 #463, 2026-11-11)
+
+고시 자료로 자동으로 만들 수 없는 관계 세 가지(맞는 생각 유형 FITS·선수 PREREQUISITE·다루는 내용 요소 COVERS)의 후보를 만들고, 사람이 확인한 행만 #466 관계 테이블(C3)에 넘기는 도구. 이번에는 도구·시험·샘플 확인까지만 함. 초3·초4 전체 사람 확인과 수락률 정리(완료 조건)는 #465 실제 레코드가 나온 뒤 같은 도구로 진행(#466 저장소·#467 임베딩 API는 머지됨).
+
+| 파일 | 내용 |
+|---|---|
+| `scripts/knowledge/relation_candidates.py` | 후보 생성 → C4 확인 파일(decision 이하 빈 칸) |
+| `scripts/knowledge/review_relations.py` | C4 읽기·쓰기, `validate`·`compare`·`stats`·`coverage` |
+| `scripts/tests/test_knowledge_relations.py` | 가짜 LLM·가짜 임베딩 시험 15개 |
+
+### 결정
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| LLM 호출 | ai-service `create_llm` 재사용(LLM_PROVIDER·OPENAI_*·ANTHROPIC_* 설정 그대로), ai-service 환경(`uv run`)에서 실행. 사용량은 표준 오류에만 남기고 core 이벤트는 보내지 않음(`callType` 기준안 `KNOWLEDGE_RELATION`은 로컬 표시용) | 사용자 결정. 구조화 출력·재시도를 다시 만들지 않음 |
+| 사람 확인 | 두 명. 이슈 담당자 1차 파일 + 팀원 1명 교차 파일 → `compare`로 판단 다른 행 → 합의해 1차 파일을 고쳐 차이 0 → `validate --final` → #466 `manage_datasets.py load --reviews` | 사용자 결정(이슈 기준안) |
+| 학기×유형 빈 칸 | 목록만 보고, 그 학기 테마를 어떻게 채울지는 테마 생성 쪽 | 사용자 결정 |
+| 선수 범위 | 같은 교과·학기가 앞선 **초3~6** 성취기준만. 3-1은 선수 후보 없음 | 사용자 결정. 초1~2는 지식 자료 밖이고 성취기준 표 시드에도 학기가 없음. ERD 4.5 메모 갱신 |
+| 앞 학기 | 선수의 마지막 학기 < 이 성취기준의 첫 학기. 학기 정보가 없으면(초5·6 도덕 일부) 후보·수락 불가 | C1 `semesters` 배열 |
+| COVERS 범위 | 같은 교과·같은 고시 학년군 내용 요소 전체에서 유사도 상위 3(`--top`) | 사회·과학 성취기준 `domainId`는 단원(STANDARD_GROUP)이라 내용 체계 영역과 이어지지 않음(#464) |
+| 선수 겹침 | 확인된 COVERS 파일(`--covers`)이 있으면 그것, 없으면 이번 COVERS 유사도 상위. 겹침 많은 순 → 가까운 학기 순 상위 10개를 LLM에 주고 0~3개 | 이슈 "내용 요소가 겹치는 것 우선" |
+| evidence 형식(C4 보충) | 부분을 ` \| `로 잇고, `문장: `·`해설: `로 시작하는 부분은 원문 그대로(맨 뒤). `validate`가 부분 문자열 검사 | C4 "'문장:'으로 시작하면 그 뒤는 원문"을 지키면서 요소 코드·이유를 같이 남김 |
+| FITS 거르기 | 유형 코드·요소 코드가 틀리거나 인용이 원문에 없으면 버림, 최대 2개 | 이슈 "근거 없는 유형은 내지 않음" |
+| 결과 폴더 | `scripts/knowledge/relations-reviewed/<판>-candidates.csv`·`<판>-first.csv`·`<판>-cross.csv`. 실제 확인 파일이 생길 때 만듦 | 빈 폴더는 저장소에 남지 않음 |
+
+### 실행
+
+```
+cd backend/ai-service
+uv run python ../../scripts/knowledge/relation_candidates.py --records R --dataset-version kn-YYYYMMDD-NN \
+    --embedding http --out ../../scripts/knowledge/relations-reviewed/kn-YYYYMMDD-NN-candidates.csv
+python scripts/knowledge/review_relations.py validate FILE --records R [--final]
+python scripts/knowledge/review_relations.py compare FIRST CROSS
+python scripts/knowledge/review_relations.py stats FILE --records R
+python scripts/knowledge/review_relations.py coverage FILE --records R
+python scripts/knowledge/manage_datasets.py load --records R --reviews FIRST --dataset D   # #466 적재
+```
+
+- `--embedding fake`(기본)는 #464 가짜(`fake-bigram-v1`), `http`는 ai `POST /internal/embeddings`(#467, 환경 변수 `AI_URL` 기본 `http://localhost:8000`·`INTERNAL_TOKEN`, ai에 `EMBEDDING_PROVIDER=openai`와 키 필요)
+- `validate` 검사: C4 칸 조건, 코드 존재(성취기준·선수·내용 요소·수정 대상), 문장·대상 글 = 레코드, 후보 중복·수락 중복, 판 하나, 선수 같은 교과·(수락 행) 앞 학기, COVERS 같은 교과·학년군, 인용. `--final`은 미확인 행·`SAMPLE` 확인자 거부
+- LLM 입력은 성취기준 문장·해설, 생각 유형 지침, 내용 요소 글뿐(학생 정보 없음)
+- #466 적재가 돌려주는 `recheck` CSV(`--recheck-out`, 옮기지 못했거나 끝 본문이 바뀐 관계)도 C4 모양이라 같은 확인 절차로 다시 확인
+
+### 샘플 확인
+
+- #464 샘플 확인 파일 29행: `validate` 통과, `--final`은 SAMPLE 27행·미확인 2행으로 거부
+- `stats`: FITS 확인 6행 중 수락 5(83%), COVERS 20행 모두 수락(수정 1), 선수 1행 거절
+- `coverage`(3-1~4-2): 3-1은 다섯 유형 모두 1개씩, 3-2·4-1·4-2는 샘플에 성취기준이 없어 모두 빈 칸(실제 레코드로 다시)
+- 가짜 LLM으로 샘플 후보 생성: FITS 15·COVERS 45·선수 0(샘플은 모두 3-1), 모두 C4 스키마와 `validate` 통과
+- 참고: 샘플에서 사람이 수락한 COVERS 20행 중 13행이 가짜 임베딩 상위 3에 듦. 가짜 벡터는 글자 2개 해시라 품질 지표가 아니며 #467 실제 임베딩(`--embedding http`)으로 다시 잼
+
+### 이슈와 다른 점
+
+- 선수 "앞 학년 포함" → 초3~6 안에서만(위 결정). 3-1 성취기준은 선수 후보 없음
+- "후보 품질: 수락률(유형별·교과별)"은 `stats` 도구까지. 실제 수락률·거절 사유 정리와 학기×유형 표 보고는 실제 확인 뒤
+- `review_relations.py`의 "CSV 내보내기"는 `write_review_csv` 함수로 두고 `relation_candidates.py --out`이 부름(명령 하나로 생성·내보내기)
+- 작업 위치 밖 기존 파일 수정: `docs/design/erd.md` 4.5 선수 메모 한 줄
+
+### API 변경
+
+없음(스크립트만, C4 형식 그대로).
+
+### 검증
+
+- `scripts/tests/test_knowledge_relations.py` 15개: FITS 틀린 인용·요소 코드·중복 버림과 2개 제한·구분자 정리, 프롬프트 = 성취기준 글과 #262 규칙, COVERS 같은 교과·학년군 상위 3·유사도 내림차순, 선수 같은 교과·앞 학기·겹침 우선·목록 밖 코드 버림·3-1은 LLM을 부르지 않음, 확인된 COVERS 파일 사용, 샘플 후보 C4 스키마 통과, `validate` 오류 12종, CSV 왕복·BOM·머리행, `compare`·`stats`·`coverage` 숫자, CLI 종료 코드
+- `python -O -m unittest discover -s scripts/tests` 271개 통과(1개 건너뜀, develop #466·#467 머지 뒤), `ruff check` 통과
+- 실제 LLM 어댑터: ai-service 환경에서 `uv run`으로 실행해 키 미설정 `LLM_NOT_CONFIGURED`까지 확인. 로컬에 LLM·임베딩 키가 없어 실제 LLM·`--embedding http`로 후보를 만들지는 않음
+
+### 한계
+
+- 완료 조건(초3·초4 5개 교과 사람 확인, 학기×유형 표, 수락률·거절 사유, #466 인계)은 #465 뒤
+- 실제 LLM 프롬프트 품질(유형 판단·설명)은 아직 재지 않음. 첫 실제 실행 때 1차 확인 수락률로 보고 프롬프트 판(`relation-candidates-v1`)을 올림

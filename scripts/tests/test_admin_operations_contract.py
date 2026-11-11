@@ -22,6 +22,9 @@ class AdminOperationsContracts(unittest.TestCase):
             for name,expected in baseline[section].items():
                 self.assertIn(name,current)
                 reviewed=deepcopy(current[name])
+                # #479 adds optional explanations; preserve every pre-existing report field.
+                if section=='schemas' and name=='ReportDetail':
+                    reviewed['allOf'][1]['properties'].pop('explanations',None)
                 # #367 extends registration only; retain all prior fields in the fingerprint.
                 if section=='schemas' and name=='RegisterModelVersion':
                     reviewed['properties'].pop('registration',None)
@@ -130,7 +133,13 @@ class AdminOperationsContracts(unittest.TestCase):
                 if section=='schemas' and name=='CallType':
                     reviewed['enum'].remove('MISSION_DRAFT')
                     # #439 adds only the ai weekly theme text/image usage types.
-                    reviewed['enum'].remove('THEME_DRAFT'); reviewed['enum'].remove('THEME_IMAGE'); reviewed['enum'].remove('THEME_VIDEO')
+                    reviewed['enum'].remove('THEME_DRAFT'); reviewed['enum'].remove('THEME_IMAGE')
+                    # #480 adds only the report explanation sLLM usage type.
+                    reviewed['enum'].remove('REPORT_EXPLANATION')
+                    # #467 adds only the knowledge embedding usage type.
+                    reviewed['enum'].remove('KNOWLEDGE_EMBEDDING')
+                    # #436 adds only the weekly theme video usage type.
+                    reviewed['enum'].remove('THEME_VIDEO')
                 # #390 (P24 daily report) adds only the periodType filter/field, daily detail fields and two
                 # daily notification types. Remove exactly those additions; every other field stays fingerprinted.
                 if section=='paths' and name=='/children/{childId}/reports':

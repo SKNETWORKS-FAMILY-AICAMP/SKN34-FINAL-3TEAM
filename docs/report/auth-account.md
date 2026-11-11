@@ -28,7 +28,7 @@
 ## 3. 계정 관리·재인증·삭제·탈퇴 (#45)
 
 - 재인증 토큰 5분·세션/작업/자녀 결합·1회 사용(사용자 결정). Google 계정 확인은 비밀번호·MFA 재입력을 보장하지 않음
-- 재인증 사용 절차(#58 PIN 변경 예)
+- 재인증 사용 절차(#58 당시 PIN 변경 예. PIN 설정은 15절에서 재인증을 제거했고, 같은 절차를 탈퇴·보호자 비밀번호·자녀 해제 등에 쓴다)
   1. 원래 세션에서 `POST /me/reauth {"purpose":"PIN_CHANGE","childId":...}`(Origin·`X-Requested-With` 필요)
   2. 응답 `authorizationUrl`을 새 창에서 열어 Google 확인. Google 콘솔에 `<webOrigin>/api/v1/auth/google/reauth/callback` 등록 필요. callback은 VERIFIED 안내만, 로그인·refresh는 바꾸지 않음
      - #425: callback은 JSON 대신 안내 HTML. 같은 출처 `BroadcastChannel('sagomungchi-reauth')`로 challengeId만 알리고 창을 닫음(닫히지 않으면 안내 문구). 팝업 `opener=null` 유지 때문에 postMessage는 쓰지 않음. CSP nonce·`no-store`·`no-referrer`·`nosniff`. 실패도 스크립트 없는 안내 HTML(403)
@@ -334,17 +334,18 @@ python scripts/admin_account_sql.py --login-id ops-kim --disable | psql "$CORE_D
 
 - 실제 모드 `/login`: Google 버튼과 함께 "또는 아이디로 로그인" 폼과 "아이디로 가입" 링크를 둔다.
 - `/signup`: Google 카드와 아이디 가입 폼(아이디·이름·비밀번호·확인). 가입 후 `/parent/onboarding`으로 간다.
-- 재확인 UI: `/me`의 `authMethod`가 `PASSWORD`면 Google 새 탭 대신 로그인 비밀번호를 입력받는다(탈퇴·자녀 해제/삭제·이관·보호자 비밀번호·자녀 PIN 모두, `PasswordRecheck`).
+- 재확인 UI: `/me`의 `authMethod`가 `PASSWORD`면 Google 새 탭 대신 로그인 비밀번호를 입력받는다(탈퇴·자녀 해제/삭제·이관·보호자 비밀번호 모두, `PasswordRecheck`. 자녀 PIN은 15절에서 재확인 제거).
 - 로그인 도움말: 두 방법이 서로 연결되지 않는다는 안내와 비밀번호 찾기 안내를 더했다.
 - MSW 핸들러도 같은 계약이다. 개발 시연(목업)의 이메일 로그인은 그대로 둔다.
 
 ### 부하 시험
 
-- `evaluation/load/prepare_accounts.py`가 공개 API로 시험 계정을 만든다(가입 → 동의 → 자녀 3명 → 기기 등록 → 비밀번호 재확인 → PIN). 비밀번호·PIN·기기 쿠키는 저장소 밖 비밀 파일에만 쓴다.
+- `evaluation/load/prepare_accounts.py`가 공개 API로 시험 계정을 만든다(가입 → 동의 → 자녀 3명 → 기기 등록 → PIN). 비밀번호·PIN·기기 쿠키는 저장소 밖 비밀 파일에만 쓴다.
 - k6 `core-load.js`는 계정에 `loginId`가 있으면 `POST /auth/parent/login`으로 access를 받는다. 회전하는 refresh 토큰이 없어 비밀 파일을 다시 쓰지 않는다. `loginId`가 없으면 옛 refresh 방식이다.
 - AWS 데모는 `AUTH_NEW_ACCOUNT_DEMO=true`라 시험 계정이 `is_demo`로 저장되어 운영 집계에서 빠진다.
+- 가입 IP 제한(`AUTH_SIGNUP_LIMIT_PER_IP`·`AUTH_SIGNUP_LIMIT_WINDOW`)은 #517에서 compose·`.env.example`·로컬 GitOps에 같은 기본값(5회·10분)으로 전달한다. 로컬 부하 시험은 `.env`에서 늘릴 수 있다. prod values에는 넣지 않아 앱 기본값을 쓴다.
 - k6 `setup()`은 쿠키 저장소 하나를 공유한다. 앞 계정의 refresh 쿠키가 남은 채로 다음 계정이 로그인하면 `startSession`이 그 세션을 "이전 세션"으로 폐기하므로, 계정마다 빈 쿠키 저장소(`jar: new http.CookieJar()`)로 로그인한다.
-- 로컬 격리 compose 확인(2026-11-09, `AUTH_NEW_ACCOUNT_DEMO=true`)
+- 로컬 격리 compose 확인(2026-11-09, `AUTH_NEW_ACCOUNT_DEMO=true`). 당시 `compose.yaml`은 이 값을 core-service에 전달하지 않아 계정은 기본값(false)으로 저장됐을 수 있다. #500에서 compose 전달을 추가했다(기본 false)
   - 시험 계정 4개(`load1`~`load4`, 자녀 3명씩) 준비 → k6 VU 8·30초. 보호자 ID 로그인 4건, 학생 로그인 12건, 학습 칸 60개(1차의 15개 → 4배), 알림 SSE·조회 API 정상.
   - 학습 시도 시작은 무료 자녀 하루 미션 한도(`429 USAGE_LIMIT_REACHED`, #387)에 금방 걸렸다. 프리미엄도 하루 3개라 2차 시험(#384)은 시험 동안 한도를 어떻게 다룰지 먼저 정해야 한다. 학생 기록 비공개 기본값(`403 STUDENT_RECORDS_PRIVATE`, #206)도 조회 오류로 섞인다.
 
@@ -431,3 +432,18 @@ python scripts/admin_account_sql.py --login-id ops-kim --disable | psql "$CORE_D
 최종 통합 검증: 단위 271건, 브라우저 77건(일반 화면 46·로그인/재인증 7·꾸미기 9·모델 운영 15), TypeScript·lint·운영 빌드·운영 목업 제외 검사 통과. 보호자 비밀번호의 실제 Google 복귀는 아래 사용자 확인 결과를 따르며, 다른 재인증 목적과 kind 실사용은 별도 확인이 남아 있다.
 
 2026-11-10 사용자 실사용 확인: 로컬 `http://localhost:5173/parent/devices`에서 보호자 비밀번호 Google 본인 확인 후 **새 탭이 닫히고 원래 화면의 저장 버튼이 자동 활성화됨**을 사용자가 확인했다. 이 결과는 실제 Google 재인증의 보호자 비밀번호 복귀 흐름에 한정한다. 비밀번호 저장 성공·자녀 PIN·삭제·탈퇴의 실제 Google 흐름, 장시간 로그인 유지, kind 환경까지 확인한 것으로 확대하지 않는다. PR 게시 승인은 여전히 받지 않았다.
+
+## 15. 학생 PIN 추가 재인증 제거 (2026-11-10)
+
+사용자가 학생 PIN 설정의 Google 인증 제거를 요청했다. `StudentPinService.set`은 활성 보호자 세션 잠금·현재 자녀 권한을 검사하고 PIN 해시/실패 횟수/잠금 상태를 변경하며 같은 트랜잭션에 감사를 기록한다. 이 경로의 추가 재인증 grant 소비를 제거했다. HTTP 컨트롤러·web·MSW·OpenAPI도 추가 증명 없이 보호자 인증으로 저장하도록 맞췄다. 다른 중요 작업의 재인증과 학생 PIN 로그인·기기 등록 정책은 유지한다. PIN_CHANGE 재인증 발급은 이전 클라이언트 호환용으로 남는다.
+
+core 권한/HTTP/기기 20건과 기존 비밀번호 재인증 통합 8건, 공개 계약 14건, 합성 Google 로그인→추가 인증 없는 PIN 저장 E2E를 통과했다. 사용자가 개발 API 교체를 별도로 승인한 뒤 localhost:8080에 적용했다. 환경값은 Docker 내부에서만 재사용하고 호스트 파일·로그에 내보내지 않았다. 자세한 UI 범위와 검증 한계는 [frontend 16절](frontend.md#16-리포트챗봇과-학부모-설정-동선-통합-2026-11-10)을 따른다.
+
+
+### PIN 재인증 잔재 정리 (#516, 2026-11-11)
+
+부하 시험 계정 준비에서 자녀별 PIN_CHANGE grant 발급과 X-Reauth-Token 전송을 제거했다. 웹의 미사용 startPinReauth·목업 consumePinReauth를 삭제했다. finishPinReauth는 실제 보호자 비밀번호 설정에서 사용 중이므로 finishGuardianReauth로 이름과 호출부를 맞췄다. core의 grant 소비 주석도 현재 소비처로 수정했다. PIN_CHANGE 발급은 이전 클라이언트 호환을 위해 유지한다. 공개 API·DB 변경은 없다. 설계 3.11의 남아 있던 헤더 필수 설명과 부하 시험 준비 순서를 현재 정책에 맞췄다.
+
+검증: 계정 준비 unittest 4건(두 자녀 PIN까지 요청 순서·재인증 헤더 없음 포함), web 단위 291건·lint·test:types 통과. 실제 부하 계정을 생성하지 않았다.
+
+저장소 scripts/tests unittest 전체 215건 실행(214 통과·1 건너뜀). 기본 sandbox 임시 경로에서 권한 오류가 발생해 쓰기 가능한 임시 폴더로 TEMP·TMP를 지정한 재실행에서 통과했다.

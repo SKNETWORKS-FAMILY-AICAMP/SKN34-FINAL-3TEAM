@@ -193,7 +193,7 @@ def verify(args):
             created.append(docker("create", "--rm", "--name", container, "-p", "127.0.0.1::5432",
                                   "--cpus=0.5", "--memory=256m",
                                   "-e", "POSTGRES_DB=" + core_db, "-e", "POSTGRES_USER=issue39",
-                                  "-e", "POSTGRES_PASSWORD=issue39-disposable-password", "postgres:17.11-alpine"))
+                                  "-e", "POSTGRES_PASSWORD=issue39-disposable-password", "pgvector/pgvector:0.8.7-pg17-trixie"))
             docker("start", created[-1])
             # The image's temporary init server accepts Unix sockets before its final restart, but not TCP.
             wait_for(lambda: subprocess.run(["docker", "exec", container, "pg_isready", "-h", "127.0.0.1", "-U", "issue39", "-d", core_db],

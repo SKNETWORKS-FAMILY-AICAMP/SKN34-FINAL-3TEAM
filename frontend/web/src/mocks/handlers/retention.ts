@@ -1,3 +1,4 @@
+import { THEME_GRADE_LABELS } from '../../domain/admin/retention.ts'
 import { http, HttpResponse } from 'msw/http'
 import { ApiError } from '../../data/apiClient.ts'
 import { REACTIONS } from '../../domain/retention.ts'
@@ -119,7 +120,7 @@ export const retentionHandlers = [
     respond(async () => {
       guard(request)
       const me = mockStudent()
-      return weeklyThemeFor(me.id, (await mockStudentHome(me)).missions)
+      return weeklyThemeFor(me.id, (await mockStudentHome(me)).missions, me.grade)
     }),
   ),
   http.post('/api/v1/students/me/weekly-theme/review-views', ({ request }) =>
@@ -131,7 +132,7 @@ export const retentionHandlers = [
       const first = !retentionState.reviewViews.includes(key)
       if (first) retentionState.reviewViews.push(key)
       earn(me.id, 'REVIEW_VIEWED', key)
-      const week = weeklyThemeFor(me.id, (await mockStudentHome(me)).missions)
+      const week = weeklyThemeFor(me.id, (await mockStudentHome(me)).missions, me.grade)
       if (week.completed) earn(me.id, 'THEME_COMPLETED', key)
       return saved({ firstViewThisWeek: first, completed: week.completed })
     }),
@@ -268,7 +269,7 @@ export const retentionHandlers = [
       const q = new URL(request.url).searchParams
       const items = retentionState.themes.filter(
         (t) =>
-          (!q.get('gradeBand') || t.gradeBand === q.get('gradeBand')) &&
+          (!q.get('grade') || t.grade === q.get('grade')) &&
           (!q.get('status') || t.status === q.get('status')) &&
           (!q.get('weekStart') || t.weekStart === q.get('weekStart')),
       )
@@ -390,12 +391,12 @@ function themeById(id: string) {
 function themeInput(raw: unknown): Omit<MockWeeklyTheme, 'themeId' | 'status' | 'updatedAt'> {
   const b = (raw ?? {}) as Record<string, unknown>
   const days = Array.isArray(b.days) ? (b.days as { day?: unknown; missionId?: unknown }[]) : []
-  if (b.gradeBand !== 'G3_4' && b.gradeBand !== 'G5_6') fail(422, 'VALIDATION_FAILED', '학년군을 확인해 주세요.')
+  if (typeof b.grade !== 'string' || !Object.hasOwn(THEME_GRADE_LABELS, b.grade)) fail(422, 'VALIDATION_FAILED', '학년을 확인해 주세요.')
   if (typeof b.weekStart !== 'string' || new Date(`${b.weekStart}T00:00:00Z`).getUTCDay() !== 1)
     fail(422, 'VALIDATION_FAILED', '주 시작일은 월요일이어야 합니다.')
   if (typeof b.title !== 'string' || !b.title.trim()) fail(422, 'VALIDATION_FAILED', '제목을 적어 주세요.')
   return {
-    gradeBand: b.gradeBand as MockWeeklyTheme['gradeBand'],
+    grade: b.grade as MockWeeklyTheme['grade'],
     weekStart: b.weekStart as string,
     title: (b.title as string).trim(),
     intro: typeof b.intro === 'string' ? b.intro : '',
@@ -405,25 +406,25 @@ function themeInput(raw: unknown): Omit<MockWeeklyTheme, 'themeId' | 'status' | 
     })),
   }
 }
-/** 게시 검사(목업): 다섯 요일 모두 채움·서로 다른 생각 유형·같은 학년군·주 게시 1개. */
+/** 게시 검사(목업): 다섯 요일 모두 채움·서로 다른 생각 유형·같은 학년·주 게시 1개. */
 async function publishErrors(t: MockWeeklyTheme) {
   const errors: string[] = []
-  const [low, high] = t.gradeBand === 'G3_4' ? [3, 4] : [5, 6]
+  const grade = Number(t.grade.slice(1))
   // 관리자 미션 목업 중 게시된 미션만, 게시판(또는 현재판)의 학년·유형으로 검사한다.
   const byId = new Map(
     adminMissions
       .filter((m) => m.status === 'PUBLISHED')
       .flatMap((m) => {
         const v = m.versions.find((x) => x.version === (m.publishedVersion ?? m.currentVersion))
-        return v && v.gradeMin <= high && v.gradeMax >= low ? [[m.missionId, v] as const] : []
+        return v && v.gradeMin <= grade && v.gradeMax >= grade ? [[m.missionId, v] as const] : []
       }),
   )
   if (t.days.some((d) => !d.missionId)) errors.push('비어 있는 요일이 있습니다.')
-  if (t.days.some((d) => d.missionId && !byId.has(d.missionId))) errors.push('학년군에 맞지 않거나 게시되지 않은 미션이 있습니다.')
+  if (t.days.some((d) => d.missionId && !byId.has(d.missionId))) errors.push('학년에 맞지 않거나 게시되지 않은 미션이 있습니다.')
   const types = t.days.map((d) => byId.get(d.missionId)?.thinkingType).filter(Boolean)
   if (new Set(types).size !== THINKING_ORDER.length) errors.push('다섯 생각 유형이 하나씩 들어가야 합니다.')
-  if (retentionState.themes.some((x) => x !== t && x.status === 'PUBLISHED' && x.gradeBand === t.gradeBand && x.weekStart === t.weekStart))
-    errors.push('같은 학년군·주에 이미 게시한 테마가 있습니다.')
+  if (retentionState.themes.some((x) => x !== t && x.status === 'PUBLISHED' && x.grade === t.grade && x.weekStart === t.weekStart))
+    errors.push('같은 학년·주에 이미 게시한 테마가 있습니다.')
   return errors
 }
 function itemFields(b: Partial<MockLookItem>) {

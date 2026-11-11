@@ -68,12 +68,19 @@ class ReportHttpTest : IntegrationTestSupport() {
         @Volatile private var response = "{}"
         @Volatile private var fileResponse: String? = null
         @Volatile private var code = 200
+        /** List responses by `page` query (#500); empty means [response] for every page. */
+        @Volatile private var listPages: List<String> = emptyList()
         private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
             createContext("/internal/reports") { exchange ->
                 val h = exchange.requestHeaders
                 requests.add(Request(exchange.requestURI.path, exchange.requestURI.rawQuery, h.getFirst("X-Student-Scope"),
                     h.getFirst("X-User-Id"), h.getFirst("X-User-Role"), h.getFirst("traceparent"), h.getFirst("X-Internal-Token")))
-                val bytes = (if(exchange.requestURI.path.contains("/files/")) fileResponse ?: response else response).toByteArray(Charsets.UTF_8)
+                val page = Regex("(?:^|&)page=(\\d+)").find(exchange.requestURI.rawQuery ?: "")?.groupValues?.get(1)?.toInt()
+                val bytes = (when {
+                    exchange.requestURI.path.contains("/files/") -> fileResponse ?: response
+                    listPages.isNotEmpty() && page != null -> listPages[page]
+                    else -> response
+                }).toByteArray(Charsets.UTF_8)
                 exchange.responseHeaders.set("Content-Type", "application/json")
                 exchange.sendResponseHeaders(code, bytes.size.toLong())
                 exchange.responseBody.use { it.write(bytes) }
@@ -94,7 +101,7 @@ class ReportHttpTest : IntegrationTestSupport() {
         user = parent(jdbc); student = child(jdbc, user); child(jdbc, user)
         report = completedJob(jdbc, student).second
         token = tokens.access(session(jdbc, user, "PARENT"))
-        requests.clear(); response = "{}"; fileResponse=null;code = 200
+        requests.clear(); response = "{}"; fileResponse=null;code = 200; listPages = emptyList()
     }
 
     @Test fun `list narrows scope passes filter and authenticated headers without recording views`() {
@@ -104,15 +111,42 @@ class ReportHttpTest : IntegrationTestSupport() {
             header("X-Student-Scope", UUID.randomUUID().toString()); header("X-User-Id", "forged")
         }.andExpect { status { isOk() }; jsonPath("$.items[0].reportId") { value(report.toString()) } }
         val request = requests.single()
-        assertEquals("studentId=$student&status=COMPLETED", request.query)
+        assertEquals("studentId=$student&status=COMPLETED&page=0&size=100", request.query)
         assertEquals(student.toString(), request.scope); assertEquals(user.toString(), request.user)
         assertEquals("PARENT", request.role); assertEquals("test-token", request.token)
         assertEquals("00-test-trace", request.trace); assertEquals(0, views())
     }
 
+    @Test fun `list gathers every report-api page beyond the default twenty and fails on a broken later page`() {
+        val all = (0 until 120).map { offset ->
+            val day = WEEK.to.minusDays(offset.toLong())
+            detail(UUID.randomUUID(), period = com.sagomungchi.core.report.domain.ReportPeriod(day, day,
+                com.sagomungchi.core.report.domain.ReportPeriodType.DAILY)) + ("periodType" to "DAILY")
+        }
+        fun page(items: List<Map<String, Any?>>, page: Int) =
+            json.writeValueAsString(mapOf("items" to items, "page" to page, "size" to 100, "totalElements" to all.size))
+        listPages = listOf(page(all.take(100), 0), page(all.drop(100), 1))
+        mvc.get("/api/v1/children/$student/reports") { header("Authorization", "Bearer $token") }.andExpect {
+            status { isOk() }; jsonPath("$.items.length()") { value(120) }
+            jsonPath("$.items[119].reportId") { value(all[119]["reportId"].toString()) }
+            jsonPath("$.page") { doesNotExist() }; jsonPath("$.totalElements") { doesNotExist() }
+        }
+        assertEquals(listOf("studentId=$student&page=0&size=100", "studentId=$student&page=1&size=100"), requests.map { it.query })
+        listPages = listOf(listPages[0], page(listOf(detail().toMutableMap().also { it["childId"] = UUID.randomUUID() }), 1))
+        mvc.get("/api/v1/children/$student/reports") { header("Authorization", "Bearer $token") }
+            .andExpect { status { isBadGateway() }; jsonPath("$.code") { value("REPORT_CONTRACT_INVALID") } }
+        assertEquals(0, views())
+    }
+
     @Test fun `detail passes revision preserves full payload and records actual returned revision id`() {
         val actualReport = UUID.randomUUID()
-        val body = detail(actualReport, revision = 2)
+        // #508: the dumped detail feeds validate_report_contracts.py, so it carries explanations too.
+        `when`(entitlement.narrativeEnabled(student)).thenReturn(true)
+        val body = detail(actualReport, revision = 2) + ("explanations" to mapOf("state" to "INCLUDED", "items" to listOf(
+            mapOf("attemptId" to UUID.randomUUID(), "answerId" to UUID.randomUUID(), "answerVersion" to 1, "missionTitle" to "합성 미션",
+                "thinkingType" to "ANALYZE", "quote" to "합성 인용 문장.", "text" to "잘한 점: 합성 설명.\n함께 이야기해 볼 점: 합성 설명."),
+            mapOf("attemptId" to UUID.randomUUID(), "answerId" to UUID.randomUUID(), "answerVersion" to 2, "missionTitle" to "합성 미션",
+                "thinkingType" to "REFLECT", "quote" to null, "text" to "잘한 점: 합성 설명."))))
         response = json.writeValueAsString(body)
         val result = mvc.get("/api/v1/reports/$report?revision=2") { header("Authorization", "Bearer $token") }
             .andExpect { status { isOk() }; jsonPath("$.revision") { value(2) }; jsonPath("$.state") { value("NO_RECORD") } }
@@ -133,7 +167,7 @@ class ReportHttpTest : IntegrationTestSupport() {
         response = json.writeValueAsString(mapOf("items" to listOf(detail(period = day) + ("periodType" to "DAILY"))))
         mvc.get("/api/v1/children/$student/reports?periodType=DAILY") { header("Authorization", "Bearer $token") }
             .andExpect { status { isOk() }; jsonPath("$.items[0].periodType") { value("DAILY") }; jsonPath("$.items[0].period.to") { value(WEEK.to.toString()) } }
-        assertEquals("studentId=$student&periodType=DAILY", requests.single().query)
+        assertEquals("studentId=$student&periodType=DAILY&page=0&size=100", requests.single().query)
         // Without a filter both types are listed; a report-api that predates P24 omits the field, which is WEEKLY.
         response = json.writeValueAsString(mapOf("items" to listOf(detail(), detail(period = day) + ("periodType" to "DAILY"))))
         mvc.get("/api/v1/children/$student/reports") { header("Authorization", "Bearer $token") }
@@ -221,9 +255,12 @@ class ReportHttpTest : IntegrationTestSupport() {
     @Test fun `current free entitlement hides past premium narrative while preserving numeric detail`() {
         val body=json.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(detail())
         body.putObject("narrative").put("text","유료 서술");body.put("eveningQuestion","유료 저녁 질문")
+        body.putObject("explanations").put("state", "INCLUDED").putArray("items")
+            .addObject().put("text", "유료 설명")
         response=json.writeValueAsString(body)
         mvc.get("/api/v1/reports/$report") { header("Authorization","Bearer $token") }.andExpect {
             status { isOk() };jsonPath("$.narrative") { value(null) };jsonPath("$.eveningQuestion") { value(null) }
+            jsonPath("$.explanations") { value(null) }
             jsonPath("$.metrics") { isArray() }
         }
         assertEquals(1,views())

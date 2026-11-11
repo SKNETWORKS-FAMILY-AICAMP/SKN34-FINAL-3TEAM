@@ -82,11 +82,13 @@ class RewardIntegrationTest : IntegrationTestSupport() {
         return code
     }
 
-    @Test fun `seeded rules hold the P21 initial values`() {
+    @Test fun `seeded rules hold the P21 values`() {
         val rows = jdbc.queryForList("SELECT event_type,amount,daily_cap,active FROM reward_rule ORDER BY event_type")
             .associate { it["event_type"] to listOf(it["amount"], it["daily_cap"], it["active"]) }
         assertEquals<Map<Any?, List<Any?>>>(mapOf("COMMUNITY_POSTED" to listOf(5, null, true), "MISSION_COMPLETED" to listOf(10, null, true),
-            "REACTION_GIVEN" to listOf(1, 5, true), "REVIEW_VIEWED" to listOf(10, null, true), "THEME_COMPLETED" to listOf(30, null, true)), rows)
+            "REACTION_GIVEN" to listOf(1, 5, true), "REVIEW_VIEWED" to listOf(10, null, true), "THEME_COMPLETED" to listOf(30, null, true),
+            // #485 V43: 당일 풀이 5·주간 완주 10
+            "THEME_FINISHED" to listOf(10, null, true), "THEME_ON_TIME" to listOf(5, null, true)), rows)
     }
 
     @Test fun `earning is once per event key, reactions stop at the KST daily cap and history is newest first`() {

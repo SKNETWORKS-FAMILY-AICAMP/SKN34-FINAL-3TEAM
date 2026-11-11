@@ -30,7 +30,7 @@ export const adminRetentionApi = {
     if (typeof result?.themeId !== 'string' || !result.themeId) throw new Error('채택한 테마를 확인하지 못했습니다. 목록에서 결과를 먼저 확인해 주세요.')
     return { themeId: result.themeId }
   },
-  themes: (filters: { gradeBand?: string; weekStart?: string; status?: string }, signal?: AbortSignal) =>
+  themes: (filters: { grade?: string; weekStart?: string; status?: string }, signal?: AbortSignal) =>
     apiFetch<Page<AdminWeeklyTheme>>(`/admin/weekly-themes?${query(filters)}`, { signal }),
   theme: (id: string, signal?: AbortSignal) => apiFetch<AdminWeeklyTheme>(`/admin/weekly-themes/${p(id)}`, { signal }),
   createTheme: (data: WeeklyThemeInput) => apiFetch<AdminWeeklyTheme>('/admin/weekly-themes', json(data)),

@@ -35,7 +35,7 @@ AWS 데모 환경(CloudFront → ALB → core)에 k6로 부하를 주어 core·N
 
 ### 기본: ID·비밀번호 시험 계정 (#415)
 
-`prepare_accounts.py`가 공개 API로 계정을 만든다. 순서는 ID·비밀번호 가입 → 약관·처리방침 동의 → 자녀(법정대리인 동의) → 학생 기기 등록 → 비밀번호 재확인 → 자녀 PIN이다. 비밀번호·PIN·기기 쿠키는 비밀 파일에만 쓴다.
+`prepare_accounts.py`가 공개 API로 계정을 만든다. 순서는 ID·비밀번호 가입 → 약관·처리방침 동의 → 자녀(법정대리인 동의) → 학생 기기 등록 → 자녀 PIN이다. 비밀번호·PIN·기기 쿠키는 비밀 파일에만 쓴다.
 
 ```powershell
 python evaluation/load/prepare_accounts.py --base-url https://d3jf0rnm6vhd9v.cloudfront.net `
@@ -44,7 +44,7 @@ python evaluation/load/prepare_accounts.py --base-url https://d3jf0rnm6vhd9v.clo
 
 - 판정 경로까지 보려면 계정 수 × 자녀 3 × 미션 5 ≥ 학습 VU(전체의 20%)가 필요하다(`docs/report/load-test.md` 4장). 300 VU는 4개다.
 - AWS 데모는 `AUTH_NEW_ACCOUNT_DEMO=true`라서 가입한 계정이 `is_demo=true`로 저장되어 운영 집계에서 빠진다. 로컬은 이 값을 켠 core에서 만든다.
-- 가입은 같은 IP에서 10분에 5회까지다(`AUTH_SIGNUP_LIMIT_PER_IP`). `--wait`를 주면 한도에 걸릴 때 1분씩 기다렸다 다시 시도한다.
+- 가입은 같은 IP에서 10분에 5회까지다(`AUTH_SIGNUP_LIMIT_PER_IP`·`AUTH_SIGNUP_LIMIT_WINDOW`). `--wait`를 주면 한도에 걸릴 때 1분씩 기다렸다 다시 시도한다. 로컬 compose는 `.env`에서 두 값을 바꾸면 core에 전달된다(#517).
 - 같은 `--prefix`·`--secrets`로 다시 실행하면 파일에 없는 계정만 더 만든다. ID는 `<prefix><번호>`(영문 소문자·숫자)다.
 - k6 `setup()`은 실행할 때마다 계정마다 `POST /auth/parent/login`으로 보호자 access를 새로 받는다. 회전하는 refresh 토큰이 없으므로 비밀 파일을 다시 쓰지 않고, 시크릿 창·로그아웃 주의도 필요 없다.
 

@@ -199,11 +199,11 @@ test('기기 관리의 페어링·PIN·해제 요청과 성공 후 캐시 갱신
   const h = await mount(t, device.useDeviceAdmin, cache)
   await act(async () => { await h.get().pairing.mutateAsync([child.id]) })
   assert.equal(cache.getQueryState(['children'])?.isInvalidated, false)
-  await act(async () => { await h.get().setPin.mutateAsync({ childId: child.id, pin: '4831', reauthToken: 'synthetic-proof' }) })
+  await act(async () => { await h.get().setPin.mutateAsync({ childId: child.id, pin: '4831' }) })
   await act(async () => { await h.get().revoke.mutateAsync('device-a') })
   assert.deepEqual(calls.map(c => c.method), ['POST', 'PUT', 'DELETE'])
   assert.deepEqual(calls[0].body, { childIds: [child.id] })
-  assert.equal(calls[1].proof, 'synthetic-proof')
+  assert.equal(calls[1].proof, null)
   assert.equal(cache.getQueryState(['children'])?.isInvalidated, true)
 })
 

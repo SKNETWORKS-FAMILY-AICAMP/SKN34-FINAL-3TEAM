@@ -128,6 +128,30 @@ class ModelVersionHttpTest : PostgresRepositoryTest() {
             .andExpect { status { isOk() }; jsonPath("$.items[*].callType") { value(org.hamcrest.Matchers.containsInAnyOrder("THEME_DRAFT", "THEME_IMAGE", "THEME_VIDEO")) } }
     }
 
+    @Test fun `report explanation model registers with explanation scopes and its sLLM usage is listed unpriced (#480)`() {
+        val (_, access) = adminToken()
+        val scopes = listOf("explanation/grade-5/narrative", "explanation/grade-6/essay")
+        val id = registerHttp(access, registration(name = "report-explanation", version = "lora-${UUID.randomUUID()}").copy(evaluation = evidence(scopes)))
+            .andExpect { status { isCreated() } }.andReturn().response.contentAsString.let { json.readTree(it)["id"].asText() }
+        mvc.post("/api/v1/admin/model-versions/$id/activate") {
+            header("Authorization", "Bearer $access"); contentType = MediaType.APPLICATION_JSON
+            content = json.writeValueAsString(approval(scopes))
+        }.andExpect { status { isOk() }; jsonPath("$.status") { value("ACTIVE") } }
+        mvc.get("/internal/model-versions/active") { header("X-Internal-Token", "repository-test-token") }.andExpect {
+            status { isOk() }
+            jsonPath("$.items[?(@.id == '$id')].name") { value(org.hamcrest.Matchers.contains("report-explanation")) }
+            jsonPath("$.items[?(@.id == '$id')].scopes[*]") { value(org.hamcrest.Matchers.containsInAnyOrder(*scopes.toTypedArray())) }
+        }
+        usage.record(com.sagomungchi.core._common.messaging.EventEnvelope(type = "llm.usage.recorded",
+            source = "ai-service", dataschema = "llm.usage.recorded.v1", data = com.sagomungchi.core.usage.domain.LlmUsageRecorded(
+                "ai", "REPORT_EXPLANATION", "report-explanation", "report-explanation@1", 300, 60, 4000, true, null, OffsetDateTime.parse("2042-01-05T00:10:00+09:00"))))
+        mvc.get("/api/v1/admin/ai-usage?from=2042-01-05&to=2042-01-05&callType=REPORT_EXPLANATION") { header("Authorization", "Bearer $access") }.andExpect {
+            status { isOk() }; jsonPath("$.items.length()") { value(1) }; jsonPath("$.items[0].callType") { value("REPORT_EXPLANATION") }
+            jsonPath("$.items[0].calls") { value(1) }; jsonPath("$.items[0].unpricedCalls") { value(1) }
+            jsonPath("$.items[0].costUsd") { value(org.hamcrest.Matchers.nullValue()) }
+        }
+    }
+
     @Test fun `usage HTTP allows 366 days but rejects excess periods and unsupported years with 400`() {
         val (_, access) = adminToken()
         mvc.get("/api/v1/admin/ai-usage") {

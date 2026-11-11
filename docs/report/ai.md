@@ -623,6 +623,8 @@ MODEL_REGISTER 감사 detail에 source·jsonSha256·manifestSha256·modifiedFiel
 
 ### 11.3 파일을 읽고 요청을 만드는 순서
 
+S3 산출물을 먼저 준비할 때는 [전체 SHA-256 업로드 절차](model-artifact-upload.md)를 따른다. 기존 manifest와 로컬 원본 대조 → 단일 PutObject → S3 전체 SHA-256 확인 → 사전 검사 순서다. manifest의 파일 해시를 등록 감사에 저장하는 것과 S3가 전체 체크섬을 보유하는 것은 별개다. 기존 모델의 체크섬 보완 때문에 같은 모델을 다시 등록하거나 활성화하지 않는다.
+
 1. registration_1103.json 원본 바이트를 읽어 SHA-256을 계산한다. `file.arrayBuffer()` → `crypto.subtle.digest('SHA-256', buffer)` → 소문자 16진수 64자리. BOM·공백·개행을 포함한 원본 파일 그대로이며 파싱/재직렬화한 JSON으로 계산하지 않는다.
 2. 파싱한 requests[]를 모델별 카드로 만든다. 최상위 설명(title/version/date/author/주의/<버킷>)은 POST 본문에 보내지 않는다. requests[]의 승인 관련 값이나 알 수 없는 필드는 가져오기 단계에서 거부한다.
 3. 선택한 manifest도 원본 바이트로 해시한다. name/version/scope를 대조하고 해당 모델 files[]만 고른다. manifest가 없으면 manifestSha256 생략, artifactFiles는 []다.
@@ -798,7 +800,7 @@ createdAt
 
 ### 12.1 사전 검사 구현 요약 (2026-11-09)
 
-scoring의 읽기 전용 파일·메타데이터 검사, core 관리자 동기 중계와 별도 MODEL_PREFLIGHT 감사, web 미리보기 검사 버튼을 연결했다. 가중치 본문은 다운로드하지 않으며 전체 S3 SHA-256이 없으면 실패한다. core→scoring local/prod NetworkPolicy와 서비스 URL을 반영했다. 실제 local core·scoring·MinIO·PostgreSQL에서 정상/해시 불일치/누락을 검증했다. 후속 AWS 읽기 전용 확인에서 실제 Pod Identity 연결·S3 읽기 정책과 12개 객체 HEAD를 확인했다. 객체 모두 S3 SHA-256이 없으며 scoring replicas=0이라 실제 Pod 실행 검증은 남았다. 업로드 방식 조율이 필요해 해당 항목은 미완료로 유지한다. 운영 배포·재가동·객체 및 정책 변경은 하지 않았다. 계약·검증·원문 체크리스트는 12.2 이하에 둔다.
+scoring의 읽기 전용 파일·메타데이터 검사, core 관리자 동기 중계와 별도 MODEL_PREFLIGHT 감사, web 미리보기 검사 버튼을 연결했다. 가중치 본문은 다운로드하지 않으며 전체 S3 SHA-256이 없으면 실패한다. core→scoring local/prod NetworkPolicy와 서비스 URL을 반영했다. 실제 local core·scoring·MinIO·PostgreSQL에서 정상/해시 불일치/누락을 검증했다. 후속 AWS 읽기 전용 확인에서 실제 Pod Identity 연결·S3 읽기 정책과 12개 객체 HEAD를 확인했다. 당시 객체에 S3 SHA-256이 없었으나 #493에서 단일 PutObject 업로드 방식을 정하고 12개 객체를 보완해 CloudShell 사전 검사 PASS까지 확인했다([12.9](#129-전체-sha-256-업로드-방식-결정-493)·[12.10](#1210-aws-s3-보완과-cloudshell-사전-검사-493)). scoring replicas=0이라 실제 Pod 실행 검증만 남아 AWS 항목은 미완료로 유지한다. 운영 배포·재가동·정책 변경은 하지 않았다. 계약·검증·원문 체크리스트는 12.2 이하에 둔다.
 
 ### 12.2 구현
 
@@ -816,6 +818,8 @@ scoring의 읽기 전용 파일·메타데이터 검사, core 관리자 동기 �
 [Amazon S3 HeadObject 계약](https://docs.aws.amazon.com/AmazonS3/latest/API/API_HeadObject.html)에 따라 `ChecksumMode=ENABLED`로 조회한다. 작은 JSON은 실제 바이트 SHA-256으로 대조한다. 나머지는 S3 전체 파일 SHA-256만 사용하고 ETag, 임의 사용자 metadata의 sha256, multipart COMPOSITE는 대체 근거로 인정하지 않는다. 전체 SHA-256이 없으면 `CHECKSUM_UNAVAILABLE`로 실패한다. 성공처럼 표시하거나 가중치 다운로드로 우회하지 않는다.
 
 따라서 기존 AWS 객체가 multipart COMPOSITE이거나 SHA-256을 저장하지 않았다면 사전 검사가 실패할 수 있다. 객체를 임의로 다시 업로드하거나 운영 모델을 교체하지 않았다. 업로드 방식 보완이 필요하면 #212 담당자와 해당 객체 상태를 확인한 뒤 별도로 반영한다.
+
+2026-11-10 #493에서 단일 PutObject에 전체 원본 SHA-256을 명시하는 방식으로 정했다([12.9](#129-전체-sha-256-업로드-방식-결정-493)). 이후 사용자 추가 지시로 기존 두 모델 12개 객체의 실제 S3 보완과 CloudShell 자격 증명의 사전 검사 PASS를 확인했다([12.10](#1210-aws-s3-보완과-cloudshell-사전-검사-493)). 실제 Pod 검증은 남아 있다.
 
 저장소의 `scoring-s3-read` IAM 정책은 s3:ListBucket·s3:GetObject를 허용한다. 사용 API는 HeadObject·GetObject이며 새 쓰기 권한은 필요 없다. JSON GET은 If-Match로 고정하여 GetObjectVersion 권한을 요구하지 않는다. SSE-KMS 객체의 checksum 조회에는 추가 KMS 권한이 필요할 수 있다. #212 문서의 Pod Identity·S3 Gateway 경로를 검토했고, 2026-11-09 AWS 콘솔 CloudShell에서 실제 IAM 연결·정책과 S3 객체 HEAD를 조회했다. 배포·정책 수정은 하지 않았다. NetworkPolicy YAML/JSON 검증은 실제 클러스터 통신 검증과 구분한다.
 
@@ -852,7 +856,7 @@ scoring의 읽기 전용 파일·메타데이터 검사, core 관리자 동기 �
 - [x] web: 미리보기 카드에 "사전 검사" 버튼과 결과 표시(manifest 필요)
 - [x] api-spec·OpenAPI 반영
 
-AWS 실제 역할 연결·정책 및 객체 HEAD 확인까지 완료했다. 다만 실행 중인 scoring Pod가 없고 기존 객체에 S3 SHA-256이 없어 실제 Pod 검증과 업로드 방식 조율이 남았다. 따라서 AWS 항목은 미완료로 유지한다. 운영 리소스·객체·권한은 변경하지 않았다.
+AWS 실제 역할 연결·정책 및 객체 HEAD 확인까지 완료했다. S3 SHA-256 업로드 방식과 기존 12개 객체 보완은 #493에서 끝났다(12.9·12.10). 실행 중인 scoring Pod가 없어 실제 Pod 검증만 남았으므로 AWS 항목은 미완료로 유지한다. 운영 권한은 변경하지 않았다.
 
 #### 완료 조건
 - [x] scoring·core 테스트, web 테스트 통과
@@ -882,6 +886,43 @@ AWS 실제 역할 연결·정책 및 객체 HEAD 확인까지 완료했다. 다�
 현재 구현에 이 객체를 입력하면 본문을 읽지 않는 tokenizer.json·tokenizer_config.json·model.safetensors는 CHECKSUM_UNAVAILABLE 대상이다. 작은 JSON은 본문 해시 검사가 가능하지만 이번 AWS 확인에서는 HEAD만 실행했으므로 해시·메타데이터 유효성 통과로 기록하지 않는다.
 
 남은 조치: #212 업로드 담당자와 전체 파일 SHA-256을 S3에 제공하는 업로드 방식을 맞추고, 서비스 재가동 시 실제 scoring Pod의 읽기·통신을 확인한다. 체크섬 검사 완화, 가중치 다운로드, 운영 객체 재업로드, 정책 변경, 서비스 재가동은 수행하지 않았다.
+
+위 기록은 11/09 읽기 전용 확인 결과로 보존한다. 이후 업로드 방식 결정과 11/10 실제 S3 보완 결과는 [#493 업로드 안내](model-artifact-upload.md)에 별도로 기록했다.
+
+### 12.8 kind 확인 (2026-11-10)
+
+local kind에 배포된 이미지(develop `ecc6b71d`)로 core → scoring → MinIO 경로를 다시 확인했다. 확인용 모델은 학습하지 않은 작은 BERT 형태(출력 9개, 회귀)다. scoring Pod 안에서 만들어 실제 로더로 불러지는 것까지 확인했다. 이 모델을 `sagomungchi-local-models`에 `ChecksumSHA256`을 붙여 올렸다.
+
+| 경우 | scoring 내부 API | 관리자 화면(registration·manifest JSON 가져오기 → 사전 검사) |
+| --- | --- | --- |
+| 정상 | PASS `FILES_AND_METADATA_VERIFIED` | 파일·형식 확인 완료 |
+| 해시 불일치(manifest의 가중치 sha256만 변경) | FAIL, `model.safetensors` `HASH_MISMATCH` | SHA-256 불일치 |
+| 파일 누락(가중치 없는 경로) | FAIL, `model.safetensors` `FILE_MISSING` | 파일 없음 |
+
+- 감사 `MODEL_PREFLIGHT`는 SUCCESS 1·FAILURE 2였고, 자동 등록된 MODEL 행은 0이다. 확인 후 MinIO 객체를 지웠다
+- AWS는 실행하지 않았다. 남은 S3 SHA-256 업로드 방식 결정과 실제 Pod 확인은 #493으로 분리했다
+
+### 12.9 전체 SHA-256 업로드 방식 결정 (#493)
+
+2026-11-10 develop `fd119af1` 기준. 모델별 6개 파일을 `aws s3api put-object`로 단일 업로드하고, 원본 전체 SHA-256의 Base64 값을 명시한다. 현재 약 443MB 가중치는 단일 PUT 한도 안에 있다. multipart SHA-256은 COMPOSITE라 기존 사전 검사 계약을 만족하지 못한다.
+
+- [업로드 안내](model-artifact-upload.md): 공식 근거, 신규 객체 명령, 기존 서술 3.0·논술 3.1의 동일 원본 보완 방침, 메타데이터 보존·동시 변경 방지·복구 및 실제 Pod 확인 절차
+- [로컬 준비 도구](../../scripts/prepare_model_upload.py): 기존 manifest 기반 사전 검사 요청과 로컬 6개 파일을 크기·SHA-256으로 대조하고 업로드 계획만 생성. AWS 접속·업로드·등록·활성화 기능 없음
+- 기존 두 모델은 아래 12.10에서 실제 S3 보완을 완료했다. EKS·RDS 재가동과 권한 변경은 하지 않았고 실제 scoring Pod 검증은 **미완료**다.
+- ETag·사용자 metadata·COMPOSITE 거부와 작은 JSON만 GET하는 계약을 유지한다. 서비스 코드·API·DB·IAM·배포 설정은 변경하지 않는다. 로컬 검증 결과는 [업로드 안내 6절](model-artifact-upload.md#6-로컬-검증)에 따로 기록한다.
+
+### 12.10 AWS S3 보완과 CloudShell 사전 검사 (#493)
+
+2026-11-10 사용자 추가 지시에 따라 서버를 켜지 않고 기존 모델 버킷의 12개 객체를 보완했다. 로컬 원본 및 S3 기존 버전 본문을 담당자 manifest와 대조한 뒤 동일 원본·속성으로 단일 PutObject를 실행했다. 전체 SHA-256·크기 일치와 이전 버전 보존을 확인했다. #212의 IAM·버킷·네트워크 설정은 변경하지 않았다. 별도 담당자 연락을 수행한 것으로 기록하지 않는다.
+
+| 검증 대상 | 결과 |
+| --- | --- |
+| 기존 서술 3.0·논술 3.1, 총 12개 객체 | 모두 FULL_OBJECT SHA-256과 manifest 일치, 원본 바이트·속성 유지, 이전 버전 보존 |
+| CloudShell 운영자 자격 증명으로 실제 S3 대상 검사 | 두 모델 모두 PASS / FILES_AND_METADATA_VERIFIED, 모델별 HEAD 6회·작은 JSON GET 3회 |
+| EKS·RDS | 작업 전후 두 nodegroup desiredSize=0, RDS stopped. 재가동 없음 |
+| 실제 scoring Pod Identity 및 관리자 → core → scoring | 미실행. 재가동 후 별도 검증 필요 |
+
+검사는 `83500294`의 원본 사전 검사 소스 8개를 해시 대조한 뒤 CloudShell Python 3.13에서 직접 실행했다. 배포 이미지/Python 3.12 Pod의 HTTP·권한·네트워크 검증으로 간주하지 않는다. 자세한 실행 범위·복구 정보는 [업로드 안내 7절](model-artifact-upload.md#7-실제-aws-s3-보완검사-결과-2026-11-10), [객체별 증빙](evidence/issue493-s3-sha256-20261110.json)에 둔다.
 
 ## 13. Pod별 모델 로딩 보고 (#370)
 
@@ -941,8 +982,8 @@ V37 migration → RabbitMQ definitions(새 core 큐·재시도·DLQ 바인딩) �
 - [x] Pod 축소·재시작 시 오래된 기록 처리 규칙
 
 #### 완료 조건
-- [ ] 레플리카 2개 이상인 local 환경에서 한 Pod 로딩 실패 시 화면에 구분되어 보임을 확인
-  - 두 scoring 프로세스와 실제 RabbitMQ·core·DB·HTTP 응답, 해당 응답을 사용한 브라우저 표시를 검증했다. 실제 Kubernetes Pod 2개와 브라우저 직접 연결은 미검증이므로 원문 조건은 미체크한다.
+- [x] 레플리카 2개 이상인 local 환경에서 한 Pod 로딩 실패 시 화면에 구분되어 보임을 확인
+  - 11/09에는 두 scoring 프로세스와 그 응답을 쓴 브라우저 표시까지만 검증했다. 11/10 kind의 실제 Pod 2개와 관리자 화면 직접 연결로 확인했다(13.9).
 - [x] 관련 테스트 통과
 
 #### 유지할 원칙
@@ -963,3 +1004,108 @@ develop `ef18b2ac`(#391·#369 포함)을 병합했다. OpenAPI의 #368 사전 �
 기존 감사 정책을 유지하도록 `events.topic / model.loading.reported → core.event.audit` 명시적 바인딩을 추가했다. EventAuditConsumer는 기존처럼 이벤트 봉투 메타데이터만 기록하며 모델 상태 본문은 event_log에 저장하지 않는다. 큐 조회 테스트는 버전 관리되는 definitions의 전체 큐·DLQ 수와 실제 브로커 조회 결과를 비교하도록 바꿨다. 기존 allowlist 일치·누락 큐 오류 검증은 유지한다.
 
 수정 후 core 전체 test·bootJar 통과: 585개 중 실패 0개, 조건부 제외 3개. 저장소 계약 회귀 203개 통과.
+
+### 13.9 kind 실제 Pod 2개 확인 (2026-11-10)
+
+1. 12.8의 확인용 모델을 관리자 화면에서 등록·활성화했다. 범위는 실제 채점과 겹치지 않는 `kindcheck/issue-370`이다. 기존 scoring Pod가 `LOADED`를 보고했다
+2. MinIO의 `model.safetensors`를 같은 크기의 깨진 파일로 바꾸고 scoring을 레플리카 2로 늘렸다. 새 Pod는 `SafetensorError`로 실패하고 Ready가 되지 않았다
+3. `GET /api/v1/admin/model-loading` 응답은 `observedPods 2, loadedPods 1, failedPods [새 Pod]`였다. 관리자 화면 로딩 확인 단계에는 다음이 보였다
+   - "최근 보고 Pod 2개 중 로딩 완료 1개"
+   - 실패 Pod·오류 유형·"기존 모델 없음"
+   - 120초 넘은 이전 Pod의 "보고 만료"
+
+되돌림: 레플리카 1개로 복구했다. MinIO 객체를 지웠다. 확인용 `model_version` 행은 활성화 해제 API가 없어 DB에서 지웠고, 감사 이력은 남겼다. 확인 중 생긴 로딩 보고 행을 지웠다. scoring을 다시 시작해 빈 모델 목록 보고를 확인했다(Deployment에 `restartedAt` annotation 추가).
+
+## 14. 리포트 설명 API (#477, 2026-11-10)
+
+에픽 #473(설명 sLLM)의 ai 몫. report가 대표 답변마다 부르면 M2 항목 점수와 학생 글로 학부모용 설명을 만든다(api-spec 4.2.3, FN-RPT-09). 모델 학습(#475)·서버 배포(#476) 전이라 지금은 설명 모델이 활성이 아니어서 항상 `{active:false}`를 돌려준다.
+
+### API
+
+| 경로 | 요청 | 응답 |
+|---|---|---|
+| `POST /internal/report-explanations` | `{grade, inputType, text, scores}` | `200 {active:true, explanation:{text, quote\|null}, versions:{model, prompt}}` · `200 {active:false}` · `400`·`422 AI_EXPLANATION_REJECTED`·`503 AI_UNAVAILABLE` |
+| `GET /internal/versions` | — | `prompts.reportExplanation` 추가(`report-explanation@1`) |
+
+### 결정과 근거
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 설명 항목 | 가장 높은 항목(잘한 점) 1개 + 가장 낮은 항목(함께 이야기해 볼 점) 1개, 동점은 항목 표 순서, 모두 같으면 1개. 서술 총점 `hol` 제외 | 학습 데이터(71818) 이유 문장이 항목당 1문장이라 모델도 항목 하나씩 생성. 9항목 전부는 CPU에서 답변당 9회라 길고 느림(사용자 결정 11/10) |
+| 인용 구절 | 설명과 낱말 앞 두 글자가 2개 이상 겹치는 학생 글 문장 중 가장 많이 겹치는 것, 없으면 null | 이유 문장에 근거 구절 표시가 없어 모델에게 구절까지 만들게 하면 틀리기 쉬움. 원문 문장을 그대로 잘라 써 부분 문자열 조건을 항상 만족(사용자 결정 11/10) |
+| 활성 확인 | 레지스트리 `MODEL` `report-explanation`, scope `explanation/grade-{학년}/{narrative\|essay}`(#480). `ActiveVersions`가 PROMPT와 함께 이 MODEL도 보관(`prompt_versions/models.tracked`) | 기존 활성 목록·`model.version.activated` 수신을 그대로 써 새 구독 없이 승인 범위를 지킴. M2 scope와 같은 모양 |
+| 클라이언트 | `create_explanation_llm` → `OpenAICompatibleLlm` 두 번째 인스턴스(`EXPLANATION_BASE_URL`·`EXPLANATION_MODEL`), 재시도 0, `app.state.explanation_llm` | 다른 호출의 `LLM_PROVIDER`는 그대로(닫힌 #341의 리포트 전용 제공자와 달리 OpenAI 호환 주소만 바꿈). 주소가 없으면 `UnconfiguredLlm`이라 설명만 503 |
+| 생성 방식 | `LlmClient.stream`의 평문을 모음(JSON 구조화 출력 안 씀), `callType = REPORT_EXPLANATION` | LoRA가 이유 문장 평문으로 학습되므로 JSON 강제는 학습 형식과 다름. 사용량 기록은 기존 스트림 경로 그대로 |
+| 후처리·검사 | 숫자나 금지어(분석 대화 `verification.FORBIDDEN`: 레벨·등급·점수·사고력·IQ·상위·하위·뒤처·영재)가 있는 문장을 버리고 항목당 앞 2문장. 남는 문장이 없으면 422 | 전문가 문장에 "4점" 같은 점수 표현이 섞임(`ml/m2/scripts/build_feedback.py` `SCORE_PAT`). 문장 안에서 숫자만 지우면 문장이 깨지므로 문장째 버림. 생성형 AI로 말투를 바꾸지 않음(NFR-DAT-03) |
+| 학부모 문장 틀 | `잘한 점: …` / `함께 이야기해 볼 점: …` 줄 | 점수 대신 칭찬과 대화 거리로 전달(D2 규칙 후처리) |
+| 시간 | 항목 1회 60초, 요청 마감 125초, 최대 256토큰. 모두 설정값 | CPU 양자화 모델 실측(#475) 전 임시값. 주 1회 배치라 P12 예외 |
+
+### #475 학습 입력 형식 (고정)
+
+```
+system: 너는 초등학생 글의 한 평가 항목에 대해 전문가가 쓴 이유 문장을 쓴다. (app/report_explanation/prompts.py SYSTEM)
+user:   [학년] 초{학년} [항목] {항목 이름} [점수] {점수}
+        {학생 글}
+target: 그 항목의 전문가 이유 문장(71818 score.personal.*.feedback 원문)
+```
+
+- 항목 이름: 서술 과제 수행·명료성·구체성·적절성·연결성·통일성·어휘·어법(`task_1`·`content_1~3`·`organization_1~2`·`expression_1~2`), 논술 구성·내용·표현(`org`·`cont`·`exp`). 문구를 바꾸면 `PROMPT_VERSION`을 올리고 #475 학습 쌍도 같이 바꾼다
+- 확인 필요(#475): 논술 M2는 545 데이터의 `{org,cont,exp}` 0~3점인데 이유 문장은 71819에만 있어 항목 체계가 다르다. 논술 설명 학습 쌍을 만들 때 항목 대응을 정해야 한다
+
+### 검증
+
+- `tests/report_explanation/`(20개): 항목 선택(동점·전부 같음·총점 제외), 후처리(숫자·금지어 문장 버림, 2문장), 문장 틀, 인용(겹침 최대·없으면 null), 활성·미등록·다른 학년·다른 입력 유형·같은 이름 PROMPT는 `{active:false}`이고 sLLM 미호출, 422·503, 사용량 `REPORT_EXPLANATION`, revision 순서·snapshot 전 이벤트 보관, 라우터 camelCase·`{active:false}` 단독·400·401·주소 미설정 503
+- `tests/test_versions.py`: `/internal/versions`에 `reportExplanation`
+- `scripts/tests/test_ai_openapi.py`: 라우터 8개와 OpenAPI 경로 일치
+- 남은 확인: 실제 sLLM 서버(#476)와 학습 모델(#475)로 생성 시간·후처리 통과율 측정. report 연동은 #479(PR #494)에서 완료, 후속 정합화는 #508
+
+## 15. 교육과정 지식 RAG 계약 (#464, 2026-11-11)
+
+에픽 #463 계약 고정의 ai 몫. 구현(#467 임베딩, #470 검색 연결) 전 계약이며 값은 기준안(팀 확인 전)이다. 테이블·샘플·결정 전체는 [learning 28장](learning.md#28-교육과정-지식-rag-계약-고정-464-에픽-463-2026-11-11).
+
+- C6 임베딩([api-spec 4.2.4](../design/api-spec.md#424-지식-임베딩-463-계약-464-c6-구현-467)): `POST /internal/embeddings` `{texts[]}` → `{model, dimensions, vectors[]}`, 1~64개·본문당 8,000자, 502·503. 계약 고정 당시 OpenAPI에 `x-implementation-status: planned-issue-467`, 사용량 `callType`은 #467에서 추가(16장에서 구현·표시 제거)
+- C7 근거 칸([api-spec 4.2.5](../design/api-spec.md#425-미션-초안-근거-칸-463-계약-464-c7-구현-470)): 미션 초안 요청 `knowledge`(C5 standards 응답 그대로, 선택), 응답 `sources`(근거 조각 표시, 빈 배열 허용). OpenAPI 칸에 `planned-issue-470`. `mission_draft/models.py`는 바꾸지 않았다(#470)
+- `app/knowledge/contracts.py`: C5·C6·C7 pydantic 모델, `KnowledgeApi`·`Embedder`·`KnowledgeRetriever` Protocol, `RetrievalResult`(근거 없음은 예외 대신 `fallback` 사유), `sources_of`
+- `app/knowledge/fake.py`: 표준 라이브러리만 쓰는 가짜(계약 시험이 pydantic 없이 불러 씀). 샘플을 활성 판 하나로 올린 `FakeKnowledgeApi`(다섯 경로, 인증·400·409 포함), 글자 2개 조각 해시 벡터 `FakeEmbedder`(모델 `fake-bigram-v1`, 같은 글 같은 벡터), `as_knowledge_api()`·`as_embedder()`(Protocol 만족), `mock_transport()`(httpx), `serve()`(로컬 HTTP)
+- 검증: `tests/knowledge/test_contracts.py` 29개(모델 칸·필수 = OpenAPI, 사유·상한 = OpenAPI·가짜, Protocol 통해 응답, MockTransport·HTTP 서버), `scripts/tests/test_knowledge_contracts.py`(learning 28장). `test_ai_openapi.py`는 구현 전 표시 경로를 라우터 대조에서 뺌(라우터 8개 그대로)
+
+## 16. 지식 임베딩 API (#467, 2026-11-11)
+
+에픽 #463의 ai 몫. 15장 계약 C6를 구현했다. learning 지식 적재(#466)·관계 후보 스크립트(#468)·ai 검색 클라이언트(#470)가 가짜 임베딩 대신 이 API를 부른다.
+
+### API 변경
+
+| 경로·계약 | 변경 |
+|---|---|
+| `POST /internal/embeddings` | 구현. `{texts[]}` → `200 {model, dimensions, vectors[]}`(순서·개수 보존) · `400 VALIDATION_FAILED`(0개·65개 이상, 빈 글·공백만, 8,000자 초과, `texts` 밖 칸) · `401` · `502 AI_BAD_RESPONSE` · `503 AI_UNAVAILABLE`(둘 다 `retryable`) |
+| `contracts/openapi/ai-service.yaml` | `/embeddings`의 `x-implementation-status: planned-issue-467` 제거, 설명에 설정·시간 기준 |
+| `llm.usage.recorded` | `callType` `KNOWLEDGE_EMBEDDING` 추가(core V44, [core-gateway 19장](core-gateway.md#19-지식-임베딩-사용량-knowledge_embedding-467-2026-11-11)) |
+| 설정 | `EMBEDDING_PROVIDER`(openai\|fake, 기본 openai)·`EMBEDDING_MODEL`(text-embedding-3-small)·`EMBEDDING_DIMENSIONS`(1536). compose·`.env.example`에 추가 |
+
+### 결정과 근거
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 시간 기준 | 제공자 요청 1회 타임아웃·재시도·대기는 LLM 공통 `LLM_TIMEOUT` 15초·`LLM_MAX_RETRIES` 1회·`LLM_RETRY_BACKOFF` 1초(P12) 그대로 | 이슈 지침(기존 제공자 설정 재사용). 임베딩은 보통 1~2초라 충분하고 새 설정이 늘지 않음(사용자 결정 11/11) |
+| 제공자·주소 | `EMBEDDING_PROVIDER=openai`는 `OPENAI_API_KEY`를 쓰고 `OPENAI_BASE_URL`은 쓰지 않아 항상 OpenAI 기본 주소. 키가 없으면 `UnconfiguredEmbeddingClient`로 임베딩만 503(`retryable=false`), 서버는 기동 | `OPENAI_BASE_URL`은 sLLM 대화용이라 임베딩 모델이 없을 수 있음. `LLM_PROVIDER=anthropic`이어도 임베딩은 OpenAI(사용자 결정 11/11) |
+| 가짜 전환 | `EMBEDDING_PROVIDER=fake`면 계약 4.2.4 가짜 규칙(`fake-bigram-v1`, `knowledge/fake.py` `fake_vector`) 벡터를 돌려주고 사용량을 남기지 않음 | 키 없이 로컬·시험에서 learning 연동 확인. 외부 호출이 없어 비용·사용량이 없음 |
+| 구조 | `app/llm/embeddings.py` `EmbeddingClient`(재시도·사용량, `LlmClient`와 같은 방식)·`OpenAIEmbeddingClient`·`create_embedder` → `app.state.embedder`. `app/embedding/` 라우터·서비스. 요청·응답 모델은 `knowledge/contracts.py` 그대로 | 기존 `LlmError`·`status_error`·`LlmUnavailable`·사용량 recorder를 재사용하고 새 공통 라이브러리를 만들지 않음. `LlmClient`는 채팅 구조화 출력 전용이라 상속하지 않음 |
+| `Embedder` Protocol | `EmbeddingService.embed(texts)`가 `EmbeddingResponse`를 돌려줘 Protocol을 만족 | #470 검색 클라이언트가 HTTP 없이 같은 객체(`EmbeddingService(app.state.embedder)`)를 씀 |
+| 순서·검사 | OpenAI 응답 `data`를 `index`로 정렬. 개수·차원이 요청과 다르면 `LLM_INVALID_OUTPUT`(재시도 대상) → 재실패 시 502 | 계약 C6 순서 보존과 learning 판 차원 보호. OpenAI 요청에 `dimensions`를 보내 설정 차원을 명시 |
+| 사용량 | 요청 1회(재시도 포함) = 1건, `callType = KNOWLEDGE_EMBEDDING`, `promptVersion` null, `inputTokens` = `usage.prompt_tokens`, `outputTokens` = 0 | 임베딩은 출력 토큰이 없음. 0으로 남겨 core에 단가가 생기면 입력 토큰만으로 비용이 계산됨(null이면 계산 안 됨). `LlmUsage.prompt_version`을 `str \| None`으로 넓힘 |
+| 상한 | 개수 64·글자 8,000은 계약 고정값(`contracts.py` 상수, OpenAPI `maxItems`·`maxLength`)으로 두고 설정으로 만들지 않음 | 설정으로 바꾸면 OpenAPI·가짜·learning 대역과 어긋남 |
+| Langfuse | 임베딩 호출은 Langfuse generation을 만들지 않음 | 프롬프트·출력이 없는 호출이라 추적 가치가 낮고 사용량은 이벤트로 남음. 필요하면 후속 |
+
+### 검증
+
+- `tests/embedding/test_client.py`: 응답 순서가 섞여도 요청 순서, 요청 칸(model·dimensions·timeout), 사용량(callType·입력 토큰·출력 0·promptVersion null), 개수·차원 불일치 = `LLM_INVALID_OUTPUT`+사용량, SDK 오류 6종 분류·기록, 재시도 1회와 요청마다 사용량, 재시도 안 하는 오류, 가짜 규칙·사용량 없음, 미설정, 팩토리 기본값·LLM 공통 시간 기준·`OPENAI_BASE_URL` 무시·SDK 재시도 끔
+- `tests/embedding/test_router.py`: 200 모양·순서, 401, 상한 400(경계 64개·8,000자는 200), 502·503과 `retryable`, 키 없는 기본 앱 503, `Embedder` Protocol, 응답이 OpenAPI 스키마 통과
+- `scripts/tests/test_ai_openapi.py`(라우터 9개 = OpenAPI), `test_knowledge_contracts.py`(ai planned 표시 없음)
+- 실제 OpenAI 1회 호출(2026-11-11, `OpenAIEmbeddingClient`·재시도 0): 짧은 교육과정 문장 3개 → `text-embedding-3-small`, 벡터 3개 모두 1536차원·길이 약 1, 사용량 1건(`KNOWLEDGE_EMBEDDING`, 입력 42토큰·출력 0·성공), 2.2초. 관련 문장 쌍(분수 덧셈 두 문장) 코사인 0.46, 무관한 쌍 0.12
+
+### 한계·후속
+
+- OpenAI는 입력 하나 8,192토큰·요청 전체 300,000토큰 제한이 있다. 한국어 8,000자 글은 8,192토큰을 넘을 수 있고 64개를 모두 길게 보내면 요청 한도를 넘어 `LLM_BAD_REQUEST` → 503(`retryable=false`)이 된다. C2 조각은 성취기준·내용 요소 문장이라 짧아 지금은 해당 없음. 긴 글을 넣게 되면 상한(글자 수)을 다시 정한다
+- #466·#468·#470이 가짜에서 이 API로 바꾸는 일은 각 이슈 몫
+- 위 실측처럼 `text-embedding-3-small`의 관련 문장 코사인이 0.5 안팎이라 계약 기준안 `DEFAULT_MIN_SIMILARITY = 0.7`(C5)이면 근거가 대부분 `BELOW_THRESHOLD`가 될 수 있다. 실제 적재 데이터로 기준값을 다시 재는 일은 #466·#470에서 한다
+

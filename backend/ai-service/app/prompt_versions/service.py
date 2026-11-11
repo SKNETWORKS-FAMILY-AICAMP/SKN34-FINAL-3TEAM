@@ -4,7 +4,7 @@ import asyncio
 import logging
 
 from app.clients.core_client import CoreClient
-from app.prompt_versions.models import PROMPT_SCOPES, ActiveVersionItem
+from app.prompt_versions.models import ActiveVersionItem, tracked
 from app.prompt_versions.registry import ActiveVersions
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ class PromptSync:
 
     def offer(self, item: ActiveVersionItem) -> None:
         """snapshot 전에는 이름별 최신 revision만 보존하고, 이후에는 바로 적용한다."""
-        if item.kind != "PROMPT" or item.name not in PROMPT_SCOPES:
+        if not tracked(item):
             return
         if self.initialized:
             self._versions.apply(item)
@@ -39,7 +39,7 @@ class PromptSync:
         if previous is None or item.revision > previous.revision:
             self._pending[item.name] = item
         elif item.revision == previous.revision and item != previous:
-            logger.warning("Conflicting pending prompt revision ignored name=%s", item.name)
+            logger.warning("Conflicting pending revision ignored name=%s", item.name)
 
     async def synchronize(self, disconnected: asyncio.Event) -> None:
         while not disconnected.is_set():

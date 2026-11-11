@@ -96,13 +96,15 @@ class AdminMissionDraftsContractTest(unittest.TestCase):
 
 
 class CallTypeListTest(unittest.TestCase):
-    """LLM 호출 종류는 이벤트 스키마·core enum·core CHECK·ERD·core OpenAPI와 ai·scoring 발행 목록이 같아야 한다 (#355, #439)"""
+    """LLM 호출 종류는 이벤트 스키마·core enum·core CHECK·ERD·core OpenAPI와 ai·scoring 발행 목록이 같아야 한다 (#355, #439, #480, #467)"""
 
     def test_every_call_type_list_is_the_same(self):
         schema = json.loads((ROOT / 'contracts/events/llm.usage.recorded.v1.schema.json').read_text(encoding='utf-8'))
         expected = schema['properties']['callType']['enum']
         self.assertIn('MISSION_DRAFT', expected)
         self.assertTrue({'THEME_DRAFT', 'THEME_IMAGE', 'THEME_VIDEO'} <= set(expected))  # #439·#436
+        self.assertIn('REPORT_EXPLANATION', expected)  # #480
+        self.assertIn('KNOWLEDGE_EMBEDDING', expected)  # #467
         public = yaml.safe_load((ROOT / 'contracts/openapi/core-service.yaml').read_text(encoding='utf-8'))
         enum = (ROOT / 'backend/core-service/src/main/kotlin/com/sagomungchi/core/usage/domain/UsageSummary.kt').read_text(encoding='utf-8')
         migrations = sorted((ROOT / 'backend/core-service/src/main/resources/db/migration').glob('V*__*.sql'),
