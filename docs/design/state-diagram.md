@@ -691,7 +691,7 @@ stateDiagram-v2
 
 ### 6.4 결제 상태 적용 보완 (#48)
 
-CONFIRMING은 PG 조회로만 확정하며, APPROVED/RECOVERY_REQUIRED는 추가 청구 없이 구독 반영을 재시도한다. REQUESTED 환불은 프리미엄 사용 동결 상태이며 증빙 미확인은 503이다. APPROVED 환불의 PG 결과 불명확은 FAILED로 바꾸지 않고 조회 복구한다. REFUNDED/CANCELED는 지연 DONE 통지로 되돌리지 않는다. PG 호출 중 parent 잠금은 유지하지 않으며 준비된 거래/환불이 탈퇴를 차단한다. 상세 계약은 [#48 보고서](../report/payment.md)를 따른다.
+CONFIRMING은 PG 조회로만 확정하며, APPROVED/RECOVERY_REQUIRED는 추가 청구 없이 구독 반영을 재시도한다. REQUESTED 환불은 프리미엄 사용 동결 상태이며 증빙 미확인은 503이다. APPROVED 환불의 PG 결과 불명확은 FAILED로 바꾸지 않고 조회 복구한다. REFUNDED/CANCELED는 지연 DONE 통지로 되돌리지 않는다. PG 호출 중 parent 잠금은 유지하지 않으며 준비된 거래/환불이 탈퇴를 차단한다. 상세 계약은 [#48 보고서](../report/core-gateway.md#24-결제구독과-상품-권한-48184419)를 따른다.
 
 ---
 

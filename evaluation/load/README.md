@@ -10,7 +10,7 @@ AWS 데모 환경(CloudFront → ALB → core)에 k6로 부하를 주어 core·N
 | `collect_metrics.py` | Prometheus(core·learning JVM, DB 풀, HTTP, RabbitMQ)·CloudWatch(RDS, ALB, NAT)·Pod 재시작 수집 |
 | `llm-stub.k8s.yaml` | 데모 `app` 네임스페이스용 LLM 스텁 Deployment·Service·NetworkPolicy |
 
-1차 결과와 해석은 [`docs/report/load-test.md`](../../docs/report/load-test.md)에 있다.
+1차 결과와 해석은 [`docs/report/infra.md#9-aws-데모-부하-시험-1차-361`](../../docs/report/infra.md#9-aws-데모-부하-시험-1차-361)에 있다.
 
 ## 시나리오
 
@@ -42,7 +42,7 @@ python evaluation/load/prepare_accounts.py --base-url https://d3jf0rnm6vhd9v.clo
   --count 4 --prefix load --wait --secrets 'C:\Users\<사용자>\sagomungchi-load\secrets.json'
 ```
 
-- 판정 경로까지 보려면 계정 수 × 자녀 3 × 미션 5 ≥ 학습 VU(전체의 20%)가 필요하다(`docs/report/load-test.md` 4장). 300 VU는 4개다.
+- 판정 경로까지 보려면 계정 수 × 자녀 3 × 미션 5 ≥ 학습 VU(전체의 20%)가 필요하다(`docs/report/infra.md#9-aws-데모-부하-시험-1차-361` 4장). 300 VU는 4개다.
 - AWS 데모는 `AUTH_NEW_ACCOUNT_DEMO=true`라서 가입한 계정이 `is_demo=true`로 저장되어 운영 집계에서 빠진다. 로컬은 이 값을 켠 core에서 만든다.
 - 가입은 같은 IP에서 10분에 5회까지다(`AUTH_SIGNUP_LIMIT_PER_IP`·`AUTH_SIGNUP_LIMIT_WINDOW`). `--wait`를 주면 한도에 걸릴 때 1분씩 기다렸다 다시 시도한다. 로컬 compose는 `.env`에서 두 값을 바꾸면 core에 전달된다(#517).
 - 같은 `--prefix`·`--secrets`로 다시 실행하면 파일에 없는 계정만 더 만든다. ID는 `<prefix><번호>`(영문 소문자·숫자)다.
