@@ -2366,6 +2366,9 @@ classDiagram
   class NarrativeGenerator {
     +generate(command, report) GenerationResult
   }
+  class ExplanationGenerator {
+    +generate(command, report) GenerationResult
+  }
   class RenderingGenerator {
     +generate(command, report) GenerationResult
   }
@@ -2381,6 +2384,7 @@ classDiagram
     +state ReportState
     +inclusion_rule str
     +items tuple~ReportItem~
+    +explanation_state str
   }
   class ReportVerifier {
     <<service>>
@@ -2422,11 +2426,13 @@ classDiagram
   class LearningClient {
     <<client>>
     +records(student_id, period) LearningRecords
+    +explanation_attempts(student_id, period) tuple
     +evidence(student_id, links) tuple
   }
   class AiClient {
     <<client>>
     +narrative(request) NarrativeResponse
+    +explanation(payload, timeout) ExplanationResponse
   }
   class ObjectStorage {
     <<client>>
@@ -2472,7 +2478,10 @@ classDiagram
   NamedGenerator --> CoreClient : 학생 별명
   NamedGenerator --> RenderingGenerator : R4
   GenerationService --> JobLocks
-  RenderingGenerator --> NarrativeGenerator : R3
+  RenderingGenerator --> ExplanationGenerator : 설명 (#479)
+  ExplanationGenerator --> NarrativeGenerator : R3
+  ExplanationGenerator --> LearningClient : M2 점수 기록·원문 대조
+  ExplanationGenerator --> AiClient : 대표 답변 설명
   NarrativeGenerator --> RecordGenerator : R2
   RecordGenerator --> LearningClient
   RecordGenerator --> MetricsCalculator
@@ -2501,6 +2510,7 @@ classDiagram
 | `RecordGenerator`, `GenerationResult`·`ReportItem` | `generation/record_generator.py`·`models.py` | report-worker (R2 계산 결과를 종료 트랜잭션으로 전달) |
 | `LearningClient` | `clients/learning_client.py` | worker/API (`records`는 세 조회 정규화, `evidence`는 현재 원문·버전·삭제 대조) |
 | `NarrativeGenerator`, `RenderingGenerator`, `JobLocks` | `generation/narrative_generator.py`·`locking.py`, `rendering/generator.py` | report-worker |
+| `ExplanationGenerator` | `generation/explanation_generator.py` | report-worker (주간 설명, #479·#508) |
 | `ReportRenderer` | `rendering/renderer.py` (Jinja2 → HTML, Playwright → PDF, Markdown) | report-worker |
 | `OutboxRelay`, `OutboxRepository` | `outbox/` | report-worker (서비스의 종료 트랜잭션이 `OutboxRepository.add` 호출) |
 | `StudentDeletedConsumer`, `DeletionService` | `deletion/` | report-worker |
@@ -2512,7 +2522,7 @@ classDiagram
 - `query_router`·`QueryService`: 모든 조회에서 리포트의 `student_id`가 `X-Student-Scope`에 있는지 검사, 없으면 403 (API 4장)
 - 수치·전후 변화는 `MetricsCalculator`(코드)에서만 계산, ai는 서술·저녁 질문만 (FN-RPT-03, 05)
 - `ReportVerifier`: 서술 속 숫자·인용을 계산 결과·learning 원문과 대조, 실패 시 서술을 템플릿 요약으로 교체(`narrative.source = TEMPLATE`, P16). `NO_RECORD`·무료 플랜(`narrativeEnabled = false`)·일일 리포트(`periodType = DAILY`)는 ai 호출 생략 (P06·P13)
-- (예정, #479) 설명 단계: `NarrativeGenerator` 뒤에 대표 답변 최대 3개 선정 → `AiClient` 설명 요청 → 검사 통과분만 `ReportItem(EXPLANATION)`. 실패·시간 초과·미활성은 리포트 실패로 바꾸지 않고 설명 상태만 `NOT_INCLUDED` (FN-RPT-09, P16, api-spec 3.4)
+- 설명 단계(#479, #508): `ExplanationGenerator`가 `NarrativeGenerator` 뒤·`RenderingGenerator` 앞에서 실행(파이프라인 Record → Narrative → Explanation → Rendering). `LearningClient.explanation_attempts()`(`includeModelScores=true`)로 M2 점수가 있는 답변을 최신순으로 받고, 생각 유형마다 최신 답변부터 자격(정정·빈 답변·학년·입력 유형·점수 형식)과 원문 대조를 확인하며 실패하면 같은 유형의 다음 답변을 시도한다. 유형당 `AiClient.explanation()`은 결과와 관계없이 최대 1회, 최대 3유형. 검사 통과분만 `ReportItem(EXPLANATION)`이며 `GenerationResult.explanation_state`는 하나라도 통과하면 `INCLUDED`, M2 점수 답변이 없으면 `NO_TARGET`, 그 밖에는 `NOT_INCLUDED`. 실패·시간 초과·미활성은 리포트 실패로 바꾸지 않는다 (FN-RPT-09, P16, api-spec 3.4·4.2.3)
 
 ### 7.1 리포트 기간 종류 (report #391 구현 · core #390 연동)
 
