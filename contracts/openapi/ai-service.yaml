@@ -844,7 +844,7 @@ components:
             - INTRO
             - OUTRO
           type: object
-          description: 시작·종료 영상 S3 키(컷 4개 4·6·8·6초를 0.5초 녹아드는 전환으로 이은 22.5초). 요일 영상은 없음. 끝내 실패하거나 건너뛰면 그 장면은 빠지고 warnings(VIDEO)
+          description: 시작·종료 영상 S3 키(컷 4개 4·6·8·6초를 0.5초 녹아드는 전환으로 이은 22.5초). 요일 영상은 없음. 컷 영상이 끝내 검토를 통과하지 못하면 그 컷은 첫 그림을 천천히 확대하는 움직이는 그림 컷으로 대신하고 warnings(VIDEO), 컷 첫 그림이 실패하거나 영상 단계를 건너뛰면 그 장면은 빠지고 warnings(VIDEO)
         motions:
           additionalProperties:
             $ref: '#/components/schemas/ThemeMotion'

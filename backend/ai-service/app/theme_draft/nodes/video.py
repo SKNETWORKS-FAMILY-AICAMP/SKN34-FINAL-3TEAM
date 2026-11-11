@@ -3,9 +3,11 @@
 사용자 결정 2026-11-11:
 - 컷 길이 4·6·8·6초(theme_video_cut_seconds), 첫 그림(컷 첫 그림)만 고정. 끝 그림까지 고정하면
   비슷한 두 그림 사이를 억지로 이어 움직임이 흐물거리고 배경이 같아짐(실측)
-- 컷은 동시에 만들고, 검토 모델이 2초마다 뽑은 장면을 보고 판정(MORPH·ANSWER_HINT·TEXT·SAFETY).
-  실패한 컷만 사유를 넣어 다시(상한 theme_max_regen, 마감 확인). 끝내 실패한 컷이 있으면 그 장면
-  영상만 빼고 warnings(VIDEO)
+- 컷은 동시에 만들고, 검토 모델이 1초마다 뽑은 장면을 보고 판정(MORPH·ANSWER_HINT·TEXT·SAFETY·
+  CONTINUITY). 실패한 컷만 사유를 넣어 다시(상한 theme_video_max_regen, 마감 확인). 끝내 실패한
+  컷은 첫 그림을 천천히 확대하는 움직이는 그림 컷으로 대신하고 warnings(VIDEO)(2026-11-11 결정:
+  뭉치 컷은 동작과 상관없이 영상 모델이 작은 손을 팔로 키워 거의 다 실패, 장면 영상 전체를 빼지
+  않으려고). 첫 그림이 없는 장면(컷 그림 실패)만 영상을 뺀다
 - 0.5초 겹쳐 녹아드는 전환(ffmpeg xfade)으로 이어 S3 .mp4
 - 영상 클라이언트가 없거나(THEME_VIDEO_ENABLED=false) 마감까지 theme_video_timeout + 60초가 안
   남으면 건너뛰고 경고. THEME_VIDEO 사용량은 core enum 전이라 이벤트 없이 로그만
@@ -18,7 +20,7 @@ import subprocess
 from langgraph.runtime import Runtime
 
 from app.llm.base import LlmUnavailable
-from app.llm.media import freeze_spans, join_xfade, trim_clip, video_frames
+from app.llm.media import freeze_spans, join_xfade, still_clip, trim_clip, video_frames
 from app.theme_draft.checks import VIDEO_REVIEW_IDS, Theme, check_review
 from app.theme_draft.models import GeneratedVideoReview
 from app.theme_draft.nodes import DEADLINE_REASON, THEME_CALL_TYPE, ThemeContext, ThemeState, uniq
@@ -29,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 VIDEO_OFF = "영상 설정 꺼짐"
 VIDEO_DEADLINE = "마감까지 남은 시간이 부족해 영상을 건너뜀"
+STILL_NOTE = "움직이는 그림으로 대신함"
 FRAME_EVERY = 1.0  # 검토 장면 간격(초). 2초 간격 4장으로는 사이의 사라짐·변형을 놓쳤음(실측)
 FRAME_COUNT = 8  # 8초 컷이면 0~7초
 FREEZE_FAIL = 0.5  # 컷 중간에 이보다 오래 멈추면 그 컷을 다시 만듦(초, 기준안)
@@ -77,7 +80,7 @@ async def film(
     shows_target = body.cut_shows_target(scene, index)
     feedback: list[str] = []
     bad: list[str] = []
-    for attempt in range(ctx.settings.theme_max_regen + 1):
+    for attempt in range(ctx.settings.theme_video_max_regen + 1):
         if attempt and not ctx.can_regenerate():
             bad = [*bad, DEADLINE_REASON]
             break
@@ -175,19 +178,30 @@ async def generate_videos(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
     lengths: dict[str, list[float]] = {}
     for scene in scenes:
         cuts = [filmed[(scene, i)] for i in range(1, len(durations) + 1)]
-        for i, (_, _, warns, _) in enumerate(cuts, 1):
+        clips: list[bytes] = []
+        actual: list[float] = []
+        broken = None
+        for i, (clip, bad, warns, length) in enumerate(cuts, 1):
             warnings += [warning("VIDEO", f"{scene}{i}", w) for w in warns]
-        failed = [
-            (i, r)
-            for i, (clip, bad, _, _) in enumerate(cuts, 1)
-            if clip is None
-            for r in bad or ["?"]
-        ]
-        if failed:
-            warnings += [warning("VIDEO", scene, f"{scene}{i} 영상 {r}") for i, r in failed]
+            if clip is None:  # 끝내 실패한 컷은 움직이는 그림 컷으로 대신
+                warnings += [
+                    warning("VIDEO", scene, f"{scene}{i} 영상 {r}, {STILL_NOTE}")
+                    for r in bad or ["?"]
+                ]
+                try:
+                    clip = await asyncio.to_thread(
+                        still_clip, images[f"{scene}{i}"], durations[i - 1], ctx.video.size
+                    )
+                except (RuntimeError, subprocess.SubprocessError) as exc:
+                    broken = f"{scene}{i} {STILL_NOTE} 실패 {type(exc).__name__}"
+                    break
+                length = float(durations[i - 1])
+            clips.append(clip)
+            actual.append(length)
+        if broken:
+            warnings.append(warning("VIDEO", scene, broken))
             continue
-        actual = [length for _, _, _, length in cuts]
-        key, error = await join_and_put(ctx, scene, [c for c, _, _, _ in cuts if c], actual)
+        key, error = await join_and_put(ctx, scene, clips, actual)
         if key:
             keys[scene] = key
             lengths[scene] = actual

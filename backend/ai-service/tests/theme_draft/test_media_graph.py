@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 from app.bootstrap import create_app
 from app.config import get_settings
 from app.llm.base import LlmError, LlmRequest, ProviderResponse, T
-from app.llm.media import FakeImageClient, FakeVideoClient, tiny_png
+from app.llm.media import FakeImageClient, FakeVideoClient, still_clip, tiny_png
 from app.mission_draft.models import Draft
 from app.mission_draft.prompts import GeneratedDraft
 from app.prompt_versions.registry import ActiveVersions
@@ -41,6 +41,7 @@ from app.theme_draft.models import (
     ThemeMotion,
     VideoReviewItem,
 )
+from app.theme_draft.nodes.video import STILL_NOTE
 from app.theme_draft.prompts import VIDEO_NEGATIVE
 from app.theme_draft.service import ThemeDraftGraphRunner
 from app.theme_draft.storage import MemoryThemeStorage
@@ -411,6 +412,32 @@ def test_video_success_joins_cuts_with_captions() -> None:
         (16.75, 22.5, INTRO_CUTS[3]["caption"]),
     ]
     assert response.motions["MON"].captions == []
+
+
+def test_failed_video_cut_becomes_still_cut() -> None:
+    """끝내 검토를 못 넘은 컷은 첫 그림을 천천히 확대하는 움직이는 그림 컷으로 대신하고 장면 영상은
+    남김(2026-11-11: 뭉치 컷은 영상 모델이 작은 손을 팔로 키워 거의 다 실패). 다시 만들기는 1번."""
+
+    def verdicts(user: dict) -> dict[str, str]:
+        return {"CONTINUITY": "FAIL"} if user["scene"] == OUTRO_CUTS[3]["scene"] else {}
+
+    video, storage = FakeVideoClient(), MemoryThemeStorage()
+    response = run(
+        gen_llm(), review_llm(video=verdicts), image=FakeImageClient(), video=video, storage=storage
+    )
+    assert response.failure is None and set(response.videos) == {"INTRO", "OUTRO"}
+    assert len(video.calls) == 8 + 1  # 종료 4컷만 한 번 더(theme_video_max_regen 1)
+    assert [(w.stage, w.item) for w in response.warnings] == [("VIDEO", "OUTRO")]
+    assert response.warnings[0].reason == "OUTRO4 영상 CONTINUITY CONTINUITY 사유, " + STILL_NOTE
+    body, _ = storage.objects[response.videos["OUTRO"]]
+    assert mp4_seconds(body) == pytest.approx(4 + 6 + 8 + 6 - 3 * 0.5, abs=0.15)
+    outro = response.motions["OUTRO"]
+    assert [c.end for c in outro.captions][-1] == pytest.approx(22.5)
+
+
+def test_still_clip_length_and_size() -> None:
+    clip = still_clip(tiny_png(3), 4, (64, 36))
+    assert mp4_seconds(clip) == pytest.approx(4, abs=0.1)
 
 
 def test_cut_image_failure_omits_only_that_video() -> None:

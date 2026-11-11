@@ -49,6 +49,24 @@ DAY_TEXTS = ("place", "sceneNote", "clue", "discovery", "missionHook")
 CUTS = 4  # 시작·종료 영상 콘티 컷 수(4·6·8·6초, theme_video_cut_seconds, 사용자 결정 2026-11-11)
 CAPTION_MAX = 30  # 컷 문구(움직임 captions로 웹이 띄움) 글자 상한(기준안)
 MUNGCHI_MOODS = ("none", "smile", "surprised", "determined")
+# 콘티 scene·action을 칸 하나만 고쳐 쓸 때 알려 주는 글자 상한(기준안, 길이 검사는 하지 않음)
+CUT_TEXT_MAX = 80
+# 뭉치는 팔이 없어(아래쪽 작은 손만) 손·팔다리를 쓰는 동작을 영상으로 만들면 팔·다리가 새로 생긴다.
+# 실측 2026-11-11(auto4·auto5b·auto4d 뭉치 컷 12개 중 9개가 짚기·손 들기·건네기·가리키기·모으기,
+# 그런 컷과 뛰는 컷에서 영상 검토 CONTINUITY·MORPH 실패). 낱말은 다른 뜻과 겹치지 않는 꼴만 둔다
+# (손전등·놓인·모은 단서 같은 말은 걸리지 않게)
+MUNGCHI_HAND_WORDS = tuple(
+    (
+        "손을|손으로|손가락|두 손|한 손|양손|손뼉|박수|만세|팔을|양팔|"
+        "가리키며|가리키고|가리킨다|가리켜|짚|건네|건넨|안아|안고|안는|껴안|모으|모아|모은다|"
+        "놓는|놓고|놓아|내려놓|들어 올|들어올|집어|줍|쥐고|쥔다|뛰|점프|달리|달려|달린"
+    ).split("|")
+)
+# …이·…가로 끝나도 주어가 아닌 낱말(콘티 마디의 주어를 가를 때)
+NOT_SUBJECT = tuple("같이 많이 높이 깊이 길이 가까이 바닷가 물가 강가 길가 냇가 창가".split())
+# 화면 쪽으로 다가오거나 화면 밖으로 나가면 확대돼 몸이 잘리거나 인물이 사라진다(비교 시험
+# 2026-11-11: "화면 쪽으로 다가온다" 컷에서 빠른 모델이 확대해 뭉치 발이 잘림)
+APPROACH_WORDS = tuple("다가오|다가온|달려오|달려온|걸어오|걸어온|화면 밖|밖으로|들어간".split("|"))
 # 시작 콘티 1 평소 모습·2 사건에는 뭉치가 없고 3 출동·4 현장 도착에는 나옴(사용자 결정 2026-11-11)
 INTRO_MUNGCHI = (False, False, True, True)
 CANDIDATE_CHARS = (2, 10)
@@ -137,8 +155,11 @@ FIX_PATH = re.compile(
     r"|(?:MON|TUE|WED|THU|FRI)\.(?:place|sceneNote|clue|discovery|missionHook)"
     r"|(?:introCuts|outroCuts)[1-4]\.caption)$"
 )
+# 콘티 scene·action은 뭉치 동작 검사(CUT_ACTION)일 때만 그 칸을 고쳐 쓴다(정답 유출은 다시 생성)
+CUT_FIX_PATH = re.compile(r"^(?:introCuts|outroCuts)[1-4]\.(?:scene|action)$")
 FIX_REASON = (
     re.compile(r"^LENGTH (\S+) \d+자 > \d+$"),
+    re.compile(r"^CUT_ACTION ((?:introCuts|outroCuts)[1-4])\.(scene|action) "),
     re.compile(r"^CLUE_EARLY (MON|TUE|WED|THU|FRI) (discovery)에 "),
     re.compile(r"^ANSWER_LEAK (\S+?)에 "),
 )
@@ -165,7 +186,8 @@ def fix_targets(bad: list[str]) -> dict[str, list[str]]:
             if m := pattern.match(reason):
                 path = ".".join(m.groups())
                 break
-        if path is None or not FIX_PATH.match(path):
+        cut_fix = reason.startswith("CUT_ACTION ") and CUT_FIX_PATH.match(path or "")
+        if path is None or not (FIX_PATH.match(path) or cut_fix):
             return {}
         targets.setdefault(path, []).append(reason)
     return targets
@@ -191,7 +213,46 @@ def set_text_at(theme: Theme, path: str, text: str) -> None:
 
 
 def text_max(path: str) -> int:
-    return CAPTION_MAX if path.endswith(".caption") else TEXT_MAX[path.rpartition(".")[2]]
+    key = path.rpartition(".")[2]
+    if key == "caption":
+        return CAPTION_MAX
+    return CUT_TEXT_MAX if key in ("scene", "action") else TEXT_MAX[key]
+
+
+def mungchi_clauses(text: str) -> list[str]:
+    """콘티 문장에서 뭉치가 주어인 마디. 뭉치가 나오는 컷에만 쓴다.
+
+    '…고 '·'…며 '·'…가운데 '·'…동안 '·쉼표로 마디를 나눈다. '뭉치와 민지가'·'모두'처럼 함께 하는
+    주어도 뭉치 마디이고 '뭉치를'·'뭉치 곁에서'는 아니다. 다른 사람이 주어(…이·…가, 마디 첫 낱말
+    …는·…들은)인 마디는 빼고, 주어가 없는 마디는 앞 마디의 주어를 잇는다(첫 마디는 뭉치).
+    """
+    out: list[str] = []
+    mungchi = True
+    for part in re.split(r"(?<=[고며]) |(?<=가운데) |(?<=동안) |[,.] ", text):
+        if re.search(r"뭉치(?:가|는|도|와|과|랑|하고)(?:\s|$)", part) or re.match(
+            r"(?:모두|다 ?같이|다 ?함께|함께)", part
+        ):
+            mungchi = True
+        elif re.match(r"\S+(?:는|들은|도)\s", part) or any(
+            not w.endswith(NOT_SUBJECT) for w in re.findall(r"(?:^|\s)(\S+(?:이|가))\s", part)
+        ):
+            mungchi = False
+        if mungchi:
+            out.append(part)
+    return out
+
+
+def cut_action_problems(text: str, has_mungchi: bool = True) -> list[str]:
+    """뭉치가 손·팔다리를 쓰는 동작(뭉치가 나오는 컷만), 화면 쪽으로 다가오거나 나가는 동작."""
+    clauses = mungchi_clauses(text) if has_mungchi else []
+    hands = [w for w in MUNGCHI_HAND_WORDS if any(w in c for c in clauses)]
+    near = [w for w in APPROACH_WORDS if w in text]
+    out = []
+    if hands:
+        out.append(f"뭉치가 손·팔다리를 쓰는 동작({', '.join(hands)}), 손짓은 사람만")
+    if near:
+        out.append(f"화면 쪽으로 다가오거나 화면 밖으로 나가는 동작({', '.join(near)})")
+    return out
 
 
 def feature_table(theme: Theme) -> tuple[dict[str, dict[str, str]], list[str]]:
@@ -325,6 +386,10 @@ def check_cuts(theme: Theme) -> list[str]:
                 bad.append(
                     f"LENGTH {key}{i}.caption {len(cut.get('caption') or '')}자 > {CAPTION_MAX}"
                 )
+            has_mungchi = key == "outroCuts" or (i <= len(INTRO_MUNGCHI) and INTRO_MUNGCHI[i - 1])
+            for k in ("scene", "action"):
+                for problem in cut_action_problems(str(cut.get(k) or ""), has_mungchi):
+                    bad.append(f"CUT_ACTION {key}{i}.{k} {problem}")
             mood = cut.get("mungchiMood")
             if mood not in MUNGCHI_MOODS:
                 bad.append(f"CUT_MOOD {key}{i} mungchiMood는 {list(MUNGCHI_MOODS)} 중 하나")
