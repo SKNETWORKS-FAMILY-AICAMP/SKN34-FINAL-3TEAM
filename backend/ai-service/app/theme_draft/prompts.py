@@ -318,8 +318,9 @@ def story_text(theme: Theme, day: str, grade: int, knowledge: list[str] | None =
         f"- 찾는 대상: {theme.get('target') or ''}. 아직 찾지 못했으므로 문제에서 지금 보거나 "
         "만지거나 곁에 있는 것처럼 "
         "쓰지 않는다.",
-        f"- 생각 열기 질문(hints)은 정확히 {HINTS[grade]}개. 장면 그림 속 물건을 가리킬 수 있게 "
-        "쓰되 정답·풀이는 주지 않는다.",
+        f"- 생각 열기 질문(hints)은 정확히 {HINTS[grade]}개. question 글에 나온 장소·물건·자료를 "
+        "가리켜 생각을 열게 쓰되 정답·풀이는 주지 않는다. question 글에 없는 그림 속 모습·안내판"
+        "을 떠올리게 하지 않는다(미션 그림은 question과 생각 열기 질문으로 그림).",
     ]
     lines += [
         "- 오늘 장면과 오늘 찾은 증거(장소·인물·물건·목격·기록)는 문제 소재로 쓸 수 있다. "
