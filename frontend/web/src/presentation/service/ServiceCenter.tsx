@@ -1,25 +1,23 @@
-import { useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router'
-import { useQueryClient } from '@tanstack/react-query'
+import { lazy, Suspense, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { useSession } from '../auth/sessionContext.ts'
 import { useParentQuery, useParentMutation } from '../../data/parent/queries.ts'
 import { serviceApi } from '../../data/serviceApi.ts'
 import { supportApi } from '../../data/support/api.ts'
 import type { InquiryCategory, SupportTarget } from '../../domain/service.ts'
-import { notificationLabels, notificationPath } from '../../domain/service.ts'
 import { Workspace, QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import './service.css'
+const NotificationCenter = lazy(() => import('./NotificationCenter.tsx').then(module => ({ default: module.NotificationCenter })))
 
 export function ServiceCenter({ page }: { page: 'help' | 'support' | 'notices' | 'notifications' }) {
   const { session } = useSession()
   const role = session!.role
   const root = '/' + role.toLowerCase()
   const nav = [{ path: root + '/home', label: '시작 화면' }, { path: root + '/help', label: '이용 도움말' }, { path: root + '/support', label: '문의·오류 신고' }, { path: root + '/notices', label: '공지·점검' },
-    ...(role === 'ADMIN' ? [] : [{ path: root + '/support/results', label: '신고·문의 처리 결과' }]),
-    ...(role === 'STUDENT' ? [] : [{ path: root + '/notifications', label: '알림' }])]
+    ...(role === 'ADMIN' ? [] : [{ path: root + '/support/results', label: '신고·문의 처리 결과' }])]
   return <Workspace title="사고뭉치 이용 안내" nav={nav}>
-    <div className="svc-page">{page === 'help' ? <Help role={role} /> : page === 'notices' ? <Notices /> : page === 'notifications' ? <Notifications role={role} /> : <Support />}</div>
+    <div className="svc-page">{page === 'help' ? <Help role={role} /> : page === 'notices' ? <Notices /> : page === 'notifications' ? <Suspense fallback={<p role="status">알림을 불러오고 있습니다.</p>}><NotificationCenter role={role} /></Suspense> : <Support />}</div>
   </Workspace>
 }
 function Help({ role }: { role: string }) {
@@ -61,24 +59,4 @@ function Support() {
     {kind === 'error-reports'
       ? reports.data?.items.map(r => <article className="ws-card" key={r.reportId}><h3>{r.category} · {statusLabel[r.status] ?? r.status}</h3><p>{r.comment}</p>{r.targetId && <small>대상 {r.targetType} · {r.targetId}</small>}<p>{r.reviewReason ?? '아직 처리 결과가 등록되지 않았습니다.'}</p><small>{r.createdAt}</small></article>)
       : inquiries.data?.items.map(i => <article className="ws-card" key={i.inquiryId}><h3>{i.category} · {statusLabel[i.status] ?? i.status}</h3><p><strong>{i.title}</strong></p><p>{i.body}</p><p>{i.answer ?? '아직 처리 결과가 등록되지 않았습니다.'}</p><small>{i.createdAt}</small></article>)}</>
-}
-function Notifications({ role }: { role: string }) {
-  const cache = useQueryClient()
-  const [unread, setUnread] = useState(false), [page, setPage] = useState(0), [notice, setNotice] = useState('')
-  const q = useParentQuery(['notifications', unread, page], signal => serviceApi.notifications(unread, page, signal), role !== 'STUDENT')
-  const settings = useParentQuery(['notification-settings'], serviceApi.settings, role !== 'STUDENT')
-  const read = useParentMutation(serviceApi.read), all = useParentMutation(serviceApi.readAll), save = useParentMutation(serviceApi.saveSettings)
-  const [edited, setEdited] = useState<Record<string, boolean>>({})
-  const reload = () => { void cache.invalidateQueries({ queryKey: ['parent', 'notifications'] }) }
-  if (role === 'STUDENT') return <><h1>알림</h1><p>학생 전용 알림함은 제공하지 않습니다. 보호자 화면에서 확인해 주세요.</p></>
-  return <><h1>알림</h1><div className="ws-actions"><label className="ws-check"><input type="checkbox" checked={unread} onChange={e => { setUnread(e.target.checked); setPage(0) }} />읽지 않은 알림만</label><button onClick={() => reload()}>새로고침</button><button disabled={all.isPending} onClick={() => void all.mutateAsync(undefined).then(reload).catch(() => {})}>모두 읽음</button></div>
-    <QueryFeedback query={q} /><ErrorNotice error={read.error ?? all.error} />
-    {q.data && !q.data.items.length && <p>표시할 알림이 없습니다.</p>}
-    {q.data?.items.map(n => { const path = notificationPath(n.link, role, location.origin); return <article className="ws-card" key={n.id}><h2>{n.title}</h2><p>{n.readAt ? '읽음' : '읽지 않음'} · {n.createdAt}</p>{n.childId && <small>대상 자녀 {n.childId}</small>}<div className="ws-actions">{!n.readAt && <button disabled={read.isPending} onClick={() => void read.mutateAsync(n.id).then(reload).catch(() => {})}>읽음으로 표시</button>}{path ? <Link to={path}>관련 내용 열기</Link> : <p>관련 화면 주소를 확인할 수 없습니다.</p>}</div></article> })}
-    <div className="ws-actions"><button disabled={!page} onClick={() => setPage(p => p-1)}>이전</button><span>{page+1}쪽</span><button disabled={!q.data?.hasNext} onClick={() => setPage(p => p+1)}>다음</button></div>
-    <h2>알림 수신 설정</h2><p>앱 안 알림만 제공합니다. 이메일·푸시 발송 설정은 제공하지 않습니다.</p><QueryFeedback query={settings} />
-    <form className="ws-form ws-card" onSubmit={e => { e.preventDefault(); void save.mutateAsync({ items: (settings.data?.items ?? []).map(s => ({ ...s, enabled: edited[s.type] ?? s.enabled })) }).then(() => { setEdited({}); setNotice('수신 설정을 저장했습니다.') }).catch(() => {}) }}>
-      {settings.data?.items.map(s => <label className="ws-check" key={s.type}><input type="checkbox" checked={edited[s.type] ?? s.enabled} onChange={e => setEdited(v => ({ ...v, [s.type]: e.target.checked }))} />{notificationLabels[s.type]}</label>)}
-      <button disabled={!settings.data || save.isPending || !Object.keys(edited).length}>설정 저장</button><ErrorNotice error={save.error} /><p role="status">{notice}</p>
-    </form></>
 }

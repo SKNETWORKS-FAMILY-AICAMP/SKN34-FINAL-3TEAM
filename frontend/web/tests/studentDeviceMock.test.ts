@@ -30,17 +30,11 @@ async function parentLogin() {
   parentToken = r.body.accessToken
   return parentToken
 }
-async function reauth(childId: string) {
-  const started = await call('/me/reauth', { method: 'POST', body: JSON.stringify({ purpose: 'PIN_CHANGE', childId }), token: parentToken })
-  const r = await call('/me/reauth', { method: 'POST', body: JSON.stringify({ challengeId: started.body.challengeId }), token: parentToken })
-  return r.body.reauthToken as string
-}
 async function setPin(childId: string, pin: string) {
   return call(`/children/${childId}/pin`, {
     method: 'PUT',
     body: JSON.stringify({ pin }),
     token: parentToken,
-    headers: { 'X-Reauth-Token': await reauth(childId) },
   })
 }
 async function pair(childIds: string[]) {
@@ -57,10 +51,10 @@ test('미등록 기기: 프로필·PIN 로그인 모두 STUDENT_DEVICE_INVALID',
   assert.equal(r.body.code, 'STUDENT_DEVICE_INVALID')
 })
 
-test('PIN 설정은 재확인 필요, 반복·연속 PIN 거부, 자녀 목록에 상태 표시', async () => {
+test('PIN 설정은 추가 재인증 없이 저장하고 반복·연속 PIN 거부, 자녀 목록에 상태 표시', async () => {
   await parentLogin()
   const noReauth = await call('/children/demo-seoyun/pin', { method: 'PUT', body: JSON.stringify({ pin: '4831' }), token: parentToken })
-  assert.equal(noReauth.body.code, 'REAUTH_REQUIRED')
+  assert.equal(noReauth.status, 204)
   assert.equal((await setPin('demo-seoyun', '1234')).status, 422)
   assert.equal((await setPin('demo-seoyun', '4831')).status, 204)
   const children = (await call('/children', { token: parentToken })).body.items

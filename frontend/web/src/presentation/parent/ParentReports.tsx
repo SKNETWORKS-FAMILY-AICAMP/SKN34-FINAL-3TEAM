@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ReportProblem } from '../service/ReportProblem.tsx'
-import type { Child, Period } from '../../domain/classroom.ts'
+import { ReportExplanations } from './ReportExplanations.tsx'
+import type { Child } from '../../domain/classroom.ts'
 import type { DailyProblem, ReportPeriodType, ThemeSummary } from '../../domain/parent.ts'
 import { reportPeriodType } from '../../domain/parent.ts'
-import { ReportChat } from './ReportChat.tsx'
+import type { ReportContext, ReportHighlight } from '../../domain/reportHighlight.ts'
+import { emptyReportTargets, reportTargets } from '../../domain/reportHighlight.ts'
 import { parentApi } from '../../data/parent/api.ts'
 import { useParentQuery, useParentMutation } from '../../data/parent/queries.ts'
 import { thinkingLabels } from '../../domain/classroom.ts'
@@ -13,21 +15,29 @@ import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { EvidenceQuery } from './ParentConversation.tsx'
 export function ParentReports({
   child,
-  onAnalysis,
+  onAskReport, preview, highlight, revealToken = 0, onReportChange,
 }: {
   child: Child
-  onAnalysis: (p: Period) => void
+  preview?: ReportContext
+  highlight?: ReportHighlight | null
+  revealToken?: number
+  onReportChange?: () => void
+  onAskReport: (report: ReportContext) => void
 }) {
   const [status, setStatus] = useState(''),
     [kind, setKind] = useState<ReportPeriodType | ''>(''),
     [id, setId] = useState<string | null>(null),
     [revision, setRevision] = useState<number | undefined>(),
     list = useParentQuery(['reports', child.id, status, kind], (signal) =>
-      parentApi.reports(child.id, status, signal, kind || undefined),
+      parentApi.reports(child.id, status, signal, kind || undefined), !preview,
     )
+  const selected = preview ?? highlight
+  const activeId = selected?.reportId ?? id
+  const activeRevision = selected?.revision ?? revision
   return (
     <>
-      <header className="parent-page-head"><h1>리포트</h1>
+      {!preview && <>
+      <header className="parent-page-head"><h2>리포트</h2>
       <p>
         하루·한 주의 학습을 자동으로 정리한 결과입니다. 궁금한 점은 AI 챗봇에서 질문할 수 있습니다.
       </p>
@@ -45,7 +55,6 @@ export function ParentReports({
         <select aria-label="리포트 상태" value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">전체</option>
           {[
-            ['QUEUED', '대기'],
             ['RUNNING', '생성 중'],
             ['COMPLETED', '완료'],
             ['FAILED', '생성 실패'],
@@ -76,7 +85,7 @@ export function ParentReports({
               <button
                 className="cj-secondary"
                 onClick={() => {
-                  setId(r.reportId)
+                  onReportChange?.(); setId(r.reportId)
                   setRevision(undefined)
                 }}
               >
@@ -86,14 +95,16 @@ export function ParentReports({
           ))}
         </div>
       )}
-      {id && (
+      </>}
+      {activeId && (
         <ReportDetail
-          key={id}
+          key={activeId}
           child={child}
-          id={id}
-          revision={revision}
-          onRevision={setRevision}
-          onAnalysis={onAnalysis}
+          id={activeId}
+          revision={activeRevision}
+          compact={!!preview} highlight={highlight} revealToken={revealToken}
+          onRevision={value => { setId(activeId); setRevision(value); onReportChange?.() }}
+          onAskReport={value => { setId(value.reportId); setRevision(value.revision); onAskReport(value) }}
         />
       )}
     </>
@@ -104,13 +115,16 @@ function ReportDetail({
   id,
   revision,
   onRevision,
-  onAnalysis,
+  onAskReport, compact = false, highlight, revealToken = 0,
 }: {
   child: Child
+  compact?: boolean
+  highlight?: ReportHighlight | null
+  revealToken?: number
   id: string
   revision: number | undefined
   onRevision: (v: number | undefined) => void
-  onAnalysis: (p: Period) => void
+  onAskReport: (report: ReportContext) => void
 }) {
   const q = useParentQuery(
       ['report', child.id, id, revision ?? 'latest'],
@@ -125,6 +139,21 @@ function ReportDetail({
   const r = q.error ? undefined : q.data,
     ready = r?.status === 'COMPLETED',
     daily = !!r && reportPeriodType(r) === 'DAILY'
+  const panel = useRef<HTMLElement>(null), lastReveal = useRef(0)
+  const targets = useMemo(() => r ? reportTargets(r, highlight) : emptyReportTargets(), [r, highlight])
+  const matched = Object.values(targets).reduce((total, values) => total + values.length, 0)
+  useEffect(() => {
+    if (!highlight || !ready || !matched) return
+    const first = panel.current?.querySelector<HTMLElement>('[data-answer-highlight="true"]')
+    if (!first) return
+    const pane = compact ? panel.current?.closest<HTMLElement>('.parent-insights-report-body') : null
+    const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+    if (pane && window.matchMedia('(min-width:1101px)').matches) {
+      pane.scrollTo({ top: pane.scrollTop + first.getBoundingClientRect().top - pane.getBoundingClientRect().top - 16, behavior })
+    } else if (revealToken > lastReveal.current) first.scrollIntoView({ block: 'center', behavior })
+    if (revealToken > lastReveal.current) first.focus({ preventScroll: true })
+    lastReveal.current = revealToken
+  }, [highlight, ready, matched, targets, revealToken, compact])
   async function file(format: 'pdf' | 'md') {
     try {
       const data = await download.mutateAsync(format)
@@ -139,10 +168,19 @@ function ReportDetail({
     }
   }
   return (
-    <section className="ws-card">
+    <section className="ws-card report-detail" ref={panel}>
       <h2>{daily ? '일일 리포트 상세' : '리포트 상세'}</h2>
       <ReportProblem targetType="REPORT" targetId={id}/>
       <QueryFeedback query={q} />
+      {!compact && r && ready && r.parentSharingEnabled !== false && (
+        <div className="parent-report-question"><h3>이 리포트에서 이어서 질문하기</h3>
+          <p>{child.plan === 'FREE' ? 'AI 질문은 프리미엄 기능입니다. 리포트의 수치는 계속 확인할 수 있습니다.' : '리포트의 자녀와 기간을 AI 챗봇에 연결합니다.'}</p>
+          <button className="cj-primary" disabled={child.plan === 'FREE'} onClick={() => onAskReport({ reportId: r.reportId, revision: r.revision, period: r.period, periodType: daily ? 'DAILY' : 'WEEKLY' })}>이 리포트로 질문하기</button>
+        </div>
+      )}
+      {highlight && r && <><p>선택한 질문 · {highlight.question}</p><p role="status" className="report-highlight-summary">{matched
+        ? `선택한 답변과 연결된 ${matched}개 항목을 초록 테두리로 표시했습니다.`
+        : '이 답변과 직접 연결된 항목이 현재 리포트 판에는 없습니다.'}</p></>}
       {r && (
         <>
           <p>
@@ -151,7 +189,7 @@ function ReportDetail({
           {r.correctionNotice && (
             <p role="note">이 리포트에 쓰인 판정 중 일부가 리포트를 만든 뒤 정정되었습니다. 리포트 내용은 만들어진 때 그대로입니다.</p>
           )}
-          <label>
+          {!compact && <label>
             리포트 판{' '}
             <select
               aria-label="리포트 판"
@@ -167,7 +205,7 @@ function ReportDetail({
                 </option>
               ))}
             </select>
-          </label>
+          </label>}
           {!ready ? (
             <p role="status">
               {r.status === 'FAILED'
@@ -179,7 +217,7 @@ function ReportDetail({
               <p>{r.inclusionRule}</p>
               <QueryStateNotice state={r.state} />
               {daily ? (
-                <DailyProblems problems={r.problems ?? []} canReadOriginals={r.parentSharingEnabled !== false} onProof={setProof} />
+                <DailyProblems highlighted={targets.problems} problems={r.problems ?? []} canReadOriginals={r.parentSharingEnabled !== false} onProof={setProof} />
               ) : r.narrative ? (
                 <>
                   <p>{r.narrative.text}</p>
@@ -188,7 +226,8 @@ function ReportDetail({
               ) : (
                 <p>{r.parentSharingEnabled === false ? '아이의 답변 원문이 비공개여서 서술과 인용을 표시하지 않습니다. 학습 수치는 아래에서 확인할 수 있습니다.' : '수치 리포트입니다. 이 자녀의 플랜에는 서술 요약이 포함되지 않습니다.'}</p>
               )}
-              <MetricCards metrics={r.metrics} />
+              <MetricCards metrics={r.metrics} highlighted={targets.metrics} />
+              <ReportExplanations report={r} plan={child.plan} />
               <div className="ws-actions">
                 {r.metrics.map((m, i) => (
                   <button
@@ -205,8 +244,9 @@ function ReportDetail({
               {!daily && child.plan !== 'FREE' && r.parentSharingEnabled !== false && (
                 <>
                   <h3>생각 유형별 활동</h3>
-                  {r.thinkingTypes.map((t) => (
-                    <p key={t.type}>
+                  {r.thinkingTypes.map((t, i) => (
+                    <p className="report-highlight-target" data-answer-highlight={targets.thinking.includes(i) ? 'true' : undefined} tabIndex={-1} key={t.type}>
+                      <HighlightLabel active={targets.thinking.includes(i)} />
                       {thinkingLabels[t.type]} ·{' '}
                       {t.state === 'NO_RECORD'
                         ? '미관찰 · 확인된 기록 없음'
@@ -215,8 +255,9 @@ function ReportDetail({
                   ))}
                   <h3>되묻기 전후</h3>
                   {!r.changes.length && <p>비교할 답변 쌍이 없습니다.</p>}
-                  {r.changes.map((c) => (
-                    <article className="ws-card" key={c.attemptId}>
+                  {r.changes.map((c, i) => (
+                    <article className="ws-card report-highlight-target" data-answer-highlight={targets.changes.includes(i) ? 'true' : undefined} tabIndex={-1} key={c.attemptId}>
+                      <HighlightLabel active={targets.changes.includes(i)} />
                       {c.followup !== null && <p>받은 질문 · {c.followup}</p>}
                       <div className="ws-grid">
                         <div>
@@ -244,16 +285,15 @@ function ReportDetail({
                   ))}
                   <h3>돌아보기</h3>
                   {r.reflections.map((f, i) => (
-                    <p key={i}>
+                    <p className="report-highlight-target" data-answer-highlight={targets.reflections.includes(i) ? 'true' : undefined} tabIndex={-1} key={i}>
+                      <HighlightLabel active={targets.reflections.includes(i)} />
                       {f.written ? `${f.difficulty} · ${f.text || '달라진 점 미작성'}` : '미작성'}
                     </p>
                   ))}
                   <h3>아이의 말</h3>
-                  {r.quotes
-                    .filter((v) => v.verified)
-                    .map((v) => (
-                      <blockquote key={v.answerId}>{v.text}</blockquote>
-                    ))}
+                  {r.quotes.map((v, i) => v.verified && <blockquote className="report-highlight-target" data-answer-highlight={targets.quotes.includes(i) ? 'true' : undefined} tabIndex={-1} key={v.answerId}>
+                    <HighlightLabel active={targets.quotes.includes(i)} />{v.text}
+                  </blockquote>)}
                   {r.eveningQuestion && (
                     <>
                       <h3>이번 주 저녁 질문</h3>
@@ -262,13 +302,8 @@ function ReportDetail({
                   )}
                 </>
               )}
-              <p>{r.parentSharingEnabled === false ? '원문 비공개 중에는 기존 파일을 제공하지 않습니다. 위 학습 수치는 계속 확인할 수 있습니다.' : '다운로드는 서버가 제공하는 최신판 파일입니다.'}</p>
-              <div className="ws-actions">
-                {!daily && (
-                  <button className="cj-secondary" disabled={r.parentSharingEnabled === false} onClick={() => onAnalysis(r.period)}>
-                    AI 챗봇으로 이 기간 질문하기
-                  </button>
-                )}
+              {!compact && <p>{r.parentSharingEnabled === false ? '원문 비공개 중에는 기존 파일을 제공하지 않습니다. 위 학습 수치는 계속 확인할 수 있습니다.' : '다운로드는 서버가 제공하는 최신판 파일입니다.'}</p>}
+              {!compact && <div className="ws-actions">
                 <button
                   className="cj-secondary"
                   disabled={download.isPending || r.parentSharingEnabled === false}
@@ -287,10 +322,10 @@ function ReportDetail({
                 >
                   Markdown 다운로드
                 </button>
-              </div>
+              </div>}
             </>
           )}
-          <button
+          {!compact && <><button
             className="cj-secondary"
             disabled={regenerate.isPending || r.status === 'RUNNING' || r.status === 'QUEUED'}
             onClick={() => {
@@ -305,20 +340,11 @@ function ReportDetail({
           >
             새 판으로 재생성
           </button>
-          <p>학부모 재생성은 리포트당 한 번입니다. 이전 판은 유지됩니다.</p>
+          <p>학부모 재생성은 리포트당 한 번입니다. 이전 판은 유지됩니다.</p></>}
         </>
       )}
       {r && ready && r.parentSharingEnabled === false && <p role="note">원문 비공개 중에는 원문 근거·AI 질문·파일 다운로드를 이용할 수 없습니다. 위 학습 수치는 계속 확인할 수 있습니다.</p>}
-      {r && ready && r.parentSharingEnabled !== false && (
-        <ReportChat
-          key={`${r.reportId}-${r.revision}`}
-          child={child}
-          scope={{ childId: child.id, from: r.period.from, to: r.period.to }}
-          reportId={daily ? r.reportId : undefined}
-          onAnalysis={onAnalysis}
-        />
-      )}
-      <p role="status">{notice}</p>
+      {notice && <p role="status">{notice}</p>}
       <ErrorNotice error={regenerate.error} />
       <ErrorNotice error={download.error} />
       {proof && r && (
@@ -346,13 +372,14 @@ const contextLabels: Record<NonNullable<DailyProblem['context']>, string> = {
 }
 
 /** 일일 리포트(P24): 그날 문제별 기록만 보여 준다. 서술·저녁 질문은 없다. */
-function DailyProblems({ problems, onProof, canReadOriginals }: { problems: DailyProblem[]; canReadOriginals: boolean; onProof: (itemId: string) => void }) {
+function DailyProblems({ problems, onProof, canReadOriginals, highlighted }: { problems: DailyProblem[]; canReadOriginals: boolean; onProof: (itemId: string) => void; highlighted: number[] }) {
   if (!problems.length) return <p>이날은 기록이 없습니다.</p>
   return (
     <>
       <h3>그날 푼 문제</h3>
       {problems.map((p, i) => (
-        <article className="ws-card" key={`${p.missionId}-${p.attemptId ?? i}`}>
+        <article className="ws-card report-highlight-target" data-answer-highlight={highlighted.includes(i) ? 'true' : undefined} tabIndex={-1} key={`${p.missionId}-${p.attemptId ?? i}`}>
+          <HighlightLabel active={highlighted.includes(i)} />
           <h4>{p.title}</h4>
           <p>
             {p.context ? `${contextLabels[p.context]} · ` : ''}
@@ -416,4 +443,8 @@ function ThemeSummaryView({ summary }: { summary: ThemeSummary }) {
       )}
     </>
   )
+}
+
+function HighlightLabel({ active }: { active: boolean }) {
+  return active ? <span className="report-highlight-label">선택한 답변의 근거</span> : null
 }

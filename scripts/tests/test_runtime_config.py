@@ -28,7 +28,12 @@ AI_KEYS = (
 )
 KEYS = {
     "ai-service": AI_KEYS,
-    "core-service": ("APP_GUARDIAN_TRANSFER_ENABLED",),
+    "core-service": (
+        "APP_GUARDIAN_TRANSFER_ENABLED",
+        "AUTH_NEW_ACCOUNT_DEMO",
+        "AUTH_SIGNUP_LIMIT_PER_IP",
+        "AUTH_SIGNUP_LIMIT_WINDOW",
+    ),
     "scoring-service": ("M2_CONTENT3_RULE_ENABLED",),
 }
 FILES = (
@@ -64,7 +69,12 @@ def defaults():
     return {
         "ai-service": python_defaults("ai-service", AI_KEYS),
         "scoring-service": python_defaults("scoring-service", KEYS["scoring-service"]),
-        "core-service": {"APP_GUARDIAN_TRANSFER_ENABLED": "false"},
+        "core-service": {
+            "APP_GUARDIAN_TRANSFER_ENABLED": "false",
+            "AUTH_NEW_ACCOUNT_DEMO": "false",
+            "AUTH_SIGNUP_LIMIT_PER_IP": "5",
+            "AUTH_SIGNUP_LIMIT_WINDOW": "10m",
+        },
     }
 
 
@@ -142,6 +152,43 @@ class RuntimeConfigTests(unittest.TestCase):
                     self.assertEqual(actual.get(key), value)
                     self.assertIsInstance(actual[key], str)
 
+    def test_core_defaults_match_application_yml(self):
+        # app.auth.* 기본값은 Spring 자리표시자 ${KEY:기본값}과 같아야 한다 (#517)
+        text = (
+            ROOT / "backend/core-service/src/main/resources/application.yml"
+        ).read_text(encoding="utf-8")
+        for key, value in defaults()["core-service"].items():
+            if not key.startswith("AUTH_"):
+                continue
+            with self.subTest(key=key):
+                self.assertIn(f"${{{key}:{value}}}", text)
+
+    def test_report_worker_explanation_settings_and_grace_period(self):
+        # #508: local·prod report-worker가 같은 설명 시간 값을 쓰고, 종료 유예가 설명 단계보다 김
+        keys = (
+            "REPORT_EXPLANATION_TIMEOUT_SECONDS",
+            "REPORT_EXPLANATION_BUDGET_SECONDS",
+            "REPORT_THEME_SUMMARY_ENABLED",
+        )
+        base = ROOT / "infrastructure/gitops/environments"
+        local = yaml.safe_load(
+            (base / "local/report-worker.yaml").read_text(encoding="utf-8")
+        )
+        prod = json.loads(
+            (base / "prod/report-worker.json").read_text(encoding="utf-8")
+        )
+        for name, values in (("local", local), ("prod", prod)):
+            env = {item["name"]: item.get("value") for item in values["env"]}
+            with self.subTest(env=name):
+                self.assertEqual(
+                    {key: env.get(key) for key in keys},
+                    dict(zip(keys, ("130", "400", "true"))),
+                )
+                self.assertGreater(
+                    values["terminationGracePeriodSeconds"],
+                    float(env["REPORT_EXPLANATION_BUDGET_SECONDS"]),
+                )
+
     @unittest.skipUnless(shutil.which("docker"), "Compose CLI 필요(컨테이너 실행 없음)")
     def test_compose_omitted_and_explicit_false_keep_defaults(self):
         for overrides in (
@@ -178,6 +225,9 @@ class RuntimeConfigTests(unittest.TestCase):
             "M1_CHECK_ENABLED": "true",
             "M1_MIN_CONFIDENCE": "0.9",
             "APP_GUARDIAN_TRANSFER_ENABLED": "true",
+            "AUTH_NEW_ACCOUNT_DEMO": "true",
+            "AUTH_SIGNUP_LIMIT_PER_IP": "50",
+            "AUTH_SIGNUP_LIMIT_WINDOW": "1m",
             "M2_CONTENT3_RULE_ENABLED": "true",
         }
         services = compose(("compose.yaml",), overrides)["services"]
@@ -199,10 +249,8 @@ class RuntimeConfigTests(unittest.TestCase):
         scoring = services[target.hostname]
         self.assertFalse(scoring.get("profiles"))
         self.assertFalse(scoring.get("ports"))
-        self.assertEqual(
-            ai["depends_on"][target.hostname]["condition"], "service_healthy"
-        )
-        self.assertTrue(ai["depends_on"][target.hostname]["required"])
+        # #305 이후 교차 확인 off면 scoring을 부르지 않으므로 기동 의존을 두지 않는다 (#502)
+        self.assertNotIn(target.hostname, ai.get("depends_on", {}))
         for service in ("ai-service", "scoring-service"):
             for key, value in defaults()[service].items():
                 self.assertEqual(services[service]["environment"][key], value)

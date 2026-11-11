@@ -74,6 +74,25 @@ class Settings(BaseSettings):
     # 데모 시드 최대 193자에 여유
     mission_draft_question_max_chars: dict[int, int] = {3: 200, 4: 200, 5: 200, 6: 200}
 
+    # 리포트 설명 sLLM (#477, FN-RPT-09). 클러스터 안 설명 전용 OpenAI 호환 서버(#476)이며
+    # 다른 호출의 LLM 제공자(llm_provider)와 별개.
+    # 주소가 비어 있으면 설명만 503(report는 설명 미포함)
+    explanation_base_url: str | None = None
+    explanation_model: str = "report-explanation"  # sLLM 서버에 올린 모델 이름(요청 model 값)
+    explanation_api_key: str | None = None  # 클러스터 안 서버는 비워도 됨
+    # 기준안: CPU 양자화 모델 실측(#475) 전 임시값. 답변 1개 = 항목 최대 2회 생성, 재시도 없음.
+    # 주 1회 배치라 기다리는 사람이 없어 P12 예외. report→ai 대기(#479)는 마감보다 길게 잡음
+    explanation_llm_timeout: float = 60.0
+    explanation_deadline: float = 125.0
+    explanation_max_tokens: int = 256
+
+    # 지식 임베딩 (#467, api-spec 4.2.4 C6). openai는 OPENAI_API_KEY를 쓰고 OPENAI_BASE_URL(sLLM
+    # 대화용)은 쓰지 않음. 키가 없으면 임베딩만 503. fake는 개발용 fake-bigram-v1(사용량 없음).
+    # 타임아웃·재시도는 위 LLM 값(P12)을 그대로 씀. 개수·글자 상한은 계약 고정값(contracts.py)
+    embedding_provider: Literal["openai", "fake"] = "openai"
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimensions: int = 1536
+
     # 분석 대화 전체 마감(초). core 기준 전체 120초(P12)보다 짧게, LLM 호출은 이 안에서만
     analysis_deadline: float = 110.0
 

@@ -19,6 +19,9 @@
 \getenv app_password LEARNING_APP_PASSWORD
 \set db learning_db
 \ir rds-bootstrap-db.sql
+-- #466 knowledge store: pgvector is not a trusted extension, so the admin user creates it here
+-- (learning_migrate cannot). The type lands in schema public, usable by the migrate and app roles.
+CREATE EXTENSION IF NOT EXISTS vector;
 
 \getenv migrate_user REPORT_MIGRATE_USER
 \getenv migrate_password REPORT_MIGRATE_PASSWORD

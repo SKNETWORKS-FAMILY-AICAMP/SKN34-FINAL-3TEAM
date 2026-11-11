@@ -7,7 +7,10 @@ import com.fasterxml.jackson.databind.JsonNode
  * elementId는 rubric_element.id(UUID 문자열). 학생 이름·ID는 보내지 않고 학년만 (api-spec 4 내부 API)
  */
 
-/** question·keywords·essayType은 M2 교차 확인 입력 (#69, api-spec 4.2.2). M1 입력(answerKey·solution)은 M1 활성화 후속 */
+/**
+ * question·keywords·essayType은 M2 교차 확인 입력 (#69, api-spec 4.2.2).
+ * M1 미지원(#501): M1 입력(answerKey·solution)은 보내지 않아 ai M1_CHECK_ENABLED를 켜도 M1은 호출되지 않음. M1 활성화 때 함께 추가
+ */
 data class AiJudgeRequest(
     val answerText: String,
     val inputType: String,

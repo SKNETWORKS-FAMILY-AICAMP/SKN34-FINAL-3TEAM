@@ -219,6 +219,11 @@ export interface Usage {
 }
 export const hasPermission = (permissions: Permission[] | undefined, p: Permission) =>
   !!permissions?.includes(p)
+export const jobTypeLabels: Record<JobType, string> = {
+  CONVERSATION: 'AI 대화',
+  REPORT: '리포트',
+  NOTIFICATION: '알림',
+}
 export const jobLabels: Record<JobStatus, string> = {
   QUEUED: '대기',
   RUNNING: '처리 중',

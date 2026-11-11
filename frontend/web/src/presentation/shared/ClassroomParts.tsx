@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { X } from 'lucide-react'
+import { Link, useLocation } from 'react-router'
+import { useSession } from '../auth/sessionContext.ts'
+import { roleStart } from '../../domain/navigation.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { isDemo } from '../../data/classroom/useClassroom.ts'
 import type { Mission } from '../../domain/classroom.ts'
@@ -73,7 +76,7 @@ export function Modal({
       if (e.key === 'Escape') close.current()
       if (e.key !== 'Tab') return
       const elements = [
-        ...(panel.current?.querySelectorAll<HTMLElement>('button,input,textarea,select,summary') ??
+        ...(panel.current?.querySelectorAll<HTMLElement>('a[href],button,input,textarea,select,summary,[tabindex]:not([tabindex="-1"])') ??
           []),
       ].filter((el) => !el.hasAttribute('disabled') && el.getClientRects().length)
       const first = elements[0],
@@ -111,7 +114,18 @@ export function Modal({
     </div>
   )
 }
-export function Brand() {
+export function Brand({ linked = true }: { linked?: boolean }) {
+  const { session } = useSession()
+  const location = useLocation()
+  const scope = new URLSearchParams()
+  if (session?.role === 'PARENT' && location.pathname.startsWith('/parent/')) {
+    const current = new URLSearchParams(location.search)
+    for (const key of ['childId', 'from', 'to']) { const value = current.get(key); if (value) scope.set(key, value) }
+  }
+  const home = session ? roleStart(session.role) + (scope.size ? '?' + scope : '') : '/'
+  if (linked) return <Link className="app-brand" to={home} aria-label="사고뭉치 홈">
+    <img src="/brand-idea-transparent.png" alt="사고뭉치 · 생각을 잇는 배움" />
+  </Link>
   return (
     <span className="app-brand" role="img" aria-label="사고뭉치 · 생각을 잇는 배움">
       <img src="/brand-idea-transparent.png" alt="" aria-hidden="true" />

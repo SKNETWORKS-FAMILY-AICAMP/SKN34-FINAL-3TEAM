@@ -6,10 +6,14 @@ replicaCount: 0
 command: [python, -m, app.worker]
 service:
   enabled: false
+# #508: explanation budget 400s + base generation/render/upload margin
+terminationGracePeriodSeconds: 480
 resources:
   requests: {cpu: 100m, memory: 256Mi}
   limits: {cpu: 500m, memory: 768Mi}
 env:
+  - {name: REPORT_EXPLANATION_TIMEOUT_SECONDS, value: "130"}
+  - {name: REPORT_EXPLANATION_BUDGET_SECONDS, value: "400"}
   - {name: REPORT_THEME_SUMMARY_ENABLED, value: "true"}
   - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN}}}
   - {name: RABBITMQ_URL, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_URL}}}

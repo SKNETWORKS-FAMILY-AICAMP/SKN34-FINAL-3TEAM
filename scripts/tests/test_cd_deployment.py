@@ -431,13 +431,39 @@ class SmokeTests(unittest.TestCase):
             self.assertEqual(result["steps"][-1]["step"], "pick-mission")
             self.assertFalse(any(c[1].endswith("/attempts") for c in opener.calls))
 
-    def test_free_limit_429_is_reported_without_extra_fallback(self):
-        opener = FakeOpener(fail={"/attempts": 429})
-        result, _ = self.run_smoke(opener)
+    def test_start_refusal_is_reported_without_extra_fallback(self):
+        # 409(learning 요일·마무리 문제 거부)·429(무료 EXTRA 재활성 때 한도)는 EXTRA로 바꿔 시도하지 않는다
+        for code in (409, 429):
+            opener = FakeOpener(fail={"/attempts": code})
+            result, _ = self.run_smoke(opener)
+            self.assertFalse(result["ok"])
+            self.assertIn(
+                f"/api/v1/missions/{{id}}/attempts: HTTP {code}", result["steps"][-1]["error"]
+            )
+
+    def test_open_days_skip_completed_and_prefer_in_progress(self):
+        # 2026-11-10 개정(#483): 공개된 문제가 쌓이고 마무리한 문제의 새 THEME_DAY는 거부(#506)
+        def day(name, mission, status):
+            return {"day": name, "missionId": mission, "state": "OPEN", "attemptStatus": status}
+
+        cases = [
+            ([day("MON", OTHER_MISSION, "COMPLETED"), day("TUE", TODAY_MISSION, "NOT_STARTED")], TODAY_MISSION),
+            ([day("MON", OTHER_MISSION, "NOT_STARTED"), day("TUE", TODAY_MISSION, "IN_PROGRESS")], TODAY_MISSION),
+        ]
+        for days, expected in cases:
+            opener = FakeOpener(theme={**theme(), "days": days})
+            self.assertTrue(self.run_smoke(opener)[0]["ok"])
+            self.assertEqual(self.started(opener), (expected, {"context": "THEME_DAY"}))
+        # 열린 문제를 모두 마무리한 토요일은 되돌아보기 다시 풀기, 평일(되돌아보기 닫힘)은 시작 전 실패
+        done = [day("MON", OTHER_MISSION, "COMPLETED")]
+        saturday = FakeOpener(theme={**theme(review_open=True, review=[(OTHER_MISSION, True)]), "days": done})
+        self.assertTrue(self.run_smoke(saturday)[0]["ok"])
+        self.assertEqual(self.started(saturday), (OTHER_MISSION, {"context": "THEME_REVIEW"}))
+        weekday = FakeOpener(theme={**theme(), "days": done})
+        result, _ = self.run_smoke(weekday)
         self.assertFalse(result["ok"])
-        self.assertIn(
-            "/api/v1/missions/{id}/attempts: HTTP 429", result["steps"][-1]["error"]
-        )
+        self.assertEqual(result["steps"][-1]["step"], "pick-mission")
+        self.assertFalse(any(c[1].endswith("/attempts") for c in weekday.calls))
         self.assertEqual(1, sum(c[1].endswith("/attempts") for c in opener.calls))
 
     def test_resumed_attempt_with_answer_only_reads_it(self):

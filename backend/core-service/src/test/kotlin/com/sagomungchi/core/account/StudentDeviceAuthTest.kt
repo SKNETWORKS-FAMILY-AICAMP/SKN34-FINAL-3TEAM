@@ -109,7 +109,7 @@ class StudentDeviceAuthTest : PostgresRepositoryTest() {
         reauth.callback("synthetic-google-code",tokens.verify(start.stateCookie,"oauth").getClaimAsString("state"),null,start.stateCookie)
         return reauth.issue(identity,start.challengeId).reauthToken
     }
-    private fun set(identity: AuthenticatedAccount,c: UUID,pin: String="4831")=pins.set(identity,c,pin,grant(identity,child=c))
+    private fun set(identity: AuthenticatedAccount,c: UUID,pin: String="4831")=pins.set(identity,c,pin)
     private fun device(identity: AuthenticatedAccount,c: UUID)=service.register(service.pairing(identity,listOf(c)).pairingCode,"합성 기기",UUID.randomUUID().toString())
     private fun code(expected: String, block: () -> Unit) { assertEquals(expected,assertFailsWith<BusinessException>(block=block).code) }
     private fun count(sql: String,vararg args: Any)=jdbc.queryForObject(sql,Int::class.java,*args)!!
@@ -231,28 +231,23 @@ class StudentDeviceAuthTest : PostgresRepositoryTest() {
         assertEquals(0,count("SELECT pin_failed_count FROM student WHERE id=?",c))
         assertTrue(jdbc.queryForObject("SELECT pin_hash FROM student WHERE id=?",String::class.java,c)!!.startsWith("pbkdf2-sha256$600000$"))
     }
-    @Test fun `PIN grant target purpose session expiry reuse and transaction rollback`() {
-        val p=parent();val c=child(p.identity.account.id);val other=child(p.identity.account.id)
-        val token=grant(p.identity,child=c)
-        code("REAUTH_REQUIRED") { pins.set(p.identity,other,"4831",token) }
-        val wrongPurpose=grant(p.identity,ReauthPurpose.CHILD_UNLINK,c)
-        code("REAUTH_REQUIRED") { pins.set(p.identity,c,"4831",wrongPurpose) }
-        val second=auth.login(GoogleProfile(p.identity.account.subject!!,p.identity.account.email,null),null)
-        code("REAUTH_REQUIRED") { pins.set(second.identity,c,"4831",token) }
-        for(pin in listOf("1234","4321","1111","abc1","123","1234567")) code("VALIDATION_FAILED") { pins.set(p.identity,c,pin,token) }
-        assertFailsWith<IllegalStateException> { TransactionTemplate(manager).executeWithoutResult { pins.set(p.identity,c,"4831",token); error("rollback fixture") } }
+    @Test fun `PIN uses current guardian session without additional grant and rolls back atomically`() {
+        val p=parent();val c=child(p.identity.account.id)
+        for(pin in listOf("1234","4321","1111","abc1","123","1234567")) code("VALIDATION_FAILED") { pins.set(p.identity,c,pin) }
+        assertFailsWith<IllegalStateException> { TransactionTemplate(manager).executeWithoutResult { pins.set(p.identity,c,"4831"); error("rollback fixture") } }
         assertFalse(pins.state(c).pinSet)
-        assertEquals(0,count("SELECT count(*) FROM reauth_grant WHERE token_hash=? AND used_at IS NOT NULL",tokens.hash(token)))
-        pins.set(p.identity,c,"4831",token)
-        code("REAUTH_REQUIRED") { pins.set(p.identity,c,"5729",token) }
-        val expired=grant(p.identity,child=c)
-        jdbc.update("UPDATE reauth_grant SET expires_at=now()-interval '1 second' WHERE token_hash=?",tokens.hash(expired))
-        code("REAUTH_REQUIRED") { pins.set(p.identity,c,"5729",expired) }
+        assertEquals(0,count("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action='STUDENT_PIN_CHANGED'",p.identity.account.id))
+        pins.set(p.identity,c,"4831")
+        assertTrue(pins.state(c).pinSet)
+        val second=auth.login(GoogleProfile(p.identity.account.subject!!,p.identity.account.email,null),null)
+        pins.set(second.identity,c,"5729")
+        assertEquals(0,count("SELECT count(*) FROM reauth_grant g JOIN reauth_challenge c ON c.id=g.challenge_id WHERE c.user_id=?",p.identity.account.id))
+        assertEquals(2,count("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action='STUDENT_PIN_CHANGED'",p.identity.account.id))
     }
     @Test fun `other guardian cannot pair set PIN or revoke and consumed codes recheck current consent`() {
         val p=parent();val q=parent();val c=child(p.identity.account.id);val foreign=child(q.identity.account.id)
         code("CHILD_NOT_LINKED") { service.pairing(p.identity,listOf(foreign)) }
-        code("CHILD_NOT_LINKED") { pins.set(p.identity,foreign,"4831",null) }
+        code("CHILD_NOT_LINKED") { pins.set(p.identity,foreign,"4831") }
         val d=device(p.identity,c)
         code("NOT_FOUND") { service.revoke(q.identity,d.deviceId) }
         val pairing=service.pairing(p.identity,listOf(c))
@@ -309,7 +304,7 @@ class StudentDeviceAuthTest : PostgresRepositoryTest() {
     }
     @Test fun `delete serializes concurrent PIN and registration and removes actual mappings`() {
         val p=parent();val c=child(p.identity.account.id);set(p.identity,c);val d=device(p.identity,c)
-        val pinGrant=grant(p.identity,child=c);val deletionGrant=grant(p.identity,ReauthPurpose.CHILD_DELETE,c,"PROFILE")
+        val deletionGrant=grant(p.identity,ReauthPurpose.CHILD_DELETE,c,"PROFILE")
         val pairing=service.pairing(p.identity,listOf(c))
         val entered=CountDownLatch(1);val release=CountDownLatch(1)
         Executors.newFixedThreadPool(3).use { pool ->
@@ -317,7 +312,7 @@ class StudentDeviceAuthTest : PostgresRepositoryTest() {
                 children.delete(p.identity,c,DeletionScope.PROFILE,deletionGrant);entered.countDown();check(release.await(10,TimeUnit.SECONDS))
             } }
             assertTrue(entered.await(10,TimeUnit.SECONDS))
-            val pin=pool.submit(Callable { runCatching { pins.set(p.identity,c,"5729",pinGrant) } })
+            val pin=pool.submit(Callable { runCatching { pins.set(p.identity,c,"5729") } })
             val registration=pool.submit(Callable { runCatching { service.register(pairing.pairingCode,"기기","delete-race") } })
             release.countDown();deletion.get(15,TimeUnit.SECONDS)
             assertTrue(pin.get(15,TimeUnit.SECONDS).isFailure);assertTrue(registration.get(15,TimeUnit.SECONDS).isFailure)
@@ -329,14 +324,14 @@ class StudentDeviceAuthTest : PostgresRepositoryTest() {
     @Test fun `withdrawal serializes PIN login and registration and revokes all devices`() {
         val p=parent();val c=child(p.identity.account.id);set(p.identity,c);val d=device(p.identity,c)
         val access=service.login(d.credential,c,"4831").accessToken
-        val pairing=service.pairing(p.identity,listOf(c));val pinGrant=grant(p.identity,child=c);val withdrawal=grant(p.identity,ReauthPurpose.WITHDRAWAL)
+        val pairing=service.pairing(p.identity,listOf(c));val withdrawal=grant(p.identity,ReauthPurpose.WITHDRAWAL)
         val entered=CountDownLatch(1);val release=CountDownLatch(1)
         Executors.newFixedThreadPool(4).use { pool ->
             val deleting=pool.submit { TransactionTemplate(manager).executeWithoutResult {
                 withdrawals.request(p.identity,withdrawal);entered.countDown();check(release.await(10,TimeUnit.SECONDS))
             } }
             assertTrue(entered.await(10,TimeUnit.SECONDS))
-            val jobs=listOf<() -> Unit>({ pins.set(p.identity,c,"5729",pinGrant) },{ service.login(d.credential,c,"4831") },{ service.register(pairing.pairingCode,"기기","withdrawal-race") }).map { action -> pool.submit(Callable { runCatching(action) }) }
+            val jobs=listOf<() -> Unit>({ pins.set(p.identity,c,"5729") },{ service.login(d.credential,c,"4831") },{ service.register(pairing.pairingCode,"기기","withdrawal-race") }).map { action -> pool.submit(Callable { runCatching(action) }) }
             release.countDown();deleting.get(15,TimeUnit.SECONDS);jobs.forEach { assertTrue(it.get(15,TimeUnit.SECONDS).isFailure) }
         }
         assertEquals(0,count("SELECT count(*) FROM student_device WHERE parent_user_id=? AND revoked_at IS NULL",p.identity.account.id))

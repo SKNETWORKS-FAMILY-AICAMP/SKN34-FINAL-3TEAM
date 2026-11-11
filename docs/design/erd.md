@@ -25,10 +25,10 @@
 | 문자열·금액 | varchar는 기본적으로 길이 제한 없는 PostgreSQL varchar. 길이 제한 컬럼은 Mermaid에 `varchar(N)`로 적고 `scripts/verify_db_schema.py`가 길이까지 대조(ShedLock name 64·locked_by 255, `student.look_theme`·`look_companion` 16, 3.5.1 포인트·꾸미기 표, `model_loading_report.pod_id` 253, report `report_job_guard.failure_reason` 100·`outbox_event.last_error_code` 64). 원화는 int, cost_usd는 반올림 정책 없는 numeric |
 | FK 삭제·순환 참조 | 기본 ON DELETE/UPDATE NO ACTION. mission.current_*·published_*, weekly_theme.current_·published_·review_version_id(#385)와 answer.followup_id만 DEFERRABLE INITIALLY IMMEDIATE. 삭제는 P09에 따라 `student.deleted` 이벤트로 서비스별 물리 삭제. learning 하위 기록은 CASCADE 없이 서비스가 한 트랜잭션에서 순서대로 삭제(4.3, #128) |
 
-- 테이블 없이 Redis에 두는 값: SSE 알림 중계 (아키텍처 1.6). 분석 대화 일일 사용량은 `payment_premium_usage` KST 일자 집계(#225), 무료 플랜 미션 일일 한도(P13)는 `mission_daily_usage` KST 일자 집계(#387, 3.4)
+- 테이블 없이 Redis에 두는 값: SSE 알림 중계 (아키텍처 1.6). 분석 대화 일일 사용량은 `payment_premium_usage` KST 일자 집계(#225), 무료 플랜 미션 일일 한도(P13)는 `mission_daily_usage` KST 일자 집계(#387, 3.4. 2026-11-10 개정 #485 뒤 무료 상품에서 다시 켠 무료 `EXTRA`만 집계)
 - 생각 메모는 `attempt_draft.content.memo`에 저장 (P05). 음성 시범 미구현으로 음성 데이터 없음 (P03)
 - 학생 별도 계정 없음: 학생 세션은 `student.id`로 발급하는 토큰만. 발급 경로는 학부모 인증(동석) 또는 학부모 등록 기기 + 자녀 PIN(단독). PIN·기기 저장 구조는 3.1 (P01)
-- 학생 기기 페어링 코드(10분·1회용)는 테이블 없이 Redis 저장
+- 학생 기기 페어링 코드(10분·1회용)와 학부모 ID 가입 IP별 횟수 제한(`auth:parent-signup:ip:<IP>`, 기본 10분 5회, #415)은 테이블 없이 Redis 저장
 - 코드 CHECK는 Mermaid 주석의 `A|B` 목록 또는 `CHECK[A]` 명시 표기로 자동 검증한다. 허용값이 하나인 경우에도 `CHECK[A]`로 표시해 일반 설명과 구분한다.
 
 ---
@@ -38,11 +38,11 @@
 | ID | 소유 (원본 테이블) | 참조하는 곳 |
 |---|---|---|
 | `student_id` | core `student.id` | learning `attempt`·`deleted_student`, report `weekly_report` |
-| `mission_id` | learning `mission.id` | (core는 프록시만, 저장 없음) |
-| `attempt_id`, `answer_id` | learning `attempt`·`answer` | core `message_evidence`, report `report_item_evidence` |
+| `mission_id` | learning `mission.id` | core `mission_daily_usage.mission_id`(무료 한도 집계, 3.4) |
+| `attempt_id`, `answer_id` | learning `attempt`·`answer` | core `message_evidence`·`mission_daily_usage.attempt_id`·`error_report.attempt_id`·`inquiry.attempt_id`, report `report_item_evidence` |
 | `judgment_id`, `followup_id` | learning `judgment`·`followup` | core `error_report.target_id` |
 | `job_id` | core `report_job.id` | report `weekly_report.job_id` |
-| `report_id` | report `weekly_report.id` | core `report_job.report_id`, `report_view.report_id`, `error_report.target_id` |
+| `report_id` | report `weekly_report.id` | core `report_job.report_id`, `report_view.report_id`, `error_report.target_id`, `conversation.report_id` |
 | `rubric_version_id` | learning `rubric_version.id` | core `model_version.ref_id` (`kind = RUBRIC`) |
 | `error_report_id` | core `error_report.id` | learning `judgment_correction` |
 | 사용자 ID | core `user_account.id` | learning `mission.created_by`·`mission_review.reviewer_id`·`judgment_correction.corrected_by` |
@@ -579,7 +579,7 @@ erDiagram
 
 #48: 무료 상품 버전은 PAYMENT_FREE_PRODUCT_ID로 지정한다(2026-10-28 사용자 확정). 상품·주문·구독 조건은 snapshot으로 보존한다. V15의 payment_charge_attempt는 논리 주문당 확정 실패 재청구 이력을 분리하며 `(order_id,attempt_no)`·pg_order_no·멱등키 UK를 갖는다. 기존 정기 주문 기간 UK는 유지한다. subscription.billing_anchor_day는 최초 일자를 보존한다. payment_premium_usage는 환불과 경합하는 사용 예약·완료 증빙을 소유한다. 상세 경계는 [보고서](../report/payment.md)를 따른다.
 
-#387(V34, P13·P14 개정): `mission_daily_usage`는 무료 자녀의 `THEME_DAY`·`EXTRA` 신규 시도(learning `201`)만 시도 ID PK로 기록하고 `(student_id, usage_date)` 건수를 `product.limits.dailyMissions`와 비교한다(#210 PostgreSQL 결정, core는 learning 시도를 직접 볼 수 없음). `mission_id`는 한도 도달 뒤 같은 미션의 진행 중 시도 이어하기(`200`)를 막지 않도록 마지막 기록 시도를 찾는 데 쓴다(3.6 설계에 더한 컬럼). 학생 삭제 확정 때 같은 트랜잭션에서 지운다. `EXTRA` 허용은 상품 `features.extraMissions`(없으면 허용)로 정하며, 무료 상품에서 `false`일 때만 프리미엄 `EXTRA` 신규 시도를 `payment_premium_usage.kind = EXTRA_MISSION`(`source_id` = 시도 ID, `USED`)으로 남겨 환불 판정의 프리미엄 사용에 넣는다(2026-11-08 결정: 지금은 무료도 허용, 기록 없음). V34 파일 주석의 "THEME_DAY 신규 시도만"은 실제 집계(`ProductEntitlementService.missionStart`, `THEME_DAY`·`EXTRA`)와 다르며 적용된 마이그레이션이라 고치지 않는다. 상세는 [core 보고서](../report/core-gateway.md#13-주간-테마-프록시무료-하루-1개추가-문제-프리미엄-387).
+#387(V34, P13·P14 개정): `mission_daily_usage`는 무료 자녀의 신규 시도(learning `201`)만 시도 ID PK로 기록하고 `(student_id, usage_date)` 건수를 `product.limits.dailyMissions`와 비교한다(#210 PostgreSQL 결정, core는 learning 시도를 직접 볼 수 없음). `mission_id`는 한도 도달 뒤 같은 미션의 진행 중 시도 이어하기(`200`)를 막지 않도록 마지막 기록 시도를 찾는 데 쓴다(3.6 설계에 더한 컬럼). 학생 삭제 확정 때 같은 트랜잭션에서 지운다. `EXTRA` 허용은 상품 `features.extraMissions`로 정하며(값이 없으면 무료 거부·구독 중 허용 #506), 무료 상품에서 `false`일 때 프리미엄 `EXTRA` 신규 시도를 `payment_premium_usage.kind = EXTRA_MISSION`(`source_id` = 시도 ID, `USED`)으로 남겨 환불 판정의 프리미엄 사용에 넣는다. 집계 대상은 2026-11-08 결정 때 무료 `THEME_DAY`·`EXTRA` 합산 하루 1개였고, 2026-11-10 개정(#483, core #485 V43)부터는 무료 테마 문제(`THEME_DAY`·`THEME_REVIEW`)를 세지 않으며 V43이 무료 상품 `extraMissions`를 `false`로 바꿔 무료 `EXTRA`도 403이다. 그래서 이 테이블은 무료 상품에서 `EXTRA`를 다시 켤 때(`true`)의 무료 `EXTRA` 하루 한도로만 쓰이고 평소에는 새 행이 없다(테이블·`limits.dailyMissions`는 되돌릴 수 있게 유지). V34 파일 주석의 "THEME_DAY 신규 시도만"은 실제 집계와 다르며 적용된 마이그레이션이라 고치지 않는다. 상세는 [core 보고서](../report/core-gateway.md#13-주간-테마-프록시무료-하루-1개추가-문제-프리미엄-387).
 
 ```mermaid
 erDiagram
@@ -592,7 +592,7 @@ erDiagram
   subscription |o--o{ payment_order : "청구 대상"
   payment_order ||--o| payment : "승인"
   payment ||--o{ refund_request : refunds
-  student ||--o{ mission_daily_usage : "무료 하루 미션"
+  student ||--o{ mission_daily_usage : "무료 추가 문제 하루 한도"
 
   payment_charge_attempt {
     uuid id PK
@@ -631,7 +631,7 @@ erDiagram
     varchar billing_cycle "MONTHLY|YEARLY"
     int child_limit
     jsonb features
-    jsonb limits "dailyMissions(무료 THEME_DAY·EXTRA 합산), dailyFeedback, dailyConversations, reportNarrative (P13)"
+    jsonb limits "dailyMissions(무료 EXTRA 재활성 때 하루 한도), dailyFeedback, dailyConversations, reportNarrative (P13)"
     boolean active
     timestamptz created_at
   }
@@ -767,7 +767,7 @@ erDiagram
     uuid id PK
     uuid event_id UK "llm.usage.recorded id"
     varchar service "ai|scoring"
-    varchar call_type "JUDGMENT|FOLLOWUP|ANALYSIS|REPORT_NARRATIVE|MISSION_DRAFT|THEME_DRAFT|THEME_IMAGE|M2|M1"
+    varchar call_type "JUDGMENT|FOLLOWUP|ANALYSIS|REPORT_NARRATIVE|MISSION_DRAFT|THEME_DRAFT|THEME_IMAGE|REPORT_EXPLANATION|KNOWLEDGE_EMBEDDING|M2|M1"
     varchar model
     varchar prompt_version "NULL 허용"
     int input_tokens "NULL 허용"
@@ -827,6 +827,8 @@ erDiagram
 - `cost_usd`는 core 설정의 모델별 토큰 단가(기획서 3.9)로 소비 시 계산, 단가 변경 후에도 과거 값 유지 (FN-ADM-19)
 - #355: ai 미션 초안 호출(FN-ADM-20)의 `call_type` `MISSION_DRAFT`를 V28에서 CHECK에 더함. 호출 종류 목록은 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·core OpenAPI `CallType`과 ai·scoring 발행 목록이 같음(Mermaid 주석 값은 CHECK와 자동 대조, 1장)
 - #439: ai 주간 테마 생성(에픽 #436, ai #437)의 텍스트 호출 `THEME_DRAFT`·이미지 호출 `THEME_IMAGE`를 V40에서 CHECK에 더함(V28과 같은 방식, 허용 목록만 넓힘). 이미지 호출은 토큰이 없어 `cost_usd`가 null(미산정 호출로 셈)
+- #480(에픽 #473): 리포트 설명(FN-RPT-09)의 ai 호출 종류 `REPORT_EXPLANATION`(설명 항목 1개당 클러스터 안 sLLM 1회, ai #477)을 V42에서 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·OpenAPI `CallType`·ai/scoring 발행 목록에 함께 더함(V28·V40과 같은 방식, 허용 목록만 넓힘). 토큰은 기록하지만 sLLM 단가를 설정하지 않아 `cost_usd`는 null(미산정 호출로 셈, #439 이미지와 같음)
+- #467(에픽 #463): 지식 임베딩 API(api-spec 4.2.4 C6)의 ai 호출 종류 `KNOWLEDGE_EMBEDDING`(임베딩 요청 1회당 1건, 본문 최대 64개를 한 번에 보냄)을 V44에서 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·OpenAPI `CallType`·ai/scoring 발행 목록에 함께 더함(V42와 같은 방식, 허용 목록만 넓힘). 입력 토큰만 있고 출력 토큰은 0으로 기록한다. 단가(`app.llm-pricing`)는 다른 모델처럼 비어 있어 `cost_usd`는 null(미산정 호출로 셈)
 - `outbox_event`: 상태 변경과 같은 트랜잭션에 저장, 릴레이가 publisher confirm 후 `published_at` 기록 (아키텍처 1.6)
 - #243 `outbox_event` 실패·격리: 릴레이는 subject별 선두만 발행. 발행 실패는 `failure_count`·`last_error_code`·`last_failed_at`을 기록하고 1·5·15분 뒤 재시도, 4번째 실패에 `quarantined_at` 기록(report #131과 같은 컬럼·기준). 격리 선두와 같은 subject 뒤 행은 운영 재처리까지 대기, 다른 subject는 계속 발행 ([보고서](../report/core-gateway.md#11-core-outbox-실패-격리-243))
 - #208 `event_log`: 감사 큐 `core.event.audit`로 받은 모든 업무 메시지(ai·scoring 발행 포함)의 메타데이터. payload·원문은 저장하지 않음. 같은 id 재발행·재전달은 첫 행 유지. `outbox_event`·`processed_event`·`llm_usage`와 `event_id`로 조인해 발행·전달·소비를 추적 ([보고서](../report/core-gateway.md#9-rabbitmq-발행소비-기록-208))
@@ -850,7 +852,7 @@ erDiagram
   user_account ||--o{ look_item : creates
 
   reward_rule {
-    varchar(32) event_type PK "MISSION_COMPLETED|REVIEW_VIEWED|COMMUNITY_POSTED|REACTION_GIVEN|THEME_COMPLETED"
+    varchar(32) event_type PK "MISSION_COMPLETED|REVIEW_VIEWED|COMMUNITY_POSTED|REACTION_GIVEN|THEME_COMPLETED|THEME_ON_TIME|THEME_FINISHED"
     int amount "1 이상, 사건 1회 적립값"
     int daily_cap "NULL 허용 · 한국 시간 하루 적립 횟수 상한(1 이상)"
     boolean active "false면 적립하지 않음"
@@ -859,7 +861,7 @@ erDiagram
   reward_point_ledger {
     uuid id PK
     uuid student_id FK
-    varchar(32) event_type "MISSION_COMPLETED|REVIEW_VIEWED|COMMUNITY_POSTED|REACTION_GIVEN|THEME_COMPLETED|UNLOCK"
+    varchar(32) event_type "MISSION_COMPLETED|REVIEW_VIEWED|COMMUNITY_POSTED|REACTION_GIVEN|THEME_COMPLETED|THEME_ON_TIME|THEME_FINISHED|UNLOCK"
     varchar(200) source_key "사건 키, (student_id, event_type, source_key) UK"
     int amount "적립 양수, UNLOCK 음수"
     timestamptz created_at
@@ -895,8 +897,9 @@ erDiagram
   }
 ```
 
-- `reward_rule` 시드(V35)는 P21 초기값: 학습 완료 10·되돌아보기 10·공유 5·반응 1(하루 5회)·완주 30. 값·상한·사용 여부는 데이터로 바꾸며 이미 쌓인 원장은 바꾸지 않는다. `daily_cap`은 적립 횟수(포인트 합이 아님)
-- `reward_point_ledger` UK `(student_id, event_type, source_key)`로 사건당 1회. 사건 키: 학습 완료 `missionId`(미션당 최초 1회), 되돌아보기·완주 `weekStart`(ISO date, 주 1회), 공유 `postId`, 반응 `postId:reaction`, 해금 `itemKey`. CHECK로 `UNLOCK`만 음수, 그 외 양수(0 없음). 인덱스 `(student_id, created_at)`는 내역과 하루 상한 집계용
+- 2026-11-10 개정(#483, core #485 V43 `V43__theme_free_limit_and_daily_points.sql`): 사건 종류에 당일 풀이(`THEME_ON_TIME`, 5)·주간 완주(`THEME_FINISHED`, 10)를 더했다. `reward_rule`·`reward_point_ledger`의 `event_type` CHECK를 V43으로 넓히고(V35는 고치지 않음) `reward_rule` 2행을 추가했다. `THEME_COMPLETED`(30)는 개근(월~금 각 당일 학습 완료)으로 그대로 쓴다. 사건 키는 당일 풀이 `weekStart:day`(예 `2026-11-09:MON`, 요일당 1회), 주간 완주 `weekStart`. 위 Mermaid의 CHECK 목록은 V43 기준이다. 적립 근거는 learning 주간 테마 조회 응답의 `days[].completedOnDay`·`completed`(개근)·`finished`이며, learning #484 구현 전에는 당일 풀이·주간 완주 칸이 없어 쌓이지 않는다
+- `reward_rule` 시드(V35)는 P21 초기값: 학습 완료 10·되돌아보기 10·공유 5·반응 1(하루 5회)·완주 30(`THEME_COMPLETED`, 2026-11-10 개정으로 개근: 월~금 각 당일 학습 완료). V43이 당일 풀이 5·주간 완주 10(토요일까지 5문제 학습 완료)을 더했다. 값·상한·사용 여부는 데이터로 바꾸며 이미 쌓인 원장은 바꾸지 않는다. `daily_cap`은 적립 횟수(포인트 합이 아님)
+- `reward_point_ledger` UK `(student_id, event_type, source_key)`로 사건당 1회. 사건 키: 학습 완료 `missionId`(미션당 최초 1회), 되돌아보기·개근·주간 완주 `weekStart`(ISO date, 주 1회), 당일 풀이 `weekStart:day`(요일당 1회), 공유 `postId`, 반응 `postId:reaction`, 해금 `itemKey`. CHECK로 `UNLOCK`만 음수, 그 외 양수(0 없음). 인덱스 `(student_id, created_at)`는 내역과 하루 상한 집계용
 - 적립·해금은 학생 행 `FOR SHARE`(삭제 확정과 직렬화) → `reward_point_balance` 행 `FOR UPDATE` 순서로 잠가 학생별로 직렬화한다. 같은 사건 동시 적립, 다른 키로 같은 항목 동시 해금도 한 번만 반영. 잔액 CHECK `>= 0`
 - `look_item`: 관리자(CONTENT) 등록 아이템. 삭제 없이 `STOPPED`로 판매 중단, 이미 해금한 학생은 계속 착용. `code`는 바꾸지 않으며 `:`가 없어 테마·캐릭터 키와 겹치지 않는다. 변경은 같은 트랜잭션에서 `audit_log`(`target_type = LOOK_ITEM`)
 - `student_look_unlock`: 테마·캐릭터 해금값(테마 100·캐릭터 150)은 코드 상수라 테이블이 없다. `THEME:lake`·`COMPANION:mungchi`는 행 없이 항상 해금. V35가 잠금 전 저장된 `student.look_theme`·`look_companion`(무료 제외)을 `ledger_id` NULL 행으로 옮겼다(포인트 차감 없음). 포인트 해금 행은 그 `UNLOCK` 원장 행을 `ledger_id`로 가리킨다(UK)
@@ -1052,7 +1055,7 @@ erDiagram
 - `rubric_element.judge_verified = false` 요소는 AI 판정 시 충족 표시 금지 → `HELD (UNVERIFIED_SCOPE)`. 평가 통과 후 관리자가 갱신 (FN-JDG-04, 05, NFR-AIQ-01). 사람 검증(P11) 도입 전에는 ai `JUDGE_REQUIRE_VERIFIED=false`(기본)로 끄고 `trial = true`로 시범 표시
 - `forbidden_terms`: 정답 키와 함께 ai `followups` 유출 검사 입력 (FN-JDG-06)
 - `keywords`·`essay_type`(#69, learning V9): ai 판정의 M2 교차 확인 입력(api-spec 4.2.2). `keywords`는 서술 핵심어 묶음 배열(괄호 안 대체어 포함 문자열), `essay_type`은 `설명글|글짓기|주장|찬성반대|대안제시`(CHECK, 논술 미션에서만 사용). 기준표 버전과 함께 불변. 비어 있으면 서술·논술 M2를 부르지 않음
-- `judgment.model_scores`(#69): ai 응답 `modelScores`(`{m2, m1, skipped}`) 그대로. 학생 화면에 보이지 않는 AI 관찰. M2를 부르지 않았거나 비활성이면 NULL. scoring 실패로 교차 확인을 생략하면 `{m2:null, m1:null, skipped:"SCORING_UNAVAILABLE"|"SCORING_REJECTED"}`(#305, 컬럼 변경 없음)
+- `judgment.model_scores`(#69): ai 응답 `modelScores`(`{m2, m1, skipped}`) 그대로. 학생 화면에 보이지 않는 AI 관찰. M2를 부르지 않았거나 비활성이면 NULL. scoring 실패로 교차 확인을 생략하면 `{m2:null, m1:null, skipped:"SCORING_UNAVAILABLE"|"SCORING_REJECTED"}`(#305, 컬럼 변경 없음). #478에서 report 집계 입력(api-spec 4.1.1)에 그대로 제공해 리포트 설명(FN-RPT-09) 입력으로 쓴다(컬럼 변경 없음)
 - #262 표준 요소: 새 컬럼 없이 `rubric_element.code` 값 규칙(FN 1.5). DB CHECK는 두지 않음: 이전 기준표 버전은 불변이라 자유 code가 남고, 미션 유형은 `mission_version`에 있어 행 단위 CHECK로 맞춤을 확인할 수 없음. 저장 때 code 모양(400)·게시 때 유형·입력 방식 맞춤(422 `rubric.elements.code`)을 앱이 검사. 시드는 같은 행의 code만 바꿔 지난 판정이 `judgment_element.rubric_element_id`로 이어짐
 - #79: V6는 `mission_version`에 `categories`(분류 그룹, `answer_key.assignments`의 `categoryId`가 가리킴)·`answer_unit`(수학 최종 답 단위)을 추가한다. 기존 마이그레이션은 수정하지 않는다. 수학 `answer_key.finalAnswer`는 수만 담고 단위는 비교하지 않는다(FN-JDG-02). 풀이 단계 기준표의 `code = 'FINAL_ANSWER'` 요소는 ai에 보내지 않고 정답 키로 충족을 정한다
 - AI Hub 문항·답안·피드백 원문은 어떤 컬럼에도 저장하지 않음 (FN-ADM-09)
@@ -1224,7 +1227,7 @@ erDiagram
   - `previous`·`corrected`는 `{"result": "PARTIAL"}` 모양. `previous`는 정정 직전에 보이던 결과(앞선 정정이 있으면 그 결과), 최신 정정은 `created_at` 가장 늦은 행 (#80)
 - `self_assessment` UK `(attempt_id, rubric_element_id)`. AI 판정·원본 답변과 별도 저장 (FN-LRN-13)
 - 도움 이용 비율 집계 근거 = `hint_usage.opened_at` vs 최초 `answer.submitted_at` (최초 답변 전 열람 없는 시도 / 집계 대상 시도, P08)
-- `attempt.context`(#385, V11 준비·V12 최종): `THEME_DAY`(오늘 요일 테마 문제)·`THEME_REVIEW`(토·일 되돌아보기 다시 풀기)·`EXTRA`(생각 유형별 고르기). 기존 행은 V11에서 `EXTRA`로 채움. CHECK `ck_attempt_theme_context`: 테마 컨텍스트는 `theme_id`·`theme_week_start`가 함께 있고 `EXTRA`는 둘 다 NULL. 진행 중 시도 부분 UK는 컨텍스트와 무관하게 학생·미션당 하나
+- `attempt.context`(#385, V11 준비·V12 최종): `THEME_DAY`(오늘 요일 테마 문제)·`THEME_REVIEW`(토·일 되돌아보기 다시 풀기)·`EXTRA`(생각 유형별 고르기). 2026-11-10 개정(#483) 뒤 뜻: `THEME_DAY`는 공개된 테마 문제 신규 시도(월~토, 프리미엄 일요일), `THEME_REVIEW`는 토요일(프리미엄 일요일) 다시 풀기. 값·CHECK는 그대로이며, 당일 풀이는 `completed_at`과 문제 요일로 계산하고 큰 질문 정답 고르기 결과 저장 위치는 learning #484에서 정한다. 기존 행은 V11에서 `EXTRA`로 채움. CHECK `ck_attempt_theme_context`: 테마 컨텍스트는 `theme_id`·`theme_week_start`가 함께 있고 `EXTRA`는 둘 다 NULL. 진행 중 시도 부분 UK는 컨텍스트와 무관하게 학생·미션당 하나
 
 ### 4.2.1 주간 테마 (P23, #385 V11·V12)
 
@@ -1347,6 +1350,148 @@ erDiagram
 
 2026-11-06 서비스 기획 방향 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 저장 구조. 주간 테마(#385)는 V11·V12로 구현해 4.2·4.2.1 Mermaid와 6장으로 옮겼다(설계와 달리 게시 중 수정을 미션처럼 버전으로 두려고 `weekly_theme_version` 테이블과 `weekly_theme.current_·published_·review_version_id`를 더하고, 제목·소개는 버전으로, 요일 문제는 버전 기준 `weekly_theme_day (theme_version_id, …)`로 옮김, [learning 보고서](../report/learning.md)). 커뮤니티 공유물·반응(#386)은 V13으로 구현해 4.3.1 Mermaid와 6장으로 옮겼다. 이로써 learning_db에 남은 설계 표는 없다. 아래 원칙은 이후 변경에도 같다: 컬럼 기본값은 두지 않는다(검증 스크립트 규칙): 기존 행이 있는 테이블의 NOT NULL 컬럼은 준비 버전(nullable 추가)→기존 행 채움→최종 버전(NOT NULL·CHECK)으로 나눈다(8장).
 
+### 4.5 교육과정 지식 RAG (#463, 계약 #464, 구현 #466)
+
+**계약 C2·C3·C9, learning V14(#466)**. 아래 Mermaid를 `scripts/verify_db_schema.py`가 실제 DB와 대조하고, 표는 칸 설명이다. 테이블 칸은 #466 이슈 표를 따르고, 그 표에 없던 칸은 "기준안 추가"로 표시했다. 추출 레코드(C1)는 `scripts/knowledge/schema/curriculum-record.schema.json`, 관계 확인 파일(C4)은 `relation-review.schema.json`, 조회 API(C5)는 [api-spec 4.1.2](api-spec.md#412-교육과정-지식-내부-api-463-계약-464-c5-구현-469), 판 관리 API는 [api-spec 4.1.3](api-spec.md#413-교육과정-지식-판-관리-466).
+
+```mermaid
+erDiagram
+  knowledge_dataset {
+    varchar(32) version PK "kn-YYYYMMDD-NN (CHECK)"
+    varchar status "CHECK[LOADING|ACTIVE|RETIRED], 부분 UK (status) WHERE ACTIVE"
+    jsonb source "원문 고시·추출 판·확인 파일·학기 대응 자료·이전 활성 판"
+    varchar embedding_model "C6 응답 model"
+    int embedding_dimensions "1536 (CHECK)"
+    int chunk_count
+    int relation_count
+    timestamptz created_at
+    timestamptz activated_at "NULL 허용, LOADING만"
+  }
+  knowledge_chunk {
+    varchar(32) dataset_version PK,FK
+    varchar(300) id PK
+    varchar kind "CHECK[STANDARD|DOMAIN|CONTENT|SUBJECT_GUIDE|THINKING_TYPE]"
+    varchar subject "NULL 허용"
+    varchar area "NULL 허용"
+    varchar standard_code "NULL 허용"
+    varchar domain_id "NULL 허용"
+    varchar thinking_type "NULL 허용, CHECK[ANALYZE|EVALUATE|CREATE|SOLVE|REFLECT]"
+    smallint[] grades "3~6 (CHECK), 빈 배열 허용"
+    varchar[] semesters "3-1~6-2 (CHECK), 빈 배열 허용"
+    varchar notice_grade_band "NULL 허용"
+    text text
+    jsonb record "C1 원본"
+    vector(1536) embedding "NULL 허용, 활성화 전 모두 채움"
+    char(64) content_hash "SHA-256 16진수"
+    jsonb source
+  }
+  knowledge_standard_semester {
+    varchar(32) dataset_version PK,FK
+    varchar standard_code PK,FK
+    varchar semester PK "그 학년 학기 (CHECK)"
+    smallint grade "3~6 (CHECK)"
+  }
+  knowledge_fits {
+    varchar(32) dataset_version PK,FK
+    varchar standard_code PK,FK
+    varchar thinking_type PK,FK "CHECK[ANALYZE|EVALUATE|CREATE|SOLVE|REFLECT]"
+    text reason
+    varchar reviewed_by
+    timestamptz reviewed_at
+  }
+  knowledge_prerequisite {
+    varchar(32) dataset_version PK,FK
+    varchar standard_code PK,FK
+    varchar prerequisite_code PK "FK 없음, achievement_standard 코드 적재 검사"
+    text reason
+    varchar reviewed_by
+    timestamptz reviewed_at
+  }
+  knowledge_covers {
+    varchar(32) dataset_version PK,FK
+    varchar standard_code PK,FK
+    varchar content_id PK,FK
+    varchar reviewed_by
+    timestamptz reviewed_at
+  }
+```
+
+- 비 btree 인덱스(6장 대조 대상 아님): `knowledge_chunk.embedding` HNSW(`vector_cosine_ops`), `grades`·`semesters` GIN
+- 관계 FK는 `(dataset_version, …)` → `knowledge_chunk(dataset_version, id)`, 자동 삭제 없음. 판 제거는 서비스가 관계 → 조각 → 판 순서로 지운다
+
+- 저장소: `learning_db` 안(새 DB 없음, 에픽 결정). `vector` 확장은 migrate 계정이 만들 수 없어 관리자 계정 bootstrap이 만든다(#466)
+- 학년은 초3·초4·초5·초6(`grades`), 고시 원문 학년군(`초3~4`·`초5~6`)은 `notice_grade_band`에만 둔다
+- 학생 정보·학생 답은 어느 칸에도 없다. 평가원 성취수준·교육청(서울특별시·경기도) 수업-평가 자료 문장·블룸 원서·VALUE 루브릭 문장도 넣지 않는다(교육청 자료는 코드↔학년·학기 대응만)
+
+`knowledge_dataset` (판)
+
+| 칸 | 타입 | NULL | 내용 |
+|---|---|---|---|
+| `version` | varchar(32) PK | | 판 이름(C9 이름 규칙) |
+| `status` | varchar | | CHECK `LOADING`·`ACTIVE`·`RETIRED`. 부분 UNIQUE `(status) WHERE status = 'ACTIVE'`로 활성 판은 하나 |
+| `source` | jsonb | | 원문 고시 번호·추출 판(`curriculum-v1` 등)·관계 확인 파일·학기 대응 자료 이름 |
+| `embedding_model` | varchar | | 기준안 추가: 조각 임베딩 모델(C6 응답 `model`). 검색 요청 `embeddingModel`과 다르면 409 |
+| `embedding_dimensions` | int | | 기준안 추가: 벡터 길이(C6 응답 `dimensions`, 기준안 1536) |
+| `chunk_count`, `relation_count` | int | | 결과서 5절 숫자(활성화 때 채움) |
+| `created_at` | timestamptz | | |
+| `activated_at` | timestamptz | 허용 | `ACTIVE`가 된 때 |
+
+`knowledge_chunk` (지식 조각, PK `(dataset_version, id)`)
+
+| 칸 | 타입 | NULL | 내용 |
+|---|---|---|---|
+| `dataset_version` | varchar(32) FK | | → `knowledge_dataset.version` |
+| `id` | varchar(300) | | 조각 ID(아래 조각 표) |
+| `kind` | varchar | | CHECK `STANDARD`·`DOMAIN`·`CONTENT`·`SUBJECT_GUIDE`·`THINKING_TYPE` |
+| `subject` | varchar | 허용 | 교과(생각 유형은 NULL) |
+| `area` | varchar | 허용 | 영역·단원 이름 |
+| `standard_code` | varchar | 허용 | 성취기준 조각만 |
+| `domain_id` | varchar | 허용 | 성취기준(고려 사항을 가진 영역)·영역·내용 요소 조각 |
+| `thinking_type` | varchar | 허용 | 생각 유형 조각만. CHECK 다섯 유형 |
+| `grades` | smallint[] | | 학년(3~6). 빈 배열 허용 |
+| `semesters` | varchar[] | | 학기(`3-1` …). 빈 배열 허용 |
+| `notice_grade_band` | varchar | 허용 | 고시 원문 학년군 표기(출처·검사용) |
+| `text` | text | | 임베딩하는 본문(아래 본문 규칙) |
+| `record` | jsonb | | 기준안 추가: C1 레코드 원본. C5 응답이 문장·해설·고려 사항·내용 체계를 따로 돌려줘야 해서 본문을 다시 쪼개지 않으려고 둠 |
+| `embedding` | vector(1536) | 허용 | 적재 중(`LOADING`)에는 비어 있을 수 있고 활성화 전 모두 채워야 함(앱 검사) |
+| `content_hash` | char(64) | | `text`(NFC)의 SHA-256 16진수. 이전 판과 같으면 임베딩 재사용 |
+| `source` | jsonb | | C1 `source`(문서·절·쪽) |
+
+조각 ID·본문·학년·학기 규칙(C1 레코드 → 조각, 가짜 구현 `fake.chunk_text`와 같음)
+
+| kind | ID | 본문(`text`) | `grades` | `semesters` |
+|---|---|---|---|---|
+| `STANDARD` | 성취기준 코드(`4수01-06`) | `[코드] 문장` + 해설이 있으면 줄바꿈 `해설: …` | 레코드 `grades` | 레코드 `semesters`(학기 대응 자료) |
+| `DOMAIN` | `교과:원문학년군:영역`(`국어:초3~4:읽기`) | 첫 줄 `교과 학년군 영역`, 이어서 `핵심 아이디어:`·`지식⋅이해:`·`과정⋅기능:`·`가치⋅태도:`·`적용 시 고려 사항:`·`탐구 활동:` 줄(있는 것만) | 원문 학년군의 학년(`초3~4` → 3·4) | 이 영역 성취기준(내용 체계만인 영역은 확인된 covers로 이어진 성취기준)의 학기 합 |
+| `CONTENT` | `영역ID:구분:본문해시8자`(구분 `K`·`P`·`V`, 해시는 항목 글 NFC의 SHA-256 앞 8자) | `교과 학년군 영역 범주이름: 묶음 - 항목`(묶음 없으면 항목만) | 확인된 covers로 이어진 성취기준 학년 합 | 같은 성취기준 학기 합. 확인 전에는 빈 배열(학기 판단에 쓰지 않음) |
+| `SUBJECT_GUIDE` | `교과:guide` | `교과 교수⋅학습:` 다음 항목들, `평가:` 다음 항목들(줄마다) | 빈 배열 | 빈 배열(학년·학기 거르기 제외) |
+| `THINKING_TYPE` | 유형 코드(`ANALYZE`) | `이름(코드)`, `근거:`, `요소:`, `질문에 꼭:`, `피할 것:` 줄 | 빈 배열 | 빈 배열(학년·학기 거르기 제외) |
+
+- 영역 레코드 `scope`(C1): 국어·수학·도덕은 내용 체계 영역과 성취기준 영역이 같아 한 레코드(`BOTH`). 사회·과학은 내용 체계 영역(예: 과학 `운동과 에너지`, `CONTENT_SYSTEM`)과 성취기준 단원(예: `힘과 우리 생활`, `STANDARD_GROUP`: 고려 사항·탐구 활동)이 달라 레코드를 나눈다. 성취기준의 `domain_id`는 고려 사항을 가진 레코드이고 내용 체계 항목은 covers로 잇는다(원문 대조 결과, 에픽 "고려 사항은 영역마다"를 사회·과학에서는 단원으로 읽음)
+- 도덕은 성취기준·고려 사항이 원문에서 `[초등학교]` 한 묶음(3~4·5~6학년군 함께)이고 내용 체계만 학년군 칸이 나뉜다. 기준안: 영역 레코드는 내용 체계 학년군(`도덕:초3~4:…`)으로 두고 고려 사항은 같은 글을 넣는다(#465 확인)
+- 인덱스: `embedding` HNSW(`vector_cosine_ops`, 기준안), `(dataset_version, kind, subject)`, `grades`·`semesters` GIN
+
+관계 테이블(모두 `dataset_version` 포함, FK `(dataset_version, …)` → `knowledge_chunk(dataset_version, id)`, 자동 삭제 없음)
+
+| 테이블 | 칸(PK 굵게) | 출처 |
+|---|---|---|
+| `knowledge_standard_semester` | **dataset_version, standard_code, semester**, grade(smallint, CHECK 3~6) | 학기 대응 자료(자동). C1 성취기준 `semesters` |
+| `knowledge_fits` | **dataset_version, standard_code, thinking_type**, reason(text), reviewed_by(varchar), reviewed_at(timestamptz) | C4 확인 파일 FITS 수락·수정 행만 |
+| `knowledge_prerequisite` | **dataset_version, standard_code, prerequisite_code**, reason, reviewed_by, reviewed_at. CHECK 두 코드 다름 | C4 PREREQUISITE 수락·수정 행만 |
+| `knowledge_covers` | **dataset_version, standard_code, content_id**, reviewed_by, reviewed_at | C4 COVERS 수락·수정 행만 |
+
+- C4 → C3: `ACCEPT`는 `target`, `MODIFY`는 `modifiedTarget`을 대상으로 넣고 `reason`·`reviewer`·`reviewedAt`(KST 날짜 00:00)을 옮긴다. `REJECT`·빈 칸(확인 전)은 넣지 않는다. 같은 관계가 여러 번 나오면 `reviewedAt`이 늦은 행. `reviewer = SAMPLE`(샘플 파일)은 거부
+- `knowledge_prerequisite.prerequisite_code` FK는 기준안에서 **두지 않는다**: 초3 1학기의 앞 학기 선수는 초1~2 성취기준인데 지식 저장소 범위가 초3~6이라 조각이 없을 수 있다. 대신 `achievement_standard` 코드인지 적재 때 검사(#468·#466 확인). #468은 선수 후보를 초3~6 안에서만 내므로(2026-11-11 결정) 3-1 성취기준은 선수가 없고 확인 파일의 선수는 모두 저장소 안 성취기준이다. FK를 둘지는 #466이 다시 판단
+- 성취기준 문장은 적재 때 `achievement_standard`와 코드로 대조하고 다르면 적재를 멈춘다(#466)
+
+판 규칙(C9, 기준안)
+
+- 이름: `kn-YYYYMMDD-NN`(KST 적재 시작일과 그날 순번 2자리, 예 `kn-20261111-01`). 추출 판(`curriculum-v1`)·고시 번호·관계 확인 파일 이름은 `knowledge_dataset.source`에 둔다
+- 적재·교체 순서: ① 새 판 `LOADING` 행 → ② C1 레코드를 조각으로(같은 판 안에서 `id` 중복이면 멈춤) → ③ 현재 `ACTIVE` 판과 모델·차원이 같고 `content_hash`가 같은 조각은 임베딩을 복사, 나머지는 C6에 64개 이하로 나눠 요청 → ④ 학기 관계(C1 `semesters`) → ⑤ 사람 확인 관계 옮기기(아래) → ⑥ 새 확인 파일(C4) 적재(늦은 `reviewedAt` 우선) → ⑦ 검사(임베딩 모두 채움, 성취기준 문장 대조, 관계 양 끝 존재, 수 기록) → ⑧ 한 트랜잭션에서 이전 `ACTIVE` → `RETIRED`, 새 판 → `ACTIVE`(`activated_at`). 실패하면 새 판은 `LOADING`으로 남고 활성 판은 그대로다. 같은 입력으로 다시 돌리면 같은 조각·관계 수(멱등)
+- 사람 확인 관계 옮기기: 이전 활성 판의 fits·prerequisite·covers 중 양 끝 ID가 새 판에도 있으면 `reviewed_by`·`reviewed_at`·`reason` 그대로 옮긴다. 끝이 없어진 관계는 옮기지 않고 다시 확인할 목록(C4 행 모양, decision 빈 칸)으로 출력한다. 끝은 있지만 본문(`content_hash`)이 바뀐 관계는 옮기되 다시 확인 권장 목록에도 넣는다(기준안)
+- 제거: `RETIRED` 판만 관리 명령으로 지운다. 한 트랜잭션에서 관계 → 조각 → 판 행 순서. `ACTIVE`·`LOADING`은 지우지 않는다
+- 검색·조회는 `ACTIVE` 판만 읽는다(C5)
+
 ---
 
 ## 5. report_db
@@ -1399,7 +1544,7 @@ erDiagram
   report_item {
     uuid id PK "evidence itemId"
     uuid report_id FK
-    varchar item_type "METRIC|THINKING_TYPE|CHANGE|REFLECTION|QUOTE|PROBLEM"
+    varchar item_type "METRIC|THINKING_TYPE|CHANGE|REFLECTION|QUOTE|PROBLEM|EXPLANATION"
     int seq
     jsonb payload "Metric, 유형 요약, 전후 변화 등"
     varchar state "OK|NO_RECORD|INSUFFICIENT_SAMPLE"
@@ -1449,6 +1594,7 @@ erDiagram
 - 재생성은 기존 행을 덮지 않고 `revision` 증가 행 추가, UK `(student_id, period_type, period_from, revision)` (기존 판 보존·최신판 기본 조회, P06). 학부모 요청 재생성은 리포트당 1회 → core `report_job(REGENERATE)` 건수로 확인
 - 기록 없는 주·표본 부족 주는 `status = COMPLETED` + `state`로 구분, 생성 실패(`FAILED`)와 분리 (FN-RPT-11). state는 COMPLETED일 때만 NOT NULL (상태 다이어그램 4.2).
 - `report_item` UK `(report_id, item_type, seq)`. 상세 응답(API 3.4)은 `item_type`별로 묶어 조립
+- #479: `item_type=EXPLANATION`은 Alembic CHECK에 추가한다. `payload`는 `{attemptId, answerId, answerVersion, missionTitle, thinkingType, quote, text}`, `quote`는 null 허용, 근거 답변은 `report_item_evidence`에 연결하며 검사 통과분만 저장(`verified=true`). 리포트당 최대 3행이다. 상태(`INCLUDED`·`NOT_INCLUDED`·`NO_TARGET`)는 기존 `weekly_report.verification` JSONB의 `explanationState`에 보관한다. 이전 행은 값 없이 유지한다. 삭제는 기존 리포트 삭제(P09)에 포함하며 새 테이블·컬럼은 추가하지 않는다.
 - `report_file` UK `(report_id, format)`. 다운로드는 `s3_key`로 presigned URL 발급 (FN-RPT-13)
 - #55의 `20261027_02`는 `report_deletion_guard`를 추가한다. 삭제 중 생성·조회를 막고 완료 후에도 PROFILE·RECORDS 모두 생성을 차단한다. 최신 #45의 자동 학습 재개 금지와 일치시키며 재개는 별도 계약이 필요하다. 학생 UUID·삭제 요청 UUID·범위·시각·처리 상태만 남기며 원문·이름·리포트 내용은 저장하지 않는다.
 
@@ -1494,7 +1640,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | core | `notification` | `(user_id, read_at, created_at)` | 읽지 않은 알림 |
 | core | `payment` | `(status, updated_at)` | `CONFIRMING` 재조회, 결제 운영 조회 |
 | core | `subscription` | `(next_billing_date) WHERE auto_renew` | 정기 청구 대상 |
-| core | `mission_daily_usage` | `(student_id, usage_date)`, `(student_id, mission_id, created_at)` | 무료 하루 미션 건수, 한도 뒤 같은 미션 이어하기 확인 (#387, V34) |
+| core | `mission_daily_usage` | `(student_id, usage_date)`, `(student_id, mission_id, created_at)` | 무료 추가 문제(`EXTRA` 재활성 때) 하루 건수, 한도 뒤 같은 미션 이어하기 확인 (#387 V34, #485 뒤 무료 `EXTRA`만) |
 | core | `auth_session` | `(user_id)` | 사용자별 세션 폐기 |
 | core | `auth_session` | `(parent_session_id) WHERE parent_session_id IS NOT NULL` | 잠금 해제·재로그인 시 동석 학생 세션 폐기 (V24) |
 | core | `refresh_token` | `(session_id)` | 세션별 토큰 폐기·재사용 탐지 |
@@ -1513,6 +1659,8 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | learning | `community_post` | `(mission_id, status)` | 미션별 공개 공유물 목록 (#386, V13) |
 | learning | `community_reaction` | `(student_id, created_at)` | 학생 삭제 때 남긴 반응 정리 (#386, V13) |
 | learning | `processed_event` | `(processed_at)` | 보존 기간 정리 |
+| learning | `knowledge_dataset` | `(status) WHERE status = 'ACTIVE'` | 활성 판 하나(UNIQUE, #466 V14) |
+| learning | `knowledge_chunk` | `(dataset_version, kind, subject)` | 판·종류·교과 거르기(검색 #469·성취기준 조회). HNSW·GIN은 4.5 |
 | report | `weekly_report` | `(student_id, period_type, status, period_from)` | 자녀별 리포트 목록 |
 | report | `report_job_guard` | `(student_id)` | 학생 삭제 때 차단 기록 정리 (#132, `20261029_03`) |
 | report | `outbox_event` | `(created_at) WHERE published_at IS NULL`, `(subject, created_at, id) WHERE published_at IS NULL`, `(published_at) WHERE published_at IS NOT NULL` | 학생별 선두·발행 순서 및 재시도 대상, 보존 기간 정리 |
@@ -1525,7 +1673,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V39(V10·V11 결번), learning Flyway V1~V13, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`. 현재 94개 테이블·814개 컬럼(core 58/508, learning 28/240, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V39·learning V13·report `20261109_07` 기준). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V43(V10·V11 결번), learning Flyway V1~V14, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 101개 테이블·866개 컬럼(core 59/514, learning 34/286, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V43·learning V14·report `20261110_08` 기준). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT

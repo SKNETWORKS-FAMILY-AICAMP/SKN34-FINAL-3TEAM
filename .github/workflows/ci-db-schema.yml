@@ -30,7 +30,7 @@ jobs:
     timeout-minutes: 3
     services:
       postgres:
-        image: postgres:17.11-alpine
+        image: pgvector/pgvector:0.8.7-pg17-trixie
         env:
           POSTGRES_USER: schema_ci
           POSTGRES_PASSWORD: schema_ci_temporary

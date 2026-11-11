@@ -29,6 +29,8 @@ CallType = Literal[
     "MISSION_DRAFT",
     "THEME_DRAFT",
     "THEME_IMAGE",
+    "REPORT_EXPLANATION",
+    "KNOWLEDGE_EMBEDDING",
     "M2",
     "M1",
 ]

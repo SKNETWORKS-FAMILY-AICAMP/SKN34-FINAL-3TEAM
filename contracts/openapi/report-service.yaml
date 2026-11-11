@@ -1599,6 +1599,16 @@
               }
             ]
           },
+          "explanations": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportExplanations"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "problems": {
             "items": {
               "$ref": "#/components/schemas/DailyProblem"
@@ -1731,6 +1741,85 @@
           "generatedAt"
         ],
         "title": "ReportDetail"
+      },
+      "ReportExplanation": {
+        "properties": {
+          "attemptId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Attemptid"
+          },
+          "answerId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Answerid"
+          },
+          "answerVersion": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Answerversion"
+          },
+          "missionTitle": {
+            "type": "string",
+            "title": "Missiontitle"
+          },
+          "thinkingType": {
+            "$ref": "#/components/schemas/ThinkingType"
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attemptId",
+          "answerId",
+          "answerVersion",
+          "missionTitle",
+          "thinkingType",
+          "quote",
+          "text"
+        ],
+        "title": "ReportExplanation"
+      },
+      "ReportExplanations": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "INCLUDED",
+              "NOT_INCLUDED",
+              "NO_TARGET"
+            ],
+            "title": "State"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReportExplanation"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "state",
+          "items"
+        ],
+        "title": "ReportExplanations"
       },
       "ReportPage": {
         "properties": {

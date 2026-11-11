@@ -26,4 +26,10 @@ th { background:#edf4f5; } .text { white-space:pre-wrap; overflow-wrap:anywhere;
 {% elif section == 'narrative' %}{% if report.narrative %}<h2>이번 주 요약</h2><p class="text">{{ report.narrative.text }}</p><div class="small">출처: {{ 'AI 서술' if report.narrative.source == 'LLM' else '계산 기반 요약' }}</div>{% endif %}
 {% elif section == 'eveningQuestion' %}{% if report.eveningQuestion %}<h2>이번 주 저녁 질문</h2><p class="text">{{ report.eveningQuestion }}</p>{% endif %}
 {% endif %}{% endfor %}<div class="footer small">수치는 실제 기록을 코드로 계산한 관찰 결과입니다. 능력·등급·사고력 향상을 판정하지 않습니다.</div>
-{% if report.get("themeSummary") %}{% include "theme.html" %}{% endif %}</body></html>
+{% if report.get("themeSummary") %}{% include "theme.html" %}{% endif %}{% if report.get("explanations") %}<h2>대표 답변 설명 · AI 관찰</h2>
+{% if report.explanations.state == 'INCLUDED' %}{% for item in report.explanations['items'] %}
+<div class="card"><h3>{{ item.missionTitle }} · {{ thinking_labels[item.thinkingType] }}</h3>
+{% if item.quote is not none %}<blockquote class="text">{{ item.quote }}</blockquote>{% endif %}
+<p class="text">{{ item.text }}</p></div>{% endfor %}
+{% elif report.explanations.state == 'NOT_INCLUDED' %}<p>설명 미포함 · 설명을 제공하지 못했습니다. 학습 수치와 기록은 계속 확인할 수 있습니다.</p>
+{% else %}<p>설명 대상 답변이 없어 AI 관찰 설명이 포함되지 않았습니다.</p>{% endif %}{% endif %}</body></html>

@@ -429,7 +429,13 @@ class ReportRepository:
             "generated_at": (result.generated_at or datetime.now(UTC)) if result else None,
             "narrative": result.narrative if result else None,
             "theme_summary": result.theme_summary if result else None,
-            "verification": result.verification if result else None,
+            "verification": (
+                {**(result.verification or {}), "explanationState": result.explanation_state}
+                if result and result.explanation_state is not None
+                else result.verification
+                if result
+                else None
+            ),
             "versions": result.versions if result else None,
             "evening_question": result.evening_question if result else None,
         }

@@ -12,7 +12,7 @@
   - 확정 응답은 원문·필수 헤더·상태를 보관. 미확정·5xx·전송 실패는 같은 키로 learning 재호출. core 저장 실패는 503(learning 성공을 성공으로 가장하지 않음)
   - learning이 키의 UK·본문 대조·최초 응답 재구성·답변/판정 원자적 저장을 제공해야 두 DB 사이 중복 생성이 없음(core TTL 24시간 이후에도 learning UK 유지)
 - 시도 상세(#195): core 공개 `GET /attempts/{attemptId}`는 `Cache-Control: no-store`, 웹도 상세·제출·마무리·돌아보기 후 재조회에 `cache: 'no-store'`. 초안 버전은 피드백·마무리·돌아보기 상태의 버전이 아니라서 상세 표현의 HTTP 캐시 검증자(ETag)로 쓰면 304로 상태 변경을 놓침. 초안 ETag/If-Match·409 계약은 그대로
-- 일일 한도(P13): #387에서 구현(13절). 무료 하루 1개(당일 테마 문제 `THEME_DAY`, 2026-11-06 결정)를 #210 결정대로 PostgreSQL `mission_daily_usage`로 집계. learning의 신규 `201`·이어하기 `200`을 그대로 전달하고 `201`만 집계·한도 도달 시 신규 생성만 차단
+- 일일 한도(P13): #387에서 구현(13절). 무료 하루 1개(당일 테마 문제 `THEME_DAY`, 2026-11-06 결정)를 #210 결정대로 PostgreSQL `mission_daily_usage`로 집계. learning의 신규 `201`·이어하기 `200`을 그대로 전달하고 `201`만 집계·한도 도달 시 신규 생성만 차단. 2026-11-10 개정(#485, 18절) 뒤에는 무료 테마 문제를 세지 않고 무료 상품에서 다시 켠 무료 `EXTRA`만 센다
 
 ## 2. 피드백 SSE (#39)
 
@@ -81,7 +81,7 @@
 | 분석 대화 일일 사용량 | `conversation/service/AnalysisUsageService.kt:26-32,43-47,57-63` | Lua 확인+증가 원자 처리, 키 `analysis:daily:v1:{childId}:{KST 일자}`, `EXPIREAT` 다음 KST 자정+1일 | 503 `ANALYSIS_USAGE_UNAVAILABLE`(`:30`). 대화 생성·조회는 권한 확인만 해 영향 없음(`conversation/service/ConversationService.kt:43`) |
 | 관리자 대화 재처리 중복 차감 방지 | `AnalysisUsageService.kt:33-39,48-56`, `ConversationService.kt:153` | 요청 ID 표식 `analysis:retry:v1:{requestId}` 확인·증가·표식 저장을 한 스크립트로 처리 | 같은 503, 재처리 실행 실패 |
 | 알림 다중 레플리카 SSE 중계 | `notification/messaging/NotificationRedisPublisher.kt:17-26`, `notification/config/NotificationRedisConfiguration.kt:13-18`, `notification/consumer/NotificationRedisSubscriber.kt:14-17`, `notification/service/NotificationStreams.kt:29-33` | 채널 `core:notifications:v1` fan-out(at-most-once, 구독자 0명도 발행 성공), 커밋 후 발행 | 발행 예외 → `FAILED`·`REDIS_PUBLISH_FAILED`(`notification/service/NotificationDeliveryService.kt:12`). 알림 행·리포트 상태는 유지되고 목록 재조회로 복구. 관리자 재처리(`admin/service/OperationRetryService.kt:59`)도 같은 publisher 사용 |
-| 무료 플랜 미션 일일 한도(미구현) | 설계만 존재([API 명세](../design/api-spec.md) 2.2 P13·4.1 `/internal/missions/{id}/attempts`) | #210 전 설계는 core Redis 카운터, 현재 설계는 PostgreSQL `mission_daily_usage`(무료 하루 1개, #387). 신규 `201`만 집계 | 코드 없음 |
+| 무료 플랜 미션 일일 한도(미구현) | 설계만 존재([API 명세](../design/api-spec.md) 2.2 P13·4.1 `/internal/missions/{id}/attempts`) | #210 전 설계는 core Redis 카운터, 현재 설계는 PostgreSQL `mission_daily_usage`(무료 하루 1개, #387. 2026-11-10 개정 #485 뒤 무료 `EXTRA`를 다시 켤 때의 하루 한도로만 사용, 18절). 신규 `201`만 집계 | 코드 없음 |
 
 전수 확인 결과(`StringRedisTemplate`·`RedisTemplate`·`RedisConnectionFactory`·`@Cacheable`·`spring.data.redis` 검색):
 
@@ -135,7 +135,7 @@
 | 구분 | 대상 |
 |---|---|
 | PostgreSQL로 이전 | 분석 대화 일일 사용량, 관리자 대화 재처리 중복 차감 방지 표식 |
-| PostgreSQL로 신규 구현(후속 미정) | 무료 플랜 미션 일일 한도(P13, 2026-11-06 결정으로 하루 1개). 구현 이슈 #387. 설계는 core `mission_daily_usage`(ERD 3.6) |
+| PostgreSQL로 신규 구현(후속 미정) | 무료 플랜 미션 일일 한도(P13, 2026-11-06 결정으로 하루 1개, 2026-11-10 개정 #485로 무료 테마 문제는 한도 없음·무료 `EXTRA` 재활성 때만 사용). 구현 이슈 #387. 설계는 core `mission_daily_usage`(ERD 3.6) |
 | Redis 유지 | 학생 기기 페어링 코드, 기기 등록·페어링 발급 rate limit, 알림 Pub/Sub `core:notifications:v1` |
 
 - 근거 1: 분석 사용량은 이미 보호자·학생 행 잠금 트랜잭션 안에서 차감되므로 PostgreSQL 조건부 UPSERT로 동시성 요구를 같은 수준으로 충족하면서 롤백 불일치와 분산 원자성 제약을 함께 없앤다. 아직 구현되지 않은 미션 한도도 같은 패턴으로 만들면 Redis 의존 기능을 새로 늘리지 않는다
@@ -174,7 +174,7 @@
 
 - `ANALYSIS_USAGE_UNAVAILABLE`: 더는 발생하지 않는다. API 명세 1.3에 없던 코드([audit](audit.md))라 문서화된 계약 변경은 아니다. 과거 작업 실행 기록 표시를 위해 `admin/domain/Operations.kt`의 안전 코드 목록에는 남겼다
 - 관리자 재실행 130초 만료: Redis 표식 TTL 전제가 아니라 실행 만료(대화 RUNNING 고착 판정 `ConversationService.kt:82`와 같은 값)로 유지한다. API 명세에서 "표식 TTL보다 짧은" 전제 문구만 지웠다
-- 무료 미션 하루 1개(#387)·프리미엄 피드백 50회 한도(P13, 미구현): 이번 범위가 아니다. 무료 미션은 `mission_daily_usage`로 정했고 피드백 한도 저장 방식은 구현 이슈에서 정한다
+- 무료 미션 하루 1개(#387, 2026-11-10 개정 #485 뒤 무료 `EXTRA` 재활성 때만)·프리미엄 피드백 50회 한도(P13, 미구현): 이번 범위가 아니다. 무료 미션은 `mission_daily_usage`로 정했고 피드백 한도 저장 방식은 구현 이슈에서 정한다
 
 검증:
 
@@ -363,14 +363,16 @@ WHERE id = :event_id AND quarantined_at IS NOT NULL AND published_at IS NULL;
 
 ## 13. 주간 테마 프록시·무료 하루 1개·추가 문제 프리미엄 (#387)
 
+> 2026-11-10 개정(#483)으로 무료 한도·추가 문제·일요일이 바뀌었다. 지금 규칙은 이 문서 18절을 따른다.
+
 2026-11-06 결정(P23, P13·P14 개정, [서비스 방향](service-direction.md) 2.4·2.6)의 core 몫. 에픽 #396, #233 회의 안건(무료 미션 한도)의 구현. learning 테마 API(#385)는 동시에 구현 중이라 api-spec 2.11·4.1 계약대로 클라이언트를 만들고 테스트는 learning 계약 대역으로 했다.
 
 - **학생 주간 테마**: `GET /students/me/weekly-theme`·`POST /students/me/weekly-theme/review-views`(`WeeklyThemeController`)를 learning `/internal/students/{studentId}/weekly-theme…?gradeBand&date`로 넘긴다. 학년군(초3~4 `G3_4`, 초5~6 `G5_6`)은 core 학년, 날짜는 `paymentClock` 기준 KST 오늘이라 무료 한도와 같은 날을 쓴다. 클라이언트 query는 버림. 요일 상태가 날마다 바뀌어 `Cache-Control: no-store`. 열람 기록에도 같은 query를 붙인다(4.1 표에 없던 값, learning이 학생의 주를 정하는 근거)
 - **시도 `context`**: `POST /missions/{id}/attempts`의 본문 없음·`{}`·`context: null`은 `EXTRA`. `context` 외 필드나 허용 밖 값은 learning 호출 전 400. learning에는 학년·시연 query와 `{context}` 본문을 넘기고 `themeId`는 넘기지 않는다(그 주 테마는 learning이 학년·날짜로 정함, api-spec 4.1 비고를 이렇게 고침). 요일(`THEME_DAY_CLOSED`)·되돌아보기(`THEME_REVIEW_NOT_ALLOWED`) 검사는 learning이 하고 core는 그대로 전달
-- **결정(2026-11-08 동섭)**: 무료 하루 1개(`limits.dailyMissions` 3 → 1, 신규 `201`만 집계)는 확정. 생각 유형별 고르기(`EXTRA`)의 프리미엄 전용은 미정이라 **지금은 무료도 허용**하고, 무료의 `EXTRA` 신규 시작도 `THEME_DAY`와 합쳐 하루 1개로 센다. 설계 문서(서비스 방향 2.4·기능명세 P13·api-spec 2.11 초안)의 'EXTRA는 프리미엄 추가 문제' 서술과 다르다. 프리미엄 전용으로 바꿀 때는 코드 수정 없이 상품 데이터만 바꾼다(아래 전환 방법)
-- **판정 한 곳**: 무료·프리미엄 판단은 `ProductEntitlementService.forStudent`를 거치고, 시도 정책은 같은 서비스의 `missionStart`·`missionStarted`에만 둔다. learning 호출 전에 `THEME_REVIEW`는 상품과 무관하게 통과, `EXTRA`는 학생 상품의 `features.extraMissions`가 `false`면 403 `PREMIUM_REQUIRED`(없으면 허용, boolean이 아니면 503 `PAYMENT_PRODUCT_UNAVAILABLE`), 무료 `THEME_DAY`·`EXTRA`는 KST 오늘 `mission_daily_usage` 건수가 무료 상품 `limits.dailyMissions` 이상이면 429 `USAGE_LIMIT_REACHED`. 무료 상품에서 `EXTRA`가 꺼진 동안의 프리미엄 `EXTRA`만 프리미엄 사용이라 환불 처리 중이면 409 `REFUND_IN_PROGRESS`. `limits.dailyMissions`가 없거나 음수면 503 `PAYMENT_PRODUCT_UNAVAILABLE`(#48 원칙대로 임의 값으로 대체하지 않음). 프리미엄은 하루 미션 한도 없음(프리미엄 하루 피드백 50회는 이번 범위 밖)
+- **결정(2026-11-08 동섭)**: 무료 하루 1개(`limits.dailyMissions` 3 → 1, 신규 `201`만 집계)는 확정. 생각 유형별 고르기(`EXTRA`)의 프리미엄 전용은 미정이라 **지금은 무료도 허용**하고, 무료의 `EXTRA` 신규 시작도 `THEME_DAY`와 합쳐 하루 1개로 센다. 설계 문서(서비스 방향 2.4·기능명세 P13·api-spec 2.11 초안)의 'EXTRA는 프리미엄 추가 문제' 서술과 다르다. 프리미엄 전용으로 바꿀 때는 코드 수정 없이 상품 데이터만 바꾼다(아래 전환 방법). 2026-11-10 개정(#483·#485)으로 이 결정은 대체됐다: 무료 테마 문제는 한도 없음, `EXTRA`는 프리미엄 전용(V43, 18절)
+- **판정 한 곳**: 무료·프리미엄 판단은 `ProductEntitlementService.forStudent`를 거치고, 시도 정책은 같은 서비스의 `missionStart`·`missionStarted`에만 둔다. learning 호출 전에 `THEME_REVIEW`는 상품과 무관하게 통과, `EXTRA`는 학생 상품의 `features.extraMissions`가 `false`면 403 `PREMIUM_REQUIRED`(값이 없으면 #387 당시 허용 → #506부터 무료 거부·구독 중 허용, boolean이 아니면 503 `PAYMENT_PRODUCT_UNAVAILABLE`), 무료 `THEME_DAY`·`EXTRA`(#485 뒤 무료 `EXTRA`만)는 KST 오늘 `mission_daily_usage` 건수가 무료 상품 `limits.dailyMissions` 이상이면 429 `USAGE_LIMIT_REACHED`. 무료 상품에서 `EXTRA`가 꺼진 동안의 프리미엄 `EXTRA`만 프리미엄 사용이라 환불 처리 중이면 409 `REFUND_IN_PROGRESS`. `limits.dailyMissions`가 없거나 음수면 503 `PAYMENT_PRODUCT_UNAVAILABLE`(#48 원칙대로 임의 값으로 대체하지 않음). 프리미엄은 하루 미션 한도 없음(프리미엄 하루 피드백 50회는 이번 범위 밖)
 - **기록**: learning이 신규 `201`을 돌려준 뒤에만 `missionStarted`가 무료 `THEME_DAY`·`EXTRA`는 `mission_daily_usage(attempt_id PK, student_id, mission_id, usage_date)`에, 무료 상품에서 `EXTRA`가 꺼진 동안의 프리미엄 `EXTRA`는 부모 잠금 안에서 `payment_premium_usage(kind = EXTRA_MISSION, source_id = 시도 ID, USED)`에 남긴다. 둘 다 시도 ID로 1회(PK·`UNIQUE(kind, source_id)`). `EXTRA_MISSION` 행은 기존 환불 검사(`usageCount`)가 그대로 세어 환불 판정의 프리미엄 사용이 된다(P14). 무료에도 열려 있는 지금은 프리미엄 `EXTRA`를 기록하지 않아 환불 판정에 영향이 없다. 이어하기 `200`은 기록하지 않는다
-- **전환 방법**: (1) 무료 한도 수는 무료 상품(`PAYMENT_FREE_PRODUCT_ID` 행) `limits.dailyMissions`. 운영 DB는 `infrastructure/aws/set-free-product-daily-missions.sql`로 1로 바꾼 뒤 배포한다(값이 없으면 503). (2) `EXTRA` 프리미엄 전용 전환은 무료 상품 `features`에 `"extraMissions": false`를 넣는다(`UPDATE product SET features = jsonb_set(features, '{extraMissions}', 'false') WHERE id = <무료 상품 ID>`). 그 순간부터 무료 `EXTRA`는 403, 프리미엄 `EXTRA` 신규 시도는 `EXTRA_MISSION` 사용으로 기록된다. 되돌리려면 키를 지우거나 `true`. 프리미엄 상품 `features`는 비워 두면 허용
+- **전환 방법**: (1) 무료 한도 수는 무료 상품(`PAYMENT_FREE_PRODUCT_ID` 행) `limits.dailyMissions`. 운영 DB는 `infrastructure/aws/set-free-product-daily-missions.sql`로 1로 바꾼 뒤 배포한다(값이 없으면 무료 `EXTRA`만 503). (2) `EXTRA` 프리미엄 전용은 무료 상품 `features.extraMissions = false`다. #485 V43이 이미 있는 무료 상품(`price = 0`)을 `false`로 바꿨고, #506부터 값이 없는 무료 상품(빈 DB에서 마이그레이션 뒤 만든 상품)도 거부한다. 그래서 이 값은 선택 스위치가 아니라 무료 상품 준비 때 명시하는 값이다(`set-free-product-daily-missions.sql`이 함께 넣음). 무료 `EXTRA`를 다시 열려면 `true`를 넣는다(키를 지우면 거부). 프리미엄 상품 `features`는 비워 두면 구독 중이라 허용
 - **한도 뒤 이어하기**: 한도 확인은 learning 호출 전이라 이어하기(`200`)와 신규(`201`)를 구분할 수 없다. 한도에 닿았으면 같은 학생·미션의 마지막 기록 시도를 learning `GET /internal/attempts/{id}`로 읽어 `IN_PROGRESS`일 때만 넘긴다(learning은 미션당 진행 중 시도 하나를 200으로 반환). 그래서 ERD 3.6 설계에 `mission_id` 컬럼과 `(student_id, mission_id, created_at)` 인덱스를 더했다. 이미 마무리한 시도로 같은 날 다시 시작하는 것은 신규라 429
 - **실패 처리**: 기록 저장 실패는 학습 응답(201)을 바꾸지 않고 ERROR 로그만 남긴다. 이미 learning에 시도가 생겼고, 같은 요청을 다시 보내면 200 이어하기라 학생이 막히지 않기 때문이다(그 대신 그 1건은 한도·환불 근거에서 빠질 수 있음). 학생 피드백 제출 때 프리미엄 `FEEDBACK` 사용은 따로 남으므로 환불 근거가 모두 사라지지는 않는다
 - **동시 요청**: 한도 확인과 기록 사이에 잠금을 두지 않는다(learning HTTP 동안 DB 잠금을 잡지 않는 기존 원칙). 같은 미션은 learning이 진행 중 시도를 하나로 묶어 신규가 1건이지만, 무료 학생이 서로 다른 미션(`THEME_DAY`와 `EXTRA`, 또는 `EXTRA` 둘)을 동시에 시작하면 한도를 1건 넘길 수 있다. 하루 1개 정책의 학습 화면 흐름에서는 드물어 잠금 대신 허용 오차로 둔다
@@ -429,12 +431,12 @@ WHERE id = :event_id AND quarantined_at IS NOT NULL AND published_at IS NULL;
 | 공유 `COMMUNITY_POSTED` | 같은 곳, `CommunityService.shareCompleted` 결과 | 공유 응답 201(새 공유)·200(이미 있음) | `postId` |
 | 반응 `REACTION_GIVEN` | `CommunityService.react` | 반응 남기기 2xx(취소는 적립 없음) | `postId:reaction` |
 | 되돌아보기 `REVIEW_VIEWED` | `LearningProxyService.reviewViewed` | 열람 기록 200 | 그 주 월요일(KST) |
-| 완주 `THEME_COMPLETED` | 같은 곳 | 열람 응답 `completed:true` | 그 주 월요일(KST) |
-| 보충 | `LearningProxyService.weeklyTheme` | 조회 200의 `days[].attemptStatus == COMPLETED` 미션 | 학습 완료와 같음 |
+| 완주 `THEME_COMPLETED`(#485부터 "개근") | 같은 곳 | 열람 응답 `completed:true` | 그 주 월요일(KST) |
+| 보충 | `LearningProxyService.weeklyTheme` | 조회 200의 `days[].attemptStatus == COMPLETED` 미션. #485부터 `days[].completedOnDay`(당일 풀이)·`completed`(개근, #506)·`finished`(주간 완주)도 | 학습 완료와 같음, 당일 풀이 `weekStart:day`, 개근·주간 완주 그 주 월요일(KST) |
 
 - **응답을 바꾸지 않음**: `ParticipationRewardService`는 응답 해석·`earn` 실패를 모두 로그로만 남기고 던지지 않는다. `earn`은 자체 트랜잭션(`REQUIRES_NEW`)이고 프록시 경로에는 바깥 트랜잭션이 없어, 적립이 실패해도 learning 응답·상태 코드·본문이 그대로 나간다. 공개 API 응답 모양은 바뀌지 않았다(적립 결과는 `GET /students/me/points`로 본다). 시퀀스 다이어그램 설계안의 응답 `{earned}`는 넣지 않았다: 웹이 이미 잔액을 따로 조회하고, learning 응답을 그대로 넘기는 프록시 원칙을 지키려는 것
 - **학습 완료 미션은 시도 상세로 확인**: learning 돌아보기 응답은 `{attemptId, status, reflection}`라 미션 ID가 없다. 저장 뒤 `GET /internal/attempts/{id}`를 한 번 더 불러 `COMPLETED`와 `mission.id`를 확인한다(클라이언트가 보낸 값은 쓰지 않음). 다시 풀기는 같은 미션 키라 적립하지 않는다(P21 미션당 최초 1회)
-- **보충 경로**: 같은 돌아보기 재요청은 learning이 `409 ATTEMPT_CLOSED`를 돌려주지만 core는 그 응답을 그대로 넘기면서 학습 완료·공유 적립을 다시 시도한다. 반응은 이미 남긴 반응을 다시 보내면(`created:false`) 같은 키로 보충만 된다. 되돌아보기·완주는 열람 기록이 멱등이라 열람 재요청이 보충이다. 주간 테마 조회는 이번 주 요일 문제 중 학습 완료한 미션만 보충하고, 추가 문제(EXTRA)는 응답에 없어 보충하지 않는다(FN-RET-05). 주간 테마 조회는 열람 여부를 알려 주지 않아 되돌아보기·완주 보충은 하지 않는다
+- **보충 경로**: 같은 돌아보기 재요청은 learning이 `409 ATTEMPT_CLOSED`를 돌려주지만 core는 그 응답을 그대로 넘기면서 학습 완료·공유 적립을 다시 시도한다. 반응은 이미 남긴 반응을 다시 보내면(`created:false`) 같은 키로 보충만 된다. 되돌아보기·완주는 열람 기록이 멱등이라 열람 재요청이 보충이다. 주간 테마 조회는 이번 주 요일 문제 중 학습 완료한 미션만 보충하고, 추가 문제(EXTRA)는 응답에 없어 보충하지 않는다(FN-RET-05). 주간 테마 조회는 열람 여부를 알려 주지 않아 되돌아보기 보충은 하지 않는다(개근은 #485부터 조회 응답 `completed`로 보충, 18절)
 - **반복 적립 방지**: 반응 키 `postId:reaction`은 learning 반응 ID(같은 학생·공유물·반응이면 같은 ID)와 1:1이라 껐다 켜도 한 번이다. 하루 상한은 `earn`이 KST 하루 횟수로 막는다
 - **주 시작일**: 열람 응답에는 `weekStart`가 없어 core가 learning에 넘긴 날짜(`entitlements.today()`, KST)의 월요일로 정한다. learning도 같은 날짜로 그 주를 정한다
 - **작성자 `look.equipped`**: 커뮤니티 작성자 표시(`CommunityAuthorMapper`)에 착용 네 슬롯을 더했다(`StudentLook.equipped`와 같은 모양, 없으면 null). 공개 가능한 작성자만 한 번에 조회한다
@@ -491,3 +493,121 @@ local kind(develop `b1562c2b`)에서 테스트 학부모·학생·관리자 계�
 | 알림 | 일일·주간 리포트 완료 알림이 학부모 알림 화면에 보이고 읽지 않음 개수로 표시 |
 
 - 되돌아보기 열람(+10)·주간 테마 완주(+30) 적립은 주말·5일 연속 학습이 필요해 미확인
+
+## 17. 리포트 설명 사용량 REPORT_EXPLANATION·설명 모델 등록 (#480, 2026-11-10)
+
+에픽 #473(설명 sLLM)의 core 몫. ai #477이 리포트 설명을 만들 때 발행할 사용량 호출 종류를 받고, 설명 모델을 기존 모델 레지스트리에 등록·승인할 수 있는지 확인했다.
+
+### API 변경
+
+| 경로 | 변경 |
+|---|---|
+| `GET /api/v1/admin/ai-usage?callType` | `callType`에 `REPORT_EXPLANATION` 추가(응답 항목도 같은 값) |
+| `llm.usage.recorded` v1 이벤트 | `callType` enum에 `REPORT_EXPLANATION` 추가 |
+
+### 결정과 근거
+
+- **이름 `REPORT_EXPLANATION`**: 같은 리포트 생성 흐름의 서술 호출이 `REPORT_NARRATIVE`라 같은 접두로 맞춤. 설명 항목 1개당 sLLM 1회라 답변 하나에 최대 2건이 쌓인다(잘한 점·함께 이야기해 볼 점, #477)
+- **목록 동기화**: 이벤트 스키마·core `CallType`·core OpenAPI·ERD Mermaid 주석·ai/scoring 발행 목록에 `THEME_IMAGE` 다음, `M2` 앞에 더하고 `V42__report_explanation_call_type.sql`이 `ck_llm_usage_call_type`을 넓힌다(V28·V40과 같은 방식, 기존 행 영향 없음). gitops 로컬 core 리비전 v42. 실제 발행은 ai #477이 한다
+- **비용**: 클러스터 안 CPU sLLM이라 토큰 단가를 설정하지 않는다. 토큰은 기록하되 `cost_usd`는 null이고 관리자 사용량에서 `unpricedCalls`로 센다(`THEME_IMAGE`와 같음). 노드 비용은 인프라 비용으로 따로 본다(#476)
+- **모델 레지스트리 코드 변경 없음**: 이름·scope가 자유 형식(`ModelVersion.validScopes`)이라 `MODEL` `report-explanation`, scope `explanation/grade-{학년}/{narrative|essay}`(M2 `judgment/grade-{학년}/{narrative|essay}`와 같은 모양)를 그대로 등록·승인·복귀할 수 있다. 활성 목록(`/internal/model-versions/active`)과 `model.version.activated` 이벤트로 ai가 활성 범위를 읽는 일은 ai #477 몫이다
+- **AI 사용량 화면**: web `callTypeLabel`에 "리포트 설명", MSW 사용량 필터 허용 목록에 값 추가
+- **마이그레이션 번호 충돌 주의**: 미병합 브랜치 `feature/theme-draft-core-proxy`(`THEME_VIDEO`)도 V42로 같은 CHECK·목록을 고친다. 나중에 머지하는 쪽이 번호를 V43으로 바꾸고 CHECK·목록에 두 값을 모두 넣어야 한다
+
+### 검증
+
+- `ModelVersionHttpTest`: `report-explanation` 모델을 설명 scope 2개로 등록·활성화하고 활성 목록에 이름·scope가 보임, `REPORT_EXPLANATION` 사용량 저장(V42 CHECK)·호출 종류별 조회·미산정
+- `scripts/tests/test_admin_mission_drafts_contract.py`(호출 종류 목록 7곳 대조)·`test_admin_operations_contract.py`(OpenAPI 지문)·`test_core_migration_versions.py`(로컬 리비전)
+
+## #479 리포트 설명에 필요한 프로필·열람 경계 (2026-11-10)
+
+- SYSTEM 전용 `GET /internal/students/{studentId}/profile`에 기존 저장값 `grade`를 추가한다. report가 설명 대상 학년을 임의로 정하지 않도록 하기 위한 필드다. 기존 내부 토큰·학생 범위·활성 학생 검사와 `no-store`는 유지한다. DB와 이벤트 변경은 없다.
+- 공개 리포트 상세의 `explanations`는 report 계약대로 전달하되, 현재 무료 이용권/원문 비공개이면 null로 가린다. 기존 서술·원문 경계와 같은 위치에서 재검사한다. 인용 `quote`는 PR #491에 맞춰 null을 허용한다.
+
+## 18. 무료 테마 주 5문제·추가 문제 프리미엄 전용·프리미엄 일요일·당일 풀이·주간 완주 포인트 (#485, 2026-11-10)
+
+주간 테마 규칙 개정(#483, 2026-11-10 결정)의 core 몫. 문제 공개·엔딩·일요일 닫힘 판정과 당일 풀이·개근·주간 완주 값은 learning #484가 정하고, core는 상품으로 무료·프리미엄을 판단해 learning에 넘기고 learning 응답으로 포인트를 적립한다. 13·14절의 #387·#389 동작 중 아래와 다른 부분은 이 절이 우선한다.
+
+### API 변경
+
+| 경로 | 변경 |
+|---|---|
+| `POST /missions/{missionId}/attempts` | 무료 `THEME_DAY`를 하루 한도에서 뺌(같은 날 여러 개 시작 가능). 무료 `EXTRA`는 상품 데이터(V43)로 `403 PREMIUM_REQUIRED`. learning 쿼리에 `sundayTheme=true\|false` 추가. 429 문구는 추가 문제 기준 |
+| `GET /students/me/weekly-theme` | learning 쿼리에 `sundayTheme` 추가. 200 응답 뒤 당일 풀이·개근·주간 완주 적립 보충. 응답 본문은 그대로 |
+| `POST /students/me/weekly-theme/review-views`·`story-views` | learning 쿼리에 `sundayTheme` 추가 |
+| `GET /students/me/points`·`GET /children/{childId}/points` | `items[].eventType`에 `THEME_ON_TIME`·`THEME_FINISHED` 추가 |
+
+오류 코드는 새로 만들지 않았다. 일요일 거부는 learning 오류(기존 `THEME_DAY_CLOSED`·`THEME_REVIEW_NOT_ALLOWED`, #484가 정하는 코드)를 그대로 전달한다.
+
+### learning과 맞춘 계약(기준안, #484 확정 전)
+
+| 방향 | 이름 | 뜻 |
+|---|---|---|
+| core → learning | 쿼리 `sundayTheme=true\|false` | 시도 시작(`/internal/missions/{id}/attempts`)·주간 테마 조회·열람 기록 3종에 항상 붙인다. KST 일요일이고 상품이 허용할 때만 `true`. learning은 `true`일 때만 일요일 신규 시작·다시 풀기를 연다 |
+| learning → core | `days[].completedOnDay` (boolean) | 그 요일 문제를 그 요일 KST 안에 학습 완료(당일 풀이) |
+| learning → core | `completed` (boolean) | 월~금 모두 당일 풀이(개근). #498은 새 칸 `perfectAttendance`를 읽었으나 learning·설계(api-spec 2.11 "기존 `completed`는 개근 뜻으로 유지")와 어긋나 #506에서 기존 칸 `completed`로 맞췄다 |
+| learning → core | `finished` (boolean) | 그 주 토요일 23:59(KST)까지 다섯 문제 학습 완료(주간 완주). 일요일 완료 제외 |
+
+learning이 아직 위 칸을 주지 않으면 core는 그 적립만 건너뛰고 응답은 그대로 넘긴다(boolean `true`일 때만 적립). learning이 모르는 쿼리 `sundayTheme`는 무시되므로 배포 순서와 무관하다.
+
+### 결정과 근거
+
+- **무료 한도**: `ProductEntitlementService.missionStart`에서 `THEME_DAY`·`THEME_REVIEW`는 상품 조회·한도 확인 없이 통과한다. 무료 "테마 문제 주 5개"는 learning 누적 공개(월~금 하루 1개 공개, 토요일까지 풀기)가 곧 상한이라 core가 따로 세지 않는다. `mission_daily_usage`·`limits.dailyMissions`는 지우지 않고 무료 상품에서 `EXTRA`를 다시 켤 때의 무료 `EXTRA` 하루 한도로만 남겼다(되돌릴 수 있게, 상품 데이터만으로 전환)
+- **추가 문제 프리미엄 전용**: 코드 분기(#387)는 그대로 두고 V43이 무료 상품(`price = 0`) `features.extraMissions`를 `false`로 바꾼다. 그 순간부터 무료 `EXTRA`는 403, 프리미엄 `EXTRA` 신규 시도는 `EXTRA_MISSION` 프리미엄 사용으로 기록된다(13절 기록 규칙)
+- **프리미엄 일요일 값**: 상품 기능 값 `features.sundayTheme`(기준안 이름). V43이 유료 상품(`price > 0`)에 `true`, 무료 상품에 `false`를 넣는다. 구독은 결제 시점 상품 스냅숏을 쓰므로 기존 구독 스냅숏에는 값이 없다. 그래서 값이 없으면 구독 중(프리미엄)은 `true`, 무료는 `false`로 본다. boolean이 아니면 503 `PAYMENT_PRODUCT_UNAVAILABLE`(#48 원칙, 임의 값 대체 없음). 판단은 `ProductEntitlementService.sundayTheme` 한 곳
+- **일요일만 상품 조회**: KST 일요일이 아니면 상품을 읽지 않고 `false`를 넘긴다. 평일 주간 테마 조회·테마 문제 시작에 결제 조회 실패 경로를 새로 만들지 않기 위함이다. 일요일 조회·열람 기록은 상품 확인이 실패(결제 확정 중·상품 오류)해도 막지 않고 `false`(닫힘)로 넘긴다. 시도 시작은 503으로 실패한다(프리미엄 학생이 무료로 잘못 처리되지 않게)
+- **일요일 거부는 learning**: 무료 학생의 일요일 시작·다시 풀기 거부는 learning(#484)이 `sundayTheme=false`로 판정하고 core는 오류를 그대로 전달한다. 요일·공개 판정을 learning 한 곳에 두는 #387 원칙을 따른다
+- **포인트 사건**: `THEME_ON_TIME`(당일 풀이 +5, 사건 키 `weekStart:day`, 예 `2026-11-09:MON`)·`THEME_FINISHED`(주간 완주 +10, 사건 키 `weekStart`)를 더했다. 개근 +30은 기존 `THEME_COMPLETED`를 그대로 쓴다(사건 키 `weekStart`가 같아 되돌아보기 열람 적립과 주간 테마 조회 보충이 한 번으로 합쳐짐). `day`는 learning `ThemeDay`(`MON`~`FRI`) 값만 받는다. 매일 푼 학생 50+25+30+10 = 115점, 금·토에 몰아 푼 학생 50+10 = 60점
+- **적립 시점(개근이 빠지지 않게)**: 일요일이 닫혀 토·일 되돌아보기 열람이 줄어든다. 그래서 `ParticipationRewardService.weeklyThemeViewed`가 주간 테마 조회 200마다 `completedOnDay`·`completed`(개근, #506)·`finished`를 읽어 사건 키로 보충한다. 주간 완주는 이 조회 보충으로만 적립하고 열람 응답에서는 읽지 않는다. 토요일 열람의 `completed`도 지금처럼 개근으로 적립한다. 일요일에 끝낸 주는 learning이 `finished=false`로 주므로 주간 완주가 없다
+- **`weekStart`**: 주간 테마 응답의 `weekStart`(KST 월요일)를 쓴다. 날짜가 아니거나 월요일이 아니면 새 사건 적립만 건너뛴다(학습 완료 보충은 그대로)
+- **값은 데이터**: 5·10점은 `reward_rule` 행이라 운영이 행만 고쳐 조정한다
+- **표시 이름**: web `POINT_EVENT_LABELS`에 당일 풀이·주간 완주를 더하고 `THEME_COMPLETED`를 "주간 테마 개근"으로 바꿨다. 모르는 사건 종류는 내역에서 걸러지므로(`isPointEvent`) 함께 넣어야 새 적립이 보인다. 화면 문구 전반은 web #487
+
+### 마이그레이션
+
+`V43__theme_free_limit_and_daily_points.sql`(develop V42 #480 다음): `reward_rule`·`reward_point_ledger`의 사건 종류 CHECK에 두 사건 추가(기존 행은 새 목록에도 있어 통과), `reward_rule` 2행(5·10점), 상품 `features` 갱신(무료 `extraMissions:false`·`sundayTheme:false`, 유료 `sundayTheme:true`, 빈 DB는 영향 없음). V35는 고치지 않았다. gitops 로컬 core 리비전 v43. 번호는 머지 순서로 정한다(먼저 머지되는 쪽이 다음 번호). 미병합 `feature/theme-draft-core-proxy`(#439)도 V42 다음 번호를 쓰므로 머지 직전에 develop 최신 번호를 다시 확인한다
+
+### 검증
+
+- `PaymentIntegrationTest`: 무료 `THEME_DAY` 같은 날 여러 개 비집계, 무료 `EXTRA`만 하루 한도(이어하기·KST 0시 초기화), `extraMissions=false` 403·형식 오류 503, `dailyMissions` 누락은 무료 `EXTRA`만 503. 일요일 값: 평일 `false`, 무료 `false`, 프리미엄 스냅숏 값 없음 `true`, 스냅숏 `false`/`true`, 형식 오류 503
+- `WeeklyThemeProxyIntegrationTest`: 무료 테마 문제 3개 시작·되돌아보기 비집계, 무료 `EXTRA` 켠 경우 한도·이어하기, 무료 `EXTRA` 403, 일요일 `sundayTheme=false` 전달과 learning 409 전달, 상품 허용 시 `true`, 상품 오류 시 조회는 `false`·시작은 503, 기존 경로의 `sundayTheme` 쿼리
+- `RewardEarnIntegrationTest`: 매일 푼 학생 115점(당일 풀이 5건·개근·주간 완주, 재조회 중복 없음), learning 칸 없음·문자열·주말 요일·월요일 아닌 `weekStart`는 새 사건 건너뜀, 일요일에 끝낸 주(`finished=false`) 주간 완주 없음, 몰아 푼 학생 60점. `RewardIntegrationTest` 시드 규칙값
+- `LearningProxyIntegrationTest`: 시도 시작 쿼리에 `sundayTheme`, 실행 요일과 무관하게 평일 시계로 고정
+- DB: `verify_db_schema.py` 시드 예외에 두 사건, 새 사건 원장 행·음수 거부 사례
+- 남은 확인: learning #484가 칸 이름·쿼리 이름을 바꾸면 core 파싱·쿼리와 이 절을 맞춘다. 병합 후 kind에서 learning과 함께 한 주 흐름(무료 일요일 거부·프리미엄 일요일 허용·적립)을 확인한다
+
+### #506 후속 정합(2026-11-11)
+
+#498 병합 뒤 검토(#506)에서 learning·설계와 어긋난 부분을 맞췄다. 결정은 2026-11-11 동섭 확인.
+
+- **개근 칸 이름 `completed`**: core가 새 칸 `perfectAttendance`를 읽어, 지금 learning 주간 테마 조회 응답(`WeeklyThemeView.completed`)과 설계(api-spec 2.11 "기존 `completed`는 개근 뜻으로 유지")로는 조회 경로 개근 +30이 쌓이지 않았다. learning(#484)에 칸을 더하게 하는 대신 core를 기존 이름 `completed`로 맞췄다. learning 변경이 없어 #484와 겹치지 않고, 일요일이 닫혀 토요일 열람을 놓친 학생도 지금 바로 조회 보충으로 개근을 받는다. `RewardEarnIntegrationTest` 픽스처는 `completed`만 보내고, `perfectAttendance`만 있는 응답은 적립하지 않음을 확인한다
+- **주간 완주는 조회 보충으로만**: 되돌아보기 열람 응답은 `{firstViewThisWeek, completed}`이고 core `reviewViewed`도 `completed`(개근)만 읽는다. 설계 문서의 "열람 응답 `finished`로 주간 완주 적립"을 지우고 주간 테마 조회 응답 `finished`로만 적립한다고 고쳤다(core 코드 변경 없음)
+- **`extraMissions` 값이 없을 때**: 무료는 거부·구독 중은 허용(`sundayTheme`과 같은 규칙). V43은 마이그레이션 시점의 무료 상품만 `false`로 바꾸므로 빈 DB에서 그 뒤에 만든 무료 상품(E2E 시드, 새 운영 환경)은 값이 없어 무료 `EXTRA`가 열려 있었다. 전부 거부로 바꾸면 값 없는 기존 구독 스냅숏의 프리미엄도 막혀 구독 여부로 나눴다. 프리미엄 사용 판정(`premiumUsage`)은 무료 상품 값을 무료 기준으로 읽어, 값이 없으면 프리미엄 `EXTRA`가 `EXTRA_MISSION` 사용으로 기록된다. E2E 시드는 값을 명시(무료 `extraMissions:true`는 학습 여정 E2E용, 아래), `set-free-product-daily-missions.sql`은 무료 상품에 `extraMissions:false`·`sundayTheme:false`를 함께 넣는다. 새 마이그레이션은 없다
+- **마무리한 당일 문제 재시작**: #485가 무료 `THEME_DAY`를 한도에서 빼면서, 무료 하루 1개 429가 부수적으로 막던 "이미 마무리한 오늘 문제의 새 `THEME_DAY` 시도"가 열렸다. core는 `THEME_DAY` 시도 기록이 없고 learning `WeeklyThemeService.checkStart`가 그 주 시도 목록으로 바로 판정할 수 있어 learning #484에서 막기로 했다(409, 코드는 #484 기준안). #484 구현 전까지는 허용됨을 api-spec 2.11·state-diagram 3.2.1에 적었다
+- **학생 포인트 안내**: web `POINT_RULES`의 당일 풀이·주간 완주에 `preparing`을 달아 학생 포인트 화면에 "준비 중"을 붙였다. learning #484가 `days[].completedOnDay`·`finished`를 내보내면 지운다
+- **E2E 무료 상품**: `frontend/web/tests/e2e/seed/core.sql`은 마이그레이션 뒤에 상품을 넣는다. 무료는 `{"extraMissions":true,"sundayTheme":false}`, 유료는 `{"sundayTheme":true}`로 명시했다. 학습 여정 E2E(`learning-journey.spec.ts`)가 테마 시드 없이 무료 학생으로 미션 고르기(`EXTRA`)를 풀기 때문에 무료 추가 문제를 E2E에서만 켰다(무료 `EXTRA` 하루 1개 한도 경로)
+- 검증: `PaymentIntegrationTest`(값 없는 무료 상품 `EXTRA` 403, 값 없는 프리미엄 스냅숏 `EXTRA` 허용·프리미엄 사용 기록), `WeeklyThemeProxyIntegrationTest`(무료 상품 `features` `{}`·`false` 모두 learning 호출 전 403), `RewardEarnIntegrationTest`(개근 `completed` 하나로 적립, `perfectAttendance`만으로는 적립 없음)
+
+## 19. 지식 임베딩 사용량 KNOWLEDGE_EMBEDDING (#467, 2026-11-11)
+
+에픽 #463(지식 RAG)의 core 몫. ai 임베딩 API(api-spec 4.2.4 C6, [ai 16장](ai.md#16-지식-임베딩-api-467-2026-11-11))가 OpenAI 임베딩 요청마다 발행하는 사용량을 받는다.
+
+### API 변경
+
+| 경로 | 변경 |
+|---|---|
+| `GET /api/v1/admin/ai-usage?callType` | `callType`에 `KNOWLEDGE_EMBEDDING` 추가(응답 항목도 같은 값) |
+| `llm.usage.recorded` v1 이벤트 | `callType` enum에 `KNOWLEDGE_EMBEDDING` 추가 |
+
+### 결정과 근거
+
+- **이름 `KNOWLEDGE_EMBEDDING`**: #464 계약 기준안 그대로. 지식 적재·관계 후보·검색 질의 임베딩을 한 종류로 센다(요청 1회 = 본문 최대 64개 = 1건)
+- **목록 동기화**: 이벤트 스키마·core `CallType`·core OpenAPI·ERD Mermaid 주석·ai/scoring 발행 목록에 `REPORT_EXPLANATION` 다음, `M2` 앞에 더하고 `V44__knowledge_embedding_call_type.sql`이 `ck_llm_usage_call_type`을 넓힌다(V28·V40·V42와 같은 방식, 기존 행 영향 없음). gitops 로컬 core 리비전 v44
+- **토큰·비용**: 임베딩은 입력 토큰만 있어 ai가 `outputTokens = 0`으로 보낸다. `app.llm-pricing`은 다른 모델처럼 비어 있어 `cost_usd`는 null이고 관리자 사용량에서 `unpricedCalls`로 센다. 단가를 넣으면(`app.llm-pricing.text-embedding-3-small.input`·`output=0`) 입력 토큰만으로 계산된다
+- **AI 사용량 화면**: web `callTypeLabel`에 "지식 임베딩", MSW 사용량 필터 허용 목록에 값 추가
+- **마이그레이션 번호**: 미병합 #439 영상 브랜치(`feature/theme-draft-core-proxy`, `THEME_VIDEO`)도 같은 CHECK를 넓힌다. 나중에 머지하는 쪽이 번호를 다음 번호로 바꾸고 CHECK·목록에 두 값을 모두 넣는다
+
+### 검증
+
+- `scripts/tests/test_admin_mission_drafts_contract.py`(호출 종류 목록 7곳 대조)·`test_admin_operations_contract.py`(OpenAPI 지문)·`test_core_migration_versions.py`(로컬 리비전)
+- core `./gradlew test bootJar`: PR 검증 결과에 기록

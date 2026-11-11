@@ -1,5 +1,6 @@
 package com.sagomungchi.learning.record
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.learning.TestRows
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
@@ -305,6 +306,27 @@ class RecordServiceTest : PostgresRepositoryTest() {
         val completed = service.attempts(student, week, AttemptStatus.COMPLETED, 0, 20)
         assertEquals(listOf("완료") to 1, completed.items.map { it.detail.mission.title } to completed.totalElements)
         assertEquals(listOf("진행 중"), service.attempts(student, week, AttemptStatus.IN_PROGRESS, 0, 20).items.map { it.detail.mission.title })
+    }
+
+    @Test
+    fun `includeModelScores면 판정이 끝난 답변에 저장된 모델 점수 원문, M2를 안 불렀으면 null, 처리 중 답변은 판정 없음 (#478)`() {
+        val attempt = attempt(title = "점수")
+        val scored = answer(attempt, "처음 답", inWeek)
+        rows.judged(scored.id)
+        jdbc.update(
+            "UPDATE judgment SET model_scores = CAST(? AS jsonb) WHERE answer_id = ?",
+            """{"m2": {"inputType": "NARRATIVE", "scores": {"hol": 3}}, "m1": null, "skipped": null}""", scored.id,
+        )
+        val unscored = revise(attempt, scored, "보완 답")
+        rows.judged(unscored.id)
+        val running = answer(attempt(title = "처리 중"), "답")
+
+        val feedbacks = service.attempts(student, week, null, 0, 20, includeModelScores = true).items.flatMap { it.detail.feedbacks.entries }.associate { it.toPair() }
+        val stored = checkNotNull(feedbacks.getValue(scored.id).judgment?.modelScores)
+        assertEquals("NARRATIVE", ObjectMapper().readTree(stored).path("m2").path("inputType").asText())
+        assertEquals("null", feedbacks.getValue(unscored.id).judgment?.modelScores)
+        assertNull(feedbacks.getValue(running.id).judgment)
+        assertNull(service.attempts(student, week, null, 0, 20).items.single { it.detail.attempt.id == attempt.id }.detail.feedbacks.getValue(scored.id).judgment?.modelScores)
     }
 
     @Test

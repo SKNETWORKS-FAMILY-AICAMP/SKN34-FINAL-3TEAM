@@ -10,7 +10,7 @@ from app.errors import ApiError
 from app.generation.codec import ReportV1Codec
 from app.generation.models import GenerationBusy, JobConflict, PeriodType, ReportEvent, ReportStatus
 from app.generation.repository import ReportRepository
-from app.outbox.repository import OutboxRepository
+from app.outbox import service as outbox_service
 from app.security import current_user_context
 
 
@@ -80,7 +80,7 @@ class ReconciliationService:
                         report = self._repository.finish(
                             session, report.id, failure_reason="REPORT_EXECUTION_ABANDONED"
                         )
-                        OutboxRepository().add(
+                        outbox_service.add_event(
                             session,
                             ReportV1Codec().encode(
                                 ReportEvent("report.failed", report, "REPORT_EXECUTION_ABANDONED"),

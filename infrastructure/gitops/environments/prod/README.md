@@ -8,7 +8,7 @@
 
 | 파일 | namespace / release | chart |
 |---|---|---|
-| `core-service.json`, `learning-service.json`, `ai-service.json`, `scoring-service.json`, `report-api.json`, `report-worker.json` | app / 파일명 | `../../charts/app-service` |
+| `core-service.json`, `learning-service.json`, `ai-service.json`, `scoring-service.json`, `report-api.json`, `report-worker.json` | app / 파일명 | `../../charts/app-service`. `ai-service.json`의 설명 sLLM 연결(#476·#477: env `EXPLANATION_BASE_URL`·`EXPLANATION_MODEL`, egress `sllm-server:8080`)은 미적용 |
 | `platform-data.json` | platform / platform-data | `../../charts/platform-data` |
 | `external-secrets.json` | external-secrets / external-secrets | external-secrets/external-secrets 2.14.0 |
 | `aws-load-balancer-controller.json` | kube-system / aws-load-balancer-controller | eks/aws-load-balancer-controller 1.14.1 |
@@ -17,8 +17,10 @@
 | `core-alb-network.json` | app | ALB public subnet에서 core:8080 허용 |
 | `karpenter.json` | kube-system / karpenter | oci://public.ecr.aws/karpenter/karpenter 1.15.1 (#211) |
 | `karpenter-nodepool.json` | cluster | EC2NodeClass `application`, NodePool `application-burst`. Karpenter 설치 후 `kubectl apply` (#211) |
+| `sllm-server.json` | app / sllm-server | `../../charts/app-service`. 설명 sLLM(#476). 미적용: KEDA 설치, `sllm-server` ServiceAccount Pod Identity(모델 버킷 읽기), llama.cpp 서버 이미지 ECR 게시·digest, 모델 경로·SHA256(#475) |
+| `karpenter-nodepool-explanation.json` | cluster | NodePool `explanation-cpu`(taint `workload=explanation-sllm`). `karpenter-nodepool.json`의 EC2NodeClass `application` 뒤에 `kubectl apply` (#476, 미적용) |
 
-이 values는 현재 라이브 리소스에서 수집했다. Helm chart 기본값 전체를 복사한 파일은 아니다. 배포된 앱 chart의 기반은 `b67d8a462b6b3dc239ecfc14b2aa185766c0c293`이며, 저장소 chart 변경 시 렌더링 차이를 먼저 검토한다. 앱 이미지는 각 파일의 digest로 고정한다. core digest에는 아직 커밋되지 않은 이용권 수정이 들어 있으므로 기반 SHA만으로 같은 이미지를 재빌드할 수 있다고 주장하지 않는다. scoring은 PR #288 병합 SHA `f6250bdd131c4875feba99212212bfdb580c353e`를 사용한다.
+앱 6개·platform·외부 chart values는 2026-11-03 라이브 리소스에서 수집하고 이후 배포 때 맞춘 값이다(아래 배포 기록). 그 뒤 저장소에만 추가한 값은 위 표에 미적용으로 표시한다. 특히 `ai-service.json`의 설명 sLLM 연결은 `sllm-server`가 설치되기 전에 ai를 재배포하면 함께 적용되어 없는 Service를 가리키므로, 그 상태에서는 설명 생성 호출만 연결 실패한다. ai 재배포는 sLLM 설치 뒤 또는 설명 실패를 감수할 때 한다. Helm chart 기본값 전체를 복사한 파일은 아니다. 이 디렉토리의 저장소 chart values·manifest JSON은 ci-gitops가 렌더링·kubeconform 검사한다(#509, 외부 chart values 제외). 배포된 앱 chart의 기반은 `b67d8a462b6b3dc239ecfc14b2aa185766c0c293`이며, 저장소 chart 변경 시 렌더링 차이를 먼저 검토한다. 앱 이미지는 각 파일의 digest로 고정한다. core digest에는 아직 커밋되지 않은 이용권 수정이 들어 있으므로 기반 SHA만으로 같은 이미지를 재빌드할 수 있다고 주장하지 않는다. scoring은 PR #288 병합 SHA `f6250bdd131c4875feba99212212bfdb580c353e`를 사용한다.
 
 ## 선행 조건
 
@@ -34,6 +36,8 @@
 `redeploy-app.ps1`은 기존 앱 release 한 개의 재배포 진입점이다. AWS 계정·실제 EKS endpoint·고정 digest·기존 release 상태를 확인하고 기본 실행은 server dry-run만 수행한다. `-Apply`를 지정할 때만 ESO Ready 확인 후 배포한다. 새 클러스터·DB 초기화·Secret 생성·웹 빌드·Ingress 생성은 수행하지 않는다. 현재 노드의 Pod 슬롯과 메모리 여유가 작으므로 preview 성공을 실제 rollout 성공으로 해석하지 않는다. 적용 전에 기존 Pod와 비교할 계획을 검토한다.
 
 승인 절차를 거친 배포·롤백은 [#186 운영 배포](../../../cd/README.md)의 `cd-release` workflow가 이 스크립트를 `-ImageDigest`(저장소 values는 그대로 두고 digest만 바꾼 임시 사본)로 호출한다.
+
+`sllm-server`(#476)도 `-Service`로 받는다. 이 스크립트는 기존 release만 다루므로 첫 설치는 수동 `helm upgrade --install`로 하고, 이미지 digest가 고정되기 전(`pending-475`)에는 스크립트가 거부한다. 저장소에서 빌드하는 이미지가 아니라 `cd-release` 대상이 아니다. KEDA cron 가동 창(일 23:50 ~ 월 02:00 KST)에 적용하면 다음 KEDA 확인까지 0대가 되므로 그 시간에는 실행하지 않는다.
 
 ```powershell
 pwsh -File infrastructure/gitops/environments/prod/redeploy-app.ps1 -Service core-service -Kubeconfig '<AWS kubeconfig 절대 경로>' -Helm '<helm 실행 파일>'

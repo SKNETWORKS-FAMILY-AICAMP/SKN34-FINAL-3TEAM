@@ -34,13 +34,14 @@ class LearningProxyService(private val client: LearningClient, private val idemp
 
     /**
      * 시도 시작 (#387, api-spec 2.2·2.11). `context` 생략은 `EXTRA`(생각 유형별 고르기). 판정은 [ProductEntitlementService]가 하고
-     * learning에는 학년·시연 여부와 `{context}`를 넘긴다(요일·되돌아보기 검사는 learning). 신규 `201`만 사용량을 기록하고 이어하기 `200`은 기록하지 않는다.
+     * learning에는 학년·시연 여부·일요일 허용(`sundayTheme`, #485)과 `{context}`를 넘긴다(요일·되돌아보기·일요일 검사는 learning).
+     * 신규 `201`만 사용량을 기록하고 이어하기 `200`은 기록하지 않는다.
      */
     fun startAttempt(mission: UUID, attemptContext: String): HttpExchangeResult {
         val context = verifiedStudent()
         val student = UUID.fromString(context.studentScope.single())
-        val query = profileQuery(context)
         val permit = entitlements.missionStart(student, attemptContext, mission) { attempt -> inProgress(attempt, mission) }
+        val query = "${profileQuery(context)}&sundayTheme=${permit.sundayTheme}"
         val response = client.exchange("POST", "/missions/$mission/attempts", query,
             json.writeValueAsBytes(mapOf("context" to attemptContext)))
         if (response.status == 201) {
@@ -69,7 +70,10 @@ class LearningProxyService(private val client: LearningClient, private val idemp
         return response
     }
 
-    /** 이번 주(KST) 학년군 테마 (#387, api-spec 2.11). #439 새 필드(`outro`·이미지 URL·`introSeen`·`outroSeen`)도 바꾸지 않고 전달. 200이면 이번 주 학습 완료한 요일 문제의 누락 적립을 보충한다(#389) */
+    /**
+     * 이번 주(KST) 학년군 테마 (#387, api-spec 2.11). #439 새 필드(`outro`·이미지 URL·`introSeen`·`outroSeen`)도 바꾸지 않고 전달.
+     * 200이면 학습 완료·당일 풀이·개근·주간 완주 적립을 사건 키로 보충한다(#389·#485). 개근은 일요일이 닫혀도(#485) 여기서 빠지지 않는다
+     */
     fun weeklyTheme(): HttpExchangeResult {
         val context = verifiedStudent()
         val response = client.exchange("GET", "/students/${context.studentScope.single()}/weekly-theme", themeQuery(context))
@@ -77,7 +81,7 @@ class LearningProxyService(private val client: LearningClient, private val idemp
         return response
     }
 
-    /** 토·일 되돌아보기 열람 기록 (#387, 멱등은 learning). 200 `{firstViewThisWeek, completed}` 뒤 되돌아보기·완주 적립(#389) */
+    /** 토·일 되돌아보기 열람 기록 (#387, 멱등은 learning). 200 `{firstViewThisWeek, completed}` 뒤 되돌아보기·개근 적립(#389) */
     fun reviewViewed(): HttpExchangeResult {
         val context = verifiedStudent()
         val today = entitlements.today()
@@ -110,10 +114,19 @@ class LearningProxyService(private val client: LearningClient, private val idemp
     private fun profileQuery(context: UserContext) =
         linked(context).let { student -> listOf("grade=${student.learningGrade}", "demo=${student.demo}").joinToString("&") }
 
-    /** 테마 학년은 core 학년 그대로(`G3`~`G6`, 중학생은 `G6` #432, 학년별 테마 #436). 날짜는 KST 오늘이라 무료 한도와 같은 날을 쓴다 */
+    /**
+     * 테마 학년은 core 학년 그대로(`G3`~`G6`, 중학생은 `G6` #432, 학년별 테마 #436). 날짜는 KST 오늘이라 무료 한도와 같은 날을 쓴다.
+     * `sundayTheme`은 그날이 일요일이고 상품이 일요일 테마 이용을 허용하는지(#485, learning #484가 일요일 열림 판단에 씀).
+     * 조회·열람 기록은 상품 확인 실패(결제 확정 중·상품 오류 503)로 막지 않고 닫힌 일요일(false)로 넘긴다. 시도 시작은 [startAttempt]에서 그대로 실패한다
+     */
     private fun themeQuery(context: UserContext, date: LocalDate = entitlements.today()): String {
         val grade = "G${linked(context).learningGrade}"
-        return "grade=$grade&date=$date"
+        val student = UUID.fromString(context.studentScope.single())
+        val sunday = try { entitlements.sundayTheme(student, date) } catch (error: BusinessException) {
+            log.warn("sunday theme entitlement unavailable; sent as closed: student={}, code={}", student, error.code)
+            false
+        }
+        return "grade=$grade&date=$date&sundayTheme=$sunday"
     }
 
     /** 학습 완료 확인: 시도 상세가 `COMPLETED`면 그 미션 ID. 조회 실패·다른 상태는 null(적립하지 않음) */

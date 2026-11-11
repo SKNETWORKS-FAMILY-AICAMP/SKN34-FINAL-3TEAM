@@ -61,7 +61,7 @@ services:
       # base64 of a public synthetic test value; never use outside this isolated fixture.
       AUTH_JWT_SECRET: cmVwb3J0NTYtc3ludGhldGljLWp3dC1zZWNyZXQtYXQtbGVhc3QtMzItY2hhcmFjdGVycw==
   postgres:
-    image: postgres:17.11-alpine
+    image: pgvector/pgvector:0.8.7-pg17-trixie
     environment:
       POSTGRES_USER: verify
       POSTGRES_PASSWORD: synthetic-only

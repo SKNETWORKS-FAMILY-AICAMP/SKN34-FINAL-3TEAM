@@ -42,8 +42,10 @@ class ContractTests(unittest.TestCase):
         seeds = MIGRATION_SEED_ROWS["core_db"]
         sql = populated_sql(["reward_rule"], seeds)
         self.assertIn("FROM reward_rule WHERE event_type NOT IN ('MISSION_COMPLETED'", sql)
-        migration = next((ROOT / "backend/core-service/src/main/resources/db/migration").glob("V*__reward_points_and_look_unlocks.sql"))
-        text = migration.read_text(encoding="utf-8")
+        # V35 seeds the first rules, V43 (#485) adds THEME_ON_TIME and THEME_FINISHED.
+        folder = ROOT / "backend/core-service/src/main/resources/db/migration"
+        text = "".join(next(folder.glob(name)).read_text(encoding="utf-8") for name in
+                       ("V*__reward_points_and_look_unlocks.sql", "V*__theme_free_limit_and_daily_points.sql"))
         for seed in seeds["reward_rule"]:
             self.assertIn(f"('{seed}', ", text)
 

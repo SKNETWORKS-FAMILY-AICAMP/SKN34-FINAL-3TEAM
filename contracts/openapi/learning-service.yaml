@@ -3,7 +3,7 @@ info:
   title: learning 내부 API
   version: 1.2.0
   description: >-
-    core가 호출하는 learning 내부 API (api-spec 4.1). 구현된 경로만 담는다.
+    core가 호출하는 learning 내부 API (api-spec 4.1). 구현된 경로만 담는다. 단 x-implementation-status가 붙은 경로는 계약만 먼저 정한 구현 전 항목이다(지식 내부 API #464, 구현 #469). 지식 내부 API는 SYSTEM 컨텍스트만, 학생 범위 없음.
     학생 학습 API는 core가 검증한 STUDENT 컨텍스트(X-Student-Scope에 본인 1명)를 요구하고,
     미션 조회·시도 시작은 core가 학생 학년(grade)·시연 여부(demo)를 붙인다.
     기록 존재 확인(#37)과 기록 조회(#27)는 PARENT·STUDENT·SYSTEM 컨텍스트와 대상 학생 X-Student-Scope를(학생 홈은 학생 STUDENT 컨텍스트만),
@@ -124,6 +124,7 @@ paths:
         - $ref: '#/components/parameters/StudentScope'
         - $ref: '#/components/parameters/Grade'
         - $ref: '#/components/parameters/Demo'
+        - $ref: '#/components/parameters/ThemeSunday'
       description: >-
         본문 {context}(#385, api-spec 2.11): 생략·{}·null은 EXTRA, 정해진 값 밖은 400. 진행 중 시도가 있으면 검사 없이 원래 context 그대로 200.
         신규 시도만 테마 검사: THEME_DAY는 이번 주 테마의 오늘(KST) 요일 문제만, THEME_REVIEW는 토·일에 이번 주 마무리한 테마 문제만.
@@ -706,6 +707,12 @@ paths:
         - name: size
           in: query
           schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+        - name: includeModelScores
+          in: query
+          description: >-
+            true면 answers[].feedback.judgment에 modelScores를 넣음(report 설명 대상 선정용, FN-RPT-09).
+            report 주기 작업(X-User-Role SYSTEM)만 허용하고 그 밖 역할은 403 (#478, api-spec 4.1.1)
+          schema: {type: boolean, default: false}
       responses:
         '200':
           description: 조회 결과
@@ -925,6 +932,7 @@ paths:
         - $ref: '#/components/parameters/StudentScope'
         - $ref: '#/components/parameters/GradeBandQuery'
         - $ref: '#/components/parameters/ThemeDate'
+        - $ref: '#/components/parameters/ThemeSunday'
       responses:
         '200':
           description: 결과
@@ -942,7 +950,7 @@ paths:
       summary: 토·일 되돌아보기 열람 기록 (주 1회 멱등, #385)
       description: >-
         본문 없음. 학생·주당 1행(theme_review_view)이라 다시 보내도 200이고 firstViewThisWeek만 false.
-        completed는 월~금 다섯 문제를 각 요일(KST) 안에 학습 완료(돌아보기 저장)했는지(완주, #389 포인트 근거).
+        completed는 월~금 다섯 문제를 각 요일(KST) 안에 학습 완료(돌아보기 저장)했는지(개근, 2026-11-10 개정 전 이름 완주. core 개근 THEME_COMPLETED 근거).
         date가 토·일이 아니면 409 THEME_REVIEW_NOT_ALLOWED, 게시 테마가 없으면 404.
       parameters:
         - $ref: '#/components/parameters/StudentId'
@@ -950,6 +958,7 @@ paths:
         - $ref: '#/components/parameters/StudentScope'
         - $ref: '#/components/parameters/GradeBandQuery'
         - $ref: '#/components/parameters/ThemeDate'
+        - $ref: '#/components/parameters/ThemeSunday'
       responses:
         '200':
           description: 결과
@@ -1912,6 +1921,236 @@ paths:
         '400': {$ref: '#/components/responses/Problem'}
         '401': {$ref: '#/components/responses/Problem'}
         '403': {$ref: '#/components/responses/Problem'}
+  /admin/knowledge/datasets:
+    get:
+      operationId: listKnowledgeDatasets
+      summary: '교육과정 지식 판 목록 (#466, api-spec 4.1.3)'
+      description: >-
+        운영 스크립트(scripts/knowledge/manage_datasets.py)가 포트 포워드로 직접 부른다. core 프록시·관리자 화면 없음.
+        SYSTEM 역할, 학생 범위 없음. 최근 판부터.
+      parameters:
+        - $ref: '#/components/parameters/SystemRole'
+      responses:
+        '200':
+          description: 판 목록
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/KnowledgeDatasetList'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: loadKnowledgeDataset
+      summary: '새 판 적재 (#466, C9 ①~⑦, 동기)'
+      description: >-
+        C1 레코드·C4 확인 행으로 새 판(kn-YYYYMMDD-NN)을 LOADING으로 만들고 조각·학기·관계를 넣는다.
+        활성 판과 모델·차원이 같으면 같은 본문 임베딩을 재사용하고 나머지는 ai 임베딩(C6)에 64개 이하로 나눠 요청한다.
+        이전 활성 판의 사람 확인 관계는 양 끝이 있으면 옮기고, 없거나 본문이 바뀌면 recheck(C4 모양, decision 빈 칸)로 돌려준다.
+        입력 오류(형식, 조각 ID 겹침, reviewer SAMPLE, 성취기준 문장 불일치, 관계 끝 없음)는 판을 만들기 전에 400.
+        임베딩 실패는 판을 LOADING으로 남기고 503(AI_UNAVAILABLE·AI_TIMEOUT·AI_CIRCUIT_OPEN) 또는 502(AI_BAD_RESPONSE).
+        같은 입력은 같은 조각·관계 수(멱등). 활성화는 따로.
+      parameters:
+        - $ref: '#/components/parameters/SystemRole'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/KnowledgeLoadRequest'}
+      responses:
+        '201':
+          description: 적재한 LOADING 판과 결과 숫자
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/KnowledgeLoadResult'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '502': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /admin/knowledge/datasets/{version}:
+    get:
+      operationId: getKnowledgeDataset
+      summary: '판 상태·수 (#466)'
+      parameters:
+        - $ref: '#/components/parameters/SystemRole'
+        - $ref: '#/components/parameters/KnowledgeDatasetVersion'
+      responses:
+        '200':
+          description: 판
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/KnowledgeDatasetView'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: deleteKnowledgeDataset
+      summary: 'RETIRED 판 제거 (#466, C9)'
+      description: 한 트랜잭션에서 관계 → 조각 → 판. ACTIVE·LOADING은 409 KNOWLEDGE_DATASET_STATE_CONFLICT.
+      parameters:
+        - $ref: '#/components/parameters/SystemRole'
+        - $ref: '#/components/parameters/KnowledgeDatasetVersion'
+      responses:
+        '204': {description: 제거함}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+  /admin/knowledge/datasets/{version}/activate:
+    post:
+      operationId: activateKnowledgeDataset
+      summary: 'LOADING 판 활성화 (#466, C9 ⑧)'
+      description: >-
+        한 트랜잭션에서 이전 ACTIVE → RETIRED, 이 판 → ACTIVE(activated_at). LOADING이 아니거나 임베딩이 빈 조각이 있거나
+        적재 뒤 활성 판이 바뀌었으면(source.previousVersion과 다름) 409 KNOWLEDGE_DATASET_STATE_CONFLICT. 본문은 {} 또는 없음.
+      parameters:
+        - $ref: '#/components/parameters/SystemRole'
+        - $ref: '#/components/parameters/KnowledgeDatasetVersion'
+      responses:
+        '200':
+          description: 활성 판
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/KnowledgeDatasetView'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+  /knowledge/standards:
+    get:
+      operationId: getKnowledgeStandards
+      summary: '성취기준 코드로 근거 묶음 조회 (#464 계약 C5, 구현 #469)'
+      description: >-
+        코드마다 성취기준 문장·해설(있으면), 고려 사항을 가진 영역(사회·과학은 단원, 내용 체계는 covers로),
+        확인된 맞는 유형(knowledge_fits)·다루는 내용 요소(knowledge_covers)와 교과 지침을 돌려준다.
+        thinkingType을 주면 그 유형 출제 지침도 함께. 유사도 검색 없음. 활성 판만 읽는다.
+        활성 판이 없으면 200 reason NO_ACTIVE_DATASET, 코드가 하나도 없으면 200 reason CODE_NOT_FOUND(missingCodes).
+        SYSTEM 역할, 학생 범위 없음(학생 정보 없음). 기준안: codes 1~10개.
+      x-implementation-status: planned-issue-469
+      parameters:
+        - $ref: '#/components/parameters/SystemRole'
+        - name: codes
+          in: query
+          required: true
+          description: 대괄호 없는 성취기준 코드를 쉼표로(1~10개, 기준안)
+          schema: {type: string, minLength: 1}
+        - name: grade
+          in: query
+          description: 주면 항목 gradeMatch(그 학년에 배우는 성취기준인지)를 채움
+          schema: {type: integer, minimum: 3, maximum: 6}
+        - name: thinkingType
+          in: query
+          schema: {$ref: '#/components/schemas/KnowledgeThinkingType'}
+      responses:
+        '200':
+          description: 근거 묶음(미션 초안 요청 knowledge 칸에 그대로 넣음, C7)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/KnowledgeBundle'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+  /knowledge/thinking-types/{type}:
+    get:
+      operationId: getKnowledgeThinkingType
+      summary: '생각 유형 출제 지침 (#464 계약 C5, 구현 #469)'
+      description: >-
+        팀이 우리 말로 쓴 출제 지침과 출처 표기만(블룸 원서·VALUE 루브릭 문장 없음).
+        활성 판이 없으면 200 guide null, reason NO_ACTIVE_DATASET. SYSTEM 역할.
+      x-implementation-status: planned-issue-469
+      parameters:
+        - $ref: '#/components/parameters/SystemRole'
+        - name: type
+          in: path
+          required: true
+          schema: {$ref: '#/components/schemas/KnowledgeThinkingType'}
+      responses:
+        '200':
+          description: 출제 지침
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/KnowledgeThinkingTypeResponse'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+  /knowledge/search:
+    post:
+      operationId: searchKnowledge
+      summary: '벡터·필터 지식 검색 (#464 계약 C5, 구현 #469)'
+      description: >-
+        부르는 쪽(ai)이 만든 질의 벡터로 활성 판 조각을 코사인 유사도 순으로 k개.
+        minSimilarity 미만은 빼고, 남는 것이 없으면 200 reason BELOW_THRESHOLD.
+        embeddingModel·벡터 길이가 활성 판과 다르면 409 KNOWLEDGE_EMBEDDING_MISMATCH. SYSTEM 역할.
+      x-implementation-status: planned-issue-469
+      parameters:
+        - $ref: '#/components/parameters/SystemRole'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/KnowledgeSearchRequest'}
+      responses:
+        '200':
+          description: 조각과 점수
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/KnowledgeSearchResponse'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+  /knowledge/theme-candidates:
+    post:
+      operationId: getKnowledgeThemeCandidates
+      summary: '테마 주제 → 그 학년·학기의 유형별 성취기준 후보 (#464 계약 C5, 구현 #469)'
+      description: >-
+        주제 벡터와 비슷한 성취기준·내용 요소(covers)를 찾아 그 학기(knowledge_standard_semester)로 거르고
+        확인된 knowledge_fits로 다섯 유형마다 후보(점수 순, 유형당 k개)를 돌려준다. 후보 없는 유형은 빈 목록과 NO_CANDIDATE.
+        semester는 grade의 학기여야 한다(아니면 400). SYSTEM 역할.
+      x-implementation-status: planned-issue-469
+      parameters:
+        - $ref: '#/components/parameters/SystemRole'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/KnowledgeThemeCandidatesRequest'}
+      responses:
+        '200':
+          description: 유형별 후보
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/KnowledgeThemeCandidatesResponse'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+  /knowledge/learned:
+    post:
+      operationId: checkKnowledgeLearned
+      summary: '낱말·개념을 그 학기까지 배웠는지 (#464 계약 C5, 구현 #469)'
+      description: >-
+        개념마다 가장 비슷한 내용 요소(minSimilarity 이상)를 찾고 확인된 covers → 성취기준 학기로
+        LEARNED(그 학기 이전·같은 학기에 배움)·NOT_YET(뒤 학기에만)·HOLD(비슷한 내용 요소 없음 BELOW_THRESHOLD,
+        확인된 covers 없음 NO_REVIEWED_RELATION)를 돌려준다. 기준안: 한 요청 개념 1~20개. SYSTEM 역할.
+      x-implementation-status: planned-issue-469
+      parameters:
+        - $ref: '#/components/parameters/SystemRole'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/KnowledgeLearnedRequest'}
+      responses:
+        '200':
+          description: 개념별 판정
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/KnowledgeLearnedResponse'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
 components:
   securitySchemes:
     InternalToken:
@@ -1919,6 +2158,11 @@ components:
       in: header
       name: X-Internal-Token
   parameters:
+    KnowledgeDatasetVersion:
+      name: version
+      in: path
+      required: true
+      schema: {type: string, pattern: '^kn-[0-9]{8}-[0-9]{2}$'}
     SystemRole:
       name: X-User-Role
       in: header
@@ -2008,6 +2252,14 @@ components:
       required: true
       description: core가 정한 KST 오늘 날짜. 그 날짜가 속한 월요일이 이번 주
       schema: {type: string, format: date}
+    ThemeSunday:
+      name: sundayTheme
+      in: query
+      required: false
+      description: >-
+        core #485가 항상 붙이는 일요일 허용 값(api-spec 2.11·core-gateway 18절). KST 일요일이고 상품이 일요일 테마를 허용할 때만 true.
+        learning #484가 true일 때만 일요일 신규 시작·다시 풀기·되돌아보기를 연다. #484 구현 전 learning은 이 값을 읽지 않는다.
+      schema: {type: boolean}
     AdminUserId:
       name: X-User-Id
       in: header
@@ -2749,6 +3001,13 @@ components:
       properties:
         judgmentId: {type: string, format: uuid, description: 신고(targetType JUDGMENT)·정정 대상 ID (#146)}
         corrected: {type: boolean, description: 정정이 있으면 true. elements는 원판정 그대로라 report 요소 지표에서 제외 (FN-RPT-05)}
+        modelScores:
+          description: >-
+            기록 목록에 includeModelScores=true(SYSTEM)로 요청했을 때만 있는 키. judgment.model_scores 저장값 그대로
+            ({m2, m1, skipped}, ai-service 판정 응답 modelScores), M2를 부르지 않았으면 null. 그 밖의 응답에는 키가 없음 (#478)
+          oneOf:
+            - {type: object}
+            - {type: 'null'}
         result:
           type: string
           enum: [CORRECT, PARTIAL, RETHINK, HELD]
@@ -3226,7 +3485,7 @@ components:
                   title: {type: string}
                   completed: {type: boolean, description: 이번 주 그 문제 요일 시도를 마무리함(다시 풀기 가능)}
                   missed: {type: boolean, description: 지난 요일인데 마무리하지 않음(풀 수 없음)}
-        completed: {type: boolean, description: 월~금 다섯 문제를 각 요일(KST) 안에 학습 완료(완주)}
+        completed: {type: boolean, description: '월~금 다섯 문제를 각 요일(KST) 안에 학습 완료(개근, 개정 전 이름 완주). core가 개근 THEME_COMPLETED로 적립(#485·#506)'}
     ThemeReviewViewResult:
       type: object
       required: [firstViewThisWeek, completed]
@@ -3351,3 +3610,405 @@ components:
           type: string
         traceId:
           type: string
+    KnowledgeLoadRequest:
+      type: object
+      required: [source, records]
+      properties:
+        source:
+          type: object
+          description: 원문 고시 번호·추출 판·확인 파일·학기 대응 자료 이름(dataset.sample.json source 모양). previousVersion은 learning이 채움
+        records:
+          type: array
+          minItems: 1
+          description: C1 레코드(scripts/knowledge/schema/curriculum-record.schema.json), JSONL 한 줄이 한 항목
+          items: {type: object}
+        reviews:
+          type: array
+          description: C4 확인 행(relation-review.schema.json), CSV 한 행이 한 항목. 없으면 이전 활성 판 관계만 옮김
+          items: {$ref: '#/components/schemas/KnowledgeRelationReview'}
+    KnowledgeRelationReview:
+      type: object
+      description: C4 한 행. 빈 칸은 빈 문자열. ACCEPT·MODIFY만 적재, reviewer SAMPLE은 400
+      properties:
+        relationType: {type: string, enum: [FITS, PREREQUISITE, COVERS]}
+        standardCode: {type: string}
+        standardStatement: {type: string}
+        target: {type: string}
+        targetText: {type: string}
+        evidence: {type: string}
+        similarity: {type: string}
+        candidateSource: {type: string}
+        decision: {type: string, enum: ['', ACCEPT, REJECT, MODIFY]}
+        modifiedTarget: {type: string}
+        reason: {type: string}
+        reviewer: {type: string}
+        reviewedAt: {type: string}
+        datasetVersion: {type: string}
+    KnowledgeDatasetView:
+      type: object
+      required: [version, status, source, embeddingModel, embeddingDimensions, chunkCount, relationCount, chunks, relations, createdAt]
+      properties:
+        version: {type: string}
+        status: {type: string, enum: [LOADING, ACTIVE, RETIRED]}
+        source: {type: object}
+        embeddingModel: {type: string}
+        embeddingDimensions: {type: integer}
+        chunkCount: {type: integer}
+        relationCount: {type: integer, description: 학기·fits·prerequisite·covers 행 합}
+        chunks:
+          type: object
+          description: 종류(STANDARD·DOMAIN·CONTENT·SUBJECT_GUIDE·THINKING_TYPE)별 조각 수
+          additionalProperties: {type: integer}
+        relations:
+          type: object
+          description: SEMESTER·FITS·PREREQUISITE·COVERS 행 수
+          additionalProperties: {type: integer}
+        createdAt: {type: string, format: date-time}
+        activatedAt: {type: [string, 'null'], format: date-time}
+    KnowledgeDatasetList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/KnowledgeDatasetView'}
+    KnowledgeLoadResult:
+      type: object
+      required: [dataset, documents, embeddedTexts, embeddingRequests, reusedEmbeddings, carriedRelations, recheck]
+      properties:
+        dataset: {$ref: '#/components/schemas/KnowledgeDatasetView'}
+        documents: {type: integer, description: 원문 고시 문서 수(생각 유형 제외)}
+        embeddedTexts: {type: integer, description: 새로 임베딩한 본문 수(같은 본문은 한 번)}
+        embeddingRequests: {type: integer, description: C6 호출 수(64개 이하 묶음)}
+        reusedEmbeddings: {type: integer, description: 활성 판 벡터를 그대로 쓴 조각 수}
+        previousVersion: {type: [string, 'null']}
+        carriedRelations: {type: integer, description: 이전 활성 판에서 옮긴 사람 확인 관계 수}
+        recheck:
+          type: array
+          description: 다시 확인할 관계(C4 모양, decision 빈 칸, evidence에 사유)
+          items: {$ref: '#/components/schemas/KnowledgeRelationReview'}
+    KnowledgeThinkingType:
+      type: string
+      enum: [ANALYZE, EVALUATE, CREATE, SOLVE, REFLECT]
+    KnowledgeKind:
+      type: string
+      enum: [STANDARD, DOMAIN, CONTENT, SUBJECT_GUIDE, THINKING_TYPE]
+    KnowledgeSubject:
+      type: string
+      enum: [국어, 도덕, 사회, 수학, 과학]
+    KnowledgeFallbackReason:
+      description: >-
+        근거 없음 사유(200 응답, #464 C5). NO_ACTIVE_DATASET 활성 판 없음, BELOW_THRESHOLD 최소 유사도 넘는 조각 없음,
+        NO_CANDIDATE 그 유형 후보 없음, CODE_NOT_FOUND 요청 코드가 하나도 없음, NO_REVIEWED_RELATION 비슷한 내용 요소는 있으나 확인된 covers 없음
+      type: string
+      enum: [NO_ACTIVE_DATASET, BELOW_THRESHOLD, NO_CANDIDATE, CODE_NOT_FOUND, NO_REVIEWED_RELATION]
+    KnowledgeRef:
+      description: 근거 조각 표시. C5 응답 조각마다 붙고 C7 미션 초안 응답 sources 항목이 된다
+      type: object
+      additionalProperties: false
+      required: [kind, id, datasetVersion]
+      properties:
+        kind: {$ref: '#/components/schemas/KnowledgeKind'}
+        id: {type: string, minLength: 1}
+        datasetVersion: {type: string, minLength: 1}
+    KnowledgeContentItem:
+      type: object
+      additionalProperties: false
+      required: [group, text]
+      properties:
+        group: {type: [string, 'null']}
+        text: {type: string}
+    KnowledgeStandard:
+      type: object
+      additionalProperties: false
+      required: [code, subject, grades, semesters, noticeGradeBand, area, statement, explanation, ref]
+      properties:
+        code: {type: string}
+        subject: {$ref: '#/components/schemas/KnowledgeSubject'}
+        grades: {type: array, items: {type: integer, minimum: 3, maximum: 6}}
+        semesters: {type: array, items: {type: string, pattern: '^[3-6]-[12]$'}}
+        noticeGradeBand: {type: string}
+        area: {type: string}
+        statement: {type: string}
+        explanation: {type: [string, 'null']}
+        ref: {$ref: '#/components/schemas/KnowledgeRef'}
+    KnowledgeDomain:
+      type: object
+      additionalProperties: false
+      required: [id, subject, area, scope, coreIdeas, knowledge, process, values, considerations, activities, ref]
+      properties:
+        id: {type: string}
+        subject: {$ref: '#/components/schemas/KnowledgeSubject'}
+        area: {type: string}
+        scope: {type: string, enum: [BOTH, CONTENT_SYSTEM, STANDARD_GROUP]}
+        coreIdeas: {type: array, items: {type: string}}
+        knowledge: {type: array, items: {$ref: '#/components/schemas/KnowledgeContentItem'}}
+        process: {type: array, items: {$ref: '#/components/schemas/KnowledgeContentItem'}}
+        values: {type: array, items: {$ref: '#/components/schemas/KnowledgeContentItem'}}
+        considerations: {type: array, items: {type: string}}
+        activities: {type: array, items: {type: string}}
+        ref: {$ref: '#/components/schemas/KnowledgeRef'}
+    KnowledgeContent:
+      type: object
+      additionalProperties: false
+      required: [id, domainId, category, group, text, ref]
+      properties:
+        id: {type: string}
+        domainId: {type: string}
+        category: {type: string, enum: [K, P, V]}
+        group: {type: [string, 'null']}
+        text: {type: string}
+        ref: {$ref: '#/components/schemas/KnowledgeRef'}
+    KnowledgeFit:
+      type: object
+      additionalProperties: false
+      required: [thinkingType, reason]
+      properties:
+        thinkingType: {$ref: '#/components/schemas/KnowledgeThinkingType'}
+        reason: {type: string}
+    KnowledgeStandardBundle:
+      type: object
+      additionalProperties: false
+      required: [standard, domain, covers, fits, gradeMatch]
+      properties:
+        standard: {$ref: '#/components/schemas/KnowledgeStandard'}
+        domain:
+          anyOf:
+            - $ref: '#/components/schemas/KnowledgeDomain'
+            - type: 'null'
+        covers: {type: array, items: {$ref: '#/components/schemas/KnowledgeContent'}}
+        fits: {type: array, items: {$ref: '#/components/schemas/KnowledgeFit'}}
+        gradeMatch: {type: [boolean, 'null']}
+    KnowledgeSubjectGuide:
+      type: object
+      additionalProperties: false
+      required: [subject, teaching, assessment, ref]
+      properties:
+        subject: {$ref: '#/components/schemas/KnowledgeSubject'}
+        teaching: {type: array, items: {type: string}}
+        assessment: {type: array, items: {type: string}}
+        ref: {$ref: '#/components/schemas/KnowledgeRef'}
+    KnowledgeThinkingTypeGuide:
+      description: 팀이 우리 말로 쓴 출제 지침과 출처 표기(블룸 원서·VALUE 루브릭 문장 없음)
+      type: object
+      additionalProperties: false
+      required: [type, name, basis, elements, questionMust, questionMustNot, ref]
+      properties:
+        type: {$ref: '#/components/schemas/KnowledgeThinkingType'}
+        name: {type: string}
+        basis:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [framework, attribution]
+            properties:
+              framework: {type: string}
+              attribution: {type: string}
+        elements:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, label, description]
+            properties:
+              code: {type: string}
+              label: {type: string}
+              description: {type: string}
+        questionMust: {type: array, items: {type: string}}
+        questionMustNot: {type: array, items: {type: string}}
+        ref: {$ref: '#/components/schemas/KnowledgeRef'}
+    KnowledgeBundle:
+      description: GET /internal/knowledge/standards 응답. C7 미션 초안 요청 knowledge 칸에 그대로 담는다
+      type: object
+      additionalProperties: false
+      required: [datasetVersion, items, missingCodes, subjectGuides, thinkingType, reason]
+      properties:
+        datasetVersion: {type: [string, 'null']}
+        items: {type: array, items: {$ref: '#/components/schemas/KnowledgeStandardBundle'}}
+        missingCodes: {type: array, items: {type: string}}
+        subjectGuides: {type: array, items: {$ref: '#/components/schemas/KnowledgeSubjectGuide'}}
+        thinkingType:
+          anyOf:
+            - $ref: '#/components/schemas/KnowledgeThinkingTypeGuide'
+            - type: 'null'
+        reason:
+          anyOf:
+            - $ref: '#/components/schemas/KnowledgeFallbackReason'
+            - type: 'null'
+    KnowledgeThinkingTypeResponse:
+      type: object
+      additionalProperties: false
+      required: [datasetVersion, guide, reason]
+      properties:
+        datasetVersion: {type: [string, 'null']}
+        guide:
+          anyOf:
+            - $ref: '#/components/schemas/KnowledgeThinkingTypeGuide'
+            - type: 'null'
+        reason:
+          anyOf:
+            - $ref: '#/components/schemas/KnowledgeFallbackReason'
+            - type: 'null'
+    KnowledgeSearchFilters:
+      description: 빈 배열·생략은 거르지 않음. 칸 안은 OR, 칸끼리는 AND, grades·semesters는 겹치면 통과(교과 지침·생각 유형 조각은 학년·학기 거르기 제외)
+      type: object
+      additionalProperties: false
+      properties:
+        kinds: {type: array, items: {$ref: '#/components/schemas/KnowledgeKind'}}
+        subjects: {type: array, items: {$ref: '#/components/schemas/KnowledgeSubject'}}
+        grades: {type: array, items: {type: integer, minimum: 3, maximum: 6}}
+        semesters: {type: array, items: {type: string, pattern: '^[3-6]-[12]$'}}
+        thinkingTypes: {type: array, items: {$ref: '#/components/schemas/KnowledgeThinkingType'}}
+    KnowledgeSearchRequest:
+      type: object
+      additionalProperties: false
+      required: [vector, embeddingModel]
+      properties:
+        vector: {type: array, minItems: 1, items: {type: number}, description: 'ai 임베딩 API(C6)로 만든 질의 벡터(기준안 1536차원)'}
+        embeddingModel: {type: string, minLength: 1, description: 벡터를 만든 모델(C6 응답 model)}
+        k: {type: integer, minimum: 1, maximum: 20, default: 5}
+        minSimilarity: {type: number, minimum: 0, maximum: 1, default: 0.7, description: '기준안 0.7(에픽 #463)'}
+        filters: {$ref: '#/components/schemas/KnowledgeSearchFilters'}
+    KnowledgeSearchHit:
+      type: object
+      additionalProperties: false
+      required: [ref, kind, subject, area, standardCode, domainId, thinkingType, grades, semesters, text, similarity]
+      properties:
+        ref: {$ref: '#/components/schemas/KnowledgeRef'}
+        kind: {$ref: '#/components/schemas/KnowledgeKind'}
+        subject:
+          anyOf:
+            - $ref: '#/components/schemas/KnowledgeSubject'
+            - type: 'null'
+        area: {type: [string, 'null']}
+        standardCode: {type: [string, 'null']}
+        domainId: {type: [string, 'null']}
+        thinkingType:
+          anyOf:
+            - $ref: '#/components/schemas/KnowledgeThinkingType'
+            - type: 'null'
+        grades: {type: array, items: {type: integer}}
+        semesters: {type: array, items: {type: string}}
+        text: {type: string, description: 조각 본문(C2 본문 규칙)}
+        similarity: {type: number, minimum: 0, maximum: 1}
+    KnowledgeSearchResponse:
+      type: object
+      additionalProperties: false
+      required: [datasetVersion, items, reason]
+      properties:
+        datasetVersion: {type: [string, 'null']}
+        items: {type: array, items: {$ref: '#/components/schemas/KnowledgeSearchHit'}}
+        reason:
+          anyOf:
+            - $ref: '#/components/schemas/KnowledgeFallbackReason'
+            - type: 'null'
+    KnowledgeThemeCandidatesRequest:
+      type: object
+      additionalProperties: false
+      required: [vector, embeddingModel, grade, semester]
+      properties:
+        vector: {type: array, minItems: 1, items: {type: number}}
+        embeddingModel: {type: string, minLength: 1}
+        grade: {type: integer, minimum: 3, maximum: 6}
+        semester: {type: string, pattern: '^[3-6]-[12]$'}
+        k: {type: integer, minimum: 1, maximum: 10, default: 3, description: 유형당 후보 수(기준안)}
+        minSimilarity: {type: number, minimum: 0, maximum: 1, default: 0.7}
+    KnowledgeThemeCandidate:
+      type: object
+      additionalProperties: false
+      required: [code, statement, subject, area, similarity, matchedBy, fitReason, ref]
+      properties:
+        code: {type: string}
+        statement: {type: string}
+        subject: {$ref: '#/components/schemas/KnowledgeSubject'}
+        area: {type: string}
+        similarity: {type: number, minimum: 0, maximum: 1}
+        matchedBy: {$ref: '#/components/schemas/KnowledgeRef'}
+        fitReason: {type: string}
+        ref: {$ref: '#/components/schemas/KnowledgeRef'}
+    KnowledgeThemeTypeCandidates:
+      type: object
+      additionalProperties: false
+      required: [thinkingType, candidates, reason]
+      properties:
+        thinkingType: {$ref: '#/components/schemas/KnowledgeThinkingType'}
+        candidates: {type: array, items: {$ref: '#/components/schemas/KnowledgeThemeCandidate'}}
+        reason:
+          anyOf:
+            - $ref: '#/components/schemas/KnowledgeFallbackReason'
+            - type: 'null'
+    KnowledgeThemeCandidatesResponse:
+      type: object
+      additionalProperties: false
+      required: [datasetVersion, grade, semester, types, reason]
+      properties:
+        datasetVersion: {type: [string, 'null']}
+        grade: {type: integer}
+        semester: {type: string}
+        types: {type: array, items: {$ref: '#/components/schemas/KnowledgeThemeTypeCandidates'}, description: 활성 판이 있으면 다섯 유형 모두}
+        reason:
+          anyOf:
+            - $ref: '#/components/schemas/KnowledgeFallbackReason'
+            - type: 'null'
+    KnowledgeLearnedConcept:
+      type: object
+      additionalProperties: false
+      required: [text, vector]
+      properties:
+        text: {type: string, minLength: 1}
+        vector: {type: array, minItems: 1, items: {type: number}}
+    KnowledgeLearnedRequest:
+      type: object
+      additionalProperties: false
+      required: [concepts, embeddingModel, grade, semester]
+      properties:
+        concepts: {type: array, minItems: 1, maxItems: 20, items: {$ref: '#/components/schemas/KnowledgeLearnedConcept'}}
+        embeddingModel: {type: string, minLength: 1}
+        grade: {type: integer, minimum: 3, maximum: 6}
+        semester: {type: string, pattern: '^[3-6]-[12]$'}
+        minSimilarity: {type: number, minimum: 0, maximum: 1, default: 0.7}
+    KnowledgeLearnedItem:
+      type: object
+      additionalProperties: false
+      required: [text, verdict, matched, learnedIn, reason]
+      properties:
+        text: {type: string}
+        verdict: {type: string, enum: [LEARNED, NOT_YET, HOLD]}
+        matched:
+          anyOf:
+            - type: object
+              additionalProperties: false
+              required: [contentId, text, similarity, ref]
+              properties:
+                contentId: {type: string}
+                text: {type: string}
+                similarity: {type: number, minimum: 0, maximum: 1}
+                ref: {$ref: '#/components/schemas/KnowledgeRef'}
+            - type: 'null'
+        learnedIn:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [standardCode, semester]
+            properties:
+              standardCode: {type: string}
+              semester: {type: string}
+        reason:
+          anyOf:
+            - $ref: '#/components/schemas/KnowledgeFallbackReason'
+            - type: 'null'
+    KnowledgeLearnedResponse:
+      type: object
+      additionalProperties: false
+      required: [datasetVersion, grade, semester, items, reason]
+      properties:
+        datasetVersion: {type: [string, 'null']}
+        grade: {type: integer}
+        semester: {type: string}
+        items: {type: array, items: {$ref: '#/components/schemas/KnowledgeLearnedItem'}}
+        reason:
+          anyOf:
+            - $ref: '#/components/schemas/KnowledgeFallbackReason'
+            - type: 'null'

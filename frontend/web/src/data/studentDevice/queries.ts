@@ -82,8 +82,8 @@ export function useDeviceAdmin() {
       onSuccess: refresh,
     }),
     setPin: useMutation({
-      mutationFn: ({ childId, pin, reauthToken }: { childId: string; pin: string; reauthToken: string }) =>
-        studentDeviceApi.setPin(childId, pin, reauthToken),
+      mutationFn: ({ childId, pin }: { childId: string; pin: string }) =>
+        studentDeviceApi.setPin(childId, pin),
       onSuccess: refresh,
     }),
   }
