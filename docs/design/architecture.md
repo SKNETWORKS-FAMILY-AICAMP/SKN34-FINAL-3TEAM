@@ -18,7 +18,7 @@
 |---|---|---|---|
 | core-service | Spring Boot (Kotlin) | **유일한 공개 API**. 계정·인증·동의, 학부모-자녀 연결(권한 기준), 분석 대화 세션·이력, 주간·일일 리포트 작업·일정, 알림(SSE·인앱), 신고·문의·공지, 결제·구독(토스페이먼츠 테스트), 관리자 운영·모델 버전 레지스트리, LLM 사용량 집계 | core_db, Redis |
 | learning-service | Spring Boot (Kotlin) | 미션·기준표·예시 답·생각 열기 질문(버전 관리), 학습 시도·답변 버전·초안·도움 이용·돌아보기·자기 평가, 규칙 판정(고르기·수학 동치), 판정·되묻기 저장, 학습 기록 조회 API(대시보드·에이전트 도구·리포트 소재), 교육과정 지식 저장소(판 적재·활성화, pgvector, #466; 임베딩은 ai 호출) | learning_db (미션 장면 이미지는 웹 정적 파일과 함께 CloudFront→S3로 서빙, learning은 S3를 쓰지 않음) |
-| ai-service | FastAPI | 서술 근거 구절 추출(LLM) + 원문 대조 판정(코드), 되묻기 생성·정답/금지어 유출 검사, LangGraph 분석 에이전트, 리포트 서술·저녁 질문 생성, 리포트 설명 생성 요청·검사(설명 sLLM 호출, #477), 프롬프트 버전 | 없음 (상태 없음) |
+| ai-service | FastAPI | 서술 근거 구절 추출(LLM) + 원문 대조 판정(코드), 되묻기 생성·정답/금지어 유출 검사, LangGraph 분석 에이전트, 리포트 서술·저녁 질문 생성, 리포트 설명 생성 요청·검사(설명 sLLM 호출, #477), 미션 초안·주간 테마 초안 생성(#354·#437), 프롬프트 버전 | 없음 (상태 없음). 테마 초안 이미지·영상은 S3 `theme-drafts/`에 쓰고 키만 반환(#437) |
 | scoring-service | FastAPI | M2 항목 점수(klue/roberta, 국어 우선), M1 수학 풀이 점검(후순위, 활성 범위만) 추론, CPU 추론, 관리자 모델 파일 사전 검사(#368), Pod별 모델 로딩 상태 보고(#370) | 없음 (S3 가중치 읽기) |
 | report-service | FastAPI | 주간·일일 리포트 기간·포함 기록 확정, 수치·전후 변화 코드 계산, 숫자·인용 대조, 렌더링(HTML/PDF/Markdown)·저장 | report_db, S3 |
 
@@ -37,7 +37,7 @@
 | 서비스 | 추가 책임 | 기능 패키지 |
 |---|---|---|
 | core-service | 커뮤니티 공개 설정·보호자 선택 동의·공유물 신고 연결, 작성자 별명·꾸미기 표시 변환, 포인트 규칙·원장·잔액, 테마·캐릭터·아이템 해금·착용, 꾸미기 아이템 관리, 무료 추가 문제 하루 한도 집계(무료 상품에서 `EXTRA`를 다시 켠 경우, 2026-11-10 개정 #485 뒤), 일일 리포트 일정(매일 자정, 다음 날 00:00)·작업, 리포트 고정 대화 생성 | `community`(설정·learning 프록시·신고 연결), `reward`(포인트·해금·아이템). 무료 미션 한도는 기존 `usage`(`MissionUsageService`), 일일 일정은 기존 `report`, 리포트 고정 대화는 기존 `conversation`, 동의 문서 종류는 기존 `consent` |
-| learning-service | 주간 테마·요일별 미션 배치·게시 검사, 시도 `context`(당일·되돌아보기·추가 문제) 검사, 되돌아보기 열람 기록·완주 판정 소재, 커뮤니티 공유물·반응·열람 검사(같은 미션 마무리 여부)·숨김 상태 | `theme`, `community` |
+| learning-service | 주간 테마·요일별 미션 배치·게시 검사, 학년별 테마(#438)·테마 초안 저장·생성 주기 작업·채택, 시작·종료 이야기 열람 기록, 테마 그림·영상 presigned URL 발급(#438), 시도 `context`(당일·되돌아보기·추가 문제) 검사, 되돌아보기 열람 기록·완주 판정 소재, 커뮤니티 공유물·반응·열람 검사(같은 미션 마무리 여부)·숨김 상태 | `theme`, `community` |
 | report-service | 일일 리포트(템플릿, LLM 미호출) 기간 확정·계산·대조·렌더링, 주간 리포트 테마 요약 | 기존 리포트 생성 흐름에 기간 종류 분기 |
 | ai-service | 리포트 고정 대화의 범위(그날)와 core가 넣어 주는 리포트 요약 입력 처리(report 직접 호출 없음). 일일 리포트 서술은 없음 | 기존 분석 에이전트 |
 | scoring-service | 변경 없음 | - |
@@ -60,7 +60,7 @@
         report-service ────────────────────────┘
           └─ HTTP(기록 조회) ─▶ learning-service
 
-저장소: RDS PostgreSQL(서비스별 DB) · S3(미션 장면·리포트 파일·모델 가중치) · Redis
+저장소: RDS PostgreSQL(서비스별 DB) · S3(미션 장면·테마 초안 이미지·영상·리포트 파일·모델 가중치) · Redis
 외부: LLM API(ai) · 토스페이먼츠 테스트(core)
 ```
 
@@ -139,7 +139,7 @@
 
 2026-11-06 결정(6~9 구현):
 
-6. **주간 테마**: core가 학생 학년으로 학년군을 정해 learning에 이번 주 테마 조회 → learning이 KST 요일로 문제 상태 계산. 시도 시작 시 learning이 `context` 검사, core가 상품으로 추가 문제 허용(무료 `EXTRA` 403)·일요일 허용 값 `sundayTheme`을 정한다. 무료 테마 문제는 한도 없음(2026-11-10 개정 #485, 이전 #387은 무료 `THEME_DAY`·`EXTRA` 합쳐 하루 1개)
+6. **주간 테마**: core가 학생 학년으로 테마 학년(`G3`~`G6`, 중학생 `G6`, #438)을 정해 learning에 이번 주 테마 조회 → learning이 KST 요일로 문제 상태·단서·정답 공개 계산. 테마 초안은 learning 주기 작업이 ai `POST /internal/theme-drafts`를 1회씩 불러 저장하고 관리자가 채택(#438). 시도 시작 시 learning이 `context` 검사, core가 상품으로 추가 문제 허용(무료 `EXTRA` 403)·일요일 허용 값 `sundayTheme`을 정한다. 무료 테마 문제는 한도 없음(2026-11-10 개정 #485, 이전 #387은 무료 `THEME_DAY`·`EXTRA` 합쳐 하루 1개)
 7. **학습 완료 후**: 돌아보기 저장 성공 → core가 포인트 적립(미션당 최초 1회) → 커뮤니티 공개가 켜져 있고 그 미션 공유물이 없으면 learning에 공유 요청(학생·미션당 1개) → 공유 성공 시 포인트 적립. 공유 요청(#388)과 두 포인트 적립 연결(#389) 구현
 8. **일일 리포트**: core 스케줄러(ShedLock)가 매일 자정(다음 날 00:00 KST) 보호자가 연결된 자녀별 `report_job(period_type = DAILY)` + Outbox → `report.generate` → report가 learning 기록 조회 → 코드 계산·템플릿 구성 → 인용 대조 → 렌더링·S3 저장(ai 호출 없음) → `report.completed` → core 일일 알림
 9. **리포트 대화**: 학부모가 일일 리포트에서 대화 생성 → core가 리포트 소유·자녀 연결 확인 후 대화에 리포트 ID·판을 저장하고 범위를 그날로 고정 → 메시지마다 core가 report에서 그 판을 읽어 ai 요청에 넣음 → 이후는 4번 분석 대화 흐름 그대로
@@ -168,7 +168,7 @@
   - #43 계약: 내부 조회와 이벤트는 같은 kind·name별 revision·적용 scopes를 제공한다. 소비자는 초기 조회 중 이벤트를 보존·조정하고 더 높은 revision만 적용하며 승인 scope 밖에는 적용하지 않는다. core는 Pod 공유 소비 큐를 추가하지 않는다. scoring 소비·readiness는 #86에서 구현하며 ai는 #68 범위다.
   - scoring #86: 큐 바인딩·소비 시작 후 snapshot을 조회한다. 조회·로딩 중 이벤트는 이름별 최신 revision을 보존하고 readiness 전에 조정한다. 재연결 때 새 exclusive 큐를 바인딩하고 snapshot을 다시 조회하여 연결 중단 중 변경도 복구한다.
   - scoring 교체·롤백은 #85와 동일하게 S3/MinIO에서 재다운로드 → 메모리 로딩 → 임시 파일 정리 방식이다. 성공 후 참조를 교체하며 로딩 실패 시 기존 모델과 새 승인 범위의 교집합만 사용한다. 정상 기동 후 교체 실패는 기존 모델을 유지하고 재시도한다. 최초 조회·로딩 실패 또는 재연결 조정 중에는 readiness false다.
-  - ai #68: `PROMPT`의 `name`은 `judgment`·`followup`·`analysis`·`reportNarrative`·`reportTemplate`(#280 리포트 설정 제안)·`missionDraft`(#354 미션 초안)·`reportExplanation`(#477 리포트 설명) 7개, 각 승인 scope는 `ai/judgment`·`ai/followup`·`ai/analysis`·`ai/report-narrative`·`ai/report-template`·`ai/mission-draft`·`ai/report-explanation`다. 해당 scope가 없는 항목은 적용하지 않는다. 각 버전의 실제 system/user 프롬프트 본문은 ai 이미지의 코드에 함께 보관한다. core에 활성 항목이 없으면 현재 내장 버전을 사용한다. 활성 버전 본문이 이미지에 없으면 다른 본문에 그 버전명을 붙이지 않고 해당 기능의 새 요청을 503으로 거부하며 readiness는 false다. 요청마다 선택한 본문과 버전을 고정해 응답·사용량에 같은 버전을 기록한다.
+  - ai #68: `PROMPT`의 `name`은 `judgment`·`followup`·`analysis`·`reportNarrative`·`reportTemplate`(#280 리포트 설정 제안)·`missionDraft`(#354 미션 초안)·`reportExplanation`(#477 리포트 설명)·`themeDraft`(#437 주간 테마 초안) 8개, 각 승인 scope는 `ai/judgment`·`ai/followup`·`ai/analysis`·`ai/report-narrative`·`ai/report-template`·`ai/mission-draft`·`ai/report-explanation`·`ai/theme-draft`다. 해당 scope가 없는 항목은 적용하지 않는다. 각 버전의 실제 system/user 프롬프트 본문은 ai 이미지의 코드에 함께 보관한다. core에 활성 항목이 없으면 현재 내장 버전을 사용한다. 활성 버전 본문이 이미지에 없으면 다른 본문에 그 버전명을 붙이지 않고 해당 기능의 새 요청을 503으로 거부하며 readiness는 false다. 요청마다 선택한 본문과 버전을 고정해 응답·사용량에 같은 버전을 기록한다.
   - ai도 큐 바인딩·소비 시작 후 snapshot을 조회하고 그사이 이벤트를 revision으로 조정한다. 재연결마다 새 큐를 먼저 바인딩하고 snapshot으로 유실 구간을 복구한다. readiness는 이 백그라운드 상태만 읽으며 probe가 core를 호출하지 않는다.
   - core 조회 실패 시 프로세스 종료 없이 readiness false 유지·재시도 (core 장애가 ai·scoring 기동 실패로 번지지 않게)
 - **이벤트 봉투**: CloudEvents 형식 `id, specversion, type, source, time, subject, dataschema, traceparent, data` → `contracts/events/*.schema.json`
@@ -377,6 +377,7 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 │  ├─ security/
 │  ├─ messaging/                 # 소비 재시도·이벤트 봉투 (발행 없음). 멱등 소비 기록은 record/repository/ProcessedEventRepository
 │  ├─ persistence/               # MyBatis 설정·PostgreSQL 타입 핸들러
+│  ├─ storage/                   # AssetUrls: S3 키 → 단기 presigned URL (AWS SDK S3 presigner, 미션 장면·테마 그림·영상, #438)
 │  └─ web/                       # 공유 응답 DTO: MissionResponse·MissionListItemResponse·AnswerItem (#251)
 ├─ mission/                      # 미션·기준표·예시 답·생각 열기 질문 버전, 관리자 작성·검토·공개, 성취기준·미션 초안(#353)
 │  ├─ controller/
@@ -411,8 +412,10 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 │  └─ facade/
 │     └─ FeedbackFacade.kt
 ├─ theme/                        # (P23, #385) 주간 테마·요일별 미션·게시 검사, 되돌아보기 열람·완주·주간 요약
-│  ├─ controller/
-│  ├─ service/
+│  ├─ controller/                # + AdminThemeDraftController (#438)
+│  ├─ service/                   # + ThemeDraftService (#438)
+│  ├─ scheduler/                 # ThemeDraftScheduler: 생성 주기·주간 자동 크론 (#438)
+│  ├─ client/                    # ThemeDraftAiClient: ai 서킷 ai-theme-draft (#438)
 │  ├─ domain/
 │  └─ repository/
 ├─ community/                    # (P20, #386) 공유물·반응·열람 검사·숨김 상태
@@ -480,6 +483,16 @@ backend/ai-service/
 │  │  ├─ models.py
 │  │  ├─ checks.py               # REQUIRED·QUESTION_LENGTH·LEAK 검사
 │  │  └─ prompts.py              # missionDraft 프롬프트 본문·버전
+│  ├─ theme_draft/               # 주간 테마 초안 1회 생성 LangGraph (#437)
+│  │  ├─ router.py               # POST /internal/theme-drafts
+│  │  ├─ service.py              # ThemeDraftService: 마감·그래프 실행·응답 조립
+│  │  ├─ graph.py                # plan_theme → … → generate_motion
+│  │  ├─ nodes/                  # plan·mission·dialogue·review·images·video·motion 노드
+│  │  ├─ models.py               # 요청·응답·테마 틀 스키마
+│  │  ├─ checks.py               # 정답 논리·단서 규칙·대화·움직임 검사
+│  │  ├─ storage.py              # S3 theme-drafts/ 업로드 (boto3)
+│  │  ├─ assets/                 # mungchi-2d.png 기본 뭉치 그림(테마 옷 뭉치의 원본, 기준안)
+│  │  └─ prompts.py              # themeDraft 프롬프트 본문·버전(생성·검토)
 │  ├─ report_explanation/        # 리포트 설명: M2 항목 점수 → 학부모용 설명 (#477)
 │  │  ├─ router.py               # POST /internal/report-explanations
 │  │  ├─ service.py              # 설명 모델 활성 확인·항목별 sLLM 호출
@@ -498,7 +511,8 @@ backend/ai-service/
 │  │  └─ core_client.py          # 기동·재연결 시 core 활성 버전 조회 (#68)
 │  ├─ llm/                       # LLM 클라이언트 래퍼 (제공자 교체 지점)
 │  │  ├─ base.py                 # 공통 인터페이스·재시도·타임아웃·사용량 기록
-│  │  └─ providers.py            # Claude·OpenAI·OpenAI 호환 sLLM, LLM_PROVIDER로 선택
+│  │  ├─ providers.py            # Claude·OpenAI·OpenAI 호환 sLLM, LLM_PROVIDER로 선택
+│  │  └─ media.py                # 그림·영상 생성 클라이언트(IMAGE_PROVIDER·VIDEO_PROVIDER, 가짜 구현), 컷 이어 붙이기 (#437, imageio-ffmpeg)
 │  ├─ messaging/
 │  │  ├─ envelope.py
 │  │  ├─ connection.py
@@ -700,7 +714,7 @@ backend/report-service/
 |---|---|---|
 | core | ALB(서브넷 ipBlock), ai, scoring, learning, report-worker, Prometheus | learning, ai, scoring(모델 사전 검사 #368), report-api, RabbitMQ(5672·15672), Redis, RDS, 토스(NAT) |
 | learning | core, ai, report-api, report-worker, Prometheus | core, ai, RabbitMQ, RDS |
-| ai | core, learning, report-worker, Prometheus | learning, scoring, core, RabbitMQ, LLM API(NAT), 설명 sLLM 서버(#476) |
+| ai | core, learning, report-worker, Prometheus | learning, scoring, core, RabbitMQ, LLM API(NAT), 설명 sLLM 서버(#476), 이미지 생성 API·Google Cloud 영상 API(NAT, #437), S3(테마 초안 이미지·영상 쓰기, #437) |
 | scoring | ai, core(모델 사전 검사 #368), Prometheus | core, RabbitMQ, S3 |
 | report-api | core, Prometheus | learning(근거 조회), RDS, S3 |
 | report-worker | Prometheus | core, learning, ai, RabbitMQ, RDS, S3 |
