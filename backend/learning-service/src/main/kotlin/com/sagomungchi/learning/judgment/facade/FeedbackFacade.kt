@@ -3,7 +3,7 @@ package com.sagomungchi.learning.judgment.facade
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning.attempt.domain.Attempt
 import com.sagomungchi.learning.attempt.service.AttemptService
-import com.sagomungchi.learning.judgment.client.AiCallException
+import com.sagomungchi.learning._common.client.AiCallException
 import com.sagomungchi.learning.judgment.client.AiClient
 import com.sagomungchi.learning.judgment.client.AiElementResult
 import com.sagomungchi.learning.judgment.client.AiFollowupElement

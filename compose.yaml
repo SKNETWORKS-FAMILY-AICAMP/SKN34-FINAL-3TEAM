@@ -222,7 +222,7 @@ services:
       M2_NARRATIVE_HIGH: "${M2_NARRATIVE_HIGH:-4.0}"
       M2_ESSAY_LOW: "${M2_ESSAY_LOW:-1.0}"
       M2_ESSAY_HIGH: "${M2_ESSAY_HIGH:-2.0}"
-      M1_CHECK_ENABLED: "${M1_CHECK_ENABLED:-false}"
+      M1_CHECK_ENABLED: "${M1_CHECK_ENABLED:-false}" # M1 미지원(#501): learning이 answerKey·solution을 보내지 않아 켜도 M1을 부르지 않음
       M1_MIN_CONFIDENCE: "${M1_MIN_CONFIDENCE:-0.8}"
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}

@@ -1356,7 +1356,7 @@ sequenceDiagram
   AW->>C: POST /admin/error-reports/{id}/corrections {reason, corrected}
   C->>L: POST /internal/judgments/{judgmentId}/corrections (Idempotency-Key)
   L->>L: judgment_correction 추가 (기존 판정·원본 답변 불변)
-  L-->>C: 201
+  L-->>C: 200 {correctionId, previousResult, corrected, createdAt, impact}
   C->>R: GET /internal/reports/correction-impact?studentId&attemptId (#244, 실패 시 UNKNOWN)
   R-->>C: 그 시도로 만든 완료 판
   C->>L: GET /internal/support/attempts/{attemptId} (판정의 답변 ID 확인, #244)
@@ -1494,7 +1494,7 @@ sequenceDiagram
   AW->>C: GET /admin/achievement-standards?subject&gradeBand&q
   C->>L: GET /internal/admin/achievement-standards
   L-->>AW: 성취기준 목록 (core 경유)
-  AW->>C: POST /admin/mission-drafts {standardCodes, achievementLevels, thinkingType, grade, inputType}
+  AW->>C: POST /admin/mission-drafts {standardCodes, achievementLevels, thinkingType, gradeMin, gradeMax, inputType}
   C->>C: CONTENT 권한, 요청 감사
   C->>L: POST /internal/admin/mission-drafts
   L->>LDB: 성취기준 실재·학년군 확인 → mission_draft GENERATING (attempts 0)
@@ -1502,7 +1502,7 @@ sequenceDiagram
 
   loop MissionDraftScheduler 주기 (기준안 10초)
     L->>LDB: GENERATING·리스 없음/만료 초안 하나 조건부 UPDATE로 점유 (lease 90초)
-    L->>A: POST /internal/mission-drafts {성취기준·성취수준 문장, 유형 표준 요소, 학년, 입력 방식, previousFailures}
+    L->>A: POST /internal/mission-drafts {성취기준·성취수준 문장, 유형 표준 요소, 학년 범위(gradeMin·gradeMax), 입력 방식, previousFailures}
     A->>LLM: 구조화 출력 1회 (60초, 재시도 없음, P12 예외 #353)
     A->>A: 필수 항목·질문 길이·정답·금지어 노출 검사
     A-->>L: {draft, checks, versions}
