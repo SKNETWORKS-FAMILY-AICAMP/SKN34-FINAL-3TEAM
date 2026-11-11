@@ -597,7 +597,7 @@ backend/report-service/
 │  │  ├─ repository.py           # 삭제 장벽·processed_event DB 작업 (#252)
 │  │  └─ state.py                # DeleteStudent·순수 삭제/생성 허용 규칙
 │  ├─ outbox/                    # report.started·completed·failed
-│  │  ├─ service.py              # 동일 트랜잭션의 subject별 삭제·발행 완료 보존 정리 진입점 (#252, #278)
+│  │  ├─ service.py              # 동일 트랜잭션의 이벤트 저장·subject별 삭제·발행 완료 보존 정리 진입점 (#252, #278, #503)
 │  │  ├─ repository.py
 │  │  ├─ relay.py                # 학생별 선두 발행·재시도·격리 (#131)
 │  │  └─ manage.py               # 격리 이벤트 운영 CLI (#131)

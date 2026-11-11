@@ -1272,7 +1272,7 @@ core 자체의 권한·상태·본문 충돌 오류는 기존 계약을 유지�
 
 ### 5.9 리포트 작업 복구 (#132)
 
-`POST /internal/report-jobs/{jobId}/reconcile` (core → report). 내부 토큰 + SYSTEM + 정확히 한 학생 scope가 필요하다. 요청 `{studentId,periodFrom,periodTo}`는 core 작업의 학생·월~일 날짜다. report는 기존 행/차단 기록과 세 값을 대조하며 불일치는 409 `REPORT_JOB_IDENTITY_MISMATCH`로 거부한다.
+`POST /internal/report-jobs/{jobId}/reconcile` (core → report). 내부 토큰 + SYSTEM + 정확히 한 학생 scope가 필요하다. 요청 `{studentId,periodFrom,periodTo,periodType?}`는 core 작업의 학생·기간·기간 종류다. periodType 생략은 WEEKLY(월~일), DAILY는 periodFrom=periodTo 하루만 허용한다(#391). report는 기존 행/차단 기록과 이 값들을 대조하며 불일치는 409 `REPORT_JOB_IDENTITY_MISMATCH`로 거부한다.
 
 200 응답은 `{jobId,studentId,periodFrom,periodTo,status,reportId,failureReason}`이다. status는 BUSY·COMPLETED·FAILED. BUSY는 reportId/failureReason null, COMPLETED는 실제 reportId 필수·사유 null, FAILED는 실제 ID가 있을 때만 reportId 및 원문 없는 대문자 사유 코드다. 원문·서술·파일 URL은 반환하지 않는다. `Cache-Control: no-store`. DB/통신 실패는 오류이며 종료로 간주하지 않는다.
 
@@ -1398,9 +1398,9 @@ report-worker는 생성 시작 시 한 번 조회하여 command에 고정한다.
 #### #391 report 일일 생성·주간 테마 소비 계약
 
 - report 내부 목록 `GET /internal/reports`는 선택 `periodType=DAILY|WEEKLY`를 받는다. 미지정은 두 종류 모두이며 `(studentId,periodType,periodFrom)`별 최신 판이다. 상세·목록에 periodType을 반환하고 상세 problems는 일일, themeSummary는 주간에 사용한다. 구체적인 중첩 필드는 report OpenAPI를 따른다. core 공개 프록시는 #390에서 연결한다.
-- 일일 항목은 PROBLEM으로 저장한다. `mission.id`, `feedback.followup.question`, 판정·요소와 제출 답변을 기존 learning 응답에서 읽는다. `context`는 #385 적용 전 null이며 임의로 추정하지 않는다. 원문 비공개면 finalAnswer=null, followups/quotes=[], reflection.text=null, evidence 없음. 일일은 비율·서술·저녁 질문을 생성하지 않는다.
+- 일일 항목은 PROBLEM으로 저장한다. `mission.id`, `feedback.followup.question`, 판정·요소와 제출 답변을 기존 learning 응답에서 읽는다. `context`는 learning 기록 응답 값을 그대로 쓰며 임의로 추정하지 않는다. 원문 비공개면 finalAnswer=null, followups/quotes=[], reflection.text=null, evidence 없음. 일일은 비율·서술·저녁 질문을 생성하지 않는다.
 - learning `GET /internal/records/students/{studentId}/daily-attempts?from&to&page&size`는 같은 KST 날짜의 **완료 시각**으로 조회한다. 기존 P08의 제출일 조회와 분리하며 응답은 RecordPage와 같다. 전날 제출·오늘 완료도 포함한다. 학생 scope·삭제 검사와 페이지 제한은 기존 기록 조회와 같다.
-- learning 주간 테마 summary API 구현은 #385에 남아 있다. report 소비 계약은 `{studentId,weekStart,state,themeId,title,days:[{day(MON~FRI),missionId,title?,completed}],completed,reviewRetries:[{missionId,title?,comparison?{state,elements:[{label,previousSatisfied,currentSatisfied}]}}]}`이다. 날짜·학생 범위를 검증하며 NO_RECORD는 themeId/title=null, 배열=[], completed=false다. HTTP 오류·형식 오류를 NO_RECORD로 숨기지 않는다. 실제 producer와의 연동 확인은 #385 완료 후 수행한다.
+- learning 주간 테마 summary API는 #385에서 구현했다(내부 API 표 `GET /internal/students/{studentId}/weekly-theme/summary`). report 소비 계약은 `{studentId,weekStart,state,themeId,title,days:[{day(MON~FRI),missionId,title?,completed}],completed,reviewRetries:[{missionId,title?,comparison?{state,elements:[{label,previousSatisfied,currentSatisfied}]}}]}`이다. 날짜·학생 범위를 검증하며 NO_RECORD는 themeId/title=null, 배열=[], completed=false다. HTTP 오류·형식 오류를 NO_RECORD로 숨기지 않는다.
 - 복구 요청 `POST /internal/report-jobs/{jobId}/reconcile`도 periodType을 받는다. 미지정 WEEKLY, DAILY는 하루만 허용한다. 응답은 기존 7개 필드를 유지하며 periodType을 추가하지 않는다.
 
 - #391 learning 기록 목록·상세·일일 완료 목록은 `context: THEME_DAY|THEME_REVIEW|EXTRA`를 실제 시도에서 반환한다. 주간 요약은 기존 #207 비교 규칙의 상태·요소만 포함하며 답변 원문·인용은 반환하지 않는다.
