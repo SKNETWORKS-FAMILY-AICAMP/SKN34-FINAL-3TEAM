@@ -328,6 +328,8 @@ def check_cuts(theme: Theme) -> list[str]:
             mood = cut.get("mungchiMood")
             if mood not in MUNGCHI_MOODS:
                 bad.append(f"CUT_MOOD {key}{i} mungchiMood는 {list(MUNGCHI_MOODS)} 중 하나")
+            elif key == "outroCuts" and mood == "none":
+                bad.append(f"CUT_MOOD {key}{i} 종료 콘티는 모두 뭉치가 나와 none이 아님")
             elif key == "introCuts" and i <= len(INTRO_MUNGCHI):
                 if INTRO_MUNGCHI[i - 1] and mood == "none":
                     bad.append(f"CUT_MOOD {key}{i} 뭉치가 나오는 컷이라 none이 아님")
@@ -469,7 +471,11 @@ def check_mission(
         *[c.label for c in draft.choices or []],
     ]
     if key and any(key in compact(x) for x in texts):
-        bad.append("THEME_ANSWER_LEAK 문제·안내·생각 열기 질문·예시 답에 테마 정답")
+        bad.append(
+            "THEME_ANSWER_LEAK 문제·안내·생각 열기 질문·예시 "
+            f"답에 테마 정답 낱말 '{theme['answer']}'"
+            "(장소 후보 이름은 쓰지 않음)"
+        )
     if any(FOREIGN.search(x) for x in [*texts, draft.title]):
         bad.append("LANGUAGE 한국어 밖 글자(가나·한자)")
     return bad
@@ -541,8 +547,10 @@ def check_dialogue(
         bad.append("SELF_NAME 말하는 사람이 자기 이름을 3인칭으로 부름")
     answers, numeric = mission_checks._answer_texts(draft)
     key = compact(theme["answer"])
-    for x in lines:
-        text = x["text"]
+    # 유출 검사는 LLM이 만든 줄만. 끝 두 줄은 줄거리 검사가 이미 봤고 대화를 다시 만들어도 바뀌지
+    # 않음(점검 C10: 미션 금지어가 그 줄 낱말과 겹치면 모든 시도가 같은 이유로 실패)
+    for x in llm_lines:
+        text = x.get("text") or ""
         # 질문과 끝 두 줄은 학생이 이미 보는 글이라 예시 답과 겹쳐도 유출로 보지 않음
         for reason in find_text_leaks(
             text,
@@ -556,7 +564,7 @@ def check_dialogue(
         if numeric and any(mission_checks._has_number(text, n) for n in numeric):
             bad.append("LEAK ANSWER_KEY")
         if key and key in compact(text):
-            bad.append("THEME_ANSWER_LEAK 대화에 테마 정답")
+            bad.append(f"THEME_ANSWER_LEAK 대화에 테마 정답 낱말 '{theme['answer']}'")
     return list(dict.fromkeys(bad))
 
 
@@ -627,7 +635,23 @@ SPOT_LABEL_MAX = 10
 SPOT_LINE_MAX = 30
 
 
-def spots(generated: list[dict], theme: Theme, day: str | None) -> tuple[list[dict], list[str]]:
+def spot_leaks(draft: Draft, text: str, overlap: int) -> bool:
+    """살펴보기 글이 미션 답·금지어·예시 답을 말하는지(대화와 같은 검사, 점검 C20)."""
+    answers, numeric = mission_checks._answer_texts(draft)
+    if find_text_leaks(
+        text, answers, draft.forbidden_terms, draft.example_answer, overlap, [draft.question]
+    ):
+        return True
+    return bool(numeric and any(mission_checks._has_number(text, n) for n in numeric))
+
+
+def spots(
+    generated: list[dict],
+    theme: Theme,
+    day: str | None,
+    draft: Draft | None = None,
+    overlap: int = 12,
+) -> tuple[list[dict], list[str]]:
     """생성 모델의 살펴보기 물건 → 응답 spots와 맞춘 사유(warnings MOTION).
 
     요일 장면만. 이름·한마디가 비거나 길면, 한마디가 그날 단서 결론(허용 값)을 미리 말하거나
@@ -652,6 +676,8 @@ def spots(generated: list[dict], theme: Theme, day: str | None) -> tuple[list[di
             why = "한마디가 그날 단서 결론을 미리 말함(CLUE_EARLY)"
         elif any(n and n in compact(label + line) for n in names):
             why = "후보·정답 이름(ANSWER_LEAK)"
+        elif draft is not None and spot_leaks(draft, label + " " + line, overlap):
+            why = "미션 답·금지어(LEAK)"
         if why:
             notes.append(f"MOTION_SPOT spots{i} {why}이라 뺌")
             continue

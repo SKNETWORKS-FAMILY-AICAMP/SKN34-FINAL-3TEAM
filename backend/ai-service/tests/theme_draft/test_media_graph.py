@@ -22,6 +22,7 @@ from app.bootstrap import create_app
 from app.config import get_settings
 from app.llm.base import LlmError, LlmRequest, ProviderResponse, T
 from app.llm.media import FakeImageClient, FakeVideoClient, tiny_png
+from app.mission_draft.models import Draft
 from app.mission_draft.prompts import GeneratedDraft
 from app.prompt_versions.registry import ActiveVersions
 from app.theme_draft.checks import DAY_TYPE, DAYS, VIDEO_REVIEW_IDS, motion, spots
@@ -296,9 +297,17 @@ def test_images_motion_and_video_off_warning() -> None:
     mon_user = next(u for u in motion_users if u["scene"] == "MON")
     assert mon_user["dayInfo"]["discovery"] == DISCOVERY["MON"]
     assert mon_user["dayInfo"]["missionQuestion"] == mission_draft("ANALYZE").question
-    assert "clue" not in json.dumps(mon_user) and "젖음" not in json.dumps(
-        mon_user, ensure_ascii=False
-    )
+    # 증거 종류와 피할 낱말(그날 단서 값·후보 이름·미션 금지어)을 함께 줌(점검 C3·C11·C20)
+    assert set(mon_user["dayInfo"]) == {
+        "discovery",
+        "evidenceKind",
+        "missionQuestion",
+        "hints",
+        "avoidWords",
+    }
+    assert mon_user["dayInfo"]["evidenceKind"] == "TRACE"
+    assert "젖음" in mon_user["dayInfo"]["avoidWords"]
+    assert all(c in mon_user["dayInfo"]["avoidWords"] for c in valid_theme()["candidates"])
     assert "dayInfo" not in next(u for u in motion_users if u["scene"] == "INTRO")
     assert set(dumped["camera"]) == {"from", "to", "seconds"}  # 계약 ThemeMotion 형식
 
@@ -385,7 +394,13 @@ def test_video_success_joins_cuts_with_captions() -> None:
     assert set(video.negatives) == {VIDEO_NEGATIVE}
     assert sorted(c[3] for c in video.calls) == sorted([4, 6, 8, 6] * 2 + [6])
     smile = [c[0] for c in video.calls if OUTRO_CUTS[3]["action"] in c[0]]
-    assert "a small smiling mouth" in smile[0] and "Do not show where 강아지 보리" in smile[0]
+    # 종료 4컷은 대상을 보여 줘도 되는 컷이라 숨기라는 문구가 없음(점검 C5)
+    assert "a small smiling mouth" in smile[0] and "Do not show" not in smile[0]
+    first = [c[0] for c in video.calls if INTRO_CUTS[0]["action"] in c[0]][0]
+    assert "may be held or used, but do not show where it is put" in first
+    assert "Mungchi does not appear in this clip." in first  # 시작 1컷은 뭉치 없음(점검 C6)
+    run_cut = [c[0] for c in video.calls if INTRO_CUTS[2]["action"] in c[0]][0]
+    assert "Only Mungchi is in this clip" in run_cut and "Do not show 강아지 보리." in run_cut
     again = [c[0] for c in video.calls if INTRO_CUTS[1]["action"] in c[0]]
     assert len(again) == 2 and "MORPH MORPH 사유" in again[1]
     intro = response.motions["INTRO"]
@@ -504,6 +519,48 @@ def test_motion_check_unit() -> None:
     value, notes = motion(generated, [], [])
     assert value["camera"]["to"] == {"x": 100.0, "y": 0.0, "zoom": 1.0}
     assert value["speakers"] == {} and len(notes) == 4  # x·y·zoom + 화자 아닌 뭉치
+
+
+def test_image_prompts_and_review_follow_drawing_rules() -> None:
+    """그림 규칙과 검토가 맞음(점검 C1·C2·C4·C8): 옷 그림 글자 금지, 증거 종류별로 그릴 것, 찾는
+    대상은 증거가 아님, 검토는 글자·개수를 보지 않음, 종료 콘티만 정답 장소 공개 허용."""
+    from app.theme_draft import prompts
+
+    theme = valid_theme()
+    assert "No letters, numbers, badges or emblems" in prompts.outfit_prompt(theme)
+    mon = prompts.mission_image_prompt(theme, "MON", mission_draft("ANALYZE"), [])
+    assert "the place or object where the trace was left" in mon
+    assert "itself is not the evidence; do not draw it" in mon
+    assert "적힌 내용·정확한 개수" in prompts.IMAGE_REVIEW_SYSTEM
+    assert "장면 글에 없는 등장인물이 함께 있는 것은 결함이 아니다" in prompts.IMAGE_REVIEW_SYSTEM
+    user = json.loads(
+        prompts.image_review_user(
+            theme,
+            "s",
+            ids=("ANSWER_HINT",),
+            has_mungchi=True,
+            shows_target=False,
+            question="q",
+            hints=[],
+            discovery="d",
+            evidence="SIGHTING",
+        )
+    )
+    assert user["evidenceKind"] == "SIGHTING" and user["answerPlaceAllowed"] is False
+    assert prompts.cut_reveals_answer("OUTRO") and not prompts.cut_reveals_answer("INTRO")
+
+
+def test_spots_leak_mission_answer() -> None:
+    """살펴보기 한마디가 미션 금지어를 말하면 그 물건을 뺌(대화와 같은 유출 검사, 점검 C20)."""
+    draft = Draft.model_validate(mission_draft("ANALYZE").model_dump())
+    word = (draft.forbidden_terms or ["비밀낱말"])[0]
+    if not draft.forbidden_terms:
+        draft = draft.model_copy(update={"forbidden_terms": [word]})
+    out, notes = spots(
+        [EV, OTHER, spot("의자", f"{word} 이야기를 해 볼까?")], valid_theme(), "MON", draft
+    )
+    assert [s["label"] for s in out] == ["발자국", "마을 지도"]
+    assert any("LEAK" in n for n in notes)
 
 
 def spot(label: str, line: str, evidence: bool = False, x: float = 50, y: float = 50) -> dict:

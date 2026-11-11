@@ -50,10 +50,16 @@ async def scene_motion(
     day_info = None
     draft = (state.get("drafts") or {}).get(scene) if scene in DAYS else None
     if draft is not None:
+        d = theme_day(theme, scene)
         day_info = {
-            "discovery": theme_day(theme, scene)["discovery"],
+            "discovery": d["discovery"],
+            "evidenceKind": ctx.prompt.body.evidence_kind(d),
             "missionQuestion": draft.question,
             "hints": draft.hints,
+            "avoidWords": [
+                *ctx.prompt.body.avoid_words(theme, scene),
+                *draft.forbidden_terms,
+            ],
         }
     try:
         generated = await ctx.llm.generate(
@@ -74,7 +80,13 @@ async def scene_motion(
         return None, [warning("MOTION", scene, f"MOTION_CALL {exc.code}")]
     captions = captions_of(ctx, theme, scene, scene in (state.get("video_keys") or {}))
     data = generated.data.model_dump()
-    spot_list, spot_notes = spots(data.get("spots") or [], theme, scene if day_info else None)
+    spot_list, spot_notes = spots(
+        data.get("spots") or [],
+        theme,
+        scene if day_info else None,
+        draft,
+        ctx.settings.followup_example_overlap_chars,
+    )
     value, notes = motion(data, speakers, captions, spot_list)
     notes = [*notes, *spot_notes]
     warnings = [warning("MOTION", scene, n) for n in notes]

@@ -70,8 +70,16 @@ async def review_mission(
 EXAMPLE_ONLY = "MISSION_REVIEW EXAMPLE_COMPLETE "
 
 
-def only_example(bad: list[str]) -> bool:
-    return bool(bad) and all(r.startswith(EXAMPLE_ONLY) for r in bad)
+# 예시 답 고쳐 쓰기는 서술·논술·풀이만(고르기·순서·분류는 정답 키라 고쳐 쓰기로 못 고침, 점검 C16)
+EXAMPLE_FIX_TYPES = ("NARRATIVE", "ESSAY", "SOLUTION_STEPS")
+
+
+def only_example(bad: list[str], input_type: str = "NARRATIVE") -> bool:
+    return (
+        input_type in EXAMPLE_FIX_TYPES
+        and bool(bad)
+        and all(r.startswith(EXAMPLE_ONLY) for r in bad)
+    )
 
 
 async def fix_example(
@@ -143,7 +151,7 @@ async def generate_mission(payload: dict[str, Any], runtime: Runtime[ThemeContex
                     "mission_warnings": {day: warns},
                 }
             if (
-                only_example(bad)
+                only_example(bad, request.input_type)
                 and fixes < ctx.settings.theme_max_text_fix
                 and ctx.can_regenerate()
             ):

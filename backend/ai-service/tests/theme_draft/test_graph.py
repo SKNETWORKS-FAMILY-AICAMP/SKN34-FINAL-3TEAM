@@ -189,7 +189,11 @@ def test_mission_prompt_gets_hook_not_clues() -> None:
         assert not [h for h in others if h in user]
     fri = gen.users("GeneratedDraft", "FRI")[0]
     assert theme["bigQuestion"] not in fri
-    assert not [c for c in theme["candidates"] if c in fri]
+    # 후보 이름은 "쓰지 말 낱말" 줄에만(정답이 어느 것인지는 알려 주지 않음, 점검 C13)
+    avoid = [line for line in fri.splitlines() if line.startswith("- 쓰지 말 낱말")]
+    assert len(avoid) == 1 and all(c in avoid[0] for c in theme["candidates"])
+    rest = "\n".join(line for line in fri.splitlines() if line not in avoid)
+    assert not [c for c in theme["candidates"] if c in rest]
     assert "요일:" not in fri
 
 
@@ -510,7 +514,10 @@ def test_text_substitute_and_material_rules_in_prompts() -> None:
     # (줄거리 프롬프트와 맞춤)
     assert "설계상 허용" in prompts.REVIEW_SYSTEM and "지나간" in prompts.REVIEW_SYSTEM
     tue = prompts.mission_extra(valid_theme(), "TUE", 3, [])
-    assert "다른 관점(반대 의견·예외)에 답하는 것을 꼭 묻는다" in tue
+    # 다른 관점은 질문·예시 답에 넣고 필수 여부는 관리자가 요소에서 정함(점검 C19)
+    assert "다른 관점(반대 의견·예외)을 생각해 답하는 부분을" in tue and "관리자가" in tue
+    assert "선택처럼 쓰였다는 이유로 결함이 아니다" in prompts.MISSION_REVIEW_SYSTEM
+    assert "선택처럼 쓰였다는 이유로 결함이 아니다" in prompts.REVIEW_SYSTEM
 
 
 def test_theme_missions_use_theme_question_limit() -> None:

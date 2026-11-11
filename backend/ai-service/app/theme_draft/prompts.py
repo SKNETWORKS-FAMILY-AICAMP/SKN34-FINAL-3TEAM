@@ -73,7 +73,9 @@ PLAN_SYSTEM = (
     "성취기준 활동이 자연스럽게 나올 거리(물건·불편한 일·상황)를 넣되, 그날 문제의 답(만들 "
     "물건·계산 결과·고를 답·바뀐 "
     "생각)은 쓰지 않는다(학생이 생각할 몫). 뭉치가 지나는 길에 탁자 같은 물체를 두지 않고, 소품은 "
-    "쓰임새대로 쓴다.\n"
+    "쓰임새대로 쓴다. 그림에는 글자·숫자를 그리지 않으므로 쓰인 내용·정확한 개수처럼 글로만 보이는 "
+    "것과 생각·떠올리기처럼 그릴 수 없는 행동은 sceneNote에 "
+    "쓰지 않는다(그런 내용은 문제 글이 준다).\n"
     "- intro는 시작 이야기(200자 이내): 주인 인물이 대상을 잃은 사건, 테마 역할의 뭉치가 현장으로 "
     "출동해 큰 질문을 맡는 데까지. outro는 토요일 종료 이야기(300자 "
     "이내): 뭉치가 모은 단서로 정답을 밝히고 "
@@ -93,7 +95,8 @@ PLAN_SYSTEM = (
     "1·2컷의 mungchiMood는 none, 3·4컷은 none이 아니다. "
     "시작 콘티에는 정답 이름·정답 장소를 쓰지 않는다.\n"
     "- outroCuts 순서: 1 뭉치가 모은 단서를 정리함, 2 정답 장소로 감, "
-    "3 정답 장소에서 대상을 찾아 주인에게 돌려줌, 4 함께 기뻐함.\n"
+    "3 정답 장소에서 대상을 찾아 주인에게 돌려줌, 4 함께 기뻐함. 종료 4컷에는 모두 뭉치가 나온다"
+    "(mungchiMood는 none이 아님). 종료 콘티는 정답 공개 뒤라 정답 이름·정답 장소를 써도 된다.\n"
     "- 영상 속에는 글자를 넣지 않으므로 scene·action에 글자·숫자가 보이는 "
     "장면(쓰인 간판 등)을 쓰지 않는다.\n"
     "\n"
@@ -105,8 +108,9 @@ PLAN_SYSTEM = (
     "증명할 수 없음). candidates는 주어진 개수, 각 2~10자 명사(예: 빵집 뒤뜰). 후보 이름에 색 "
     "낱말(빨간·파란·노란·초록 등)을 "
     "쓰지 않는다. answer는 후보 중 하나.\n"
-    "- 정답 이름은 outro에만 쓴다. title·world·intro·bigQuestion·styleNote·outfit과 days의 "
-    "place·sceneNote·clue·discovery·missionHook에 쓰지 않는다.\n"
+    "- 정답 이름은 outro와 outroCuts에만 쓴다. "
+    "title·world·intro·bigQuestion·styleNote·outfit과 days의 "
+    "place·sceneNote·clue·discovery·missionHook, introCuts에 쓰지 않는다.\n"
     "\n"
     "특징 표(features) — 정답 논리는 이 표로 코드가 확인한다\n"
     "- 후보를 가려낼 특징 2~5개. 특징마다 name과 values(후보마다 값 하나, [{candidate, value}]). "
@@ -115,7 +119,8 @@ PLAN_SYSTEM = (
     "- 특징은 되도록 그 주 요일별 성취기준 내용에서 고른다(예: 사는 곳·환경을 배우면 주변 바닥이나 "
     "물기, 길이·거리를 "
     "계산하면 거리, 무게를 비교하면 무게). 어울리는 것이 없으면 장면에서 고른다.\n"
-    "- 값은 그 장소·물건에 실제로 그럴 법해야 한다.\n"
+    "- 값은 그 장소·물건에 실제로 그럴 법해야 한다. 값에 등장인물 이름을 쓰지 않는다(목격 증거 "
+    "발견 줄이 본 사람을 말하므로 그 이름이 단서 결론이 되어 버림).\n"
     "- standardCode: 그 특징을 그날 성취기준 내용에서 골랐으면 그 성취기준 코드, 장면에서 골랐으면 "
     "null.\n"
     "\n"
@@ -258,6 +263,8 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
             names,
         ]
     if key == "caption":
+        if head.startswith("outroCuts"):
+            return ["영상 위에 띄우는 짧은 문구. 종료 콘티라 정답 이름을 써도 된다."]
         return ["영상 위에 띄우는 짧은 문구. 정답 이름·정답 장소를 쓰지 않는다."]
     return ["정답 이름은 종료 이야기(outro)에만 쓴다." if path != "outro" else ""]
 
@@ -350,7 +357,13 @@ def story_text(theme: Theme, day: str, grade: int, knowledge: list[str] | None =
         "비교 문제로 만들지 않는다(정답 수가 문제 글에 보이면 유출 검사에 걸림).",
         f"- 찾는 대상: {theme.get('target') or ''}. 아직 찾지 못했으므로 문제에서 지금 보거나 "
         "만지거나 곁에 있는 것처럼 "
-        "쓰지 않는다.",
+        "쓰지 않는다. 사진·영상·기록에 찍힌 지나간 때의 "
+        "모습은 써도 된다(지금 있는 곳은 쓰지 않음).",
+        "- 쓰지 말 낱말(이번 주 장소 후보 이름): "
+        f"{', '.join(theme.get('candidates') or []) or '없음'}. "
+        "문제·안내·생각 열기 질문·예시 답에 쓰지 않는다.",
+        "- 위 증거 발견 줄·수사 연결 문장의 낱말은 "
+        "forbiddenTerms에 넣지 않는다(학생이 대화로 보는 줄).",
         f"- 생각 열기 질문(hints)은 정확히 {HINTS[grade]}개. question 글에 나온 장소·물건·자료를 "
         "가리켜 생각을 열게 쓰되 정답·풀이는 주지 않는다. question 글에 없는 그림 속 모습·안내판"
         "을 떠올리게 하지 않는다(미션 그림은 question과 생각 열기 질문으로 그림).",
@@ -366,8 +379,9 @@ def story_text(theme: Theme, day: str, grade: int, knowledge: list[str] | None =
     ]
     if DAY_TYPE[day] == "EVALUATE":
         lines += [
-            "- 따져 보기는 자기 주장·근거와 함께 다른 관점(반대 의견·예외)에 답하는 것을 꼭 묻는다"
-            "(선택 사항으로 두지 않는다).",
+            "- 따져 보기는 자기 주장·근거와 함께 다른 관점(반대 의견·예외)을 생각해 답하는 부분을 "
+            "질문에 넣고 예시 답에도 쓴다. 그 부분을 필수로 볼지는 관리자가 미션 요소에서 정한다"
+            "(요소 기본값은 미션 초안 규칙 그대로).",
         ]
     if day == "FRI":
         lines += [
@@ -432,6 +446,14 @@ def llm_line_range(grade: int) -> tuple[int, int]:
     return max(lo - 2, 0), max(hi - 2, 0)
 
 
+def avoid_words(theme: Theme, day: str) -> list[str]:
+    """문제 전 글(대화 LLM 줄·살펴보기)이 피할 낱말: 그날 "
+    "단서 허용 값과 장소 후보 이름(점검 C11·C13)."""
+    d = next(x for x in theme["days"] if x["day"] == day)
+    allowed = (d.get("condition") or {}).get("allowed") or []
+    return list(dict.fromkeys([*allowed, *(theme.get("candidates") or [])]))
+
+
 def dialogue_user(theme: Theme, day: str, draft: Draft, grade: int, feedback: list[str]) -> str:
     """그날 단서는 넣지 않는다(학생이 미션을 마친 뒤 보여 줌). 끝 두 줄이 될 증거 발견 줄과
     수사 연결 문장만 준다."""
@@ -450,6 +472,8 @@ def dialogue_user(theme: Theme, day: str, draft: Draft, grade: int, feedback: li
         f"찾는 대상(대화에서 말하지 않고 나타나지 않음): {theme.get('target') or ''}",
         f"오늘 문제(대화 뒤에 나옴, 값·풀이·답을 대화에 쓰지 않음): {draft.question}",
         f"금지어: {', '.join(draft.forbidden_terms) or '없음'}",
+        "쓰지 말 낱말(단서 결론·장소 후보 이름, 대화 LLM 줄에): "
+        + (", ".join(avoid_words(theme, day)) or "없음"),
     ]
     if feedback:
         lines += [
@@ -498,7 +522,8 @@ REVIEW_SYSTEM = (
     "전 모습과, 사진·영상·기록에 찍힌 그때(지나간 "
     "때)의 대상 모습은 허용. 지금 있는 곳이 드러나면 결함). "
     "단서가 그날 장면의 이야기 속 사실인지(문제 활동의 결과가 아닌지).\n"
-    "ANSWER_HINT: 종료 이야기(outro) 말고 학생이 보는 글(intro·장면·증거 발견 줄·수사 연결 "
+    "ANSWER_HINT: 종료 이야기(outro)·종료 콘티(outroCuts) "
+    "말고 학생이 보는 글(intro·장면·증거 발견 줄·수사 연결 "
     "문장·문제·안내·생각 열기 질문·예시 "
     "답·대화)이 정답을 직접 "
     "쓰거나 목요일 전에 정답을 확정하지 않는지. 월~수의 빈 rulesOut 단서가 정답 하나만 가리키지 "
@@ -507,7 +532,8 @@ REVIEW_SYSTEM = (
     "문장(missionHook)·대화·미션이 그날 단서 결론이나 정답을 미리 말하지 않는지. 수사 연결 문장이 "
     "그날 배울 개념·방법 이름(예: 분수 곱셈, 넓이 "
     "구하기)을 말하는 것은 설계상 허용이다(단서 결론·정답을 "
-    "말할 때만 결함). 장면·대화가 그날 "
+    "말할 때만 결함). 그 개념 낱말이 단서 값 낱말과 같아도 장소·때와 묶어 결론으로 말하지 않으면 "
+    "허용. 장면·대화가 그날 "
     "문제의 답(만들 물건·계산 "
     "결과 등)을 미리 알려 "
     "주지 않는지.\n"
@@ -517,7 +543,11 @@ REVIEW_SYSTEM = (
     "미션이므로 협력처럼 혼자 할 수 없는 부분은 보지 않고 핵심 "
     "행동(설명·구분·설계·계산·점검 등)을 본다. "
     + TEXT_ONLY
-    + " 정답 키·예시 답이 문제와 맞는지(계산이면 값이 맞는지, 풀이는 finalAnswer).\n"
+    + " 정답 키·예시 답의 계산 값이 맞는지(풀이는 finalAnswer). "
+    "예시 답이 질문을 빠짐없이 답하는지는 "
+    "미션 검토가 이미 봤으므로 보지 않는다. 따져 보기의 "
+    "다른 관점은 질문에 들어 있으면 되고 선택처럼 "
+    "쓰였다는 이유로 결함이 아니다(필수 여부는 관리자가 정함).\n"
     "SAFETY: 폭력·범죄·위험·무서운 내용, 차별, 실존 인물·상표, 개인정보가 없는지.\n"
 )
 
@@ -596,13 +626,18 @@ MISSION_REVIEW_SYSTEM = (
     "맞는지.\n"
     "STANDARD_FIT: 질문이 주어진 성취기준의 핵심 행동을 학생이 직접 하게 하고 생각 유형과 맞는지. "
     "학생 혼자 글로 답하는 "
-    "미션이므로 협력처럼 혼자 할 수 없는 부분은 보지 않는다. " + TEXT_ONLY + "\n"
+    "미션이므로 협력처럼 혼자 할 수 없는 부분은 보지 않는다. "
+    + TEXT_ONLY
+    + " 따져 보기의 다른 관점은 "
+    "질문에 들어 있으면 되고 선택처럼 쓰였다는 이유로 결함이 아니다(필수 여부는 관리자가 정함).\n"
     "MATERIAL: 답하는 데 필요한 것(읽을 글·비교할 글·수·관찰할 모습)이 질문 글 안에 다 있는지. "
     "그림에만 있는 정보나 주어지지 "
     "않은 글(예: '처음 쓴 글'을 비교하라는데 그 글이 없음)에 기대면 결함. 사진·녹음·그림·영상·"
     "지도·활동지를 보거나 듣게 하는데 그 내용이 질문 글에 없으면 결함. target이 주어지면, "
     "문제가 그 대상을 지금 보거나 "
-    "곁에 있는 것처럼 쓰면 결함(아직 찾지 못한 대상).\n"
+    "곁에 있는 것처럼 쓰면 결함(아직 찾지 못한 대상). "
+    "사진·영상·기록에 찍힌 지나간 때의 대상 모습은 "
+    "허용(지금 있는 곳이 드러나면 결함).\n"
 )
 
 
@@ -633,11 +668,14 @@ EXAMPLE_FIX_SYSTEM = (
     "너는 초등 미션의 예시 답만 고쳐 쓰는 출제자다. 질문·생각 열기 질문은 바꾸지 않는다.\n"
     "- 예시 답은 질문이 묻는 것을 하나도 빠짐없이, 질문에 나온 순서대로 답한다. 질문이 여러 "
     "가지를 물으면(예: 처음 생각·바뀐 생각·까닭, 쓰는 법·처리 방법) 각각 분명히 답한다.\n"
-    "- 질문 글에 준 자료만 쓰고 새 사실을 지어내지 않는다. 질문이 쓰라고 한 재료·조건은 모두 "
-    "쓴다.\n"
+    "- 사건(흔적·목격·기록)에 관한 새 사실은 지어내지 않는다. 질문이 요구한 자기 경험·새 생각은 "
+    "쓴다. 질문이 쓰라고 한 재료·조건은 모두 쓴다.\n"
+    "- 안내(guide)·생각 열기 질문 문장을 그대로 옮기지 않는다(예시 답 유출 검사에 걸림).\n"
     "- 그 학년 학생이 쓸 만한 말과 길이로 쓴다.\n"
     "- 풀이 문제(inputType SOLUTION_STEPS)면 exampleAnswer에 구할 것·방법·계산·확인을 차례로 쓰고 "
-    "finalAnswer에 최종 답(값과 단위)을 쓴다. 풀이가 아니면 finalAnswer는 null.\n"
+    "finalAnswer에 최종 답을 단위 없이 값만 쓴다(단위는 "
+    "exampleAnswer에). 풀이가 아니면 finalAnswer는 "
+    "null.\n"
     "- 검토 사유를 모두 고친다.\n"
     "- 예시 답은 계획·방법 설명이 아니라 질문이 요구한 결과물 자체다. 까닭을 둘 이상 요구하면 서로 "
     "다른 까닭을 쓴다. " + TEXT_ONLY
@@ -690,6 +728,7 @@ def outfit_prompt(theme: Theme) -> str:
         "Edit this picture. Keep the picture exactly as it is: Mungchi's body, face, eyes, "
         "cheeks, feet, hand positions, size, position, colors and the background stay "
         f"identical. Only add the theme outfit: {theme['outfit']}. Nothing in the hands. "
+        "No letters, numbers, badges or emblems on the outfit. "
         f"{IMAGE_STYLE}"
     )
 
@@ -721,6 +760,23 @@ def _no_target(theme: Theme) -> str:
     return f"Do not draw {theme.get('target') or 'the missing target'} anywhere in this picture."
 
 
+# 그날 증거 종류별로 그림·살펴보기에서 보여 줄 것(찾는 대상 자체는 증거가 아님, 점검 C2·C3)
+EVIDENCE_EN = {
+    "TRACE": "the place or object where the trace was left",
+    "RECORD": "the photo or record object",
+    "SIGHTING": "the person who saw it",
+}
+
+
+def evidence_kind(day: dict) -> str:
+    return str((day.get("evidence") or {}).get("kind") or "")
+
+
+def cut_reveals_answer(scene: str) -> bool:
+    """정답 장소를 보여 줘도 되는 컷: 종료 콘티(정답 공개 뒤)."""
+    return scene == "OUTRO"
+
+
 def mission_image_prompt(theme: Theme, day: str, draft: Draft, feedback: list[str]) -> str:
     """요일 미션 그림: 스타일·뭉치·인물·그날 장면 + 그날 증거 발견 줄 + 미션 질문·생각 열기 질문.
 
@@ -733,8 +789,9 @@ def mission_image_prompt(theme: Theme, day: str, draft: Draft, feedback: list[st
         MUNGCHI_LOOK.format(outfit=theme["outfit"]),
         _characters(theme),
         f"Scene (Korean): 장소 {d['place']}. {d['sceneNote']}",
-        "Today's evidence (Korean). Draw the evidence object it mentions clearly visible: "
-        f"{d['discovery']}"
+        f"Today's evidence (Korean): {d['discovery']}. Draw "
+        f"{EVIDENCE_EN.get(evidence_kind(d), 'the evidence')} clearly visible. "
+        f"{theme.get('target') or 'The missing target'} itself is not the evidence; do not draw it."
         if d.get("discovery")
         else "",
         "Today's question for the student (Korean). Every object or place the question and the "
@@ -789,16 +846,28 @@ IMAGE_REVIEW_SYSTEM = (
     "주인공 뭉치의 기준 모습(테마 옷)이다. 주어진 항목(items)마다 verdict를 PASS(문제 없음)·"
     "WARN(애매해서 사람이 볼 것)·FAIL(분명한 결함, 다시 그려야 함) 중 하나로 쓰고 근거 한 "
     "문장(reason)을 쓴다. 주어진 항목을 모두 한 번씩 쓴다. 분명한 결함만 FAIL로 한다.\n"
+    "그림에는 글자·숫자를 그리지 않는다(그림 규칙). "
+    "그래서 모든 항목에서 물건·장소·인물이 보이는지만 "
+    "보고, 적힌 내용·정확한 개수·그림 속 사진이나 종이 "
+    "안의 내용, 생각·말·시선처럼 그림으로 보일 수 "
+    "없는 것은 판단하지 않는다(그 내용은 문제 글이 준다).\n"
     "MUNGCHI: 뭉치가 나와야 하는 그림이면 기준 모습과 같은지(크림색 몽글몽글한 몸, 몸 아래쪽 "
-    "가운데 얼굴, 흰자 없는 점 눈, 분홍 볼, 작은 손, 갈색 짧은 발, 테마 옷). 뭉치가 나오지 "
-    "않아야 하는 그림이면 나오지 않는지.\n"
-    "ANSWER_HINT: 찾는 대상이 나오면 안 되는 그림(targetAllowed false)에 찾는 대상이 보이는지, "
-    "정답 장소가 드러나는지(생각 풍선·화살표 등으로 대상이 있는 곳을 보여 주는지).\n"
+    "가운데 얼굴, 흰자 없는 점 눈, 분홍 볼, 작은 손, "
+    "갈색 짧은 발, 테마 옷). 손에 든 물건·자세·표정은 "
+    "장면에 따라 달라도 된다. 뭉치가 나오지 않아야 하는 그림이면 나오지 않는지.\n"
+    "ANSWER_HINT: 찾는 대상이 나오면 안 되는 "
+    "그림(targetAllowed false)에 찾는 대상이 보이는지. 정답 "
+    "장소 공개가 허용되지 않은 그림(answerPlaceAllowed "
+    "false)에 생각 풍선·화살표처럼 대상이 있는 곳을 "
+    "가리키는 표시가 있는지(장소가 비슷해 보인다는 이유만으로는 결함이 아님).\n"
     "TEXT: 글자·숫자 같은 글이 보이는지(간판·책·표지에 쓴 글 포함).\n"
     "SAFETY: 무섭거나 위험한 모습, 폭력, 실존 인물·상표가 있는지.\n"
-    "SCENE_FIT: 주어진 장면(장소·인물·하는 일)과 그림이 맞는지.\n"
-    "MISSION_FIT(items에 있을 때만): 미션 질문과 생각 열기 질문이 가리키는 물건·장소, 그날 증거 "
-    "발견 줄(discovery)이 말하는 증거 물건이 그림에 다 보이는지.\n"
+    "SCENE_FIT: 주어진 장면의 장소·인물·하는 일이 그림에 보이는지. 장면 글에 없는 등장인물이 함께 "
+    "있는 것은 결함이 아니다.\n"
+    "MISSION_FIT(items에 있을 때만): 미션 질문과 생각 열기 질문이 가리키는 물건·장소와 그날 증거"
+    "(evidenceKind가 TRACE면 흔적이 남은 자리·물건, "
+    "RECORD면 사진·기록 물건, SIGHTING이면 그것을 본 "
+    "사람)가 그림에 보이는지. 찾는 대상 자체는 증거가 아니라 그리지 않는다.\n"
 )
 
 
@@ -812,6 +881,8 @@ def image_review_user(
     question: str | None = None,
     hints: list[str] | None = None,
     discovery: str | None = None,
+    evidence: str | None = None,
+    answer_place_allowed: bool = False,
 ) -> str:
     body: dict = {
         "items": list(ids),
@@ -821,9 +892,15 @@ def image_review_user(
         "target": theme.get("target") or "",
         "targetAllowed": shows_target,
         "answerPlace": theme.get("answer") or "",
+        "answerPlaceAllowed": answer_place_allowed,
     }
     if question is not None:
-        body |= {"missionQuestion": question, "hints": hints or [], "discovery": discovery or ""}
+        body |= {
+            "missionQuestion": question,
+            "hints": hints or [],
+            "discovery": discovery or "",
+            "evidenceKind": evidence or "",
+        }
     return json.dumps(body, ensure_ascii=False)
 
 
@@ -833,16 +910,32 @@ VIDEO_NEGATIVE = (
 )
 
 
-def video_prompt(theme: Theme, cut: dict, feedback: list[str]) -> str:
-    """컷 동작 + 고정 문구(첫 그림만 고정해 그 그림에서 시작)."""
-    mouth = mood_mouth(cut)
+def video_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list[str]) -> str:
+    """컷 동작 + 고정 문구(첫 그림만 고정해 그 그림에서 시작). 뭉치·찾는 대상 규칙은 그림과 같은
+    컷 판정(cut_has_mungchi·cut_has_characters·cut_shows_target)을 따른다."""
+    target = theme.get("target") or "the missing target"
+    if cut_has_mungchi(scene, index):
+        mouth = mood_mouth(cut)
+        mungchi = [
+            "Keep Mungchi's round fluffy shape and small dot eyes unchanged (no eye whites).",
+            f"Mungchi's expression: {mouth}." if mouth else "",
+        ]
+    else:
+        mungchi = ["Mungchi does not appear in this clip."]
+    if not cut_has_characters(scene, index):
+        mungchi.append("Only Mungchi is in this clip (no other characters).")
+    if (scene, index) == ("INTRO", 1):
+        about_target = f"{target} may be held or used, but do not show where it is put or hidden."
+    elif cut_shows_target(scene, index):
+        about_target = ""
+    else:
+        about_target = f"Do not show {target}."
     lines = [
         f"Action (Korean): {cut['action']}",
         "Keep the 2D cartoon style of the first frame with thick even outlines.",
-        "Keep Mungchi's round fluffy shape and small dot eyes unchanged (no eye whites).",
-        f"Mungchi's expression: {mouth}." if mouth else "",
+        *mungchi,
         "Natural, simple movement. Only one camera move. No text.",
-        f"Do not show where {theme.get('target') or 'the missing target'} is put or hidden.",
+        about_target,
         *_fixes(feedback),
     ]
     return "\n".join(x for x in lines if x)
@@ -853,22 +946,32 @@ VIDEO_REVIEW_SYSTEM = (
     "장면이다. 네 항목마다 verdict를 PASS·WARN·FAIL 중 하나로 쓰고 근거 한 문장(reason)을 쓴다. "
     "네 항목을 모두 한 번씩 쓴다. 분명한 결함만 FAIL로 한다.\n"
     "MORPH: 인물·뭉치의 몸·얼굴·눈 모양이 장면 사이에 녹아내리듯 바뀌거나 팔다리가 늘어나는지, "
-    "2D 그림체가 3D로 바뀌는지.\n"
-    "ANSWER_HINT: 찾는 대상이 나오면 안 되는 컷(targetAllowed false)에 보이거나 정답 장소가 "
-    "드러나는지.\n"
+    "2D 그림체가 3D로 바뀌는지, 뭉치가 나오지 않아야 하는 컷(mungchi 나오지 않아야 함)에 뭉치가 "
+    "나타나는지. 손에 든 물건·자세·표정은 동작에 따라 달라도 된다.\n"
+    "ANSWER_HINT: 찾는 대상이 나오면 안 되는 컷(targetAllowed false)에 대상이 보이는지, 정답 장소 "
+    "공개가 허용되지 않은 컷(answerPlaceAllowed false)에서 대상이 있는 곳을 가리켜 보여 주는지"
+    "(장소가 비슷해 보인다는 이유만으로는 결함이 아님).\n"
     "TEXT: 글자·숫자가 보이는지.\n"
     "SAFETY: 무섭거나 위험한 모습, 번쩍이는 빛, 폭력이 있는지.\n"
 )
 
 
-def video_review_user(theme: Theme, cut: dict, shows_target: bool) -> str:
+def video_review_user(
+    theme: Theme,
+    cut: dict,
+    shows_target: bool,
+    has_mungchi: bool = True,
+    answer_place_allowed: bool = False,
+) -> str:
     return json.dumps(
         {
             "scene": cut["scene"],
             "action": cut["action"],
+            "mungchi": "나와야 함" if has_mungchi else "나오지 않아야 함",
             "target": theme.get("target") or "",
             "targetAllowed": shows_target,
             "answerPlace": theme.get("answer") or "",
+            "answerPlaceAllowed": answer_place_allowed,
         },
         ensure_ascii=False,
     )
@@ -886,12 +989,16 @@ MOTION_SYSTEM = (
     "- effects: 장면 분위기에 맞는 가벼운 효과(눈·꽃잎·잎·물방울 등) 0~2층. color는 #RRGGBB, "
     "count 1~20, size 1~6(그림 너비 %), direction 0~359도(0은 아래로 떨어짐), speed 2~20, "
     "opacity 0.2~0.8. 효과가 어울리지 않으면 빈 목록. 번쩍이거나 무서운 효과는 쓰지 않는다.\n"
-    "- spots: dayInfo가 있는 요일 장면만, 문제 전에 학생이 그림에서 눌러 볼 물건 2~3개. 정확히 "
-    "하나는 그날 찾은 증거(discovery가 말하는 물건, evidence true), 나머지는 미션 질문·생각 열기 "
-    "질문에 나온 물건(evidence false). 그림에 실제로 보이는 물건만 고르고 x·y는 그 물건의 중심. "
-    "label은 물건 이름(10자 이내), line은 눌렀을 때 뭉치가 하는 짧은 말(30자 이내, 증거 물건은 "
-    "찾았다는 말, 다른 물건은 미션을 떠올리게 하는 말). line에 증거가 무엇을 뜻하는지(단서 결론)·"
-    "후보 이름·정답은 쓰지 않는다. dayInfo가 없으면(시작·종료) 빈 목록.\n"
+    "- spots: dayInfo가 있는 요일 장면만, 문제 전에 학생이 그림에서 눌러 볼 것 2~3개. 정확히 "
+    "하나는 그날 증거(evidence true): evidenceKind가 "
+    "TRACE면 흔적이 남은 자리·물건, RECORD면 사진·기록 "
+    "물건, SIGHTING이면 그것을 본 사람. 찾는 대상 "
+    "자체는 증거가 아니다. 나머지는 미션 질문·생각 열기 "
+    "질문에 나온 물건(evidence false). 그림에 실제로 보이는 것만 고르고 x·y는 그 중심. "
+    "label은 이름(10자 이내), line은 눌렀을 때 뭉치가 하는 짧은 말(30자 이내, 증거는 "
+    "찾았다는 말, 다른 물건은 미션을 떠올리게 하는 말). "
+    "label·line에 avoidWords(단서 결론 낱말·후보 "
+    "이름·미션 금지어)와 미션의 값·풀이·답을 쓰지 않는다. dayInfo가 없으면(시작·종료) 빈 목록.\n"
 )
 
 

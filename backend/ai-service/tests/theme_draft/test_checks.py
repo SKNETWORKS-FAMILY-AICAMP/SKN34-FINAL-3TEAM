@@ -272,9 +272,10 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
         ["CUT_MOOD"],
     ),
     (
-        "outro cut without mungchi is fine",
+        # 종료 콘티는 4컷 모두 뭉치가 나옴(그림이 항상 뭉치를 그려서, 점검 C9)
+        "outro cut without mungchi",
         edit(lambda t: t["outroCuts"][1].update(mungchiMood="none")),
-        [],
+        ["CUT_MOOD"],
     ),
     # 증거 발견 줄·수사 연결 문장: 필수·길이, 단서 결론(허용 값)·후보·정답 금지
     ("discovery empty", on_day("MON", discovery=" "), ["REQUIRED"]),
@@ -643,3 +644,49 @@ def test_public_theme_drops_internal_fields() -> None:
         public["days"][0]
     )
     assert public["days"][2]["rulesOut"] == ["창고", "정자"]
+
+
+def test_dialogue_leak_checks_only_llm_lines() -> None:
+    """끝 두 줄(코드가 넣는 증거 발견 줄·수사 연결 문장)에 미션 금지어가 있어도 대화는 실패하지
+    않음. 대화를 다시 만들어도 바뀌지 않는 줄이라서(점검 C10). LLM 줄에 있으면 실패."""
+    theme = valid_theme()
+    word = DISCOVERY["MON"].split()[0]
+    draft = draft_of("ANALYZE").model_copy(update={"forbidden_terms": [word]})
+    s = get_settings()
+    ok = checks.check_dialogue(
+        theme, "MON", dlg(lines=say("같이 가 보자")), draft, GRADE, s.followup_example_overlap_chars
+    )
+    assert "LEAK" not in codes(ok)
+    bad = checks.check_dialogue(
+        theme,
+        "MON",
+        dlg(lines=say(f"{word} 말이야")),
+        draft,
+        GRADE,
+        s.followup_example_overlap_chars,
+    )
+    assert "LEAK" in codes(bad)
+
+
+def test_theme_answer_leak_reason_names_the_word() -> None:
+    """정답 낱말 유출 사유에 걸린 낱말을 적어 다시 생성 때 피하게 함(점검 C13)."""
+    theme = valid_theme()
+    s = get_settings()
+    bad = checks.check_dialogue(
+        theme,
+        "MON",
+        dlg(lines=say("텃밭에 가 볼까")),
+        draft_of("ANALYZE"),
+        GRADE,
+        s.followup_example_overlap_chars,
+    )
+    assert any(r.startswith("THEME_ANSWER_LEAK") and "'텃밭'" in r for r in bad)
+
+
+def test_example_fix_only_for_written_answers() -> None:
+    """예시 답 고쳐 쓰기는 서술·논술·풀이만(고르기·순서·분류는 정답 키라 못 고침, 점검 C16)."""
+    from app.theme_draft.nodes.mission import only_example
+
+    bad = ["MISSION_REVIEW EXAMPLE_COMPLETE 사유"]
+    assert only_example(bad, "NARRATIVE") and only_example(bad, "SOLUTION_STEPS")
+    assert not only_example(bad, "CHOICE") and not only_example(bad, "CLASSIFICATION")

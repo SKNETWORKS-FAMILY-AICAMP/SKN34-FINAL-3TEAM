@@ -53,7 +53,7 @@ async def film(
             break
         try:
             clip = await ctx.video.generate(
-                body.video_prompt(theme, cut, feedback),
+                body.video_prompt(theme, scene, index, cut, feedback),
                 first,
                 seconds=seconds,
                 deadline=ctx.deadline,
@@ -62,7 +62,13 @@ async def film(
             frames = await asyncio.to_thread(video_frames, clip, FRAME_EVERY, FRAME_COUNT)
             review = await ctx.review_llm.generate(
                 system=body.VIDEO_REVIEW_SYSTEM,
-                user=body.video_review_user(theme, cut, shows_target),
+                user=body.video_review_user(
+                    theme,
+                    cut,
+                    shows_target,
+                    body.cut_has_mungchi(scene, index),
+                    body.cut_reveals_answer(scene),
+                ),
                 output=GeneratedVideoReview,
                 call_type=THEME_CALL_TYPE,
                 prompt_version=ctx.prompt.version,

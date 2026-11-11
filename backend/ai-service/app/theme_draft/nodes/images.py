@@ -64,6 +64,8 @@ class Shot:
     question: str | None = None
     hints: list[str] | None = None
     discovery: str | None = None  # 미션 그림만: 그날 증거 발견 줄
+    evidence: str | None = None  # 미션 그림만: 그날 증거 종류(TRACE·SIGHTING·RECORD)
+    answer_place_allowed: bool = False  # 종료 콘티 컷만 정답 장소 공개 허용
 
 
 @dataclass
@@ -103,6 +105,8 @@ async def draw(
                     question=shot.question,
                     hints=shot.hints,
                     discovery=shot.discovery,
+                    evidence=shot.evidence,
+                    answer_place_allowed=shot.answer_place_allowed,
                 ),
                 output=GeneratedImageReview,
                 call_type=THEME_CALL_TYPE,
@@ -166,6 +170,7 @@ def cut_shot(
         ids=IMAGE_REVIEW_IDS,
         has_mungchi=has_mungchi,
         shows_target=body.cut_shows_target(scene, index),
+        answer_place_allowed=body.cut_reveals_answer(scene),
     )
 
 
@@ -185,6 +190,7 @@ def mission_shot(
         question=draft.question,
         hints=[h for h in draft.hints if h.strip()],
         discovery=d.get("discovery"),
+        evidence=body.evidence_kind(d),
     )
 
 
