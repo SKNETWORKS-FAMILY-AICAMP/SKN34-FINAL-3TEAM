@@ -586,3 +586,27 @@ learning이 아직 위 칸을 주지 않으면 core는 그 적립만 건너뛰�
 - **학생 포인트 안내**: web `POINT_RULES`의 당일 풀이·주간 완주에 `preparing`을 달아 학생 포인트 화면에 "준비 중"을 붙였다. learning #484가 `days[].completedOnDay`·`finished`를 내보내면 지운다
 - **E2E 무료 상품**: `frontend/web/tests/e2e/seed/core.sql`은 마이그레이션 뒤에 상품을 넣는다. 무료는 `{"extraMissions":true,"sundayTheme":false}`, 유료는 `{"sundayTheme":true}`로 명시했다. 학습 여정 E2E(`learning-journey.spec.ts`)가 테마 시드 없이 무료 학생으로 미션 고르기(`EXTRA`)를 풀기 때문에 무료 추가 문제를 E2E에서만 켰다(무료 `EXTRA` 하루 1개 한도 경로)
 - 검증: `PaymentIntegrationTest`(값 없는 무료 상품 `EXTRA` 403, 값 없는 프리미엄 스냅숏 `EXTRA` 허용·프리미엄 사용 기록), `WeeklyThemeProxyIntegrationTest`(무료 상품 `features` `{}`·`false` 모두 learning 호출 전 403), `RewardEarnIntegrationTest`(개근 `completed` 하나로 적립, `perfectAttendance`만으로는 적립 없음)
+
+## 19. 지식 임베딩 사용량 KNOWLEDGE_EMBEDDING (#467, 2026-11-11)
+
+에픽 #463(지식 RAG)의 core 몫. ai 임베딩 API(api-spec 4.2.4 C6, [ai 16장](ai.md#16-지식-임베딩-api-467-2026-11-11))가 OpenAI 임베딩 요청마다 발행하는 사용량을 받는다.
+
+### API 변경
+
+| 경로 | 변경 |
+|---|---|
+| `GET /api/v1/admin/ai-usage?callType` | `callType`에 `KNOWLEDGE_EMBEDDING` 추가(응답 항목도 같은 값) |
+| `llm.usage.recorded` v1 이벤트 | `callType` enum에 `KNOWLEDGE_EMBEDDING` 추가 |
+
+### 결정과 근거
+
+- **이름 `KNOWLEDGE_EMBEDDING`**: #464 계약 기준안 그대로. 지식 적재·관계 후보·검색 질의 임베딩을 한 종류로 센다(요청 1회 = 본문 최대 64개 = 1건)
+- **목록 동기화**: 이벤트 스키마·core `CallType`·core OpenAPI·ERD Mermaid 주석·ai/scoring 발행 목록에 `REPORT_EXPLANATION` 다음, `M2` 앞에 더하고 `V44__knowledge_embedding_call_type.sql`이 `ck_llm_usage_call_type`을 넓힌다(V28·V40·V42와 같은 방식, 기존 행 영향 없음). gitops 로컬 core 리비전 v44
+- **토큰·비용**: 임베딩은 입력 토큰만 있어 ai가 `outputTokens = 0`으로 보낸다. `app.llm-pricing`은 다른 모델처럼 비어 있어 `cost_usd`는 null이고 관리자 사용량에서 `unpricedCalls`로 센다. 단가를 넣으면(`app.llm-pricing.text-embedding-3-small.input`·`output=0`) 입력 토큰만으로 계산된다
+- **AI 사용량 화면**: web `callTypeLabel`에 "지식 임베딩", MSW 사용량 필터 허용 목록에 값 추가
+- **마이그레이션 번호**: 미병합 #439 영상 브랜치(`feature/theme-draft-core-proxy`, `THEME_VIDEO`)도 같은 CHECK를 넓힌다. 나중에 머지하는 쪽이 번호를 다음 번호로 바꾸고 CHECK·목록에 두 값을 모두 넣는다
+
+### 검증
+
+- `scripts/tests/test_admin_mission_drafts_contract.py`(호출 종류 목록 7곳 대조)·`test_admin_operations_contract.py`(OpenAPI 지문)·`test_core_migration_versions.py`(로컬 리비전)
+- core `./gradlew test bootJar`: PR 검증 결과에 기록

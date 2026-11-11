@@ -13,7 +13,8 @@ JSON 필드는 camelCase(ApiModel). 학생 정보는 어떤 모델에도 없다.
 from dataclasses import dataclass
 from typing import Annotated, Literal, Protocol
 
-from pydantic import Field
+from pydantic import ConfigDict, Field, field_validator
+from pydantic.alias_generators import to_camel
 
 from app.followup.models import ThinkingType
 from app.judgment.models import ApiModel
@@ -288,9 +289,19 @@ class LearnedResponse(ApiModel):
 
 # ---- C6
 class EmbeddingRequest(ApiModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
+
     texts: list[Annotated[str, Field(min_length=1, max_length=EMBEDDING_MAX_CHARS)]] = Field(
         min_length=1, max_length=EMBEDDING_MAX_TEXTS
     )
+
+    @field_validator("texts")
+    @classmethod
+    def _no_blank_text(cls, texts: list[str]) -> list[str]:
+        """공백만인 글은 빈 글과 같이 400 (api-spec 4.2.4)."""
+        if any(not text.strip() for text in texts):
+            raise ValueError("texts 항목은 공백만일 수 없음")
+        return texts
 
 
 class EmbeddingResponse(ApiModel):
@@ -330,7 +341,8 @@ def sources_of(bundle: KnowledgeBundle) -> list[KnowledgeRef]:
 
 
 class Embedder(Protocol):
-    """C6 임베딩. 실제 구현은 #467 API를 부르는 클라이언트, 개발 중에는 fake.FakeEmbedder."""
+    """C6 임베딩. ai 안에서는 #467 `embedding.service.EmbeddingService`(app.state.embedder로
+    만든 것), 시험·개발에는 fake.FakeEmbedder."""
 
     async def embed(self, texts: list[str]) -> EmbeddingResponse: ...
 
