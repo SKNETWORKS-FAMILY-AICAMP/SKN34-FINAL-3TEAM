@@ -1078,6 +1078,21 @@ components:
               start: {type: number, minimum: 0, description: 영상 시작부터 초}
               end: {type: number, minimum: 0}
               text: {type: string, maxLength: 30}
+        spots:
+          type: array
+          maxItems: 3
+          description: '살펴보기(요일 장면, 2026-11-11 추가 선택 칸). 문제 전에 학생이 그림에서 누르는 물건 2~3개,
+            그중 증거 물건(evidence true) 정확히 1개. 시작·종료 장면과 살펴보기를 만들지 못한 장면은 빈 배열.
+            line은 단서 결론·후보·정답 이름을 말하지 않음'
+          items:
+            type: object
+            required: [x, y, label, line, evidence]
+            properties:
+              x: {type: number, minimum: 0, maximum: 100, description: 그림 너비 %}
+              y: {type: number, minimum: 0, maximum: 100, description: 그림 높이 %}
+              label: {type: string, minLength: 1, maxLength: 10, description: 물건 이름}
+              line: {type: string, minLength: 1, maxLength: 30, description: 눌렀을 때 뭉치가 하는 말}
+              evidence: {type: boolean, description: 그날 찾은 증거 물건이면 true}
     ThemeWarning:
       properties:
         stage:

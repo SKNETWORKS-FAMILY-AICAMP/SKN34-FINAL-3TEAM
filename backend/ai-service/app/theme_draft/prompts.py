@@ -842,16 +842,29 @@ MOTION_SYSTEM = (
     "- effects: 장면 분위기에 맞는 가벼운 효과(눈·꽃잎·잎·물방울 등) 0~2층. color는 #RRGGBB, "
     "count 1~20, size 1~6(그림 너비 %), direction 0~359도(0은 아래로 떨어짐), speed 2~20, "
     "opacity 0.2~0.8. 효과가 어울리지 않으면 빈 목록. 번쩍이거나 무서운 효과는 쓰지 않는다.\n"
+    "- spots: dayInfo가 있는 요일 장면만, 문제 전에 학생이 그림에서 눌러 볼 물건 2~3개. 정확히 "
+    "하나는 그날 찾은 증거(discovery가 말하는 물건, evidence true), 나머지는 미션 질문·생각 열기 "
+    "질문에 나온 물건(evidence false). 그림에 실제로 보이는 물건만 고르고 x·y는 그 물건의 중심. "
+    "label은 물건 이름(10자 이내), line은 눌렀을 때 뭉치가 하는 짧은 말(30자 이내, 증거 물건은 "
+    "찾았다는 말, 다른 물건은 미션을 떠올리게 하는 말). line에 증거가 무엇을 뜻하는지(단서 결론)·"
+    "후보 이름·정답은 쓰지 않는다. dayInfo가 없으면(시작·종료) 빈 목록.\n"
 )
 
 
-def motion_user(theme: Theme, scene: str, scene_text: str, speakers: list[str]) -> str:
-    return json.dumps(
-        {
-            "scene": scene,
-            "sceneText": scene_text,
-            "styleNote": theme.get("styleNote") or "",
-            "speakers": speakers,
-        },
-        ensure_ascii=False,
-    )
+def motion_user(
+    theme: Theme,
+    scene: str,
+    scene_text: str,
+    speakers: list[str],
+    day_info: dict | None = None,
+) -> str:
+    """day_info: 요일 장면의 살펴보기 재료 {discovery, missionQuestion, hints}(단서는 넣지 않음)."""
+    body: dict = {
+        "scene": scene,
+        "sceneText": scene_text,
+        "styleNote": theme.get("styleNote") or "",
+        "speakers": speakers,
+    }
+    if day_info:
+        body["dayInfo"] = day_info
+    return json.dumps(body, ensure_ascii=False)

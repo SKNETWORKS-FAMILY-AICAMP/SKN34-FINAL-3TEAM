@@ -24,7 +24,7 @@ from app.llm.base import LlmError, LlmRequest, ProviderResponse, T
 from app.llm.media import FakeImageClient, FakeVideoClient, tiny_png
 from app.mission_draft.prompts import GeneratedDraft
 from app.prompt_versions.registry import ActiveVersions
-from app.theme_draft.checks import DAY_TYPE, DAYS, VIDEO_REVIEW_IDS, motion
+from app.theme_draft.checks import DAY_TYPE, DAYS, VIDEO_REVIEW_IDS, motion, spots
 from app.theme_draft.models import (
     GeneratedDialogue,
     GeneratedImageReview,
@@ -34,6 +34,7 @@ from app.theme_draft.models import (
     GeneratedTheme,
     GeneratedVideoReview,
     ImageReviewItem,
+    MotionSpot,
     ThemeDraftRequest,
     ThemeDraftResponse,
     ThemeMotion,
@@ -51,6 +52,7 @@ from tests.theme_draft.fixtures import (
     mission_draft,
     mission_review,
     story_review,
+    valid_theme,
 )
 from tests.theme_draft.helpers import request_body
 from tests.theme_draft.test_graph import ScriptedLlm
@@ -75,6 +77,13 @@ class MediaLlm(ScriptedLlm):
         return json.loads(self.calls[-1][2])
 
 
+# 살펴보기: 증거 물건 1개 + 미션 물건 1개(월요일 단서 값 '젖음'·후보 이름 없음)
+GOOD_SPOTS = [
+    {"label": "발자국", "line": "여기 발자국을 찾았어!", "evidence": True, "x": 30, "y": 70},
+    {"label": "마을 지도", "line": "지도로 길을 따라가 볼까?", "evidence": False, "x": 60, "y": 40},
+]
+
+
 def good_motion(speakers: list[str], **overrides: Any) -> GeneratedMotion:
     body: dict[str, Any] = {
         "transition": "fade",
@@ -94,6 +103,7 @@ def good_motion(speakers: list[str], **overrides: Any) -> GeneratedMotion:
                 "opacity": 0.5,
             }
         ],
+        "spots": [],
     }
     body.update(overrides)
     return GeneratedMotion.model_validate(body)
@@ -108,7 +118,9 @@ def gen_llm(motion_reply: Callable[[dict], Any] | None = None) -> MediaLlm:
             GeneratedDialogue: lambda n, d: dialogue(),
         },
     )
-    reply = motion_reply or (lambda user: good_motion(user["speakers"]))
+    reply = motion_reply or (
+        lambda user: good_motion(user["speakers"], spots=GOOD_SPOTS if "dayInfo" in user else [])
+    )
     llm.handlers[GeneratedMotion] = lambda n, d: reply(llm.last_user())
     return llm
 
@@ -267,7 +279,27 @@ def test_images_motion_and_video_off_warning() -> None:
     assert set(response.motions["MON"].speakers) == {"뭉치", "지호"}
     assert response.motions["INTRO"].speakers == {} and response.motions["INTRO"].captions == []
     dumped = response.model_dump(by_alias=True)["motions"]["MON"]
-    assert set(dumped) == {"version", "transition", "camera", "speakers", "effects", "captions"}
+    assert set(dumped) == {
+        "version",
+        "transition",
+        "camera",
+        "speakers",
+        "effects",
+        "captions",
+        "spots",
+    }
+    # 살펴보기: 요일 장면만, 움직임 user에 그날 증거 발견 줄·미션 질문·생각 열기 질문(단서 없음)
+    assert [s["label"] for s in dumped["spots"]] == ["발자국", "마을 지도"]
+    assert [s["evidence"] for s in dumped["spots"]] == [True, False]
+    assert response.motions["INTRO"].spots == []
+    motion_users = [json.loads(u) for u in gen.users("GeneratedMotion")]
+    mon_user = next(u for u in motion_users if u["scene"] == "MON")
+    assert mon_user["dayInfo"]["discovery"] == DISCOVERY["MON"]
+    assert mon_user["dayInfo"]["missionQuestion"] == mission_draft("ANALYZE").question
+    assert "clue" not in json.dumps(mon_user) and "젖음" not in json.dumps(
+        mon_user, ensure_ascii=False
+    )
+    assert "dayInfo" not in next(u for u in motion_users if u["scene"] == "INTRO")
     assert set(dumped["camera"]) == {"from", "to", "seconds"}  # 계약 ThemeMotion 형식
 
 
@@ -472,6 +504,66 @@ def test_motion_check_unit() -> None:
     value, notes = motion(generated, [], [])
     assert value["camera"]["to"] == {"x": 100.0, "y": 0.0, "zoom": 1.0}
     assert value["speakers"] == {} and len(notes) == 4  # x·y·zoom + 화자 아닌 뭉치
+
+
+def spot(label: str, line: str, evidence: bool = False, x: float = 50, y: float = 50) -> dict:
+    return {"label": label, "line": line, "evidence": evidence, "x": x, "y": y}
+
+
+EV = spot("발자국", "여기 발자국을 찾았어!", True)
+OTHER = spot("마을 지도", "지도로 길을 따라가 볼까?")
+
+
+@pytest.mark.parametrize(
+    ("name", "given", "labels", "codes"),
+    [
+        ("good", [EV, OTHER], ["발자국", "마을 지도"], []),
+        # 한마디가 그날 단서 값('젖음')을 미리 말하면 그 물건만 빼고, 2개 미만이면 비움
+        (
+            "clue early",
+            [EV, spot("웅덩이", "바닥에 젖음 자국이 있어")],
+            [],
+            ["MOTION_SPOT", "MOTION_SPOT"],
+        ),
+        (
+            "candidate name",
+            [EV, OTHER, spot("창고 문", "문이 열려 있네")],
+            ["발자국", "마을 지도"],
+            ["MOTION_SPOT"],
+        ),
+        ("no evidence", [OTHER, spot("나무", "나무 아래를 볼까?")], [], ["MOTION_SPOT"]),
+        ("two evidence", [EV, spot("털", "털을 찾았어!", True)], ["발자국", "털"], ["MOTION_SPOT"]),
+        (
+            "too many keeps evidence",
+            [OTHER, spot("나무", "나무 아래를 볼까?"), spot("의자", "의자를 볼까?"), EV],
+            ["발자국", "마을 지도", "나무"],
+            ["MOTION_SPOT"],
+        ),
+        ("long line", [EV, OTHER, spot("돌", "가" * 31)], ["발자국", "마을 지도"], ["MOTION_SPOT"]),
+        (
+            "coords fitted",
+            [spot("발자국", "찾았어!", True, 120, -3), OTHER],
+            ["발자국", "마을 지도"],
+            ["MOTION_RANGE"],
+        ),
+    ],
+)
+def test_spots_check(name: str, given: list[dict], labels: list[str], codes: list[str]) -> None:
+    out, notes = spots(given, valid_theme(), "MON")
+    assert [s["label"] for s in out] == labels
+    assert sorted(n.split()[0] for n in notes) == sorted(codes)
+    assert all(0 <= s["x"] <= 100 and 0 <= s["y"] <= 100 for s in out)
+    assert sum(s["evidence"] for s in out) == (1 if out else 0)
+    for s in out:
+        MotionSpot.model_validate(s)
+
+
+def test_spots_only_for_day_scenes() -> None:
+    assert spots([EV, OTHER], valid_theme(), None) == (
+        [],
+        ["MOTION_SPOT 시작·종료 장면은 살펴보기 없음"],
+    )
+    assert spots([], valid_theme(), None) == ([], [])
 
 
 # --- 연결 ---------------------------------------------------------------------------

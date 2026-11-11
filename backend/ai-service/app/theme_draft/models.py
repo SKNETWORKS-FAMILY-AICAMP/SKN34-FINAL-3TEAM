@@ -171,8 +171,21 @@ class MotionCaption(BaseModel):
     text: str = Field(max_length=30)
 
 
+class MotionSpot(BaseModel):
+    """살펴보기에서 학생이 누르는 그림 속 물건(요일 장면). 좌표는 그림 %."""
+
+    x: float = Field(ge=0, le=100)
+    y: float = Field(ge=0, le=100)
+    label: str = Field(min_length=1, max_length=10)
+    line: str = Field(min_length=1, max_length=30)
+    evidence: bool  # 그날 찾은 증거 물건이면 true(장면마다 정확히 1개)
+
+
 class ThemeMotion(BaseModel):
-    """장면 움직임 형식 v1(api-spec 4.2·ai-service.yaml ThemeMotion). learning은 그대로 저장."""
+    """장면 움직임 형식 v1(api-spec 4.2·ai-service.yaml ThemeMotion). learning은 그대로 저장.
+
+    spots는 2026-11-11 더한 선택 칸(요일 장면 살펴보기, 시작·종료는 빈 배열)이라 version은 1.
+    """
 
     version: Literal[1] = 1
     transition: MotionTransition
@@ -180,6 +193,7 @@ class ThemeMotion(BaseModel):
     speakers: dict[str, MotionPoint]
     effects: list[MotionEffect] = Field(max_length=2)
     captions: list[MotionCaption] = Field(max_length=8)
+    spots: list[MotionSpot] = Field(default_factory=list, max_length=3)
 
 
 class ThemeDraftResponse(ApiModel):
@@ -421,8 +435,19 @@ class GeneratedEffect(BaseModel):
     opacity: float
 
 
+class GeneratedSpot(BaseModel):
+    label: str
+    line: str
+    evidence: bool
+    x: float
+    y: float
+
+
 class GeneratedMotion(BaseModel):
-    """생성 모델이 그림을 보고 정하는 움직임 값. 상한은 코드가 맞춘다(checks.motion)."""
+    """생성 모델이 그림을 보고 정하는 움직임 값. 상한은 코드가 맞춘다(checks.motion·checks.spots).
+
+    spots는 요일 장면에서 살펴보기로 누를 그림 속 물건(시작·종료는 빈 목록).
+    """
 
     transition: TransitionKind
     transitionSeconds: float
@@ -431,3 +456,4 @@ class GeneratedMotion(BaseModel):
     cameraSeconds: float
     speakers: list[GeneratedSpeaker]
     effects: list[GeneratedEffect]
+    spots: list[GeneratedSpot]

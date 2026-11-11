@@ -603,7 +603,70 @@ def dialogue_speakers(theme: Theme, lines: list[dict] | None) -> list[str]:
     return [s for s in dict.fromkeys(names) if s.strip() and not is_target(theme, s)]
 
 
-def motion(generated: dict, speakers: list[str], captions: list[dict]) -> tuple[dict, list[str]]:
+# 살펴보기(요일 장면 그림 속 누를 물건, 사용자 결정 2026-11-11). 개수·글자 수는 기준안
+SPOTS = (2, 3)
+SPOT_LABEL_MAX = 10
+SPOT_LINE_MAX = 30
+
+
+def spots(generated: list[dict], theme: Theme, day: str | None) -> tuple[list[dict], list[str]]:
+    """생성 모델의 살펴보기 물건 → 응답 spots와 맞춘 사유(warnings MOTION).
+
+    요일 장면만. 이름·한마디가 비거나 길면, 한마디가 그날 단서 결론(허용 값)을 미리 말하거나
+    이름·한마디에 후보·정답 이름이 있으면 그 물건을 뺀다(살펴보기는 미션 전이라 단서는 아직
+    보여 주지 않음). 증거 물건은 정확히 1개(여럿이면 첫 번째만 증거), 남은 물건이 2개 미만이거나
+    증거 물건이 없으면 그 장면 spots를 비운다. 다시 생성하지 않는다(움직임과 같은 처리).
+    """
+    if day is None:
+        return [], (["MOTION_SPOT 시작·종료 장면은 살펴보기 없음"] if generated else [])
+    notes: list[str] = []
+    d = theme_day(theme, day)
+    names = [compact(c) for c in theme.get("candidates") or []]
+    kept: list[dict] = []
+    for i, s in enumerate(generated):
+        label, line = str(s.get("label") or "").strip(), str(s.get("line") or "").strip()
+        why = None
+        if not label or not line:
+            why = "이름·한마디 비어 있음"
+        elif len(label) > SPOT_LABEL_MAX or len(line) > SPOT_LINE_MAX:
+            why = f"이름 {SPOT_LABEL_MAX}자·한마디 {SPOT_LINE_MAX}자 초과"
+        elif early_values(d, line):
+            why = "한마디가 그날 단서 결론을 미리 말함(CLUE_EARLY)"
+        elif any(n and n in compact(label + line) for n in names):
+            why = "후보·정답 이름(ANSWER_LEAK)"
+        if why:
+            notes.append(f"MOTION_SPOT spots{i} {why}이라 뺌")
+            continue
+        x, y = float(s.get("x", 50)), float(s.get("y", 50))
+        fx, fy = min(max(x, 0.0), 100.0), min(max(y, 0.0), 100.0)
+        if (fx, fy) != (x, y):
+            notes.append(f"MOTION_RANGE spots{i} 좌표 ({x}, {y})→({fx}, {fy})")
+        kept.append(
+            {"x": fx, "y": fy, "label": label, "line": line, "evidence": bool(s.get("evidence"))}
+        )
+    evidence = [k for k in kept if k["evidence"]]
+    if not evidence:
+        if kept:
+            notes.append("MOTION_SPOT 증거 물건이 없어 살펴보기를 비움")
+        return [], notes
+    if len(evidence) > 1:
+        notes.append("MOTION_SPOT 증거 물건이 여럿이라 첫 번째만 증거")
+        for k in evidence[1:]:
+            k["evidence"] = False
+    if len(kept) > SPOTS[1]:
+        notes.append(f"MOTION_SPOT {SPOTS[1]}개까지(나머지 뺌)")
+        kept = [evidence[0]] + [k for k in kept if k is not evidence[0]][: SPOTS[1] - 1]
+    if len(kept) < SPOTS[0]:
+        return [], [*notes, f"MOTION_SPOT 물건이 {SPOTS[0]}개 미만이라 살펴보기를 비움"]
+    return kept, notes
+
+
+def motion(
+    generated: dict,
+    speakers: list[str],
+    captions: list[dict],
+    spot_list: list[dict] | None = None,
+) -> tuple[dict, list[str]]:
     """생성 모델의 움직임 값 → ThemeMotion 모양과 맞춘 항목 사유(warnings MOTION).
 
     상한 밖 숫자는 상한으로 맞추고, 색이 #RRGGBB가 아니면 그 효과를 빼고, 화자가 아닌 이름은
@@ -676,5 +739,6 @@ def motion(generated: dict, speakers: list[str], captions: list[dict]) -> tuple[
             {"start": c["start"], "end": c["end"], "text": c["text"][:CAPTION_MAX]}
             for c in captions
         ],
+        "spots": spot_list or [],
     }
     return result, notes

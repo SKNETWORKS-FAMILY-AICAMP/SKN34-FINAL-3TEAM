@@ -4,6 +4,8 @@
 - 시작·종료 captions는 영상이 있을 때만(컷 문구, 녹아드는 전환 경계 기준 시각)
 - 상한 밖 숫자는 checks.motion이 맞추고 맞춘 항목마다 warnings(MOTION)
 - 움직임 LLM이 실패하면 그 장면 움직임만 빼고 경고
+- 요일 장면은 살펴보기 spots(그림 속 누를 물건 2~3개, 증거 물건 1개)도 같은 호출에서 정하고
+  checks.spots가 맞춘다. 맞지 않으면 그 물건이나 그 장면 spots만 빼고 경고(테마 실패 아님)
 """
 
 import asyncio
@@ -13,7 +15,7 @@ from pydantic import ValidationError
 
 from app.llm.base import LlmUnavailable
 from app.llm.media import xfade_caption_times
-from app.theme_draft.checks import DAYS, Theme, dialogue_speakers, motion
+from app.theme_draft.checks import DAYS, Theme, dialogue_speakers, motion, spots, theme_day
 from app.theme_draft.models import GeneratedMotion, ThemeMotion
 from app.theme_draft.nodes import THEME_CALL_TYPE, ThemeContext, ThemeState
 from app.theme_draft.nodes.images import CUTS_KEY, image_of, warning
@@ -45,10 +47,20 @@ async def scene_motion(
     lines = (state.get("dialogues") or {}).get(scene) if scene in DAYS else None
     speakers = dialogue_speakers(theme, lines)
     image = (state.get("scene_images") or {})[image_of(scene)]
+    day_info = None
+    draft = (state.get("drafts") or {}).get(scene) if scene in DAYS else None
+    if draft is not None:
+        day_info = {
+            "discovery": theme_day(theme, scene)["discovery"],
+            "missionQuestion": draft.question,
+            "hints": draft.hints,
+        }
     try:
         generated = await ctx.llm.generate(
             system=ctx.prompt.body.MOTION_SYSTEM,
-            user=ctx.prompt.body.motion_user(theme, scene, scene_text(theme, scene), speakers),
+            user=ctx.prompt.body.motion_user(
+                theme, scene, scene_text(theme, scene), speakers, day_info
+            ),
             output=GeneratedMotion,
             call_type=THEME_CALL_TYPE,
             prompt_version=ctx.prompt.version,
@@ -61,7 +73,10 @@ async def scene_motion(
     except LlmUnavailable as exc:
         return None, [warning("MOTION", scene, f"MOTION_CALL {exc.code}")]
     captions = captions_of(ctx, theme, scene, scene in (state.get("video_keys") or {}))
-    value, notes = motion(generated.data.model_dump(), speakers, captions)
+    data = generated.data.model_dump()
+    spot_list, spot_notes = spots(data.get("spots") or [], theme, scene if day_info else None)
+    value, notes = motion(data, speakers, captions, spot_list)
+    notes = [*notes, *spot_notes]
     warnings = [warning("MOTION", scene, n) for n in notes]
     try:
         ThemeMotion.model_validate(value)
