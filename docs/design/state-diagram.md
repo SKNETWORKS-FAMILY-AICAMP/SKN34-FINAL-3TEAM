@@ -226,7 +226,7 @@ stateDiagram-v2
 
 #### 3.2.1 테마 요일 문제 열림 (파생, DB 미저장, P23, #385 → 2026-11-10 개정 #483)
 
-2026-11-10 개정(#483, 구현 learning #484·core #485): 공개된 문제가 쌓이는 누적 공개로 바꾼다. 구현 전까지 코드는 아래 "이전 규칙"으로 동작한다.
+2026-11-10 개정(#483, 구현 learning #484·core #485): 공개된 문제가 쌓이는 누적 공개로 바꾼다. core #485(일요일 허용 값 `sundayTheme` 전달, 무료 테마 문제 한도 없음)는 구현됐고, learning #484 구현 전까지 요일 상태·시작 검사는 아래 "이전 규칙"으로 동작한다.
 
 ```mermaid
 stateDiagram-v2
@@ -234,16 +234,16 @@ stateDiagram-v2
   LOCKED --> OPEN: 그 요일 KST 00:00 공개
   OPEN --> OPEN: 다음 날로 넘어가도 유지 (그 주 토요일 끝까지)
   OPEN --> CLOSED: 일요일 KST 00:00 (무료)
-  OPEN --> SUNDAY_OPEN: 일요일 KST 00:00 (프리미엄, 기준안 features.sundayTheme)
+  OPEN --> SUNDAY_OPEN: 일요일 KST 00:00 (프리미엄, sundayTheme=true)
   SUNDAY_OPEN --> CLOSED: 다음 주 월요일 KST 00:00
   CLOSED --> [*]
 ```
 
-- `SUNDAY_OPEN`은 응답 값이 아니라 설명용이다. 응답 `state`는 `LOCKED`·`OPEN`·`CLOSED` 셋 그대로이고, 프리미엄 일요일에는 `OPEN`으로 계산한다(일요일 허용 여부는 core가 상품으로 판단해 learning에 전달, 전달 방식은 #484·#485 합의)
+- `SUNDAY_OPEN`은 응답 값이 아니라 설명용이다. 응답 `state`는 `LOCKED`·`OPEN`·`CLOSED` 셋 그대로이고, 프리미엄 일요일에는 `OPEN`으로 계산한다(일요일 허용 여부는 core #485가 상품 `features.sundayTheme`으로 판단해 learning 쿼리 `sundayTheme=true|false`로 전달, [api-spec 4.1](api-spec.md))
 - 월요일에는 월 문제만, 금요일에는 다섯 문제 모두 `OPEN`. 토요일에는 다섯 문제 모두 `OPEN`
-- `OPEN`이면 `THEME_DAY` 신규 시도(안 푼 문제). 마무리한 문제 다시 풀기 `THEME_REVIEW`는 토요일(프리미엄은 일요일도)만. `LOCKED` 신규 시도와 무료 일요일 신규 시도는 `409 THEME_DAY_CLOSED`, 평일·무료 일요일 다시 풀기는 `409 THEME_REVIEW_NOT_ALLOWED`(기준안: 기존 코드 재사용, 일요일 전용 코드 신설 여부는 #484에서 결정)
+- `OPEN`이면 `THEME_DAY` 신규 시도(안 푼 문제). 그 주에 이미 마무리한 문제의 새 `THEME_DAY` 시도는 `409`로 거부한다(learning #484, 코드는 #484 기준안 `THEME_DAY_CLOSED`). #484 구현 전까지는 이 거부가 없어 마무리한 오늘 문제를 다시 `THEME_DAY`로 시작할 수 있다(전에는 무료 하루 1개 429가 부수적으로 막았음, #506). 마무리한 문제 다시 풀기 `THEME_REVIEW`는 토요일(프리미엄은 일요일도)만. `LOCKED` 신규 시도와 무료 일요일 신규 시도는 `409 THEME_DAY_CLOSED`, 평일·무료 일요일 다시 풀기는 `409 THEME_REVIEW_NOT_ALLOWED`(기준안: 기존 코드 재사용, 일요일 전용 코드 신설 여부는 #484에서 결정)
 - 시작 요청 `context`(`THEME_DAY`·`THEME_REVIEW`·`EXTRA`)는 신규 시도에만 검사. 진행 중 시도 반환(부분 UK 충돌)은 요일과 무관하게 이어하기 허용(일요일 포함). 당일 풀이(기준안 `completedOnDay`)·개근은 그 요일 KST 안의 학습 완료 시각만 인정
-- 재사용 테마의 이미 푼 문제도 그 주 `OPEN`이면 `THEME_DAY` 신규 시도 가능
+- 재사용 테마의 이미 푼 문제도 그 주 `OPEN`이면 `THEME_DAY` 신규 시도 가능(지난 주 시도는 "그 주에 마무리"에 들지 않음)
 - 이전 규칙(#385 구현): `ThemeWeek.stateOf`가 KST 날짜로 계산하고 그 요일만 `OPEN`, 다음 날 `CLOSED`, 토·일에는 다섯 요일 모두 `CLOSED`. 시작 검사는 learning 시계(KST), 조회·열람은 core가 넘긴 날짜 기준(개정 뒤에도 같음)
 
 #### 3.2.2 주간 테마 엔딩 (파생, 2026-11-10 개정 #483, 기준안 learning #484)

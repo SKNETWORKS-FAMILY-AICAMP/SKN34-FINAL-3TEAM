@@ -53,7 +53,7 @@
 | 초안 저장 잠금 | 시도 행을 잠그고(`lockOwned`) 열림 확인 후 저장 | 마무리·돌아보기와 같은 순서로 직렬화([점검 기록 B14](audit.md)) |
 | 쓰기 막는 때 | `COMPLETED` 시도의 초안·생각 열기는 409 `ATTEMPT_CLOSED`. 마무리 뒤 막는 것은 답변 제출 | state-diagram 3.2, P04 |
 | 생각 열기 | 열지 않은 질문을 `seq` 순으로, 다 열면 마지막 질문 반복, 열 때마다 `hint_usage` 기록. 질문 없는 미션 404 | 도움 이용 집계 근거(P08) |
-| 하루 미션 한도 | learning은 확인하지 않음 | core 책임. #210 결정으로 Redis가 아닌 PostgreSQL(`mission_daily_usage`, 무료 하루 1개, #387 구현) |
+| 하루 미션 한도 | learning은 확인하지 않음 | core 책임. #210 결정으로 Redis가 아닌 PostgreSQL(`mission_daily_usage`, 무료 하루 1개 #387 구현 → 2026-11-10 개정 core #485부터 무료 테마 문제는 한도 없음·무료 `EXTRA` 재활성 때만). 무료 테마 문제 주 5개는 learning 누적 공개 규칙(#484) |
 
 ## 3. 답변 제출 (#24)
 
@@ -766,7 +766,7 @@ learning `Element`에 `code`·`goodThought`를 더했을 때 응답을 받는 �
 
 ## 24. 주간 테마·요일 문제·되돌아보기 (#385)
 
-2026-11-06 결정 P23(학년군별 주 1테마, 월~금 하루 1문제, 그 요일에만 신규 시도, 토·일 되돌아보기·다시 풀기)의 learning 몫. core 프록시·무료 하루 1개 한도는 #387(develop 머지), 웹은 #393·#395(MSW 목업 기준)이다.
+2026-11-06 결정 P23(학년군별 주 1테마, 월~금 하루 1문제, 그 요일에만 신규 시도, 토·일 되돌아보기·다시 풀기)의 learning 몫. core 프록시·무료 하루 1개 한도는 #387(develop 머지), 웹은 #393·#395(MSW 목업 기준)이다. 이 절은 #385 구현 기록이다. 2026-11-10 개정(#483: 누적 공개·토요일까지 풀기·일요일 닫힘(프리미엄 이용)·즉시 엔딩·당일 풀이/개근/주간 완주)은 learning #484, core 몫은 #485(무료 테마 문제 한도 없음, [core 보고서 18절](core-gateway.md#18-무료-테마-주-5문제추가-문제-프리미엄-전용프리미엄-일요일당일-풀이주간-완주-포인트-485-2026-11-10))에서 다룬다.
 
 | 위치 | 내용 |
 |---|---|
@@ -797,7 +797,7 @@ learning `Element`에 `code`·`goodThought`를 더했을 때 응답을 받는 �
 | `THEME_DAY` | 이번 주 테마의 오늘(KST, learning 시계) 요일 문제만. 아니면 409 `THEME_DAY_CLOSED`. 이미 끝낸 문제도 그날이면 새 시도 | api-spec 2.11 |
 | `THEME_REVIEW` | 토·일 + 이번 주 테마 문제 + 이번 주 그 문제 `THEME_DAY` 시도를 마무리(`finished_at`)했을 때만. 아니면 409 `THEME_REVIEW_NOT_ALLOWED` | "그 주 마무리한 문제만" |
 | 요일 상태·되돌아보기 | `state`는 오늘 `OPEN`, 지난 요일 `CLOSED`, 안 온 요일 `LOCKED`(토·일은 모두 `CLOSED`). `attemptStatus`는 이번 주 그 요일 문제 최근 `THEME_DAY` 시도. `review.missions[].completed` = 마무리함, `missed` = 지난 요일인데 마무리 안 함 | 웹 `readWeeklyTheme`(`NOT_STARTED`·`IN_PROGRESS`·`COMPLETED`) |
-| 완주 | 월~금 다섯 문제 각각 그 요일(KST) 안에 학습 완료(`completed_at`) | P23 "각 당일 학습 완료". 금요일 문제를 토요일 01시에 끝내면 완주 아님 |
+| 완주(2026-11-10 개정으로 이름 "개근", 칸 `completed` 유지) | 월~금 다섯 문제 각각 그 요일(KST) 안에 학습 완료(`completed_at`) | P23 "각 당일 학습 완료". 금요일 문제를 토요일 01시에 끝내면 개근 아님. 개정 뒤 "주간 완주"(`finished`)는 토요일까지 다섯 문제 학습 완료로 따로 판정(learning #484) |
 | 열람 기록 | `theme_review_view` 학생·주당 1행, 다시 보내도 200(`firstViewThisWeek`만 false). 평일은 409 `THEME_REVIEW_NOT_ALLOWED` | #389 포인트 멱등 근거 |
 | 주간 요약 | 역할 `PARENT`·`STUDENT`·`SYSTEM` + 대상 학생 scope(기록 조회와 같음). 테마는 그 주 학생 테마 시도에서 정함(주 중간에 바뀌면 마지막 요일 문제 시도의 테마), 테마 시도가 없으면 `NO_RECORD` | report는 학년군을 모름. 학생이 실제로 푼 테마를 요약 |
 | 날짜 기준 | 조회·열람은 core가 넘긴 `date`, 시작 검사는 learning `Clock`(KST) | core 시작 프록시는 날짜를 넘기지 않음(#387). 둘 다 KST 오늘이라 같은 날 |
@@ -828,7 +828,7 @@ learning `Element`에 `code`·`goodThought`를 더했을 때 응답을 받는 �
 
 ### 후속 (이슈 댓글 초안, 직접 달지 않음)
 
-- #389(원장·`RewardService.earn`, 사건 연결 모두 core 구현): 되돌아보기·완주 적립 근거는 `POST …/review-views` 응답 `{firstViewThisWeek, completed}`. 완주는 월~금 다섯 문제 각 요일(KST) 안 학습 완료. 학습 완료 적립 보충은 주간 테마 응답 `days[].attemptStatus`(`COMPLETED`)로 하므로 시도 `context`가 없어도 된다(추가 문제는 보충 대상 아님)
+- #389(원장·`RewardService.earn`, 사건 연결 모두 core 구현): 되돌아보기·완주(개정 뒤 개근) 적립 근거는 `POST …/review-views` 응답 `{firstViewThisWeek, completed}`. 완주(개근)는 월~금 다섯 문제 각 요일(KST) 안 학습 완료. core #485부터 주간 테마 조회 응답 `completed`로도 개근을 보충하고(#506), 당일 풀이(`days[].completedOnDay`)·주간 완주(`finished`)는 learning #484가 조회 응답에 칸을 더하면 적립된다. 학습 완료 적립 보충은 주간 테마 응답 `days[].attemptStatus`(`COMPLETED`)로 하므로 시도 `context`가 없어도 된다(추가 문제는 보충 대상 아님)
 - #391: 주간 요약 `GET /internal/students/{id}/weekly-theme/summary?weekStart`(SYSTEM + 학생 scope) 응답은 learning OpenAPI `WeeklyThemeSummary`. 일일 리포트 `problems[].context`는 learning 기록 응답에 `context`를 더하는 후속 작업이 필요
 - #395: 관리자 응답에 `version`·`publishedVersion`·`reviewRequested`, 게시 검사 `errors[].code` 6종이 더 있음. 별도 검토(승인) 화면 없이 "검토 요청 → 게시"
 - #393: 학생 응답 `days[].title`·`review.missions[].title` 채움, 학년군에 게시 테마가 없으면 404
@@ -1040,6 +1040,7 @@ production vector 확장·C2/C3 테이블 Flyway·적재·활성 판 교체는 #
 - `KnowledgeApiIntegrationTest` 22개, `KnowledgeConcurrencyIntegrationTest` 2개 통과. PostgreSQL 17 / pgvector 0.8.7에서 샘플 215개를 적재해 실제 controller→service→MyBatis→DB 경로를 실행했다. 정수 JSON 벡터, 기본 k, 엄격한 타입·null 검사, 내부 인증, 필터 조합, 학기·유형, ACTIVE 판 격리, 최소 유사도, 순환 선수 관계, 동일 개념 근거만 인정하는 판정을 포함한다.
 - 실제 HTTP JSON 18개(정상 5개·대체 사유 9개·오류 4개)가 OpenAPI 검증을 통과했다. 근거의 판 필드를 지우거나 정상 응답을 빈 결과로 바꿨을 때 검증기가 실패하는 것도 확인했다. CI에서 이 응답을 재생성하고 검사한다.
 - learning 전체 `test bootJar`: 69개 시험 묶음, 400개 통과·실패/건너뜀 0개, 실행 JAR 빌드 성공. 기존 커뮤니티·테마 요약 응답 계약 검사도 통과했다. 저장소 스크립트 시험은 251개 중 250개 통과·기존 조건부 1개 건너뜀, ai 지식 계약 시험 29개 통과다.
+- 최신 develop `c26c0ca4`(#522·#524·#525 병합 포함)을 #469 브랜치에 충돌 없이 병합한 뒤 지식·커뮤니티·테마 비교 통합 시험 34개와 세 응답 계약 검사를 다시 통과했다. 병합 후 저장소 스크립트는 252개 중 251개 통과·기존 조건부 1개 건너뜀이다. learning 소스 변경이 없어 기존 실행 JAR은 유효하다.
 - 실제 DB 배타 잠금을 유지한 채 요청이 500으로 종료되고 잠금 해제 후 다음 요청이 200으로 복구됐다. 서비스 로그의 소요 시간은 2,110ms였다. 2초는 SQL 취소 예산이며, 취소 전달·트랜잭션 정리와 공유 풀 대기까지 포함한 HTTP 응답의 절대 상한을 뜻하지 않는다.
 - 조회가 chunk 잠금에서 기다리는 동안 활성 판과 기존 본문을 함께 변경했다. 진행 중인 응답의 본문·참조는 모두 이전 스냅숏을 유지했고 다음 요청은 새 판을 반환했다.
 

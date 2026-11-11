@@ -103,14 +103,14 @@ helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx --version 4.15.
 
 ### 5. 앱 배포
 
-앱 6종·관측도 같은 `sagomungchi-local` 클러스터에 배포한다. 별도 검증 클러스터를 두지 않는다. Secret 원본은 Compose와 같은 루트 `.env` 하나다.
+앱 6종과 설명 sLLM 대역(`sllm-server`, #476)·관측도 같은 `sagomungchi-local` 클러스터에 배포한다. 별도 검증 클러스터를 두지 않는다. Secret 원본은 Compose와 같은 루트 `.env` 하나다.
 
 ```powershell
 pwsh -File infrastructure/kind/create-app-secrets.ps1
 ```
 
 - 스크립트는 context·노드 이름을 검사한 뒤 `app/app-service-credentials`를 만든다. `.env`에 `GRAFANA_ADMIN_USER`·`GRAFANA_ADMIN_PASSWORD`가 있으면 `observability/observability-credentials`도 만든다. 값은 kubectl의 UTF-8 stdin으로만 전달하고, 같은 이름의 Secret이 이미 있으면 값을 대조해 다르면 아무것도 바꾸지 않고 멈춘다.
-- 앱 이미지는 `environments/local/*.yaml`의 `sagomungchi/*:local` 이름으로 빌드한다. Docker의 다중 플랫폼 캐시 이미지는 `kind load docker-image`가 누락 digest로 실패할 수 있으므로 `docker image save --platform linux/amd64 -o <임시 archive> <이미지:local>` 뒤 `kind load image-archive <임시 archive> --name sagomungchi-local`로 로드하고 archive를 지운다.
+- 앱 이미지는 `environments/local/*.yaml`의 `sagomungchi/*:local` 이름으로 빌드한다. `sllm-server`는 `docker build -t sagomungchi/llm-stub:local infrastructure/stubs/llm-stub`으로 만든 대역 이미지를 쓰고, 내려받을 MinIO 객체는 platform-data 초기화 Job이 만든다(#509). Docker의 다중 플랫폼 캐시 이미지는 `kind load docker-image`가 누락 digest로 실패할 수 있으므로 `docker image save --platform linux/amd64 -o <임시 archive> <이미지:local>` 뒤 `kind load image-archive <임시 archive> --name sagomungchi-local`로 로드하고 archive를 지운다.
 - Helm·kubectl 명령은 모든 호출에 `--kube-context kind-sagomungchi-local` 또는 `--context kind-sagomungchi-local`을 명시한다. 동기화 순서는 [local Argo CD 안내](../gitops/argocd/local/README.md)를 따른다.
 - 전체 앱·모델·관측을 한 번에 기동할 메모리 예산은 검증되지 않았다. platform → migration·core·learning → 나머지 API → worker·KEDA → 관측 순으로 자원을 확인하며 올린다.
 - 외부 연동 키(#236): `.env`에 값이 있는 Google·OpenAI/Anthropic·토스 테스트 키·`PAYMENT_*`만 앱 Secret에 넣는다. 토스는 `test_` 키만 허용하며 `live_` 키는 스크립트가 거부한다. 키를 바꾸면 기존 Secret과 값이 달라 스크립트가 멈추므로, 저장된 데이터와 무관한 앱 Secret만 `kubectl --context kind-sagomungchi-local -n app delete secret app-service-credentials`로 지운 뒤 다시 만들고 core·ai를 재시작한다. platform Secret은 지우지 않는다.

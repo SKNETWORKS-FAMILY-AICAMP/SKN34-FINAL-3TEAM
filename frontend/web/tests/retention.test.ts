@@ -7,6 +7,7 @@ import {
   readMyPosts,
   readPoints,
   readWeeklyTheme,
+  POINT_RULES,
   todayThemeDay,
 } from '../src/domain/retention.ts'
 import { readLook } from '../src/domain/studentLook.ts'
@@ -129,4 +130,9 @@ test('#389 실제 조회·해금 응답과 assetKey를 보존하고 HTTP 캐시�
   assert.equal(calls[1].url, '/api/v1/children/child%2Fid/points?page=2&size=20')
   assert.ok(calls.every(call => call.init.cache === 'no-store'))
   assert.equal(calls[3].init.body, undefined)
+})
+
+test('learning 판정 칸(#484)이 아직 없는 당일 풀이·주간 완주는 준비 중으로 안내한다(#506)', () => {
+  assert.deepEqual(POINT_RULES.filter((r) => r.preparing).map((r) => r.type), ['THEME_ON_TIME', 'THEME_FINISHED'])
+  assert.equal(POINT_RULES.find((r) => r.type === 'THEME_COMPLETED')?.preparing, undefined)
 })
