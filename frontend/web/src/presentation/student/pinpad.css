@@ -26,7 +26,7 @@
 #class-journal .pin-help {
   margin: 0;
   color: var(--cj-muted);
-  font-size: 15px;
+  font-size: var(--st-fs-sm, 15px);
 }
 #class-journal .pin-keys {
   display: grid;
@@ -39,7 +39,7 @@
   border: 2px solid var(--cj-line);
   background: var(--cj-white);
   color: var(--cj-ink);
-  font-size: 28px;
+  font-size: var(--st-fs-lg, 28px);
   font-weight: 700;
   cursor: pointer;
   display: grid;
@@ -57,7 +57,7 @@
   cursor: default;
 }
 #class-journal .pin-keys .pin-back {
-  font-size: 13px;
+  font-size: var(--st-fs-xs, 13px);
   gap: 2px;
 }
 #class-journal .pin-keys .pin-back svg {
@@ -68,7 +68,7 @@
   background: var(--cj-green);
   border-color: var(--cj-green);
   color: #fff;
-  font-size: 20px;
+  font-size: var(--st-fs-md, 20px);
 }
 
 /* 자녀 기기 화면 */
@@ -89,7 +89,7 @@
 }
 #class-journal .device-card h1 {
   margin: 0;
-  font-size: 28px;
+  font-size: var(--st-fs-lg, 28px);
 }
 #class-journal .device-card .lead {
   margin: 0;
@@ -105,7 +105,7 @@
   border-radius: 20px;
   border: 2px solid var(--cj-line);
   background: var(--cj-white);
-  font-size: 22px;
+  font-size: var(--st-fs-md, 22px);
   font-weight: 700;
   color: var(--cj-ink);
   cursor: pointer;
@@ -115,7 +115,7 @@
   padding: 12px;
 }
 #class-journal .device-profiles button small {
-  font-size: 14px;
+  font-size: var(--st-fs-xs, 14px);
   font-weight: 500;
   color: var(--cj-muted);
 }
@@ -123,7 +123,7 @@
   border-color: var(--cj-green);
 }
 #class-journal .device-code {
-  font-size: 28px;
+  font-size: var(--st-fs-lg, 28px);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   text-align: center;
@@ -156,7 +156,7 @@
   align-items: center;
 }
 #class-journal .pairing-code strong {
-  font-size: 34px;
+  font-size: var(--st-fs-xl, 34px);
   letter-spacing: 0.16em;
 }
 #class-journal .pairing-code img {

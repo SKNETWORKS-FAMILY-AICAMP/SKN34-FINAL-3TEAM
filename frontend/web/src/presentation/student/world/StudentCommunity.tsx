@@ -35,7 +35,6 @@ export function StudentCommunity({ child, onSettings }: { child: Child; onSettin
       <h1>
         <Users aria-hidden="true" /> 친구 생각
       </h1>
-      <p>내가 마무리한 미션에서 다른 친구들은 어떻게 생각했는지 볼 수 있어요.</p>
       {settings.data && !settings.data.enabled && (
         <p className="st-meta">
           내 답은 지금 친구들에게 보이지 않아요.{' '}

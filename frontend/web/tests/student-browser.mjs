@@ -58,12 +58,12 @@ async function open(p, title) {
     .getByRole('article')
     .filter({ has: p.getByRole('heading', { name: title, exact: true }) })
   await card.getByRole('button', { name: '미션 열기' }).click()
-  await p.getByRole('button', { name: '작성하기 · 진행 중이면 이어서' }).click()
+  await p.getByRole('button', { name: '미션 시작하기' }).click()
   await p.waitForURL('**/student/attempts/*')
   await p.getByRole('region', { name: '미션 작성기' }).waitFor()
 }
 async function saved(p) {
-  await p.getByText('초안 저장 완료(모의)', { exact: true }).waitFor()
+  await p.getByText('저장했어요(모의)', { exact: true }).waitFor()
 }
 async function submit(p) {
   await saved(p)
@@ -151,7 +151,7 @@ try {
     )
     await p.getByLabel('상태 시연').selectOption('draft-fail')
     await p.getByLabel('내 생각과 까닭').fill('저장 실패 상태의 입력도 보존합니다.')
-    await p.getByText('초안 저장 실패 · 입력은 유지됩니다.', { exact: true }).waitFor()
+    await p.getByText('저장하지 못했어요. 쓴 글은 그대로 있어요.', { exact: true }).waitFor()
     await p.goBack()
     await p.getByRole('dialog', { name: '아직 저장하지 못한 입력이 있어요.' }).waitFor()
     await p.getByRole('button', { name: '계속 작성', exact: true }).click()
@@ -197,7 +197,7 @@ try {
     await p.getByRole('button', { name: '공책으로', exact: true }).click()
     await open(p, '같은 날 심었는데')
     await p.getByRole('button', { name: '생각 메모', exact: true }).click()
-    await p.getByText('글 메모를 선택 답으로 자동 변환하지 않습니다.', { exact: false }).waitFor()
+    await p.getByText('이 문제는 답 칸에서 직접 골라 주세요.', { exact: false }).waitFor()
     assert.equal(await p.getByRole('button', { name: '글 메모 전체를 답변으로 옮기기' }).count(), 0)
   })
   await check('제출 뒤 메모로 제출 답을 변경할 수 없음', async (p) => {
@@ -304,8 +304,8 @@ try {
         await p.getByRole('button', { name: '다시 시도', exact: true }).click()
       }
       if (scenario === 'ai-fail') {
-        await p.getByRole('button', { name: '피드백만 다시 요청' }).waitFor()
-        await p.getByRole('button', { name: '피드백만 다시 요청' }).click()
+        await p.getByRole('button', { name: '피드백 다시 받기' }).waitFor()
+        await p.getByRole('button', { name: '피드백 다시 받기' }).click()
       }
       await p.getByRole('button', { name: '이대로 돌아보기' }).waitFor()
       if (scenario === 'submit-fail') {
@@ -322,7 +322,7 @@ try {
       if (scenario === 'rethink')
         assert.ok((await p.locator('.ux-evidence').innerText()).includes('다시 생각'))
       if (scenario === 'held')
-        await p.getByText('판정 보류 · 답변은 기록했어요.', { exact: true }).waitFor()
+        await p.getByText('답을 잘 받았어요.', { exact: true }).waitFor()
       if (scenario === 'correct') {
         await p.getByText('정답을 확인했어요.', { exact: true }).waitFor()
         // 판정 신고 대상은 답변 ID가 아니라 판정 ID (#146)
@@ -336,8 +336,8 @@ try {
     await p.getByLabel('상태 시연').selectOption('ai-fail-final')
     await p.getByLabel('내 생각과 까닭').fill('근거를 덧붙여 적은 내 생각입니다.')
     await submit(p)
-    await p.getByText('지금은 피드백을 다시 받을 수 없어요.', { exact: false }).waitFor()
-    assert.equal(await p.getByRole('button', { name: '피드백만 다시 요청' }).count(), 0)
+    await p.getByText('지금은 피드백을 받을 수 없어요.', { exact: false }).waitFor()
+    assert.equal(await p.getByRole('button', { name: '피드백 다시 받기' }).count(), 0)
     assert.equal(await p.getByRole('button', { name: '다시 시도', exact: true }).count(), 0)
     // 판정이 없으니 판정 신고 버튼도 없음 (#146)
     assert.equal(await p.getByRole('link', { name: '이 결과 오류 신고' }).count(), 0)

@@ -19,7 +19,7 @@ export function SelfAssessmentPanel({ attempt, onBusyChange }: { attempt: Attemp
   if (!attempt.finishedAt || attempt.status === 'COMPLETED' || !attempt.checklist?.length) return null
   return <section className="ux-self-assessment" aria-label="내 답 돌아보기">
     <h3>내 답도 확인해 보세요.</h3>
-    <p>내 답에 담았다고 생각하는 항목을 골라 주세요. 선생님 확인과 나란히 볼 수 있어요.</p>
+    <p>내 답에 들어 있다고 생각하는 것을 골라 보세요.</p>
     <div className="ux-checklist">
       {attempt.checklist.map((e) => <label className="ux-self-row" key={e.elementId}>
         <input type="checkbox" checked={checks[e.elementId] ?? false} disabled={save.isPending}

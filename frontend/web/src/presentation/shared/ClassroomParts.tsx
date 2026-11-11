@@ -267,7 +267,7 @@ export function MemoCanvas() {
     <div className="ux-memo-drawing">
       <canvas
         ref={ref}
-        aria-label="학생 전용 그림 연습. 제출·판정·학부모 공유에 포함되지 않습니다."
+        aria-label="나만 보는 그림 연습이에요."
       />
       <button
         type="button"
@@ -293,7 +293,7 @@ export function MemoCanvas() {
       >
         마지막 획 지우기
       </button>
-      <small>그림 연습은 현재 화면에서만 유지됩니다. 글 메모는 초안 저장 대상입니다.</small>
+      <small>그림은 이 화면을 나가면 사라져요.</small>
     </div>
   )
 }

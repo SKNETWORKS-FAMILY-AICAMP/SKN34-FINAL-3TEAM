@@ -59,11 +59,10 @@ export function StudentPoints({ child }: { child: Child }) {
         {POINT_RULES.map((r) => (
           <li key={r.type}>
             {POINT_EVENT_LABELS[r.type]} {r.amount}포인트 · {r.note}
-            {r.preparing && <span className="st-meta"> (준비 중이에요. 곧 쌓이기 시작해요)</span>}
+            {r.preparing && <span className="st-meta"> (준비 중)</span>}
           </li>
         ))}
       </ul>
-      <p className="st-meta">답이 맞았는지와는 상관없이, 끝까지 해 본 만큼 쌓여요. 다른 친구와 견주지 않아요.</p>
       {decorating && (
         <Modal title="내 생각 지도 꾸미기" onClose={() => setDecorating(false)}>
           <Customize child={child} onDone={() => setDecorating(false)} />
