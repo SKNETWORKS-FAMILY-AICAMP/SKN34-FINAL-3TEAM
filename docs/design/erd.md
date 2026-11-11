@@ -767,7 +767,7 @@ erDiagram
     uuid id PK
     uuid event_id UK "llm.usage.recorded id"
     varchar service "ai|scoring"
-    varchar call_type "JUDGMENT|FOLLOWUP|ANALYSIS|REPORT_NARRATIVE|MISSION_DRAFT|THEME_DRAFT|THEME_IMAGE|REPORT_EXPLANATION|M2|M1"
+    varchar call_type "JUDGMENT|FOLLOWUP|ANALYSIS|REPORT_NARRATIVE|MISSION_DRAFT|THEME_DRAFT|THEME_IMAGE|REPORT_EXPLANATION|KNOWLEDGE_EMBEDDING|M2|M1"
     varchar model
     varchar prompt_version "NULL 허용"
     int input_tokens "NULL 허용"
@@ -828,6 +828,7 @@ erDiagram
 - #355: ai 미션 초안 호출(FN-ADM-20)의 `call_type` `MISSION_DRAFT`를 V28에서 CHECK에 더함. 호출 종류 목록은 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·core OpenAPI `CallType`과 ai·scoring 발행 목록이 같음(Mermaid 주석 값은 CHECK와 자동 대조, 1장)
 - #439: ai 주간 테마 생성(에픽 #436, ai #437)의 텍스트 호출 `THEME_DRAFT`·이미지 호출 `THEME_IMAGE`를 V40에서 CHECK에 더함(V28과 같은 방식, 허용 목록만 넓힘). 이미지 호출은 토큰이 없어 `cost_usd`가 null(미산정 호출로 셈)
 - #480(에픽 #473): 리포트 설명(FN-RPT-09)의 ai 호출 종류 `REPORT_EXPLANATION`(설명 항목 1개당 클러스터 안 sLLM 1회, ai #477)을 V42에서 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·OpenAPI `CallType`·ai/scoring 발행 목록에 함께 더함(V28·V40과 같은 방식, 허용 목록만 넓힘). 토큰은 기록하지만 sLLM 단가를 설정하지 않아 `cost_usd`는 null(미산정 호출로 셈, #439 이미지와 같음)
+- #467(에픽 #463): 지식 임베딩 API(api-spec 4.2.4 C6)의 ai 호출 종류 `KNOWLEDGE_EMBEDDING`(임베딩 요청 1회당 1건, 본문 최대 64개를 한 번에 보냄)을 V44에서 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·OpenAPI `CallType`·ai/scoring 발행 목록에 함께 더함(V42와 같은 방식, 허용 목록만 넓힘). 입력 토큰만 있고 출력 토큰은 0으로 기록한다. 단가(`app.llm-pricing`)는 다른 모델처럼 비어 있어 `cost_usd`는 null(미산정 호출로 셈)
 - `outbox_event`: 상태 변경과 같은 트랜잭션에 저장, 릴레이가 publisher confirm 후 `published_at` 기록 (아키텍처 1.6)
 - #243 `outbox_event` 실패·격리: 릴레이는 subject별 선두만 발행. 발행 실패는 `failure_count`·`last_error_code`·`last_failed_at`을 기록하고 1·5·15분 뒤 재시도, 4번째 실패에 `quarantined_at` 기록(report #131과 같은 컬럼·기준). 격리 선두와 같은 subject 뒤 행은 운영 재처리까지 대기, 다른 subject는 계속 발행 ([보고서](../report/core-gateway.md#11-core-outbox-실패-격리-243))
 - #208 `event_log`: 감사 큐 `core.event.audit`로 받은 모든 업무 메시지(ai·scoring 발행 포함)의 메타데이터. payload·원문은 저장하지 않음. 같은 id 재발행·재전달은 첫 행 유지. `outbox_event`·`processed_event`·`llm_usage`와 `event_id`로 조인해 발행·전달·소비를 추적 ([보고서](../report/core-gateway.md#9-rabbitmq-발행소비-기록-208))
@@ -1349,9 +1350,74 @@ erDiagram
 
 2026-11-06 서비스 기획 방향 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 저장 구조. 주간 테마(#385)는 V11·V12로 구현해 4.2·4.2.1 Mermaid와 6장으로 옮겼다(설계와 달리 게시 중 수정을 미션처럼 버전으로 두려고 `weekly_theme_version` 테이블과 `weekly_theme.current_·published_·review_version_id`를 더하고, 제목·소개는 버전으로, 요일 문제는 버전 기준 `weekly_theme_day (theme_version_id, …)`로 옮김, [learning 보고서](../report/learning.md)). 커뮤니티 공유물·반응(#386)은 V13으로 구현해 4.3.1 Mermaid와 6장으로 옮겼다. 이로써 learning_db에 남은 설계 표는 없다. 아래 원칙은 이후 변경에도 같다: 컬럼 기본값은 두지 않는다(검증 스크립트 규칙): 기존 행이 있는 테이블의 NOT NULL 컬럼은 준비 버전(nullable 추가)→기존 행 채움→최종 버전(NOT NULL·CHECK)으로 나눈다(8장).
 
-### 4.5 교육과정 지식 RAG (#463, 계약 #464, 구현 전)
+### 4.5 교육과정 지식 RAG (#463, 계약 #464, 구현 #466)
 
-**구현 전 설계 표(기준안, 계약 C2·C3·C9)**. #466이 Flyway(다음 번호, 병합 때 다시 확인)로 만들 때 위 Mermaid·6장 인덱스·8장 버전으로 옮긴다(4.1.1·4.4 선례: `scripts/verify_db_schema.py`가 Mermaid를 실제 DB와 대조하므로 구현 전에는 Mermaid에 넣지 않음). 테이블 칸은 #466 이슈 표를 따르고, 그 표에 없던 칸은 "기준안 추가"로 표시했다. 추출 레코드(C1)는 `scripts/knowledge/schema/curriculum-record.schema.json`, 관계 확인 파일(C4)은 `relation-review.schema.json`, 조회 API(C5)는 [api-spec 4.1.2](api-spec.md#412-교육과정-지식-내부-api-463-계약-464-c5-구현-469).
+**계약 C2·C3·C9, learning V14(#466)**. 아래 Mermaid를 `scripts/verify_db_schema.py`가 실제 DB와 대조하고, 표는 칸 설명이다. 테이블 칸은 #466 이슈 표를 따르고, 그 표에 없던 칸은 "기준안 추가"로 표시했다. 추출 레코드(C1)는 `scripts/knowledge/schema/curriculum-record.schema.json`, 관계 확인 파일(C4)은 `relation-review.schema.json`, 조회 API(C5)는 [api-spec 4.1.2](api-spec.md#412-교육과정-지식-내부-api-463-계약-464-c5-구현-469), 판 관리 API는 [api-spec 4.1.3](api-spec.md#413-교육과정-지식-판-관리-466).
+
+```mermaid
+erDiagram
+  knowledge_dataset {
+    varchar(32) version PK "kn-YYYYMMDD-NN (CHECK)"
+    varchar status "CHECK[LOADING|ACTIVE|RETIRED], 부분 UK (status) WHERE ACTIVE"
+    jsonb source "원문 고시·추출 판·확인 파일·학기 대응 자료·이전 활성 판"
+    varchar embedding_model "C6 응답 model"
+    int embedding_dimensions "1536 (CHECK)"
+    int chunk_count
+    int relation_count
+    timestamptz created_at
+    timestamptz activated_at "NULL 허용, LOADING만"
+  }
+  knowledge_chunk {
+    varchar(32) dataset_version PK,FK
+    varchar(300) id PK
+    varchar kind "CHECK[STANDARD|DOMAIN|CONTENT|SUBJECT_GUIDE|THINKING_TYPE]"
+    varchar subject "NULL 허용"
+    varchar area "NULL 허용"
+    varchar standard_code "NULL 허용"
+    varchar domain_id "NULL 허용"
+    varchar thinking_type "NULL 허용, CHECK[ANALYZE|EVALUATE|CREATE|SOLVE|REFLECT]"
+    smallint[] grades "3~6 (CHECK), 빈 배열 허용"
+    varchar[] semesters "3-1~6-2 (CHECK), 빈 배열 허용"
+    varchar notice_grade_band "NULL 허용"
+    text text
+    jsonb record "C1 원본"
+    vector(1536) embedding "NULL 허용, 활성화 전 모두 채움"
+    char(64) content_hash "SHA-256 16진수"
+    jsonb source
+  }
+  knowledge_standard_semester {
+    varchar(32) dataset_version PK,FK
+    varchar standard_code PK,FK
+    varchar semester PK "그 학년 학기 (CHECK)"
+    smallint grade "3~6 (CHECK)"
+  }
+  knowledge_fits {
+    varchar(32) dataset_version PK,FK
+    varchar standard_code PK,FK
+    varchar thinking_type PK,FK "CHECK[ANALYZE|EVALUATE|CREATE|SOLVE|REFLECT]"
+    text reason
+    varchar reviewed_by
+    timestamptz reviewed_at
+  }
+  knowledge_prerequisite {
+    varchar(32) dataset_version PK,FK
+    varchar standard_code PK,FK
+    varchar prerequisite_code PK "FK 없음, achievement_standard 코드 적재 검사"
+    text reason
+    varchar reviewed_by
+    timestamptz reviewed_at
+  }
+  knowledge_covers {
+    varchar(32) dataset_version PK,FK
+    varchar standard_code PK,FK
+    varchar content_id PK,FK
+    varchar reviewed_by
+    timestamptz reviewed_at
+  }
+```
+
+- 비 btree 인덱스(6장 대조 대상 아님): `knowledge_chunk.embedding` HNSW(`vector_cosine_ops`), `grades`·`semesters` GIN
+- 관계 FK는 `(dataset_version, …)` → `knowledge_chunk(dataset_version, id)`, 자동 삭제 없음. 판 제거는 서비스가 관계 → 조각 → 판 순서로 지운다
 
 - 저장소: `learning_db` 안(새 DB 없음, 에픽 결정). `vector` 확장은 migrate 계정이 만들 수 없어 관리자 계정 bootstrap이 만든다(#466)
 - 학년은 초3·초4·초5·초6(`grades`), 고시 원문 학년군(`초3~4`·`초5~6`)은 `notice_grade_band`에만 둔다
@@ -1593,6 +1659,8 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | learning | `community_post` | `(mission_id, status)` | 미션별 공개 공유물 목록 (#386, V13) |
 | learning | `community_reaction` | `(student_id, created_at)` | 학생 삭제 때 남긴 반응 정리 (#386, V13) |
 | learning | `processed_event` | `(processed_at)` | 보존 기간 정리 |
+| learning | `knowledge_dataset` | `(status) WHERE status = 'ACTIVE'` | 활성 판 하나(UNIQUE, #466 V14) |
+| learning | `knowledge_chunk` | `(dataset_version, kind, subject)` | 판·종류·교과 거르기(검색 #469·성취기준 조회). HNSW·GIN은 4.5 |
 | report | `weekly_report` | `(student_id, period_type, status, period_from)` | 자녀별 리포트 목록 |
 | report | `report_job_guard` | `(student_id)` | 학생 삭제 때 차단 기록 정리 (#132, `20261029_03`) |
 | report | `outbox_event` | `(created_at) WHERE published_at IS NULL`, `(subject, created_at, id) WHERE published_at IS NULL`, `(published_at) WHERE published_at IS NOT NULL` | 학생별 선두·발행 순서 및 재시도 대상, 보존 기간 정리 |
@@ -1605,7 +1673,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V43(V10·V11 결번), learning Flyway V1~V13, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 95개 테이블·820개 컬럼(core 59/514, learning 28/240, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V43·learning V13·report `20261110_08` 기준). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V43(V10·V11 결번), learning Flyway V1~V14, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 101개 테이블·866개 컬럼(core 59/514, learning 34/286, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V43·learning V14·report `20261110_08` 기준). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT

@@ -92,7 +92,7 @@ def verify(
     compose = {
         "services": {
             "postgres": {
-                "image": "postgres:17.11-alpine",
+                "image": "pgvector/pgvector:0.8.7-pg17-trixie",
                 "environment": {
                     "POSTGRES_USER": "verify",
                     "POSTGRES_PASSWORD": password,

@@ -7,8 +7,8 @@
     python scripts/knowledge/review_relations.py stats FILE [--records R]
     python scripts/knowledge/review_relations.py coverage FILE [--records R] [--semesters 3-1,3-2,4-1,4-2]
 
-확인 절차(docs/report/learning.md 29절): 후보 CSV(relation_candidates.py) → 담당자 1차 파일과 팀원 교차
-파일을 따로 채움 → compare로 판단이 다른 행을 찾아 합의 → 1차 파일을 고쳐 차이 0 → validate --final → #466 적재.
+확인 절차(docs/report/learning.md 30절): 후보 CSV(relation_candidates.py) → 담당자 1차 파일과 팀원 교차
+파일을 따로 채움 → compare로 판단이 다른 행을 찾아 합의 → 1차 파일을 고쳐 차이 0 → validate --final → #466 적재(manage_datasets.py load --reviews).
 
 evidence(C4 보충): 부분을 " | "로 잇는다. "문장: "·"해설: "로 시작하는 부분은 그 성취기준 문장·해설을
 글자 그대로 옮긴 인용이라 validate가 부분 문자열인지 검사한다.

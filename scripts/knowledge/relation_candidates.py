@@ -16,7 +16,7 @@ C1 레코드만 입력으로 쓴다(학생 정보 없음). 결과는 C4 확인 �
         --embedding http --out ../../scripts/knowledge/relations-reviewed/kn-YYYYMMDD-NN-candidates.csv
 
 임베딩: --embedding fake(기본, #464 가짜 fake-bigram-v1) | http(ai `POST /internal/embeddings`, 환경 변수
-AI_URL·INTERNAL_TOKEN, #467 구현 후).
+AI_URL(기본 http://localhost:8000)·INTERNAL_TOKEN, #467).
 """
 
 import argparse

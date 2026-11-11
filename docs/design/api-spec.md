@@ -517,7 +517,7 @@
 | POST | `/admin/model-versions` | SERVICE_OPS | 버전 등록 (평가 기록 첨부) | ADM-17 | 우선1 |
 | POST | `/admin/model-versions/{versionId}/activate` | SERVICE_OPS | 승인 조건(NFR-AIQ-05) 확인 후 활성화 → `model.version.activated` | ADM-18 | 우선1 |
 | POST | `/admin/model-versions/{versionId}/rollback` | SERVICE_OPS | 이전 승인 버전 복귀, 재분석 여부 기록 | ADM-18 | 우선1 |
-| GET | `/admin/ai-usage?from&to&callType` | SERVICE_OPS | 되묻기·판정·분석·리포트·미션 초안(#355, `MISSION_DRAFT`)·리포트 설명(FN-RPT-09, #480 `REPORT_EXPLANATION`)·주간 테마 생성(#439, 텍스트 `THEME_DRAFT`·이미지 `THEME_IMAGE`)·scoring 모델(`M2`·`M1`)별 호출량·실패·지연·토큰·비용 (요금제 한도 P13, 월 LLM 비용 예산 80% 경보 P10) | ADM-19 | 우선1 |
+| GET | `/admin/ai-usage?from&to&callType` | SERVICE_OPS | 되묻기·판정·분석·리포트·미션 초안(#355, `MISSION_DRAFT`)·리포트 설명(FN-RPT-09, #480 `REPORT_EXPLANATION`)·지식 임베딩(#467 `KNOWLEDGE_EMBEDDING`)·주간 테마 생성(#439, 텍스트 `THEME_DRAFT`·이미지 `THEME_IMAGE`)·scoring 모델(`M2`·`M1`)별 호출량·실패·지연·토큰·비용 (요금제 한도 P13, 월 LLM 비용 예산 80% 경보 P10) | ADM-19 | 우선1 |
 | GET·POST | `/admin/weekly-themes?gradeBand&weekStart&status` | CONTENT | 테마 목록·작성 `{gradeBand, weekStart, title, intro, days:[{day, missionId}]}`. `gradeBand`는 `G3_4`·`G5_6` | ADM-22 | core 프록시 #387 |
 | GET·PUT | `/admin/weekly-themes/{themeId}` | CONTENT | 상세·수정(게시 중 수정은 재검토) | ADM-22 | core 프록시 #387 |
 | POST | `/admin/weekly-themes/{themeId}/review-request` · `/publish` · `/unpublish` | CONTENT | 미션과 같은 작성→검토→게시(본문 `{}`). 별도 검토 경로 없이 검토 요청한 현재본의 게시가 승인, 아니면 `409 CONFLICT`. 게시 검사: 월~금 다섯 요일, 게시 미션만(시연 전용 제외), 다섯 생각 유형 1개씩, 학년군 전체를 덮는 학년 범위(초3~4 논술 불가), 같은 학년군·주 게시 1개 | ADM-22 | core 프록시 #387 |
@@ -910,6 +910,7 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 | GET | `/internal/community/posts/{postId}` | core | 구현(#386, #388 요청): `SYSTEM`, scope 없음. 신고 대상 확인·관리자 원문 열람 `{postId, studentId, missionId, status, answer, createdAt}`(상태 무관), 파기·없음 `404 COMMUNITY_POST_NOT_FOUND` |
 | GET · POST | `/internal/admin/theme-drafts…` | core | learning #438(core #439 프록시, 에픽 #436): 인증·권한 전달은 관리자 미션과 같음. 요청 `POST`(202)·목록 `GET ?status&source&page&size`·상세 `GET /{draftId}`·채택 `POST /{draftId}/adopt`(201, 응답에 만든 `themeId`)·버리기 `POST /{draftId}/discard`·다시 생성 `POST /{draftId}/regenerate`(202). 요청·버리기·다시 생성 응답에 `draftId`·`status`가 있어야 core가 결과 감사를 남김(없으면 core `503 LEARNING_INVALID_RESPONSE`). 초안 본문 모양·오류 코드는 learning #438 소유 |
 | GET·POST·PUT | `/internal/admin/weekly-themes…` | core | #385(core #387 프록시): `ADMIN` + `X-User-Id`. 목록 `GET ?gradeBand&weekStart&status&page&size` → `{items, page, size, totalElements}`, 작성 `POST`(201)·수정 `PUT /{id}`(새 버전) 본문 `{gradeBand, weekStart, title, intro, days:[{day, missionId}]}`, 검토 요청·게시·중단 `POST /{id}/review-request`·`/publish`·`/unpublish` `{}` → 모두 `AdminWeeklyTheme` = `{themeId, gradeBand, weekStart, status, version, publishedVersion, reviewRequested, title, intro, days, publishedAt, createdAt, updatedAt}`. 오류: 형식·월요일 아닌 주·없는 미션 `400`, 상태상 불가 전이·게시 중 학년군·주 변경 `409 CONFLICT`, 게시 검사 `422 WEEKLY_THEME_PUBLISH_INCOMPLETE` + `errors:[{code, message}]` |
+| GET·POST·DELETE | `/internal/admin/knowledge/datasets…` | 운영 스크립트 | #466 교육과정 지식 판 적재·상태·활성화·제거. `SYSTEM`, core 프록시 없음. 4.1.3 |
 | GET · POST | `/internal/knowledge…` | ai, learning 내부 | 교육과정 지식 근거·검색(#463, 계약 #464 C5, 구현 #469, **구현 전·팀 확인 전**). `SYSTEM` 역할, 학생 범위·학생 정보 없음. 다섯 경로와 응답은 4.1.2 |
 
 - 기록 조회 공통 (#27): 학생 경로는 역할 `PARENT`·`STUDENT`·`SYSTEM`(`home`은 학생 본인 `STUDENT`만)이고 `X-Student-Scope`에 대상 학생이 없으면 `403`. `from`·`to`는 KST 날짜(양 끝 포함), 둘 다 주거나 둘 다 생략(생략하면 오늘 포함 최근 7일, P06), 한쪽만 주거나 `from > to`면 `400`. 응답 `period`는 실제 조회 기간. 집계 대상은 P08(기간 안에 답변 제출이 있는 시도, 미완료 포함·판정 상태 무관. 조회 종료일까지의 답변이 모두 처리 실패인 시도와 삭제 기록은 제외). 시도별 사실(완료·되묻기 받음·보완 답변·최근 답변)은 조회 종료일까지 일어난 것만. `state`는 집계 대상(비율은 분모) 0건 `NO_RECORD`, 1~4건 `INSUFFICIENT_SAMPLE`(비율 `value: null`), 5건 이상 `OK`. 메모·초안은 반환하지 않음(P05). 최상위 학생 식별자는 호출 역할과 무관하게 `studentId`(학부모 공개 응답의 `childId`는 core가 바꿈, core #40·report #51과 합의). 조회 장애는 `state`가 아니라 HTTP 오류(Problem Details)로 반환. 까닭을 잇는 말은 `왜냐하면`·`때문`·`그래서`·`따라서`(report와 확정)
@@ -937,7 +938,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 #### 4.1.2 교육과정 지식 내부 API (#463, 계약 #464 C5, 구현 #469)
 
-**구현 전 계약(기준안, 팀 확인 전)**. 저장 구조는 [ERD 4.5](erd.md#45-교육과정-지식-rag-463-계약-464-구현-전), 요청·응답 칸은 learning OpenAPI(`x-implementation-status: planned-issue-469`), ai 쪽 모델은 `backend/ai-service/app/knowledge/contracts.py`, 가짜 구현은 `app/knowledge/fake.py`(샘플 `scripts/knowledge/samples/`). 계약을 바꾸면 이 절·OpenAPI·`contracts.py`·`scripts/tests/test_knowledge_contracts.py`를 같이 고치고 #465~#471 담당에게 알린다(변경 절차 기준안, #464 확인 필요).
+**구현 전 계약(기준안, 팀 확인 전)**. 저장 구조는 [ERD 4.5](erd.md#45-교육과정-지식-rag-463-계약-464-구현-466), 요청·응답 칸은 learning OpenAPI(`x-implementation-status: planned-issue-469`), ai 쪽 모델은 `backend/ai-service/app/knowledge/contracts.py`, 가짜 구현은 `app/knowledge/fake.py`(샘플 `scripts/knowledge/samples/`). 계약을 바꾸면 이 절·OpenAPI·`contracts.py`·`scripts/tests/test_knowledge_contracts.py`를 같이 고치고 #465~#471 담당에게 알린다(변경 절차 기준안, #464 확인 필요).
 
 | Method | Path | 호출자 | 요청 → 응답 |
 |---|---|---|---|
@@ -958,6 +959,28 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 기준안 값: 코드 1~10개, k 기본 5·최대 20, 테마 유형당 기본 3·최대 10, 개념 1~20개, 최소 유사도 0.7(에픽, 결과서 양식 예시 값), learning 질의당 2초 이하(#469), ai→learning 대기 시간은 #470에서 정함. 실측 후 조정
 - 팀 확인: 경로·칸·사유 코드·`SYSTEM` 인증(#469, #470), 미션 초안 작업이 같은 서비스 안에서 이 API 대신 서비스 메서드를 직접 부를지(#470)
 
+#### 4.1.3 교육과정 지식 판 관리 (#466)
+
+판 적재·상태 조회·활성화·제거(계약 #464 C9, 저장 구조 [ERD 4.5](erd.md#45-교육과정-지식-rag-463-계약-464-구현-466)). learning OpenAPI `/admin/knowledge/datasets…`.
+
+- 부르는 쪽: 운영 스크립트 `scripts/knowledge/manage_datasets.py`가 learning에 직접(kind는 `kubectl -n app port-forward svc/learning-service 18081:8081`) 내부 토큰 + `X-User-Role: SYSTEM`. core 프록시·관리자 화면·감사 기록 없음(동섭 결정 2026-11-11, 이슈 기준안). 다른 역할은 `403`
+- 적재는 동기(동섭 결정 2026-11-11): 실제 추출본도 임베딩 호출 수십 번(1~2분)이라 스크립트가 10분까지 기다린다. 실패하면 판은 `LOADING`으로 남는다(C9)
+- 임베딩: `app.knowledge.embedding` = `ai`(기본, 4.2.4 `POST /internal/embeddings`, #467) | `fake`(`fake-bigram-v1`, 4.2.4 가짜 규칙을 Kotlin으로 옮김). #467 전까지 compose·kind는 `fake`(동섭 결정 2026-11-11). 판의 `embedding_model`은 `fake`면 `fake-bigram-v1`, `ai`면 `app.knowledge.embedding-model`(기본 `text-embedding-3-small`)이고 응답 `model`·`dimensions`·개수가 다르면 `502 AI_BAD_RESPONSE`
+
+| 메서드 | 경로 | 내용 |
+|---|---|---|
+| GET | `/internal/admin/knowledge/datasets` | `{items:[KnowledgeDatasetView]}` 최근 판부터. `KnowledgeDatasetView = {version, status, source, embeddingModel, embeddingDimensions, chunkCount, relationCount, chunks:{종류: 수}, relations:{SEMESTER·FITS·PREREQUISITE·COVERS: 수}, createdAt, activatedAt}` |
+| POST | `/internal/admin/knowledge/datasets` | 본문 `{source, records:[C1], reviews:[C4 행]}`(reviews 선택) → `201 KnowledgeLoadResult {dataset, documents, embeddedTexts, embeddingRequests, reusedEmbeddings, previousVersion, carriedRelations, recheck:[C4 행]}`. 새 판 `kn-YYYYMMDD-NN`(KST) `LOADING`, `source.previousVersion`에 적재 때 활성 판 |
+| GET | `/internal/admin/knowledge/datasets/{version}` | `KnowledgeDatasetView`, 없으면 `404 KNOWLEDGE_DATASET_NOT_FOUND` |
+| POST | `/internal/admin/knowledge/datasets/{version}/activate` | 본문 `{}` 또는 없음 → 한 트랜잭션에서 이전 `ACTIVE` → `RETIRED`, 이 판 → `ACTIVE` |
+| DELETE | `/internal/admin/knowledge/datasets/{version}` | `RETIRED`만 `204`(관계 → 조각 → 판) |
+
+- 적재 순서(C9 ①~⑦): 입력 검사(레코드 형식, 같은 판 안 조각 ID 겹침, 학기가 그 학년 것, 성취기준 문장 = `achievement_standard`, 확인 행 `reviewer = SAMPLE` 거부, 관계 끝: 성취기준·생각 유형·내용 요소 조각, 선수 코드는 `achievement_standard`) → 실패하면 판을 만들기 전에 `400 VALIDATION_FAILED` → ① 판 행 → ③ 활성 판과 모델·차원이 같으면 같은 `content_hash` 벡터 복사, 나머지만 64개씩 임베딩 → ②④⑤⑥⑦ 한 트랜잭션: 조각, 학기 관계, 이전 활성 판 관계 옮기기 + 새 확인 행(늦은 `reviewedAt` 우선, 늦은 `REJECT`는 옮긴 관계를 뺌), 확인된 covers로 내용 요소·영역 학년·학기, 빈 임베딩 없음 검사, `chunk_count`·`relation_count`(학기·fits·prerequisite·covers 행 합)
+- `recheck`: 옮기지 못한 관계(끝이 새 판에 없음)와 옮겼지만 끝 본문이 바뀐 관계를 C4 행 모양(`decision` 빈 칸, `evidence`에 사유, `datasetVersion` = 이전 판)으로. 스크립트 `--recheck-out`이 CSV로 저장해 #468 확인 파일에 다시 넣는다
+- 활성화 `409 KNOWLEDGE_DATASET_STATE_CONFLICT`: `LOADING`이 아님, 빈 임베딩, 적재 뒤 활성 판이 바뀜(`source.previousVersion` ≠ 현재 활성 판, 다시 적재). 제거 `409`: `ACTIVE`·`LOADING`
+- 같은 입력을 다시 적재하면 같은 조각·관계 수(멱등). 활성 판이 같은 모델이면 임베딩 호출 0번
+- 임베딩 사용량(비용)은 ai가 `llm.usage.recorded`(`callType` `KNOWLEDGE_EMBEDDING`, #467)로 기록한다. learning은 호출 수(`embeddingRequests`)와 본문 수(`embeddedTexts`)만 돌려준다
+
 ### 4.2 ai-service (호출: learning, core, report)
 
 구현된 경로의 요청·응답 계약: [contracts/openapi/ai-service.yaml](../../contracts/openapi/ai-service.yaml) (`scripts/tests/test_ai_openapi.py`가 라우터 경로와 대조)
@@ -972,7 +995,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | GET | `/internal/versions` | core | 현재 호출에 사용하는 프롬프트 버전 `{prompts:{judgment,followup,analysis,reportNarrative,reportTemplate,missionDraft,reportExplanation}}` (#280 `reportTemplate`, #354 `missionDraft`, #477 `reportExplanation` 추가. core에 이 응답을 읽는 코드는 없음) |
 | POST | `/internal/analysis/report-template` | core | `{question, current}` → `{settings}` 또는 `{clarification}` 중 하나 (#209, 2.4). 미보유 활성 본문은 503 `AI_PROMPT_VERSION_UNAVAILABLE`(#280). core 호출은 별도 서킷 `ai-report-template`(아키텍처 1.3) |
 | POST | `/internal/mission-drafts` | learning | 미션 초안 1회 생성·검사 (#354, FN-ADM-20). `{standards:[{code, statement, level?:{grade, text}}], thinkingType, elementCodes:[{code, label, description}], gradeMin, gradeMax, inputType, previousFailures:[{check, reason}]}` → `{draft:{title, question, guide, sceneNote, choices?, categories?, answerKey?, exampleAnswer?, forbiddenTerms[], hints[], elements:[{code, label, description, goodThought, standardCode}]}, checks:{passed, failures:[{check, reason}]}, versions:{prompt, model}}`. `level`은 성취수준 문장이 있을 때만, `elementCodes`는 learning이 FN 1.5 표에서 그 유형 코드와 입력 방식에 맞는 정답 코드를 채움(코드 목록은 learning 소유). ai 검사 `check`: `REQUIRED`(필수 항목·입력 방식별 선택지·정답 키·예시 답), `QUESTION_LENGTH`(`TOO_LONG`, `gradeMin` 학년의 상한, 설정 `MISSION_DRAFT_QUESTION_MAX_CHARS` 기본 전 학년 200자, P19 확정 전 기준안), `LEAK`(질문·안내·생각 열기 질문 속 정답 키·금지어 노출과, 안내·생각 열기 질문 속 예시 답 노출(질문에 이미 있는 글은 빼고 비교, 질문은 예시 답과 비교하지 않음), `reason`은 되묻기 노출 검사 코드 `ANSWER_KEY`·`FORBIDDEN_TERM`·`EXAMPLE_ANSWER` 그대로. 정답 키 글은 고르기면 정답 선택지 이름, 풀이면 최종 답이고 숫자뿐인 답은 숫자 경계로 비교, 순서·분류는 비교하지 않음). 검사 실패도 `200`(`checks.passed=false`), 형식에 맞는 초안을 못 만들면 `502 AI_BAD_RESPONSE`, 그 밖 LLM 실패는 `503 AI_UNAVAILABLE`(둘 다 `retryable`). 호출 1번에 생성 1회이고 재생성 반복은 learning이 함. 시간은 P12 예외(#353): LLM 60초 1회(재시도 없음)·마감 63초, learning→ai 대기 70초. 주기 작업이라 기다리는 사람이 없고, 기본 모델 `gpt-6-luna`가 실제 성취기준으로 15~31.7초 걸림(ai.md 9.2). LLM 입력에 학생 정보 없음. 사용량 `callType = MISSION_DRAFT`(core #355가 받음. 그 전에 발행된 메시지는 core 소비자가 거부해 DLQ에 남아 있음). 근거 칸 `knowledge`·응답 `sources`는 4.2.5(#464 C7, 구현 전) |
-| POST | `/internal/embeddings` | learning(지식 적재), 스크립트(관계 후보), ai 내부(검색 질의) | 교육과정 지식 본문·질의 임베딩(#463, 계약 #464 C6, 구현 #467, **구현 전·팀 확인 전**). `{texts[]}` → `{model, dimensions, vectors[]}`, 4.2.4 |
+| POST | `/internal/embeddings` | learning(지식 적재), 스크립트(관계 후보), ai 내부(검색 질의) | 교육과정 지식 본문·질의 임베딩(#463, 계약 #464 C6, 구현 #467). `{texts[]}` → `{model, dimensions, vectors[]}`, 4.2.4 |
 
 - #68 프롬프트 레지스트리의 `PROMPT name`은 위 응답의 일곱 키와 같다. 승인 scope는 차례대로 `ai/judgment`·`ai/followup`·`ai/analysis`·`ai/report-narrative`·`ai/report-template`·`ai/mission-draft`(#354 `missionDraft`)·`ai/report-explanation`(#477 `reportExplanation`)이며 요청 범위 밖 이벤트는 적용하지 않는다. core에 해당 활성 항목이 없으면 ai 이미지에 포함된 기존 본문·버전을 사용한다. 활성화된 버전의 실제 본문이 이미지에 없으면 해당 기능의 새 요청과 `/internal/versions`는 `503 AI_PROMPT_VERSION_UNAVAILABLE`로 실패하고 `/health/ready`의 `versions`는 DOWN이다. 기존 본문을 새 버전명으로 보고하지 않는다. 진행 중인 요청은 시작 때 선택한 본문·버전으로 완료한다.
 
@@ -1016,14 +1039,15 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 #### 4.2.4 지식 임베딩 (#463, 계약 #464 C6, 구현 #467)
 
-**구현 전 계약(기준안, 팀 확인 전)**. ai OpenAPI `/embeddings`(`x-implementation-status: planned-issue-467`), 모델 `contracts.py` `EmbeddingRequest`·`EmbeddingResponse`.
+**#467에서 구현**. ai OpenAPI `/embeddings`, 모델 `contracts.py` `EmbeddingRequest`·`EmbeddingResponse`, 라우터 `app/embedding/`, 제공자 `app/llm/embeddings.py`.
 
 - `POST /internal/embeddings` `{texts:[string]}` → `200 {model, dimensions, vectors:[[number]]}`. `vectors`는 `texts`와 같은 순서·같은 개수. 내부 토큰만 확인한다(4.2 다른 경로와 같음)
 - 입력은 교육과정 지식 본문(C2 조각 본문)과 검색 질의 문장만. 학생 정보·학생 답은 받지 않는다(FN-ADM-20 원칙)
-- 상한(기준안, #467): 한 요청 `texts` 1~64개, 본문당 1~8,000자. 넘거나 빈 글·공백만이면 `400 VALIDATION_FAILED`. 64개를 넘는 적재는 부르는 쪽이 나눠 보낸다
-- 모델·차원(기준안, 에픽 #463): OpenAI `text-embedding-3-small`, 1536차원. 설정값이며 응답에 함께 돌려줘 learning이 판(`knowledge_dataset.embedding_model`·`embedding_dimensions`, C2)과 다른 벡터를 넣지 않게 한다
+- 상한(기준안, #467): 한 요청 `texts` 1~64개, 본문당 1~8,000자. 넘거나 빈 글·공백만이거나 `texts` 밖 칸이 있으면 `400 VALIDATION_FAILED`. 64개를 넘는 적재는 부르는 쪽이 나눠 보낸다
+- 모델·차원(기준안, 에픽 #463): OpenAI `text-embedding-3-small`, 1536차원. 설정값(`EMBEDDING_MODEL`·`EMBEDDING_DIMENSIONS`, OpenAI 요청에 `dimensions`로 보냄)이며 응답에 함께 돌려줘 learning이 판(`knowledge_dataset.embedding_model`·`embedding_dimensions`, C2)과 다른 벡터를 넣지 않게 한다
 - 오류: 제공자 응답의 벡터 개수·차원이 맞지 않음 `502 AI_BAD_RESPONSE`, 제공자 미설정·호출 실패·시간 초과 `503 AI_UNAVAILABLE`(둘 다 `retryable`, 기존 `AI_*` 실패 코드와 같은 방식)
-- 사용량: 기존 `llm.usage.recorded`로 호출마다 토큰 수·모델 기록. `callType`은 기준안 `KNOWLEDGE_EMBEDDING`(4.6). core CHECK·이벤트 스키마·core OpenAPI·ERD·ai·scoring 발행 목록을 함께 바꿔야 해 #467이 core 담당과 같이 반영한다(이 계약 고정에서는 목록을 바꾸지 않음)
+- 제공자(#467 결정): `EMBEDDING_PROVIDER=openai`(기본)|`fake`. openai는 `OPENAI_API_KEY`를 쓰고 `OPENAI_BASE_URL`(sLLM 대화용)은 쓰지 않아 항상 OpenAI 기본 주소로 보낸다. 키가 없으면 임베딩만 `503`(`retryable=false`). 제공자 요청 1회 타임아웃·재시도·대기는 LLM 공통 값(P12 15초·1회·1초)을 그대로 쓰고, 재시도 대상은 시간 초과·연결·429·5xx·개수/차원 불일치다. 한 요청의 `texts`는 OpenAI에 한 번에 보낸다
+- 사용량: 기존 `llm.usage.recorded`로 제공자 요청 1회마다(재시도 포함) 1건, `callType`은 `KNOWLEDGE_EMBEDDING`(4.6, core V44). 입력 토큰만 있고 출력 토큰은 `0`, `promptVersion`은 null. `fake`는 외부 호출이 없어 기록하지 않는다
 - 가짜 구현(개발용, `app/knowledge/fake.py` `FakeEmbedder`): 모델 이름 `fake-bigram-v1`. 벡터 = NFC·소문자·공백 제거 → 글자 2개씩(한 글자면 그 글자) → 조각마다 SHA-256 앞 4바이트(big endian) % 차원 위치에 5번째 바이트가 짝수면 +1·홀수면 −1 → 길이 1로 맞춤(모두 0이면 0번 위치 1.0). 같은 글은 언제나 같은 벡터라 learning 시험 대역(#466)이 같은 규칙으로 만들 수 있다
 
 #### 4.2.5 미션 초안 근거 칸 (#463, 계약 #464 C7, 구현 #470)
@@ -1116,11 +1140,11 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 ### 4.6 #43 AI 사용량 조회 계약
 
-- `GET /api/v1/admin/ai-usage`: 기존 #36 Bearer·`SERVICE_OPS` 검사를 사용한다. 필수 `from`, `to`는 0001~9999 연도의 ISO 날짜이며 KST 기준 양 끝 날짜를 포함한다. 조회 기간은 양 끝 포함 최대 366일이다. `from > to`, 366일 초과 또는 허용 연도 밖의 날짜는 DB 조회 전에 400 `VALIDATION_FAILED`로 거부한다. 선택 `callType`은 사용량 이벤트의 10개 호출 종류 중 하나다(#355에서 `MISSION_DRAFT`, #439에서 주간 테마 생성 텍스트 `THEME_DRAFT`·이미지 `THEME_IMAGE`, #480에서 `REPORT_EXPLANATION` 추가). 이미지 호출은 토큰이 없어 `costUsd`가 null이고 `unpricedCalls`로 센다(장당 단가 반영은 ai #437 비용 측정 뒤).
+- `GET /api/v1/admin/ai-usage`: 기존 #36 Bearer·`SERVICE_OPS` 검사를 사용한다. 필수 `from`, `to`는 0001~9999 연도의 ISO 날짜이며 KST 기준 양 끝 날짜를 포함한다. 조회 기간은 양 끝 포함 최대 366일이다. `from > to`, 366일 초과 또는 허용 연도 밖의 날짜는 DB 조회 전에 400 `VALIDATION_FAILED`로 거부한다. 선택 `callType`은 사용량 이벤트의 11개 호출 종류 중 하나다(#355에서 `MISSION_DRAFT`, #439에서 주간 테마 생성 텍스트 `THEME_DRAFT`·이미지 `THEME_IMAGE`, #480에서 `REPORT_EXPLANATION`, #467에서 지식 임베딩 `KNOWLEDGE_EMBEDDING` 추가). 이미지 호출은 토큰이 없어 `costUsd`가 null이고 `unpricedCalls`로 센다(장당 단가 반영은 ai #437 비용 측정 뒤).
 - 응답은 `{period:{from,to},items:[{callType,calls,failures,latencyMs,inputTokens,outputTokens,costUsd,unpricedCalls}]}`다. 기간에 실제 호출이 있는 종류만 반환한다. `latencyMs`는 성공·실패를 포함한 호출당 평균 지연(ms)이다. 토큰은 합계이며 하나라도 미기록이면 해당 합계는 null이다.
 - `costUsd`는 저장된 소비 시점 비용의 합계다. 단가 미등록 등 null 비용이 하나라도 있으면 합계도 null이며 `unpricedCalls`로 미산정 호출 수를 공개한다. 빈 결과는 `items:[]`이고 null을 0으로 치환하지 않는다. 수집·멱등 처리·과거 단가 계산은 변경하지 않는다.
 - 요금제 한도, 월 예산 알림, 결제·구독 구현은 #43 조회 범위에 포함하지 않는다.
-- #464 기준안: 지식 임베딩(4.2.4) 사용량 `callType = KNOWLEDGE_EMBEDDING`을 #467에서 추가한다(core 담당 확인 전). 추가 전까지 위 9개 목록은 그대로다.
+- #467: 지식 임베딩(4.2.4) 사용량 `callType = KNOWLEDGE_EMBEDDING`을 V44에서 추가했다. 입력 토큰만 있어 출력 토큰은 0이고, 단가(`app.llm-pricing`)가 다른 모델처럼 비어 있어 `costUsd`는 null(`unpricedCalls`로 셈)이다.
 
 ## 5. 구현 계약
 
