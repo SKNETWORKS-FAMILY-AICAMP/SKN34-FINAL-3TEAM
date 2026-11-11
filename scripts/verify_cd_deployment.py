@@ -4,12 +4,15 @@
 않는다. 판정(LLM)·결제·환불은 호출하지 않는다. 부모 refresh 쿠키는 사용할 때마다 회전하므로
 새 값을 같은 fixture 파일에 바로 다시 쓴다(재사용하면 core가 세션을 폐기한다).
 
-답변을 낼 미션은 학생 주간 테마(#387, GET /students/me/weekly-theme)에서 고른다. 월~금은 오늘 열린
-요일 문제를 context THEME_DAY로, 토·일은 그 주 마무리한 문제를 THEME_REVIEW(fixture missionId 우선)로
-시작한다. context를 빼면 EXTRA(추가 문제)가 되어 무료 학생의 하루 1개를 쓰고, 무료 상품에서 EXTRA를 끄면
-무료 학생은 403, 프리미엄 학생은 확인마다 환불 판정용 프리미엄 사용이 기록되므로 EXTRA는 쓰지 않는다. 무료 학생은 THEME_DAY 신규 시작이 하루 1개라, 같은 날 다시
-확인하면 진행 중 시도를 200으로 돌려받는다. 판정을 부르지 않으므로 그 시도에 이미 답변이 있으면 다시 내지
-않고(learning 422) 저장된 답변을 조회만 한다(read-answer). 답변 입력 방식은 시작 응답의 mission.inputType에
+답변을 낼 미션은 학생 주간 테마(#387, GET /students/me/weekly-theme)에서 고른다. 열린(OPEN) 요일 문제 중
+그 주에 마무리하지 않은 문제(진행 중 우선)를 context THEME_DAY로, 없으면 되돌아보기가 열린 날(토요일,
+learning #484 전에는 토·일)에 그 주 마무리한 문제를 THEME_REVIEW(fixture missionId 우선)로 시작한다.
+2026-11-10 개정(#483·#485): 추가 문제(EXTRA, context 생략)는 무료 403 PREMIUM_REQUIRED, 프리미엄은 확인마다
+환불 판정용 프리미엄 사용이 기록되므로 쓰지 않는다. 무료 테마 문제는 하루 한도(429)가 없고, 마무리한 문제의
+새 THEME_DAY 시도는 learning #484부터 409라 고르지 않는다(#506). 같은 날 다시 확인하면 진행 중 시도를 200으로
+돌려받는다. 판정을 부르지 않으므로 그 시도에 이미 답변이 있으면 다시 내지 않고(learning 422) 저장된 답변을
+조회만 한다(read-answer). 열린 문제를 모두 마무리한 평일·무료 학생의 일요일(#484 뒤 닫힘)에는 pick-mission에서
+실패하므로 다음 날·토요일에 확인하거나 일요일은 프리미엄 시연 학생으로 확인한다. 답변 입력 방식은 시작 응답의 mission.inputType에
 맞는 fixture 답변(answer 또는 answers[])을 쓴다.
 
 fixture 파일(작업자 PC에만 두고 Git·Actions Secret에 넣지 않음):
@@ -153,18 +156,22 @@ def template(path):
 
 
 def theme_mission(theme, preferred):
-    """(미션 ID, context). 오늘 열린 요일 문제는 THEME_DAY, 없으면 토·일 되돌아보기의 마무리한 문제."""
+    """(미션 ID, context). 마무리하지 않은 열린 요일 문제(진행 중 우선)는 THEME_DAY, 없으면 되돌아보기의 마무리한 문제."""
     days = theme.get("days")
     review = theme.get("review")
     if not isinstance(days, list) or not isinstance(review, dict):
         raise CheckFailed("주간 테마 응답 형식이 아님")
-    today = [
-        str(day.get("missionId"))
+    opened = [
+        day
         for day in days
-        if isinstance(day, dict) and day.get("state") == "OPEN" and day.get("missionId")
+        if isinstance(day, dict)
+        and day.get("state") == "OPEN"
+        and day.get("missionId")
+        and day.get("attemptStatus") != "COMPLETED"
     ]
-    if today:
-        return today[0], "THEME_DAY"
+    opened.sort(key=lambda day: day.get("attemptStatus") != "IN_PROGRESS")
+    if opened:
+        return str(opened[0]["missionId"]), "THEME_DAY"
     done = [
         str(item.get("missionId"))
         for item in review.get("missions") or []
@@ -172,7 +179,7 @@ def theme_mission(theme, preferred):
     ]
     if review.get("open") is True and done:
         return (str(preferred) if str(preferred) in done else done[0]), "THEME_REVIEW"
-    raise CheckFailed("오늘 시작할 테마 문제나 되돌아보기 문제가 없음")
+    raise CheckFailed("마무리하지 않은 열린 테마 문제나 되돌아보기 문제가 없음")
 
 
 def rotated_refresh(set_cookies):

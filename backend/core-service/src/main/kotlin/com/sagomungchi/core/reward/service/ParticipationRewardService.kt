@@ -45,9 +45,10 @@ class ParticipationRewardService(private val rewards: RewardService, private val
      * 주간 테마 조회 응답 뒤 보충(#389·#485). 모두 사건 키가 멱등이라 조회할 때마다 불러도 한 번만 적립된다.
      * - 요일 문제 `attemptStatus == COMPLETED`: 그 미션의 학습 완료(추가 문제 EXTRA는 이 응답에 없어 대상 아님)
      * - 요일 문제 `completedOnDay == true`: 당일 풀이, 사건 키 `weekStart:day`
-     * - 주 `perfectAttendance == true`: 개근(`THEME_COMPLETED`), 사건 키 `weekStart`. 일요일이 닫혀 되돌아보기 열람이 없어도 여기서 채운다
+     * - 주 `completed == true`: 개근(`THEME_COMPLETED`, 월~금 각 당일 학습 완료), 사건 키 `weekStart`. 일요일이 닫혀 되돌아보기 열람이 없어도 여기서 채운다.
+     *   learning·설계(api-spec 2.11)의 기존 칸 이름 `completed`를 쓴다(#506, 되돌아보기 열람 응답 `completed`와 같은 판정)
      * - 주 `finished == true`: 주간 완주, 사건 키 `weekStart`(토요일까지 5개, 일요일 완료 제외는 learning 판정)
-     * learning #484의 새 칸(`completedOnDay`·`perfectAttendance`·`finished`)이 없거나 boolean `true`가 아니면 그 적립은 건너뛴다.
+     * learning #484의 새 칸(`completedOnDay`·`finished`)과 `completed`가 없거나 boolean `true`가 아니면 그 적립은 건너뛴다.
      * `weekStart`가 날짜가 아니면 새 사건 적립만 건너뛴다.
      */
     fun weeklyThemeViewed(studentId: UUID, body: ByteArray) {
@@ -61,7 +62,7 @@ class ParticipationRewardService(private val rewards: RewardService, private val
         days.filter { it.path("completedOnDay").isBoolean && it.path("completedOnDay").booleanValue() }
             .mapNotNull { it.path("day").asText().takeIf { day -> day in WEEKDAYS } }
             .distinct().forEach { earn(studentId, RewardEvent.THEME_ON_TIME, "$weekStart:$it") }
-        if (flag(root, "perfectAttendance")) earn(studentId, RewardEvent.THEME_COMPLETED, weekStart)
+        if (flag(root, "completed")) earn(studentId, RewardEvent.THEME_COMPLETED, weekStart)
         if (flag(root, "finished")) earn(studentId, RewardEvent.THEME_FINISHED, weekStart)
     }
 

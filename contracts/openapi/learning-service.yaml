@@ -124,6 +124,7 @@ paths:
         - $ref: '#/components/parameters/StudentScope'
         - $ref: '#/components/parameters/Grade'
         - $ref: '#/components/parameters/Demo'
+        - $ref: '#/components/parameters/ThemeSunday'
       description: >-
         본문 {context}(#385, api-spec 2.11): 생략·{}·null은 EXTRA, 정해진 값 밖은 400. 진행 중 시도가 있으면 검사 없이 원래 context 그대로 200.
         신규 시도만 테마 검사: THEME_DAY는 이번 주 테마의 오늘(KST) 요일 문제만, THEME_REVIEW는 토·일에 이번 주 마무리한 테마 문제만.
@@ -931,6 +932,7 @@ paths:
         - $ref: '#/components/parameters/StudentScope'
         - $ref: '#/components/parameters/GradeBandQuery'
         - $ref: '#/components/parameters/ThemeDate'
+        - $ref: '#/components/parameters/ThemeSunday'
       responses:
         '200':
           description: 결과
@@ -948,7 +950,7 @@ paths:
       summary: 토·일 되돌아보기 열람 기록 (주 1회 멱등, #385)
       description: >-
         본문 없음. 학생·주당 1행(theme_review_view)이라 다시 보내도 200이고 firstViewThisWeek만 false.
-        completed는 월~금 다섯 문제를 각 요일(KST) 안에 학습 완료(돌아보기 저장)했는지(완주, #389 포인트 근거).
+        completed는 월~금 다섯 문제를 각 요일(KST) 안에 학습 완료(돌아보기 저장)했는지(개근, 2026-11-10 개정 전 이름 완주. core 개근 THEME_COMPLETED 근거).
         date가 토·일이 아니면 409 THEME_REVIEW_NOT_ALLOWED, 게시 테마가 없으면 404.
       parameters:
         - $ref: '#/components/parameters/StudentId'
@@ -956,6 +958,7 @@ paths:
         - $ref: '#/components/parameters/StudentScope'
         - $ref: '#/components/parameters/GradeBandQuery'
         - $ref: '#/components/parameters/ThemeDate'
+        - $ref: '#/components/parameters/ThemeSunday'
       responses:
         '200':
           description: 결과
@@ -2149,6 +2152,14 @@ components:
       required: true
       description: core가 정한 KST 오늘 날짜. 그 날짜가 속한 월요일이 이번 주
       schema: {type: string, format: date}
+    ThemeSunday:
+      name: sundayTheme
+      in: query
+      required: false
+      description: >-
+        core #485가 항상 붙이는 일요일 허용 값(api-spec 2.11·core-gateway 18절). KST 일요일이고 상품이 일요일 테마를 허용할 때만 true.
+        learning #484가 true일 때만 일요일 신규 시작·다시 풀기·되돌아보기를 연다. #484 구현 전 learning은 이 값을 읽지 않는다.
+      schema: {type: boolean}
     AdminUserId:
       name: X-User-Id
       in: header
@@ -3374,7 +3385,7 @@ components:
                   title: {type: string}
                   completed: {type: boolean, description: 이번 주 그 문제 요일 시도를 마무리함(다시 풀기 가능)}
                   missed: {type: boolean, description: 지난 요일인데 마무리하지 않음(풀 수 없음)}
-        completed: {type: boolean, description: 월~금 다섯 문제를 각 요일(KST) 안에 학습 완료(완주)}
+        completed: {type: boolean, description: '월~금 다섯 문제를 각 요일(KST) 안에 학습 완료(개근, 개정 전 이름 완주). core가 개근 THEME_COMPLETED로 적립(#485·#506)'}
     ThemeReviewViewResult:
       type: object
       required: [firstViewThisWeek, completed]

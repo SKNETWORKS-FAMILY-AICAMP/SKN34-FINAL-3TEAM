@@ -407,7 +407,10 @@ class PaymentIntegrationTest: PostgresRepositoryTest() {
             entitlements.missionStarted(day,UUID.randomUUID(),first)
         }
         assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM mission_daily_usage WHERE student_id=?",Int::class.java,student))
-        // 무료 상품에서 추가 문제를 다시 켜면(features에 값 없음) 무료 EXTRA만 KST 하루 dailyMissions개
+        // #506: 무료 상품 features에 값이 없으면 추가 문제는 프리미엄 전용(빈 DB에서 만든 무료 상품)
+        error("PREMIUM_REQUIRED") { entitlements.missionStart(student,"EXTRA",first) { false } }
+        // 무료 상품에서 추가 문제를 다시 켜면(extraMissions=true) 무료 EXTRA만 KST 하루 dailyMissions개
+        jdbc.update("UPDATE product SET features=jsonb_set(features,'{extraMissions}','true') WHERE id=?",free)
         val permit=entitlements.missionStart(student,"EXTRA",first) { fail("한도 전에는 이어하기 확인을 하지 않음") }
         assertTrue(permit.counted);assertFalse(permit.premiumUsage)
         entitlements.missionStarted(permit,attempt,first);entitlements.missionStarted(permit,attempt,first)
@@ -430,7 +433,7 @@ class PaymentIntegrationTest: PostgresRepositoryTest() {
         jdbc.update("UPDATE product SET features=jsonb_set(features,'{extraMissions}','\"no\"') WHERE id=?",free)
         error("PAYMENT_PRODUCT_UNAVAILABLE") { entitlements.missionStart(student,"EXTRA",other) { false } }
         // 한도 수가 없으면 무료 EXTRA만 상품 오류, 테마 문제는 한도 값을 읽지 않는다
-        jdbc.update("UPDATE product SET features='{}'::jsonb,limits=limits-'dailyMissions' WHERE id=?",free)
+        jdbc.update("UPDATE product SET features='{\"extraMissions\":true}'::jsonb,limits=limits-'dailyMissions' WHERE id=?",free)
         error("PAYMENT_PRODUCT_UNAVAILABLE") { entitlements.missionStart(student,"EXTRA",other) { false } }
         entitlements.missionStart(student,"THEME_DAY",other) { false }
         // 무료 시도는 프리미엄 사용을 남기지 않음
@@ -463,7 +466,8 @@ class PaymentIntegrationTest: PostgresRepositoryTest() {
         val paid=approved();val mission=UUID.randomUUID();val attempt=UUID.randomUUID()
         val day=entitlements.missionStart(student,"THEME_DAY",mission) { fail("프리미엄은 하루 한도 없음") }
         assertFalse(day.counted);entitlements.missionStarted(day,UUID.randomUUID(),mission)
-        // 무료에도 열려 있으면 프리미엄 사용이 아니다(환불 판정 영향 없음)
+        // 프리미엄 상품 스냅숏에 값이 없어도 구독 중이면 추가 문제 허용(#506). 무료에도 열려 있으면 프리미엄 사용이 아니다(환불 판정 영향 없음)
+        jdbc.update("UPDATE product SET features=jsonb_set(features,'{extraMissions}','true') WHERE id=?",free)
         val open=entitlements.missionStart(student,"EXTRA",mission) { false }
         assertFalse(open.counted);assertFalse(open.premiumUsage);entitlements.missionStarted(open,UUID.randomUUID(),mission)
         assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM mission_daily_usage WHERE student_id=?",Int::class.java,student))

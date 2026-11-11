@@ -93,8 +93,9 @@ class ProductEntitlementService(private val repository: PaymentRepository, priva
      * #387·#485 (P13·P14 개정, 2026-11-10 결정): 시도 시작 전 판정. 무료·프리미엄 정책은 이 함수와 [missionStarted]·[sundayTheme]에만 둔다.
      * - `THEME_REVIEW`: 상품과 무관, 한도 제외
      * - `THEME_DAY`: 상품과 무관, 한도 제외. 무료 "테마 문제 주 5개"는 learning의 누적 공개(월~금 하루 1개)로 정해진다(#484)
-     * - `EXTRA`(생각 유형별 고르기): 상품 `features.extraMissions`가 `false`인 상품이면 403 `PREMIUM_REQUIRED`(없거나 `true`면 허용).
-     *   #485 마이그레이션 V43이 무료 상품을 `false`로 바꿔 프리미엄 전용이다. 무료 상품에서 꺼진 동안 프리미엄 `EXTRA`는
+     * - `EXTRA`(생각 유형별 고르기): 상품 `features.extraMissions`가 `false`인 상품이면 403 `PREMIUM_REQUIRED`(`true`면 허용).
+     *   값이 없으면 무료는 거부·구독 중은 허용(#506, [sundayTheme]과 같은 규칙: 빈 DB에서 만든 무료 상품도 프리미엄 전용,
+     *   값 없는 기존 구독 스냅숏은 그대로 이용). #485 마이그레이션 V43이 무료 상품을 `false`로 바꿨다. 무료 상품에서 꺼진 동안 프리미엄 `EXTRA`는
      *   프리미엄 사용(환불 판정, P14)이라 환불 처리 중이면 409.
      * - 무료 상품에서 `EXTRA`를 다시 켜면 무료 `EXTRA`만 KST 하루 `limits.dailyMissions`개로 센다. 한도에 닿아도 같은 미션의
      *   진행 중 시도 이어하기(learning 200)는 막지 않도록 마지막 기록 시도를 [resumable]로 learning에 확인한다.
@@ -107,9 +108,9 @@ class ProductEntitlementService(private val repository: PaymentRepository, priva
         if(context!="EXTRA") return MissionStartPermit(student,context,false,false,null,today,sundayTheme(student,today))
         val entitlement=forStudent(student)
         val free=entitlement.subscriptionId==null
-        if(!extraMissions(entitlement.product)) throw BusinessException(HttpStatus.FORBIDDEN,"PREMIUM_REQUIRED",
+        if(!extraMissions(entitlement.product,!free)) throw BusinessException(HttpStatus.FORBIDDEN,"PREMIUM_REQUIRED",
             "추가 문제는 프리미엄 이용권에서 풀 수 있습니다.","무료 이용권은 이번 주 공개된 테마 문제를 풀 수 있습니다.")
-        val premiumUsage=!free && !extraMissions(freeProduct())
+        val premiumUsage=!free && !extraMissions(freeProduct(),false)
         if(premiumUsage && entitlement.refundPending) conflict("REFUND_IN_PROGRESS")
         // 집계·한도 확인은 usage(MissionUsageService), 한도 수는 무료 상품 데이터
         if(free) missionUsage.requireAvailable(student,today,dailyMissions(entitlement.product),mission,resumable)
@@ -151,9 +152,9 @@ class ProductEntitlementService(private val repository: PaymentRepository, priva
         if(value==null || value.toLong() !in 0..Int.MAX_VALUE.toLong()) unavailable("PAYMENT_PRODUCT_UNAVAILABLE")
         return value.toInt()
     }
-    /** 추가 문제 허용. 값이 없으면 허용(현행), boolean이 아니면 상품 오류 */
-    private fun extraMissions(product: Product): Boolean = when(val value=product.features["extraMissions"]) {
-        null -> true
+    /** 추가 문제 허용. 값이 없으면 구독 중([subscribed])만 허용(#506), boolean이 아니면 상품 오류 */
+    private fun extraMissions(product: Product, subscribed: Boolean): Boolean = when(val value=product.features["extraMissions"]) {
+        null -> subscribed
         is Boolean -> value
         else -> unavailable("PAYMENT_PRODUCT_UNAVAILABLE")
     }
