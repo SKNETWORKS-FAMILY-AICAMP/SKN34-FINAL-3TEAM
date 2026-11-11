@@ -67,11 +67,33 @@
           "properties": {
             "repository": {"type": "string"},
             "tag": {"type": "string"},
-            "digest": {"type": "string"}
+            "digest": {"type": "string"},
+            "pullPolicy": {"enum": ["Always", "IfNotPresent", "Never"]}
           }
         },
+        "command": {"type": "array", "items": {"type": "string"}},
+        "args": {"type": "array", "items": {"type": "string"}},
+        "env": {
+          "type": "array",
+          "items": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string", "minLength": 1}}}
+        },
+        "resources": {"type": "object"},
         "mountPath": {"type": "string", "pattern": "^/"},
         "sizeLimit": {"type": "string", "minLength": 1}
+      },
+      "if": {"properties": {"enabled": {"const": true}}, "required": ["enabled"]},
+      "then": {
+        "required": ["image"],
+        "properties": {
+          "image": {
+            "required": ["repository"],
+            "properties": {"repository": {"minLength": 1}},
+            "anyOf": [
+              {"required": ["digest"], "properties": {"digest": {"minLength": 1}}},
+              {"required": ["tag"], "properties": {"tag": {"minLength": 1}}}
+            ]
+          }
+        }
       }
     },
     "migration": {

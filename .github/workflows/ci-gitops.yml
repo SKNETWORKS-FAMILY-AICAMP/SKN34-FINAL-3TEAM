@@ -59,6 +59,9 @@ jobs:
       # 그래서 chart lint는 실제 배포 조합(환경 values)으로 하고, 어떤 환경도 쓰지 않는 chart만 기본 values로 한다.
       # Argo CD 정의와 같은 조합: 환경 파일과 이름이 같은 chart(observability·platform-data)는
       # 그 chart로, 나머지는 ApplicationSet처럼 파일 이름을 릴리스로 app-service chart에 넘긴다.
+      # prod(#509)는 JSON이다. 저장소 chart values는 같은 규칙으로 렌더링하고(migrations/ 덮어쓰기는 Job까지),
+      # kind가 있는 manifest(NodePool·NetworkPolicy·ExternalSecret)는 그대로 kubeconform에 넘긴다.
+      # 외부 chart(ESO·LB Controller·Karpenter) values는 chart를 받아야 하므로 검사하지 않는다.
       - name: chart·환경별 helm lint·template 렌더링
         run: |
           for chart in charts/*/; do
@@ -68,27 +71,50 @@ jobs:
           done
           out="$RUNNER_TEMP/rendered"
           used=" "
+          # render <values> <env> <release> [덮어쓰기 values]
+          render() {
+            values="$1"; env="$2"; release="$3"; overlay="${4:-}"
+            if [ -d "charts/$release" ]; then chart="$release"; else chart=app-service; fi
+            case "$chart" in
+              app-service) namespace=app ;;
+              observability) namespace=observability ;;
+              platform-data) namespace=platform ;;
+              *) echo "::error file=infrastructure/gitops/$values::$chart chart의 namespace가 정의되지 않음"; exit 1 ;;
+            esac
+            used="$used$chart "
+            set -- -f "$values"
+            [ -z "$overlay" ] || set -- "$@" -f "$overlay"
+            echo "::group::$env/$release${overlay:+ + $overlay} ($chart → $namespace)"
+            helm lint --strict "charts/$chart" --namespace "$namespace" "$@"
+            if [ -z "$overlay" ]; then
+              helm template "$release" "charts/$chart" --namespace "$namespace"                 --kube-version "$KUBERNETES_VERSION" "$@" > "$out/$env/$release.yaml"
+            else
+              helm template "$release" "charts/$chart" --namespace "$namespace"                 --kube-version "$KUBERNETES_VERSION" "$@" --show-only templates/migration-job.yaml                 > "$out/$env/$release.migration.yaml"
+            fi
+            echo "::endgroup::"
+          }
           for env_dir in environments/*/; do
             env="$(basename "$env_dir")"
             mkdir -p "$out/$env"
             for values in "$env_dir"*.yaml; do
-              # prod는 JSON values·manifest만 있어 이 YAML 렌더링 대상이 아니다(#185).
               [ -e "$values" ] || continue
-              release="$(basename "$values" .yaml)"
-              if [ -d "charts/$release" ]; then chart="$release"; else chart=app-service; fi
-              case "$chart" in
-                app-service) namespace=app ;;
-                observability) namespace=observability ;;
-                platform-data) namespace=platform ;;
-                *) echo "::error file=infrastructure/gitops/$values::$chart chart의 namespace가 정의되지 않음"; exit 1 ;;
-              esac
-              used="$used$chart "
-              echo "::group::$env/$release ($chart → $namespace)"
-              helm lint --strict "charts/$chart" --namespace "$namespace" -f "$values"
-              helm template "$release" "charts/$chart" --namespace "$namespace" \
-                --kube-version "$KUBERNETES_VERSION" -f "$values" > "$out/$env/$release.yaml"
-              echo "::endgroup::"
+              render "$values" "$env" "$(basename "$values" .yaml)"
             done
+          done
+          for values in environments/prod/*.json; do
+            release="$(basename "$values" .json)"
+            if jq -e 'has("kind")' "$values" > /dev/null; then
+              cp "$values" "$out/prod/$release.json"
+              continue
+            fi
+            case "$release" in
+              external-secrets|aws-load-balancer-controller|karpenter)
+                echo "외부 chart values라 건너뜀: $values"
+                continue ;;
+            esac
+            render "$values" prod "$release"
+            migration="environments/prod/migrations/$release.json"
+            if [ -e "$migration" ]; then render "$values" prod "$release" "$migration"; fi
           done
           for chart in charts/*/; do
             chart="$(basename "$chart")"
