@@ -951,7 +951,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 #### 4.2.2 판정 모델 교차 확인 (#69, 2026-11-03)
 
-- 선택 입력: `question`(mission_version.question, M2 `prompt`·M1 `problem`), `keywords`(rubric_version.keywords, 서술 핵심어 묶음 배열, 생략 시 빈 배열), `essayType`(rubric_version.essay_type, 설명글·글짓기·주장·찬성반대·대안제시), `answerKey`(M1 정답 문자열), `solution`(`{steps[], finalAnswer}`, M1 학생 풀이). learning은 현재 앞의 세 항목만 보낸다. M1 입력 전달은 M1 활성화 후속이다.
+- 선택 입력: `question`(mission_version.question, M2 `prompt`·M1 `problem`), `keywords`(rubric_version.keywords, 서술 핵심어 묶음 배열, 생략 시 빈 배열), `essayType`(rubric_version.essay_type, 설명글·글짓기·주장·찬성반대·대안제시), `answerKey`(M1 정답 문자열), `solution`(`{steps[], finalAnswer}`, M1 학생 풀이). learning은 현재 앞의 세 항목만 보낸다. M1은 지금 운영하는 모델이 아니어서(M1 미지원) `answerKey`·`solution` 전달은 M1 활성화 때 scoring 응답 확정과 함께 한다(#501). 그래서 지금은 `M1_CHECK_ENABLED=true`로 켜도 M1을 부르지 않고 `modelScores.skipped`에도 남기지 않는다.
 - M2 호출: `M2_CROSS_CHECK_ENABLED=true`이고 LLM 판정 결과가 보류가 아니며 `inputType`이 NARRATIVE·ESSAY이며 `question`이 있을 때 `POST /internal/m2/scores`(4.3.1)를 부른다. 서술은 `keywords`가 비어 있으면, 논술은 `essayType`이 없으면 호출하지 않는다. 학년·승인 범위 판단은 scoring이 하며 `{active:false}`면 LLM 판정을 그대로 쓴다. M2 text는 `answerText`다.
 - 불일치 기준(임시, 설정값): M2 `scores` 평균을 서술 9항목·논술 3영역으로 구한다. LLM 결과가 `CORRECT`인데 평균이 낮은 경계 이하(서술 `M2_NARRATIVE_LOW=2.0`, 논술 `M2_ESSAY_LOW=1.0`)이거나, `RETHINK`인데 높은 경계 이상(서술 `M2_NARRATIVE_HIGH=4.0`, 논술 `M2_ESSAY_HIGH=2.0`)이면 불일치다. `PARTIAL`은 불일치로 보지 않는다. 경계는 M2 담당 확인 전 임시값이다.
 - `M2_CROSS_CHECK_ENABLED`는 기본 `false`다. 꺼져 있으면 scoring M2를 부르지 않고 LLM 판정만 쓴다(`modelScores`는 `null`, LLM은 판정 마감 전체 사용). 켜져 있고 불일치면 `HELD(MODEL_DISAGREEMENT)`이며 `elements`는 빈 목록이다. #69의 "꺼져 있어도 점수·불일치를 기록" 동작은 #305에서 없앴다.
