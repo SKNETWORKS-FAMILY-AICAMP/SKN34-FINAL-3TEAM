@@ -20,10 +20,7 @@ const item = (id: string) => encodeURIComponent(id)
  * `credentials: 'same-origin'`으로 브라우저가 알아서 보낸다.
  */
 export const studentDeviceApi = {
-  // #45: proof is bound to this session, PIN_CHANGE and exactly one child.
-  startPinReauth: (childId: string) => apiFetch<{ challengeId: string; authorizationUrl: string; expiresAt: string }>(
-    '/me/reauth', json({ purpose: 'PIN_CHANGE', childId })),
-  finishPinReauth: (challengeId: string) => apiFetch<{ reauthToken: string; expiresAt: string }>(
+  finishGuardianReauth: (challengeId: string) => apiFetch<{ reauthToken: string; expiresAt: string }>(
     '/me/reauth', json({ challengeId })),
   // 보호자 비밀번호: 학생 화면에서 잠긴 학부모 화면으로 돌아올 때 쓴다 (FN-ACC-05). 재인증은 계정 단위다.
   startGuardianReauth: () => apiFetch<{ challengeId: string; authorizationUrl: string; expiresAt: string }>(

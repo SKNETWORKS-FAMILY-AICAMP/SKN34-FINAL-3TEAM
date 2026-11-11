@@ -1,7 +1,7 @@
 """Create load-test parent accounts through the public API and write the k6 secrets file (#415).
 
 Each account: ID/password signup -> TERMS/PRIVACY consent -> children (GUARDIAN consent) -> one student device
-(pairing code + registration) -> password re-confirmation -> child PIN. Accounts are is_demo only where core runs with
+(pairing code + registration) -> child PIN. Accounts are is_demo only where core runs with
 AUTH_NEW_ACCOUNT_DEMO=true (the AWS demo does). Passwords, PINs and device cookies go only to the secrets file, which
 must be outside the repository; nothing secret is printed.
 
@@ -117,11 +117,8 @@ def prepare(base_url, login_id, children, grade, wait):
     if not device:
         raise ApiFailure("device registration", 201, "NO_DEVICE_COOKIE")
     for kid in kids:
-        grant = client.call("password re-confirmation", "POST", "/me/reauth/password",
-                            {"purpose": "PIN_CHANGE", "childId": kid["childId"], "password": password})
         kid["pin"] = new_pin()
-        client.call("child PIN", "PUT", f"/children/{kid['childId']}/pin", {"pin": kid["pin"]},
-                    {"X-Reauth-Token": grant["reauthToken"]})
+        client.call("child PIN", "PUT", f"/children/{kid['childId']}/pin", {"pin": kid["pin"]})
     return {"loginId": login_id, "password": password, "deviceCookie": device, "children": kids}
 
 
