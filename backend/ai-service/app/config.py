@@ -3,6 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
 
@@ -73,6 +74,71 @@ class Settings(BaseSettings):
     # 학년별 질문 글자 수 상한 (QUESTION_LENGTH). P19(김동섭) 확정 전 MVP 기준안:
     # 데모 시드 최대 193자에 여유
     mission_draft_question_max_chars: dict[int, int] = {3: 200, 4: 200, 5: 200, 6: 200}
+
+    # 주간 테마 초안 생성 (#437, api-spec 4.2). 호출 1번에 그래프를 한 번 끝까지 실행하고
+    # 다시 부르기는 learning.
+    # 마감 기준안 15분(learning→ai 대기 16분 안). 텍스트 시험에서 글 단계만 6~13분이라
+    # 마감까지 남은 시간이 부족하면 다음 재생성을 시작하지 않음(ai.md 17절)
+    theme_draft_deadline: float = 900.0
+    # 테마 생성·검토 모델은 테마 전용 설정(사용자 결정 2026-11-10). 로컬·운영 OPENAI_MODEL이
+    # gpt-6.1-terra라 기존 클라이언트를 쓰면 생성 = 검토가 되고 생성 비용이 약 10배.
+    # 텍스트 시험은 생성 luna·검토 terra로 검증. 같은 OpenAI 키를 쓰고, 둘이 같으면 테마 경로만 503
+    theme_generation_model: str = "gpt-6-luna"
+    theme_review_model: str = "gpt-6.1-terra"
+    # 호출 1번 상한(기준안). 줄거리 1회 실측 130~170초(2026-11-11, 출력 약 1만 토큰)에 180초로는
+    # 시간 초과가 나서(repo-fair4-4) 300초로 올림. 전체는 theme_draft_deadline이 막음
+    theme_llm_timeout: float = 300.0
+    theme_llm_retries: int = 0  # 재시도 대신 그래프의 실패 사유 넣은 다시 생성
+    theme_max_regen: int = 2  # 단계마다 다시 생성 상한(기준안, 첫 생성 포함 최대 3회)
+    # 줄거리 검사가 칸 하나만 고치면 되는 사유로만 실패하면 줄거리 전체 대신 그 칸만 고쳐 쓰는
+    # 상한(기준안). 줄거리 다시 생성 횟수와 따로 셈
+    theme_max_text_fix: int = 2
+    theme_review_max_rerun: int = 2  # 글 검토 뒤 다시 만들고 재검토하는 상한(기준안)
+    # 마감까지 이보다 적게 남으면 다시 생성을 시작하지 않음(기준안)
+    theme_min_regen_seconds: float = 180.0
+    # 테마 미션 질문 글자 수 상한(기준안, 사용자 결정 2026-11-11, P19 확인 필요).
+    # 테마 미션은 다룰 글·작품·대화·자료를 문제 글에 넣어야 해서 미션 초안 기준안 200자로는
+    # 자주 넘음(실측 11번)
+    theme_question_max_chars: dict[int, int] = {3: 400, 4: 400, 5: 400, 6: 400}
+    theme_plan_max_tokens: int = 32000  # 줄거리·검토는 추론 출력이 길어 넉넉히(시험 최대 약 11,500)
+    theme_review_max_tokens: int = 32000
+    theme_dialogue_max_tokens: int = 8000
+    # 지식 검색(#470) 연결 자리. 꺼져 있으면 요청의 성취기준으로 지금 틀대로 동작
+    theme_knowledge_enabled: bool = False
+
+    # 테마 그림·영상(#437, 사용자 결정 2026-11-10·11). 그림은 OpenAI(같은 키), 2D 만화풍.
+    # 버킷(ASSET_S3_BUCKET, learning과 같은 버킷)이 비면 그림·영상·움직임을 건너뛰고 경고만
+    image_provider: Literal["openai", "fake"] = "openai"
+    image_model: str = "gpt-image-2.6-sunburst"
+    image_size: str = "1536x864"  # 16:9 바로 생성(공식 크기 조건 안)
+    image_quality: str = "medium"
+    theme_image_timeout: float = 280.0  # 그림 1장 상한(기준안, 실측 약 30초)
+    # 영상은 시작·종료만(컷 4개). 운영 Google 인증(기준안 WIF)이 정해질 때까지 기본 꺼짐.
+    # 로컬은 gcloud로 받은 접근 토큰을 VIDEO_ACCESS_TOKEN에 넣어 시험(출력·커밋 금지)
+    theme_video_enabled: bool = False
+    video_provider: Literal["veo", "fake"] = "veo"
+    video_model: str = "veo-3.1-fast-generate-001"
+    video_project: str | None = None
+    video_location: str = "us-central1"
+    video_access_token: SecretStr | None = None
+    theme_video_timeout: float = 400.0  # 컷 1개 생성·대기 상한(기준안, 실측 약 115초)
+    # 영상 컷 다시 만들기 상한(기준안, 첫 생성 포함 최대 2회). 뭉치 컷은 다시 만들어도 팔이 생겨
+    # 거의 실패해(실측 2026-11-11) 비용만 들어서 그림·글(theme_max_regen 2)보다 적게, 끝내 실패하면
+    # 움직이는 그림 컷으로 대신
+    theme_video_max_regen: int = 1
+    # 영상 단계를 시작할 최소 남은 시간(초, 기준안). 컷은 동시에 만들어 실측 컷 1개 약 115초,
+    # 다시 만들기 1번까지 약 230초 + 이어 붙이기·움직임. 컷 1개 상한(theme_video_timeout 400)
+    # + 60초를 기준으로 하면 글 단계에서 줄거리를 한 번만 다시 만들어도 영상이 빠졌음
+    # (실측 2026-11-11). 컷 생성은 마감까지만 기다리고(남은 시간이 상한보다 짧으면 그만큼만),
+    # 끝내 못 만든 컷은 움직이는 그림으로 대신함
+    theme_video_min_seconds: float = 300.0
+    # 시작·종료 영상 컷 길이(초, 컷 4개). 첫 그림만 고정하고 0.5초씩 겹쳐 녹아들게 이음
+    # (사용자 결정 2026-11-11, 4+6+8+6-1.5 = 22.5초)
+    theme_video_cut_seconds: list[int] = [4, 6, 8, 6]
+    theme_motion_max_tokens: int = 8000  # 움직임 출력(기준안, 대화와 같은 값)
+    asset_s3_bucket: str | None = None
+    s3_endpoint_url: str | None = None  # 로컬 MinIO만, 비면 AWS S3
+    s3_region: str = "ap-northeast-2"
 
     # 리포트 설명 sLLM (#477, FN-RPT-09). 클러스터 안 설명 전용 OpenAI 호환 서버(#476)이며
     # 다른 호출의 LLM 제공자(llm_provider)와 별개.

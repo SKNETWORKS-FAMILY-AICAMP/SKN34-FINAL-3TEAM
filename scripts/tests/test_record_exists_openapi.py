@@ -18,7 +18,7 @@ class RecordExistsContractTest(unittest.TestCase):
                 actual.add((method.lower(),((prefix[1] if prefix else '')+path).removeprefix('/internal')))
         # #464: x-implementation-status가 붙은 경로는 계약만 먼저 정한 구현 전 항목(#469 지식 내부 API)
         documented={(method,path) for path,methods in self.spec['paths'].items() for method,operation in methods.items() if not operation.get('x-implementation-status')}
-        self.assertEqual(len(actual),66)  # #466 지식 판 관리 5개
+        self.assertEqual(len(actual),73)  # #438 테마 초안 6개·#466 지식 판 관리 5개 포함
         self.assertEqual(actual,documented)
     def test_producer_and_consumer_use_the_same_path(self):
         path='/records/students/{studentId}/exists'
