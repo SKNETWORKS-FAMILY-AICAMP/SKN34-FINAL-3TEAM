@@ -35,6 +35,8 @@ env:
   - {name: AUTH_COOKIE_SECURE, value: "false"}
   - {name: APP_GUARDIAN_TRANSFER_ENABLED, value: "false"}
   - {name: AUTH_NEW_ACCOUNT_DEMO, value: "false"}
+  - {name: AUTH_SIGNUP_LIMIT_PER_IP, value: "5"}
+  - {name: AUTH_SIGNUP_LIMIT_WINDOW, value: 10m}
   - {name: SERVER_SHUTDOWN, value: graceful}
   - {name: SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE, value: 30s}
   - {name: LEARNING_URL, value: "http://learning-service.app.svc.cluster.local:8081"}

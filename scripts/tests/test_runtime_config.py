@@ -28,7 +28,12 @@ AI_KEYS = (
 )
 KEYS = {
     "ai-service": AI_KEYS,
-    "core-service": ("APP_GUARDIAN_TRANSFER_ENABLED", "AUTH_NEW_ACCOUNT_DEMO"),
+    "core-service": (
+        "APP_GUARDIAN_TRANSFER_ENABLED",
+        "AUTH_NEW_ACCOUNT_DEMO",
+        "AUTH_SIGNUP_LIMIT_PER_IP",
+        "AUTH_SIGNUP_LIMIT_WINDOW",
+    ),
     "scoring-service": ("M2_CONTENT3_RULE_ENABLED",),
 }
 FILES = (
@@ -67,6 +72,8 @@ def defaults():
         "core-service": {
             "APP_GUARDIAN_TRANSFER_ENABLED": "false",
             "AUTH_NEW_ACCOUNT_DEMO": "false",
+            "AUTH_SIGNUP_LIMIT_PER_IP": "5",
+            "AUTH_SIGNUP_LIMIT_WINDOW": "10m",
         },
     }
 
@@ -145,6 +152,17 @@ class RuntimeConfigTests(unittest.TestCase):
                     self.assertEqual(actual.get(key), value)
                     self.assertIsInstance(actual[key], str)
 
+    def test_core_defaults_match_application_yml(self):
+        # app.auth.* 기본값은 Spring 자리표시자 ${KEY:기본값}과 같아야 한다 (#517)
+        text = (
+            ROOT / "backend/core-service/src/main/resources/application.yml"
+        ).read_text(encoding="utf-8")
+        for key, value in defaults()["core-service"].items():
+            if not key.startswith("AUTH_"):
+                continue
+            with self.subTest(key=key):
+                self.assertIn(f"${{{key}:{value}}}", text)
+
     def test_report_worker_explanation_settings_and_grace_period(self):
         # #508: local·prod report-worker가 같은 설명 시간 값을 쓰고, 종료 유예가 설명 단계보다 김
         keys = (
@@ -208,6 +226,8 @@ class RuntimeConfigTests(unittest.TestCase):
             "M1_MIN_CONFIDENCE": "0.9",
             "APP_GUARDIAN_TRANSFER_ENABLED": "true",
             "AUTH_NEW_ACCOUNT_DEMO": "true",
+            "AUTH_SIGNUP_LIMIT_PER_IP": "50",
+            "AUTH_SIGNUP_LIMIT_WINDOW": "1m",
             "M2_CONTENT3_RULE_ENABLED": "true",
         }
         services = compose(("compose.yaml",), overrides)["services"]
