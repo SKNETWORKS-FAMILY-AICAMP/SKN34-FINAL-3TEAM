@@ -144,6 +144,18 @@ FIX_REASON = (
 )
 
 
+# 단서 문장이 기록(사진·영상·녹음 등)을 말하면 증거 종류는 RECORD, RECORD면 기록 낱말이 있어야 함
+# (실측 2026-11-11: 사진을 근거로 한 단서에 evidence가 SIGHTING이라 글 검토 CLUE_LOGIC으로 실패)
+RECORD_WORDS = ("사진", "영상", "녹음", "기록", "일지", "메모", "녹화", "동영상", "cctv", "CCTV")
+
+
+def clue_evidence_mismatch(day: dict) -> bool:
+    clue = day.get("clue") or ""
+    kind = (day.get("evidence") or {}).get("kind")
+    has_record = any(w in clue for w in RECORD_WORDS)
+    return (has_record and kind != "RECORD") or (kind == "RECORD" and not has_record)
+
+
 def fix_targets(bad: list[str]) -> dict[str, list[str]]:
     """사유가 모두 칸 하나만 고치면 되는 것이면 {칸 경로: [사유]}, 하나라도 아니면 빈 사전."""
     targets: dict[str, list[str]] = {}
@@ -375,6 +387,12 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
         # 문장은 그날 배울 개념을 말하는 자리라 개념 낱말이 단서 값과 같을 수밖에 없어
         # (특징을 성취기준
         # 내용에서 고름, 실측 repo-fair4-3) 코드로 막지 않고 글 검토(정답 암시)가 본다
+        if clue_evidence_mismatch(d):
+            bad.append(
+                f"CLUE_EVIDENCE {d['day']} 단서 문장의 "
+                "증거와 evidence 종류가 다름(사진·영상·녹음·기록·"
+                "일지·메모를 말하면 RECORD, RECORD면 그 기록을 말함)"
+            )
         if early := early_values(d, d.get("discovery")):
             bad.append(f"CLUE_EARLY {d['day']} discovery에 그날 단서 결론(허용 값 {early})")
         for k in ("discovery", "missionHook"):

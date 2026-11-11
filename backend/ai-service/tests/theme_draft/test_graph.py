@@ -486,11 +486,37 @@ def test_llm_failures_map_to_502_503(where: str, code: str, status: int) -> None
 
 
 def test_text_substitute_and_material_rules_in_prompts() -> None:
-    """글로 직접 할 수 없는 활동(듣기·말하기·조사·관찰)은 문제 글 자료로 대신하고 성취기준에 맞다고
-    봄(사용자 결정 2026-11-11). 내용을 적지 않은 사진·녹음을 살피게 하지 않음."""
+    """글로 직접 할 수 없는 활동은 문제 글 자료로 대신하고 성취기준에 맞다고 봄(사용자 결정
+    2026-11-11). 같은 원칙 글이 미션 생성·미션 검토·글 검토·예시 답 고쳐 쓰기 네 곳에 똑같이 들어가
+    기준이 어긋나지 않음(실측 분석: 글 검토에만 빠져 실패). 내용을 적지 않은 자료를 살피게
+    하지 않음."""
     from app.theme_draft import prompts
 
     extra = prompts.mission_extra(valid_theme(), "MON", 3, [])
-    assert "녹음을 옮긴 글을 읽고 요약하기" in extra and "내용을 적지 않은 자료" in extra
-    assert "성취기준에 맞다고 본다" in prompts.MISSION_REVIEW_SYSTEM
+    for text in (
+        extra,
+        prompts.MISSION_REVIEW_SYSTEM,
+        prompts.REVIEW_SYSTEM,
+        prompts.EXAMPLE_FIX_SYSTEM,
+    ):
+        assert prompts.TEXT_ONLY in text
+    assert "내용을 적지 않은 자료" in extra
+    assert "방법이나 계획을 묻지 않고" in extra and "요소 수(2~3가지)만큼만" in extra
+    assert "비교 문제로 만들지 않는다" in extra
     assert "그 내용이 질문 글에 없으면 결함" in prompts.MISSION_REVIEW_SYSTEM
+    # 풀이는 미션 초안 형식상 예시 답 없이 최종 답만 봄(검토와 형식 맞춤)
+    assert "exampleAnswer가 없어도 되고" in prompts.MISSION_REVIEW_SYSTEM
+    # 글 검토: 배울 것을 말하는 수사 연결 문장·기록 속 지나간 대상 모습은 허용
+    # (줄거리 프롬프트와 맞춤)
+    assert "설계상 허용" in prompts.REVIEW_SYSTEM and "지나간" in prompts.REVIEW_SYSTEM
+    tue = prompts.mission_extra(valid_theme(), "TUE", 3, [])
+    assert "다른 관점(반대 의견·예외)에 답하는 것을 꼭 묻는다" in tue
+
+
+def test_theme_missions_use_theme_question_limit() -> None:
+    """테마 미션 질문 상한은 테마 설정(기준안 400자)으로 미션 프롬프트에 알리고 검사한다."""
+    gen = gen_llm()
+    response = run(gen, review_llm())
+    assert response.failure is None
+    limit = get_settings().theme_question_max_chars[3]
+    assert all(f"질문 글자 수 상한: {limit}자" in u for u in gen.users("GeneratedDraft"))

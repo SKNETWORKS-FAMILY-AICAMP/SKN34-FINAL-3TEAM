@@ -96,6 +96,10 @@ class Settings(BaseSettings):
     theme_review_max_rerun: int = 2  # 글 검토 뒤 다시 만들고 재검토하는 상한(기준안)
     # 마감까지 이보다 적게 남으면 다시 생성을 시작하지 않음(기준안)
     theme_min_regen_seconds: float = 180.0
+    # 테마 미션 질문 글자 수 상한(기준안, 사용자 결정 2026-11-11, P19 확인 필요).
+    # 테마 미션은 다룰 글·작품·대화·자료를 문제 글에 넣어야 해서 미션 초안 기준안 200자로는
+    # 자주 넘음(실측 11번)
+    theme_question_max_chars: dict[int, int] = {3: 400, 4: 400, 5: 400, 6: 400}
     theme_plan_max_tokens: int = 32000  # 줄거리·검토는 추론 출력이 길어 넉넉히(시험 최대 약 11,500)
     theme_review_max_tokens: int = 32000
     theme_dialogue_max_tokens: int = 8000

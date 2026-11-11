@@ -86,6 +86,7 @@ def _stale_rule(theme: dict) -> None:
     fri.update(
         clue="보리는 지붕이 없는 데서 놀았어.",
         condition={"kind": "RULE", "feature": "지붕", "allowed": ["없음"]},
+        evidence={"kind": "SIGHTING", "when": fri["evidence"]["when"]},
     )
 
 
@@ -203,6 +204,17 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
     ("clue excludes answer", edit(_answer_out), ["LOGIC", "LOGIC THU"]),
     # 이미 빠진 후보만 빼는 RULE(learning 결정적 단서 계산과 어긋남)
     ("rule removes nothing new", edit(_stale_rule), ["LOGIC FRI"]),
+    # 단서 문장의 증거와 evidence 종류가 다름(실측: 사진 단서인데 SIGHTING)
+    (
+        "photo clue but sighting",
+        lambda: day_with(valid_theme(), "WED", clue="사진 속 보리는 지붕이 없는 곳에 있었어."),
+        ["CLUE_EVIDENCE WED"],
+    ),
+    (
+        "record without record word",
+        lambda: day_with(valid_theme(), "FRI", clue="보리가 지나간 길에 젖은 자국이 남았어."),
+        ["CLUE_EVIDENCE FRI"],
+    ),
     # 마지막 틀린 후보가 수요일에 빠짐
     ("last wrong out too early", edit(_early_finish), ["LOGIC"]),
     # 어떤 RULE로도 빠지지 않는 틀린 후보

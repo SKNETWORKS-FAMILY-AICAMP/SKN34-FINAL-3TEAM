@@ -120,6 +120,7 @@ async def generate_mission(payload: dict[str, Any], runtime: Runtime[ThemeContex
             call_type=THEME_CALL_TYPE,
             deadline=ctx.deadline,
             timeout=ctx.settings.theme_llm_timeout,
+            question_max_chars=ctx.settings.theme_question_max_chars,
         )
         draft = response.draft
         fixes = 0
@@ -129,7 +130,7 @@ async def generate_mission(payload: dict[str, Any], runtime: Runtime[ThemeContex
                 request,
                 draft,
                 ctx.grade,
-                ctx.settings.mission_draft_question_max_chars,
+                ctx.settings.theme_question_max_chars,
                 ctx.settings.followup_example_overlap_chars,
             )
             warns: list[str] = []

@@ -35,17 +35,18 @@ class MissionDraftService:
         call_type: str = "MISSION_DRAFT",
         deadline: float | None = None,
         timeout: float | None = None,
+        question_max_chars: dict[int, int] | None = None,
     ) -> MissionDraftResponse:
-        """extra_user·call_type·deadline·timeout은 주간 테마(#437)가 부를 때만 준다.
+        """extra_user·call_type·deadline·timeout·question_max_chars는 주간 테마(#437)가 부를 때만
+        준다.
 
         테마는 이야기 조각·학년별 생각 열기 개수·테마 실패 사유를 덧붙이고
         사용량을 THEME_DRAFT로 남기며 그래프 마감 안에서 부른다.
         주지 않으면 기존 /internal/mission-drafts와 같다.
         """
         prompt = self._versions.prompt("missionDraft")
-        limit = checks.question_limit(
-            self._settings.mission_draft_question_max_chars, request.grade_min
-        )
+        max_chars = question_max_chars or self._settings.mission_draft_question_max_chars
+        limit = checks.question_limit(max_chars, request.grade_min)
         user = prompt.body.build_user(request, limit)
         if extra_user:
             user += "\n" + extra_user
@@ -69,7 +70,7 @@ class MissionDraftService:
         failures = checks.check(
             draft,
             request,
-            self._settings.mission_draft_question_max_chars,
+            max_chars,
             self._settings.followup_example_overlap_chars,
         )
         return MissionDraftResponse(
