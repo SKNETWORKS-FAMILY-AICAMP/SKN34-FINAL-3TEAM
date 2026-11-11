@@ -4,8 +4,9 @@
 
 - 그림: OpenAI images edits(참조 그림 여러 장). 사용량은 THEME_IMAGE로 기록(토큰은 응답 usage).
 - 영상: Google Cloud Veo(첫 그림만 고정, 무음). THEME_VIDEO는 core enum에 들어가기 전이라
-  사용량 이벤트를 보내지 않고 로그만 남긴다(ai.md 17.1 사용량). 운영 인증(WIF)은 인프라 확인 전이라
-  접근 토큰을 설정으로 받는다(로컬 시험용).
+  사용량 이벤트를 보내지 않고 로그만 남긴다(ai.md 17.1 사용량). 인증은 Google 표준 자격 증명
+  (`google.auth.default()`, #538): 운영은 GOOGLE_APPLICATION_CREDENTIALS가 가리키는 파일(서비스
+  계정 키 또는 WIF 설정), 로컬은 `gcloud auth application-default login`. 토큰은 만료 전에 갱신.
 - 컷 이어 붙이기(0.5초 녹아드는 전환)·장면 뽑기는 imageio-ffmpeg에 들어 있는 ffmpeg 실행 파일로
   한다(Docker 수정 없음).
 - 시험은 가짜 구현(FakeImageClient·FakeVideoClient)을 쓴다.
@@ -24,6 +25,10 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Protocol
 
+import google.auth
+import google.auth.credentials
+import google.auth.exceptions
+import google.auth.transport.requests
 import httpx
 import imageio_ffmpeg
 import openai
@@ -162,11 +167,54 @@ def image_status(status: int) -> tuple[str, bool]:
     return "LLM_BAD_REQUEST", False  # 안전 정책 거절(400)도 여기. 그래프가 사유를 넣어 다시 만듦
 
 
+GOOGLE_SCOPES = ("https://www.googleapis.com/auth/cloud-platform",)
+
+
+class TokenSource(Protocol):
+    async def token(self) -> str:
+        """요청에 붙일 접근 토큰(만료 전이면 그대로, 아니면 갱신해서)."""
+        ...
+
+
+class GoogleTokenSource:
+    """Google 자격 증명(google.auth.default)에서 접근 토큰을 꺼내고 만료 전에 갱신한다.
+
+    google-auth의 `valid`는 만료 몇 분 전부터 거짓이 되므로 그때 갱신한다. 갱신은 동기 호출이라
+    스레드에서 하고, 컷 여러 개가 동시에 요청해도 한 번만 갱신하게 잠근다.
+    """
+
+    def __init__(self, credentials: google.auth.credentials.Credentials) -> None:
+        self._credentials = credentials
+        self._lock = asyncio.Lock()
+
+    async def token(self) -> str:
+        async with self._lock:
+            if not self._credentials.valid:
+                request = google.auth.transport.requests.Request()
+                try:
+                    await asyncio.to_thread(self._credentials.refresh, request)
+                except google.auth.exceptions.RefreshError as exc:
+                    raise LlmUnavailable("LLM_AUTH_FAILED", retryable=False) from exc
+                except google.auth.exceptions.TransportError as exc:
+                    raise LlmUnavailable("LLM_CONNECTION", retryable=True) from exc
+            return str(self._credentials.token)
+
+
+def google_token_source() -> GoogleTokenSource | None:
+    """표준 자격 증명을 찾으면 토큰 공급자, 없으면 None(영상 건너뜀)."""
+    try:
+        credentials, _ = google.auth.default(scopes=GOOGLE_SCOPES)
+    except google.auth.exceptions.DefaultCredentialsError:
+        return None
+    return GoogleTokenSource(credentials)
+
+
 class VeoVideoClient:
     """Veo REST(predictLongRunning → fetchPredictOperation 대기). 시험(2026-11-11)과 같은 호출.
 
     첫 그림만 고정한다(사용자 결정 2026-11-11). 끝 그림까지 고정하면 비슷한 두 그림 사이를
     억지로 이어 움직임이 흐물거리고 배경이 같아짐(실측). last를 주면 lastFrame도 보낸다.
+    토큰은 요청마다 tokens에서 받는다(대기 중에 만료돼도 갱신됨).
     """
 
     def __init__(
@@ -175,7 +223,7 @@ class VeoVideoClient:
         project: str,
         location: str,
         model: str,
-        token: str,
+        tokens: TokenSource,
         timeout: float,
         client: httpx.AsyncClient | None = None,
         poll_seconds: float = 8.0,
@@ -186,13 +234,14 @@ class VeoVideoClient:
             f"https://{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/"
             f"{location}/publishers/google/models/{model}"
         )
-        self._token, self._timeout, self._poll = token, timeout, poll_seconds
+        self._tokens, self._timeout, self._poll = tokens, timeout, poll_seconds
         self._client = client or httpx.AsyncClient(timeout=120)
 
     async def _post(self, url: str, body: dict) -> dict:
+        token = await self._tokens.token()
         try:
             response = await self._client.post(
-                url, json=body, headers={"Authorization": f"Bearer {self._token}"}
+                url, json=body, headers={"Authorization": f"Bearer {token}"}
             )
         except httpx.HTTPError as exc:
             raise LlmUnavailable("LLM_CONNECTION", retryable=True) from exc
@@ -570,7 +619,10 @@ def video_frames(clip: bytes, every: float = 2.0, count: int = 3) -> list[bytes]
 def create_media_clients(
     settings: Settings, recorder: UsageRecorder
 ) -> tuple[ImageClient | None, VideoClient | None]:
-    """그림은 버킷이 있어야, 영상은 켜져 있고 프로젝트·토큰이 있어야 만든다(없으면 None: 건너뜀)."""
+    """그림은 버킷이 있어야, 영상은 켜져 있고 프로젝트·Google 자격 증명이 있어야 만든다.
+
+    없으면 None(건너뜀). 영상이 켜져 있는데 자격 증명을 못 찾으면 경고를 남긴다.
+    """
     image: ImageClient | None = None
     video: VideoClient | None = None
     if settings.asset_s3_bucket:
@@ -588,12 +640,16 @@ def create_media_clients(
     if image is not None and settings.theme_video_enabled:
         if settings.video_provider == "fake":
             video = FakeVideoClient()
-        elif settings.video_project and settings.video_access_token:
-            video = VeoVideoClient(
-                project=settings.video_project,
-                location=settings.video_location,
-                model=settings.video_model,
-                token=settings.video_access_token.get_secret_value(),
-                timeout=settings.theme_video_timeout,
-            )
+        elif settings.video_project:
+            tokens = google_token_source()
+            if tokens is None:
+                logger.warning("theme video skipped: Google credentials not found")
+            else:
+                video = VeoVideoClient(
+                    project=settings.video_project,
+                    location=settings.video_location,
+                    model=settings.video_model,
+                    tokens=tokens,
+                    timeout=settings.theme_video_timeout,
+                )
     return image, video
