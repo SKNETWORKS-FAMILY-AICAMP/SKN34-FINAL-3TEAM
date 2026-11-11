@@ -1481,7 +1481,7 @@ erDiagram
 | `knowledge_covers` | **dataset_version, standard_code, content_id**, reviewed_by, reviewed_at | C4 COVERS 수락·수정 행만 |
 
 - C4 → C3: `ACCEPT`는 `target`, `MODIFY`는 `modifiedTarget`을 대상으로 넣고 `reason`·`reviewer`·`reviewedAt`(KST 날짜 00:00)을 옮긴다. `REJECT`·빈 칸(확인 전)은 넣지 않는다. 같은 관계가 여러 번 나오면 `reviewedAt`이 늦은 행. `reviewer = SAMPLE`(샘플 파일)은 거부
-- `knowledge_prerequisite.prerequisite_code` FK는 기준안에서 **두지 않는다**: 초3 1학기의 앞 학기 선수는 초1~2 성취기준인데 지식 저장소 범위가 초3~6이라 조각이 없을 수 있다. 대신 `achievement_standard` 코드인지 적재 때 검사(#468·#466 확인)
+- `knowledge_prerequisite.prerequisite_code` FK는 기준안에서 **두지 않는다**: 초3 1학기의 앞 학기 선수는 초1~2 성취기준인데 지식 저장소 범위가 초3~6이라 조각이 없을 수 있다. 대신 `achievement_standard` 코드인지 적재 때 검사(#468·#466 확인). #468은 선수 후보를 초3~6 안에서만 내므로(2026-11-11 결정) 3-1 성취기준은 선수가 없고 확인 파일의 선수는 모두 저장소 안 성취기준이다. FK를 둘지는 #466이 다시 판단
 - 성취기준 문장은 적재 때 `achievement_standard`와 코드로 대조하고 다르면 적재를 멈춘다(#466)
 
 판 규칙(C9, 기준안)
