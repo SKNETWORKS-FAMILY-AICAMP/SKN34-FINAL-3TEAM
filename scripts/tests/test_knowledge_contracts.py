@@ -219,7 +219,10 @@ class OpenApiSpecTests(unittest.TestCase):
                 if isinstance(operation, dict) and operation.get("x-implementation-status")}
 
     def test_learning_knowledge_paths_match_api_spec(self):
-        self.assertEqual(self.planned(self.learning), {key: "planned-issue-469" for key in KNOWLEDGE_PATHS})
+        self.assertEqual(self.planned(self.learning), {})
+        actual = {(method, path) for path, methods in self.learning["paths"].items()
+                  if path.startswith("/knowledge/") for method in methods}
+        self.assertEqual(actual, KNOWLEDGE_PATHS)
         rows = set()
         for method, path in re.findall(r"^\| (GET|POST) \| `(/internal/knowledge/[^`?]+)", self.spec_412, re.M):
             rows.add((method.lower(), path.removeprefix("/internal")))

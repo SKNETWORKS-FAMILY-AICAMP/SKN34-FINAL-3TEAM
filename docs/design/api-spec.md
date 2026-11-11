@@ -910,7 +910,7 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 | GET | `/internal/community/posts/{postId}` | core | 구현(#386, #388 요청): `SYSTEM`, scope 없음. 신고 대상 확인·관리자 원문 열람 `{postId, studentId, missionId, status, answer, createdAt}`(상태 무관), 파기·없음 `404 COMMUNITY_POST_NOT_FOUND` |
 | GET · POST | `/internal/admin/theme-drafts…` | core | learning #438(core #439 프록시, 에픽 #436): 인증·권한 전달은 관리자 미션과 같음. 요청 `POST`(202)·목록 `GET ?status&source&page&size`·상세 `GET /{draftId}`·채택 `POST /{draftId}/adopt`(201, 응답에 만든 `themeId`)·버리기 `POST /{draftId}/discard`·다시 생성 `POST /{draftId}/regenerate`(202). 요청·버리기·다시 생성 응답에 `draftId`·`status`가 있어야 core가 결과 감사를 남김(없으면 core `503 LEARNING_INVALID_RESPONSE`). 초안 본문 모양·오류 코드는 learning #438 소유 |
 | GET·POST·PUT | `/internal/admin/weekly-themes…` | core | #385(core #387 프록시): `ADMIN` + `X-User-Id`. 목록 `GET ?gradeBand&weekStart&status&page&size` → `{items, page, size, totalElements}`, 작성 `POST`(201)·수정 `PUT /{id}`(새 버전) 본문 `{gradeBand, weekStart, title, intro, days:[{day, missionId}]}`, 검토 요청·게시·중단 `POST /{id}/review-request`·`/publish`·`/unpublish` `{}` → 모두 `AdminWeeklyTheme` = `{themeId, gradeBand, weekStart, status, version, publishedVersion, reviewRequested, title, intro, days, publishedAt, createdAt, updatedAt}`. 오류: 형식·월요일 아닌 주·없는 미션 `400`, 상태상 불가 전이·게시 중 학년군·주 변경 `409 CONFLICT`, 게시 검사 `422 WEEKLY_THEME_PUBLISH_INCOMPLETE` + `errors:[{code, message}]` |
-| GET · POST | `/internal/knowledge…` | ai, learning 내부 | 교육과정 지식 근거·검색(#463, 계약 #464 C5, 구현 #469, **구현 전·팀 확인 전**). `SYSTEM` 역할, 학생 범위·학생 정보 없음. 다섯 경로와 응답은 4.1.2 |
+| GET · POST | `/internal/knowledge…` | ai, learning 내부 | 교육과정 지식 근거·검색(#463, 계약 #464 C5, 구현 #469). `SYSTEM` 역할, 학생 범위·학생 정보 없음. 다섯 경로와 응답은 4.1.2 |
 
 - 기록 조회 공통 (#27): 학생 경로는 역할 `PARENT`·`STUDENT`·`SYSTEM`(`home`은 학생 본인 `STUDENT`만)이고 `X-Student-Scope`에 대상 학생이 없으면 `403`. `from`·`to`는 KST 날짜(양 끝 포함), 둘 다 주거나 둘 다 생략(생략하면 오늘 포함 최근 7일, P06), 한쪽만 주거나 `from > to`면 `400`. 응답 `period`는 실제 조회 기간. 집계 대상은 P08(기간 안에 답변 제출이 있는 시도, 미완료 포함·판정 상태 무관. 조회 종료일까지의 답변이 모두 처리 실패인 시도와 삭제 기록은 제외). 시도별 사실(완료·되묻기 받음·보완 답변·최근 답변)은 조회 종료일까지 일어난 것만. `state`는 집계 대상(비율은 분모) 0건 `NO_RECORD`, 1~4건 `INSUFFICIENT_SAMPLE`(비율 `value: null`), 5건 이상 `OK`. 메모·초안은 반환하지 않음(P05). 최상위 학생 식별자는 호출 역할과 무관하게 `studentId`(학부모 공개 응답의 `childId`는 core가 바꿈, core #40·report #51과 합의). 조회 장애는 `state`가 아니라 HTTP 오류(Problem Details)로 반환. 까닭을 잇는 말은 `왜냐하면`·`때문`·`그래서`·`따라서`(report와 확정)
 
@@ -937,7 +937,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 #### 4.1.2 교육과정 지식 내부 API (#463, 계약 #464 C5, 구현 #469)
 
-**구현 전 계약(기준안, 팀 확인 전)**. 저장 구조는 [ERD 4.5](erd.md#45-교육과정-지식-rag-463-계약-464-구현-전), 요청·응답 칸은 learning OpenAPI(`x-implementation-status: planned-issue-469`), ai 쪽 모델은 `backend/ai-service/app/knowledge/contracts.py`, 가짜 구현은 `app/knowledge/fake.py`(샘플 `scripts/knowledge/samples/`). 계약을 바꾸면 이 절·OpenAPI·`contracts.py`·`scripts/tests/test_knowledge_contracts.py`를 같이 고치고 #465~#471 담당에게 알린다(변경 절차 기준안, #464 확인 필요).
+**C5 조회 구현(#469)**. 저장 구조는 [ERD 4.5](erd.md#45-교육과정-지식-rag-463-계약-464-구현-전), 요청·응답 칸은 learning OpenAPI(구현된 다섯 경로), ai 쪽 모델은 `backend/ai-service/app/knowledge/contracts.py`, 가짜 구현은 `app/knowledge/fake.py`(샘플 `scripts/knowledge/samples/`). 계약을 바꾸면 이 절·OpenAPI·`contracts.py`·`scripts/tests/test_knowledge_contracts.py`를 같이 고치고 #465~#471 담당에게 알린다(변경 절차 기준안, #464 확인 필요).
 
 | Method | Path | 호출자 | 요청 → 응답 |
 |---|---|---|---|
@@ -950,13 +950,13 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 인증: `X-Internal-Token` + `X-User-Role: SYSTEM`(사용자 요청 없는 호출과 같음, 4장 공통). `X-Student-Scope`·학생 정보는 받지 않는다. 토큰 오류 `401 UNAUTHENTICATED`, SYSTEM 외 역할 `403 FORBIDDEN`
 - 활성 판만 읽는다(`knowledge_dataset.status = ACTIVE`, C9). 응답 조각마다 근거 표시 `ref = {kind, id, datasetVersion}`(C7 `sources` 항목과 같은 모양)
 - 대체 사유(`reason`): 근거가 없어도 오류가 아니라 `200`에 사유를 담는다. `NO_ACTIVE_DATASET`(활성 판 없음, `datasetVersion: null`)·`BELOW_THRESHOLD`(최소 유사도 넘는 조각 없음)·`NO_CANDIDATE`(그 유형 후보 없음)·`CODE_NOT_FOUND`(요청 코드가 하나도 없음, 일부만 없으면 `missingCodes`만)·`NO_REVIEWED_RELATION`(비슷한 내용 요소는 있으나 확인된 covers 없음). 생성 쪽은 사유가 있으면 근거 없이 기존 방식으로 생성하고 결과에 표시한다(#470)
-- 오류: 형식·상한 밖·학기가 그 학년 것이 아님(`grade: 3`에 `semester: "4-1"`) `400 VALIDATION_FAILED`, 요청 `embeddingModel`·벡터 길이가 활성 판과 다름 `409 KNOWLEDGE_EMBEDDING_MISMATCH`(learning이 ai를 되부르지 않으므로 벡터는 부르는 쪽이 C6로 만든다), 예상하지 못한 조회 실패 `500`
+- 오류: 형식·상한 밖·학기가 그 학년 것이 아님(`grade: 3`에 `semester: "4-1"`) `400 VALIDATION_FAILED`, 요청 `embeddingModel`·벡터 길이가 활성 판과 다름 `409 KNOWLEDGE_EMBEDDING_MISMATCH`(learning이 ai를 되부르지 않으므로 벡터는 부르는 쪽이 C6로 만든다), 조회 실패·질의 시간 예산 초과 `500 INTERNAL_ERROR`(응답·로그에 질의 본문이나 벡터를 남기지 않음)
 - 내용: 성취기준 묶음의 `domain`은 성취기준이 속한 영역(국어·수학·도덕은 내용 체계와 고려 사항이 같은 영역, 사회·과학은 단원 = 고려 사항·탐구 활동만이고 내용 체계 항목은 `covers`로 이어짐, ERD 4.5). 고려 사항은 영역 단위라 같은 영역 성취기준끼리 같은 글. 교과 지침은 요청 성취기준의 교과마다 한 번(`subjectGuides`)
 - 검색 거르기: 빈 배열·생략은 거르지 않음, 칸 안은 OR·칸끼리는 AND, `grades`·`semesters`는 조각 값과 겹치면 통과. 교과 지침·생각 유형 조각은 학년·학기와 무관해 학년·학기 거르기를 받지 않는다. 유사도 = 1 − 코사인 거리(0~1)
 - 테마 후보: 그 학기(`knowledge_standard_semester`) 성취기준마다 성취기준 조각과 확인된 covers 내용 요소 조각 중 가장 비슷한 것을 점수·`matchedBy`로 쓰고, 최소 유사도 이상만 확인된 `knowledge_fits` 유형별로 점수 순 k개
-- 배움 확인: 개념마다 가장 비슷한 내용 요소(최소 유사도 이상)를 찾고 확인된 covers → 성취기준 학기(`learnedIn`)가 요청 학기와 같거나 앞이면 `LEARNED`, 모두 뒤면 `NOT_YET`. 비슷한 내용 요소가 없으면 `HOLD`+`BELOW_THRESHOLD`, 확인된 covers가 없으면 `HOLD`+`NO_REVIEWED_RELATION`(확인 전 관계는 학기 판단에 쓰지 않음). 학기 순서는 `3-1 < 3-2 < 4-1 …`. 선수 관계(`WITH RECURSIVE`)를 판정에 더할지는 #469에서 정하고 응답 모양은 같다
-- 기준안 값: 코드 1~10개, k 기본 5·최대 20, 테마 유형당 기본 3·최대 10, 개념 1~20개, 최소 유사도 0.7(에픽, 결과서 양식 예시 값), learning 질의당 2초 이하(#469), ai→learning 대기 시간은 #470에서 정함. 실측 후 조정
-- 팀 확인: 경로·칸·사유 코드·`SYSTEM` 인증(#469, #470), 미션 초안 작업이 같은 서비스 안에서 이 API 대신 서비스 메서드를 직접 부를지(#470)
+- 배움 확인: 개념마다 가장 비슷한 내용 요소(최소 유사도 이상)를 찾고 확인된 covers → 성취기준 학기(`learnedIn`)가 요청 학기와 같거나 앞이면 `LEARNED`, 모두 뒤면 `NOT_YET`. 비슷한 내용 요소가 없으면 `HOLD`+`BELOW_THRESHOLD`, 확인된 covers가 없으면 `HOLD`+`NO_REVIEWED_RELATION`(확인 전 관계는 학기 판단에 쓰지 않음). 학기 순서는 `3-1 < 3-2 < 4-1 …`. #469는 확인된 선수 관계를 `WITH RECURSIVE`로 추적하되, 같은 내용 요소를 다룬다는 확인된 covers와 학기가 있는 성취기준만 `learnedIn` 근거로 쓴다. 다른 개념의 선수 과목을 배웠다는 이유만으로 현재 개념을 배웠다고 추정하지 않는다. 순환은 중복 제거로 끝내고 학기 정보가 없는 관계는 학기를 만들어 채우지 않는다
+- 기준안 값: 코드 1~10개, k 기본 5·최대 20, 테마 유형당 기본 3·최대 10, 개념 1~20개, 최소 유사도 0.7(에픽, 결과서 양식 예시 값), learning 질의 예산 2초(#469, 각 SQL에 남은 시간 적용). 공유 연결 풀 대기 강제 취소와 응답 정리까지의 절대 2초 상한은 보장하지 않으며 [learning 보고서 29장](../report/learning.md#29-지식-검색-내부-api-469-2026-11-11)에 측정·한계를 기록한다. ai→learning 대기 시간은 #470에서 정하며 실제 적재본 실측 후 조정
+- #469는 위 경로·칸·사유 코드·`SYSTEM` 인증과 요청 상한을 구현한다. 검색 기준값의 실제 적재본 보정과 미션 초안 작업의 직접 서비스 호출 여부는 #470·#471 통합에서 확인한다. #466의 vector 확장·C2/C3 마이그레이션이 배포 선행이며 테스트에서는 같은 설계의 격리 테이블과 샘플을 사용한다.
 
 ### 4.2 ai-service (호출: learning, core, report)
 
