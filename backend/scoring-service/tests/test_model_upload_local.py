@@ -1,7 +1,7 @@
 """Opt-in #493 integration test: disposable localhost MinIO, never AWS.
 
 MODEL_UPLOAD_LOCAL=true pytest tests/test_model_upload_local.py
-See docs/report/scoring.md#6-모델-산출물-sha-256-업로드-절차-493 for the fixed local container setup.
+See docs/report/scoring.md section 6 for the fixed local container setup.
 """
 
 import hashlib
