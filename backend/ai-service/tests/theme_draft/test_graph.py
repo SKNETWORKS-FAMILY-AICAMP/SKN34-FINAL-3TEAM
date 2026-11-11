@@ -403,15 +403,58 @@ def test_story_review_standard_fit_regenerates_named_day() -> None:
     assert len(response.dialogues) == 5
 
 
-def test_story_review_clue_logic_regenerates_plan() -> None:
-    review = review_llm(
-        story=lambda n, d: story_review({"CLUE_LOGIC": "FAIL"}) if n == 1 else story_review()
+MON_CLUE = next(d for d in valid_theme()["days"] if d["day"] == "MON")["clue"]
+
+
+def clue_fail(times: int, extra: dict[str, str] | None = None) -> Handler:
+    """처음 times번은 월요일 CLUE_LOGIC FAIL(extra 항목도 함께), 그 뒤 통과."""
+    return lambda n, d: (
+        story_review({"CLUE_LOGIC": "FAIL", **(extra or {})}, {"CLUE_LOGIC": ["MON"]})
+        if n <= times
+        else story_review()
     )
-    gen = gen_llm()
+
+
+def test_story_review_clue_logic_fixes_clue_only() -> None:
+    """CLUE_LOGIC 처음 한 번은 지목된 요일 단서 문장만 고쳐 쓰고 다시 검토(미션·대화는 그대로)."""
+    gen = gen_llm(fix=lambda n, d: fixes(("MON.clue", MON_CLUE + "!")))
+    review = review_llm(story=clue_fail(1))
     response = run(gen, review)
     assert response.failure is None
-    assert gen.count("GeneratedTheme") == 2 and gen.count("GeneratedDraft") == 10
+    assert gen.count("GeneratedTheme") == 1 and gen.count("GeneratedDraft") == 5
+    assert gen.count("GeneratedDialogue") == 5 and gen.count("GeneratedFixes") == 1
+    assert review.count("GeneratedStoryReview") == 2
+    user = gen.users("GeneratedFixes")[0]
+    assert "path: MON.clue" in user and "CLUE_LOGIC ['MON'] CLUE_LOGIC 사유" in user
+    assert response.theme is not None
+    assert next(d for d in response.theme.days if d.day == "MON").clue == MON_CLUE + "!"
+
+
+def test_story_review_clue_logic_again_regenerates_plan() -> None:
+    """고쳐 쓴 뒤에도 CLUE_LOGIC이면 이야기 틀 문제로 보고 줄거리부터(고쳐 쓰기는 한 번만)."""
+    gen = gen_llm(fix=lambda n, d: fixes(("MON.clue", MON_CLUE)))
+    review = review_llm(story=clue_fail(2))
+    response = run(gen, review)
+    assert response.failure is None
+    assert gen.count("GeneratedFixes") == 1 and gen.count("GeneratedTheme") == 2
+    assert gen.count("GeneratedDraft") == 10 and review.count("GeneratedStoryReview") == 3
     assert "CLUE_LOGIC" in gen.users("GeneratedTheme")[1]
+
+
+def test_story_review_clue_logic_with_answer_hint_regenerates_plan() -> None:
+    gen = gen_llm()  # 고쳐 쓰기 처리기 없음: 부르면 시험 실패
+    response = run(gen, review_llm(story=clue_fail(1, {"ANSWER_HINT": "FAIL"})))
+    assert response.failure is None
+    assert gen.count("GeneratedTheme") == 2 and gen.count("GeneratedDraft") == 10
+
+
+def test_fixed_clue_failing_code_check_regenerates_plan() -> None:
+    """고친 단서가 허용 값 낱말을 빠뜨리면(CLUE_TEXT) 줄거리부터 다시."""
+    gen = gen_llm(fix=lambda n, d: fixes(("MON.clue", "보리가 어딘가를 지나갔어.")))
+    response = run(gen, review_llm(story=clue_fail(1)))
+    assert response.failure is None
+    assert gen.count("GeneratedTheme") == 2 and gen.count("GeneratedDraft") == 10
+    assert "CLUE_TEXT MON" in gen.users("GeneratedTheme")[1]
 
 
 def test_story_review_shape_error_reviews_again_only() -> None:

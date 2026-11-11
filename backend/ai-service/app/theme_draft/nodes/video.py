@@ -9,8 +9,8 @@
   뭉치 컷은 동작과 상관없이 영상 모델이 작은 손을 팔로 키워 거의 다 실패, 장면 영상 전체를 빼지
   않으려고). 첫 그림이 없는 장면(컷 그림 실패)만 영상을 뺀다
 - 0.5초 겹쳐 녹아드는 전환(ffmpeg xfade)으로 이어 S3 .mp4
-- 영상 클라이언트가 없거나(THEME_VIDEO_ENABLED=false) 마감까지 theme_video_timeout + 60초가 안
-  남으면 건너뛰고 경고. THEME_VIDEO 사용량은 core enum 전이라 이벤트 없이 로그만
+- 영상 클라이언트가 없거나(THEME_VIDEO_ENABLED=false) 마감까지 theme_video_min_seconds(기준안
+  300초)가 안 남으면 건너뛰고 경고. THEME_VIDEO 사용량은 core enum 전이라 이벤트 없이 로그만
 """
 
 import asyncio
@@ -36,7 +36,6 @@ FRAME_EVERY = 1.0  # 검토 장면 간격(초). 2초 간격 4장으로는 사이
 FRAME_COUNT = 8  # 8초 컷이면 0~7초
 FREEZE_FAIL = 0.5  # 컷 중간에 이보다 오래 멈추면 그 컷을 다시 만듦(초, 기준안)
 MIN_KEEP = 0.6  # 앞뒤 정지 화면을 잘라도 요청 길이의 이 비율은 남아야 함
-DEADLINE_MARGIN = 60.0  # 이어 붙이기·올리기·움직임 몫
 
 
 def cut_freezes(clip: bytes, seconds: float) -> tuple[bytes, float, list[str]]:
@@ -154,7 +153,7 @@ async def generate_videos(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
     ctx = runtime.context
     if ctx.video is None:
         return {"media_warnings": [warning("VIDEO", "ALL", VIDEO_OFF)]}
-    if ctx.deadline - ctx.clock() < ctx.settings.theme_video_timeout + DEADLINE_MARGIN:
+    if ctx.deadline - ctx.clock() < ctx.settings.theme_video_min_seconds:
         return {"media_warnings": [warning("VIDEO", "ALL", VIDEO_DEADLINE)]}
     theme = state["theme"]
     assert theme is not None

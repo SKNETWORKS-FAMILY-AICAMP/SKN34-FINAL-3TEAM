@@ -71,6 +71,44 @@ async def fix_theme(state: ThemeState, runtime: Runtime[ThemeContext]) -> ThemeS
     }
 
 
+async def fix_clues(state: ThemeState, runtime: Runtime[ThemeContext]) -> ThemeState:
+    """글 검토 CLUE_LOGIC(처음 한 번): 지목된 요일 단서 문장만 고쳐 쓰고 코드 검사를 다시 한다.
+
+    단서는 학생이 그날 미션을 마친 뒤 보는 글이라 미션·대화에 들어가지 않아, 단서만 바꿔도 미션·
+    대화는 그대로 둔다. 고친 단서가 코드 검사에 걸리면 줄거리부터 다시 만든다.
+    """
+    ctx = runtime.context
+    targets = state.get("fix_targets") or {}
+    theme = copy.deepcopy(state["theme"])
+    assert theme is not None
+    generated = await ctx.llm.generate(
+        system=ctx.prompt.body.FIX_SYSTEM,
+        user=ctx.prompt.body.fix_user(theme, targets),
+        output=GeneratedFixes,
+        call_type=THEME_CALL_TYPE,
+        prompt_version=ctx.prompt.version,
+        max_tokens=ctx.settings.theme_dialogue_max_tokens,
+        deadline=ctx.deadline,
+        timeout=ctx.settings.theme_llm_timeout,
+        max_retries=ctx.settings.theme_llm_retries,
+    )
+    for fix in generated.data.fixes:
+        if fix.path in targets:
+            set_text_at(theme, fix.path, fix.text.strip())
+    codes = {s.code for m in ctx.request.missions for s in m.standards}
+    bad = check_theme(theme, ctx.grade, codes)
+    out: ThemeState = {"fix_targets": {}, "clue_fixed": True}
+    if bad:
+        reasons = state.get("review_reasons") or []
+        feedback = [*(state.get("plan_feedback") or []), ("REVIEW", reasons), ("THEME", bad)]
+        return {**out, "plan_feedback": feedback, "plan_attempts": 0, "review_route": "PLAN"}
+    return {**out, "theme": theme, "review_route": "REVIEW"}
+
+
+def after_fix_clues(state: ThemeState) -> str:
+    return "plan_theme" if state.get("review_route") == "PLAN" else "review_story"
+
+
 async def check_theme_node(state: ThemeState, runtime: Runtime[ThemeContext]) -> ThemeState:
     ctx = runtime.context
     codes = {s.code for m in ctx.request.missions for s in m.standards}
