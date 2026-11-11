@@ -34,6 +34,8 @@ from app.llm.providers import image_mime
 
 logger = logging.getLogger(__name__)
 IMAGE_CALL_TYPE = "THEME_IMAGE"
+VEO_SIZE = (1280, 720)  # 요청 resolution 720p·16:9의 결과 크기(24fps, 실측)
+STILL_ZOOM = 1.06  # 움직이는 그림 컷: 첫 그림을 컷 길이 동안 이 배율까지 천천히 확대
 
 
 class ImageClient(Protocol):
@@ -48,6 +50,7 @@ class ImageClient(Protocol):
 
 class VideoClient(Protocol):
     model: str
+    size: tuple[int, int]  # 만드는 영상 크기(대체 컷을 같은 크기로 만들어 이어 붙이게)
 
     async def generate(
         self,
@@ -178,6 +181,7 @@ class VeoVideoClient:
         poll_seconds: float = 8.0,
     ) -> None:
         self.model = model
+        self.size = VEO_SIZE
         self._base = (
             f"https://{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/"
             f"{location}/publishers/google/models/{model}"
@@ -287,6 +291,7 @@ class FakeVideoClient:
 
     def __init__(self, model: str = "fake-video") -> None:
         self.model = model
+        self.size = (64, 36)  # color_clip 크기
         self.calls: list[tuple[str, bytes, bytes | None, int]] = []  # (지시문, 첫, 끝, 초)
         self.negatives: list[str | None] = []
 
@@ -337,6 +342,37 @@ def color_clip(seed: int, seconds: float = 1.0, still: bool = False) -> bytes:
                 source,
                 "-c:v",
                 "mpeg4",
+                "-pix_fmt",
+                "yuv420p",
+                str(out),
+            ]
+        )
+        return out.read_bytes()
+
+
+def still_clip(image: bytes, seconds: float, size: tuple[int, int]) -> bytes:
+    """움직이는 그림 컷: 그림 1장을 seconds초 동안 가운데로 천천히 확대(24fps·yuv420p, size 크기).
+
+    영상 컷이 끝내 검토를 통과하지 못하면 이 컷으로 대신한다(첫 그림은 그림 검토를 통과한 것).
+    확대 떨림을 줄이려고 두 배로 키운 뒤 잘라 낸다.
+    """
+    width, height = size
+    frames = max(1, round(seconds * 24))
+    zoom = f"1+{STILL_ZOOM - 1:.3f}*on/{frames}"
+    with tempfile.TemporaryDirectory() as tmp:
+        src, out = Path(tmp) / "in.img", Path(tmp) / "c.mp4"
+        src.write_bytes(image)
+        _ffmpeg(
+            [
+                "-i",
+                str(src),
+                "-vf",
+                f"scale={width * 2}:{height * 2},zoompan=z='{zoom}':d={frames}"
+                f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={width}x{height}:fps=24",
+                "-frames:v",
+                str(frames),
+                "-c:v",
+                "libx264",
                 "-pix_fmt",
                 "yuv420p",
                 str(out),

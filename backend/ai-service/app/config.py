@@ -122,6 +122,10 @@ class Settings(BaseSettings):
     video_location: str = "us-central1"
     video_access_token: SecretStr | None = None
     theme_video_timeout: float = 400.0  # 컷 1개 생성·대기 상한(기준안, 실측 약 115초)
+    # 영상 컷 다시 만들기 상한(기준안, 첫 생성 포함 최대 2회). 뭉치 컷은 다시 만들어도 팔이 생겨
+    # 거의 실패해(실측 2026-11-11) 비용만 들어서 그림·글(theme_max_regen 2)보다 적게, 끝내 실패하면
+    # 움직이는 그림 컷으로 대신
+    theme_video_max_regen: int = 1
     # 시작·종료 영상 컷 길이(초, 컷 4개). 첫 그림만 고정하고 0.5초씩 겹쳐 녹아들게 이음
     # (사용자 결정 2026-11-11, 4+6+8+6-1.5 = 22.5초)
     theme_video_cut_seconds: list[int] = [4, 6, 8, 6]

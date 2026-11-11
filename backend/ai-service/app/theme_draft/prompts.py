@@ -99,16 +99,20 @@ PLAN_SYSTEM = (
     "- introCuts 순서: 1 사건 장소의 평소 모습과 주인 인물(대상을 지니거나 쓰는 모습은 되지만 "
     "어디에 두는지는 보여 주지 않음, 뭉치 안 나옴), "
     "2 사건(주인이 대상이 사라진 걸 알아채고 당황함, 뭉치 안 나옴), "
-    "3 뭉치 출동(테마 차림의 뭉치가 혼자 현장으로 달려감), "
+    "3 뭉치 출동(테마 차림의 뭉치가 혼자 화면 안에서 옆으로 통통 튀어 감), "
     "4 현장 도착(뭉치와 인물들이 모여 큰 질문을 마주함). "
     "1·2컷의 mungchiMood는 none, 3·4컷은 none이 아니다. "
     "시작 콘티에는 정답 이름·정답 장소를 쓰지 않는다.\n"
-    "- outroCuts 순서: 1 뭉치가 모은 단서를 정리함, 2 정답 장소로 감, "
-    "3 정답 장소에서 대상을 찾아 주인에게 돌려줌, 4 함께 기뻐함. 종료 4컷에는 모두 뭉치가 나온다"
+    "- outroCuts 순서: 1 뭉치가 바닥·탁자에 놓인 단서들 앞에서 생각을 정리함, 2 정답 장소 앞에 "
+    "도착해 바라봄, 3 정답 장소에서 찾은 대상을 주인이 받아 듦(뭉치는 곁에서 지켜봄), "
+    "4 함께 기뻐함. 종료 4컷에는 모두 뭉치가 나온다"
     "(mungchiMood는 none이 아님). 종료 콘티는 정답 공개 뒤라 정답 이름·정답 장소를 써도 된다.\n"
-    "- action은 그 자리에서 하는 작은 동작 하나(손 흔들기·고개 끄덕이기·껴안기·뛰며 좋아하기 등). "
-    "걸어서 화면 밖으로 나가거나 새 인물이 들어오는 동작은 쓰지 않는다(뭉치 출동 컷은 화면 안에서 "
-    "달려오는 모습). 컷 끝까지 scene에 나온 인물이 모두 화면 안에 있다.\n"
+    "- action은 그 자리에서 하는 작은 동작 하나. 뭉치는 팔이 없어(아래쪽 작은 손만) 뭉치의 동작은 "
+    "제자리에서 작게 통통 튀기·고개 갸웃·몸 살짝 흔들기·표정 바꾸기만 쓴다. 손 흔들기·손 들기·"
+    "가리키기·짚기·건네기·안기·모으기·놓기·뛰기처럼 손이나 팔다리를 쓰는 동작은 사람만 한다"
+    "(예: '사람들이 손뼉을 치고 뭉치는 제자리에서 통통 튄다'). 인물·뭉치가 화면 쪽으로 다가오거나 "
+    "멀어지지 않고, 걸어서 화면 밖으로 나가거나 새 인물이 들어오지 않는다. 컷 끝까지 scene에 나온 "
+    "인물이 모두 화면 안에 있다.\n"
     "- 영상 속에는 글자를 넣지 않으므로 scene·action에 글자·숫자가 보이는 "
     "장면(쓰인 간판 등)을 쓰지 않는다.\n"
     "\n"
@@ -297,6 +301,22 @@ def plan_user(request: ThemeDraftRequest, feedback: list[tuple[str, list[str]]])
     return "\n".join(lines)
 
 
+# 콘티 컷 역할(PLAN_SYSTEM의 introCuts·outroCuts 순서와 같게). 칸 하나만 고쳐 쓸 때 역할을 잃지 않게
+CUT_ROLES = {
+    "introCuts": (
+        "사건 장소의 평소 모습과 주인 인물(뭉치 안 나옴)",
+        "주인이 대상이 사라진 걸 알아채고 당황함(뭉치 안 나옴)",
+        "뭉치 출동(테마 차림의 뭉치가 혼자 화면 안에서 옆으로 통통 튀어 감)",
+        "현장 도착(뭉치와 인물들이 모여 큰 질문을 마주함)",
+    ),
+    "outroCuts": (
+        "뭉치가 바닥·탁자에 놓인 단서들 앞에서 생각을 정리함",
+        "정답 장소 앞에 도착해 바라봄",
+        "정답 장소에서 찾은 대상을 주인이 받아 듦(뭉치는 곁에서 지켜봄)",
+        "함께 기뻐함",
+    ),
+}
+
 FIX_SYSTEM = (
     "너는 초등학생용 주간 테마 글에서 검사에 걸린 칸 몇 개만 고쳐 쓰는 편집자다.\n"
     "- 받은 칸만 다시 쓴다. 다른 칸과 이야기 속 사실은 바꾸지 않는다.\n"
@@ -335,6 +355,18 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
             "찾은 증거를 풀려면 그날 배울 것이 필요하다는 이유만 말하고 도움을 청한다.",
             "증거 자체를 살피라고 하지 않는다.",
             names,
+        ]
+    if key in ("scene", "action"):
+        return [
+            f"이 컷의 역할을 지킨다: {CUT_ROLES[head[:-1]][int(head[-1]) - 1]}.",
+            "scene은 컷 끝에 보이는 모습(누가 어디서) 한 문장, action은 동작 하나를 한 문장으로, "
+            "지금 글 길이와 비슷하게 쓴다. 같은 말을 되풀이하지 않는다.",
+            "뭉치는 제자리에서 작게 통통 튀기·고개 갸웃·몸 살짝 흔들기·표정 바꾸기만 한다. 손짓·"
+            "건네기·안기·뛰기처럼 손이나 팔다리를 쓰는 동작은 사람이 한다.",
+            "누구도 화면 쪽으로 다가오거나 화면 밖으로 나가지 않는다. 인물·장소는 그대로 둔다.",
+            "종료 콘티라 정답 이름을 써도 된다."
+            if head.startswith("outroCuts")
+            else "정답 이름·정답 장소를 쓰지 않는다.",
         ]
     if key == "caption":
         if head.startswith("outroCuts"):
@@ -985,7 +1017,8 @@ def image_review_user(
 
 VIDEO_NEGATIVE = (
     "big eyes, eye whites, changing eye shape, body morphing, extra limbs, long arms, wings, "
-    "stretched limbs, outfit change, character leaving the frame, character disappearing, "
+    "stretched limbs, Mungchi raising hands, Mungchi holding objects, outfit change, "
+    "character leaving the frame, character disappearing, character walking toward the camera, "
     "characters merging, extreme zoom, cropped faces, freeze frame, 3D render, text, "
     "flashing lights, scary, sudden cuts"
 )
@@ -1000,6 +1033,9 @@ def video_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list
         mungchi = [
             "Keep Mungchi's round fluffy shape and small dot eyes unchanged (no eye whites).",
             "Mungchi has only tiny hands at the lower front: no arms, wings or stretched limbs.",
+            "Mungchi only bounces gently in place, tilts its head or changes its mouth: it never "
+            "waves, raises its hands, points, holds, hugs or hands over anything. Any hand "
+            "gestures are done by the people.",
             "Mungchi's outfit, hat and items around the neck stay exactly as in the first frame.",
             f"Mungchi's expression: {mouth}." if mouth else "",
         ]
@@ -1019,7 +1055,8 @@ def video_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list
         *mungchi,
         "Everyone in the first frame stays fully inside the frame until the end: nobody walks "
         "out, disappears, appears or merges with another person.",
-        "Small, gentle movements in place, continuous until the end with no pauses.",
+        "Small, gentle movements in place, continuous until the end with no pauses. Nobody moves "
+        "toward or away from the camera: everyone keeps the same size as in the first frame.",
         "Only a slow, slight camera move; never zoom in so close that someone is cut off. No text.",
         about_target,
         *_fixes(feedback),

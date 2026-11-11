@@ -277,6 +277,39 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
         edit(lambda t: t["outroCuts"][1].update(mungchiMood="none")),
         ["CUT_MOOD"],
     ),
+    # 뭉치는 팔이 없어 손·팔다리 동작은 사람만, 화면 쪽으로 다가오거나 밖으로 나가지 않음
+    # (실측 2026-11-11: 그런 컷에서 영상에 팔·다리가 생기거나 확대돼 잘림)
+    (
+        "mungchi hands over target",
+        edit(lambda t: t["outroCuts"][2].update(action="뭉치가 지호에게 보리를 건넨다")),
+        ["CUT_ACTION"],
+    ),
+    (
+        "everyone raises hands includes mungchi",
+        edit(lambda t: t["outroCuts"][3].update(action="모두가 두 손을 들어 기뻐한다")),
+        ["CUT_ACTION"],
+    ),
+    (
+        "mungchi jumps in scene",
+        edit(lambda t: t["introCuts"][3].update(scene="뭉치가 길모퉁이에서 뛰며 웃는다")),
+        ["CUT_ACTION"],
+    ),
+    (
+        "mungchi runs toward camera",
+        edit(lambda t: t["introCuts"][2].update(action="뭉치가 화면 쪽으로 다가온다")),
+        ["CUT_ACTION"],
+    ),
+    (
+        "person gestures while mungchi watches",
+        edit(lambda t: t["outroCuts"][2].update(action="뭉치 곁에서 지호가 손을 흔든다")),
+        [],
+    ),
+    (
+        # 시작 1·2컷은 뭉치가 없어 손 동작은 보지 않음(다가오기만 봄)
+        "hands fine in intro cut without mungchi",
+        edit(lambda t: t["introCuts"][0].update(action="모두 함께 손을 흔든다")),
+        [],
+    ),
     # 증거 발견 줄·수사 연결 문장: 필수·길이, 단서 결론(허용 값)·후보·정답 금지
     ("discovery empty", on_day("MON", discovery=" "), ["REQUIRED"]),
     ("discovery too long", on_day("TUE", discovery="가" * 41), ["LENGTH"]),
@@ -334,6 +367,14 @@ def test_check_theme_exact_codes(name: str, build: Callable[[], dict], expected:
         (["LENGTH TUE.clue 44자 > 40", "LOGIC 정답 텃밭이 MON 단서로 빠짐"], []),
         (["ANSWER_LEAK characters.텃밭지기에 정답 이름"], []),
         (["ANSWER_LEAK introCuts1.scene에 정답 이름"], []),
+        # 콘티 뭉치 동작은 그 칸만 고쳐 씀(정답 유출과 달리)
+        (
+            [
+                "CUT_ACTION outroCuts3.action 뭉치가 손·팔다리를 쓰는 동작(건넨), 손짓은 사람만",
+                "CUT_ACTION introCuts3.scene 화면 쪽으로 다가오거나 나가는 동작(달려온)",
+            ],
+            ["outroCuts3.action", "introCuts3.scene"],
+        ),
         (["CLUE_TEXT TUE 단서 문장에 허용 값 낱말 없음"], []),
     ],
 )
@@ -352,6 +393,9 @@ def test_text_at_and_set_text_at_paths() -> None:
     assert theme["outroCuts"][1]["caption"] == "새 문구" and theme["title"] == "새 제목"
     assert checks.text_at(theme, "outroCuts2.caption") == "새 문구"
     assert (checks.text_max("WED.clue"), checks.text_max("introCuts1.caption")) == (40, 30)
+    checks.set_text_at(theme, "outroCuts3.action", "뭉치가 곁에서 통통 튄다")
+    assert theme["outroCuts"][2]["action"] == "뭉치가 곁에서 통통 튄다"
+    assert checks.text_max("outroCuts3.action") == checks.CUT_TEXT_MAX
 
 
 def test_llm_output_has_no_rules_out() -> None:
