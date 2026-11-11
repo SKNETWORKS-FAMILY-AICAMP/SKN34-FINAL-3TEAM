@@ -378,7 +378,7 @@
 ### 2.5 리포트 (FN-RPT)
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
-| GET | `/children/{childId}/reports?status&periodType` | 학부모 | 대상 기간·생성 상태별 목록. `periodType`(`DAILY`·`WEEKLY`, 생략 시 전체) 필터, 항목에 항상 `periodType`(report가 생략하면 core가 `WEEKLY`로 채움, #390) | RPT-10, RPT-11, RPT-15 | 핵심 |
+| GET | `/children/{childId}/reports?status&periodType` | 학부모 | 대상 기간·생성 상태별 목록. `status`는 `RUNNING`·`COMPLETED`·`FAILED`만 허용하며 `QUEUED`·알 수 없는 값은 400 `VALIDATION_FAILED`다(#518). `periodType`(`DAILY`·`WEEKLY`, 생략 시 전체) 필터, 항목에 항상 `periodType`(report가 생략하면 core가 `WEEKLY`로 채움, #390) | RPT-10, RPT-11, RPT-15 | 핵심 |
 | GET | `/reports/{reportId}?revision` | 학부모 | 상세: 기간·포함 기준·`Metric[]`·생각 유형 요약·전후 변화·돌아보기·원문 인용·저녁 질문·버전, `periodType`(core가 작업 기준으로 채움, #390). #391 구현: 일일 `problems[]`, 주간 `themeSummary`(아래). 기본 최신판, `revision`으로 이전판 조회 (P06) | RPT-02~10, RPT-12 | 핵심 |
 | GET | `/reports/{reportId}/evidence/{itemId}` | 학부모 | 리포트 항목의 원본 기록 `{items:[{attemptId,answerId,answerVersion,available,quote?,missionTitle?,submittedAt?}]}` (report `EvidencePage` 그대로, 삭제된 근거는 `available=false`·원문 없음) | RPT-03, RPT-12 | 핵심 |
 | GET | `/reports/{reportId}/download?format=pdf\|md` | 학부모 | 권한 확인 후 `{url, expiresAt}`(단기 presigned URL) 반환, 웹이 해당 URL로 이동. Bearer 인증이라 302 대신 JSON (PDF·Markdown, P06) | RPT-13 | 핵심 |
@@ -801,7 +801,7 @@ If-Match: "7"
   - 불일치 시 `pin_failed_count` 증가, 5회째 `pin_locked_at` 기록 후 `423 STUDENT_PIN_LOCKED`. 성공 시 실패 횟수 0, 기기 `last_used_at` 갱신
   - refresh token 미발급. access 만료 시 PIN 재입력(초안은 자동 저장으로 보존). 학생 토큰 권한은 동석 경로와 동일
 - PIN 설정 `PUT /children/{childId}/pin`
-  - `X-Reauth-Token` 필수. 숫자 4~6자리, 동일 숫자 반복(`1111`)·연속(`1234`, `4321`) 거부 `422 VALIDATION_FAILED`
+  - 활성 보호자 인증만 필요하며 추가 재인증·`X-Reauth-Token`은 요구하지 않는다(#516). 숫자 4~6자리, 동일 숫자 반복(`1111`)·연속(`1234`, `4321`) 거부 `422 VALIDATION_FAILED`
   - 해시 저장, 실패 횟수 0·잠금 해제. 잠긴 PIN의 해제 수단은 재설정뿐
 - 기기 해제 `DELETE /student-devices/{deviceId}`: `revoked_at` 기록, 기존 학생 access token은 만료까지 유효
 - 학부모 화면의 실제 PIN 상태: `GET /children` 각 항목에 `pinSet`(설정 여부)·`pinLocked`(5회 실패 잠금 여부)를 반환한다. PIN 원문·해시·실패 횟수는 반환하지 않음
@@ -1134,7 +1134,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 - 자동 생성은 직전 KST 월~일, 주가 끝난 일요일 자정(월요일 00:00)이다(2026-11-09 결정). 부모 REGENERATE 한도는 자녀·주 계열 전체 1회(새 판을 기준으로 재요청해도 409 REPORT_REGENERATION_LIMIT). SERVICE_OPS 관리자는 같은 POST 경로에서 ADMIN_RETRY 작업을 무제한 생성한다. 생성 중 작업이 있으면 409 REPORT_GENERATION_IN_PROGRESS이다.
 - 재생성 202는 `{jobId, childId, period:{from,to}, status:"QUEUED"}`다. 이전 reportId는 보존되고 report가 revision을 배정한다. 상품·구독 권한은 payment의 ProductEntitlementService에서 확인한다. 상품 설정 불완전·권한 조회 실패는 명시적인 오류로 처리하고 job/Outbox를 생성하지 않는다.
-- reportId 조회의 자녀 연결·현재 필수/법정대리인 동의를 확인한 뒤 단일 학생 scope로 report-api를 호출한다. 없는 core reportId는 404 REPORT_NOT_FOUND다. 목록은 `{items:[3.4의 식별·기간·status·state·revision·generatedAt 필드]}`다. 상세는 3.4, 근거는 report-api JSON을 그대로 전달하고 다운로드는 pdf/md의 `{url,expiresAt}`다. report 장애는 503 REPORT_UNAVAILABLE, JSON 계약 위반은 502 REPORT_CONTRACT_INVALID다. 성공 상세의 실제 반환 reportId로 열람 기록을 남긴다.
+- reportId 조회의 자녀 연결·현재 필수/법정대리인 동의를 확인한 뒤 단일 학생 scope로 report-api를 호출한다. 없는 core reportId는 404 REPORT_NOT_FOUND다. 목록은 `{items:[3.4의 식별·기간·status·state·revision·generatedAt 필드]}`다. 목록 `status` 필터는 `RUNNING`·`COMPLETED`·`FAILED`만 허용한다. `QUEUED`는 아직 리포트가 없는 작업 상태로 목록 필터에 제공하지 않으며 요청하면 400 `VALIDATION_FAILED`다(#518). 상세는 3.4, 근거는 report-api JSON을 그대로 전달하고 다운로드는 pdf/md의 `{url,expiresAt}`다. report 장애는 503 REPORT_UNAVAILABLE, JSON 계약 위반은 502 REPORT_CONTRACT_INVALID다. 성공 상세의 실제 반환 reportId로 열람 기록을 남긴다.
 - v1 이벤트 스키마·봉투·생산자·소비자는 [report-messages.md](../../contracts/events/report-messages.md). 결정 근거는 [리포트 보고서](../report/report.md).
 
 #### 5.5.1 #152 관리자 실패 리포트 재처리 (report 공급 계약)

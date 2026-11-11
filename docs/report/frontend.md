@@ -388,3 +388,12 @@ develop `2d9b8d68`을 병합했다. #422가 PIN 경로를 `StudentDeviceControll
 병합 후 web 타입·lint·단위 288건·운영 빌드·운영 목업 제외 검사, 운영 HTTP 39건과 모델 운영 화면 15건이 통과했다. core bootJar 빌드도 통과했다. 이전 PR #458은 병합되어 있으므로 후속 PR로 준비하며, 테마 grade 계약은 #438 → core 선행 반영 조건을 설명에 명시한다. 게시 요청 전까지 원격에 올리지 않는다.
 
 최종 확인: core AccountHttpTest·StudentDeviceAuthTest, 전체 계약 214건(기존 1건 건너뜀)이 통과했다. 신규 공개 API 경로는 없으며 PIN 재인증 정책 변경만 기존 계약에 반영한다. PR 설명 초안은 로컬 `.taste-skill/pr-preparation/pr-body.md`에 보관한다.
+
+
+## 리포트 목록 상태 필터 계약 정렬 (#518, 2026-11-11)
+
+학부모 리포트 목록의 대기(QUEUED) 선택지를 제거했다. core·공개 OpenAPI가 허용하는 RUNNING·COMPLETED·FAILED만 필터로 제공한다. 재생성 응답과 상세의 QUEUED 상태·생성 중 재생성 비활성 조건은 유지한다. MSW도 QUEUED·알 수 없는 상태 필터를 400 VALIDATION_FAILED로 거부한다. 공개 API 경로·스키마 변경은 없다.
+
+검증: web 단위 291건·lint·test:types 통과. 새 MSW 회귀 검사는 QUEUED·UNKNOWN의 400과 허용 상태 세 종류의 200·목록 필터링을 확인한다. 실서버·브라우저 연동은 확인하지 않았다.
+
+할당 이슈 #441은 상세 DTO·장면 움직임 형식 합의(#438)와 공용 재생기(#440)가 남아 있다. 기존 이슈에 기록된 사용자 지시(미확정 DTO·상태 전이·재생기 임의 구현 금지)를 유지하며 이번 변경에 포함하지 않았다.
