@@ -1284,7 +1284,7 @@ erDiagram
     jsonb rules_out "NULL 허용 · 그날 빠지는 후보 배열"
     jsonb dialogue "NULL 허용 · 문제 전 대화 [{speaker, text}]"
     jsonb hint_spots "NULL 허용 · 그림 위 생각 열기 위치 [{seq, x, y}]"
-    varchar video_uri "NULL 허용 · 문제 전 영상 S3 키"
+    varchar video_uri "NULL 허용 · 문제 전 영상 S3 키(관리자 입력용, ai 테마 초안 채택분은 NULL)"
   }
   theme_review_view {
     uuid student_id PK "core 논리 참조"

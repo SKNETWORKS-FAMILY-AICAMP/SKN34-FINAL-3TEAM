@@ -228,7 +228,7 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
             listOf(theme.grade, theme.weekStart, theme.status, theme.title, theme.answer, theme.answerClue))
         assertEquals(ThemeDraftFixtures.key("INTRO"), theme.introImageUri)
         assertEquals(ThemeDay.entries, theme.days.map { it.day })
-        assertEquals(ThemeDay.entries.map { ThemeDraftFixtures.key(it.name, "mp4") }, theme.days.map { it.videoUri })
+        assertTrue(theme.days.all { it.videoUri == null }) // 요일 문제 전 영상 없음
         assertTrue(theme.days.all { it.hintSpots == null })
         val rows = jdbc.queryForList(
             """SELECT m.source, m.status, v.grade_min, v.grade_max, v.thinking_type, v.scene_uri, v.static_scene_uri, v.scene_motion::text AS motion
@@ -240,7 +240,7 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
             assertEquals(listOf("LLM_THEME", "DRAFT", 5, 5), listOf(it["source"], it["status"], it["grade_min"], it["grade_max"]))
             assertEquals(it["scene_uri"], it["static_scene_uri"])
             assertTrue((it["scene_uri"] as String).startsWith("theme-drafts/run-1/"))
-            assertTrue((it["motion"] as String).contains("zoom"))
+            assertTrue((it["motion"] as String).contains("\"spots\""), it["motion"].toString()) // 움직임 v1 그대로
         }
         val adopted = drafts.findById(draft.id)!!
         assertEquals(DraftStatus.ADOPTED to theme.themeId, adopted.status to adopted.themeId)
@@ -268,7 +268,7 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
-    fun `목록은 상태·출처로 거르고 최근 요청 순, 응답 장면은 7개이고 그림·영상은 presigned URL`() {
+    fun `목록은 상태·출처로 거르고 최근 요청 순, 응답 장면은 7개이고 그림·시작·종료 영상은 presigned URL`() {
         val ready = readyDraft()
         service.createWeekly(nextWeek.plusWeeks(1))
 
@@ -282,8 +282,12 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
         assertEquals(ThemeDraftRules.SCENES, view.scenes.map { it.scene })
         view.scenes.forEach {
             assertTrue(it.imageUrl!!.startsWith(TestAssets.BASE + ThemeDraftFixtures.key(it.scene) + "?"), it.imageUrl)
-            assertTrue(it.videoUrl!!.startsWith(TestAssets.BASE + ThemeDraftFixtures.key(it.scene, "mp4") + "?"), it.videoUrl)
-            assertEquals(mapOf("zoom" to 1.1, "pan" to "left"), it.motion)
+            if (it.scene in ThemeDraftFixtures.VIDEO_SCENES) {
+                assertTrue(it.videoUrl!!.startsWith(TestAssets.BASE + ThemeDraftFixtures.key(it.scene, "mp4") + "?"), it.videoUrl)
+            } else {
+                assertNull(it.videoUrl, it.scene)
+            }
+            assertEquals(ThemeDraftFixtures.motion(it.scene), it.motion)
         }
         assertEquals(listOf(3, 1, "REVIEW"), listOf(view.maxAttempts, view.attempts, view.draft!!.warnings.single().stage))
         assertEquals(emptyList(), service.view(service.request(command(weekStart = nextWeek.plusWeeks(2)))).scenes) // 생성 전

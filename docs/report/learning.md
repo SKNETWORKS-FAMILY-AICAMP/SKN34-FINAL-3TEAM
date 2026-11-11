@@ -994,11 +994,11 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 | 이미지·영상 URL | DB에는 ai가 올린 S3 키를 두고, 응답 때 learning이 단기 presigned URL로 바꿈(AWS SDK S3 presigner 의존성 추가). core는 그대로 전달 | 사용자 결정 2026-11-10. 리포트 PDF 다운로드(report presigned, core 전달)와 같은 방식이고 core #439 가정("URL은 learning 응답에서")과 같음. core에는 S3 연결이 없음 |
 | URL 유효기간 (기준안) | 1시간(`app.assets.url-ttl`, 1초~3600초) | 학생이 테마 화면·영상을 보는 동안 열려 있어야 함. 리포트 다운로드 300초는 바로 받는 파일이라 짧음. 상한은 report와 같은 3600초 |
 | 사람이 넣은 장면 주소 | ai 키(`theme-drafts/`로 시작)만 presign, 그 밖의 값(`http(s)://`·`/`·상대 경로 등)은 지금처럼 그대로 | 기존 미션 `sceneUri`는 저장 값을 그대로 내보냄. 관리자 화면이 장면 칸을 자유 글로 받아 운영·kind DB 값의 형식을 알 수 없어, 처음 정한 "`http(s)://`·`/`가 아니면 S3 키"로 하면 상대 경로가 버킷 설정이 없는 환경에서 null이 될 수 있음(구현 3에서 좁힘) |
-| 문제 전 영상 위치 | 미션이 아니라 테마 요일 칸(`weekly_theme_day.video_uri`). 응답은 시도 시작·이어하기의 `themeScene.videoUrl`만(관리자 응답 미리보기 URL은 별도) | 같은 미션이 학년별 테마 여럿(`G3`·`G4` 복사)에 들어갈 수 있어 미션 응답에 넣으면 어느 테마 영상인지 정할 수 없음 |
+| 문제 전 영상 위치 | 미션이 아니라 테마 요일 칸(`weekly_theme_day.video_uri`). 응답은 시도 시작·이어하기의 `themeScene.videoUrl`만(관리자 응답 미리보기 URL은 별도). ai는 요일 영상을 만들지 않아 테마 초안 채택 테마에서는 null, 관리자가 넣을 때만 씀(구현 5) | 같은 미션이 학년별 테마 여럿(`G3`·`G4` 복사)에 들어갈 수 있어 미션 응답에 넣으면 어느 테마 영상인지 정할 수 없음 |
 | 정답 구조 공개 | 요일 단서는 그 요일이 `OPEN`·`CLOSED`일 때(기준안). 종료 이야기·정답·결정적 단서·종료 장면은 엔딩 상태일 때만 넣고, 엔딩 여부는 한 곳(`ThemeEnding`)에서 판단. #484 전까지는 토·일을 엔딩으로 봄 | 주간 테마 규칙 개정 #483(2026-11-10 팀 공유): 엔딩 = 큰 질문 정답 맞힘 즉시, 틀리면 토요일 다시 풀기 뒤. 정답 고르기·엔딩 판정은 learning #484 몫으로 두기로 함(사용자 결정 2026-11-10). 공개 칸과 판단 자리만 #438에 두면 #484는 판단만 바꾸면 됨 |
 | 시작 이야기 시점 | 온보딩 영상처럼 그 주 처음 들어왔을 때 한 번(월~토, 일요일 제외). INTRO 열람 기록을 월~토에 받고, `intro`(글)는 #385의 '월요일만'에서 매일 채움으로 바꿈. 시작 그림·영상·움직임 URL도 주 내내 | 사용자 결정 2026-11-10(에픽 '월요일 첫 진입'에서 바꿈), #483 팀 규칙의 '그 주 월~토 첫 진입(기준안)'과 같음. 월요일에 안 온 학생도 이야기를 처음부터 봄. 일요일은 #483에서 테마가 닫혀 뺌 |
 | 이야기 열람 응답 | `{kind, firstViewThisWeek}`. INTRO는 일요일, OUTRO는 엔딩 상태가 아니면(#484 전까지 토요일 밖) `409 THEME_STORY_NOT_ALLOWED` | core #439 가정값과 같은 코드. 되돌아보기 열람의 `firstViewThisWeek`와 같은 모양. OUTRO 조건은 #483 '엔딩 상태일 때'(#438 코멘트 2026-11-10) |
-| 자동 생성 성취기준 (기준안) | 그 학년이 속한 학년군 표에서 `SOLVE`는 수학, 나머지 넷은 국어. 같은 학년의 최근 4주 테마 초안에 쓴 코드는 빼고 무작위 1개. 입력은 FN 1.5 기본(서술·논술·서술·풀이 단계·서술), 초3·초4 따져 보기는 서술. 성취수준은 비움 | 사용자 결정 2026-11-10. P15 국어 우선, FN 1.5 문제 해결하기 수학 예외, P03 논술 초5~6. 지식 검색(#470) 연결 뒤 유형별 후보로 바꿀 수 있음 |
+| 자동 생성 성취기준 (기준안) | 그 학년이 속한 학년군 표에서 `SOLVE`는 수학, 나머지 넷은 국어. 같은 학년의 최근 4주 테마 초안에 쓴 코드는 빼고 무작위 1개. 입력은 FN 1.5 기본(서술·논술·서술·풀이 단계·서술), 초3·초4 따져 보기는 서술. 성취수준은 비움 | 사용자 결정 2026-11-10. P15 국어 우선, FN 1.5 문제 해결하기 수학 예외, P03 논술 초5~6. 학년군 단위라 아래 학년에 위 학년 내용이 뽑힐 수 있고, 지식 RAG 뒤 후보 풀을 학년·학기·유형으로 바꾸는 설계는 구현 5 |
 | 관리자 요청의 빈 유형 | 고르지 않은 유형은 자동 규칙으로 learning이 채워 `input`에 저장 | 에픽 "관리자 요청은 유형별 지정 가능". ai 요청은 유형 5개가 다 있어야 함 |
 | 주간 자동과 게시 테마 | 그 학년·주에 이미 게시 테마가 있으면 그 학년 자동 초안은 만들지 않음 | 사용자 결정 2026-11-10. 사람이 먼저 게시한 주에 쓰지 않을 초안을 만들어 ai 비용을 쓰지 않게. 필요하면 관리자 요청으로 만듦 |
 | 생성 시도 상한 (기준안) | 3회(`app.theme-draft.max-attempts`) | 이슈 기준안, 미션 초안과 같음 |
@@ -1133,3 +1133,21 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 - 지식 API 시간 상한(기준안 질의당 2초)은 #469 몫이라 여기서는 스레드 분리만 확인
 - 검증: learning `./gradlew clean test bootJar` 436건 통과 + 뒤에 더한 `ThemeDraftServiceTest`(늦은 작업)·`ThemeDraftAiStubFlowTest` 통과(합계 438건, 로컬 JDK 21·Testcontainers). 루트 `python -O -m unittest discover -s scripts/tests` 215건 OK(core #439 3자 대조 포함), `validate_learning_community_contracts.py`·`validate_theme_summary_contracts.py` 통과. 이 단계는 마이그레이션·ERD를 바꾸지 않아 `ci-db-schema`(`check_db_migrations.py`)는 구현 1 결과 그대로
 - ai 스텁 흐름은 ai 계약(api-spec 4.2) 모양의 WireMock 응답으로 확인했고, #437 그래프와 실제로 붙여 보는 것은 #437 구현 뒤 kind 확인 때
+
+### 구현 5: #437 응답 확정 반영과 자동 성취기준 설계 (2026-11-11)
+
+#437이 그림·영상·움직임 단계를 마치고 응답 모양을 확정했다(`c42058c7` 살펴보기 `spots`까지, 그 뒤 응답 모양 변경 없음). learning 메인 코드는 바꿀 것이 없었고 테스트·문서만 맞췄다.
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 요일 문제 전 영상 | ai는 `videos`에 `INTRO`·`OUTRO`만 돌려준다. 요일 영상 칸(`weekly_theme_day.video_uri`, 관리자 `days[].videoUri`·`videoUrl`, `themeScene.videoUrl`, 초안 `scenes[].videoUrl`)은 **지우지 않고 남겨**, 테마 초안 채택 테마에서는 null, 관리자가 직접 넣을 때만 쓴다 | #437 사용자 결정 2026-11-11(요일 영상 없음). 칸은 core #439·웹 #440과 같이 쓰는 계약이고 null 허용이라 남겨도 깨지는 곳이 없음. 지우면 마이그레이션·core·웹을 다시 맞춰야 함 |
+| 움직임 형식 | ai 움직임 형식 v1(ai OpenAPI `ThemeMotion`: `version`·`transition`·`camera`·`speakers`·`effects`·`captions`·`spots`)을 **칸 검사 없이 그대로** 저장·전달(`Map<String, Any?>`). 요일 장면 살펴보기 `spots`(2~3개, 증거 물건 1개, `evidence`는 참·거짓 값), 시작·종료는 빈 `spots`. 살펴보기 검사에 걸린 요일은 빈 `spots`, 움직임 LLM이 실패한 장면은 키가 빠져 null, 그림 설정이 없으면 `images`·`videos`·`motions`가 모두 비어 장면 값이 null | #437 확인 2026-11-11. 학생 미션 응답 `sceneMotion`으로 나가도 `spots.line`은 ai가 단서 결론·후보·정답 이름을 걸러 단서(미션 뒤 공개, #484)가 미리 드러나지 않음 |
+| 자동 성취기준 학년 한계 | 지금 `autoStandards`는 학년군 표에서 고르므로 초3 테마에 4학년 내용이 뽑힐 수 있다. 성취기준 표에는 학년·학기 칸이 없어(고시가 학년군 단위) 지금은 거를 방법이 없고, 임시 표를 넣지 않는다 | #437 실측(서비스 입력 그대로 20건): 초3 통과율 2/5로 가장 낮음, 원인 중 하나는 초3 수학에 4학년 `정다각형`이 뽑혀 검토 `GRADE_VOCAB` 실패. 학년·학기 대응은 지식 RAG(#465·#466)가 만들 데이터라 임시 표는 곧 버릴 일. 그때까지는 관리자가 요청에서 성취기준을 지정하면 피할 수 있음 |
+| 자동 성취기준 후보 풀 (기준안) | learning이 계속 고르고, `autoStandards`가 받는 **후보 풀만** 바꾼다. 지식 RAG 적재(#466) 뒤에는 같은 서비스의 지식 서비스(#469)에서 그 학년·학기(`knowledge_standard_semester`)와 그 유형(`knowledge_fits`, 사람 확인분) 성취기준을 받고, 지식 판이 없거나 후보가 없거나 장애면 학년·학기(교과 규칙) → 학년군 표(지금) 순으로 대체한다. 최근 4주 제외는 모든 단계에 그대로. ai 요청 `missions[].standards` 계약은 그대로이고 ai `retrieve`(#470)는 받은 코드의 근거 묶음만 가져온다 | 주간 자동은 주제(`topic`)가 null이라 벡터 검색이 할 일이 없고, 학년·학기 거르기는 learning DB 조회 하나로 됨. ai가 고르게 바꾸면 #437·#438 요청·응답 계약이 다시 바뀜. `knowledge_fits`가 지금의 "풀이는 수학, 나머지는 국어" 규칙을 대신할 수 있음 |
+| 학기 규칙 (기준안) | `weekStart`가 3월 1일~8월 15일이면 1학기, 그 밖은 2학기(2월은 학년 끝이라 2학기) | 새로 정한 값. 후보 풀을 지식 서비스로 바꿀 때 씀 |
+| 코드로 못 거르는 부분 | 국어는 두 학년 공통 코드가 많다(초3·초4 공통 21/30, 초5·초6 공통 13/34, 수학은 초3·초4 8/47·초5·초6 1/45). 같은 코드의 학년 수준 차이는 코드가 아니라 단원 내용에 있어 `learned`(#469, 개념을 그 학년·학기까지 배웠는지)와 ai 검토가 맡는다 | 학기 단원 연결표 집계(경기도교육청 수업-평가 계획 예시 자료 3~4학년·5~6학년, 서울시교육청 평가계획 도움자료 1~4학년·5~6학년 단원 연결표) |
+
+- 확인 필요: 주제가 있는 관리자 요청에서 주제와 가까운 성취기준을 고르려면 learning이 ai 임베딩(#467)으로 주제 벡터를 받아 `theme-candidates`를 같은 서비스 안에서 부르게 되어, C5 `theme-candidates`를 부르는 쪽이 ai `retrieve`에서 learning으로 바뀐다(#469 담당과 확인). 학년·학기 거르기만 먼저 하면 이 확인 없이 된다
+- 테스트(기존 파일 수정): `ThemeDraftFixtures`(영상 `INTRO`·`OUTRO`만, 움직임 v1과 `spots`), `ThemeDraftRulesTest`(채택 미션 `sceneMotion`·이야기 `introMotion`이 v1 그대로, 요일 `videoUri` null), `ThemeDraftServiceTest`(채택 테마 요일 영상 null, 미션 `scene_motion`에 `spots`, 응답 장면 영상은 `INTRO`·`OUTRO`만), `ThemeDraftAiClientTest`(실제 JSON의 움직임 v1·`spots`를 칸 검사 없이 읽음), `ThemeDraftAiStubFlowTest`(시작·종료 영상 키, 요일 영상 null)
+- 문서: api-spec 4.1(`ThemeDraft.scenes`·관리자 `days[].videoUri`·`themeScene`·`sceneMotion`), class-diagram 4.4(`themeScene`·채택·후보 풀 설계), sequence-diagram 테마 시도 메모, learning OpenAPI(`ThemeMotion`·`videoUrl`·`videoUri` 설명)
+- 검증: learning theme 패키지 테스트 88건 통과

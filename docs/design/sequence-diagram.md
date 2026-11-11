@@ -719,7 +719,7 @@ sequenceDiagram
 - 주간 테마 조회 때 core는 응답에서 이번 주 학습 완료한 요일 문제(`attemptStatus = COMPLETED`)마다 `MISSION_COMPLETED`를 다시 부르고, 원장 사건 키 UK로 이미 있는 것은 건너뛰어 누락분만 보충한다(#389). 추가 문제(EXTRA)는 응답에 없어 보충 대상이 아니다. 당일 풀이·개근·주간 완주도 같은 방식으로 보충(기준안 core #485). 주간 완주는 learning이 토요일 23:59:59 KST까지의 완료만 세므로 프리미엄 일요일 완료로는 적립되지 않는다
 - 학습 완료 직후(3.5)에는 웹이 홈으로 돌아와 주간 테마를 다시 조회할 때 당일 풀이가 적립된다(적립 시점을 돌아보기 저장 응답 쪽으로 옮길지는 core #485에서 결정)
 - 학년별 테마(#438): core는 학생 학년 그대로 `grade=G3`~`G6`(중학생 `G6`)을 넘긴다. core 반영 전(병합 순서 #438 → core)에는 core가 `gradeBand`를 보내므로 learning은 `grade`가 없으면 `gradeBand`의 `G3_4`를 `G3`, `G5_6`을 `G5`로 읽는다(V14가 학년군 테마를 학년마다 같은 내용으로 복사하므로 이 기간 내용은 같음). core 반영 뒤 이 호환을 지운다
-- 테마 시도(#438): 시작·이어하기 응답에 `themeScene{dialogue, hintSpots, videoUrl}`(그 시도 테마 게시본의 그 미션 요일 값, `EXTRA`는 `null`). 생각 열기(`POST /attempts/{id}/hints`)는 순서대로 하나씩 여는 기존 동작·열람 기록 그대로이고 `hintSpots`는 그림 위 표시 위치만 정한다
+- 테마 시도(#438): 시작·이어하기 응답에 `themeScene{dialogue, hintSpots, videoUrl}`(그 시도 테마 게시본의 그 미션 요일 값, `EXTRA`는 `null`. ai 테마 초안 채택 테마는 요일 문제 전 영상이 없어 `videoUrl`은 null, #437 2026-11-11). 생각 열기(`POST /attempts/{id}/hints`)는 순서대로 하나씩 여는 기존 동작·열람 기록 그대로이고 `hintSpots`는 그림 위 표시 위치만 정한다
 
 ### 3.5 학습 완료 → 포인트 적립·자동 공유 (P20·P21, core #388·#389·learning #386 구현)
 

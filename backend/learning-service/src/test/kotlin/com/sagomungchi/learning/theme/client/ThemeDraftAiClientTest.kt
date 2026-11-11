@@ -63,8 +63,9 @@ class ThemeDraftAiClientTest {
         "missions":[{"day":"MON","thinkingType":"ANALYZE","draft":$draft}],
         "dialogues":[{"day":"MON","lines":[{"speaker":"뭉치","text":"어디 갔지?"}]}],
         "images":{"INTRO":"theme-drafts/r1/INTRO.png","MON":"theme-drafts/r1/MON.png"},
-        "videos":{"MON":"theme-drafts/r1/MON.mp4"},
-        "motions":{"MON":{"zoom":1.2,"focus":{"x":40,"y":60}}},
+        "videos":{"INTRO":"theme-drafts/r1/INTRO.mp4"},
+        "motions":{"MON":{"version":1,"transition":{"kind":"fade","seconds":0.6},"camera":null,"speakers":{},"effects":[],"captions":[],
+          "spots":[{"x":20,"y":70,"label":"발자국","line":"여기 뭔가 있어!","evidence":true}]}},
         "warnings":[{"stage":"VIDEO","item":"OUTRO","reason":"영상 생성 실패"}],
         "failure":null,
         "versions":{"prompt":"theme-draft@1","model":"gpt-6-luna"}}"""
@@ -105,8 +106,10 @@ class ThemeDraftAiClientTest {
         assertEquals(listOf("반납함", ThemeDay.MON, listOf("서가")), listOf(theme.answer, theme.days.single().day, theme.days.single().rulesOut))
         assertEquals("책 찾기", result.missions.single().draft.title)
         assertEquals(listOf(DialogueLine("뭉치", "어디 갔지?")), result.dialogues.single().lines)
-        assertEquals("theme-drafts/r1/MON.mp4", result.videos["MON"])
-        assertEquals(mapOf("zoom" to 1.2, "focus" to mapOf("x" to 40, "y" to 60)), result.motions["MON"])
+        assertEquals(mapOf("INTRO" to "theme-drafts/r1/INTRO.mp4"), result.videos)
+        val motion = result.motions.getValue("MON") // 형식 v1을 칸 검사 없이 그대로
+        assertEquals(listOf(1, null), listOf(motion["version"], motion["camera"]))
+        assertEquals(listOf(mapOf("x" to 20, "y" to 70, "label" to "발자국", "line" to "여기 뭔가 있어!", "evidence" to true)), motion["spots"])
         assertEquals("VIDEO", result.warnings.single().stage)
         assertNull(result.failure)
         assertEquals("theme-draft@1" to "gpt-6-luna", result.versions.prompt to result.versions.model)

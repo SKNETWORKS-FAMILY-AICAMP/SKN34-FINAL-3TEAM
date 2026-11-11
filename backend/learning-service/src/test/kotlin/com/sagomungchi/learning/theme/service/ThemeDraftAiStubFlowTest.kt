@@ -65,8 +65,8 @@ class ThemeDraftAiStubFlowTest : PostgresRepositoryTest() {
 
         assertEquals(WeeklyThemeStatus.DRAFT, theme.status)
         assertEquals(listOf(ThemeDraftFixtures.CANDIDATES, ThemeDraftFixtures.ANSWER, "FRI 단서"), listOf(theme.candidates, theme.answer, theme.answerClue))
-        assertEquals(ThemeDraftFixtures.key("OUTRO", "mp4"), theme.outroVideoUri)
-        assertEquals(ThemeDay.entries.map { ThemeDraftFixtures.key(it.name, "mp4") }, theme.days.map { it.videoUri })
+        assertEquals(ThemeDraftFixtures.key("INTRO", "mp4") to ThemeDraftFixtures.key("OUTRO", "mp4"), theme.introVideoUri to theme.outroVideoUri)
+        assertEquals(List(ThemeDay.entries.size) { null }, theme.days.map { it.videoUri }) // 요일 문제 전 영상 없음(#437 2026-11-11)
         assertEquals(listOf("DRAFT"), jdbc.queryForList(
             "SELECT DISTINCT status FROM mission WHERE source = 'LLM_THEME' AND id::text = ANY(?)", String::class.java,
             theme.days.map { it.missionId.toString() }.toTypedArray(),

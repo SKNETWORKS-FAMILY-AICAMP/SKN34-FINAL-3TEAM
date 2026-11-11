@@ -26,7 +26,7 @@ import com.sagomungchi.learning.theme.domain.ThemeWarning
 
 /**
  * 테마 초안 테스트 샘플 (#438): 게시 규칙을 통과하는 유형별 미션 5개, 정답 구조(후보 4개·정답 강아지·월 수 힌트 단서·금요일에 마지막 후보),
- * 장면 7개의 S3 키·움직임. 성취기준 코드는 시드에 있는 값
+ * 장면 7개의 그림 키·움직임(형식 v1), 시작·종료 영상 키. 성취기준 코드는 시드에 있는 값
  */
 object ThemeDraftFixtures {
     val CANDIDATES = listOf("고양이", "강아지", "토끼", "햄스터")
@@ -73,6 +73,28 @@ object ThemeDraftFixtures {
 
     fun key(scene: String, extension: String = "png", run: String = "run-1") = "theme-drafts/$run/$scene.$extension"
 
+    /** 영상은 시작·종료만(api-spec 4.2, #437 사용자 결정 2026-11-11). 요일 문제 전 영상은 없음 */
+    val VIDEO_SCENES = listOf("INTRO", "OUTRO")
+
+    /**
+     * ai 움직임 형식 v1(ai OpenAPI `ThemeMotion`). learning은 칸을 검사하지 않고 그대로 저장·전달.
+     * 요일 장면은 살펴보기 spots 2개(증거 물건 1개), 시작·종료는 빈 spots
+     */
+    fun motion(scene: String): Map<String, Any?> = mapOf(
+        "version" to 1,
+        "transition" to mapOf("kind" to "fade", "seconds" to 0.6),
+        "camera" to mapOf(
+            "from" to mapOf("x" to 50, "y" to 50, "zoom" to 1.0), "to" to mapOf("x" to 40, "y" to 45, "zoom" to 1.2), "seconds" to 10,
+        ),
+        "speakers" to mapOf("뭉치" to mapOf("x" to 30, "y" to 60, "zoom" to 1.2)),
+        "effects" to emptyList<Any>(),
+        "captions" to emptyList<Any>(),
+        "spots" to if (scene in VIDEO_SCENES) emptyList() else listOf(
+            mapOf("x" to 20, "y" to 70, "label" to "발자국", "line" to "여기 뭔가 있어!", "evidence" to true),
+            mapOf("x" to 75, "y" to 30, "label" to "창문", "line" to "창문은 닫혀 있네.", "evidence" to false),
+        ),
+    )
+
     /** 검사를 통과하는 생성 결과 */
     fun output(input: ThemeDraftInput = input(), title: String = "사라진 강아지"): ThemeDraftOutput {
         val days = ThemeDraftRules.DAY_TYPES.map { (day, type) ->
@@ -90,8 +112,8 @@ object ThemeDraftFixtures {
             },
             dialogues = listOf(GeneratedDialogue(ThemeDay.MON, listOf(DialogueLine("뭉치", "어디 갔지?"), DialogueLine("토리", "같이 찾자!")))),
             images = ThemeDraftRules.SCENES.associateWith { key(it) },
-            videos = ThemeDraftRules.SCENES.associateWith { key(it, "mp4") },
-            motions = ThemeDraftRules.SCENES.associateWith { mapOf("zoom" to 1.1, "pan" to "left") },
+            videos = VIDEO_SCENES.associateWith { key(it, "mp4") },
+            motions = ThemeDraftRules.SCENES.associateWith { motion(it) },
             warnings = listOf(ThemeWarning("REVIEW", "WED", "단서가 조금 어려움")),
         )
     }

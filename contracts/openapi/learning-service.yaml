@@ -1758,7 +1758,7 @@ paths:
       summary: 검사 통과(READY) 테마 초안 채택 → DRAFT 미션 5개(LLM_THEME) + DRAFT 테마
       description: >-
         초안 행을 잠그고 한 트랜잭션에 미션 5개(미션 초안 채택과 같은 규칙, 요소 배점 1, 학년 범위 = 테마 학년, 그날 장면 그림 키를
-        sceneUri·staticSceneUri에, 움직임을 sceneMotion에)와 테마(요일 배치·단서·rulesOut·대화·문제 전 영상, 이야기·장면·움직임·큰 질문·후보·정답,
+        sceneUri·staticSceneUri에, 움직임을 sceneMotion에)와 테마(요일 배치·단서·rulesOut·대화, 요일 영상은 ai가 만들지 않아 비움, 이야기·장면·움직임·큰 질문·후보·정답,
         answerClue는 결정적 단서, hintSpots는 비움)를 만든 뒤 ADOPTED. 자동 게시 없음(P19). 본문은 {}.
       parameters:
         - $ref: '#/components/parameters/AdminUserId'
@@ -2880,7 +2880,7 @@ components:
       properties:
         dialogue: {type: [array, 'null'], items: {$ref: '#/components/schemas/DialogueLine'}}
         hintSpots: {type: [array, 'null'], items: {$ref: '#/components/schemas/HintSpot'}}
-        videoUrl: {type: [string, 'null'], description: 문제 전 영상 presigned URL}
+        videoUrl: {type: [string, 'null'], description: 문제 전 영상 presigned URL. ai 테마 초안 채택 테마는 요일 영상이 없어 null(#437 2026-11-11)}
     AnswerItem:
       type: object
       additionalProperties: false
@@ -3497,7 +3497,7 @@ components:
     ThemeMotion:
       type: [object, 'null']
       additionalProperties: true
-      description: 장면 움직임(#438). ai가 정한 JSON 객체 그대로(형식은 ai 기준안)
+      description: 장면 움직임(#438). ai 움직임 형식 v1(ai OpenAPI ThemeMotion, 요일 장면 살펴보기 spots 포함)을 칸 검사 없이 저장한 그대로
     ThemeStoryKind:
       type: string
       enum: [INTRO, OUTRO]
@@ -3592,7 +3592,7 @@ components:
         rulesOut: {type: [array, 'null'], maxItems: 10, items: {type: string, maxLength: 100}}
         dialogue: {type: [array, 'null'], maxItems: 20, items: {$ref: '#/components/schemas/DialogueLine'}}
         hintSpots: {type: [array, 'null'], maxItems: 10, items: {$ref: '#/components/schemas/HintSpot'}}
-        videoUri: {type: [string, 'null'], maxLength: 500, description: 문제 전 영상 S3 키}
+        videoUri: {type: [string, 'null'], maxLength: 500, description: 문제 전 영상 S3 키. ai는 요일 영상을 만들지 않아 관리자가 직접 넣을 때만 씀}
     AdminThemeDay:
       type: object
       required: [day, missionId, clue, rulesOut, dialogue, hintSpots, videoUri, videoUrl, sceneImageUrl]
@@ -3723,7 +3723,7 @@ components:
       properties:
         scene: {type: string, enum: [INTRO, MON, TUE, WED, THU, FRI, OUTRO]}
         imageUrl: {type: [string, 'null'], description: 장면 그림 presigned URL (버킷 설정이 없거나 그림이 없으면 null)}
-        videoUrl: {type: [string, 'null'], description: 장면 영상 presigned URL}
+        videoUrl: {type: [string, 'null'], description: 장면 영상 presigned URL. INTRO·OUTRO만 값이 있고 요일은 null(ai 요일 영상 없음)}
         motion: {$ref: '#/components/schemas/ThemeMotion'}
     ThemeDraft:
       type: object

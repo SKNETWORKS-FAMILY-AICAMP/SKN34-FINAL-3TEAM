@@ -138,7 +138,7 @@ class ThemeDraftRulesTest {
         missions.forEach {
             val key = ThemeDraftFixtures.key(it.day.name)
             assertEquals(listOf(key, key, 5, 5, author), listOf(it.command.sceneUri, it.command.staticSceneUri, it.command.gradeMin, it.command.gradeMax, it.command.authorId))
-            assertEquals(mapOf("zoom" to 1.1, "pan" to "left"), it.command.sceneMotion)
+            assertEquals(ThemeDraftFixtures.motion(it.day.name), it.command.sceneMotion) // 형식 v1·spots 그대로
             assertEquals(ThemeDraftRules.DAY_TYPES.getValue(it.day), it.command.thinkingType)
             assertTrue(it.rubric.elements.all { element -> element.points == DraftRules.ADOPTED_POINTS })
         }
@@ -146,7 +146,7 @@ class ThemeDraftRulesTest {
     }
 
     @Test
-    fun `채택 테마는 요일 단서·대화·영상과 이야기·장면·정답 구조, 생각 열기 위치는 비우고 결정적 단서는 마지막으로 후보를 빼는 날`() {
+    fun `채택 테마는 요일 단서·대화와 이야기·장면·시작·종료 영상·정답 구조, 요일 영상은 없고 생각 열기 위치는 비우고 결정적 단서는 마지막으로 후보를 빼는 날`() {
         val output = ThemeDraftFixtures.output(input)
         val missionIds = ThemeDay.entries.associateWith { UUID.randomUUID() }
         val week = LocalDate.of(2026, 11, 16)
@@ -159,13 +159,13 @@ class ThemeDraftRulesTest {
         assertEquals(listOf(DialogueLine("뭉치", "어디 갔지?"), DialogueLine("토리", "같이 찾자!")), content.days.first().dialogue)
         assertNull(content.days[1].dialogue)
         assertTrue(content.days.all { it.hintSpots == null })
-        assertEquals(ThemeDay.entries.map { ThemeDraftFixtures.key(it.name, "mp4") }, content.days.map { it.videoUri })
+        assertTrue(content.days.all { it.videoUri == null }) // 요일 문제 전 영상 없음(#437 2026-11-11)
         val story = content.story
         assertEquals(
             listOf(ThemeDraftFixtures.key("INTRO"), ThemeDraftFixtures.key("OUTRO"), ThemeDraftFixtures.key("INTRO", "mp4"), ThemeDraftFixtures.key("OUTRO", "mp4")),
             listOf(story.introImageUri, story.outroImageUri, story.introVideoUri, story.outroVideoUri),
         )
-        assertEquals(mapOf("zoom" to 1.1, "pan" to "left"), story.introMotion)
+        assertEquals(ThemeDraftFixtures.motion("INTRO"), story.introMotion)
         assertEquals(listOf(ThemeDraftFixtures.CANDIDATES, ThemeDraftFixtures.ANSWER, "사라진 동물은 누구일까?", "FRI 단서"),
             listOf(story.candidates, story.answer, story.bigQuestion, story.answerClue))
         assertEquals(emptyList(), ThemeAnswerRules.errors(story, content.days)) // 관리자 저장 검사도 통과
