@@ -1,5 +1,6 @@
 package com.sagomungchi.learning.attempt.service
 
+import com.sagomungchi.learning.TestAssets
 import com.sagomungchi.learning.TestRows
 import com.sagomungchi.learning._common.exception.errorCodeOf
 import com.sagomungchi.learning._common.exception.httpStatusOf
@@ -11,6 +12,8 @@ import com.sagomungchi.learning.attempt.repository.AttemptDraftRepository
 import com.sagomungchi.learning.attempt.repository.AttemptRepository
 import com.sagomungchi.learning.judgment.service.JudgmentService
 import com.sagomungchi.learning.mission.service.MissionService
+import com.sagomungchi.learning.theme.domain.DialogueLine
+import com.sagomungchi.learning.theme.domain.HintSpot
 import com.sagomungchi.learning.theme.repository.WeeklyThemeRepository
 import com.sagomungchi.learning.theme.service.WeeklyThemeService
 import org.junit.jupiter.api.AfterEach
@@ -56,12 +59,30 @@ class AttemptThemeStartTest : PostgresRepositoryTest() {
     /** 그 날짜 KST 정오의 시계를 쓰는 시도 서비스 */
     private fun on(date: LocalDate) = AttemptService(
         attemptRepository, draftRepository, missionService, judgmentService,
-        WeeklyThemeService(themeRepository, Clock.fixed(date.atTime(12, 0).atZone(KST).toInstant(), KST)),
+        WeeklyThemeService(themeRepository, Clock.fixed(date.atTime(12, 0).atZone(KST).toInstant(), KST), com.sagomungchi.learning.TestAssets.urls),
     )
 
     private fun assertError(status: HttpStatus, code: String, block: () -> Unit) {
         val error = assertThrows<RuntimeException> { block() }
         assertEquals(status to code, httpStatusOf(error) to errorCodeOf(error))
+    }
+
+    @Test
+    fun `테마 시도 응답에 그 미션 요일의 대화·생각 열기 위치·문제 전 영상, EXTRA는 null (#438)`() {
+        jdbc.update(
+            """UPDATE weekly_theme_day SET dialogue = '[{"speaker":"뭉치","text":"어디 갔을까?"}]'::jsonb,
+                   hint_spots = '[{"seq":1,"x":10.0,"y":20.0}]'::jsonb, video_uri = 'theme-drafts/run/TUE.mp4'
+               WHERE day_of_week = 2 AND theme_version_id = (SELECT published_version_id FROM weekly_theme WHERE id = ?)""",
+            themeId,
+        )
+        val tuesday = on(WEEK.plusDays(1))
+        val themed = tuesday.start(student, missions[1].id, 3, false, AttemptContext.THEME_DAY).attempt
+        val extra = tuesday.start(student, missions[3].id, 3, false).attempt
+        val scene = checkNotNull(tuesday.get(themed.id).themeScene)
+        assertEquals(listOf(DialogueLine("뭉치", "어디 갔을까?")), scene.dialogue)
+        assertEquals(listOf(HintSpot(1, 10.0, 20.0)), scene.hintSpots)
+        assertTrue(scene.videoUrl!!.startsWith(TestAssets.BASE + "theme-drafts/run/TUE.mp4?"), scene.videoUrl)
+        assertNull(tuesday.get(extra.id).themeScene)
     }
 
     @Test
@@ -103,6 +124,9 @@ class AttemptThemeStartTest : PostgresRepositoryTest() {
         assertEquals(AttemptContext.EXTRA, extra.attempt.context)
         assertNull(extra.attempt.themeId)
         assertError(HttpStatus.CONFLICT, "THEME_REVIEW_NOT_ALLOWED") { saturday.start(student, missions[1].id, 3, false, AttemptContext.THEME_REVIEW) }
+        // #438: 다시 풀기 시도도 그 미션 요일(월)의 장면을 받음(요일 칸이 비어 모두 null), EXTRA는 null
+        assertEquals(com.sagomungchi.learning.theme.domain.ThemeScene(null, null, null), saturday.get(retry.attempt.id).themeScene)
+        assertNull(saturday.get(extra.attempt.id).themeScene)
     }
 
     @Test

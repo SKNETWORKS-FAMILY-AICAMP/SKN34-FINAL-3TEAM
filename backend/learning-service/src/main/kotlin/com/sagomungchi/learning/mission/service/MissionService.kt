@@ -1,6 +1,8 @@
 package com.sagomungchi.learning.mission.service
 
 import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning._common.storage.AssetUrls
+import com.sagomungchi.learning.mission.domain.AchievementStandard
 import com.sagomungchi.learning.mission.domain.AdminMission
 import com.sagomungchi.learning.mission.domain.AdminMissionFilter
 import com.sagomungchi.learning.mission.domain.AdminMissionPage
@@ -37,10 +39,11 @@ class MissionService(
     private val missionRepository: MissionRepository,
     private val rubricRepository: RubricRepository,
     private val standardRepository: AchievementStandardRepository,
+    private val assetUrls: AssetUrls,
 ) {
     /** 학생 학년·입력 방식 범위(시연 전용은 시연 학생만)의 공개 미션과 수행 상태 (FN-LRN-02, FN-DSH-02) */
     fun listForStudent(studentId: UUID, grade: Int, demo: Boolean): List<MissionListItem> {
-        val missions = missionRepository.findPublished().filter { it.isOpenTo(grade, demo) }
+        val missions = missionRepository.findPublished().filter { it.isOpenTo(grade, demo) }.map(::withSceneUrls)
         val progress = missionRepository.findProgress(studentId)
         return missions.mapIndexed { index, mission ->
             MissionListItem(
@@ -55,7 +58,7 @@ class MissionService(
     /** 목록과 같은 범위의 공개 미션 상세 (FN-LRN-03). 비공개·범위 밖이면 409, 없으면 404 */
     fun get(missionId: UUID, grade: Int, demo: Boolean): MissionView {
         val mission = missionRepository.findPublishedById(missionId)
-        if (mission != null && mission.isOpenTo(grade, demo)) return mission
+        if (mission != null && mission.isOpenTo(grade, demo)) return withSceneUrls(mission)
         if (mission != null || missionRepository.existsById(missionId)) {
             throw BusinessException(HttpStatus.CONFLICT, "MISSION_NOT_AVAILABLE", "제공되지 않는 미션")
         }
@@ -72,8 +75,21 @@ class MissionService(
 
     /** 시도에 고정된 버전의 미션. 공개 여부와 무관 */
     fun getVersion(missionVersionId: UUID): MissionView =
-        missionRepository.findVersion(missionVersionId)
+        missionRepository.findVersion(missionVersionId)?.let(::withSceneUrls)
             ?: throw BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "미션 버전 없음")
+
+    /**
+     * 학생·부모 응답용 장면 (#438): ai 키(`theme-drafts/…`)는 presigned URL로, 그 밖의 값은 그대로(AssetUrls).
+     * 학생용 조회(listForStudent·get·getVersion·preview)만 거치고, 관리자 미션 조회(getForAdmin)는 저장 값 그대로(웹이 다시 저장함)
+     */
+    private fun withSceneUrls(mission: MissionView): MissionView =
+        mission.copy(sceneUri = assetUrls.url(mission.sceneUri), staticSceneUri = assetUrls.url(mission.staticSceneUri))
+
+    /** 성취기준 표에 있는 코드만 (테마 초안 #438이 미션 저장소를 직접 부르지 않게 service로 냄, architecture 계층 규칙) */
+    fun standards(codes: Collection<String>): Map<String, AchievementStandard> = standardRepository.findByCodes(codes)
+
+    /** 교과·학년군의 성취기준 전체, 코드 순 (테마 초안 자동 성취기준 #438) */
+    fun standardsOf(subject: String, gradeBand: String): List<AchievementStandard> = standardRepository.findAll(subject, gradeBand)
 
     /** 판정용 기준표·정답 키 (class-diagram 4.2 FeedbackFacade --> MissionService). 시도에 고정된 두 버전으로 찾음 */
     fun rubric(missionVersionId: UUID, rubricVersionId: UUID): Rubric =
@@ -115,12 +131,13 @@ class MissionService(
 
     /**
      * 초안 채택 (class-diagram 4.1.1 createFromDraft, #353): create·putRubric과 같은 규칙으로 DRAFT 미션·첫 버전·첫 기준표를
-     * 호출한 쪽 트랜잭션 안에서 만듦(source LLM_DRAFT). 이후 수정·검토·게시는 관리자 미션 경로 그대로(자동 공개 없음, P19)
+     * 호출한 쪽 트랜잭션 안에서 만듦(source 기본 LLM_DRAFT, 테마 초안 채택은 LLM_THEME #438). 이후 수정·검토·게시는 관리자 미션 경로 그대로
+     * (자동 공개 없음, P19)
      */
     @Transactional
-    fun createFromDraft(command: MissionCommand, rubric: RubricCommand): UUID {
+    fun createFromDraft(command: MissionCommand, rubric: RubricCommand, source: MissionSource = MissionSource.LLM_DRAFT): UUID {
         val now = now()
-        val missionId = missionRepository.create(command, now, MissionSource.LLM_DRAFT)
+        val missionId = missionRepository.create(command, now, source)
         rubricRepository.append(missionId, rubric, now)
         return missionId
     }
@@ -130,7 +147,8 @@ class MissionService(
     fun update(missionId: UUID, command: MissionCommand): AdminMissionVersion {
         val mission = entity(header(missionId, lock = true))
         val now = now()
-        val version = missionRepository.appendVersion(missionId, command, now)
+        // 관리자 본문에는 움직임이 없어 장면이 같으면 현재 버전 움직임을 이어받음 (#438)
+        val version = missionRepository.appendVersion(missionId, command.carryMotion(missionRepository.findCurrentScene(missionId)), now)
         mission.edited()
         missionRepository.updateStatus(missionId, mission.status, now)
         return missionRepository.findVersions(missionId).single { it.version == version }

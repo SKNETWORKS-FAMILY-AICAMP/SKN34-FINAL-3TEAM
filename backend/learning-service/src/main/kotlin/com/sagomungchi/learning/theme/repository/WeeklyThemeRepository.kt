@@ -1,6 +1,6 @@
 package com.sagomungchi.learning.theme.repository
 
-import com.sagomungchi.learning.theme.domain.GradeBand
+import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.ThemeContent
 import com.sagomungchi.learning.theme.domain.ThemeDayMission
 import com.sagomungchi.learning.theme.domain.WeeklyThemeStatus
@@ -15,19 +15,28 @@ class WeeklyThemeRepository(private val mapper: WeeklyThemeMapper) {
     fun findHeader(id: UUID, lock: Boolean = false): ThemeHeader? = mapper.findHeader(id, lock)
 
     /** 그 주 게시본, 없으면 그 주 이전 최근 게시본 */
-    fun findLatestPublished(gradeBand: GradeBand, weekStart: LocalDate): ThemeHeader? = mapper.findLatestPublished(gradeBand, weekStart)
+    fun findLatestPublished(grade: ThemeGrade, weekStart: LocalDate): ThemeHeader? = mapper.findLatestPublished(grade, weekStart)
 
-    fun existsOtherPublished(id: UUID, gradeBand: GradeBand, weekStart: LocalDate): Boolean =
-        mapper.existsOtherPublished(id, gradeBand, weekStart)
+    /** 그 학년·주에 게시 테마가 있음 (주간 자동 초안을 건너뜀, #438) */
+    fun existsPublished(grade: ThemeGrade, weekStart: LocalDate): Boolean = mapper.existsPublished(grade, weekStart)
 
-    fun findIds(gradeBand: GradeBand?, weekStart: LocalDate?, status: WeeklyThemeStatus?, page: Int, size: Int): List<UUID> =
-        mapper.findIds(gradeBand, weekStart, status, size, page.toLong() * size)
+    fun existsOtherPublished(id: UUID, grade: ThemeGrade, weekStart: LocalDate): Boolean =
+        mapper.existsOtherPublished(id, grade, weekStart)
 
-    fun count(gradeBand: GradeBand?, weekStart: LocalDate?, status: WeeklyThemeStatus?): Long = mapper.count(gradeBand, weekStart, status)
+    fun findIds(grade: ThemeGrade?, weekStart: LocalDate?, status: WeeklyThemeStatus?, page: Int, size: Int): List<UUID> =
+        mapper.findIds(grade, weekStart, status, size, page.toLong() * size)
+
+    fun count(grade: ThemeGrade?, weekStart: LocalDate?, status: WeeklyThemeStatus?): Long = mapper.count(grade, weekStart, status)
 
     fun findVersion(versionId: UUID): ThemeVersionRow = checkNotNull(mapper.findVersion(versionId)) { "테마 버전 없음" }
 
     fun findDays(versionId: UUID): List<ThemeDayRow> = mapper.findDays(versionId)
+
+    /** 버전의 저장 내용(이야기·정답 구조·요일 칸 포함). 관리자 수정의 이전 버전 복사(#438)에 씀 */
+    fun findContent(header: ThemeHeader, versionId: UUID): ThemeContent {
+        val version = findVersion(versionId)
+        return ThemeContent(header.grade, header.weekStart, version.title, version.intro, findDays(versionId).map { it.toMission() }, version.story)
+    }
 
     /** 모든 미션 ID가 있는지 */
     fun missionsExist(ids: List<UUID>): Boolean = ids.isEmpty() || mapper.countMissions(ids.distinct()) == ids.distinct().size
@@ -36,7 +45,7 @@ class WeeklyThemeRepository(private val mapper: WeeklyThemeMapper) {
     fun create(id: UUID, content: ThemeContent, status: WeeklyThemeStatus, createdBy: UUID, now: Instant) {
         val versionId = UUID.randomUUID()
         mapper.deferCurrentVersionCheck()
-        check(mapper.insertTheme(id, content.gradeBand, content.weekStart, status, versionId, createdBy, now) == 1)
+        check(mapper.insertTheme(id, content.grade, content.weekStart, status, versionId, createdBy, now) == 1)
         insertVersion(versionId, id, 1, content, createdBy, now)
     }
 
@@ -44,7 +53,7 @@ class WeeklyThemeRepository(private val mapper: WeeklyThemeMapper) {
     fun appendVersion(id: UUID, version: Int, content: ThemeContent, status: WeeklyThemeStatus, createdBy: UUID, now: Instant) {
         val versionId = UUID.randomUUID()
         insertVersion(versionId, id, version, content, createdBy, now)
-        check(mapper.updateHeader(id, content.gradeBand, content.weekStart, status, versionId, now) == 1)
+        check(mapper.updateHeader(id, content.grade, content.weekStart, status, versionId, now) == 1)
     }
 
     fun updateStatus(id: UUID, status: WeeklyThemeStatus, now: Instant) {
@@ -56,7 +65,7 @@ class WeeklyThemeRepository(private val mapper: WeeklyThemeMapper) {
         check(mapper.markReviewRequested(id, status, now) == 1)
     }
 
-    /** 게시: 게시본 <- 현재본. 같은 학년군·주의 다른 게시본이 있으면 부분 UK 충돌(DuplicateKeyException) */
+    /** 게시: 게시본 <- 현재본. 같은 학년·주의 다른 게시본이 있으면 부분 UK 충돌(DuplicateKeyException) */
     fun publish(id: UUID, now: Instant) {
         check(mapper.publish(id, now) == 1)
     }
@@ -67,11 +76,18 @@ class WeeklyThemeRepository(private val mapper: WeeklyThemeMapper) {
     fun recordReviewView(studentId: UUID, weekStart: LocalDate, themeId: UUID, now: Instant): Boolean =
         mapper.insertReviewView(studentId, weekStart, themeId, now) == 1
 
-    /** 학생 삭제: 그 학생의 되돌아보기 열람 기록. 호출한 쪽 트랜잭션 안에서만 */
-    fun deleteByStudent(studentId: UUID): Int = mapper.deleteReviewViewsByStudent(studentId)
+    /** 이번 주 이야기 열람 종류(INTRO·OUTRO, #438) */
+    fun findStoryViews(studentId: UUID, weekStart: LocalDate): Set<String> = mapper.findStoryViews(studentId, weekStart).toSet()
+
+    /** 이야기 열람 기록(학생·주·종류당 1행). 이번 요청이 그 주 첫 열람이면 true */
+    fun recordStoryView(studentId: UUID, weekStart: LocalDate, kind: String, themeId: UUID, now: Instant): Boolean =
+        mapper.insertStoryView(studentId, weekStart, kind, themeId, now) == 1
+
+    /** 학생 삭제: 그 학생의 되돌아보기·이야기 열람 기록(#438). 호출한 쪽 트랜잭션 안에서만 */
+    fun deleteByStudent(studentId: UUID): Int = mapper.deleteReviewViewsByStudent(studentId) + mapper.deleteStoryViewsByStudent(studentId)
 
     private fun insertVersion(versionId: UUID, themeId: UUID, version: Int, content: ThemeContent, createdBy: UUID, now: Instant) {
-        check(mapper.insertVersion(versionId, themeId, version, content.title, content.intro, createdBy, now) == 1)
-        content.days.forEach { check(mapper.insertDay(versionId, it.day.number, it.missionId) == 1) }
+        check(mapper.insertVersion(versionId, themeId, version, content.title, content.intro, content.story, createdBy, now) == 1)
+        content.days.forEach { check(mapper.insertDay(versionId, it.day.number, it) == 1) }
     }
 }

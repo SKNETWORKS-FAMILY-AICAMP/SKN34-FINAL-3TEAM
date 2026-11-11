@@ -32,6 +32,14 @@ class StringMapTypeHandler(objectMapper: ObjectMapper) : JacksonJsonbTypeHandler
     objectMapper, objectMapper.typeFactory.constructMapType(Map::class.java, String::class.java, String::class.java),
 )
 
+/**
+ * mission_version.scene_motion, weekly_theme_version.intro_motion·outro_motion: ai가 정한 움직임 JSON 객체 그대로 (#438).
+ * Map<String, Any?>는 판정 ContentMapTypeHandler와 같은 타입이라 전역 매핑이 겹치지만 둘 다 같은 방식으로 읽고 쓰며, 각 XML이 자기 핸들러를 지정한다
+ */
+class MotionTypeHandler(objectMapper: ObjectMapper) : JacksonJsonbTypeHandler<Map<String, Any?>>(
+    objectMapper, objectMapper.typeFactory.constructMapType(Map::class.java, String::class.java, Any::class.java),
+)
+
 /** rubric_version.answer_key: 정답 키 */
 class AnswerKeyTypeHandler(objectMapper: ObjectMapper) : JacksonJsonbTypeHandler<AnswerKey>(
     objectMapper, objectMapper.typeFactory.constructType(AnswerKey::class.java),
@@ -52,6 +60,7 @@ class MissionPersistenceConfig {
             register(AnswerKey::class.java, AnswerKeyTypeHandler(objectMapper))
             // #353: 성취수준 단계·초안 검사 결과·초안. 구체 타입으로만 등록(일반 Map·List에는 적용되지 않음)
             register(object : TypeReference<Map<String, String>>() {}, StringMapTypeHandler(objectMapper))
+            register(object : TypeReference<Map<String, Any?>>() {}, MotionTypeHandler(objectMapper))
             register(object : TypeReference<List<DraftAttemptFailures>>() {}, DraftFailuresTypeHandler(objectMapper))
             register(GeneratedDraft::class.java, GeneratedDraftTypeHandler(objectMapper))
         }

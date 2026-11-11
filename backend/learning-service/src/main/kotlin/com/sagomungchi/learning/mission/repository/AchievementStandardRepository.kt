@@ -12,6 +12,7 @@ interface AchievementStandardMapper {
     fun search(@Param("filter") filter: StandardFilter, @Param("offset") offset: Long): List<AchievementStandard>
     fun count(@Param("filter") filter: StandardFilter): Long
     fun findByCodes(@Param("codes") codes: Collection<String>): List<AchievementStandard>
+    fun findAll(@Param("subject") subject: String, @Param("gradeBand") gradeBand: String): List<AchievementStandard>
 }
 
 /**
@@ -26,4 +27,7 @@ class AchievementStandardRepository(private val mapper: AchievementStandardMappe
     /** 표에 있는 코드만 (없는 코드는 빠짐) */
     fun findByCodes(codes: Collection<String>): Map<String, AchievementStandard> =
         if (codes.isEmpty()) emptyMap() else mapper.findByCodes(codes.toSet()).associateBy { it.code }
+
+    /** 교과·학년군 전체, 코드 순 (테마 초안 자동 성취기준 #438) */
+    fun findAll(subject: String, gradeBand: String): List<AchievementStandard> = mapper.findAll(subject, gradeBand)
 }

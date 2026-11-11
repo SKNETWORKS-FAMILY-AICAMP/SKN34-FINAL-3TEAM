@@ -689,9 +689,9 @@ sequenceDiagram
 
   W->>C: GET /students/me/weekly-theme
   C->>CDB: KST 일요일이면 상품 기능 확인 (features.sundayTheme, 값 없으면 구독 중이면 허용)
-  C->>L: GET /internal/students/{id}/weekly-theme?gradeBand&date&sundayTheme (KST)
-  L->>L: 그 주 게시 테마, 없으면 최근 게시 테마 재사용. 요일 상태(누적 공개)·당일 풀이·개근·주간 완주·엔딩 계산
-  L-->>C: 테마·요일 상태(days[].completedOnDay)·completed(개근)·finished(주간 완주)·ending·되돌아보기 목록
+  C->>L: GET /internal/students/{id}/weekly-theme?grade&date&sundayTheme (KST)
+  L->>L: 그 학년의 그 주 게시 테마, 없으면 최근 게시 테마 재사용. 요일 상태(누적 공개)·당일 풀이·개근·주간 완주·엔딩 계산
+  L-->>C: 테마·요일 상태(days[].completedOnDay)·completed(개근)·finished(주간 완주)·ending·되돌아보기 목록·공개된 단서·이야기 열람 여부·이미지/영상 URL(presigned)
   rect rgba(128,128,128,0.12)
     Note over C,CDB: 보충 적립 — 원장 사건 키 UK로 이미 있으면 건너뜀
     C->>CDB: days[].attemptStatus = COMPLETED → MISSION_COMPLETED (source_key = missionId)
@@ -703,7 +703,7 @@ sequenceDiagram
   W->>C: POST /missions/{missionId}/attempts {context: THEME_DAY}
   Note over C: 무료도 THEME_DAY는 하루 한도 집계 없음 (EXTRA는 무료 403 PREMIUM_REQUIRED)
   C->>L: POST /internal/missions/{id}/attempts?grade&demo&sundayTheme {context}
-  L->>L: 진행 중 시도면 그대로 반환, 아니면 미션 공개·범위 → 학년군(grade)·KST 오늘로 그 주 테마 확인
+  L->>L: 진행 중 시도면 그대로 반환, 아니면 미션 공개·범위 → 테마 학년(grade, 중학생 G6)·KST 오늘로 그 주 테마 확인
   alt 신규 시도인데 공개 전(LOCKED) 문제이거나 일요일(허용 값 없음)이거나 이번 주 이미 마무리한 문제
     L-->>C: 409 THEME_DAY_CLOSED (마무리한 문제 거부와 코드는 #484 기준안)
     C-->>W: 409
@@ -718,6 +718,8 @@ sequenceDiagram
 - 진행 중 시도 반환(`200`)은 요일 검사 없이 이어하기(자정 후·일요일 포함). 당일 풀이는 학습 완료 시각이 그 요일 KST 안일 때만. 재사용 테마의 이미 푼 문제도 그 주 공개된 문제면 `THEME_DAY` 신규 시도(그 주에 마무리한 문제만 거부, 다시 풀기는 `THEME_REVIEW`). learning #484 구현 전에는 마무리한 오늘 문제의 새 `THEME_DAY` 시도가 열려 있다(#506)
 - 주간 테마 조회 때 core는 응답에서 이번 주 학습 완료한 요일 문제(`attemptStatus = COMPLETED`)마다 `MISSION_COMPLETED`를 다시 부르고, 원장 사건 키 UK로 이미 있는 것은 건너뛰어 누락분만 보충한다(#389). 추가 문제(EXTRA)는 응답에 없어 보충 대상이 아니다. 당일 풀이·개근(learning 칸 `completed`)·주간 완주도 같은 방식으로 보충(core #485, 개근 칸 이름은 #506에서 `completed`로 맞춤). 주간 완주는 learning이 토요일 23:59:59 KST까지의 완료만 세므로 프리미엄 일요일 완료로는 적립되지 않는다
 - 학습 완료 직후(3.5)에는 웹이 홈으로 돌아와 주간 테마를 다시 조회할 때 당일 풀이가 적립된다(core #485는 주간 테마 조회 보충으로 정했다, [core 보고서 18절](../report/core-gateway.md#18-무료-테마-주-5문제추가-문제-프리미엄-전용프리미엄-일요일당일-풀이주간-완주-포인트-485-2026-11-10))
+- 학년별 테마(#438): core는 학생 학년 그대로 `grade=G3`~`G6`(중학생 `G6`)을 넘긴다. core 반영 전(병합 순서 #438 → core)에는 core가 `gradeBand`를 보내므로 learning은 `grade`가 없으면 `gradeBand`의 `G3_4`를 `G3`, `G5_6`을 `G5`로 읽는다(V15가 학년군 테마를 학년마다 같은 내용으로 복사하므로 이 기간 내용은 같음). core 반영 뒤 이 호환을 지운다
+- 테마 시도(#438): 시작·이어하기 응답에 `themeScene{dialogue, hintSpots, videoUrl}`(그 시도 테마 게시본의 그 미션 요일 값, `EXTRA`는 `null`. ai 테마 초안 채택 테마는 요일 문제 전 영상이 없어 `videoUrl`은 null, #437 2026-11-11). 생각 열기(`POST /attempts/{id}/hints`)는 순서대로 하나씩 여는 기존 동작·열람 기록 그대로이고 `hintSpots`는 그림 위 표시 위치만 정한다
 
 ### 3.5 학습 완료 → 포인트 적립·자동 공유 (P20·P21, core #388·#389·learning #386 구현)
 
@@ -769,7 +771,7 @@ sequenceDiagram
   participant L as learning
 
   W->>C: POST /students/me/weekly-theme/review-views
-  C->>L: POST /internal/students/{id}/weekly-theme/review-views?gradeBand&date&sundayTheme
+  C->>L: POST /internal/students/{id}/weekly-theme/review-views?grade&date&sundayTheme
   L->>L: 토요일(일요일 허용 값이면 일요일도) 확인(아니면 409 THEME_REVIEW_NOT_ALLOWED), theme_review_view 저장 (주 1회 멱등)
   L-->>C: {firstViewThisWeek, completed}
   rect rgba(128,128,128,0.12)
@@ -782,6 +784,28 @@ sequenceDiagram
 ```
 
 - `weekStart`는 core가 learning에 넘긴 KST 날짜의 월요일. `firstViewThisWeek`와 무관하게 적립을 부르고 사건 키로 1회만 남겨, 앞선 적립 저장이 실패했으면 열람 재요청 때 보충
+
+#### 3.6.1 시작·종료 이야기 열람 (에픽 #436, learning #438·core #439)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web(학생)
+  participant C as core
+  participant L as learning
+
+  Note over W: 월~토 그 주 첫 진입(introSeen=false) → 시작 화면, 엔딩 상태에서 outroSeen=false → 종료 화면
+  W->>C: POST /students/me/weekly-theme/story-views {kind}
+  C->>L: POST /internal/students/{id}/weekly-theme/story-views?grade&date {kind}
+  L->>L: INTRO는 월~토·OUTRO는 엔딩 상태인지 (아니면 409 THEME_STORY_NOT_ALLOWED), 게시 테마 확인(없으면 404)
+  L->>L: theme_story_view (학생·주·kind) ON CONFLICT DO NOTHING
+  L-->>C: {kind, firstViewThisWeek}
+  C-->>W: 200 (learning 응답 그대로, 포인트 적립 없음)
+```
+
+- 시작 이야기는 온보딩 영상처럼 그 주에 처음 들어왔을 때 한 번 보여 준다(요일 무관, 일요일 제외, 2026-11-10 사용자 결정). 그래서 이번 주 테마 응답의 `intro`(글)는 #385의 '월요일만'에서 매일 채움으로 바꾼다
+- 날짜·학년은 core가 정한다(되돌아보기 열람과 같음). 기존 되돌아보기 열람(`review-views`, 포인트·완주)은 그대로이고 이야기 열람과 따로 기록한다
+- 종료 이야기·정답·결정적 단서·종료 장면은 엔딩 상태일 때만 이번 주 테마 응답에 들어간다. 엔딩 조건(큰 질문 정답 맞힘 즉시, 틀리면 토요일 다시 풀기 뒤)과 정답 고르기는 #483·#484, 그 전까지 #438은 토·일을 엔딩으로 본다(state-diagram 3.2.1)
 
 ### 3.7 커뮤니티 열람·반응·신고 (P20, core #388·learning #386 구현)
 
@@ -1545,6 +1569,58 @@ sequenceDiagram
 
 - ai는 호출마다 생성 1회만 하고 반복은 learning이 맡는다. 반복을 ai 안에서 하면 learning→ai 35초를 넘는다(class-diagram 4.1.1·5.4)
 - 상한·주기는 기준안(state-diagram 3.4). learning의 초안용 ai 호출은 판정·되묻기와 서킷을 따로 쓴다
+
+### 11.1 주간 테마 초안 생성 (에픽 #436, learning #438·ai #437·core 프록시 #439)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant AW as Web (관리자)
+  participant C as core
+  participant L as learning
+  participant LDB as learning_db
+  participant A as ai
+  participant S3 as S3
+
+  alt 관리자 요청
+    AW->>C: POST /admin/theme-drafts {grade, weekStart, topic?, missions?}
+    C->>L: POST /internal/admin/theme-drafts (요청 감사)
+    L->>LDB: 학년·주·성취기준·입력 방식 확인, 비운 유형은 자동 규칙·비운 주제는 주제 씨앗으로 채움 → theme_draft GENERATING (ADMIN)
+    L-->>AW: 202 ThemeDraft {draftId, status} (core 경유, 결과 감사)
+  else 주간 자동 (기준안 수요일 03:00 KST)
+    L->>LDB: 다음 주 G3·G4·G5·G6 theme_draft GENERATING (AUTO, 학년마다 겹치지 않는 주제 씨앗) ON CONFLICT DO NOTHING (그 학년·주 게시 테마가 있으면 건너뜀)
+  end
+
+  loop ThemeDraftScheduler 주기 (기준안 10초)
+    L->>LDB: GENERATING·리스 없음/만료 초안 하나 조건부 UPDATE로 점유 (lease 기준안 18분)
+    L->>A: POST /internal/theme-drafts {gradeMin=gradeMax, weekStart, topic, missions[유형별 성취기준·요소 code·입력 방식], previousFailures}
+    A->>A: 그래프 1회 (실패한 부분만 다시 생성, ai 마감 기준안 15분)
+    A->>S3: 장면 7개 그림·영상 저장 (theme-drafts/{실행 ID}/{장면})
+    A-->>L: {theme, missions, dialogues, images, videos, motions, warnings, failure, versions} (대기 기준안 16분)
+    L->>L: failure 없음 → 요일·유형 배치, 미션 5개 게시 규칙(DraftRules), 정답 논리, 성취기준 학년 검사
+    alt 모두 통과
+      L->>LDB: READY + output (점유한 리스일 때만)
+    else 실패, 상한 미만
+      L->>LDB: attempts+1, 실패 사유 추가, output 갱신(ai 결과를 받았으면, failure여도), 리스 비움 → 다음 주기 다시 생성
+    else 실패, 상한 도달 (기준안 3회)
+      L->>LDB: CHECK_FAILED(output 갱신) 또는 FAILED(AI 호출 실패, 이전 output 유지)
+    end
+  end
+
+  AW->>C: GET /admin/theme-drafts/{id} (이야기·미션·장면 미리보기 URL·검사 결과)
+  AW->>C: POST /admin/theme-drafts/{id}/adopt
+  C->>L: POST /internal/admin/theme-drafts/{id}/adopt
+  rect rgba(128,128,128,0.12)
+    L->>LDB: 초안 잠금 → 미션 5개 DRAFT(source LLM_THEME, 장면 키·움직임) → 테마 DRAFT(요일 배치·이야기·장면·대화·정답 구조, hint_spots 비움) → 초안 ADOPTED + theme_id
+  end
+  L-->>C: 201 AdminWeeklyTheme {themeId, …}
+  C->>C: 결과 감사 (themeId, detail.draftId)
+  Note over AW,L: 이후 미션 검토·게시(4.1)와 테마 생각 열기 위치 입력·검토 요청·게시(2.8)는 기존 경로 (자동 공개 없음, P19)
+```
+
+- ai는 호출 한 번에 그래프 1회만 돌고, 초안 단위 재시도(상한)는 learning이 맡는다. learning의 테마용 ai 호출은 미션 초안·판정과 서킷을 따로 쓴다(`ai-theme-draft`)
+- 테마 생성 중 ai가 learning 지식 내부 API(#469)를 부를 수 있다. 주기 작업은 스케줄러 스레드에서 ai를 기다리고 웹 요청은 Tomcat 스레드에서 처리하므로 서로 막지 않는다(`spring.task.scheduling.pool.size` 5, 작업마다 스레드 하나)
+- 다시 생성은 같은 입력으로 새 초안을 만든다(state-diagram 3.5.1). 주간 자동은 학년·주당 1개라, 자동 초안이 실패하면 관리자가 다시 생성으로 새 초안을 만든다
 
 ---
 
