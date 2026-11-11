@@ -163,6 +163,9 @@ FIX_REASON = (
     re.compile(r"^CLUE_EARLY (MON|TUE|WED|THU|FRI) (discovery)에 "),
     re.compile(r"^ANSWER_LEAK (\S+?)에 "),
     re.compile(r"^CLUE_WORDING (MON|TUE|WED|THU|FRI) (clue) "),
+    # 증거 종류(evidence.kind)는 그대로 두고 단서 문장만 그 종류에 맞게 고쳐 씀(실측 2026-11-11:
+    # 단서 글자 수 초과와 섞이면 줄거리 전체를 다시 만들어 상한까지 실패, 글 20건 1건·전체 실측 1건)
+    re.compile(r"^CLUE_EVIDENCE (MON|TUE|WED|THU|FRI) (clue) "),
 )
 
 
@@ -475,7 +478,7 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
         # 내용에서 고름, 실측 repo-fair4-3) 코드로 막지 않고 글 검토(정답 암시)가 본다
         if clue_evidence_mismatch(d):
             bad.append(
-                f"CLUE_EVIDENCE {d['day']} 단서 문장의 "
+                f"CLUE_EVIDENCE {d['day']} clue 단서 문장의 "
                 "증거와 evidence 종류가 다름(사진·영상·녹음·기록·"
                 "일지·메모를 말하면 RECORD, RECORD면 그 기록을 말함)"
             )

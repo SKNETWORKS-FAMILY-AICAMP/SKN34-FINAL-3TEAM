@@ -165,9 +165,9 @@ PLAN_SYSTEM = (
     "feature는 표의 특징 이름, "
     "allowed는 그 단서로 보아 가능한 값 목록(표에 있는 값만).\n"
     "- clue 문장은 그 condition만 말한다. 특징이 무엇에 대한 것인지(바닥·바람·빛처럼) 밝혀 쓰고, "
-    "allowed 값 낱말을 모두 그대로 쓴다. 값이 둘 이상이면 대상이 그중 한 곳·하나에 있었다는 "
-    "뜻으로 쓴다('모래나 나무 바닥 중 한 곳'). '모두·전부·둘 다'처럼 여러 값이 함께 있었던 것처럼 "
-    "쓰지 않는다(코드 검사 CLUE_WORDING). 허용 밖 "
+    "allowed 값 낱말을 모두 그대로 쓴다. 값이 둘 이상이면 '모래나 나무'처럼 '나'로 이어 그중 "
+    "하나였다는 뜻으로 쓰고, '모두·전부·둘 다'처럼 여러 값이 함께 있었던 것처럼 쓰지 않는다(코드 "
+    "검사 CLUE_WORDING). 허용 밖 "
     "값 낱말은 쓰지 않는다. 그 특징에 대한 사실만 쓰고 표에 없는 새 사실을 더하지 않는다. "
     "RULE 단서는 단정해서 쓰고 '~수도 있다·~것 같다·~듯'처럼 흐리게 쓰지 않는다. 곁 "
     "물건의 종류·이름(예: 흙 포대, 화분, 책장)처럼 표에 "
@@ -337,6 +337,16 @@ FIX_SYSTEM = (
 )
 
 
+# 단서 칸 고쳐 쓰기: 증거 종류(evidence.kind)는 바꾸지 않고 문장을 그 종류에 맞춤
+# (코드 검사 CLUE_EVIDENCE)
+RECORD_LIST = "사진·영상·녹음·기록·일지·메모"
+EVIDENCE_CLUE_RULE = {
+    "RECORD": f"증거 종류가 기록이라 {RECORD_LIST} 중 하나를 말한다.",
+    "SIGHTING": f"증거 종류가 목격이라 본 것으로 쓰고 {RECORD_LIST}는 말하지 않는다.",
+    "TRACE": f"증거 종류가 흔적이라 남은 흔적으로 쓰고 {RECORD_LIST}는 말하지 않는다.",
+}
+
+
 def fix_rules(theme: Theme, path: str) -> list[str]:
     """칸 종류별로 줄거리 프롬프트와 같은 지킬 점(검사를 다시 통과하도록)."""
     cands = theme.get("candidates") or []
@@ -352,10 +362,10 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
             return [
                 f"특징 '{cond.get('feature')}'이 무엇에 대한 것인지 밝히고 값 낱말 {allowed}를 "
                 "모두 그대로 쓴다.",
-                "값이 둘 이상이라 그중 한 곳·하나였다는 뜻으로 쓴다('A나 B 중 한 곳'). "
-                "'모두·전부·둘 다'로 쓰지 않는다."
+                "값이 둘 이상이라 'A나 B'처럼 '나'로 잇는다. '모두·전부·둘 다'로 쓰지 않는다."
                 if len(allowed) >= 2
                 else "",
+                EVIDENCE_CLUE_RULE.get((day.get("evidence") or {}).get("kind") or "", ""),
                 f"허용 밖 값 낱말 {others}는 쓰지 않는다." if others else "",
                 "후보를 빼는 단서라 단정해서 쓴다('~수도 있다·~것 같다·~듯' 금지)."
                 if cond.get("kind") == "RULE"
