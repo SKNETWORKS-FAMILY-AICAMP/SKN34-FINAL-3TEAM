@@ -145,6 +145,32 @@ class RuntimeConfigTests(unittest.TestCase):
                     self.assertEqual(actual.get(key), value)
                     self.assertIsInstance(actual[key], str)
 
+    def test_report_worker_explanation_settings_and_grace_period(self):
+        # #508: local·prod report-worker가 같은 설명 시간 값을 쓰고, 종료 유예가 설명 단계보다 김
+        keys = (
+            "REPORT_EXPLANATION_TIMEOUT_SECONDS",
+            "REPORT_EXPLANATION_BUDGET_SECONDS",
+            "REPORT_THEME_SUMMARY_ENABLED",
+        )
+        base = ROOT / "infrastructure/gitops/environments"
+        local = yaml.safe_load(
+            (base / "local/report-worker.yaml").read_text(encoding="utf-8")
+        )
+        prod = json.loads(
+            (base / "prod/report-worker.json").read_text(encoding="utf-8")
+        )
+        for name, values in (("local", local), ("prod", prod)):
+            env = {item["name"]: item.get("value") for item in values["env"]}
+            with self.subTest(env=name):
+                self.assertEqual(
+                    {key: env.get(key) for key in keys},
+                    dict(zip(keys, ("130", "400", "true"))),
+                )
+                self.assertGreater(
+                    values["terminationGracePeriodSeconds"],
+                    float(env["REPORT_EXPLANATION_BUDGET_SECONDS"]),
+                )
+
     @unittest.skipUnless(shutil.which("docker"), "Compose CLI 필요(컨테이너 실행 없음)")
     def test_compose_omitted_and_explicit_false_keep_defaults(self):
         for overrides in (

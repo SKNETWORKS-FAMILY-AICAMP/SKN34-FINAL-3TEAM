@@ -234,12 +234,68 @@ def test_no_scores_is_no_target_and_essay_grade_four_is_supported():
         (TEXT, '"없는 구절"을 썼습니다.'),
         (TEXT, "합성별명이 잘했습니다."),
         (TEXT, "세 문장으로 표현했습니다."),
+        (TEXT, "한 문장으로 표현했습니다."),
+        (TEXT, "생각을 두번 고쳤습니다."),
     ],
 )
 def test_invalid_quotes_numbers_and_claims_are_not_saved(quote, text):
     command, report, base, _, _, generator = setup_case(ai=AI(quote=quote, text=text))
     result = asyncio.run(generator.generate(command, report))
     assert result.items == base.items and result.explanation_state == "NOT_INCLUDED"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "잘한 점: 정확한 문장으로 그늘의 역할을 설명했습니다.",
+        "함께 이야기해 볼 점: 적절한 글자 수를 생각해 보면 좋겠습니다.",
+    ],
+)
+def test_adjective_ending_is_not_a_korean_count(text):
+    # #508: "-한" adjective endings are not the numeral "한".
+    command, report, base, _, _, generator = setup_case(ai=AI(text=text))
+    result = asyncio.run(generator.generate(command, report))
+    assert result.explanation_state == "INCLUDED"
+    assert result.items[-1].payload["text"] == text
+
+
+def test_excluded_latest_answer_falls_back_to_same_type():
+    # #508: pre-call exclusions try the next answer of the same type before giving up.
+    student = fixed_result()[0].student_id
+    valid = scored(student, times=["2026-10-20T10:00:00+09:00"])
+    stale = scored(student, times=["2026-10-21T10:00:00+09:00"])
+    latest = scored(student, times=["2026-10-22T10:00:00+09:00"])
+    latest = replace(
+        latest,
+        answers=(
+            replace(
+                latest.answers[0],
+                judgment=replace(latest.answers[0].judgment, corrected=True),
+            ),
+        ),
+    )
+
+    class StaleEvidence(Records):
+        async def evidence(self, student, links):
+            if links[0].answer_id == stale.answers[0].id:
+                return (EvidenceRecord(links[0].answer_id, links[0].attempt_id, 99, TEXT, True),)
+            return await super().evidence(student, links)
+
+    command, report, _, _, ai, _ = setup_case()
+    learning = StaleEvidence([latest, stale, valid])
+    generator = ExplanationGenerator(Base(fixed_result()[1]), ai, learning)
+    result = asyncio.run(generator.generate(command, report))
+    explanations = [i for i in result.items if i.type == ItemType.EXPLANATION]
+    assert result.explanation_state == "INCLUDED" and len(ai.calls) == 1
+    assert explanations[0].payload["answerId"] == str(valid.answers[0].id)
+
+
+def test_failed_call_does_not_retry_same_type():
+    student = fixed_result()[0].student_id
+    rows = [scored(student, times=[f"2026-10-2{i}T10:00:00+09:00"]) for i in range(3)]
+    command, report, _, _, ai, generator = setup_case(rows, AI(fault="inactive"))
+    result = asyncio.run(generator.generate(command, report))
+    assert result.explanation_state == "NOT_INCLUDED" and len(ai.calls) == 1
 
 
 @pytest.mark.parametrize("quote", [TEXT, None])
