@@ -851,8 +851,13 @@ class SubjectRecords:
         if info is None:
             self.statement_diffs.append({"code": code, "reason": "성취기준 표에 없는 코드"})
         elif statement != info["statement"]:
-            self.statement_diffs.append({"code": code, "loose": loose(statement) == loose(info["statement"]),
-                                         "source": statement, "seed": info["statement"]})
+            same = loose(statement) == loose(info["statement"])
+            self.statement_diffs.append({"code": code, "loose": same, "source": statement, "seed": info["statement"]})
+            # 문장 기준은 성취기준 표(이슈 #465 지침, C1). learning 적재(#466 checkStatements)는 표와 글자까지
+            # 같아야 받으므로 공백·기호만 다르면 표 문장을 쓰고 원문 글은 notes에 남긴다
+            if same:
+                notes.append(f"문장은 성취기준 표 그대로(원문 글: {statement})")
+                statement = info["statement"]
         section = f"2. 나. 성취기준 {unit.band_heading} {unit.heading}"
         if explanation:
             section += " / (가) 성취기준 해설"

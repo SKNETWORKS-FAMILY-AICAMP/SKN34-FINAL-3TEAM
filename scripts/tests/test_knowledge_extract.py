@@ -89,16 +89,49 @@ class ExtractedDataTests(unittest.TestCase):
             self.assertEqual(record["area"], self.seed[code]["area"], code)
 
     def test_statements_equal_seed(self):
-        """코드별 문장이 성취기준 표와 같다. 공백·기호 차이만 허용하고 다른 것은 목록으로 남긴다."""
-        exact_diffs = []
+        """코드별 문장이 성취기준 표와 글자까지 같다(learning 적재 #466이 다르면 판 전체를 거부).
+        원문과 표가 공백·기호만 다른 코드는 표 문장을 쓰고 원문 글을 notes에 남겼는지 본다."""
         for code, record in sorted(self.standards.items()):
-            seed = self.seed[code]["statement"]
-            self.assertEqual(extract.loose(record["statement"]), extract.loose(seed), code)
-            if record["statement"] != seed:
-                exact_diffs.append(code)
-        print(f"\n[문장] 공백·기호만 다른 코드: {exact_diffs}")
-        self.assertEqual(exact_diffs, sorted(d["code"] for d in self.summary["statementDiffs"]))
-        self.assertTrue(all(d["loose"] for d in self.summary["statementDiffs"]))
+            self.assertEqual(record["statement"], self.seed[code]["statement"], code)
+        diffs = self.summary["statementDiffs"]
+        print(f"\n[문장] 원문과 표가 공백·기호만 달라 표 문장을 쓴 코드: {[d['code'] for d in diffs]}")
+        self.assertTrue(all(d["loose"] for d in diffs))
+        for d in diffs:
+            self.assertIn(f"원문 글: {d['source']}", " ".join(self.standards[d["code"]].get("notes", [])))
+
+    def test_records_pass_learning_load_rules(self):
+        """learning 적재(#466 KnowledgeChunks.fromRecords·checkSemesters·checkStatements)가 거부하지 않는다:
+        칸 종류, 조각 ID 겹침 없음, 학기가 학년 안, 생각 유형 값, 내용 요소 분류."""
+        ids = []
+        for record in self.records:
+            kind, where = record["kind"], record.get("id") or record.get("code") or record.get("type")
+            self.assertIn("source", record, where)
+            if kind == "standard":
+                self.assertTrue(all(isinstance(g, int) and 3 <= g <= 6 for g in record["grades"]), where)
+                for semester in record["semesters"]:
+                    self.assertRegex(semester, r"^[3-6]-[12]$", where)
+                    self.assertIn(int(semester[0]), record["grades"], where)
+                ids.append(record["code"])
+            elif kind == "domain":
+                self.assertRegex(record["noticeGradeBand"], r"^초\d~\d$", where)
+                for key in ("knowledge", "process", "values"):
+                    self.assertTrue(all(isinstance(item["text"], str) for item in record[key]), where)
+                self.assertTrue(all(isinstance(x, str) for x in record["coreIdeas"] + record["considerations"]))
+                ids.append(record["id"])
+            elif kind == "content":
+                self.assertIn(record["category"], ("K", "P", "V"), where)
+                self.assertIsInstance(record["domainId"], str, where)
+                ids.append(record["id"])
+            elif kind == "subject_guide":
+                self.assertTrue(record["teaching"] and record["assessment"], where)
+                ids.append(record["id"])
+            else:
+                self.assertEqual(kind, "thinking_type")
+                self.assertIn(record["type"], ("ANALYZE", "EVALUATE", "CREATE", "SOLVE", "REFLECT"))
+                self.assertTrue(all("attribution" in b for b in record["basis"]), where)
+                self.assertTrue(all("label" in e and "description" in e for e in record["elements"]), where)
+                ids.append(record["type"])
+        self.assertEqual(len(ids), len(set(ids)), "조각 ID 겹침")
 
     def test_explanations_match_source_items(self):
         """해설이 있는 성취기준 수를 교과별로 내고, 원문 (가) 절 항목이 가리키는 코드 수와 맞춘다."""
