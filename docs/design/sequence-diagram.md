@@ -1278,7 +1278,7 @@ sequenceDiagram
     SCH->>DB: payment_order 저장 (RENEWAL, billing_period_start) — 부분 UK로 이중 청구 방지
     alt UK 충돌 + 기존 결제 APPROVED·CONFIRMING
       SCH->>SCH: 건너뜀
-    else 신규 주문 또는 UK 충돌 + 기존 결제 FAILED (재청구 매일 1회 최대 3회 P13, 11장 가정)
+    else 신규 주문 또는 UK 충돌 + 기존 결제 FAILED (재청구 매일 1회 최대 3회 P13, 12장 가정)
       SCH->>T: 빌링키 자동결제 API
       alt 성공
         SCH->>DB: payment APPROVED, subscription 기간 연장·next_billing_date 갱신
@@ -1364,7 +1364,7 @@ sequenceDiagram
   AW->>C: POST /admin/error-reports/{id}/corrections {reason, corrected}
   C->>L: POST /internal/judgments/{judgmentId}/corrections (Idempotency-Key)
   L->>L: judgment_correction 추가 (기존 판정·원본 답변 불변)
-  L-->>C: 201
+  L-->>C: 200 {correctionId, previousResult, corrected, createdAt, impact}
   C->>R: GET /internal/reports/correction-impact?studentId&attemptId (#244, 실패 시 UNKNOWN)
   R-->>C: 그 시도로 만든 완료 판
   C->>L: GET /internal/support/attempts/{attemptId} (판정의 답변 ID 확인, #244)
@@ -1427,7 +1427,7 @@ sequenceDiagram
 
 - 롤백(`/rollback`): 이전 승인 버전 재활성화로 같은 흐름, 재분석 여부는 `audit_log.detail` 기록 (FN-ADM-18)
 - scoring #86은 큐 바인딩·소비 시작 → core snapshot → 조회·로딩 중 보존 이벤트의 revision 조정 → readiness true 순서다. 브로커 재연결도 같은 순서로 수행한다. 이벤트는 전체 snapshot이 아니므로 다른 모델을 제거하지 않고 해당 이름의 모델만 교체한다.
-- ai #68도 Pod별 큐 바인딩·소비 시작 → core snapshot → 조회 중 받은 이벤트의 kind·name별 revision 조정 → readiness 순서다. 재연결 시 snapshot으로 유실 구간을 복구한다. `PROMPT` 다섯 기능(#336 구현 때 미션 초안을 더해 여섯)과 승인 scope만 반영하며, 미보유 버전 본문을 받으면 해당 기능 새 요청은 503, readiness는 false다. 요청이 시작할 때 잡은 본문·버전은 진행 중 교체하지 않는다.
+- ai #68도 Pod별 큐 바인딩·소비 시작 → core snapshot → 조회 중 받은 이벤트의 kind·name별 revision 조정 → readiness 순서다. 재연결 시 snapshot으로 유실 구간을 복구한다. `PROMPT` 일곱 기능(#336 미션 초안, #477 리포트 설명 포함)과 승인 scope만 반영하며, 미보유 버전 본문을 받으면 해당 기능 새 요청은 503, readiness는 false다. 요청이 시작할 때 잡은 본문·버전은 진행 중 교체하지 않는다.
 - scoring 교체·롤백 시 artifact를 다시 내려받아 로딩한 뒤 임시 파일을 정리한다. 로딩 중에는 기존 모델을 사용하며 실패 시 기존 모델을 유지하고 재시도한다. 새 승인 scopes에서 제외된 범위에는 기존 모델도 사용하지 않는다. 최초 준비·재연결 복구가 끝나기 전에는 readiness false다.
 - 기준표(`kind = RUBRIC`) 행은 core 레지스트리의 승인·활성 기록만 담당. learning은 이 이벤트를 소비하지 않으며, `judge_verified`·현재 기준표 버전 반영은 관리자 미션 API(`/admin/missions/...`)로 별도 수행
 
@@ -1502,7 +1502,7 @@ sequenceDiagram
   AW->>C: GET /admin/achievement-standards?subject&gradeBand&q
   C->>L: GET /internal/admin/achievement-standards
   L-->>AW: 성취기준 목록 (core 경유)
-  AW->>C: POST /admin/mission-drafts {standardCodes, achievementLevels, thinkingType, grade, inputType}
+  AW->>C: POST /admin/mission-drafts {standardCodes, achievementLevels, thinkingType, gradeMin, gradeMax, inputType}
   C->>C: CONTENT 권한, 요청 감사
   C->>L: POST /internal/admin/mission-drafts
   L->>LDB: 성취기준 실재·학년군 확인 → mission_draft GENERATING (attempts 0)
@@ -1510,7 +1510,7 @@ sequenceDiagram
 
   loop MissionDraftScheduler 주기 (기준안 10초)
     L->>LDB: GENERATING·리스 없음/만료 초안 하나 조건부 UPDATE로 점유 (lease 90초)
-    L->>A: POST /internal/mission-drafts {성취기준·성취수준 문장, 유형 표준 요소, 학년, 입력 방식, previousFailures}
+    L->>A: POST /internal/mission-drafts {성취기준·성취수준 문장, 유형 표준 요소, 학년 범위(gradeMin·gradeMax), 입력 방식, previousFailures}
     A->>LLM: 구조화 출력 1회 (60초, 재시도 없음, P12 예외 #353)
     A->>A: 필수 항목·질문 길이·정답·금지어 노출 검사
     A-->>L: {draft, checks, versions}

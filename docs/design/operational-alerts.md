@@ -22,7 +22,7 @@ DLQ 적재는 별도 opt-in scrape job `rabbitmq-dlq`로 본다. 같은 RabbitMQ
 기본 `rabbitmq` job과 전체 per-object 지표는 바꾸지 않는다. 시계열은 정의된 DLQ 수(현재 7개, #370 `core.model.loading.reported.dlq` 포함)만큼이다.
 규칙은 `max by (vhost, queue)`로 큐마다 경보 인스턴스를 만든다. 큐 이름은 시계열 라벨로 알림에 실린다.
 메시지 수는 ready+unacked 합계이며 메시지 나이·재처리 지연은 의미하지 않는다. scrape 실패나 지표 부재는 0이 아니라 NoData로 남는다.
-업무 ID·메시지 내용은 label에 넣지 않는다. 운영 임계값·지속시간은 결정 전이며 prod values에는 아직 넣지 않았다.
+업무 ID·메시지 내용은 label에 넣지 않는다. prod values는 수집(`prometheus.rabbitmqDlqMetrics.enabled`)을 켜고 `rabbitmq-dlq-depth`(> 0, 5m)를 초기 기준으로 넣었다. 운영 임계값·지속시간은 실측 뒤 조정한다.
 일일 리포트(P24, #390·#391)는 같은 `report.generate` 큐를 써 DLQ 수(현재 7개)는 늘지 않는다. 월요일 00:00에는 주간·일일 작업이 함께 쌓이므로 임계값·지속시간을 정할 때 이 시각의 적체를 실측해 반영한다([아키텍처 4.4](architecture.md#44-확장)).
 
 ## 월 LLM 비용
@@ -38,10 +38,13 @@ OTel Java agent가 켜진 경우에만 export되고 없으면 no-op이다. expor
 ## 업무별 오류율·지연
 
 core·learning Java agent의 `http_server_request_duration_seconds`(`http_route`·`http_response_status_code`)를 쓴다.
-core 공개 API 경로로 인증·학습 저장·AI 처리·리포트·결제를 나누고 5xx 비율과 p95 지연을 본다. 요청이 없으면 `noDataState: OK`로 정상 처리하고,
+core 공개 API 경로로 인증·학생 학습·AI 처리·리포트·결제를 나누고 5xx 비율과 p95 지연을 본다(AI 처리는 SSE 스트림이 섞여 p95 지연 규칙 없이 5xx 비율만). 요청이 없으면 `noDataState: OK`로 정상 처리하고,
 지표 수집 자체가 사라지면 `app-metrics-missing`이 알린다. 4xx는 사용자 입력 오류로 보고 제외한다. Python 서비스(ai·report)의 자체 HTTP 지표는 아직 없다.
 prod는 core·learning의 Java agent와 Collector egress를 켜야 이 규칙들이 값을 갖는다. app-service chart는 env의 `JAVA_TOOL_OPTIONS`를 agent 옵션 뒤에 합친다.
 커뮤니티·포인트·꾸미기·주간 테마는 core 공개 API 경로라 새 지표 없이 경로 분류(학생 학습 묶음)만 추가한다.
+학생 학습 묶음(`http-learning-*`)의 경로는 `/api/v1/(attempts/.+|missions/.+/(attempts|community-posts)|students/me/.+|community-posts/.+)`이다.
+풀이 저장과 학생 본인 경로(`/students/me/*`: 홈·풀이 목록·커뮤니티 공유·포인트·꾸미기·주간 테마), 커뮤니티 반응·미션별 공유물 조회를 함께 본다(#504).
+미션 목록·상세(`/missions`, `/missions/{missionId}`)와 보호자 자녀 경로(`/children/*`)는 이 묶음에 넣지 않는다.
 
 ## 실패 요청 trace
 

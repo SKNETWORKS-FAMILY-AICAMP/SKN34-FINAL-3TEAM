@@ -62,7 +62,8 @@ app:
   internal:
     token: ${INTERNAL_TOKEN}
     connect-timeout: 2s
-    read-timeout: 35s # [P12] learning→ai 각 35초 (architecture 1.3). core 호출(결제 사용·삭제 완료 보고)도 같은 값
+    read-timeout: 35s # [P12] learning→ai 판정·되묻기 각 35초 (architecture 1.3)
+    core-read-timeout: 4s # core 호출(결제 사용 예약·완료, 삭제 완료 보고). 피드백 안쪽 합계 4+35+35+4=78초 < core 80초 (#501)
   services:
     core: ${CORE_URL:http://localhost:8080}
     ai: ${AI_URL:http://localhost:8000}

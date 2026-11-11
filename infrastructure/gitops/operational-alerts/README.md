@@ -15,9 +15,9 @@
 | `llm-unpriced-calls` | `max(llm_usage_month_to_date_unpriced_calls)` > 0 | 1m | NoData |
 | `app-metrics-missing` | core 또는 learning HTTP 지표 부재 | 10m | NoData |
 | `http-<영역>-errors` | 5xx 비율 > 5%, 5분 10건 이상 | 5m | OK |
-| `http-<영역>-latency` | p95 > 인증 1s·학습 저장 2s·리포트 3s·결제 5s, 5분 10건 이상 | 5m | OK |
+| `http-<영역>-latency` | p95 > 인증 1s·학생 학습 2s·리포트 3s·결제 5s, 5분 10건 이상 | 5m | OK |
 
-영역은 core 공개 API의 `http_route`로 나눈다: 인증 `/api/v1/auth/.+`, 학습 저장 `/api/v1/(attempts/.+|missions/.+/attempts)`,
+영역은 core 공개 API의 `http_route`로 나눈다: 인증 `/api/v1/auth/.+`, 학생 학습 `/api/v1/(attempts/.+|missions/.+/(attempts|community-posts)|students/me/.+|community-posts/.+)`(풀이 저장·학생 본인 경로·커뮤니티, #504),
 AI 처리 `/api/v1/(conversations.*|answers/.+/feedback)`, 리포트 `/api/v1/reports/.+`, 결제 `/api/v1/(payments.*|subscriptions.*|orders|webhooks/tosspayments)`.
 AI 처리는 SSE 스트림이 섞여 지연 규칙을 두지 않는다. 비용 지표는 단가가 있는 호출만 합산하므로 미산정 호출이 있으면 합계는 하한값이고 별도 경고가 난다.
 core가 여러 replica면 같은 값을 각각 보고하므로 `max`로 본다. 값은 core의 metric export 주기(기본 60초)마다 DB에서 다시 읽는다.

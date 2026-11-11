@@ -953,7 +953,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 #### 4.2.2 판정 모델 교차 확인 (#69, 2026-11-03)
 
-- 선택 입력: `question`(mission_version.question, M2 `prompt`·M1 `problem`), `keywords`(rubric_version.keywords, 서술 핵심어 묶음 배열, 생략 시 빈 배열), `essayType`(rubric_version.essay_type, 설명글·글짓기·주장·찬성반대·대안제시), `answerKey`(M1 정답 문자열), `solution`(`{steps[], finalAnswer}`, M1 학생 풀이). learning은 현재 앞의 세 항목만 보낸다. M1 입력 전달은 M1 활성화 후속이다.
+- 선택 입력: `question`(mission_version.question, M2 `prompt`·M1 `problem`), `keywords`(rubric_version.keywords, 서술 핵심어 묶음 배열, 생략 시 빈 배열), `essayType`(rubric_version.essay_type, 설명글·글짓기·주장·찬성반대·대안제시), `answerKey`(M1 정답 문자열), `solution`(`{steps[], finalAnswer}`, M1 학생 풀이). learning은 현재 앞의 세 항목만 보낸다. M1은 지금 운영하는 모델이 아니어서(M1 미지원) `answerKey`·`solution` 전달은 M1 활성화 때 scoring 응답 확정과 함께 한다(#501). 그래서 지금은 `M1_CHECK_ENABLED=true`로 켜도 M1을 부르지 않고 `modelScores.skipped`에도 남기지 않는다.
 - M2 호출: `M2_CROSS_CHECK_ENABLED=true`이고 LLM 판정 결과가 보류가 아니며 `inputType`이 NARRATIVE·ESSAY이며 `question`이 있을 때 `POST /internal/m2/scores`(4.3.1)를 부른다. 서술은 `keywords`가 비어 있으면, 논술은 `essayType`이 없으면 호출하지 않는다. 학년·승인 범위 판단은 scoring이 하며 `{active:false}`면 LLM 판정을 그대로 쓴다. M2 text는 `answerText`다.
 - 불일치 기준(임시, 설정값): M2 `scores` 평균을 서술 9항목·논술 3영역으로 구한다. LLM 결과가 `CORRECT`인데 평균이 낮은 경계 이하(서술 `M2_NARRATIVE_LOW=2.0`, 논술 `M2_ESSAY_LOW=1.0`)이거나, `RETHINK`인데 높은 경계 이상(서술 `M2_NARRATIVE_HIGH=4.0`, 논술 `M2_ESSAY_HIGH=2.0`)이면 불일치다. `PARTIAL`은 불일치로 보지 않는다. 경계는 M2 담당 확인 전 임시값이다.
 - `M2_CROSS_CHECK_ENABLED`는 기본 `false`다. 꺼져 있으면 scoring M2를 부르지 않고 LLM 판정만 쓴다(`modelScores`는 `null`, LLM은 판정 마감 전체 사용). 켜져 있고 불일치면 `HELD(MODEL_DISAGREEMENT)`이며 `elements`는 빈 목록이다. #69의 "꺼져 있어도 점수·불일치를 기록" 동작은 #305에서 없앴다.
@@ -1118,7 +1118,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - `evalResult`는 `{evidence:evaluation,approval:null|{scopes,reason,approvedBy,approvedAt},activeScopes:[],revision:0}`로 저장한다. 활성화·복귀 때 activeScopes와 revision을 갱신한다. 동일 kind·name을 advisory transaction lock으로 직렬화하고 해당 그룹에 저장된 최대 revision + 1을 사용한다. 평가 근거와 최초 승인은 덮어쓰지 않는다.
 - 내부 GET `/internal/model-versions/active`는 기존 `X-Internal-Token` 필수이며 `{items:[{id,kind,name,version,refId,artifactUri,scopes,revision,activatedAt}]}`를 반환한다. 평가·관리자 정보는 전파하지 않는다. 공개 API base(`/api/v1`)를 붙이지 않는다.
 - 이벤트는 `contracts/events/model.version.activated.v1.schema.json` data와 기존 봉투를 사용한다. `revision`은 kind·name별 단조 증가 값이다. 소비자는 큐 바인딩 후 내부 API로 초기화하고, 초기화 중 이벤트를 보존·조정하며 더 높은 revision만 적용한다. 승인 scope를 실제 요청 시에도 제한해야 한다.
-- ai는 `PROMPT` 중 #68의 여섯 이름(#280 `reportTemplate`, #354 `missionDraft` 포함)과 해당 기능 scope만 반영한다. 이벤트는 전체 snapshot이 아니며 다른 기능의 활성 버전을 제거하지 않는다. 새 scope에서 빠진 기능에는 이전 활성 본문을 계속 쓰지 않고 내장 버전으로 돌아간다. 재연결 후 새 큐 바인딩·snapshot 조회·이벤트 조정을 완료하기 전에는 `versions=DOWN`이다. malformed 이벤트는 안전한 로그 후 ACK하여 재시도하지 않는다. probe 자체는 core 조회를 수행하지 않는다.
+- ai는 `PROMPT` 중 #68의 일곱 이름(#280 `reportTemplate`, #354 `missionDraft`, #477 `reportExplanation` 포함)과 해당 기능 scope만 반영한다. 이벤트는 전체 snapshot이 아니며 다른 기능의 활성 버전을 제거하지 않는다. 새 scope에서 빠진 기능에는 이전 활성 본문을 계속 쓰지 않고 내장 버전으로 돌아간다. 재연결 후 새 큐 바인딩·snapshot 조회·이벤트 조정을 완료하기 전에는 `versions=DOWN`이다. malformed 이벤트는 안전한 로그 후 ACK하여 재시도하지 않는다. probe 자체는 core 조회를 수행하지 않는다.
 
 - #43 기존 SQL NULL 평가 행은 목록에서 evalResult:null로 보존하고 활성화/복귀 시 422로 거부한다. 승인 근거·적용 범위가 불완전한 기존 ACTIVE 행이 있으면 내부 snapshot은 MODEL_VERSION_STATE_INVALID(503)로 명시적으로 실패하며 임의 기본 버전을 반환하지 않는다. 신규 등록은 계속 완전한 평가 기록을 요구한다.
 

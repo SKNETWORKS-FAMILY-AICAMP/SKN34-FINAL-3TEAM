@@ -26,10 +26,6 @@ services:
       JAVA_TOOL_OPTIONS: -Xmx384m
   ai-service:
     ports: !override ["127.0.0.1:18098:8000"]
-    # 교차 확인 off도 scoring 호출이 필요하다(#69). 입력을 지우거나 장애를 숨기지 않는다.
-    depends_on:
-      scoring-service:
-        condition: service_healthy
   scoring-service:
     ports: !override []
     # 격리 환경에도 실행하되 호스트 포트는 열지 않는다. 모델 미등록 시 active:false.

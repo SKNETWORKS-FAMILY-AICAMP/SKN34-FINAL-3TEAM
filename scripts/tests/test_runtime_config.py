@@ -203,10 +203,8 @@ class RuntimeConfigTests(unittest.TestCase):
         scoring = services[target.hostname]
         self.assertFalse(scoring.get("profiles"))
         self.assertFalse(scoring.get("ports"))
-        self.assertEqual(
-            ai["depends_on"][target.hostname]["condition"], "service_healthy"
-        )
-        self.assertTrue(ai["depends_on"][target.hostname]["required"])
+        # #305 이후 교차 확인 off면 scoring을 부르지 않으므로 기동 의존을 두지 않는다 (#502)
+        self.assertNotIn(target.hostname, ai.get("depends_on", {}))
         for service in ("ai-service", "scoring-service"):
             for key, value in defaults()[service].items():
                 self.assertEqual(services[service]["environment"][key], value)
