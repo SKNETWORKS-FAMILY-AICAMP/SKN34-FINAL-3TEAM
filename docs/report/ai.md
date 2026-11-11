@@ -1137,6 +1137,9 @@ target: 그 항목의 전문가 이유 문장(71818 score.personal.*.feedback �
 | 단서 | 표에 없는 물건 종류를 특정하지 않음, 코드 검사 `CLUE_EVIDENCE`(단서 문장이 사진·영상·녹음·기록·일지·메모를 말하면 evidence `RECORD`, `RECORD`면 기록 낱말이 있어야 함) | ⑧. `CLUE_EVIDENCE`는 새로 정한 검사 코드 |
 | 테마 미션 질문 상한 | `theme_question_max_chars` 학년 모두 400자(기준안, P19 확인 필요). `MissionDraftService.generate`에 선택 인자 `question_max_chars`(주지 않으면 미션 초안 설정 그대로) | 사용자 결정 2026-11-11. 자료를 문제 글에 넣으면 200자를 자주 넘음. learning에는 질문 길이 검사가 없음 |
 
+실측 8회차(묶음 수정 뒤, 서비스 자동 입력 20건): 16건 통과(80%, 초3 2·초4 4·초5 5·초6 5), 완료 기준(한 번에 70% 이상, 기준안) 충족으로 글 단계 품질 보강을 마무리함. 실패 4건: 초3 글 검토 `GRADE_VOCAB`(분모가 같은 분수 덧셈, 4학년 내용)·`STANDARD_FIT`(정다각형 성취기준, 4학년 내용)은 위 ⑩(학년군 표에서 4학년 성취기준이 뽑힘, learning·#464 몫), 줄거리 `CLUE_EVIDENCE`로 상한까지 실패 1건(새 검사가 잡았으나 줄거리 다시 생성 3번 안에 못 고침), 미션 `EXAMPLE_COMPLETE`·`MATERIAL` 1건. ⑩을 빼면 18건 중 16건.
+
+
 ### 15.5 그림·영상·움직임 구현 (2026-11-11)
 
 그래프는 `review_story`가 `PASS`면 `generate_images → generate_videos → generate_motion → END`로 이어진다. 그림 클라이언트나 저장소가 없으면(버킷 `ASSET_S3_BUCKET`이 비거나 OpenAI 키 없음) `generate_images`가 경고 `IMAGE`/`ALL`/"그림 설정 없음" 하나만 남기고 끝나며 글 단계 결과는 그대로 성공이다. 미션 그림이 끝내 실패해도 `END`(영상·움직임 없음).
