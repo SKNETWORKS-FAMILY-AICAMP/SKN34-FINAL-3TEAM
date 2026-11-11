@@ -30,14 +30,14 @@ class AiOpenApiTests(unittest.TestCase):
             for method, operation in methods.items()
             if not operation.get("x-implementation-status")
         }
-        self.assertEqual(len(actual), 9)
+        self.assertEqual(len(actual), 10)  # #437 /theme-drafts 포함
         self.assertIn(("post", "/embeddings"), actual)  # #467
         self.assertEqual(actual, documented)
 
     def test_internal_token_and_problem_responses(self):
         self.assertEqual(self.spec["security"], [{"InternalToken": []}])
         self.assertEqual(self.spec["components"]["securitySchemes"]["InternalToken"]["name"], "X-Internal-Token")
-        for path in ("/judgments", "/followups", "/report-narratives", "/mission-drafts", "/embeddings"):
+        for path in ("/judgments", "/followups", "/report-narratives", "/mission-drafts", "/theme-drafts", "/embeddings"):
             responses = self.spec["paths"][path]["post"]["responses"]
             self.assertTrue({"200", "400", "401", "503"} <= set(responses))
             self.assertNotIn("422", responses)
@@ -71,7 +71,7 @@ class AiOpenApiTests(unittest.TestCase):
         self.assertFalse(prompts["additionalProperties"])
         self.assertEqual(set(prompts["required"]), expected)
         self.assertEqual(set(prompts["properties"]), expected)
-        self.assertEqual(len(expected), 7)
+        self.assertEqual(len(expected), 8)  # #437 themeDraft 포함
 
 
 if __name__ == "__main__":
