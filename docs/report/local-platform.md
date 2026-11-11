@@ -192,6 +192,7 @@ kind/GitOps local values가 `compose.yaml`보다 적어 Google 로그인·토스
 - 플래그뿐 아니라 기존 #69 설정 10개(판정 마감·scoring timeout·reserve, M2 플래그·서술/논술 낮은·높은 경계, M1 플래그·신뢰도)를 Compose·`.env.example`·GitOps local AI values에 전달한다. 기존 Settings가 이미 환경 변수로 받는 값이며, 시간 배분·불일치 기준이 담당자 확정 보고서에 있어 새 판정 정책은 정하지 않았다. 값과 기본 false는 그대로다. 이 범위 선택은 기존 구현을 배포 설정에 노출하는 결정이며 추가 담당자 승인을 받았다는 뜻은 아니다.
 - GitOps local core에 `APP_GUARDIAN_TRANSFER_ENABLED=false`, scoring에 `M2_CONTENT3_RULE_ENABLED=false`를 추가한다. Compose·`.env.example`에 있던 값과 일치한다. 실제 활성화·원복은 [README](../../README.md#64-구현과-활성화-상태)의 서비스별 설정 방법을 따른다.
 - 기존 #69 계약에서 M2 플래그 off도 scoring을 호출한다. 따라서 transfer-local은 scoring 제외 프로필을 제거하고 AI의 `service_healthy` 의존성을 추가한다. 모델 미등록/승인 범위 밖이면 실제 scoring의 `active:false` 응답을 따른다. keywords·essayType을 제거하거나 실패를 비활성으로 위장하지 않는다. scoring 호스트 포트는 계속 닫아 둔다.
+  - 후속(#502): #305에서 교차 확인이 꺼져 있으면 scoring을 부르지 않게 바뀌어, transfer-local의 AI→scoring `service_healthy` 의존성과 옛 주석을 지웠다. scoring은 계속 함께 실행하고 호스트 포트는 닫아 둔다.
 - scoring을 끈 채 판정을 계속하게 만드는 정책(I1, 현재 #305 A20·B36)은 미확정이므로 변경하지 않았다. 임의 중지·장애는 기존 `503 SCORING_UNAVAILABLE`이다. 이번 변경은 함께 실행하여 해당 단절을 없애는 구성 보완이며 #305 해결로 집계하지 않는다.
 - API·DB·모델 가중치·score_cuts·승인 조건·운영 배포는 변경하지 않았다. 이관 체험은 기존 별도 프로젝트·볼륨·네트워크를 유지한다.
 

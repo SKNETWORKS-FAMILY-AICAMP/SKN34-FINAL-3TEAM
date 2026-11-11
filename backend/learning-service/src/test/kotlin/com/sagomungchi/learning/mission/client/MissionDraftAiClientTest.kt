@@ -13,7 +13,7 @@ import com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
 import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning._common.config.InternalRestClientFactory
-import com.sagomungchi.learning.judgment.client.AiCallException
+import com.sagomungchi.learning._common.client.AiCallException
 import com.sagomungchi.learning.judgment.client.AiClient
 import com.sagomungchi.learning.mission.domain.DraftFailure
 import com.sagomungchi.learning.mission.domain.InputType

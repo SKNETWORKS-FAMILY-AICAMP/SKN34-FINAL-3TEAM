@@ -169,6 +169,7 @@ services:
       TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY: ${TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY:-}
       PAYMENT_BILLING_ENCRYPTION_KEY: ${PAYMENT_BILLING_ENCRYPTION_KEY:-}
       APP_GUARDIAN_TRANSFER_ENABLED: "${APP_GUARDIAN_TRANSFER_ENABLED:-false}"
+      AUTH_NEW_ACCOUNT_DEMO: "${AUTH_NEW_ACCOUNT_DEMO:-false}"
       # 관리자 큐 현황(GET /admin/queues): RabbitMQ 관리 API, 로컬은 기존 브로커 계정 재사용
       ADMIN_RABBIT_MANAGEMENT_URL: http://rabbitmq:15672
       ADMIN_RABBIT_MANAGEMENT_USERNAME: ${RABBITMQ_USER}
@@ -213,7 +214,7 @@ services:
       LEARNING_URL: http://learning-service:8081
       SCORING_URL: http://scoring-service:8001
       CORE_URL: http://core-service:8080
-      # #69: false여도 M2 점수는 기록한다. 시간·경계 기본값은 ai Settings와 동일.
+      # #69·#305: 교차 확인 false면 scoring을 부르지 않는다. 시간·경계 기본값은 ai Settings와 동일.
       JUDGE_DEADLINE: "${JUDGE_DEADLINE:-33.0}"
       SCORING_TIMEOUT: "${SCORING_TIMEOUT:-10.0}"
       SCORING_RESERVE: "${SCORING_RESERVE:-3.0}"
@@ -222,7 +223,7 @@ services:
       M2_NARRATIVE_HIGH: "${M2_NARRATIVE_HIGH:-4.0}"
       M2_ESSAY_LOW: "${M2_ESSAY_LOW:-1.0}"
       M2_ESSAY_HIGH: "${M2_ESSAY_HIGH:-2.0}"
-      M1_CHECK_ENABLED: "${M1_CHECK_ENABLED:-false}"
+      M1_CHECK_ENABLED: "${M1_CHECK_ENABLED:-false}" # M1 미지원(#501): learning이 answerKey·solution을 보내지 않아 켜도 M1을 부르지 않음
       M1_MIN_CONFIDENCE: "${M1_MIN_CONFIDENCE:-0.8}"
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}

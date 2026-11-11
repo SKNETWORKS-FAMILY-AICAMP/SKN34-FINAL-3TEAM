@@ -26,7 +26,7 @@
 
 ```mermaid
 stateDiagram-v2
-  [*] --> ACTIVE: 최초 Google 로그인·계정 생성
+  [*] --> ACTIVE: 최초 Google 로그인·계정 생성 / 학부모 ID 가입
   ACTIVE --> WITHDRAWAL_REQUESTED: 탈퇴 요청 (재확인 토큰)
   WITHDRAWAL_REQUESTED --> WITHDRAWN: 즉시 처리 완료
   WITHDRAWN --> [*]
@@ -39,7 +39,7 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
-| → `ACTIVE` | 최초 `GET /auth/google/callback` (#36) | `AuthService.login` | `(oauth_provider, oauth_subject)` UK로 PARENT 생성, 같은 `login_id`(이메일) 기존 계정은 자동 연결 없이 `ACCOUNT_EXISTS` |
+| → `ACTIVE` | 최초 `GET /auth/google/callback` (#36) · `POST /auth/parent/signup {loginId,password,name}` (#415) | `AuthService.login` · `AuthService.parentSignup` | Google은 `(oauth_provider, oauth_subject)` UK로 PARENT 생성, 같은 `login_id`(이메일) 기존 계정은 자동 연결 없이 `ACCOUNT_EXISTS`. ID 가입은 비밀번호 PARENT 생성(IP별 가입 횟수 제한, [API 명세서](api-spec.md) 5.1) |
 | `ACTIVE → WITHDRAWAL_REQUESTED` | `POST /me/withdrawal` + `X-Reauth-Token` | `AccountWithdrawalService.request` | 보낸 이관 대기 요청 없음(있으면 `409 TRANSFER_PENDING`, #289. 탈퇴 화면에서 이관 유지 또는 `POST /guardian-transfers/cancel-outgoing` 후 재진입) + 진행 중 구독·미처리 환불 없음(있으면 `409 WITHDRAWAL_BLOCKED`) + `WHERE status = 'ACTIVE'`, 같은 트랜잭션에 `withdrawal_request(REQUESTED)`·계정의 `auth_session` 전체 폐기(refresh 포함)·자녀 전원 삭제 요청 (P09). 이관 수락으로 종료된 연결(`transferred_at`)의 자녀와 선택 이관 상담은 삭제 대상에서 제외 |
 | `WITHDRAWAL_REQUESTED → WITHDRAWN` | 자녀 삭제 요청 전부 `COMPLETED` (P09) | `AccountManagementService.completeWithdrawal` | 진행 중 구독 없음·미처리 환불 없음, `withdrawal_request REQUESTED → COMPLETED` 동시 전이 |
 
@@ -137,7 +137,7 @@ stateDiagram-v2
 
 ```mermaid
 stateDiagram-v2
-  [*] --> OPEN: Google 로그인 (PARENT·ADMIN) · 관리자 ID 로그인 (ADMIN)
+  [*] --> OPEN: Google 로그인 (PARENT·ADMIN) · 학부모 ID 가입·로그인 (PARENT) · 관리자 ID 로그인 (ADMIN)
   OPEN --> LOCKED: 동석 학생 진입 (locked_at, version+1)
   LOCKED --> OPEN: 보호자 비밀번호 확인 (version+1)
   OPEN --> REVOKED: 로그아웃 · 탈퇴 · refresh 재사용 · 새 로그인
@@ -149,7 +149,7 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
-| `→ OPEN` | `GET /auth/google/callback` · `POST /auth/admin/login {loginId,password}` | `AuthService.login` · `AuthService.adminLogin` → `startSession` | Google은 PARENT·ADMIN, ID 로그인은 `admin_credential` 행이 있는 ACTIVE ADMIN만(#369, [API 명세서](api-spec.md) 5.1). 둘 다 같은 브라우저의 이전 refresh 쿠키 세션과 그 세션에서 들어간 학생 세션을 폐기한 뒤 새 세션 발급 |
+| `→ OPEN` | `GET /auth/google/callback` · `POST /auth/parent/signup`·`POST /auth/parent/login {loginId,password}` · `POST /auth/admin/login {loginId,password}` | `AuthService.login` · `AuthService.parentSignup`·`parentLogin` · `AuthService.adminLogin` → `startSession` | Google은 PARENT·ADMIN, 학부모 ID 가입·로그인은 비밀번호 PARENT(#415, 5회 실패 시 15분 잠금), 관리자 ID 로그인은 `admin_credential` 행이 있는 ACTIVE ADMIN만(#369, [API 명세서](api-spec.md) 5.1). 모두 같은 브라우저의 이전 refresh 쿠키 세션과 그 세션에서 들어간 학생 세션을 폐기한 뒤 새 세션 발급 |
 | `OPEN → LOCKED` | `POST /auth/student-sessions` | `AuthService.enterStudent` | 부모 세션 행 잠금·version 일치·PARENT. 학생 auth_session을 `parent_session_id`=부모 세션으로 새로 만들고 학생 access만 발급. 부모 refresh 쿠키는 지우지 않음. 기존 부모 access는 `401 SESSION_CHANGED`, 잠긴 세션의 `/auth/refresh`는 refresh 토큰을 소비하지 않고 `401 PARENT_SESSION_LOCKED` |
 | `LOCKED → OPEN` | `POST /auth/parent-unlock {password}` | `AuthService.unlockParent`·`GuardianPasswordService.attempt` | refresh 쿠키의 잠긴 세션과 보호자 비밀번호 확인. 성공 시 `locked_at` 해제·version+1·그 세션에서 들어간 학생 세션 폐기·refresh 회전. 실패 횟수는 오류 응답 전에 커밋, 5회째부터 `423 GUARDIAN_PASSWORD_LOCKED`, 미설정은 `409 GUARDIAN_PASSWORD_NOT_SET`. 잠기지 않은 세션은 refresh와 같이 처리 |
 | `LOCKED → REVOKED` | 새 Google 로그인 · 관리자 ID 로그인 | `AuthService.login` · `AuthService.adminLogin` | 보호자 비밀번호 미설정·잠김일 때의 복귀 경로. 같은 브라우저의 이전 refresh 쿠키로 찾은 이전(잠긴) 세션과 그 세션에서 들어간 학생 세션을 폐기 |
@@ -226,7 +226,7 @@ stateDiagram-v2
 
 #### 3.2.1 테마 요일 문제 열림 (파생, DB 미저장, P23, #385 → 2026-11-10 개정 #483)
 
-2026-11-10 개정(#483, 구현 learning #484·core #485): 공개된 문제가 쌓이는 누적 공개로 바꾼다. 구현 전까지 코드는 아래 "이전 규칙"으로 동작한다.
+2026-11-10 개정(#483, 구현 learning #484·core #485): 공개된 문제가 쌓이는 누적 공개로 바꾼다. core #485(일요일 허용 값 `sundayTheme` 전달, 무료 테마 문제 한도 없음)는 구현됐고, learning #484 구현 전까지 요일 상태·시작 검사는 아래 "이전 규칙"으로 동작한다.
 
 ```mermaid
 stateDiagram-v2
@@ -234,16 +234,16 @@ stateDiagram-v2
   LOCKED --> OPEN: 그 요일 KST 00:00 공개
   OPEN --> OPEN: 다음 날로 넘어가도 유지 (그 주 토요일 끝까지)
   OPEN --> CLOSED: 일요일 KST 00:00 (무료)
-  OPEN --> SUNDAY_OPEN: 일요일 KST 00:00 (프리미엄, 기준안 features.sundayTheme)
+  OPEN --> SUNDAY_OPEN: 일요일 KST 00:00 (프리미엄, sundayTheme=true)
   SUNDAY_OPEN --> CLOSED: 다음 주 월요일 KST 00:00
   CLOSED --> [*]
 ```
 
-- `SUNDAY_OPEN`은 응답 값이 아니라 설명용이다. 응답 `state`는 `LOCKED`·`OPEN`·`CLOSED` 셋 그대로이고, 프리미엄 일요일에는 `OPEN`으로 계산한다(일요일 허용 여부는 core가 상품으로 판단해 learning에 전달, 전달 방식은 #484·#485 합의)
+- `SUNDAY_OPEN`은 응답 값이 아니라 설명용이다. 응답 `state`는 `LOCKED`·`OPEN`·`CLOSED` 셋 그대로이고, 프리미엄 일요일에는 `OPEN`으로 계산한다(일요일 허용 여부는 core #485가 상품 `features.sundayTheme`으로 판단해 learning 쿼리 `sundayTheme=true|false`로 전달, [api-spec 4.1](api-spec.md))
 - 월요일에는 월 문제만, 금요일에는 다섯 문제 모두 `OPEN`. 토요일에는 다섯 문제 모두 `OPEN`
-- `OPEN`이면 `THEME_DAY` 신규 시도(안 푼 문제). 마무리한 문제 다시 풀기 `THEME_REVIEW`는 토요일(프리미엄은 일요일도)만. `LOCKED` 신규 시도와 무료 일요일 신규 시도는 `409 THEME_DAY_CLOSED`, 평일·무료 일요일 다시 풀기는 `409 THEME_REVIEW_NOT_ALLOWED`(기준안: 기존 코드 재사용, 일요일 전용 코드 신설 여부는 #484에서 결정)
+- `OPEN`이면 `THEME_DAY` 신규 시도(안 푼 문제). 그 주에 이미 마무리한 문제의 새 `THEME_DAY` 시도는 `409`로 거부한다(learning #484, 코드는 #484 기준안 `THEME_DAY_CLOSED`). #484 구현 전까지는 이 거부가 없어 마무리한 오늘 문제를 다시 `THEME_DAY`로 시작할 수 있다(전에는 무료 하루 1개 429가 부수적으로 막았음, #506). 마무리한 문제 다시 풀기 `THEME_REVIEW`는 토요일(프리미엄은 일요일도)만. `LOCKED` 신규 시도와 무료 일요일 신규 시도는 `409 THEME_DAY_CLOSED`, 평일·무료 일요일 다시 풀기는 `409 THEME_REVIEW_NOT_ALLOWED`(기준안: 기존 코드 재사용, 일요일 전용 코드 신설 여부는 #484에서 결정)
 - 시작 요청 `context`(`THEME_DAY`·`THEME_REVIEW`·`EXTRA`)는 신규 시도에만 검사. 진행 중 시도 반환(부분 UK 충돌)은 요일과 무관하게 이어하기 허용(일요일 포함). 당일 풀이(기준안 `completedOnDay`)·개근은 그 요일 KST 안의 학습 완료 시각만 인정
-- 재사용 테마의 이미 푼 문제도 그 주 `OPEN`이면 `THEME_DAY` 신규 시도 가능
+- 재사용 테마의 이미 푼 문제도 그 주 `OPEN`이면 `THEME_DAY` 신규 시도 가능(지난 주 시도는 "그 주에 마무리"에 들지 않음)
 - 이전 규칙(#385 구현): `ThemeWeek.stateOf`가 KST 날짜로 계산하고 그 요일만 `OPEN`, 다음 날 `CLOSED`, 토·일에는 다섯 요일 모두 `CLOSED`. 시작 검사는 learning 시계(KST), 조회·열람은 core가 넘긴 날짜 기준(개정 뒤에도 같음)
 
 #### 3.2.2 주간 테마 엔딩 (파생, 2026-11-10 개정 #483, 기준안 learning #484)
@@ -679,7 +679,7 @@ stateDiagram-v2
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
 | → `REQUESTED` | `POST /payments/{id}/refund-requests` | `RefundService.request` | 같은 주문에 대기 환불(`REQUESTED`·`APPROVED`·`FAILED`)이 있으면 새 행 없이 그 행을 반환(`PaymentMapper.pendingRefund`) |
-| `REQUESTED → REJECTED` (시스템) | 요청 직후 learning 사용 증빙 조회에서 결제 후 프리미엄 사용 확인 | `RefundService.request` | `decided_by` 없음, `reject_reason`="결제 후 프리미엄 기능 사용", 결제 `APPROVED` 복귀, 응답 `409 REFUND_NOT_ALLOWED` (P14) |
+| `REQUESTED → REJECTED` (시스템) | 요청 직후 learning 사용 증빙 조회에서 결제 후 프리미엄 사용 확인(7일·결제 상태·core 프리미엄 사용 사전 검사 실패는 행 생성 없이 `409 REFUND_NOT_ALLOWED`·`409 REFUND_PREMIUM_USAGE_PRESENT`) | `RefundService.request` | `decided_by` 없음, `reject_reason`="결제 후 프리미엄 기능 사용", 결제 `APPROVED` 복귀, 응답 `409 REFUND_NOT_ALLOWED` (P14) |
 | `REQUESTED → APPROVED` | `POST /admin/refund-requests/{id}/approve` (`PAYMENT_REFUND`) | `RefundService.approve` | 사용 증빙 확인(`usage_verified_at`) 뒤에만, 아니면 `409 REFUND_NOT_READY`. 7일·금액·미사용 재확인 실패는 `409 REFUND_NOT_ALLOWED` (FN-ADM-16) |
 | `REQUESTED·FAILED → REJECTED` (관리자) | `POST /admin/refund-requests/{id}/reject` (`PAYMENT_REFUND`) | `RefundService.reject` | 그 밖의 상태는 `409 REFUND_STATE_CHANGED`. 결제 `APPROVED` 복귀 |
 | `APPROVED → COMPLETED·FAILED` | 승인 직후 PG 취소 결과·`APPROVED` 복구 조회(스케줄러·`GET /payments/{orderId}`) | `RefundService.applyVerified` | PG `CANCELED`(잔액 0)면 `COMPLETED`, PG가 취소를 거절하면 `FAILED`(결제 `APPROVED` 복귀). 결과 불명확은 `APPROVED`로 남겨 조회 복구 (6.4) |

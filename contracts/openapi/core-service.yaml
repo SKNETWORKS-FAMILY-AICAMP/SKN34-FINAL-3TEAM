@@ -4238,7 +4238,7 @@ paths:
         context 생략(본문 없음·{}·null)은 EXTRA(생각 유형별 미션 고르기). 요일·되돌아보기·일요일 검사는 learning(THEME_DAY_CLOSED·THEME_REVIEW_NOT_ALLOWED 409),
         무료·프리미엄 판정과 사용 기록은 core. learning은 신규 생성 201·기존 진행 시도 반환 200을 구분하며 core는 상태를 그대로 전달한다.
         #485(2026-11-10 결정): THEME_DAY·THEME_REVIEW는 하루 한도에 세지 않는다(무료 테마 문제 주 5개는 learning 누적 공개 규칙).
-        EXTRA 허용은 상품 features.extraMissions(없으면 허용)로 정하며 V43이 무료 상품을 false로 바꿔 무료 403 PREMIUM_REQUIRED(추가 문제 프리미엄 전용),
+        EXTRA 허용은 상품 features.extraMissions(값이 없으면 무료는 거부·구독 중은 허용, #506)로 정하며 V43이 무료 상품을 false로 바꿔 무료 403 PREMIUM_REQUIRED(추가 문제 프리미엄 전용),
         프리미엄은 신규 201을 payment_premium_usage(kind EXTRA_MISSION, source_id 시도 ID)로 기록해 환불 판정의 프리미엄 사용에 넣는다.
         무료 상품에서 EXTRA를 다시 켜면 무료 EXTRA만 KST 하루 product.limits.dailyMissions개까지 신규 201을 mission_daily_usage에 기록하고 한도 도달 시 신규만 429
         (같은 미션의 진행 중 시도 이어하기 200은 허용).
@@ -6510,8 +6510,8 @@ paths:
         learning GET /internal/students/{studentId}/weekly-theme?gradeBand&date&sundayTheme로 넘기고 결과를 그대로 전달한다. 클라이언트 query는 쓰지 않는다. Cache-Control no-store.
         sundayTheme(#485)은 KST 일요일이고 상품이 일요일 테마를 허용할 때만 true(상품 확인 실패는 false로 넘김).
         200 응답의 days[].attemptStatus COMPLETED(학습 완료)·days[].completedOnDay(당일 풀이 THEME_ON_TIME, 사건 키 weekStart:day)·
-        perfectAttendance(개근 THEME_COMPLETED, 사건 키 weekStart)·finished(주간 완주 THEME_FINISHED, 사건 키 weekStart)가 true면 포인트를 적립·보충한다(#389·#485).
-        learning #484 칸이 없거나 boolean true가 아니면 그 적립만 건너뛰고 응답은 바꾸지 않는다.
+        completed(개근 THEME_COMPLETED, 사건 키 weekStart, learning 기존 칸 이름 #506)·finished(주간 완주 THEME_FINISHED, 사건 키 weekStart)가 true면 포인트를 적립·보충한다(#389·#485).
+        칸이 없거나(completedOnDay·finished는 learning #484 전까지 없음) boolean true가 아니면 그 적립만 건너뛰고 응답은 바꾸지 않는다.
       responses:
         '200':
           description: 테마·요일 상태·되돌아보기 목록(learning 소유 모양)

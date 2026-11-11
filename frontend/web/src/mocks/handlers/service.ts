@@ -44,7 +44,7 @@ export const serviceHandlers = [
     ] : [
       { title:'자녀와 조회 기간',body:'선택한 자녀와 기간의 기록만 조회합니다. 다른 자녀로 바꾸면 분석 범위를 다시 확인해 주세요.' },
       { title:'숫자와 분석의 한계',body:'활동 건수와 답변 근거를 확인합니다. 기록이 적거나 판정이 보류된 경우 능력 점수로 해석하지 않습니다.' },
-      { title:'QR과 PIN으로 자녀 기기 등록',body:'자녀 기기·PIN에서 자녀별 본인 확인 후 PIN을 정하고 등록 코드를 발급합니다. 자녀 기기에서 QR을 열고 등록한 뒤 PIN을 입력해 주세요.' },
+      { title:'QR과 PIN으로 자녀 기기 등록',body:'자녀 기기·PIN에서 자녀별 PIN을 정하고 등록 코드를 발급합니다. 자녀 기기에서 QR을 열고 등록한 뒤 PIN을 입력해 주세요.' },
     ] }
   })),
   ...(['error-reports','inquiries'] as const).flatMap(kind => [

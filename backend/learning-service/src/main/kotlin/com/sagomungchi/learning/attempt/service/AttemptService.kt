@@ -225,6 +225,10 @@ class AttemptService(
         )
     }
 
+    /** 시도 조회 (주간 테마 되돌아보기 비교, #391). 없으면 null, 학생 범위는 호출한 쪽이 확인 (기능 간 호출은 service로, #501) */
+    @Transactional(readOnly = true)
+    fun find(attemptId: UUID): Attempt? = attemptRepository.findById(attemptId)
+
     /** 커뮤니티 열람·반응 검사 (#386, P20): 그 미션을 학습 완료(마무리 후 돌아보기)한 적이 있는지 */
     @Transactional(readOnly = true)
     fun hasCompleted(studentId: UUID, missionId: UUID): Boolean = attemptRepository.findFirstCompleted(studentId, missionId) != null

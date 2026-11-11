@@ -1,6 +1,6 @@
 # app-service chart (#171)
 
-One Helm release owns one Deployment and, where needed, a ClusterIP Service, HPA or KEDA ScaledObject, PDB, Ingress, NetworkPolicy, and a versioned migration Job. The six local releases use the values in `../../environments/local/`. The runtime commands and ports are the existing Dockerfile and Compose commands.
+One Helm release owns one Deployment and, where needed, a ClusterIP Service, HPA or KEDA ScaledObject, PDB, Ingress, NetworkPolicy, and a versioned migration Job. The seven local releases use the values in `../../environments/local/`: the six apps plus `sllm-server` (#476). The app runtime commands and ports are the existing Dockerfile and Compose commands.
 
 ## Inputs and ownership
 

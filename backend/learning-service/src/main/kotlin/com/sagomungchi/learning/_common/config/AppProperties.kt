@@ -16,6 +16,11 @@ data class AppProperties(
         val token: String,
         val connectTimeout: Duration,
         val readTimeout: Duration,
+        /**
+         * core 호출(결제 사용 예약·완료, 삭제 완료 보고) 응답 대기 (#501). 피드백 경로의 안쪽 호출 합계
+         * 사용 예약 + 판정 + 되묻기 + 사용 완료 = 4 + 35 + 35 + 4 = 78초가 core→learning 피드백 80초보다 작게 둠 (architecture 1.3)
+         */
+        val coreReadTimeout: Duration = Duration.ofSeconds(4),
     )
 
     /** 소비 실패 재시도 횟수 (아키텍처 1.6, P12). definitions.json의 <큐>.retry.1~N 개수와 같아야 함 */

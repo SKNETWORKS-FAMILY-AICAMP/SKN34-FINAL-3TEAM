@@ -4,11 +4,9 @@ import com.fasterxml.jackson.annotation.JsonFormat
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning._common.config.InternalRestClientFactory
-import com.sagomungchi.learning.judgment.client.AiCallException
-import com.sagomungchi.learning.judgment.client.aiCircuitBreaker
-import com.sagomungchi.learning.judgment.client.postToAi
-import com.sagomungchi.learning.mission.client.AiDraftStandard
-import com.sagomungchi.learning.mission.client.AiElementCode
+import com.sagomungchi.learning._common.client.AiCallException
+import com.sagomungchi.learning._common.client.aiCircuitBreaker
+import com.sagomungchi.learning._common.client.postToAi
 import com.sagomungchi.learning.mission.domain.DraftVersions
 import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.domain.ThinkingType
@@ -42,9 +40,17 @@ data class AiThemeDraftRequest(
 data class AiThemeMission(
     val thinkingType: ThinkingType,
     val inputType: InputType,
-    val standards: List<AiDraftStandard>,
-    val elementCodes: List<AiElementCode>,
+    val standards: List<AiThemeStandard>,
+    val elementCodes: List<AiThemeElementCode>,
 )
+
+/**
+ * 미션 근거 성취기준·정답 요소 코드. 미션 초안 요청과 같은 모양이지만 기능 client끼리 참조하지 않아 따로 둔다(architecture 2.2, #422·#501).
+ * 테마 초안은 성취수준 문장을 넣지 않아(learning.md 29장 결정) level 칸이 없다
+ */
+data class AiThemeStandard(val code: String, val statement: String)
+
+data class AiThemeElementCode(val code: String, val label: String, val description: String)
 
 /** ai 응답: 끝내 실패하면 failure(THEME·MISSION·REVIEW·IMAGE)를 담은 200, theme은 그때 null일 수 있음 */
 data class AiThemeDraftResponse(

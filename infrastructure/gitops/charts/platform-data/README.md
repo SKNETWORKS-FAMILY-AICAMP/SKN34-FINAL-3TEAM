@@ -60,7 +60,7 @@ pwsh -File infrastructure/kind/create-platform-secret.ps1
 - PostgreSQL: `settings`에서 메모리·연결 수를 지정한다. 최초 초기화 때 `files/postgres/init.sql`이 운영 RDS와 같은 `rds-bootstrap.sql`을 실행해 DB 3개와 DB별 migrate(DDL)·app(DML) 계정을 만들고 다른 DB 접속을 막는다(#230). 두 bootstrap 파일은 entrypoint가 단독 실행하지 않도록 `/docker-entrypoint-initdb.d/bootstrap/`에 둔다. 서비스 계정 비밀번호를 바꾸거나 기존 데이터가 있는 PVC에 적용하려면 [#230 보고서](../../../../docs/report/db-dev-guide.md#84-기존-로컬-환경-적용)를 따른다. 테이블 변경은 서비스별 migration이 담당한다.
 - RabbitMQ: `memoryHighWatermark`는 절대 바이트 수 문자열이다. 로컬은 `1073741824`(1GiB)로 지정하며 컨테이너 메모리 limit과 구분한다. 큐·exchange·binding은 기존 `files/rabbitmq/definitions.json`만 기준으로 하고 계정은 파일에 추가하지 않는다.
 - Redis: `maxMemory`는 데이터 메모리 기준, `maxMemoryPolicy`는 한도 도달 시 처리 방식이다. 로컬은 `128mb`·`noeviction`을 사용하고 AOF를 활성화한다. `noeviction`에서는 메모리 한도를 넘는 쓰기를 오류로 처리한다.
-- MinIO: 단일 저장 공간에 `missions`·`reports`·`models` 세 버킷을 만든다. `buckets`의 키는 용도이고 값은 실제 버킷 이름이다. 로컬 버킷명은 환경 values에 지정한다.
+- MinIO: 단일 저장 공간에 `missions`·`reports`·`models` 세 버킷을 만든다. `buckets`의 키는 용도이고 값은 실제 버킷 이름이다. 로컬 버킷명은 환경 values에 지정한다. `placeholderObjects`(`bucket`·`key`)에 적은 객체는 초기화 Job이 없을 때만 고정 문구로 만들고, 이미 있으면 덮어쓰지 않는다. 로컬은 `sllm-server` 대역이 내려받는 `sagomungchi-local-models/explanation/stub/model.gguf` 하나다(#509). `bucket`은 `buckets` 값 중 하나여야 한다.
 
 RabbitMQ의 `rabbitmq-config`는 management·Prometheus 플러그인을 활성화하고 `rabbitmq-definitions`는 기존 JSON을 그대로 담는다. JSON에는 1·5·15분 재시도 큐·DLQ가 포함된다. 기본 큐 타입을 전역 quorum으로 강제하지 않고 JSON의 큐별 선언을 따른다. 이는 앱이 선언하는 Pod별 exclusive 브로드캐스트 큐와 구분하기 위한 설정이다.
 

@@ -53,7 +53,7 @@
     },
     {
       "name": "OPENAI_MODEL",
-      "value": "gpt-6.1-terra"
+      "value": "gpt-6-luna"
     },
     {
       "name": "CORE_URL",
@@ -149,7 +149,6 @@
     "ingressFromApps": [
       "core-service",
       "learning-service",
-      "report-api",
       "report-worker"
     ]
   },

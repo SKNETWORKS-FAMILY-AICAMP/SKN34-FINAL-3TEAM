@@ -1,0 +1,348 @@
+{
+  "issue": 493,
+  "time": "2026-11-10T09:17:39.204577+00:00",
+  "operatorArn": "arn:aws:iam::347161580747:user/student",
+  "scope": "CloudShell operator credentials; not EKS Pod Identity",
+  "sourceCommit": "8350029432c7eaf5886ea04ae97b020b0c5aa18b",
+  "python": "3.13.16",
+  "dependencies": {
+    "boto3": "1.43.120",
+    "fastapi": "0.162.0",
+    "pydantic": "2.14.1",
+    "pydantic-settings": "2.16.1"
+  },
+  "sourceHashes": {
+    "app/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "app/clients/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "app/clients/model_artifacts.py": "562a16a90ec1d1d40fc4ca2610a87c2e86c9f44ba33149979a572abf4abc1db1",
+    "app/config.py": "11d35b953ff556fb224b0e818915a8bcdf00e76443ff325c1eebb1eb886c2a51",
+    "app/m2/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "app/m2/metadata.py": "b344b7e8715b340d03463fc858ab105b9f47b709d24b2248e167cd72a58b317f",
+    "app/m2/models.py": "038978653be3700605e3eb0b3a39a6715396d549ac721cf66fc7b598e321ac35",
+    "app/preflight.py": "a38b29475eec8233b8f3ec29cb22d7f1059ff896acf50f53317cba451b464b47"
+  },
+  "objects": [
+    {
+      "key": "models/m2-klue-narrative/3.0/config.json",
+      "bytes": 1177,
+      "sha256": "27f352106a1a61c407369256acb31bb46d0463c7b498c0f33be5183dfeead528",
+      "checksumSHA256": "J/NSEGoaYcQHNpJWrLMbtG0EY8e0mMDzO+UYPf7q1Sg=",
+      "checksumType": "FULL_OBJECT",
+      "previousVersionId": "Nx9UjCmQm4rf9DPN88tbA6WVND6wNcrh",
+      "versionId": "8RYodrATlH5zTwXACxLsWUmhbtiJhSR.",
+      "metadataUnchanged": true,
+      "previousVersionRetained": true,
+      "verifiedAt": "2026-11-10T09:10:55.584065+00:00"
+    },
+    {
+      "key": "models/m2-klue-narrative/3.0/tokenizer.json",
+      "bytes": 752095,
+      "sha256": "067f88297297c41c13e072fb7b80a477a901ec31e91afeeb2e958173b2e404f9",
+      "checksumSHA256": "Bn+IKXKXxBwT4HL7e4Ckd6kB7DHpGv7rLpWBc7LkBPk=",
+      "checksumType": "FULL_OBJECT",
+      "previousVersionId": "erpe1MWTYnV.NUVkgf7JqwyPhlr7fYJk",
+      "versionId": "F_.n5jX7uKkM7AuSqay.ENF5Oy5Kzrj3",
+      "metadataUnchanged": true,
+      "previousVersionRetained": true,
+      "verifiedAt": "2026-11-10T09:10:55.725977+00:00"
+    },
+    {
+      "key": "models/m2-klue-narrative/3.0/tokenizer_config.json",
+      "bytes": 452,
+      "sha256": "f9051b19e43e2a1be479bc0ed9e27e1e40a43a2a32f4bd6d585b3e7045f62654",
+      "checksumSHA256": "+QUbGeQ+KhvkebwO2eJ+HkCkOioy9L1tWFs+cEX2JlQ=",
+      "checksumType": "FULL_OBJECT",
+      "previousVersionId": "u8MyZut5223pNg6z.hbUnlQcCY5x63vO",
+      "versionId": "nVstHXr_G0wcqC1b6wuM3RqPC.aKyvgl",
+      "metadataUnchanged": true,
+      "previousVersionRetained": true,
+      "verifiedAt": "2026-11-10T09:10:55.838697+00:00"
+    },
+    {
+      "key": "models/m2-klue-narrative/3.0/train_info.json",
+      "bytes": 1694,
+      "sha256": "4bdd8697a824b04a11cfc92107e66071734e5ce658a20b69a51abb6c1b45c8ec",
+      "checksumSHA256": "S92Gl6gksEoRz8khB+ZgcXNOXOZYogtppRq7bBtFyOw=",
+      "checksumType": "FULL_OBJECT",
+      "previousVersionId": "GTtkyZkpRnek4FCkDP_48_L1cfvBln5W",
+      "versionId": "jxi8yrlAfkWqdpRLyrcIGRG.FA3e04c9",
+      "metadataUnchanged": true,
+      "previousVersionRetained": true,
+      "verifiedAt": "2026-11-10T09:10:55.955891+00:00"
+    },
+    {
+      "key": "models/m2-klue-narrative/3.0/score_cuts.json",
+      "bytes": 531,
+      "sha256": "87d54702a691db3e4180a8a0e4db84be29792ce162d729c844b8da2bf2ed9139",
+      "checksumSHA256": "h9VHAqaR2z5BgKig5NuEvil5LOFi1ynIRLjaK/LtkTk=",
+      "checksumType": "FULL_OBJECT",
+      "previousVersionId": "Ike1hPLopx17omDEXJXUEG_dJsK5DXuW",
+      "versionId": "rlfqYxr5SHizVO63pe1qfQjWpm15GoaF",
+      "metadataUnchanged": true,
+      "previousVersionRetained": true,
+      "verifiedAt": "2026-11-10T09:10:56.083473+00:00"
+    },
+    {
+      "key": "models/m2-klue-narrative/3.0/model.safetensors",
+      "bytes": 442524276,
+      "sha256": "0b965a4152a5bf758112baa11187d5ca44c05e7231d0f4aa651a3845c90c1829",
+      "checksumSHA256": "C5ZaQVKlv3WBErqhEYfVykTAXnIx0PSqZRo4RckMGCk=",
+      "checksumType": "FULL_OBJECT",
+      "previousVersionId": "3XDkytbpo6wiWHzc0f54kT2QRYQ5syl6",
+      "versionId": "JzjAI_jCEF0VYuTPGU5XlO7t_oSqN4t8",
+      "metadataUnchanged": true,
+      "previousVersionRetained": true,
+      "verifiedAt": "2026-11-10T09:11:00.757309+00:00"
+    },
+    {
+      "key": "models/m2-klue-essay/3.1/config.json",
+      "bytes": 1383,
+      "sha256": "d534a4c4c3bdda29f65b405591f25037f392a1987f19a0fe2e91252e25670d89",
+      "checksumSHA256": "1TSkxMO92in2W0BVkfJQN/OSoZh/GaD+LpElLiVnDYk=",
+      "checksumType": "FULL_OBJECT",
+      "previousVersionId": "MOOwWNVrp80pCYRYT.ihImWPS6hEUvGZ",
+      "versionId": "aBKTipuYSB9TrTALPTmpEyFleyF0viMu",
+      "metadataUnchanged": true,
+      "previousVersionRetained": true,
+      "verifiedAt": "2026-11-10T09:11:00.873604+00:00"
+    },
+    {
+      "key": "models/m2-klue-essay/3.1/tokenizer.json",
+      "bytes": 752095,
+      "sha256": "067f88297297c41c13e072fb7b80a477a901ec31e91afeeb2e958173b2e404f9",
+      "checksumSHA256": "Bn+IKXKXxBwT4HL7e4Ckd6kB7DHpGv7rLpWBc7LkBPk=",
+      "checksumType": "FULL_OBJECT",
+      "previousVersionId": "WTRL_WEcdMW4KdHOEmhrHgOU3EQMftO2",
+      "versionId": "_XigUuT6JWpcxCF84daLd2.sP5lMRvJm",
+      "metadataUnchanged": true,
+      "previousVersionRetained": true,
+      "verifiedAt": "2026-11-10T09:11:01.008545+00:00"
+    },
+    {
+      "key": "models/m2-klue-essay/3.1/tokenizer_config.json",
+      "bytes": 452,
+      "sha256": "f9051b19e43e2a1be479bc0ed9e27e1e40a43a2a32f4bd6d585b3e7045f62654",
+      "checksumSHA256": "+QUbGeQ+KhvkebwO2eJ+HkCkOioy9L1tWFs+cEX2JlQ=",
+      "checksumType": "FULL_OBJECT",
+      "previousVersionId": "N1Cxi_8ozxOdJoe4.DFvlssbXLK4avIZ",
+      "versionId": "JjFnKeVdS8wEgPx26rXxMoonYzmkFdkq",
+      "metadataUnchanged": true,
+      "previousVersionRetained": true,
+      "verifiedAt": "2026-11-10T09:11:01.127331+00:00"
+    },
+    {
+      "key": "models/m2-klue-essay/3.1/train_info.json",
+      "bytes": 1570,
+      "sha256": "f27a4f5b4cc7c096c20a88e0a29f77f7405c2edcec7e3baa3b340ed6cbb738e8",
+      "checksumSHA256": "8npPW0zHwJbCCojgop9390BcLtzsfjuqOzQO1su3OOg=",
+      "checksumType": "FULL_OBJECT",
+      "previousVersionId": "yx6v_MFdsrZ86g4PBwZ7Furu3ndHou2i",
+      "versionId": "oXJ5sTPgNFsNaEYYUZVyBpJbe25ew2oH",
+      "metadataUnchanged": true,
+      "previousVersionRetained": true,
+      "verifiedAt": "2026-11-10T09:11:01.244390+00:00"
+    },
+    {
+      "key": "models/m2-klue-essay/3.1/score_cuts.json",
+      "bytes": 86,
+      "sha256": "5c19781c3efd878da445d3f316e184b9e78d18b81b036fac12f9c27cec2e06d6",
+      "checksumSHA256": "XBl4HD79h42kRdPzFuGEueeNGLgbA2+sEvnCfOwuBtY=",
+      "checksumType": "FULL_OBJECT",
+      "previousVersionId": "rANOpGU3egLCidmdXxNfNgoQ3W_IeuXo",
+      "versionId": "QQkNg.QAvxhq9mfxQTpbdgH9Snu_VxL.",
+      "metadataUnchanged": true,
+      "previousVersionRetained": true,
+      "verifiedAt": "2026-11-10T09:11:01.361170+00:00"
+    },
+    {
+      "key": "models/m2-klue-essay/3.1/model.safetensors",
+      "bytes": 442539656,
+      "sha256": "2ea2c0f50acb7a6713ff14a477fc96f524af901958d767ef5c11210a33811fea",
+      "checksumSHA256": "LqLA9QrLemcT/xSkd/yW9SSvkBlY12fvXBEhCjOBH+o=",
+      "checksumType": "FULL_OBJECT",
+      "previousVersionId": "sokhplnLeFUBcBU05owZ7Gy.HYg_WcH8",
+      "versionId": "CTQHwhSdTGNySXFCTMCPaQ6zRkUAyzCs",
+      "metadataUnchanged": true,
+      "previousVersionRetained": true,
+      "verifiedAt": "2026-11-10T09:11:06.054561+00:00"
+    }
+  ],
+  "models": [
+    {
+      "name": "m2-klue-narrative",
+      "version": "3.0",
+      "result": {
+        "status": "PASS",
+        "code": "FILES_AND_METADATA_VERIFIED",
+        "files": [
+          {
+            "file": "config.json",
+            "status": "PASS",
+            "code": "OK"
+          },
+          {
+            "file": "tokenizer.json",
+            "status": "PASS",
+            "code": "OK"
+          },
+          {
+            "file": "tokenizer_config.json",
+            "status": "PASS",
+            "code": "OK"
+          },
+          {
+            "file": "train_info.json",
+            "status": "PASS",
+            "code": "OK"
+          },
+          {
+            "file": "score_cuts.json",
+            "status": "PASS",
+            "code": "OK"
+          },
+          {
+            "file": "model.safetensors",
+            "status": "PASS",
+            "code": "OK"
+          }
+        ]
+      },
+      "calls": [
+        {
+          "operation": "HeadObject",
+          "key": "models/m2-klue-narrative/3.0/config.json"
+        },
+        {
+          "operation": "GetObject",
+          "key": "models/m2-klue-narrative/3.0/config.json"
+        },
+        {
+          "operation": "HeadObject",
+          "key": "models/m2-klue-narrative/3.0/tokenizer.json"
+        },
+        {
+          "operation": "HeadObject",
+          "key": "models/m2-klue-narrative/3.0/tokenizer_config.json"
+        },
+        {
+          "operation": "HeadObject",
+          "key": "models/m2-klue-narrative/3.0/train_info.json"
+        },
+        {
+          "operation": "GetObject",
+          "key": "models/m2-klue-narrative/3.0/train_info.json"
+        },
+        {
+          "operation": "HeadObject",
+          "key": "models/m2-klue-narrative/3.0/score_cuts.json"
+        },
+        {
+          "operation": "GetObject",
+          "key": "models/m2-klue-narrative/3.0/score_cuts.json"
+        },
+        {
+          "operation": "HeadObject",
+          "key": "models/m2-klue-narrative/3.0/model.safetensors"
+        }
+      ]
+    },
+    {
+      "name": "m2-klue-essay",
+      "version": "3.1",
+      "result": {
+        "status": "PASS",
+        "code": "FILES_AND_METADATA_VERIFIED",
+        "files": [
+          {
+            "file": "config.json",
+            "status": "PASS",
+            "code": "OK"
+          },
+          {
+            "file": "tokenizer.json",
+            "status": "PASS",
+            "code": "OK"
+          },
+          {
+            "file": "tokenizer_config.json",
+            "status": "PASS",
+            "code": "OK"
+          },
+          {
+            "file": "train_info.json",
+            "status": "PASS",
+            "code": "OK"
+          },
+          {
+            "file": "score_cuts.json",
+            "status": "PASS",
+            "code": "OK"
+          },
+          {
+            "file": "model.safetensors",
+            "status": "PASS",
+            "code": "OK"
+          }
+        ]
+      },
+      "calls": [
+        {
+          "operation": "HeadObject",
+          "key": "models/m2-klue-essay/3.1/config.json"
+        },
+        {
+          "operation": "GetObject",
+          "key": "models/m2-klue-essay/3.1/config.json"
+        },
+        {
+          "operation": "HeadObject",
+          "key": "models/m2-klue-essay/3.1/tokenizer.json"
+        },
+        {
+          "operation": "HeadObject",
+          "key": "models/m2-klue-essay/3.1/tokenizer_config.json"
+        },
+        {
+          "operation": "HeadObject",
+          "key": "models/m2-klue-essay/3.1/train_info.json"
+        },
+        {
+          "operation": "GetObject",
+          "key": "models/m2-klue-essay/3.1/train_info.json"
+        },
+        {
+          "operation": "HeadObject",
+          "key": "models/m2-klue-essay/3.1/score_cuts.json"
+        },
+        {
+          "operation": "GetObject",
+          "key": "models/m2-klue-essay/3.1/score_cuts.json"
+        },
+        {
+          "operation": "HeadObject",
+          "key": "models/m2-klue-essay/3.1/model.safetensors"
+        }
+      ]
+    }
+  ],
+  "nodegroups": {
+    "application": {
+      "minSize": 0,
+      "maxSize": 3,
+      "desiredSize": 0
+    },
+    "platform-observability": {
+      "minSize": 0,
+      "maxSize": 2,
+      "desiredSize": 0
+    }
+  },
+  "rds": [
+    {
+      "DBInstanceIdentifier": "sagomungchi-demo-db",
+      "DBInstanceStatus": "stopped"
+    }
+  ],
+  "podIdentityVerification": "NOT_RUN: EKS nodegroups remain at desiredSize=0",
+  "coreToScoringVerification": "NOT_RUN: application servers not started"
+}

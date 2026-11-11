@@ -449,3 +449,51 @@ local kind에 develop `b1562c2b` 이미지를 올려 core → RabbitMQ → repor
 - 계약/스크립트 unittest 214개 실행, 실패 없음(기존 조건부 1개 제외). core 실제 생성/생명주기 이벤트와 일일·주간 상세 출력의 계약 검사도 통과했다.
 - `check_db_migrations.py`를 일회용 PostgreSQL에서 실행했다. 내부 `verify_db_schema.py`가 core 59표/514컬럼·learning 28표/240컬럼·report 8표/66컬럼, 부정 제약 115건·CHECK 98종·인덱스 49개를 검증했다. 6개 DB 역할 격리, 재적용 무변경, report downgrade/upgrade 왕복 통과. 팀 DB나 운영 데이터에는 적용하지 않았다.
 - #479의 생성·저장·렌더링 및 로컬 테스트 완료 조건은 충족했다. 확인 항목인 대기 상한은 담당자 댓글의 ai 마감 125초보다 긴 임시값(호출 130초·전체 400초)으로 구현했다. 실제 CPU 모델의 품질·지연 측정과 운영 배포는 별도이며, 해당 확인 체크박스를 실측 완료로 처리하지 않는다.
+
+## #500 학부모 리포트 목록 전체 반환 (2026-11-11)
+
+### 원인
+
+- core `ReportQueryService.list`가 report `GET /internal/reports`에 `studentId`·`status`·`periodType`만 넘기고 `page`·`size`를 넘기지 않았다. report 기본값(`page=0`, `size=20`)이 적용되어 최신 20건만 돌아왔다.
+- 공개 `ReportList`는 `{items}`만이라 web은 다음 페이지를 요청할 수단이 없었다. 일일(주 7건)+주간 기준 약 2.5주 뒤부터 학부모 목록에서 과거 리포트가 사라지고, 수업 화면 기간별 리포트 찾기(`apiGateway.ts`)도 오래된 기간을 `REPORT_NOT_GENERATED`로 보여 줬다.
+
+### 결정
+
+- 공개 API에 페이지를 추가하지 않고 core가 report 목록을 `page=0`부터 `size=100`(report 최대)으로 짧은 페이지가 나올 때까지 조회해 합친 `{items}`를 반환한다(사용자 승인).
+- 근거: 공개 API·openapi·web·MSW를 바꾸지 않고 학부모 목록과 수업 화면 두 증상을 함께 고친다. 자녀 1명당 1년 약 420건(일일 365+주간 52)이라 한 번에 돌려줘도 응답 크기가 작다.
+- 각 페이지에 기존 계약 검사(`items` 배열·자녀 일치·식별·기간 종류)를 그대로 적용하고, 한 페이지라도 위반하면 전체 502 `REPORT_CONTRACT_INVALID`다. 50페이지(5000건)를 넘으면 반복을 멈추고 같은 502로 거부한다. report 페이지 봉투 필드(`page`·`size`·`totalElements`)는 응답에서 뺀다.
+- report는 기간별 최신 revision을 고른 뒤 `(period_from desc, period_type)`으로 정렬하며 이 조합이 유일하므로 offset 페이지 사이 중복·누락이 없다.
+- 계층 정리: `ConversationService`가 report 기능의 `ReportJobRepository`를 직접 쓰던 것을 `ReportQueryService.job(reportId)`(report HTTP 호출 없음)로 바꿨다. 422 `CONVERSATION_REPORT_INVALID`와 report 미호출 동작은 같다.
+
+### 검증
+
+- core 전체 테스트 621개 통과(기존 건너뜀 3개). `ReportHttpTest`에 report 2페이지(100+20건) 합침·쿼리(`page=0&size=100`, `page=1&size=100`)·봉투 필드 제거·둘째 페이지 계약 위반 502 검사를 추가했다. `ReportConversationIntegrationTest`의 422·report 미호출 검사도 통과.
+- 계약/스크립트 unittest 225개 통과(기존 조건부 1개 건너뜀). `test_runtime_config.py`에 `AUTH_NEW_ACCOUNT_DEMO`를 추가해 compose 전달·기본값·덮어쓰기를 확인한다.
+- web lint·단위 테스트 291개 통과(문구만 변경). report-service와 공개 OpenAPI는 바꾸지 않았다.
+
+## #508 설명 후속: 대기·종료 시간, 검사 오탐, 후보 대체 (2026-11-11)
+
+### 결정(사용자 승인 2026-11-11)
+
+- 처리량: 설명 별도 큐·워커 증설·예산 축소 대신 core 리포트 작업 복구 후보 기준을 60분에서 4시간으로 늘렸다(`app.report.recovery.stale-after` 기본 `PT4H`, 모든 환경 공통). core는 `created_at` 기준으로 오래된 QUEUED/RUNNING 작업을 report에 대조하고, 리포트 행이 아직 없는 작업은 `REPORT_NOT_CREATED`로 실패시킨다. 월 00:00에 주간·일일 작업이 함께 생성되고 report-worker 1대·prefetch 1로 차례로 처리되므로 60분 기준에서는 설명이 켜진 뒤 약 9건(3600/400) 이후 대기 작업(일일 포함)이 실패할 수 있었다.
+- 계산: 기준 > 주간 설명 대상 수 × (설명 단계 400초 + 기본 생성 시간) + 일일 처리 시간. 데모 30명 기준 30×(400+약 30)초 ≈ 215분 + 일일 수 분 < 240분이다. 실행 중 작업은 report 리스로 BUSY가 되어 영향이 없다. 학생 수가 늘거나 #475 실측으로 설명 시간이 바뀌면 다시 계산한다. 진짜 유실 작업의 발견은 최대 4시간으로 늦어진다.
+- sLLM 가동 창(일 23:50~월 02:00)은 늘리지 않았다. 최악 200분은 창을 넘을 수 있으며 창 밖 호출은 설명만 빠지고(`NOT_INCLUDED`, P16) 리포트는 완료된다.
+- 설명 지표: 새 지표 내보내기 없이 `weekly_report.verification.explanationState` 비율을 지표로 정했다(운영 경보 문서). 규칙·임계값은 실측 뒤 정한다.
+
+### 구현
+
+- 종료 유예: prod report-worker `terminationGracePeriodSeconds` 180→480초, local은 chart 기본 30초 대신 480초. 설명 단계 400초 + 기본 생성·렌더·업로드 여유 80초이며 prefetch 1이라 진행 작업은 최대 1건이다. `worker.py`는 바꾸지 않았다.
+- prod report-worker에 `REPORT_EXPLANATION_TIMEOUT_SECONDS=130`·`REPORT_EXPLANATION_BUDGET_SECONDS=400`·`REPORT_THEME_SUMMARY_ENABLED=true`를 명시해 local·compose와 맞췄다.
+- 수량 검사: `KOREAN_COUNT` 앞에 한글 음절이 오면 수 관형사로 보지 않는다. "정확한 문장"·"적절한 글자"는 통과하고 "한 문장"·"두번"은 계속 거부한다. 같은 정규식을 쓰는 요약 검증의 같은 오탐도 함께 해소된다. ai 검사(숫자·금지어)보다 report 검사가 넓은 구조는 유지한다.
+- 후보 선정: M2 점수가 있는 답변을 최신순으로 받고 생각 유형마다 최신 답변부터 시도한다. ai 호출 전 제외(정정·빈 답변·학년·입력 유형·점수 형식·원문 대조 실패)는 같은 유형의 다음 답변으로 넘어간다. ai를 한 번 부른 유형은 성공·실패·미활성과 관계없이 다시 부르지 않아 sLLM 호출은 유형당 1회, 최대 3유형이다. 상태 정의는 #479와 같다(M2 점수 답변 없음 → `NO_TARGET`, 하나라도 통과 → `INCLUDED`, 그 밖 `NOT_INCLUDED`).
+- web 설명 본문에 `white-space: pre-line`을 적용해 "잘한 점"·"함께 이야기해 볼 점" 줄바꿈을 HTML/PDF와 같게 표시한다.
+- core 상세 HTTP 테스트의 report-api 응답에 `explanations`(인용 있음·null 각 1건)를 넣어 `build/contracts/report-detail.json`이 core OpenAPI `ReportDetail.explanations`까지 검증되게 했고, 검증 스크립트는 주간 상세에 설명 항목이 없으면 실패한다.
+- API 경로·스키마 변경은 없다.
+
+### 검증 결과
+
+- report 전체 pytest 426개 통과(설명 테스트 37개: 형용사 어미 "정확한 문장"·"적절한 글자" 통과, "한 문장"·"두번" 거부, 최신 답변이 정정·두 번째가 원문 버전 불일치일 때 같은 유형 세 번째 답변으로 채움(ai 1회), 미활성 응답 뒤 같은 유형 재호출 없음 포함). Ruff check·format(113파일) 통과.
+- core 리포트 패키지 테스트 92개 통과(#500 병합 후 재실행). 복구 테스트는 4시간 넘은 작업만 후보로 삼고 61분 된 작업은 후보가 아님을 확인한다. 상세 HTTP·메시징 테스트 산출물로 `validate_report_contracts.py`를 실행해 주간·일일 상세와 생성·생명주기 이벤트 모두 PASS했다(주간 상세 `explanations` 포함).
+- 계약/스크립트 unittest 227개 통과(조건부 1개 건너뜀, #500 병합 후 재실행). local·prod report-worker 설명 값과 종료 유예 > 설명 단계를 확인하는 테스트를 추가했고, `helm template`(alpine/helm 4.3.1)으로 두 환경 모두 `terminationGracePeriodSeconds: 480`과 환경 변수 3개가 렌더링됨을 확인했다.
+- web 단위 테스트 291개, `tsc -b`, 테스트 타입 검사, oxlint 통과. 설명 줄바꿈의 실제 화면 확인은 하지 않았다.
+- 실제 sLLM·클러스터에서의 월요일 배치 시간은 측정하지 않았다(#475·#476). 위 4시간 기준은 계산값이다.

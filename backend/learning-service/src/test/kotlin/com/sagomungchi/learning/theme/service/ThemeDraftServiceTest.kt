@@ -6,7 +6,7 @@ import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning._common.exception.errorCodeOf
 import com.sagomungchi.learning._common.exception.httpStatusOf
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
-import com.sagomungchi.learning.judgment.client.AiCallException
+import com.sagomungchi.learning._common.client.AiCallException
 import com.sagomungchi.learning.mission.domain.DraftStatus
 import com.sagomungchi.learning.mission.domain.GeneratedElement
 import com.sagomungchi.learning.mission.domain.InputType

@@ -55,7 +55,6 @@ export function ParentReports({
         <select aria-label="리포트 상태" value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">전체</option>
           {[
-            ['QUEUED', '대기'],
             ['RUNNING', '생성 중'],
             ['COMPLETED', '완료'],
             ['FAILED', '생성 실패'],

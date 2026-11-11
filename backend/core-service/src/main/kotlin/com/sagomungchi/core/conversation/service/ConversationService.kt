@@ -27,7 +27,6 @@ class ConversationService(private val repository: ConversationRepository, privat
     private val records: LearningRecordService, private val tx: TransactionTemplate, private val json: ObjectMapper,
     private val events: org.springframework.context.ApplicationEventPublisher,
     private val learningContext: com.sagomungchi.core.guardianship.service.StudentLearningContextService,
-    private val reportJobs: com.sagomungchi.core.report.repository.ReportJobRepository,
     private val reports: com.sagomungchi.core.report.service.ReportQueryService,
     private val corrections: com.sagomungchi.core.support.service.CorrectionNoticeService) {
 
@@ -58,7 +57,7 @@ class ConversationService(private val repository: ConversationRepository, privat
     fun createForReport(child: UUID, reportId: UUID): Map<String, Any?> {
         val parent = parent()
         tx.execute { access(parent, child); usage.requireEntitlement(parent, child) }
-        val job = reportJobs.byReport(reportId)
+        val job = reports.job(reportId)
         if (job == null || job.studentId != child || job.periodType != com.sagomungchi.core.report.domain.ReportPeriodType.DAILY) reportInvalid()
         val report = reports.pinned(reportId, null)
         if (report["status"].textValue() != "COMPLETED") reportInvalid()

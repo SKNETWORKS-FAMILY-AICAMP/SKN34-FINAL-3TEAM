@@ -4,7 +4,7 @@
 
 - 그림: OpenAI images edits(참조 그림 여러 장). 사용량은 THEME_IMAGE로 기록(토큰은 응답 usage).
 - 영상: Google Cloud Veo(첫 그림만 고정, 무음). THEME_VIDEO는 core enum에 들어가기 전이라
-  사용량 이벤트를 보내지 않고 로그만 남긴다(ai.md 15.1 사용량). 운영 인증(WIF)은 인프라 확인 전이라
+  사용량 이벤트를 보내지 않고 로그만 남긴다(ai.md 16.1 사용량). 운영 인증(WIF)은 인프라 확인 전이라
   접근 토큰을 설정으로 받는다(로컬 시험용).
 - 컷 이어 붙이기(0.5초 녹아드는 전환)·장면 뽑기는 imageio-ffmpeg에 들어 있는 ffmpeg 실행 파일로
   한다(Docker 수정 없음).

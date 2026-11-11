@@ -166,7 +166,7 @@ sequenceDiagram
 
 #### 2.1.3 비밀번호 재확인 (#415)
 
-`/me`의 `authMethod`가 `PASSWORD`인 학부모는 중요 작업(탈퇴·보호자 비밀번호·학생 PIN·자녀 해제·자녀 삭제·자녀 이관·이관 수락)에서 Google 재인증 대신 로그인 비밀번호를 다시 입력한다. 검증·발급을 마친 challenge·grant를 한 번에 만들어, 각 작업의 grant 소비는 Google 재인증과 같다 ([API 명세 5.6](api-spec.md#56-45-계정-관리google비밀번호-재확인삭제탈퇴-계약))
+`/me`의 `authMethod`가 `PASSWORD`인 학부모는 중요 작업(탈퇴·보호자 비밀번호·자녀 해제·자녀 삭제·자녀 이관·이관 수락)에서 Google 재인증 대신 로그인 비밀번호를 다시 입력한다. 검증·발급을 마친 challenge·grant를 한 번에 만들어, 각 작업의 grant 소비는 Google 재인증과 같다 ([API 명세 5.6](api-spec.md#56-45-계정-관리google비밀번호-재확인삭제탈퇴-계약))
 
 ```mermaid
 sequenceDiagram
@@ -399,9 +399,9 @@ sequenceDiagram
   Note over K: access 만료 시 PIN 재입력. 학부모 화면은 학부모 로그인 필요
 ```
 
-- PIN 잠금 해제는 학부모 `PUT /children/{childId}/pin`(재확인 필요)으로만 가능
+- PIN 잠금 해제는 학부모 `PUT /children/{childId}/pin`(활성 보호자 세션·현재 자녀 권한, 추가 재인증 없음 2026-11-10)으로만 가능
 - 학부모가 기기를 해제하면(`DELETE /student-devices/{deviceId}`) 이후 PIN 로그인은 `401 STUDENT_DEVICE_INVALID`
-- 단독 로그인은 계정 행 잠금 → 기기 유효/등록 자녀 → 현재 연결·활성·동의 → PIN 설정·잠금·일치 순으로 재검사한다. 실패 횟수 커밋 후 401/423 응답한다. 성공은 별도 STUDENT auth_session을 생성하며 부모 세션을 변경하지 않는다. PIN 변경은 계정 잠금 → 현재 자녀 권한 → 학생 잠금 → DB 재인증 consume → PIN 갱신·감사 기록을 한 트랜잭션으로 실행한다.
+- 단독 로그인은 계정 행 잠금 → 기기 유효/등록 자녀 → 현재 연결·활성·동의 → PIN 설정·잠금·일치 순으로 재검사한다. 실패 횟수 커밋 후 401/423 응답한다. 성공은 별도 STUDENT auth_session을 생성하며 부모 세션을 변경하지 않는다. PIN 변경은 계정 잠금 → 현재 자녀 권한 → 학생 잠금 → PIN 갱신·감사 기록을 한 트랜잭션으로 실행한다.
 
 ### 2.5 탈퇴 전 자녀 이관 (#289)
 
@@ -545,8 +545,8 @@ sequenceDiagram
 - learning도 시도·키(ERD UK)로 같은 키를 처리. core가 learning 응답을 받기 전에 끊겨 다시 보내도 답변은 1건
 - 표현 검사(#205)는 learning 안의 단어 목록 대조라 외부 호출이 없음. 막힌 요청은 저장하지 않고, core는 그 422(범주별 안내, 원문 없음)를 같은 키의 응답으로 저장. 웹은 답이 바뀌면 새 키를 만들어 고친 답은 새 요청이 됨. 초안 자동 저장은 검사하지 않음 (learning.md #205)
 - 메모는 초안 `content.memo`로 함께 저장, 학생 본인 조회에만 포함 (P05)
-- 2026-11-10 개정(#483, core #485 구현 전): 무료 플랜은 테마 문제(`THEME_DAY`)를 하루 한도 없이 공개된 만큼(주 5개) 시작하고, 추가 문제(`EXTRA`)는 프리미엄 전용(403 `PREMIUM_REQUIRED`). 아래는 이전 규칙
-- 무료 플랜은 하루 신규 미션 시도 1개(`THEME_DAY`·`EXTRA` 합산, 3.4)까지 허용 (P13). 신규 생성 `201`만 집계하고 이어하기 `200`은 항상 허용, 한도 초과 신규 생성만 `429 USAGE_LIMIT_REACHED` (API 2.2, #387 구현: #210 결정에 따라 PostgreSQL `mission_daily_usage`)
+- 2026-11-10 개정(#483, core #485 구현): 무료 플랜은 테마 문제(`THEME_DAY`)를 하루 한도 없이 공개된 만큼(주 5개, learning #484 누적 공개) 시작하고, 추가 문제(`EXTRA`)는 프리미엄 전용(403 `PREMIUM_REQUIRED`, 상품 값이 없으면 무료 거부 #506)
+- 무료 상품에서 `EXTRA`를 다시 켠 경우에만 무료 `EXTRA` 신규 시도를 하루 `limits.dailyMissions`개까지 허용한다. 신규 생성 `201`만 집계하고 이어하기 `200`은 항상 허용, 한도 초과 신규 생성만 `429 USAGE_LIMIT_REACHED` (API 2.2, #210 결정에 따라 PostgreSQL `mission_daily_usage`). 이전 규칙(무료 `THEME_DAY`·`EXTRA` 합산 하루 1개, #387)은 개정으로 대체
 
 ### 3.2 피드백 SSE (판정·되묻기)
 
@@ -677,7 +677,7 @@ sequenceDiagram
 
 2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). learning #385·core #387 구현. 포인트 보충(마지막 항목)은 #389 적립 연결로 구현. 1장 공통 규칙을 따른다.
 
-2026-11-10 개정(#483): 아래 그림은 바뀐 규칙(누적 공개·무료 테마 하루 한도 없음·프리미엄 일요일·당일 풀이/개근/주간 완주 보충)이다. 구현은 learning #484·core #485이며, 그 전 코드는 무료 `THEME_DAY`·`EXTRA` 합산 하루 1개(`mission_daily_usage`, `429 USAGE_LIMIT_REACHED`)와 오늘 요일 문제만 허용한다. 칸 이름·사건 이름·상품 기능 값은 기준안이다.
+2026-11-10 개정(#483): 아래 그림은 바뀐 규칙(누적 공개·무료 테마 하루 한도 없음·프리미엄 일요일·당일 풀이/개근/주간 완주 보충)이다. core 몫은 #485(PR #498, V43)로 구현했다(무료 테마 문제 한도 집계 없음·`sundayTheme` 전달·적립 사건). learning #484 구현 전에는 learning이 오늘 요일 문제만 허용하고 `sundayTheme`을 무시하며, `days[].completedOnDay`·`finished`·`ending` 칸이 없어 당일 풀이·주간 완주는 적립되지 않는다. learning 응답 칸 이름(`completedOnDay`·`finished`·`ending`)은 기준안이다.
 
 ```mermaid
 sequenceDiagram
@@ -688,8 +688,8 @@ sequenceDiagram
   participant L as learning
 
   W->>C: GET /students/me/weekly-theme
-  C->>CDB: 상품 기능 확인 (기준안 features.sundayTheme, 프리미엄 일요일 허용)
-  C->>L: GET /internal/students/{id}/weekly-theme?grade&date (KST) + 일요일 허용 값(전달 방식 #484·#485 합의)
+  C->>CDB: KST 일요일이면 상품 기능 확인 (features.sundayTheme, 값 없으면 구독 중이면 허용)
+  C->>L: GET /internal/students/{id}/weekly-theme?grade&date&sundayTheme (KST)
   L->>L: 그 학년의 그 주 게시 테마, 없으면 최근 게시 테마 재사용. 요일 상태(누적 공개)·당일 풀이·개근·주간 완주·엔딩 계산
   L-->>C: 테마·요일 상태(days[].completedOnDay)·completed(개근)·finished(주간 완주)·ending·되돌아보기 목록·공개된 단서·이야기 열람 여부·이미지/영상 URL(presigned)
   rect rgba(128,128,128,0.12)
@@ -702,10 +702,10 @@ sequenceDiagram
   C-->>W: 200 (learning 응답 그대로)
   W->>C: POST /missions/{missionId}/attempts {context: THEME_DAY}
   Note over C: 무료도 THEME_DAY는 하루 한도 집계 없음 (EXTRA는 무료 403 PREMIUM_REQUIRED)
-  C->>L: POST /internal/missions/{id}/attempts?grade {context} + 일요일 허용 값
+  C->>L: POST /internal/missions/{id}/attempts?grade&demo&sundayTheme {context}
   L->>L: 진행 중 시도면 그대로 반환, 아니면 미션 공개·범위 → 테마 학년(grade, 중학생 G6)·KST 오늘로 그 주 테마 확인
-  alt 신규 시도인데 공개 전(LOCKED) 문제이거나 일요일(허용 값 없음)
-    L-->>C: 409 THEME_DAY_CLOSED
+  alt 신규 시도인데 공개 전(LOCKED) 문제이거나 일요일(허용 값 없음)이거나 이번 주 이미 마무리한 문제
+    L-->>C: 409 THEME_DAY_CLOSED (마무리한 문제 거부와 코드는 #484 기준안)
     C-->>W: 409
   else 신규 201 / 진행 중 200
     L-->>C: 시도
@@ -715,9 +715,9 @@ sequenceDiagram
 
 - 공개(`OPEN`)된 문제는 월~토(프리미엄 일요일) 언제든 `THEME_DAY` 신규 시도. 금요일에는 다섯 문제 모두 공개, 토요일에는 안 푼 문제 새로 풀기와 `THEME_REVIEW` 다시 풀기를 함께 허용
 - `EXTRA`는 무료 상품(`features.extraMissions = false`)이면 core가 403 `PREMIUM_REQUIRED`, 프리미엄이면 `payment_premium_usage(EXTRA_MISSION)` 기록. `THEME_REVIEW`는 한도 집계 없이 learning이 토요일(프리미엄 일요일)·마무리한 문제인지 검사(아니면 409 `THEME_REVIEW_NOT_ALLOWED`)
-- 진행 중 시도 반환(`200`)은 요일 검사 없이 이어하기(자정 후·일요일 포함). 당일 풀이는 학습 완료 시각이 그 요일 KST 안일 때만. 재사용 테마의 이미 푼 문제도 그 주 공개된 문제면 `THEME_DAY` 신규 시도
-- 주간 테마 조회 때 core는 응답에서 이번 주 학습 완료한 요일 문제(`attemptStatus = COMPLETED`)마다 `MISSION_COMPLETED`를 다시 부르고, 원장 사건 키 UK로 이미 있는 것은 건너뛰어 누락분만 보충한다(#389). 추가 문제(EXTRA)는 응답에 없어 보충 대상이 아니다. 당일 풀이·개근·주간 완주도 같은 방식으로 보충(기준안 core #485). 주간 완주는 learning이 토요일 23:59:59 KST까지의 완료만 세므로 프리미엄 일요일 완료로는 적립되지 않는다
-- 학습 완료 직후(3.5)에는 웹이 홈으로 돌아와 주간 테마를 다시 조회할 때 당일 풀이가 적립된다(적립 시점을 돌아보기 저장 응답 쪽으로 옮길지는 core #485에서 결정)
+- 진행 중 시도 반환(`200`)은 요일 검사 없이 이어하기(자정 후·일요일 포함). 당일 풀이는 학습 완료 시각이 그 요일 KST 안일 때만. 재사용 테마의 이미 푼 문제도 그 주 공개된 문제면 `THEME_DAY` 신규 시도(그 주에 마무리한 문제만 거부, 다시 풀기는 `THEME_REVIEW`). learning #484 구현 전에는 마무리한 오늘 문제의 새 `THEME_DAY` 시도가 열려 있다(#506)
+- 주간 테마 조회 때 core는 응답에서 이번 주 학습 완료한 요일 문제(`attemptStatus = COMPLETED`)마다 `MISSION_COMPLETED`를 다시 부르고, 원장 사건 키 UK로 이미 있는 것은 건너뛰어 누락분만 보충한다(#389). 추가 문제(EXTRA)는 응답에 없어 보충 대상이 아니다. 당일 풀이·개근(learning 칸 `completed`)·주간 완주도 같은 방식으로 보충(core #485, 개근 칸 이름은 #506에서 `completed`로 맞춤). 주간 완주는 learning이 토요일 23:59:59 KST까지의 완료만 세므로 프리미엄 일요일 완료로는 적립되지 않는다
+- 학습 완료 직후(3.5)에는 웹이 홈으로 돌아와 주간 테마를 다시 조회할 때 당일 풀이가 적립된다(core #485는 주간 테마 조회 보충으로 정했다, [core 보고서 18절](../report/core-gateway.md#18-무료-테마-주-5문제추가-문제-프리미엄-전용프리미엄-일요일당일-풀이주간-완주-포인트-485-2026-11-10))
 - 학년별 테마(#438): core는 학생 학년 그대로 `grade=G3`~`G6`(중학생 `G6`)을 넘긴다. core 반영 전(병합 순서 #438 → core)에는 core가 `gradeBand`를 보내므로 learning은 `grade`가 없으면 `gradeBand`의 `G3_4`를 `G3`, `G5_6`을 `G5`로 읽는다(V14가 학년군 테마를 학년마다 같은 내용으로 복사하므로 이 기간 내용은 같음). core 반영 뒤 이 호환을 지운다
 - 테마 시도(#438): 시작·이어하기 응답에 `themeScene{dialogue, hintSpots, videoUrl}`(그 시도 테마 게시본의 그 미션 요일 값, `EXTRA`는 `null`. ai 테마 초안 채택 테마는 요일 문제 전 영상이 없어 `videoUrl`은 null, #437 2026-11-11). 생각 열기(`POST /attempts/{id}/hints`)는 순서대로 하나씩 여는 기존 동작·열람 기록 그대로이고 `hintSpots`는 그림 위 표시 위치만 정한다
 
@@ -760,7 +760,7 @@ sequenceDiagram
 
 2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). learning 열람 기록·완주 판정은 #385, core 열람 응답 뒤 적립 연결은 #389 구현. 1장 공통 규칙을 따른다.
 
-2026-11-10 개정(#483): 열람은 토요일(프리미엄은 일요일도)만 허용하고 무료 일요일은 `409 THEME_REVIEW_NOT_ALLOWED`. 이전 "완주 보너스"(`THEME_COMPLETED`, 월~금 각 당일 학습 완료)는 이름만 개근으로 바꿔 그대로 두고, 주간 완주(기준안 `THEME_FINISHED`, 응답 기준안 `finished`)를 같은 자리에서 적립한다. 일요일이 닫히므로 토요일에 열람하지 않은 학생도 3.4 주간 테마 조회 보충으로 빠지지 않게 한다(core #485).
+2026-11-10 개정(#483): 열람은 토요일(프리미엄은 일요일도)만 허용하고 무료 일요일은 `409 THEME_REVIEW_NOT_ALLOWED`. 이전 "완주 보너스"(`THEME_COMPLETED`, 월~금 각 당일 학습 완료)는 이름만 개근으로 바꿔 그대로 두고 열람 응답 `completed`로 적립한다. 주간 완주(`THEME_FINISHED`)는 열람 응답이 아니라 3.4 주간 테마 조회 응답 `finished`로 적립한다(core #485 `ParticipationRewardService`, #506). 일요일이 닫히므로 토요일에 열람하지 않은 학생도 3.4 주간 테마 조회 보충으로 빠지지 않게 한다(core #485).
 
 ```mermaid
 sequenceDiagram
@@ -771,19 +771,16 @@ sequenceDiagram
   participant L as learning
 
   W->>C: POST /students/me/weekly-theme/review-views
-  C->>L: POST /internal/students/{id}/weekly-theme/review-views?grade&date
+  C->>L: POST /internal/students/{id}/weekly-theme/review-views?grade&date&sundayTheme
   L->>L: 토요일(일요일 허용 값이면 일요일도) 확인(아니면 409 THEME_REVIEW_NOT_ALLOWED), theme_review_view 저장 (주 1회 멱등)
-  L-->>C: {firstViewThisWeek, completed, finished(기준안)}
+  L-->>C: {firstViewThisWeek, completed}
   rect rgba(128,128,128,0.12)
     C->>CDB: reward_point_ledger (REVIEW_VIEWED, source_key = weekStart) + 잔액 — 이미 있으면 건너뜀(재요청 보충)
     opt completed (개근: 월~금 5문제 각 당일 학습 완료)
       C->>CDB: reward_point_ledger (THEME_COMPLETED, source_key = weekStart) + 잔액
     end
-    opt finished (주간 완주: 5문제 토요일까지 학습 완료, 기준안)
-      C->>CDB: reward_point_ledger (THEME_FINISHED, source_key = weekStart) + 잔액
-    end
   end
-  C-->>W: 200 {firstViewThisWeek, completed, finished} (learning 응답 그대로)
+  C-->>W: 200 {firstViewThisWeek, completed} (learning 응답 그대로)
 ```
 
 - `weekStart`는 core가 learning에 넘긴 KST 날짜의 월요일. `firstViewThisWeek`와 무관하게 적립을 부르고 사건 키로 1회만 남겨, 앞선 적립 저장이 실패했으면 열람 재요청 때 보충
@@ -1010,7 +1007,7 @@ sequenceDiagram
   end
   Note over RW,C: #119 core API를 기본 worker의 CoreClient.lookup에서 호출 (#56)
   RW->>C: GET /internal/students/{id}/profile (내부 토큰, SYSTEM, 학생 scope)
-  C-->>RW: 200 {studentId, nickname} (ACTIVE만, no-store)
+  C-->>RW: 200 {studentId, nickname, parentSharingEnabled, grade} (ACTIVE만, no-store)
   RW->>RW: nickname을 렌더링용 display_name으로 보관 (메시지에는 추가하지 않음)
   Note over RW,C: 403·404·통신 장애는 GENERATION_FAILED로 종료. HTTP 재시도·가짜 별명 없음
   RW->>L: GET /internal/records/students/{id}/thinking-types·attempts·changes
@@ -1031,17 +1028,28 @@ sequenceDiagram
       RW->>RW: 템플릿 요약으로 교체 (narrative.source = TEMPLATE)
     end
   end
-  opt narrativeEnabled, 원문 공개, M2 점수가 있는 답변 있음 (FN-RPT-09, #479)
-    RW->>RW: 대표 답변 최대 3개 선정 (생각 유형이 겹치지 않게, 같으면 최근)
-    loop 대표 답변마다
-      RW->>A: POST /internal/report-explanations {grade, inputType, text, scores}
-      A->>X: OpenAI 호환 생성 요청 (월 00:00 전후 KEDA cron으로 1대 기동, #476)
-      X-->>A: 설명 초안
-      A->>A: 규칙 후처리, 금지어·점수·등급 표현 검사, 인용 부분 문자열 확인
-      A-->>RW: {active, explanation, versions} 또는 실패
-    end
-    opt 실패·시간 초과·설명 모델 미활성 (P16)
-      RW->>RW: 해당 설명 제외, explanations.state = NOT_INCLUDED (리포트 status·state 유지)
+  opt 주간, narrativeEnabled, 원문 공개 (FN-RPT-09, #479·#508, 단계 전체 400초 예산)
+    RW->>L: GET /internal/records/students/{id}/attempts?includeModelScores=true (SYSTEM)
+    L-->>RW: 기간 내 기록 + modelScores.m2
+    alt M2 점수가 있는 답변 없음
+      RW->>RW: explanations.state = NO_TARGET
+    else
+      RW->>RW: 최신순 정렬, 생각 유형마다 최신 답변부터 시도 (최대 3유형)
+      loop 유형별 후보 (ai 호출 전 제외 시 같은 유형 다음 답변)
+        RW->>RW: 자격 확인 (정정·빈 답변·학년·입력 유형·M2 점수 형식)
+        RW->>L: GET /internal/records/evidence?answerIds= (원문·버전 대조)
+        RW->>A: POST /internal/report-explanations {grade, inputType, text, scores} (호출당 130초, 유형당 1회)
+        A->>X: OpenAI 호환 생성 요청 (일 23:50~월 02:00 KEDA cron으로 1대 기동, #476)
+        X-->>A: 설명 초안
+        A->>A: 규칙 후처리, 금지어·점수·등급 표현 검사, 인용 선택
+        A-->>RW: {active, explanation, versions} 또는 실패
+        RW->>RW: report 재검사 (숫자·금지어·수량·별명·인용 원문 부분 문자열)
+      end
+      alt 하나라도 통과
+        RW->>RW: 통과분만 EXPLANATION 항목, explanations.state = INCLUDED
+      else 모두 실패·시간 초과·설명 모델 미활성·sLLM 가동 창 밖 (P16)
+        RW->>RW: explanations.state = NOT_INCLUDED (리포트 status·state 유지)
+      end
     end
   end
   RW->>RW: ReportRenderer HTML·PDF·MD
@@ -1079,7 +1087,7 @@ sequenceDiagram
   participant C as core DB
   participant R as report API
   participant D as report DB
-  S->>C: 생성 60분 이상 미종료 후보 조회
+  S->>C: 생성 4시간 이상 미종료 후보 조회 (#508)
   S->>R: POST reconcile (트랜잭션 밖)
   R->>D: 학생 shared/job exclusive session 잠금 시도
   alt 실행/삭제 잠금 사용 중
@@ -1302,7 +1310,7 @@ sequenceDiagram
     SCH->>DB: payment_order 저장 (RENEWAL, billing_period_start) — 부분 UK로 이중 청구 방지
     alt UK 충돌 + 기존 결제 APPROVED·CONFIRMING
       SCH->>SCH: 건너뜀
-    else 신규 주문 또는 UK 충돌 + 기존 결제 FAILED (재청구 매일 1회 최대 3회 P13, 11장 가정)
+    else 신규 주문 또는 UK 충돌 + 기존 결제 FAILED (재청구 매일 1회 최대 3회 P13, 12장 가정)
       SCH->>T: 빌링키 자동결제 API
       alt 성공
         SCH->>DB: payment APPROVED, subscription 기간 연장·next_billing_date 갱신
@@ -1326,13 +1334,21 @@ sequenceDiagram
   participant C as core
   participant DB as core_db
   participant T as Toss
+  participant L as learning
 
   W->>C: POST /payments/{id}/refund-requests (Idempotency-Key)
-  C->>DB: 결제 7일 이내 + 결제 후 해당 자녀의 피드백(learning 기록)·분석 대화·리포트 열람(report_view) 기록 없음 확인 (P14)
-  alt 조건 불충족
-    C-->>W: 409 REFUND_NOT_ALLOWED
+  C->>DB: 대기 환불 있으면 그 행 반환. 결제 7일 이내·결제 상태 + 결제 후 core 프리미엄 사용(payment_premium_usage) 없음 확인 (P14)
+  alt 사전 조건 불충족 (행 생성 없음)
+    C-->>W: 409 REFUND_NOT_ALLOWED / 409 REFUND_PREMIUM_USAGE_PRESENT
   end
   C->>DB: refund_request REQUESTED (전액), payment REFUND_REVIEW
+  C->>L: GET /internal/payment-usage/students/{id}?since (트랜잭션 밖, 실패 시 503 REFUND_USAGE_UNAVAILABLE)
+  alt 결제 후 프리미엄 사용 확인
+    C->>DB: refund_request REJECTED (시스템, "결제 후 프리미엄 기능 사용"), payment APPROVED 복귀
+    C-->>W: 409 REFUND_NOT_ALLOWED
+  else 미사용
+    C->>DB: usage_verified_at 기록
+  end
   alt 관리자 반려
     AW->>C: POST /admin/refund-requests/{id}/reject {reason}
     C->>DB: refund_request REJECTED (decided_by, reject_reason), payment REFUND_REVIEW → APPROVED
@@ -1380,7 +1396,7 @@ sequenceDiagram
   AW->>C: POST /admin/error-reports/{id}/corrections {reason, corrected}
   C->>L: POST /internal/judgments/{judgmentId}/corrections (Idempotency-Key)
   L->>L: judgment_correction 추가 (기존 판정·원본 답변 불변)
-  L-->>C: 201
+  L-->>C: 200 {correctionId, previousResult, corrected, createdAt, impact}
   C->>R: GET /internal/reports/correction-impact?studentId&attemptId (#244, 실패 시 UNKNOWN)
   R-->>C: 그 시도로 만든 완료 판
   C->>L: GET /internal/support/attempts/{attemptId} (판정의 답변 ID 확인, #244)
@@ -1443,7 +1459,7 @@ sequenceDiagram
 
 - 롤백(`/rollback`): 이전 승인 버전 재활성화로 같은 흐름, 재분석 여부는 `audit_log.detail` 기록 (FN-ADM-18)
 - scoring #86은 큐 바인딩·소비 시작 → core snapshot → 조회·로딩 중 보존 이벤트의 revision 조정 → readiness true 순서다. 브로커 재연결도 같은 순서로 수행한다. 이벤트는 전체 snapshot이 아니므로 다른 모델을 제거하지 않고 해당 이름의 모델만 교체한다.
-- ai #68도 Pod별 큐 바인딩·소비 시작 → core snapshot → 조회 중 받은 이벤트의 kind·name별 revision 조정 → readiness 순서다. 재연결 시 snapshot으로 유실 구간을 복구한다. `PROMPT` 다섯 기능(#336 구현 때 미션 초안을 더해 여섯)과 승인 scope만 반영하며, 미보유 버전 본문을 받으면 해당 기능 새 요청은 503, readiness는 false다. 요청이 시작할 때 잡은 본문·버전은 진행 중 교체하지 않는다.
+- ai #68도 Pod별 큐 바인딩·소비 시작 → core snapshot → 조회 중 받은 이벤트의 kind·name별 revision 조정 → readiness 순서다. 재연결 시 snapshot으로 유실 구간을 복구한다. `PROMPT` 일곱 기능(#336 미션 초안, #477 리포트 설명 포함)과 승인 scope만 반영하며, 미보유 버전 본문을 받으면 해당 기능 새 요청은 503, readiness는 false다. 요청이 시작할 때 잡은 본문·버전은 진행 중 교체하지 않는다.
 - scoring 교체·롤백 시 artifact를 다시 내려받아 로딩한 뒤 임시 파일을 정리한다. 로딩 중에는 기존 모델을 사용하며 실패 시 기존 모델을 유지하고 재시도한다. 새 승인 scopes에서 제외된 범위에는 기존 모델도 사용하지 않는다. 최초 준비·재연결 복구가 끝나기 전에는 readiness false다.
 - 기준표(`kind = RUBRIC`) 행은 core 레지스트리의 승인·활성 기록만 담당. learning은 이 이벤트를 소비하지 않으며, `judge_verified`·현재 기준표 버전 반영은 관리자 미션 API(`/admin/missions/...`)로 별도 수행
 
@@ -1518,7 +1534,7 @@ sequenceDiagram
   AW->>C: GET /admin/achievement-standards?subject&gradeBand&q
   C->>L: GET /internal/admin/achievement-standards
   L-->>AW: 성취기준 목록 (core 경유)
-  AW->>C: POST /admin/mission-drafts {standardCodes, achievementLevels, thinkingType, grade, inputType}
+  AW->>C: POST /admin/mission-drafts {standardCodes, achievementLevels, thinkingType, gradeMin, gradeMax, inputType}
   C->>C: CONTENT 권한, 요청 감사
   C->>L: POST /internal/admin/mission-drafts
   L->>LDB: 성취기준 실재·학년군 확인 → mission_draft GENERATING (attempts 0)
@@ -1526,7 +1542,7 @@ sequenceDiagram
 
   loop MissionDraftScheduler 주기 (기준안 10초)
     L->>LDB: GENERATING·리스 없음/만료 초안 하나 조건부 UPDATE로 점유 (lease 90초)
-    L->>A: POST /internal/mission-drafts {성취기준·성취수준 문장, 유형 표준 요소, 학년, 입력 방식, previousFailures}
+    L->>A: POST /internal/mission-drafts {성취기준·성취수준 문장, 유형 표준 요소, 학년 범위(gradeMin·gradeMax), 입력 방식, previousFailures}
     A->>LLM: 구조화 출력 1회 (60초, 재시도 없음, P12 예외 #353)
     A->>A: 필수 항목·질문 길이·정답·금지어 노출 검사
     A-->>L: {draft, checks, versions}

@@ -11,10 +11,8 @@ import com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
 import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning._common.config.InternalRestClientFactory
-import com.sagomungchi.learning.judgment.client.AiCallException
+import com.sagomungchi.learning._common.client.AiCallException
 import com.sagomungchi.learning.judgment.client.AiClient
-import com.sagomungchi.learning.mission.client.AiDraftStandard
-import com.sagomungchi.learning.mission.client.AiElementCode
 import com.sagomungchi.learning.mission.client.MissionDraftAiClient
 import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.domain.ThinkingType
@@ -46,8 +44,8 @@ class ThemeDraftAiClientTest {
     private val request = AiThemeDraftRequest(
         gradeMin = 4, gradeMax = 4, weekStart = LocalDate.of(2026, 11, 16), topic = "도서관",
         missions = listOf(
-            AiThemeMission(ThinkingType.ANALYZE, InputType.NARRATIVE, listOf(AiDraftStandard("4국03-03", "목적을 고려하여 글을 쓴다.")),
-                listOf(AiElementCode("ANALYZE_RELATION", "원인·특징·관계", "관계를 말함"))),
+            AiThemeMission(ThinkingType.ANALYZE, InputType.NARRATIVE, listOf(AiThemeStandard("4국03-03", "목적을 고려하여 글을 쓴다.")),
+                listOf(AiThemeElementCode("ANALYZE_RELATION", "원인·특징·관계", "관계를 말함"))),
         ),
         previousFailures = listOf(ThemeFailure("MISSION", listOf("TUE ELEMENT_CODE rubric.elements.code"))),
     )

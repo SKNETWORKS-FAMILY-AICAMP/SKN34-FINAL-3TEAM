@@ -3,9 +3,7 @@ package com.sagomungchi.learning.theme.service
 import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.storage.AssetUrls
-import com.sagomungchi.learning.judgment.client.AiCallException
-import com.sagomungchi.learning.mission.client.AiDraftStandard
-import com.sagomungchi.learning.mission.client.AiElementCode
+import com.sagomungchi.learning._common.client.AiCallException
 import com.sagomungchi.learning.mission.domain.AchievementStandard
 import com.sagomungchi.learning.mission.domain.DraftRules
 import com.sagomungchi.learning.mission.domain.DraftStatus
@@ -14,7 +12,9 @@ import com.sagomungchi.learning.mission.domain.MissionSource
 import com.sagomungchi.learning.mission.domain.MissionView
 import com.sagomungchi.learning.mission.service.MissionService
 import com.sagomungchi.learning.theme.client.AiThemeDraftRequest
+import com.sagomungchi.learning.theme.client.AiThemeElementCode
 import com.sagomungchi.learning.theme.client.AiThemeMission
+import com.sagomungchi.learning.theme.client.AiThemeStandard
 import com.sagomungchi.learning.theme.client.ThemeDraftAiClient
 import com.sagomungchi.learning.theme.domain.AdminWeeklyTheme
 import com.sagomungchi.learning.theme.domain.ThemeDraft
@@ -242,8 +242,8 @@ class ThemeDraftService(
             AiThemeMission(
                 thinkingType = mission.thinkingType,
                 inputType = mission.inputType,
-                standards = mission.standardCodes.map { AiDraftStandard(it, standards.getValue(it).statement) },
-                elementCodes = DraftRules.elementCodes(mission.thinkingType, mission.inputType).map { AiElementCode(it.code, it.label, it.description) },
+                standards = mission.standardCodes.map { AiThemeStandard(it, standards.getValue(it).statement) },
+                elementCodes = DraftRules.elementCodes(mission.thinkingType, mission.inputType).map { AiThemeElementCode(it.code, it.label, it.description) },
             )
         },
         previousFailures = draft.previousFailures,
