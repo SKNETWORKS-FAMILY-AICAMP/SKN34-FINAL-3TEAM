@@ -3794,7 +3794,7 @@ components:
       properties:
         grade: {$ref: '#/components/schemas/ThemeGrade'}
         weekStart: {type: string, format: date, description: 적용 주 KST 월요일, 이번 주 이후}
-        topic: {type: [string, 'null'], maxLength: 100, description: 주제(앞뒤 공백 제거, 비면 null)}
+        topic: {type: [string, 'null'], maxLength: 100, description: '주제(앞뒤 공백 제거). 비우면 learning이 주제 씨앗(뭉치 역할: … / 장소: … / 찾는 대상: …)을 골라 input.topic에 넣음'}
         missions:
           type: [array, 'null']
           maxItems: 5

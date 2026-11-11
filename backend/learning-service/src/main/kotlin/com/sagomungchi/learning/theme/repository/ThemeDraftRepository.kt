@@ -72,6 +72,7 @@ interface ThemeDraftMapper {
     ): List<ThemeDraftRow>
     fun count(@Param("status") status: DraftStatus?, @Param("source") source: ThemeDraftSource?): Long
     fun findInputs(@Param("grade") grade: ThemeGrade, @Param("from") from: LocalDate, @Param("until") until: LocalDate): List<ThemeDraftInput>
+    fun findWeekInputs(@Param("weekStart") weekStart: LocalDate): List<ThemeDraftInput>
     fun claimNext(@Param("now") now: Instant, @Param("leaseUntil") leaseUntil: Instant): ThemeDraftRow?
     fun saveAttempt(@Param("d") draft: ThemeDraft, @Param("claimedLease") claimedLease: Instant): Int
     fun updateState(@Param("d") draft: ThemeDraft): Int
@@ -102,6 +103,9 @@ class ThemeDraftRepository(private val mapper: ThemeDraftMapper) {
 
     /** 그 학년의 적용 주가 [from, until)인 초안 입력 (자동 성취기준이 최근 코드를 피함) */
     fun findInputs(grade: ThemeGrade, from: LocalDate, until: LocalDate): List<ThemeDraftInput> = mapper.findInputs(grade, from, until)
+
+    /** 그 주 모든 학년 초안 입력(주제 씨앗을 같은 주 다른 초안과 겹치지 않게 고를 때) */
+    fun findWeekInputs(weekStart: LocalDate): List<ThemeDraftInput> = mapper.findWeekInputs(weekStart)
 
     /**
      * GENERATING이고 리스가 없거나 지난 초안 하나를 조건부 UPDATE로 점유(가장 먼저 요청한 것부터).

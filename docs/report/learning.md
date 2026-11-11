@@ -1052,6 +1052,7 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 | 이야기 열람 응답 | `{kind, firstViewThisWeek}`. INTRO는 일요일, OUTRO는 엔딩 상태가 아니면(#484 전까지 토요일 밖) `409 THEME_STORY_NOT_ALLOWED` | core #439 가정값과 같은 코드. 되돌아보기 열람의 `firstViewThisWeek`와 같은 모양. OUTRO 조건은 #483 '엔딩 상태일 때'(#438 코멘트 2026-11-10) |
 | 자동 생성 성취기준 (기준안) | 그 학년이 속한 학년군 표에서 `SOLVE`는 수학, 나머지 넷은 국어. 같은 학년의 최근 4주 테마 초안에 쓴 코드는 빼고 무작위 1개. 입력은 FN 1.5 기본(서술·논술·서술·풀이 단계·서술), 초3·초4 따져 보기는 서술. 성취수준은 비움 | 사용자 결정 2026-11-10. P15 국어 우선, FN 1.5 문제 해결하기 수학 예외, P03 논술 초5~6. 학년군 단위라 아래 학년에 위 학년 내용이 뽑힐 수 있고, 지식 RAG 뒤 후보 풀을 학년·학기·유형으로 바꾸는 설계는 구현 5 |
 | 관리자 요청의 빈 유형 | 고르지 않은 유형은 자동 규칙으로 learning이 채워 `input`에 저장 | 에픽 "관리자 요청은 유형별 지정 가능". ai 요청은 유형 5개가 다 있어야 함 |
+| 비운 주제 | 주간 자동과 주제를 비운 관리자 요청은 learning이 주제 씨앗(뭉치 역할·장소·찾는 대상)을 골라 `topic`에 넣음(기준안 목록 24개, 아래 구현 6) | #437 실측에서 주제가 비면 공원·탐정으로 쏠림(사용자 결정 2026-11-11) |
 | 주간 자동과 게시 테마 | 그 학년·주에 이미 게시 테마가 있으면 그 학년 자동 초안은 만들지 않음 | 사용자 결정 2026-11-10. 사람이 먼저 게시한 주에 쓰지 않을 초안을 만들어 ai 비용을 쓰지 않게. 필요하면 관리자 요청으로 만듦 |
 | 생성 시도 상한 (기준안) | 3회(`app.theme-draft.max-attempts`) | 이슈 기준안, 미션 초안과 같음 |
 | 대기·리스 (기준안) | ai 마감 15분, learning→ai 대기 16분(`app.theme-draft.ai-read-timeout`), 리스 18분 | 이슈·ai.md 16장 기준안. 실측 후 조정 |
@@ -1203,6 +1204,25 @@ local kind(`sagomungchi-local`)에 develop `b1562c2b`(core V41, learning V13, re
 - 테스트(기존 파일 수정): `ThemeDraftFixtures`(영상 `INTRO`·`OUTRO`만, 움직임 v1과 `spots`), `ThemeDraftRulesTest`(채택 미션 `sceneMotion`·이야기 `introMotion`이 v1 그대로, 요일 `videoUri` null), `ThemeDraftServiceTest`(채택 테마 요일 영상 null, 미션 `scene_motion`에 `spots`, 응답 장면 영상은 `INTRO`·`OUTRO`만), `ThemeDraftAiClientTest`(실제 JSON의 움직임 v1·`spots`를 칸 검사 없이 읽음), `ThemeDraftAiStubFlowTest`(시작·종료 영상 키, 요일 영상 null)
 - 문서: api-spec 4.1(`ThemeDraft.scenes`·관리자 `days[].videoUri`·`themeScene`·`sceneMotion`), class-diagram 4.4(`themeScene`·채택·후보 풀 설계), sequence-diagram 테마 시도 메모, learning OpenAPI(`ThemeMotion`·`videoUrl`·`videoUri` 설명)
 - 검증: learning theme 패키지 테스트 88건 통과
+
+### 구현 6: 주제 씨앗 (2026-11-11)
+
+주간 자동 요청은 `topic`이 비어 ai가 매번 무난한 주제를 골랐다(#437 글 단계 20건 실측: 19건 중 장소 공원 15·뭉치 역할 탐정 13·공원 관리인 11). #437이 낸 B안(learning이 주제 씨앗을 골라 `topic`에 넣음)을 받아 구현했다. 계약 변경은 없다(`topic`은 원래 있는 100자 글 칸, ai는 "주제: …"로 프롬프트에 넣고 #437이 씨앗 형식이면 역할·장소·대상을 그대로 따르게 고침).
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 채우는 때 | 주간 자동은 늘, 관리자 요청은 `topic`을 비웠을 때. 관리자가 쓴 주제와 다시 생성(저장된 `input.topic`)은 그대로. 고른 씨앗은 `input.topic`에 남아 관리자 상세에 보임 | 사용자 결정 2026-11-11. 비운 관리자 요청도 같은 쏠림이 생김 |
+| 형식 | `뭉치 역할: <역할(차림)> / 장소: <장소> / 찾는 대상: <대상>`(가장 긴 것 62자) | #437 줄거리 프롬프트가 읽는 형식(#437 제안) |
+| 목록 (기준안) | 24개(`ThemeTopicSeeds.ALL`, #437 초안 그대로). 찾는 대상은 잃어버린 물건·길 잃은 동물만(누가 훔쳤나 같은 사람 탓 줄거리 없음), 주인은 학생 또래 아이, 손에 드는 물건은 차림에 넣지 않음(ai 옷 규칙과 같음) | #437 제안, 사용자 결정 2026-11-11(기준안으로 넣음) |
+| 다시 쓰지 않는 기간 | 같은 학년에서 쓴 씨앗은 **목록 개수만큼의 주**(지금 24주) 동안 빼고, 초안 상태와 관계없이 셈(버린·실패한 초안 포함, 자동 성취기준 최근 코드와 같은 방식) | #437은 "24주" 고정을 제안. 목록을 늘리면 반복 주기도 같이 늘도록 바꿈(사용자 결정 2026-11-11) |
+| 같은 주 | 같은 주 다른 초안(다른 학년·같은 학년 다른 요청)의 씨앗도 뺌. 주간 자동은 학년을 차례로 만들고 하나씩 커밋해 다음 학년이 앞 학년 씨앗을 봄 | #437 제안. 레플리카가 동시에 돌면 드물게 겹칠 수 있으나 부분 UK로 학년마다 하나라 막지 않음 |
+| 남는 게 없을 때 | 같은 주 씨앗만 빼고 가장 오래전에 쓴 것(여러 번 쓴 씨앗은 마지막으로 쓴 때로 셈). 한 주에 네 학년이 서로 다른 씨앗을 고르므로 실제 반복은 목록 개수보다 조금 이를 수 있음 | #437 제안 |
+| 계절 (기준안) | 봄 3~5월·여름 6~8월·가을 9~11월·겨울 12~2월(적용 주 월요일의 달). 눈썰매장은 겨울, 바닷가 모래사장·갯벌 체험장은 여름, 할머니 댁 꽃밭(해바라기 씨앗)은 봄·여름에만, 나머지 20개는 아무 때나 | 새로 정한 값(사용자 결정 2026-11-11, 23번은 #437 제안) |
+
+- 새 파일: `theme/domain/ThemeTopicSeeds.kt`(`Season`, `ThemeTopicSeed`, `ThemeTopicSeeds.ALL`·`RECENT_WEEKS`·`choose`), `ThemeTopicSeedsTest`
+- 기존 파일 수정: `ThemeDraftService.autoInput`(주제가 없으면 `seedTopic`), `ThemeDraftRepository.findWeekInputs`(+ 매퍼 `findWeekInputs`, 그 주 모든 학년 입력), `ThemeDraftServiceTest`(관리자 빈 주제·주간 자동 학년마다 다른 씨앗·같은 학년 최근 씨앗 피함·관리자 주제 그대로)
+- 문서: api-spec 4.1 테마 초안 요청 `topic`, class-diagram 4.4, sequence-diagram 테마 초안 흐름, learning OpenAPI `ThemeDraftRequest.topic` 설명
+- 연결: 지식 RAG(#470)에서 주제와 가까운 성취기준을 고르려면 주제가 필요한데, 주간 자동에도 씨앗이 생겨 그 재료가 됨(구현 5 "확인 필요")
 
 ### develop 반영 (2026-11-11)
 

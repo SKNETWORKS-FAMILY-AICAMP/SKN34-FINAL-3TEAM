@@ -1585,10 +1585,10 @@ sequenceDiagram
   alt 관리자 요청
     AW->>C: POST /admin/theme-drafts {grade, weekStart, topic?, missions?}
     C->>L: POST /internal/admin/theme-drafts (요청 감사)
-    L->>LDB: 학년·주·성취기준·입력 방식 확인, 비운 유형은 자동 규칙으로 채움 → theme_draft GENERATING (ADMIN)
+    L->>LDB: 학년·주·성취기준·입력 방식 확인, 비운 유형은 자동 규칙·비운 주제는 주제 씨앗으로 채움 → theme_draft GENERATING (ADMIN)
     L-->>AW: 202 ThemeDraft {draftId, status} (core 경유, 결과 감사)
   else 주간 자동 (기준안 수요일 03:00 KST)
-    L->>LDB: 다음 주 G3·G4·G5·G6 theme_draft GENERATING (AUTO) ON CONFLICT DO NOTHING (그 학년·주 게시 테마가 있으면 건너뜀)
+    L->>LDB: 다음 주 G3·G4·G5·G6 theme_draft GENERATING (AUTO, 학년마다 겹치지 않는 주제 씨앗) ON CONFLICT DO NOTHING (그 학년·주 게시 테마가 있으면 건너뜀)
   end
 
   loop ThemeDraftScheduler 주기 (기준안 10초)
