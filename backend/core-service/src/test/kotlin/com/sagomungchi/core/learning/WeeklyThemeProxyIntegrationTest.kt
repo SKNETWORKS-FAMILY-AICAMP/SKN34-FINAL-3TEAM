@@ -155,6 +155,7 @@ class WeeklyThemeProxyIntegrationTest : PostgresRepositoryTest() {
     }
 
     @Test fun `free product that turns extra back on counts only extra against the daily limit and keeps resume open`() {
+        jdbc.update("UPDATE product SET features='{\"extraMissions\":true}'::jsonb WHERE id=?", free)
         val mission = UUID.randomUUID(); val other = UUID.randomUUID(); val attempt = UUID.randomUUID()
         stub.respond = { LearningHttpStub.Reply(201, "{\"attemptId\":\"$attempt\",\"status\":\"IN_PROGRESS\",\"mission\":{\"id\":\"$mission\"}}") }
         start(mission, null).andExpect(status().isCreated())
@@ -177,13 +178,16 @@ class WeeklyThemeProxyIntegrationTest : PostgresRepositoryTest() {
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM mission_daily_usage WHERE student_id=?", Int::class.java, child))
     }
 
-    @Test fun `free product with extra missions off makes extra 403 before learning whether context is omitted or explicit`() {
-        jdbc.update("UPDATE product SET features='{\"extraMissions\":false}'::jsonb WHERE id=?", free)
-        val mission = UUID.randomUUID()
-        start(mission, null).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("PREMIUM_REQUIRED"))
-        call("POST", "/api/v1/missions/$mission/attempts", "{}").andExpect(status().isForbidden())
-        call("POST", "/api/v1/missions/$mission/attempts", "{\"context\":null}").andExpect(status().isForbidden())
-        start(mission, "EXTRA").andExpect(status().isForbidden())
+    @Test fun `free product with extra missions off or unset makes extra 403 before learning whether context is omitted or explicit`() {
+        // #506: 빈 DB에서 만든 무료 상품(features에 값 없음)도 V43 무료 상품(false)과 같이 프리미엄 전용
+        listOf("{}", "{\"extraMissions\":false}").forEach { features ->
+            jdbc.update("UPDATE product SET features=?::jsonb WHERE id=?", features, free)
+            val mission = UUID.randomUUID()
+            start(mission, null).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("PREMIUM_REQUIRED"))
+            call("POST", "/api/v1/missions/$mission/attempts", "{}").andExpect(status().isForbidden())
+            call("POST", "/api/v1/missions/$mission/attempts", "{\"context\":null}").andExpect(status().isForbidden())
+            start(mission, "EXTRA").andExpect(status().isForbidden())
+        }
         assertTrue(stub.requests.isEmpty())
     }
 
@@ -219,6 +223,7 @@ class WeeklyThemeProxyIntegrationTest : PostgresRepositoryTest() {
     }
 
     @Test fun `deleting the child removes its mission usage in the same confirmation`() {
+        jdbc.update("UPDATE product SET features='{\"extraMissions\":true}'::jsonb WHERE id=?", free)
         val attempt = UUID.randomUUID()
         stub.respond = { LearningHttpStub.Reply(201, "{\"attemptId\":\"$attempt\"}") }
         start(UUID.randomUUID(), "EXTRA").andExpect(status().isCreated())

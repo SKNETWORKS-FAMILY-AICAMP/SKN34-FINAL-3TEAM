@@ -25,7 +25,7 @@ export function ReportExplanations({ report, plan }: { report: WeeklyReport; pla
       <h4>{item.missionTitle}</h4>
       <p>{thinkingLabels[item.thinkingType]} · <span className="ws-tag">AI 관찰</span></p>
       {item.quote !== null && <blockquote>{item.quote}</blockquote>}
-      <p className="report-explanation-text">{item.text}</p>
+      <p>{item.text}</p>
     </article>)}</div>}
   </section>
 }

@@ -36,7 +36,7 @@
 
 | 서비스 | 추가 책임 | 기능 패키지 |
 |---|---|---|
-| core-service | 커뮤니티 공개 설정·보호자 선택 동의·공유물 신고 연결, 작성자 별명·꾸미기 표시 변환, 포인트 규칙·원장·잔액, 테마·캐릭터·아이템 해금·착용, 꾸미기 아이템 관리, 무료 하루 미션 1개 집계, 일일 리포트 일정(매일 자정, 다음 날 00:00)·작업, 리포트 고정 대화 생성 | `community`(설정·learning 프록시·신고 연결), `reward`(포인트·해금·아이템). 무료 미션 한도는 기존 `usage`(`MissionUsageService`), 일일 일정은 기존 `report`, 리포트 고정 대화는 기존 `conversation`, 동의 문서 종류는 기존 `consent` |
+| core-service | 커뮤니티 공개 설정·보호자 선택 동의·공유물 신고 연결, 작성자 별명·꾸미기 표시 변환, 포인트 규칙·원장·잔액, 테마·캐릭터·아이템 해금·착용, 꾸미기 아이템 관리, 무료 추가 문제 하루 한도 집계(무료 상품에서 `EXTRA`를 다시 켠 경우, 2026-11-10 개정 #485 뒤), 일일 리포트 일정(매일 자정, 다음 날 00:00)·작업, 리포트 고정 대화 생성 | `community`(설정·learning 프록시·신고 연결), `reward`(포인트·해금·아이템). 무료 미션 한도는 기존 `usage`(`MissionUsageService`), 일일 일정은 기존 `report`, 리포트 고정 대화는 기존 `conversation`, 동의 문서 종류는 기존 `consent` |
 | learning-service | 주간 테마·요일별 미션 배치·게시 검사, 시도 `context`(당일·되돌아보기·추가 문제) 검사, 되돌아보기 열람 기록·완주 판정 소재, 커뮤니티 공유물·반응·열람 검사(같은 미션 마무리 여부)·숨김 상태 | `theme`, `community` |
 | report-service | 일일 리포트(템플릿, LLM 미호출) 기간 확정·계산·대조·렌더링, 주간 리포트 테마 요약 | 기존 리포트 생성 흐름에 기간 종류 분기 |
 | ai-service | 리포트 고정 대화의 범위(그날)와 core가 넣어 주는 리포트 요약 입력 처리(report 직접 호출 없음). 일일 리포트 서술은 없음 | 기존 분석 에이전트 |
@@ -77,7 +77,7 @@
 | 주간·일일 리포트 생성 | **명령** → `cmd.direct` 작업 큐 | 일괄 처리, 재시도, 워커 단독 확장 |
 | 상태 변화 전파 | **이벤트** → `events.topic` | 생산자가 소비자를 모름, 소비자 추가 시 생산자 무변경 |
 
-- 동기 호출 장애 대응: 타임아웃 + 재시도 제한 + 서킷 브레이커(Spring Resilience4j / Python httpx 타임아웃·재시도). 값(P12): LLM 1회 15초·재시도 1회(1초 대기), learning→ai 판정·되묻기 각 35초(예외: 미션 초안은 주기 작업이라 ai LLM 60초 1회·마감 63초, learning→ai 70초, #353), core→learning 피드백 80초, 분석 대화 core→ai 첫 응답 20초·전체 120초, 서킷 브레이커 최근 20건 중 실패 50% 이상 시 30초 차단, 리포트 작업 재시도 3회(1·5·15분) 후 DLQ(예외: 주간 리포트 설명은 주 1회 배치라 report→ai 호출당 130초·설명 단계 400초, 리포트 작업 복구 후보 4시간, #479·#508). 실패 시 "처리 실패"로 기록·SSE 전달, 판정 보류·기록 없음과 구분
+- 동기 호출 장애 대응: 타임아웃 + 재시도 제한 + 서킷 브레이커(Spring Resilience4j / Python httpx 타임아웃·재시도). 값(P12): LLM 1회 15초·재시도 1회(1초 대기), learning→ai 판정·되묻기 각 35초(예외: 미션 초안은 주기 작업이라 ai LLM 60초 1회·마감 63초, learning→ai 70초, #353), core→learning 피드백 80초, 분석 대화 core→ai 첫 응답 20초·전체 120초, 서킷 브레이커 최근 20건 중 실패 50% 이상 시 30초 차단, 리포트 작업 재시도 3회(1·5·15분) 후 DLQ. 실패 시 "처리 실패"로 기록·SSE 전달, 판정 보류·기록 없음과 구분
   - 서킷 브레이커 적용 구간은 core→learning(`learning-json`·`learning-feedback`), learning→ai, core→ai(`ai-analysis`), core→report(`report-query`·`report-recovery`), core→토스 조회(`toss-lookup`·`toss-transactions`)다(#167). 각 core 인스턴스 안에서 구간별 상태를 공유하며 구간 사이는 독립이다. 최근/최소 20건·실패율 50%·30초 차단·half-open 1건을 사용한다. HTTP 4xx는 실패로 세지 않고 전송 오류·시간 초과·5xx는 실패로 센다. report 2xx 복구 결과 FAILED/BUSY는 정상 통신 결과다. 토스 쓰기(승인·청구·취소·빌링키 발급)는 예외로 기존 타임아웃만 유지한다. 준비 상태 저장 후 전송을 차단하면 PG 거래가 없어 조회만으로 복구할 수 없으므로, 전송 전 차단 상태/복구 설계를 별도로 확정하기 전에는 적용하지 않는다. 서비스 간 재시도는 추가하지 않는다.
 - #305 learning→ai 판정·되묻기는 서킷 `ai` 하나를 함께 쓰므로, 그 뒤 ai→scoring 실패가 이 서킷으로 번지지 않게 ai에서 끊는다. ai→scoring(M2·M1)은 교차 확인 플래그(`M2_CROSS_CHECK_ENABLED`·`M1_CHECK_ENABLED`, 기본 꺼짐)가 켜진 경우에만 부르고, scoring 장애·시간 초과·5xx·4xx(입력 한도 초과 등)·계약 밖 응답은 503으로 바꾸지 않는다. ai는 교차 확인을 생략한 LLM 판정을 200으로 돌려주고 `modelScores.skipped`(`SCORING_UNAVAILABLE`·`SCORING_REJECTED`)에 사유를 남긴다(api-spec 4.2.2). 따라서 scoring 장애는 learning `ai` 서킷의 실패로 집계되지 않고 scoring과 무관한 판정·되묻기를 막지 않는다. 대신 교차 확인 없이 확정된 판정은 다시 판정하지 않는다. ai→scoring에는 서킷·재시도를 따로 두지 않는다(요청마다 남은 판정 시간 안의 timeout만).
 - #280 core→ai 리포트 설정 제안(`AiClient.reportTemplate`, 25초)은 분석 스트림과 분리한 작은 서킷 `ai-report-template`(최근/최소 10건·실패율 50%·30초 차단·half-open 1건)을 쓴다. 설정 제안 실패가 분석 대화 스트림을 차단하지 않게 하기 위해서다. HTTP 4xx는 성공으로, 전송 오류·시간 초과·5xx(ai `AI_UNAVAILABLE`·`AI_PROMPT_VERSION_UNAVAILABLE` 포함)·빈 본문은 실패로 센다. OPEN은 기존 502 `AI_UNAVAILABLE`로 실패하며 이미 차감한 분석 사용량은 그대로 둔다. 재시도는 추가하지 않는다.
@@ -139,7 +139,7 @@
 
 2026-11-06 결정(6~9 구현):
 
-6. **주간 테마**: core가 학생 학년으로 학년군을 정해 learning에 이번 주 테마 조회 → learning이 KST 요일로 문제 상태 계산. 시도 시작 시 learning이 `context` 검사, core가 무료 한도(`THEME_DAY`·`EXTRA` 신규 `201`, 합쳐 하루 1개) 집계(#387)
+6. **주간 테마**: core가 학생 학년으로 학년군을 정해 learning에 이번 주 테마 조회 → learning이 KST 요일로 문제 상태 계산. 시도 시작 시 learning이 `context` 검사, core가 상품으로 추가 문제 허용(무료 `EXTRA` 403)·일요일 허용 값 `sundayTheme`을 정한다. 무료 테마 문제는 한도 없음(2026-11-10 개정 #485, 이전 #387은 무료 `THEME_DAY`·`EXTRA` 합쳐 하루 1개)
 7. **학습 완료 후**: 돌아보기 저장 성공 → core가 포인트 적립(미션당 최초 1회) → 커뮤니티 공개가 켜져 있고 그 미션 공유물이 없으면 learning에 공유 요청(학생·미션당 1개) → 공유 성공 시 포인트 적립. 공유 요청(#388)과 두 포인트 적립 연결(#389) 구현
 8. **일일 리포트**: core 스케줄러(ShedLock)가 매일 자정(다음 날 00:00 KST) 보호자가 연결된 자녀별 `report_job(period_type = DAILY)` + Outbox → `report.generate` → report가 learning 기록 조회 → 코드 계산·템플릿 구성 → 인용 대조 → 렌더링·S3 저장(ai 호출 없음) → `report.completed` → core 일일 알림
 9. **리포트 대화**: 학부모가 일일 리포트에서 대화 생성 → core가 리포트 소유·자녀 연결 확인 후 대화에 리포트 ID·판을 저장하고 범위를 그날로 고정 → 메시지마다 core가 report에서 그 판을 읽어 ai 요청에 넣음 → 이후는 4번 분석 대화 흐름 그대로
@@ -340,7 +340,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  │  ├─ TossClient.kt
 │  │  └─ PremiumUsageClient.kt   # learning 프리미엄 사용 증빙 조회
 │  └─ scheduler/                 # 정기 청구
-├─ usage/                        # LLM 사용량 집계, 무료 미션 하루 한도(#387 `MissionUsageService`, `mission_daily_usage`)
+├─ usage/                        # LLM 사용량 집계, 무료 추가 문제 하루 한도(#387·#485 `MissionUsageService`, `mission_daily_usage`)
 │  ├─ controller/                # AiUsageController: 관리자 AI 사용량 조회 (#422)
 │  ├─ consumer/
 │  ├─ service/
@@ -743,7 +743,7 @@ backend/report-service/
   - 3B급 양자화 모델 CPU 추론은 t3 계열에 맞지 않아 Karpenter NodePool `explanation-cpu`(4.3)에만 놓는다(nodeSelector·toleration). Pod 요청 CPU 3·메모리 5Gi, llama.cpp `--threads 3 --parallel 1`
   - local(kind)은 실제 모델 대신 OpenAI 호환 대역(`infrastructure/stubs/llm-stub`)으로 내려받기·readiness·NetworkPolicy·cron 0→1→0만 확인한다. 추론 속도·메모리는 #475 실측 대상
   - AWS 데모는 KEDA 미설치(4.4 AWS 데모 적용)라 KEDA 설치·Pod Identity 연결·NodePool 적용·서버 이미지 ECR 게시가 남아 있다(AWS 작업 보류, `environments/prod/sllm-server.json`·`karpenter-nodepool-explanation.json`은 파일만 작성)
-  - 생성 시간은 건당 20~30초 가정(30명 × 3건 약 40분), #475 실측 후 시간대·대기 상한·인스턴스 유형 조정. report의 설명 단계 상한(리포트당 400초)으로는 최악 30명 × 400초 = 200분이라 창(약 2시간)을 넘을 수 있으며, 창 밖 호출은 설명만 빠지고 리포트는 완료된다(P16, #508)
+  - 생성 시간은 건당 20~30초 가정(30명 × 3건 약 40분), #475 실측 후 시간대·대기 상한·인스턴스 유형 조정
 - 종료 처리: core는 preStop 지연 + terminationGracePeriod로 SSE 정리 시간 확보 (롤링 배포·축소 시 단절은 클라이언트 재연결로 처리)
   - 피드백 executor 종료 대기는 최대 85초, heartbeat timer 종료 대기는 최대 5초다. 배포 시 `terminationGracePeriodSeconds`는 preStop 지연 + Spring/Tomcat 종료 단계의 예산 + 이 최대 90초 + 안전 여유보다 길게 설정하고 실제 롤링 종료로 검증한다. local chart 시작값은 preStop 15초·grace 180초([로컬 플랫폼](../report/local-platform.md) 8장). SIGKILL·프로세스 강제 종료 후에도 진행 중 호출이 보존된다는 의미는 아니다.
 - probe: readiness는 자기 연결과 백그라운드 초기화 상태만 확인, 요청마다 하위 서비스 호출 금지. ai는 RabbitMQ 구독·core 활성 버전 snapshot 조정·사용 가능한 프롬프트 본문을 완료해야 Ready이며 core 조회 실패·재연결 조정·미보유 활성 본문은 NotReady다(#68).
@@ -967,4 +967,4 @@ SKN34-FINAL-3TEAM/
 
 ### 7.1 구현 결정 요약
 
-클래스 수준 결정(인증·주간 리포트·삭제·결제·신고 연결 경계)은 [클래스 다이어그램](class-diagram.md) 3장과 보고서([auth-account](../report/auth-account.md)·[report](../report/report.md)·[payment](../report/payment.md)·[support-admin](../report/support-admin.md))를 따른다. Redis 사용 범위는 6장 저장소 행과 [core-gateway #210](../report/core-gateway.md#6-redis-사용-필요성과-postgresql-대체-비교-210). 무료 플랜 미션 일일 한도(P13, 하루 1개)는 #210 결정에 따라 core `usage`의 `mission_daily_usage`(PostgreSQL)로 구현(#387, [core-gateway 13절](../report/core-gateway.md#13-주간-테마-프록시무료-하루-1개추가-문제-프리미엄-387))
+클래스 수준 결정(인증·주간 리포트·삭제·결제·신고 연결 경계)은 [클래스 다이어그램](class-diagram.md) 3장과 보고서([auth-account](../report/auth-account.md)·[report](../report/report.md)·[payment](../report/payment.md)·[support-admin](../report/support-admin.md))를 따른다. Redis 사용 범위는 6장 저장소 행과 [core-gateway #210](../report/core-gateway.md#6-redis-사용-필요성과-postgresql-대체-비교-210). 무료 플랜 미션 일일 한도(P13, 하루 1개 → 2026-11-10 개정 #485 뒤 무료 추가 문제 재활성 때만)는 #210 결정에 따라 core `usage`의 `mission_daily_usage`(PostgreSQL)로 구현(#387, [core-gateway 13절](../report/core-gateway.md#13-주간-테마-프록시무료-하루-1개추가-문제-프리미엄-387))

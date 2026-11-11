@@ -38,8 +38,6 @@ def main():
         Draft202012Validator(bundle, format_checker=FormatChecker()).validate(detail)
         if detail["periodType"] != period_type:
             raise ValueError(f"{name}: expected periodType {period_type}")
-        if period_type == "WEEKLY" and not (detail.get("explanations") or {}).get("items"):
-            raise ValueError(f"{name}: weekly detail must exercise explanations (#508)")
         if period_type == "DAILY" and detail["period"]["from"] != detail["period"]["to"]:
             raise ValueError(f"{name}: a daily report covers one day")
         print(f"PASS actual core HTTP {period_type} report detail vs OpenAPI")

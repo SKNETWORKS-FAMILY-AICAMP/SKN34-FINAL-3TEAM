@@ -25,7 +25,7 @@
 | 문자열·금액 | varchar는 기본적으로 길이 제한 없는 PostgreSQL varchar. 길이 제한 컬럼은 Mermaid에 `varchar(N)`로 적고 `scripts/verify_db_schema.py`가 길이까지 대조(ShedLock name 64·locked_by 255, `student.look_theme`·`look_companion` 16, 3.5.1 포인트·꾸미기 표, `model_loading_report.pod_id` 253, report `report_job_guard.failure_reason` 100·`outbox_event.last_error_code` 64). 원화는 int, cost_usd는 반올림 정책 없는 numeric |
 | FK 삭제·순환 참조 | 기본 ON DELETE/UPDATE NO ACTION. mission.current_*·published_*, weekly_theme.current_·published_·review_version_id(#385)와 answer.followup_id만 DEFERRABLE INITIALLY IMMEDIATE. 삭제는 P09에 따라 `student.deleted` 이벤트로 서비스별 물리 삭제. learning 하위 기록은 CASCADE 없이 서비스가 한 트랜잭션에서 순서대로 삭제(4.3, #128) |
 
-- 테이블 없이 Redis에 두는 값: SSE 알림 중계 (아키텍처 1.6). 분석 대화 일일 사용량은 `payment_premium_usage` KST 일자 집계(#225), 무료 플랜 미션 일일 한도(P13)는 `mission_daily_usage` KST 일자 집계(#387, 3.4)
+- 테이블 없이 Redis에 두는 값: SSE 알림 중계 (아키텍처 1.6). 분석 대화 일일 사용량은 `payment_premium_usage` KST 일자 집계(#225), 무료 플랜 미션 일일 한도(P13)는 `mission_daily_usage` KST 일자 집계(#387, 3.4. 2026-11-10 개정 #485 뒤 무료 상품에서 다시 켠 무료 `EXTRA`만 집계)
 - 생각 메모는 `attempt_draft.content.memo`에 저장 (P05). 음성 시범 미구현으로 음성 데이터 없음 (P03)
 - 학생 별도 계정 없음: 학생 세션은 `student.id`로 발급하는 토큰만. 발급 경로는 학부모 인증(동석) 또는 학부모 등록 기기 + 자녀 PIN(단독). PIN·기기 저장 구조는 3.1 (P01)
 - 학생 기기 페어링 코드(10분·1회용)와 학부모 ID 가입 IP별 횟수 제한(`auth:parent-signup:ip:<IP>`, 기본 10분 5회, #415)은 테이블 없이 Redis 저장
@@ -579,7 +579,7 @@ erDiagram
 
 #48: 무료 상품 버전은 PAYMENT_FREE_PRODUCT_ID로 지정한다(2026-10-28 사용자 확정). 상품·주문·구독 조건은 snapshot으로 보존한다. V15의 payment_charge_attempt는 논리 주문당 확정 실패 재청구 이력을 분리하며 `(order_id,attempt_no)`·pg_order_no·멱등키 UK를 갖는다. 기존 정기 주문 기간 UK는 유지한다. subscription.billing_anchor_day는 최초 일자를 보존한다. payment_premium_usage는 환불과 경합하는 사용 예약·완료 증빙을 소유한다. 상세 경계는 [보고서](../report/payment.md)를 따른다.
 
-#387(V34, P13·P14 개정): `mission_daily_usage`는 무료 자녀의 `THEME_DAY`·`EXTRA` 신규 시도(learning `201`)만 시도 ID PK로 기록하고 `(student_id, usage_date)` 건수를 `product.limits.dailyMissions`와 비교한다(#210 PostgreSQL 결정, core는 learning 시도를 직접 볼 수 없음). `mission_id`는 한도 도달 뒤 같은 미션의 진행 중 시도 이어하기(`200`)를 막지 않도록 마지막 기록 시도를 찾는 데 쓴다(3.6 설계에 더한 컬럼). 학생 삭제 확정 때 같은 트랜잭션에서 지운다. `EXTRA` 허용은 상품 `features.extraMissions`(없으면 허용)로 정하며, 무료 상품에서 `false`일 때만 프리미엄 `EXTRA` 신규 시도를 `payment_premium_usage.kind = EXTRA_MISSION`(`source_id` = 시도 ID, `USED`)으로 남겨 환불 판정의 프리미엄 사용에 넣는다(2026-11-08 결정: 지금은 무료도 허용, 기록 없음). V34 파일 주석의 "THEME_DAY 신규 시도만"은 실제 집계(`ProductEntitlementService.missionStart`, `THEME_DAY`·`EXTRA`)와 다르며 적용된 마이그레이션이라 고치지 않는다. 상세는 [core 보고서](../report/core-gateway.md#13-주간-테마-프록시무료-하루-1개추가-문제-프리미엄-387).
+#387(V34, P13·P14 개정): `mission_daily_usage`는 무료 자녀의 신규 시도(learning `201`)만 시도 ID PK로 기록하고 `(student_id, usage_date)` 건수를 `product.limits.dailyMissions`와 비교한다(#210 PostgreSQL 결정, core는 learning 시도를 직접 볼 수 없음). `mission_id`는 한도 도달 뒤 같은 미션의 진행 중 시도 이어하기(`200`)를 막지 않도록 마지막 기록 시도를 찾는 데 쓴다(3.6 설계에 더한 컬럼). 학생 삭제 확정 때 같은 트랜잭션에서 지운다. `EXTRA` 허용은 상품 `features.extraMissions`로 정하며(값이 없으면 무료 거부·구독 중 허용 #506), 무료 상품에서 `false`일 때 프리미엄 `EXTRA` 신규 시도를 `payment_premium_usage.kind = EXTRA_MISSION`(`source_id` = 시도 ID, `USED`)으로 남겨 환불 판정의 프리미엄 사용에 넣는다. 집계 대상은 2026-11-08 결정 때 무료 `THEME_DAY`·`EXTRA` 합산 하루 1개였고, 2026-11-10 개정(#483, core #485 V43)부터는 무료 테마 문제(`THEME_DAY`·`THEME_REVIEW`)를 세지 않으며 V43이 무료 상품 `extraMissions`를 `false`로 바꿔 무료 `EXTRA`도 403이다. 그래서 이 테이블은 무료 상품에서 `EXTRA`를 다시 켤 때(`true`)의 무료 `EXTRA` 하루 한도로만 쓰이고 평소에는 새 행이 없다(테이블·`limits.dailyMissions`는 되돌릴 수 있게 유지). V34 파일 주석의 "THEME_DAY 신규 시도만"은 실제 집계와 다르며 적용된 마이그레이션이라 고치지 않는다. 상세는 [core 보고서](../report/core-gateway.md#13-주간-테마-프록시무료-하루-1개추가-문제-프리미엄-387).
 
 ```mermaid
 erDiagram
@@ -592,7 +592,7 @@ erDiagram
   subscription |o--o{ payment_order : "청구 대상"
   payment_order ||--o| payment : "승인"
   payment ||--o{ refund_request : refunds
-  student ||--o{ mission_daily_usage : "무료 하루 미션"
+  student ||--o{ mission_daily_usage : "무료 추가 문제 하루 한도"
 
   payment_charge_attempt {
     uuid id PK
@@ -631,7 +631,7 @@ erDiagram
     varchar billing_cycle "MONTHLY|YEARLY"
     int child_limit
     jsonb features
-    jsonb limits "dailyMissions(무료 THEME_DAY·EXTRA 합산), dailyFeedback, dailyConversations, reportNarrative (P13)"
+    jsonb limits "dailyMissions(무료 EXTRA 재활성 때 하루 한도), dailyFeedback, dailyConversations, reportNarrative (P13)"
     boolean active
     timestamptz created_at
   }
@@ -896,9 +896,9 @@ erDiagram
   }
 ```
 
-- 2026-11-10 개정(#483, core #485 새 마이그레이션 전): 사건 종류에 당일 풀이(기준안 `THEME_ON_TIME`, 5)·주간 완주(기준안 `THEME_FINISHED`, 10)를 더한다. `reward_rule`·`reward_point_ledger`의 `event_type` CHECK를 새 버전 마이그레이션으로 넓히고(V35는 고치지 않음) `reward_rule` 행을 추가한다. `THEME_COMPLETED`(30)는 개근(월~금 각 당일 학습 완료)으로 그대로 쓴다. 사건 키는 당일 풀이 `weekStart:day`(예 `2026-11-09:MON`, 요일당 1회), 주간 완주 `weekStart`. 위 Mermaid의 CHECK 목록은 마이그레이션 병합 때 갱신한다
-- `reward_rule` 시드(V35)는 P21 초기값: 학습 완료 10·되돌아보기 10·공유 5·반응 1(하루 5회)·완주 30. 값·상한·사용 여부는 데이터로 바꾸며 이미 쌓인 원장은 바꾸지 않는다. `daily_cap`은 적립 횟수(포인트 합이 아님)
-- `reward_point_ledger` UK `(student_id, event_type, source_key)`로 사건당 1회. 사건 키: 학습 완료 `missionId`(미션당 최초 1회), 되돌아보기·완주 `weekStart`(ISO date, 주 1회), 공유 `postId`, 반응 `postId:reaction`, 해금 `itemKey`. CHECK로 `UNLOCK`만 음수, 그 외 양수(0 없음). 인덱스 `(student_id, created_at)`는 내역과 하루 상한 집계용
+- 2026-11-10 개정(#483, core #485 V43 `V43__theme_free_limit_and_daily_points.sql`): 사건 종류에 당일 풀이(`THEME_ON_TIME`, 5)·주간 완주(`THEME_FINISHED`, 10)를 더했다. `reward_rule`·`reward_point_ledger`의 `event_type` CHECK를 V43으로 넓히고(V35는 고치지 않음) `reward_rule` 2행을 추가했다. `THEME_COMPLETED`(30)는 개근(월~금 각 당일 학습 완료)으로 그대로 쓴다. 사건 키는 당일 풀이 `weekStart:day`(예 `2026-11-09:MON`, 요일당 1회), 주간 완주 `weekStart`. 위 Mermaid의 CHECK 목록은 V43 기준이다. 적립 근거는 learning 주간 테마 조회 응답의 `days[].completedOnDay`·`completed`(개근)·`finished`이며, learning #484 구현 전에는 당일 풀이·주간 완주 칸이 없어 쌓이지 않는다
+- `reward_rule` 시드(V35)는 P21 초기값: 학습 완료 10·되돌아보기 10·공유 5·반응 1(하루 5회)·완주 30(`THEME_COMPLETED`, 2026-11-10 개정으로 개근: 월~금 각 당일 학습 완료). V43이 당일 풀이 5·주간 완주 10(토요일까지 5문제 학습 완료)을 더했다. 값·상한·사용 여부는 데이터로 바꾸며 이미 쌓인 원장은 바꾸지 않는다. `daily_cap`은 적립 횟수(포인트 합이 아님)
+- `reward_point_ledger` UK `(student_id, event_type, source_key)`로 사건당 1회. 사건 키: 학습 완료 `missionId`(미션당 최초 1회), 되돌아보기·개근·주간 완주 `weekStart`(ISO date, 주 1회), 당일 풀이 `weekStart:day`(요일당 1회), 공유 `postId`, 반응 `postId:reaction`, 해금 `itemKey`. CHECK로 `UNLOCK`만 음수, 그 외 양수(0 없음). 인덱스 `(student_id, created_at)`는 내역과 하루 상한 집계용
 - 적립·해금은 학생 행 `FOR SHARE`(삭제 확정과 직렬화) → `reward_point_balance` 행 `FOR UPDATE` 순서로 잠가 학생별로 직렬화한다. 같은 사건 동시 적립, 다른 키로 같은 항목 동시 해금도 한 번만 반영. 잔액 CHECK `>= 0`
 - `look_item`: 관리자(CONTENT) 등록 아이템. 삭제 없이 `STOPPED`로 판매 중단, 이미 해금한 학생은 계속 착용. `code`는 바꾸지 않으며 `:`가 없어 테마·캐릭터 키와 겹치지 않는다. 변경은 같은 트랜잭션에서 `audit_log`(`target_type = LOOK_ITEM`)
 - `student_look_unlock`: 테마·캐릭터 해금값(테마 100·캐릭터 150)은 코드 상수라 테이블이 없다. `THEME:lake`·`COMPANION:mungchi`는 행 없이 항상 해금. V35가 잠금 전 저장된 `student.look_theme`·`look_companion`(무료 제외)을 `ledger_id` NULL 행으로 옮겼다(포인트 차감 없음). 포인트 해금 행은 그 `UNLOCK` 원장 행을 `ledger_id`로 가리킨다(UK)
@@ -1497,7 +1497,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | core | `notification` | `(user_id, read_at, created_at)` | 읽지 않은 알림 |
 | core | `payment` | `(status, updated_at)` | `CONFIRMING` 재조회, 결제 운영 조회 |
 | core | `subscription` | `(next_billing_date) WHERE auto_renew` | 정기 청구 대상 |
-| core | `mission_daily_usage` | `(student_id, usage_date)`, `(student_id, mission_id, created_at)` | 무료 하루 미션 건수, 한도 뒤 같은 미션 이어하기 확인 (#387, V34) |
+| core | `mission_daily_usage` | `(student_id, usage_date)`, `(student_id, mission_id, created_at)` | 무료 추가 문제(`EXTRA` 재활성 때) 하루 건수, 한도 뒤 같은 미션 이어하기 확인 (#387 V34, #485 뒤 무료 `EXTRA`만) |
 | core | `auth_session` | `(user_id)` | 사용자별 세션 폐기 |
 | core | `auth_session` | `(parent_session_id) WHERE parent_session_id IS NOT NULL` | 잠금 해제·재로그인 시 동석 학생 세션 폐기 (V24) |
 | core | `refresh_token` | `(session_id)` | 세션별 토큰 폐기·재사용 탐지 |

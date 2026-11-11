@@ -59,7 +59,7 @@ function GuardianPasswordSettings() {
     [again, setAgain] = useState(''),
     [problem, setProblem] = useState<string | null>(null)
   const start = useParentMutation(studentDeviceApi.startGuardianReauth)
-  const finish = useParentMutation(studentDeviceApi.finishGuardianReauth)
+  const finish = useParentMutation(studentDeviceApi.finishPinReauth)
   const save = useParentMutation(studentDeviceApi.setGuardianPassword)
   useEffect(() => {
     if (!grant) return

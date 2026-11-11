@@ -60,19 +60,6 @@
       "name": "CONSUMER_PREFETCH",
       "value": "1"
     }
-,
-    {
-      "name": "REPORT_EXPLANATION_TIMEOUT_SECONDS",
-      "value": "130"
-    },
-    {
-      "name": "REPORT_EXPLANATION_BUDGET_SECONDS",
-      "value": "400"
-    },
-    {
-      "name": "REPORT_THEME_SUMMARY_ENABLED",
-      "value": "true"
-    }
   ],
   "extraVolumeMounts": [
     {
@@ -243,7 +230,7 @@
     "automountToken": false,
     "create": false
   },
-  "terminationGracePeriodSeconds": 480,
+  "terminationGracePeriodSeconds": 180,
   "tracing": {
     "enabled": true
   }

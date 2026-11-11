@@ -505,8 +505,6 @@
 #class-journal .ws-parent :is(p,blockquote).report-highlight-target[data-answer-highlight=true] { padding:12px 16px; }
 #class-journal .ws-parent .report-highlight-label { display:block; margin:0 0 8px; color:var(--pd-accent-ink); font-size:13px; font-weight:600; }
 #class-journal .ws-parent .report-highlight-summary { color:var(--pd-accent-ink); font-size:14px; }
-/* #508: ai joins "잘한 점"·"함께 이야기해 볼 점" with a newline; keep it as the HTML/PDF files do. */
-#class-journal .ws-parent .report-explanation-text { white-space:pre-line; }
 @media(max-width:1100px) {
   #class-journal .ws-parent .parent-insights.is-linked .parent-insights-content { grid-template-columns:minmax(0,1fr); }
   #class-journal .ws-parent .parent-insights.is-linked .parent-insights-chat { grid-row:1; }

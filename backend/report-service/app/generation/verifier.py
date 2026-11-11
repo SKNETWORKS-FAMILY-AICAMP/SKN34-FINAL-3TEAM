@@ -9,9 +9,8 @@ from app.generation.models import GenerationResult, ItemType
 from app.generation.records import EvidenceRecord
 
 NUMBER = re.compile(r"[-+]?\d[\d,]*(?:\.\d+)?")
-# A numeral starts a word: "정확한 문장"·"적절한 글자" are adjective endings, not counts (#508).
 KOREAN_COUNT = re.compile(
-    r"(?<![가-힣])(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉|열|스무)\s*(?:번|회|개|건|문장|글자)"
+    r"(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉|열|스무)\s*(?:번|회|개|건|문장|글자)"
 )
 UNSUPPORTED_CLAIM = re.compile(r"레벨|등급|순위|점수|사고력.{0,12}향상|상위\s*\d")
 QUOTED = re.compile(r'[“「『"]([^”」』"]+)[”」』"]')

@@ -35,7 +35,7 @@ AWS 데모 환경(CloudFront → ALB → core)에 k6로 부하를 주어 core·N
 
 ### 기본: ID·비밀번호 시험 계정 (#415)
 
-`prepare_accounts.py`가 공개 API로 계정을 만든다. 순서는 ID·비밀번호 가입 → 약관·처리방침 동의 → 자녀(법정대리인 동의) → 학생 기기 등록 → 자녀 PIN이다. 비밀번호·PIN·기기 쿠키는 비밀 파일에만 쓴다.
+`prepare_accounts.py`가 공개 API로 계정을 만든다. 순서는 ID·비밀번호 가입 → 약관·처리방침 동의 → 자녀(법정대리인 동의) → 학생 기기 등록 → 비밀번호 재확인 → 자녀 PIN이다. 비밀번호·PIN·기기 쿠키는 비밀 파일에만 쓴다.
 
 ```powershell
 python evaluation/load/prepare_accounts.py --base-url https://d3jf0rnm6vhd9v.cloudfront.net `

@@ -65,4 +65,4 @@ prod는 core·learning의 Java agent와 Collector egress를 켜야 이 규칙들
 - ai·scoring·report-api는 자체 span이 없다. ai 호출 구간은 호출한 쪽 span으로만 보인다.
 - local values는 Tempo·trace를 켜지 않는다. 검증 시 opt-in으로 켠다.
 - 임계값은 초기 기준이다. 실측 부하 기반 조정과 서비스별 담당 라우팅은 후속이다.
-- 리포트 설명(#476·#479): 배치 시간대 설명 sLLM 서버 기동 실패와 설명 `NOT_INCLUDED` 비율 경보는 아직 없다. 설명이 빠져도 리포트는 `COMPLETED`로 끝나 기존 DLQ·오류율 규칙에 잡히지 않는다. 지표는 report DB `weekly_report.verification` JSONB의 `explanationState`(`INCLUDED`·`NOT_INCLUDED`·`NO_TARGET`, #479)로 정한다(#508): 월요일 배치 주간 리포트 중 `NO_TARGET`을 뺀 대상에서 `NOT_INCLUDED` 비율과, sLLM 가동 창 안에서 `INCLUDED`가 0건인지를 본다. 상태가 없는 이전 리포트는 집계에서 뺀다. report-worker는 아직 지표를 내보내지 않으므로 지금은 report DB 조회로 확인하고, 지표 내보내기·Grafana 규칙·임계값은 #475 실측 뒤 정한다.
+- 리포트 설명(#476·#479): 배치 시간대 설명 sLLM 서버 기동 실패와 설명 `NOT_INCLUDED` 비율 경보는 아직 없다. 설명이 빠져도 리포트는 `COMPLETED`로 끝나 기존 DLQ·오류율 규칙에 잡히지 않으므로 #479에서 지표를 정하고 임계값은 실측 뒤 정한다.

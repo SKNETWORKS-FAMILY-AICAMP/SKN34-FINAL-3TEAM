@@ -48,19 +48,3 @@ test('MSW 자녀 수정은 nickname·grade 중 보낸 필드만 바꾸고 계약
   for (const invalid of [{ nickname: ' ' }, { grade: 10 }, { grade: 2 }, { birthYear: 2016 }])
     assert.equal((await patch(invalid)).status, 400, JSON.stringify(invalid))
 })
-
-// #518: do not let the mock hide filters rejected by core.
-test('MSW 리포트 목록은 QUEUED·알 수 없는 상태를 400으로 거부한다', async () => {
-  const { headers, child } = await parent()
-  for (const status of ['QUEUED', 'UNKNOWN']) {
-    const response = await fetch(`${base}/children/${child.id}/reports?status=${status}`, { headers })
-    assert.equal(response.status, 400, status)
-    assert.equal((await response.json()).code, 'VALIDATION_FAILED')
-  }
-  for (const status of ['RUNNING', 'COMPLETED', 'FAILED']) {
-    const response = await fetch(`${base}/children/${child.id}/reports?status=${status}`, { headers })
-    assert.equal(response.status, 200, status)
-    const data = await response.json()
-    assert.ok(data.items.every((r: { status: string }) => r.status === status))
-  }
-})

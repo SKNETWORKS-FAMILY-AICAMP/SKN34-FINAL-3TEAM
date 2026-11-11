@@ -26,10 +26,15 @@ def candidates(attempts, period):
         and isinstance(answer.judgment.model_scores, dict)
         and answer.judgment.model_scores.get("m2") is not None
     ]
-    # Newest first. The caller tries the next answer of the same type when one fails the
-    # pre-call checks, so an excluded latest answer does not empty its type (#508).
     rows.sort(key=lambda row: (row[1].submitted_at, row[1].version, str(row[1].id)), reverse=True)
-    return rows
+    selected, seen = [], set()
+    for attempt, answer in rows:
+        if attempt.thinking_type not in seen:
+            selected.append((attempt, answer))
+            seen.add(attempt.thinking_type)
+        if len(selected) == 3:
+            break
+    return selected
 
 
 def input_scores(answer, grade):
@@ -115,18 +120,10 @@ class ExplanationGenerator:
                 attempts = await self._learning.explanation_attempts(command.student_id, period)
                 if any(attempt.student_id != command.student_id for attempt in attempts):
                     raise RecordContractError("Explanation records are outside the student scope")
-                rows = candidates(attempts, period)
-                if not rows:
+                selected = candidates(attempts, period)
+                if not selected:
                     state = "NO_TARGET"
-                elif type(command.grade) is not int:
-                    # A missing grade excludes every answer; skip per-answer fallback.
-                    raise RecordContractError("Explanation requires a trusted grade")
-                called = set()
-                for attempt, answer in rows:
-                    if len(called) == 3:
-                        break
-                    if attempt.thinking_type in called:
-                        continue
+                for attempt, answer in selected:
                     try:
                         scores = input_scores(answer, command.grade)
                         link = EvidenceLink(attempt.id, answer.id, answer.version)
@@ -144,13 +141,6 @@ class ExplanationGenerator:
                             raise RecordContractError(
                                 "Explanation evidence is unavailable or stale"
                             )
-                    except Exception:
-                        # Try the next answer of the same type; no sLLM call was made.
-                        logger.warning("Report explanation candidate skipped before call")
-                        continue
-                    # One sLLM call per type at most, whatever its outcome.
-                    called.add(attempt.thinking_type)
-                    try:
                         text = scrub(answer.written_text, command.display_name)
                         # Identifier strings in a submitted answer are not forwarded either.
                         for identifier in (command.student_id, attempt.id, answer.id):

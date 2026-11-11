@@ -59,6 +59,7 @@ export function StudentPoints({ child }: { child: Child }) {
         {POINT_RULES.map((r) => (
           <li key={r.type}>
             {POINT_EVENT_LABELS[r.type]} {r.amount}포인트 · {r.note}
+            {r.preparing && <span className="st-meta"> (준비 중이에요. 곧 쌓이기 시작해요)</span>}
           </li>
         ))}
       </ul>

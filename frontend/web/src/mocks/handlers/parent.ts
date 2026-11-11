@@ -143,6 +143,7 @@ function evidenceResponse(items: ReturnType<typeof evidence>) {
 const downloadTickets = new Map<string, { file: string; childId: string; expires: number }>()
 const pinChallenges = new Map<string, { childId?: string; purpose?: string; scope?: string; bearer: string; expires: number }>()
 const pinGrants = new Map<string, { childId?: string; purpose?: string; scope?: string; bearer: string; expires: number }>()
+export function consumePinReauth(request: Request, childId: string) { return consumeActionReauth(request, 'PIN_CHANGE', childId) }
 export function consumeActionReauth(request: Request, purpose: string, childId?: string, scope?: string) {
   const key = request.headers.get('X-Reauth-Token') ?? ''
   const grant = pinGrants.get(key)
@@ -619,8 +620,6 @@ export const parentHandlers = [
       const c = await parentChild(request, String(params.childId))
       queryFault()
       const status = new URL(request.url).searchParams.get('status')
-      if (status !== null && !['RUNNING', 'COMPLETED', 'FAILED'].includes(status))
-        fail('VALIDATION_FAILED', '리포트 생성 상태를 확인해 주세요.')
       const periodType = new URL(request.url).searchParams.get('periodType')
       // 리포트 목록은 페이지 없이 {items}만 반환한다(api-spec 1.1·5.5, ReportList).
       return {

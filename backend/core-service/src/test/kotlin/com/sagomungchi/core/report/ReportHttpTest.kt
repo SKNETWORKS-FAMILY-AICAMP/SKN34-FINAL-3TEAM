@@ -140,13 +140,7 @@ class ReportHttpTest : IntegrationTestSupport() {
 
     @Test fun `detail passes revision preserves full payload and records actual returned revision id`() {
         val actualReport = UUID.randomUUID()
-        // #508: the dumped detail feeds validate_report_contracts.py, so it carries explanations too.
-        `when`(entitlement.narrativeEnabled(student)).thenReturn(true)
-        val body = detail(actualReport, revision = 2) + ("explanations" to mapOf("state" to "INCLUDED", "items" to listOf(
-            mapOf("attemptId" to UUID.randomUUID(), "answerId" to UUID.randomUUID(), "answerVersion" to 1, "missionTitle" to "합성 미션",
-                "thinkingType" to "ANALYZE", "quote" to "합성 인용 문장.", "text" to "잘한 점: 합성 설명.\n함께 이야기해 볼 점: 합성 설명."),
-            mapOf("attemptId" to UUID.randomUUID(), "answerId" to UUID.randomUUID(), "answerVersion" to 2, "missionTitle" to "합성 미션",
-                "thinkingType" to "REFLECT", "quote" to null, "text" to "잘한 점: 합성 설명."))))
+        val body = detail(actualReport, revision = 2)
         response = json.writeValueAsString(body)
         val result = mvc.get("/api/v1/reports/$report?revision=2") { header("Authorization", "Bearer $token") }
             .andExpect { status { isOk() }; jsonPath("$.revision") { value(2) }; jsonPath("$.state") { value("NO_RECORD") } }

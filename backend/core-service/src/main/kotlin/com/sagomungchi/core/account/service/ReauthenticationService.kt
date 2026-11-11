@@ -104,7 +104,7 @@ class ReauthenticationService(private val repository: ReauthenticationRepository
    else -> throw passwordInvalid()
   }
  }
- /** Account withdrawal, guardian password and child unlinking consume grants within their mutation transaction. */
+ /** #58 PIN service consumes this in the same transaction as the actual PIN mutation. */
  @Transactional(propagation=Propagation.MANDATORY)
  fun consume(identity: AuthenticatedAccount, token: String?, purpose: ReauthPurpose, childId: UUID?=null, scope: String?=null) {
   accounts.lock(identity)

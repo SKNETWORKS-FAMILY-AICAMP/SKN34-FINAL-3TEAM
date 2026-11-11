@@ -192,11 +192,10 @@ class RewardEarnIntegrationTest : IntegrationTestSupport() {
     }
 
     @Test fun `daily solver earns same day solves perfect attendance and weekly finish once from the learning flags`() {
-        // #485 매일 푼 학생: 완료 50 + 당일 풀이 25 + 개근 30 + 주간 완주 10 = 115
+        // #485 매일 푼 학생: 완료 50 + 당일 풀이 25 + 개근 30 + 주간 완주 10 = 115. 개근은 learning 칸 `completed`만 보낸다(#506)
         val days = listOf("MON", "TUE", "WED", "THU", "FRI").map {
             mapOf("day" to it, "missionId" to UUID.randomUUID(), "attemptStatus" to "COMPLETED", "completedOnDay" to true) }
-        themeBody = json.writeValueAsString(mapOf("weekStart" to "2026-11-09", "days" to days, "completed" to true,
-            "perfectAttendance" to true, "finished" to true))
+        themeBody = json.writeValueAsString(mapOf("weekStart" to "2026-11-09", "days" to days, "completed" to true, "finished" to true))
         assertEquals(json.readTree(themeBody), call("GET", "/students/me/weekly-theme", studentToken))
         call("GET", "/students/me/weekly-theme", studentToken)  // 같은 사건 키라 다시 조회해도 한 번
         assertEquals(days.map { "2026-11-09:${it["day"]}" }.toSet(), ledger(RewardEvent.THEME_ON_TIME).map { it.second }.toSet())
@@ -211,18 +210,22 @@ class RewardEarnIntegrationTest : IntegrationTestSupport() {
         themeBody = json.writeValueAsString(mapOf("weekStart" to "2026-11-09", "days" to days, "completed" to false))
         assertEquals(json.readTree(themeBody), call("GET", "/students/me/weekly-theme", studentToken))
         assertEquals(setOf("MISSION_COMPLETED"), ledger().map { it.first }.toSet()); assertEquals(50, balance())
+        // 계약에 없는 칸 이름(perfectAttendance)으로는 개근을 적립하지 않는다(#506: 개근 칸은 completed)
+        themeBody = json.writeValueAsString(mapOf("weekStart" to "2026-11-09", "days" to days, "completed" to false, "perfectAttendance" to true))
+        call("GET", "/students/me/weekly-theme", studentToken)
+        assertEquals(5, ledger().size)
         // 일요일 보충으로 끝낸 주: learning이 finished=false로 주므로 주간 완주 없음. 잘못된 값(문자열·주말 요일)도 건너뜀
-        themeBody = json.writeValueAsString(mapOf("weekStart" to "2026-11-09", "completed" to false, "perfectAttendance" to "true", "finished" to false,
+        themeBody = json.writeValueAsString(mapOf("weekStart" to "2026-11-09", "completed" to "true", "finished" to false,
             "days" to days.map { it + ("completedOnDay" to "true") } + mapOf("day" to "SAT", "missionId" to UUID.randomUUID(), "attemptStatus" to "NOT_STARTED", "completedOnDay" to true)))
         call("GET", "/students/me/weekly-theme", studentToken)
         assertEquals(5, ledger().size)
         // weekStart가 월요일이 아니면 새 사건은 건너뛴다
-        themeBody = json.writeValueAsString(mapOf("weekStart" to "2026-11-10", "days" to days, "perfectAttendance" to true, "finished" to true))
+        themeBody = json.writeValueAsString(mapOf("weekStart" to "2026-11-10", "days" to days, "completed" to true, "finished" to true))
         call("GET", "/students/me/weekly-theme", studentToken)
         assertEquals(5, ledger().size)
         // 금·토에 몰아 푼 학생: 완료 50 + 주간 완주 10 = 60(당일 풀이·개근 없음)
         themeBody = json.writeValueAsString(mapOf("weekStart" to "2026-11-09", "days" to days.map { it + ("completedOnDay" to false) },
-            "completed" to false, "perfectAttendance" to false, "finished" to true))
+            "completed" to false, "finished" to true))
         call("GET", "/students/me/weekly-theme", studentToken)
         assertEquals(listOf("THEME_FINISHED" to "2026-11-09"), ledger(RewardEvent.THEME_FINISHED))
         assertTrue(ledger(RewardEvent.THEME_ON_TIME).isEmpty()); assertTrue(ledger(RewardEvent.THEME_COMPLETED).isEmpty())
