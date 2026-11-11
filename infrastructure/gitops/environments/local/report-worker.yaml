@@ -6,6 +6,8 @@ replicaCount: 0
 command: [python, -m, app.worker]
 service:
   enabled: false
+# #508: explanation budget 400s + base generation/render/upload margin
+terminationGracePeriodSeconds: 480
 resources:
   requests: {cpu: 100m, memory: 256Mi}
   limits: {cpu: 500m, memory: 768Mi}
