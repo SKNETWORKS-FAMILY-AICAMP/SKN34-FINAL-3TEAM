@@ -800,7 +800,7 @@ createdAt
 
 ### 12.1 사전 검사 구현 요약 (2026-11-09)
 
-scoring의 읽기 전용 파일·메타데이터 검사, core 관리자 동기 중계와 별도 MODEL_PREFLIGHT 감사, web 미리보기 검사 버튼을 연결했다. 가중치 본문은 다운로드하지 않으며 전체 S3 SHA-256이 없으면 실패한다. core→scoring local/prod NetworkPolicy와 서비스 URL을 반영했다. 실제 local core·scoring·MinIO·PostgreSQL에서 정상/해시 불일치/누락을 검증했다. 후속 AWS 읽기 전용 확인에서 실제 Pod Identity 연결·S3 읽기 정책과 12개 객체 HEAD를 확인했다. 객체 모두 S3 SHA-256이 없으며 scoring replicas=0이라 실제 Pod 실행 검증은 남았다. 업로드 방식 조율이 필요해 해당 항목은 미완료로 유지한다. 운영 배포·재가동·객체 및 정책 변경은 하지 않았다. 계약·검증·원문 체크리스트는 12.2 이하에 둔다.
+scoring의 읽기 전용 파일·메타데이터 검사, core 관리자 동기 중계와 별도 MODEL_PREFLIGHT 감사, web 미리보기 검사 버튼을 연결했다. 가중치 본문은 다운로드하지 않으며 전체 S3 SHA-256이 없으면 실패한다. core→scoring local/prod NetworkPolicy와 서비스 URL을 반영했다. 실제 local core·scoring·MinIO·PostgreSQL에서 정상/해시 불일치/누락을 검증했다. 후속 AWS 읽기 전용 확인에서 실제 Pod Identity 연결·S3 읽기 정책과 12개 객체 HEAD를 확인했다. 당시 객체에 S3 SHA-256이 없었으나 #493에서 단일 PutObject 업로드 방식을 정하고 12개 객체를 보완해 CloudShell 사전 검사 PASS까지 확인했다([12.9](#129-전체-sha-256-업로드-방식-결정-493)·[12.10](#1210-aws-s3-보완과-cloudshell-사전-검사-493)). scoring replicas=0이라 실제 Pod 실행 검증만 남아 AWS 항목은 미완료로 유지한다. 운영 배포·재가동·정책 변경은 하지 않았다. 계약·검증·원문 체크리스트는 12.2 이하에 둔다.
 
 ### 12.2 구현
 
@@ -856,7 +856,7 @@ scoring의 읽기 전용 파일·메타데이터 검사, core 관리자 동기 �
 - [x] web: 미리보기 카드에 "사전 검사" 버튼과 결과 표시(manifest 필요)
 - [x] api-spec·OpenAPI 반영
 
-AWS 실제 역할 연결·정책 및 객체 HEAD 확인까지 완료했다. 다만 실행 중인 scoring Pod가 없고 기존 객체에 S3 SHA-256이 없어 실제 Pod 검증과 업로드 방식 조율이 남았다. 따라서 AWS 항목은 미완료로 유지한다. 운영 리소스·객체·권한은 변경하지 않았다.
+AWS 실제 역할 연결·정책 및 객체 HEAD 확인까지 완료했다. S3 SHA-256 업로드 방식과 기존 12개 객체 보완은 #493에서 끝났다(12.9·12.10). 실행 중인 scoring Pod가 없어 실제 Pod 검증만 남았으므로 AWS 항목은 미완료로 유지한다. 운영 권한은 변경하지 않았다.
 
 #### 완료 조건
 - [x] scoring·core 테스트, web 테스트 통과

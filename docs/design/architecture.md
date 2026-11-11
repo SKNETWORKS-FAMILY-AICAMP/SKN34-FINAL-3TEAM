@@ -660,7 +660,7 @@ backend/report-service/
 | CNI (NetworkPolicy) | - | Calico (기본 CNI 정책 지원 버전별 상이) | VPC CNI `enableNetworkPolicy: "true"` |
 | 외부 연동 | stub (LLM·토스·Google OAuth, E2E 오버레이) | stub 또는 테스트 키 | LLM API, 토스페이먼츠 테스트 키 |
 
-- stub(`infrastructure/stubs`)은 실서버 E2E 오버레이 `compose.e2e.yaml`에서만 연결한다(google·llm·toss-stub, 합성 값 `infrastructure/stubs/e2e.env`). 기본 Docker Compose의 ai-service는 그대로 `.env`의 `LLM_PROVIDER`·API 키로 실제 LLM을 호출하고, 키가 없으면 판정·되묻기가 `AI_UNAVAILABLE`로 실패한다(6장 LLM 제공자). kind의 `<target>-stub` Service는 미구성이다. [이슈 #246 보고서](../report/testing-ci.md#2-실서버-브라우저-e2e와-외부-스텁-246)
+- stub(`infrastructure/stubs`)은 실서버 E2E 오버레이 `compose.e2e.yaml`에서만 연결한다(google·llm·toss-stub, 합성 값 `infrastructure/stubs/e2e.env`). 기본 Docker Compose의 ai-service는 그대로 `.env`의 `LLM_PROVIDER`·API 키로 실제 LLM을 호출하고, 키가 없으면 판정·되묻기가 `AI_UNAVAILABLE`로 실패한다(6장 LLM 제공자). kind에는 이 E2E용 `<target>-stub` Service가 없다. 예외로 local `sllm-server` release가 llm-stub 이미지(`sagomungchi/llm-stub:local`)를 설명 sLLM 대역으로 쓴다(4.4). [이슈 #246 보고서](../report/testing-ci.md#2-실서버-브라우저-e2e와-외부-스텁-246)
 
 - PostgreSQL은 learning_db 지식 저장소(#463·#466)를 위해 pgvector 포함 이미지(PG 17.11 Debian)를 쓴다. `vector`는 trusted 확장이 아니어서 서비스 migrate 계정의 Flyway가 만들 수 없고, 관리자 계정 bootstrap이 만든다(지식 테이블과 함께 #466에서 추가). alpine(musl)에서 초기화한 기존 데이터 디렉터리는 glibc와 text 정렬이 달라 이미지 교체 뒤 DB마다 `REINDEX DATABASE`를 한 번 실행하거나 볼륨을 새로 만든다
 
@@ -717,7 +717,7 @@ backend/report-service/
     | learning | `judgment/client/PaymentUsageClient.kt` | 피드백 프리미엄 사용 예약·확정 `POST /internal/payment-usage/reservations`·`/completions` (#48) |
     | report-worker | `app/clients/core_client.py` | 학생 별명 `GET /internal/students/{id}/profile`(#119)·리포트 표시 설정 `GET /internal/students/{id}/report-template`(#209) 조회, 삭제 완료 보고 |
     | ai·scoring | `app/clients/core_client.py` | 기동·재연결 시 활성 버전 snapshot `GET /internal/model-versions/active` (ai #68, scoring #85) |
-  - migration-job: RDS egress / local: LLM API·토스 stub는 compose E2E 전용이며 kind에는 없음(4.1)
+  - migration-job: RDS egress / local: LLM API·토스 stub Service는 compose E2E 전용이며 kind에는 없음(4.1, 설명 sLLM 대역 `sllm-server`는 4.4)
 
 ### 4.4 확장
 - #171로 HPA·KEDA·PDB 템플릿과 local report-worker KEDA 0–1 설정. local 상시 값의 HPA·PDB는 자원 한도로 비활성화한다. 아래는 제품 설계 기준이고, 2026-11-05 AWS 데모 적용 값은 이 절 끝의 "AWS 데모 적용"을 따른다
@@ -742,7 +742,9 @@ backend/report-service/
   - readiness·startup은 `/health`(llama.cpp는 모델 적재 중 503). 모델을 다 올려야 Ready라 ai 요청이 적재 중 Pod로 가지 않는다
   - 3B급 양자화 모델 CPU 추론은 t3 계열에 맞지 않아 Karpenter NodePool `explanation-cpu`(4.3)에만 놓는다(nodeSelector·toleration). Pod 요청 CPU 3·메모리 5Gi, llama.cpp `--threads 3 --parallel 1`
   - local(kind)은 실제 모델 대신 OpenAI 호환 대역(`infrastructure/stubs/llm-stub`)으로 내려받기·readiness·NetworkPolicy·cron 0→1→0만 확인한다. 추론 속도·메모리는 #475 실측 대상
-  - AWS 데모는 KEDA 미설치(4.4 AWS 데모 적용)라 KEDA 설치·Pod Identity 연결·NodePool 적용·서버 이미지 ECR 게시가 남아 있다(AWS 작업 보류, `environments/prod/sllm-server.json`·`karpenter-nodepool-explanation.json`은 파일만 작성)
+  - local이 내려받는 `sagomungchi-local-models/explanation/stub/model.gguf`는 platform-data의 MinIO 초기화 Job이 `minio.placeholderObjects`로 없을 때만 만드는 고정 문구 파일이다(#509). 새 kind에서도 platform-data 동기화 뒤 가동 창에 Init이 성공한다. 대역은 파일 내용을 읽지 않는다
+  - AWS 데모는 KEDA 미설치(4.4 AWS 데모 적용)라 KEDA 설치·Pod Identity 연결·NodePool 적용·서버 이미지 ECR 게시가 남아 있다(AWS 작업 보류, `environments/prod/sllm-server.json`·`karpenter-nodepool-explanation.json`은 파일만 작성). 두 파일은 ci-gitops가 렌더링·스키마 검사한다(#509)
+  - 첫 설치는 `redeploy-app.ps1`이 기존 release만 다루므로 수동 `helm upgrade --install`로 한다. 그 뒤 값 변경은 `redeploy-app.ps1 -Service sllm-server`로 재배포한다(이미지 digest가 고정돼야 통과). 저장소에서 빌드하는 이미지가 아니라 `cd-release` 대상이 아니다
   - 생성 시간은 건당 20~30초 가정(30명 × 3건 약 40분), #475 실측 후 시간대·대기 상한·인스턴스 유형 조정
 - 종료 처리: core는 preStop 지연 + terminationGracePeriod로 SSE 정리 시간 확보 (롤링 배포·축소 시 단절은 클라이언트 재연결로 처리)
   - 피드백 executor 종료 대기는 최대 85초, heartbeat timer 종료 대기는 최대 5초다. 배포 시 `terminationGracePeriodSeconds`는 preStop 지연 + Spring/Tomcat 종료 단계의 예산 + 이 최대 90초 + 안전 여유보다 길게 설정하고 실제 롤링 종료로 검증한다. local chart 시작값은 preStop 15초·grace 180초([로컬 플랫폼](../report/local-platform.md) 8장). SIGKILL·프로세스 강제 종료 후에도 진행 중 호출이 보존된다는 의미는 아니다.
@@ -844,7 +846,7 @@ SKN34-FINAL-3TEAM/
 │  │  │  │  ├─ files/
 │  │  │  │  │  ├─ rabbitmq/
 │  │  │  │  │  │  └─ definitions.json      # exchange·queue·DLX 단일 기준
-│  │  │  │  │  ├─ minio/                  # 로컬 버킷 생성
+│  │  │  │  │  ├─ minio/                  # 로컬 버킷·자리 객체 생성 (#509)
 │  │  │  │  │  └─ postgres/
 │  │  │  │  │     ├─ init.sql              # 로컬 init 진입점 (rds-bootstrap.sql 포함)
 │  │  │  │  │     └─ rds-bootstrap*.sql    # DB·서비스별 migrate/app 계정 생성, 로컬 init·운영 RDS 공용 (#230)
@@ -860,6 +862,7 @@ SKN34-FINAL-3TEAM/
 │  │  │  │  ├─ scoring-service.yaml
 │  │  │  │  ├─ report-api.yaml
 │  │  │  │  ├─ report-worker.yaml
+│  │  │  │  ├─ sllm-server.yaml      # 설명 sLLM 대역(llm-stub), KEDA cron 0→1→0 (#476)
 │  │  │  │  ├─ platform-data.yaml
 │  │  │  │  └─ observability.yaml     # local metrics 기반, Langfuse 제외
 │  │  │  └─ prod/                # AWS 데모 Helm values·ExternalSecret 참조·NetworkPolicy
@@ -887,7 +890,7 @@ SKN34-FINAL-3TEAM/
 │  │  └─ hpa-check-values.yaml   # #171 HPA 검증 전용 values
 │  ├─ eks/                       # eksctl ClusterConfig(cluster.json)·관측 인벤토리·gp3
 │  ├─ aws/                       # AWS CLI IaC(demo_stack.py·demo-stack.json·iam/), RDS bootstrap 실행(SQL은 platform-data chart 공용), CloudFront·ALB redacted 설정
-│  └─ stubs/                     # compose.e2e.yaml 전용 대역, e2e.env(합성 값)
+│  └─ stubs/                     # compose.e2e.yaml 대역, e2e.env(합성 값). llm-stub는 kind sllm-server 대역으로도 사용
 │     └─ <target>-stub/          # google·llm·toss-stub: Google OAuth·LLM·토스페이먼츠 대역 (로컬·CI E2E)
 │        └─ Dockerfile
 ├─ .github/
@@ -898,7 +901,7 @@ SKN34-FINAL-3TEAM/
 │     ├─ ci-<service>.yml        # 서비스별 경로 필터 → 재사용 워크플로 호출 (감시 경로는 아래 목록)
 │     ├─ ci-db-schema.yml        # 마이그레이션 적용·ERD 대조 (scripts/check_db_migrations.py)
 │     ├─ ci-contracts.yml        # 저장소 계약 회귀·core 실제 테스트 산출물 대조 (#143·#237); asyncapi 검사는 미구현
-│     ├─ ci-gitops.yml           # chart lint·렌더·스키마 검증, migration 이미지 빌드 (#238)
+│     ├─ ci-gitops.yml           # chart lint·렌더·스키마 검증(local YAML·prod JSON), migration 이미지 빌드 (#238·#509)
 │     ├─ ci-ml-m1.yml · ci-ml-m2.yml  # ml/m1·ml/m2 ruff·pytest
 │     ├─ cd-candidate.yml        # #186 CD 도구 검사(계획 검증·실행기 테스트, 배포 없음)
 │     ├─ cd-release.yml          # #186 운영 배포(main 수동 실행, 4.5)
