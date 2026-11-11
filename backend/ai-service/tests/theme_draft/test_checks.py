@@ -300,6 +300,12 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
         ["CUT_ACTION"],
     ),
     (
+        # 실측 2026-11-11 auto4b: 씨앗 '농부(밀짚모자)'의 '밀짚'이 '짚'에 걸려 줄거리 9번 실패
+        "straw hat is not a hand action",
+        edit(lambda t: t["introCuts"][2].update(scene="밀짚모자를 쓴 뭉치가 마을 길 위에 있다")),
+        [],
+    ),
+    (
         "person gestures while mungchi watches",
         edit(lambda t: t["outroCuts"][2].update(action="뭉치 곁에서 지호가 손을 흔든다")),
         [],
