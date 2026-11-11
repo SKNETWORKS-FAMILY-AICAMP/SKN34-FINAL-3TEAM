@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: ai 내부 API
   version: 1.0.0
-  description: learning·core·report가 호출하는 ai-service 내부 API (api-spec 4.2). 구현된 경로만 담는다. 스키마는 FastAPI(pydantic) 생성 결과에서 옮겼고 필드 이름은
+  description: learning·core·report가 호출하는 ai-service 내부 API (api-spec 4.2). 구현된 경로만 담는다. 단 x-implementation-status가 붙은 경로·칸은 계약만 먼저 정한 구현 전 항목이다(#464). 스키마는 FastAPI(pydantic) 생성 결과에서 옮겼고 필드 이름은
     camelCase 별칭이다. 헬스 체크(/health/*)는 제외한다.
 servers:
 - url: /internal
@@ -391,6 +391,66 @@ paths:
                   properties:
                     retryable:
                       type: boolean
+  /embeddings:
+    post:
+      summary: '지식 본문·질의 임베딩 (api-spec 4.2.4, #464 계약 C6, 구현 #467). 순서 보존, 사용량 callType KNOWLEDGE_EMBEDDING(기준안)'
+      description: >-
+        learning 지식 적재(#466)·관계 후보 스크립트(#468)·ai 검색 클라이언트(#470)가 부른다. 교육과정 지식과 질의 문장만 받고
+        학생 정보·학생 답은 받지 않는다. 기준안: 모델 text-embedding-3-small, 1536차원, 한 요청 texts 1~64개, 본문당 1~8,000자.
+        모델·차원은 설정값이며 응답에 함께 돌려줘 learning이 다른 차원을 넣지 않게 한다.
+      operationId: createEmbeddings
+      x-implementation-status: planned-issue-467
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmbeddingRequest'
+        required: true
+      responses:
+        '200':
+          description: 성공 (vectors는 texts와 같은 순서·같은 개수)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmbeddingResponse'
+        '400':
+          description: VALIDATION_FAILED (texts 0개·65개 이상, 빈 글·공백만, 8,000자 초과)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: UNAUTHENTICATED (내부 토큰 불일치)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: AI_BAD_RESPONSE (제공자 응답의 벡터 개수·차원이 맞지 않음). `retryable` 포함
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Problem'
+                - type: object
+                  required:
+                  - retryable
+                  properties:
+                    retryable:
+                      type: boolean
+        '503':
+          description: AI_UNAVAILABLE (임베딩 제공자 미설정·호출 실패·시간 초과). `retryable` 포함
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Problem'
+                - type: object
+                  required:
+                  - retryable
+                  properties:
+                    retryable:
+                      type: boolean
 components:
   securitySchemes:
     InternalToken:
@@ -500,6 +560,14 @@ components:
           items:
             $ref: '#/components/schemas/MissionDraftFailure'
           type: array
+        knowledge:
+          description: '#464 계약 C7(기준안, 팀 확인 전). learning이 GET /internal/knowledge/standards?codes&grade&thinkingType
+            응답을 그대로 넣는다. 조회 실패·근거 없음이면 생략 또는 null이고 ai는 지금과 같은 방식으로 생성한다. 구현 #470'
+          x-implementation-status: planned-issue-470
+          anyOf:
+          - $ref: '#/components/schemas/KnowledgeBundle'
+          - type: 'null'
+          default: null
       required:
       - standards
       - thinkingType
@@ -651,6 +719,13 @@ components:
           $ref: '#/components/schemas/MissionDraftChecks'
         versions:
           $ref: '#/components/schemas/LlmVersions'
+        sources:
+          description: '#464 계약 C7(기준안, 팀 확인 전). 프롬프트에 넣은 근거 조각 {kind, id, datasetVersion}. 근거 없이
+            생성했으면 빈 배열. learning이 초안과 함께 저장해 관리자 검토(P19)에 보여 준다. 구현 #470'
+          x-implementation-status: planned-issue-470
+          items:
+            $ref: '#/components/schemas/KnowledgeRef'
+          type: array
       required:
       - draft
       - checks
@@ -1842,3 +1917,187 @@ components:
                 type: string
               reason:
                 type: string
+    EmbeddingRequest:
+      description: '#464 계약 C6. 교육과정 지식 본문 또는 검색 질의만(학생 정보 없음)'
+      type: object
+      additionalProperties: false
+      required:
+      - texts
+      properties:
+        texts:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items:
+            type: string
+            minLength: 1
+            maxLength: 8000
+    EmbeddingResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - model
+      - dimensions
+      - vectors
+      properties:
+        model:
+          type: string
+          description: 실제로 쓴 임베딩 모델(기준안 text-embedding-3-small)
+        dimensions:
+          type: integer
+          description: 벡터 길이(기준안 1536)
+        vectors:
+          type: array
+          items:
+            type: array
+            items:
+              type: number
+    KnowledgeThinkingType:
+      type: string
+      enum: [ANALYZE, EVALUATE, CREATE, SOLVE, REFLECT]
+    KnowledgeKind:
+      type: string
+      enum: [STANDARD, DOMAIN, CONTENT, SUBJECT_GUIDE, THINKING_TYPE]
+    KnowledgeSubject:
+      type: string
+      enum: [국어, 도덕, 사회, 수학, 과학]
+    KnowledgeFallbackReason:
+      description: >-
+        근거 없음 사유(200 응답, #464 C5). NO_ACTIVE_DATASET 활성 판 없음, BELOW_THRESHOLD 최소 유사도 넘는 조각 없음,
+        NO_CANDIDATE 그 유형 후보 없음, CODE_NOT_FOUND 요청 코드가 하나도 없음, NO_REVIEWED_RELATION 비슷한 내용 요소는 있으나 확인된 covers 없음
+      type: string
+      enum: [NO_ACTIVE_DATASET, BELOW_THRESHOLD, NO_CANDIDATE, CODE_NOT_FOUND, NO_REVIEWED_RELATION]
+    KnowledgeRef:
+      description: 근거 조각 표시. C5 응답 조각마다 붙고 C7 미션 초안 응답 sources 항목이 된다
+      type: object
+      additionalProperties: false
+      required: [kind, id, datasetVersion]
+      properties:
+        kind: {$ref: '#/components/schemas/KnowledgeKind'}
+        id: {type: string, minLength: 1}
+        datasetVersion: {type: string, minLength: 1}
+    KnowledgeContentItem:
+      type: object
+      additionalProperties: false
+      required: [group, text]
+      properties:
+        group: {type: [string, 'null']}
+        text: {type: string}
+    KnowledgeStandard:
+      type: object
+      additionalProperties: false
+      required: [code, subject, grades, semesters, noticeGradeBand, area, statement, explanation, ref]
+      properties:
+        code: {type: string}
+        subject: {$ref: '#/components/schemas/KnowledgeSubject'}
+        grades: {type: array, items: {type: integer, minimum: 3, maximum: 6}}
+        semesters: {type: array, items: {type: string, pattern: '^[3-6]-[12]$'}}
+        noticeGradeBand: {type: string}
+        area: {type: string}
+        statement: {type: string}
+        explanation: {type: [string, 'null']}
+        ref: {$ref: '#/components/schemas/KnowledgeRef'}
+    KnowledgeDomain:
+      type: object
+      additionalProperties: false
+      required: [id, subject, area, scope, coreIdeas, knowledge, process, values, considerations, activities, ref]
+      properties:
+        id: {type: string}
+        subject: {$ref: '#/components/schemas/KnowledgeSubject'}
+        area: {type: string}
+        scope: {type: string, enum: [BOTH, CONTENT_SYSTEM, STANDARD_GROUP]}
+        coreIdeas: {type: array, items: {type: string}}
+        knowledge: {type: array, items: {$ref: '#/components/schemas/KnowledgeContentItem'}}
+        process: {type: array, items: {$ref: '#/components/schemas/KnowledgeContentItem'}}
+        values: {type: array, items: {$ref: '#/components/schemas/KnowledgeContentItem'}}
+        considerations: {type: array, items: {type: string}}
+        activities: {type: array, items: {type: string}}
+        ref: {$ref: '#/components/schemas/KnowledgeRef'}
+    KnowledgeContent:
+      type: object
+      additionalProperties: false
+      required: [id, domainId, category, group, text, ref]
+      properties:
+        id: {type: string}
+        domainId: {type: string}
+        category: {type: string, enum: [K, P, V]}
+        group: {type: [string, 'null']}
+        text: {type: string}
+        ref: {$ref: '#/components/schemas/KnowledgeRef'}
+    KnowledgeFit:
+      type: object
+      additionalProperties: false
+      required: [thinkingType, reason]
+      properties:
+        thinkingType: {$ref: '#/components/schemas/KnowledgeThinkingType'}
+        reason: {type: string}
+    KnowledgeStandardBundle:
+      type: object
+      additionalProperties: false
+      required: [standard, domain, covers, fits, gradeMatch]
+      properties:
+        standard: {$ref: '#/components/schemas/KnowledgeStandard'}
+        domain:
+          anyOf:
+            - $ref: '#/components/schemas/KnowledgeDomain'
+            - type: 'null'
+        covers: {type: array, items: {$ref: '#/components/schemas/KnowledgeContent'}}
+        fits: {type: array, items: {$ref: '#/components/schemas/KnowledgeFit'}}
+        gradeMatch: {type: [boolean, 'null']}
+    KnowledgeSubjectGuide:
+      type: object
+      additionalProperties: false
+      required: [subject, teaching, assessment, ref]
+      properties:
+        subject: {$ref: '#/components/schemas/KnowledgeSubject'}
+        teaching: {type: array, items: {type: string}}
+        assessment: {type: array, items: {type: string}}
+        ref: {$ref: '#/components/schemas/KnowledgeRef'}
+    KnowledgeThinkingTypeGuide:
+      description: 팀이 우리 말로 쓴 출제 지침과 출처 표기(블룸 원서·VALUE 루브릭 문장 없음)
+      type: object
+      additionalProperties: false
+      required: [type, name, basis, elements, questionMust, questionMustNot, ref]
+      properties:
+        type: {$ref: '#/components/schemas/KnowledgeThinkingType'}
+        name: {type: string}
+        basis:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [framework, attribution]
+            properties:
+              framework: {type: string}
+              attribution: {type: string}
+        elements:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, label, description]
+            properties:
+              code: {type: string}
+              label: {type: string}
+              description: {type: string}
+        questionMust: {type: array, items: {type: string}}
+        questionMustNot: {type: array, items: {type: string}}
+        ref: {$ref: '#/components/schemas/KnowledgeRef'}
+    KnowledgeBundle:
+      description: GET /internal/knowledge/standards 응답. C7 미션 초안 요청 knowledge 칸에 그대로 담는다
+      type: object
+      additionalProperties: false
+      required: [datasetVersion, items, missingCodes, subjectGuides, thinkingType, reason]
+      properties:
+        datasetVersion: {type: [string, 'null']}
+        items: {type: array, items: {$ref: '#/components/schemas/KnowledgeStandardBundle'}}
+        missingCodes: {type: array, items: {type: string}}
+        subjectGuides: {type: array, items: {$ref: '#/components/schemas/KnowledgeSubjectGuide'}}
+        thinkingType:
+          anyOf:
+            - $ref: '#/components/schemas/KnowledgeThinkingTypeGuide'
+            - type: 'null'
+        reason:
+          anyOf:
+            - $ref: '#/components/schemas/KnowledgeFallbackReason'
+            - type: 'null'

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sagomungchi.local/knowledge/relation-review.schema.json",
+  "title": "지식 관계 확인 파일 한 행 (#464 계약 C4)",
+  "description": "UTF-8 CSV(머리행 = 아래 칸 이름, 이 순서)를 행마다 문자열 객체로 읽어 검사한다. 빈 칸은 빈 문자열. 후보를 내보낼 때(#468)는 decision 이하를 비우고, 사람이 decision·reviewer·reviewedAt을 채운다. ACCEPT·MODIFY 행만 관계 테이블(C3)에 적재한다. reviewer 'SAMPLE'은 샘플 전용이라 실제 적재(#466)는 거부한다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["relationType", "standardCode", "standardStatement", "target", "targetText", "evidence", "similarity", "candidateSource", "decision", "modifiedTarget", "reason", "reviewer", "reviewedAt", "datasetVersion"],
+  "properties": {
+    "relationType": {"description": "FITS(맞는 생각 유형)·PREREQUISITE(선수)·COVERS(다루는 내용 요소)", "enum": ["FITS", "PREREQUISITE", "COVERS"]},
+    "standardCode": {"type": "string", "pattern": "^[0-9][가-힣]+[0-9]{2}-[0-9]{2}$"},
+    "standardStatement": {"description": "확인하는 사람이 보는 성취기준 문장", "type": "string", "minLength": 1},
+    "target": {"description": "FITS: 유형 코드, PREREQUISITE: 선수 성취기준 코드, COVERS: 내용 요소 id", "type": "string", "minLength": 1},
+    "targetText": {"description": "FITS: 유형 이름, PREREQUISITE: 선수 성취기준 문장, COVERS: 내용 요소 글", "type": "string", "minLength": 1},
+    "evidence": {"description": "후보 근거(성취기준 동사·해설 구절·유형 근거 항목 등). '문장:'·'해설:'로 시작하면 그 뒤는 원문 그대로", "type": "string", "minLength": 1},
+    "similarity": {"description": "COVERS 임베딩 유사도(0~1). 없으면 빈 칸", "type": "string", "pattern": "^$|^(0(\\.[0-9]+)?|1(\\.0+)?)$"},
+    "candidateSource": {"description": "후보를 낸 방법", "enum": ["LLM", "EMBEDDING", "MANUAL"]},
+    "decision": {"description": "빈 칸 = 확인 전", "enum": ["", "ACCEPT", "REJECT", "MODIFY"]},
+    "modifiedTarget": {"description": "MODIFY일 때 바꾼 대상(target과 같은 모양)", "type": "string"},
+    "reason": {"description": "관계 테이블 reason으로 옮기는 근거. REJECT·MODIFY는 필수", "type": "string"},
+    "reviewer": {"description": "확인한 사람(관계 테이블 reviewed_by)", "type": "string"},
+    "reviewedAt": {"description": "확인한 날(KST, YYYY-MM-DD)", "type": "string", "pattern": "^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+    "datasetVersion": {"description": "후보를 만들 때 쓴 판(C9)", "type": "string", "pattern": "^kn-[0-9]{8}-[0-9]{2}$"}
+  },
+  "allOf": [
+    {"if": {"properties": {"decision": {"const": ""}}},
+     "then": {"properties": {"modifiedTarget": {"const": ""}, "reviewer": {"const": ""}, "reviewedAt": {"const": ""}}},
+     "else": {"properties": {"reviewer": {"minLength": 1}, "reviewedAt": {"minLength": 10}}}},
+    {"if": {"properties": {"decision": {"enum": ["REJECT", "MODIFY"]}}},
+     "then": {"properties": {"reason": {"minLength": 1}}}},
+    {"if": {"properties": {"decision": {"const": "MODIFY"}}},
+     "then": {"properties": {"modifiedTarget": {"minLength": 1}}},
+     "else": {"properties": {"modifiedTarget": {"const": ""}}}},
+    {"if": {"properties": {"relationType": {"const": "FITS"}}},
+     "then": {"properties": {"target": {"enum": ["ANALYZE", "EVALUATE", "CREATE", "SOLVE", "REFLECT"]}, "similarity": {"const": ""}}}},
+    {"if": {"properties": {"relationType": {"const": "PREREQUISITE"}}},
+     "then": {"properties": {"target": {"pattern": "^[0-9][가-힣]+[0-9]{2}-[0-9]{2}$"}, "similarity": {"const": ""}}}},
+    {"if": {"properties": {"relationType": {"const": "COVERS"}}},
+     "then": {"properties": {"target": {"pattern": ":[KPV]:[0-9a-f]{8}$"}}}}
+  ]
+}

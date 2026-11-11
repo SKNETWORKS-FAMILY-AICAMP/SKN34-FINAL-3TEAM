@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sagomungchi.local/knowledge/eval-record.schema.json",
+  "title": "지식 RAG 평가셋 한 줄 (#464 계약 C8)",
+  "description": "JSONL 한 줄. 팀이 직접 쓴 질의만(AI Hub 원문·학생 답 없음). 정답은 사람이 확인한 것만 쓰고 확인 전이면 reviewed=false. PARAPHRASE: 성취기준 문장을 바꿔 말한 질의 → 정답 코드(Recall@5·MRR). THEME: 테마 주제 → 정답 성취기준. RELATION: 관계 질의(THEME_CANDIDATES·LEARNED·PREREQUISITE) → 정답.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "kind", "query", "grade", "expected", "reviewed", "author"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z]+-[0-9]{3,}$"},
+    "kind": {"enum": ["PARAPHRASE", "THEME", "RELATION"]},
+    "relationType": {"enum": ["THEME_CANDIDATES", "LEARNED", "PREREQUISITE"]},
+    "query": {"description": "질의 글. PREREQUISITE는 성취기준 코드", "type": "string", "minLength": 1},
+    "grade": {"type": "integer", "minimum": 3, "maximum": 6},
+    "semester": {"type": "string", "pattern": "^[3-6]-[12]$"},
+    "subject": {"enum": ["국어", "도덕", "사회", "수학", "과학"]},
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "codes": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[0-9][가-힣]+[0-9]{2}-[0-9]{2}$"}},
+        "byType": {
+          "type": "object", "additionalProperties": false, "minProperties": 1,
+          "patternProperties": {"^(ANALYZE|EVALUATE|CREATE|SOLVE|REFLECT)$": {"type": "array", "items": {"type": "string", "pattern": "^[0-9][가-힣]+[0-9]{2}-[0-9]{2}$"}}}
+        },
+        "verdict": {"enum": ["LEARNED", "NOT_YET", "HOLD"]}
+      }
+    },
+    "reviewed": {"type": "boolean"},
+    "author": {"type": "string", "minLength": 1},
+    "notes": {"type": "string"}
+  },
+  "allOf": [
+    {"if": {"properties": {"kind": {"const": "RELATION"}}},
+     "then": {"required": ["relationType", "semester"]},
+     "else": {"not": {"required": ["relationType"]}, "properties": {"expected": {"required": ["codes"], "properties": {"codes": {"minItems": 1}}}}}},
+    {"if": {"properties": {"relationType": {"const": "THEME_CANDIDATES"}}, "required": ["relationType"]},
+     "then": {"properties": {"expected": {"required": ["byType"]}}}},
+    {"if": {"properties": {"relationType": {"const": "LEARNED"}}, "required": ["relationType"]},
+     "then": {"properties": {"expected": {"required": ["verdict"]}}}},
+    {"if": {"properties": {"relationType": {"const": "PREREQUISITE"}}, "required": ["relationType"]},
+     "then": {"properties": {"query": {"pattern": "^[0-9][가-힣]+[0-9]{2}-[0-9]{2}$"}, "expected": {"required": ["codes"]}}}}
+  ]
+}

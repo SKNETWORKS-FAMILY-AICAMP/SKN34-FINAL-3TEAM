@@ -1058,3 +1058,13 @@ target: 그 항목의 전문가 이유 문장(71818 score.personal.*.feedback �
 - `tests/test_versions.py`: `/internal/versions`에 `reportExplanation`
 - `scripts/tests/test_ai_openapi.py`: 라우터 8개와 OpenAPI 경로 일치
 - 남은 확인: 실제 sLLM 서버(#476)와 학습 모델(#475)로 생성 시간·후처리 통과율 측정. report 연동은 #479(PR #494)에서 완료, 후속 정합화는 #508
+
+## 15. 교육과정 지식 RAG 계약 (#464, 2026-11-11)
+
+에픽 #463 계약 고정의 ai 몫. 구현(#467 임베딩, #470 검색 연결) 전 계약이며 값은 기준안(팀 확인 전)이다. 테이블·샘플·결정 전체는 [learning 28장](learning.md#28-교육과정-지식-rag-계약-고정-464-에픽-463-2026-11-11).
+
+- C6 임베딩([api-spec 4.2.4](../design/api-spec.md#424-지식-임베딩-463-계약-464-c6-구현-467)): `POST /internal/embeddings` `{texts[]}` → `{model, dimensions, vectors[]}`, 1~64개·본문당 8,000자, 502·503. OpenAPI에 `x-implementation-status: planned-issue-467`. 사용량 `callType` 기준안 `KNOWLEDGE_EMBEDDING`은 core 목록과 함께 #467에서(이번에는 목록 그대로)
+- C7 근거 칸([api-spec 4.2.5](../design/api-spec.md#425-미션-초안-근거-칸-463-계약-464-c7-구현-470)): 미션 초안 요청 `knowledge`(C5 standards 응답 그대로, 선택), 응답 `sources`(근거 조각 표시, 빈 배열 허용). OpenAPI 칸에 `planned-issue-470`. `mission_draft/models.py`는 바꾸지 않았다(#470)
+- `app/knowledge/contracts.py`: C5·C6·C7 pydantic 모델, `KnowledgeApi`·`Embedder`·`KnowledgeRetriever` Protocol, `RetrievalResult`(근거 없음은 예외 대신 `fallback` 사유), `sources_of`
+- `app/knowledge/fake.py`: 표준 라이브러리만 쓰는 가짜(계약 시험이 pydantic 없이 불러 씀). 샘플을 활성 판 하나로 올린 `FakeKnowledgeApi`(다섯 경로, 인증·400·409 포함), 글자 2개 조각 해시 벡터 `FakeEmbedder`(모델 `fake-bigram-v1`, 같은 글 같은 벡터), `as_knowledge_api()`·`as_embedder()`(Protocol 만족), `mock_transport()`(httpx), `serve()`(로컬 HTTP)
+- 검증: `tests/knowledge/test_contracts.py` 29개(모델 칸·필수 = OpenAPI, 사유·상한 = OpenAPI·가짜, Protocol 통해 응답, MockTransport·HTTP 서버), `scripts/tests/test_knowledge_contracts.py`(learning 28장). `test_ai_openapi.py`는 구현 전 표시 경로를 라우터 대조에서 뺌(라우터 8개 그대로)
