@@ -527,3 +527,24 @@ def test_theme_missions_use_theme_question_limit() -> None:
     assert response.failure is None
     limit = get_settings().theme_question_max_chars[3]
     assert all(f"질문 글자 수 상한: {limit}자" in u for u in gen.users("GeneratedDraft"))
+
+
+def test_plan_names_and_variety_rules() -> None:
+    """이름은 코드가 목록에서 고르고 같은 요청(주·학년)이면 같음, 큰 질문은 '마지막으로 둔 곳'만
+    되풀이하지 않고 사람을 탓하는 질문은 금지, 인물은 장면에 맞게(실측: 큰 질문 19/19가 같은 틀,
+    민지·준호 반복)."""
+    from app.theme_draft import prompts
+
+    request = ThemeDraftRequest.model_validate(request_body())
+    names = prompts.names_for(request)
+    assert len(names) == prompts.NAMES_PER_THEME and set(names) <= set(prompts.NAME_POOL)
+    assert prompts.names_for(request) == names
+    other = ThemeDraftRequest.model_validate(request_body(weekStart="2026-11-23"))
+    assert prompts.names_for(other) != names
+    user = prompts.plan_user(request, [])
+    assert "등장인물 이름 목록" in user and all(n in user for n in names)
+    assert "'마지막으로 둔 곳'만 되풀이하지 않는다" in prompts.PLAN_SYSTEM
+    assert "사람을 탓하는 질문은 쓰지 않는다" in prompts.PLAN_SYSTEM
+    assert "흔한 이름" not in prompts.PLAN_SYSTEM
+    extra = prompts.mission_extra(valid_theme(), "MON", 3, [])
+    assert "새 이름을 만들지 않는다" in extra
