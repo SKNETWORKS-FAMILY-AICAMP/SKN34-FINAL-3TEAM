@@ -8,6 +8,7 @@ import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.learning.attempt.domain.AttemptContext
 import com.sagomungchi.learning.attempt.domain.ThemeAttempt
 import com.sagomungchi.learning.theme.domain.AnswerPickResult
+import com.sagomungchi.learning.theme.domain.AnswerPickView
 import com.sagomungchi.learning.theme.domain.DayState
 import com.sagomungchi.learning.theme.domain.ThemeEndingState
 import com.sagomungchi.learning.theme.domain.ThemeGrade
@@ -329,6 +330,9 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
         assertEquals(ThemeEndingState.NOT_ENDED, notEnded.ending)
         assertNull(notEnded.answer)
         assertNull(notEnded.outro)
+        // 고르지 않았으면 고른 정답 칸도 없음 (#590)
+        assertNull(view.answerPick)
+        assertNull(notEnded.answerPick)
     }
 
     @Test
@@ -351,6 +355,7 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
         assertEquals("금요일 단서", ended.answerClue)
         assertTrue(ended.outroVideoUrl!!.startsWith(TestAssets.BASE + "theme-drafts/run/OUTRO.mp4?"), ended.outroVideoUrl)
         assertEquals(mapOf("pan" to "left"), ended.outroMotion)
+        assertEquals(AnswerPickView("강아지", true), ended.answerPick)
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM theme_answer_pick WHERE student_id = ?", Int::class.java, student))
         // 무료 일요일에도 이미 본 엔딩은 다시 볼 수 있음
         val sunday = WEEK.plusDays(6)
@@ -370,12 +375,19 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
 
         assertEquals(AnswerPickResult(false, ThemeEndingState.NOT_ENDED, null), picked)
         assertEquals(ThemeEndingState.NOT_ENDED, serviceOn(saturday).ending(student, WEEK))
+        // 틀린 뒤 다시 조회해도 고른 후보와 틀림을 알 수 있고, 정답·결말은 엔딩 전이라 비어 있음 (#590)
+        val waiting = serviceOn(friday).current(student, ThemeGrade.G3, friday)
+        assertEquals(AnswerPickView("고양이", false), waiting.answerPick)
+        assertNull(waiting.answer)
+        assertNull(waiting.outro)
         attempt(missions[4], "THEME_REVIEW", at(saturday, 13), finishedAt = at(saturday, 14), completedAt = at(saturday, 14))
         // 같은 트랜잭션의 같은 조회는 MyBatis 세션 캐시를 타므로 쓰기 한 번으로 비움
         serviceOn(saturday).recordReviewView(student, ThemeGrade.G3, saturday)
         val ended = serviceOn(saturday).current(student, ThemeGrade.G3, saturday)
         assertEquals(ThemeEndingState.ENDED, ended.ending)
         assertEquals("강아지", ended.answer)
+        // 엔딩 뒤에도 틀렸던 것은 남아 종료 화면이 "정답은 ○○였어요"를 구분할 수 있음 (#590)
+        assertEquals(AnswerPickView("고양이", false), ended.answerPick)
     }
 
     @Test

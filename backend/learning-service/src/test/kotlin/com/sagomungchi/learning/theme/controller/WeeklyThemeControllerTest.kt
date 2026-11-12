@@ -4,6 +4,7 @@ import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning.mission.domain.ThinkingType
 import com.sagomungchi.learning.theme.domain.AnswerPickResult
+import com.sagomungchi.learning.theme.domain.AnswerPickView
 import com.sagomungchi.learning.theme.domain.DayState
 import com.sagomungchi.learning.theme.domain.ThemeEndingState
 import com.sagomungchi.learning.theme.domain.ThemeGrade
@@ -18,6 +19,7 @@ import com.sagomungchi.learning.theme.domain.ThemeSummaryState
 import com.sagomungchi.learning.theme.domain.WeeklyThemeSummary
 import com.sagomungchi.learning.theme.domain.WeeklyThemeView
 import com.sagomungchi.learning.theme.service.WeeklyThemeService
+import org.hamcrest.Matchers
 import org.junit.jupiter.api.Test
 import org.mockito.BDDMockito.given
 import org.mockito.Mockito.verifyNoInteractions
@@ -79,6 +81,26 @@ class WeeklyThemeControllerTest(@Autowired private val mockMvc: MockMvc) {
             jsonPath("$.review.open") { value(false) }
             jsonPath("$.review.missions[0].missed") { value(false) }
             jsonPath("$.completed") { value(false) }
+            jsonPath("$.answerPick") { value(Matchers.nullValue()) }
+        }
+    }
+
+    @Test
+    fun `고른 큰 질문 정답은 answerPick {pick, correct}로 돌려줌 (#590)`() {
+        val friday = monday.plusDays(4)
+        given(service.current(student, ThemeGrade.G3, friday)).willReturn(
+            WeeklyThemeView(
+                themeId, monday, "물의 여행", "소개", false, emptyList(), ThemeReview(false, emptyList()),
+                completed = false, answerPick = AnswerPickView("고양이", false),
+            ),
+        )
+
+        mockMvc.get("$base?grade=G3&date=2026-11-13") { as_() }.andExpect {
+            status { isOk() }
+            jsonPath("$.answerPick.pick") { value("고양이") }
+            jsonPath("$.answerPick.correct") { value(false) }
+            jsonPath("$.ending") { value("NOT_ENDED") }
+            jsonPath("$.answer") { value(Matchers.nullValue()) }
         }
     }
 
