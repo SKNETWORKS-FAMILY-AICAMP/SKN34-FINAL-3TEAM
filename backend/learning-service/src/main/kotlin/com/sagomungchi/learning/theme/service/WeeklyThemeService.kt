@@ -31,7 +31,6 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
-import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
@@ -49,14 +48,13 @@ class WeeklyThemeService(
 ) {
     /** 이번 주 테마·요일 상태·되돌아보기 목록 (api-spec 2.11). 학년에 게시 테마가 하나도 없으면 404 */
     @Transactional(readOnly = true)
-    fun current(studentId: UUID, grade: ThemeGrade, date: LocalDate): WeeklyThemeView {
+    fun current(studentId: UUID, grade: ThemeGrade, date: LocalDate, sundayTheme: Boolean = false): WeeklyThemeView {
         val week = ThemeWeek.startOf(date)
         val theme = repository.findLatestPublished(grade, week) ?: notFound()
         val version = repository.findVersion(published(theme))
         val story = version.story
         val days = repository.findDays(version.id)
         val attempts = repository.findStudentAttempts(studentId, week)
-        val weekend = ThemeWeek.isWeekend(date)
         val ended = ThemeEnding.ended(date)
         val seen = repository.findStoryViews(studentId, week)
         return WeeklyThemeView(
@@ -66,7 +64,7 @@ class WeeklyThemeService(
             intro = version.intro,
             reused = theme.weekStart != week,
             days = days.map { day ->
-                val state = ThemeWeek.stateOf(ThemeDay.ofNumber(day.dayOfWeek), date)
+                val state = ThemeWeek.stateOf(ThemeDay.ofNumber(day.dayOfWeek), date, sundayTheme)
                 val opened = state != DayState.LOCKED
                 ThemeDayView(
                     day = ThemeDay.ofNumber(day.dayOfWeek),
@@ -80,11 +78,12 @@ class WeeklyThemeService(
                 )
             },
             review = ThemeReview(
-                open = weekend,
+                open = ThemeWeek.reviewOpen(date, sundayTheme),
                 missions = days.map { day ->
                     val finished = finished(attempts, day.missionId)
-                    val closed = ThemeWeek.stateOf(ThemeDay.ofNumber(day.dayOfWeek), date) == DayState.CLOSED
-                    ThemeReviewMission(day.missionId, day.title, completed = finished, missed = closed && !finished)
+                    // 칸 이름은 core·report가 써서 유지하고 뜻만 "공개됐지만 아직 마무리하지 않음"으로 바뀜(api-spec 2.11, #484)
+                    val released = ThemeWeek.stateOf(ThemeDay.ofNumber(day.dayOfWeek), date, sundayTheme) != DayState.LOCKED
+                    ThemeReviewMission(day.missionId, day.title, completed = finished, missed = released && !finished)
                 },
             ),
             completed = completedWeek(days, attempts, week),
@@ -106,15 +105,15 @@ class WeeklyThemeService(
 
     /**
      * 시작·종료 이야기 열람 기록 (#438, sequence-diagram 3.6.1). 학생·주·종류당 1행 멱등.
-     * INTRO는 월~토(그 주 첫 진입에 한 번, 일요일 제외), OUTRO는 엔딩 상태이고 일요일이 아닐 때(#484 전까지 토요일).
+     * INTRO는 월~토·프리미엄 일요일(그 주 첫 진입에 한 번), OUTRO는 엔딩 상태이고 무료 일요일이 아닐 때.
      * 아니면 409 THEME_STORY_NOT_ALLOWED, 게시 테마가 없으면 404
      */
     @Transactional
-    fun recordStoryView(studentId: UUID, grade: ThemeGrade, date: LocalDate, kind: ThemeStoryKind): StoryViewResult {
-        val sunday = date.dayOfWeek == DayOfWeek.SUNDAY
+    fun recordStoryView(studentId: UUID, grade: ThemeGrade, date: LocalDate, kind: ThemeStoryKind, sundayTheme: Boolean = false): StoryViewResult {
+        val usable = ThemeWeek.usable(date, sundayTheme)
         val allowed = when (kind) {
-            ThemeStoryKind.INTRO -> !sunday
-            ThemeStoryKind.OUTRO -> ThemeEnding.ended(date) && !sunday
+            ThemeStoryKind.INTRO -> usable
+            ThemeStoryKind.OUTRO -> ThemeEnding.ended(date) && usable
         }
         if (!allowed) {
             throw BusinessException(HttpStatus.CONFLICT, "THEME_STORY_NOT_ALLOWED", "이야기를 볼 수 있는 날이 아님",
@@ -138,39 +137,46 @@ class WeeklyThemeService(
     }
 
     /**
-     * 테마 시도 시작 검사 (sequence-diagram 3.4·3.6). 진행 중 시도 반환은 부른 쪽(AttemptService)이 먼저 처리해 여기 오지 않는다.
-     * THEME_DAY: 오늘(KST) 요일의 이번 주 테마 문제만, 아니면 409 THEME_DAY_CLOSED.
-     * THEME_REVIEW: 토·일에 이번 주 테마 문제이고 이번 주 그 문제 THEME_DAY 시도를 마무리했을 때만, 아니면 409 THEME_REVIEW_NOT_ALLOWED.
-     * 테마 학년은 시도 학년으로 정함(core가 학생 학년으로 테마 학년을 정하는 규칙과 같음, 7~9는 G6)
+     * 테마 시도 시작 검사 (sequence-diagram 3.4·3.6, state-diagram 3.2.1 누적 공개 #484). 진행 중 시도 반환은 부른 쪽(AttemptService)이
+     * 먼저 처리해 여기 오지 않는다(요일과 무관하게 이어하기).
+     * THEME_DAY: 이번 주 테마 문제이고 그 요일이 공개(OPEN, 그 요일 00:00부터 토요일까지·프리미엄 일요일)됐고 그 주에 그 문제 THEME_DAY 시도를
+     * 아직 마무리하지 않았을 때만(#506), 아니면 409 THEME_DAY_CLOSED.
+     * THEME_REVIEW: 토요일(프리미엄 일요일)에 이번 주 테마 문제이고 이번 주 그 문제 THEME_DAY 시도를 마무리했을 때만, 아니면 409 THEME_REVIEW_NOT_ALLOWED.
+     * 일요일 허용 값 `sundayTheme`은 core가 상품으로 정해 넘김(core #485). 테마 학년은 시도 학년으로 정함(core가 학생 학년으로 테마 학년을 정하는 규칙과 같음, 7~9는 G6)
      */
     @Transactional(readOnly = true)
-    fun checkStart(studentId: UUID, missionId: UUID, grade: Int, context: AttemptContext): ThemeAttempt {
+    fun checkStart(studentId: UUID, missionId: UUID, grade: Int, context: AttemptContext, sundayTheme: Boolean = false): ThemeAttempt {
         require(context != AttemptContext.EXTRA) { "테마 컨텍스트만 검사" }
         val today = LocalDate.now(clock)
         val week = ThemeWeek.startOf(today)
         val theme = repository.findLatestPublished(ThemeGrade.of(grade), week)
         val days = theme?.let { repository.findDays(published(it)) }.orEmpty()
+        val day = days.firstOrNull { it.missionId == missionId }
         if (context == AttemptContext.THEME_DAY) {
-            val day = ThemeDay.of(today)
-            if (theme == null || day == null || days.none { it.dayOfWeek == day.number && it.missionId == missionId }) {
-                throw BusinessException(HttpStatus.CONFLICT, "THEME_DAY_CLOSED", "오늘 요일 문제가 아님", "테마 문제는 그 요일에만 새로 시작할 수 있어요.")
+            if (theme == null || day == null || ThemeWeek.stateOf(ThemeDay.ofNumber(day.dayOfWeek), today, sundayTheme) != DayState.OPEN) {
+                throw BusinessException(HttpStatus.CONFLICT, "THEME_DAY_CLOSED", "열리지 않은 테마 문제",
+                    "공개된 테마 문제는 그 주 토요일까지 새로 시작할 수 있어요.")
+            }
+            if (finished(repository.findStudentAttempts(studentId, week), missionId)) {
+                throw BusinessException(HttpStatus.CONFLICT, "THEME_DAY_CLOSED", "이미 마무리한 테마 문제",
+                    "마무리한 문제는 토요일에 다시 풀 수 있어요.")
             }
             return ThemeAttempt(theme.id, week)
         }
-        if (theme == null || !ThemeWeek.isWeekend(today) || days.none { it.missionId == missionId } ||
+        if (theme == null || day == null || !ThemeWeek.reviewOpen(today, sundayTheme) ||
             !finished(repository.findStudentAttempts(studentId, week), missionId)
         ) {
             throw BusinessException(HttpStatus.CONFLICT, "THEME_REVIEW_NOT_ALLOWED", "다시 풀 수 없는 테마 문제",
-                "토·일에 이번 주 마무리한 테마 문제만 다시 풀 수 있어요.")
+                "토요일에 이번 주 마무리한 테마 문제만 다시 풀 수 있어요.")
         }
         return ThemeAttempt(theme.id, week)
     }
 
-    /** 토·일 되돌아보기 열람 기록 (주 1회 멱등). 평일이면 409 THEME_REVIEW_NOT_ALLOWED, 게시 테마가 없으면 404 */
+    /** 되돌아보기 열람 기록 (주 1회 멱등). 토요일·프리미엄 일요일만, 아니면 409 THEME_REVIEW_NOT_ALLOWED, 게시 테마가 없으면 404 */
     @Transactional
-    fun recordReviewView(studentId: UUID, grade: ThemeGrade, date: LocalDate): ReviewViewResult {
-        if (!ThemeWeek.isWeekend(date)) {
-            throw BusinessException(HttpStatus.CONFLICT, "THEME_REVIEW_NOT_ALLOWED", "되돌아보기 기간이 아님", "되돌아보기는 토·일에 열려요.")
+    fun recordReviewView(studentId: UUID, grade: ThemeGrade, date: LocalDate, sundayTheme: Boolean = false): ReviewViewResult {
+        if (!ThemeWeek.reviewOpen(date, sundayTheme)) {
+            throw BusinessException(HttpStatus.CONFLICT, "THEME_REVIEW_NOT_ALLOWED", "되돌아보기 기간이 아님", "되돌아보기는 토요일에 열려요.")
         }
         val week = ThemeWeek.startOf(date)
         val theme = repository.findLatestPublished(grade, week) ?: notFound()

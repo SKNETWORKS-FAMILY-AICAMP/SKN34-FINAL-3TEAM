@@ -28,6 +28,7 @@ data class StoryViewRequest(val kind: ThemeStoryKind? = null)
 /**
  * 학생 주간 테마 내부 API (api-spec 2.11·4.1, #385). core #387이 `/api/v1/students/me/weekly-theme…`를 넘김:
  * 학생 본인 세션(STUDENT + 본인 1명 범위), 테마 학년·KST 날짜는 core가 정한 값. 주간 요약은 report(SYSTEM)·학부모·학생 조회.
+ * 일요일 허용 값 `sundayTheme`(core #485, 상품 `features.sundayTheme`)은 일요일에만 의미가 있고 없으면 false(#484).
  * 테마 학년은 `grade`(G3~G6, #438). core 반영 전에는 core가 `gradeBand`를 보내므로 `grade`가 없으면 그것을 학년으로 읽음(ThemeGrade.fromBand)
  */
 @RestController
@@ -42,9 +43,10 @@ class WeeklyThemeController(
         @RequestParam(required = false) grade: ThemeGrade?,
         @RequestParam(required = false) gradeBand: String?,
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate,
+        @RequestParam(defaultValue = "false") sundayTheme: Boolean,
     ): WeeklyThemeView {
         requireSelf(studentId)
-        return service.current(studentId, themeGrade(grade, gradeBand), date)
+        return service.current(studentId, themeGrade(grade, gradeBand), date, sundayTheme)
     }
 
     /** 본문 없음. 주 1회 멱등: 다시 보내도 200, firstViewThisWeek만 false */
@@ -54,9 +56,10 @@ class WeeklyThemeController(
         @RequestParam(required = false) grade: ThemeGrade?,
         @RequestParam(required = false) gradeBand: String?,
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate,
+        @RequestParam(defaultValue = "false") sundayTheme: Boolean,
     ): ReviewViewResult {
         requireSelf(studentId)
-        return service.recordReviewView(studentId, themeGrade(grade, gradeBand), date)
+        return service.recordReviewView(studentId, themeGrade(grade, gradeBand), date, sundayTheme)
     }
 
     /** 시작·종료 이야기 열람 기록 (#438). 주 1회 멱등: 다시 보내도 200, firstViewThisWeek만 false */
@@ -66,12 +69,13 @@ class WeeklyThemeController(
         @RequestParam(required = false) grade: ThemeGrade?,
         @RequestParam(required = false) gradeBand: String?,
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate,
+        @RequestParam(defaultValue = "false") sundayTheme: Boolean,
         @RequestBody request: StoryViewRequest,
     ): StoryViewResult {
         requireSelf(studentId)
         val kind = request.kind
             ?: throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "요청 오류", "kind는 INTRO·OUTRO 중 하나")
-        return service.recordStoryView(studentId, themeGrade(grade, gradeBand), date, kind)
+        return service.recordStoryView(studentId, themeGrade(grade, gradeBand), date, kind, sundayTheme)
     }
 
     /** 주간 리포트 테마 요약 (FN-RPT-17). weekStart는 KST 월요일 */

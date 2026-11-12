@@ -93,6 +93,26 @@ class WeeklyThemeControllerTest(@Autowired private val mockMvc: MockMvc) {
     }
 
     @Test
+    fun `일요일 허용 값 sundayTheme을 조회·되돌아보기·이야기 열람에 넘기고 없으면 false (#484)`() {
+        val sunday = monday.plusDays(6)
+        given(service.recordReviewView(student, ThemeGrade.G3, sunday, true)).willReturn(ReviewViewResult(firstViewThisWeek = true, completed = false))
+        given(service.recordReviewView(student, ThemeGrade.G3, sunday, false))
+            .willThrow(BusinessException(HttpStatus.CONFLICT, "THEME_REVIEW_NOT_ALLOWED", "되돌아보기 기간이 아님"))
+        given(service.recordStoryView(student, ThemeGrade.G3, sunday, ThemeStoryKind.INTRO, true))
+            .willReturn(StoryViewResult(ThemeStoryKind.INTRO, firstViewThisWeek = true))
+        given(service.current(student, ThemeGrade.G3, sunday, true)).willReturn(
+            WeeklyThemeView(themeId, monday, "물의 여행", "소개", false, emptyList(), ThemeReview(true, emptyList()), completed = false),
+        )
+
+        mockMvc.post("$base/review-views?grade=G3&date=2026-11-15&sundayTheme=true") { as_() }.andExpect { status { isOk() } }
+        mockMvc.post("$base/review-views?grade=G3&date=2026-11-15") { as_() }.andExpect { status { isConflict() } }
+        mockMvc.post("$base/story-views?grade=G3&date=2026-11-15&sundayTheme=true") {
+            as_(); contentType = MediaType.APPLICATION_JSON; content = """{"kind":"INTRO"}"""
+        }.andExpect { status { isOk() } }
+        mockMvc.get("$base?grade=G3&date=2026-11-15&sundayTheme=true") { as_() }.andExpect { jsonPath("$.review.open") { value(true) } }
+    }
+
+    @Test
     fun `학생 본인이 아니거나 학생 역할이 아니면 403, 학년·날짜가 틀리면 400`() {
         mockMvc.get("$base?grade=G3&date=2026-11-09") { as_(scope = UUID.randomUUID()) }.andExpect { status { isForbidden() } }
         mockMvc.get("$base?grade=G3&date=2026-11-09") { as_(role = "PARENT") }.andExpect { status { isForbidden() } }
