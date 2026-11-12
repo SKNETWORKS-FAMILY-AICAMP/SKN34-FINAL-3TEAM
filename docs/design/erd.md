@@ -1257,7 +1257,7 @@ erDiagram
 
 ### 4.2.1 주간 테마 (P23, #385 V11·V12)
 
-#438이 V15·V16으로 학년별 테마·이야기·이미지·영상·정답 구조·테마 초안·이야기 열람을 더했다(아래 Mermaid와 끝 항목).
+#438이 V15·V16으로 학년별 테마·이야기·이미지·영상·정답 구조·테마 초안·이야기 열람을 더했다(아래 Mermaid와 끝 항목). #559가 V18로 기념 액자(`theme_frame`, P27, 4.6 설계 표에서 옮김)를 더했다.
 
 ```mermaid
 erDiagram
@@ -1269,6 +1269,8 @@ erDiagram
   weekly_theme ||--o{ theme_answer_pick : "큰 질문 정답 고르기"
   mission ||--o{ theme_answer_pick : "고를 때 금요일 문제"
   weekly_theme ||--o| theme_draft : adopted
+  weekly_theme ||--o{ theme_frame : "기념 액자 (P27)"
+  weekly_theme_version ||--o{ theme_frame : "지급 때 버전"
 
   weekly_theme {
     uuid id PK
@@ -1335,6 +1337,16 @@ erDiagram
     boolean correct "고를 때 정답과 같았는지"
     timestamptz picked_at
   }
+  theme_frame {
+    uuid id PK
+    uuid student_id "core 논리 참조 · UK (student_id, theme_id, theme_week_start)"
+    uuid theme_id FK "회차 테마"
+    date theme_week_start "회차 주 KST 월요일 (CHECK)"
+    uuid theme_version_id FK "지급 때 게시본(없으면 현재본)"
+    timestamptz awarded_at "5문제 중 마지막 학습 완료 시각"
+    timestamptz seen_at "NULL 허용 · 새 액자 확인 시각(소급분은 awarded_at)"
+    timestamptz created_at
+  }
   theme_draft {
     uuid id PK
     varchar grade "G3|G4|G5|G6"
@@ -1365,6 +1377,8 @@ erDiagram
 - 이야기·이미지·영상·정답 구조(#438, 기준안): 버전 칸이라 테마 새 버전을 만들 때 요일 칸(`clue`·`rules_out`·`dialogue`·`hint_spots`·`video_uri`)과 함께 복사한다. 모두 NULL 허용이라 사람이 쓴 테마는 비워도 된다. `*_uri`는 ai가 올린 S3 키(`theme-drafts/{실행 ID}/{장면}`)이고 학생·관리자 응답의 URL은 learning이 단기 presigned URL로 만든다. `candidates`는 후보 이름 배열, `rules_out`은 그날 단서로 빠지는 후보 이름 배열(빈 배열 허용)이며, 저장 때 정답 논리(정답은 후보 안이고 어떤 날에도 빠지지 않음, 틀린 후보는 적어도 한 날 빠짐, `rules_out`은 후보 안)를 앱이 검사한다(DB 제약 아님). `hint_spots` 각 항목은 그날 미션 기준표의 생각 열기 순번 `seq`와 그림 기준 0~100% 좌표 `x`·`y`
 - `theme_story_view`는 학생·주·종류(`INTRO`·`OUTRO`)당 1행(`ON CONFLICT DO NOTHING`) 열람 멱등. 학생 삭제 때 함께 물리 삭제(4.3)
 - 큰 질문 정답 고르기(#484, V18, 사용자 결정 2026-11-12): `theme_answer_pick`은 학생·주당 1행(`ON CONFLICT DO NOTHING`, 한 주 한 번). 금요일 문제를 마무리한 뒤 후보 중 하나를 고르며 `mission_id`는 고를 때의 금요일 문제, `correct`는 고를 때 정답과 같았는지. 엔딩 상태(state-diagram 3.2.2)는 저장하지 않고 이 행과 그 문제 `THEME_REVIEW` 시도 마무리 시각(고른 뒤)으로 계산한다. `pick` 길이는 후보 상한 100자. 학생 삭제 때 함께 물리 삭제(4.3)
+
+- `theme_frame`(#559, P27, FN-RET-10): 회차(학생·테마·주)당 1개(UK). 학습 완료(돌아보기 저장) 트랜잭션에서 시도가 `THEME_DAY`·`THEME_REVIEW`면 회차 잠금(`pg_advisory_xact_lock`, 같은 회차의 다른 문제 완료가 동시에 커밋돼 서로 못 보는 경우 방지) 뒤 `INSERT … SELECT … ON CONFLICT DO NOTHING`. 완료 조건은 그 회차 완료 시도(`completed_at` 있음)를 문제별로 묶어 테마 게시본(없으면 현재본)의 요일 문제 5개와 모두 맞는 것이고, `awarded_at` = 문제별 처음 완료 시각 중 가장 늦은 값(프리미엄 일요일·자정 넘긴 이어하기 포함, 다시 풀기는 이미 있는 액자를 바꾸지 않음). `EXTRA`는 회차 칸이 없어 빠진다. `theme_version_id`는 지급 때 버전으로 고정해 이후 재게시와 무관하게 앨범 제목·그림을 유지하고, 판정 규칙이 바뀌어도 저장된 액자는 지우지 않는다. 도입 전 기록은 learning 기동 때마다 같은 조건으로 소급(`seen_at = awarded_at`, 다시 돌려도 같은 결과, `docs/report/retention-expansion.md` 9장). 앨범·상세·확인·보유 확인은 `theme_week_start < 이번 주(KST)`만 본다. 학생 삭제 때 같은 트랜잭션에서 물리 삭제(4.3)
 - `answer_clue`(결정적 단서): ai 응답 계약(api-spec 4.2)에 칸이 없어, 채택 때 learning이 요일 단서에서 마지막 틀린 후보를 빼는 날(`rules_out`이 비지 않은 마지막 요일)의 `clue`로 채우고 관리자가 고칠 수 있다(엔딩 화면의 정답 근거)
 - `theme_draft`(#438, 미션 초안 `mission_draft`와 같은 구조): 검사에 실패한 초안은 테마를 만들지 않아 `weekly_theme`과 따로 둔다. 채택 1회에 테마 1개(`theme_id` UK). 부분 UK `(grade, week_start) WHERE source = 'AUTO'`로 레플리카가 주간 자동 생성을 동시에 돌려도 학년·주당 자동 초안 1개(`ON CONFLICT DO NOTHING`). `input`은 `{topic, missions:[{thinkingType, inputType, standardCodes}]}`(관리자가 고르지 않은 유형은 learning이 채운 값), `check_results`는 시도마다 `{attempt, failures:[{stage, reasons[]}]}`, `output`은 ai 응답(api-spec 4.2 `/internal/theme-drafts`) 그대로. `lease_until`은 `mission_draft.lease_until`과 같은 점유 방식. 학생 ID·학생 답은 없다
 
@@ -1386,7 +1400,7 @@ erDiagram
 ```
 
 - `student.deleted` 소비: 해당 학생 `attempt` 이하 기록 삭제 + `deleted_student` 저장 → 근거 조회 시 `available: false` (물리 삭제 + 표식, P09). 처리 완료는 core 내부 API `POST /internal/deletion-requests/{id}/completions`로 알림
-  - 삭제 방식(#128): FK는 NO ACTION 그대로 두고 서비스가 한 트랜잭션에서 `judgment_correction`·`judgment_element` → `self_assessment`·`reflection`·`hint_usage`·`attempt_draft` → `followup`(`answer.followup_id`는 `SET CONSTRAINTS … DEFERRED`로 커밋 때 검사) → `judgment` → `answer` → `attempt` 순서로 삭제하고 `theme_review_view`(#385)·`theme_story_view`(#438)·`theme_answer_pick`(#484)도 같은 트랜잭션에서 삭제. 4.6(설계) 구현 시 `memory_search_doc`은 `attempt`보다 먼저, `theme_frame`도 같은 트랜잭션에서 삭제. `processed_event`에 이벤트 `id`를 같은 트랜잭션에 기록해 재전달 때 다시 지우지 않음
+  - 삭제 방식(#128): FK는 NO ACTION 그대로 두고 서비스가 한 트랜잭션에서 `judgment_correction`·`judgment_element` → `self_assessment`·`reflection`·`hint_usage`·`attempt_draft` → `followup`(`answer.followup_id`는 `SET CONSTRAINTS … DEFERRED`로 커밋 때 검사) → `judgment` → `answer` → `attempt` 순서로 삭제하고 `theme_review_view`(#385)·`theme_story_view`(#438)·`theme_answer_pick`(#484)·`theme_frame`(#559)도 같은 트랜잭션에서 삭제. 4.6(설계) 구현 시 `memory_search_doc`은 `attempt`보다 먼저, `theme_frame`도 같은 트랜잭션에서 삭제. `processed_event`에 이벤트 `id`를 같은 트랜잭션에 기록해 재전달 때 다시 지우지 않음
   - `deleted_student`는 학생당 한 행: 다시 받으면 `event_id`·`deleted_at`을 갱신하고 `scope`는 이미 `PROFILE`이면 유지(report 삭제 장벽과 같은 규칙)
 - learning은 이벤트를 발행하지 않으므로 `outbox_event` 없음 (아키텍처 1.6)
 - #208 `processed_event`는 90일 뒤 삭제(V8 `processed_at` 인덱스). 재처리 방지 표식 `deleted_student`는 유지되므로 90일 이후 재전달도 삭제를 반복할 뿐 기록을 되살리지 않음
@@ -1577,14 +1591,13 @@ erDiagram
 
 ### 4.6 기념 액자·추억 검색 (P27, 설계·구현 전)
 
-2026-11-12 리텐션 확장 결정([기능명세 P27](functional-spec.md#14-확정-정책), [결정 기록](../report/retention-expansion.md))의 learning 저장 구조. 구현 전이라 Mermaid·6장에 넣지 않고 아래 표로만 둔다. 구현 마이그레이션(V18 이후)에서 Mermaid·6장으로 옮긴다. `vector` 확장은 이미 bootstrap이 learning_db에 만든다(4.5).
+2026-11-12 리텐션 확장 결정([기능명세 P27](functional-spec.md#14-확정-정책), [결정 기록](../report/retention-expansion.md))의 learning 저장 구조. 구현 전이라 Mermaid·6장에 넣지 않고 아래 표로만 둔다. 구현 마이그레이션(V19 이후)에서 Mermaid·6장으로 옮긴다. `theme_frame`은 #559 V18로 구현해 4.2.1 Mermaid·6장으로 옮겼다. `vector` 확장은 이미 bootstrap이 learning_db에 만든다(4.5).
 
 | 테이블 | 컬럼 | 제약·규칙 |
 |---|---|---|
-| `theme_frame` (신규) | `id` uuid PK, `student_id` uuid(core 논리 참조), `theme_id` uuid FK, `theme_week_start` date(KST 월요일), `theme_version_id` uuid FK, `awarded_at` timestamptz, `seen_at` timestamptz NULL 허용, `created_at` timestamptz | UK `(student_id, theme_id, theme_week_start)` = 회차당 1개. 회차의 테마 5문제가 모두 `attempt.completed_at`을 가지면 마지막 완료 트랜잭션에서 `INSERT … ON CONFLICT DO NOTHING`. `awarded_at` = 5문제 중 가장 늦은 `completed_at`(일요일·자정 넘긴 이어하기 포함), `EXTRA` 제외. 도입 전 기록은 같은 조건으로 1회 소급(`seen_at` 채움). 인덱스 `(student_id, theme_week_start)` |
 | `memory_search_doc` (신규) | `id` uuid PK, `attempt_id` uuid FK UK, `student_id` uuid, `theme_id` uuid FK, `theme_week_start` date, `content_text` text, `embedding` vector(1536) NULL 허용, `embedding_model` varchar NULL 허용, `status` varchar `PENDING`·`PROCESSING`·`READY`·`FAILED`, `retry_count` int, `lease_until` timestamptz NULL 허용, `created_at` timestamptz, `embedded_at` timestamptz NULL 허용 | 테마 문제 완료 시도 1건 = 1행(`EXTRA` 제외), 시도 완료 트랜잭션에서 `PENDING`으로 생성. `content_text` = 테마 제목 + 미션 장면·질문 + 최종 답변(`answer` 최신 버전 `plain_text`). `READY`일 때만 `embedding`·`embedding_model`·`embedded_at` NOT NULL(CHECK). 상태 전이는 [상태 3.7](state-diagram.md). 검색은 `status = READY`·본인 `student_id`·보유 `theme_frame` 회차·`theme_week_start < 이번 주` 필터 후 코사인 거리 정렬. 인덱스 `(status, lease_until)`(주기 작업), `(student_id, theme_week_start)`. 학생당 대상이 수백 행 이내라 HNSW는 두지 않음(기준안) |
 
-- FK는 NO ACTION(1장). `student.deleted` 소비 때 4.3 순서에서 `memory_search_doc`을 `attempt`보다 먼저, `theme_frame`과 함께 삭제
+- FK는 NO ACTION(1장). `student.deleted` 소비 때 4.3 순서에서 `memory_search_doc`을 `attempt`보다 먼저 삭제
 - 학생 답변은 수정되지 않으므로(FN-LRN-08/09) 검색 문서 갱신 없음. 판정 정정은 검색 문서에 영향 없음
 - 질문·설명은 저장하지 않으므로 테이블 없음(P27)
 
@@ -1755,6 +1768,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | learning | `judgment` | `(process_status, lease_until)` | 고착 `RUNNING` 탐지 |
 | learning | `mission_draft` | `(status, created_at)` | 초안 목록(상태 필터·최근 요청 순)·생성 작업 점유 (#353) |
 | learning | `community_post` | `(mission_id, status)` | 미션별 공개 공유물 목록 (#386, V13) |
+| learning | `theme_frame` | `(student_id, theme_week_start)` | 앨범 목록(최근 회차순)·보유 확인 (#559, V18). 회차당 1개는 UK `(student_id, theme_id, theme_week_start)` |
 | learning | `community_reaction` | `(student_id, created_at)` | 학생 삭제 때 남긴 반응 정리 (#386, V13) |
 | learning | `processed_event` | `(processed_at)` | 보존 기간 정리 |
 | learning | `knowledge_dataset` | `(status) WHERE status = 'ACTIVE'` | 활성 판 하나(UNIQUE, #466 V14) |

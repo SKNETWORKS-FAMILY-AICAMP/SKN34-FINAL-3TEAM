@@ -178,3 +178,25 @@ data class AdminThemeDay(
 )
 
 data class AdminWeeklyThemePage(val items: List<AdminWeeklyTheme>, val page: Int, val size: Int, val totalElements: Long)
+
+/** 지난 회차의 요일 문제와 그 회차에서 그 문제를 마지막으로 학습 완료한 시도(다시 풀기 포함, 없으면 null) (P27 앨범 #559) */
+data class ThemeRoundDay(
+    val day: ThemeDay,
+    val missionId: UUID,
+    val title: String,
+    val thinkingType: ThinkingType,
+    val attemptId: UUID?,
+)
+
+/**
+ * 지난 회차 기록 (P27 앨범 상세 #559). 제목·시작 그림은 지정 버전의 값.
+ * 종료 이야기·정답은 그 주 엔딩(OUTRO)을 본 학생만 채우고 아니면 null(P23)
+ */
+data class ThemeRoundRecord(
+    val title: String,
+    val introImageUrl: String?,
+    val days: List<ThemeRoundDay>,
+    val endingSeen: Boolean,
+    val outro: String?,
+    val answer: String?,
+)

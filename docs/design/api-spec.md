@@ -148,7 +148,7 @@
 | `REFUND_NOT_READY` / `REFUND_STATE_CHANGED` / `REFUND_PREMIUM_USAGE_PRESENT` | 409 | 사용 이력 확인 전 또는 REQUESTED가 아닌 환불 승인 / 처리 중 환불 상태 변경 / 프리미엄 기능 사용 이력 있음 (P14) |
 | `PAYMENT_PG_UNAVAILABLE` / `PAYMENT_PG_MISMATCH` / `PAYMENT_PG_KEY_UNAVAILABLE` / `PAYMENT_KEY_UNAVAILABLE` / `PAYMENT_CUSTOMER_UNAVAILABLE` | 503 | 토스 설정·연결 실패 / 토스 응답과 주문·금액·MID·상태 불일치 / 토스 키 미설정 / 빌링키 암호화 키 미설정 / 구독의 고객 키 없음 (2.6) |
 | `PAYMENT_STORAGE_UNAVAILABLE` / `PAYMENT_WEBHOOK_UNAVAILABLE` / `PAYMENT_WEBHOOK_LOOKUP_UNAVAILABLE` / `PAYMENT_RECONCILIATION_UNAVAILABLE` / `PAYMENT_RENEWAL_DATA_UNAVAILABLE` / `REFUND_USAGE_UNAVAILABLE` | 503 | 결제 저장소 장애 / 웹훅 처리 실패 / 웹훅 결제 조회 실패 / 대사 조회 실패 / 갱신 데이터 확인 실패 / 환불 전 사용 이력 확인 실패 (2.6) |
-| `THEME_FRAME_NOT_FOUND` | 404 | 보유하지 않은 기념 액자 회차의 앨범 상세·확인 처리·추억의 벽 걸기 (2.12 설계, P27) |
+| `THEME_FRAME_NOT_FOUND` | 404 | 보유하지 않은 기념 액자 회차(진행 중인 주 포함)의 앨범 상세·확인 처리·추억의 벽 걸기 (2.12, P27, learning 4.1.4 구현 #559) |
 | `METHOD_NOT_ALLOWED` / `UNSUPPORTED_MEDIA_TYPE` / `REQUEST_FAILED` | 405 / 415 / 그 밖의 4xx·5xx | 허용되지 않는 메서드 / 지원하지 않는 Content-Type / 위 표에 없는 프레임워크 기본 오류 |
 | `INTERNAL_ERROR` | 500 | 예상하지 못한 서버 오류 (SSE `error` 이벤트는 `retryable: true`) |
 
@@ -609,7 +609,7 @@ core 경로는 #387 구현·OpenAPI 반영(태그 `WeeklyTheme`, 시도 `Attempt
 | GET | `/students/me/room/frame-slots` | 학생 | 추억의 벽 슬롯 `{slots:[{slotNo, themeId, weekStart, title, imageUrl}]}`(빈 슬롯 제외). 방 벽지·가구 스킨·캐릭터 착용은 기존 2.10·3.12 응답 사용 | RET-09 | 설계 |
 | PUT | `/students/me/room/frame-slots` | 학생 | 전체 교체 `{slots:[{slotNo, themeId, weekStart}]}` → 저장된 목록. `slotNo` 1~6·중복 슬롯·같은 액자 중복 422 `VALIDATION_FAILED`, 미보유 회차 404 `THEME_FRAME_NOT_FOUND` | RET-09 | 설계 |
 | GET | `/students/me/album?page&size` | 학생 | 보유 액자 회차(진행 중인 주·`EXTRA` 제외, 최근 회차순) `{items:[{themeId, weekStart, title, imageUrl, awardedAt, seen, displayed}], page, size, totalElements}` | RET-10, RET-11 | 설계 |
-| GET | `/students/me/album/{themeId}/{weekStart}` | 학생 | 회차 상세 `{themeId, weekStart, title, awardedAt, missions:[{day, missionId, title, thinkingType, attemptId}], ending:{seen, outro, answer}}`. 엔딩을 보지 않았으면 `outro`·`answer` null(P23). 문제별 기록은 기존 시도 상세(2.3·`/attempts/{id}/comparison`)로 연다. 미보유 404 `THEME_FRAME_NOT_FOUND` | RET-11 | 설계 |
+| GET | `/students/me/album/{themeId}/{weekStart}` | 학생 | 회차 상세 `{themeId, weekStart, title, imageUrl, awardedAt, missions:[{day, missionId, title, thinkingType, attemptId}], ending:{seen, outro, answer}}`. 엔딩을 보지 않았으면 `outro`·`answer` null(P23). 문제별 기록은 기존 시도 상세(2.3·`/attempts/{id}/comparison`)로 연다. 미보유 404 `THEME_FRAME_NOT_FOUND` | RET-11 | 설계 |
 | POST | `/students/me/album/{themeId}/{weekStart}/seen` | 학생 | 새 액자 확인(멱등) → 204. 미보유 404 `THEME_FRAME_NOT_FOUND` | RET-10 | 설계 |
 | POST | `/students/me/memories/search` | 학생 | body `{query}`(1~200자) → `{state, cards:[{themeId, weekStart, title, imageUrl, missions:[{missionId, title, attemptId, answerExcerpt}], score}]}`. `state`는 `RESULTS`·`NO_RESULTS`(관련도 기준 미달)·`NO_RECORDS`(보유 액자 없음), 카드 최대 3개(기준안). 하루 한도 429 `USAGE_LIMIT_REACHED`, 임베딩 장애 503 `AI_UNAVAILABLE`, 형식 오류 400 `VALIDATION_FAILED`(사용량 미기록) | RET-12 | core 구현 #566(learning #563 대기) |
 | POST | `/students/me/memories/explanations` | 학생 | body `{query, attemptIds}`(검색 결과 카드의 시도, 1~3개) → 200 `{state, text, citations:[{no, themeId, weekStart, attemptId}]}`. `state`는 `GENERATED`·`INSUFFICIENT`(근거 부족, 생성 안 함)·`FAILED`(생성·검사 실패, `text` null). 본인 검색 문서가 아닌 `attemptId`는 422 `VALIDATION_FAILED`, 하루 한도 429 `USAGE_LIMIT_REACHED`. 빈 배열·4개 이상·중복·UUID 아님은 core 400 `VALIDATION_FAILED`(사용량 미기록) | RET-13 | core 구현 #566(learning #564 대기) |
@@ -1011,16 +1011,22 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 | 메서드 | 경로 | 내용 |
 |---|---|---|
-| GET | `/internal/students/{studentId}/album?page&size` | 2.12 앨범 목록과 같은 모양(`displayed`는 core가 슬롯으로 채움) |
-| GET | `/internal/students/{studentId}/album/{themeId}/{weekStart}` | 2.12 회차 상세, 미보유 404 `THEME_FRAME_NOT_FOUND` |
-| POST | `/internal/students/{studentId}/album/{themeId}/{weekStart}/seen` | `seen_at` 기록(멱등) → 204 |
-| POST | `/internal/students/{studentId}/frames/ownership` | `{frames:[{themeId, weekStart}]}` → `{owned:[{themeId, weekStart}]}`(core 액자 슬롯 저장 전 확인) |
+| GET | `/internal/students/{studentId}/album?page&size` | 2.12 앨범 목록과 같은 모양(`displayed`는 core가 슬롯으로 채움, learning 응답에 없음). `page` 0부터·`size` 1~100(기본 20), 범위 밖 400 |
+| GET | `/internal/students/{studentId}/album/{themeId}/{weekStart}` | 2.12 회차 상세, 미보유 404 `THEME_FRAME_NOT_FOUND`, `weekStart`가 월요일이 아니면 400 |
+| POST | `/internal/students/{studentId}/album/{themeId}/{weekStart}/seen` | `seen_at` 기록(멱등, 처음 시각 유지) → 204, 미보유 404 `THEME_FRAME_NOT_FOUND` |
+| POST | `/internal/students/{studentId}/frames/ownership` | `{frames:[{themeId, weekStart}]}`(최대 100개) → `{owned:[{themeId, weekStart}]}`(보유한 것만, 중복은 한 번. core 액자 슬롯 저장 전 확인) |
 | POST | `/internal/students/{studentId}/memories/search` | `{query}` → 2.12 검색 응답. 질문 임베딩은 ai 4.2.4, 실패 503 `AI_UNAVAILABLE` |
 | POST | `/internal/students/{studentId}/memories/explanations` | `{query, attemptIds}` → 2.12 설명 응답. 생성은 ai 4.2.6 |
 
 - 검색 범위: `memory_search_doc.status = READY` + 본인 + 보유 `theme_frame` 회차 + `theme_week_start < 이번 주(KST)`. 코사인 거리 정렬 뒤 회차 단위로 묶어 상위 3개, 관련도 기준값(기준안, 평가셋으로 조정) 미달은 `NO_RESULTS`
 - 설명: `attemptIds`가 위 범위의 문서인지 다시 확인(아니면 422 `VALIDATION_FAILED`) → 근거 부족 규칙(최고 관련도 기준 미달·답변 너무 짧음)이면 ai를 부르지 않고 `INSUFFICIENT` → ai 응답의 `citations`가 보낸 번호 안이고 따옴표 인용이 근거 원문의 부분 문자열일 때만 `GENERATED`, 아니면 ai 실패와 같이 `FAILED`(200)
 - 학습 완료(돌아보기 저장) 트랜잭션의 액자·검색 문서 등록과 임베딩 주기 작업은 내부 API가 아니다([시퀀스 3.8·3.10](sequence-diagram.md), [상태 3.7](state-diagram.md))
+- **#559 구현(learning V18, 2026-11-12)**: 앨범 목록·회차 상세·확인·보유 확인 4개 경로는 구현(learning OpenAPI). 검색·설명 2개는 설계(구현 전) 그대로. 결정은 [결정 기록 9장](../report/retention-expansion.md#9-learning-기념-액자앨범-구현-559-2026-11-12)
+  - 보유 = `theme_frame` 행 + `theme_week_start < 이번 주(KST 월요일)`. 4개 경로 모두 같은 기준이라 진행 중인 주 회차는 목록에 없고 상세·확인 404, 보유 확인에서 빠짐(추억의 벽에 앨범에 없는 액자가 걸리지 않음)
+  - 범위 검사는 `X-Student-Scope`에 경로 학생이 있는지(1.2). core 프록시는 학생 본인 STUDENT 세션
+  - 목록 `imageUrl`·상세 `imageUrl`은 액자를 받은 때 테마 버전의 시작 이야기 그림 presigned URL(종료 그림은 엔딩 내용이라 쓰지 않음), 없으면 null(화면이 `ThemeArt`로 그림). 제목도 그 버전 값
+  - 상세 `missions[].attemptId`는 그 회차에서 그 문제를 마지막으로 학습 완료한 시도(토·일 다시 풀기 포함, 기존 비교 화면이 이전 시도를 함께 보여 줌). 테마 재게시로 문제가 바뀌었으면 null
+  - 상세 `ending`은 그 주 종료 이야기(`theme_story_view` OUTRO) 열람 기록이 있을 때만 `outro`·`answer`를 채움. 정답 고르기 엔딩 판정(#484) 전후 모두 엔딩을 보면 OUTRO 열람이 남으므로 같은 기준
 
 ### 4.2 ai-service (호출: learning, core, report)
 

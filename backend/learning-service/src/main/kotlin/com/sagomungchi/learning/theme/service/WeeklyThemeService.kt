@@ -20,6 +20,8 @@ import com.sagomungchi.learning.theme.domain.ThemeDayView
 import com.sagomungchi.learning.theme.domain.ThemeReview
 import com.sagomungchi.learning.theme.domain.ThemeReviewMission
 import com.sagomungchi.learning.theme.domain.ThemeReviewRetry
+import com.sagomungchi.learning.theme.domain.ThemeRoundDay
+import com.sagomungchi.learning.theme.domain.ThemeRoundRecord
 import com.sagomungchi.learning.theme.domain.ThemeSummaryDay
 import com.sagomungchi.learning.theme.domain.ThemeSummaryState
 import com.sagomungchi.learning.theme.domain.ThemeWeek
@@ -284,7 +286,33 @@ class WeeklyThemeService(
         )
     }
 
-    /** 학생 삭제(P09): 되돌아보기·이야기 열람(#438)·정답 고르기(#484) 기록. 시도 삭제·삭제 표식과 같은 트랜잭션 안에서만 */
+    /**
+     * 지난 회차 기록 (P27 앨범 상세, #559, class-diagram 4.5). versionId는 액자가 고정한 테마 버전.
+     * 문제별 시도는 그 회차(테마·주)에서 마지막으로 학습 완료한 시도(토·일 다시 풀기 포함, 기존 비교 화면이 이전 시도를 함께 보여 줌).
+     * 엔딩: 그 주 종료 이야기(OUTRO) 열람 기록이 있을 때만 종료 이야기·정답을 담음(P23). 엔딩 판정 규칙 개정(#484) 뒤에도
+     * 엔딩을 보면 OUTRO 열람이 기록되므로 같은 기준
+     */
+    @Transactional(readOnly = true)
+    fun pastRound(studentId: UUID, themeId: UUID, weekStart: LocalDate, versionId: UUID): ThemeRoundRecord {
+        val version = repository.findVersion(versionId)
+        val completed = repository.findStudentAttempts(studentId, weekStart)
+            .filter { it.themeId == themeId && it.context != AttemptContext.EXTRA && it.completedAt != null }
+        val endingSeen = ThemeStoryKind.OUTRO.name in repository.findStoryViews(studentId, weekStart)
+        return ThemeRoundRecord(
+            title = version.title,
+            introImageUrl = assetUrls.url(version.story.introImageUri),
+            days = repository.findDays(versionId).map { day ->
+                val last = completed.filter { it.missionId == day.missionId }
+                    .maxWithOrNull(compareBy<ThemeAttemptRow>({ it.completedAt }, { it.id }))
+                ThemeRoundDay(ThemeDay.ofNumber(day.dayOfWeek), day.missionId, day.title, day.thinkingType, last?.id)
+            },
+            endingSeen = endingSeen,
+            outro = version.story.outro.takeIf { endingSeen },
+            answer = version.story.answer.takeIf { endingSeen },
+        )
+    }
+
+    /** 학생 삭제(P09): 되돌아보기·이야기 열람 기록(#438). 시도 삭제·삭제 표식과 같은 트랜잭션 안에서만 */
     @Transactional(propagation = Propagation.MANDATORY)
     fun deleteByStudent(studentId: UUID): Int = repository.deleteByStudent(studentId)
 

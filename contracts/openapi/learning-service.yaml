@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: learning 내부 API
-  version: 1.3.0
+  version: 1.4.0
   description: >-
     core가 호출하는 learning 내부 API (api-spec 4.1). 구현된 경로만 담는다. 단 x-implementation-status가 붙은 경로는 계약만 먼저 정한 구현 전 항목이다(지식 내부 API #464, 구현 #469). 지식 내부 API는 SYSTEM 컨텍스트만, 학생 범위 없음.
     학생 학습 API는 core가 검증한 STUDENT 컨텍스트(X-Student-Scope에 본인 1명)를 요구하고,
@@ -15,6 +15,7 @@ info:
     커뮤니티(#386)는 공유·공개 전환·신고 검토·원문이 SYSTEM, 열람·반응이 학생 STUDENT, 본인·자녀 목록이 STUDENT·PARENT 컨텍스트를 요구한다.
     주간 테마(#385)는 학생 조회·되돌아보기 열람이 STUDENT 본인, 주간 요약이 PARENT·STUDENT·SYSTEM과 대상 학생 X-Student-Scope,
     관리자 테마가 ADMIN과 관리자 X-User-Id를 요구한다.
+    기념 액자·추억 앨범(#559, api-spec 4.1.4)은 대상 학생이 든 X-Student-Scope를 요구한다(core 프록시는 학생 본인 STUDENT 세션).
 servers:
   - url: /internal
 security:
@@ -1084,6 +1085,122 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WeeklyThemeSummary'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+  /students/{studentId}/album:
+    get:
+      operationId: getAlbum
+      summary: 추억 앨범 목록 (P27, FN-RET-11, #559)
+      description: >-
+        core가 `/students/me/album`(api-spec 2.12)으로 넘김. 보유 기념 액자 회차만, 진행 중인 주(theme_week_start가 이번 주 KST 월요일 이후) 제외,
+        최근 회차순(같은 주는 획득 순). EXTRA는 회차가 없어 대상이 아니다. 전시 여부 displayed는 core가 추억의 벽 슬롯으로 채운다(learning 응답에 없음).
+        X-Student-Scope에 경로 학생이 없으면 403, page·size 범위 밖 400.
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/MemoryRole'
+        - $ref: '#/components/parameters/MemoryScope'
+        - {name: page, in: query, description: 0부터, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlbumPage'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+  /students/{studentId}/album/{themeId}/{weekStart}:
+    get:
+      operationId: getAlbumRound
+      summary: 추억 앨범 회차 상세 (P27, FN-RET-11, #559)
+      description: >-
+        액자를 받은 때의 테마 버전으로 5문제와 그 회차에서 문제별 마지막으로 학습 완료한 시도(토·일 다시 풀기 포함)를 준다.
+        문제별 기록은 기존 시도 상세·비교(`/attempts/{attemptId}`·`/comparison`)로 연다.
+        엔딩은 그 주 종료 이야기(OUTRO) 열람 기록이 있을 때만 outro·answer를 채우고 아니면 null(P23).
+        미보유·진행 중인 주 회차 404 THEME_FRAME_NOT_FOUND, weekStart가 월요일이 아니면 400.
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/ThemeId'
+        - $ref: '#/components/parameters/RoundWeekStart'
+        - $ref: '#/components/parameters/MemoryRole'
+        - $ref: '#/components/parameters/MemoryScope'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlbumRound'
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404':
+          description: THEME_FRAME_NOT_FOUND(미보유·진행 중인 주 회차)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /students/{studentId}/album/{themeId}/{weekStart}/seen:
+    post:
+      operationId: markAlbumFrameSeen
+      summary: 새 기념 액자 확인 (멱등, P27 FN-RET-10, #559)
+      description: >-
+        본문 없음. 처음 확인한 시각만 seen_at에 남기고 다시 보내도 204. 미보유·진행 중인 주 회차 404 THEME_FRAME_NOT_FOUND.
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/ThemeId'
+        - $ref: '#/components/parameters/RoundWeekStart'
+        - $ref: '#/components/parameters/MemoryRole'
+        - $ref: '#/components/parameters/MemoryScope'
+      responses:
+        '204': {description: 확인 기록}
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404':
+          description: THEME_FRAME_NOT_FOUND(미보유·진행 중인 주 회차)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /students/{studentId}/frames/ownership:
+    post:
+      operationId: checkFrameOwnership
+      summary: 기념 액자 보유 확인 (P27, #559. core 추억의 벽 #555·검색 범위 #563)
+      description: >-
+        보낸 회차 중 보유한 것만 owned로 돌려준다(중복은 한 번, 진행 중인 주 회차는 미보유). 미보유가 있어도 200이고 판단은 부른 쪽이 한다.
+        frames 누락·최대 100개 초과·칸 누락·월요일이 아닌 weekStart는 400.
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/MemoryRole'
+        - $ref: '#/components/parameters/MemoryScope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [frames]
+              properties:
+                frames:
+                  type: array
+                  maxItems: 100
+                  items: {$ref: '#/components/schemas/RoundKey'}
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [owned]
+                properties:
+                  owned:
+                    type: array
+                    items: {$ref: '#/components/schemas/RoundKey'}
         '400': {$ref: '#/components/responses/Problem'}
         '401': {$ref: '#/components/responses/Problem'}
         '403': {$ref: '#/components/responses/Problem'}
@@ -2475,6 +2592,24 @@ components:
       required: true
       description: 판정 학생 UUID 정확히 1개. 비었거나 여럿이거나 다른 학생이면 403
       schema: {type: string, format: uuid}
+    MemoryRole:
+      name: X-User-Role
+      in: header
+      required: true
+      description: core 프록시는 학생 본인 STUDENT. learning은 X-Student-Scope로만 범위를 판단
+      schema: {type: string}
+    MemoryScope:
+      name: X-Student-Scope
+      in: header
+      required: true
+      description: 검증된 허용 학생 UUID의 쉼표 구분 목록, 경로 학생이 있어야 함(core 프록시는 학생 본인 1명)
+      schema: {type: string}
+    RoundWeekStart:
+      name: weekStart
+      in: path
+      required: true
+      description: 회차 주(KST 월요일)
+      schema: {type: string, format: date}
     RecordRole:
       name: X-User-Role
       in: header
@@ -3825,6 +3960,66 @@ components:
                         previousSatisfied: {type: boolean}
                         currentSatisfied: {type: boolean}
                         change: {type: string, enum: [ADDED, RETAINED, NOT_CONFIRMED, NOT_CONFIRMED_NOW]}
+    RoundKey:
+      type: object
+      required: [themeId, weekStart]
+      description: 회차 키(P27). 학생은 경로로 정함
+      properties:
+        themeId: {type: string, format: uuid}
+        weekStart: {type: string, format: date, description: KST 월요일}
+    AlbumItem:
+      type: object
+      required: [themeId, weekStart, title, imageUrl, awardedAt, seen]
+      properties:
+        themeId: {type: string, format: uuid}
+        weekStart: {type: string, format: date}
+        title: {type: string, description: 액자를 받은 때 테마 버전의 제목}
+        imageUrl:
+          type: [string, 'null']
+          description: 그 버전 시작 이야기 그림의 presigned URL(종료 그림은 엔딩 내용이라 쓰지 않음). 없으면 null(화면이 ThemeArt로 그림)
+        awardedAt: {type: string, format: date-time, description: 5문제 중 마지막 학습 완료 시각}
+        seen: {type: boolean, description: 새 액자 확인 여부(false면 새 액자)}
+    AlbumPage:
+      type: object
+      required: [items, page, size, totalElements]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/AlbumItem'}
+        page: {type: integer}
+        size: {type: integer}
+        totalElements: {type: integer, format: int64}
+    AlbumRound:
+      type: object
+      required: [themeId, weekStart, title, imageUrl, awardedAt, missions, ending]
+      properties:
+        themeId: {type: string, format: uuid}
+        weekStart: {type: string, format: date}
+        title: {type: string}
+        imageUrl: {type: [string, 'null']}
+        awardedAt: {type: string, format: date-time}
+        missions:
+          type: array
+          items:
+            type: object
+            required: [day, missionId, title, thinkingType, attemptId]
+            properties:
+              day: {$ref: '#/components/schemas/ThemeDay'}
+              missionId: {type: string, format: uuid}
+              title: {type: string}
+              thinkingType: {$ref: '#/components/schemas/ThinkingType'}
+              attemptId:
+                type: [string, 'null']
+                format: uuid
+                description: 그 회차에서 그 문제를 마지막으로 학습 완료한 시도(다시 풀기 포함). 테마 재게시로 문제가 바뀌었으면 null
+        ending:
+          type: object
+          required: [seen, outro, answer]
+          description: 그 주 종료 이야기(OUTRO)를 본 학생만 outro·answer를 받음(P23)
+          properties:
+            seen: {type: boolean}
+            outro: {type: [string, 'null']}
+            answer: {type: [string, 'null']}
     ThemeDayMission:
       type: object
       required: [day, missionId]
