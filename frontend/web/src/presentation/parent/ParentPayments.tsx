@@ -33,6 +33,19 @@ export function ParentPayments({ child }: { child?: Child }) {
   const checkoutState = useParentQuery(['checkout-state', order?.orderId], signal => paymentApi.state(order!.orderId, signal), !!order)
   const state = checkoutState.data ?? null
   const widget = useRef<TossWidget | null>(null), createKey = useRef(params.get('orderKey') ?? crypto.randomUUID())
+  // One request per idempotency key: a re-run effect (StrictMode, refetch) must reuse it, not race into 409.
+  const orderRequest = useRef<{ id: string; promise: Promise<PendingCheckout> } | null>(null)
+  const requestOrder = (childId: string, productId: string) => {
+    const id = [childId, productId, createKey.current].join(':')
+    if (orderRequest.current?.id !== id) {
+      const promise = paymentApi.order(childId, productId, createKey.current).then(created => {
+        const pending = pendingOrder(created); saveCheckout(pending); return pending
+      })
+      promise.catch(() => { if (orderRequest.current?.promise === promise) orderRequest.current = null })
+      orderRequest.current = { id, promise }
+    }
+    return orderRequest.current.promise
+  }
   const [tabNotice, setTabNotice] = useState('')
   const [opening, setOpening] = useState(false)
   useEffect(() => {
@@ -44,9 +57,8 @@ export function ParentPayments({ child }: { child?: Child }) {
   useEffect(() => {
     if (!checkoutMode || order || !product || !child || duplicate || !paymentAvailable || !paymentTestMode && (subscriptions.isPending || subscriptions.error)) return
     let active = true
-    void paymentApi.order(child.id, product.id, createKey.current).then(created => {
-      if (!active) return
-      const pending = pendingOrder(created); saveCheckout(pending); setOrder(pending)
+    void requestOrder(child.id, product.id).then(pending => {
+      if (active) setOrder(pending)
     }).catch(e => { if (active) setError(e) }).finally(() => { if (active) setBusy(false) })
     return () => { active = false }
   }, [checkoutMode, order, product, child, duplicate, paymentAvailable, subscriptions.isPending, subscriptions.error])
@@ -79,8 +91,7 @@ export function ParentPayments({ child }: { child?: Child }) {
     setBusy(true); setError(null)
     try {
       if (checkoutMode) {
-        const created = await paymentApi.order(child.id, product.id, createKey.current)
-        const pending = pendingOrder(created); saveCheckout(pending); setOrder(pending)
+        setOrder(await requestOrder(child.id, product.id))
         return
       }
       const url = new URL('/parent/billing', location.origin)
