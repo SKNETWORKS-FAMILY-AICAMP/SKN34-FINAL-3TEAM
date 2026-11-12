@@ -41,7 +41,9 @@ class LearningOpenApiTests(unittest.TestCase):
         sources = "\n".join(file.read_text(encoding="utf-8") for file in files)
         for forbidden in ("JdbcTemplate", "DataSource", "@Transactional", "Retry.decorate", "Retry.of", "learning_db"):
             self.assertNotIn(forbidden, sources)
-        self.assertIn('factory.create("learning", properties.readTimeout)', sources)
+        # #566: 전송별 응답 시간(일반 readTimeout·추억 검색/설명)을 받아 같은 팩토리로 만든다
+        self.assertIn('factory.create("learning", readTimeout)', sources)
+        self.assertIn('this(factory, properties.readTimeout, circuit("learning-json")', sources)
         self.assertIn('headers.set("Idempotency-Key", it)', sources)
 
     def test_mission_query_only_accepts_pagination_and_derives_profile_in_core(self):

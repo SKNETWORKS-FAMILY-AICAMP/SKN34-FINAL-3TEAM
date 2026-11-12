@@ -132,7 +132,10 @@ test('#389 실제 조회·해금 응답과 assetKey를 보존하고 HTTP 캐시�
   assert.equal(calls[3].init.body, undefined)
 })
 
-test('learning 판정 칸(#484)이 아직 없는 당일 풀이·주간 완주는 준비 중으로 안내한다(#506)', () => {
-  assert.deepEqual(POINT_RULES.filter((r) => r.preparing).map((r) => r.type), ['THEME_ON_TIME', 'THEME_FINISHED'])
-  assert.equal(POINT_RULES.find((r) => r.type === 'THEME_COMPLETED')?.preparing, undefined)
+test('당일 풀이·주간 완주는 learning #484 판정 칸으로 적립되어 준비 중 표시 없이 안내한다(#506)', () => {
+  assert.deepEqual(
+    POINT_RULES.filter((r) => r.type === 'THEME_ON_TIME' || r.type === 'THEME_FINISHED').map((r) => [r.type, r.amount]),
+    [['THEME_ON_TIME', 5], ['THEME_FINISHED', 10]],
+  )
+  assert.ok(POINT_RULES.every((r) => !('preparing' in r)))
 })

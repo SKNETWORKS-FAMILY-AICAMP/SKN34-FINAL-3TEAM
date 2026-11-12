@@ -2,6 +2,7 @@ package com.sagomungchi.core.payment.service
 
 import com.sagomungchi.core.payment.domain.*
 import com.sagomungchi.core.payment.repository.PaymentRepository
+import com.sagomungchi.core.usage.service.MemoryUsageKind
 import com.sagomungchi.core.usage.service.MissionUsageService
 import com.sagomungchi.core.payment.service.PaymentTransactions.Companion.conflict
 import com.sagomungchi.core.payment.service.PaymentTransactions.Companion.forbidden
@@ -146,6 +147,20 @@ class ProductEntitlementService(private val repository: PaymentRepository, priva
                 else check(repository.reserve(PremiumUsage(UUID.randomUUID(),permit.student,sub.id,"EXTRA_MISSION",attempt,"USED",tx.now(),tx.now()))==1)
             }
         }
+    }
+    /**
+     * #566 추억 검색·설명 하루 한도(P13·P27, 2026-11-12 확정 20·10, 무료·프리미엄 같음). 값은 이용 중 상품의
+     * `limits.dailyMemorySearches`·`dailyMemoryExplanations`. 키가 없는 기존 구독 스냅숏은 같은 값 정책이라 무료 상품 값을 쓰고,
+     * 무료 상품에도 없거나 0 이상 정수가 아니면 상품 오류(503)
+     */
+    fun memoryLimit(student: UUID, kind: MemoryUsageKind): Int {
+        val key=when(kind) { MemoryUsageKind.SEARCH -> "dailyMemorySearches"; MemoryUsageKind.EXPLANATION -> "dailyMemoryExplanations" }
+        val entitlement=forStudent(student)
+        val value=entitlement.product.limits[key]
+            ?: entitlement.subscriptionId?.let { freeProduct().limits[key] }
+        val number=value.takeIf { it is Int || it is Long || it is java.math.BigInteger } as Number?
+        if(number==null || number.toLong() !in 0..Int.MAX_VALUE.toLong()) unavailable("PAYMENT_PRODUCT_UNAVAILABLE")
+        return number.toInt()
     }
     private fun dailyMissions(product: Product): Int {
         val value=product.limits["dailyMissions"].takeIf { it is Int || it is Long || it is java.math.BigInteger } as Number?

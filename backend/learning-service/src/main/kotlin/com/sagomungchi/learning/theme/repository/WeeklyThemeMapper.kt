@@ -5,6 +5,7 @@ import com.sagomungchi.learning.attempt.domain.AttemptStatus
 import com.sagomungchi.learning.mission.domain.ThinkingType
 import com.sagomungchi.learning.theme.domain.DialogueLine
 import com.sagomungchi.learning.theme.domain.HintSpot
+import com.sagomungchi.learning.theme.domain.ThemeAnswerPick
 import com.sagomungchi.learning.theme.domain.ThemeDayMission
 import com.sagomungchi.learning.theme.domain.ThemeStory
 import com.sagomungchi.learning.theme.domain.ThemeGrade
@@ -162,4 +163,21 @@ interface WeeklyThemeMapper {
         @Param("now") now: Instant,
     ): Int
     fun deleteStoryViewsByStudent(studentId: UUID): Int
+
+    /** 그 주 큰 질문 정답 고르기(#484) */
+    fun findAnswerPick(@Param("studentId") studentId: UUID, @Param("weekStart") weekStart: LocalDate): ThemeAnswerPick?
+    /** 큰 질문·정답이 있는 테마 버전의 금요일 문제인지 */
+    fun isAnswerPickMission(missionId: UUID): Boolean
+    /** 그 문제를 금요일 문제로 정답 고르기를 한 주 */
+    fun findAnswerPicks(@Param("studentId") studentId: UUID, @Param("missionId") missionId: UUID): List<LocalDate>
+    fun insertAnswerPick(
+        @Param("studentId") studentId: UUID,
+        @Param("weekStart") weekStart: LocalDate,
+        @Param("themeId") themeId: UUID,
+        @Param("missionId") missionId: UUID,
+        @Param("pick") pick: String,
+        @Param("correct") correct: Boolean,
+        @Param("now") now: Instant,
+    ): Int
+    fun deleteAnswerPicksByStudent(studentId: UUID): Int
 }

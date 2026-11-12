@@ -17,8 +17,13 @@ export function ServiceCenter({ page }: { page: 'help' | 'support' | 'notices' |
   const nav = [{ path: root + '/home', label: '시작 화면' }, { path: root + '/help', label: '이용 도움말' }, { path: root + '/support', label: '문의·오류 신고' }, { path: root + '/notices', label: '공지·점검' },
     ...(role === 'ADMIN' ? [] : [{ path: root + '/support/results', label: '신고·문의 처리 결과' }])]
   return <Workspace title="사고뭉치 이용 안내" nav={nav}>
-    <div className="svc-page">{page === 'help' ? <Help role={role} /> : page === 'notices' ? <Notices /> : page === 'notifications' ? <Suspense fallback={<p role="status">알림을 불러오고 있습니다.</p>}><NotificationCenter role={role} /></Suspense> : <Support />}</div>
+    <ServiceContent page={page} />
   </Workspace>
+}
+export function ServiceContent({ page }: { page: 'help' | 'support' | 'notices' | 'notifications' }) {
+  const { session } = useSession()
+  const role = session!.role
+  return <div className="svc-page">{page === 'help' ? <Help role={role} /> : page === 'notices' ? <Notices /> : page === 'notifications' ? <Suspense fallback={<p role="status">알림을 불러오고 있습니다.</p>}><NotificationCenter role={role} /></Suspense> : <Support />}</div>
 }
 function Help({ role }: { role: string }) {
   const q = useParentQuery(['help', role], signal => serviceApi.help(role, signal))

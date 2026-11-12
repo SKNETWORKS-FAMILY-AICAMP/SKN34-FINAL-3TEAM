@@ -581,6 +581,25 @@ $$, '23503');
 SELECT pg_temp.expect_sqlstate($$
     UPDATE theme_frame SET theme_id = '00000000-0000-4000-8000-999999999999' WHERE id = '00000000-0000-4000-8000-000005590001'
 $$, '23503');
+-- #484 큰 질문 정답 고르기: 학생·주(월요일)당 1행, 고를 때 금요일 문제는 있는 미션
+INSERT INTO theme_answer_pick (student_id, week_start, theme_id, mission_id, pick, correct, picked_at)
+VALUES ('00000000-0000-4000-8000-000000000002', '2026-11-09', '00000000-0000-4000-8000-000000000120',
+        '00000000-0000-4000-8000-000000000101', 'synthetic-candidate', false, now());
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO theme_answer_pick (student_id, week_start, theme_id, mission_id, pick, correct, picked_at)
+    VALUES ('00000000-0000-4000-8000-000000000002', '2026-11-09', '00000000-0000-4000-8000-000000000120',
+            '00000000-0000-4000-8000-000000000101', 'synthetic-other', true, now())
+$$, '23505');
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO theme_answer_pick (student_id, week_start, theme_id, mission_id, pick, correct, picked_at)
+    VALUES ('00000000-0000-4000-8000-000000000003', '2026-11-10', '00000000-0000-4000-8000-000000000120',
+            '00000000-0000-4000-8000-000000000101', 'synthetic-candidate', false, now())
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO theme_answer_pick (student_id, week_start, theme_id, mission_id, pick, correct, picked_at)
+    VALUES ('00000000-0000-4000-8000-000000000003', '2026-11-09', '00000000-0000-4000-8000-000000000120',
+            '00000000-0000-4000-8000-999999999999', 'synthetic-candidate', false, now())
+$$, '23503');
 -- #438 테마 초안: 학년·주(월요일)·출처·상태 CHECK, 자동 초안은 학년·주당 1개, 채택 테마 1개
 INSERT INTO theme_draft (id, grade, week_start, source, status, input, attempts, created_at, updated_at)
 VALUES ('00000000-0000-4000-8000-000000000127', 'G3', '2026-11-16', 'AUTO', 'GENERATING',

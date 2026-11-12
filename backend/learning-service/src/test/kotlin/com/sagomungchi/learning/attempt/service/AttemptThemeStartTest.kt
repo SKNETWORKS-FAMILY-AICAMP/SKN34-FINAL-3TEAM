@@ -88,17 +88,31 @@ class AttemptThemeStartTest : PostgresRepositoryTest() {
     }
 
     @Test
-    fun `THEME_DAY는 오늘 요일 문제면 그 주 테마를 시도에 저장하고, 다른 요일 문제는 409`() {
+    fun `THEME_DAY는 공개된 요일 문제면 그 주 테마를 시도에 저장하고, 공개 전 문제는 409 (#484)`() {
         val tuesday = on(WEEK.plusDays(1))
 
         val started = tuesday.start(student, missions[1].id, 3, false, AttemptContext.THEME_DAY)
+        // 누적 공개: 화요일에 월요일 문제도 새로 시작
+        val monday = tuesday.start(student, missions[0].id, 3, false, AttemptContext.THEME_DAY)
 
         assertTrue(started.created)
+        assertTrue(monday.created)
         assertEquals(Triple(AttemptContext.THEME_DAY, themeId, WEEK), Triple(started.attempt.context, started.attempt.themeId, started.attempt.themeWeekStart))
         assertEquals(listOf("THEME_DAY", themeId.toString(), WEEK.toString()), jdbc.queryForList(
             "SELECT context, theme_id::text AS theme, theme_week_start::text AS week FROM attempt WHERE id = ?", started.attempt.id,
         ).single().values.map { it.toString() })
         assertError(HttpStatus.CONFLICT, "THEME_DAY_CLOSED") { tuesday.start(student, missions[2].id, 3, false, AttemptContext.THEME_DAY) }
+    }
+
+    @Test
+    fun `일요일 THEME_DAY는 core 허용 값 sundayTheme이 true일 때만 (#484)`() {
+        val sunday = on(WEEK.plusDays(6))
+
+        assertError(HttpStatus.CONFLICT, "THEME_DAY_CLOSED") { sunday.start(student, missions[4].id, 3, false, AttemptContext.THEME_DAY) }
+        val started = sunday.start(student, missions[4].id, 3, false, AttemptContext.THEME_DAY, sundayTheme = true)
+
+        assertTrue(started.created)
+        assertEquals(AttemptContext.THEME_DAY to WEEK, started.attempt.context to started.attempt.themeWeekStart)
     }
 
     @Test

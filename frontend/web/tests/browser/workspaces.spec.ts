@@ -1,3 +1,4 @@
+import { enterStudentFixture } from './studentFixture.ts'
 import { writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
@@ -246,7 +247,7 @@ test('동석 학습 뒤 보호자 비밀번호로 Google 로그인 없이 학부
   await expect(card.getByText('설정됨')).toBeVisible()
 
   await page.getByRole('link', { name: '사고뭉치 홈', exact: true }).filter({ visible: true }).click()
-  await page.getByRole('button', { name: '이 자녀로 학습 시작', exact: true }).click()
+  await enterStudentFixture(page)
   await expect(page).toHaveURL(/\/student\/home/)
   await page.getByRole('button', { name: '학부모 로그인으로', exact: true }).click()
   await expect(page).toHaveURL(/\/login/)

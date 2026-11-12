@@ -84,14 +84,21 @@ class AttemptService(
     /**
      * 시도 시작 (state-diagram 3.2, sequence-diagram 3.1). 진행 중 시도가 있으면 미션 공개·범위와 무관하게 그 시도를 돌려줌
      * (공개 중단 뒤에도 기존 시도는 당시 버전 유지, state-diagram 3.1). 없으면 공개·범위를 확인하고 현재 버전을 고정해 만듦.
-     * 테마 컨텍스트(#385, P23)는 신규 시도만 요일·되돌아보기 검사(409 THEME_DAY_CLOSED·THEME_REVIEW_NOT_ALLOWED)를 하고 그 주 테마를 시도에 저장.
+     * 테마 컨텍스트(#385, P23)는 신규 시도만 요일·되돌아보기 검사(409 THEME_DAY_CLOSED·THEME_REVIEW_NOT_ALLOWED, 일요일은 core 허용 값 `sundayTheme` #484)를 하고 그 주 테마를 시도에 저장.
      * 진행 중 시도는 컨텍스트와 무관하게 원래 컨텍스트 그대로 돌려줌(자정이 지나도 이어하기)
      */
     @Transactional
-    fun start(studentId: UUID, missionId: UUID, grade: Int, demo: Boolean, context: AttemptContext = AttemptContext.EXTRA): AttemptStart {
+    fun start(
+        studentId: UUID,
+        missionId: UUID,
+        grade: Int,
+        demo: Boolean,
+        context: AttemptContext = AttemptContext.EXTRA,
+        sundayTheme: Boolean = false,
+    ): AttemptStart {
         attemptRepository.findInProgress(studentId, missionId)?.let { return AttemptStart(it, created = false) }
         missionService.get(missionId, grade, demo)
-        val theme = if (context == AttemptContext.EXTRA) null else weeklyThemeService.checkStart(studentId, missionId, grade, context)
+        val theme = if (context == AttemptContext.EXTRA) null else weeklyThemeService.checkStart(studentId, missionId, grade, context, sundayTheme)
         val now = now()
         val attempt = Attempt.start(studentId, missionId, missionService.currentVersions(missionId), grade, now, context, theme)
         if (attemptRepository.insertIfNoneInProgress(attempt)) {
